@@ -477,14 +477,20 @@ func unpack(r *bytes.Reader) (any, error) {
 }
 
 func unpackStr(r *bytes.Reader, l int) (string, error) {
+	if l == 0 {
+		return "", nil
+	}
 	b := make([]byte, l)
-	_, err := r.Read(b)
+	_, err := io.ReadFull(r, b)
 	return string(b), err
 }
 
 func unpackBin(r *bytes.Reader, l int) ([]byte, error) {
+	if l == 0 {
+		return []byte{}, nil
+	}
 	b := make([]byte, l)
-	_, err := r.Read(b)
+	_, err := io.ReadFull(r, b)
 	return b, err
 }
 
