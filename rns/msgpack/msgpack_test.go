@@ -13,6 +13,7 @@ import (
 )
 
 func TestMsgPack(t *testing.T) {
+	t.Parallel()
 	testCases := []any{
 		nil,
 		true,
@@ -46,6 +47,7 @@ func TestMsgPack(t *testing.T) {
 }
 
 func TestMsgPackTypes(t *testing.T) {
+	t.Parallel()
 	// Special case for byte slices which are unpacked as []byte
 	b := []byte{1, 2, 3}
 	packed, _ := Pack(b)
@@ -56,6 +58,7 @@ func TestMsgPackTypes(t *testing.T) {
 }
 
 func TestPackUnpackExtended(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		val  any
@@ -118,6 +121,7 @@ func TestPackUnpackExtended(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			packed, err := Pack(tt.val)
 			if err != nil {
 				t.Fatalf("Pack() error = %v", err)
@@ -247,6 +251,7 @@ func isUnsignedInt(v any) bool {
 }
 
 func TestUnpackMalformed(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		data []byte
@@ -259,6 +264,7 @@ func TestUnpackMalformed(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := Unpack(tt.data)
 			if err == nil {
 				t.Error("Unpack() expected error for malformed data, got nil")
@@ -268,6 +274,7 @@ func TestUnpackMalformed(t *testing.T) {
 }
 
 func TestPackUnsupported(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		val  any
@@ -278,6 +285,7 @@ func TestPackUnsupported(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := Pack(tt.val)
 			if err == nil {
 				t.Error("Pack() expected error for unsupported type, got nil")
@@ -287,6 +295,7 @@ func TestPackUnsupported(t *testing.T) {
 }
 
 func TestMapWithByteSliceKey(t *testing.T) {
+	t.Parallel()
 	// We can't create a map[[]byte]any in Go.
 	// But we can simulate what happens if we UNPACK a map that has binary keys.
 	data := []byte{

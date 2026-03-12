@@ -11,6 +11,7 @@ import (
 )
 
 func TestAES(t *testing.T) {
+	t.Parallel()
 	key128 := make([]byte, 16)
 	key256 := make([]byte, 32)
 	iv := make([]byte, 16)

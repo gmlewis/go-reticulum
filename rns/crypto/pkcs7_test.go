@@ -11,6 +11,7 @@ import (
 )
 
 func TestPKCS7(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		data      []byte
 		blockSize int
@@ -40,6 +41,7 @@ func TestPKCS7(t *testing.T) {
 }
 
 func TestPKCS7Unpad_Errors(t *testing.T) {
+	t.Parallel()
 	// Empty data
 	if _, err := PKCS7Unpad([]byte{}); err == nil {
 		t.Error("expected error for empty data")

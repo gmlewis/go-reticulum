@@ -11,6 +11,7 @@ import (
 )
 
 func TestX25519(t *testing.T) {
+	t.Parallel()
 	priv1, err := GenerateX25519PrivateKey()
 	if err != nil {
 		t.Fatalf("failed to generate private key 1: %v", err)
@@ -68,6 +69,7 @@ func TestX25519(t *testing.T) {
 }
 
 func TestNewX25519PrivateKeyFromBytes_Errors(t *testing.T) {
+	t.Parallel()
 	_, err := NewX25519PrivateKeyFromBytes(make([]byte, 31))
 	if err == nil {
 		t.Error("expected error for short private key")
@@ -80,6 +82,7 @@ func TestNewX25519PrivateKeyFromBytes_Errors(t *testing.T) {
 }
 
 func TestNewX25519PublicKeyFromBytes_Errors(t *testing.T) {
+	t.Parallel()
 	_, err := NewX25519PublicKeyFromBytes(make([]byte, 31))
 	if err == nil {
 		t.Error("expected error for short public key")

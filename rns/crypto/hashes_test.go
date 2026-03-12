@@ -11,6 +11,7 @@ import (
 )
 
 func TestSHA256(t *testing.T) {
+	t.Parallel()
 	data := []byte("hello world")
 	got := SHA256(data)
 	want := []byte{185, 77, 39, 185, 147, 77, 62, 8,
@@ -23,6 +24,7 @@ func TestSHA256(t *testing.T) {
 }
 
 func TestSHA512(t *testing.T) {
+	t.Parallel()
 	data := []byte("hello world")
 	got := SHA512(data)
 	want := []byte{48, 158, 204, 72, 156, 18, 214, 235,

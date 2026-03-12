@@ -11,6 +11,7 @@ import (
 )
 
 func TestToken(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		isAES256 bool
@@ -21,6 +22,7 @@ func TestToken(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			key, err := GenerateTokenKey(tt.isAES256)
 			if err != nil {
 				t.Fatalf("failed to generate token key: %v", err)
@@ -54,6 +56,7 @@ func TestToken(t *testing.T) {
 }
 
 func TestNewToken_Errors(t *testing.T) {
+	t.Parallel()
 	_, err := NewToken(make([]byte, 31))
 	if err == nil {
 		t.Error("expected error for 31-byte key")
@@ -76,6 +79,7 @@ func TestNewToken_Errors(t *testing.T) {
 }
 
 func TestToken_VerifyHMAC_Invalid(t *testing.T) {
+	t.Parallel()
 	key, _ := GenerateTokenKey(false)
 	token, _ := NewToken(key)
 
@@ -101,6 +105,7 @@ func TestToken_VerifyHMAC_Invalid(t *testing.T) {
 }
 
 func TestToken_Decrypt_Invalid(t *testing.T) {
+	t.Parallel()
 	key, _ := GenerateTokenKey(false)
 	token, _ := NewToken(key)
 

@@ -11,6 +11,7 @@ import (
 )
 
 func TestHKDF(t *testing.T) {
+	t.Parallel()
 	deriveFrom := []byte("key material")
 	salt := []byte("salt")
 	context := []byte("context")
