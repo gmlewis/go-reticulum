@@ -41,4 +41,21 @@ func TestAES(t *testing.T) {
 	if !bytes.Equal(data, decrypted) {
 		t.Errorf("AES-256 decrypted data mismatch")
 	}
+
+	// Invalid key lengths
+	badKey := make([]byte, 15)
+	if _, err := AES128CBCEncrypt(data, badKey, iv); err == nil {
+		t.Error("expected error for bad AES-128 key length")
+	}
+	if _, err := AES128CBCDecrypt(data, badKey, iv); err == nil {
+		t.Error("expected error for bad AES-128 key length")
+	}
+
+	badKey = make([]byte, 31)
+	if _, err := AES256CBCEncrypt(data, badKey, iv); err == nil {
+		t.Error("expected error for bad AES-256 key length")
+	}
+	if _, err := AES256CBCDecrypt(data, badKey, iv); err == nil {
+		t.Error("expected error for bad AES-256 key length")
+	}
 }

@@ -11,19 +11,47 @@ import (
 )
 
 func TestPKCS7(t *testing.T) {
-	data := []byte("hello world")
-	blockSize := 16
-	padded := PKCS7Pad(data, blockSize)
-	if len(padded)%blockSize != 0 {
-		t.Errorf("PKCS7Pad padded length (%v) not a multiple of blockSize (%v)", len(padded), blockSize)
+	tests := []struct {
+		data      []byte
+		blockSize int
+	}{
+		{[]byte("hello world"), 16},
+		{[]byte("1234567890123456"), 16},
+		{[]byte(""), 16},
+		{[]byte("a"), 8},
+		{[]byte("12345678"), 8},
 	}
 
-	got, err := PKCS7Unpad(padded)
-	if err != nil {
-		t.Fatal(err)
+	for _, tt := range tests {
+		padded := PKCS7Pad(tt.data, tt.blockSize)
+		if len(padded)%tt.blockSize != 0 {
+			t.Errorf("PKCS7Pad length (%v) not multiple of %v", len(padded), tt.blockSize)
+		}
+
+		unpadded, err := PKCS7Unpad(padded)
+		if err != nil {
+			t.Fatalf("PKCS7Unpad failed: %v", err)
+		}
+
+		if !bytes.Equal(unpadded, tt.data) {
+			t.Errorf("PKCS7Unpad = %v, want %v", unpadded, tt.data)
+		}
+	}
+}
+
+func TestPKCS7Unpad_Errors(t *testing.T) {
+	// Empty data
+	if _, err := PKCS7Unpad([]byte{}); err == nil {
+		t.Error("expected error for empty data")
 	}
 
-	if !bytes.Equal(got, data) {
-		t.Errorf("PKCS7Unpad = %v, want %v", got, data)
+	// Invalid padding value (too large)
+	if _, err := PKCS7Unpad([]byte{1, 2, 3, 4, 16}); err == nil {
+		t.Error("expected error for invalid padding value")
+	}
+
+	// Invalid padding bytes
+	if _, err := PKCS7Unpad([]byte{1, 2, 3, 4, 1, 2}); err == nil {
+		t.Error("expected error for invalid padding bytes")
 	}
 }
