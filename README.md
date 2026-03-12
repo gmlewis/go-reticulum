@@ -1,4 +1,4 @@
-Go Reticulum Network Stack <img align="right" src="https://static.pepy.tech/personalized-badge/rns?period=month&units=international_system&left_color=grey&right_color=blue&left_text=Installs/month" style="padding-left:10px"/><a href="https://github.com/gmlewis/go-reticulum/actions/workflows/build.yml"><img align="right" src="https://github.com/gmlewis/go-reticulum/actions/workflows/build.yml/badge.svg"/></a>
+# Go Reticulum Network Stack <a href="https://github.com/gmlewis/go-reticulum/actions/workflows/build.yml"><img align="right" src="https://github.com/gmlewis/go-reticulum/actions/workflows/build.yml/badge.svg"/></a>
 
 This is an experimental port of the [Reticulum Network Stack](https://github.com/markqvist/Reticulum) from Python to Go.
 What follows is Mark Qvist's original README.md.
