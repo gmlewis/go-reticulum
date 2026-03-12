@@ -1,0 +1,43 @@
+name: Build Go Reticulum
+
+on:
+  push:
+    branches: 
+      - '*'
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+*"
+  pull_request:
+    branches: 
+      - master
+    paths-ignore:
+      - .gitignore
+      - LICENSE
+
+permissions:
+  contents: read
+
+concurrency: 
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Go Tests (non-integration)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: |
+            go.mod
+            **/go.sum
+
+      - name: Run non-integration Go tests
+        run: go test ./... -race -count=1

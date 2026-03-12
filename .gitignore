@@ -1,0 +1,8 @@
+.DS_Store
+*.data
+*.result
+.vscode
+
+# Handy symlinks
+/test-all.sh
+original-*
