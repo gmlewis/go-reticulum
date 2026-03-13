@@ -414,7 +414,7 @@ func TestLocalInterfaceParity(t *testing.T) {
 	if runtime.GOOS == "linux" {
 		cmd = exec.Command("pipx", "run", "--spec", "rns", "python3", scriptPath, socketPath)
 	} else {
-		cmd = exec.Command("pipx", "run", "--spec", "rns", "python3", scriptPath, fmt.Sprintf("%v", pyPort))
+		cmd = exec.Command("python3", scriptPath, fmt.Sprintf("%v", pyPort))
 	}
 
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPath)
