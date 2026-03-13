@@ -122,7 +122,6 @@ func TestSerialInterfaceParity(t *testing.T) {
 
 	received := make(chan []byte, 1)
 	handler := func(data []byte, iface Interface) {
-		fmt.Printf("Go received: %x\n", data)
 		received <- data
 	}
 
@@ -134,7 +133,6 @@ func TestSerialInterfaceParity(t *testing.T) {
 	defer goIface.Detach()
 
 	msg := []byte("hello from go to python via serial")
-	fmt.Printf("Go sending: %x\n", msg)
 	if err := goIface.Send(msg); err != nil {
 		t.Fatalf("failed to send data to Python: %v", err)
 	}

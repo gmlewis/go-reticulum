@@ -224,14 +224,8 @@ func NewLocalServerInterface(name string, path string, port int, handler Inbound
 			}
 		}
 		l, err = net.Listen("unix", path)
-		if err == nil {
-			fmt.Printf("Local server listening on unix %v\n", path)
-		}
 	} else {
 		l, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%v", port))
-		if err == nil {
-			fmt.Printf("Local server listening on tcp 127.0.0.1:%v\n", port)
-		}
 	}
 
 	if err != nil {

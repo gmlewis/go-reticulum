@@ -106,8 +106,6 @@ func (si *serialInterface) Send(data []byte) error {
 	frame := append([]byte{HDLCFlag}, HDLCEscape(data)...)
 	frame = append(frame, HDLCFlag)
 
-	fmt.Printf("Serial %v sending frame: %x\n", si.name, frame)
-
 	si.mu.Lock()
 	file := si.file
 	si.mu.Unlock()

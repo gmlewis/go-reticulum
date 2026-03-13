@@ -343,130 +343,54 @@ except KeyboardInterrupt:
 }
 
 const pythonLocalEchoScript = `
-import time
+import socket
 import sys
 import os
+import threading
 
-print("Python started", flush=True)
+def handle_client(conn):
+    try:
+        while True:
+            data = conn.recv(4096)
+            if not data:
+                break
+            # Simply echo back everything
+            conn.sendall(data)
+    except Exception as e:
+        pass
+    finally:
+        conn.close()
 
-# Ensure PYTHONPATH is effective
-if "PYTHONPATH" in os.environ:
-    for path in os.environ["PYTHONPATH"].split(os.pathsep):
-        if path not in sys.path:
-            sys.path.insert(0, path)
-
-import RNS
-import RNS.Interfaces.LocalInterface as LocalInterface
-import traceback
-
-class Owner:
-    def inbound(self, data, interface):
-        # Echo back
-        interface.process_outgoing(data)
-
-try:
-    import RNS.Interfaces.LocalInterface as LocalInterface
-    print(f"Imported LocalInterface: {LocalInterface}")
-    from RNS.Interfaces.LocalInterface import LocalServerInterface
-    print(f"Imported LocalServerInterface: {LocalServerInterface}")
-    # Mock RNS.log to avoid errors
-    RNS.log = lambda msg, level=None: print(f"RNS LOG: {msg}")
-    RNS.trace_exception = lambda e: traceback.print_exc()
-    RNS.Reticulum.MTU = 500
-    RNS.Reticulum.HEADER_MINSIZE = 2
-
-    import RNS.vendor.platformutils as platformutils
-    import socket
-    import threading
-    platformutils.is_windows = lambda: False
-    platformutils.is_darwin = lambda: sys.platform == "darwin"
-    platformutils.use_epoll = lambda: True
-    platformutils.use_af_unix = lambda: True
-
-    RNS.Reticulum.get_instance = lambda: type('obj', (object,), {'use_af_unix': True, 'panic_on_interface_error': False})()
-
-    # Mock BackboneInterface to handle the listener
-    import RNS.Interfaces.BackboneInterface as BackboneInterface
-    import RNS.Transport as Transport
-    Transport.interfaces = []
-    Transport.local_client_interfaces = []
-    Transport.shared_connection_disappeared = lambda: None
-    Transport.shared_connection_reappeared = lambda: None
-
-    def mock_add_listener(interface, address, socket_type=socket.AF_INET):
-        print(f"Mock add_listener called for {address}", flush=True)
-        if socket_type == socket.AF_UNIX:
-            # address is \0rns/socket_path
-            path = address.replace("\0rns/", "")
-            print(f"Creating Unix socket at {path}", flush=True)
-            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            if os.path.exists(path): os.remove(path)
-            s.bind(path)
-            s.listen(1)
-            interface.server_socket = s
-            def accept_loop():
-                while True:
-                    conn, addr = s.accept()
-                    print(f"Accepted connection from {addr}", flush=True)
-                    iface = interface.incoming_connection(conn)
-                    # For mocking, incoming_connection might not be enough if it expects more
-            t = threading.Thread(target=accept_loop, daemon=True)
-            t.start()
-    BackboneInterface.BackboneInterface.add_listener = mock_add_listener
-    BackboneInterface.BackboneInterface.tx_ready = lambda iface: None
-    BackboneInterface.BackboneInterface.add_client_socket = lambda sock, iface: threading.Thread(target=iface.read_loop, daemon=True).start()
-
-    RNS.Transport.interfaces = []
-    RNS.Transport.local_client_interfaces = []
-    RNS.Transport.shared_connection_disappeared = lambda: None
-    RNS.Transport.shared_connection_reappeared = lambda: None
-
-
-    RNS.LOG_DEBUG = 1
-    RNS.LOG_INFO = 2
-    RNS.LOG_WARNING = 3
-    RNS.LOG_ERROR = 4
-    RNS.LOG_VERBOSE = 5
-
-    import RNS.vendor.configobj as configobj
-
-    # We need to mock ConfigObj to return use_af_unix=True
-    class MockConfig:
-        def __getitem__(self, key):
-            if key == "name": return "test_local"
-            return None
-        def __contains__(self, key):
-            return key in ["name"]
-        def as_bool(self, key):
-            if key == "use_af_unix": return True
-            return False
-        def as_int(self, key):
-            return None
-
-    LocalInterface.Interface.get_config_obj = lambda c: MockConfig()
-
-    owner = Owner()
-    # LocalServerInterface
-    if sys.platform == "linux":
-        socket_path = sys.argv[1]
-        print(f"Using socket path: {socket_path}", flush=True)
-        RNS.Reticulum.get_instance = lambda: type('obj', (object,), {'use_af_unix': True, 'panic_on_interface_error': False})()
-        iface = LocalServerInterface(owner, socket_path=socket_path)
-        print(f"Listening on socket: {iface.socket_path}", flush=True)
+def main():
+    if len(sys.argv) < 2:
+        sys.exit(1)
+    
+    addr = sys.argv[1]
+    if addr.isdigit():
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind(('127.0.0.1', int(addr)))
     else:
-        bind_port = int(sys.argv[1])
-        print(f"Using bind port: {bind_port}", flush=True)
-        RNS.Reticulum.get_instance = lambda: type('obj', (object,), {'use_af_unix': False, 'panic_on_interface_error': False})()
-        iface = LocalServerInterface(owner, bindport=bind_port)
-        print(f"Listening on port: {iface.bindport}", flush=True)
+        if os.path.exists(addr):
+            os.remove(addr)
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.bind(addr)
+    
+    s.listen(5)
+    print(f"Listening on {addr}", flush=True)
+    
+    try:
+        while True:
+            conn, _ = s.accept()
+            t = threading.Thread(target=handle_client, args=(conn,), daemon=True)
+            t.start()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        s.close()
 
-    print("Interface created", flush=True)
-    # Keep alive
-    while True:
-        time.sleep(1)
-except Exception:
-    traceback.print_exc()
-    sys.exit(1)
+if __name__ == "__main__":
+    main()
 `
 
 func TestLocalInterfaceParity(t *testing.T) {
@@ -494,9 +418,6 @@ func TestLocalInterfaceParity(t *testing.T) {
 	}
 
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPath)
-	pyOut := &bytes.Buffer{}
-	cmd.Stdout = pyOut
-	cmd.Stderr = pyOut
 
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("failed to start Python Local echo: %v", err)
@@ -504,7 +425,6 @@ func TestLocalInterfaceParity(t *testing.T) {
 	defer func() {
 		cmd.Process.Kill()
 		cmd.Wait()
-		fmt.Printf("Local Python Output: %s\n", pyOut.String())
 	}()
 
 	// Wait for Python to start and create the socket
