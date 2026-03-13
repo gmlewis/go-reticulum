@@ -27,6 +27,9 @@ const (
 	SerialHWMTU           = 564
 	SerialFrameTimeout    = 100 * time.Millisecond
 	serialReconnectDelay  = 5 * time.Second
+
+	// cbaud is not always defined in syscall for all Linux platforms.
+	cbaud = 0x100f
 )
 
 type serialInterface struct {
@@ -102,6 +105,8 @@ func (si *serialInterface) Send(data []byte) error {
 
 	frame := append([]byte{HDLCFlag}, HDLCEscape(data)...)
 	frame = append(frame, HDLCFlag)
+
+	fmt.Printf("Serial %v sending frame: %x\n", si.name, frame)
 
 	si.mu.Lock()
 	file := si.file
@@ -302,7 +307,7 @@ func configureTermios(fd uintptr, speed, databits int, parity string, stopbits i
 	if err != nil {
 		return err
 	}
-	termios.Cflag &^= syscall.CBAUD
+	termios.Cflag &^= cbaud
 	termios.Cflag |= baud
 	termios.Ispeed = baud
 	termios.Ospeed = baud

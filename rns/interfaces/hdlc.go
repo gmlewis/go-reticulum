@@ -31,11 +31,13 @@ func HDLCUnescape(data []byte) []byte {
 	out := make([]byte, 0, len(data))
 	escape := false
 	for _, b := range data {
+		if b == HDLCEsc && !escape {
+			escape = true
+			continue
+		}
 		if escape {
 			out = append(out, b^HDLCEscMask)
 			escape = false
-		} else if b == HDLCEsc {
-			escape = true
 		} else {
 			out = append(out, b)
 		}

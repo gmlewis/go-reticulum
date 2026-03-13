@@ -83,10 +83,10 @@ func NewRNodeInterface(name, port string, speed, databits, stopbits int, parity 
 		return nil, err
 	}
 
-	if flowControl {
-		// Flow control behavior is handled by underlying device firmware;
-		// this Go parity slice validates and preserves configuration surface.
-	}
+	// if flowControl {
+	// Flow control behavior is handled by underlying device firmware;
+	// this Go parity slice validates and preserves configuration surface.
+	// }
 
 	return &RNodeInterface{inner: iface}, nil
 }
