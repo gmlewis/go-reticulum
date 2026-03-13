@@ -5,7 +5,10 @@
 
 package interfaces
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestBaseInterfaceIFACRoundTrip(t *testing.T) {
 	bi := NewBaseInterface("ifac-test", ModeFull, 1000)
@@ -36,6 +39,20 @@ func TestBaseInterfaceIFACRoundTrip(t *testing.T) {
 	}
 	if string(inProcessed) != string(raw) {
 		t.Fatalf("inbound IFAC round-trip mismatch")
+	}
+}
+
+func TestBaseInterfaceIFACKeyDerivation(t *testing.T) {
+	bi := NewBaseInterface("ifac-test", ModeFull, 1000)
+	cfg := IFACConfig{Enabled: true, NetName: "mesh", NetKey: "secret", Size: 16}
+	bi.SetIFACConfig(cfg)
+
+	// Expected value from Python script:
+	// fb627f692fc06e22193bc67b5f38875b7e238e0b01dba3cc78da71f432012ce7702fd7d32af340d46c0c1bce096430133063d6362b3a54de341355424bfdbeb9
+	expectedHex := "fb627f692fc06e22193bc67b5f38875b7e238e0b01dba3cc78da71f432012ce7702fd7d32af340d46c0c1bce096430133063d6362b3a54de341355424bfdbeb9"
+	gotKey := fmt.Sprintf("%x", bi.ifacKey)
+	if gotKey != expectedHex {
+		t.Fatalf("IFAC key derivation mismatch:\ngot:  %v\nwant: %v", gotKey, expectedHex)
 	}
 }
 

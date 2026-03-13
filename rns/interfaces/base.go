@@ -14,6 +14,7 @@ import (
 	rnscrypto "github.com/gmlewis/go-reticulum/rns/crypto"
 )
 
+// IFAC stands for Interface Authentication and Control.
 // IFACConfig holds per-interface authentication configuration.
 // This is currently used for configuration plumbing and transport hook wiring.
 type IFACConfig struct {
