@@ -26,41 +26,6 @@
 //
 //	Sign a file with an identity:
 //	  gornid -i <identity_path> -s <file_path> [-w <output_path>]
-//
-// Flags:
-//
-//	-config string
-//	      path to alternative Reticulum config directory
-//	-i string
-//	      hexadecimal Reticulum identity or destination hash, or path to Identity file
-//	-g string
-//	      generate a new Identity at the specified path
-//	-m string
-//	      import Reticulum identity in hex, base32 or base64 format
-//	-x    export identity to hex, base32 or base64 format
-//	-p    print identity info and exit
-//	-P    allow displaying private keys when printing
-//	-e string
-//	      encrypt the specified file
-//	-d string
-//	      decrypt the specified file
-//	-s string
-//	      sign the specified file
-//	-V string
-//	      validate the specified signature file against the input file
-//	-r string
-//	      input file path for operations
-//	-w string
-//	      output file path for operations
-//	-f    force write output even if it overwrites existing files
-//	-a string
-//	      announce a destination based on this Identity (format: app_name.aspect1.aspect2)
-//	-H string
-//	      show destination hashes for other aspects for this Identity
-//	-b    use base64-encoded input and output
-//	-B    use base32-encoded input and output
-//	-v    increase verbosity
-//	-q    decrease verbosity
 package main
 
 import (
@@ -77,107 +42,190 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-// AppName is the identifier used when creating or loading the default identity.
-const AppName = "rnid"
+func init() {
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), `
+usage: gornid [-h] [--config path] [-i identity] [-g file] [-m identity_data] [-x] [-v] [-q] [-a aspects]
+              [-H aspects] [-e file] [-d file] [-s path] [-V path] [-r file] [-w file] [-f] [-R] [-t seconds] [-p]
+              [-P] [-b] [-B] [--version]
+
+Go Reticulum Identity & Encryption Utility
+
+options:
+  -h, --help            show this help message and exit
+  --config path         path to alternative Reticulum config directory
+  -i, --identity identity
+                        hexadecimal Reticulum identity or destination hash, or path to Identity file
+  -g, --generate file   generate a new Identity
+  -m, --import identity_data
+                        import Reticulum identity in hex, base32 or base64 format
+  -x, --export          export identity to hex, base32 or base64 format
+  -v, --verbose         increase verbosity
+  -q, --quiet           decrease verbosity
+  -a, --announce aspects
+                        announce a destination based on this Identity
+  -H, --hash aspects    show destination hashes for other aspects for this Identity
+  -e, --encrypt file    encrypt file
+  -d, --decrypt file    decrypt file
+  -s, --sign path       sign file
+  -V, --validate path   validate signature
+  -r, --read file       input file path
+  -w, --write file      output file path
+  -f, --force           write output even if it overwrites existing files
+  -R, --request         request unknown Identities from the network
+  -t seconds            identity request timeout before giving up
+  -p, --print-identity  print identity info and exit
+  -P, --print-private   allow displaying private keys
+  -b, --base64          Use base64-encoded input and output
+  -B, --base32          Use base32-encoded input and output
+  --version             show program's version number and exit
+`)
+	}
+
+	flag.StringVar(&configDir, "config", "", "path to alternative Reticulum config directory")
+	flag.StringVar(&identityPath, "i", "", "hexadecimal Reticulum identity or destination hash, or path to Identity file")
+	flag.StringVar(&identityPath, "identity", "", "hexadecimal Reticulum identity or destination hash, or path to Identity file")
+	flag.StringVar(&generatePath, "g", "", "generate a new Identity")
+	flag.StringVar(&generatePath, "generate", "", "generate a new Identity")
+	flag.StringVar(&importStr, "m", "", "import Reticulum identity in hex, base32 or base64 format")
+	flag.StringVar(&importStr, "import", "", "import Reticulum identity in hex, base32 or base64 format")
+	flag.BoolVar(&export, "x", false, "export identity to hex, base32 or base64 format")
+	flag.BoolVar(&export, "export", false, "export identity to hex, base32 or base64 format")
+	flag.BoolVar(&verbose, "v", false, "increase verbosity")
+	flag.BoolVar(&verbose, "verbose", false, "increase verbosity")
+	flag.BoolVar(&quiet, "q", false, "decrease verbosity")
+	flag.BoolVar(&quiet, "quiet", false, "decrease verbosity")
+	flag.StringVar(&announce, "a", "", "announce a destination based on this Identity")
+	flag.StringVar(&announce, "announce", "", "announce a destination based on this Identity")
+	flag.StringVar(&hashAspects, "H", "", "show destination hashes for other aspects for this Identity")
+	flag.StringVar(&hashAspects, "hash", "", "show destination hashes for other aspects for this Identity")
+	flag.StringVar(&encryptFile, "e", "", "encrypt file")
+	flag.StringVar(&encryptFile, "encrypt", "", "encrypt file")
+	flag.StringVar(&decryptFile, "d", "", "decrypt file")
+	flag.StringVar(&decryptFile, "decrypt", "", "decrypt file")
+	flag.StringVar(&signFile, "s", "", "sign file")
+	flag.StringVar(&signFile, "sign", "", "sign file")
+	flag.StringVar(&validateFile, "V", "", "validate signature")
+	flag.StringVar(&validateFile, "validate", "", "validate signature")
+	flag.StringVar(&readFile, "r", "", "input file path")
+	flag.StringVar(&readFile, "read", "", "input file path")
+	flag.StringVar(&writeFile, "w", "", "output file path")
+	flag.StringVar(&writeFile, "write", "", "output file path")
+	flag.BoolVar(&force, "f", false, "write output even if it overwrites existing files")
+	flag.BoolVar(&force, "force", false, "write output even if it overwrites existing files")
+	flag.BoolVar(&requestID, "R", false, "request unknown Identities from the network")
+	flag.BoolVar(&requestID, "request", false, "request unknown Identities from the network")
+	flag.Float64Var(&timeout, "t", 15.0, "identity request timeout before giving up")
+	flag.BoolVar(&printIdentity, "p", false, "print identity info and exit")
+	flag.BoolVar(&printIdentity, "print-identity", false, "print identity info and exit")
+	flag.BoolVar(&printPrivate, "P", false, "allow displaying private keys")
+	flag.BoolVar(&printPrivate, "print-private", false, "allow displaying private keys")
+	flag.BoolVar(&useBase64, "b", false, "Use base64-encoded input and output")
+	flag.BoolVar(&useBase64, "base64", false, "Use base64-encoded input and output")
+	flag.BoolVar(&useBase32, "B", false, "Use base32-encoded input and output")
+	flag.BoolVar(&useBase32, "base32", false, "Use base32-encoded input and output")
+	flag.BoolVar(&version, "version", false, "show program's version number and exit")
+}
+
+var (
+	configDir     string
+	identityPath  string
+	generatePath  string
+	importStr     string
+	export        bool
+	verbose       bool
+	quiet         bool
+	announce      string
+	hashAspects   string
+	encryptFile   string
+	decryptFile   string
+	signFile      string
+	validateFile  string
+	readFile      string
+	writeFile     string
+	force         bool
+	requestID     bool
+	timeout       float64
+	printIdentity bool
+	printPrivate  bool
+	useBase64     bool
+	useBase32     bool
+	version       bool
+)
 
 func main() {
-	configDir := flag.String("config", "", "path to alternative Reticulum config directory")
-	identityPath := flag.String("i", "", "hexadecimal Reticulum identity or destination hash, or path to Identity file")
-	generatePath := flag.String("g", "", "generate a new Identity")
-	importStr := flag.String("m", "", "import Reticulum identity in hex, base32 or base64 format")
-	export := flag.Bool("x", false, "export identity to hex, base32 or base64 format")
-	verbose := flag.Bool("v", false, "increase verbosity")
-	quiet := flag.Bool("q", false, "decrease verbosity")
-	announce := flag.String("a", "", "announce a destination based on this Identity")
-	hashAspects := flag.String("H", "", "show destination hashes for other aspects for this Identity")
-	encryptFile := flag.String("e", "", "encrypt file")
-	decryptFile := flag.String("d", "", "decrypt file")
-	signFile := flag.String("s", "", "sign file")
-	validateFile := flag.String("V", "", "validate signature")
-	readFile := flag.String("r", "", "input file path")
-	writeFile := flag.String("w", "", "output file path")
-	force := flag.Bool("f", false, "write output even if it overwrites existing files")
-	requestID := flag.Bool("R", false, "request unknown Identities from the network")
-	timeout := flag.Float64("t", 15.0, "identity request timeout before giving up")
-	printIdentity := flag.Bool("p", false, "print identity info and exit")
-	printPrivate := flag.Bool("P", false, "allow displaying private keys")
-	useBase64 := flag.Bool("b", false, "Use base64-encoded input and output")
-	useBase32 := flag.Bool("B", false, "Use base32-encoded input and output")
-	version := flag.Bool("version", false, "show version and exit")
-
 	log.SetFlags(0)
 	flag.Parse()
 
-	if *version {
+	if version {
 		fmt.Printf("gornid %v\n", rns.VERSION)
 		return
 	}
 
-	if *verbose {
+	if verbose {
 		rns.SetLogLevel(rns.LogVerbose)
 	}
-	if *quiet {
+	if quiet {
 		rns.SetLogLevel(rns.LogWarning)
 	}
 
-	if *importStr != "" {
-		doImport(*importStr, *useBase64, *useBase32, *printPrivate, *writeFile, *force)
+	if importStr != "" {
+		doImport(importStr, useBase64, useBase32, printPrivate, writeFile, force)
 		return
 	}
 
-	if *generatePath != "" {
-		doGenerate(*generatePath, *force)
+	if generatePath != "" {
+		doGenerate(generatePath, force)
 		return
 	}
 
-	if *identityPath == "" && !*printIdentity && *encryptFile == "" && *decryptFile == "" && *signFile == "" && *validateFile == "" {
-		fmt.Println("No identity provided, cannot continue")
+	if identityPath == "" && !printIdentity && encryptFile == "" && decryptFile == "" && signFile == "" && validateFile == "" {
+		fmt.Fprint(flag.CommandLine.Output(), "\nNo identity provided, cannot continue\n")
 		flag.Usage()
 		os.Exit(2)
 	}
 
-	reticulum, err := rns.NewReticulum(*configDir)
+	_, err := rns.NewReticulum(configDir)
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
-	_ = reticulum
 	rns.CompactLogFmt = true
 
-	id := loadIdentity(*identityPath, *requestID, *timeout)
+	id := loadIdentity(identityPath, requestID, timeout)
 	if id == nil {
 		log.Fatal("Could not load or recall identity")
 	}
 
-	if *printIdentity {
-		doPrintIdentity(id, *useBase64, *useBase32, *printPrivate)
+	if printIdentity {
+		doPrintIdentity(id, useBase64, useBase32, printPrivate)
 	}
 
-	if *export {
-		doExport(id, *useBase64, *useBase32)
+	if export {
+		doExport(id, useBase64, useBase32)
 	}
 
-	if *hashAspects != "" {
-		doHash(id, *hashAspects)
+	if hashAspects != "" {
+		doHash(id, hashAspects)
 	}
 
-	if *announce != "" {
-		doAnnounce(id, *announce)
+	if announce != "" {
+		doAnnounce(id, announce)
 	}
 
-	if *encryptFile != "" || *decryptFile != "" || *signFile != "" || *validateFile != "" {
+	if encryptFile != "" || decryptFile != "" || signFile != "" || validateFile != "" {
 		// Handle file operations
-		input := *readFile
+		input := readFile
 		if input == "" {
-			if *encryptFile != "" {
-				input = *encryptFile
-			} else if *decryptFile != "" {
-				input = *decryptFile
-			} else if *signFile != "" {
-				input = *signFile
+			if encryptFile != "" {
+				input = encryptFile
+			} else if decryptFile != "" {
+				input = decryptFile
+			} else if signFile != "" {
+				input = signFile
 			}
 		}
-		output := *writeFile
-		doFileOp(id, input, output, *encryptFile != "", *decryptFile != "", *signFile != "", *validateFile, *force)
+		output := writeFile
+		doFileOp(id, input, output, encryptFile != "", decryptFile != "", signFile != "", validateFile, force)
 	}
 }
 
