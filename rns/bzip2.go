@@ -12,6 +12,7 @@ import (
 	vendoredbzip2 "github.com/gmlewis/go-reticulum/compress/bzip2"
 )
 
+// CompressBzip2 takes a byte slice and compresses it using the bzip2 algorithm at the specified compression level.
 func CompressBzip2(input []byte, level int) ([]byte, error) {
 	var buf bytes.Buffer
 	w, err := vendoredbzip2.NewWriter(&buf, &vendoredbzip2.WriterConfig{Level: level})
@@ -28,6 +29,7 @@ func CompressBzip2(input []byte, level int) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// DecompressBzip2 extracts the original byte sequence from a bzip2-compressed payload.
 func DecompressBzip2(input []byte) ([]byte, error) {
 	r, err := vendoredbzip2.NewReader(bytes.NewReader(input), nil)
 	if err != nil {

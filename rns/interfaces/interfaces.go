@@ -15,17 +15,17 @@ import (
 // Interface modes dictate the architectural role and forwarding behavior an interface adopts within the broader network topology.
 const (
 	// ModeFull indicates the interface is a fully participating, bidirectional routing nexus.
-	ModeFull         = 0x01
+	ModeFull = 0x01
 	// ModePointToPoint signifies a direct, unshared link between exactly two peers, optimizing broadcast behaviors.
 	ModePointToPoint = 0x02
 	// ModeAccessPoint designates the interface as a hub serving multiple downstream, potentially transient, client nodes.
-	ModeAccessPoint  = 0x03
+	ModeAccessPoint = 0x03
 	// ModeRoaming specifies that the interface is highly mobile and expects its underlying network attachment to change frequently.
-	ModeRoaming      = 0x04
+	ModeRoaming = 0x04
 	// ModeBoundary establishes a strict routing partition, carefully filtering traffic bridging disparate network segments.
-	ModeBoundary     = 0x05
+	ModeBoundary = 0x05
 	// ModeGateway acts as an egress or ingress gateway, actively brokering traffic into external, potentially non-Reticulum networks.
-	ModeGateway      = 0x06
+	ModeGateway = 0x06
 )
 
 // Interface strictly defines the operational contract that all Reticulum physical and virtual transport mechanisms must fulfill.

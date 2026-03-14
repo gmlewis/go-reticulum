@@ -27,22 +27,22 @@ const (
 	// AutoDefaultDiscoveryPort specifies the standard UDP port utilized for broadcasting presence announcements and discovery packets.
 	AutoDefaultDiscoveryPort = 29716
 	// AutoDefaultDataPort specifies the standard UDP port allocated for actual payload data transmission between peers.
-	AutoDefaultDataPort      = 42671
+	AutoDefaultDataPort = 42671
 	// AutoDefaultGroupID dictates the default network partitioning ID to ensure discovery frames are constrained to intended participants.
-	AutoDefaultGroupID       = "reticulum"
+	AutoDefaultGroupID = "reticulum"
 	// AutoDefaultIFACSize specifies the standard byte length for the cryptographic IFAC authentication signature.
-	AutoDefaultIFACSize      = 16
+	AutoDefaultIFACSize = 16
 
 	// AutoScopeLink restricts the IPv6 multicast scope strictly to the local physical link.
-	AutoScopeLink         = "2"
+	AutoScopeLink = "2"
 	// AutoScopeAdmin elevates the multicast scope to the administrative boundary.
-	AutoScopeAdmin        = "4"
+	AutoScopeAdmin = "4"
 	// AutoScopeSite expands the multicast propagation domain to the site level.
-	AutoScopeSite         = "5"
+	AutoScopeSite = "5"
 	// AutoScopeOrganisation broadens the multicast envelope to encompass the entire organization's routing boundary.
 	AutoScopeOrganisation = "8"
 	// AutoScopeGlobal establishes a globally routable multicast domain.
-	AutoScopeGlobal       = "e"
+	AutoScopeGlobal = "e"
 
 	// AutoMulticastPermanent designates the multicast address as permanently assigned and universally recognized by routing infrastructure.
 	AutoMulticastPermanent = "0"
@@ -50,17 +50,17 @@ const (
 	AutoMulticastTemporary = "1"
 
 	// AutoPeeringTimeout establishes the maximum duration a peer can remain silent before its state is purged and resources reclaimed.
-	AutoPeeringTimeout   = 22 * time.Second
+	AutoPeeringTimeout = 22 * time.Second
 	// AutoAnnounceInterval sets the pacing frequency at which this interface broadcasts its existence to the local broadcast domain.
 	AutoAnnounceInterval = 1600 * time.Millisecond
 	// AutoPeerJobInterval determines the execution frequency for the background worker responsible for culling dead peers and managing state.
-	AutoPeerJobInterval  = 4 * time.Second
+	AutoPeerJobInterval = 4 * time.Second
 	// AutoMcastEchoTimeout defines the threshold after which missing local multicast loopbacks signal a potential network partition or socket failure.
 	AutoMcastEchoTimeout = 6500 * time.Millisecond
 	// AutoMultiIFDequeTTL dictates how long an incoming frame's hash is cached to rigorously suppress duplicate packet loops across bridged interfaces.
-	AutoMultiIFDequeTTL  = 750 * time.Millisecond
+	AutoMultiIFDequeTTL = 750 * time.Millisecond
 	// AutoBitrateGuess furnishes a conservative fallback estimation of the underlying interface's operational capacity, expressed in bits per second.
-	AutoBitrateGuess     = 10 * 1000 * 1000
+	AutoBitrateGuess = 10 * 1000 * 1000
 )
 
 var (

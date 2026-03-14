@@ -8,13 +8,13 @@ package interfaces
 // Constants defining the rigid structural boundaries and escape markers required by the KISS (Keep It Simple, Stupid) framing protocol.
 const (
 	// KISSFend designates the Frame End marker, definitively signaling the start or conclusion of a discrete data packet.
-	KISSFend    = 0xC0
+	KISSFend = 0xC0
 	// KISSFesc specifies the Frame Escape character, utilized to safely obfuscate control bytes appearing within the payload.
-	KISSFesc    = 0xDB
+	KISSFesc = 0xDB
 	// KISSTfend is the Transposed Frame End byte, structurally substituted into the stream when a literal Fend appears in the data.
-	KISSTfend   = 0xDC
+	KISSTfend = 0xDC
 	// KISSTfesc is the Transposed Frame Escape byte, substituted when a literal Fesc is encountered in the payload.
-	KISSTfesc   = 0xDD
+	KISSTfesc = 0xDD
 	// KISSCmdData instructs the TNC that the accompanying payload consists of standard, routable network data rather than control commands.
 	KISSCmdData = 0x00
 )
