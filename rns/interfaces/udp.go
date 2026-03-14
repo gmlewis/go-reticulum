@@ -16,10 +16,12 @@ const (
 	UDPBitrateGuess = 10 * 1000 * 1000
 )
 
-// InboundHandler is a function that processes incoming data from an interface.
+// InboundHandler rigorously defines the callback signature invoked universally across all interface types whenever a valid payload frame is successfully reassembled.
+// It acts as the critical bridge, injecting raw network bytes back into the core routing engine for cryptographic validation and dispatch.
 type InboundHandler func(data []byte, iface Interface)
 
-// UDPInterface implements a Reticulum interface over UDP.
+// UDPInterface implements a high-throughput, connectionless transport interface leveraging standard User Datagram Protocol semantics.
+// It is explicitly designed to handle best-effort broadcast, multicast, or direct point-to-point datagrams across IP networks.
 type UDPInterface struct {
 	*BaseInterface
 
@@ -33,7 +35,8 @@ type UDPInterface struct {
 	mu      sync.Mutex
 }
 
-// NewUDPInterface creates a new UDP interface.
+// NewUDPInterface provisions a robust UDP socket bound to the specified listen coordinates and configured with a default forwarding target.
+// It rapidly boots the asynchronous listening loop, readying the interface to ingest and broadcast connectionless frames.
 func NewUDPInterface(name string, listenIP string, listenPort int, forwardIP string, forwardPort int, handler InboundHandler) (*UDPInterface, error) {
 	bi := NewBaseInterface(name, ModeFull, UDPBitrateGuess)
 

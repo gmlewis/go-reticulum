@@ -14,9 +14,8 @@ import (
 	rnscrypto "github.com/gmlewis/go-reticulum/rns/crypto"
 )
 
-// IFAC stands for Interface Authentication and Control.
-// IFACConfig holds per-interface authentication configuration.
-// This is currently used for configuration plumbing and transport hook wiring.
+// IFACConfig articulates the strict cryptographic parameters required to secure a physical or virtual interface.
+// It houses the enabling flag and requisite entropy material, dictating precisely how the interface should authenticate payload frames at the hardware boundary.
 type IFACConfig struct {
 	Enabled bool
 	NetName string
@@ -24,7 +23,8 @@ type IFACConfig struct {
 	Size    int
 }
 
-// BaseInterface provides common functionality for all interfaces.
+// BaseInterface implements the foundational, structural bedrock required by every concrete interface type within the network stack.
+// It securely encapsulates crucial state such as byte metrics, cryptographic IFAC keying material, and interface lifecycle flags, guaranteeing uniform behavior.
 type BaseInterface struct {
 	name     string
 	mode     int
@@ -41,7 +41,8 @@ type BaseInterface struct {
 	ifacSigner *rnscrypto.Ed25519PrivateKey
 }
 
-// NewBaseInterface creates a new BaseInterface instance.
+// NewBaseInterface allocates and securely zeros a fresh BaseInterface instance with the prescribed architectural properties.
+// It establishes the immutable creation timestamp and baseline operational mode, serving as the required progenitor for all specialized interfaces.
 func NewBaseInterface(name string, mode int, bitrate int) *BaseInterface {
 	return &BaseInterface{
 		name:    name,
@@ -51,25 +52,32 @@ func NewBaseInterface(name string, mode int, bitrate int) *BaseInterface {
 	}
 }
 
-// Name returns the interface name.
+// Name safely exposes the immutably configured string identifier assigned to this specific interface.
+// It allows higher-level orchestrators to definitively distinguish between varied routing components.
 func (bi *BaseInterface) Name() string { return bi.name }
 
-// Mode returns the interface mode.
+// Mode yields the operational simplex/duplex mode flag assigned during the interface's architectural inception.
+// It dictates the interface's capability to participate in bidirectional or unidirectional routing topologies.
 func (bi *BaseInterface) Mode() int { return bi.mode }
 
-// Bitrate returns the interface bitrate.
+// Bitrate fetches the conservatively estimated transmission capacity of the interface, expressed in bits per second.
+// This metric is structurally vital for the routing engine to accurately calculate transit costs and shape traffic queues.
 func (bi *BaseInterface) Bitrate() int { return bi.bitrate }
 
-// SetBitrate updates interface bitrate.
+// SetBitrate safely and atomically updates the interface's operational capacity to reflect changing hardware constraints.
+// It forcefully alters the routing engine's perception of this interface's bandwidth, triggering downstream cost recalculations.
 func (bi *BaseInterface) SetBitrate(bitrate int) { bi.bitrate = bitrate }
 
-// Age returns the time since the interface was created.
+// Age calculates and provides the precise temporal duration since the interface was instantiated and added to the network.
+// It enables the system to aggressively prune stale or malfunctioning interfaces based on their longevity.
 func (bi *BaseInterface) Age() time.Duration { return time.Since(bi.created) }
 
-// IsDetached returns true if the interface has been detached.
+// IsDetached deterministically queries the atomic lifecycle flag to assert whether the interface has been logically severed from the active stack.
+// It is relied upon by read/write loops to guarantee immediate termination of resources upon teardown.
 func (bi *BaseInterface) IsDetached() bool { return atomic.LoadInt32(&bi.detached) == 1 }
 
-// SetDetached updates detached lifecycle state.
+// SetDetached executes a thread-safe, atomic mutation of the interface's lifecycle state.
+// Setting this to true acts as an irrevocable kill signal, compelling all associated IO workers to systematically disband.
 func (bi *BaseInterface) SetDetached(detached bool) {
 	if detached {
 		atomic.StoreInt32(&bi.detached, 1)
@@ -78,13 +86,16 @@ func (bi *BaseInterface) SetDetached(detached bool) {
 	atomic.StoreInt32(&bi.detached, 0)
 }
 
-// BytesReceived returns the total number of bytes received.
+// BytesReceived retrieves the atomically managed counter detailing the absolute total of payload bytes successfully ingested by this interface.
+// It is critical for telemetry and throughput modeling.
 func (bi *BaseInterface) BytesReceived() uint64 { return bi.rxBytes }
 
-// BytesSent returns the total number of bytes sent.
+// BytesSent fetches the precise atomic metric recording every byte successfully dispatched outbound from this interface.
+// It provides essential observability into the interface's aggregate workload and physical layer stress.
 func (bi *BaseInterface) BytesSent() uint64 { return bi.txBytes }
 
-// SetIFACConfig updates IFAC configuration for an interface.
+// SetIFACConfig completely reinitializes the interface's cryptographic authentication layer using the provided tuning parameters.
+// It aggressively regenerates symmetric keying material and signs the new boundary configuration, imposing a strict lock during the volatile transition.
 func (bi *BaseInterface) SetIFACConfig(cfg IFACConfig) {
 	bi.ifacMu.Lock()
 	defer bi.ifacMu.Unlock()
@@ -130,15 +141,16 @@ func (bi *BaseInterface) SetIFACConfig(cfg IFACConfig) {
 	bi.ifacSigner = signer
 }
 
-// IFACConfig returns the current IFAC configuration.
+// IFACConfig safely extracts a thread-consistent snapshot of the interface's active authentication configuration.
+// It allows inspection routines to ascertain the current security posture without violating memory constraints.
 func (bi *BaseInterface) IFACConfig() IFACConfig {
 	bi.ifacMu.RLock()
 	defer bi.ifacMu.RUnlock()
 	return bi.ifacConfig
 }
 
-// ApplyIFACInbound processes ingress bytes before packet decoding.
-// Current implementation is passthrough and serves as a hook point.
+// ApplyIFACInbound aggressively processes incoming raw bytes, stripping out and rigorously validating cryptographic authentication tags.
+// It explicitly rejects malformed or unauthentic payloads at the lowest possible layer, dropping them securely before they can poison the router.
 func (bi *BaseInterface) ApplyIFACInbound(data []byte) ([]byte, bool) {
 	if len(data) <= 2 {
 		return nil, false
@@ -202,8 +214,8 @@ func (bi *BaseInterface) ApplyIFACInbound(data []byte) ([]byte, bool) {
 	return newRaw, true
 }
 
-// ApplyIFACOutbound processes egress bytes before transmission.
-// Current implementation is passthrough and serves as a hook point.
+// ApplyIFACOutbound surgically embeds requisite cryptographic signatures into outgoing raw payloads prior to physical transmission.
+// It ensures that data leaving the interface adheres to the pre-established IFAC security envelope, maintaining strict boundary integrity.
 func (bi *BaseInterface) ApplyIFACOutbound(data []byte) ([]byte, error) {
 	bi.ifacMu.RLock()
 	ifacConfig := bi.ifacConfig

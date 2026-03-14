@@ -19,10 +19,14 @@ const (
 	WeaveDefaultParity   = "N"
 )
 
+// WeaveInterface implements a highly specialized, ultra-low latency serial abstraction tailored specifically for Weave routing endpoints.
+// It inherits the foundational robustness of the standard serial stack but aggressively forces transmission parameters to Weave's accelerated defaults.
 type WeaveInterface struct {
 	inner Interface
 }
 
+// NewWeaveInterface strictly enforces port validity before securely binding a serial interface at the Weave-mandated 3 Mbps baud rate.
+// It serves as the authoritative factory, automatically adjusting the logical bitrate capacity metrics reported to the routing engine.
 func NewWeaveInterface(name, port string, configuredBitrate int, handler InboundHandler) (Interface, error) {
 	if !validWeavePort(port) {
 		return nil, errNoPortForWeave()

@@ -66,6 +66,8 @@ type ax25KISSInterface struct {
 	mu      sync.Mutex
 }
 
+// NewAX25KISSInterface instantiates a low-level AX.25 interface over a standard serial TTY port using the KISS protocol framing.
+// It orchestrates hardware-level flow control, termios configuration, and asynchronous read/write queues to ensure robust RF communication.
 func NewAX25KISSInterface(name, port string, speed, databits, stopbits int, parity, callsign string, ssid, preambleMS, txTailMS, persistence, slotTimeMS int, flowControl bool, handler InboundHandler) (Interface, error) {
 	if strings.TrimSpace(port) == "" {
 		return nil, fmt.Errorf("no port specified for serial interface")

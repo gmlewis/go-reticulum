@@ -19,28 +19,47 @@ import (
 	"time"
 )
 
+// Constants defining the structural limits and default behaviors for AutoInterfaces.
 const (
+	// AutoHWMTU defines the absolute maximum transmission unit byte size supported at the hardware layer for this interface type.
 	AutoHWMTU = 1196
 
+	// AutoDefaultDiscoveryPort specifies the standard UDP port utilized for broadcasting presence announcements and discovery packets.
 	AutoDefaultDiscoveryPort = 29716
+	// AutoDefaultDataPort specifies the standard UDP port allocated for actual payload data transmission between peers.
 	AutoDefaultDataPort      = 42671
+	// AutoDefaultGroupID dictates the default network partitioning ID to ensure discovery frames are constrained to intended participants.
 	AutoDefaultGroupID       = "reticulum"
+	// AutoDefaultIFACSize specifies the standard byte length for the cryptographic IFAC authentication signature.
 	AutoDefaultIFACSize      = 16
 
+	// AutoScopeLink restricts the IPv6 multicast scope strictly to the local physical link.
 	AutoScopeLink         = "2"
+	// AutoScopeAdmin elevates the multicast scope to the administrative boundary.
 	AutoScopeAdmin        = "4"
+	// AutoScopeSite expands the multicast propagation domain to the site level.
 	AutoScopeSite         = "5"
+	// AutoScopeOrganisation broadens the multicast envelope to encompass the entire organization's routing boundary.
 	AutoScopeOrganisation = "8"
+	// AutoScopeGlobal establishes a globally routable multicast domain.
 	AutoScopeGlobal       = "e"
 
+	// AutoMulticastPermanent designates the multicast address as permanently assigned and universally recognized by routing infrastructure.
 	AutoMulticastPermanent = "0"
+	// AutoMulticastTemporary indicates the multicast address is transient and locally administered.
 	AutoMulticastTemporary = "1"
 
+	// AutoPeeringTimeout establishes the maximum duration a peer can remain silent before its state is purged and resources reclaimed.
 	AutoPeeringTimeout   = 22 * time.Second
+	// AutoAnnounceInterval sets the pacing frequency at which this interface broadcasts its existence to the local broadcast domain.
 	AutoAnnounceInterval = 1600 * time.Millisecond
+	// AutoPeerJobInterval determines the execution frequency for the background worker responsible for culling dead peers and managing state.
 	AutoPeerJobInterval  = 4 * time.Second
+	// AutoMcastEchoTimeout defines the threshold after which missing local multicast loopbacks signal a potential network partition or socket failure.
 	AutoMcastEchoTimeout = 6500 * time.Millisecond
+	// AutoMultiIFDequeTTL dictates how long an incoming frame's hash is cached to rigorously suppress duplicate packet loops across bridged interfaces.
 	AutoMultiIFDequeTTL  = 750 * time.Millisecond
+	// AutoBitrateGuess furnishes a conservative fallback estimation of the underlying interface's operational capacity, expressed in bits per second.
 	AutoBitrateGuess     = 10 * 1000 * 1000
 )
 
@@ -50,6 +69,8 @@ var (
 	autoAndroidIgnoreIfs = map[string]struct{}{"dummy0": {}, "lo": {}, "tun0": {}}
 )
 
+// AutoInterfaceConfig defines the comprehensive suite of initialization parameters required to bootstrap an AutoInterface.
+// It exposes low-level tuning for network namespaces, port allocations, and device binding constraints.
 type AutoInterfaceConfig struct {
 	GroupID              string
 	DiscoveryScope       string
@@ -73,7 +94,8 @@ type autoSocketSet struct {
 	data      *net.UDPConn
 }
 
-// AutoInterface provides automatic IPv6 link-local peer discovery and per-peer communication.
+// AutoInterface orchestrates fully autonomous, zero-configuration peer discovery and data plane management over IPv6 link-local networks.
+// It actively manages a dynamic pool of peer sub-interfaces, transparently handling multicast announcements, socket lifecycle, and duplicate frame suppression.
 type AutoInterface struct {
 	*BaseInterface
 
@@ -120,7 +142,8 @@ type AutoInterface struct {
 	final   int32
 }
 
-// NewAutoInterface creates and starts an AutoInterface.
+// NewAutoInterface strategically provisions and activates a new autonomous discovery interface.
+// It parses the provided configuration, allocates necessary UDP sockets across allowable hardware interfaces, and spawns the core asynchronous multiplexing loops.
 func NewAutoInterface(name string, cfg AutoInterfaceConfig, handler InboundHandler, onPeer func(Interface)) (*AutoInterface, error) {
 	bi := NewBaseInterface(name, ModeFull, AutoBitrateGuess)
 	ai := &AutoInterface{
@@ -756,7 +779,8 @@ func (ai *AutoInterface) AdoptedInterfaces() []string {
 	return out
 }
 
-// AutoInterfacePeer is a spawned per-peer interface used by transport for peer-specific egress.
+// AutoInterfacePeer signifies a distinct, dynamically discovered point-to-point connection originating from a parent AutoInterface.
+// It provides dedicated egress targeting and metrics tracking for a specific neighbor while deferring complex state logic back to the orchestrating parent.
 type AutoInterfacePeer struct {
 	*BaseInterface
 	owner         *AutoInterface

@@ -26,7 +26,8 @@ func isAbstractUnixAddr(path string) bool {
 	return strings.HasPrefix(path, "@")
 }
 
-// LocalClientInterface handles connection to a local shared Reticulum instance.
+// LocalClientInterface establishes a high-bandwidth, low-latency IPC link to a master Reticulum instance running on the same local machine.
+// It acts as a dedicated conduit, leveraging Unix domain sockets or loopback TCP to proxy routing requests out to the broader network.
 type LocalClientInterface struct {
 	*BaseInterface
 
@@ -39,6 +40,8 @@ type LocalClientInterface struct {
 	mu             sync.Mutex
 }
 
+// NewLocalClientInterface dials and negotiates a persistent connection to the designated local Reticulum hub.
+// It seamlessly falls back between Unix sockets and TCP loopbacks based on platform constraints, initiating asynchronous read loops upon success.
 func NewLocalClientInterface(name string, path string, port int, handler InboundHandler) (*LocalClientInterface, error) {
 	bi := NewBaseInterface(name, ModeFull, LocalBitrate)
 	lci := &LocalClientInterface{
@@ -188,7 +191,8 @@ func (lci *LocalClientInterface) Detach() error {
 	return nil
 }
 
-// LocalServerInterface listens for connections from other local Reticulum instances.
+// LocalServerInterface spins up a high-performance IPC listener dedicated to servicing transient local Reticulum client processes.
+// It acts as the master node's local ingress point, safely managing multiple concurrent client sessions via Unix sockets or loopback TCP.
 type LocalServerInterface struct {
 	*BaseInterface
 
@@ -203,6 +207,8 @@ type LocalServerInterface struct {
 	mu      sync.Mutex
 }
 
+// NewLocalServerInterface binds an IPC listener to securely accept incoming connections from co-located Reticulum instances.
+// It aggressively manages socket files and port bindings, clearing stale handles and immediately launching an asynchronous accept loop.
 func NewLocalServerInterface(name string, path string, port int, handler InboundHandler) (*LocalServerInterface, error) {
 	bi := NewBaseInterface(name, ModeFull, LocalBitrate)
 

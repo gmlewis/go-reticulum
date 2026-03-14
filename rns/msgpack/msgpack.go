@@ -65,7 +65,8 @@ const (
 	// negFixIntMax = 0xff
 )
 
-// Pack serializes the given data into MessagePack format.
+// Pack serializes the provided Go data structure into a compact MessagePack byte slice.
+// It uses reflection to dynamically determine the most efficient MessagePack encoding format for the given value, ensuring optimized data payloads for Reticulum network transmissions.
 func Pack(v any) ([]byte, error) {
 	var buf bytes.Buffer
 	err := pack(&buf, reflect.ValueOf(v))
@@ -322,7 +323,8 @@ func packMap(w io.Writer, v reflect.Value) error {
 	return nil
 }
 
-// Unpack deserializes the given MessagePack data.
+// Unpack deserializes a MessagePack encoded byte slice back into a native Go data structure.
+// It analyzes the byte stream to infer the correct types, recursively reconstructing complex elements such as maps and arrays, and returns an any interface that the caller can safely type-assert.
 func Unpack(data []byte) (any, error) {
 	r := bytes.NewReader(data)
 	return unpack(r)

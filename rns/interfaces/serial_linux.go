@@ -48,6 +48,8 @@ type serialInterface struct {
 	mu      sync.Mutex
 }
 
+// NewSerialInterface opens and extensively configures a low-level Unix TTY serial port, enforcing precise baud rates and framing characteristics.
+// It actively scans the inbound bitstream for HDLC structural markers, safely reassembling bounded payloads before injecting them into the upper routing logic.
 func NewSerialInterface(name, port string, speed, databits, stopbits int, parity string, handler InboundHandler) (Interface, error) {
 	if strings.TrimSpace(port) == "" {
 		return nil, fmt.Errorf("no port specified for serial interface")

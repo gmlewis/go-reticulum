@@ -19,6 +19,8 @@ const (
 	SerialDefaultParity   = "N"
 )
 
+// NewSerialInterface provides a safe compilation fallback for environments lacking native serial TTY hardware access.
+// It systematically returns an error to gracefully prevent runtime panics when invoked on unsupported architectures.
 func NewSerialInterface(name, port string, speed, databits, stopbits int, parity string, handler InboundHandler) (Interface, error) {
 	return nil, fmt.Errorf("serial port not supported on platform %v", runtime.GOOS)
 }

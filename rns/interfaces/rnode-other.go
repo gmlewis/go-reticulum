@@ -19,6 +19,8 @@ const (
 	RNodeDefaultParity   = "N"
 )
 
+// NewRNodeInterface serves as a structurally compliant but functionally inert stub for operating systems lacking rigorous serial port support.
+// It deliberately returns an error, ensuring cross-platform compilation succeeds while explicitly declining execution where hardware constraints forbid it.
 func NewRNodeInterface(name, port string, speed, databits, stopbits int, parity string, frequency, bandwidth, txpower, spreadingFactor, codingRate int, flowControl bool, idInterval int, idCallsign string, handler InboundHandler) (Interface, error) {
 	return nil, fmt.Errorf("serial port not supported on platform %v", runtime.GOOS)
 }

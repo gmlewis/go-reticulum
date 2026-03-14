@@ -19,7 +19,8 @@ const (
 	TCPHWMTU        = 262144
 )
 
-// TCPClientInterface implements a Reticulum interface over a TCP connection.
+// TCPClientInterface drives a persistent, outbound TCP session specifically engineered to tunnel Reticulum network frames.
+// It inherently manages reconnection logic and dynamically supports both raw HDLC and structured KISS framing over the TCP stream.
 type TCPClientInterface struct {
 	*BaseInterface
 
@@ -34,7 +35,8 @@ type TCPClientInterface struct {
 	mu      sync.Mutex
 }
 
-// NewTCPClientInterface creates a new TCP client interface.
+// NewTCPClientInterface initiates a resilient TCP connection to a specified remote peer.
+// It aggressively establishes the link, configuring the appropriate payload framing mode and spinning up dedicated read/write goroutines.
 func NewTCPClientInterface(name string, host string, port int, kiss bool, handler InboundHandler) (*TCPClientInterface, error) {
 	bi := NewBaseInterface(name, ModeFull, TCPBitrateGuess)
 	tci := &TCPClientInterface{
@@ -217,7 +219,8 @@ func (tci *TCPClientInterface) Detach() error {
 	return nil
 }
 
-// TCPServerInterface implements a Reticulum interface that listens for TCP connections.
+// TCPServerInterface operates a highly concurrent TCP listener designed to accept and manage numerous inbound Reticulum peer connections.
+// It serves as a primary ingress hub, dynamically spawning distinct client interface instances as new peers dial in.
 type TCPServerInterface struct {
 	*BaseInterface
 
@@ -232,6 +235,8 @@ type TCPServerInterface struct {
 	mu      sync.Mutex
 }
 
+// NewTCPServerInterface binds to a designated IP and port, establishing a listening socket for incoming TCP peers.
+// It immediately drops into a non-blocking accept loop, delegating individual connection handling to spawned client interfaces.
 func NewTCPServerInterface(name string, bindIP string, bindPort int, handler InboundHandler) (*TCPServerInterface, error) {
 	bi := NewBaseInterface(name, ModeFull, TCPBitrateGuess)
 

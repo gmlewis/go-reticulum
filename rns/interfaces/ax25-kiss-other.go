@@ -23,6 +23,8 @@ const (
 	AX25KISSDefaultSlotTimeMS  = 20
 )
 
+// NewAX25KISSInterface serves as a structurally compliant but functionally inert stub for operating systems lacking rigorous serial port support.
+// It deliberately returns an error, ensuring cross-platform compilation succeeds while explicitly declining execution where hardware constraints forbid it.
 func NewAX25KISSInterface(name, port string, speed, databits, stopbits int, parity, callsign string, ssid, preambleMS, txTailMS, persistence, slotTimeMS int, flowControl bool, handler InboundHandler) (Interface, error) {
 	return nil, fmt.Errorf("serial port not supported on platform %v", runtime.GOOS)
 }
