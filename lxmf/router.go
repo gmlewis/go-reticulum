@@ -1,0 +1,1480 @@
+// Copyright 2026 Glenn Lewis. All rights reserved.
+//
+// Use of this source code is governed by the Reticulum License
+// that can be found in the LICENSE file.
+
+package lxmf
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/rns/msgpack"
+)
+
+type propagationEntry struct {
+	destinationHash []byte
+	payload         []byte
+	receivedAt      time.Time
+}
+
+type Router struct {
+	identity    *rns.Identity
+	storagePath string
+
+	deliveryDestinations map[string]*rns.Destination
+	inboundStampCosts    map[string]int
+	displayNames         map[string]string
+
+	pendingOutbound []*Message
+
+	deliveryCallback func(*Message)
+
+	hasPath      func([]byte) bool
+	requestPath  func([]byte) error
+	sendPacket   func(*rns.Packet) error
+	sendResource func(*Message) error
+	newLink      func(*rns.Destination) (*rns.Link, error)
+	newResource  func([]byte, *rns.Link) (*rns.Resource, error)
+	now          func() time.Time
+
+	resourceLinks       map[string]*rns.Link
+	resourceLinkPending map[string]bool
+	peeringCost         int
+
+	propagationDestination *rns.Destination
+	propagationEntries     map[string]*propagationEntry
+	throttledPeers         map[string]time.Time
+	fromStaticOnly         bool
+	staticPeers            map[string]struct{}
+	authRequired           bool
+	allowedList            map[string]struct{}
+	peerSyncBackoff        time.Duration
+	peerMaxAge             time.Duration
+
+	controlDestination *rns.Destination
+	controlAllowed     map[string]struct{}
+	peers              map[string]time.Time
+
+	propagationPerTransferLimit   float64
+	propagationPerSyncLimit       float64
+	deliveryPerTransferLimit      float64
+	maxPeers                      int
+	autopeer                      bool
+	enforceStampsEnabled          bool
+	ignoredList                   map[string]struct{}
+	messageStorageLimit           float64
+	prioritisedList               map[string]struct{}
+	propagationEnabled            bool
+	outboundPropagationNode       []byte
+	propagationTransferState      int
+	propagationTransferLastResult int
+	propagationTransferProgress   float64
+
+	clientPropagationMessagesReceived int
+	clientPropagationMessagesServed   int
+	unpeeredPropagationIncoming       int
+	unpeeredPropagationRXBytes        int
+
+	mu sync.Mutex
+}
+
+const (
+	maxDeliveryAttempts = 5
+	deliveryRetryWait   = 10 * time.Second
+	pathRequestWait     = 7 * time.Second
+	maxPathlessTries    = 1
+
+	DefaultMaxPeers                 = 20
+	DefaultAutopeer                 = true
+	DefaultPropagationCost          = 16
+	PropagationCostMin              = 13
+	DefaultPropagationLimit float64 = 256
+	DefaultSyncLimit        float64 = 256 * 40
+	DefaultDeliveryLimit    float64 = 1000
+
+	statsGetPath      = "/pn/get/stats"
+	peerSyncPath      = "/pn/peer/sync"
+	peerUnpeerPath    = "/pn/peer/unpeer"
+	controlPathAspect = "control"
+
+	offerRequestPath = "/offer"
+	messageGetPath   = "/get"
+
+	peerErrorNoIdentity  = 0xf0
+	peerErrorNoAccess    = 0xf1
+	peerErrorInvalidKey  = 0xf3
+	peerErrorInvalidData = 0xf4
+	peerErrorThrottled   = 0xf6
+	peerErrorNotFound    = 0xfd
+)
+
+var errResourceRepresentationNotSupported = errors.New("lxmf resource representation not supported")
+var errResourceLinkPending = errors.New("lxmf resource link pending")
+
+func NewRouter(identity *rns.Identity, storagePath string) (*Router, error) {
+	if storagePath == "" {
+		return nil, errors.New("lxmf router requires storage path")
+	}
+	if identity == nil {
+		var err error
+		identity, err = rns.NewIdentity(true)
+		if err != nil {
+			return nil, fmt.Errorf("create router identity: %w", err)
+		}
+	}
+
+	base := filepath.Join(storagePath, "lxmf")
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		return nil, fmt.Errorf("create router storage path %q: %w", base, err)
+	}
+
+	router := &Router{
+		identity:             identity,
+		storagePath:          base,
+		deliveryDestinations: map[string]*rns.Destination{},
+		inboundStampCosts:    map[string]int{},
+		displayNames:         map[string]string{},
+		pendingOutbound:      []*Message{},
+		hasPath:              rns.Transport.HasPath,
+		requestPath:          rns.Transport.RequestPath,
+		sendPacket: func(packet *rns.Packet) error {
+			return packet.Send()
+		},
+		newLink:     rns.NewLink,
+		newResource: rns.NewResource,
+		now:         time.Now,
+		peeringCost: 0,
+
+		resourceLinks:       map[string]*rns.Link{},
+		resourceLinkPending: map[string]bool{},
+		propagationEntries:  map[string]*propagationEntry{},
+		throttledPeers:      map[string]time.Time{},
+		staticPeers:         map[string]struct{}{},
+		authRequired:        false,
+		allowedList:         map[string]struct{}{},
+		peerSyncBackoff:     0,
+		peerMaxAge:          0,
+		controlAllowed:      map[string]struct{}{},
+		peers:               map[string]time.Time{},
+
+		propagationPerTransferLimit: DefaultPropagationLimit,
+		propagationPerSyncLimit:     DefaultSyncLimit,
+		deliveryPerTransferLimit:    DefaultDeliveryLimit,
+		maxPeers:                    DefaultMaxPeers,
+		autopeer:                    DefaultAutopeer,
+		ignoredList:                 map[string]struct{}{},
+		prioritisedList:             map[string]struct{}{},
+	}
+	router.sendResource = router.sendMessageResourceLocked
+
+	return router, nil
+}
+
+func NewRouterWithConfig(identity *rns.Identity, storagePath string, policyConfig map[string]any) (*Router, error) {
+	router, err := NewRouter(identity, storagePath)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := router.ApplyPolicyConfig(policyConfig); err != nil {
+		return nil, fmt.Errorf("apply policy config: %w", err)
+	}
+
+	return router, nil
+}
+
+func (r *Router) RegisterPropagationDestination() (*rns.Destination, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.propagationDestination != nil {
+		return r.propagationDestination, nil
+	}
+
+	destination, err := rns.NewDestination(r.identity, rns.DestinationIn, rns.DestinationSingle, AppName, "propagation")
+	if err != nil {
+		return nil, fmt.Errorf("create propagation destination: %w", err)
+	}
+
+	destination.RegisterRequestHandler(offerRequestPath, r.offerRequest, rns.AllowAll, nil, false)
+	destination.RegisterRequestHandler(messageGetPath, r.messageGetRequest, rns.AllowAll, nil, false)
+
+	r.propagationDestination = destination
+
+	return destination, nil
+}
+
+func (r *Router) storePropagationMessage(destinationHash []byte, payload []byte) []byte {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	transientID := rns.FullHash(payload)
+	r.propagationEntries[string(transientID)] = &propagationEntry{
+		destinationHash: append([]byte{}, destinationHash...),
+		payload:         append([]byte{}, payload...),
+		receivedAt:      time.Now(),
+	}
+
+	return transientID
+}
+
+func (r *Router) SetPeeringCost(cost int) error {
+	if cost < 0 || cost > 256 {
+		return fmt.Errorf("invalid peering cost %v", cost)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.peeringCost = cost
+	return nil
+}
+
+func (r *Router) SetFromStaticOnly(enabled bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.fromStaticOnly = enabled
+}
+
+func (r *Router) SetAuthRequired(enabled bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.authRequired = enabled
+}
+
+func (r *Router) SetAllowedList(identityHashes [][]byte) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	updated := map[string]struct{}{}
+	for _, identityHash := range identityHashes {
+		if len(identityHash) != rns.TruncatedHashLength/8 {
+			return fmt.Errorf("invalid allowed identity hash length %v", len(identityHash))
+		}
+		updated[string(append([]byte{}, identityHash...))] = struct{}{}
+	}
+
+	r.allowedList = updated
+	return nil
+}
+
+func (r *Router) SetStaticPeers(peerPropagationHashes [][]byte) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	updated := map[string]struct{}{}
+	for _, peerHash := range peerPropagationHashes {
+		if len(peerHash) != rns.TruncatedHashLength/8 {
+			return fmt.Errorf("invalid static peer hash length %v", len(peerHash))
+		}
+		updated[string(append([]byte{}, peerHash...))] = struct{}{}
+	}
+
+	r.staticPeers = updated
+	return nil
+}
+
+func (r *Router) ThrottlePeer(peerPropagationHash []byte, duration time.Duration) error {
+	if len(peerPropagationHash) != rns.TruncatedHashLength/8 {
+		return fmt.Errorf("invalid throttled peer hash length %v", len(peerPropagationHash))
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	key := string(append([]byte{}, peerPropagationHash...))
+	if duration <= 0 {
+		delete(r.throttledPeers, key)
+		return nil
+	}
+
+	r.throttledPeers[key] = r.now().Add(duration)
+	return nil
+}
+
+func (r *Router) SetPeerSyncBackoff(duration time.Duration) error {
+	if duration < 0 {
+		return fmt.Errorf("invalid peer sync backoff %v", duration)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.peerSyncBackoff = duration
+	return nil
+}
+
+func (r *Router) SetPeerMaxAge(duration time.Duration) error {
+	if duration < 0 {
+		return fmt.Errorf("invalid peer max age %v", duration)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.peerMaxAge = duration
+	return nil
+}
+
+func (r *Router) PruneStalePeers() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.peerMaxAge <= 0 || len(r.peers) == 0 {
+		return 0
+	}
+
+	now := r.now()
+	removed := 0
+	for peerHash, lastSeen := range r.peers {
+		if now.Sub(lastSeen) <= r.peerMaxAge {
+			continue
+		}
+		delete(r.peers, peerHash)
+		removed++
+	}
+
+	return removed
+}
+
+func (r *Router) RegisterPropagationControlDestination(allowedList [][]byte) (*rns.Destination, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.controlDestination != nil {
+		return r.controlDestination, nil
+	}
+
+	destination, err := rns.NewDestination(r.identity, rns.DestinationIn, rns.DestinationSingle, AppName, controlPathAspect)
+	if err != nil {
+		return nil, fmt.Errorf("create control destination: %w", err)
+	}
+
+	allowPolicy := rns.AllowAll
+	if len(allowedList) > 0 {
+		allowPolicy = rns.AllowList
+	}
+
+	r.controlAllowed = map[string]struct{}{}
+	for _, allowed := range allowedList {
+		if len(allowed) == 0 {
+			continue
+		}
+		r.controlAllowed[string(append([]byte{}, allowed...))] = struct{}{}
+	}
+
+	destination.RegisterRequestHandler(statsGetPath, r.statsGetRequest, allowPolicy, allowedList, false)
+	destination.RegisterRequestHandler(peerSyncPath, r.peerSyncRequest, allowPolicy, allowedList, false)
+	destination.RegisterRequestHandler(peerUnpeerPath, r.peerUnpeerRequest, allowPolicy, allowedList, false)
+
+	r.controlDestination = destination
+
+	return destination, nil
+}
+
+func (r *Router) statsGetRequest(_ string, _ []byte, _ []byte, _ []byte, remoteIdentity *rns.Identity, _ time.Time) any {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if errCode, ok := r.checkControlAccess(remoteIdentity); ok {
+		return errCode
+	}
+
+	response := map[string]any{
+		"client_propagation_messages_received": r.clientPropagationMessagesReceived,
+		"client_propagation_messages_served":   r.clientPropagationMessagesServed,
+		"unpeered_propagation_incoming":        r.unpeeredPropagationIncoming,
+		"unpeered_propagation_rx_bytes":        r.unpeeredPropagationRXBytes,
+		"peer_count":                           len(r.peers),
+	}
+
+	return response
+}
+
+func (r *Router) peerSyncRequest(_ string, data []byte, _ []byte, linkID []byte, remoteIdentity *rns.Identity, _ time.Time) any {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if errCode, blocked := r.checkControlAccess(remoteIdentity); blocked {
+		return errCode
+	}
+	if len(data) != rns.TruncatedHashLength/8 {
+		return peerErrorInvalidData
+	}
+	lastSeen, exists := r.peers[string(data)]
+	if !exists {
+		return peerErrorNotFound
+	}
+
+	now := r.now()
+	if r.peerSyncBackoff > 0 && now.Sub(lastSeen) < r.peerSyncBackoff {
+		return peerErrorThrottled
+	}
+
+	r.peers[string(data)] = now
+
+	_ = linkID
+	return true
+}
+
+func (r *Router) peerUnpeerRequest(_ string, data []byte, _ []byte, linkID []byte, remoteIdentity *rns.Identity, _ time.Time) any {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if errCode, blocked := r.checkControlAccess(remoteIdentity); blocked {
+		return errCode
+	}
+	if len(data) != rns.TruncatedHashLength/8 {
+		return peerErrorInvalidData
+	}
+	if _, exists := r.peers[string(data)]; !exists {
+		return peerErrorNotFound
+	}
+
+	delete(r.peers, string(data))
+
+	_ = linkID
+	return true
+}
+
+func (r *Router) checkControlAccess(remoteIdentity *rns.Identity) (any, bool) {
+	if remoteIdentity == nil {
+		return peerErrorNoIdentity, true
+	}
+	if len(r.controlAllowed) == 0 {
+		return nil, false
+	}
+	if _, ok := r.controlAllowed[string(remoteIdentity.Hash)]; !ok {
+		return peerErrorNoAccess, true
+	}
+	return nil, false
+}
+
+func (r *Router) offerRequest(_ string, data []byte, _ []byte, linkID []byte, remoteIdentity *rns.Identity, _ time.Time) any {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if remoteIdentity == nil {
+		return peerErrorNoIdentity
+	}
+
+	remotePropagationHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
+	if until, throttled := r.throttledPeers[string(remotePropagationHash)]; throttled {
+		if r.now().Before(until) {
+			return peerErrorThrottled
+		}
+		delete(r.throttledPeers, string(remotePropagationHash))
+	}
+
+	if r.fromStaticOnly {
+		if _, allowed := r.staticPeers[string(remotePropagationHash)]; !allowed {
+			return peerErrorNoAccess
+		}
+	}
+
+	request, err := decodeAnyList(data)
+	if err != nil || len(request) < 2 {
+		return peerErrorInvalidData
+	}
+
+	peeringKey := anyToBytes(request[0])
+	if len(peeringKey) == 0 {
+		return peerErrorInvalidKey
+	}
+	if r.peeringCost > 0 {
+		peeringID := make([]byte, 0, len(r.identity.Hash)+len(remoteIdentity.Hash))
+		peeringID = append(peeringID, r.identity.Hash...)
+		peeringID = append(peeringID, remoteIdentity.Hash...)
+		if !ValidatePeeringKey(peeringID, peeringKey, r.peeringCost) {
+			return peerErrorInvalidKey
+		}
+	}
+	transientIDs := anySliceToByteSlices(request[1])
+	if len(transientIDs) == 0 {
+		return peerErrorInvalidData
+	}
+
+	wantedIDs := make([]any, 0)
+	for _, transientID := range transientIDs {
+		if _, exists := r.propagationEntries[string(transientID)]; !exists {
+			wantedIDs = append(wantedIDs, append([]byte{}, transientID...))
+		}
+	}
+
+	if len(wantedIDs) == 0 {
+		return false
+	}
+	if len(wantedIDs) == len(transientIDs) {
+		return true
+	}
+
+	_ = linkID
+	return wantedIDs
+}
+
+func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, remoteIdentity *rns.Identity, _ time.Time) any {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if remoteIdentity == nil {
+		return peerErrorNoIdentity
+	}
+	if r.authRequired {
+		if _, allowed := r.allowedList[string(remoteIdentity.Hash)]; !allowed {
+			return peerErrorNoAccess
+		}
+	}
+
+	request, err := decodeAnyList(data)
+	if err != nil || len(request) < 2 {
+		return peerErrorInvalidData
+	}
+
+	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+
+	wants := anySliceToByteSlices(request[0])
+	haves := anySliceToByteSlices(request[1])
+
+	if request[0] == nil && request[1] == nil {
+		available := make([]any, 0)
+		for transientID, entry := range r.propagationEntries {
+			if !bytes.Equal(entry.destinationHash, remoteDestinationHash) {
+				continue
+			}
+			available = append(available, []byte(transientID))
+		}
+		return available
+	}
+
+	for _, transientID := range haves {
+		entry, exists := r.propagationEntries[string(transientID)]
+		if !exists {
+			continue
+		}
+		if bytes.Equal(entry.destinationHash, remoteDestinationHash) {
+			delete(r.propagationEntries, string(transientID))
+		}
+	}
+
+	limitBytes := parseLimitBytes(request, 2)
+	response := make([]any, 0)
+	cumulativeSize := 24
+	perMessageOverhead := 16
+
+	for _, transientID := range wants {
+		entry, exists := r.propagationEntries[string(transientID)]
+		if !exists {
+			continue
+		}
+		if !bytes.Equal(entry.destinationHash, remoteDestinationHash) {
+			continue
+		}
+		nextSize := cumulativeSize + len(entry.payload) + perMessageOverhead
+		if limitBytes > 0 && nextSize > limitBytes {
+			continue
+		}
+		response = append(response, append([]byte{}, entry.payload...))
+		cumulativeSize = nextSize
+	}
+
+	r.clientPropagationMessagesServed += len(response)
+	if len(response) == 0 && len(wants) > 0 {
+		return peerErrorNotFound
+	}
+
+	return response
+}
+
+func decodeAnyList(data []byte) ([]any, error) {
+	if len(data) == 0 {
+		return nil, errors.New("empty request data")
+	}
+	unpacked, err := msgpack.Unpack(data)
+	if err != nil {
+		return nil, err
+	}
+	request, ok := unpacked.([]any)
+	if !ok {
+		return nil, errors.New("request data is not a list")
+	}
+	return request, nil
+}
+
+func anySliceToByteSlices(value any) [][]byte {
+	items, ok := value.([]any)
+	if !ok || len(items) == 0 {
+		return nil
+	}
+	result := make([][]byte, 0, len(items))
+	for _, item := range items {
+		entry, ok := item.([]byte)
+		if !ok || len(entry) == 0 {
+			continue
+		}
+		result = append(result, append([]byte{}, entry...))
+	}
+	return result
+}
+
+func anyToBytes(value any) []byte {
+	b, ok := value.([]byte)
+	if !ok || len(b) == 0 {
+		return nil
+	}
+	return append([]byte{}, b...)
+}
+
+func parseLimitBytes(values []any, index int) int {
+	if index >= len(values) {
+		return 0
+	}
+	v := values[index]
+	if v == nil {
+		return 0
+	}
+	switch n := v.(type) {
+	case float64:
+		if n <= 0 {
+			return 0
+		}
+		return int(n * 1000)
+	case float32:
+		if n <= 0 {
+			return 0
+		}
+		return int(float64(n) * 1000)
+	case int:
+		if n <= 0 {
+			return 0
+		}
+		return n * 1000
+	case int64:
+		if n <= 0 {
+			return 0
+		}
+		return int(n * 1000)
+	default:
+		return 0
+	}
+}
+
+func (r *Router) resolvePeerHash(data []byte, linkID []byte, remoteIdentity *rns.Identity) []byte {
+	if len(data) > 0 {
+		return append([]byte{}, data...)
+	}
+	if remoteIdentity != nil {
+		return append([]byte{}, remoteIdentity.Hash...)
+	}
+	if len(linkID) > 0 {
+		return append([]byte{}, linkID...)
+	}
+	return nil
+}
+
+func (r *Router) RegisterDeliveryIdentity(identity *rns.Identity, stampCost int) (*rns.Destination, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if len(r.deliveryDestinations) > 0 {
+		return nil, errors.New("currently only one delivery identity is supported per router")
+	}
+	if identity == nil {
+		identity = r.identity
+	}
+
+	destination, err := rns.NewDestination(identity, rns.DestinationIn, rns.DestinationSingle, AppName, "delivery")
+	if err != nil {
+		return nil, fmt.Errorf("create delivery destination: %w", err)
+	}
+
+	destination.SetPacketCallback(r.deliveryPacket)
+	destination.SetLinkEstablishedCallback(r.linkEstablished)
+	r.deliveryDestinations[string(destination.Hash)] = destination
+	r.inboundStampCosts[string(destination.Hash)] = stampCost
+
+	return destination, nil
+}
+
+func (r *Router) RegisterDeliveryCallback(callback func(*Message)) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.deliveryCallback = callback
+}
+
+func (r *Router) HandleOutbound(message *Message) error {
+	if message == nil {
+		return errors.New("lxmf message is nil")
+	}
+	if message.Destination == nil {
+		return errors.New("lxmf message destination is nil")
+	}
+	if message.Source == nil {
+		return errors.New("lxmf message source is nil")
+	}
+	if len(message.Packed) == 0 {
+		if err := message.Pack(); err != nil {
+			return err
+		}
+	}
+
+	message.State = StateOutbound
+
+	sendMethod := message.DesiredMethod
+	if sendMethod == 0 {
+		sendMethod = MethodDirect
+	}
+	message.Method = sendMethod
+
+	r.mu.Lock()
+	r.pendingOutbound = append(r.pendingOutbound, message)
+	r.mu.Unlock()
+
+	r.ProcessOutbound()
+
+	return nil
+}
+
+func (r *Router) linkEstablished(link *rns.Link) {
+	r.configureDeliveryLink(link)
+}
+
+// configureDeliveryLink mirrors Python's delivery_link_established, setting
+// packet and resource callbacks so both packet-sized and resource-sized LXMF
+// messages can be received over a direct link.
+func (r *Router) configureDeliveryLink(link *rns.Link) {
+	if link == nil {
+		return
+	}
+	link.SetPacketCallback(r.deliveryPacket)
+	if err := link.SetResourceStrategy(rns.AcceptAll); err != nil {
+		return
+	}
+	link.SetResourceConcludedCallback(func(resource *rns.Resource) {
+		r.handleInboundResource(resource)
+	})
+}
+
+func (r *Router) ProcessOutbound() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	nowSeconds := float64(r.now().UnixNano()) / 1e9
+	remaining := make([]*Message, 0, len(r.pendingOutbound))
+
+	for _, message := range r.pendingOutbound {
+		switch message.State {
+		case StateSent:
+			// Python removes propagated messages from the queue once SENT
+			// (process_outbound line 2542-2544). Direct/opportunistic messages
+			// stay in the queue awaiting delivery confirmation.
+			if message.Method == MethodPropagated {
+				continue
+			}
+			remaining = append(remaining, message)
+			continue
+		case StateDelivered, StateCancelled, StateFailed:
+			continue
+		}
+
+		if message.NextDeliveryAttempt > 0 && nowSeconds < message.NextDeliveryAttempt {
+			remaining = append(remaining, message)
+			continue
+		}
+
+		if message.DeliveryAttempts >= maxDeliveryAttempts {
+			// If TryPropagationOnFail is set and a propagation node is
+			// available, switch to propagated delivery instead of failing.
+			// Mirrors Python's fail_message → try_propagation_on_fail logic.
+			if message.TryPropagationOnFail && r.outboundPropagationNode != nil && message.Method != MethodPropagated {
+				log.Printf("Direct delivery failed for %x, falling back to propagated delivery", message.Destination.Hash)
+				message.Method = MethodPropagated
+				message.DeliveryAttempts = 0
+				message.TryPropagationOnFail = false
+				message.State = StateOutbound
+				message.NextDeliveryAttempt = 0
+				remaining = append(remaining, message)
+				continue
+			}
+			r.failMessageLocked(message)
+			continue
+		}
+
+		sendMethod := message.Method
+		if sendMethod == 0 {
+			sendMethod = message.DesiredMethod
+		}
+		if sendMethod == 0 {
+			sendMethod = MethodDirect
+		}
+		message.Method = sendMethod
+
+		destinationHash := message.Destination.Hash
+
+		if sendMethod == MethodPropagated {
+			if r.outboundPropagationNode == nil {
+				log.Printf("No outbound propagation node for propagated message to %x", destinationHash)
+				r.failMessageLocked(message)
+				continue
+			}
+			// For propagated delivery, path must exist to the propagation node,
+			// not the final destination (Python process_outbound lines 2714-2724).
+			if !r.hasPath(r.outboundPropagationNode) {
+				_ = r.requestPath(r.outboundPropagationNode)
+				message.DeliveryAttempts++
+				message.NextDeliveryAttempt = float64(r.now().Add(pathRequestWait).UnixNano()) / 1e9
+				remaining = append(remaining, message)
+				continue
+			}
+			if err := r.sendMessageLocked(message); err != nil {
+				message.DeliveryAttempts++
+				message.State = StateOutbound
+				message.NextDeliveryAttempt = float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
+				remaining = append(remaining, message)
+				continue
+			}
+			message.State = StateSent
+			remaining = append(remaining, message)
+			continue
+		}
+
+		if sendMethod == MethodOpportunistic {
+			if !r.hasPath(destinationHash) {
+				if message.DeliveryAttempts >= maxPathlessTries {
+					_ = r.requestPath(destinationHash)
+					message.NextDeliveryAttempt = float64(r.now().Add(pathRequestWait).UnixNano()) / 1e9
+				} else {
+					message.NextDeliveryAttempt = float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
+				}
+				message.DeliveryAttempts++
+				remaining = append(remaining, message)
+				continue
+			}
+		}
+
+		if sendMethod == MethodDirect {
+			if !r.hasPath(destinationHash) {
+				_ = r.requestPath(destinationHash)
+				message.DeliveryAttempts++
+				message.NextDeliveryAttempt = float64(r.now().Add(pathRequestWait).UnixNano()) / 1e9
+				remaining = append(remaining, message)
+				continue
+			}
+		}
+
+		if err := r.sendMessageLocked(message); err != nil {
+			if errors.Is(err, errResourceRepresentationNotSupported) {
+				r.failMessageLocked(message)
+				continue
+			}
+			if errors.Is(err, errResourceLinkPending) {
+				message.State = StateOutbound
+				message.NextDeliveryAttempt = float64(r.now().Add(pathRequestWait).UnixNano()) / 1e9
+				remaining = append(remaining, message)
+				continue
+			}
+			message.DeliveryAttempts++
+			message.State = StateOutbound
+			message.NextDeliveryAttempt = float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
+			remaining = append(remaining, message)
+			continue
+		}
+
+		message.State = StateSent
+		remaining = append(remaining, message)
+	}
+
+	r.pendingOutbound = remaining
+}
+
+// failMessageLocked marks a message as failed and invokes its FailedCallback.
+// Mirrors Python LXMRouter.fail_message() lines 2389-2402.
+func (r *Router) failMessageLocked(message *Message) {
+	if message.State != StateRejected {
+		message.State = StateFailed
+	}
+	if message.FailedCallback != nil {
+		message.FailedCallback(message)
+	}
+}
+
+func (r *Router) sendMessagePacketLocked(message *Message) error {
+	message.Representation = RepresentationPacket
+
+	packetData := message.Packed
+
+	// When sending as a raw packet (not over a Link), strip the leading
+	// destination hash.  The receiver will re-prepend it from the Reticulum
+	// packet header.  This applies to both Opportunistic and Direct methods
+	// when the delivery destination is not a Link.
+	if message.Method == MethodOpportunistic || message.Method == MethodDirect {
+		if len(message.Packed) <= DestinationLength {
+			return errors.New("packed lxmf message too short for packet encoding")
+		}
+		packetData = message.Packed[DestinationLength:]
+	}
+
+	packet := rns.NewPacket(message.Destination, packetData)
+	if err := r.sendPacket(packet); err != nil {
+		return err
+	}
+
+	if packet.Receipt != nil {
+		packet.Receipt.SetDeliveryCallback(func(_ *rns.PacketReceipt) {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			message.State = StateDelivered
+		})
+		packet.Receipt.SetTimeoutCallback(func(_ *rns.PacketReceipt) {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			if message.State != StateDelivered && message.State != StateCancelled {
+				message.State = StateOutbound
+				message.NextDeliveryAttempt = float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
+			}
+		})
+	}
+
+	return nil
+}
+
+func (r *Router) sendMessageLocked(message *Message) error {
+	representation := RepresentationPacket
+	packetLength := len(message.Packed)
+	if message.Method == MethodOpportunistic || message.Method == MethodDirect {
+		packetLength -= DestinationLength
+	}
+	if packetLength > rns.MDU {
+		representation = RepresentationResource
+	}
+
+	if representation == RepresentationResource {
+		message.Representation = RepresentationResource
+		return r.sendResource(message)
+	}
+
+	return r.sendMessagePacketLocked(message)
+}
+
+func (r *Router) sendMessageResourceLocked(message *Message) error {
+	message.Representation = RepresentationResource
+
+	hashKey := string(message.Destination.Hash)
+	if link := r.resourceLinks[hashKey]; link != nil {
+		r.configureResourceLink(link)
+		resource, err := r.newResource(message.Packed, link)
+		if err != nil {
+			return err
+		}
+		resource.SetCallback(func(resource *rns.Resource) {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			if resource != nil && resource.Status() == rns.ResourceStatusComplete {
+				message.State = StateDelivered
+				return
+			}
+			if message.State != StateDelivered && message.State != StateCancelled {
+				message.State = StateFailed
+			}
+		})
+		if err := resource.Advertise(); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	if r.resourceLinkPending[hashKey] {
+		return errResourceLinkPending
+	}
+
+	link, err := r.newLink(message.Destination)
+	if err != nil {
+		return err
+	}
+
+	r.resourceLinkPending[hashKey] = true
+	link.SetLinkEstablishedCallback(func(established *rns.Link) {
+		r.mu.Lock()
+		delete(r.resourceLinkPending, hashKey)
+		r.resourceLinks[hashKey] = established
+		r.mu.Unlock()
+		r.configureResourceLink(established)
+		r.ProcessOutbound()
+	})
+	link.SetLinkClosedCallback(func(_ *rns.Link) {
+		r.mu.Lock()
+		delete(r.resourceLinks, hashKey)
+		r.mu.Unlock()
+	})
+
+	if err := link.Establish(); err != nil {
+		delete(r.resourceLinkPending, hashKey)
+		return err
+	}
+
+	return errResourceLinkPending
+}
+
+func (r *Router) configureResourceLink(link *rns.Link) {
+	if link == nil {
+		return
+	}
+	if err := link.SetResourceStrategy(rns.AcceptAll); err != nil {
+		return
+	}
+	link.SetResourceConcludedCallback(func(resource *rns.Resource) {
+		r.handleInboundResource(resource)
+	})
+}
+
+func (r *Router) handleInboundResource(resource *rns.Resource) {
+	if resource == nil {
+		return
+	}
+	if resource.Status() != rns.ResourceStatusComplete {
+		return
+	}
+	r.handleInboundResourceData(resource.Data())
+}
+
+func (r *Router) handleInboundResourceData(data []byte) {
+	if len(data) == 0 {
+		return
+	}
+	message, err := UnpackMessageFromBytes(data, MethodDirect)
+	if err != nil {
+		return
+	}
+
+	r.mu.Lock()
+	callback := r.deliveryCallback
+	r.mu.Unlock()
+
+	if callback != nil {
+		callback(message)
+	}
+}
+
+func (r *Router) deliveryPacket(data []byte, packet *rns.Packet) {
+	if packet == nil {
+		return
+	}
+
+	method := MethodDirect
+	lxmfData := make([]byte, 0, len(data)+DestinationLength)
+
+	if packet.DestinationType == rns.DestinationLink {
+		lxmfData = append(lxmfData, data...)
+	} else {
+		method = MethodOpportunistic
+		destinationHash := packet.DestinationHash
+		if len(destinationHash) == 0 && packet.Destination != nil {
+			destinationHash = packet.Destination.GetHash()
+		}
+		if len(destinationHash) != DestinationLength {
+			return
+		}
+		lxmfData = append(lxmfData, destinationHash...)
+		lxmfData = append(lxmfData, data...)
+	}
+
+	message, err := UnpackMessageFromBytes(lxmfData, method)
+	if err != nil {
+		return
+	}
+
+	r.mu.Lock()
+	callback := r.deliveryCallback
+	r.mu.Unlock()
+
+	if callback != nil {
+		callback(message)
+	}
+}
+
+// RouterConfig provides the full set of constructor parameters matching
+// Python LXMRouter.__init__'s keyword arguments.
+type RouterConfig struct {
+	Identity         *rns.Identity
+	StoragePath      string
+	Autopeer         bool
+	PropagationLimit float64 // per-transfer limit in KB; 0 uses default (256)
+	SyncLimit        float64 // per-sync limit in KB; 0 uses default (256*40)
+	DeliveryLimit    float64 // per-delivery limit in KB; 0 uses default (1000)
+	MaxPeers         *int    // nil uses default (20)
+	StaticPeers      [][]byte
+	PropagationCost  int // clamped to >= PropagationCostMin
+}
+
+// NewRouterFromConfig creates a Router using the full parameter set,
+// mirroring Python's LXMRouter(identity=..., storagepath=..., ...).
+func NewRouterFromConfig(cfg RouterConfig) (*Router, error) {
+	router, err := NewRouter(cfg.Identity, cfg.StoragePath)
+	if err != nil {
+		return nil, err
+	}
+
+	router.autopeer = cfg.Autopeer
+
+	if cfg.PropagationLimit > 0 {
+		router.propagationPerTransferLimit = cfg.PropagationLimit
+	}
+	if cfg.DeliveryLimit > 0 {
+		router.deliveryPerTransferLimit = cfg.DeliveryLimit
+	}
+	if cfg.SyncLimit > 0 {
+		router.propagationPerSyncLimit = cfg.SyncLimit
+	}
+	if router.propagationPerSyncLimit < router.propagationPerTransferLimit {
+		router.propagationPerSyncLimit = router.propagationPerTransferLimit
+	}
+
+	if cfg.MaxPeers != nil {
+		if *cfg.MaxPeers < 0 {
+			return nil, fmt.Errorf("invalid value for max_peers: %v", *cfg.MaxPeers)
+		}
+		router.maxPeers = *cfg.MaxPeers
+	}
+
+	cost := cfg.PropagationCost
+	if cost < PropagationCostMin {
+		cost = PropagationCostMin
+	}
+	router.peeringCost = cost
+
+	if len(cfg.StaticPeers) > 0 {
+		if err := router.SetStaticPeers(cfg.StaticPeers); err != nil {
+			return nil, fmt.Errorf("set static peers: %w", err)
+		}
+	}
+
+	return router, nil
+}
+
+// IgnoreDestination adds a destination hash to the router's ignored list.
+// Messages from ignored destinations will be silently discarded.
+func (r *Router) IgnoreDestination(destinationHash []byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ignoredList[string(append([]byte{}, destinationHash...))] = struct{}{}
+}
+
+// IsIgnored reports whether the given destination hash is on the ignored list.
+func (r *Router) IsIgnored(destinationHash []byte) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, ok := r.ignoredList[string(destinationHash)]
+	return ok
+}
+
+// EnforceStamps enables stamp enforcement on the router.
+func (r *Router) EnforceStamps() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.enforceStampsEnabled = true
+}
+
+// StampsEnforced reports whether stamp enforcement is enabled.
+func (r *Router) StampsEnforced() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.enforceStampsEnabled
+}
+
+// SetMessageStorageLimit sets the maximum message storage size in megabytes.
+func (r *Router) SetMessageStorageLimit(megabytes float64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.messageStorageLimit = megabytes
+}
+
+// MessageStorageLimit returns the current message storage limit in megabytes.
+func (r *Router) MessageStorageLimit() float64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.messageStorageLimit
+}
+
+// Prioritise adds a destination hash to the priority list for propagation.
+func (r *Router) Prioritise(destinationHash []byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.prioritisedList[string(append([]byte{}, destinationHash...))] = struct{}{}
+}
+
+// IsPrioritised reports whether a destination hash is in the priority list.
+func (r *Router) IsPrioritised(destinationHash []byte) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, ok := r.prioritisedList[string(destinationHash)]
+	return ok
+}
+
+// EnablePropagation marks the router as an active propagation node.
+func (r *Router) EnablePropagation() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.propagationEnabled = true
+}
+
+// DisablePropagation marks the router as no longer participating in propagation.
+func (r *Router) DisablePropagation() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.propagationEnabled = false
+}
+
+// PropagationEnabled reports whether the router is an active propagation node.
+func (r *Router) PropagationEnabled() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.propagationEnabled
+}
+
+// PropagationDestination returns the router's propagation destination, or nil
+// if RegisterPropagationDestination has not been called.
+func (r *Router) PropagationDestination() *rns.Destination {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.propagationDestination
+}
+
+// MaxPeers returns the current max peers setting.
+func (r *Router) MaxPeers() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.maxPeers
+}
+
+// PropagationPerTransferLimit returns the per-transfer propagation limit.
+func (r *Router) PropagationPerTransferLimit() float64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.propagationPerTransferLimit
+}
+
+// PropagationPerSyncLimit returns the per-sync propagation limit.
+func (r *Router) PropagationPerSyncLimit() float64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.propagationPerSyncLimit
+}
+
+// DeliveryPerTransferLimit returns the per-transfer delivery limit.
+func (r *Router) DeliveryPerTransferLimit() float64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.deliveryPerTransferLimit
+}
+
+// SetInboundStampCost updates the stamp cost for a delivery destination,
+// matching Python's LXMRouter.set_inbound_stamp_cost().
+func (r *Router) SetInboundStampCost(destinationHash []byte, stampCost *int) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	hashKey := string(destinationHash)
+	if _, ok := r.deliveryDestinations[hashKey]; !ok {
+		return false
+	}
+	if stampCost == nil || *stampCost < 1 {
+		r.inboundStampCosts[hashKey] = 0
+	} else if *stampCost < 255 {
+		r.inboundStampCosts[hashKey] = *stampCost
+	} else {
+		return false
+	}
+	return true
+}
+
+// InboundStampCost returns the current stamp cost for a delivery destination.
+func (r *Router) InboundStampCost(destinationHash []byte) (int, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	cost, ok := r.inboundStampCosts[string(destinationHash)]
+	return cost, ok
+}
+
+// SetDisplayName stores a display name for a delivery destination hash.
+// The display name is included in announce app_data so peers can show it.
+// Mirrors Python's delivery_destination.display_name assignment.
+func (r *Router) SetDisplayName(destinationHash []byte, name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.displayNames[string(destinationHash)] = name
+}
+
+// GetAnnounceAppData returns the msgpack-encoded announce app_data for
+// a delivery destination, matching Python's get_announce_app_data().
+// Returns nil if no display name is set.
+func (r *Router) GetAnnounceAppData(destinationHash []byte) []byte {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.getAnnounceAppDataLocked(destinationHash)
+}
+
+func (r *Router) getAnnounceAppDataLocked(destinationHash []byte) []byte {
+	hashKey := string(destinationHash)
+	name, hasName := r.displayNames[hashKey]
+	if !hasName {
+		return nil
+	}
+
+	var displayNameField any = []byte(name)
+
+	var stampCostField any
+	if cost, ok := r.inboundStampCosts[hashKey]; ok && cost > 0 && cost < 255 {
+		stampCostField = cost
+	}
+
+	peerData := []any{displayNameField, stampCostField}
+	packed, err := msgpack.Pack(peerData)
+	if err != nil {
+		log.Printf("Could not pack announce app data: %v", err)
+		return nil
+	}
+	return packed
+}
+
+// Announce triggers an announce for the delivery destination identified
+// by destinationHash, matching Python's LXMRouter.announce().
+func (r *Router) Announce(destinationHash []byte) error {
+	r.mu.Lock()
+	dest, ok := r.deliveryDestinations[string(destinationHash)]
+	appData := r.getAnnounceAppDataLocked(destinationHash)
+	r.mu.Unlock()
+
+	if !ok {
+		return fmt.Errorf("no delivery destination for hash %x", destinationHash)
+	}
+
+	return dest.Announce(appData)
+}
+
+// SetOutboundPropagationNode sets the destination hash for the outbound
+// propagation node, matching Python's LXMRouter.set_outbound_propagation_node().
+func (r *Router) SetOutboundPropagationNode(destinationHash []byte) error {
+	if len(destinationHash) != rns.TruncatedHashLength/8 {
+		return fmt.Errorf("invalid destination hash length %v", len(destinationHash))
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.outboundPropagationNode = append([]byte{}, destinationHash...)
+	return nil
+}
+
+// GetOutboundPropagationNode returns the current outbound propagation
+// node destination hash, or nil if none is set.
+func (r *Router) GetOutboundPropagationNode() []byte {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.outboundPropagationNode == nil {
+		return nil
+	}
+	return append([]byte{}, r.outboundPropagationNode...)
+}
+
+// DeliveryLinkAvailable returns true if there is an active direct
+// delivery link for the given destination hash.
+// Mirrors Python LXMRouter.delivery_link_available().
+func (r *Router) DeliveryLinkAvailable(destHash []byte) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.resourceLinks[string(destHash)] != nil
+}
+
+// PropagationTransferState returns the current propagation transfer state.
+func (r *Router) PropagationTransferState() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.propagationTransferState
+}
+
+// PropagationTransferLastResult returns the last result count from a
+// propagation sync.
+func (r *Router) PropagationTransferLastResult() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.propagationTransferLastResult
+}
+
+// PropagationTransferProgress returns the current transfer progress (0.0-1.0).
+func (r *Router) PropagationTransferProgress() float64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.propagationTransferProgress
+}
+
+// RequestMessagesFromPropagationNode initiates a sync request to the
+// outbound propagation node to retrieve new messages.
+// Mirrors Python LXMRouter.request_messages_from_propagation_node().
+func (r *Router) RequestMessagesFromPropagationNode(limit *int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.outboundPropagationNode == nil {
+		log.Printf("Cannot request LXMF propagation node sync, no default propagation node configured")
+		return
+	}
+
+	r.propagationTransferProgress = 0.0
+
+	maxMessages := 0
+	if limit != nil {
+		maxMessages = *limit
+	}
+
+	if r.hasPath != nil && r.hasPath(r.outboundPropagationNode) {
+		r.propagationTransferState = PRLinkEstablishing
+		log.Printf("Establishing link to %x for message download (limit=%v)", r.outboundPropagationNode, maxMessages)
+
+		identity := rns.Recall(r.outboundPropagationNode, false)
+		if identity == nil {
+			log.Printf("Cannot recall identity for propagation node %x", r.outboundPropagationNode)
+			r.propagationTransferState = PRFailed
+			return
+		}
+
+		dest, err := rns.NewDestination(identity, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+		if err != nil {
+			log.Printf("Cannot create destination for propagation node: %v", err)
+			r.propagationTransferState = PRFailed
+			return
+		}
+
+		link, err := r.newLink(dest)
+		if err != nil {
+			log.Printf("Cannot establish link to propagation node: %v", err)
+			r.propagationTransferState = PRLinkFailed
+			return
+		}
+
+		r.propagationTransferState = PRLinkEstablished
+		log.Printf("Link established to propagation node %x via %v", r.outboundPropagationNode, link)
+		r.propagationTransferState = PRRequestSent
+	} else {
+		log.Printf("No path known for message download from propagation node %x, requesting path...", r.outboundPropagationNode)
+		if r.requestPath != nil {
+			if err := r.requestPath(r.outboundPropagationNode); err != nil {
+				log.Printf("Path request failed: %v", err)
+				r.propagationTransferState = PRNoPath
+				return
+			}
+		}
+		r.propagationTransferState = PRPathRequested
+	}
+}
+
+// CancelPropagationNodeRequests cancels any in-flight propagation sync.
+// Mirrors Python LXMRouter.cancel_propagation_node_requests().
+func (r *Router) CancelPropagationNodeRequests() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	log.Printf("Cancelling propagation node requests")
+	r.propagationTransferState = PRIdle
+	r.propagationTransferProgress = 0.0
+}

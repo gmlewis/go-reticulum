@@ -7,6 +7,7 @@ REPO_ROOT="${SCRIPT_DIR}/.."
 # Point to the original repo directories for integration tests:
 export ORIGINAL_RETICULUM_REPO_DIR=${HOME}/src/github.com/markqvist/Reticulum
 export ORIGINAL_LXMF_REPO_DIR=${HOME}/src/github.com/markqvist/lxmf
+export ORIGINAL_RNSH_REPO_DIR=${HOME}/src/github.com/acehoss/rnsh
 
 ERRCHECK_BIN="$(command -v errcheck || true)"
 if [[ -z "${ERRCHECK_BIN}" ]]; then
