@@ -44,7 +44,7 @@ import (
 
 func init() {
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), `
+		_, _ = fmt.Fprintf(flag.CommandLine.Output(), `
 usage: gornid [-h] [--config path] [-i identity] [-g file] [-m identity_data] [-x] [-v] [-q] [-a aspects]
               [-H aspects] [-e file] [-d file] [-s path] [-V path] [-r file] [-w file] [-f] [-R] [-t seconds] [-p]
               [-P] [-b] [-B] [--version]
@@ -180,7 +180,7 @@ func main() {
 	}
 
 	if identityPath == "" && !printIdentity && encryptFile == "" && decryptFile == "" && signFile == "" && validateFile == "" {
-		fmt.Fprint(flag.CommandLine.Output(), "\nNo identity provided, cannot continue\n")
+		_, _ = fmt.Fprint(flag.CommandLine.Output(), "\nNo identity provided, cannot continue\n")
 		flag.Usage()
 		os.Exit(2)
 	}
