@@ -69,23 +69,27 @@ func TestTickChanTicker(t *testing.T) {
 
 func TestRunOperationalLoopWithHandlersTicksAndStops(t *testing.T) {
 	done := make(chan struct{})
+	finished := make(chan struct{})
 
 	var maintenanceCount int32
 	var outboundCount int32
 	var announceCount int32
 	var syncCount int32
 
-	go runOperationalLoopWithHandlers(
-		5*time.Millisecond,
-		7*time.Millisecond,
-		9*time.Millisecond,
-		11*time.Millisecond,
-		done,
-		func() { atomic.AddInt32(&maintenanceCount, 1) },
-		func() { atomic.AddInt32(&outboundCount, 1) },
-		func() { atomic.AddInt32(&announceCount, 1) },
-		func() { atomic.AddInt32(&syncCount, 1) },
-	)
+	go func() {
+		runOperationalLoopWithHandlers(
+			5*time.Millisecond,
+			7*time.Millisecond,
+			9*time.Millisecond,
+			11*time.Millisecond,
+			done,
+			func() { atomic.AddInt32(&maintenanceCount, 1) },
+			func() { atomic.AddInt32(&outboundCount, 1) },
+			func() { atomic.AddInt32(&announceCount, 1) },
+			func() { atomic.AddInt32(&syncCount, 1) },
+		)
+		close(finished)
+	}()
 
 	deadline := time.Now().Add(200 * time.Millisecond)
 	for time.Now().Before(deadline) {
@@ -112,6 +116,13 @@ func TestRunOperationalLoopWithHandlersTicksAndStops(t *testing.T) {
 	}
 
 	close(done)
+
+	select {
+	case <-finished:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timed out waiting for operational loop to stop")
+	}
+
 	stoppedMaintenance := atomic.LoadInt32(&maintenanceCount)
 	stoppedOutbound := atomic.LoadInt32(&outboundCount)
 	stoppedAnnounce := atomic.LoadInt32(&announceCount)
