@@ -70,7 +70,11 @@ id_one = bytes.fromhex(sys.argv[4])
 id_two = bytes.fromhex(sys.argv[5])
 payload_two = bytes.fromhex(sys.argv[6])
 
-RNS.Reticulum(configdir=os.path.join(store_dir, "rnsconfig"))
+config_dir = os.path.join(store_dir, "rnsconfig")
+if not os.path.exists(config_dir): os.makedirs(config_dir)
+with open(os.path.join(config_dir, "config"), "w") as f:
+    f.write("[reticulum]\nshare_instance = No\n")
+RNS.Reticulum(configdir=config_dir)
 router = LXMF.LXMRouter(storagepath=store_dir)
 remote_identity = RNS.Identity()
 remote_destination = RNS.Destination(remote_identity, RNS.Destination.OUT, RNS.Destination.SINGLE, LXMF.APP_NAME, "delivery")
@@ -114,7 +118,11 @@ store_dir = sys.argv[3]
 id_small = bytes.fromhex(sys.argv[4])
 id_large = bytes.fromhex(sys.argv[5])
 
-RNS.Reticulum(configdir=os.path.join(store_dir, "rnsconfig"))
+config_dir = os.path.join(store_dir, "rnsconfig")
+if not os.path.exists(config_dir): os.makedirs(config_dir)
+with open(os.path.join(config_dir, "config"), "w") as f:
+    f.write("[reticulum]\nshare_instance = No\n")
+RNS.Reticulum(configdir=config_dir)
 router = LXMF.LXMRouter(storagepath=store_dir)
 remote_identity = RNS.Identity()
 remote_destination = RNS.Destination(remote_identity, RNS.Destination.OUT, RNS.Destination.SINGLE, LXMF.APP_NAME, "delivery")
@@ -149,6 +157,7 @@ with open(response_high_path, "wb") as f:
 const lxmfRunMessageGetAccessPy = `import LXMF
 import RNS
 import RNS.vendor.umsgpack as msgpack
+import os
 import sys
 import tempfile
 import time
@@ -158,7 +167,10 @@ if len(sys.argv) != 2:
 	sys.exit(1)
 
 out_path = sys.argv[1]
-RNS.Reticulum(configdir=tempfile.mkdtemp())
+config_dir = tempfile.mkdtemp()
+with open(os.path.join(config_dir, "config"), "w") as f:
+	f.write("[reticulum]\nshare_instance = No\n")
+RNS.Reticulum(configdir=config_dir)
 router = LXMF.LXMRouter(storagepath="/tmp")
 router.auth_required = True
 
@@ -197,7 +209,11 @@ response_meta_path = sys.argv[3]
 store_dir = sys.argv[4]
 id_one = bytes.fromhex(sys.argv[5])
 
-RNS.Reticulum(configdir=os.path.join(store_dir, "rnsconfig"))
+config_dir = os.path.join(store_dir, "rnsconfig")
+if not os.path.exists(config_dir): os.makedirs(config_dir)
+with open(os.path.join(config_dir, "config"), "w") as f:
+    f.write("[reticulum]\nshare_instance = No\n")
+RNS.Reticulum(configdir=config_dir)
 router = LXMF.LXMRouter(storagepath=store_dir)
 remote_identity = RNS.Identity()
 remote_destination = RNS.Destination(remote_identity, RNS.Destination.OUT, RNS.Destination.SINGLE, LXMF.APP_NAME, "delivery")
@@ -256,6 +272,7 @@ with open(high_path, "wb") as f:
 const lxmfRunControlRecoveryPy = `import LXMF
 import RNS
 import RNS.vendor.umsgpack as msgpack
+import os
 import sys
 import tempfile
 import time
@@ -265,7 +282,10 @@ if len(sys.argv) != 2:
 	sys.exit(1)
 
 out_path = sys.argv[1]
-RNS.Reticulum(configdir=tempfile.mkdtemp())
+config_dir = tempfile.mkdtemp()
+with open(os.path.join(config_dir, "config"), "w") as f:
+	f.write("[reticulum]\nshare_instance = No\n")
+RNS.Reticulum(configdir=config_dir)
 router = LXMF.LXMRouter(storagepath="/tmp")
 remote_identity = RNS.Identity()
 router.control_allowed_list = [remote_identity.hash]
@@ -296,6 +316,7 @@ with open(out_path, "wb") as f:
 const lxmfRunControlPeerErrorsPy = `import LXMF
 import RNS
 import RNS.vendor.umsgpack as msgpack
+import os
 import sys
 import tempfile
 import time
@@ -305,7 +326,10 @@ if len(sys.argv) != 2:
 	sys.exit(1)
 
 out_path = sys.argv[1]
-RNS.Reticulum(configdir=tempfile.mkdtemp())
+config_dir = tempfile.mkdtemp()
+with open(os.path.join(config_dir, "config"), "w") as f:
+	f.write("[reticulum]\nshare_instance = No\n")
+RNS.Reticulum(configdir=config_dir)
 router = LXMF.LXMRouter(storagepath="/tmp")
 
 allowed_identity = RNS.Identity()
@@ -374,6 +398,7 @@ with open(second_path, "wb") as f:
 const lxmfRunControlStatsPy = `import LXMF
 import RNS
 import RNS.vendor.umsgpack as msgpack
+import os
 import sys
 import tempfile
 import time
@@ -383,7 +408,10 @@ if len(sys.argv) != 2:
 	sys.exit(1)
 
 out_path = sys.argv[1]
-RNS.Reticulum(configdir=tempfile.mkdtemp())
+config_dir = tempfile.mkdtemp()
+with open(os.path.join(config_dir, "config"), "w") as f:
+	f.write("[reticulum]\nshare_instance = No\n")
+RNS.Reticulum(configdir=config_dir)
 router = LXMF.LXMRouter(storagepath="/tmp")
 router.propagation_node = True
 router.propagation_node_start_time = time.time()
@@ -422,6 +450,7 @@ with open(not_allowed_path, "wb") as f:
 const lxmfRunOfferInvalidKeyPy = `import LXMF
 import RNS
 import RNS.vendor.umsgpack as msgpack
+import os
 import sys
 import tempfile
 import time
@@ -431,7 +460,10 @@ if len(sys.argv) != 2:
 	sys.exit(1)
 
 out_path = sys.argv[1]
-RNS.Reticulum(configdir=tempfile.mkdtemp())
+config_dir = tempfile.mkdtemp()
+with open(os.path.join(config_dir, "config"), "w") as f:
+	f.write("[reticulum]\nshare_instance = No\n")
+RNS.Reticulum(configdir=config_dir)
 router = LXMF.LXMRouter(storagepath="/tmp")
 remote_identity = RNS.Identity()
 transient_id = RNS.Identity.full_hash(b"offer-invalid-key")
@@ -445,6 +477,7 @@ with open(out_path, "wb") as f:
 const lxmfRunOfferThrottledPy = `import LXMF
 import RNS
 import RNS.vendor.umsgpack as msgpack
+import os
 import sys
 import tempfile
 import time
@@ -454,7 +487,10 @@ if len(sys.argv) != 2:
 	sys.exit(1)
 
 out_path = sys.argv[1]
-RNS.Reticulum(configdir=tempfile.mkdtemp())
+config_dir = tempfile.mkdtemp()
+with open(os.path.join(config_dir, "config"), "w") as f:
+	f.write("[reticulum]\nshare_instance = No\n")
+RNS.Reticulum(configdir=config_dir)
 router = LXMF.LXMRouter(storagepath="/tmp")
 remote_identity = RNS.Identity()
 remote_destination = RNS.Destination(remote_identity, RNS.Destination.OUT, RNS.Destination.SINGLE, LXMF.APP_NAME, "propagation")
@@ -470,6 +506,7 @@ with open(out_path, "wb") as f:
 const lxmfRunOfferThrottleExpiredPy = `import LXMF
 import RNS
 import RNS.vendor.umsgpack as msgpack
+import os
 import sys
 import tempfile
 import time
@@ -479,7 +516,10 @@ if len(sys.argv) != 2:
 	sys.exit(1)
 
 out_path = sys.argv[1]
-RNS.Reticulum(configdir=tempfile.mkdtemp())
+config_dir = tempfile.mkdtemp()
+with open(os.path.join(config_dir, "config"), "w") as f:
+	f.write("[reticulum]\nshare_instance = No\n")
+RNS.Reticulum(configdir=config_dir)
 router = LXMF.LXMRouter(storagepath="/tmp", peering_cost=0)
 remote_identity = RNS.Identity()
 remote_destination = RNS.Destination(remote_identity, RNS.Destination.OUT, RNS.Destination.SINGLE, LXMF.APP_NAME, "propagation")
@@ -495,6 +535,7 @@ with open(out_path, "wb") as f:
 const lxmfRunOfferStaticOnlyPy = `import LXMF
 import RNS
 import RNS.vendor.umsgpack as msgpack
+import os
 import sys
 import tempfile
 import time
@@ -504,7 +545,10 @@ if len(sys.argv) != 2:
 	sys.exit(1)
 
 out_path = sys.argv[1]
-RNS.Reticulum(configdir=tempfile.mkdtemp())
+config_dir = tempfile.mkdtemp()
+with open(os.path.join(config_dir, "config"), "w") as f:
+	f.write("[reticulum]\nshare_instance = No\n")
+RNS.Reticulum(configdir=config_dir)
 router = LXMF.LXMRouter(storagepath="/tmp", from_static_only=True)
 remote_identity = RNS.Identity()
 
@@ -518,6 +562,7 @@ with open(out_path, "wb") as f:
 const lxmfRunOfferStaticAllowedPy = `import LXMF
 import RNS
 import RNS.vendor.umsgpack as msgpack
+import os
 import sys
 import tempfile
 import time
@@ -527,7 +572,10 @@ if len(sys.argv) != 2:
 	sys.exit(1)
 
 out_path = sys.argv[1]
-RNS.Reticulum(configdir=tempfile.mkdtemp())
+config_dir = tempfile.mkdtemp()
+with open(os.path.join(config_dir, "config"), "w") as f:
+	f.write("[reticulum]\nshare_instance = No\n")
+RNS.Reticulum(configdir=config_dir)
 remote_identity = RNS.Identity()
 remote_destination = RNS.Destination(remote_identity, RNS.Destination.OUT, RNS.Destination.SINGLE, LXMF.APP_NAME, "propagation")
 router = LXMF.LXMRouter(storagepath="/tmp", from_static_only=True, static_peers=[remote_destination.hash], peering_cost=0)
@@ -542,6 +590,7 @@ with open(out_path, "wb") as f:
 const lxmfRunOfferAllKnownPy = `import LXMF
 import RNS
 import RNS.vendor.umsgpack as msgpack
+import os
 import sys
 import tempfile
 import time
@@ -551,7 +600,10 @@ if len(sys.argv) != 2:
 	sys.exit(1)
 
 out_path = sys.argv[1]
-RNS.Reticulum(configdir=tempfile.mkdtemp())
+config_dir = tempfile.mkdtemp()
+with open(os.path.join(config_dir, "config"), "w") as f:
+	f.write("[reticulum]\nshare_instance = No\n")
+RNS.Reticulum(configdir=config_dir)
 router = LXMF.LXMRouter(storagepath="/tmp", peering_cost=0)
 remote_identity = RNS.Identity()
 
@@ -570,6 +622,7 @@ with open(out_path, "wb") as f:
 const lxmfRunOfferAllMissingPy = `import LXMF
 import RNS
 import RNS.vendor.umsgpack as msgpack
+import os
 import sys
 import tempfile
 import time
@@ -579,7 +632,10 @@ if len(sys.argv) != 2:
 	sys.exit(1)
 
 out_path = sys.argv[1]
-RNS.Reticulum(configdir=tempfile.mkdtemp())
+config_dir = tempfile.mkdtemp()
+with open(os.path.join(config_dir, "config"), "w") as f:
+	f.write("[reticulum]\nshare_instance = No\n")
+RNS.Reticulum(configdir=config_dir)
 router = LXMF.LXMRouter(storagepath="/tmp", peering_cost=0)
 remote_identity = RNS.Identity()
 

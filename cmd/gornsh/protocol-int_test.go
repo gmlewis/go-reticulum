@@ -228,9 +228,16 @@ print('ok')
 }
 
 func getRnshPythonPath() string {
-	if root := os.Getenv("ORIGINAL_RNSH_REPO_DIR"); root != "" {
-		return root
+	rnshRoot := os.Getenv("ORIGINAL_RNSH_REPO_DIR")
+	reticulumRoot := os.Getenv("ORIGINAL_RETICULUM_REPO_DIR")
+	if rnshRoot != "" && reticulumRoot != "" {
+		return rnshRoot + string(os.PathListSeparator) + reticulumRoot
 	}
-	log.Fatalf("missing required environment variable: ORIGINAL_RNSH_REPO_DIR")
+	if rnshRoot == "" {
+		log.Fatalf("missing required environment variable: ORIGINAL_RNSH_REPO_DIR")
+	}
+	if reticulumRoot == "" {
+		log.Fatalf("missing required environment variable: ORIGINAL_RETICULUM_REPO_DIR")
+	}
 	return "" // unreachable
 }
