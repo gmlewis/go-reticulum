@@ -31,7 +31,7 @@ func runPythonRatchetEncrypt(t *testing.T, initScriptPath, pyStorage string, des
 	go func() {
 		var err error
 		for i := 0; i < 3; i++ {
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 			if e := announceFn(); e != nil {
 				err = e
 				break
@@ -447,7 +447,7 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 		if ratchetPub != nil {
 			break
 		}
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	if ratchetPub == nil {
@@ -537,7 +537,7 @@ func TestRatchetPythonToGoParity(t *testing.T) {
 				return
 			default:
 				dest.Announce(nil)
-				time.Sleep(2 * time.Second)
+				time.Sleep(500 * time.Millisecond)
 			}
 		}
 	}()

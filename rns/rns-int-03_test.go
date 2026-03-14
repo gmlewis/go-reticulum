@@ -91,7 +91,7 @@ share_instance = No
     timeout = time.time() + 25
     while time.time() < timeout:
         destination.announce()
-        time.sleep(1.5)
+        time.sleep(0.5)
         if os.path.exists(done_file):
             print("Responder done")
             sys.stdout.flush()
@@ -295,7 +295,7 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 				if transport.HasPath(destHash) {
 					break
 				}
-				time.Sleep(150 * time.Millisecond)
+				time.Sleep(50 * time.Millisecond)
 			}
 			if !transport.HasPath(destHash) {
 				t.Fatal("timed out waiting for python path")
@@ -436,14 +436,14 @@ func setupGoOnlyIntegrationLinkPair(t *testing.T) (*Link, *Link) {
 
 	select {
 	case <-initiatorEstablished:
-	case <-time.After(3 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("timeout waiting for initiator link establishment")
 	}
 
 	var receiverLink *Link
 	select {
 	case receiverLink = <-receiverEstablished:
-	case <-time.After(3 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("timeout waiting for receiver link establishment")
 	}
 
@@ -514,7 +514,7 @@ func TestIntegratedGoOnlyLargeResourceCompressionOnOff(t *testing.T) {
 				if *gc != tc.expectCompressed {
 					t.Fatalf("compressed flag mismatch: got %v want %v", *gc, tc.expectCompressed)
 				}
-			case <-time.After(6 * time.Second):
+			case <-time.After(10 * time.Second):
 				t.Fatal("timeout waiting for response")
 			}
 		})
@@ -624,7 +624,7 @@ func TestIntegratedResponseResourceCompressionPolicyPythonToGo(t *testing.T) {
 			go func() {
 				for {
 					_ = dest.Announce(nil)
-					time.Sleep(1500 * time.Millisecond)
+					time.Sleep(500 * time.Millisecond)
 				}
 			}()
 

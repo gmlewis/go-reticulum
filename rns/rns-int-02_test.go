@@ -87,7 +87,7 @@ share_instance = No
     timeout = time.time() + 20
     while time.time() < timeout:
         destination.announce()
-        time.sleep(2)
+        time.sleep(0.5)
         if os.path.exists(done_file):
             print("Receiver received done signal")
             break
@@ -814,7 +814,7 @@ share_instance = No
 		except Exception as e:
 			print(f"EMITTER_SEND_ERROR:{e}")
 			sys.stdout.flush()
-		time.sleep(0.7)
+		time.sleep(0.5)
 		if os.path.exists(done_file):
 			print("EMITTER_DONE")
 			sys.stdout.flush()
@@ -840,8 +840,8 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
-
 	ResetTransport()
+
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
 	scriptPath := filepath.Join(tmpDir, "integrated_receiver.py")
@@ -918,7 +918,7 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 			found = true
 			break
 		}
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	if !found {
@@ -994,8 +994,8 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
-
 	ResetTransport()
+
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
 	scriptPath := filepath.Join(tmpDir, "integrated_receiver.py")
@@ -1073,7 +1073,7 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 		if ts.HasPath(destHash) {
 			break
 		}
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
 	if !ts.HasPath(destHash) {
 		t.Fatal("timed out waiting for announce path from Python")
@@ -1141,8 +1141,8 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
-
 	ResetTransport()
+
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
 	scriptPath := filepath.Join(tmpDir, "integrated_initiator.py")
@@ -1189,7 +1189,7 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 	go func() {
 		for {
 			dest.Announce(nil)
-			time.Sleep(2 * time.Second)
+			time.Sleep(500 * time.Millisecond)
 		}
 	}()
 
@@ -1247,8 +1247,8 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
-
 	ResetTransport()
+
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
 	scriptPath := filepath.Join(tmpDir, "integrated_large_initiator.py")
@@ -1284,7 +1284,7 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 	go func() {
 		for {
 			_ = dest.Announce(nil)
-			time.Sleep(2 * time.Second)
+			time.Sleep(500 * time.Millisecond)
 		}
 	}()
 
@@ -1332,8 +1332,8 @@ func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
-
 	ResetTransport()
+
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
 	scriptPath := filepath.Join(tmpDir, "integrated_receiver.py")
@@ -1393,7 +1393,7 @@ func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 		if ts.HasPath(destHash) {
 			break
 		}
-		time.Sleep(250 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
 	if !ts.HasPath(destHash) {
 		t.Fatal("timed out waiting for initial path learning from Python")
@@ -1415,7 +1415,7 @@ func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 		if ts.HasPath(destHash) {
 			break
 		}
-		time.Sleep(250 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
 	if !ts.HasPath(destHash) {
 		t.Fatal("timed out waiting for path rediscovery after invalidation")
@@ -1435,8 +1435,8 @@ func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
-
 	ResetTransport()
+
 	goListenPort, requesterPort := allocateUDPPortPair(t)
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
@@ -1528,8 +1528,8 @@ func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
-
 	ResetTransport()
+
 	goListenPort, sinkPort := allocateUDPPortPair(t)
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
@@ -1633,8 +1633,8 @@ func TestIntegratedPathResponseAnnounceNotRebroadcastUDP(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
-
 	ResetTransport()
+
 	ingressListenPort := allocateUDPPort(t)
 	ingressForwardPort := allocateUDPPort(t)
 	egressListenPort := allocateUDPPort(t)
@@ -1723,8 +1723,8 @@ func TestIntegratedRelayedPathResponsePropagationUDP(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
-
 	ResetTransport()
+
 	relayIngressListenPort := allocateUDPPort(t)
 	relayEgressListenPort := allocateUDPPort(t)
 	requesterPort := allocateUDPPort(t)
@@ -1885,8 +1885,8 @@ func TestIntegratedRelayedPathResponsePropagationPythonRequesterUDP(t *testing.T
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
-
 	ResetTransport()
+
 	pyListenPort := allocateUDPPort(t)
 	relayIngressListenPort := allocateUDPPort(t)
 	relayEgressListenPort := allocateUDPPort(t)
@@ -2046,8 +2046,8 @@ func TestIntegratedRelayedPathResponsePropagationPythonRelayUDP(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
-
 	ResetTransport()
+
 	pyIngressListenPort := allocateUDPPort(t)
 	requesterPort := allocateUDPPort(t)
 	pyEgressListenPort := allocateUDPPort(t)
@@ -2228,8 +2228,8 @@ func TestIntegratedAnnouncePropagationPythonRelayUDP(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
-
 	ResetTransport()
+
 	pyIngressListenPort := allocateUDPPort(t)
 	requesterPort := allocateUDPPort(t)
 	pyEgressListenPort := allocateUDPPort(t)
@@ -2387,8 +2387,8 @@ func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
-
 	ResetTransport()
+
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
@@ -2417,7 +2417,7 @@ func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 		}
 	}()
 	go func() {
-		ticker := time.NewTicker(2 * time.Second)
+		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 		for {
 			select {
@@ -2455,7 +2455,7 @@ func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 			announceStopped = true
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	seenLearned := false
@@ -2501,8 +2501,8 @@ func TestIntegratedRelayedPathResponseGoRequesterToPythonTargetUDP(t *testing.T)
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
-
 	ResetTransport()
+
 	pyListenPort := allocateUDPPort(t)
 	relayEgressListenPort := allocateUDPPort(t)
 	relayIngressListenPort := allocateUDPPort(t)
@@ -2658,8 +2658,8 @@ func TestIntegratedPythonRelayPathRequestEmissionUDP(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
-
 	ResetTransport()
+
 	pyIngressListenPort := allocateUDPPort(t)
 	requesterPort := allocateUDPPort(t)
 	pyEgressListenPort := allocateUDPPort(t)
@@ -2787,8 +2787,8 @@ func TestIntegratedPythonRelayInboundPathRequestForwardingUDP(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
-
 	ResetTransport()
+
 	pyRelayIngressListenPort := allocateUDPPort(t)
 	pyRequesterListenPort := allocateUDPPort(t)
 	pyRelayEgressListenPort := allocateUDPPort(t)

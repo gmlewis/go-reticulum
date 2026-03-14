@@ -1450,20 +1450,11 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 		forLocalClient := packet.PacketType != PacketAnnounce && ts.isForLocalClient(packet)
 		forLocalClientLink := packet.PacketType != PacketAnnounce && ts.isForLocalClientLink(packet)
 
-		Logf("Inbound: transportEnabled=%v, fromLocalClient=%v, forLocalClient=%v, forLocalClientLink=%v", LogDebug, false, transportEnabled(), fromLocalClient, forLocalClient, forLocalClientLink)
-
 		if transportEnabled() || fromLocalClient || forLocalClient || forLocalClientLink {
-			Logf("Inbound: entering forwarding block for packet %x", LogDebug, false, packet.PacketHash)
 			// If transport ID matches ours, we are the next hop
-			var transportHash []byte
-			if ts.identity != nil {
-				transportHash = ts.identity.Hash
-			}
-			Logf("Inbound: packet.TransportID=%x, ts.identity.Hash=%x", LogDebug, false, packet.TransportID, transportHash)
 			if packet.TransportID != nil && ts.identity != nil && bytes.Equal(packet.TransportID, ts.identity.Hash) {
 				ts.mu.Lock()
 				if entry, ok := ts.pathTable[destHash]; ok {
-					Logf("Inbound: path found in ts.pathTable for %x via %s", LogDebug, false, packet.DestinationHash, entry.Interface.Name())
 					// Forwarding logic
 					remainingHops := entry.Hops
 					var newRaw []byte
