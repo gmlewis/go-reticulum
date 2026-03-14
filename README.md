@@ -1,6 +1,17 @@
 # Go Reticulum Network Stack <a href="https://github.com/gmlewis/go-reticulum/actions/workflows/build.yml"><img align="right" src="https://github.com/gmlewis/go-reticulum/actions/workflows/build.yml/badge.svg"/></a>
 
 This is an experimental port of the [Reticulum Network Stack](https://github.com/markqvist/Reticulum) from Python to Go.
+
+## Go Port Security & Dependency Policy
+- **Vendored Compression Snapshot**: A local in-repo snapshot (with source commit
+  `39efe44ab707ffd2c1ef32cc7dbebfe584718686`) of `github.com/dsnet/compress/bzip2`
+  is included under `compress/bzip2` for parity work so that the rest of `lxmf` and `rns`
+  can rely solely upon the Go standard library.
+- **No External Interface Plugin Runtime**: External interface plugins (like Python's
+  `<configdir>/interfaces/<Type>.py`) are intentionally not supported in the Go port.
+- **Supply-Chain Risk Posture**: This design is deliberate to minimize dependency-chain
+  attack surface, informed by incidents such as the Jia Tan/XZ backdoor.
+
 What follows is Mark Qvist's original README.md.
 
 ==========

@@ -1,0 +1,1452 @@
+package rns
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"testing"
+)
+
+func TestChooseConfigDir(t *testing.T) {
+	home := "/home/testuser"
+
+	tests := []struct {
+		name     string
+		explicit string
+		has      map[string]bool
+		want     string
+	}{
+		{
+			name:     "explicit config dir wins",
+			explicit: "/custom/rns",
+			has:      map[string]bool{systemConfigDir: true, filepath.Join(home, ".config", "reticulum"): true},
+			want:     "/custom/rns",
+		},
+		{
+			name:     "system config preferred when present",
+			explicit: "",
+			has:      map[string]bool{systemConfigDir: true, filepath.Join(home, ".config", "reticulum"): true},
+			want:     systemConfigDir,
+		},
+		{
+			name:     "user config used when system missing",
+			explicit: "",
+			has:      map[string]bool{filepath.Join(home, ".config", "reticulum"): true},
+			want:     filepath.Join(home, ".config", "reticulum"),
+		},
+		{
+			name:     "fallback to .reticulum",
+			explicit: "",
+			has:      map[string]bool{},
+			want:     filepath.Join(home, ".reticulum"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := chooseConfigDir(tt.explicit, home, func(path string) bool {
+				return tt.has[path]
+			})
+			if got != tt.want {
+				t.Fatalf("chooseConfigDir() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCreateDefaultConfigMatchesPythonShape(t *testing.T) {
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "config")
+
+	r := &Reticulum{}
+	if err := r.createDefaultConfig(configPath); err != nil {
+		t.Fatalf("createDefaultConfig() error = %v", err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	content := string(data)
+	mustContain := []string{
+		"[reticulum]",
+		"[logging]",
+		"[interfaces]",
+		"[[Default Interface]]",
+		"type = AutoInterface",
+		"enabled = Yes",
+	}
+	for _, token := range mustContain {
+		if !strings.Contains(content, token) {
+			t.Fatalf("default config missing %q", token)
+		}
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	interfacesSection, ok := cfg.GetSection("interfaces")
+	if !ok {
+		t.Fatalf("expected [interfaces] section in default config")
+	}
+
+	sub, ok := interfacesSection.Subsections["Default Interface"]
+	if !ok {
+		t.Fatalf("expected [[Default Interface]] subsection in default config")
+	}
+
+	if ifaceType, _ := sub.GetProperty("type"); ifaceType != "AutoInterface" {
+		t.Fatalf("Default Interface type = %q, want %q", ifaceType, "AutoInterface")
+	}
+}
+
+func TestParseListProperty(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want []string
+	}{
+		{name: "empty", in: "", want: nil},
+		{name: "single", in: "eth0", want: []string{"eth0"}},
+		{name: "csv", in: "eth0, wlan0", want: []string{"eth0", "wlan0"}},
+		{name: "bracketed csv", in: "[eth0, wlan0]", want: []string{"eth0", "wlan0"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseListProperty(tt.in)
+			if len(got) != len(tt.want) {
+				t.Fatalf("parseListProperty(%q) length = %v, want %v", tt.in, len(got), len(tt.want))
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("parseListProperty(%q)[%v] = %q, want %q", tt.in, i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestNewReticulumCreatesPythonStartupLayout(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	_, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	requiredDirs := []string{
+		filepath.Join(configDir, "storage"),
+		filepath.Join(configDir, "storage", "cache"),
+		filepath.Join(configDir, "storage", "cache", "announces"),
+		filepath.Join(configDir, "storage", "resources"),
+		filepath.Join(configDir, "storage", "identities"),
+		filepath.Join(configDir, "storage", "blackhole"),
+		filepath.Join(configDir, "interfaces"),
+	}
+
+	for _, dir := range requiredDirs {
+		info, err := os.Stat(dir)
+		if err != nil {
+			t.Fatalf("Stat(%q) error = %v", dir, err)
+		}
+		if !info.IsDir() {
+			t.Fatalf("%q is not a directory", dir)
+		}
+	}
+}
+
+func TestReticulumOptionParitySliceNetworkIdentityAndBooleans(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	origMTU := linkMTUDiscoveryEnabled()
+	origImplicit := shouldUseImplicitProof()
+	defer func() {
+		setLinkMTUDiscoveryEnabled(origMTU)
+		setUseImplicitProof(origImplicit)
+	}()
+
+	configDir := t.TempDir()
+	networkIdentityPath := filepath.Join(configDir, "storage", "identities", "network-id")
+	config := `[reticulum]
+share_instance = No
+network_identity = ` + networkIdentityPath + `
+link_mtu_discovery = No
+use_implicit_proof = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if r.networkIdentity == nil {
+		t.Fatalf("expected network identity to be initialized")
+	}
+	if _, err := os.Stat(networkIdentityPath); err != nil {
+		t.Fatalf("expected network identity file at %q: %v", networkIdentityPath, err)
+	}
+	if got := r.transport.NetworkIdentityHash(); len(got) == 0 {
+		t.Fatalf("expected transport network identity hash to be set")
+	}
+
+	if r.linkMTUDiscovery {
+		t.Fatalf("expected link_mtu_discovery = false from config")
+	}
+	if linkMTUDiscoveryEnabled() {
+		t.Fatalf("expected global link_mtu_discovery to be false")
+	}
+
+	if r.useImplicitProof {
+		t.Fatalf("expected use_implicit_proof = false from config")
+	}
+	if shouldUseImplicitProof() {
+		t.Fatalf("expected global use_implicit_proof to be false")
+	}
+
+	l, err := NewLink(nil)
+	if err != nil {
+		t.Fatalf("NewLink() error = %v", err)
+	}
+	if got := l.signallingBytes(); len(got) != 0 {
+		t.Fatalf("expected signalling bytes omitted when link_mtu_discovery disabled, got len=%v", len(got))
+	}
+}
+
+func TestSerialInterfaceMissingPortDoesNotRegister(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[Serial Missing Port]]
+    type = SerialInterface
+    enabled = Yes
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0", got)
+	}
+}
+
+func TestKISSInterfaceMissingPortDoesNotRegister(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[KISS Missing Port]]
+    type = KISSInterface
+    enabled = Yes
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0", got)
+	}
+}
+
+func TestKISSInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
+	if runtime.GOOS == "linux" {
+		t.Skip("unsupported-platform behavior test")
+	}
+
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[KISS Unsupported]]
+    type = KISSInterface
+    enabled = Yes
+    port = /dev/ttyUSB0
+    speed = 9600
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0", got)
+	}
+}
+
+func TestAX25KISSInterfaceMissingPortDoesNotRegister(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[AX25 Missing Port]]
+    type = AX25KISSInterface
+    enabled = Yes
+    callsign = N0CALL
+    ssid = 0
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0", got)
+	}
+}
+
+func TestAX25KISSInterfaceMissingCallsignDoesNotRegister(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[AX25 Missing Callsign]]
+    type = AX25KISSInterface
+    enabled = Yes
+    port = /dev/ttyUSB0
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0", got)
+	}
+}
+
+func TestAX25KISSInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
+	if runtime.GOOS == "linux" {
+		t.Skip("unsupported-platform behavior test")
+	}
+
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[AX25 Unsupported]]
+    type = AX25KISSInterface
+    enabled = Yes
+    port = /dev/ttyUSB0
+    callsign = N0CALL
+    ssid = 0
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0", got)
+	}
+}
+
+func TestPipeInterfaceMissingCommandDoesNotRegister(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[Pipe Missing Command]]
+    type = PipeInterface
+    enabled = Yes
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0", got)
+	}
+}
+
+func TestPipeInterfaceBadCommandDoesNotRegister(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[Pipe Bad Command]]
+    type = PipeInterface
+    enabled = Yes
+    command = /this/command/does/not/exist
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0", got)
+	}
+}
+
+func TestBackboneInterfaceMissingPortDoesNotRegister(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[Backbone Missing Port]]
+    type = BackboneInterface
+    enabled = Yes
+    listen_ip = 127.0.0.1
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0", got)
+	}
+}
+
+func TestBackboneClientInterfaceMissingTargetDoesNotRegister(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[Backbone Client Missing Target]]
+    type = BackboneClientInterface
+    enabled = Yes
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0", got)
+	}
+}
+
+func TestI2PInterfaceMissingConfigDoesNotRegister(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[I2P Missing Config]]
+    type = I2PInterface
+    enabled = Yes
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0", got)
+	}
+}
+
+func TestI2PInterfaceConnectableMissingPortDoesNotRegister(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[I2P Missing Connectable Port]]
+    type = I2PInterface
+    enabled = Yes
+    connectable = Yes
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0", got)
+	}
+}
+
+func TestI2PInterfacePeerConfigRegisters(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[I2P Peer]]
+    type = I2PInterface
+    enabled = Yes
+    peers = 127.0.0.1:9
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 1 {
+		t.Fatalf("registered interfaces = %v, want 1", got)
+	}
+
+	if got := r.transport.GetInterfaces()[0].Type(); got != "I2PInterfacePeer" {
+		t.Fatalf("registered interface type = %q, want I2PInterfacePeer", got)
+	}
+}
+
+func TestI2PInterfaceConnectableRegisters(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[I2P Connectable]]
+    type = I2PInterface
+    enabled = Yes
+    connectable = Yes
+    bind_ip = 127.0.0.1
+    bind_port = 37435
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 1 {
+		t.Fatalf("registered interfaces = %v, want 1", got)
+	}
+
+	if got := r.transport.GetInterfaces()[0].Type(); got != "I2PInterface" {
+		t.Fatalf("registered interface type = %q, want I2PInterface", got)
+	}
+}
+
+func TestRNodeInterfaceMissingPortDoesNotRegister(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[RNode Missing Port]]
+    type = RNodeInterface
+    enabled = Yes
+    frequency = 433050000
+    bandwidth = 125000
+    txpower = 10
+    spreadingfactor = 7
+    codingrate = 5
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0", got)
+	}
+}
+
+func TestRNodeInterfaceMissingRequiredFieldsDoesNotRegister(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[RNode Missing Required]]
+    type = RNodeInterface
+    enabled = Yes
+    port = /dev/ttyUSB0
+    bandwidth = 125000
+    txpower = 10
+    spreadingfactor = 7
+    codingrate = 5
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0", got)
+	}
+}
+
+func TestRNodeInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
+	if runtime.GOOS == "linux" {
+		t.Skip("unsupported-platform behavior test")
+	}
+
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[RNode Unsupported]]
+    type = RNodeInterface
+    enabled = Yes
+    port = /dev/ttyUSB0
+    frequency = 433050000
+    bandwidth = 125000
+    txpower = 10
+    spreadingfactor = 7
+    codingrate = 5
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0", got)
+	}
+}
+
+func TestWeaveInterfaceMissingPortDoesNotRegister(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[Weave Missing Port]]
+    type = WeaveInterface
+    enabled = Yes
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0", got)
+	}
+}
+
+func TestWeaveInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
+	if runtime.GOOS == "linux" {
+		t.Skip("unsupported-platform behavior test")
+	}
+
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[Weave Unsupported]]
+    type = WeaveInterface
+    enabled = Yes
+    port = /dev/ttyUSB0
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0", got)
+	}
+}
+
+func TestRNodeMultiInterfaceNoSubinterfacesDoesNotRegister(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[RNode Multi Missing Subs]]
+    type = RNodeMultiInterface
+    enabled = Yes
+    port = /dev/ttyUSB0
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0", got)
+	}
+}
+
+func TestRNodeMultiInterfaceMultipleEnabledSubsDoesNotRegister(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[RNode Multi Two Subs]]
+    type = RNodeMultiInterface
+    enabled = Yes
+    port = /dev/ttyUSB0
+
+    [[[sub0]]]
+      interface_enabled = Yes
+      frequency = 433050000
+      bandwidth = 125000
+      txpower = 10
+      spreadingfactor = 7
+      codingrate = 5
+
+    [[[sub1]]]
+      interface_enabled = Yes
+      frequency = 433150000
+      bandwidth = 125000
+      txpower = 10
+      spreadingfactor = 7
+      codingrate = 5
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0", got)
+	}
+}
+
+func TestRNodeMultiInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
+	if runtime.GOOS == "linux" {
+		t.Skip("unsupported-platform behavior test")
+	}
+
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[RNode Multi Unsupported]]
+    type = RNodeMultiInterface
+    enabled = Yes
+    port = /dev/ttyUSB0
+
+    [[[sub0]]]
+      interface_enabled = Yes
+      frequency = 433050000
+      bandwidth = 125000
+      txpower = 10
+      spreadingfactor = 7
+      codingrate = 5
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0", got)
+	}
+}
+
+func TestSerialInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
+	if runtime.GOOS == "linux" {
+		t.Skip("unsupported-platform behavior test")
+	}
+
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+  [[Serial Unsupported]]
+    type = SerialInterface
+    enabled = Yes
+    port = /dev/ttyUSB0
+    speed = 9600
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if got := len(r.transport.GetInterfaces()); got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0", got)
+	}
+}
+
+func TestReticulumOptionParityRemoteManagementAndProbes(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	hash1 := "00112233445566778899aabbccddeeff"
+	hash2 := "ffeeddccbbaa99887766554433221100"
+	config := `[reticulum]
+share_instance = No
+enable_remote_management = Yes
+respond_to_probes = Yes
+remote_management_allowed = [` + hash1 + `, ` + strings.ToUpper(hash1) + `, ` + hash2 + `]
+
+[logging]
+loglevel = 4
+
+[interfaces]
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if !r.remoteMgmtEnabled {
+		t.Fatalf("expected enable_remote_management = true")
+	}
+	if !r.allowProbes {
+		t.Fatalf("expected respond_to_probes = true")
+	}
+	if len(r.remoteMgmtAllowed) != 2 {
+		t.Fatalf("expected 2 unique remote_management_allowed hashes, got %v", len(r.remoteMgmtAllowed))
+	}
+
+	want1 := []byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}
+	want2 := []byte{0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x99, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00}
+
+	seen1 := false
+	seen2 := false
+	for _, got := range r.remoteMgmtAllowed {
+		if bytes.Equal(got, want1) {
+			seen1 = true
+		}
+		if bytes.Equal(got, want2) {
+			seen2 = true
+		}
+	}
+	if !seen1 || !seen2 {
+		t.Fatalf("unexpected remote management ACL contents: %x", r.remoteMgmtAllowed)
+	}
+}
+
+func TestReticulumOptionParityRemoteManagementAllowedInvalidLength(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+remote_management_allowed = [abcd]
+
+[logging]
+loglevel = 4
+
+[interfaces]
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	if _, err := NewReticulum(configDir); err == nil {
+		t.Fatalf("expected NewReticulum() to fail for invalid remote_management_allowed hash length")
+	}
+}
+
+func TestReticulumOptionParityRemoteManagementAllowedInvalidHex(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+remote_management_allowed = [00112233445566778899aabbccddeezz]
+
+[logging]
+loglevel = 4
+
+[interfaces]
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	if _, err := NewReticulum(configDir); err == nil {
+		t.Fatalf("expected NewReticulum() to fail for invalid remote_management_allowed hex")
+	}
+}
+
+func TestReticulumOptionParityForceBitratePanicAndDiscover(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	origPanic := panicOnInterfaceErrorEnabled()
+	defer setPanicOnInterfaceErrorEnabled(origPanic)
+
+	sharedPort := reserveTCPPort(t)
+	configDir := t.TempDir()
+	forcedBitrate := 24680
+
+	config := `[reticulum]
+share_instance = Yes
+shared_instance_type = tcp
+shared_instance_port = ` + strconv.Itoa(sharedPort) + `
+force_shared_instance_bitrate = ` + strconv.Itoa(forcedBitrate) + `
+panic_on_interface_error = Yes
+discover_interfaces = Yes
+
+[logging]
+loglevel = 4
+
+[interfaces]
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if !r.panicOnIfaceError {
+		t.Fatalf("expected panic_on_interface_error=true")
+	}
+	if !panicOnInterfaceErrorEnabled() {
+		t.Fatalf("expected global panic_on_interface_error=true")
+	}
+
+	if !r.discoverInterfaces {
+		t.Fatalf("expected discover_interfaces=true")
+	}
+	if r.transport.DiscoverInterfacesCallCount() == 0 {
+		t.Fatalf("expected discover interfaces hook to be invoked")
+	}
+
+	if r.forceSharedBitrate != forcedBitrate {
+		t.Fatalf("expected force_shared_instance_bitrate=%v, got %v", forcedBitrate, r.forceSharedBitrate)
+	}
+	if r.sharedInstanceInterface == nil {
+		t.Fatalf("expected local shared interface to be initialized")
+	}
+	if got := r.sharedInstanceInterface.Bitrate(); got != forcedBitrate {
+		t.Fatalf("expected shared interface bitrate=%v, got %v", forcedBitrate, got)
+	}
+}
+
+func TestReticulumOptionParityDiscoveryAndBlackholeSettings(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	bh1 := "11223344556677889900aabbccddeeff"
+	bh2 := "ffeeddccbbaa00998877665544332211"
+	is1 := "0102030405060708090a0b0c0d0e0f10"
+	is2 := "a1a2a3a4a5a6a7a8a9aaabacadaeaf01"
+
+	config := `[reticulum]
+share_instance = No
+required_discovery_value = 7
+publish_blackhole = Yes
+blackhole_sources = [` + bh1 + `, ` + strings.ToUpper(bh1) + `, ` + bh2 + `]
+interface_discovery_sources = [` + is1 + `, ` + strings.ToUpper(is1) + `, ` + is2 + `]
+autoconnect_discovered_interfaces = 3
+
+[logging]
+loglevel = 4
+
+[interfaces]
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+
+	if r.requiredDiscoveryV != 7 {
+		t.Fatalf("expected required_discovery_value=7, got %v", r.requiredDiscoveryV)
+	}
+	if !r.publishBlackhole {
+		t.Fatalf("expected publish_blackhole=true")
+	}
+	if r.autoconnectDiscover != 3 {
+		t.Fatalf("expected autoconnect_discovered_interfaces=3, got %v", r.autoconnectDiscover)
+	}
+
+	if len(r.blackholeSources) != 2 {
+		t.Fatalf("expected 2 unique blackhole_sources, got %v", len(r.blackholeSources))
+	}
+	if len(r.interfaceSources) != 2 {
+		t.Fatalf("expected 2 unique interface_discovery_sources, got %v", len(r.interfaceSources))
+	}
+}
+
+func TestReticulumOptionParityDiscoveryValueNonPositiveClears(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+required_discovery_value = 0
+
+[logging]
+loglevel = 4
+
+[interfaces]
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	r, err := NewReticulum(configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+	if r.requiredDiscoveryV != 0 {
+		t.Fatalf("expected required_discovery_value to clear to 0, got %v", r.requiredDiscoveryV)
+	}
+}
+
+func TestReticulumOptionParityBlackholeSourcesInvalidLength(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+blackhole_sources = [abcd]
+
+[logging]
+loglevel = 4
+
+[interfaces]
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	if _, err := NewReticulum(configDir); err == nil {
+		t.Fatalf("expected NewReticulum() to fail for invalid blackhole_sources hash length")
+	}
+}
+
+func TestReticulumOptionParityBlackholeSourcesInvalidHex(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+blackhole_sources = [00112233445566778899aabbccddeezz]
+
+[logging]
+loglevel = 4
+
+[interfaces]
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	if _, err := NewReticulum(configDir); err == nil {
+		t.Fatalf("expected NewReticulum() to fail for invalid blackhole_sources hex")
+	}
+}
+
+func TestReticulumOptionParityInterfaceDiscoverySourcesInvalidLength(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+interface_discovery_sources = [abcd]
+
+[logging]
+loglevel = 4
+
+[interfaces]
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	if _, err := NewReticulum(configDir); err == nil {
+		t.Fatalf("expected NewReticulum() to fail for invalid interface_discovery_sources hash length")
+	}
+}
+
+func TestReticulumOptionParityInterfaceDiscoverySourcesInvalidHex(t *testing.T) {
+	ResetTransport()
+	defer ResetTransport()
+
+	configDir := t.TempDir()
+	config := `[reticulum]
+share_instance = No
+interface_discovery_sources = [00112233445566778899aabbccddeezz]
+
+[logging]
+loglevel = 4
+
+[interfaces]
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	if _, err := NewReticulum(configDir); err == nil {
+		t.Fatalf("expected NewReticulum() to fail for invalid interface_discovery_sources hex")
+	}
+}
+
+func TestParseIFACConfig(t *testing.T) {
+	sub := &ConfigSection{Properties: map[string]string{
+		"ifac_netname": "mesh-alpha",
+		"ifac_netkey":  "key-material",
+		"ifac_size":    "32",
+	}}
+
+	cfg := parseIFACConfig(sub)
+	if !cfg.Enabled {
+		t.Fatalf("expected IFAC config to be enabled")
+	}
+	if cfg.NetName != "mesh-alpha" {
+		t.Fatalf("netname mismatch: got %q", cfg.NetName)
+	}
+	if cfg.NetKey != "key-material" {
+		t.Fatalf("netkey mismatch: got %q", cfg.NetKey)
+	}
+	if cfg.Size != 4 {
+		t.Fatalf("size mismatch: got %v", cfg.Size)
+	}
+}
+
+func TestParseIFACConfigAliases(t *testing.T) {
+	sub := &ConfigSection{Properties: map[string]string{
+		"network_name": "mesh-beta",
+		"pass_phrase":  "secret-pass",
+		"ifac_size":    "16",
+	}}
+
+	cfg := parseIFACConfig(sub)
+	if !cfg.Enabled {
+		t.Fatalf("expected alias IFAC config to be enabled")
+	}
+	if cfg.NetName != "mesh-beta" {
+		t.Fatalf("alias netname mismatch: got %q", cfg.NetName)
+	}
+	if cfg.NetKey != "secret-pass" {
+		t.Fatalf("alias netkey mismatch: got %q", cfg.NetKey)
+	}
+	if cfg.Size != 2 {
+		t.Fatalf("alias size mismatch: got %v", cfg.Size)
+	}
+}
+
+func TestParseIFACConfigSizeOnlyDoesNotEnable(t *testing.T) {
+	sub := &ConfigSection{Properties: map[string]string{
+		"ifac_size": "64",
+	}}
+
+	cfg := parseIFACConfig(sub)
+	if cfg.Enabled {
+		t.Fatalf("expected size-only IFAC config to remain disabled")
+	}
+}
+
+func TestParseIFACConfigDisabledByDefault(t *testing.T) {
+	sub := &ConfigSection{Properties: map[string]string{}}
+	cfg := parseIFACConfig(sub)
+	if cfg.Enabled {
+		t.Fatalf("expected empty IFAC config to be disabled")
+	}
+}

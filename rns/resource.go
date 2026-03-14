@@ -1,0 +1,811 @@
+// Copyright 2026 Glenn Lewis. All rights reserved.
+//
+// Use of this source code is governed by the Reticulum License
+// that can be found in the LICENSE file.
+
+package rns
+
+import (
+	"bytes"
+	"crypto/rand"
+	"fmt"
+	"math"
+	"sync"
+	"time"
+
+	vendoredbzip2 "github.com/gmlewis/go-reticulum/compress/bzip2"
+	"github.com/gmlewis/go-reticulum/rns/msgpack"
+)
+
+var resourceRandRead = rand.Read
+
+// Resource constants
+const (
+	ResourceMapHashLen          = 4
+	ResourceRandomHashSize      = 4
+	ResourceAutoCompressMaxSize = 64 * 1024 * 1024
+)
+
+type ResourceOptions struct {
+	AutoCompress      bool
+	AutoCompressLimit int
+	CompressionLevel  int
+}
+
+func (o ResourceOptions) normalized() ResourceOptions {
+	norm := o
+	if norm.AutoCompressLimit <= 0 {
+		norm.AutoCompressLimit = ResourceAutoCompressMaxSize
+	}
+	if norm.CompressionLevel == 0 {
+		norm.CompressionLevel = vendoredbzip2.DefaultCompression
+	}
+	return norm
+}
+
+// Resource status constants
+const (
+	ResourceStatusNone          = 0x00
+	ResourceStatusQueued        = 0x01
+	ResourceStatusAdvertised    = 0x02
+	ResourceStatusTransferring  = 0x03
+	ResourceStatusAwaitingProof = 0x04
+	ResourceStatusAssembling    = 0x05
+	ResourceStatusComplete      = 0x06
+	ResourceStatusFailed        = 0x07
+	ResourceStatusCorrupt       = 0x08
+	ResourceStatusRejected      = 0x00
+)
+
+// ResourceAdvertisement constants
+const (
+	ResourceAdvOverhead = 134
+)
+
+// ResourceAdvertisement represents a resource advertisement packet data.
+type ResourceAdvertisement struct {
+	T int64  `msgpack:"t"` // Transfer size
+	D int64  `msgpack:"d"` // Data size
+	N int    `msgpack:"n"` // Number of parts
+	H []byte `msgpack:"h"` // Resource hash
+	R []byte `msgpack:"r"` // Resource random hash
+	O []byte `msgpack:"o"` // Original hash
+	I int    `msgpack:"i"` // Segment index
+	L int    `msgpack:"l"` // Total segments
+	Q []byte `msgpack:"q"` // Request ID
+	F byte   `msgpack:"f"` // Resource flags
+	M []byte `msgpack:"m"` // Resource hashmap
+
+	// Decoded flags
+	Encrypted   bool
+	Compressed  bool
+	Split       bool
+	IsRequest   bool
+	IsResponse  bool
+	HasMetadata bool
+}
+
+// Pack serializes the ResourceAdvertisement.
+func (adv *ResourceAdvertisement) Pack() ([]byte, error) {
+	// Encode flags
+	adv.F = 0
+	if adv.Encrypted {
+		adv.F |= 0x01
+	}
+	if adv.Compressed {
+		adv.F |= 0x02
+	}
+	if adv.Split {
+		adv.F |= 0x04
+	}
+	if adv.IsRequest {
+		adv.F |= 0x08
+	}
+	if adv.IsResponse {
+		adv.F |= 0x10
+	}
+	if adv.HasMetadata {
+		adv.F |= 0x20
+	}
+
+	m := map[string]any{
+		"t": adv.T,
+		"d": adv.D,
+		"n": adv.N,
+		"h": adv.H,
+		"r": adv.R,
+		"o": adv.O,
+		"i": adv.I,
+		"l": adv.L,
+		"q": adv.Q,
+		"f": adv.F,
+		"m": adv.M,
+	}
+	return msgpack.Pack(m)
+}
+
+// UnpackResourceAdvertisement deserializes data into a ResourceAdvertisement.
+func UnpackResourceAdvertisement(data []byte) (*ResourceAdvertisement, error) {
+	unpacked, err := msgpack.Unpack(data)
+	if err != nil {
+		return nil, err
+	}
+
+	m, ok := unpacked.(map[any]any)
+	if !ok {
+		return nil, fmt.Errorf("invalid resource advertisement format")
+	}
+
+	adv := &ResourceAdvertisement{}
+	toInt64 := func(v any) (int64, bool) {
+		switch n := v.(type) {
+		case int:
+			return int64(n), true
+		case int8:
+			return int64(n), true
+		case int16:
+			return int64(n), true
+		case int32:
+			return int64(n), true
+		case int64:
+			return n, true
+		case uint:
+			return int64(n), true
+		case uint8:
+			return int64(n), true
+		case uint16:
+			return int64(n), true
+		case uint32:
+			return int64(n), true
+		case uint64:
+			return int64(n), true
+		default:
+			return 0, false
+		}
+	}
+
+	// Helper to extract values from map
+	getVal := func(key string) any {
+		return m[key]
+	}
+
+	if v := getVal("t"); v != nil {
+		if n, ok := toInt64(v); ok {
+			adv.T = n
+		}
+	}
+	if v := getVal("d"); v != nil {
+		if n, ok := toInt64(v); ok {
+			adv.D = n
+		}
+	}
+	if v := getVal("n"); v != nil {
+		if n, ok := toInt64(v); ok {
+			adv.N = int(n)
+		}
+	}
+	if v := getVal("h"); v != nil {
+		adv.H = v.([]byte)
+	}
+	if v := getVal("r"); v != nil {
+		adv.R = v.([]byte)
+	}
+	if v := getVal("o"); v != nil {
+		adv.O = v.([]byte)
+	}
+	if v := getVal("i"); v != nil {
+		if n, ok := toInt64(v); ok {
+			adv.I = int(n)
+		}
+	}
+	if v := getVal("l"); v != nil {
+		if n, ok := toInt64(v); ok {
+			adv.L = int(n)
+		}
+	}
+	if v := getVal("q"); v != nil {
+		adv.Q = v.([]byte)
+	}
+	if v := getVal("f"); v != nil {
+		if n, ok := toInt64(v); ok {
+			adv.F = byte(n)
+		}
+	}
+	if v := getVal("m"); v != nil {
+		adv.M = v.([]byte)
+	}
+
+	adv.Encrypted = (adv.F & 0x01) != 0
+	adv.Compressed = (adv.F & 0x02) != 0
+	adv.Split = (adv.F & 0x04) != 0
+	adv.IsRequest = (adv.F & 0x08) != 0
+	adv.IsResponse = (adv.F & 0x10) != 0
+	adv.HasMetadata = (adv.F & 0x20) != 0
+
+	return adv, nil
+}
+
+// Reject rejects a resource advertisement.
+func Reject(packet *Packet) error {
+	adv, err := UnpackResourceAdvertisement(packet.Data)
+	if err != nil {
+		return err
+	}
+
+	l, ok := packet.Destination.(*Link)
+	if !ok {
+		return fmt.Errorf("packet destination is not a link")
+	}
+
+	rejectPacket := NewPacket(l, adv.H)
+	rejectPacket.Context = ContextResourceRcl
+	return rejectPacket.Send()
+}
+
+// Accept accepts a resource advertisement.
+func Accept(packet *Packet, callback func(*Resource), startedCallback func(*Resource), progressCallback func(*Resource)) (*Resource, error) {
+	adv, err := UnpackResourceAdvertisement(packet.Data)
+	if err != nil {
+		return nil, err
+	}
+
+	l, ok := packet.Destination.(*Link)
+	if !ok {
+		return nil, fmt.Errorf("packet destination is not a link")
+	}
+
+	r := &Resource{
+		link:             l,
+		initiator:        false,
+		status:           ResourceStatusTransferring,
+		size:             adv.T,
+		uncompressedSize: adv.D,
+		totalSize:        adv.D,
+		hash:             adv.H,
+		randomHash:       adv.R,
+		originalHash:     adv.O,
+		totalParts:       adv.N,
+		callback:         callback,
+		progressCallback: progressCallback,
+		requestID:        copyBytes(adv.Q),
+		isResponse:       adv.IsResponse,
+		encrypted:        adv.Encrypted,
+		compressed:       adv.Compressed,
+		lastActivity:     time.Now(),
+		window:           4,
+		windowMax:        10,
+		windowMin:        2,
+	}
+
+	r.parts = make([]*ResourcePart, r.totalParts)
+	r.hashmap = make([][]byte, r.totalParts)
+	for i := 0; i < r.totalParts; i++ {
+		r.parts[i] = &ResourcePart{Index: i}
+	}
+
+	for i := 0; i+ResourceMapHashLen <= len(adv.M) && (i/ResourceMapHashLen) < r.totalParts; i += ResourceMapHashLen {
+		idx := i / ResourceMapHashLen
+		mh := copyBytes(adv.M[i : i+ResourceMapHashLen])
+		r.hashmap[idx] = mh
+		r.parts[idx].MapHash = mh
+	}
+
+	l.mu.Lock()
+	l.incomingResources = append(l.incomingResources, r)
+	l.mu.Unlock()
+
+	Logf("Accepted resource advertisement for %x", LogDebug, false, r.hash)
+
+	if startedCallback != nil {
+		go startedCallback(r)
+	}
+
+	go func() {
+		if err := r.RequestNext(); err != nil {
+			Logf("Failed to request initial resource parts: %v", LogDebug, false, err)
+		}
+	}()
+
+	return r, nil
+}
+
+// Resource handles transferring arbitrary amounts of data over a link.
+type Resource struct {
+	link             *Link
+	initiator        bool
+	data             []byte
+	uncompressedData []byte
+	hash             []byte
+	expectedProof    []byte
+	randomHash       []byte
+	originalHash     []byte
+	status           int
+
+	size             int64
+	totalSize        int64
+	uncompressedSize int64
+
+	parts         []*ResourcePart
+	hashmap       [][]byte
+	totalParts    int
+	receivedCount int
+
+	window    int
+	windowMax int
+	windowMin int
+
+	lastActivity time.Time
+
+	callback         func(*Resource)
+	progressCallback func(*Resource)
+	requestID        []byte
+	isResponse       bool
+	encrypted        bool
+	compressed       bool
+	sentParts        int
+
+	mu sync.Mutex
+}
+
+// ResourcePart represents a single part of a resource transfer.
+type ResourcePart struct {
+	Data         []byte // Original data for outgoing
+	ReceivedData []byte // Data received for incoming
+	Hash         []byte
+	MapHash      []byte
+	Index        int
+	Sent         bool
+}
+
+// NewResource creates a new resource for transmission.
+func NewResource(data []byte, link *Link) (*Resource, error) {
+	return NewResourceWithOptions(data, link, ResourceOptions{})
+}
+
+// NewResourceWithOptions creates a new resource for transmission with explicit compression policy.
+func NewResourceWithOptions(data []byte, link *Link, opts ResourceOptions) (*Resource, error) {
+	if link.status != LinkActive {
+		return nil, fmt.Errorf("link is not active")
+	}
+
+	r := &Resource{
+		link:             link,
+		initiator:        true,
+		uncompressedData: data,
+		status:           ResourceStatusQueued,
+		window:           4,
+		windowMax:        10,
+		windowMin:        2,
+	}
+
+	normOpts := opts.normalized()
+	payload := data
+	r.uncompressedSize = int64(len(data))
+	r.totalSize = r.uncompressedSize
+	r.compressed = false
+	if normOpts.AutoCompress && len(data) <= normOpts.AutoCompressLimit {
+		compressedPayload, err := CompressBzip2(data, normOpts.CompressionLevel)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compress resource payload: %w", err)
+		}
+		if len(compressedPayload) < len(data) {
+			payload = compressedPayload
+			r.compressed = true
+		}
+	}
+
+	r.randomHash = make([]byte, ResourceRandomHashSize)
+	if _, err := resourceRandRead(r.randomHash); err != nil {
+		return nil, fmt.Errorf("failed to generate random hash for resource: %w", err)
+	}
+
+	hashMaterial := make([]byte, 0, len(data)+len(r.randomHash))
+	hashMaterial = append(hashMaterial, data...)
+	hashMaterial = append(hashMaterial, r.randomHash...)
+	r.hash = FullHash(hashMaterial)
+	r.expectedProof = FullHash(append(copyBytes(data), r.hash...))
+	r.originalHash = r.hash
+
+	resourcePlaintext := make([]byte, 0, len(r.randomHash)+len(payload))
+	resourcePlaintext = append(resourcePlaintext, r.randomHash...)
+	resourcePlaintext = append(resourcePlaintext, payload...)
+
+	encryptedStream, err := link.Encrypt(resourcePlaintext)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt resource stream: %w", err)
+	}
+	r.data = encryptedStream
+	r.encrypted = true
+	r.size = int64(len(r.data))
+
+	// Segment data into parts
+	sdu := link.mdu
+	if sdu <= 0 {
+		sdu = MDU
+	}
+
+	r.totalParts = int(math.Ceil(float64(r.size) / float64(sdu)))
+	r.parts = make([]*ResourcePart, r.totalParts)
+	r.hashmap = make([][]byte, r.totalParts)
+
+	for i := 0; i < r.totalParts; i++ {
+		start := i * sdu
+		end := (i + 1) * sdu
+		if end > int(r.size) {
+			end = int(r.size)
+		}
+
+		partData := r.data[start:end]
+		r.parts[i] = &ResourcePart{
+			Data:    partData,
+			Index:   i,
+			MapHash: r.getMapHash(partData),
+		}
+		r.hashmap[i] = r.parts[i].MapHash
+	}
+
+	return r, nil
+}
+
+func (r *Resource) getMapHash(data []byte) []byte {
+	hashMaterial := make([]byte, 0, len(data)+len(r.randomHash))
+	hashMaterial = append(hashMaterial, data...)
+	hashMaterial = append(hashMaterial, r.randomHash...)
+	return FullHash(hashMaterial)[:ResourceMapHashLen]
+}
+
+func (r *Resource) Hash() []byte {
+	return r.hash
+}
+
+// Status returns the current transfer status.
+func (r *Resource) Status() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.status
+}
+
+// Data returns a copy of the assembled resource payload.
+func (r *Resource) Data() []byte {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return copyBytes(r.data)
+}
+
+// GetProgress returns the transfer progress as a float between 0.0 and 1.0.
+func (r *Resource) GetProgress() float64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.totalParts == 0 {
+		return 0.0
+	}
+	return float64(r.receivedCount) / float64(r.totalParts)
+}
+
+// TotalSize returns the total data size of the resource.
+func (r *Resource) TotalSize() int64 {
+	return r.size
+}
+
+// SetCallback sets the completion callback.
+func (r *Resource) SetCallback(cb func(*Resource)) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.callback = cb
+}
+
+// SetProgressCallback sets the progress callback.
+func (r *Resource) SetProgressCallback(cb func(*Resource)) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.progressCallback = cb
+}
+
+// RequestNext is called on incoming resources to request more data.
+func (r *Resource) RequestNext() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.status == ResourceStatusFailed {
+		return fmt.Errorf("resource transfer failed")
+	}
+
+	if r.initiator {
+		return nil
+	}
+
+	if r.receivedCount >= r.totalParts {
+		return nil
+	}
+
+	requestedHashes := make([]byte, 0, r.window*ResourceMapHashLen)
+	requestedParts := 0
+	for i := 0; i < r.totalParts && requestedParts < r.window; i++ {
+		if r.parts[i] == nil || r.parts[i].ReceivedData != nil {
+			continue
+		}
+		if len(r.hashmap[i]) != ResourceMapHashLen {
+			continue
+		}
+		requestedHashes = append(requestedHashes, r.hashmap[i]...)
+		requestedParts++
+	}
+
+	if len(requestedHashes) == 0 {
+		return nil
+	}
+
+	requestData := make([]byte, 0, 1+len(r.hash)+len(requestedHashes))
+	requestData = append(requestData, 0x00)
+	requestData = append(requestData, r.hash...)
+	requestData = append(requestData, requestedHashes...)
+
+	p := NewPacket(r.link, requestData)
+	p.Context = ContextResourceReq
+	if err := p.Send(); err != nil {
+		return err
+	}
+
+	r.lastActivity = time.Now()
+	return nil
+}
+
+// Request is called on outgoing resources to handle incoming data requests.
+func (r *Resource) Request(requestData []byte) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.status == ResourceStatusFailed {
+		return fmt.Errorf("resource transfer failed")
+	}
+
+	if len(requestData) < 1 {
+		return fmt.Errorf("invalid resource request packet")
+	}
+
+	offset := 1
+	if requestData[0] == 0xFF {
+		offset += ResourceMapHashLen
+	}
+
+	if len(requestData) < offset+len(r.hash) {
+		return fmt.Errorf("resource request packet too short")
+	}
+
+	resourceHash := requestData[offset : offset+len(r.hash)]
+	if !bytes.Equal(resourceHash, r.hash) {
+		return fmt.Errorf("resource hash mismatch in request")
+	}
+
+	requestedHashes := requestData[offset+len(r.hash):]
+	for i := 0; i+ResourceMapHashLen <= len(requestedHashes); i += ResourceMapHashLen {
+		mapHash := requestedHashes[i : i+ResourceMapHashLen]
+		for _, part := range r.parts {
+			if !bytes.Equal(part.MapHash, mapHash) {
+				continue
+			}
+			p := NewPacket(r.link, part.Data)
+			p.Context = ContextResource
+			if err := p.Send(); err != nil {
+				return err
+			}
+			if !part.Sent {
+				part.Sent = true
+				r.sentParts++
+			}
+			break
+		}
+	}
+
+	if r.sentParts >= r.totalParts {
+		r.status = ResourceStatusAwaitingProof
+	}
+
+	return nil
+}
+
+// ValidateProof validates an incoming proof for an outgoing resource transfer.
+func (r *Resource) ValidateProof(proofData []byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.status == ResourceStatusFailed || r.status == ResourceStatusComplete {
+		return
+	}
+
+	hashLen := len(r.hash)
+	if hashLen == 0 || len(proofData) != hashLen*2 {
+		r.status = ResourceStatusFailed
+		if r.callback != nil {
+			go r.callback(r)
+		}
+		return
+	}
+
+	proofHash := proofData[:hashLen]
+	proof := proofData[hashLen:]
+	if !bytes.Equal(proofHash, r.hash) || !bytes.Equal(proof, r.expectedProof) {
+		r.status = ResourceStatusFailed
+		if r.callback != nil {
+			go r.callback(r)
+		}
+		return
+	}
+
+	r.status = ResourceStatusComplete
+	if r.callback != nil {
+		go r.callback(r)
+	}
+}
+
+// ReceivePart is called on incoming resources when a data part is received.
+func (r *Resource) ReceivePart(packet *Packet) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.status == ResourceStatusFailed {
+		return fmt.Errorf("resource transfer failed")
+	}
+
+	r.status = ResourceStatusTransferring
+	r.lastActivity = time.Now()
+
+	partData := packet.Data
+	partHash := r.getMapHash(partData)
+	matched := false
+
+	// Check if part matches any in our hashmap
+	for i, mh := range r.hashmap {
+		if bytes.Equal(mh, partHash) {
+			matched = true
+			if r.parts[i] != nil && r.parts[i].ReceivedData == nil {
+				r.parts[i].ReceivedData = partData
+				r.receivedCount++
+
+				if r.progressCallback != nil {
+					go r.progressCallback(r)
+				}
+			}
+			break
+		}
+	}
+
+	if !matched {
+		Logf("Received resource part with unmatched maphash for %x", LogDebug, false, r.hash)
+	}
+
+	if r.receivedCount == r.totalParts {
+		Logf("Received all %v resource parts for %x; assembling", LogDebug, false, r.totalParts, r.hash)
+		go r.Assemble()
+	} else {
+		go func() {
+			if err := r.RequestNext(); err != nil {
+				Logf("Failed to request next resource parts: %v", LogDebug, false, err)
+			}
+		}()
+	}
+
+	return nil
+}
+
+// Assemble assembles the received parts into the final data.
+func (r *Resource) Assemble() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.status = ResourceStatusAssembling
+
+	var buf bytes.Buffer
+	for _, p := range r.parts {
+		if p == nil || p.ReceivedData == nil {
+			r.status = ResourceStatusFailed
+			return
+		}
+		buf.Write(p.ReceivedData)
+	}
+
+	assembled := buf.Bytes()
+	if r.encrypted {
+		plaintext, err := r.link.Decrypt(assembled)
+		if err != nil {
+			Logf("Failed to decrypt assembled resource %x: %v", LogDebug, false, r.hash, err)
+			r.status = ResourceStatusFailed
+			return
+		}
+		assembled = plaintext
+	}
+
+	if len(assembled) < ResourceRandomHashSize {
+		Logf("Assembled resource %x too small to contain random hash", LogDebug, false, r.hash)
+		r.status = ResourceStatusCorrupt
+		return
+	}
+
+	payload := assembled[ResourceRandomHashSize:]
+	if r.compressed {
+		decompressed, err := DecompressBzip2(payload)
+		if err != nil {
+			Logf("Failed to decompress assembled resource %x: %v", LogDebug, false, r.hash, err)
+			r.status = ResourceStatusFailed
+			return
+		}
+		payload = decompressed
+	}
+	calculatedHash := FullHash(append(copyBytes(payload), r.randomHash...))
+	if !bytes.Equal(calculatedHash, r.hash) {
+		Logf("Assembled resource %x failed payload hash validation", LogDebug, false, r.hash)
+		r.status = ResourceStatusCorrupt
+		return
+	}
+
+	r.data = copyBytes(payload)
+	r.status = ResourceStatusComplete
+	if err := r.prove(); err != nil {
+		Logf("Failed to send resource proof for %x: %v", LogDebug, false, r.hash, err)
+	} else {
+		Logf("Sent resource proof for %x", LogDebug, false, r.hash)
+	}
+	if r.callback != nil {
+		go r.callback(r)
+	}
+}
+
+func (r *Resource) prove() error {
+	if r.link == nil || len(r.hash) == 0 {
+		return fmt.Errorf("invalid resource proof state")
+	}
+
+	proofMaterial := make([]byte, 0, len(r.data)+len(r.hash))
+	proofMaterial = append(proofMaterial, r.data...)
+	proofMaterial = append(proofMaterial, r.hash...)
+	proof := FullHash(proofMaterial)
+
+	proofData := make([]byte, 0, len(r.hash)+len(proof))
+	proofData = append(proofData, r.hash...)
+	proofData = append(proofData, proof...)
+
+	p := NewPacket(r.link, proofData)
+	p.PacketType = PacketProof
+	p.Context = ContextResourcePrf
+	return p.Send()
+}
+
+// Advertise sends a resource advertisement.
+func (r *Resource) Advertise() error {
+	hashmapRaw := make([]byte, 0, len(r.hashmap)*ResourceMapHashLen)
+	for _, mh := range r.hashmap {
+		hashmapRaw = append(hashmapRaw, mh...)
+	}
+
+	adv := &ResourceAdvertisement{
+		T:          r.size,
+		D:          r.uncompressedSize,
+		H:          r.hash,
+		R:          r.randomHash,
+		O:          r.hash, // Single segment for now
+		N:          r.totalParts,
+		L:          1, // Total segments
+		I:          1, // Segment index
+		Q:          r.requestID,
+		M:          hashmapRaw,
+		IsRequest:  r.requestID != nil && !r.isResponse,
+		IsResponse: r.requestID != nil && r.isResponse,
+		Encrypted:  r.encrypted,
+		Compressed: r.compressed,
+	}
+
+	data, err := adv.Pack()
+	if err != nil {
+		return err
+	}
+
+	p := NewPacket(r.link, data)
+	p.PacketType = PacketData
+	p.Context = ContextResourceAdv
+
+	r.link.mu.Lock()
+	r.link.outgoingResources = append(r.link.outgoingResources, r)
+	r.link.mu.Unlock()
+
+	return p.Send()
+}

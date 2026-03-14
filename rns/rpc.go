@@ -1,0 +1,1034 @@
+// Copyright 2026 Glenn Lewis. All rights reserved.
+//
+// Use of this source code is governed by the Reticulum License
+// that can be found in the LICENSE file.
+
+package rns
+
+import (
+	"crypto/subtle"
+	"encoding/binary"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"math"
+	"net"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"time"
+
+	"github.com/gmlewis/go-reticulum/rns/msgpack"
+)
+
+func (r *Reticulum) startRPCListener() {
+	if !r.isSharedInstance {
+		return
+	}
+
+	r.ensureRPCKey()
+	if len(r.rpcKey) == 0 {
+		return
+	}
+
+	listener, err := r.makeRPCListener()
+	if err != nil {
+		Logf("Could not start RPC listener: %v", LogError, false, err)
+		return
+	}
+	r.rpcListener = listener
+
+	go r.rpcLoop()
+}
+
+func (r *Reticulum) ensureRPCKey() {
+	if len(r.rpcKey) > 0 || r.transport == nil || r.transport.identity == nil {
+		return
+	}
+	r.rpcKey = FullHash(r.transport.identity.GetPrivateKey())
+}
+
+func (r *Reticulum) makeRPCListener() (net.Listener, error) {
+	useUnix := runtime.GOOS != "windows" && r.sharedInstanceType != "tcp"
+	if useUnix {
+		instance := r.localSocketPath
+		if instance == "" {
+			instance = "default"
+		}
+		if runtime.GOOS == "linux" {
+			return net.Listen("unix", "@rns/"+instance+"/rpc")
+		}
+		rpcPath := filepath.Join(r.configDir, ".rns-"+instance+"-rpc.sock")
+		if err := os.Remove(rpcPath); err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+		return net.Listen("unix", rpcPath)
+	}
+
+	addr := fmt.Sprintf("127.0.0.1:%v", r.localControlPort)
+	return net.Listen("tcp", addr)
+}
+
+func (r *Reticulum) rpcLoop() {
+	for {
+		conn, err := r.rpcListener.Accept()
+		if err != nil {
+			return
+		}
+		go r.handleRPCConn(conn)
+	}
+}
+
+func (r *Reticulum) handleRPCConn(conn net.Conn) {
+	defer func() {
+		if err := conn.Close(); err != nil {
+			Logf("Failed closing RPC connection: %v", LogDebug, false, err)
+		}
+	}()
+
+	authReq, err := readRPCFrame(conn)
+	if err != nil {
+		return
+	}
+	authMap, ok := authReq.(map[any]any)
+	if !ok {
+		return
+	}
+
+	provided, ok := authMap["auth"]
+	if !ok {
+		return
+	}
+
+	if !r.rpcAuthValid(provided) {
+		if err := writeRPCFrame(conn, map[string]any{"error": "unauthorized"}); err != nil {
+			return
+		}
+		return
+	}
+	if err := writeRPCFrame(conn, map[string]any{"ok": true}); err != nil {
+		return
+	}
+
+	for {
+		req, err := readRPCFrame(conn)
+		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				Logf("An error occurred while handling RPC call from local client: %v", LogError, false, err)
+			}
+			return
+		}
+
+		resp := r.handleRPCRequest(req)
+		if err := writeRPCFrame(conn, resp); err != nil {
+			return
+		}
+	}
+}
+
+func (r *Reticulum) rpcAuthValid(auth any) bool {
+	var provided []byte
+	switch v := auth.(type) {
+	case []byte:
+		provided = v
+	case string:
+		decoded, err := hex.DecodeString(strings.TrimSpace(v))
+		if err != nil {
+			return false
+		}
+		provided = decoded
+	default:
+		return false
+	}
+
+	if len(provided) != len(r.rpcKey) {
+		return false
+	}
+	return subtle.ConstantTimeCompare(provided, r.rpcKey) == 1
+}
+
+func readRPCFrame(conn net.Conn) (any, error) {
+	var hdr [4]byte
+	if _, err := io.ReadFull(conn, hdr[:]); err != nil {
+		return nil, err
+	}
+	size := binary.BigEndian.Uint32(hdr[:])
+	if size == 0 {
+		return nil, errors.New("empty rpc frame")
+	}
+	buf := make([]byte, size)
+	if _, err := io.ReadFull(conn, buf); err != nil {
+		return nil, err
+	}
+	return msgpack.Unpack(buf)
+}
+
+func writeRPCFrame(conn net.Conn, v any) error {
+	payload, err := msgpack.Pack(v)
+	if err != nil {
+		return err
+	}
+	var hdr [4]byte
+	binary.BigEndian.PutUint32(hdr[:], uint32(len(payload)))
+	if _, err := conn.Write(hdr[:]); err != nil {
+		return err
+	}
+	_, err = conn.Write(payload)
+	return err
+}
+
+func (r *Reticulum) handleRPCRequest(req any) any {
+	m, ok := req.(map[any]any)
+	if !ok {
+		return map[string]any{"error": "invalid request"}
+	}
+
+	if getPath, ok := m["get"]; ok {
+		path, _ := getPath.(string)
+		switch path {
+		case "interface_stats":
+			return r.getInterfaceStats()
+		case "path_table":
+			maxHops, _ := asOptionalInt(m["max_hops"])
+			return r.getPathTable(maxHops)
+		case "next_hop":
+			if dest, ok := decodeHashArg(m["destination_hash"]); ok {
+				return r.getNextHop(dest)
+			}
+			return nil
+		case "next_hop_if_name":
+			if dest, ok := decodeHashArg(m["destination_hash"]); ok {
+				return r.getNextHopInterfaceName(dest)
+			}
+			return ""
+		case "link_count":
+			return r.getLinkCount()
+		case "rate_table":
+			return r.getRateTable()
+		case "blackholed_identities":
+			return r.getBlackholedIdentities()
+		case "first_hop_timeout":
+			if dest, ok := decodeHashArg(m["destination_hash"]); ok {
+				return r.getFirstHopTimeout(dest)
+			}
+			return 0
+		case "packet_rssi":
+			if packetHash, ok := decodeHashArg(m["packet_hash"]); ok {
+				return r.getPacketRSSI(packetHash)
+			}
+			return nil
+		case "packet_snr":
+			if packetHash, ok := decodeHashArg(m["packet_hash"]); ok {
+				return r.getPacketSNR(packetHash)
+			}
+			return nil
+		case "packet_q":
+			if packetHash, ok := decodeHashArg(m["packet_hash"]); ok {
+				return r.getPacketQ(packetHash)
+			}
+			return nil
+		default:
+			return map[string]any{"error": "unsupported get path"}
+		}
+	}
+
+	if dropPath, ok := m["drop"]; ok {
+		path, _ := dropPath.(string)
+		switch path {
+		case "path":
+			if dest, ok := decodeHashArg(m["destination_hash"]); ok {
+				return r.transport.InvalidatePath(dest)
+			}
+			return false
+		case "all_via":
+			if via, ok := decodeHashArg(m["destination_hash"]); ok {
+				return r.transport.InvalidatePathsViaNextHop(via)
+			}
+			return 0
+		case "announce_queues":
+			return r.dropAnnounceQueues()
+		default:
+			return map[string]any{"error": "unsupported drop path"}
+		}
+	}
+
+	if blackholeIdentity, ok := m["blackhole_identity"]; ok {
+		identityHash, ok := decodeHashArg(blackholeIdentity)
+		if !ok {
+			return false
+		}
+		var until *int64
+		if rawUntil, exists := m["until"]; exists {
+			if untilInt, ok := asOptionalInt64(rawUntil); ok {
+				until = &untilInt
+			}
+		}
+		reason := ""
+		if rv, ok := m["reason"]; ok {
+			reason = asString(rv)
+		}
+		return r.blackholeIdentity(identityHash, until, reason)
+	}
+
+	if unblackholeIdentity, ok := m["unblackhole_identity"]; ok {
+		identityHash, ok := decodeHashArg(unblackholeIdentity)
+		if !ok {
+			return false
+		}
+		return r.unblackholeIdentity(identityHash)
+	}
+
+	return map[string]any{"error": "unsupported rpc request"}
+}
+
+func asOptionalInt(v any) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	case int32:
+		return int(n), true
+	case uint64:
+		return int(n), true
+	case uint32:
+		return int(n), true
+	case float64:
+		return int(n), true
+	default:
+		return 0, false
+	}
+}
+
+func asOptionalInt64(v any) (int64, bool) {
+	switch n := v.(type) {
+	case int:
+		return int64(n), true
+	case int64:
+		return n, true
+	case int32:
+		return int64(n), true
+	case uint64:
+		return int64(n), true
+	case uint32:
+		return int64(n), true
+	case float64:
+		return int64(n), true
+	default:
+		return 0, false
+	}
+}
+
+func decodeHashArg(v any) ([]byte, bool) {
+	switch t := v.(type) {
+	case []byte:
+		if len(t) == 0 {
+			return nil, false
+		}
+		out := make([]byte, len(t))
+		copy(out, t)
+		return out, true
+	case string:
+		t = strings.TrimSpace(t)
+		if t == "" {
+			return nil, false
+		}
+		b, err := hex.DecodeString(t)
+		if err != nil {
+			return nil, false
+		}
+		return b, true
+	default:
+		return nil, false
+	}
+}
+
+func (r *Reticulum) getInterfaceStats() map[string]any {
+	interfacesOut := make([]any, 0)
+	var totalRX uint64
+	var totalTX uint64
+
+	ts := r.transport
+	if ts == nil {
+		return map[string]any{
+			"interfaces":       interfacesOut,
+			"rxb":              totalRX,
+			"txb":              totalTX,
+			"rxs":              0,
+			"txs":              0,
+			"network_id":       nil,
+			"transport_id":     nil,
+			"transport_uptime": nil,
+			"probe_responder":  nil,
+			"rss":              nil,
+		}
+	}
+
+	ifaces := ts.GetInterfaces()
+	for _, iface := range ifaces {
+		rx := iface.BytesReceived()
+		tx := iface.BytesSent()
+		totalRX += rx
+		totalTX += tx
+		interfacesOut = append(interfacesOut, map[string]any{
+			"name":                        iface.Name(),
+			"short_name":                  iface.Name(),
+			"hash":                        []byte(iface.Name()),
+			"type":                        iface.Type(),
+			"rxb":                         rx,
+			"txb":                         tx,
+			"rxs":                         0,
+			"txs":                         0,
+			"status":                      iface.Status(),
+			"mode":                        iface.Mode(),
+			"bitrate":                     iface.Bitrate(),
+			"clients":                     nil,
+			"incoming_announce_frequency": 0.0,
+			"outgoing_announce_frequency": 0.0,
+			"held_announces":              0,
+			"announce_queue":              nil,
+			"peers":                       nil,
+			"ifac_signature":              nil,
+			"ifac_size":                   nil,
+			"ifac_netname":                nil,
+			"autoconnect_source":          nil,
+		})
+	}
+
+	var networkID any
+	if hash := ts.NetworkIdentityHash(); len(hash) > 0 {
+		networkID = hash
+	}
+
+	var transportID any
+	if ts.identity != nil && len(ts.identity.Hash) > 0 {
+		transportID = ts.identity.Hash
+	}
+
+	var transportUptime any
+	if !ts.startedAt.IsZero() {
+		transportUptime = time.Since(ts.startedAt).Seconds()
+	}
+
+	return map[string]any{
+		"interfaces":       interfacesOut,
+		"rxb":              totalRX,
+		"txb":              totalTX,
+		"rxs":              0,
+		"txs":              0,
+		"network_id":       networkID,
+		"transport_id":     transportID,
+		"transport_uptime": transportUptime,
+		"probe_responder":  nil,
+		"rss":              nil,
+	}
+}
+
+func (r *Reticulum) getPathTable(maxHops int) []any {
+	entries := r.transport.GetPathTable()
+	out := make([]any, 0, len(entries))
+	for _, e := range entries {
+		if maxHops > 0 && e.Hops > maxHops {
+			continue
+		}
+		ifName := ""
+		if e.Interface != nil {
+			ifName = e.Interface.Name()
+		}
+		out = append(out, map[string]any{
+			"hash":      e.Hash,
+			"timestamp": float64(e.Timestamp.UnixNano()) / 1e9,
+			"via":       e.NextHop,
+			"hops":      e.Hops,
+			"expires":   float64(e.Expires.UnixNano()) / 1e9,
+			"interface": ifName,
+		})
+	}
+	return out
+}
+
+func (r *Reticulum) getNextHop(destHash []byte) []byte {
+	if r.transport == nil {
+		return nil
+	}
+	entry := r.transport.GetPathEntry(destHash)
+	if entry == nil {
+		return nil
+	}
+	if entry.NextHop == nil {
+		return nil
+	}
+	return entry.NextHop
+}
+
+func (r *Reticulum) getNextHopInterfaceName(destHash []byte) string {
+	if r.transport == nil {
+		return ""
+	}
+	entry := r.transport.GetPathEntry(destHash)
+	if entry == nil || entry.Interface == nil {
+		return ""
+	}
+	return entry.Interface.Name()
+}
+
+func (r *Reticulum) getLinkCount() int {
+	if r.transport == nil {
+		return 0
+	}
+	mu := r.transport.GetMutex()
+	mu.Lock()
+	defer mu.Unlock()
+	return len(r.transport.linkTable)
+}
+
+func (r *Reticulum) getRateTable() []any {
+	if r.transport == nil {
+		return []any{}
+	}
+	rows := r.transport.GetRateTable()
+	out := make([]any, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, row)
+	}
+	return out
+}
+
+func (r *Reticulum) getBlackholedIdentities() []any {
+	if r.transport == nil {
+		return []any{}
+	}
+	rows := r.transport.GetBlackholedIdentities()
+	out := make([]any, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, row)
+	}
+	return out
+}
+
+func (r *Reticulum) getFirstHopTimeout(destinationHash []byte) int {
+	const defaultPerHopTimeout = 6
+	if r.transport == nil {
+		return defaultPerHopTimeout
+	}
+
+	entry := r.transport.GetPathEntry(destinationHash)
+	if entry == nil || entry.Interface == nil || entry.Interface.Bitrate() <= 0 {
+		return defaultPerHopTimeout
+	}
+
+	latencySeconds := (1.0 / float64(entry.Interface.Bitrate())) * 8.0 * float64(MTU)
+	return defaultPerHopTimeout + int(math.Ceil(latencySeconds))
+}
+
+func (r *Reticulum) getPacketRSSI(packetHash []byte) any {
+	if r.transport == nil {
+		return nil
+	}
+	v, ok := r.transport.GetPacketRSSI(packetHash)
+	if !ok {
+		return nil
+	}
+	return v
+}
+
+func (r *Reticulum) getPacketSNR(packetHash []byte) any {
+	if r.transport == nil {
+		return nil
+	}
+	v, ok := r.transport.GetPacketSNR(packetHash)
+	if !ok {
+		return nil
+	}
+	return v
+}
+
+func (r *Reticulum) getPacketQ(packetHash []byte) any {
+	if r.transport == nil {
+		return nil
+	}
+	v, ok := r.transport.GetPacketQ(packetHash)
+	if !ok {
+		return nil
+	}
+	return v
+}
+
+func (r *Reticulum) dropAnnounceQueues() int {
+	if r.transport == nil {
+		return 0
+	}
+	return r.transport.DropAnnounceQueues()
+}
+
+func (r *Reticulum) blackholeIdentity(identityHash []byte, until *int64, reason string) bool {
+	if r.transport == nil {
+		return false
+	}
+	return r.transport.BlackholeIdentity(identityHash, until, reason)
+}
+
+func (r *Reticulum) unblackholeIdentity(identityHash []byte) bool {
+	if r.transport == nil {
+		return false
+	}
+	return r.transport.UnblackholeIdentity(identityHash)
+}
+
+type InterfaceStat struct {
+	Name    string
+	Type    string
+	Status  bool
+	Bitrate int
+	RXB     uint64
+	TXB     uint64
+}
+
+type InterfaceStatsSnapshot struct {
+	Interfaces []InterfaceStat
+	RXB        uint64
+	TXB        uint64
+}
+
+// InterfaceStats returns interface stats from local transport, or via RPC when
+// this instance is connected to a shared local instance.
+func (r *Reticulum) InterfaceStats() (*InterfaceStatsSnapshot, error) {
+	if r.isConnectedToSharedInstance {
+		resp, err := r.callRPC(map[string]any{"get": "interface_stats"})
+		if err != nil {
+			return nil, err
+		}
+		return decodeInterfaceStats(resp), nil
+	}
+
+	local := r.getInterfaceStats()
+	return decodeInterfaceStats(local), nil
+}
+
+func (r *Reticulum) PathTable(maxHops int) ([]any, error) {
+	if r.isConnectedToSharedInstance {
+		resp, err := r.callRPC(map[string]any{"get": "path_table", "max_hops": maxHops})
+		if err != nil {
+			return nil, err
+		}
+		if out, ok := resp.([]any); ok {
+			return out, nil
+		}
+		return []any{}, nil
+	}
+	return r.getPathTable(maxHops), nil
+}
+
+func (r *Reticulum) RateTable() ([]any, error) {
+	if r.isConnectedToSharedInstance {
+		resp, err := r.callRPC(map[string]any{"get": "rate_table"})
+		if err != nil {
+			return nil, err
+		}
+		if out, ok := resp.([]any); ok {
+			return out, nil
+		}
+		return []any{}, nil
+	}
+	return r.getRateTable(), nil
+}
+
+func (r *Reticulum) BlackholedIdentities() ([]any, error) {
+	if r.isConnectedToSharedInstance {
+		resp, err := r.callRPC(map[string]any{"get": "blackholed_identities"})
+		if err != nil {
+			return nil, err
+		}
+		if out, ok := resp.([]any); ok {
+			return out, nil
+		}
+		return []any{}, nil
+	}
+	return r.getBlackholedIdentities(), nil
+}
+
+func (r *Reticulum) NextHop(destinationHash []byte) ([]byte, error) {
+	if r.isConnectedToSharedInstance {
+		resp, err := r.callRPC(map[string]any{"get": "next_hop", "destination_hash": destinationHash})
+		if err != nil {
+			return []byte{}, fmt.Errorf("rpc next_hop failed: %w", err)
+		}
+		if out, ok := decodeHashArg(resp); ok {
+			return out, nil
+		}
+		return []byte{}, nil
+	}
+	return r.getNextHop(destinationHash), nil
+}
+
+func (r *Reticulum) NextHopInterfaceName(destinationHash []byte) (string, error) {
+	if r.isConnectedToSharedInstance {
+		resp, err := r.callRPC(map[string]any{"get": "next_hop_if_name", "destination_hash": destinationHash})
+		if err != nil {
+			return "", fmt.Errorf("rpc next_hop_if_name failed: %w", err)
+		}
+		return asString(resp), nil
+	}
+	return r.getNextHopInterfaceName(destinationHash), nil
+}
+
+func (r *Reticulum) LinkCount() (int, error) {
+	if r.isConnectedToSharedInstance {
+		resp, err := r.callRPC(map[string]any{"get": "link_count"})
+		if err != nil {
+			return 0, err
+		}
+		return asInt(resp), nil
+	}
+	return r.getLinkCount(), nil
+}
+
+func (r *Reticulum) FirstHopTimeout(destinationHash []byte) (int, error) {
+	if r.isConnectedToSharedInstance {
+		resp, err := r.callRPC(map[string]any{"get": "first_hop_timeout", "destination_hash": destinationHash})
+		if err != nil {
+			return 6, fmt.Errorf("rpc first_hop_timeout failed: %w", err)
+		}
+		timeout := asInt(resp)
+		if r.forceSharedBitrate > 0 {
+			simulatedLatency := int(math.Ceil((1.0 / float64(r.forceSharedBitrate)) * 8.0 * float64(MTU)))
+			timeout += simulatedLatency
+		}
+		return timeout, nil
+	}
+	return r.getFirstHopTimeout(destinationHash), nil
+}
+
+func (r *Reticulum) PacketRSSI(packetHash []byte) (any, error) {
+	if r.isConnectedToSharedInstance {
+		resp, err := r.callRPC(map[string]any{"get": "packet_rssi", "packet_hash": packetHash})
+		if err != nil {
+			return nil, fmt.Errorf("rpc packet_rssi failed: %w", err)
+		}
+		return resp, nil
+	}
+	return r.getPacketRSSI(packetHash), nil
+}
+
+func (r *Reticulum) PacketSNR(packetHash []byte) (any, error) {
+	if r.isConnectedToSharedInstance {
+		resp, err := r.callRPC(map[string]any{"get": "packet_snr", "packet_hash": packetHash})
+		if err != nil {
+			return nil, fmt.Errorf("rpc packet_snr failed: %w", err)
+		}
+		return resp, nil
+	}
+	return r.getPacketSNR(packetHash), nil
+}
+
+func (r *Reticulum) PacketQ(packetHash []byte) (any, error) {
+	if r.isConnectedToSharedInstance {
+		resp, err := r.callRPC(map[string]any{"get": "packet_q", "packet_hash": packetHash})
+		if err != nil {
+			return nil, fmt.Errorf("rpc packet_q failed: %w", err)
+		}
+		return resp, nil
+	}
+	return r.getPacketQ(packetHash), nil
+}
+
+func (r *Reticulum) DropPath(destinationHash []byte) (bool, error) {
+	if r.isConnectedToSharedInstance {
+		resp, err := r.callRPC(map[string]any{"drop": "path", "destination_hash": destinationHash})
+		if err != nil {
+			return false, err
+		}
+		return asBool(resp), nil
+	}
+	return r.transport.InvalidatePath(destinationHash), nil
+}
+
+func (r *Reticulum) DropAllVia(destinationHash []byte) (int, error) {
+	if r.isConnectedToSharedInstance {
+		resp, err := r.callRPC(map[string]any{"drop": "all_via", "destination_hash": destinationHash})
+		if err != nil {
+			return 0, err
+		}
+		return asInt(resp), nil
+	}
+	return r.transport.InvalidatePathsViaNextHop(destinationHash), nil
+}
+
+func (r *Reticulum) DropAnnounceQueues() (int, error) {
+	if r.isConnectedToSharedInstance {
+		resp, err := r.callRPC(map[string]any{"drop": "announce_queues"})
+		if err != nil {
+			return 0, err
+		}
+		return asInt(resp), nil
+	}
+	return r.dropAnnounceQueues(), nil
+}
+
+func (r *Reticulum) BlackholeIdentity(identityHash []byte, until *int64, reason string) (bool, error) {
+	if len(identityHash) != TruncatedHashLength/8 {
+		return false, nil
+	}
+
+	if r.isConnectedToSharedInstance {
+		req := map[string]any{"blackhole_identity": identityHash, "reason": reason}
+		if until != nil {
+			req["until"] = *until
+		}
+		resp, err := r.callRPC(req)
+		if err != nil {
+			return false, err
+		}
+		return asBool(resp), nil
+	}
+	return r.blackholeIdentity(identityHash, until, reason), nil
+}
+
+func (r *Reticulum) UnblackholeIdentity(identityHash []byte) (bool, error) {
+	if len(identityHash) != TruncatedHashLength/8 {
+		return false, nil
+	}
+
+	if r.isConnectedToSharedInstance {
+		resp, err := r.callRPC(map[string]any{"unblackhole_identity": identityHash})
+		if err != nil {
+			return false, err
+		}
+		return asBool(resp), nil
+	}
+	return r.unblackholeIdentity(identityHash), nil
+}
+
+func (r *Reticulum) callRPC(req any) (any, error) {
+	r.ensureRPCKey()
+	if len(r.rpcKey) == 0 {
+		return nil, errors.New("rpc key unavailable")
+	}
+
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		resp, err := r.callRPCOnce(req)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if !isTransientRPCError(err) {
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	return nil, lastErr
+}
+
+func (r *Reticulum) callRPCOnce(req any) (any, error) {
+	conn, err := r.dialRPCServer()
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := conn.Close(); closeErr != nil {
+			Logf("Failed closing RPC client connection: %v", LogDebug, false, closeErr)
+		}
+	}()
+
+	if err := writeRPCFrame(conn, map[string]any{"auth": r.rpcKey}); err != nil {
+		return nil, err
+	}
+
+	authResp, err := readRPCFrame(conn)
+	if err != nil {
+		return nil, err
+	}
+	authMap := asAnyMap(authResp)
+	if authMap == nil {
+		return nil, errors.New("invalid rpc auth response")
+	}
+	if v, ok := lookupAny(authMap, "error"); ok {
+		return nil, fmt.Errorf("rpc auth failed: %v", v)
+	}
+
+	if err := writeRPCFrame(conn, req); err != nil {
+		return nil, err
+	}
+
+	return readRPCFrame(conn)
+}
+
+func isTransientRPCError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "connection reset by peer") || strings.Contains(message, "broken pipe")
+}
+
+func (r *Reticulum) dialRPCServer() (net.Conn, error) {
+	useUnix := runtime.GOOS != "windows" && r.sharedInstanceType != "tcp"
+	if useUnix {
+		instance := r.localSocketPath
+		if instance == "" {
+			instance = "default"
+		}
+		if runtime.GOOS == "linux" {
+			return net.Dial("unix", "@rns/"+instance+"/rpc")
+		}
+		rpcPath := filepath.Join(r.configDir, ".rns-"+instance+"-rpc.sock")
+		return net.Dial("unix", rpcPath)
+	}
+
+	addr := fmt.Sprintf("127.0.0.1:%v", r.localControlPort)
+	return net.Dial("tcp", addr)
+}
+
+func decodeInterfaceStats(raw any) *InterfaceStatsSnapshot {
+	out := &InterfaceStatsSnapshot{}
+	m := asAnyMap(raw)
+	if m == nil {
+		return out
+	}
+
+	out.RXB = asUint64(lookupAnyValue(m, "rxb"))
+	out.TXB = asUint64(lookupAnyValue(m, "txb"))
+
+	interfacesVal, ok := lookupAny(m, "interfaces")
+	if !ok {
+		return out
+	}
+
+	list, ok := interfacesVal.([]any)
+	if !ok {
+		return out
+	}
+
+	out.Interfaces = make([]InterfaceStat, 0, len(list))
+	for _, item := range list {
+		im := asAnyMap(item)
+		if im == nil {
+			continue
+		}
+		entry := InterfaceStat{
+			Name:    asString(lookupAnyValue(im, "name")),
+			Type:    asString(lookupAnyValue(im, "type")),
+			Status:  asBool(lookupAnyValue(im, "status")),
+			Bitrate: asInt(lookupAnyValue(im, "bitrate")),
+			RXB:     asUint64(lookupAnyValue(im, "rxb")),
+			TXB:     asUint64(lookupAnyValue(im, "txb")),
+		}
+		out.Interfaces = append(out.Interfaces, entry)
+	}
+
+	return out
+}
+
+func asAnyMap(v any) map[any]any {
+	switch m := v.(type) {
+	case map[any]any:
+		return m
+	case map[string]any:
+		out := make(map[any]any, len(m))
+		for k, val := range m {
+			out[k] = val
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func lookupAny(m map[any]any, key string) (any, bool) {
+	if m == nil {
+		return nil, false
+	}
+	v, ok := m[key]
+	if ok {
+		return v, true
+	}
+	for mk, mv := range m {
+		if ks, ok := mk.(string); ok && ks == key {
+			return mv, true
+		}
+	}
+	return nil, false
+}
+
+func lookupAnyValue(m map[any]any, key string) any {
+	v, _ := lookupAny(m, key)
+	return v
+}
+
+func asString(v any) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case []byte:
+		return string(t)
+	default:
+		return ""
+	}
+}
+
+func asBool(v any) bool {
+	switch t := v.(type) {
+	case bool:
+		return t
+	case int:
+		return t != 0
+	case int64:
+		return t != 0
+	case uint64:
+		return t != 0
+	default:
+		return false
+	}
+}
+
+func asInt(v any) int {
+	switch t := v.(type) {
+	case int:
+		return t
+	case int64:
+		return int(t)
+	case int32:
+		return int(t)
+	case uint64:
+		return int(t)
+	case uint32:
+		return int(t)
+	case float64:
+		return int(t)
+	default:
+		return 0
+	}
+}
+
+func asUint64(v any) uint64 {
+	switch t := v.(type) {
+	case uint64:
+		return t
+	case uint32:
+		return uint64(t)
+	case int:
+		if t < 0 {
+			return 0
+		}
+		return uint64(t)
+	case int64:
+		if t < 0 {
+			return 0
+		}
+		return uint64(t)
+	case float64:
+		if t < 0 {
+			return 0
+		}
+		return uint64(t)
+	default:
+		return 0
+	}
+}
