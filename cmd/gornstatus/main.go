@@ -41,7 +41,7 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Printf("gornstatus %v\n", rns.Version)
+		fmt.Printf("gornstatus %v\n", rns.VERSION)
 		return
 	}
 

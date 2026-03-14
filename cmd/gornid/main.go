@@ -109,7 +109,7 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Printf("gornid %v\n", rns.Version)
+		fmt.Printf("gornid %v\n", rns.VERSION)
 		return
 	}
 

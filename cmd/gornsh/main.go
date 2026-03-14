@@ -108,7 +108,7 @@ func main() {
 	opts := parseFlags()
 
 	if opts.version {
-		_, _ = fmt.Printf("gornsh %v\n", rns.Version)
+		_, _ = fmt.Printf("gornsh %v\n", rns.VERSION)
 		return
 	}
 

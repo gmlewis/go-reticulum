@@ -50,7 +50,7 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Printf("gornsd %v\n", rns.Version)
+		fmt.Printf("gornsd %v\n", rns.VERSION)
 		return
 	}
 
@@ -74,7 +74,7 @@ func main() {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
 
-	rns.Log(fmt.Sprintf("Started gornsd version %v", rns.Version), rns.LogNotice, false)
+	rns.Log(fmt.Sprintf("Started gornsd version %v", rns.VERSION), rns.LogNotice, false)
 
 	// Keep alive
 	select {}

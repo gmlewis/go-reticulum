@@ -5,7 +5,5 @@
 
 package rns
 
-// VERSION is the current version of the Reticulum Network Stack. It is kept on its
-// own line so automated tools can reliably bump the version without parsing the
-// surrounding source code.
+// VERSION is the current version of the Go port of the Reticulum Network Stack.
 const VERSION = "0.1.0"

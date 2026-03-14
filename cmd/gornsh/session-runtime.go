@@ -87,7 +87,7 @@ func wireListenerChannelSession(link *rns.Link, opts options, allowedList [][]by
 		AllowRemoteCommand: !opts.noRemoteCmd,
 		RemoteCmdAsArgs:    opts.remoteAsArgs,
 		DefaultCommand:     opts.commandLine,
-		SoftwareVersion:    "gornsh " + rns.Version,
+		SoftwareVersion:    "gornsh " + rns.VERSION,
 	})
 
 	channel := link.GetChannel()

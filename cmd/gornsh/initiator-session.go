@@ -193,7 +193,7 @@ func runInitiatorProtocolFlow(channel channelSession, opts options, linkClosedCh
 	channel.AddMessageHandler(session.handleMessage)
 	timeout := time.Duration(opts.timeoutSec) * time.Second
 
-	versionMessage := &versionInfoMessage{SoftwareVersion: "gornsh " + rns.Version, ProtocolVersion: protocolVersion}
+	versionMessage := &versionInfoMessage{SoftwareVersion: "gornsh " + rns.VERSION, ProtocolVersion: protocolVersion}
 	if err := sendMessageWithRetry(channel, versionMessage, time.Now().Add(timeout)); err != nil {
 		return 1, session, fmt.Errorf("failed to send version info: %w", err)
 	}

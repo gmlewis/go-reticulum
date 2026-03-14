@@ -70,9 +70,6 @@ const (
 	MDU = MTU - HeaderMaxSize - IFACMinSize
 )
 
-// Version specifies the exact semantic version string for this implementation of the Reticulum Network Stack.
-const Version = "1.1.3" // To be updated based on the original repo's version.
-
 // LogLevelName maps an integer logging level back to its human-readable console tag representation.
 func LogLevelName(level int) string {
 	switch level {
