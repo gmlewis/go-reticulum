@@ -16,19 +16,19 @@ import (
 	"time"
 )
 
-// SystemMessageTypes defines system-reserved message type codes.
 const (
+	// SMTStreamData defines the system-reserved message type code for internal binary stream data transmission.
 	SMTStreamData = 0xff00
 )
 
-// Message is the interface for any message sent over a Channel.
+// Message defines the standard interface that any custom data structure must implement to be transmitted over a Channel.
 type Message interface {
 	GetMsgType() uint16
 	Pack() ([]byte, error)
 	Unpack(data []byte) error
 }
 
-// ChannelOutlet defines the transport layer interface used by Channel.
+// ChannelOutlet defines the required transport layer interface that a Channel uses to physically send and manage packets.
 type ChannelOutlet interface {
 	Send(raw []byte) (*Packet, error)
 	Resend(p *Packet) (*Packet, error)
@@ -37,17 +37,21 @@ type ChannelOutlet interface {
 	IsUsable() bool
 }
 
-// MessageState represents the possible states of a message.
+// MessageState defines an enumeration representing the various lifecycle stages of a message in transit.
 type MessageState int
 
 const (
+	// MsgStateNew indicates that the message has been instantiated but not yet queued for transmission.
 	MsgStateNew MessageState = iota
+	// MsgStateSent indicates that the message has been transmitted and is currently awaiting an acknowledgment.
 	MsgStateSent
+	// MsgStateDelivered indicates that the message has been successfully received and acknowledged by the remote peer.
 	MsgStateDelivered
+	// MsgStateFailed indicates that the message could not be delivered after exceeding the maximum number of retry attempts.
 	MsgStateFailed
 )
 
-// Envelope is an internal wrapper for messages sent over a channel.
+// Envelope serves as an internal wrapper for messages, managing sequencing, timing, and retry logic over a Channel.
 type Envelope struct {
 	TS       time.Time
 	Message  Message
@@ -57,7 +61,7 @@ type Envelope struct {
 	Tries    int
 }
 
-// Pack returns the binary representation of the envelope.
+// Pack serializes the Envelope and its contained Message into a strict binary format suitable for network transmission.
 func (env *Envelope) Pack() ([]byte, error) {
 	data, err := env.Message.Pack()
 	if err != nil {
@@ -74,7 +78,7 @@ func (env *Envelope) Pack() ([]byte, error) {
 	return raw, nil
 }
 
-// Unpack populates the envelope from binary representation.
+// Unpack reconstructs the Envelope and its contained Message from a binary payload using the provided message factories.
 func (env *Envelope) Unpack(factories map[uint16]func() Message) error {
 	if len(env.Raw) < 6 {
 		return errors.New("envelope too short")
@@ -101,7 +105,7 @@ func (env *Envelope) Unpack(factories map[uint16]func() Message) error {
 	return nil
 }
 
-// Channel provides reliable delivery of messages over a link.
+// Channel provides a robust, reliable, and sequenced delivery mechanism for discrete messages over a Link.
 type Channel struct {
 	outlet           ChannelOutlet
 	mu               sync.RWMutex
@@ -131,22 +135,35 @@ type messageHandlerEntry struct {
 }
 
 const (
-	ChannelWindowDefault   = 2
-	ChannelWindowMin       = 2
-	ChannelWindowMinSlow   = 2
+	// ChannelWindowDefault specifies the initial transmission window size for a new Channel.
+	ChannelWindowDefault = 2
+	// ChannelWindowMin defines the absolute minimum allowable transmission window size.
+	ChannelWindowMin = 2
+	// ChannelWindowMinSlow establishes the minimum transmission window size during slow network conditions.
+	ChannelWindowMinSlow = 2
+	// ChannelWindowMinMedium establishes the minimum transmission window size during medium-speed network conditions.
 	ChannelWindowMinMedium = 5
-	ChannelWindowMinFast   = 16
-	ChannelWindowMaxSlow   = 5
+	// ChannelWindowMinFast establishes the minimum transmission window size during fast network conditions.
+	ChannelWindowMinFast = 16
+	// ChannelWindowMaxSlow establishes the maximum transmission window size during slow network conditions.
+	ChannelWindowMaxSlow = 5
+	// ChannelWindowMaxMedium establishes the maximum transmission window size during medium-speed network conditions.
 	ChannelWindowMaxMedium = 12
-	ChannelWindowMaxFast   = 48
-	ChannelSeqMax          = 0xFFFF
-	ChannelFastRateRounds  = 10
-	ChannelRTTFast         = 0.18
-	ChannelRTTMedium       = 0.75
-	ChannelRTTSlow         = 1.45
+	// ChannelWindowMaxFast establishes the maximum transmission window size during fast network conditions.
+	ChannelWindowMaxFast = 48
+	// ChannelSeqMax defines the maximum sequence number before wrapping around to zero.
+	ChannelSeqMax = 0xFFFF
+	// ChannelFastRateRounds specifies the number of consecutive successful rounds required to upgrade the window size tier.
+	ChannelFastRateRounds = 10
+	// ChannelRTTFast defines the maximum Round Trip Time (in seconds) to be considered a fast connection.
+	ChannelRTTFast = 0.18
+	// ChannelRTTMedium defines the maximum Round Trip Time (in seconds) to be considered a medium-speed connection.
+	ChannelRTTMedium = 0.75
+	// ChannelRTTSlow defines the threshold Round Trip Time (in seconds) where the connection is considered slow.
+	ChannelRTTSlow = 1.45
 )
 
-// NewChannel creates a new Channel over the given outlet.
+// NewChannel instantiates a new Channel operating over the provided ChannelOutlet transport mechanism.
 func NewChannel(outlet ChannelOutlet) *Channel {
 	c := &Channel{
 		outlet:            outlet,
@@ -169,7 +186,7 @@ func NewChannel(outlet ChannelOutlet) *Channel {
 	return c
 }
 
-// Start starts the channel's background processes.
+// Start initiates the internal background processes responsible for packet timeouts, retransmissions, and maintenance.
 func (c *Channel) Start() {
 	c.startOnce.Do(func() {
 		go c.maintenanceLoop()
@@ -222,7 +239,7 @@ func (c *Channel) checkTimeouts() {
 	}
 }
 
-// Shutdown stops the channel and clears resources.
+// Shutdown halts the channel's background processes and securely clears all pending transmission and reception queues.
 func (c *Channel) Shutdown() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -242,14 +259,14 @@ func (c *Channel) clearRings() {
 	c.rxRing = nil
 }
 
-// RegisterMessageType registers a message factory for a given type.
+// RegisterMessageType maps a specific 16-bit message type identifier to its corresponding Message factory function.
 func (c *Channel) RegisterMessageType(msgType uint16, factory func() Message) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.messageFactories[msgType] = factory
 }
 
-// AddMessageHandler adds a callback for incoming messages.
+// AddMessageHandler registers a callback function to be invoked whenever a valid Message is received and unpacked.
 func (c *Channel) AddMessageHandler(handler func(Message) bool) {
 	c.addMessageHandler(handler)
 }
@@ -277,7 +294,7 @@ func (c *Channel) removeMessageHandlerByID(handlerID uint64) {
 	}
 }
 
-// Send packs and sends a message over the channel.
+// Send serializes the provided Message, wraps it in an Envelope, and securely transmits it over the underlying outlet.
 func (c *Channel) Send(msg Message) (*Envelope, error) {
 	c.mu.Lock()
 	if !c.isReadyToSend() {
@@ -469,7 +486,7 @@ func (c *Channel) isReadyToSend() bool {
 	return len(c.txRing) < c.window
 }
 
-// Receive handles raw data received from the outlet.
+// Receive processes raw byte payloads inbound from the outlet, deserializing envelopes and dispatching validated messages to handlers.
 func (c *Channel) Receive(raw []byte) {
 	env := &Envelope{
 		TS:  time.Now(),

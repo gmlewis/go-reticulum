@@ -13,56 +13,84 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
 )
 
-// Packet types
 const (
-	PacketData        = 0x00
-	PacketAnnounce    = 0x01
+	// PacketData represents a standard data packet containing user or application payload.
+	PacketData = 0x00
+	// PacketAnnounce represents an announce packet used for identity and destination discovery.
+	PacketAnnounce = 0x01
+	// PacketLinkRequest represents a request to establish a reliable cryptographic link.
 	PacketLinkRequest = 0x02
-	PacketProof       = 0x03
+	// PacketProof represents a cryptographic proof packet acknowledging receipt of data.
+	PacketProof = 0x03
 )
 
-// Header types
 const (
+	// Header1 represents a standard single-hop or direct header type without a transport ID.
 	Header1 = 0x00
+	// Header2 represents a multi-hop or routed header type that requires a transport ID.
 	Header2 = 0x01
 )
 
-// Transport types
 const (
+	// TransportBroadcast is used for packets broadcast to all reachable interfaces and nodes.
 	TransportBroadcast = 0x00
-	TransportForward   = 0x01
-	TransportRelay     = 0x02
-	TransportTunnel    = 0x03
+	// TransportForward is used for packets being forwarded directly towards a specific destination.
+	TransportForward = 0x01
+	// TransportRelay is used for packets being relayed through intermediate helper nodes.
+	TransportRelay = 0x02
+	// TransportTunnel is used for packets securely encapsulated within a tunnel.
+	TransportTunnel = 0x03
 )
 
-// Packet context types
 const (
-	ContextNone          = 0x00
-	ContextResource      = 0x01
-	ContextResourceAdv   = 0x02
-	ContextResourceReq   = 0x03
-	ContextResourceHmu   = 0x04
-	ContextResourcePrf   = 0x05
-	ContextResourceIcl   = 0x06
-	ContextResourceRcl   = 0x07
-	ContextCacheRequest  = 0x08
-	ContextRequest       = 0x09
-	ContextResponse      = 0x0a
-	ContextPathResponse  = 0x0b
-	ContextCommand       = 0x0c
+	// ContextNone signifies that a packet carries no special context.
+	ContextNone = 0x00
+	// ContextResource identifies a packet as carrying resource data chunks.
+	ContextResource = 0x01
+	// ContextResourceAdv advertises the availability of a specific resource.
+	ContextResourceAdv = 0x02
+	// ContextResourceReq requests a previously advertised resource.
+	ContextResourceReq = 0x03
+	// ContextResourceHmu provides hashmap updates for resuming resource transfers.
+	ContextResourceHmu = 0x04
+	// ContextResourcePrf proves receipt of a complete resource transmission.
+	ContextResourcePrf = 0x05
+	// ContextResourceIcl initiates the cancellation of a resource transfer.
+	ContextResourceIcl = 0x06
+	// ContextResourceRcl confirms the cancellation of a resource transfer.
+	ContextResourceRcl = 0x07
+	// ContextCacheRequest requests cached packets from nearby nodes.
+	ContextCacheRequest = 0x08
+	// ContextRequest signifies an RPC or general inquiry request packet.
+	ContextRequest = 0x09
+	// ContextResponse signifies a response to a prior context request.
+	ContextResponse = 0x0a
+	// ContextPathResponse provides information about a discovered path through the network.
+	ContextPathResponse = 0x0b
+	// ContextCommand represents an administrative or operational command packet.
+	ContextCommand = 0x0c
+	// ContextCommandStatus relays the status or result of an executed command.
 	ContextCommandStatus = 0x0d
-	ContextChannel       = 0x0e
-	ContextKeepalive     = 0xfa
-	ContextLinkIdentify  = 0xfb
-	ContextLinkClose     = 0xfc
-	ContextLinkProof     = 0xfd
-	ContextLrrtt         = 0xfe
-	ContextLrproof       = 0xff
+	// ContextChannel identifies a packet related to symmetric messaging channels.
+	ContextChannel = 0x0e
+	// ContextKeepalive sends a small payload to keep a network link active.
+	ContextKeepalive = 0xfa
+	// ContextLinkIdentify identifies a node's full identity over an established link.
+	ContextLinkIdentify = 0xfb
+	// ContextLinkClose gracefully shuts down an active cryptographic link.
+	ContextLinkClose = 0xfc
+	// ContextLinkProof provides cryptographic proof for packets transmitted over a link.
+	ContextLinkProof = 0xfd
+	// ContextLrrtt is used to measure link request round-trip time.
+	ContextLrrtt = 0xfe
+	// ContextLrproof acknowledges receipt of a link request proof.
+	ContextLrproof = 0xff
 )
 
-// Context flag values
 const (
-	FlagSet   = 0x01
+	// FlagSet indicates that a specific contextual packet flag is active.
+	FlagSet = 0x01
+	// FlagUnset indicates that a specific contextual packet flag is inactive.
 	FlagUnset = 0x00
 )
 
@@ -354,24 +382,28 @@ type PacketReceipt struct {
 	mu               sync.Mutex
 }
 
+// SetTimeoutCallback assigns a function to be executed when the receipt's timeout window expires without delivery.
 func (pr *PacketReceipt) SetTimeoutCallback(cb func(*PacketReceipt)) {
 	pr.mu.Lock()
 	defer pr.mu.Unlock()
 	pr.timeoutCallback = cb
 }
 
+// SetDeliveryCallback assigns a function to be executed when a valid proof of delivery is received for this packet.
 func (pr *PacketReceipt) SetDeliveryCallback(cb func(*PacketReceipt)) {
 	pr.mu.Lock()
 	defer pr.mu.Unlock()
 	pr.deliveryCallback = cb
 }
 
+// SetTimeout establishes the duration, in seconds, before the receipt is considered failed if no proof is received.
 func (pr *PacketReceipt) SetTimeout(timeout float64) {
 	pr.mu.Lock()
 	defer pr.mu.Unlock()
 	pr.Timeout = timeout
 }
 
+// MarkSent updates the receipt's internal state to indicate that the packet was physically dispatched at the given time.
 func (pr *PacketReceipt) MarkSent(sentAt float64) {
 	pr.mu.Lock()
 	defer pr.mu.Unlock()
@@ -380,6 +412,7 @@ func (pr *PacketReceipt) MarkSent(sentAt float64) {
 	pr.Status = ReceiptSent
 }
 
+// TriggerDelivery fires the delivery callback, safely transitioning the receipt's status to delivered.
 func (pr *PacketReceipt) TriggerDelivery() {
 	pr.mu.Lock()
 	pr.Proved = true
@@ -391,6 +424,7 @@ func (pr *PacketReceipt) TriggerDelivery() {
 	}
 }
 
+// TriggerTimeout fires the timeout callback, safely transitioning the receipt's status to failed.
 func (pr *PacketReceipt) TriggerTimeout() {
 	pr.mu.Lock()
 	pr.Status = ReceiptFailed
@@ -401,10 +435,13 @@ func (pr *PacketReceipt) TriggerTimeout() {
 	}
 }
 
-// Receipt status constants
 const (
-	ReceiptFailed    = 0x00
-	ReceiptSent      = 0x01
+	// ReceiptFailed indicates that a packet failed to be delivered within its timeout window.
+	ReceiptFailed = 0x00
+	// ReceiptSent indicates that a packet was successfully transmitted onto the physical interface.
+	ReceiptSent = 0x01
+	// ReceiptDelivered indicates that a valid cryptographic proof of delivery was received.
 	ReceiptDelivered = 0x02
-	ReceiptCulled    = 0xff
+	// ReceiptCulled indicates that the packet receipt was culled from memory before delivery or timeout.
+	ReceiptCulled = 0xff
 )

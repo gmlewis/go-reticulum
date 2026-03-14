@@ -10,52 +10,70 @@ import (
 	"math"
 )
 
-// Log levels
 const (
-	LogNone     = -1
+	// LogNone completely disables the output of the logging subsystem.
+	LogNone = -1
+	// LogCritical designates the most severe level of failure, requiring immediate attention.
 	LogCritical = 0
-	LogError    = 1
-	LogWarning  = 2
-	LogNotice   = 3
-	LogInfo     = 4
-	LogVerbose  = 5
-	LogDebug    = 6
-	LogExtreme  = 7
+	// LogError designates an error state that interrupts a specific operation but not the entire system.
+	LogError = 1
+	// LogWarning designates a potential issue or unexpected condition that does not halt the system.
+	LogWarning = 2
+	// LogNotice designates a significant event that is not an error.
+	LogNotice = 3
+	// LogInfo designates informational progress about routine operations.
+	LogInfo = 4
+	// LogVerbose designates detailed information primarily useful for tracing operations.
+	LogVerbose = 5
+	// LogDebug designates low-level system details for in-depth troubleshooting.
+	LogDebug = 6
+	// LogExtreme designates an exhaustive level of logging, outputting almost all internal events.
+	LogExtreme = 7
 )
 
-// Log destinations
 const (
-	LogStdout   = 0x91
+	// LogStdout configures the logging subsystem to write to standard output.
+	LogStdout = 0x91
+	// LogDestFile configures the logging subsystem to append output to a specific file on disk.
 	LogDestFile = 0x92
+	// LogCallback configures the logging subsystem to route messages to a custom callback function.
 	LogCallback = 0x93
 )
 
 const (
+	// LogMaxSize defines the maximum file size (in bytes) before a log rotation is triggered.
 	LogMaxSize = 5 * 1024 * 1024
 )
 
-// Default MTU
 const (
+	// MTU defines the Maximum Transmission Unit for generic packets across the Reticulum network.
 	MTU = 500
 )
 
 const (
+	// ReticulumHopsMax limits the absolute maximum number of network hops a packet can traverse.
 	ReticulumHopsMax = 20
 )
 
 const (
-	NameHashLength      = 80
+	// NameHashLength establishes the fixed length in bytes for Reticulum name hashes.
+	NameHashLength = 80
+	// TruncatedHashLength establishes the fixed length in bits for truncated identifiers.
 	TruncatedHashLength = 128
-	HeaderMinSize       = 2 + 1 + (TruncatedHashLength/8)*1
-	HeaderMaxSize       = 2 + 1 + (TruncatedHashLength/8)*2
-	IFACMinSize         = 1
-	MDU                 = MTU - HeaderMaxSize - IFACMinSize
+	// HeaderMinSize specifies the absolute minimum number of bytes required for a packet header.
+	HeaderMinSize = 2 + 1 + (TruncatedHashLength/8)*1
+	// HeaderMaxSize specifies the maximum possible size in bytes for a packet header.
+	HeaderMaxSize = 2 + 1 + (TruncatedHashLength/8)*2
+	// IFACMinSize specifies the minimum number of bytes allocated for interface control data.
+	IFACMinSize = 1
+	// MDU defines the Maximum Data Unit payload size after subtracting theoretical maximum header overhead.
+	MDU = MTU - HeaderMaxSize - IFACMinSize
 )
 
-// Version represents the Reticulum version.
+// Version specifies the exact semantic version string for this implementation of the Reticulum Network Stack.
 const Version = "1.1.3" // To be updated based on the original repo's version.
 
-// LogLevelName returns the string representation of a log level.
+// LogLevelName maps an integer logging level back to its human-readable console tag representation.
 func LogLevelName(level int) string {
 	switch level {
 	case LogCritical:
@@ -79,7 +97,7 @@ func LogLevelName(level int) string {
 	}
 }
 
-// PrettySize formats a byte count into a human-readable string.
+// PrettySize dynamically formats a precise byte count into an easily readable string with magnitude suffixes.
 func PrettySize(num float64, suffix string) string {
 	units := []string{"", "K", "M", "G", "T", "P", "E", "Z"}
 	lastUnit := "Y"
@@ -101,7 +119,7 @@ func PrettySize(num float64, suffix string) string {
 	return fmt.Sprintf("%.2f %v%v", num, lastUnit, suffix)
 }
 
-// PrettyTime formats a duration in seconds into a human-readable string.
+// PrettyTime calculates and formats a raw duration in seconds into a human-readable temporal string representation.
 func PrettyTime(seconds float64, verbose bool, compact bool) string {
 	neg := false
 	if seconds < 0 {

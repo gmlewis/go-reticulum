@@ -18,42 +18,50 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
-// Destination types
 const (
+	// DestinationSingle designates an endpoint intended for point-to-point communication with a single entity.
 	DestinationSingle = 0x00
-	DestinationGroup  = 0x01
-	DestinationPlain  = 0x02
-	DestinationLink   = 0x03
+	// DestinationGroup designates an endpoint intended for communication with multiple entities.
+	DestinationGroup = 0x01
+	// DestinationPlain designates an unencrypted, unauthenticated endpoint.
+	DestinationPlain = 0x02
+	// DestinationLink designates an endpoint specifically bound to an established link.
+	DestinationLink = 0x03
 )
 
-// Proof strategies
 const (
+	// ProveNone configures the destination to never generate cryptographic proofs for incoming packets.
 	ProveNone = 0x21
-	ProveApp  = 0x22
-	ProveAll  = 0x23
+	// ProveApp configures the destination to only generate proofs for application-level data packets.
+	ProveApp = 0x22
+	// ProveAll configures the destination to aggressively generate proofs for all valid incoming packets.
+	ProveAll = 0x23
 )
 
-// Request policies
 const (
+	// AllowNone explicitly rejects all incoming requests to this handler.
 	AllowNone = 0x00
-	AllowAll  = 0x01
+	// AllowAll openly accepts all incoming requests to this handler regardless of sender identity.
+	AllowAll = 0x01
+	// AllowList strictly filters incoming requests, only allowing those from known identities in the list.
 	AllowList = 0x02
 )
 
-// Directions
 const (
-	DestinationIn  = 0x11
+	// DestinationIn specifies that this destination listens for incoming data from the network.
+	DestinationIn = 0x11
+	// DestinationOut specifies that this destination is exclusively used for sending data out to the network.
 	DestinationOut = 0x12
 )
 
-// Callbacks holds function pointers for various destination events.
+// Callbacks holds function pointers for hooking into asynchronous destination events like links and packets.
 type Callbacks struct {
 	LinkEstablished func(*Link)
 	Packet          func([]byte, *Packet)
 	ProofRequested  func(*Packet) bool
 }
 
-// RequestHandler handles incoming requests.
+// RequestHandler manages the routing, filtering, and dynamic response generation for incoming resource requests.
 type RequestHandler struct {
 	Path              string
 	ResponseGenerator func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any
@@ -63,7 +71,7 @@ type RequestHandler struct {
 	AutoCompressLimit int
 }
 
-// Destination represents an endpoint in a Reticulum network.
+// Destination represents an addressable endpoint on the Reticulum network, anchoring cryptographic identities and routing paths.
 type Destination struct {
 	identity      *Identity
 	direction     int
@@ -92,12 +100,12 @@ type Destination struct {
 	retainedRatchets  int
 }
 
-// NewDestination creates a new destination.
+// NewDestination initializes a new programmatic endpoint on the default Reticulum transport system.
 func NewDestination(identity *Identity, direction int, destType int, appName string, aspects ...string) (*Destination, error) {
 	return NewDestinationWithTransport(GetTransport(), identity, direction, destType, appName, aspects...)
 }
 
-// NewDestinationWithTransport creates a new destination with a specific transport system.
+// NewDestinationWithTransport instantiates a new endpoint bound to a specific, custom transport system instance.
 func NewDestinationWithTransport(ts *TransportSystem, identity *Identity, direction int, destType int, appName string, aspects ...string) (*Destination, error) {
 	if strings.Contains(appName, ".") {
 		return nil, errors.New("dots can't be used in app names")
@@ -154,7 +162,7 @@ func NewDestinationWithTransport(ts *TransportSystem, identity *Identity, direct
 	return d, nil
 }
 
-// Announce creates and broadcasts an announce packet for this destination.
+// Announce broadcasts a cryptographic proof of existence and routing information to the wider Reticulum network.
 func (d *Destination) Announce(appData []byte) error {
 	p, err := d.buildAnnouncePacket(appData)
 	if err != nil {
@@ -163,8 +171,7 @@ func (d *Destination) Announce(appData []byte) error {
 	return p.Send()
 }
 
-// BuildAnnouncePacket constructs an announce packet for this destination
-// with the given app_data, without sending it. This is useful for testing.
+// BuildAnnouncePacket generates the signed raw payload for an announce, useful for deferred transmission or testing.
 func (d *Destination) BuildAnnouncePacket(appData []byte) (*Packet, error) {
 	return d.buildAnnouncePacket(appData)
 }
@@ -232,7 +239,7 @@ func (d *Destination) buildAnnouncePacket(appData []byte) (*Packet, error) {
 	return p, nil
 }
 
-// EnableRatchets enables ratchets on the destination.
+// EnableRatchets activates persistent forward-secrecy key rotation for this destination, storing state at the provided path.
 func (d *Destination) EnableRatchets(path string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -339,7 +346,7 @@ func (d *Destination) persistRatchets() error {
 	return os.Rename(tempPath, d.ratchetsPath)
 }
 
-// RotateRatchets generates a new ratchet key pair if the interval has passed.
+// RotateRatchets generates and prepends a new keypair to the internal list if the time interval has elapsed.
 func (d *Destination) RotateRatchets() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -370,21 +377,21 @@ func (d *Destination) RotateRatchets() error {
 	return d.persistRatchets()
 }
 
-// SetPacketCallback sets the callback for received packets.
+// SetPacketCallback registers a custom function to intercept and process raw incoming packets.
 func (d *Destination) SetPacketCallback(callback func([]byte, *Packet)) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.callbacks.Packet = callback
 }
 
-// SetLinkEstablishedCallback sets the callback for established links.
+// SetLinkEstablishedCallback registers a custom function to handle notifications when a remote node establishes a link.
 func (d *Destination) SetLinkEstablishedCallback(callback func(*Link)) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.callbacks.LinkEstablished = callback
 }
 
-// RegisterRequestHandler registers a request handler for the given path.
+// RegisterRequestHandler assigns a specific generator function to a path, applying generic allow-list logic.
 func (d *Destination) RegisterRequestHandler(path string, responseGenerator func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any, allow int, allowedList [][]byte, autoCompress bool) {
 	autoCompressLimit := 0
 	if autoCompress {
@@ -393,7 +400,7 @@ func (d *Destination) RegisterRequestHandler(path string, responseGenerator func
 	d.RegisterRequestHandlerWithAutoCompressLimit(path, responseGenerator, allow, allowedList, autoCompress, autoCompressLimit)
 }
 
-// RegisterRequestHandlerWithAutoCompressLimit registers a request handler for the given path with explicit auto-compression limit.
+// RegisterRequestHandlerWithAutoCompressLimit assigns a handler with an explicitly configured automatic compression size limit.
 func (d *Destination) RegisterRequestHandlerWithAutoCompressLimit(path string, responseGenerator func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any, allow int, allowedList [][]byte, autoCompress bool, autoCompressLimit int) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -408,7 +415,7 @@ func (d *Destination) RegisterRequestHandlerWithAutoCompressLimit(path string, r
 	}
 }
 
-// HasRequestHandler reports whether a handler is registered for the given path.
+// HasRequestHandler checks whether a specific resource path string currently has an associated registered handler.
 func (d *Destination) HasRequestHandler(path string) bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -417,7 +424,7 @@ func (d *Destination) HasRequestHandler(path string) bool {
 	return ok
 }
 
-// DeregisterRequestHandler removes a request handler for the given path.
+// DeregisterRequestHandler safely removes an existing request handler bound to the specified path string.
 func (d *Destination) DeregisterRequestHandler(path string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -425,7 +432,7 @@ func (d *Destination) DeregisterRequestHandler(path string) {
 	delete(d.requestHandlers, string(pathHash))
 }
 
-// ExpandName returns the expanded name for the destination.
+// ExpandName builds the deterministic string representation of a destination by concatenating the app name, aspects, and identity hash.
 func ExpandName(identity *Identity, appName string, aspects ...string) string {
 	name := appName
 	for _, aspect := range aspects {
@@ -437,7 +444,7 @@ func ExpandName(identity *Identity, appName string, aspects ...string) string {
 	return name
 }
 
-// CalculateHash returns the destination hash for the given identity, appName and aspects.
+// CalculateHash deterministically computes the truncated cryptographic hash identifying this unique destination address.
 func CalculateHash(identity *Identity, appName string, aspects ...string) []byte {
 	nameHash := FullHash([]byte(ExpandName(nil, appName, aspects...)))[:NameHashLength/8]
 	material := nameHash
@@ -447,11 +454,12 @@ func CalculateHash(identity *Identity, appName string, aspects ...string) []byte
 	return FullHash(material)[:TruncatedHashLength/8]
 }
 
+// String provides a human-readable representation of the destination, including its expanded name and truncated hex hash.
 func (d *Destination) String() string {
 	return fmt.Sprintf("<%v:%v>", d.name, d.HexHash)
 }
 
-// Encrypt encrypts data for the destination.
+// Encrypt protects data bounds for this destination utilizing the embedded Identity or available ratchets.
 func (d *Destination) Encrypt(plaintext []byte) ([]byte, error) {
 	if d.Type == DestinationPlain {
 		return plaintext, nil
@@ -467,7 +475,7 @@ func (d *Destination) Encrypt(plaintext []byte) ([]byte, error) {
 	return d.identity.Encrypt(plaintext, selectedRatchet)
 }
 
-// Decrypt decrypts data for the destination.
+// Decrypt processes incoming ciphertexts, iterating through available ratchets or falling back to the primary identity key.
 func (d *Destination) Decrypt(ciphertext []byte) ([]byte, error) {
 	if d.Type == DestinationPlain {
 		return ciphertext, nil
@@ -498,7 +506,7 @@ func (d *Destination) Decrypt(ciphertext []byte) ([]byte, error) {
 	return d.identity.Decrypt(ciphertext, nil, d.enforceRatchets)
 }
 
-// Sign signs data using the destination's identity.
+// Sign delegates the generation of an Ed25519 cryptographic signature to the destination's underlying identity.
 func (d *Destination) Sign(data []byte) ([]byte, error) {
 	if d.identity == nil {
 		return nil, errors.New("destination does not hold an identity")
@@ -506,7 +514,7 @@ func (d *Destination) Sign(data []byte) ([]byte, error) {
 	return d.identity.Sign(data)
 }
 
-// Verify verifies a signature using the destination's identity.
+// Verify delegates the verification of an Ed25519 cryptographic signature against the destination's underlying identity.
 func (d *Destination) Verify(signature, data []byte) bool {
 	if d.identity == nil {
 		return false

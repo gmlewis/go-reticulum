@@ -13,31 +13,42 @@ import (
 )
 
 var (
-	LogLevel       = LogNotice
-	logLevelMu     sync.RWMutex
-	LogFilePath    string
-	LogDest        = LogStdout
-	LogCall        func(string)
-	LogTimeFmt     = "2006-01-02 15:04:05"
-	LogTimeFmtP    = "15:04:05.000"
-	CompactLogFmt  = false
-	LoggingLock    sync.Mutex
+	// LogLevel dictates the current operational verbosity of the logging subsystem.
+	LogLevel   = LogNotice
+	logLevelMu sync.RWMutex
+	// LogFilePath specifies an absolute path where log output will be appended if file logging is enabled.
+	LogFilePath string
+	// LogDest determines where log messages are fundamentally routed, such as stdout, file, or callback.
+	LogDest = LogStdout
+	// LogCall holds a custom callback function triggered for every log event if the destination is set to callback.
+	LogCall func(string)
+	// LogTimeFmt defines the standard timestamp format used in log entries.
+	LogTimeFmt = "2006-01-02 15:04:05"
+	// LogTimeFmtP defines a precise timestamp format including milliseconds, typically used for performance logging.
+	LogTimeFmtP = "15:04:05.000"
+	// CompactLogFmt toggles a leaner log output format that removes semantic log level labels.
+	CompactLogFmt = false
+	// LoggingLock strictly serializes writes to the active log destination to prevent interleaved output.
+	LoggingLock sync.Mutex
+	// AlwaysOverride forces log messages to write to standard output regardless of the configured destination.
 	AlwaysOverride = false
 )
 
+// SetLogLevel safely updates the global operational verbosity for the logging subsystem.
 func SetLogLevel(level int) {
 	logLevelMu.Lock()
 	LogLevel = level
 	logLevelMu.Unlock()
 }
 
+// GetLogLevel safely retrieves the global operational verbosity currently applied to the logging subsystem.
 func GetLogLevel() int {
 	logLevelMu.RLock()
 	defer logLevelMu.RUnlock()
 	return LogLevel
 }
 
-// Log formats and writes a log message.
+// Log constructs, formats, and safely writes a distinct log message to the configured system destination.
 func Log(msg string, level int, pt bool) {
 	currentLogLevel := GetLogLevel()
 	if currentLogLevel == LogNone {
@@ -110,12 +121,12 @@ func Log(msg string, level int, pt bool) {
 	}
 }
 
-// Logf formats and writes a log message using a format string.
+// Logf provides string formatting convenience over the standard logging function.
 func Logf(format string, level int, pt bool, args ...any) {
 	Log(fmt.Sprintf(format, args...), level, pt)
 }
 
-// TraceException logs an error and its context.
+// TraceException formats and logs an error struct directly as a discrete, high-severity error event.
 func TraceException(err error) {
 	Logf("An unhandled exception occurred: %v", LogError, false, err)
 }

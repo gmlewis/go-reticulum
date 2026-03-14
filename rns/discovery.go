@@ -9,31 +9,31 @@ import (
 	"sync"
 )
 
-// InterfaceAnnouncer handles broadcasting interface availability.
+// InterfaceAnnouncer manages the periodic broadcast of local interface availability to dynamically discoverable peers on the network.
 type InterfaceAnnouncer struct {
 	owner *Reticulum
 	mu    sync.Mutex
 }
 
-// NewInterfaceAnnouncer creates a new InterfaceAnnouncer.
+// NewInterfaceAnnouncer initializes a new announcer component bound to the provided local Reticulum instance.
 func NewInterfaceAnnouncer(owner *Reticulum) *InterfaceAnnouncer {
 	return &InterfaceAnnouncer{
 		owner: owner,
 	}
 }
 
-// Start starts the announcer.
+// Start triggers the underlying background mechanism that begins transmitting interface presence announcements.
 func (ia *InterfaceAnnouncer) Start() {
 	// Minimal implementation without LXMF dependency
 	Log("On-network interface discovery requires LXMF, which is not available in this Go port.", LogInfo, false)
 }
 
-// InterfaceDiscovery handles finding and connecting to interfaces.
+// InterfaceDiscovery actively listens for and processes inbound presence announcements from remote nodes to establish automatic connections.
 type InterfaceDiscovery struct {
 	owner *Reticulum
 }
 
-// NewInterfaceDiscovery creates a new InterfaceDiscovery.
+// NewInterfaceDiscovery initializes a discovery listener bound to the provided local Reticulum configuration.
 func NewInterfaceDiscovery(owner *Reticulum) *InterfaceDiscovery {
 	return &InterfaceDiscovery{
 		owner: owner,

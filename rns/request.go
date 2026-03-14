@@ -10,13 +10,17 @@ import (
 	"time"
 )
 
-// RequestReceipt status constants
 const (
-	RequestFailed    = 0x00
-	RequestSent      = 0x01
+	// RequestFailed indicates that the request was not delivered or no response was received within the timeout.
+	RequestFailed = 0x00
+	// RequestSent indicates that the request has been dispatched to the network interface.
+	RequestSent = 0x01
+	// RequestDelivered indicates that the request reached the destination and is pending a response.
 	RequestDelivered = 0x02
+	// RequestReceiving indicates that the response data is currently being downloaded or assembled.
 	RequestReceiving = 0x03
-	RequestReady     = 0x04
+	// RequestReady indicates that the complete response has been received and is available for consumption.
+	RequestReady = 0x04
 )
 
 // RequestReceipt represents a receipt for a sent request.

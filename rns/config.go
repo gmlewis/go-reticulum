@@ -13,26 +13,26 @@ import (
 	"strings"
 )
 
-// Config represents a parsed Reticulum configuration.
+// Config represents a parsed and loaded Reticulum network configuration containing a hierarchy of sections and properties.
 type Config struct {
 	Sections map[string]*ConfigSection
 }
 
-// ConfigSection represents a section in the configuration.
+// ConfigSection represents an isolated subset of configuration directives within a Reticulum configuration.
 type ConfigSection struct {
 	Name        string
 	Properties  map[string]string
 	Subsections map[string]*ConfigSection
 }
 
-// NewConfig creates a new empty configuration.
+// NewConfig initializes an empty configuration structure ready for programmatic population or parsing.
 func NewConfig() *Config {
 	return &Config{
 		Sections: make(map[string]*ConfigSection),
 	}
 }
 
-// LoadConfig loads a configuration from a file.
+// LoadConfig reads and parses a Reticulum configuration directly from a file path on the local filesystem.
 func LoadConfig(path string) (*Config, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -42,7 +42,7 @@ func LoadConfig(path string) (*Config, error) {
 	return ParseConfig(f)
 }
 
-// ParseConfig parses a configuration from an io.Reader.
+// ParseConfig consumes an input stream to parse and validate a Reticulum INI-style configuration file structure.
 func ParseConfig(r io.Reader) (*Config, error) {
 	config := NewConfig()
 	scanner := bufio.NewScanner(r)
@@ -111,13 +111,13 @@ func ParseConfig(r io.Reader) (*Config, error) {
 	return config, scanner.Err()
 }
 
-// GetSection returns a section by name.
+// GetSection retrieves an entire top-level configuration section by its designated name.
 func (c *Config) GetSection(name string) (*ConfigSection, bool) {
 	s, ok := c.Sections[name]
 	return s, ok
 }
 
-// GetProperty returns a property from a section.
+// GetProperty retrieves a specific string value mapped to a given key within this configuration section.
 func (s *ConfigSection) GetProperty(key string) (string, bool) {
 	v, ok := s.Properties[key]
 	return v, ok

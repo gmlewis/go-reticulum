@@ -18,38 +18,49 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
-// Link states
 const (
-	LinkPending   = 0x00
+	// LinkPending indicates that the link has been requested but a handshake has not yet begun.
+	LinkPending = 0x00
+	// LinkHandshake indicates that the link is currently performing a cryptographic handshake.
 	LinkHandshake = 0x01
-	LinkActive    = 0x02
-	LinkStale     = 0x03
-	LinkClosed    = 0x04
+	// LinkActive indicates that the link is fully established and actively passing data.
+	LinkActive = 0x02
+	// LinkStale indicates that the link has not seen traffic recently and may be dropping.
+	LinkStale = 0x03
+	// LinkClosed indicates that the link has been explicitly torn down or timed out.
+	LinkClosed = 0x04
 )
 
-// Link modes
 const (
+	// LinkModeAES128CBC specifies the use of 128-bit AES in CBC mode for link encryption.
 	LinkModeAES128CBC = 0x00
+	// LinkModeAES256CBC specifies the use of 256-bit AES in CBC mode for link encryption.
 	LinkModeAES256CBC = 0x01
 )
 
-// Link constants
 const (
+	// LinkECPubSize defines the combined byte length of the ephemeral encryption and signing public keys.
 	LinkECPubSize = 32 + 32
-	LinkKeySize   = 32
-	LinkMTUSize   = 3
-	MTUBytemask   = 0x1FFFFF
-	ModeBytemask  = 0xE0
+	// LinkKeySize defines the byte length of a standard 256-bit X25519 key.
+	LinkKeySize = 32
+	// LinkMTUSize defines the number of bytes used to encode the Maximum Transmission Unit during signalling.
+	LinkMTUSize = 3
+	// MTUBytemask defines a bitmask used to extract the MTU from combined link signalling bytes.
+	MTUBytemask = 0x1FFFFF
+	// ModeBytemask defines a bitmask used to extract the cryptographic mode from link signalling bytes.
+	ModeBytemask = 0xE0
 )
 
-// Resource strategy constants
 const (
+	// AcceptNone strictly denies all incoming resource advertisements on the link.
 	AcceptNone = 0x00
-	AcceptApp  = 0x01
-	AcceptAll  = 0x02
+	// AcceptApp defers the decision to accept a resource advertisement to an application-provided callback.
+	AcceptApp = 0x01
+	// AcceptAll blindly accepts all incoming resource advertisements on the link.
+	AcceptAll = 0x02
 )
 
-// LinkCallbacks holds function pointers for various link events.
+// LinkCallbacks aggregates optional application-level hooks for asynchronous events occurring over a link's lifecycle.
 type LinkCallbacks struct {
 	LinkEstablished   func(*Link)
 	LinkClosed        func(*Link)
@@ -60,7 +71,7 @@ type LinkCallbacks struct {
 	ResourceConcluded func(*Resource)
 }
 
-// Link represents an established or pending connection to another peer.
+// Link manages a stateful, encrypted, and authenticated bidirectional connection between two Reticulum endpoints.
 type Link struct {
 	destination *Destination
 	initiator   bool
@@ -122,13 +133,24 @@ func (l *Link) signallingBytes() []byte {
 	return buf[1:]
 }
 
-// UpdateMDU calculates the maximum data unit for the link.
+// UpdateMDU proactively recalculates the Maximum Data Unit payload size based on the current MTU and header overhead.
 func (l *Link) UpdateMDU() {
 	// Simple calculation for now
 	l.mdu = l.mtu - HeaderMaxSize - IFACMinSize
 }
 
-// NewLink creates a new link to the given destination.
+// NewLink attempts to proactively establish an encrypted connection to a specified remote destination using the default transport.
+func (l *Link) NewLink(destination *Destination) (*Link, error) {
+	var ts *TransportSystem
+	if destination != nil {
+		ts = destination.transport
+	} else {
+		ts = GetTransport()
+	}
+	return NewLinkWithTransport(ts, destination)
+}
+
+// NewLink specifies an alias for creating a new link object, maintaining compatibility with the primary instantiation pattern.
 func NewLink(destination *Destination) (*Link, error) {
 	var ts *TransportSystem
 	if destination != nil {
@@ -139,7 +161,7 @@ func NewLink(destination *Destination) (*Link, error) {
 	return NewLinkWithTransport(ts, destination)
 }
 
-// NewLinkWithTransport creates a new link with a specific transport system.
+// NewLinkWithTransport constructs a link explicitly bound to a custom transport system rather than the global default.
 func NewLinkWithTransport(ts *TransportSystem, destination *Destination) (*Link, error) {
 	if destination != nil && destination.Type != DestinationSingle {
 		return nil, errors.New("links can only be established to the SINGLE destination type")
@@ -182,7 +204,7 @@ func NewLinkWithTransport(ts *TransportSystem, destination *Destination) (*Link,
 	return l, nil
 }
 
-// Establish starts the link establishment process.
+// Establish actively dispatches the initial link request packet onto the network to begin the Diffie-Hellman handshake.
 func (l *Link) Establish() error {
 	if !l.initiator {
 		return errors.New("only the initiator can start establishment")
@@ -216,7 +238,7 @@ func (l *Link) Establish() error {
 	return p.Send()
 }
 
-// LinkIDFromLR derives the link ID from a LinkRequest packet.
+// LinkIDFromLR deterministically calculates the unique link identifier based on the payload of a link request packet.
 func LinkIDFromLR(packet *Packet) []byte {
 	hashablePart := packet.GetHashablePart()
 	if len(packet.Data) > LinkECPubSize {
@@ -226,7 +248,7 @@ func LinkIDFromLR(packet *Packet) []byte {
 	return TruncatedHash(hashablePart)
 }
 
-// ValidateRequest handles an incoming link request.
+// ValidateRequest intercepts an inbound link request, validates its structure, and conditionally spawns a responding link instance.
 func ValidateRequest(destination *Destination, data []byte, packet *Packet) (*Link, error) {
 	if len(data) < LinkECPubSize {
 		return nil, fmt.Errorf("invalid link request payload size: %v", len(data))
@@ -276,7 +298,7 @@ func ValidateRequest(destination *Destination, data []byte, packet *Packet) (*Li
 	return l, nil
 }
 
-// Prove sends a link request proof.
+// Prove responds to a link request by transmitting a cryptographic proof affirming successful session key derivation.
 func (l *Link) Prove() error {
 	// signedData = self.link_id+self.pub_bytes+self.sig_pub_bytes+signalling_bytes
 	sigBytes := l.signallingBytes()
@@ -312,7 +334,7 @@ func (l *Link) Prove() error {
 	return p.Send()
 }
 
-// receive handles an incoming packet for the link.
+// receive processes incoming packets targeting this link, handling decryption and delegating to context-specific routines.
 func (l *Link) receive(packet *Packet) {
 	if packet.Context == ContextLrproof {
 		if err := l.ValidateProof(packet); err != nil {
@@ -524,7 +546,7 @@ func (l *Link) receive(packet *Packet) {
 	}
 }
 
-// ValidateProof validates an incoming link request proof.
+// ValidateProof evaluates an incoming link proof packet and formally transitions the link into an active state upon success.
 func (l *Link) ValidateProof(packet *Packet) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -594,7 +616,7 @@ func (l *Link) ValidateProof(packet *Packet) error {
 	return nil
 }
 
-// HandleRTT handles an incoming RTT packet.
+// HandleRTT processes an incoming Round Trip Time packet to finalize activation for non-initiator link instances.
 func (l *Link) HandleRTT(packet *Packet) {
 	Logf("Handling RTT for %x", LogExtreme, false, l.linkID)
 	l.mu.Lock()
@@ -613,7 +635,7 @@ func (l *Link) HandleRTT(packet *Packet) {
 	}
 }
 
-// Handshake performs the Diffie-Hellman key exchange and derives session keys.
+// Handshake triggers the underlying Diffie-Hellman cryptographic exchange, deriving secure symmetric session keys.
 func (l *Link) Handshake() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -654,7 +676,7 @@ func (l *Link) handshake() error {
 	return nil
 }
 
-// Sign signs data using the link's private signing key.
+// Sign hashes and uniquely signs a given byte slice utilizing the private ephemeral signing key tied to this link.
 func (l *Link) Sign(data []byte) ([]byte, error) {
 	if l.sigPrv == nil {
 		return nil, errors.New("link does not hold a private signing key")
@@ -662,7 +684,7 @@ func (l *Link) Sign(data []byte) ([]byte, error) {
 	return l.sigPrv.Sign(data), nil
 }
 
-// Verify verifies a signature using the peer's public signing key.
+// Verify guarantees data authenticity by comparing a signature against the remote peer's established public signing key.
 func (l *Link) Verify(signature, data []byte) bool {
 	if l.peerSigPub == nil {
 		return false
@@ -670,7 +692,7 @@ func (l *Link) Verify(signature, data []byte) bool {
 	return l.peerSigPub.Verify(signature, data)
 }
 
-// Encrypt encrypts data for transmission over the link.
+// Encrypt obscures arbitrary plaintext data securely using the derived symmetric session token established during handshake.
 func (l *Link) Encrypt(plaintext []byte) ([]byte, error) {
 	if l.token == nil {
 		return nil, errors.New("link session keys not initialized")
@@ -678,7 +700,7 @@ func (l *Link) Encrypt(plaintext []byte) ([]byte, error) {
 	return l.token.Encrypt(plaintext)
 }
 
-// Decrypt decrypts data received over the link.
+// Decrypt strips away link-level encryption using the derived symmetric session token, returning original plaintext.
 func (l *Link) Decrypt(ciphertext []byte) ([]byte, error) {
 	if l.token == nil {
 		return nil, errors.New("link session keys not initialized")
@@ -686,7 +708,7 @@ func (l *Link) Decrypt(ciphertext []byte) ([]byte, error) {
 	return l.token.Decrypt(ciphertext)
 }
 
-// Identify identifies the initiator to the remote peer.
+// Identify explicitly reveals and cryptographically proves the initiator's long-term identity to the remote peer over this active link.
 func (l *Link) Identify(identity *Identity) error {
 	if !l.initiator || l.status != LinkActive {
 		return errors.New("invalid state for identification")
@@ -717,7 +739,7 @@ func (l *Link) Identify(identity *Identity) error {
 	return p.Send()
 }
 
-// LoadPeer loads the peer's public keys.
+// LoadPeer parses and permanently associates the remote peer's ephemeral public encryption and signature keys into link state.
 func (l *Link) LoadPeer(pubBytes, sigPubBytes []byte) error {
 	var err error
 	l.peerPubBytes = pubBytes
@@ -735,8 +757,7 @@ func (l *Link) LoadPeer(pubBytes, sigPubBytes []byte) error {
 	return nil
 }
 
-// SetPacketCallback sets the callback for received data packets on the link.
-// The callback receives the decrypted payload and the packet.
+// SetPacketCallback registers a handler function that executes precisely when standard decrypted data packets traverse the link.
 func (l *Link) SetPacketCallback(callback func([]byte, *Packet)) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -749,14 +770,14 @@ func (l *Link) SetPacketCallback(callback func([]byte, *Packet)) {
 	}
 }
 
-// SetResourceCallback sets the callback for incoming resources.
+// SetResourceCallback defines a handler function consulted whenever a remote peer advertises a potential resource transfer over the link.
 func (l *Link) SetResourceCallback(callback func(*ResourceAdvertisement) bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.callbacks.Resource = callback
 }
 
-// SetResourceStrategy configures how incoming resource advertisements are handled.
+// SetResourceStrategy explicitly overrides the default behavior dictating whether new incoming resource advertisements should be accepted.
 func (l *Link) SetResourceStrategy(strategy int) error {
 	if strategy != AcceptNone && strategy != AcceptApp && strategy != AcceptAll {
 		return fmt.Errorf("invalid resource strategy %v", strategy)
@@ -767,49 +788,49 @@ func (l *Link) SetResourceStrategy(strategy int) error {
 	return nil
 }
 
-// SetResourceStartedCallback sets the callback for when a resource starts.
+// SetResourceStartedCallback assigns a notification function to fire synchronously when an incoming resource transfer physically begins.
 func (l *Link) SetResourceStartedCallback(callback func(*Resource)) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.callbacks.ResourceStarted = callback
 }
 
-// SetResourceConcludedCallback sets the callback for completed resources.
+// SetResourceConcludedCallback defines a notification handler to fire precisely when an inbound resource transfer reaches completion.
 func (l *Link) SetResourceConcludedCallback(callback func(*Resource)) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.callbacks.ResourceConcluded = callback
 }
 
-// SetLinkEstablishedCallback sets the callback for established links.
+// SetLinkEstablishedCallback maps a custom application routine to trigger immediately upon the successful activation of this link.
 func (l *Link) SetLinkEstablishedCallback(callback func(*Link)) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.callbacks.LinkEstablished = callback
 }
 
-// SetRemoteIdentifiedCallback sets the callback for remote identity discovery on link identify packets.
+// SetRemoteIdentifiedCallback maps an application hook firing when a remote peer safely proves its long-term identity via an in-band packet.
 func (l *Link) SetRemoteIdentifiedCallback(callback func(*Link, *Identity)) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.callbacks.RemoteIdentified = callback
 }
 
-// SetLinkClosedCallback sets the callback invoked when the link is closed.
+// SetLinkClosedCallback defines a mandatory notification hook designed to safely clean up logic when the link connection terminates.
 func (l *Link) SetLinkClosedCallback(callback func(*Link)) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.callbacks.LinkClosed = callback
 }
 
-// GetRemoteIdentity returns the last verified remote identity for the link.
+// GetRemoteIdentity securely retrieves the underlying structural Identity, if the peer has opted to reveal and prove it.
 func (l *Link) GetRemoteIdentity() *Identity {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.remoteIdentity
 }
 
-// GetChannel returns a Channel over this link.
+// GetChannel allocates and automatically starts a high-level stream-oriented Channel built seamlessly over this discrete link.
 func (l *Link) GetChannel() *Channel {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -820,19 +841,22 @@ func (l *Link) GetChannel() *Channel {
 	return l.channel
 }
 
+// GetPublicBytes retrieves the raw byte representation of the local node's ephemeral encryption public key.
 func (l *Link) GetPublicBytes() []byte {
 	return l.pubBytes
 }
 
+// GetSigPublicBytes retrieves the raw byte representation of the local node's ephemeral signature public key.
 func (l *Link) GetSigPublicBytes() []byte {
 	return l.sigPubBytes
 }
 
-// LinkChannelOutlet implements ChannelOutlet for a Link.
+// LinkChannelOutlet serves as a structural bridge integrating an abstract Channel directly atop a physical link.
 type LinkChannelOutlet struct {
 	link *Link
 }
 
+// Send dynamically wraps raw channel data into a formatted packet and delegates physical transmission to the link transport.
 func (o *LinkChannelOutlet) Send(raw []byte) (*Packet, error) {
 	p := NewPacketWithTransport(o.link.transport, o.link, raw)
 	p.Context = ContextChannel
@@ -842,6 +866,7 @@ func (o *LinkChannelOutlet) Send(raw []byte) (*Packet, error) {
 	return p, nil
 }
 
+// Resend attempts to retransmit a previously stalled packet without altering its fundamental cryptographic identity.
 func (o *LinkChannelOutlet) Resend(p *Packet) (*Packet, error) {
 	if p == nil {
 		return nil, errors.New("cannot resend nil packet")
@@ -855,19 +880,22 @@ func (o *LinkChannelOutlet) Resend(p *Packet) (*Packet, error) {
 	return p, nil
 }
 
+// MDU forwards the calculated Maximum Data Unit safely available to the channel from the underlying link limitations.
 func (o *LinkChannelOutlet) MDU() int {
 	return o.link.mdu
 }
 
+// RTT exposes the current measured Round Trip Time from the underlying link strictly to aid the channel's retry metrics.
 func (o *LinkChannelOutlet) RTT() float64 {
 	return o.link.rtt
 }
 
+// IsUsable safely reports whether the physical link remains in an active state capable of sustaining channel traffic.
 func (o *LinkChannelOutlet) IsUsable() bool {
 	return o.link.status == LinkActive
 }
 
-// Teardown closes the link.
+// Teardown actively closes the link, destroying related channels, and notifying any observers that data transmission has halted.
 func (l *Link) Teardown() {
 	l.teardown(LinkClosed)
 }
@@ -892,7 +920,7 @@ func (l *Link) teardown(reason int) {
 	Logf("Link %x closed", LogVerbose, false, l.linkID)
 }
 
-// Request sends a request to the remote peer.
+// Request fires a generalized structured request packet asynchronously, expecting a correlated logical response from the remote peer.
 func (l *Link) Request(path string, data any, responseCallback, failedCallback, progressCallback func(*RequestReceipt), timeout time.Duration) (*RequestReceipt, error) {
 	requestPathHash := TruncatedHash([]byte(path))
 	// unpacked_request  = [time.time(), request_path_hash, data]
@@ -1078,7 +1106,6 @@ func (l *Link) handleResponse(requestID []byte, responseData any, metadata any) 
 	}
 }
 
-// removePendingRequest removes the given RequestReceipt from the pending requests list.
 func (l *Link) removePendingRequest(rr *RequestReceipt) {
 	l.mu.Lock()
 	defer l.mu.Unlock()

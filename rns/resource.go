@@ -19,17 +19,23 @@ import (
 
 var resourceRandRead = rand.Read
 
-// Resource constants
 const (
-	ResourceMapHashLen          = 4
-	ResourceRandomHashSize      = 4
+	// ResourceMapHashLen specifies the length of the map hash used for verifying resource parts.
+	ResourceMapHashLen = 4
+	// ResourceRandomHashSize specifies the length of the random hash used to uniquely identify a resource transfer.
+	ResourceRandomHashSize = 4
+	// ResourceAutoCompressMaxSize sets the upper limit on data size before auto-compression is skipped.
 	ResourceAutoCompressMaxSize = 64 * 1024 * 1024
 )
 
+// ResourceOptions configures optional behavior for new resource transmissions, such as compression.
 type ResourceOptions struct {
-	AutoCompress      bool
+	// AutoCompress determines if the data should be automatically compressed before transmission.
+	AutoCompress bool
+	// AutoCompressLimit sets the maximum byte size for data to be eligible for auto-compression.
 	AutoCompressLimit int
-	CompressionLevel  int
+	// CompressionLevel sets the algorithm-specific compression level.
+	CompressionLevel int
 }
 
 func (o ResourceOptions) normalized() ResourceOptions {
@@ -43,26 +49,35 @@ func (o ResourceOptions) normalized() ResourceOptions {
 	return norm
 }
 
-// Resource status constants
 const (
-	ResourceStatusNone          = 0x00
-	ResourceStatusQueued        = 0x01
-	ResourceStatusAdvertised    = 0x02
-	ResourceStatusTransferring  = 0x03
+	// ResourceStatusNone indicates an uninitialized or reset resource state.
+	ResourceStatusNone = 0x00
+	// ResourceStatusQueued indicates the resource is prepared but transmission hasn't started.
+	ResourceStatusQueued = 0x01
+	// ResourceStatusAdvertised indicates an advertisement has been sent, awaiting acceptance.
+	ResourceStatusAdvertised = 0x02
+	// ResourceStatusTransferring indicates parts are currently being exchanged.
+	ResourceStatusTransferring = 0x03
+	// ResourceStatusAwaitingProof indicates all parts were sent, awaiting final delivery proof.
 	ResourceStatusAwaitingProof = 0x04
-	ResourceStatusAssembling    = 0x05
-	ResourceStatusComplete      = 0x06
-	ResourceStatusFailed        = 0x07
-	ResourceStatusCorrupt       = 0x08
-	ResourceStatusRejected      = 0x00
+	// ResourceStatusAssembling indicates the resource is currently piecing together received parts.
+	ResourceStatusAssembling = 0x05
+	// ResourceStatusComplete indicates the resource transfer succeeded and data is ready.
+	ResourceStatusComplete = 0x06
+	// ResourceStatusFailed indicates the transfer failed or timed out.
+	ResourceStatusFailed = 0x07
+	// ResourceStatusCorrupt indicates the assembled data failed hash verification.
+	ResourceStatusCorrupt = 0x08
+	// ResourceStatusRejected indicates the receiver actively declined the resource.
+	ResourceStatusRejected = 0x00
 )
 
-// ResourceAdvertisement constants
 const (
+	// ResourceAdvOverhead defines the byte overhead size for a resource advertisement packet.
 	ResourceAdvOverhead = 134
 )
 
-// ResourceAdvertisement represents a resource advertisement packet data.
+// ResourceAdvertisement represents the payload of a resource advertisement packet, carrying metadata needed to initiate a transfer.
 type ResourceAdvertisement struct {
 	T int64  `msgpack:"t"` // Transfer size
 	D int64  `msgpack:"d"` // Data size
@@ -85,7 +100,7 @@ type ResourceAdvertisement struct {
 	HasMetadata bool
 }
 
-// Pack serializes the ResourceAdvertisement.
+// Pack serializes the ResourceAdvertisement into a compact MessagePack format suitable for network transmission.
 func (adv *ResourceAdvertisement) Pack() ([]byte, error) {
 	// Encode flags
 	adv.F = 0
@@ -124,7 +139,7 @@ func (adv *ResourceAdvertisement) Pack() ([]byte, error) {
 	return msgpack.Pack(m)
 }
 
-// UnpackResourceAdvertisement deserializes data into a ResourceAdvertisement.
+// UnpackResourceAdvertisement deserializes a raw MessagePack byte slice into a structured ResourceAdvertisement.
 func UnpackResourceAdvertisement(data []byte) (*ResourceAdvertisement, error) {
 	unpacked, err := msgpack.Unpack(data)
 	if err != nil {
@@ -225,7 +240,7 @@ func UnpackResourceAdvertisement(data []byte) (*ResourceAdvertisement, error) {
 	return adv, nil
 }
 
-// Reject rejects a resource advertisement.
+// Reject gracefully declines an incoming resource advertisement, informing the sender that the transfer will not proceed.
 func Reject(packet *Packet) error {
 	adv, err := UnpackResourceAdvertisement(packet.Data)
 	if err != nil {
@@ -242,7 +257,7 @@ func Reject(packet *Packet) error {
 	return rejectPacket.Send()
 }
 
-// Accept accepts a resource advertisement.
+// Accept accepts an incoming resource advertisement and begins the process of sequentially requesting and receiving its data parts.
 func Accept(packet *Packet, callback func(*Resource), startedCallback func(*Resource), progressCallback func(*Resource)) (*Resource, error) {
 	adv, err := UnpackResourceAdvertisement(packet.Data)
 	if err != nil {
@@ -309,7 +324,7 @@ func Accept(packet *Packet, callback func(*Resource), startedCallback func(*Reso
 	return r, nil
 }
 
-// Resource handles transferring arbitrary amounts of data over a link.
+// Resource manages the state, sequencing, and reliable transmission of arbitrary amounts of data over a given link.
 type Resource struct {
 	link             *Link
 	initiator        bool
@@ -347,7 +362,7 @@ type Resource struct {
 	mu sync.Mutex
 }
 
-// ResourcePart represents a single part of a resource transfer.
+// ResourcePart encapsulates a single chunk of data within a larger resource transfer, tracking its unique hash and transmission status.
 type ResourcePart struct {
 	Data         []byte // Original data for outgoing
 	ReceivedData []byte // Data received for incoming
@@ -357,12 +372,12 @@ type ResourcePart struct {
 	Sent         bool
 }
 
-// NewResource creates a new resource for transmission.
+// NewResource initializes a new resource transfer for the provided data over the specified link using default options.
 func NewResource(data []byte, link *Link) (*Resource, error) {
 	return NewResourceWithOptions(data, link, ResourceOptions{})
 }
 
-// NewResourceWithOptions creates a new resource for transmission with explicit compression policy.
+// NewResourceWithOptions initializes a new resource transfer, allowing explicit configuration of parameters like compression policy.
 func NewResourceWithOptions(data []byte, link *Link, opts ResourceOptions) (*Resource, error) {
 	if link.status != LinkActive {
 		return nil, fmt.Errorf("link is not active")
@@ -454,25 +469,26 @@ func (r *Resource) getMapHash(data []byte) []byte {
 	return FullHash(hashMaterial)[:ResourceMapHashLen]
 }
 
+// Hash returns the unique cryptographic identifier of the entire resource data payload.
 func (r *Resource) Hash() []byte {
 	return r.hash
 }
 
-// Status returns the current transfer status.
+// Status retrieves the current lifecycle state of the resource transfer.
 func (r *Resource) Status() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.status
 }
 
-// Data returns a copy of the assembled resource payload.
+// Data provides a full copy of the internally assembled and verified payload data.
 func (r *Resource) Data() []byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return copyBytes(r.data)
 }
 
-// GetProgress returns the transfer progress as a float between 0.0 and 1.0.
+// GetProgress calculates the transfer progress as a float value spanning from 0.0 to 1.0.
 func (r *Resource) GetProgress() float64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -482,26 +498,26 @@ func (r *Resource) GetProgress() float64 {
 	return float64(r.receivedCount) / float64(r.totalParts)
 }
 
-// TotalSize returns the total data size of the resource.
+// TotalSize yields the cumulative byte size of the resource as transmitted over the network.
 func (r *Resource) TotalSize() int64 {
 	return r.size
 }
 
-// SetCallback sets the completion callback.
+// SetCallback registers a function to execute when the resource transfer achieves completion or fails permanently.
 func (r *Resource) SetCallback(cb func(*Resource)) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.callback = cb
 }
 
-// SetProgressCallback sets the progress callback.
+// SetProgressCallback registers a function to execute periodically as parts of the resource are successively delivered.
 func (r *Resource) SetProgressCallback(cb func(*Resource)) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.progressCallback = cb
 }
 
-// RequestNext is called on incoming resources to request more data.
+// RequestNext triggers a network request for the next optimal batch of missing data parts on an incoming transfer.
 func (r *Resource) RequestNext() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -550,7 +566,7 @@ func (r *Resource) RequestNext() error {
 	return nil
 }
 
-// Request is called on outgoing resources to handle incoming data requests.
+// Request processes an inbound packet requesting specific missing data parts and dispatches them directly over the link.
 func (r *Resource) Request(requestData []byte) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -604,7 +620,7 @@ func (r *Resource) Request(requestData []byte) error {
 	return nil
 }
 
-// ValidateProof validates an incoming proof for an outgoing resource transfer.
+// ValidateProof verifies an incoming cryptographic proof of delivery for an outgoing resource transfer, marking it as complete on success.
 func (r *Resource) ValidateProof(proofData []byte) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -638,7 +654,7 @@ func (r *Resource) ValidateProof(proofData []byte) {
 	}
 }
 
-// ReceivePart is called on incoming resources when a data part is received.
+// ReceivePart incorporates a newly arrived data part into the resource, triggering assembly if all parts have been accumulated.
 func (r *Resource) ReceivePart(packet *Packet) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -688,7 +704,7 @@ func (r *Resource) ReceivePart(packet *Packet) error {
 	return nil
 }
 
-// Assemble assembles the received parts into the final data.
+// Assemble reconstructs the original payload from received parts, verifies cryptographic integrity, decrypts, and decompresses as necessary.
 func (r *Resource) Assemble() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -770,7 +786,7 @@ func (r *Resource) prove() error {
 	return p.Send()
 }
 
-// Advertise sends a resource advertisement.
+// Advertise broadcasts a resource advertisement over the link to notify the remote peer of an impending transfer.
 func (r *Resource) Advertise() error {
 	hashmapRaw := make([]byte, 0, len(r.hashmap)*ResourceMapHashLen)
 	for _, mh := range r.hashmap {

@@ -19,13 +19,13 @@ import (
 )
 
 const (
-	// IdentityCurve is the curve used for Elliptic Curve DH key exchanges.
+	// IdentityCurve specifies the elliptic curve standard used for Ephemeral Diffie-Hellman key exchanges within Reticulum.
 	IdentityCurve = "Curve25519"
-	// IdentityKeySize is the combined size of X25519 and Ed25519 keys in bits.
+	// IdentityKeySize specifies the combined total size in bits of both the encryption and signing keypairs.
 	IdentityKeySize = 256 * 2
 )
 
-// Identity represents a Reticulum identity, combining encryption and signing keys.
+// Identity encapsulates the fundamental cryptographic material representing a unique node or user within the Reticulum network.
 type Identity struct {
 	prv    *crypto.X25519PrivateKey
 	pub    *crypto.X25519PublicKey
@@ -44,7 +44,7 @@ var (
 	currentStoragePath string
 )
 
-// Remember remembers an identity for a destination hash.
+// Remember caches a newly discovered identity and its associated routing context in local ephemeral or persistent storage.
 func Remember(packetHash, destHash, publicKey, appData []byte) {
 	identityMu.Lock()
 	knownDestinations[string(destHash)] = []any{
@@ -61,7 +61,7 @@ func Remember(packetHash, destHash, publicKey, appData []byte) {
 	}
 }
 
-// RememberRatchet remembers a ratchet public key for a destination hash.
+// RememberRatchet securely registers and optionally persists a forward-secrecy ratchet public key associated with a specific destination.
 func RememberRatchet(destHash, ratchetPub []byte) {
 	identityMu.Lock()
 	destHashStr := string(destHash)
@@ -110,7 +110,7 @@ func persistRatchet(storagePath string, destHash, ratchetPub []byte) {
 	}
 }
 
-// GetRatchet retrieves the latest known ratchet public key for a destination.
+// GetRatchet retrieves the most recently observed valid forward-secrecy ratchet public key for a known destination.
 func GetRatchet(destHash []byte) []byte {
 	identityMu.Lock()
 	destHashStr := string(destHash)
@@ -164,7 +164,7 @@ func GetRatchet(destHash []byte) []byte {
 	return nil
 }
 
-// CleanRatchets removes expired ratchets from storage.
+// CleanRatchets scans persistent storage and aggressively purges any expired forward-secrecy ratchet data.
 func CleanRatchets() {
 	identityMu.Lock()
 	path := currentStoragePath
@@ -215,7 +215,7 @@ func CleanRatchets() {
 	}
 }
 
-// Recall recalls an identity for a destination or identity hash.
+// Recall reconstructs an Identity instance dynamically from known network data or transport registry.
 func Recall(targetHash []byte, fromIdentityHash bool) *Identity {
 	identityMu.Lock()
 	defer identityMu.Unlock()
@@ -278,7 +278,7 @@ func Recall(targetHash []byte, fromIdentityHash bool) *Identity {
 	return nil
 }
 
-// LoadKnownDestinations loads known destinations from storage.
+// LoadKnownDestinations populates the local identity cache using serialized data retrieved from disk.
 func LoadKnownDestinations(storagePath string) {
 	identityMu.Lock()
 	currentStoragePath = storagePath
@@ -311,7 +311,7 @@ func LoadKnownDestinations(storagePath string) {
 	}
 }
 
-// SaveKnownDestinations saves known destinations to storage.
+// SaveKnownDestinations serializes and safely flushes the currently cached known network identities to persistent storage.
 func SaveKnownDestinations(storagePath string) {
 	path := filepath.Join(storagePath, "known_destinations")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -336,7 +336,7 @@ func SaveKnownDestinations(storagePath string) {
 	Logf("Saved %v known destinations to storage", LogDebug, false, count)
 }
 
-// NewIdentity creates a new identity. If createKeys is true, new keys are generated.
+// NewIdentity allocates a new structural container, optionally auto-generating pristine cryptographic keys.
 func NewIdentity(createKeys bool) (*Identity, error) {
 	id := &Identity{}
 	if createKeys {
@@ -347,7 +347,7 @@ func NewIdentity(createKeys bool) (*Identity, error) {
 	return id, nil
 }
 
-// CreateKeys generates new encryption and signing keys for the identity.
+// CreateKeys securely computes fresh, tightly coupled encryption and signature keypairs for this identity.
 func (id *Identity) CreateKeys() error {
 	prv, err := crypto.GenerateX25519PrivateKey()
 	if err != nil {
@@ -367,13 +367,13 @@ func (id *Identity) CreateKeys() error {
 	return nil
 }
 
-// UpdateHashes updates the identity's hash and hex hash based on its public key.
+// UpdateHashes re-calculates the internal cryptographic hash values corresponding to the underlying public key.
 func (id *Identity) UpdateHashes() {
 	id.Hash = TruncatedHash(id.GetPublicKey())
 	id.HexHash = fmt.Sprintf("%x", id.Hash)
 }
 
-// GetPublicKey returns the combined public key bytes.
+// GetPublicKey extracts and concatenates the strict byte representations of the public encryption and signature keys.
 func (id *Identity) GetPublicKey() []byte {
 	if id.pub == nil || id.sigPub == nil {
 		return nil
@@ -381,7 +381,7 @@ func (id *Identity) GetPublicKey() []byte {
 	return append(id.pub.PublicBytes(), id.sigPub.PublicBytes()...)
 }
 
-// GetPrivateKey returns the combined private key bytes.
+// GetPrivateKey extracts and concatenates the strict byte representations of the private encryption and signature keys.
 func (id *Identity) GetPrivateKey() []byte {
 	if id.prv == nil || id.sigPrv == nil {
 		return nil
@@ -389,7 +389,7 @@ func (id *Identity) GetPrivateKey() []byte {
 	return append(id.prv.PrivateBytes(), id.sigPrv.PrivateBytes()...)
 }
 
-// LoadPrivateKey loads a private key from bytes.
+// LoadPrivateKey meticulously parses raw bytes to securely reinstantiate the underlying private key materials.
 func (id *Identity) LoadPrivateKey(data []byte) error {
 	half := IdentityKeySize / 8 / 2
 	if len(data) != half*2 {
@@ -414,7 +414,7 @@ func (id *Identity) LoadPrivateKey(data []byte) error {
 	return nil
 }
 
-// LoadPublicKey loads a public key from bytes.
+// LoadPublicKey safely interprets raw network bytes to populate the associated public verification materials.
 func (id *Identity) LoadPublicKey(data []byte) error {
 	half := IdentityKeySize / 8 / 2
 	if len(data) != half*2 {
@@ -437,18 +437,17 @@ func (id *Identity) LoadPublicKey(data []byte) error {
 	return nil
 }
 
-// FullHash returns the SHA-256 hash of the data.
+// FullHash computes an unmodified SHA-256 digest over arbitrary binary data.
 func FullHash(data []byte) []byte {
 	return crypto.SHA256(data)
 }
 
-// TruncatedHash returns the truncated SHA-256 hash of the data.
+// TruncatedHash computes a SHA-256 digest but aggressively truncates it to align with internal routing lengths.
 func TruncatedHash(data []byte) []byte {
 	return FullHash(data)[:TruncatedHashLength/8]
 }
 
-// CurrentRatchetID returns the ratchet ID for the given destination hash,
-// or nil if no ratchet is known. Mirrors Python Identity.current_ratchet_id().
+// CurrentRatchetID calculates the short unique identifier corresponding to the active forward-secrecy key.
 func CurrentRatchetID(destHash []byte) []byte {
 	ratchet := GetRatchet(destHash)
 	if ratchet == nil {
@@ -457,12 +456,12 @@ func CurrentRatchetID(destHash []byte) []byte {
 	return RatchetID(ratchet)
 }
 
-// RatchetID returns the 10-byte truncated hash of a ratchet's public key.
+// RatchetID generates the unique internal identifier corresponding directly to a specific ratchet public key.
 func RatchetID(ratchetPubBytes []byte) []byte {
 	return FullHash(ratchetPubBytes)[:NameHashLength/8]
 }
 
-// Sign signs a message using the identity's signing key.
+// Sign delegates the generation of an Ed25519 cryptographic signature utilizing the identity's private signing key.
 func (id *Identity) Sign(message []byte) ([]byte, error) {
 	if id.sigPrv == nil {
 		return nil, errors.New("identity does not hold a private signing key")
@@ -470,7 +469,7 @@ func (id *Identity) Sign(message []byte) ([]byte, error) {
 	return id.sigPrv.Sign(message), nil
 }
 
-// Verify verifies a signature for a message using the identity's public signing key.
+// Verify securely validates an Ed25519 cryptographic signature against an arbitrary message utilizing the identity's public key.
 func (id *Identity) Verify(signature, message []byte) bool {
 	if id.sigPub == nil {
 		return false
@@ -478,7 +477,7 @@ func (id *Identity) Verify(signature, message []byte) bool {
 	return id.sigPub.Verify(signature, message)
 }
 
-// ValidateAnnounce validates an announce packet.
+// ValidateAnnounce exhaustively processes a newly received announce packet, verifying cryptographic proofs and logical constraints.
 func ValidateAnnounce(packet *Packet) bool {
 	if packet.PacketType != PacketAnnounce {
 		return false
@@ -558,7 +557,7 @@ func ValidateAnnounce(packet *Packet) bool {
 	return true
 }
 
-// Encrypt encrypts data for the identity using an ephemeral key and HKDF.
+// Encrypt constructs a highly secure cipher envelope over the payload, bootstrapping session keys via ephemeral Diffie-Hellman handshakes.
 func (id *Identity) Encrypt(plaintext []byte, ratchetPubBytes []byte) ([]byte, error) {
 	var targetPub *crypto.X25519PublicKey
 	var err error
@@ -610,7 +609,7 @@ func (id *Identity) encryptWithToken(token *crypto.Token, plaintext []byte) ([]b
 	return token.Encrypt(plaintext)
 }
 
-// Decrypt decrypts data for the identity.
+// Decrypt attempts to symmetrically invert an encrypted payload utilizing dynamic fallback between ephemeral ratchets and static keys.
 func (id *Identity) Decrypt(ciphertext []byte, ratchets []*crypto.X25519PrivateKey, enforceRatchets bool) ([]byte, error) {
 	half := IdentityKeySize / 8 / 2
 	if len(ciphertext) < half {
@@ -675,7 +674,7 @@ func (id *Identity) Decrypt(ciphertext []byte, ratchets []*crypto.X25519PrivateK
 	return token.Decrypt(tokenCiphertext)
 }
 
-// FromFile loads an identity from a file.
+// FromFile instantiates a fully operational Identity context strictly by loading raw material from disk.
 func FromFile(path string) (*Identity, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -691,7 +690,7 @@ func FromFile(path string) (*Identity, error) {
 	return id, nil
 }
 
-// ToFile saves the identity's private key to a file.
+// ToFile safely exports the core private identity bytes directly to a specified system path, restricted strictly for owner access.
 func (id *Identity) ToFile(path string) error {
 	data := id.GetPrivateKey()
 	if data == nil {
