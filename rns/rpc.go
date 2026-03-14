@@ -576,6 +576,7 @@ func (r *Reticulum) unblackholeIdentity(identityHash []byte) bool {
 	return r.transport.UnblackholeIdentity(identityHash)
 }
 
+// InterfaceStat represents the statistics and status of a single network interface.
 type InterfaceStat struct {
 	Name    string
 	Type    string
@@ -585,6 +586,7 @@ type InterfaceStat struct {
 	TXB     uint64
 }
 
+// InterfaceStatsSnapshot represents a snapshot of statistics for all network interfaces.
 type InterfaceStatsSnapshot struct {
 	Interfaces []InterfaceStat
 	RXB        uint64
@@ -606,6 +608,7 @@ func (r *Reticulum) InterfaceStats() (*InterfaceStatsSnapshot, error) {
 	return decodeInterfaceStats(local), nil
 }
 
+// PathTable retrieves the current path table from the transport system, optionally limiting the results to a maximum number of hops.
 func (r *Reticulum) PathTable(maxHops int) ([]any, error) {
 	if r.isConnectedToSharedInstance {
 		resp, err := r.callRPC(map[string]any{"get": "path_table", "max_hops": maxHops})
@@ -620,6 +623,7 @@ func (r *Reticulum) PathTable(maxHops int) ([]any, error) {
 	return r.getPathTable(maxHops), nil
 }
 
+// RateTable retrieves the current announce rate table from the transport system.
 func (r *Reticulum) RateTable() ([]any, error) {
 	if r.isConnectedToSharedInstance {
 		resp, err := r.callRPC(map[string]any{"get": "rate_table"})
@@ -634,6 +638,7 @@ func (r *Reticulum) RateTable() ([]any, error) {
 	return r.getRateTable(), nil
 }
 
+// BlackholedIdentities retrieves the list of currently blackholed identities from the transport system.
 func (r *Reticulum) BlackholedIdentities() ([]any, error) {
 	if r.isConnectedToSharedInstance {
 		resp, err := r.callRPC(map[string]any{"get": "blackholed_identities"})
@@ -648,6 +653,7 @@ func (r *Reticulum) BlackholedIdentities() ([]any, error) {
 	return r.getBlackholedIdentities(), nil
 }
 
+// NextHop determines the next hop interface hash for a given destination hash.
 func (r *Reticulum) NextHop(destinationHash []byte) ([]byte, error) {
 	if r.isConnectedToSharedInstance {
 		resp, err := r.callRPC(map[string]any{"get": "next_hop", "destination_hash": destinationHash})
@@ -662,6 +668,7 @@ func (r *Reticulum) NextHop(destinationHash []byte) ([]byte, error) {
 	return r.getNextHop(destinationHash), nil
 }
 
+// NextHopInterfaceName retrieves the name of the interface that will be used for the next hop towards a destination.
 func (r *Reticulum) NextHopInterfaceName(destinationHash []byte) (string, error) {
 	if r.isConnectedToSharedInstance {
 		resp, err := r.callRPC(map[string]any{"get": "next_hop_if_name", "destination_hash": destinationHash})
@@ -673,6 +680,7 @@ func (r *Reticulum) NextHopInterfaceName(destinationHash []byte) (string, error)
 	return r.getNextHopInterfaceName(destinationHash), nil
 }
 
+// LinkCount returns the total number of active links currently managed by the transport system.
 func (r *Reticulum) LinkCount() (int, error) {
 	if r.isConnectedToSharedInstance {
 		resp, err := r.callRPC(map[string]any{"get": "link_count"})
@@ -684,6 +692,7 @@ func (r *Reticulum) LinkCount() (int, error) {
 	return r.getLinkCount(), nil
 }
 
+// FirstHopTimeout calculates the appropriate timeout in seconds for the first hop towards a given destination.
 func (r *Reticulum) FirstHopTimeout(destinationHash []byte) (int, error) {
 	if r.isConnectedToSharedInstance {
 		resp, err := r.callRPC(map[string]any{"get": "first_hop_timeout", "destination_hash": destinationHash})
@@ -700,6 +709,7 @@ func (r *Reticulum) FirstHopTimeout(destinationHash []byte) (int, error) {
 	return r.getFirstHopTimeout(destinationHash), nil
 }
 
+// PacketRSSI retrieves the Received Signal Strength Indicator (RSSI) for a specific packet hash, if available.
 func (r *Reticulum) PacketRSSI(packetHash []byte) (any, error) {
 	if r.isConnectedToSharedInstance {
 		resp, err := r.callRPC(map[string]any{"get": "packet_rssi", "packet_hash": packetHash})
@@ -711,6 +721,7 @@ func (r *Reticulum) PacketRSSI(packetHash []byte) (any, error) {
 	return r.getPacketRSSI(packetHash), nil
 }
 
+// PacketSNR retrieves the Signal-to-Noise Ratio (SNR) for a specific packet hash, if available.
 func (r *Reticulum) PacketSNR(packetHash []byte) (any, error) {
 	if r.isConnectedToSharedInstance {
 		resp, err := r.callRPC(map[string]any{"get": "packet_snr", "packet_hash": packetHash})
@@ -722,6 +733,7 @@ func (r *Reticulum) PacketSNR(packetHash []byte) (any, error) {
 	return r.getPacketSNR(packetHash), nil
 }
 
+// PacketQ retrieves the Link Quality indicator for a specific packet hash, if available.
 func (r *Reticulum) PacketQ(packetHash []byte) (any, error) {
 	if r.isConnectedToSharedInstance {
 		resp, err := r.callRPC(map[string]any{"get": "packet_q", "packet_hash": packetHash})
@@ -733,6 +745,7 @@ func (r *Reticulum) PacketQ(packetHash []byte) (any, error) {
 	return r.getPacketQ(packetHash), nil
 }
 
+// DropPath invalidates any known path to a given destination hash from the transport system's path table.
 func (r *Reticulum) DropPath(destinationHash []byte) (bool, error) {
 	if r.isConnectedToSharedInstance {
 		resp, err := r.callRPC(map[string]any{"drop": "path", "destination_hash": destinationHash})
@@ -744,6 +757,7 @@ func (r *Reticulum) DropPath(destinationHash []byte) (bool, error) {
 	return r.transport.InvalidatePath(destinationHash), nil
 }
 
+// DropAllVia invalidates all paths that go through the specified next hop destination hash.
 func (r *Reticulum) DropAllVia(destinationHash []byte) (int, error) {
 	if r.isConnectedToSharedInstance {
 		resp, err := r.callRPC(map[string]any{"drop": "all_via", "destination_hash": destinationHash})
@@ -755,6 +769,7 @@ func (r *Reticulum) DropAllVia(destinationHash []byte) (int, error) {
 	return r.transport.InvalidatePathsViaNextHop(destinationHash), nil
 }
 
+// DropAnnounceQueues clears all pending and queued announces from the transport system.
 func (r *Reticulum) DropAnnounceQueues() (int, error) {
 	if r.isConnectedToSharedInstance {
 		resp, err := r.callRPC(map[string]any{"drop": "announce_queues"})
@@ -766,6 +781,7 @@ func (r *Reticulum) DropAnnounceQueues() (int, error) {
 	return r.dropAnnounceQueues(), nil
 }
 
+// BlackholeIdentity adds an identity hash to the local blackhole list, preventing it from interacting with the network.
 func (r *Reticulum) BlackholeIdentity(identityHash []byte, until *int64, reason string) (bool, error) {
 	if len(identityHash) != TruncatedHashLength/8 {
 		return false, nil
@@ -785,6 +801,7 @@ func (r *Reticulum) BlackholeIdentity(identityHash []byte, until *int64, reason 
 	return r.blackholeIdentity(identityHash, until, reason), nil
 }
 
+// UnblackholeIdentity removes an identity hash from the local blackhole list, restoring its ability to interact with the network.
 func (r *Reticulum) UnblackholeIdentity(identityHash []byte) (bool, error) {
 	if len(identityHash) != TruncatedHashLength/8 {
 		return false, nil

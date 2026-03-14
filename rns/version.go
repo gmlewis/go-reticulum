@@ -5,5 +5,5 @@
 
 package rns
 
-// VERSION is on a line by itself to enable auto version bumping:
+// VERSION is the current version of the Reticulum Network Stack, kept on a line by itself to enable auto version bumping.
 const VERSION = "0.1.0"

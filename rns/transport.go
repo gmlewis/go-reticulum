@@ -62,6 +62,7 @@ type TransportSystem struct {
 	mu sync.Mutex
 }
 
+// AnnounceEntry represents a stored network announce within the transport system.
 type AnnounceEntry struct {
 	PacketRaw         []byte
 	SourceInterface   interfaces.Interface
@@ -70,6 +71,7 @@ type AnnounceEntry struct {
 	Retries           int
 }
 
+// AnnounceRateEntry tracks the rate of announces received for a specific destination.
 type AnnounceRateEntry struct {
 	Last           time.Time
 	RateViolations int
@@ -77,6 +79,7 @@ type AnnounceRateEntry struct {
 	Timestamps     []time.Time
 }
 
+// BlackholeIdentityEntry defines an identity that is temporarily or permanently blocked from communication.
 type BlackholeIdentityEntry struct {
 	IdentityHash []byte
 	Until        *time.Time
@@ -315,6 +318,7 @@ func (ts *TransportSystem) Start(storagePath string) error {
 	return nil
 }
 
+// Stop halts the transport system, shutting down all network interfaces and closing active connections.
 func (ts *TransportSystem) Stop() {
 	ts.mu.Lock()
 	if !ts.running {
@@ -345,12 +349,14 @@ func (ts *TransportSystem) Stop() {
 	ts.activeLinks = nil
 }
 
+// SetNetworkIdentity sets the primary identity used by the transport system for network-level operations.
 func (ts *TransportSystem) SetNetworkIdentity(identity *Identity) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	ts.networkID = identity
 }
 
+// NetworkIdentityHash retrieves the hash of the current network identity, if one is configured.
 func (ts *TransportSystem) NetworkIdentityHash() []byte {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
@@ -362,12 +368,14 @@ func (ts *TransportSystem) NetworkIdentityHash() []byte {
 	return h
 }
 
+// DiscoverInterfaces initiates a discovery process to find available interfaces on the network.
 func (ts *TransportSystem) DiscoverInterfaces() {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	ts.discoverCalls++
 }
 
+// DiscoverInterfacesCallCount returns the number of times the discovery interface process has been called.
 func (ts *TransportSystem) DiscoverInterfacesCallCount() int {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
