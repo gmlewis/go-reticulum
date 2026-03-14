@@ -26,8 +26,9 @@ func isAbstractUnixAddr(path string) bool {
 	return strings.HasPrefix(path, "@")
 }
 
-// LocalClientInterface establishes a high-bandwidth, low-latency IPC link to a master Reticulum instance running on the same local machine.
-// It acts as a dedicated conduit, leveraging Unix domain sockets or loopback TCP to proxy routing requests out to the broader network.
+// LocalClientInterface establishes a high-bandwidth, low-latency IPC link to a
+// local Reticulum instance. It uses Unix domain sockets or loopback TCP to
+// proxy routing requests to the broader network.
 type LocalClientInterface struct {
 	*BaseInterface
 
@@ -40,8 +41,9 @@ type LocalClientInterface struct {
 	mu             sync.Mutex
 }
 
-// NewLocalClientInterface dials and negotiates a persistent connection to the designated local Reticulum hub.
-// It seamlessly falls back between Unix sockets and TCP loopbacks based on platform constraints, initiating asynchronous read loops upon success.
+// NewLocalClientInterface dials and negotiates a persistent connection to the
+// local Reticulum hub. It falls back between Unix sockets and TCP loopback as
+// needed and starts asynchronous read loops on success.
 func NewLocalClientInterface(name string, path string, port int, handler InboundHandler) (*LocalClientInterface, error) {
 	bi := NewBaseInterface(name, ModeFull, LocalBitrate)
 	lci := &LocalClientInterface{
@@ -191,8 +193,9 @@ func (lci *LocalClientInterface) Detach() error {
 	return nil
 }
 
-// LocalServerInterface spins up a high-performance IPC listener dedicated to servicing transient local Reticulum client processes.
-// It acts as the master node's local ingress point, safely managing multiple concurrent client sessions via Unix sockets or loopback TCP.
+// LocalServerInterface starts a high-performance IPC listener that services
+// local Reticulum client processes. It manages concurrent client sessions over
+// Unix sockets or loopback TCP.
 type LocalServerInterface struct {
 	*BaseInterface
 
@@ -207,8 +210,9 @@ type LocalServerInterface struct {
 	mu      sync.Mutex
 }
 
-// NewLocalServerInterface binds an IPC listener to securely accept incoming connections from co-located Reticulum instances.
-// It aggressively manages socket files and port bindings, clearing stale handles and immediately launching an asynchronous accept loop.
+// NewLocalServerInterface binds an IPC listener to accept incoming connections
+// from co-located Reticulum instances. It manages socket files and port bindings
+// and launches an asynchronous accept loop.
 func NewLocalServerInterface(name string, path string, port int, handler InboundHandler) (*LocalServerInterface, error) {
 	bi := NewBaseInterface(name, ModeFull, LocalBitrate)
 

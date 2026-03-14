@@ -5,8 +5,10 @@
 
 package interfaces
 
-// RNodeMultiSubinterfaceConfig encapsulates the rigorous, granular hardware tuning parameters required for an individual child radio within a multiplexed RNode cluster.
-// It dictates essential RF characteristics such as frequency, bandwidth, and spread spectrum variables for localized optimization.
+// RNodeMultiSubinterfaceConfig describes the hardware tuning parameters for a
+// child radio within a multiplexed RNode cluster. It includes RF characteristics
+// such as frequency, bandwidth, spreading factor, and coding rate for local
+// optimization.
 type RNodeMultiSubinterfaceConfig struct {
 	Name            string
 	Enabled         bool

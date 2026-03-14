@@ -14,8 +14,9 @@ import (
 	rnscrypto "github.com/gmlewis/go-reticulum/rns/crypto"
 )
 
-// IFACConfig articulates the strict cryptographic parameters required to secure a physical or virtual interface.
-// It houses the enabling flag and requisite entropy material, dictating precisely how the interface should authenticate payload frames at the hardware boundary.
+// IFACConfig describes the cryptographic parameters required to secure a physical
+// or virtual interface. It contains an enable flag and entropy material used to
+// authenticate payload frames at the hardware boundary.
 type IFACConfig struct {
 	Enabled bool
 	NetName string
@@ -23,8 +24,10 @@ type IFACConfig struct {
 	Size    int
 }
 
-// BaseInterface implements the foundational, structural bedrock required by every concrete interface type within the network stack.
-// It securely encapsulates crucial state such as byte metrics, cryptographic IFAC keying material, and interface lifecycle flags, guaranteeing uniform behavior.
+// BaseInterface implements the foundational structure used by all concrete
+// interface types. It encapsulates state such as byte metrics, IFAC keying
+// material, and lifecycle flags to guarantee consistent behavior across
+// interface implementations.
 type BaseInterface struct {
 	name     string
 	mode     int
@@ -41,8 +44,9 @@ type BaseInterface struct {
 	ifacSigner *rnscrypto.Ed25519PrivateKey
 }
 
-// NewBaseInterface allocates and securely zeros a fresh BaseInterface instance with the prescribed architectural properties.
-// It establishes the immutable creation timestamp and baseline operational mode, serving as the required progenitor for all specialized interfaces.
+// NewBaseInterface allocates and initializes a BaseInterface with the given
+// name, mode, and bitrate. It records a creation timestamp and provides the
+// baseline state required by specialized interfaces.
 func NewBaseInterface(name string, mode int, bitrate int) *BaseInterface {
 	return &BaseInterface{
 		name:    name,
@@ -52,32 +56,38 @@ func NewBaseInterface(name string, mode int, bitrate int) *BaseInterface {
 	}
 }
 
-// Name safely exposes the immutably configured string identifier assigned to this specific interface.
-// It allows higher-level orchestrators to definitively distinguish between varied routing components.
+// Name returns the immutably configured identifier assigned to this interface.
+// It allows higher-level orchestrators to distinguish between different routing
+// components.
 func (bi *BaseInterface) Name() string { return bi.name }
 
-// Mode yields the operational simplex/duplex mode flag assigned during the interface's architectural inception.
-// It dictates the interface's capability to participate in bidirectional or unidirectional routing topologies.
+// Mode returns the operational simplex/duplex mode flag for this interface.
+// It indicates whether the interface can participate in bidirectional or
+// unidirectional routing topologies.
 func (bi *BaseInterface) Mode() int { return bi.mode }
 
-// Bitrate fetches the conservatively estimated transmission capacity of the interface, expressed in bits per second.
-// This metric is structurally vital for the routing engine to accurately calculate transit costs and shape traffic queues.
+// Bitrate returns the estimated transmission capacity of the interface in bits
+// per second. The routing engine uses this metric to calculate transit costs and
+// shape traffic queues.
 func (bi *BaseInterface) Bitrate() int { return bi.bitrate }
 
-// SetBitrate safely and atomically updates the interface's operational capacity to reflect changing hardware constraints.
-// It forcefully alters the routing engine's perception of this interface's bandwidth, triggering downstream cost recalculations.
+// SetBitrate atomically updates the interface's operational bitrate to reflect
+// changing hardware constraints. Updating this value influences routing cost
+// calculations downstream.
 func (bi *BaseInterface) SetBitrate(bitrate int) { bi.bitrate = bitrate }
 
-// Age calculates and provides the precise temporal duration since the interface was instantiated and added to the network.
-// It enables the system to aggressively prune stale or malfunctioning interfaces based on their longevity.
+// Age returns the duration since the interface was created and added to the
+// network. It is used to identify and prune stale or malfunctioning
+// interfaces.
 func (bi *BaseInterface) Age() time.Duration { return time.Since(bi.created) }
 
-// IsDetached deterministically queries the atomic lifecycle flag to assert whether the interface has been logically severed from the active stack.
-// It is relied upon by read/write loops to guarantee immediate termination of resources upon teardown.
+// IsDetached returns true if the interface has been logically severed from the
+// active stack. Readers and writers use this flag to terminate work and release
+// resources.
 func (bi *BaseInterface) IsDetached() bool { return atomic.LoadInt32(&bi.detached) == 1 }
 
-// SetDetached executes a thread-safe, atomic mutation of the interface's lifecycle state.
-// Setting this to true acts as an irrevocable kill signal, compelling all associated IO workers to systematically disband.
+// SetDetached atomically updates the interface lifecycle flag. Setting this to
+// true signals workers to stop and release resources.
 func (bi *BaseInterface) SetDetached(detached bool) {
 	if detached {
 		atomic.StoreInt32(&bi.detached, 1)
@@ -86,16 +96,17 @@ func (bi *BaseInterface) SetDetached(detached bool) {
 	atomic.StoreInt32(&bi.detached, 0)
 }
 
-// BytesReceived retrieves the atomically managed counter detailing the absolute total of payload bytes successfully ingested by this interface.
-// It is critical for telemetry and throughput modeling.
+// BytesReceived returns the atomically managed counter of payload bytes
+// ingested by this interface. It is used for telemetry and throughput modeling.
 func (bi *BaseInterface) BytesReceived() uint64 { return bi.rxBytes }
 
-// BytesSent fetches the precise atomic metric recording every byte successfully dispatched outbound from this interface.
-// It provides essential observability into the interface's aggregate workload and physical layer stress.
+// BytesSent returns the atomic metric recording bytes dispatched by this
+// interface. It provides observability into the interface's workload.
 func (bi *BaseInterface) BytesSent() uint64 { return bi.txBytes }
 
-// SetIFACConfig completely reinitializes the interface's cryptographic authentication layer using the provided tuning parameters.
-// It aggressively regenerates symmetric keying material and signs the new boundary configuration, imposing a strict lock during the volatile transition.
+// SetIFACConfig reinitializes the interface's cryptographic authentication
+// layer using the provided parameters. It regenerates keying material and
+// updates signing state while holding a lock for thread safety.
 func (bi *BaseInterface) SetIFACConfig(cfg IFACConfig) {
 	bi.ifacMu.Lock()
 	defer bi.ifacMu.Unlock()
@@ -141,16 +152,18 @@ func (bi *BaseInterface) SetIFACConfig(cfg IFACConfig) {
 	bi.ifacSigner = signer
 }
 
-// IFACConfig safely extracts a thread-consistent snapshot of the interface's active authentication configuration.
-// It allows inspection routines to ascertain the current security posture without violating memory constraints.
+// IFACConfig returns a thread-consistent snapshot of the interface's active
+// authentication configuration. It enables inspection without violating memory
+// safety.
 func (bi *BaseInterface) IFACConfig() IFACConfig {
 	bi.ifacMu.RLock()
 	defer bi.ifacMu.RUnlock()
 	return bi.ifacConfig
 }
 
-// ApplyIFACInbound aggressively processes incoming raw bytes, stripping out and rigorously validating cryptographic authentication tags.
-// It explicitly rejects malformed or unauthentic payloads at the lowest possible layer, dropping them securely before they can poison the router.
+// ApplyIFACInbound processes incoming raw bytes and validates cryptographic
+// authentication tags. Malformed or unauthentic payloads are rejected at the
+// lowest possible layer.
 func (bi *BaseInterface) ApplyIFACInbound(data []byte) ([]byte, bool) {
 	if len(data) <= 2 {
 		return nil, false
@@ -214,8 +227,9 @@ func (bi *BaseInterface) ApplyIFACInbound(data []byte) ([]byte, bool) {
 	return newRaw, true
 }
 
-// ApplyIFACOutbound surgically embeds requisite cryptographic signatures into outgoing raw payloads prior to physical transmission.
-// It ensures that data leaving the interface adheres to the pre-established IFAC security envelope, maintaining strict boundary integrity.
+// ApplyIFACOutbound embeds cryptographic signatures into outgoing payloads
+// before physical transmission. It ensures outgoing data adheres to the IFAC
+// security envelope.
 func (bi *BaseInterface) ApplyIFACOutbound(data []byte) ([]byte, error) {
 	bi.ifacMu.RLock()
 	ifacConfig := bi.ifacConfig

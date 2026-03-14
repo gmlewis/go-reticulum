@@ -14,21 +14,23 @@ import (
 )
 
 const (
-	// TokenOverhead defines the additional byte length introduced when cryptographically sealing a payload within a Token.
-	// It accounts for both the initialization vector and the appended HMAC signature used to ensure structural integrity and authenticity.
+	// TokenOverhead defines the number of additional bytes added when sealing a
+	// payload in a Token. It accounts for the initialization vector and the
+	// appended HMAC signature.
 	TokenOverhead = 48 // Bytes
 )
 
-// Token implements a highly secure, authenticated symmetric encryption envelope reminiscent of the Fernet specification.
-// It orchestrates both signing and encryption keys, using either AES-128 or AES-256 in CBC mode paired with an SHA-256 HMAC to guarantee data confidentiality and non-repudiation.
+// Token implements an authenticated symmetric encryption envelope similar to
+// Fernet. It uses signing and encryption keys with AES-CBC (AES-128 or AES-256)
+// and an SHA-256 HMAC to provide confidentiality and integrity.
 type Token struct {
 	signingKey    []byte
 	encryptionKey []byte
 	isAES256      bool
 }
 
-// GenerateTokenKey securely derives a new cryptographically random key tailored for Token operations.
-// It provisions a 256-bit key for AES-128 operations or a 512-bit key for AES-256 operations, sourcing from the secure random generator.
+// GenerateTokenKey derives a cryptographically random key for Token
+// operations. It returns 32 bytes for AES-128 mode or 64 bytes for AES-256.
 func GenerateTokenKey(aes256 bool) ([]byte, error) {
 	size := 32
 	if aes256 {
@@ -60,8 +62,9 @@ func NewToken(key []byte) (*Token, error) {
 	return nil, fmt.Errorf("token key must be 256 or 512 bits, not %v", len(key)*8)
 }
 
-// VerifyHMAC validates the integrity and authenticity of the appended cryptographic signature on the provided token bytes.
-// It isolates the HMAC and recalculates it across the preceding payload, ensuring no tampering has occurred in transit before decryption is attempted.
+// VerifyHMAC validates the HMAC appended to the token bytes. It recalculates
+// the HMAC over the preceding payload and compares it to the received value to
+// detect tampering before decryption.
 func (t *Token) VerifyHMAC(token []byte) bool {
 	if len(token) <= 32 {
 		return false
@@ -76,8 +79,9 @@ func (t *Token) VerifyHMAC(token []byte) bool {
 	return hmac.Equal(receivedHMAC, expectedHMAC)
 }
 
-// Encrypt encapsulates the raw plaintext data into a secure Token format using the configured encryption and signing keys.
-// It introduces a fresh initialization vector, applies strict PKCS#7 padding, encrypts the payload via AES-CBC, and securely binds the result with an HMAC signature.
+// Encrypt wraps plaintext into the Token format using the configured encryption
+// and signing keys. It generates an IV, applies PKCS#7 padding, encrypts with
+// AES-CBC, and appends an HMAC signature.
 func (t *Token) Encrypt(data []byte) ([]byte, error) {
 	iv := make([]byte, 16)
 	if _, err := rand.Read(iv); err != nil {
@@ -106,8 +110,9 @@ func (t *Token) Encrypt(data []byte) ([]byte, error) {
 	return append(signedParts, mac...), nil
 }
 
-// Decrypt securely unwraps and validates a Token, extracting the original plaintext payload.
-// It strictly enforces HMAC verification prior to executing AES-CBC decryption and removes the PKCS#7 padding, returning an error if any structural or cryptographic discrepancies are detected.
+// Decrypt unwraps and validates a Token, returning the original plaintext.
+// It enforces HMAC verification before decrypting and removes PKCS#7 padding,
+// returning an error if validation or decryption fails.
 func (t *Token) Decrypt(token []byte) ([]byte, error) {
 	if !t.VerifyHMAC(token) {
 		return nil, errors.New("token HMAC was invalid")

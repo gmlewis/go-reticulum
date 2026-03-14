@@ -5,8 +5,10 @@
 
 package interfaces
 
-// PipeInterface establishes a direct, in-memory conduit connecting two endpoints, explicitly optimized for localized testing and simulation.
-// It bypasses the physical network stack, allowing rapid point-to-point payload delivery via concurrent Go channels.
+// PipeInterface establishes a direct in-memory conduit between two endpoints,
+// optimized for localized testing and simulation. It bypasses the physical
+// network stack and enables rapid point-to-point payload delivery using Go
+// channels.
 type PipeInterface struct {
 	*BaseInterface
 	Other     *PipeInterface
@@ -14,8 +16,9 @@ type PipeInterface struct {
 	queue     chan []byte
 }
 
-// NewPipeInterface provisions an asynchronous, unidirectional in-memory testing channel.
-// It spawns a dedicated worker routine to drain the internal queue and dispatch received frames directly into the linked peer's callback.
+// NewPipeInterface provisions an asynchronous in-memory testing channel. It
+// spawns a dedicated worker goroutine to drain the internal queue and dispatch
+// received frames into the linked peer's callback.
 func NewPipeInterface(name string, onReceive func([]byte, Interface)) *PipeInterface {
 	p := &PipeInterface{
 		BaseInterface: NewBaseInterface(name, ModeFull, 1000000),

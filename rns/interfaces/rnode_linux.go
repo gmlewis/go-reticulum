@@ -32,14 +32,17 @@ const (
 	rNodeCallsignMaxLen = 32
 )
 
-// RNodeInterface heavily abstracts and encapsulates a physical RNode hardware radio modem.
-// It proxies all routing interactions to an underlying KISS-framed serial link while enforcing strict RF parameter boundaries.
+// RNodeInterface provides a high-level abstraction around a physical RNode radio modem.
+// It proxies routing interactions to an underlying KISS-framed serial link and enforces
+// strict RF parameter boundaries to ensure hardware remains within supported limits.
 type RNodeInterface struct {
 	inner Interface
 }
 
-// NewRNodeInterface validates hardware bounds and rigorously initializes a physical RNode radio via a serial interface.
-// It ensures that physical layer constraints—such as frequency, bandwidth, and spread spectrum factors—are mathematically sound before delegating to the serial controller.
+// NewRNodeInterface validates hardware bounds and initializes a physical RNode radio
+// via a serial interface. It verifies physical-layer constraints—frequency,
+// bandwidth, spreading factor, and coding rate—before delegating control to the
+// serial controller.
 func NewRNodeInterface(name, port string, speed, databits, stopbits int, parity string, frequency, bandwidth, txpower, spreadingFactor, codingRate int, flowControl bool, idInterval int, idCallsign string, handler InboundHandler) (Interface, error) {
 	if strings.TrimSpace(port) == "" {
 		return nil, fmt.Errorf("no port specified for RNode interface")

@@ -39,8 +39,10 @@ type pipeSubprocessInterface struct {
 	mu      sync.Mutex
 }
 
-// NewPipeSubprocessInterface aggressively forks a child OS process, establishing a bidirectional HDLC-framed communication channel over its standard I/O streams.
-// It provides a highly resilient bridging mechanism, capable of automatically respawning the external command upon unexpected termination.
+// NewPipeSubprocessInterface forks a child OS process and establishes a
+// bidirectional HDLC-framed communication channel over its standard I/O
+// streams. It provides a resilient bridge and can automatically respawn the
+// external command if it terminates unexpectedly.
 func NewPipeSubprocessInterface(name, command string, respawnDelay time.Duration, handler InboundHandler) (Interface, error) {
 	if strings.TrimSpace(command) == "" {
 		return nil, fmt.Errorf("no command specified for PipeInterface")

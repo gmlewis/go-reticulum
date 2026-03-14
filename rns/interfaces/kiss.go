@@ -5,7 +5,8 @@
 
 package interfaces
 
-// Constants defining the rigid structural boundaries and escape markers required by the KISS (Keep It Simple, Stupid) framing protocol.
+// Constants defining the structural boundaries and escape markers required by the
+// KISS (Keep It Simple, Stupid) framing protocol.
 const (
 	// KISSFend designates the Frame End marker, definitively signaling the start or conclusion of a discrete data packet.
 	KISSFend = 0xC0
@@ -19,8 +20,9 @@ const (
 	KISSCmdData = 0x00
 )
 
-// KISSEscape aggressively scans and re-encodes a raw binary payload to strictly adhere to the KISS protocol's byte-stuffing rules.
-// It safely neutralizes internal boundary markers, yielding a buffer that can be reliably transmitted over raw serial links without triggering premature frame truncation.
+// KISSEscape scans and re-encodes a binary payload to adhere to the KISS
+// protocol's byte-stuffing rules. It neutralizes internal boundary markers and
+// returns a buffer safe for transmission over raw serial links.
 func KISSEscape(data []byte) []byte {
 	out := make([]byte, 0, len(data))
 	for _, b := range data {
@@ -36,8 +38,9 @@ func KISSEscape(data []byte) []byte {
 	return out
 }
 
-// KISSUnescape carefully parses a received byte stream, stripping away KISS framing escapes to restore the original payload.
-// It structurally reverses the obfuscation introduced during transmission, delivering uncorrupted data to the upper network layers.
+// KISSUnescape parses a received byte stream and strips KISS framing escapes to
+// restore the original payload. It reverses the obfuscation applied during
+// transmission so upper network layers receive unmodified data.
 func KISSUnescape(data []byte) []byte {
 	out := make([]byte, 0, len(data))
 	escape := false

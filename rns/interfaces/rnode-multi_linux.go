@@ -13,16 +13,18 @@ import (
 	"time"
 )
 
-// RNodeMultiInterface acts as a high-performance multiplexer, binding multiple physical RNode radios into a unified, load-balanced logical interface.
-// It strategically distributes outbound transmissions across its child hardware in a round-robin fashion, significantly expanding overall RF throughput.
+// RNodeMultiInterface multiplexes multiple physical RNode radios into a unified,
+// load-balanced logical interface. It distributes outbound transmissions across
+// child hardware in a round-robin fashion to expand RF throughput.
 type RNodeMultiInterface struct {
 	children []Interface
 	created  time.Time
 	nextSend uint32
 }
 
-// NewRNodeMultiInterface iterates over a slice of configuration structs, instantiating and aggressively validating multiple underlying RNode hardware instances.
-// It safely clusters these radios under a single cohesive object, tearing down all partially initialized links if any single device fails to boot.
+// NewRNodeMultiInterface instantiates and validates multiple RNode hardware
+// instances from the provided configuration. Partially initialized radios are
+// torn down if any single device fails to boot.
 func NewRNodeMultiInterface(name, port string, speed, databits, stopbits int, parity string, idInterval int, idCallsign string, subinterfaces []RNodeMultiSubinterfaceConfig, handler InboundHandler) (Interface, error) {
 	enabled := make([]RNodeMultiSubinterfaceConfig, 0, len(subinterfaces))
 	for _, sub := range subinterfaces {

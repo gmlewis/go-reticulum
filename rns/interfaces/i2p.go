@@ -5,8 +5,9 @@
 
 package interfaces
 
-// I2PInterface wraps a core TCP listener specifically tuned for tunneling over the Invisible Internet Project (I2P) network.
-// It acts as a resilient, anonymized ingress point, dynamically managing inbound connections originating from the I2P mesh.
+// I2PInterface wraps a TCP listener tuned for tunneling over the Invisible
+// Internet Project (I2P) network. It acts as an anonymized ingress point and
+// manages inbound connections originating from the I2P mesh.
 type I2PInterface struct {
 	*TCPServerInterface
 }
@@ -25,8 +26,9 @@ func (i *I2PInterface) Type() string {
 	return "I2PInterface"
 }
 
-// I2PInterfacePeer establishes an outbound, persistent TCP connection explicitly destined for a remote I2P hidden service.
-// It encapsulates the transport complexities of I2P, masquerading as a standard TCP client interface to the upper routing layers.
+// I2PInterfacePeer establishes a persistent TCP connection to a remote I2P
+// hidden service. It encapsulates I2P transport details and presents a standard
+// TCP client interface to upper routing layers.
 type I2PInterfacePeer struct {
 	*TCPClientInterface
 }

@@ -5,20 +5,23 @@
 
 package interfaces
 
-// HDLCFlag strictly defines the standard High-Level Data Link Control frame boundary marker byte.
-// It acts as the immutable synchronization primitive used to assert the start and conclusion of discrete packets over raw serial interfaces.
+// HDLCFlag defines the HDLC frame boundary marker byte. It is the
+// synchronization primitive used to assert the start and end of discrete
+// packets over raw serial interfaces.
 const HDLCFlag = 0x7E
 
-// HDLCEsc specifies the requisite escape character deployed when escaping reserved bytes within a frame's data payload.
-// It is mathematically applied to guarantee that embedded flag markers are not improperly interpreted as structural boundaries.
+// HDLCEsc specifies the escape character used to escape reserved bytes inside
+// a frame payload. It prevents embedded flag markers from being misinterpreted
+// as structural boundaries.
 const HDLCEsc = 0x7D
 
-// HDLCEscMask provides the XOR modifier utilized to cryptographically mangle escaped bytes within the HDLC stream.
-// It ensures robust character obfuscation, allowing the transparent delivery of arbitrary binary payloads.
+// HDLCEscMask provides the XOR modifier applied to escaped bytes within the
+// HDLC stream. It ensures escaped bytes are transformed safely for transport.
 const HDLCEscMask = 0x20
 
-// HDLCEscape mechanically scans and reformats an arbitrary binary payload to comply rigorously with HDLC framing constraints.
-// It surgically replaces internal instances of the flag or escape characters, returning a physically safe byte slice ready for hardware transmission.
+// HDLCEscape scans and reformats a binary payload to comply with HDLC framing
+// constraints. It replaces flag and escape characters so the payload is safe for
+// hardware transmission.
 func HDLCEscape(data []byte) []byte {
 	out := make([]byte, 0, len(data))
 	for _, b := range data {
@@ -34,8 +37,8 @@ func HDLCEscape(data []byte) []byte {
 	return out
 }
 
-// HDLCUnescape efficiently parses an incoming raw byte stream, stripping away escape markers and restoring the mangled bytes to their pristine state.
-// It structurally reverses the obfuscation applied prior to transmission, yielding the original, uncorrupted payload.
+// HDLCUnescape parses a raw byte stream and removes escape markers to restore
+// the original payload. It reverses the obfuscation applied for transmission.
 func HDLCUnescape(data []byte) []byte {
 	out := make([]byte, 0, len(data))
 	escape := false
