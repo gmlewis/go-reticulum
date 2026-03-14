@@ -112,7 +112,11 @@ func TestNewReticulumSharedInstanceUnixServerThenClientSameConfigDir(t *testing.
 	ResetTransport()
 	defer ResetTransport()
 
-	cfg, err := os.MkdirTemp("/tmp", "go-ret-shared-*")
+	tempDir := t.TempDir()
+	if runtime.GOOS == "darwin" {
+		tempDir = "/tmp"
+	}
+	cfg, err := os.MkdirTemp(tempDir, "go-ret-shared-*")
 	if err != nil {
 		t.Fatalf("MkdirTemp config dir error: %v", err)
 	}
@@ -121,6 +125,7 @@ func TestNewReticulumSharedInstanceUnixServerThenClientSameConfigDir(t *testing.
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
 instance_name = %v
 share_instance = Yes
+shared_instance_type = unix
 
 [logging]
 loglevel = 4

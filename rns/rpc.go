@@ -51,8 +51,7 @@ func (r *Reticulum) ensureRPCKey() {
 }
 
 func (r *Reticulum) makeRPCListener() (net.Listener, error) {
-	useUnix := runtime.GOOS != "windows" && r.sharedInstanceType != "tcp"
-	if useUnix {
+	if r.useAFUnix() {
 		instance := r.localSocketPath
 		if instance == "" {
 			instance = "default"
@@ -869,8 +868,7 @@ func isTransientRPCError(err error) bool {
 }
 
 func (r *Reticulum) dialRPCServer() (net.Conn, error) {
-	useUnix := runtime.GOOS != "windows" && r.sharedInstanceType != "tcp"
-	if useUnix {
+	if r.useAFUnix() {
 		instance := r.localSocketPath
 		if instance == "" {
 			instance = "default"

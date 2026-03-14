@@ -511,6 +511,16 @@ func (r *Reticulum) initNetworkIdentity() error {
 	return nil
 }
 
+func (r *Reticulum) useAFUnix() bool {
+	if r.sharedInstanceType == "unix" {
+		return true
+	}
+	if runtime.GOOS != "linux" {
+		return false
+	}
+	return r.sharedInstanceType != "tcp"
+}
+
 func (r *Reticulum) startLocalInterface() {
 	if !r.shareInstance {
 		r.isSharedInstance = false
@@ -523,7 +533,7 @@ func (r *Reticulum) startLocalInterface() {
 		r.transport.Inbound(data, iface)
 	}
 
-	useUnix := runtime.GOOS != "windows" && r.sharedInstanceType != "tcp"
+	useUnix := r.useAFUnix()
 	localPath := ""
 	if useUnix {
 		instance := r.localSocketPath
