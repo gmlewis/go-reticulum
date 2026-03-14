@@ -157,6 +157,18 @@ func main() {
 	log.SetFlags(0)
 	flag.Parse()
 
+	var ops int
+	for _, op := range []bool{encryptFile != "", decryptFile != "", validateFile != "", signFile != ""} {
+		if op {
+			ops++
+		}
+	}
+
+	if ops > 1 {
+		rns.Log("This utility currently only supports one of the encrypt, decrypt, sign or verify operations per invocation", rns.LogError, false)
+		os.Exit(1)
+	}
+
 	if version {
 		fmt.Printf("gornid %v\n", rns.VERSION)
 		return
@@ -169,17 +181,24 @@ func main() {
 		rns.SetLogLevel(rns.LogWarning)
 	}
 
+	if readFile == "" {
+		if encryptFile != "" {
+			readFile = encryptFile
+		}
+		if decryptFile != "" {
+			readFile = decryptFile
+		}
+		if signFile != "" {
+			readFile = signFile
+		}
+	}
+
 	if importStr != "" {
 		doImport(importStr, useBase64, useBase32, printPrivate, writeFile, force)
 		return
 	}
 
-	if generatePath != "" {
-		doGenerate(generatePath, force)
-		return
-	}
-
-	if identityPath == "" && !printIdentity && encryptFile == "" && decryptFile == "" && signFile == "" && validateFile == "" {
+	if generatePath == "" && identityPath == "" {
 		_, _ = fmt.Fprint(flag.CommandLine.Output(), "\nNo identity provided, cannot continue\n")
 		flag.Usage()
 		os.Exit(2)
@@ -190,6 +209,11 @@ func main() {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
 	rns.CompactLogFmt = true
+
+	if generatePath != "" {
+		doGenerate(generatePath, force)
+		return
+	}
 
 	id := loadIdentity(identityPath, requestID, timeout)
 	if id == nil {
