@@ -25,6 +25,7 @@ type propagationEntry struct {
 	receivedAt      time.Time
 }
 
+// Router encapsulates the routing logic, delivery mechanisms, and state management for the LXMF messaging protocol.
 type Router struct {
 	identity    *rns.Identity
 	storagePath string
@@ -119,6 +120,7 @@ const (
 var errResourceRepresentationNotSupported = errors.New("lxmf resource representation not supported")
 var errResourceLinkPending = errors.New("lxmf resource link pending")
 
+// NewRouter instantiates a new LXMF router with the specified Reticulum identity and local storage path.
 func NewRouter(identity *rns.Identity, storagePath string) (*Router, error) {
 	if storagePath == "" {
 		return nil, errors.New("lxmf router requires storage path")
@@ -178,6 +180,7 @@ func NewRouter(identity *rns.Identity, storagePath string) (*Router, error) {
 	return router, nil
 }
 
+// NewRouterWithConfig creates a new LXMF router and immediately applies the provided policy configuration map.
 func NewRouterWithConfig(identity *rns.Identity, storagePath string, policyConfig map[string]any) (*Router, error) {
 	router, err := NewRouter(identity, storagePath)
 	if err != nil {
@@ -191,6 +194,7 @@ func NewRouterWithConfig(identity *rns.Identity, storagePath string, policyConfi
 	return router, nil
 }
 
+// RegisterPropagationDestination initializes and registers the destination required to participate as an LXMF propagation node.
 func (r *Router) RegisterPropagationDestination() (*rns.Destination, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -226,6 +230,7 @@ func (r *Router) storePropagationMessage(destinationHash []byte, payload []byte)
 	return transientID
 }
 
+// SetPeeringCost establishes the computational hashcash cost required for other nodes to peer with this router.
 func (r *Router) SetPeeringCost(cost int) error {
 	if cost < 0 || cost > 256 {
 		return fmt.Errorf("invalid peering cost %v", cost)
@@ -236,18 +241,21 @@ func (r *Router) SetPeeringCost(cost int) error {
 	return nil
 }
 
+// SetFromStaticOnly restricts the router to only accept incoming traffic from explicitly defined static peers.
 func (r *Router) SetFromStaticOnly(enabled bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.fromStaticOnly = enabled
 }
 
+// SetAuthRequired enforces an authentication policy where only verified identities from the allowed list can access the router.
 func (r *Router) SetAuthRequired(enabled bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.authRequired = enabled
 }
 
+// SetAllowedList defines the set of verified identities permitted to interact with this router when authentication is required.
 func (r *Router) SetAllowedList(identityHashes [][]byte) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -264,6 +272,7 @@ func (r *Router) SetAllowedList(identityHashes [][]byte) error {
 	return nil
 }
 
+// SetStaticPeers configures the explicit list of peer propagation hashes the router is permitted to communicate with.
 func (r *Router) SetStaticPeers(peerPropagationHashes [][]byte) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -280,6 +289,7 @@ func (r *Router) SetStaticPeers(peerPropagationHashes [][]byte) error {
 	return nil
 }
 
+// ThrottlePeer temporarily suspends communication with a specific peer for the given duration to mitigate spam or abuse.
 func (r *Router) ThrottlePeer(peerPropagationHash []byte, duration time.Duration) error {
 	if len(peerPropagationHash) != rns.TruncatedHashLength/8 {
 		return fmt.Errorf("invalid throttled peer hash length %v", len(peerPropagationHash))
@@ -298,6 +308,7 @@ func (r *Router) ThrottlePeer(peerPropagationHash []byte, duration time.Duration
 	return nil
 }
 
+// SetPeerSyncBackoff specifies the minimum resting duration required between consecutive peer sync operations.
 func (r *Router) SetPeerSyncBackoff(duration time.Duration) error {
 	if duration < 0 {
 		return fmt.Errorf("invalid peer sync backoff %v", duration)
@@ -309,6 +320,7 @@ func (r *Router) SetPeerSyncBackoff(duration time.Duration) error {
 	return nil
 }
 
+// SetPeerMaxAge determines the maximum duration a peer is retained in the routing table without being seen.
 func (r *Router) SetPeerMaxAge(duration time.Duration) error {
 	if duration < 0 {
 		return fmt.Errorf("invalid peer max age %v", duration)
@@ -320,6 +332,7 @@ func (r *Router) SetPeerMaxAge(duration time.Duration) error {
 	return nil
 }
 
+// PruneStalePeers sweeps the routing table and removes any peers that have exceeded the maximum allowed age.
 func (r *Router) PruneStalePeers() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -341,6 +354,7 @@ func (r *Router) PruneStalePeers() int {
 	return removed
 }
 
+// RegisterPropagationControlDestination initializes the destination used to handle administrative control requests for propagation.
 func (r *Router) RegisterPropagationControlDestination(allowedList [][]byte) (*rns.Destination, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -675,6 +689,7 @@ func (r *Router) resolvePeerHash(data []byte, linkID []byte, remoteIdentity *rns
 	return nil
 }
 
+// RegisterDeliveryIdentity sets up the primary identity and associated destination for receiving direct LXMF messages.
 func (r *Router) RegisterDeliveryIdentity(identity *rns.Identity, stampCost int) (*rns.Destination, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -699,12 +714,14 @@ func (r *Router) RegisterDeliveryIdentity(identity *rns.Identity, stampCost int)
 	return destination, nil
 }
 
+// RegisterDeliveryCallback attaches a handler function to be invoked whenever a new LXMF message is successfully delivered.
 func (r *Router) RegisterDeliveryCallback(callback func(*Message)) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.deliveryCallback = callback
 }
 
+// HandleOutbound accepts a constructed message, prepares its payload, and queues it for outbound routing and delivery.
 func (r *Router) HandleOutbound(message *Message) error {
 	if message == nil {
 		return errors.New("lxmf message is nil")
@@ -758,6 +775,7 @@ func (r *Router) configureDeliveryLink(link *rns.Link) {
 	})
 }
 
+// ProcessOutbound iterates over the pending outbound queue and actively attempts to transmit messages via the Reticulum network.
 func (r *Router) ProcessOutbound() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1095,8 +1113,7 @@ func (r *Router) deliveryPacket(data []byte, packet *rns.Packet) {
 	}
 }
 
-// RouterConfig provides the full set of constructor parameters matching
-// Python LXMRouter.__init__'s keyword arguments.
+// RouterConfig provides the full set of constructor parameters matching the Python LXMRouter's arguments, granting fine-grained control over routing limits and policies.
 type RouterConfig struct {
 	Identity         *rns.Identity
 	StoragePath      string
@@ -1109,8 +1126,7 @@ type RouterConfig struct {
 	PropagationCost  int // clamped to >= PropagationCostMin
 }
 
-// NewRouterFromConfig creates a Router using the full parameter set,
-// mirroring Python's LXMRouter(identity=..., storagepath=..., ...).
+// NewRouterFromConfig creates a Router using the comprehensive configuration object, configuring the routing instance to mirror specific network constraints.
 func NewRouterFromConfig(cfg RouterConfig) (*Router, error) {
 	router, err := NewRouter(cfg.Identity, cfg.StoragePath)
 	if err != nil {
@@ -1154,15 +1170,14 @@ func NewRouterFromConfig(cfg RouterConfig) (*Router, error) {
 	return router, nil
 }
 
-// IgnoreDestination adds a destination hash to the router's ignored list.
-// Messages from ignored destinations will be silently discarded.
+// IgnoreDestination adds a destination hash to the router's ignored list, ensuring messages from the specified source are silently discarded.
 func (r *Router) IgnoreDestination(destinationHash []byte) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.ignoredList[string(append([]byte{}, destinationHash...))] = struct{}{}
 }
 
-// IsIgnored reports whether the given destination hash is on the ignored list.
+// IsIgnored reports whether the given destination hash is present on the ignored list, preventing it from communicating with this router.
 func (r *Router) IsIgnored(destinationHash []byte) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1170,42 +1185,42 @@ func (r *Router) IsIgnored(destinationHash []byte) bool {
 	return ok
 }
 
-// EnforceStamps enables stamp enforcement on the router.
+// EnforceStamps enables strict stamp enforcement on the router, requiring valid hashcash stamps for processing incoming messages.
 func (r *Router) EnforceStamps() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.enforceStampsEnabled = true
 }
 
-// StampsEnforced reports whether stamp enforcement is enabled.
+// StampsEnforced reports whether strict stamp enforcement is currently active on the routing node.
 func (r *Router) StampsEnforced() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.enforceStampsEnabled
 }
 
-// SetMessageStorageLimit sets the maximum message storage size in megabytes.
+// SetMessageStorageLimit configures the maximum message storage size in megabytes to prevent unbounded memory or disk consumption.
 func (r *Router) SetMessageStorageLimit(megabytes float64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.messageStorageLimit = megabytes
 }
 
-// MessageStorageLimit returns the current message storage limit in megabytes.
+// MessageStorageLimit returns the currently configured message storage limit in megabytes.
 func (r *Router) MessageStorageLimit() float64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.messageStorageLimit
 }
 
-// Prioritise adds a destination hash to the priority list for propagation.
+// Prioritise adds a destination hash to the priority list, giving its traffic higher precedence during propagation syncs.
 func (r *Router) Prioritise(destinationHash []byte) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.prioritisedList[string(append([]byte{}, destinationHash...))] = struct{}{}
 }
 
-// IsPrioritised reports whether a destination hash is in the priority list.
+// IsPrioritised reports whether a given destination hash is currently elevated within the routing priority list.
 func (r *Router) IsPrioritised(destinationHash []byte) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1213,65 +1228,63 @@ func (r *Router) IsPrioritised(destinationHash []byte) bool {
 	return ok
 }
 
-// EnablePropagation marks the router as an active propagation node.
+// EnablePropagation marks the router as an active propagation node, empowering the network to forward and distribute messages asynchronously.
 func (r *Router) EnablePropagation() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.propagationEnabled = true
 }
 
-// DisablePropagation marks the router as no longer participating in propagation.
+// DisablePropagation gracefully withdraws the router from participating as an active propagation node in the network.
 func (r *Router) DisablePropagation() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.propagationEnabled = false
 }
 
-// PropagationEnabled reports whether the router is an active propagation node.
+// PropagationEnabled reports whether the router is actively participating as a propagation node within the network.
 func (r *Router) PropagationEnabled() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.propagationEnabled
 }
 
-// PropagationDestination returns the router's propagation destination, or nil
-// if RegisterPropagationDestination has not been called.
+// PropagationDestination returns the specific Reticulum destination allocated for handling propagation traffic, or nil if unconfigured.
 func (r *Router) PropagationDestination() *rns.Destination {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.propagationDestination
 }
 
-// MaxPeers returns the current max peers setting.
+// MaxPeers returns the upper limit on the number of concurrent propagation peers this router will actively maintain.
 func (r *Router) MaxPeers() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.maxPeers
 }
 
-// PropagationPerTransferLimit returns the per-transfer propagation limit.
+// PropagationPerTransferLimit returns the maximum payload size, in kilobytes, permitted during a single propagation transfer operation.
 func (r *Router) PropagationPerTransferLimit() float64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.propagationPerTransferLimit
 }
 
-// PropagationPerSyncLimit returns the per-sync propagation limit.
+// PropagationPerSyncLimit returns the overarching data limit, in kilobytes, permitted across an entire propagation sync cycle.
 func (r *Router) PropagationPerSyncLimit() float64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.propagationPerSyncLimit
 }
 
-// DeliveryPerTransferLimit returns the per-transfer delivery limit.
+// DeliveryPerTransferLimit returns the maximum payload size, in kilobytes, allowed for a single direct delivery operation.
 func (r *Router) DeliveryPerTransferLimit() float64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.deliveryPerTransferLimit
 }
 
-// SetInboundStampCost updates the stamp cost for a delivery destination,
-// matching Python's LXMRouter.set_inbound_stamp_cost().
+// SetInboundStampCost enforces a specific hashcash cost for incoming messages to a given delivery destination, mitigating spam effectively.
 func (r *Router) SetInboundStampCost(destinationHash []byte, stampCost *int) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1290,7 +1303,7 @@ func (r *Router) SetInboundStampCost(destinationHash []byte, stampCost *int) boo
 	return true
 }
 
-// InboundStampCost returns the current stamp cost for a delivery destination.
+// InboundStampCost retrieves the currently enforced hashcash stamp cost for the specified delivery destination.
 func (r *Router) InboundStampCost(destinationHash []byte) (int, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1299,18 +1312,14 @@ func (r *Router) InboundStampCost(destinationHash []byte) (int, bool) {
 	return cost, ok
 }
 
-// SetDisplayName stores a display name for a delivery destination hash.
-// The display name is included in announce app_data so peers can show it.
-// Mirrors Python's delivery_destination.display_name assignment.
+// SetDisplayName registers a human-readable alias for a delivery destination, which is automatically included in announces to facilitate peer discovery.
 func (r *Router) SetDisplayName(destinationHash []byte, name string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.displayNames[string(destinationHash)] = name
 }
 
-// GetAnnounceAppData returns the msgpack-encoded announce app_data for
-// a delivery destination, matching Python's get_announce_app_data().
-// Returns nil if no display name is set.
+// GetAnnounceAppData constructs the msgpack-encoded payload containing display name and stamp cost data for network announcements.
 func (r *Router) GetAnnounceAppData(destinationHash []byte) []byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1340,8 +1349,7 @@ func (r *Router) getAnnounceAppDataLocked(destinationHash []byte) []byte {
 	return packed
 }
 
-// Announce triggers an announce for the delivery destination identified
-// by destinationHash, matching Python's LXMRouter.announce().
+// Announce broadcasts the presence and capabilities of a specific delivery destination to the wider Reticulum network, enabling dynamic peer discovery.
 func (r *Router) Announce(destinationHash []byte) error {
 	r.mu.Lock()
 	dest, ok := r.deliveryDestinations[string(destinationHash)]
@@ -1355,8 +1363,7 @@ func (r *Router) Announce(destinationHash []byte) error {
 	return dest.Announce(appData)
 }
 
-// SetOutboundPropagationNode sets the destination hash for the outbound
-// propagation node, matching Python's LXMRouter.set_outbound_propagation_node().
+// SetOutboundPropagationNode configures the default propagation node that this router will utilize for outgoing store-and-forward message delivery.
 func (r *Router) SetOutboundPropagationNode(destinationHash []byte) error {
 	if len(destinationHash) != rns.TruncatedHashLength/8 {
 		return fmt.Errorf("invalid destination hash length %v", len(destinationHash))
@@ -1367,8 +1374,7 @@ func (r *Router) SetOutboundPropagationNode(destinationHash []byte) error {
 	return nil
 }
 
-// GetOutboundPropagationNode returns the current outbound propagation
-// node destination hash, or nil if none is set.
+// GetOutboundPropagationNode retrieves the currently configured destination hash of the primary outbound propagation node.
 func (r *Router) GetOutboundPropagationNode() []byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1378,40 +1384,35 @@ func (r *Router) GetOutboundPropagationNode() []byte {
 	return append([]byte{}, r.outboundPropagationNode...)
 }
 
-// DeliveryLinkAvailable returns true if there is an active direct
-// delivery link for the given destination hash.
-// Mirrors Python LXMRouter.delivery_link_available().
+// DeliveryLinkAvailable quickly determines if a reliable, direct Reticulum link is currently established with the specified destination hash.
 func (r *Router) DeliveryLinkAvailable(destHash []byte) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.resourceLinks[string(destHash)] != nil
 }
 
-// PropagationTransferState returns the current propagation transfer state.
+// PropagationTransferState provides the granular status code reflecting the current phase of a propagation node sync operation.
 func (r *Router) PropagationTransferState() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.propagationTransferState
 }
 
-// PropagationTransferLastResult returns the last result count from a
-// propagation sync.
+// PropagationTransferLastResult yields the total count of messages successfully retrieved during the most recent propagation node sync.
 func (r *Router) PropagationTransferLastResult() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.propagationTransferLastResult
 }
 
-// PropagationTransferProgress returns the current transfer progress (0.0-1.0).
+// PropagationTransferProgress exposes the ongoing completion percentage of an active propagation sync, represented as a float between 0.0 and 1.0.
 func (r *Router) PropagationTransferProgress() float64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.propagationTransferProgress
 }
 
-// RequestMessagesFromPropagationNode initiates a sync request to the
-// outbound propagation node to retrieve new messages.
-// Mirrors Python LXMRouter.request_messages_from_propagation_node().
+// RequestMessagesFromPropagationNode orchestrates the complex sequence of establishing a link and downloading queued messages from the designated outbound propagation node.
 func (r *Router) RequestMessagesFromPropagationNode(limit *int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1469,8 +1470,7 @@ func (r *Router) RequestMessagesFromPropagationNode(limit *int) {
 	}
 }
 
-// CancelPropagationNodeRequests cancels any in-flight propagation sync.
-// Mirrors Python LXMRouter.cancel_propagation_node_requests().
+// CancelPropagationNodeRequests forcefully aborts any currently active or pending synchronization requests directed at the outbound propagation node.
 func (r *Router) CancelPropagationNodeRequests() {
 	r.mu.Lock()
 	defer r.mu.Unlock()

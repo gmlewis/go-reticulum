@@ -3,7 +3,7 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// Command gornsh provides Reticulum remote shell sessions compatible with rnsh.
+// gornsh provides Reticulum remote shell sessions compatible with rnsh.
 //
 // It supports listener and initiator roles over the rnsh application namespace,
 // including identity handling, optional authentication controls, mirror-exit

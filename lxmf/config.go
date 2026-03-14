@@ -13,6 +13,7 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
+// ApplyPolicyConfig parses a generic configuration map and applies its policies to the router, enabling dynamic configuration of peering costs, static peers, and authentication requirements for LXMF communication.
 func (r *Router) ApplyPolicyConfig(cfg map[string]any) error {
 	if cfg == nil {
 		return nil

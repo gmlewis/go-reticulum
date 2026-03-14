@@ -16,6 +16,7 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
+// Message represents a fully materialized LXMF message, encompassing routing metadata, cryptographic signatures, and the structured payload for network transport.
 type Message struct {
 	Destination     *rns.Destination
 	Source          *rns.Destination
@@ -56,6 +57,7 @@ type Message struct {
 	FailedCallback   func(*Message)
 }
 
+// NewMessage constructs a fresh, outbound LXMF message bound for the specified destination, securely anchoring it to the originating source identity.
 func NewMessage(destination, source *rns.Destination, content, title string, fields map[any]any) (*Message, error) {
 	if destination == nil {
 		return nil, errors.New("lxmf destination is required")
@@ -81,22 +83,27 @@ func NewMessage(destination, source *rns.Destination, content, title string, fie
 	return m, nil
 }
 
+// SetTitleString intuitively mutates the underlying byte array representing the message title using a standard Go string.
 func (m *Message) SetTitleString(title string) {
 	m.Title = []byte(title)
 }
 
+// SetContentString injects a standard Go string directly into the message's primary content payload byte array.
 func (m *Message) SetContentString(content string) {
 	m.Content = []byte(content)
 }
 
+// TitleString safely decodes the underlying byte array of the message title into a human-readable Go string.
 func (m *Message) TitleString() string {
 	return string(m.Title)
 }
 
+// ContentString safely decodes the underlying byte array of the message content into a human-readable Go string.
 func (m *Message) ContentString() string {
 	return string(m.Content)
 }
 
+// Pack prepares the message for network transmission by assembling its payload, calculating its hash, and generating a cryptographic signature.
 func (m *Message) Pack() error {
 	if len(m.Packed) > 0 {
 		return fmt.Errorf("lxmf message already packed")
@@ -160,6 +167,7 @@ func (m *Message) Pack() error {
 	return nil
 }
 
+// UnpackMessageFromBytes reconstructs a Message object from its raw binary representation and validates its cryptographic integrity.
 func UnpackMessageFromBytes(data []byte, originalMethod int) (*Message, error) {
 	minimum := (2 * DestinationLength) + SignatureLength
 	if len(data) < minimum {

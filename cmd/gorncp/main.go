@@ -46,6 +46,7 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
+// AppName is the name of the application used for identity generation.
 const AppName = "rncp"
 
 func main() {

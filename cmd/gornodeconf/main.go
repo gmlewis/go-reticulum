@@ -44,6 +44,7 @@ import (
 	"log"
 )
 
+// AppVersion is the current version of the gornodeconf utility.
 const AppVersion = "2.5.0"
 
 func main() {

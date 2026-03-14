@@ -15,6 +15,7 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
+// StampWorkblock generates the deterministic workblock used as the foundation for anti-spam hashcash calculations.
 func StampWorkblock(material []byte, expandRounds int) ([]byte, error) {
 	if len(material) == 0 {
 		return nil, fmt.Errorf("stamp workblock material is required")
@@ -46,6 +47,7 @@ func StampWorkblock(material []byte, expandRounds int) ([]byte, error) {
 	return workblock, nil
 }
 
+// StampValue computes the hashcash value of a stamp by measuring the number of leading zero bits in its hash.
 func StampValue(workblock, stamp []byte) int {
 	material := make([]byte, 0, len(workblock)+len(stamp))
 	material = append(material, workblock...)
@@ -54,6 +56,7 @@ func StampValue(workblock, stamp []byte) int {
 	return leadingZeroBits(h)
 }
 
+// StampValid verifies if a provided stamp meets or exceeds the required target cost for the given workblock.
 func StampValid(stamp []byte, targetCost int, workblock []byte) bool {
 	if targetCost <= 0 {
 		return true
@@ -66,6 +69,7 @@ func StampValid(stamp []byte, targetCost int, workblock []byte) bool {
 	return value >= targetCost
 }
 
+// ValidatePeeringKey validates a prospective peer's key against a target computational cost to prevent peering spam.
 func ValidatePeeringKey(peeringID, peeringKey []byte, targetCost int) bool {
 	if len(peeringID) == 0 || len(peeringKey) == 0 {
 		return false
@@ -77,6 +81,7 @@ func ValidatePeeringKey(peeringID, peeringKey []byte, targetCost int) bool {
 	return StampValid(peeringKey, targetCost, workblock)
 }
 
+// GenerateStamp performs the computational work required to produce a valid stamp meeting the specified target cost.
 func GenerateStamp(material []byte, targetCost int, expandRounds int) ([]byte, int, int, error) {
 	if targetCost <= 0 {
 		return nil, 0, 0, nil

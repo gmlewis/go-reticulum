@@ -49,8 +49,10 @@ import (
 )
 
 const (
+	// DefaultProbeSize is the default size of the probe packet payload in bytes.
 	DefaultProbeSize = 16
-	DefaultTimeout   = 12.0
+	// DefaultTimeout is the default timeout in seconds before giving up on a probe.
+	DefaultTimeout = 12.0
 )
 
 func main() {

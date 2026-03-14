@@ -3,7 +3,7 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// Command gornx provides Reticulum remote command execution compatible with rnx.
+// gornx provides Reticulum remote command execution compatible with rnx.
 //
 // It operates in two primary modes:
 //   - Listen mode: expose an rnx execute endpoint and run authorized commands.
@@ -46,6 +46,7 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
+// AppName is the application name used for default identities and destinations.
 const AppName = "rnx"
 
 func main() {

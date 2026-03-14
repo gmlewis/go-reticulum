@@ -77,6 +77,7 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
+// AppName is the identifier used when creating or loading the default identity.
 const AppName = "rnid"
 
 func main() {

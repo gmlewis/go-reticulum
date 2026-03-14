@@ -3,6 +3,10 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
+// golxmd is the Reticulum-based LXMF routing daemon.
+//
+// It provides a local LXMF router and delivery node, managing identities,
+// peer pruning, and message propagation for the local system.
 package main
 
 import (
