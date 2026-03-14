@@ -658,6 +658,8 @@ func TestOutboundUsesKnownPathMultiHopHeader2(t *testing.T) {
 }
 
 func TestInboundForwardsWhenTransportIDMatches(t *testing.T) {
+	setTransportEnabled(true)
+	defer setTransportEnabled(false)
 	ts := &TransportSystem{
 		interfaces:    make([]interfaces.Interface, 0),
 		destinations:  make([]*Destination, 0),
@@ -721,6 +723,8 @@ func TestInboundForwardsWhenTransportIDMatches(t *testing.T) {
 }
 
 func TestInboundForwardFinalHopStripsTransportHeader(t *testing.T) {
+	setTransportEnabled(true)
+	defer setTransportEnabled(false)
 	ts := &TransportSystem{
 		interfaces:    make([]interfaces.Interface, 0),
 		destinations:  make([]*Destination, 0),

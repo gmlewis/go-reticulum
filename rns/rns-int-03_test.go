@@ -280,7 +280,7 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 			if err := os.MkdirAll(goConfigDir, 0o700); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(mustUDPConfig(goListenPort, pyListenPort)), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(mustUDPConfig(t.Name(), goListenPort, pyListenPort, false)), 0o600); err != nil {
 				t.Fatal(err)
 			}
 
@@ -317,13 +317,16 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			var mu sync.Mutex
 			var gotCompressed *bool
 			link.SetResourceStartedCallback(func(r *Resource) {
 				if r == nil || !r.isResponse {
 					return
 				}
 				v := r.compressed
+				mu.Lock()
 				gotCompressed = &v
+				mu.Unlock()
 			})
 			linked := make(chan struct{}, 1)
 			link.SetLinkEstablishedCallback(func(*Link) { linked <- struct{}{} })
@@ -348,10 +351,13 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 				if len(resp) != payloadSize {
 					t.Fatalf("response size mismatch: got %v want %v", len(resp), payloadSize)
 				}
-				if gotCompressed == nil {
+				mu.Lock()
+				gc := gotCompressed
+				mu.Unlock()
+				if gc == nil {
 					t.Fatal("did not observe response resource start callback")
 				}
-				if !*gotCompressed {
+				if !*gc {
 					t.Fatal("expected compressed response resource from python responder")
 				}
 			case <-time.After(20 * time.Second):
@@ -369,8 +375,9 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 func setupGoOnlyIntegrationLinkPair(t *testing.T) (*Link, *Link) {
 	t.Helper()
 
-	transportInstance = nil
-	transportOnce = sync.Once{}
+	ResetTransport()
+	transportMu.Lock()
+	defer transportMu.Unlock()
 
 	tsInitiator := &TransportSystem{
 		pathTable:    make(map[string]*PathEntry),
@@ -474,13 +481,16 @@ func TestIntegratedGoOnlyLargeResourceCompressionOnOff(t *testing.T) {
 				tc.autoCompressLimit,
 			)
 
+			var mu sync.Mutex
 			var gotCompressed *bool
 			initiatorLink.SetResourceStartedCallback(func(r *Resource) {
 				if r == nil || !r.isResponse {
 					return
 				}
 				v := r.compressed
+				mu.Lock()
 				gotCompressed = &v
+				mu.Unlock()
 			})
 
 			responseReady := make(chan []byte, 1)
@@ -495,11 +505,14 @@ func TestIntegratedGoOnlyLargeResourceCompressionOnOff(t *testing.T) {
 				if len(resp) != initiatorLink.mdu+1024 {
 					t.Fatalf("response size mismatch: got %v want %v", len(resp), initiatorLink.mdu+1024)
 				}
-				if gotCompressed == nil {
+				mu.Lock()
+				gc := gotCompressed
+				mu.Unlock()
+				if gc == nil {
 					t.Fatal("did not observe response resource callback")
 				}
-				if *gotCompressed != tc.expectCompressed {
-					t.Fatalf("compressed flag mismatch: got %v want %v", *gotCompressed, tc.expectCompressed)
+				if *gc != tc.expectCompressed {
+					t.Fatalf("compressed flag mismatch: got %v want %v", *gc, tc.expectCompressed)
 				}
 			case <-time.After(6 * time.Second):
 				t.Fatal("timeout waiting for response")
@@ -585,7 +598,7 @@ func TestIntegratedResponseResourceCompressionPolicyPythonToGo(t *testing.T) {
 			if err := os.MkdirAll(goConfigDir, 0o700); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(mustUDPConfig(goListenPort, pyListenPort)), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(mustUDPConfig(t.Name(), goListenPort, pyListenPort, false)), 0o600); err != nil {
 				t.Fatal(err)
 			}
 

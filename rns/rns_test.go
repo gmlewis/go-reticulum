@@ -45,6 +45,7 @@ func TestNewReticulumSharedInstanceServerThenClient(t *testing.T) {
 	port := reserveTCPPort(t)
 
 	configTemplate := `[reticulum]
+instance_name = %v
 share_instance = Yes
 shared_instance_type = tcp
 shared_instance_port = %v
@@ -57,13 +58,14 @@ loglevel = 4
 
 	cfg1 := t.TempDir()
 	cfg2 := t.TempDir()
-	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, port))
-	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, port))
+	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name(), port))
+	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name(), port))
 
 	r1, err := NewReticulum(cfg1)
 	if err != nil {
 		t.Fatalf("NewReticulum(first) error: %v", err)
 	}
+	defer func() { _ = r1.Close() }()
 	if !r1.isSharedInstance || r1.isConnectedToSharedInstance || r1.isStandaloneInstance {
 		t.Fatalf("first instance role mismatch: shared=%v connected=%v standalone=%v", r1.isSharedInstance, r1.isConnectedToSharedInstance, r1.isStandaloneInstance)
 	}
@@ -72,6 +74,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum(second) error: %v", err)
 	}
+	defer func() { _ = r2.Close() }()
 	if r2.isSharedInstance || !r2.isConnectedToSharedInstance || r2.isStandaloneInstance {
 		t.Fatalf("second instance role mismatch: shared=%v connected=%v standalone=%v", r2.isSharedInstance, r2.isConnectedToSharedInstance, r2.isStandaloneInstance)
 	}
@@ -95,6 +98,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum error: %v", err)
 	}
+	defer func() { _ = r.Close() }()
 	if r.isSharedInstance || r.isConnectedToSharedInstance || !r.isStandaloneInstance {
 		t.Fatalf("instance role mismatch: shared=%v connected=%v standalone=%v", r.isSharedInstance, r.isConnectedToSharedInstance, r.isStandaloneInstance)
 	}
@@ -114,52 +118,36 @@ func TestNewReticulumSharedInstanceUnixServerThenClientSameConfigDir(t *testing.
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(cfg) })
 
-	writeConfig(t, cfg, `[reticulum]
+	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
+instance_name = %v
 share_instance = Yes
 
 [logging]
 loglevel = 4
 
 [interfaces]
-`)
+`, t.Name()))
 
 	r1, err := NewReticulum(cfg)
 	if err != nil {
 		t.Fatalf("NewReticulum(first) error: %v", err)
 	}
+	defer func() { _ = r1.Close() }()
 	if !r1.isSharedInstance || r1.isConnectedToSharedInstance || r1.isStandaloneInstance {
 		t.Fatalf("first instance role mismatch: shared=%v connected=%v standalone=%v", r1.isSharedInstance, r1.isConnectedToSharedInstance, r1.isStandaloneInstance)
 	}
 
 	r2, err := NewReticulum(cfg)
 	if err != nil {
-		if r1.sharedInstanceInterface != nil {
-			_ = r1.sharedInstanceInterface.Detach()
-		}
-		if r1.rpcListener != nil {
-			_ = r1.rpcListener.Close()
-		}
 		t.Fatalf("NewReticulum(second) error: %v", err)
 	}
+	defer func() { _ = r2.Close() }()
 	if r2.isSharedInstance || !r2.isConnectedToSharedInstance || r2.isStandaloneInstance {
 		t.Fatalf("second instance role mismatch: shared=%v connected=%v standalone=%v", r2.isSharedInstance, r2.isConnectedToSharedInstance, r2.isStandaloneInstance)
 	}
 
 	if r2.sharedInstanceInterface == nil || r2.sharedInstanceInterface.Type() != "LocalInterface" {
 		t.Fatalf("expected second instance to use LocalInterface shared-instance client")
-	}
-
-	if r1.sharedInstanceInterface != nil {
-		_ = r1.sharedInstanceInterface.Detach()
-	}
-	if r2.sharedInstanceInterface != nil {
-		_ = r2.sharedInstanceInterface.Detach()
-	}
-	if r1.rpcListener != nil {
-		_ = r1.rpcListener.Close()
-	}
-	if r2.rpcListener != nil {
-		_ = r2.rpcListener.Close()
 	}
 }
 

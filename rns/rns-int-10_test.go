@@ -403,7 +403,7 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
 	os.MkdirAll(goConfigDir, 0700)
 
-	goConfigContent := mustUDPConfig(goListenPort, pyListenPort)
+	goConfigContent := mustUDPConfig(t.Name(), goListenPort, pyListenPort, false)
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
@@ -508,7 +508,7 @@ func TestRatchetPythonToGoParity(t *testing.T) {
 	os.MkdirAll(goConfigDir, 0700)
 	goRatchets := filepath.Join(goConfigDir, "ratchets_file")
 
-	goConfigContent := mustUDPConfig(goListenPort, pyListenPort)
+	goConfigContent := mustUDPConfig(t.Name(), goListenPort, pyListenPort, false)
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
@@ -602,7 +602,7 @@ func TestRatchetRotationParity(t *testing.T) {
 	os.MkdirAll(goConfigDir, 0700)
 	goRatchets := filepath.Join(goConfigDir, "ratchets_file")
 
-	goConfigContent := mustUDPConfig(goListenPort, pyListenPort)
+	goConfigContent := mustUDPConfig(t.Name(), goListenPort, pyListenPort, false)
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
@@ -701,7 +701,7 @@ func TestRatchetRetentionWindowParity(t *testing.T) {
 	os.MkdirAll(goConfigDir, 0700)
 	goRatchets := filepath.Join(goConfigDir, "ratchets_file")
 
-	goConfigContent := mustUDPConfig(goListenPort, pyListenPort)
+	goConfigContent := mustUDPConfig(t.Name(), goListenPort, pyListenPort, false)
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)

@@ -20,6 +20,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gmlewis/go-reticulum/rns/interfaces"
 )
 
 const integratedReceiverPy = `import RNS
@@ -897,7 +899,7 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
 	os.MkdirAll(goConfigDir, 0700)
 
-	goConfigContent := mustUDPConfig(goListenPort, pyListenPort)
+	goConfigContent := mustUDPConfig(t.Name(), goListenPort, pyListenPort, false)
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
@@ -1055,7 +1057,7 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
 	os.MkdirAll(goConfigDir, 0o700)
 
-	goConfigContent := mustUDPConfig(goListenPort, pyListenPort)
+	goConfigContent := mustUDPConfig(t.Name(), goListenPort, pyListenPort, false)
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600)
 
 	SetLogLevel(LogDebug)
@@ -1153,7 +1155,7 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
 	os.MkdirAll(goConfigDir, 0700)
 
-	goConfigContent := mustUDPConfig(goListenPort, pyListenPort)
+	goConfigContent := mustUDPConfig(t.Name(), goListenPort, pyListenPort, false)
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
@@ -1257,7 +1259,7 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
 	os.MkdirAll(goConfigDir, 0o700)
-	goConfigContent := mustUDPConfig(goListenPort, pyListenPort)
+	goConfigContent := mustUDPConfig(t.Name(), goListenPort, pyListenPort, false)
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600)
 
 	SetLogLevel(LogDebug)
@@ -1375,7 +1377,7 @@ func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
 	os.MkdirAll(goConfigDir, 0700)
-	goConfigContent := mustUDPConfig(goListenPort, pyListenPort)
+	goConfigContent := mustUDPConfig(t.Name(), goListenPort, pyListenPort, false)
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
@@ -1439,7 +1441,7 @@ func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
 	os.MkdirAll(goConfigDir, 0700)
-	goConfigContent := mustUDPConfig(goListenPort, requesterPort)
+	goConfigContent := mustUDPConfig(t.Name(), goListenPort, requesterPort, false)
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
@@ -1459,7 +1461,7 @@ func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open requester UDP socket: %v", err)
 	}
-	defer requestConn.Close()
+	defer func() { _ = requestConn.Close() }()
 
 	pathReqDest, err := NewDestination(nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 	if err != nil {
@@ -1532,7 +1534,7 @@ func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
 	os.MkdirAll(goConfigDir, 0700)
-	goConfigContent := mustUDPConfig(goListenPort, sinkPort)
+	goConfigContent := mustUDPConfig(t.Name(), goListenPort, sinkPort, true)
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
@@ -1543,10 +1545,16 @@ func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 	_ = r
 
 	ts := GetTransport()
-	if len(ts.GetInterfaces()) == 0 {
-		t.Fatal("expected at least one transport interface")
+	var outIface interfaces.Interface
+	for _, iface := range ts.GetInterfaces() {
+		if iface.Type() == "UDPInterface" {
+			outIface = iface
+			break
+		}
 	}
-	outIface := ts.GetInterfaces()[0]
+	if outIface == nil {
+		t.Fatal("expected UDP interface for multi-hop test")
+	}
 
 	remoteID, _ := NewIdentity(true)
 	remoteDest, err := NewDestinationWithTransport(nil, remoteID, DestinationOut, DestinationSingle, "multihop", "target")
@@ -1568,13 +1576,13 @@ func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open sink UDP socket: %v", err)
 	}
-	defer sinkConn.Close()
+	defer func() { _ = sinkConn.Close() }()
 
 	senderConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
 	if err != nil {
 		t.Fatalf("failed to open sender UDP socket: %v", err)
 	}
-	defer senderConn.Close()
+	defer func() { _ = senderConn.Close() }()
 
 	p := NewPacket(remoteDest, []byte("multi-hop-forward"))
 	p.HeaderType = Header2
@@ -1667,13 +1675,13 @@ enable_transport = False
 	if err != nil {
 		t.Fatalf("failed to open sink UDP socket: %v", err)
 	}
-	defer sinkConn.Close()
+	defer func() { _ = sinkConn.Close() }()
 
 	senderConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
 	if err != nil {
 		t.Fatalf("failed to open sender UDP socket: %v", err)
 	}
-	defer senderConn.Close()
+	defer func() { _ = senderConn.Close() }()
 
 	id, _ := NewIdentity(true)
 	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "pathresp", "target")
@@ -1757,13 +1765,13 @@ enable_transport = False
 	if err != nil {
 		t.Fatalf("failed to open requester UDP socket: %v", err)
 	}
-	defer requestConn.Close()
+	defer func() { _ = requestConn.Close() }()
 
 	responderConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: responderPort})
 	if err != nil {
 		t.Fatalf("failed to open responder UDP socket: %v", err)
 	}
-	defer responderConn.Close()
+	defer func() { _ = responderConn.Close() }()
 
 	remoteID, _ := NewIdentity(true)
 	remoteDest, err := NewDestinationWithTransport(nil, remoteID, DestinationIn, DestinationSingle, "relay", "target")
@@ -1919,7 +1927,7 @@ enable_transport = False
 	if err != nil {
 		t.Fatalf("failed to open responder UDP socket: %v", err)
 	}
-	defer responderConn.Close()
+	defer func() { _ = responderConn.Close() }()
 
 	remoteID, _ := NewIdentity(true)
 	remoteDest, err := NewDestinationWithTransport(nil, remoteID, DestinationIn, DestinationSingle, "relay", "python_requester_target")
@@ -2087,13 +2095,13 @@ func TestIntegratedRelayedPathResponsePropagationPythonRelayUDP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open requester UDP socket: %v", err)
 	}
-	defer requestConn.Close()
+	defer func() { _ = requestConn.Close() }()
 
 	responderConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: responderPort})
 	if err != nil {
 		t.Fatalf("failed to open responder UDP socket: %v", err)
 	}
-	defer responderConn.Close()
+	defer func() { _ = responderConn.Close() }()
 
 	remoteID, _ := NewIdentity(true)
 	remoteDest, err := NewDestinationWithTransport(nil, remoteID, DestinationIn, DestinationSingle, "relay", "python_relay_target")
@@ -2263,7 +2271,7 @@ func TestIntegratedAnnouncePropagationPythonRelayUDP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open announce sink UDP socket: %v", err)
 	}
-	defer sinkConn.Close()
+	defer func() { _ = sinkConn.Close() }()
 
 	go func() {
 		for scanner.Scan() {
@@ -2385,7 +2393,7 @@ func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
 	os.MkdirAll(goConfigDir, 0o700)
-	goConfigContent := mustUDPConfig(goListenPort, pyListenPort)
+	goConfigContent := mustUDPConfig(t.Name(), goListenPort, pyListenPort, false)
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600)
 
 	SetLogLevel(LogDebug)
@@ -2578,7 +2586,7 @@ enable_transport = False
 	if err != nil {
 		t.Fatalf("failed opening requester UDP socket: %v", err)
 	}
-	defer requestConn.Close()
+	defer func() { _ = requestConn.Close() }()
 
 	pathReqDest, err := NewDestination(nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 	if err != nil {
@@ -2695,7 +2703,7 @@ func TestIntegratedPythonRelayPathRequestEmissionUDP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed opening sink UDP socket: %v", err)
 	}
-	defer sinkConn.Close()
+	defer func() { _ = sinkConn.Close() }()
 
 	lineCh := make(chan string, 64)
 	go func() {
@@ -2850,7 +2858,7 @@ relayReady:
 	if err != nil {
 		t.Fatalf("failed opening sink UDP socket: %v", err)
 	}
-	defer sinkConn.Close()
+	defer func() { _ = sinkConn.Close() }()
 
 	requesterScriptPath := filepath.Join(tmpDir, "integrated_path_requester_emitter.py")
 	if err := os.WriteFile(requesterScriptPath, []byte(integratedPathRequesterEmitterPy), 0o644); err != nil {

@@ -78,6 +78,7 @@ func TestRPCAuthAndGetEndpoints(t *testing.T) {
 
 	cfg := t.TempDir()
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
+instance_name = %v
 share_instance = Yes
 shared_instance_type = tcp
 shared_instance_port = %v
@@ -88,12 +89,13 @@ rpc_key = %v
 loglevel = 4
 
 [interfaces]
-`, sharedPort, rpcPort, rpcKeyHex))
+`, t.Name(), sharedPort, rpcPort, rpcKeyHex))
 
 	r, err := NewReticulum(cfg)
 	if err != nil {
 		t.Fatalf("NewReticulum error: %v", err)
 	}
+	defer func() { _ = r.Close() }()
 	if !r.isSharedInstance {
 		t.Fatalf("expected shared instance")
 	}
@@ -135,6 +137,7 @@ func TestRPCRejectsInvalidAuth(t *testing.T) {
 
 	cfg := t.TempDir()
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
+instance_name = %v
 share_instance = Yes
 shared_instance_type = tcp
 shared_instance_port = %v
@@ -145,11 +148,13 @@ rpc_key = 00112233445566778899aabbccddeeff
 loglevel = 4
 
 [interfaces]
-`, sharedPort, rpcPort))
+`, t.Name(), sharedPort, rpcPort))
 
-	if _, err := NewReticulum(cfg); err != nil {
+	r, err := NewReticulum(cfg)
+	if err != nil {
 		t.Fatalf("NewReticulum error: %v", err)
 	}
+	defer func() { _ = r.Close() }()
 
 	conn := mustDialRPC(t, fmt.Sprintf("127.0.0.1:%v", rpcPort))
 	defer func() { _ = conn.Close() }()
@@ -175,6 +180,7 @@ func TestRPCAcceptsByteAuthKey(t *testing.T) {
 
 	cfg := t.TempDir()
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
+instance_name = %v
 share_instance = Yes
 shared_instance_type = tcp
 shared_instance_port = %v
@@ -185,11 +191,13 @@ rpc_key = %v
 loglevel = 4
 
 [interfaces]
-`, sharedPort, rpcPort, rpcKeyHex))
+`, t.Name(), sharedPort, rpcPort, rpcKeyHex))
 
-	if _, err := NewReticulum(cfg); err != nil {
+	r, err := NewReticulum(cfg)
+	if err != nil {
 		t.Fatalf("NewReticulum error: %v", err)
 	}
+	defer func() { _ = r.Close() }()
 
 	conn := mustDialRPC(t, fmt.Sprintf("127.0.0.1:%v", rpcPort))
 	defer func() { _ = conn.Close() }()
@@ -211,6 +219,7 @@ func TestConnectedInstanceInterfaceStatsViaRPC(t *testing.T) {
 	rpcKeyHex := "00112233445566778899aabbccddeeff"
 
 	configTemplate := `[reticulum]
+instance_name = %v
 share_instance = Yes
 shared_instance_type = tcp
 shared_instance_port = %v
@@ -225,13 +234,14 @@ loglevel = 4
 
 	cfg1 := t.TempDir()
 	cfg2 := t.TempDir()
-	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, sharedPort, rpcPort, rpcKeyHex))
-	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, sharedPort, rpcPort, rpcKeyHex))
+	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name()+"-1", sharedPort, rpcPort, rpcKeyHex))
+	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name()+"-2", sharedPort, rpcPort, rpcKeyHex))
 
 	r1, err := NewReticulum(cfg1)
 	if err != nil {
 		t.Fatalf("NewReticulum(shared) error: %v", err)
 	}
+	defer func() { _ = r1.Close() }()
 	if !r1.isSharedInstance {
 		t.Fatalf("expected first instance to be shared")
 	}
@@ -240,6 +250,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum(client) error: %v", err)
 	}
+	defer func() { _ = r2.Close() }()
 	if !r2.isConnectedToSharedInstance {
 		t.Fatalf("expected second instance to be connected to shared instance")
 	}
@@ -266,6 +277,7 @@ func TestRPCExpandedGetDropAndBlackholeSurface(t *testing.T) {
 
 	cfg := t.TempDir()
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
+instance_name = %v
 share_instance = Yes
 shared_instance_type = tcp
 shared_instance_port = %v
@@ -276,11 +288,13 @@ rpc_key = %v
 loglevel = 4
 
 [interfaces]
-`, sharedPort, rpcPort, rpcKeyHex))
+`, t.Name(), sharedPort, rpcPort, rpcKeyHex))
 
-	if _, err := NewReticulum(cfg); err != nil {
+	r, err := NewReticulum(cfg)
+	if err != nil {
 		t.Fatalf("NewReticulum error: %v", err)
 	}
+	defer func() { _ = r.Close() }()
 
 	conn := mustDialRPC(t, fmt.Sprintf("127.0.0.1:%v", rpcPort))
 	defer func() { _ = conn.Close() }()
@@ -333,6 +347,7 @@ func TestConnectedInstanceExpandedProxyMethods(t *testing.T) {
 	rpcKeyHex := "00112233445566778899aabbccddeeff"
 
 	configTemplate := `[reticulum]
+instance_name = %v
 share_instance = Yes
 shared_instance_type = tcp
 shared_instance_port = %v
@@ -347,16 +362,20 @@ loglevel = 4
 
 	cfg1 := t.TempDir()
 	cfg2 := t.TempDir()
-	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, sharedPort, rpcPort, rpcKeyHex))
-	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, sharedPort, rpcPort, rpcKeyHex))
+	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name()+"-1", sharedPort, rpcPort, rpcKeyHex))
+	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name()+"-2", sharedPort, rpcPort, rpcKeyHex))
 
-	if _, err := NewReticulum(cfg1); err != nil {
+	r1, err := NewReticulum(cfg1)
+	if err != nil {
 		t.Fatalf("NewReticulum(shared) error: %v", err)
 	}
+	defer func() { _ = r1.Close() }()
+
 	r2, err := NewReticulum(cfg2)
 	if err != nil {
 		t.Fatalf("NewReticulum(client) error: %v", err)
 	}
+	defer func() { _ = r2.Close() }()
 	if !r2.isConnectedToSharedInstance {
 		t.Fatalf("expected second instance to be connected to shared instance")
 	}
@@ -621,6 +640,7 @@ func TestConnectedInstanceManagementCallsRecoverAfterRPCServerRestart(t *testing
 			}
 
 			configTemplate := `[reticulum]
+instance_name = %v
 share_instance = Yes
 shared_instance_port = %v
 instance_control_port = %v
@@ -636,7 +656,7 @@ loglevel = 4
 [interfaces]
 `
 
-			configBody := fmt.Sprintf(configTemplate, sharedPort, rpcPort, rpcKeyHex)
+			configBody := fmt.Sprintf(configTemplate, t.Name(), sharedPort, rpcPort, rpcKeyHex)
 			writeConfig(t, cfg1, configBody)
 			if !tc.sameConfigDir {
 				writeConfig(t, cfg2, configBody)
@@ -646,30 +666,16 @@ loglevel = 4
 			if err != nil {
 				t.Fatalf("NewReticulum(shared) error: %v", err)
 			}
+			defer func() { _ = r1.Close() }()
 			if !r1.isSharedInstance {
 				t.Fatalf("expected first instance to be shared, got shared=%v connected=%v standalone=%v", r1.isSharedInstance, r1.isConnectedToSharedInstance, r1.isStandaloneInstance)
 			}
-			defer func() {
-				if r1.sharedInstanceInterface != nil {
-					_ = r1.sharedInstanceInterface.Detach()
-				}
-				if r1.rpcListener != nil {
-					_ = r1.rpcListener.Close()
-				}
-			}()
 
 			r2, err := NewReticulum(cfg2)
 			if err != nil {
 				t.Fatalf("NewReticulum(client) error: %v", err)
 			}
-			defer func() {
-				if r2.sharedInstanceInterface != nil {
-					_ = r2.sharedInstanceInterface.Detach()
-				}
-				if r2.rpcListener != nil {
-					_ = r2.rpcListener.Close()
-				}
-			}()
+			defer func() { _ = r2.Close() }()
 
 			if !r2.isConnectedToSharedInstance {
 				t.Fatalf("expected connected-to-shared role, got shared=%v connected=%v standalone=%v", r2.isSharedInstance, r2.isConnectedToSharedInstance, r2.isStandaloneInstance)

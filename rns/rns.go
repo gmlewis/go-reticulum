@@ -139,7 +139,20 @@ var (
 	globalLinkMTUDiscovery uint32 = 1
 	globalUseImplicitProof uint32 = 1
 	globalPanicOnIfaceErr  uint32 = 0
+	globalTransportEnabled uint32 = 0
 )
+
+func transportEnabled() bool {
+	return atomic.LoadUint32(&globalTransportEnabled) == 1
+}
+
+func setTransportEnabled(enabled bool) {
+	if enabled {
+		atomic.StoreUint32(&globalTransportEnabled, 1)
+		return
+	}
+	atomic.StoreUint32(&globalTransportEnabled, 0)
+}
 
 func linkMTUDiscoveryEnabled() bool {
 	return atomic.LoadUint32(&globalLinkMTUDiscovery) == 1
@@ -322,6 +335,9 @@ func (r *Reticulum) applyConfig() error {
 		}
 		if v, ok := reticulumSection.GetProperty("enable_remote_management"); ok {
 			r.remoteMgmtEnabled = parseBoolLike(v)
+		}
+		if v, ok := reticulumSection.GetProperty("enable_transport"); ok {
+			setTransportEnabled(parseBoolLike(v))
 		}
 		if v, ok := reticulumSection.GetProperty("respond_to_probes"); ok {
 			r.allowProbes = parseBoolLike(v)

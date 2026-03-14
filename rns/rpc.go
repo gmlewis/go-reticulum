@@ -92,12 +92,12 @@ func (r *Reticulum) handleRPCConn(conn net.Conn) {
 	if err != nil {
 		return
 	}
-	authMap, ok := authReq.(map[any]any)
-	if !ok {
+	authMap := asAnyMap(authReq)
+	if authMap == nil {
 		return
 	}
 
-	provided, ok := authMap["auth"]
+	provided, ok := lookupAny(authMap, "auth")
 	if !ok {
 		return
 	}

@@ -408,6 +408,33 @@ func (ts *TransportSystem) AnnounceHandlers() []*AnnounceHandler {
 	return result
 }
 
+func (ts *TransportSystem) isLocalClientInterface(iface interfaces.Interface) bool {
+	if iface == nil {
+		return false
+	}
+	// On Linux, local client interfaces are typically LocalClientInterface.
+	// We can check the type name or use an interface check.
+	return iface.Type() == "LocalInterface" && strings.Contains(iface.Name(), "Local Client")
+}
+
+func (ts *TransportSystem) isForLocalClient(p *Packet) bool {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if entry, ok := ts.pathTable[string(p.DestinationHash)]; ok {
+		return entry.Hops == 0
+	}
+	return false
+}
+
+func (ts *TransportSystem) isForLocalClientLink(p *Packet) bool {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if entry, ok := ts.linkTable[string(p.DestinationHash)]; ok {
+		return ts.isLocalClientInterface(entry.ReceivedInterface) || ts.isLocalClientInterface(entry.OutboundInterface)
+	}
+	return false
+}
+
 func (ts *TransportSystem) maintenance() {
 	defer close(ts.doneCh)
 	ratchetTicker := time.NewTicker(24 * time.Hour)
@@ -1355,6 +1382,7 @@ func (ts *TransportSystem) RequestPath(destHash []byte) error {
 
 // Inbound processes a raw packet received from an interface.
 func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
+	Logf("Inbound: received packet of %d bytes from %s", LogDebug, false, len(raw), iface.Name())
 	if ifac, ok := iface.(ifacInboundHook); ok {
 		processed, accepted := ifac.ApplyIFACInbound(raw)
 		if !accepted {
@@ -1370,7 +1398,7 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 		Logf("Received malformed packet, dropping it: %v", LogExtreme, false, err)
 		return
 	}
-	Logf("Inbound packet: type=%v, dest=%x, hops=%v", LogDebug, false, packet.PacketType, packet.DestinationHash, packet.Hops)
+	Logf("Inbound packet: type=%v, dest=%x, hops=%v, hash=%x", LogDebug, false, packet.PacketType, packet.DestinationHash, packet.Hops, packet.PacketHash)
 
 	packet.Hops++
 
@@ -1417,63 +1445,81 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 
 	// Transport handling
 	if packet.PacketType != PacketAnnounce {
-		// If transport ID matches ours, we are the next hop
-		if packet.TransportID != nil && ts.identity != nil && string(packet.TransportID) == string(ts.identity.Hash) {
-			ts.mu.Lock()
-			if entry, ok := ts.pathTable[destHash]; ok {
-				// Forwarding logic
-				remainingHops := entry.Hops
-				var newRaw []byte
+		// Check special conditions for local clients
+		fromLocalClient := ts.isLocalClientInterface(iface)
+		forLocalClient := packet.PacketType != PacketAnnounce && ts.isForLocalClient(packet)
+		forLocalClientLink := packet.PacketType != PacketAnnounce && ts.isForLocalClientLink(packet)
 
-				if remainingHops > 1 {
-					newRaw = make([]byte, len(packet.Raw))
-					copy(newRaw, packet.Raw)
-					newRaw[1] = byte(packet.Hops)
-					copy(newRaw[2:], entry.NextHop)
-				} else if remainingHops == 1 {
-					// Strip transport header
-					newFlags := (Header1 << 6) | (packet.Flags & 0b00001111)
-					newRaw = []byte{newFlags, byte(packet.Hops)}
-					newRaw = append(newRaw, packet.Raw[TruncatedHashLength/8+2:]...)
-				} else {
-					newRaw = make([]byte, len(packet.Raw))
-					copy(newRaw, packet.Raw)
-					newRaw[1] = byte(packet.Hops)
-				}
+		Logf("Inbound: transportEnabled=%v, fromLocalClient=%v, forLocalClient=%v, forLocalClientLink=%v", LogDebug, false, transportEnabled(), fromLocalClient, forLocalClient, forLocalClientLink)
 
-				if packet.PacketType == PacketLinkRequest {
-					now := time.Now()
-					proofTimeout := ts.extraLinkProofTimeout(iface)
-					proofTimeout += time.Duration(max(1, remainingHops)) * establishmentTimeoutPerHop
-					linkID := LinkIDFromLR(packet)
-					ts.linkTable[string(linkID)] = &LinkEntry{
-						Timestamp:         now,
-						NextHop:           copyBytes(entry.NextHop),
-						OutboundInterface: entry.Interface,
-						RemainingHops:     remainingHops,
-						ReceivedInterface: iface,
-						Hops:              packet.Hops,
-						DestinationHash:   copyBytes(packet.DestinationHash),
-						Validated:         false,
-						ProofTimeout:      now.Add(proofTimeout),
-					}
-				} else {
-					// Add reverse table entry for proofs/responses
-					ts.reverseTable[string(packet.PacketHash)] = &ReverseEntry{
-						ReceivedInterface: iface,
-						OutboundInterface: entry.Interface,
-						Timestamp:         time.Now(),
-					}
-				}
-
-				ts.mu.Unlock()
-				if err := entry.Interface.Send(newRaw); err != nil {
-					Log(fmt.Sprintf("Failed to forward packet: %v", err), LogError, false)
-					ts.InvalidatePath(packet.DestinationHash)
-				}
-				return
+		if transportEnabled() || fromLocalClient || forLocalClient || forLocalClientLink {
+			Logf("Inbound: entering forwarding block for packet %x", LogDebug, false, packet.PacketHash)
+			// If transport ID matches ours, we are the next hop
+			var transportHash []byte
+			if ts.identity != nil {
+				transportHash = ts.identity.Hash
 			}
-			ts.mu.Unlock()
+			Logf("Inbound: packet.TransportID=%x, ts.identity.Hash=%x", LogDebug, false, packet.TransportID, transportHash)
+			if packet.TransportID != nil && ts.identity != nil && bytes.Equal(packet.TransportID, ts.identity.Hash) {
+				ts.mu.Lock()
+				if entry, ok := ts.pathTable[destHash]; ok {
+					Logf("Inbound: path found in ts.pathTable for %x via %s", LogDebug, false, packet.DestinationHash, entry.Interface.Name())
+					// Forwarding logic
+					remainingHops := entry.Hops
+					var newRaw []byte
+
+					if remainingHops > 1 {
+						newRaw = make([]byte, len(packet.Raw))
+						copy(newRaw, packet.Raw)
+						newRaw[1] = byte(packet.Hops)
+						copy(newRaw[2:], entry.NextHop)
+					} else if remainingHops == 1 {
+						// Strip transport header
+						newFlags := (Header1 << 6) | (packet.Flags & 0b00001111)
+						newRaw = []byte{newFlags, byte(packet.Hops)}
+						newRaw = append(newRaw, packet.Raw[TruncatedHashLength/8+2:]...)
+					} else {
+						newRaw = make([]byte, len(packet.Raw))
+						copy(newRaw, packet.Raw)
+						newRaw[1] = byte(packet.Hops)
+					}
+
+					if packet.PacketType == PacketLinkRequest {
+						now := time.Now()
+						proofTimeout := ts.extraLinkProofTimeout(iface)
+						proofTimeout += time.Duration(max(1, remainingHops)) * establishmentTimeoutPerHop
+						linkID := LinkIDFromLR(packet)
+						ts.linkTable[string(linkID)] = &LinkEntry{
+							Timestamp:         now,
+							NextHop:           copyBytes(entry.NextHop),
+							OutboundInterface: entry.Interface,
+							RemainingHops:     remainingHops,
+							ReceivedInterface: iface,
+							Hops:              packet.Hops,
+							DestinationHash:   copyBytes(packet.DestinationHash),
+							Validated:         false,
+							ProofTimeout:      now.Add(proofTimeout),
+						}
+					} else {
+						// Add reverse table entry for proofs/responses
+						ts.reverseTable[string(packet.PacketHash)] = &ReverseEntry{
+							ReceivedInterface: iface,
+							OutboundInterface: entry.Interface,
+							Timestamp:         time.Now(),
+						}
+					}
+
+					ts.mu.Unlock()
+					Logf("Inbound: transmitting forwarded packet on %s", LogDebug, false, entry.Interface.Name())
+					if err := entry.Interface.Send(newRaw); err != nil {
+						Log(fmt.Sprintf("Failed to forward packet: %v", err), LogError, false)
+						ts.InvalidatePath(packet.DestinationHash)
+					}
+					return
+				}
+				Logf("Inbound: no path found in ts.pathTable for %x", LogDebug, false, packet.DestinationHash)
+				ts.mu.Unlock()
+			}
 		}
 	}
 

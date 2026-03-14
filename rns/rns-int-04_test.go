@@ -49,9 +49,14 @@ func allocateUDPPortPair(t *testing.T) (int, int) {
 	return 0, 0
 }
 
-func mustUDPConfig(listenPort, forwardPort int) string {
+func mustUDPConfig(instanceName string, listenPort, forwardPort int, enableTransport bool) string {
+	transport := "False"
+	if enableTransport {
+		transport = "True"
+	}
 	return fmt.Sprintf(`[reticulum]
-enable_transport = False
+instance_name = %v
+enable_transport = %v
 
 [interfaces]
   [[UDP Interface]]
@@ -61,5 +66,5 @@ enable_transport = False
     listen_port = %v
     forward_ip = 127.0.0.1
     forward_port = %v
-`, listenPort, forwardPort)
+`, instanceName, transport, listenPort, forwardPort)
 }

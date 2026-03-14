@@ -21,8 +21,13 @@ const checkAnnounceParityPy = `import RNS
 import sys
 import os
 
-def check_announce_packet(packet_path, identity_path):
+def check_announce_packet(config_dir, packet_path, identity_path):
     try:
+        if not os.path.exists(config_dir):
+            os.makedirs(config_dir)
+        with open(os.path.join(config_dir, "config"), "w") as f:
+            f.write("[reticulum]\nshare_instance = No\n")
+
         if not os.path.exists(packet_path):
             print(f"Packet file not found: {packet_path}")
             sys.exit(1)
@@ -31,7 +36,7 @@ def check_announce_packet(packet_path, identity_path):
             raw = f.read()
         
         # We need a Reticulum instance to unpack
-        reticulum = RNS.Reticulum(configdir="/tmp/rns_parity_test", loglevel=RNS.LOG_DEBUG)
+        reticulum = RNS.Reticulum(configdir=config_dir, loglevel=RNS.LOG_DEBUG)
         
         packet = RNS.Packet(None, raw)
         packet.unpack()
@@ -68,19 +73,24 @@ def check_announce_packet(packet_path, identity_path):
         sys.exit(1)
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: check_announce_parity.py <packet_path>")
+    if len(sys.argv) != 3:
+        print("Usage: check_announce_parity.py <config_dir> <packet_path>")
         sys.exit(1)
     
-    check_announce_packet(sys.argv[1], None)
+    check_announce_packet(sys.argv[1], sys.argv[2], None)
 `
 
 const checkLinkProofParityPy = `import RNS
 import sys
 import os
 
-def check_link_proof_packet(packet_path, link_id_hex, destination_pub_hex):
+def check_link_proof_packet(config_dir, packet_path, link_id_hex, destination_pub_hex):
     try:
+        if not os.path.exists(config_dir):
+            os.makedirs(config_dir)
+        with open(os.path.join(config_dir, "config"), "w") as f:
+            f.write("[reticulum]\nshare_instance = No\n")
+
         if not os.path.exists(packet_path):
             print(f"Packet file not found: {packet_path}")
             sys.exit(1)
@@ -88,7 +98,7 @@ def check_link_proof_packet(packet_path, link_id_hex, destination_pub_hex):
         with open(packet_path, "rb") as f:
             raw = f.read()
         
-        reticulum = RNS.Reticulum(configdir="/tmp/rns_parity_test", loglevel=RNS.LOG_DEBUG)
+        reticulum = RNS.Reticulum(configdir=config_dir, loglevel=RNS.LOG_DEBUG)
         
         packet = RNS.Packet(None, raw)
         packet.unpack()
@@ -126,18 +136,23 @@ def check_link_proof_packet(packet_path, link_id_hex, destination_pub_hex):
         sys.exit(1)
 
 if __name__ == "__main__":
-    if len(sys.argv) != 4:
-        print("Usage: check_link_proof_parity.py <packet_path> <link_id_hex> <destination_pub_hex>")
+    if len(sys.argv) != 5:
+        print("Usage: check_link_proof_parity.py <config_dir> <packet_path> <link_id_hex> <destination_pub_hex>")
         sys.exit(1)
-    check_link_proof_packet(sys.argv[1], sys.argv[2], sys.argv[3])
+    check_link_proof_packet(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4])
 `
 
 const checkLinkRequestParityPy = `import RNS
 import sys
 import os
 
-def check_link_request_packet(packet_path):
+def check_link_request_packet(config_dir, packet_path):
     try:
+        if not os.path.exists(config_dir):
+            os.makedirs(config_dir)
+        with open(os.path.join(config_dir, "config"), "w") as f:
+            f.write("[reticulum]\nshare_instance = No\n")
+
         if not os.path.exists(packet_path):
             print(f"Packet file not found: {packet_path}")
             sys.exit(1)
@@ -145,7 +160,7 @@ def check_link_request_packet(packet_path):
         with open(packet_path, "rb") as f:
             raw = f.read()
         
-        reticulum = RNS.Reticulum(configdir="/tmp/rns_parity_test", loglevel=RNS.LOG_DEBUG)
+        reticulum = RNS.Reticulum(configdir=config_dir, loglevel=RNS.LOG_DEBUG)
         
         packet = RNS.Packet(None, raw)
         packet.unpack()
@@ -172,10 +187,10 @@ def check_link_request_packet(packet_path):
         sys.exit(1)
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: check_link_request_parity.py <packet_path>")
+    if len(sys.argv) != 3:
+        print("Usage: check_link_request_parity.py <config_dir> <packet_path>")
         sys.exit(1)
-    check_link_request_packet(sys.argv[1])
+    check_link_request_packet(sys.argv[1], sys.argv[2])
 `
 
 func TestAnnouncePacketParity(t *testing.T) {
@@ -239,7 +254,8 @@ func TestAnnouncePacketParity(t *testing.T) {
 	}
 
 	// Verify with Python
-	cmd := exec.Command("python3", scriptPath, packetPath)
+	pyConfigDir := filepath.Join(tmpDir, "py_config")
+	cmd := exec.Command("python3", scriptPath, pyConfigDir, packetPath)
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -331,7 +347,8 @@ func TestLinkProofPacketParity(t *testing.T) {
 	}
 
 	// Verify with Python
-	cmd := exec.Command("python3", scriptPath, packetPath, fmt.Sprintf("%x", l.linkID), fmt.Sprintf("%x", dest.identity.GetPublicKey()))
+	pyConfigDir := filepath.Join(tmpDir, "py_config")
+	cmd := exec.Command("python3", scriptPath, pyConfigDir, packetPath, fmt.Sprintf("%x", l.linkID), fmt.Sprintf("%x", dest.identity.GetPublicKey()))
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -386,7 +403,8 @@ func TestLinkRequestPacketParity(t *testing.T) {
 	}
 
 	// Verify with Python
-	cmd := exec.Command("python3", scriptPath, packetPath)
+	pyConfigDir := filepath.Join(tmpDir, "py_config")
+	cmd := exec.Command("python3", scriptPath, pyConfigDir, packetPath)
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 	out, err := cmd.CombinedOutput()
 	if err != nil {
