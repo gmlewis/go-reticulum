@@ -204,8 +204,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	_, err := rns.NewReticulum(configDir)
-	if err != nil {
+	if _, err := rns.NewReticulum(configDir); err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
 	rns.CompactLogFmt = true
