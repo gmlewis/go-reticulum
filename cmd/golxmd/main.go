@@ -405,6 +405,9 @@ func main() {
 		}
 	}
 
+	// The runtimeTracker is retained as a useful debugging feature for the Go port of golxmd,
+	// providing persistence of operational state across restarts that is not present in the
+	// original implementation.
 	runtimeStatePath := filepath.Join(resolvedStorage, "lxmf", "golxmd-state.json")
 	tr, err = newRuntimeTracker(runtimeStatePath)
 	if err != nil {
