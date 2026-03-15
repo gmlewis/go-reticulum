@@ -136,8 +136,49 @@ func setupLogging(service bool, configDir string) {
 	}
 }
 
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	"github.com/gmlewis/go-reticulum/lxmf"
+	"github.com/gmlewis/go-reticulum/rns"
+)
+
+var (
+	ac     *activeConfig
+	lxmdir string
+)
+
 func lxmfDelivery(lxm *lxmf.Message) {
-	// TODO: T18
+	writtenPath, err := lxm.WriteToDirectory(lxmdir)
+	if err != nil {
+		rns.Logf("Error occurred while processing received message %v. The contained exception was: %v", rns.LogError, false, lxm, err)
+		return
+	}
+	rns.Logf("Received %v written to %v", rns.LogDebug, false, lxm, writtenPath)
+
+	if ac != nil && ac.OnInbound != "" {
+		rns.Logf("Calling external program to handle message", rns.LogDebug, false)
+		// Python: processing_command = command+" \""+written_path+"\""
+		// return_code = subprocess.call(shlex.split(processing_command), ...)
+		// We use exec.Command which is safer.
+		cmd := exec.Command(ac.OnInbound, writtenPath)
+		if err := cmd.Run(); err != nil {
+			rns.Logf("Error occurred while calling external program: %v", rns.LogError, false, err)
+		}
+	} else {
+		rns.Logf("No action defined for inbound messages, ignoring", rns.LogDebug, false)
+	}
 }
 
 func main() {

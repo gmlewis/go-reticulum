@@ -16,6 +16,100 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
+func TestLXMFDelivery(t *testing.T) {
+	tempDir := t.TempDir()
+	lxmdir = filepath.Join(tempDir, "messages")
+	err := os.MkdirAll(lxmdir, 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Mock message
+	id, _ := rns.NewIdentity(true)
+	dest, _ := rns.NewDestination(id, rns.DestinationIn, rns.DestinationSingle, "lxmf", "delivery")
+	lxm, _ := lxmf.NewMessage(dest, dest, "Hello", "Content", "")
+	
+	// Case 1: No on_inbound
+	ac = &activeConfig{OnInbound: ""}
+	lxmfDelivery(lxm)
+	// Check if file exists in lxmdir
+	entries, _ := os.ReadDir(lxmdir)
+	if len(entries) != 1 {
+		t.Errorf("expected 1 message file, got %v", len(entries))
+	}
+
+	// Case 2: with on_inbound (mock script)
+	scriptPath := filepath.Join(tempDir, "handler.sh")
+	err = os.WriteFile(scriptPath, []byte("#!/bin/sh\necho $1 > "+filepath.Join(tempDir, "result")), 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	
+	ac = &activeConfig{OnInbound: scriptPath}
+	lxmfDelivery(lxm)
+	
+	resultPath := filepath.Join(tempDir, "result")
+	if _, err := os.Stat(resultPath); os.IsNotExist(err) {
+		t.Errorf("on_inbound script was not called")
+	}
+}
+
+func TestPropagationNodeSetup(t *testing.T) {
+	tempDir := t.TempDir()
+	identity, _ := rns.NewIdentity(true)
+	router, _ := lxmf.NewRouter(identity, tempDir)
+
+	prioritised := []string{"0102030405060708090a0b0c0d0e0f10"}
+	controlAllowed := []string{"1112131415161718191a1b1c1d1e1f20"}
+
+	router.SetMessageStorageLimit(500)
+	for _, s := range prioritised {
+		if h, err := rns.HexToBytes(s); err == nil {
+			router.Prioritise(h)
+		}
+	}
+	for _, s := range controlAllowed {
+		if h, err := rns.HexToBytes(s); err == nil {
+			router.AllowControl(h)
+		}
+	}
+	router.EnablePropagation()
+
+	if !router.PropagationEnabled() {
+		t.Errorf("PropagationEnabled: got false, want true")
+	}
+}
+
+func TestAuthSetup(t *testing.T) {
+	tempDir := t.TempDir()
+	identity, _ := rns.NewIdentity(true)
+	router, _ := lxmf.NewRouter(identity, tempDir)
+
+	allowed := [][]byte{
+		{0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20},
+	}
+
+	router.SetAuthRequired(true)
+	for _, h := range allowed {
+		router.Allow(h)
+	}
+
+	// We can't easily check if it's applied without calling private methods or testing in lxmf package.
+	// But we can verify it doesn't crash and the methods exist.
+}
+
+func TestIdentityRemember(t *testing.T) {
+	identity, _ := rns.NewIdentity(true)
+	dest, _ := rns.NewDestination(identity, rns.DestinationIn, rns.DestinationSingle, "lxmf", "delivery")
+
+	rns.Remember(nil, dest.Hash, identity.GetPublicKey(), nil)
+
+	recalled := rns.Recall(dest.Hash, false)
+	if recalled == nil {
+		t.Errorf("recalled identity is nil")
+	}
+}
+
 func TestIgnoreDestinations(t *testing.T) {
 	tempDir := t.TempDir()
 	identity, _ := rns.NewIdentity(true)

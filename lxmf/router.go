@@ -278,6 +278,20 @@ func (r *Router) SetAllowedList(identityHashes [][]byte) error {
 	return nil
 }
 
+// Allow adds a single identity hash to the allowed list.
+func (r *Router) Allow(identityHash []byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.allowedList[string(append([]byte{}, identityHash...))] = struct{}{}
+}
+
+// AllowControl adds a single identity hash to the control allowed list.
+func (r *Router) AllowControl(identityHash []byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.controlAllowed[string(append([]byte{}, identityHash...))] = struct{}{}
+}
+
 // SetStaticPeers configures the explicit list of peer propagation hashes the router is permitted to communicate with.
 func (r *Router) SetStaticPeers(peerPropagationHashes [][]byte) error {
 	r.mu.Lock()
