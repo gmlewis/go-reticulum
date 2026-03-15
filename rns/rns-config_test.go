@@ -58,7 +58,7 @@ func TestChooseConfigDir(t *testing.T) {
 }
 
 func TestCreateDefaultConfigMatchesPythonShape(t *testing.T) {
-	tmp := t.TempDir()
+	tmp := tempDir(t)
 	configPath := filepath.Join(tmp, "config")
 
 	r := &Reticulum{}
@@ -137,7 +137,7 @@ func TestNewReticulumCreatesPythonStartupLayout(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -188,7 +188,7 @@ func TestReticulumOptionParitySliceNetworkIdentityAndBooleans(t *testing.T) {
 		setUseImplicitProof(origImplicit)
 	}()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	networkIdentityPath := filepath.Join(configDir, "storage", "identities", "network-id")
 	config := `[reticulum]
 share_instance = No
@@ -248,7 +248,7 @@ func TestSerialInterfaceMissingPortDoesNotRegister(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -279,7 +279,7 @@ func TestKISSInterfaceMissingPortDoesNotRegister(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -314,7 +314,7 @@ func TestKISSInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -347,7 +347,7 @@ func TestAX25KISSInterfaceMissingPortDoesNotRegister(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -380,7 +380,7 @@ func TestAX25KISSInterfaceMissingCallsignDoesNotRegister(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -416,7 +416,7 @@ func TestAX25KISSInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -450,7 +450,7 @@ func TestPipeInterfaceMissingCommandDoesNotRegister(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -481,7 +481,7 @@ func TestPipeInterfaceBadCommandDoesNotRegister(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -513,7 +513,7 @@ func TestBackboneInterfaceMissingPortDoesNotRegister(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -545,7 +545,7 @@ func TestBackboneClientInterfaceMissingTargetDoesNotRegister(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -576,7 +576,7 @@ func TestI2PInterfaceMissingConfigDoesNotRegister(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -607,7 +607,7 @@ func TestI2PInterfaceConnectableMissingPortDoesNotRegister(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -639,7 +639,7 @@ func TestI2PInterfacePeerConfigRegisters(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -675,7 +675,7 @@ func TestI2PInterfaceConnectableRegisters(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -713,7 +713,7 @@ func TestRNodeInterfaceMissingPortDoesNotRegister(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -749,7 +749,7 @@ func TestRNodeInterfaceMissingRequiredFieldsDoesNotRegister(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -789,7 +789,7 @@ func TestRNodeInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -826,7 +826,7 @@ func TestWeaveInterfaceMissingPortDoesNotRegister(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -861,7 +861,7 @@ func TestWeaveInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -893,7 +893,7 @@ func TestRNodeMultiInterfaceNoSubinterfacesDoesNotRegister(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -925,7 +925,7 @@ func TestRNodeMultiInterfaceMultipleEnabledSubsDoesNotRegister(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -977,7 +977,7 @@ func TestRNodeMultiInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -1021,7 +1021,7 @@ func TestSerialInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 
@@ -1054,7 +1054,7 @@ func TestReticulumOptionParityRemoteManagementAndProbes(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	hash1 := "00112233445566778899aabbccddeeff"
 	hash2 := "ffeeddccbbaa99887766554433221100"
 	config := `[reticulum]
@@ -1110,7 +1110,7 @@ func TestReticulumOptionParityRemoteManagementAllowedInvalidLength(t *testing.T)
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 remote_management_allowed = [abcd]
@@ -1134,7 +1134,7 @@ func TestReticulumOptionParityRemoteManagementAllowedInvalidHex(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 remote_management_allowed = [00112233445566778899aabbccddeezz]
@@ -1162,7 +1162,7 @@ func TestReticulumOptionParityForceBitratePanicAndDiscover(t *testing.T) {
 	defer setPanicOnInterfaceErrorEnabled(origPanic)
 
 	sharedPort := reserveTCPPort(t)
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	forcedBitrate := 24680
 
 	config := `[reticulum]
@@ -1217,7 +1217,7 @@ func TestReticulumOptionParityDiscoveryAndBlackholeSettings(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	bh1 := "11223344556677889900aabbccddeeff"
 	bh2 := "ffeeddccbbaa00998877665544332211"
 	is1 := "0102030405060708090a0b0c0d0e0f10"
@@ -1268,7 +1268,7 @@ func TestReticulumOptionParityDiscoveryValueNonPositiveClears(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 required_discovery_value = 0
@@ -1296,7 +1296,7 @@ func TestReticulumOptionParityBlackholeSourcesInvalidLength(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 blackhole_sources = [abcd]
@@ -1320,7 +1320,7 @@ func TestReticulumOptionParityBlackholeSourcesInvalidHex(t *testing.T) {
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 blackhole_sources = [00112233445566778899aabbccddeezz]
@@ -1344,7 +1344,7 @@ func TestReticulumOptionParityInterfaceDiscoverySourcesInvalidLength(t *testing.
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 interface_discovery_sources = [abcd]
@@ -1368,7 +1368,7 @@ func TestReticulumOptionParityInterfaceDiscoverySourcesInvalidHex(t *testing.T) 
 	ResetTransport()
 	defer ResetTransport()
 
-	configDir := t.TempDir()
+	configDir := tempDir(t)
 	config := `[reticulum]
 share_instance = No
 interface_discovery_sources = [00112233445566778899aabbccddeezz]

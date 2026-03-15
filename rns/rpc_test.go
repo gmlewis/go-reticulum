@@ -90,7 +90,7 @@ func TestRPCAuthAndGetEndpoints(t *testing.T) {
 	rpcPort := reserveTCPPort(t)
 	rpcKeyHex := "00112233445566778899aabbccddeeff"
 
-	cfg := t.TempDir()
+	cfg := tempDir(t)
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
 instance_name = %v
 share_instance = Yes
@@ -149,7 +149,7 @@ func TestRPCRejectsInvalidAuth(t *testing.T) {
 	sharedPort := reserveTCPPort(t)
 	rpcPort := reserveTCPPort(t)
 
-	cfg := t.TempDir()
+	cfg := tempDir(t)
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
 instance_name = %v
 share_instance = Yes
@@ -192,7 +192,7 @@ func TestRPCAcceptsByteAuthKey(t *testing.T) {
 	rpcPort := reserveTCPPort(t)
 	rpcKeyHex := "00112233445566778899aabbccddeeff"
 
-	cfg := t.TempDir()
+	cfg := tempDir(t)
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
 instance_name = %v
 share_instance = Yes
@@ -246,8 +246,8 @@ loglevel = 4
 [interfaces]
 `
 
-	cfg1 := t.TempDir()
-	cfg2 := t.TempDir()
+	cfg1 := tempDir(t)
+	cfg2 := tempDir(t)
 	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name()+"-1", sharedPort, rpcPort, rpcKeyHex))
 	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name()+"-2", sharedPort, rpcPort, rpcKeyHex))
 
@@ -289,7 +289,7 @@ func TestRPCExpandedGetDropAndBlackholeSurface(t *testing.T) {
 	rpcPort := reserveTCPPort(t)
 	rpcKeyHex := "00112233445566778899aabbccddeeff"
 
-	cfg := t.TempDir()
+	cfg := tempDir(t)
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
 instance_name = %v
 share_instance = Yes
@@ -374,8 +374,8 @@ loglevel = 4
 [interfaces]
 `
 
-	cfg1 := t.TempDir()
-	cfg2 := t.TempDir()
+	cfg1 := tempDir(t)
+	cfg2 := tempDir(t)
 	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name()+"-1", sharedPort, rpcPort, rpcKeyHex))
 	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name()+"-2", sharedPort, rpcPort, rpcKeyHex))
 
@@ -638,8 +638,8 @@ func TestConnectedInstanceManagementCallsRecoverAfterRPCServerRestart(t *testing
 			rpcPort := reserveTCPPort(t)
 			rpcKeyHex := "00112233445566778899aabbccddeeff"
 
-			cfg1 := t.TempDir()
-			cfg2 := t.TempDir()
+			cfg1 := tempDir(t)
+			cfg2 := tempDir(t)
 			if tc.name == "Unix" {
 				shortCfg, err := os.MkdirTemp("/tmp", "go-ret-rpc-restart-*")
 				if err != nil {
