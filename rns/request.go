@@ -51,6 +51,13 @@ type RequestReceiptCallbacks struct {
 	Progress func(*RequestReceipt)
 }
 
+// GetStatus returns the current status of the request receipt.
+func (rr *RequestReceipt) GetStatus() int {
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
+	return rr.Status
+}
+
 func (rr *RequestReceipt) responseReceived(response, metadata any) {
 	rr.mu.Lock()
 	defer rr.mu.Unlock()

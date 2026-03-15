@@ -285,11 +285,17 @@ func main() {
 	}
 
 	if exampleConfig {
-		fmt.Print(defaultLXMDaemonConfig)
+		fmt.Print(exampleLXMDaemonConfig)
+		return
+	}
+
+	if displayStatus || displayPeers {
+		getStatus(remoteHash, configDir, rnsConfigDir, int(verbosity), int(quietness), timeout, displayStatus, displayPeers, identityPath)
 		return
 	}
 
 	configDir = resolveConfigDir(configDir)
+
 	if err := ensureConfig(configDir); err != nil {
 		log.Fatalf("ensure config: %v", err)
 	}

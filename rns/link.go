@@ -133,6 +133,13 @@ func (l *Link) signallingBytes() []byte {
 	return buf[1:]
 }
 
+// GetStatus returns the current status of the link.
+func (l *Link) GetStatus() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.status
+}
+
 // UpdateMDU proactively recalculates the Maximum Data Unit payload size based on the current MTU and header overhead.
 func (l *Link) UpdateMDU() {
 	// Simple calculation for now
