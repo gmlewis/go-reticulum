@@ -8,7 +8,6 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -280,106 +279,16 @@ func TestParseAllowedIdentitiesErrors(t *testing.T) {
 
 func TestResolvePathsDefaults(t *testing.T) {
 	storageRoot := t.TempDir()
-	storagePath, identityPath, err := resolvePaths(storageRoot, "")
+	storagePath, identityPath, err := resolvePaths(storageRoot, "", storageRoot)
 	if err != nil {
 		t.Fatalf("resolvePaths: %v", err)
 	}
 	if storagePath != storageRoot {
 		t.Fatalf("storagePath=%q want=%q", storagePath, storageRoot)
 	}
-	wantIdentity := filepath.Join(storageRoot, "identities", "lxmd")
+	wantIdentity := filepath.Join(storageRoot, "identity")
 	if identityPath != wantIdentity {
 		t.Fatalf("identityPath=%q want=%q", identityPath, wantIdentity)
-	}
-}
-
-func TestTickChanNil(t *testing.T) {
-	if ch := tickChan(nil); ch != nil {
-		t.Fatal("expected nil channel for nil ticker")
-	}
-}
-
-func TestTickChanTicker(t *testing.T) {
-	ticker := time.NewTicker(time.Hour)
-	defer ticker.Stop()
-	if ch := tickChan(ticker); ch == nil {
-		t.Fatal("expected non-nil channel for ticker")
-	}
-}
-
-func TestRunOperationalLoopWithHandlersTicksAndStops(t *testing.T) {
-	done := make(chan struct{})
-	finished := make(chan struct{})
-
-	var maintenanceCount int32
-	var outboundCount int32
-	var announceCount int32
-	var syncCount int32
-
-	go func() {
-		runOperationalLoopWithHandlers(
-			5*time.Millisecond,
-			7*time.Millisecond,
-			9*time.Millisecond,
-			11*time.Millisecond,
-			done,
-			func() { atomic.AddInt32(&maintenanceCount, 1) },
-			func() { atomic.AddInt32(&outboundCount, 1) },
-			func() { atomic.AddInt32(&announceCount, 1) },
-			func() { atomic.AddInt32(&syncCount, 1) },
-		)
-		close(finished)
-	}()
-
-	deadline := time.Now().Add(200 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		if atomic.LoadInt32(&maintenanceCount) > 0 &&
-			atomic.LoadInt32(&outboundCount) > 0 &&
-			atomic.LoadInt32(&announceCount) > 0 &&
-			atomic.LoadInt32(&syncCount) > 0 {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-
-	if atomic.LoadInt32(&maintenanceCount) == 0 {
-		t.Fatal("expected maintenance handler to be called at least once")
-	}
-	if atomic.LoadInt32(&outboundCount) == 0 {
-		t.Fatal("expected outbound handler to be called at least once")
-	}
-	if atomic.LoadInt32(&announceCount) == 0 {
-		t.Fatal("expected announce handler to be called at least once")
-	}
-	if atomic.LoadInt32(&syncCount) == 0 {
-		t.Fatal("expected sync handler to be called at least once")
-	}
-
-	close(done)
-
-	select {
-	case <-finished:
-	case <-time.After(200 * time.Millisecond):
-		t.Fatal("timed out waiting for operational loop to stop")
-	}
-
-	stoppedMaintenance := atomic.LoadInt32(&maintenanceCount)
-	stoppedOutbound := atomic.LoadInt32(&outboundCount)
-	stoppedAnnounce := atomic.LoadInt32(&announceCount)
-	stoppedSync := atomic.LoadInt32(&syncCount)
-	time.Sleep(40 * time.Millisecond)
-
-	if atomic.LoadInt32(&maintenanceCount) != stoppedMaintenance {
-		t.Fatal("expected maintenance handler calls to stop after done close")
-	}
-	if atomic.LoadInt32(&outboundCount) != stoppedOutbound {
-		t.Fatal("expected outbound handler calls to stop after done close")
-	}
-	if atomic.LoadInt32(&announceCount) != stoppedAnnounce {
-		t.Fatal("expected announce handler calls to stop after done close")
-	}
-	if atomic.LoadInt32(&syncCount) != stoppedSync {
-		t.Fatal("expected sync handler calls to stop after done close")
 	}
 }
 

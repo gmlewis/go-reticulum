@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -72,7 +73,7 @@ options:
 	flag.StringVar(&syncHash, "sync", "", "request a sync with the specified peer")
 	flag.StringVar(&unpeerHash, "b", "", "break peering with the specified peer")
 	flag.StringVar(&unpeerHash, "break", "", "break peering with the specified peer")
-	flag.DurationVar(&timeout, "timeout", 0, "timeout in seconds for query operations")
+	flag.Var((*timeoutFlag)(&timeout), "timeout", "timeout in seconds for query operations")
 	flag.StringVar(&remoteHash, "r", "", "remote propagation node destination hash")
 	flag.StringVar(&remoteHash, "remote", "", "remote propagation node destination hash")
 	flag.StringVar(&identityPath, "identity", "", "path to identity used for remote requests (default: ~/.reticulum/identities/lxmd)")
@@ -83,6 +84,21 @@ options:
 	flag.Var(&quietness, "q", "reduce log verbosity (stackable)")
 }
 
+type timeoutFlag time.Duration
+
+func (t *timeoutFlag) String() string {
+	return fmt.Sprint(float64(time.Duration(*t).Seconds()))
+}
+
+func (t *timeoutFlag) Set(s string) error {
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return err
+	}
+	*t = timeoutFlag(time.Duration(f * float64(time.Second)))
+	return nil
+}
+
 type countFlag int
 
 func (c *countFlag) String() string {
@@ -90,7 +106,15 @@ func (c *countFlag) String() string {
 }
 
 func (c *countFlag) Set(s string) error {
-	*c++
+	if s == "true" {
+		*c++
+	} else if s == "false" {
+		// do nothing
+	} else {
+		// handle as count if multiple flags are passed?
+		// Actually flag package calls Set once per occurrence for boolean flags with "true"
+		*c++
+	}
 	return nil
 }
 
@@ -99,17 +123,6 @@ func (c *countFlag) IsBoolFlag() bool {
 }
 
 var (
-	storagePath         string
-	stampCost           int
-	registerPropagation bool
-	registerControl     bool
-	controlAllowed      string
-	peerMaxAge          time.Duration
-	maintenanceInterval time.Duration
-	outboundInterval    time.Duration
-	announceInterval    time.Duration
-	syncInterval        time.Duration
-
 	configDir            string
 	rnsConfigDir         string
 	runAsPropagationNode bool
@@ -134,35 +147,68 @@ var (
 
 	lastPeerAnnounce time.Time
 	lastNodeAnnounce time.Time
+
+	tr *runtimeTracker
 )
 
-const jobsInterval = 5 * time.Second
+const (
+	jobsInterval        = 5 * time.Second
+	maintenanceInterval = 10 // Maintenance every 10 ticks (50s)
+)
+
+var (
+	now       = time.Now
+	tickCount = 0
+)
 
 func jobs(router *lxmf.Router, lxmfDestination *rns.Destination, stop <-chan struct{}, interval time.Duration) {
 	for {
+		tick(router, lxmfDestination)
 		select {
 		case <-stop:
 			return
-		default:
-			if ac != nil && ac.PeerAnnounceInterval != nil {
-				if time.Since(lastPeerAnnounce) > time.Duration(*ac.PeerAnnounceInterval)*time.Second {
-					rns.Logf("Sending announce for LXMF delivery destination", rns.LogVerbose, false)
-					if lxmfDestination != nil {
-						_ = router.Announce(lxmfDestination.Hash)
-					}
-					lastPeerAnnounce = time.Now()
-				}
-			}
+		case <-time.After(interval):
+		}
+	}
+}
 
-			if ac != nil && ac.NodeAnnounceInterval != nil {
-				if time.Since(lastNodeAnnounce) > time.Duration(*ac.NodeAnnounceInterval)*time.Second {
-					rns.Logf("Sending announce for LXMF Propagation Node", rns.LogVerbose, false)
-					router.AnnouncePropagationNode()
-					lastNodeAnnounce = time.Now()
-				}
-			}
+func tick(router *lxmf.Router, lxmfDestination *rns.Destination) {
+	if ac == nil {
+		return
+	}
 
-			time.Sleep(interval)
+	tickCount++
+
+	if ac.PeerAnnounceInterval != nil {
+		if now().Sub(lastPeerAnnounce) > time.Duration(*ac.PeerAnnounceInterval)*time.Second {
+			rns.Logf("Sending announce for LXMF delivery destination", rns.LogVerbose, false)
+			if lxmfDestination != nil {
+				_ = router.Announce(lxmfDestination.Hash)
+			}
+			lastPeerAnnounce = now()
+			if tr != nil {
+				_ = tr.RecordAnnounce(lastPeerAnnounce)
+			}
+		}
+	}
+
+	if ac.NodeAnnounceInterval != nil {
+		if now().Sub(lastNodeAnnounce) > time.Duration(*ac.NodeAnnounceInterval)*time.Second {
+			rns.Logf("Sending announce for LXMF Propagation Node", rns.LogVerbose, false)
+			router.AnnouncePropagationNode()
+			lastNodeAnnounce = now()
+			if tr != nil {
+				_ = tr.RecordSync(lastNodeAnnounce)
+			}
+		}
+	}
+
+	router.ProcessOutbound()
+
+	if tickCount%maintenanceInterval == 0 {
+		pruned := router.PruneStalePeers()
+		if pruned > 0 {
+			rns.Logf("golxmd pruned %v stale peers", rns.LogInfo, false, pruned)
 		}
 	}
 }
@@ -234,7 +280,7 @@ func main() {
 	// }
 
 	if version {
-		fmt.Printf("golxmd %v\n", rns.VERSION)
+		fmt.Printf("lxmd %v\n", rns.VERSION) // T22 change
 		return
 	}
 
@@ -243,11 +289,27 @@ func main() {
 		return
 	}
 
+	configDir = resolveConfigDir(configDir)
+	if err := ensureConfig(configDir); err != nil {
+		log.Fatalf("ensure config: %v", err)
+	}
+
+	var err error
+	ac, err = loadConfig(configDir)
+	if err != nil {
+		log.Fatalf("load config: %v", err)
+	}
+
+	// T09: Log level calculation
+	rns.LogLevel = resolveLogLevel(ac.LogLevel, int(verbosity), int(quietness))
+	setupLogging(runAsService, configDir)
+
 	if _, err := rns.NewReticulum(rnsConfigDir); err != nil {
 		log.Fatalf("initialize Reticulum: %v", err)
 	}
 
-	resolvedStorage, resolvedIdentityPath, err := resolvePaths(storagePath, identityPath)
+	var storagePath, identityPath string
+	resolvedStorage, resolvedIdentityPath, err := resolvePaths(storagePath, identityPath, configDir)
 	if err != nil {
 		log.Fatalf("resolve paths: %v", err)
 	}
@@ -257,180 +319,139 @@ func main() {
 		log.Fatalf("load identity: %v", err)
 	}
 
-	router, err := lxmf.NewRouter(identity, resolvedStorage)
+	if cmdOnInbound != "" {
+		ac.OnInbound = cmdOnInbound
+	}
+
+	// T11: LXMRouter config-driven construction
+	router, err := lxmf.NewRouterFromConfig(lxmf.RouterConfig{
+		Identity:                   identity,
+		StoragePath:                resolvedStorage,
+		Autopeer:                   ac.Autopeer,
+		AutopeerMaxdepth:           ac.AutopeerMaxdepth,
+		PropagationLimit:           ac.PropagationTransferMaxAcceptedSize,
+		SyncLimit:                  ac.PropagationSyncMaxAcceptedSize,
+		DeliveryLimit:              ac.DeliveryTransferMaxAcceptedSize,
+		MaxPeers:                   ac.MaxPeers,
+		StaticPeers:                ac.StaticPeers,
+		FromStaticOnly:             ac.FromStaticOnly,
+		PropagationCost:            ac.PropagationStampCostTarget,
+		PropagationCostFlexibility: ac.PropagationStampCostFlexibility,
+		PeeringCost:                ac.PeeringCost,
+		MaxPeeringCost:             ac.RemotePeeringCostMax,
+		Name:                       ac.NodeName,
+	})
 	if err != nil {
 		log.Fatalf("create LXMF router: %v", err)
 	}
 
+	// T12: register_delivery_callback
 	router.RegisterDeliveryCallback(lxmfDelivery)
 
-	if _, err := router.RegisterDeliveryIdentity(identity, "Anonymous Peer", &stampCost); err != nil {
+	// T13: ignore_destination
+	for _, h := range ac.IgnoredLXMFDestinations {
+		router.IgnoreDestination(h)
+	}
+
+	// T14: register_delivery_identity with display_name
+	lxmfDestination, err := router.RegisterDeliveryIdentity(identity, ac.DisplayName, nil)
+	if err != nil {
 		log.Fatalf("register delivery destination: %v", err)
 	}
 
-	if registerPropagation {
+	// T15: RNS.Identity.remember
+	rns.Remember(nil, lxmfDestination.Hash, identity.GetPublicKey(), nil)
+
+	// T16: Auth setup
+	if ac.AuthRequired {
+		router.SetAuthRequired(true)
+		if len(ac.AllowedIdentities) > 0 {
+			for _, h := range ac.AllowedIdentities {
+				router.Allow(h)
+			}
+		} else {
+			rns.Logf("Authentication required for delivery, but no allowed identities loaded!", rns.LogWarning, false)
+		}
+	}
+
+	// T17: Propagation node enable
+	if runAsPropagationNode || ac.EnablePropagationNode {
+		router.SetMessageStorageLimit(ac.MessageStorageLimit)
+		for _, s := range ac.PrioritisedLXMFDestinations {
+			if h, err := rns.HexToBytes(s); err == nil {
+				router.Prioritise(h)
+			}
+		}
+		for _, s := range ac.ControlAllowedIdentities {
+			if h, err := rns.HexToBytes(s); err == nil {
+				router.AllowControl(h)
+			}
+		}
+		router.EnablePropagation()
 		if _, err := router.RegisterPropagationDestination(); err != nil {
 			log.Fatalf("register propagation destination: %v", err)
 		}
-	}
-
-	if registerControl {
-		allowed, err := parseAllowedIdentities(controlAllowed)
-		if err != nil {
-			log.Fatalf("parse control-allowed hashes: %v", err)
-		}
-		if _, err := router.RegisterPropagationControlDestination(allowed); err != nil {
-			log.Fatalf("register control destination: %v", err)
-		}
-	}
-
-	if peerMaxAge > 0 {
-		if err := router.SetPeerMaxAge(peerMaxAge); err != nil {
-			log.Fatalf("set peer max age: %v", err)
+		// If control identities are allowed, register control destination
+		if len(ac.ControlAllowedIdentities) > 0 {
+			allowed := make([][]byte, 0, len(ac.ControlAllowedIdentities))
+			for _, s := range ac.ControlAllowedIdentities {
+				if h, err := rns.HexToBytes(s); err == nil {
+					allowed = append(allowed, h)
+				}
+			}
+			if _, err := router.RegisterPropagationControlDestination(allowed); err != nil {
+				log.Fatalf("register control destination: %v", err)
+			}
 		}
 	}
 
 	runtimeStatePath := filepath.Join(resolvedStorage, "lxmf", "golxmd-state.json")
-	tracker, err := newRuntimeTracker(runtimeStatePath)
+	tr, err = newRuntimeTracker(runtimeStatePath)
 	if err != nil {
 		log.Fatalf("initialize runtime tracker: %v", err)
 	}
-	if tracker.WasUncleanShutdown() {
+	if tr.WasUncleanShutdown() {
 		log.Printf("golxmd detected unclean previous shutdown; entering recovery-aware startup")
 	}
 
 	log.Printf("golxmd running with identity %x", identity.Hash)
 
+	// T21: Initialize announce timers to current time + 10s (deferred delay)
+	// Python doesn't explicitly initialize them, so they start as None and are set after first fire.
+	// We'll set them to current time to avoid immediate fire BEFORE deferred start fires.
+	lastPeerAnnounce = now().Add(10 * time.Second)
+	lastNodeAnnounce = now().Add(10 * time.Second)
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
-	done := make(chan struct{})
-	if maintenanceInterval > 0 || outboundInterval > 0 || announceInterval > 0 || syncInterval > 0 {
-		go runOperationalLoop(
-			router,
-			maintenanceInterval,
-			outboundInterval,
-			announceInterval,
-			syncInterval,
-			done,
-			tracker,
-		)
-	}
+	// Start jobs
+	stopJobs := make(chan struct{})
+	go jobs(router, lxmfDestination, stopJobs, jobsInterval)
+	go runDeferredJobs(10*time.Second, router, lxmfDestination)
+
 	<-stop
-	close(done)
-	if err := tracker.MarkCleanShutdown(); err != nil {
+	fmt.Println() // T36: KeyboardInterrupt prints a blank line
+	close(stopJobs)
+	if err := tr.MarkCleanShutdown(); err != nil {
 		log.Printf("golxmd failed to persist clean shutdown marker: %v", err)
 	}
 
 	log.Printf("golxmd shutting down")
 }
 
-func runOperationalLoop(router *lxmf.Router, maintenanceInterval, outboundInterval, announceInterval, syncInterval time.Duration, done <-chan struct{}, tracker *runtimeTracker) {
-	runOperationalLoopWithHandlers(
-		maintenanceInterval,
-		outboundInterval,
-		announceInterval,
-		syncInterval,
-		done,
-		func() {
-			pruned := router.PruneStalePeers()
-			if pruned > 0 {
-				log.Printf("golxmd pruned %v stale peers", pruned)
-			}
-		},
-		func() {
-			router.ProcessOutbound()
-		},
-		func() {
-			if tracker != nil {
-				if err := tracker.RecordAnnounce(time.Now()); err != nil {
-					log.Printf("golxmd failed to persist announce marker: %v", err)
-				}
-			}
-			log.Printf("golxmd announce cadence tick")
-		},
-		func() {
-			if tracker != nil {
-				if err := tracker.RecordSync(time.Now()); err != nil {
-					log.Printf("golxmd failed to persist sync marker: %v", err)
-				}
-			}
-			log.Printf("golxmd sync cadence tick")
-		},
-	)
-}
-
-func runOperationalLoopWithHandlers(maintenanceInterval, outboundInterval, announceInterval, syncInterval time.Duration, done <-chan struct{}, onMaintenance func(), onOutbound func(), onAnnounce func(), onSync func()) {
-	var maintenanceTicker *time.Ticker
-	if maintenanceInterval > 0 {
-		maintenanceTicker = time.NewTicker(maintenanceInterval)
-		defer maintenanceTicker.Stop()
-	}
-
-	var outboundTicker *time.Ticker
-	if outboundInterval > 0 {
-		outboundTicker = time.NewTicker(outboundInterval)
-		defer outboundTicker.Stop()
-	}
-
-	var announceTicker *time.Ticker
-	if announceInterval > 0 {
-		announceTicker = time.NewTicker(announceInterval)
-		defer announceTicker.Stop()
-	}
-
-	var syncTicker *time.Ticker
-	if syncInterval > 0 {
-		syncTicker = time.NewTicker(syncInterval)
-		defer syncTicker.Stop()
-	}
-
-	for {
-		select {
-		case <-done:
-			return
-		case <-tickChan(maintenanceTicker):
-			if onMaintenance != nil {
-				onMaintenance()
-			}
-		case <-tickChan(outboundTicker):
-			if onOutbound != nil {
-				onOutbound()
-			}
-		case <-tickChan(announceTicker):
-			if onAnnounce != nil {
-				onAnnounce()
-			}
-		case <-tickChan(syncTicker):
-			if onSync != nil {
-				onSync()
-			}
-		}
-	}
-}
-
-func tickChan(ticker *time.Ticker) <-chan time.Time {
-	if ticker == nil {
-		return nil
-	}
-	return ticker.C
-}
-
-func resolvePaths(storagePath string, identityPath string) (string, string, error) {
+func resolvePaths(storagePath, identityPath, configDir string) (string, string, error) {
 	if storagePath == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", "", fmt.Errorf("determine home directory: %w", err)
-		}
-		storagePath = filepath.Join(home, ".reticulum")
+		storagePath = filepath.Join(configDir, "storage")
 	}
+	lxmdir = filepath.Join(storagePath, "messages")
 
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		return "", "", fmt.Errorf("create storage path %q: %w", storagePath, err)
 	}
 
 	if identityPath == "" {
-		identityPath = filepath.Join(storagePath, "identities", "lxmd")
+		identityPath = filepath.Join(configDir, "identity")
 	}
 	if err := os.MkdirAll(filepath.Dir(identityPath), 0o755); err != nil {
 		return "", "", fmt.Errorf("create identity directory %q: %w", filepath.Dir(identityPath), err)
