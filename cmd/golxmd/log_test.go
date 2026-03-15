@@ -36,7 +36,7 @@ func TestStartupLogMessages(t *testing.T) {
 	identityPath := filepath.Join(configDir, "identity")
 
 	// Call loadOrCreateIdentity - should log something after fix
-	identity, err := loadOrCreateIdentity(identityPath)
+	_, err := loadOrCreateIdentity(identityPath)
 	if err != nil {
 		t.Fatalf("loadOrCreateIdentity: %v", err)
 	}

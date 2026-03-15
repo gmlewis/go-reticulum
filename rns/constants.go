@@ -212,3 +212,8 @@ func PrettyTime(seconds float64, verbose bool, compact bool) string {
 	}
 	return result
 }
+
+// PrettyHex returns a bracketed hex representation of the provided data, matching Python's prettyhexrep.
+func PrettyHex(data []byte) string {
+	return fmt.Sprintf("<%x>", data)
+}
