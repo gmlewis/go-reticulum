@@ -68,7 +68,7 @@ func TestGenerateRoundTrip(t *testing.T) {
 	tmpDir := t.TempDir()
 	idFile := filepath.Join(tmpDir, "test.id")
 
-	out, err := exec.Command(bin, "-g", idFile).CombinedOutput()
+	out, err := exec.Command(bin, "--config", tmpDir, "-g", idFile).CombinedOutput()
 	if err != nil {
 		t.Fatalf("generate failed: %v\n%v", err, string(out))
 	}
@@ -76,7 +76,7 @@ func TestGenerateRoundTrip(t *testing.T) {
 		t.Fatalf("identity file not created: %v", err)
 	}
 
-	out, err = exec.Command(bin, "-i", idFile, "-p").CombinedOutput()
+	out, err = exec.Command(bin, "--config", tmpDir, "-i", idFile, "-p").CombinedOutput()
 	if err != nil {
 		t.Fatalf("print identity failed: %v\n%v", err, string(out))
 	}
@@ -92,12 +92,12 @@ func TestImportExportRoundTrip(t *testing.T) {
 	idFile := filepath.Join(tmpDir, "test.id")
 
 	// Generate identity
-	if out, err := exec.Command(bin, "-g", idFile).CombinedOutput(); err != nil {
+	if out, err := exec.Command(bin, "--config", tmpDir, "-g", idFile).CombinedOutput(); err != nil {
 		t.Fatalf("generate failed: %v\n%v", err, string(out))
 	}
 
 	// Export identity
-	out, err := exec.Command(bin, "-i", idFile, "-x").CombinedOutput()
+	out, err := exec.Command(bin, "--config", tmpDir, "-i", idFile, "-x").CombinedOutput()
 	if err != nil {
 		t.Fatalf("export failed: %v\n%v", err, string(out))
 	}
@@ -115,7 +115,7 @@ func TestImportExportRoundTrip(t *testing.T) {
 		t.Fatalf("could not find exported identity in output: %v", string(out))
 	}
 
-	// Import identity
+	// Import identity (does not need --config, exits before NewReticulum)
 	out, err = exec.Command(bin, "-m", exportedHex, "-P").CombinedOutput()
 	if err != nil {
 		t.Fatalf("import failed: %v\n%v", err, string(out))
@@ -134,7 +134,7 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 	encFile := filepath.Join(tmpDir, "plain.txt.rfe")
 	decFile := filepath.Join(tmpDir, "decrypted.txt")
 
-	if out, err := exec.Command(bin, "-g", idFile).CombinedOutput(); err != nil {
+	if out, err := exec.Command(bin, "--config", tmpDir, "-g", idFile).CombinedOutput(); err != nil {
 		t.Fatalf("generate failed: %v\n%v", err, string(out))
 	}
 
@@ -143,14 +143,14 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if out, err := exec.Command(bin, "-i", idFile, "-e", plainFile).CombinedOutput(); err != nil {
+	if out, err := exec.Command(bin, "--config", tmpDir, "-i", idFile, "-e", plainFile).CombinedOutput(); err != nil {
 		t.Fatalf("encrypt failed: %v\n%v", err, string(out))
 	}
 	if _, err := os.Stat(encFile); err != nil {
 		t.Fatalf("encrypted file not created: %v", err)
 	}
 
-	if out, err := exec.Command(bin, "-i", idFile, "-d", encFile, "-w", decFile).CombinedOutput(); err != nil {
+	if out, err := exec.Command(bin, "--config", tmpDir, "-i", idFile, "-d", encFile, "-w", decFile).CombinedOutput(); err != nil {
 		t.Fatalf("decrypt failed: %v\n%v", err, string(out))
 	}
 	got, err := os.ReadFile(decFile)
@@ -169,7 +169,7 @@ func TestSignValidateRoundTrip(t *testing.T) {
 	idFile := filepath.Join(tmpDir, "test.id")
 	dataFile := filepath.Join(tmpDir, "data.txt")
 
-	if out, err := exec.Command(bin, "-g", idFile).CombinedOutput(); err != nil {
+	if out, err := exec.Command(bin, "--config", tmpDir, "-g", idFile).CombinedOutput(); err != nil {
 		t.Fatalf("generate failed: %v\n%v", err, string(out))
 	}
 
@@ -177,7 +177,7 @@ func TestSignValidateRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if out, err := exec.Command(bin, "-i", idFile, "-s", dataFile).CombinedOutput(); err != nil {
+	if out, err := exec.Command(bin, "--config", tmpDir, "-i", idFile, "-s", dataFile).CombinedOutput(); err != nil {
 		t.Fatalf("sign failed: %v\n%v", err, string(out))
 	}
 	sigFile := dataFile + ".rsg"
@@ -185,7 +185,7 @@ func TestSignValidateRoundTrip(t *testing.T) {
 		t.Fatalf("signature file not created: %v", err)
 	}
 
-	out, err := exec.Command(bin, "-i", idFile, "-V", sigFile, "-r", dataFile).CombinedOutput()
+	out, err := exec.Command(bin, "--config", tmpDir, "-i", idFile, "-V", sigFile, "-r", dataFile).CombinedOutput()
 	if err != nil {
 		t.Fatalf("validate failed: %v\n%v", err, string(out))
 	}
@@ -202,7 +202,7 @@ func TestValidateBadSignature(t *testing.T) {
 	dataFile := filepath.Join(tmpDir, "data.txt")
 	sigFile := filepath.Join(tmpDir, "bad.rsg")
 
-	if out, err := exec.Command(bin, "-g", idFile).CombinedOutput(); err != nil {
+	if out, err := exec.Command(bin, "--config", tmpDir, "-g", idFile).CombinedOutput(); err != nil {
 		t.Fatalf("generate failed: %v\n%v", err, string(out))
 	}
 
@@ -213,7 +213,7 @@ func TestValidateBadSignature(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(bin, "-i", idFile, "-V", sigFile, "-r", dataFile)
+	cmd := exec.Command(bin, "--config", tmpDir, "-i", idFile, "-V", sigFile, "-r", dataFile)
 	_, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatal("expected error exit for bad signature")
@@ -233,11 +233,11 @@ func TestHashOutput(t *testing.T) {
 	tmpDir := t.TempDir()
 	idFile := filepath.Join(tmpDir, "test.id")
 
-	if out, err := exec.Command(bin, "-g", idFile).CombinedOutput(); err != nil {
+	if out, err := exec.Command(bin, "--config", tmpDir, "-g", idFile).CombinedOutput(); err != nil {
 		t.Fatalf("generate failed: %v\n%v", err, string(out))
 	}
 
-	out, err := exec.Command(bin, "-i", idFile, "-H", "app.aspect").CombinedOutput()
+	out, err := exec.Command(bin, "--config", tmpDir, "-i", idFile, "-H", "app.aspect").CombinedOutput()
 	if err != nil {
 		t.Fatalf("hash failed: %v\n%v", err, string(out))
 	}
