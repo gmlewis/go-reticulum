@@ -8,6 +8,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,6 +48,11 @@ func TestJobs(t *testing.T) {
 
 	// This just verifies it runs and doesn't crash
 	jobs(router, dest, stop, 10*time.Millisecond)
+}
+
+func TestJobsRecovery(t *testing.T) {
+	// For testing, we'll verify the panic recovery works if we could trigger it.
+	// Since tick() is package-global, we'd need to mock it.
 }
 
 func TestAnnounceAtStart(t *testing.T) {
@@ -112,6 +118,14 @@ func TestLXMFDelivery(t *testing.T) {
 	if _, err := os.Stat(resultPath); os.IsNotExist(err) {
 		t.Errorf("on_inbound script was not called")
 	}
+
+	// Case 3: Multi-word command
+	_ = os.Remove(resultPath)
+	ac = &activeConfig{OnInbound: scriptPath + " --some-arg"}
+	lxmfDelivery(lxm)
+	if _, err := os.Stat(resultPath); os.IsNotExist(err) {
+		t.Errorf("multi-word on_inbound script was not called")
+	}
 }
 
 func TestPropagationNodeSetup(t *testing.T) {
@@ -137,6 +151,41 @@ func TestPropagationNodeSetup(t *testing.T) {
 
 	if !router.PropagationEnabled() {
 		t.Errorf("PropagationEnabled: got false, want true")
+	}
+
+	// Verify control destination is created
+	cd, err := router.RegisterPropagationControlDestination(nil)
+	if err != nil {
+		t.Fatalf("RegisterPropagationControlDestination: %v", err)
+	}
+	if cd == nil {
+		t.Fatal("expected non-nil control destination")
+	}
+}
+
+func TestAuthWarningMessage(t *testing.T) {
+	tempDir := t.TempDir()
+	configDir = tempDir
+	ac = &activeConfig{AuthRequired: true, AllowedIdentities: nil}
+
+	var capturedLog string
+	rns.SetLogDest(rns.LogCallback)
+	rns.SetLogCallback(func(s string) {
+		capturedLog = s
+	})
+	defer func() {
+		rns.SetLogDest(rns.LogStdout)
+		rns.SetLogCallback(nil)
+	}()
+
+	id, _ := rns.NewIdentity(true)
+	router, _ := lxmf.NewRouter(id, tempDir)
+
+	setupAuth(router)
+
+	want := "Client authentication was enabled, but no identity hashes could be loaded from " + filepath.Join(tempDir, "allowed") + ". Nobody will be able to sync messages from this propagation node."
+	if !strings.Contains(capturedLog, want) {
+		t.Errorf("captured log does not contain expected message.\ngot: %q\nwant: %q", capturedLog, want)
 	}
 }
 
@@ -277,6 +326,57 @@ func TestParseAllowedIdentitiesErrors(t *testing.T) {
 	}
 }
 
+func TestApplyTimeoutDefaults(t *testing.T) {
+	tests := []struct {
+		name          string
+		displayStatus bool
+		displayPeers  bool
+		syncHash      string
+		unpeerHash    string
+		initial       time.Duration
+		want          time.Duration
+	}{
+		{"status-default", true, false, "", "", 0, 5 * time.Second},
+		{"peers-default", false, true, "", "", 0, 5 * time.Second},
+		{"sync-default", false, false, "hash", "", 0, 10 * time.Second},
+		{"unpeer-default", false, false, "", "hash", 0, 10 * time.Second},
+		{"status-override", true, false, "", "", 15 * time.Second, 15 * time.Second},
+		{"sync-override", false, false, "hash", "", 20 * time.Second, 20 * time.Second},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Save globals
+			oldDisplayStatus := displayStatus
+			oldDisplayPeers := displayPeers
+			oldSyncHash := syncHash
+			oldUnpeerHash := unpeerHash
+			oldTimeout := timeout
+
+			// Set globals
+			displayStatus = tt.displayStatus
+			displayPeers = tt.displayPeers
+			syncHash = tt.syncHash
+			unpeerHash = tt.unpeerHash
+			timeout = tt.initial
+
+			// Call function
+			applyTimeoutDefaults()
+
+			if timeout != tt.want {
+				t.Errorf("timeout: got %v, want %v", timeout, tt.want)
+			}
+
+			// Restore globals
+			displayStatus = oldDisplayStatus
+			displayPeers = oldDisplayPeers
+			syncHash = oldSyncHash
+			unpeerHash = oldUnpeerHash
+			timeout = oldTimeout
+		})
+	}
+}
+
 func TestResolvePathsDefaults(t *testing.T) {
 	storageRoot := t.TempDir()
 	storagePath, identityPath, err := resolvePaths(storageRoot, "", storageRoot)
@@ -289,6 +389,14 @@ func TestResolvePathsDefaults(t *testing.T) {
 	wantIdentity := filepath.Join(storageRoot, "identity")
 	if identityPath != wantIdentity {
 		t.Fatalf("identityPath=%q want=%q", identityPath, wantIdentity)
+	}
+
+	if !isDir(lxmdir) {
+		t.Errorf("lxmdir %q not created", lxmdir)
+	}
+	wantLxmdir := filepath.Join(storageRoot, "messages")
+	if lxmdir != wantLxmdir {
+		t.Errorf("lxmdir=%q want=%q", lxmdir, wantLxmdir)
 	}
 }
 

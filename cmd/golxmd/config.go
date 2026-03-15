@@ -116,7 +116,7 @@ func applyConfig(cfg map[string]map[string]string) (*activeConfig, error) {
 		StaticPeers:                        [][]byte{},
 		MaxPeers:                           nil,
 		FromStaticOnly:                     false,
-		LogLevel:                           4,
+		LogLevel:                           -1,
 		IgnoredLXMFDestinations:            [][]byte{},
 		AllowedIdentities:                  [][]byte{},
 	}

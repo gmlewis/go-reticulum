@@ -383,17 +383,13 @@ func (r *Router) RegisterPropagationControlDestination(allowedList [][]byte) (*r
 		return r.controlDestination, nil
 	}
 
-	destination, err := rns.NewDestination(r.identity, rns.DestinationIn, rns.DestinationSingle, AppName, controlPathAspect)
+	destination, err := rns.NewDestination(r.identity, rns.DestinationIn, rns.DestinationSingle, AppName, "propagation", controlPathAspect)
 	if err != nil {
 		return nil, fmt.Errorf("create control destination: %w", err)
 	}
 
-	allowPolicy := rns.AllowAll
-	if len(allowedList) > 0 {
-		allowPolicy = rns.AllowList
-	}
-
-	r.controlAllowed = map[string]struct{}{}
+	// Python always uses ALLOW_LIST and always includes self.identity.hash
+	r.controlAllowed[string(append([]byte{}, r.identity.Hash...))] = struct{}{}
 	for _, allowed := range allowedList {
 		if len(allowed) == 0 {
 			continue
@@ -401,9 +397,15 @@ func (r *Router) RegisterPropagationControlDestination(allowedList [][]byte) (*r
 		r.controlAllowed[string(append([]byte{}, allowed...))] = struct{}{}
 	}
 
-	destination.RegisterRequestHandler(statsGetPath, r.statsGetRequest, allowPolicy, allowedList, false)
-	destination.RegisterRequestHandler(peerSyncPath, r.peerSyncRequest, allowPolicy, allowedList, false)
-	destination.RegisterRequestHandler(peerUnpeerPath, r.peerUnpeerRequest, allowPolicy, allowedList, false)
+	// Prepare full allowed list for RegisterRequestHandler
+	fullAllowed := make([][]byte, 0, len(r.controlAllowed))
+	for hStr := range r.controlAllowed {
+		fullAllowed = append(fullAllowed, []byte(hStr))
+	}
+
+	destination.RegisterRequestHandler(statsGetPath, r.statsGetRequest, rns.AllowList, fullAllowed, false)
+	destination.RegisterRequestHandler(peerSyncPath, r.peerSyncRequest, rns.AllowList, fullAllowed, false)
+	destination.RegisterRequestHandler(peerUnpeerPath, r.peerUnpeerRequest, rns.AllowList, fullAllowed, false)
 
 	r.controlDestination = destination
 

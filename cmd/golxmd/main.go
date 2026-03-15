@@ -161,6 +161,16 @@ var (
 	tickCount = 0
 )
 
+func applyTimeoutDefaults() {
+	if timeout == 0 {
+		if displayStatus || displayPeers {
+			timeout = 5 * time.Second
+		} else if syncHash != "" || unpeerHash != "" {
+			timeout = 10 * time.Second
+		}
+	}
+}
+
 func jobs(router *lxmf.Router, lxmfDestination *rns.Destination, stop <-chan struct{}, interval time.Duration) {
 	for {
 		tick(router, lxmfDestination)
@@ -203,9 +213,11 @@ func tick(router *lxmf.Router, lxmfDestination *rns.Destination) {
 		}
 	}
 
+	// Go-specific enhancement: ensure outbound messages are processed periodically.
 	router.ProcessOutbound()
 
 	if tickCount%maintenanceInterval == 0 {
+		// Go-specific enhancement: prune stale peers periodically.
 		pruned := router.PruneStalePeers()
 		if pruned > 0 {
 			rns.Logf("golxmd pruned %v stale peers", rns.LogInfo, false, pruned)
@@ -233,11 +245,15 @@ func lxmfDelivery(lxm *lxmf.Message) {
 	if ac != nil && ac.OnInbound != "" {
 		rns.Logf("Calling external program to handle message", rns.LogDebug, false)
 		// Python: processing_command = command+" \""+written_path+"\""
-		// return_code = subprocess.call(shlex.split(processing_command), ...)
-		// We use exec.Command which is safer.
-		cmd := exec.Command(ac.OnInbound, writtenPath)
-		if err := cmd.Run(); err != nil {
-			rns.Logf("Error occurred while calling external program: %v", rns.LogError, false, err)
+		// return_code = subprocess.call(shlex.split(processing_command), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+		parts := strings.Fields(ac.OnInbound)
+		if len(parts) > 0 {
+			cmd := exec.Command(parts[0], append(parts[1:], writtenPath)...)
+			cmd.Stdout = nil
+			cmd.Stderr = nil
+			if err := cmd.Run(); err != nil {
+				rns.Logf("Error occurred while calling external program: %v", rns.LogError, false, err)
+			}
 		}
 	} else {
 		rns.Logf("No action defined for inbound messages, ignoring", rns.LogDebug, false)
@@ -259,9 +275,24 @@ func runDeferredJobs(delay time.Duration, router *lxmf.Router, lxmfDestination *
 	}
 }
 
+func setupAuth(router *lxmf.Router) {
+	if ac.AuthRequired {
+		router.SetAuthRequired(true)
+		if len(ac.AllowedIdentities) > 0 {
+			for _, h := range ac.AllowedIdentities {
+				router.Allow(h)
+			}
+		} else {
+			allowedPath := filepath.Join(configDir, "allowed")
+			rns.Logf("Client authentication was enabled, but no identity hashes could be loaded from %v. Nobody will be able to sync messages from this propagation node.", rns.LogWarning, false, allowedPath)
+		}
+	}
+}
+
 func main() {
 	log.SetFlags(0)
 	flag.Parse()
+	applyTimeoutDefaults()
 
 	// if peerMaxAge < 0 {
 	// 	log.Fatalf("peer-max-age must be >= 0")
@@ -338,6 +369,9 @@ func main() {
 	}
 
 	if cmdOnInbound != "" {
+		// Note: Python's lxmd.py accepts the --on-inbound CLI arg but fails to
+		// actually apply it to the configuration (it's a Python bug). Go
+		// correctly applies it here.
 		ac.OnInbound = cmdOnInbound
 	}
 
@@ -382,16 +416,7 @@ func main() {
 	rns.Remember(nil, lxmfDestination.Hash, identity.GetPublicKey(), nil)
 
 	// T16: Auth setup
-	if ac.AuthRequired {
-		router.SetAuthRequired(true)
-		if len(ac.AllowedIdentities) > 0 {
-			for _, h := range ac.AllowedIdentities {
-				router.Allow(h)
-			}
-		} else {
-			rns.Logf("Authentication required for delivery, but no allowed identities loaded!", rns.LogWarning, false)
-		}
-	}
+	setupAuth(router)
 
 	// T17: Propagation node enable
 	if runAsPropagationNode || ac.EnablePropagationNode {
@@ -413,17 +438,15 @@ func main() {
 		}
 		rns.Logf("LXMF Propagation Node started on %v", rns.LogInfo, false, rns.PrettyHex(propDest.Hash))
 
-		// If control identities are allowed, register control destination
-		if len(ac.ControlAllowedIdentities) > 0 {
-			allowed := make([][]byte, 0, len(ac.ControlAllowedIdentities))
-			for _, s := range ac.ControlAllowedIdentities {
-				if h, err := rns.HexToBytes(s); err == nil {
-					allowed = append(allowed, h)
-				}
+		// T09: Always register control destination for propagation nodes
+		allowed := make([][]byte, 0, len(ac.ControlAllowedIdentities))
+		for _, s := range ac.ControlAllowedIdentities {
+			if h, err := rns.HexToBytes(s); err == nil {
+				allowed = append(allowed, h)
 			}
-			if _, err := router.RegisterPropagationControlDestination(allowed); err != nil {
-				log.Fatalf("register control destination: %v", err)
-			}
+		}
+		if _, err := router.RegisterPropagationControlDestination(allowed); err != nil {
+			log.Fatalf("register control destination: %v", err)
 		}
 	}
 
@@ -472,8 +495,8 @@ func resolvePaths(storagePath, identityPath, configDir string) (string, string, 
 	}
 	lxmdir = filepath.Join(storagePath, "messages")
 
-	if err := os.MkdirAll(storagePath, 0o755); err != nil {
-		return "", "", fmt.Errorf("create storage path %q: %w", storagePath, err)
+	if err := os.MkdirAll(lxmdir, 0o755); err != nil {
+		return "", "", fmt.Errorf("create messages path %q: %w", lxmdir, err)
 	}
 
 	if identityPath == "" {

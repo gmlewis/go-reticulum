@@ -92,7 +92,9 @@ func TestApplyConfig(t *testing.T) {
 		if got.PropagationStampCostTarget != 16 {
 			t.Errorf("PropagationStampCostTarget: got %v, want 16", got.PropagationStampCostTarget)
 		}
-		// ... add more as needed
+		if got.LogLevel != -1 {
+			t.Errorf("LogLevel: got %v, want -1", got.LogLevel)
+		}
 	})
 
 	t.Run("overrides", func(t *testing.T) {
