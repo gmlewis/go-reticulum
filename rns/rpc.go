@@ -38,7 +38,9 @@ func (r *Reticulum) startRPCListener() error {
 		Logf("Could not start RPC listener: %v", LogError, false, err)
 		return err
 	}
+	r.mu.Lock()
 	r.rpcListener = listener
+	r.mu.Unlock()
 
 	go r.rpcLoop()
 	return nil
@@ -73,7 +75,13 @@ func (r *Reticulum) makeRPCListener() (net.Listener, error) {
 
 func (r *Reticulum) rpcLoop() {
 	for {
-		conn, err := r.rpcListener.Accept()
+		r.mu.Lock()
+		listener := r.rpcListener
+		r.mu.Unlock()
+		if listener == nil {
+			return
+		}
+		conn, err := listener.Accept()
 		if err != nil {
 			return
 		}

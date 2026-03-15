@@ -67,7 +67,11 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum(first) error: %v", err)
 	}
-	defer func() { _ = r1.Close() }()
+	defer func() {
+		if err := r1.Close(); err != nil {
+			t.Fatalf("failed to close reticulum 1: %v", err)
+		}
+	}()
 	if !r1.isSharedInstance || r1.isConnectedToSharedInstance || r1.isStandaloneInstance {
 		t.Fatalf("first instance role mismatch: shared=%v connected=%v standalone=%v", r1.isSharedInstance, r1.isConnectedToSharedInstance, r1.isStandaloneInstance)
 	}
@@ -76,7 +80,11 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum(second) error: %v", err)
 	}
-	defer func() { _ = r2.Close() }()
+	defer func() {
+		if err := r2.Close(); err != nil {
+			t.Fatalf("failed to close reticulum 2: %v", err)
+		}
+	}()
 	if r2.isSharedInstance || !r2.isConnectedToSharedInstance || r2.isStandaloneInstance {
 		t.Fatalf("second instance role mismatch: shared=%v connected=%v standalone=%v", r2.isSharedInstance, r2.isConnectedToSharedInstance, r2.isStandaloneInstance)
 	}
@@ -101,7 +109,11 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum error: %v", err)
 	}
-	defer func() { _ = r.Close() }()
+	defer func() {
+		if err := r.Close(); err != nil {
+			t.Fatalf("failed to close reticulum: %v", err)
+		}
+	}()
 	if r.isSharedInstance || r.isConnectedToSharedInstance || !r.isStandaloneInstance {
 		t.Fatalf("instance role mismatch: shared=%v connected=%v standalone=%v", r.isSharedInstance, r.isConnectedToSharedInstance, r.isStandaloneInstance)
 	}
@@ -140,7 +152,11 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum(first) error: %v", err)
 	}
-	defer func() { _ = r1.Close() }()
+	defer func() {
+		if err := r1.Close(); err != nil {
+			t.Fatalf("failed to close reticulum 1: %v", err)
+		}
+	}()
 	if !r1.isSharedInstance || r1.isConnectedToSharedInstance || r1.isStandaloneInstance {
 		t.Fatalf("first instance role mismatch: shared=%v connected=%v standalone=%v", r1.isSharedInstance, r1.isConnectedToSharedInstance, r1.isStandaloneInstance)
 	}
@@ -149,7 +165,11 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum(second) error: %v", err)
 	}
-	defer func() { _ = r2.Close() }()
+	defer func() {
+		if err := r2.Close(); err != nil {
+			t.Fatalf("failed to close reticulum 2: %v", err)
+		}
+	}()
 	if r2.isSharedInstance || !r2.isConnectedToSharedInstance || r2.isStandaloneInstance {
 		t.Fatalf("second instance role mismatch: shared=%v connected=%v standalone=%v", r2.isSharedInstance, r2.isConnectedToSharedInstance, r2.isStandaloneInstance)
 	}

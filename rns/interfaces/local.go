@@ -183,12 +183,19 @@ func (lci *LocalClientInterface) IsOut() bool {
 }
 
 func (lci *LocalClientInterface) Detach() error {
+	if lci.IsDetached() {
+		return nil
+	}
 	lci.SetDetached(true)
 	atomic.StoreInt32(&lci.running, 0)
 	lci.mu.Lock()
 	defer lci.mu.Unlock()
 	if lci.conn != nil {
-		return lci.conn.Close()
+		err := lci.conn.Close()
+		lci.conn = nil
+		if err != nil && !errors.Is(err, net.ErrClosed) {
+			return err
+		}
 	}
 	return nil
 }
@@ -258,7 +265,13 @@ func NewLocalServerInterface(name string, path string, port int, handler Inbound
 
 func (lsi *LocalServerInterface) acceptLoop() {
 	for atomic.LoadInt32(&lsi.running) == 1 {
-		conn, err := lsi.listener.Accept()
+		lsi.mu.Lock()
+		listener := lsi.listener
+		lsi.mu.Unlock()
+		if listener == nil {
+			break
+		}
+		conn, err := listener.Accept()
 		if err != nil {
 			break
 		}
@@ -301,6 +314,10 @@ func (lsi *LocalServerInterface) IsOut() bool {
 }
 
 func (lsi *LocalServerInterface) Detach() error {
+	if lsi.IsDetached() {
+		return nil
+	}
+	lsi.SetDetached(true)
 	var detachErr error
 
 	atomic.StoreInt32(&lsi.running, 0)
@@ -312,18 +329,15 @@ func (lsi *LocalServerInterface) Detach() error {
 			detachErr = errors.Join(detachErr, err)
 		}
 	}
+	lsi.spawnedInterfaces = nil
 
 	if lsi.listener != nil {
-		if err := lsi.listener.Close(); err != nil {
+		if err := lsi.listener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
 			detachErr = errors.Join(detachErr, err)
 		}
-		if lsi.path != "" && runtime.GOOS != "windows" && !isAbstractUnixAddr(lsi.path) {
-			if err := os.Remove(lsi.path); err != nil && !os.IsNotExist(err) {
-				detachErr = errors.Join(detachErr, err)
-			}
-		}
-		return detachErr
+		lsi.listener = nil
 	}
+
 	if lsi.path != "" && runtime.GOOS != "windows" && !isAbstractUnixAddr(lsi.path) {
 		if err := os.Remove(lsi.path); err != nil && !os.IsNotExist(err) {
 			detachErr = errors.Join(detachErr, err)

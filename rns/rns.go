@@ -30,6 +30,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -92,6 +93,7 @@ type Reticulum struct {
 	interfaceSources    [][]byte
 	autoconnectDiscover int
 
+	mu                          sync.Mutex
 	shareInstance               bool
 	sharedInstanceType          string
 	localInterfacePort          int
@@ -120,17 +122,22 @@ func (r *Reticulum) IsConnectedToSharedInstance() bool { return r.isConnectedToS
 // Close tears down the Reticulum instance, detaching the shared-instance
 // interface and closing the RPC listener if active.
 func (r *Reticulum) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var closeErr error
 	if r.sharedInstanceInterface != nil {
 		if err := r.sharedInstanceInterface.Detach(); err != nil {
-			return err
+			closeErr = errors.Join(closeErr, err)
 		}
+		r.sharedInstanceInterface = nil
 	}
 	if r.rpcListener != nil {
-		if err := r.rpcListener.Close(); err != nil {
-			return err
+		if err := r.rpcListener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			closeErr = errors.Join(closeErr, err)
 		}
+		r.rpcListener = nil
 	}
-	return nil
+	return closeErr
 }
 
 const systemConfigDir = "/etc/reticulum"
@@ -555,7 +562,9 @@ func (r *Reticulum) startLocalInterface() {
 	if err == nil {
 		r.applyForcedSharedBitrate(server)
 		r.transport.RegisterInterface(server)
+		r.mu.Lock()
 		r.sharedInstanceInterface = server
+		r.mu.Unlock()
 		r.isSharedInstance = true
 		r.isStandaloneInstance = false
 		r.isConnectedToSharedInstance = false
@@ -566,7 +575,9 @@ func (r *Reticulum) startLocalInterface() {
 	if err == nil && client.Status() {
 		r.applyForcedSharedBitrate(client)
 		r.transport.RegisterInterface(client)
+		r.mu.Lock()
 		r.sharedInstanceInterface = client
+		r.mu.Unlock()
 		r.isSharedInstance = false
 		r.isStandaloneInstance = false
 		r.isConnectedToSharedInstance = true

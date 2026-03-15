@@ -41,7 +41,11 @@ func reserveTCPPort(t *testing.T) int {
 	if err != nil {
 		t.Fatalf("reserveTCPPort: %v", err)
 	}
-	defer func() { _ = l.Close() }()
+	defer func() {
+		if err := l.Close(); err != nil {
+			t.Logf("failed to close listener: %v", err)
+		}
+	}()
 	return l.Addr().(*net.TCPAddr).Port
 }
 
@@ -60,11 +64,20 @@ func TestRemoteInit(t *testing.T) {
 		tempDir := t.TempDir()
 		nonExistent := filepath.Join(tempDir, "nonexistent")
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0o755)
+		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
 		writeRNSConfig(t, rnsDir)
-		ret, _ := remoteInit(nonExistent, rnsDir, 0, 0, "")
+		ret, err := remoteInit(nonExistent, rnsDir, 0, 0, "")
+		if err != nil {
+			t.Fatalf("remoteInit: %v", err)
+		}
 		if ret != nil {
-			defer func() { _ = ret.Close() }()
+			defer func() {
+				if err := ret.Close(); err != nil {
+					t.Fatalf("failed to close reticulum: %v", err)
+				}
+			}()
 		}
 		if lastExitCode != 201 {
 			t.Errorf("got exit code %v, want 201", lastExitCode)
@@ -74,13 +87,24 @@ func TestRemoteInit(t *testing.T) {
 	t.Run("identity file doesn't exist", func(t *testing.T) {
 		lastExitCode = 0
 		tempDir := t.TempDir()
-		_ = os.MkdirAll(tempDir, 0o755)
+		if err := os.MkdirAll(tempDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0o755)
+		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
 		writeRNSConfig(t, rnsDir)
-		ret, _ := remoteInit(tempDir, rnsDir, 0, 0, "")
+		ret, err := remoteInit(tempDir, rnsDir, 0, 0, "")
+		if err != nil {
+			t.Fatalf("remoteInit: %v", err)
+		}
 		if ret != nil {
-			defer func() { _ = ret.Close() }()
+			defer func() {
+				if err := ret.Close(); err != nil {
+					t.Fatalf("failed to close reticulum: %v", err)
+				}
+			}()
 		}
 		if lastExitCode != 202 {
 			t.Errorf("got exit code %v, want 202", lastExitCode)
@@ -92,11 +116,20 @@ func TestRemoteInit(t *testing.T) {
 		tempDir := t.TempDir()
 		nonExistentIdentity := filepath.Join(tempDir, "nonexistent_identity")
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0o755)
+		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
 		writeRNSConfig(t, rnsDir)
-		ret, _ := remoteInit("", rnsDir, 0, 0, nonExistentIdentity)
+		ret, err := remoteInit("", rnsDir, 0, 0, nonExistentIdentity)
+		if err != nil {
+			t.Fatalf("remoteInit: %v", err)
+		}
 		if ret != nil {
-			defer func() { _ = ret.Close() }()
+			defer func() {
+				if err := ret.Close(); err != nil {
+					t.Fatalf("failed to close reticulum: %v", err)
+				}
+			}()
 		}
 		if lastExitCode != 202 {
 			t.Errorf("got exit code %v, want 202", lastExitCode)
@@ -118,11 +151,20 @@ func TestRemoteInit(t *testing.T) {
 		}
 
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0o755)
+		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
 		writeRNSConfig(t, rnsDir)
-		ret, _ := remoteInit(tempDir, rnsDir, 0, 0, "")
+		ret, err := remoteInit(tempDir, rnsDir, 0, 0, "")
+		if err != nil {
+			t.Fatalf("remoteInit: %v", err)
+		}
 		if ret != nil {
-			defer func() { _ = ret.Close() }()
+			defer func() {
+				if err := ret.Close(); err != nil {
+					t.Fatalf("failed to close reticulum: %v", err)
+				}
+			}()
 		}
 		if lastExitCode != 0 {
 			t.Errorf("got exit code %v, want 0", lastExitCode)
@@ -149,11 +191,20 @@ func TestRemoteInit(t *testing.T) {
 		}
 
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0o755)
+		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
 		writeRNSConfig(t, rnsDir)
-		ret, _ := remoteInit("", rnsDir, 0, 0, identityPath)
+		ret, err := remoteInit("", rnsDir, 0, 0, identityPath)
+		if err != nil {
+			t.Fatalf("remoteInit: %v", err)
+		}
 		if ret != nil {
-			defer func() { _ = ret.Close() }()
+			defer func() {
+				if err := ret.Close(); err != nil {
+					t.Fatalf("failed to close reticulum: %v", err)
+				}
+			}()
 		}
 		if lastExitCode != 0 {
 			t.Errorf("got exit code %v, want 0", lastExitCode)
@@ -169,12 +220,19 @@ func TestRemoteInit(t *testing.T) {
 		lastExitCode = 0
 		tempDir := t.TempDir()
 		identityPath := filepath.Join(tempDir, "identity")
-		id, _ := rns.NewIdentity(true)
-		_ = id.ToFile(identityPath)
+		id, err := rns.NewIdentity(true)
+		if err != nil {
+			t.Fatalf("NewIdentity: %v", err)
+		}
+		if err := id.ToFile(identityPath); err != nil {
+			t.Fatalf("ToFile: %v", err)
+		}
 
 		// Create a mock RNS config
 		rnsConfigDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsConfigDir, 0o755)
+		if err := os.MkdirAll(rnsConfigDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
 		content := fmt.Sprintf(`[reticulum]
 share_instance = Yes
 shared_instance_type = tcp
@@ -186,15 +244,25 @@ loglevel = 1
 
 [interfaces]
 `, reserveTCPPort(t), reserveTCPPort(t))
-		_ = os.WriteFile(filepath.Join(rnsConfigDir, "config"), []byte(content), 0o644)
+		if err := os.WriteFile(filepath.Join(rnsConfigDir, "config"), []byte(content), 0o644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
 
-		ret, _ := remoteInit(tempDir, rnsConfigDir, 2, 1, "") // 3 + 2 - 1 = 4
+		ret, err := remoteInit(tempDir, rnsConfigDir, 2, 1, "") // 3 + 2 - 1 = 4
+		if err != nil {
+			t.Fatalf("remoteInit: %v", err)
+		}
 		if ret != nil {
-			defer func() { _ = ret.Close() }()
+			defer func() {
+				if err := ret.Close(); err != nil {
+					t.Fatalf("failed to close reticulum: %v", err)
+				}
+			}()
 		}
 		if rns.GetLogLevel() != 4 {
 			t.Errorf("got log level %v, want 4", rns.GetLogLevel())
 		}
+
 		if rns.GetLogDest() != rns.LogStdout {
 			t.Errorf("got log dest %v, want LogStdout", rns.GetLogDest())
 		}
@@ -203,14 +271,28 @@ loglevel = 1
 	t.Run("testGetTargetIdentityLocal", func(t *testing.T) {
 		tempDir := t.TempDir()
 		identityPath := filepath.Join(tempDir, "identity")
-		id, _ := rns.NewIdentity(true)
-		_ = id.ToFile(identityPath)
+		id, err := rns.NewIdentity(true)
+		if err != nil {
+			t.Fatalf("NewIdentity: %v", err)
+		}
+		if err := id.ToFile(identityPath); err != nil {
+			t.Fatalf("ToFile: %v", err)
+		}
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0o755)
+		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
 		writeRNSConfig(t, rnsDir)
-		ret, _ := remoteInit(tempDir, rnsDir, 0, 0, "")
+		ret, err := remoteInit(tempDir, rnsDir, 0, 0, "")
+		if err != nil {
+			t.Fatalf("remoteInit: %v", err)
+		}
 		if ret != nil {
-			defer func() { _ = ret.Close() }()
+			defer func() {
+				if err := ret.Close(); err != nil {
+					t.Fatalf("failed to close reticulum: %v", err)
+				}
+			}()
 		}
 
 		got := getTargetIdentity("", 5*time.Second)
@@ -231,7 +313,10 @@ loglevel = 1
 	})
 
 	t.Run("testGetTargetIdentityRecall", func(t *testing.T) {
-		id, _ := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true)
+		if err != nil {
+			t.Fatalf("NewIdentity: %v", err)
+		}
 		rns.Remember(nil, id.Hash, id.GetPublicKey(), nil)
 
 		got := getTargetIdentity(id.HexHash, 5*time.Second)
@@ -246,16 +331,28 @@ loglevel = 1
 	t.Run("testGetTargetIdentityNetwork", func(t *testing.T) {
 		tempDir := t.TempDir()
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0o755)
+		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
 		writeRNSConfig(t, rnsDir)
-		ret, _ := rns.NewReticulum(rnsDir)
+		ret, err := rns.NewReticulum(rnsDir)
+		if err != nil {
+			t.Fatalf("NewReticulum: %v", err)
+		}
 		if ret != nil {
-			defer func() { _ = ret.Close() }()
+			defer func() {
+				if err := ret.Close(); err != nil {
+					t.Fatalf("failed to close reticulum: %v", err)
+				}
+			}()
 		}
 
 		rns.ResetTransport()
 		lastExitCode = 0
-		id, _ := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true)
+		if err != nil {
+			t.Fatalf("NewIdentity: %v", err)
+		}
 
 		done := make(chan struct{})
 		// Start a goroutine that will "find" the path and identity after a delay
@@ -276,16 +373,28 @@ loglevel = 1
 	t.Run("testGetTargetIdentityTimeout", func(t *testing.T) {
 		tempDir := t.TempDir()
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0o755)
+		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
 		writeRNSConfig(t, rnsDir)
-		ret, _ := rns.NewReticulum(rnsDir)
+		ret, err := rns.NewReticulum(rnsDir)
+		if err != nil {
+			t.Fatalf("NewReticulum: %v", err)
+		}
 		if ret != nil {
-			defer func() { _ = ret.Close() }()
+			defer func() {
+				if err := ret.Close(); err != nil {
+					t.Fatalf("failed to close reticulum: %v", err)
+				}
+			}()
 		}
 
 		rns.ResetTransport()
 		lastExitCode = 0
-		id, _ := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true)
+		if err != nil {
+			t.Fatalf("NewIdentity: %v", err)
+		}
 
 		// This should timeout because nothing is found
 		_ = getTargetIdentity(id.HexHash, 200*time.Millisecond)
@@ -297,17 +406,29 @@ loglevel = 1
 	t.Run("testQueryStatusTimeout", func(t *testing.T) {
 		rns.ResetTransport()
 		lastExitCode = 0
-		id, _ := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true)
+		if err != nil {
+			t.Fatalf("NewIdentity: %v", err)
+		}
 		rns.Remember(nil, id.Hash, id.GetPublicKey(), nil)
 
 		// Create a mock RNS config
 		tempDir := t.TempDir()
 		rnsConfigDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsConfigDir, 0o755)
+		if err := os.MkdirAll(rnsConfigDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
 		writeRNSConfig(t, rnsConfigDir)
-		ret, _ := rns.NewReticulum(rnsConfigDir)
+		ret, err := rns.NewReticulum(rnsConfigDir)
+		if err != nil {
+			t.Fatalf("NewReticulum: %v", err)
+		}
 		if ret != nil {
-			defer func() { _ = ret.Close() }()
+			defer func() {
+				if err := ret.Close(); err != nil {
+					t.Fatalf("failed to close reticulum: %v", err)
+				}
+			}()
 		}
 
 		// This should timeout because the link will never become active
@@ -326,16 +447,28 @@ loglevel = 1
 	t.Run("testRequestSyncInternalTimeout", func(t *testing.T) {
 		tempDir := t.TempDir()
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0o755)
+		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
 		writeRNSConfig(t, rnsDir)
-		ret, _ := rns.NewReticulum(rnsDir)
+		ret, err := rns.NewReticulum(rnsDir)
+		if err != nil {
+			t.Fatalf("NewReticulum: %v", err)
+		}
 		if ret != nil {
-			defer func() { _ = ret.Close() }()
+			defer func() {
+				if err := ret.Close(); err != nil {
+					t.Fatalf("failed to close reticulum: %v", err)
+				}
+			}()
 		}
 
 		rns.ResetTransport()
 		lastExitCode = 0
-		id, _ := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true)
+		if err != nil {
+			t.Fatalf("NewIdentity: %v", err)
+		}
 		rns.Remember(nil, id.Hash, id.GetPublicKey(), nil)
 
 		// This should timeout

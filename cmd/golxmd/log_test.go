@@ -17,7 +17,9 @@ import (
 func TestStartupLogMessages(t *testing.T) {
 	tempDir := t.TempDir()
 	configDir := filepath.Join(tempDir, "lxmd")
-	_ = os.MkdirAll(configDir, 0o755)
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
 
 	var capturedLogs []string
 	rns.SetLogDest(rns.LogCallback)
