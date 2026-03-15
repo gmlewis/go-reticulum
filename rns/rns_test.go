@@ -15,6 +15,16 @@ import (
 	"testing"
 )
 
+func closeReticulum(t *testing.T, r *Reticulum) {
+	t.Helper()
+	if r == nil {
+		return
+	}
+	if err := r.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+		t.Errorf("failed to close reticulum: %v", err)
+	}
+}
+
 func reserveTCPPort(t *testing.T) int {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")

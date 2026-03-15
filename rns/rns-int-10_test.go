@@ -411,7 +411,7 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = r
+	defer closeReticulum(t, r)
 
 	// Wait for Python destination info and announce
 	pyScanner := bufio.NewScanner(pyStdout)
@@ -516,7 +516,7 @@ func TestRatchetPythonToGoParity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = r
+	defer closeReticulum(t, r)
 
 	// Create Go destination with ratchets
 	id, _ := NewIdentity(true)
@@ -610,7 +610,7 @@ func TestRatchetRotationParity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = r
+	defer closeReticulum(t, r)
 
 	id, _ := NewIdentity(true)
 	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "ratchet_test", "parity")
@@ -709,7 +709,7 @@ func TestRatchetRetentionWindowParity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = r
+	defer closeReticulum(t, r)
 
 	id, _ := NewIdentity(true)
 	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "ratchet_test", "parity")

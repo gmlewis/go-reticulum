@@ -7,7 +7,6 @@ package rns
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -19,16 +18,6 @@ import (
 
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
-
-func closeReticulum(t *testing.T, r *Reticulum) {
-	t.Helper()
-	if r == nil {
-		return
-	}
-	if err := r.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
-		t.Errorf("failed to close reticulum: %v", err)
-	}
-}
 
 func rpcWriteFrame(t *testing.T, conn net.Conn, v any) {
 	t.Helper()

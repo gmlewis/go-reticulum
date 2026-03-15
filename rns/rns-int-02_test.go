@@ -907,7 +907,7 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = r
+	defer closeReticulum(t, r)
 
 	// Wait for announce (path) from Python
 	ts := GetTransport()
@@ -1065,7 +1065,7 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = r
+	defer closeReticulum(t, r)
 
 	ts := GetTransport()
 	pathDeadline := time.Now().Add(10 * time.Second)
@@ -1163,7 +1163,7 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = r
+	defer closeReticulum(t, r)
 
 	// Create Go destination
 	id, _ := NewIdentity(true)
@@ -1267,7 +1267,7 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = r
+	defer closeReticulum(t, r)
 
 	id, _ := NewIdentity(true)
 	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "integrated_test", "parity")
@@ -1385,7 +1385,7 @@ func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = r
+	defer closeReticulum(t, r)
 
 	ts := GetTransport()
 	initialDeadline := time.Now().Add(10 * time.Second)
@@ -1449,7 +1449,7 @@ func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = r
+	defer closeReticulum(t, r)
 
 	id, _ := NewIdentity(true)
 	localDest, err := NewDestination(id, DestinationIn, DestinationSingle, "pathreq", "target")
@@ -1542,7 +1542,7 @@ func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = r
+	defer closeReticulum(t, r)
 
 	ts := GetTransport()
 	var outIface interfaces.Interface
@@ -1643,6 +1643,7 @@ func TestIntegratedPathResponseAnnounceNotRebroadcastUDP(t *testing.T) {
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
 	os.MkdirAll(goConfigDir, 0700)
 	goConfigContent := fmt.Sprintf(`[reticulum]
+share_instance = No
 enable_transport = False
 
 [interfaces]
@@ -1669,7 +1670,7 @@ enable_transport = False
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = r
+	defer closeReticulum(t, r)
 
 	sinkConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: sinkPort})
 	if err != nil {
@@ -1733,6 +1734,7 @@ func TestIntegratedRelayedPathResponsePropagationUDP(t *testing.T) {
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
 	os.MkdirAll(goConfigDir, 0o700)
 	goConfigContent := fmt.Sprintf(`[reticulum]
+share_instance = No
 enable_transport = False
 
 [interfaces]
@@ -1759,7 +1761,7 @@ enable_transport = False
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = r
+	defer closeReticulum(t, r)
 
 	requestConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: requesterPort})
 	if err != nil {
@@ -1895,6 +1897,7 @@ func TestIntegratedRelayedPathResponsePropagationPythonRequesterUDP(t *testing.T
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
 	os.MkdirAll(goConfigDir, 0o700)
 	goConfigContent := fmt.Sprintf(`[reticulum]
+share_instance = No
 enable_transport = False
 
 [interfaces]
@@ -1921,7 +1924,7 @@ enable_transport = False
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = r
+	defer closeReticulum(t, r)
 
 	responderConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: responderPort})
 	if err != nil {
@@ -2401,7 +2404,7 @@ func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = r
+	defer closeReticulum(t, r)
 
 	id, _ := NewIdentity(true)
 	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "integrated_test", "invalidate_py")
@@ -2554,6 +2557,7 @@ func TestIntegratedRelayedPathResponseGoRequesterToPythonTargetUDP(t *testing.T)
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
 	os.MkdirAll(goConfigDir, 0o700)
 	goConfigContent := fmt.Sprintf(`[reticulum]
+share_instance = No
 enable_transport = False
 
 [interfaces]
@@ -2580,7 +2584,7 @@ enable_transport = False
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = r
+	defer closeReticulum(t, r)
 
 	requestConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: requesterPort})
 	if err != nil {

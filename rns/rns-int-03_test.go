@@ -285,9 +285,11 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 			}
 
 			SetLogLevel(LogDebug)
-			if _, err := NewReticulum(goConfigDir); err != nil {
+			r, err := NewReticulum(goConfigDir)
+			if err != nil {
 				t.Fatal(err)
 			}
+			defer closeReticulum(t, r)
 
 			transport := GetTransport()
 			pathDeadline := time.Now().Add(10 * time.Second)
@@ -603,9 +605,11 @@ func TestIntegratedResponseResourceCompressionPolicyPythonToGo(t *testing.T) {
 			}
 
 			SetLogLevel(LogDebug)
-			if _, err := NewReticulum(goConfigDir); err != nil {
+			r, err := NewReticulum(goConfigDir)
+			if err != nil {
 				t.Fatal(err)
 			}
+			defer closeReticulum(t, r)
 
 			id, err := NewIdentity(true)
 			if err != nil {

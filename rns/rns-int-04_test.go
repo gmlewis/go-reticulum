@@ -57,6 +57,7 @@ func mustUDPConfig(instanceName string, listenPort, forwardPort int, enableTrans
 	return fmt.Sprintf(`[reticulum]
 instance_name = %v
 enable_transport = %v
+share_instance = No
 
 [interfaces]
   [[UDP Interface]]
