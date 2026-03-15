@@ -23,24 +23,25 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
-func (r *Reticulum) startRPCListener() {
+func (r *Reticulum) startRPCListener() error {
 	if !r.isSharedInstance {
-		return
+		return nil
 	}
 
 	r.ensureRPCKey()
 	if len(r.rpcKey) == 0 {
-		return
+		return nil
 	}
 
 	listener, err := r.makeRPCListener()
 	if err != nil {
 		Logf("Could not start RPC listener: %v", LogError, false, err)
-		return
+		return err
 	}
 	r.rpcListener = listener
 
 	go r.rpcLoop()
+	return nil
 }
 
 func (r *Reticulum) ensureRPCKey() {
@@ -87,8 +88,14 @@ func (r *Reticulum) handleRPCConn(conn net.Conn) {
 		}
 	}()
 
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		return
+	}
 	authReq, err := readRPCFrame(conn)
 	if err != nil {
+		return
+	}
+	if err := conn.SetReadDeadline(time.Time{}); err != nil {
 		return
 	}
 	authMap := asAnyMap(authReq)

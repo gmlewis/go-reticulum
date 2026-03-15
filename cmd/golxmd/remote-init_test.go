@@ -6,6 +6,8 @@
 package main
 
 import (
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,6 +15,35 @@ import (
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
+
+func writeRNSConfig(t *testing.T, dir string) {
+	t.Helper()
+	cfgPath := filepath.Join(dir, "config")
+	content := fmt.Sprintf(`[reticulum]
+share_instance = Yes
+shared_instance_type = tcp
+shared_instance_port = %v
+instance_control_port = %v
+
+[logging]
+loglevel = 0
+
+[interfaces]
+`, reserveTCPPort(t), reserveTCPPort(t))
+	if err := os.WriteFile(cfgPath, []byte(content), 0644); err != nil {
+		t.Fatalf("writeRNSConfig: %v", err)
+	}
+}
+
+func reserveTCPPort(t *testing.T) int {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserveTCPPort: %v", err)
+	}
+	defer func() { _ = l.Close() }()
+	return l.Addr().(*net.TCPAddr).Port
+}
 
 func TestRemoteInit(t *testing.T) {
 	// Mock osExit
@@ -29,7 +60,8 @@ func TestRemoteInit(t *testing.T) {
 		tempDir := t.TempDir()
 		nonExistent := filepath.Join(tempDir, "nonexistent")
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0o755)
+		_ = os.MkdirAll(rnsDir, 0755)
+		writeRNSConfig(t, rnsDir)
 		ret, _ := remoteInit(nonExistent, rnsDir, 0, 0, "")
 		if ret != nil {
 			defer func() { _ = ret.Close() }()
@@ -42,9 +74,10 @@ func TestRemoteInit(t *testing.T) {
 	t.Run("identity file doesn't exist", func(t *testing.T) {
 		lastExitCode = 0
 		tempDir := t.TempDir()
-		_ = os.MkdirAll(tempDir, 0o755)
+		_ = os.MkdirAll(tempDir, 0755)
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0o755)
+		_ = os.MkdirAll(rnsDir, 0755)
+		writeRNSConfig(t, rnsDir)
 		ret, _ := remoteInit(tempDir, rnsDir, 0, 0, "")
 		if ret != nil {
 			defer func() { _ = ret.Close() }()
@@ -59,7 +92,8 @@ func TestRemoteInit(t *testing.T) {
 		tempDir := t.TempDir()
 		nonExistentIdentity := filepath.Join(tempDir, "nonexistent_identity")
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0o755)
+		_ = os.MkdirAll(rnsDir, 0755)
+		writeRNSConfig(t, rnsDir)
 		ret, _ := remoteInit("", rnsDir, 0, 0, nonExistentIdentity)
 		if ret != nil {
 			defer func() { _ = ret.Close() }()
@@ -84,7 +118,8 @@ func TestRemoteInit(t *testing.T) {
 		}
 
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0o755)
+		_ = os.MkdirAll(rnsDir, 0755)
+		writeRNSConfig(t, rnsDir)
 		ret, _ := remoteInit(tempDir, rnsDir, 0, 0, "")
 		if ret != nil {
 			defer func() { _ = ret.Close() }()
@@ -114,7 +149,8 @@ func TestRemoteInit(t *testing.T) {
 		}
 
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0o755)
+		_ = os.MkdirAll(rnsDir, 0755)
+		writeRNSConfig(t, rnsDir)
 		ret, _ := remoteInit("", rnsDir, 0, 0, identityPath)
 		if ret != nil {
 			defer func() { _ = ret.Close() }()
@@ -138,8 +174,19 @@ func TestRemoteInit(t *testing.T) {
 
 		// Create a mock RNS config
 		rnsConfigDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsConfigDir, 0o755)
-		_ = os.WriteFile(filepath.Join(rnsConfigDir, "config"), []byte("[logging]\nloglevel = 1\n"), 0o644)
+		_ = os.MkdirAll(rnsConfigDir, 0755)
+		content := fmt.Sprintf(`[reticulum]
+share_instance = Yes
+shared_instance_type = tcp
+shared_instance_port = %v
+instance_control_port = %v
+
+[logging]
+loglevel = 1
+
+[interfaces]
+`, reserveTCPPort(t), reserveTCPPort(t))
+		_ = os.WriteFile(filepath.Join(rnsConfigDir, "config"), []byte(content), 0644)
 
 		ret, _ := remoteInit(tempDir, rnsConfigDir, 2, 1, "") // 3 + 2 - 1 = 4
 		if ret != nil {
@@ -159,7 +206,8 @@ func TestRemoteInit(t *testing.T) {
 		id, _ := rns.NewIdentity(true)
 		_ = id.ToFile(identityPath)
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0o755)
+		_ = os.MkdirAll(rnsDir, 0755)
+		writeRNSConfig(t, rnsDir)
 		ret, _ := remoteInit(tempDir, rnsDir, 0, 0, "")
 		if ret != nil {
 			defer func() { _ = ret.Close() }()
@@ -198,7 +246,8 @@ func TestRemoteInit(t *testing.T) {
 	t.Run("testGetTargetIdentityNetwork", func(t *testing.T) {
 		tempDir := t.TempDir()
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0o755)
+		_ = os.MkdirAll(rnsDir, 0755)
+		writeRNSConfig(t, rnsDir)
 		ret, _ := rns.NewReticulum(rnsDir)
 		if ret != nil {
 			defer func() { _ = ret.Close() }()
@@ -227,7 +276,8 @@ func TestRemoteInit(t *testing.T) {
 	t.Run("testGetTargetIdentityTimeout", func(t *testing.T) {
 		tempDir := t.TempDir()
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0o755)
+		_ = os.MkdirAll(rnsDir, 0755)
+		writeRNSConfig(t, rnsDir)
 		ret, _ := rns.NewReticulum(rnsDir)
 		if ret != nil {
 			defer func() { _ = ret.Close() }()
@@ -253,8 +303,8 @@ func TestRemoteInit(t *testing.T) {
 		// Create a mock RNS config
 		tempDir := t.TempDir()
 		rnsConfigDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsConfigDir, 0o755)
-		_ = os.WriteFile(filepath.Join(rnsConfigDir, "config"), []byte("[logging]\nloglevel = 1\n"), 0o644)
+		_ = os.MkdirAll(rnsConfigDir, 0755)
+		writeRNSConfig(t, rnsConfigDir)
 		ret, _ := rns.NewReticulum(rnsConfigDir)
 		if ret != nil {
 			defer func() { _ = ret.Close() }()
@@ -276,7 +326,8 @@ func TestRemoteInit(t *testing.T) {
 	t.Run("testRequestSyncInternalTimeout", func(t *testing.T) {
 		tempDir := t.TempDir()
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0o755)
+		_ = os.MkdirAll(rnsDir, 0755)
+		writeRNSConfig(t, rnsDir)
 		ret, _ := rns.NewReticulum(rnsDir)
 		if ret != nil {
 			defer func() { _ = ret.Close() }()

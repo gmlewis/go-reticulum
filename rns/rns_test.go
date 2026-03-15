@@ -43,12 +43,14 @@ func TestNewReticulumSharedInstanceServerThenClient(t *testing.T) {
 	defer ResetTransport()
 
 	port := reserveTCPPort(t)
+	controlPort := reserveTCPPort(t)
 
 	configTemplate := `[reticulum]
 instance_name = %v
 share_instance = Yes
 shared_instance_type = tcp
 shared_instance_port = %v
+instance_control_port = %v
 
 [logging]
 loglevel = 4
@@ -58,8 +60,8 @@ loglevel = 4
 
 	cfg1 := t.TempDir()
 	cfg2 := t.TempDir()
-	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name(), port))
-	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name(), port))
+	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name(), port, controlPort))
+	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name(), port, controlPort))
 
 	r1, err := NewReticulum(cfg1)
 	if err != nil {
@@ -85,14 +87,15 @@ func TestNewReticulumShareInstanceNoStandalone(t *testing.T) {
 	defer ResetTransport()
 
 	cfg := t.TempDir()
-	writeConfig(t, cfg, `[reticulum]
+	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
 share_instance = No
+instance_control_port = %v
 
 [logging]
 loglevel = 4
 
 [interfaces]
-`)
+`, reserveTCPPort(t)))
 
 	r, err := NewReticulum(cfg)
 	if err != nil {

@@ -37,6 +37,9 @@ func rpcWriteFrame(t *testing.T, conn net.Conn, v any) {
 
 func rpcReadFrame(t *testing.T, conn net.Conn) any {
 	t.Helper()
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set read deadline error: %v", err)
+	}
 	var hdr [4]byte
 	if _, err := io.ReadFull(conn, hdr[:]); err != nil {
 		t.Fatalf("read header error: %v", err)
@@ -697,7 +700,7 @@ loglevel = 4
 				t.Fatalf("expected LinkCount to fail while rpc listener is down")
 			}
 
-			r1.startRPCListener()
+			_ = r1.startRPCListener()
 			if r1.rpcListener == nil {
 				t.Fatalf("rpc listener did not restart")
 			}

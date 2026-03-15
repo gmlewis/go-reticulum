@@ -257,13 +257,17 @@ func NewReticulum(configDir string) (*Reticulum, error) {
 	}
 
 	r.startLocalInterface()
-	r.startRPCListener()
+	if err := r.startRPCListener(); err != nil {
+		_ = r.Close()
+		return nil, err
+	}
 
 	LoadKnownDestinations(storagePath)
 
 	if r.isSharedInstance || r.isStandaloneInstance {
 		// Initialize interfaces from config
 		if err := r.initInterfaces(); err != nil {
+			_ = r.Close()
 			return nil, err
 		}
 		if r.discoverInterfaces && r.transport != nil {
