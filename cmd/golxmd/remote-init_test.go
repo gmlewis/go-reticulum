@@ -30,7 +30,7 @@ loglevel = 0
 
 [interfaces]
 `, reserveTCPPort(t), reserveTCPPort(t))
-	if err := os.WriteFile(cfgPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("writeRNSConfig: %v", err)
 	}
 }
@@ -60,7 +60,7 @@ func TestRemoteInit(t *testing.T) {
 		tempDir := t.TempDir()
 		nonExistent := filepath.Join(tempDir, "nonexistent")
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0755)
+		_ = os.MkdirAll(rnsDir, 0o755)
 		writeRNSConfig(t, rnsDir)
 		ret, _ := remoteInit(nonExistent, rnsDir, 0, 0, "")
 		if ret != nil {
@@ -74,9 +74,9 @@ func TestRemoteInit(t *testing.T) {
 	t.Run("identity file doesn't exist", func(t *testing.T) {
 		lastExitCode = 0
 		tempDir := t.TempDir()
-		_ = os.MkdirAll(tempDir, 0755)
+		_ = os.MkdirAll(tempDir, 0o755)
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0755)
+		_ = os.MkdirAll(rnsDir, 0o755)
 		writeRNSConfig(t, rnsDir)
 		ret, _ := remoteInit(tempDir, rnsDir, 0, 0, "")
 		if ret != nil {
@@ -92,7 +92,7 @@ func TestRemoteInit(t *testing.T) {
 		tempDir := t.TempDir()
 		nonExistentIdentity := filepath.Join(tempDir, "nonexistent_identity")
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0755)
+		_ = os.MkdirAll(rnsDir, 0o755)
 		writeRNSConfig(t, rnsDir)
 		ret, _ := remoteInit("", rnsDir, 0, 0, nonExistentIdentity)
 		if ret != nil {
@@ -118,7 +118,7 @@ func TestRemoteInit(t *testing.T) {
 		}
 
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0755)
+		_ = os.MkdirAll(rnsDir, 0o755)
 		writeRNSConfig(t, rnsDir)
 		ret, _ := remoteInit(tempDir, rnsDir, 0, 0, "")
 		if ret != nil {
@@ -149,7 +149,7 @@ func TestRemoteInit(t *testing.T) {
 		}
 
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0755)
+		_ = os.MkdirAll(rnsDir, 0o755)
 		writeRNSConfig(t, rnsDir)
 		ret, _ := remoteInit("", rnsDir, 0, 0, identityPath)
 		if ret != nil {
@@ -174,7 +174,7 @@ func TestRemoteInit(t *testing.T) {
 
 		// Create a mock RNS config
 		rnsConfigDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsConfigDir, 0755)
+		_ = os.MkdirAll(rnsConfigDir, 0o755)
 		content := fmt.Sprintf(`[reticulum]
 share_instance = Yes
 shared_instance_type = tcp
@@ -186,7 +186,7 @@ loglevel = 1
 
 [interfaces]
 `, reserveTCPPort(t), reserveTCPPort(t))
-		_ = os.WriteFile(filepath.Join(rnsConfigDir, "config"), []byte(content), 0644)
+		_ = os.WriteFile(filepath.Join(rnsConfigDir, "config"), []byte(content), 0o644)
 
 		ret, _ := remoteInit(tempDir, rnsConfigDir, 2, 1, "") // 3 + 2 - 1 = 4
 		if ret != nil {
@@ -206,7 +206,7 @@ loglevel = 1
 		id, _ := rns.NewIdentity(true)
 		_ = id.ToFile(identityPath)
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0755)
+		_ = os.MkdirAll(rnsDir, 0o755)
 		writeRNSConfig(t, rnsDir)
 		ret, _ := remoteInit(tempDir, rnsDir, 0, 0, "")
 		if ret != nil {
@@ -246,7 +246,7 @@ loglevel = 1
 	t.Run("testGetTargetIdentityNetwork", func(t *testing.T) {
 		tempDir := t.TempDir()
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0755)
+		_ = os.MkdirAll(rnsDir, 0o755)
 		writeRNSConfig(t, rnsDir)
 		ret, _ := rns.NewReticulum(rnsDir)
 		if ret != nil {
@@ -276,7 +276,7 @@ loglevel = 1
 	t.Run("testGetTargetIdentityTimeout", func(t *testing.T) {
 		tempDir := t.TempDir()
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0755)
+		_ = os.MkdirAll(rnsDir, 0o755)
 		writeRNSConfig(t, rnsDir)
 		ret, _ := rns.NewReticulum(rnsDir)
 		if ret != nil {
@@ -303,7 +303,7 @@ loglevel = 1
 		// Create a mock RNS config
 		tempDir := t.TempDir()
 		rnsConfigDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsConfigDir, 0755)
+		_ = os.MkdirAll(rnsConfigDir, 0o755)
 		writeRNSConfig(t, rnsConfigDir)
 		ret, _ := rns.NewReticulum(rnsConfigDir)
 		if ret != nil {
@@ -326,7 +326,7 @@ loglevel = 1
 	t.Run("testRequestSyncInternalTimeout", func(t *testing.T) {
 		tempDir := t.TempDir()
 		rnsDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsDir, 0755)
+		_ = os.MkdirAll(rnsDir, 0o755)
 		writeRNSConfig(t, rnsDir)
 		ret, _ := rns.NewReticulum(rnsDir)
 		if ret != nil {
