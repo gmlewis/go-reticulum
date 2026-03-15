@@ -13,10 +13,25 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
+
+func tempDir(t *testing.T) string {
+	t.Helper()
+	baseDir := ""
+	if runtime.GOOS == "darwin" {
+		baseDir = "/tmp"
+	}
+	dir, err := os.MkdirTemp(baseDir, "gornsh-test-")
+	if err != nil {
+		t.Fatalf("tempDir error: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
 
 func TestProtocolPayloadParityWithPython(t *testing.T) {
 	t.Parallel()
@@ -26,7 +41,7 @@ func TestProtocolPayloadParityWithPython(t *testing.T) {
 		t.Skip("python3 not found")
 	}
 
-	tmpDir := t.TempDir()
+	tmpDir := tempDir(t)
 	payloadPath := filepath.Join(tmpDir, "payload.msgpack")
 
 	executePayload, err := msgpack.Pack([]any{[]any{"/bin/sh", "-lc", "echo hi"}, true, false, true, nil, "xterm", 24, 80, nil, nil})
@@ -68,7 +83,7 @@ func TestErrorExitOrderingPayloadParityWithPython(t *testing.T) {
 		t.Skip("python3 not found")
 	}
 
-	tmpDir := t.TempDir()
+	tmpDir := tempDir(t)
 	payloadPath := filepath.Join(tmpDir, "ordered.msgpack")
 
 	warnPayload, err := (&errorMessage{Message: "temporary issue", Fatal: false, Data: nil}).pack()
@@ -148,7 +163,7 @@ func TestRetryMetadataAndExitPayloadParityWithPython(t *testing.T) {
 		t.Skip("python3 not found")
 	}
 
-	tmpDir := t.TempDir()
+	tmpDir := tempDir(t)
 	payloadPath := filepath.Join(tmpDir, "retry_ordered.msgpack")
 
 	retryPayload, err := (&errorMessage{

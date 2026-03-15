@@ -79,7 +79,7 @@ if __name__ == "__main__":
 func TestIntegrationOpportunisticGoToPython(t *testing.T) {
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir := t.TempDir()
+	tmpDir := tempDir(t)
 	decodeScriptPath := filepath.Join(tmpDir, "decode_opportunistic.py")
 	if err := os.WriteFile(decodeScriptPath, []byte(lxmfDecodeOpportunisticPy), 0o644); err != nil {
 		t.Fatalf("write python decode script: %v", err)
@@ -135,7 +135,7 @@ func TestIntegrationOpportunisticGoToPython(t *testing.T) {
 func TestIntegrationOpportunisticPythonToGo(t *testing.T) {
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir := t.TempDir()
+	tmpDir := tempDir(t)
 	generateScriptPath := filepath.Join(tmpDir, "generate_opportunistic.py")
 	if err := os.WriteFile(generateScriptPath, []byte(lxmfGenerateOpportunisticPy), 0o644); err != nil {
 		t.Fatalf("write python generate script: %v", err)

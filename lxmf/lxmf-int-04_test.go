@@ -80,7 +80,7 @@ if __name__ == "__main__":
 func TestIntegrationResourceGoToPython(t *testing.T) {
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir := t.TempDir()
+	tmpDir := tempDir(t)
 	decodeScriptPath := filepath.Join(tmpDir, "decode_resource.py")
 	if err := os.WriteFile(decodeScriptPath, []byte(lxmfDecodeResourcePy), 0o644); err != nil {
 		t.Fatalf("write python decode script: %v", err)
@@ -109,7 +109,7 @@ func TestIntegrationResourceGoToPython(t *testing.T) {
 		t.Fatalf("NewMessage: %v", err)
 	}
 
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestIntegrationResourceGoToPython(t *testing.T) {
 func TestIntegrationResourcePythonToGo(t *testing.T) {
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir := t.TempDir()
+	tmpDir := tempDir(t)
 	generateScriptPath := filepath.Join(tmpDir, "generate_resource.py")
 	if err := os.WriteFile(generateScriptPath, []byte(lxmfGenerateResourcePy), 0o644); err != nil {
 		t.Fatalf("write python generate script: %v", err)

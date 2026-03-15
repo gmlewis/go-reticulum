@@ -16,7 +16,7 @@ import (
 
 func TestResolveConfigDir(t *testing.T) {
 	t.Run("explicit config dir", func(t *testing.T) {
-		tempDir := t.TempDir()
+		tempDir := tempDir(t)
 		home := filepath.Join(tempDir, "home")
 		explicit := filepath.Join(tempDir, "explicit")
 		got := resolveConfigDirCustom(explicit, home, "/etc/lxmd")
@@ -26,7 +26,7 @@ func TestResolveConfigDir(t *testing.T) {
 	})
 
 	t.Run("etc config dir exists", func(t *testing.T) {
-		tempDir := t.TempDir()
+		tempDir := tempDir(t)
 		home := filepath.Join(tempDir, "home")
 		etc := filepath.Join(tempDir, "etc")
 		err := os.MkdirAll(etc, 0o755)
@@ -45,7 +45,7 @@ func TestResolveConfigDir(t *testing.T) {
 	})
 
 	t.Run("user config dir exists", func(t *testing.T) {
-		tempDir := t.TempDir()
+		tempDir := tempDir(t)
 		home := filepath.Join(tempDir, "home")
 		userConfig := filepath.Join(home, ".config", "lxmd")
 		err := os.MkdirAll(userConfig, 0o755)
@@ -64,7 +64,7 @@ func TestResolveConfigDir(t *testing.T) {
 	})
 
 	t.Run("fallback to dot lxmd", func(t *testing.T) {
-		tempDir := t.TempDir()
+		tempDir := tempDir(t)
 		home := filepath.Join(tempDir, "home")
 		dotLxmd := filepath.Join(home, ".lxmd")
 		got := resolveConfigDirCustom("", home, "/nonexistent/etc")
@@ -206,8 +206,8 @@ func TestApplyConfig(t *testing.T) {
 }
 
 func TestLoadHashList(t *testing.T) {
-	tempDir := t.TempDir()
-	path := filepath.Join(tempDir, "hashes")
+	td := tempDir(t)
+	path := filepath.Join(td, "hashes")
 
 	t.Run("valid and invalid", func(t *testing.T) {
 		valid1 := "0123456789abcdef0123456789abcdef"
@@ -236,8 +236,8 @@ func TestLoadHashList(t *testing.T) {
 }
 
 func TestEnsureConfig(t *testing.T) {
-	tempDir := t.TempDir()
-	configDir := filepath.Join(tempDir, "lxmd")
+	td := tempDir(t)
+	configDir := filepath.Join(td, "lxmd")
 	configPath := filepath.Join(configDir, "config")
 
 	err := ensureConfig(configDir)

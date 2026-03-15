@@ -59,7 +59,7 @@ func TestJobs_RecoverFromPanic(t *testing.T) {
 }
 
 func TestTick(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := tempDir(t)
 	identity, _ := rns.NewIdentity(true)
 	router, _ := lxmf.NewRouter(identity, tempDir)
 	dest, _ := router.RegisterDeliveryIdentity(identity, "Test Peer", nil)

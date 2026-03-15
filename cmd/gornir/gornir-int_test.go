@@ -62,7 +62,7 @@ func TestIntegration_ExampleConfigOutput(t *testing.T) {
 func TestIntegration_ExitCodeZero(t *testing.T) {
 	t.Parallel()
 	bin := buildGornir(t)
-	tmpDir := t.TempDir()
+	tmpDir := tempDir(t)
 	cmd := exec.Command(bin, "--config", tmpDir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

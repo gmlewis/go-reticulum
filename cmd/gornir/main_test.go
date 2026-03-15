@@ -6,8 +6,10 @@
 package main
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -16,9 +18,23 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
+func tempDir(t *testing.T) string {
+	t.Helper()
+	baseDir := ""
+	if runtime.GOOS == "darwin" {
+		baseDir = "/tmp"
+	}
+	dir, err := os.MkdirTemp(baseDir, "gornir-test-")
+	if err != nil {
+		t.Fatalf("tempDir error: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
 func buildGornir(t *testing.T) string {
 	t.Helper()
-	tmpDir := t.TempDir()
+	tmpDir := tempDir(t)
 	bin := filepath.Join(tmpDir, "gornir")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Dir = "."
@@ -123,7 +139,7 @@ func TestExampleConfig(t *testing.T) {
 func TestExitCodeZero(t *testing.T) {
 	t.Parallel()
 	bin := buildGornir(t)
-	tmpDir := t.TempDir()
+	tmpDir := tempDir(t)
 	cmd := exec.Command(bin, "--config", tmpDir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -134,7 +150,7 @@ func TestExitCodeZero(t *testing.T) {
 func TestSIGINTCleanExit(t *testing.T) {
 	t.Parallel()
 	bin := buildGornir(t)
-	tmpDir := t.TempDir()
+	tmpDir := tempDir(t)
 	cmd := exec.Command(bin, "--config", tmpDir, "-v", "-v", "-v")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {

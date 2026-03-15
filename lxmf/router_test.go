@@ -8,6 +8,8 @@ package lxmf
 import (
 	"encoding/hex"
 	"errors"
+	"os"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -15,6 +17,20 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
+
+func tempDir(t *testing.T) string {
+	t.Helper()
+	baseDir := ""
+	if runtime.GOOS == "darwin" {
+		baseDir = "/tmp"
+	}
+	dir, err := os.MkdirTemp(baseDir, "lxmf-test-")
+	if err != nil {
+		t.Fatalf("tempDir error: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
 
 func TestNewRouterRequiresStoragePath(t *testing.T) {
 	_, err := NewRouter(nil, "")
@@ -24,7 +40,7 @@ func TestNewRouterRequiresStoragePath(t *testing.T) {
 }
 
 func TestRegisterDeliveryIdentitySingleDestinationOnly(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -48,7 +64,7 @@ func TestRegisterDeliveryIdentitySingleDestinationOnly(t *testing.T) {
 }
 
 func TestHandleOutboundValidatesMessage(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -59,7 +75,7 @@ func TestHandleOutboundValidatesMessage(t *testing.T) {
 }
 
 func TestProcessOutboundDirectRequestsPathWhenUnavailable(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -115,7 +131,7 @@ func TestProcessOutboundDirectRequestsPathWhenUnavailable(t *testing.T) {
 }
 
 func TestProcessOutboundOpportunisticPathRecoversWithoutPathRequest(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -195,7 +211,7 @@ func TestProcessOutboundOpportunisticPathRecoversWithoutPathRequest(t *testing.T
 }
 
 func TestProcessOutboundOpportunisticEscalatesToPathRequestThenSends(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -271,7 +287,7 @@ func TestProcessOutboundOpportunisticEscalatesToPathRequestThenSends(t *testing.
 }
 
 func TestProcessOutboundSendFailureEventuallyFails(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -319,7 +335,7 @@ func TestProcessOutboundSendFailureEventuallyFails(t *testing.T) {
 }
 
 func TestProcessOutboundSendSuccessSetsSent(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -360,7 +376,7 @@ func TestProcessOutboundSendSuccessSetsSent(t *testing.T) {
 }
 
 func TestProcessOutboundSentMessageNotResentUntilTimeout(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -412,7 +428,7 @@ func TestProcessOutboundSentMessageNotResentUntilTimeout(t *testing.T) {
 }
 
 func TestProcessOutboundTimeoutRequeuesForRetry(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -480,7 +496,7 @@ func TestProcessOutboundTimeoutRequeuesForRetry(t *testing.T) {
 }
 
 func TestProcessOutboundDeliveryCallbackSetsDeliveredAndPreventsTimeoutRequeue(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -542,7 +558,7 @@ func TestProcessOutboundDeliveryCallbackSetsDeliveredAndPreventsTimeoutRequeue(t
 }
 
 func TestProcessOutboundSelectsPacketRepresentation(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -594,7 +610,7 @@ func TestProcessOutboundSelectsPacketRepresentation(t *testing.T) {
 }
 
 func TestProcessOutboundSelectsResourceRepresentation(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -654,7 +670,7 @@ func TestProcessOutboundSelectsResourceRepresentation(t *testing.T) {
 }
 
 func TestProcessOutboundResourceUnsupportedFails(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -738,7 +754,7 @@ func (f *fakeLinkBuilder) SetLinkClosedCallback(cb func(*rns.Link)) {
 }
 
 func TestProcessOutboundResourceLinkPendingRetryNoAttemptIncrement(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -797,7 +813,7 @@ func TestProcessOutboundResourceLinkPendingRetryNoAttemptIncrement(t *testing.T)
 }
 
 func TestSendMessageResourceLockedEstablishError(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -843,7 +859,7 @@ func TestSendMessageResourceLockedEstablishError(t *testing.T) {
 }
 
 func TestProcessOutboundResourceSendFailureEventuallyFails(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -895,7 +911,7 @@ func TestProcessOutboundResourceSendFailureEventuallyFails(t *testing.T) {
 }
 
 func TestProcessOutboundResourceSendRetriesThenSucceeds(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -957,7 +973,7 @@ func TestProcessOutboundResourceSendRetriesThenSucceeds(t *testing.T) {
 }
 
 func TestProcessOutboundDropsTerminalStatesFromQueue(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -975,7 +991,7 @@ func TestProcessOutboundDropsTerminalStatesFromQueue(t *testing.T) {
 }
 
 func TestHandleInboundResourceDataDeliversMessage(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1024,7 +1040,7 @@ func TestHandleInboundResourceDataDeliversMessage(t *testing.T) {
 }
 
 func TestHandleInboundResourceDataIgnoresInvalidPayload(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1042,7 +1058,7 @@ func TestHandleInboundResourceDataIgnoresInvalidPayload(t *testing.T) {
 }
 
 func TestRegisterPropagationControlDestination(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1065,7 +1081,7 @@ func TestRegisterPropagationControlDestination(t *testing.T) {
 }
 
 func TestControlStatsGetRequest(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1106,7 +1122,7 @@ func TestControlStatsGetRequest(t *testing.T) {
 }
 
 func TestControlStatsGetRequestAccessErrors(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1132,7 +1148,7 @@ func TestControlStatsGetRequestAccessErrors(t *testing.T) {
 }
 
 func TestControlPeerSyncAndUnpeerRequests(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1164,7 +1180,7 @@ func TestControlPeerSyncAndUnpeerRequests(t *testing.T) {
 }
 
 func TestControlPeerSyncBackoff(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1199,7 +1215,7 @@ func TestControlPeerSyncBackoff(t *testing.T) {
 }
 
 func TestPruneStalePeers(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1229,7 +1245,7 @@ func TestPruneStalePeers(t *testing.T) {
 }
 
 func TestControlPeerSyncAndUnpeerErrors(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1279,7 +1295,7 @@ func TestControlPeerSyncAndUnpeerErrors(t *testing.T) {
 }
 
 func TestRegisterPropagationDestination(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1302,7 +1318,7 @@ func TestRegisterPropagationDestination(t *testing.T) {
 }
 
 func TestOfferRequestReturnsWantedIDs(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1339,7 +1355,7 @@ func TestOfferRequestReturnsWantedIDs(t *testing.T) {
 }
 
 func TestOfferRequestInvalidKey(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1362,7 +1378,7 @@ func TestOfferRequestInvalidKey(t *testing.T) {
 }
 
 func TestOfferRequestThrottled(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1391,7 +1407,7 @@ func TestOfferRequestThrottled(t *testing.T) {
 }
 
 func TestOfferRequestStaticOnlyNoAccess(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1416,7 +1432,7 @@ func TestOfferRequestStaticOnlyNoAccess(t *testing.T) {
 }
 
 func TestOfferRequestPeeringCostValidation(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1457,7 +1473,7 @@ func TestOfferRequestPeeringCostValidation(t *testing.T) {
 }
 
 func TestRouterPolicyConfigurationAPIs(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1542,7 +1558,7 @@ func TestRouterPolicyConfigurationAPIs(t *testing.T) {
 }
 
 func TestApplyPolicyConfig(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1607,7 +1623,7 @@ func TestApplyPolicyConfig(t *testing.T) {
 }
 
 func TestApplyPolicyConfigErrors(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1642,7 +1658,7 @@ func TestNewRouterWithConfigAppliesPolicy(t *testing.T) {
 	}
 	remotePropagationHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
 
-	router, err := NewRouterWithConfig(nil, t.TempDir(), map[string]any{
+	router, err := NewRouterWithConfig(nil, tempDir(t), map[string]any{
 		"peering_cost":     2,
 		"from_static_only": true,
 		"static_peers":     []any{hex.EncodeToString(remotePropagationHash)},
@@ -1671,14 +1687,14 @@ func TestNewRouterWithConfigAppliesPolicy(t *testing.T) {
 }
 
 func TestNewRouterWithConfigReturnsPolicyError(t *testing.T) {
-	_, err := NewRouterWithConfig(nil, t.TempDir(), map[string]any{"peering_cost": "bad"})
+	_, err := NewRouterWithConfig(nil, tempDir(t), map[string]any{"peering_cost": "bad"})
 	if err == nil {
 		t.Fatal("expected policy config error")
 	}
 }
 
 func TestMessageGetRequestListAndFetch(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1743,7 +1759,7 @@ func TestMessageGetRequestListAndFetch(t *testing.T) {
 }
 
 func TestMessageGetRequestRequiresIdentity(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1760,7 +1776,7 @@ func TestMessageGetRequestRequiresIdentity(t *testing.T) {
 }
 
 func TestMessageGetRequestNoAccessWhenAuthRequired(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1799,7 +1815,7 @@ func (e assertErr) Error() string {
 }
 
 func TestDeliveryPacketOpportunisticAndDirect(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1876,7 +1892,7 @@ func TestNewRouterFromConfig(t *testing.T) {
 
 	router, err := NewRouterFromConfig(RouterConfig{
 		Identity:         id,
-		StoragePath:      t.TempDir(),
+		StoragePath:      tempDir(t),
 		Autopeer:         true,
 		PropagationLimit: 128,
 		SyncLimit:        512,
@@ -1908,7 +1924,7 @@ func TestNewRouterFromConfig(t *testing.T) {
 
 func TestNewRouterFromConfigDefaults(t *testing.T) {
 	router, err := NewRouterFromConfig(RouterConfig{
-		StoragePath: t.TempDir(),
+		StoragePath: tempDir(t),
 	})
 	if err != nil {
 		t.Fatalf("NewRouterFromConfig: %v", err)
@@ -1934,7 +1950,7 @@ func TestNewRouterFromConfigDefaults(t *testing.T) {
 
 func TestNewRouterFromConfigSyncLimitClamped(t *testing.T) {
 	router, err := NewRouterFromConfig(RouterConfig{
-		StoragePath:      t.TempDir(),
+		StoragePath:      tempDir(t),
 		PropagationLimit: 500,
 		SyncLimit:        100, // less than PropagationLimit
 	})
@@ -1949,7 +1965,7 @@ func TestNewRouterFromConfigSyncLimitClamped(t *testing.T) {
 }
 
 func TestRouterIgnoreDestination(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1968,7 +1984,7 @@ func TestRouterIgnoreDestination(t *testing.T) {
 }
 
 func TestRouterEnforceStamps(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1985,7 +2001,7 @@ func TestRouterEnforceStamps(t *testing.T) {
 }
 
 func TestRouterMessageStorageLimit(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -2002,7 +2018,7 @@ func TestRouterMessageStorageLimit(t *testing.T) {
 }
 
 func TestRouterPrioritise(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -2021,7 +2037,7 @@ func TestRouterPrioritise(t *testing.T) {
 }
 
 func TestRouterSetInboundStampCost(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -2070,7 +2086,7 @@ func TestRouterSetInboundStampCost(t *testing.T) {
 }
 
 func TestRouterAnnounce(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -2097,7 +2113,7 @@ func TestRouterAnnounce(t *testing.T) {
 }
 
 func TestRequestMessagesNoPropNode(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -2109,7 +2125,7 @@ func TestRequestMessagesNoPropNode(t *testing.T) {
 }
 
 func TestRequestMessagesPathRequested(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -2135,7 +2151,7 @@ func TestRequestMessagesPathRequested(t *testing.T) {
 }
 
 func TestRequestMessagesLinkEstablished(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -2166,7 +2182,7 @@ func TestRequestMessagesLinkEstablished(t *testing.T) {
 }
 
 func TestRequestMessagesLinkFailed(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -2196,7 +2212,7 @@ func TestRequestMessagesLinkFailed(t *testing.T) {
 }
 
 func TestCancelPropagationResetsState(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -2228,7 +2244,7 @@ func TestCancelPropagationResetsState(t *testing.T) {
 }
 
 func TestProcessOutboundPropagatedNoNodeFails(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -2277,7 +2293,7 @@ func TestProcessOutboundPropagatedNoNodeFails(t *testing.T) {
 }
 
 func TestProcessOutboundPropagatedRequestsPathThenSends(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -2348,7 +2364,7 @@ func TestProcessOutboundPropagatedRequestsPathThenSends(t *testing.T) {
 }
 
 func TestProcessOutboundPropagatedSentRemovesFromQueue(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -2404,7 +2420,7 @@ func TestProcessOutboundPropagatedSentRemovesFromQueue(t *testing.T) {
 }
 
 func TestProcessOutboundTryPropagationOnFailFallback(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -2478,7 +2494,7 @@ func TestProcessOutboundTryPropagationOnFailFallback(t *testing.T) {
 }
 
 func TestProcessOutboundFailedCallbackInvoked(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -2532,7 +2548,7 @@ func TestProcessOutboundFailedCallbackInvoked(t *testing.T) {
 }
 
 func TestSetDisplayNameAndAnnounceAppData(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -2590,7 +2606,7 @@ func TestSetDisplayNameAndAnnounceAppData(t *testing.T) {
 }
 
 func TestSetDisplayNameNilReturnsNilAppData(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -2613,7 +2629,7 @@ func TestSetDisplayNameNilReturnsNilAppData(t *testing.T) {
 }
 
 func TestSetDisplayNameNoStampCost(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -2654,7 +2670,7 @@ func TestSetDisplayNameNoStampCost(t *testing.T) {
 }
 
 func TestAnnounceIncludesAppData(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -2736,7 +2752,7 @@ func TestAnnounceIncludesAppData(t *testing.T) {
 }
 
 func TestAnnounceWithoutDisplayNamePassesNilAppData(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -2771,7 +2787,7 @@ func TestAnnounceWithoutDisplayNamePassesNilAppData(t *testing.T) {
 }
 
 func TestRouterPropagationToggle(t *testing.T) {
-	router, err := NewRouter(nil, t.TempDir())
+	router, err := NewRouter(nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}

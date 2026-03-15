@@ -72,7 +72,7 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("config dir doesn't exist", func(t *testing.T) {
 		lastExitCode = 0
-		tempDir := t.TempDir()
+		tempDir := tempDir(t)
 		nonExistent := filepath.Join(tempDir, "nonexistent")
 		rnsDir := filepath.Join(tempDir, "rns")
 		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
@@ -91,7 +91,7 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("identity file doesn't exist", func(t *testing.T) {
 		lastExitCode = 0
-		tempDir := t.TempDir()
+		tempDir := tempDir(t)
 		if err := os.MkdirAll(tempDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
 		}
@@ -112,7 +112,7 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("identity file from argument doesn't exist", func(t *testing.T) {
 		lastExitCode = 0
-		tempDir := t.TempDir()
+		tempDir := tempDir(t)
 		nonExistentIdentity := filepath.Join(tempDir, "nonexistent_identity")
 		rnsDir := filepath.Join(tempDir, "rns")
 		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
@@ -131,7 +131,7 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("load valid identity", func(t *testing.T) {
 		lastExitCode = 0
-		tempDir := t.TempDir()
+		tempDir := tempDir(t)
 		identityPath := filepath.Join(tempDir, "identity")
 
 		// Create a valid identity
@@ -165,7 +165,7 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("load valid identity from path argument", func(t *testing.T) {
 		lastExitCode = 0
-		tempDir := t.TempDir()
+		tempDir := tempDir(t)
 		identityPath := filepath.Join(tempDir, "identity_arg")
 
 		// Create a valid identity
@@ -199,7 +199,7 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("test log level and reticulum init", func(t *testing.T) {
 		lastExitCode = 0
-		tempDir := t.TempDir()
+		tempDir := tempDir(t)
 		identityPath := filepath.Join(tempDir, "identity")
 		id, err := rns.NewIdentity(true)
 		if err != nil {
@@ -245,7 +245,7 @@ loglevel = 1
 
 	t.Run("config-file loglevel applied in remoteInit", func(t *testing.T) {
 		lastExitCode = 0
-		tempDir := t.TempDir()
+		tempDir := tempDir(t)
 		identityPath := filepath.Join(tempDir, "identity")
 		id, err := rns.NewIdentity(true)
 		if err != nil {
@@ -278,7 +278,7 @@ loglevel = 1
 	})
 
 	t.Run("testGetTargetIdentityLocal", func(t *testing.T) {
-		tempDir := t.TempDir()
+		tempDir := tempDir(t)
 		identityPath := filepath.Join(tempDir, "identity")
 		id, err := rns.NewIdentity(true)
 		if err != nil {
@@ -332,7 +332,7 @@ loglevel = 1
 	})
 
 	t.Run("testGetTargetIdentityNetwork", func(t *testing.T) {
-		tempDir := t.TempDir()
+		tempDir := tempDir(t)
 		rnsDir := filepath.Join(tempDir, "rns")
 		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
@@ -368,7 +368,7 @@ loglevel = 1
 		// Actually, let's just test the timeout case for now if it's too complex to mock.
 	})
 	t.Run("testGetTargetIdentityTimeout", func(t *testing.T) {
-		tempDir := t.TempDir()
+		tempDir := tempDir(t)
 		rnsDir := filepath.Join(tempDir, "rns")
 		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
@@ -404,7 +404,7 @@ loglevel = 1
 		rns.Remember(nil, id.Hash, id.GetPublicKey(), nil)
 
 		// Create a mock RNS config
-		tempDir := t.TempDir()
+		tempDir := tempDir(t)
 		rnsConfigDir := filepath.Join(tempDir, "rns")
 		if err := os.MkdirAll(rnsConfigDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
@@ -449,7 +449,7 @@ loglevel = 1
 	})
 
 	t.Run("testRequestSyncInternalTimeout", func(t *testing.T) {
-		tempDir := t.TempDir()
+		tempDir := tempDir(t)
 		rnsDir := filepath.Join(tempDir, "rns")
 		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)

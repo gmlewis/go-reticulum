@@ -8,6 +8,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -16,8 +17,22 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
+func tempDir(t *testing.T) string {
+	t.Helper()
+	baseDir := ""
+	if runtime.GOOS == "darwin" {
+		baseDir = "/tmp"
+	}
+	dir, err := os.MkdirTemp(baseDir, "golxmd-test-")
+	if err != nil {
+		t.Fatalf("tempDir error: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
 func TestJobs(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := tempDir(t)
 	identity, _ := rns.NewIdentity(true)
 	router, _ := lxmf.NewRouter(identity, tempDir)
 	dest, _ := router.RegisterDeliveryIdentity(identity, "Test Peer", nil)
@@ -56,7 +71,7 @@ func TestJobsRecovery(t *testing.T) {
 }
 
 func TestAnnounceAtStart(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := tempDir(t)
 	identity, _ := rns.NewIdentity(true)
 	router, _ := lxmf.NewRouter(identity, tempDir)
 	dest, _ := router.RegisterDeliveryIdentity(identity, "Test Peer", nil)
@@ -129,7 +144,7 @@ func TestJobsStartAfterDeferred(t *testing.T) {
 }
 
 func TestLXMFDelivery(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := tempDir(t)
 	lxmdir = filepath.Join(tempDir, "messages")
 	err := os.MkdirAll(lxmdir, 0o755)
 	if err != nil {
@@ -175,7 +190,7 @@ func TestLXMFDelivery(t *testing.T) {
 }
 
 func TestPropagationNodeSetup(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := tempDir(t)
 	identity, _ := rns.NewIdentity(true)
 	router, _ := lxmf.NewRouter(identity, tempDir)
 
@@ -210,7 +225,7 @@ func TestPropagationNodeSetup(t *testing.T) {
 }
 
 func TestAuthWarningMessage(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := tempDir(t)
 	configDir = tempDir
 	ac = &activeConfig{AuthRequired: true, AllowedIdentities: nil}
 
@@ -236,7 +251,7 @@ func TestAuthWarningMessage(t *testing.T) {
 }
 
 func TestAuthSetup(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := tempDir(t)
 	identity, _ := rns.NewIdentity(true)
 	router, _ := lxmf.NewRouter(identity, tempDir)
 
@@ -266,7 +281,7 @@ func TestIdentityRemember(t *testing.T) {
 }
 
 func TestIgnoreDestinations(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := tempDir(t)
 	identity, _ := rns.NewIdentity(true)
 	router, _ := lxmf.NewRouter(identity, tempDir)
 
@@ -284,7 +299,7 @@ func TestIgnoreDestinations(t *testing.T) {
 }
 
 func TestRouterConstruction(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := tempDir(t)
 	configDir := filepath.Join(tempDir, "lxmd")
 	err := os.MkdirAll(configDir, 0o755)
 	if err != nil {
@@ -324,7 +339,7 @@ func TestRouterConstruction(t *testing.T) {
 }
 
 func TestServiceLogging(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := tempDir(t)
 	configDir := filepath.Join(tempDir, "lxmd")
 	err := os.MkdirAll(configDir, 0o755)
 	if err != nil {
@@ -399,7 +414,7 @@ func TestApplyTimeoutDefaults(t *testing.T) {
 }
 
 func TestResolvePathsDefaults(t *testing.T) {
-	storageRoot := t.TempDir()
+	storageRoot := tempDir(t)
 	storagePath, identityPath, err := resolvePaths(storageRoot, "", storageRoot)
 	if err != nil {
 		t.Fatalf("resolvePaths: %v", err)
@@ -422,7 +437,7 @@ func TestResolvePathsDefaults(t *testing.T) {
 }
 
 func TestLoadOrCreateIdentityCreateThenReload(t *testing.T) {
-	identityPath := filepath.Join(t.TempDir(), "identities", "lxmd")
+	identityPath := filepath.Join(tempDir(t), "identities", "lxmd")
 	if err := os.MkdirAll(filepath.Dir(identityPath), 0o755); err != nil {
 		t.Fatalf("mkdir identity dir: %v", err)
 	}
@@ -448,7 +463,7 @@ func TestLoadOrCreateIdentityCreateThenReload(t *testing.T) {
 }
 
 func TestLoadOrCreateIdentityCorruptFile(t *testing.T) {
-	identityPath := filepath.Join(t.TempDir(), "identities", "lxmd")
+	identityPath := filepath.Join(tempDir(t), "identities", "lxmd")
 	if err := os.MkdirAll(filepath.Dir(identityPath), 0o755); err != nil {
 		t.Fatalf("mkdir identity dir: %v", err)
 	}
@@ -462,7 +477,7 @@ func TestLoadOrCreateIdentityCorruptFile(t *testing.T) {
 }
 
 func TestRuntimeTrackerLifecycle(t *testing.T) {
-	statePath := filepath.Join(t.TempDir(), "lxmf", "golxmd-state.json")
+	statePath := filepath.Join(tempDir(t), "lxmf", "golxmd-state.json")
 
 	tracker, err := newRuntimeTracker(statePath)
 	if err != nil {
@@ -507,7 +522,7 @@ func TestRuntimeTrackerLifecycle(t *testing.T) {
 }
 
 func TestRuntimeTrackerDetectsUncleanRestart(t *testing.T) {
-	statePath := filepath.Join(t.TempDir(), "lxmf", "golxmd-state.json")
+	statePath := filepath.Join(tempDir(t), "lxmf", "golxmd-state.json")
 	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
 		t.Fatalf("mkdir state dir: %v", err)
 	}
@@ -526,7 +541,7 @@ func TestRuntimeTrackerDetectsUncleanRestart(t *testing.T) {
 }
 
 func TestLoadRuntimeStateCorruptData(t *testing.T) {
-	statePath := filepath.Join(t.TempDir(), "lxmf", "golxmd-state.json")
+	statePath := filepath.Join(tempDir(t), "lxmf", "golxmd-state.json")
 	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
 		t.Fatalf("mkdir state dir: %v", err)
 	}

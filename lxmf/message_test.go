@@ -186,7 +186,7 @@ func TestWriteToDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dir := t.TempDir()
+	dir := tempDir(t)
 	path, err := msg.WriteToDirectory(dir)
 	if err != nil {
 		t.Fatalf("WriteToDirectory error = %v", err)
