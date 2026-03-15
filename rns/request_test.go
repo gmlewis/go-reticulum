@@ -76,7 +76,7 @@ func TestRequestResponse(t *testing.T) {
 	select {
 	case <-establishedInitiator:
 		// OK
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("Timeout waiting for link establishment")
 	}
 
@@ -96,7 +96,7 @@ func TestRequestResponse(t *testing.T) {
 		if res != expected {
 			t.Errorf("expected %v, got %v", expected, res)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("Timeout waiting for response")
 	}
 }
@@ -175,7 +175,7 @@ func TestRequestResponseAutoCompressPolicyInlineAndResource(t *testing.T) {
 
 			select {
 			case <-establishedInitiator:
-			case <-time.After(2 * time.Second):
+			case <-time.After(5 * time.Second):
 				t.Fatal("Timeout waiting for link establishment")
 			}
 

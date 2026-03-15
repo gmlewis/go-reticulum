@@ -548,7 +548,7 @@ func doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile, sgnFile,
 			rns.Logf("The contained exception was: %v", rns.LogError, false, err)
 			os.Exit(13)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		dataInput = f
 	}
 
@@ -580,7 +580,7 @@ func doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile, sgnFile,
 			rns.Logf("The contained exception was: %v", rns.LogError, false, err)
 			os.Exit(15)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		dataOutput = f
 	}
 
