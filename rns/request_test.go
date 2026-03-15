@@ -7,7 +7,6 @@ package rns
 
 import (
 	"bytes"
-	"sync"
 	"testing"
 	"time"
 
@@ -15,8 +14,7 @@ import (
 )
 
 func TestRequestResponse(t *testing.T) {
-	transportInstance = nil
-	transportOnce = sync.Once{}
+	ResetTransport()
 	// Create two separate transport systems
 	tsInitiator := &TransportSystem{
 		pathTable:    make(map[string]*PathEntry),
@@ -76,7 +74,7 @@ func TestRequestResponse(t *testing.T) {
 	select {
 	case <-establishedInitiator:
 		// OK
-	case <-time.After(5 * time.Second):
+	case <-time.After(2 * time.Second):
 		t.Fatal("Timeout waiting for link establishment")
 	}
 
@@ -96,7 +94,7 @@ func TestRequestResponse(t *testing.T) {
 		if res != expected {
 			t.Errorf("expected %v, got %v", expected, res)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(2 * time.Second):
 		t.Fatal("Timeout waiting for response")
 	}
 }
@@ -113,8 +111,7 @@ func TestRequestResponseAutoCompressPolicyInlineAndResource(t *testing.T) {
 	for _, tc := range tests {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			transportInstance = nil
-			transportOnce = sync.Once{}
+			ResetTransport()
 
 			tsInitiator := &TransportSystem{
 				pathTable:    make(map[string]*PathEntry),
@@ -175,7 +172,7 @@ func TestRequestResponseAutoCompressPolicyInlineAndResource(t *testing.T) {
 
 			select {
 			case <-establishedInitiator:
-			case <-time.After(5 * time.Second):
+			case <-time.After(2 * time.Second):
 				t.Fatal("Timeout waiting for link establishment")
 			}
 
