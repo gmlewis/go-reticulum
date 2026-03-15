@@ -210,7 +210,7 @@ func TestHMACParity(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
-	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -239,7 +239,7 @@ func TestEd25519Parity(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
-	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -272,7 +272,7 @@ func TestX25519Parity(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
-	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -311,7 +311,7 @@ func TestHKDFParity(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
-	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -345,7 +345,7 @@ func TestTokenParity(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
-	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -382,7 +382,7 @@ func TestSHA256Parity(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
-	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -410,7 +410,7 @@ func TestSHA512Parity(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
-	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -438,7 +438,7 @@ func TestPKCS7Parity(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
-	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -484,7 +484,7 @@ func TestAES128Parity(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
-	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -535,7 +535,7 @@ func TestAES256Parity(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
-	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

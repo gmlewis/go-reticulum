@@ -27,11 +27,11 @@ func TestResolveConfigDir(t *testing.T) {
 		tempDir := t.TempDir()
 		home := filepath.Join(tempDir, "home")
 		etc := filepath.Join(tempDir, "etc")
-		err := os.MkdirAll(etc, 0755)
+		err := os.MkdirAll(etc, 0o755)
 		if err != nil {
 			t.Fatal(err)
 		}
-		err = os.WriteFile(filepath.Join(etc, "config"), []byte(""), 0644)
+		err = os.WriteFile(filepath.Join(etc, "config"), []byte(""), 0o644)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -46,11 +46,11 @@ func TestResolveConfigDir(t *testing.T) {
 		tempDir := t.TempDir()
 		home := filepath.Join(tempDir, "home")
 		userConfig := filepath.Join(home, ".config", "lxmd")
-		err := os.MkdirAll(userConfig, 0755)
+		err := os.MkdirAll(userConfig, 0o755)
 		if err != nil {
 			t.Fatal(err)
 		}
-		err = os.WriteFile(filepath.Join(userConfig, "config"), []byte(""), 0644)
+		err = os.WriteFile(filepath.Join(userConfig, "config"), []byte(""), 0o644)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -212,7 +212,7 @@ func TestLoadHashList(t *testing.T) {
 		invalid2 := "not_hex_0123456789abcdef01234567"
 
 		content := valid1 + "\n" + invalid1 + "\n" + valid2 + "\n" + invalid2 + "\n"
-		err := os.WriteFile(path, []byte(content), 0644)
+		err := os.WriteFile(path, []byte(content), 0o644)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -28,7 +28,12 @@ func TestRemoteInit(t *testing.T) {
 		lastExitCode = 0
 		tempDir := t.TempDir()
 		nonExistent := filepath.Join(tempDir, "nonexistent")
-		_ = remoteInit(nonExistent, "", 0, 0, "")
+		rnsDir := filepath.Join(tempDir, "rns")
+		_ = os.MkdirAll(rnsDir, 0o755)
+		ret, _ := remoteInit(nonExistent, rnsDir, 0, 0, "")
+		if ret != nil {
+			defer func() { _ = ret.Close() }()
+		}
 		if lastExitCode != 201 {
 			t.Errorf("got exit code %v, want 201", lastExitCode)
 		}
@@ -37,8 +42,13 @@ func TestRemoteInit(t *testing.T) {
 	t.Run("identity file doesn't exist", func(t *testing.T) {
 		lastExitCode = 0
 		tempDir := t.TempDir()
-		_ = os.MkdirAll(tempDir, 0755)
-		_ = remoteInit(tempDir, "", 0, 0, "")
+		_ = os.MkdirAll(tempDir, 0o755)
+		rnsDir := filepath.Join(tempDir, "rns")
+		_ = os.MkdirAll(rnsDir, 0o755)
+		ret, _ := remoteInit(tempDir, rnsDir, 0, 0, "")
+		if ret != nil {
+			defer func() { _ = ret.Close() }()
+		}
 		if lastExitCode != 202 {
 			t.Errorf("got exit code %v, want 202", lastExitCode)
 		}
@@ -48,7 +58,12 @@ func TestRemoteInit(t *testing.T) {
 		lastExitCode = 0
 		tempDir := t.TempDir()
 		nonExistentIdentity := filepath.Join(tempDir, "nonexistent_identity")
-		_ = remoteInit("", "", 0, 0, nonExistentIdentity)
+		rnsDir := filepath.Join(tempDir, "rns")
+		_ = os.MkdirAll(rnsDir, 0o755)
+		ret, _ := remoteInit("", rnsDir, 0, 0, nonExistentIdentity)
+		if ret != nil {
+			defer func() { _ = ret.Close() }()
+		}
 		if lastExitCode != 202 {
 			t.Errorf("got exit code %v, want 202", lastExitCode)
 		}
@@ -68,7 +83,12 @@ func TestRemoteInit(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		_ = remoteInit(tempDir, "", 0, 0, "")
+		rnsDir := filepath.Join(tempDir, "rns")
+		_ = os.MkdirAll(rnsDir, 0o755)
+		ret, _ := remoteInit(tempDir, rnsDir, 0, 0, "")
+		if ret != nil {
+			defer func() { _ = ret.Close() }()
+		}
 		if lastExitCode != 0 {
 			t.Errorf("got exit code %v, want 0", lastExitCode)
 		}
@@ -93,7 +113,12 @@ func TestRemoteInit(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		_ = remoteInit("", "", 0, 0, identityPath)
+		rnsDir := filepath.Join(tempDir, "rns")
+		_ = os.MkdirAll(rnsDir, 0o755)
+		ret, _ := remoteInit("", rnsDir, 0, 0, identityPath)
+		if ret != nil {
+			defer func() { _ = ret.Close() }()
+		}
 		if lastExitCode != 0 {
 			t.Errorf("got exit code %v, want 0", lastExitCode)
 		}
@@ -113,10 +138,13 @@ func TestRemoteInit(t *testing.T) {
 
 		// Create a mock RNS config
 		rnsConfigDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsConfigDir, 0755)
-		_ = os.WriteFile(filepath.Join(rnsConfigDir, "config"), []byte("[logging]\nloglevel = 1\n"), 0644)
+		_ = os.MkdirAll(rnsConfigDir, 0o755)
+		_ = os.WriteFile(filepath.Join(rnsConfigDir, "config"), []byte("[logging]\nloglevel = 1\n"), 0o644)
 
-		_ = remoteInit(tempDir, rnsConfigDir, 2, 1, "") // 3 + 2 - 1 = 4
+		ret, _ := remoteInit(tempDir, rnsConfigDir, 2, 1, "") // 3 + 2 - 1 = 4
+		if ret != nil {
+			defer func() { _ = ret.Close() }()
+		}
 		if rns.GetLogLevel() != 4 {
 			t.Errorf("got log level %v, want 4", rns.GetLogLevel())
 		}
@@ -130,7 +158,12 @@ func TestRemoteInit(t *testing.T) {
 		identityPath := filepath.Join(tempDir, "identity")
 		id, _ := rns.NewIdentity(true)
 		_ = id.ToFile(identityPath)
-		_ = remoteInit(tempDir, "", 0, 0, "")
+		rnsDir := filepath.Join(tempDir, "rns")
+		_ = os.MkdirAll(rnsDir, 0o755)
+		ret, _ := remoteInit(tempDir, rnsDir, 0, 0, "")
+		if ret != nil {
+			defer func() { _ = ret.Close() }()
+		}
 
 		got := getTargetIdentity("", 5*time.Second)
 		if got == nil {
@@ -163,6 +196,14 @@ func TestRemoteInit(t *testing.T) {
 	})
 
 	t.Run("testGetTargetIdentityNetwork", func(t *testing.T) {
+		tempDir := t.TempDir()
+		rnsDir := filepath.Join(tempDir, "rns")
+		_ = os.MkdirAll(rnsDir, 0o755)
+		ret, _ := rns.NewReticulum(rnsDir)
+		if ret != nil {
+			defer func() { _ = ret.Close() }()
+		}
+
 		rns.ResetTransport()
 		lastExitCode = 0
 		id, _ := rns.NewIdentity(true)
@@ -184,6 +225,14 @@ func TestRemoteInit(t *testing.T) {
 		// Actually, let's just test the timeout case for now if it's too complex to mock.
 	})
 	t.Run("testGetTargetIdentityTimeout", func(t *testing.T) {
+		tempDir := t.TempDir()
+		rnsDir := filepath.Join(tempDir, "rns")
+		_ = os.MkdirAll(rnsDir, 0o755)
+		ret, _ := rns.NewReticulum(rnsDir)
+		if ret != nil {
+			defer func() { _ = ret.Close() }()
+		}
+
 		rns.ResetTransport()
 		lastExitCode = 0
 		id, _ := rns.NewIdentity(true)
@@ -204,9 +253,12 @@ func TestRemoteInit(t *testing.T) {
 		// Create a mock RNS config
 		tempDir := t.TempDir()
 		rnsConfigDir := filepath.Join(tempDir, "rns")
-		_ = os.MkdirAll(rnsConfigDir, 0755)
-		_ = os.WriteFile(filepath.Join(rnsConfigDir, "config"), []byte("[logging]\nloglevel = 1\n"), 0644)
-		_, _ = rns.NewReticulum(rnsConfigDir)
+		_ = os.MkdirAll(rnsConfigDir, 0o755)
+		_ = os.WriteFile(filepath.Join(rnsConfigDir, "config"), []byte("[logging]\nloglevel = 1\n"), 0o644)
+		ret, _ := rns.NewReticulum(rnsConfigDir)
+		if ret != nil {
+			defer func() { _ = ret.Close() }()
+		}
 
 		// This should timeout because the link will never become active
 		// Wait, I should mock the link to be active to test the next part
@@ -222,6 +274,14 @@ func TestRemoteInit(t *testing.T) {
 	})
 
 	t.Run("testRequestSyncInternalTimeout", func(t *testing.T) {
+		tempDir := t.TempDir()
+		rnsDir := filepath.Join(tempDir, "rns")
+		_ = os.MkdirAll(rnsDir, 0o755)
+		ret, _ := rns.NewReticulum(rnsDir)
+		if ret != nil {
+			defer func() { _ = ret.Close() }()
+		}
+
 		rns.ResetTransport()
 		lastExitCode = 0
 		id, _ := rns.NewIdentity(true)

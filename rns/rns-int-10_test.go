@@ -382,7 +382,7 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 	pyIdPath := filepath.Join(tmpDir, "py_id")
 
 	scriptPath := filepath.Join(tmpDir, "ratchet_parity.py")
-	if err := os.WriteFile(scriptPath, []byte(ratchetParityPy), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(ratchetParityPy), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -474,7 +474,7 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 	}
 
 	// Signal Python to exit receiver and then try to decrypt
-	os.WriteFile(filepath.Join(pyStorage, "done"), []byte("done"), 0644)
+	os.WriteFile(filepath.Join(pyStorage, "done"), []byte("done"), 0o644)
 	pyCmd.Wait()
 
 	// Verify Python can decrypt using stored ratchet
@@ -549,7 +549,7 @@ func TestRatchetPythonToGoParity(t *testing.T) {
 	os.MkdirAll(pyStorage, 0700)
 
 	initScriptPath := filepath.Join(tmpDir, "ratchet_initiator.py")
-	os.WriteFile(initScriptPath, []byte(ratchetInitiatorPy), 0644)
+	os.WriteFile(initScriptPath, []byte(ratchetInitiatorPy), 0o644)
 
 	pyCmd := exec.Command("python3", initScriptPath, pyStorage, fmt.Sprintf("%x", dest.Hash), fmt.Sprintf("%x", id.GetPublicKey()), fmt.Sprintf("%x", msg), strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort))
 	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
@@ -632,7 +632,7 @@ func TestRatchetRotationParity(t *testing.T) {
 	pyStorage := filepath.Join(tmpDir, "py_rns")
 	os.MkdirAll(pyStorage, 0700)
 	initScriptPath := filepath.Join(tmpDir, "ratchet_initiator.py")
-	os.WriteFile(initScriptPath, []byte(ratchetInitiatorPy), 0644)
+	os.WriteFile(initScriptPath, []byte(ratchetInitiatorPy), 0o644)
 
 	oldMsg := []byte("rotation-old-message")
 	oldCipher, pyOldRatchetID, _ := runPythonRatchetEncrypt(t, initScriptPath, pyStorage, dest.Hash, id.GetPublicKey(), oldMsg, pyListenPort, goListenPort, func() error {
@@ -733,7 +733,7 @@ func TestRatchetRetentionWindowParity(t *testing.T) {
 	pyStorage := filepath.Join(tmpDir, "py_rns")
 	os.MkdirAll(pyStorage, 0700)
 	initScriptPath := filepath.Join(tmpDir, "ratchet_initiator.py")
-	os.WriteFile(initScriptPath, []byte(ratchetInitiatorPy), 0644)
+	os.WriteFile(initScriptPath, []byte(ratchetInitiatorPy), 0o644)
 
 	forceRotate()
 	ratchetAID := RatchetID(dest.ratchets[0].PublicKey().PublicBytes())
@@ -810,7 +810,7 @@ func TestRatchetEnforceParity(t *testing.T) {
 	ratchetPub := dest.ratchets[0].PublicKey().PublicBytes()
 
 	scriptPath := filepath.Join(tmpDir, "ratchet_enforce.py")
-	if err := os.WriteFile(scriptPath, []byte(ratchetEnforcePy), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(ratchetEnforcePy), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -853,7 +853,7 @@ func TestRatchetFileInteropParity(t *testing.T) {
 	ResetTransport()
 
 	scriptPath := filepath.Join(tmpDir, "ratchet_file_interop.py")
-	if err := os.WriteFile(scriptPath, []byte(ratchetFileInteropPy), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(ratchetFileInteropPy), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

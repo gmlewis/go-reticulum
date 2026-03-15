@@ -64,7 +64,7 @@ func TestSerialInterfaceParity(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "serial_echo.py")
-	if err := os.WriteFile(scriptPath, []byte(pythonSerialEchoScript), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(pythonSerialEchoScript), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

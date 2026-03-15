@@ -466,7 +466,7 @@ func doFileOp(id *rns.Identity, inputPath, outputPath string, enc, dec, sign boo
 			rns.Log(fmt.Sprintf("Output file %v already exists, not overwriting", outputPath), rns.LogNotice, false)
 			os.Exit(15)
 		}
-		if err := os.WriteFile(outputPath, ciphertext, 0644); err != nil {
+		if err := os.WriteFile(outputPath, ciphertext, 0o644); err != nil {
 			rns.Log(fmt.Sprintf("Error writing file: %v", err), rns.LogNotice, false)
 			os.Exit(15)
 		}
@@ -489,7 +489,7 @@ func doFileOp(id *rns.Identity, inputPath, outputPath string, enc, dec, sign boo
 			rns.Log(fmt.Sprintf("Output file %v already exists, not overwriting", outputPath), rns.LogNotice, false)
 			os.Exit(15)
 		}
-		if err := os.WriteFile(outputPath, plaintext, 0644); err != nil {
+		if err := os.WriteFile(outputPath, plaintext, 0o644); err != nil {
 			rns.Log(fmt.Sprintf("Error writing file: %v", err), rns.LogNotice, false)
 			os.Exit(15)
 		}
@@ -512,7 +512,7 @@ func doFileOp(id *rns.Identity, inputPath, outputPath string, enc, dec, sign boo
 			rns.Log(fmt.Sprintf("Output file %v already exists, not overwriting", outputPath), rns.LogNotice, false)
 			os.Exit(15)
 		}
-		if err := os.WriteFile(outputPath, signature, 0644); err != nil {
+		if err := os.WriteFile(outputPath, signature, 0o644); err != nil {
 			rns.Log(fmt.Sprintf("Error writing file: %v", err), rns.LogNotice, false)
 			os.Exit(15)
 		}

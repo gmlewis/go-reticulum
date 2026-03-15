@@ -74,7 +74,7 @@ func TestUDPInterfaceParity(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "udp_echo.py")
-	if err := os.WriteFile(scriptPath, []byte(pythonUDPEchoScript), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(pythonUDPEchoScript), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -173,7 +173,7 @@ func TestTCPInterfaceParity(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "tcp_echo.py")
-	if err := os.WriteFile(scriptPath, []byte(pythonTCPEchoScript), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(pythonTCPEchoScript), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -291,7 +291,7 @@ except KeyboardInterrupt:
 `
 
 	scriptPath := filepath.Join(tmpDir, "tcp_kiss_echo.py")
-	if err := os.WriteFile(scriptPath, []byte(pythonTCPKISSEchoScript), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(pythonTCPKISSEchoScript), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -402,7 +402,7 @@ func TestLocalInterfaceParity(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "local_echo.py")
-	if err := os.WriteFile(scriptPath, []byte(pythonLocalEchoScript), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(pythonLocalEchoScript), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -556,7 +556,7 @@ func TestPipeInterfaceParity(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "pipe_echo.py")
-	if err := os.WriteFile(scriptPath, []byte(pythonPipeEchoScript), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(pythonPipeEchoScript), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

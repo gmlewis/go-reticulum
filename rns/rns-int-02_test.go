@@ -845,7 +845,7 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
 	scriptPath := filepath.Join(tmpDir, "integrated_receiver.py")
-	if err := os.WriteFile(scriptPath, []byte(integratedReceiverPy), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(integratedReceiverPy), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	pyConfigDir := filepath.Join(tmpDir, "py_receiver")
@@ -979,7 +979,7 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 	}
 
 	// Signal Python to exit
-	os.WriteFile(filepath.Join(pyConfigDir, "done"), []byte("done"), 0644)
+	os.WriteFile(filepath.Join(pyConfigDir, "done"), []byte("done"), 0o644)
 
 	pyCmd.Wait()
 }
@@ -1146,7 +1146,7 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
 	scriptPath := filepath.Join(tmpDir, "integrated_initiator.py")
-	if err := os.WriteFile(scriptPath, []byte(integratedInitiatorPy), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(integratedInitiatorPy), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	pyConfigDir := filepath.Join(tmpDir, "py_initiator")
@@ -1337,7 +1337,7 @@ func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
 	scriptPath := filepath.Join(tmpDir, "integrated_receiver.py")
-	if err := os.WriteFile(scriptPath, []byte(integratedReceiverPy), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(integratedReceiverPy), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	pyConfigDir := filepath.Join(tmpDir, "py_receiver")
@@ -1421,7 +1421,7 @@ func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 		t.Fatal("timed out waiting for path rediscovery after invalidation")
 	}
 
-	os.WriteFile(filepath.Join(pyConfigDir, "done"), []byte("done"), 0644)
+	os.WriteFile(filepath.Join(pyConfigDir, "done"), []byte("done"), 0o644)
 	pyCmd.Wait()
 }
 

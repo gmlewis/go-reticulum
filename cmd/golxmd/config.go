@@ -35,11 +35,11 @@ func ensureConfig(configDir string) error {
 	}
 
 	log.Printf("Could not load config file, creating default configuration file...")
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return fmt.Errorf("create config directory %q: %w", configDir, err)
 	}
 
-	if err := os.WriteFile(configPath, []byte(defaultLXMDaemonConfig), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(defaultLXMDaemonConfig), 0o644); err != nil {
 		return fmt.Errorf("write default config to %q: %w", configPath, err)
 	}
 

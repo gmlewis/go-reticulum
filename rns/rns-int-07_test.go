@@ -77,7 +77,7 @@ func TestIdentityParity(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_identity_parity.py")
-	if err := os.WriteFile(scriptPath, []byte(checkIdentityParityPy), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(checkIdentityParityPy), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -127,7 +127,7 @@ func TestIdentityPythonToGoParity(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "generate_identity_parity.py")
-	if err := os.WriteFile(scriptPath, []byte(generateIdentityParityPy), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(generateIdentityParityPy), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

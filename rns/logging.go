@@ -123,7 +123,7 @@ func Log(msg string, level int, pt bool) {
 		if dest == LogStdout || AlwaysOverride {
 			fmt.Println(logString)
 		} else if dest == LogDestFile && filePath != "" {
-			f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 			if err != nil {
 				AlwaysOverride = true
 				fmt.Printf("[%v] [Critical] Exception occurred while writing log message to log file: %v\n", timeStr, err)

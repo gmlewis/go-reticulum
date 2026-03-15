@@ -201,7 +201,7 @@ func TestAnnouncePacketParity(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_announce_parity.py")
-	if err := os.WriteFile(scriptPath, []byte(checkAnnounceParityPy), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(checkAnnounceParityPy), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -249,7 +249,7 @@ func TestAnnouncePacketParity(t *testing.T) {
 	}
 
 	packetPath := filepath.Join(tmpDir, "announce_packet")
-	if err := os.WriteFile(packetPath, p.Raw, 0644); err != nil {
+	if err := os.WriteFile(packetPath, p.Raw, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -297,7 +297,7 @@ func TestLinkProofPacketParity(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_link_proof_parity.py")
-	if err := os.WriteFile(scriptPath, []byte(checkLinkProofParityPy), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(checkLinkProofParityPy), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -342,7 +342,7 @@ func TestLinkProofPacketParity(t *testing.T) {
 	}
 
 	packetPath := filepath.Join(tmpDir, "link_proof_packet")
-	if err := os.WriteFile(packetPath, p.Raw, 0644); err != nil {
+	if err := os.WriteFile(packetPath, p.Raw, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -368,7 +368,7 @@ func TestLinkRequestPacketParity(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_link_request_parity.py")
-	if err := os.WriteFile(scriptPath, []byte(checkLinkRequestParityPy), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(checkLinkRequestParityPy), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -398,7 +398,7 @@ func TestLinkRequestPacketParity(t *testing.T) {
 	}
 
 	packetPath := filepath.Join(tmpDir, "link_request_packet")
-	if err := os.WriteFile(packetPath, p.Raw, 0644); err != nil {
+	if err := os.WriteFile(packetPath, p.Raw, 0o644); err != nil {
 		t.Fatal(err)
 	}
 

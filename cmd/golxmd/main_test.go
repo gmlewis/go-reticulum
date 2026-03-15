@@ -79,7 +79,7 @@ func TestDeferredStartDelay(t *testing.T) {
 func TestLXMFDelivery(t *testing.T) {
 	tempDir := t.TempDir()
 	lxmdir = filepath.Join(tempDir, "messages")
-	err := os.MkdirAll(lxmdir, 0755)
+	err := os.MkdirAll(lxmdir, 0o755)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestLXMFDelivery(t *testing.T) {
 
 	// Case 2: with on_inbound (mock script)
 	scriptPath := filepath.Join(tempDir, "handler.sh")
-	err = os.WriteFile(scriptPath, []byte("#!/bin/sh\necho $1 > "+filepath.Join(tempDir, "result")), 0755)
+	err = os.WriteFile(scriptPath, []byte("#!/bin/sh\necho $1 > "+filepath.Join(tempDir, "result")), 0o755)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestIgnoreDestinations(t *testing.T) {
 func TestRouterConstruction(t *testing.T) {
 	tempDir := t.TempDir()
 	configDir := filepath.Join(tempDir, "lxmd")
-	err := os.MkdirAll(configDir, 0755)
+	err := os.MkdirAll(configDir, 0o755)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestRouterConstruction(t *testing.T) {
 func TestServiceLogging(t *testing.T) {
 	tempDir := t.TempDir()
 	configDir := filepath.Join(tempDir, "lxmd")
-	err := os.MkdirAll(configDir, 0755)
+	err := os.MkdirAll(configDir, 0o755)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -93,7 +93,7 @@ func TestMessagePackParity(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_msgpack_parity.py")
-	if err := os.WriteFile(scriptPath, []byte(checkMsgpackParityPy), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(checkMsgpackParityPy), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -145,7 +145,7 @@ func TestMessagePackParity(t *testing.T) {
 	}
 
 	packedPath := filepath.Join(tmpDir, "packed.msgpack")
-	if err := os.WriteFile(packedPath, packed, 0644); err != nil {
+	if err := os.WriteFile(packedPath, packed, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -210,7 +210,7 @@ if __name__ == "__main__":
 `
 
 	scriptPath := filepath.Join(tmpDir, "generate_msgpack_parity.py")
-	if err := os.WriteFile(scriptPath, []byte(generateMsgpackParityPyExtended), 0644); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(generateMsgpackParityPyExtended), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
