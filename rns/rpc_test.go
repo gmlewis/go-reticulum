@@ -383,13 +383,13 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum(shared) error: %v", err)
 	}
-	defer func() { _ = r1.Close() }()
+	defer closeReticulum(t, r1)
 
 	r2, err := NewReticulum(cfg2)
 	if err != nil {
 		t.Fatalf("NewReticulum(client) error: %v", err)
 	}
-	defer func() { _ = r2.Close() }()
+	defer closeReticulum(t, r2)
 	if !r2.isConnectedToSharedInstance {
 		t.Fatalf("expected second instance to be connected to shared instance")
 	}
@@ -680,11 +680,7 @@ loglevel = 4
 			if err != nil {
 				t.Fatalf("NewReticulum(shared) error: %v", err)
 			}
-			defer func() {
-				if err := r1.Close(); err != nil {
-					t.Fatalf("failed to close reticulum 1: %v", err)
-				}
-			}()
+			defer closeReticulum(t, r1)
 			if !r1.isSharedInstance {
 				t.Fatalf("expected first instance to be shared, got shared=%v connected=%v standalone=%v", r1.isSharedInstance, r1.isConnectedToSharedInstance, r1.isStandaloneInstance)
 			}
@@ -693,11 +689,7 @@ loglevel = 4
 			if err != nil {
 				t.Fatalf("NewReticulum(client) error: %v", err)
 			}
-			defer func() {
-				if err := r2.Close(); err != nil {
-					t.Fatalf("failed to close reticulum 2: %v", err)
-				}
-			}()
+			defer closeReticulum(t, r2)
 
 			if !r2.isConnectedToSharedInstance {
 				t.Fatalf("expected connected-to-shared role, got shared=%v connected=%v standalone=%v", r2.isSharedInstance, r2.isConnectedToSharedInstance, r2.isStandaloneInstance)
