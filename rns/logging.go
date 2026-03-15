@@ -27,12 +27,40 @@ var (
 	// LogTimeFmtP defines a precise timestamp format including milliseconds, typically used for performance logging.
 	LogTimeFmtP = "15:04:05.000"
 	// CompactLogFmt toggles a leaner log output format that removes semantic log level labels.
-	CompactLogFmt = false
+	compactLogFmt = false
 	// LoggingLock strictly serializes writes to the active log destination to prevent interleaved output.
 	LoggingLock sync.Mutex
-	// AlwaysOverride forces log messages to write to standard output regardless of the configured destination.
-	AlwaysOverride = false
+	// alwaysOverride forces log messages to write to standard output regardless of the configured destination.
+	alwaysOverride = false
 )
+
+// SetAlwaysOverride safely updates the AlwaysOverride setting.
+func SetAlwaysOverride(override bool) {
+	logLevelMu.Lock()
+	defer logLevelMu.Unlock()
+	alwaysOverride = override
+}
+
+// GetAlwaysOverride safely retrieves the AlwaysOverride setting.
+func GetAlwaysOverride() bool {
+	logLevelMu.RLock()
+	defer logLevelMu.RUnlock()
+	return alwaysOverride
+}
+
+// SetCompactLogFmt safely updates the CompactLogFmt setting.
+func SetCompactLogFmt(compact bool) {
+	logLevelMu.Lock()
+	defer logLevelMu.Unlock()
+	compactLogFmt = compact
+}
+
+// GetCompactLogFmt safely retrieves the CompactLogFmt setting.
+func GetCompactLogFmt() bool {
+	logLevelMu.RLock()
+	defer logLevelMu.RUnlock()
+	return compactLogFmt
+}
 
 // SetLogLevel safely updates the global operational verbosity for the logging subsystem.
 func SetLogLevel(level int) {
@@ -108,7 +136,7 @@ func Log(msg string, level int, pt bool) {
 			timeStr = now.Format(LogTimeFmt)
 		}
 
-		if CompactLogFmt {
+		if GetCompactLogFmt() {
 			logString = fmt.Sprintf("[%v] %v", timeStr, msg)
 		} else {
 			logString = fmt.Sprintf("[%v] %v %v", timeStr, LogLevelName(level), msg)
@@ -120,12 +148,12 @@ func Log(msg string, level int, pt bool) {
 		dest := GetLogDest()
 		filePath := GetLogFilePath()
 
-		if dest == LogStdout || AlwaysOverride {
+		if dest == LogStdout || GetAlwaysOverride() {
 			fmt.Println(logString)
 		} else if dest == LogDestFile && filePath != "" {
 			f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 			if err != nil {
-				AlwaysOverride = true
+				SetAlwaysOverride(true)
 				fmt.Printf("[%v] [Critical] Exception occurred while writing log message to log file: %v\n", timeStr, err)
 				fmt.Printf("[%v] [Critical] Dumping future log events to console!\n", timeStr)
 				fmt.Println(logString)
@@ -133,13 +161,13 @@ func Log(msg string, level int, pt bool) {
 			}
 			defer func() {
 				if closeErr := f.Close(); closeErr != nil {
-					AlwaysOverride = true
+					SetAlwaysOverride(true)
 					fmt.Printf("[%v] [Critical] Exception occurred while closing log file: %v\n", timeStr, closeErr)
 				}
 			}()
 
 			if _, err := f.WriteString(logString + "\n"); err != nil {
-				AlwaysOverride = true
+				SetAlwaysOverride(true)
 				fmt.Printf("[%v] [Critical] Exception occurred while writing log message to log file: %v\n", timeStr, err)
 				fmt.Printf("[%v] [Critical] Dumping future log events to console!\n", timeStr)
 				fmt.Println(logString)
@@ -151,12 +179,12 @@ func Log(msg string, level int, pt bool) {
 				prevFile := filePath + ".1"
 				if _, err := os.Stat(prevFile); err == nil {
 					if rmErr := os.Remove(prevFile); rmErr != nil {
-						AlwaysOverride = true
+						SetAlwaysOverride(true)
 						fmt.Printf("[%v] [Critical] Exception occurred while rotating log file: %v\n", timeStr, rmErr)
 					}
 				}
 				if renameErr := os.Rename(filePath, prevFile); renameErr != nil {
-					AlwaysOverride = true
+					SetAlwaysOverride(true)
 					fmt.Printf("[%v] [Critical] Exception occurred while rotating log file: %v\n", timeStr, renameErr)
 				}
 			}

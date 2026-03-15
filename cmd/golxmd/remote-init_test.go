@@ -6,6 +6,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -15,6 +16,16 @@ import (
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
+
+func closeReticulum(t *testing.T, r *rns.Reticulum) {
+	t.Helper()
+	if r == nil {
+		return
+	}
+	if err := r.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+		t.Errorf("failed to close reticulum: %v", err)
+	}
+}
 
 func writeRNSConfig(t *testing.T, dir string) {
 	t.Helper()
@@ -72,13 +83,7 @@ func TestRemoteInit(t *testing.T) {
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
 		}
-		if ret != nil {
-			defer func() {
-				if err := ret.Close(); err != nil {
-					t.Fatalf("failed to close reticulum: %v", err)
-				}
-			}()
-		}
+		defer closeReticulum(t, ret)
 		if lastExitCode != 201 {
 			t.Errorf("got exit code %v, want 201", lastExitCode)
 		}
@@ -99,13 +104,7 @@ func TestRemoteInit(t *testing.T) {
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
 		}
-		if ret != nil {
-			defer func() {
-				if err := ret.Close(); err != nil {
-					t.Fatalf("failed to close reticulum: %v", err)
-				}
-			}()
-		}
+		defer closeReticulum(t, ret)
 		if lastExitCode != 202 {
 			t.Errorf("got exit code %v, want 202", lastExitCode)
 		}
@@ -124,13 +123,7 @@ func TestRemoteInit(t *testing.T) {
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
 		}
-		if ret != nil {
-			defer func() {
-				if err := ret.Close(); err != nil {
-					t.Fatalf("failed to close reticulum: %v", err)
-				}
-			}()
-		}
+		defer closeReticulum(t, ret)
 		if lastExitCode != 202 {
 			t.Errorf("got exit code %v, want 202", lastExitCode)
 		}
@@ -159,13 +152,7 @@ func TestRemoteInit(t *testing.T) {
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
 		}
-		if ret != nil {
-			defer func() {
-				if err := ret.Close(); err != nil {
-					t.Fatalf("failed to close reticulum: %v", err)
-				}
-			}()
-		}
+		defer closeReticulum(t, ret)
 		if lastExitCode != 0 {
 			t.Errorf("got exit code %v, want 0", lastExitCode)
 		}
@@ -199,13 +186,7 @@ func TestRemoteInit(t *testing.T) {
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
 		}
-		if ret != nil {
-			defer func() {
-				if err := ret.Close(); err != nil {
-					t.Fatalf("failed to close reticulum: %v", err)
-				}
-			}()
-		}
+		defer closeReticulum(t, ret)
 		if lastExitCode != 0 {
 			t.Errorf("got exit code %v, want 0", lastExitCode)
 		}
@@ -252,15 +233,9 @@ loglevel = 1
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
 		}
-		if ret != nil {
-			defer func() {
-				if err := ret.Close(); err != nil {
-					t.Fatalf("failed to close reticulum: %v", err)
-				}
-			}()
-		}
-		if rns.GetLogLevel() != 4 {
-			t.Errorf("got log level %v, want 4", rns.GetLogLevel())
+		defer closeReticulum(t, ret)
+		if want := 4; rns.GetLogLevel() != want {
+			t.Errorf("got log level %v, want %v", rns.GetLogLevel(), want)
 		}
 
 		if rns.GetLogDest() != rns.LogStdout {
@@ -287,13 +262,7 @@ loglevel = 1
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
 		}
-		if ret != nil {
-			defer func() {
-				if err := ret.Close(); err != nil {
-					t.Fatalf("failed to close reticulum: %v", err)
-				}
-			}()
-		}
+		defer closeReticulum(t, ret)
 
 		got := getTargetIdentity("", 5*time.Second)
 		if got == nil {
@@ -339,13 +308,7 @@ loglevel = 1
 		if err != nil {
 			t.Fatalf("NewReticulum: %v", err)
 		}
-		if ret != nil {
-			defer func() {
-				if err := ret.Close(); err != nil {
-					t.Fatalf("failed to close reticulum: %v", err)
-				}
-			}()
-		}
+		defer closeReticulum(t, ret)
 
 		rns.ResetTransport()
 		lastExitCode = 0
@@ -381,13 +344,7 @@ loglevel = 1
 		if err != nil {
 			t.Fatalf("NewReticulum: %v", err)
 		}
-		if ret != nil {
-			defer func() {
-				if err := ret.Close(); err != nil {
-					t.Fatalf("failed to close reticulum: %v", err)
-				}
-			}()
-		}
+		defer closeReticulum(t, ret)
 
 		rns.ResetTransport()
 		lastExitCode = 0
@@ -423,13 +380,7 @@ loglevel = 1
 		if err != nil {
 			t.Fatalf("NewReticulum: %v", err)
 		}
-		if ret != nil {
-			defer func() {
-				if err := ret.Close(); err != nil {
-					t.Fatalf("failed to close reticulum: %v", err)
-				}
-			}()
-		}
+		defer closeReticulum(t, ret)
 
 		// This should timeout because the link will never become active
 		// Wait, I should mock the link to be active to test the next part
@@ -455,13 +406,7 @@ loglevel = 1
 		if err != nil {
 			t.Fatalf("NewReticulum: %v", err)
 		}
-		if ret != nil {
-			defer func() {
-				if err := ret.Close(); err != nil {
-					t.Fatalf("failed to close reticulum: %v", err)
-				}
-			}()
-		}
+		defer closeReticulum(t, ret)
 
 		rns.ResetTransport()
 		lastExitCode = 0

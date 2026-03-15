@@ -50,7 +50,7 @@ func main() {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
 	_ = reticulum
-	rns.CompactLogFmt = true
+	rns.SetCompactLogFmt(true)
 
 	// Print summary
 	fmt.Println("")

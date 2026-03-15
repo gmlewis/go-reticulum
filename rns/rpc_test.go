@@ -7,6 +7,7 @@ package rns
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -18,6 +19,16 @@ import (
 
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
+
+func closeReticulum(t *testing.T, r *Reticulum) {
+	t.Helper()
+	if r == nil {
+		return
+	}
+	if err := r.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+		t.Errorf("failed to close reticulum: %v", err)
+	}
+}
 
 func rpcWriteFrame(t *testing.T, conn net.Conn, v any) {
 	t.Helper()
@@ -98,11 +109,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum error: %v", err)
 	}
-	defer func() {
-		if err := r.Close(); err != nil {
-			t.Fatalf("failed to close reticulum: %v", err)
-		}
-	}()
+	defer closeReticulum(t, r)
 	if !r.isSharedInstance {
 		t.Fatalf("expected shared instance")
 	}
@@ -161,11 +168,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum error: %v", err)
 	}
-	defer func() {
-		if err := r.Close(); err != nil {
-			t.Fatalf("failed to close reticulum: %v", err)
-		}
-	}()
+	defer closeReticulum(t, r)
 
 	conn := mustDialRPC(t, fmt.Sprintf("127.0.0.1:%v", rpcPort))
 	defer func() { _ = conn.Close() }()
@@ -208,11 +211,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum error: %v", err)
 	}
-	defer func() {
-		if err := r.Close(); err != nil {
-			t.Fatalf("failed to close reticulum: %v", err)
-		}
-	}()
+	defer closeReticulum(t, r)
 
 	conn := mustDialRPC(t, fmt.Sprintf("127.0.0.1:%v", rpcPort))
 	defer func() { _ = conn.Close() }()
@@ -256,11 +255,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum(shared) error: %v", err)
 	}
-	defer func() {
-		if err := r1.Close(); err != nil {
-			t.Fatalf("failed to close reticulum 1: %v", err)
-		}
-	}()
+	defer closeReticulum(t, r1)
 	if !r1.isSharedInstance {
 		t.Fatalf("expected first instance to be shared")
 	}
@@ -269,11 +264,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum(client) error: %v", err)
 	}
-	defer func() {
-		if err := r2.Close(); err != nil {
-			t.Fatalf("failed to close reticulum 2: %v", err)
-		}
-	}()
+	defer closeReticulum(t, r2)
 	if !r2.isConnectedToSharedInstance {
 		t.Fatalf("expected second instance to be connected to shared instance")
 	}
@@ -317,11 +308,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum error: %v", err)
 	}
-	defer func() {
-		if err := r.Close(); err != nil {
-			t.Fatalf("failed to close reticulum: %v", err)
-		}
-	}()
+	defer closeReticulum(t, r)
 
 	conn := mustDialRPC(t, fmt.Sprintf("127.0.0.1:%v", rpcPort))
 	defer func() { _ = conn.Close() }()

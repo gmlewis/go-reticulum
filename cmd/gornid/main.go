@@ -207,7 +207,7 @@ func main() {
 	if _, err := rns.NewReticulum(configDir); err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
-	rns.CompactLogFmt = true
+	rns.SetCompactLogFmt(true)
 
 	if generatePath != "" {
 		doGenerate(generatePath, force)

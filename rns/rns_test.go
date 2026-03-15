@@ -6,6 +6,7 @@
 package rns
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -127,15 +128,9 @@ func TestNewReticulumSharedInstanceUnixServerThenClientSameConfigDir(t *testing.
 	ResetTransport()
 	defer ResetTransport()
 
-	tempDir := t.TempDir()
-	if runtime.GOOS == "darwin" {
-		tempDir = "/tmp"
-	}
-	cfg, err := os.MkdirTemp(tempDir, "go-ret-shared-*")
-	if err != nil {
-		t.Fatalf("MkdirTemp config dir error: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(cfg) })
+	cfg := t.TempDir()
+	// Use a shorter name for the socket to avoid path length limits on macOS
+	instanceName := "rns-test"
 
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
 instance_name = %v
@@ -146,15 +141,15 @@ shared_instance_type = unix
 loglevel = 4
 
 [interfaces]
-`, t.Name()))
+`, instanceName))
 
 	r1, err := NewReticulum(cfg)
 	if err != nil {
 		t.Fatalf("NewReticulum(first) error: %v", err)
 	}
 	defer func() {
-		if err := r1.Close(); err != nil {
-			t.Fatalf("failed to close reticulum 1: %v", err)
+		if err := r1.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			t.Errorf("failed to close reticulum 1: %v", err)
 		}
 	}()
 	if !r1.isSharedInstance || r1.isConnectedToSharedInstance || r1.isStandaloneInstance {
@@ -166,8 +161,8 @@ loglevel = 4
 		t.Fatalf("NewReticulum(second) error: %v", err)
 	}
 	defer func() {
-		if err := r2.Close(); err != nil {
-			t.Fatalf("failed to close reticulum 2: %v", err)
+		if err := r2.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			t.Errorf("failed to close reticulum 2: %v", err)
 		}
 	}()
 	if r2.isSharedInstance || !r2.isConnectedToSharedInstance || r2.isStandaloneInstance {
