@@ -58,7 +58,7 @@ func TestRemoteInit(t *testing.T) {
 		lastExitCode = 0
 		tempDir := t.TempDir()
 		identityPath := filepath.Join(tempDir, "identity")
-		
+
 		// Create a valid identity
 		id, err := rns.NewIdentity(true)
 		if err != nil {
@@ -83,7 +83,7 @@ func TestRemoteInit(t *testing.T) {
 		lastExitCode = 0
 		tempDir := t.TempDir()
 		identityPath := filepath.Join(tempDir, "identity_arg")
-		
+
 		// Create a valid identity
 		id, err := rns.NewIdentity(true)
 		if err != nil {
@@ -167,33 +167,27 @@ func TestRemoteInit(t *testing.T) {
 		lastExitCode = 0
 		id, _ := rns.NewIdentity(true)
 
+		done := make(chan struct{})
 		// Start a goroutine that will "find" the path and identity after a delay
 		go func() {
-			time.Sleep(200 * time.Millisecond)
-			rns.Remember(nil, id.Hash, id.GetPublicKey(), nil)
-			// Actually need to add to path table for HasPath to work
-			tr := rns.GetTransport()
-			tr.GetMutex().Lock()
-			// Mocking path table entry
-			// tr.pathTable is private but GetTransport().HasPath uses it.
-			// Wait, I can't access pathTable directly.
-			// But I can use a mock interface to send an announce.
-			tr.GetMutex().Unlock()
-			
-			// Let's use internal knowledge: HasPath checks pathTable.
-			// Maybe I can use rns.Recall and that's enough? No, HasPath is checked first.
+			select {
+			case <-time.After(200 * time.Millisecond):
+				rns.Remember(nil, id.Hash, id.GetPublicKey(), nil)
+			case <-done:
+				return
+			}
 		}()
+		defer close(done)
 
 		// Since I can't easily mock the transport's internal pathTable without reflection or exported methods,
 		// I'll use a real announce if I have an interface.
 		// Actually, let's just test the timeout case for now if it's too complex to mock.
 	})
-
 	t.Run("testGetTargetIdentityTimeout", func(t *testing.T) {
 		rns.ResetTransport()
 		lastExitCode = 0
 		id, _ := rns.NewIdentity(true)
-		
+
 		// This should timeout because nothing is found
 		_ = getTargetIdentity(id.HexHash, 200*time.Millisecond)
 		if lastExitCode != 200 {

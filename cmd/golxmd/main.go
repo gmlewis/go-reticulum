@@ -299,6 +299,11 @@ func main() {
 		return
 	}
 
+	if unpeerHash != "" {
+		requestUnpeer(unpeerHash, remoteHash, configDir, rnsConfigDir, int(verbosity), int(quietness), timeout, identityPath)
+		return
+	}
+
 	configDir = resolveConfigDir(configDir)
 
 	if err := ensureConfig(configDir); err != nil {

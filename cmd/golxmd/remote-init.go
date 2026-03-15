@@ -418,6 +418,70 @@ func getStatus(remote string, configDirArg string, rnsConfigDir string, verbosit
 }
 
 const SyncRequestPath = "/pn/peer/sync"
+const UnpeerRequestPath = "/pn/peer/unpeer"
+
+func requestUnpeerInternal(id *rns.Identity, targetHash []byte, remoteIdentityArg *rns.Identity, timeoutArg time.Duration, exitOnFail bool) (any, error) {
+	if remoteIdentityArg == nil {
+		remoteIdentityArg = id
+	}
+
+	controlDestination, err := rns.NewDestination(remoteIdentityArg, rns.DestinationOut, rns.DestinationSingle, "lxmf", "propagation", "control")
+	if err != nil {
+		return nil, err
+	}
+
+	start := time.Now()
+	checkTimeout := func() error {
+		if time.Since(start) > timeoutArg {
+			if exitOnFail {
+				fmt.Println("Requesting lxmd peering break timed out, exiting now")
+				osExit(200)
+				return nil
+			}
+			return fmt.Errorf("timeout")
+		}
+		time.Sleep(100 * time.Millisecond)
+		return nil
+	}
+
+	if !rns.GetTransport().HasPath(controlDestination.Hash) {
+		rns.GetTransport().RequestPath(controlDestination.Hash)
+		for !rns.GetTransport().HasPath(controlDestination.Hash) {
+			if err := checkTimeout(); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	link, err := rns.NewLink(controlDestination)
+	if err != nil {
+		return nil, err
+	}
+
+	for link.GetStatus() != rns.LinkActive {
+		if err := checkTimeout(); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := link.Identify(id); err != nil {
+		return nil, err
+	}
+
+	requestReceipt, err := link.Request(UnpeerRequestPath, targetHash, nil, nil, nil, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	for requestReceipt.GetStatus() != rns.RequestReady {
+		if err := checkTimeout(); err != nil {
+			return nil, err
+		}
+	}
+
+	link.Teardown()
+	return requestReceipt.Response, nil
+}
 
 func requestSyncInternal(id *rns.Identity, targetHash []byte, remoteIdentityArg *rns.Identity, timeoutArg time.Duration, exitOnFail bool) (any, error) {
 	if remoteIdentityArg == nil {
@@ -483,14 +547,14 @@ func requestSyncInternal(id *rns.Identity, targetHash []byte, remoteIdentityArg 
 }
 
 const (
-	LXMPeerErrorNoIdentity  = 0xf0
-	LXMPeerErrorNoAccess    = 0xf1
-	LXMPeerErrorInvalidKey  = 0xf3
-	LXMPeerErrorInvalidData = 0xf4
+	LXMPeerErrorNoIdentity   = 0xf0
+	LXMPeerErrorNoAccess     = 0xf1
+	LXMPeerErrorInvalidKey   = 0xf3
+	LXMPeerErrorInvalidData  = 0xf4
 	LXMPeerErrorInvalidStamp = 0xf5
-	LXMPeerErrorThrottled   = 0xf6
-	LXMPeerErrorNotFound    = 0xfd
-	LXMPeerErrorTimeout     = 0xfe
+	LXMPeerErrorThrottled    = 0xf6
+	LXMPeerErrorNotFound     = 0xfd
+	LXMPeerErrorTimeout      = 0xfe
 )
 
 func requestSync(target string, remote string, configDirArg string, rnsConfigDir string, verbosity int, quietness int, timeout time.Duration, identityPathArg string) {
@@ -571,6 +635,84 @@ func requestSync(target string, remote string, configDirArg string, rnsConfigDir
 	}
 
 	fmt.Printf("Sync requested for peer <%x>\n", peerDestinationHash)
+	osExit(0)
+}
+
+func requestUnpeer(target string, remote string, configDirArg string, rnsConfigDir string, verbosity int, quietness int, timeout time.Duration, identityPathArg string) {
+	peerDestinationHash, err := rns.HexToBytes(target)
+	if err != nil || len(peerDestinationHash) != rns.TruncatedHashLength/8 {
+		msg := "Invalid peer destination hash"
+		if err != nil {
+			msg = fmt.Sprintf("Invalid peer destination hash: %v", err)
+		} else {
+			msg = fmt.Sprintf("Invalid peer destination hash: Destination hash length must be %v characters", rns.TruncatedHashLength/8*2)
+		}
+		fmt.Println(msg)
+		osExit(203)
+		return
+	}
+
+	if err := remoteInit(configDirArg, rnsConfigDir, verbosity, quietness, identityPathArg); err != nil {
+		fmt.Printf("Remote initialization failed: %v\n", err)
+		osExit(1)
+		return
+	}
+
+	targetIdentity := getTargetIdentity(remote, timeout)
+	response, err := requestUnpeerInternal(identity, peerDestinationHash, targetIdentity, timeout, true)
+	if err != nil {
+		fmt.Printf("Request unpeer failed: %v\n", err)
+		osExit(1)
+		return
+	}
+
+	if response == nil {
+		fmt.Println("Empty response received")
+		osExit(207)
+		return
+	}
+
+	if code, ok := response.(int); ok {
+		switch code {
+		case LXMPeerErrorNoIdentity:
+			fmt.Println("Remote received no identity")
+			osExit(203)
+			return
+		case LXMPeerErrorNoAccess:
+			fmt.Println("Access denied")
+			osExit(204)
+			return
+		case LXMPeerErrorInvalidData:
+			fmt.Println("Invalid data received by remote")
+			osExit(205)
+			return
+		case LXMPeerErrorNotFound:
+			fmt.Println("The requested peer was not found")
+			osExit(206)
+			return
+		}
+	} else if code, ok := response.(uint64); ok {
+		switch code {
+		case uint64(LXMPeerErrorNoIdentity):
+			fmt.Println("Remote received no identity")
+			osExit(203)
+			return
+		case uint64(LXMPeerErrorNoAccess):
+			fmt.Println("Access denied")
+			osExit(204)
+			return
+		case uint64(LXMPeerErrorInvalidData):
+			fmt.Println("Invalid data received by remote")
+			osExit(205)
+			return
+		case uint64(LXMPeerErrorNotFound):
+			fmt.Println("The requested peer was not found")
+			osExit(206)
+			return
+		}
+	}
+
+	fmt.Printf("Broke peering with <%x>\n", peerDestinationHash)
 	osExit(0)
 }
 

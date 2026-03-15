@@ -13,7 +13,7 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-func TestTickFiring(t *testing.T) {
+func TestTick(t *testing.T) {
 	tempDir := t.TempDir()
 	identity, _ := rns.NewIdentity(true)
 	router, _ := lxmf.NewRouter(identity, tempDir)
