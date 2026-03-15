@@ -31,9 +31,9 @@ import (
 func init() {
 	flag.Usage = func() {
 		_, _ = fmt.Fprintf(flag.CommandLine.Output(), `
-usage: golxmd [-h] [--config CONFIG] [--rnsconfig RNSCONFIG] [-p] [-i PATH] [-v] [-q] [-s] [--status] [--peers]
-              [--sync SYNC] [-b UNPEER] [--timeout TIMEOUT] [-r REMOTE] [--identity IDENTITY] [--exampleconfig]
-              [--version]
+usage: golxmd [-h] [--config CONFIG] [--rnsconfig RNSCONFIG] [-p] [-i PATH] [-v] [-q] [-s]
+              [--status] [--peers] [--sync SYNC] [-b UNPEER] [--timeout TIMEOUT] [-r REMOTE]
+              [--identity IDENTITY] [--exampleconfig] [--version]
 
 Go Lightweight Extensible Messaging Daemon
 
@@ -280,7 +280,7 @@ func main() {
 	// }
 
 	if version {
-		fmt.Printf("lxmd %v\n", rns.VERSION) // T22 change
+		fmt.Printf("golxmd %v\n", rns.VERSION)
 		return
 	}
 
