@@ -106,15 +106,10 @@ func (c *countFlag) String() string {
 }
 
 func (c *countFlag) Set(s string) error {
-	if s == "true" {
-		*c++
-	} else if s == "false" {
-		// do nothing
-	} else {
-		// handle as count if multiple flags are passed?
-		// Actually flag package calls Set once per occurrence for boolean flags with "true"
-		*c++
+	if s == "false" {
+		return nil
 	}
+	*c++
 	return nil
 }
 
@@ -173,7 +168,14 @@ func applyTimeoutDefaults() {
 
 func jobs(router *lxmf.Router, lxmfDestination *rns.Destination, stop <-chan struct{}, interval time.Duration) {
 	for {
-		tick(router, lxmfDestination)
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					rns.Logf("An error occurred while running periodic jobs. The contained exception was: %v", rns.LogError, false, r)
+				}
+			}()
+			tick(router, lxmfDestination)
+		}()
 		select {
 		case <-stop:
 			return
@@ -193,11 +195,15 @@ func tick(router *lxmf.Router, lxmfDestination *rns.Destination) {
 		if now().Sub(lastPeerAnnounce) > time.Duration(*ac.PeerAnnounceInterval)*time.Second {
 			rns.Logf("Sending announce for LXMF delivery destination", rns.LogVerbose, false)
 			if lxmfDestination != nil {
-				_ = router.Announce(lxmfDestination.Hash)
+				if err := router.Announce(lxmfDestination.Hash); err != nil {
+					rns.Logf("Failed to announce delivery destination: %v", rns.LogError, false, err)
+				}
 			}
 			lastPeerAnnounce = now()
 			if tr != nil {
-				_ = tr.RecordAnnounce(lastPeerAnnounce)
+				if err := tr.RecordAnnounce(lastPeerAnnounce); err != nil {
+					rns.Logf("Failed to record announce: %v", rns.LogWarning, false, err)
+				}
 			}
 		}
 	}
@@ -208,7 +214,9 @@ func tick(router *lxmf.Router, lxmfDestination *rns.Destination) {
 			router.AnnouncePropagationNode()
 			lastNodeAnnounce = now()
 			if tr != nil {
-				_ = tr.RecordSync(lastNodeAnnounce)
+				if err := tr.RecordSync(lastNodeAnnounce); err != nil {
+					rns.Logf("Failed to record sync: %v", rns.LogWarning, false, err)
+				}
 			}
 		}
 	}
@@ -244,8 +252,6 @@ func lxmfDelivery(lxm *lxmf.Message) {
 
 	if ac != nil && ac.OnInbound != "" {
 		rns.Logf("Calling external program to handle message", rns.LogDebug, false)
-		// Python: processing_command = command+" \""+written_path+"\""
-		// return_code = subprocess.call(shlex.split(processing_command), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 		parts := strings.Fields(ac.OnInbound)
 		if len(parts) > 0 {
 			cmd := exec.Command(parts[0], append(parts[1:], writtenPath)...)
@@ -260,19 +266,26 @@ func lxmfDelivery(lxm *lxmf.Message) {
 	}
 }
 
-func runDeferredJobs(delay time.Duration, router *lxmf.Router, lxmfDestination *rns.Destination) {
+func runDeferredThenJobs(delay time.Duration, router *lxmf.Router, lxmfDestination *rns.Destination, stopJobs <-chan struct{}, jobsInterval time.Duration) {
 	time.Sleep(delay)
 	rns.Logf("Running deferred start jobs", rns.LogDebug, false)
 
 	if ac != nil && ac.PeerAnnounceAtStart && router != nil && lxmfDestination != nil {
 		rns.Logf("Sending announce for LXMF delivery destination", rns.LogExtreme, false)
-		_ = router.Announce(lxmfDestination.Hash)
+		if err := router.Announce(lxmfDestination.Hash); err != nil {
+			rns.Logf("Failed to announce delivery destination at start: %v", rns.LogError, false, err)
+		}
 	}
 
 	if ac != nil && ac.NodeAnnounceAtStart && router != nil {
 		rns.Logf("Sending announce for LXMF Propagation Node", rns.LogExtreme, false)
 		router.AnnouncePropagationNode()
 	}
+
+	lastPeerAnnounce = now()
+	lastNodeAnnounce = now()
+
+	jobs(router, lxmfDestination, stopJobs, jobsInterval)
 }
 
 func setupAuth(router *lxmf.Router) {
@@ -293,22 +306,6 @@ func main() {
 	log.SetFlags(0)
 	flag.Parse()
 	applyTimeoutDefaults()
-
-	// if peerMaxAge < 0 {
-	// 	log.Fatalf("peer-max-age must be >= 0")
-	// }
-	// if maintenanceInterval < 0 {
-	// 	log.Fatalf("maintenance-interval must be >= 0")
-	// }
-	// if outboundInterval < 0 {
-	// 	log.Fatalf("outbound-interval must be >= 0")
-	// }
-	// if announceInterval < 0 {
-	// 	log.Fatalf("announce-interval must be >= 0")
-	// }
-	// if syncInterval < 0 {
-	// 	log.Fatalf("sync-interval must be >= 0")
-	// }
 
 	if version {
 		fmt.Printf("golxmd %v\n", rns.VERSION)
@@ -347,7 +344,6 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 
-	// T09: Log level calculation
 	rns.SetLogLevel(resolveLogLevel(ac.LogLevel, int(verbosity), int(quietness)))
 	setupLogging(runAsService, configDir)
 	rns.Logf("Configuration loaded from %v", rns.LogVerbose, false, configDir)
@@ -375,7 +371,6 @@ func main() {
 		ac.OnInbound = cmdOnInbound
 	}
 
-	// T11: LXMRouter config-driven construction
 	router, err := lxmf.NewRouterFromConfig(lxmf.RouterConfig{
 		Identity:                   identity,
 		StoragePath:                resolvedStorage,
@@ -397,28 +392,22 @@ func main() {
 		log.Fatalf("create LXMF router: %v", err)
 	}
 
-	// T12: register_delivery_callback
 	router.RegisterDeliveryCallback(lxmfDelivery)
 
-	// T13: ignore_destination
 	for _, h := range ac.IgnoredLXMFDestinations {
 		router.IgnoreDestination(h)
 	}
 
-	// T14: register_delivery_identity with display_name
 	lxmfDestination, err := router.RegisterDeliveryIdentity(identity, ac.DisplayName, nil)
 	if err != nil {
 		log.Fatalf("register delivery destination: %v", err)
 	}
 	rns.Logf("LXMF Router ready to receive on %v", rns.LogInfo, false, rns.PrettyHex(lxmfDestination.Hash))
 
-	// T15: RNS.Identity.remember
 	rns.Remember(nil, lxmfDestination.Hash, identity.GetPublicKey(), nil)
 
-	// T16: Auth setup
 	setupAuth(router)
 
-	// T17: Propagation node enable
 	if runAsPropagationNode || ac.EnablePropagationNode {
 		router.SetMessageStorageLimit(ac.MessageStorageLimit)
 		for _, s := range ac.PrioritisedLXMFDestinations {
@@ -438,7 +427,6 @@ func main() {
 		}
 		rns.Logf("LXMF Propagation Node started on %v", rns.LogInfo, false, rns.PrettyHex(propDest.Hash))
 
-		// T09: Always register control destination for propagation nodes
 		allowed := make([][]byte, 0, len(ac.ControlAllowedIdentities))
 		for _, s := range ac.ControlAllowedIdentities {
 			if h, err := rns.HexToBytes(s); err == nil {
@@ -465,22 +453,16 @@ func main() {
 	log.Printf("golxmd running with identity %x", identity.Hash)
 	rns.Logf("Started golxmd version %v", rns.LogNotice, false, rns.VERSION)
 
-	// T21: Initialize announce timers to current time + 10s (deferred delay)
-	// Python doesn't explicitly initialize them, so they start as None and are set after first fire.
-	// We'll set them to current time to avoid immediate fire BEFORE deferred start fires.
-	lastPeerAnnounce = now().Add(10 * time.Second)
-	lastNodeAnnounce = now().Add(10 * time.Second)
-
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
-	// Start jobs
+	// Start deferred jobs, which will start the periodic jobs goroutine
+	// after the deferred announces complete (matching Python's sequencing).
 	stopJobs := make(chan struct{})
-	go jobs(router, lxmfDestination, stopJobs, jobsInterval)
-	go runDeferredJobs(10*time.Second, router, lxmfDestination)
+	go runDeferredThenJobs(10*time.Second, router, lxmfDestination, stopJobs, jobsInterval)
 
 	<-stop
-	fmt.Println() // T36: KeyboardInterrupt prints a blank line
+	fmt.Println()
 	close(stopJobs)
 	if err := tr.MarkCleanShutdown(); err != nil {
 		log.Printf("golxmd failed to persist clean shutdown marker: %v", err)
@@ -532,31 +514,6 @@ func loadOrCreateIdentity(identityPath string) (*rns.Identity, error) {
 
 	rns.Logf("Created new Primary Identity %v", rns.LogInfo, false, identity)
 	return identity, nil
-}
-
-func parseAllowedIdentities(value string) ([][]byte, error) {
-	if strings.TrimSpace(value) == "" {
-		return nil, nil
-	}
-
-	parts := strings.Split(value, ",")
-	out := make([][]byte, 0, len(parts))
-	for _, part := range parts {
-		trimmed := strings.TrimSpace(part)
-		if trimmed == "" {
-			continue
-		}
-		hash, err := rns.HexToBytes(trimmed)
-		if err != nil {
-			return nil, fmt.Errorf("decode hash %q: %w", trimmed, err)
-		}
-		if len(hash) != rns.TruncatedHashLength/8 {
-			return nil, fmt.Errorf("invalid hash length %v for %q", len(hash), trimmed)
-		}
-		out = append(out, hash)
-	}
-
-	return out, nil
 }
 
 type daemonRuntimeState struct {

@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gmlewis/go-reticulum/rns"
 )
 
 func resolveLogLevel(configLogLevel int, verbosity int, quietness int) int {
@@ -256,12 +258,18 @@ func parseBool(s string) bool {
 }
 
 func parseInt(s string) int {
-	i, _ := strconv.Atoi(s)
+	i, err := strconv.Atoi(s)
+	if err != nil {
+		rns.Logf("Invalid integer value %q in config: %v", rns.LogWarning, false, s, err)
+	}
 	return i
 }
 
 func parseFloat(s string) float64 {
-	f, _ := strconv.ParseFloat(s, 64)
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		rns.Logf("Invalid float value %q in config: %v", rns.LogWarning, false, s, err)
+	}
 	return f
 }
 

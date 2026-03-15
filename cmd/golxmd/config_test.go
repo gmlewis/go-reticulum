@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/rns"
 )
 
 func TestResolveConfigDir(t *testing.T) {
@@ -315,5 +317,41 @@ key3 = value3
 				t.Errorf("section %v, key %v: got %q, want %q", s, k, got[s][k], v)
 			}
 		}
+	}
+}
+
+func TestParseIntWarning(t *testing.T) {
+	var capturedLog string
+	rns.SetLogDest(rns.LogCallback)
+	rns.SetLogCallback(func(s string) { capturedLog += s })
+	defer func() {
+		rns.SetLogDest(rns.LogStdout)
+		rns.SetLogCallback(nil)
+	}()
+
+	result := parseInt("not-a-number")
+	if result != 0 {
+		t.Errorf("parseInt(\"not-a-number\") = %v, want 0", result)
+	}
+	if !strings.Contains(capturedLog, "Invalid integer value") {
+		t.Errorf("expected warning log, got %q", capturedLog)
+	}
+}
+
+func TestParseFloatWarning(t *testing.T) {
+	var capturedLog string
+	rns.SetLogDest(rns.LogCallback)
+	rns.SetLogCallback(func(s string) { capturedLog += s })
+	defer func() {
+		rns.SetLogDest(rns.LogStdout)
+		rns.SetLogCallback(nil)
+	}()
+
+	result := parseFloat("not-a-float")
+	if result != 0 {
+		t.Errorf("parseFloat(\"not-a-float\") = %v, want 0", result)
+	}
+	if !strings.Contains(capturedLog, "Invalid float value") {
+		t.Errorf("expected warning log, got %q", capturedLog)
 	}
 }

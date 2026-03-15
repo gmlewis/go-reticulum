@@ -116,6 +116,12 @@ func PrettySize(num float64, suffix string) string {
 	return fmt.Sprintf("%.2f %v%v", num, lastUnit, suffix)
 }
 
+// PrettySpeed formats a bit rate (in bits per second) into a human-readable
+// string like "1.00 Kbps" or "500.00 Mbps".
+func PrettySpeed(num float64) string {
+	return PrettySize(num/8, "b") + "ps"
+}
+
 // PrettyTime calculates and formats a raw duration in seconds into a human-readable temporal string representation.
 func PrettyTime(seconds float64, verbose bool, compact bool) string {
 	neg := false
@@ -216,4 +222,10 @@ func PrettyTime(seconds float64, verbose bool, compact bool) string {
 // PrettyHex returns a bracketed hex representation of the provided data, matching Python's prettyhexrep.
 func PrettyHex(data []byte) string {
 	return fmt.Sprintf("<%x>", data)
+}
+
+// PrettyHexFromString formats a hex string with angle brackets,
+// matching Python's prettyhexrep output format.
+func PrettyHexFromString(hexStr string) string {
+	return "<" + hexStr + ">"
 }

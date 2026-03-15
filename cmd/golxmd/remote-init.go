@@ -7,6 +7,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,8 +66,15 @@ func remoteInit(configDirArg string, rnsConfigDir string, verbosity int, quietne
 		}
 	}
 
-	// T24 will implement the rest (Reticulum init, log level)
-	targetloglevel := 3
+	targetloglevel := -1
+	if configpath != "" {
+		if cfg, err := loadConfig(filepath.Dir(configpath)); err == nil && cfg != nil {
+			targetloglevel = cfg.LogLevel
+		}
+	}
+	if targetloglevel == -1 {
+		targetloglevel = 3
+	}
 	if verbosity != 0 || quietness != 0 {
 		targetloglevel = targetloglevel + verbosity - quietness
 	}
@@ -226,7 +234,7 @@ func getStatus(remote string, configDirArg string, rnsConfigDir string, verbosit
 	msUtilStr := "0%"
 	if msLimit != 0 {
 		mutil := (msBytes / msLimit) * 100
-		msUtilStr = fmt.Sprintf("%.2f%%", mutil)
+		msUtilStr = formatRound2(mutil) + "%"
 	}
 
 	whoStr := "all nodes"
@@ -306,7 +314,7 @@ func getStatus(remote string, configDirArg string, rnsConfigDir string, verbosit
 		fmt.Printf("          %v messages transferred to peered nodes (%v)\n", peeredOutgoing, rns.PrettySize(peeredTxBytes, ""))
 		fmt.Printf("          %v propagation messages received directly from clients\n", cprr)
 		fmt.Printf("          %v propagation messages served to clients\n", cprs)
-		fmt.Printf("          Distribution factor is %.2f\n", df)
+		fmt.Printf("          Distribution factor is %v\n", formatRound2(df))
 		fmt.Printf("\n")
 	}
 
@@ -367,8 +375,8 @@ func getStatus(remote string, configDirArg string, rnsConfigDir string, verbosit
 				ls = fmt.Sprintf("last synced %v ago", rns.PrettyTime(now-lsa, false, false))
 			}
 
-			sstr := rns.PrettySize(anyToFloat64(p["str"])/8, "b") + "ps"
-			sler := rns.PrettySize(anyToFloat64(p["ler"])/8, "b") + "ps"
+			sstr := rns.PrettySpeed(anyToFloat64(p["str"]))
+			sler := rns.PrettySpeed(anyToFloat64(p["ler"]))
 
 			stl := "Unknown"
 			if p["transfer_limit"] != nil {
@@ -398,7 +406,7 @@ func getStatus(remote string, configDirArg string, rnsConfigDir string, verbosit
 				}
 			}
 
-			dhs := fmt.Sprintf("<%v>", peerID)
+			dhs := rns.PrettyHexFromString(peerID)
 			fmt.Printf("%v%v%v\n", ind, t, dhs)
 			if nn != "" {
 				fmt.Printf("%vName       : %v\n", ind+ind, nn)
@@ -408,7 +416,7 @@ func getStatus(remote string, configDirArg string, rnsConfigDir string, verbosit
 			fmt.Printf("%vSync key   : %v\n", ind+ind, pkStr)
 			fmt.Printf("%vSpeeds     : %v STR, %v LER\n", ind+ind, sstr, sler)
 			fmt.Printf("%vLimits     : %v message limit, %v sync limit\n", ind+ind, stl, ssl)
-			fmt.Printf("%vMessages   : %v offered, %v outgoing, %v incoming, %.2f%% acceptance rate\n", ind+ind, pmo, pmout, pmi, ar)
+			fmt.Printf("%vMessages   : %v offered, %v outgoing, %v incoming, %v%% acceptance rate\n", ind+ind, pmo, pmout, pmi, formatRound2(ar))
 			fmt.Printf("%vTraffic    : %v received, %v sent\n", ind+ind, srxb, stxb)
 			msSuffix := ""
 			if pmuh != 1 {
@@ -736,4 +744,17 @@ func anyToFloat64(v any) float64 {
 	default:
 		return 0
 	}
+}
+
+// formatRound2 formats a float rounded to 2 decimal places, matching
+// Python's str(round(v, 2)) output which trims trailing zeros but
+// keeps at least one decimal digit.
+func formatRound2(v float64) string {
+	rounded := math.Round(v*100) / 100
+	s := fmt.Sprintf("%.2f", rounded)
+	s = strings.TrimRight(s, "0")
+	if strings.HasSuffix(s, ".") {
+		s += "0"
+	}
+	return s
 }

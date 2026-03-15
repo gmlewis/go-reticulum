@@ -243,6 +243,40 @@ loglevel = 1
 		}
 	})
 
+	t.Run("config-file loglevel applied in remoteInit", func(t *testing.T) {
+		lastExitCode = 0
+		tempDir := t.TempDir()
+		identityPath := filepath.Join(tempDir, "identity")
+		id, err := rns.NewIdentity(true)
+		if err != nil {
+			t.Fatalf("NewIdentity: %v", err)
+		}
+		if err := id.ToFile(identityPath); err != nil {
+			t.Fatalf("ToFile: %v", err)
+		}
+
+		// Create an lxmd config with loglevel=6.
+		lxmdConfig := "[logging]\nloglevel = 6\n"
+		if err := os.WriteFile(filepath.Join(tempDir, "config"), []byte(lxmdConfig), 0o644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+
+		rnsConfigDir := filepath.Join(tempDir, "rns")
+		if err := os.MkdirAll(rnsConfigDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		writeRNSConfig(t, rnsConfigDir)
+
+		ret, err := remoteInit(tempDir, rnsConfigDir, 0, 0, "")
+		if err != nil {
+			t.Fatalf("remoteInit: %v", err)
+		}
+		defer closeReticulum(t, ret)
+		if want := 6; rns.GetLogLevel() != want {
+			t.Errorf("got log level %v, want %v", rns.GetLogLevel(), want)
+		}
+	})
+
 	t.Run("testGetTargetIdentityLocal", func(t *testing.T) {
 		tempDir := t.TempDir()
 		identityPath := filepath.Join(tempDir, "identity")
@@ -389,9 +423,28 @@ loglevel = 1
 	})
 
 	t.Run("testGetStatusFormatting", func(t *testing.T) {
-		// Actually, I'll test the helper anyToFloat64
 		if anyToFloat64(int(10)) != 10.0 {
 			t.Errorf("anyToFloat64(int) failed")
+		}
+
+		tests := []struct {
+			input float64
+			want  string
+		}{
+			{0.0, "0.0"},
+			{0.5, "0.5"},
+			{0.333333, "0.33"},
+			{1.0, "1.0"},
+			{0.125, "0.13"},
+			{0.999, "1.0"},
+			{2.345, "2.35"},
+			{0.005, "0.01"},
+		}
+		for _, tt := range tests {
+			got := formatRound2(tt.input)
+			if got != tt.want {
+				t.Errorf("formatRound2(%v) = %q, want %q", tt.input, got, tt.want)
+			}
 		}
 	})
 

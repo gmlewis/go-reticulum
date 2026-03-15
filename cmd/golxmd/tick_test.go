@@ -13,6 +13,51 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
+func TestJobs_RecoverFromPanic(t *testing.T) {
+	t.Parallel()
+
+	// Save and restore global state.
+	origAC := ac
+	origNow := now
+	origLastPeer := lastPeerAnnounce
+	origLastNode := lastNodeAnnounce
+	origTickCount := tickCount
+	defer func() {
+		ac = origAC
+		now = origNow
+		lastPeerAnnounce = origLastPeer
+		lastNodeAnnounce = origLastNode
+		tickCount = origTickCount
+	}()
+
+	// Set up a config that will trigger announce logic.
+	peerInterval := 1
+	ac = &activeConfig{
+		PeerAnnounceInterval: &peerInterval,
+	}
+
+	currentTime := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	now = func() time.Time { return currentTime }
+	lastPeerAnnounce = time.Time{}
+	lastNodeAnnounce = time.Time{}
+
+	// Pass a nil router so that tick panics when it tries to call
+	// router.Announce on a nil pointer. The jobs loop must recover
+	// and keep running instead of crashing.
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		jobs(nil, nil, stop, 1*time.Millisecond)
+	}()
+
+	// Let the jobs loop run a few iterations (it would crash without
+	// panic recovery).
+	time.Sleep(50 * time.Millisecond)
+	close(stop)
+	<-done
+}
+
 func TestTick(t *testing.T) {
 	tempDir := t.TempDir()
 	identity, _ := rns.NewIdentity(true)
