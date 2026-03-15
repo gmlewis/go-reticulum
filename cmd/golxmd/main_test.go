@@ -239,17 +239,17 @@ func TestServiceLogging(t *testing.T) {
 	// We'll test a function that sets up logging based on service flag and config dir
 	setupLogging(true, configDir)
 
-	if rns.LogDest != rns.LogDestFile {
-		t.Errorf("LogDest: got %v, want %v", rns.LogDest, rns.LogDestFile)
+	if rns.GetLogDest() != rns.LogDestFile {
+		t.Errorf("LogDest: got %v, want %v", rns.GetLogDest(), rns.LogDestFile)
 	}
 	wantLogPath := filepath.Join(configDir, "logfile")
-	if rns.LogFilePath != wantLogPath {
-		t.Errorf("LogFilePath: got %q, want %q", rns.LogFilePath, wantLogPath)
+	if rns.GetLogFilePath() != wantLogPath {
+		t.Errorf("LogFilePath: got %q, want %q", rns.GetLogFilePath(), wantLogPath)
 	}
 
 	// Reset for other tests
-	rns.LogDest = rns.LogStdout
-	rns.LogFilePath = ""
+	rns.SetLogDest(rns.LogStdout)
+	rns.SetLogFilePath("")
 }
 
 func TestParseAllowedIdentities(t *testing.T) {

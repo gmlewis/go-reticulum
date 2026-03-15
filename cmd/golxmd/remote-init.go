@@ -77,8 +77,8 @@ func remoteInit(configDirArg string, rnsConfigDir string, verbosity int, quietne
 		return nil
 	}
 
-	rns.LogLevel = targetloglevel
-	rns.LogDest = rns.LogStdout
+	rns.SetLogLevel(targetloglevel)
+	rns.SetLogDest(rns.LogStdout)
 
 	return nil
 }

@@ -117,11 +117,11 @@ func TestRemoteInit(t *testing.T) {
 		_ = os.WriteFile(filepath.Join(rnsConfigDir, "config"), []byte("[logging]\nloglevel = 1\n"), 0644)
 
 		_ = remoteInit(tempDir, rnsConfigDir, 2, 1, "") // 3 + 2 - 1 = 4
-		if rns.LogLevel != 4 {
-			t.Errorf("got log level %v, want 4", rns.LogLevel)
+		if rns.GetLogLevel() != 4 {
+			t.Errorf("got log level %v, want 4", rns.GetLogLevel())
 		}
-		if rns.LogDest != rns.LogStdout {
-			t.Errorf("got log dest %v, want LogStdout", rns.LogDest)
+		if rns.GetLogDest() != rns.LogStdout {
+			t.Errorf("got log dest %v, want LogStdout", rns.GetLogDest())
 		}
 	})
 

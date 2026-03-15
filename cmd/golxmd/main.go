@@ -215,10 +215,10 @@ func tick(router *lxmf.Router, lxmfDestination *rns.Destination) {
 
 func setupLogging(service bool, configDir string) {
 	if service {
-		rns.LogDest = rns.LogDestFile
-		rns.LogFilePath = filepath.Join(configDir, "logfile")
+		rns.SetLogDest(rns.LogDestFile)
+		rns.SetLogFilePath(filepath.Join(configDir, "logfile"))
 	} else {
-		rns.LogDest = rns.LogStdout
+		rns.SetLogDest(rns.LogStdout)
 	}
 }
 
@@ -317,7 +317,7 @@ func main() {
 	}
 
 	// T09: Log level calculation
-	rns.LogLevel = resolveLogLevel(ac.LogLevel, int(verbosity), int(quietness))
+	rns.SetLogLevel(resolveLogLevel(ac.LogLevel, int(verbosity), int(quietness)))
 	setupLogging(runAsService, configDir)
 	rns.Logf("Configuration loaded from %v", rns.LogVerbose, false, configDir)
 

@@ -20,13 +20,13 @@ func TestStartupLogMessages(t *testing.T) {
 	os.MkdirAll(configDir, 0755)
 
 	var capturedLogs []string
-	rns.LogDest = rns.LogCallback
-	rns.LogCall = func(msg string) {
+	rns.SetLogDest(rns.LogCallback)
+	rns.SetLogCallback(func(msg string) {
 		capturedLogs = append(capturedLogs, msg)
-	}
+	})
 	defer func() {
-		rns.LogDest = rns.LogStdout
-		rns.LogCall = nil
+		rns.SetLogDest(rns.LogStdout)
+		rns.SetLogCallback(nil)
 	}()
 
 	// We set LogLevel high enough to see all messages

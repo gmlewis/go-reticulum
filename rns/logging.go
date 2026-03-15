@@ -13,15 +13,15 @@ import (
 )
 
 var (
-	// LogLevel dictates the current operational verbosity of the logging subsystem.
-	LogLevel   = LogNotice
+	// logLevel dictates the current operational verbosity of the logging subsystem.
+	logLevel   = LogNotice
 	logLevelMu sync.RWMutex
-	// LogFilePath specifies an absolute path where log output will be appended if file logging is enabled.
-	LogFilePath string
-	// LogDest determines where log messages are fundamentally routed, such as stdout, file, or callback.
-	LogDest = LogStdout
-	// LogCall holds a custom callback function triggered for every log event if the destination is set to callback.
-	LogCall func(string)
+	// logFilePath specifies an absolute path where log output will be appended if file logging is enabled.
+	logFilePath string
+	// logDest determines where log messages are fundamentally routed, such as stdout, file, or callback.
+	logDest = LogStdout
+	// logCall holds a custom callback function triggered for every log event if the destination is set to callback.
+	logCall func(string)
 	// LogTimeFmt defines the standard timestamp format used in log entries.
 	LogTimeFmt = "2006-01-02 15:04:05"
 	// LogTimeFmtP defines a precise timestamp format including milliseconds, typically used for performance logging.
@@ -37,15 +37,57 @@ var (
 // SetLogLevel safely updates the global operational verbosity for the logging subsystem.
 func SetLogLevel(level int) {
 	logLevelMu.Lock()
-	LogLevel = level
-	logLevelMu.Unlock()
+	defer logLevelMu.Unlock()
+	logLevel = level
 }
 
 // GetLogLevel safely retrieves the global operational verbosity currently applied to the logging subsystem.
 func GetLogLevel() int {
 	logLevelMu.RLock()
 	defer logLevelMu.RUnlock()
-	return LogLevel
+	return logLevel
+}
+
+// SetLogFilePath safely sets the path to the log file.
+func SetLogFilePath(path string) {
+	logLevelMu.Lock()
+	defer logLevelMu.Unlock()
+	logFilePath = path
+}
+
+// GetLogFilePath safely retrieves the current log file path.
+func GetLogFilePath() string {
+	logLevelMu.RLock()
+	defer logLevelMu.RUnlock()
+	return logFilePath
+}
+
+// SetLogDest safely sets the log destination.
+func SetLogDest(dest int) {
+	logLevelMu.Lock()
+	defer logLevelMu.Unlock()
+	logDest = dest
+}
+
+// GetLogDest safely retrieves the current log destination.
+func GetLogDest() int {
+	logLevelMu.RLock()
+	defer logLevelMu.RUnlock()
+	return logDest
+}
+
+// SetLogCallback safely sets the log callback function.
+func SetLogCallback(call func(string)) {
+	logLevelMu.Lock()
+	defer logLevelMu.Unlock()
+	logCall = call
+}
+
+// GetLogCallback safely retrieves the current log callback function.
+func GetLogCallback() func(string) {
+	logLevelMu.RLock()
+	defer logLevelMu.RUnlock()
+	return logCall
 }
 
 // Log constructs, formats, and safely writes a distinct log message to the configured system destination.
@@ -75,10 +117,13 @@ func Log(msg string, level int, pt bool) {
 		LoggingLock.Lock()
 		defer LoggingLock.Unlock()
 
-		if LogDest == LogStdout || AlwaysOverride {
+		dest := GetLogDest()
+		filePath := GetLogFilePath()
+
+		if dest == LogStdout || AlwaysOverride {
 			fmt.Println(logString)
-		} else if LogDest == LogDestFile && LogFilePath != "" {
-			f, err := os.OpenFile(LogFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		} else if dest == LogDestFile && filePath != "" {
+			f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 			if err != nil {
 				AlwaysOverride = true
 				fmt.Printf("[%v] [Critical] Exception occurred while writing log message to log file: %v\n", timeStr, err)
@@ -103,20 +148,22 @@ func Log(msg string, level int, pt bool) {
 
 			fi, err := f.Stat()
 			if err == nil && fi.Size() > LogMaxSize {
-				prevFile := LogFilePath + ".1"
+				prevFile := filePath + ".1"
 				if _, err := os.Stat(prevFile); err == nil {
 					if rmErr := os.Remove(prevFile); rmErr != nil {
 						AlwaysOverride = true
 						fmt.Printf("[%v] [Critical] Exception occurred while rotating log file: %v\n", timeStr, rmErr)
 					}
 				}
-				if renameErr := os.Rename(LogFilePath, prevFile); renameErr != nil {
+				if renameErr := os.Rename(filePath, prevFile); renameErr != nil {
 					AlwaysOverride = true
 					fmt.Printf("[%v] [Critical] Exception occurred while rotating log file: %v\n", timeStr, renameErr)
 				}
 			}
-		} else if LogDest == LogCallback && LogCall != nil {
-			LogCall(logString)
+		} else if dest == LogCallback {
+			if callback := GetLogCallback(); callback != nil {
+				callback(logString)
+			}
 		}
 	}
 }

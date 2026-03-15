@@ -46,7 +46,7 @@ func main() {
 		rns.SetLogLevel(rns.LogWarning)
 	}
 	if *service {
-		rns.LogDest = rns.LogDestFile
+		rns.SetLogDest(rns.LogDestFile)
 	}
 
 	_, err := rns.NewReticulum(*configDir)
