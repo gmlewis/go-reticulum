@@ -294,6 +294,11 @@ func main() {
 		return
 	}
 
+	if syncHash != "" {
+		requestSync(syncHash, remoteHash, configDir, rnsConfigDir, int(verbosity), int(quietness), timeout, identityPath)
+		return
+	}
+
 	configDir = resolveConfigDir(configDir)
 
 	if err := ensureConfig(configDir); err != nil {

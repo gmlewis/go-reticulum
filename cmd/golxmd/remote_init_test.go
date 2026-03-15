@@ -226,4 +226,14 @@ func TestRemoteInit(t *testing.T) {
 			t.Errorf("anyToFloat64(int) failed")
 		}
 	})
+
+	t.Run("testRequestSyncInternalTimeout", func(t *testing.T) {
+		rns.ResetTransport()
+		lastExitCode = 0
+		id, _ := rns.NewIdentity(true)
+		rns.Remember(nil, id.Hash, id.GetPublicKey(), nil)
+
+		// This should timeout
+		_, _ = requestSyncInternal(id, id.Hash, id, 100*time.Millisecond, false)
+	})
 }
