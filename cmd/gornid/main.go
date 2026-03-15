@@ -36,11 +36,22 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
+
+// counter implements flag.Value for a counted flag (e.g. -v -v -v).
+type counter int
+
+func (c *counter) String() string { return strconv.Itoa(int(*c)) }
+func (c *counter) Set(string) error {
+	*c++
+	return nil
+}
+func (c *counter) IsBoolFlag() bool { return true }
 
 func init() {
 	flag.Usage = func() {
@@ -91,10 +102,10 @@ options:
 	flag.StringVar(&importStr, "import", "", "import Reticulum identity in hex, base32 or base64 format")
 	flag.BoolVar(&export, "x", false, "export identity to hex, base32 or base64 format")
 	flag.BoolVar(&export, "export", false, "export identity to hex, base32 or base64 format")
-	flag.BoolVar(&verbose, "v", false, "increase verbosity")
-	flag.BoolVar(&verbose, "verbose", false, "increase verbosity")
-	flag.BoolVar(&quiet, "q", false, "decrease verbosity")
-	flag.BoolVar(&quiet, "quiet", false, "decrease verbosity")
+	flag.Var(&verbose, "v", "increase verbosity")
+	flag.Var(&verbose, "verbose", "increase verbosity")
+	flag.Var(&quiet, "q", "decrease verbosity")
+	flag.Var(&quiet, "quiet", "decrease verbosity")
 	flag.StringVar(&announce, "a", "", "announce a destination based on this Identity")
 	flag.StringVar(&announce, "announce", "", "announce a destination based on this Identity")
 	flag.StringVar(&hashAspects, "H", "", "show destination hashes for other aspects for this Identity")
@@ -124,6 +135,10 @@ options:
 	flag.BoolVar(&useBase64, "base64", false, "Use base64-encoded input and output")
 	flag.BoolVar(&useBase32, "B", false, "Use base32-encoded input and output")
 	flag.BoolVar(&useBase32, "base32", false, "Use base32-encoded input and output")
+	flag.BoolVar(&useStdin, "I", false, "read input from STDIN")
+	flag.BoolVar(&useStdin, "stdin", false, "read input from STDIN")
+	flag.BoolVar(&useStdout, "O", false, "write output to STDOUT")
+	flag.BoolVar(&useStdout, "stdout", false, "write output to STDOUT")
 	flag.BoolVar(&version, "version", false, "show program's version number and exit")
 }
 
@@ -133,8 +148,8 @@ var (
 	generatePath  string
 	importStr     string
 	export        bool
-	verbose       bool
-	quiet         bool
+	verbose       counter
+	quiet         counter
 	announce      string
 	hashAspects   string
 	encryptFile   string
@@ -150,6 +165,8 @@ var (
 	printPrivate  bool
 	useBase64     bool
 	useBase32     bool
+	useStdin      bool
+	useStdout     bool
 	version       bool
 )
 
@@ -174,11 +191,8 @@ func main() {
 		return
 	}
 
-	if verbose {
-		rns.SetLogLevel(rns.LogVerbose)
-	}
-	if quiet {
-		rns.SetLogLevel(rns.LogWarning)
+	if verbose != 0 || quiet != 0 {
+		rns.SetLogLevel(4 + int(verbose) - int(quiet))
 	}
 
 	if readFile == "" {
@@ -190,6 +204,9 @@ func main() {
 		}
 		if signFile != "" {
 			readFile = signFile
+		}
+		if validateFile != "" && strings.HasSuffix(strings.ToLower(validateFile), ".rsg") {
+			readFile = strings.Replace(validateFile, ".rsg", "", 1)
 		}
 	}
 
@@ -208,6 +225,9 @@ func main() {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
 	rns.SetCompactLogFmt(true)
+	if useStdout {
+		rns.SetLogLevel(-1)
+	}
 
 	if generatePath != "" {
 		doGenerate(generatePath, force)
@@ -221,10 +241,12 @@ func main() {
 
 	if printIdentity {
 		doPrintIdentity(id, useBase64, useBase32, printPrivate)
+		os.Exit(0)
 	}
 
 	if export {
 		doExport(id, useBase64, useBase32)
+		os.Exit(0)
 	}
 
 	if hashAspects != "" {
@@ -236,19 +258,7 @@ func main() {
 	}
 
 	if encryptFile != "" || decryptFile != "" || signFile != "" || validateFile != "" {
-		// Handle file operations
-		input := readFile
-		if input == "" {
-			if encryptFile != "" {
-				input = encryptFile
-			} else if decryptFile != "" {
-				input = decryptFile
-			} else if signFile != "" {
-				input = signFile
-			}
-		}
-		output := writeFile
-		doFileOp(id, input, output, encryptFile != "", decryptFile != "", signFile != "", validateFile, force)
+		doFileOps(id, readFile, writeFile, encryptFile, decryptFile, signFile, validateFile, force, useStdout)
 	}
 }
 
@@ -264,36 +274,32 @@ func doImport(data string, b64, b32, prv bool, writePath string, force bool) {
 	}
 
 	if err != nil {
-		fmt.Printf("Invalid identity data: %v\n", err)
+		fmt.Printf("Invalid identity data specified for import: %v\n", err)
 		os.Exit(41)
 	}
 
-	id, err := rns.NewIdentity(false)
+	id, err := rns.FromBytes(idBytes)
 	if err != nil {
-		fmt.Printf("Could not create identity: %v\n", err)
+		fmt.Printf("Could not create Reticulum identity from specified data: %v\n", err)
 		os.Exit(42)
-	}
-	if err := id.LoadPrivateKey(idBytes); err != nil {
-		// Try loading as public key if private fails
-		if err := id.LoadPublicKey(idBytes); err != nil {
-			fmt.Printf("Could not load identity: %v\n", err)
-			os.Exit(42)
-		}
 	}
 
 	rns.Log("Identity imported", rns.LogNotice, false)
 	doPrintIdentity(id, b64, b32, prv)
 
 	if writePath != "" {
-		if _, err := os.Stat(writePath); err == nil && !force {
-			fmt.Printf("File %v already exists, not overwriting\n", writePath)
-			os.Exit(43)
+		wp := expandUser(writePath)
+		if !force {
+			if _, err := os.Stat(wp); err == nil {
+				fmt.Printf("File %v already exists, not overwriting\n", wp)
+				os.Exit(43)
+			}
 		}
-		if err := id.ToFile(writePath); err != nil {
-			fmt.Printf("Error writing identity: %v\n", err)
+		if err := id.ToFile(wp); err != nil {
+			fmt.Printf("Error while writing imported identity to file: %v\n", err)
 			os.Exit(44)
 		}
-		rns.Log(fmt.Sprintf("Wrote imported identity to %v", writePath), rns.LogNotice, false)
+		rns.Logf("Wrote imported identity to %v", rns.LogNotice, false, writePath)
 	}
 }
 
@@ -304,14 +310,16 @@ func doGenerate(path string, force bool) {
 	}
 	id, err := rns.NewIdentity(true)
 	if err != nil {
-		rns.Log(fmt.Sprintf("Error generating identity: %v", err), rns.LogError, false)
+		rns.Log("An error ocurred while saving the generated Identity.", rns.LogError, false)
+		rns.Logf("The contained exception was: %v", rns.LogError, false, err)
 		os.Exit(4)
 	}
 	if err := id.ToFile(path); err != nil {
-		rns.Log(fmt.Sprintf("Error saving identity: %v", err), rns.LogError, false)
+		rns.Log("An error ocurred while saving the generated Identity.", rns.LogError, false)
+		rns.Logf("The contained exception was: %v", rns.LogError, false, err)
 		os.Exit(4)
 	}
-	rns.Log(fmt.Sprintf("New identity <%v> written to %v", id.HexHash, path), rns.LogNotice, false)
+	rns.Logf("New identity %v written to %v", rns.LogNotice, false, rns.PrettyHexFromString(id.HexHash), path)
 }
 
 func loadIdentity(path string, request bool, timeout float64) *rns.Identity {
@@ -319,39 +327,66 @@ func loadIdentity(path string, request bool, timeout float64) *rns.Identity {
 		return nil
 	}
 
-	// Try as file first
-	if _, err := os.Stat(path); err == nil {
-		id, err := rns.FromFile(path)
-		if err == nil {
-			rns.Logf("Loaded Identity <%v> from %v", rns.LogNotice, false, id.HexHash, path)
-			return id
-		}
-	}
+	hashStrLen := rns.TruncatedHashLength / 8 * 2
+	_, fileErr := os.Stat(path)
+	isFile := fileErr == nil
 
-	// Try as hex hash
-	hash, err := hex.DecodeString(path)
-	if err == nil && len(hash) == rns.TruncatedHashLength/8 {
-		id := rns.RecallIdentity(hash)
-		if id == nil && request {
-			rns.Log(fmt.Sprintf("Requesting unknown Identity for %v...", path), rns.LogNotice, false)
+	if len(path) == hashStrLen && !isFile {
+		hash, err := hex.DecodeString(path)
+		if err != nil {
+			rns.Log("Invalid hexadecimal hash provided", rns.LogError, false)
+			os.Exit(7)
+		}
+
+		id := rns.Recall(hash, false)
+		if id == nil {
+			id = rns.Recall(hash, true)
+		}
+
+		if id == nil {
+			if !request {
+				rns.Logf("Could not recall Identity for %v.", rns.LogError, false, rns.PrettyHex(hash))
+				rns.Log("You can query the network for unknown Identities with the -R option.", rns.LogError, false)
+				os.Exit(5)
+			}
 			if err := rns.Transport.RequestPath(hash); err != nil {
-				rns.Logf("Identity request failed for %v: %v", rns.LogError, false, path, err)
-				return nil
+				rns.Logf("Identity request failed for %v: %v", rns.LogError, false, rns.PrettyHex(hash), err)
+				os.Exit(6)
 			}
 			deadline := time.Now().Add(time.Duration(timeout * float64(time.Second)))
 			for time.Now().Before(deadline) {
 				time.Sleep(100 * time.Millisecond)
-				id = rns.RecallIdentity(hash)
+				id = rns.Recall(hash, false)
 				if id != nil {
+					rns.Logf("Received Identity %v for destination %v from the network", rns.LogNotice, false, rns.PrettyHexFromString(id.HexHash), rns.PrettyHex(hash))
 					return id
 				}
 			}
-			rns.Log("Identity request timed out", rns.LogNotice, false)
+			rns.Log("Identity request timed out", rns.LogError, false)
+			os.Exit(6)
+		}
+
+		identStr := rns.PrettyHexFromString(id.HexHash)
+		hashStr := rns.PrettyHex(hash)
+		if identStr == hashStr {
+			rns.Logf("Recalled Identity %v", rns.LogNotice, false, identStr)
+		} else {
+			rns.Logf("Recalled Identity %v for destination %v", rns.LogNotice, false, identStr, hashStr)
 		}
 		return id
 	}
 
-	return nil
+	if !isFile {
+		rns.Log("Specified Identity file not found", rns.LogNotice, false)
+		os.Exit(8)
+	}
+	id, err := rns.FromFile(path)
+	if err != nil {
+		rns.Log("Could not decode Identity from specified file", rns.LogNotice, false)
+		os.Exit(9)
+	}
+	rns.Logf("Loaded Identity %v from %v", rns.LogNotice, false, rns.PrettyHexFromString(id.HexHash), path)
+	return id
 }
 
 func doPrintIdentity(id *rns.Identity, b64, b32, prv bool) {
@@ -366,23 +401,21 @@ func doPrintIdentity(id *rns.Identity, b64, b32, prv bool) {
 	}
 	rns.Logf("Public Key  : %v", rns.LogNotice, false, pubStr)
 
-	if prv {
-		priv := id.GetPrivateKey()
-		if priv != nil {
+	privKey := id.GetPrivateKey()
+	if privKey != nil {
+		if prv {
 			var privStr string
 			if b64 {
-				privStr = base64.RawURLEncoding.EncodeToString(priv)
+				privStr = base64.RawURLEncoding.EncodeToString(privKey)
 			} else if b32 {
-				privStr = base32.StdEncoding.EncodeToString(priv)
+				privStr = base32.StdEncoding.EncodeToString(privKey)
 			} else {
-				privStr = hex.EncodeToString(priv)
+				privStr = hex.EncodeToString(privKey)
 			}
 			rns.Logf("Private Key : %v", rns.LogNotice, false, privStr)
 		} else {
 			rns.Log("Private Key : Hidden", rns.LogNotice, false)
 		}
-	} else {
-		rns.Log("Private Key : Hidden", rns.LogNotice, false)
 	}
 }
 
@@ -415,124 +448,316 @@ func doHash(id *rns.Identity, aspects string) {
 		subAspects = parts[1:]
 	}
 
+	if id.GetPublicKey() == nil {
+		rns.Log("An error ocurred while attempting to send the announce.", rns.LogError, false)
+		rns.Log("The contained exception was: No public key known", rns.LogError, false)
+		os.Exit(0)
+	}
 	dest, err := rns.NewDestination(id, rns.DestinationOut, rns.DestinationSingle, appName, subAspects...)
 	if err != nil {
-		rns.Logf("Error calculating hash: %v", rns.LogNotice, false, err)
-		os.Exit(32)
+		rns.Log("An error ocurred while attempting to send the announce.", rns.LogError, false)
+		rns.Logf("The contained exception was: %v", rns.LogError, false, err)
+		os.Exit(0)
 	}
-	rns.Logf("The %v destination for this Identity is <%x>", rns.LogNotice, false, aspects, dest.Hash)
+	rns.Logf("The %v destination for this Identity is %v", rns.LogNotice, false, aspects, rns.PrettyHex(dest.Hash))
 	rns.Logf("The full destination specifier is %v", rns.LogNotice, false, dest)
+	time.Sleep(250 * time.Millisecond)
+	os.Exit(0)
 }
 
 func doAnnounce(id *rns.Identity, aspects string) {
 	parts := strings.Split(aspects, ".")
 	if len(parts) < 2 {
-		rns.Log("Invalid destination aspects specified, at least app_name and one aspect required for announcement", rns.LogError, false)
+		rns.Log("Invalid destination aspects specified", rns.LogError, false)
 		os.Exit(32)
 	}
 	appName := parts[0]
 	subAspects := parts[1:]
 
-	dest, err := rns.NewDestination(id, rns.DestinationIn, rns.DestinationSingle, appName, subAspects...)
-	if err != nil {
-		rns.Log(fmt.Sprintf("Error creating destination: %v", err), rns.LogNotice, false)
-		os.Exit(32)
+	if id.GetPrivateKey() != nil {
+		dest, err := rns.NewDestination(id, rns.DestinationIn, rns.DestinationSingle, appName, subAspects...)
+		if err != nil {
+			rns.Log("An error ocurred while attempting to send the announce.", rns.LogError, false)
+			rns.Logf("The contained exception was: %v", rns.LogError, false, err)
+			os.Exit(32)
+		}
+		rns.Logf("Created destination %v", rns.LogNotice, false, dest)
+		rns.Logf("Announcing destination %v", rns.LogNotice, false, rns.PrettyHex(dest.Hash))
+		time.Sleep(1100 * time.Millisecond)
+		if err := dest.Announce(nil); err != nil {
+			rns.Log("An error ocurred while attempting to send the announce.", rns.LogError, false)
+			rns.Logf("The contained exception was: %v", rns.LogError, false, err)
+			os.Exit(32)
+		}
+		time.Sleep(250 * time.Millisecond)
+		os.Exit(0)
 	}
 
-	rns.Log(fmt.Sprintf("Created destination %v", dest), rns.LogNotice, false)
-	rns.Log(fmt.Sprintf("Announcing destination %x", dest.Hash), rns.LogNotice, false)
-	if err := dest.Announce(nil); err != nil {
-		rns.Log(fmt.Sprintf("Error sending announce: %v", err), rns.LogError, false)
+	dest, err := rns.NewDestination(id, rns.DestinationOut, rns.DestinationSingle, appName, subAspects...)
+	if err != nil {
+		rns.Log("An error ocurred while attempting to send the announce.", rns.LogError, false)
+		rns.Logf("The contained exception was: %v", rns.LogError, false, err)
 		os.Exit(32)
 	}
+	rns.Logf("The %v destination for this Identity is %v", rns.LogNotice, false, aspects, rns.PrettyHex(dest.Hash))
+	rns.Logf("The full destination specifier is %v", rns.LogNotice, false, dest)
+	rns.Log("Cannot announce this destination, since the private key is not held", rns.LogNotice, false)
+	time.Sleep(250 * time.Millisecond)
+	os.Exit(33)
 }
 
-func doFileOp(id *rns.Identity, inputPath, outputPath string, enc, dec, sign bool, valPath string, force bool) {
-	if enc {
-		if outputPath == "" {
-			outputPath = inputPath + ".rfe"
+func expandUser(path string) string {
+	if strings.HasPrefix(path, "~/") || path == "~" {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			return home + path[1:]
 		}
-		data, err := os.ReadFile(inputPath)
-		if err != nil {
-			rns.Log(fmt.Sprintf("Error reading file: %v", err), rns.LogNotice, false)
+	}
+	return path
+}
+
+const chunkSize = 16 * 1024 * 1024
+
+func doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile, sgnFile, valFile string, force, stdout bool) {
+	idStr := rns.PrettyHexFromString(id.HexHash)
+
+	if valFile != "" {
+		if _, err := os.Stat(valFile); err != nil {
+			rns.Logf("Signature file %v not found", rns.LogError, false, readPath)
+			os.Exit(10)
+		}
+		if readPath == "" {
+			rns.Log("Signature verification requested, but no input data specified", rns.LogError, false)
+			os.Exit(11)
+		}
+		if _, err := os.Stat(readPath); err != nil {
+			rns.Logf("Input file %v not found", rns.LogError, false, readPath)
+			os.Exit(11)
+		}
+	}
+
+	var dataInput *os.File
+	if readPath != "" {
+		if _, err := os.Stat(readPath); err != nil {
+			rns.Logf("Input file %v not found", rns.LogError, false, readPath)
 			os.Exit(12)
 		}
-		ciphertext, err := id.Encrypt(data, nil)
+		f, err := os.Open(readPath)
 		if err != nil {
-			rns.Log(fmt.Sprintf("Error encrypting: %v", err), rns.LogNotice, false)
-			os.Exit(26)
+			rns.Log("Could not open input file for reading", rns.LogError, false)
+			rns.Logf("The contained exception was: %v", rns.LogError, false, err)
+			os.Exit(13)
 		}
-		if _, err := os.Stat(outputPath); err == nil && !force {
-			rns.Log(fmt.Sprintf("Output file %v already exists, not overwriting", outputPath), rns.LogNotice, false)
+		defer f.Close()
+		dataInput = f
+	}
+
+	if encFile != "" && writePath == "" && !stdout && readPath != "" {
+		writePath = readPath + ".rfe"
+	}
+	if decFile != "" && writePath == "" && !stdout && readPath != "" && strings.HasSuffix(strings.ToLower(readPath), ".rfe") {
+		writePath = strings.Replace(readPath, ".rfe", "", 1)
+	}
+	if sgnFile != "" && id.GetPrivateKey() == nil {
+		rns.Log("Specified Identity does not hold a private key. Cannot sign.", rns.LogError, false)
+		os.Exit(14)
+	}
+	if sgnFile != "" && writePath == "" && !stdout && readPath != "" {
+		writePath = readPath + ".rsg"
+	}
+
+	var dataOutput *os.File
+	if writePath != "" {
+		if !force {
+			if _, err := os.Stat(writePath); err == nil {
+				rns.Logf("Output file %v already exists. Not overwriting.", rns.LogError, false, writePath)
+				os.Exit(15)
+			}
+		}
+		f, err := os.Create(writePath)
+		if err != nil {
+			rns.Log("Could not open output file for writing", rns.LogError, false)
+			rns.Logf("The contained exception was: %v", rns.LogError, false, err)
 			os.Exit(15)
 		}
-		if err := os.WriteFile(outputPath, ciphertext, 0o644); err != nil {
-			rns.Log(fmt.Sprintf("Error writing file: %v", err), rns.LogNotice, false)
-			os.Exit(15)
+		defer f.Close()
+		dataOutput = f
+	}
+
+	if sgnFile != "" {
+		if id.GetPrivateKey() == nil {
+			rns.Log("Specified Identity does not hold a private key. Cannot sign.", rns.LogError, false)
+			os.Exit(16)
 		}
-		rns.Log(fmt.Sprintf("File %v encrypted for %v to %v", inputPath, id.HexHash, outputPath), rns.LogNotice, false)
-	} else if dec {
-		if outputPath == "" && strings.HasSuffix(inputPath, ".rfe") {
-			outputPath = strings.TrimSuffix(inputPath, ".rfe")
+		if dataInput == nil {
+			if !stdout {
+				rns.Log("Signing requested, but no input data specified", rns.LogError, false)
+			}
+			os.Exit(17)
 		}
-		data, err := os.ReadFile(inputPath)
+		if dataOutput == nil {
+			if !stdout {
+				rns.Log("Signing requested, but no output specified", rns.LogError, false)
+			}
+			os.Exit(18)
+		}
+		if !stdout {
+			rns.Logf("Signing %v", rns.LogNotice, false, readPath)
+		}
+		data, err := os.ReadFile(readPath)
 		if err != nil {
-			rns.Log(fmt.Sprintf("Error reading file: %v", err), rns.LogNotice, false)
-			os.Exit(12)
-		}
-		plaintext, err := id.Decrypt(data, nil, false)
-		if err != nil {
-			rns.Log(fmt.Sprintf("Error decrypting: %v", err), rns.LogNotice, false)
-			os.Exit(31)
-		}
-		if _, err := os.Stat(outputPath); err == nil && !force {
-			rns.Log(fmt.Sprintf("Output file %v already exists, not overwriting", outputPath), rns.LogNotice, false)
-			os.Exit(15)
-		}
-		if err := os.WriteFile(outputPath, plaintext, 0o644); err != nil {
-			rns.Log(fmt.Sprintf("Error writing file: %v", err), rns.LogNotice, false)
-			os.Exit(15)
-		}
-		rns.Log(fmt.Sprintf("File %v decrypted with %v to %v", inputPath, id.HexHash, outputPath), rns.LogNotice, false)
-	} else if sign {
-		if outputPath == "" {
-			outputPath = inputPath + ".rsg"
-		}
-		data, err := os.ReadFile(inputPath)
-		if err != nil {
-			rns.Log(fmt.Sprintf("Error reading file: %v", err), rns.LogNotice, false)
-			os.Exit(12)
-		}
-		signature, err := id.Sign(data)
-		if err != nil {
-			rns.Log(fmt.Sprintf("Error signing: %v", err), rns.LogNotice, false)
+			if !stdout {
+				rns.Log("An error ocurred while encrypting data.", rns.LogError, false)
+				rns.Logf("The contained exception was: %v", rns.LogError, false, err)
+			}
 			os.Exit(19)
 		}
-		if _, err := os.Stat(outputPath); err == nil && !force {
-			rns.Log(fmt.Sprintf("Output file %v already exists, not overwriting", outputPath), rns.LogNotice, false)
-			os.Exit(15)
-		}
-		if err := os.WriteFile(outputPath, signature, 0o644); err != nil {
-			rns.Log(fmt.Sprintf("Error writing file: %v", err), rns.LogNotice, false)
-			os.Exit(15)
-		}
-		rns.Log(fmt.Sprintf("File %v signed with %v to %v", inputPath, id.HexHash, outputPath), rns.LogNotice, false)
-	} else if valPath != "" {
-		sig, err := os.ReadFile(valPath)
+		sig, err := id.Sign(data)
 		if err != nil {
-			rns.Log(fmt.Sprintf("Error reading signature file: %v", err), rns.LogNotice, false)
+			if !stdout {
+				rns.Log("An error ocurred while encrypting data.", rns.LogError, false)
+				rns.Logf("The contained exception was: %v", rns.LogError, false, err)
+			}
+			os.Exit(19)
+		}
+		if _, err := dataOutput.Write(sig); err != nil {
+			if !stdout {
+				rns.Log("An error ocurred while encrypting data.", rns.LogError, false)
+				rns.Logf("The contained exception was: %v", rns.LogError, false, err)
+			}
+			os.Exit(19)
+		}
+		if !stdout && readPath != "" {
+			rns.Logf("File %v signed with %v to %v", rns.LogNotice, false, readPath, idStr, writePath)
+		}
+		os.Exit(0)
+	}
+
+	if valFile != "" {
+		if dataInput == nil {
+			if !stdout {
+				rns.Log("Signature verification requested, but no input data specified", rns.LogError, false)
+			}
+			os.Exit(20)
+		}
+		sigData, err := os.ReadFile(valFile)
+		if err != nil {
+			rns.Logf("An error ocurred while opening %v.", rns.LogError, false, valFile)
+			rns.Logf("The contained exception was: %v", rns.LogError, false, err)
 			os.Exit(21)
 		}
-		data, err := os.ReadFile(inputPath)
+		inputData, err := os.ReadFile(readPath)
 		if err != nil {
-			rns.Log(fmt.Sprintf("Error reading data file: %v", err), rns.LogNotice, false)
-			os.Exit(12)
+			if !stdout {
+				rns.Log("An error ocurred while validating signature.", rns.LogError, false)
+				rns.Logf("The contained exception was: %v", rns.LogError, false, err)
+			}
+			os.Exit(23)
 		}
-		if id.Verify(sig, data) {
-			rns.Log(fmt.Sprintf("Signature %v for file %v made by Identity %v is valid", valPath, inputPath, id.HexHash), rns.LogNotice, false)
-		} else {
-			rns.Log(fmt.Sprintf("Signature %v for file %v is invalid", valPath, inputPath), rns.LogNotice, false)
+		if !id.Verify(sigData, inputData) {
+			if !stdout {
+				rns.Logf("Signature %v for file %v is invalid", rns.LogError, false, valFile, readPath)
+			}
 			os.Exit(22)
 		}
+		if !stdout {
+			rns.Logf("Signature %v for file %v made by Identity %v is valid", rns.LogNotice, false, valFile, readPath, idStr)
+		}
+		os.Exit(0)
+	}
+
+	if encFile != "" {
+		if dataInput == nil {
+			if !stdout {
+				rns.Log("Encryption requested, but no input data specified", rns.LogError, false)
+			}
+			os.Exit(24)
+		}
+		if dataOutput == nil {
+			if !stdout {
+				rns.Log("Encryption requested, but no output specified", rns.LogError, false)
+			}
+			os.Exit(25)
+		}
+		if !stdout {
+			rns.Logf("Encrypting %v", rns.LogNotice, false, readPath)
+		}
+		buf := make([]byte, chunkSize)
+		for {
+			n, err := dataInput.Read(buf)
+			if n > 0 {
+				ct, encErr := id.Encrypt(buf[:n], nil)
+				if encErr != nil {
+					if !stdout {
+						rns.Log("An error ocurred while encrypting data.", rns.LogError, false)
+						rns.Logf("The contained exception was: %v", rns.LogError, false, encErr)
+					}
+					os.Exit(26)
+				}
+				if _, wErr := dataOutput.Write(ct); wErr != nil {
+					if !stdout {
+						rns.Log("An error ocurred while encrypting data.", rns.LogError, false)
+						rns.Logf("The contained exception was: %v", rns.LogError, false, wErr)
+					}
+					os.Exit(26)
+				}
+			}
+			if err != nil {
+				break
+			}
+		}
+		if !stdout && readPath != "" {
+			rns.Logf("File %v encrypted for %v to %v", rns.LogNotice, false, readPath, idStr, writePath)
+		}
+		os.Exit(0)
+	}
+
+	if decFile != "" {
+		if id.GetPrivateKey() == nil {
+			rns.Log("Specified Identity does not hold a private key. Cannot decrypt.", rns.LogError, false)
+			os.Exit(27)
+		}
+		if dataInput == nil {
+			if !stdout {
+				rns.Log("Decryption requested, but no input data specified", rns.LogError, false)
+			}
+			os.Exit(28)
+		}
+		if dataOutput == nil {
+			if !stdout {
+				rns.Log("Decryption requested, but no output specified", rns.LogError, false)
+			}
+			os.Exit(29)
+		}
+		if !stdout {
+			rns.Logf("Decrypting %v...", rns.LogNotice, false, readPath)
+		}
+		buf := make([]byte, chunkSize)
+		for {
+			n, err := dataInput.Read(buf)
+			if n > 0 {
+				plaintext, decErr := id.Decrypt(buf[:n], nil, false)
+				if decErr != nil || plaintext == nil {
+					if !stdout {
+						rns.Log("Data could not be decrypted with the specified Identity", rns.LogNotice, false)
+					}
+					os.Exit(30)
+				}
+				if _, wErr := dataOutput.Write(plaintext); wErr != nil {
+					if !stdout {
+						rns.Log("An error ocurred while decrypting data.", rns.LogError, false)
+						rns.Logf("The contained exception was: %v", rns.LogError, false, wErr)
+					}
+					os.Exit(31)
+				}
+			}
+			if err != nil {
+				break
+			}
+		}
+		if !stdout && readPath != "" {
+			rns.Logf("File %v decrypted with %v to %v", rns.LogNotice, false, readPath, idStr, writePath)
+		}
+		os.Exit(0)
 	}
 }

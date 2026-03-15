@@ -389,6 +389,20 @@ func (id *Identity) GetPrivateKey() []byte {
 	return append(id.prv.PrivateBytes(), id.sigPrv.PrivateBytes()...)
 }
 
+// FromBytes creates a new Identity from private key bytes, matching
+// Python's Identity.from_bytes. It returns an error if the bytes
+// cannot be loaded as a valid private key.
+func FromBytes(prvBytes []byte) (*Identity, error) {
+	id, err := NewIdentity(false)
+	if err != nil {
+		return nil, err
+	}
+	if err := id.LoadPrivateKey(prvBytes); err != nil {
+		return nil, err
+	}
+	return id, nil
+}
+
 // LoadPrivateKey meticulously parses raw bytes to securely reinstantiate the underlying private key materials.
 func (id *Identity) LoadPrivateKey(data []byte) error {
 	half := IdentityKeySize / 8 / 2
