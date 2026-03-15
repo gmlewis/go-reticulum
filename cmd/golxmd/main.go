@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -127,6 +128,11 @@ var (
 	version              bool
 )
 
+var (
+	ac     *activeConfig
+	lxmdir string
+)
+
 func setupLogging(service bool, configDir string) {
 	if service {
 		rns.LogDest = rns.LogDestFile
@@ -135,29 +141,6 @@ func setupLogging(service bool, configDir string) {
 		rns.LogDest = rns.LogStdout
 	}
 }
-
-import (
-	"encoding/json"
-	"flag"
-	"fmt"
-	"log"
-	"os"
-	"os/exec"
-	"os/signal"
-	"path/filepath"
-	"strings"
-	"sync"
-	"syscall"
-	"time"
-
-	"github.com/gmlewis/go-reticulum/lxmf"
-	"github.com/gmlewis/go-reticulum/rns"
-)
-
-var (
-	ac     *activeConfig
-	lxmdir string
-)
 
 func lxmfDelivery(lxm *lxmf.Message) {
 	writtenPath, err := lxm.WriteToDirectory(lxmdir)

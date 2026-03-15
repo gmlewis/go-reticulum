@@ -27,7 +27,7 @@ func TestLXMFDelivery(t *testing.T) {
 	// Mock message
 	id, _ := rns.NewIdentity(true)
 	dest, _ := rns.NewDestination(id, rns.DestinationIn, rns.DestinationSingle, "lxmf", "delivery")
-	lxm, _ := lxmf.NewMessage(dest, dest, "Hello", "Content", "")
+	lxm, _ := lxmf.NewMessage(dest, dest, "Hello", "Content", nil)
 	
 	// Case 1: No on_inbound
 	ac = &activeConfig{OnInbound: ""}
