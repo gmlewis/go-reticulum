@@ -11,7 +11,92 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/gmlewis/go-reticulum/lxmf"
+	"github.com/gmlewis/go-reticulum/rns"
 )
+
+func TestIgnoreDestinations(t *testing.T) {
+	tempDir := t.TempDir()
+	identity, _ := rns.NewIdentity(true)
+	router, _ := lxmf.NewRouter(identity, tempDir)
+
+	ignored := [][]byte{
+		{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
+	}
+
+	for _, h := range ignored {
+		router.IgnoreDestination(h)
+	}
+
+	if !router.IsIgnored(ignored[0]) {
+		t.Errorf("destination not ignored")
+	}
+}
+
+func TestRouterConstruction(t *testing.T) {
+	tempDir := t.TempDir()
+	configDir := filepath.Join(tempDir, "lxmd")
+	err := os.MkdirAll(configDir, 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := map[string]map[string]string{
+		"propagation": {
+			"autopeer": "no",
+			"autopeer_maxdepth": "3",
+			"propagation_stamp_cost_target": "25",
+		},
+	}
+	ac, err := applyConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	identity, _ := rns.NewIdentity(true)
+	router, err := lxmf.NewRouterFromConfig(lxmf.RouterConfig{
+		Identity: identity,
+		StoragePath: tempDir,
+		Autopeer: ac.Autopeer,
+		AutopeerMaxdepth: ac.AutopeerMaxdepth,
+		PropagationCost: ac.PropagationStampCostTarget,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if router.PropagationEnabled() {
+		// Should not be enabled yet
+		t.Errorf("PropagationEnabled: got true, want false")
+	}
+	// Note: We can't easily check private fields of Router unless we add getters or the test is in lxmf package.
+	// But NewRouterFromConfig is in lxmf package.
+}
+
+func TestServiceLogging(t *testing.T) {
+	tempDir := t.TempDir()
+	configDir := filepath.Join(tempDir, "lxmd")
+	err := os.MkdirAll(configDir, 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// We'll test a function that sets up logging based on service flag and config dir
+	setupLogging(true, configDir)
+
+	if rns.LogDest != rns.LogDestFile {
+		t.Errorf("LogDest: got %v, want %v", rns.LogDest, rns.LogDestFile)
+	}
+	wantLogPath := filepath.Join(configDir, "logfile")
+	if rns.LogFilePath != wantLogPath {
+		t.Errorf("LogFilePath: got %q, want %q", rns.LogFilePath, wantLogPath)
+	}
+
+	// Reset for other tests
+	rns.LogDest = rns.LogStdout
+	rns.LogFilePath = ""
+}
 
 func TestParseAllowedIdentities(t *testing.T) {
 	validHash := "00112233445566778899aabbccddeeff"

@@ -33,7 +33,8 @@ func TestRegisterDeliveryIdentitySingleDestinationOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewIdentity #1: %v", err)
 	}
-	if _, err := router.RegisterDeliveryIdentity(id, 0); err != nil {
+	zero := 0
+	if _, err := router.RegisterDeliveryIdentity(id, "", &zero); err != nil {
 		t.Fatalf("RegisterDeliveryIdentity #1: %v", err)
 	}
 
@@ -41,7 +42,7 @@ func TestRegisterDeliveryIdentitySingleDestinationOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewIdentity #2: %v", err)
 	}
-	if _, err := router.RegisterDeliveryIdentity(id2, 0); err == nil {
+	if _, err := router.RegisterDeliveryIdentity(id2, "", &zero); err == nil {
 		t.Fatal("expected second RegisterDeliveryIdentity call to fail")
 	}
 }
@@ -2029,7 +2030,8 @@ func TestRouterSetInboundStampCost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewIdentity: %v", err)
 	}
-	dest, err := router.RegisterDeliveryIdentity(id, 0)
+	zero := 0
+	dest, err := router.RegisterDeliveryIdentity(id, "", &zero)
 	if err != nil {
 		t.Fatalf("RegisterDeliveryIdentity: %v", err)
 	}
@@ -2077,7 +2079,8 @@ func TestRouterAnnounce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewIdentity: %v", err)
 	}
-	dest, err := router.RegisterDeliveryIdentity(id, 0)
+	zero := 0
+	dest, err := router.RegisterDeliveryIdentity(id, "", &zero)
 	if err != nil {
 		t.Fatalf("RegisterDeliveryIdentity: %v", err)
 	}
@@ -2538,7 +2541,8 @@ func TestSetDisplayNameAndAnnounceAppData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewIdentity: %v", err)
 	}
-	dest, err := router.RegisterDeliveryIdentity(id, 8)
+	cost8 := 8
+	dest, err := router.RegisterDeliveryIdentity(id, "", &cost8)
 	if err != nil {
 		t.Fatalf("RegisterDeliveryIdentity: %v", err)
 	}
@@ -2595,7 +2599,8 @@ func TestSetDisplayNameNilReturnsNilAppData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewIdentity: %v", err)
 	}
-	dest, err := router.RegisterDeliveryIdentity(id, 0)
+	zero := 0
+	dest, err := router.RegisterDeliveryIdentity(id, "", &zero)
 	if err != nil {
 		t.Fatalf("RegisterDeliveryIdentity: %v", err)
 	}
@@ -2617,7 +2622,8 @@ func TestSetDisplayNameNoStampCost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewIdentity: %v", err)
 	}
-	dest, err := router.RegisterDeliveryIdentity(id, 0)
+	zero := 0
+	dest, err := router.RegisterDeliveryIdentity(id, "", &zero)
 	if err != nil {
 		t.Fatalf("RegisterDeliveryIdentity: %v", err)
 	}
@@ -2657,7 +2663,8 @@ func TestAnnounceIncludesAppData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewIdentity: %v", err)
 	}
-	dest, err := router.RegisterDeliveryIdentity(id, 12)
+	cost12 := 12
+	dest, err := router.RegisterDeliveryIdentity(id, "", &cost12)
 	if err != nil {
 		t.Fatalf("RegisterDeliveryIdentity: %v", err)
 	}
@@ -2738,7 +2745,8 @@ func TestAnnounceWithoutDisplayNamePassesNilAppData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewIdentity: %v", err)
 	}
-	dest, err := router.RegisterDeliveryIdentity(id, 0)
+	zero := 0
+	dest, err := router.RegisterDeliveryIdentity(id, "", &zero)
 	if err != nil {
 		t.Fatalf("RegisterDeliveryIdentity: %v", err)
 	}

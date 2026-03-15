@@ -64,8 +64,6 @@ options:
 	flag.BoolVar(&runAsPropagationNode, "propagation-node", false, "run an LXMF Propagation Node")
 	flag.StringVar(&cmdOnInbound, "i", "", "executable to run when a message is received")
 	flag.StringVar(&cmdOnInbound, "on-inbound", "", "executable to run when a message is received")
-	flag.BoolVar(&verbose, "v", false, "enable verbose logging")
-	flag.BoolVar(&quiet, "q", false, "reduce log verbosity")
 	flag.BoolVar(&runAsService, "s", false, "golxmd is running as a service and should log to file")
 	flag.BoolVar(&runAsService, "service", false, "golxmd is running as a service and should log to file")
 	flag.BoolVar(&displayStatus, "status", false, "display node status")
@@ -79,26 +77,44 @@ options:
 	flag.StringVar(&identityPath, "identity", "", "path to identity used for remote requests (default: ~/.reticulum/identities/lxmd)")
 	flag.BoolVar(&exampleConfig, "exampleconfig", false, "print verbose configuration example to stdout and exit")
 	flag.BoolVar(&version, "version", false, "show program's version number and exit")
+
+	flag.Var(&verbosity, "v", "enable verbose logging (stackable)")
+	flag.Var(&quietness, "q", "reduce log verbosity (stackable)")
+}
+
+type countFlag int
+
+func (c *countFlag) String() string {
+	return fmt.Sprint(int(*c))
+}
+
+func (c *countFlag) Set(s string) error {
+	*c++
+	return nil
+}
+
+func (c *countFlag) IsBoolFlag() bool {
+	return true
 }
 
 var (
-	// storagePath         string
-	// stampCost           int
-	// registerPropagation bool
-	// registerControl     bool
-	// controlAllowed      string
-	// peerMaxAge          time.Duration
-	// maintenanceInterval time.Duration
-	// outboundInterval    time.Duration
-	// announceInterval    time.Duration
-	// syncInterval        time.Duration
+	storagePath         string
+	stampCost           int
+	registerPropagation bool
+	registerControl     bool
+	controlAllowed      string
+	peerMaxAge          time.Duration
+	maintenanceInterval time.Duration
+	outboundInterval    time.Duration
+	announceInterval    time.Duration
+	syncInterval        time.Duration
 
 	configDir            string
 	rnsConfigDir         string
 	runAsPropagationNode bool
 	cmdOnInbound         string
-	verbose              bool
-	quiet                bool
+	verbosity            countFlag
+	quietness            countFlag
 	runAsService         bool
 	displayStatus        bool
 	displayPeers         bool
@@ -110,6 +126,19 @@ var (
 	exampleConfig        bool
 	version              bool
 )
+
+func setupLogging(service bool, configDir string) {
+	if service {
+		rns.LogDest = rns.LogDestFile
+		rns.LogFilePath = filepath.Join(configDir, "logfile")
+	} else {
+		rns.LogDest = rns.LogStdout
+	}
+}
+
+func lxmfDelivery(lxm *lxmf.Message) {
+	// TODO: T18
+}
 
 func main() {
 	log.SetFlags(0)
@@ -137,18 +166,11 @@ func main() {
 	}
 
 	if exampleConfig {
-		fmt.Print(exampleLXMDaemonConfig)
+		fmt.Print(defaultLXMDaemonConfig)
 		return
 	}
 
-	if verbose {
-		rns.SetLogLevel(rns.LogVerbose)
-	}
-	if quiet {
-		rns.SetLogLevel(rns.LogWarning)
-	}
-
-	if _, err := rns.NewReticulum(configDir); err != nil {
+	if _, err := rns.NewReticulum(rnsConfigDir); err != nil {
 		log.Fatalf("initialize Reticulum: %v", err)
 	}
 
@@ -167,7 +189,9 @@ func main() {
 		log.Fatalf("create LXMF router: %v", err)
 	}
 
-	if _, err := router.RegisterDeliveryIdentity(identity, stampCost); err != nil {
+	router.RegisterDeliveryCallback(lxmfDelivery)
+
+	if _, err := router.RegisterDeliveryIdentity(identity, "Anonymous Peer", &stampCost); err != nil {
 		log.Fatalf("register delivery destination: %v", err)
 	}
 

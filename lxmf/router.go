@@ -48,7 +48,6 @@ type Router struct {
 
 	resourceLinks       map[string]*rns.Link
 	resourceLinkPending map[string]bool
-	peeringCost         int
 
 	propagationDestination *rns.Destination
 	propagationEntries     map[string]*propagationEntry
@@ -69,6 +68,7 @@ type Router struct {
 	deliveryPerTransferLimit      float64
 	maxPeers                      int
 	autopeer                      bool
+	autopeerMaxdepth              int
 	enforceStampsEnabled          bool
 	ignoredList                   map[string]struct{}
 	messageStorageLimit           float64
@@ -78,6 +78,12 @@ type Router struct {
 	propagationTransferState      int
 	propagationTransferLastResult int
 	propagationTransferProgress   float64
+
+	propagationCost            int
+	propagationCostFlexibility int
+	peeringCost                int
+	maxPeeringCost             int
+	name                       string
 
 	clientPropagationMessagesReceived int
 	clientPropagationMessagesServed   int
@@ -690,7 +696,7 @@ func (r *Router) resolvePeerHash(data []byte, linkID []byte, remoteIdentity *rns
 }
 
 // RegisterDeliveryIdentity sets up the primary identity and associated destination for receiving direct LXMF messages.
-func (r *Router) RegisterDeliveryIdentity(identity *rns.Identity, stampCost int) (*rns.Destination, error) {
+func (r *Router) RegisterDeliveryIdentity(identity *rns.Identity, displayName string, stampCost *int) (*rns.Destination, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -709,7 +715,13 @@ func (r *Router) RegisterDeliveryIdentity(identity *rns.Identity, stampCost int)
 	destination.SetPacketCallback(r.deliveryPacket)
 	destination.SetLinkEstablishedCallback(r.linkEstablished)
 	r.deliveryDestinations[string(destination.Hash)] = destination
-	r.inboundStampCosts[string(destination.Hash)] = stampCost
+
+	if displayName != "" {
+		r.displayNames[string(destination.Hash)] = displayName
+	}
+	if stampCost != nil {
+		r.inboundStampCosts[string(destination.Hash)] = *stampCost
+	}
 
 	return destination, nil
 }
@@ -1115,15 +1127,21 @@ func (r *Router) deliveryPacket(data []byte, packet *rns.Packet) {
 
 // RouterConfig provides the full set of constructor parameters matching the Python LXMRouter's arguments, granting fine-grained control over routing limits and policies.
 type RouterConfig struct {
-	Identity         *rns.Identity
-	StoragePath      string
-	Autopeer         bool
-	PropagationLimit float64 // per-transfer limit in KB; 0 uses default (256)
-	SyncLimit        float64 // per-sync limit in KB; 0 uses default (256*40)
-	DeliveryLimit    float64 // per-delivery limit in KB; 0 uses default (1000)
-	MaxPeers         *int    // nil uses default (20)
-	StaticPeers      [][]byte
-	PropagationCost  int // clamped to >= PropagationCostMin
+	Identity                   *rns.Identity
+	StoragePath                string
+	Autopeer                   bool
+	AutopeerMaxdepth           *int
+	PropagationLimit           float64 // per-transfer limit in KB; 0 uses default (256)
+	SyncLimit                  float64 // per-sync limit in KB; 0 uses default (256*40)
+	DeliveryLimit              float64 // per-delivery limit in KB; 0 uses default (1000)
+	MaxPeers                   *int    // nil uses default (20)
+	StaticPeers                [][]byte
+	FromStaticOnly             bool
+	PropagationCost            int // clamped to >= PropagationCostMin
+	PropagationCostFlexibility int
+	PeeringCost                int
+	MaxPeeringCost             int
+	Name                       string
 }
 
 // NewRouterFromConfig creates a Router using the comprehensive configuration object, configuring the routing instance to mirror specific network constraints.
@@ -1134,6 +1152,9 @@ func NewRouterFromConfig(cfg RouterConfig) (*Router, error) {
 	}
 
 	router.autopeer = cfg.Autopeer
+	if cfg.AutopeerMaxdepth != nil {
+		router.autopeerMaxdepth = *cfg.AutopeerMaxdepth
+	}
 
 	if cfg.PropagationLimit > 0 {
 		router.propagationPerTransferLimit = cfg.PropagationLimit
@@ -1160,6 +1181,11 @@ func NewRouterFromConfig(cfg RouterConfig) (*Router, error) {
 		cost = PropagationCostMin
 	}
 	router.peeringCost = cost
+	router.propagationCost = cost
+	router.propagationCostFlexibility = cfg.PropagationCostFlexibility
+	router.maxPeeringCost = cfg.MaxPeeringCost
+	router.name = cfg.Name
+	router.fromStaticOnly = cfg.FromStaticOnly
 
 	if len(cfg.StaticPeers) > 0 {
 		if err := router.SetStaticPeers(cfg.StaticPeers); err != nil {
