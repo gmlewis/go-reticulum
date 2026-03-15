@@ -3,6 +3,7 @@
 *.md
 *.result
 .vscode
+/compress
 
 # Handy symlinks
 /test-all.sh
