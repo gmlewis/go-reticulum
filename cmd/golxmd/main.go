@@ -319,7 +319,9 @@ func main() {
 	// T09: Log level calculation
 	rns.LogLevel = resolveLogLevel(ac.LogLevel, int(verbosity), int(quietness))
 	setupLogging(runAsService, configDir)
+	rns.Logf("Configuration loaded from %v", rns.LogVerbose, false, configDir)
 
+	rns.Logf("Substantiating Reticulum...", rns.LogInfo, false)
 	if _, err := rns.NewReticulum(rnsConfigDir); err != nil {
 		log.Fatalf("initialize Reticulum: %v", err)
 	}
@@ -374,6 +376,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("register delivery destination: %v", err)
 	}
+	rns.Logf("LXMF Router ready to receive on %v", rns.LogInfo, false, rns.PrettyHex(lxmfDestination.Hash))
 
 	// T15: RNS.Identity.remember
 	rns.Remember(nil, lxmfDestination.Hash, identity.GetPublicKey(), nil)
@@ -404,9 +407,12 @@ func main() {
 			}
 		}
 		router.EnablePropagation()
-		if _, err := router.RegisterPropagationDestination(); err != nil {
+		propDest, err := router.RegisterPropagationDestination()
+		if err != nil {
 			log.Fatalf("register propagation destination: %v", err)
 		}
+		rns.Logf("LXMF Propagation Node started on %v", rns.LogInfo, false, rns.PrettyHex(propDest.Hash))
+
 		// If control identities are allowed, register control destination
 		if len(ac.ControlAllowedIdentities) > 0 {
 			allowed := make([][]byte, 0, len(ac.ControlAllowedIdentities))
@@ -434,6 +440,7 @@ func main() {
 	}
 
 	log.Printf("golxmd running with identity %x", identity.Hash)
+	rns.Logf("Started golxmd version %v", rns.LogNotice, false, rns.VERSION)
 
 	// T21: Initialize announce timers to current time + 10s (deferred delay)
 	// Python doesn't explicitly initialize them, so they start as None and are set after first fire.
@@ -485,9 +492,13 @@ func loadOrCreateIdentity(identityPath string) (*rns.Identity, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read identity from %q: %w", identityPath, err)
 		}
+		if identity != nil {
+			rns.Logf("Loaded Primary Identity %v", rns.LogInfo, false, identity)
+		}
 		return identity, nil
 	}
 
+	rns.Logf("No Primary Identity file found, creating new...", rns.LogInfo, false)
 	identity, err := rns.NewIdentity(true)
 	if err != nil {
 		return nil, fmt.Errorf("create identity: %w", err)
@@ -496,6 +507,7 @@ func loadOrCreateIdentity(identityPath string) (*rns.Identity, error) {
 		return nil, fmt.Errorf("persist identity to %q: %w", identityPath, err)
 	}
 
+	rns.Logf("Created new Primary Identity %v", rns.LogInfo, false, identity)
 	return identity, nil
 }
 
