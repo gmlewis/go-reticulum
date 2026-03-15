@@ -164,6 +164,21 @@ func lxmfDelivery(lxm *lxmf.Message) {
 	}
 }
 
+func runDeferredJobs(delay time.Duration, router *lxmf.Router, lxmfDestination *rns.Destination) {
+	time.Sleep(delay)
+	rns.Logf("Running deferred start jobs", rns.LogDebug, false)
+
+	if ac != nil && ac.PeerAnnounceAtStart && router != nil && lxmfDestination != nil {
+		rns.Logf("Sending announce for LXMF delivery destination", rns.LogExtreme, false)
+		_ = router.Announce(lxmfDestination.Hash)
+	}
+
+	if ac != nil && ac.NodeAnnounceAtStart && router != nil {
+		rns.Logf("Sending announce for LXMF Propagation Node", rns.LogExtreme, false)
+		router.AnnouncePropagationNode()
+	}
+}
+
 func main() {
 	log.SetFlags(0)
 	flag.Parse()

@@ -16,6 +16,33 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
+func TestAnnounceAtStart(t *testing.T) {
+	tempDir := t.TempDir()
+	identity, _ := rns.NewIdentity(true)
+	router, _ := lxmf.NewRouter(identity, tempDir)
+	dest, _ := router.RegisterDeliveryIdentity(identity, "Test Peer", nil)
+
+	ac = &activeConfig{
+		PeerAnnounceAtStart: true,
+		NodeAnnounceAtStart: true,
+	}
+
+	// We'll test runDeferredJobs with a small delay
+	// It should call router.Announce and router.AnnouncePropagationNode
+	// Since we can't easily mock these, we just verify it runs.
+	runDeferredJobs(1*time.Millisecond, router, dest)
+}
+
+func TestDeferredStartDelay(t *testing.T) {
+	start := time.Now()
+	// We'll test a version that takes a duration for testing
+	runDeferredJobs(100 * time.Millisecond, nil, nil)
+	elapsed := time.Since(start)
+	if elapsed < 100*time.Millisecond {
+		t.Errorf("elapsed %v, want >= 100ms", elapsed)
+	}
+}
+
 func TestLXMFDelivery(t *testing.T) {
 	tempDir := t.TempDir()
 	lxmdir = filepath.Join(tempDir, "messages")

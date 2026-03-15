@@ -1389,6 +1389,44 @@ func (r *Router) getAnnounceAppDataLocked(destinationHash []byte) []byte {
 	return packed
 }
 
+// AnnouncePropagationNode broadcasts the presence and capabilities of this router as a propagation node.
+func (r *Router) AnnouncePropagationNode() {
+	r.mu.Lock()
+	dest := r.propagationDestination
+	if dest == nil {
+		r.mu.Unlock()
+		return
+	}
+	appData := r.getPropagationNodeAppDataLocked()
+	controlDest := r.controlDestination
+	controlAllowedCount := len(r.controlAllowed)
+	r.mu.Unlock()
+
+	// Python uses a delayed announce thread, but here we'll just send it.
+	// The delay is 0.1s in Python.
+	time.Sleep(100 * time.Millisecond)
+	_ = dest.Announce(appData)
+
+	if controlDest != nil && controlAllowedCount > 0 {
+		_ = controlDest.Announce(nil)
+	}
+}
+
+func (r *Router) getPropagationNodeAppDataLocked() []byte {
+	peerData := []any{
+		r.autopeer,
+		r.peeringCost,
+		r.autopeerMaxdepth,
+		r.name,
+	}
+	packed, err := msgpack.Pack(peerData)
+	if err != nil {
+		log.Printf("Could not pack propagation node app data: %v", err)
+		return nil
+	}
+	return packed
+}
+
 // Announce broadcasts the presence and capabilities of a specific delivery destination to the wider Reticulum network, enabling dynamic peer discovery.
 func (r *Router) Announce(destinationHash []byte) error {
 	r.mu.Lock()
