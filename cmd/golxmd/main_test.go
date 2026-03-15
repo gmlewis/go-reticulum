@@ -16,6 +16,40 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
+func TestJobs(t *testing.T) {
+	tempDir := t.TempDir()
+	identity, _ := rns.NewIdentity(true)
+	router, _ := lxmf.NewRouter(identity, tempDir)
+	dest, _ := router.RegisterDeliveryIdentity(identity, "Test Peer", nil)
+
+	// Actually, Python stores them in seconds.
+	// active_configuration["peer_announce_interval"] = lxmd_config["lxmf"].as_int("announce_interval")*60
+
+	peerInterval := 1 // 1 minute = 60s
+	nodeInterval := 1 // 1 minute = 60s
+
+	ac = &activeConfig{
+		PeerAnnounceInterval: &peerInterval,
+		NodeAnnounceInterval: &nodeInterval,
+	}
+
+	// We'll mock time.time() equivalent by manually setting lastPeerAnnounce/lastNodeAnnounce
+	// But jobs() uses time.Now().
+	// To test it without waiting, we'd need to mock time.Now() or use very small intervals.
+	// Since intervals in config are in minutes (then *60 for seconds), we can't easily make them < 60s in config.
+
+	// For testing, we'll implement jobsWithTimeout that takes a tick duration
+
+	stop := make(chan struct{})
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		close(stop)
+	}()
+
+	// This just verifies it runs and doesn't crash
+	jobs(router, dest, stop, 10*time.Millisecond)
+}
+
 func TestAnnounceAtStart(t *testing.T) {
 	tempDir := t.TempDir()
 	identity, _ := rns.NewIdentity(true)
@@ -36,7 +70,7 @@ func TestAnnounceAtStart(t *testing.T) {
 func TestDeferredStartDelay(t *testing.T) {
 	start := time.Now()
 	// We'll test a version that takes a duration for testing
-	runDeferredJobs(100 * time.Millisecond, nil, nil)
+	runDeferredJobs(100*time.Millisecond, nil, nil)
 	elapsed := time.Since(start)
 	if elapsed < 100*time.Millisecond {
 		t.Errorf("elapsed %v, want >= 100ms", elapsed)
@@ -55,7 +89,7 @@ func TestLXMFDelivery(t *testing.T) {
 	id, _ := rns.NewIdentity(true)
 	dest, _ := rns.NewDestination(id, rns.DestinationIn, rns.DestinationSingle, "lxmf", "delivery")
 	lxm, _ := lxmf.NewMessage(dest, dest, "Hello", "Content", nil)
-	
+
 	// Case 1: No on_inbound
 	ac = &activeConfig{OnInbound: ""}
 	lxmfDelivery(lxm)
@@ -71,10 +105,10 @@ func TestLXMFDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	ac = &activeConfig{OnInbound: scriptPath}
 	lxmfDelivery(lxm)
-	
+
 	resultPath := filepath.Join(tempDir, "result")
 	if _, err := os.Stat(resultPath); os.IsNotExist(err) {
 		t.Errorf("on_inbound script was not called")
@@ -165,8 +199,8 @@ func TestRouterConstruction(t *testing.T) {
 
 	cfg := map[string]map[string]string{
 		"propagation": {
-			"autopeer": "no",
-			"autopeer_maxdepth": "3",
+			"autopeer":                      "no",
+			"autopeer_maxdepth":             "3",
 			"propagation_stamp_cost_target": "25",
 		},
 	}
@@ -177,11 +211,11 @@ func TestRouterConstruction(t *testing.T) {
 
 	identity, _ := rns.NewIdentity(true)
 	router, err := lxmf.NewRouterFromConfig(lxmf.RouterConfig{
-		Identity: identity,
-		StoragePath: tempDir,
-		Autopeer: ac.Autopeer,
+		Identity:         identity,
+		StoragePath:      tempDir,
+		Autopeer:         ac.Autopeer,
 		AutopeerMaxdepth: ac.AutopeerMaxdepth,
-		PropagationCost: ac.PropagationStampCostTarget,
+		PropagationCost:  ac.PropagationStampCostTarget,
 	})
 	if err != nil {
 		t.Fatal(err)

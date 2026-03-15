@@ -35,7 +35,7 @@ func TestResolveConfigDir(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		
+
 		got := resolveConfigDirCustom("", home, etc)
 		if got != etc {
 			t.Errorf("got %v, want %v", got, etc)
@@ -54,7 +54,7 @@ func TestResolveConfigDir(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		
+
 		got := resolveConfigDirCustom("", home, "/nonexistent/etc")
 		if got != userConfig {
 			t.Errorf("got %v, want %v", got, userConfig)
@@ -98,18 +98,18 @@ func TestApplyConfig(t *testing.T) {
 	t.Run("overrides", func(t *testing.T) {
 		cfg := map[string]map[string]string{
 			"lxmf": {
-				"display_name": "My Peer",
-				"announce_at_start": "yes",
-				"announce_interval": "120",
+				"display_name":                        "My Peer",
+				"announce_at_start":                   "yes",
+				"announce_interval":                   "120",
 				"delivery_transfer_max_accepted_size": "2.5",
 			},
 			"propagation": {
-				"enable_node": "yes",
-				"node_name": "My Node",
-				"autopeer": "no",
-				"max_peers": "50",
+				"enable_node":                   "yes",
+				"node_name":                     "My Node",
+				"autopeer":                      "no",
+				"max_peers":                     "50",
 				"propagation_stamp_cost_target": "20",
-				"static_peers": "e17f833c, 5a2d0029",
+				"static_peers":                  "e17f833c, 5a2d0029",
 			},
 			"logging": {
 				"loglevel": "5",
@@ -154,20 +154,20 @@ func TestApplyConfig(t *testing.T) {
 			t.Errorf("LogLevel: got %v, want 5", got.LogLevel)
 		}
 	})
-	
+
 	t.Run("clamping", func(t *testing.T) {
 		cfg := map[string]map[string]string{
 			"lxmf": {
 				"delivery_transfer_max_accepted_size": "0.1",
 			},
 			"propagation": {
-				"message_storage_limit": "0.001",
+				"message_storage_limit":                  "0.001",
 				"propagation_transfer_max_accepted_size": "0.1",
-				"propagation_sync_max_accepted_size": "0.1",
-				"propagation_stamp_cost_target": "5",
-				"propagation_stamp_cost_flexibility": "-5",
-				"peering_cost": "-5",
-				"remote_peering_cost_max": "-5",
+				"propagation_sync_max_accepted_size":     "0.1",
+				"propagation_stamp_cost_target":          "5",
+				"propagation_stamp_cost_flexibility":     "-5",
+				"peering_cost":                           "-5",
+				"remote_peering_cost_max":                "-5",
 			},
 		}
 		got, err := applyConfig(cfg)
@@ -210,7 +210,7 @@ func TestLoadHashList(t *testing.T) {
 		valid2 := "fedcba9876543210fedcba9876543210"
 		invalid1 := "too_short"
 		invalid2 := "not_hex_0123456789abcdef01234567"
-		
+
 		content := valid1 + "\n" + invalid1 + "\n" + valid2 + "\n" + invalid2 + "\n"
 		err := os.WriteFile(path, []byte(content), 0644)
 		if err != nil {

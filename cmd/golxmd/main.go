@@ -131,7 +131,41 @@ var (
 var (
 	ac     *activeConfig
 	lxmdir string
+
+	lastPeerAnnounce time.Time
+	lastNodeAnnounce time.Time
 )
+
+const jobsInterval = 5 * time.Second
+
+func jobs(router *lxmf.Router, lxmfDestination *rns.Destination, stop <-chan struct{}, interval time.Duration) {
+	for {
+		select {
+		case <-stop:
+			return
+		default:
+			if ac != nil && ac.PeerAnnounceInterval != nil {
+				if time.Since(lastPeerAnnounce) > time.Duration(*ac.PeerAnnounceInterval)*time.Second {
+					rns.Logf("Sending announce for LXMF delivery destination", rns.LogVerbose, false)
+					if lxmfDestination != nil {
+						_ = router.Announce(lxmfDestination.Hash)
+					}
+					lastPeerAnnounce = time.Now()
+				}
+			}
+
+			if ac != nil && ac.NodeAnnounceInterval != nil {
+				if time.Since(lastNodeAnnounce) > time.Duration(*ac.NodeAnnounceInterval)*time.Second {
+					rns.Logf("Sending announce for LXMF Propagation Node", rns.LogVerbose, false)
+					router.AnnouncePropagationNode()
+					lastNodeAnnounce = time.Now()
+				}
+			}
+
+			time.Sleep(interval)
+		}
+	}
+}
 
 func setupLogging(service bool, configDir string) {
 	if service {

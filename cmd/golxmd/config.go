@@ -271,7 +271,7 @@ type activeConfig struct {
 	PropagationStampCostFlexibility    int
 	PeeringCost                        int
 	RemotePeeringCostMax               int
-	PrioritisedLXMFDestinations       []string
+	PrioritisedLXMFDestinations        []string
 	ControlAllowedIdentities           []string
 	StaticPeers                        [][]byte
 	MaxPeers                           *int
@@ -299,10 +299,10 @@ func applyConfig(cfg map[string]map[string]string) (*activeConfig, error) {
 		PropagationTransferMaxAcceptedSize: 256,
 		PropagationSyncMaxAcceptedSize:     256 * 40,
 		PropagationStampCostTarget:         16,
-		PropagationStampCostFlexibility:    3, // LXMF.LXMRouter.PROPAGATION_COST_FLEX
+		PropagationStampCostFlexibility:    3,  // LXMF.LXMRouter.PROPAGATION_COST_FLEX
 		PeeringCost:                        18, // LXMF.LXMRouter.PEERING_COST
 		RemotePeeringCostMax:               26, // LXMF.LXMRouter.MAX_PEERING_COST
-		PrioritisedLXMFDestinations:       []string{},
+		PrioritisedLXMFDestinations:        []string{},
 		ControlAllowedIdentities:           []string{},
 		StaticPeers:                        [][]byte{},
 		MaxPeers:                           nil,
