@@ -164,20 +164,20 @@ func doSend(idPath string, destHashHex string, filePath string, noCompress bool)
 	remoteID := rns.RecallIdentity(destHash)
 	if remoteID == nil {
 		fmt.Printf("Path to <%x> requested  ", destHash)
-		if err := rns.Transport.RequestPath(destHash); err != nil {
+		if err := rns.TransportProxy.RequestPath(destHash); err != nil {
 			log.Fatalf("Could not request path to <%x>: %v\n", destHash, err)
 		}
 
 		i := 0
 		syms := []string{"⢄", "⢂", "⢁", "⡁", "⡈", "⡐", "⡠"}
 		timeout := time.Now().Add(15 * time.Second)
-		for !rns.Transport.HasPath(destHash) && time.Now().Before(timeout) {
+		for !rns.TransportProxy.HasPath(destHash) && time.Now().Before(timeout) {
 			time.Sleep(100 * time.Millisecond)
 			fmt.Printf("\b\b%v ", syms[i])
 			i = (i + 1) % len(syms)
 		}
 
-		if !rns.Transport.HasPath(destHash) {
+		if !rns.TransportProxy.HasPath(destHash) {
 			log.Fatalf("\r%v\rPath request timed out\n", strings.Repeat(" ", 60))
 		}
 		fmt.Printf("\b\b \n")
@@ -298,24 +298,25 @@ func doFetch(idPath string, destHashHex string, fileName string, noCompress bool
 	remoteID := rns.RecallIdentity(destHash)
 	if remoteID == nil {
 		fmt.Printf("Path to <%x> requested  ", destHash)
-		if err := rns.Transport.RequestPath(destHash); err != nil {
+		if err := rns.TransportProxy.RequestPath(destHash); err != nil {
 			log.Fatalf("Could not request path to <%x>: %v\n", destHash, err)
 		}
+
 		i := 0
 		syms := []string{"⢄", "⢂", "⢁", "⡁", "⡈", "⡐", "⡠"}
 		timeout := time.Now().Add(15 * time.Second)
-		for !rns.Transport.HasPath(destHash) && time.Now().Before(timeout) {
+		for !rns.TransportProxy.HasPath(destHash) && time.Now().Before(timeout) {
 			time.Sleep(100 * time.Millisecond)
 			fmt.Printf("\b\b%v ", syms[i])
 			i = (i + 1) % len(syms)
 		}
-		if !rns.Transport.HasPath(destHash) {
+
+		if !rns.TransportProxy.HasPath(destHash) {
 			log.Fatalf("\r%v\rPath request timed out\n", strings.Repeat(" ", 60))
 		}
 		fmt.Printf("\b\b \n")
 		remoteID = rns.RecallIdentity(destHash)
 	}
-
 	remoteDest, err := rns.NewDestination(remoteID, rns.DestinationOut, rns.DestinationSingle, AppName, "receive")
 	if err != nil {
 		log.Fatalf("Could not create destination: %v\n", err)

@@ -12,21 +12,23 @@ import (
 )
 
 func TestLink(t *testing.T) {
+	t.Parallel()
+	ts := NewTransportSystem()
 	// Create receiver identity
 	receiverID := mustTestNewIdentity(t, true)
 
 	// Create destination for receiver
-	receiverDest := mustTestNewDestination(t, receiverID, DestinationIn, DestinationSingle, "receiver")
+	receiverDest := mustTestNewDestinationWithTransport(t, ts, receiverID, DestinationIn, DestinationSingle, "receiver")
 
 	// Initiator creates link to receiver
-	link := mustTestNewLink(t, receiverDest)
+	link := mustTestNewLinkWithTransport(t, ts, receiverDest)
 
 	// Simulate link ID (derived from packet hash in practice)
 	link.linkID = []byte("simulated_link_id")
 	link.hash = link.linkID
 
 	// Receiver accepts link and generates its keys
-	receiverLink := mustTestNewLink(t, receiverDest)
+	receiverLink := mustTestNewLinkWithTransport(t, ts, receiverDest)
 	receiverLink.initiator = false
 	receiverLink.linkID = link.linkID
 	receiverLink.hash = link.linkID
@@ -66,7 +68,7 @@ func TestLink(t *testing.T) {
 }
 
 func TestLinkHandshakeFull(t *testing.T) {
-	SetLogLevel(LogExtreme)
+	t.Parallel()
 
 	tsInitiator := newTestTransportSystem(t)
 	tsReceiver := newTestTransportSystem(t)
@@ -96,7 +98,7 @@ func TestLinkHandshakeFull(t *testing.T) {
 
 	select {
 	case <-establishedInitiator:
-	case <-time.After(30 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("Timeout waiting for initiator link establishment")
 	}
 
@@ -105,7 +107,7 @@ func TestLinkHandshakeFull(t *testing.T) {
 		if l.status != LinkActive {
 			t.Errorf("Receiver link not active")
 		}
-	case <-time.After(30 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("Timeout waiting for receiver link establishment")
 	}
 
@@ -115,10 +117,12 @@ func TestLinkHandshakeFull(t *testing.T) {
 }
 
 func TestLinkIdentification(t *testing.T) {
+	t.Parallel()
+	ts := NewTransportSystem()
 	receiverID := mustTestNewIdentity(t, true)
-	receiverDest := mustTestNewDestination(t, receiverID, DestinationIn, DestinationSingle, "receiver")
+	receiverDest := mustTestNewDestinationWithTransport(t, ts, receiverID, DestinationIn, DestinationSingle, "receiver")
 
-	link := mustTestNewLink(t, receiverDest)
+	link := mustTestNewLinkWithTransport(t, ts, receiverDest)
 	link.linkID = []byte("link_id")
 	link.status = LinkActive // Simulate established link
 
@@ -136,9 +140,11 @@ func TestLinkIdentification(t *testing.T) {
 }
 
 func TestLinkIdentifyInvalidState(t *testing.T) {
+	t.Parallel()
+	ts := NewTransportSystem()
 	receiverID := mustTestNewIdentity(t, true)
-	receiverDest := mustTestNewDestination(t, receiverID, DestinationIn, DestinationSingle, "receiver")
-	link := mustTestNewLink(t, receiverDest)
+	receiverDest := mustTestNewDestinationWithTransport(t, ts, receiverID, DestinationIn, DestinationSingle, "receiver")
+	link := mustTestNewLinkWithTransport(t, ts, receiverDest)
 	initiatorID := mustTestNewIdentity(t, true)
 
 	if err := link.Identify(initiatorID); err == nil {
@@ -147,7 +153,7 @@ func TestLinkIdentifyInvalidState(t *testing.T) {
 }
 
 func TestLinkIdentifyPacketFlow(t *testing.T) {
-	SetLogLevel(LogWarning)
+	t.Parallel()
 
 	tsInitiator := newTestTransportSystem(t)
 	tsReceiver := newTestTransportSystem(t)
@@ -175,14 +181,14 @@ func TestLinkIdentifyPacketFlow(t *testing.T) {
 
 	select {
 	case <-establishedInitiator:
-	case <-time.After(30 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for initiator link establishment")
 	}
 
 	var receiverLink *Link
 	select {
 	case receiverLink = <-establishedReceiver:
-	case <-time.After(30 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for receiver link establishment")
 	}
 
@@ -200,12 +206,13 @@ func TestLinkIdentifyPacketFlow(t *testing.T) {
 		if !bytes.Equal(id.Hash, tsInitiator.identity.Hash) {
 			t.Fatalf("identified hash mismatch: got %x want %x", id.Hash, tsInitiator.identity.Hash)
 		}
-	case <-time.After(30 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for remote identification")
 	}
 }
 
 func TestSetResourceStrategyValidatesInput(t *testing.T) {
+	t.Parallel()
 	l := &Link{}
 
 	if err := l.SetResourceStrategy(AcceptAll); err != nil {

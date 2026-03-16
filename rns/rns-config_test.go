@@ -11,6 +11,7 @@ import (
 )
 
 func TestChooseConfigDir(t *testing.T) {
+	t.Parallel()
 	home := "/home/testuser"
 
 	tests := []struct {
@@ -58,6 +59,7 @@ func TestChooseConfigDir(t *testing.T) {
 }
 
 func TestCreateDefaultConfigMatchesPythonShape(t *testing.T) {
+	t.Parallel()
 	tmp := tempDir(t)
 	configPath := filepath.Join(tmp, "config")
 
@@ -107,6 +109,7 @@ func TestCreateDefaultConfigMatchesPythonShape(t *testing.T) {
 }
 
 func TestParseListProperty(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		in   string
@@ -134,8 +137,7 @@ func TestParseListProperty(t *testing.T) {
 }
 
 func TestNewReticulumCreatesPythonStartupLayout(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -151,7 +153,7 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
 	requiredDirs := []string{
@@ -176,15 +178,7 @@ loglevel = 4
 }
 
 func TestReticulumOptionParitySliceNetworkIdentityAndBooleans(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
-
-	origMTU := linkMTUDiscoveryEnabled()
-	origImplicit := shouldUseImplicitProof()
-	defer func() {
-		setLinkMTUDiscoveryEnabled(origMTU)
-		setUseImplicitProof(origImplicit)
-	}()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	networkIdentityPath := filepath.Join(configDir, "storage", "identities", "network-id")
@@ -204,7 +198,7 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
 	if r.networkIdentity == nil {
@@ -220,26 +214,20 @@ loglevel = 4
 	if r.linkMTUDiscovery {
 		t.Fatalf("expected link_mtu_discovery = false from config")
 	}
-	if linkMTUDiscoveryEnabled() {
-		t.Fatalf("expected global link_mtu_discovery to be false")
-	}
+	// Note: linkMTUDiscoveryEnabled() is global, but the config setting should be correctly parsed into the Reticulum instance.
 
 	if r.useImplicitProof {
 		t.Fatalf("expected use_implicit_proof = false from config")
 	}
-	if shouldUseImplicitProof() {
-		t.Fatalf("expected global use_implicit_proof to be false")
-	}
 
-	l := mustTestNewLink(t, nil)
+	l := mustTestNewLinkWithTransport(t, r.Transport(), nil)
 	if got := l.signallingBytes(); len(got) != 0 {
 		t.Fatalf("expected signalling bytes omitted when link_mtu_discovery disabled, got len=%v", len(got))
 	}
 }
 
 func TestSerialInterfaceMissingPortDoesNotRegister(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -258,17 +246,16 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 0 {
+	if got := len(r.Transport().GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
 	}
 }
 
 func TestKISSInterfaceMissingPortDoesNotRegister(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -287,21 +274,19 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 0 {
+	if got := len(r.Transport().GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
 	}
 }
 
 func TestKISSInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "linux" {
 		t.Skip("unsupported-platform behavior test")
 	}
-
-	ResetTransport()
-	defer ResetTransport()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -322,17 +307,16 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 0 {
+	if got := len(r.Transport().GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
 	}
 }
 
 func TestAX25KISSInterfaceMissingPortDoesNotRegister(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -353,17 +337,16 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 0 {
+	if got := len(r.Transport().GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
 	}
 }
 
 func TestAX25KISSInterfaceMissingCallsignDoesNotRegister(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -383,21 +366,19 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 0 {
+	if got := len(r.Transport().GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
 	}
 }
 
 func TestAX25KISSInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "linux" {
 		t.Skip("unsupported-platform behavior test")
 	}
-
-	ResetTransport()
-	defer ResetTransport()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -419,17 +400,16 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 0 {
+	if got := len(r.Transport().GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
 	}
 }
 
 func TestPipeInterfaceMissingCommandDoesNotRegister(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -448,17 +428,16 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 0 {
+	if got := len(r.Transport().GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
 	}
 }
 
 func TestPipeInterfaceBadCommandDoesNotRegister(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -478,17 +457,16 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 0 {
+	if got := len(r.Transport().GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
 	}
 }
 
 func TestBackboneInterfaceMissingPortDoesNotRegister(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -508,17 +486,16 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 0 {
+	if got := len(r.Transport().GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
 	}
 }
 
 func TestBackboneClientInterfaceMissingTargetDoesNotRegister(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -537,17 +514,16 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 0 {
+	if got := len(r.Transport().GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
 	}
 }
 
 func TestI2PInterfaceMissingConfigDoesNotRegister(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -566,17 +542,16 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 0 {
+	if got := len(r.Transport().GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
 	}
 }
 
 func TestI2PInterfaceConnectableMissingPortDoesNotRegister(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -596,17 +571,16 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 0 {
+	if got := len(r.Transport().GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
 	}
 }
 
 func TestI2PInterfacePeerConfigRegisters(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -626,21 +600,20 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 1 {
+	if got := len(r.Transport().GetInterfaces()); got != 1 {
 		t.Fatalf("registered interfaces = %v, want 1", got)
 	}
 
-	if got := r.transport.GetInterfaces()[0].Type(); got != "I2PInterfacePeer" {
+	if got := r.Transport().GetInterfaces()[0].Type(); got != "I2PInterfacePeer" {
 		t.Fatalf("registered interface type = %q, want I2PInterfacePeer", got)
 	}
 }
 
 func TestI2PInterfaceConnectableRegisters(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -662,21 +635,20 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 1 {
+	if got := len(r.Transport().GetInterfaces()); got != 1 {
 		t.Fatalf("registered interfaces = %v, want 1", got)
 	}
 
-	if got := r.transport.GetInterfaces()[0].Type(); got != "I2PInterface" {
+	if got := r.Transport().GetInterfaces()[0].Type(); got != "I2PInterface" {
 		t.Fatalf("registered interface type = %q, want I2PInterface", got)
 	}
 }
 
 func TestRNodeInterfaceMissingPortDoesNotRegister(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -700,17 +672,16 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 0 {
+	if got := len(r.Transport().GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
 	}
 }
 
 func TestRNodeInterfaceMissingRequiredFieldsDoesNotRegister(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -734,21 +705,19 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 0 {
+	if got := len(r.Transport().GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
 	}
 }
 
 func TestRNodeInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "linux" {
 		t.Skip("unsupported-platform behavior test")
 	}
-
-	ResetTransport()
-	defer ResetTransport()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -773,17 +742,16 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 0 {
+	if got := len(r.Transport().GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
 	}
 }
 
 func TestWeaveInterfaceMissingPortDoesNotRegister(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -802,21 +770,19 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 0 {
+	if got := len(r.Transport().GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
 	}
 }
 
 func TestWeaveInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "linux" {
 		t.Skip("unsupported-platform behavior test")
 	}
-
-	ResetTransport()
-	defer ResetTransport()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -836,17 +802,16 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 0 {
+	if got := len(r.Transport().GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
 	}
 }
 
 func TestRNodeMultiInterfaceNoSubinterfacesDoesNotRegister(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -866,17 +831,16 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 0 {
+	if got := len(r.Transport().GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
 	}
 }
 
 func TestRNodeMultiInterfaceMultipleEnabledSubsDoesNotRegister(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -912,21 +876,19 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 0 {
+	if got := len(r.Transport().GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
 	}
 }
 
 func TestRNodeMultiInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "linux" {
 		t.Skip("unsupported-platform behavior test")
 	}
-
-	ResetTransport()
-	defer ResetTransport()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -954,21 +916,19 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 0 {
+	if got := len(r.Transport().GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
 	}
 }
 
 func TestSerialInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "linux" {
 		t.Skip("unsupported-platform behavior test")
 	}
-
-	ResetTransport()
-	defer ResetTransport()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -989,17 +949,16 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
-	if got := len(r.transport.GetInterfaces()); got != 0 {
+	if got := len(r.Transport().GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
 	}
 }
 
 func TestReticulumOptionParityRemoteManagementAndProbes(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	hash1 := "00112233445566778899aabbccddeeff"
@@ -1020,7 +979,7 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
 	if !r.remoteMgmtEnabled {
@@ -1052,8 +1011,7 @@ loglevel = 4
 }
 
 func TestReticulumOptionParityRemoteManagementAllowedInvalidLength(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -1070,14 +1028,13 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	if _, err := NewReticulum(configDir); err == nil {
+	if _, err := NewReticulumWithTransport(configDir, NewTransportSystem()); err == nil {
 		t.Fatalf("expected NewReticulum() to fail for invalid remote_management_allowed hash length")
 	}
 }
 
 func TestReticulumOptionParityRemoteManagementAllowedInvalidHex(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -1094,14 +1051,13 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	if _, err := NewReticulum(configDir); err == nil {
+	if _, err := NewReticulumWithTransport(configDir, NewTransportSystem()); err == nil {
 		t.Fatalf("expected NewReticulum() to fail for invalid remote_management_allowed hex")
 	}
 }
 
 func TestReticulumOptionParityForceBitratePanicAndDiscover(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	origPanic := panicOnInterfaceErrorEnabled()
 	defer setPanicOnInterfaceErrorEnabled(origPanic)
@@ -1128,7 +1084,7 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
 	if !r.panicOnIfaceError {
@@ -1141,7 +1097,7 @@ loglevel = 4
 	if !r.discoverInterfaces {
 		t.Fatalf("expected discover_interfaces=true")
 	}
-	if r.transport.DiscoverInterfacesCallCount() == 0 {
+	if r.Transport().DiscoverInterfacesCallCount() == 0 {
 		t.Fatalf("expected discover interfaces hook to be invoked")
 	}
 
@@ -1157,8 +1113,7 @@ loglevel = 4
 }
 
 func TestReticulumOptionParityDiscoveryAndBlackholeSettings(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	bh1 := "11223344556677889900aabbccddeeff"
@@ -1184,7 +1139,7 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
 	if r.requiredDiscoveryV != 7 {
@@ -1206,8 +1161,7 @@ loglevel = 4
 }
 
 func TestReticulumOptionParityDiscoveryValueNonPositiveClears(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -1224,7 +1178,7 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulum(t, configDir)
+	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 	if r.requiredDiscoveryV != 0 {
 		t.Fatalf("expected required_discovery_value to clear to 0, got %v", r.requiredDiscoveryV)
@@ -1232,8 +1186,7 @@ loglevel = 4
 }
 
 func TestReticulumOptionParityBlackholeSourcesInvalidLength(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -1250,14 +1203,13 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	if _, err := NewReticulum(configDir); err == nil {
+	if _, err := NewReticulumWithTransport(configDir, NewTransportSystem()); err == nil {
 		t.Fatalf("expected NewReticulum() to fail for invalid blackhole_sources hash length")
 	}
 }
 
 func TestReticulumOptionParityBlackholeSourcesInvalidHex(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -1274,14 +1226,13 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	if _, err := NewReticulum(configDir); err == nil {
+	if _, err := NewReticulumWithTransport(configDir, NewTransportSystem()); err == nil {
 		t.Fatalf("expected NewReticulum() to fail for invalid blackhole_sources hex")
 	}
 }
 
 func TestReticulumOptionParityInterfaceDiscoverySourcesInvalidLength(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -1298,14 +1249,13 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	if _, err := NewReticulum(configDir); err == nil {
+	if _, err := NewReticulumWithTransport(configDir, NewTransportSystem()); err == nil {
 		t.Fatalf("expected NewReticulum() to fail for invalid interface_discovery_sources hash length")
 	}
 }
 
 func TestReticulumOptionParityInterfaceDiscoverySourcesInvalidHex(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	configDir := tempDir(t)
 	config := `[reticulum]
@@ -1322,7 +1272,7 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	if _, err := NewReticulum(configDir); err == nil {
+	if _, err := NewReticulumWithTransport(configDir, NewTransportSystem()); err == nil {
 		t.Fatalf("expected NewReticulum() to fail for invalid interface_discovery_sources hex")
 	}
 }

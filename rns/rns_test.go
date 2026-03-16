@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
-	"time"
 
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
 )
@@ -62,14 +61,9 @@ func tempDir(t *testing.T) string {
 func newTestTransportSystem(t *testing.T) *TransportSystem {
 	t.Helper()
 	id := mustTestNewIdentity(t, true)
-	return &TransportSystem{
-		pathTable:    make(map[string]*PathEntry),
-		packetHashes: make(map[string]time.Time),
-		destinations: make([]*Destination, 0),
-		pendingLinks: make([]*Link, 0),
-		activeLinks:  make([]*Link, 0),
-		identity:     id,
-	}
+	ts := NewTransportSystem()
+	ts.identity = id
+	return ts
 }
 
 // newTestPipes creates a pair of connected PipeInterfaces wired to the
@@ -102,8 +96,9 @@ func writeConfig(t *testing.T, dir, content string) {
 }
 
 func TestNewReticulumSharedInstanceServerThenClient(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
+	ts1 := NewTransportSystem()
+	ts2 := NewTransportSystem()
 
 	port := reserveTCPPort(t)
 	controlPort := reserveTCPPort(t)
@@ -126,13 +121,19 @@ loglevel = 4
 	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name(), port, controlPort))
 	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name(), port, controlPort))
 
-	r1 := mustTestNewReticulum(t, cfg1)
+	r1, err := NewReticulumWithTransport(cfg1, ts1)
+	if err != nil {
+		t.Fatalf("failed to create reticulum 1: %v", err)
+	}
 	defer closeReticulum(t, r1)
 	if !r1.isSharedInstance || r1.isConnectedToSharedInstance || r1.isStandaloneInstance {
 		t.Fatalf("first instance role mismatch: shared=%v connected=%v standalone=%v", r1.isSharedInstance, r1.isConnectedToSharedInstance, r1.isStandaloneInstance)
 	}
 
-	r2 := mustTestNewReticulum(t, cfg2)
+	r2, err := NewReticulumWithTransport(cfg2, ts2)
+	if err != nil {
+		t.Fatalf("failed to create reticulum 2: %v", err)
+	}
 	defer closeReticulum(t, r2)
 	if r2.isSharedInstance || !r2.isConnectedToSharedInstance || r2.isStandaloneInstance {
 		t.Fatalf("second instance role mismatch: shared=%v connected=%v standalone=%v", r2.isSharedInstance, r2.isConnectedToSharedInstance, r2.isStandaloneInstance)
@@ -140,8 +141,8 @@ loglevel = 4
 }
 
 func TestNewReticulumShareInstanceNoStandalone(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
+	ts := NewTransportSystem()
 
 	cfg := tempDir(t)
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
@@ -154,7 +155,10 @@ loglevel = 4
 [interfaces]
 `, reserveTCPPort(t)))
 
-	r := mustTestNewReticulum(t, cfg)
+	r, err := NewReticulumWithTransport(cfg, ts)
+	if err != nil {
+		t.Fatalf("failed to create reticulum: %v", err)
+	}
 	defer closeReticulum(t, r)
 	if r.isSharedInstance || r.isConnectedToSharedInstance || !r.isStandaloneInstance {
 		t.Fatalf("instance role mismatch: shared=%v connected=%v standalone=%v", r.isSharedInstance, r.isConnectedToSharedInstance, r.isStandaloneInstance)
@@ -166,8 +170,9 @@ func TestNewReticulumSharedInstanceUnixServerThenClientSameConfigDir(t *testing.
 		t.Skip("unix shared-instance transport is not used on windows")
 	}
 
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
+	ts1 := NewTransportSystem()
+	ts2 := NewTransportSystem()
 
 	cfg := tempDir(t)
 	// Use a shorter name for the socket to avoid path length limits on macOS
@@ -184,13 +189,19 @@ loglevel = 4
 [interfaces]
 `, instanceName))
 
-	r1 := mustTestNewReticulum(t, cfg)
+	r1, err := NewReticulumWithTransport(cfg, ts1)
+	if err != nil {
+		t.Fatalf("failed to create reticulum 1: %v", err)
+	}
 	defer closeReticulum(t, r1)
 	if !r1.isSharedInstance || r1.isConnectedToSharedInstance || r1.isStandaloneInstance {
 		t.Fatalf("first instance role mismatch: shared=%v connected=%v standalone=%v", r1.isSharedInstance, r1.isConnectedToSharedInstance, r1.isStandaloneInstance)
 	}
 
-	r2 := mustTestNewReticulum(t, cfg)
+	r2, err := NewReticulumWithTransport(cfg, ts2)
+	if err != nil {
+		t.Fatalf("failed to create reticulum 2: %v", err)
+	}
 	defer closeReticulum(t, r2)
 	if r2.isSharedInstance || !r2.isConnectedToSharedInstance || r2.isStandaloneInstance {
 		t.Fatalf("second instance role mismatch: shared=%v connected=%v standalone=%v", r2.isSharedInstance, r2.isConnectedToSharedInstance, r2.isStandaloneInstance)
@@ -202,6 +213,7 @@ loglevel = 4
 }
 
 func TestParseBoolLike(t *testing.T) {
+	t.Parallel()
 	truthy := []string{"1", "true", "True", "yes", "Y", "on"}
 	for _, v := range truthy {
 		if !parseBoolLike(v) {

@@ -831,6 +831,7 @@ if __name__ == "__main__":
 `
 
 func TestIntegratedHandshakeGoToPython(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integrated test in short mode")
 	}
@@ -838,7 +839,6 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-integrated-*")
 	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
-	ResetTransport()
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -903,7 +903,7 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 	defer closeReticulum(t, r)
 
 	// Wait for announce (path) from Python
-	ts := GetTransport()
+	ts := r.Transport()
 	timeout := time.Now().Add(10 * time.Second)
 	found := false
 	for time.Now().Before(timeout) {
@@ -920,13 +920,13 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 
 	// Create Link
 	// We need to create a dummy destination for the remote side
-	remoteDest := mustTestNewDestination(t, remoteId, DestinationOut, DestinationSingle, "integrated_test", "parity")
+	remoteDest := mustTestNewDestinationWithTransport(t, ts, remoteId, DestinationOut, DestinationSingle, "integrated_test", "parity")
 	// The hash should match what Python reported
 	if !bytes.Equal(remoteDest.Hash, destHash) {
 		t.Fatalf("Remote destination hash mismatch! Expected %x, got %x", destHash, remoteDest.Hash)
 	}
 
-	l := mustTestNewLink(t, remoteDest)
+	l := mustTestNewLinkWithTransport(t, ts, remoteDest)
 
 	linkEstablished := make(chan bool, 1)
 	l.SetLinkEstablishedCallback(func(link *Link) {
@@ -972,6 +972,7 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 }
 
 func TestIntegratedLargeRequestGoToPython(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integrated test in short mode")
 	}
@@ -979,7 +980,6 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-large-request-*")
 	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
-	ResetTransport()
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -1047,7 +1047,7 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 	r := mustTestNewReticulum(t, goConfigDir)
 	defer closeReticulum(t, r)
 
-	ts := GetTransport()
+	ts := r.Transport()
 	pathDeadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(pathDeadline) {
 		if ts.HasPath(destHash) {
@@ -1059,12 +1059,12 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 		t.Fatal("timed out waiting for announce path from Python")
 	}
 
-	remoteDest := mustTestNewDestination(t, remoteID, DestinationOut, DestinationSingle, "integrated_test", "parity")
+	remoteDest := mustTestNewDestinationWithTransport(t, ts, remoteID, DestinationOut, DestinationSingle, "integrated_test", "parity")
 	if !bytes.Equal(remoteDest.Hash, destHash) {
 		t.Fatalf("remote destination hash mismatch: expected %x got %x", destHash, remoteDest.Hash)
 	}
 
-	l := mustTestNewLink(t, remoteDest)
+	l := mustTestNewLinkWithTransport(t, ts, remoteDest)
 
 	linkEstablished := make(chan bool, 1)
 	l.SetLinkEstablishedCallback(func(link *Link) {
@@ -1106,6 +1106,7 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 }
 
 func TestIntegratedHandshakePythonToGo(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integrated test in short mode")
 	}
@@ -1113,7 +1114,6 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-integrated-*")
 	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
-	ResetTransport()
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -1136,7 +1136,7 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 
 	// Create Go destination
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "integrated_test", "parity")
+	dest := mustTestNewDestinationWithTransport(t, r.Transport(), id, DestinationIn, DestinationSingle, "integrated_test", "parity")
 
 	linkEstablished := make(chan *Link, 1)
 	dest.SetLinkEstablishedCallback(func(l *Link) {

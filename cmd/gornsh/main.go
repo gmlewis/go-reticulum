@@ -426,7 +426,7 @@ func resolveRemoteIdentity(destHash []byte, timeout time.Duration) (*rns.Identit
 		return remoteIdentity, nil
 	}
 
-	if err := rns.Transport.RequestPath(destHash); err != nil {
+	if err := rns.TransportProxy.RequestPath(destHash); err != nil {
 		return nil, fmt.Errorf("could not request path to %x: %w", destHash, err)
 	}
 	deadline := time.Now().Add(timeout)

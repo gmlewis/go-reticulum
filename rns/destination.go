@@ -106,7 +106,7 @@ func NewDestination(identity *Identity, direction, destType int, appName string,
 }
 
 // NewDestinationWithTransport instantiates a new endpoint bound to a specific, custom transport system instance.
-func NewDestinationWithTransport(ts *TransportSystem, identity *Identity, direction, destType int, appName string, aspects ...string) (*Destination, error) {
+func NewDestinationWithTransport(ts Transport, identity *Identity, direction, destType int, appName string, aspects ...string) (*Destination, error) {
 	if strings.Contains(appName, ".") {
 		return nil, errors.New("dots can't be used in app names")
 	}
@@ -124,7 +124,7 @@ func NewDestinationWithTransport(ts *TransportSystem, identity *Identity, direct
 		aspects:            aspects,
 		proofStrategy:      ProveNone,
 		acceptLinkRequests: true,
-		transport:          ts,
+		transport:          ts.(*TransportSystem),
 		requestHandlers:    make(map[string]*RequestHandler),
 		ratchetInterval:    30 * time.Minute,
 		retainedRatchets:   512,

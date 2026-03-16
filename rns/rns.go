@@ -48,9 +48,9 @@ func Unpack(data []byte) (any, error) {
 	return msgpack.Unpack(data)
 }
 
-// RecallIdentity recalls an identity from its hash.
+// RecallIdentity recalls an identity from its hash using the default transport.
 func RecallIdentity(hash []byte) *Identity {
-	return Recall(hash, false)
+	return Recall(hash, false, GetTransport())
 }
 
 // PacketDestination is an interface for types that can be a packet destination.
@@ -118,6 +118,12 @@ func (r *Reticulum) IsStandaloneInstance() bool { return r.isStandaloneInstance 
 // IsConnectedToSharedInstance reports whether this Reticulum instance is
 // connected to an existing shared instance (client).
 func (r *Reticulum) IsConnectedToSharedInstance() bool { return r.isConnectedToSharedInstance }
+
+// Transport returns the transport system for this Reticulum instance.
+// Transport returns the transport system instance associated with this Reticulum stack.
+func (r *Reticulum) Transport() Transport {
+	return r.transport
+}
 
 // Close tears down the Reticulum instance, detaching the shared-instance
 // interface and closing the RPC listener if active.
@@ -199,6 +205,11 @@ func setPanicOnInterfaceErrorEnabled(enabled bool) {
 
 // NewReticulum initializes Reticulum with the given configuration directory.
 func NewReticulum(configDir string) (*Reticulum, error) {
+	return NewReticulumWithTransport(configDir, GetTransport())
+}
+
+// NewReticulumWithTransport initializes a new Reticulum stack with a specific transport system.
+func NewReticulumWithTransport(configDir string, ts Transport) (*Reticulum, error) {
 	resolvedConfigDir, err := resolveConfigDir(configDir)
 	if err != nil {
 		return nil, err
@@ -207,6 +218,7 @@ func NewReticulum(configDir string) (*Reticulum, error) {
 
 	r := &Reticulum{
 		configDir:            configDir,
+		transport:            ts.(*TransportSystem),
 		shareInstance:        true,
 		sharedInstanceType:   "",
 		linkMTUDiscovery:     true,
@@ -254,7 +266,6 @@ func NewReticulum(configDir string) (*Reticulum, error) {
 		return nil, err
 	}
 
-	r.transport = GetTransport()
 	if err := r.initNetworkIdentity(); err != nil {
 		return nil, err
 	}

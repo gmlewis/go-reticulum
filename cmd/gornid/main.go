@@ -349,7 +349,7 @@ func loadIdentity(path string, request bool, timeout float64) *rns.Identity {
 				rns.Log("You can query the network for unknown Identities with the -R option.", rns.LogError, false)
 				os.Exit(5)
 			}
-			if err := rns.Transport.RequestPath(hash); err != nil {
+			if err := rns.TransportProxy.RequestPath(hash); err != nil {
 				rns.Logf("Identity request failed for %v: %v", rns.LogError, false, rns.PrettyHex(hash), err)
 				os.Exit(6)
 			}

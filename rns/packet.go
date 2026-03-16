@@ -133,7 +133,7 @@ type Packet struct {
 
 // NewPacket creates a new packet for the given destination and data.
 func NewPacket(destination PacketDestination, data []byte) *Packet {
-	var ts *TransportSystem
+	var ts Transport
 	if destination != nil {
 		// Use type assertion to get transport from Destination if possible
 		if d, ok := destination.(*Destination); ok {
@@ -150,7 +150,8 @@ func NewPacket(destination PacketDestination, data []byte) *Packet {
 }
 
 // NewPacketWithTransport creates a new packet with a specific transport system.
-func NewPacketWithTransport(ts *TransportSystem, destination PacketDestination, data []byte) *Packet {
+// NewPacketWithTransport initializes a new Reticulum packet with an explicitly provided transport system.
+func NewPacketWithTransport(ts Transport, destination PacketDestination, data []byte) *Packet {
 	p := &Packet{
 		Destination:   destination,
 		Data:          data,
@@ -161,7 +162,7 @@ func NewPacketWithTransport(ts *TransportSystem, destination PacketDestination, 
 		CreateReceipt: true,
 		ContextFlag:   FlagUnset,
 		MTU:           MTU,
-		transport:     ts,
+		transport:     ts.(*TransportSystem),
 	}
 	if destination != nil {
 		p.DestinationType = destination.GetType()
@@ -294,7 +295,7 @@ func (p *Packet) Send() error {
 			return l.transport.Outbound(p)
 		}
 	}
-	return Transport.Outbound(p)
+	return TransportProxy.Outbound(p)
 }
 
 // Unpack parses a raw packet.

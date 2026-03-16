@@ -169,7 +169,7 @@ func NewLink(destination *Destination) (*Link, error) {
 }
 
 // NewLinkWithTransport constructs a link explicitly bound to a custom transport system rather than the global default.
-func NewLinkWithTransport(ts *TransportSystem, destination *Destination) (*Link, error) {
+func NewLinkWithTransport(ts Transport, destination *Destination) (*Link, error) {
 	if destination != nil && destination.Type != DestinationSingle {
 		return nil, errors.New("links can only be established to the SINGLE destination type")
 	}
@@ -180,7 +180,7 @@ func NewLinkWithTransport(ts *TransportSystem, destination *Destination) (*Link,
 		status:               LinkPending,
 		mode:                 LinkModeAES256CBC,
 		mtu:                  MTU,
-		transport:            ts,
+		transport:            ts.(*TransportSystem),
 		trafficTimeoutFactor: 6.0,
 	}
 	l.UpdateMDU()

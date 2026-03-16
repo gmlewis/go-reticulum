@@ -242,7 +242,7 @@ func doExecute(idPath string, destHashHex string, command string) {
 	}
 	remoteID := rns.RecallIdentity(destHash)
 	if remoteID == nil {
-		if err := rns.Transport.RequestPath(destHash); err != nil {
+		if err := rns.TransportProxy.RequestPath(destHash); err != nil {
 			log.Fatalf("Could not request path to <%x>: %v\n", destHash, err)
 		}
 		time.Sleep(2 * time.Second)

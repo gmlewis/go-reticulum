@@ -363,6 +363,7 @@ func runPythonInteropCmd(t *testing.T, scriptPath, mode string, args ...string) 
 }
 
 func TestRatchetGoToPythonParity(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -371,7 +372,6 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	ResetTransport()
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
 	pyStorage := filepath.Join(tmpDir, "py_rns")
@@ -403,7 +403,7 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
-	r := mustTestNewReticulum(t, goConfigDir)
+	r := mustTestNewReticulumWithTransport(t, goConfigDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
 	// Wait for Python destination info and announce
@@ -455,7 +455,7 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 	remoteId.LoadPublicKey(pyPub)
 	fmt.Printf("Go: Remote Identity Hash: %x\n", remoteId.Hash)
 
-	remoteDest := mustTestNewDestination(t, remoteId, DestinationOut, DestinationSingle, "ratchet_test", "parity")
+	remoteDest := mustTestNewDestinationWithTransport(t, r.Transport(), remoteId, DestinationOut, DestinationSingle, "ratchet_test", "parity")
 
 	msg := []byte("ratchet secret message")
 	encrypted, err := remoteDest.Encrypt(msg)
@@ -481,6 +481,7 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 }
 
 func TestRatchetPythonToGoParity(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -489,7 +490,6 @@ func TestRatchetPythonToGoParity(t *testing.T) {
 	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	ResetTransport()
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
@@ -500,12 +500,12 @@ func TestRatchetPythonToGoParity(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
-	r := mustTestNewReticulum(t, goConfigDir)
+	r := mustTestNewReticulumWithTransport(t, goConfigDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
 	// Create Go destination with ratchets
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "ratchet_test", "parity")
+	dest := mustTestNewDestinationWithTransport(t, r.Transport(), id, DestinationIn, DestinationSingle, "ratchet_test", "parity")
 	if err := dest.EnableRatchets(goRatchets); err != nil {
 		t.Fatal(err)
 	}
@@ -567,6 +567,7 @@ func TestRatchetPythonToGoParity(t *testing.T) {
 }
 
 func TestRatchetRotationParity(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -575,7 +576,6 @@ func TestRatchetRotationParity(t *testing.T) {
 	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	ResetTransport()
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
@@ -586,11 +586,11 @@ func TestRatchetRotationParity(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
-	r := mustTestNewReticulum(t, goConfigDir)
+	r := mustTestNewReticulumWithTransport(t, goConfigDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "ratchet_test", "parity")
+	dest := mustTestNewDestinationWithTransport(t, r.Transport(), id, DestinationIn, DestinationSingle, "ratchet_test", "parity")
 	if err := dest.EnableRatchets(goRatchets); err != nil {
 		t.Fatal(err)
 	}
@@ -658,6 +658,7 @@ func TestRatchetRotationParity(t *testing.T) {
 }
 
 func TestRatchetRetentionWindowParity(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -666,7 +667,6 @@ func TestRatchetRetentionWindowParity(t *testing.T) {
 	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	ResetTransport()
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
@@ -677,11 +677,11 @@ func TestRatchetRetentionWindowParity(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
-	r := mustTestNewReticulum(t, goConfigDir)
+	r := mustTestNewReticulumWithTransport(t, goConfigDir, NewTransportSystem())
 	defer closeReticulum(t, r)
 
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "ratchet_test", "parity")
+	dest := mustTestNewDestinationWithTransport(t, r.Transport(), id, DestinationIn, DestinationSingle, "ratchet_test", "parity")
 	if err := dest.EnableRatchets(goRatchets); err != nil {
 		t.Fatal(err)
 	}
@@ -748,6 +748,7 @@ func TestRatchetRetentionWindowParity(t *testing.T) {
 }
 
 func TestRatchetEnforceParity(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -756,10 +757,9 @@ func TestRatchetEnforceParity(t *testing.T) {
 	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	ResetTransport()
-
+	ts := NewTransportSystem()
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "ratchet_test", "parity")
+	dest := mustTestNewDestinationWithTransport(t, ts, id, DestinationIn, DestinationSingle, "ratchet_test", "parity")
 	if err := dest.EnableRatchets(filepath.Join(tmpDir, "ratchets_file")); err != nil {
 		t.Fatal(err)
 	}
@@ -801,6 +801,7 @@ func TestRatchetEnforceParity(t *testing.T) {
 }
 
 func TestRatchetFileInteropParity(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -809,7 +810,7 @@ func TestRatchetFileInteropParity(t *testing.T) {
 	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	ResetTransport()
+	ts := NewTransportSystem()
 
 	scriptPath := filepath.Join(tmpDir, "ratchet_file_interop.py")
 	if err := os.WriteFile(scriptPath, []byte(ratchetFileInteropPy), 0o644); err != nil {
@@ -824,7 +825,7 @@ func TestRatchetFileInteropParity(t *testing.T) {
 	}
 
 	goRatchetsPath := filepath.Join(tmpDir, "go_ratchets")
-	goDest := mustTestNewDestination(t, goID, DestinationIn, DestinationSingle, "ratchet_test", "parity")
+	goDest := mustTestNewDestinationWithTransport(t, ts, goID, DestinationIn, DestinationSingle, "ratchet_test", "parity")
 	if err := goDest.EnableRatchets(goRatchetsPath); err != nil {
 		t.Fatal(err)
 	}
@@ -872,7 +873,7 @@ func TestRatchetFileInteropParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed loading python identity in go: %v", err)
 	}
-	goLoadDest := mustTestNewDestination(t, goLoadedID, DestinationIn, DestinationSingle, "ratchet_test", "parity")
+	goLoadDest := mustTestNewDestinationWithTransport(t, ts, goLoadedID, DestinationIn, DestinationSingle, "ratchet_test", "parity")
 	if err := goLoadDest.EnableRatchets(pyRatchetsPath); err != nil {
 		t.Fatalf("go failed loading python ratchet file: %v", err)
 	}
@@ -900,7 +901,7 @@ func TestRatchetFileInteropParity(t *testing.T) {
 		t.Fatalf("failed writing corrupt ratchet file: %v", err)
 	}
 
-	goCorruptDest := mustTestNewDestination(t, goLoadedID, DestinationIn, DestinationSingle, "ratchet_test", "parity")
+	goCorruptDest := mustTestNewDestinationWithTransport(t, ts, goLoadedID, DestinationIn, DestinationSingle, "ratchet_test", "parity")
 	if err := goCorruptDest.EnableRatchets(corruptPath); err == nil {
 		t.Fatal("expected go to reject corrupted ratchet file, but load succeeded")
 	}

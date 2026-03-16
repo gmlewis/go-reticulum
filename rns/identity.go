@@ -215,8 +215,10 @@ func CleanRatchets() {
 	}
 }
 
-// Recall reconstructs an Identity instance dynamically from known network data or transport registry.
-func Recall(targetHash []byte, fromIdentityHash bool) *Identity {
+// Recall searches for a known identity matching the given target hash.
+// If fromIdentityHash is true, the hash is compared against identity hashes;
+// otherwise, it is compared against destination hashes.
+func Recall(targetHash []byte, fromIdentityHash bool, ts Transport) *Identity {
 	identityMu.Lock()
 	defer identityMu.Unlock()
 
@@ -259,19 +261,22 @@ func Recall(targetHash []byte, fromIdentityHash bool) *Identity {
 		return id
 	}
 
-	// Also check registered destinations in transport
-	for _, d := range GetTransport().destinations {
-		if bytes.Equal(targetHash, d.Hash) {
-			id, err := NewIdentity(false)
-			if err != nil {
-				Logf("Failed to create identity during transport recall: %v", LogError, false, err)
-				return nil
+	// Also check registered destinations in transport if provided
+	if ts != nil {
+		tsSys := ts.(*TransportSystem)
+		for _, d := range tsSys.destinations {
+			if bytes.Equal(targetHash, d.Hash) {
+				id, err := NewIdentity(false)
+				if err != nil {
+					Logf("Failed to create identity during transport recall: %v", LogError, false, err)
+					return nil
+				}
+				if err := id.LoadPublicKey(d.identity.GetPublicKey()); err != nil {
+					Logf("Failed to load transport destination public key: %v", LogError, false, err)
+					return nil
+				}
+				return id
 			}
-			if err := id.LoadPublicKey(d.identity.GetPublicKey()); err != nil {
-				Logf("Failed to load transport destination public key: %v", LogError, false, err)
-				return nil
-			}
-			return id
 		}
 	}
 

@@ -20,6 +20,23 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
+// Transport defines the required methods for any transport system within the Reticulum network.
+type Transport interface {
+	RegisterDestination(d *Destination)
+	RegisterLink(l *Link)
+	ActivateLink(l *Link)
+	FindLink(linkID []byte) *Link
+	Outbound(packet *Packet) error
+	Inbound(raw []byte, iface interfaces.Interface)
+	HasPath(destHash []byte) bool
+	RequestPath(destHash []byte) error
+	HopsTo(destHash []byte) int
+	RegisterAnnounceHandler(handler *AnnounceHandler)
+	AnnounceHandlers() []*AnnounceHandler
+	SetNetworkIdentity(identity *Identity)
+	NetworkIdentityHash() []byte
+}
+
 // TransportSystem manages routing, packet forwarding, and global state.
 type TransportSystem struct {
 	identity    *Identity
@@ -179,30 +196,35 @@ const (
 	maxRandomBlobs = 64
 )
 
+// NewTransportSystem constructs an independent TransportSystem.
+func NewTransportSystem() *TransportSystem {
+	return &TransportSystem{
+		interfaces:           make([]interfaces.Interface, 0),
+		destinations:         make([]*Destination, 0),
+		pendingLinks:         make([]*Link, 0),
+		activeLinks:          make([]*Link, 0),
+		pathTable:            make(map[string]*PathEntry),
+		reverseTable:         make(map[string]*ReverseEntry),
+		linkTable:            make(map[string]*LinkEntry),
+		packetHashes:         make(map[string]time.Time),
+		packetHashesPrev:     make(map[string]time.Time),
+		packetHashRotateAt:   packetHashRotateDefault,
+		announceTable:        make(map[string]*AnnounceEntry),
+		announceRateTable:    make(map[string]*AnnounceRateEntry),
+		pathRequests:         make(map[string]time.Time),
+		pendingPathRequests:  make(map[string][]interfaces.Interface),
+		pendingPathRequestAt: make(map[string]time.Time),
+		packetRSSICache:      make(map[string]float64),
+		packetSNRCache:       make(map[string]float64),
+		packetQCache:         make(map[string]float64),
+		blackholedIdentities: make(map[string]BlackholeIdentityEntry),
+	}
+}
+
 // GetTransport returns the singleton instance of the Transport system.
 func GetTransport() *TransportSystem {
 	transportOnce.Do(func() {
-		transportInstance = &TransportSystem{
-			interfaces:           make([]interfaces.Interface, 0),
-			destinations:         make([]*Destination, 0),
-			pendingLinks:         make([]*Link, 0),
-			activeLinks:          make([]*Link, 0),
-			pathTable:            make(map[string]*PathEntry),
-			reverseTable:         make(map[string]*ReverseEntry),
-			linkTable:            make(map[string]*LinkEntry),
-			packetHashes:         make(map[string]time.Time),
-			packetHashesPrev:     make(map[string]time.Time),
-			packetHashRotateAt:   packetHashRotateDefault,
-			announceTable:        make(map[string]*AnnounceEntry),
-			announceRateTable:    make(map[string]*AnnounceRateEntry),
-			pathRequests:         make(map[string]time.Time),
-			pendingPathRequests:  make(map[string][]interfaces.Interface),
-			pendingPathRequestAt: make(map[string]time.Time),
-			packetRSSICache:      make(map[string]float64),
-			packetSNRCache:       make(map[string]float64),
-			packetQCache:         make(map[string]float64),
-			blackholedIdentities: make(map[string]BlackholeIdentityEntry),
-		}
+		transportInstance = NewTransportSystem()
 	})
 	return transportInstance
 }
@@ -1676,7 +1698,7 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 
 	// Call announce handlers
 	if len(handlers) > 0 {
-		announceIdentity := Recall(packet.DestinationHash, false)
+		announceIdentity := Recall(packet.DestinationHash, false, ts)
 		if announceIdentity != nil {
 			for _, handler := range handlers {
 				executeCallback := false

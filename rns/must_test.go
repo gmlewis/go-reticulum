@@ -62,3 +62,10 @@ func mustTestNewReticulum(t *testing.T, configDir string) *Reticulum {
 	mustTest(t, err)
 	return ret
 }
+
+func mustTestNewReticulumWithTransport(t *testing.T, configDir string, ts Transport) *Reticulum {
+	t.Helper()
+	ret, err := NewReticulumWithTransport(configDir, ts)
+	mustTest(t, err)
+	return ret
+}

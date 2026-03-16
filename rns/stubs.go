@@ -5,8 +5,8 @@
 
 package rns
 
-// Transport is a global proxy to the singleton TransportSystem.
-var Transport = transportProxy{}
+// TransportProxy is a global proxy to the singleton TransportSystem.
+var TransportProxy = transportProxy{}
 
 type transportProxy struct{}
 

@@ -72,8 +72,7 @@ func mustDialRPC(t *testing.T, addr string) net.Conn {
 }
 
 func TestRPCAuthAndGetEndpoints(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	sharedPort := reserveTCPPort(t)
 	rpcPort := reserveTCPPort(t)
@@ -94,7 +93,7 @@ loglevel = 4
 [interfaces]
 `, t.Name(), sharedPort, rpcPort, rpcKeyHex))
 
-	r := mustTestNewReticulum(t, cfg)
+	r := mustTestNewReticulumWithTransport(t, cfg, NewTransportSystem())
 	defer closeReticulum(t, r)
 	if !r.isSharedInstance {
 		t.Fatalf("expected shared instance")
@@ -129,8 +128,7 @@ loglevel = 4
 }
 
 func TestRPCRejectsInvalidAuth(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	sharedPort := reserveTCPPort(t)
 	rpcPort := reserveTCPPort(t)
@@ -150,7 +148,7 @@ loglevel = 4
 [interfaces]
 `, t.Name(), sharedPort, rpcPort))
 
-	r := mustTestNewReticulum(t, cfg)
+	r := mustTestNewReticulumWithTransport(t, cfg, NewTransportSystem())
 	defer closeReticulum(t, r)
 
 	conn := mustDialRPC(t, fmt.Sprintf("127.0.0.1:%v", rpcPort))
@@ -168,8 +166,7 @@ loglevel = 4
 }
 
 func TestRPCAcceptsByteAuthKey(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	sharedPort := reserveTCPPort(t)
 	rpcPort := reserveTCPPort(t)
@@ -190,7 +187,7 @@ loglevel = 4
 [interfaces]
 `, t.Name(), sharedPort, rpcPort, rpcKeyHex))
 
-	r := mustTestNewReticulum(t, cfg)
+	r := mustTestNewReticulumWithTransport(t, cfg, NewTransportSystem())
 	defer closeReticulum(t, r)
 
 	conn := mustDialRPC(t, fmt.Sprintf("127.0.0.1:%v", rpcPort))
@@ -205,8 +202,7 @@ loglevel = 4
 }
 
 func TestConnectedInstanceInterfaceStatsViaRPC(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	sharedPort := reserveTCPPort(t)
 	rpcPort := reserveTCPPort(t)
@@ -231,13 +227,13 @@ loglevel = 4
 	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name()+"-1", sharedPort, rpcPort, rpcKeyHex))
 	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name()+"-2", sharedPort, rpcPort, rpcKeyHex))
 
-	r1 := mustTestNewReticulum(t, cfg1)
+	r1 := mustTestNewReticulumWithTransport(t, cfg1, NewTransportSystem())
 	defer closeReticulum(t, r1)
 	if !r1.isSharedInstance {
 		t.Fatalf("expected first instance to be shared")
 	}
 
-	r2 := mustTestNewReticulum(t, cfg2)
+	r2 := mustTestNewReticulumWithTransport(t, cfg2, NewTransportSystem())
 	defer closeReticulum(t, r2)
 	if !r2.isConnectedToSharedInstance {
 		t.Fatalf("expected second instance to be connected to shared instance")
@@ -256,8 +252,7 @@ loglevel = 4
 }
 
 func TestRPCExpandedGetDropAndBlackholeSurface(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	sharedPort := reserveTCPPort(t)
 	rpcPort := reserveTCPPort(t)
@@ -278,7 +273,7 @@ loglevel = 4
 [interfaces]
 `, t.Name(), sharedPort, rpcPort, rpcKeyHex))
 
-	r := mustTestNewReticulum(t, cfg)
+	r := mustTestNewReticulumWithTransport(t, cfg, NewTransportSystem())
 	defer closeReticulum(t, r)
 
 	conn := mustDialRPC(t, fmt.Sprintf("127.0.0.1:%v", rpcPort))
@@ -324,8 +319,7 @@ loglevel = 4
 }
 
 func TestConnectedInstanceExpandedProxyMethods(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
 	sharedPort := reserveTCPPort(t)
 	rpcPort := reserveTCPPort(t)
@@ -350,10 +344,10 @@ loglevel = 4
 	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name()+"-1", sharedPort, rpcPort, rpcKeyHex))
 	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name()+"-2", sharedPort, rpcPort, rpcKeyHex))
 
-	r1 := mustTestNewReticulum(t, cfg1)
+	r1 := mustTestNewReticulumWithTransport(t, cfg1, NewTransportSystem())
 	defer closeReticulum(t, r1)
 
-	r2 := mustTestNewReticulum(t, cfg2)
+	r2 := mustTestNewReticulumWithTransport(t, cfg2, NewTransportSystem())
 	defer closeReticulum(t, r2)
 	if !r2.isConnectedToSharedInstance {
 		t.Fatalf("expected second instance to be connected to shared instance")
@@ -485,10 +479,9 @@ func TestConnectedInstanceBlackholeIdentityInvalidHashShortCircuits(t *testing.T
 }
 
 func TestRPCPathTableSchemaIncludesTimestamp(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
-	ts := GetTransport()
+	ts := NewTransportSystem()
 	now := time.Now().Truncate(time.Second)
 	destHash := []byte("0123456789abcdef")
 	nextHop := []byte("fedcba9876543210")
@@ -529,10 +522,9 @@ func TestRPCPathTableSchemaIncludesTimestamp(t *testing.T) {
 }
 
 func TestRPCInterfaceStatsSchemaIncludesCoreFields(t *testing.T) {
-	ResetTransport()
-	defer ResetTransport()
+	t.Parallel()
 
-	ts := GetTransport()
+	ts := NewTransportSystem()
 	iface := &dummyInterface{name: "stats-iface"}
 	ts.RegisterInterface(iface)
 

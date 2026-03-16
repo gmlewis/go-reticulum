@@ -28,7 +28,6 @@ func TestMain(m *testing.M) {
 		_ = lockFile.Close()
 	}
 
-	ResetTransport()
 	code := m.Run()
 
 	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN); err != nil {

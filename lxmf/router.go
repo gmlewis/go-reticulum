@@ -151,8 +151,8 @@ func NewRouter(identity *rns.Identity, storagePath string) (*Router, error) {
 		inboundStampCosts:    map[string]int{},
 		displayNames:         map[string]string{},
 		pendingOutbound:      []*Message{},
-		hasPath:              rns.Transport.HasPath,
-		requestPath:          rns.Transport.RequestPath,
+		hasPath:              rns.TransportProxy.HasPath,
+		requestPath:          rns.TransportProxy.RequestPath,
 		sendPacket: func(packet *rns.Packet) error {
 			return packet.Send()
 		},
