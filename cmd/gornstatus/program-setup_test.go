@@ -13,7 +13,6 @@ import (
 )
 
 func TestProgramSetupExitsCleanly(t *testing.T) {
-	t.Parallel()
 	tmpDir := tempDir(t)
 	var buf bytes.Buffer
 	r, err := rns.NewReticulum(tmpDir)

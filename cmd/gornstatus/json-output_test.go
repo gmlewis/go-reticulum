@@ -16,10 +16,10 @@ import (
 func TestRenderJSON(t *testing.T) {
 	t.Parallel()
 	stats := &rns.InterfaceStatsSnapshot{
-		RXB: 1000,
-		TXB: 2000,
-		RXS: 100,
-		TXS: 200,
+		RXB:         1000,
+		TXB:         2000,
+		RXS:         100,
+		TXS:         200,
 		TransportID: []byte{0xab, 0xcd},
 		Interfaces: []rns.InterfaceStat{
 			{

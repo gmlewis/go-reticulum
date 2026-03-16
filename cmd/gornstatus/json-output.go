@@ -17,44 +17,44 @@ import (
 // jsonInterfaceStat is a JSON-serializable version of InterfaceStat
 // where byte slices are converted to hex strings.
 type jsonInterfaceStat struct {
-	Name              string   `json:"name"`
-	Type              string   `json:"type"`
-	Status            bool     `json:"status"`
-	Mode              int      `json:"mode"`
-	Bitrate           int      `json:"bitrate"`
-	RXB               uint64   `json:"rxb"`
-	TXB               uint64   `json:"txb"`
-	RXS               float64  `json:"rxs"`
-	TXS               float64  `json:"txs"`
-	Clients           *int     `json:"clients"`
-	IFACSignature     string   `json:"ifac_signature,omitempty"`
-	IFACSize          int      `json:"ifac_size"`
-	IFACNetname       string   `json:"ifac_netname,omitempty"`
-	AutoconnectSource string   `json:"autoconnect_source,omitempty"`
-	NoiseFloor        *float64 `json:"noise_floor,omitempty"`
-	Interference      *float64 `json:"interference,omitempty"`
+	Name               string   `json:"name"`
+	Type               string   `json:"type"`
+	Status             bool     `json:"status"`
+	Mode               int      `json:"mode"`
+	Bitrate            int      `json:"bitrate"`
+	RXB                uint64   `json:"rxb"`
+	TXB                uint64   `json:"txb"`
+	RXS                float64  `json:"rxs"`
+	TXS                float64  `json:"txs"`
+	Clients            *int     `json:"clients"`
+	IFACSignature      string   `json:"ifac_signature,omitempty"`
+	IFACSize           int      `json:"ifac_size"`
+	IFACNetname        string   `json:"ifac_netname,omitempty"`
+	AutoconnectSource  string   `json:"autoconnect_source,omitempty"`
+	NoiseFloor         *float64 `json:"noise_floor,omitempty"`
+	Interference       *float64 `json:"interference,omitempty"`
 	InterferenceLastTS *float64 `json:"interference_last_ts,omitempty"`
 	InterferenceLastDB *float64 `json:"interference_last_dbm,omitempty"`
-	CPULoad           *float64 `json:"cpu_load,omitempty"`
-	CPUTemp           *float64 `json:"cpu_temp,omitempty"`
-	MemLoad           *float64 `json:"mem_load,omitempty"`
-	BatteryPercent    *int     `json:"battery_percent,omitempty"`
-	BatteryState      string   `json:"battery_state,omitempty"`
-	AirtimeShort      *float64 `json:"airtime_short,omitempty"`
-	AirtimeLong       *float64 `json:"airtime_long,omitempty"`
-	ChannelLoadShort  *float64 `json:"channel_load_short,omitempty"`
-	ChannelLoadLong   *float64 `json:"channel_load_long,omitempty"`
-	SwitchID          *string  `json:"switch_id,omitempty"`
-	EndpointID        *string  `json:"endpoint_id,omitempty"`
-	ViaSwitchID       *string  `json:"via_switch_id,omitempty"`
-	Peers             *int     `json:"peers,omitempty"`
-	TunnelState       *string  `json:"tunnelstate,omitempty"`
-	I2PB32            *string  `json:"i2p_b32,omitempty"`
-	I2PConnectable    *bool    `json:"i2p_connectable,omitempty"`
-	AnnounceQueue     *int     `json:"announce_queue,omitempty"`
-	HeldAnnounces     *int     `json:"held_announces,omitempty"`
-	InAnnounceFreq    *float64 `json:"incoming_announce_frequency,omitempty"`
-	OutAnnounceFreq   *float64 `json:"outgoing_announce_frequency,omitempty"`
+	CPULoad            *float64 `json:"cpu_load,omitempty"`
+	CPUTemp            *float64 `json:"cpu_temp,omitempty"`
+	MemLoad            *float64 `json:"mem_load,omitempty"`
+	BatteryPercent     *int     `json:"battery_percent,omitempty"`
+	BatteryState       string   `json:"battery_state,omitempty"`
+	AirtimeShort       *float64 `json:"airtime_short,omitempty"`
+	AirtimeLong        *float64 `json:"airtime_long,omitempty"`
+	ChannelLoadShort   *float64 `json:"channel_load_short,omitempty"`
+	ChannelLoadLong    *float64 `json:"channel_load_long,omitempty"`
+	SwitchID           *string  `json:"switch_id,omitempty"`
+	EndpointID         *string  `json:"endpoint_id,omitempty"`
+	ViaSwitchID        *string  `json:"via_switch_id,omitempty"`
+	Peers              *int     `json:"peers,omitempty"`
+	TunnelState        *string  `json:"tunnelstate,omitempty"`
+	I2PB32             *string  `json:"i2p_b32,omitempty"`
+	I2PConnectable     *bool    `json:"i2p_connectable,omitempty"`
+	AnnounceQueue      *int     `json:"announce_queue,omitempty"`
+	HeldAnnounces      *int     `json:"held_announces,omitempty"`
+	InAnnounceFreq     *float64 `json:"incoming_announce_frequency,omitempty"`
+	OutAnnounceFreq    *float64 `json:"outgoing_announce_frequency,omitempty"`
 }
 
 // jsonStatsSnapshot is a JSON-serializable version of InterfaceStatsSnapshot.

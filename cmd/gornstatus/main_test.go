@@ -92,7 +92,6 @@ func TestHelpOutput(t *testing.T) {
 }
 
 func TestExitCodeZero(t *testing.T) {
-	t.Parallel()
 	bin := buildGornstatus(t)
 	tmpDir := tempDir(t)
 	cmd := exec.Command(bin, "--config", tmpDir)
@@ -106,12 +105,12 @@ func TestSIGINTCleanExit(t *testing.T) {
 	t.Parallel()
 	bin := buildGornstatus(t)
 	tmpDir := tempDir(t)
-	cmd := exec.Command(bin, "--config", tmpDir, "-v", "-v", "-v")
+	cmd := exec.Command(bin, "--config", tmpDir, "-m", "-I", "10")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("failed to start: %v", err)
 	}
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
 	_ = cmd.Process.Signal(syscall.SIGINT)
 	err := cmd.Wait()
 	if err != nil {
