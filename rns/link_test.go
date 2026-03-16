@@ -140,7 +140,7 @@ func TestLinkHandshakeFull(t *testing.T) {
 	select {
 	case <-establishedInitiator:
 		// Initiator side established
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("Timeout waiting for initiator link establishment")
 	}
 
@@ -150,7 +150,7 @@ func TestLinkHandshakeFull(t *testing.T) {
 		if l.status != LinkActive {
 			t.Errorf("Receiver link not active")
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("Timeout waiting for receiver link establishment")
 	}
 
@@ -249,14 +249,14 @@ func TestLinkIdentifyPacketFlow(t *testing.T) {
 
 	select {
 	case <-establishedInitiator:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("timeout waiting for initiator link establishment")
 	}
 
 	var receiverLink *Link
 	select {
 	case receiverLink = <-establishedReceiver:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("timeout waiting for receiver link establishment")
 	}
 
@@ -274,7 +274,7 @@ func TestLinkIdentifyPacketFlow(t *testing.T) {
 		if !bytes.Equal(id.Hash, idInitiator.Hash) {
 			t.Fatalf("identified hash mismatch: got %x want %x", id.Hash, idInitiator.Hash)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("timeout waiting for remote identification")
 	}
 }

@@ -32,6 +32,22 @@ func tempDir(t *testing.T) string {
 	return dir
 }
 
+// tempDirWithConfig returns a temp directory pre-populated with a
+// Reticulum config that uses a unique instance_name derived from
+// the directory name. This prevents abstract-socket collisions
+// when multiple test processes create Reticulum instances
+// concurrently on Linux.
+func tempDirWithConfig(t *testing.T) string {
+	t.Helper()
+	dir := tempDir(t)
+	instanceName := filepath.Base(dir)
+	config := "[reticulum]\nenable_transport = False\nshare_instance = Yes\ninstance_name = " + instanceName + "\n\n[logging]\nloglevel = 2\n"
+	if err := os.WriteFile(filepath.Join(dir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("writeTestConfig: %v", err)
+	}
+	return dir
+}
+
 func buildGornstatus(t *testing.T) string {
 	t.Helper()
 	tmpDir := tempDir(t)
@@ -92,8 +108,9 @@ func TestHelpOutput(t *testing.T) {
 }
 
 func TestExitCodeZero(t *testing.T) {
+	t.Parallel()
 	bin := buildGornstatus(t)
-	tmpDir := tempDir(t)
+	tmpDir := tempDirWithConfig(t)
 	cmd := exec.Command(bin, "--config", tmpDir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -104,7 +121,7 @@ func TestExitCodeZero(t *testing.T) {
 func TestSIGINTCleanExit(t *testing.T) {
 	t.Parallel()
 	bin := buildGornstatus(t)
-	tmpDir := tempDir(t)
+	tmpDir := tempDirWithConfig(t)
 	cmd := exec.Command(bin, "--config", tmpDir, "-m", "-I", "10")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
@@ -124,7 +141,7 @@ func TestSIGINTCleanExit(t *testing.T) {
 func TestMonitorModeSIGINT(t *testing.T) {
 	t.Parallel()
 	bin := buildGornstatus(t)
-	tmpDir := tempDir(t)
+	tmpDir := tempDirWithConfig(t)
 	cmd := exec.Command(bin, "--config", tmpDir, "-m", "-I", "0.1")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {

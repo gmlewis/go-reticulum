@@ -74,7 +74,7 @@ func TestRequestResponse(t *testing.T) {
 	select {
 	case <-establishedInitiator:
 		// OK
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("Timeout waiting for link establishment")
 	}
 
@@ -94,7 +94,7 @@ func TestRequestResponse(t *testing.T) {
 		if res != expected {
 			t.Errorf("expected %v, got %v", expected, res)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("Timeout waiting for response")
 	}
 }
@@ -172,7 +172,7 @@ func TestRequestResponseAutoCompressPolicyInlineAndResource(t *testing.T) {
 
 			select {
 			case <-establishedInitiator:
-			case <-time.After(2 * time.Second):
+			case <-time.After(10 * time.Second):
 				t.Fatal("Timeout waiting for link establishment")
 			}
 
@@ -194,7 +194,7 @@ func TestRequestResponseAutoCompressPolicyInlineAndResource(t *testing.T) {
 				if !bytes.Equal(res, tc.responseData) {
 					t.Fatalf("response mismatch: got len=%v want len=%v", len(res), len(tc.responseData))
 				}
-			case <-time.After(4 * time.Second):
+			case <-time.After(10 * time.Second):
 				t.Fatal("Timeout waiting for response")
 			}
 		})

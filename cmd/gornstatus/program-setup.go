@@ -53,7 +53,7 @@ func programSetup(p programSetupParams) int {
 	} else {
 		r, err := rns.NewReticulum(p.configDir)
 		if err != nil {
-			fmt.Fprintln(w, "No shared RNS instance available to get status from")
+			_, _ = fmt.Fprintln(w, "No shared RNS instance available to get status from")
 			if p.mustExit {
 				return 1
 			}
@@ -62,7 +62,7 @@ func programSetup(p programSetupParams) int {
 		reticulum = r
 		defer func() {
 			if err := reticulum.Close(); err != nil {
-				fmt.Fprintf(w, "Error closing Reticulum: %v\n", err)
+				_, _ = fmt.Fprintf(w, "Error closing Reticulum: %v\n", err)
 			}
 		}()
 	}
@@ -81,9 +81,9 @@ func programSetup(p programSetupParams) int {
 
 	if stats == nil {
 		if p.remote == "" {
-			fmt.Fprintln(w, "Could not get RNS status")
+			_, _ = fmt.Fprintln(w, "Could not get RNS status")
 		} else {
-			fmt.Fprintf(w, "Could not get RNS status from remote transport instance %v\n", p.remote)
+			_, _ = fmt.Fprintf(w, "Could not get RNS status from remote transport instance %v\n", p.remote)
 		}
 		if p.mustExit {
 			return 2
@@ -93,7 +93,7 @@ func programSetup(p programSetupParams) int {
 
 	if p.jsonOutput {
 		if err := renderJSON(w, stats); err != nil {
-			fmt.Fprintf(w, "JSON encoding error: %v\n", err)
+			_, _ = fmt.Fprintf(w, "JSON encoding error: %v\n", err)
 		}
 		return 0
 	}
@@ -105,7 +105,7 @@ func programSetup(p programSetupParams) int {
 
 	for _, ifstat := range ifaces {
 		if shouldDisplayInterface(ifstat, p.dispAll, p.nameFilter) {
-			fmt.Fprintln(w)
+			_, _ = fmt.Fprintln(w)
 			renderInterface(w, ifstat, p.announceStats)
 		}
 	}
@@ -121,7 +121,7 @@ func programSetup(p programSetupParams) int {
 	}
 
 	renderTransportFooter(w, stats, lstr)
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w)
 
 	return 0
 }

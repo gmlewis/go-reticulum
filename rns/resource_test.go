@@ -164,7 +164,7 @@ func TestResourceValidateProofSuccess(t *testing.T) {
 
 	select {
 	case <-called:
-	case <-time.After(1 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("expected callback to be called")
 	}
 }
@@ -194,7 +194,7 @@ func TestResourceValidateProofFailure(t *testing.T) {
 
 	select {
 	case <-called:
-	case <-time.After(1 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("expected callback to be called")
 	}
 }

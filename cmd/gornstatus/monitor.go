@@ -41,8 +41,8 @@ func runMonitor(r *rns.Reticulum, nameFilter string, verbosity int) {
 			writer:             &buf,
 		})
 
-		fmt.Fprint(os.Stdout, "\033[H\033[2J")
-		fmt.Fprint(os.Stdout, buf.String())
+		_, _ = fmt.Fprint(os.Stdout, "\033[H\033[2J")
+		_, _ = fmt.Fprint(os.Stdout, buf.String())
 
 		time.Sleep(time.Duration(monitorInterval * float64(time.Second)))
 	}
