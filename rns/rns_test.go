@@ -18,13 +18,6 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
 )
 
-func mustTest(t *testing.T, err error) {
-	t.Helper()
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
 func closeReticulum(t *testing.T, r *Reticulum) {
 	t.Helper()
 	if r == nil {

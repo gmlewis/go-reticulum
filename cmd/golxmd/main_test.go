@@ -34,9 +34,7 @@ func tempDir(t *testing.T) string {
 func TestJobs(t *testing.T) {
 	tempDir := tempDir(t)
 	identity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	router, _ := lxmf.NewRouter(identity, tempDir)
 	dest, _ := router.RegisterDeliveryIdentity(identity, "Test Peer", nil)
 
@@ -76,9 +74,7 @@ func TestJobsRecovery(t *testing.T) {
 func TestAnnounceAtStart(t *testing.T) {
 	tempDir := tempDir(t)
 	identity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	router, _ := lxmf.NewRouter(identity, tempDir)
 	dest, _ := router.RegisterDeliveryIdentity(identity, "Test Peer", nil)
 
@@ -153,19 +149,13 @@ func TestLXMFDelivery(t *testing.T) {
 	tempDir := tempDir(t)
 	lxmdir = filepath.Join(tempDir, "messages")
 	err := os.MkdirAll(lxmdir, 0o755)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	// Mock message
 	id, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	dest, err := rns.NewDestination(id, rns.DestinationIn, rns.DestinationSingle, "lxmf", "delivery")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	lxm, _ := lxmf.NewMessage(dest, dest, "Hello", "Content", nil)
 
 	// Case 1: No on_inbound
@@ -180,9 +170,7 @@ func TestLXMFDelivery(t *testing.T) {
 	// Case 2: with on_inbound (mock script)
 	scriptPath := filepath.Join(tempDir, "handler.sh")
 	err = os.WriteFile(scriptPath, []byte("#!/bin/sh\necho $1 > "+filepath.Join(tempDir, "result")), 0o755)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	ac = &activeConfig{OnInbound: scriptPath}
 	lxmfDelivery(lxm)
@@ -204,9 +192,7 @@ func TestLXMFDelivery(t *testing.T) {
 func TestPropagationNodeSetup(t *testing.T) {
 	tempDir := tempDir(t)
 	identity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	router, _ := lxmf.NewRouter(identity, tempDir)
 
 	prioritised := []string{"0102030405060708090a0b0c0d0e0f10"}
@@ -255,9 +241,7 @@ func TestAuthWarningMessage(t *testing.T) {
 	}()
 
 	id, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	router, _ := lxmf.NewRouter(id, tempDir)
 
 	setupAuth(router)
@@ -271,9 +255,7 @@ func TestAuthWarningMessage(t *testing.T) {
 func TestAuthSetup(t *testing.T) {
 	tempDir := tempDir(t)
 	identity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	router, _ := lxmf.NewRouter(identity, tempDir)
 
 	allowed := [][]byte{
@@ -291,13 +273,9 @@ func TestAuthSetup(t *testing.T) {
 
 func TestIdentityRemember(t *testing.T) {
 	identity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	dest, err := rns.NewDestination(identity, rns.DestinationIn, rns.DestinationSingle, "lxmf", "delivery")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	rns.Remember(nil, dest.Hash, identity.GetPublicKey(), nil)
 
@@ -310,9 +288,7 @@ func TestIdentityRemember(t *testing.T) {
 func TestIgnoreDestinations(t *testing.T) {
 	tempDir := tempDir(t)
 	identity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	router, _ := lxmf.NewRouter(identity, tempDir)
 
 	ignored := [][]byte{
@@ -332,9 +308,7 @@ func TestRouterConstruction(t *testing.T) {
 	tempDir := tempDir(t)
 	configDir := filepath.Join(tempDir, "lxmd")
 	err := os.MkdirAll(configDir, 0o755)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	cfg := map[string]map[string]string{
 		"propagation": {
@@ -344,14 +318,10 @@ func TestRouterConstruction(t *testing.T) {
 		},
 	}
 	ac, err := applyConfig(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	identity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	router, err := lxmf.NewRouterFromConfig(lxmf.RouterConfig{
 		Identity:         identity,
 		StoragePath:      tempDir,
@@ -359,9 +329,7 @@ func TestRouterConstruction(t *testing.T) {
 		AutopeerMaxdepth: ac.AutopeerMaxdepth,
 		PropagationCost:  ac.PropagationStampCostTarget,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	if router.PropagationEnabled() {
 		// Should not be enabled yet
@@ -375,9 +343,7 @@ func TestServiceLogging(t *testing.T) {
 	tempDir := tempDir(t)
 	configDir := filepath.Join(tempDir, "lxmd")
 	err := os.MkdirAll(configDir, 0o755)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	// We'll test a function that sets up logging based on service flag and config dir
 	setupLogging(true, configDir)

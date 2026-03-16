@@ -58,9 +58,7 @@ except KeyboardInterrupt:
 func TestSerialInterfaceParity(t *testing.T) {
 	pythonPath := getPythonPath()
 	tmpDir, err := os.MkdirTemp("", "rns-serial-parity-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "serial_echo.py")

@@ -71,9 +71,7 @@ if __name__ == "__main__":
 
 func TestIdentityParity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-parity-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_identity_parity.py")
@@ -82,9 +80,7 @@ func TestIdentityParity(t *testing.T) {
 	}
 
 	id, err := NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	idPath := filepath.Join(tmpDir, "id")
 	if err := id.ToFile(idPath); err != nil {
@@ -121,9 +117,7 @@ func TestIdentityParity(t *testing.T) {
 
 func TestIdentityPythonToGoParity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-parity-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "generate_identity_parity.py")

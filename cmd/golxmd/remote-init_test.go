@@ -136,9 +136,7 @@ func TestRemoteInit(t *testing.T) {
 
 		// Create a valid identity
 		id, err := rns.NewIdentity(true)
-		if err != nil {
-			t.Fatal(err)
-		}
+		mustTest(t, err)
 		if err := id.ToFile(identityPath); err != nil {
 			t.Fatal(err)
 		}
@@ -170,9 +168,7 @@ func TestRemoteInit(t *testing.T) {
 
 		// Create a valid identity
 		id, err := rns.NewIdentity(true)
-		if err != nil {
-			t.Fatal(err)
-		}
+		mustTest(t, err)
 		if err := id.ToFile(identityPath); err != nil {
 			t.Fatal(err)
 		}

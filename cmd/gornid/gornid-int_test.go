@@ -280,9 +280,7 @@ func TestParity_EncryptGoDecryptPython(t *testing.T) {
 	}
 
 	got, err := os.ReadFile(decFile)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	if string(got) != original {
 		t.Errorf("Python decrypted = %q, want %q", string(got), original)
 	}
@@ -318,9 +316,7 @@ func TestParity_EncryptPythonDecryptGo(t *testing.T) {
 	}
 
 	got, err := os.ReadFile(decFile)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	if string(got) != original {
 		t.Errorf("Go decrypted = %q, want %q", string(got), original)
 	}

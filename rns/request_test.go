@@ -47,9 +47,7 @@ func TestRequestResponse(t *testing.T) {
 		responseReceived <- rr.Response.(string)
 	}, nil, nil, 0)
 
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	select {
 	case res := <-responseReceived:
@@ -120,9 +118,7 @@ func TestRequestResponseAutoCompressPolicyInlineAndResource(t *testing.T) {
 				responseReceived <- respBytes
 			}, nil, nil, 0)
 
-			if err != nil {
-				t.Fatal(err)
-			}
+			mustTest(t, err)
 
 			select {
 			case res := <-responseReceived:

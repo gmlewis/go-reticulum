@@ -204,9 +204,7 @@ if __name__ == "__main__":
 
 func TestHMACParity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
@@ -233,9 +231,7 @@ func TestHMACParity(t *testing.T) {
 
 func TestEd25519Parity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
@@ -244,9 +240,7 @@ func TestEd25519Parity(t *testing.T) {
 	}
 
 	prv, err := GenerateEd25519PrivateKey()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	pub := prv.PublicKey()
 	message := []byte("hello cryptography parity")
 	signature := prv.Sign(message)
@@ -266,9 +260,7 @@ func TestEd25519Parity(t *testing.T) {
 
 func TestX25519Parity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
@@ -277,18 +269,14 @@ func TestX25519Parity(t *testing.T) {
 	}
 
 	prv, err := GenerateX25519PrivateKey()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	// Create a second key pair to act as peer
 	peerPrv, _ := GenerateX25519PrivateKey()
 	peerPub := peerPrv.PublicKey()
 
 	shared, err := prv.Exchange(peerPub)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	// Verify with Python
 	cmd := exec.Command("python3", scriptPath, "x25519", fmt.Sprintf("%x", prv.PrivateBytes()), fmt.Sprintf("%x", peerPub.PublicBytes()), fmt.Sprintf("%x", shared))
@@ -305,9 +293,7 @@ func TestX25519Parity(t *testing.T) {
 
 func TestHKDFParity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
@@ -320,9 +306,7 @@ func TestHKDFParity(t *testing.T) {
 	length := 32
 
 	derived, err := HKDF(length, deriveFrom, salt, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	// Verify with Python
 	cmd := exec.Command("python3", scriptPath, "hkdf", fmt.Sprintf("%x", deriveFrom), fmt.Sprintf("%x", salt), fmt.Sprintf("%v", length), fmt.Sprintf("%x", derived))
@@ -339,9 +323,7 @@ func TestHKDFParity(t *testing.T) {
 
 func TestTokenParity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
@@ -351,15 +333,11 @@ func TestTokenParity(t *testing.T) {
 
 	key := []byte("01234567890123456789012345678901") // 32 bytes
 	token, err := NewToken(key)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	plaintext := []byte("secret message for token parity")
 	ciphertext, err := token.Encrypt(plaintext)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	// Verify with Python
 	cmd := exec.Command("python3", scriptPath, "token", fmt.Sprintf("%x", key), fmt.Sprintf("%x", ciphertext), fmt.Sprintf("%x", plaintext))
@@ -376,9 +354,7 @@ func TestTokenParity(t *testing.T) {
 
 func TestSHA256Parity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
@@ -404,9 +380,7 @@ func TestSHA256Parity(t *testing.T) {
 
 func TestSHA512Parity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
@@ -432,9 +406,7 @@ func TestSHA512Parity(t *testing.T) {
 
 func TestPKCS7Parity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
@@ -460,9 +432,7 @@ func TestPKCS7Parity(t *testing.T) {
 
 	// Verify unpadding with Python
 	unpadded, err := PKCS7Unpad(padded)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	cmd = exec.Command("python3", scriptPath, "pkcs7_unpad", fmt.Sprintf("%x", padded), fmt.Sprintf("%x", unpadded))
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
@@ -478,9 +448,7 @@ func TestPKCS7Parity(t *testing.T) {
 
 func TestAES128Parity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
@@ -493,9 +461,7 @@ func TestAES128Parity(t *testing.T) {
 	plaintext := PKCS7Pad([]byte("aes128 parity message"), 16)
 
 	ciphertext, err := AES128CBCEncrypt(plaintext, key, iv)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	// Verify encryption with Python
 	cmd := exec.Command("python3", scriptPath, "aes128_encrypt", fmt.Sprintf("%x", key), fmt.Sprintf("%x", iv), fmt.Sprintf("%x", plaintext), fmt.Sprintf("%x", ciphertext))
@@ -511,9 +477,7 @@ func TestAES128Parity(t *testing.T) {
 
 	// Verify decryption with Python
 	decrypted, err := AES128CBCDecrypt(ciphertext, key, iv)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	cmd = exec.Command("python3", scriptPath, "aes128_decrypt", fmt.Sprintf("%x", key), fmt.Sprintf("%x", iv), fmt.Sprintf("%x", ciphertext), fmt.Sprintf("%x", decrypted))
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
@@ -529,9 +493,7 @@ func TestAES128Parity(t *testing.T) {
 
 func TestAES256Parity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
@@ -544,9 +506,7 @@ func TestAES256Parity(t *testing.T) {
 	plaintext := PKCS7Pad([]byte("aes256 parity message"), 16)
 
 	ciphertext, err := AES256CBCEncrypt(plaintext, key, iv)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	// Verify encryption with Python
 	cmd := exec.Command("python3", scriptPath, "aes256_encrypt", fmt.Sprintf("%x", key), fmt.Sprintf("%x", iv), fmt.Sprintf("%x", plaintext), fmt.Sprintf("%x", ciphertext))
@@ -562,9 +522,7 @@ func TestAES256Parity(t *testing.T) {
 
 	// Verify decryption with Python
 	decrypted, err := AES256CBCDecrypt(ciphertext, key, iv)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	cmd = exec.Command("python3", scriptPath, "aes256_decrypt", fmt.Sprintf("%x", key), fmt.Sprintf("%x", iv), fmt.Sprintf("%x", ciphertext), fmt.Sprintf("%x", decrypted))
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())

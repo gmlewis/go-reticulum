@@ -30,13 +30,9 @@ func TestResolveConfigDir(t *testing.T) {
 		home := filepath.Join(tempDir, "home")
 		etc := filepath.Join(tempDir, "etc")
 		err := os.MkdirAll(etc, 0o755)
-		if err != nil {
-			t.Fatal(err)
-		}
+		mustTest(t, err)
 		err = os.WriteFile(filepath.Join(etc, "config"), []byte(""), 0o644)
-		if err != nil {
-			t.Fatal(err)
-		}
+		mustTest(t, err)
 
 		got := resolveConfigDirCustom("", home, etc)
 		if got != etc {
@@ -49,13 +45,9 @@ func TestResolveConfigDir(t *testing.T) {
 		home := filepath.Join(tempDir, "home")
 		userConfig := filepath.Join(home, ".config", "lxmd")
 		err := os.MkdirAll(userConfig, 0o755)
-		if err != nil {
-			t.Fatal(err)
-		}
+		mustTest(t, err)
 		err = os.WriteFile(filepath.Join(userConfig, "config"), []byte(""), 0o644)
-		if err != nil {
-			t.Fatal(err)
-		}
+		mustTest(t, err)
 
 		got := resolveConfigDirCustom("", home, "/nonexistent/etc")
 		if got != userConfig {
@@ -78,9 +70,7 @@ func TestApplyConfig(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
 		cfg := make(map[string]map[string]string)
 		got, err := applyConfig(cfg)
-		if err != nil {
-			t.Fatal(err)
-		}
+		mustTest(t, err)
 
 		if got.DisplayName != "Anonymous Peer" {
 			t.Errorf("DisplayName: got %q, want %q", got.DisplayName, "Anonymous Peer")
@@ -120,9 +110,7 @@ func TestApplyConfig(t *testing.T) {
 			},
 		}
 		got, err := applyConfig(cfg)
-		if err != nil {
-			t.Fatal(err)
-		}
+		mustTest(t, err)
 
 		if got.DisplayName != "My Peer" {
 			t.Errorf("DisplayName: got %q, want %q", got.DisplayName, "My Peer")
@@ -175,9 +163,7 @@ func TestApplyConfig(t *testing.T) {
 			},
 		}
 		got, err := applyConfig(cfg)
-		if err != nil {
-			t.Fatal(err)
-		}
+		mustTest(t, err)
 		if got.DeliveryTransferMaxAcceptedSize != 0.38 {
 			t.Errorf("DeliveryTransferMaxAcceptedSize: got %v, want 0.38", got.DeliveryTransferMaxAcceptedSize)
 		}
@@ -217,9 +203,7 @@ func TestLoadHashList(t *testing.T) {
 
 		content := valid1 + "\n" + invalid1 + "\n" + valid2 + "\n" + invalid2 + "\n"
 		err := os.WriteFile(path, []byte(content), 0o644)
-		if err != nil {
-			t.Fatal(err)
-		}
+		mustTest(t, err)
 
 		got := loadHashList(path)
 		if len(got) != 2 {
@@ -241,18 +225,14 @@ func TestEnsureConfig(t *testing.T) {
 	configPath := filepath.Join(configDir, "config")
 
 	err := ensureConfig(configDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	if !isFile(configPath) {
 		t.Errorf("config file %q not created", configPath)
 	}
 
 	data, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	if !strings.Contains(string(data), "[propagation]") {
 		t.Errorf("config file doesn't contain [propagation]")

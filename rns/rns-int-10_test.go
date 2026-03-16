@@ -368,9 +368,7 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 	}
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-ratchet-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	ResetTransport()
@@ -390,9 +388,7 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 	pyCmd := exec.Command("python3", scriptPath, "receiver", pyStorage, pyRatchets, pyIdPath, strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort))
 	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 	pyStdout, err := pyCmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
@@ -408,9 +404,7 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 
 	SetLogLevel(LogDebug)
 	r, err := NewReticulum(goConfigDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer closeReticulum(t, r)
 
 	// Wait for Python destination info and announce
@@ -493,9 +487,7 @@ func TestRatchetPythonToGoParity(t *testing.T) {
 	}
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-ratchet-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	ResetTransport()
@@ -510,9 +502,7 @@ func TestRatchetPythonToGoParity(t *testing.T) {
 
 	SetLogLevel(LogDebug)
 	r, err := NewReticulum(goConfigDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer closeReticulum(t, r)
 
 	// Create Go destination with ratchets
@@ -584,9 +574,7 @@ func TestRatchetRotationParity(t *testing.T) {
 	}
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-ratchet-rotation-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	ResetTransport()
@@ -601,9 +589,7 @@ func TestRatchetRotationParity(t *testing.T) {
 
 	SetLogLevel(LogDebug)
 	r, err := NewReticulum(goConfigDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer closeReticulum(t, r)
 
 	id := mustTestNewIdentity(t, true)
@@ -680,9 +666,7 @@ func TestRatchetRetentionWindowParity(t *testing.T) {
 	}
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-ratchet-retention-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	ResetTransport()
@@ -697,9 +681,7 @@ func TestRatchetRetentionWindowParity(t *testing.T) {
 
 	SetLogLevel(LogDebug)
 	r, err := NewReticulum(goConfigDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer closeReticulum(t, r)
 
 	id := mustTestNewIdentity(t, true)
@@ -775,9 +757,7 @@ func TestRatchetEnforceParity(t *testing.T) {
 	}
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-ratchet-enforce-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	ResetTransport()
@@ -830,9 +810,7 @@ func TestRatchetFileInteropParity(t *testing.T) {
 	}
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-ratchet-file-interop-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	ResetTransport()
@@ -927,9 +905,7 @@ func TestRatchetFileInteropParity(t *testing.T) {
 	}
 
 	goCorruptDest, err := NewDestination(goLoadedID, DestinationIn, DestinationSingle, "ratchet_test", "parity")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	if err := goCorruptDest.EnableRatchets(corruptPath); err == nil {
 		t.Fatal("expected go to reject corrupted ratchet file, but load succeeded")
 	}

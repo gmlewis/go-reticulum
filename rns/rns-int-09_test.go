@@ -195,9 +195,7 @@ if __name__ == "__main__":
 
 func TestAnnouncePacketParity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-parity-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_announce_parity.py")
@@ -222,9 +220,7 @@ func TestAnnouncePacketParity(t *testing.T) {
 	signedData = append(signedData, appData...)
 
 	signature, err := dest.identity.Sign(signedData)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	// announce_data = public_key+name_hash+random_hash+ratchet+signature+app_data
 	announceData := make([]byte, 0, 512)
@@ -284,9 +280,7 @@ func TestAnnouncePacketParity(t *testing.T) {
 
 func TestLinkProofPacketParity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-parity-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_link_proof_parity.py")
@@ -309,9 +303,7 @@ func TestLinkProofPacketParity(t *testing.T) {
 	signedData = append(signedData, dest.identity.GetPublicKey()[32:64]...) // dest's sig_pub
 
 	signature, err := dest.identity.Sign(signedData)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	// proofData = signature+self.pub_bytes
 	proofData := append(signature, l.pubBytes...)
@@ -344,9 +336,7 @@ func TestLinkProofPacketParity(t *testing.T) {
 
 func TestLinkRequestPacketParity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-parity-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "check_link_request_parity.py")

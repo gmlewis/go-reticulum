@@ -169,9 +169,7 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 		t.Fatalf("decrypt failed: %v\n%v", err, string(out))
 	}
 	got, err := os.ReadFile(decFile)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	if string(got) != plaintext {
 		t.Errorf("decrypted content = %q, want %q", string(got), plaintext)
 	}

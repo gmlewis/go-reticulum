@@ -27,15 +27,11 @@ func mustTestNewDestinationWithTransport(t *testing.T, ts *TransportSystem, iden
 
 func TestDestination(t *testing.T) {
 	id, err := NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	// Test IN SINGLE destination
 	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "testapp", "aspect1", "aspect2")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	if dest.Type != DestinationSingle {
 		t.Errorf("expected SINGLE destination type")
 	}
@@ -60,24 +56,16 @@ func TestDestination(t *testing.T) {
 
 func TestDestinationEncryption(t *testing.T) {
 	id, err := NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "testapp")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	msg := []byte("secret message")
 	encrypted, err := dest.Encrypt(msg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	decrypted, err := dest.Decrypt(encrypted)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	if !bytes.Equal(msg, decrypted) {
 		t.Errorf("encryption/decryption failed")

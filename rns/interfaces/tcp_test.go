@@ -19,9 +19,7 @@ func TestTCPInterface(t *testing.T) {
 
 	// Create server
 	server, err := NewTCPServerInterface("server", "127.0.0.1", 37430, handler)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer func() {
 		if err := server.Detach(); err != nil {
 			t.Fatalf("server detach failed: %v", err)
@@ -30,9 +28,7 @@ func TestTCPInterface(t *testing.T) {
 
 	// Create client
 	client, err := NewTCPClientInterface("client", "127.0.0.1", 37430, false, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer func() {
 		if err := client.Detach(); err != nil {
 			t.Fatalf("client detach failed: %v", err)

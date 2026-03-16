@@ -836,9 +836,7 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 	}
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-integrated-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 	ResetTransport()
 
@@ -854,9 +852,7 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 	pyCmd := exec.Command("python3", scriptPath, pyConfigDir, strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort))
 	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 	pyStdout, err := pyCmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout // Combine stderr and stdout
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
@@ -904,9 +900,7 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 
 	SetLogLevel(LogDebug)
 	r, err := NewReticulum(goConfigDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer closeReticulum(t, r)
 
 	// Wait for announce (path) from Python
@@ -928,18 +922,14 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 	// Create Link
 	// We need to create a dummy destination for the remote side
 	remoteDest, err := NewDestination(remoteId, DestinationOut, DestinationSingle, "integrated_test", "parity")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	// The hash should match what Python reported
 	if !bytes.Equal(remoteDest.Hash, destHash) {
 		t.Fatalf("Remote destination hash mismatch! Expected %x, got %x", destHash, remoteDest.Hash)
 	}
 
 	l, err := NewLink(remoteDest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	linkEstablished := make(chan bool, 1)
 	l.SetLinkEstablishedCallback(func(link *Link) {
@@ -990,9 +980,7 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 	}
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-large-request-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 	ResetTransport()
 
@@ -1007,9 +995,7 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 	pyCmd := exec.Command("python3", scriptPath, pyConfigDir, strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort))
 	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 	pyStdout, err := pyCmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
@@ -1062,9 +1048,7 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 
 	SetLogLevel(LogDebug)
 	r, err := NewReticulum(goConfigDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer closeReticulum(t, r)
 
 	ts := GetTransport()
@@ -1080,17 +1064,13 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 	}
 
 	remoteDest, err := NewDestination(remoteID, DestinationOut, DestinationSingle, "integrated_test", "parity")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	if !bytes.Equal(remoteDest.Hash, destHash) {
 		t.Fatalf("remote destination hash mismatch: expected %x got %x", destHash, remoteDest.Hash)
 	}
 
 	l, err := NewLink(remoteDest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	linkEstablished := make(chan bool, 1)
 	l.SetLinkEstablishedCallback(func(link *Link) {
@@ -1137,9 +1117,7 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 	}
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-integrated-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 	ResetTransport()
 
@@ -1160,17 +1138,13 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 
 	SetLogLevel(LogDebug)
 	r, err := NewReticulum(goConfigDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer closeReticulum(t, r)
 
 	// Create Go destination
 	id, _ := NewIdentity(true)
 	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "integrated_test", "parity")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	linkEstablished := make(chan *Link, 1)
 	dest.SetLinkEstablishedCallback(func(l *Link) {
@@ -1198,9 +1172,7 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 	pyCmd := exec.Command("python3", scriptPath, fmt.Sprintf("%x", dest.Hash), fmt.Sprintf("%x", id.GetPublicKey()), pyConfigDir, strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort))
 	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 	pyStdout, err := pyCmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
@@ -1243,9 +1215,7 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 	}
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-large-py-to-go-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 	ResetTransport()
 
@@ -1264,16 +1234,12 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 
 	SetLogLevel(LogDebug)
 	r, err := NewReticulum(goConfigDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer closeReticulum(t, r)
 
 	id, _ := NewIdentity(true)
 	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "integrated_test", "parity")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	requestReceived := make(chan int, 1)
 	dest.RegisterRequestHandler("test_path", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
@@ -1292,9 +1258,7 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 	pyCmd := exec.Command("python3", scriptPath, fmt.Sprintf("%x", dest.Hash), fmt.Sprintf("%x", id.GetPublicKey()), pyConfigDir, strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort), strconv.Itoa(payloadSize))
 	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 	pyStdout, err := pyCmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
@@ -1328,9 +1292,7 @@ func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 	}
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-integrated-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 	ResetTransport()
 
@@ -1345,9 +1307,7 @@ func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 	pyCmd := exec.Command("python3", scriptPath, pyConfigDir, strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort))
 	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 	pyStdout, err := pyCmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
@@ -1382,9 +1342,7 @@ func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 
 	SetLogLevel(LogDebug)
 	r, err := NewReticulum(goConfigDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer closeReticulum(t, r)
 
 	ts := GetTransport()
@@ -1431,9 +1389,7 @@ func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
 	}
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-pathresp-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 	ResetTransport()
 
@@ -1446,16 +1402,12 @@ func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
 
 	SetLogLevel(LogDebug)
 	r, err := NewReticulum(goConfigDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer closeReticulum(t, r)
 
 	id, _ := NewIdentity(true)
 	localDest, err := NewDestination(id, DestinationIn, DestinationSingle, "pathreq", "target")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	requestConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: requesterPort})
 	if err != nil {
@@ -1524,9 +1476,7 @@ func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 	}
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-multihop-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 	ResetTransport()
 
@@ -1539,9 +1489,7 @@ func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 
 	SetLogLevel(LogDebug)
 	r, err := NewReticulum(goConfigDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer closeReticulum(t, r)
 
 	ts := GetTransport()
@@ -1558,9 +1506,7 @@ func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 
 	remoteID, _ := NewIdentity(true)
 	remoteDest, err := NewDestinationWithTransport(nil, remoteID, DestinationOut, DestinationSingle, "multihop", "target")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	nextHop := bytes.Repeat([]byte{0x7A}, TruncatedHashLength/8)
 	ts.GetMutex().Lock()
@@ -1629,9 +1575,7 @@ func TestIntegratedPathResponseAnnounceNotRebroadcastUDP(t *testing.T) {
 	}
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-pathresp-norebroadcast-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 	ResetTransport()
 
@@ -1667,9 +1611,7 @@ enable_transport = False
 
 	SetLogLevel(LogDebug)
 	r, err := NewReticulum(goConfigDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer closeReticulum(t, r)
 
 	sinkConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: sinkPort})
@@ -1686,9 +1628,7 @@ enable_transport = False
 
 	id, _ := NewIdentity(true)
 	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "pathresp", "target")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	announce, err := dest.buildAnnouncePacket(nil)
 	if err != nil {
@@ -1720,9 +1660,7 @@ func TestIntegratedRelayedPathResponsePropagationUDP(t *testing.T) {
 	}
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-pathresp-relay-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 	ResetTransport()
 
@@ -1758,9 +1696,7 @@ enable_transport = False
 
 	SetLogLevel(LogDebug)
 	r, err := NewReticulum(goConfigDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer closeReticulum(t, r)
 
 	requestConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: requesterPort})
@@ -1883,9 +1819,7 @@ func TestIntegratedRelayedPathResponsePropagationPythonRequesterUDP(t *testing.T
 	}
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-pathresp-python-requester-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 	ResetTransport()
 
@@ -1921,9 +1855,7 @@ enable_transport = False
 
 	SetLogLevel(LogDebug)
 	r, err := NewReticulum(goConfigDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer closeReticulum(t, r)
 
 	responderConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: responderPort})
@@ -1947,9 +1879,7 @@ enable_transport = False
 	pyCmd := exec.Command("python3", scriptPath, fmt.Sprintf("%x", remoteDest.Hash), pyConfigDir, strconv.Itoa(pyListenPort), strconv.Itoa(relayIngressListenPort))
 	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 	pyStdout, err := pyCmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
@@ -2045,9 +1975,7 @@ func TestIntegratedRelayedPathResponsePropagationPythonRelayUDP(t *testing.T) {
 	}
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-pathresp-python-relay-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 	ResetTransport()
 
@@ -2065,9 +1993,7 @@ func TestIntegratedRelayedPathResponsePropagationPythonRelayUDP(t *testing.T) {
 	pyCmd := exec.Command("python3", scriptPath, pyConfigDir, strconv.Itoa(pyIngressListenPort), strconv.Itoa(requesterPort), strconv.Itoa(pyEgressListenPort), strconv.Itoa(responderPort))
 	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 	pyStdout, err := pyCmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
@@ -2227,9 +2153,7 @@ func TestIntegratedAnnouncePropagationPythonRelayUDP(t *testing.T) {
 	}
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-announce-python-relay-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 	ResetTransport()
 
@@ -2247,9 +2171,7 @@ func TestIntegratedAnnouncePropagationPythonRelayUDP(t *testing.T) {
 	pyCmd := exec.Command("python3", scriptPath, pyConfigDir, strconv.Itoa(pyIngressListenPort), strconv.Itoa(sinkPort), strconv.Itoa(pyEgressListenPort), strconv.Itoa(sinkPort))
 	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 	pyStdout, err := pyCmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
@@ -2292,9 +2214,7 @@ func TestIntegratedAnnouncePropagationPythonRelayUDP(t *testing.T) {
 	emitterCmd := exec.Command("python3", emitterScriptPath, emitterConfigDir, strconv.Itoa(requesterPort), strconv.Itoa(pyIngressListenPort))
 	emitterCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 	emitterStdout, err := emitterCmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	emitterCmd.Stderr = emitterCmd.Stdout
 	if err := emitterCmd.Start(); err != nil {
 		t.Fatal(err)
@@ -2386,9 +2306,7 @@ func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 	}
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-path-invalidate-py-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 	ResetTransport()
 
@@ -2401,16 +2319,12 @@ func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 
 	SetLogLevel(LogDebug)
 	r, err := NewReticulum(goConfigDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer closeReticulum(t, r)
 
 	id, _ := NewIdentity(true)
 	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "integrated_test", "invalidate_py")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	stopAnnounce := make(chan struct{})
 	announceStopped := false
@@ -2442,9 +2356,7 @@ func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 	pyCmd := exec.Command("python3", scriptPath, fmt.Sprintf("%x", dest.Hash), pyConfigDir, strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort))
 	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 	pyStdout, err := pyCmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
@@ -2500,9 +2412,7 @@ func TestIntegratedRelayedPathResponseGoRequesterToPythonTargetUDP(t *testing.T)
 	}
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-pathresp-go-relay-python-target-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 	ResetTransport()
 
@@ -2521,9 +2431,7 @@ func TestIntegratedRelayedPathResponseGoRequesterToPythonTargetUDP(t *testing.T)
 	pyCmd := exec.Command("python3", scriptPath, pyConfigDir, strconv.Itoa(pyListenPort), strconv.Itoa(relayEgressListenPort), fmt.Sprintf("%x", tag))
 	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 	pyStdout, err := pyCmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
@@ -2581,9 +2489,7 @@ enable_transport = False
 
 	SetLogLevel(LogDebug)
 	r, err := NewReticulum(goConfigDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer closeReticulum(t, r)
 
 	requestConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: requesterPort})
@@ -2658,9 +2564,7 @@ func TestIntegratedPythonRelayPathRequestEmissionUDP(t *testing.T) {
 	}
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-python-relay-pr-emitter-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 	ResetTransport()
 
@@ -2694,9 +2598,7 @@ func TestIntegratedPythonRelayPathRequestEmissionUDP(t *testing.T) {
 	)
 	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 	pyStdout, err := pyCmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
@@ -2787,9 +2689,7 @@ func TestIntegratedPythonRelayInboundPathRequestForwardingUDP(t *testing.T) {
 	}
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-python-relay-inbound-forward-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 	ResetTransport()
 
@@ -2821,9 +2721,7 @@ func TestIntegratedPythonRelayInboundPathRequestForwardingUDP(t *testing.T) {
 	)
 	relayCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 	relayStdout, err := relayCmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	relayCmd.Stderr = relayCmd.Stdout
 	if err := relayCmd.Start(); err != nil {
 		t.Fatal(err)
@@ -2880,9 +2778,7 @@ relayReady:
 	)
 	requesterCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 	requesterStdout, err := requesterCmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	requesterCmd.Stderr = requesterCmd.Stdout
 	if err := requesterCmd.Start(); err != nil {
 		t.Fatal(err)

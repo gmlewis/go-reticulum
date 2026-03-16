@@ -41,9 +41,7 @@ func TestLink(t *testing.T) {
 
 	// Receiver accepts link and generates its keys
 	receiverLink, err := NewLink(receiverDest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	receiverLink.initiator = false
 	receiverLink.linkID = link.linkID
 	receiverLink.hash = link.linkID
@@ -72,14 +70,10 @@ func TestLink(t *testing.T) {
 	// Test encrypted communication over link
 	msg := []byte("secret link message")
 	encrypted, err := link.Encrypt(msg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	decrypted, err := receiverLink.Decrypt(encrypted)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	if !bytes.Equal(msg, decrypted) {
 		t.Errorf("link encryption/decryption failed")
@@ -98,9 +92,7 @@ func TestLinkHandshakeFull(t *testing.T) {
 
 	// Setup receiver destination
 	receiverDest, err := NewDestinationWithTransport(tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	establishedReceiver := make(chan *Link, 1)
 	receiverDest.callbacks.LinkEstablished = func(l *Link) {
@@ -108,9 +100,7 @@ func TestLinkHandshakeFull(t *testing.T) {
 	}
 
 	link, err := NewLinkWithTransport(tsInitiator, receiverDest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	establishedInitiator := make(chan bool, 1)
 	link.callbacks.LinkEstablished = func(l *Link) {
@@ -154,9 +144,7 @@ func TestLinkIdentification(t *testing.T) {
 	pubKey := initiatorID.GetPublicKey()
 	signedData := append(link.linkID, pubKey...)
 	signature, err := initiatorID.Sign(signedData)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	// Receiver verifies identity
 	if !initiatorID.Verify(signature, signedData) {
@@ -186,18 +174,14 @@ func TestLinkIdentifyPacketFlow(t *testing.T) {
 	tsReceiver.RegisterInterface(pipeReceiver)
 
 	receiverDest, err := NewDestinationWithTransport(tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	establishedReceiver := make(chan *Link, 1)
 	receiverDest.callbacks.LinkEstablished = func(l *Link) {
 		establishedReceiver <- l
 	}
 
 	link, err := NewLinkWithTransport(tsInitiator, receiverDest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	establishedInitiator := make(chan struct{}, 1)
 	link.callbacks.LinkEstablished = func(l *Link) {

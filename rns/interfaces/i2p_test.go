@@ -18,9 +18,7 @@ func TestI2PInterfaceRoundTrip(t *testing.T) {
 	}
 
 	serverIface, err := NewI2PInterface("i2p-server", "127.0.0.1", 37434, handler)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer func() {
 		if err := serverIface.Detach(); err != nil {
 			t.Fatalf("server detach failed: %v", err)
@@ -32,9 +30,7 @@ func TestI2PInterfaceRoundTrip(t *testing.T) {
 	}
 
 	peerIface, err := NewI2PInterfacePeer("i2p-peer", "127.0.0.1", 37434, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer func() {
 		if err := peerIface.Detach(); err != nil {
 			t.Fatalf("peer detach failed: %v", err)

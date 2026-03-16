@@ -12,17 +12,13 @@ import (
 
 func mustTestNewIdentity(t *testing.T, createKeys bool) *Identity {
 	id, err := NewIdentity(createKeys)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	return id
 }
 
 func TestIdentity(t *testing.T) {
 	id, err := NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	// Test public key consistency
 	pub := id.GetPublicKey()
@@ -33,22 +29,16 @@ func TestIdentity(t *testing.T) {
 	// Test signing/verification
 	msg := []byte("hello world")
 	sig, err := id.Sign(msg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	if !id.Verify(sig, msg) {
 		t.Errorf("signature verification failed")
 	}
 
 	// Test encryption/decryption
 	encrypted, err := id.Encrypt(msg, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	decrypted, err := id.Decrypt(encrypted, nil, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	if !bytes.Equal(msg, decrypted) {
 		t.Errorf("decryption failed: expected %s, got %s", msg, decrypted)
 	}
@@ -56,34 +46,24 @@ func TestIdentity(t *testing.T) {
 
 func TestIdentityLoading(t *testing.T) {
 	id1, err := NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	prvBytes := id1.GetPrivateKey()
 	pubBytes := id1.GetPublicKey()
 
 	// Test loading private key
 	id2, err := NewIdentity(false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	err = id2.LoadPrivateKey(prvBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	if !bytes.Equal(id1.Hash, id2.Hash) {
 		t.Errorf("identity hash mismatch after loading private key")
 	}
 
 	// Test loading public key
 	id3, err := NewIdentity(false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	err = id3.LoadPublicKey(pubBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	if !bytes.Equal(id1.Hash, id3.Hash) {
 		t.Errorf("identity hash mismatch after loading public key")
 	}
@@ -93,9 +73,7 @@ func TestFromBytes(t *testing.T) {
 	t.Parallel()
 
 	id1, err := NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	prvBytes := id1.GetPrivateKey()
 	pubBytes := id1.GetPublicKey()
 

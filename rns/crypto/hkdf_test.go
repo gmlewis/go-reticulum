@@ -18,9 +18,7 @@ func TestHKDF(t *testing.T) {
 	length := 64
 
 	got, err := HKDF(length, deriveFrom, salt, context)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	want := []byte{242, 87, 219, 5, 164, 56, 107, 16,
 		243, 252, 76, 33, 233, 192, 68, 47,

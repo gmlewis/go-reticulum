@@ -165,26 +165,16 @@ func TestMessageHashMatchesProtocolMaterial(t *testing.T) {
 
 func TestWriteToDirectory(t *testing.T) {
 	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	srcID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	dest, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	src, err := rns.NewDestination(srcID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	msg, err := NewMessage(dest, src, "hello", "greet", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	dir := tempDir(t)
 	path, err := msg.WriteToDirectory(dir)

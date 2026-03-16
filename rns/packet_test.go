@@ -12,13 +12,9 @@ import (
 
 func TestPacket(t *testing.T) {
 	id, err := NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "testapp")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	data := []byte("hello reticulum")
 	p := NewPacket(dest, data)
@@ -61,13 +57,9 @@ func TestPacket(t *testing.T) {
 
 func TestPacketEncryption(t *testing.T) {
 	id, err := NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "testapp")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	data := []byte("secret message")
 	p := NewPacket(dest, data)
@@ -82,9 +74,7 @@ func TestPacketEncryption(t *testing.T) {
 	}
 
 	decrypted, err := dest.Decrypt(p2.Data)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	if !bytes.Equal(data, decrypted) {
 		t.Errorf("decryption failed: expected %s, got %s", data, decrypted)

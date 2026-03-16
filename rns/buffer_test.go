@@ -88,9 +88,7 @@ func TestBidirectionalBuffer(t *testing.T) {
 
 	buf := make([]byte, 100)
 	n, err := bb2.Read(buf)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	if !bytes.Equal(msg, buf[:n]) {
 		t.Errorf("expected %v, got %v", string(msg), string(buf[:n]))
@@ -104,9 +102,7 @@ func TestBidirectionalBuffer(t *testing.T) {
 	}()
 
 	n, err = bb1.Read(buf)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 
 	if !bytes.Equal(reply, buf[:n]) {
 		t.Errorf("expected %v, got %v", string(reply), string(buf[:n]))

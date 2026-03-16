@@ -68,9 +68,7 @@ except KeyboardInterrupt:
 func TestUDPInterfaceParity(t *testing.T) {
 	pythonPath := getPythonPath()
 	tmpDir, err := os.MkdirTemp("", "rns-udp-parity-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "udp_echo.py")
@@ -167,9 +165,7 @@ except KeyboardInterrupt:
 func TestTCPInterfaceParity(t *testing.T) {
 	pythonPath := getPythonPath()
 	tmpDir, err := os.MkdirTemp("", "rns-tcp-parity-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "tcp_echo.py")
@@ -227,9 +223,7 @@ func TestTCPInterfaceParity(t *testing.T) {
 func TestTCPInterfaceParityKISS(t *testing.T) {
 	pythonPath := getPythonPath()
 	tmpDir, err := os.MkdirTemp("", "rns-tcp-kiss-parity-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	const pythonTCPKISSEchoScript = `
@@ -396,9 +390,7 @@ if __name__ == "__main__":
 func TestLocalInterfaceParity(t *testing.T) {
 	pythonPath := getPythonPath()
 	tmpDir, err := os.MkdirTemp("", "rns-local-parity-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "local_echo.py")
@@ -550,9 +542,7 @@ while True:
 
 func TestPipeInterfaceParity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "rns-pipe-parity-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "pipe_echo.py")

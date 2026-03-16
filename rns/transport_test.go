@@ -17,9 +17,7 @@ import (
 
 func TestTransport(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "rns-transport-test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	ts := GetTransport()
@@ -856,9 +854,7 @@ func TestCullStaleTransportTables(t *testing.T) {
 
 func TestPathTablePersistenceRoundTrip(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "rns-path-persist-*")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	iface := &capturingInterface{name: "persist-iface"}

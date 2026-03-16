@@ -19,26 +19,18 @@ func TestAES(t *testing.T) {
 
 	// AES-128
 	encrypted, err := AES128CBCEncrypt(data, key128, iv)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	decrypted, err := AES128CBCDecrypt(encrypted, key128, iv)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	if !bytes.Equal(data, decrypted) {
 		t.Errorf("AES-128 decrypted data mismatch")
 	}
 
 	// AES-256
 	encrypted, err = AES256CBCEncrypt(data, key256, iv)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	decrypted, err = AES256CBCDecrypt(encrypted, key256, iv)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	if !bytes.Equal(data, decrypted) {
 		t.Errorf("AES-256 decrypted data mismatch")
 	}

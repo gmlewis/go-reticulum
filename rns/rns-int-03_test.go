@@ -222,9 +222,7 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			tmpDir, err := os.MkdirTemp("", "go-reticulum-policy-go2py-*")
-			if err != nil {
-				t.Fatal(err)
-			}
+			mustTest(t, err)
 			defer os.RemoveAll(tmpDir)
 
 			ResetTransport()
@@ -240,9 +238,7 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 			pyCmd := exec.Command("python3", scriptPath, pyConfigDir, strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort), tc.autoMode, strconv.Itoa(payloadSize))
 			pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 			pyStdout, err := pyCmd.StdoutPipe()
-			if err != nil {
-				t.Fatal(err)
-			}
+			mustTest(t, err)
 			pyCmd.Stderr = pyCmd.Stdout
 			if err := pyCmd.Start(); err != nil {
 				t.Fatal(err)
@@ -286,9 +282,7 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 
 			SetLogLevel(LogDebug)
 			r, err := NewReticulum(goConfigDir)
-			if err != nil {
-				t.Fatal(err)
-			}
+			mustTest(t, err)
 			defer closeReticulum(t, r)
 
 			transport := GetTransport()
@@ -308,17 +302,13 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 				t.Fatalf("load python public key: %v", err)
 			}
 			remoteDest, err := NewDestination(remoteID, DestinationOut, DestinationSingle, "integrated_test", "parity")
-			if err != nil {
-				t.Fatal(err)
-			}
+			mustTest(t, err)
 			if !bytes.Equal(remoteDest.Hash, destHash) {
 				t.Fatalf("destination hash mismatch: expected %x got %x", destHash, remoteDest.Hash)
 			}
 
 			link, err := NewLink(remoteDest)
-			if err != nil {
-				t.Fatal(err)
-			}
+			mustTest(t, err)
 			var mu sync.Mutex
 			var gotCompressed *bool
 			link.SetResourceStartedCallback(func(r *Resource) {
@@ -588,9 +578,7 @@ func TestIntegratedResponseResourceCompressionPolicyPythonToGo(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			tmpDir, err := os.MkdirTemp("", "go-reticulum-policy-py2go-*")
-			if err != nil {
-				t.Fatal(err)
-			}
+			mustTest(t, err)
 			defer os.RemoveAll(tmpDir)
 
 			ResetTransport()
@@ -606,19 +594,13 @@ func TestIntegratedResponseResourceCompressionPolicyPythonToGo(t *testing.T) {
 
 			SetLogLevel(LogDebug)
 			r, err := NewReticulum(goConfigDir)
-			if err != nil {
-				t.Fatal(err)
-			}
+			mustTest(t, err)
 			defer closeReticulum(t, r)
 
 			id, err := NewIdentity(true)
-			if err != nil {
-				t.Fatal(err)
-			}
+			mustTest(t, err)
 			dest, err := NewDestination(id, DestinationIn, DestinationSingle, "integrated_test", "parity")
-			if err != nil {
-				t.Fatal(err)
-			}
+			mustTest(t, err)
 
 			payloadSize := MDU + 768
 			dest.RegisterRequestHandlerWithAutoCompressLimit("test_path", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
@@ -641,9 +623,7 @@ func TestIntegratedResponseResourceCompressionPolicyPythonToGo(t *testing.T) {
 			pyCmd := exec.Command("python3", scriptPath, fmt.Sprintf("%x", dest.Hash), fmt.Sprintf("%x", id.GetPublicKey()), pyConfigDir, strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort))
 			pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 			pyStdout, err := pyCmd.StdoutPipe()
-			if err != nil {
-				t.Fatal(err)
-			}
+			mustTest(t, err)
 			pyCmd.Stderr = pyCmd.Stdout
 			if err := pyCmd.Start(); err != nil {
 				t.Fatal(err)

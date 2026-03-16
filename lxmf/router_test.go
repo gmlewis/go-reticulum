@@ -2158,13 +2158,9 @@ func TestRequestMessagesLinkEstablished(t *testing.T) {
 
 	// Create and remember a peer identity.
 	peerID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	peerDest, err := rns.NewDestination(peerID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	rns.Remember(nil, peerDest.Hash, peerID.GetPublicKey(), nil)
 	if err := router.SetOutboundPropagationNode(peerDest.Hash); err != nil {
 		t.Fatal(err)
@@ -2188,13 +2184,9 @@ func TestRequestMessagesLinkFailed(t *testing.T) {
 	}
 
 	peerID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	peerDest, err := rns.NewDestination(peerID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	rns.Remember(nil, peerDest.Hash, peerID.GetPublicKey(), nil)
 	if err := router.SetOutboundPropagationNode(peerDest.Hash); err != nil {
 		t.Fatal(err)
