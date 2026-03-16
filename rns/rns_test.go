@@ -13,6 +13,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
+
+	"github.com/gmlewis/go-reticulum/rns/interfaces"
 )
 
 func closeReticulum(t *testing.T, r *Reticulum) {
@@ -53,6 +56,42 @@ func tempDir(t *testing.T) string {
 		_ = os.RemoveAll(dir)
 	})
 	return dir
+}
+
+// newTestTransportSystem creates a minimal TransportSystem for testing.
+func newTestTransportSystem(t *testing.T) *TransportSystem {
+	t.Helper()
+	id, err := NewIdentity(true)
+	if err != nil {
+		t.Fatalf("NewIdentity: %v", err)
+	}
+	return &TransportSystem{
+		pathTable:    make(map[string]*PathEntry),
+		packetHashes: make(map[string]time.Time),
+		destinations: make([]*Destination, 0),
+		pendingLinks: make([]*Link, 0),
+		activeLinks:  make([]*Link, 0),
+		identity:     id,
+	}
+}
+
+// newTestPipes creates a pair of connected PipeInterfaces wired to the
+// given transport systems and registers cleanup via t.Cleanup.
+func newTestPipes(t *testing.T, tsA, tsB *TransportSystem) (*interfaces.PipeInterface, *interfaces.PipeInterface) {
+	t.Helper()
+	pipeA := interfaces.NewPipeInterface("initiator", func(data []byte, iface interfaces.Interface) {
+		tsA.Inbound(data, iface)
+	})
+	pipeB := interfaces.NewPipeInterface("receiver", func(data []byte, iface interfaces.Interface) {
+		tsB.Inbound(data, iface)
+	})
+	pipeA.Other = pipeB
+	pipeB.Other = pipeA
+	t.Cleanup(func() {
+		_ = pipeA.Detach()
+		_ = pipeB.Detach()
+	})
+	return pipeA, pipeB
 }
 
 func writeConfig(t *testing.T, dir, content string) {

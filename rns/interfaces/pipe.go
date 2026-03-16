@@ -5,6 +5,8 @@
 
 package interfaces
 
+import "sync"
+
 // PipeInterface establishes a direct in-memory conduit between two endpoints,
 // optimized for localized testing and simulation. It bypasses the physical
 // network stack and enables rapid point-to-point payload delivery using Go
@@ -14,6 +16,7 @@ type PipeInterface struct {
 	Other     *PipeInterface
 	OnReceive func([]byte, Interface)
 	queue     chan []byte
+	closeOnce sync.Once
 }
 
 // NewPipeInterface provisions an asynchronous in-memory testing channel. It
@@ -42,11 +45,18 @@ func (p *PipeInterface) Send(data []byte) error {
 	// Use a copy to avoid data races if the buffer is reused
 	buf := make([]byte, len(data))
 	copy(buf, data)
+	defer func() { recover() }()
 	p.queue <- buf
 	return nil
 }
 
-func (p *PipeInterface) Type() string  { return "PipeInterface" }
-func (p *PipeInterface) IsOut() bool   { return true }
-func (p *PipeInterface) Status() bool  { return true }
-func (p *PipeInterface) Detach() error { return nil }
+func (p *PipeInterface) Type() string { return "PipeInterface" }
+func (p *PipeInterface) IsOut() bool  { return true }
+func (p *PipeInterface) Status() bool { return true }
+
+// Detach closes the internal queue channel, stopping the background
+// processQueue goroutine and releasing resources.
+func (p *PipeInterface) Detach() error {
+	p.closeOnce.Do(func() { close(p.queue) })
+	return nil
+}

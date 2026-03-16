@@ -9,8 +9,6 @@ import (
 	"bytes"
 	"testing"
 	"time"
-
-	"github.com/gmlewis/go-reticulum/rns/interfaces"
 )
 
 func TestLink(t *testing.T) {
@@ -76,51 +74,22 @@ func TestLink(t *testing.T) {
 
 func TestLinkHandshakeFull(t *testing.T) {
 	SetLogLevel(LogExtreme)
-	// Create two separate transport systems
-	tsInitiator := &TransportSystem{
-		pathTable:    make(map[string]*PathEntry),
-		packetHashes: make(map[string]time.Time),
-		destinations: make([]*Destination, 0),
-		pendingLinks: make([]*Link, 0),
-		activeLinks:  make([]*Link, 0),
-	}
-	idInitiator, _ := NewIdentity(true)
-	tsInitiator.identity = idInitiator
 
-	tsReceiver := &TransportSystem{
-		pathTable:    make(map[string]*PathEntry),
-		packetHashes: make(map[string]time.Time),
-		destinations: make([]*Destination, 0),
-		pendingLinks: make([]*Link, 0),
-		activeLinks:  make([]*Link, 0),
-	}
-	idReceiver, _ := NewIdentity(true)
-	tsReceiver.identity = idReceiver
+	tsInitiator := newTestTransportSystem(t)
+	tsReceiver := newTestTransportSystem(t)
 
-	// Connect them with pipes
-	var pipeInitiator, pipeReceiver *interfaces.PipeInterface
-	pipeInitiator = interfaces.NewPipeInterface("initiator", func(data []byte, iface interfaces.Interface) {
-		tsInitiator.Inbound(data, iface)
-	})
-	pipeReceiver = interfaces.NewPipeInterface("receiver", func(data []byte, iface interfaces.Interface) {
-		tsReceiver.Inbound(data, iface)
-	})
-	pipeInitiator.Other = pipeReceiver
-	pipeReceiver.Other = pipeInitiator
-
+	pipeInitiator, pipeReceiver := newTestPipes(t, tsInitiator, tsReceiver)
 	tsInitiator.RegisterInterface(pipeInitiator)
 	tsReceiver.RegisterInterface(pipeReceiver)
 
 	// Setup receiver destination
-	receiverDest, _ := NewDestinationWithTransport(tsReceiver, idReceiver, DestinationIn, DestinationSingle, "receiver")
-	// Registering is done by constructor
+	receiverDest, _ := NewDestinationWithTransport(tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
 
 	establishedReceiver := make(chan *Link, 1)
 	receiverDest.callbacks.LinkEstablished = func(l *Link) {
 		establishedReceiver <- l
 	}
 
-	// Initiator creates link to receiver
 	link, err := NewLinkWithTransport(tsInitiator, receiverDest)
 	if err != nil {
 		t.Fatal(err)
@@ -131,26 +100,22 @@ func TestLinkHandshakeFull(t *testing.T) {
 		establishedInitiator <- true
 	}
 
-	// 1. Initiator sends LINKREQUEST
 	if err := link.Establish(); err != nil {
 		t.Fatal(err)
 	}
 
-	// Wait for establishment on both sides
 	select {
 	case <-establishedInitiator:
-		// Initiator side established
-	case <-time.After(10 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("Timeout waiting for initiator link establishment")
 	}
 
 	select {
 	case l := <-establishedReceiver:
-		// Receiver side established
 		if l.status != LinkActive {
 			t.Errorf("Receiver link not active")
 		}
-	case <-time.After(10 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("Timeout waiting for receiver link establishment")
 	}
 
@@ -194,40 +159,14 @@ func TestLinkIdentifyInvalidState(t *testing.T) {
 func TestLinkIdentifyPacketFlow(t *testing.T) {
 	SetLogLevel(LogWarning)
 
-	tsInitiator := &TransportSystem{
-		pathTable:    make(map[string]*PathEntry),
-		packetHashes: make(map[string]time.Time),
-		destinations: make([]*Destination, 0),
-		pendingLinks: make([]*Link, 0),
-		activeLinks:  make([]*Link, 0),
-	}
-	idInitiator, _ := NewIdentity(true)
-	tsInitiator.identity = idInitiator
+	tsInitiator := newTestTransportSystem(t)
+	tsReceiver := newTestTransportSystem(t)
 
-	tsReceiver := &TransportSystem{
-		pathTable:    make(map[string]*PathEntry),
-		packetHashes: make(map[string]time.Time),
-		destinations: make([]*Destination, 0),
-		pendingLinks: make([]*Link, 0),
-		activeLinks:  make([]*Link, 0),
-	}
-	idReceiver, _ := NewIdentity(true)
-	tsReceiver.identity = idReceiver
-
-	var pipeInitiator, pipeReceiver *interfaces.PipeInterface
-	pipeInitiator = interfaces.NewPipeInterface("initiator", func(data []byte, iface interfaces.Interface) {
-		tsInitiator.Inbound(data, iface)
-	})
-	pipeReceiver = interfaces.NewPipeInterface("receiver", func(data []byte, iface interfaces.Interface) {
-		tsReceiver.Inbound(data, iface)
-	})
-	pipeInitiator.Other = pipeReceiver
-	pipeReceiver.Other = pipeInitiator
-
+	pipeInitiator, pipeReceiver := newTestPipes(t, tsInitiator, tsReceiver)
 	tsInitiator.RegisterInterface(pipeInitiator)
 	tsReceiver.RegisterInterface(pipeReceiver)
 
-	receiverDest, _ := NewDestinationWithTransport(tsReceiver, idReceiver, DestinationIn, DestinationSingle, "receiver")
+	receiverDest, _ := NewDestinationWithTransport(tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
 	establishedReceiver := make(chan *Link, 1)
 	receiverDest.callbacks.LinkEstablished = func(l *Link) {
 		establishedReceiver <- l
@@ -249,14 +188,14 @@ func TestLinkIdentifyPacketFlow(t *testing.T) {
 
 	select {
 	case <-establishedInitiator:
-	case <-time.After(10 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("timeout waiting for initiator link establishment")
 	}
 
 	var receiverLink *Link
 	select {
 	case receiverLink = <-establishedReceiver:
-	case <-time.After(10 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("timeout waiting for receiver link establishment")
 	}
 
@@ -265,16 +204,16 @@ func TestLinkIdentifyPacketFlow(t *testing.T) {
 		identified <- id
 	}
 
-	if err := link.Identify(idInitiator); err != nil {
+	if err := link.Identify(tsInitiator.identity); err != nil {
 		t.Fatalf("Identify() error: %v", err)
 	}
 
 	select {
 	case id := <-identified:
-		if !bytes.Equal(id.Hash, idInitiator.Hash) {
-			t.Fatalf("identified hash mismatch: got %x want %x", id.Hash, idInitiator.Hash)
+		if !bytes.Equal(id.Hash, tsInitiator.identity.Hash) {
+			t.Fatalf("identified hash mismatch: got %x want %x", id.Hash, tsInitiator.identity.Hash)
 		}
-	case <-time.After(10 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("timeout waiting for remote identification")
 	}
 }

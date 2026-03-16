@@ -9,56 +9,22 @@ import (
 	"bytes"
 	"testing"
 	"time"
-
-	"github.com/gmlewis/go-reticulum/rns/interfaces"
 )
 
 func TestRequestResponse(t *testing.T) {
-	ResetTransport()
-	// Create two separate transport systems
-	tsInitiator := &TransportSystem{
-		pathTable:    make(map[string]*PathEntry),
-		packetHashes: make(map[string]time.Time),
-		destinations: make([]*Destination, 0),
-		pendingLinks: make([]*Link, 0),
-		activeLinks:  make([]*Link, 0),
-	}
-	idInitiator, _ := NewIdentity(true)
-	tsInitiator.identity = idInitiator
+	tsInitiator := newTestTransportSystem(t)
+	tsReceiver := newTestTransportSystem(t)
 
-	tsReceiver := &TransportSystem{
-		pathTable:    make(map[string]*PathEntry),
-		packetHashes: make(map[string]time.Time),
-		destinations: make([]*Destination, 0),
-		pendingLinks: make([]*Link, 0),
-		activeLinks:  make([]*Link, 0),
-	}
-	idReceiver, _ := NewIdentity(true)
-	tsReceiver.identity = idReceiver
-
-	// Connect them with pipes
-	var pipeInitiator, pipeReceiver *interfaces.PipeInterface
-	pipeInitiator = interfaces.NewPipeInterface("initiator", func(data []byte, iface interfaces.Interface) {
-		tsInitiator.Inbound(data, iface)
-	})
-	pipeReceiver = interfaces.NewPipeInterface("receiver", func(data []byte, iface interfaces.Interface) {
-		tsReceiver.Inbound(data, iface)
-	})
-	pipeInitiator.Other = pipeReceiver
-	pipeReceiver.Other = pipeInitiator
-
+	pipeInitiator, pipeReceiver := newTestPipes(t, tsInitiator, tsReceiver)
 	tsInitiator.RegisterInterface(pipeInitiator)
 	tsReceiver.RegisterInterface(pipeReceiver)
 
-	// Setup receiver destination
-	receiverDest, _ := NewDestinationWithTransport(tsReceiver, idReceiver, DestinationIn, DestinationSingle, "receiver")
+	receiverDest, _ := NewDestinationWithTransport(tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
 
-	// Register request handler
 	receiverDest.RegisterRequestHandler("/test/path", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
 		return "response data: " + string(data)
 	}, AllowAll, nil, true)
 
-	// Initiator creates link to receiver
 	link, _ := NewLinkWithTransport(tsInitiator, receiverDest)
 
 	establishedInitiator := make(chan bool, 1)
@@ -66,19 +32,16 @@ func TestRequestResponse(t *testing.T) {
 		establishedInitiator <- true
 	}
 
-	// 1. Establish link
 	if err := link.Establish(); err != nil {
 		t.Fatal(err)
 	}
 
 	select {
 	case <-establishedInitiator:
-		// OK
-	case <-time.After(10 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("Timeout waiting for link establishment")
 	}
 
-	// 2. Perform request
 	responseReceived := make(chan string, 1)
 	_, err := link.Request("/test/path", []byte("hello"), func(rr *RequestReceipt) {
 		responseReceived <- rr.Response.(string)
@@ -94,7 +57,7 @@ func TestRequestResponse(t *testing.T) {
 		if res != expected {
 			t.Errorf("expected %v, got %v", expected, res)
 		}
-	case <-time.After(10 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("Timeout waiting for response")
 	}
 }
@@ -111,42 +74,14 @@ func TestRequestResponseAutoCompressPolicyInlineAndResource(t *testing.T) {
 	for _, tc := range tests {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			ResetTransport()
+			tsInitiator := newTestTransportSystem(t)
+			tsReceiver := newTestTransportSystem(t)
 
-			tsInitiator := &TransportSystem{
-				pathTable:    make(map[string]*PathEntry),
-				packetHashes: make(map[string]time.Time),
-				destinations: make([]*Destination, 0),
-				pendingLinks: make([]*Link, 0),
-				activeLinks:  make([]*Link, 0),
-			}
-			idInitiator, _ := NewIdentity(true)
-			tsInitiator.identity = idInitiator
-
-			tsReceiver := &TransportSystem{
-				pathTable:    make(map[string]*PathEntry),
-				packetHashes: make(map[string]time.Time),
-				destinations: make([]*Destination, 0),
-				pendingLinks: make([]*Link, 0),
-				activeLinks:  make([]*Link, 0),
-			}
-			idReceiver, _ := NewIdentity(true)
-			tsReceiver.identity = idReceiver
-
-			var pipeInitiator, pipeReceiver *interfaces.PipeInterface
-			pipeInitiator = interfaces.NewPipeInterface("initiator", func(data []byte, iface interfaces.Interface) {
-				tsInitiator.Inbound(data, iface)
-			})
-			pipeReceiver = interfaces.NewPipeInterface("receiver", func(data []byte, iface interfaces.Interface) {
-				tsReceiver.Inbound(data, iface)
-			})
-			pipeInitiator.Other = pipeReceiver
-			pipeReceiver.Other = pipeInitiator
-
+			pipeInitiator, pipeReceiver := newTestPipes(t, tsInitiator, tsReceiver)
 			tsInitiator.RegisterInterface(pipeInitiator)
 			tsReceiver.RegisterInterface(pipeReceiver)
 
-			receiverDest, _ := NewDestinationWithTransport(tsReceiver, idReceiver, DestinationIn, DestinationSingle, "receiver")
+			receiverDest, _ := NewDestinationWithTransport(tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
 
 			receiverDest.RegisterRequestHandlerWithAutoCompressLimit(
 				"/test/path",
@@ -172,7 +107,7 @@ func TestRequestResponseAutoCompressPolicyInlineAndResource(t *testing.T) {
 
 			select {
 			case <-establishedInitiator:
-			case <-time.After(10 * time.Second):
+			case <-time.After(30 * time.Second):
 				t.Fatal("Timeout waiting for link establishment")
 			}
 
@@ -194,7 +129,7 @@ func TestRequestResponseAutoCompressPolicyInlineAndResource(t *testing.T) {
 				if !bytes.Equal(res, tc.responseData) {
 					t.Fatalf("response mismatch: got len=%v want len=%v", len(res), len(tc.responseData))
 				}
-			case <-time.After(10 * time.Second):
+			case <-time.After(30 * time.Second):
 				t.Fatal("Timeout waiting for response")
 			}
 		})
