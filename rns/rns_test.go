@@ -126,28 +126,14 @@ loglevel = 4
 	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name(), port, controlPort))
 	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name(), port, controlPort))
 
-	r1, err := NewReticulum(cfg1)
-	if err != nil {
-		t.Fatalf("NewReticulum(first) error: %v", err)
-	}
-	defer func() {
-		if err := r1.Close(); err != nil {
-			t.Fatalf("failed to close reticulum 1: %v", err)
-		}
-	}()
+	r1 := mustTestNewReticulum(t, cfg1)
+	defer closeReticulum(t, r1)
 	if !r1.isSharedInstance || r1.isConnectedToSharedInstance || r1.isStandaloneInstance {
 		t.Fatalf("first instance role mismatch: shared=%v connected=%v standalone=%v", r1.isSharedInstance, r1.isConnectedToSharedInstance, r1.isStandaloneInstance)
 	}
 
-	r2, err := NewReticulum(cfg2)
-	if err != nil {
-		t.Fatalf("NewReticulum(second) error: %v", err)
-	}
-	defer func() {
-		if err := r2.Close(); err != nil {
-			t.Fatalf("failed to close reticulum 2: %v", err)
-		}
-	}()
+	r2 := mustTestNewReticulum(t, cfg2)
+	defer closeReticulum(t, r2)
 	if r2.isSharedInstance || !r2.isConnectedToSharedInstance || r2.isStandaloneInstance {
 		t.Fatalf("second instance role mismatch: shared=%v connected=%v standalone=%v", r2.isSharedInstance, r2.isConnectedToSharedInstance, r2.isStandaloneInstance)
 	}
@@ -168,15 +154,8 @@ loglevel = 4
 [interfaces]
 `, reserveTCPPort(t)))
 
-	r, err := NewReticulum(cfg)
-	if err != nil {
-		t.Fatalf("NewReticulum error: %v", err)
-	}
-	defer func() {
-		if err := r.Close(); err != nil {
-			t.Fatalf("failed to close reticulum: %v", err)
-		}
-	}()
+	r := mustTestNewReticulum(t, cfg)
+	defer closeReticulum(t, r)
 	if r.isSharedInstance || r.isConnectedToSharedInstance || !r.isStandaloneInstance {
 		t.Fatalf("instance role mismatch: shared=%v connected=%v standalone=%v", r.isSharedInstance, r.isConnectedToSharedInstance, r.isStandaloneInstance)
 	}
@@ -205,28 +184,14 @@ loglevel = 4
 [interfaces]
 `, instanceName))
 
-	r1, err := NewReticulum(cfg)
-	if err != nil {
-		t.Fatalf("NewReticulum(first) error: %v", err)
-	}
-	defer func() {
-		if err := r1.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
-			t.Errorf("failed to close reticulum 1: %v", err)
-		}
-	}()
+	r1 := mustTestNewReticulum(t, cfg)
+	defer closeReticulum(t, r1)
 	if !r1.isSharedInstance || r1.isConnectedToSharedInstance || r1.isStandaloneInstance {
 		t.Fatalf("first instance role mismatch: shared=%v connected=%v standalone=%v", r1.isSharedInstance, r1.isConnectedToSharedInstance, r1.isStandaloneInstance)
 	}
 
-	r2, err := NewReticulum(cfg)
-	if err != nil {
-		t.Fatalf("NewReticulum(second) error: %v", err)
-	}
-	defer func() {
-		if err := r2.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
-			t.Errorf("failed to close reticulum 2: %v", err)
-		}
-	}()
+	r2 := mustTestNewReticulum(t, cfg)
+	defer closeReticulum(t, r2)
 	if r2.isSharedInstance || !r2.isConnectedToSharedInstance || r2.isStandaloneInstance {
 		t.Fatalf("second instance role mismatch: shared=%v connected=%v standalone=%v", r2.isSharedInstance, r2.isConnectedToSharedInstance, r2.isStandaloneInstance)
 	}

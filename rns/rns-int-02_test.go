@@ -899,8 +899,7 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
-	r, err := NewReticulum(goConfigDir)
-	mustTest(t, err)
+	r := mustTestNewReticulum(t, goConfigDir)
 	defer closeReticulum(t, r)
 
 	// Wait for announce (path) from Python
@@ -921,15 +920,13 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 
 	// Create Link
 	// We need to create a dummy destination for the remote side
-	remoteDest, err := NewDestination(remoteId, DestinationOut, DestinationSingle, "integrated_test", "parity")
-	mustTest(t, err)
+	remoteDest := mustTestNewDestination(t, remoteId, DestinationOut, DestinationSingle, "integrated_test", "parity")
 	// The hash should match what Python reported
 	if !bytes.Equal(remoteDest.Hash, destHash) {
 		t.Fatalf("Remote destination hash mismatch! Expected %x, got %x", destHash, remoteDest.Hash)
 	}
 
-	l, err := NewLink(remoteDest)
-	mustTest(t, err)
+	l := mustTestNewLink(t, remoteDest)
 
 	linkEstablished := make(chan bool, 1)
 	l.SetLinkEstablishedCallback(func(link *Link) {
@@ -1047,8 +1044,7 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600)
 
 	SetLogLevel(LogDebug)
-	r, err := NewReticulum(goConfigDir)
-	mustTest(t, err)
+	r := mustTestNewReticulum(t, goConfigDir)
 	defer closeReticulum(t, r)
 
 	ts := GetTransport()
@@ -1063,14 +1059,12 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 		t.Fatal("timed out waiting for announce path from Python")
 	}
 
-	remoteDest, err := NewDestination(remoteID, DestinationOut, DestinationSingle, "integrated_test", "parity")
-	mustTest(t, err)
+	remoteDest := mustTestNewDestination(t, remoteID, DestinationOut, DestinationSingle, "integrated_test", "parity")
 	if !bytes.Equal(remoteDest.Hash, destHash) {
 		t.Fatalf("remote destination hash mismatch: expected %x got %x", destHash, remoteDest.Hash)
 	}
 
-	l, err := NewLink(remoteDest)
-	mustTest(t, err)
+	l := mustTestNewLink(t, remoteDest)
 
 	linkEstablished := make(chan bool, 1)
 	l.SetLinkEstablishedCallback(func(link *Link) {
@@ -1137,14 +1131,12 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
-	r, err := NewReticulum(goConfigDir)
-	mustTest(t, err)
+	r := mustTestNewReticulum(t, goConfigDir)
 	defer closeReticulum(t, r)
 
 	// Create Go destination
 	id := mustTestNewIdentity(t, true)
-	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "integrated_test", "parity")
-	mustTest(t, err)
+	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "integrated_test", "parity")
 
 	linkEstablished := make(chan *Link, 1)
 	dest.SetLinkEstablishedCallback(func(l *Link) {
@@ -1233,13 +1225,11 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600)
 
 	SetLogLevel(LogDebug)
-	r, err := NewReticulum(goConfigDir)
-	mustTest(t, err)
+	r := mustTestNewReticulum(t, goConfigDir)
 	defer closeReticulum(t, r)
 
 	id := mustTestNewIdentity(t, true)
-	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "integrated_test", "parity")
-	mustTest(t, err)
+	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "integrated_test", "parity")
 
 	requestReceived := make(chan int, 1)
 	dest.RegisterRequestHandler("test_path", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
@@ -1341,8 +1331,7 @@ func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
-	r, err := NewReticulum(goConfigDir)
-	mustTest(t, err)
+	r := mustTestNewReticulum(t, goConfigDir)
 	defer closeReticulum(t, r)
 
 	ts := GetTransport()
@@ -1401,13 +1390,11 @@ func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
-	r, err := NewReticulum(goConfigDir)
-	mustTest(t, err)
+	r := mustTestNewReticulum(t, goConfigDir)
 	defer closeReticulum(t, r)
 
 	id := mustTestNewIdentity(t, true)
-	localDest, err := NewDestination(id, DestinationIn, DestinationSingle, "pathreq", "target")
-	mustTest(t, err)
+	localDest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "pathreq", "target")
 
 	requestConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: requesterPort})
 	if err != nil {
@@ -1415,7 +1402,7 @@ func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
 	}
 	defer func() { _ = requestConn.Close() }()
 
-	pathReqDest, err := NewDestination(nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
+	pathReqDest := mustTestNewDestination(t, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 	if err != nil {
 		t.Fatalf("failed creating path request destination: %v", err)
 	}
@@ -1488,8 +1475,7 @@ func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
-	r, err := NewReticulum(goConfigDir)
-	mustTest(t, err)
+	r := mustTestNewReticulum(t, goConfigDir)
 	defer closeReticulum(t, r)
 
 	ts := GetTransport()
@@ -1505,8 +1491,7 @@ func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 	}
 
 	remoteID := mustTestNewIdentity(t, true)
-	remoteDest, err := NewDestinationWithTransport(nil, remoteID, DestinationOut, DestinationSingle, "multihop", "target")
-	mustTest(t, err)
+	remoteDest := mustTestNewDestinationWithTransport(t, nil, remoteID, DestinationOut, DestinationSingle, "multihop", "target")
 
 	nextHop := bytes.Repeat([]byte{0x7A}, TruncatedHashLength/8)
 	ts.GetMutex().Lock()
@@ -1610,8 +1595,7 @@ enable_transport = False
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
-	r, err := NewReticulum(goConfigDir)
-	mustTest(t, err)
+	r := mustTestNewReticulum(t, goConfigDir)
 	defer closeReticulum(t, r)
 
 	sinkConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: sinkPort})
@@ -1627,8 +1611,7 @@ enable_transport = False
 	defer func() { _ = senderConn.Close() }()
 
 	id := mustTestNewIdentity(t, true)
-	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "pathresp", "target")
-	mustTest(t, err)
+	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "pathresp", "target")
 
 	announce, err := dest.buildAnnouncePacket(nil)
 	if err != nil {
@@ -1695,8 +1678,7 @@ enable_transport = False
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600)
 
 	SetLogLevel(LogDebug)
-	r, err := NewReticulum(goConfigDir)
-	mustTest(t, err)
+	r := mustTestNewReticulum(t, goConfigDir)
 	defer closeReticulum(t, r)
 
 	requestConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: requesterPort})
@@ -1712,12 +1694,12 @@ enable_transport = False
 	defer func() { _ = responderConn.Close() }()
 
 	remoteID := mustTestNewIdentity(t, true)
-	remoteDest, err := NewDestinationWithTransport(nil, remoteID, DestinationIn, DestinationSingle, "relay", "target")
+	remoteDest := mustTestNewDestinationWithTransport(t, nil, remoteID, DestinationIn, DestinationSingle, "relay", "target")
 	if err != nil {
 		t.Fatalf("failed creating remote destination: %v", err)
 	}
 
-	pathReqDest, err := NewDestination(nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
+	pathReqDest := mustTestNewDestination(t, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 	if err != nil {
 		t.Fatalf("failed creating path request destination: %v", err)
 	}
@@ -1854,8 +1836,7 @@ enable_transport = False
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600)
 
 	SetLogLevel(LogDebug)
-	r, err := NewReticulum(goConfigDir)
-	mustTest(t, err)
+	r := mustTestNewReticulum(t, goConfigDir)
 	defer closeReticulum(t, r)
 
 	responderConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: responderPort})
@@ -1865,7 +1846,7 @@ enable_transport = False
 	defer func() { _ = responderConn.Close() }()
 
 	remoteID := mustTestNewIdentity(t, true)
-	remoteDest, err := NewDestinationWithTransport(nil, remoteID, DestinationIn, DestinationSingle, "relay", "python_requester_target")
+	remoteDest := mustTestNewDestinationWithTransport(t, nil, remoteID, DestinationIn, DestinationSingle, "relay", "python_requester_target")
 	if err != nil {
 		t.Fatalf("failed creating remote destination: %v", err)
 	}
@@ -1906,7 +1887,7 @@ enable_transport = False
 		t.Fatalf("failed reading forwarded path request packet from Python requester: %v", err)
 	}
 
-	pathReqDest, err := NewDestination(nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
+	pathReqDest := mustTestNewDestination(t, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 	if err != nil {
 		t.Fatalf("failed creating path request destination: %v", err)
 	}
@@ -2033,12 +2014,12 @@ func TestIntegratedRelayedPathResponsePropagationPythonRelayUDP(t *testing.T) {
 	defer func() { _ = responderConn.Close() }()
 
 	remoteID := mustTestNewIdentity(t, true)
-	remoteDest, err := NewDestinationWithTransport(nil, remoteID, DestinationIn, DestinationSingle, "relay", "python_relay_target")
+	remoteDest := mustTestNewDestinationWithTransport(t, nil, remoteID, DestinationIn, DestinationSingle, "relay", "python_relay_target")
 	if err != nil {
 		t.Fatalf("failed creating remote destination: %v", err)
 	}
 
-	pathReqDest, err := NewDestination(nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
+	pathReqDest := mustTestNewDestination(t, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 	if err != nil {
 		t.Fatalf("failed creating path request destination: %v", err)
 	}
@@ -2318,13 +2299,11 @@ func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600)
 
 	SetLogLevel(LogDebug)
-	r, err := NewReticulum(goConfigDir)
-	mustTest(t, err)
+	r := mustTestNewReticulum(t, goConfigDir)
 	defer closeReticulum(t, r)
 
 	id := mustTestNewIdentity(t, true)
-	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "integrated_test", "invalidate_py")
-	mustTest(t, err)
+	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "integrated_test", "invalidate_py")
 
 	stopAnnounce := make(chan struct{})
 	announceStopped := false
@@ -2488,8 +2467,7 @@ enable_transport = False
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600)
 
 	SetLogLevel(LogDebug)
-	r, err := NewReticulum(goConfigDir)
-	mustTest(t, err)
+	r := mustTestNewReticulum(t, goConfigDir)
 	defer closeReticulum(t, r)
 
 	requestConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: requesterPort})
@@ -2498,7 +2476,7 @@ enable_transport = False
 	}
 	defer func() { _ = requestConn.Close() }()
 
-	pathReqDest, err := NewDestination(nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
+	pathReqDest := mustTestNewDestination(t, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 	if err != nil {
 		t.Fatalf("failed creating path request destination: %v", err)
 	}
@@ -2574,7 +2552,7 @@ func TestIntegratedPythonRelayPathRequestEmissionUDP(t *testing.T) {
 	sinkPort := allocateUDPPort(t)
 
 	targetID := mustTestNewIdentity(t, true)
-	targetDest, err := NewDestinationWithTransport(nil, targetID, DestinationIn, DestinationSingle, "relay", "forward_target")
+	targetDest := mustTestNewDestinationWithTransport(t, nil, targetID, DestinationIn, DestinationSingle, "relay", "forward_target")
 	if err != nil {
 		t.Fatalf("failed creating target destination: %v", err)
 	}
@@ -2656,7 +2634,7 @@ waitPacket:
 		t.Fatalf("failed unpacking emitted path request packet: %v", err)
 	}
 
-	pathReqDest, err := NewDestination(nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
+	pathReqDest := mustTestNewDestination(t, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 	if err != nil {
 		t.Fatalf("failed creating path request destination: %v", err)
 	}
@@ -2699,7 +2677,7 @@ func TestIntegratedPythonRelayInboundPathRequestForwardingUDP(t *testing.T) {
 	sinkPort := allocateUDPPort(t)
 
 	targetID := mustTestNewIdentity(t, true)
-	targetDest, err := NewDestinationWithTransport(nil, targetID, DestinationIn, DestinationSingle, "relay", "inbound_forward_target")
+	targetDest := mustTestNewDestinationWithTransport(t, nil, targetID, DestinationIn, DestinationSingle, "relay", "inbound_forward_target")
 	if err != nil {
 		t.Fatalf("failed creating target destination: %v", err)
 	}
@@ -2805,7 +2783,7 @@ relayReady:
 		t.Fatalf("failed unpacking forwarded inbound path request: %v", err)
 	}
 
-	pathReqDest, err := NewDestination(nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
+	pathReqDest := mustTestNewDestination(t, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 	if err != nil {
 		t.Fatalf("failed creating path request destination: %v", err)
 	}

@@ -11,8 +11,7 @@ import (
 )
 
 func TestIdentity(t *testing.T) {
-	id, err := NewIdentity(true)
-	mustTest(t, err)
+	id := mustTestNewIdentity(t, true)
 
 	// Test public key consistency
 	pub := id.GetPublicKey()
@@ -39,23 +38,20 @@ func TestIdentity(t *testing.T) {
 }
 
 func TestIdentityLoading(t *testing.T) {
-	id1, err := NewIdentity(true)
-	mustTest(t, err)
+	id1 := mustTestNewIdentity(t, true)
 	prvBytes := id1.GetPrivateKey()
 	pubBytes := id1.GetPublicKey()
 
 	// Test loading private key
-	id2, err := NewIdentity(false)
-	mustTest(t, err)
-	err = id2.LoadPrivateKey(prvBytes)
+	id2 := mustTestNewIdentity(t, false)
+	err := id2.LoadPrivateKey(prvBytes)
 	mustTest(t, err)
 	if !bytes.Equal(id1.Hash, id2.Hash) {
 		t.Errorf("identity hash mismatch after loading private key")
 	}
 
 	// Test loading public key
-	id3, err := NewIdentity(false)
-	mustTest(t, err)
+	id3 := mustTestNewIdentity(t, false)
 	err = id3.LoadPublicKey(pubBytes)
 	mustTest(t, err)
 	if !bytes.Equal(id1.Hash, id3.Hash) {
@@ -66,8 +62,7 @@ func TestIdentityLoading(t *testing.T) {
 func TestFromBytes(t *testing.T) {
 	t.Parallel()
 
-	id1, err := NewIdentity(true)
-	mustTest(t, err)
+	id1 := mustTestNewIdentity(t, true)
 	prvBytes := id1.GetPrivateKey()
 	pubBytes := id1.GetPublicKey()
 

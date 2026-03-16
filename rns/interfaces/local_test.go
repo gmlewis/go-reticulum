@@ -45,12 +45,12 @@ func TestLocalUnixServerClientLifecycleAndRestart(t *testing.T) {
 
 	socketPath := filepath.Join(tmp, "local.sock")
 
-	server, err := NewLocalServerInterface("local-server", socketPath, 0, handler)
+	server := mustTestNewLocalServerInterface(t, "local-server", socketPath, 0, handler)
 	if err != nil {
 		t.Fatalf("NewLocalServerInterface first error: %v", err)
 	}
 
-	client, err := NewLocalClientInterface("local-client", socketPath, 0, nil)
+	client := mustTestNewLocalClientInterface(t, "local-client", socketPath, 0, nil)
 	if err != nil {
 		_ = server.Detach()
 		t.Fatalf("NewLocalClientInterface first error: %v", err)
@@ -88,12 +88,12 @@ func TestLocalUnixServerClientLifecycleAndRestart(t *testing.T) {
 		t.Fatalf("expected socket path removed after detach, stat err=%v", err)
 	}
 
-	server2, err := NewLocalServerInterface("local-server-2", socketPath, 0, handler)
+	server2 := mustTestNewLocalServerInterface(t, "local-server-2", socketPath, 0, handler)
 	if err != nil {
 		t.Fatalf("NewLocalServerInterface restart error: %v", err)
 	}
 
-	client2, err := NewLocalClientInterface("local-client-2", socketPath, 0, nil)
+	client2 := mustTestNewLocalClientInterface(t, "local-client-2", socketPath, 0, nil)
 	if err != nil {
 		_ = server2.Detach()
 		t.Fatalf("NewLocalClientInterface restart error: %v", err)
@@ -143,7 +143,7 @@ func TestLocalServerRemovesStaleSocketPath(t *testing.T) {
 		t.Fatalf("WriteFile stale socket placeholder error: %v", err)
 	}
 
-	server, err := NewLocalServerInterface("local-server-stale", socketPath, 0, nil)
+	server := mustTestNewLocalServerInterface(t, "local-server-stale", socketPath, 0, nil)
 	if err != nil {
 		t.Fatalf("NewLocalServerInterface with stale path error: %v", err)
 	}
@@ -170,14 +170,13 @@ func TestLocalServerRejectsTakeoverWhenSocketActive(t *testing.T) {
 
 	socketPath := filepath.Join(tmp, "active.sock")
 
-	server, err := NewLocalServerInterface("local-server-1", socketPath, 0, nil)
+	server := mustTestNewLocalServerInterface(t, "local-server-1", socketPath, 0, nil)
 	if err != nil {
 		t.Fatalf("NewLocalServerInterface first error: %v", err)
 	}
 	defer func() { _ = server.Detach() }()
 
-	server2, err := NewLocalServerInterface("local-server-2", socketPath, 0, nil)
-	if err == nil {
+	if server2, err := NewLocalServerInterface("local-server-2", socketPath, 0, nil); err == nil {
 		_ = server2.Detach()
 		t.Fatalf("expected second local server creation to fail while first server is active")
 	}

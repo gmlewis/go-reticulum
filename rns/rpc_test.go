@@ -94,10 +94,7 @@ loglevel = 4
 [interfaces]
 `, t.Name(), sharedPort, rpcPort, rpcKeyHex))
 
-	r, err := NewReticulum(cfg)
-	if err != nil {
-		t.Fatalf("NewReticulum error: %v", err)
-	}
+	r := mustTestNewReticulum(t, cfg)
 	defer closeReticulum(t, r)
 	if !r.isSharedInstance {
 		t.Fatalf("expected shared instance")
@@ -153,10 +150,7 @@ loglevel = 4
 [interfaces]
 `, t.Name(), sharedPort, rpcPort))
 
-	r, err := NewReticulum(cfg)
-	if err != nil {
-		t.Fatalf("NewReticulum error: %v", err)
-	}
+	r := mustTestNewReticulum(t, cfg)
 	defer closeReticulum(t, r)
 
 	conn := mustDialRPC(t, fmt.Sprintf("127.0.0.1:%v", rpcPort))
@@ -196,10 +190,7 @@ loglevel = 4
 [interfaces]
 `, t.Name(), sharedPort, rpcPort, rpcKeyHex))
 
-	r, err := NewReticulum(cfg)
-	if err != nil {
-		t.Fatalf("NewReticulum error: %v", err)
-	}
+	r := mustTestNewReticulum(t, cfg)
 	defer closeReticulum(t, r)
 
 	conn := mustDialRPC(t, fmt.Sprintf("127.0.0.1:%v", rpcPort))
@@ -240,19 +231,13 @@ loglevel = 4
 	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name()+"-1", sharedPort, rpcPort, rpcKeyHex))
 	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name()+"-2", sharedPort, rpcPort, rpcKeyHex))
 
-	r1, err := NewReticulum(cfg1)
-	if err != nil {
-		t.Fatalf("NewReticulum(shared) error: %v", err)
-	}
+	r1 := mustTestNewReticulum(t, cfg1)
 	defer closeReticulum(t, r1)
 	if !r1.isSharedInstance {
 		t.Fatalf("expected first instance to be shared")
 	}
 
-	r2, err := NewReticulum(cfg2)
-	if err != nil {
-		t.Fatalf("NewReticulum(client) error: %v", err)
-	}
+	r2 := mustTestNewReticulum(t, cfg2)
 	defer closeReticulum(t, r2)
 	if !r2.isConnectedToSharedInstance {
 		t.Fatalf("expected second instance to be connected to shared instance")
@@ -293,10 +278,7 @@ loglevel = 4
 [interfaces]
 `, t.Name(), sharedPort, rpcPort, rpcKeyHex))
 
-	r, err := NewReticulum(cfg)
-	if err != nil {
-		t.Fatalf("NewReticulum error: %v", err)
-	}
+	r := mustTestNewReticulum(t, cfg)
 	defer closeReticulum(t, r)
 
 	conn := mustDialRPC(t, fmt.Sprintf("127.0.0.1:%v", rpcPort))
@@ -368,16 +350,10 @@ loglevel = 4
 	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name()+"-1", sharedPort, rpcPort, rpcKeyHex))
 	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name()+"-2", sharedPort, rpcPort, rpcKeyHex))
 
-	r1, err := NewReticulum(cfg1)
-	if err != nil {
-		t.Fatalf("NewReticulum(shared) error: %v", err)
-	}
+	r1 := mustTestNewReticulum(t, cfg1)
 	defer closeReticulum(t, r1)
 
-	r2, err := NewReticulum(cfg2)
-	if err != nil {
-		t.Fatalf("NewReticulum(client) error: %v", err)
-	}
+	r2 := mustTestNewReticulum(t, cfg2)
 	defer closeReticulum(t, r2)
 	if !r2.isConnectedToSharedInstance {
 		t.Fatalf("expected second instance to be connected to shared instance")
@@ -833,19 +809,13 @@ loglevel = 4
 				writeConfig(t, cfg2, configBody)
 			}
 
-			r1, err := NewReticulum(cfg1)
-			if err != nil {
-				t.Fatalf("NewReticulum(shared) error: %v", err)
-			}
+			r1 := mustTestNewReticulum(t, cfg1)
 			defer closeReticulum(t, r1)
 			if !r1.isSharedInstance {
 				t.Fatalf("expected first instance to be shared, got shared=%v connected=%v standalone=%v", r1.isSharedInstance, r1.isConnectedToSharedInstance, r1.isStandaloneInstance)
 			}
 
-			r2, err := NewReticulum(cfg2)
-			if err != nil {
-				t.Fatalf("NewReticulum(client) error: %v", err)
-			}
+			r2 := mustTestNewReticulum(t, cfg2)
 			defer closeReticulum(t, r2)
 
 			if !r2.isConnectedToSharedInstance {

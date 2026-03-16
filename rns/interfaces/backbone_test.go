@@ -17,8 +17,7 @@ func TestBackboneInterfaceRoundTrip(t *testing.T) {
 		received <- data
 	}
 
-	serverIface, err := NewBackboneInterface("backbone-server", "127.0.0.1", 37432, handler)
-	mustTest(t, err)
+	serverIface := mustTestNewBackboneInterface(t, "backbone-server", "127.0.0.1", 37432, handler)
 	defer func() {
 		if err := serverIface.Detach(); err != nil {
 			t.Fatalf("server detach failed: %v", err)
@@ -29,8 +28,7 @@ func TestBackboneInterfaceRoundTrip(t *testing.T) {
 		t.Fatalf("server type = %q, want BackboneInterface", serverIface.Type())
 	}
 
-	clientIface, err := NewBackboneClientInterface("backbone-client", "127.0.0.1", 37432, nil)
-	mustTest(t, err)
+	clientIface := mustTestNewBackboneClientInterface(t, "backbone-client", "127.0.0.1", 37432, nil)
 	defer func() {
 		if err := clientIface.Detach(); err != nil {
 			t.Fatalf("client detach failed: %v", err)

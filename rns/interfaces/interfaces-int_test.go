@@ -95,7 +95,7 @@ func TestUDPInterfaceParity(t *testing.T) {
 		received <- data
 	}
 
-	goIface, err := NewUDPInterface("go_udp", "127.0.0.1", goListenPort, "127.0.0.1", pyListenPort, handler)
+	goIface := mustTestNewUDPInterface(t, "go_udp", "127.0.0.1", goListenPort, "127.0.0.1", pyListenPort, handler)
 	if err != nil {
 		t.Fatalf("failed to create Go UDP interface: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestTCPInterfaceParity(t *testing.T) {
 
 	// Go connects to Python (which is a TCPServerInterface)
 	// We use HDLC framing (kiss=false) by default in Test
-	goIface, err := NewTCPClientInterface("go_tcp", "127.0.0.1", pyListenPort, false, handler)
+	goIface := mustTestNewTCPClientInterface(t, "go_tcp", "127.0.0.1", pyListenPort, false, handler)
 	if err != nil {
 		t.Fatalf("failed to create Go TCP interface: %v", err)
 	}
@@ -309,7 +309,7 @@ except KeyboardInterrupt:
 
 	// Go connects to Python (which is a TCPServerInterface)
 	// We use KISS framing (kiss=true)
-	goIface, err := NewTCPClientInterface("go_tcp_kiss", "127.0.0.1", pyListenPort, true, handler)
+	goIface := mustTestNewTCPClientInterface(t, "go_tcp_kiss", "127.0.0.1", pyListenPort, true, handler)
 	if err != nil {
 		t.Fatalf("failed to create Go TCP interface: %v", err)
 	}
@@ -557,7 +557,7 @@ func TestPipeInterfaceParity(t *testing.T) {
 
 	// Go PipeSubprocessInterface runs the Python echo script
 	command := "python3 " + scriptPath
-	goIface, err := NewPipeSubprocessInterface("go_pipe", command, 1*time.Second, handler)
+	goIface := mustTestNewPipeSubprocessInterface(t, "go_pipe", command, 1*time.Second, handler)
 	if err != nil {
 		t.Fatalf("failed to create Go Pipe interface: %v", err)
 	}

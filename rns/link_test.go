@@ -26,8 +26,7 @@ func TestLink(t *testing.T) {
 	link.hash = link.linkID
 
 	// Receiver accepts link and generates its keys
-	receiverLink, err := NewLink(receiverDest)
-	mustTest(t, err)
+	receiverLink := mustTestNewLink(t, receiverDest)
 	receiverLink.initiator = false
 	receiverLink.linkID = link.linkID
 	receiverLink.hash = link.linkID
@@ -77,16 +76,14 @@ func TestLinkHandshakeFull(t *testing.T) {
 	tsReceiver.RegisterInterface(pipeReceiver)
 
 	// Setup receiver destination
-	receiverDest, err := NewDestinationWithTransport(tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
-	mustTest(t, err)
+	receiverDest := mustTestNewDestinationWithTransport(t, tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
 
 	establishedReceiver := make(chan *Link, 1)
 	receiverDest.callbacks.LinkEstablished = func(l *Link) {
 		establishedReceiver <- l
 	}
 
-	link, err := NewLinkWithTransport(tsInitiator, receiverDest)
-	mustTest(t, err)
+	link := mustTestNewLinkWithTransport(t, tsInitiator, receiverDest)
 
 	establishedInitiator := make(chan bool, 1)
 	link.callbacks.LinkEstablished = func(l *Link) {
@@ -159,15 +156,13 @@ func TestLinkIdentifyPacketFlow(t *testing.T) {
 	tsInitiator.RegisterInterface(pipeInitiator)
 	tsReceiver.RegisterInterface(pipeReceiver)
 
-	receiverDest, err := NewDestinationWithTransport(tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
-	mustTest(t, err)
+	receiverDest := mustTestNewDestinationWithTransport(t, tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
 	establishedReceiver := make(chan *Link, 1)
 	receiverDest.callbacks.LinkEstablished = func(l *Link) {
 		establishedReceiver <- l
 	}
 
-	link, err := NewLinkWithTransport(tsInitiator, receiverDest)
-	mustTest(t, err)
+	link := mustTestNewLinkWithTransport(t, tsInitiator, receiverDest)
 
 	establishedInitiator := make(chan struct{}, 1)
 	link.callbacks.LinkEstablished = func(l *Link) {

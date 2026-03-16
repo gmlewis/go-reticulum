@@ -18,16 +18,14 @@ func TestUDPInterface(t *testing.T) {
 	}
 
 	// Create two interfaces talking to each other on localhost
-	if1, err := NewUDPInterface("if1", "127.0.0.1", 37428, "127.0.0.1", 37429, handler)
-	mustTest(t, err)
+	if1 := mustTestNewUDPInterface(t, "if1", "127.0.0.1", 37428, "127.0.0.1", 37429, handler)
 	defer func() {
 		if err := if1.Detach(); err != nil {
 			t.Fatalf("if1 detach failed: %v", err)
 		}
 	}()
 
-	if2, err := NewUDPInterface("if2", "127.0.0.1", 37429, "127.0.0.1", 37428, nil)
-	mustTest(t, err)
+	if2 := mustTestNewUDPInterface(t, "if2", "127.0.0.1", 37429, "127.0.0.1", 37428, nil)
 	defer func() {
 		if err := if2.Detach(); err != nil {
 			t.Fatalf("if2 detach failed: %v", err)

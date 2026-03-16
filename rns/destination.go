@@ -101,12 +101,12 @@ type Destination struct {
 }
 
 // NewDestination initializes a new programmatic endpoint on the default Reticulum transport system.
-func NewDestination(identity *Identity, direction int, destType int, appName string, aspects ...string) (*Destination, error) {
+func NewDestination(identity *Identity, direction, destType int, appName string, aspects ...string) (*Destination, error) {
 	return NewDestinationWithTransport(GetTransport(), identity, direction, destType, appName, aspects...)
 }
 
 // NewDestinationWithTransport instantiates a new endpoint bound to a specific, custom transport system instance.
-func NewDestinationWithTransport(ts *TransportSystem, identity *Identity, direction int, destType int, appName string, aspects ...string) (*Destination, error) {
+func NewDestinationWithTransport(ts *TransportSystem, identity *Identity, direction, destType int, appName string, aspects ...string) (*Destination, error) {
 	if strings.Contains(appName, ".") {
 		return nil, errors.New("dots can't be used in app names")
 	}

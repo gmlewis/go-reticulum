@@ -124,7 +124,7 @@ func TestSerialInterfaceParity(t *testing.T) {
 	}
 
 	// Go connects to vserial1
-	goIface, err := NewSerialInterface("go_serial", vserial1, 115200, 8, 1, "N", handler)
+	goIface := mustTestNewSerialInterface(t, "go_serial", vserial1, 115200, 8, 1, "N", handler)
 	if err != nil {
 		t.Fatalf("failed to create Go Serial interface: %v", err)
 	}

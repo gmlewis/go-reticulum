@@ -37,7 +37,7 @@ type UDPInterface struct {
 
 // NewUDPInterface provisions a robust UDP socket bound to the specified listen coordinates and configured with a default forwarding target.
 // It rapidly boots the asynchronous listening loop, readying the interface to ingest and broadcast connectionless frames.
-func NewUDPInterface(name string, listenIP string, listenPort int, forwardIP string, forwardPort int, handler InboundHandler) (*UDPInterface, error) {
+func NewUDPInterface(name, listenIP string, listenPort int, forwardIP string, forwardPort int, handler InboundHandler) (*UDPInterface, error) {
 	bi := NewBaseInterface(name, ModeFull, UDPBitrateGuess)
 
 	lAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%v:%v", listenIP, listenPort))

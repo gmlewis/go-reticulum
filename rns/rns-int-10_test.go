@@ -403,8 +403,7 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
-	r, err := NewReticulum(goConfigDir)
-	mustTest(t, err)
+	r := mustTestNewReticulum(t, goConfigDir)
 	defer closeReticulum(t, r)
 
 	// Wait for Python destination info and announce
@@ -501,8 +500,7 @@ func TestRatchetPythonToGoParity(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
-	r, err := NewReticulum(goConfigDir)
-	mustTest(t, err)
+	r := mustTestNewReticulum(t, goConfigDir)
 	defer closeReticulum(t, r)
 
 	// Create Go destination with ratchets
@@ -588,8 +586,7 @@ func TestRatchetRotationParity(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
-	r, err := NewReticulum(goConfigDir)
-	mustTest(t, err)
+	r := mustTestNewReticulum(t, goConfigDir)
 	defer closeReticulum(t, r)
 
 	id := mustTestNewIdentity(t, true)
@@ -680,8 +677,7 @@ func TestRatchetRetentionWindowParity(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
-	r, err := NewReticulum(goConfigDir)
-	mustTest(t, err)
+	r := mustTestNewReticulum(t, goConfigDir)
 	defer closeReticulum(t, r)
 
 	id := mustTestNewIdentity(t, true)
@@ -904,8 +900,7 @@ func TestRatchetFileInteropParity(t *testing.T) {
 		t.Fatalf("failed writing corrupt ratchet file: %v", err)
 	}
 
-	goCorruptDest, err := NewDestination(goLoadedID, DestinationIn, DestinationSingle, "ratchet_test", "parity")
-	mustTest(t, err)
+	goCorruptDest := mustTestNewDestination(t, goLoadedID, DestinationIn, DestinationSingle, "ratchet_test", "parity")
 	if err := goCorruptDest.EnableRatchets(corruptPath); err == nil {
 		t.Fatal("expected go to reject corrupted ratchet file, but load succeeded")
 	}

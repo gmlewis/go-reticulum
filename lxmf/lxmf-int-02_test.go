@@ -102,7 +102,7 @@ func TestIntegrationOpportunisticGoToPython(t *testing.T) {
 		t.Fatalf("NewDestination(destination): %v", err)
 	}
 
-	message, err := NewMessage(destinationDest, sourceDest, "go-opportunistic-content", "go-opportunistic-title", nil)
+	message := mustTestNewMessage(t, destinationDest, sourceDest, "go-opportunistic-content", "go-opportunistic-title", nil)
 	if err != nil {
 		t.Fatalf("NewMessage: %v", err)
 	}

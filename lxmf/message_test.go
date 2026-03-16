@@ -35,7 +35,7 @@ func TestMessagePackUnpackRoundTrip(t *testing.T) {
 	}
 
 	fields := map[any]any{int64(FieldDebug): []byte("debug-data")}
-	m, err := NewMessage(destination, source, "hello-content", "hello-title", fields)
+	m := mustTestNewMessage(t, destination, source, "hello-content", "hello-title", fields)
 	if err != nil {
 		t.Fatalf("NewMessage: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestMessagePackIncludesStampAndUnpacksIt(t *testing.T) {
 		t.Fatalf("NewDestination(source): %v", err)
 	}
 
-	m, err := NewMessage(destination, source, "content", "title", nil)
+	m := mustTestNewMessage(t, destination, source, "content", "title", nil)
 	if err != nil {
 		t.Fatalf("NewMessage: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestMessageHashMatchesProtocolMaterial(t *testing.T) {
 		t.Fatalf("NewDestination(source): %v", err)
 	}
 
-	m, err := NewMessage(destination, source, "abc", "def", map[any]any{})
+	m := mustTestNewMessage(t, destination, source, "abc", "def", map[any]any{})
 	if err != nil {
 		t.Fatalf("NewMessage: %v", err)
 	}
@@ -173,8 +173,7 @@ func TestWriteToDirectory(t *testing.T) {
 	src, err := rns.NewDestination(srcID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	mustTest(t, err)
 
-	msg, err := NewMessage(dest, src, "hello", "greet", nil)
-	mustTest(t, err)
+	msg := mustTestNewMessage(t, dest, src, "hello", "greet", nil)
 
 	dir := tempDir(t)
 	path, err := msg.WriteToDirectory(dir)

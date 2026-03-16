@@ -694,7 +694,7 @@ func TestIntegrationPropagationOfferPythonToGo(t *testing.T) {
 		t.Fatalf("write python script: %v", err)
 	}
 
-	router, err := NewRouter(nil, tmpDir)
+	router := mustTestNewRouter(t, nil, tmpDir)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -746,7 +746,7 @@ func TestIntegrationPropagationOfferInvalidKeyPythonToGo(t *testing.T) {
 		t.Fatalf("write python script: %v", err)
 	}
 
-	router, err := NewRouter(nil, tmpDir)
+	router := mustTestNewRouter(t, nil, tmpDir)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -784,7 +784,7 @@ func TestIntegrationPropagationOfferThrottledPythonToGo(t *testing.T) {
 		t.Fatalf("write python script: %v", err)
 	}
 
-	router, err := NewRouter(nil, tmpDir)
+	router := mustTestNewRouter(t, nil, tmpDir)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -828,7 +828,7 @@ func TestIntegrationPropagationOfferThrottleExpiredPythonToGo(t *testing.T) {
 		t.Fatalf("write python script: %v", err)
 	}
 
-	router, err := NewRouter(nil, tmpDir)
+	router := mustTestNewRouter(t, nil, tmpDir)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -876,7 +876,7 @@ func TestIntegrationPropagationOfferStaticOnlyPythonToGo(t *testing.T) {
 		t.Fatalf("write python script: %v", err)
 	}
 
-	router, err := NewRouter(nil, tmpDir)
+	router := mustTestNewRouter(t, nil, tmpDir)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -917,7 +917,7 @@ func TestIntegrationPropagationOfferStaticAllowedPythonToGo(t *testing.T) {
 		t.Fatalf("write python script: %v", err)
 	}
 
-	router, err := NewRouter(nil, tmpDir)
+	router := mustTestNewRouter(t, nil, tmpDir)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -960,7 +960,7 @@ func TestIntegrationPropagationOfferAllKnownPythonToGo(t *testing.T) {
 		t.Fatalf("write python script: %v", err)
 	}
 
-	router, err := NewRouter(nil, tmpDir)
+	router := mustTestNewRouter(t, nil, tmpDir)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1002,7 +1002,7 @@ func TestIntegrationPropagationOfferAllMissingPythonToGo(t *testing.T) {
 		t.Fatalf("write python script: %v", err)
 	}
 
-	router, err := NewRouter(nil, tmpDir)
+	router := mustTestNewRouter(t, nil, tmpDir)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1318,7 +1318,7 @@ func TestIntegrationPropagationMessageGetRetryPythonToGo(t *testing.T) {
 		t.Fatalf("write python script: %v", err)
 	}
 
-	router, err := NewRouter(nil, tmpDir)
+	router := mustTestNewRouter(t, nil, tmpDir)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1403,7 +1403,7 @@ func TestIntegrationPropagationMessageGetAccessPythonToGo(t *testing.T) {
 		t.Fatalf("read not-allowed hash: %v", err)
 	}
 
-	router, err := NewRouter(nil, tmpDir)
+	router := mustTestNewRouter(t, nil, tmpDir)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1565,7 +1565,7 @@ func TestIntegrationPropagationControlRecoveryPythonToGo(t *testing.T) {
 		t.Fatalf("read peer hash: %v", err)
 	}
 
-	router, err := NewRouter(nil, tmpDir)
+	router := mustTestNewRouter(t, nil, tmpDir)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1621,7 +1621,7 @@ func TestIntegrationPropagationControlPeerSyncBackoffPythonToGo(t *testing.T) {
 		t.Fatalf("read peer hash: %v", err)
 	}
 
-	router, err := NewRouter(nil, tmpDir)
+	router := mustTestNewRouter(t, nil, tmpDir)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1675,7 +1675,7 @@ func TestIntegrationPropagationControlPeerPrunePythonToGo(t *testing.T) {
 		t.Fatalf("read new peer hash: %v", err)
 	}
 
-	router, err := NewRouter(nil, tmpDir)
+	router := mustTestNewRouter(t, nil, tmpDir)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -1781,7 +1781,7 @@ func TestIntegrationPropagationControlStatsPythonToGo(t *testing.T) {
 		t.Fatalf("read not-allowed hash: %v", err)
 	}
 
-	router, err := NewRouter(nil, tmpDir)
+	router := mustTestNewRouter(t, nil, tmpDir)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}

@@ -79,8 +79,7 @@ func TestIdentityParity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	id, err := NewIdentity(true)
-	mustTest(t, err)
+	id := mustTestNewIdentity(t, true)
 
 	idPath := filepath.Join(tmpDir, "id")
 	if err := id.ToFile(idPath); err != nil {

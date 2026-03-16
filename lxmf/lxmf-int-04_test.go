@@ -104,12 +104,12 @@ func TestIntegrationResourceGoToPython(t *testing.T) {
 	}
 
 	contentLen := rns.MDU * 3
-	message, err := NewMessage(destinationDest, sourceDest, strings.Repeat("G", contentLen), "go-resource-title", nil)
+	message := mustTestNewMessage(t, destinationDest, sourceDest, strings.Repeat("G", contentLen), "go-resource-title", nil)
 	if err != nil {
 		t.Fatalf("NewMessage: %v", err)
 	}
 
-	router, err := NewRouter(nil, tempDir(t))
+	router := mustTestNewRouter(t, nil, tempDir(t))
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}

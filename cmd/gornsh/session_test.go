@@ -159,7 +159,7 @@ func TestSessionWindowSizeRetainsLastValidDimensions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	zero := 0
+	var zero int
 	if err := s.handleWindowSize(windowSizeMessage{Rows: nil, Cols: &zero}); err != nil {
 		t.Fatal(err)
 	}

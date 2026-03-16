@@ -74,26 +74,22 @@ func TestEd25519(t *testing.T) {
 
 func TestNewEd25519PrivateKeyFromBytes_Errors(t *testing.T) {
 	t.Parallel()
-	_, err := NewEd25519PrivateKeyFromBytes(make([]byte, 31))
-	if err == nil {
+	if _, err := NewEd25519PrivateKeyFromBytes(make([]byte, 31)); err == nil {
 		t.Error("expected error for short private key")
 	}
 
-	_, err = NewEd25519PrivateKeyFromBytes(make([]byte, 33))
-	if err == nil {
+	if _, err := NewEd25519PrivateKeyFromBytes(make([]byte, 33)); err == nil {
 		t.Error("expected error for long private key")
 	}
 }
 
 func TestNewEd25519PublicKeyFromBytes_Errors(t *testing.T) {
 	t.Parallel()
-	_, err := NewEd25519PublicKeyFromBytes(make([]byte, 31))
-	if err == nil {
+	if _, err := NewEd25519PublicKeyFromBytes(make([]byte, 31)); err == nil {
 		t.Error("expected error for short public key")
 	}
 
-	_, err = NewEd25519PublicKeyFromBytes(make([]byte, 33))
-	if err == nil {
+	if _, err := NewEd25519PublicKeyFromBytes(make([]byte, 33)); err == nil {
 		t.Error("expected error for long public key")
 	}
 }

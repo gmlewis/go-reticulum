@@ -281,8 +281,7 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 			}
 
 			SetLogLevel(LogDebug)
-			r, err := NewReticulum(goConfigDir)
-			mustTest(t, err)
+			r := mustTestNewReticulum(t, goConfigDir)
 			defer closeReticulum(t, r)
 
 			transport := GetTransport()
@@ -301,14 +300,12 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 			if err := remoteID.LoadPublicKey(pyPub); err != nil {
 				t.Fatalf("load python public key: %v", err)
 			}
-			remoteDest, err := NewDestination(remoteID, DestinationOut, DestinationSingle, "integrated_test", "parity")
-			mustTest(t, err)
+			remoteDest := mustTestNewDestination(t, remoteID, DestinationOut, DestinationSingle, "integrated_test", "parity")
 			if !bytes.Equal(remoteDest.Hash, destHash) {
 				t.Fatalf("destination hash mismatch: expected %x got %x", destHash, remoteDest.Hash)
 			}
 
-			link, err := NewLink(remoteDest)
-			mustTest(t, err)
+			link := mustTestNewLink(t, remoteDest)
 			var mu sync.Mutex
 			var gotCompressed *bool
 			link.SetResourceStartedCallback(func(r *Resource) {
@@ -403,7 +400,7 @@ func setupGoOnlyIntegrationLinkPair(t *testing.T) (*Link, *Link) {
 	tsInitiator.RegisterInterface(pipeInitiator)
 	tsReceiver.RegisterInterface(pipeReceiver)
 
-	receiverDest, err := NewDestinationWithTransport(tsReceiver, idReceiver, DestinationIn, DestinationSingle, "integrated_test", "parity")
+	receiverDest := mustTestNewDestinationWithTransport(t, tsReceiver, idReceiver, DestinationIn, DestinationSingle, "integrated_test", "parity")
 	if err != nil {
 		t.Fatalf("receiver destination setup failed: %v", err)
 	}
@@ -413,7 +410,7 @@ func setupGoOnlyIntegrationLinkPair(t *testing.T) (*Link, *Link) {
 		receiverEstablished <- l
 	})
 
-	initiatorLink, err := NewLinkWithTransport(tsInitiator, receiverDest)
+	initiatorLink := mustTestNewLinkWithTransport(t, tsInitiator, receiverDest)
 	if err != nil {
 		t.Fatalf("failed to create initiator link: %v", err)
 	}
@@ -593,14 +590,11 @@ func TestIntegratedResponseResourceCompressionPolicyPythonToGo(t *testing.T) {
 			}
 
 			SetLogLevel(LogDebug)
-			r, err := NewReticulum(goConfigDir)
-			mustTest(t, err)
+			r := mustTestNewReticulum(t, goConfigDir)
 			defer closeReticulum(t, r)
 
-			id, err := NewIdentity(true)
-			mustTest(t, err)
-			dest, err := NewDestination(id, DestinationIn, DestinationSingle, "integrated_test", "parity")
-			mustTest(t, err)
+			id := mustTestNewIdentity(t, true)
+			dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "integrated_test", "parity")
 
 			payloadSize := MDU + 768
 			dest.RegisterRequestHandlerWithAutoCompressLimit("test_path", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {

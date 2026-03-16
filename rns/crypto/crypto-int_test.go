@@ -332,8 +332,7 @@ func TestTokenParity(t *testing.T) {
 	}
 
 	key := []byte("01234567890123456789012345678901") // 32 bytes
-	token, err := NewToken(key)
-	mustTest(t, err)
+	token := mustTestNewToken(t, key)
 
 	plaintext := []byte("secret message for token parity")
 	ciphertext, err := token.Encrypt(plaintext)

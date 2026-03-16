@@ -28,7 +28,7 @@ func TestToken(t *testing.T) {
 				t.Fatalf("failed to generate token key: %v", err)
 			}
 
-			token, err := NewToken(key)
+			token := mustTestNewToken(t, key)
 			if err != nil {
 				t.Fatalf("failed to create token: %v", err)
 			}
@@ -57,23 +57,19 @@ func TestToken(t *testing.T) {
 
 func TestNewToken_Errors(t *testing.T) {
 	t.Parallel()
-	_, err := NewToken(make([]byte, 31))
-	if err == nil {
+	if _, err := NewToken(make([]byte, 31)); err == nil {
 		t.Error("expected error for 31-byte key")
 	}
 
-	_, err = NewToken(make([]byte, 33))
-	if err == nil {
+	if _, err := NewToken(make([]byte, 33)); err == nil {
 		t.Error("expected error for 33-byte key")
 	}
 
-	_, err = NewToken(make([]byte, 63))
-	if err == nil {
+	if _, err := NewToken(make([]byte, 63)); err == nil {
 		t.Error("expected error for 63-byte key")
 	}
 
-	_, err = NewToken(make([]byte, 65))
-	if err == nil {
+	if _, err := NewToken(make([]byte, 65)); err == nil {
 		t.Error("expected error for 65-byte key")
 	}
 }

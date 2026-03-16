@@ -33,23 +33,16 @@ func tempDir(t *testing.T) string {
 }
 
 func TestNewRouterRequiresStoragePath(t *testing.T) {
-	_, err := NewRouter(nil, "")
-	if err == nil {
+	if _, err := NewRouter(nil, ""); err == nil {
 		t.Fatal("expected error when storage path is empty")
 	}
 }
 
 func TestRegisterDeliveryIdentitySingleDestinationOnly(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	id, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity #1: %v", err)
-	}
-	zero := 0
+	id := mustTestNewIdentity(t, true)
+	var zero int
 	if _, err := router.RegisterDeliveryIdentity(id, "", &zero); err != nil {
 		t.Fatalf("RegisterDeliveryIdentity #1: %v", err)
 	}
@@ -64,10 +57,7 @@ func TestRegisterDeliveryIdentitySingleDestinationOnly(t *testing.T) {
 }
 
 func TestHandleOutboundValidatesMessage(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
 	if err := router.HandleOutbound(nil); err == nil {
 		t.Fatal("expected nil message error")
@@ -75,32 +65,14 @@ func TestHandleOutboundValidatesMessage(t *testing.T) {
 }
 
 func TestProcessOutboundDirectRequestsPathWhenUnavailable(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	sourceID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(source): %v", err)
-	}
-	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(dest): %v", err)
-	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(source): %v", err)
-	}
-	destination, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(dest): %v", err)
-	}
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
-	msg, err := NewMessage(destination, sourceDest, "content", "title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
@@ -131,32 +103,14 @@ func TestProcessOutboundDirectRequestsPathWhenUnavailable(t *testing.T) {
 }
 
 func TestProcessOutboundOpportunisticPathRecoversWithoutPathRequest(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	sourceID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(source): %v", err)
-	}
-	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(dest): %v", err)
-	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(source): %v", err)
-	}
-	destination, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(dest): %v", err)
-	}
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
-	msg, err := NewMessage(destination, sourceDest, "content", "title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 	msg.DesiredMethod = MethodOpportunistic
 
 	now := time.Unix(1700000000, 0)
@@ -211,32 +165,14 @@ func TestProcessOutboundOpportunisticPathRecoversWithoutPathRequest(t *testing.T
 }
 
 func TestProcessOutboundOpportunisticEscalatesToPathRequestThenSends(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	sourceID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(source): %v", err)
-	}
-	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(dest): %v", err)
-	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(source): %v", err)
-	}
-	destination, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(dest): %v", err)
-	}
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
-	msg, err := NewMessage(destination, sourceDest, "content", "title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 	msg.DesiredMethod = MethodOpportunistic
 
 	now := time.Unix(1700000000, 0)
@@ -287,32 +223,13 @@ func TestProcessOutboundOpportunisticEscalatesToPathRequestThenSends(t *testing.
 }
 
 func TestProcessOutboundSendFailureEventuallyFails(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
-	sourceID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(source): %v", err)
-	}
-	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(dest): %v", err)
-	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(source): %v", err)
-	}
-	destination, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(dest): %v", err)
-	}
-
-	msg, err := NewMessage(destination, sourceDest, "content", "title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
@@ -335,32 +252,14 @@ func TestProcessOutboundSendFailureEventuallyFails(t *testing.T) {
 }
 
 func TestProcessOutboundSendSuccessSetsSent(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	sourceID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(source): %v", err)
-	}
-	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(dest): %v", err)
-	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(source): %v", err)
-	}
-	destination, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(dest): %v", err)
-	}
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
-	msg, err := NewMessage(destination, sourceDest, "content", "title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 
 	router.hasPath = func(_ []byte) bool { return true }
 	router.requestPath = func(_ []byte) error { return nil }
@@ -376,32 +275,14 @@ func TestProcessOutboundSendSuccessSetsSent(t *testing.T) {
 }
 
 func TestProcessOutboundSentMessageNotResentUntilTimeout(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	sourceID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(source): %v", err)
-	}
-	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(dest): %v", err)
-	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(source): %v", err)
-	}
-	destination, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(dest): %v", err)
-	}
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
-	msg, err := NewMessage(destination, sourceDest, "content", "title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 
 	router.hasPath = func(_ []byte) bool { return true }
 	router.requestPath = func(_ []byte) error { return nil }
@@ -428,32 +309,14 @@ func TestProcessOutboundSentMessageNotResentUntilTimeout(t *testing.T) {
 }
 
 func TestProcessOutboundTimeoutRequeuesForRetry(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	sourceID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(source): %v", err)
-	}
-	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(dest): %v", err)
-	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(source): %v", err)
-	}
-	destination, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(dest): %v", err)
-	}
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
-	msg, err := NewMessage(destination, sourceDest, "content", "title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
@@ -496,32 +359,14 @@ func TestProcessOutboundTimeoutRequeuesForRetry(t *testing.T) {
 }
 
 func TestProcessOutboundDeliveryCallbackSetsDeliveredAndPreventsTimeoutRequeue(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	sourceID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(source): %v", err)
-	}
-	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(dest): %v", err)
-	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(source): %v", err)
-	}
-	destination, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(dest): %v", err)
-	}
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
-	msg, err := NewMessage(destination, sourceDest, "content", "title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 
 	router.hasPath = func(_ []byte) bool { return true }
 	router.requestPath = func(_ []byte) error { return nil }
@@ -558,32 +403,14 @@ func TestProcessOutboundDeliveryCallbackSetsDeliveredAndPreventsTimeoutRequeue(t
 }
 
 func TestProcessOutboundSelectsPacketRepresentation(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	sourceID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(source): %v", err)
-	}
-	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(dest): %v", err)
-	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(source): %v", err)
-	}
-	destination, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(dest): %v", err)
-	}
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
-	msg, err := NewMessage(destination, sourceDest, "short content", "title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
+	msg := mustTestNewMessage(t, destination, sourceDest, "short content", "title", nil)
 
 	router.hasPath = func(_ []byte) bool { return true }
 	router.requestPath = func(_ []byte) error { return nil }
@@ -610,37 +437,19 @@ func TestProcessOutboundSelectsPacketRepresentation(t *testing.T) {
 }
 
 func TestProcessOutboundSelectsResourceRepresentation(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	sourceID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(source): %v", err)
-	}
-	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(dest): %v", err)
-	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(source): %v", err)
-	}
-	destination, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(dest): %v", err)
-	}
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
 	content := make([]byte, rns.MDU*2)
 	for i := range content {
 		content[i] = 'A'
 	}
 
-	msg, err := NewMessage(destination, sourceDest, string(content), "title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
+	msg := mustTestNewMessage(t, destination, sourceDest, string(content), "title", nil)
 
 	router.hasPath = func(_ []byte) bool { return true }
 	router.requestPath = func(_ []byte) error { return nil }
@@ -670,37 +479,19 @@ func TestProcessOutboundSelectsResourceRepresentation(t *testing.T) {
 }
 
 func TestProcessOutboundResourceUnsupportedFails(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	sourceID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(source): %v", err)
-	}
-	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(dest): %v", err)
-	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(source): %v", err)
-	}
-	destination, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(dest): %v", err)
-	}
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
 	content := make([]byte, rns.MDU*2)
 	for i := range content {
 		content[i] = 'B'
 	}
 
-	msg, err := NewMessage(destination, sourceDest, string(content), "title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
+	msg := mustTestNewMessage(t, destination, sourceDest, string(content), "title", nil)
 
 	router.hasPath = func(_ []byte) bool { return true }
 	router.requestPath = func(_ []byte) error { return nil }
@@ -754,36 +545,18 @@ func (f *fakeLinkBuilder) SetLinkClosedCallback(cb func(*rns.Link)) {
 }
 
 func TestProcessOutboundResourceLinkPendingRetryNoAttemptIncrement(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	sourceID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(source): %v", err)
-	}
-	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(dest): %v", err)
-	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(source): %v", err)
-	}
-	destination, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(dest): %v", err)
-	}
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
 	content := make([]byte, rns.MDU*2)
 	for i := range content {
 		content[i] = 'C'
 	}
-	msg, err := NewMessage(destination, sourceDest, string(content), "title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
+	msg := mustTestNewMessage(t, destination, sourceDest, string(content), "title", nil)
 
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
@@ -813,36 +586,18 @@ func TestProcessOutboundResourceLinkPendingRetryNoAttemptIncrement(t *testing.T)
 }
 
 func TestSendMessageResourceLockedEstablishError(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	sourceID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(source): %v", err)
-	}
-	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(dest): %v", err)
-	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(source): %v", err)
-	}
-	destination, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(dest): %v", err)
-	}
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
 	content := make([]byte, rns.MDU*2)
 	for i := range content {
 		content[i] = 'D'
 	}
-	msg, err := NewMessage(destination, sourceDest, string(content), "title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
+	msg := mustTestNewMessage(t, destination, sourceDest, string(content), "title", nil)
 	if err := msg.Pack(); err != nil {
 		t.Fatalf("Pack: %v", err)
 	}
@@ -852,43 +607,24 @@ func TestSendMessageResourceLockedEstablishError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	err = router.sendMessageResourceLocked(msg)
-	if !errors.Is(err, wantErr) {
+	if err := router.sendMessageResourceLocked(msg); !errors.Is(err, wantErr) {
 		t.Fatalf("error=%v want=%v", err, wantErr)
 	}
 }
 
 func TestProcessOutboundResourceSendFailureEventuallyFails(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	sourceID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(source): %v", err)
-	}
-	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(dest): %v", err)
-	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(source): %v", err)
-	}
-	destination, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(dest): %v", err)
-	}
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
 	content := make([]byte, rns.MDU*2)
 	for i := range content {
 		content[i] = 'E'
 	}
-	msg, err := NewMessage(destination, sourceDest, string(content), "title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
+	msg := mustTestNewMessage(t, destination, sourceDest, string(content), "title", nil)
 
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
@@ -911,36 +647,18 @@ func TestProcessOutboundResourceSendFailureEventuallyFails(t *testing.T) {
 }
 
 func TestProcessOutboundResourceSendRetriesThenSucceeds(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	sourceID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(source): %v", err)
-	}
-	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(dest): %v", err)
-	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(source): %v", err)
-	}
-	destination, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(dest): %v", err)
-	}
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
 	content := make([]byte, rns.MDU*2)
 	for i := range content {
 		content[i] = 'F'
 	}
-	msg, err := NewMessage(destination, sourceDest, string(content), "title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
+	msg := mustTestNewMessage(t, destination, sourceDest, string(content), "title", nil)
 
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
@@ -973,10 +691,7 @@ func TestProcessOutboundResourceSendRetriesThenSucceeds(t *testing.T) {
 }
 
 func TestProcessOutboundDropsTerminalStatesFromQueue(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
 	msgDelivered := &Message{State: StateDelivered}
 	msgFailed := &Message{State: StateFailed}
@@ -991,32 +706,14 @@ func TestProcessOutboundDropsTerminalStatesFromQueue(t *testing.T) {
 }
 
 func TestHandleInboundResourceDataDeliversMessage(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	sourceID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(source): %v", err)
-	}
-	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(dest): %v", err)
-	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(source): %v", err)
-	}
-	destination, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(dest): %v", err)
-	}
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
-	msg, err := NewMessage(destination, sourceDest, "resource-content", "resource-title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
+	msg := mustTestNewMessage(t, destination, sourceDest, "resource-content", "resource-title", nil)
 	if err := msg.Pack(); err != nil {
 		t.Fatalf("Pack: %v", err)
 	}
@@ -1040,10 +737,7 @@ func TestHandleInboundResourceDataDeliversMessage(t *testing.T) {
 }
 
 func TestHandleInboundResourceDataIgnoresInvalidPayload(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
 	called := false
 	router.RegisterDeliveryCallback(func(_ *Message) {
@@ -1058,10 +752,7 @@ func TestHandleInboundResourceDataIgnoresInvalidPayload(t *testing.T) {
 }
 
 func TestRegisterPropagationControlDestination(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
 	destination, err := router.RegisterPropagationControlDestination(nil)
 	if err != nil {
@@ -1081,15 +772,9 @@ func TestRegisterPropagationControlDestination(t *testing.T) {
 }
 
 func TestControlStatsGetRequest(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	remoteIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(remote): %v", err)
-	}
+	remoteIdentity := mustTestNewIdentity(t, true)
 
 	router.clientPropagationMessagesReceived = 11
 	router.clientPropagationMessagesServed = 7
@@ -1122,25 +807,16 @@ func TestControlStatsGetRequest(t *testing.T) {
 }
 
 func TestControlStatsGetRequestAccessErrors(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
 	if got := router.statsGetRequest("", nil, nil, nil, nil, time.Now()); got != peerErrorNoIdentity {
 		t.Fatalf("stats no identity=%v want=%v", got, peerErrorNoIdentity)
 	}
 
-	allowedIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(allowed): %v", err)
-	}
+	allowedIdentity := mustTestNewIdentity(t, true)
 	router.controlAllowed[string(allowedIdentity.Hash)] = struct{}{}
 
-	notAllowedIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(not allowed): %v", err)
-	}
+	notAllowedIdentity := mustTestNewIdentity(t, true)
 
 	if got := router.statsGetRequest("", nil, nil, nil, notAllowedIdentity, time.Now()); got != peerErrorNoAccess {
 		t.Fatalf("stats no access=%v want=%v", got, peerErrorNoAccess)
@@ -1148,20 +824,11 @@ func TestControlStatsGetRequestAccessErrors(t *testing.T) {
 }
 
 func TestControlPeerSyncAndUnpeerRequests(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	remoteIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(remote): %v", err)
-	}
+	remoteIdentity := mustTestNewIdentity(t, true)
 
-	peerIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(peer): %v", err)
-	}
+	peerIdentity := mustTestNewIdentity(t, true)
 	peerHash := append([]byte{}, peerIdentity.Hash...)
 	router.peers[string(peerHash)] = time.Now().Add(-time.Hour)
 
@@ -1180,10 +847,7 @@ func TestControlPeerSyncAndUnpeerRequests(t *testing.T) {
 }
 
 func TestControlPeerSyncBackoff(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
@@ -1192,15 +856,9 @@ func TestControlPeerSyncBackoff(t *testing.T) {
 		t.Fatalf("SetPeerSyncBackoff: %v", err)
 	}
 
-	remoteIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(remote): %v", err)
-	}
+	remoteIdentity := mustTestNewIdentity(t, true)
 
-	peerIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(peer): %v", err)
-	}
+	peerIdentity := mustTestNewIdentity(t, true)
 	peerHash := append([]byte{}, peerIdentity.Hash...)
 	router.peers[string(peerHash)] = now
 
@@ -1215,10 +873,7 @@ func TestControlPeerSyncBackoff(t *testing.T) {
 }
 
 func TestPruneStalePeers(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
@@ -1245,24 +900,15 @@ func TestPruneStalePeers(t *testing.T) {
 }
 
 func TestControlPeerSyncAndUnpeerErrors(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
 	if got := router.peerSyncRequest("", nil, nil, nil, nil, time.Now()); got != peerErrorNoIdentity {
 		t.Fatalf("sync no identity=%v want=%v", got, peerErrorNoIdentity)
 	}
 
-	remoteIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(remote): %v", err)
-	}
+	remoteIdentity := mustTestNewIdentity(t, true)
 
-	allowedIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(allowed): %v", err)
-	}
+	allowedIdentity := mustTestNewIdentity(t, true)
 	router.controlAllowed[string(allowedIdentity.Hash)] = struct{}{}
 
 	if got := router.peerSyncRequest("", make([]byte, rns.TruncatedHashLength/8), nil, nil, remoteIdentity, time.Now()); got != peerErrorNoAccess {
@@ -1279,10 +925,7 @@ func TestControlPeerSyncAndUnpeerErrors(t *testing.T) {
 		t.Fatalf("sync invalid data=%v want=%v", got, peerErrorInvalidData)
 	}
 
-	peerIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(peer): %v", err)
-	}
+	peerIdentity := mustTestNewIdentity(t, true)
 	peerHash := append([]byte{}, peerIdentity.Hash...)
 
 	if got := router.peerSyncRequest("", peerHash, nil, nil, remoteIdentity, time.Now()); got != peerErrorNotFound {
@@ -1295,10 +938,7 @@ func TestControlPeerSyncAndUnpeerErrors(t *testing.T) {
 }
 
 func TestRegisterPropagationDestination(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
 	destination, err := router.RegisterPropagationDestination()
 	if err != nil {
@@ -1318,15 +958,9 @@ func TestRegisterPropagationDestination(t *testing.T) {
 }
 
 func TestOfferRequestReturnsWantedIDs(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	remoteIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(remote): %v", err)
-	}
+	remoteIdentity := mustTestNewIdentity(t, true)
 
 	destinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
 	haveID := router.storePropagationMessage(destinationHash, []byte("msg-have"))
@@ -1355,15 +989,9 @@ func TestOfferRequestReturnsWantedIDs(t *testing.T) {
 }
 
 func TestOfferRequestInvalidKey(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	remoteIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(remote): %v", err)
-	}
+	remoteIdentity := mustTestNewIdentity(t, true)
 
 	wantID := rns.FullHash([]byte("missing"))
 	requestData, err := msgpack.Pack([]any{nil, []any{wantID}})
@@ -1378,18 +1006,12 @@ func TestOfferRequestInvalidKey(t *testing.T) {
 }
 
 func TestOfferRequestThrottled(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
 
-	remoteIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(remote): %v", err)
-	}
+	remoteIdentity := mustTestNewIdentity(t, true)
 
 	remotePropagationHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
 	router.throttledPeers[string(remotePropagationHash)] = now.Add(time.Minute)
@@ -1407,15 +1029,9 @@ func TestOfferRequestThrottled(t *testing.T) {
 }
 
 func TestOfferRequestStaticOnlyNoAccess(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	remoteIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(remote): %v", err)
-	}
+	remoteIdentity := mustTestNewIdentity(t, true)
 
 	router.fromStaticOnly = true
 
@@ -1432,16 +1048,10 @@ func TestOfferRequestStaticOnlyNoAccess(t *testing.T) {
 }
 
 func TestOfferRequestPeeringCostValidation(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 	router.peeringCost = 2
 
-	remoteIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(remote): %v", err)
-	}
+	remoteIdentity := mustTestNewIdentity(t, true)
 
 	peeringID := make([]byte, 0, len(router.identity.Hash)+len(remoteIdentity.Hash))
 	peeringID = append(peeringID, router.identity.Hash...)
@@ -1473,10 +1083,7 @@ func TestOfferRequestPeeringCostValidation(t *testing.T) {
 }
 
 func TestRouterPolicyConfigurationAPIs(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
 
@@ -1491,10 +1098,7 @@ func TestRouterPolicyConfigurationAPIs(t *testing.T) {
 		t.Fatal("expected SetStaticPeers to reject invalid hash length")
 	}
 
-	remoteIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(remote): %v", err)
-	}
+	remoteIdentity := mustTestNewIdentity(t, true)
 	remotePropagationHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
 
 	if err := router.SetStaticPeers([][]byte{remotePropagationHash}); err != nil {
@@ -1536,10 +1140,7 @@ func TestRouterPolicyConfigurationAPIs(t *testing.T) {
 		t.Fatalf("allowed response=%v want=true", allowed)
 	}
 
-	nonStaticIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(non-static): %v", err)
-	}
+	nonStaticIdentity := mustTestNewIdentity(t, true)
 	nonStaticPeeringID := make([]byte, 0, len(router.identity.Hash)+len(nonStaticIdentity.Hash))
 	nonStaticPeeringID = append(nonStaticPeeringID, router.identity.Hash...)
 	nonStaticPeeringID = append(nonStaticPeeringID, nonStaticIdentity.Hash...)
@@ -1558,15 +1159,9 @@ func TestRouterPolicyConfigurationAPIs(t *testing.T) {
 }
 
 func TestApplyPolicyConfig(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	remoteIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(remote): %v", err)
-	}
+	remoteIdentity := mustTestNewIdentity(t, true)
 	remotePropagationHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
 
 	cfg := map[string]any{
@@ -1623,10 +1218,7 @@ func TestApplyPolicyConfig(t *testing.T) {
 }
 
 func TestApplyPolicyConfigErrors(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
 	if err := router.ApplyPolicyConfig(map[string]any{"peering_cost": "bad"}); err == nil {
 		t.Fatal("expected peering_cost parse error")
@@ -1652,22 +1244,16 @@ func TestApplyPolicyConfigErrors(t *testing.T) {
 }
 
 func TestNewRouterWithConfigAppliesPolicy(t *testing.T) {
-	remoteIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(remote): %v", err)
-	}
+	remoteIdentity := mustTestNewIdentity(t, true)
 	remotePropagationHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
 
-	router, err := NewRouterWithConfig(nil, tempDir(t), map[string]any{
+	router := mustTestNewRouterWithConfig(t, nil, tempDir(t), map[string]any{
 		"peering_cost":     2,
 		"from_static_only": true,
 		"static_peers":     []any{hex.EncodeToString(remotePropagationHash)},
 		"auth_required":    true,
 		"allowed_list":     []any{hex.EncodeToString(remoteIdentity.Hash)},
 	})
-	if err != nil {
-		t.Fatalf("NewRouterWithConfig: %v", err)
-	}
 
 	if router.peeringCost != 2 {
 		t.Fatalf("peeringCost=%v want=2", router.peeringCost)
@@ -1687,28 +1273,18 @@ func TestNewRouterWithConfigAppliesPolicy(t *testing.T) {
 }
 
 func TestNewRouterWithConfigReturnsPolicyError(t *testing.T) {
-	_, err := NewRouterWithConfig(nil, tempDir(t), map[string]any{"peering_cost": "bad"})
-	if err == nil {
+	if _, err := NewRouterWithConfig(nil, tempDir(t), map[string]any{"peering_cost": "bad"}); err == nil {
 		t.Fatal("expected policy config error")
 	}
 }
 
 func TestMessageGetRequestListAndFetch(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	remoteIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(remote): %v", err)
-	}
+	remoteIdentity := mustTestNewIdentity(t, true)
 
 	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
-	otherIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(other): %v", err)
-	}
+	otherIdentity := mustTestNewIdentity(t, true)
 	otherDestinationHash := rns.CalculateHash(otherIdentity, AppName, "delivery")
 
 	idOne := router.storePropagationMessage(remoteDestinationHash, []byte("payload-1"))
@@ -1759,10 +1335,7 @@ func TestMessageGetRequestListAndFetch(t *testing.T) {
 }
 
 func TestMessageGetRequestRequiresIdentity(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
 	request, err := msgpack.Pack([]any{nil, nil})
 	if err != nil {
@@ -1776,10 +1349,7 @@ func TestMessageGetRequestRequiresIdentity(t *testing.T) {
 }
 
 func TestMessageGetRequestNoAccessWhenAuthRequired(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
 	router.authRequired = true
 
@@ -1788,18 +1358,12 @@ func TestMessageGetRequestNoAccessWhenAuthRequired(t *testing.T) {
 		t.Fatalf("Pack request: %v", err)
 	}
 
-	notAllowedIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(not allowed): %v", err)
-	}
+	notAllowedIdentity := mustTestNewIdentity(t, true)
 	if response := router.messageGetRequest("", request, nil, nil, notAllowedIdentity, time.Now()); response != peerErrorNoAccess {
 		t.Fatalf("message_get no access=%v want=%v", response, peerErrorNoAccess)
 	}
 
-	allowedIdentity, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(allowed): %v", err)
-	}
+	allowedIdentity := mustTestNewIdentity(t, true)
 	router.allowedList[string(allowedIdentity.Hash)] = struct{}{}
 
 	response := router.messageGetRequest("", request, nil, nil, allowedIdentity, time.Now())
@@ -1815,33 +1379,15 @@ func (e assertErr) Error() string {
 }
 
 func TestDeliveryPacketOpportunisticAndDirect(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	sourceID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(source): %v", err)
-	}
-	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(dest): %v", err)
-	}
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
 
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(source): %v", err)
-	}
-	destination, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(dest): %v", err)
-	}
+	sourceDest := mustTestNewDestination(t, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
-	message, err := NewMessage(destination, sourceDest, "content", "title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
+	message := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 	if err := message.Pack(); err != nil {
 		t.Fatalf("Pack: %v", err)
 	}
@@ -1882,15 +1428,12 @@ func TestDeliveryPacketOpportunisticAndDirect(t *testing.T) {
 }
 
 func TestNewRouterFromConfig(t *testing.T) {
-	id, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity: %v", err)
-	}
+	id := mustTestNewIdentity(t, true)
 
 	maxPeers := 5
 	staticPeer := rns.CalculateHash(id, AppName, "propagation")
 
-	router, err := NewRouterFromConfig(RouterConfig{
+	router := mustTestNewRouterFromConfig(t, RouterConfig{
 		Identity:         id,
 		StoragePath:      tempDir(t),
 		Autopeer:         true,
@@ -1901,9 +1444,6 @@ func TestNewRouterFromConfig(t *testing.T) {
 		StaticPeers:      [][]byte{staticPeer},
 		PropagationCost:  20,
 	})
-	if err != nil {
-		t.Fatalf("NewRouterFromConfig: %v", err)
-	}
 
 	if got := router.PropagationPerTransferLimit(); got != 128 {
 		t.Fatalf("PropagationPerTransferLimit=%v want=128", got)
@@ -1923,12 +1463,9 @@ func TestNewRouterFromConfig(t *testing.T) {
 }
 
 func TestNewRouterFromConfigDefaults(t *testing.T) {
-	router, err := NewRouterFromConfig(RouterConfig{
+	router := mustTestNewRouterFromConfig(t, RouterConfig{
 		StoragePath: tempDir(t),
 	})
-	if err != nil {
-		t.Fatalf("NewRouterFromConfig: %v", err)
-	}
 
 	if got := router.PropagationPerTransferLimit(); got != DefaultPropagationLimit {
 		t.Fatalf("PropagationPerTransferLimit=%v want=%v", got, DefaultPropagationLimit)
@@ -1949,14 +1486,11 @@ func TestNewRouterFromConfigDefaults(t *testing.T) {
 }
 
 func TestNewRouterFromConfigSyncLimitClamped(t *testing.T) {
-	router, err := NewRouterFromConfig(RouterConfig{
+	router := mustTestNewRouterFromConfig(t, RouterConfig{
 		StoragePath:      tempDir(t),
 		PropagationLimit: 500,
 		SyncLimit:        100, // less than PropagationLimit
 	})
-	if err != nil {
-		t.Fatalf("NewRouterFromConfig: %v", err)
-	}
 
 	// sync limit should be clamped to propagation limit
 	if got := router.PropagationPerSyncLimit(); got != 500 {
@@ -1965,10 +1499,7 @@ func TestNewRouterFromConfigSyncLimitClamped(t *testing.T) {
 }
 
 func TestRouterIgnoreDestination(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
 	hash := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}
 
@@ -1984,10 +1515,7 @@ func TestRouterIgnoreDestination(t *testing.T) {
 }
 
 func TestRouterEnforceStamps(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
 	if router.StampsEnforced() {
 		t.Fatal("stamps should not be enforced initially")
@@ -2001,10 +1529,7 @@ func TestRouterEnforceStamps(t *testing.T) {
 }
 
 func TestRouterMessageStorageLimit(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
 	if got := router.MessageStorageLimit(); got != 0 {
 		t.Fatalf("initial MessageStorageLimit=%v want=0", got)
@@ -2018,10 +1543,7 @@ func TestRouterMessageStorageLimit(t *testing.T) {
 }
 
 func TestRouterPrioritise(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
 	hash := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}
 
@@ -2037,16 +1559,10 @@ func TestRouterPrioritise(t *testing.T) {
 }
 
 func TestRouterSetInboundStampCost(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	id, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity: %v", err)
-	}
-	zero := 0
+	id := mustTestNewIdentity(t, true)
+	var zero int
 	dest, err := router.RegisterDeliveryIdentity(id, "", &zero)
 	if err != nil {
 		t.Fatalf("RegisterDeliveryIdentity: %v", err)
@@ -2086,16 +1602,10 @@ func TestRouterSetInboundStampCost(t *testing.T) {
 }
 
 func TestRouterAnnounce(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	id, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity: %v", err)
-	}
-	zero := 0
+	id := mustTestNewIdentity(t, true)
+	var zero int
 	dest, err := router.RegisterDeliveryIdentity(id, "", &zero)
 	if err != nil {
 		t.Fatalf("RegisterDeliveryIdentity: %v", err)
@@ -2113,10 +1623,7 @@ func TestRouterAnnounce(t *testing.T) {
 }
 
 func TestRequestMessagesNoPropNode(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 	// No propagation node set — should log and return without panicking.
 	router.RequestMessagesFromPropagationNode(nil)
 	if router.PropagationTransferState() != PRIdle {
@@ -2125,10 +1632,7 @@ func TestRequestMessagesNoPropNode(t *testing.T) {
 }
 
 func TestRequestMessagesPathRequested(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
 	propNode := make([]byte, 16)
 	for i := range propNode {
@@ -2151,16 +1655,11 @@ func TestRequestMessagesPathRequested(t *testing.T) {
 }
 
 func TestRequestMessagesLinkEstablished(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
 	// Create and remember a peer identity.
-	peerID, err := rns.NewIdentity(true)
-	mustTest(t, err)
-	peerDest, err := rns.NewDestination(peerID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
-	mustTest(t, err)
+	peerID := mustTestNewIdentity(t, true)
+	peerDest := mustTestNewDestination(t, peerID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
 	rns.Remember(nil, peerDest.Hash, peerID.GetPublicKey(), nil)
 	if err := router.SetOutboundPropagationNode(peerDest.Hash); err != nil {
 		t.Fatal(err)
@@ -2178,15 +1677,10 @@ func TestRequestMessagesLinkEstablished(t *testing.T) {
 }
 
 func TestRequestMessagesLinkFailed(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	peerID, err := rns.NewIdentity(true)
-	mustTest(t, err)
-	peerDest, err := rns.NewDestination(peerID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
-	mustTest(t, err)
+	peerID := mustTestNewIdentity(t, true)
+	peerDest := mustTestNewDestination(t, peerID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
 	rns.Remember(nil, peerDest.Hash, peerID.GetPublicKey(), nil)
 	if err := router.SetOutboundPropagationNode(peerDest.Hash); err != nil {
 		t.Fatal(err)
@@ -2204,10 +1698,7 @@ func TestRequestMessagesLinkFailed(t *testing.T) {
 }
 
 func TestCancelPropagationResetsState(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
 	propNode := make([]byte, 16)
 	for i := range propNode {
@@ -2236,32 +1727,14 @@ func TestCancelPropagationResetsState(t *testing.T) {
 }
 
 func TestProcessOutboundPropagatedNoNodeFails(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	sourceID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(source): %v", err)
-	}
-	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(dest): %v", err)
-	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(source): %v", err)
-	}
-	destination, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(dest): %v", err)
-	}
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
-	msg, err := NewMessage(destination, sourceDest, "content", "title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 	msg.DesiredMethod = MethodPropagated
 
 	// No outbound propagation node set — should fail immediately.
@@ -2285,32 +1758,14 @@ func TestProcessOutboundPropagatedNoNodeFails(t *testing.T) {
 }
 
 func TestProcessOutboundPropagatedRequestsPathThenSends(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	sourceID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(source): %v", err)
-	}
-	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(dest): %v", err)
-	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(source): %v", err)
-	}
-	destination, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(dest): %v", err)
-	}
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
-	msg, err := NewMessage(destination, sourceDest, "content", "title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 	msg.DesiredMethod = MethodPropagated
 
 	propNode := make([]byte, 16)
@@ -2356,32 +1811,14 @@ func TestProcessOutboundPropagatedRequestsPathThenSends(t *testing.T) {
 }
 
 func TestProcessOutboundPropagatedSentRemovesFromQueue(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	sourceID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(source): %v", err)
-	}
-	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(dest): %v", err)
-	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(source): %v", err)
-	}
-	destination, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(dest): %v", err)
-	}
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
-	msg, err := NewMessage(destination, sourceDest, "content", "title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 	msg.DesiredMethod = MethodPropagated
 
 	propNode := make([]byte, 16)
@@ -2412,32 +1849,14 @@ func TestProcessOutboundPropagatedSentRemovesFromQueue(t *testing.T) {
 }
 
 func TestProcessOutboundTryPropagationOnFailFallback(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	sourceID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(source): %v", err)
-	}
-	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(dest): %v", err)
-	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(source): %v", err)
-	}
-	destination, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(dest): %v", err)
-	}
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
-	msg, err := NewMessage(destination, sourceDest, "content", "title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 	msg.DesiredMethod = MethodDirect
 	msg.TryPropagationOnFail = true
 
@@ -2486,32 +1905,14 @@ func TestProcessOutboundTryPropagationOnFailFallback(t *testing.T) {
 }
 
 func TestProcessOutboundFailedCallbackInvoked(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	sourceID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(source): %v", err)
-	}
-	destID, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity(dest): %v", err)
-	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(source): %v", err)
-	}
-	destination, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
-	if err != nil {
-		t.Fatalf("NewDestination(dest): %v", err)
-	}
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
-	msg, err := NewMessage(destination, sourceDest, "content", "title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 
 	failedCalled := false
 	msg.FailedCallback = func(_ *Message) { failedCalled = true }
@@ -2540,15 +1941,9 @@ func TestProcessOutboundFailedCallbackInvoked(t *testing.T) {
 }
 
 func TestSetDisplayNameAndAnnounceAppData(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	id, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity: %v", err)
-	}
+	id := mustTestNewIdentity(t, true)
 	cost8 := 8
 	dest, err := router.RegisterDeliveryIdentity(id, "", &cost8)
 	if err != nil {
@@ -2598,16 +1993,10 @@ func TestSetDisplayNameAndAnnounceAppData(t *testing.T) {
 }
 
 func TestSetDisplayNameNilReturnsNilAppData(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	id, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity: %v", err)
-	}
-	zero := 0
+	id := mustTestNewIdentity(t, true)
+	var zero int
 	dest, err := router.RegisterDeliveryIdentity(id, "", &zero)
 	if err != nil {
 		t.Fatalf("RegisterDeliveryIdentity: %v", err)
@@ -2621,16 +2010,10 @@ func TestSetDisplayNameNilReturnsNilAppData(t *testing.T) {
 }
 
 func TestSetDisplayNameNoStampCost(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	id, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity: %v", err)
-	}
-	zero := 0
+	id := mustTestNewIdentity(t, true)
+	var zero int
 	dest, err := router.RegisterDeliveryIdentity(id, "", &zero)
 	if err != nil {
 		t.Fatalf("RegisterDeliveryIdentity: %v", err)
@@ -2662,15 +2045,9 @@ func TestSetDisplayNameNoStampCost(t *testing.T) {
 }
 
 func TestAnnounceIncludesAppData(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	id, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity: %v", err)
-	}
+	id := mustTestNewIdentity(t, true)
 	cost12 := 12
 	dest, err := router.RegisterDeliveryIdentity(id, "", &cost12)
 	if err != nil {
@@ -2744,16 +2121,10 @@ func TestAnnounceIncludesAppData(t *testing.T) {
 }
 
 func TestAnnounceWithoutDisplayNamePassesNilAppData(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
-	id, err := rns.NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity: %v", err)
-	}
-	zero := 0
+	id := mustTestNewIdentity(t, true)
+	var zero int
 	dest, err := router.RegisterDeliveryIdentity(id, "", &zero)
 	if err != nil {
 		t.Fatalf("RegisterDeliveryIdentity: %v", err)
@@ -2779,10 +2150,7 @@ func TestAnnounceWithoutDisplayNamePassesNilAppData(t *testing.T) {
 }
 
 func TestRouterPropagationToggle(t *testing.T) {
-	router, err := NewRouter(nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, nil, tempDir(t))
 
 	if router.PropagationEnabled() {
 		t.Fatal("propagation should not be enabled initially")

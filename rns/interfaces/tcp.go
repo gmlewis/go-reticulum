@@ -39,7 +39,7 @@ type TCPClientInterface struct {
 // NewTCPClientInterface initiates a resilient TCP connection to a remote peer.
 // It establishes the link, configures framing mode, and starts read/write
 // goroutines.
-func NewTCPClientInterface(name string, host string, port int, kiss bool, handler InboundHandler) (*TCPClientInterface, error) {
+func NewTCPClientInterface(name, host string, port int, kiss bool, handler InboundHandler) (*TCPClientInterface, error) {
 	bi := NewBaseInterface(name, ModeFull, TCPBitrateGuess)
 	tci := &TCPClientInterface{
 		BaseInterface:  bi,
@@ -241,7 +241,7 @@ type TCPServerInterface struct {
 // NewTCPServerInterface binds to the given IP and port and starts a listening
 // socket for incoming TCP peers. It then enters a non-blocking accept loop and
 // delegates connection handling to spawned client interfaces.
-func NewTCPServerInterface(name string, bindIP string, bindPort int, handler InboundHandler) (*TCPServerInterface, error) {
+func NewTCPServerInterface(name, bindIP string, bindPort int, handler InboundHandler) (*TCPServerInterface, error) {
 	bi := NewBaseInterface(name, ModeFull, TCPBitrateGuess)
 
 	addr := fmt.Sprintf("%v:%v", bindIP, bindPort)

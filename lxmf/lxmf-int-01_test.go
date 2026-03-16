@@ -119,7 +119,7 @@ func TestIntegrationDirectGoToPython(t *testing.T) {
 		t.Fatalf("NewDestination(destination): %v", err)
 	}
 
-	message, err := NewMessage(destinationDest, sourceDest, "go-direct-content", "go-direct-title", nil)
+	message := mustTestNewMessage(t, destinationDest, sourceDest, "go-direct-content", "go-direct-title", nil)
 	if err != nil {
 		t.Fatalf("NewMessage: %v", err)
 	}

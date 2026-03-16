@@ -81,10 +81,7 @@ func TestNewResourceWithOptionsCompressesWhenSmaller(t *testing.T) {
 	link := testActiveResourceLink(t)
 	data := bytes.Repeat([]byte("AAAAAAAAAAAAAAAA"), 1024)
 
-	r, err := NewResourceWithOptions(data, link, ResourceOptions{AutoCompress: true})
-	if err != nil {
-		t.Fatalf("NewResourceWithOptions error: %v", err)
-	}
+	r := mustTestNewResourceWithOptions(t, data, link, ResourceOptions{AutoCompress: true})
 	if !r.compressed {
 		t.Fatalf("expected compressed resource for highly repetitive payload")
 	}
@@ -109,10 +106,7 @@ func TestNewResourceWithOptionsRespectsCompressionLimit(t *testing.T) {
 	link := testActiveResourceLink(t)
 	data := bytes.Repeat([]byte("A"), 2048)
 
-	r, err := NewResourceWithOptions(data, link, ResourceOptions{AutoCompress: true, AutoCompressLimit: 64})
-	if err != nil {
-		t.Fatalf("NewResourceWithOptions error: %v", err)
-	}
+	r := mustTestNewResourceWithOptions(t, data, link, ResourceOptions{AutoCompress: true, AutoCompressLimit: 64})
 	if r.compressed {
 		t.Fatalf("expected uncompressed resource when payload exceeds auto-compress limit")
 	}

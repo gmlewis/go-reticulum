@@ -220,7 +220,7 @@ type LocalServerInterface struct {
 // NewLocalServerInterface binds an IPC listener to accept incoming connections
 // from co-located Reticulum instances. It manages socket files and port bindings
 // and launches an asynchronous accept loop.
-func NewLocalServerInterface(name string, path string, port int, handler InboundHandler) (*LocalServerInterface, error) {
+func NewLocalServerInterface(name, path string, port int, handler InboundHandler) (*LocalServerInterface, error) {
 	bi := NewBaseInterface(name, ModeFull, LocalBitrate)
 
 	var l net.Listener

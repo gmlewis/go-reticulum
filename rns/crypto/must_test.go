@@ -17,8 +17,6 @@ func mustTest(t *testing.T, err error) {
 func mustTestNewToken(t *testing.T, key []byte) *Token {
 	t.Helper()
 	token, err := NewToken(key)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustTest(t, err)
 	return token
 }
