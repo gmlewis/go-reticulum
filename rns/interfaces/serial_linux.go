@@ -212,7 +212,7 @@ func (si *serialInterface) readLoopOnce() error {
 			if errors.Is(err, os.ErrClosed) || errors.Is(err, io.EOF) {
 				return nil
 			}
-			return fmt.Errorf("serial read error on %v: %w", si.port, err)
+			return err
 		}
 
 		if n == 0 {
