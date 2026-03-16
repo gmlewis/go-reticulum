@@ -3,25 +3,11 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// gornstatus is a Reticulum-based status and statistics utility.
+// gornstatus is the Go port of the Reticulum Network Stack Status utility.
 //
-// It provides a quick overview of the current state of the Reticulum
-// Network Stack, including:
-//   - Configured network interfaces and their status (Up/Down).
-//   - Transfer rates for each interface.
-//   - Total traffic (sent and received) since the stack was initialized.
-//
-// Usage:
-//
-//	gornstatus [-a] [--config <config_dir>]
-//
-// Flags:
-//
-//	-config string
-//	      path to alternative Reticulum config directory
-//	-a    show all interfaces, including detached ones
-//	-version
-//	      show version and exit
+// It queries a running Reticulum instance (local or remote) and displays
+// the status of all configured network interfaces, including transfer
+// rates, traffic counters, announce statistics, and transport state.
 package main
 
 import (
@@ -29,72 +15,137 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
+	"os/signal"
+	"strconv"
+	"syscall"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
+// counter implements flag.Value for a counted flag (e.g. -v -v -v).
+type counter int
+
+func (c *counter) String() string { return strconv.Itoa(int(*c)) }
+func (c *counter) Set(string) error {
+	*c++
+	return nil
+}
+func (c *counter) IsBoolFlag() bool { return true }
+
+func init() {
+	flag.Usage = func() {
+		_, _ = fmt.Fprintf(flag.CommandLine.Output(), `
+usage: gornstatus [-h] [--config CONFIG] [--version] [-a] [-A] [-l] [-t]
+                  [-s SORT] [-r] [-j] [-R hash] [-i path] [-w seconds]
+                  [-d] [-D] [-m] [-I seconds] [-v]
+                  [filter]
+
+Reticulum Network Stack Status
+
+positional arguments:
+  filter                only display interfaces with names including filter
+
+options:
+  -h, --help            show this help message and exit
+  --config CONFIG       path to alternative Reticulum config directory
+  --version             show program's version number and exit
+  -a, --all             show all interfaces
+  -A, --announce-stats  show announce stats
+  -l, --link-stats      show link stats
+  -t, --totals          display traffic totals
+  -s SORT, --sort SORT  sort interfaces by [rate, traffic, rx, tx, rxs, txs,
+                        announces, arx, atx, held]
+  -r, --reverse         reverse sorting
+  -j, --json            output in JSON format
+  -R hash               transport identity hash of remote instance to get
+                        status from
+  -i path               path to identity used for remote management
+  -w seconds            timeout before giving up on remote queries
+  -d, --discovered      list discovered interfaces
+  -D                    show details and config entries for discovered
+                        interfaces
+  -m, --monitor         continuously monitor status
+  -I seconds, --monitor-interval seconds
+                        refresh interval for monitor mode (default: 1)
+  -v, --verbose
+`)
+	}
+
+	flag.StringVar(&configDir, "config", "", "path to alternative Reticulum config directory")
+	flag.BoolVar(&showVersion, "version", false, "show program's version number and exit")
+	flag.BoolVar(&showAll, "a", false, "show all interfaces")
+	flag.BoolVar(&showAll, "all", false, "show all interfaces")
+	flag.BoolVar(&announceStats, "A", false, "show announce stats")
+	flag.BoolVar(&announceStats, "announce-stats", false, "show announce stats")
+	flag.BoolVar(&linkStats, "l", false, "show link stats")
+	flag.BoolVar(&linkStats, "link-stats", false, "show link stats")
+	flag.BoolVar(&trafficTotals, "t", false, "display traffic totals")
+	flag.BoolVar(&trafficTotals, "totals", false, "display traffic totals")
+	flag.StringVar(&sortKey, "s", "", "sort interfaces by [rate, traffic, rx, tx, rxs, txs, announces, arx, atx, held]")
+	flag.StringVar(&sortKey, "sort", "", "sort interfaces by [rate, traffic, rx, tx, rxs, txs, announces, arx, atx, held]")
+	flag.BoolVar(&sortReverse, "r", false, "reverse sorting")
+	flag.BoolVar(&sortReverse, "reverse", false, "reverse sorting")
+	flag.BoolVar(&jsonOutput, "j", false, "output in JSON format")
+	flag.BoolVar(&jsonOutput, "json", false, "output in JSON format")
+	flag.StringVar(&remoteHash, "R", "", "transport identity hash of remote instance to get status from")
+	flag.StringVar(&identityPath, "i", "", "path to identity used for remote management")
+	flag.Float64Var(&remoteTimeout, "w", 15.0, "timeout before giving up on remote queries")
+	flag.BoolVar(&discovered, "d", false, "list discovered interfaces")
+	flag.BoolVar(&discovered, "discovered", false, "list discovered interfaces")
+	flag.BoolVar(&detailedDiscovered, "D", false, "show details and config entries for discovered interfaces")
+	flag.BoolVar(&monitorMode, "m", false, "continuously monitor status")
+	flag.BoolVar(&monitorMode, "monitor", false, "continuously monitor status")
+	flag.Float64Var(&monitorInterval, "I", 1.0, "refresh interval for monitor mode (default: 1)")
+	flag.Float64Var(&monitorInterval, "monitor-interval", 1.0, "refresh interval for monitor mode (default: 1)")
+	flag.Var(&verbose, "v", "increase verbosity")
+	flag.Var(&verbose, "verbose", "increase verbosity")
+}
+
+var (
+	configDir          string
+	showVersion        bool
+	showAll            bool
+	announceStats      bool
+	linkStats          bool
+	trafficTotals      bool
+	sortKey            string
+	sortReverse        bool
+	jsonOutput         bool
+	remoteHash         string
+	identityPath       string
+	remoteTimeout      float64
+	discovered         bool
+	detailedDiscovered bool
+	monitorMode        bool
+	monitorInterval    float64
+	verbose            counter
+)
+
 func main() {
-	configDir := flag.String("config", "", "path to alternative Reticulum config directory")
-	all := flag.Bool("a", false, "show all interfaces")
-	version := flag.Bool("version", false, "show version and exit")
+	log.SetFlags(0)
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sig
+		fmt.Println()
+		os.Exit(0)
+	}()
+
 	flag.Parse()
 
-	if *version {
+	if showVersion {
 		fmt.Printf("gornstatus %v\n", rns.VERSION)
 		return
 	}
 
-	reticulum, err := rns.NewReticulum(*configDir)
-	if err != nil {
-		log.Fatalf("Could not initialize Reticulum: %v\n", err)
-	}
-	_ = reticulum
-	rns.SetCompactLogFmt(true)
-
-	// Print summary
-	fmt.Println("")
-	fmt.Println(" Reticulum Network Stack status")
-	fmt.Println(" ==============================")
-
-	stats, err := reticulum.InterfaceStats()
-	if err != nil {
-		log.Fatalf("Could not get RNS status: %v", err)
+	rns.SetLogDest(rns.LogStdout)
+	if verbose != 0 {
+		rns.SetLogLevel(int(verbose))
 	}
 
-	if len(stats.Interfaces) == 0 {
-		cfgPath := filepath.Join(*configDir, "config")
-		if *configDir == "" {
-			home, err := os.UserHomeDir()
-			if err == nil {
-				cfgPath = filepath.Join(home, ".reticulum", "config")
-			}
-		}
-		log.Fatalf("Could not get RNS status: no interfaces are configured in %v. Add an [interfaces] section or pass --config <config_dir>.", cfgPath)
+	if _, err := rns.NewReticulum(configDir); err != nil {
+		log.Fatalf("Could not initialize Reticulum: %v", err)
 	}
-
-	for _, iface := range stats.Interfaces {
-		status := "Down"
-		if iface.Status {
-			status = "Up"
-		}
-
-		fmt.Println("")
-		fmt.Printf(" %v[%v]\n", iface.Type, iface.Name)
-		fmt.Printf("    Status    : %v\n", status)
-		fmt.Printf("    Rate      : %v\n", rns.PrettySize(float64(iface.Bitrate), "bps"))
-
-		rxbStr := "↓ " + rns.PrettySize(float64(iface.RXB), "B")
-		txbStr := "↑ " + rns.PrettySize(float64(iface.TXB), "B")
-
-		fmt.Printf("    Traffic   : %v\n", txbStr)
-		fmt.Printf("                %v\n", rxbStr)
-	}
-
-	if *all {
-		fmt.Println("")
-		fmt.Printf(" Total Traffic: ↑ %v\n", rns.PrettySize(float64(stats.TXB), "B"))
-		fmt.Printf("                ↓ %v\n", rns.PrettySize(float64(stats.RXB), "B"))
-	}
-	fmt.Println("")
+	os.Exit(0)
 }

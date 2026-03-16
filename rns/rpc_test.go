@@ -600,6 +600,174 @@ func TestRPCInterfaceStatsSchemaIncludesCoreFields(t *testing.T) {
 	}
 }
 
+func TestDecodeInterfaceStatsAllFields(t *testing.T) {
+	t.Parallel()
+	clients := 5
+	raw := map[string]any{
+		"rxb":              uint64(1000),
+		"txb":              uint64(2000),
+		"rxs":              1.5,
+		"txs":              2.5,
+		"transport_id":     []byte{0xaa, 0xbb},
+		"network_id":       []byte{0xcc, 0xdd},
+		"transport_uptime": 3600.0,
+		"probe_responder":  []byte{0xee, 0xff},
+		"interfaces": []any{
+			map[string]any{
+				"name": "TestIface", "type": "UDP", "status": true,
+				"mode": 1, "bitrate": 9600, "rxb": uint64(500), "txb": uint64(600),
+				"rxs": 10.0, "txs": 20.0, "clients": clients,
+				"ifac_signature": []byte{1, 2, 3, 4, 5}, "ifac_size": 16,
+				"ifac_netname": "mynet", "autoconnect_source": "auto1",
+				"noise_floor": -120.0, "interference": -80.0,
+				"interference_last_ts": 1000.0, "interference_last_dbm": -90.0,
+				"cpu_load": 55.0, "cpu_temp": 42.0, "mem_load": 30.0,
+				"battery_percent": 85, "battery_state": "charging",
+				"airtime_short": 1.5, "airtime_long": 2.5,
+				"channel_load_short": 3.5, "channel_load_long": 4.5,
+				"switch_id": "sw1", "endpoint_id": "ep1", "via_switch_id": "vsw1",
+				"peers": 3, "tunnelstate": "active",
+				"i2p_b32": "abc.b32.i2p", "i2p_connectable": true,
+				"announce_queue": 2, "held_announces": 7,
+				"incoming_announce_frequency": 0.5, "outgoing_announce_frequency": 0.3,
+			},
+		},
+	}
+
+	snap := decodeInterfaceStats(raw)
+	if snap.RXB != 1000 {
+		t.Errorf("RXB = %v, want 1000", snap.RXB)
+	}
+	if snap.TXB != 2000 {
+		t.Errorf("TXB = %v, want 2000", snap.TXB)
+	}
+	if snap.RXS != 1.5 {
+		t.Errorf("RXS = %v, want 1.5", snap.RXS)
+	}
+	if snap.TXS != 2.5 {
+		t.Errorf("TXS = %v, want 2.5", snap.TXS)
+	}
+	if string(snap.TransportID) != string([]byte{0xaa, 0xbb}) {
+		t.Errorf("TransportID = %x, want aabb", snap.TransportID)
+	}
+	if string(snap.NetworkID) != string([]byte{0xcc, 0xdd}) {
+		t.Errorf("NetworkID = %x, want ccdd", snap.NetworkID)
+	}
+	if snap.TransportUptime == nil || *snap.TransportUptime != 3600.0 {
+		t.Errorf("TransportUptime = %v, want 3600.0", snap.TransportUptime)
+	}
+	if string(snap.ProbeResponder) != string([]byte{0xee, 0xff}) {
+		t.Errorf("ProbeResponder = %x, want eeff", snap.ProbeResponder)
+	}
+
+	if len(snap.Interfaces) != 1 {
+		t.Fatalf("len(Interfaces) = %v, want 1", len(snap.Interfaces))
+	}
+	iface := snap.Interfaces[0]
+	if iface.Name != "TestIface" {
+		t.Errorf("Name = %q", iface.Name)
+	}
+	if iface.Mode != 1 {
+		t.Errorf("Mode = %v, want 1", iface.Mode)
+	}
+	if iface.RXS != 10.0 {
+		t.Errorf("RXS = %v, want 10.0", iface.RXS)
+	}
+	if iface.Clients == nil || *iface.Clients != 5 {
+		t.Errorf("Clients = %v, want 5", iface.Clients)
+	}
+	if len(iface.IFACSignature) != 5 {
+		t.Errorf("IFACSignature len = %v, want 5", len(iface.IFACSignature))
+	}
+	if iface.IFACSize != 16 {
+		t.Errorf("IFACSize = %v, want 16", iface.IFACSize)
+	}
+	if iface.IFACNetname != "mynet" {
+		t.Errorf("IFACNetname = %q, want mynet", iface.IFACNetname)
+	}
+	if iface.AutoconnectSource != "auto1" {
+		t.Errorf("AutoconnectSource = %q, want auto1", iface.AutoconnectSource)
+	}
+	if iface.NoiseFloor == nil || *iface.NoiseFloor != -120.0 {
+		t.Errorf("NoiseFloor = %v, want -120.0", iface.NoiseFloor)
+	}
+	if iface.CPULoad == nil || *iface.CPULoad != 55.0 {
+		t.Errorf("CPULoad = %v, want 55.0", iface.CPULoad)
+	}
+	if iface.BatteryPercent == nil || *iface.BatteryPercent != 85 {
+		t.Errorf("BatteryPercent = %v, want 85", iface.BatteryPercent)
+	}
+	if iface.BatteryState != "charging" {
+		t.Errorf("BatteryState = %q, want charging", iface.BatteryState)
+	}
+	if iface.AirtimeShort == nil || *iface.AirtimeShort != 1.5 {
+		t.Errorf("AirtimeShort = %v, want 1.5", iface.AirtimeShort)
+	}
+	if iface.SwitchID == nil || *iface.SwitchID != "sw1" {
+		t.Errorf("SwitchID = %v, want sw1", iface.SwitchID)
+	}
+	if iface.Peers == nil || *iface.Peers != 3 {
+		t.Errorf("Peers = %v, want 3", iface.Peers)
+	}
+	if iface.I2PB32 == nil || *iface.I2PB32 != "abc.b32.i2p" {
+		t.Errorf("I2PB32 = %v, want abc.b32.i2p", iface.I2PB32)
+	}
+	if iface.I2PConnectable == nil || *iface.I2PConnectable != true {
+		t.Errorf("I2PConnectable = %v, want true", iface.I2PConnectable)
+	}
+	if iface.AnnounceQueue == nil || *iface.AnnounceQueue != 2 {
+		t.Errorf("AnnounceQueue = %v, want 2", iface.AnnounceQueue)
+	}
+	if iface.HeldAnnounces == nil || *iface.HeldAnnounces != 7 {
+		t.Errorf("HeldAnnounces = %v, want 7", iface.HeldAnnounces)
+	}
+	if iface.InAnnounceFreq == nil || *iface.InAnnounceFreq != 0.5 {
+		t.Errorf("InAnnounceFreq = %v, want 0.5", iface.InAnnounceFreq)
+	}
+	if iface.OutAnnounceFreq == nil || *iface.OutAnnounceFreq != 0.3 {
+		t.Errorf("OutAnnounceFreq = %v, want 0.3", iface.OutAnnounceFreq)
+	}
+}
+
+func TestDecodeInterfaceStatsNilOptionals(t *testing.T) {
+	t.Parallel()
+	raw := map[string]any{
+		"rxb": uint64(0), "txb": uint64(0),
+		"interfaces": []any{
+			map[string]any{
+				"name": "Bare", "type": "TCP", "status": false,
+				"mode": 0, "bitrate": 0, "rxb": uint64(0), "txb": uint64(0),
+			},
+		},
+	}
+	snap := decodeInterfaceStats(raw)
+	if len(snap.Interfaces) != 1 {
+		t.Fatalf("len(Interfaces) = %v, want 1", len(snap.Interfaces))
+	}
+	iface := snap.Interfaces[0]
+	if iface.Clients != nil {
+		t.Errorf("Clients should be nil, got %v", *iface.Clients)
+	}
+	if iface.NoiseFloor != nil {
+		t.Errorf("NoiseFloor should be nil, got %v", *iface.NoiseFloor)
+	}
+	if iface.CPULoad != nil {
+		t.Errorf("CPULoad should be nil, got %v", *iface.CPULoad)
+	}
+	if iface.SwitchID != nil {
+		t.Errorf("SwitchID should be nil, got %v", *iface.SwitchID)
+	}
+	if iface.I2PConnectable != nil {
+		t.Errorf("I2PConnectable should be nil, got %v", *iface.I2PConnectable)
+	}
+	if snap.TransportID != nil {
+		t.Errorf("TransportID should be nil, got %x", snap.TransportID)
+	}
+	if snap.TransportUptime != nil {
+		t.Errorf("TransportUptime should be nil, got %v", *snap.TransportUptime)
+	}
+}
+
 func TestConnectedInstanceManagementCallsRecoverAfterRPCServerRestart(t *testing.T) {
 	testCases := []struct {
 		name               string

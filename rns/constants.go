@@ -219,6 +219,26 @@ func PrettyTime(seconds float64, verbose bool, compact bool) string {
 	return result
 }
 
+// PrettyFrequency formats a frequency value (in Hz as a float where
+// 1.0 = 1 Hz) into a human-readable string with SI unit prefixes.
+// The input is multiplied by 1e6 and iterated through units
+// ["µ","m","","K","M","G","T","P","E","Z"] with suffix "Hz".
+func PrettyFrequency(hz float64) string {
+	num := hz * 1e6
+	units := []string{"µ", "m", "", "K", "M", "G", "T", "P", "E", "Z"}
+	lastUnit := "Y"
+	suffix := "Hz"
+
+	for _, unit := range units {
+		if math.Abs(num) < 1000.0 {
+			return fmt.Sprintf("%.2f %v%v", num, unit, suffix)
+		}
+		num /= 1000.0
+	}
+
+	return fmt.Sprintf("%.2f %v%v", num, lastUnit, suffix)
+}
+
 // PrettyHex returns a bracketed hex representation of the provided data, matching Python's prettyhexrep.
 func PrettyHex(data []byte) string {
 	return fmt.Sprintf("<%x>", data)

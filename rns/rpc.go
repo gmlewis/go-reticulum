@@ -596,16 +596,61 @@ type InterfaceStat struct {
 	Name    string
 	Type    string
 	Status  bool
+	Mode    int
 	Bitrate int
 	RXB     uint64
 	TXB     uint64
+	RXS     float64
+	TXS     float64
+	Clients *int
+
+	IFACSignature     []byte
+	IFACSize          int
+	IFACNetname       string
+	AutoconnectSource string
+
+	NoiseFloor         *float64
+	Interference       *float64
+	InterferenceLastTS *float64
+	InterferenceLastDB *float64
+
+	CPULoad        *float64
+	CPUTemp        *float64
+	MemLoad        *float64
+	BatteryPercent *int
+	BatteryState   string
+
+	AirtimeShort    *float64
+	AirtimeLong     *float64
+	ChannelLoadShrt *float64
+	ChannelLoadLong *float64
+
+	SwitchID    *string
+	EndpointID  *string
+	ViaSwitchID *string
+	Peers       *int
+	TunnelState *string
+
+	I2PB32          *string
+	I2PConnectable  *bool
+	AnnounceQueue   *int
+	HeldAnnounces   *int
+	InAnnounceFreq  *float64
+	OutAnnounceFreq *float64
 }
 
-// InterfaceStatsSnapshot represents a snapshot of statistics for all network interfaces.
+// InterfaceStatsSnapshot represents a snapshot of statistics for all
+// network interfaces plus aggregate transport-level metadata.
 type InterfaceStatsSnapshot struct {
-	Interfaces []InterfaceStat
-	RXB        uint64
-	TXB        uint64
+	Interfaces      []InterfaceStat
+	RXB             uint64
+	TXB             uint64
+	RXS             float64
+	TXS             float64
+	TransportID     []byte
+	NetworkID       []byte
+	TransportUptime *float64
+	ProbeResponder  []byte
 }
 
 // InterfaceStats returns interface stats from local transport, or via RPC when
@@ -925,6 +970,12 @@ func decodeInterfaceStats(raw any) *InterfaceStatsSnapshot {
 
 	out.RXB = asUint64(lookupAnyValue(m, "rxb"))
 	out.TXB = asUint64(lookupAnyValue(m, "txb"))
+	out.RXS = asFloat64(lookupAnyValue(m, "rxs"))
+	out.TXS = asFloat64(lookupAnyValue(m, "txs"))
+	out.TransportID = lookupOptBytes(m, "transport_id")
+	out.NetworkID = lookupOptBytes(m, "network_id")
+	out.TransportUptime = lookupOptFloat64(m, "transport_uptime")
+	out.ProbeResponder = lookupOptBytes(m, "probe_responder")
 
 	interfacesVal, ok := lookupAny(m, "interfaces")
 	if !ok {
@@ -946,9 +997,47 @@ func decodeInterfaceStats(raw any) *InterfaceStatsSnapshot {
 			Name:    asString(lookupAnyValue(im, "name")),
 			Type:    asString(lookupAnyValue(im, "type")),
 			Status:  asBool(lookupAnyValue(im, "status")),
+			Mode:    asInt(lookupAnyValue(im, "mode")),
 			Bitrate: asInt(lookupAnyValue(im, "bitrate")),
 			RXB:     asUint64(lookupAnyValue(im, "rxb")),
 			TXB:     asUint64(lookupAnyValue(im, "txb")),
+			RXS:     asFloat64(lookupAnyValue(im, "rxs")),
+			TXS:     asFloat64(lookupAnyValue(im, "txs")),
+			Clients: lookupOptInt(im, "clients"),
+
+			IFACSignature:     lookupOptBytes(im, "ifac_signature"),
+			IFACSize:          asInt(lookupAnyValue(im, "ifac_size")),
+			IFACNetname:       asString(lookupAnyValue(im, "ifac_netname")),
+			AutoconnectSource: asString(lookupAnyValue(im, "autoconnect_source")),
+
+			NoiseFloor:         lookupOptFloat64(im, "noise_floor"),
+			Interference:       lookupOptFloat64(im, "interference"),
+			InterferenceLastTS: lookupOptFloat64(im, "interference_last_ts"),
+			InterferenceLastDB: lookupOptFloat64(im, "interference_last_dbm"),
+
+			CPULoad:        lookupOptFloat64(im, "cpu_load"),
+			CPUTemp:        lookupOptFloat64(im, "cpu_temp"),
+			MemLoad:        lookupOptFloat64(im, "mem_load"),
+			BatteryPercent: lookupOptInt(im, "battery_percent"),
+			BatteryState:   asString(lookupAnyValue(im, "battery_state")),
+
+			AirtimeShort:    lookupOptFloat64(im, "airtime_short"),
+			AirtimeLong:     lookupOptFloat64(im, "airtime_long"),
+			ChannelLoadShrt: lookupOptFloat64(im, "channel_load_short"),
+			ChannelLoadLong: lookupOptFloat64(im, "channel_load_long"),
+
+			SwitchID:    lookupOptString(im, "switch_id"),
+			EndpointID:  lookupOptString(im, "endpoint_id"),
+			ViaSwitchID: lookupOptString(im, "via_switch_id"),
+			Peers:       lookupOptInt(im, "peers"),
+			TunnelState: lookupOptString(im, "tunnelstate"),
+
+			I2PB32:          lookupOptString(im, "i2p_b32"),
+			I2PConnectable:  lookupOptBool(im, "i2p_connectable"),
+			AnnounceQueue:   lookupOptInt(im, "announce_queue"),
+			HeldAnnounces:   lookupOptInt(im, "held_announces"),
+			InAnnounceFreq:  lookupOptFloat64(im, "incoming_announce_frequency"),
+			OutAnnounceFreq: lookupOptFloat64(im, "outgoing_announce_frequency"),
 		}
 		out.Interfaces = append(out.Interfaces, entry)
 	}
@@ -1035,6 +1124,78 @@ func asInt(v any) int {
 	default:
 		return 0
 	}
+}
+
+func asFloat64(v any) float64 {
+	switch t := v.(type) {
+	case float64:
+		return t
+	case float32:
+		return float64(t)
+	case int:
+		return float64(t)
+	case int64:
+		return float64(t)
+	case uint64:
+		return float64(t)
+	default:
+		return 0
+	}
+}
+
+func lookupOptFloat64(m map[any]any, key string) *float64 {
+	v, ok := lookupAny(m, key)
+	if !ok || v == nil {
+		return nil
+	}
+	f := asFloat64(v)
+	return &f
+}
+
+func lookupOptInt(m map[any]any, key string) *int {
+	v, ok := lookupAny(m, key)
+	if !ok || v == nil {
+		return nil
+	}
+	i := asInt(v)
+	return &i
+}
+
+func lookupOptString(m map[any]any, key string) *string {
+	v, ok := lookupAny(m, key)
+	if !ok || v == nil {
+		return nil
+	}
+	s := asString(v)
+	return &s
+}
+
+func lookupOptBool(m map[any]any, key string) *bool {
+	v, ok := lookupAny(m, key)
+	if !ok || v == nil {
+		return nil
+	}
+	b := asBool(v)
+	return &b
+}
+
+func asBytes(v any) []byte {
+	switch t := v.(type) {
+	case []byte:
+		return t
+	case string:
+		return []byte(t)
+	default:
+		return nil
+	}
+}
+
+func lookupOptBytes(m map[any]any, key string) []byte {
+	v, ok := lookupAny(m, key)
+	if !ok || v == nil {
+		return nil
+	}
+	return asBytes(v)
 }
 
 func asUint64(v any) uint64 {
