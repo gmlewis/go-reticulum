@@ -122,6 +122,26 @@ func TestSIGINTCleanExit(t *testing.T) {
 	}
 }
 
+func TestMonitorModeSIGINT(t *testing.T) {
+	t.Parallel()
+	bin := buildGornstatus(t)
+	tmpDir := tempDir(t)
+	cmd := exec.Command(bin, "--config", tmpDir, "-m", "-I", "0.1")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start: %v", err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	_ = cmd.Process.Signal(syscall.SIGINT)
+	err := cmd.Wait()
+	if err != nil {
+		exitErr, ok := err.(*exec.ExitError)
+		if !ok || exitErr.ExitCode() > 1 {
+			t.Errorf("expected clean exit, got: %v", err)
+		}
+	}
+}
+
 func TestVerboseStacking(t *testing.T) {
 	t.Parallel()
 	bin := buildGornstatus(t)

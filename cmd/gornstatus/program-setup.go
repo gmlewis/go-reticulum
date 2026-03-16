@@ -67,6 +67,13 @@ func programSetup(p programSetupParams) int {
 		}()
 	}
 
+	var linkCount *int
+	if p.linkStats {
+		if lc, err := reticulum.LinkCount(); err == nil {
+			linkCount = &lc
+		}
+	}
+
 	stats, err := reticulum.InterfaceStats()
 	if err != nil {
 		stats = nil
@@ -84,7 +91,38 @@ func programSetup(p programSetupParams) int {
 		return 0
 	}
 
-	_ = stats
+	if p.jsonOutput {
+		if err := renderJSON(w, stats); err != nil {
+			fmt.Fprintf(w, "JSON encoding error: %v\n", err)
+		}
+		return 0
+	}
+
+	ifaces := stats.Interfaces
+	if p.sorting != "" {
+		sortInterfaces(ifaces, p.sorting, p.sortReverse)
+	}
+
+	for _, ifstat := range ifaces {
+		if shouldDisplayInterface(ifstat, p.dispAll, p.nameFilter) {
+			fmt.Fprintln(w)
+			renderInterface(w, ifstat, p.announceStats)
+		}
+	}
+
+	lstr := ""
+	if linkCount != nil && p.linkStats {
+		hasTransport := len(stats.TransportID) > 0
+		lstr = linkStatsString(linkCount, hasTransport)
+	}
+
+	if p.trafficTotals {
+		renderTotals(w, stats)
+	}
+
+	renderTransportFooter(w, stats, lstr)
+	fmt.Fprintln(w)
+
 	return 0
 }
 

@@ -8,7 +8,10 @@ package main
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
+
+	"github.com/gmlewis/go-reticulum/rns"
 )
 
 // Interface mode constants matching Python's Interface.MODE_* values.
@@ -84,4 +87,75 @@ func speedStr(num float64) string {
 	}
 
 	return fmt.Sprintf("%.2f %v%v", num, lastUnit, suffix)
+}
+
+// optFloat returns the value of a *float64, or 0 if nil.
+func optFloat(p *float64) float64 {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+// optInt returns the value of a *int, or 0 if nil.
+func optInt(p *int) int {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+// sortInterfaces sorts a slice of InterfaceStat in place by the
+// given sort key. Python default is descending (reverse=true when
+// sort_reverse=false), and -r/--reverse flips it.
+func sortInterfaces(ifaces []rns.InterfaceStat, key string, sortReverse bool) {
+	key = strings.ToLower(key)
+
+	var less func(i, j int) bool
+	switch key {
+	case "rate", "bitrate":
+		less = func(i, j int) bool { return ifaces[i].Bitrate < ifaces[j].Bitrate }
+	case "rx":
+		less = func(i, j int) bool { return ifaces[i].RXB < ifaces[j].RXB }
+	case "tx":
+		less = func(i, j int) bool { return ifaces[i].TXB < ifaces[j].TXB }
+	case "rxs":
+		less = func(i, j int) bool { return ifaces[i].RXS < ifaces[j].RXS }
+	case "txs":
+		less = func(i, j int) bool { return ifaces[i].TXS < ifaces[j].TXS }
+	case "traffic":
+		less = func(i, j int) bool {
+			return ifaces[i].RXB+ifaces[i].TXB < ifaces[j].RXB+ifaces[j].TXB
+		}
+	case "announces", "announce":
+		less = func(i, j int) bool {
+			ai := optFloat(ifaces[i].InAnnounceFreq) + optFloat(ifaces[i].OutAnnounceFreq)
+			aj := optFloat(ifaces[j].InAnnounceFreq) + optFloat(ifaces[j].OutAnnounceFreq)
+			return ai < aj
+		}
+	case "arx":
+		less = func(i, j int) bool {
+			return optFloat(ifaces[i].InAnnounceFreq) < optFloat(ifaces[j].InAnnounceFreq)
+		}
+	case "atx":
+		less = func(i, j int) bool {
+			return optFloat(ifaces[i].OutAnnounceFreq) < optFloat(ifaces[j].OutAnnounceFreq)
+		}
+	case "held":
+		less = func(i, j int) bool {
+			return optInt(ifaces[i].HeldAnnounces) < optInt(ifaces[j].HeldAnnounces)
+		}
+	default:
+		return
+	}
+
+	// Python default: reverse=not sort_reverse → descending.
+	// -r/--reverse flips to ascending.
+	if !sortReverse {
+		// Descending: flip the less function.
+		origLess := less
+		less = func(i, j int) bool { return origLess(j, i) }
+	}
+
+	sort.SliceStable(ifaces, less)
 }

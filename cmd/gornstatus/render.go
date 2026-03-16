@@ -191,6 +191,60 @@ func renderInterface(w io.Writer, ifstat rns.InterfaceStat, astats bool) {
 	renderTraffic(w, ifstat)
 }
 
+// linkStatsString returns the link stats string for the footer.
+// If hasTransportID is true, it prepends a comma for embedding
+// in the transport uptime line.
+func linkStatsString(linkCount *int, hasTransportID bool) string {
+	if linkCount == nil {
+		return ""
+	}
+	ms := "ies"
+	if *linkCount == 1 {
+		ms = "y"
+	}
+	if hasTransportID {
+		return fmt.Sprintf(", %v entr%v in link table", *linkCount, ms)
+	}
+	return fmt.Sprintf(" %v entr%v in link table", *linkCount, ms)
+}
+
+// renderTotals writes the traffic totals footer.
+func renderTotals(w io.Writer, stats *rns.InterfaceStatsSnapshot) {
+	rxbStr := "↓" + rns.PrettySize(float64(stats.RXB), "B")
+	txbStr := "↑" + rns.PrettySize(float64(stats.TXB), "B")
+
+	diff := len(rxbStr) - len(txbStr)
+	if diff > 0 {
+		txbStr += strings.Repeat(" ", diff)
+	} else if diff < 0 {
+		rxbStr += strings.Repeat(" ", -diff)
+	}
+
+	rxstat := rxbStr + "  " + rns.PrettySpeed(stats.RXS)
+	txstat := txbStr + "  " + rns.PrettySpeed(stats.TXS)
+	fmt.Fprintf(w, "\n Totals       : %v\n                %v\n", txstat, rxstat)
+}
+
+// renderTransportFooter writes the transport instance footer.
+func renderTransportFooter(w io.Writer, stats *rns.InterfaceStatsSnapshot, lstr string) {
+	if len(stats.TransportID) > 0 {
+		fmt.Fprintf(w, "\n Transport Instance %v running\n", rns.PrettyHex(stats.TransportID))
+		if len(stats.NetworkID) > 0 {
+			fmt.Fprintf(w, " Network Identity   %v\n", rns.PrettyHex(stats.NetworkID))
+		}
+		if len(stats.ProbeResponder) > 0 {
+			fmt.Fprintf(w, " Probe responder at %v active\n", rns.PrettyHex(stats.ProbeResponder))
+		}
+		if stats.TransportUptime != nil {
+			fmt.Fprintf(w, " Uptime is %v%v\n", rns.PrettyTime(*stats.TransportUptime, false, false), lstr)
+		}
+	} else {
+		if lstr != "" {
+			fmt.Fprintf(w, "\n%v\n", lstr)
+		}
+	}
+}
+
 // renderTraffic writes the traffic line for a single interface.
 func renderTraffic(w io.Writer, ifstat rns.InterfaceStat) {
 	rxbStr := "↓" + rns.PrettySize(float64(ifstat.RXB), "B")

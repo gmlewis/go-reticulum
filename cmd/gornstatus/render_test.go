@@ -347,6 +347,104 @@ func TestRenderInterfaceAutoconnect(t *testing.T) {
 	}
 }
 
+func TestLinkStatsString(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name           string
+		linkCount      *int
+		hasTransportID bool
+		want           string
+	}{
+		{"nil", nil, false, ""},
+		{"nil with transport", nil, true, ""},
+		{"1 entry no transport", intPtr(1), false, " 1 entry in link table"},
+		{"1 entry with transport", intPtr(1), true, ", 1 entry in link table"},
+		{"5 entries no transport", intPtr(5), false, " 5 entries in link table"},
+		{"5 entries with transport", intPtr(5), true, ", 5 entries in link table"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := linkStatsString(tc.linkCount, tc.hasTransportID)
+			if got != tc.want {
+				t.Errorf("linkStatsString(%v, %v) = %q, want %q",
+					tc.linkCount, tc.hasTransportID, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRenderTotals(t *testing.T) {
+	t.Parallel()
+	stats := &rns.InterfaceStatsSnapshot{
+		RXB: 5000000,
+		TXB: 2000000,
+		RXS: 1200,
+		TXS: 800,
+	}
+	var buf bytes.Buffer
+	renderTotals(&buf, stats)
+	got := buf.String()
+
+	for _, want := range []string{
+		"\n Totals       : ↑",
+		"\n                ↓",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q\ngot:\n%v", want, got)
+		}
+	}
+}
+
+func TestRenderTransportFooter(t *testing.T) {
+	t.Parallel()
+	uptime := 3661.0
+	stats := &rns.InterfaceStatsSnapshot{
+		TransportID:     []byte{0xab, 0xcd, 0xef, 0x01},
+		NetworkID:       []byte{0x12, 0x34, 0x56},
+		ProbeResponder:  []byte{0xaa, 0xbb},
+		TransportUptime: &uptime,
+	}
+	var buf bytes.Buffer
+	renderTransportFooter(&buf, stats, ", 5 entries in link table")
+	got := buf.String()
+
+	for _, want := range []string{
+		"Transport Instance <abcdef01> running",
+		"Network Identity   <123456>",
+		"Probe responder at <aabb> active",
+		"Uptime is 1h, 1m and 1s, 5 entries in link table",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q\ngot:\n%v", want, got)
+		}
+	}
+}
+
+func TestRenderTransportFooterNoTransport(t *testing.T) {
+	t.Parallel()
+	stats := &rns.InterfaceStatsSnapshot{}
+	var buf bytes.Buffer
+	renderTransportFooter(&buf, stats, " 3 entries in link table")
+	got := buf.String()
+
+	if !strings.Contains(got, " 3 entries in link table") {
+		t.Errorf("expected link table line, got:\n%v", got)
+	}
+}
+
+func TestRenderTransportFooterNoTransportNoLinks(t *testing.T) {
+	t.Parallel()
+	stats := &rns.InterfaceStatsSnapshot{}
+	var buf bytes.Buffer
+	renderTransportFooter(&buf, stats, "")
+	got := buf.String()
+
+	if got != "" {
+		t.Errorf("expected empty output, got:\n%v", got)
+	}
+}
+
 func TestRenderInterfaceNetwork(t *testing.T) {
 	t.Parallel()
 	ifstat := rns.InterfaceStat{

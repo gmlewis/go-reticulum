@@ -67,6 +67,85 @@ func TestClientsString(t *testing.T) {
 	}
 }
 
+func TestSortInterfaces(t *testing.T) {
+	t.Parallel()
+	mkIfaces := func() []rns.InterfaceStat {
+		return []rns.InterfaceStat{
+			{Name: "A", Bitrate: 100, RXB: 300, TXB: 200, RXS: 10, TXS: 20},
+			{Name: "B", Bitrate: 300, RXB: 100, TXB: 400, RXS: 30, TXS: 10},
+			{Name: "C", Bitrate: 200, RXB: 200, TXB: 100, RXS: 20, TXS: 30},
+		}
+	}
+
+	tests := []struct {
+		name        string
+		sortKey     string
+		sortReverse bool
+		wantOrder   string
+	}{
+		{"rate descending", "rate", false, "BCA"},
+		{"rate ascending", "rate", true, "ACB"},
+		{"bitrate alias", "bitrate", false, "BCA"},
+		{"rx descending", "rx", false, "ACB"},
+		{"tx descending", "tx", false, "BAC"},
+		{"traffic descending", "traffic", false, "ABC"},
+		{"rxs descending", "rxs", false, "BCA"},
+		{"txs descending", "txs", false, "CAB"},
+		{"unknown key no change", "unknown", false, "ABC"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ifaces := mkIfaces()
+			sortInterfaces(ifaces, tc.sortKey, tc.sortReverse)
+			var got string
+			for _, iface := range ifaces {
+				got += iface.Name
+			}
+			if got != tc.wantOrder {
+				t.Errorf("sortInterfaces(%q, %v) order = %q, want %q",
+					tc.sortKey, tc.sortReverse, got, tc.wantOrder)
+			}
+		})
+	}
+}
+
+func TestSortInterfacesAnnounces(t *testing.T) {
+	t.Parallel()
+	ifaces := []rns.InterfaceStat{
+		{Name: "A", InAnnounceFreq: float64Ptr(1.0), OutAnnounceFreq: float64Ptr(2.0), HeldAnnounces: intPtr(5)},
+		{Name: "B", InAnnounceFreq: float64Ptr(5.0), OutAnnounceFreq: float64Ptr(5.0), HeldAnnounces: intPtr(1)},
+		{Name: "C", InAnnounceFreq: float64Ptr(3.0), OutAnnounceFreq: float64Ptr(1.0), HeldAnnounces: intPtr(3)},
+	}
+
+	tests := []struct {
+		name      string
+		sortKey   string
+		wantOrder string
+	}{
+		{"announces desc", "announces", "BCA"},
+		{"arx desc", "arx", "BCA"},
+		{"atx desc", "atx", "BAC"},
+		{"held desc", "held", "ACB"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cp := make([]rns.InterfaceStat, len(ifaces))
+			copy(cp, ifaces)
+			sortInterfaces(cp, tc.sortKey, false)
+			var got string
+			for _, iface := range cp {
+				got += iface.Name
+			}
+			if got != tc.wantOrder {
+				t.Errorf("sortInterfaces(%q) order = %q, want %q",
+					tc.sortKey, got, tc.wantOrder)
+			}
+		})
+	}
+}
+
 func TestSpeedStr(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

@@ -140,12 +140,36 @@ func main() {
 	}
 
 	rns.SetLogDest(rns.LogStdout)
-	if verbose != 0 {
-		rns.SetLogLevel(int(verbose))
+	verbosity := int(verbose)
+
+	nameFilter := flag.Arg(0)
+
+	if monitorMode {
+		r, err := rns.NewReticulum(configDir)
+		if err != nil {
+			log.Fatal("No shared RNS instance available to get status from")
+		}
+		runMonitor(r, nameFilter, verbosity)
+		return
 	}
 
-	if _, err := rns.NewReticulum(configDir); err != nil {
-		log.Fatalf("Could not initialize Reticulum: %v", err)
-	}
-	os.Exit(0)
+	exitCode := programSetup(programSetupParams{
+		configDir:          configDir,
+		dispAll:            showAll,
+		verbosity:          verbosity,
+		nameFilter:         nameFilter,
+		jsonOutput:         jsonOutput,
+		announceStats:      announceStats,
+		linkStats:          linkStats,
+		sorting:            sortKey,
+		sortReverse:        sortReverse,
+		remote:             remoteHash,
+		managementIdentity: identityPath,
+		remoteTimeout:      remoteTimeout,
+		mustExit:           true,
+		trafficTotals:      trafficTotals,
+		discoveredIfaces:   discovered,
+		configEntries:      detailedDiscovered,
+	})
+	os.Exit(exitCode)
 }
