@@ -151,10 +151,11 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	_, err := NewReticulum(configDir)
+	r, err := NewReticulum(configDir)
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	requiredDirs := []string{
 		filepath.Join(configDir, "storage"),
@@ -210,6 +211,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if r.networkIdentity == nil {
 		t.Fatalf("expected network identity to be initialized")
@@ -269,6 +271,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
@@ -300,6 +303,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
@@ -337,6 +341,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
@@ -370,6 +375,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
@@ -402,6 +408,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
@@ -440,6 +447,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
@@ -471,6 +479,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
@@ -503,6 +512,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
@@ -535,6 +545,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
@@ -566,6 +577,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
@@ -597,6 +609,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
@@ -629,6 +642,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
@@ -661,6 +675,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 1 {
 		t.Fatalf("registered interfaces = %v, want 1", got)
@@ -699,6 +714,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 1 {
 		t.Fatalf("registered interfaces = %v, want 1", got)
@@ -739,6 +755,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
@@ -775,6 +792,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
@@ -816,6 +834,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
@@ -847,6 +866,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
@@ -883,6 +903,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
@@ -915,6 +936,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
@@ -963,6 +985,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
@@ -1007,6 +1030,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
@@ -1044,6 +1068,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if got := len(r.transport.GetInterfaces()); got != 0 {
 		t.Fatalf("registered interfaces = %v, want 0", got)
@@ -1077,6 +1102,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if !r.remoteMgmtEnabled {
 		t.Fatalf("expected enable_remote_management = true")
@@ -1187,6 +1213,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if !r.panicOnIfaceError {
 		t.Fatalf("expected panic_on_interface_error=true")
@@ -1245,6 +1272,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 
 	if r.requiredDiscoveryV != 7 {
 		t.Fatalf("expected required_discovery_value=7, got %v", r.requiredDiscoveryV)
@@ -1287,6 +1315,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("NewReticulum() error = %v", err)
 	}
+	defer closeReticulum(t, r)
 	if r.requiredDiscoveryV != 0 {
 		t.Fatalf("expected required_discovery_value to clear to 0, got %v", r.requiredDiscoveryV)
 	}
