@@ -5,7 +5,10 @@
 
 package interfaces
 
-import "sync"
+import (
+	"log"
+	"sync"
+)
 
 // PipeInterface establishes a direct in-memory conduit between two endpoints,
 // optimized for localized testing and simulation. It bypasses the physical
@@ -45,7 +48,11 @@ func (p *PipeInterface) Send(data []byte) error {
 	// Use a copy to avoid data races if the buffer is reused
 	buf := make([]byte, len(data))
 	copy(buf, data)
-	defer func() { recover() }()
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println("Recovered in PipeInterface.Send", r)
+		}
+	}()
 	p.queue <- buf
 	return nil
 }
