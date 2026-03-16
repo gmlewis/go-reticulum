@@ -10,6 +10,7 @@ package interfaces
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -192,7 +193,7 @@ func (si *serialInterface) readLoopOnce() error {
 	escape := false
 	dataBuffer := make([]byte, 0, SerialHWMTU)
 	lastRead := time.Now()
-	one := make([]byte, 1)
+	readBuf := make([]byte, SerialHWMTU)
 
 	for atomic.LoadInt32(&si.running) == 1 {
 		si.mu.Lock()
@@ -202,16 +203,16 @@ func (si *serialInterface) readLoopOnce() error {
 			return fmt.Errorf("serial port closed")
 		}
 
-		n, err := file.Read(one)
+		n, err := file.Read(readBuf)
 		if err != nil {
-			if errors.Is(err, syscall.EINTR) || errors.Is(err, syscall.EAGAIN) {
+			if errors.Is(err, syscall.EINTR) || errors.Is(err, syscall.EAGAIN) || errors.Is(err, syscall.EIO) {
 				time.Sleep(20 * time.Millisecond)
 				continue
 			}
-			if errors.Is(err, os.ErrClosed) {
+			if errors.Is(err, os.ErrClosed) || errors.Is(err, io.EOF) {
 				return nil
 			}
-			return err
+			return fmt.Errorf("serial read error on %v: %w", si.port, err)
 		}
 
 		if n == 0 {
@@ -225,44 +226,46 @@ func (si *serialInterface) readLoopOnce() error {
 		}
 
 		lastRead = time.Now()
-		b := one[0]
+		for i := range n {
+			b := readBuf[i]
 
-		if inFrame && b == HDLCFlag {
-			if len(dataBuffer) > 0 {
-				payload := make([]byte, len(dataBuffer))
-				copy(payload, dataBuffer)
-				atomic.AddUint64(&si.rxBytes, uint64(len(payload)))
-				if si.inboundHandler != nil {
-					si.inboundHandler(payload, si)
+			if inFrame && b == HDLCFlag {
+				if len(dataBuffer) > 0 {
+					payload := make([]byte, len(dataBuffer))
+					copy(payload, dataBuffer)
+					atomic.AddUint64(&si.rxBytes, uint64(len(payload)))
+					if si.inboundHandler != nil {
+						si.inboundHandler(payload, si)
+					}
 				}
+				inFrame = false
+				dataBuffer = dataBuffer[:0]
+				continue
 			}
-			inFrame = false
-			dataBuffer = dataBuffer[:0]
-			continue
-		}
 
-		if b == HDLCFlag {
-			inFrame = true
-			escape = false
-			dataBuffer = dataBuffer[:0]
-			continue
-		}
+			if b == HDLCFlag {
+				inFrame = true
+				escape = false
+				dataBuffer = dataBuffer[:0]
+				continue
+			}
 
-		if !inFrame || len(dataBuffer) >= SerialHWMTU {
-			continue
-		}
+			if !inFrame || len(dataBuffer) >= SerialHWMTU {
+				continue
+			}
 
-		if b == HDLCEsc {
-			escape = true
-			continue
-		}
+			if b == HDLCEsc {
+				escape = true
+				continue
+			}
 
-		if escape {
-			b = b ^ HDLCEscMask
-			escape = false
-		}
+			if escape {
+				b = b ^ HDLCEscMask
+				escape = false
+			}
 
-		dataBuffer = append(dataBuffer, b)
+			dataBuffer = append(dataBuffer, b)
+		}
 	}
 
 	return si.closePort()

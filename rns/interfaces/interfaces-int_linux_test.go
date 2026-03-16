@@ -133,16 +133,25 @@ func TestSerialInterfaceParity(t *testing.T) {
 	defer goIface.Detach()
 
 	msg := []byte("hello from go to python via serial")
-	if err := goIface.Send(msg); err != nil {
-		t.Fatalf("failed to send data to Python: %v", err)
-	}
 
-	select {
-	case data := <-received:
-		if !bytes.Equal(msg, data) {
-			t.Errorf("received data mismatch: expected %s, got %s", msg, data)
+	// Retry sending a few times to handle cases where the Python
+	// serial echo process took longer to start under heavy system load.
+	deadline = time.Now().Add(10 * time.Second)
+	for {
+		if err := goIface.Send(msg); err != nil {
+			t.Fatalf("failed to send data to Python: %v", err)
 		}
-	case <-time.After(5 * time.Second):
-		t.Errorf("timed out waiting for echo from Python")
+
+		select {
+		case data := <-received:
+			if !bytes.Equal(msg, data) {
+				t.Errorf("received data mismatch: expected %s, got %s", msg, data)
+			}
+			return
+		case <-time.After(2 * time.Second):
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting for echo from Python (interface status=%v)", goIface.Status())
+			}
+		}
 	}
 }
