@@ -372,6 +372,18 @@ func optionalIntEqual(a, b *int) bool {
 	return *a == *b
 }
 
+func (s *initiatorChannelSession) stderrString() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stderr.String()
+}
+
+func (s *initiatorChannelSession) stdoutString() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stdout.String()
+}
+
 func writeInitiatorStreams(session *initiatorChannelSession) {
 	session.mu.Lock()
 	defer session.mu.Unlock()

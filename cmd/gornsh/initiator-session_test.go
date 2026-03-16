@@ -418,8 +418,8 @@ func TestRunInitiatorProtocolFlowSuccess(t *testing.T) {
 	if code != 3 {
 		t.Fatalf("exit code=%v, want 3", code)
 	}
-	if session == nil || session.stdout.String() != "ok" {
-		t.Fatalf("session stdout=%q", session.stdout.String())
+	if session == nil || session.stdoutString() != "ok" {
+		t.Fatalf("session stdout=%q", session.stdoutString())
 	}
 }
 
@@ -566,7 +566,7 @@ func TestRunInitiatorProtocolFlowWarningThenExitMirror(t *testing.T) {
 	if session == nil {
 		t.Fatal("expected non-nil session")
 	}
-	if got := session.stderr.String(); got != "remote warning: temporary issue\n" {
+	if got := session.stderrString(); got != "remote warning: temporary issue\n" {
 		t.Fatalf("stderr=%q", got)
 	}
 }
@@ -602,7 +602,7 @@ func TestRunInitiatorProtocolFlowWarningThenExitNoMirror(t *testing.T) {
 	if session == nil {
 		t.Fatal("expected non-nil session")
 	}
-	if got := session.stderr.String(); got != "remote warning: temporary issue\n" {
+	if got := session.stderrString(); got != "remote warning: temporary issue\n" {
 		t.Fatalf("stderr=%q", got)
 	}
 }
@@ -972,8 +972,10 @@ func TestRunInitiatorProtocolFlowRetryWarningsThenExitMirror(t *testing.T) {
 	if session == nil {
 		t.Fatal("expected non-nil session")
 	}
+	// Allow remaining timed-event goroutines to deliver messages.
+	time.Sleep(50 * time.Millisecond)
 	wantStderr := "remote warning: retry attempt 1\nremote warning: retry attempt 2\n"
-	if got := session.stderr.String(); got != wantStderr {
+	if got := session.stderrString(); got != wantStderr {
 		t.Fatalf("stderr=%q, want %q", got, wantStderr)
 	}
 }
@@ -1016,8 +1018,10 @@ func TestRunInitiatorProtocolFlowRetryWarningsThenFatalMirror(t *testing.T) {
 	if session == nil {
 		t.Fatal("expected non-nil session")
 	}
+	// Allow remaining timed-event goroutines to deliver messages.
+	time.Sleep(50 * time.Millisecond)
 	wantPrefix := "remote warning: retry attempt 1\n"
-	if got := session.stderr.String(); got != wantPrefix {
+	if got := session.stderrString(); got != wantPrefix {
 		t.Fatalf("stderr=%q, want %q", got, wantPrefix)
 	}
 }
