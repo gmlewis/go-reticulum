@@ -886,7 +886,7 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 		}
 	}()
 
-	remoteId, _ := NewIdentity(false)
+	remoteId := mustTestNewIdentity(t, false)
 	if err := remoteId.LoadPublicKey(pyPub); err != nil {
 		t.Fatalf("Failed to load remote public key: %v", err)
 	}
@@ -1035,7 +1035,7 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 		}
 	}()
 
-	remoteID, _ := NewIdentity(false)
+	remoteID := mustTestNewIdentity(t, false)
 	if err := remoteID.LoadPublicKey(pyPub); err != nil {
 		t.Fatalf("Failed to load remote public key: %v", err)
 	}
@@ -1142,7 +1142,7 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 	defer closeReticulum(t, r)
 
 	// Create Go destination
-	id, _ := NewIdentity(true)
+	id := mustTestNewIdentity(t, true)
 	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "integrated_test", "parity")
 	mustTest(t, err)
 
@@ -1237,7 +1237,7 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 	mustTest(t, err)
 	defer closeReticulum(t, r)
 
-	id, _ := NewIdentity(true)
+	id := mustTestNewIdentity(t, true)
 	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "integrated_test", "parity")
 	mustTest(t, err)
 
@@ -1405,7 +1405,7 @@ func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
 	mustTest(t, err)
 	defer closeReticulum(t, r)
 
-	id, _ := NewIdentity(true)
+	id := mustTestNewIdentity(t, true)
 	localDest, err := NewDestination(id, DestinationIn, DestinationSingle, "pathreq", "target")
 	mustTest(t, err)
 
@@ -1504,7 +1504,7 @@ func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 		t.Fatal("expected UDP interface for multi-hop test")
 	}
 
-	remoteID, _ := NewIdentity(true)
+	remoteID := mustTestNewIdentity(t, true)
 	remoteDest, err := NewDestinationWithTransport(nil, remoteID, DestinationOut, DestinationSingle, "multihop", "target")
 	mustTest(t, err)
 
@@ -1626,7 +1626,7 @@ enable_transport = False
 	}
 	defer func() { _ = senderConn.Close() }()
 
-	id, _ := NewIdentity(true)
+	id := mustTestNewIdentity(t, true)
 	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "pathresp", "target")
 	mustTest(t, err)
 
@@ -1711,7 +1711,7 @@ enable_transport = False
 	}
 	defer func() { _ = responderConn.Close() }()
 
-	remoteID, _ := NewIdentity(true)
+	remoteID := mustTestNewIdentity(t, true)
 	remoteDest, err := NewDestinationWithTransport(nil, remoteID, DestinationIn, DestinationSingle, "relay", "target")
 	if err != nil {
 		t.Fatalf("failed creating remote destination: %v", err)
@@ -1864,7 +1864,7 @@ enable_transport = False
 	}
 	defer func() { _ = responderConn.Close() }()
 
-	remoteID, _ := NewIdentity(true)
+	remoteID := mustTestNewIdentity(t, true)
 	remoteDest, err := NewDestinationWithTransport(nil, remoteID, DestinationIn, DestinationSingle, "relay", "python_requester_target")
 	if err != nil {
 		t.Fatalf("failed creating remote destination: %v", err)
@@ -2032,7 +2032,7 @@ func TestIntegratedRelayedPathResponsePropagationPythonRelayUDP(t *testing.T) {
 	}
 	defer func() { _ = responderConn.Close() }()
 
-	remoteID, _ := NewIdentity(true)
+	remoteID := mustTestNewIdentity(t, true)
 	remoteDest, err := NewDestinationWithTransport(nil, remoteID, DestinationIn, DestinationSingle, "relay", "python_relay_target")
 	if err != nil {
 		t.Fatalf("failed creating remote destination: %v", err)
@@ -2322,7 +2322,7 @@ func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 	mustTest(t, err)
 	defer closeReticulum(t, r)
 
-	id, _ := NewIdentity(true)
+	id := mustTestNewIdentity(t, true)
 	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "integrated_test", "invalidate_py")
 	mustTest(t, err)
 
@@ -2573,7 +2573,7 @@ func TestIntegratedPythonRelayPathRequestEmissionUDP(t *testing.T) {
 	pyEgressListenPort := allocateUDPPort(t)
 	sinkPort := allocateUDPPort(t)
 
-	targetID, _ := NewIdentity(true)
+	targetID := mustTestNewIdentity(t, true)
 	targetDest, err := NewDestinationWithTransport(nil, targetID, DestinationIn, DestinationSingle, "relay", "forward_target")
 	if err != nil {
 		t.Fatalf("failed creating target destination: %v", err)
@@ -2698,7 +2698,7 @@ func TestIntegratedPythonRelayInboundPathRequestForwardingUDP(t *testing.T) {
 	pyRelayEgressListenPort := allocateUDPPort(t)
 	sinkPort := allocateUDPPort(t)
 
-	targetID, _ := NewIdentity(true)
+	targetID := mustTestNewIdentity(t, true)
 	targetDest, err := NewDestinationWithTransport(nil, targetID, DestinationIn, DestinationSingle, "relay", "inbound_forward_target")
 	if err != nil {
 		t.Fatalf("failed creating target destination: %v", err)

@@ -297,7 +297,7 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 				t.Fatal("timed out waiting for python path")
 			}
 
-			remoteID, _ := NewIdentity(false)
+			remoteID := mustTestNewIdentity(t, false)
 			if err := remoteID.LoadPublicKey(pyPub); err != nil {
 				t.Fatalf("load python public key: %v", err)
 			}
@@ -378,7 +378,7 @@ func setupGoOnlyIntegrationLinkPair(t *testing.T) (*Link, *Link) {
 		pendingLinks: make([]*Link, 0),
 		activeLinks:  make([]*Link, 0),
 	}
-	idInitiator, _ := NewIdentity(true)
+	idInitiator := mustTestNewIdentity(t, true)
 	tsInitiator.identity = idInitiator
 
 	tsReceiver := &TransportSystem{
@@ -388,7 +388,7 @@ func setupGoOnlyIntegrationLinkPair(t *testing.T) (*Link, *Link) {
 		pendingLinks: make([]*Link, 0),
 		activeLinks:  make([]*Link, 0),
 	}
-	idReceiver, _ := NewIdentity(true)
+	idReceiver := mustTestNewIdentity(t, true)
 	tsReceiver.identity = idReceiver
 
 	var pipeInitiator, pipeReceiver *interfaces.PipeInterface

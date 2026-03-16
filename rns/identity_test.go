@@ -10,12 +10,6 @@ import (
 	"testing"
 )
 
-func mustTestNewIdentity(t *testing.T, createKeys bool) *Identity {
-	id, err := NewIdentity(createKeys)
-	mustTest(t, err)
-	return id
-}
-
 func TestIdentity(t *testing.T) {
 	id, err := NewIdentity(true)
 	mustTest(t, err)

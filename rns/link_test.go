@@ -11,20 +11,6 @@ import (
 	"time"
 )
 
-func mustTestNewLink(t *testing.T, destination *Destination) *Link {
-	t.Helper()
-	link, err := NewLink(destination)
-	mustTest(t, err)
-	return link
-}
-
-func mustTestNewLinkWithTransport(t *testing.T, ts *TransportSystem, destination *Destination) *Link {
-	t.Helper()
-	link, err := NewLinkWithTransport(ts, destination)
-	mustTest(t, err)
-	return link
-}
-
 func TestLink(t *testing.T) {
 	// Create receiver identity
 	receiverID := mustTestNewIdentity(t, true)

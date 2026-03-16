@@ -13,3 +13,12 @@ func mustTest(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
+
+func mustTestNewToken(t *testing.T, key []byte) *Token {
+	t.Helper()
+	token, err := NewToken(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return token
+}

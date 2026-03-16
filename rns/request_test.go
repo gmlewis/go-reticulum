@@ -19,13 +19,13 @@ func TestRequestResponse(t *testing.T) {
 	tsInitiator.RegisterInterface(pipeInitiator)
 	tsReceiver.RegisterInterface(pipeReceiver)
 
-	receiverDest, _ := NewDestinationWithTransport(tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
+	receiverDest := mustTestNewDestinationWithTransport(t, tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
 
 	receiverDest.RegisterRequestHandler("/test/path", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
 		return "response data: " + string(data)
 	}, AllowAll, nil, true)
 
-	link, _ := NewLinkWithTransport(tsInitiator, receiverDest)
+	link := mustTestNewLinkWithTransport(t, tsInitiator, receiverDest)
 
 	establishedInitiator := make(chan bool, 1)
 	link.callbacks.LinkEstablished = func(l *Link) {
@@ -79,7 +79,7 @@ func TestRequestResponseAutoCompressPolicyInlineAndResource(t *testing.T) {
 			tsInitiator.RegisterInterface(pipeInitiator)
 			tsReceiver.RegisterInterface(pipeReceiver)
 
-			receiverDest, _ := NewDestinationWithTransport(tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
+			receiverDest := mustTestNewDestinationWithTransport(t, tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
 
 			receiverDest.RegisterRequestHandlerWithAutoCompressLimit(
 				"/test/path",
@@ -92,7 +92,7 @@ func TestRequestResponseAutoCompressPolicyInlineAndResource(t *testing.T) {
 				ResourceAutoCompressMaxSize,
 			)
 
-			link, _ := NewLinkWithTransport(tsInitiator, receiverDest)
+			link := mustTestNewLinkWithTransport(t, tsInitiator, receiverDest)
 
 			establishedInitiator := make(chan bool, 1)
 			link.callbacks.LinkEstablished = func(l *Link) {

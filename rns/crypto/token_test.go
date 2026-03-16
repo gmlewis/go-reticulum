@@ -81,7 +81,7 @@ func TestNewToken_Errors(t *testing.T) {
 func TestToken_VerifyHMAC_Invalid(t *testing.T) {
 	t.Parallel()
 	key, _ := GenerateTokenKey(false)
-	token, _ := NewToken(key)
+	token := mustTestNewToken(t, key)
 
 	if token.VerifyHMAC(make([]byte, 32)) {
 		t.Error("expected false for short token")
@@ -107,7 +107,7 @@ func TestToken_VerifyHMAC_Invalid(t *testing.T) {
 func TestToken_Decrypt_Invalid(t *testing.T) {
 	t.Parallel()
 	key, _ := GenerateTokenKey(false)
-	token, _ := NewToken(key)
+	token := mustTestNewToken(t, key)
 
 	data := []byte("test")
 	encrypted, _ := token.Encrypt(data)

@@ -11,20 +11,6 @@ import (
 	"time"
 )
 
-func mustTestNewDestination(t *testing.T, identity *Identity, direction int, destType int, appName string, aspects ...string) *Destination {
-	t.Helper()
-	dest, err := NewDestination(identity, direction, destType, appName, aspects...)
-	mustTest(t, err)
-	return dest
-}
-
-func mustTestNewDestinationWithTransport(t *testing.T, ts *TransportSystem, identity *Identity, direction int, destType int, appName string, aspects ...string) *Destination {
-	t.Helper()
-	dest, err := NewDestinationWithTransport(ts, identity, direction, destType, appName, aspects...)
-	mustTest(t, err)
-	return dest
-}
-
 func TestDestination(t *testing.T) {
 	id, err := NewIdentity(true)
 	mustTest(t, err)
@@ -73,7 +59,7 @@ func TestDestinationEncryption(t *testing.T) {
 }
 
 func TestRegisterRequestHandlerWithAutoCompressLimit(t *testing.T) {
-	id, _ := NewIdentity(true)
+	id := mustTestNewIdentity(t, true)
 	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "testapp")
 	if err != nil {
 		t.Fatalf("NewDestination error: %v", err)
@@ -104,7 +90,7 @@ func TestRegisterRequestHandlerWithAutoCompressLimit(t *testing.T) {
 }
 
 func TestRegisterRequestHandlerAutoCompressDefaults(t *testing.T) {
-	id, _ := NewIdentity(true)
+	id := mustTestNewIdentity(t, true)
 	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "testapp")
 	if err != nil {
 		t.Fatalf("NewDestination error: %v", err)
