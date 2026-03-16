@@ -11,8 +11,25 @@ import (
 	"time"
 )
 
+func mustTestNewDestination(t *testing.T, identity *Identity, direction int, destType int, appName string, aspects ...string) *Destination {
+	t.Helper()
+	dest, err := NewDestination(identity, direction, destType, appName, aspects...)
+	mustTest(t, err)
+	return dest
+}
+
+func mustTestNewDestinationWithTransport(t *testing.T, ts *TransportSystem, identity *Identity, direction int, destType int, appName string, aspects ...string) *Destination {
+	t.Helper()
+	dest, err := NewDestinationWithTransport(ts, identity, direction, destType, appName, aspects...)
+	mustTest(t, err)
+	return dest
+}
+
 func TestDestination(t *testing.T) {
-	id, _ := NewIdentity(true)
+	id, err := NewIdentity(true)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Test IN SINGLE destination
 	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "testapp", "aspect1", "aspect2")
@@ -42,8 +59,14 @@ func TestDestination(t *testing.T) {
 }
 
 func TestDestinationEncryption(t *testing.T) {
-	id, _ := NewIdentity(true)
-	dest, _ := NewDestination(id, DestinationIn, DestinationSingle, "testapp")
+	id, err := NewIdentity(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "testapp")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	msg := []byte("secret message")
 	encrypted, err := dest.Encrypt(msg)

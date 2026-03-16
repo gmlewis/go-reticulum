@@ -33,7 +33,10 @@ func tempDir(t *testing.T) string {
 
 func TestJobs(t *testing.T) {
 	tempDir := tempDir(t)
-	identity, _ := rns.NewIdentity(true)
+	identity, err := rns.NewIdentity(true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	router, _ := lxmf.NewRouter(identity, tempDir)
 	dest, _ := router.RegisterDeliveryIdentity(identity, "Test Peer", nil)
 
@@ -72,7 +75,10 @@ func TestJobsRecovery(t *testing.T) {
 
 func TestAnnounceAtStart(t *testing.T) {
 	tempDir := tempDir(t)
-	identity, _ := rns.NewIdentity(true)
+	identity, err := rns.NewIdentity(true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	router, _ := lxmf.NewRouter(identity, tempDir)
 	dest, _ := router.RegisterDeliveryIdentity(identity, "Test Peer", nil)
 
@@ -152,8 +158,14 @@ func TestLXMFDelivery(t *testing.T) {
 	}
 
 	// Mock message
-	id, _ := rns.NewIdentity(true)
-	dest, _ := rns.NewDestination(id, rns.DestinationIn, rns.DestinationSingle, "lxmf", "delivery")
+	id, err := rns.NewIdentity(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dest, err := rns.NewDestination(id, rns.DestinationIn, rns.DestinationSingle, "lxmf", "delivery")
+	if err != nil {
+		t.Fatal(err)
+	}
 	lxm, _ := lxmf.NewMessage(dest, dest, "Hello", "Content", nil)
 
 	// Case 1: No on_inbound
@@ -191,7 +203,10 @@ func TestLXMFDelivery(t *testing.T) {
 
 func TestPropagationNodeSetup(t *testing.T) {
 	tempDir := tempDir(t)
-	identity, _ := rns.NewIdentity(true)
+	identity, err := rns.NewIdentity(true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	router, _ := lxmf.NewRouter(identity, tempDir)
 
 	prioritised := []string{"0102030405060708090a0b0c0d0e0f10"}
@@ -239,7 +254,10 @@ func TestAuthWarningMessage(t *testing.T) {
 		rns.SetLogCallback(nil)
 	}()
 
-	id, _ := rns.NewIdentity(true)
+	id, err := rns.NewIdentity(true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	router, _ := lxmf.NewRouter(id, tempDir)
 
 	setupAuth(router)
@@ -252,7 +270,10 @@ func TestAuthWarningMessage(t *testing.T) {
 
 func TestAuthSetup(t *testing.T) {
 	tempDir := tempDir(t)
-	identity, _ := rns.NewIdentity(true)
+	identity, err := rns.NewIdentity(true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	router, _ := lxmf.NewRouter(identity, tempDir)
 
 	allowed := [][]byte{
@@ -269,8 +290,14 @@ func TestAuthSetup(t *testing.T) {
 }
 
 func TestIdentityRemember(t *testing.T) {
-	identity, _ := rns.NewIdentity(true)
-	dest, _ := rns.NewDestination(identity, rns.DestinationIn, rns.DestinationSingle, "lxmf", "delivery")
+	identity, err := rns.NewIdentity(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dest, err := rns.NewDestination(identity, rns.DestinationIn, rns.DestinationSingle, "lxmf", "delivery")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	rns.Remember(nil, dest.Hash, identity.GetPublicKey(), nil)
 
@@ -282,7 +309,10 @@ func TestIdentityRemember(t *testing.T) {
 
 func TestIgnoreDestinations(t *testing.T) {
 	tempDir := tempDir(t)
-	identity, _ := rns.NewIdentity(true)
+	identity, err := rns.NewIdentity(true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	router, _ := lxmf.NewRouter(identity, tempDir)
 
 	ignored := [][]byte{
@@ -318,7 +348,10 @@ func TestRouterConstruction(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	identity, _ := rns.NewIdentity(true)
+	identity, err := rns.NewIdentity(true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	router, err := lxmf.NewRouterFromConfig(lxmf.RouterConfig{
 		Identity:         identity,
 		StoragePath:      tempDir,

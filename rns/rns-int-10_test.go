@@ -458,14 +458,11 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 	}
 
 	// Send encrypted packet using ratchet
-	remoteId, _ := NewIdentity(false)
+	remoteId := mustTestNewIdentity(t, false)
 	remoteId.LoadPublicKey(pyPub)
 	fmt.Printf("Go: Remote Identity Hash: %x\n", remoteId.Hash)
 
-	remoteDest, err := NewDestination(remoteId, DestinationOut, DestinationSingle, "ratchet_test", "parity")
-	if err != nil {
-		t.Fatal(err)
-	}
+	remoteDest := mustTestNewDestination(t, remoteId, DestinationOut, DestinationSingle, "ratchet_test", "parity")
 
 	msg := []byte("ratchet secret message")
 	encrypted, err := remoteDest.Encrypt(msg)
@@ -519,11 +516,8 @@ func TestRatchetPythonToGoParity(t *testing.T) {
 	defer closeReticulum(t, r)
 
 	// Create Go destination with ratchets
-	id, _ := NewIdentity(true)
-	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "ratchet_test", "parity")
-	if err != nil {
-		t.Fatal(err)
-	}
+	id := mustTestNewIdentity(t, true)
+	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "ratchet_test", "parity")
 	if err := dest.EnableRatchets(goRatchets); err != nil {
 		t.Fatal(err)
 	}
@@ -612,11 +606,8 @@ func TestRatchetRotationParity(t *testing.T) {
 	}
 	defer closeReticulum(t, r)
 
-	id, _ := NewIdentity(true)
-	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "ratchet_test", "parity")
-	if err != nil {
-		t.Fatal(err)
-	}
+	id := mustTestNewIdentity(t, true)
+	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "ratchet_test", "parity")
 	if err := dest.EnableRatchets(goRatchets); err != nil {
 		t.Fatal(err)
 	}
@@ -711,11 +702,8 @@ func TestRatchetRetentionWindowParity(t *testing.T) {
 	}
 	defer closeReticulum(t, r)
 
-	id, _ := NewIdentity(true)
-	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "ratchet_test", "parity")
-	if err != nil {
-		t.Fatal(err)
-	}
+	id := mustTestNewIdentity(t, true)
+	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "ratchet_test", "parity")
 	if err := dest.EnableRatchets(goRatchets); err != nil {
 		t.Fatal(err)
 	}
@@ -794,11 +782,8 @@ func TestRatchetEnforceParity(t *testing.T) {
 
 	ResetTransport()
 
-	id, _ := NewIdentity(true)
-	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "ratchet_test", "parity")
-	if err != nil {
-		t.Fatal(err)
-	}
+	id := mustTestNewIdentity(t, true)
+	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "ratchet_test", "parity")
 	if err := dest.EnableRatchets(filepath.Join(tmpDir, "ratchets_file")); err != nil {
 		t.Fatal(err)
 	}
@@ -858,17 +843,14 @@ func TestRatchetFileInteropParity(t *testing.T) {
 	}
 
 	// Part 1: Go-generated ratchet file can be loaded/decrypted by Python.
-	goID, _ := NewIdentity(true)
+	goID := mustTestNewIdentity(t, true)
 	goIDPath := filepath.Join(tmpDir, "go_id")
 	if err := goID.ToFile(goIDPath); err != nil {
 		t.Fatalf("failed to persist go identity: %v", err)
 	}
 
 	goRatchetsPath := filepath.Join(tmpDir, "go_ratchets")
-	goDest, err := NewDestination(goID, DestinationIn, DestinationSingle, "ratchet_test", "parity")
-	if err != nil {
-		t.Fatal(err)
-	}
+	goDest := mustTestNewDestination(t, goID, DestinationIn, DestinationSingle, "ratchet_test", "parity")
 	if err := goDest.EnableRatchets(goRatchetsPath); err != nil {
 		t.Fatal(err)
 	}
@@ -891,7 +873,7 @@ func TestRatchetFileInteropParity(t *testing.T) {
 	}
 
 	// Part 2: Python-generated ratchet file can be loaded/decrypted by Go.
-	pyID, _ := NewIdentity(true)
+	pyID := mustTestNewIdentity(t, true)
 	pyIDPath := filepath.Join(tmpDir, "py_id")
 	if err := pyID.ToFile(pyIDPath); err != nil {
 		t.Fatalf("failed to persist python-side identity: %v", err)
@@ -916,10 +898,7 @@ func TestRatchetFileInteropParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed loading python identity in go: %v", err)
 	}
-	goLoadDest, err := NewDestination(goLoadedID, DestinationIn, DestinationSingle, "ratchet_test", "parity")
-	if err != nil {
-		t.Fatal(err)
-	}
+	goLoadDest := mustTestNewDestination(t, goLoadedID, DestinationIn, DestinationSingle, "ratchet_test", "parity")
 	if err := goLoadDest.EnableRatchets(pyRatchetsPath); err != nil {
 		t.Fatalf("go failed loading python ratchet file: %v", err)
 	}

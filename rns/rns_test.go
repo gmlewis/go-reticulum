@@ -18,6 +18,13 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
 )
 
+func mustTest(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func closeReticulum(t *testing.T, r *Reticulum) {
 	t.Helper()
 	if r == nil {
@@ -61,10 +68,7 @@ func tempDir(t *testing.T) string {
 // newTestTransportSystem creates a minimal TransportSystem for testing.
 func newTestTransportSystem(t *testing.T) *TransportSystem {
 	t.Helper()
-	id, err := NewIdentity(true)
-	if err != nil {
-		t.Fatalf("NewIdentity: %v", err)
-	}
+	id := mustTestNewIdentity(t, true)
 	return &TransportSystem{
 		pathTable:    make(map[string]*PathEntry),
 		packetHashes: make(map[string]time.Time),

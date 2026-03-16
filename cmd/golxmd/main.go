@@ -222,9 +222,11 @@ func tick(router *lxmf.Router, lxmfDestination *rns.Destination) {
 	}
 
 	// Go-specific enhancement: ensure outbound messages are processed periodically.
-	router.ProcessOutbound()
+	if router != nil {
+		router.ProcessOutbound()
+	}
 
-	if tickCount%maintenanceInterval == 0 {
+	if tickCount%maintenanceInterval == 0 && router != nil {
 		// Go-specific enhancement: prune stale peers periodically.
 		pruned := router.PruneStalePeers()
 		if pruned > 0 {

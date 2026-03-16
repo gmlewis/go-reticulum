@@ -10,6 +10,14 @@ import (
 	"testing"
 )
 
+func mustTestNewIdentity(t *testing.T, createKeys bool) *Identity {
+	id, err := NewIdentity(createKeys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
 func TestIdentity(t *testing.T) {
 	id, err := NewIdentity(true)
 	if err != nil {
@@ -47,13 +55,19 @@ func TestIdentity(t *testing.T) {
 }
 
 func TestIdentityLoading(t *testing.T) {
-	id1, _ := NewIdentity(true)
+	id1, err := NewIdentity(true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	prvBytes := id1.GetPrivateKey()
 	pubBytes := id1.GetPublicKey()
 
 	// Test loading private key
-	id2, _ := NewIdentity(false)
-	err := id2.LoadPrivateKey(prvBytes)
+	id2, err := NewIdentity(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = id2.LoadPrivateKey(prvBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +76,10 @@ func TestIdentityLoading(t *testing.T) {
 	}
 
 	// Test loading public key
-	id3, _ := NewIdentity(false)
+	id3, err := NewIdentity(false)
+	if err != nil {
+		t.Fatal(err)
+	}
 	err = id3.LoadPublicKey(pubBytes)
 	if err != nil {
 		t.Fatal(err)

@@ -11,8 +11,14 @@ import (
 )
 
 func TestPacket(t *testing.T) {
-	id, _ := NewIdentity(true)
-	dest, _ := NewDestination(id, DestinationIn, DestinationSingle, "testapp")
+	id, err := NewIdentity(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "testapp")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	data := []byte("hello reticulum")
 	p := NewPacket(dest, data)
@@ -54,8 +60,14 @@ func TestPacket(t *testing.T) {
 }
 
 func TestPacketEncryption(t *testing.T) {
-	id, _ := NewIdentity(true)
-	dest, _ := NewDestination(id, DestinationIn, DestinationSingle, "testapp")
+	id, err := NewIdentity(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "testapp")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	data := []byte("secret message")
 	p := NewPacket(dest, data)

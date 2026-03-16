@@ -11,25 +11,39 @@ import (
 	"time"
 )
 
+func mustTestNewLink(t *testing.T, destination *Destination) *Link {
+	t.Helper()
+	link, err := NewLink(destination)
+	mustTest(t, err)
+	return link
+}
+
+func mustTestNewLinkWithTransport(t *testing.T, ts *TransportSystem, destination *Destination) *Link {
+	t.Helper()
+	link, err := NewLinkWithTransport(ts, destination)
+	mustTest(t, err)
+	return link
+}
+
 func TestLink(t *testing.T) {
 	// Create receiver identity
-	receiverID, _ := NewIdentity(true)
+	receiverID := mustTestNewIdentity(t, true)
 
 	// Create destination for receiver
-	receiverDest, _ := NewDestination(receiverID, DestinationIn, DestinationSingle, "receiver")
+	receiverDest := mustTestNewDestination(t, receiverID, DestinationIn, DestinationSingle, "receiver")
 
 	// Initiator creates link to receiver
-	link, err := NewLink(receiverDest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	link := mustTestNewLink(t, receiverDest)
 
 	// Simulate link ID (derived from packet hash in practice)
 	link.linkID = []byte("simulated_link_id")
 	link.hash = link.linkID
 
 	// Receiver accepts link and generates its keys
-	receiverLink, _ := NewLink(receiverDest)
+	receiverLink, err := NewLink(receiverDest)
+	if err != nil {
+		t.Fatal(err)
+	}
 	receiverLink.initiator = false
 	receiverLink.linkID = link.linkID
 	receiverLink.hash = link.linkID
@@ -83,7 +97,10 @@ func TestLinkHandshakeFull(t *testing.T) {
 	tsReceiver.RegisterInterface(pipeReceiver)
 
 	// Setup receiver destination
-	receiverDest, _ := NewDestinationWithTransport(tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
+	receiverDest, err := NewDestinationWithTransport(tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	establishedReceiver := make(chan *Link, 1)
 	receiverDest.callbacks.LinkEstablished = func(l *Link) {
@@ -125,18 +142,21 @@ func TestLinkHandshakeFull(t *testing.T) {
 }
 
 func TestLinkIdentification(t *testing.T) {
-	receiverID, _ := NewIdentity(true)
-	receiverDest, _ := NewDestination(receiverID, DestinationIn, DestinationSingle, "receiver")
+	receiverID := mustTestNewIdentity(t, true)
+	receiverDest := mustTestNewDestination(t, receiverID, DestinationIn, DestinationSingle, "receiver")
 
-	link, _ := NewLink(receiverDest)
+	link := mustTestNewLink(t, receiverDest)
 	link.linkID = []byte("link_id")
 	link.status = LinkActive // Simulate established link
 
 	// Initiator reveals identity to receiver over link
-	initiatorID, _ := NewIdentity(true)
+	initiatorID := mustTestNewIdentity(t, true)
 	pubKey := initiatorID.GetPublicKey()
 	signedData := append(link.linkID, pubKey...)
-	signature, _ := initiatorID.Sign(signedData)
+	signature, err := initiatorID.Sign(signedData)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Receiver verifies identity
 	if !initiatorID.Verify(signature, signedData) {
@@ -145,11 +165,10 @@ func TestLinkIdentification(t *testing.T) {
 }
 
 func TestLinkIdentifyInvalidState(t *testing.T) {
-	receiverID, _ := NewIdentity(true)
-	receiverDest, _ := NewDestination(receiverID, DestinationIn, DestinationSingle, "receiver")
-
-	link, _ := NewLink(receiverDest)
-	initiatorID, _ := NewIdentity(true)
+	receiverID := mustTestNewIdentity(t, true)
+	receiverDest := mustTestNewDestination(t, receiverID, DestinationIn, DestinationSingle, "receiver")
+	link := mustTestNewLink(t, receiverDest)
+	initiatorID := mustTestNewIdentity(t, true)
 
 	if err := link.Identify(initiatorID); err == nil {
 		t.Fatal("expected invalid state error")
@@ -166,7 +185,10 @@ func TestLinkIdentifyPacketFlow(t *testing.T) {
 	tsInitiator.RegisterInterface(pipeInitiator)
 	tsReceiver.RegisterInterface(pipeReceiver)
 
-	receiverDest, _ := NewDestinationWithTransport(tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
+	receiverDest, err := NewDestinationWithTransport(tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
+	if err != nil {
+		t.Fatal(err)
+	}
 	establishedReceiver := make(chan *Link, 1)
 	receiverDest.callbacks.LinkEstablished = func(l *Link) {
 		establishedReceiver <- l

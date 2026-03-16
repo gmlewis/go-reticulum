@@ -205,15 +205,8 @@ func TestAnnouncePacketParity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	id, err := NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "parityapp", "aspect1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	id := mustTestNewIdentity(t, true)
+	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "parityapp", "aspect1")
 
 	appData := []byte("parity data")
 	randomHash := []byte("fixedrandh") // 10 bytes
@@ -301,20 +294,9 @@ func TestLinkProofPacketParity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	id, err := NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "parityapp")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	l, err := NewLink(dest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	id := mustTestNewIdentity(t, true)
+	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "parityapp")
+	l := mustTestNewLink(t, dest)
 	l.initiator = false // Set as receiver side
 
 	// Manually set linkID as if it came from a request
@@ -372,20 +354,9 @@ func TestLinkRequestPacketParity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	id, err := NewIdentity(true)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dest, err := NewDestination(id, DestinationIn, DestinationSingle, "parityapp")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	l, err := NewLink(dest)
-	if err != nil {
-		t.Fatal(err)
-	}
+	id := mustTestNewIdentity(t, true)
+	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "parityapp")
+	l := mustTestNewLink(t, dest)
 
 	requestData := make([]byte, 0, len(l.pubBytes)+len(l.sigPubBytes))
 	requestData = append(requestData, l.pubBytes...)
