@@ -1,0 +1,365 @@
+// Copyright 2026 Glenn Lewis. All rights reserved.
+//
+// Use of this source code is governed by the Reticulum License
+// that can be found in the LICENSE file.
+
+package main
+
+import (
+	"bytes"
+	"strings"
+	"testing"
+
+	"github.com/gmlewis/go-reticulum/rns"
+)
+
+func float64Ptr(v float64) *float64 { return &v }
+func strPtr(v string) *string       { return &v }
+
+func TestRenderInterfaceBasic(t *testing.T) {
+	t.Parallel()
+	ifstat := rns.InterfaceStat{
+		Name:    "RNodeInterface[LoRa 915]",
+		Status:  true,
+		Mode:    modeAccessPoint,
+		Bitrate: 1200,
+		RXB:     15000,
+		TXB:     8000,
+	}
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, false)
+	got := buf.String()
+
+	for _, want := range []string{
+		" RNodeInterface[LoRa 915]\n",
+		"    Status    : Up\n",
+		"    Mode      : Access Point\n",
+		"    Rate      : 1.20 kbps\n",
+		"    Traffic   : ↑8.00 KB",
+		"                ↓15.00 KB",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q\ngot:\n%v", want, got)
+		}
+	}
+}
+
+func TestRenderInterfaceDown(t *testing.T) {
+	t.Parallel()
+	ifstat := rns.InterfaceStat{
+		Name:   "TCPInterface[Server on 0.0.0.0]",
+		Status: false,
+		Mode:   modeFull,
+	}
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, false)
+	got := buf.String()
+
+	if !strings.Contains(got, "    Status    : Down\n") {
+		t.Errorf("expected Down status, got:\n%v", got)
+	}
+	if !strings.Contains(got, "    Mode      : Full\n") {
+		t.Errorf("expected Full mode, got:\n%v", got)
+	}
+}
+
+func TestRenderInterfaceSharedInstance(t *testing.T) {
+	t.Parallel()
+	clients := 3
+	ifstat := rns.InterfaceStat{
+		Name:    "Shared Instance[37428]",
+		Status:  true,
+		Mode:    modeFull,
+		Clients: &clients,
+		RXB:     1000000,
+		TXB:     500000,
+	}
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, false)
+	got := buf.String()
+
+	if !strings.Contains(got, "    Serving   : 2 programs\n") {
+		t.Errorf("expected serving line, got:\n%v", got)
+	}
+	if strings.Contains(got, "    Mode") {
+		t.Errorf("Shared Instance should not show Mode, got:\n%v", got)
+	}
+}
+
+func TestRenderInterfaceNoiseFloor(t *testing.T) {
+	t.Parallel()
+	ifstat := rns.InterfaceStat{
+		Name:         "RNodeInterface[LoRa 915]",
+		Status:       true,
+		Mode:         modeFull,
+		NoiseFloor:   float64Ptr(-119.0),
+		Interference: float64Ptr(-95.0),
+	}
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, false)
+	got := buf.String()
+
+	if !strings.Contains(got, "    Noise Fl. : -119 dBm") {
+		t.Errorf("expected noise floor, got:\n%v", got)
+	}
+	if !strings.Contains(got, "    Intrfrnc. : -95 dBm") {
+		t.Errorf("expected interference, got:\n%v", got)
+	}
+}
+
+func TestRenderInterfaceNoiseFloorNoInterference(t *testing.T) {
+	t.Parallel()
+	ifstat := rns.InterfaceStat{
+		Name:         "RNodeInterface[LoRa 915]",
+		Status:       true,
+		Mode:         modeFull,
+		NoiseFloor:   float64Ptr(-119.0),
+		Interference: float64Ptr(0),
+	}
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, false)
+	got := buf.String()
+
+	if !strings.Contains(got, "    Noise Fl. : -119 dBm, no interference") {
+		t.Errorf("expected no interference, got:\n%v", got)
+	}
+}
+
+func TestRenderInterfaceCPU(t *testing.T) {
+	t.Parallel()
+	ifstat := rns.InterfaceStat{
+		Name:    "RNodeInterface[LoRa 915]",
+		Status:  true,
+		Mode:    modeFull,
+		CPULoad: float64Ptr(45.2),
+		CPUTemp: float64Ptr(62.5),
+		MemLoad: float64Ptr(38.1),
+	}
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, false)
+	got := buf.String()
+
+	for _, want := range []string{
+		"    CPU load  : 45.2 %\n",
+		"    CPU temp  : 62.5°C\n",
+		"    Mem usage : 38.1 %\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q\ngot:\n%v", want, got)
+		}
+	}
+}
+
+func TestRenderInterfaceBattery(t *testing.T) {
+	t.Parallel()
+	bp := 85
+	ifstat := rns.InterfaceStat{
+		Name:           "RNodeInterface[LoRa 915]",
+		Status:         true,
+		Mode:           modeFull,
+		BatteryPercent: &bp,
+		BatteryState:   "charging",
+	}
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, false)
+	got := buf.String()
+
+	if !strings.Contains(got, "    Battery   : 85% (charging)\n") {
+		t.Errorf("expected battery line, got:\n%v", got)
+	}
+}
+
+func TestRenderInterfaceAirtime(t *testing.T) {
+	t.Parallel()
+	ifstat := rns.InterfaceStat{
+		Name:            "RNodeInterface[LoRa 915]",
+		Status:          true,
+		Mode:            modeFull,
+		AirtimeShort:    float64Ptr(1.5),
+		AirtimeLong:     float64Ptr(0.8),
+		ChannelLoadShrt: float64Ptr(2.3),
+		ChannelLoadLong: float64Ptr(1.1),
+	}
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, false)
+	got := buf.String()
+
+	for _, want := range []string{
+		"    Airtime   : 1.5% (15s), 0.8% (1h)\n",
+		"    Ch. Load  : 2.3% (15s), 1.1% (1h)\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q\ngot:\n%v", want, got)
+		}
+	}
+}
+
+func TestRenderInterfaceSwitchEndpoint(t *testing.T) {
+	t.Parallel()
+	ifstat := rns.InterfaceStat{
+		Name:        "RNodeInterface[LoRa 915]",
+		Status:      true,
+		Mode:        modeFull,
+		SwitchID:    strPtr("abc123"),
+		EndpointID:  strPtr("def456"),
+		ViaSwitchID: strPtr("ghi789"),
+		Peers:       intPtr(5),
+		TunnelState: strPtr("Connected"),
+	}
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, false)
+	got := buf.String()
+
+	for _, want := range []string{
+		"    Switch ID : abc123\n",
+		"    Endpoint  : def456\n",
+		"    Via       : ghi789\n",
+		"    Peers     : 5 reachable\n",
+		"    I2P       : Connected\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q\ngot:\n%v", want, got)
+		}
+	}
+}
+
+func TestRenderInterfaceIFAC(t *testing.T) {
+	t.Parallel()
+	ifstat := rns.InterfaceStat{
+		Name:          "RNodeInterface[LoRa 915]",
+		Status:        true,
+		Mode:          modeFull,
+		IFACSignature: []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a},
+		IFACSize:      2,
+	}
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, false)
+	got := buf.String()
+
+	if !strings.Contains(got, "    Access    : 16-bit IFAC by <…060708090a>\n") {
+		t.Errorf("expected IFAC line, got:\n%v", got)
+	}
+}
+
+func TestRenderInterfaceI2PB32(t *testing.T) {
+	t.Parallel()
+	ifstat := rns.InterfaceStat{
+		Name:   "I2PInterface[test]",
+		Status: true,
+		Mode:   modeFull,
+		I2PB32: strPtr("abc123.b32.i2p"),
+	}
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, false)
+	got := buf.String()
+
+	if !strings.Contains(got, "    I2P B32   : abc123.b32.i2p\n") {
+		t.Errorf("expected I2P B32 line, got:\n%v", got)
+	}
+}
+
+func TestRenderInterfaceAnnounceStats(t *testing.T) {
+	t.Parallel()
+	ifstat := rns.InterfaceStat{
+		Name:            "RNodeInterface[LoRa 915]",
+		Status:          true,
+		Mode:            modeFull,
+		AnnounceQueue:   intPtr(3),
+		HeldAnnounces:   intPtr(1),
+		InAnnounceFreq:  float64Ptr(0.5),
+		OutAnnounceFreq: float64Ptr(1.2),
+	}
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, true)
+	got := buf.String()
+
+	for _, want := range []string{
+		"    Queued    : 3 announces\n",
+		"    Held      : 1 announce\n",
+		"    Announces : ",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q\ngot:\n%v", want, got)
+		}
+	}
+}
+
+func TestRenderInterfaceAnnounceStatsNotShownWithoutFlag(t *testing.T) {
+	t.Parallel()
+	ifstat := rns.InterfaceStat{
+		Name:            "RNodeInterface[LoRa 915]",
+		Status:          true,
+		Mode:            modeFull,
+		AnnounceQueue:   intPtr(3),
+		HeldAnnounces:   intPtr(1),
+		InAnnounceFreq:  float64Ptr(0.5),
+		OutAnnounceFreq: float64Ptr(1.2),
+	}
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, false)
+	got := buf.String()
+
+	for _, notWant := range []string{
+		"Queued",
+		"Held",
+		"Announces",
+	} {
+		if strings.Contains(got, notWant) {
+			t.Errorf("output should not contain %q without astats, got:\n%v", notWant, got)
+		}
+	}
+}
+
+func TestRenderTrafficWithSpeed(t *testing.T) {
+	t.Parallel()
+	ifstat := rns.InterfaceStat{
+		RXB: 1500000,
+		TXB: 800000,
+		RXS: 1200,
+		TXS: 600,
+	}
+	var buf bytes.Buffer
+	renderTraffic(&buf, ifstat)
+	got := buf.String()
+
+	if !strings.Contains(got, "    Traffic   : ↑") {
+		t.Errorf("expected traffic header, got:\n%v", got)
+	}
+	if !strings.Contains(got, "↓") {
+		t.Errorf("expected rx traffic, got:\n%v", got)
+	}
+}
+
+func TestRenderInterfaceAutoconnect(t *testing.T) {
+	t.Parallel()
+	ifstat := rns.InterfaceStat{
+		Name:              "RNodeInterface[LoRa 915]",
+		Status:            true,
+		Mode:              modeFull,
+		AutoconnectSource: "ble_scanner",
+	}
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, false)
+	got := buf.String()
+
+	if !strings.Contains(got, "    Source    : Auto-connect via <ble_scanner>\n") {
+		t.Errorf("expected autoconnect source, got:\n%v", got)
+	}
+}
+
+func TestRenderInterfaceNetwork(t *testing.T) {
+	t.Parallel()
+	ifstat := rns.InterfaceStat{
+		Name:        "RNodeInterface[LoRa 915]",
+		Status:      true,
+		Mode:        modeFull,
+		IFACNetname: "mynetwork",
+	}
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, false)
+	got := buf.String()
+
+	if !strings.Contains(got, "    Network   : mynetwork\n") {
+		t.Errorf("expected network name, got:\n%v", got)
+	}
+}
