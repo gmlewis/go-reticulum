@@ -1516,7 +1516,7 @@ func (r *Router) RequestMessagesFromPropagationNode(limit *int) {
 		r.propagationTransferState = PRLinkEstablishing
 		log.Printf("Establishing link to %x for message download (limit=%v)", r.outboundPropagationNode, maxMessages)
 
-		identity := rns.Recall(r.transport, r.outboundPropagationNode, false)
+		identity := r.transport.Recall(r.outboundPropagationNode)
 		if identity == nil {
 			log.Printf("Cannot recall identity for propagation node %x", r.outboundPropagationNode)
 			r.propagationTransferState = PRFailed

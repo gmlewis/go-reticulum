@@ -47,8 +47,10 @@ func findRnid(t *testing.T) string {
 func TestParity_PrintIdentity(t *testing.T) {
 	t.Parallel()
 	rnidBin := findRnid(t)
-	gornidBin := buildGornid(t)
-	tmpDir := tempDir(t)
+	gornidBin, cleanup1 := buildGornid(t)
+	defer cleanup1()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 
 	// Generate identity with Go.
@@ -82,8 +84,10 @@ func TestParity_PrintIdentity(t *testing.T) {
 func TestParity_Export(t *testing.T) {
 	t.Parallel()
 	rnidBin := findRnid(t)
-	gornidBin := buildGornid(t)
-	tmpDir := tempDir(t)
+	gornidBin, cleanup1 := buildGornid(t)
+	defer cleanup1()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 
 	if out, err := exec.Command(gornidBin, "-g", idFile).CombinedOutput(); err != nil {
@@ -111,8 +115,10 @@ func TestParity_Export(t *testing.T) {
 func TestParity_Hash(t *testing.T) {
 	t.Parallel()
 	rnidBin := findRnid(t)
-	gornidBin := buildGornid(t)
-	tmpDir := tempDir(t)
+	gornidBin, cleanup1 := buildGornid(t)
+	defer cleanup1()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 
 	if out, err := exec.Command(gornidBin, "-g", idFile).CombinedOutput(); err != nil {
@@ -146,8 +152,10 @@ func TestParity_Hash(t *testing.T) {
 func TestParity_ImportHex(t *testing.T) {
 	t.Parallel()
 	rnidBin := findRnid(t)
-	gornidBin := buildGornid(t)
-	tmpDir := tempDir(t)
+	gornidBin, cleanup1 := buildGornid(t)
+	defer cleanup1()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 
 	if out, err := exec.Command(gornidBin, "-g", idFile).CombinedOutput(); err != nil {
@@ -191,8 +199,10 @@ func TestParity_ImportHex(t *testing.T) {
 func TestParity_SignGoValidatePython(t *testing.T) {
 	t.Parallel()
 	rnidBin := findRnid(t)
-	gornidBin := buildGornid(t)
-	tmpDir := tempDir(t)
+	gornidBin, cleanup1 := buildGornid(t)
+	defer cleanup1()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 	dataFile := filepath.Join(tmpDir, "data.txt")
 
@@ -222,8 +232,10 @@ func TestParity_SignGoValidatePython(t *testing.T) {
 func TestParity_SignPythonValidateGo(t *testing.T) {
 	t.Parallel()
 	rnidBin := findRnid(t)
-	gornidBin := buildGornid(t)
-	tmpDir := tempDir(t)
+	gornidBin, cleanup1 := buildGornid(t)
+	defer cleanup1()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 	dataFile := filepath.Join(tmpDir, "data.txt")
 	sigFile := filepath.Join(tmpDir, "data.txt.rsg")
@@ -253,8 +265,10 @@ func TestParity_SignPythonValidateGo(t *testing.T) {
 func TestParity_EncryptGoDecryptPython(t *testing.T) {
 	t.Parallel()
 	rnidBin := findRnid(t)
-	gornidBin := buildGornid(t)
-	tmpDir := tempDir(t)
+	gornidBin, cleanup1 := buildGornid(t)
+	defer cleanup1()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 	plainFile := filepath.Join(tmpDir, "plain.txt")
 	encFile := filepath.Join(tmpDir, "plain.txt.rfe")
@@ -289,8 +303,10 @@ func TestParity_EncryptGoDecryptPython(t *testing.T) {
 func TestParity_EncryptPythonDecryptGo(t *testing.T) {
 	t.Parallel()
 	rnidBin := findRnid(t)
-	gornidBin := buildGornid(t)
-	tmpDir := tempDir(t)
+	gornidBin, cleanup1 := buildGornid(t)
+	defer cleanup1()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 	plainFile := filepath.Join(tmpDir, "plain.txt")
 	encFile := filepath.Join(tmpDir, "plain.txt.rfe")

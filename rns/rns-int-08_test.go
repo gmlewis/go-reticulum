@@ -141,7 +141,7 @@ func runPythonIFAC(t *testing.T, scriptPath, mode string, payload []byte, size i
 func TestIFACParityWithPython(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-ifac-parity-*")
 	mustTest(t, err)
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
 
 	scriptPath := filepath.Join(tmpDir, "ifac_parity.py")
 	if err := os.WriteFile(scriptPath, []byte(ifacParityPy), 0o644); err != nil {

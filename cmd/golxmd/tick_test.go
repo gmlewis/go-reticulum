@@ -16,30 +16,17 @@ import (
 func TestJobs_RecoverFromPanic(t *testing.T) {
 	t.Parallel()
 
-	// Save and restore global state.
-	origAC := ac
-	origNow := now
-	origLastPeer := lastPeerAnnounce
-	origLastNode := lastNodeAnnounce
-	origTickCount := tickCount
-	defer func() {
-		ac = origAC
-		now = origNow
-		lastPeerAnnounce = origLastPeer
-		lastNodeAnnounce = origLastNode
-		tickCount = origTickCount
-	}()
-
 	// Set up a config that will trigger announce logic.
 	peerInterval := 1
-	ac = &activeConfig{
-		PeerAnnounceInterval: &peerInterval,
-	}
-
 	currentTime := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
-	now = func() time.Time { return currentTime }
-	lastPeerAnnounce = time.Time{}
-	lastNodeAnnounce = time.Time{}
+	c := &clientT{
+		ac: &activeConfig{
+			PeerAnnounceInterval: &peerInterval,
+		},
+		now:              func() time.Time { return currentTime },
+		lastPeerAnnounce: time.Time{},
+		lastNodeAnnounce: time.Time{},
+	}
 
 	// Pass a nil router so that tick panics when it tries to call
 	// router.Announce on a nil pointer. The jobs loop must recover
@@ -48,7 +35,7 @@ func TestJobs_RecoverFromPanic(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		jobs(nil, nil, stop, 1*time.Millisecond)
+		c.jobs(nil, nil, stop, 1*time.Millisecond)
 	}()
 
 	// Let the jobs loop run a few iterations (it would crash without
@@ -59,55 +46,57 @@ func TestJobs_RecoverFromPanic(t *testing.T) {
 }
 
 func TestTick(t *testing.T) {
-	tempDir := tempDir(t)
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	identity, err := rns.NewIdentity(true)
 	mustTest(t, err)
-	ts := rns.NewTransportSystem()
-	router, _ := lxmf.NewRouter(ts, identity, tempDir)
-	dest, _ := router.RegisterDeliveryIdentity(identity, "Test Peer", nil)
-	router.EnablePropagation()
-	_, _ = router.RegisterPropagationDestination()
-
-	peerInterval := 1 // 1 second for test
-	nodeInterval := 1 // 1 second for test
-
-	ac = &activeConfig{
-		PeerAnnounceInterval: &peerInterval,
-		NodeAnnounceInterval: &nodeInterval,
-	}
 
 	// Mock clock
 	currentTime := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
-	now = func() time.Time { return currentTime }
-	defer func() { now = time.Now }() // Restore after test
-
-	lastPeerAnnounce = time.Time{}
-	lastNodeAnnounce = time.Time{}
+	peerInterval := 1 // 1 second for test
+	nodeInterval := 1 // 1 second for test
+	c := &clientT{
+		ts: rns.NewTransportSystem(),
+		ac: &activeConfig{
+			PeerAnnounceInterval: &peerInterval,
+			NodeAnnounceInterval: &nodeInterval,
+		},
+		now:              func() time.Time { return currentTime },
+		lastPeerAnnounce: time.Time{},
+		lastNodeAnnounce: time.Time{},
+	}
+	router, err := lxmf.NewRouter(c.ts, identity, tmpDir)
+	mustTest(t, err)
+	dest, err := router.RegisterDeliveryIdentity(identity, "Test Peer", nil)
+	mustTest(t, err)
+	router.EnablePropagation()
+	_, err = router.RegisterPropagationDestination()
+	mustTest(t, err)
 
 	// Initial tick should fire immediately
-	tick(router, dest)
+	c.tick(router, dest)
 
-	if !lastPeerAnnounce.Equal(currentTime) {
-		t.Errorf("lastPeerAnnounce got %v, want %v", lastPeerAnnounce, currentTime)
+	if !c.lastPeerAnnounce.Equal(currentTime) {
+		t.Errorf("lastPeerAnnounce got %v, want %v", c.lastPeerAnnounce, currentTime)
 	}
-	if !lastNodeAnnounce.Equal(currentTime) {
-		t.Errorf("lastNodeAnnounce got %v, want %v", lastNodeAnnounce, currentTime)
+	if !c.lastNodeAnnounce.Equal(currentTime) {
+		t.Errorf("lastNodeAnnounce got %v, want %v", c.lastNodeAnnounce, currentTime)
 	}
 
 	// Advance time by 0.5s - should NOT fire
 	currentTime = currentTime.Add(500 * time.Millisecond)
-	tick(router, dest)
-	if !lastPeerAnnounce.Equal(currentTime.Add(-500 * time.Millisecond)) {
+	c.tick(router, dest)
+	if !c.lastPeerAnnounce.Equal(currentTime.Add(-500 * time.Millisecond)) {
 		t.Error("lastPeerAnnounce updated prematurely")
 	}
 
 	// Advance time to 1.1s total - SHOULD fire
 	currentTime = currentTime.Add(600 * time.Millisecond)
-	tick(router, dest)
-	if !lastPeerAnnounce.Equal(currentTime) {
-		t.Errorf("lastPeerAnnounce not updated; got %v, want %v", lastPeerAnnounce, currentTime)
+	c.tick(router, dest)
+	if !c.lastPeerAnnounce.Equal(currentTime) {
+		t.Errorf("lastPeerAnnounce not updated; got %v, want %v", c.lastPeerAnnounce, currentTime)
 	}
-	if !lastNodeAnnounce.Equal(currentTime) {
-		t.Errorf("lastNodeAnnounce not updated; got %v, want %v", lastNodeAnnounce, currentTime)
+	if !c.lastNodeAnnounce.Equal(currentTime) {
+		t.Errorf("lastNodeAnnounce not updated; got %v, want %v", c.lastNodeAnnounce, currentTime)
 	}
 }

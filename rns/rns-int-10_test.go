@@ -437,7 +437,7 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 	timeout := time.Now().Add(10 * time.Second)
 	var ratchetPub []byte
 	for time.Now().Before(timeout) {
-		ratchetPub = GetRatchet(destHash)
+		ratchetPub = ts.GetRatchet(destHash)
 		if ratchetPub != nil {
 			break
 		}

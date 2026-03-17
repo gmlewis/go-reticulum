@@ -193,7 +193,9 @@ func (d *Destination) buildAnnouncePacket(appData []byte) (*Packet, error) {
 		}
 		d.mu.Lock()
 		ratchet = d.ratchets[0].PublicKey().PublicBytes()
-		RememberRatchet(d.Hash, ratchet)
+		if d.transport != nil {
+			d.transport.SetRatchet(d.Hash, ratchet)
+		}
 	}
 	d.mu.Unlock()
 
@@ -463,7 +465,10 @@ func (d *Destination) Encrypt(plaintext []byte) ([]byte, error) {
 		return nil, errors.New("destination does not hold an identity")
 	}
 
-	selectedRatchet := GetRatchet(d.Hash)
+	var selectedRatchet []byte
+	if d.transport != nil {
+		selectedRatchet = d.transport.GetRatchet(d.Hash)
+	}
 	if selectedRatchet != nil {
 		d.latestRatchetID = RatchetID(selectedRatchet)
 	}

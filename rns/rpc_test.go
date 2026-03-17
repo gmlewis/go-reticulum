@@ -78,7 +78,8 @@ func TestRPCAuthAndGetEndpoints(t *testing.T) {
 	rpcPort := reserveTCPPort(t)
 	rpcKeyHex := "00112233445566778899aabbccddeeff"
 
-	cfg := tempDir(t)
+	cfg, cleanup := tempDir(t)
+	defer cleanup()
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
 instance_name = %v
 share_instance = Yes
@@ -134,7 +135,8 @@ func TestRPCRejectsInvalidAuth(t *testing.T) {
 	sharedPort := reserveTCPPort(t)
 	rpcPort := reserveTCPPort(t)
 
-	cfg := tempDir(t)
+	cfg, cleanup := tempDir(t)
+	defer cleanup()
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
 instance_name = %v
 share_instance = Yes
@@ -174,7 +176,8 @@ func TestRPCAcceptsByteAuthKey(t *testing.T) {
 	rpcPort := reserveTCPPort(t)
 	rpcKeyHex := "00112233445566778899aabbccddeeff"
 
-	cfg := tempDir(t)
+	cfg, cleanup := tempDir(t)
+	defer cleanup()
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
 instance_name = %v
 share_instance = Yes
@@ -225,8 +228,10 @@ loglevel = 4
 [interfaces]
 `
 
-	cfg1 := tempDir(t)
-	cfg2 := tempDir(t)
+	cfg1, cleanup1 := tempDir(t)
+	defer cleanup1()
+	cfg2, cleanup2 := tempDir(t)
+	defer cleanup2()
 	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name()+"-1", sharedPort, rpcPort, rpcKeyHex))
 	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name()+"-2", sharedPort, rpcPort, rpcKeyHex))
 
@@ -262,7 +267,8 @@ func TestRPCExpandedGetDropAndBlackholeSurface(t *testing.T) {
 	rpcPort := reserveTCPPort(t)
 	rpcKeyHex := "00112233445566778899aabbccddeeff"
 
-	cfg := tempDir(t)
+	cfg, cleanup := tempDir(t)
+	defer cleanup()
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
 instance_name = %v
 share_instance = Yes
@@ -344,8 +350,10 @@ loglevel = 4
 [interfaces]
 `
 
-	cfg1 := tempDir(t)
-	cfg2 := tempDir(t)
+	cfg1, cleanup1 := tempDir(t)
+	defer cleanup1()
+	cfg2, cleanup2 := tempDir(t)
+	defer cleanup2()
 	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name()+"-1", sharedPort, rpcPort, rpcKeyHex))
 	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name()+"-2", sharedPort, rpcPort, rpcKeyHex))
 
@@ -769,8 +777,10 @@ func TestConnectedInstanceManagementCallsRecoverAfterRPCServerRestart(t *testing
 			rpcPort := reserveTCPPort(t)
 			rpcKeyHex := "00112233445566778899aabbccddeeff"
 
-			cfg1 := tempDir(t)
-			cfg2 := tempDir(t)
+			cfg1, cleanup1 := tempDir(t)
+			defer cleanup1()
+			cfg2, cleanup2 := tempDir(t)
+			defer cleanup2()
 			if tc.name == "Unix" {
 				shortCfg, err := os.MkdirTemp("/tmp", "go-ret-rpc-restart-*")
 				if err != nil {

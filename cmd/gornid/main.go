@@ -342,9 +342,12 @@ func loadIdentity(ts rns.Transport, path string, request bool, timeout float64) 
 			os.Exit(7)
 		}
 
-		id := rns.Recall(ts, hash, false)
+		id := ts.Recall(hash)
 		if id == nil {
-			id = rns.Recall(ts, hash, true)
+			// Try as identity hash if not found as destination hash
+			// (Note: Transport.Recall currently only checks destination hashes
+			// but we might need a way to recall by identity hash too if needed)
+			// For now, gornid uses destination hashes by default.
 		}
 
 		if id == nil {
@@ -360,7 +363,7 @@ func loadIdentity(ts rns.Transport, path string, request bool, timeout float64) 
 			deadline := time.Now().Add(time.Duration(timeout * float64(time.Second)))
 			for time.Now().Before(deadline) {
 				time.Sleep(100 * time.Millisecond)
-				id = rns.Recall(ts, hash, false)
+				id = ts.Recall(hash)
 				if id != nil {
 					rns.Logf("Received Identity %v for destination %v from the network", rns.LogNotice, false, rns.PrettyHexFromString(id.HexHash), rns.PrettyHex(hash))
 					return id

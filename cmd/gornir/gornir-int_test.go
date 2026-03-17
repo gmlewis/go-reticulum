@@ -26,7 +26,8 @@ func findRnir(t *testing.T) string {
 
 func TestIntegration_VersionOutput(t *testing.T) {
 	t.Parallel()
-	bin := buildGornir(t)
+	bin, cleanup := buildGornir(t)
+	defer cleanup()
 	out, err := exec.Command(bin, "--version").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornir --version failed: %v\n%v", err, string(out))
@@ -40,7 +41,8 @@ func TestIntegration_VersionOutput(t *testing.T) {
 
 func TestIntegration_ExampleConfigOutput(t *testing.T) {
 	t.Parallel()
-	bin := buildGornir(t)
+	bin, cleanup := buildGornir(t)
+	defer cleanup()
 	out, err := exec.Command(bin, "--exampleconfig").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornir --exampleconfig failed: %v\n%v", err, string(out))
@@ -61,8 +63,10 @@ func TestIntegration_ExampleConfigOutput(t *testing.T) {
 
 func TestIntegration_ExitCodeZero(t *testing.T) {
 	t.Parallel()
-	bin := buildGornir(t)
-	tmpDir := tempDir(t)
+	bin, cleanup := buildGornir(t)
+	defer cleanup()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	cmd := exec.Command(bin, "--config", tmpDir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -72,7 +76,8 @@ func TestIntegration_ExitCodeZero(t *testing.T) {
 
 func TestIntegration_HelpOutput(t *testing.T) {
 	t.Parallel()
-	bin := buildGornir(t)
+	bin, cleanup := buildGornir(t)
+	defer cleanup()
 	out, _ := exec.Command(bin, "--help").CombinedOutput()
 	output := string(out)
 	for _, want := range []string{
@@ -92,7 +97,8 @@ func TestIntegration_HelpOutput(t *testing.T) {
 func TestParity_ExampleConfig(t *testing.T) {
 	t.Parallel()
 	rnirBin := findRnir(t)
-	gornirBin := buildGornir(t)
+	gornirBin, cleanup := buildGornir(t)
+	defer cleanup()
 
 	pyOut, err := exec.Command(rnirBin, "--exampleconfig").CombinedOutput()
 	if err != nil {
@@ -118,7 +124,8 @@ func TestParity_ExampleConfig(t *testing.T) {
 func TestParity_HelpFlags(t *testing.T) {
 	t.Parallel()
 	rnirBin := findRnir(t)
-	gornirBin := buildGornir(t)
+	gornirBin, cleanup := buildGornir(t)
+	defer cleanup()
 
 	pyOut, _ := exec.Command(rnirBin, "--help").CombinedOutput()
 	goOut, _ := exec.Command(gornirBin, "--help").CombinedOutput()

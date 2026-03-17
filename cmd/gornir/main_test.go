@@ -18,7 +18,7 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-func tempDir(t *testing.T) string {
+func tempDir(t *testing.T) (string, func()) {
 	t.Helper()
 	baseDir := ""
 	if runtime.GOOS == "darwin" {
@@ -28,26 +28,30 @@ func tempDir(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("tempDir error: %v", err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return dir
+	cleanup := func() {
+		_ = os.RemoveAll(dir)
+	}
+	return dir, cleanup
 }
 
-func buildGornir(t *testing.T) string {
+func buildGornir(t *testing.T) (string, func()) {
 	t.Helper()
-	tmpDir := tempDir(t)
+	tmpDir, cleanup := tempDir(t)
 	bin := filepath.Join(tmpDir, "gornir")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Dir = "."
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		cleanup()
 		t.Fatalf("failed to build gornir: %v\n%v", err, string(out))
 	}
-	return bin
+	return bin, cleanup
 }
 
 func TestHelpOutput(t *testing.T) {
 	t.Parallel()
-	bin := buildGornir(t)
+	bin, cleanupBin := buildGornir(t)
+	defer cleanupBin()
 	out, err := exec.Command(bin, "--help").CombinedOutput()
 	// --help causes flag.Parse to exit with code 0 via flag.Usage
 	// but Go's flag package exits with code 2 for -help by default
@@ -117,7 +121,8 @@ func TestCounterString(t *testing.T) {
 
 func TestExampleConfig(t *testing.T) {
 	t.Parallel()
-	bin := buildGornir(t)
+	bin, cleanupBin := buildGornir(t)
+	defer cleanupBin()
 	out, err := exec.Command(bin, "--exampleconfig").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornir --exampleconfig failed: %v\n%v", err, string(out))
@@ -138,8 +143,10 @@ func TestExampleConfig(t *testing.T) {
 
 func TestExitCodeZero(t *testing.T) {
 	t.Parallel()
-	bin := buildGornir(t)
-	tmpDir := tempDir(t)
+	bin, cleanupBin := buildGornir(t)
+	defer cleanupBin()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	cmd := exec.Command(bin, "--config", tmpDir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -149,8 +156,10 @@ func TestExitCodeZero(t *testing.T) {
 
 func TestSIGINTCleanExit(t *testing.T) {
 	t.Parallel()
-	bin := buildGornir(t)
-	tmpDir := tempDir(t)
+	bin, cleanupBin := buildGornir(t)
+	defer cleanupBin()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	cmd := exec.Command(bin, "--config", tmpDir, "-v", "-v", "-v")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
@@ -169,7 +178,8 @@ func TestSIGINTCleanExit(t *testing.T) {
 
 func TestVerboseStacking(t *testing.T) {
 	t.Parallel()
-	bin := buildGornir(t)
+	bin, cleanupBin := buildGornir(t)
+	defer cleanupBin()
 	// -v -v --version should not error — it should print version and exit
 	out, err := exec.Command(bin, "-v", "-v", "--version").CombinedOutput()
 	if err != nil {
@@ -184,7 +194,8 @@ func TestVerboseStacking(t *testing.T) {
 
 func TestVersionOutput(t *testing.T) {
 	t.Parallel()
-	bin := buildGornir(t)
+	bin, cleanupBin := buildGornir(t)
+	defer cleanupBin()
 	out, err := exec.Command(bin, "--version").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornir --version failed: %v\n%v", err, string(out))

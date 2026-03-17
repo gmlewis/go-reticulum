@@ -96,7 +96,8 @@ func pythonPathEnv(lxmfPath, reticulumPath string) string {
 func TestIntegrationDirectGoToPython(t *testing.T) {
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir := tempDir(t)
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	decodeScriptPath := filepath.Join(tmpDir, "decode_direct.py")
 	if err := os.WriteFile(decodeScriptPath, []byte(lxmfDecodeDirectPy), 0o644); err != nil {
 		t.Fatalf("write python decode script: %v", err)
@@ -149,7 +150,8 @@ func TestIntegrationDirectGoToPython(t *testing.T) {
 func TestIntegrationDirectPythonToGo(t *testing.T) {
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir := tempDir(t)
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	generateScriptPath := filepath.Join(tmpDir, "generate_direct.py")
 	if err := os.WriteFile(generateScriptPath, []byte(lxmfGenerateDirectPy), 0o644); err != nil {
 		t.Fatalf("write python generate script: %v", err)

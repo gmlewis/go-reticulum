@@ -15,8 +15,9 @@ import (
 )
 
 func TestStartupLogMessages(t *testing.T) {
-	tempDir := tempDir(t)
-	configDir := filepath.Join(tempDir, "lxmd")
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	configDir := filepath.Join(tmpDir, "lxmd")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}

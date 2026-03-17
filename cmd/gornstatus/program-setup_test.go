@@ -14,7 +14,8 @@ import (
 
 func TestProgramSetupExitsCleanly(t *testing.T) {
 	t.Parallel()
-	tmpDir := tempDirWithConfig(t)
+	tmpDir, cleanup := tempDirWithConfig(t)
+	defer cleanup()
 	var buf bytes.Buffer
 	ts := rns.NewTransportSystem()
 	r, err := rns.NewReticulum(ts, tmpDir)

@@ -59,6 +59,14 @@ type Transport interface {
 	Start(storagePath string) error
 	StartedAt() time.Time
 	UnblackholeIdentity(identityHash []byte) bool
+
+	Remember(packetHash, destHash, publicKey, appData []byte)
+	Recall(targetHash []byte) *Identity
+	GetRatchet(destHash []byte) []byte
+	SetRatchet(destHash, ratchetPub []byte)
+
+	LoadKnownDestinations(storagePath string)
+	SaveKnownDestinations(storagePath string)
 }
 
 // TransportSystem manages routing, packet forwarding, and global state.
@@ -98,7 +106,11 @@ type TransportSystem struct {
 
 	blackholedIdentities map[string]BlackholeIdentityEntry
 	discoverCalls        int
-	announceHandlers     []*AnnounceHandler
+
+	knownDestinations map[string][]any
+	knownRatchets     map[string][]byte
+
+	announceHandlers []*AnnounceHandler
 
 	enabled          bool
 	linkMTUDiscovery bool
@@ -226,6 +238,8 @@ func NewTransportSystem() *TransportSystem {
 		packetSNRCache:       make(map[string]float64),
 		packetQCache:         make(map[string]float64),
 		blackholedIdentities: make(map[string]BlackholeIdentityEntry),
+		knownDestinations:    make(map[string][]any),
+		knownRatchets:        make(map[string][]byte),
 	}
 }
 
@@ -378,7 +392,19 @@ func (ts *TransportSystem) Start(storagePath string) error {
 	}
 	ts.pathRequestHash = copyBytes(pathRequestDst.Hash)
 	pathRequestDst.SetPacketCallback(ts.handlePathRequest)
-	ts.RegisterDestination(pathRequestDst)
+
+	ts.mu.Lock()
+	found := false
+	for _, d := range ts.destinations {
+		if bytes.Equal(d.Hash, pathRequestDst.Hash) {
+			found = true
+			break
+		}
+	}
+	ts.mu.Unlock()
+	if !found {
+		ts.RegisterDestination(pathRequestDst)
+	}
 
 	// Start maintenance loop
 	go ts.maintenance()
@@ -513,6 +539,65 @@ func (ts *TransportSystem) isForLocalClientLink(p *Packet) bool {
 	return false
 }
 
+// CleanRatchets removes expired forward-secrecy ratchets from the local cache and storage.
+func (ts *TransportSystem) CleanRatchets() {
+	ts.mu.Lock()
+	path := ts.storagePath
+	ts.mu.Unlock()
+
+	if path == "" {
+		return
+	}
+
+	ratchetDir := filepath.Join(path, "ratchets")
+	entries, err := os.ReadDir(ratchetDir)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			Logf("Failed to read ratchet directory for cleaning: %v", LogError, false, err)
+		}
+		return
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	expiry := 30 * 24 * 3600.0
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if strings.HasSuffix(entry.Name(), ".out") {
+			continue
+		}
+
+		p := filepath.Join(ratchetDir, entry.Name())
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+
+		unpacked, err := msgpack.Unpack(data)
+		if err != nil {
+			continue
+		}
+
+		if m, ok := unpacked.(map[any]any); ok {
+			received := m["received"].(float64)
+			if now > received+expiry {
+				if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+					Logf("Failed to remove expired ratchet file %v: %v", LogError, false, entry.Name(), err)
+				}
+				// Also remove from memory if present
+				ts.mu.Lock()
+				// The key in memory is the raw bytes, but we only have the hex name here.
+				// For simplicity, we could clear the whole memory cache or iterate.
+				// Since it's a small cache, we'll just clear it and let it reload on demand.
+				ts.knownRatchets = make(map[string][]byte)
+				ts.mu.Unlock()
+			}
+		}
+	}
+}
+
 func (ts *TransportSystem) maintenance() {
 	defer close(ts.doneCh)
 	ratchetTicker := time.NewTicker(24 * time.Hour)
@@ -523,7 +608,7 @@ func (ts *TransportSystem) maintenance() {
 	defer pathPersistTicker.Stop()
 
 	// Initial clean
-	CleanRatchets()
+	ts.CleanRatchets()
 
 	for {
 		select {
@@ -538,7 +623,7 @@ func (ts *TransportSystem) maintenance() {
 		case <-pathPersistTicker.C:
 			ts.persistPathTable()
 		case <-ratchetTicker.C:
-			CleanRatchets()
+			ts.CleanRatchets()
 		}
 	}
 }
@@ -1388,6 +1473,247 @@ func (ts *TransportSystem) BlackholeIdentity(identityHash []byte, until *int64, 
 	return true
 }
 
+// Remember caches a newly discovered identity and its associated routing context in local ephemeral or persistent storage.
+func (ts *TransportSystem) Remember(packetHash, destHash, publicKey, appData []byte) {
+	ts.mu.Lock()
+	ts.knownDestinations[string(destHash)] = []any{
+		float64(time.Now().UnixNano()) / 1e9,
+		packetHash,
+		publicKey,
+		appData,
+	}
+	path := ts.storagePath
+	ts.mu.Unlock()
+
+	if path != "" {
+		ts.SaveKnownDestinations(path)
+	}
+}
+
+// Recall searches for a known identity matching the given target hash.
+// It checks both destination hashes and truncated identity hashes.
+func (ts *TransportSystem) Recall(targetHash []byte) *Identity {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+
+	// Check destination hashes
+	if data, ok := ts.knownDestinations[string(targetHash)]; ok {
+		pubKey := data[2].([]byte)
+		id, err := NewIdentity(false)
+		if err != nil {
+			Logf("Failed to create identity during recall: %v", LogError, false, err)
+			return nil
+		}
+		if err := id.LoadPublicKey(pubKey); err != nil {
+			Logf("Failed to load recalled public key: %v", LogError, false, err)
+			return nil
+		}
+		if data[3] != nil {
+			id.AppData = data[3].([]byte)
+		}
+		return id
+	}
+
+	// Check identity hashes
+	for _, data := range ts.knownDestinations {
+		pubKey := data[2].([]byte)
+		if bytes.Equal(targetHash, TruncatedHash(pubKey)) {
+			id, err := NewIdentity(false)
+			if err != nil {
+				Logf("Failed to create identity during recall: %v", LogError, false, err)
+				return nil
+			}
+			if err := id.LoadPublicKey(pubKey); err != nil {
+				Logf("Failed to load recalled public key: %v", LogError, false, err)
+				return nil
+			}
+			if data[3] != nil {
+				id.AppData = data[3].([]byte)
+			}
+			return id
+		}
+	}
+
+	// Also check registered destinations in transport
+	for _, d := range ts.destinations {
+		if bytes.Equal(targetHash, d.Hash) {
+			id, err := NewIdentity(false)
+			if err != nil {
+				Logf("Failed to create identity during transport recall: %v", LogError, false, err)
+				return nil
+			}
+			if err := id.LoadPublicKey(d.identity.GetPublicKey()); err != nil {
+				Logf("Failed to load transport destination public key: %v", LogError, false, err)
+				return nil
+			}
+			return id
+		}
+	}
+
+	return nil
+}
+
+// GetRatchet retrieves the most recently observed valid forward-secrecy ratchet public key for a known destination.
+func (ts *TransportSystem) GetRatchet(destHash []byte) []byte {
+	ts.mu.Lock()
+	destHashStr := string(destHash)
+	if pub, ok := ts.knownRatchets[destHashStr]; ok {
+		ts.mu.Unlock()
+		return pub
+	}
+	path := ts.storagePath
+	ts.mu.Unlock()
+
+	if path == "" {
+		return nil
+	}
+
+	// Try to load from storage
+	hexHash := fmt.Sprintf("%x", destHash)
+	ratchetPath := filepath.Join(path, "ratchets", hexHash)
+	if _, err := os.Stat(ratchetPath); os.IsNotExist(err) {
+		return nil
+	}
+
+	data, err := os.ReadFile(ratchetPath)
+	if err != nil {
+		Logf("Failed to read ratchet file for %v: %v", LogError, false, hexHash, err)
+		return nil
+	}
+
+	unpacked, err := msgpack.Unpack(data)
+	if err != nil {
+		Logf("Failed to unpack ratchet data for %v: %v", LogError, false, hexHash, err)
+		return nil
+	}
+
+	if m, ok := unpacked.(map[any]any); ok {
+		ratchetPub := m["ratchet"].([]byte)
+		received := m["received"].(float64)
+
+		// Check expiry (30 days)
+		if float64(time.Now().UnixNano())/1e9 < received+30*24*3600 {
+			ts.mu.Lock()
+			ts.knownRatchets[destHashStr] = ratchetPub
+			ts.mu.Unlock()
+			return ratchetPub
+		}
+		// Expired
+		if err := os.Remove(ratchetPath); err != nil && !os.IsNotExist(err) {
+			Logf("Failed to remove expired ratchet file for %v: %v", LogError, false, hexHash, err)
+		}
+	}
+
+	return nil
+}
+
+// SetRatchet securely registers and optionally persists a forward-secrecy ratchet public key associated with a specific destination.
+func (ts *TransportSystem) SetRatchet(destHash, ratchetPub []byte) {
+	ts.mu.Lock()
+	destHashStr := string(destHash)
+	if bytes.Equal(ts.knownRatchets[destHashStr], ratchetPub) {
+		ts.mu.Unlock()
+		return
+	}
+	ts.knownRatchets[destHashStr] = ratchetPub
+	path := ts.storagePath
+	ts.mu.Unlock()
+
+	if path != "" {
+		ts.persistRatchet(path, destHash, ratchetPub)
+	}
+}
+
+func (ts *TransportSystem) persistRatchet(storagePath string, destHash, ratchetPub []byte) {
+	ratchetDir := filepath.Join(storagePath, "ratchets")
+	if err := os.MkdirAll(ratchetDir, 0o700); err != nil {
+		Logf("Failed to create ratchet directory: %v", LogError, false, err)
+		return
+	}
+
+	hexHash := fmt.Sprintf("%x", destHash)
+	outPath := filepath.Join(ratchetDir, hexHash+".out")
+	finalPath := filepath.Join(ratchetDir, hexHash)
+
+	ratchetData := map[string]any{
+		"ratchet":  ratchetPub,
+		"received": float64(time.Now().UnixNano()) / 1e9,
+	}
+
+	data, err := msgpack.Pack(ratchetData)
+	if err != nil {
+		Logf("Failed to pack ratchet data for %v: %v", LogError, false, hexHash, err)
+		return
+	}
+
+	if err := os.WriteFile(outPath, data, 0o600); err != nil {
+		Logf("Failed to write ratchet file for %v: %v", LogError, false, hexHash, err)
+		return
+	}
+
+	if err := os.Rename(outPath, finalPath); err != nil {
+		Logf("Failed to finalize ratchet file for %v: %v", LogError, false, hexHash, err)
+	}
+}
+
+// LoadKnownDestinations populates the local identity cache using serialized data retrieved from disk.
+func (ts *TransportSystem) LoadKnownDestinations(storagePath string) {
+	ts.mu.Lock()
+	ts.storagePath = storagePath
+	ts.mu.Unlock()
+
+	path := filepath.Join(storagePath, "known_destinations")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		Logf("Failed to read known destinations: %v", LogError, false, err)
+		return
+	}
+
+	unpacked, err := Unpack(data)
+	if err != nil {
+		Logf("Failed to unpack known destinations: %v", LogError, false, err)
+		return
+	}
+
+	if m, ok := unpacked.(map[any]any); ok {
+		ts.mu.Lock()
+		for k, v := range m {
+			ts.knownDestinations[k.(string)] = v.([]any)
+		}
+		ts.mu.Unlock()
+		Logf("Loaded %v known destination from storage", LogVerbose, false, len(ts.knownDestinations))
+	}
+}
+
+// SaveKnownDestinations serializes and safely flushes the currently cached known network identities to persistent storage.
+func (ts *TransportSystem) SaveKnownDestinations(storagePath string) {
+	path := filepath.Join(storagePath, "known_destinations")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		Logf("Failed to create known destinations directory: %v", LogError, false, err)
+		return
+	}
+
+	ts.mu.Lock()
+	data, err := msgpack.Pack(ts.knownDestinations)
+	count := len(ts.knownDestinations)
+	ts.mu.Unlock()
+
+	if err != nil {
+		Logf("Failed to pack known destinations: %v", LogError, false, err)
+		return
+	}
+
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		Logf("Failed to save known destinations: %v", LogError, false, err)
+		return
+	}
+	Logf("Saved %v known destinations to storage", LogDebug, false, count)
+}
+
 // UnblackholeIdentity removes an identity hash from the local blackhole registry.
 func (ts *TransportSystem) UnblackholeIdentity(identityHash []byte) bool {
 	if len(identityHash) == 0 {
@@ -1645,7 +1971,7 @@ func nextHopFromAnnounce(packet *Packet) ([]byte, error) {
 }
 
 func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Interface) {
-	if !ValidateAnnounce(packet) {
+	if !ValidateAnnounce(ts, packet) {
 		Log(fmt.Sprintf("Received invalid announce for %x, dropping", packet.DestinationHash), LogDebug, false)
 		return
 	}
@@ -1756,7 +2082,7 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 
 	// Call announce handlers
 	if len(handlers) > 0 {
-		announceIdentity := Recall(ts, packet.DestinationHash, false)
+		announceIdentity := ts.Recall(packet.DestinationHash)
 		if announceIdentity != nil {
 			for _, handler := range handlers {
 				executeCallback := false

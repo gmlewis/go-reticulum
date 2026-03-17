@@ -7,6 +7,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -16,36 +17,30 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-var (
-	configpath   string
-	identitypath string
-	identity     *rns.Identity
+var osExit = os.Exit // for unit testing
 
-	osExit = os.Exit
-)
-
-func remoteInit(configDirArg string, rnsConfigDir string, verbosity int, quietness int, identityPathArg string) (*rns.Reticulum, error) {
+func (c *clientT) remoteInit(configDirArg string, rnsConfigDir string, verbosity int, quietness int, identityPathArg string) (*rns.Reticulum, error) {
 	if identityPathArg == "" {
 		resolvedConfigDir := resolveConfigDir(configDirArg)
 
-		configpath = filepath.Join(resolvedConfigDir, "config")
-		identitypath = filepath.Join(resolvedConfigDir, "identity")
-		identity = nil
+		c.configpath = filepath.Join(resolvedConfigDir, "config")
+		c.identitypath = filepath.Join(resolvedConfigDir, "identity")
+		c.identity = nil
 
 		if !isDir(resolvedConfigDir) {
 			rns.Logf("Specified configuration directory does not exist, exiting now", rns.LogError, false)
 			osExit(201)
 			return nil, nil
 		}
-		if !isFile(identitypath) {
+		if !isFile(c.identitypath) {
 			rns.Logf("Identity file not found in specified configuration directory, exiting now", rns.LogError, false)
 			osExit(202)
 			return nil, nil
 		} else {
 			var err error
-			identity, err = rns.FromFile(identitypath)
+			c.identity, err = rns.FromFile(c.identitypath)
 			if err != nil {
-				rns.Logf("Could not load the Primary Identity from %v", rns.LogError, false, identitypath)
+				rns.Logf("Could not load the Primary Identity from %v", rns.LogError, false, c.identitypath)
 				osExit(4)
 				return nil, nil
 			}
@@ -57,7 +52,7 @@ func remoteInit(configDirArg string, rnsConfigDir string, verbosity int, quietne
 			return nil, nil
 		} else {
 			var err error
-			identity, err = rns.FromFile(identityPathArg)
+			c.identity, err = rns.FromFile(identityPathArg)
 			if err != nil {
 				rns.Logf("Could not load the Primary Identity from %v", rns.LogError, false, identityPathArg)
 				osExit(4)
@@ -67,8 +62,8 @@ func remoteInit(configDirArg string, rnsConfigDir string, verbosity int, quietne
 	}
 
 	targetloglevel := -1
-	if configpath != "" {
-		if cfg, err := loadConfig(filepath.Dir(configpath)); err == nil && cfg != nil {
+	if c.configpath != "" {
+		if cfg, err := loadConfig(filepath.Dir(c.configpath)); err == nil && cfg != nil {
 			targetloglevel = cfg.LogLevel
 		}
 	}
@@ -79,8 +74,10 @@ func remoteInit(configDirArg string, rnsConfigDir string, verbosity int, quietne
 		targetloglevel = targetloglevel + verbosity - quietness
 	}
 
-	ts := rns.NewTransportSystem()
-	reticulum, err := rns.NewReticulum(ts, rnsConfigDir)
+	if c.ts == nil {
+		c.ts = rns.NewTransportSystem()
+	}
+	reticulum, err := rns.NewReticulum(c.ts, rnsConfigDir)
 	if err != nil {
 		rns.Logf("Could not initialize Reticulum, exiting now", rns.LogError, false)
 		osExit(1)
@@ -93,9 +90,9 @@ func remoteInit(configDirArg string, rnsConfigDir string, verbosity int, quietne
 	return reticulum, nil
 }
 
-func getTargetIdentity(remote string, timeoutArg time.Duration) *rns.Identity {
+func (c *clientT) getTargetIdentity(remote string, timeoutArg time.Duration) *rns.Identity {
 	if remote == "" {
-		return identity
+		return c.identity
 	}
 
 	destinationHash, err := rns.HexToBytes(remote)
@@ -111,36 +108,42 @@ func getTargetIdentity(remote string, timeoutArg time.Duration) *rns.Identity {
 		return nil
 	}
 
-	ts := rns.NewTransportSystem()
-	remoteIdentity := rns.Recall(ts, destinationHash, false)
+	if c.ts == nil {
+		c.ts = rns.NewTransportSystem()
+	}
+	remoteIdentity := c.ts.Recall(destinationHash)
 	if remoteIdentity != nil {
 		return remoteIdentity
 	}
 
-	if !ts.HasPath(destinationHash) {
-		_ = ts.RequestPath(destinationHash)
+	if !c.ts.HasPath(destinationHash) {
+		_ = c.ts.RequestPath(destinationHash)
 		start := time.Now()
-		for !ts.HasPath(destinationHash) {
+		for !c.ts.HasPath(destinationHash) {
 			if time.Since(start) > timeoutArg {
 				fmt.Println("Resolving remote identity timed out, exiting now")
 				osExit(200)
 				return nil
 			}
+			log.Printf("GML: Looking for hash %x... sleeping", destinationHash)
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
 
-	return rns.Recall(ts, destinationHash, false)
+	return c.ts.Recall(destinationHash)
 }
 
 const StatsGetPath = "/pn/get/stats"
 
-func queryStatus(ts rns.Transport, id *rns.Identity, remoteIdentityArg *rns.Identity, timeoutArg time.Duration, exitOnFail bool) (any, error) {
+func (c *clientT) queryStatus(id *rns.Identity, remoteIdentityArg *rns.Identity, timeoutArg time.Duration, exitOnFail bool) (any, error) {
 	if remoteIdentityArg == nil {
 		remoteIdentityArg = id
 	}
 
-	controlDestination, err := rns.NewDestination(ts, remoteIdentityArg, rns.DestinationOut, rns.DestinationSingle, "lxmf", "propagation", "control")
+	if c.ts == nil {
+		c.ts = rns.NewTransportSystem()
+	}
+	controlDestination, err := rns.NewDestination(c.ts, remoteIdentityArg, rns.DestinationOut, rns.DestinationSingle, "lxmf", "propagation", "control")
 	if err != nil {
 		return nil, err
 	}
@@ -160,16 +163,16 @@ func queryStatus(ts rns.Transport, id *rns.Identity, remoteIdentityArg *rns.Iden
 		return nil
 	}
 
-	if !ts.HasPath(controlDestination.Hash) {
-		_ = ts.RequestPath(controlDestination.Hash)
-		for !ts.HasPath(controlDestination.Hash) {
+	if !c.ts.HasPath(controlDestination.Hash) {
+		_ = c.ts.RequestPath(controlDestination.Hash)
+		for !c.ts.HasPath(controlDestination.Hash) {
 			if err := checkTimeout(); err != nil {
 				return nil, err
 			}
 		}
 	}
 
-	link, err := rns.NewLink(ts, controlDestination)
+	link, err := rns.NewLink(c.ts, controlDestination)
 	if err != nil {
 		return nil, err
 	}
@@ -199,8 +202,8 @@ func queryStatus(ts rns.Transport, id *rns.Identity, remoteIdentityArg *rns.Iden
 	return requestReceipt.Response, nil
 }
 
-func getStatus(ts rns.Transport, remote string, configDirArg string, rnsConfigDir string, verbosity int, quietness int, timeout time.Duration, showStatus bool, showPeers bool, identityPathArg string) {
-	reticulum, err := remoteInit(configDirArg, rnsConfigDir, verbosity, quietness, identityPathArg)
+func (c *clientT) getStatus(remote string, configDirArg string, rnsConfigDir string, verbosity int, quietness int, timeout time.Duration, showStatus bool, showPeers bool, identityPathArg string) {
+	reticulum, err := c.remoteInit(configDirArg, rnsConfigDir, verbosity, quietness, identityPathArg)
 	if err != nil {
 		fmt.Printf("Remote initialization failed: %v\n", err)
 		osExit(1)
@@ -208,8 +211,8 @@ func getStatus(ts rns.Transport, remote string, configDirArg string, rnsConfigDi
 	}
 	defer func() { _ = reticulum.Close() }()
 
-	targetIdentity := getTargetIdentity(remote, timeout)
-	response, err := queryStatus(ts, identity, targetIdentity, timeout, true)
+	targetIdentity := c.getTargetIdentity(remote, timeout)
+	response, err := c.queryStatus(c.identity, targetIdentity, timeout, true)
 	if err != nil {
 		fmt.Printf("Query status failed: %v\n", err)
 		osExit(1)
@@ -437,12 +440,15 @@ func getStatus(ts rns.Transport, remote string, configDirArg string, rnsConfigDi
 const SyncRequestPath = "/pn/peer/sync"
 const UnpeerRequestPath = "/pn/peer/unpeer"
 
-func requestUnpeerInternal(ts rns.Transport, id *rns.Identity, targetHash []byte, remoteIdentityArg *rns.Identity, timeoutArg time.Duration, exitOnFail bool) (any, error) {
+func (c *clientT) requestUnpeerInternal(id *rns.Identity, targetHash []byte, remoteIdentityArg *rns.Identity, timeoutArg time.Duration, exitOnFail bool) (any, error) {
 	if remoteIdentityArg == nil {
 		remoteIdentityArg = id
 	}
 
-	controlDestination, err := rns.NewDestination(ts, remoteIdentityArg, rns.DestinationOut, rns.DestinationSingle, "lxmf", "propagation", "control")
+	if c.ts == nil {
+		c.ts = rns.NewTransportSystem()
+	}
+	controlDestination, err := rns.NewDestination(c.ts, remoteIdentityArg, rns.DestinationOut, rns.DestinationSingle, "lxmf", "propagation", "control")
 	if err != nil {
 		return nil, err
 	}
@@ -461,16 +467,16 @@ func requestUnpeerInternal(ts rns.Transport, id *rns.Identity, targetHash []byte
 		return nil
 	}
 
-	if !ts.HasPath(controlDestination.Hash) {
-		_ = ts.RequestPath(controlDestination.Hash)
-		for !ts.HasPath(controlDestination.Hash) {
+	if !c.ts.HasPath(controlDestination.Hash) {
+		_ = c.ts.RequestPath(controlDestination.Hash)
+		for !c.ts.HasPath(controlDestination.Hash) {
 			if err := checkTimeout(); err != nil {
 				return nil, err
 			}
 		}
 	}
 
-	link, err := rns.NewLink(ts, controlDestination)
+	link, err := rns.NewLink(c.ts, controlDestination)
 	if err != nil {
 		return nil, err
 	}
@@ -500,12 +506,15 @@ func requestUnpeerInternal(ts rns.Transport, id *rns.Identity, targetHash []byte
 	return requestReceipt.Response, nil
 }
 
-func requestSyncInternal(ts rns.Transport, id *rns.Identity, targetHash []byte, remoteIdentityArg *rns.Identity, timeoutArg time.Duration, exitOnFail bool) (any, error) {
+func (c *clientT) requestSyncInternal(id *rns.Identity, targetHash []byte, remoteIdentityArg *rns.Identity, timeoutArg time.Duration, exitOnFail bool) (any, error) {
 	if remoteIdentityArg == nil {
 		remoteIdentityArg = id
 	}
 
-	controlDestination, err := rns.NewDestination(ts, remoteIdentityArg, rns.DestinationOut, rns.DestinationSingle, "lxmf", "propagation", "control")
+	if c.ts == nil {
+		c.ts = rns.NewTransportSystem()
+	}
+	controlDestination, err := rns.NewDestination(c.ts, remoteIdentityArg, rns.DestinationOut, rns.DestinationSingle, "lxmf", "propagation", "control")
 	if err != nil {
 		return nil, err
 	}
@@ -524,16 +533,16 @@ func requestSyncInternal(ts rns.Transport, id *rns.Identity, targetHash []byte, 
 		return nil
 	}
 
-	if !ts.HasPath(controlDestination.Hash) {
-		_ = ts.RequestPath(controlDestination.Hash)
-		for !ts.HasPath(controlDestination.Hash) {
+	if !c.ts.HasPath(controlDestination.Hash) {
+		_ = c.ts.RequestPath(controlDestination.Hash)
+		for !c.ts.HasPath(controlDestination.Hash) {
 			if err := checkTimeout(); err != nil {
 				return nil, err
 			}
 		}
 	}
 
-	link, err := rns.NewLink(ts, controlDestination)
+	link, err := rns.NewLink(c.ts, controlDestination)
 	if err != nil {
 		return nil, err
 	}
@@ -574,7 +583,7 @@ const (
 	LXMPeerErrorTimeout      = 0xfe
 )
 
-func requestSync(target string, remote string, configDirArg string, rnsConfigDir string, verbosity int, quietness int, timeout time.Duration, identityPathArg string) {
+func (c *clientT) requestSync(target string, remote string, configDirArg string, rnsConfigDir string, verbosity int, quietness int, timeout time.Duration, identityPathArg string) {
 	peerDestinationHash, err := rns.HexToBytes(target)
 	if err != nil || len(peerDestinationHash) != rns.TruncatedHashLength/8 {
 		msg := "Invalid peer destination hash"
@@ -588,7 +597,7 @@ func requestSync(target string, remote string, configDirArg string, rnsConfigDir
 		return
 	}
 
-	reticulum, err := remoteInit(configDirArg, rnsConfigDir, verbosity, quietness, identityPathArg)
+	reticulum, err := c.remoteInit(configDirArg, rnsConfigDir, verbosity, quietness, identityPathArg)
 	if err != nil {
 		fmt.Printf("Remote initialization failed: %v\n", err)
 		osExit(1)
@@ -596,9 +605,11 @@ func requestSync(target string, remote string, configDirArg string, rnsConfigDir
 	}
 	defer func() { _ = reticulum.Close() }()
 
-	targetIdentity := getTargetIdentity(remote, timeout)
-	ts := reticulum.Transport()
-	response, err := requestSyncInternal(ts, identity, peerDestinationHash, targetIdentity, timeout, true)
+	targetIdentity := c.getTargetIdentity(remote, timeout)
+	if c.ts == nil {
+		c.ts = reticulum.Transport()
+	}
+	response, err := c.requestSyncInternal(c.identity, peerDestinationHash, targetIdentity, timeout, true)
 	if err != nil {
 		fmt.Printf("Request sync failed: %v\n", err)
 		osExit(1)
@@ -658,7 +669,7 @@ func requestSync(target string, remote string, configDirArg string, rnsConfigDir
 	osExit(0)
 }
 
-func requestUnpeer(target string, remote string, configDirArg string, rnsConfigDir string, verbosity int, quietness int, timeout time.Duration, identityPathArg string) {
+func (c *clientT) requestUnpeer(target string, remote string, configDirArg string, rnsConfigDir string, verbosity int, quietness int, timeout time.Duration, identityPathArg string) {
 	peerDestinationHash, err := rns.HexToBytes(target)
 	if err != nil || len(peerDestinationHash) != rns.TruncatedHashLength/8 {
 		msg := "Invalid peer destination hash"
@@ -672,7 +683,7 @@ func requestUnpeer(target string, remote string, configDirArg string, rnsConfigD
 		return
 	}
 
-	reticulum, err := remoteInit(configDirArg, rnsConfigDir, verbosity, quietness, identityPathArg)
+	reticulum, err := c.remoteInit(configDirArg, rnsConfigDir, verbosity, quietness, identityPathArg)
 	if err != nil {
 		fmt.Printf("Remote initialization failed: %v\n", err)
 		osExit(1)
@@ -680,9 +691,11 @@ func requestUnpeer(target string, remote string, configDirArg string, rnsConfigD
 	}
 	defer func() { _ = reticulum.Close() }()
 
-	targetIdentity := getTargetIdentity(remote, timeout)
-	ts := reticulum.Transport()
-	response, err := requestUnpeerInternal(ts, identity, peerDestinationHash, targetIdentity, timeout, true)
+	targetIdentity := c.getTargetIdentity(remote, timeout)
+	if c.ts == nil {
+		c.ts = reticulum.Transport()
+	}
+	response, err := c.requestUnpeerInternal(c.identity, peerDestinationHash, targetIdentity, timeout, true)
 	if err != nil {
 		fmt.Printf("Request unpeer failed: %v\n", err)
 		osExit(1)

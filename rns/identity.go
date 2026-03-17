@@ -6,16 +6,11 @@
 package rns
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
-	"sync"
-	"time"
 
 	"github.com/gmlewis/go-reticulum/rns/crypto"
-	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
 const (
@@ -35,310 +30,6 @@ type Identity struct {
 	Hash    []byte
 	HexHash string
 	AppData []byte
-}
-
-var (
-	knownDestinations  = make(map[string][]any)
-	knownRatchets      = make(map[string][]byte)
-	identityMu         sync.Mutex
-	currentStoragePath string
-)
-
-// Remember caches a newly discovered identity and its associated routing context in local ephemeral or persistent storage.
-func Remember(packetHash, destHash, publicKey, appData []byte) {
-	identityMu.Lock()
-	knownDestinations[string(destHash)] = []any{
-		float64(time.Now().UnixNano()) / 1e9,
-		packetHash,
-		publicKey,
-		appData,
-	}
-	path := currentStoragePath
-	identityMu.Unlock()
-
-	if path != "" {
-		SaveKnownDestinations(path)
-	}
-}
-
-// RememberRatchet securely registers and optionally persists a forward-secrecy ratchet public key associated with a specific destination.
-func RememberRatchet(destHash, ratchetPub []byte) {
-	identityMu.Lock()
-	destHashStr := string(destHash)
-	if bytes.Equal(knownRatchets[destHashStr], ratchetPub) {
-		identityMu.Unlock()
-		return
-	}
-	knownRatchets[destHashStr] = ratchetPub
-	path := currentStoragePath
-	identityMu.Unlock()
-
-	if path != "" {
-		persistRatchet(path, destHash, ratchetPub)
-	}
-}
-
-func persistRatchet(storagePath string, destHash, ratchetPub []byte) {
-	ratchetDir := filepath.Join(storagePath, "ratchets")
-	if err := os.MkdirAll(ratchetDir, 0700); err != nil {
-		Logf("Failed to create ratchet directory: %v", LogError, false, err)
-		return
-	}
-
-	hexHash := fmt.Sprintf("%x", destHash)
-	outPath := filepath.Join(ratchetDir, hexHash+".out")
-	finalPath := filepath.Join(ratchetDir, hexHash)
-
-	ratchetData := map[string]any{
-		"ratchet":  ratchetPub,
-		"received": float64(time.Now().UnixNano()) / 1e9,
-	}
-
-	data, err := msgpack.Pack(ratchetData)
-	if err != nil {
-		Logf("Failed to pack ratchet data for %v: %v", LogError, false, hexHash, err)
-		return
-	}
-
-	if err := os.WriteFile(outPath, data, 0600); err != nil {
-		Logf("Failed to write ratchet file for %v: %v", LogError, false, hexHash, err)
-		return
-	}
-
-	if err := os.Rename(outPath, finalPath); err != nil {
-		Logf("Failed to finalize ratchet file for %v: %v", LogError, false, hexHash, err)
-	}
-}
-
-// GetRatchet retrieves the most recently observed valid forward-secrecy ratchet public key for a known destination.
-func GetRatchet(destHash []byte) []byte {
-	identityMu.Lock()
-	destHashStr := string(destHash)
-	if pub, ok := knownRatchets[destHashStr]; ok {
-		identityMu.Unlock()
-		return pub
-	}
-	path := currentStoragePath
-	identityMu.Unlock()
-
-	if path == "" {
-		return nil
-	}
-
-	// Try to load from storage
-	hexHash := fmt.Sprintf("%x", destHash)
-	ratchetPath := filepath.Join(path, "ratchets", hexHash)
-	if _, err := os.Stat(ratchetPath); os.IsNotExist(err) {
-		return nil
-	}
-
-	data, err := os.ReadFile(ratchetPath)
-	if err != nil {
-		Logf("Failed to read ratchet file for %v: %v", LogError, false, hexHash, err)
-		return nil
-	}
-
-	unpacked, err := msgpack.Unpack(data)
-	if err != nil {
-		Logf("Failed to unpack ratchet data for %v: %v", LogError, false, hexHash, err)
-		return nil
-	}
-
-	if m, ok := unpacked.(map[any]any); ok {
-		ratchetPub := m["ratchet"].([]byte)
-		received := m["received"].(float64)
-
-		// Check expiry (30 days)
-		if float64(time.Now().UnixNano())/1e9 < received+30*24*3600 {
-			identityMu.Lock()
-			knownRatchets[destHashStr] = ratchetPub
-			identityMu.Unlock()
-			return ratchetPub
-		}
-		// Expired
-		if err := os.Remove(ratchetPath); err != nil && !os.IsNotExist(err) {
-			Logf("Failed to remove expired ratchet file for %v: %v", LogError, false, hexHash, err)
-		}
-	}
-
-	return nil
-}
-
-// CleanRatchets scans persistent storage and aggressively purges any expired forward-secrecy ratchet data.
-func CleanRatchets() {
-	identityMu.Lock()
-	path := currentStoragePath
-	identityMu.Unlock()
-
-	if path == "" {
-		return
-	}
-
-	ratchetDir := filepath.Join(path, "ratchets")
-	entries, err := os.ReadDir(ratchetDir)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			Logf("Failed to read ratchet directory: %v", LogError, false, err)
-		}
-		return
-	}
-
-	now := float64(time.Now().UnixNano()) / 1e9
-	expiry := float64(30 * 24 * 3600)
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		filePath := filepath.Join(ratchetDir, entry.Name())
-		data, err := os.ReadFile(filePath)
-		if err != nil {
-			continue
-		}
-
-		unpacked, err := msgpack.Unpack(data)
-		if err != nil {
-			if rmErr := os.Remove(filePath); rmErr != nil && !os.IsNotExist(rmErr) {
-				Logf("Failed to remove invalid ratchet file %v: %v", LogError, false, filePath, rmErr)
-			}
-			continue
-		}
-
-		if m, ok := unpacked.(map[any]any); ok {
-			received, _ := m["received"].(float64)
-			if now > received+expiry {
-				if rmErr := os.Remove(filePath); rmErr != nil && !os.IsNotExist(rmErr) {
-					Logf("Failed to remove expired ratchet file %v: %v", LogError, false, filePath, rmErr)
-				}
-			}
-		}
-	}
-}
-
-// Recall searches for a known identity matching the given target hash.
-// If fromIdentityHash is true, the hash is compared against identity hashes;
-// otherwise, it is compared against destination hashes.
-func Recall(ts Transport, targetHash []byte, fromIdentityHash bool) *Identity {
-	identityMu.Lock()
-	defer identityMu.Unlock()
-
-	if fromIdentityHash {
-		for _, data := range knownDestinations {
-			pubKey := data[2].([]byte)
-			if bytes.Equal(targetHash, TruncatedHash(pubKey)) {
-				id, err := NewIdentity(false)
-				if err != nil {
-					Logf("Failed to create identity during recall: %v", LogError, false, err)
-					return nil
-				}
-				if err := id.LoadPublicKey(pubKey); err != nil {
-					Logf("Failed to load recalled public key: %v", LogError, false, err)
-					return nil
-				}
-				if data[3] != nil {
-					id.AppData = data[3].([]byte)
-				}
-				return id
-			}
-		}
-		return nil
-	}
-
-	if data, ok := knownDestinations[string(targetHash)]; ok {
-		pubKey := data[2].([]byte)
-		id, err := NewIdentity(false)
-		if err != nil {
-			Logf("Failed to create identity during recall: %v", LogError, false, err)
-			return nil
-		}
-		if err := id.LoadPublicKey(pubKey); err != nil {
-			Logf("Failed to load recalled public key: %v", LogError, false, err)
-			return nil
-		}
-		if data[3] != nil {
-			id.AppData = data[3].([]byte)
-		}
-		return id
-	}
-
-	// Also check registered destinations in transport if provided
-	if ts != nil {
-		tsSys := ts.(*TransportSystem)
-		for _, d := range tsSys.destinations {
-			if bytes.Equal(targetHash, d.Hash) {
-				id, err := NewIdentity(false)
-				if err != nil {
-					Logf("Failed to create identity during transport recall: %v", LogError, false, err)
-					return nil
-				}
-				if err := id.LoadPublicKey(d.identity.GetPublicKey()); err != nil {
-					Logf("Failed to load transport destination public key: %v", LogError, false, err)
-					return nil
-				}
-				return id
-			}
-		}
-	}
-
-	return nil
-}
-
-// LoadKnownDestinations populates the local identity cache using serialized data retrieved from disk.
-func LoadKnownDestinations(storagePath string) {
-	identityMu.Lock()
-	currentStoragePath = storagePath
-	identityMu.Unlock()
-
-	path := filepath.Join(storagePath, "known_destinations")
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		Logf("Failed to read known destinations: %v", LogError, false, err)
-		return
-	}
-
-	unpacked, err := Unpack(data)
-	if err != nil {
-		Logf("Failed to unpack known destinations: %v", LogError, false, err)
-		return
-	}
-
-	if m, ok := unpacked.(map[any]any); ok {
-		identityMu.Lock()
-		for k, v := range m {
-			knownDestinations[k.(string)] = v.([]any)
-		}
-		identityMu.Unlock()
-		Logf("Loaded %v known destination from storage", LogVerbose, false, len(knownDestinations))
-	}
-}
-
-// SaveKnownDestinations serializes and safely flushes the currently cached known network identities to persistent storage.
-func SaveKnownDestinations(storagePath string) {
-	path := filepath.Join(storagePath, "known_destinations")
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		Logf("Failed to create known destinations directory: %v", LogError, false, err)
-		return
-	}
-
-	identityMu.Lock()
-	data, err := msgpack.Pack(knownDestinations)
-	count := len(knownDestinations)
-	identityMu.Unlock()
-
-	if err != nil {
-		Logf("Failed to pack known destinations: %v", LogError, false, err)
-		return
-	}
-
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		Logf("Failed to save known destinations: %v", LogError, false, err)
-		return
-	}
-	Logf("Saved %v known destinations to storage", LogDebug, false, count)
 }
 
 // NewIdentity allocates a new structural container, optionally auto-generating pristine cryptographic keys.
@@ -466,15 +157,6 @@ func TruncatedHash(data []byte) []byte {
 	return FullHash(data)[:TruncatedHashLength/8]
 }
 
-// CurrentRatchetID calculates the short unique identifier corresponding to the active forward-secrecy key.
-func CurrentRatchetID(destHash []byte) []byte {
-	ratchet := GetRatchet(destHash)
-	if ratchet == nil {
-		return nil
-	}
-	return RatchetID(ratchet)
-}
-
 // RatchetID generates the unique internal identifier corresponding directly to a specific ratchet public key.
 func RatchetID(ratchetPubBytes []byte) []byte {
 	return FullHash(ratchetPubBytes)[:NameHashLength/8]
@@ -497,7 +179,7 @@ func (id *Identity) Verify(signature, message []byte) bool {
 }
 
 // ValidateAnnounce exhaustively processes a newly received announce packet, verifying cryptographic proofs and logical constraints.
-func ValidateAnnounce(packet *Packet) bool {
+func ValidateAnnounce(ts Transport, packet *Packet) bool {
 	if packet.PacketType != PacketAnnounce {
 		return false
 	}
@@ -567,10 +249,12 @@ func ValidateAnnounce(packet *Packet) bool {
 		return false
 	}
 
-	Remember(packet.PacketHash, packet.DestinationHash, publicKey, appData)
-	if len(ratchet) > 0 {
-		Logf("Learned ratchet %x for %x", LogDebug, false, ratchet, packet.DestinationHash)
-		RememberRatchet(packet.DestinationHash, ratchet)
+	if ts != nil {
+		ts.Remember(packet.PacketHash, packet.DestinationHash, publicKey, appData)
+		if len(ratchet) > 0 {
+			Logf("Learned ratchet %x for %x", LogDebug, false, ratchet, packet.DestinationHash)
+			ts.SetRatchet(packet.DestinationHash, ratchet)
+		}
 	}
 
 	return true

@@ -17,7 +17,7 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-func tempDir(t *testing.T) string {
+func tempDir(t *testing.T) (string, func()) {
 	t.Helper()
 	baseDir := ""
 	if runtime.GOOS == "darwin" {
@@ -27,17 +27,25 @@ func tempDir(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("tempDir error: %v", err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return dir
+	cleanup := func() {
+		_ = os.RemoveAll(dir)
+	}
+	return dir, cleanup
 }
 
 func TestJobs(t *testing.T) {
-	tempDir := tempDir(t)
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	identity, err := rns.NewIdentity(true)
 	mustTest(t, err)
-	ts := rns.NewTransportSystem()
-	router, _ := lxmf.NewRouter(ts, identity, tempDir)
-	dest, _ := router.RegisterDeliveryIdentity(identity, "Test Peer", nil)
+	c := &clientT{
+		ts:  rns.NewTransportSystem(),
+		now: time.Now,
+	}
+	router, err := lxmf.NewRouter(c.ts, identity, tmpDir)
+	mustTest(t, err)
+	dest, err := router.RegisterDeliveryIdentity(identity, "Test Peer", nil)
+	mustTest(t, err)
 
 	// Actually, Python stores them in seconds.
 	// active_configuration["peer_announce_interval"] = lxmd_config["lxmf"].as_int("announce_interval")*60
@@ -45,7 +53,7 @@ func TestJobs(t *testing.T) {
 	peerInterval := 1 // 1 minute = 60s
 	nodeInterval := 1 // 1 minute = 60s
 
-	ac = &activeConfig{
+	c.ac = &activeConfig{
 		PeerAnnounceInterval: &peerInterval,
 		NodeAnnounceInterval: &nodeInterval,
 	}
@@ -64,23 +72,29 @@ func TestJobs(t *testing.T) {
 	}()
 
 	// This just verifies it runs and doesn't crash
-	jobs(router, dest, stop, 10*time.Millisecond)
+	c.jobs(router, dest, stop, 10*time.Millisecond)
 }
 
 func TestJobsRecovery(t *testing.T) {
 	// For testing, we'll verify the panic recovery works if we could trigger it.
-	// Since tick() is package-global, we'd need to mock it.
+	// TODO: tick() is no longer package-global.
 }
 
 func TestAnnounceAtStart(t *testing.T) {
-	tempDir := tempDir(t)
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	identity, err := rns.NewIdentity(true)
 	mustTest(t, err)
-	ts := rns.NewTransportSystem()
-	router, _ := lxmf.NewRouter(ts, identity, tempDir)
-	dest, _ := router.RegisterDeliveryIdentity(identity, "Test Peer", nil)
+	c := &clientT{
+		ts:  rns.NewTransportSystem(),
+		now: time.Now,
+	}
+	router, err := lxmf.NewRouter(c.ts, identity, tmpDir)
+	mustTest(t, err)
+	dest, err := router.RegisterDeliveryIdentity(identity, "Test Peer", nil)
+	mustTest(t, err)
 
-	ac = &activeConfig{
+	c.ac = &activeConfig{
 		PeerAnnounceAtStart: true,
 		NodeAnnounceAtStart: true,
 	}
@@ -90,7 +104,7 @@ func TestAnnounceAtStart(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		close(stopJobs)
 	}()
-	runDeferredThenJobs(1*time.Millisecond, router, dest, stopJobs, 1*time.Second)
+	c.runDeferredThenJobs(1*time.Millisecond, router, dest, stopJobs, 1*time.Second)
 }
 
 func TestDeferredStartDelay(t *testing.T) {
@@ -100,7 +114,10 @@ func TestDeferredStartDelay(t *testing.T) {
 		time.Sleep(150 * time.Millisecond)
 		close(stopJobs)
 	}()
-	runDeferredThenJobs(100*time.Millisecond, nil, nil, stopJobs, 1*time.Second)
+	c := &clientT{
+		now: time.Now,
+	}
+	c.runDeferredThenJobs(100*time.Millisecond, nil, nil, stopJobs, 1*time.Second)
 	elapsed := time.Since(start)
 	if elapsed < 100*time.Millisecond {
 		t.Errorf("elapsed %v, want >= 100ms", elapsed)
@@ -108,16 +125,11 @@ func TestDeferredStartDelay(t *testing.T) {
 }
 
 func TestJobsStartAfterDeferred(t *testing.T) {
-	// Save and restore global state.
-	origAC := ac
-	origNow := now
-	origLastPeer := lastPeerAnnounce
-	origLastNode := lastNodeAnnounce
-	origTickCount := tickCount
-
-	ac = &activeConfig{}
 	currentTime := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
-	now = func() time.Time { return currentTime }
+	c := &clientT{
+		ac:  &activeConfig{},
+		now: func() time.Time { return currentTime },
+	}
 
 	stopJobs := make(chan struct{})
 
@@ -129,28 +141,25 @@ func TestJobsStartAfterDeferred(t *testing.T) {
 
 	// runDeferredThenJobs blocks: first deferred, then jobs loop until
 	// stopJobs is closed. When it returns, everything has stopped.
-	runDeferredThenJobs(50*time.Millisecond, nil, nil, stopJobs, 1*time.Millisecond)
+	c.runDeferredThenJobs(50*time.Millisecond, nil, nil, stopJobs, 1*time.Millisecond)
 
 	// After deferred completes and jobs are stopped, announce times
 	// should have been set to currentTime by runDeferredThenJobs.
-	if !lastPeerAnnounce.Equal(currentTime) {
-		t.Errorf("lastPeerAnnounce = %v, want %v", lastPeerAnnounce, currentTime)
+	if !c.lastPeerAnnounce.Equal(currentTime) {
+		t.Errorf("lastPeerAnnounce = %v, want %v", c.lastPeerAnnounce, currentTime)
 	}
-	if !lastNodeAnnounce.Equal(currentTime) {
-		t.Errorf("lastNodeAnnounce = %v, want %v", lastNodeAnnounce, currentTime)
+	if !c.lastNodeAnnounce.Equal(currentTime) {
+		t.Errorf("lastNodeAnnounce = %v, want %v", c.lastNodeAnnounce, currentTime)
 	}
-
-	ac = origAC
-	now = origNow
-	lastPeerAnnounce = origLastPeer
-	lastNodeAnnounce = origLastNode
-	tickCount = origTickCount
 }
 
 func TestLXMFDelivery(t *testing.T) {
-	tempDir := tempDir(t)
-	lxmdir = filepath.Join(tempDir, "messages")
-	err := os.MkdirAll(lxmdir, 0o755)
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	c := &clientT{
+		lxmdir: filepath.Join(tmpDir, "messages"),
+	}
+	err := os.MkdirAll(c.lxmdir, 0o755)
 	mustTest(t, err)
 
 	// Mock message
@@ -159,45 +168,51 @@ func TestLXMFDelivery(t *testing.T) {
 	ts := rns.NewTransportSystem()
 	dest, err := rns.NewDestination(ts, id, rns.DestinationIn, rns.DestinationSingle, "lxmf", "delivery")
 	mustTest(t, err)
-	lxm, _ := lxmf.NewMessage(dest, dest, "Hello", "Content", nil)
+	lxm, err := lxmf.NewMessage(dest, dest, "Hello", "Content", nil)
+	mustTest(t, err)
 
 	// Case 1: No on_inbound
-	ac = &activeConfig{OnInbound: ""}
-	lxmfDelivery(lxm)
+	c.ac = &activeConfig{OnInbound: ""}
+	c.lxmfDelivery(lxm)
 	// Check if file exists in lxmdir
-	entries, _ := os.ReadDir(lxmdir)
+	entries, err := os.ReadDir(c.lxmdir)
+	mustTest(t, err)
 	if len(entries) != 1 {
 		t.Errorf("expected 1 message file, got %v", len(entries))
 	}
 
 	// Case 2: with on_inbound (mock script)
-	scriptPath := filepath.Join(tempDir, "handler.sh")
-	err = os.WriteFile(scriptPath, []byte("#!/bin/sh\necho $1 > "+filepath.Join(tempDir, "result")), 0o755)
+	scriptPath := filepath.Join(tmpDir, "handler.sh")
+	err = os.WriteFile(scriptPath, []byte("#!/bin/sh\necho $1 > "+filepath.Join(tmpDir, "result")), 0o755)
 	mustTest(t, err)
 
-	ac = &activeConfig{OnInbound: scriptPath}
-	lxmfDelivery(lxm)
+	c.ac = &activeConfig{OnInbound: scriptPath}
+	c.lxmfDelivery(lxm)
 
-	resultPath := filepath.Join(tempDir, "result")
+	resultPath := filepath.Join(tmpDir, "result")
 	if _, err := os.Stat(resultPath); os.IsNotExist(err) {
 		t.Errorf("on_inbound script was not called")
 	}
 
 	// Case 3: Multi-word command
 	_ = os.Remove(resultPath)
-	ac = &activeConfig{OnInbound: scriptPath + " --some-arg"}
-	lxmfDelivery(lxm)
+	c.ac = &activeConfig{OnInbound: scriptPath + " --some-arg"}
+	c.lxmfDelivery(lxm)
 	if _, err := os.Stat(resultPath); os.IsNotExist(err) {
 		t.Errorf("multi-word on_inbound script was not called")
 	}
 }
 
 func TestPropagationNodeSetup(t *testing.T) {
-	tempDir := tempDir(t)
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	identity, err := rns.NewIdentity(true)
 	mustTest(t, err)
-	ts := rns.NewTransportSystem()
-	router, _ := lxmf.NewRouter(ts, identity, tempDir)
+	c := &clientT{
+		ts: rns.NewTransportSystem(),
+	}
+	router, err := lxmf.NewRouter(c.ts, identity, tmpDir)
+	mustTest(t, err)
 
 	prioritised := []string{"0102030405060708090a0b0c0d0e0f10"}
 	controlAllowed := []string{"1112131415161718191a1b1c1d1e1f20"}
@@ -230,9 +245,13 @@ func TestPropagationNodeSetup(t *testing.T) {
 }
 
 func TestAuthWarningMessage(t *testing.T) {
-	tempDir := tempDir(t)
-	configDir = tempDir
-	ac = &activeConfig{AuthRequired: true, AllowedIdentities: nil}
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	configDir = tmpDir
+	c := &clientT{
+		ts: rns.NewTransportSystem(),
+		ac: &activeConfig{AuthRequired: true, AllowedIdentities: nil},
+	}
 
 	var capturedLog string
 	rns.SetLogDest(rns.LogCallback)
@@ -246,23 +265,23 @@ func TestAuthWarningMessage(t *testing.T) {
 
 	id, err := rns.NewIdentity(true)
 	mustTest(t, err)
-	ts := rns.NewTransportSystem()
-	router, _ := lxmf.NewRouter(ts, id, tempDir)
+	router, _ := lxmf.NewRouter(c.ts, id, tmpDir)
 
-	setupAuth(router)
+	c.setupAuth(router)
 
-	want := "Client authentication was enabled, but no identity hashes could be loaded from " + filepath.Join(tempDir, "allowed") + ". Nobody will be able to sync messages from this propagation node."
+	want := "Client authentication was enabled, but no identity hashes could be loaded from " + filepath.Join(tmpDir, "allowed") + ". Nobody will be able to sync messages from this propagation node."
 	if !strings.Contains(capturedLog, want) {
 		t.Errorf("captured log does not contain expected message.\ngot: %q\nwant: %q", capturedLog, want)
 	}
 }
 
 func TestAuthSetup(t *testing.T) {
-	tempDir := tempDir(t)
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	identity, err := rns.NewIdentity(true)
 	mustTest(t, err)
 	ts := rns.NewTransportSystem()
-	router, _ := lxmf.NewRouter(ts, identity, tempDir)
+	router, _ := lxmf.NewRouter(ts, identity, tmpDir)
 
 	allowed := [][]byte{
 		{0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20},
@@ -284,20 +303,21 @@ func TestIdentityRemember(t *testing.T) {
 	dest, err := rns.NewDestination(ts, identity, rns.DestinationIn, rns.DestinationSingle, "lxmf", "delivery")
 	mustTest(t, err)
 
-	rns.Remember(nil, dest.Hash, identity.GetPublicKey(), nil)
+	ts.Remember(nil, dest.Hash, identity.GetPublicKey(), nil)
 
-	recalled := rns.Recall(ts, dest.Hash, false)
+	recalled := ts.Recall(dest.Hash)
 	if recalled == nil {
 		t.Errorf("recalled identity is nil")
 	}
 }
 
 func TestIgnoreDestinations(t *testing.T) {
-	tempDir := tempDir(t)
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	identity, err := rns.NewIdentity(true)
 	mustTest(t, err)
 	ts := rns.NewTransportSystem()
-	router, _ := lxmf.NewRouter(ts, identity, tempDir)
+	router, _ := lxmf.NewRouter(ts, identity, tmpDir)
 
 	ignored := [][]byte{
 		{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
@@ -313,8 +333,9 @@ func TestIgnoreDestinations(t *testing.T) {
 }
 
 func TestRouterConstruction(t *testing.T) {
-	tempDir := tempDir(t)
-	configDir := filepath.Join(tempDir, "lxmd")
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	configDir := filepath.Join(tmpDir, "lxmd")
 	err := os.MkdirAll(configDir, 0o755)
 	mustTest(t, err)
 
@@ -333,7 +354,7 @@ func TestRouterConstruction(t *testing.T) {
 	ts := rns.NewTransportSystem()
 	router, err := lxmf.NewRouterFromConfig(ts, lxmf.RouterConfig{
 		Identity:         identity,
-		StoragePath:      tempDir,
+		StoragePath:      tmpDir,
 		Autopeer:         ac.Autopeer,
 		AutopeerMaxdepth: ac.AutopeerMaxdepth,
 		PropagationCost:  ac.PropagationStampCostTarget,
@@ -349,8 +370,9 @@ func TestRouterConstruction(t *testing.T) {
 }
 
 func TestServiceLogging(t *testing.T) {
-	tempDir := tempDir(t)
-	configDir := filepath.Join(tempDir, "lxmd")
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	configDir := filepath.Join(tmpDir, "lxmd")
 	err := os.MkdirAll(configDir, 0o755)
 	mustTest(t, err)
 
@@ -377,53 +399,31 @@ func TestApplyTimeoutDefaults(t *testing.T) {
 		displayPeers  bool
 		syncHash      string
 		unpeerHash    string
-		initial       time.Duration
 		want          time.Duration
 	}{
-		{"status-default", true, false, "", "", 0, 5 * time.Second},
-		{"peers-default", false, true, "", "", 0, 5 * time.Second},
-		{"sync-default", false, false, "hash", "", 0, 10 * time.Second},
-		{"unpeer-default", false, false, "", "hash", 0, 10 * time.Second},
-		{"status-override", true, false, "", "", 15 * time.Second, 15 * time.Second},
-		{"sync-override", false, false, "hash", "", 20 * time.Second, 20 * time.Second},
+		{"nothing", false, false, "", "", 0},
+		{"status-default", true, false, "", "", 5 * time.Second},
+		{"peers-default", false, true, "", "", 5 * time.Second},
+		{"sync-default", false, false, "hash", "", 10 * time.Second},
+		{"unpeer-default", false, false, "", "hash", 10 * time.Second},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Save globals
-			oldDisplayStatus := displayStatus
-			oldDisplayPeers := displayPeers
-			oldSyncHash := syncHash
-			oldUnpeerHash := unpeerHash
-			oldTimeout := timeout
-
-			// Set globals
-			displayStatus = tt.displayStatus
-			displayPeers = tt.displayPeers
-			syncHash = tt.syncHash
-			unpeerHash = tt.unpeerHash
-			timeout = tt.initial
-
-			// Call function
-			applyTimeoutDefaults()
-
-			if timeout != tt.want {
-				t.Errorf("timeout: got %v, want %v", timeout, tt.want)
+			got := applyTimeoutDefaults(tt.displayStatus, tt.displayPeers, tt.syncHash, tt.unpeerHash)
+			if got != tt.want {
+				t.Errorf("applyTimeoutDefaults = %v, want %v", got, tt.want)
 			}
-
-			// Restore globals
-			displayStatus = oldDisplayStatus
-			displayPeers = oldDisplayPeers
-			syncHash = oldSyncHash
-			unpeerHash = oldUnpeerHash
-			timeout = oldTimeout
 		})
 	}
 }
 
 func TestResolvePathsDefaults(t *testing.T) {
-	storageRoot := tempDir(t)
-	storagePath, identityPath, err := resolvePaths(storageRoot, "", storageRoot)
+	td, cleanup := tempDir(t)
+	defer cleanup()
+	storageRoot := td
+	c := &clientT{}
+	storagePath, identityPath, err := c.resolvePaths(storageRoot, "", storageRoot)
 	if err != nil {
 		t.Fatalf("resolvePaths: %v", err)
 	}
@@ -435,17 +435,19 @@ func TestResolvePathsDefaults(t *testing.T) {
 		t.Fatalf("identityPath=%q want=%q", identityPath, wantIdentity)
 	}
 
-	if !isDir(lxmdir) {
-		t.Errorf("lxmdir %q not created", lxmdir)
+	if !isDir(c.lxmdir) {
+		t.Errorf("lxmdir %q not created", c.lxmdir)
 	}
 	wantLxmdir := filepath.Join(storageRoot, "messages")
-	if lxmdir != wantLxmdir {
-		t.Errorf("lxmdir=%q want=%q", lxmdir, wantLxmdir)
+	if c.lxmdir != wantLxmdir {
+		t.Errorf("lxmdir=%q want=%q", c.lxmdir, wantLxmdir)
 	}
 }
 
 func TestLoadOrCreateIdentityCreateThenReload(t *testing.T) {
-	identityPath := filepath.Join(tempDir(t), "identities", "lxmd")
+	td, cleanup := tempDir(t)
+	defer cleanup()
+	identityPath := filepath.Join(td, "identities", "lxmd")
 	if err := os.MkdirAll(filepath.Dir(identityPath), 0o755); err != nil {
 		t.Fatalf("mkdir identity dir: %v", err)
 	}
@@ -471,7 +473,9 @@ func TestLoadOrCreateIdentityCreateThenReload(t *testing.T) {
 }
 
 func TestLoadOrCreateIdentityCorruptFile(t *testing.T) {
-	identityPath := filepath.Join(tempDir(t), "identities", "lxmd")
+	td, cleanup := tempDir(t)
+	defer cleanup()
+	identityPath := filepath.Join(td, "identities", "lxmd")
 	if err := os.MkdirAll(filepath.Dir(identityPath), 0o755); err != nil {
 		t.Fatalf("mkdir identity dir: %v", err)
 	}
@@ -485,7 +489,9 @@ func TestLoadOrCreateIdentityCorruptFile(t *testing.T) {
 }
 
 func TestRuntimeTrackerLifecycle(t *testing.T) {
-	statePath := filepath.Join(tempDir(t), "lxmf", "golxmd-state.json")
+	td, cleanup := tempDir(t)
+	defer cleanup()
+	statePath := filepath.Join(td, "lxmf", "golxmd-state.json")
 
 	tracker, err := newRuntimeTracker(statePath)
 	if err != nil {
@@ -530,7 +536,9 @@ func TestRuntimeTrackerLifecycle(t *testing.T) {
 }
 
 func TestRuntimeTrackerDetectsUncleanRestart(t *testing.T) {
-	statePath := filepath.Join(tempDir(t), "lxmf", "golxmd-state.json")
+	td, cleanup := tempDir(t)
+	defer cleanup()
+	statePath := filepath.Join(td, "lxmf", "golxmd-state.json")
 	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
 		t.Fatalf("mkdir state dir: %v", err)
 	}
@@ -549,7 +557,9 @@ func TestRuntimeTrackerDetectsUncleanRestart(t *testing.T) {
 }
 
 func TestLoadRuntimeStateCorruptData(t *testing.T) {
-	statePath := filepath.Join(tempDir(t), "lxmf", "golxmd-state.json")
+	td, cleanup := tempDir(t)
+	defer cleanup()
+	statePath := filepath.Join(td, "lxmf", "golxmd-state.json")
 	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
 		t.Fatalf("mkdir state dir: %v", err)
 	}

@@ -41,7 +41,7 @@ func reserveTCPPort(t *testing.T) int {
 	return addr.Port
 }
 
-func tempDir(t *testing.T) string {
+func tempDir(t *testing.T) (string, func()) {
 	t.Helper()
 	baseDir := ""
 	if runtime.GOOS == "darwin" {
@@ -51,10 +51,10 @@ func tempDir(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("tempDir error: %v", err)
 	}
-	t.Cleanup(func() {
+	cleanup := func() {
 		_ = os.RemoveAll(dir)
-	})
-	return dir
+	}
+	return dir, cleanup
 }
 
 // newTestTransportSystem creates a minimal TransportSystem for testing.
@@ -116,8 +116,10 @@ loglevel = 4
 [interfaces]
 `
 
-	cfg1 := tempDir(t)
-	cfg2 := tempDir(t)
+	cfg1, cleanup1 := tempDir(t)
+	defer cleanup1()
+	cfg2, cleanup2 := tempDir(t)
+	defer cleanup2()
 	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name(), port, controlPort))
 	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name(), port, controlPort))
 
@@ -144,7 +146,8 @@ func TestNewReticulumShareInstanceNoStandalone(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem()
 
-	cfg := tempDir(t)
+	cfg, cleanup := tempDir(t)
+	defer cleanup()
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
 share_instance = No
 instance_control_port = %v
@@ -174,7 +177,8 @@ func TestNewReticulumSharedInstanceUnixServerThenClientSameConfigDir(t *testing.
 	ts1 := NewTransportSystem()
 	ts2 := NewTransportSystem()
 
-	cfg := tempDir(t)
+	cfg, cleanup := tempDir(t)
+	defer cleanup()
 	// Use a shorter name for the socket to avoid path length limits on macOS
 	instanceName := "rns-test"
 

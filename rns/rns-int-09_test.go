@@ -196,7 +196,7 @@ if __name__ == "__main__":
 func TestAnnouncePacketParity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-parity-*")
 	mustTest(t, err)
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
 
 	scriptPath := filepath.Join(tmpDir, "check_announce_parity.py")
 	if err := os.WriteFile(scriptPath, []byte(checkAnnounceParityPy), 0o644); err != nil {
@@ -282,7 +282,7 @@ func TestAnnouncePacketParity(t *testing.T) {
 func TestLinkProofPacketParity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-parity-*")
 	mustTest(t, err)
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
 
 	scriptPath := filepath.Join(tmpDir, "check_link_proof_parity.py")
 	if err := os.WriteFile(scriptPath, []byte(checkLinkProofParityPy), 0o644); err != nil {
@@ -339,7 +339,7 @@ func TestLinkProofPacketParity(t *testing.T) {
 func TestLinkRequestPacketParity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-parity-*")
 	mustTest(t, err)
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
 
 	scriptPath := filepath.Join(tmpDir, "check_link_request_parity.py")
 	if err := os.WriteFile(scriptPath, []byte(checkLinkRequestParityPy), 0o644); err != nil {

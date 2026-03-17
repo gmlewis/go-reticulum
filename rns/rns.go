@@ -49,7 +49,7 @@ func Unpack(data []byte) (any, error) {
 
 // RecallIdentity recalls an identity from its hash using the provided transport.
 func RecallIdentity(ts Transport, hash []byte) *Identity {
-	return Recall(ts, hash, false)
+	return ts.Recall(hash)
 }
 
 // PacketDestination is an interface for types that can be a packet destination.
@@ -226,7 +226,7 @@ func NewReticulum(ts Transport, configDir string) (*Reticulum, error) {
 		return nil, err
 	}
 
-	LoadKnownDestinations(storagePath)
+	r.transport.LoadKnownDestinations(storagePath)
 
 	if r.isSharedInstance || r.isStandaloneInstance {
 		// Initialize interfaces from config

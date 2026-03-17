@@ -80,7 +80,8 @@ if __name__ == "__main__":
 func TestIntegrationResourceGoToPython(t *testing.T) {
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir := tempDir(t)
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	decodeScriptPath := filepath.Join(tmpDir, "decode_resource.py")
 	if err := os.WriteFile(decodeScriptPath, []byte(lxmfDecodeResourcePy), 0o644); err != nil {
 		t.Fatalf("write python decode script: %v", err)
@@ -107,7 +108,9 @@ func TestIntegrationResourceGoToPython(t *testing.T) {
 	contentLen := rns.MDU * 3
 	message := mustTestNewMessage(t, destinationDest, sourceDest, strings.Repeat("G", contentLen), "go-resource-title", nil)
 
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	td, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, td)
 	router.hasPath = func(_ []byte) bool { return true }
 	router.requestPath = func(_ []byte) error { return nil }
 	router.now = func() time.Time { return time.Unix(1700000000, 0) }
@@ -152,7 +155,8 @@ func TestIntegrationResourceGoToPython(t *testing.T) {
 func TestIntegrationResourcePythonToGo(t *testing.T) {
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir := tempDir(t)
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	generateScriptPath := filepath.Join(tmpDir, "generate_resource.py")
 	if err := os.WriteFile(generateScriptPath, []byte(lxmfGenerateResourcePy), 0o644); err != nil {
 		t.Fatalf("write python generate script: %v", err)

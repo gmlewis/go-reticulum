@@ -16,7 +16,7 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-func tempDir(t *testing.T) string {
+func tempDir(t *testing.T) (string, func()) {
 	t.Helper()
 	baseDir := ""
 	if runtime.GOOS == "darwin" {
@@ -26,26 +26,30 @@ func tempDir(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("tempDir error: %v", err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return dir
+	cleanup := func() {
+		_ = os.RemoveAll(dir)
+	}
+	return dir, cleanup
 }
 
-func buildGornid(t *testing.T) string {
+func buildGornid(t *testing.T) (string, func()) {
 	t.Helper()
-	tmpDir := tempDir(t)
+	tmpDir, cleanup := tempDir(t)
 	bin := filepath.Join(tmpDir, "gornid")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Dir = "."
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		cleanup()
 		t.Fatalf("failed to build gornid: %v\n%v", err, string(out))
 	}
-	return bin
+	return bin, cleanup
 }
 
 func TestVersionOutput(t *testing.T) {
 	t.Parallel()
-	bin := buildGornid(t)
+	bin, cleanupBin := buildGornid(t)
+	defer cleanupBin()
 	out, err := exec.Command(bin, "--version").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornid --version failed: %v\n%v", err, string(out))
@@ -59,7 +63,8 @@ func TestVersionOutput(t *testing.T) {
 
 func TestNoIdentityError(t *testing.T) {
 	t.Parallel()
-	bin := buildGornid(t)
+	bin, cleanupBin := buildGornid(t)
+	defer cleanupBin()
 	cmd := exec.Command(bin)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
@@ -79,8 +84,10 @@ func TestNoIdentityError(t *testing.T) {
 
 func TestGenerateRoundTrip(t *testing.T) {
 	t.Parallel()
-	bin := buildGornid(t)
-	tmpDir := tempDir(t)
+	bin, cleanupBin := buildGornid(t)
+	defer cleanupBin()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 
 	out, err := exec.Command(bin, "--config", tmpDir, "-g", idFile).CombinedOutput()
@@ -102,8 +109,10 @@ func TestGenerateRoundTrip(t *testing.T) {
 
 func TestImportExportRoundTrip(t *testing.T) {
 	t.Parallel()
-	bin := buildGornid(t)
-	tmpDir := tempDir(t)
+	bin, cleanupBin := buildGornid(t)
+	defer cleanupBin()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 
 	// Generate identity
@@ -142,8 +151,10 @@ func TestImportExportRoundTrip(t *testing.T) {
 
 func TestEncryptDecryptRoundTrip(t *testing.T) {
 	t.Parallel()
-	bin := buildGornid(t)
-	tmpDir := tempDir(t)
+	bin, cleanupBin := buildGornid(t)
+	defer cleanupBin()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 	plainFile := filepath.Join(tmpDir, "plain.txt")
 	encFile := filepath.Join(tmpDir, "plain.txt.rfe")
@@ -177,8 +188,10 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 
 func TestSignValidateRoundTrip(t *testing.T) {
 	t.Parallel()
-	bin := buildGornid(t)
-	tmpDir := tempDir(t)
+	bin, cleanupBin := buildGornid(t)
+	defer cleanupBin()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 	dataFile := filepath.Join(tmpDir, "data.txt")
 
@@ -209,8 +222,10 @@ func TestSignValidateRoundTrip(t *testing.T) {
 
 func TestValidateBadSignature(t *testing.T) {
 	t.Parallel()
-	bin := buildGornid(t)
-	tmpDir := tempDir(t)
+	bin, cleanupBin := buildGornid(t)
+	defer cleanupBin()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 	dataFile := filepath.Join(tmpDir, "data.txt")
 	sigFile := filepath.Join(tmpDir, "bad.rsg")
@@ -242,8 +257,10 @@ func TestValidateBadSignature(t *testing.T) {
 
 func TestHashOutput(t *testing.T) {
 	t.Parallel()
-	bin := buildGornid(t)
-	tmpDir := tempDir(t)
+	bin, cleanupBin := buildGornid(t)
+	defer cleanupBin()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 
 	if out, err := exec.Command(bin, "--config", tmpDir, "-g", idFile).CombinedOutput(); err != nil {

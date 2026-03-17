@@ -8,6 +8,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -72,14 +73,17 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("config dir doesn't exist", func(t *testing.T) {
 		lastExitCode = 0
-		tempDir := tempDir(t)
-		nonExistent := filepath.Join(tempDir, "nonexistent")
-		rnsDir := filepath.Join(tempDir, "rns")
+		tmpDir, cleanup := tempDir(t)
+		defer cleanup()
+		nonExistent := filepath.Join(tmpDir, "nonexistent")
+		rnsDir := filepath.Join(tmpDir, "rns")
 		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
 		}
 		writeRNSConfig(t, rnsDir)
-		ret, err := remoteInit(nonExistent, rnsDir, 0, 0, "")
+
+		c := &clientT{}
+		ret, err := c.remoteInit(nonExistent, rnsDir, 0, 0, "")
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
 		}
@@ -91,16 +95,19 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("identity file doesn't exist", func(t *testing.T) {
 		lastExitCode = 0
-		tempDir := tempDir(t)
-		if err := os.MkdirAll(tempDir, 0o755); err != nil {
+		tmpDir, cleanup := tempDir(t)
+		defer cleanup()
+		if err := os.MkdirAll(tmpDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
 		}
-		rnsDir := filepath.Join(tempDir, "rns")
+		rnsDir := filepath.Join(tmpDir, "rns")
 		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
 		}
 		writeRNSConfig(t, rnsDir)
-		ret, err := remoteInit(tempDir, rnsDir, 0, 0, "")
+
+		c := &clientT{}
+		ret, err := c.remoteInit(tmpDir, rnsDir, 0, 0, "")
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
 		}
@@ -112,14 +119,17 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("identity file from argument doesn't exist", func(t *testing.T) {
 		lastExitCode = 0
-		tempDir := tempDir(t)
-		nonExistentIdentity := filepath.Join(tempDir, "nonexistent_identity")
-		rnsDir := filepath.Join(tempDir, "rns")
+		tmpDir, cleanup := tempDir(t)
+		defer cleanup()
+		nonExistentIdentity := filepath.Join(tmpDir, "nonexistent_identity")
+		rnsDir := filepath.Join(tmpDir, "rns")
 		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
 		}
 		writeRNSConfig(t, rnsDir)
-		ret, err := remoteInit("", rnsDir, 0, 0, nonExistentIdentity)
+
+		c := &clientT{}
+		ret, err := c.remoteInit("", rnsDir, 0, 0, nonExistentIdentity)
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
 		}
@@ -131,8 +141,9 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("load valid identity", func(t *testing.T) {
 		lastExitCode = 0
-		tempDir := tempDir(t)
-		identityPath := filepath.Join(tempDir, "identity")
+		tmpDir, cleanup := tempDir(t)
+		defer cleanup()
+		identityPath := filepath.Join(tmpDir, "identity")
 
 		// Create a valid identity
 		id, err := rns.NewIdentity(true)
@@ -141,12 +152,14 @@ func TestRemoteInit(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		rnsDir := filepath.Join(tempDir, "rns")
+		rnsDir := filepath.Join(tmpDir, "rns")
 		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
 		}
 		writeRNSConfig(t, rnsDir)
-		ret, err := remoteInit(tempDir, rnsDir, 0, 0, "")
+
+		c := &clientT{}
+		ret, err := c.remoteInit(tmpDir, rnsDir, 0, 0, "")
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
 		}
@@ -154,17 +167,18 @@ func TestRemoteInit(t *testing.T) {
 		if lastExitCode != 0 {
 			t.Errorf("got exit code %v, want 0", lastExitCode)
 		}
-		if identity == nil {
+		if c.identity == nil {
 			t.Error("identity was not loaded")
-		} else if identity.HexHash != id.HexHash {
-			t.Errorf("loaded identity hexhash %v, want %v", identity.HexHash, id.HexHash)
+		} else if c.identity.HexHash != id.HexHash {
+			t.Errorf("loaded identity hexhash %v, want %v", c.identity.HexHash, id.HexHash)
 		}
 	})
 
 	t.Run("load valid identity from path argument", func(t *testing.T) {
 		lastExitCode = 0
-		tempDir := tempDir(t)
-		identityPath := filepath.Join(tempDir, "identity_arg")
+		tmpDir, cleanup := tempDir(t)
+		defer cleanup()
+		identityPath := filepath.Join(tmpDir, "identity_arg")
 
 		// Create a valid identity
 		id, err := rns.NewIdentity(true)
@@ -173,12 +187,14 @@ func TestRemoteInit(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		rnsDir := filepath.Join(tempDir, "rns")
+		rnsDir := filepath.Join(tmpDir, "rns")
 		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
 		}
 		writeRNSConfig(t, rnsDir)
-		ret, err := remoteInit("", rnsDir, 0, 0, identityPath)
+
+		c := &clientT{}
+		ret, err := c.remoteInit("", rnsDir, 0, 0, identityPath)
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
 		}
@@ -186,17 +202,18 @@ func TestRemoteInit(t *testing.T) {
 		if lastExitCode != 0 {
 			t.Errorf("got exit code %v, want 0", lastExitCode)
 		}
-		if identity == nil {
+		if c.identity == nil {
 			t.Error("identity was not loaded")
-		} else if identity.HexHash != id.HexHash {
-			t.Errorf("loaded identity hexhash %v, want %v", identity.HexHash, id.HexHash)
+		} else if c.identity.HexHash != id.HexHash {
+			t.Errorf("loaded identity hexhash %v, want %v", c.identity.HexHash, id.HexHash)
 		}
 	})
 
 	t.Run("test log level and reticulum init", func(t *testing.T) {
 		lastExitCode = 0
-		tempDir := tempDir(t)
-		identityPath := filepath.Join(tempDir, "identity")
+		tmpDir, cleanup := tempDir(t)
+		defer cleanup()
+		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true)
 		if err != nil {
 			t.Fatalf("NewIdentity: %v", err)
@@ -206,7 +223,7 @@ func TestRemoteInit(t *testing.T) {
 		}
 
 		// Create a mock RNS config
-		rnsConfigDir := filepath.Join(tempDir, "rns")
+		rnsConfigDir := filepath.Join(tmpDir, "rns")
 		if err := os.MkdirAll(rnsConfigDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
 		}
@@ -225,7 +242,8 @@ loglevel = 1
 			t.Fatalf("WriteFile: %v", err)
 		}
 
-		ret, err := remoteInit(tempDir, rnsConfigDir, 2, 1, "") // 3 + 2 - 1 = 4
+		c := &clientT{}
+		ret, err := c.remoteInit(tmpDir, rnsConfigDir, 2, 1, "") // 3 + 2 - 1 = 4
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
 		}
@@ -241,8 +259,9 @@ loglevel = 1
 
 	t.Run("config-file loglevel applied in remoteInit", func(t *testing.T) {
 		lastExitCode = 0
-		tempDir := tempDir(t)
-		identityPath := filepath.Join(tempDir, "identity")
+		tmpDir, cleanup := tempDir(t)
+		defer cleanup()
+		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true)
 		if err != nil {
 			t.Fatalf("NewIdentity: %v", err)
@@ -253,17 +272,18 @@ loglevel = 1
 
 		// Create an lxmd config with loglevel=6.
 		lxmdConfig := "[logging]\nloglevel = 6\n"
-		if err := os.WriteFile(filepath.Join(tempDir, "config"), []byte(lxmdConfig), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(tmpDir, "config"), []byte(lxmdConfig), 0o644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
 		}
 
-		rnsConfigDir := filepath.Join(tempDir, "rns")
+		rnsConfigDir := filepath.Join(tmpDir, "rns")
 		if err := os.MkdirAll(rnsConfigDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
 		}
 		writeRNSConfig(t, rnsConfigDir)
 
-		ret, err := remoteInit(tempDir, rnsConfigDir, 0, 0, "")
+		c := &clientT{}
+		ret, err := c.remoteInit(tmpDir, rnsConfigDir, 0, 0, "")
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
 		}
@@ -274,8 +294,9 @@ loglevel = 1
 	})
 
 	t.Run("testGetTargetIdentityLocal", func(t *testing.T) {
-		tempDir := tempDir(t)
-		identityPath := filepath.Join(tempDir, "identity")
+		tmpDir, cleanup := tempDir(t)
+		defer cleanup()
+		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true)
 		if err != nil {
 			t.Fatalf("NewIdentity: %v", err)
@@ -283,18 +304,20 @@ loglevel = 1
 		if err := id.ToFile(identityPath); err != nil {
 			t.Fatalf("ToFile: %v", err)
 		}
-		rnsDir := filepath.Join(tempDir, "rns")
+		rnsDir := filepath.Join(tmpDir, "rns")
 		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
 		}
 		writeRNSConfig(t, rnsDir)
-		ret, err := remoteInit(tempDir, rnsDir, 0, 0, "")
+
+		c := &clientT{}
+		ret, err := c.remoteInit(tmpDir, rnsDir, 0, 0, "")
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
 		}
 		defer closeReticulum(t, ret)
 
-		got := getTargetIdentity("", 5*time.Second)
+		got := c.getTargetIdentity("", 5*time.Second)
 		if got == nil {
 			t.Fatal("got nil identity")
 		}
@@ -305,7 +328,8 @@ loglevel = 1
 
 	t.Run("testGetTargetIdentityInvalidHash", func(t *testing.T) {
 		lastExitCode = 0
-		_ = getTargetIdentity("invalid", 5*time.Second)
+		c := &clientT{}
+		_ = c.getTargetIdentity("invalid", 5*time.Second)
 		if lastExitCode != 203 {
 			t.Errorf("got exit code %v, want 203", lastExitCode)
 		}
@@ -316,9 +340,12 @@ loglevel = 1
 		if err != nil {
 			t.Fatalf("NewIdentity: %v", err)
 		}
-		rns.Remember(nil, id.Hash, id.GetPublicKey(), nil)
+		c := &clientT{
+			ts: rns.NewTransportSystem(),
+		}
+		c.ts.Remember(nil, id.Hash, id.GetPublicKey(), nil)
 
-		got := getTargetIdentity(id.HexHash, 5*time.Second)
+		got := c.getTargetIdentity(id.HexHash, 5*time.Second)
 		if got == nil {
 			t.Fatal("got nil identity")
 		}
@@ -328,14 +355,18 @@ loglevel = 1
 	})
 
 	t.Run("testGetTargetIdentityNetwork", func(t *testing.T) {
-		tempDir := tempDir(t)
-		rnsDir := filepath.Join(tempDir, "rns")
+		c := &clientT{
+			ts: rns.NewTransportSystem(),
+		}
+		tmpDir, cleanup := tempDir(t)
+		defer cleanup()
+		rnsDir := filepath.Join(tmpDir, "rns")
 		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
 		}
 		writeRNSConfig(t, rnsDir)
-		ts := rns.NewTransportSystem()
-		ret, err := rns.NewReticulum(ts, rnsDir)
+
+		ret, err := rns.NewReticulum(c.ts, rnsDir)
 		if err != nil {
 			t.Fatalf("NewReticulum: %v", err)
 		}
@@ -352,26 +383,35 @@ loglevel = 1
 		go func() {
 			select {
 			case <-time.After(200 * time.Millisecond):
-				rns.Remember(nil, id.Hash, id.GetPublicKey(), nil)
+				log.Printf("GML: Remembering hash %x...", id.HexHash)
+				c.ts.Remember(nil, id.Hash, id.GetPublicKey(), nil)
 			case <-done:
 				return
 			}
 		}()
 		defer close(done)
 
-		// Since I can't easily mock the transport's internal pathTable without reflection or exported methods,
-		// I'll use a real announce if I have an interface.
-		// Actually, let's just test the timeout case for now if it's too complex to mock.
+		got := c.getTargetIdentity(id.HexHash, 10*time.Second)
+		if got == nil {
+			t.Fatal("got nil identity")
+		}
+		if got.HexHash != id.HexHash {
+			t.Errorf("got identity hexhash %v, want %v", got.HexHash, id.HexHash)
+		}
 	})
+
 	t.Run("testGetTargetIdentityTimeout", func(t *testing.T) {
-		tempDir := tempDir(t)
-		rnsDir := filepath.Join(tempDir, "rns")
+		c := &clientT{
+			ts: rns.NewTransportSystem(),
+		}
+		tmpDir, cleanup := tempDir(t)
+		defer cleanup()
+		rnsDir := filepath.Join(tmpDir, "rns")
 		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
 		}
 		writeRNSConfig(t, rnsDir)
-		ts := rns.NewTransportSystem()
-		ret, err := rns.NewReticulum(ts, rnsDir)
+		ret, err := rns.NewReticulum(c.ts, rnsDir)
 		if err != nil {
 			t.Fatalf("NewReticulum: %v", err)
 		}
@@ -384,36 +424,41 @@ loglevel = 1
 		}
 
 		// This should timeout because nothing is found
-		_ = getTargetIdentity(id.HexHash, 200*time.Millisecond)
+		_ = c.getTargetIdentity(id.HexHash, 200*time.Millisecond)
+		mustTest(t, err)
 		if lastExitCode != 200 {
 			t.Errorf("got exit code %v, want 200", lastExitCode)
 		}
 	})
 
 	t.Run("testQueryStatusTimeout", func(t *testing.T) {
+		c := &clientT{
+			ts: rns.NewTransportSystem(),
+		}
 		lastExitCode = 0
 		id, err := rns.NewIdentity(true)
 		if err != nil {
 			t.Fatalf("NewIdentity: %v", err)
 		}
-		rns.Remember(nil, id.Hash, id.GetPublicKey(), nil)
+		c.ts.Remember(nil, id.Hash, id.GetPublicKey(), nil)
 
 		// Create a mock RNS config
-		tempDir := tempDir(t)
-		rnsConfigDir := filepath.Join(tempDir, "rns")
+		tmpDir, cleanup := tempDir(t)
+		defer cleanup()
+		rnsConfigDir := filepath.Join(tmpDir, "rns")
 		if err := os.MkdirAll(rnsConfigDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
 		}
 		writeRNSConfig(t, rnsConfigDir)
-		ts := rns.NewTransportSystem()
-		ret, err := rns.NewReticulum(ts, rnsConfigDir)
+
+		ret, err := rns.NewReticulum(c.ts, rnsConfigDir)
 		if err != nil {
 			t.Fatalf("NewReticulum: %v", err)
 		}
 		defer closeReticulum(t, ret)
 
 		// TODO: fully test this.
-		_, _ = queryStatus(ts, id, id, 100*time.Millisecond, false)
+		_, _ = c.queryStatus(id, id, 100*time.Millisecond, false)
 	})
 
 	t.Run("testGetStatusFormatting", func(t *testing.T) {
@@ -443,14 +488,18 @@ loglevel = 1
 	})
 
 	t.Run("testRequestSyncInternalTimeout", func(t *testing.T) {
-		tempDir := tempDir(t)
-		rnsDir := filepath.Join(tempDir, "rns")
+		c := &clientT{
+			ts: rns.NewTransportSystem(),
+		}
+		tmpDir, cleanup := tempDir(t)
+		defer cleanup()
+		rnsDir := filepath.Join(tmpDir, "rns")
 		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
 		}
 		writeRNSConfig(t, rnsDir)
-		ts := rns.NewTransportSystem()
-		ret, err := rns.NewReticulum(ts, rnsDir)
+
+		ret, err := rns.NewReticulum(c.ts, rnsDir)
 		if err != nil {
 			t.Fatalf("NewReticulum: %v", err)
 		}
@@ -461,9 +510,9 @@ loglevel = 1
 		if err != nil {
 			t.Fatalf("NewIdentity: %v", err)
 		}
-		rns.Remember(nil, id.Hash, id.GetPublicKey(), nil)
+		c.ts.Remember(nil, id.Hash, id.GetPublicKey(), nil)
 
 		// TODO: fix this.
-		_, _ = requestSyncInternal(ts, id, id.Hash, id, 100*time.Millisecond, false)
+		_, _ = c.requestSyncInternal(id, id.Hash, id, 100*time.Millisecond, false)
 	})
 }

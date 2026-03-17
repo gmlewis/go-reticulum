@@ -35,8 +35,8 @@ func TestMessagePackUnpackRoundTrip(t *testing.T) {
 		t.Fatalf("NewDestination(source): %v", err)
 	}
 
-	rns.Remember(nil, destination.Hash, destinationID.GetPublicKey(), nil)
-	rns.Remember(nil, source.Hash, sourceID.GetPublicKey(), nil)
+	ts.Remember(nil, destination.Hash, destinationID.GetPublicKey(), nil)
+	ts.Remember(nil, source.Hash, sourceID.GetPublicKey(), nil)
 
 	fields := map[any]any{int64(FieldDebug): []byte("debug-data")}
 	m := mustTestNewMessage(t, destination, source, "hello-content", "hello-title", fields)
@@ -173,7 +173,8 @@ func TestWriteToDirectory(t *testing.T) {
 
 	msg := mustTestNewMessage(t, dest, src, "hello", "greet", nil)
 
-	dir := tempDir(t)
+	dir, cleanup := tempDir(t)
+	defer cleanup()
 	path, err := msg.WriteToDirectory(dir)
 	if err != nil {
 		t.Fatalf("WriteToDirectory error = %v", err)

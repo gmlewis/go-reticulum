@@ -367,7 +367,7 @@ func isTimestampType(v any) bool {
 }
 
 func recalledDeliveryDestination(ts rns.Transport, destHash []byte) *rns.Destination {
-	identity := rns.Recall(ts, destHash, false)
+	identity := ts.Recall(destHash)
 	if identity == nil {
 		return nil
 	}

@@ -15,7 +15,8 @@ func TestStackIsolation(t *testing.T) {
 	t.Parallel()
 
 	// Stack A
-	cfgA := tempDir(t)
+	cfgA, cleanupA := tempDir(t)
+	defer cleanupA()
 	tsA := NewTransportSystem()
 	r1, err := NewReticulum(tsA, cfgA)
 	if err != nil {
@@ -24,7 +25,8 @@ func TestStackIsolation(t *testing.T) {
 	defer closeReticulum(t, r1)
 
 	// Stack B
-	cfgB := tempDir(t)
+	cfgB, cleanupB := tempDir(t)
+	defer cleanupB()
 	tsB := NewTransportSystem()
 	r2, err := NewReticulum(tsB, cfgB)
 	if err != nil {

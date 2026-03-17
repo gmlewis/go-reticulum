@@ -18,7 +18,7 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-func tempDir(t *testing.T) string {
+func tempDir(t *testing.T) (string, func()) {
 	t.Helper()
 	baseDir := ""
 	if runtime.GOOS == "darwin" {
@@ -28,26 +28,30 @@ func tempDir(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("tempDir error: %v", err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return dir
+	cleanup := func() {
+		_ = os.RemoveAll(dir)
+	}
+	return dir, cleanup
 }
 
-func buildGornpkg(t *testing.T) string {
+func buildGornpkg(t *testing.T) (string, func()) {
 	t.Helper()
-	tmpDir := tempDir(t)
+	tmpDir, cleanup := tempDir(t)
 	bin := filepath.Join(tmpDir, "gornpkg")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Dir = "."
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		cleanup()
 		t.Fatalf("failed to build gornpkg: %v\n%v", err, string(out))
 	}
-	return bin
+	return bin, cleanup
 }
 
 func TestVersionOutput(t *testing.T) {
 	t.Parallel()
-	bin := buildGornpkg(t)
+	bin, cleanupBin := buildGornpkg(t)
+	defer cleanupBin()
 	out, err := exec.Command(bin, "--version").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornpkg --version failed: %v\n%v", err, string(out))
@@ -61,7 +65,8 @@ func TestVersionOutput(t *testing.T) {
 
 func TestHelpOutput(t *testing.T) {
 	t.Parallel()
-	bin := buildGornpkg(t)
+	bin, cleanupBin := buildGornpkg(t)
+	defer cleanupBin()
 	out, err := exec.Command(bin, "--help").CombinedOutput()
 	_ = err
 	output := string(out)
@@ -81,7 +86,8 @@ func TestHelpOutput(t *testing.T) {
 
 func TestExampleConfig(t *testing.T) {
 	t.Parallel()
-	bin := buildGornpkg(t)
+	bin, cleanupBin := buildGornpkg(t)
+	defer cleanupBin()
 	out, err := exec.Command(bin, "--exampleconfig").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornpkg --exampleconfig failed: %v\n%v", err, string(out))
@@ -95,7 +101,8 @@ func TestExampleConfig(t *testing.T) {
 
 func TestVerboseStacking(t *testing.T) {
 	t.Parallel()
-	bin := buildGornpkg(t)
+	bin, cleanupBin := buildGornpkg(t)
+	defer cleanupBin()
 	out, err := exec.Command(bin, "-v", "-v", "--version").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornpkg -v -v --version failed: %v\n%v", err, string(out))
@@ -109,8 +116,10 @@ func TestVerboseStacking(t *testing.T) {
 
 func TestExitCodeZero(t *testing.T) {
 	t.Parallel()
-	bin := buildGornpkg(t)
-	tmpDir := tempDir(t)
+	bin, cleanupBin := buildGornpkg(t)
+	defer cleanupBin()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	cmd := exec.Command(bin, "--config", tmpDir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -120,8 +129,10 @@ func TestExitCodeZero(t *testing.T) {
 
 func TestSIGINTCleanExit(t *testing.T) {
 	t.Parallel()
-	bin := buildGornpkg(t)
-	tmpDir := tempDir(t)
+	bin, cleanupBin := buildGornpkg(t)
+	defer cleanupBin()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	cmd := exec.Command(bin, "--config", tmpDir, "-v", "-v", "-v")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {

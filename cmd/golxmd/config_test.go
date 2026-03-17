@@ -16,9 +16,10 @@ import (
 
 func TestResolveConfigDir(t *testing.T) {
 	t.Run("explicit config dir", func(t *testing.T) {
-		tempDir := tempDir(t)
-		home := filepath.Join(tempDir, "home")
-		explicit := filepath.Join(tempDir, "explicit")
+		tmpDir, cleanup := tempDir(t)
+		defer cleanup()
+		home := filepath.Join(tmpDir, "home")
+		explicit := filepath.Join(tmpDir, "explicit")
 		got := resolveConfigDirCustom(explicit, home, "/etc/lxmd")
 		if got != explicit {
 			t.Errorf("got %v, want %v", got, explicit)
@@ -26,9 +27,10 @@ func TestResolveConfigDir(t *testing.T) {
 	})
 
 	t.Run("etc config dir exists", func(t *testing.T) {
-		tempDir := tempDir(t)
-		home := filepath.Join(tempDir, "home")
-		etc := filepath.Join(tempDir, "etc")
+		tmpDir, cleanup := tempDir(t)
+		defer cleanup()
+		home := filepath.Join(tmpDir, "home")
+		etc := filepath.Join(tmpDir, "etc")
 		err := os.MkdirAll(etc, 0o755)
 		mustTest(t, err)
 		err = os.WriteFile(filepath.Join(etc, "config"), []byte(""), 0o644)
@@ -41,8 +43,9 @@ func TestResolveConfigDir(t *testing.T) {
 	})
 
 	t.Run("user config dir exists", func(t *testing.T) {
-		tempDir := tempDir(t)
-		home := filepath.Join(tempDir, "home")
+		tmpDir, cleanup := tempDir(t)
+		defer cleanup()
+		home := filepath.Join(tmpDir, "home")
 		userConfig := filepath.Join(home, ".config", "lxmd")
 		err := os.MkdirAll(userConfig, 0o755)
 		mustTest(t, err)
@@ -56,8 +59,9 @@ func TestResolveConfigDir(t *testing.T) {
 	})
 
 	t.Run("fallback to dot lxmd", func(t *testing.T) {
-		tempDir := tempDir(t)
-		home := filepath.Join(tempDir, "home")
+		tmpDir, cleanup := tempDir(t)
+		defer cleanup()
+		home := filepath.Join(tmpDir, "home")
 		dotLxmd := filepath.Join(home, ".lxmd")
 		got := resolveConfigDirCustom("", home, "/nonexistent/etc")
 		if got != dotLxmd {
@@ -192,7 +196,8 @@ func TestApplyConfig(t *testing.T) {
 }
 
 func TestLoadHashList(t *testing.T) {
-	td := tempDir(t)
+	td, cleanup := tempDir(t)
+	defer cleanup()
 	path := filepath.Join(td, "hashes")
 
 	t.Run("valid and invalid", func(t *testing.T) {
@@ -220,7 +225,8 @@ func TestLoadHashList(t *testing.T) {
 }
 
 func TestEnsureConfig(t *testing.T) {
-	td := tempDir(t)
+	td, cleanup := tempDir(t)
+	defer cleanup()
 	configDir := filepath.Join(td, "lxmd")
 	configPath := filepath.Join(configDir, "config")
 

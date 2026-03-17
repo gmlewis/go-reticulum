@@ -18,7 +18,7 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
-func tempDir(t *testing.T) string {
+func tempDir(t *testing.T) (string, func()) {
 	t.Helper()
 	baseDir := ""
 	if runtime.GOOS == "darwin" {
@@ -28,8 +28,10 @@ func tempDir(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("tempDir error: %v", err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return dir
+	cleanup := func() {
+		_ = os.RemoveAll(dir)
+	}
+	return dir, cleanup
 }
 
 func TestNewRouterRequiresStoragePath(t *testing.T) {
@@ -41,7 +43,9 @@ func TestNewRouterRequiresStoragePath(t *testing.T) {
 
 func TestRegisterDeliveryIdentitySingleDestinationOnly(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	id := mustTestNewIdentity(t, true)
 	var zero int
@@ -60,7 +64,9 @@ func TestRegisterDeliveryIdentitySingleDestinationOnly(t *testing.T) {
 
 func TestHandleOutboundValidatesMessage(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	if err := router.HandleOutbound(nil); err == nil {
 		t.Fatal("expected nil message error")
@@ -69,7 +75,9 @@ func TestHandleOutboundValidatesMessage(t *testing.T) {
 
 func TestProcessOutboundDirectRequestsPathWhenUnavailable(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
@@ -108,7 +116,9 @@ func TestProcessOutboundDirectRequestsPathWhenUnavailable(t *testing.T) {
 
 func TestProcessOutboundOpportunisticPathRecoversWithoutPathRequest(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
@@ -171,7 +181,9 @@ func TestProcessOutboundOpportunisticPathRecoversWithoutPathRequest(t *testing.T
 
 func TestProcessOutboundOpportunisticEscalatesToPathRequestThenSends(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
@@ -230,7 +242,9 @@ func TestProcessOutboundOpportunisticEscalatesToPathRequestThenSends(t *testing.
 
 func TestProcessOutboundSendFailureEventuallyFails(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
 	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
@@ -260,7 +274,9 @@ func TestProcessOutboundSendFailureEventuallyFails(t *testing.T) {
 
 func TestProcessOutboundSendSuccessSetsSent(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
@@ -284,7 +300,9 @@ func TestProcessOutboundSendSuccessSetsSent(t *testing.T) {
 
 func TestProcessOutboundSentMessageNotResentUntilTimeout(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
@@ -319,7 +337,9 @@ func TestProcessOutboundSentMessageNotResentUntilTimeout(t *testing.T) {
 
 func TestProcessOutboundTimeoutRequeuesForRetry(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
@@ -370,7 +390,9 @@ func TestProcessOutboundTimeoutRequeuesForRetry(t *testing.T) {
 
 func TestProcessOutboundDeliveryCallbackSetsDeliveredAndPreventsTimeoutRequeue(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
@@ -415,7 +437,9 @@ func TestProcessOutboundDeliveryCallbackSetsDeliveredAndPreventsTimeoutRequeue(t
 
 func TestProcessOutboundSelectsPacketRepresentation(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
@@ -450,7 +474,9 @@ func TestProcessOutboundSelectsPacketRepresentation(t *testing.T) {
 
 func TestProcessOutboundSelectsResourceRepresentation(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
@@ -493,7 +519,9 @@ func TestProcessOutboundSelectsResourceRepresentation(t *testing.T) {
 
 func TestProcessOutboundResourceUnsupportedFails(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
@@ -560,7 +588,9 @@ func (f *fakeLinkBuilder) SetLinkClosedCallback(cb func(*rns.Link)) {
 
 func TestProcessOutboundResourceLinkPendingRetryNoAttemptIncrement(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
@@ -602,7 +632,9 @@ func TestProcessOutboundResourceLinkPendingRetryNoAttemptIncrement(t *testing.T)
 
 func TestSendMessageResourceLockedEstablishError(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
@@ -630,7 +662,9 @@ func TestSendMessageResourceLockedEstablishError(t *testing.T) {
 
 func TestProcessOutboundResourceSendFailureEventuallyFails(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
@@ -665,7 +699,9 @@ func TestProcessOutboundResourceSendFailureEventuallyFails(t *testing.T) {
 
 func TestProcessOutboundResourceSendRetriesThenSucceeds(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
@@ -710,7 +746,9 @@ func TestProcessOutboundResourceSendRetriesThenSucceeds(t *testing.T) {
 
 func TestProcessOutboundDropsTerminalStatesFromQueue(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	msgDelivered := &Message{State: StateDelivered}
 	msgFailed := &Message{State: StateFailed}
@@ -726,7 +764,9 @@ func TestProcessOutboundDropsTerminalStatesFromQueue(t *testing.T) {
 
 func TestHandleInboundResourceDataDeliversMessage(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
@@ -758,7 +798,9 @@ func TestHandleInboundResourceDataDeliversMessage(t *testing.T) {
 
 func TestHandleInboundResourceDataIgnoresInvalidPayload(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	called := false
 	router.RegisterDeliveryCallback(func(_ *Message) {
@@ -774,7 +816,9 @@ func TestHandleInboundResourceDataIgnoresInvalidPayload(t *testing.T) {
 
 func TestRegisterPropagationControlDestination(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	destination, err := router.RegisterPropagationControlDestination(nil)
 	if err != nil {
@@ -795,7 +839,9 @@ func TestRegisterPropagationControlDestination(t *testing.T) {
 
 func TestControlStatsGetRequest(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	remoteIdentity := mustTestNewIdentity(t, true)
 
@@ -831,7 +877,9 @@ func TestControlStatsGetRequest(t *testing.T) {
 
 func TestControlStatsGetRequestAccessErrors(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	if got := router.statsGetRequest("", nil, nil, nil, nil, time.Now()); got != peerErrorNoIdentity {
 		t.Fatalf("stats no identity=%v want=%v", got, peerErrorNoIdentity)
@@ -849,7 +897,9 @@ func TestControlStatsGetRequestAccessErrors(t *testing.T) {
 
 func TestControlPeerSyncAndUnpeerRequests(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	remoteIdentity := mustTestNewIdentity(t, true)
 
@@ -873,7 +923,9 @@ func TestControlPeerSyncAndUnpeerRequests(t *testing.T) {
 
 func TestControlPeerSyncBackoff(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
@@ -900,7 +952,9 @@ func TestControlPeerSyncBackoff(t *testing.T) {
 
 func TestPruneStalePeers(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
@@ -928,7 +982,9 @@ func TestPruneStalePeers(t *testing.T) {
 
 func TestControlPeerSyncAndUnpeerErrors(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	if got := router.peerSyncRequest("", nil, nil, nil, nil, time.Now()); got != peerErrorNoIdentity {
 		t.Fatalf("sync no identity=%v want=%v", got, peerErrorNoIdentity)
@@ -967,7 +1023,9 @@ func TestControlPeerSyncAndUnpeerErrors(t *testing.T) {
 
 func TestRegisterPropagationDestination(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	destination, err := router.RegisterPropagationDestination()
 	if err != nil {
@@ -988,7 +1046,9 @@ func TestRegisterPropagationDestination(t *testing.T) {
 
 func TestOfferRequestReturnsWantedIDs(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	remoteIdentity := mustTestNewIdentity(t, true)
 
@@ -1020,7 +1080,9 @@ func TestOfferRequestReturnsWantedIDs(t *testing.T) {
 
 func TestOfferRequestInvalidKey(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	remoteIdentity := mustTestNewIdentity(t, true)
 
@@ -1038,7 +1100,9 @@ func TestOfferRequestInvalidKey(t *testing.T) {
 
 func TestOfferRequestThrottled(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
@@ -1062,7 +1126,9 @@ func TestOfferRequestThrottled(t *testing.T) {
 
 func TestOfferRequestStaticOnlyNoAccess(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	remoteIdentity := mustTestNewIdentity(t, true)
 
@@ -1082,7 +1148,9 @@ func TestOfferRequestStaticOnlyNoAccess(t *testing.T) {
 
 func TestOfferRequestPeeringCostValidation(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 	router.peeringCost = 2
 
 	remoteIdentity := mustTestNewIdentity(t, true)
@@ -1118,7 +1186,9 @@ func TestOfferRequestPeeringCostValidation(t *testing.T) {
 
 func TestRouterPolicyConfigurationAPIs(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
 
@@ -1195,7 +1265,9 @@ func TestRouterPolicyConfigurationAPIs(t *testing.T) {
 
 func TestApplyPolicyConfig(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	remoteIdentity := mustTestNewIdentity(t, true)
 	remotePropagationHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
@@ -1255,7 +1327,9 @@ func TestApplyPolicyConfig(t *testing.T) {
 
 func TestApplyPolicyConfigErrors(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	if err := router.ApplyPolicyConfig(map[string]any{"peering_cost": "bad"}); err == nil {
 		t.Fatal("expected peering_cost parse error")
@@ -1285,7 +1359,9 @@ func TestNewRouterWithConfigAppliesPolicy(t *testing.T) {
 	remotePropagationHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
 
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouterWithConfig(t, ts, nil, tempDir(t), map[string]any{
+	td, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouterWithConfig(t, ts, nil, td, map[string]any{
 		"peering_cost":     2,
 		"from_static_only": true,
 		"static_peers":     []any{hex.EncodeToString(remotePropagationHash)},
@@ -1312,14 +1388,18 @@ func TestNewRouterWithConfigAppliesPolicy(t *testing.T) {
 
 func TestNewRouterWithConfigReturnsPolicyError(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	if _, err := NewRouterWithConfig(ts, nil, tempDir(t), map[string]any{"peering_cost": "bad"}); err == nil {
+	td, cleanup := tempDir(t)
+	defer cleanup()
+	if _, err := NewRouterWithConfig(ts, nil, td, map[string]any{"peering_cost": "bad"}); err == nil {
 		t.Fatal("expected policy config error")
 	}
 }
 
 func TestMessageGetRequestListAndFetch(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	remoteIdentity := mustTestNewIdentity(t, true)
 
@@ -1376,7 +1456,9 @@ func TestMessageGetRequestListAndFetch(t *testing.T) {
 
 func TestMessageGetRequestRequiresIdentity(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	request, err := msgpack.Pack([]any{nil, nil})
 	if err != nil {
@@ -1391,7 +1473,9 @@ func TestMessageGetRequestRequiresIdentity(t *testing.T) {
 
 func TestMessageGetRequestNoAccessWhenAuthRequired(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	router.authRequired = true
 
@@ -1422,7 +1506,9 @@ func (e assertErr) Error() string {
 
 func TestDeliveryPacketOpportunisticAndDirect(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
@@ -1477,9 +1563,11 @@ func TestNewRouterFromConfig(t *testing.T) {
 	staticPeer := rns.CalculateHash(id, AppName, "propagation")
 
 	ts := rns.NewTransportSystem()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	router := mustTestNewRouterFromConfig(t, ts, RouterConfig{
 		Identity:         id,
-		StoragePath:      tempDir(t),
+		StoragePath:      tmpDir,
 		Autopeer:         true,
 		PropagationLimit: 128,
 		SyncLimit:        512,
@@ -1508,8 +1596,10 @@ func TestNewRouterFromConfig(t *testing.T) {
 
 func TestNewRouterFromConfigDefaults(t *testing.T) {
 	ts := rns.NewTransportSystem()
+	td, cleanup := tempDir(t)
+	defer cleanup()
 	router := mustTestNewRouterFromConfig(t, ts, RouterConfig{
-		StoragePath: tempDir(t),
+		StoragePath: td,
 	})
 
 	if got := router.PropagationPerTransferLimit(); got != DefaultPropagationLimit {
@@ -1532,8 +1622,10 @@ func TestNewRouterFromConfigDefaults(t *testing.T) {
 
 func TestNewRouterFromConfigSyncLimitClamped(t *testing.T) {
 	ts := rns.NewTransportSystem()
+	td, cleanup := tempDir(t)
+	defer cleanup()
 	router := mustTestNewRouterFromConfig(t, ts, RouterConfig{
-		StoragePath:      tempDir(t),
+		StoragePath:      td,
 		PropagationLimit: 500,
 		SyncLimit:        100, // less than PropagationLimit
 	})
@@ -1546,7 +1638,9 @@ func TestNewRouterFromConfigSyncLimitClamped(t *testing.T) {
 
 func TestRouterIgnoreDestination(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	hash := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}
 
@@ -1563,7 +1657,9 @@ func TestRouterIgnoreDestination(t *testing.T) {
 
 func TestRouterEnforceStamps(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	if router.StampsEnforced() {
 		t.Fatal("stamps should not be enforced initially")
@@ -1578,7 +1674,9 @@ func TestRouterEnforceStamps(t *testing.T) {
 
 func TestRouterMessageStorageLimit(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	if got := router.MessageStorageLimit(); got != 0 {
 		t.Fatalf("initial MessageStorageLimit=%v want=0", got)
@@ -1593,7 +1691,9 @@ func TestRouterMessageStorageLimit(t *testing.T) {
 
 func TestRouterPrioritise(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	hash := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}
 
@@ -1610,7 +1710,9 @@ func TestRouterPrioritise(t *testing.T) {
 
 func TestRouterSetInboundStampCost(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	id := mustTestNewIdentity(t, true)
 	var zero int
@@ -1654,7 +1756,9 @@ func TestRouterSetInboundStampCost(t *testing.T) {
 
 func TestRouterAnnounce(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	id := mustTestNewIdentity(t, true)
 	var zero int
@@ -1676,7 +1780,9 @@ func TestRouterAnnounce(t *testing.T) {
 
 func TestRequestMessagesNoPropNode(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 	// No propagation node set — should log and return without panicking.
 	router.RequestMessagesFromPropagationNode(nil)
 	if router.PropagationTransferState() != PRIdle {
@@ -1686,7 +1792,9 @@ func TestRequestMessagesNoPropNode(t *testing.T) {
 
 func TestRequestMessagesPathRequested(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	propNode := make([]byte, 16)
 	for i := range propNode {
@@ -1710,12 +1818,14 @@ func TestRequestMessagesPathRequested(t *testing.T) {
 
 func TestRequestMessagesLinkEstablished(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	// Create and remember a peer identity.
 	peerID := mustTestNewIdentity(t, true)
 	peerDest := mustTestNewDestination(t, ts, peerID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
-	rns.Remember(nil, peerDest.Hash, peerID.GetPublicKey(), nil)
+	ts.Remember(nil, peerDest.Hash, peerID.GetPublicKey(), nil)
 	if err := router.SetOutboundPropagationNode(peerDest.Hash); err != nil {
 		t.Fatal(err)
 	}
@@ -1733,11 +1843,13 @@ func TestRequestMessagesLinkEstablished(t *testing.T) {
 
 func TestRequestMessagesLinkFailed(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	peerID := mustTestNewIdentity(t, true)
 	peerDest := mustTestNewDestination(t, ts, peerID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
-	rns.Remember(nil, peerDest.Hash, peerID.GetPublicKey(), nil)
+	ts.Remember(nil, peerDest.Hash, peerID.GetPublicKey(), nil)
 	if err := router.SetOutboundPropagationNode(peerDest.Hash); err != nil {
 		t.Fatal(err)
 	}
@@ -1755,7 +1867,9 @@ func TestRequestMessagesLinkFailed(t *testing.T) {
 
 func TestCancelPropagationResetsState(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	propNode := make([]byte, 16)
 	for i := range propNode {
@@ -1785,7 +1899,9 @@ func TestCancelPropagationResetsState(t *testing.T) {
 
 func TestProcessOutboundPropagatedNoNodeFails(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
@@ -1817,7 +1933,9 @@ func TestProcessOutboundPropagatedNoNodeFails(t *testing.T) {
 
 func TestProcessOutboundPropagatedRequestsPathThenSends(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
@@ -1871,7 +1989,9 @@ func TestProcessOutboundPropagatedRequestsPathThenSends(t *testing.T) {
 
 func TestProcessOutboundPropagatedSentRemovesFromQueue(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
@@ -1910,7 +2030,9 @@ func TestProcessOutboundPropagatedSentRemovesFromQueue(t *testing.T) {
 
 func TestProcessOutboundTryPropagationOnFailFallback(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
@@ -1967,7 +2089,9 @@ func TestProcessOutboundTryPropagationOnFailFallback(t *testing.T) {
 
 func TestProcessOutboundFailedCallbackInvoked(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
@@ -2004,7 +2128,9 @@ func TestProcessOutboundFailedCallbackInvoked(t *testing.T) {
 
 func TestSetDisplayNameAndAnnounceAppData(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	id := mustTestNewIdentity(t, true)
 	cost8 := 8
@@ -2057,7 +2183,9 @@ func TestSetDisplayNameAndAnnounceAppData(t *testing.T) {
 
 func TestSetDisplayNameNilReturnsNilAppData(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	id := mustTestNewIdentity(t, true)
 	var zero int
@@ -2075,7 +2203,9 @@ func TestSetDisplayNameNilReturnsNilAppData(t *testing.T) {
 
 func TestSetDisplayNameNoStampCost(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	id := mustTestNewIdentity(t, true)
 	var zero int
@@ -2111,7 +2241,9 @@ func TestSetDisplayNameNoStampCost(t *testing.T) {
 
 func TestAnnounceIncludesAppData(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	id := mustTestNewIdentity(t, true)
 	cost12 := 12
@@ -2161,7 +2293,7 @@ func TestAnnounceIncludesAppData(t *testing.T) {
 	if err := packet.Pack(); err != nil {
 		t.Fatalf("Pack: %v", err)
 	}
-	if !rns.ValidateAnnounce(packet) {
+	if !rns.ValidateAnnounce(ts, packet) {
 		t.Fatal("ValidateAnnounce returned false for announce with app_data")
 	}
 
@@ -2188,7 +2320,9 @@ func TestAnnounceIncludesAppData(t *testing.T) {
 
 func TestAnnounceWithoutDisplayNamePassesNilAppData(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	id := mustTestNewIdentity(t, true)
 	var zero int
@@ -2211,14 +2345,16 @@ func TestAnnounceWithoutDisplayNamePassesNilAppData(t *testing.T) {
 	if err := packet.Pack(); err != nil {
 		t.Fatalf("Pack: %v", err)
 	}
-	if !rns.ValidateAnnounce(packet) {
+	if !rns.ValidateAnnounce(ts, packet) {
 		t.Fatal("ValidateAnnounce returned false for announce without app_data")
 	}
 }
 
 func TestRouterPropagationToggle(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	router := mustTestNewRouter(t, ts, nil, tempDir(t))
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	if router.PropagationEnabled() {
 		t.Fatal("propagation should not be enabled initially")

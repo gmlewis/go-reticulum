@@ -18,7 +18,7 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-func tempDir(t *testing.T) string {
+func tempDir(t *testing.T) (string, func()) {
 	t.Helper()
 	baseDir := ""
 	if runtime.GOOS == "darwin" {
@@ -28,8 +28,10 @@ func tempDir(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("tempDir error: %v", err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return dir
+	cleanup := func() {
+		_ = os.RemoveAll(dir)
+	}
+	return dir, cleanup
 }
 
 // tempDirWithConfig returns a temp directory pre-populated with a
@@ -37,33 +39,36 @@ func tempDir(t *testing.T) string {
 // the directory name. This prevents abstract-socket collisions
 // when multiple test processes create Reticulum instances
 // concurrently on Linux.
-func tempDirWithConfig(t *testing.T) string {
+func tempDirWithConfig(t *testing.T) (string, func()) {
 	t.Helper()
-	dir := tempDir(t)
+	dir, cleanup := tempDir(t)
 	instanceName := filepath.Base(dir)
 	config := "[reticulum]\nenable_transport = False\nshare_instance = Yes\ninstance_name = " + instanceName + "\n\n[logging]\nloglevel = 2\n"
 	if err := os.WriteFile(filepath.Join(dir, "config"), []byte(config), 0o600); err != nil {
+		cleanup()
 		t.Fatalf("writeTestConfig: %v", err)
 	}
-	return dir
+	return dir, cleanup
 }
 
-func buildGornstatus(t *testing.T) string {
+func buildGornstatus(t *testing.T) (string, func()) {
 	t.Helper()
-	tmpDir := tempDir(t)
+	tmpDir, cleanup := tempDir(t)
 	bin := filepath.Join(tmpDir, "gornstatus")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Dir = "."
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		cleanup()
 		t.Fatalf("failed to build gornstatus: %v\n%v", err, string(out))
 	}
-	return bin
+	return bin, cleanup
 }
 
 func TestVersionOutput(t *testing.T) {
 	t.Parallel()
-	bin := buildGornstatus(t)
+	bin, cleanupBin := buildGornstatus(t)
+	defer cleanupBin()
 	out, err := exec.Command(bin, "--version").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornstatus --version failed: %v\n%v", err, string(out))
@@ -77,7 +82,8 @@ func TestVersionOutput(t *testing.T) {
 
 func TestHelpOutput(t *testing.T) {
 	t.Parallel()
-	bin := buildGornstatus(t)
+	bin, cleanupBin := buildGornstatus(t)
+	defer cleanupBin()
 	out, err := exec.Command(bin, "--help").CombinedOutput()
 	_ = err
 	output := string(out)
@@ -109,8 +115,10 @@ func TestHelpOutput(t *testing.T) {
 
 func TestExitCodeZero(t *testing.T) {
 	t.Parallel()
-	bin := buildGornstatus(t)
-	tmpDir := tempDirWithConfig(t)
+	bin, cleanupBin := buildGornstatus(t)
+	defer cleanupBin()
+	tmpDir, cleanup := tempDirWithConfig(t)
+	defer cleanup()
 	cmd := exec.Command(bin, "--config", tmpDir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -120,8 +128,10 @@ func TestExitCodeZero(t *testing.T) {
 
 func TestSIGINTCleanExit(t *testing.T) {
 	t.Parallel()
-	bin := buildGornstatus(t)
-	tmpDir := tempDirWithConfig(t)
+	bin, cleanupBin := buildGornstatus(t)
+	defer cleanupBin()
+	tmpDir, cleanup := tempDirWithConfig(t)
+	defer cleanup()
 	cmd := exec.Command(bin, "--config", tmpDir, "-m", "-I", "10")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
@@ -140,8 +150,10 @@ func TestSIGINTCleanExit(t *testing.T) {
 
 func TestMonitorModeSIGINT(t *testing.T) {
 	t.Parallel()
-	bin := buildGornstatus(t)
-	tmpDir := tempDirWithConfig(t)
+	bin, cleanupBin := buildGornstatus(t)
+	defer cleanupBin()
+	tmpDir, cleanup := tempDirWithConfig(t)
+	defer cleanup()
 	cmd := exec.Command(bin, "--config", tmpDir, "-m", "-I", "0.1")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
@@ -160,7 +172,8 @@ func TestMonitorModeSIGINT(t *testing.T) {
 
 func TestVerboseStacking(t *testing.T) {
 	t.Parallel()
-	bin := buildGornstatus(t)
+	bin, cleanupBin := buildGornstatus(t)
+	defer cleanupBin()
 	out, err := exec.Command(bin, "-v", "-v", "--version").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornstatus -v -v --version failed: %v\n%v", err, string(out))
