@@ -1492,7 +1492,7 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 	// Duplicate detection
 	ts.mu.Lock()
 	if ts.seenOrRememberPacketHashLocked(packet.PacketHash, time.Now()) {
-		Logf("Inbound: dropping duplicate packet %x", LogDebug, false, packet.PacketHash)
+		Logf("Inbound: dropping duplicate packet %x", LogVerbose, false, packet.PacketHash)
 		ts.mu.Unlock()
 		return
 	}
@@ -1511,7 +1511,6 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 	destHash := string(packet.DestinationHash)
 
 	if packet.PacketType == PacketData && len(ts.pathRequestHash) > 0 && bytes.Equal(packet.DestinationHash, ts.pathRequestHash) {
-		Logf("Inbound: matched pathRequestHash", LogDebug, false)
 		ts.handlePathRequest(packet.Data, packet)
 		ts.forwardPathRequest(packet, iface)
 		return
@@ -1520,7 +1519,6 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 	// Check if it's for us or a local destination
 	for _, d := range ts.destinations {
 		if string(d.Hash) == destHash {
-			Logf("Inbound: matched local destination %v", LogDebug, false, d.name)
 			// Delivery to local destination
 			d.receive(packet)
 			return
@@ -1529,12 +1527,10 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 
 	// Check if it's for a local link
 	if link := ts.FindLink(packet.DestinationHash); link != nil {
-		Logf("Inbound: matched local link %x", LogDebug, false, link.linkID)
 		link.receive(packet)
 		return
 	}
 
-	Logf("Inbound: starting transport handling", LogDebug, false)
 	// Transport handling
 	if packet.PacketType != PacketAnnounce {
 		// Check special conditions for local clients
@@ -1543,7 +1539,6 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 		forLocalClientLink := packet.PacketType != PacketAnnounce && ts.isForLocalClientLink(packet)
 
 		if ts.Enabled() || fromLocalClient || forLocalClient || forLocalClientLink {
-			Logf("Inbound: Transport handling check: transportID=%x, ourIdentityHash=%x", LogDebug, false, packet.TransportID, ts.identity.Hash)
 			// If transport ID matches ours, we are the next hop
 			if packet.TransportID != nil && ts.identity != nil && bytes.Equal(packet.TransportID, ts.identity.Hash) {
 				ts.mu.Lock()

@@ -616,12 +616,8 @@ func TestInboundForwardsWhenTransportIDMatches(t *testing.T) {
 
 func TestInboundForwardFinalHopStripsTransportHeader(t *testing.T) {
 	t.Parallel()
-	SetLogLevel(LogDebug)
 	ts := NewTransportSystem()
 	ts.SetEnabled(true)
-	if !ts.Enabled() {
-		t.Fatalf("TransportSystem should be enabled")
-	}
 
 	identity := mustTestNewIdentity(t, true)
 	ts.SetNetworkIdentity(identity)
