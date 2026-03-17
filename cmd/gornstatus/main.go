@@ -146,12 +146,12 @@ func main() {
 
 	if monitorMode {
 		ts := rns.NewTransportSystem()
-		r, err := rns.NewReticulum(ts, configDir)
+		ret, err := rns.NewReticulum(ts, configDir)
 		if err != nil {
 			log.Fatal("No shared RNS instance available to get status from")
 		}
-		defer r.Close()
-		runMonitor(r, nameFilter, verbosity)
+		defer func() { _ = ret.Close() }()
+		runMonitor(ret, nameFilter, verbosity)
 		return
 	}
 

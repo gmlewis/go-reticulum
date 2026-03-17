@@ -553,8 +553,6 @@ func TestInboundForwardsWhenTransportIDMatches(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem()
 	ts.SetEnabled(true)
-	tmpDir := tempDir(t)
-	ts.Start(tmpDir)
 
 	identity := mustTestNewIdentity(t, true)
 	ts.SetNetworkIdentity(identity)
