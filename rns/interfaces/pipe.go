@@ -19,6 +19,7 @@ type PipeInterface struct {
 	Other     *PipeInterface
 	OnReceive func([]byte, Interface)
 	queue     chan []byte
+	mu        sync.RWMutex
 	closeOnce sync.Once
 }
 
@@ -44,6 +45,13 @@ func (p *PipeInterface) processQueue() {
 }
 
 func (p *PipeInterface) Send(data []byte) error {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	if p.IsDetached() {
+		return nil
+	}
+
 	p.txBytes += uint64(len(data))
 	// Use a copy to avoid data races if the buffer is reused
 	buf := make([]byte, len(data))
@@ -64,6 +72,12 @@ func (p *PipeInterface) Status() bool { return true }
 // Detach closes the internal queue channel, stopping the background
 // processQueue goroutine and releasing resources.
 func (p *PipeInterface) Detach() error {
-	p.closeOnce.Do(func() { close(p.queue) })
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.closeOnce.Do(func() {
+		p.SetDetached(true)
+		close(p.queue)
+	})
 	return nil
 }
