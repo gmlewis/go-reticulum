@@ -99,6 +99,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v", err)
 	}
-	defer ret.Close()
+	defer func() { _ = ret.Close() }()
 	// TODO: Finish this.
 }

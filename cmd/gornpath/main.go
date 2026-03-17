@@ -91,7 +91,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
-	defer ret.Close()
+	defer func() { _ = ret.Close() }()
 
 	if *table {
 		doTable(ts, *maxHops, *jsonOut)

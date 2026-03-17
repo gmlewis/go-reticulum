@@ -54,7 +54,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
-	defer ret.Close()
+	defer func() { _ = ret.Close() }()
 
 	rns.Log(fmt.Sprintf("Started gornsd version %v", rns.VERSION), rns.LogNotice, false)
 

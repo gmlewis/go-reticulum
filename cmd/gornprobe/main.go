@@ -95,7 +95,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
-	defer ret.Close()
+	defer func() { _ = ret.Close() }()
 
 	destHash, err := hex.DecodeString(destHex)
 	if err != nil {
