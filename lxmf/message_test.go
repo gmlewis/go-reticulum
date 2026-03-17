@@ -35,6 +35,9 @@ func TestMessagePackUnpackRoundTrip(t *testing.T) {
 		t.Fatalf("NewDestination(source): %v", err)
 	}
 
+	rns.Remember(nil, destination.Hash, destinationID.GetPublicKey(), nil)
+	rns.Remember(nil, source.Hash, sourceID.GetPublicKey(), nil)
+
 	fields := map[any]any{int64(FieldDebug): []byte("debug-data")}
 	m := mustTestNewMessage(t, destination, source, "hello-content", "hello-title", fields)
 
