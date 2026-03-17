@@ -49,10 +49,12 @@ func main() {
 		rns.SetLogDest(rns.LogDestFile)
 	}
 
-	_, err := rns.NewReticulum(*configDir)
+	ts := rns.NewTransportSystem()
+	ret, err := rns.NewReticulum(ts, *configDir)
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
+	defer ret.Close()
 
 	rns.Log(fmt.Sprintf("Started gornsd version %v", rns.VERSION), rns.LogNotice, false)
 

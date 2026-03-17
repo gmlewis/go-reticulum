@@ -128,29 +128,17 @@ type Packet struct {
 	SNR  *float64
 	Q    *float64
 
-	transport *TransportSystem
+	transport Transport
 }
 
 // NewPacket creates a new packet for the given destination and data.
+// It uses the transport defined by the destination.
 func NewPacket(destination PacketDestination, data []byte) *Packet {
-	var ts Transport
-	if destination != nil {
-		// Use type assertion to get transport from Destination if possible
-		if d, ok := destination.(*Destination); ok {
-			ts = d.transport
-		} else if l, ok := destination.(*Link); ok {
-			ts = l.transport
-		} else {
-			ts = GetTransport()
-		}
-	} else {
-		ts = GetTransport()
-	}
+	ts := destination.GetTransport()
 	return NewPacketWithTransport(ts, destination, data)
 }
 
-// NewPacketWithTransport creates a new packet with a specific transport system.
-// NewPacketWithTransport initializes a new Reticulum packet with an explicitly provided transport system.
+// NewPacketWithTransport creates a new Reticulum packet with a specific transport system.
 func NewPacketWithTransport(ts Transport, destination PacketDestination, data []byte) *Packet {
 	p := &Packet{
 		Destination:   destination,
@@ -162,7 +150,7 @@ func NewPacketWithTransport(ts Transport, destination PacketDestination, data []
 		CreateReceipt: true,
 		ContextFlag:   FlagUnset,
 		MTU:           MTU,
-		transport:     ts.(*TransportSystem),
+		transport:     ts,
 	}
 	if destination != nil {
 		p.DestinationType = destination.GetType()
@@ -288,14 +276,12 @@ func (p *Packet) Send() error {
 		return p.transport.Outbound(p)
 	}
 	if p.Destination != nil {
-		if d, ok := p.Destination.(*Destination); ok && d.transport != nil {
-			return d.transport.Outbound(p)
-		}
-		if l, ok := p.Destination.(*Link); ok && l.transport != nil {
-			return l.transport.Outbound(p)
+		ts := p.Destination.GetTransport()
+		if ts != nil {
+			return ts.Outbound(p)
 		}
 	}
-	return TransportProxy.Outbound(p)
+	return errors.New("unknown transport for packet")
 }
 
 // Unpack parses a raw packet.

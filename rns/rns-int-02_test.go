@@ -899,11 +899,11 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
-	r := mustTestNewReticulum(t, goConfigDir)
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, goConfigDir)
 	defer closeReticulum(t, r)
 
 	// Wait for announce (path) from Python
-	ts := r.Transport()
 	timeout := time.Now().Add(10 * time.Second)
 	found := false
 	for time.Now().Before(timeout) {
@@ -920,13 +920,13 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 
 	// Create Link
 	// We need to create a dummy destination for the remote side
-	remoteDest := mustTestNewDestinationWithTransport(t, ts, remoteId, DestinationOut, DestinationSingle, "integrated_test", "parity")
+	remoteDest := mustTestNewDestination(t, ts, remoteId, DestinationOut, DestinationSingle, "integrated_test", "parity")
 	// The hash should match what Python reported
 	if !bytes.Equal(remoteDest.Hash, destHash) {
 		t.Fatalf("Remote destination hash mismatch! Expected %x, got %x", destHash, remoteDest.Hash)
 	}
 
-	l := mustTestNewLinkWithTransport(t, ts, remoteDest)
+	l := mustTestNewLink(t, ts, remoteDest)
 
 	linkEstablished := make(chan bool, 1)
 	l.SetLinkEstablishedCallback(func(link *Link) {
@@ -1044,10 +1044,10 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600)
 
 	SetLogLevel(LogDebug)
-	r := mustTestNewReticulum(t, goConfigDir)
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, goConfigDir)
 	defer closeReticulum(t, r)
 
-	ts := r.Transport()
 	pathDeadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(pathDeadline) {
 		if ts.HasPath(destHash) {
@@ -1059,12 +1059,12 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 		t.Fatal("timed out waiting for announce path from Python")
 	}
 
-	remoteDest := mustTestNewDestinationWithTransport(t, ts, remoteID, DestinationOut, DestinationSingle, "integrated_test", "parity")
+	remoteDest := mustTestNewDestination(t, ts, remoteID, DestinationOut, DestinationSingle, "integrated_test", "parity")
 	if !bytes.Equal(remoteDest.Hash, destHash) {
 		t.Fatalf("remote destination hash mismatch: expected %x got %x", destHash, remoteDest.Hash)
 	}
 
-	l := mustTestNewLinkWithTransport(t, ts, remoteDest)
+	l := mustTestNewLink(t, ts, remoteDest)
 
 	linkEstablished := make(chan bool, 1)
 	l.SetLinkEstablishedCallback(func(link *Link) {
@@ -1131,12 +1131,13 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
-	r := mustTestNewReticulum(t, goConfigDir)
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, goConfigDir)
 	defer closeReticulum(t, r)
 
 	// Create Go destination
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestinationWithTransport(t, r.Transport(), id, DestinationIn, DestinationSingle, "integrated_test", "parity")
+	dest := mustTestNewDestination(t, r.Transport(), id, DestinationIn, DestinationSingle, "integrated_test", "parity")
 
 	linkEstablished := make(chan *Link, 1)
 	dest.SetLinkEstablishedCallback(func(l *Link) {
@@ -1209,7 +1210,6 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-large-py-to-go-*")
 	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
-	ResetTransport()
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -1225,11 +1225,12 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600)
 
 	SetLogLevel(LogDebug)
-	r := mustTestNewReticulum(t, goConfigDir)
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, goConfigDir)
 	defer closeReticulum(t, r)
 
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "integrated_test", "parity")
+	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "integrated_test", "parity")
 
 	requestReceived := make(chan int, 1)
 	dest.RegisterRequestHandler("test_path", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
@@ -1284,7 +1285,6 @@ func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-integrated-*")
 	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
-	ResetTransport()
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -1331,10 +1331,10 @@ func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
-	r := mustTestNewReticulum(t, goConfigDir)
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, goConfigDir)
 	defer closeReticulum(t, r)
 
-	ts := GetTransport()
 	initialDeadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(initialDeadline) {
 		if ts.HasPath(destHash) {
@@ -1380,7 +1380,6 @@ func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-pathresp-*")
 	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
-	ResetTransport()
 
 	goListenPort, requesterPort := allocateUDPPortPair(t)
 
@@ -1390,11 +1389,12 @@ func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
-	r := mustTestNewReticulum(t, goConfigDir)
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, goConfigDir)
 	defer closeReticulum(t, r)
 
 	id := mustTestNewIdentity(t, true)
-	localDest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "pathreq", "target")
+	localDest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "pathreq", "target")
 
 	requestConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: requesterPort})
 	if err != nil {
@@ -1402,10 +1402,7 @@ func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
 	}
 	defer func() { _ = requestConn.Close() }()
 
-	pathReqDest := mustTestNewDestination(t, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
-	if err != nil {
-		t.Fatalf("failed creating path request destination: %v", err)
-	}
+	pathReqDest := mustTestNewDestination(t, ts, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 
 	tag := bytes.Repeat([]byte{0xAB}, TruncatedHashLength/8)
 	requestData := make([]byte, 0, TruncatedHashLength/4)
@@ -1448,7 +1445,7 @@ func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
 		t.Fatalf("expected TransportForward path response, got %v", response.TransportType)
 	}
 
-	transportID := GetTransport().identity.Hash
+	transportID := r.Transport().(*TransportSystem).identity.Hash
 	if !bytes.Equal(response.TransportID, transportID) {
 		t.Fatalf("expected transport ID to match local transport identity")
 	}
@@ -1465,7 +1462,6 @@ func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-multihop-*")
 	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
-	ResetTransport()
 
 	goListenPort, sinkPort := allocateUDPPortPair(t)
 
@@ -1475,10 +1471,10 @@ func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
-	r := mustTestNewReticulum(t, goConfigDir)
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, goConfigDir)
 	defer closeReticulum(t, r)
 
-	ts := GetTransport()
 	var outIface interfaces.Interface
 	for _, iface := range ts.GetInterfaces() {
 		if iface.Type() == "UDPInterface" {
@@ -1491,7 +1487,7 @@ func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 	}
 
 	remoteID := mustTestNewIdentity(t, true)
-	remoteDest := mustTestNewDestinationWithTransport(t, nil, remoteID, DestinationOut, DestinationSingle, "multihop", "target")
+	remoteDest := mustTestNewDestination(t, nil, remoteID, DestinationOut, DestinationSingle, "multihop", "target")
 
 	nextHop := bytes.Repeat([]byte{0x7A}, TruncatedHashLength/8)
 	ts.GetMutex().Lock()
@@ -1562,7 +1558,6 @@ func TestIntegratedPathResponseAnnounceNotRebroadcastUDP(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-pathresp-norebroadcast-*")
 	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
-	ResetTransport()
 
 	ingressListenPort := allocateUDPPort(t)
 	ingressForwardPort := allocateUDPPort(t)
@@ -1595,7 +1590,8 @@ enable_transport = False
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
 
 	SetLogLevel(LogDebug)
-	r := mustTestNewReticulum(t, goConfigDir)
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, goConfigDir)
 	defer closeReticulum(t, r)
 
 	sinkConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: sinkPort})
@@ -1611,7 +1607,7 @@ enable_transport = False
 	defer func() { _ = senderConn.Close() }()
 
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "pathresp", "target")
+	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "pathresp", "target")
 
 	announce, err := dest.buildAnnouncePacket(nil)
 	if err != nil {
@@ -1645,7 +1641,6 @@ func TestIntegratedRelayedPathResponsePropagationUDP(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-pathresp-relay-*")
 	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
-	ResetTransport()
 
 	relayIngressListenPort := allocateUDPPort(t)
 	relayEgressListenPort := allocateUDPPort(t)
@@ -1678,7 +1673,8 @@ enable_transport = False
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600)
 
 	SetLogLevel(LogDebug)
-	r := mustTestNewReticulum(t, goConfigDir)
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, goConfigDir)
 	defer closeReticulum(t, r)
 
 	requestConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: requesterPort})
@@ -1694,15 +1690,9 @@ enable_transport = False
 	defer func() { _ = responderConn.Close() }()
 
 	remoteID := mustTestNewIdentity(t, true)
-	remoteDest := mustTestNewDestinationWithTransport(t, nil, remoteID, DestinationIn, DestinationSingle, "relay", "target")
-	if err != nil {
-		t.Fatalf("failed creating remote destination: %v", err)
-	}
+	remoteDest := mustTestNewDestination(t, nil, remoteID, DestinationIn, DestinationSingle, "relay", "target")
 
-	pathReqDest := mustTestNewDestination(t, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
-	if err != nil {
-		t.Fatalf("failed creating path request destination: %v", err)
-	}
+	pathReqDest := mustTestNewDestination(t, ts, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 
 	tag := bytes.Repeat([]byte{0xCD}, TruncatedHashLength/8)
 	requestData := make([]byte, 0, len(remoteDest.Hash)+len(tag))
@@ -1803,7 +1793,6 @@ func TestIntegratedRelayedPathResponsePropagationPythonRequesterUDP(t *testing.T
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-pathresp-python-requester-*")
 	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
-	ResetTransport()
 
 	pyListenPort := allocateUDPPort(t)
 	relayIngressListenPort := allocateUDPPort(t)
@@ -1836,7 +1825,8 @@ enable_transport = False
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600)
 
 	SetLogLevel(LogDebug)
-	r := mustTestNewReticulum(t, goConfigDir)
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, goConfigDir)
 	defer closeReticulum(t, r)
 
 	responderConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: responderPort})
@@ -1846,10 +1836,7 @@ enable_transport = False
 	defer func() { _ = responderConn.Close() }()
 
 	remoteID := mustTestNewIdentity(t, true)
-	remoteDest := mustTestNewDestinationWithTransport(t, nil, remoteID, DestinationIn, DestinationSingle, "relay", "python_requester_target")
-	if err != nil {
-		t.Fatalf("failed creating remote destination: %v", err)
-	}
+	remoteDest := mustTestNewDestination(t, nil, remoteID, DestinationIn, DestinationSingle, "relay", "python_requester_target")
 
 	scriptPath := filepath.Join(tmpDir, "integrated_path_requester.py")
 	if err := os.WriteFile(scriptPath, []byte(integratedPathRequesterPy), 0o644); err != nil {
@@ -1887,10 +1874,7 @@ enable_transport = False
 		t.Fatalf("failed reading forwarded path request packet from Python requester: %v", err)
 	}
 
-	pathReqDest := mustTestNewDestination(t, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
-	if err != nil {
-		t.Fatalf("failed creating path request destination: %v", err)
-	}
+	pathReqDest := mustTestNewDestination(t, ts, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 
 	forwardedReq := NewPacketFromRaw(buf[:n])
 	if err := forwardedReq.Unpack(); err != nil {
@@ -1958,7 +1942,6 @@ func TestIntegratedRelayedPathResponsePropagationPythonRelayUDP(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-pathresp-python-relay-*")
 	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
-	ResetTransport()
 
 	pyIngressListenPort := allocateUDPPort(t)
 	requesterPort := allocateUDPPort(t)
@@ -2014,15 +1997,11 @@ func TestIntegratedRelayedPathResponsePropagationPythonRelayUDP(t *testing.T) {
 	defer func() { _ = responderConn.Close() }()
 
 	remoteID := mustTestNewIdentity(t, true)
-	remoteDest := mustTestNewDestinationWithTransport(t, nil, remoteID, DestinationIn, DestinationSingle, "relay", "python_relay_target")
-	if err != nil {
-		t.Fatalf("failed creating remote destination: %v", err)
-	}
+	// TODO: Investigate this.
+	remoteDest := mustTestNewDestination(t, nil, remoteID, DestinationIn, DestinationSingle, "relay", "python_relay_target")
 
-	pathReqDest := mustTestNewDestination(t, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
-	if err != nil {
-		t.Fatalf("failed creating path request destination: %v", err)
-	}
+	ts := NewTransportSystem()
+	pathReqDest := mustTestNewDestination(t, ts, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 
 	tag := bytes.Repeat([]byte{0xA5}, TruncatedHashLength/8)
 	requestData := make([]byte, 0, len(remoteDest.Hash)+len(tag))
@@ -2136,7 +2115,6 @@ func TestIntegratedAnnouncePropagationPythonRelayUDP(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-announce-python-relay-*")
 	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
-	ResetTransport()
 
 	pyIngressListenPort := allocateUDPPort(t)
 	requesterPort := allocateUDPPort(t)
@@ -2289,7 +2267,6 @@ func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-path-invalidate-py-*")
 	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
-	ResetTransport()
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -2299,11 +2276,12 @@ func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600)
 
 	SetLogLevel(LogDebug)
-	r := mustTestNewReticulum(t, goConfigDir)
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, goConfigDir)
 	defer closeReticulum(t, r)
 
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "integrated_test", "invalidate_py")
+	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "integrated_test", "invalidate_py")
 
 	stopAnnounce := make(chan struct{})
 	announceStopped := false
@@ -2393,7 +2371,6 @@ func TestIntegratedRelayedPathResponseGoRequesterToPythonTargetUDP(t *testing.T)
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-pathresp-go-relay-python-target-*")
 	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
-	ResetTransport()
 
 	pyListenPort := allocateUDPPort(t)
 	relayEgressListenPort := allocateUDPPort(t)
@@ -2467,7 +2444,8 @@ enable_transport = False
 	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600)
 
 	SetLogLevel(LogDebug)
-	r := mustTestNewReticulum(t, goConfigDir)
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, goConfigDir)
 	defer closeReticulum(t, r)
 
 	requestConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: requesterPort})
@@ -2476,10 +2454,7 @@ enable_transport = False
 	}
 	defer func() { _ = requestConn.Close() }()
 
-	pathReqDest := mustTestNewDestination(t, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
-	if err != nil {
-		t.Fatalf("failed creating path request destination: %v", err)
-	}
+	pathReqDest := mustTestNewDestination(t, ts, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 
 	requestData := make([]byte, 0, len(destHash)+len(tag))
 	requestData = append(requestData, destHash...)
@@ -2544,7 +2519,6 @@ func TestIntegratedPythonRelayPathRequestEmissionUDP(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-python-relay-pr-emitter-*")
 	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
-	ResetTransport()
 
 	pyIngressListenPort := allocateUDPPort(t)
 	requesterPort := allocateUDPPort(t)
@@ -2552,7 +2526,7 @@ func TestIntegratedPythonRelayPathRequestEmissionUDP(t *testing.T) {
 	sinkPort := allocateUDPPort(t)
 
 	targetID := mustTestNewIdentity(t, true)
-	targetDest := mustTestNewDestinationWithTransport(t, nil, targetID, DestinationIn, DestinationSingle, "relay", "forward_target")
+	targetDest := mustTestNewDestination(t, nil, targetID, DestinationIn, DestinationSingle, "relay", "forward_target")
 	if err != nil {
 		t.Fatalf("failed creating target destination: %v", err)
 	}
@@ -2634,10 +2608,8 @@ waitPacket:
 		t.Fatalf("failed unpacking emitted path request packet: %v", err)
 	}
 
-	pathReqDest := mustTestNewDestination(t, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
-	if err != nil {
-		t.Fatalf("failed creating path request destination: %v", err)
-	}
+	ts := NewTransportSystem()
+	pathReqDest := mustTestNewDestination(t, ts, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 
 	if packet.PacketType != PacketData {
 		t.Fatalf("expected DATA packet type, got %v", packet.PacketType)
@@ -2669,7 +2641,6 @@ func TestIntegratedPythonRelayInboundPathRequestForwardingUDP(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-python-relay-inbound-forward-*")
 	mustTest(t, err)
 	defer os.RemoveAll(tmpDir)
-	ResetTransport()
 
 	pyRelayIngressListenPort := allocateUDPPort(t)
 	pyRequesterListenPort := allocateUDPPort(t)
@@ -2677,7 +2648,7 @@ func TestIntegratedPythonRelayInboundPathRequestForwardingUDP(t *testing.T) {
 	sinkPort := allocateUDPPort(t)
 
 	targetID := mustTestNewIdentity(t, true)
-	targetDest := mustTestNewDestinationWithTransport(t, nil, targetID, DestinationIn, DestinationSingle, "relay", "inbound_forward_target")
+	targetDest := mustTestNewDestination(t, nil, targetID, DestinationIn, DestinationSingle, "relay", "inbound_forward_target")
 	if err != nil {
 		t.Fatalf("failed creating target destination: %v", err)
 	}
@@ -2783,10 +2754,8 @@ relayReady:
 		t.Fatalf("failed unpacking forwarded inbound path request: %v", err)
 	}
 
-	pathReqDest := mustTestNewDestination(t, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
-	if err != nil {
-		t.Fatalf("failed creating path request destination: %v", err)
-	}
+	ts := NewTransportSystem()
+	pathReqDest := mustTestNewDestination(t, ts, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 
 	if packet.PacketType != PacketData {
 		t.Fatalf("expected DATA packet type, got %v", packet.PacketType)

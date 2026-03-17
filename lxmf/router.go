@@ -27,6 +27,7 @@ type propagationEntry struct {
 
 // Router encapsulates the routing logic, delivery mechanisms, and state management for the LXMF messaging protocol.
 type Router struct {
+	transport   rns.Transport
 	identity    *rns.Identity
 	storagePath string
 
@@ -42,7 +43,7 @@ type Router struct {
 	requestPath  func([]byte) error
 	sendPacket   func(*rns.Packet) error
 	sendResource func(*Message) error
-	newLink      func(*rns.Destination) (*rns.Link, error)
+	newLink      func(rns.Transport, *rns.Destination) (*rns.Link, error)
 	newResource  func([]byte, *rns.Link) (*rns.Resource, error)
 	now          func() time.Time
 
@@ -127,7 +128,7 @@ var errResourceRepresentationNotSupported = errors.New("lxmf resource representa
 var errResourceLinkPending = errors.New("lxmf resource link pending")
 
 // NewRouter instantiates a new LXMF router with the specified Reticulum identity and local storage path.
-func NewRouter(identity *rns.Identity, storagePath string) (*Router, error) {
+func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*Router, error) {
 	if storagePath == "" {
 		return nil, errors.New("lxmf router requires storage path")
 	}
@@ -145,14 +146,15 @@ func NewRouter(identity *rns.Identity, storagePath string) (*Router, error) {
 	}
 
 	router := &Router{
+		transport:            ts,
 		identity:             identity,
 		storagePath:          base,
 		deliveryDestinations: map[string]*rns.Destination{},
 		inboundStampCosts:    map[string]int{},
 		displayNames:         map[string]string{},
 		pendingOutbound:      []*Message{},
-		hasPath:              rns.TransportProxy.HasPath,
-		requestPath:          rns.TransportProxy.RequestPath,
+		hasPath:              ts.HasPath,
+		requestPath:          ts.RequestPath,
 		sendPacket: func(packet *rns.Packet) error {
 			return packet.Send()
 		},
@@ -187,8 +189,8 @@ func NewRouter(identity *rns.Identity, storagePath string) (*Router, error) {
 }
 
 // NewRouterWithConfig creates a new LXMF router and immediately applies the provided policy configuration map.
-func NewRouterWithConfig(identity *rns.Identity, storagePath string, policyConfig map[string]any) (*Router, error) {
-	router, err := NewRouter(identity, storagePath)
+func NewRouterWithConfig(ts rns.Transport, identity *rns.Identity, storagePath string, policyConfig map[string]any) (*Router, error) {
+	router, err := NewRouter(ts, identity, storagePath)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +211,7 @@ func (r *Router) RegisterPropagationDestination() (*rns.Destination, error) {
 		return r.propagationDestination, nil
 	}
 
-	destination, err := rns.NewDestination(r.identity, rns.DestinationIn, rns.DestinationSingle, AppName, "propagation")
+	destination, err := rns.NewDestination(r.transport, r.identity, rns.DestinationIn, rns.DestinationSingle, AppName, "propagation")
 	if err != nil {
 		return nil, fmt.Errorf("create propagation destination: %w", err)
 	}
@@ -383,7 +385,7 @@ func (r *Router) RegisterPropagationControlDestination(allowedList [][]byte) (*r
 		return r.controlDestination, nil
 	}
 
-	destination, err := rns.NewDestination(r.identity, rns.DestinationIn, rns.DestinationSingle, AppName, "propagation", controlPathAspect)
+	destination, err := rns.NewDestination(r.transport, r.identity, rns.DestinationIn, rns.DestinationSingle, AppName, "propagation", controlPathAspect)
 	if err != nil {
 		return nil, fmt.Errorf("create control destination: %w", err)
 	}
@@ -698,18 +700,19 @@ func parseLimitBytes(values []any, index int) int {
 	}
 }
 
-func (r *Router) resolvePeerHash(data []byte, linkID []byte, remoteIdentity *rns.Identity) []byte {
-	if len(data) > 0 {
-		return append([]byte{}, data...)
-	}
-	if remoteIdentity != nil {
-		return append([]byte{}, remoteIdentity.Hash...)
-	}
-	if len(linkID) > 0 {
-		return append([]byte{}, linkID...)
-	}
-	return nil
-}
+// TODO: Find out where this is needed or delete it.
+// func (r *Router) resolvePeerHash(data []byte, linkID []byte, remoteIdentity *rns.Identity) []byte {
+// 	if len(data) > 0 {
+// 		return append([]byte{}, data...)
+// 	}
+// 	if remoteIdentity != nil {
+// 		return append([]byte{}, remoteIdentity.Hash...)
+// 	}
+// 	if len(linkID) > 0 {
+// 		return append([]byte{}, linkID...)
+// 	}
+// 	return nil
+// }
 
 // RegisterDeliveryIdentity sets up the primary identity and associated destination for receiving direct LXMF messages.
 func (r *Router) RegisterDeliveryIdentity(identity *rns.Identity, displayName string, stampCost *int) (*rns.Destination, error) {
@@ -723,7 +726,7 @@ func (r *Router) RegisterDeliveryIdentity(identity *rns.Identity, displayName st
 		identity = r.identity
 	}
 
-	destination, err := rns.NewDestination(identity, rns.DestinationIn, rns.DestinationSingle, AppName, "delivery")
+	destination, err := rns.NewDestination(r.transport, identity, rns.DestinationIn, rns.DestinationSingle, AppName, "delivery")
 	if err != nil {
 		return nil, fmt.Errorf("create delivery destination: %w", err)
 	}
@@ -1036,7 +1039,7 @@ func (r *Router) sendMessageResourceLocked(message *Message) error {
 		return errResourceLinkPending
 	}
 
-	link, err := r.newLink(message.Destination)
+	link, err := r.newLink(r.transport, message.Destination)
 	if err != nil {
 		return err
 	}
@@ -1090,7 +1093,7 @@ func (r *Router) handleInboundResourceData(data []byte) {
 	if len(data) == 0 {
 		return
 	}
-	message, err := UnpackMessageFromBytes(data, MethodDirect)
+	message, err := UnpackMessageFromBytes(r.transport, data, MethodDirect)
 	if err != nil {
 		return
 	}
@@ -1127,7 +1130,7 @@ func (r *Router) deliveryPacket(data []byte, packet *rns.Packet) {
 		lxmfData = append(lxmfData, data...)
 	}
 
-	message, err := UnpackMessageFromBytes(lxmfData, method)
+	message, err := UnpackMessageFromBytes(r.transport, lxmfData, method)
 	if err != nil {
 		return
 	}
@@ -1161,8 +1164,8 @@ type RouterConfig struct {
 }
 
 // NewRouterFromConfig creates a Router using the comprehensive configuration object, configuring the routing instance to mirror specific network constraints.
-func NewRouterFromConfig(cfg RouterConfig) (*Router, error) {
-	router, err := NewRouter(cfg.Identity, cfg.StoragePath)
+func NewRouterFromConfig(ts rns.Transport, cfg RouterConfig) (*Router, error) {
+	router, err := NewRouter(ts, cfg.Identity, cfg.StoragePath)
 	if err != nil {
 		return nil, err
 	}
@@ -1513,21 +1516,21 @@ func (r *Router) RequestMessagesFromPropagationNode(limit *int) {
 		r.propagationTransferState = PRLinkEstablishing
 		log.Printf("Establishing link to %x for message download (limit=%v)", r.outboundPropagationNode, maxMessages)
 
-		identity := rns.Recall(r.outboundPropagationNode, false)
+		identity := rns.Recall(r.transport, r.outboundPropagationNode, false)
 		if identity == nil {
 			log.Printf("Cannot recall identity for propagation node %x", r.outboundPropagationNode)
 			r.propagationTransferState = PRFailed
 			return
 		}
 
-		dest, err := rns.NewDestination(identity, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+		dest, err := rns.NewDestination(r.transport, identity, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
 		if err != nil {
 			log.Printf("Cannot create destination for propagation node: %v", err)
 			r.propagationTransferState = PRFailed
 			return
 		}
 
-		link, err := r.newLink(dest)
+		link, err := r.newLink(r.transport, dest)
 		if err != nil {
 			log.Printf("Cannot establish link to propagation node: %v", err)
 			r.propagationTransferState = PRLinkFailed

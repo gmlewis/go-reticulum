@@ -18,17 +18,17 @@ func TestLink(t *testing.T) {
 	receiverID := mustTestNewIdentity(t, true)
 
 	// Create destination for receiver
-	receiverDest := mustTestNewDestinationWithTransport(t, ts, receiverID, DestinationIn, DestinationSingle, "receiver")
+	receiverDest := mustTestNewDestination(t, ts, receiverID, DestinationIn, DestinationSingle, "receiver")
 
 	// Initiator creates link to receiver
-	link := mustTestNewLinkWithTransport(t, ts, receiverDest)
+	link := mustTestNewLink(t, ts, receiverDest)
 
 	// Simulate link ID (derived from packet hash in practice)
 	link.linkID = []byte("simulated_link_id")
 	link.hash = link.linkID
 
 	// Receiver accepts link and generates its keys
-	receiverLink := mustTestNewLinkWithTransport(t, ts, receiverDest)
+	receiverLink := mustTestNewLink(t, ts, receiverDest)
 	receiverLink.initiator = false
 	receiverLink.linkID = link.linkID
 	receiverLink.hash = link.linkID
@@ -78,14 +78,14 @@ func TestLinkHandshakeFull(t *testing.T) {
 	tsReceiver.RegisterInterface(pipeReceiver)
 
 	// Setup receiver destination
-	receiverDest := mustTestNewDestinationWithTransport(t, tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
+	receiverDest := mustTestNewDestination(t, tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
 
 	establishedReceiver := make(chan *Link, 1)
 	receiverDest.callbacks.LinkEstablished = func(l *Link) {
 		establishedReceiver <- l
 	}
 
-	link := mustTestNewLinkWithTransport(t, tsInitiator, receiverDest)
+	link := mustTestNewLink(t, tsInitiator, receiverDest)
 
 	establishedInitiator := make(chan bool, 1)
 	link.callbacks.LinkEstablished = func(l *Link) {
@@ -120,9 +120,9 @@ func TestLinkIdentification(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem()
 	receiverID := mustTestNewIdentity(t, true)
-	receiverDest := mustTestNewDestinationWithTransport(t, ts, receiverID, DestinationIn, DestinationSingle, "receiver")
+	receiverDest := mustTestNewDestination(t, ts, receiverID, DestinationIn, DestinationSingle, "receiver")
 
-	link := mustTestNewLinkWithTransport(t, ts, receiverDest)
+	link := mustTestNewLink(t, ts, receiverDest)
 	link.linkID = []byte("link_id")
 	link.status = LinkActive // Simulate established link
 
@@ -143,8 +143,8 @@ func TestLinkIdentifyInvalidState(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem()
 	receiverID := mustTestNewIdentity(t, true)
-	receiverDest := mustTestNewDestinationWithTransport(t, ts, receiverID, DestinationIn, DestinationSingle, "receiver")
-	link := mustTestNewLinkWithTransport(t, ts, receiverDest)
+	receiverDest := mustTestNewDestination(t, ts, receiverID, DestinationIn, DestinationSingle, "receiver")
+	link := mustTestNewLink(t, ts, receiverDest)
 	initiatorID := mustTestNewIdentity(t, true)
 
 	if err := link.Identify(initiatorID); err == nil {
@@ -162,13 +162,13 @@ func TestLinkIdentifyPacketFlow(t *testing.T) {
 	tsInitiator.RegisterInterface(pipeInitiator)
 	tsReceiver.RegisterInterface(pipeReceiver)
 
-	receiverDest := mustTestNewDestinationWithTransport(t, tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
+	receiverDest := mustTestNewDestination(t, tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
 	establishedReceiver := make(chan *Link, 1)
 	receiverDest.callbacks.LinkEstablished = func(l *Link) {
 		establishedReceiver <- l
 	}
 
-	link := mustTestNewLinkWithTransport(t, tsInitiator, receiverDest)
+	link := mustTestNewLink(t, tsInitiator, receiverDest)
 
 	establishedInitiator := make(chan struct{}, 1)
 	link.callbacks.LinkEstablished = func(l *Link) {

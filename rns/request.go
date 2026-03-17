@@ -59,6 +59,7 @@ func (rr *RequestReceipt) GetStatus() int {
 }
 
 func (rr *RequestReceipt) responseReceived(response, metadata any) {
+	// TODO: Why is metadata unused?
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
 

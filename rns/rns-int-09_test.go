@@ -31,20 +31,20 @@ def check_announce_packet(config_dir, packet_path, identity_path):
         if not os.path.exists(packet_path):
             print(f"Packet file not found: {packet_path}")
             sys.exit(1)
-        
+
         with open(packet_path, "rb") as f:
             raw = f.read()
-        
+
         # We need a Reticulum instance to unpack
         reticulum = RNS.Reticulum(configdir=config_dir, loglevel=RNS.LOG_DEBUG)
-        
+
         packet = RNS.Packet(None, raw)
         packet.unpack()
-        
+
         if packet.packet_type != RNS.Packet.ANNOUNCE:
             print(f"Not an announce packet: {packet.packet_type}")
             sys.exit(1)
-            
+
         # Verify announce
         if RNS.Identity.validate_announce(packet):
             print("Announce Valid: Yes")
@@ -65,7 +65,7 @@ def check_announce_packet(config_dir, packet_path, identity_path):
         else:
             print("Announce Valid: No")
             sys.exit(1)
-            
+
     except Exception as e:
         print(f"Error: {e}")
         import traceback
@@ -76,7 +76,7 @@ if __name__ == "__main__":
     if len(sys.argv) != 3:
         print("Usage: check_announce_parity.py <config_dir> <packet_path>")
         sys.exit(1)
-    
+
     check_announce_packet(sys.argv[1], sys.argv[2], None)
 `
 
@@ -94,43 +94,43 @@ def check_link_proof_packet(config_dir, packet_path, link_id_hex, destination_pu
         if not os.path.exists(packet_path):
             print(f"Packet file not found: {packet_path}")
             sys.exit(1)
-            
+
         with open(packet_path, "rb") as f:
             raw = f.read()
-        
+
         reticulum = RNS.Reticulum(configdir=config_dir, loglevel=RNS.LOG_DEBUG)
-        
+
         packet = RNS.Packet(None, raw)
         packet.unpack()
-        
+
         if packet.packet_type != RNS.Packet.PROOF:
             print(f"Not a proof packet: {packet.packet_type}")
             sys.exit(1)
-            
+
         if packet.context != RNS.Packet.LRPROOF:
             print(f"Not a link request proof: {packet.context}")
             sys.exit(1)
-            
+
         # proof_data = signature (64) + pub_bytes (32)
         signature = packet.data[:64]
         peer_pub = packet.data[64:96]
-        
+
         link_id = bytes.fromhex(link_id_hex)
         dest_pub = bytes.fromhex(destination_pub_hex)
         dest_sig_pub = dest_pub[32:64]
-        
+
         signed_data = link_id + peer_pub + dest_sig_pub
-        
+
         id = RNS.Identity(create_keys=False)
         id.load_public_key(dest_pub)
-        
+
         if id.validate(signature, signed_data):
             print("Proof Valid: Yes")
             sys.exit(0)
         else:
             print("Proof Valid: No")
             sys.exit(1)
-            
+
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)
@@ -156,32 +156,32 @@ def check_link_request_packet(config_dir, packet_path):
         if not os.path.exists(packet_path):
             print(f"Packet file not found: {packet_path}")
             sys.exit(1)
-            
+
         with open(packet_path, "rb") as f:
             raw = f.read()
-        
+
         reticulum = RNS.Reticulum(configdir=config_dir, loglevel=RNS.LOG_DEBUG)
-        
+
         packet = RNS.Packet(None, raw)
         packet.unpack()
-        
+
         if packet.packet_type != RNS.Packet.LINKREQUEST:
             print(f"Not a link request packet: {packet.packet_type}")
             sys.exit(1)
-            
+
         # Data should be 32 (X25519) + 32 (Ed25519) = 64 bytes
         if len(packet.data) < 64:
             print(f"Link request data too short: {len(packet.data)}")
             sys.exit(1)
-            
+
         x25519_pub = packet.data[:32]
         ed25519_pub = packet.data[32:64]
-        
+
         print(f"X25519 Pub: {x25519_pub.hex()}")
         print(f"Ed25519 Pub: {ed25519_pub.hex()}")
         print(f"Destination Hash: {packet.destination_hash.hex()}")
         sys.exit(0)
-            
+
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)
@@ -204,7 +204,8 @@ func TestAnnouncePacketParity(t *testing.T) {
 	}
 
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "parityapp", "aspect1")
+	ts := NewTransportSystem()
+	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "parityapp", "aspect1")
 
 	appData := []byte("parity data")
 	randomHash := []byte("fixedrandh") // 10 bytes
@@ -289,8 +290,9 @@ func TestLinkProofPacketParity(t *testing.T) {
 	}
 
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "parityapp")
-	l := mustTestNewLink(t, dest)
+	ts := NewTransportSystem()
+	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "parityapp")
+	l := mustTestNewLink(t, ts, dest)
 	l.initiator = false // Set as receiver side
 
 	// Manually set linkID as if it came from a request
@@ -345,8 +347,9 @@ func TestLinkRequestPacketParity(t *testing.T) {
 	}
 
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "parityapp")
-	l := mustTestNewLink(t, dest)
+	ts := NewTransportSystem()
+	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "parityapp")
+	l := mustTestNewLink(t, ts, dest)
 
 	requestData := make([]byte, 0, len(l.pubBytes)+len(l.sigPubBytes))
 	requestData = append(requestData, l.pubBytes...)

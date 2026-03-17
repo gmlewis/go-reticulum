@@ -94,25 +94,20 @@ func TestIntegrationResourceGoToPython(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewIdentity(destination): %v", err)
 	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	ts := rns.NewTransportSystem()
+	sourceDest, err := rns.NewDestination(ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	if err != nil {
 		t.Fatalf("NewDestination(source): %v", err)
 	}
-	destinationDest, err := rns.NewDestination(destinationID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destinationDest, err := rns.NewDestination(ts, destinationID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	if err != nil {
 		t.Fatalf("NewDestination(destination): %v", err)
 	}
 
 	contentLen := rns.MDU * 3
 	message := mustTestNewMessage(t, destinationDest, sourceDest, strings.Repeat("G", contentLen), "go-resource-title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
 
-	router := mustTestNewRouter(t, nil, tempDir(t))
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
+	router := mustTestNewRouter(t, ts, nil, tempDir(t))
 	router.hasPath = func(_ []byte) bool { return true }
 	router.requestPath = func(_ []byte) error { return nil }
 	router.now = func() time.Time { return time.Unix(1700000000, 0) }
@@ -182,7 +177,8 @@ func TestIntegrationResourcePythonToGo(t *testing.T) {
 		t.Fatalf("read python packed message: %v", err)
 	}
 
-	message, err := UnpackMessageFromBytes(packed, MethodDirect)
+	ts := rns.NewTransportSystem()
+	message, err := UnpackMessageFromBytes(ts, packed, MethodDirect)
 	if err != nil {
 		t.Fatalf("UnpackMessageFromBytes: %v", err)
 	}

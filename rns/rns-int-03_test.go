@@ -205,6 +205,7 @@ if __name__ == "__main__":
 `
 
 func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integrated test in short mode")
 	}
@@ -220,12 +221,13 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 	}
 
 	for _, tc := range cases {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			tmpDir, err := os.MkdirTemp("", "go-reticulum-policy-go2py-*")
 			mustTest(t, err)
 			defer os.RemoveAll(tmpDir)
 
-			ResetTransport()
 			pyListenPort, goListenPort := allocateUDPPortPair(t)
 
 			scriptPath := filepath.Join(tmpDir, "policy_responder.py")
@@ -281,10 +283,11 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 			}
 
 			SetLogLevel(LogDebug)
-			r := mustTestNewReticulum(t, goConfigDir)
+			ts := NewTransportSystem()
+			r := mustTestNewReticulum(t, ts, goConfigDir)
 			defer closeReticulum(t, r)
 
-			transport := GetTransport()
+			transport := r.Transport()
 			pathDeadline := time.Now().Add(10 * time.Second)
 			for time.Now().Before(pathDeadline) {
 				if transport.HasPath(destHash) {
@@ -300,12 +303,12 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 			if err := remoteID.LoadPublicKey(pyPub); err != nil {
 				t.Fatalf("load python public key: %v", err)
 			}
-			remoteDest := mustTestNewDestination(t, remoteID, DestinationOut, DestinationSingle, "integrated_test", "parity")
+			remoteDest := mustTestNewDestination(t, ts, remoteID, DestinationOut, DestinationSingle, "integrated_test", "parity")
 			if !bytes.Equal(remoteDest.Hash, destHash) {
 				t.Fatalf("destination hash mismatch: expected %x got %x", destHash, remoteDest.Hash)
 			}
 
-			link := mustTestNewLink(t, remoteDest)
+			link := mustTestNewLink(t, ts, remoteDest)
 			var mu sync.Mutex
 			var gotCompressed *bool
 			link.SetResourceStartedCallback(func(r *Resource) {
@@ -364,10 +367,6 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 func setupGoOnlyIntegrationLinkPair(t *testing.T) (*Link, *Link) {
 	t.Helper()
 
-	ResetTransport()
-	transportMu.Lock()
-	defer transportMu.Unlock()
-
 	tsInitiator := &TransportSystem{
 		pathTable:    make(map[string]*PathEntry),
 		packetHashes: make(map[string]time.Time),
@@ -400,20 +399,14 @@ func setupGoOnlyIntegrationLinkPair(t *testing.T) (*Link, *Link) {
 	tsInitiator.RegisterInterface(pipeInitiator)
 	tsReceiver.RegisterInterface(pipeReceiver)
 
-	receiverDest := mustTestNewDestinationWithTransport(t, tsReceiver, idReceiver, DestinationIn, DestinationSingle, "integrated_test", "parity")
-	if err != nil {
-		t.Fatalf("receiver destination setup failed: %v", err)
-	}
+	receiverDest := mustTestNewDestination(t, tsReceiver, idReceiver, DestinationIn, DestinationSingle, "integrated_test", "parity")
 
 	receiverEstablished := make(chan *Link, 1)
 	receiverDest.SetLinkEstablishedCallback(func(l *Link) {
 		receiverEstablished <- l
 	})
 
-	initiatorLink := mustTestNewLinkWithTransport(t, tsInitiator, receiverDest)
-	if err != nil {
-		t.Fatalf("failed to create initiator link: %v", err)
-	}
+	initiatorLink := mustTestNewLink(t, tsInitiator, receiverDest)
 	initiatorEstablished := make(chan struct{}, 1)
 	initiatorLink.SetLinkEstablishedCallback(func(*Link) {
 		initiatorEstablished <- struct{}{}
@@ -440,6 +433,7 @@ func setupGoOnlyIntegrationLinkPair(t *testing.T) (*Link, *Link) {
 }
 
 func TestIntegratedGoOnlyLargeResourceCompressionOnOff(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integrated test in short mode")
 	}
@@ -457,6 +451,7 @@ func TestIntegratedGoOnlyLargeResourceCompressionOnOff(t *testing.T) {
 	for _, tc := range tests {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			initiatorLink, receiverLink := setupGoOnlyIntegrationLinkPair(t)
 
 			receiverLink.destination.RegisterRequestHandlerWithAutoCompressLimit(
@@ -511,6 +506,7 @@ func TestIntegratedGoOnlyLargeResourceCompressionOnOff(t *testing.T) {
 }
 
 func TestIntegratedGoOnlyChannelStreamCompressedChunks(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integrated test in short mode")
 	}
@@ -558,6 +554,7 @@ func TestIntegratedGoOnlyChannelStreamCompressedChunks(t *testing.T) {
 }
 
 func TestIntegratedResponseResourceCompressionPolicyPythonToGo(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integrated test in short mode")
 	}
@@ -573,12 +570,13 @@ func TestIntegratedResponseResourceCompressionPolicyPythonToGo(t *testing.T) {
 	}
 
 	for _, tc := range cases {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			tmpDir, err := os.MkdirTemp("", "go-reticulum-policy-py2go-*")
 			mustTest(t, err)
 			defer os.RemoveAll(tmpDir)
 
-			ResetTransport()
 			pyListenPort, goListenPort := allocateUDPPortPair(t)
 
 			goConfigDir := filepath.Join(tmpDir, "go_rns")
@@ -590,11 +588,12 @@ func TestIntegratedResponseResourceCompressionPolicyPythonToGo(t *testing.T) {
 			}
 
 			SetLogLevel(LogDebug)
-			r := mustTestNewReticulum(t, goConfigDir)
+			ts := NewTransportSystem()
+			r := mustTestNewReticulum(t, ts, goConfigDir)
 			defer closeReticulum(t, r)
 
 			id := mustTestNewIdentity(t, true)
-			dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "integrated_test", "parity")
+			dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "integrated_test", "parity")
 
 			payloadSize := MDU + 768
 			dest.RegisterRequestHandlerWithAutoCompressLimit("test_path", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {

@@ -151,7 +151,7 @@ func (pi *pipeSubprocessInterface) killProcess() error {
 
 	var firstErr error
 	if pi.stdin != nil {
-		if err := pi.stdin.Close(); err != nil && firstErr == nil {
+		if err := pi.stdin.Close(); err != nil {
 			firstErr = err
 		}
 		pi.stdin = nil
@@ -166,7 +166,9 @@ func (pi *pipeSubprocessInterface) killProcess() error {
 		if err := pi.cmd.Process.Kill(); err != nil && !strings.Contains(err.Error(), "process already finished") && firstErr == nil {
 			firstErr = err
 		}
-		_, _ = pi.cmd.Process.Wait()
+		if _, err := pi.cmd.Process.Wait(); err != nil && firstErr == nil {
+			firstErr = err
+		}
 		pi.cmd = nil
 	}
 

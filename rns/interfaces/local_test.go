@@ -46,11 +46,8 @@ func TestLocalUnixServerClientLifecycleAndRestart(t *testing.T) {
 	socketPath := filepath.Join(tmp, "local.sock")
 
 	server := mustTestNewLocalServerInterface(t, "local-server", socketPath, 0, handler)
-	if err != nil {
-		t.Fatalf("NewLocalServerInterface first error: %v", err)
-	}
 
-	client := mustTestNewLocalClientInterface(t, "local-client", socketPath, 0, nil)
+	client, err := NewLocalClientInterface("local-client", socketPath, 0, nil)
 	if err != nil {
 		_ = server.Detach()
 		t.Fatalf("NewLocalClientInterface first error: %v", err)
@@ -89,11 +86,8 @@ func TestLocalUnixServerClientLifecycleAndRestart(t *testing.T) {
 	}
 
 	server2 := mustTestNewLocalServerInterface(t, "local-server-2", socketPath, 0, handler)
-	if err != nil {
-		t.Fatalf("NewLocalServerInterface restart error: %v", err)
-	}
 
-	client2 := mustTestNewLocalClientInterface(t, "local-client-2", socketPath, 0, nil)
+	client2, err := NewLocalClientInterface("local-client-2", socketPath, 0, nil)
 	if err != nil {
 		_ = server2.Detach()
 		t.Fatalf("NewLocalClientInterface restart error: %v", err)
@@ -144,9 +138,6 @@ func TestLocalServerRemovesStaleSocketPath(t *testing.T) {
 	}
 
 	server := mustTestNewLocalServerInterface(t, "local-server-stale", socketPath, 0, nil)
-	if err != nil {
-		t.Fatalf("NewLocalServerInterface with stale path error: %v", err)
-	}
 
 	if err := server.Detach(); !allowClosedNetworkErr(err) {
 		t.Fatalf("server.Detach error: %v", err)
@@ -171,9 +162,6 @@ func TestLocalServerRejectsTakeoverWhenSocketActive(t *testing.T) {
 	socketPath := filepath.Join(tmp, "active.sock")
 
 	server := mustTestNewLocalServerInterface(t, "local-server-1", socketPath, 0, nil)
-	if err != nil {
-		t.Fatalf("NewLocalServerInterface first error: %v", err)
-	}
 	defer func() { _ = server.Detach() }()
 
 	if server2, err := NewLocalServerInterface("local-server-2", socketPath, 0, nil); err == nil {

@@ -110,19 +110,17 @@ func TestIntegrationDirectGoToPython(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewIdentity(destination): %v", err)
 	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	ts := rns.NewTransportSystem()
+	sourceDest, err := rns.NewDestination(ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	if err != nil {
 		t.Fatalf("NewDestination(source): %v", err)
 	}
-	destinationDest, err := rns.NewDestination(destinationID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destinationDest, err := rns.NewDestination(ts, destinationID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	if err != nil {
 		t.Fatalf("NewDestination(destination): %v", err)
 	}
 
 	message := mustTestNewMessage(t, destinationDest, sourceDest, "go-direct-content", "go-direct-title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
 	if err := message.Pack(); err != nil {
 		t.Fatalf("Pack: %v", err)
 	}
@@ -170,7 +168,8 @@ func TestIntegrationDirectPythonToGo(t *testing.T) {
 		t.Fatalf("read python packed message: %v", err)
 	}
 
-	message, err := UnpackMessageFromBytes(packed, MethodDirect)
+	ts := rns.NewTransportSystem()
+	message, err := UnpackMessageFromBytes(ts, packed, MethodDirect)
 	if err != nil {
 		t.Fatalf("UnpackMessageFromBytes: %v", err)
 	}

@@ -221,9 +221,13 @@ func main() {
 		os.Exit(2)
 	}
 
-	if _, err := rns.NewReticulum(configDir); err != nil {
+	ts := rns.NewTransportSystem()
+	ret, err := rns.NewReticulum(ts, configDir)
+	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
+	defer ret.Close()
+
 	rns.SetCompactLogFmt(true)
 	if useStdout {
 		rns.SetLogLevel(-1)
@@ -234,7 +238,7 @@ func main() {
 		return
 	}
 
-	id := loadIdentity(identityPath, requestID, timeout)
+	id := loadIdentity(ret.Transport(), identityPath, requestID, timeout)
 	if id == nil {
 		log.Fatal("Could not load or recall identity")
 	}
@@ -250,11 +254,11 @@ func main() {
 	}
 
 	if hashAspects != "" {
-		doHash(id, hashAspects)
+		doHash(ts, id, hashAspects)
 	}
 
 	if announce != "" {
-		doAnnounce(id, announce)
+		doAnnounce(ts, id, announce)
 	}
 
 	if encryptFile != "" || decryptFile != "" || signFile != "" || validateFile != "" {
@@ -322,7 +326,7 @@ func doGenerate(path string, force bool) {
 	rns.Logf("New identity %v written to %v", rns.LogNotice, false, rns.PrettyHexFromString(id.HexHash), path)
 }
 
-func loadIdentity(path string, request bool, timeout float64) *rns.Identity {
+func loadIdentity(ts rns.Transport, path string, request bool, timeout float64) *rns.Identity {
 	if path == "" {
 		return nil
 	}
@@ -338,9 +342,9 @@ func loadIdentity(path string, request bool, timeout float64) *rns.Identity {
 			os.Exit(7)
 		}
 
-		id := rns.Recall(hash, false)
+		id := rns.Recall(ts, hash, false)
 		if id == nil {
-			id = rns.Recall(hash, true)
+			id = rns.Recall(ts, hash, true)
 		}
 
 		if id == nil {
@@ -349,14 +353,14 @@ func loadIdentity(path string, request bool, timeout float64) *rns.Identity {
 				rns.Log("You can query the network for unknown Identities with the -R option.", rns.LogError, false)
 				os.Exit(5)
 			}
-			if err := rns.TransportProxy.RequestPath(hash); err != nil {
+			if err := ts.RequestPath(hash); err != nil {
 				rns.Logf("Identity request failed for %v: %v", rns.LogError, false, rns.PrettyHex(hash), err)
 				os.Exit(6)
 			}
 			deadline := time.Now().Add(time.Duration(timeout * float64(time.Second)))
 			for time.Now().Before(deadline) {
 				time.Sleep(100 * time.Millisecond)
-				id = rns.Recall(hash, false)
+				id = rns.Recall(ts, hash, false)
 				if id != nil {
 					rns.Logf("Received Identity %v for destination %v from the network", rns.LogNotice, false, rns.PrettyHexFromString(id.HexHash), rns.PrettyHex(hash))
 					return id
@@ -436,7 +440,7 @@ func doExport(id *rns.Identity, b64, b32 bool) {
 	rns.Log(fmt.Sprintf("Exported Identity : %v", privStr), rns.LogNotice, false)
 }
 
-func doHash(id *rns.Identity, aspects string) {
+func doHash(ts rns.Transport, id *rns.Identity, aspects string) {
 	parts := strings.Split(aspects, ".")
 	if len(parts) == 0 {
 		rns.Log("Invalid destination aspects specified", rns.LogError, false)
@@ -453,7 +457,7 @@ func doHash(id *rns.Identity, aspects string) {
 		rns.Log("The contained exception was: No public key known", rns.LogError, false)
 		os.Exit(0)
 	}
-	dest, err := rns.NewDestination(id, rns.DestinationOut, rns.DestinationSingle, appName, subAspects...)
+	dest, err := rns.NewDestination(ts, id, rns.DestinationOut, rns.DestinationSingle, appName, subAspects...)
 	if err != nil {
 		rns.Log("An error ocurred while attempting to send the announce.", rns.LogError, false)
 		rns.Logf("The contained exception was: %v", rns.LogError, false, err)
@@ -465,7 +469,7 @@ func doHash(id *rns.Identity, aspects string) {
 	os.Exit(0)
 }
 
-func doAnnounce(id *rns.Identity, aspects string) {
+func doAnnounce(ts rns.Transport, id *rns.Identity, aspects string) {
 	parts := strings.Split(aspects, ".")
 	if len(parts) < 2 {
 		rns.Log("Invalid destination aspects specified", rns.LogError, false)
@@ -475,7 +479,7 @@ func doAnnounce(id *rns.Identity, aspects string) {
 	subAspects := parts[1:]
 
 	if id.GetPrivateKey() != nil {
-		dest, err := rns.NewDestination(id, rns.DestinationIn, rns.DestinationSingle, appName, subAspects...)
+		dest, err := rns.NewDestination(ts, id, rns.DestinationIn, rns.DestinationSingle, appName, subAspects...)
 		if err != nil {
 			rns.Log("An error ocurred while attempting to send the announce.", rns.LogError, false)
 			rns.Logf("The contained exception was: %v", rns.LogError, false, err)
@@ -493,7 +497,7 @@ func doAnnounce(id *rns.Identity, aspects string) {
 		os.Exit(0)
 	}
 
-	dest, err := rns.NewDestination(id, rns.DestinationOut, rns.DestinationSingle, appName, subAspects...)
+	dest, err := rns.NewDestination(ts, id, rns.DestinationOut, rns.DestinationSingle, appName, subAspects...)
 	if err != nil {
 		rns.Log("An error ocurred while attempting to send the announce.", rns.LogError, false)
 		rns.Logf("The contained exception was: %v", rns.LogError, false, err)

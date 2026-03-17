@@ -319,8 +319,9 @@ func main() {
 		return
 	}
 
+	ts := rns.NewTransportSystem()
 	if displayStatus || displayPeers {
-		getStatus(remoteHash, configDir, rnsConfigDir, int(verbosity), int(quietness), timeout, displayStatus, displayPeers, identityPath)
+		getStatus(ts, remoteHash, configDir, rnsConfigDir, int(verbosity), int(quietness), timeout, displayStatus, displayPeers, identityPath)
 		return
 	}
 
@@ -351,7 +352,7 @@ func main() {
 	rns.Logf("Configuration loaded from %v", rns.LogVerbose, false, configDir)
 
 	rns.Logf("Substantiating Reticulum...", rns.LogInfo, false)
-	if _, err := rns.NewReticulum(rnsConfigDir); err != nil {
+	if _, err := rns.NewReticulum(ts, rnsConfigDir); err != nil {
 		log.Fatalf("initialize Reticulum: %v", err)
 	}
 
@@ -373,7 +374,7 @@ func main() {
 		ac.OnInbound = cmdOnInbound
 	}
 
-	router, err := lxmf.NewRouterFromConfig(lxmf.RouterConfig{
+	router, err := lxmf.NewRouterFromConfig(ts, lxmf.RouterConfig{
 		Identity:                   identity,
 		StoragePath:                resolvedStorage,
 		Autopeer:                   ac.Autopeer,

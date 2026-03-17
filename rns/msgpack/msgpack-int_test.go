@@ -67,24 +67,6 @@ if __name__ == "__main__":
     check_msgpack(sys.argv[1])
 `
 
-const generateMsgpackParityPy = `import RNS.vendor.umsgpack as umsgpack
-import sys
-
-def generate_msgpack(path):
-    data = {
-        "x": 42,
-        "y": [1.1, 2.2, {"z": b"bytes data"}],
-        "null": None,
-        "bool": True
-    }
-    packed = umsgpack.packb(data)
-    with open(path, "wb") as f:
-        f.write(packed)
-
-if __name__ == "__main__":
-    generate_msgpack(sys.argv[1])
-`
-
 func TestMessagePackParity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-msgpack-parity-*")
 	mustTest(t, err)

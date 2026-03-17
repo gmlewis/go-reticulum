@@ -17,7 +17,7 @@ func TestStackIsolation(t *testing.T) {
 	// Stack A
 	cfgA := tempDir(t)
 	tsA := NewTransportSystem()
-	r1, err := NewReticulumWithTransport(cfgA, tsA)
+	r1, err := NewReticulum(tsA, cfgA)
 	if err != nil {
 		t.Fatalf("failed to create r1: %v", err)
 	}
@@ -26,7 +26,7 @@ func TestStackIsolation(t *testing.T) {
 	// Stack B
 	cfgB := tempDir(t)
 	tsB := NewTransportSystem()
-	r2, err := NewReticulumWithTransport(cfgB, tsB)
+	r2, err := NewReticulum(tsB, cfgB)
 	if err != nil {
 		t.Fatalf("failed to create r2: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestStackIsolation(t *testing.T) {
 
 	// Identity and Destination on Stack B
 	idB := mustTestNewIdentity(t, true)
-	destB, err := NewDestinationWithTransport(tsB, idB, DestinationIn, DestinationSingle, "stackB")
+	destB, err := NewDestination(tsB, idB, DestinationIn, DestinationSingle, "stackB")
 	if err != nil {
 		t.Fatalf("failed to create destB: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestStackIsolation(t *testing.T) {
 	}, AllowAll, nil, true)
 
 	// Link from Stack A to Stack B
-	linkA, err := NewLinkWithTransport(tsA, destB)
+	linkA, err := NewLink(tsA, destB)
 	if err != nil {
 		t.Fatalf("failed to create linkA: %v", err)
 	}

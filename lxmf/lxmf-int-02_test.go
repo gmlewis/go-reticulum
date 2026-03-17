@@ -93,19 +93,17 @@ func TestIntegrationOpportunisticGoToPython(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewIdentity(destination): %v", err)
 	}
-	sourceDest, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	ts := rns.NewTransportSystem()
+	sourceDest, err := rns.NewDestination(ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	if err != nil {
 		t.Fatalf("NewDestination(source): %v", err)
 	}
-	destinationDest, err := rns.NewDestination(destinationID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destinationDest, err := rns.NewDestination(ts, destinationID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	if err != nil {
 		t.Fatalf("NewDestination(destination): %v", err)
 	}
 
 	message := mustTestNewMessage(t, destinationDest, sourceDest, "go-opportunistic-content", "go-opportunistic-title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
 	message.DesiredMethod = MethodOpportunistic
 	if err := message.Pack(); err != nil {
 		t.Fatalf("Pack: %v", err)
@@ -172,7 +170,8 @@ func TestIntegrationOpportunisticPythonToGo(t *testing.T) {
 	raw := append([]byte{}, destinationHash...)
 	raw = append(raw, payload...)
 
-	message, err := UnpackMessageFromBytes(raw, MethodOpportunistic)
+	ts := rns.NewTransportSystem()
+	message, err := UnpackMessageFromBytes(ts, raw, MethodOpportunistic)
 	if err != nil {
 		t.Fatalf("UnpackMessageFromBytes: %v", err)
 	}

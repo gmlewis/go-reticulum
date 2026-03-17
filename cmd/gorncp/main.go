@@ -70,13 +70,15 @@ func main() {
 		rns.SetLogLevel(rns.LogWarning)
 	}
 
-	_, err := rns.NewReticulum(*configDir)
+	ts := rns.NewTransportSystem()
+	ret, err := rns.NewReticulum(ts, *configDir)
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
+	defer ret.Close()
 
 	if *listenMode {
-		doListen(*identityPath, noCompress)
+		doListen(ts, *identityPath, noCompress)
 	} else if *fetchMode {
 		if flag.NArg() < 2 {
 			flag.Usage()
@@ -96,7 +98,7 @@ func main() {
 	}
 }
 
-func doListen(idPath string, noCompress bool) {
+func doListen(ts rns.Transport, idPath string, noCompress bool) {
 	if idPath == "" {
 		home, _ := os.UserHomeDir()
 		idPath = filepath.Join(home, ".reticulum", "identities", AppName)
@@ -117,7 +119,7 @@ func doListen(idPath string, noCompress bool) {
 		}
 	}
 
-	dest, err := rns.NewDestination(id, rns.DestinationIn, rns.DestinationSingle, AppName, "receive")
+	dest, err := rns.NewDestination(ts, id, rns.DestinationIn, rns.DestinationSingle, AppName, "receive")
 	if err != nil {
 		log.Fatalf("Could not create destination: %v\n", err)
 	}
@@ -161,36 +163,37 @@ func doSend(idPath string, destHashHex string, filePath string, noCompress bool)
 		log.Fatalf("Invalid destination hash: %v\n", err)
 	}
 
-	remoteID := rns.RecallIdentity(destHash)
+	ts := rns.NewTransportSystem()
+	remoteID := rns.RecallIdentity(ts, destHash)
 	if remoteID == nil {
 		fmt.Printf("Path to <%x> requested  ", destHash)
-		if err := rns.TransportProxy.RequestPath(destHash); err != nil {
+		if err := ts.RequestPath(destHash); err != nil {
 			log.Fatalf("Could not request path to <%x>: %v\n", destHash, err)
 		}
 
 		i := 0
 		syms := []string{"⢄", "⢂", "⢁", "⡁", "⡈", "⡐", "⡠"}
 		timeout := time.Now().Add(15 * time.Second)
-		for !rns.TransportProxy.HasPath(destHash) && time.Now().Before(timeout) {
+		for !ts.HasPath(destHash) && time.Now().Before(timeout) {
 			time.Sleep(100 * time.Millisecond)
 			fmt.Printf("\b\b%v ", syms[i])
 			i = (i + 1) % len(syms)
 		}
 
-		if !rns.TransportProxy.HasPath(destHash) {
+		if !ts.HasPath(destHash) {
 			log.Fatalf("\r%v\rPath request timed out\n", strings.Repeat(" ", 60))
 		}
 		fmt.Printf("\b\b \n")
-		remoteID = rns.RecallIdentity(destHash)
+		remoteID = rns.RecallIdentity(ts, destHash)
 	}
 
-	remoteDest, err := rns.NewDestination(remoteID, rns.DestinationOut, rns.DestinationSingle, AppName, "receive")
+	remoteDest, err := rns.NewDestination(ts, remoteID, rns.DestinationOut, rns.DestinationSingle, AppName, "receive")
 	if err != nil {
 		log.Fatalf("Could not create destination: %v\n", err)
 	}
 
 	fmt.Printf("Establishing link with remote transport instance...  ")
-	link, err := rns.NewLink(remoteDest)
+	link, err := rns.NewLink(ts, remoteDest)
 	if err != nil {
 		log.Fatalf("Could not create link: %v\n", err)
 	}
@@ -295,35 +298,36 @@ func doFetch(idPath string, destHashHex string, fileName string, noCompress bool
 		log.Fatalf("Invalid destination hash: %v\n", err)
 	}
 
-	remoteID := rns.RecallIdentity(destHash)
+	ts := rns.NewTransportSystem()
+	remoteID := rns.RecallIdentity(ts, destHash)
 	if remoteID == nil {
 		fmt.Printf("Path to <%x> requested  ", destHash)
-		if err := rns.TransportProxy.RequestPath(destHash); err != nil {
+		if err := ts.RequestPath(destHash); err != nil {
 			log.Fatalf("Could not request path to <%x>: %v\n", destHash, err)
 		}
 
 		i := 0
 		syms := []string{"⢄", "⢂", "⢁", "⡁", "⡈", "⡐", "⡠"}
 		timeout := time.Now().Add(15 * time.Second)
-		for !rns.TransportProxy.HasPath(destHash) && time.Now().Before(timeout) {
+		for !ts.HasPath(destHash) && time.Now().Before(timeout) {
 			time.Sleep(100 * time.Millisecond)
 			fmt.Printf("\b\b%v ", syms[i])
 			i = (i + 1) % len(syms)
 		}
 
-		if !rns.TransportProxy.HasPath(destHash) {
+		if !ts.HasPath(destHash) {
 			log.Fatalf("\r%v\rPath request timed out\n", strings.Repeat(" ", 60))
 		}
 		fmt.Printf("\b\b \n")
-		remoteID = rns.RecallIdentity(destHash)
+		remoteID = rns.RecallIdentity(ts, destHash)
 	}
-	remoteDest, err := rns.NewDestination(remoteID, rns.DestinationOut, rns.DestinationSingle, AppName, "receive")
+	remoteDest, err := rns.NewDestination(ts, remoteID, rns.DestinationOut, rns.DestinationSingle, AppName, "receive")
 	if err != nil {
 		log.Fatalf("Could not create destination: %v\n", err)
 	}
 
 	fmt.Printf("Establishing link with remote transport instance...  ")
-	link, err := rns.NewLink(remoteDest)
+	link, err := rns.NewLink(ts, remoteDest)
 	if err != nil {
 		log.Fatalf("Could not create link: %v\n", err)
 	}

@@ -12,7 +12,8 @@ import (
 
 func TestPacket(t *testing.T) {
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "testapp")
+	ts := NewTransportSystem()
+	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "testapp")
 
 	data := []byte("hello reticulum")
 	p := NewPacket(dest, data)
@@ -55,7 +56,8 @@ func TestPacket(t *testing.T) {
 
 func TestPacketEncryption(t *testing.T) {
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestination(t, id, DestinationIn, DestinationSingle, "testapp")
+	ts := NewTransportSystem()
+	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "testapp")
 
 	data := []byte("secret message")
 	p := NewPacket(dest, data)

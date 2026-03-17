@@ -25,9 +25,9 @@ func mustTestNewIdentity(t *testing.T, createKeys bool) *rns.Identity {
 	return id
 }
 
-func mustTestNewDestination(t *testing.T, identity *rns.Identity, direction, destType int, appName string, aspects ...string) *rns.Destination {
+func mustTestNewDestination(t *testing.T, ts rns.Transport, identity *rns.Identity, direction, destType int, appName string, aspects ...string) *rns.Destination {
 	t.Helper()
-	dest, err := rns.NewDestination(identity, direction, destType, appName, aspects...)
+	dest, err := rns.NewDestination(ts, identity, direction, destType, appName, aspects...)
 	mustTest(t, err)
 	return dest
 }
@@ -39,23 +39,23 @@ func mustTestNewMessage(t *testing.T, destination, source *rns.Destination, cont
 	return msg
 }
 
-func mustTestNewRouter(t *testing.T, identity *rns.Identity, storagePath string) *Router {
+func mustTestNewRouter(t *testing.T, ts rns.Transport, identity *rns.Identity, storagePath string) *Router {
 	t.Helper()
-	router, err := NewRouter(identity, storagePath)
+	router, err := NewRouter(ts, identity, storagePath)
 	mustTest(t, err)
 	return router
 }
 
-func mustTestNewRouterWithConfig(t *testing.T, identity *rns.Identity, storagePath string, policyConfig map[string]any) *Router {
+func mustTestNewRouterWithConfig(t *testing.T, ts rns.Transport, identity *rns.Identity, storagePath string, policyConfig map[string]any) *Router {
 	t.Helper()
-	router, err := NewRouterWithConfig(identity, storagePath, policyConfig)
+	router, err := NewRouterWithConfig(ts, identity, storagePath, policyConfig)
 	mustTest(t, err)
 	return router
 }
 
-func mustTestNewRouterFromConfig(t *testing.T, cfg RouterConfig) *Router {
+func mustTestNewRouterFromConfig(t *testing.T, ts rns.Transport, cfg RouterConfig) *Router {
 	t.Helper()
-	router, err := NewRouterFromConfig(cfg)
+	router, err := NewRouterFromConfig(ts, cfg)
 	mustTest(t, err)
 	return router
 }

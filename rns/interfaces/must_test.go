@@ -41,13 +41,6 @@ func mustTestNewI2PInterfacePeer(t *testing.T, name, targetHost string, targetPo
 	return iface
 }
 
-func mustTestNewLocalClientInterface(t *testing.T, name, path string, port int, handler InboundHandler) *LocalClientInterface {
-	t.Helper()
-	iface, err := NewLocalClientInterface(name, path, port, handler)
-	mustTest(t, err)
-	return iface
-}
-
 func mustTestNewLocalServerInterface(t *testing.T, name, path string, port int, handler InboundHandler) *LocalServerInterface {
 	t.Helper()
 	iface, err := NewLocalServerInterface(name, path, port, handler)

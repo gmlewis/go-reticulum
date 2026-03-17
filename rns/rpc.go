@@ -47,10 +47,10 @@ func (r *Reticulum) startRPCListener() error {
 }
 
 func (r *Reticulum) ensureRPCKey() {
-	if len(r.rpcKey) > 0 || r.transport == nil || r.transport.identity == nil {
+	if len(r.rpcKey) > 0 || r.transport == nil || r.transport.Identity() == nil {
 		return
 	}
-	r.rpcKey = FullHash(r.transport.identity.GetPrivateKey())
+	r.rpcKey = FullHash(r.transport.Identity().GetPrivateKey())
 }
 
 func (r *Reticulum) makeRPCListener() (net.Listener, error) {
@@ -417,13 +417,13 @@ func (r *Reticulum) getInterfaceStats() map[string]any {
 	}
 
 	var transportID any
-	if ts.identity != nil && len(ts.identity.Hash) > 0 {
-		transportID = ts.identity.Hash
+	if ts.Identity() != nil && len(ts.Identity().Hash) > 0 {
+		transportID = ts.Identity().Hash
 	}
 
 	var transportUptime any
-	if !ts.startedAt.IsZero() {
-		transportUptime = time.Since(ts.startedAt).Seconds()
+	if sa := ts.StartedAt(); !sa.IsZero() {
+		transportUptime = time.Since(sa).Seconds()
 	}
 
 	return map[string]any{
@@ -492,10 +492,7 @@ func (r *Reticulum) getLinkCount() int {
 	if r.transport == nil {
 		return 0
 	}
-	mu := r.transport.GetMutex()
-	mu.Lock()
-	defer mu.Unlock()
-	return len(r.transport.linkTable)
+	return len(r.transport.LinkTable())
 }
 
 func (r *Reticulum) getRateTable() []any {

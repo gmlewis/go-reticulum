@@ -93,7 +93,8 @@ loglevel = 4
 [interfaces]
 `, t.Name(), sharedPort, rpcPort, rpcKeyHex))
 
-	r := mustTestNewReticulumWithTransport(t, cfg, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, cfg)
 	defer closeReticulum(t, r)
 	if !r.isSharedInstance {
 		t.Fatalf("expected shared instance")
@@ -148,7 +149,8 @@ loglevel = 4
 [interfaces]
 `, t.Name(), sharedPort, rpcPort))
 
-	r := mustTestNewReticulumWithTransport(t, cfg, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, cfg)
 	defer closeReticulum(t, r)
 
 	conn := mustDialRPC(t, fmt.Sprintf("127.0.0.1:%v", rpcPort))
@@ -187,7 +189,8 @@ loglevel = 4
 [interfaces]
 `, t.Name(), sharedPort, rpcPort, rpcKeyHex))
 
-	r := mustTestNewReticulumWithTransport(t, cfg, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, cfg)
 	defer closeReticulum(t, r)
 
 	conn := mustDialRPC(t, fmt.Sprintf("127.0.0.1:%v", rpcPort))
@@ -227,13 +230,14 @@ loglevel = 4
 	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name()+"-1", sharedPort, rpcPort, rpcKeyHex))
 	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name()+"-2", sharedPort, rpcPort, rpcKeyHex))
 
-	r1 := mustTestNewReticulumWithTransport(t, cfg1, NewTransportSystem())
+	ts := NewTransportSystem()
+	r1 := mustTestNewReticulum(t, ts, cfg1)
 	defer closeReticulum(t, r1)
 	if !r1.isSharedInstance {
 		t.Fatalf("expected first instance to be shared")
 	}
 
-	r2 := mustTestNewReticulumWithTransport(t, cfg2, NewTransportSystem())
+	r2 := mustTestNewReticulum(t, ts, cfg2)
 	defer closeReticulum(t, r2)
 	if !r2.isConnectedToSharedInstance {
 		t.Fatalf("expected second instance to be connected to shared instance")
@@ -273,7 +277,8 @@ loglevel = 4
 [interfaces]
 `, t.Name(), sharedPort, rpcPort, rpcKeyHex))
 
-	r := mustTestNewReticulumWithTransport(t, cfg, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, cfg)
 	defer closeReticulum(t, r)
 
 	conn := mustDialRPC(t, fmt.Sprintf("127.0.0.1:%v", rpcPort))
@@ -344,10 +349,11 @@ loglevel = 4
 	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name()+"-1", sharedPort, rpcPort, rpcKeyHex))
 	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name()+"-2", sharedPort, rpcPort, rpcKeyHex))
 
-	r1 := mustTestNewReticulumWithTransport(t, cfg1, NewTransportSystem())
+	ts := NewTransportSystem()
+	r1 := mustTestNewReticulum(t, ts, cfg1)
 	defer closeReticulum(t, r1)
 
-	r2 := mustTestNewReticulumWithTransport(t, cfg2, NewTransportSystem())
+	r2 := mustTestNewReticulum(t, ts, cfg2)
 	defer closeReticulum(t, r2)
 	if !r2.isConnectedToSharedInstance {
 		t.Fatalf("expected second instance to be connected to shared instance")
@@ -737,6 +743,7 @@ func TestDecodeInterfaceStatsNilOptionals(t *testing.T) {
 }
 
 func TestConnectedInstanceManagementCallsRecoverAfterRPCServerRestart(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name               string
 		sharedInstanceType string
@@ -756,8 +763,7 @@ func TestConnectedInstanceManagementCallsRecoverAfterRPCServerRestart(t *testing
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			ResetTransport()
-			defer ResetTransport()
+			t.Parallel()
 
 			sharedPort := reserveTCPPort(t)
 			rpcPort := reserveTCPPort(t)
@@ -801,13 +807,14 @@ loglevel = 4
 				writeConfig(t, cfg2, configBody)
 			}
 
-			r1 := mustTestNewReticulum(t, cfg1)
+			ts := NewTransportSystem()
+			r1 := mustTestNewReticulum(t, ts, cfg1)
 			defer closeReticulum(t, r1)
 			if !r1.isSharedInstance {
 				t.Fatalf("expected first instance to be shared, got shared=%v connected=%v standalone=%v", r1.isSharedInstance, r1.isConnectedToSharedInstance, r1.isStandaloneInstance)
 			}
 
-			r2 := mustTestNewReticulum(t, cfg2)
+			r2 := mustTestNewReticulum(t, ts, cfg2)
 			defer closeReticulum(t, r2)
 
 			if !r2.isConnectedToSharedInstance {

@@ -112,7 +112,7 @@ type Link struct {
 	owner                *Reticulum
 	establishmentTimeout time.Duration
 	attachedInterface    interfaces.Interface
-	transport            *TransportSystem
+	transport            Transport
 
 	resourceStrategy     int
 	outgoingResources    []*Resource
@@ -123,7 +123,7 @@ type Link struct {
 }
 
 func (l *Link) signallingBytes() []byte {
-	if !linkMTUDiscoveryEnabled() {
+	if l.transport != nil && !l.transport.LinkMTUDiscovery() {
 		return nil
 	}
 	// signalling_value = (mtu & Link.MTU_BYTEMASK)+(((mode<<5) & Link.MODE_BYTEMASK)<<16)
@@ -146,30 +146,8 @@ func (l *Link) UpdateMDU() {
 	l.mdu = l.mtu - HeaderMaxSize - IFACMinSize
 }
 
-// NewLink attempts to proactively establish an encrypted connection to a specified remote destination using the default transport.
-func (l *Link) NewLink(destination *Destination) (*Link, error) {
-	var ts *TransportSystem
-	if destination != nil {
-		ts = destination.transport
-	} else {
-		ts = GetTransport()
-	}
-	return NewLinkWithTransport(ts, destination)
-}
-
-// NewLink specifies an alias for creating a new link object, maintaining compatibility with the primary instantiation pattern.
-func NewLink(destination *Destination) (*Link, error) {
-	var ts *TransportSystem
-	if destination != nil {
-		ts = destination.transport
-	} else {
-		ts = GetTransport()
-	}
-	return NewLinkWithTransport(ts, destination)
-}
-
-// NewLinkWithTransport constructs a link explicitly bound to a custom transport system rather than the global default.
-func NewLinkWithTransport(ts Transport, destination *Destination) (*Link, error) {
+// NewLink constructs a link explicitly bound to a custom transport system.
+func NewLink(ts Transport, destination *Destination) (*Link, error) {
 	if destination != nil && destination.Type != DestinationSingle {
 		return nil, errors.New("links can only be established to the SINGLE destination type")
 	}
@@ -261,7 +239,7 @@ func ValidateRequest(destination *Destination, data []byte, packet *Packet) (*Li
 		return nil, fmt.Errorf("invalid link request payload size: %v", len(data))
 	}
 
-	l, err := NewLinkWithTransport(destination.transport, nil) // Receiver side link
+	l, err := NewLink(destination.transport, nil) // Receiver side link
 	if err != nil {
 		return nil, err
 	}
@@ -924,7 +902,7 @@ func (l *Link) teardown(reason int) {
 		go l.callbacks.LinkClosed(l)
 	}
 
-	Logf("Link %x closed", LogVerbose, false, l.linkID)
+	Logf("Link %x closed: reason=%v", LogVerbose, false, l.linkID, reason)
 }
 
 // Request fires a generalized structured request packet asynchronously, expecting a correlated logical response from the remote peer.

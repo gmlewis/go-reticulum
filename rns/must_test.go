@@ -21,30 +21,16 @@ func mustTestNewIdentity(t *testing.T, createKeys bool) *Identity {
 	return id
 }
 
-func mustTestNewDestination(t *testing.T, identity *Identity, direction, destType int, appName string, aspects ...string) *Destination {
+func mustTestNewDestination(t *testing.T, ts Transport, identity *Identity, direction int, destType int, appName string, aspects ...string) *Destination {
 	t.Helper()
-	dest, err := NewDestination(identity, direction, destType, appName, aspects...)
+	dest, err := NewDestination(ts, identity, direction, destType, appName, aspects...)
 	mustTest(t, err)
 	return dest
 }
 
-func mustTestNewDestinationWithTransport(t *testing.T, ts *TransportSystem, identity *Identity, direction int, destType int, appName string, aspects ...string) *Destination {
+func mustTestNewLink(t *testing.T, ts Transport, destination *Destination) *Link {
 	t.Helper()
-	dest, err := NewDestinationWithTransport(ts, identity, direction, destType, appName, aspects...)
-	mustTest(t, err)
-	return dest
-}
-
-func mustTestNewLink(t *testing.T, destination *Destination) *Link {
-	t.Helper()
-	link, err := NewLink(destination)
-	mustTest(t, err)
-	return link
-}
-
-func mustTestNewLinkWithTransport(t *testing.T, ts *TransportSystem, destination *Destination) *Link {
-	t.Helper()
-	link, err := NewLinkWithTransport(ts, destination)
+	link, err := NewLink(ts, destination)
 	mustTest(t, err)
 	return link
 }
@@ -56,16 +42,9 @@ func mustTestNewResourceWithOptions(t *testing.T, data []byte, link *Link, opts 
 	return resource
 }
 
-func mustTestNewReticulum(t *testing.T, configDir string) *Reticulum {
+func mustTestNewReticulum(t *testing.T, ts Transport, configDir string) *Reticulum {
 	t.Helper()
-	ret, err := NewReticulum(configDir)
-	mustTest(t, err)
-	return ret
-}
-
-func mustTestNewReticulumWithTransport(t *testing.T, configDir string, ts Transport) *Reticulum {
-	t.Helper()
-	ret, err := NewReticulumWithTransport(configDir, ts)
+	ret, err := NewReticulum(ts, configDir)
 	mustTest(t, err)
 	return ret
 }

@@ -334,13 +334,13 @@ loglevel = 1
 			t.Fatalf("MkdirAll: %v", err)
 		}
 		writeRNSConfig(t, rnsDir)
-		ret, err := rns.NewReticulum(rnsDir)
+		ts := rns.NewTransportSystem()
+		ret, err := rns.NewReticulum(ts, rnsDir)
 		if err != nil {
 			t.Fatalf("NewReticulum: %v", err)
 		}
 		defer closeReticulum(t, ret)
 
-		rns.ResetTransport()
 		lastExitCode = 0
 		id, err := rns.NewIdentity(true)
 		if err != nil {
@@ -370,13 +370,13 @@ loglevel = 1
 			t.Fatalf("MkdirAll: %v", err)
 		}
 		writeRNSConfig(t, rnsDir)
-		ret, err := rns.NewReticulum(rnsDir)
+		ts := rns.NewTransportSystem()
+		ret, err := rns.NewReticulum(ts, rnsDir)
 		if err != nil {
 			t.Fatalf("NewReticulum: %v", err)
 		}
 		defer closeReticulum(t, ret)
 
-		rns.ResetTransport()
 		lastExitCode = 0
 		id, err := rns.NewIdentity(true)
 		if err != nil {
@@ -391,7 +391,6 @@ loglevel = 1
 	})
 
 	t.Run("testQueryStatusTimeout", func(t *testing.T) {
-		rns.ResetTransport()
 		lastExitCode = 0
 		id, err := rns.NewIdentity(true)
 		if err != nil {
@@ -406,16 +405,15 @@ loglevel = 1
 			t.Fatalf("MkdirAll: %v", err)
 		}
 		writeRNSConfig(t, rnsConfigDir)
-		ret, err := rns.NewReticulum(rnsConfigDir)
+		ts := rns.NewTransportSystem()
+		ret, err := rns.NewReticulum(ts, rnsConfigDir)
 		if err != nil {
 			t.Fatalf("NewReticulum: %v", err)
 		}
 		defer closeReticulum(t, ret)
 
-		// This should timeout because the link will never become active
-		// Wait, I should mock the link to be active to test the next part
-		// but I can't easily. So I'll just check that it still compiles and runs.
-		_, _ = queryStatus(id, id, 100*time.Millisecond, false)
+		// TODO: fully test this.
+		_, _ = queryStatus(ts, id, id, 100*time.Millisecond, false)
 	})
 
 	t.Run("testGetStatusFormatting", func(t *testing.T) {
@@ -451,13 +449,13 @@ loglevel = 1
 			t.Fatalf("MkdirAll: %v", err)
 		}
 		writeRNSConfig(t, rnsDir)
-		ret, err := rns.NewReticulum(rnsDir)
+		ts := rns.NewTransportSystem()
+		ret, err := rns.NewReticulum(ts, rnsDir)
 		if err != nil {
 			t.Fatalf("NewReticulum: %v", err)
 		}
 		defer closeReticulum(t, ret)
 
-		rns.ResetTransport()
 		lastExitCode = 0
 		id, err := rns.NewIdentity(true)
 		if err != nil {
@@ -465,7 +463,7 @@ loglevel = 1
 		}
 		rns.Remember(nil, id.Hash, id.GetPublicKey(), nil)
 
-		// This should timeout
-		_, _ = requestSyncInternal(id, id.Hash, id, 100*time.Millisecond, false)
+		// TODO: fix this.
+		_, _ = requestSyncInternal(ts, id, id.Hash, id, 100*time.Millisecond, false)
 	})
 }

@@ -51,7 +51,8 @@ func programSetup(p programSetupParams) int {
 		reticulum = p.rnsInstance
 		p.mustExit = false
 	} else {
-		r, err := rns.NewReticulum(p.configDir)
+		ts := rns.NewTransportSystem()
+		r, err := rns.NewReticulum(ts, p.configDir)
 		if err != nil {
 			_, _ = fmt.Fprintln(w, "No shared RNS instance available to get status from")
 			if p.mustExit {

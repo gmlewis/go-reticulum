@@ -35,7 +35,8 @@ func TestJobs(t *testing.T) {
 	tempDir := tempDir(t)
 	identity, err := rns.NewIdentity(true)
 	mustTest(t, err)
-	router, _ := lxmf.NewRouter(identity, tempDir)
+	ts := rns.NewTransportSystem()
+	router, _ := lxmf.NewRouter(ts, identity, tempDir)
 	dest, _ := router.RegisterDeliveryIdentity(identity, "Test Peer", nil)
 
 	// Actually, Python stores them in seconds.
@@ -75,7 +76,8 @@ func TestAnnounceAtStart(t *testing.T) {
 	tempDir := tempDir(t)
 	identity, err := rns.NewIdentity(true)
 	mustTest(t, err)
-	router, _ := lxmf.NewRouter(identity, tempDir)
+	ts := rns.NewTransportSystem()
+	router, _ := lxmf.NewRouter(ts, identity, tempDir)
 	dest, _ := router.RegisterDeliveryIdentity(identity, "Test Peer", nil)
 
 	ac = &activeConfig{
@@ -154,7 +156,8 @@ func TestLXMFDelivery(t *testing.T) {
 	// Mock message
 	id, err := rns.NewIdentity(true)
 	mustTest(t, err)
-	dest, err := rns.NewDestination(id, rns.DestinationIn, rns.DestinationSingle, "lxmf", "delivery")
+	ts := rns.NewTransportSystem()
+	dest, err := rns.NewDestination(ts, id, rns.DestinationIn, rns.DestinationSingle, "lxmf", "delivery")
 	mustTest(t, err)
 	lxm, _ := lxmf.NewMessage(dest, dest, "Hello", "Content", nil)
 
@@ -193,7 +196,8 @@ func TestPropagationNodeSetup(t *testing.T) {
 	tempDir := tempDir(t)
 	identity, err := rns.NewIdentity(true)
 	mustTest(t, err)
-	router, _ := lxmf.NewRouter(identity, tempDir)
+	ts := rns.NewTransportSystem()
+	router, _ := lxmf.NewRouter(ts, identity, tempDir)
 
 	prioritised := []string{"0102030405060708090a0b0c0d0e0f10"}
 	controlAllowed := []string{"1112131415161718191a1b1c1d1e1f20"}
@@ -242,7 +246,8 @@ func TestAuthWarningMessage(t *testing.T) {
 
 	id, err := rns.NewIdentity(true)
 	mustTest(t, err)
-	router, _ := lxmf.NewRouter(id, tempDir)
+	ts := rns.NewTransportSystem()
+	router, _ := lxmf.NewRouter(ts, id, tempDir)
 
 	setupAuth(router)
 
@@ -256,7 +261,8 @@ func TestAuthSetup(t *testing.T) {
 	tempDir := tempDir(t)
 	identity, err := rns.NewIdentity(true)
 	mustTest(t, err)
-	router, _ := lxmf.NewRouter(identity, tempDir)
+	ts := rns.NewTransportSystem()
+	router, _ := lxmf.NewRouter(ts, identity, tempDir)
 
 	allowed := [][]byte{
 		{0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20},
@@ -274,12 +280,13 @@ func TestAuthSetup(t *testing.T) {
 func TestIdentityRemember(t *testing.T) {
 	identity, err := rns.NewIdentity(true)
 	mustTest(t, err)
-	dest, err := rns.NewDestination(identity, rns.DestinationIn, rns.DestinationSingle, "lxmf", "delivery")
+	ts := rns.NewTransportSystem()
+	dest, err := rns.NewDestination(ts, identity, rns.DestinationIn, rns.DestinationSingle, "lxmf", "delivery")
 	mustTest(t, err)
 
 	rns.Remember(nil, dest.Hash, identity.GetPublicKey(), nil)
 
-	recalled := rns.Recall(dest.Hash, false)
+	recalled := rns.Recall(ts, dest.Hash, false)
 	if recalled == nil {
 		t.Errorf("recalled identity is nil")
 	}
@@ -289,7 +296,8 @@ func TestIgnoreDestinations(t *testing.T) {
 	tempDir := tempDir(t)
 	identity, err := rns.NewIdentity(true)
 	mustTest(t, err)
-	router, _ := lxmf.NewRouter(identity, tempDir)
+	ts := rns.NewTransportSystem()
+	router, _ := lxmf.NewRouter(ts, identity, tempDir)
 
 	ignored := [][]byte{
 		{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
@@ -322,7 +330,8 @@ func TestRouterConstruction(t *testing.T) {
 
 	identity, err := rns.NewIdentity(true)
 	mustTest(t, err)
-	router, err := lxmf.NewRouterFromConfig(lxmf.RouterConfig{
+	ts := rns.NewTransportSystem()
+	router, err := lxmf.NewRouterFromConfig(ts, lxmf.RouterConfig{
 		Identity:         identity,
 		StoragePath:      tempDir,
 		Autopeer:         ac.Autopeer,

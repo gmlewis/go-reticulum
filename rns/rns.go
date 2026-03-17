@@ -31,7 +31,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
@@ -48,15 +47,16 @@ func Unpack(data []byte) (any, error) {
 	return msgpack.Unpack(data)
 }
 
-// RecallIdentity recalls an identity from its hash using the default transport.
-func RecallIdentity(hash []byte) *Identity {
-	return Recall(hash, false, GetTransport())
+// RecallIdentity recalls an identity from its hash using the provided transport.
+func RecallIdentity(ts Transport, hash []byte) *Identity {
+	return Recall(ts, hash, false)
 }
 
 // PacketDestination is an interface for types that can be a packet destination.
 type PacketDestination interface {
 	GetHash() []byte
 	GetType() int
+	GetTransport() Transport
 }
 
 // GetHash returns the destination hash.
@@ -65,17 +65,23 @@ func (d *Destination) GetHash() []byte { return d.Hash }
 // GetType returns the destination type.
 func (d *Destination) GetType() int { return d.Type }
 
+// GetTransport returns the destination transport.
+func (d *Destination) GetTransport() Transport { return d.transport }
+
 // GetHash returns the link ID.
 func (l *Link) GetHash() []byte { return l.linkID }
 
 // GetType returns the link destination type.
 func (l *Link) GetType() int { return DestinationLink }
 
+// GetTransport returns the link destination transport.
+func (l *Link) GetTransport() Transport { return l.transport }
+
 // Reticulum is the main entry point for the Reticulum Network Stack.
 type Reticulum struct {
 	config    *Config
 	configDir string
-	transport *TransportSystem
+	transport Transport
 
 	networkIdentity     *Identity
 	networkIdentityPath string
@@ -148,68 +154,8 @@ func (r *Reticulum) Close() error {
 
 const systemConfigDir = "/etc/reticulum"
 
-var (
-	globalLinkMTUDiscovery uint32 = 1
-	globalUseImplicitProof uint32 = 1
-	globalPanicOnIfaceErr  uint32 = 0
-	globalTransportEnabled uint32 = 0
-)
-
-func transportEnabled() bool {
-	return atomic.LoadUint32(&globalTransportEnabled) == 1
-}
-
-func setTransportEnabled(enabled bool) {
-	if enabled {
-		atomic.StoreUint32(&globalTransportEnabled, 1)
-		return
-	}
-	atomic.StoreUint32(&globalTransportEnabled, 0)
-}
-
-func linkMTUDiscoveryEnabled() bool {
-	return atomic.LoadUint32(&globalLinkMTUDiscovery) == 1
-}
-
-func setLinkMTUDiscoveryEnabled(enabled bool) {
-	if enabled {
-		atomic.StoreUint32(&globalLinkMTUDiscovery, 1)
-		return
-	}
-	atomic.StoreUint32(&globalLinkMTUDiscovery, 0)
-}
-
-func shouldUseImplicitProof() bool {
-	return atomic.LoadUint32(&globalUseImplicitProof) == 1
-}
-
-func setUseImplicitProof(enabled bool) {
-	if enabled {
-		atomic.StoreUint32(&globalUseImplicitProof, 1)
-		return
-	}
-	atomic.StoreUint32(&globalUseImplicitProof, 0)
-}
-
-func panicOnInterfaceErrorEnabled() bool {
-	return atomic.LoadUint32(&globalPanicOnIfaceErr) == 1
-}
-
-func setPanicOnInterfaceErrorEnabled(enabled bool) {
-	if enabled {
-		atomic.StoreUint32(&globalPanicOnIfaceErr, 1)
-		return
-	}
-	atomic.StoreUint32(&globalPanicOnIfaceErr, 0)
-}
-
-// NewReticulum initializes Reticulum with the given configuration directory.
-func NewReticulum(configDir string) (*Reticulum, error) {
-	return NewReticulumWithTransport(configDir, GetTransport())
-}
-
-// NewReticulumWithTransport initializes a new Reticulum stack with a specific transport system.
-func NewReticulumWithTransport(configDir string, ts Transport) (*Reticulum, error) {
+// NewReticulum initializes a new Reticulum stack with a specific transport system.
+func NewReticulum(ts Transport, configDir string) (*Reticulum, error) {
 	resolvedConfigDir, err := resolveConfigDir(configDir)
 	if err != nil {
 		return nil, err
@@ -218,7 +164,7 @@ func NewReticulumWithTransport(configDir string, ts Transport) (*Reticulum, erro
 
 	r := &Reticulum{
 		configDir:            configDir,
-		transport:            ts.(*TransportSystem),
+		transport:            ts,
 		shareInstance:        true,
 		sharedInstanceType:   "",
 		linkMTUDiscovery:     true,
@@ -351,6 +297,9 @@ func (r *Reticulum) applyConfig() error {
 		}
 		if v, ok := reticulumSection.GetProperty("link_mtu_discovery"); ok {
 			r.linkMTUDiscovery = parseBoolLike(v)
+			if r.transport != nil {
+				r.transport.SetLinkMTUDiscovery(r.linkMTUDiscovery)
+			}
 		}
 		if v, ok := reticulumSection.GetProperty("use_implicit_proof"); ok {
 			r.useImplicitProof = parseBoolLike(v)
@@ -359,7 +308,10 @@ func (r *Reticulum) applyConfig() error {
 			r.remoteMgmtEnabled = parseBoolLike(v)
 		}
 		if v, ok := reticulumSection.GetProperty("enable_transport"); ok {
-			setTransportEnabled(parseBoolLike(v))
+			enabled := parseBoolLike(v)
+			if r.transport != nil {
+				r.transport.SetEnabled(enabled)
+			}
 		}
 		if v, ok := reticulumSection.GetProperty("respond_to_probes"); ok {
 			r.allowProbes = parseBoolLike(v)
@@ -466,9 +418,10 @@ func (r *Reticulum) applyConfig() error {
 		}
 	}
 
-	setLinkMTUDiscoveryEnabled(r.linkMTUDiscovery)
-	setUseImplicitProof(r.useImplicitProof)
-	setPanicOnInterfaceErrorEnabled(r.panicOnIfaceError)
+	r.transport.SetLinkMTUDiscovery(r.linkMTUDiscovery)
+	// TODO: Investigate:
+	// r.transport.SetUseImplicitProof(r.useImplicitProof)
+	// r.transport.SetPanicOnInterfaceErrorEnabled(r.panicOnIfaceError)
 
 	return nil
 }

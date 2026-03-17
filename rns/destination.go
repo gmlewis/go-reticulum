@@ -88,7 +88,7 @@ type Destination struct {
 	mu sync.Mutex
 
 	acceptLinkRequests bool
-	transport          *TransportSystem
+	transport          Transport
 	requestHandlers    map[string]*RequestHandler
 
 	ratchets          []*crypto.X25519PrivateKey
@@ -100,13 +100,8 @@ type Destination struct {
 	retainedRatchets  int
 }
 
-// NewDestination initializes a new programmatic endpoint on the default Reticulum transport system.
-func NewDestination(identity *Identity, direction, destType int, appName string, aspects ...string) (*Destination, error) {
-	return NewDestinationWithTransport(GetTransport(), identity, direction, destType, appName, aspects...)
-}
-
-// NewDestinationWithTransport instantiates a new endpoint bound to a specific, custom transport system instance.
-func NewDestinationWithTransport(ts Transport, identity *Identity, direction, destType int, appName string, aspects ...string) (*Destination, error) {
+// NewDestination instantiates a new endpoint bound to a specific, custom transport system instance.
+func NewDestination(ts Transport, identity *Identity, direction, destType int, appName string, aspects ...string) (*Destination, error) {
 	if strings.Contains(appName, ".") {
 		return nil, errors.New("dots can't be used in app names")
 	}

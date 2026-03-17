@@ -238,9 +238,12 @@ func parseFlags() options {
 }
 
 func printIdentity(opts options) error {
-	if _, err := rns.NewReticulum(opts.configDir); err != nil {
+	ts := rns.NewTransportSystem()
+	ret, err := rns.NewReticulum(ts, opts.configDir)
+	if err != nil {
 		return fmt.Errorf("could not initialize Reticulum: %w", err)
 	}
+	defer ret.Close()
 
 	identityPath, err := resolveIdentityPath(opts)
 	if err != nil {
@@ -258,7 +261,7 @@ func printIdentity(opts options) error {
 	_, _ = fmt.Printf("Identity     : %v\n", id.HexHash)
 
 	if opts.listen {
-		destination, err := rns.NewDestination(id, rns.DestinationIn, rns.DestinationSingle, appName)
+		destination, err := rns.NewDestination(ts, id, rns.DestinationIn, rns.DestinationSingle, appName)
 		if err != nil {
 			return fmt.Errorf("could not create destination: %w", err)
 		}
@@ -291,9 +294,12 @@ func resolveIdentityPath(opts options) (string, error) {
 }
 
 func doListen(opts options) error {
-	if _, err := rns.NewReticulum(opts.configDir); err != nil {
+	ts := rns.NewTransportSystem()
+	ret, err := rns.NewReticulum(ts, opts.configDir)
+	if err != nil {
 		return fmt.Errorf("could not initialize Reticulum: %w", err)
 	}
+	defer ret.Close()
 
 	identityPath, err := resolveIdentityPath(opts)
 	if err != nil {
@@ -305,7 +311,7 @@ func doListen(opts options) error {
 		return err
 	}
 
-	destination, err := rns.NewDestination(id, rns.DestinationIn, rns.DestinationSingle, appName)
+	destination, err := rns.NewDestination(ts, id, rns.DestinationIn, rns.DestinationSingle, appName)
 	if err != nil {
 		return fmt.Errorf("could not create destination: %w", err)
 	}
@@ -363,9 +369,12 @@ func doListen(opts options) error {
 }
 
 func doInitiate(opts options) (int, error) {
-	if _, err := rns.NewReticulum(opts.configDir); err != nil {
+	ts := rns.NewTransportSystem()
+	ret, err := rns.NewReticulum(ts, opts.configDir)
+	if err != nil {
 		return 1, fmt.Errorf("could not initialize Reticulum: %w", err)
 	}
+	defer ret.Close()
 
 	identityPath, err := resolveIdentityPath(opts)
 	if err != nil {
@@ -382,17 +391,17 @@ func doInitiate(opts options) (int, error) {
 		return 1, fmt.Errorf("invalid destination hash %q: %w", opts.destination, err)
 	}
 
-	remoteIdentity, err := resolveRemoteIdentity(destHash, time.Duration(opts.timeoutSec)*time.Second)
+	remoteIdentity, err := resolveRemoteIdentity(ret.Transport(), destHash, time.Duration(opts.timeoutSec)*time.Second)
 	if err != nil {
 		return 1, err
 	}
 
-	remoteDest, err := rns.NewDestination(remoteIdentity, rns.DestinationOut, rns.DestinationSingle, appName)
+	remoteDest, err := rns.NewDestination(ts, remoteIdentity, rns.DestinationOut, rns.DestinationSingle, appName)
 	if err != nil {
 		return 1, fmt.Errorf("could not create remote destination: %w", err)
 	}
 
-	link, err := rns.NewLink(remoteDest)
+	link, err := rns.NewLink(ts, remoteDest)
 	if err != nil {
 		return 1, fmt.Errorf("could not create link: %w", err)
 	}
@@ -420,19 +429,19 @@ func doInitiate(opts options) (int, error) {
 	return runInitiatorChannelSession(link, opts)
 }
 
-func resolveRemoteIdentity(destHash []byte, timeout time.Duration) (*rns.Identity, error) {
-	remoteIdentity := rns.RecallIdentity(destHash)
+func resolveRemoteIdentity(ts rns.Transport, destHash []byte, timeout time.Duration) (*rns.Identity, error) {
+	remoteIdentity := rns.RecallIdentity(ts, destHash)
 	if remoteIdentity != nil {
 		return remoteIdentity, nil
 	}
 
-	if err := rns.TransportProxy.RequestPath(destHash); err != nil {
+	if err := ts.RequestPath(destHash); err != nil {
 		return nil, fmt.Errorf("could not request path to %x: %w", destHash, err)
 	}
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
-		remoteIdentity = rns.RecallIdentity(destHash)
+		remoteIdentity = rns.RecallIdentity(ts, destHash)
 		if remoteIdentity != nil {
 			return remoteIdentity, nil
 		}

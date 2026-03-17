@@ -67,10 +67,12 @@ func main() {
 		rns.SetLogLevel(rns.LogWarning)
 	}
 
-	_, err := rns.NewReticulum(*configDir)
+	ts := rns.NewTransportSystem()
+	ret, err := rns.NewReticulum(ts, *configDir)
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
+	defer ret.Close()
 
 	if *listenMode {
 		doListen(*identityPath)
@@ -83,7 +85,7 @@ func main() {
 		}
 		destHashHex := flag.Arg(0)
 		command := flag.Arg(1)
-		doExecute(*identityPath, destHashHex, command)
+		doExecute(ret.Transport(), *identityPath, destHashHex, command)
 	}
 }
 
@@ -107,7 +109,8 @@ func doListen(idPath string) {
 		}
 	}
 
-	dest, err := rns.NewDestination(id, rns.DestinationIn, rns.DestinationSingle, AppName, "execute")
+	ts := rns.NewTransportSystem()
+	dest, err := rns.NewDestination(ts, id, rns.DestinationIn, rns.DestinationSingle, AppName, "execute")
 	if err != nil {
 		log.Fatalf("Could not create destination: %v\n", err)
 	}
@@ -223,7 +226,7 @@ func resolveAllowedIdentitiesPath(home string) string {
 	return ""
 }
 
-func doExecute(idPath string, destHashHex string, command string) {
+func doExecute(ts rns.Transport, idPath string, destHashHex string, command string) {
 	if idPath == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -240,23 +243,23 @@ func doExecute(idPath string, destHashHex string, command string) {
 	if err != nil {
 		log.Fatalf("Invalid destination hash %q: %v\n", destHashHex, err)
 	}
-	remoteID := rns.RecallIdentity(destHash)
+	remoteID := rns.RecallIdentity(ts, destHash)
 	if remoteID == nil {
-		if err := rns.TransportProxy.RequestPath(destHash); err != nil {
+		if err := ts.RequestPath(destHash); err != nil {
 			log.Fatalf("Could not request path to <%x>: %v\n", destHash, err)
 		}
 		time.Sleep(2 * time.Second)
-		remoteID = rns.RecallIdentity(destHash)
+		remoteID = rns.RecallIdentity(ts, destHash)
 	}
 	if remoteID == nil {
 		log.Fatalf("Could not resolve remote identity for destination %x\n", destHash)
 	}
 
-	remoteDest, err := rns.NewDestination(remoteID, rns.DestinationOut, rns.DestinationSingle, AppName, "execute")
+	remoteDest, err := rns.NewDestination(ts, remoteID, rns.DestinationOut, rns.DestinationSingle, AppName, "execute")
 	if err != nil {
 		log.Fatalf("Could not create remote destination: %v\n", err)
 	}
-	link, err := rns.NewLink(remoteDest)
+	link, err := rns.NewLink(ts, remoteDest)
 	if err != nil {
 		log.Fatalf("Could not create link: %v\n", err)
 	}

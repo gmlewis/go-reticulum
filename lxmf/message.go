@@ -168,7 +168,7 @@ func (m *Message) Pack() error {
 }
 
 // UnpackMessageFromBytes reconstructs a Message object from its raw binary representation and validates its cryptographic integrity.
-func UnpackMessageFromBytes(data []byte, originalMethod int) (*Message, error) {
+func UnpackMessageFromBytes(ts rns.Transport, data []byte, originalMethod int) (*Message, error) {
 	minimum := (2 * DestinationLength) + SignatureLength
 	if len(data) < minimum {
 		return nil, fmt.Errorf("lxmf bytes too short: got %v, need at least %v", len(data), minimum)
@@ -226,8 +226,8 @@ func UnpackMessageFromBytes(data []byte, originalMethod int) (*Message, error) {
 		return nil, err
 	}
 
-	destination := recalledDeliveryDestination(destinationHash)
-	source := recalledDeliveryDestination(sourceHash)
+	destination := recalledDeliveryDestination(ts, destinationHash)
+	source := recalledDeliveryDestination(ts, sourceHash)
 
 	m := &Message{
 		Destination:     destination,
@@ -366,13 +366,13 @@ func isTimestampType(v any) bool {
 	}
 }
 
-func recalledDeliveryDestination(destHash []byte) *rns.Destination {
-	identity := rns.Recall(destHash, false)
+func recalledDeliveryDestination(ts rns.Transport, destHash []byte) *rns.Destination {
+	identity := rns.Recall(ts, destHash, false)
 	if identity == nil {
 		return nil
 	}
 
-	d, err := rns.NewDestination(identity, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	d, err := rns.NewDestination(ts, identity, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	if err != nil {
 		return nil
 	}

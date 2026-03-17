@@ -90,17 +90,17 @@ func main() {
 	}
 	rns.SetLogLevel(targetLogLevel)
 
-	_, err := rns.NewReticulum(*configDir)
+	ts := rns.NewTransportSystem()
+	ret, err := rns.NewReticulum(ts, *configDir)
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
+	defer ret.Close()
 
 	destHash, err := hex.DecodeString(destHex)
 	if err != nil {
 		log.Fatalf("Invalid destination hash: %v\n", err)
 	}
-
-	ts := rns.GetTransport()
 
 	if !ts.HasPath(destHash) {
 		fmt.Printf("Path to <%x> requested  ", destHash)
@@ -124,7 +124,7 @@ func main() {
 		log.Fatalf("\r%v\rPath request timed out\n", strings.Repeat(" ", 60))
 	}
 
-	remoteID := rns.RecallIdentity(destHash)
+	remoteID := rns.RecallIdentity(ts, destHash)
 
 	// Parse app name and aspects
 	parts := strings.Split(fullName, ".")
@@ -137,7 +137,7 @@ func main() {
 		aspects = parts[1:]
 	}
 
-	remoteDest, err := rns.NewDestination(remoteID, rns.DestinationOut, rns.DestinationSingle, appName, aspects...)
+	remoteDest, err := rns.NewDestination(ts, remoteID, rns.DestinationOut, rns.DestinationSingle, appName, aspects...)
 	if err != nil {
 		log.Fatalf("Could not create destination: %v\n", err)
 	}

@@ -358,7 +358,7 @@ def handle_client(conn):
 def main():
     if len(sys.argv) < 2:
         sys.exit(1)
-    
+
     addr = sys.argv[1]
     if addr.isdigit():
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -369,10 +369,10 @@ def main():
             os.remove(addr)
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         s.bind(addr)
-    
+
     s.listen(5)
     print(f"Listening on {addr}", flush=True)
-    
+
     try:
         while True:
             conn, _ = s.accept()
@@ -523,7 +523,7 @@ while True:
     if not chunk:
         break
     buffer.extend(chunk)
-    
+
     while FLAG in buffer:
         start = buffer.find(FLAG)
         end = buffer.find(FLAG, start + 1)
@@ -557,7 +557,7 @@ func TestPipeInterfaceParity(t *testing.T) {
 
 	// Go PipeSubprocessInterface runs the Python echo script
 	command := "python3 " + scriptPath
-	goIface := mustTestNewPipeSubprocessInterface(t, "go_pipe", command, 1*time.Second, handler)
+	goIface, err := NewPipeSubprocessInterface("go_pipe", command, 1*time.Second, handler)
 	if err != nil {
 		t.Fatalf("failed to create Go Pipe interface: %v", err)
 	}

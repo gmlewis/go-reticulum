@@ -94,8 +94,11 @@ func main() {
 		rns.SetLogLevel(int(verbose) - int(quiet))
 	}
 
-	if _, err := rns.NewReticulum(configDir); err != nil {
+	ts := rns.NewTransportSystem()
+	ret, err := rns.NewReticulum(ts, configDir)
+	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v", err)
 	}
-	os.Exit(0)
+	defer ret.Close()
+	// TODO: Finish this.
 }

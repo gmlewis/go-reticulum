@@ -25,20 +25,18 @@ func TestMessagePackUnpackRoundTrip(t *testing.T) {
 		t.Fatalf("NewIdentity(source): %v", err)
 	}
 
-	destination, err := rns.NewDestination(destinationID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	ts := rns.NewTransportSystem()
+	destination, err := rns.NewDestination(ts, destinationID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	if err != nil {
 		t.Fatalf("NewDestination(destination): %v", err)
 	}
-	source, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	source, err := rns.NewDestination(ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	if err != nil {
 		t.Fatalf("NewDestination(source): %v", err)
 	}
 
 	fields := map[any]any{int64(FieldDebug): []byte("debug-data")}
 	m := mustTestNewMessage(t, destination, source, "hello-content", "hello-title", fields)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
 
 	if err := m.Pack(); err != nil {
 		t.Fatalf("Pack: %v", err)
@@ -51,7 +49,7 @@ func TestMessagePackUnpackRoundTrip(t *testing.T) {
 		t.Fatalf("signature length=%v want=%v", len(m.Signature), SignatureLength)
 	}
 
-	unpacked, err := UnpackMessageFromBytes(m.Packed, MethodDirect)
+	unpacked, err := UnpackMessageFromBytes(ts, m.Packed, MethodDirect)
 	if err != nil {
 		t.Fatalf("UnpackMessageFromBytes: %v", err)
 	}
@@ -86,26 +84,24 @@ func TestMessagePackIncludesStampAndUnpacksIt(t *testing.T) {
 		t.Fatalf("NewIdentity(source): %v", err)
 	}
 
-	destination, err := rns.NewDestination(destinationID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	ts := rns.NewTransportSystem()
+	destination, err := rns.NewDestination(ts, destinationID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	if err != nil {
 		t.Fatalf("NewDestination(destination): %v", err)
 	}
-	source, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	source, err := rns.NewDestination(ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	if err != nil {
 		t.Fatalf("NewDestination(source): %v", err)
 	}
 
 	m := mustTestNewMessage(t, destination, source, "content", "title", nil)
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
 	m.Stamp = []byte{0xAA, 0xBB, 0xCC}
 
 	if err := m.Pack(); err != nil {
 		t.Fatalf("Pack: %v", err)
 	}
 
-	unpacked, err := UnpackMessageFromBytes(m.Packed, MethodDirect)
+	unpacked, err := UnpackMessageFromBytes(ts, m.Packed, MethodDirect)
 	if err != nil {
 		t.Fatalf("UnpackMessageFromBytes: %v", err)
 	}
@@ -128,19 +124,17 @@ func TestMessageHashMatchesProtocolMaterial(t *testing.T) {
 		t.Fatalf("NewIdentity(source): %v", err)
 	}
 
-	destination, err := rns.NewDestination(destinationID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	ts := rns.NewTransportSystem()
+	destination, err := rns.NewDestination(ts, destinationID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	if err != nil {
 		t.Fatalf("NewDestination(destination): %v", err)
 	}
-	source, err := rns.NewDestination(sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	source, err := rns.NewDestination(ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	if err != nil {
 		t.Fatalf("NewDestination(source): %v", err)
 	}
 
 	m := mustTestNewMessage(t, destination, source, "abc", "def", map[any]any{})
-	if err != nil {
-		t.Fatalf("NewMessage: %v", err)
-	}
 	m.Timestamp = 1700000000.25
 
 	if err := m.Pack(); err != nil {
@@ -168,9 +162,10 @@ func TestWriteToDirectory(t *testing.T) {
 	mustTest(t, err)
 	srcID, err := rns.NewIdentity(true)
 	mustTest(t, err)
-	dest, err := rns.NewDestination(destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	ts := rns.NewTransportSystem()
+	dest, err := rns.NewDestination(ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	mustTest(t, err)
-	src, err := rns.NewDestination(srcID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	src, err := rns.NewDestination(ts, srcID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	mustTest(t, err)
 
 	msg := mustTestNewMessage(t, dest, src, "hello", "greet", nil)

@@ -7,6 +7,7 @@ package rns
 
 import (
 	"bytes"
+	"crypto/rand"
 	"os"
 	"path/filepath"
 	"testing"
@@ -30,7 +31,7 @@ func TestTransport(t *testing.T) {
 
 	// Test registration
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestinationWithTransport(t, ts, id, DestinationIn, DestinationSingle,
+	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle,
 		"app")
 
 	ts.mu.Lock()
@@ -53,7 +54,7 @@ func TestHandleAnnounce(t *testing.T) {
 	// LogLevel = LogDebug
 	ts := NewTransportSystem()
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestinationWithTransport(t, ts, id, DestinationIn, DestinationSingle,
+	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle,
 		"testapp")
 
 	// Create announce data
@@ -152,7 +153,7 @@ func TestHandlePathRequestEmitsTargetedPathResponse(t *testing.T) {
 	ts.interfaces = append(ts.interfaces, recvIface, otherIface)
 
 	localID := mustTestNewIdentity(t, true)
-	localDest := mustTestNewDestinationWithTransport(t, ts, localID, DestinationIn, DestinationSingle, "pathreq", "target")
+	localDest := mustTestNewDestination(t, ts, localID, DestinationIn, DestinationSingle, "pathreq", "target")
 
 	tag := bytes.Repeat([]byte{0xAB}, TruncatedHashLength/8)
 	requestData := make([]byte, 0, TruncatedHashLength/4)
@@ -204,7 +205,7 @@ func TestAnnounceRebroadcastProcessing(t *testing.T) {
 	ts.interfaces = append(ts.interfaces, source, outbound)
 
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestinationWithTransport(t, ts, id, DestinationIn, DestinationSingle,
+	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle,
 		"testapp")
 
 	nameHash := FullHash([]byte("testapp"))[:NameHashLength/8]
@@ -274,7 +275,7 @@ func TestPathResponseAnnounceNotRebroadcast(t *testing.T) {
 	ts.interfaces = append(ts.interfaces, source, outbound)
 
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestinationWithTransport(t, ts, id, DestinationIn, DestinationSingle,
+	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle,
 		"path-response-test")
 
 	nameHash := FullHash([]byte("path-response-test"))[:NameHashLength/8]
@@ -400,7 +401,7 @@ func TestOutboundSendFailureInvalidatesPaths(t *testing.T) {
 	ts.pathTable["via-good"] = &PathEntry{Interface: good, Expires: time.Now().Add(time.Hour)}
 
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestinationWithTransport(t, ts, id, DestinationIn, DestinationSingle,
+	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle,
 		"outbound-test")
 	p := NewPacket(dest, []byte("hello"))
 	if err := p.Pack(); err != nil {
@@ -424,7 +425,7 @@ func TestInboundIFACHookDrop(t *testing.T) {
 	ts := NewTransportSystem()
 
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestinationWithTransport(t, ts, id, DestinationIn, DestinationSingle,
+	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle,
 		"ifac-drop")
 	p := NewPacket(dest, []byte("payload"))
 	if err := p.Pack(); err != nil {
@@ -450,7 +451,7 @@ func TestOutboundIFACEgressTransform(t *testing.T) {
 	ts.interfaces = append(ts.interfaces, iface)
 
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestinationWithTransport(t, ts, id, DestinationIn, DestinationSingle,
+	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle,
 		"ifac-out")
 	p := NewPacket(dest, []byte("payload"))
 	if err := p.Pack(); err != nil {
@@ -478,7 +479,7 @@ func TestOutboundUsesKnownPathSingleHop(t *testing.T) {
 	ts.interfaces = append(ts.interfaces, routeIface, otherIface)
 
 	remoteID := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestinationWithTransport(t, ts, remoteID, DestinationOut, DestinationSingle, "route-test")
+	dest := mustTestNewDestination(t, ts, remoteID, DestinationOut, DestinationSingle, "route-test")
 	ts.pathTable[string(dest.Hash)] = &PathEntry{Interface: routeIface, Hops: 1, Expires: time.Now().Add(time.Hour)}
 
 	p := NewPacketWithTransport(ts, dest, []byte("hello"))
@@ -510,7 +511,7 @@ func TestOutboundUsesKnownPathMultiHopHeader2(t *testing.T) {
 	ts.interfaces = append(ts.interfaces, routeIface, otherIface)
 
 	remoteID := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestinationWithTransport(t, ts, remoteID, DestinationOut, DestinationSingle, "route-test-multihop")
+	dest := mustTestNewDestination(t, ts, remoteID, DestinationOut, DestinationSingle, "route-test-multihop")
 	nextHop := bytes.Repeat([]byte{0x44}, TruncatedHashLength/8)
 	ts.pathTable[string(dest.Hash)] = &PathEntry{Interface: routeIface, Hops: 3, NextHop: nextHop, Expires: time.Now().Add(time.Hour)}
 
@@ -550,19 +551,21 @@ func TestOutboundUsesKnownPathMultiHopHeader2(t *testing.T) {
 
 func TestInboundForwardsWhenTransportIDMatches(t *testing.T) {
 	t.Parallel()
-	setTransportEnabled(true)
-	defer setTransportEnabled(false)
 	ts := NewTransportSystem()
+	ts.SetEnabled(true)
+	tmpDir := tempDir(t)
+	ts.Start(tmpDir)
 
 	identity := mustTestNewIdentity(t, true)
-	ts.identity = identity
+	ts.SetNetworkIdentity(identity)
 
 	inboundIface := &capturingInterface{name: "inbound"}
 	forwardIface := &capturingInterface{name: "forward"}
 	ts.interfaces = append(ts.interfaces, inboundIface, forwardIface)
 
 	remoteID := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestinationWithTransport(t, nil, remoteID, DestinationOut, DestinationSingle, "inbound-forward")
+	dest := mustTestNewDestination(t, ts, remoteID, DestinationOut, DestinationSingle,
+		"inbound-forward")
 	nextHop := bytes.Repeat([]byte{0x55}, TruncatedHashLength/8)
 	ts.pathTable[string(dest.Hash)] = &PathEntry{
 		Interface: forwardIface,
@@ -571,13 +574,21 @@ func TestInboundForwardsWhenTransportIDMatches(t *testing.T) {
 		Expires:   time.Now().Add(time.Hour),
 	}
 
-	p := NewPacketWithTransport(ts, dest, []byte("forward-me"))
+	payload := make([]byte, 16)
+	rand.Read(payload)
+	p := NewPacketWithTransport(ts, dest, payload)
 	p.HeaderType = Header2
-	p.TransportID = identity.Hash
+	p.TransportType = TransportForward
+	p.TransportID = ts.identity.Hash
 	if err := p.Pack(); err != nil {
 		t.Fatalf("pack failed: %v", err)
 	}
 
+	p.UpdateHash()
+	ts.mu.Lock()
+	ts.packetHashes = make(map[string]time.Time)
+	ts.packetHashesPrev = make(map[string]time.Time)
+	ts.mu.Unlock()
 	ts.Inbound(p.Raw, inboundIface)
 
 	if forwardIface.sendCount != 1 {
@@ -605,19 +616,19 @@ func TestInboundForwardsWhenTransportIDMatches(t *testing.T) {
 
 func TestInboundForwardFinalHopStripsTransportHeader(t *testing.T) {
 	t.Parallel()
-	setTransportEnabled(true)
-	defer setTransportEnabled(false)
 	ts := NewTransportSystem()
+	ts.SetEnabled(true)
 
 	identity := mustTestNewIdentity(t, true)
-	ts.identity = identity
+	ts.SetNetworkIdentity(identity)
 
 	inboundIface := &capturingInterface{name: "inbound"}
 	forwardIface := &capturingInterface{name: "forward"}
 	ts.interfaces = append(ts.interfaces, inboundIface, forwardIface)
 
 	remoteID := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestinationWithTransport(t, nil, remoteID, DestinationOut, DestinationSingle, "inbound-final-hop")
+	dest := mustTestNewDestination(t, ts, remoteID, DestinationOut, DestinationSingle,
+		"inbound-final-hop")
 	ts.pathTable[string(dest.Hash)] = &PathEntry{
 		Interface: forwardIface,
 		Hops:      1,
@@ -625,13 +636,21 @@ func TestInboundForwardFinalHopStripsTransportHeader(t *testing.T) {
 		Expires:   time.Now().Add(time.Hour),
 	}
 
-	p := NewPacketWithTransport(ts, dest, []byte("final-hop"))
+	payload := make([]byte, 16)
+	rand.Read(payload)
+	p := NewPacketWithTransport(ts, dest, payload)
 	p.HeaderType = Header2
-	p.TransportID = identity.Hash
+	p.TransportType = TransportForward
+	p.TransportID = ts.identity.Hash
 	if err := p.Pack(); err != nil {
 		t.Fatalf("pack failed: %v", err)
 	}
 
+	p.UpdateHash()
+	ts.mu.Lock()
+	ts.packetHashes = make(map[string]time.Time)
+	ts.packetHashesPrev = make(map[string]time.Time)
+	ts.mu.Unlock()
 	ts.Inbound(p.Raw, inboundIface)
 
 	if forwardIface.sendCount != 1 {

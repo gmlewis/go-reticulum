@@ -153,7 +153,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	requiredDirs := []string{
@@ -198,7 +199,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if r.networkIdentity == nil {
@@ -220,7 +222,7 @@ loglevel = 4
 		t.Fatalf("expected use_implicit_proof = false from config")
 	}
 
-	l := mustTestNewLinkWithTransport(t, r.Transport(), nil)
+	l := mustTestNewLink(t, r.Transport(), nil)
 	if got := l.signallingBytes(); len(got) != 0 {
 		t.Fatalf("expected signalling bytes omitted when link_mtu_discovery disabled, got len=%v", len(got))
 	}
@@ -246,7 +248,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 0 {
@@ -274,7 +277,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 0 {
@@ -307,7 +311,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 0 {
@@ -337,7 +342,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 0 {
@@ -366,7 +372,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 0 {
@@ -400,7 +407,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 0 {
@@ -428,7 +436,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 0 {
@@ -457,7 +466,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 0 {
@@ -486,7 +496,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 0 {
@@ -514,7 +525,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 0 {
@@ -542,7 +554,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 0 {
@@ -571,7 +584,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 0 {
@@ -600,7 +614,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 1 {
@@ -635,7 +650,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 1 {
@@ -672,7 +688,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 0 {
@@ -705,7 +722,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 0 {
@@ -742,7 +760,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 0 {
@@ -770,7 +789,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 0 {
@@ -802,7 +822,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 0 {
@@ -831,7 +852,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 0 {
@@ -876,7 +898,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 0 {
@@ -916,7 +939,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 0 {
@@ -949,7 +973,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if got := len(r.Transport().GetInterfaces()); got != 0 {
@@ -979,7 +1004,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if !r.remoteMgmtEnabled {
@@ -1028,7 +1054,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	if _, err := NewReticulumWithTransport(configDir, NewTransportSystem()); err == nil {
+	ts := NewTransportSystem()
+	if _, err := NewReticulum(ts, configDir); err == nil {
 		t.Fatalf("expected NewReticulum() to fail for invalid remote_management_allowed hash length")
 	}
 }
@@ -1051,7 +1078,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	if _, err := NewReticulumWithTransport(configDir, NewTransportSystem()); err == nil {
+	ts := NewTransportSystem()
+	if _, err := NewReticulum(ts, configDir); err == nil {
 		t.Fatalf("expected NewReticulum() to fail for invalid remote_management_allowed hex")
 	}
 }
@@ -1059,8 +1087,8 @@ loglevel = 4
 func TestReticulumOptionParityForceBitratePanicAndDiscover(t *testing.T) {
 	t.Parallel()
 
-	origPanic := panicOnInterfaceErrorEnabled()
-	defer setPanicOnInterfaceErrorEnabled(origPanic)
+	// origPanic := panicOnInterfaceErrorEnabled()
+	// defer setPanicOnInterfaceErrorEnabled(origPanic)
 
 	sharedPort := reserveTCPPort(t)
 	configDir := tempDir(t)
@@ -1084,14 +1112,12 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if !r.panicOnIfaceError {
 		t.Fatalf("expected panic_on_interface_error=true")
-	}
-	if !panicOnInterfaceErrorEnabled() {
-		t.Fatalf("expected global panic_on_interface_error=true")
 	}
 
 	if !r.discoverInterfaces {
@@ -1139,7 +1165,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
 	if r.requiredDiscoveryV != 7 {
@@ -1178,7 +1205,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	r := mustTestNewReticulumWithTransport(t, configDir, NewTransportSystem())
+	ts := NewTransportSystem()
+	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 	if r.requiredDiscoveryV != 0 {
 		t.Fatalf("expected required_discovery_value to clear to 0, got %v", r.requiredDiscoveryV)
@@ -1203,7 +1231,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	if _, err := NewReticulumWithTransport(configDir, NewTransportSystem()); err == nil {
+	ts := NewTransportSystem()
+	if _, err := NewReticulum(ts, configDir); err == nil {
 		t.Fatalf("expected NewReticulum() to fail for invalid blackhole_sources hash length")
 	}
 }
@@ -1226,7 +1255,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	if _, err := NewReticulumWithTransport(configDir, NewTransportSystem()); err == nil {
+	ts := NewTransportSystem()
+	if _, err := NewReticulum(ts, configDir); err == nil {
 		t.Fatalf("expected NewReticulum() to fail for invalid blackhole_sources hex")
 	}
 }
@@ -1249,7 +1279,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	if _, err := NewReticulumWithTransport(configDir, NewTransportSystem()); err == nil {
+	ts := NewTransportSystem()
+	if _, err := NewReticulum(ts, configDir); err == nil {
 		t.Fatalf("expected NewReticulum() to fail for invalid interface_discovery_sources hash length")
 	}
 }
@@ -1272,7 +1303,8 @@ loglevel = 4
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	if _, err := NewReticulumWithTransport(configDir, NewTransportSystem()); err == nil {
+	ts := NewTransportSystem()
+	if _, err := NewReticulum(ts, configDir); err == nil {
 		t.Fatalf("expected NewReticulum() to fail for invalid interface_discovery_sources hex")
 	}
 }

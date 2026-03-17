@@ -121,7 +121,7 @@ loglevel = 4
 	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name(), port, controlPort))
 	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name(), port, controlPort))
 
-	r1, err := NewReticulumWithTransport(cfg1, ts1)
+	r1, err := NewReticulum(ts1, cfg1)
 	if err != nil {
 		t.Fatalf("failed to create reticulum 1: %v", err)
 	}
@@ -130,7 +130,7 @@ loglevel = 4
 		t.Fatalf("first instance role mismatch: shared=%v connected=%v standalone=%v", r1.isSharedInstance, r1.isConnectedToSharedInstance, r1.isStandaloneInstance)
 	}
 
-	r2, err := NewReticulumWithTransport(cfg2, ts2)
+	r2, err := NewReticulum(ts2, cfg2)
 	if err != nil {
 		t.Fatalf("failed to create reticulum 2: %v", err)
 	}
@@ -155,7 +155,7 @@ loglevel = 4
 [interfaces]
 `, reserveTCPPort(t)))
 
-	r, err := NewReticulumWithTransport(cfg, ts)
+	r, err := NewReticulum(ts, cfg)
 	if err != nil {
 		t.Fatalf("failed to create reticulum: %v", err)
 	}
@@ -189,7 +189,7 @@ loglevel = 4
 [interfaces]
 `, instanceName))
 
-	r1, err := NewReticulumWithTransport(cfg, ts1)
+	r1, err := NewReticulum(ts1, cfg)
 	if err != nil {
 		t.Fatalf("failed to create reticulum 1: %v", err)
 	}
@@ -198,7 +198,7 @@ loglevel = 4
 		t.Fatalf("first instance role mismatch: shared=%v connected=%v standalone=%v", r1.isSharedInstance, r1.isConnectedToSharedInstance, r1.isStandaloneInstance)
 	}
 
-	r2, err := NewReticulumWithTransport(cfg, ts2)
+	r2, err := NewReticulum(ts2, cfg)
 	if err != nil {
 		t.Fatalf("failed to create reticulum 2: %v", err)
 	}

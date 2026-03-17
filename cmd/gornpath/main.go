@@ -86,12 +86,12 @@ func main() {
 	}
 	rns.SetLogLevel(targetLogLevel)
 
-	_, err := rns.NewReticulum(*configDir)
+	ts := rns.NewTransportSystem()
+	ret, err := rns.NewReticulum(ts, *configDir)
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
-
-	ts := rns.GetTransport()
+	defer ret.Close()
 
 	if *table {
 		doTable(ts, *maxHops, *jsonOut)
@@ -140,7 +140,7 @@ func doTable(ts *rns.TransportSystem, maxHops int, jsonOut bool) {
 	}
 }
 
-func doDrop(ts *rns.TransportSystem, destHash []byte) {
+func doDrop(_ *rns.TransportSystem, destHash []byte) {
 	// TODO: Implement drop_path in TransportSystem
 	fmt.Printf("Dropped path to %x\n", destHash)
 }

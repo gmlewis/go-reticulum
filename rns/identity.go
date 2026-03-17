@@ -218,7 +218,7 @@ func CleanRatchets() {
 // Recall searches for a known identity matching the given target hash.
 // If fromIdentityHash is true, the hash is compared against identity hashes;
 // otherwise, it is compared against destination hashes.
-func Recall(targetHash []byte, fromIdentityHash bool, ts Transport) *Identity {
+func Recall(ts Transport, targetHash []byte, fromIdentityHash bool) *Identity {
 	identityMu.Lock()
 	defer identityMu.Unlock()
 

@@ -16,7 +16,8 @@ func TestProgramSetupExitsCleanly(t *testing.T) {
 	t.Parallel()
 	tmpDir := tempDirWithConfig(t)
 	var buf bytes.Buffer
-	r, err := rns.NewReticulum(tmpDir)
+	ts := rns.NewTransportSystem()
+	r, err := rns.NewReticulum(ts, tmpDir)
 	if err != nil {
 		t.Fatalf("NewReticulum: %v", err)
 	}

@@ -22,19 +22,43 @@ import (
 
 // Transport defines the required methods for any transport system within the Reticulum network.
 type Transport interface {
-	RegisterDestination(d *Destination)
-	RegisterLink(l *Link)
 	ActivateLink(l *Link)
-	FindLink(linkID []byte) *Link
-	Outbound(packet *Packet) error
-	Inbound(raw []byte, iface interfaces.Interface)
-	HasPath(destHash []byte) bool
-	RequestPath(destHash []byte) error
-	HopsTo(destHash []byte) int
-	RegisterAnnounceHandler(handler *AnnounceHandler)
 	AnnounceHandlers() []*AnnounceHandler
-	SetNetworkIdentity(identity *Identity)
+	BlackholeIdentity(identityHash []byte, until *int64, reason string) bool
+	DiscoverInterfaces()
+	DiscoverInterfacesCallCount() int
+	DropAnnounceQueues() int
+	Enabled() bool
+	FindLink(linkID []byte) *Link
+	GetBlackholedIdentities() []map[string]any
+	GetInterfaces() []interfaces.Interface
+	GetPacketQ(packetHash []byte) (float64, bool)
+	GetPacketRSSI(packetHash []byte) (float64, bool)
+	GetPacketSNR(packetHash []byte) (float64, bool)
+	GetPathEntry(destHash []byte) *PathInfo
+	GetPathTable() []PathInfo
+	GetRateTable() []map[string]any
+	HasPath(destHash []byte) bool
+	HopsTo(destHash []byte) int
+	Identity() *Identity
+	Inbound(raw []byte, iface interfaces.Interface)
+	InvalidatePath(destHash []byte) bool
+	InvalidatePathsViaNextHop(nextHop []byte) int
+	LinkMTUDiscovery() bool
+	LinkTable() map[string]*LinkEntry
 	NetworkIdentityHash() []byte
+	Outbound(packet *Packet) error
+	RegisterAnnounceHandler(handler *AnnounceHandler)
+	RegisterDestination(d *Destination)
+	RegisterInterface(iface interfaces.Interface)
+	RegisterLink(l *Link)
+	RequestPath(destHash []byte) error
+	SetEnabled(enabled bool)
+	SetLinkMTUDiscovery(enabled bool)
+	SetNetworkIdentity(identity *Identity)
+	Start(storagePath string) error
+	StartedAt() time.Time
+	UnblackholeIdentity(identityHash []byte) bool
 }
 
 // TransportSystem manages routing, packet forwarding, and global state.
@@ -76,7 +100,9 @@ type TransportSystem struct {
 	discoverCalls        int
 	announceHandlers     []*AnnounceHandler
 
-	mu sync.Mutex
+	enabled          bool
+	linkMTUDiscovery bool
+	mu               sync.Mutex
 }
 
 // AnnounceEntry represents a stored network announce within the transport system.
@@ -151,24 +177,6 @@ type ifacOutboundHook interface {
 	ApplyIFACOutbound(data []byte) ([]byte, error)
 }
 
-var (
-	transportInstance *TransportSystem
-	transportOnce     sync.Once
-)
-
-// ResetTransport resets the transport singleton. Used for testing.
-func ResetTransport() {
-	transportMu.Lock()
-	defer transportMu.Unlock()
-	if transportInstance != nil {
-		transportInstance.Stop()
-	}
-	transportInstance = nil
-	transportOnce = sync.Once{}
-}
-
-var transportMu sync.Mutex
-
 // PathfinderM is the maximum number of hops in path finding,
 // matching Python's Transport.PATHFINDER_M = 128.
 const PathfinderM = 128
@@ -221,12 +229,22 @@ func NewTransportSystem() *TransportSystem {
 	}
 }
 
-// GetTransport returns the singleton instance of the Transport system.
-func GetTransport() *TransportSystem {
-	transportOnce.Do(func() {
-		transportInstance = NewTransportSystem()
-	})
-	return transportInstance
+func (ts *TransportSystem) Identity() *Identity {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.identity
+}
+
+func (ts *TransportSystem) StartedAt() time.Time {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.startedAt
+}
+
+func (ts *TransportSystem) LinkTable() map[string]*LinkEntry {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.linkTable
 }
 
 func (ts *TransportSystem) ensureStateLocked() {
@@ -275,6 +293,34 @@ func (ts *TransportSystem) ensureStateLocked() {
 	if ts.blackholedIdentities == nil {
 		ts.blackholedIdentities = make(map[string]BlackholeIdentityEntry)
 	}
+}
+
+// SetEnabled sets whether the transport system is enabled.
+func (ts *TransportSystem) SetEnabled(enabled bool) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.enabled = enabled
+}
+
+// Enabled returns whether the transport system is enabled.
+func (ts *TransportSystem) Enabled() bool {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.enabled
+}
+
+// LinkMTUDiscovery returns whether link MTU discovery is enabled.
+func (ts *TransportSystem) LinkMTUDiscovery() bool {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.linkMTUDiscovery
+}
+
+// SetLinkMTUDiscovery sets whether link MTU discovery is enabled.
+func (ts *TransportSystem) SetLinkMTUDiscovery(enabled bool) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.linkMTUDiscovery = enabled
 }
 
 // Start initializes the transport system.
@@ -326,7 +372,7 @@ func (ts *TransportSystem) Start(storagePath string) error {
 	ts.mu.Unlock()
 
 	// Setup control destinations
-	pathRequestDst, err := NewDestination(nil, DestinationIn, DestinationPlain, "rnstransport", "path", "request")
+	pathRequestDst, err := NewDestination(ts, nil, DestinationIn, DestinationPlain, "rnstransport", "path", "request")
 	if err != nil {
 		return err
 	}
@@ -376,6 +422,7 @@ func (ts *TransportSystem) SetNetworkIdentity(identity *Identity) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	ts.networkID = identity
+	ts.identity = identity
 }
 
 // NetworkIdentityHash retrieves the hash of the current network identity, if one is configured.
@@ -395,6 +442,7 @@ func (ts *TransportSystem) DiscoverInterfaces() {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	ts.discoverCalls++
+	// TODO - unimplemented
 }
 
 // DiscoverInterfacesCallCount returns the number of times the discovery interface process has been called.
@@ -876,7 +924,7 @@ func (ts *TransportSystem) forwardPathRequest(packet *Packet, source interfaces.
 	ts.pendingPathRequestAt[targetKey] = time.Now()
 	ts.mu.Unlock()
 
-	pathReqDst, err := NewDestinationWithTransport(ts, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
+	pathReqDst, err := NewDestination(ts, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 	if err != nil {
 		Logf("Failed creating relay path request destination: %v", LogError, false, err)
 		return
@@ -1193,6 +1241,7 @@ func (ts *TransportSystem) GetInterfaces() []interfaces.Interface {
 }
 
 // GetMutex returns the transport system's mutex.
+// TODO: kill this
 func (ts *TransportSystem) GetMutex() *sync.Mutex {
 	return &ts.mu
 }
@@ -1379,7 +1428,7 @@ func (ts *TransportSystem) HasPath(destHash []byte) bool {
 
 // RequestPath requests a path to the destination from the network.
 func (ts *TransportSystem) RequestPath(destHash []byte) error {
-	pathRequestDst, err := NewDestinationWithTransport(ts, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
+	pathRequestDst, err := NewDestination(ts, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 	if err != nil {
 		return err
 	}
@@ -1435,6 +1484,7 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 	// Duplicate detection
 	ts.mu.Lock()
 	if ts.seenOrRememberPacketHashLocked(packet.PacketHash, time.Now()) {
+		Logf("Inbound: dropping duplicate packet %x", LogVerbose, false, packet.PacketHash)
 		ts.mu.Unlock()
 		return
 	}
@@ -1480,7 +1530,7 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 		forLocalClient := packet.PacketType != PacketAnnounce && ts.isForLocalClient(packet)
 		forLocalClientLink := packet.PacketType != PacketAnnounce && ts.isForLocalClientLink(packet)
 
-		if transportEnabled() || fromLocalClient || forLocalClient || forLocalClientLink {
+		if ts.Enabled() || fromLocalClient || forLocalClient || forLocalClientLink {
 			// If transport ID matches ours, we are the next hop
 			if packet.TransportID != nil && ts.identity != nil && bytes.Equal(packet.TransportID, ts.identity.Hash) {
 				ts.mu.Lock()
@@ -1493,7 +1543,7 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 						newRaw = make([]byte, len(packet.Raw))
 						copy(newRaw, packet.Raw)
 						newRaw[1] = byte(packet.Hops)
-						copy(newRaw[2:], entry.NextHop)
+						copy(newRaw[2:TruncatedHashLength/8+2], entry.NextHop)
 					} else if remainingHops == 1 {
 						// Strip transport header
 						newFlags := (Header1 << 6) | (packet.Flags & 0b00001111)
@@ -1698,7 +1748,7 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 
 	// Call announce handlers
 	if len(handlers) > 0 {
-		announceIdentity := Recall(packet.DestinationHash, false, ts)
+		announceIdentity := Recall(ts, packet.DestinationHash, false)
 		if announceIdentity != nil {
 			for _, handler := range handlers {
 				executeCallback := false

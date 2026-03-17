@@ -37,7 +37,7 @@ func init() {
 		_, _ = fmt.Fprintf(flag.CommandLine.Output(), `
 usage: gornir [-h] [--config CONFIG] [-v] [-q] [--exampleconfig] [--version]
 
-Reticulum Distributed Identity Resolver
+Go Reticulum Distributed Identity Resolver
 
 options:
   -h, --help       show this help message and exit
@@ -94,8 +94,11 @@ func main() {
 		rns.SetLogLevel(int(verbose) - int(quiet))
 	}
 
-	if _, err := rns.NewReticulum(configDir); err != nil {
+	ts := rns.NewTransportSystem()
+	ret, err := rns.NewReticulum(ts, configDir)
+	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v", err)
 	}
-	os.Exit(0)
+	defer ret.Close()
+	// TODO: finish this
 }
