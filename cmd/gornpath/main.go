@@ -41,11 +41,12 @@
 package main
 
 import (
+	"cmp"
 	"encoding/hex"
 	"flag"
 	"fmt"
 	"log"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -114,11 +115,11 @@ func doTable(ts *rns.TransportSystem, maxHops int, jsonOut bool) {
 	paths := ts.GetPathTable()
 
 	// Sort by interface then hops
-	sort.Slice(paths, func(i, j int) bool {
-		if paths[i].Interface.Name() != paths[j].Interface.Name() {
-			return paths[i].Interface.Name() < paths[j].Interface.Name()
-		}
-		return paths[i].Hops < paths[j].Hops
+	slices.SortFunc(paths, func(a, b rns.PathInfo) int {
+		return cmp.Or(
+			cmp.Compare(a.Interface.Name(), b.Interface.Name()),
+			cmp.Compare(a.Hops, b.Hops),
+		)
 	})
 
 	if jsonOut {

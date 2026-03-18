@@ -7,10 +7,11 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"io"
 	"os"
-	"sort"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -1029,8 +1030,8 @@ func TestRunInitiatorProtocolFlowRetryWarningsThenFatalMirror(t *testing.T) {
 
 func runTimedEvents(fake *fakeChannelSession, linkClosedCh chan<- struct{}, events ...timedEvent) {
 	// Sort events by delay to ensure we process them in order.
-	sort.Slice(events, func(i, j int) bool {
-		return events[i].delay < events[j].delay
+	slices.SortFunc(events, func(a, b timedEvent) int {
+		return cmp.Compare(a.delay, b.delay)
 	})
 
 	go func() {

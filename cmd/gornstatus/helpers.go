@@ -6,9 +6,10 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"math"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/gmlewis/go-reticulum/rns"
@@ -111,39 +112,39 @@ func optInt(p *int) int {
 func sortInterfaces(ifaces []rns.InterfaceStat, key string, sortReverse bool) {
 	key = strings.ToLower(key)
 
-	var less func(i, j int) bool
+	var cmpFunc func(a, b rns.InterfaceStat) int
 	switch key {
 	case "rate", "bitrate":
-		less = func(i, j int) bool { return ifaces[i].Bitrate < ifaces[j].Bitrate }
+		cmpFunc = func(a, b rns.InterfaceStat) int { return cmp.Compare(a.Bitrate, b.Bitrate) }
 	case "rx":
-		less = func(i, j int) bool { return ifaces[i].RXB < ifaces[j].RXB }
+		cmpFunc = func(a, b rns.InterfaceStat) int { return cmp.Compare(a.RXB, b.RXB) }
 	case "tx":
-		less = func(i, j int) bool { return ifaces[i].TXB < ifaces[j].TXB }
+		cmpFunc = func(a, b rns.InterfaceStat) int { return cmp.Compare(a.TXB, b.TXB) }
 	case "rxs":
-		less = func(i, j int) bool { return ifaces[i].RXS < ifaces[j].RXS }
+		cmpFunc = func(a, b rns.InterfaceStat) int { return cmp.Compare(a.RXS, b.RXS) }
 	case "txs":
-		less = func(i, j int) bool { return ifaces[i].TXS < ifaces[j].TXS }
+		cmpFunc = func(a, b rns.InterfaceStat) int { return cmp.Compare(a.TXS, b.TXS) }
 	case "traffic":
-		less = func(i, j int) bool {
-			return ifaces[i].RXB+ifaces[i].TXB < ifaces[j].RXB+ifaces[j].TXB
+		cmpFunc = func(a, b rns.InterfaceStat) int {
+			return cmp.Compare(a.RXB+a.TXB, b.RXB+b.TXB)
 		}
 	case "announces", "announce":
-		less = func(i, j int) bool {
-			ai := optFloat(ifaces[i].InAnnounceFreq) + optFloat(ifaces[i].OutAnnounceFreq)
-			aj := optFloat(ifaces[j].InAnnounceFreq) + optFloat(ifaces[j].OutAnnounceFreq)
-			return ai < aj
+		cmpFunc = func(a, b rns.InterfaceStat) int {
+			ai := optFloat(a.InAnnounceFreq) + optFloat(a.OutAnnounceFreq)
+			aj := optFloat(b.InAnnounceFreq) + optFloat(b.OutAnnounceFreq)
+			return cmp.Compare(ai, aj)
 		}
 	case "arx":
-		less = func(i, j int) bool {
-			return optFloat(ifaces[i].InAnnounceFreq) < optFloat(ifaces[j].InAnnounceFreq)
+		cmpFunc = func(a, b rns.InterfaceStat) int {
+			return cmp.Compare(optFloat(a.InAnnounceFreq), optFloat(b.InAnnounceFreq))
 		}
 	case "atx":
-		less = func(i, j int) bool {
-			return optFloat(ifaces[i].OutAnnounceFreq) < optFloat(ifaces[j].OutAnnounceFreq)
+		cmpFunc = func(a, b rns.InterfaceStat) int {
+			return cmp.Compare(optFloat(a.OutAnnounceFreq), optFloat(b.OutAnnounceFreq))
 		}
 	case "held":
-		less = func(i, j int) bool {
-			return optInt(ifaces[i].HeldAnnounces) < optInt(ifaces[j].HeldAnnounces)
+		cmpFunc = func(a, b rns.InterfaceStat) int {
+			return cmp.Compare(optInt(a.HeldAnnounces), optInt(b.HeldAnnounces))
 		}
 	default:
 		return
@@ -152,10 +153,10 @@ func sortInterfaces(ifaces []rns.InterfaceStat, key string, sortReverse bool) {
 	// Python default: reverse=not sort_reverse → descending.
 	// -r/--reverse flips to ascending.
 	if !sortReverse {
-		// Descending: flip the less function.
-		origLess := less
-		less = func(i, j int) bool { return origLess(j, i) }
+		// Descending: flip the comparison.
+		origCmp := cmpFunc
+		cmpFunc = func(a, b rns.InterfaceStat) int { return origCmp(b, a) }
 	}
 
-	sort.SliceStable(ifaces, less)
+	slices.SortStableFunc(ifaces, cmpFunc)
 }

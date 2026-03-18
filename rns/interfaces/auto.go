@@ -12,7 +12,7 @@ import (
 	"log"
 	"net"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -775,7 +775,7 @@ func (ai *AutoInterface) AdoptedInterfaces() []string {
 	for name := range ai.adoptedInterfaces {
 		out = append(out, name)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 
