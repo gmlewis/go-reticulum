@@ -847,13 +847,17 @@ func (ts *TransportSystem) InvalidatePath(destHash []byte) bool {
 	defer ts.mu.Unlock()
 	ts.ensureStateLocked()
 	destinationHash := string(destHash)
-	_, ok := ts.pathTable[destinationHash]
-	if ok {
+	_, ok1 := ts.pathTable[destinationHash]
+	if ok1 {
 		delete(ts.pathTable, destinationHash)
+	}
+	_, ok2 := ts.knownDestinations[destinationHash]
+	if ok2 {
+		delete(ts.knownDestinations, destinationHash)
 	}
 	delete(ts.announceTable, destinationHash)
 	delete(ts.pathRequests, destinationHash)
-	return ok
+	return ok1 || ok2
 }
 
 // InvalidatePathsViaInterface removes all known paths that route via an interface.
@@ -866,6 +870,7 @@ func (ts *TransportSystem) InvalidatePathsViaInterface(iface interfaces.Interfac
 	for destinationHash, entry := range ts.pathTable {
 		if entry.Interface == iface {
 			delete(ts.pathTable, destinationHash)
+			delete(ts.knownDestinations, destinationHash)
 			delete(ts.announceTable, destinationHash)
 			delete(ts.pathRequests, destinationHash)
 			removed++
@@ -884,6 +889,7 @@ func (ts *TransportSystem) InvalidatePathsViaNextHop(nextHop []byte) int {
 	for destinationHash, entry := range ts.pathTable {
 		if bytes.Equal(entry.NextHop, nextHop) {
 			delete(ts.pathTable, destinationHash)
+			delete(ts.knownDestinations, destinationHash)
 			delete(ts.announceTable, destinationHash)
 			delete(ts.pathRequests, destinationHash)
 			removed++
@@ -1757,9 +1763,6 @@ func (ts *TransportSystem) HasPath(destHash []byte) bool {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	if _, ok := ts.pathTable[string(destHash)]; ok {
-		return true
-	}
-	if _, ok := ts.knownDestinations[string(destHash)]; ok {
 		return true
 	}
 	return false

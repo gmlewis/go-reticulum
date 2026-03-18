@@ -119,6 +119,10 @@ func (c *clientT) getTargetIdentity(remote string, timeoutArg time.Duration) *rn
 		_ = c.ts.RequestPath(destinationHash)
 		start := time.Now()
 		for !c.ts.HasPath(destinationHash) {
+			remoteIdentity = c.ts.Recall(destinationHash)
+			if remoteIdentity != nil {
+				return remoteIdentity
+			}
 			if time.Since(start) > timeoutArg {
 				fmt.Println("Resolving remote identity timed out, exiting now")
 				osExit(200)
