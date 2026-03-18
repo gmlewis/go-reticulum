@@ -7,7 +7,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -125,7 +124,6 @@ func (c *clientT) getTargetIdentity(remote string, timeoutArg time.Duration) *rn
 				osExit(200)
 				return nil
 			}
-			log.Printf("GML: Looking for hash %x... sleeping", destinationHash)
 			time.Sleep(100 * time.Millisecond)
 		}
 	}

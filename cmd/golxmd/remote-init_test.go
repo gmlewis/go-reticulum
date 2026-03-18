@@ -8,7 +8,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -383,7 +382,6 @@ loglevel = 1
 		go func() {
 			select {
 			case <-time.After(200 * time.Millisecond):
-				log.Printf("GML: Remembering hash %x...", id.HexHash)
 				c.ts.Remember(nil, id.Hash, id.GetPublicKey(), nil)
 			case <-done:
 				return
@@ -391,7 +389,7 @@ loglevel = 1
 		}()
 		defer close(done)
 
-		got := c.getTargetIdentity(id.HexHash, 10*time.Second)
+		got := c.getTargetIdentity(id.HexHash, 1*time.Second)
 		if got == nil {
 			t.Fatal("got nil identity")
 		}

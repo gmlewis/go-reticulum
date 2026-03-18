@@ -1756,8 +1756,13 @@ func (ts *TransportSystem) GetBlackholedIdentities() []map[string]any {
 func (ts *TransportSystem) HasPath(destHash []byte) bool {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
-	_, ok := ts.pathTable[string(destHash)]
-	return ok
+	if _, ok := ts.pathTable[string(destHash)]; ok {
+		return true
+	}
+	if _, ok := ts.knownDestinations[string(destHash)]; ok {
+		return true
+	}
+	return false
 }
 
 // RequestPath requests a path to the destination from the network.

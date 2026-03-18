@@ -343,12 +343,13 @@ func loadIdentity(ts rns.Transport, path string, request bool, timeout float64) 
 		}
 
 		id := ts.Recall(hash)
-		if id == nil {
-			// Try as identity hash if not found as destination hash
-			// (Note: Transport.Recall currently only checks destination hashes
-			// but we might need a way to recall by identity hash too if needed)
-			// For now, gornid uses destination hashes by default.
-		}
+		// TODO:
+		// if id == nil {
+		//   Try as identity hash if not found as destination hash
+		//   (Note: Transport.Recall currently only checks destination hashes
+		//   but we might need a way to recall by identity hash too if needed)
+		//   For now, gornid uses destination hashes by default.
+		// }
 
 		if id == nil {
 			if !request {
