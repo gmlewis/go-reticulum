@@ -76,8 +76,9 @@ func TestUDPInterfaceParity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pyListenPort := 37430
-	goListenPort := 37431
+	p1, p2 := allocateUDPPortPair(t)
+	pyListenPort := p1
+	goListenPort := p2
 
 	cmd := exec.Command("python3", scriptPath, fmt.Sprintf("%v", pyListenPort), fmt.Sprintf("%v", goListenPort))
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPath)
@@ -173,7 +174,7 @@ func TestTCPInterfaceParity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pyListenPort := 37432
+	pyListenPort := reserveTCPPort(t)
 
 	cmd := exec.Command("python3", scriptPath, fmt.Sprintf("%v", pyListenPort))
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPath)
@@ -289,7 +290,7 @@ except KeyboardInterrupt:
 		t.Fatal(err)
 	}
 
-	pyListenPort := 37434
+	pyListenPort := reserveTCPPort(t)
 
 	cmd := exec.Command("python3", scriptPath, fmt.Sprintf("%v", pyListenPort))
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPath)
@@ -400,7 +401,7 @@ func TestLocalInterfaceParity(t *testing.T) {
 
 	var cmd *exec.Cmd
 	var goIface *LocalClientInterface
-	pyPort := 37436
+	pyPort := reserveTCPPort(t)
 	socketPath := filepath.Join(tmpDir, "rns-test.sock")
 
 	if runtime.GOOS == "linux" {

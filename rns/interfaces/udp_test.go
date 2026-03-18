@@ -12,20 +12,22 @@ import (
 )
 
 func TestUDPInterface(t *testing.T) {
+	t.Parallel()
+	p1, p2 := allocateUDPPortPair(t)
 	received := make(chan []byte, 1)
 	handler := func(data []byte, iface Interface) {
 		received <- data
 	}
 
 	// Create two interfaces talking to each other on localhost
-	if1 := mustTestNewUDPInterface(t, "if1", "127.0.0.1", 37428, "127.0.0.1", 37429, handler)
+	if1 := mustTestNewUDPInterface(t, "if1", "127.0.0.1", p1, "127.0.0.1", p2, handler)
 	defer func() {
 		if err := if1.Detach(); err != nil {
 			t.Fatalf("if1 detach failed: %v", err)
 		}
 	}()
 
-	if2 := mustTestNewUDPInterface(t, "if2", "127.0.0.1", 37429, "127.0.0.1", 37428, nil)
+	if2 := mustTestNewUDPInterface(t, "if2", "127.0.0.1", p2, "127.0.0.1", p1, nil)
 	defer func() {
 		if err := if2.Detach(); err != nil {
 			t.Fatalf("if2 detach failed: %v", err)

@@ -119,7 +119,7 @@ func NewDestination(ts Transport, identity *Identity, direction, destType int, a
 		aspects:            aspects,
 		proofStrategy:      ProveNone,
 		acceptLinkRequests: true,
-		transport:          ts.(*TransportSystem),
+		transport:          ts,
 		requestHandlers:    make(map[string]*RequestHandler),
 		ratchetInterval:    30 * time.Minute,
 		retainedRatchets:   512,

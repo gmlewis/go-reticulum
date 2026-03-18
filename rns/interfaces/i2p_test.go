@@ -12,12 +12,14 @@ import (
 )
 
 func TestI2PInterfaceRoundTrip(t *testing.T) {
+	t.Parallel()
+	port := reserveTCPPort(t)
 	received := make(chan []byte, 1)
 	handler := func(data []byte, iface Interface) {
 		received <- data
 	}
 
-	serverIface := mustTestNewI2PInterface(t, "i2p-server", "127.0.0.1", 37434, handler)
+	serverIface := mustTestNewI2PInterface(t, "i2p-server", "127.0.0.1", port, handler)
 	defer func() {
 		if err := serverIface.Detach(); err != nil {
 			t.Fatalf("server detach failed: %v", err)
@@ -28,7 +30,7 @@ func TestI2PInterfaceRoundTrip(t *testing.T) {
 		t.Fatalf("server type = %q, want I2PInterface", serverIface.Type())
 	}
 
-	peerIface := mustTestNewI2PInterfacePeer(t, "i2p-peer", "127.0.0.1", 37434, nil)
+	peerIface := mustTestNewI2PInterfacePeer(t, "i2p-peer", "127.0.0.1", port, nil)
 	defer func() {
 		if err := peerIface.Detach(); err != nil {
 			t.Fatalf("peer detach failed: %v", err)

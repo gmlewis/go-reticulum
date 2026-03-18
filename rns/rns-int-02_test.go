@@ -1445,7 +1445,7 @@ func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
 		t.Fatalf("expected TransportForward path response, got %v", response.TransportType)
 	}
 
-	transportID := r.Transport().(*TransportSystem).identity.Hash
+	transportID := r.Transport().Identity().Hash
 	if !bytes.Equal(response.TransportID, transportID) {
 		t.Fatalf("expected transport ID to match local transport identity")
 	}
@@ -1513,7 +1513,7 @@ func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 
 	p := NewPacket(remoteDest, []byte("multi-hop-forward"))
 	p.HeaderType = Header2
-	p.TransportID = ts.identity.Hash
+	p.TransportID = ts.Identity().Hash
 	if err := p.Pack(); err != nil {
 		t.Fatalf("failed packing inbound multi-hop packet: %v", err)
 	}

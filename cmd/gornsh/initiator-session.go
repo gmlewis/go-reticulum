@@ -222,13 +222,9 @@ func runInitiatorProtocolFlow(channel channelSession, opts options, linkClosedCh
 		select {
 		case err := <-session.errCh:
 			return 1, session, err
-		default:
-		}
-
-		select {
-		case err := <-session.errCh:
-			return 1, session, err
 		case exitCode := <-session.doneCh:
+			// Even if we got an exit code, a fatal error might have arrived
+			// simultaneously and should be prioritized.
 			select {
 			case err := <-session.errCh:
 				return 1, session, err
@@ -239,6 +235,18 @@ func runInitiatorProtocolFlow(channel channelSession, opts options, linkClosedCh
 			}
 			return 0, session, nil
 		case <-linkClosedCh:
+			// Link closure is the lowest priority; check for errors or exits first.
+			select {
+			case err := <-session.errCh:
+				return 1, session, err
+			case exitCode := <-session.doneCh:
+				if opts.mirror {
+					return exitCode, session, nil
+				}
+				return 0, session, nil
+			default:
+			}
+
 			snapshot := session.terminalSnapshot()
 			if snapshot.lastErr != nil {
 				return 1, session, snapshot.lastErr

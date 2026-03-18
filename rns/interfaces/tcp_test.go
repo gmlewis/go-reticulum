@@ -12,13 +12,15 @@ import (
 )
 
 func TestTCPInterface(t *testing.T) {
+	t.Parallel()
+	port := reserveTCPPort(t)
 	received := make(chan []byte, 1)
 	handler := func(data []byte, iface Interface) {
 		received <- data
 	}
 
 	// Create server
-	server := mustTestNewTCPServerInterface(t, "server", "127.0.0.1", 37430, handler)
+	server := mustTestNewTCPServerInterface(t, "server", "127.0.0.1", port, handler)
 	defer func() {
 		if err := server.Detach(); err != nil {
 			t.Fatalf("server detach failed: %v", err)
@@ -26,7 +28,7 @@ func TestTCPInterface(t *testing.T) {
 	}()
 
 	// Create client
-	client := mustTestNewTCPClientInterface(t, "client", "127.0.0.1", 37430, false, nil)
+	client := mustTestNewTCPClientInterface(t, "client", "127.0.0.1", port, false, nil)
 	defer func() {
 		if err := client.Detach(); err != nil {
 			t.Fatalf("client detach failed: %v", err)

@@ -158,7 +158,7 @@ func NewLink(ts Transport, destination *Destination) (*Link, error) {
 		status:               LinkPending,
 		mode:                 LinkModeAES256CBC,
 		mtu:                  MTU,
-		transport:            ts.(*TransportSystem),
+		transport:            ts,
 		trafficTimeoutFactor: 6.0,
 	}
 	l.UpdateMDU()

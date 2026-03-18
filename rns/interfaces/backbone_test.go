@@ -12,12 +12,14 @@ import (
 )
 
 func TestBackboneInterfaceRoundTrip(t *testing.T) {
+	t.Parallel()
+	port := reserveTCPPort(t)
 	received := make(chan []byte, 1)
 	handler := func(data []byte, iface Interface) {
 		received <- data
 	}
 
-	serverIface := mustTestNewBackboneInterface(t, "backbone-server", "127.0.0.1", 37432, handler)
+	serverIface := mustTestNewBackboneInterface(t, "backbone-server", "127.0.0.1", port, handler)
 	defer func() {
 		if err := serverIface.Detach(); err != nil {
 			t.Fatalf("server detach failed: %v", err)
@@ -28,7 +30,7 @@ func TestBackboneInterfaceRoundTrip(t *testing.T) {
 		t.Fatalf("server type = %q, want BackboneInterface", serverIface.Type())
 	}
 
-	clientIface := mustTestNewBackboneClientInterface(t, "backbone-client", "127.0.0.1", 37432, nil)
+	clientIface := mustTestNewBackboneClientInterface(t, "backbone-client", "127.0.0.1", port, nil)
 	defer func() {
 		if err := clientIface.Detach(); err != nil {
 			t.Fatalf("client detach failed: %v", err)
