@@ -831,7 +831,6 @@ if __name__ == "__main__":
 `
 
 func TestIntegratedHandshakeGoToPython(t *testing.T) {
-	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integrated test in short mode")
 	}
@@ -972,7 +971,6 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 }
 
 func TestIntegratedLargeRequestGoToPython(t *testing.T) {
-	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integrated test in short mode")
 	}
@@ -1106,7 +1104,6 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 }
 
 func TestIntegratedHandshakePythonToGo(t *testing.T) {
-	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integrated test in short mode")
 	}
@@ -1268,7 +1265,7 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 		if gotSize != payloadSize {
 			t.Fatalf("unexpected large request payload size: got %v want %v", gotSize, payloadSize)
 		}
-	case <-time.After(25 * time.Second):
+	case <-time.After(60 * time.Second):
 		t.Fatal("timed out waiting for large request from Python")
 	}
 

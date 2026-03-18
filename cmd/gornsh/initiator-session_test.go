@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -1027,11 +1028,17 @@ func TestRunInitiatorProtocolFlowRetryWarningsThenFatalMirror(t *testing.T) {
 }
 
 func runTimedEvents(fake *fakeChannelSession, linkClosedCh chan<- struct{}, events ...timedEvent) {
-	for _, ev := range events {
-		event := ev
-		go func() {
-			time.Sleep(event.delay)
-			event.send(fake, linkClosedCh)
-		}()
-	}
+	// Sort events by delay to ensure we process them in order.
+	sort.Slice(events, func(i, j int) bool {
+		return events[i].delay < events[j].delay
+	})
+
+	go func() {
+		var lastDelay time.Duration
+		for _, ev := range events {
+			time.Sleep(ev.delay - lastDelay)
+			ev.send(fake, linkClosedCh)
+			lastDelay = ev.delay
+		}
+	}()
 }

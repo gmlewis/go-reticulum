@@ -363,7 +363,6 @@ func runPythonInteropCmd(t *testing.T, scriptPath, mode string, args ...string) 
 }
 
 func TestRatchetGoToPythonParity(t *testing.T) {
-	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -482,7 +481,6 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 }
 
 func TestRatchetPythonToGoParity(t *testing.T) {
-	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -569,7 +567,6 @@ func TestRatchetPythonToGoParity(t *testing.T) {
 }
 
 func TestRatchetRotationParity(t *testing.T) {
-	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -661,7 +658,6 @@ func TestRatchetRotationParity(t *testing.T) {
 }
 
 func TestRatchetRetentionWindowParity(t *testing.T) {
-	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -752,7 +748,6 @@ func TestRatchetRetentionWindowParity(t *testing.T) {
 }
 
 func TestRatchetEnforceParity(t *testing.T) {
-	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -805,7 +800,6 @@ func TestRatchetEnforceParity(t *testing.T) {
 }
 
 func TestRatchetFileInteropParity(t *testing.T) {
-	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}

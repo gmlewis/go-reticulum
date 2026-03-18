@@ -205,7 +205,6 @@ if __name__ == "__main__":
 `
 
 func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
-	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integrated test in short mode")
 	}
@@ -223,7 +222,6 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			tmpDir, err := os.MkdirTemp("", "go-reticulum-policy-go2py-*")
 			mustTest(t, err)
 			defer os.RemoveAll(tmpDir)
@@ -433,7 +431,6 @@ func setupGoOnlyIntegrationLinkPair(t *testing.T) (*Link, *Link) {
 }
 
 func TestIntegratedGoOnlyLargeResourceCompressionOnOff(t *testing.T) {
-	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integrated test in short mode")
 	}
@@ -451,7 +448,6 @@ func TestIntegratedGoOnlyLargeResourceCompressionOnOff(t *testing.T) {
 	for _, tc := range tests {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			initiatorLink, receiverLink := setupGoOnlyIntegrationLinkPair(t)
 
 			receiverLink.destination.RegisterRequestHandlerWithAutoCompressLimit(
@@ -506,7 +502,6 @@ func TestIntegratedGoOnlyLargeResourceCompressionOnOff(t *testing.T) {
 }
 
 func TestIntegratedGoOnlyChannelStreamCompressedChunks(t *testing.T) {
-	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integrated test in short mode")
 	}
@@ -554,7 +549,6 @@ func TestIntegratedGoOnlyChannelStreamCompressedChunks(t *testing.T) {
 }
 
 func TestIntegratedResponseResourceCompressionPolicyPythonToGo(t *testing.T) {
-	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integrated test in short mode")
 	}
@@ -572,7 +566,6 @@ func TestIntegratedResponseResourceCompressionPolicyPythonToGo(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			tmpDir, err := os.MkdirTemp("", "go-reticulum-policy-py2go-*")
 			mustTest(t, err)
 			defer os.RemoveAll(tmpDir)
