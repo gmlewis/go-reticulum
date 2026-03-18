@@ -67,8 +67,8 @@ func newTestTransportSystem(t *testing.T) *TransportSystem {
 }
 
 // newTestPipes creates a pair of connected PipeInterfaces wired to the
-// given transport systems and registers cleanup via t.Cleanup.
-func newTestPipes(t *testing.T, tsA, tsB *TransportSystem) (*interfaces.PipeInterface, *interfaces.PipeInterface) {
+// given transport systems and returns a cleanup func.
+func newTestPipes(t *testing.T, tsA, tsB *TransportSystem) (*interfaces.PipeInterface, *interfaces.PipeInterface, func()) {
 	t.Helper()
 	pipeA := interfaces.NewPipeInterface("initiator", func(data []byte, iface interfaces.Interface) {
 		tsA.Inbound(data, iface)
@@ -78,11 +78,11 @@ func newTestPipes(t *testing.T, tsA, tsB *TransportSystem) (*interfaces.PipeInte
 	})
 	pipeA.Other = pipeB
 	pipeB.Other = pipeA
-	t.Cleanup(func() {
+	cleanup := func() {
 		_ = pipeA.Detach()
 		_ = pipeB.Detach()
-	})
-	return pipeA, pipeB
+	}
+	return pipeA, pipeB, cleanup
 }
 
 func writeConfig(t *testing.T, dir, content string) {

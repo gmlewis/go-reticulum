@@ -16,7 +16,8 @@ func TestRequestResponse(t *testing.T) {
 	tsInitiator := newTestTransportSystem(t)
 	tsReceiver := newTestTransportSystem(t)
 
-	pipeInitiator, pipeReceiver := newTestPipes(t, tsInitiator, tsReceiver)
+	pipeInitiator, pipeReceiver, cleanup := newTestPipes(t, tsInitiator, tsReceiver)
+	defer cleanup()
 	tsInitiator.RegisterInterface(pipeInitiator)
 	tsReceiver.RegisterInterface(pipeReceiver)
 
@@ -77,7 +78,8 @@ func TestRequestResponseAutoCompressPolicyInlineAndResource(t *testing.T) {
 			tsInitiator := newTestTransportSystem(t)
 			tsReceiver := newTestTransportSystem(t)
 
-			pipeInitiator, pipeReceiver := newTestPipes(t, tsInitiator, tsReceiver)
+			pipeInitiator, pipeReceiver, cleanup := newTestPipes(t, tsInitiator, tsReceiver)
+			defer cleanup()
 			tsInitiator.RegisterInterface(pipeInitiator)
 			tsReceiver.RegisterInterface(pipeReceiver)
 

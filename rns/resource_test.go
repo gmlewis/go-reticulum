@@ -27,7 +27,7 @@ func (errReader) Read(_ []byte) (int, error) {
 
 func TestNewResourceFailsOnRandomHashGenerationError(t *testing.T) {
 	randReaderMu.Lock()
-	t.Cleanup(randReaderMu.Unlock)
+	defer randReaderMu.Unlock()
 
 	key := make([]byte, 32)
 	token, err := crypto.NewToken(key)
@@ -45,9 +45,7 @@ func TestNewResourceFailsOnRandomHashGenerationError(t *testing.T) {
 	resourceRandRead = func(p []byte) (int, error) {
 		return errReader{}.Read(p)
 	}
-	t.Cleanup(func() {
-		resourceRandRead = originalRandRead
-	})
+	defer func() { resourceRandRead = originalRandRead }()
 
 	_, err = NewResource([]byte("payload"), link)
 	if err == nil {

@@ -235,7 +235,7 @@ func TestChannelWriterCompressionCanBeDisabled(t *testing.T) {
 func TestChannelWriterUsesConfigurableDefault(t *testing.T) {
 	previous := DefaultChannelWriterCompressionEnabled
 	DefaultChannelWriterCompressionEnabled = false
-	t.Cleanup(func() { DefaultChannelWriterCompressionEnabled = previous })
+	defer func() { DefaultChannelWriterCompressionEnabled = previous }()
 
 	outlet := &mockOutlet{mdu: 5000, rtt: 0.1}
 	channel := NewChannel(outlet)

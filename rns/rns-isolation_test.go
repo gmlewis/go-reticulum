@@ -37,7 +37,8 @@ func TestStackIsolation(t *testing.T) {
 	defer closeReticulum(t, r2)
 
 	// Create pipe between tsA and tsB
-	pipeA, pipeB := newTestPipes(t, tsA, tsB)
+	pipeA, pipeB, cleanupC := newTestPipes(t, tsA, tsB)
+	defer cleanupC()
 	tsA.RegisterInterface(pipeA)
 	tsB.RegisterInterface(pipeB)
 

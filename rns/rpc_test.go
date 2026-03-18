@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -781,15 +780,6 @@ func TestConnectedInstanceManagementCallsRecoverAfterRPCServerRestart(t *testing
 			defer cleanup1()
 			cfg2, cleanup2 := tempDir(t)
 			defer cleanup2()
-			if tc.name == "Unix" {
-				shortCfg, err := os.MkdirTemp("/tmp", "go-ret-rpc-restart-*")
-				if err != nil {
-					t.Fatalf("MkdirTemp short unix config dir error: %v", err)
-				}
-				t.Cleanup(func() { _ = os.RemoveAll(shortCfg) })
-				cfg1 = shortCfg
-				cfg2 = shortCfg
-			}
 			if tc.sameConfigDir {
 				cfg2 = cfg1
 			}

@@ -41,7 +41,7 @@ func TestLocalUnixServerClientLifecycleAndRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MkdirTemp error: %v", err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(tmp) })
+	defer func() { _ = os.RemoveAll(tmp) }()
 
 	socketPath := filepath.Join(tmp, "local.sock")
 
@@ -129,7 +129,7 @@ func TestLocalServerRemovesStaleSocketPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MkdirTemp error: %v", err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(tmp) })
+	defer func() { _ = os.RemoveAll(tmp) }()
 
 	socketPath := filepath.Join(tmp, "stale.sock")
 
@@ -157,7 +157,7 @@ func TestLocalServerRejectsTakeoverWhenSocketActive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MkdirTemp error: %v", err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(tmp) })
+	defer func() { _ = os.RemoveAll(tmp) }()
 
 	socketPath := filepath.Join(tmp, "active.sock")
 
