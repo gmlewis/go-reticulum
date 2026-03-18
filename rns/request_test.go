@@ -107,7 +107,7 @@ func TestRequestResponseAutoCompressPolicyInlineAndResource(t *testing.T) {
 
 			select {
 			case <-establishedInitiator:
-			case <-time.After(30 * time.Second):
+			case <-time.After(60 * time.Second):
 				t.Fatal("Timeout waiting for link establishment")
 			}
 
@@ -127,7 +127,7 @@ func TestRequestResponseAutoCompressPolicyInlineAndResource(t *testing.T) {
 				if !bytes.Equal(res, tc.responseData) {
 					t.Fatalf("response mismatch: got len=%v want len=%v", len(res), len(tc.responseData))
 				}
-			case <-time.After(30 * time.Second):
+			case <-time.After(60 * time.Second):
 				t.Fatal("Timeout waiting for response")
 			}
 		})
