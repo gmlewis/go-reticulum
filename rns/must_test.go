@@ -5,7 +5,11 @@
 
 package rns
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func mustTest(t *testing.T, err error) {
 	t.Helper()
@@ -44,6 +48,11 @@ func mustTestNewResourceWithOptions(t *testing.T, data []byte, link *Link, opts 
 
 func mustTestNewReticulum(t *testing.T, ts Transport, configDir string) *Reticulum {
 	t.Helper()
+	// Ensure isolation if no config exists
+	configPath := filepath.Join(configDir, "config")
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		writeConfig(t, configDir, "[reticulum]\nshare_instance = No\n")
+	}
 	ret, err := NewReticulum(ts, configDir)
 	mustTest(t, err)
 	return ret

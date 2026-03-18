@@ -310,9 +310,11 @@ func TestParseIntWarning(t *testing.T) {
 	var capturedLog string
 	rns.SetLogDest(rns.LogCallback)
 	rns.SetLogCallback(func(s string) { capturedLog += s })
+	rns.SetLogLevel(rns.LogInfo) // Ensure level is high enough to capture warnings
 	defer func() {
 		rns.SetLogDest(rns.LogStdout)
 		rns.SetLogCallback(nil)
+		rns.SetLogLevel(rns.LogNotice)
 	}()
 
 	result := parseInt("not-a-number")
@@ -328,9 +330,11 @@ func TestParseFloatWarning(t *testing.T) {
 	var capturedLog string
 	rns.SetLogDest(rns.LogCallback)
 	rns.SetLogCallback(func(s string) { capturedLog += s })
+	rns.SetLogLevel(rns.LogInfo) // Ensure level is high enough to capture warnings
 	defer func() {
 		rns.SetLogDest(rns.LogStdout)
 		rns.SetLogCallback(nil)
+		rns.SetLogLevel(rns.LogNotice)
 	}()
 
 	result := parseFloat("not-a-float")

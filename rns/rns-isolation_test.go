@@ -17,6 +17,7 @@ func TestStackIsolation(t *testing.T) {
 	// Stack A
 	cfgA, cleanupA := tempDir(t)
 	defer cleanupA()
+	writeConfig(t, cfgA, "[reticulum]\nshare_instance = No\n")
 	tsA := NewTransportSystem()
 	r1, err := NewReticulum(tsA, cfgA)
 	if err != nil {
@@ -27,6 +28,7 @@ func TestStackIsolation(t *testing.T) {
 	// Stack B
 	cfgB, cleanupB := tempDir(t)
 	defer cleanupB()
+	writeConfig(t, cfgB, "[reticulum]\nshare_instance = No\n")
 	tsB := NewTransportSystem()
 	r2, err := NewReticulum(tsB, cfgB)
 	if err != nil {

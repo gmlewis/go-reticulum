@@ -30,6 +30,7 @@ func TestStartupLogMessages(t *testing.T) {
 	defer func() {
 		rns.SetLogDest(rns.LogStdout)
 		rns.SetLogCallback(nil)
+		rns.SetLogLevel(rns.LogNotice)
 	}()
 
 	// We set LogLevel high enough to see all messages

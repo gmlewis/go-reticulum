@@ -2,6 +2,7 @@ package rns
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -646,9 +647,10 @@ loglevel = 4
 func TestI2PInterfaceConnectableRegisters(t *testing.T) {
 	t.Parallel()
 
+	port := reserveTCPPort(t)
 	configDir, cleanup := tempDir(t)
 	defer cleanup()
-	config := `[reticulum]
+	config := fmt.Sprintf(`[reticulum]
 share_instance = No
 
 [logging]
@@ -660,8 +662,8 @@ loglevel = 4
     enabled = Yes
     connectable = Yes
     bind_ip = 127.0.0.1
-    bind_port = 37435
-`
+    bind_port = %v
+`, port)
 
 	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
 		t.Fatalf("WriteFile(config) error = %v", err)

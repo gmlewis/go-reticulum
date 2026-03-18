@@ -258,9 +258,11 @@ func TestAuthWarningMessage(t *testing.T) {
 	rns.SetLogCallback(func(s string) {
 		capturedLog = s
 	})
+	rns.SetLogLevel(rns.LogInfo)
 	defer func() {
 		rns.SetLogDest(rns.LogStdout)
 		rns.SetLogCallback(nil)
+		rns.SetLogLevel(rns.LogNotice)
 	}()
 
 	id, err := rns.NewIdentity(true)
