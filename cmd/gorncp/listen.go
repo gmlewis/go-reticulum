@@ -225,7 +225,9 @@ func doListen(ts rns.Transport, idPath string, noCompress bool, silent bool, all
 				}
 			}
 		})
-		l.SetResourceStrategy(rns.AcceptApp)
+		if err := l.SetResourceStrategy(rns.AcceptApp); err != nil {
+			log.Fatalf("l.SetResourceStrategy: %v", err)
+		}
 		l.SetResourceCallback(func(adv *rns.ResourceAdvertisement) bool {
 			senderIdentity := l.GetRemoteIdentity()
 			if senderIdentity != nil {
