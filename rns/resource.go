@@ -28,7 +28,7 @@ const (
 	ResourceAutoCompressMaxSize = 64 * 1024 * 1024
 )
 
-// ResourceOptions configures optional behavior for new resource transmissions, such as compression.
+// ResourceOptions configures optional behavior for new resource transmissions, such as compression and metadata.
 type ResourceOptions struct {
 	// AutoCompress determines if the data should be automatically compressed before transmission.
 	AutoCompress bool
@@ -36,6 +36,8 @@ type ResourceOptions struct {
 	AutoCompressLimit int
 	// CompressionLevel sets the algorithm-specific compression level.
 	CompressionLevel int
+	// Metadata contains optional metadata to be sent with the resource advertisement.
+	Metadata map[string][]byte
 }
 
 func (o ResourceOptions) normalized() ResourceOptions {
@@ -290,6 +292,7 @@ func Accept(packet *Packet, callback func(*Resource), startedCallback func(*Reso
 		window:           4,
 		windowMax:        10,
 		windowMin:        2,
+		hasMetadata:      adv.HasMetadata,
 	}
 
 	r.parts = make([]*ResourcePart, r.totalParts)
@@ -358,6 +361,8 @@ type Resource struct {
 	encrypted        bool
 	compressed       bool
 	sentParts        int
+	metadata         map[string][]byte
+	hasMetadata      bool
 
 	mu sync.Mutex
 }
@@ -391,6 +396,7 @@ func NewResourceWithOptions(data []byte, link *Link, opts ResourceOptions) (*Res
 		window:           4,
 		windowMax:        10,
 		windowMin:        2,
+		metadata:         opts.Metadata,
 	}
 
 	normOpts := opts.normalized()
@@ -421,8 +427,31 @@ func NewResourceWithOptions(data []byte, link *Link, opts ResourceOptions) (*Res
 	r.expectedProof = FullHash(append(copyBytes(data), r.hash...))
 	r.originalHash = r.hash
 
-	resourcePlaintext := make([]byte, 0, len(r.randomHash)+len(payload))
+	// Handle metadata: pack and prepend to payload
+	var metadataBytes []byte
+	if len(opts.Metadata) > 0 {
+		packedMetadata, err := msgpack.Pack(opts.Metadata)
+		if err != nil {
+			return nil, fmt.Errorf("failed to pack metadata: %w", err)
+		}
+		metadataSize := len(packedMetadata)
+		if metadataSize > 0xFFFFFF {
+			return nil, fmt.Errorf("metadata size exceeds maximum")
+		}
+		// 3-byte big-endian size (drop first byte of 4-byte int)
+		metadataBytes = make([]byte, 3+metadataSize)
+		metadataBytes[0] = byte((metadataSize >> 16) & 0xFF)
+		metadataBytes[1] = byte((metadataSize >> 8) & 0xFF)
+		metadataBytes[2] = byte(metadataSize & 0xFF)
+		copy(metadataBytes[3:], packedMetadata)
+		r.totalSize = int64(len(metadataBytes)) + int64(len(payload))
+	}
+
+	resourcePlaintext := make([]byte, 0, len(r.randomHash)+len(metadataBytes)+len(payload))
 	resourcePlaintext = append(resourcePlaintext, r.randomHash...)
+	if metadataBytes != nil {
+		resourcePlaintext = append(resourcePlaintext, metadataBytes...)
+	}
 	resourcePlaintext = append(resourcePlaintext, payload...)
 
 	encryptedStream, err := link.Encrypt(resourcePlaintext)
@@ -501,6 +530,21 @@ func (r *Resource) GetProgress() float64 {
 // TotalSize yields the cumulative byte size of the resource as transmitted over the network.
 func (r *Resource) TotalSize() int64 {
 	return r.size
+}
+
+// Metadata returns the metadata associated with this resource.
+func (r *Resource) Metadata() map[string][]byte {
+	return r.metadata
+}
+
+// SetRequestID sets the request ID for this resource response.
+func (r *Resource) SetRequestID(requestID []byte) {
+	r.requestID = copyBytes(requestID)
+}
+
+// SetResponse marks this resource as a response to a request.
+func (r *Resource) SetResponse(isResponse bool) {
+	r.isResponse = isResponse
 }
 
 // SetCallback registers a function to execute when the resource transfer achieves completion or fails permanently.
@@ -737,7 +781,33 @@ func (r *Resource) Assemble() {
 		return
 	}
 
-	payload := assembled[ResourceRandomHashSize:]
+	rawPayload := assembled[ResourceRandomHashSize:]
+	payload := rawPayload
+
+	// Extract metadata if present (metadata is prepended to the data)
+	if r.hasMetadata && len(rawPayload) >= 3 {
+		metadataSize := int(rawPayload[0])<<16 | int(rawPayload[1])<<8 | int(rawPayload[2])
+		if len(rawPayload) >= 3+metadataSize {
+			packedMetadata := rawPayload[3 : 3+metadataSize]
+			unpacked, err := msgpack.Unpack(packedMetadata)
+			if err != nil {
+				Logf("Failed to unpack metadata: %v", LogDebug, false, err)
+			} else {
+				if m, ok := unpacked.(map[any]any); ok {
+					r.metadata = make(map[string][]byte)
+					for k, v := range m {
+						if ks, ok := k.(string); ok {
+							if vb, ok := v.([]byte); ok {
+								r.metadata[ks] = vb
+							}
+						}
+					}
+				}
+			}
+			payload = rawPayload[3+metadataSize:]
+		}
+	}
+
 	if r.compressed {
 		decompressed, err := DecompressBzip2(payload)
 		if err != nil {
@@ -794,20 +864,21 @@ func (r *Resource) Advertise() error {
 	}
 
 	adv := &ResourceAdvertisement{
-		T:          r.size,
-		D:          r.uncompressedSize,
-		H:          r.hash,
-		R:          r.randomHash,
-		O:          r.hash, // Single segment for now
-		N:          r.totalParts,
-		L:          1, // Total segments
-		I:          1, // Segment index
-		Q:          r.requestID,
-		M:          hashmapRaw,
-		IsRequest:  r.requestID != nil && !r.isResponse,
-		IsResponse: r.requestID != nil && r.isResponse,
-		Encrypted:  r.encrypted,
-		Compressed: r.compressed,
+		T:           r.size,
+		D:           r.uncompressedSize,
+		H:           r.hash,
+		R:           r.randomHash,
+		O:           r.hash, // Single segment for now
+		N:           r.totalParts,
+		L:           1, // Total segments
+		I:           1, // Segment index
+		Q:           r.requestID,
+		M:           hashmapRaw,
+		IsRequest:   r.requestID != nil && !r.isResponse,
+		IsResponse:  r.requestID != nil && r.isResponse,
+		Encrypted:   r.encrypted,
+		Compressed:  r.compressed,
+		HasMetadata: len(r.metadata) > 0,
 	}
 
 	data, err := adv.Pack()

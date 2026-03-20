@@ -200,7 +200,43 @@ func doListen(ts rns.Transport, idPath string, noCompress bool, silent bool, all
 				return false
 			}
 
-			return true
+			// Find the link and send the resource with metadata
+			link := ts.FindLink(linkID)
+			if link == nil {
+				rns.Logf("Link not found for request %x", rns.LogError, false, requestID)
+				return false
+			}
+
+			// Read the file
+			fileData, err := os.ReadFile(filePath)
+			if err != nil {
+				rns.Logf("Could not read file %v: %v", rns.LogError, false, filePath, err)
+				return false
+			}
+
+			// Create metadata with filename
+			metadata := map[string][]byte{
+				"name": []byte(filepath.Base(filePath)),
+			}
+
+			// Create and send resource with metadata
+			resource, err := rns.NewResourceWithOptions(fileData, link, rns.ResourceOptions{
+				AutoCompress: !noCompress,
+				Metadata:     metadata,
+			})
+			if err != nil {
+				rns.Logf("Could not create resource: %v", rns.LogError, false, err)
+				return false
+			}
+			resource.SetRequestID(requestID)
+			resource.SetResponse(true)
+			if err := resource.Advertise(); err != nil {
+				rns.Logf("Could not advertise resource: %v", rns.LogError, false, err)
+				return false
+			}
+
+			rns.Logf("Sending file %v to client", rns.LogVerbose, false, filePath)
+			return nil // Resource already sent
 		}, rns.AllowAll, nil, !noCompress)
 	}
 
