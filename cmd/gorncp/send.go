@@ -43,7 +43,7 @@ func doSend(idPath string, destHashHex string, filePath string, noCompress bool,
 		}
 
 		i := 0
-		timeout := time.Now().Add(15 * time.Second)
+		timeout := time.Now().Add(time.Duration(timeoutSec * float64(time.Second)))
 		for !ts.HasPath(destHash) && time.Now().Before(timeout) {
 			time.Sleep(100 * time.Millisecond)
 			if !silent {
@@ -53,7 +53,7 @@ func doSend(idPath string, destHashHex string, filePath string, noCompress bool,
 		}
 
 		if !ts.HasPath(destHash) {
-			log.Fatalf("\r%v\rPath request timed out\n", strings.Repeat(" ", 60))
+			log.Fatalf("\r%v\rPath not found\n", strings.Repeat(" ", 60))
 		}
 		if !silent {
 			fmt.Printf("\b\b \n")

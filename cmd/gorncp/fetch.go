@@ -42,7 +42,7 @@ func doFetch(idPath string, destHashHex string, fileName string, noCompress bool
 
 		i := 0
 		syms := []string{"⢄", "⢂", "⢁", "⡁", "⡈", "⡐", "⡠"}
-		timeout := time.Now().Add(15 * time.Second)
+		timeout := time.Now().Add(time.Duration(timeoutSec * float64(time.Second)))
 		for !ts.HasPath(destHash) && time.Now().Before(timeout) {
 			time.Sleep(100 * time.Millisecond)
 			fmt.Printf("\b\b%v ", syms[i])
@@ -50,7 +50,7 @@ func doFetch(idPath string, destHashHex string, fileName string, noCompress bool
 		}
 
 		if !ts.HasPath(destHash) {
-			log.Fatalf("\r%v\rPath request timed out\n", strings.Repeat(" ", 60))
+			log.Fatalf("\r%v\rPath not found\n", strings.Repeat(" ", 60))
 		}
 		fmt.Printf("\b\b \n")
 		remoteID = rns.RecallIdentity(ts, destHash)
@@ -76,6 +76,7 @@ func doFetch(idPath string, destHashHex string, fileName string, noCompress bool
 	}
 
 	i := 0
+	linkTimeout := time.Now().Add(time.Duration(timeoutSec * float64(time.Second)))
 	for {
 		select {
 		case <-established:
@@ -88,8 +89,9 @@ func doFetch(idPath string, destHashHex string, fileName string, noCompress bool
 				fmt.Printf("\b\b%v ", spinnerSymbols[i])
 				i = (i + 1) % len(spinnerSymbols)
 			}
-		case <-time.After(10 * time.Second):
-			log.Fatalf("\r%v\rLink establishment timed out\n", strings.Repeat(" ", 60))
+			if time.Now().After(linkTimeout) {
+				log.Fatalf("\r%v\rLink establishment timed out\n", strings.Repeat(" ", 60))
+			}
 		}
 	}
 established:
