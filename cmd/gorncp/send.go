@@ -160,34 +160,6 @@ established:
 					phyStr)
 			}
 			goto sent
-		case <-time.After(60 * time.Second):
-			log.Fatalf("\nFile transfer timed out")
-		}
-	}
-sent:
-
-	if res.Status() == rns.ResourceStatusComplete {
-		if !silent {
-			fmt.Printf("\n%v copied to %v\n", filePath, rns.PrettyHex(destHash))
-		}
-	} else {
-		if !silent {
-			fmt.Printf("\nThe transfer failed\n")
-		}
-		os.Exit(1)
-	}
-
-	link.Teardown()
-	time.Sleep(250 * time.Millisecond)
-}
-				fmt.Printf("\rTransfer complete  100.0%% - %v of %v in %v - %vps%v\n",
-					rns.PrettySize(float64(len(data)), "B"),
-					rns.PrettySize(float64(len(data)), "B"),
-					rns.PrettyTime(duration.Seconds(), false, true),
-					rns.PrettySize(speed, "bps"),
-					phyStr)
-			}
-			goto sent
 		case <-time.After(100 * time.Millisecond):
 			if !silent {
 				// Update progress
@@ -213,6 +185,17 @@ sent:
 	}
 sent:
 
+	if res.Status() == rns.ResourceStatusComplete {
+		if !silent {
+			fmt.Printf("\n%v copied to %v\n", filePath, rns.PrettyHex(destHash))
+		}
+	} else {
+		if !silent {
+			fmt.Printf("\nThe transfer failed\n")
+		}
+		os.Exit(1)
+	}
+
 	link.Teardown()
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(250 * time.Millisecond)
 }
