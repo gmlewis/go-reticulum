@@ -392,8 +392,8 @@ func setupGoOnlyIntegrationLinkPair(t *testing.T) (*Link, *Link) {
 	pipeReceiver = interfaces.NewPipeInterface("receiver", func(data []byte, iface interfaces.Interface) {
 		tsReceiver.Inbound(data, iface)
 	})
-	pipeInitiator.Other = pipeReceiver
-	pipeReceiver.Other = pipeInitiator
+	pipeInitiator.SetOther(pipeReceiver)
+	pipeReceiver.SetOther(pipeInitiator)
 	tsInitiator.RegisterInterface(pipeInitiator)
 	tsReceiver.RegisterInterface(pipeReceiver)
 

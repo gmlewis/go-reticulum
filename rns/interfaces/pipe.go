@@ -6,7 +6,6 @@
 package interfaces
 
 import (
-	"log"
 	"sync"
 )
 
@@ -16,7 +15,7 @@ import (
 // channels.
 type PipeInterface struct {
 	*BaseInterface
-	Other     *PipeInterface
+	other     *PipeInterface
 	OnReceive func([]byte, Interface)
 	queue     chan []byte
 	mu        sync.RWMutex
@@ -30,7 +29,7 @@ func NewPipeInterface(name string, onReceive func([]byte, Interface)) *PipeInter
 	p := &PipeInterface{
 		BaseInterface: NewBaseInterface(name, ModeFull, 1000000),
 		OnReceive:     onReceive,
-		queue:         make(chan []byte, 100),
+		queue:         make(chan []byte, 1000),
 	}
 	go p.processQueue()
 	return p
@@ -38,15 +37,25 @@ func NewPipeInterface(name string, onReceive func([]byte, Interface)) *PipeInter
 
 func (p *PipeInterface) processQueue() {
 	for data := range p.queue {
-		if p.Other != nil && p.Other.OnReceive != nil {
-			p.Other.OnReceive(data, p.Other)
+		p.mu.RLock()
+		other := p.other
+		p.mu.RUnlock()
+		if other != nil && other.OnReceive != nil {
+			other.OnReceive(data, other)
 		}
 	}
 }
 
+// SetOther establishes the peer PipeInterface for bidirectional communication.
+func (p *PipeInterface) SetOther(other *PipeInterface) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.other = other
+}
+
 func (p *PipeInterface) Send(data []byte) error {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	if p.IsDetached() {
 		return nil
@@ -56,11 +65,6 @@ func (p *PipeInterface) Send(data []byte) error {
 	// Use a copy to avoid data races if the buffer is reused
 	buf := make([]byte, len(data))
 	copy(buf, data)
-	defer func() {
-		if r := recover(); r != nil {
-			log.Println("Recovered in PipeInterface.Send", r)
-		}
-	}()
 	p.queue <- buf
 	return nil
 }

@@ -76,8 +76,8 @@ func newTestPipes(t *testing.T, tsA, tsB *TransportSystem) (*interfaces.PipeInte
 	pipeB := interfaces.NewPipeInterface("receiver", func(data []byte, iface interfaces.Interface) {
 		tsB.Inbound(data, iface)
 	})
-	pipeA.Other = pipeB
-	pipeB.Other = pipeA
+	pipeA.SetOther(pipeB)
+	pipeB.SetOther(pipeA)
 	cleanup := func() {
 		_ = pipeA.Detach()
 		_ = pipeB.Detach()
