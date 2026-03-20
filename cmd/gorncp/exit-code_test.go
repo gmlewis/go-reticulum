@@ -79,7 +79,7 @@ func TestCorruptIdentityFileExitCode(t *testing.T) {
 	// Write corrupt data to identity file
 	mustTest(t, os.WriteFile(identityPath, []byte("corrupt data"), 0o644))
 
-	// Build the binary first
+	// Build the binary First
 	buildCmd := exec.Command("go", "build", "-o", filepath.Join(tmpDir, "gorncp"), ".")
 	buildCmd.Dir = "."
 	buildCmd.Env = append(os.Environ(), "HOME="+tmpDir)
@@ -98,6 +98,85 @@ func TestCorruptIdentityFileExitCode(t *testing.T) {
 		}
 	} else {
 		t.Error("expected exit error for corrupt identity")
+	}
+}
+
+func TestOutputDirectoryNotFoundExitCode(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := tempDir(t)
+	configDir := filepath.Join(tmpDir, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
+	// Create identity directory to avoid identity creation failure
+	identityDir := filepath.Join(tmpDir, ".reticulum", "identities")
+	if err := os.MkdirAll(identityDir, 0o755); err != nil {
+		t.Fatalf("failed to create identity dir: %v", err)
+	}
+
+	// Build the binary First
+	buildCmd := exec.Command("go", "build", "-o", filepath.Join(tmpDir, "gorncp"), ".")
+	buildCmd.Dir = "."
+	buildCmd.Env = append(os.Environ(), "HOME="+tmpDir)
+	if err := buildCmd.Run(); err != nil {
+		t.Fatalf("failed to build: %v", err)
+	}
+
+	// Run the binary with non-existent save directory
+	nonExistentDir := "/nonexistent-gorncp-test-dir"
+	cmd := exec.Command(filepath.Join(tmpDir, "gorncp"), "-l", "-s", nonExistentDir, "--config", configDir)
+	cmd.Dir = "."
+	cmd.Env = append(os.Environ(), "HOME="+tmpDir)
+	err := cmd.Run()
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		if got := exitErr.ExitCode(); got != 3 {
+			t.Errorf("output directory not found exit code = %d, want 3", got)
+		}
+	} else {
+		t.Error("expected exit error for non-existent output directory")
+	}
+}
+
+func TestOutputDirectoryNotWritableExitCode(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := tempDir(t)
+	configDir := filepath.Join(tmpDir, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
+	// Create identity directory to avoid identity creation failure
+	identityDir := filepath.Join(tmpDir, ".reticulum", "identities")
+	if err := os.MkdirAll(identityDir, 0o755); err != nil {
+		t.Fatalf("failed to create identity dir: %v", err)
+	}
+
+	// Create a read-only directory
+	readOnlyDir := filepath.Join(tmpDir, "readonly")
+	if err := os.MkdirAll(readOnlyDir, 0o555); err != nil {
+		t.Fatalf("failed to create readonly dir: %v", err)
+	}
+
+	// Build the binary First
+	buildCmd := exec.Command("go", "build", "-o", filepath.Join(tmpDir, "gorncp"), ".")
+	buildCmd.Dir = "."
+	buildCmd.Env = append(os.Environ(), "HOME="+tmpDir)
+	if err := buildCmd.Run(); err != nil {
+		t.Fatalf("failed to build: %v", err)
+	}
+
+	// Run the binary with read-only save directory
+	cmd := exec.Command(filepath.Join(tmpDir, "gorncp"), "-l", "-s", readOnlyDir, "--config", configDir)
+	cmd.Dir = "."
+	cmd.Env = append(os.Environ(), "HOME="+tmpDir)
+	err := cmd.Run()
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		if got := exitErr.ExitCode(); got != 4 {
+			t.Errorf("output directory not writable exit code = %d, want 4", got)
+		}
+	} else {
+		t.Error("expected exit error for non-writable output directory")
 	}
 }
 

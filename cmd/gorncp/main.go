@@ -98,6 +98,43 @@ func sizeStr(num float64, suffix string) string {
 	return sprintf("%.2f%s%s", num, lastUnit, suffix)
 }
 
+func printUsage() {
+	fmt.Printf("usage: gorncp [-h] [--config path] [-v] [-q] [-S] [-l] [-C] [-F] [-f] [-j path]\n")
+	fmt.Printf("          [-s path] [-O] [-b seconds] [-a allowed_hash] [-n] [-p]\n")
+	fmt.Printf("          [-i identity] [-w seconds] [-P] [--version]\n")
+	fmt.Printf("          [file] [destination]\n")
+	fmt.Printf("\n")
+	fmt.Printf("Reticulum File Transfer Utility\n")
+	fmt.Printf("\n")
+	fmt.Printf("positional arguments:\n")
+	fmt.Printf("  file                  file to be transferred\n")
+	fmt.Printf("  destination           hexadecimal hash of the receiver\n")
+	fmt.Printf("\n")
+	fmt.Printf("options:\n")
+	fmt.Printf("  -h, --help            show this help message and exit\n")
+	fmt.Printf("  --config path         path to alternative Reticulum config directory\n")
+	fmt.Printf("  -v, --verbose         increase verbosity\n")
+	fmt.Printf("  -q, --quiet           decrease verbosity\n")
+	fmt.Printf("  -S, --silent          disable transfer progress output\n")
+	fmt.Printf("  -l, --listen          listen for incoming transfer requests\n")
+	fmt.Printf("  -C, --no-compress     disable automatic compression\n")
+	fmt.Printf("  -F, --allow-fetch     allow authenticated clients to fetch files\n")
+	fmt.Printf("  -f, --fetch           fetch file from remote listener instead of sending\n")
+	fmt.Printf("  -j path, --jail path  restrict fetch requests to specified path\n")
+	fmt.Printf("  -s path, --save path  save received files in specified path\n")
+	fmt.Printf("  -O, --overwrite       Allow overwriting received files, instead of adding\n")
+	fmt.Printf("                        postfix\n")
+	fmt.Printf("  -b seconds            announce interval, 0 to only announce at startup\n")
+	fmt.Printf("  -a allowed_hash       allow this identity (or add in\n")
+	fmt.Printf("                        ~/.rncp/allowed_identities)\n")
+	fmt.Printf("  -n, --no-auth         accept requests from anyone\n")
+	fmt.Printf("  -p, --print-identity  print identity and destination info and exit\n")
+	fmt.Printf("  -i identity           path to identity to use\n")
+	fmt.Printf("  -w seconds            sender timeout before giving up\n")
+	fmt.Printf("  -P, --phy-rates       display physical layer transfer rates\n")
+	fmt.Printf("  --version             show program's version number and exit\n")
+}
+
 func main() {
 	configDir := flag.String("config", "", "path to alternative Reticulum config directory")
 	identityPath := flag.String("i", "", "path to identity to use")
@@ -132,7 +169,11 @@ func main() {
 	timeout := flag.Float64("w", 15.0, "sender timeout seconds")
 	version := flag.Bool("version", false, "show version")
 	log.SetFlags(0)
+
+	flag.Usage = printUsage
 	flag.Parse()
+
+	help := flag.Bool("h", false, "show this help message and exit")
 	noCompress := *noCompressShort || *noCompressLong
 	silent := *silentShort || *silentLong
 	allowFetch := *allowFetchShort || *allowFetchLong
@@ -151,6 +192,11 @@ func main() {
 	phyRates := *phyRatesShort || *phyRatesLong
 	timeoutSec := *timeout
 	showVersion := *version
+
+	if *help {
+		printUsage()
+		os.Exit(0)
+	}
 
 	// Validate allowed identity hashes
 	for _, a := range allowed {
@@ -181,6 +227,7 @@ func main() {
 
 	if *listenMode {
 		doListen(ts, *identityPath, noCompress, silent, allowFetch, jail, savePath, overwrite, announceInterval, allowed, noAuth, printIdentity)
+		os.Exit(0)
 	} else if *fetchMode {
 		if flag.NArg() < 2 {
 			flag.Usage()
@@ -226,6 +273,70 @@ func doListen(ts rns.Transport, idPath string, noCompress bool, silent bool, all
 		log.Fatalf("Could not create destination: %v\n", err)
 	}
 
+	// Build allowed identity hashes list
+	var allowedIdentityHashes [][]byte
+	destLen := (rns.TruncatedHashLength / 8) * 2
+
+	// Load allowed identities from file
+	allowedFileName := "allowed_identities"
+	var allowedFile string
+	if _, err := os.Stat("/etc/rncp/" + allowedFileName); err == nil {
+		allowedFile = "/etc/rncp/" + allowedFileName
+	} else if _, err := os.Stat(filepath.Join(homeDir, ".config", "rncp", allowedFileName)); err == nil {
+		allowedFile = filepath.Join(homeDir, ".config", "rncp", allowedFileName)
+	} else if _, err := os.Stat(filepath.Join(homeDir, ".rncp", allowedFileName)); err == nil {
+		allowedFile = filepath.Join(homeDir, ".rncp", allowedFileName)
+	}
+
+	if allowedFile != "" {
+		data, err := os.ReadFile(allowedFile)
+		if err != nil {
+			rns.Logf("Error while parsing allowed_identities file: %v", rns.LogError, false, err)
+		} else {
+			lines := strings.ReplaceAll(string(data), "\r", "")
+			parts := strings.Split(lines, "\n")
+			var fileAllowed []string
+			for _, a := range parts {
+				if len(a) == destLen {
+					fileAllowed = append(fileAllowed, a)
+				}
+			}
+			if len(fileAllowed) > 0 {
+				if len(allowed) == 0 {
+					allowed = fileAllowed
+				} else {
+					allowed = append(allowed, fileAllowed...)
+				}
+				suffix := "y"
+				if len(fileAllowed) > 1 {
+					suffix = "ies"
+				}
+				rns.Logf("Loaded %d allowed identit%s from %v", rns.LogVerbose, false, len(fileAllowed), suffix, allowedFile)
+			}
+		}
+	}
+
+	// Validate and build allowed identity hashes
+	for _, a := range allowed {
+		if len(a) != destLen {
+			fmt.Fprintf(os.Stderr, "Allowed destination length is invalid, must be %d hexadecimal characters (%d bytes).\n", destLen, destLen/2)
+			os.Exit(1)
+		}
+		h, err := rns.HexToBytes(a)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Invalid destination entered. Check your input.\n")
+			os.Exit(1)
+		}
+		if h != nil {
+			allowedIdentityHashes = append(allowedIdentityHashes, h)
+		}
+	}
+
+	dest, err := rns.NewDestination(ts, id, rns.DestinationIn, rns.DestinationSingle, AppName, "receive")
+	if err != nil {
+		log.Fatalf("Could not create destination: %v\n", err)
+	}
+
 	if jail != "" {
 		fetchJail := filepath.Clean(jail)
 		rns.Logf("Restricting fetch requests to paths under %q", rns.LogVerbose, false, fetchJail)
@@ -233,6 +344,19 @@ func doListen(ts rns.Transport, idPath string, noCompress bool, silent bool, all
 
 	if savePath != "" {
 		sp := filepath.Clean(savePath)
+		if _, err := os.Stat(sp); err != nil {
+			rns.Logf("Output directory not found", rns.LogError, false)
+			os.Exit(3)
+		}
+		// Test if directory is writable by trying to open a temp file
+		tmpFile := filepath.Join(sp, ".gorncp_write_test")
+		f, err := os.OpenFile(tmpFile, os.O_CREATE|os.O_WRONLY, 0o600)
+		if err != nil {
+			rns.Logf("Output directory not writable", rns.LogError, false)
+			os.Exit(4)
+		}
+		_ = f.Close()
+		_ = os.Remove(tmpFile)
 		rns.Logf("Saving received files in %q", rns.LogVerbose, false, sp)
 	}
 
@@ -249,6 +373,49 @@ func doListen(ts rns.Transport, idPath string, noCompress bool, silent bool, all
 
 	if noAuth {
 		rns.Log("Accepting unauthenticated requests", rns.LogVerbose, false)
+	} else if len(allowedIdentityHashes) == 0 {
+		fmt.Println("Warning: No allowed identities configured, rncp will not accept any files!")
+	}
+	}
+
+	if jail != "" {
+		fetchJail := filepath.Clean(jail)
+		rns.Logf("Restricting fetch requests to paths under %q", rns.LogVerbose, false, fetchJail)
+	}
+
+	if savePath != "" {
+		sp := filepath.Clean(savePath)
+		if _, err := os.Stat(sp); err != nil {
+			rns.Logf("Output directory not found", rns.LogError, false)
+			os.Exit(3)
+		}
+		// Test if directory is writable by trying to open a temp file
+		tmpFile := filepath.Join(sp, ".gorncp_write_test")
+		f, err := os.OpenFile(tmpFile, os.O_CREATE|os.O_WRONLY, 0o600)
+		if err != nil {
+			rns.Logf("Output directory not writable", rns.LogError, false)
+			os.Exit(4)
+		}
+		_ = f.Close()
+		_ = os.Remove(tmpFile)
+		rns.Logf("Saving received files in %q", rns.LogVerbose, false, sp)
+	}
+
+	if overwrite {
+		rns.Log("Allowing overwrite of received files", rns.LogVerbose, false)
+	}
+
+	if len(allowed) > 0 {
+		rns.Logf("Allowing %d identity hash(es)", rns.LogVerbose, false, len(allowed))
+		for _, a := range allowed {
+			rns.Logf("  Allowed: %v", rns.LogVerbose, false, a)
+		}
+	}
+
+	if noAuth {
+		rns.Log("Accepting unauthenticated requests", rns.LogVerbose, false)
+	} else if len(allowedIdentityHashes) == 0 {
+		fmt.Println("Warning: No allowed identities configured, rncp will not accept any files!")
 	}
 
 	if printIdentity {
@@ -267,9 +434,42 @@ func doListen(ts rns.Transport, idPath string, noCompress bool, silent bool, all
 
 	dest.SetLinkEstablishedCallback(func(l *rns.Link) {
 		rns.Log("Incoming link established", rns.LogVerbose, false)
+		l.SetRemoteIdentifiedCallback(func(link *rns.Link, identity *rns.Identity) {
+			if identity != nil {
+				found := false
+				for _, h := range allowedIdentityHashes {
+					if string(h) == string(identity.Hash) {
+						found = true
+						break
+					}
+				}
+				if found {
+					rns.Log("Authenticated sender", rns.LogVerbose, false)
+				} else {
+					if !noAuth {
+						rns.Log("Sender not allowed, tearing down link", rns.LogVerbose, false)
+						link.Teardown()
+					}
+				}
+			}
+		})
+		l.SetResourceStrategy(rns.AcceptApp)
 		l.SetResourceCallback(func(adv *rns.ResourceAdvertisement) bool {
-			rns.Logf("Incoming resource: %x", rns.LogVerbose, false, adv.H)
-			return true
+			senderIdentity := l.GetRemoteIdentity()
+			if senderIdentity != nil {
+				for _, h := range allowedIdentityHashes {
+					if string(h) == string(senderIdentity.Hash) {
+						return true
+					}
+				}
+			}
+			if noAuth {
+				return true
+			}
+			return false
+		})
+		l.SetResourceStartedCallback(func(res *rns.Resource) {
+			rns.Log("Starting resource transfer", rns.LogInfo, false)
 		})
 		l.SetResourceConcludedCallback(func(res *rns.Resource) {
 			rns.Logf("Resource concluded: %x", rns.LogInfo, false, res.Hash())
