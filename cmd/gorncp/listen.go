@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -279,10 +280,69 @@ func doListen(ts rns.Transport, idPath string, noCompress bool, silent bool, all
 			return false
 		})
 		l.SetResourceStartedCallback(func(res *rns.Resource) {
-			rns.Log("Starting resource transfer", rns.LogInfo, false)
+			idStr := ""
+			if remoteID := l.GetRemoteIdentity(); remoteID != nil {
+				idStr = " from " + rns.PrettyHex(remoteID.Hash)
+			}
+			rns.Logf("Starting resource transfer %x%s", rns.LogInfo, false, res.Hash(), idStr)
 		})
 		l.SetResourceConcludedCallback(func(res *rns.Resource) {
-			rns.Logf("Resource concluded: %x", rns.LogInfo, false, res.Hash())
+			if res.Status() == rns.ResourceStatusComplete {
+				rns.Logf("%v completed", rns.LogInfo, false, res)
+
+				metadata := res.Metadata()
+				if metadata == nil {
+					rns.Log("Invalid data received, ignoring resource", rns.LogError, false)
+					return
+				}
+
+				nameBytes, ok := metadata["name"]
+				if !ok {
+					rns.Log("Invalid data received, ignoring resource", rns.LogError, false)
+					return
+				}
+
+				filename := filepath.Base(string(nameBytes))
+				counter := 0
+				var savedFilename string
+
+				if savePath != "" {
+					savedFilename = filepath.Clean(filepath.Join(savePath, filename))
+					if !strings.HasPrefix(savedFilename, savePath+"/") {
+						rns.Logf("Invalid save path %v, ignoring", rns.LogError, false, savedFilename)
+						return
+					}
+				} else {
+					savedFilename = filename
+				}
+
+				fullSavePath := savedFilename
+				if overwrite {
+					if _, err := os.Stat(fullSavePath); err == nil {
+						if err := os.Remove(fullSavePath); err != nil {
+							rns.Logf("Could not overwrite existing file %v, renaming instead", rns.LogError, false, fullSavePath)
+							overwrite = false
+						}
+					}
+				}
+
+				for {
+					if _, err := os.Stat(fullSavePath); os.IsNotExist(err) {
+						break
+					}
+					counter++
+					fullSavePath = savedFilename + "." + strconv.Itoa(counter)
+				}
+
+				if err := os.WriteFile(fullSavePath, res.Data(), 0o644); err != nil {
+					rns.Logf("An error occurred while saving received resource: %v", rns.LogError, false, err)
+					return
+				}
+
+				rns.Logf("Saved resource to %v", rns.LogVerbose, false, fullSavePath)
+			} else {
+				rns.Log("Resource failed", rns.LogError, false)
+			}
 		})
 	})
 
