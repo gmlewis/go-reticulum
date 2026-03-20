@@ -147,24 +147,64 @@ established:
 			if !silent {
 				duration := time.Since(start)
 				speed := float64(len(data)) / duration.Seconds()
-				fmt.Printf("\rTransfer complete  100.0%% - %v of %v in %v - %vps\n",
+				phySpeed := float64(res.TotalSize()) / duration.Seconds()
+				phyStr := ""
+				if phyRates {
+					phyStr = " (" + rns.PrettySize(phySpeed, "bps") + " at physical layer)"
+				}
+				fmt.Printf("\rTransfer complete  100.0%% - %v of %v in %v - %vps%v\n",
 					rns.PrettySize(float64(len(data)), "B"),
 					rns.PrettySize(float64(len(data)), "B"),
 					rns.PrettyTime(duration.Seconds(), false, true),
-					rns.PrettySize(speed, "bps"))
+					rns.PrettySize(speed, "bps"),
+					phyStr)
+			}
+			goto sent
+		case <-time.After(60 * time.Second):
+			log.Fatalf("\nFile transfer timed out")
+		}
+	}
+sent:
+
+	if res.Status() == rns.ResourceStatusComplete {
+		if !silent {
+			fmt.Printf("\n%v copied to %v\n", filePath, rns.PrettyHex(destHash))
+		}
+	} else {
+		if !silent {
+			fmt.Printf("\nThe transfer failed\n")
+		}
+		os.Exit(1)
+	}
+
+	link.Teardown()
+	time.Sleep(250 * time.Millisecond)
+}
+				fmt.Printf("\rTransfer complete  100.0%% - %v of %v in %v - %vps%v\n",
+					rns.PrettySize(float64(len(data)), "B"),
+					rns.PrettySize(float64(len(data)), "B"),
+					rns.PrettyTime(duration.Seconds(), false, true),
+					rns.PrettySize(speed, "bps"),
+					phyStr)
 			}
 			goto sent
 		case <-time.After(100 * time.Millisecond):
 			if !silent {
 				// Update progress
 				prg := res.GetProgress()
+				segPrg := res.GetSegmentProgress()
 				percent := prg * 100.0
 				ps := rns.PrettySize(prg*float64(len(data)), "B")
 				ts := rns.PrettySize(float64(len(data)), "B")
 				duration := time.Since(start)
 				speed := (prg * float64(len(data))) / duration.Seconds()
-				fmt.Printf("\rTransferring file %v %.1f%% - %v of %v - %vps  ",
-					spinnerSymbols[i], percent, ps, ts, rns.PrettySize(speed, "bps"))
+				phySpeed := (segPrg * float64(res.TotalSize())) / duration.Seconds()
+				phyStr := ""
+				if phyRates {
+					phyStr = " (" + rns.PrettySize(phySpeed, "bps") + " at physical layer)"
+				}
+				fmt.Printf("\rTransferring file %v %.1f%% - %v of %v - %vps%v  ",
+					spinnerSymbols[i], percent, ps, ts, rns.PrettySize(speed, "bps"), phyStr)
 				i = (i + 1) % len(spinnerSymbols)
 			}
 		case <-time.After(60 * time.Second):

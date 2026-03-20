@@ -518,11 +518,30 @@ func (r *Resource) Data() []byte {
 }
 
 // GetProgress calculates the transfer progress as a float value spanning from 0.0 to 1.0.
+// This represents the logical/application layer progress (percentage of uncompressed data assembled).
 func (r *Resource) GetProgress() float64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.totalParts == 0 {
 		return 0.0
+	}
+	if r.initiator {
+		return float64(r.sentParts) / float64(r.totalParts)
+	}
+	return float64(r.receivedCount) / float64(r.totalParts)
+}
+
+// GetSegmentProgress calculates the physical layer transfer progress as a float value spanning from 0.0 to 1.0.
+// This represents the percentage of encrypted segments actually transferred over the wire.
+// For initiators (senders), it tracks sent parts; for receivers, it tracks received parts.
+func (r *Resource) GetSegmentProgress() float64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.totalParts == 0 {
+		return 0.0
+	}
+	if r.initiator {
+		return float64(r.sentParts) / float64(r.totalParts)
 	}
 	return float64(r.receivedCount) / float64(r.totalParts)
 }
