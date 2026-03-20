@@ -16,6 +16,12 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
+type statsEntry struct {
+	Time   time.Time
+	Got    float64
+	PhyGot float64
+}
+
 func doSend(idPath string, destHashHex string, filePath string, noCompress bool, silent bool, phyRates bool, timeoutSec float64) {
 	if idPath == "" {
 		home, _ := os.UserHomeDir()
@@ -124,12 +130,45 @@ established:
 		log.Fatalf("Could not create resource: %v\n", err)
 	}
 
+	statsMax := 32
+	stats := make([]statsEntry, 0)
+	var speed, phySpeed float64
+
 	done := make(chan bool, 1)
 	res.SetCallback(func(r *rns.Resource) {
 		done <- true
 	})
 	res.SetProgressCallback(func(r *rns.Resource) {
-		// Progress callback for tracking transfer progress
+		now := time.Now()
+		got := r.GetProgress() * float64(len(data))
+		phyGot := r.GetSegmentProgress() * float64(r.TotalSize())
+
+		entry := statsEntry{
+			Time:   now,
+			Got:    got,
+			PhyGot: phyGot,
+		}
+		stats = append(stats, entry)
+
+		for len(stats) > statsMax {
+			stats = stats[1:]
+		}
+
+		span := now.Sub(stats[0].Time).Seconds()
+		if span == 0 {
+			speed = 0
+			phySpeed = 0
+		} else {
+			diff := got - stats[0].Got
+			speed = diff / span
+
+			phyDiff := phyGot - stats[0].PhyGot
+			if phyDiff > 0 {
+				phySpeed = phyDiff / span
+			}
+		}
+		_ = speed
+		_ = phySpeed
 	})
 
 	if !silent {
