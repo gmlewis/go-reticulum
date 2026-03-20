@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -60,7 +61,9 @@ func doFetch(idPath string, destHashHex string, fileName string, noCompress bool
 		log.Fatalf("Could not create destination: %v\n", err)
 	}
 
-	fmt.Printf("Establishing link with remote transport instance...  ")
+	if !silent {
+		fmt.Printf("Establishing link with %v  ", rns.PrettyHex(destHash))
+	}
 	link, err := rns.NewLink(ts, remoteDest)
 	if err != nil {
 		log.Fatalf("Could not create link: %v\n", err)
@@ -151,6 +154,9 @@ requested:
 		res.SetCallback(func(r *rns.Resource) {
 			done <- true
 		})
+		res.SetProgressCallback(func(r *rns.Resource) {
+			// Progress callback for tracking transfer progress
+		})
 
 		if !silent {
 			fmt.Printf("Downloading %v...  ", fileName)
@@ -168,6 +174,61 @@ requested:
 						rns.PrettySize(float64(res.TotalSize()), "B"),
 						rns.PrettyTime(duration.Seconds(), false, true),
 						rns.PrettySize(speed, "bps"))
+				}
+				if res.Status() == rns.ResourceStatusComplete {
+					metadata := res.Metadata()
+					if metadata == nil {
+						log.Fatalf("Invalid data received, ignoring resource")
+					}
+
+					nameBytes, ok := metadata["name"]
+					if !ok {
+						log.Fatalf("Invalid data received, ignoring resource")
+					}
+
+					filename := filepath.Base(string(nameBytes))
+					counter := 0
+					var savedFilename string
+
+					if savePath != "" {
+						savedFilename = filepath.Clean(filepath.Join(savePath, filename))
+						if !strings.HasPrefix(savedFilename, savePath+"/") {
+							log.Fatalf("Invalid save path %v, ignoring", savedFilename)
+						}
+					} else {
+						savedFilename = filename
+					}
+
+					fullSavePath := savedFilename
+					if overwrite {
+						if _, err := os.Stat(fullSavePath); err == nil {
+							if err := os.Remove(fullSavePath); err != nil {
+								log.Fatalf("Could not overwrite existing file %v, renaming instead", fullSavePath)
+								overwrite = false
+							}
+						}
+					}
+
+					for {
+						if _, err := os.Stat(fullSavePath); os.IsNotExist(err) {
+							break
+						}
+						counter++
+						fullSavePath = savedFilename + "." + strconv.Itoa(counter)
+					}
+
+					if err := os.WriteFile(fullSavePath, res.Data(), 0o644); err != nil {
+						log.Fatalf("An error occurred while saving received resource: %v", err)
+					}
+
+					if !silent {
+						fmt.Printf("\n%v fetched from %v\n", fileName, rns.PrettyHex(destHash))
+					}
+				} else {
+					if !silent {
+						fmt.Printf("\nThe transfer failed\n")
+					}
+					os.Exit(1)
 				}
 				goto fetched
 			case <-time.After(100 * time.Millisecond):

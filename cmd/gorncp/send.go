@@ -67,7 +67,7 @@ func doSend(idPath string, destHashHex string, filePath string, noCompress bool,
 	}
 
 	if !silent {
-		fmt.Printf("Establishing link with remote transport instance...  ")
+		fmt.Printf("Establishing link with %v  ", rns.PrettyHex(destHash))
 	}
 	link, err := rns.NewLink(ts, remoteDest)
 	if err != nil {
@@ -84,37 +84,42 @@ func doSend(idPath string, destHashHex string, filePath string, noCompress bool,
 	}
 
 	i := 0
-	select {
-	case <-established:
-		if !silent {
-			fmt.Printf("\b\b \n")
-		}
-	case <-time.After(10 * time.Second):
-		log.Fatalf("\r%v\rLink establishment timed out\n", strings.Repeat(" ", 60))
-	default:
-		for {
-			select {
-			case <-established:
-				if !silent {
-					fmt.Printf("\b\b \n")
-				}
-				goto established
-			case <-time.After(100 * time.Millisecond):
-				if !silent {
-					fmt.Printf("\b\b%v ", spinnerSymbols[i])
-					i = (i + 1) % len(spinnerSymbols)
-				}
+	linkTimeout := time.Now().Add(time.Duration(timeoutSec * float64(time.Second)))
+	for {
+		select {
+		case <-established:
+			if !silent {
+				fmt.Printf("\b\b \n")
+			}
+			goto established
+		case <-time.After(100 * time.Millisecond):
+			if !silent {
+				fmt.Printf("\b\b%v ", spinnerSymbols[i])
+				i = (i + 1) % len(spinnerSymbols)
+			}
+			if time.Now().After(linkTimeout) {
+				log.Fatalf("\r%v\rLink establishment timed out\n", strings.Repeat(" ", 60))
 			}
 		}
 	}
 established:
 
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		log.Fatalf("File not found\n")
+	}
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		log.Fatalf("Could not read file: %v\n", err)
 	}
 
-	res, err := rns.NewResourceWithOptions(data, link, rns.ResourceOptions{AutoCompress: !noCompress})
+	metadata := map[string][]byte{
+		"name": []byte(filepath.Base(filePath)),
+	}
+
+	res, err := rns.NewResourceWithOptions(data, link, rns.ResourceOptions{
+		AutoCompress: !noCompress,
+		Metadata:     metadata,
+	})
 	if err != nil {
 		log.Fatalf("Could not create resource: %v\n", err)
 	}
@@ -123,9 +128,12 @@ established:
 	res.SetCallback(func(r *rns.Resource) {
 		done <- true
 	})
+	res.SetProgressCallback(func(r *rns.Resource) {
+		// Progress callback for tracking transfer progress
+	})
 
 	if !silent {
-		fmt.Printf("Sending %v (%v bytes)...\n", filepath.Base(filePath), len(data))
+		fmt.Printf("Advertising file resource  ")
 	}
 	if err := res.Advertise(); err != nil {
 		log.Fatalf("Could not advertise resource: %v\n", err)
