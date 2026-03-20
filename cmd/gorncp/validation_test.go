@@ -39,22 +39,3 @@ func TestValidateIdentityHash(t *testing.T) {
 		})
 	}
 }
-
-func validateIdentityHash(hash string) error {
-	destLen := (rns.TruncatedHashLength / 8) * 2
-	if len(hash) != destLen {
-		return &identityHashError{"invalid length"}
-	}
-	if _, err := rns.HexToBytes(hash); err != nil {
-		return &identityHashError{"invalid hex"}
-	}
-	return nil
-}
-
-type identityHashError struct {
-	msg string
-}
-
-func (e *identityHashError) Error() string {
-	return e.msg
-}

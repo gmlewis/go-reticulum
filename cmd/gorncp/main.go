@@ -46,8 +46,22 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
+// sprintf is a helper function for formatting strings.
 func sprintf(format string, a ...any) string {
 	return fmt.Sprintf(format, a...)
+}
+
+// validateIdentityHash validates a hexadecimal identity hash.
+// Returns an error if the hash is invalid (wrong length or non-hex characters).
+func validateIdentityHash(hash string) error {
+	destLen := (rns.TruncatedHashLength / 8) * 2
+	if len(hash) != destLen {
+		return fmt.Errorf("allowed destination length is invalid, must be %d hexadecimal characters (%d bytes)", destLen, destLen/2)
+	}
+	if _, err := rns.HexToBytes(hash); err != nil {
+		return fmt.Errorf("invalid destination entered. check your input")
+	}
+	return nil
 }
 
 // AppName is the name of the application used for identity generation.
@@ -137,6 +151,14 @@ func main() {
 	phyRates := *phyRatesShort || *phyRatesLong
 	timeoutSec := *timeout
 	showVersion := *version
+
+	// Validate allowed identity hashes
+	for _, a := range allowed {
+		if err := validateIdentityHash(a); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
 
 	if *verbose {
 		rns.SetLogLevel(rns.LogVerbose)
