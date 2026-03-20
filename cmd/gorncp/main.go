@@ -277,6 +277,9 @@ func doListen(ts rns.Transport, idPath string, noCompress bool, silent bool, all
 	var allowedIdentityHashes [][]byte
 	destLen := (rns.TruncatedHashLength / 8) * 2
 
+	// Get home directory for searching allowed identities file
+	homeDir, _ := os.UserHomeDir()
+
 	// Load allowed identities from file
 	allowedFileName := "allowed_identities"
 	var allowedFile string
@@ -332,16 +335,6 @@ func doListen(ts rns.Transport, idPath string, noCompress bool, silent bool, all
 		}
 	}
 
-	dest, err := rns.NewDestination(ts, id, rns.DestinationIn, rns.DestinationSingle, AppName, "receive")
-	if err != nil {
-		log.Fatalf("Could not create destination: %v\n", err)
-	}
-
-	if jail != "" {
-		fetchJail := filepath.Clean(jail)
-		rns.Logf("Restricting fetch requests to paths under %q", rns.LogVerbose, false, fetchJail)
-	}
-
 	if savePath != "" {
 		sp := filepath.Clean(savePath)
 		if _, err := os.Stat(sp); err != nil {
@@ -362,20 +355,6 @@ func doListen(ts rns.Transport, idPath string, noCompress bool, silent bool, all
 
 	if overwrite {
 		rns.Log("Allowing overwrite of received files", rns.LogVerbose, false)
-	}
-
-	if len(allowed) > 0 {
-		rns.Logf("Allowing %d identity hash(es)", rns.LogVerbose, false, len(allowed))
-		for _, a := range allowed {
-			rns.Logf("  Allowed: %v", rns.LogVerbose, false, a)
-		}
-	}
-
-	if noAuth {
-		rns.Log("Accepting unauthenticated requests", rns.LogVerbose, false)
-	} else if len(allowedIdentityHashes) == 0 {
-		fmt.Println("Warning: No allowed identities configured, rncp will not accept any files!")
-	}
 	}
 
 	if jail != "" {
@@ -426,8 +405,32 @@ func doListen(ts rns.Transport, idPath string, noCompress bool, silent bool, all
 
 	if allowFetch {
 		dest.RegisterRequestHandler("fetch_file", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
-			fileName := string(data)
-			rns.Logf("Fetch request for %v", rns.LogVerbose, false, fileName)
+			// Check if fetch is allowed
+			if !allowFetch {
+				return byte(0xF0) // REQ_FETCH_NOT_ALLOWED
+			}
+
+			// Apply fetch jail validation
+			if jail != "" {
+				dataStr := string(data)
+				if !strings.HasPrefix(dataStr, jail+"/") {
+					dataStr = strings.TrimPrefix(dataStr, jail+"/")
+				}
+				filePath := filepath.Clean(filepath.Join(jail, dataStr))
+				if !strings.HasPrefix(filePath, jail+"/") {
+					rns.Logf("Disallowing fetch request for %v outside of fetch jail %v", rns.LogWarning, false, filePath, jail)
+					return byte(0xF0) // REQ_FETCH_NOT_ALLOWED
+				}
+				data = []byte(filePath)
+			}
+
+			// Check file existence
+			filePath := string(data)
+			if _, err := os.Stat(filePath); err != nil {
+				rns.Logf("Client-requested file not found: %v", rns.LogVerbose, false, filePath)
+				return false
+			}
+
 			return true
 		}, rns.AllowAll, nil, !noCompress)
 	}
