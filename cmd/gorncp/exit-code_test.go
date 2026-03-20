@@ -8,6 +8,7 @@ package main
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 )
 
@@ -62,6 +63,41 @@ func TestMainExitCodeHelper(t *testing.T) {
 		}
 	} else {
 		t.Error("expected exit error for invalid hash")
+	}
+}
+
+func TestCorruptIdentityFileExitCode(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := tempDir(t)
+	configDir := filepath.Join(tmpDir, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
+	identityPath := filepath.Join(tmpDir, "identity")
+
+	// Write corrupt data to identity file
+	mustTest(t, os.WriteFile(identityPath, []byte("corrupt data"), 0o644))
+
+	// Build the binary first
+	buildCmd := exec.Command("go", "build", "-o", filepath.Join(tmpDir, "gorncp"), ".")
+	buildCmd.Dir = "."
+	buildCmd.Env = append(os.Environ(), "HOME="+tmpDir)
+	if err := buildCmd.Run(); err != nil {
+		t.Fatalf("failed to build: %v", err)
+	}
+
+	// Run the binary
+	cmd := exec.Command(filepath.Join(tmpDir, "gorncp"), "-l", "-i", identityPath, "--config", configDir)
+	cmd.Dir = "."
+	cmd.Env = append(os.Environ(), "HOME="+tmpDir)
+	err := cmd.Run()
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		if got := exitErr.ExitCode(); got != 2 {
+			t.Errorf("corrupt identity exit code = %d, want 2", got)
+		}
+	} else {
+		t.Error("expected exit error for corrupt identity")
 	}
 }
 

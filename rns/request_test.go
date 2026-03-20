@@ -57,7 +57,7 @@ func TestRequestResponse(t *testing.T) {
 		if res != expected {
 			t.Errorf("expected %v, got %v", expected, res)
 		}
-	case <-time.After(60 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("Timeout waiting for response")
 	}
 }
