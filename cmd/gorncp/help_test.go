@@ -175,13 +175,14 @@ func TestHelpOutput(t *testing.T) {
 			var buf bytes.Buffer
 			done := make(chan struct{})
 			go func() {
-				io.Copy(&buf, r)
+				_, err := io.Copy(&buf, r)
+				mustTest(t, err)
 				close(done)
 			}()
 
 			printUsage()
 
-			w.Close()
+			mustTest(t, w.Close())
 			<-done
 
 			os.Stdout = oldStdout
