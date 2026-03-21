@@ -8,6 +8,7 @@ package interfaces
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -69,15 +70,21 @@ func (tci *TCPClientInterface) connect() error {
 	tci.conn = conn
 	tci.mu.Unlock()
 	atomic.StoreInt32(&tci.running, 1)
+	log.Printf("TCP client interface %v connected to %v", tci.name, addr)
 	return nil
 }
 
 func (tci *TCPClientInterface) reconnectLoop() {
+	if tci.targetHost == "" {
+		return
+	}
 	for atomic.LoadInt32(&tci.running) == 0 && !tci.IsDetached() {
 		time.Sleep(5 * time.Second)
 		if err := tci.connect(); err == nil {
 			go tci.readLoop()
 			return
+		} else {
+			log.Printf("TCP client interface %v reconnection attempt to %v:%v failed: %v", tci.name, tci.targetHost, tci.targetPort, err)
 		}
 	}
 }
@@ -89,10 +96,12 @@ func (tci *TCPClientInterface) readLoop() {
 	for atomic.LoadInt32(&tci.running) == 1 {
 		n, err := tci.conn.Read(buf)
 		if err != nil {
+			log.Printf("TCP interface %v read error: %v", tci.name, err)
 			break
 		}
 
 		if n > 0 {
+			log.Printf("TCP interface %v read %d bytes", tci.name, n)
 			if tci.kissFraming {
 				frameBuffer = append(frameBuffer, buf[:n]...)
 				for {

@@ -2200,6 +2200,7 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 			raw = processed
 		}
 
+		Logf("Outbound: sending packet of %d bytes on %s (type=%v, dest=%x)", LogDebug, false, len(raw), iface.Name(), packet.PacketType, packet.DestinationHash)
 		if err := iface.Send(raw); err != nil {
 			Log(fmt.Sprintf("Could not transmit on %v: %v", iface.Name(), err), LogError, false)
 			ts.InvalidatePathsViaInterface(iface)

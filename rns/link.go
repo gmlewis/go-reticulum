@@ -214,6 +214,8 @@ func (l *Link) Establish() error {
 	l.hash = l.linkID
 	l.requestTime = time.Now()
 
+	Logf("Establishing link %x to %v", LogNotice, false, l.linkID, l.destination.name)
+
 	// Register with Transport
 	if l.transport != nil {
 		l.transport.RegisterLink(l)
