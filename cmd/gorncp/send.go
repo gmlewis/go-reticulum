@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
@@ -135,6 +136,7 @@ established:
 
 	statsMax := 32
 	stats := make([]statsEntry, 0)
+	var statsMu sync.Mutex
 	var speed, phySpeed float64
 
 	done := make(chan bool, 1)
@@ -145,6 +147,9 @@ established:
 		now := time.Now()
 		got := r.GetProgress() * float64(len(data))
 		phyGot := r.GetSegmentProgress() * float64(r.TotalSize())
+
+		statsMu.Lock()
+		defer statsMu.Unlock()
 
 		entry := statsEntry{
 			Time:   now,
@@ -170,8 +175,6 @@ established:
 				phySpeed = phyDiff / span
 			}
 		}
-		_ = speed
-		_ = phySpeed
 	})
 
 	if !silent {
@@ -188,17 +191,26 @@ established:
 		case <-done:
 			if !silent {
 				duration := time.Since(start)
-				speed := float64(len(data)) / duration.Seconds()
-				phySpeed := float64(res.TotalSize()) / duration.Seconds()
+				statsMu.Lock()
+				s := speed
+				ps := phySpeed
+				statsMu.Unlock()
+				if s == 0 {
+					s = float64(len(data)) / duration.Seconds()
+				}
+				if ps == 0 {
+					ps = float64(res.TotalSize()) / duration.Seconds()
+				}
+
 				phyStr := ""
 				if phyRates {
-					phyStr = " (" + rns.PrettySize(phySpeed, "bps") + " at physical layer)"
+					phyStr = " (" + rns.PrettySize(ps, "bps") + " at physical layer)"
 				}
 				fmt.Printf("\rTransfer complete  100.0%% - %v of %v in %v - %vps%v\n",
 					rns.PrettySize(float64(len(data)), "B"),
 					rns.PrettySize(float64(len(data)), "B"),
 					rns.PrettyTime(duration.Seconds(), false, true),
-					rns.PrettySize(speed, "bps"),
+					rns.PrettySize(s, "bps"),
 					phyStr)
 			}
 			goto sent
@@ -211,14 +223,25 @@ established:
 				ps := rns.PrettySize(prg*float64(len(data)), "B")
 				ts := rns.PrettySize(float64(len(data)), "B")
 				duration := time.Since(start)
-				speed := (prg * float64(len(data))) / duration.Seconds()
-				phySpeed := (segPrg * float64(res.TotalSize())) / duration.Seconds()
+
+				statsMu.Lock()
+				s := speed
+				psRate := phySpeed
+				statsMu.Unlock()
+
+				if s == 0 {
+					s = (prg * float64(len(data))) / duration.Seconds()
+				}
+				if psRate == 0 {
+					psRate = (segPrg * float64(res.TotalSize())) / duration.Seconds()
+				}
+
 				phyStr := ""
 				if phyRates {
-					phyStr = " (" + rns.PrettySize(phySpeed, "bps") + " at physical layer)"
+					phyStr = " (" + rns.PrettySize(psRate, "bps") + " at physical layer)"
 				}
 				fmt.Printf("\rTransferring file %v %.1f%% - %v of %v - %vps%v  ",
-					spinnerSymbols[i], percent, ps, ts, rns.PrettySize(speed, "bps"), phyStr)
+					spinnerSymbols[i], percent, ps, ts, rns.PrettySize(s, "bps"), phyStr)
 				i = (i + 1) % len(spinnerSymbols)
 			}
 		case <-time.After(60 * time.Second):

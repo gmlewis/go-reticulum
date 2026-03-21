@@ -1851,12 +1851,20 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 	}
 
 	// Check if it's for us or a local destination
+	ts.mu.Lock()
+	var localDest *Destination
 	for _, d := range ts.destinations {
 		if string(d.Hash) == destHash {
-			// Delivery to local destination
-			d.receive(packet)
-			return
+			localDest = d
+			break
 		}
+	}
+	ts.mu.Unlock()
+
+	if localDest != nil {
+		// Delivery to local destination
+		localDest.receive(packet)
+		return
 	}
 
 	// Check if it's for a local link

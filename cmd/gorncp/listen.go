@@ -132,28 +132,6 @@ func doListen(ts rns.Transport, idPath string, noCompress bool, silent bool, all
 		rns.Logf("Restricting fetch requests to paths under %q", rns.LogVerbose, false, fetchJail)
 	}
 
-	if savePath != "" {
-		sp := filepath.Clean(savePath)
-		if _, err := os.Stat(sp); err != nil {
-			rns.Logf("Output directory not found", rns.LogError, false)
-			os.Exit(3)
-		}
-		// Test if directory is writable by trying to open a temp file
-		tmpFile := filepath.Join(sp, ".gorncp_write_test")
-		f, err := os.OpenFile(tmpFile, os.O_CREATE|os.O_WRONLY, 0o600)
-		if err != nil {
-			rns.Logf("Output directory not writable", rns.LogError, false)
-			os.Exit(4)
-		}
-		_ = f.Close()
-		_ = os.Remove(tmpFile)
-		rns.Logf("Saving received files in %q", rns.LogVerbose, false, sp)
-	}
-
-	if overwrite {
-		rns.Log("Allowing overwrite of received files", rns.LogVerbose, false)
-	}
-
 	if len(allowed) > 0 {
 		rns.Logf("Allowing %d identity hash(es)", rns.LogVerbose, false, len(allowed))
 		for _, a := range allowed {
@@ -175,11 +153,6 @@ func doListen(ts rns.Transport, idPath string, noCompress bool, silent bool, all
 
 	if allowFetch {
 		dest.RegisterRequestHandler("fetch_file", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
-			// Check if fetch is allowed
-			if !allowFetch {
-				return byte(0xF0) // REQ_FETCH_NOT_ALLOWED
-			}
-
 			// Apply fetch jail validation
 			if jail != "" {
 				dataStr := string(data)
