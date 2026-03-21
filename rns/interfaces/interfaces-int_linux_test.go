@@ -59,7 +59,11 @@ func TestSerialInterfaceParity(t *testing.T) {
 	pythonPath := getPythonPath()
 	tmpDir, err := os.MkdirTemp("", "rns-serial-parity-*")
 	mustTest(t, err)
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
+		}
+	})
 
 	scriptPath := filepath.Join(tmpDir, "serial_echo.py")
 	if err := os.WriteFile(scriptPath, []byte(pythonSerialEchoScript), 0o644); err != nil {
@@ -79,11 +83,15 @@ func TestSerialInterfaceParity(t *testing.T) {
 	if err := socatCmd.Start(); err != nil {
 		t.Fatalf("failed to start socat: %v", err)
 	}
-	defer func() {
-		socatCmd.Process.Kill()
-		socatCmd.Wait()
+	t.Cleanup(func() {
+		if err := socatCmd.Process.Kill(); err != nil {
+			t.Logf("failed to kill socat: %v", err)
+		}
+		if err := socatCmd.Wait(); err != nil {
+			t.Logf("socat wait error: %v", err)
+		}
 		fmt.Printf("socat Output: %s\n", socatOut.String())
-	}()
+	})
 
 	// Wait for socat to create the links
 	deadline := time.Now().Add(5 * time.Second)
@@ -109,11 +117,15 @@ func TestSerialInterfaceParity(t *testing.T) {
 	if err := pyCmd.Start(); err != nil {
 		t.Fatalf("failed to start Python Serial echo: %v", err)
 	}
-	defer func() {
-		pyCmd.Process.Kill()
-		pyCmd.Wait()
+	t.Cleanup(func() {
+		if err := pyCmd.Process.Kill(); err != nil {
+			t.Logf("failed to kill Python Serial echo: %v", err)
+		}
+		if err := pyCmd.Wait(); err != nil {
+			t.Logf("Python Serial echo wait error: %v", err)
+		}
 		fmt.Printf("Python Output: %s\n", pyOut.String())
-	}()
+	})
 
 	// Wait for Python to start and open the port
 	time.Sleep(2000 * time.Millisecond)
@@ -128,7 +140,11 @@ func TestSerialInterfaceParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create Go Serial interface: %v", err)
 	}
-	defer goIface.Detach()
+	t.Cleanup(func() {
+		if err := goIface.Detach(); err != nil {
+			t.Logf("failed to detach Go Serial interface: %v", err)
+		}
+	})
 
 	msg := []byte("hello from go to python via serial")
 

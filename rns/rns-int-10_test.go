@@ -369,12 +369,18 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-ratchet-*")
 	mustTest(t, err)
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
+		}
+	})
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
 	pyStorage := filepath.Join(tmpDir, "py_rns")
-	os.MkdirAll(pyStorage, 0700)
+	if err := os.MkdirAll(pyStorage, 0700); err != nil {
+		t.Fatalf("failed to MkdirAll %v: %v", pyStorage, err)
+	}
 	pyRatchets := filepath.Join(tmpDir, "py_ratchets")
 	pyIdPath := filepath.Join(tmpDir, "py_id")
 
@@ -392,14 +398,22 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer pyCmd.Process.Kill()
+	t.Cleanup(func() {
+		if err := pyCmd.Process.Kill(); err != nil {
+			t.Logf("failed to kill pyCmd: %v", err)
+		}
+	})
 
 	// Initialize Go Reticulum to receive announce
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
-	os.MkdirAll(goConfigDir, 0700)
+	if err := os.MkdirAll(goConfigDir, 0700); err != nil {
+		t.Fatalf("failed to MkdirAll %v: %v", goConfigDir, err)
+	}
 
 	goConfigContent := mustUDPConfig(t.Name(), goListenPort, pyListenPort, false)
-	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
+	if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600); err != nil {
+		t.Fatalf("failed to WriteFile config: %v", err)
+	}
 
 	SetLogLevel(LogDebug)
 	ts := NewTransportSystem()
@@ -452,7 +466,9 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 
 	// Send encrypted packet using ratchet
 	remoteId := mustTestNewIdentity(t, false)
-	remoteId.LoadPublicKey(pyPub)
+	if err := remoteId.LoadPublicKey(pyPub); err != nil {
+		t.Fatalf("failed to load public key: %v", err)
+	}
 	fmt.Printf("Go: Remote Identity Hash: %x\n", remoteId.Hash)
 
 	remoteDest := mustTestNewDestination(t, r.Transport(), remoteId, DestinationOut, DestinationSingle, "ratchet_test", "parity")
@@ -464,8 +480,12 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 	}
 
 	// Signal Python to exit receiver and then try to decrypt
-	os.WriteFile(filepath.Join(pyStorage, "done"), []byte("done"), 0o644)
-	pyCmd.Wait()
+	if err := os.WriteFile(filepath.Join(pyStorage, "done"), []byte("done"), 0o644); err != nil {
+		t.Logf("failed to write done signal: %v", err)
+	}
+	if err := pyCmd.Wait(); err != nil {
+		t.Logf("pyCmd wait error: %v", err)
+	}
 
 	// Verify Python can decrypt using stored ratchet
 	verifyCmd := exec.Command("python3", scriptPath, "decrypt", pyStorage, pyRatchets, pyIdPath, fmt.Sprintf("%x", encrypted))
@@ -487,16 +507,24 @@ func TestRatchetPythonToGoParity(t *testing.T) {
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-ratchet-*")
 	mustTest(t, err)
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
+		}
+	})
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
-	os.MkdirAll(goConfigDir, 0700)
+	if err := os.MkdirAll(goConfigDir, 0700); err != nil {
+		t.Fatalf("failed to MkdirAll %v: %v", goConfigDir, err)
+	}
 	goRatchets := filepath.Join(goConfigDir, "ratchets_file")
 
 	goConfigContent := mustUDPConfig(t.Name(), goListenPort, pyListenPort, false)
-	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
+	if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600); err != nil {
+		t.Fatalf("failed to WriteFile config: %v", err)
+	}
 
 	SetLogLevel(LogDebug)
 	ts := NewTransportSystem()
@@ -518,7 +546,9 @@ func TestRatchetPythonToGoParity(t *testing.T) {
 			case <-stopAnnounce:
 				return
 			default:
-				dest.Announce(nil)
+				if err := dest.Announce(nil); err != nil {
+					Logf("failed to announce: %v", LogError, false, err)
+				}
 				time.Sleep(500 * time.Millisecond)
 			}
 		}
@@ -528,10 +558,14 @@ func TestRatchetPythonToGoParity(t *testing.T) {
 	// Start Python initiator
 	msg := []byte("secret from python")
 	pyStorage := filepath.Join(tmpDir, "py_rns")
-	os.MkdirAll(pyStorage, 0700)
+	if err := os.MkdirAll(pyStorage, 0700); err != nil {
+		t.Fatalf("failed to MkdirAll %v: %v", pyStorage, err)
+	}
 
 	initScriptPath := filepath.Join(tmpDir, "ratchet_initiator.py")
-	os.WriteFile(initScriptPath, []byte(ratchetInitiatorPy), 0o644)
+	if err := os.WriteFile(initScriptPath, []byte(ratchetInitiatorPy), 0o644); err != nil {
+		t.Fatalf("failed to WriteFile initScript: %v", err)
+	}
 
 	pyCmd := exec.Command("python3", initScriptPath, pyStorage, fmt.Sprintf("%x", dest.Hash), fmt.Sprintf("%x", id.GetPublicKey()), fmt.Sprintf("%x", msg), strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort))
 	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
@@ -573,16 +607,24 @@ func TestRatchetRotationParity(t *testing.T) {
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-ratchet-rotation-*")
 	mustTest(t, err)
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
+		}
+	})
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
-	os.MkdirAll(goConfigDir, 0700)
+	if err := os.MkdirAll(goConfigDir, 0700); err != nil {
+		t.Fatalf("failed to MkdirAll %v: %v", goConfigDir, err)
+	}
 	goRatchets := filepath.Join(goConfigDir, "ratchets_file")
 
 	goConfigContent := mustUDPConfig(t.Name(), goListenPort, pyListenPort, false)
-	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
+	if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600); err != nil {
+		t.Fatalf("failed to WriteFile config: %v", err)
+	}
 
 	SetLogLevel(LogDebug)
 	ts := NewTransportSystem()
@@ -604,9 +646,13 @@ func TestRatchetRotationParity(t *testing.T) {
 	oldRatchetID := RatchetID(oldRatchetPub)
 
 	pyStorage := filepath.Join(tmpDir, "py_rns")
-	os.MkdirAll(pyStorage, 0700)
+	if err := os.MkdirAll(pyStorage, 0700); err != nil {
+		t.Fatalf("failed to MkdirAll %v: %v", pyStorage, err)
+	}
 	initScriptPath := filepath.Join(tmpDir, "ratchet_initiator.py")
-	os.WriteFile(initScriptPath, []byte(ratchetInitiatorPy), 0o644)
+	if err := os.WriteFile(initScriptPath, []byte(ratchetInitiatorPy), 0o644); err != nil {
+		t.Fatalf("failed to WriteFile initScript: %v", err)
+	}
 
 	oldMsg := []byte("rotation-old-message")
 	oldCipher, pyOldRatchetID, _ := runPythonRatchetEncrypt(t, initScriptPath, pyStorage, dest.Hash, id.GetPublicKey(), oldMsg, pyListenPort, goListenPort, func() error {
@@ -664,16 +710,24 @@ func TestRatchetRetentionWindowParity(t *testing.T) {
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-ratchet-retention-*")
 	mustTest(t, err)
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
+		}
+	})
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
-	os.MkdirAll(goConfigDir, 0700)
+	if err := os.MkdirAll(goConfigDir, 0700); err != nil {
+		t.Fatalf("failed to MkdirAll %v: %v", goConfigDir, err)
+	}
 	goRatchets := filepath.Join(goConfigDir, "ratchets_file")
 
 	goConfigContent := mustUDPConfig(t.Name(), goListenPort, pyListenPort, false)
-	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
+	if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600); err != nil {
+		t.Fatalf("failed to WriteFile config: %v", err)
+	}
 
 	SetLogLevel(LogDebug)
 	ts := NewTransportSystem()
@@ -697,9 +751,13 @@ func TestRatchetRetentionWindowParity(t *testing.T) {
 	}
 
 	pyStorage := filepath.Join(tmpDir, "py_rns")
-	os.MkdirAll(pyStorage, 0700)
+	if err := os.MkdirAll(pyStorage, 0700); err != nil {
+		t.Fatalf("failed to MkdirAll %v: %v", pyStorage, err)
+	}
 	initScriptPath := filepath.Join(tmpDir, "ratchet_initiator.py")
-	os.WriteFile(initScriptPath, []byte(ratchetInitiatorPy), 0o644)
+	if err := os.WriteFile(initScriptPath, []byte(ratchetInitiatorPy), 0o644); err != nil {
+		t.Fatalf("failed to WriteFile initScript: %v", err)
+	}
 
 	forceRotate()
 	ratchetAID := RatchetID(dest.ratchets[0].PublicKey().PublicBytes())
@@ -754,7 +812,11 @@ func TestRatchetEnforceParity(t *testing.T) {
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-ratchet-enforce-*")
 	mustTest(t, err)
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
+		}
+	})
 
 	ts := NewTransportSystem()
 	id := mustTestNewIdentity(t, true)
@@ -806,7 +868,11 @@ func TestRatchetFileInteropParity(t *testing.T) {
 
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-ratchet-file-interop-*")
 	mustTest(t, err)
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
+		}
+	})
 
 	ts := NewTransportSystem()
 

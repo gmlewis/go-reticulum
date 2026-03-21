@@ -224,7 +224,11 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tmpDir, err := os.MkdirTemp("", "go-reticulum-policy-go2py-*")
 			mustTest(t, err)
-			defer os.RemoveAll(tmpDir)
+			t.Cleanup(func() {
+				if err := os.RemoveAll(tmpDir); err != nil {
+					t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
+				}
+			})
 
 			pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -243,7 +247,11 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 			if err := pyCmd.Start(); err != nil {
 				t.Fatal(err)
 			}
-			defer pyCmd.Process.Kill()
+			t.Cleanup(func() {
+				if err := pyCmd.Process.Kill(); err != nil {
+					t.Logf("failed to kill pyCmd: %v", err)
+				}
+			})
 
 			scanner := bufio.NewScanner(pyStdout)
 			var destHashHex, pyPubHex string
@@ -568,7 +576,11 @@ func TestIntegratedResponseResourceCompressionPolicyPythonToGo(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tmpDir, err := os.MkdirTemp("", "go-reticulum-policy-py2go-*")
 			mustTest(t, err)
-			defer os.RemoveAll(tmpDir)
+			t.Cleanup(func() {
+				if err := os.RemoveAll(tmpDir); err != nil {
+					t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
+				}
+			})
 
 			pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -614,7 +626,11 @@ func TestIntegratedResponseResourceCompressionPolicyPythonToGo(t *testing.T) {
 			if err := pyCmd.Start(); err != nil {
 				t.Fatal(err)
 			}
-			defer pyCmd.Process.Kill()
+			t.Cleanup(func() {
+				if err := pyCmd.Process.Kill(); err != nil {
+					t.Logf("failed to kill pyCmd: %v", err)
+				}
+			})
 
 			scanner := bufio.NewScanner(pyStdout)
 			var gotCompressed *bool

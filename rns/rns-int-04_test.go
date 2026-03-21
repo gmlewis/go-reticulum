@@ -21,7 +21,11 @@ func allocateUDPPort(t *testing.T) int {
 	if err != nil {
 		t.Fatalf("failed to allocate UDP port: %v", err)
 	}
-	defer pc.Close()
+	defer func() {
+		if err := pc.Close(); err != nil {
+			t.Logf("failed to close packet conn: %v", err)
+		}
+	}()
 
 	addr, ok := pc.LocalAddr().(*net.UDPAddr)
 	if !ok {

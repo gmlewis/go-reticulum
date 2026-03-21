@@ -70,7 +70,11 @@ if __name__ == "__main__":
 func TestMessagePackParity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-msgpack-parity-*")
 	mustTest(t, err)
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
+		}
+	})
 
 	scriptPath := filepath.Join(tmpDir, "check_msgpack_parity.py")
 	if err := os.WriteFile(scriptPath, []byte(checkMsgpackParityPy), 0o644); err != nil {
@@ -149,8 +153,12 @@ func TestMessagePackParity(t *testing.T) {
 
 	// Since maps are not ordered, we compare the objects after unmarshaling again to avoid key order issues in JSON string
 	var goObj, pyObj any
-	json.Unmarshal(goBytes, &goObj)
-	json.Unmarshal(pyBytes, &pyObj)
+	if err := json.Unmarshal(goBytes, &goObj); err != nil {
+		t.Fatalf("failed to unmarshal goBytes: %v", err)
+	}
+	if err := json.Unmarshal(pyBytes, &pyObj); err != nil {
+		t.Fatalf("failed to unmarshal pyBytes: %v", err)
+	}
 
 	if !reflect.DeepEqual(goObj, pyObj) {
 		t.Errorf("MessagePack structure mismatch!\nGo JSON: %v\nPy JSON: %v", string(goBytes), string(pyBytes))
@@ -160,7 +168,11 @@ func TestMessagePackParity(t *testing.T) {
 func TestMessagePackPythonToGoParity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-msgpack-parity-*")
 	mustTest(t, err)
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
+		}
+	})
 
 	const generateMsgpackParityPyExtended = `import RNS.vendor.umsgpack as umsgpack
 import sys
@@ -228,8 +240,12 @@ if __name__ == "__main__":
 	expectedBytes, _ := json.Marshal(expected)
 
 	var goObj, expectedObj any
-	json.Unmarshal(goBytes, &goObj)
-	json.Unmarshal(expectedBytes, &expectedObj)
+	if err := json.Unmarshal(goBytes, &goObj); err != nil {
+		t.Fatalf("failed to unmarshal goBytes: %v", err)
+	}
+	if err := json.Unmarshal(expectedBytes, &expectedObj); err != nil {
+		t.Fatalf("failed to unmarshal expectedBytes: %v", err)
+	}
 
 	if !reflect.DeepEqual(goObj, expectedObj) {
 		t.Errorf("MessagePack structure mismatch!\nGo JSON: %v\nExpected JSON: %v", string(goBytes), string(expectedBytes))

@@ -69,7 +69,11 @@ func TestUDPInterfaceParity(t *testing.T) {
 	pythonPath := getPythonPath()
 	tmpDir, err := os.MkdirTemp("", "rns-udp-parity-*")
 	mustTest(t, err)
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
+		}
+	})
 
 	scriptPath := filepath.Join(tmpDir, "udp_echo.py")
 	if err := os.WriteFile(scriptPath, []byte(pythonUDPEchoScript), 0o644); err != nil {
@@ -86,7 +90,11 @@ func TestUDPInterfaceParity(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("failed to start Python UDP echo: %v", err)
 	}
-	defer cmd.Process.Kill()
+	t.Cleanup(func() {
+		if err := cmd.Process.Kill(); err != nil {
+			t.Logf("failed to kill Python UDP echo: %v", err)
+		}
+	})
 
 	// Wait for Python to start
 	time.Sleep(500 * time.Millisecond)
@@ -97,10 +105,11 @@ func TestUDPInterfaceParity(t *testing.T) {
 	}
 
 	goIface := mustTestNewUDPInterface(t, "go_udp", "127.0.0.1", goListenPort, "127.0.0.1", pyListenPort, handler)
-	if err != nil {
-		t.Fatalf("failed to create Go UDP interface: %v", err)
-	}
-	defer goIface.Detach()
+	t.Cleanup(func() {
+		if err := goIface.Detach(); err != nil {
+			t.Logf("failed to detach Go UDP interface: %v", err)
+		}
+	})
 
 	msg := []byte("hello from go to python")
 	if err := goIface.Send(msg); err != nil {
@@ -167,7 +176,11 @@ func TestTCPInterfaceParity(t *testing.T) {
 	pythonPath := getPythonPath()
 	tmpDir, err := os.MkdirTemp("", "rns-tcp-parity-*")
 	mustTest(t, err)
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
+		}
+	})
 
 	scriptPath := filepath.Join(tmpDir, "tcp_echo.py")
 	if err := os.WriteFile(scriptPath, []byte(pythonTCPEchoScript), 0o644); err != nil {
@@ -182,7 +195,11 @@ func TestTCPInterfaceParity(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("failed to start Python TCP echo: %v", err)
 	}
-	defer cmd.Process.Kill()
+	t.Cleanup(func() {
+		if err := cmd.Process.Kill(); err != nil {
+			t.Logf("failed to kill Python TCP echo: %v", err)
+		}
+	})
 
 	// Wait for Python to start
 	time.Sleep(1000 * time.Millisecond)
@@ -195,10 +212,11 @@ func TestTCPInterfaceParity(t *testing.T) {
 	// Go connects to Python (which is a TCPServerInterface)
 	// We use HDLC framing (kiss=false) by default in Test
 	goIface := mustTestNewTCPClientInterface(t, "go_tcp", "127.0.0.1", pyListenPort, false, handler)
-	if err != nil {
-		t.Fatalf("failed to create Go TCP interface: %v", err)
-	}
-	defer goIface.Detach()
+	t.Cleanup(func() {
+		if err := goIface.Detach(); err != nil {
+			t.Logf("failed to detach Go TCP interface: %v", err)
+		}
+	})
 
 	// Wait for connection
 	time.Sleep(500 * time.Millisecond)
@@ -225,7 +243,11 @@ func TestTCPInterfaceParityKISS(t *testing.T) {
 	pythonPath := getPythonPath()
 	tmpDir, err := os.MkdirTemp("", "rns-tcp-kiss-parity-*")
 	mustTest(t, err)
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
+		}
+	})
 
 	const pythonTCPKISSEchoScript = `
 import RNS.Interfaces.TCPInterface as TCPInterface
@@ -298,7 +320,11 @@ except KeyboardInterrupt:
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("failed to start Python TCP KISS echo: %v", err)
 	}
-	defer cmd.Process.Kill()
+	t.Cleanup(func() {
+		if err := cmd.Process.Kill(); err != nil {
+			t.Logf("failed to kill Python TCP KISS echo: %v", err)
+		}
+	})
 
 	// Wait for Python to start
 	time.Sleep(1000 * time.Millisecond)
@@ -311,10 +337,11 @@ except KeyboardInterrupt:
 	// Go connects to Python (which is a TCPServerInterface)
 	// We use KISS framing (kiss=true)
 	goIface := mustTestNewTCPClientInterface(t, "go_tcp_kiss", "127.0.0.1", pyListenPort, true, handler)
-	if err != nil {
-		t.Fatalf("failed to create Go TCP interface: %v", err)
-	}
-	defer goIface.Detach()
+	t.Cleanup(func() {
+		if err := goIface.Detach(); err != nil {
+			t.Logf("failed to detach Go TCP interface: %v", err)
+		}
+	})
 
 	// Wait for connection
 	time.Sleep(500 * time.Millisecond)
@@ -392,7 +419,11 @@ func TestLocalInterfaceParity(t *testing.T) {
 	pythonPath := getPythonPath()
 	tmpDir, err := os.MkdirTemp("", "rns-local-parity-*")
 	mustTest(t, err)
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
+		}
+	})
 
 	scriptPath := filepath.Join(tmpDir, "local_echo.py")
 	if err := os.WriteFile(scriptPath, []byte(pythonLocalEchoScript), 0o644); err != nil {
@@ -415,10 +446,14 @@ func TestLocalInterfaceParity(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("failed to start Python Local echo: %v", err)
 	}
-	defer func() {
-		cmd.Process.Kill()
-		cmd.Wait()
-	}()
+	t.Cleanup(func() {
+		if err := cmd.Process.Kill(); err != nil {
+			t.Logf("failed to kill Python Local echo: %v", err)
+		}
+		if err := cmd.Wait(); err != nil {
+			t.Logf("Python Local echo wait error: %v", err)
+		}
+	})
 
 	// Wait for Python to start and create the socket
 	deadline := time.Now().Add(5 * time.Second)
@@ -452,7 +487,11 @@ func TestLocalInterfaceParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create Go Local interface: %v", err)
 	}
-	defer goIface.Detach()
+	t.Cleanup(func() {
+		if err := goIface.Detach(); err != nil {
+			t.Logf("failed to detach Go Local interface: %v", err)
+		}
+	})
 
 	// Wait for connection with retries
 	connected := false
@@ -544,7 +583,11 @@ while True:
 func TestPipeInterfaceParity(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "rns-pipe-parity-*")
 	mustTest(t, err)
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
+		}
+	})
 
 	scriptPath := filepath.Join(tmpDir, "pipe_echo.py")
 	if err := os.WriteFile(scriptPath, []byte(pythonPipeEchoScript), 0o644); err != nil {
@@ -562,7 +605,11 @@ func TestPipeInterfaceParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create Go Pipe interface: %v", err)
 	}
-	defer goIface.Detach()
+	t.Cleanup(func() {
+		if err := goIface.Detach(); err != nil {
+			t.Logf("failed to detach Go Pipe interface: %v", err)
+		}
+	})
 
 	// Wait for Python to start
 	time.Sleep(500 * time.Millisecond)

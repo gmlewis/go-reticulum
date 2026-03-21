@@ -856,7 +856,11 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer pyCmd.Process.Kill()
+	t.Cleanup(func() {
+		if err := pyCmd.Process.Kill(); err != nil {
+			t.Logf("failed to kill pyCmd: %v", err)
+		}
+	})
 
 	// Read destination hash from Python output
 	scanner := bufio.NewScanner(pyStdout)
@@ -892,10 +896,14 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 
 	// Initialize Go Reticulum
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
-	os.MkdirAll(goConfigDir, 0700)
+	if err := os.MkdirAll(goConfigDir, 0700); err != nil {
+		t.Fatalf("failed to MkdirAll %v: %v", goConfigDir, err)
+	}
 
 	goConfigContent := mustUDPConfig(t.Name(), goListenPort, pyListenPort, false)
-	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
+	if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600); err != nil {
+		t.Fatalf("failed to WriteFile config: %v", err)
+	}
 
 	SetLogLevel(LogDebug)
 	ts := NewTransportSystem()
@@ -965,9 +973,13 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 	}
 
 	// Signal Python to exit
-	os.WriteFile(filepath.Join(pyConfigDir, "done"), []byte("done"), 0o644)
+	if err := os.WriteFile(filepath.Join(pyConfigDir, "done"), []byte("done"), 0o644); err != nil {
+		t.Logf("failed to write done signal: %v", err)
+	}
 
-	pyCmd.Wait()
+	if err := pyCmd.Wait(); err != nil {
+		t.Logf("pyCmd wait error: %v", err)
+	}
 }
 
 func TestIntegratedLargeRequestGoToPython(t *testing.T) {
@@ -995,7 +1007,11 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer pyCmd.Process.Kill()
+	t.Cleanup(func() {
+		if err := pyCmd.Process.Kill(); err != nil {
+			t.Logf("failed to kill pyCmd: %v", err)
+		}
+	})
 
 	scanner := bufio.NewScanner(pyStdout)
 	var destHashHex, pyPubHex string
@@ -1036,10 +1052,14 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 	}
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
-	os.MkdirAll(goConfigDir, 0o700)
+	if err := os.MkdirAll(goConfigDir, 0o700); err != nil {
+		t.Fatalf("failed to MkdirAll %v: %v", goConfigDir, err)
+	}
 
 	goConfigContent := mustUDPConfig(t.Name(), goListenPort, pyListenPort, false)
-	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600)
+	if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600); err != nil {
+		t.Fatalf("failed to WriteFile config: %v", err)
+	}
 
 	SetLogLevel(LogDebug)
 	ts := NewTransportSystem()
@@ -1097,7 +1117,9 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 		t.Fatal("timed out waiting for response to large request")
 	}
 
-	os.WriteFile(filepath.Join(pyConfigDir, "done"), []byte("done"), 0o644)
+	if err := os.WriteFile(filepath.Join(pyConfigDir, "done"), []byte("done"), 0o644); err != nil {
+		t.Logf("failed to write done signal: %v", err)
+	}
 	if err := pyCmd.Wait(); err != nil {
 		t.Fatalf("python receiver exited with error: %v", err)
 	}
@@ -1122,10 +1144,14 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 
 	// Initialize Go Reticulum
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
-	os.MkdirAll(goConfigDir, 0700)
+	if err := os.MkdirAll(goConfigDir, 0700); err != nil {
+		t.Fatalf("failed to MkdirAll %v: %v", goConfigDir, err)
+	}
 
 	goConfigContent := mustUDPConfig(t.Name(), goListenPort, pyListenPort, false)
-	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
+	if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600); err != nil {
+		t.Fatalf("failed to WriteFile config: %v", err)
+	}
 
 	SetLogLevel(LogDebug)
 	ts := NewTransportSystem()
@@ -1152,7 +1178,9 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 	// Periodically announce
 	go func() {
 		for {
-			dest.Announce(nil)
+			if err := dest.Announce(nil); err != nil {
+				Logf("failed to announce: %v", LogError, false, err)
+			}
 			time.Sleep(500 * time.Millisecond)
 		}
 	}()
@@ -1167,7 +1195,11 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer pyCmd.Process.Kill()
+	t.Cleanup(func() {
+		if err := pyCmd.Process.Kill(); err != nil {
+			t.Logf("failed to kill pyCmd: %v", err)
+		}
+	})
 
 	// Keep reading Python output in background
 	go func() {
@@ -1217,9 +1249,13 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 	pyConfigDir := filepath.Join(tmpDir, "py_large_initiator")
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
-	os.MkdirAll(goConfigDir, 0o700)
+	if err := os.MkdirAll(goConfigDir, 0o700); err != nil {
+		t.Fatalf("failed to MkdirAll %v: %v", goConfigDir, err)
+	}
 	goConfigContent := mustUDPConfig(t.Name(), goListenPort, pyListenPort, false)
-	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600)
+	if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600); err != nil {
+		t.Fatalf("failed to WriteFile config: %v", err)
+	}
 
 	SetLogLevel(LogDebug)
 	ts := NewTransportSystem()
@@ -1237,7 +1273,9 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 
 	go func() {
 		for {
-			_ = dest.Announce(nil)
+			if err := dest.Announce(nil); err != nil {
+				Logf("failed to announce: %v", LogError, false, err)
+			}
 			time.Sleep(500 * time.Millisecond)
 		}
 	}()
@@ -1251,7 +1289,11 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer pyCmd.Process.Kill()
+	t.Cleanup(func() {
+		if err := pyCmd.Process.Kill(); err != nil {
+			t.Logf("failed to kill pyCmd: %v", err)
+		}
+	})
 
 	go func() {
 		scanner := bufio.NewScanner(pyStdout)
@@ -1299,7 +1341,11 @@ func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer pyCmd.Process.Kill()
+	t.Cleanup(func() {
+		if err := pyCmd.Process.Kill(); err != nil {
+			t.Logf("failed to kill pyCmd: %v", err)
+		}
+	})
 
 	scanner := bufio.NewScanner(pyStdout)
 	var destHashHex string
@@ -1323,9 +1369,13 @@ func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 	}()
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
-	os.MkdirAll(goConfigDir, 0700)
+	if err := os.MkdirAll(goConfigDir, 0700); err != nil {
+		t.Fatalf("failed to MkdirAll %v: %v", goConfigDir, err)
+	}
 	goConfigContent := mustUDPConfig(t.Name(), goListenPort, pyListenPort, false)
-	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
+	if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600); err != nil {
+		t.Fatalf("failed to WriteFile config: %v", err)
+	}
 
 	SetLogLevel(LogDebug)
 	ts := NewTransportSystem()
@@ -1365,8 +1415,12 @@ func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 		t.Fatal("timed out waiting for path rediscovery after invalidation")
 	}
 
-	os.WriteFile(filepath.Join(pyConfigDir, "done"), []byte("done"), 0o644)
-	pyCmd.Wait()
+	if err := os.WriteFile(filepath.Join(pyConfigDir, "done"), []byte("done"), 0o644); err != nil {
+		t.Logf("failed to write done signal: %v", err)
+	}
+	if err := pyCmd.Wait(); err != nil {
+		t.Logf("pyCmd wait error: %v", err)
+	}
 }
 
 func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
@@ -1381,9 +1435,13 @@ func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
 	goListenPort, requesterPort := allocateUDPPortPair(t)
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
-	os.MkdirAll(goConfigDir, 0700)
+	if err := os.MkdirAll(goConfigDir, 0700); err != nil {
+		t.Fatalf("failed to MkdirAll %v: %v", goConfigDir, err)
+	}
 	goConfigContent := mustUDPConfig(t.Name(), goListenPort, requesterPort, false)
-	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
+	if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600); err != nil {
+		t.Fatalf("failed to WriteFile config: %v", err)
+	}
 
 	SetLogLevel(LogDebug)
 	ts := NewTransportSystem()
@@ -1463,9 +1521,13 @@ func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 	goListenPort, sinkPort := allocateUDPPortPair(t)
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
-	os.MkdirAll(goConfigDir, 0700)
+	if err := os.MkdirAll(goConfigDir, 0700); err != nil {
+		t.Fatalf("failed to MkdirAll %v: %v", goConfigDir, err)
+	}
 	goConfigContent := mustUDPConfig(t.Name(), goListenPort, sinkPort, true)
-	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
+	if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600); err != nil {
+		t.Fatalf("failed to WriteFile config: %v", err)
+	}
 
 	SetLogLevel(LogDebug)
 	ts := NewTransportSystem()
@@ -1562,7 +1624,9 @@ func TestIntegratedPathResponseAnnounceNotRebroadcastUDP(t *testing.T) {
 	sinkPort := allocateUDPPort(t)
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
-	os.MkdirAll(goConfigDir, 0700)
+	if err := os.MkdirAll(goConfigDir, 0700); err != nil {
+		t.Fatalf("failed to MkdirAll %v: %v", goConfigDir, err)
+	}
 	goConfigContent := fmt.Sprintf(`[reticulum]
 share_instance = No
 enable_transport = False
@@ -1584,7 +1648,9 @@ enable_transport = False
     forward_ip = 127.0.0.1
     forward_port = %v
 `, ingressListenPort, ingressForwardPort, egressListenPort, sinkPort)
-	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600)
+	if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0600); err != nil {
+		t.Fatalf("failed to WriteFile config: %v", err)
+	}
 
 	SetLogLevel(LogDebug)
 	ts := NewTransportSystem()
@@ -1645,7 +1711,9 @@ func TestIntegratedRelayedPathResponsePropagationUDP(t *testing.T) {
 	responderPort := allocateUDPPort(t)
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
-	os.MkdirAll(goConfigDir, 0o700)
+	if err := os.MkdirAll(goConfigDir, 0o700); err != nil {
+		t.Fatalf("failed to MkdirAll %v: %v", goConfigDir, err)
+	}
 	goConfigContent := fmt.Sprintf(`[reticulum]
 share_instance = No
 enable_transport = False
@@ -1667,7 +1735,9 @@ enable_transport = False
     forward_ip = 127.0.0.1
     forward_port = %v
 `, relayIngressListenPort, requesterPort, relayEgressListenPort, responderPort)
-	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600)
+	if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600); err != nil {
+		t.Fatalf("failed to WriteFile config: %v", err)
+	}
 
 	SetLogLevel(LogDebug)
 	ts := NewTransportSystem()
@@ -1797,7 +1867,9 @@ func TestIntegratedRelayedPathResponsePropagationPythonRequesterUDP(t *testing.T
 	responderPort := allocateUDPPort(t)
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
-	os.MkdirAll(goConfigDir, 0o700)
+	if err := os.MkdirAll(goConfigDir, 0o700); err != nil {
+		t.Fatalf("failed to MkdirAll %v: %v", goConfigDir, err)
+	}
 	goConfigContent := fmt.Sprintf(`[reticulum]
 share_instance = No
 enable_transport = False
@@ -1819,7 +1891,9 @@ enable_transport = False
     forward_ip = 127.0.0.1
     forward_port = %v
 `, relayIngressListenPort, pyListenPort, relayEgressListenPort, responderPort)
-	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600)
+	if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600); err != nil {
+		t.Fatalf("failed to WriteFile config: %v", err)
+	}
 
 	SetLogLevel(LogDebug)
 	ts := NewTransportSystem()
@@ -1849,7 +1923,11 @@ enable_transport = False
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer pyCmd.Process.Kill()
+	t.Cleanup(func() {
+		if err := pyCmd.Process.Kill(); err != nil {
+			t.Logf("failed to kill pyCmd: %v", err)
+		}
+	})
 
 	lineCh := make(chan string, 64)
 	go func() {
@@ -1959,7 +2037,11 @@ func TestIntegratedRelayedPathResponsePropagationPythonRelayUDP(t *testing.T) {
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer pyCmd.Process.Kill()
+	t.Cleanup(func() {
+		if err := pyCmd.Process.Kill(); err != nil {
+			t.Logf("failed to kill pyCmd: %v", err)
+		}
+	})
 
 	scanner := bufio.NewScanner(pyStdout)
 	relayReady := false
@@ -2094,7 +2176,9 @@ func TestIntegratedRelayedPathResponsePropagationPythonRelayUDP(t *testing.T) {
 		if !bytes.Equal(response.DestinationHash, remoteDest.Hash) {
 			continue
 		}
-		os.WriteFile(filepath.Join(pyConfigDir, "done"), []byte("done"), 0o644)
+		if err := os.WriteFile(filepath.Join(pyConfigDir, "done"), []byte("done"), 0o644); err != nil {
+			t.Logf("failed to write done signal: %v", err)
+		}
 		if err := pyCmd.Wait(); err != nil {
 			t.Fatalf("python relay exited with error: %v", err)
 		}
@@ -2132,7 +2216,11 @@ func TestIntegratedAnnouncePropagationPythonRelayUDP(t *testing.T) {
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer pyCmd.Process.Kill()
+	t.Cleanup(func() {
+		if err := pyCmd.Process.Kill(); err != nil {
+			t.Logf("failed to kill pyCmd: %v", err)
+		}
+	})
 
 	scanner := bufio.NewScanner(pyStdout)
 	relayReady := false
@@ -2175,7 +2263,11 @@ func TestIntegratedAnnouncePropagationPythonRelayUDP(t *testing.T) {
 	if err := emitterCmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer emitterCmd.Process.Kill()
+	t.Cleanup(func() {
+		if err := emitterCmd.Process.Kill(); err != nil {
+			t.Logf("failed to kill emitterCmd: %v", err)
+		}
+	})
 
 	emitterDestHash := []byte(nil)
 	emitterScanner := bufio.NewScanner(emitterStdout)
@@ -2242,8 +2334,12 @@ func TestIntegratedAnnouncePropagationPythonRelayUDP(t *testing.T) {
 			t.Fatalf("expected TransportForward rebroadcast, got %v", candidate.TransportType)
 		}
 
-		os.WriteFile(filepath.Join(pyConfigDir, "done"), []byte("done"), 0o644)
-		os.WriteFile(filepath.Join(emitterConfigDir, "done"), []byte("done"), 0o644)
+		if err := os.WriteFile(filepath.Join(pyConfigDir, "done"), []byte("done"), 0o644); err != nil {
+			t.Logf("failed to write done signal: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(emitterConfigDir, "done"), []byte("done"), 0o644); err != nil {
+			t.Logf("failed to write emitter done signal: %v", err)
+		}
 		if err := emitterCmd.Wait(); err != nil {
 			t.Fatalf("python announce emitter exited with error: %v", err)
 		}
@@ -2268,9 +2364,13 @@ func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
-	os.MkdirAll(goConfigDir, 0o700)
+	if err := os.MkdirAll(goConfigDir, 0o700); err != nil {
+		t.Fatalf("failed to MkdirAll %v: %v", goConfigDir, err)
+	}
 	goConfigContent := mustUDPConfig(t.Name(), goListenPort, pyListenPort, false)
-	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600)
+	if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600); err != nil {
+		t.Fatalf("failed to WriteFile config: %v", err)
+	}
 
 	SetLogLevel(LogDebug)
 	ts := NewTransportSystem()
@@ -2293,7 +2393,9 @@ func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 		for {
 			select {
 			case <-ticker.C:
-				_ = dest.Announce(nil)
+				if err := dest.Announce(nil); err != nil {
+					Logf("failed to announce: %v", LogError, false, err)
+				}
 			case <-stopAnnounce:
 				return
 			}
@@ -2315,7 +2417,11 @@ func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer pyCmd.Process.Kill()
+	t.Cleanup(func() {
+		if err := pyCmd.Process.Kill(); err != nil {
+			t.Logf("failed to kill pyCmd: %v", err)
+		}
+	})
 
 	stopDeadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(stopDeadline) {
@@ -2389,7 +2495,11 @@ func TestIntegratedRelayedPathResponseGoRequesterToPythonTargetUDP(t *testing.T)
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer pyCmd.Process.Kill()
+	t.Cleanup(func() {
+		if err := pyCmd.Process.Kill(); err != nil {
+			t.Logf("failed to kill pyCmd: %v", err)
+		}
+	})
 
 	scanner := bufio.NewScanner(pyStdout)
 	var destHashHex string
@@ -2416,7 +2526,9 @@ func TestIntegratedRelayedPathResponseGoRequesterToPythonTargetUDP(t *testing.T)
 	}()
 
 	goConfigDir := filepath.Join(tmpDir, "go_rns")
-	os.MkdirAll(goConfigDir, 0o700)
+	if err := os.MkdirAll(goConfigDir, 0o700); err != nil {
+		t.Fatalf("failed to MkdirAll %v: %v", goConfigDir, err)
+	}
 	goConfigContent := fmt.Sprintf(`[reticulum]
 share_instance = No
 enable_transport = False
@@ -2438,7 +2550,9 @@ enable_transport = False
     forward_ip = 127.0.0.1
     forward_port = %v
 `, relayIngressListenPort, requesterPort, relayEgressListenPort, pyListenPort)
-	os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600)
+	if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfigContent), 0o600); err != nil {
+		t.Fatalf("failed to WriteFile config: %v", err)
+	}
 
 	SetLogLevel(LogDebug)
 	ts := NewTransportSystem()
@@ -2467,7 +2581,9 @@ enable_transport = False
 	}
 
 	time.Sleep(300 * time.Millisecond)
-	os.WriteFile(filepath.Join(pyConfigDir, "emit_path_response"), []byte("emit"), 0o644)
+	if err := os.WriteFile(filepath.Join(pyConfigDir, "emit_path_response"), []byte("emit"), 0o644); err != nil {
+		t.Logf("failed to write emit signal: %v", err)
+	}
 
 	buf := make([]byte, 4096)
 	deadline := time.Now().Add(20 * time.Second)
@@ -2498,7 +2614,9 @@ enable_transport = False
 			continue
 		}
 
-		os.WriteFile(filepath.Join(pyConfigDir, "done"), []byte("done"), 0o644)
+		if err := os.WriteFile(filepath.Join(pyConfigDir, "done"), []byte("done"), 0o644); err != nil {
+			t.Logf("failed to write done signal: %v", err)
+		}
 		if err := pyCmd.Wait(); err != nil {
 			t.Fatalf("python receiver exited with error: %v", err)
 		}
@@ -2552,7 +2670,11 @@ func TestIntegratedPythonRelayPathRequestEmissionUDP(t *testing.T) {
 	if err := pyCmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer pyCmd.Process.Kill()
+	t.Cleanup(func() {
+		if err := pyCmd.Process.Kill(); err != nil {
+			t.Logf("failed to kill pyCmd: %v", err)
+		}
+	})
 
 	sinkConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: sinkPort})
 	if err != nil {
@@ -2672,7 +2794,11 @@ func TestIntegratedPythonRelayInboundPathRequestForwardingUDP(t *testing.T) {
 	if err := relayCmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer relayCmd.Process.Kill()
+	t.Cleanup(func() {
+		if err := relayCmd.Process.Kill(); err != nil {
+			t.Logf("failed to kill relayCmd: %v", err)
+		}
+	})
 
 	relayLines := make(chan string, 128)
 	go func() {
@@ -2770,7 +2896,9 @@ relayReady:
 		t.Fatalf("forwarded packet tag mismatch")
 	}
 
-	os.WriteFile(filepath.Join(relayConfigDir, "done"), []byte("done"), 0o644)
+	if err := os.WriteFile(filepath.Join(relayConfigDir, "done"), []byte("done"), 0o644); err != nil {
+		t.Logf("failed to write relay done signal: %v", err)
+	}
 	if err := requesterCmd.Wait(); err != nil {
 		t.Fatalf("python requester exited with error: %v", err)
 	}
