@@ -31,7 +31,6 @@ func doSend(idPath string, destHashHex string, filePath string, noCompress bool,
 	if err != nil {
 		log.Fatalf("Could not load identity: %v\n", err)
 	}
-	_ = id // TODO: FIX THIS!!!
 
 	destHash, err := rns.HexToBytes(destHashHex)
 	if err != nil {
@@ -109,6 +108,10 @@ func doSend(idPath string, destHashHex string, filePath string, noCompress bool,
 		}
 	}
 established:
+
+	if err := link.Identify(id); err != nil {
+		log.Fatalf("Could not identify local node on link: %v\n", err)
+	}
 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		log.Fatalf("File not found\n")

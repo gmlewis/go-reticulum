@@ -38,7 +38,7 @@ type LocalClientInterface struct {
 
 	inboundHandler InboundHandler
 	running        int32
-	mu             sync.Mutex
+	mu             sync.RWMutex
 }
 
 // NewLocalClientInterface dials and negotiates a persistent connection to the
@@ -98,7 +98,13 @@ func (lci *LocalClientInterface) readLoop() {
 	frameBuffer := make([]byte, 0, TCPHWMTU)
 
 	for atomic.LoadInt32(&lci.running) == 1 {
-		n, err := lci.conn.Read(buf)
+		lci.mu.RLock()
+		conn := lci.conn
+		lci.mu.RUnlock()
+		if conn == nil {
+			break
+		}
+		n, err := conn.Read(buf)
 		if err != nil {
 			break
 		}
@@ -280,15 +286,19 @@ func (lsi *LocalServerInterface) acceptLoop() {
 	}
 }
 
-func (lsi *LocalServerInterface) handleConnection(conn net.Conn) {
-	name := fmt.Sprintf("Local Client %v", conn.RemoteAddr().String())
-	bi := NewBaseInterface(name, ModeFull, LocalBitrate)
+func newLocalClientInterfaceFromConn(name string, conn net.Conn, handler InboundHandler) *LocalClientInterface {
 	lci := &LocalClientInterface{
-		BaseInterface:  bi,
+		BaseInterface:  NewBaseInterface(name, ModeFull, LocalBitrate),
 		conn:           conn,
-		inboundHandler: lsi.inboundHandler,
+		inboundHandler: handler,
 	}
 	atomic.StoreInt32(&lci.running, 1)
+	return lci
+}
+
+func (lsi *LocalServerInterface) handleConnection(conn net.Conn) {
+	name := fmt.Sprintf("Local Client %v", conn.RemoteAddr().String())
+	lci := newLocalClientInterfaceFromConn(name, conn, lsi.inboundHandler)
 
 	lsi.mu.Lock()
 	lsi.spawnedInterfaces = append(lsi.spawnedInterfaces, lci)

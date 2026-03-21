@@ -18,7 +18,8 @@ import (
 
 func TestTransport(t *testing.T) {
 	t.Parallel()
-	tmpDir := t.TempDir()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 
 	ts := NewTransportSystem()
 	if err := ts.Start(tmpDir); err != nil {
@@ -729,7 +730,8 @@ func TestCullStaleTransportTables(t *testing.T) {
 
 func TestPathTablePersistenceRoundTrip(t *testing.T) {
 	t.Parallel()
-	tmpDir := t.TempDir()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 
 	iface := &capturingInterface{name: "persist-iface"}
 	ts := NewTransportSystem()

@@ -8,6 +8,7 @@ package interfaces
 import (
 	"fmt"
 	"io"
+	"log"
 	"os/exec"
 	"strings"
 	"sync"
@@ -183,8 +184,12 @@ func (pi *pipeSubprocessInterface) readLoop() {
 		}
 
 		atomic.StoreInt32(&pi.running, 0)
-		_ = pi.killProcess()
-		_ = err
+		if killErr := pi.killProcess(); killErr != nil {
+			log.Printf("readLoop: failed to kill pipe process: %v", killErr)
+		}
+		if err != nil {
+			log.Printf("readLoop: failed to read pipe frames: %v", err)
+		}
 
 		timer := time.NewTimer(pi.respawnDelay)
 		select {

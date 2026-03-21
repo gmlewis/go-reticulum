@@ -16,7 +16,8 @@ import (
 func TestResourceMetadataInOptions(t *testing.T) {
 	t.Parallel()
 
-	tmpDir := tempDir(t)
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 
 	// Create a test file
 	testFile := filepath.Join(tmpDir, "test.txt")

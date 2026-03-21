@@ -48,7 +48,8 @@ func TestMainExitCodeHelper(t *testing.T) {
 	t.Parallel()
 
 	// Test that os.Exit is called with correct codes
-	tmpDir := tempDir(t)
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	mustTest(t, os.Setenv("HOME", tmpDir))
 	defer func() { _ = os.Unsetenv("HOME") }()
 
@@ -69,7 +70,8 @@ func TestMainExitCodeHelper(t *testing.T) {
 func TestCorruptIdentityFileExitCode(t *testing.T) {
 	t.Parallel()
 
-	tmpDir := tempDir(t)
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	configDir := filepath.Join(tmpDir, "config")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)
@@ -104,7 +106,8 @@ func TestCorruptIdentityFileExitCode(t *testing.T) {
 func TestOutputDirectoryNotFoundExitCode(t *testing.T) {
 	t.Parallel()
 
-	tmpDir := tempDir(t)
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	configDir := filepath.Join(tmpDir, "config")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)
@@ -141,7 +144,8 @@ func TestOutputDirectoryNotFoundExitCode(t *testing.T) {
 func TestOutputDirectoryNotWritableExitCode(t *testing.T) {
 	t.Parallel()
 
-	tmpDir := tempDir(t)
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
 	configDir := filepath.Join(tmpDir, "config")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)
@@ -178,24 +182,4 @@ func TestOutputDirectoryNotWritableExitCode(t *testing.T) {
 	} else {
 		t.Error("expected exit error for non-writable output directory")
 	}
-}
-
-func tempDir(t *testing.T) string {
-	t.Helper()
-	var dir string
-	var err error
-	if os.PathSeparator == '/' && os.Getenv("GOOS") == "darwin" {
-		dir, err = os.MkdirTemp("/tmp", "gorncp-test-*")
-	} else {
-		dir, err = os.MkdirTemp("", "gorncp-test-*")
-	}
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := os.RemoveAll(dir); err != nil {
-			t.Logf("failed to remove temp dir: %v", err)
-		}
-	})
-	return dir
 }

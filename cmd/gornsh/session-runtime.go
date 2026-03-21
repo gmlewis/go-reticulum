@@ -332,5 +332,7 @@ func sendProtocolError(channel *rns.Channel, message string, fatal bool) {
 }
 
 func sendProtocolErrorToSender(sender messageSender, message string, fatal bool) {
-	_ = sendMessageWithRetry(sender, &errorMessage{Message: message, Fatal: fatal, Data: nil}, time.Now().Add(2*time.Second))
+	if err := sendMessageWithRetry(sender, &errorMessage{Message: message, Fatal: fatal, Data: nil}, time.Now().Add(2*time.Second)); err != nil {
+		rns.Logf("Failed to send protocol error %q: %v", rns.LogWarning, false, message, err)
+	}
 }
