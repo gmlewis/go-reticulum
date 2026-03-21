@@ -724,7 +724,13 @@ func (r *Reticulum) initInterfaces() error {
 					Logf("Invalid listen_port for TCP interface %v: %v", LogWarning, false, sub.Name, err)
 					continue
 				}
-				iface, err := interfaces.NewTCPServerInterface(sub.Name, listenIP, listenPort, handler)
+
+				onConnect := func(iface interfaces.Interface) {
+					applyIFACConfig(iface, ifacConfig)
+					r.transport.RegisterInterface(iface)
+				}
+
+				iface, err := interfaces.NewTCPServerInterface(sub.Name, listenIP, listenPort, handler, onConnect)
 				if err != nil {
 					Logf("Failed to initialize TCP server interface %v: %v", LogError, false, sub.Name, err)
 					continue
