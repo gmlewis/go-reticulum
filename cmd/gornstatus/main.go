@@ -150,7 +150,11 @@ func main() {
 		if err != nil {
 			log.Fatal("No shared RNS instance available to get status from")
 		}
-		defer func() { _ = ret.Close() }()
+		defer func() {
+			if err := ret.Close(); err != nil {
+				rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+			}
+		}()
 		runMonitor(ret, nameFilter, verbosity)
 		return
 	}

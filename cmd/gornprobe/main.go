@@ -95,7 +95,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
-	defer func() { _ = ret.Close() }()
+	defer func() {
+		if err := ret.Close(); err != nil {
+			rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+		}
+	}()
 
 	destHash, err := hex.DecodeString(destHex)
 	if err != nil {

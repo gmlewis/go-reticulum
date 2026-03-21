@@ -74,10 +74,14 @@ func (c *activeCommand) close() {
 	c.mu.Unlock()
 
 	if stdin != nil {
-		_ = stdin.Close()
+		if err := stdin.Close(); err != nil {
+			rns.Logf("Warning: Could not close stdin for active command: %v", rns.LogWarning, false, err)
+		}
 	}
 	if shouldKill {
-		_ = kill()
+		if err := kill(); err != nil {
+			rns.Logf("Warning: Could not kill active command properly: %v", rns.LogWarning, false, err)
+		}
 	}
 }
 

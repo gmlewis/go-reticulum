@@ -243,7 +243,11 @@ func printIdentity(opts options) error {
 	if err != nil {
 		return fmt.Errorf("could not initialize Reticulum: %w", err)
 	}
-	defer func() { _ = ret.Close() }()
+	defer func() {
+		if err := ret.Close(); err != nil {
+			rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+		}
+	}()
 
 	identityPath, err := resolveIdentityPath(opts)
 	if err != nil {
@@ -299,7 +303,11 @@ func doListen(opts options) error {
 	if err != nil {
 		return fmt.Errorf("could not initialize Reticulum: %w", err)
 	}
-	defer func() { _ = ret.Close() }()
+	defer func() {
+		if err := ret.Close(); err != nil {
+			rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+		}
+	}()
 
 	identityPath, err := resolveIdentityPath(opts)
 	if err != nil {
@@ -374,7 +382,11 @@ func doInitiate(opts options) (int, error) {
 	if err != nil {
 		return 1, fmt.Errorf("could not initialize Reticulum: %w", err)
 	}
-	defer func() { _ = ret.Close() }()
+	defer func() {
+		if err := ret.Close(); err != nil {
+			rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+		}
+	}()
 
 	identityPath, err := resolveIdentityPath(opts)
 	if err != nil {

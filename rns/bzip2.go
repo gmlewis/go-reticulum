@@ -20,7 +20,9 @@ func CompressBzip2(input []byte, level int) ([]byte, error) {
 		return nil, err
 	}
 	if _, err := w.Write(input); err != nil {
-		_ = w.Close()
+		if cerr := w.Close(); cerr != nil {
+			Logf("Warning: Could not close bzip2 writer during error recovery: %v", LogWarning, false, cerr)
+		}
 		return nil, err
 	}
 	if err := w.Close(); err != nil {
@@ -37,7 +39,9 @@ func DecompressBzip2(input []byte) ([]byte, error) {
 	}
 	out, err := io.ReadAll(r)
 	if err != nil {
-		_ = r.Close()
+		if cerr := r.Close(); cerr != nil {
+			Logf("Warning: Could not close bzip2 reader during error recovery: %v", LogWarning, false, cerr)
+		}
 		return nil, err
 	}
 	if err := r.Close(); err != nil {

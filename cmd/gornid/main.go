@@ -226,7 +226,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
-	defer func() { _ = ret.Close() }()
+	defer func() {
+		if err := ret.Close(); err != nil {
+			rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+		}
+	}()
 
 	rns.SetCompactLogFmt(true)
 	if useStdout {
@@ -556,7 +560,11 @@ func doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile, sgnFile,
 			rns.Logf("The contained exception was: %v", rns.LogError, false, err)
 			os.Exit(13)
 		}
-		defer func() { _ = f.Close() }()
+		defer func() {
+			if err := f.Close(); err != nil {
+				rns.Logf("Warning: Could not close file %v properly: %v", rns.LogWarning, false, f.Name(), err)
+			}
+		}()
 		dataInput = f
 	}
 
@@ -588,7 +596,11 @@ func doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile, sgnFile,
 			rns.Logf("The contained exception was: %v", rns.LogError, false, err)
 			os.Exit(15)
 		}
-		defer func() { _ = f.Close() }()
+		defer func() {
+			if err := f.Close(); err != nil {
+				rns.Logf("Warning: Could not close file %v properly: %v", rns.LogWarning, false, f.Name(), err)
+			}
+		}()
 		dataOutput = f
 	}
 

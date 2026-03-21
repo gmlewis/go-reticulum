@@ -32,7 +32,11 @@ func doListen(ts rns.Transport, idPath string, noCompress bool, silent bool, all
 		}
 	} else {
 		rns.Log("No valid saved identity found, creating new...", rns.LogInfo, false)
-		id, _ = rns.NewIdentity(true)
+		var err error
+		id, err = rns.NewIdentity(true)
+		if err != nil {
+			log.Fatalf("Could not create new identity: %v\n", err)
+		}
 		if err := id.ToFile(idPath); err != nil {
 			log.Fatalf("Could not persist identity %q: %v\n", idPath, err)
 		}
@@ -118,8 +122,12 @@ func doListen(ts rns.Transport, idPath string, noCompress bool, silent bool, all
 			rns.Logf("Output directory not writable", rns.LogError, false)
 			os.Exit(4)
 		}
-		_ = f.Close()
-		_ = os.Remove(tmpFile)
+		if err := f.Close(); err != nil {
+			rns.Logf("Warning: Could not close temporary write test file %v: %v", rns.LogWarning, false, tmpFile, err)
+		}
+		if err := os.Remove(tmpFile); err != nil {
+			rns.Logf("Warning: Could not remove temporary write test file %v: %v", rns.LogWarning, false, tmpFile, err)
+		}
 		rns.Logf("Saving received files in %q", rns.LogVerbose, false, sp)
 	}
 

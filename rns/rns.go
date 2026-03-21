@@ -222,7 +222,9 @@ func NewReticulum(ts Transport, configDir string) (*Reticulum, error) {
 
 	r.startLocalInterface()
 	if err := r.startRPCListener(); err != nil {
-		_ = r.Close()
+		if cerr := r.Close(); cerr != nil {
+			Logf("Warning: Could not close Reticulum properly after initialization failure: %v", LogWarning, false, cerr)
+		}
 		return nil, err
 	}
 
@@ -231,7 +233,9 @@ func NewReticulum(ts Transport, configDir string) (*Reticulum, error) {
 	if r.isSharedInstance || r.isStandaloneInstance {
 		// Initialize interfaces from config
 		if err := r.initInterfaces(); err != nil {
-			_ = r.Close()
+			if cerr := r.Close(); cerr != nil {
+				Logf("Warning: Could not close Reticulum properly after initialization failure: %v", LogWarning, false, cerr)
+			}
 			return nil, err
 		}
 		if r.discoverInterfaces && r.transport != nil {

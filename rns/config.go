@@ -38,7 +38,11 @@ func LoadConfig(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = f.Close() }()
+	defer func() {
+		if err := f.Close(); err != nil {
+			Logf("Warning: Could not close config file %v properly: %v", LogWarning, false, path, err)
+		}
+	}()
 	return ParseConfig(f)
 }
 
