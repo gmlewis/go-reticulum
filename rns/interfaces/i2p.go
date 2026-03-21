@@ -14,8 +14,8 @@ type I2PInterface struct {
 
 // NewI2PInterface binds and orchestrates an I2P-aware TCP server on the provided IP and port.
 // It delegates core session handling to the underlying TCP infrastructure while explicitly labeling traffic as traversing the I2P boundary.
-func NewI2PInterface(name, bindIP string, bindPort int, handler InboundHandler) (Interface, error) {
-	inner, err := NewTCPServerInterface(name, bindIP, bindPort, handler)
+func NewI2PInterface(name, bindIP string, bindPort int, handler InboundHandler, onConnect ConnectHandler) (Interface, error) {
+	inner, err := NewTCPServerInterface(name, bindIP, bindPort, handler, onConnect)
 	if err != nil {
 		return nil, err
 	}

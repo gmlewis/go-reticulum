@@ -14,6 +14,8 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
 )
 
+const systemConfigDir = "/etc/reticulum"
+
 func hasConfigFile(dir string) bool {
 	dirInfo, err := os.Stat(dir)
 	if err != nil || !dirInfo.IsDir() {

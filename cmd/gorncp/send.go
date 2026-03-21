@@ -23,22 +23,14 @@ type statsEntry struct {
 	PhyGot float64
 }
 
-func doSend(idPath string, destHashHex string, filePath string, noCompress bool, silent bool, phyRates bool, timeoutSec float64) {
-	if idPath == "" {
-		home, _ := os.UserHomeDir()
-		idPath = filepath.Join(home, ".reticulum", "identities", AppName)
-	}
-	id, err := rns.FromFile(idPath)
-	if err != nil {
-		log.Fatalf("Could not load identity: %v\n", err)
-	}
+func doSend(ts rns.Transport, idPath string, destHashHex string, filePath string, noCompress bool, silent bool, phyRates bool, timeoutSec float64) {
+	id := prepareIdentity(idPath)
 
 	destHash, err := rns.HexToBytes(destHashHex)
 	if err != nil {
 		log.Fatalf("Invalid destination hash: %v\n", err)
 	}
 
-	ts := rns.NewTransportSystem()
 	remoteID := rns.RecallIdentity(ts, destHash)
 	if remoteID == nil {
 		if !silent {

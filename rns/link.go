@@ -145,6 +145,21 @@ func (l *Link) UpdateMDU() {
 	l.mdu = l.mtu - HeaderMaxSize - IFACMinSize
 }
 
+// GetHash returns the truncated cryptographic hash identifying this link.
+func (l *Link) GetHash() []byte {
+	return l.linkID
+}
+
+// GetType returns the destination type for a link.
+func (l *Link) GetType() int {
+	return DestinationLink
+}
+
+// GetTransport returns the transport system associated with this link.
+func (l *Link) GetTransport() Transport {
+	return l.transport
+}
+
 // NewLink constructs a link explicitly bound to a custom transport system.
 func NewLink(ts Transport, destination *Destination) (*Link, error) {
 	if destination != nil && destination.Type != DestinationSingle {
@@ -213,6 +228,8 @@ func (l *Link) Establish() error {
 	l.linkID = LinkIDFromLR(p)
 	l.hash = l.linkID
 	l.requestTime = time.Now()
+
+	Logf("Establishing link %x to %v", LogNotice, false, l.linkID, l.destination.name)
 
 	// Register with Transport
 	if l.transport != nil {

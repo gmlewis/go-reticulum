@@ -16,10 +16,6 @@ const (
 	UDPBitrateGuess = 10 * 1000 * 1000
 )
 
-// InboundHandler rigorously defines the callback signature invoked universally across all interface types whenever a valid payload frame is successfully reassembled.
-// It acts as the critical bridge, injecting raw network bytes back into the core routing engine for cryptographic validation and dispatch.
-type InboundHandler func(data []byte, iface Interface)
-
 // UDPInterface implements a high-throughput, connectionless transport interface leveraging standard User Datagram Protocol semantics.
 // It is explicitly designed to handle best-effort broadcast, multicast, or direct point-to-point datagrams across IP networks.
 type UDPInterface struct {
@@ -118,17 +114,8 @@ func (ui *UDPInterface) Send(data []byte) error {
 	return nil
 }
 
-// Status returns true if the interface is online.
-func (ui *UDPInterface) Status() bool {
-	return atomic.LoadInt32(&ui.running) == 1
-}
-
 func (ui *UDPInterface) Type() string {
 	return "UDPInterface"
-}
-
-func (ui *UDPInterface) IsOut() bool {
-	return true
 }
 
 // Detach closes the interface and stops the listener.
