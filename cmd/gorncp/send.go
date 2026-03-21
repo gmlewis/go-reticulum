@@ -80,6 +80,10 @@ func doSend(idPath string, destHashHex string, filePath string, noCompress bool,
 		log.Fatalf("Could not create link: %v\n", err)
 	}
 
+	var activeResource *rns.Resource
+	activeLink := link
+	setupSignalHandler(&activeResource, &activeLink)
+
 	established := make(chan bool, 1)
 	link.SetLinkEstablishedCallback(func(l *rns.Link) {
 		established <- true
@@ -133,6 +137,7 @@ established:
 	if err != nil {
 		log.Fatalf("Could not create resource: %v\n", err)
 	}
+	activeResource = res
 
 	statsMax := 32
 	stats := make([]statsEntry, 0)

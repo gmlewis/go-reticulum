@@ -109,7 +109,6 @@ type Link struct {
 
 	remoteIdentity *Identity
 
-	owner                *Reticulum
 	establishmentTimeout time.Duration
 	attachedInterface    interfaces.Interface
 	transport            Transport
@@ -220,7 +219,7 @@ func (l *Link) Establish() error {
 		l.transport.RegisterLink(l)
 	}
 
-	return p.Send()
+	return l.send(p)
 }
 
 // LinkIDFromLR deterministically calculates the unique link identifier based on the payload of a link request packet.
@@ -316,11 +315,15 @@ func (l *Link) Prove() error {
 	p.PacketType = PacketProof
 	p.Context = ContextLrproof
 
-	return p.Send()
+	return l.send(p)
 }
 
 // receive processes incoming packets targeting this link, handling decryption and delegating to context-specific routines.
 func (l *Link) receive(packet *Packet) {
+	l.mu.Lock()
+	l.lastInbound = time.Now()
+	l.mu.Unlock()
+
 	if packet.Context == ContextLrproof {
 		if err := l.ValidateProof(packet); err != nil {
 			Logf("Failed to validate link proof: %v", LogDebug, false, err)
@@ -335,14 +338,11 @@ func (l *Link) receive(packet *Packet) {
 		return
 	}
 
-	shouldDecrypt := true
-	if packet.Context == ContextResource ||
-		packet.Context == ContextResourcePrf ||
-		packet.Context == ContextKeepalive ||
-		packet.Context == ContextCacheRequest ||
-		packet.Context == ContextLrproof {
-		shouldDecrypt = false
-	}
+	shouldDecrypt := packet.Context != ContextResource &&
+		packet.Context != ContextResourcePrf &&
+		packet.Context != ContextKeepalive &&
+		packet.Context != ContextCacheRequest &&
+		packet.Context != ContextLrproof
 
 	if shouldDecrypt {
 		plaintext, err := l.Decrypt(packet.Data)
@@ -506,7 +506,7 @@ func (l *Link) receive(packet *Packet) {
 		if !l.initiator && len(packet.Data) > 0 && packet.Data[0] == 0xFF {
 			keepalivePacket := NewPacketWithTransport(l.transport, l, []byte{0xFE})
 			keepalivePacket.Context = ContextKeepalive
-			if err := keepalivePacket.Send(); err != nil {
+			if err := l.send(keepalivePacket); err != nil {
 				Logf("Failed sending keepalive response: %v", LogDebug, false, err)
 			}
 		}
@@ -529,6 +529,13 @@ func (l *Link) receive(packet *Packet) {
 			cb(l, packet)
 		}
 	}
+}
+
+func (l *Link) send(p *Packet) error {
+	l.mu.Lock()
+	l.lastOutbound = time.Now()
+	l.mu.Unlock()
+	return p.Send()
 }
 
 // ValidateProof evaluates an incoming link proof packet and formally transitions the link into an active state upon success.
@@ -721,7 +728,7 @@ func (l *Link) Identify(identity *Identity) error {
 
 	p := NewPacketWithTransport(l.transport, l, proofData)
 	p.Context = ContextLinkIdentify
-	return p.Send()
+	return l.send(p)
 }
 
 // LoadPeer parses and permanently associates the remote peer's ephemeral public encryption and signature keys into link state.
@@ -845,7 +852,7 @@ type LinkChannelOutlet struct {
 func (o *LinkChannelOutlet) Send(raw []byte) (*Packet, error) {
 	p := NewPacketWithTransport(o.link.transport, o.link, raw)
 	p.Context = ContextChannel
-	if err := p.Send(); err != nil {
+	if err := o.link.send(p); err != nil {
 		return nil, err
 	}
 	return p, nil
@@ -929,7 +936,7 @@ func (l *Link) Request(path string, data any, responseCallback, failedCallback, 
 			return nil, err
 		}
 
-		if err := p.Send(); err != nil {
+		if err := l.send(p); err != nil {
 			return nil, err
 		}
 
@@ -1046,7 +1053,7 @@ func (l *Link) handleRequest(requestID []byte, unpackedRequest []any) {
 				if len(packedResponse) <= l.mdu {
 					p := NewPacketWithTransport(l.transport, l, packedResponse)
 					p.Context = ContextResponse
-					if err := p.Send(); err != nil {
+					if err := l.send(p); err != nil {
 						Logf("Failed to send response packet: %v", LogError, false, err)
 					}
 				} else {

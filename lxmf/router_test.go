@@ -560,32 +560,6 @@ func TestProcessOutboundResourceUnsupportedFails(t *testing.T) {
 	}
 }
 
-type fakeLinkBuilder struct {
-	establishedCB func(*rns.Link)
-	closedCB      func(*rns.Link)
-	establishErr  error
-	establishes   int
-}
-
-func (f *fakeLinkBuilder) Establish() error {
-	f.establishes++
-	if f.establishErr != nil {
-		return f.establishErr
-	}
-	if f.establishedCB != nil {
-		f.establishedCB(&rns.Link{})
-	}
-	return nil
-}
-
-func (f *fakeLinkBuilder) SetLinkEstablishedCallback(cb func(*rns.Link)) {
-	f.establishedCB = cb
-}
-
-func (f *fakeLinkBuilder) SetLinkClosedCallback(cb func(*rns.Link)) {
-	f.closedCB = cb
-}
-
 func TestProcessOutboundResourceLinkPendingRetryNoAttemptIncrement(t *testing.T) {
 	ts := rns.NewTransportSystem()
 	tmpDir, cleanup := tempDir(t)

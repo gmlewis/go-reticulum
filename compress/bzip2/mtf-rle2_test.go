@@ -143,10 +143,10 @@ func TestMoveToFront(t *testing.T) {
 		if fail || v.fail {
 			continue
 		}
-		if !reflect.DeepEqual(input, v.input) && !(len(input) == 0 && len(v.input) == 0) {
+		if !reflect.DeepEqual(input, v.input) && (len(input) != 0 || len(v.input) != 0) {
 			t.Errorf("test %d, input mismatch:\ngot  %v\nwant %v", i, input, v.input)
 		}
-		if !reflect.DeepEqual(output, v.output) && !(len(output) == 0 && len(v.output) == 0) {
+		if !reflect.DeepEqual(output, v.output) && (len(output) != 0 || len(v.output) != 0) {
 			t.Errorf("test %d, output mismatch:\ngot  %v\nwant %v", i, output, v.output)
 		}
 	}

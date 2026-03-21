@@ -294,7 +294,7 @@ func (p *parser) checkLength() {
 	}
 }
 func (p *parser) checkDelimiter() {
-	if len(p.in) > 0 && !(unicode.IsSpace(rune(p.in[0])) || p.in[0] == '#' || p.in[0] == ')') {
+	if len(p.in) > 0 && !unicode.IsSpace(rune(p.in[0])) && p.in[0] != '#' && p.in[0] != ')' {
 		panic(fmt.Errorf("unexpected character: %c", p.in[0]))
 	}
 }

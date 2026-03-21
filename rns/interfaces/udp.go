@@ -94,15 +94,22 @@ func (ui *UDPInterface) listenLoop() {
 	}
 }
 
-// Send transmits data over the UDP interface.
 func (ui *UDPInterface) Send(data []byte) error {
-	if atomic.LoadInt32(&ui.running) != 1 {
+	ui.mu.Lock()
+	conn := ui.conn
+	ui.mu.Unlock()
+
+	if conn == nil {
+		return fmt.Errorf("no connection for interface %v", ui.name)
+	}
+
+	if atomic.LoadInt32(&ui.running) == 0 {
 		return fmt.Errorf("interface %v is not running", ui.name)
 	}
 
 	// Create a temporary connection for sending if it's a broadcast or specific forward
 	// In Python it uses a single socket and sendto.
-	n, err := ui.conn.WriteToUDP(data, ui.forwardAddr)
+	n, err := conn.WriteToUDP(data, ui.forwardAddr)
 	if err != nil {
 		return err
 	}
@@ -126,8 +133,11 @@ func (ui *UDPInterface) IsOut() bool {
 
 // Detach closes the interface and stops the listener.
 func (ui *UDPInterface) Detach() error {
+	ui.mu.Lock()
+	defer ui.mu.Unlock()
+
 	atomic.StoreInt32(&ui.running, 0)
-	ui.BaseInterface.SetDetached(true)
+	ui.SetDetached(true)
 	if ui.conn != nil {
 		return ui.conn.Close()
 	}

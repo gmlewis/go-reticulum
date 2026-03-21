@@ -65,7 +65,7 @@ func (pd *Decoder) Init(codes PrefixCodes) {
 	if internal.Debug && !sort.IsSorted(prefixCodesBySymbol(codes)) {
 		panic("input codes is not sorted")
 	}
-	if internal.Debug && !(codes.checkLengths() && codes.checkPrefixes()) {
+	if internal.Debug && (!codes.checkLengths() || !codes.checkPrefixes()) {
 		panic("detected incomplete or overlapping codes")
 	}
 

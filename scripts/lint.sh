@@ -14,6 +14,6 @@ fi
 cd "${REPO_ROOT}"
 
 echo "Running golangci-lint..."
-"${GOLANGCI_LINT_BIN}" run ./...
+"${GOLANGCI_LINT_BIN}" run --build-tags=integration ./...
 
 echo "Done."

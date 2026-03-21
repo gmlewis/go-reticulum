@@ -5,14 +5,9 @@
 
 package rns
 
-import (
-	"sync"
-)
-
 // InterfaceAnnouncer manages the periodic broadcast of local interface availability to dynamically discoverable peers on the network.
 type InterfaceAnnouncer struct {
 	owner *Reticulum
-	mu    sync.Mutex
 }
 
 // NewInterfaceAnnouncer initializes a new announcer component bound to the provided local Reticulum instance.

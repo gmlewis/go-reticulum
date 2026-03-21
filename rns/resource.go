@@ -551,6 +551,13 @@ func (r *Resource) TotalSize() int64 {
 	return r.size
 }
 
+// Cancel prematurely terminates the resource transfer and updates its status to failed.
+func (r *Resource) Cancel() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.status = ResourceStatusFailed
+}
+
 // Metadata returns the metadata associated with this resource.
 func (r *Resource) Metadata() map[string][]byte {
 	return r.metadata

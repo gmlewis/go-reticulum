@@ -2,4 +2,4 @@
 
 package rns
 
-const raceEnabled = true
+const RaceEnabled = true

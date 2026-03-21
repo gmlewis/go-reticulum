@@ -24,8 +24,8 @@ func setupSignalHandler(resource **rns.Resource, link **rns.Link) {
 		<-sigChan
 		fmt.Println("")
 		if resource != nil && *resource != nil {
-			// Resource cleanup (cancel if available)
 			fmt.Println("Cancelling resource...")
+			(*resource).Cancel()
 		}
 		if link != nil && *link != nil {
 			fmt.Println("Tearing down link...")

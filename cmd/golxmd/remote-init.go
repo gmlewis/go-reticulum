@@ -96,7 +96,7 @@ func (c *clientT) getTargetIdentity(remote string, timeoutArg time.Duration) *rn
 
 	destinationHash, err := rns.HexToBytes(remote)
 	if err != nil || len(destinationHash) != rns.TruncatedHashLength/8 {
-		msg := "Invalid remote destination hash"
+		var msg string
 		if err != nil {
 			msg = fmt.Sprintf("Invalid remote destination hash: %v", err)
 		} else {
@@ -363,7 +363,7 @@ func (c *clientT) getStatus(remote string, configDirArg string, rnsConfigDir str
 			}
 
 			hops := int(anyToFloat64(p["network_distance"]))
-			hs := "hops unknown"
+			var hs string
 			switch hops {
 			case rns.PathfinderM:
 				hs = "hops unknown"
@@ -592,7 +592,7 @@ const (
 func (c *clientT) requestSync(target string, remote string, configDirArg string, rnsConfigDir string, verbosity int, quietness int, timeout time.Duration, identityPathArg string) {
 	peerDestinationHash, err := rns.HexToBytes(target)
 	if err != nil || len(peerDestinationHash) != rns.TruncatedHashLength/8 {
-		msg := "Invalid peer destination hash"
+		var msg string
 		if err != nil {
 			msg = fmt.Sprintf("Invalid peer destination hash: %v", err)
 		} else {
@@ -682,7 +682,7 @@ func (c *clientT) requestSync(target string, remote string, configDirArg string,
 func (c *clientT) requestUnpeer(target string, remote string, configDirArg string, rnsConfigDir string, verbosity int, quietness int, timeout time.Duration, identityPathArg string) {
 	peerDestinationHash, err := rns.HexToBytes(target)
 	if err != nil || len(peerDestinationHash) != rns.TruncatedHashLength/8 {
-		msg := "Invalid peer destination hash"
+		var msg string
 		if err != nil {
 			msg = fmt.Sprintf("Invalid peer destination hash: %v", err)
 		} else {

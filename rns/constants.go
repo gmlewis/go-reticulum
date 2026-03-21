@@ -194,7 +194,6 @@ func PrettyTime(seconds float64, verbose bool, compact bool) string {
 		} else {
 			components = append(components, fmt.Sprintf("%.2f%v", secs, label))
 		}
-		displayed++
 	}
 
 	if len(components) == 0 {

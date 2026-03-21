@@ -69,6 +69,10 @@ func doFetch(idPath string, destHashHex string, fileName string, noCompress bool
 		log.Fatalf("Could not create link: %v\n", err)
 	}
 
+	var activeResource *rns.Resource
+	activeLink := link
+	setupSignalHandler(&activeResource, &activeLink)
+
 	established := make(chan bool, 1)
 	link.SetLinkEstablishedCallback(func(l *rns.Link) {
 		established <- true
@@ -111,6 +115,7 @@ established:
 	})
 
 	link.SetResourceStartedCallback(func(res *rns.Resource) {
+		activeResource = res
 		resourceStarted <- res
 	})
 
@@ -203,8 +208,7 @@ requested:
 					if overwrite {
 						if _, err := os.Stat(fullSavePath); err == nil {
 							if err := os.Remove(fullSavePath); err != nil {
-								log.Fatalf("Could not overwrite existing file %v, renaming instead", fullSavePath)
-								overwrite = false
+								rns.Logf("Could not overwrite existing file %v, renaming instead", rns.LogError, false, fullSavePath)
 							}
 						}
 					}

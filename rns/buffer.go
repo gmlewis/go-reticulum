@@ -256,7 +256,7 @@ type BidirectionalBuffer struct {
 
 // Close cleanly shuts down both the reading and writing halves of the bidirectional buffer, releasing underlying resources.
 func (bb *BidirectionalBuffer) Close() error {
-	bb.ChannelReader.channel.removeMessageHandlerByID(bb.ChannelReader.handlerID)
+	bb.ChannelReader.channel.removeMessageHandlerByID(bb.handlerID)
 	return bb.ChannelWriter.Close()
 }
 

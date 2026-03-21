@@ -144,7 +144,7 @@ func runBenchmarks(b *testing.B, f func(b *testing.B, buf []byte, lvl int)) {
 		if len(td.data) == 0 {
 			continue
 		}
-		if testing.Short() && !(td.name == "Twain" || td.name == "Digits") {
+		if testing.Short() && td.name != "Twain" && td.name != "Digits" {
 			continue
 		}
 		for _, tl := range levels {

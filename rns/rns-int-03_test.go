@@ -208,7 +208,7 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integrated test in short mode")
 	}
-	if raceEnabled {
+	if RaceEnabled {
 		t.Skip("Skipping in race mode due known concurrent hash access in request path under this stress pattern")
 	}
 
