@@ -1803,7 +1803,7 @@ func (ts *TransportSystem) RequestPath(destHash []byte) error {
 
 // Inbound processes a raw packet received from an interface.
 func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
-	Logf("Inbound: received packet of %d bytes from %s", LogDebug, false, len(raw), iface.Name())
+	Logf("Inbound: received packet of %d bytes from %s", LogNotice, false, len(raw), iface.Name())
 	if ifac, ok := iface.(ifacInboundHook); ok {
 		processed, accepted := ifac.ApplyIFACInbound(raw)
 		if !accepted {
