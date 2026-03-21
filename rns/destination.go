@@ -429,6 +429,21 @@ func (d *Destination) DeregisterRequestHandler(path string) {
 	delete(d.requestHandlers, string(pathHash))
 }
 
+// GetHash returns the truncated cryptographic hash identifying this unique destination address.
+func (d *Destination) GetHash() []byte {
+	return d.Hash
+}
+
+// GetType returns the destination type.
+func (d *Destination) GetType() int {
+	return d.Type
+}
+
+// GetTransport returns the transport system associated with this destination.
+func (d *Destination) GetTransport() Transport {
+	return d.transport
+}
+
 // ExpandName builds the deterministic string representation of a destination by concatenating the app name, aspects, and identity hash.
 func ExpandName(identity *Identity, appName string, aspects ...string) string {
 	name := appName

@@ -15,7 +15,7 @@ func mustTest(t *testing.T, err error) {
 }
 func mustTestNewBackboneInterface(t *testing.T, name, bindIP string, bindPort int, handler InboundHandler) Interface {
 	t.Helper()
-	iface, err := NewBackboneInterface(name, bindIP, bindPort, handler)
+	iface, err := NewBackboneInterface(name, bindIP, bindPort, handler, nil)
 	mustTest(t, err)
 	return iface
 }
@@ -29,7 +29,7 @@ func mustTestNewBackboneClientInterface(t *testing.T, name, targetHost string, t
 
 func mustTestNewI2PInterface(t *testing.T, name, bindIP string, bindPort int, handler InboundHandler) Interface {
 	t.Helper()
-	iface, err := NewI2PInterface(name, bindIP, bindPort, handler)
+	iface, err := NewI2PInterface(name, bindIP, bindPort, handler, nil)
 	mustTest(t, err)
 	return iface
 }
@@ -57,7 +57,7 @@ func mustTestNewTCPClientInterface(t *testing.T, name, host string, port int, ki
 
 func mustTestNewTCPServerInterface(t *testing.T, name, bindIP string, bindPort int, handler InboundHandler) *TCPServerInterface {
 	t.Helper()
-	iface, err := NewTCPServerInterface(name, bindIP, bindPort, handler)
+	iface, err := NewTCPServerInterface(name, bindIP, bindPort, handler, nil)
 	mustTest(t, err)
 	return iface
 }

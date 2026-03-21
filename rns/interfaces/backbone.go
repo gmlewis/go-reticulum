@@ -15,8 +15,8 @@ type BackboneInterface struct {
 // NewBackboneInterface binds and initializes a TCP-based BackboneInterface on the
 // given address and port. It creates a persistent listener and dispatches
 // incoming frames to router logic.
-func NewBackboneInterface(name, bindIP string, bindPort int, handler InboundHandler) (Interface, error) {
-	inner, err := NewTCPServerInterface(name, bindIP, bindPort, handler)
+func NewBackboneInterface(name, bindIP string, bindPort int, handler InboundHandler, onConnect ConnectHandler) (Interface, error) {
+	inner, err := NewTCPServerInterface(name, bindIP, bindPort, handler, onConnect)
 	if err != nil {
 		return nil, err
 	}

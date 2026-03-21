@@ -57,6 +57,7 @@ type Transport interface {
 	SetLinkMTUDiscovery(enabled bool)
 	SetNetworkIdentity(identity *Identity)
 	Start(storagePath string) error
+	Stop()
 	StartedAt() time.Time
 	UnblackholeIdentity(identityHash []byte) bool
 
@@ -1679,7 +1680,7 @@ func (ts *TransportSystem) LoadKnownDestinations(storagePath string) {
 		return
 	}
 
-	unpacked, err := Unpack(data)
+	unpacked, err := msgpack.Unpack(data)
 	if err != nil {
 		Logf("Failed to unpack known destinations: %v", LogError, false, err)
 		return

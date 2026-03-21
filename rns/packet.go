@@ -94,6 +94,18 @@ const (
 	FlagUnset = 0x00
 )
 
+// PacketDestination defines the operational contract for any entity that can
+// serve as a network destination, including Destinations and Links.
+type PacketDestination interface {
+	GetHash() []byte
+	GetType() int
+	GetTransport() Transport
+	Encrypt([]byte) ([]byte, error)
+	Decrypt([]byte) ([]byte, error)
+	Sign([]byte) ([]byte, error)
+	Verify([]byte, []byte) bool
+}
+
 // Packet represents a Reticulum network packet.
 type Packet struct {
 	Hops          int

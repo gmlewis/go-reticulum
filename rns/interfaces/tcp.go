@@ -20,9 +20,6 @@ const (
 	TCPHWMTU        = 1064
 )
 
-type InboundHandler func(data []byte, iface Interface)
-type ConnectHandler func(Interface)
-
 type TCPClientInterface struct {
 	*BaseInterface
 	conn           net.Conn

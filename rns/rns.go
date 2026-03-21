@@ -52,31 +52,6 @@ func RecallIdentity(ts Transport, hash []byte) *Identity {
 	return ts.Recall(hash)
 }
 
-// PacketDestination is an interface for types that can be a packet destination.
-type PacketDestination interface {
-	GetHash() []byte
-	GetType() int
-	GetTransport() Transport
-}
-
-// GetHash returns the destination hash.
-func (d *Destination) GetHash() []byte { return d.Hash }
-
-// GetType returns the destination type.
-func (d *Destination) GetType() int { return d.Type }
-
-// GetTransport returns the destination transport.
-func (d *Destination) GetTransport() Transport { return d.transport }
-
-// GetHash returns the link ID.
-func (l *Link) GetHash() []byte { return l.linkID }
-
-// GetType returns the link destination type.
-func (l *Link) GetType() int { return DestinationLink }
-
-// GetTransport returns the link destination transport.
-func (l *Link) GetTransport() Transport { return l.transport }
-
 // Reticulum is the main entry point for the Reticulum Network Stack.
 type Reticulum struct {
 	config    *Config
@@ -151,8 +126,6 @@ func (r *Reticulum) Close() error {
 	}
 	return closeErr
 }
-
-const systemConfigDir = "/etc/reticulum"
 
 // NewReticulum initializes a new Reticulum stack with a specific transport system.
 func NewReticulum(ts Transport, configDir string) (*Reticulum, error) {
@@ -777,7 +750,13 @@ func (r *Reticulum) initInterfaces() error {
 				if listenPort <= 0 {
 					Logf("Failed to initialize I2P interface %v: connectable requires bind_port/listen_port", LogError, false, sub.Name)
 				} else {
-					iface, err := interfaces.NewI2PInterface(sub.Name, listenIP, listenPort, handler)
+					onConnect := func(iface interfaces.Interface) {
+						applyIFACConfig(iface, ifacConfig)
+						r.transport.RegisterInterface(iface)
+					}
+
+					iface, err := interfaces.NewTCPServerInterface(sub.Name, listenIP, listenPort, handler, onConnect)
+
 					if err != nil {
 						Logf("Failed to initialize I2P interface %v: %v", LogError, false, sub.Name, err)
 					} else {
@@ -862,7 +841,13 @@ func (r *Reticulum) initInterfaces() error {
 				r.transport.Inbound(data, iface)
 			}
 
-			iface, err := interfaces.NewBackboneInterface(sub.Name, listenIP, listenPort, handler)
+			onConnect := func(iface interfaces.Interface) {
+				applyIFACConfig(iface, ifacConfig)
+				r.transport.RegisterInterface(iface)
+			}
+
+			iface, err := interfaces.NewTCPServerInterface(sub.Name, listenIP, listenPort, handler, onConnect)
+
 			if err != nil {
 				Logf("Failed to initialize Backbone interface %v: %v", LogError, false, sub.Name, err)
 				continue
