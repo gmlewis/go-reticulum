@@ -305,7 +305,7 @@ func doListen(ts rns.Transport, idPath string, noCompress bool, silent bool, all
 		})
 	})
 
-	fmt.Printf("rncp listening on %v\n", rns.PrettyHex(dest.Hash))
+	fmt.Printf("gorncp listening on %v\n", rns.PrettyHex(dest.Hash))
 
 	if announceInterval >= 0 {
 		rns.Logf("Announcing destination (interval=%v)", rns.LogVerbose, false, announceInterval)
