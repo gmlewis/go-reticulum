@@ -5,6 +5,11 @@
 
 // gorncp is a Reticulum-based file transfer utility.
 //
+// The Python source-of-truth for rncp relies on callback completion in a few
+// places where the Go port intentionally uses bounded waits to avoid an
+// indefinite CLI hang. Those safety timeouts are documented in the transfer
+// helpers and are the primary behavioral difference from the Python utility.
+//
 // It provides three main modes of operation:
 //   - Listen: Waits for incoming file transfer requests from other nodes.
 //   - Send: Transmits a file to a remote node that is in listen mode.
