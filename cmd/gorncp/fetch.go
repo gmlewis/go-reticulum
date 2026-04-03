@@ -116,9 +116,40 @@ established:
 	}
 	_, err = link.Request("fetch_file", []byte(fileName), func(rr *rns.RequestReceipt) {
 		if rr.Status == rns.RequestReady {
+			if rr.Response == false {
+				if !silent {
+					fmt.Printf("\r%v\r", strings.Repeat(" ", 60))
+				}
+				fmt.Printf("Fetch request failed, the file %v was not found on the remote\n", fileName)
+				link.Teardown()
+				time.Sleep(150 * time.Millisecond)
+				os.Exit(0)
+			} else if rr.Response == nil {
+				if !silent {
+					fmt.Printf("\r%v\r", strings.Repeat(" ", 60))
+				}
+				fmt.Printf("Fetch request failed due to an error on the remote system\n")
+				link.Teardown()
+				time.Sleep(150 * time.Millisecond)
+				os.Exit(0)
+			} else if rr.Response == rns.ReqFetchNotAllowed {
+				if !silent {
+					fmt.Printf("\r%v\r", strings.Repeat(" ", 60))
+				}
+				fmt.Printf("Fetch request failed, fetching the file %v was not allowed by the remote\n", fileName)
+				link.Teardown()
+				time.Sleep(150 * time.Millisecond)
+				os.Exit(0)
+			}
 			requestResolved <- true
 		} else {
-			log.Fatalf("\r%v\rRequest failed with status %v\n", strings.Repeat(" ", 60), rr.Status)
+			if !silent {
+				fmt.Printf("\r%v\r", strings.Repeat(" ", 60))
+			}
+			fmt.Printf("Fetch request failed due to an unknown error (probably not authorised)\n")
+			link.Teardown()
+			time.Sleep(150 * time.Millisecond)
+			os.Exit(0)
 		}
 	}, nil, nil, 0)
 

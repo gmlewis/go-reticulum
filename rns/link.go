@@ -1039,6 +1039,7 @@ func (l *Link) handleRequest(requestID []byte, unpackedRequest []any) {
 	handler, ok := l.destination.requestHandlers[string(pathHash)]
 	l.mu.Unlock()
 
+	Logf("Request handler lookup: pathHash=%x, ok=%v, handler.Path=%v", LogDebug, false, pathHash, ok, handler.Path)
 	if ok {
 		allowed := false
 		if handler.Allow == AllowAll {
@@ -1054,9 +1055,11 @@ func (l *Link) handleRequest(requestID []byte, unpackedRequest []any) {
 			}
 		}
 
+		Logf("Request allowed check: allowed=%v, handler.Allow=%v", LogDebug, false, allowed, handler.Allow)
 		if allowed {
 			Logf("Handling request %v for %v", LogDebug, false, requestID, handler.Path)
 			response := handler.ResponseGenerator(handler.Path, requestData, requestID, l.linkID, l.remoteIdentity, requestedAt)
+			Logf("Handler response: %v (type: %T)", LogDebug, false, response, response)
 
 			if response != nil {
 				packedResponse, err := msgpack.Pack([]any{requestID, response})

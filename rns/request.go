@@ -23,6 +23,12 @@ const (
 	RequestReady = 0x04
 )
 
+// Request response codes
+const (
+	// ReqFetchNotAllowed indicates that fetching the requested file was not allowed by the remote.
+	ReqFetchNotAllowed = 0xF0
+)
+
 // RequestReceipt represents a receipt for a sent request.
 type RequestReceipt struct {
 	Link          *Link

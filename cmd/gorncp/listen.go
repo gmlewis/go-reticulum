@@ -159,68 +159,75 @@ func doListen(ts rns.Transport, idPath string, noCompress bool, silent bool, all
 		os.Exit(0)
 	}
 
-	if allowFetch {
-		dest.RegisterRequestHandler("fetch_file", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
-			// Apply fetch jail validation
-			if jail != "" {
-				dataStr := string(data)
-				if !strings.HasPrefix(dataStr, jail+"/") {
-					dataStr = strings.TrimPrefix(dataStr, jail+"/")
-				}
-				filePath := filepath.Clean(filepath.Join(jail, dataStr))
-				if !strings.HasPrefix(filePath, jail+"/") {
-					rns.Logf("Disallowing fetch request for %v outside of fetch jail %v", rns.LogWarning, false, filePath, jail)
-					return byte(0xF0) // REQ_FETCH_NOT_ALLOWED
-				}
-				data = []byte(filePath)
-			}
+	// Always register fetch handler, but check allowFetch inside (matches Python behavior)
+	rns.Logf("Registering fetch_file handler, allowFetch=%v", rns.LogDebug, false, allowFetch)
+	dest.RegisterRequestHandler("fetch_file", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+		rns.Logf("FETCH_HANDLER CALLED: allowFetch=%v, path=%v, data=%v, requestID=%x", rns.LogDebug, false, allowFetch, path, string(data), requestID)
+		// Check if fetch is allowed
+		if !allowFetch {
+			rns.Logf("fetch not allowed, returning 0xF0", rns.LogDebug, false)
+			return byte(0xF0) // REQ_FETCH_NOT_ALLOWED
+		}
 
-			// Check file existence
-			filePath := string(data)
-			if _, err := os.Stat(filePath); err != nil {
-				rns.Logf("Client-requested file not found: %v", rns.LogVerbose, false, filePath)
-				return false
+		// Apply fetch jail validation
+		if jail != "" {
+			dataStr := string(data)
+			if !strings.HasPrefix(dataStr, jail+"/") {
+				dataStr = strings.TrimPrefix(dataStr, jail+"/")
 			}
+			filePath := filepath.Clean(filepath.Join(jail, dataStr))
+			if !strings.HasPrefix(filePath, jail+"/") {
+				rns.Logf("Disallowing fetch request for %v outside of fetch jail %v", rns.LogWarning, false, filePath, jail)
+				return byte(0xF0) // REQ_FETCH_NOT_ALLOWED
+			}
+			data = []byte(filePath)
+		}
 
-			// Find the link and send the resource with metadata
-			link := ts.FindLink(linkID)
-			if link == nil {
-				rns.Logf("Link not found for request %x", rns.LogError, false, requestID)
-				return false
-			}
+		// Check file existence
+		filePath := string(data)
+		if _, err := os.Stat(filePath); err != nil {
+			rns.Logf("Client-requested file not found: %v", rns.LogVerbose, false, filePath)
+			return false
+		}
 
-			// Read the file
-			fileData, err := os.ReadFile(filePath)
-			if err != nil {
-				rns.Logf("Could not read file %v: %v", rns.LogError, false, filePath, err)
-				return false
-			}
+		// Find the link and send the resource with metadata
+		link := ts.FindLink(linkID)
+		if link == nil {
+			rns.Logf("Link not found for request %x", rns.LogError, false, requestID)
+			return false
+		}
 
-			// Create metadata with filename
-			metadata := map[string][]byte{
-				"name": []byte(filepath.Base(filePath)),
-			}
+		// Read the file
+		fileData, err := os.ReadFile(filePath)
+		if err != nil {
+			rns.Logf("Could not read file %v: %v", rns.LogError, false, filePath, err)
+			return false
+		}
 
-			// Create and send resource with metadata
-			resource, err := rns.NewResourceWithOptions(fileData, link, rns.ResourceOptions{
-				AutoCompress: !noCompress,
-				Metadata:     metadata,
-			})
-			if err != nil {
-				rns.Logf("Could not create resource: %v", rns.LogError, false, err)
-				return false
-			}
-			resource.SetRequestID(requestID)
-			resource.SetResponse(true)
-			if err := resource.Advertise(); err != nil {
-				rns.Logf("Could not advertise resource: %v", rns.LogError, false, err)
-				return false
-			}
+		// Create metadata with filename
+		metadata := map[string][]byte{
+			"name": []byte(filepath.Base(filePath)),
+		}
 
-			rns.Logf("Sending file %v to client", rns.LogVerbose, false, filePath)
-			return nil // Resource already sent
-		}, rns.AllowAll, nil, !noCompress)
-	}
+		// Create and send resource with metadata
+		resource, err := rns.NewResourceWithOptions(fileData, link, rns.ResourceOptions{
+			AutoCompress: !noCompress,
+			Metadata:     metadata,
+		})
+		if err != nil {
+			rns.Logf("Could not create resource: %v", rns.LogError, false, err)
+			return false
+		}
+		resource.SetRequestID(requestID)
+		resource.SetResponse(true)
+		if err := resource.Advertise(); err != nil {
+			rns.Logf("Could not advertise resource: %v", rns.LogError, false, err)
+			return false
+		}
+
+		rns.Logf("Sending file %v to client", rns.LogVerbose, false, filePath)
+		return nil // Resource already sent
+	}, rns.AllowAll, nil, !noCompress)
 
 	dest.SetLinkEstablishedCallback(func(l *rns.Link) {
 		rns.Log("Incoming link established", rns.LogVerbose, false)

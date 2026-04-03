@@ -427,3 +427,232 @@ func TestListenModeIdentityCreation(t *testing.T) {
 		t.Fatal("Loaded identity should not be nil")
 	}
 }
+
+func TestFetchFileNotFoundOnRemote(t *testing.T) {
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+
+	serverConfigDir := filepath.Join(tmpDir, "server_config")
+	clientConfigDir := filepath.Join(tmpDir, "client_config")
+	if err := os.MkdirAll(serverConfigDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll server_config: %v", err)
+	}
+	if err := os.MkdirAll(clientConfigDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll client_config: %v", err)
+	}
+
+	port, err := getFreePort()
+	if err != nil {
+		t.Fatalf("getFreePort: %v", err)
+	}
+
+	serverConfig := fmt.Sprintf(`[reticulum]
+enable_transport = Yes
+share_instance = No
+
+[interfaces]
+  [[TCP]]
+    type = TCPServerInterface
+    interface_enabled = yes
+    listen_ip = 127.0.0.1
+    listen_port = %d
+`, port)
+	serverConfigPath := filepath.Join(serverConfigDir, "config")
+	if err := os.WriteFile(serverConfigPath, []byte(serverConfig), 0o644); err != nil {
+		t.Fatalf("WriteFile server config: %v", err)
+	}
+
+	clientConfig := fmt.Sprintf(`[reticulum]
+share_instance = No
+
+[interfaces]
+  [[TCP]]
+    type = TCPClientInterface
+    interface_enabled = yes
+    target_host = 127.0.0.1
+    target_port = %d
+`, port)
+	clientConfigPath := filepath.Join(clientConfigDir, "config")
+	if err := os.WriteFile(clientConfigPath, []byte(clientConfig), 0o644); err != nil {
+		t.Fatalf("WriteFile client config: %v", err)
+	}
+
+	serverIdentity := filepath.Join(tmpDir, "server_identity")
+	clientIdentity := filepath.Join(tmpDir, "client_identity")
+
+	listenerReady := make(chan string, 1)
+	listenerDone := make(chan struct{}, 1)
+
+	go func() {
+		lCmd, buf := runGorncpBackground(t, serverConfigDir, "-l", "-n", "-F", "-i", serverIdentity, "-b", "2", "-v")
+		defer func() {
+			_ = lCmd.Process.Signal(os.Interrupt)
+			time.Sleep(500 * time.Millisecond)
+			_ = lCmd.Process.Kill()
+		}()
+
+		timeout := time.After(20 * time.Second)
+		var destHash string
+		for {
+			select {
+			case <-timeout:
+				t.Logf("=== LISTENER OUTPUT (complete) ===\n%s", buf.String())
+				t.Errorf("listener goroutine: timed out waiting for listener to start.")
+				return
+			default:
+				out := buf.String()
+				if strings.Contains(out, "Listening on : <") {
+					parts := strings.Split(out, "Listening on : <")
+					if len(parts) > 1 {
+						destHash = strings.Split(parts[1], ">")[0]
+						t.Logf("listener goroutine: ready at %s", destHash)
+						listenerReady <- destHash
+						select {
+						case <-listenerDone:
+						case <-time.After(2 * time.Second):
+						}
+						return
+					}
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+		}
+	}()
+
+	var destHash string
+	select {
+	case destHash = <-listenerReady:
+		t.Logf("Listener ready, hash: %s", destHash)
+	case <-time.After(20 * time.Second):
+		t.Fatalf("Timed out waiting for listener to become ready")
+	}
+
+	time.Sleep(2 * time.Second)
+
+	fOut := runGorncp(t, clientConfigDir, "-i", clientIdentity, "-w", "30", "-f", destHash, "nonexistent_file.txt", "-v")
+	t.Logf("Fetcher output:\n%s", fOut)
+
+	if !strings.Contains(fOut, "was not found on the remote") {
+		t.Errorf("Fetcher output does not contain expected error message")
+	}
+
+	close(listenerDone)
+}
+
+func TestFetchNotAllowedByRemote(t *testing.T) {
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+
+	serverConfigDir := filepath.Join(tmpDir, "server_config")
+	clientConfigDir := filepath.Join(tmpDir, "client_config")
+	if err := os.MkdirAll(serverConfigDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll server_config: %v", err)
+	}
+	if err := os.MkdirAll(clientConfigDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll client_config: %v", err)
+	}
+
+	port, err := getFreePort()
+	if err != nil {
+		t.Fatalf("getFreePort: %v", err)
+	}
+
+	serverConfig := fmt.Sprintf(`[reticulum]
+enable_transport = Yes
+share_instance = No
+
+[interfaces]
+  [[TCP]]
+    type = TCPServerInterface
+    interface_enabled = yes
+    listen_ip = 127.0.0.1
+    listen_port = %d
+`, port)
+	serverConfigPath := filepath.Join(serverConfigDir, "config")
+	if err := os.WriteFile(serverConfigPath, []byte(serverConfig), 0o644); err != nil {
+		t.Fatalf("WriteFile server config: %v", err)
+	}
+
+	clientConfig := fmt.Sprintf(`[reticulum]
+share_instance = No
+
+[interfaces]
+  [[TCP]]
+    type = TCPClientInterface
+    interface_enabled = yes
+    target_host = 127.0.0.1
+    target_port = %d
+`, port)
+	clientConfigPath := filepath.Join(clientConfigDir, "config")
+	if err := os.WriteFile(clientConfigPath, []byte(clientConfig), 0o644); err != nil {
+		t.Fatalf("WriteFile client config: %v", err)
+	}
+
+	serverIdentity := filepath.Join(tmpDir, "server_identity")
+	clientIdentity := filepath.Join(tmpDir, "client_identity")
+
+	listenerReady := make(chan string, 1)
+	listenerDone := make(chan struct{}, 1)
+
+	go func() {
+		lCmd, buf := runGorncpBackground(t, serverConfigDir, "-l", "-n", "-i", serverIdentity, "-b", "2", "-v")
+		defer func() {
+			_ = lCmd.Process.Signal(os.Interrupt)
+			time.Sleep(500 * time.Millisecond)
+			_ = lCmd.Process.Kill()
+			t.Logf("=== LISTENER OUTPUT (complete) ===\n%s", buf.String())
+		}()
+
+		timeout := time.After(20 * time.Second)
+		var destHash string
+		for {
+			select {
+			case <-timeout:
+				t.Logf("=== LISTENER OUTPUT (timeout) ===\n%s", buf.String())
+				t.Errorf("listener goroutine: timed out waiting for listener to start.")
+				return
+			default:
+				out := buf.String()
+				if strings.Contains(out, "Listening on : <") {
+					parts := strings.Split(out, "Listening on : <")
+					if len(parts) > 1 {
+						destHash = strings.Split(parts[1], ">")[0]
+						t.Logf("listener goroutine: ready at %s", destHash)
+						listenerReady <- destHash
+						select {
+						case <-listenerDone:
+						case <-time.After(2 * time.Second):
+						}
+						return
+					}
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+		}
+	}()
+
+	var destHash string
+	select {
+	case destHash = <-listenerReady:
+		t.Logf("Listener ready, hash: %s", destHash)
+	case <-time.After(20 * time.Second):
+		t.Fatalf("Timed out waiting for listener to become ready")
+	}
+
+	time.Sleep(2 * time.Second)
+
+	testFile := filepath.Join(tmpDir, "test.txt")
+	testData := "Test file for fetch"
+	if err := os.WriteFile(testFile, []byte(testData), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	fOut := runGorncp(t, clientConfigDir, "-i", clientIdentity, "-w", "30", "-f", destHash, testFile, "-v")
+	t.Logf("Fetcher output:\n%s", fOut)
+
+	if !strings.Contains(fOut, "was not allowed by the remote") {
+		t.Errorf("Fetcher output does not contain expected error message")
+	}
+
+	close(listenerDone)
+}
