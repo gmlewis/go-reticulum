@@ -59,6 +59,7 @@ func findRnid(t *testing.T) string {
 }
 
 func TestParity_PrintIdentity(t *testing.T) {
+	skipShortIntegration(t)
 	t.Parallel()
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
@@ -96,6 +97,7 @@ func TestParity_PrintIdentity(t *testing.T) {
 }
 
 func TestParity_Export(t *testing.T) {
+	skipShortIntegration(t)
 	t.Parallel()
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
@@ -127,6 +129,7 @@ func TestParity_Export(t *testing.T) {
 }
 
 func TestParity_Hash(t *testing.T) {
+	skipShortIntegration(t)
 	t.Parallel()
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
@@ -164,6 +167,7 @@ func TestParity_Hash(t *testing.T) {
 }
 
 func TestParity_ImportHex(t *testing.T) {
+	skipShortIntegration(t)
 	t.Parallel()
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
@@ -211,6 +215,7 @@ func TestParity_ImportHex(t *testing.T) {
 }
 
 func TestParity_SignGoValidatePython(t *testing.T) {
+	skipShortIntegration(t)
 	t.Parallel()
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
@@ -244,6 +249,7 @@ func TestParity_SignGoValidatePython(t *testing.T) {
 }
 
 func TestParity_SignPythonValidateGo(t *testing.T) {
+	skipShortIntegration(t)
 	t.Parallel()
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
@@ -277,6 +283,7 @@ func TestParity_SignPythonValidateGo(t *testing.T) {
 }
 
 func TestParity_EncryptGoDecryptPython(t *testing.T) {
+	skipShortIntegration(t)
 	t.Parallel()
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
@@ -315,6 +322,7 @@ func TestParity_EncryptGoDecryptPython(t *testing.T) {
 }
 
 func TestParity_EncryptPythonDecryptGo(t *testing.T) {
+	skipShortIntegration(t)
 	t.Parallel()
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)

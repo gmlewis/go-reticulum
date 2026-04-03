@@ -106,6 +106,7 @@ func TestGolxmd_Help(t *testing.T) {
 }
 
 func TestGolxmd_Status_WithNoRemote(t *testing.T) {
+	skipShortIntegration(t)
 	t.Parallel()
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
@@ -143,6 +144,7 @@ func TestGolxmd_Status_WithNoRemote(t *testing.T) {
 }
 
 func TestGolxmd_Break_WithInvalidHash(t *testing.T) {
+	skipShortIntegration(t)
 	t.Parallel()
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
@@ -174,6 +176,7 @@ func TestGolxmd_Break_WithInvalidHash(t *testing.T) {
 }
 
 func TestGolxmd_Sync_WithInvalidHash(t *testing.T) {
+	skipShortIntegration(t)
 	t.Parallel()
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
@@ -205,6 +208,7 @@ func TestGolxmd_Sync_WithInvalidHash(t *testing.T) {
 }
 
 func TestGolxmd_Status_OutputFormat(t *testing.T) {
+	skipShortIntegration(t)
 	t.Parallel()
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
@@ -244,6 +248,7 @@ func TestGolxmd_Status_OutputFormat(t *testing.T) {
 }
 
 func TestGolxmd_Status_WithShowStatusFlag(t *testing.T) {
+	skipShortIntegration(t)
 	t.Parallel()
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
@@ -285,6 +290,7 @@ func TestGolxmd_Status_WithShowStatusFlag(t *testing.T) {
 }
 
 func TestGolxmd_Peers_OutputFormat(t *testing.T) {
+	skipShortIntegration(t)
 	t.Parallel()
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
@@ -336,6 +342,7 @@ func TestGolxmd_Peers_OutputFormat(t *testing.T) {
 }
 
 func TestGolxmd_Break_Timeout(t *testing.T) {
+	skipShortIntegration(t)
 	t.Parallel()
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
