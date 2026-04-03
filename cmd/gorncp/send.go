@@ -23,6 +23,27 @@ type statsEntry struct {
 	PhyGot float64
 }
 
+func waitForTransferCompletion(done <-chan struct{}, timeout time.Duration, onTick func()) error {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-done:
+			return nil
+		case <-ticker.C:
+			if onTick != nil {
+				onTick()
+			}
+		case <-timer.C:
+			return fmt.Errorf("File transfer timed out")
+		}
+	}
+}
+
 func doSend(ts rns.Transport, idPath string, destHashHex string, filePath string, noCompress bool, silent bool, phyRates bool, timeoutSec float64) {
 	id := prepareIdentity(idPath)
 
@@ -138,9 +159,12 @@ established:
 	var statsMu sync.Mutex
 	var speed, phySpeed float64
 
-	done := make(chan bool, 1)
+	done := make(chan struct{}, 1)
 	res.SetCallback(func(r *rns.Resource) {
-		done <- true
+		select {
+		case done <- struct{}{}:
+		default:
+		}
 	})
 	res.SetProgressCallback(func(r *rns.Resource) {
 		now := time.Now()
@@ -185,73 +209,64 @@ established:
 
 	start := time.Now()
 	i = 0
-	transferTicker := time.NewTicker(100 * time.Millisecond)
-	defer transferTicker.Stop()
-	transferTimeout := time.NewTimer(60 * time.Second)
-	defer transferTimeout.Stop()
-	for {
-		select {
-		case <-done:
-			if !silent {
-				duration := time.Since(start)
-				statsMu.Lock()
-				s := speed
-				ps := phySpeed
-				statsMu.Unlock()
-				if s == 0 {
-					s = float64(len(data)) / duration.Seconds()
-				}
-				if ps == 0 {
-					ps = float64(res.TotalSize()) / duration.Seconds()
-				}
+	if err := waitForTransferCompletion(done, 60*time.Second, func() {
+		if !silent {
+			// Update progress
+			prg := res.GetProgress()
+			segPrg := res.GetSegmentProgress()
+			percent := prg * 100.0
+			ps := rns.PrettySize(prg*float64(len(data)), "B")
+			ts := rns.PrettySize(float64(len(data)), "B")
+			duration := time.Since(start)
 
-				phyStr := ""
-				if phyRates {
-					phyStr = " (" + rns.PrettySize(ps, "bps") + " at physical layer)"
-				}
-				fmt.Printf("\rTransfer complete  100.0%% - %v of %v in %v - %vps%v\n",
-					rns.PrettySize(float64(len(data)), "B"),
-					rns.PrettySize(float64(len(data)), "B"),
-					rns.PrettyTime(duration.Seconds(), false, true),
-					rns.PrettySize(s, "bps"),
-					phyStr)
+			statsMu.Lock()
+			s := speed
+			psRate := phySpeed
+			statsMu.Unlock()
+
+			if s == 0 {
+				s = (prg * float64(len(data))) / duration.Seconds()
 			}
-			goto sent
-		case <-transferTicker.C:
-			if !silent {
-				// Update progress
-				prg := res.GetProgress()
-				segPrg := res.GetSegmentProgress()
-				percent := prg * 100.0
-				ps := rns.PrettySize(prg*float64(len(data)), "B")
-				ts := rns.PrettySize(float64(len(data)), "B")
-				duration := time.Since(start)
-
-				statsMu.Lock()
-				s := speed
-				psRate := phySpeed
-				statsMu.Unlock()
-
-				if s == 0 {
-					s = (prg * float64(len(data))) / duration.Seconds()
-				}
-				if psRate == 0 {
-					psRate = (segPrg * float64(res.TotalSize())) / duration.Seconds()
-				}
-
-				phyStr := ""
-				if phyRates {
-					phyStr = " (" + rns.PrettySize(psRate, "bps") + " at physical layer)"
-				}
-				fmt.Printf("\rTransferring file %v %.1f%% - %v of %v - %vps%v  ",
-					spinnerSymbols[i], percent, ps, ts, rns.PrettySize(s, "bps"), phyStr)
-				i = (i + 1) % len(spinnerSymbols)
+			if psRate == 0 {
+				psRate = (segPrg * float64(res.TotalSize())) / duration.Seconds()
 			}
-		case <-transferTimeout.C:
-			log.Fatalf("\nFile transfer timed out")
+
+			phyStr := ""
+			if phyRates {
+				phyStr = " (" + rns.PrettySize(psRate, "bps") + " at physical layer)"
+			}
+			fmt.Printf("\rTransferring file %v %.1f%% - %v of %v - %vps%v  ",
+				spinnerSymbols[i], percent, ps, ts, rns.PrettySize(s, "bps"), phyStr)
+			i = (i + 1) % len(spinnerSymbols)
 		}
+	}); err != nil {
+		log.Fatalf("\n%v", err)
 	}
-sent:
+
+	if !silent {
+		duration := time.Since(start)
+		statsMu.Lock()
+		s := speed
+		ps := phySpeed
+		statsMu.Unlock()
+		if s == 0 {
+			s = float64(len(data)) / duration.Seconds()
+		}
+		if ps == 0 {
+			ps = float64(res.TotalSize()) / duration.Seconds()
+		}
+
+		phyStr := ""
+		if phyRates {
+			phyStr = " (" + rns.PrettySize(ps, "bps") + " at physical layer)"
+		}
+		fmt.Printf("\rTransfer complete  100.0%% - %v of %v in %v - %vps%v\n",
+			rns.PrettySize(float64(len(data)), "B"),
+			rns.PrettySize(float64(len(data)), "B"),
+			rns.PrettyTime(duration.Seconds(), false, true),
+			rns.PrettySize(s, "bps"),
+			phyStr)
+	}
 
 	if res.Status() == rns.ResourceStatusComplete {
 		if !silent {

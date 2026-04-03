@@ -778,6 +778,32 @@ enable_transport = Yes
 	}
 }
 
+func TestFetchDownloadTimeout(t *testing.T) {
+	skipShortIntegration(t)
+
+	done := make(chan struct{})
+	err := waitForDownloadCompletion(done, 20*time.Millisecond, nil)
+	if err == nil {
+		t.Fatal("expected download wait to time out")
+	}
+	if err.Error() != "File download timed out" {
+		t.Fatalf("error = %q, want %q", err.Error(), "File download timed out")
+	}
+}
+
+func TestSendTransferTimeout(t *testing.T) {
+	skipShortIntegration(t)
+
+	done := make(chan struct{})
+	err := waitForTransferCompletion(done, 20*time.Millisecond, nil)
+	if err == nil {
+		t.Fatal("expected transfer wait to time out")
+	}
+	if err.Error() != "File transfer timed out" {
+		t.Fatalf("error = %q, want %q", err.Error(), "File transfer timed out")
+	}
+}
+
 func TestFetchNotAllowedByRemote(t *testing.T) {
 	skipShortIntegration(t)
 

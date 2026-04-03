@@ -47,8 +47,30 @@ func fetchResponseCode(response any) (int, bool) {
 	}
 }
 
+func waitForDownloadCompletion(done <-chan struct{}, timeout time.Duration, onTick func()) error {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-done:
+			return nil
+		case <-ticker.C:
+			if onTick != nil {
+				onTick()
+			}
+		case <-timer.C:
+			return fmt.Errorf("File download timed out")
+		}
+	}
+}
+
 func doFetch(ts rns.Transport, idPath string, destHashHex string, fileName string, noCompress bool, silent bool, savePath string, overwrite bool, phyRates bool, timeoutSec float64) {
 	_ = noCompress
+	_ = phyRates
 	id := prepareIdentity(idPath)
 
 	destHash, err := rns.HexToBytes(destHashHex)
@@ -208,13 +230,17 @@ established:
 			log.Fatalf("\r%v\rFetch request timed out\n", strings.Repeat(" ", 60))
 		}
 	}
+
 requested:
 
 	select {
 	case res := <-resourceStarted:
-		done := make(chan bool, 1)
+		done := make(chan struct{}, 1)
 		res.SetCallback(func(r *rns.Resource) {
-			done <- true
+			select {
+			case done <- struct{}{}:
+			default:
+			}
 		})
 		res.SetProgressCallback(func(r *rns.Resource) {
 			// Progress callback for tracking transfer progress
@@ -225,97 +251,88 @@ requested:
 		}
 		start := time.Now()
 		i = 0
-		transferTicker := time.NewTicker(100 * time.Millisecond)
-		defer transferTicker.Stop()
-		transferTimeout := time.NewTimer(60 * time.Second)
-		defer transferTimeout.Stop()
-		for {
-			select {
-			case <-done:
-				if !silent {
-					duration := time.Since(start)
-					speed := float64(res.TotalSize()) / duration.Seconds()
-					fmt.Printf("\rTransfer complete  100.0%% - %v of %v in %v - %vps\n",
-						rns.PrettySize(float64(res.TotalSize()), "B"),
-						rns.PrettySize(float64(res.TotalSize()), "B"),
-						rns.PrettyTime(duration.Seconds(), false, true),
-						rns.PrettySize(speed, "bps"))
-				}
-				if res.Status() == rns.ResourceStatusComplete {
-					metadata := res.Metadata()
-					if metadata == nil {
-						log.Fatalf("Invalid data received, ignoring resource")
-					}
-
-					nameBytes, ok := metadata["name"]
-					if !ok {
-						log.Fatalf("Invalid data received, ignoring resource")
-					}
-
-					filename := filepath.Base(string(nameBytes))
-					counter := 0
-					var savedFilename string
-
-					if savePath != "" {
-						savedFilename = filepath.Clean(filepath.Join(savePath, filename))
-						if !strings.HasPrefix(savedFilename, savePath+"/") {
-							log.Fatalf("Invalid save path %v, ignoring", savedFilename)
-						}
-					} else {
-						savedFilename = filename
-					}
-
-					fullSavePath := savedFilename
-					if overwrite {
-						if _, err := os.Stat(fullSavePath); err == nil {
-							if err := os.Remove(fullSavePath); err != nil {
-								rns.Logf("Could not overwrite existing file %v, renaming instead", rns.LogError, false, fullSavePath)
-							}
-						}
-					}
-
-					for {
-						if _, err := os.Stat(fullSavePath); os.IsNotExist(err) {
-							break
-						}
-						counter++
-						fullSavePath = savedFilename + "." + strconv.Itoa(counter)
-					}
-
-					if err := os.WriteFile(fullSavePath, res.Data(), 0o644); err != nil {
-						log.Fatalf("An error occurred while saving received resource: %v", err)
-					}
-
-					if !silent {
-						fmt.Printf("\n%v fetched from %v\n", fileName, rns.PrettyHex(destHash))
-					}
-				} else {
-					if !silent {
-						fmt.Printf("\nThe transfer failed\n")
-					}
-					os.Exit(1)
-				}
-				goto fetched
-			case <-transferTicker.C:
-				if !silent {
-					prg := res.GetProgress()
-					percent := prg * 100.0
-					ps := rns.PrettySize(prg*float64(res.TotalSize()), "B")
-					ts := rns.PrettySize(float64(res.TotalSize()), "B")
-					duration := time.Since(start)
-					speed := (prg * float64(res.TotalSize())) / duration.Seconds()
-					fmt.Printf("\rTransferring file %v %.1f%% - %v of %v - %vps  ",
-						spinnerSymbols[i], percent, ps, ts, rns.PrettySize(speed, "bps"))
-					i = (i + 1) % len(spinnerSymbols)
-				}
-			case <-transferTimeout.C:
-				log.Fatalf("\nFile download timed out")
+		if err := waitForDownloadCompletion(done, 60*time.Second, func() {
+			if !silent {
+				prg := res.GetProgress()
+				percent := prg * 100.0
+				ps := rns.PrettySize(prg*float64(res.TotalSize()), "B")
+				ts := rns.PrettySize(float64(res.TotalSize()), "B")
+				duration := time.Since(start)
+				speed := (prg * float64(res.TotalSize())) / duration.Seconds()
+				fmt.Printf("\rTransferring file %v %.1f%% - %v of %v - %vps  ",
+					spinnerSymbols[i], percent, ps, ts, rns.PrettySize(speed, "bps"))
+				i = (i + 1) % len(spinnerSymbols)
 			}
+		}); err != nil {
+			log.Fatalf("\n%v", err)
+		}
+
+		if !silent {
+			duration := time.Since(start)
+			speed := float64(res.TotalSize()) / duration.Seconds()
+			fmt.Printf("\rTransfer complete  100.0%% - %v of %v in %v - %vps\n",
+				rns.PrettySize(float64(res.TotalSize()), "B"),
+				rns.PrettySize(float64(res.TotalSize()), "B"),
+				rns.PrettyTime(duration.Seconds(), false, true),
+				rns.PrettySize(speed, "bps"))
+		}
+		if res.Status() == rns.ResourceStatusComplete {
+			metadata := res.Metadata()
+			if metadata == nil {
+				log.Fatalf("Invalid data received, ignoring resource")
+			}
+
+			nameBytes, ok := metadata["name"]
+			if !ok {
+				log.Fatalf("Invalid data received, ignoring resource")
+			}
+
+			filename := filepath.Base(string(nameBytes))
+			counter := 0
+			var savedFilename string
+
+			if savePath != "" {
+				savedFilename = filepath.Clean(filepath.Join(savePath, filename))
+				if !strings.HasPrefix(savedFilename, savePath+"/") {
+					log.Fatalf("Invalid save path %v, ignoring", savedFilename)
+				}
+			} else {
+				savedFilename = filename
+			}
+
+			fullSavePath := savedFilename
+			if overwrite {
+				if _, err := os.Stat(fullSavePath); err == nil {
+					if err := os.Remove(fullSavePath); err != nil {
+						rns.Logf("Could not overwrite existing file %v, renaming instead", rns.LogError, false, fullSavePath)
+					}
+				}
+			}
+
+			for {
+				if _, err := os.Stat(fullSavePath); os.IsNotExist(err) {
+					break
+				}
+				counter++
+				fullSavePath = savedFilename + "." + strconv.Itoa(counter)
+			}
+
+			if err := os.WriteFile(fullSavePath, res.Data(), 0o644); err != nil {
+				log.Fatalf("An error occurred while saving received resource: %v", err)
+			}
+
+			if !silent {
+				fmt.Printf("\n%v fetched from %v\n", fileName, rns.PrettyHex(destHash))
+			}
+		} else {
+			if !silent {
+				fmt.Printf("\nThe transfer failed\n")
+			}
+			os.Exit(1)
 		}
 	case <-time.After(10 * time.Second):
 		log.Fatalf("Timed out waiting for resource transfer to start")
 	}
-fetched:
 
 	link.Teardown()
 	time.Sleep(100 * time.Millisecond)
