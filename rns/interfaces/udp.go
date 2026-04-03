@@ -114,8 +114,17 @@ func (ui *UDPInterface) Send(data []byte) error {
 	return nil
 }
 
+// Status returns true if the interface is online.
+func (ui *UDPInterface) Status() bool {
+	return atomic.LoadInt32(&ui.running) == 1
+}
+
 func (ui *UDPInterface) Type() string {
 	return "UDPInterface"
+}
+
+func (ui *UDPInterface) IsOut() bool {
+	return true
 }
 
 // Detach closes the interface and stops the listener.

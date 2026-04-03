@@ -401,9 +401,3 @@ func (id *Identity) ToFile(path string) error {
 	}
 	return os.WriteFile(path, data, 0600)
 }
-
-// String returns a bracketed hex representation of the identity hash,
-// matching Python's str(identity) output.
-func (id *Identity) String() string {
-	return PrettyHex(id.Hash)
-}

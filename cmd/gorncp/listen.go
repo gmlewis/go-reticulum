@@ -18,7 +18,29 @@ import (
 )
 
 func doListen(ts rns.Transport, idPath string, noCompress bool, silent bool, allowFetch bool, jail string, savePath string, overwrite bool, announceInterval int, allowed []string, noAuth bool, printIdentity bool) {
-	id := prepareIdentity(idPath)
+	if idPath == "" {
+		home, _ := os.UserHomeDir()
+		idPath = filepath.Join(home, ".reticulum", "identities", AppName)
+	}
+
+	var id *rns.Identity
+	if _, err := os.Stat(idPath); err == nil {
+		id, err = rns.FromFile(idPath)
+		if err != nil {
+			rns.Logf("Could not load identity for rncp. The identity file at \"%v\" may be corrupt or unreadable.", rns.LogError, false, idPath)
+			os.Exit(2)
+		}
+	} else {
+		rns.Log("No valid saved identity found, creating new...", rns.LogInfo, false)
+		var err error
+		id, err = rns.NewIdentity(true)
+		if err != nil {
+			log.Fatalf("Could not create new identity: %v\n", err)
+		}
+		if err := id.ToFile(idPath); err != nil {
+			log.Fatalf("Could not persist identity %q: %v\n", idPath, err)
+		}
+	}
 
 	dest, err := rns.NewDestination(ts, id, rns.DestinationIn, rns.DestinationSingle, AppName, "receive")
 	if err != nil {
@@ -305,7 +327,7 @@ func doListen(ts rns.Transport, idPath string, noCompress bool, silent bool, all
 		})
 	})
 
-	fmt.Printf("gorncp listening on %v\n", rns.PrettyHex(dest.Hash))
+	fmt.Printf("Listening on : <%x>\n", dest.Hash)
 
 	if announceInterval >= 0 {
 		rns.Logf("Announcing destination (interval=%v)", rns.LogVerbose, false, announceInterval)

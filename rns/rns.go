@@ -664,56 +664,55 @@ func (r *Reticulum) initInterfaces() error {
 			r.transport.RegisterInterface(iface)
 			Logf("Started UDP interface %v", LogInfo, false, sub.Name)
 
-		case "TCPInterface", "TCPClientInterface", "TCPServerInterface":
+		case "TCPClientInterface":
 			targetHost, _ := sub.GetProperty("target_host")
-			targetPortStr, _ := sub.GetProperty("target_port")
-			listenIP, _ := sub.GetProperty("listen_ip")
-			listenPortStr, _ := sub.GetProperty("listen_port")
+			var targetPort int
+			if _, err := fmt.Sscanf(sub.Properties["target_port"], "%v", &targetPort); err != nil {
+				Logf("Invalid target_port for TCP client interface %v: %v", LogWarning, false, sub.Name, err)
+				continue
+			}
 
 			handler := func(data []byte, iface interfaces.Interface) {
 				r.transport.Inbound(data, iface)
 			}
 
-			if targetHost != "" && targetPortStr != "" {
-				var targetPort int
-				if _, err := fmt.Sscanf(targetPortStr, "%v", &targetPort); err != nil {
-					Logf("Invalid target_port for TCP interface %v: %v", LogWarning, false, sub.Name, err)
-					continue
-				}
-				iface, err := interfaces.NewTCPClientInterface(sub.Name, targetHost, targetPort, false, handler)
-				if err != nil {
-					Logf("Failed to initialize TCP client interface %v: %v", LogError, false, sub.Name, err)
-					continue
-				}
-				applyIFACConfig(iface, ifacConfig)
-				r.transport.RegisterInterface(iface)
-				Logf("Started TCP client interface %v to %v:%v", LogInfo, false, sub.Name, targetHost, targetPort)
-			} else if listenPortStr != "" {
-				if listenIP == "" {
-					listenIP = "0.0.0.0"
-				}
-				var listenPort int
-				if _, err := fmt.Sscanf(listenPortStr, "%v", &listenPort); err != nil {
-					Logf("Invalid listen_port for TCP interface %v: %v", LogWarning, false, sub.Name, err)
-					continue
-				}
-
-				onConnect := func(iface interfaces.Interface) {
-					applyIFACConfig(iface, ifacConfig)
-					r.transport.RegisterInterface(iface)
-				}
-
-				iface, err := interfaces.NewTCPServerInterface(sub.Name, listenIP, listenPort, handler, onConnect)
-				if err != nil {
-					Logf("Failed to initialize TCP server interface %v: %v", LogError, false, sub.Name, err)
-					continue
-				}
-				applyIFACConfig(iface, ifacConfig)
-				r.transport.RegisterInterface(iface)
-				Logf("Started TCP server interface %v on %v:%v", LogInfo, false, sub.Name, listenIP, listenPort)
-			} else {
-				Logf("Failed to initialize TCP interface %v: missing either target_host/target_port or listen_port", LogError, false, sub.Name)
+			iface, err := interfaces.NewTCPClientInterface(sub.Name, targetHost, targetPort, false, handler)
+			if err != nil {
+				Logf("Failed to initialize TCP client interface %v: %v", LogError, false, sub.Name, err)
+				continue
 			}
+			applyIFACConfig(iface, ifacConfig)
+			r.transport.RegisterInterface(iface)
+			Logf("Started TCP client interface %v to %v:%v", LogInfo, false, sub.Name, targetHost, targetPort)
+
+		case "TCPServerInterface":
+			listenIP, _ := sub.GetProperty("listen_ip")
+			if listenIP == "" {
+				listenIP = "0.0.0.0"
+			}
+			var listenPort int
+			if _, err := fmt.Sscanf(sub.Properties["listen_port"], "%v", &listenPort); err != nil {
+				Logf("Invalid listen_port for TCP server interface %v: %v", LogWarning, false, sub.Name, err)
+				continue
+			}
+
+			handler := func(data []byte, iface interfaces.Interface) {
+				r.transport.Inbound(data, iface)
+			}
+
+			onConnect := func(iface interfaces.Interface) {
+				applyIFACConfig(iface, ifacConfig)
+				r.transport.RegisterInterface(iface)
+			}
+
+			iface, err := interfaces.NewTCPServerInterface(sub.Name, listenIP, listenPort, handler, onConnect)
+			if err != nil {
+				Logf("Failed to initialize TCP server interface %v: %v", LogError, false, sub.Name, err)
+				continue
+			}
+			applyIFACConfig(iface, ifacConfig)
+			r.transport.RegisterInterface(iface)
+			Logf("Started TCP server interface %v on %v:%v", LogInfo, false, sub.Name, listenIP, listenPort)
 
 		case "I2PInterface":
 			handler := func(data []byte, iface interfaces.Interface) {
@@ -755,8 +754,7 @@ func (r *Reticulum) initInterfaces() error {
 						r.transport.RegisterInterface(iface)
 					}
 
-					iface, err := interfaces.NewTCPServerInterface(sub.Name, listenIP, listenPort, handler, onConnect)
-
+					iface, err := interfaces.NewI2PInterface(sub.Name, listenIP, listenPort, handler, onConnect)
 					if err != nil {
 						Logf("Failed to initialize I2P interface %v: %v", LogError, false, sub.Name, err)
 					} else {
@@ -846,8 +844,7 @@ func (r *Reticulum) initInterfaces() error {
 				r.transport.RegisterInterface(iface)
 			}
 
-			iface, err := interfaces.NewTCPServerInterface(sub.Name, listenIP, listenPort, handler, onConnect)
-
+			iface, err := interfaces.NewBackboneInterface(sub.Name, listenIP, listenPort, handler, onConnect)
 			if err != nil {
 				Logf("Failed to initialize Backbone interface %v: %v", LogError, false, sub.Name, err)
 				continue

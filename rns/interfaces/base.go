@@ -27,6 +27,8 @@ type IFACConfig struct {
 // InboundHandler rigorously defines the callback signature invoked universally across all interface types whenever a valid payload frame is successfully reassembled.
 // It acts as the critical bridge, injecting raw network bytes back into the core routing engine for cryptographic validation and dispatch.
 type InboundHandler func(data []byte, iface Interface)
+
+// ConnectHandler defines the callback signature invoked when a new connection is established on a server interface.
 type ConnectHandler func(iface Interface)
 
 // BaseInterface implements the foundational structure used by all concrete
@@ -108,13 +110,6 @@ func (bi *BaseInterface) BytesReceived() uint64 { return bi.rxBytes }
 // BytesSent returns the atomic metric recording bytes dispatched by this
 // interface. It provides observability into the interface's workload.
 func (bi *BaseInterface) BytesSent() uint64 { return bi.txBytes }
-
-// Status returns true if the interface is currently operational and connected.
-func (bi *BaseInterface) Status() bool { return !bi.IsDetached() }
-
-// IsOut returns true if the interface is configured as an outbound-only
-// broadcast or relay mechanism.
-func (bi *BaseInterface) IsOut() bool { return false }
 
 // SetIFACConfig reinitializes the interface's cryptographic authentication
 // layer using the provided parameters. It regenerates keying material and

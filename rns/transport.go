@@ -57,7 +57,6 @@ type Transport interface {
 	SetLinkMTUDiscovery(enabled bool)
 	SetNetworkIdentity(identity *Identity)
 	Start(storagePath string) error
-	Stop()
 	StartedAt() time.Time
 	UnblackholeIdentity(identityHash []byte) bool
 
@@ -1680,7 +1679,7 @@ func (ts *TransportSystem) LoadKnownDestinations(storagePath string) {
 		return
 	}
 
-	unpacked, err := msgpack.Unpack(data)
+	unpacked, err := Unpack(data)
 	if err != nil {
 		Logf("Failed to unpack known destinations: %v", LogError, false, err)
 		return
@@ -1804,7 +1803,7 @@ func (ts *TransportSystem) RequestPath(destHash []byte) error {
 
 // Inbound processes a raw packet received from an interface.
 func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
-	Logf("Inbound: received packet of %d bytes from %s", LogNotice, false, len(raw), iface.Name())
+	Logf("Inbound: received packet of %d bytes from %s", LogDebug, false, len(raw), iface.Name())
 	if ifac, ok := iface.(ifacInboundHook); ok {
 		processed, accepted := ifac.ApplyIFACInbound(raw)
 		if !accepted {
@@ -2201,7 +2200,6 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 			raw = processed
 		}
 
-		Logf("Outbound: sending packet of %d bytes on %s (type=%v, dest=%x)", LogDebug, false, len(raw), iface.Name(), packet.PacketType, packet.DestinationHash)
 		if err := iface.Send(raw); err != nil {
 			Log(fmt.Sprintf("Could not transmit on %v: %v", iface.Name(), err), LogError, false)
 			ts.InvalidatePathsViaInterface(iface)

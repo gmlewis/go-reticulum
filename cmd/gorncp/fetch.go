@@ -17,15 +17,23 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-func doFetch(ts rns.Transport, idPath string, destHashHex string, fileName string, noCompress bool, silent bool, savePath string, overwrite bool, phyRates bool, timeoutSec float64) {
+func doFetch(idPath string, destHashHex string, fileName string, noCompress bool, silent bool, savePath string, overwrite bool, phyRates bool, timeoutSec float64) {
 	_ = noCompress
-	id := prepareIdentity(idPath)
+	if idPath == "" {
+		home, _ := os.UserHomeDir()
+		idPath = filepath.Join(home, ".reticulum", "identities", AppName)
+	}
+	id, err := rns.FromFile(idPath)
+	if err != nil {
+		log.Fatalf("Could not load identity: %v\n", err)
+	}
 
 	destHash, err := rns.HexToBytes(destHashHex)
 	if err != nil {
 		log.Fatalf("Invalid destination hash: %v\n", err)
 	}
 
+	ts := rns.NewTransportSystem()
 	remoteID := rns.RecallIdentity(ts, destHash)
 	if remoteID == nil {
 		fmt.Printf("Path to <%x> requested  ", destHash)
