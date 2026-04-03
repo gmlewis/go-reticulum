@@ -107,6 +107,24 @@ func TestGenerateRoundTrip(t *testing.T) {
 	}
 }
 
+func TestLoadIdentityFallsBackToIdentityHash(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem()
+	id, err := rns.NewIdentity(true)
+	mustTest(t, err)
+
+	destHash := rns.FullHash([]byte("gornid-test-destination"))[:rns.TruncatedHashLength/8]
+	ts.Remember([]byte("packet-hash"), destHash, id.GetPublicKey(), nil)
+
+	recalled := loadIdentity(ts, id.HexHash, false, 0)
+	if recalled == nil {
+		t.Fatal("expected identity to be recalled by identity hash")
+	}
+	if recalled.HexHash != id.HexHash {
+		t.Fatalf("recalled identity hash = %v, want %v", recalled.HexHash, id.HexHash)
+	}
+}
+
 func TestImportExportRoundTrip(t *testing.T) {
 	t.Parallel()
 	tmpDir, cleanup := tempDir(t)
