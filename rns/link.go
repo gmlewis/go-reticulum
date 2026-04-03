@@ -553,10 +553,25 @@ func (l *Link) receive(packet *Packet) {
 func (l *Link) send(p *Packet) error {
 	l.mu.Lock()
 	l.lastOutbound = time.Now()
+	iface := l.attachedInterface
 	l.mu.Unlock()
-	Logf("Link.send: packet Context=%v, Data len=%v", LogVerbose, false, p.Context, len(p.Data))
+	Logf("Link.send: packet Context=%v, Data len=%v, attachedInterface=%v", LogVerbose, false, p.Context, len(p.Data), iface != nil)
+	if iface != nil {
+		// Send directly through the attached interface for link-specific packets
+		if err := iface.Send(p.Raw); err != nil {
+			Logf("Link.send: failed to send via attached interface: %v", LogError, false, err)
+			return err
+		}
+		p.Sent = true
+		p.SentAt = float64(time.Now().UnixNano()) / 1e9
+		if p.Receipt != nil {
+			p.Receipt.MarkSent(p.SentAt)
+		}
+		Logf("Link.send: packet sent via attached interface, err=<nil>", LogVerbose, false)
+		return nil
+	}
 	err := p.Send()
-	Logf("Link.send: packet sent, err=%v", LogVerbose, false, err)
+	Logf("Link.send: packet sent via transport, err=%v", LogVerbose, false, err)
 	return err
 }
 
