@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -41,6 +42,99 @@ func TestInvalidIdentityHashExitCode(t *testing.T) {
 				t.Errorf("exit code = 0 (no error), want %d", tt.wantExitCode)
 			}
 		})
+	}
+}
+
+func TestMalformedDestinationHashExitCode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		destHash string
+		wantMsg  string
+	}{
+		{
+			name:     "too short",
+			destHash: "abc123",
+			wantMsg:  "Allowed destination length is invalid, must be 32 hexadecimal characters (16 bytes).",
+		},
+		{
+			name:     "invalid hex",
+			destHash: "gggggggggggggggggggggggggggggggg",
+			wantMsg:  "Invalid destination entered. Check your input.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir, cleanup := tempDir(t)
+			defer cleanup()
+
+			configDir := filepath.Join(tmpDir, "config")
+			if err := os.MkdirAll(configDir, 0o755); err != nil {
+				t.Fatalf("failed to create config dir: %v", err)
+			}
+
+			identityPath := filepath.Join(tmpDir, "identity")
+			_ = os.Remove(identityPath)
+
+			inputFile := filepath.Join(tmpDir, "input.txt")
+			if err := os.WriteFile(inputFile, []byte("test input"), 0o644); err != nil {
+				t.Fatalf("failed to create input file: %v", err)
+			}
+
+			cmd := exec.Command("go", "run", ".", "-config", configDir, "-i", identityPath, tt.destHash, inputFile)
+			cmd.Dir = "."
+			cmd.Env = append(os.Environ(), "HOME="+tmpDir)
+			out, err := cmd.CombinedOutput()
+			if err == nil {
+				t.Fatalf("expected malformed destination hash to fail, output: %s", string(out))
+			}
+			exitErr, ok := err.(*exec.ExitError)
+			if !ok {
+				t.Fatalf("expected exit error, got %T: %v", err, err)
+			}
+			if got := exitErr.ExitCode(); got != 1 {
+				t.Fatalf("exit code = %d, want 1; output: %s", got, string(out))
+			}
+			if !strings.Contains(string(out), tt.wantMsg) {
+				t.Fatalf("output does not contain %q: %s", tt.wantMsg, string(out))
+			}
+		})
+	}
+}
+
+func TestMissingSendFileExitCode(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+
+	configDir := filepath.Join(tmpDir, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
+
+	identityPath := filepath.Join(tmpDir, "identity")
+	missingFile := filepath.Join(tmpDir, "missing.txt")
+	destHash := "0123456789abcdef0123456789abcdef"
+
+	cmd := exec.Command("go", "run", ".", "-config", configDir, "-i", identityPath, destHash, missingFile)
+	cmd.Dir = "."
+	cmd.Env = append(os.Environ(), "HOME="+tmpDir)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected missing send file to fail, output: %s", string(out))
+	}
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok {
+		t.Fatalf("expected exit error, got %T: %v", err, err)
+	}
+	if got := exitErr.ExitCode(); got != 1 {
+		t.Fatalf("exit code = %d, want 1; output: %s", got, string(out))
+	}
+	if !strings.Contains(string(out), "File not found") {
+		t.Fatalf("output does not contain %q: %s", "File not found", string(out))
 	}
 }
 

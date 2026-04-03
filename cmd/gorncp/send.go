@@ -45,12 +45,20 @@ func waitForTransferCompletion(done <-chan struct{}, timeout time.Duration, onTi
 }
 
 func doSend(ts rns.Transport, idPath string, destHashHex string, filePath string, noCompress bool, silent bool, phyRates bool, timeoutSec float64) {
-	id := prepareIdentity(idPath)
-
-	destHash, err := rns.HexToBytes(destHashHex)
+	destHash, err := parseDestinationHash(destHashHex)
 	if err != nil {
-		log.Fatalf("Invalid destination hash: %v\n", err)
+		log.Fatalf("%v\n", err)
 	}
+
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		log.Fatalf("File not found\n")
+	}
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		log.Fatalf("Could not read file: %v\n", err)
+	}
+
+	id := prepareIdentity(idPath)
 
 	remoteID := rns.RecallIdentity(ts, destHash)
 	if remoteID == nil {
@@ -131,14 +139,6 @@ established:
 
 	if err := link.Identify(id); err != nil {
 		log.Fatalf("Could not identify local node on link: %v\n", err)
-	}
-
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		log.Fatalf("File not found\n")
-	}
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		log.Fatalf("Could not read file: %v\n", err)
 	}
 
 	metadata := map[string][]byte{

@@ -73,9 +73,9 @@ func doFetch(ts rns.Transport, idPath string, destHashHex string, fileName strin
 	_ = phyRates
 	id := prepareIdentity(idPath)
 
-	destHash, err := rns.HexToBytes(destHashHex)
+	destHash, err := parseDestinationHash(destHashHex)
 	if err != nil {
-		log.Fatalf("Invalid destination hash: %v\n", err)
+		log.Fatalf("%v\n", err)
 	}
 
 	remoteID := rns.RecallIdentity(ts, destHash)
