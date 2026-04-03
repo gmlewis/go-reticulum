@@ -23,6 +23,12 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
+type nilFetchLinkResolver struct{}
+
+func (nilFetchLinkResolver) FindLink([]byte) *rns.Link {
+	return nil
+}
+
 type SafeBuffer struct {
 	buf bytes.Buffer
 	mu  sync.Mutex
@@ -655,4 +661,23 @@ share_instance = No
 	}
 
 	close(listenerDone)
+}
+
+func TestFetchRemoteErrorWhenLinkIsMissing(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+
+	testFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("Test file for fetch"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	handler := newFetchRequestHandler(true, "", false, nilFetchLinkResolver{})
+	response := handler("fetch_file", []byte(testFile), []byte("request-id"), []byte("link-id"), nil, time.Now())
+
+	if response != nil {
+		t.Fatalf("response=%v want=nil", response)
+	}
 }
