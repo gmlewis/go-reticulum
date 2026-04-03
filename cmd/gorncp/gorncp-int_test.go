@@ -545,6 +545,49 @@ share_instance = No
 	close(listenerDone)
 }
 
+func TestFetchPathLookupTimeout(t *testing.T) {
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+
+	configDir := filepath.Join(tmpDir, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll config: %v", err)
+	}
+
+	configPath := filepath.Join(configDir, "config")
+	configData := "[reticulum]\nshare_instance = No\nenable_transport = No\n"
+	if err := os.WriteFile(configPath, []byte(configData), 0o644); err != nil {
+		t.Fatalf("WriteFile config: %v", err)
+	}
+
+	binaryPath := filepath.Join(tmpDir, "gorncp")
+	buildCmd := exec.Command("go", "build", "-o", binaryPath, ".")
+	buildCmd.Dir = "."
+	buildCmd.Env = append(os.Environ(), "HOME="+tmpDir)
+	if err := buildCmd.Run(); err != nil {
+		t.Fatalf("go build failed: %v", err)
+	}
+
+	destHash := strings.Repeat("f", (rns.TruncatedHashLength/8)*2)
+	cmd := exec.Command(binaryPath, "-f", destHash, "missing.txt", "-w", "1", "-q", "--config", configDir)
+	cmd.Dir = "."
+	cmd.Env = append(os.Environ(), "HOME="+tmpDir)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected fetch path lookup timeout to fail, output: %s", string(out))
+	}
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok {
+		t.Fatalf("expected exit error, got %T: %v", err, err)
+	}
+	if got := exitErr.ExitCode(); got != 1 {
+		t.Fatalf("exit code = %d, want 1; output: %s", got, string(out))
+	}
+	if !strings.Contains(string(out), "Path not found") {
+		t.Fatalf("output does not contain %q: %s", "Path not found", string(out))
+	}
+}
+
 func TestFetchNotAllowedByRemote(t *testing.T) {
 	tmpDir, cleanup := tempDir(t)
 	defer cleanup()
