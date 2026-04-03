@@ -552,7 +552,10 @@ func (l *Link) send(p *Packet) error {
 	l.mu.Lock()
 	l.lastOutbound = time.Now()
 	l.mu.Unlock()
-	return p.Send()
+	Logf("Link.send: packet Context=%v, Data len=%v", LogVerbose, false, p.Context, len(p.Data))
+	err := p.Send()
+	Logf("Link.send: packet sent, err=%v", LogVerbose, false, err)
+	return err
 }
 
 // ValidateProof evaluates an incoming link proof packet and formally transitions the link into an active state upon success.
@@ -1101,15 +1104,18 @@ func (l *Link) handleRequest(requestID []byte, unpackedRequest []any) {
 }
 
 func (l *Link) handleResponse(requestID []byte, responseData any, metadata any) {
+	Logf("handleResponse called: requestID=%x, responseData=%v (type: %T)", LogVerbose, false, requestID, responseData, responseData)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	if l.status != LinkActive {
+		Logf("handleResponse: link not active, status=%v", LogVerbose, false, l.status)
 		return
 	}
 
 	for i, rr := range l.pendingRequests {
 		if bytes.Equal(rr.RequestID, requestID) {
+			Logf("handleResponse: found pending request, calling responseReceived", LogVerbose, false)
 			// Found it
 			rr.responseReceived(responseData, metadata)
 			// Remove from pending
@@ -1117,6 +1123,7 @@ func (l *Link) handleResponse(requestID []byte, responseData any, metadata any) 
 			break
 		}
 	}
+	Logf("handleResponse: done", LogVerbose, false)
 }
 
 func (l *Link) removePendingRequest(rr *RequestReceipt) {
