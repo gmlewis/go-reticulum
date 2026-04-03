@@ -643,6 +643,131 @@ func TestFetchLinkEstablishmentTimeout(t *testing.T) {
 	}
 }
 
+func TestFetchRequestTimeout(t *testing.T) {
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+
+	serverConfigDir := filepath.Join(tmpDir, "server_config")
+	clientConfigDir := filepath.Join(tmpDir, "client_config")
+	if err := os.MkdirAll(serverConfigDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll server_config: %v", err)
+	}
+	if err := os.MkdirAll(clientConfigDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll client_config: %v", err)
+	}
+
+	port, err := getFreePort()
+	if err != nil {
+		t.Fatalf("getFreePort: %v", err)
+	}
+
+	listenerIdentityPath := filepath.Join(tmpDir, "listener_identity")
+	serverConfig := fmt.Sprintf(`[reticulum]
+share_instance = No
+enable_transport = Yes
+network_identity = %v
+
+[interfaces]
+  [[TCP]]
+    type = TCPServerInterface
+    interface_enabled = yes
+    listen_ip = 127.0.0.1
+    listen_port = %d
+`, listenerIdentityPath, port)
+	if err := os.WriteFile(filepath.Join(serverConfigDir, "config"), []byte(serverConfig), 0o644); err != nil {
+		t.Fatalf("WriteFile server config: %v", err)
+	}
+
+	clientConfig := fmt.Sprintf(`[reticulum]
+share_instance = No
+enable_transport = Yes
+
+[interfaces]
+  [[TCP]]
+    type = TCPClientInterface
+    interface_enabled = yes
+    target_host = 127.0.0.1
+    target_port = %d
+`, port)
+	if err := os.WriteFile(filepath.Join(clientConfigDir, "config"), []byte(clientConfig), 0o644); err != nil {
+		t.Fatalf("WriteFile client config: %v", err)
+	}
+
+	listenerStack, err := rns.NewReticulum(rns.NewTransportSystem(), serverConfigDir)
+	if err != nil {
+		t.Fatalf("NewReticulum listener: %v", err)
+	}
+	defer func() { _ = listenerStack.Close() }()
+
+	listenerID, err := rns.FromFile(listenerIdentityPath)
+	if err != nil {
+		t.Fatalf("FromFile listener identity: %v", err)
+	}
+	listenerDest, err := rns.NewDestination(listenerStack.Transport(), listenerID, rns.DestinationIn, rns.DestinationSingle, AppName, "receive")
+	if err != nil {
+		t.Fatalf("NewDestination listener: %v", err)
+	}
+	_ = listenerDest
+
+	clientSeed := rns.NewTransportSystem()
+	clientSeed.Remember([]byte("seed-request"), listenerDest.Hash, listenerID.GetPublicKey(), nil)
+	clientSeed.SaveKnownDestinations(filepath.Join(clientConfigDir, "storage"))
+
+	_ = mustCreateIdentity(t, clientConfigDir, "client")
+	clientIdentityPath := filepath.Join(clientConfigDir, "identities", "client")
+
+	binaryPath := filepath.Join(tmpDir, "gorncp")
+	buildCmd := exec.Command("go", "build", "-o", binaryPath, ".")
+	buildCmd.Dir = "."
+	buildCmd.Env = append(os.Environ(), "HOME="+tmpDir)
+	if err := buildCmd.Run(); err != nil {
+		t.Fatalf("go build failed: %v", err)
+	}
+
+	cmd := exec.Command(binaryPath, "-config", clientConfigDir, "-i", clientIdentityPath, "-q", "-f", listenerDest.HexHash, "testfile.txt")
+	cmd.Dir = "."
+	cmd.Env = append(os.Environ(), "HOME="+tmpDir)
+	buf := &SafeBuffer{}
+	cmd.Stdout = buf
+	cmd.Stderr = buf
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start fetch timeout command: %v", err)
+	}
+	defer func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	var waitErr error
+	select {
+	case waitErr = <-done:
+	case <-time.After(30 * time.Second):
+		_ = cmd.Process.Kill()
+		waitErr = <-done
+	}
+
+	out := buf.String()
+	if waitErr == nil {
+		t.Fatalf("expected fetch request timeout to fail, output: %s", out)
+	}
+	exitErr, ok := waitErr.(*exec.ExitError)
+	if !ok {
+		t.Fatalf("expected exit error, got %T: %v", waitErr, waitErr)
+	}
+	if got := exitErr.ExitCode(); got != 1 {
+		t.Fatalf("exit code = %d, want 1; output: %s", got, out)
+	}
+	if !strings.Contains(out, "Fetch request timed out") {
+		t.Fatalf("output does not contain %q: %s", "Fetch request timed out", out)
+	}
+}
+
 func TestFetchNotAllowedByRemote(t *testing.T) {
 	tmpDir, cleanup := tempDir(t)
 	defer cleanup()

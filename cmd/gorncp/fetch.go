@@ -188,6 +188,10 @@ established:
 	}
 
 	i = 0
+	requestTicker := time.NewTicker(100 * time.Millisecond)
+	defer requestTicker.Stop()
+	requestTimeout := time.NewTimer(10 * time.Second)
+	defer requestTimeout.Stop()
 	for {
 		select {
 		case <-requestResolved:
@@ -195,12 +199,12 @@ established:
 				fmt.Printf("\b\b \n")
 			}
 			goto requested
-		case <-time.After(100 * time.Millisecond):
+		case <-requestTicker.C:
 			if !silent {
 				fmt.Printf("\b\b%v ", spinnerSymbols[i])
 				i = (i + 1) % len(spinnerSymbols)
 			}
-		case <-time.After(10 * time.Second):
+		case <-requestTimeout.C:
 			log.Fatalf("\r%v\rFetch request timed out\n", strings.Repeat(" ", 60))
 		}
 	}
@@ -221,6 +225,10 @@ requested:
 		}
 		start := time.Now()
 		i = 0
+		transferTicker := time.NewTicker(100 * time.Millisecond)
+		defer transferTicker.Stop()
+		transferTimeout := time.NewTimer(60 * time.Second)
+		defer transferTimeout.Stop()
 		for {
 			select {
 			case <-done:
@@ -288,7 +296,7 @@ requested:
 					os.Exit(1)
 				}
 				goto fetched
-			case <-time.After(100 * time.Millisecond):
+			case <-transferTicker.C:
 				if !silent {
 					prg := res.GetProgress()
 					percent := prg * 100.0
@@ -300,7 +308,7 @@ requested:
 						spinnerSymbols[i], percent, ps, ts, rns.PrettySize(speed, "bps"))
 					i = (i + 1) % len(spinnerSymbols)
 				}
-			case <-time.After(60 * time.Second):
+			case <-transferTimeout.C:
 				log.Fatalf("\nFile download timed out")
 			}
 		}

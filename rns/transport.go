@@ -1314,15 +1314,18 @@ func (ts *TransportSystem) FindLink(linkID []byte) *Link {
 
 // RegisterInterface adds a network interface to the transport system.
 func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
-	log.Printf("[Transport] RegisterInterface: %s, interfaces before: %d, destinations: %d", iface.Name(), len(ts.interfaces), len(ts.destinations))
 	ts.mu.Lock()
+	interfacesBefore := len(ts.interfaces)
+	destinationsBefore := len(ts.destinations)
 	ts.interfaces = append(ts.interfaces, iface)
 	ts.resolvePathInterfacesLocked()
 
 	destinationsToAnnounce := make([]*Destination, len(ts.destinations))
 	copy(destinationsToAnnounce, ts.destinations)
+	interfacesAfter := len(ts.interfaces)
 	ts.mu.Unlock()
-	log.Printf("[Transport] RegisterInterface: %s, interfaces after: %d, will announce %d destinations", iface.Name(), len(ts.interfaces), len(destinationsToAnnounce))
+	log.Printf("[Transport] RegisterInterface: %s, interfaces before: %d, destinations: %d", iface.Name(), interfacesBefore, destinationsBefore)
+	log.Printf("[Transport] RegisterInterface: %s, interfaces after: %d, will announce %d destinations", iface.Name(), interfacesAfter, len(destinationsToAnnounce))
 
 	// Start inbound processor for this interface
 	if reader, ok := iface.(interface {

@@ -86,6 +86,8 @@ func doSend(ts rns.Transport, idPath string, destHashHex string, filePath string
 	}
 
 	i := 0
+	linkSpinnerTicker := time.NewTicker(100 * time.Millisecond)
+	defer linkSpinnerTicker.Stop()
 	linkTimeout := time.Now().Add(time.Duration(timeoutSec * float64(time.Second)))
 	for {
 		select {
@@ -94,7 +96,7 @@ func doSend(ts rns.Transport, idPath string, destHashHex string, filePath string
 				fmt.Printf("\b\b \n")
 			}
 			goto established
-		case <-time.After(100 * time.Millisecond):
+		case <-linkSpinnerTicker.C:
 			if !silent {
 				fmt.Printf("\b\b%v ", spinnerSymbols[i])
 				i = (i + 1) % len(spinnerSymbols)
@@ -183,6 +185,10 @@ established:
 
 	start := time.Now()
 	i = 0
+	transferTicker := time.NewTicker(100 * time.Millisecond)
+	defer transferTicker.Stop()
+	transferTimeout := time.NewTimer(60 * time.Second)
+	defer transferTimeout.Stop()
 	for {
 		select {
 		case <-done:
@@ -211,7 +217,7 @@ established:
 					phyStr)
 			}
 			goto sent
-		case <-time.After(100 * time.Millisecond):
+		case <-transferTicker.C:
 			if !silent {
 				// Update progress
 				prg := res.GetProgress()
@@ -241,7 +247,7 @@ established:
 					spinnerSymbols[i], percent, ps, ts, rns.PrettySize(s, "bps"), phyStr)
 				i = (i + 1) % len(spinnerSymbols)
 			}
-		case <-time.After(60 * time.Second):
+		case <-transferTimeout.C:
 			log.Fatalf("\nFile transfer timed out")
 		}
 	}
