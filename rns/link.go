@@ -339,6 +339,7 @@ func (l *Link) receive(packet *Packet) {
 	l.lastInbound = time.Now()
 	l.mu.Unlock()
 
+	Logf("Link %x receive: packet context=%v", LogVerbose, false, l.linkID, packet.Context)
 	if packet.Context == ContextLrproof {
 		if err := l.ValidateProof(packet); err != nil {
 			Logf("Failed to validate link proof: %v", LogDebug, false, err)
@@ -366,8 +367,9 @@ func (l *Link) receive(packet *Packet) {
 			return
 		}
 		packet.Data = plaintext
+		Logf("Link %x decrypted packet, new len=%v", LogVerbose, false, l.linkID, len(packet.Data))
 	}
-	Logf("Link %x received packet: type=%v, context=%x, size=%v", LogDebug, false, l.linkID, packet.PacketType, packet.Context, len(packet.Data))
+	Logf("Link %x received packet: type=%v, context=%x, size=%v", LogVerbose, false, l.linkID, packet.PacketType, packet.Context, len(packet.Data))
 
 	switch packet.Context {
 	case ContextResourceAdv:
