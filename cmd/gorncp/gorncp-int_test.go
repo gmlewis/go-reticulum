@@ -681,3 +681,14 @@ func TestFetchRemoteErrorWhenLinkIsMissing(t *testing.T) {
 		t.Fatalf("response=%v want=nil", response)
 	}
 }
+
+func TestFetchUnknownUnauthorizedError(t *testing.T) {
+	t.Parallel()
+
+	rr := &rns.RequestReceipt{Status: rns.RequestSent}
+	msg := getFetchErrorMessage(rr, "testfile.txt")
+
+	if !strings.Contains(msg, "due to an unknown error (probably not authorised)") {
+		t.Fatalf("message=%q does not contain expected unknown-error text", msg)
+	}
+}
