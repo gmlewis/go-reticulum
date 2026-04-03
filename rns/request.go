@@ -26,7 +26,7 @@ const (
 // Request response codes
 const (
 	// ReqFetchNotAllowed indicates that fetching the requested file was not allowed by the remote.
-	ReqFetchNotAllowed = 0xF0
+	ReqFetchNotAllowed int64 = 0xF0
 )
 
 // RequestReceipt represents a receipt for a sent request.

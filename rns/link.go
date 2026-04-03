@@ -557,6 +557,11 @@ func (l *Link) send(p *Packet) error {
 	l.mu.Unlock()
 	Logf("Link.send: packet Context=%v, Data len=%v, attachedInterface=%v", LogVerbose, false, p.Context, len(p.Data), iface != nil)
 	if iface != nil {
+		if !p.Packed {
+			if err := p.Pack(); err != nil {
+				return err
+			}
+		}
 		// Send directly through the attached interface for link-specific packets
 		if err := iface.Send(p.Raw); err != nil {
 			Logf("Link.send: failed to send via attached interface: %v", LogError, false, err)

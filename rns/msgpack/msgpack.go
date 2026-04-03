@@ -386,23 +386,26 @@ func unpack(r *bytes.Reader) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return uint64(v), nil
+		return int64(v), nil
 	case b == uint16Val:
 		var v uint16
 		if err := binary.Read(r, binary.BigEndian, &v); err != nil {
 			return nil, err
 		}
-		return uint64(v), nil
+		return int64(v), nil
 	case b == uint32Val:
 		var v uint32
 		if err := binary.Read(r, binary.BigEndian, &v); err != nil {
 			return nil, err
 		}
-		return uint64(v), nil
+		return int64(v), nil
 	case b == uint64Val:
 		var v uint64
 		if err := binary.Read(r, binary.BigEndian, &v); err != nil {
 			return nil, err
+		}
+		if v <= math.MaxInt64 {
+			return int64(v), nil
 		}
 		return v, nil
 	case b == int8Val:

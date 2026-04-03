@@ -81,10 +81,10 @@ func TestPackUnpackExtended(t *testing.T) {
 		{"int64 min", int64(math.MinInt64)},
 		{"int64 max", int64(math.MaxInt64)},
 
-		{"uint8 min", uint64(0)},
-		{"uint8 max", uint64(math.MaxUint8)},
-		{"uint16 max", uint64(math.MaxUint16)},
-		{"uint32 max", uint64(math.MaxUint32)},
+		{"uint8 min", int64(0)},
+		{"uint8 max", int64(math.MaxUint8)},
+		{"uint16 max", int64(math.MaxUint16)},
+		{"uint32 max", int64(math.MaxUint32)},
 		{"uint64 max", uint64(math.MaxUint64)},
 
 		// Floats
