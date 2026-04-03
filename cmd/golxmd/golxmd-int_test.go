@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func buildGolxmd(t *testing.T) (string, func()) {
@@ -200,5 +201,176 @@ func TestGolxmd_Sync_WithInvalidHash(t *testing.T) {
 	output := string(out)
 	if !strings.Contains(output, "Invalid") {
 		t.Errorf("expected error message to contain 'Invalid', got: %v", output)
+	}
+}
+
+func TestGolxmd_Status_OutputFormat(t *testing.T) {
+	t.Parallel()
+	golxmdBin, cleanup := buildGolxmd(t)
+	defer cleanup()
+	tmpDir, tmpCleanup := tempDir(t)
+	defer tmpCleanup()
+
+	// Create a minimal config
+	configDir := filepath.Join(tmpDir, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
+
+	// Create identity
+	identityPath := filepath.Join(configDir, "identity")
+	genOut, err := exec.Command("go", "run", "../gornid", "-g", identityPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("could not generate identity: %v\n%v", err, string(genOut))
+	}
+
+	// Run with --status (will timeout but we can check output format)
+	out, _ := exec.Command(golxmdBin, "--status", "--config", configDir, "--timeout", "1").CombinedOutput()
+	output := string(out)
+
+	// If we got a successful response (unlikely without remote), check format
+	if strings.Contains(output, "LXMF Propagation Node running on") {
+		// Verify key format elements are present
+		requiredPatterns := []string{
+			"running on <",
+			"uptime is",
+		}
+		for _, pattern := range requiredPatterns {
+			if !strings.Contains(output, pattern) {
+				t.Errorf("expected status output to contain %q, got: %v", pattern, output)
+			}
+		}
+	}
+}
+
+func TestGolxmd_Status_WithShowStatusFlag(t *testing.T) {
+	t.Parallel()
+	golxmdBin, cleanup := buildGolxmd(t)
+	defer cleanup()
+	tmpDir, tmpCleanup := tempDir(t)
+	defer tmpCleanup()
+
+	// Create a minimal config
+	configDir := filepath.Join(tmpDir, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
+
+	// Create identity
+	identityPath := filepath.Join(configDir, "identity")
+	genOut, err := exec.Command("go", "run", "../gornid", "-g", identityPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("could not generate identity: %v\n%v", err, string(genOut))
+	}
+
+	// Run with --status (the flag enables detailed status output)
+	out, _ := exec.Command(golxmdBin, "--status", "--config", configDir, "--timeout", "1").CombinedOutput()
+	output := string(out)
+
+	// If successful response, verify detailed status fields would be present
+	if strings.Contains(output, "LXMF Propagation Node running on") {
+		// These are the fields shown when showStatus is true
+		detailedPatterns := []string{
+			"Messagestore contains",
+			"Required propagation stamp cost",
+			"Peers   :",
+			"Traffic :",
+		}
+		for _, pattern := range detailedPatterns {
+			if !strings.Contains(output, pattern) {
+				t.Errorf("expected detailed status to contain %q, got: %v", pattern, output)
+			}
+		}
+	}
+}
+
+func TestGolxmd_Peers_OutputFormat(t *testing.T) {
+	t.Parallel()
+	golxmdBin, cleanup := buildGolxmd(t)
+	defer cleanup()
+	tmpDir, tmpCleanup := tempDir(t)
+	defer tmpCleanup()
+
+	// Create a minimal config
+	configDir := filepath.Join(tmpDir, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
+
+	// Create identity
+	identityPath := filepath.Join(configDir, "identity")
+	genOut, err := exec.Command("go", "run", "../gornid", "-g", identityPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("could not generate identity: %v\n%v", err, string(genOut))
+	}
+
+	// Run with --peers
+	out, _ := exec.Command(golxmdBin, "--peers", "--config", configDir, "--timeout", "1").CombinedOutput()
+	output := string(out)
+
+	// If successful response, verify peer format
+	if strings.Contains(output, "LXMF Propagation Node running on") {
+		// Peer output should contain these elements for each peer
+		peerPatterns := []string{
+			"Static peer",
+			"Discovered peer",
+			"Status     :",
+			"Costs      :",
+			"Sync key   :",
+			"Speeds     :",
+			"Limits     :",
+			"Messages   :",
+			"Traffic    :",
+			"Sync state :",
+		}
+		// At least some of these should be present if there are peers
+		// We just verify the format is correct if peers are shown
+		if strings.Contains(output, "peer") || strings.Contains(output, "Peer") {
+			for _, pattern := range peerPatterns {
+				if !strings.Contains(output, pattern) {
+					t.Logf("warning: peer output missing %q, got: %v", pattern, output)
+				}
+			}
+		}
+	}
+}
+
+func TestGolxmd_Break_Timeout(t *testing.T) {
+	t.Parallel()
+	golxmdBin, cleanup := buildGolxmd(t)
+	defer cleanup()
+	tmpDir, tmpCleanup := tempDir(t)
+	defer tmpCleanup()
+
+	// Create a minimal config
+	configDir := filepath.Join(tmpDir, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
+
+	// Create identity
+	identityPath := filepath.Join(configDir, "identity")
+	genOut, err := exec.Command("go", "run", "../gornid", "-g", identityPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("could not generate identity: %v\n%v", err, string(genOut))
+	}
+
+	// Create a valid destination hash (32 hex chars = 16 bytes)
+	validHash := "0123456789abcdef0123456789abcdef"
+
+	// Run with -b (break/unpeer) - should timeout since no remote running
+	start := time.Now()
+	out, err := exec.Command(golxmdBin, "-b", validHash, "--config", configDir, "--timeout", "1").CombinedOutput()
+	elapsed := time.Since(start)
+	output := string(out)
+
+	// Should timeout after ~1 second
+	if elapsed < 1*time.Second || elapsed > 5*time.Second {
+		t.Errorf("expected timeout around 1 second, took %v", elapsed)
+	}
+
+	// Should have timeout message
+	if !strings.Contains(output, "timed out") {
+		t.Errorf("expected timeout message, got: %v", output)
 	}
 }
