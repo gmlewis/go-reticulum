@@ -1291,10 +1291,10 @@ func TestIntegrationPropagationMessageGetAccessGoToPython(t *testing.T) {
 	if len(responses) != 4 {
 		t.Fatalf("response len=%v want=4", len(responses))
 	}
-	if responses[0] != int64(peerErrorNoIdentity) {
+	if responses[0] != uint64(peerErrorNoIdentity) {
 		t.Fatalf("no identity response=%v want=%v", responses[0], peerErrorNoIdentity)
 	}
-	if responses[1] != int64(peerErrorNoAccess) {
+	if responses[1] != uint64(peerErrorNoAccess) {
 		t.Fatalf("no access response=%v want=%v", responses[1], peerErrorNoAccess)
 	}
 	if responses[2] != true {
@@ -1462,7 +1462,7 @@ func TestIntegrationPropagationControlRecoveryGoToPython(t *testing.T) {
 		t.Fatalf("response len=%v want=4", len(responses))
 	}
 
-	if responses[0] != int64(peerErrorNotFound) {
+	if responses[0] != uint64(peerErrorNotFound) {
 		t.Fatalf("sync before peer=%v want=%v", responses[0], peerErrorNotFound)
 	}
 	if responses[1] != true {
@@ -1471,7 +1471,7 @@ func TestIntegrationPropagationControlRecoveryGoToPython(t *testing.T) {
 	if responses[2] != true {
 		t.Fatalf("first unpeer=%v want=true", responses[2])
 	}
-	if responses[3] != int64(peerErrorNotFound) {
+	if responses[3] != uint64(peerErrorNotFound) {
 		t.Fatalf("second unpeer=%v want=%v", responses[3], peerErrorNotFound)
 	}
 }
@@ -1511,19 +1511,19 @@ func TestIntegrationPropagationControlPeerErrorsGoToPython(t *testing.T) {
 		t.Fatalf("response len=%v want=9", len(responses))
 	}
 
-	if responses[0] != int64(peerErrorNoIdentity) {
+	if responses[0] != uint64(peerErrorNoIdentity) {
 		t.Fatalf("sync no identity=%v want=%v", responses[0], peerErrorNoIdentity)
 	}
-	if responses[1] != int64(peerErrorNoAccess) {
+	if responses[1] != uint64(peerErrorNoAccess) {
 		t.Fatalf("sync no access=%v want=%v", responses[1], peerErrorNoAccess)
 	}
-	if responses[2] != int64(peerErrorInvalidData) {
+	if responses[2] != uint64(peerErrorInvalidData) {
 		t.Fatalf("sync invalid data=%v want=%v", responses[2], peerErrorInvalidData)
 	}
-	if responses[3] != int64(peerErrorInvalidData) {
+	if responses[3] != uint64(peerErrorInvalidData) {
 		t.Fatalf("unpeer invalid data=%v want=%v", responses[3], peerErrorInvalidData)
 	}
-	if responses[4] != int64(peerErrorNotFound) {
+	if responses[4] != uint64(peerErrorNotFound) {
 		t.Fatalf("sync not found=%v want=%v", responses[4], peerErrorNotFound)
 	}
 	if responses[5] != true {
@@ -1535,7 +1535,7 @@ func TestIntegrationPropagationControlPeerErrorsGoToPython(t *testing.T) {
 	if responses[7] != true {
 		t.Fatalf("first unpeer=%v want=true", responses[7])
 	}
-	if responses[8] != int64(peerErrorNotFound) {
+	if responses[8] != uint64(peerErrorNotFound) {
 		t.Fatalf("second unpeer=%v want=%v", responses[8], peerErrorNotFound)
 	}
 }
@@ -1728,10 +1728,10 @@ func TestIntegrationPropagationControlStatsGoToPython(t *testing.T) {
 	if len(responses) != 3 {
 		t.Fatalf("response len=%v want=3", len(responses))
 	}
-	if responses[0] != int64(peerErrorNoIdentity) {
+	if responses[0] != uint64(peerErrorNoIdentity) {
 		t.Fatalf("stats no identity=%v want=%v", responses[0], peerErrorNoIdentity)
 	}
-	if responses[1] != int64(peerErrorNoAccess) {
+	if responses[1] != uint64(peerErrorNoAccess) {
 		t.Fatalf("stats no access=%v want=%v", responses[1], peerErrorNoAccess)
 	}
 

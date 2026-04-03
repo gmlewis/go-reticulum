@@ -1066,7 +1066,11 @@ func (l *Link) handleRequest(requestID []byte, unpackedRequest []any) {
 	handler, ok := l.destination.requestHandlers[string(pathHash)]
 	l.mu.Unlock()
 
-	Logf("Request handler lookup: pathHash=%x, ok=%v, handler.Path=%v", LogVerbose, false, pathHash, ok, handler.Path)
+	handlerPath := "<nil>"
+	if handler != nil {
+		handlerPath = handler.Path
+	}
+	Logf("Request handler lookup: pathHash=%x, ok=%v, handler.Path=%v", LogVerbose, false, pathHash, ok, handlerPath)
 	if ok {
 		allowed := false
 		if handler.Allow == AllowAll {

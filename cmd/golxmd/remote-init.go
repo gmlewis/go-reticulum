@@ -589,6 +589,36 @@ const (
 	LXMPeerErrorTimeout      = 0xfe
 )
 
+func peerResponseCode(response any) (int, bool) {
+	switch code := response.(type) {
+	case int:
+		return code, true
+	case int8:
+		return int(code), true
+	case int16:
+		return int(code), true
+	case int32:
+		return int(code), true
+	case int64:
+		return int(code), true
+	case uint:
+		return int(code), true
+	case uint8:
+		return int(code), true
+	case uint16:
+		return int(code), true
+	case uint32:
+		return int(code), true
+	case uint64:
+		if code > uint64(^uint(0)>>1) {
+			return 0, false
+		}
+		return int(code), true
+	default:
+		return 0, false
+	}
+}
+
 func (c *clientT) requestSync(target string, remote string, configDirArg string, rnsConfigDir string, verbosity int, quietness int, timeout time.Duration, identityPathArg string) {
 	peerDestinationHash, err := rns.HexToBytes(target)
 	if err != nil || len(peerDestinationHash) != rns.TruncatedHashLength/8 {
@@ -640,20 +670,12 @@ func (c *clientT) requestSync(target string, remote string, configDirArg string,
 	}
 
 	if response == nil {
-		fmt.Printf("Request sync failed: %v\n", err)
-		osExit(1)
-		return
-	}
-
-	if response == nil {
 		fmt.Println("Empty response received")
 		osExit(207)
 		return
 	}
 
-	// Python comparison: if response == LXMF.LXMPeer.LXMPeer.ERROR_NO_IDENTITY:
-	// We need to handle the case where response is an int (error code)
-	if code, ok := response.(int); ok {
+	if code, ok := peerResponseCode(response); ok {
 		switch code {
 		case LXMPeerErrorNoIdentity:
 			fmt.Println("Remote received no identity")
@@ -680,38 +702,6 @@ func (c *clientT) requestSync(target string, remote string, configDirArg string,
 			osExit(210)
 			return
 		case LXMPeerErrorNotFound:
-			fmt.Println("The requested peer was not found")
-			osExit(206)
-			return
-		}
-	} else if code, ok := response.(uint64); ok {
-		// msgpack might unpack as uint64
-		switch code {
-		case uint64(LXMPeerErrorNoIdentity):
-			fmt.Println("Remote received no identity")
-			osExit(203)
-			return
-		case uint64(LXMPeerErrorNoAccess):
-			fmt.Println("Access denied")
-			osExit(204)
-			return
-		case uint64(LXMPeerErrorInvalidKey):
-			fmt.Println("Invalid peering key received")
-			osExit(208)
-			return
-		case uint64(LXMPeerErrorInvalidData):
-			fmt.Println("Invalid data received by remote")
-			osExit(205)
-			return
-		case uint64(LXMPeerErrorInvalidStamp):
-			fmt.Println("Invalid stamp received")
-			osExit(209)
-			return
-		case uint64(LXMPeerErrorThrottled):
-			fmt.Println("Remote is throttled, try again later")
-			osExit(210)
-			return
-		case uint64(LXMPeerErrorNotFound):
 			fmt.Println("The requested peer was not found")
 			osExit(206)
 			return
@@ -778,7 +768,7 @@ func (c *clientT) requestUnpeer(target string, remote string, configDirArg strin
 		return
 	}
 
-	if code, ok := response.(int); ok {
+	if code, ok := peerResponseCode(response); ok {
 		switch code {
 		case LXMPeerErrorNoIdentity:
 			fmt.Println("Remote received no identity")
@@ -805,37 +795,6 @@ func (c *clientT) requestUnpeer(target string, remote string, configDirArg strin
 			osExit(210)
 			return
 		case LXMPeerErrorNotFound:
-			fmt.Println("The requested peer was not found")
-			osExit(206)
-			return
-		}
-	} else if code, ok := response.(uint64); ok {
-		switch code {
-		case uint64(LXMPeerErrorNoIdentity):
-			fmt.Println("Remote received no identity")
-			osExit(203)
-			return
-		case uint64(LXMPeerErrorNoAccess):
-			fmt.Println("Access denied")
-			osExit(204)
-			return
-		case uint64(LXMPeerErrorInvalidKey):
-			fmt.Println("Invalid peering key received")
-			osExit(208)
-			return
-		case uint64(LXMPeerErrorInvalidData):
-			fmt.Println("Invalid data received by remote")
-			osExit(205)
-			return
-		case uint64(LXMPeerErrorInvalidStamp):
-			fmt.Println("Invalid stamp received")
-			osExit(209)
-			return
-		case uint64(LXMPeerErrorThrottled):
-			fmt.Println("Remote is throttled, try again later")
-			osExit(210)
-			return
-		case uint64(LXMPeerErrorNotFound):
 			fmt.Println("The requested peer was not found")
 			osExit(206)
 			return

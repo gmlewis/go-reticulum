@@ -17,6 +17,36 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
+func fetchResponseCode(response any) (int, bool) {
+	switch code := response.(type) {
+	case int:
+		return code, true
+	case int8:
+		return int(code), true
+	case int16:
+		return int(code), true
+	case int32:
+		return int(code), true
+	case int64:
+		return int(code), true
+	case uint:
+		return int(code), true
+	case uint8:
+		return int(code), true
+	case uint16:
+		return int(code), true
+	case uint32:
+		return int(code), true
+	case uint64:
+		if code > uint64(^uint(0)>>1) {
+			return 0, false
+		}
+		return int(code), true
+	default:
+		return 0, false
+	}
+}
+
 func doFetch(ts rns.Transport, idPath string, destHashHex string, fileName string, noCompress bool, silent bool, savePath string, overwrite bool, phyRates bool, timeoutSec float64) {
 	_ = noCompress
 	id := prepareIdentity(idPath)
@@ -132,7 +162,7 @@ established:
 				link.Teardown()
 				time.Sleep(150 * time.Millisecond)
 				os.Exit(0)
-			} else if rr.Response == rns.ReqFetchNotAllowed {
+			} else if code, ok := fetchResponseCode(rr.Response); ok && code == int(rns.ReqFetchNotAllowed) {
 				if !silent {
 					fmt.Printf("\r%v\r", strings.Repeat(" ", 60))
 				}

@@ -73,7 +73,7 @@ func getFetchErrorMessage(rr *rns.RequestReceipt, fileName string) string {
 			return fmt.Sprintf("\r%v\rFetch request failed, the file %v was not found on the remote\n", strings.Repeat(" ", 60), fileName)
 		} else if rr.Response == nil {
 			return fmt.Sprintf("\r%v\rFetch request failed due to an error on the remote system\n", strings.Repeat(" ", 60))
-		} else if rr.Response == rns.ReqFetchNotAllowed {
+		} else if code, ok := fetchResponseCode(rr.Response); ok && code == int(rns.ReqFetchNotAllowed) {
 			return fmt.Sprintf("\r%v\rFetch request failed, fetching the file %v was not allowed by the remote\n", strings.Repeat(" ", 60), fileName)
 		}
 	}
