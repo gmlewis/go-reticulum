@@ -40,26 +40,7 @@ func (sb *SafeBuffer) String() string {
 	return sb.buf.String()
 }
 
-var gorncpBin string
-
 func TestMain(m *testing.M) {
-	// Build gorncp once for the whole suite
-	tmpDir, err := os.MkdirTemp("", "gorncp-test-bin-")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create temp dir for build: %v\n", err)
-		os.Exit(1)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	binPath := filepath.Join(tmpDir, "gorncp")
-	cmd := exec.Command("go", "build", "-o", binPath, ".")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "go build failed: %v\nOutput: %s\n", err, string(out))
-		os.Exit(1)
-	}
-	gorncpBin = binPath
-
 	os.Exit(m.Run())
 }
 
@@ -110,25 +91,30 @@ func runPythonBackground(t *testing.T, configDir string, args ...string) (*exec.
 
 func runGorncp(t *testing.T, configDir string, args ...string) string {
 	t.Helper()
-	fullArgs := append([]string{"-config", configDir}, args...)
-	t.Logf("Running command: %s %s", gorncpBin, strings.Join(fullArgs, " "))
-	cmd := exec.Command(gorncpBin, fullArgs...)
+	fullArgs := append([]string{"run", ".", "-config", configDir}, args...)
+	t.Logf("Running command: go %s", strings.Join(fullArgs, " "))
+	cmd := exec.Command("go", fullArgs...)
+	cmd.Dir = "."
 	out, err := cmd.CombinedOutput()
-	_ = err
+	if err != nil {
+		t.Logf("Command failed with error: %v", err)
+	}
 	return string(out)
 }
 
 func runGorncpBackground(t *testing.T, configDir string, args ...string) (*exec.Cmd, *SafeBuffer) {
 	t.Helper()
-	fullArgs := append([]string{"-config", configDir}, args...)
-	t.Logf("Running background command: %s %s", gorncpBin, strings.Join(fullArgs, " "))
-	cmd := exec.Command(gorncpBin, fullArgs...)
+	fullArgs := append([]string{"run", ".", "-config", configDir}, args...)
+	t.Logf("Running background command: go %s", strings.Join(fullArgs, " "))
+	cmd := exec.Command("go", fullArgs...)
+	cmd.Dir = "."
 	buf := &SafeBuffer{}
 	cmd.Stdout = buf
 	cmd.Stderr = buf
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("runGorncpBackground failed: %v", err)
 	}
+	t.Logf("Background command started, PID: %d", cmd.Process.Pid)
 	return cmd, buf
 }
 
@@ -247,16 +233,21 @@ func TestHelpParity(t *testing.T) {
 }
 
 func TestUnauthenticatedTransferParity(t *testing.T) {
-	// Listener: Go, Sender: Go
 	tmpDir, cleanup := tempDir(t)
 	defer cleanup()
 
 	serverConfigDir := filepath.Join(tmpDir, "server_config")
 	clientConfigDir := filepath.Join(tmpDir, "client_config")
 	saveDir := filepath.Join(tmpDir, "save")
-	os.MkdirAll(serverConfigDir, 0o755)
-	os.MkdirAll(clientConfigDir, 0o755)
-	os.MkdirAll(saveDir, 0o755)
+	if err := os.MkdirAll(serverConfigDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll server_config: %v", err)
+	}
+	if err := os.MkdirAll(clientConfigDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll client_config: %v", err)
+	}
+	if err := os.MkdirAll(saveDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll save: %v", err)
+	}
 
 	port, err := getFreePort()
 	if err != nil {
@@ -269,7 +260,7 @@ share_instance = No
 
 [interfaces]
   [[TCP]]
-    type = TCPInterface
+    type = TCPServerInterface
     interface_enabled = yes
     listen_ip = 127.0.0.1
     listen_port = %d
@@ -278,14 +269,13 @@ share_instance = No
 	if err := os.WriteFile(serverConfigPath, []byte(serverConfig), 0o644); err != nil {
 		t.Fatalf("WriteFile server config: %v", err)
 	}
-	t.Logf("Wrote server config to %s", serverConfigPath)
 
 	clientConfig := fmt.Sprintf(`[reticulum]
 share_instance = No
 
 [interfaces]
   [[TCP]]
-    type = TCPInterface
+    type = TCPClientInterface
     interface_enabled = yes
     target_host = 127.0.0.1
     target_port = %d
@@ -294,49 +284,63 @@ share_instance = No
 	if err := os.WriteFile(clientConfigPath, []byte(clientConfig), 0o644); err != nil {
 		t.Fatalf("WriteFile client config: %v", err)
 	}
-	t.Logf("Wrote client config to %s", clientConfigPath)
 
 	serverIdentity := filepath.Join(tmpDir, "server_identity")
 	clientIdentity := filepath.Join(tmpDir, "client_identity")
 
-	// Start Go listener
-	lCmd, lBuf := runGorncpBackground(t, serverConfigDir, "-l", "-n", "-s", saveDir, "-i", serverIdentity, "-b", "2", "-v")
-	defer func() {
-		lCmd.Process.Kill()
-		t.Logf("Listener output:\n%s", lBuf.String())
+	listenerReady := make(chan string, 1)
+	listenerDone := make(chan struct{}, 1)
+
+	go func() {
+		lCmd, buf := runGorncpBackground(t, serverConfigDir, "-l", "-n", "-s", saveDir, "-i", serverIdentity, "-b", "2", "-v")
+		defer func() {
+			_ = lCmd.Process.Signal(os.Interrupt)
+			time.Sleep(500 * time.Millisecond)
+			_ = lCmd.Process.Kill()
+		}()
+
+		timeout := time.After(20 * time.Second)
+		var destHash string
+		for {
+			select {
+			case <-timeout:
+				t.Logf("=== LISTENER OUTPUT (complete) ===\n%s", buf.String())
+				t.Errorf("listener goroutine: timed out waiting for listener to start. Output above.")
+				return
+			default:
+				out := buf.String()
+				if strings.Contains(out, "Listening on : <") {
+					parts := strings.Split(out, "Listening on : <")
+					if len(parts) > 1 {
+						destHash = strings.Split(parts[1], ">")[0]
+						t.Logf("listener goroutine: ready at %s", destHash)
+						listenerReady <- destHash
+						<-listenerDone
+						t.Logf("=== LISTENER OUTPUT (complete) ===\n%s", buf.String())
+						return
+					}
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+		}
 	}()
 
-	// Wait for listener to be ready and get its hash
 	var destHash string
-	timeout := time.After(15 * time.Second)
-	for {
-		select {
-		case <-timeout:
-			t.Fatalf("timed out waiting for listener to start. Output:\n%s", lBuf.String())
-		default:
-			out := lBuf.String()
-			if strings.Contains(out, "Listening on : <") {
-				parts := strings.Split(out, "Listening on : <")
-				if len(parts) > 1 {
-					destHash = strings.Split(parts[1], ">")[0]
-					goto listenerReady
-				}
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
+	select {
+	case destHash = <-listenerReady:
+		t.Logf("Listener ready, hash: %s", destHash)
+	case <-time.After(20 * time.Second):
+		t.Fatalf("Timed out waiting for listener to become ready")
 	}
-listenerReady:
-	t.Logf("Listener ready at %s", destHash)
-	time.Sleep(5 * time.Second) // Let announce propagate (interval is 2 seconds)
 
-	// Create a test file
+	time.Sleep(5 * time.Second)
+
 	testFile := filepath.Join(tmpDir, "test.txt")
 	testData := "Hello from Go sender!"
 	if err := os.WriteFile(testFile, []byte(testData), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	// Start Go sender
 	sOut := runGorncp(t, clientConfigDir, "-i", clientIdentity, "-w", "30", destHash, testFile, "-v")
 	t.Logf("Sender output:\n%s", sOut)
 
@@ -344,15 +348,26 @@ listenerReady:
 		t.Errorf("Sender did not indicate transfer complete")
 	}
 
-	// Verify file received
 	receivedFile := filepath.Join(saveDir, "test.txt")
-	// Wait a bit for file to be written
-	for i := 0; i < 50; i++ {
-		if _, err := os.Stat(receivedFile); err == nil {
-			break
+	fileReady := make(chan struct{})
+	go func() {
+		for i := 0; i < 100; i++ {
+			if _, err := os.Stat(receivedFile); err == nil {
+				close(fileReady)
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
 		}
-		time.Sleep(100 * time.Millisecond)
+	}()
+
+	select {
+	case <-fileReady:
+		t.Logf("Received file detected")
+	case <-time.After(15 * time.Second):
+		t.Fatalf("Timed out waiting for received file to appear")
 	}
+
+	time.Sleep(500 * time.Millisecond)
 
 	data, err := os.ReadFile(receivedFile)
 	if err != nil {
@@ -361,6 +376,8 @@ listenerReady:
 	if string(data) != testData {
 		t.Errorf("Received data mismatch: expected %q, got %q", testData, string(data))
 	}
+
+	close(listenerDone)
 }
 
 func TestListenModeIdentityCreation(t *testing.T) {

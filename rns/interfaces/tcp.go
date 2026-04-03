@@ -8,6 +8,7 @@ package interfaces
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -279,6 +280,7 @@ func (tsi *TCPServerInterface) acceptLoop() {
 
 func (tsi *TCPServerInterface) handleConnection(conn net.Conn) {
 	name := fmt.Sprintf("Client %v on %v", conn.RemoteAddr().String(), tsi.name)
+	log.Printf("[TCP] Server %s: accepted connection from %s, creating spawned interface", tsi.name, conn.RemoteAddr())
 	// Create a TCPClientInterface from the connected socket
 	bi := NewBaseInterface(name, ModeFull, TCPBitrateGuess)
 	tci := &TCPClientInterface{
@@ -292,16 +294,28 @@ func (tsi *TCPServerInterface) handleConnection(conn net.Conn) {
 	tsi.spawnedInterfaces = append(tsi.spawnedInterfaces, tci)
 	tsi.mu.Unlock()
 
+	// Start readLoop FIRST so interface can receive data
+	go tci.readLoop()
+	log.Printf("[TCP] Server %s: started readLoop for %s", tsi.name, tci.name)
+
+	// Then register with transport (which will trigger re-announce)
+	log.Printf("[TCP] Server %s: spawned interface %s, calling connectHandler", tsi.name, tci.name)
 	if tsi.connectHandler != nil {
 		tsi.connectHandler(tci)
+		log.Printf("[TCP] Server %s: connectHandler completed for %s", tsi.name, tci.name)
 	}
-
-	go tci.readLoop()
 }
 
 func (tsi *TCPServerInterface) Send(data []byte) error {
-	// Server interface itself doesn't send, it broadcasts to all clients?
-	// In Python, TCPServerInterface.process_outgoing does nothing.
+	tsi.mu.Lock()
+	defer tsi.mu.Unlock()
+	for _, ci := range tsi.spawnedInterfaces {
+		if ci != nil && ci.Status() {
+			if err := ci.Send(data); err != nil {
+				fmt.Printf("Failed to send to spawned client %v: %v\n", ci.name, err)
+			}
+		}
+	}
 	return nil
 }
 
