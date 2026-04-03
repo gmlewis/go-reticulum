@@ -160,12 +160,12 @@ func doListen(ts rns.Transport, idPath string, noCompress bool, silent bool, all
 	}
 
 	// Always register fetch handler, but check allowFetch inside (matches Python behavior)
-	rns.Logf("Registering fetch_file handler, allowFetch=%v", rns.LogDebug, false, allowFetch)
+	rns.Logf("Registering fetch_file handler, allowFetch=%v", rns.LogVerbose, false, allowFetch)
 	dest.RegisterRequestHandler("fetch_file", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
-		rns.Logf("FETCH_HANDLER CALLED: allowFetch=%v, path=%v, data=%v, requestID=%x", rns.LogDebug, false, allowFetch, path, string(data), requestID)
+		rns.Logf("FETCH_HANDLER CALLED: allowFetch=%v, path=%v, data=%v, requestID=%x", rns.LogVerbose, false, allowFetch, path, string(data), requestID)
 		// Check if fetch is allowed
 		if !allowFetch {
-			rns.Logf("fetch not allowed, returning 0xF0", rns.LogDebug, false)
+			rns.Logf("fetch not allowed, returning 0xF0", rns.LogVerbose, false)
 			return byte(0xF0) // REQ_FETCH_NOT_ALLOWED
 		}
 

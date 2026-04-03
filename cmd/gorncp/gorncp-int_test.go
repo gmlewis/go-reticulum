@@ -595,7 +595,7 @@ share_instance = No
 	listenerDone := make(chan struct{}, 1)
 
 	go func() {
-		lCmd, buf := runGorncpBackground(t, serverConfigDir, "-l", "-n", "-i", serverIdentity, "-b", "2", "-v")
+		lCmd, buf := runGorncpBackground(t, serverConfigDir, "-l", "-n", "-i", serverIdentity, "-b", "2", "-vv")
 		defer func() {
 			_ = lCmd.Process.Signal(os.Interrupt)
 			time.Sleep(500 * time.Millisecond)
