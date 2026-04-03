@@ -73,7 +73,7 @@ func doFetch(ts rns.Transport, idPath string, destHashHex string, fileName strin
 		}
 
 		if !ts.HasPath(destHash) {
-			log.Fatalf("\r%v\rPath not found\n", strings.Repeat(" ", 60))
+			log.Fatalf("\r%v\rPath %q not found\n", strings.Repeat(" ", 60), destHashHex)
 		}
 		fmt.Printf("\b\b \n")
 		remoteID = rns.RecallIdentity(ts, destHash)

@@ -569,7 +569,7 @@ func TestFetchPathLookupTimeout(t *testing.T) {
 	}
 
 	destHash := strings.Repeat("f", (rns.TruncatedHashLength/8)*2)
-	cmd := exec.Command(binaryPath, "-f", destHash, "missing.txt", "-w", "1", "-q", "--config", configDir)
+	cmd := exec.Command(binaryPath, "-config", configDir, "-f", destHash, "missing.txt", "-w", "1", "-q")
 	cmd.Dir = "."
 	cmd.Env = append(os.Environ(), "HOME="+tmpDir)
 	out, err := cmd.CombinedOutput()
@@ -583,8 +583,63 @@ func TestFetchPathLookupTimeout(t *testing.T) {
 	if got := exitErr.ExitCode(); got != 1 {
 		t.Fatalf("exit code = %d, want 1; output: %s", got, string(out))
 	}
-	if !strings.Contains(string(out), "Path not found") {
-		t.Fatalf("output does not contain %q: %s", "Path not found", string(out))
+	expectedMsg := fmt.Sprintf("Path %q not found", destHash)
+	if !strings.Contains(string(out), expectedMsg) {
+		t.Fatalf("output does not contain %q: %s", expectedMsg, string(out))
+	}
+}
+
+func TestFetchLinkEstablishmentTimeout(t *testing.T) {
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+
+	configDir := filepath.Join(tmpDir, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll config: %v", err)
+	}
+	configPath := filepath.Join(configDir, "config")
+	configData := "[reticulum]\nshare_instance = No\nenable_transport = No\n"
+	if err := os.WriteFile(configPath, []byte(configData), 0o644); err != nil {
+		t.Fatalf("WriteFile config: %v", err)
+	}
+
+	seedTS := rns.NewTransportSystem()
+	seedID, err := rns.NewIdentity(true)
+	if err != nil {
+		t.Fatalf("NewIdentity: %v", err)
+	}
+	seedDest, err := rns.NewDestination(seedTS, seedID, rns.DestinationIn, rns.DestinationSingle, AppName, "receive")
+	if err != nil {
+		t.Fatalf("NewDestination: %v", err)
+	}
+	seedTS.Remember([]byte("seed-packet"), seedDest.Hash, seedID.GetPublicKey(), nil)
+	seedTS.SaveKnownDestinations(filepath.Join(configDir, "storage"))
+
+	binaryPath := filepath.Join(tmpDir, "gorncp")
+	buildCmd := exec.Command("go", "build", "-o", binaryPath, ".")
+	buildCmd.Dir = "."
+	buildCmd.Env = append(os.Environ(), "HOME="+tmpDir)
+	if err := buildCmd.Run(); err != nil {
+		t.Fatalf("go build failed: %v", err)
+	}
+
+	identityPath := filepath.Join(tmpDir, "identity")
+	cmd := exec.Command(binaryPath, "-config", configDir, "-f", seedDest.HexHash, "missing.txt", "-w", "1", "-q", "-i", identityPath)
+	cmd.Dir = "."
+	cmd.Env = append(os.Environ(), "HOME="+tmpDir)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected link establishment timeout to fail, output: %s", string(out))
+	}
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok {
+		t.Fatalf("expected exit error, got %T: %v", err, err)
+	}
+	if got := exitErr.ExitCode(); got != 1 {
+		t.Fatalf("exit code = %d, want 1; output: %s", got, string(out))
+	}
+	if !strings.Contains(string(out), "Link establishment timed out") {
+		t.Fatalf("output does not contain %q: %s", "Link establishment timed out", string(out))
 	}
 }
 

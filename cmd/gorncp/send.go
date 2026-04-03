@@ -51,7 +51,7 @@ func doSend(ts rns.Transport, idPath string, destHashHex string, filePath string
 		}
 
 		if !ts.HasPath(destHash) {
-			log.Fatalf("\r%v\rPath not found\n", strings.Repeat(" ", 60))
+			log.Fatalf("\r%v\rPath %q not found\n", strings.Repeat(" ", 60), destHashHex)
 		}
 		if !silent {
 			fmt.Printf("\b\b \n")
