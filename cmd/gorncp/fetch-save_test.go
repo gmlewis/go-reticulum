@@ -17,6 +17,7 @@ import (
 
 func TestFetchModeSavesReceivedFiles(t *testing.T) {
 	t.Parallel()
+	skipShortIntegration(t)
 
 	// Create temp directories
 	listenerDir, cleanup1 := tempDir(t)

@@ -239,6 +239,8 @@ func TestHelpParity(t *testing.T) {
 }
 
 func TestUnauthenticatedTransferParity(t *testing.T) {
+	skipShortIntegration(t)
+
 	tmpDir, cleanup := tempDir(t)
 	defer cleanup()
 
@@ -435,6 +437,8 @@ func TestListenModeIdentityCreation(t *testing.T) {
 }
 
 func TestFetchFileNotFoundOnRemote(t *testing.T) {
+	skipShortIntegration(t)
+
 	tmpDir, cleanup := tempDir(t)
 	defer cleanup()
 
@@ -546,6 +550,8 @@ share_instance = No
 }
 
 func TestFetchPathLookupTimeout(t *testing.T) {
+	skipShortIntegration(t)
+
 	tmpDir, cleanup := tempDir(t)
 	defer cleanup()
 
@@ -590,6 +596,8 @@ func TestFetchPathLookupTimeout(t *testing.T) {
 }
 
 func TestFetchLinkEstablishmentTimeout(t *testing.T) {
+	skipShortIntegration(t)
+
 	tmpDir, cleanup := tempDir(t)
 	defer cleanup()
 
@@ -644,6 +652,8 @@ func TestFetchLinkEstablishmentTimeout(t *testing.T) {
 }
 
 func TestFetchRequestTimeout(t *testing.T) {
+	skipShortIntegration(t)
+
 	tmpDir, cleanup := tempDir(t)
 	defer cleanup()
 
@@ -769,6 +779,8 @@ enable_transport = Yes
 }
 
 func TestFetchNotAllowedByRemote(t *testing.T) {
+	skipShortIntegration(t)
+
 	tmpDir, cleanup := tempDir(t)
 	defer cleanup()
 
@@ -887,6 +899,8 @@ share_instance = No
 }
 
 func TestFetchRemoteErrorWhenLinkIsMissing(t *testing.T) {
+	skipShortIntegration(t)
+
 	t.Parallel()
 
 	tmpDir, cleanup := tempDir(t)
@@ -906,6 +920,8 @@ func TestFetchRemoteErrorWhenLinkIsMissing(t *testing.T) {
 }
 
 func TestFetchUnknownUnauthorizedError(t *testing.T) {
+	skipShortIntegration(t)
+
 	t.Parallel()
 
 	rr := &rns.RequestReceipt{Status: rns.RequestSent}
