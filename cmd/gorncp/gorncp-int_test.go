@@ -190,15 +190,30 @@ func TestIdentityDisplayParity(t *testing.T) {
 	}
 
 	goLines := strings.Split(strings.TrimSpace(goOut), "\n")
-	if len(goLines) < 2 {
-		t.Fatalf("Not enough output lines:\nGo: %v", goLines)
+
+	// Find the Identity and Listening lines (may be preceded by log messages)
+	var identityLine, listeningLine string
+	for _, line := range goLines {
+		if strings.HasPrefix(line, "Identity     :") {
+			identityLine = line
+		}
+		if strings.HasPrefix(line, "Listening on :") {
+			listeningLine = line
+		}
 	}
 
-	if !strings.HasPrefix(goLines[0], "Identity     : <") || !strings.HasSuffix(goLines[0], ">") {
-		t.Errorf("Go identity line format wrong: %q", goLines[0])
+	if identityLine == "" {
+		t.Fatalf("Could not find Identity line in output:\n%s", goOut)
 	}
-	if !strings.HasPrefix(goLines[1], "Listening on : <") || !strings.HasSuffix(goLines[1], ">") {
-		t.Errorf("Go listening line format wrong: %q", goLines[1])
+	if listeningLine == "" {
+		t.Fatalf("Could not find Listening line in output:\n%s", goOut)
+	}
+
+	if !strings.HasPrefix(identityLine, "Identity     : <") || !strings.HasSuffix(identityLine, ">") {
+		t.Errorf("Go identity line format wrong: %q", identityLine)
+	}
+	if !strings.HasPrefix(listeningLine, "Listening on : <") || !strings.HasSuffix(listeningLine, ">") {
+		t.Errorf("Go listening line format wrong: %q", listeningLine)
 	}
 }
 
@@ -300,8 +315,8 @@ share_instance = No
 			t.Fatalf("timed out waiting for listener to start. Output:\n%s", lBuf.String())
 		default:
 			out := lBuf.String()
-			if strings.Contains(out, "rncp listening on <") {
-				parts := strings.Split(out, "rncp listening on <")
+			if strings.Contains(out, "Listening on : <") {
+				parts := strings.Split(out, "Listening on : <")
 				if len(parts) > 1 {
 					destHash = strings.Split(parts[1], ">")[0]
 					goto listenerReady
@@ -312,7 +327,7 @@ share_instance = No
 	}
 listenerReady:
 	t.Logf("Listener ready at %s", destHash)
-	time.Sleep(2 * time.Second) // Let announce propagate
+	time.Sleep(5 * time.Second) // Let announce propagate (interval is 2 seconds)
 
 	// Create a test file
 	testFile := filepath.Join(tmpDir, "test.txt")

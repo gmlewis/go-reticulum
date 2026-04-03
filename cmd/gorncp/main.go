@@ -39,6 +39,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
@@ -54,6 +55,44 @@ func validateIdentityHash(hash string) error {
 		return fmt.Errorf("invalid destination entered. check your input")
 	}
 	return nil
+}
+
+// prepareIdentity loads an identity from the specified path, or creates a new one if it doesn't exist.
+// Matches Python's prepare_identity behavior.
+func prepareIdentity(identityPath string) *rns.Identity {
+	if identityPath == "" {
+		home, _ := os.UserHomeDir()
+		identityPath = filepath.Join(home, ".reticulum", "identities", AppName)
+	}
+
+	var id *rns.Identity
+	if _, err := os.Stat(identityPath); err == nil {
+		var err error
+		id, err = rns.FromFile(identityPath)
+		if err != nil {
+			rns.Logf("Could not load identity for rncp. The identity file at \"%v\" may be corrupt or unreadable.", rns.LogError, false, identityPath)
+			os.Exit(2)
+		}
+	}
+
+	if id == nil {
+		rns.Log("No valid saved identity found, creating new...", rns.LogInfo, false)
+		// Create directory first (matches Python behavior)
+		identityDir := filepath.Dir(identityPath)
+		if err := os.MkdirAll(identityDir, 0o700); err != nil {
+			log.Fatalf("Could not create identity directory: %v\n", err)
+		}
+
+		var err error
+		id, err = rns.NewIdentity(true)
+		if err != nil {
+			log.Fatalf("Could not create new identity: %v\n", err)
+		}
+		if err := id.ToFile(identityPath); err != nil {
+			log.Fatalf("Could not persist identity %q: %v\n", identityPath, err)
+		}
+	}
+	return id
 }
 
 // AppName is the name of the application used for identity generation.
@@ -231,7 +270,7 @@ func main() {
 		}
 		destHashHex := flag.Arg(0)
 		fileName := flag.Arg(1)
-		doFetch(*identityPath, destHashHex, fileName, noCompress, silent, savePath, overwrite, phyRates, timeoutSec)
+		doFetch(ts, *identityPath, destHashHex, fileName, noCompress, silent, savePath, overwrite, phyRates, timeoutSec)
 	} else {
 		if flag.NArg() < 2 {
 			flag.Usage()
@@ -239,6 +278,6 @@ func main() {
 		}
 		destHashHex := flag.Arg(0)
 		filePath := flag.Arg(1)
-		doSend(*identityPath, destHashHex, filePath, noCompress, silent, phyRates, timeoutSec)
+		doSend(ts, *identityPath, destHashHex, filePath, noCompress, silent, phyRates, timeoutSec)
 	}
 }
