@@ -44,6 +44,13 @@ func waitForTransferCompletion(done <-chan struct{}, timeout time.Duration, onTi
 	}
 }
 
+func sendTransferError(status int) error {
+	if status == rns.ResourceStatusComplete {
+		return nil
+	}
+	return fmt.Errorf("The transfer failed")
+}
+
 func doSend(ts rns.Transport, idPath string, destHashHex string, filePath string, noCompress bool, silent bool, phyRates bool, timeoutSec float64) {
 	destHash, err := parseDestinationHash(destHashHex)
 	if err != nil {
@@ -268,17 +275,17 @@ established:
 			phyStr)
 	}
 
-	if res.Status() == rns.ResourceStatusComplete {
+	if err := sendTransferError(res.Status()); err == nil {
 		if !silent {
 			fmt.Printf("\n%v copied to %v\n", filePath, rns.PrettyHex(destHash))
 		}
 	} else {
 		if !silent {
-			fmt.Printf("\nThe transfer failed\n")
+			fmt.Printf("\n%v\n", err)
 		}
 		os.Exit(1)
 	}
 
 	link.Teardown()
-	time.Sleep(250 * time.Millisecond)
+	sleepAfterSendCompletion(time.Sleep)
 }

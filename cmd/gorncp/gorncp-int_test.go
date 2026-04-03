@@ -924,6 +924,15 @@ share_instance = No
 	close(listenerDone)
 }
 
+func TestSendTransferFailure(t *testing.T) {
+	if got := sendTransferError(rns.ResourceStatusFailed); got == nil || got.Error() != "The transfer failed" {
+		t.Fatalf("sendTransferError(ResourceStatusFailed) = %v, want %q", got, "The transfer failed")
+	}
+	if got := sendTransferError(rns.ResourceStatusComplete); got != nil {
+		t.Fatalf("sendTransferError(ResourceStatusComplete) = %v, want nil", got)
+	}
+}
+
 func TestFetchRemoteErrorWhenLinkIsMissing(t *testing.T) {
 	skipShortIntegration(t)
 

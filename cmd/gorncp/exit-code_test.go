@@ -187,13 +187,16 @@ func TestCorruptIdentityFileExitCode(t *testing.T) {
 	cmd := exec.Command(filepath.Join(tmpDir, "gorncp"), "-l", "-i", identityPath, "--config", configDir)
 	cmd.Dir = "."
 	cmd.Env = append(os.Environ(), "HOME="+tmpDir)
-	err := cmd.Run()
+	out, err := cmd.CombinedOutput()
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		if got := exitErr.ExitCode(); got != 2 {
 			t.Errorf("corrupt identity exit code = %d, want 2", got)
 		}
 	} else {
 		t.Error("expected exit error for corrupt identity")
+	}
+	if !strings.Contains(string(out), "may be corrupt or unreadable") {
+		t.Fatalf("output does not contain corrupt-identity message: %s", string(out))
 	}
 }
 
@@ -225,13 +228,16 @@ func TestOutputDirectoryNotFoundExitCode(t *testing.T) {
 	cmd := exec.Command(filepath.Join(tmpDir, "gorncp"), "-l", "-s", nonExistentDir, "--config", configDir)
 	cmd.Dir = "."
 	cmd.Env = append(os.Environ(), "HOME="+tmpDir)
-	err := cmd.Run()
+	out, err := cmd.CombinedOutput()
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		if got := exitErr.ExitCode(); got != 3 {
 			t.Errorf("output directory not found exit code = %d, want 3", got)
 		}
 	} else {
 		t.Error("expected exit error for non-existent output directory")
+	}
+	if !strings.Contains(string(out), "Output directory not found") {
+		t.Fatalf("output does not contain output-directory message: %s", string(out))
 	}
 }
 
@@ -268,12 +274,15 @@ func TestOutputDirectoryNotWritableExitCode(t *testing.T) {
 	cmd := exec.Command(filepath.Join(tmpDir, "gorncp"), "-l", "-s", readOnlyDir, "--config", configDir)
 	cmd.Dir = "."
 	cmd.Env = append(os.Environ(), "HOME="+tmpDir)
-	err := cmd.Run()
+	out, err := cmd.CombinedOutput()
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		if got := exitErr.ExitCode(); got != 4 {
 			t.Errorf("output directory not writable exit code = %d, want 4", got)
 		}
 	} else {
 		t.Error("expected exit error for non-writable output directory")
+	}
+	if !strings.Contains(string(out), "Output directory not writable") {
+		t.Fatalf("output does not contain output-directory message: %s", string(out))
 	}
 }

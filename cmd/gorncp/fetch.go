@@ -174,7 +174,7 @@ established:
 				}
 				fmt.Printf("Fetch request failed, the file %v was not found on the remote\n", fileName)
 				link.Teardown()
-				time.Sleep(150 * time.Millisecond)
+				sleepAfterFetchFailure(time.Sleep)
 				os.Exit(0)
 			} else if rr.Response == nil {
 				if !silent {
@@ -182,7 +182,7 @@ established:
 				}
 				fmt.Printf("Fetch request failed due to an error on the remote system\n")
 				link.Teardown()
-				time.Sleep(150 * time.Millisecond)
+				sleepAfterFetchFailure(time.Sleep)
 				os.Exit(0)
 			} else if code, ok := fetchResponseCode(rr.Response); ok && code == int(rns.ReqFetchNotAllowed) {
 				if !silent {
@@ -190,7 +190,7 @@ established:
 				}
 				fmt.Printf("Fetch request failed, fetching the file %v was not allowed by the remote\n", fileName)
 				link.Teardown()
-				time.Sleep(150 * time.Millisecond)
+				sleepAfterFetchFailure(time.Sleep)
 				os.Exit(0)
 			}
 			requestResolved <- true
@@ -200,7 +200,7 @@ established:
 			}
 			fmt.Printf("Fetch request failed due to an unknown error (probably not authorised)\n")
 			link.Teardown()
-			time.Sleep(150 * time.Millisecond)
+			sleepAfterFetchFailure(time.Sleep)
 			os.Exit(0)
 		}
 	}, nil, nil, 0)
@@ -335,5 +335,5 @@ requested:
 	}
 
 	link.Teardown()
-	time.Sleep(100 * time.Millisecond)
+	sleepAfterFetchCompletion(time.Sleep)
 }
