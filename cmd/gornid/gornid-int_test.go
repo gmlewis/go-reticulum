@@ -58,6 +58,54 @@ func findRnid(t *testing.T) string {
 	return path
 }
 
+func TestParity_Base64ImportExport(t *testing.T) {
+	skipShortIntegration(t)
+	t.Parallel()
+	rnidBin := findRnid(t)
+	gornidBin, cleanup1 := buildGornid(t)
+	defer cleanup1()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	idFile := filepath.Join(tmpDir, "test.id")
+
+	if out, err := exec.Command(gornidBin, "--config", tmpDir, "-g", idFile).CombinedOutput(); err != nil {
+		t.Fatalf("gornid -g failed: %v\n%v", err, string(out))
+	}
+
+	goOut, err := exec.Command(gornidBin, "--config", tmpDir, "-i", idFile, "-x", "-b").CombinedOutput()
+	if err != nil {
+		t.Fatalf("gornid -x -b failed: %v\n%v", err, string(goOut))
+	}
+
+	pyOut, err := exec.Command(rnidBin, "--config", tmpDir, "-i", idFile, "-x", "-b").CombinedOutput()
+	if err != nil {
+		t.Fatalf("rnid -x -b failed: %v\n%v", err, string(pyOut))
+	}
+
+	goKeys := extractKeyLines(string(goOut), "Exported Identity :")
+	pyKeys := extractKeyLines(string(pyOut), "Exported Identity :")
+	if goKeys["Exported Identity :"] != pyKeys["Exported Identity :"] {
+		t.Fatalf("base64 export mismatch:\n  Go:     %v\n  Python: %v", goKeys["Exported Identity :"], pyKeys["Exported Identity :"])
+	}
+
+	goImportOut, err := exec.Command(gornidBin, "--config", tmpDir, "-m", goKeys["Exported Identity :"], "-b", "-P").CombinedOutput()
+	if err != nil {
+		t.Fatalf("gornid base64 import failed: %v\n%v", err, string(goImportOut))
+	}
+	pyImportOut, err := exec.Command(rnidBin, "--config", tmpDir, "-m", pyKeys["Exported Identity :"], "-b", "-P").CombinedOutput()
+	if err != nil {
+		t.Fatalf("rnid base64 import failed: %v\n%v", err, string(pyImportOut))
+	}
+
+	goImportKeys := extractKeyLines(string(goImportOut), "Public Key  :", "Private Key :")
+	pyImportKeys := extractKeyLines(string(pyImportOut), "Public Key  :", "Private Key :")
+	for _, label := range []string{"Public Key  :", "Private Key :"} {
+		if goImportKeys[label] != pyImportKeys[label] {
+			t.Fatalf("base64 import mismatch for %v:\n  Go:     %v\n  Python: %v", label, goImportKeys[label], pyImportKeys[label])
+		}
+	}
+}
+
 func TestParity_PrintIdentity(t *testing.T) {
 	skipShortIntegration(t)
 	t.Parallel()

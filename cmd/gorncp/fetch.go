@@ -157,6 +157,9 @@ established:
 	requestResolved := make(chan bool, 1)
 	resourceStarted := make(chan *rns.Resource, 1)
 
+	if err := link.SetResourceStrategy(rns.AcceptAll); err != nil {
+		log.Fatalf("Could not set resource strategy: %v\n", err)
+	}
 	link.SetResourceCallback(func(adv *rns.ResourceAdvertisement) bool {
 		return true
 	})

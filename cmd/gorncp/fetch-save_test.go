@@ -101,13 +101,11 @@ func TestFetchModeSavesReceivedFiles(t *testing.T) {
 			t.Logf("Could not create resource: %v", err)
 			return false
 		}
-		resource.SetRequestID(requestID)
-		resource.SetResponse(true)
 		if err := resource.Advertise(); err != nil {
 			t.Logf("Could not advertise: %v", err)
 			return false
 		}
-		return nil
+		return true
 	}, rns.AllowAll, nil, false)
 
 	// Create link - must target the listener destination (receiver side)
@@ -146,6 +144,9 @@ func TestFetchModeSavesReceivedFiles(t *testing.T) {
 
 	// Set up resource callback to save file
 	savedFileChan := make(chan string, 1)
+	if err := link.SetResourceStrategy(rns.AcceptAll); err != nil {
+		t.Fatalf("Failed to set resource strategy: %v", err)
+	}
 	link.SetResourceCallback(func(adv *rns.ResourceAdvertisement) bool {
 		return true
 	})

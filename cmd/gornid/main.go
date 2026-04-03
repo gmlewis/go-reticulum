@@ -274,7 +274,7 @@ func doImport(data string, b64, b32, prv bool, writePath string, force bool) {
 	var idBytes []byte
 	var err error
 	if b64 {
-		idBytes, err = base64.RawURLEncoding.DecodeString(data)
+		idBytes, err = base64.URLEncoding.DecodeString(data)
 	} else if b32 {
 		idBytes, err = base32.StdEncoding.DecodeString(data)
 	} else {
@@ -405,7 +405,7 @@ func doPrintIdentity(id *rns.Identity, b64, b32, prv bool) {
 	pub := id.GetPublicKey()
 	var pubStr string
 	if b64 {
-		pubStr = base64.RawURLEncoding.EncodeToString(pub)
+		pubStr = base64.URLEncoding.EncodeToString(pub)
 	} else if b32 {
 		pubStr = base32.StdEncoding.EncodeToString(pub)
 	} else {
@@ -418,7 +418,7 @@ func doPrintIdentity(id *rns.Identity, b64, b32, prv bool) {
 		if prv {
 			var privStr string
 			if b64 {
-				privStr = base64.RawURLEncoding.EncodeToString(privKey)
+				privStr = base64.URLEncoding.EncodeToString(privKey)
 			} else if b32 {
 				privStr = base32.StdEncoding.EncodeToString(privKey)
 			} else {
@@ -439,7 +439,7 @@ func doExport(id *rns.Identity, b64, b32 bool) {
 	}
 	var privStr string
 	if b64 {
-		privStr = base64.RawURLEncoding.EncodeToString(priv)
+		privStr = base64.URLEncoding.EncodeToString(priv)
 	} else if b32 {
 		privStr = base32.StdEncoding.EncodeToString(priv)
 	} else {

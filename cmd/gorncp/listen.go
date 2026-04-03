@@ -72,15 +72,13 @@ func newFetchRequestHandler(allowFetch bool, jail string, noCompress bool, linkF
 			rns.Logf("Could not create resource: %v", rns.LogError, false, err)
 			return false
 		}
-		resource.SetRequestID(requestID)
-		resource.SetResponse(true)
 		if err := resource.Advertise(); err != nil {
 			rns.Logf("Could not advertise resource: %v", rns.LogError, false, err)
 			return false
 		}
 
 		rns.Logf("Sending file %v to client", rns.LogVerbose, false, filePath)
-		return nil
+		return true
 	}
 }
 
