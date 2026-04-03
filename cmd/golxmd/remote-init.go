@@ -619,8 +619,27 @@ func (c *clientT) requestSync(target string, remote string, configDirArg string,
 	if c.ts == nil {
 		c.ts = reticulum.Transport()
 	}
-	response, err := c.requestSyncInternal(c.identity, peerDestinationHash, targetIdentity, timeout, true)
-	if err != nil {
+	// Use mock function if set (for testing)
+	var response any
+	if c.mockRequestSync != nil {
+		var mockErr error
+		response, mockErr = c.mockRequestSync(c.identity, peerDestinationHash, targetIdentity, timeout, true)
+		if mockErr != nil {
+			fmt.Printf("Request sync failed: %v\n", mockErr)
+			osExit(1)
+			return
+		}
+	} else {
+		var syncErr error
+		response, syncErr = c.requestSyncInternal(c.identity, peerDestinationHash, targetIdentity, timeout, true)
+		if syncErr != nil {
+			fmt.Printf("Request sync failed: %v\n", syncErr)
+			osExit(1)
+			return
+		}
+	}
+
+	if response == nil {
 		fmt.Printf("Request sync failed: %v\n", err)
 		osExit(1)
 		return
@@ -644,9 +663,21 @@ func (c *clientT) requestSync(target string, remote string, configDirArg string,
 			fmt.Println("Access denied")
 			osExit(204)
 			return
+		case LXMPeerErrorInvalidKey:
+			fmt.Println("Invalid peering key received")
+			osExit(208)
+			return
 		case LXMPeerErrorInvalidData:
 			fmt.Println("Invalid data received by remote")
 			osExit(205)
+			return
+		case LXMPeerErrorInvalidStamp:
+			fmt.Println("Invalid stamp received")
+			osExit(209)
+			return
+		case LXMPeerErrorThrottled:
+			fmt.Println("Remote is throttled, try again later")
+			osExit(210)
 			return
 		case LXMPeerErrorNotFound:
 			fmt.Println("The requested peer was not found")
@@ -664,9 +695,21 @@ func (c *clientT) requestSync(target string, remote string, configDirArg string,
 			fmt.Println("Access denied")
 			osExit(204)
 			return
+		case uint64(LXMPeerErrorInvalidKey):
+			fmt.Println("Invalid peering key received")
+			osExit(208)
+			return
 		case uint64(LXMPeerErrorInvalidData):
 			fmt.Println("Invalid data received by remote")
 			osExit(205)
+			return
+		case uint64(LXMPeerErrorInvalidStamp):
+			fmt.Println("Invalid stamp received")
+			osExit(209)
+			return
+		case uint64(LXMPeerErrorThrottled):
+			fmt.Println("Remote is throttled, try again later")
+			osExit(210)
 			return
 		case uint64(LXMPeerErrorNotFound):
 			fmt.Println("The requested peer was not found")
@@ -709,11 +752,24 @@ func (c *clientT) requestUnpeer(target string, remote string, configDirArg strin
 	if c.ts == nil {
 		c.ts = reticulum.Transport()
 	}
-	response, err := c.requestUnpeerInternal(c.identity, peerDestinationHash, targetIdentity, timeout, true)
-	if err != nil {
-		fmt.Printf("Request unpeer failed: %v\n", err)
-		osExit(1)
-		return
+	// Use mock function if set (for testing)
+	var response any
+	if c.mockRequestUnpeer != nil {
+		var mockErr error
+		response, mockErr = c.mockRequestUnpeer(c.identity, peerDestinationHash, targetIdentity, timeout, true)
+		if mockErr != nil {
+			fmt.Printf("Request unpeer failed: %v\n", mockErr)
+			osExit(1)
+			return
+		}
+	} else {
+		var unpeerErr error
+		response, unpeerErr = c.requestUnpeerInternal(c.identity, peerDestinationHash, targetIdentity, timeout, true)
+		if unpeerErr != nil {
+			fmt.Printf("Request unpeer failed: %v\n", unpeerErr)
+			osExit(1)
+			return
+		}
 	}
 
 	if response == nil {
@@ -732,9 +788,21 @@ func (c *clientT) requestUnpeer(target string, remote string, configDirArg strin
 			fmt.Println("Access denied")
 			osExit(204)
 			return
+		case LXMPeerErrorInvalidKey:
+			fmt.Println("Invalid peering key received")
+			osExit(208)
+			return
 		case LXMPeerErrorInvalidData:
 			fmt.Println("Invalid data received by remote")
 			osExit(205)
+			return
+		case LXMPeerErrorInvalidStamp:
+			fmt.Println("Invalid stamp received")
+			osExit(209)
+			return
+		case LXMPeerErrorThrottled:
+			fmt.Println("Remote is throttled, try again later")
+			osExit(210)
 			return
 		case LXMPeerErrorNotFound:
 			fmt.Println("The requested peer was not found")
@@ -751,9 +819,21 @@ func (c *clientT) requestUnpeer(target string, remote string, configDirArg strin
 			fmt.Println("Access denied")
 			osExit(204)
 			return
+		case uint64(LXMPeerErrorInvalidKey):
+			fmt.Println("Invalid peering key received")
+			osExit(208)
+			return
 		case uint64(LXMPeerErrorInvalidData):
 			fmt.Println("Invalid data received by remote")
 			osExit(205)
+			return
+		case uint64(LXMPeerErrorInvalidStamp):
+			fmt.Println("Invalid stamp received")
+			osExit(209)
+			return
+		case uint64(LXMPeerErrorThrottled):
+			fmt.Println("Remote is throttled, try again later")
+			osExit(210)
 			return
 		case uint64(LXMPeerErrorNotFound):
 			fmt.Println("The requested peer was not found")

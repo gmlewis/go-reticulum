@@ -43,6 +43,10 @@ type clientT struct {
 	configpath   string
 	identitypath string
 	identity     *rns.Identity
+
+	// Function pointers for mocking in tests
+	mockRequestSync   func(id *rns.Identity, targetHash []byte, remoteIdentity *rns.Identity, timeout time.Duration, exitOnFail bool) (any, error)
+	mockRequestUnpeer func(id *rns.Identity, targetHash []byte, remoteIdentity *rns.Identity, timeout time.Duration, exitOnFail bool) (any, error)
 }
 
 const (

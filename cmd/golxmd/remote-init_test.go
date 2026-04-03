@@ -513,4 +513,191 @@ loglevel = 1
 		// TODO: fix this.
 		_, _ = c.requestSyncInternal(id, id.Hash, id, 100*time.Millisecond, false)
 	})
+
+	t.Run("requestSync handles ERROR_INVALID_KEY", func(t *testing.T) {
+		lastExitCode = 0
+		c := &clientT{
+			ts: rns.NewTransportSystem(),
+		}
+		tmpDir, cleanup := tempDir(t)
+		defer cleanup()
+		identityPath := filepath.Join(tmpDir, "identity")
+		id, err := rns.NewIdentity(true)
+		if err != nil {
+			t.Fatalf("NewIdentity: %v", err)
+		}
+		if err := id.ToFile(identityPath); err != nil {
+			t.Fatalf("ToFile: %v", err)
+		}
+		rnsDir := filepath.Join(tmpDir, "rns")
+		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		writeRNSConfig(t, rnsDir)
+
+		// Mock requestSync to return ERROR_INVALID_KEY
+		c.mockRequestSync = func(id *rns.Identity, targetHash []byte, remoteIdentity *rns.Identity, timeout time.Duration, exitOnFail bool) (any, error) {
+			return LXMPeerErrorInvalidKey, nil
+		}
+
+		c.requestSync(id.HexHash, "", tmpDir, rnsDir, 0, 0, 5*time.Second, "")
+		if lastExitCode != 208 {
+			t.Errorf("got exit code %v, want 208 for ERROR_INVALID_KEY", lastExitCode)
+		}
+	})
+
+	t.Run("requestSync handles ERROR_INVALID_STAMP", func(t *testing.T) {
+		lastExitCode = 0
+		c := &clientT{
+			ts: rns.NewTransportSystem(),
+		}
+		tmpDir, cleanup := tempDir(t)
+		defer cleanup()
+		identityPath := filepath.Join(tmpDir, "identity")
+		id, err := rns.NewIdentity(true)
+		if err != nil {
+			t.Fatalf("NewIdentity: %v", err)
+		}
+		if err := id.ToFile(identityPath); err != nil {
+			t.Fatalf("ToFile: %v", err)
+		}
+		rnsDir := filepath.Join(tmpDir, "rns")
+		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		writeRNSConfig(t, rnsDir)
+
+		c.mockRequestSync = func(id *rns.Identity, targetHash []byte, remoteIdentity *rns.Identity, timeout time.Duration, exitOnFail bool) (any, error) {
+			return LXMPeerErrorInvalidStamp, nil
+		}
+
+		c.requestSync(id.HexHash, "", tmpDir, rnsDir, 0, 0, 5*time.Second, "")
+		if lastExitCode != 209 {
+			t.Errorf("got exit code %v, want 209 for ERROR_INVALID_STAMP", lastExitCode)
+		}
+	})
+
+	t.Run("requestSync handles ERROR_THROTTLED", func(t *testing.T) {
+		lastExitCode = 0
+		c := &clientT{
+			ts: rns.NewTransportSystem(),
+		}
+		tmpDir, cleanup := tempDir(t)
+		defer cleanup()
+		identityPath := filepath.Join(tmpDir, "identity")
+		id, err := rns.NewIdentity(true)
+		if err != nil {
+			t.Fatalf("NewIdentity: %v", err)
+		}
+		if err := id.ToFile(identityPath); err != nil {
+			t.Fatalf("ToFile: %v", err)
+		}
+		rnsDir := filepath.Join(tmpDir, "rns")
+		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		writeRNSConfig(t, rnsDir)
+
+		c.mockRequestSync = func(id *rns.Identity, targetHash []byte, remoteIdentity *rns.Identity, timeout time.Duration, exitOnFail bool) (any, error) {
+			return LXMPeerErrorThrottled, nil
+		}
+
+		c.requestSync(id.HexHash, "", tmpDir, rnsDir, 0, 0, 5*time.Second, "")
+		if lastExitCode != 210 {
+			t.Errorf("got exit code %v, want 210 for ERROR_THROTTLED", lastExitCode)
+		}
+	})
+
+	t.Run("requestUnpeer handles ERROR_INVALID_KEY", func(t *testing.T) {
+		lastExitCode = 0
+		c := &clientT{
+			ts: rns.NewTransportSystem(),
+		}
+		tmpDir, cleanup := tempDir(t)
+		defer cleanup()
+		identityPath := filepath.Join(tmpDir, "identity")
+		id, err := rns.NewIdentity(true)
+		if err != nil {
+			t.Fatalf("NewIdentity: %v", err)
+		}
+		if err := id.ToFile(identityPath); err != nil {
+			t.Fatalf("ToFile: %v", err)
+		}
+		rnsDir := filepath.Join(tmpDir, "rns")
+		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		writeRNSConfig(t, rnsDir)
+
+		c.mockRequestUnpeer = func(id *rns.Identity, targetHash []byte, remoteIdentity *rns.Identity, timeout time.Duration, exitOnFail bool) (any, error) {
+			return LXMPeerErrorInvalidKey, nil
+		}
+
+		c.requestUnpeer(id.HexHash, "", tmpDir, rnsDir, 0, 0, 5*time.Second, "")
+		if lastExitCode != 208 {
+			t.Errorf("got exit code %v, want 208 for ERROR_INVALID_KEY", lastExitCode)
+		}
+	})
+
+	t.Run("requestUnpeer handles ERROR_INVALID_STAMP", func(t *testing.T) {
+		lastExitCode = 0
+		c := &clientT{
+			ts: rns.NewTransportSystem(),
+		}
+		tmpDir, cleanup := tempDir(t)
+		defer cleanup()
+		identityPath := filepath.Join(tmpDir, "identity")
+		id, err := rns.NewIdentity(true)
+		if err != nil {
+			t.Fatalf("NewIdentity: %v", err)
+		}
+		if err := id.ToFile(identityPath); err != nil {
+			t.Fatalf("ToFile: %v", err)
+		}
+		rnsDir := filepath.Join(tmpDir, "rns")
+		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		writeRNSConfig(t, rnsDir)
+
+		c.mockRequestUnpeer = func(id *rns.Identity, targetHash []byte, remoteIdentity *rns.Identity, timeout time.Duration, exitOnFail bool) (any, error) {
+			return LXMPeerErrorInvalidStamp, nil
+		}
+
+		c.requestUnpeer(id.HexHash, "", tmpDir, rnsDir, 0, 0, 5*time.Second, "")
+		if lastExitCode != 209 {
+			t.Errorf("got exit code %v, want 209 for ERROR_INVALID_STAMP", lastExitCode)
+		}
+	})
+
+	t.Run("requestUnpeer handles ERROR_THROTTLED", func(t *testing.T) {
+		lastExitCode = 0
+		c := &clientT{
+			ts: rns.NewTransportSystem(),
+		}
+		tmpDir, cleanup := tempDir(t)
+		defer cleanup()
+		identityPath := filepath.Join(tmpDir, "identity")
+		id, err := rns.NewIdentity(true)
+		if err != nil {
+			t.Fatalf("NewIdentity: %v", err)
+		}
+		if err := id.ToFile(identityPath); err != nil {
+			t.Fatalf("ToFile: %v", err)
+		}
+		rnsDir := filepath.Join(tmpDir, "rns")
+		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		writeRNSConfig(t, rnsDir)
+
+		c.mockRequestUnpeer = func(id *rns.Identity, targetHash []byte, remoteIdentity *rns.Identity, timeout time.Duration, exitOnFail bool) (any, error) {
+			return LXMPeerErrorThrottled, nil
+		}
+
+		c.requestUnpeer(id.HexHash, "", tmpDir, rnsDir, 0, 0, 5*time.Second, "")
+		if lastExitCode != 210 {
+			t.Errorf("got exit code %v, want 210 for ERROR_THROTTLED", lastExitCode)
+		}
+	})
 }
