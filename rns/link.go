@@ -428,6 +428,7 @@ func (l *Link) receive(packet *Packet) {
 		go l.handleRequest(requestID, unpackedRequest.([]any))
 
 	case ContextResponse:
+		Logf("Received ContextResponse packet, data len=%v", LogVerbose, false, len(packet.Data))
 		unpackedResponse, err := msgpack.Unpack(packet.Data)
 		if err != nil {
 			Logf("Failed to unpack response: %v", LogError, false, err)
@@ -436,6 +437,7 @@ func (l *Link) receive(packet *Packet) {
 		resList := unpackedResponse.([]any)
 		requestID := resList[0].([]byte)
 		responseData := resList[1]
+		Logf("Calling handleResponse for requestID=%x, responseData=%v (type: %T)", LogVerbose, false, requestID, responseData, responseData)
 		l.handleResponse(requestID, responseData, nil)
 
 	case ContextResourceReq:
@@ -1039,7 +1041,7 @@ func (l *Link) handleRequest(requestID []byte, unpackedRequest []any) {
 	handler, ok := l.destination.requestHandlers[string(pathHash)]
 	l.mu.Unlock()
 
-	Logf("Request handler lookup: pathHash=%x, ok=%v, handler.Path=%v", LogDebug, false, pathHash, ok, handler.Path)
+	Logf("Request handler lookup: pathHash=%x, ok=%v, handler.Path=%v", LogVerbose, false, pathHash, ok, handler.Path)
 	if ok {
 		allowed := false
 		if handler.Allow == AllowAll {
@@ -1055,13 +1057,14 @@ func (l *Link) handleRequest(requestID []byte, unpackedRequest []any) {
 			}
 		}
 
-		Logf("Request allowed check: allowed=%v, handler.Allow=%v", LogDebug, false, allowed, handler.Allow)
+		Logf("Request allowed check: allowed=%v, handler.Allow=%v", LogVerbose, false, allowed, handler.Allow)
 		if allowed {
-			Logf("Handling request %v for %v", LogDebug, false, requestID, handler.Path)
+			Logf("Handling request %v for %v", LogVerbose, false, requestID, handler.Path)
 			response := handler.ResponseGenerator(handler.Path, requestData, requestID, l.linkID, l.remoteIdentity, requestedAt)
-			Logf("Handler response: %v (type: %T)", LogDebug, false, response, response)
+			Logf("Handler response: %v (type: %T)", LogVerbose, false, response, response)
 
 			if response != nil {
+				Logf("Sending response for request %x", LogVerbose, false, requestID)
 				packedResponse, err := msgpack.Pack([]any{requestID, response})
 				if err != nil {
 					Logf("Failed to pack response: %v", LogError, false, err)
