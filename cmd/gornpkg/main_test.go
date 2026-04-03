@@ -8,7 +8,6 @@ package main
 import (
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -34,30 +33,23 @@ func tempDir(t *testing.T) (string, func()) {
 	return dir, cleanup
 }
 
-func buildGornpkg(t *testing.T) (string, func()) {
+func runGornpkg(t *testing.T, args ...string) (string, error) {
 	t.Helper()
-	tmpDir, cleanup := tempDir(t)
-	bin := filepath.Join(tmpDir, "gornpkg")
-	cmd := exec.Command("go", "build", "-o", bin, ".")
+	fullArgs := append([]string{"run", "."}, args...)
+	cmd := exec.Command("go", fullArgs...)
 	cmd.Dir = "."
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		cleanup()
-		t.Fatalf("failed to build gornpkg: %v\n%v", err, string(out))
-	}
-	return bin, cleanup
+	return string(out), err
 }
 
 func TestVersionOutput(t *testing.T) {
 	t.Parallel()
-	bin, cleanupBin := buildGornpkg(t)
-	defer cleanupBin()
-	out, err := exec.Command(bin, "--version").CombinedOutput()
+	out, err := runGornpkg(t, "--version")
 	if err != nil {
-		t.Fatalf("gornpkg --version failed: %v\n%v", err, string(out))
+		t.Fatalf("gornpkg --version failed: %v\n%v", err, out)
 	}
 	want := "gornpkg " + rns.VERSION
-	got := strings.TrimSpace(string(out))
+	got := strings.TrimSpace(out)
 	if got != want {
 		t.Errorf("version output = %q, want %q", got, want)
 	}
@@ -65,11 +57,8 @@ func TestVersionOutput(t *testing.T) {
 
 func TestHelpOutput(t *testing.T) {
 	t.Parallel()
-	bin, cleanupBin := buildGornpkg(t)
-	defer cleanupBin()
-	out, err := exec.Command(bin, "--help").CombinedOutput()
+	out, err := runGornpkg(t, "--help")
 	_ = err
-	output := string(out)
 	for _, want := range []string{
 		"Reticulum Meta Package Manager",
 		"--config",
@@ -78,37 +67,32 @@ func TestHelpOutput(t *testing.T) {
 		"--exampleconfig",
 		"--version",
 	} {
-		if !strings.Contains(output, want) {
-			t.Errorf("help output missing %q, got:\n%v", want, output)
+		if !strings.Contains(out, want) {
+			t.Errorf("help output missing %q, got:\n%v", want, out)
 		}
 	}
 }
 
 func TestExampleConfig(t *testing.T) {
 	t.Parallel()
-	bin, cleanupBin := buildGornpkg(t)
-	defer cleanupBin()
-	out, err := exec.Command(bin, "--exampleconfig").CombinedOutput()
+	out, err := runGornpkg(t, "--exampleconfig")
 	if err != nil {
-		t.Fatalf("gornpkg --exampleconfig failed: %v\n%v", err, string(out))
+		t.Fatalf("gornpkg --exampleconfig failed: %v\n%v", err, out)
 	}
-	output := string(out)
 	want := "# This is an example package manager configuration file.\n"
-	if output != want {
-		t.Errorf("exampleconfig output = %q, want %q", output, want)
+	if out != want {
+		t.Errorf("exampleconfig output = %q, want %q", out, want)
 	}
 }
 
 func TestVerboseStacking(t *testing.T) {
 	t.Parallel()
-	bin, cleanupBin := buildGornpkg(t)
-	defer cleanupBin()
-	out, err := exec.Command(bin, "-v", "-v", "--version").CombinedOutput()
+	out, err := runGornpkg(t, "-v", "-v", "--version")
 	if err != nil {
-		t.Fatalf("gornpkg -v -v --version failed: %v\n%v", err, string(out))
+		t.Fatalf("gornpkg -v -v --version failed: %v\n%v", err, out)
 	}
 	want := "gornpkg " + rns.VERSION
-	got := strings.TrimSpace(string(out))
+	got := strings.TrimSpace(out)
 	if got != want {
 		t.Errorf("version output = %q, want %q", got, want)
 	}
@@ -116,24 +100,20 @@ func TestVerboseStacking(t *testing.T) {
 
 func TestExitCodeZero(t *testing.T) {
 	t.Parallel()
-	bin, cleanupBin := buildGornpkg(t)
-	defer cleanupBin()
 	tmpDir, cleanup := tempDir(t)
 	defer cleanup()
-	cmd := exec.Command(bin, "--config", tmpDir)
-	out, err := cmd.CombinedOutput()
+	out, err := runGornpkg(t, "--config", tmpDir)
 	if err != nil {
-		t.Fatalf("gornpkg exited with error: %v\n%v", err, string(out))
+		t.Fatalf("gornpkg exited with error: %v\n%v", err, out)
 	}
 }
 
 func TestSIGINTCleanExit(t *testing.T) {
 	t.Parallel()
-	bin, cleanupBin := buildGornpkg(t)
-	defer cleanupBin()
 	tmpDir, cleanup := tempDir(t)
 	defer cleanup()
-	cmd := exec.Command(bin, "--config", tmpDir, "-v", "-v", "-v")
+	cmd := exec.Command("go", "run", ".", "--config", tmpDir, "-v", "-v", "-v")
+	cmd.Dir = "."
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("failed to start: %v", err)

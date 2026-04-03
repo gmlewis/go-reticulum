@@ -315,7 +315,10 @@ share_instance = No
 						destHash = strings.Split(parts[1], ">")[0]
 						t.Logf("listener goroutine: ready at %s", destHash)
 						listenerReady <- destHash
-						<-listenerDone
+						select {
+						case <-listenerDone:
+						case <-time.After(2 * time.Second):
+						}
 						t.Logf("=== LISTENER OUTPUT (complete) ===\n%s", buf.String())
 						return
 					}

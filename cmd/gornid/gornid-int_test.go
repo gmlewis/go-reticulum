@@ -16,6 +16,20 @@ import (
 	"testing"
 )
 
+func buildGornid(t *testing.T) (string, func()) {
+	t.Helper()
+	tmpDir, cleanup := tempDir(t)
+	bin := filepath.Join(tmpDir, "gornid")
+	cmd := exec.Command("go", "build", "-o", bin, ".")
+	cmd.Dir = "."
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		cleanup()
+		t.Fatalf("failed to build gornid: %v\n%v", err, string(out))
+	}
+	return bin, cleanup
+}
+
 // extractKeyLines extracts lines containing well-known label prefixes
 // from rnid/gornid output, stripping timestamps and log-level markers
 // so that Python and Go outputs can be compared directly.

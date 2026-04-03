@@ -9,11 +9,26 @@ package main
 
 import (
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
+
+func buildGornir(t *testing.T) (string, func()) {
+	t.Helper()
+	tmpDir, cleanup := tempDir(t)
+	bin := filepath.Join(tmpDir, "gornir")
+	cmd := exec.Command("go", "build", "-o", bin, ".")
+	cmd.Dir = "."
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		cleanup()
+		t.Fatalf("failed to build gornir: %v\n%v", err, string(out))
+	}
+	return bin, cleanup
+}
 
 func findRnir(t *testing.T) string {
 	t.Helper()

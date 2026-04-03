@@ -81,7 +81,7 @@ func TestCorruptIdentityFileExitCode(t *testing.T) {
 	// Write corrupt data to identity file
 	mustTest(t, os.WriteFile(identityPath, []byte("corrupt data"), 0o644))
 
-	// Build the binary First
+	// Build the binary first (go run doesn't preserve exit codes reliably)
 	buildCmd := exec.Command("go", "build", "-o", filepath.Join(tmpDir, "gorncp"), ".")
 	buildCmd.Dir = "."
 	buildCmd.Env = append(os.Environ(), "HOME="+tmpDir)
@@ -118,7 +118,7 @@ func TestOutputDirectoryNotFoundExitCode(t *testing.T) {
 		t.Fatalf("failed to create identity dir: %v", err)
 	}
 
-	// Build the binary First
+	// Build the binary first (go run doesn't preserve exit codes reliably)
 	buildCmd := exec.Command("go", "build", "-o", filepath.Join(tmpDir, "gorncp"), ".")
 	buildCmd.Dir = "."
 	buildCmd.Env = append(os.Environ(), "HOME="+tmpDir)
@@ -162,7 +162,7 @@ func TestOutputDirectoryNotWritableExitCode(t *testing.T) {
 		t.Fatalf("failed to create readonly dir: %v", err)
 	}
 
-	// Build the binary First
+	// Build the binary first (go run doesn't preserve exit codes reliably)
 	buildCmd := exec.Command("go", "build", "-o", filepath.Join(tmpDir, "gorncp"), ".")
 	buildCmd.Dir = "."
 	buildCmd.Env = append(os.Environ(), "HOME="+tmpDir)

@@ -8,7 +8,6 @@ package main
 import (
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -34,30 +33,22 @@ func tempDir(t *testing.T) (string, func()) {
 	return dir, cleanup
 }
 
-func buildGornir(t *testing.T) (string, func()) {
+func runGornir(t *testing.T, args ...string) (string, error) {
 	t.Helper()
-	tmpDir, cleanup := tempDir(t)
-	bin := filepath.Join(tmpDir, "gornir")
-	cmd := exec.Command("go", "build", "-o", bin, ".")
+	fullArgs := append([]string{"run", "."}, args...)
+	cmd := exec.Command("go", fullArgs...)
 	cmd.Dir = "."
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		cleanup()
-		t.Fatalf("failed to build gornir: %v\n%v", err, string(out))
-	}
-	return bin, cleanup
+	return string(out), err
 }
 
 func TestHelpOutput(t *testing.T) {
 	t.Parallel()
-	bin, cleanupBin := buildGornir(t)
-	defer cleanupBin()
-	out, err := exec.Command(bin, "--help").CombinedOutput()
+	out, err := runGornir(t, "--help")
 	// --help causes flag.Parse to exit with code 0 via flag.Usage
 	// but Go's flag package exits with code 2 for -help by default
 	// unless we set flag.Usage. Either way, check output content.
 	_ = err
-	output := string(out)
 	for _, want := range []string{
 		"Reticulum Distributed Identity Resolver",
 		"--config",
@@ -66,8 +57,8 @@ func TestHelpOutput(t *testing.T) {
 		"--exampleconfig",
 		"--version",
 	} {
-		if !strings.Contains(output, want) {
-			t.Errorf("help output missing %q, got:\n%v", want, output)
+		if !strings.Contains(out, want) {
+			t.Errorf("help output missing %q, got:\n%v", want, out)
 		}
 	}
 }
@@ -121,13 +112,10 @@ func TestCounterString(t *testing.T) {
 
 func TestExampleConfig(t *testing.T) {
 	t.Parallel()
-	bin, cleanupBin := buildGornir(t)
-	defer cleanupBin()
-	out, err := exec.Command(bin, "--exampleconfig").CombinedOutput()
+	out, err := runGornir(t, "--exampleconfig")
 	if err != nil {
-		t.Fatalf("gornir --exampleconfig failed: %v\n%v", err, string(out))
+		t.Fatalf("gornir --exampleconfig failed: %v\n%v", err, out)
 	}
-	output := string(out)
 	for _, want := range []string{
 		"example Reticulum config file",
 		"[reticulum]",
@@ -135,7 +123,7 @@ func TestExampleConfig(t *testing.T) {
 		"[logging]",
 		"[interfaces]",
 	} {
-		if !strings.Contains(output, want) {
+		if !strings.Contains(out, want) {
 			t.Errorf("exampleconfig output missing %q", want)
 		}
 	}
@@ -143,24 +131,20 @@ func TestExampleConfig(t *testing.T) {
 
 func TestExitCodeZero(t *testing.T) {
 	t.Parallel()
-	bin, cleanupBin := buildGornir(t)
-	defer cleanupBin()
 	tmpDir, cleanup := tempDir(t)
 	defer cleanup()
-	cmd := exec.Command(bin, "--config", tmpDir)
-	out, err := cmd.CombinedOutput()
+	out, err := runGornir(t, "--config", tmpDir)
 	if err != nil {
-		t.Fatalf("gornir exited with error: %v\n%v", err, string(out))
+		t.Fatalf("gornir exited with error: %v\n%v", err, out)
 	}
 }
 
 func TestSIGINTCleanExit(t *testing.T) {
 	t.Parallel()
-	bin, cleanupBin := buildGornir(t)
-	defer cleanupBin()
 	tmpDir, cleanup := tempDir(t)
 	defer cleanup()
-	cmd := exec.Command(bin, "--config", tmpDir, "-v", "-v", "-v")
+	cmd := exec.Command("go", "run", ".", "--config", tmpDir, "-v", "-v", "-v")
+	cmd.Dir = "."
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("failed to start: %v", err)
@@ -178,15 +162,12 @@ func TestSIGINTCleanExit(t *testing.T) {
 
 func TestVerboseStacking(t *testing.T) {
 	t.Parallel()
-	bin, cleanupBin := buildGornir(t)
-	defer cleanupBin()
-	// -v -v --version should not error — it should print version and exit
-	out, err := exec.Command(bin, "-v", "-v", "--version").CombinedOutput()
+	out, err := runGornir(t, "-v", "-v", "--version")
 	if err != nil {
-		t.Fatalf("gornir -v -v --version failed: %v\n%v", err, string(out))
+		t.Fatalf("gornir -v -v --version failed: %v\n%v", err, out)
 	}
 	want := "gornir " + rns.VERSION
-	got := strings.TrimSpace(string(out))
+	got := strings.TrimSpace(out)
 	if got != want {
 		t.Errorf("version output = %q, want %q", got, want)
 	}
@@ -194,14 +175,12 @@ func TestVerboseStacking(t *testing.T) {
 
 func TestVersionOutput(t *testing.T) {
 	t.Parallel()
-	bin, cleanupBin := buildGornir(t)
-	defer cleanupBin()
-	out, err := exec.Command(bin, "--version").CombinedOutput()
+	out, err := runGornir(t, "--version")
 	if err != nil {
-		t.Fatalf("gornir --version failed: %v\n%v", err, string(out))
+		t.Fatalf("gornir --version failed: %v\n%v", err, out)
 	}
 	want := "gornir " + rns.VERSION
-	got := strings.TrimSpace(string(out))
+	got := strings.TrimSpace(out)
 	if got != want {
 		t.Errorf("version output = %q, want %q", got, want)
 	}
