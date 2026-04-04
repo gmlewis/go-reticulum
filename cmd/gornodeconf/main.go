@@ -165,6 +165,10 @@ type options struct {
 func main() {
 	log.SetFlags(0)
 	if err := run(os.Args[1:]); err != nil {
+		if exitErr, ok := err.(exitCodeError); ok {
+			fmt.Fprintln(os.Stderr, exitErr.Error())
+			os.Exit(exitErr.code)
+		}
 		if err == flag.ErrHelp {
 			return
 		}
@@ -333,6 +337,19 @@ func parseArgs(args []string) (options, string, error) {
 	}
 
 	return opts, port, nil
+}
+
+type exitCodeError struct {
+	code int
+	err  error
+}
+
+func (e exitCodeError) Error() string {
+	return e.err.Error()
+}
+
+func (e exitCodeError) Unwrap() error {
+	return e.err
 }
 
 func splitArgs(args []string) ([]string, string) {

@@ -60,7 +60,14 @@ func (rt cliRuntime) runDeviceSigning(out io.Writer, port string) (err error) {
 		if _, writeErr := fmt.Fprintln(out, "Could not load device signing key"); writeErr != nil {
 			return writeErr
 		}
-		return err
+		return exitCodeError{code: 78, err: fmt.Errorf("No device signer loaded, cannot sign device: %w", err)}
+	}
+
+	if deviceSigner == nil {
+		if _, err := fmt.Fprintln(out, "No device signer loaded, cannot sign device"); err != nil {
+			return err
+		}
+		return exitCodeError{code: 78, err: errors.New("No device signer loaded, cannot sign device")}
 	}
 
 	signature, err := deviceSigner.Sign(snapshot.deviceHash)
