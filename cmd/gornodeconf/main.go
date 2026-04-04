@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 
@@ -158,9 +159,11 @@ type options struct {
 	hwrev                 int
 	getTargetFirmwareHash bool
 	getFirmwareHash       bool
+	debug                 bool
 }
 
 func main() {
+	log.SetFlags(0)
 	if err := run(os.Args[1:]); err != nil {
 		if err == flag.ErrHelp {
 			return
@@ -171,6 +174,10 @@ func main() {
 }
 
 func run(args []string) error {
+	return newRuntime().run(args)
+}
+
+func (rt cliRuntime) run(args []string) error {
 	if hasHelp(args) {
 		printHelp()
 		return nil
@@ -181,6 +188,7 @@ func run(args []string) error {
 		printHelp()
 		return err
 	}
+	rt.debug = opts.debug
 
 	if opts.version {
 		fmt.Printf("gornodeconf %v\n", rns.VERSION)
@@ -204,22 +212,22 @@ func run(args []string) error {
 		return handleGenerateKeys(opts.autoinstall)
 	}
 
-	if port, err = resolveLivePort(port, opts); err != nil {
+	if port, err = rt.resolveLivePort(port, opts); err != nil {
 		return err
 	}
 
 	if opts.getTargetFirmwareHash || opts.getFirmwareHash {
-		return runFirmwareHashReadbacks(os.Stdout, port, opts)
+		return rt.runFirmwareHashReadbacks(os.Stdout, port, opts)
 	}
 
 	if opts.firmwareHash != "" {
-		return runFirmwareHashSet(os.Stdout, port, opts.firmwareHash)
+		return rt.runFirmwareHashSet(os.Stdout, port, opts.firmwareHash)
 	}
 
 	if opts.sign {
 		// Keep the legacy Python help text for parity, but execute the live
 		// device-signing workflow after the provisioning and hash checks.
-		return runDeviceSigning(os.Stdout, port)
+		return rt.runDeviceSigning(os.Stdout, port)
 	}
 
 	if port == "" {
@@ -295,6 +303,7 @@ func parseArgs(args []string) (options, string, error) {
 	fs.BoolVar(&opts.public, "P", false, "Display public part of signing key")
 	fs.StringVar(&opts.trustKey, "trust-key", "", "Public key to trust for device verification")
 	fs.BoolVar(&opts.version, "version", false, "Print program version and exit")
+	fs.BoolVar(&opts.debug, "debug", false, "Log debug information to stderr")
 	fs.BoolVar(&opts.flash, "f", false, "Flash firmware and bootstrap EEPROM")
 	fs.BoolVar(&opts.rom, "r", false, "Bootstrap EEPROM without flashing firmware")
 	fs.BoolVar(&opts.key, "k", false, "Generate a new signing key and exit")

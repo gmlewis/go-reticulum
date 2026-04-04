@@ -35,7 +35,7 @@ func (rt cliRuntime) runFirmwareHashSet(out io.Writer, port, hashHex string) (er
 		}
 	}()
 
-	eepromState, err := captureRnodeEEPROM(serial, 5*time.Second)
+	eepromState, err := captureRnodeEEPROM(port, serial, 5*time.Second)
 	if err != nil {
 		return err
 	}

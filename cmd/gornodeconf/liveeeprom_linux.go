@@ -9,13 +9,14 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"time"
 )
 
 var errReadEEPROMTimeout = errors.New("timed out while reading device EEPROM")
 
-func captureRnodeEEPROM(port serialPort, timeout time.Duration) (*eepromDownloaderState, error) {
+func captureRnodeEEPROM(portName string, port serialPort, timeout time.Duration) (*eepromDownloaderState, error) {
 	state := newRnodeReadLoopState()
 
 	if _, err := port.Write([]byte{kissFend, rnodeKISSCommandROMRead, 0x00, kissFend}); err != nil {
@@ -62,7 +63,7 @@ func captureRnodeEEPROM(port serialPort, timeout time.Duration) (*eepromDownload
 			if res.err != nil {
 				if errors.Is(res.err, io.EOF) {
 					_ = port.Close()
-					return nil, errors.New("device closed the serial port before returning EEPROM")
+					return nil, fmt.Errorf("device %v closed the serial port before returning EEPROM", portName)
 				}
 				_ = port.Close()
 				return nil, res.err

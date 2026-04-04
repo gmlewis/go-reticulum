@@ -54,7 +54,7 @@ func TestCaptureRnodeEEPROMReadsPythonFrame(t *testing.T) {
 	t.Parallel()
 
 	serial := &scriptedSerial{reads: validRnodeEEPROMFrame()}
-	state, err := captureRnodeEEPROM(serial, time.Second)
+	state, err := captureRnodeEEPROM("ttyUSB0", serial, time.Second)
 	if err != nil {
 		t.Fatalf("captureRnodeEEPROM returned error: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestCaptureRnodeEEPROMTimesOut(t *testing.T) {
 	t.Parallel()
 
 	serial := &scriptedSerial{blockOnEmpty: true, wait: make(chan struct{})}
-	_, err := captureRnodeEEPROM(serial, 5*time.Millisecond)
+	_, err := captureRnodeEEPROM("ttyUSB0", serial, 5*time.Millisecond)
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}

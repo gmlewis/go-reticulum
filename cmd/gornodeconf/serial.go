@@ -6,7 +6,9 @@
 package main
 
 import (
+	"fmt"
 	"io"
+	"log"
 	"time"
 )
 
@@ -37,6 +39,7 @@ type serialOpener func(serialSettings) (serialPort, error)
 type cliRuntime struct {
 	openSerial   serialOpener
 	discoverPort func() (string, []string, error)
+	debug        bool
 }
 
 func newRuntime() cliRuntime {
@@ -50,7 +53,7 @@ func (rt cliRuntime) rnodeOpenSerial(port string) (serialPort, error) {
 	if opener == nil {
 		opener = defaultOpenSerial
 	}
-	return opener(serialSettings{
+	serial, err := opener(serialSettings{
 		Port:             port,
 		BaudRate:         rnodeBaudRate,
 		ByteSize:         8,
@@ -63,8 +66,46 @@ func (rt cliRuntime) rnodeOpenSerial(port string) (serialPort, error) {
 		InterByteTimeout: nil,
 		WriteTimeout:     nil,
 	})
+	if err != nil {
+		return nil, err
+	}
+	if rt.debug {
+		log.Printf("gornodeconf debug open %v", port)
+		return &debugSerial{name: port, serialPort: serial}, nil
+	}
+	return serial, nil
 }
 
 func rnodeOpenSerial(port string) (serialPort, error) {
 	return newRuntime().rnodeOpenSerial(port)
+}
+
+type debugSerial struct {
+	name string
+	serialPort
+}
+
+func (s *debugSerial) Read(data []byte) (int, error) {
+	n, err := s.serialPort.Read(data)
+	if n > 0 {
+		log.Printf("gornodeconf debug read %v %v", s.name, fmt.Sprintf("%v", append([]byte(nil), data[:n]...)))
+	}
+	if err != nil {
+		log.Printf("gornodeconf debug read error %v %v", s.name, err)
+	}
+	return n, err
+}
+
+func (s *debugSerial) Write(data []byte) (int, error) {
+	log.Printf("gornodeconf debug write %v %v", s.name, fmt.Sprintf("%v", append([]byte(nil), data...)))
+	n, err := s.serialPort.Write(data)
+	if err != nil {
+		log.Printf("gornodeconf debug write error %v %v", s.name, err)
+	}
+	return n, err
+}
+
+func (s *debugSerial) Close() error {
+	log.Printf("gornodeconf debug close %v", s.name)
+	return s.serialPort.Close()
 }
