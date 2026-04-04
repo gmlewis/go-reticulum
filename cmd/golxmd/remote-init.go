@@ -8,15 +8,12 @@ package main
 import (
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
-
-var osExit = os.Exit // for unit testing
 
 func (c *clientT) remoteInit(configDirArg string, rnsConfigDir string, verbosity int, quietness int, identityPathArg string) (*rns.Reticulum, error) {
 	if identityPathArg == "" {
@@ -28,33 +25,33 @@ func (c *clientT) remoteInit(configDirArg string, rnsConfigDir string, verbosity
 
 		if !isDir(resolvedConfigDir) {
 			rns.Logf("Specified configuration directory does not exist, exiting now", rns.LogError, false)
-			osExit(201)
+			c.exit(201)
 			return nil, nil
 		}
 		if !isFile(c.identitypath) {
 			rns.Logf("Identity file not found in specified configuration directory, exiting now", rns.LogError, false)
-			osExit(202)
+			c.exit(202)
 			return nil, nil
 		} else {
 			var err error
 			c.identity, err = rns.FromFile(c.identitypath)
 			if err != nil {
 				rns.Logf("Could not load the Primary Identity from %v", rns.LogError, false, c.identitypath)
-				osExit(4)
+				c.exit(4)
 				return nil, nil
 			}
 		}
 	} else {
 		if !isFile(identityPathArg) {
 			rns.Logf("Identity file not found in specified configuration directory, exiting now", rns.LogError, false)
-			osExit(202)
+			c.exit(202)
 			return nil, nil
 		} else {
 			var err error
 			c.identity, err = rns.FromFile(identityPathArg)
 			if err != nil {
 				rns.Logf("Could not load the Primary Identity from %v", rns.LogError, false, identityPathArg)
-				osExit(4)
+				c.exit(4)
 				return nil, nil
 			}
 		}
@@ -79,7 +76,7 @@ func (c *clientT) remoteInit(configDirArg string, rnsConfigDir string, verbosity
 	reticulum, err := rns.NewReticulum(c.ts, rnsConfigDir)
 	if err != nil {
 		rns.Logf("Could not initialize Reticulum, exiting now", rns.LogError, false)
-		osExit(1)
+		c.exit(1)
 		return nil, nil
 	}
 
@@ -103,7 +100,7 @@ func (c *clientT) getTargetIdentity(remote string, timeoutArg time.Duration) *rn
 			msg = fmt.Sprintf("Invalid remote destination hash: Destination hash length must be %v characters", rns.TruncatedHashLength/8*2)
 		}
 		fmt.Println(msg)
-		osExit(203)
+		c.exit(203)
 		return nil
 	}
 
@@ -125,7 +122,7 @@ func (c *clientT) getTargetIdentity(remote string, timeoutArg time.Duration) *rn
 			}
 			if time.Since(start) > timeoutArg {
 				fmt.Println("Resolving remote identity timed out, exiting now")
-				osExit(200)
+				c.exit(200)
 				return nil
 			}
 			time.Sleep(100 * time.Millisecond)
@@ -155,7 +152,7 @@ func (c *clientT) queryStatus(id *rns.Identity, remoteIdentityArg *rns.Identity,
 		if time.Since(start) > timeoutArg {
 			if exitOnFail {
 				fmt.Println("Getting lxmd statistics timed out, exiting now")
-				osExit(200)
+				c.exit(200)
 				return nil
 			}
 			// In Python, it returns LXMF.LXMPeer.LXMPeer.ERROR_TIMEOUT
@@ -208,7 +205,7 @@ func (c *clientT) getStatus(remote string, configDirArg string, rnsConfigDir str
 	reticulum, err := c.remoteInit(configDirArg, rnsConfigDir, verbosity, quietness, identityPathArg)
 	if err != nil {
 		fmt.Printf("Remote initialization failed: %v\n", err)
-		osExit(1)
+		c.exit(1)
 		return
 	}
 	defer func() {
@@ -221,20 +218,20 @@ func (c *clientT) getStatus(remote string, configDirArg string, rnsConfigDir str
 	response, err := c.queryStatus(c.identity, targetIdentity, timeout, true)
 	if err != nil {
 		fmt.Printf("Query status failed: %v\n", err)
-		osExit(1)
+		c.exit(1)
 		return
 	}
 
 	if response == nil {
 		fmt.Println("Empty response received")
-		osExit(207)
+		c.exit(207)
 		return
 	}
 
 	s, ok := response.(map[string]any)
 	if !ok {
 		fmt.Println("Invalid response format received")
-		osExit(208)
+		c.exit(208)
 		return
 	}
 
@@ -464,7 +461,7 @@ func (c *clientT) requestUnpeerInternal(id *rns.Identity, targetHash []byte, rem
 		if time.Since(start) > timeoutArg {
 			if exitOnFail {
 				fmt.Println("Requesting lxmd peering break timed out, exiting now")
-				osExit(200)
+				c.exit(200)
 				return nil
 			}
 			return fmt.Errorf("timeout")
@@ -530,7 +527,7 @@ func (c *clientT) requestSyncInternal(id *rns.Identity, targetHash []byte, remot
 		if time.Since(start) > timeoutArg {
 			if exitOnFail {
 				fmt.Println("Requesting lxmd peer sync timed out, exiting now")
-				osExit(200)
+				c.exit(200)
 				return nil
 			}
 			return fmt.Errorf("timeout")
@@ -629,14 +626,14 @@ func (c *clientT) requestSync(target string, remote string, configDirArg string,
 			msg = fmt.Sprintf("Invalid peer destination hash: Destination hash length must be %v characters", rns.TruncatedHashLength/8*2)
 		}
 		fmt.Println(msg)
-		osExit(203)
+		c.exit(203)
 		return
 	}
 
 	reticulum, err := c.remoteInit(configDirArg, rnsConfigDir, verbosity, quietness, identityPathArg)
 	if err != nil {
 		fmt.Printf("Remote initialization failed: %v\n", err)
-		osExit(1)
+		c.exit(1)
 		return
 	}
 	defer func() {
@@ -656,7 +653,7 @@ func (c *clientT) requestSync(target string, remote string, configDirArg string,
 		response, mockErr = c.mockRequestSync(c.identity, peerDestinationHash, targetIdentity, timeout, true)
 		if mockErr != nil {
 			fmt.Printf("Request sync failed: %v\n", mockErr)
-			osExit(1)
+			c.exit(1)
 			return
 		}
 	} else {
@@ -664,14 +661,14 @@ func (c *clientT) requestSync(target string, remote string, configDirArg string,
 		response, syncErr = c.requestSyncInternal(c.identity, peerDestinationHash, targetIdentity, timeout, true)
 		if syncErr != nil {
 			fmt.Printf("Request sync failed: %v\n", syncErr)
-			osExit(1)
+			c.exit(1)
 			return
 		}
 	}
 
 	if response == nil {
 		fmt.Println("Empty response received")
-		osExit(207)
+		c.exit(207)
 		return
 	}
 
@@ -679,37 +676,37 @@ func (c *clientT) requestSync(target string, remote string, configDirArg string,
 		switch code {
 		case LXMPeerErrorNoIdentity:
 			fmt.Println("Remote received no identity")
-			osExit(203)
+			c.exit(203)
 			return
 		case LXMPeerErrorNoAccess:
 			fmt.Println("Access denied")
-			osExit(204)
+			c.exit(204)
 			return
 		case LXMPeerErrorInvalidKey:
 			fmt.Println("Invalid peering key received")
-			osExit(208)
+			c.exit(208)
 			return
 		case LXMPeerErrorInvalidData:
 			fmt.Println("Invalid data received by remote")
-			osExit(205)
+			c.exit(205)
 			return
 		case LXMPeerErrorInvalidStamp:
 			fmt.Println("Invalid stamp received")
-			osExit(209)
+			c.exit(209)
 			return
 		case LXMPeerErrorThrottled:
 			fmt.Println("Remote is throttled, try again later")
-			osExit(210)
+			c.exit(210)
 			return
 		case LXMPeerErrorNotFound:
 			fmt.Println("The requested peer was not found")
-			osExit(206)
+			c.exit(206)
 			return
 		}
 	}
 
 	fmt.Printf("Sync requested for peer <%x>\n", peerDestinationHash)
-	osExit(0)
+	c.exit(0)
 }
 
 func (c *clientT) requestUnpeer(target string, remote string, configDirArg string, rnsConfigDir string, verbosity int, quietness int, timeout time.Duration, identityPathArg string) {
@@ -722,14 +719,14 @@ func (c *clientT) requestUnpeer(target string, remote string, configDirArg strin
 			msg = fmt.Sprintf("Invalid peer destination hash: Destination hash length must be %v characters", rns.TruncatedHashLength/8*2)
 		}
 		fmt.Println(msg)
-		osExit(203)
+		c.exit(203)
 		return
 	}
 
 	reticulum, err := c.remoteInit(configDirArg, rnsConfigDir, verbosity, quietness, identityPathArg)
 	if err != nil {
 		fmt.Printf("Remote initialization failed: %v\n", err)
-		osExit(1)
+		c.exit(1)
 		return
 	}
 	defer func() {
@@ -749,7 +746,7 @@ func (c *clientT) requestUnpeer(target string, remote string, configDirArg strin
 		response, mockErr = c.mockRequestUnpeer(c.identity, peerDestinationHash, targetIdentity, timeout, true)
 		if mockErr != nil {
 			fmt.Printf("Request unpeer failed: %v\n", mockErr)
-			osExit(1)
+			c.exit(1)
 			return
 		}
 	} else {
@@ -757,14 +754,14 @@ func (c *clientT) requestUnpeer(target string, remote string, configDirArg strin
 		response, unpeerErr = c.requestUnpeerInternal(c.identity, peerDestinationHash, targetIdentity, timeout, true)
 		if unpeerErr != nil {
 			fmt.Printf("Request unpeer failed: %v\n", unpeerErr)
-			osExit(1)
+			c.exit(1)
 			return
 		}
 	}
 
 	if response == nil {
 		fmt.Println("Empty response received")
-		osExit(207)
+		c.exit(207)
 		return
 	}
 
@@ -772,37 +769,37 @@ func (c *clientT) requestUnpeer(target string, remote string, configDirArg strin
 		switch code {
 		case LXMPeerErrorNoIdentity:
 			fmt.Println("Remote received no identity")
-			osExit(203)
+			c.exit(203)
 			return
 		case LXMPeerErrorNoAccess:
 			fmt.Println("Access denied")
-			osExit(204)
+			c.exit(204)
 			return
 		case LXMPeerErrorInvalidKey:
 			fmt.Println("Invalid peering key received")
-			osExit(208)
+			c.exit(208)
 			return
 		case LXMPeerErrorInvalidData:
 			fmt.Println("Invalid data received by remote")
-			osExit(205)
+			c.exit(205)
 			return
 		case LXMPeerErrorInvalidStamp:
 			fmt.Println("Invalid stamp received")
-			osExit(209)
+			c.exit(209)
 			return
 		case LXMPeerErrorThrottled:
 			fmt.Println("Remote is throttled, try again later")
-			osExit(210)
+			c.exit(210)
 			return
 		case LXMPeerErrorNotFound:
 			fmt.Println("The requested peer was not found")
-			osExit(206)
+			c.exit(206)
 			return
 		}
 	}
 
 	fmt.Printf("Broke peering with <%x>\n", peerDestinationHash)
-	osExit(0)
+	c.exit(0)
 }
 
 func anyToFloat64(v any) float64 {

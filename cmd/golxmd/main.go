@@ -43,6 +43,7 @@ type clientT struct {
 	configpath   string
 	identitypath string
 	identity     *rns.Identity
+	exitFn       func(int)
 
 	// Function pointers for mocking in tests
 	mockRequestSync   func(id *rns.Identity, targetHash []byte, remoteIdentity *rns.Identity, timeout time.Duration, exitOnFail bool) (any, error)
@@ -61,6 +62,14 @@ func main() {
 	flag.Usage = app.usage
 	flag.Parse()
 	app.run()
+}
+
+func (c *clientT) exit(code int) {
+	if c != nil && c.exitFn != nil {
+		c.exitFn(code)
+		return
+	}
+	os.Exit(code)
 }
 
 func (a *appT) run() {

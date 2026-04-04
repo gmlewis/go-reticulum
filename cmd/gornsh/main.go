@@ -90,7 +90,7 @@ func main() {
 	}
 
 	if opts.destination == "" {
-		usage()
+		usage(os.Stderr)
 		os.Exit(2)
 	}
 

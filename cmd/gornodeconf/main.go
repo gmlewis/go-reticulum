@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
@@ -56,6 +57,18 @@ func (rt cliRuntime) run(args []string) error {
 
 	if opts.clearCache {
 		fmt.Println("Clearing local firmware cache...")
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		updateDir := filepath.Join(home, ".config", "rnodeconf", "update")
+		if _, err := os.Stat(updateDir); err != nil {
+			return err
+		}
+		if err := os.RemoveAll(updateDir); err != nil {
+			return err
+		}
+		fmt.Println("Done")
 		return nil
 	}
 

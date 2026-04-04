@@ -8,6 +8,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 )
@@ -48,21 +49,22 @@ func (m *multiValueFlag) Set(value string) error {
 	return nil
 }
 
-func usage() {
-	_, _ = fmt.Fprintln(flag.CommandLine.Output(), "Usage:")
-	_, _ = fmt.Fprintln(flag.CommandLine.Output(), "  gornsh -l [-c <configdir>] [-i <identityfile> | -s <service_name>] [-v | -q] -p")
-	_, _ = fmt.Fprintln(flag.CommandLine.Output(), "  gornsh [-c <configdir>] [-i <identityfile>] [-v | -q] -p")
-	_, _ = fmt.Fprintln(flag.CommandLine.Output(), "  gornsh [-c <configdir>] [-i <identityfile>] [-v | -q] <destination_hash> [--] [program [args ...]]")
-	_, _ = fmt.Fprintln(flag.CommandLine.Output(), "")
-	flag.PrintDefaults()
+func usage(w io.Writer) {
+	_, _ = fmt.Fprintln(w, "Usage:")
+	_, _ = fmt.Fprintln(w, "  gornsh -l [-c <configdir>] [-i <identityfile> | -s <service_name>] [-v | -q] -p")
+	_, _ = fmt.Fprintln(w, "  gornsh [-c <configdir>] [-i <identityfile>] [-v | -q] -p")
+	_, _ = fmt.Fprintln(w, "  gornsh [-c <configdir>] [-i <identityfile>] [-v | -q] <destination_hash> [--] [program [args ...]]")
+	_, _ = fmt.Fprintln(w, "")
 }
 
 func parseFlags(args []string) (options, error) {
 	var opts options
 
 	fs := flag.NewFlagSet("gornsh", flag.ContinueOnError)
-	fs.SetOutput(flag.CommandLine.Output())
-	fs.Usage = usage
+	fs.SetOutput(io.Discard)
+	fs.Usage = func() {
+		usage(io.Discard)
+	}
 
 	configShort := fs.String("c", "", "alternate Reticulum config directory")
 	configLong := fs.String("config", "", "alternate Reticulum config directory")

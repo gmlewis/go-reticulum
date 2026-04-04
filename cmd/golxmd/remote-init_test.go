@@ -61,14 +61,10 @@ func reserveTCPPort(t *testing.T) int {
 }
 
 func TestRemoteInit(t *testing.T) {
-	// Mock osExit
 	var lastExitCode int
-	osExit = func(code int) {
+	exitFn := func(code int) {
 		lastExitCode = code
 	}
-	defer func() {
-		osExit = os.Exit
-	}()
 
 	t.Run("config dir doesn't exist", func(t *testing.T) {
 		lastExitCode = 0
@@ -81,7 +77,7 @@ func TestRemoteInit(t *testing.T) {
 		}
 		writeRNSConfig(t, rnsDir)
 
-		c := &clientT{}
+		c := &clientT{exitFn: exitFn}
 		ret, err := c.remoteInit(nonExistent, rnsDir, 0, 0, "")
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
@@ -105,7 +101,7 @@ func TestRemoteInit(t *testing.T) {
 		}
 		writeRNSConfig(t, rnsDir)
 
-		c := &clientT{}
+		c := &clientT{exitFn: exitFn}
 		ret, err := c.remoteInit(tmpDir, rnsDir, 0, 0, "")
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
@@ -127,7 +123,7 @@ func TestRemoteInit(t *testing.T) {
 		}
 		writeRNSConfig(t, rnsDir)
 
-		c := &clientT{}
+		c := &clientT{exitFn: exitFn}
 		ret, err := c.remoteInit("", rnsDir, 0, 0, nonExistentIdentity)
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
@@ -157,7 +153,7 @@ func TestRemoteInit(t *testing.T) {
 		}
 		writeRNSConfig(t, rnsDir)
 
-		c := &clientT{}
+		c := &clientT{exitFn: exitFn}
 		ret, err := c.remoteInit(tmpDir, rnsDir, 0, 0, "")
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
@@ -192,7 +188,7 @@ func TestRemoteInit(t *testing.T) {
 		}
 		writeRNSConfig(t, rnsDir)
 
-		c := &clientT{}
+		c := &clientT{exitFn: exitFn}
 		ret, err := c.remoteInit("", rnsDir, 0, 0, identityPath)
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
@@ -241,7 +237,7 @@ loglevel = 1
 			t.Fatalf("WriteFile: %v", err)
 		}
 
-		c := &clientT{}
+		c := &clientT{exitFn: exitFn}
 		ret, err := c.remoteInit(tmpDir, rnsConfigDir, 2, 1, "") // 3 + 2 - 1 = 4
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
@@ -281,7 +277,7 @@ loglevel = 1
 		}
 		writeRNSConfig(t, rnsConfigDir)
 
-		c := &clientT{}
+		c := &clientT{exitFn: exitFn}
 		ret, err := c.remoteInit(tmpDir, rnsConfigDir, 0, 0, "")
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
@@ -327,7 +323,7 @@ loglevel = 1
 
 	t.Run("testGetTargetIdentityInvalidHash", func(t *testing.T) {
 		lastExitCode = 0
-		c := &clientT{}
+		c := &clientT{exitFn: exitFn}
 		_ = c.getTargetIdentity("invalid", 5*time.Second)
 		if lastExitCode != 203 {
 			t.Errorf("got exit code %v, want 203", lastExitCode)
@@ -340,7 +336,8 @@ loglevel = 1
 			t.Fatalf("NewIdentity: %v", err)
 		}
 		c := &clientT{
-			ts: rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(),
+			exitFn: exitFn,
 		}
 		c.ts.Remember(nil, id.Hash, id.GetPublicKey(), nil)
 
@@ -355,7 +352,8 @@ loglevel = 1
 
 	t.Run("testGetTargetIdentityNetwork", func(t *testing.T) {
 		c := &clientT{
-			ts: rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(),
+			exitFn: exitFn,
 		}
 		tmpDir, cleanup := tempDir(t)
 		defer cleanup()
@@ -400,7 +398,8 @@ loglevel = 1
 
 	t.Run("testGetTargetIdentityTimeout", func(t *testing.T) {
 		c := &clientT{
-			ts: rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(),
+			exitFn: exitFn,
 		}
 		tmpDir, cleanup := tempDir(t)
 		defer cleanup()
@@ -431,7 +430,8 @@ loglevel = 1
 
 	t.Run("testQueryStatusTimeout", func(t *testing.T) {
 		c := &clientT{
-			ts: rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(),
+			exitFn: exitFn,
 		}
 		lastExitCode = 0
 		id, err := rns.NewIdentity(true)
@@ -487,7 +487,8 @@ loglevel = 1
 
 	t.Run("testRequestSyncInternalTimeout", func(t *testing.T) {
 		c := &clientT{
-			ts: rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(),
+			exitFn: exitFn,
 		}
 		tmpDir, cleanup := tempDir(t)
 		defer cleanup()
@@ -517,7 +518,8 @@ loglevel = 1
 	t.Run("requestSync handles ERROR_INVALID_KEY", func(t *testing.T) {
 		lastExitCode = 0
 		c := &clientT{
-			ts: rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(),
+			exitFn: exitFn,
 		}
 		tmpDir, cleanup := tempDir(t)
 		defer cleanup()
@@ -549,7 +551,8 @@ loglevel = 1
 	t.Run("requestSync handles int64 ERROR_INVALID_KEY", func(t *testing.T) {
 		lastExitCode = 0
 		c := &clientT{
-			ts: rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(),
+			exitFn: exitFn,
 		}
 		tmpDir, cleanup := tempDir(t)
 		defer cleanup()
@@ -580,7 +583,8 @@ loglevel = 1
 	t.Run("requestSync handles ERROR_INVALID_STAMP", func(t *testing.T) {
 		lastExitCode = 0
 		c := &clientT{
-			ts: rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(),
+			exitFn: exitFn,
 		}
 		tmpDir, cleanup := tempDir(t)
 		defer cleanup()
@@ -611,7 +615,8 @@ loglevel = 1
 	t.Run("requestSync handles ERROR_THROTTLED", func(t *testing.T) {
 		lastExitCode = 0
 		c := &clientT{
-			ts: rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(),
+			exitFn: exitFn,
 		}
 		tmpDir, cleanup := tempDir(t)
 		defer cleanup()
@@ -642,7 +647,8 @@ loglevel = 1
 	t.Run("requestUnpeer handles ERROR_INVALID_KEY", func(t *testing.T) {
 		lastExitCode = 0
 		c := &clientT{
-			ts: rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(),
+			exitFn: exitFn,
 		}
 		tmpDir, cleanup := tempDir(t)
 		defer cleanup()
@@ -673,7 +679,8 @@ loglevel = 1
 	t.Run("requestUnpeer handles int64 ERROR_INVALID_KEY", func(t *testing.T) {
 		lastExitCode = 0
 		c := &clientT{
-			ts: rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(),
+			exitFn: exitFn,
 		}
 		tmpDir, cleanup := tempDir(t)
 		defer cleanup()
@@ -704,7 +711,8 @@ loglevel = 1
 	t.Run("requestUnpeer handles ERROR_INVALID_STAMP", func(t *testing.T) {
 		lastExitCode = 0
 		c := &clientT{
-			ts: rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(),
+			exitFn: exitFn,
 		}
 		tmpDir, cleanup := tempDir(t)
 		defer cleanup()
@@ -735,7 +743,8 @@ loglevel = 1
 	t.Run("requestUnpeer handles ERROR_THROTTLED", func(t *testing.T) {
 		lastExitCode = 0
 		c := &clientT{
-			ts: rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(),
+			exitFn: exitFn,
 		}
 		tmpDir, cleanup := tempDir(t)
 		defer cleanup()
