@@ -18,6 +18,7 @@ func runFirmwareHashReadbacks(out io.Writer, port string, opts options) error {
 	if err != nil {
 		return err
 	}
+	defer serial.Close()
 
 	snapshot, err := captureRnodeHashes(serial, 5*time.Second)
 	if err != nil {

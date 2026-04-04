@@ -52,7 +52,6 @@ func captureRnodeHashes(port serialPort, timeout time.Duration) (rnodeHashSnapsh
 	deadline := time.After(timeout)
 	for {
 		if len(state.deviceHash) == 32 && len(state.firmwareHashTarget) == 32 && len(state.firmwareHash) == 32 {
-			_ = port.Close()
 			return rnodeHashSnapshot{
 				deviceHash:         append([]byte(nil), state.deviceHash...),
 				firmwareHashTarget: append([]byte(nil), state.firmwareHashTarget...),
@@ -70,7 +69,6 @@ func captureRnodeHashes(port serialPort, timeout time.Duration) (rnodeHashSnapsh
 			_ = port.Close()
 			return rnodeHashSnapshot{}, errReadHashesTimeout
 		case <-readDone:
-			_ = port.Close()
 			for len(byteCh) > 0 {
 				state.feedByte(<-byteCh)
 			}
@@ -81,6 +79,7 @@ func captureRnodeHashes(port serialPort, timeout time.Duration) (rnodeHashSnapsh
 					firmwareHash:       append([]byte(nil), state.firmwareHash...),
 				}, nil
 			}
+			_ = port.Close()
 			return rnodeHashSnapshot{}, errors.New("device closed the serial port before returning hashes")
 		}
 	}

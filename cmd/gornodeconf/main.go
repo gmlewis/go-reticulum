@@ -206,6 +206,14 @@ func run(args []string) error {
 		return runFirmwareHashReadbacks(os.Stdout, port, opts)
 	}
 
+	if opts.firmwareHash != "" {
+		return runFirmwareHashSet(os.Stdout, port, opts.firmwareHash)
+	}
+
+	if opts.sign {
+		return runDeviceSigning(os.Stdout, port)
+	}
+
 	if port == "" {
 		printHelp()
 		return nil

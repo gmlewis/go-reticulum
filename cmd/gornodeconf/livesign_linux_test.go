@@ -1,0 +1,154 @@
+// Copyright 2026 Glenn Lewis. All rights reserved.
+//
+// Use of this source code is governed by the Reticulum License
+// that can be found in the LICENSE file.
+
+//go:build linux
+
+package main
+
+import (
+	"bytes"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/gmlewis/go-reticulum/rns"
+)
+
+type liveSignSerial struct {
+	mu     sync.Mutex
+	reads  []byte
+	closed bool
+	writes [][]byte
+}
+
+func (s *liveSignSerial) Read(data []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.reads) == 0 {
+		return 0, io.EOF
+	}
+	data[0] = s.reads[0]
+	s.reads = s.reads[1:]
+	return 1, nil
+}
+
+func (s *liveSignSerial) Write(data []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.writes = append(s.writes, append([]byte(nil), data...))
+	return len(data), nil
+}
+
+func (s *liveSignSerial) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.closed = true
+	return nil
+}
+
+func TestRunDeviceSigningWritesPythonFrame(t *testing.T) {
+	t.Parallel()
+
+	home := tempTrustKeyHome(t)
+	firmwareDir := filepath.Join(home, ".config", "rnodeconf", "firmware")
+	if err := os.MkdirAll(firmwareDir, 0o755); err != nil {
+		t.Fatalf("mkdir firmware dir: %v", err)
+	}
+	deviceSigner, err := rns.NewIdentity(true)
+	if err != nil {
+		t.Fatalf("create device signer: %v", err)
+	}
+	if err := deviceSigner.ToFile(filepath.Join(firmwareDir, "device.key")); err != nil {
+		t.Fatalf("write device.key: %v", err)
+	}
+
+	serial := &liveSignSerial{reads: append([]byte(nil), []byte{
+		kissFend, rnodeKISSCommandFWVersion, 0x02, 0x05, kissFend,
+		kissFend, rnodeKISSCommandDevHash,
+		0x01, 0x02, 0x03, 0x04,
+		0x05, 0x06, 0x07, 0x08,
+		0x09, 0x0a, 0x0b, 0x0c,
+		0x0d, 0x0e, 0x0f, 0x10,
+		0x11, 0x12, 0x13, 0x14,
+		0x15, 0x16, 0x17, 0x18,
+		0x19, 0x1a, 0x1b, 0x1c,
+		0x1d, 0x1e, 0x1f, 0x20, kissFend,
+		kissFend, rnodeKISSCommandHashes,
+		0x01,
+		0xa1, 0xa2, 0xa3, 0xa4,
+		0xa5, 0xa6, 0xa7, 0xa8,
+		0xa9, 0xaa, 0xab, 0xac,
+		0xad, 0xae, 0xaf, 0xb0,
+		0xb1, 0xb2, 0xb3, 0xb4,
+		0xb5, 0xb6, 0xb7, 0xb8,
+		0xb9, 0xba, 0xbb, 0xbc,
+		0xbd, 0xbe, 0xbf, kissFesc, kissTfend, kissFend,
+		kissFend, rnodeKISSCommandHashes,
+		0x02,
+		0xc1, 0xc2, 0xc3, 0xc4,
+		0xc5, 0xc6, 0xc7, 0xc8,
+		0xc9, 0xca, 0xcb, 0xcc,
+		0xcd, 0xce, 0xcf, 0xd0,
+		0xd1, 0xd2, 0xd3, 0xd4,
+		0xd5, 0xd6, 0xd7, 0xd8,
+		0xd9, 0xda, kissFesc, kissTfesc, 0xdc, 0xdd, 0xde, 0xdf, 0xe0, kissFend,
+	}...)}
+	originalOpenSerial := openSerial
+	originalHome := os.Getenv("HOME")
+	defer func() {
+		openSerial = originalOpenSerial
+		_ = os.Setenv("HOME", originalHome)
+	}()
+	openSerial = func(settings serialSettings) (serialPort, error) {
+		return serial, nil
+	}
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("set HOME: %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := runDeviceSigning(&out, "ttyUSB0"); err != nil {
+		t.Fatalf("runDeviceSigning returned error: %v", err)
+	}
+	if !strings.Contains(out.String(), "Device signed") {
+		t.Fatalf("unexpected output: %v", out.String())
+	}
+	if len(serial.writes) != 2 {
+		t.Fatalf("expected detect + signature writes, got %v", len(serial.writes))
+	}
+	expectedSignature, err := deviceSigner.Sign([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20})
+	if err != nil {
+		t.Fatalf("sign device hash: %v", err)
+	}
+	want := append([]byte{0xc0, 0x57}, kissEscape(expectedSignature)...)
+	want = append(want, 0xc0)
+	if !bytes.Equal(serial.writes[1], want) {
+		t.Fatalf("signature frame mismatch:\n got: %x\nwant: %x", serial.writes[1], want)
+	}
+}
+
+func TestRunDeviceSigningRejectsMissingKey(t *testing.T) {
+	t.Parallel()
+
+	home := tempTrustKeyHome(t)
+	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatalf("set HOME: %v", err)
+	}
+	defer func() { _ = os.Unsetenv("HOME") }()
+
+	originalOpenSerial := openSerial
+	defer func() { openSerial = originalOpenSerial }()
+	openSerial = func(settings serialSettings) (serialPort, error) {
+		return &liveSignSerial{}, nil
+	}
+
+	var out bytes.Buffer
+	if err := runDeviceSigning(&out, "ttyUSB0"); err == nil {
+		t.Fatal("expected error without device.key")
+	}
+}
