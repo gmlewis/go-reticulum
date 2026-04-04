@@ -6,6 +6,8 @@
 package main
 
 import (
+	"flag"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -173,5 +175,25 @@ func TestCounterString(t *testing.T) {
 	c = 5
 	if c.String() != "5" {
 		t.Errorf("String() = %q, want %q", c.String(), "5")
+	}
+}
+
+func TestAppFlags(t *testing.T) {
+	t.Parallel()
+	app := newApp()
+	fs := flag.NewFlagSet("gornpkg", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	app.initFlags(fs)
+	if err := fs.Parse([]string{"--verbose", "--quiet", "--exampleconfig"}); err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	if app.verbose != 1 {
+		t.Fatalf("verbose = %v, want %v", app.verbose, 1)
+	}
+	if app.quiet != 1 {
+		t.Fatalf("quiet = %v, want %v", app.quiet, 1)
+	}
+	if !app.exampleConfig {
+		t.Fatal("exampleConfig = false, want true")
 	}
 }
