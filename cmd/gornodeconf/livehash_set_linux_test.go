@@ -14,8 +14,6 @@ import (
 )
 
 func TestRunFirmwareHashSetWritesPythonFrame(t *testing.T) {
-	t.Parallel()
-
 	serial := &liveHashSerial{}
 	originalOpenSerial := openSerial
 	defer func() { openSerial = originalOpenSerial }()
@@ -46,8 +44,6 @@ func TestRunFirmwareHashSetWritesPythonFrame(t *testing.T) {
 }
 
 func TestRunFirmwareHashSetRejectsInvalidInput(t *testing.T) {
-	t.Parallel()
-
 	var out bytes.Buffer
 	if err := runFirmwareHashSet(&out, "ttyUSB0", "not-a-hash"); err == nil {
 		t.Fatal("expected invalid hash error")
@@ -58,8 +54,6 @@ func TestRunFirmwareHashSetRejectsInvalidInput(t *testing.T) {
 }
 
 func TestRunFirmwareHashSetCanRestoreOriginalValue(t *testing.T) {
-	t.Parallel()
-
 	serial := &liveHashSerial{}
 	originalOpenSerial := openSerial
 	defer func() { openSerial = originalOpenSerial }()

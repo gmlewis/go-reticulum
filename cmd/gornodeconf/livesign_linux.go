@@ -16,19 +16,25 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-func runDeviceSigning(out io.Writer, port string) error {
+func runDeviceSigning(out io.Writer, port string) (err error) {
 	serial, err := rnodeOpenSerial(port)
 	if err != nil {
 		return err
 	}
-	defer serial.Close()
+	defer func() {
+		if closeErr := serial.Close(); err == nil && closeErr != nil {
+			err = closeErr
+		}
+	}()
 
 	snapshot, err := captureRnodeHashes(serial, 5*time.Second)
 	if err != nil {
 		return err
 	}
 	if len(snapshot.deviceHash) == 0 {
-		fmt.Fprintln(out, "No device hash present, skipping device signing")
+		if _, err := fmt.Fprintln(out, "No device hash present, skipping device signing"); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -38,7 +44,9 @@ func runDeviceSigning(out io.Writer, port string) error {
 	}
 	deviceSigner, err := rns.FromFile(filepath.Join(configDir, "firmware", "device.key"))
 	if err != nil {
-		fmt.Fprintln(out, "Could not load device signing key")
+		if _, writeErr := fmt.Fprintln(out, "Could not load device signing key"); writeErr != nil {
+			return writeErr
+		}
 		return err
 	}
 
@@ -52,6 +60,8 @@ func runDeviceSigning(out io.Writer, port string) error {
 		return err
 	}
 
-	fmt.Fprintln(out, "Device signed")
+	if _, err := fmt.Fprintln(out, "Device signed"); err != nil {
+		return err
+	}
 	return nil
 }

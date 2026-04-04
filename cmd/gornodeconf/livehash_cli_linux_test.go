@@ -68,8 +68,6 @@ func (s *liveHashSerial) Close() error {
 }
 
 func TestRunFirmwareHashReadbacksPrintsPythonLines(t *testing.T) {
-	t.Parallel()
-
 	serial := &liveHashSerial{reads: append([]byte(nil), []byte{
 		kissFend, rnodeKISSCommandFWVersion, 0x02, 0x05, kissFend,
 		kissFend, rnodeKISSCommandDevHash,
@@ -126,8 +124,6 @@ func TestRunFirmwareHashReadbacksPrintsPythonLines(t *testing.T) {
 }
 
 func TestRunFirmwareHashReadbacksReturnsTimeoutError(t *testing.T) {
-	t.Parallel()
-
 	serial := &liveHashSerial{blockOnEmpty: true, wait: make(chan struct{})}
 	originalOpenSerial := openSerial
 	defer func() { openSerial = originalOpenSerial }()

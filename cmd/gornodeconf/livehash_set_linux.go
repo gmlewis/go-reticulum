@@ -14,7 +14,7 @@ import (
 	"io"
 )
 
-func runFirmwareHashSet(out io.Writer, port, hashHex string) error {
+func runFirmwareHashSet(out io.Writer, port, hashHex string) (err error) {
 	hashBytes, err := hex.DecodeString(hashHex)
 	if err != nil || len(hashBytes) != 32 {
 		return errors.New("The provided value was not a valid SHA256 hash")
@@ -24,13 +24,19 @@ func runFirmwareHashSet(out io.Writer, port, hashHex string) error {
 	if err != nil {
 		return err
 	}
-	defer serial.Close()
+	defer func() {
+		if closeErr := serial.Close(); err == nil && closeErr != nil {
+			err = closeErr
+		}
+	}()
 
 	state := &firmwareHashSetterState{name: "rnode", hashBytes: hashBytes, writer: serial}
 	if err := state.setFirmwareHash(); err != nil {
 		return err
 	}
 
-	fmt.Fprintln(out, "Firmware hash set")
+	if _, err := fmt.Fprintln(out, "Firmware hash set"); err != nil {
+		return err
+	}
 	return nil
 }

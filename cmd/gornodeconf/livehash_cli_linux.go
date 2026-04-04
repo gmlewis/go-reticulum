@@ -13,12 +13,16 @@ import (
 	"time"
 )
 
-func runFirmwareHashReadbacks(out io.Writer, port string, opts options) error {
+func runFirmwareHashReadbacks(out io.Writer, port string, opts options) (err error) {
 	serial, err := rnodeOpenSerial(port)
 	if err != nil {
 		return err
 	}
-	defer serial.Close()
+	defer func() {
+		if closeErr := serial.Close(); err == nil && closeErr != nil {
+			err = closeErr
+		}
+	}()
 
 	snapshot, err := captureRnodeHashes(serial, 5*time.Second)
 	if err != nil {
@@ -26,10 +30,14 @@ func runFirmwareHashReadbacks(out io.Writer, port string, opts options) error {
 	}
 
 	if opts.getTargetFirmwareHash {
-		fmt.Fprintf(out, "The target firmware hash is: %x\n", snapshot.firmwareHashTarget)
+		if _, err := fmt.Fprintf(out, "The target firmware hash is: %x\n", snapshot.firmwareHashTarget); err != nil {
+			return err
+		}
 	}
 	if opts.getFirmwareHash {
-		fmt.Fprintf(out, "The actual firmware hash is: %x\n", snapshot.firmwareHash)
+		if _, err := fmt.Fprintf(out, "The actual firmware hash is: %x\n", snapshot.firmwareHash); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -52,8 +52,6 @@ func (s *liveSignSerial) Close() error {
 }
 
 func TestRunDeviceSigningWritesPythonFrame(t *testing.T) {
-	t.Parallel()
-
 	home := tempTrustKeyHome(t)
 	firmwareDir := filepath.Join(home, ".config", "rnodeconf", "firmware")
 	if err := os.MkdirAll(firmwareDir, 0o755); err != nil {
@@ -99,17 +97,11 @@ func TestRunDeviceSigningWritesPythonFrame(t *testing.T) {
 		0xd9, 0xda, kissFesc, kissTfesc, 0xdc, 0xdd, 0xde, 0xdf, 0xe0, kissFend,
 	}...)}
 	originalOpenSerial := openSerial
-	originalHome := os.Getenv("HOME")
-	defer func() {
-		openSerial = originalOpenSerial
-		_ = os.Setenv("HOME", originalHome)
-	}()
+	defer func() { openSerial = originalOpenSerial }()
 	openSerial = func(settings serialSettings) (serialPort, error) {
 		return serial, nil
 	}
-	if err := os.Setenv("HOME", home); err != nil {
-		t.Fatalf("set HOME: %v", err)
-	}
+	t.Setenv("HOME", home)
 
 	var out bytes.Buffer
 	if err := runDeviceSigning(&out, "ttyUSB0"); err != nil {
@@ -133,13 +125,8 @@ func TestRunDeviceSigningWritesPythonFrame(t *testing.T) {
 }
 
 func TestRunDeviceSigningRejectsMissingKey(t *testing.T) {
-	t.Parallel()
-
 	home := tempTrustKeyHome(t)
-	if err := os.Setenv("HOME", home); err != nil {
-		t.Fatalf("set HOME: %v", err)
-	}
-	defer func() { _ = os.Unsetenv("HOME") }()
+	t.Setenv("HOME", home)
 
 	originalOpenSerial := openSerial
 	defer func() { openSerial = originalOpenSerial }()
