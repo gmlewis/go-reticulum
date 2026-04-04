@@ -1,0 +1,109 @@
+// Copyright 2026 Glenn Lewis. All rights reserved.
+//
+// Use of this source code is governed by the Reticulum License
+// that can be found in the LICENSE file.
+
+//go:build linux
+
+package main
+
+import (
+	"bytes"
+	"testing"
+)
+
+func TestRNodeReadLoopCommandStateAccumulation(t *testing.T) {
+	t.Parallel()
+
+	state := newRnodeReadLoopState()
+	stream := []byte{
+		kissFend, rnodeKISSCommandFrequency, 0x12, 0x34, 0x56, 0x78, kissFend,
+		kissFend, rnodeKISSCommandBandwidth, 0x00, 0x01, 0x86, 0xa0, kissFend,
+		kissFend, rnodeKISSCommandFWVersion, 0x02, 0x05, kissFend,
+		kissFend, rnodeKISSCommandDevHash,
+		0x01, 0x02, 0x03, 0x04,
+		0x05, 0x06, 0x07, 0x08,
+		0x09, 0x0a, 0x0b, 0x0c,
+		0x0d, 0x0e, 0x0f, 0x10,
+		0x11, 0x12, 0x13, 0x14,
+		0x15, 0x16, 0x17, 0x18,
+		0x19, 0x1a, 0x1b, 0x1c,
+		0x1d, 0x1e, 0x1f, 0x20,
+		kissFend,
+	}
+
+	for _, b := range stream {
+		state.feedByte(b)
+	}
+
+	if state.rFrequency != 0x12345678 {
+		t.Fatalf("frequency mismatch: got %#x want %#x", state.rFrequency, 0x12345678)
+	}
+	if state.rBandwidth != 0x000186a0 {
+		t.Fatalf("bandwidth mismatch: got %#x want %#x", state.rBandwidth, 0x000186a0)
+	}
+	if state.majorVersion != 0x02 || state.minorVersion != 0x05 {
+		t.Fatalf("firmware version mismatch: got %v.%v want %v.%v", state.majorVersion, state.minorVersion, 0x02, 0x05)
+	}
+	wantHash := []byte{
+		0x01, 0x02, 0x03, 0x04,
+		0x05, 0x06, 0x07, 0x08,
+		0x09, 0x0a, 0x0b, 0x0c,
+		0x0d, 0x0e, 0x0f, 0x10,
+		0x11, 0x12, 0x13, 0x14,
+		0x15, 0x16, 0x17, 0x18,
+		0x19, 0x1a, 0x1b, 0x1c,
+		0x1d, 0x1e, 0x1f, 0x20,
+	}
+	if !bytes.Equal(state.deviceHash, wantHash) {
+		t.Fatalf("device hash mismatch:\n got: %x\nwant: %x", state.deviceHash, wantHash)
+	}
+}
+
+func TestRNodeReadLoopIdleTimeoutUsesStrictGreaterThan(t *testing.T) {
+	t.Parallel()
+
+	state := newRnodeReadLoopState()
+	state.inFrame = true
+	state.escape = true
+	state.command = rnodeKISSCommandData
+	state.dataBuffer = []byte{0x01, 0x02}
+	state.commandBuffer = []byte{0x0a, 0x0b}
+
+	if state.idleTimeoutExpired(150, 100, 50) {
+		t.Fatalf("did not expect timeout reset when elapsed equals timeout")
+	}
+	if len(state.dataBuffer) != 2 || !state.inFrame || !state.escape || state.command != rnodeKISSCommandData {
+		t.Fatalf("state changed unexpectedly on exact timeout boundary: %#v", state)
+	}
+
+	if !state.idleTimeoutExpired(151, 100, 50) {
+		t.Fatalf("expected timeout reset when elapsed exceeds timeout")
+	}
+	if state.inFrame || state.escape || state.command != rnodeKISSCommandUnknown || len(state.dataBuffer) != 0 {
+		t.Fatalf("timeout reset did not clear payload state: %#v", state)
+	}
+	if !bytes.Equal(state.commandBuffer, []byte{0x0a, 0x0b}) {
+		t.Fatalf("timeout reset should not clear command buffer: %x", state.commandBuffer)
+	}
+}
+
+func TestRNodeReadLoopShutdownCleanupResetsState(t *testing.T) {
+	t.Parallel()
+
+	state := newRnodeReadLoopState()
+	state.inFrame = true
+	state.escape = true
+	state.command = rnodeKISSCommandFrequency
+	state.dataBuffer = []byte{0x01, 0x02}
+	state.commandBuffer = []byte{0x12, 0x34, 0x56, 0x78}
+
+	state.shutdownCleanup()
+
+	if state.inFrame || state.escape || state.command != rnodeKISSCommandUnknown {
+		t.Fatalf("shutdown cleanup did not reset frame state: %#v", state)
+	}
+	if len(state.dataBuffer) != 0 || len(state.commandBuffer) != 0 {
+		t.Fatalf("shutdown cleanup did not clear buffers: %#v", state)
+	}
+}
