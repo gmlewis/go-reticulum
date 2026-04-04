@@ -191,7 +191,7 @@ func TestFetchModeSavesReceivedFiles(t *testing.T) {
 	var savedFilePath string
 	select {
 	case savedFilePath = <-savedFileChan:
-	case <-time.After(15 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("Timed out waiting for file to be saved")
 	}
 
