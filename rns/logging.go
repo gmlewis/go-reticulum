@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-var (
+const (
 	// LogTimeFmt defines the standard timestamp format used in log entries.
 	LogTimeFmt = "2006-01-02 15:04:05"
 	// LogTimeFmtP defines a precise timestamp format including milliseconds, typically used for performance logging.

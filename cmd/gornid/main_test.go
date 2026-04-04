@@ -6,6 +6,8 @@
 package main
 
 import (
+	"flag"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -186,6 +188,26 @@ func TestLongFormParserAliases(t *testing.T) {
 	}
 	if !strings.Contains(out, "Public Key") {
 		t.Fatalf("identity output missing public key label: %v", out)
+	}
+}
+
+func TestAppFlags(t *testing.T) {
+	t.Parallel()
+	app := newApp()
+	fs := flag.NewFlagSet("gornid", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	app.initFlags(fs)
+	if err := fs.Parse([]string{"--verbose", "--quiet", "--version"}); err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	if app.verbose != 1 {
+		t.Fatalf("verbose = %v, want %v", app.verbose, 1)
+	}
+	if app.quiet != 1 {
+		t.Fatalf("quiet = %v, want %v", app.quiet, 1)
+	}
+	if !app.version {
+		t.Fatal("version = false, want true")
 	}
 }
 

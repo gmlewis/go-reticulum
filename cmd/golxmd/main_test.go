@@ -6,6 +6,8 @@
 package main
 
 import (
+	"flag"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -53,6 +55,35 @@ func TestLongFormParserAliases(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("parser alias output missing %q: %v", want, out)
 		}
+	}
+}
+
+func TestAppFlags(t *testing.T) {
+	t.Parallel()
+	app := newApp()
+	fs := flag.NewFlagSet("golxmd", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	app.initFlags(fs)
+	if err := fs.Parse([]string{"--config", "/tmp/config", "--rnsconfig", "/tmp/rns", "--status", "--verbose", "--quiet", "--timeout", "2"}); err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	if app.configDir != "/tmp/config" {
+		t.Fatalf("configDir = %q, want %q", app.configDir, "/tmp/config")
+	}
+	if app.rnsConfigDir != "/tmp/rns" {
+		t.Fatalf("rnsConfigDir = %q, want %q", app.rnsConfigDir, "/tmp/rns")
+	}
+	if !app.displayStatus {
+		t.Fatal("displayStatus = false, want true")
+	}
+	if app.verbosity != 1 {
+		t.Fatalf("verbosity = %v, want %v", app.verbosity, 1)
+	}
+	if app.quietness != 1 {
+		t.Fatalf("quietness = %v, want %v", app.quietness, 1)
+	}
+	if app.timeout != 2*time.Second {
+		t.Fatalf("timeout = %v, want 2s", app.timeout)
 	}
 }
 
@@ -270,10 +301,10 @@ func TestPropagationNodeSetup(t *testing.T) {
 func TestAuthWarningMessage(t *testing.T) {
 	tmpDir, cleanup := tempDir(t)
 	defer cleanup()
-	configDir = tmpDir
 	c := &clientT{
-		ts: rns.NewTransportSystem(),
-		ac: &activeConfig{AuthRequired: true, AllowedIdentities: nil},
+		ts:         rns.NewTransportSystem(),
+		ac:         &activeConfig{AuthRequired: true, AllowedIdentities: nil},
+		configpath: filepath.Join(tmpDir, "config"),
 	}
 
 	var capturedLog string

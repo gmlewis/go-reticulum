@@ -53,9 +53,7 @@ func (c *counter) Set(string) error {
 }
 func (c *counter) IsBoolFlag() bool { return true }
 
-func init() {
-	flag.Usage = func() {
-		_, _ = fmt.Fprintf(flag.CommandLine.Output(), `
+const usageText = `
 usage: gornid [-h] [--config path] [-i identity] [-g file] [-m identity_data] [-x] [-v] [-q] [-a aspects]
               [-H aspects] [-e file] [-d file] [-s path] [-V path] [-r file] [-w file] [-f] [-R] [-t seconds] [-p]
               [-P] [-b] [-B] [--version]
@@ -90,59 +88,9 @@ options:
   -b, --base64          Use base64-encoded input and output
   -B, --base32          Use base32-encoded input and output
   --version             show program's version number and exit
-`)
-	}
+`
 
-	flag.StringVar(&configDir, "config", "", "path to alternative Reticulum config directory")
-	flag.StringVar(&identityPath, "i", "", "hexadecimal Reticulum identity or destination hash, or path to Identity file")
-	flag.StringVar(&identityPath, "identity", "", "hexadecimal Reticulum identity or destination hash, or path to Identity file")
-	flag.StringVar(&generatePath, "g", "", "generate a new Identity")
-	flag.StringVar(&generatePath, "generate", "", "generate a new Identity")
-	flag.StringVar(&importStr, "m", "", "import Reticulum identity in hex, base32 or base64 format")
-	flag.StringVar(&importStr, "import", "", "import Reticulum identity in hex, base32 or base64 format")
-	flag.BoolVar(&export, "x", false, "export identity to hex, base32 or base64 format")
-	flag.BoolVar(&export, "export", false, "export identity to hex, base32 or base64 format")
-	flag.Var(&verbose, "v", "increase verbosity")
-	flag.Var(&verbose, "verbose", "increase verbosity")
-	flag.Var(&quiet, "q", "decrease verbosity")
-	flag.Var(&quiet, "quiet", "decrease verbosity")
-	flag.StringVar(&announce, "a", "", "announce a destination based on this Identity")
-	flag.StringVar(&announce, "announce", "", "announce a destination based on this Identity")
-	flag.StringVar(&hashAspects, "H", "", "show destination hashes for other aspects for this Identity")
-	flag.StringVar(&hashAspects, "hash", "", "show destination hashes for other aspects for this Identity")
-	flag.StringVar(&encryptFile, "e", "", "encrypt file")
-	flag.StringVar(&encryptFile, "encrypt", "", "encrypt file")
-	flag.StringVar(&decryptFile, "d", "", "decrypt file")
-	flag.StringVar(&decryptFile, "decrypt", "", "decrypt file")
-	flag.StringVar(&signFile, "s", "", "sign file")
-	flag.StringVar(&signFile, "sign", "", "sign file")
-	flag.StringVar(&validateFile, "V", "", "validate signature")
-	flag.StringVar(&validateFile, "validate", "", "validate signature")
-	flag.StringVar(&readFile, "r", "", "input file path")
-	flag.StringVar(&readFile, "read", "", "input file path")
-	flag.StringVar(&writeFile, "w", "", "output file path")
-	flag.StringVar(&writeFile, "write", "", "output file path")
-	flag.BoolVar(&force, "f", false, "write output even if it overwrites existing files")
-	flag.BoolVar(&force, "force", false, "write output even if it overwrites existing files")
-	flag.BoolVar(&requestID, "R", false, "request unknown Identities from the network")
-	flag.BoolVar(&requestID, "request", false, "request unknown Identities from the network")
-	flag.Float64Var(&timeout, "t", 15.0, "identity request timeout before giving up")
-	flag.BoolVar(&printIdentity, "p", false, "print identity info and exit")
-	flag.BoolVar(&printIdentity, "print-identity", false, "print identity info and exit")
-	flag.BoolVar(&printPrivate, "P", false, "allow displaying private keys")
-	flag.BoolVar(&printPrivate, "print-private", false, "allow displaying private keys")
-	flag.BoolVar(&useBase64, "b", false, "Use base64-encoded input and output")
-	flag.BoolVar(&useBase64, "base64", false, "Use base64-encoded input and output")
-	flag.BoolVar(&useBase32, "B", false, "Use base32-encoded input and output")
-	flag.BoolVar(&useBase32, "base32", false, "Use base32-encoded input and output")
-	flag.BoolVar(&useStdin, "I", false, "read input from STDIN")
-	flag.BoolVar(&useStdin, "stdin", false, "read input from STDIN")
-	flag.BoolVar(&useStdout, "O", false, "write output to STDOUT")
-	flag.BoolVar(&useStdout, "stdout", false, "write output to STDOUT")
-	flag.BoolVar(&version, "version", false, "show program's version number and exit")
-}
-
-var (
+type appT struct {
 	configDir     string
 	identityPath  string
 	generatePath  string
@@ -168,14 +116,69 @@ var (
 	useStdin      bool
 	useStdout     bool
 	version       bool
-)
+}
 
-func main() {
-	log.SetFlags(0)
-	flag.Parse()
+func newApp() *appT {
+	return &appT{timeout: 15.0}
+}
 
+func (a *appT) usage() {
+	_, _ = fmt.Fprint(flag.CommandLine.Output(), usageText)
+}
+
+func (a *appT) initFlags(fs *flag.FlagSet) {
+	fs.StringVar(&a.configDir, "config", "", "path to alternative Reticulum config directory")
+	fs.StringVar(&a.identityPath, "i", "", "hexadecimal Reticulum identity or destination hash, or path to Identity file")
+	fs.StringVar(&a.identityPath, "identity", "", "hexadecimal Reticulum identity or destination hash, or path to Identity file")
+	fs.StringVar(&a.generatePath, "g", "", "generate a new Identity")
+	fs.StringVar(&a.generatePath, "generate", "", "generate a new Identity")
+	fs.StringVar(&a.importStr, "m", "", "import Reticulum identity in hex, base32 or base64 format")
+	fs.StringVar(&a.importStr, "import", "", "import Reticulum identity in hex, base32 or base64 format")
+	fs.BoolVar(&a.export, "x", false, "export identity to hex, base32 or base64 format")
+	fs.BoolVar(&a.export, "export", false, "export identity to hex, base32 or base64 format")
+	fs.Var(&a.verbose, "v", "increase verbosity")
+	fs.Var(&a.verbose, "verbose", "increase verbosity")
+	fs.Var(&a.quiet, "q", "decrease verbosity")
+	fs.Var(&a.quiet, "quiet", "decrease verbosity")
+	fs.StringVar(&a.announce, "a", "", "announce a destination based on this Identity")
+	fs.StringVar(&a.announce, "announce", "", "announce a destination based on this Identity")
+	fs.StringVar(&a.hashAspects, "H", "", "show destination hashes for other aspects for this Identity")
+	fs.StringVar(&a.hashAspects, "hash", "", "show destination hashes for other aspects for this Identity")
+	fs.StringVar(&a.encryptFile, "e", "", "encrypt file")
+	fs.StringVar(&a.encryptFile, "encrypt", "", "encrypt file")
+	fs.StringVar(&a.decryptFile, "d", "", "decrypt file")
+	fs.StringVar(&a.decryptFile, "decrypt", "", "decrypt file")
+	fs.StringVar(&a.signFile, "s", "", "sign file")
+	fs.StringVar(&a.signFile, "sign", "", "sign file")
+	fs.StringVar(&a.validateFile, "V", "", "validate signature")
+	fs.StringVar(&a.validateFile, "validate", "", "validate signature")
+	fs.StringVar(&a.readFile, "r", "", "input file path")
+	fs.StringVar(&a.readFile, "read", "", "input file path")
+	fs.StringVar(&a.writeFile, "w", "", "output file path")
+	fs.StringVar(&a.writeFile, "write", "", "output file path")
+	fs.BoolVar(&a.force, "f", false, "write output even if it overwrites existing files")
+	fs.BoolVar(&a.force, "force", false, "write output even if it overwrites existing files")
+	fs.BoolVar(&a.requestID, "R", false, "request unknown Identities from the network")
+	fs.BoolVar(&a.requestID, "request", false, "request unknown Identities from the network")
+	fs.Float64Var(&a.timeout, "t", 15.0, "identity request timeout before giving up")
+	fs.BoolVar(&a.printIdentity, "p", false, "print identity info and exit")
+	fs.BoolVar(&a.printIdentity, "print-identity", false, "print identity info and exit")
+	fs.BoolVar(&a.printPrivate, "P", false, "allow displaying private keys")
+	fs.BoolVar(&a.printPrivate, "print-private", false, "allow displaying private keys")
+	fs.BoolVar(&a.useBase64, "b", false, "Use base64-encoded input and output")
+	fs.BoolVar(&a.useBase64, "base64", false, "Use base64-encoded input and output")
+	fs.BoolVar(&a.useBase32, "B", false, "Use base32-encoded input and output")
+	fs.BoolVar(&a.useBase32, "base32", false, "Use base32-encoded input and output")
+	fs.BoolVar(&a.useStdin, "I", false, "read input from STDIN")
+	fs.BoolVar(&a.useStdin, "stdin", false, "read input from STDIN")
+	fs.BoolVar(&a.useStdout, "O", false, "write output to STDOUT")
+	fs.BoolVar(&a.useStdout, "stdout", false, "write output to STDOUT")
+	fs.BoolVar(&a.version, "version", false, "show program's version number and exit")
+}
+
+func (a *appT) run() {
 	var ops int
-	for _, op := range []bool{encryptFile != "", decryptFile != "", validateFile != "", signFile != ""} {
+	for _, op := range []bool{a.encryptFile != "", a.decryptFile != "", a.validateFile != "", a.signFile != ""} {
 		if op {
 			ops++
 		}
@@ -186,43 +189,43 @@ func main() {
 		os.Exit(1)
 	}
 
-	if version {
+	if a.version {
 		fmt.Printf("gornid %v\n", rns.VERSION)
 		return
 	}
 
-	if verbose != 0 || quiet != 0 {
-		rns.SetLogLevel(4 + int(verbose) - int(quiet))
+	if a.verbose != 0 || a.quiet != 0 {
+		rns.SetLogLevel(4 + int(a.verbose) - int(a.quiet))
 	}
 
-	if readFile == "" {
-		if encryptFile != "" {
-			readFile = encryptFile
+	if a.readFile == "" {
+		if a.encryptFile != "" {
+			a.readFile = a.encryptFile
 		}
-		if decryptFile != "" {
-			readFile = decryptFile
+		if a.decryptFile != "" {
+			a.readFile = a.decryptFile
 		}
-		if signFile != "" {
-			readFile = signFile
+		if a.signFile != "" {
+			a.readFile = a.signFile
 		}
-		if validateFile != "" && strings.HasSuffix(strings.ToLower(validateFile), ".rsg") {
-			readFile = strings.Replace(validateFile, ".rsg", "", 1)
+		if a.validateFile != "" && strings.HasSuffix(strings.ToLower(a.validateFile), ".rsg") {
+			a.readFile = strings.Replace(a.validateFile, ".rsg", "", 1)
 		}
 	}
 
-	if importStr != "" {
-		doImport(importStr, useBase64, useBase32, printPrivate, writeFile, force)
+	if a.importStr != "" {
+		doImport(a.importStr, a.useBase64, a.useBase32, a.printPrivate, a.writeFile, a.force)
 		return
 	}
 
-	if generatePath == "" && identityPath == "" {
+	if a.generatePath == "" && a.identityPath == "" {
 		_, _ = fmt.Fprint(flag.CommandLine.Output(), "\nNo identity provided, cannot continue\n")
 		flag.Usage()
 		os.Exit(2)
 	}
 
 	ts := rns.NewTransportSystem()
-	ret, err := rns.NewReticulum(ts, configDir)
+	ret, err := rns.NewReticulum(ts, a.configDir)
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
@@ -233,41 +236,50 @@ func main() {
 	}()
 
 	rns.SetCompactLogFmt(true)
-	if useStdout {
+	if a.useStdout {
 		rns.SetLogLevel(-1)
 	}
 
-	if generatePath != "" {
-		doGenerate(generatePath, force)
+	if a.generatePath != "" {
+		doGenerate(a.generatePath, a.force)
 		return
 	}
 
-	id := loadIdentity(ret.Transport(), identityPath, requestID, timeout)
+	id := loadIdentity(ret.Transport(), a.identityPath, a.requestID, a.timeout)
 	if id == nil {
 		log.Fatal("Could not load or recall identity")
 	}
 
-	if printIdentity {
-		doPrintIdentity(id, useBase64, useBase32, printPrivate)
+	if a.printIdentity {
+		doPrintIdentity(id, a.useBase64, a.useBase32, a.printPrivate)
 		os.Exit(0)
 	}
 
-	if export {
-		doExport(id, useBase64, useBase32)
+	if a.export {
+		doExport(id, a.useBase64, a.useBase32)
 		os.Exit(0)
 	}
 
-	if hashAspects != "" {
-		doHash(ts, id, hashAspects)
+	if a.hashAspects != "" {
+		doHash(ts, id, a.hashAspects)
 	}
 
-	if announce != "" {
-		doAnnounce(ts, id, announce)
+	if a.announce != "" {
+		doAnnounce(ts, id, a.announce)
 	}
 
-	if encryptFile != "" || decryptFile != "" || signFile != "" || validateFile != "" {
-		doFileOps(id, readFile, writeFile, encryptFile, decryptFile, signFile, validateFile, force, useStdout)
+	if a.encryptFile != "" || a.decryptFile != "" || a.signFile != "" || a.validateFile != "" {
+		doFileOps(id, a.readFile, a.writeFile, a.encryptFile, a.decryptFile, a.signFile, a.validateFile, a.force, a.useStdout)
 	}
+}
+
+func main() {
+	log.SetFlags(0)
+	app := newApp()
+	app.initFlags(flag.CommandLine)
+	flag.Usage = app.usage
+	flag.Parse()
+	app.run()
 }
 
 func doImport(data string, b64, b32, prv bool, writePath string, force bool) {

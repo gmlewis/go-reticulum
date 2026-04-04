@@ -56,18 +56,24 @@ const (
 
 func main() {
 	log.SetFlags(0)
+	app := newApp()
+	app.initFlags(flag.CommandLine)
+	flag.Usage = app.usage
 	flag.Parse()
+	app.run()
+}
 
-	if timeout == 0 {
-		timeout = applyTimeoutDefaults(displayStatus, displayPeers, syncHash, unpeerHash)
+func (a *appT) run() {
+	if a.timeout == 0 {
+		a.timeout = applyTimeoutDefaults(a.displayStatus, a.displayPeers, a.syncHash, a.unpeerHash)
 	}
 
-	if version {
+	if a.version {
 		fmt.Printf("golxmd %v\n", rns.VERSION)
 		return
 	}
 
-	if exampleConfig {
+	if a.exampleConfig {
 		fmt.Print(defaultLXMDaemonConfig)
 		return
 	}
@@ -77,43 +83,43 @@ func main() {
 		now: time.Now,
 	}
 
-	if displayStatus || displayPeers {
-		c.getStatus(remoteHash, configDir, rnsConfigDir, int(verbosity), int(quietness), timeout, displayStatus, displayPeers, identityPath)
+	if a.displayStatus || a.displayPeers {
+		c.getStatus(a.remoteHash, a.configDir, a.rnsConfigDir, int(a.verbosity), int(a.quietness), a.timeout, a.displayStatus, a.displayPeers, a.identityPath)
 		return
 	}
 
-	if syncHash != "" {
-		c.requestSync(syncHash, remoteHash, configDir, rnsConfigDir, int(verbosity), int(quietness), timeout, identityPath)
+	if a.syncHash != "" {
+		c.requestSync(a.syncHash, a.remoteHash, a.configDir, a.rnsConfigDir, int(a.verbosity), int(a.quietness), a.timeout, a.identityPath)
 		return
 	}
 
-	if unpeerHash != "" {
-		c.requestUnpeer(unpeerHash, remoteHash, configDir, rnsConfigDir, int(verbosity), int(quietness), timeout, identityPath)
+	if a.unpeerHash != "" {
+		c.requestUnpeer(a.unpeerHash, a.remoteHash, a.configDir, a.rnsConfigDir, int(a.verbosity), int(a.quietness), a.timeout, a.identityPath)
 		return
 	}
 
-	configDir = resolveConfigDir(configDir)
-	if err := ensureConfig(configDir); err != nil {
+	a.configDir = resolveConfigDir(a.configDir)
+	if err := ensureConfig(a.configDir); err != nil {
 		log.Fatalf("ensure config: %v", err)
 	}
 
 	var err error
-	c.ac, err = loadConfig(configDir)
+	c.ac, err = loadConfig(a.configDir)
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
 
-	rns.SetLogLevel(resolveLogLevel(c.ac.LogLevel, int(verbosity), int(quietness)))
-	setupLogging(runAsService, configDir)
-	rns.Logf("Configuration loaded from %v", rns.LogVerbose, false, configDir)
+	rns.SetLogLevel(resolveLogLevel(c.ac.LogLevel, int(a.verbosity), int(a.quietness)))
+	setupLogging(a.runAsService, a.configDir)
+	rns.Logf("Configuration loaded from %v", rns.LogVerbose, false, a.configDir)
 
 	rns.Logf("Substantiating Reticulum...", rns.LogInfo, false)
-	if _, err := rns.NewReticulum(c.ts, rnsConfigDir); err != nil {
+	if _, err := rns.NewReticulum(c.ts, a.rnsConfigDir); err != nil {
 		log.Fatalf("initialize Reticulum: %v", err)
 	}
 
 	var storagePath, identityPath string
-	resolvedStorage, resolvedIdentityPath, err := c.resolvePaths(storagePath, identityPath, configDir)
+	resolvedStorage, resolvedIdentityPath, err := c.resolvePaths(storagePath, identityPath, a.configDir)
 	if err != nil {
 		log.Fatalf("resolve paths: %v", err)
 	}
@@ -123,11 +129,11 @@ func main() {
 		log.Fatalf("load identity: %v", err)
 	}
 
-	if cmdOnInbound != "" {
+	if a.cmdOnInbound != "" {
 		// Note: Python's lxmd.py accepts the --on-inbound CLI arg but fails to
 		// actually apply it to the configuration (it's a Python bug). Go
 		// correctly applies it here.
-		c.ac.OnInbound = cmdOnInbound
+		c.ac.OnInbound = a.cmdOnInbound
 	}
 
 	router, err := lxmf.NewRouterFromConfig(c.ts, lxmf.RouterConfig{
@@ -167,7 +173,7 @@ func main() {
 
 	c.setupAuth(router)
 
-	if runAsPropagationNode || c.ac.EnablePropagationNode {
+	if a.runAsPropagationNode || c.ac.EnablePropagationNode {
 		router.SetMessageStorageLimit(c.ac.MessageStorageLimit)
 		for _, s := range c.ac.PrioritisedLXMFDestinations {
 			if h, err := rns.HexToBytes(s); err == nil {
@@ -197,9 +203,6 @@ func main() {
 		}
 	}
 
-	// The runtimeTracker is retained as a useful debugging feature for the Go port of golxmd,
-	// providing persistence of operational state across restarts that is not present in the
-	// original implementation.
 	runtimeStatePath := filepath.Join(resolvedStorage, "lxmf", "golxmd-state.json")
 	c.tr, err = newRuntimeTracker(runtimeStatePath)
 	if err != nil {
@@ -215,8 +218,6 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
-	// Start deferred jobs, which will start the periodic jobs goroutine
-	// after the deferred announces complete (matching Python's sequencing).
 	stopJobs := make(chan struct{})
 	go c.runDeferredThenJobs(10*time.Second, router, lxmfDestination, stopJobs, jobsInterval)
 
@@ -239,7 +240,6 @@ func applyTimeoutDefaults(displayStatus, displayPeers bool, syncHash, unpeerHash
 	}
 	return 0
 }
-
 func (c *clientT) jobs(router *lxmf.Router, lxmfDestination *rns.Destination, stop <-chan struct{}, interval time.Duration) {
 	for {
 		func() {
@@ -264,16 +264,15 @@ func (c *clientT) tick(router *lxmf.Router, lxmfDestination *rns.Destination) {
 	}
 
 	c.tickCount++
+	currentTime := c.now()
 
 	if c.ac.PeerAnnounceInterval != nil {
-		if c.now().Sub(c.lastPeerAnnounce) > time.Duration(*c.ac.PeerAnnounceInterval)*time.Second {
+		if currentTime.Sub(c.lastPeerAnnounce) > time.Duration(*c.ac.PeerAnnounceInterval)*time.Second {
 			rns.Logf("Sending announce for LXMF delivery destination", rns.LogVerbose, false)
-			if lxmfDestination != nil {
-				if err := router.Announce(lxmfDestination.Hash); err != nil {
-					rns.Logf("Failed to announce delivery destination: %v", rns.LogError, false, err)
-				}
+			if err := router.Announce(lxmfDestination.Hash); err != nil {
+				rns.Logf("Failed to announce delivery destination: %v", rns.LogError, false, err)
 			}
-			c.lastPeerAnnounce = c.now()
+			c.lastPeerAnnounce = currentTime
 			if c.tr != nil {
 				if err := c.tr.RecordAnnounce(c.lastPeerAnnounce); err != nil {
 					rns.Logf("Failed to record announce: %v", rns.LogWarning, false, err)
@@ -283,10 +282,12 @@ func (c *clientT) tick(router *lxmf.Router, lxmfDestination *rns.Destination) {
 	}
 
 	if c.ac.NodeAnnounceInterval != nil {
-		if c.now().Sub(c.lastNodeAnnounce) > time.Duration(*c.ac.NodeAnnounceInterval)*time.Second {
+		if currentTime.Sub(c.lastNodeAnnounce) > time.Duration(*c.ac.NodeAnnounceInterval)*time.Second {
 			rns.Logf("Sending announce for LXMF Propagation Node", rns.LogVerbose, false)
-			router.AnnouncePropagationNode()
-			c.lastNodeAnnounce = c.now()
+			if err := router.Announce(lxmfDestination.Hash); err != nil {
+				rns.Logf("Failed to announce propagation destination: %v", rns.LogError, false, err)
+			}
+			c.lastNodeAnnounce = currentTime
 			if c.tr != nil {
 				if err := c.tr.RecordSync(c.lastNodeAnnounce); err != nil {
 					rns.Logf("Failed to record sync: %v", rns.LogWarning, false, err)
@@ -295,13 +296,11 @@ func (c *clientT) tick(router *lxmf.Router, lxmfDestination *rns.Destination) {
 		}
 	}
 
-	// Go-specific enhancement: ensure outbound messages are processed periodically.
 	if router != nil {
 		router.ProcessOutbound()
 	}
 
 	if c.tickCount%maintenanceInterval == 0 && router != nil {
-		// Go-specific enhancement: prune stale peers periodically.
 		pruned := router.PruneStalePeers()
 		if pruned > 0 {
 			rns.Logf("golxmd pruned %v stale peers", rns.LogInfo, false, pruned)
@@ -372,7 +371,7 @@ func (c *clientT) setupAuth(router *lxmf.Router) {
 				router.Allow(h)
 			}
 		} else {
-			allowedPath := filepath.Join(configDir, "allowed")
+			allowedPath := filepath.Join(filepath.Dir(c.configpath), "allowed")
 			rns.Logf("Client authentication was enabled, but no identity hashes could be loaded from %v. Nobody will be able to sync messages from this propagation node.", rns.LogWarning, false, allowedPath)
 		}
 	}
