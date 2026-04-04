@@ -190,7 +190,19 @@ func run(args []string) error {
 		return nil
 	}
 
-	if port == "" && !opts.public && opts.trustKey == "" {
+	if opts.trustKey != "" {
+		return handleTrustKey(opts.trustKey)
+	}
+
+	if opts.public {
+		return handlePublicKeys()
+	}
+
+	if opts.key {
+		return handleGenerateKeys(opts.autoinstall)
+	}
+
+	if port == "" {
 		printHelp()
 		return nil
 	}
