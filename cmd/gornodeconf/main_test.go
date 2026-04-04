@@ -13,7 +13,7 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-const expectedHelp = `usage: rnodeconf.py [-h] [-i] [-a] [-u] [-U] [--fw-version version]
+const expectedHelp = `usage: gornodeconf [-h] [-i] [-a] [-u] [-U] [--fw-version version]
                     [--fw-url url] [--nocheck] [-e] [-E] [-C]
                     [--baud-flash baud_flash] [-N] [-T] [-b] [-B] [-p]
                     [-w mode] [--channel channel] [--ssid ssid] [--psk psk]
