@@ -26,5 +26,5 @@ func tempSerialPort(t *testing.T) string {
 	t.Cleanup(func() {
 		_ = os.RemoveAll(dir)
 	})
-	return filepath.Join(dir, "ttyUSB0")
+	return filepath.Join(dir, "port")
 }
