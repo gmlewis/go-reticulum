@@ -183,7 +183,7 @@ func TestRunDeviceSigningRejectsMissingKey(t *testing.T) {
 	if exitErr.code != 78 {
 		t.Fatalf("exit code mismatch: got %v want 78", exitErr.code)
 	}
-	if !strings.Contains(out.String(), "Could not load device signing key") {
+	if !strings.Contains(out.String(), "Could not load device signing key (did you run \"gornodeconf --key\"?)") {
 		t.Fatalf("missing load-key message: %v", out.String())
 	}
 	if !strings.Contains(err.Error(), "No device signer loaded, cannot sign device: open ") {

@@ -90,10 +90,10 @@ func TestPublicKeysReportsMissingFiles(t *testing.T) {
 	if !strings.Contains(out, wantSigning) || !strings.Contains(out, wantDevice) {
 		t.Fatalf("missing file paths in output:\n%v", out)
 	}
-	if !strings.Contains(out, "Could not load EEPROM signing key: open ") {
+	if !strings.Contains(out, "Could not load EEPROM signing key (did you run \"gornodeconf --key\"?): open ") {
 		t.Fatalf("missing EEPROM signing key error: %v", out)
 	}
-	if !strings.Contains(out, "Could not load device signing key: open ") {
+	if !strings.Contains(out, "Could not load device signing key (did you run \"gornodeconf --key\"?): open ") {
 		t.Fatalf("missing device signing key error: %v", out)
 	}
 }

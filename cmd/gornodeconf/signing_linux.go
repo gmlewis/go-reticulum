@@ -34,7 +34,7 @@ func handlePublicKeys() error {
 	var errs []error
 	signingBytes, err := os.ReadFile(signingPath)
 	if err != nil {
-		errs = append(errs, fmt.Errorf("Could not load EEPROM signing key: %w", err))
+		errs = append(errs, fmt.Errorf("Could not load EEPROM signing key (did you run \"gornodeconf --key\"?): %w", err))
 	} else {
 		privateKey, err := x509.ParsePKCS8PrivateKey(signingBytes)
 		if err != nil {
@@ -59,7 +59,7 @@ func handlePublicKeys() error {
 		fmt.Println("Device Signing Public key:")
 		fmt.Println(colonHex(deviceSigner.GetPublicKey()[32:]))
 	} else {
-		errs = append(errs, fmt.Errorf("Could not load device signing key: %w", err))
+		errs = append(errs, fmt.Errorf("Could not load device signing key (did you run \"gornodeconf --key\"?): %w", err))
 	}
 
 	return errors.Join(errs...)

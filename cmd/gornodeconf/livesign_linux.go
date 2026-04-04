@@ -57,7 +57,7 @@ func (rt cliRuntime) runDeviceSigning(out io.Writer, port string) (err error) {
 	}
 	deviceSigner, err := rns.FromFile(filepath.Join(configDir, "firmware", "device.key"))
 	if err != nil {
-		if _, writeErr := fmt.Fprintln(out, "Could not load device signing key"); writeErr != nil {
+		if _, writeErr := fmt.Fprintln(out, "Could not load device signing key (did you run \"gornodeconf --key\"?)"); writeErr != nil {
 			return writeErr
 		}
 		return exitCodeError{code: 78, err: fmt.Errorf("No device signer loaded, cannot sign device: %w", err)}
