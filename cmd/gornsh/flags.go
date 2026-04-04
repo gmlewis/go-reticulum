@@ -13,6 +13,12 @@ import (
 	"strings"
 )
 
+const usageText = `Usage:
+  gornsh -l [-c <configdir>] [-i <identityfile> | -s <service_name>] [-v | -q] -p
+  gornsh [-c <configdir>] [-i <identityfile>] [-v | -q] -p
+  gornsh [-c <configdir>] [-i <identityfile>] [-v | -q] <destination_hash> [--] [program [args ...]]
+`
+
 type options struct {
 	configDir     string
 	identityPath  string
@@ -50,11 +56,7 @@ func (m *multiValueFlag) Set(value string) error {
 }
 
 func usage(w io.Writer) {
-	_, _ = fmt.Fprintln(w, "Usage:")
-	_, _ = fmt.Fprintln(w, "  gornsh -l [-c <configdir>] [-i <identityfile> | -s <service_name>] [-v | -q] -p")
-	_, _ = fmt.Fprintln(w, "  gornsh [-c <configdir>] [-i <identityfile>] [-v | -q] -p")
-	_, _ = fmt.Fprintln(w, "  gornsh [-c <configdir>] [-i <identityfile>] [-v | -q] <destination_hash> [--] [program [args ...]]")
-	_, _ = fmt.Fprintln(w, "")
+	_, _ = fmt.Fprint(w, usageText)
 }
 
 func parseFlags(args []string) (options, error) {

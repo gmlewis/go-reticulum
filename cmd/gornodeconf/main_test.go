@@ -107,6 +107,16 @@ func TestSignWithoutPortAutoDetectsDiscoveredPort(t *testing.T) {
 	}
 }
 
+func TestFwVersionRejectsNonNumericValue(t *testing.T) {
+	out, err := runGornodeconf("--fw-version", "abc")
+	if err != nil {
+		t.Fatalf("gornodeconf --fw-version abc failed: %v\n%v", err, out)
+	}
+	if !strings.Contains(out, "Selected version \"abc\" does not appear to be a number.") {
+		t.Fatalf("missing version validation message: %v", out)
+	}
+}
+
 func runGornodeconf(args ...string) (string, error) {
 	taskArgs := append([]string{"run", "."}, args...)
 	cmd := exec.Command("go", taskArgs...)

@@ -14,6 +14,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
@@ -70,6 +71,13 @@ func (rt cliRuntime) run(args []string) error {
 		}
 		fmt.Println("Done")
 		return nil
+	}
+
+	if opts.fwVersion != "" {
+		if _, err := strconv.ParseFloat(opts.fwVersion, 64); err != nil {
+			fmt.Printf("Selected version %q does not appear to be a number.\n", opts.fwVersion)
+			return nil
+		}
 	}
 
 	if opts.trustKey != "" {
