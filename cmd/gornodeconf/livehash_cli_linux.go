@@ -8,6 +8,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -23,6 +24,14 @@ func runFirmwareHashReadbacks(out io.Writer, port string, opts options) (err err
 			err = closeErr
 		}
 	}()
+
+	eepromState, err := captureRnodeEEPROM(serial, 5*time.Second)
+	if err != nil {
+		return err
+	}
+	if !eepromState.provisioned {
+		return errors.New("This device has not been provisioned yet, cannot get firmware hash")
+	}
 
 	snapshot, err := captureRnodeHashes(serial, 5*time.Second)
 	if err != nil {

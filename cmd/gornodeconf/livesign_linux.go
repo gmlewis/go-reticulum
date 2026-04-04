@@ -8,6 +8,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -26,6 +27,14 @@ func runDeviceSigning(out io.Writer, port string) (err error) {
 			err = closeErr
 		}
 	}()
+
+	eepromState, err := captureRnodeEEPROM(serial, 5*time.Second)
+	if err != nil {
+		return err
+	}
+	if !eepromState.provisioned {
+		return errors.New("This device has not been provisioned yet, cannot create device signature")
+	}
 
 	snapshot, err := captureRnodeHashes(serial, 5*time.Second)
 	if err != nil {

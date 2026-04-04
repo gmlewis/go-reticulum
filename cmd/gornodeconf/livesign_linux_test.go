@@ -65,7 +65,7 @@ func TestRunDeviceSigningWritesPythonFrame(t *testing.T) {
 		t.Fatalf("write device.key: %v", err)
 	}
 
-	serial := &liveSignSerial{reads: append([]byte(nil), []byte{
+	serial := &liveSignSerial{reads: append(validRnodeEEPROMFrame(), []byte{
 		kissFend, rnodeKISSCommandFWVersion, 0x02, 0x05, kissFend,
 		kissFend, rnodeKISSCommandDevHash,
 		0x01, 0x02, 0x03, 0x04,
@@ -110,8 +110,11 @@ func TestRunDeviceSigningWritesPythonFrame(t *testing.T) {
 	if !strings.Contains(out.String(), "Device signed") {
 		t.Fatalf("unexpected output: %v", out.String())
 	}
-	if len(serial.writes) != 2 {
-		t.Fatalf("expected detect + signature writes, got %v", len(serial.writes))
+	if len(serial.writes) != 3 {
+		t.Fatalf("expected ROM read + detect + signature writes, got %v", len(serial.writes))
+	}
+	if !bytes.Equal(serial.writes[0], []byte{kissFend, rnodeKISSCommandROMRead, 0x00, kissFend}) {
+		t.Fatalf("ROM read command mismatch: %x", serial.writes[0])
 	}
 	expectedSignature, err := deviceSigner.Sign([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20})
 	if err != nil {
@@ -119,8 +122,11 @@ func TestRunDeviceSigningWritesPythonFrame(t *testing.T) {
 	}
 	want := append([]byte{0xc0, 0x57}, kissEscape(expectedSignature)...)
 	want = append(want, 0xc0)
-	if !bytes.Equal(serial.writes[1], want) {
-		t.Fatalf("signature frame mismatch:\n got: %x\nwant: %x", serial.writes[1], want)
+	if !bytes.Equal(serial.writes[1], rnodeDetectCommand()) {
+		t.Fatalf("detect command mismatch:\n got: %x\nwant: %x", serial.writes[1], rnodeDetectCommand())
+	}
+	if !bytes.Equal(serial.writes[2], want) {
+		t.Fatalf("signature frame mismatch:\n got: %x\nwant: %x", serial.writes[2], want)
 	}
 }
 

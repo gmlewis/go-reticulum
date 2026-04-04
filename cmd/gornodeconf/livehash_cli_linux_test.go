@@ -68,7 +68,7 @@ func (s *liveHashSerial) Close() error {
 }
 
 func TestRunFirmwareHashReadbacksPrintsPythonLines(t *testing.T) {
-	serial := &liveHashSerial{reads: append([]byte(nil), []byte{
+	serial := &liveHashSerial{reads: append(validRnodeEEPROMFrame(), []byte{
 		kissFend, rnodeKISSCommandFWVersion, 0x02, 0x05, kissFend,
 		kissFend, rnodeKISSCommandDevHash,
 		0x01, 0x02, 0x03, 0x04,
@@ -118,8 +118,8 @@ func TestRunFirmwareHashReadbacksPrintsPythonLines(t *testing.T) {
 	if !strings.Contains(got, "The actual firmware hash is: c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0") {
 		t.Fatalf("missing actual hash line: %v", got)
 	}
-	if len(serial.writes) != 1 {
-		t.Fatalf("expected one detect command write, got %v", len(serial.writes))
+	if len(serial.writes) != 2 {
+		t.Fatalf("expected EEPROM read + detect writes, got %v", len(serial.writes))
 	}
 }
 
@@ -133,7 +133,7 @@ func TestRunFirmwareHashReadbacksReturnsTimeoutError(t *testing.T) {
 
 	var out bytes.Buffer
 	err := runFirmwareHashReadbacks(&out, "ttyUSB0", options{getTargetFirmwareHash: true})
-	if !errors.Is(err, errReadHashesTimeout) {
+	if !errors.Is(err, errReadEEPROMTimeout) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

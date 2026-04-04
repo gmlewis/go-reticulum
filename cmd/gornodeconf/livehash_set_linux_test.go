@@ -14,7 +14,7 @@ import (
 )
 
 func TestRunFirmwareHashSetWritesPythonFrame(t *testing.T) {
-	serial := &liveHashSerial{}
+	serial := &liveHashSerial{reads: validRnodeEEPROMFrame()}
 	originalOpenSerial := openSerial
 	defer func() { openSerial = originalOpenSerial }()
 	openSerial = func(settings serialSettings) (serialPort, error) {
@@ -29,8 +29,12 @@ func TestRunFirmwareHashSetWritesPythonFrame(t *testing.T) {
 	if !strings.Contains(out.String(), "Firmware hash set") {
 		t.Fatalf("unexpected output: %v", out.String())
 	}
-	if len(serial.writes) != 1 {
-		t.Fatalf("expected 1 write, got %v", len(serial.writes))
+	if len(serial.writes) != 2 {
+		t.Fatalf("expected 2 writes, got %v", len(serial.writes))
+	}
+	wantROM := []byte{kissFend, rnodeKISSCommandROMRead, 0x00, kissFend}
+	if !bytes.Equal(serial.writes[0], wantROM) {
+		t.Fatalf("ROM read command mismatch:\n got: %x\nwant: %x", serial.writes[0], wantROM)
 	}
 	want := []byte{0xc0, 0x58,
 		0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
@@ -38,8 +42,8 @@ func TestRunFirmwareHashSetWritesPythonFrame(t *testing.T) {
 		0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
 		0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
 		0xc0}
-	if !bytes.Equal(serial.writes[0], want) {
-		t.Fatalf("firmware hash frame mismatch:\n got: %x\nwant: %x", serial.writes[0], want)
+	if !bytes.Equal(serial.writes[1], want) {
+		t.Fatalf("firmware hash frame mismatch:\n got: %x\nwant: %x", serial.writes[1], want)
 	}
 }
 
@@ -54,10 +58,16 @@ func TestRunFirmwareHashSetRejectsInvalidInput(t *testing.T) {
 }
 
 func TestRunFirmwareHashSetCanRestoreOriginalValue(t *testing.T) {
-	serial := &liveHashSerial{}
+	serials := []*liveHashSerial{
+		{reads: validRnodeEEPROMFrame()},
+		{reads: validRnodeEEPROMFrame()},
+	}
 	originalOpenSerial := openSerial
 	defer func() { openSerial = originalOpenSerial }()
+	call := 0
 	openSerial = func(settings serialSettings) (serialPort, error) {
+		serial := serials[call]
+		call++
 		return serial, nil
 	}
 
@@ -70,7 +80,9 @@ func TestRunFirmwareHashSetCanRestoreOriginalValue(t *testing.T) {
 	if err := runFirmwareHashSet(&out, "ttyUSB0", original); err != nil {
 		t.Fatalf("runFirmwareHashSet restore failed: %v", err)
 	}
-	if len(serial.writes) != 2 {
-		t.Fatalf("expected 2 writes, got %v", len(serial.writes))
+	for i, serial := range serials {
+		if len(serial.writes) != 2 {
+			t.Fatalf("expected 2 writes for call %v, got %v", i, len(serial.writes))
+		}
 	}
 }

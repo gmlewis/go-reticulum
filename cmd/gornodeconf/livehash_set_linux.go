@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 )
 
 func runFirmwareHashSet(out io.Writer, port, hashHex string) (err error) {
@@ -29,6 +30,14 @@ func runFirmwareHashSet(out io.Writer, port, hashHex string) (err error) {
 			err = closeErr
 		}
 	}()
+
+	eepromState, err := captureRnodeEEPROM(serial, 5*time.Second)
+	if err != nil {
+		return err
+	}
+	if !eepromState.provisioned {
+		return errors.New("This device has not been provisioned yet, cannot set firmware hash")
+	}
 
 	state := &firmwareHashSetterState{name: "rnode", hashBytes: hashBytes, writer: serial}
 	if err := state.setFirmwareHash(); err != nil {
