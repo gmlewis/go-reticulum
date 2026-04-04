@@ -38,14 +38,12 @@ package main
 import (
 	"bytes"
 	"errors"
-	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -59,53 +57,11 @@ const (
 
 var nonWordRE = regexp.MustCompile(`\W+`)
 
-type options struct {
-	configDir     string
-	identityPath  string
-	serviceName   string
-	printIdentity bool
-	listen        bool
-	verbose       bool
-	quiet         bool
-	version       bool
-	destination   string
-	announceEvery int
-	noAuth        bool
-	allowHashes   []string
-	remoteAsArgs  bool
-	noRemoteCmd   bool
-	noID          bool
-	noTTY         bool
-	mirror        bool
-	timeoutSec    int
-	commandLine   []string
-}
-
-type multiValueFlag []string
-
-func (m *multiValueFlag) String() string {
-	return strings.Join(*m, ",")
-}
-
-func (m *multiValueFlag) Set(value string) error {
-	if strings.TrimSpace(value) == "" {
-		return nil
-	}
-	*m = append(*m, value)
-	return nil
-}
-
 func main() {
-	flag.Usage = func() {
-		_, _ = fmt.Fprintln(flag.CommandLine.Output(), "Usage:")
-		_, _ = fmt.Fprintln(flag.CommandLine.Output(), "  gornsh -l [-c <configdir>] [-i <identityfile> | -s <service_name>] [-v | -q] -p")
-		_, _ = fmt.Fprintln(flag.CommandLine.Output(), "  gornsh [-c <configdir>] [-i <identityfile>] [-v | -q] -p")
-		_, _ = fmt.Fprintln(flag.CommandLine.Output(), "  gornsh [-c <configdir>] [-i <identityfile>] [-v | -q] <destination_hash> [--] [program [args ...]]")
-		_, _ = fmt.Fprintln(flag.CommandLine.Output(), "")
-		flag.PrintDefaults()
+	opts, err := parseFlags(os.Args[1:])
+	if err != nil {
+		log.Fatalf("gornsh: %v", err)
 	}
-
-	opts := parseFlags()
 
 	if opts.version {
 		_, _ = fmt.Printf("gornsh %v\n", rns.VERSION)
@@ -134,7 +90,7 @@ func main() {
 	}
 
 	if opts.destination == "" {
-		flag.Usage()
+		usage()
 		os.Exit(2)
 	}
 
@@ -143,98 +99,6 @@ func main() {
 		log.Fatalf("gornsh: %v", err)
 	}
 	os.Exit(code)
-}
-
-func parseFlags() options {
-	var opts options
-
-	configShort := flag.String("c", "", "alternate Reticulum config directory")
-	configLong := flag.String("config", "", "alternate Reticulum config directory")
-	identityShort := flag.String("i", "", "specific identity file to use")
-	identityLong := flag.String("identity", "", "specific identity file to use")
-	serviceShort := flag.String("s", "", "service name for identity file when listening")
-	serviceLong := flag.String("service", "", "service name for identity file when listening")
-	printIdentityShort := flag.Bool("p", false, "print identity information and exit")
-	printIdentityLong := flag.Bool("print-identity", false, "print identity information and exit")
-	listenShort := flag.Bool("l", false, "listen (server) mode")
-	listenLong := flag.Bool("listen", false, "listen (server) mode")
-	verboseShort := flag.Bool("v", false, "increase verbosity")
-	verboseLong := flag.Bool("verbose", false, "increase verbosity")
-	quietShort := flag.Bool("q", false, "increase quietness")
-	quietLong := flag.Bool("quiet", false, "increase quietness")
-	noIDShort := flag.Bool("N", false, "disable identify on connect")
-	noIDLong := flag.Bool("no-id", false, "disable identify on connect")
-	noTTYShort := flag.Bool("T", false, "force pipe mode (no TTY)")
-	noTTYLong := flag.Bool("no-tty", false, "force pipe mode (no TTY)")
-	mirrorShort := flag.Bool("m", false, "return with code of remote process")
-	mirrorLong := flag.Bool("mirror", false, "return with code of remote process")
-	timeoutShort := flag.String("w", "", "client connect/request timeout in seconds")
-	timeoutLong := flag.String("timeout", "", "client connect/request timeout in seconds")
-	announceShort := flag.String("b", "", "announce on startup and every PERIOD seconds (0 for once)")
-	announceLong := flag.String("announce", "", "announce on startup and every PERIOD seconds (0 for once)")
-	noAuthShort := flag.Bool("n", false, "disable authentication")
-	noAuthLong := flag.Bool("no-auth", false, "disable authentication")
-	remoteAsArgsShort := flag.Bool("A", false, "append remote command as args to listener command")
-	remoteAsArgsLong := flag.Bool("remote-command-as-args", false, "append remote command as args to listener command")
-	noRemoteCmdShort := flag.Bool("C", false, "disable executing remote command")
-	noRemoteCmdLong := flag.Bool("no-remote-command", false, "disable executing remote command")
-	version := flag.Bool("version", false, "show version")
-	var allowValues multiValueFlag
-	flag.Var(&allowValues, "a", "identity hash allowed to connect")
-	flag.Var(&allowValues, "allowed", "identity hash allowed to connect")
-
-	flag.Parse()
-
-	opts.configDir = firstNonEmpty(*configShort, *configLong)
-	opts.identityPath = firstNonEmpty(*identityShort, *identityLong)
-	opts.serviceName = firstNonEmpty(*serviceShort, *serviceLong)
-	opts.printIdentity = *printIdentityShort || *printIdentityLong
-	opts.listen = *listenShort || *listenLong
-	opts.verbose = *verboseShort || *verboseLong
-	opts.quiet = *quietShort || *quietLong
-	opts.version = *version
-	opts.noAuth = *noAuthShort || *noAuthLong
-	opts.remoteAsArgs = *remoteAsArgsShort || *remoteAsArgsLong
-	opts.noRemoteCmd = *noRemoteCmdShort || *noRemoteCmdLong
-	opts.noID = *noIDShort || *noIDLong
-	opts.noTTY = *noTTYShort || *noTTYLong
-	opts.mirror = *mirrorShort || *mirrorLong
-	opts.allowHashes = append(opts.allowHashes, allowValues...)
-	opts.timeoutSec = 15
-
-	timeoutText := firstNonEmpty(*timeoutShort, *timeoutLong)
-	if timeoutText != "" {
-		timeout, err := strconv.Atoi(timeoutText)
-		if err == nil && timeout > 0 {
-			opts.timeoutSec = timeout
-		}
-	}
-
-	announceText := firstNonEmpty(*announceShort, *announceLong)
-	if announceText != "" {
-		announceEvery, err := strconv.Atoi(announceText)
-		if err == nil {
-			opts.announceEvery = announceEvery
-		}
-	}
-
-	if opts.listen && opts.serviceName == "" {
-		opts.serviceName = defaultServiceName
-	}
-	opts.serviceName = sanitizeServiceName(opts.serviceName)
-
-	if flag.NArg() > 0 {
-		if opts.listen {
-			opts.commandLine = append([]string{}, flag.Args()...)
-		} else {
-			opts.destination = flag.Arg(0)
-			if flag.NArg() > 1 {
-				opts.commandLine = append([]string{}, flag.Args()[1:]...)
-			}
-		}
-	}
-
-	return opts
 }
 
 func printIdentity(opts options) error {

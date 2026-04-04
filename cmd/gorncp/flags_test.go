@@ -10,6 +10,17 @@ import (
 	"testing"
 )
 
+func TestAppFlags(t *testing.T) {
+	t.Parallel()
+	app, err := parseFlags([]string{"--config", "/tmp/config", "--silent", "--allow-fetch", "--jail", "/home", "--save", "/tmp/save", "--overwrite", "-b", "5", "-a", "abc123", "--no-auth", "--print-identity", "--phy-rates", "-w", "30", "--version"})
+	if err != nil {
+		t.Fatalf("parseFlags failed: %v", err)
+	}
+	if app.configDir != "/tmp/config" || !app.silent || !app.allowFetch || app.jail != "/home" || app.savePath != "/tmp/save" || !app.overwrite || app.announceInterval != 5 || len(app.allowed) != 1 || app.allowed[0] != "abc123" || !app.noAuth || !app.printIdentity || !app.phyRates || app.timeoutSec != 30 || !app.version {
+		t.Fatalf("unexpected app state: %+v", app)
+	}
+}
+
 func TestSilentFlag(t *testing.T) {
 	t.Parallel()
 
