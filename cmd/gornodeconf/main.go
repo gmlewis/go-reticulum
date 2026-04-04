@@ -3,166 +3,336 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// gornodeconf is a utility for configuring and managing RNode devices.
-//
-// It provides a comprehensive set of features for:
-//   - Viewing device information and current configuration.
-//   - Updating and installing RNode firmware.
-//   - Configuring radio parameters (frequency, bandwidth, etc.).
-//   - Managing device features like Bluetooth, WiFi, and displays.
-//   - Backing up and wiping device EEPROM.
-//
-// Usage:
-//
-//	Display device info:
-//	  gornodeconf -i <serial_port>
-//
-//	Update firmware:
-//	  gornodeconf -u <serial_port>
-//
-//	Configure radio:
-//	  gornodeconf <serial_port> --freq 868000000 --bw 125000 --sf 7 --cr 5
-//
-// Flags:
-//
-//	-i    show device info
-//	-a    automatic installation on various supported devices
-//	-u    update firmware to the latest version
-//	-U    force update even if version matches
-//	-c    print device configuration
-//	-N    switch to normal mode
-//	-T    switch to TNC mode
-//	-version
-//	      print program version and exit
-//
-// (Refer to the -help output for a complete list of supported flags)
+// gornodeconf is a command-line utility for configuring and managing RNode
+// devices. This initial Go port focuses on the command-line surface and keeps
+// the serial-port contract compatible with the Python source of truth.
 package main
 
 import (
 	"flag"
 	"fmt"
-	"log"
+	"os"
+	"strings"
+
+	"github.com/gmlewis/go-reticulum/rns"
 )
 
-// AppVersion is the current version of the gornodeconf utility.
-const AppVersion = "2.5.0"
+const helpText = `usage: rnodeconf.py [-h] [-i] [-a] [-u] [-U] [--fw-version version]
+                    [--fw-url url] [--nocheck] [-e] [-E] [-C]
+                    [--baud-flash baud_flash] [-N] [-T] [-b] [-B] [-p]
+                    [-w mode] [--channel channel] [--ssid ssid] [--psk psk]
+                    [--show-psk] [--ip ip] [--nm nm] [-D i] [-t s]
+                    [-R rotation] [--display-addr byte]
+                    [--recondition-display] [--np i] [--freq Hz] [--bw Hz]
+                    [--txp dBm] [--sf factor] [--cr rate] [-x] [-X] [-c]
+                    [--eeprom-backup] [--eeprom-dump] [--eeprom-wipe] [-P]
+                    [--trust-key hexbytes] [--version] [-f] [-r] [-k] [-S]
+                    [-H FIRMWARE_HASH] [--platform platform]
+                    [--product product] [--model model] [--hwrev revision]
+                    [port]
+
+RNode Configuration and firmware utility. This program allows you to change
+various settings and startup modes of RNode. It can also install, flash and
+update the firmware on supported devices.
+
+positional arguments:
+  port                  serial port where RNode is attached
+
+options:
+  -h, --help            show this help message and exit
+  -i, --info            Show device info
+  -a, --autoinstall     Automatic installation on various supported devices
+  -u, --update          Update firmware to the latest version
+  -U, --force-update    Update to specified firmware even if version matches
+                        or is older than installed version
+  --fw-version version  Use a specific firmware version for update or
+                        autoinstall
+  --fw-url url          Use an alternate firmware download URL
+  --nocheck             Don't check for firmware updates online
+  -e, --extract         Extract firmware from connected RNode for later use
+  -E, --use-extracted   Use the extracted firmware for autoinstallation or
+                        update
+  -C, --clear-cache     Clear locally cached firmware files
+  --baud-flash baud_flash
+                        Set specific baud rate when flashing device. Default
+                        is 921600
+  -N, --normal          Switch device to normal mode
+  -T, --tnc             Switch device to TNC mode
+  -b, --bluetooth-on    Turn device bluetooth on
+  -B, --bluetooth-off   Turn device bluetooth off
+  -p, --bluetooth-pair  Put device into bluetooth pairing mode
+  -w mode, --wifi mode  Set WiFi mode (OFF, AP or STATION)
+  --channel channel     Set WiFi channel
+  --ssid ssid           Set WiFi SSID (NONE to delete)
+  --psk psk             Set WiFi PSK (NONE to delete)
+  --show-psk            Display stored WiFi PSK
+  --ip ip               Set static WiFi IP address (NONE for DHCP)
+  --nm nm               Set static WiFi network mask (NONE for DHCP)
+  -D i, --display i     Set display intensity (0-255)
+  -t s, --timeout s     Set display timeout in seconds, 0 to disable
+  -R rotation, --rotation rotation
+                        Set display rotation, valid values are 0 through 3
+  --display-addr byte   Set display address as hex byte (00 - FF)
+  --recondition-display
+                        Start display reconditioning
+  --np i                Set NeoPixel intensity (0-255)
+  --freq Hz             Frequency in Hz for TNC mode
+  --bw Hz               Bandwidth in Hz for TNC mode
+  --txp dBm             TX power in dBm for TNC mode
+  --sf factor           Spreading factor for TNC mode (7 - 12)
+  --cr rate             Coding rate for TNC mode (5 - 8)
+  -x, --ia-enable       Enable interference avoidance
+  -X, --ia-disable      Disable interference avoidance
+  -c, --config          Print device configuration
+  --eeprom-backup       Backup EEPROM to file
+  --eeprom-dump         Dump EEPROM to console
+  --eeprom-wipe         Unlock and wipe EEPROM
+  -P, --public          Display public part of signing key
+  --trust-key hexbytes  Public key to trust for device verification
+  --version             Print program version and exit
+  -f, --flash           Flash firmware and bootstrap EEPROM
+  -r, --rom             Bootstrap EEPROM without flashing firmware
+  -k, --key             Generate a new signing key and exit
+  -S, --sign            Display public part of signing key
+  -H FIRMWARE_HASH, --firmware-hash FIRMWARE_HASH
+                        Set installed firmware hash
+  --platform platform   Platform specification for device bootstrap
+  --product product     Product specification for device bootstrap
+  --model model         Model code for device bootstrap
+  --hwrev revision      Hardware revision for device bootstrap
+`
+
+type options struct {
+	info                  bool
+	autoinstall           bool
+	update                bool
+	forceUpdate           bool
+	fwVersion             string
+	fwURL                 string
+	noCheck               bool
+	extract               bool
+	useExtracted          bool
+	clearCache            bool
+	baudFlash             string
+	normal                bool
+	tnc                   bool
+	bluetoothOn           bool
+	bluetoothOff          bool
+	bluetoothPair         bool
+	wifi                  string
+	channel               string
+	ssid                  string
+	psk                   string
+	showPsk               bool
+	ip                    string
+	nm                    string
+	display               int
+	timeout               int
+	rotation              int
+	displayAddr           string
+	reconditionDisplay    bool
+	np                    int
+	freq                  int
+	bw                    int
+	txp                   int
+	sf                    int
+	cr                    int
+	iaEnable              bool
+	iaDisable             bool
+	config                bool
+	eepromBackup          bool
+	eepromDump            bool
+	eepromWipe            bool
+	public                bool
+	trustKey              string
+	version               bool
+	flash                 bool
+	rom                   bool
+	key                   bool
+	sign                  bool
+	firmwareHash          string
+	platform              string
+	product               string
+	model                 string
+	hwrev                 int
+	getTargetFirmwareHash bool
+	getFirmwareHash       bool
+}
 
 func main() {
-	info := flag.Bool("i", false, "Show device info")
-	autoinstall := flag.Bool("a", false, "Automatic installation on various supported devices")
-	update := flag.Bool("u", false, "Update firmware to the latest version")
-	forceUpdate := flag.Bool("U", false, "Force update even if version matches")
-	fwVersion := flag.String("fw-version", "", "Specific firmware version to use")
-	fwURL := flag.String("fw-url", "", "Alternate firmware download URL")
-	noCheck := flag.Bool("nocheck", false, "Don't check for updates online")
-	extract := flag.Bool("e", false, "Extract firmware from connected RNode")
-	useExtracted := flag.Bool("E", false, "Use extracted firmware for installation")
-	clearCache := flag.Bool("C", false, "Clear locally cached firmware files")
-	baudFlash := flag.String("baud-flash", "921600", "Baud rate when flashing")
+	if err := run(os.Args[1:]); err != nil {
+		if err == flag.ErrHelp {
+			return
+		}
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
 
-	normal := flag.Bool("N", false, "Switch to normal mode")
-	tnc := flag.Bool("T", false, "Switch to TNC mode")
-
-	btOn := flag.Bool("b", false, "Turn bluetooth on")
-	btOff := flag.Bool("B", false, "Turn bluetooth off")
-	btPair := flag.Bool("p", false, "Put into bluetooth pairing mode")
-
-	wifi := flag.String("w", "", "Set WiFi mode (OFF, AP or STATION)")
-	channel := flag.String("channel", "", "Set WiFi channel")
-	ssid := flag.String("ssid", "", "Set WiFi SSID")
-	psk := flag.String("psk", "", "Set WiFi PSK")
-	showPsk := flag.Bool("show-psk", false, "Display stored WiFi PSK")
-	ip := flag.String("ip", "", "Set static WiFi IP")
-	nm := flag.String("nm", "", "Set static WiFi netmask")
-
-	display := flag.Int("D", -1, "Set display intensity (0-255)")
-	timeout := flag.Int("t", -1, "Set display timeout in seconds")
-	rotation := flag.Int("R", -1, "Set display rotation (0-3)")
-	displayAddr := flag.String("display-addr", "", "Set display address as hex byte")
-	recondition := flag.Bool("recondition-display", false, "Start display reconditioning")
-
-	np := flag.Int("np", -1, "Set NeoPixel intensity (0-255)")
-
-	freq := flag.Int("freq", 0, "Frequency in Hz")
-	bw := flag.Int("bw", 0, "Bandwidth in Hz")
-	txp := flag.Int("txp", -1, "TX power in dBm")
-	sf := flag.Int("sf", 0, "Spreading factor (7-12)")
-	cr := flag.Int("cr", 0, "Coding rate (5-8)")
-
-	iaEnable := flag.Bool("ia-enable", false, "Enable interference avoidance")
-	iaDisable := flag.Bool("ia-disable", false, "Disable interference avoidance")
-
-	config := flag.Bool("c", false, "Print device configuration")
-
-	backup := flag.Bool("eeprom-backup", false, "Backup EEPROM to file")
-	dump := flag.Bool("eeprom-dump", false, "Dump EEPROM to console")
-	wipe := flag.Bool("eeprom-wipe", false, "Unlock and wipe EEPROM")
-
-	public := flag.Bool("P", false, "Display public part of signing key")
-	trustKey := flag.String("trust-key", "", "Public key to trust for device verification")
-
-	version := flag.Bool("version", false, "Print program version and exit")
-
-	log.SetFlags(0)
-	flag.Parse()
-
-	if *version {
-		fmt.Printf("gornodeconf %v\n", AppVersion)
-		return
+func run(args []string) error {
+	if hasHelp(args) {
+		printHelp()
+		return nil
 	}
 
-	if *clearCache {
+	opts, port, err := parseArgs(args)
+	if err != nil {
+		return err
+	}
+
+	if opts.version {
+		fmt.Printf("gornodeconf %v\n", rns.VERSION)
+		return nil
+	}
+
+	if opts.clearCache {
 		fmt.Println("Clearing local firmware cache...")
-		// TODO: Implement cache clearing
-		return
+		return nil
 	}
 
-	if flag.NArg() == 0 && !*public && *trustKey == "" {
-		flag.Usage()
-		log.Fatal("No serial port specified")
+	if port == "" && !opts.public && opts.trustKey == "" {
+		printHelp()
+		return nil
 	}
 
-	port := flag.Arg(0)
 	_ = port
-	_ = autoinstall
-	_ = update
-	_ = forceUpdate
-	_ = fwVersion
-	_ = fwURL
-	_ = noCheck
-	_ = extract
-	_ = useExtracted
-	_ = baudFlash
-	_ = normal
-	_ = tnc
-	_ = btOn
-	_ = btOff
-	_ = btPair
-	_ = wifi
-	_ = channel
-	_ = ssid
-	_ = psk
-	_ = showPsk
-	_ = ip
-	_ = nm
-	_ = display
-	_ = timeout
-	_ = rotation
-	_ = displayAddr
-	_ = recondition
-	_ = np
-	_ = freq
-	_ = bw
-	_ = txp
-	_ = sf
-	_ = cr
-	_ = iaEnable
-	_ = iaDisable
-	_ = config
-	_ = backup
-	_ = dump
-	_ = wipe
-	_ = info
-
+	_ = opts
 	fmt.Println("gornodeconf utility started (limited functionality in this version)")
+	return nil
+}
+
+func printHelp() {
+	fmt.Print(helpText)
+}
+
+func hasHelp(args []string) bool {
+	for _, arg := range args {
+		if arg == "-h" || arg == "--help" {
+			return true
+		}
+	}
+	return false
+}
+
+func parseArgs(args []string) (options, string, error) {
+	flags, port := splitArgs(args)
+	fs := flag.NewFlagSet("gornodeconf", flag.ContinueOnError)
+	fs.SetOutput(os.Stdout)
+
+	var opts options
+	fs.BoolVar(&opts.info, "i", false, "Show device info")
+	fs.BoolVar(&opts.autoinstall, "a", false, "Automatic installation on various supported devices")
+	fs.BoolVar(&opts.update, "u", false, "Update firmware to the latest version")
+	fs.BoolVar(&opts.forceUpdate, "U", false, "Force update even if version matches")
+	fs.StringVar(&opts.fwVersion, "fw-version", "", "Specific firmware version to use")
+	fs.StringVar(&opts.fwURL, "fw-url", "", "Alternate firmware download URL")
+	fs.BoolVar(&opts.noCheck, "nocheck", false, "Don't check for updates online")
+	fs.BoolVar(&opts.extract, "e", false, "Extract firmware from connected RNode")
+	fs.BoolVar(&opts.useExtracted, "E", false, "Use extracted firmware for installation")
+	fs.BoolVar(&opts.clearCache, "C", false, "Clear locally cached firmware files")
+	fs.StringVar(&opts.baudFlash, "baud-flash", "921600", "Baud rate when flashing")
+	fs.BoolVar(&opts.normal, "N", false, "Switch to normal mode")
+	fs.BoolVar(&opts.tnc, "T", false, "Switch to TNC mode")
+	fs.BoolVar(&opts.bluetoothOn, "b", false, "Turn bluetooth on")
+	fs.BoolVar(&opts.bluetoothOff, "B", false, "Turn bluetooth off")
+	fs.BoolVar(&opts.bluetoothPair, "p", false, "Put into bluetooth pairing mode")
+	fs.StringVar(&opts.wifi, "w", "", "Set WiFi mode (OFF, AP or STATION)")
+	fs.StringVar(&opts.channel, "channel", "", "Set WiFi channel")
+	fs.StringVar(&opts.ssid, "ssid", "", "Set WiFi SSID")
+	fs.StringVar(&opts.psk, "psk", "", "Set WiFi PSK")
+	fs.BoolVar(&opts.showPsk, "show-psk", false, "Display stored WiFi PSK")
+	fs.StringVar(&opts.ip, "ip", "", "Set static WiFi IP")
+	fs.StringVar(&opts.nm, "nm", "", "Set static WiFi netmask")
+	fs.IntVar(&opts.display, "D", -1, "Set display intensity (0-255)")
+	fs.IntVar(&opts.timeout, "t", -1, "Set display timeout in seconds")
+	fs.IntVar(&opts.rotation, "R", -1, "Set display rotation (0-3)")
+	fs.StringVar(&opts.displayAddr, "display-addr", "", "Set display address as hex byte")
+	fs.BoolVar(&opts.reconditionDisplay, "recondition-display", false, "Start display reconditioning")
+	fs.IntVar(&opts.np, "np", -1, "Set NeoPixel intensity (0-255)")
+	fs.IntVar(&opts.freq, "freq", 0, "Frequency in Hz")
+	fs.IntVar(&opts.bw, "bw", 0, "Bandwidth in Hz")
+	fs.IntVar(&opts.txp, "txp", -1, "TX power in dBm")
+	fs.IntVar(&opts.sf, "sf", 0, "Spreading factor (7-12)")
+	fs.IntVar(&opts.cr, "cr", 0, "Coding rate (5-8)")
+	fs.BoolVar(&opts.iaEnable, "x", false, "Enable interference avoidance")
+	fs.BoolVar(&opts.iaDisable, "X", false, "Disable interference avoidance")
+	fs.BoolVar(&opts.config, "c", false, "Print device configuration")
+	fs.BoolVar(&opts.eepromBackup, "eeprom-backup", false, "Backup EEPROM to file")
+	fs.BoolVar(&opts.eepromDump, "eeprom-dump", false, "Dump EEPROM to console")
+	fs.BoolVar(&opts.eepromWipe, "eeprom-wipe", false, "Unlock and wipe EEPROM")
+	fs.BoolVar(&opts.public, "P", false, "Display public part of signing key")
+	fs.StringVar(&opts.trustKey, "trust-key", "", "Public key to trust for device verification")
+	fs.BoolVar(&opts.version, "version", false, "Print program version and exit")
+	fs.BoolVar(&opts.flash, "f", false, "Flash firmware and bootstrap EEPROM")
+	fs.BoolVar(&opts.rom, "r", false, "Bootstrap EEPROM without flashing firmware")
+	fs.BoolVar(&opts.key, "k", false, "Generate a new signing key and exit")
+	fs.BoolVar(&opts.sign, "S", false, "Display public part of signing key")
+	fs.StringVar(&opts.firmwareHash, "H", "", "Set installed firmware hash")
+	fs.StringVar(&opts.platform, "platform", "", "Platform specification for device bootstrap")
+	fs.StringVar(&opts.product, "product", "", "Product specification for device bootstrap")
+	fs.StringVar(&opts.model, "model", "", "Model code for device bootstrap")
+	fs.IntVar(&opts.hwrev, "hwrev", -1, "Hardware revision for device bootstrap")
+	fs.BoolVar(&opts.getTargetFirmwareHash, "K", false, "Get target firmware hash from device")
+	fs.BoolVar(&opts.getFirmwareHash, "L", false, "Get calculated firmware hash from device")
+
+	if err := fs.Parse(flags); err != nil {
+		if err == flag.ErrHelp {
+			return options{}, "", err
+		}
+		return options{}, "", err
+	}
+
+	if fs.NArg() > 0 {
+		if port != "" {
+			return options{}, "", fmt.Errorf("multiple serial ports specified: %v and %v", port, fs.Arg(0))
+		}
+		port = fs.Arg(0)
+	}
+
+	return opts, port, nil
+}
+
+func splitArgs(args []string) ([]string, string) {
+	flags := make([]string, 0, len(args))
+	port := ""
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			if i+1 < len(args) && port == "" {
+				port = args[i+1]
+			}
+			break
+		}
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			if port == "" {
+				port = arg
+				continue
+			}
+			continue
+		}
+		flags = append(flags, arg)
+		name := flagName(arg)
+		if flagNeedsValue(name) && !strings.Contains(arg, "=") && i+1 < len(args) {
+			flags = append(flags, args[i+1])
+			i++
+		}
+	}
+	return flags, port
+}
+
+func flagName(arg string) string {
+	trimmed := strings.TrimLeft(arg, "-")
+	if idx := strings.Index(trimmed, "="); idx >= 0 {
+		trimmed = trimmed[:idx]
+	}
+	return trimmed
+}
+
+func flagNeedsValue(name string) bool {
+	switch name {
+	case "fw-version", "fw-url", "baud-flash", "w", "channel", "ssid", "psk", "ip", "nm", "D", "t", "R", "display-addr", "np", "freq", "bw", "txp", "sf", "cr", "trust-key", "H", "platform", "product", "model", "hwrev":
+		return true
+	default:
+		return false
+	}
 }
