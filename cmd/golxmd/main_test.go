@@ -7,6 +7,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -31,6 +32,28 @@ func tempDir(t *testing.T) (string, func()) {
 		_ = os.RemoveAll(dir)
 	}
 	return dir, cleanup
+}
+
+func runGolxmd(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+	fullArgs := append([]string{"run", "."}, args...)
+	cmd := exec.Command("go", fullArgs...)
+	cmd.Dir = "."
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+func TestLongFormParserAliases(t *testing.T) {
+	t.Parallel()
+	out, err := runGolxmd(t, "--verbose", "--quiet", "--exampleconfig")
+	if err != nil {
+		t.Fatalf("golxmd --verbose --quiet --exampleconfig failed: %v\n%v", err, out)
+	}
+	for _, want := range []string{"[propagation]", "[lxmf]", "[logging]"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("parser alias output missing %q: %v", want, out)
+		}
+	}
 }
 
 func TestJobs(t *testing.T) {

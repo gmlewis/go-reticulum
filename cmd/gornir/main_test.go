@@ -173,6 +173,19 @@ func TestVerboseStacking(t *testing.T) {
 	}
 }
 
+func TestLongFormParserAliases(t *testing.T) {
+	t.Parallel()
+	out, err := runGornir(t, "--verbose", "--quiet", "--exampleconfig")
+	if err != nil {
+		t.Fatalf("gornir --verbose --quiet --exampleconfig failed: %v\n%v", err, out)
+	}
+	for _, want := range []string{"example Reticulum config file", "[reticulum]", "[logging]"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("parser alias output missing %q: %v", want, out)
+		}
+	}
+}
+
 func TestVersionOutput(t *testing.T) {
 	t.Parallel()
 	out, err := runGornir(t, "--version")

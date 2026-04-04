@@ -166,6 +166,29 @@ func TestImportExportRoundTrip(t *testing.T) {
 	}
 }
 
+func TestLongFormParserAliases(t *testing.T) {
+	t.Parallel()
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+	idFile := filepath.Join(tmpDir, "alias.id")
+
+	out, err := runGornid(t, "--config", tmpDir, "--generate", idFile)
+	if err != nil {
+		t.Fatalf("gornid --generate failed: %v\n%v", err, out)
+	}
+	if _, err := os.Stat(idFile); err != nil {
+		t.Fatalf("identity file not created: %v", err)
+	}
+
+	out, err = runGornid(t, "--config", tmpDir, "--identity", idFile, "--print-identity")
+	if err != nil {
+		t.Fatalf("gornid --identity --print-identity failed: %v\n%v", err, out)
+	}
+	if !strings.Contains(out, "Public Key") {
+		t.Fatalf("identity output missing public key label: %v", out)
+	}
+}
+
 func TestEncryptDecryptRoundTrip(t *testing.T) {
 	t.Parallel()
 	tmpDir, cleanup := tempDir(t)

@@ -65,7 +65,9 @@ options:
 	flag.BoolVar(&version, "version", false, "show program's version number and exit")
 
 	flag.Var(&verbosity, "v", "enable verbose logging (stackable)")
+	flag.Var(&verbosity, "verbose", "enable verbose logging (stackable)")
 	flag.Var(&quietness, "q", "reduce log verbosity (stackable)")
+	flag.Var(&quietness, "quiet", "reduce log verbosity (stackable)")
 }
 
 type timeoutFlag time.Duration
