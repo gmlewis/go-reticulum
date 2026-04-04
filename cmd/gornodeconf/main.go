@@ -96,6 +96,10 @@ func (rt cliRuntime) run(args []string) error {
 		return err
 	}
 
+	if opts.update {
+		return rt.runFirmwareUpdate(os.Stdout, port, opts)
+	}
+
 	if opts.getTargetFirmwareHash || opts.getFirmwareHash {
 		return rt.runFirmwareHashReadbacks(os.Stdout, port, opts)
 	}
