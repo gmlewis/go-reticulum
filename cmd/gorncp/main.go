@@ -134,41 +134,44 @@ func sizeStr(num float64, suffix string) string {
 	return fmt.Sprintf("%.2f%s%s", num, lastUnit, suffix)
 }
 
+const usageText = `usage: gorncp [-h] [--config path] [-v] [-q] [-S] [-l] [-C] [-F] [-f] [-j path]
+          [-s path] [-O] [-b seconds] [-a allowed_hash] [-n] [-p]
+          [-i identity] [-w seconds] [-P] [--version]
+          [file] [destination]
+
+Go Reticulum File Transfer Utility
+
+positional arguments:
+  file                  file to be transferred
+  destination           hexadecimal hash of the receiver
+
+options:
+  -h, --help            show this help message and exit
+  --config path         path to alternative Reticulum config directory
+  -v, --verbose         increase verbosity
+  -q, --quiet           decrease verbosity
+  -S, --silent          disable transfer progress output
+  -l, --listen          listen for incoming transfer requests
+  -C, --no-compress     disable automatic compression
+  -F, --allow-fetch     allow authenticated clients to fetch files
+  -f, --fetch           fetch file from remote listener instead of sending
+  -j path, --jail path  restrict fetch requests to specified path
+  -s path, --save path  save received files in specified path
+  -O, --overwrite       Allow overwriting received files, instead of adding
+                        postfix
+  -b seconds            announce interval, 0 to only announce at startup
+  -a allowed_hash       allow this identity (or add in
+                        ~/.rncp/allowed_identities)
+  -n, --no-auth         accept requests from anyone
+  -p, --print-identity  print identity and destination info and exit
+  -i identity           path to identity to use
+  -w seconds            sender timeout before giving up
+  -P, --phy-rates       display physical layer transfer rates
+  --version             show program's version number and exit
+`
+
 func printUsage() {
-	fmt.Printf("usage: gorncp [-h] [--config path] [-v] [-q] [-S] [-l] [-C] [-F] [-f] [-j path]\n")
-	fmt.Printf("          [-s path] [-O] [-b seconds] [-a allowed_hash] [-n] [-p]\n")
-	fmt.Printf("          [-i identity] [-w seconds] [-P] [--version]\n")
-	fmt.Printf("          [file] [destination]\n")
-	fmt.Printf("\n")
-	fmt.Printf("Go Reticulum File Transfer Utility\n")
-	fmt.Printf("\n")
-	fmt.Printf("positional arguments:\n")
-	fmt.Printf("  file                  file to be transferred\n")
-	fmt.Printf("  destination           hexadecimal hash of the receiver\n")
-	fmt.Printf("\n")
-	fmt.Printf("options:\n")
-	fmt.Printf("  -h, --help            show this help message and exit\n")
-	fmt.Printf("  --config path         path to alternative Reticulum config directory\n")
-	fmt.Printf("  -v, --verbose         increase verbosity\n")
-	fmt.Printf("  -q, --quiet           decrease verbosity\n")
-	fmt.Printf("  -S, --silent          disable transfer progress output\n")
-	fmt.Printf("  -l, --listen          listen for incoming transfer requests\n")
-	fmt.Printf("  -C, --no-compress     disable automatic compression\n")
-	fmt.Printf("  -F, --allow-fetch     allow authenticated clients to fetch files\n")
-	fmt.Printf("  -f, --fetch           fetch file from remote listener instead of sending\n")
-	fmt.Printf("  -j path, --jail path  restrict fetch requests to specified path\n")
-	fmt.Printf("  -s path, --save path  save received files in specified path\n")
-	fmt.Printf("  -O, --overwrite       Allow overwriting received files, instead of adding\n")
-	fmt.Printf("                        postfix\n")
-	fmt.Printf("  -b seconds            announce interval, 0 to only announce at startup\n")
-	fmt.Printf("  -a allowed_hash       allow this identity (or add in\n")
-	fmt.Printf("                        ~/.rncp/allowed_identities)\n")
-	fmt.Printf("  -n, --no-auth         accept requests from anyone\n")
-	fmt.Printf("  -p, --print-identity  print identity and destination info and exit\n")
-	fmt.Printf("  -i identity           path to identity to use\n")
-	fmt.Printf("  -w seconds            sender timeout before giving up\n")
-	fmt.Printf("  -P, --phy-rates       display physical layer transfer rates\n")
-	fmt.Printf("  --version             show program's version number and exit\n")
+	fmt.Print(usageText)
 }
 
 func main() {
