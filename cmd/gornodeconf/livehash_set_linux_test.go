@@ -15,14 +15,12 @@ import (
 
 func TestRunFirmwareHashSetWritesPythonFrame(t *testing.T) {
 	serial := &liveHashSerial{reads: validRnodeEEPROMFrame()}
-	originalOpenSerial := openSerial
-	defer func() { openSerial = originalOpenSerial }()
-	openSerial = func(settings serialSettings) (serialPort, error) {
+	rt := cliRuntime{openSerial: func(settings serialSettings) (serialPort, error) {
 		return serial, nil
-	}
+	}}
 
 	var out bytes.Buffer
-	if err := runFirmwareHashSet(&out, "ttyUSB0", "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"); err != nil {
+	if err := rt.runFirmwareHashSet(&out, "ttyUSB0", "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"); err != nil {
 		t.Fatalf("runFirmwareHashSet returned error: %v", err)
 	}
 
@@ -49,10 +47,10 @@ func TestRunFirmwareHashSetWritesPythonFrame(t *testing.T) {
 
 func TestRunFirmwareHashSetRejectsInvalidInput(t *testing.T) {
 	var out bytes.Buffer
-	if err := runFirmwareHashSet(&out, "ttyUSB0", "not-a-hash"); err == nil {
+	if err := newRuntime().runFirmwareHashSet(&out, "ttyUSB0", "not-a-hash"); err == nil {
 		t.Fatal("expected invalid hash error")
 	}
-	if err := runFirmwareHashSet(&out, "ttyUSB0", "0011"); err == nil {
+	if err := newRuntime().runFirmwareHashSet(&out, "ttyUSB0", "0011"); err == nil {
 		t.Fatal("expected short hash error")
 	}
 }
@@ -62,22 +60,20 @@ func TestRunFirmwareHashSetCanRestoreOriginalValue(t *testing.T) {
 		{reads: validRnodeEEPROMFrame()},
 		{reads: validRnodeEEPROMFrame()},
 	}
-	originalOpenSerial := openSerial
-	defer func() { openSerial = originalOpenSerial }()
 	call := 0
-	openSerial = func(settings serialSettings) (serialPort, error) {
+	rt := cliRuntime{openSerial: func(settings serialSettings) (serialPort, error) {
 		serial := serials[call]
 		call++
 		return serial, nil
-	}
+	}}
 
 	var out bytes.Buffer
 	original := "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
 	updated := "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100"
-	if err := runFirmwareHashSet(&out, "ttyUSB0", updated); err != nil {
+	if err := rt.runFirmwareHashSet(&out, "ttyUSB0", updated); err != nil {
 		t.Fatalf("runFirmwareHashSet update failed: %v", err)
 	}
-	if err := runFirmwareHashSet(&out, "ttyUSB0", original); err != nil {
+	if err := rt.runFirmwareHashSet(&out, "ttyUSB0", original); err != nil {
 		t.Fatalf("runFirmwareHashSet restore failed: %v", err)
 	}
 	for i, serial := range serials {

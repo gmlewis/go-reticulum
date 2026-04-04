@@ -12,10 +12,6 @@ import (
 	"syscall"
 )
 
-func init() {
-	openSerial = openLinuxSerial
-}
-
-func openLinuxSerial(settings serialSettings) (serialPort, error) {
+func defaultOpenSerial(settings serialSettings) (serialPort, error) {
 	return os.OpenFile(settings.Port, os.O_RDWR|syscall.O_NOCTTY, 0)
 }

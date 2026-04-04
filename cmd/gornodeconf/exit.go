@@ -14,22 +14,26 @@ type rnodeLeaver interface {
 	Leave()
 }
 
-var (
+type exitController struct {
 	activeRNode  rnodeLeaver
 	activeSerial serialPort
-	sleepFunc    = time.Sleep
-	exitFunc     = os.Exit
-)
+	sleep        func(time.Duration)
+	exit         func(int)
+}
 
-func gracefulExit(code int) {
-	if activeRNode != nil {
-		activeRNode.Leave()
-		activeRNode = nil
-	} else if activeSerial != nil {
-		sleepFunc(time.Second)
-		_ = activeSerial.Close()
-		activeSerial = nil
+func newExitController() *exitController {
+	return &exitController{sleep: time.Sleep, exit: os.Exit}
+}
+
+func (c *exitController) gracefulExit(code int) {
+	if c.activeRNode != nil {
+		c.activeRNode.Leave()
+		c.activeRNode = nil
+	} else if c.activeSerial != nil {
+		c.sleep(time.Second)
+		_ = c.activeSerial.Close()
+		c.activeSerial = nil
 	}
 
-	exitFunc(code)
+	c.exit(code)
 }

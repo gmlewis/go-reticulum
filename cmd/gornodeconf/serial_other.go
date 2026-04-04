@@ -12,10 +12,6 @@ import (
 	"runtime"
 )
 
-func init() {
-	openSerial = openUnsupportedSerial
-}
-
-func openUnsupportedSerial(settings serialSettings) (serialPort, error) {
+func defaultOpenSerial(settings serialSettings) (serialPort, error) {
 	return nil, fmt.Errorf("serial port not supported on platform %v", runtime.GOOS)
 }

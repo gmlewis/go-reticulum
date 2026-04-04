@@ -34,10 +34,23 @@ type serialSettings struct {
 
 type serialOpener func(serialSettings) (serialPort, error)
 
-var openSerial serialOpener
+type cliRuntime struct {
+	openSerial   serialOpener
+	discoverPort func() (string, []string, error)
+}
 
-func rnodeOpenSerial(port string) (serialPort, error) {
-	return openSerial(serialSettings{
+func newRuntime() cliRuntime {
+	return cliRuntime{
+		openSerial: defaultOpenSerial,
+	}
+}
+
+func (rt cliRuntime) rnodeOpenSerial(port string) (serialPort, error) {
+	opener := rt.openSerial
+	if opener == nil {
+		opener = defaultOpenSerial
+	}
+	return opener(serialSettings{
 		Port:             port,
 		BaudRate:         rnodeBaudRate,
 		ByteSize:         8,
@@ -50,4 +63,8 @@ func rnodeOpenSerial(port string) (serialPort, error) {
 		InterByteTimeout: nil,
 		WriteTimeout:     nil,
 	})
+}
+
+func rnodeOpenSerial(port string) (serialPort, error) {
+	return newRuntime().rnodeOpenSerial(port)
 }

@@ -13,15 +13,12 @@ import (
 )
 
 func TestPreflightRnodeSerialReturnsOpenPort(t *testing.T) {
-	originalOpenSerial := openSerial
-	defer func() { openSerial = originalOpenSerial }()
-
 	serial := &stubSerial{}
-	openSerial = func(settings serialSettings) (serialPort, error) {
+	rt := cliRuntime{openSerial: func(settings serialSettings) (serialPort, error) {
 		return serial, nil
-	}
+	}}
 
-	got, err := preflightRnodeSerial("ttyUSB0")
+	got, err := rt.preflightRnodeSerial("ttyUSB0")
 	if err != nil {
 		t.Fatalf("preflightRnodeSerial returned error: %v", err)
 	}
@@ -34,15 +31,12 @@ func TestPreflightRnodeSerialReturnsOpenPort(t *testing.T) {
 }
 
 func TestPreflightRnodeSerialReturnsOpenError(t *testing.T) {
-	originalOpenSerial := openSerial
-	defer func() { openSerial = originalOpenSerial }()
-
 	wantErr := errors.New("serial missing")
-	openSerial = func(settings serialSettings) (serialPort, error) {
+	rt := cliRuntime{openSerial: func(settings serialSettings) (serialPort, error) {
 		return nil, wantErr
-	}
+	}}
 
-	got, err := preflightRnodeSerial("ttyUSB0")
+	got, err := rt.preflightRnodeSerial("ttyUSB0")
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -96,15 +96,13 @@ func TestRunDeviceSigningWritesPythonFrame(t *testing.T) {
 		0xd5, 0xd6, 0xd7, 0xd8,
 		0xd9, 0xda, kissFesc, kissTfesc, 0xdc, 0xdd, 0xde, 0xdf, 0xe0, kissFend,
 	}...)}
-	originalOpenSerial := openSerial
-	defer func() { openSerial = originalOpenSerial }()
-	openSerial = func(settings serialSettings) (serialPort, error) {
+	rt := cliRuntime{openSerial: func(settings serialSettings) (serialPort, error) {
 		return serial, nil
-	}
+	}}
 	t.Setenv("HOME", home)
 
 	var out bytes.Buffer
-	if err := runDeviceSigning(&out, "ttyUSB0"); err != nil {
+	if err := rt.runDeviceSigning(&out, "ttyUSB0"); err != nil {
 		t.Fatalf("runDeviceSigning returned error: %v", err)
 	}
 	if !strings.Contains(out.String(), "Device signed") {
@@ -134,14 +132,12 @@ func TestRunDeviceSigningRejectsMissingKey(t *testing.T) {
 	home := tempTrustKeyHome(t)
 	t.Setenv("HOME", home)
 
-	originalOpenSerial := openSerial
-	defer func() { openSerial = originalOpenSerial }()
-	openSerial = func(settings serialSettings) (serialPort, error) {
+	rt := cliRuntime{openSerial: func(settings serialSettings) (serialPort, error) {
 		return &liveSignSerial{}, nil
-	}
+	}}
 
 	var out bytes.Buffer
-	if err := runDeviceSigning(&out, "ttyUSB0"); err == nil {
+	if err := rt.runDeviceSigning(&out, "ttyUSB0"); err == nil {
 		t.Fatal("expected error without device.key")
 	}
 }

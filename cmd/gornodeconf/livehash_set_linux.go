@@ -16,12 +16,16 @@ import (
 )
 
 func runFirmwareHashSet(out io.Writer, port, hashHex string) (err error) {
+	return newRuntime().runFirmwareHashSet(out, port, hashHex)
+}
+
+func (rt cliRuntime) runFirmwareHashSet(out io.Writer, port, hashHex string) (err error) {
 	hashBytes, err := hex.DecodeString(hashHex)
 	if err != nil || len(hashBytes) != 32 {
 		return errors.New("The provided value was not a valid SHA256 hash")
 	}
 
-	serial, err := rnodeOpenSerial(port)
+	serial, err := rt.rnodeOpenSerial(port)
 	if err != nil {
 		return err
 	}

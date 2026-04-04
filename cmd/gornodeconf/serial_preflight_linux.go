@@ -8,7 +8,11 @@
 package main
 
 func preflightRnodeSerial(port string) (serialPort, error) {
-	serial, err := rnodeOpenSerial(port)
+	return newRuntime().preflightRnodeSerial(port)
+}
+
+func (rt cliRuntime) preflightRnodeSerial(port string) (serialPort, error) {
+	serial, err := rt.rnodeOpenSerial(port)
 	if err != nil {
 		return nil, err
 	}

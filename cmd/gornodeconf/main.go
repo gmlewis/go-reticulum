@@ -202,6 +202,10 @@ func run(args []string) error {
 		return handleGenerateKeys(opts.autoinstall)
 	}
 
+	if port, err = resolveLivePort(port, opts); err != nil {
+		return err
+	}
+
 	if opts.getTargetFirmwareHash || opts.getFirmwareHash {
 		return runFirmwareHashReadbacks(os.Stdout, port, opts)
 	}
@@ -211,6 +215,8 @@ func run(args []string) error {
 	}
 
 	if opts.sign {
+		// Keep the legacy Python help text for parity, but execute the live
+		// device-signing workflow after the provisioning and hash checks.
 		return runDeviceSigning(os.Stdout, port)
 	}
 
@@ -291,7 +297,9 @@ func parseArgs(args []string) (options, string, error) {
 	fs.BoolVar(&opts.rom, "r", false, "Bootstrap EEPROM without flashing firmware")
 	fs.BoolVar(&opts.key, "k", false, "Generate a new signing key and exit")
 	fs.BoolVar(&opts.sign, "S", false, "Display public part of signing key")
+	fs.BoolVar(&opts.sign, "sign", false, "Display public part of signing key")
 	fs.StringVar(&opts.firmwareHash, "H", "", "Set installed firmware hash")
+	fs.StringVar(&opts.firmwareHash, "firmware-hash", "", "Set installed firmware hash")
 	fs.StringVar(&opts.platform, "platform", "", "Platform specification for device bootstrap")
 	fs.StringVar(&opts.product, "product", "", "Product specification for device bootstrap")
 	fs.StringVar(&opts.model, "model", "", "Model code for device bootstrap")
@@ -354,7 +362,7 @@ func flagName(arg string) string {
 
 func flagNeedsValue(name string) bool {
 	switch name {
-	case "fw-version", "fw-url", "baud-flash", "w", "channel", "ssid", "psk", "ip", "nm", "D", "t", "R", "display-addr", "np", "freq", "bw", "txp", "sf", "cr", "trust-key", "H", "platform", "product", "model", "hwrev":
+	case "fw-version", "fw-url", "baud-flash", "w", "channel", "ssid", "psk", "ip", "nm", "D", "t", "R", "display-addr", "np", "freq", "bw", "txp", "sf", "cr", "trust-key", "H", "firmware-hash", "platform", "product", "model", "hwrev":
 		return true
 	default:
 		return false

@@ -140,7 +140,7 @@ func printUsage() {
 	fmt.Printf("          [-i identity] [-w seconds] [-P] [--version]\n")
 	fmt.Printf("          [file] [destination]\n")
 	fmt.Printf("\n")
-	fmt.Printf("Reticulum File Transfer Utility\n")
+	fmt.Printf("Go Reticulum File Transfer Utility\n")
 	fmt.Printf("\n")
 	fmt.Printf("positional arguments:\n")
 	fmt.Printf("  file                  file to be transferred\n")

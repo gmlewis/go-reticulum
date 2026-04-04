@@ -38,19 +38,14 @@ func (s *stubLeaver) Leave() {
 }
 
 func TestRnodeOpenSerialUsesPythonSettings(t *testing.T) {
-	originalOpenSerial := openSerial
-	defer func() {
-		openSerial = originalOpenSerial
-	}()
-
 	var got serialSettings
-	openSerial = func(settings serialSettings) (serialPort, error) {
+	rt := cliRuntime{openSerial: func(settings serialSettings) (serialPort, error) {
 		got = settings
 		return &stubSerial{}, nil
-	}
+	}}
 
 	port := tempSerialPort(t)
-	serial, err := rnodeOpenSerial(port)
+	serial, err := rt.rnodeOpenSerial(port)
 	if err != nil {
 		t.Fatalf("rnodeOpenSerial returned error: %v", err)
 	}
@@ -81,27 +76,17 @@ func TestRnodeOpenSerialUsesPythonSettings(t *testing.T) {
 }
 
 func TestGracefulExitLeavesRNodeBeforeExiting(t *testing.T) {
-	originalRNode := activeRNode
-	originalSerial := activeSerial
-	originalSleep := sleepFunc
-	originalExit := exitFunc
-	defer func() {
-		activeRNode = originalRNode
-		activeSerial = originalSerial
-		sleepFunc = originalSleep
-		exitFunc = originalExit
-	}()
-
+	controller := newExitController()
 	leaver := &stubLeaver{}
 	serial := &stubSerial{}
-	activeRNode = leaver
-	activeSerial = serial
+	controller.activeRNode = leaver
+	controller.activeSerial = serial
 	slept := false
-	sleepFunc = func(time.Duration) { slept = true }
+	controller.sleep = func(time.Duration) { slept = true }
 	exited := 0
-	exitFunc = func(code int) { exited = code }
+	controller.exit = func(code int) { exited = code }
 
-	gracefulExit(17)
+	controller.gracefulExit(17)
 
 	if !leaver.called {
 		t.Fatalf("expected Leave to be called")
@@ -118,26 +103,16 @@ func TestGracefulExitLeavesRNodeBeforeExiting(t *testing.T) {
 }
 
 func TestGracefulExitClosesRawSerialWhenNoRNode(t *testing.T) {
-	originalRNode := activeRNode
-	originalSerial := activeSerial
-	originalSleep := sleepFunc
-	originalExit := exitFunc
-	defer func() {
-		activeRNode = originalRNode
-		activeSerial = originalSerial
-		sleepFunc = originalSleep
-		exitFunc = originalExit
-	}()
-
+	controller := newExitController()
 	serial := &stubSerial{}
-	activeRNode = nil
-	activeSerial = serial
+	controller.activeRNode = nil
+	controller.activeSerial = serial
 	slept := false
-	sleepFunc = func(time.Duration) { slept = true }
+	controller.sleep = func(time.Duration) { slept = true }
 	exited := 0
-	exitFunc = func(code int) { exited = code }
+	controller.exit = func(code int) { exited = code }
 
-	gracefulExit(23)
+	controller.gracefulExit(23)
 
 	if !slept {
 		t.Fatalf("expected sleep before closing raw serial")

@@ -100,14 +100,12 @@ func TestRunFirmwareHashReadbacksPrintsPythonLines(t *testing.T) {
 		0xd9, 0xda, kissFesc, kissTfesc, 0xdc, 0xdd, 0xde, 0xdf, 0xe0, kissFend,
 	}...)}
 
-	originalOpenSerial := openSerial
-	defer func() { openSerial = originalOpenSerial }()
-	openSerial = func(settings serialSettings) (serialPort, error) {
+	rt := cliRuntime{openSerial: func(settings serialSettings) (serialPort, error) {
 		return serial, nil
-	}
+	}}
 
 	var out bytes.Buffer
-	if err := runFirmwareHashReadbacks(&out, "ttyUSB0", options{getTargetFirmwareHash: true, getFirmwareHash: true}); err != nil {
+	if err := rt.runFirmwareHashReadbacks(&out, "ttyUSB0", options{getTargetFirmwareHash: true, getFirmwareHash: true}); err != nil {
 		t.Fatalf("runFirmwareHashReadbacks returned error: %v", err)
 	}
 
@@ -125,14 +123,12 @@ func TestRunFirmwareHashReadbacksPrintsPythonLines(t *testing.T) {
 
 func TestRunFirmwareHashReadbacksReturnsTimeoutError(t *testing.T) {
 	serial := &liveHashSerial{blockOnEmpty: true, wait: make(chan struct{})}
-	originalOpenSerial := openSerial
-	defer func() { openSerial = originalOpenSerial }()
-	openSerial = func(settings serialSettings) (serialPort, error) {
+	rt := cliRuntime{openSerial: func(settings serialSettings) (serialPort, error) {
 		return serial, nil
-	}
+	}}
 
 	var out bytes.Buffer
-	err := runFirmwareHashReadbacks(&out, "ttyUSB0", options{getTargetFirmwareHash: true})
+	err := rt.runFirmwareHashReadbacks(&out, "ttyUSB0", options{getTargetFirmwareHash: true})
 	if !errors.Is(err, errReadEEPROMTimeout) {
 		t.Fatalf("unexpected error: %v", err)
 	}

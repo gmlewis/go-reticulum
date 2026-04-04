@@ -109,7 +109,10 @@ func TestDeviceProbeSucceedsOverSocatLoopback(t *testing.T) {
 		_ = deviceFile.Close()
 	})
 
-	go respondToDetectRequest(t, deviceFile)
+	responseErr := make(chan error, 1)
+	go func() {
+		responseErr <- respondToDetectRequest(deviceFile)
+	}()
 
 	detector := &loopbackProbeDetector{hostFile: hostFile, responseTimeout: 500 * time.Millisecond}
 	sleeper := &loopbackSleeper{}
@@ -123,6 +126,9 @@ func TestDeviceProbeSucceedsOverSocatLoopback(t *testing.T) {
 	}
 	if len(sleeper.calls) != 2 || sleeper.calls[0] != deviceProbeInitialDelay || sleeper.calls[1] != deviceProbeFinalDelay {
 		t.Fatalf("sleep calls mismatch: %#v", sleeper.calls)
+	}
+	if err := <-responseErr; err != nil {
+		t.Fatalf("detect response worker failed: %v", err)
 	}
 }
 
@@ -204,8 +210,7 @@ func startSocatPTYPair(t *testing.T) (string, string) {
 	return paths[0], paths[1]
 }
 
-func respondToDetectRequest(t *testing.T, deviceFile *os.File) {
-	t.Helper()
+func respondToDetectRequest(deviceFile *os.File) error {
 
 	buf := make([]byte, 0, 64)
 	readBuf := make([]byte, 32)
@@ -218,13 +223,13 @@ func respondToDetectRequest(t *testing.T, deviceFile *os.File) {
 			buf = append(buf, readBuf[:n]...)
 			if bytes.Contains(buf, want) {
 				if _, err := deviceFile.Write(response); err != nil {
-					t.Fatalf("write detect response: %v", err)
+					return err
 				}
-				return
+				return nil
 			}
 		}
 		if err != nil {
-			return
+			return nil
 		}
 	}
 }
