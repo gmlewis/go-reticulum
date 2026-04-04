@@ -6,6 +6,8 @@
 package main
 
 import (
+	"flag"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -229,5 +231,31 @@ func TestCounterString(t *testing.T) {
 	c = 5
 	if c.String() != "5" {
 		t.Errorf("String() = %q, want %q", c.String(), "5")
+	}
+}
+
+func TestAppFlags(t *testing.T) {
+	t.Parallel()
+	app := newApp()
+	fs := flag.NewFlagSet("gornstatus", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	app.initFlags(fs)
+	if err := fs.Parse([]string{"--config", "/tmp/config", "--all", "--json", "--verbose", "--monitor-interval", "2"}); err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	if app.configDir != "/tmp/config" {
+		t.Fatalf("configDir = %q, want %q", app.configDir, "/tmp/config")
+	}
+	if !app.showAll {
+		t.Fatal("showAll = false, want true")
+	}
+	if !app.jsonOutput {
+		t.Fatal("jsonOutput = false, want true")
+	}
+	if app.verbose != 1 {
+		t.Fatalf("verbose = %v, want %v", app.verbose, 1)
+	}
+	if app.monitorInterval != 2 {
+		t.Fatalf("monitorInterval = %v, want 2", app.monitorInterval)
 	}
 }

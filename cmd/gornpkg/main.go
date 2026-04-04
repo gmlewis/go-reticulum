@@ -32,9 +32,20 @@ func (c *counter) Set(string) error {
 }
 func (c *counter) IsBoolFlag() bool { return true }
 
-func init() {
-	flag.Usage = func() {
-		_, _ = fmt.Fprintf(flag.CommandLine.Output(), `
+type appT struct {
+	configDir     string
+	verbose       counter
+	quiet         counter
+	exampleConfig bool
+	version       bool
+}
+
+func newApp() *appT {
+	return &appT{}
+}
+
+func (a *appT) usage() {
+	_, _ = fmt.Fprintf(flag.CommandLine.Output(), `
 usage: gornpkg [-h] [--config CONFIG] [-v] [-q] [--exampleconfig] [--version]
 
 Reticulum Meta Package Manager
@@ -47,27 +58,52 @@ options:
   --exampleconfig  print verbose configuration example to stdout and exit
   --version        show program's version number and exit
 `)
-	}
-
-	flag.StringVar(&configDir, "config", "", "path to alternative Reticulum config directory")
-	flag.Var(&verbose, "v", "increase verbosity")
-	flag.Var(&verbose, "verbose", "increase verbosity")
-	flag.Var(&quiet, "q", "decrease verbosity")
-	flag.Var(&quiet, "quiet", "decrease verbosity")
-	flag.BoolVar(&exampleConfig, "exampleconfig", false, "print verbose configuration example to stdout and exit")
-	flag.BoolVar(&version, "version", false, "show program's version number and exit")
 }
 
-var (
-	configDir     string
-	verbose       counter
-	quiet         counter
-	exampleConfig bool
-	version       bool
-)
+func (a *appT) initFlags(fs *flag.FlagSet) {
+	fs.StringVar(&a.configDir, "config", "", "path to alternative Reticulum config directory")
+	fs.Var(&a.verbose, "v", "increase verbosity")
+	fs.Var(&a.verbose, "verbose", "increase verbosity")
+	fs.Var(&a.quiet, "q", "decrease verbosity")
+	fs.Var(&a.quiet, "quiet", "decrease verbosity")
+	fs.BoolVar(&a.exampleConfig, "exampleconfig", false, "print verbose configuration example to stdout and exit")
+	fs.BoolVar(&a.version, "version", false, "show program's version number and exit")
+}
+
+func (a *appT) run() {
+	if a.version {
+		fmt.Printf("gornpkg %v\n", rns.VERSION)
+		return
+	}
+
+	if a.exampleConfig {
+		fmt.Print(exampleRnpkgConfig)
+		return
+	}
+
+	rns.SetLogDest(rns.LogStdout)
+	if a.verbose != 0 || a.quiet != 0 {
+		rns.SetLogLevel(int(a.verbose) - int(a.quiet))
+	}
+
+	ts := rns.NewTransportSystem()
+	ret, err := rns.NewReticulum(ts, a.configDir)
+	if err != nil {
+		log.Fatalf("Could not initialize Reticulum: %v", err)
+	}
+	defer func() {
+		if err := ret.Close(); err != nil {
+			rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+		}
+	}()
+	// TODO: Finish this.
+}
 
 func main() {
 	log.SetFlags(0)
+	app := newApp()
+	app.initFlags(flag.CommandLine)
+	flag.Usage = app.usage
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
@@ -78,31 +114,5 @@ func main() {
 	}()
 
 	flag.Parse()
-
-	if version {
-		fmt.Printf("gornpkg %v\n", rns.VERSION)
-		return
-	}
-
-	if exampleConfig {
-		fmt.Print(exampleRnpkgConfig)
-		return
-	}
-
-	rns.SetLogDest(rns.LogStdout)
-	if verbose != 0 || quiet != 0 {
-		rns.SetLogLevel(int(verbose) - int(quiet))
-	}
-
-	ts := rns.NewTransportSystem()
-	ret, err := rns.NewReticulum(ts, configDir)
-	if err != nil {
-		log.Fatalf("Could not initialize Reticulum: %v", err)
-	}
-	defer func() {
-		if err := ret.Close(); err != nil {
-			rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
-		}
-	}()
-	// TODO: Finish this.
+	app.run()
 }

@@ -17,33 +17,33 @@ import (
 // runMonitor implements the -m/--monitor mode. It clears the screen,
 // captures programSetup output into a buffer, prints it, then sleeps
 // for monitorInterval seconds and repeats.
-func runMonitor(r *rns.Reticulum, nameFilter string, verbosity int) {
+func runMonitor(r *rns.Reticulum, nameFilter string, verbosity int, app *appT) {
 	for {
 		var buf bytes.Buffer
 		programSetup(programSetupParams{
-			configDir:          configDir,
-			dispAll:            showAll,
+			configDir:          app.configDir,
+			dispAll:            app.showAll,
 			verbosity:          verbosity,
 			nameFilter:         nameFilter,
-			jsonOutput:         jsonOutput,
-			announceStats:      announceStats,
-			linkStats:          linkStats,
-			sorting:            sortKey,
-			sortReverse:        sortReverse,
-			remote:             remoteHash,
-			managementIdentity: identityPath,
-			remoteTimeout:      remoteTimeout,
+			jsonOutput:         app.jsonOutput,
+			announceStats:      app.announceStats,
+			linkStats:          app.linkStats,
+			sorting:            app.sortKey,
+			sortReverse:        app.sortReverse,
+			remote:             app.remoteHash,
+			managementIdentity: app.identityPath,
+			remoteTimeout:      app.remoteTimeout,
 			mustExit:           false,
 			rnsInstance:        r,
-			trafficTotals:      trafficTotals,
-			discoveredIfaces:   discovered,
-			configEntries:      detailedDiscovered,
+			trafficTotals:      app.trafficTotals,
+			discoveredIfaces:   app.discovered,
+			configEntries:      app.detailedDiscovered,
 			writer:             &buf,
 		})
 
 		_, _ = fmt.Fprint(os.Stdout, "\033[H\033[2J")
 		_, _ = fmt.Fprint(os.Stdout, buf.String())
 
-		time.Sleep(time.Duration(monitorInterval * float64(time.Second)))
+		time.Sleep(time.Duration(app.monitorInterval * float64(time.Second)))
 	}
 }
