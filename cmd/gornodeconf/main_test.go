@@ -184,6 +184,119 @@ func TestParseArgsAcceptsPythonStyleLongFlags(t *testing.T) {
 	}
 }
 
+func TestParseArgsAcceptsLongAliases(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		args  []string
+		check func(*testing.T, options)
+	}{
+		{
+			name: "key",
+			args: []string{"--key"},
+			check: func(t *testing.T, opts options) {
+				t.Helper()
+				if !opts.key {
+					t.Fatal("expected --key to set key option")
+				}
+			},
+		},
+		{
+			name: "info",
+			args: []string{"--info"},
+			check: func(t *testing.T, opts options) {
+				t.Helper()
+				if !opts.info {
+					t.Fatal("expected --info to set info option")
+				}
+			},
+		},
+		{
+			name: "wifi",
+			args: []string{"--wifi", "AP"},
+			check: func(t *testing.T, opts options) {
+				t.Helper()
+				if opts.wifi != "AP" {
+					t.Fatalf("wifi mismatch: got %q", opts.wifi)
+				}
+			},
+		},
+		{
+			name: "display",
+			args: []string{"--display", "7"},
+			check: func(t *testing.T, opts options) {
+				t.Helper()
+				if opts.display != 7 {
+					t.Fatalf("display mismatch: got %v", opts.display)
+				}
+			},
+		},
+		{
+			name: "timeout",
+			args: []string{"--timeout", "9"},
+			check: func(t *testing.T, opts options) {
+				t.Helper()
+				if opts.timeout != 9 {
+					t.Fatalf("timeout mismatch: got %v", opts.timeout)
+				}
+			},
+		},
+		{
+			name: "rotation",
+			args: []string{"--rotation", "2"},
+			check: func(t *testing.T, opts options) {
+				t.Helper()
+				if opts.rotation != 2 {
+					t.Fatalf("rotation mismatch: got %v", opts.rotation)
+				}
+			},
+		},
+		{
+			name: "force-update",
+			args: []string{"--force-update"},
+			check: func(t *testing.T, opts options) {
+				t.Helper()
+				if !opts.forceUpdate {
+					t.Fatal("expected --force-update to set forceUpdate option")
+				}
+			},
+		},
+		{
+			name: "target-hash",
+			args: []string{"--get-target-firmware-hash"},
+			check: func(t *testing.T, opts options) {
+				t.Helper()
+				if !opts.getTargetFirmwareHash {
+					t.Fatal("expected --get-target-firmware-hash to set getTargetFirmwareHash option")
+				}
+			},
+		},
+		{
+			name: "firmware-hash",
+			args: []string{"--get-firmware-hash"},
+			check: func(t *testing.T, opts options) {
+				t.Helper()
+				if !opts.getFirmwareHash {
+					t.Fatal("expected --get-firmware-hash to set getFirmwareHash option")
+				}
+			},
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			opts, _, err := parseArgs(test.args)
+			if err != nil {
+				t.Fatalf("parseArgs returned error: %v", err)
+			}
+			test.check(t, opts)
+		})
+	}
+}
+
 func runGornodeconf(args ...string) (string, error) {
 	taskArgs := append([]string{"run", "."}, args...)
 	cmd := exec.Command("go", taskArgs...)
