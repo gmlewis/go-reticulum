@@ -40,7 +40,7 @@ func TestRnodeOpenSerialUsesPythonSettings(t *testing.T) {
 		return &stubSerial{}, nil
 	}
 
-	port := "/dev/ttyUSB0"
+	port := tempSerialPort(t)
 	serial, err := rnodeOpenSerial(port)
 	if err != nil {
 		t.Fatalf("rnodeOpenSerial returned error: %v", err)

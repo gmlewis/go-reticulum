@@ -13,7 +13,7 @@ import (
 )
 
 func TestRnodeOpenSerialReturnsPlatformError(t *testing.T) {
-	_, err := rnodeOpenSerial("/dev/ttyUSB0")
+	_, err := rnodeOpenSerial(tempSerialPort(t))
 	if err == nil {
 		t.Fatalf("expected error on %v", runtime.GOOS)
 	}

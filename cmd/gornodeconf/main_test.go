@@ -122,7 +122,7 @@ func TestNoPortPrintsHelpAndExitsZero(t *testing.T) {
 
 func TestPositionalPortIsAcceptedWithFlags(t *testing.T) {
 	t.Parallel()
-	out, err := runGornodeconf("-i", "/dev/ttyUSB0")
+	out, err := runGornodeconf("-i", tempSerialPort(t))
 	if err != nil {
 		t.Fatalf("gornodeconf positional port failed: %v\n%v", err, out)
 	}
