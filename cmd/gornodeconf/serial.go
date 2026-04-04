@@ -5,11 +5,16 @@
 
 package main
 
-import "time"
+import (
+	"io"
+	"time"
+)
 
 const rnodeBaudRate = 115200
 
 type serialPort interface {
+	io.Reader
+	io.Writer
 	Close() error
 }
 

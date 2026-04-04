@@ -6,6 +6,7 @@
 package main
 
 import (
+	"io"
 	"reflect"
 	"testing"
 	"time"
@@ -13,6 +14,14 @@ import (
 
 type stubSerial struct {
 	closed bool
+}
+
+func (s *stubSerial) Read([]byte) (int, error) {
+	return 0, io.EOF
+}
+
+func (s *stubSerial) Write(data []byte) (int, error) {
+	return len(data), nil
 }
 
 func (s *stubSerial) Close() error {
