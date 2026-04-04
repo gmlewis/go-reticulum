@@ -12,6 +12,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,19 +28,21 @@ func handlePublicKeys() error {
 	}
 
 	firmwareDir := filepath.Join(configDir, "firmware")
-	signingBytes, err := os.ReadFile(filepath.Join(firmwareDir, "signing.key"))
+	signingPath := filepath.Join(firmwareDir, "signing.key")
+	devicePath := filepath.Join(firmwareDir, "device.key")
+
+	var errs []error
+	signingBytes, err := os.ReadFile(signingPath)
 	if err != nil {
-		fmt.Println("Could not load EEPROM signing key")
+		errs = append(errs, fmt.Errorf("Could not load EEPROM signing key: %w", err))
 	} else {
 		privateKey, err := x509.ParsePKCS8PrivateKey(signingBytes)
 		if err != nil {
-			fmt.Println("Could not deserialize signing key")
-			fmt.Println(err)
+			return fmt.Errorf("Could not deserialize signing key: %w", err)
 		} else {
 			rsaKey, ok := privateKey.(*rsa.PrivateKey)
 			if !ok {
-				fmt.Println("Could not deserialize signing key")
-				fmt.Println("unexpected private key type")
+				return fmt.Errorf("Could not deserialize signing key: unexpected private key type")
 			} else {
 				publicBytes, err := x509.MarshalPKIXPublicKey(&rsaKey.PublicKey)
 				if err != nil {
@@ -51,15 +54,15 @@ func handlePublicKeys() error {
 		}
 	}
 
-	if deviceSigner, err := rns.FromFile(filepath.Join(firmwareDir, "device.key")); err == nil {
+	if deviceSigner, err := rns.FromFile(devicePath); err == nil {
 		fmt.Println("")
 		fmt.Println("Device Signing Public key:")
 		fmt.Println(colonHex(deviceSigner.GetPublicKey()[32:]))
 	} else {
-		fmt.Println("Could not load device signing key")
+		errs = append(errs, fmt.Errorf("Could not load device signing key: %w", err))
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 func handleGenerateKeys(autoinstall bool) error {
@@ -80,7 +83,7 @@ func handleGenerateKeys(autoinstall bool) error {
 			return err
 		}
 		if err := deviceSigner.ToFile(filepath.Join(firmwareDir, "device.key")); err != nil {
-			return err
+			return fmt.Errorf("Could not write device signing key file: %w", err)
 		}
 		fmt.Println("Device signing key written to " + filepath.Join(firmwareDir, "device.key"))
 	} else if err != nil {
@@ -104,7 +107,7 @@ func handleGenerateKeys(autoinstall bool) error {
 	if _, err := os.Stat(signingPath); os.IsNotExist(err) {
 		fmt.Println("Generating a new EEPROM signing key...")
 		if err := os.WriteFile(signingPath, privateBytes, 0o600); err != nil {
-			return err
+			return fmt.Errorf("Could not write EEPROM signing key file: %w", err)
 		}
 		fmt.Println("Wrote signing key")
 		fmt.Println("Public key:")

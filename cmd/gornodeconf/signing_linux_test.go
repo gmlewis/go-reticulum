@@ -141,3 +141,28 @@ func TestGenerateKeysDoesNotOverwriteExistingKeys(t *testing.T) {
 		t.Fatalf("missing overwrite warning: %v", out)
 	}
 }
+
+func TestGenerateKeysReportsWriteFailure(t *testing.T) {
+	t.Parallel()
+
+	home := tempTrustKeyHome(t)
+	firmwareDir := filepath.Join(home, ".config", "rnodeconf", "firmware")
+	if err := os.MkdirAll(firmwareDir, 0o755); err != nil {
+		t.Fatalf("mkdir firmware dir: %v", err)
+	}
+	if err := os.Chmod(firmwareDir, 0o500); err != nil {
+		t.Fatalf("chmod firmware dir: %v", err)
+	}
+
+	out, err := runGornodeconfWithEnv(map[string]string{"HOME": home}, "-k")
+	if err == nil {
+		t.Fatal("expected gornodeconf --key to fail")
+	}
+	wantPath := filepath.Join(firmwareDir, "device.key")
+	if !strings.Contains(out, "Could not write device signing key file: open ") {
+		t.Fatalf("missing device key write error: %v", out)
+	}
+	if !strings.Contains(out, wantPath) {
+		t.Fatalf("missing device key path: %v", out)
+	}
+}

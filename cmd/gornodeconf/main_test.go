@@ -77,6 +77,27 @@ func TestVersionUsesSharedGoVersion(t *testing.T) {
 	}
 }
 
+func TestPublicKeysReportsMissingFiles(t *testing.T) {
+	home := tempTrustKeyHome(t)
+	t.Setenv("HOME", home)
+
+	out, err := runGornodeconf("-P")
+	if err == nil {
+		t.Fatal("expected gornodeconf -P to fail")
+	}
+	wantSigning := filepath.Join(home, ".config", "rnodeconf", "firmware", "signing.key")
+	wantDevice := filepath.Join(home, ".config", "rnodeconf", "firmware", "device.key")
+	if !strings.Contains(out, wantSigning) || !strings.Contains(out, wantDevice) {
+		t.Fatalf("missing file paths in output:\n%v", out)
+	}
+	if !strings.Contains(out, "Could not load EEPROM signing key: open ") {
+		t.Fatalf("missing EEPROM signing key error: %v", out)
+	}
+	if !strings.Contains(out, "Could not load device signing key: open ") {
+		t.Fatalf("missing device signing key error: %v", out)
+	}
+}
+
 func TestSignWithoutPortAutoDetectsDiscoveredPort(t *testing.T) {
 	home := tempTrustKeyHome(t)
 	firmwareDir := filepath.Join(home, ".config", "rnodeconf", "firmware")

@@ -37,12 +37,12 @@ func handleTrustKey(hexBytes string) error {
 
 	trustedDir := filepath.Join(configDir, "trusted_keys")
 	if err := os.MkdirAll(trustedDir, 0o755); err != nil {
-		return err
+		return fmt.Errorf("Could not create trusted key directory: %w", err)
 	}
 
 	keyPath := filepath.Join(trustedDir, fmt.Sprintf("%x.pubkey", hash[:]))
 	if err := os.WriteFile(keyPath, publicBytes, 0o644); err != nil {
-		return err
+		return fmt.Errorf("Could not write trusted key file: %w", err)
 	}
 
 	fmt.Printf("Trusting key: %x\n", hash[:])

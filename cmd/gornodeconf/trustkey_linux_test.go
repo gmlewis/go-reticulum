@@ -70,6 +70,31 @@ func TestTrustKeyRejectsInvalidDer(t *testing.T) {
 	}
 }
 
+func TestTrustKeyReportsWriteFailure(t *testing.T) {
+	t.Parallel()
+
+	home := tempTrustKeyHome(t)
+	trustedDir := filepath.Join(home, ".config", "rnodeconf", "trusted_keys")
+	if err := os.MkdirAll(trustedDir, 0o755); err != nil {
+		t.Fatalf("mkdir trusted_keys dir: %v", err)
+	}
+	if err := os.Chmod(trustedDir, 0o500); err != nil {
+		t.Fatalf("chmod trusted_keys dir: %v", err)
+	}
+
+	out, err := runGornodeconfWithEnv(map[string]string{"HOME": home}, "--trust-key", trustKeyFixtureHex)
+	if err == nil {
+		t.Fatal("expected gornodeconf --trust-key to fail")
+	}
+	wantPath := filepath.Join(trustedDir, trustKeyFixtureHash+".pubkey")
+	if !strings.Contains(out, "Could not write trusted key file: open ") {
+		t.Fatalf("missing wrapped write error: %v", out)
+	}
+	if !strings.Contains(out, wantPath) {
+		t.Fatalf("missing trusted key path: %v", out)
+	}
+}
+
 func runGornodeconfWithEnv(extraEnv map[string]string, args ...string) (string, error) {
 	taskArgs := append([]string{"run", "."}, args...)
 	cmd := exec.Command("go", taskArgs...)
