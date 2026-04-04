@@ -11,6 +11,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -31,7 +32,7 @@ const helpText = `usage: gornodeconf [-h] [-i] [-a] [-u] [-U] [--fw-version vers
                     [--product product] [--model model] [--hwrev revision]
                     [port]
 
-RNode Configuration and firmware utility. This program allows you to change
+Go RNode Configuration and firmware utility. This program allows you to change
 various settings and startup modes of RNode. It can also install, flash and
 update the firmware on supported devices.
 
@@ -177,6 +178,7 @@ func run(args []string) error {
 
 	opts, port, err := parseArgs(args)
 	if err != nil {
+		printHelp()
 		return err
 	}
 
@@ -247,7 +249,7 @@ func hasHelp(args []string) bool {
 func parseArgs(args []string) (options, string, error) {
 	flags, port := splitArgs(args)
 	fs := flag.NewFlagSet("gornodeconf", flag.ContinueOnError)
-	fs.SetOutput(os.Stdout)
+	fs.SetOutput(io.Discard)
 
 	var opts options
 	fs.BoolVar(&opts.info, "i", false, "Show device info")
