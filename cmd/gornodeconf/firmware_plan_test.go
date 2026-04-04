@@ -27,6 +27,9 @@ func TestResolveFirmwareDownloadPlanUsesExplicitVersion(t *testing.T) {
 	if plan.releaseInfoURL != firmwareVersionURL {
 		t.Fatalf("unexpected release info url: %q", plan.releaseInfoURL)
 	}
+	if plan.fallbackURL != fallbackFirmwareVersionURL {
+		t.Fatalf("unexpected fallback url: %q", plan.fallbackURL)
+	}
 	if plan.updateURL != firmwareUpdateURL+"1.2.3/rnode_firmware.zip" {
 		t.Fatalf("unexpected update url: %q", plan.updateURL)
 	}

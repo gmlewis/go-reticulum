@@ -14,6 +14,7 @@ type firmwareDownloadPlan struct {
 	selectedVersion  string
 	selectedHash     string
 	releaseInfoURL   string
+	fallbackURL      string
 	updateURL        string
 	extractedDir     string
 }

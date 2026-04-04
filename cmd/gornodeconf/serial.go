@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"time"
 )
 
@@ -39,12 +40,14 @@ type serialOpener func(serialSettings) (serialPort, error)
 type cliRuntime struct {
 	openSerial   serialOpener
 	discoverPort func() (string, []string, error)
+	stdin        io.Reader
 	debug        bool
 }
 
 func newRuntime() cliRuntime {
 	return cliRuntime{
 		openSerial: defaultOpenSerial,
+		stdin:      os.Stdin,
 	}
 }
 

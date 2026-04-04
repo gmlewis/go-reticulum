@@ -10,6 +10,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"os"
 	"time"
 )
 
@@ -18,6 +19,16 @@ func runFirmwareUpdate(out io.Writer, port string, opts options) error {
 }
 
 func (rt cliRuntime) runFirmwareUpdate(out io.Writer, port string, opts options) (err error) {
+	if opts.useExtracted {
+		input := rt.stdin
+		if input == nil {
+			input = os.Stdin
+		}
+		if err := promptUseExtractedFirmware(out, input); err != nil {
+			return err
+		}
+	}
+
 	plan, err := resolveFirmwareDownloadPlan(opts, "rnode_firmware.zip")
 	if err != nil {
 		return err

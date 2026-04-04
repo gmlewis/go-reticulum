@@ -18,6 +18,7 @@ type firmwareDownloadPlan struct {
 	selectedVersion  string
 	selectedHash     string
 	releaseInfoURL   string
+	fallbackURL      string
 	updateURL        string
 	extractedDir     string
 }
@@ -50,6 +51,7 @@ func resolveFirmwareDownloadPlan(opts options, firmwareFilename string) (firmwar
 	}
 
 	plan.releaseInfoURL = firmwareReleaseInfoURL(opts.fwURL, plan.selectedVersion)
+	plan.fallbackURL = fallbackFirmwareVersionURL
 	plan.updateURL = firmwareBinaryURL(opts.fwURL, plan.selectedVersion, plan.firmwareFilename)
 	return plan, nil
 }
