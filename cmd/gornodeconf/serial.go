@@ -41,6 +41,7 @@ type cliRuntime struct {
 	openSerial   serialOpener
 	discoverPort func() (string, []string, error)
 	stdin        io.Reader
+	now          func() time.Time
 	debug        bool
 }
 
@@ -48,6 +49,7 @@ func newRuntime() cliRuntime {
 	return cliRuntime{
 		openSerial: defaultOpenSerial,
 		stdin:      os.Stdin,
+		now:        time.Now,
 	}
 }
 

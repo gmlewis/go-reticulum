@@ -16,7 +16,6 @@ import (
 )
 
 func TestFetchModeSavesReceivedFiles(t *testing.T) {
-	t.Parallel()
 	skipShortIntegration(t)
 
 	// Create temp directories
@@ -151,36 +150,62 @@ func TestFetchModeSavesReceivedFiles(t *testing.T) {
 		return true
 	})
 	link.SetResourceStartedCallback(func(res *rns.Resource) {
-		res.SetCallback(func(r *rns.Resource) {
-			if r.Status() == rns.ResourceStatusComplete {
-				md := r.Metadata()
-				if md == nil {
-					t.Errorf("Expected metadata")
+		go func() {
+			deadline := time.After(30 * time.Second)
+			ticker := time.NewTicker(10 * time.Millisecond)
+			defer ticker.Stop()
+
+			for {
+				status := res.Status()
+				switch status {
+				case rns.ResourceStatusComplete:
+					md := res.Metadata()
+					if md == nil {
+						t.Errorf("Expected metadata")
+						savedFileChan <- ""
+						return
+					}
+					nameBytes, ok := md["name"]
+					if !ok {
+						t.Errorf("Expected 'name' in metadata")
+						savedFileChan <- ""
+						return
+					}
+					filename := string(nameBytes)
+					savedFilePath := filepath.Join(saveDir, filename)
+					if err := os.WriteFile(savedFilePath, res.Data(), 0o644); err != nil {
+						t.Errorf("Failed to save file: %v", err)
+						savedFileChan <- ""
+						return
+					}
+					savedFileChan <- savedFilePath
+					return
+				case rns.ResourceStatusFailed, rns.ResourceStatusCorrupt, rns.ResourceStatusRejected:
+					t.Errorf("Unexpected resource status: %v", status)
 					savedFileChan <- ""
 					return
 				}
-				nameBytes, ok := md["name"]
-				if !ok {
-					t.Errorf("Expected 'name' in metadata")
+
+				select {
+				case <-ticker.C:
+				case <-deadline:
+					t.Errorf("Timed out waiting for file to be saved")
 					savedFileChan <- ""
 					return
 				}
-				filename := string(nameBytes)
-				savedFilePath := filepath.Join(saveDir, filename)
-				if err := os.WriteFile(savedFilePath, r.Data(), 0o644); err != nil {
-					t.Errorf("Failed to save file: %v", err)
-					savedFileChan <- ""
-					return
-				}
-				savedFileChan <- savedFilePath
 			}
-		})
+		}()
 	})
 
 	// Send fetch request
 	_, err = link.Request("fetch_file", []byte("testfile.txt"), func(rr *rns.RequestReceipt) {
 		if rr.Status != rns.RequestReady {
 			t.Logf("Request failed with status: %v", rr.Status)
+			savedFileChan <- ""
+			return
+		}
+		if rr.Response != true {
+			t.Logf("Request response = %T %v", rr.Response, rr.Response)
 		}
 	}, nil, nil, 0)
 	if err != nil {
