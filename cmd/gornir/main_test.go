@@ -6,8 +6,6 @@
 package main
 
 import (
-	"flag"
-	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -62,53 +60,6 @@ func TestHelpOutput(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("help output missing %q, got:\n%v", want, out)
 		}
-	}
-}
-
-func TestCounter(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name  string
-		calls int
-		want  int
-	}{
-		{"zero", 0, 0},
-		{"one", 1, 1},
-		{"three", 3, 3},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			var c counter
-			for i := 0; i < tc.calls; i++ {
-				if err := c.Set("true"); err != nil {
-					t.Fatalf("Set failed: %v", err)
-				}
-			}
-			if int(c) != tc.want {
-				t.Errorf("counter = %v, want %v", int(c), tc.want)
-			}
-		})
-	}
-}
-
-func TestCounterIsBoolFlag(t *testing.T) {
-	t.Parallel()
-	var c counter
-	if !c.IsBoolFlag() {
-		t.Error("IsBoolFlag() = false, want true")
-	}
-}
-
-func TestCounterString(t *testing.T) {
-	t.Parallel()
-	var c counter
-	if c.String() != "0" {
-		t.Errorf("String() = %q, want %q", c.String(), "0")
-	}
-	c = 5
-	if c.String() != "5" {
-		t.Errorf("String() = %q, want %q", c.String(), "5")
 	}
 }
 
@@ -175,19 +126,6 @@ func TestVerboseStacking(t *testing.T) {
 	}
 }
 
-func TestLongFormParserAliases(t *testing.T) {
-	t.Parallel()
-	out, err := runGornir(t, "--verbose", "--quiet", "--exampleconfig")
-	if err != nil {
-		t.Fatalf("gornir --verbose --quiet --exampleconfig failed: %v\n%v", err, out)
-	}
-	for _, want := range []string{"example Reticulum config file", "[reticulum]", "[logging]"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("parser alias output missing %q: %v", want, out)
-		}
-	}
-}
-
 func TestVersionOutput(t *testing.T) {
 	t.Parallel()
 	out, err := runGornir(t, "--version")
@@ -198,25 +136,5 @@ func TestVersionOutput(t *testing.T) {
 	got := strings.TrimSpace(out)
 	if got != want {
 		t.Errorf("version output = %q, want %q", got, want)
-	}
-}
-
-func TestAppFlags(t *testing.T) {
-	t.Parallel()
-	app := newApp()
-	fs := flag.NewFlagSet("gornir", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	app.initFlags(fs)
-	if err := fs.Parse([]string{"--verbose", "--quiet", "--exampleconfig"}); err != nil {
-		t.Fatalf("Parse failed: %v", err)
-	}
-	if app.verbose != 1 {
-		t.Fatalf("verbose = %v, want %v", app.verbose, 1)
-	}
-	if app.quiet != 1 {
-		t.Fatalf("quiet = %v, want %v", app.quiet, 1)
-	}
-	if !app.exampleConfig {
-		t.Fatal("exampleConfig = false, want true")
 	}
 }

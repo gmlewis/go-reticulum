@@ -43,9 +43,9 @@ package main
 import (
 	"cmp"
 	"encoding/hex"
-	"flag"
 	"fmt"
 	"log"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -54,41 +54,35 @@ import (
 )
 
 func main() {
-	configDir := flag.String("config", "", "path to alternative Reticulum config directory")
-	table := flag.Bool("t", false, "show all known paths")
-	maxHops := flag.Int("m", 0, "maximum hops to filter path table by")
-	rates := flag.Bool("r", false, "show announce rate info")
-	drop := flag.Bool("d", false, "remove the path to a destination")
-	dropAnnounces := flag.Bool("D", false, "drop all queued announces")
-	dropVia := flag.Bool("x", false, "drop all paths via specified transport instance")
-	timeout := flag.Float64("w", 15.0, "timeout before giving up")
-	jsonOut := flag.Bool("j", false, "output in JSON format")
-	verbose := flag.Bool("v", false, "increase verbosity")
-	version := flag.Bool("version", false, "show version and exit")
-
 	log.SetFlags(0)
-	flag.Parse()
+	app, err := parseFlags(os.Args[1:])
+	if err != nil {
+		if err == errHelp {
+			return
+		}
+		log.Fatal(err)
+	}
 
-	if *version {
+	if app.version {
 		fmt.Printf("gornpath %v\n", rns.VERSION)
 		return
 	}
 
-	if !*dropAnnounces && !*table && !*rates && flag.NArg() == 0 && !*dropVia {
+	if !app.dropAnnounces && !app.table && !app.rates && len(app.args) == 0 && !app.dropVia {
 		fmt.Println("")
-		flag.Usage()
+		app.usage()
 		fmt.Println("")
 		log.Fatal("missing required destination hash or operation flag")
 	}
 
 	targetLogLevel := rns.LogNotice
-	if *verbose {
+	if app.verbose {
 		targetLogLevel = rns.LogInfo
 	}
 	rns.SetLogLevel(targetLogLevel)
 
 	ts := rns.NewTransportSystem()
-	ret, err := rns.NewReticulum(ts, *configDir)
+	ret, err := rns.NewReticulum(ts, app.configDir)
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
@@ -98,19 +92,19 @@ func main() {
 		}
 	}()
 
-	if *table {
-		doTable(ts, *maxHops, *jsonOut)
-	} else if flag.NArg() > 0 {
-		destHex := flag.Arg(0)
+	if app.table {
+		doTable(ts, app.maxHops, app.jsonOut)
+	} else if len(app.args) > 0 {
+		destHex := app.args[0]
 		destHash, err := hex.DecodeString(destHex)
 		if err != nil {
 			log.Fatalf("Invalid destination hash: %v\n", err)
 		}
 
-		if *drop {
+		if app.drop {
 			doDrop(ts, destHash)
 		} else {
-			doRequest(ts, destHash, *timeout)
+			doRequest(ts, destHash, app.timeout)
 		}
 	}
 }

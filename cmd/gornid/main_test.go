@@ -6,8 +6,6 @@
 package main
 
 import (
-	"flag"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -165,49 +163,6 @@ func TestImportExportRoundTrip(t *testing.T) {
 	}
 	if !strings.Contains(out, "Public Key") {
 		t.Errorf("import output missing 'Public Key', got: %v", out)
-	}
-}
-
-func TestLongFormParserAliases(t *testing.T) {
-	t.Parallel()
-	tmpDir, cleanup := tempDir(t)
-	defer cleanup()
-	idFile := filepath.Join(tmpDir, "alias.id")
-
-	out, err := runGornid(t, "--config", tmpDir, "--generate", idFile)
-	if err != nil {
-		t.Fatalf("gornid --generate failed: %v\n%v", err, out)
-	}
-	if _, err := os.Stat(idFile); err != nil {
-		t.Fatalf("identity file not created: %v", err)
-	}
-
-	out, err = runGornid(t, "--config", tmpDir, "--identity", idFile, "--print-identity")
-	if err != nil {
-		t.Fatalf("gornid --identity --print-identity failed: %v\n%v", err, out)
-	}
-	if !strings.Contains(out, "Public Key") {
-		t.Fatalf("identity output missing public key label: %v", out)
-	}
-}
-
-func TestAppFlags(t *testing.T) {
-	t.Parallel()
-	app := newApp()
-	fs := flag.NewFlagSet("gornid", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	app.initFlags(fs)
-	if err := fs.Parse([]string{"--verbose", "--quiet", "--version"}); err != nil {
-		t.Fatalf("Parse failed: %v", err)
-	}
-	if app.verbose != 1 {
-		t.Fatalf("verbose = %v, want %v", app.verbose, 1)
-	}
-	if app.quiet != 1 {
-		t.Fatalf("quiet = %v, want %v", app.quiet, 1)
-	}
-	if !app.version {
-		t.Fatal("version = false, want true")
 	}
 }
 

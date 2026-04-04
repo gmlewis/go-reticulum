@@ -9,36 +9,11 @@
 //   - Probing the reachability of remote destinations.
 //   - Measuring round-trip time (RTT) to network nodes.
 //   - Reporting packet loss and physical layer statistics.
-//
-// Usage:
-//
-//	Probe a destination:
-//	  gornprobe <full_name> <destination_hash> [-n <count>] [-s <size>]
-//
-//	Example:
-//	  gornprobe exampleapp.aspect1 b009b7fab8c97ae05027a1d5740d00f0 -n 5
-//
-// Flags:
-//
-//	-config string
-//	      path to alternative Reticulum config directory
-//	-n int
-//	      number of probes to send (default 1)
-//	-s int
-//	      size of probe packet payload in bytes (default 16)
-//	-t float
-//	      timeout in seconds before giving up on a probe
-//	-w float
-//	      time in seconds to wait between each probe
-//	-v    increase verbosity
-//	-version
-//	      show version and exit
 package main
 
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -56,42 +31,40 @@ const (
 )
 
 func main() {
-	configDir := flag.String("config", "", "path to alternative Reticulum config directory")
-	size := flag.Int("s", DefaultProbeSize, "size of probe packet payload in bytes")
-	probes := flag.Int("n", 1, "number of probes to send")
-	timeout := flag.Float64("t", 0, "timeout before giving up")
-	wait := flag.Float64("w", 0, "time between each probe")
-	verbose := flag.Bool("v", false, "increase verbosity")
-	version := flag.Bool("version", false, "show version and exit")
-
 	log.SetFlags(0)
-	flag.Parse()
+	app, err := parseFlags(os.Args[1:])
+	if err != nil {
+		if err == errHelp {
+			return
+		}
+		log.Fatal(err)
+	}
 
-	if *version {
+	if app.version {
 		fmt.Printf("gornprobe %v\n", rns.VERSION)
 		return
 	}
 
-	if flag.NArg() < 2 {
+	if len(app.args) < 2 {
 		fmt.Println("")
 		fmt.Println("The full destination name including application name aspects must be specified for the destination")
 		fmt.Println("")
-		flag.Usage()
+		app.usage()
 		fmt.Println("")
 		log.Fatal("destination full_name and destination_hash are required")
 	}
 
-	fullName := flag.Arg(0)
-	destHex := flag.Arg(1)
+	fullName := app.args[0]
+	destHex := app.args[1]
 
 	targetLogLevel := rns.LogNotice
-	if *verbose {
+	if app.verbose {
 		targetLogLevel = rns.LogInfo
 	}
 	rns.SetLogLevel(targetLogLevel)
 
 	ts := rns.NewTransportSystem()
-	ret, err := rns.NewReticulum(ts, *configDir)
+	ret, err := rns.NewReticulum(ts, app.configDir)
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
@@ -113,11 +86,9 @@ func main() {
 		}
 	}
 
-	// Wait for path
 	i := 0
 	syms := []string{"⢄", "⢂", "⢁", "⡁", "⡈", "⡐", "⡠"}
-	pathTimeout := 15.0
-	deadline := time.Now().Add(time.Duration(pathTimeout * float64(time.Second)))
+	deadline := time.Now().Add(time.Duration(15.0 * float64(time.Second)))
 	for !ts.HasPath(destHash) && time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
 		fmt.Printf("\b\b%v ", syms[i])
@@ -129,8 +100,6 @@ func main() {
 	}
 
 	remoteID := rns.RecallIdentity(ts, destHash)
-
-	// Parse app name and aspects
 	parts := strings.Split(fullName, ".")
 	if len(parts) == 0 {
 		log.Fatalf("Invalid full name")
@@ -148,12 +117,12 @@ func main() {
 
 	sent := 0
 	replies := 0
-	for count := 0; count < *probes; count++ {
+	for count := 0; count < app.probes; count++ {
 		if sent > 0 {
-			time.Sleep(time.Duration(*wait * float64(time.Second)))
+			time.Sleep(time.Duration(app.wait * float64(time.Second)))
 		}
 
-		payload := make([]byte, *size)
+		payload := make([]byte, app.size)
 		rand.Read(payload)
 
 		p := rns.NewPacket(remoteDest, payload)
@@ -161,7 +130,7 @@ func main() {
 			log.Fatalf("Error: Probe packet size of %v bytes exceed MTU of %v bytes\n", len(p.Raw), rns.MTU)
 		}
 
-		fmt.Printf("\rSent probe %v (%v bytes) to <%x>  ", sent+1, *size, destHash)
+		fmt.Printf("\rSent probe %v (%v bytes) to <%x>  ", sent+1, app.size, destHash)
 
 		startTime := time.Now()
 		if err := p.Send(); err != nil {
@@ -175,8 +144,7 @@ func main() {
 			continue
 		}
 
-		// Wait for delivery
-		probeTimeout := *timeout
+		probeTimeout := app.timeout
 		if probeTimeout == 0 {
 			probeTimeout = DefaultTimeout
 		}

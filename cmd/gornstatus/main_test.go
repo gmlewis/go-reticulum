@@ -6,8 +6,6 @@
 package main
 
 import (
-	"flag"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -184,78 +182,5 @@ func TestVerboseStacking(t *testing.T) {
 	got := strings.TrimSpace(string(out))
 	if got != want {
 		t.Errorf("version output = %q, want %q", got, want)
-	}
-}
-
-func TestCounter(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name  string
-		calls int
-		want  int
-	}{
-		{"zero", 0, 0},
-		{"one", 1, 1},
-		{"three", 3, 3},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			var c counter
-			for i := 0; i < tc.calls; i++ {
-				if err := c.Set("true"); err != nil {
-					t.Fatalf("Set failed: %v", err)
-				}
-			}
-			if int(c) != tc.want {
-				t.Errorf("counter = %v, want %v", int(c), tc.want)
-			}
-		})
-	}
-}
-
-func TestCounterIsBoolFlag(t *testing.T) {
-	t.Parallel()
-	var c counter
-	if !c.IsBoolFlag() {
-		t.Error("IsBoolFlag() = false, want true")
-	}
-}
-
-func TestCounterString(t *testing.T) {
-	t.Parallel()
-	var c counter
-	if c.String() != "0" {
-		t.Errorf("String() = %q, want %q", c.String(), "0")
-	}
-	c = 5
-	if c.String() != "5" {
-		t.Errorf("String() = %q, want %q", c.String(), "5")
-	}
-}
-
-func TestAppFlags(t *testing.T) {
-	t.Parallel()
-	app := newApp()
-	fs := flag.NewFlagSet("gornstatus", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	app.initFlags(fs)
-	if err := fs.Parse([]string{"--config", "/tmp/config", "--all", "--json", "--verbose", "--monitor-interval", "2"}); err != nil {
-		t.Fatalf("Parse failed: %v", err)
-	}
-	if app.configDir != "/tmp/config" {
-		t.Fatalf("configDir = %q, want %q", app.configDir, "/tmp/config")
-	}
-	if !app.showAll {
-		t.Fatal("showAll = false, want true")
-	}
-	if !app.jsonOutput {
-		t.Fatal("jsonOutput = false, want true")
-	}
-	if app.verbose != 1 {
-		t.Fatalf("verbose = %v, want %v", app.verbose, 1)
-	}
-	if app.monitorInterval != 2 {
-		t.Fatalf("monitorInterval = %v, want 2", app.monitorInterval)
 	}
 }

@@ -34,7 +34,6 @@ package main
 
 import (
 	"bytes"
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -50,25 +49,24 @@ import (
 const AppName = "rnx"
 
 func main() {
-	configDir := flag.String("config", "", "path to alternative Reticulum config directory")
-	identityPath := flag.String("i", "", "path to identity to use")
-	verbose := flag.Bool("v", false, "increase verbosity")
-	quiet := flag.Bool("q", false, "decrease verbosity")
-	listenMode := flag.Bool("l", false, "listen for incoming commands")
-	interactive := flag.Bool("x", false, "enter interactive mode")
-	// Add other flags as needed
 	log.SetFlags(0)
-	flag.Parse()
+	app, err := parseFlags(os.Args[1:])
+	if err != nil {
+		if err == errHelp {
+			return
+		}
+		log.Fatal(err)
+	}
 
-	if *verbose {
+	if app.verbose {
 		rns.SetLogLevel(rns.LogVerbose)
 	}
-	if *quiet {
+	if app.quiet {
 		rns.SetLogLevel(rns.LogWarning)
 	}
 
 	ts := rns.NewTransportSystem()
-	ret, err := rns.NewReticulum(ts, *configDir)
+	ret, err := rns.NewReticulum(ts, app.configDir)
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
@@ -78,18 +76,18 @@ func main() {
 		}
 	}()
 
-	if *listenMode {
-		doListen(*identityPath)
-	} else if *interactive {
+	if app.listenMode {
+		doListen(app.identityPath)
+	} else if app.interactive {
 		// doInteractive(...)
 	} else {
-		if flag.NArg() < 2 {
-			flag.Usage()
+		if len(app.args) < 2 {
+			app.usage()
 			log.Fatal("destination and command must be specified")
 		}
-		destHashHex := flag.Arg(0)
-		command := flag.Arg(1)
-		doExecute(ret.Transport(), *identityPath, destHashHex, command)
+		destHashHex := app.args[0]
+		command := app.args[1]
+		doExecute(ret.Transport(), app.identityPath, destHashHex, command)
 	}
 }
 

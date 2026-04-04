@@ -13,44 +13,44 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
 func main() {
-	configDir := flag.String("config", "", "path to alternative Reticulum config directory")
-	verbose := flag.Bool("v", false, "increase verbosity")
-	quiet := flag.Bool("q", false, "decrease verbosity")
-	service := flag.Bool("s", false, "rnsd is running as a service and should log to file")
-	exampleConfig := flag.Bool("exampleconfig", false, "print verbose configuration example to stdout and exit")
-	version := flag.Bool("version", false, "show version and exit")
-	flag.Parse()
+	app, err := parseFlags(os.Args[1:])
+	if err != nil {
+		if err == errHelp {
+			return
+		}
+		log.Fatal(err)
+	}
 
-	if *version {
+	if app.version {
 		fmt.Printf("gornsd %v\n", rns.VERSION)
 		return
 	}
 
-	if *exampleConfig {
+	if app.exampleConfig {
 		fmt.Print(exampleRNSConfig)
 		return
 	}
 
-	if *verbose {
+	if app.verbose {
 		rns.SetLogLevel(rns.LogVerbose)
 	}
-	if *quiet {
+	if app.quiet {
 		rns.SetLogLevel(rns.LogWarning)
 	}
-	if *service {
+	if app.service {
 		rns.SetLogDest(rns.LogDestFile)
 	}
 
 	ts := rns.NewTransportSystem()
-	ret, err := rns.NewReticulum(ts, *configDir)
+	ret, err := rns.NewReticulum(ts, app.configDir)
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
