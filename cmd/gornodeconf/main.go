@@ -202,6 +202,10 @@ func run(args []string) error {
 		return handleGenerateKeys(opts.autoinstall)
 	}
 
+	if opts.getTargetFirmwareHash || opts.getFirmwareHash {
+		return runFirmwareHashReadbacks(os.Stdout, port, opts)
+	}
+
 	if port == "" {
 		printHelp()
 		return nil
