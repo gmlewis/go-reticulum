@@ -6,8 +6,9 @@
 package main
 
 import (
+	"errors"
 	"flag"
-	"fmt"
+	"io"
 	"strconv"
 )
 
@@ -31,20 +32,27 @@ type appT struct {
 
 func newApp() *appT { return &appT{} }
 
-func (a *appT) usage() {
-	_, _ = fmt.Fprintf(flag.CommandLine.Output(), `
-usage: gornpkg [-h] [--config CONFIG] [-v] [-q] [--exampleconfig] [--version]
+var errHelp = errors.New("help requested")
 
-Reticulum Meta Package Manager
+func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
+	app := newApp()
+	fs := flag.NewFlagSet("gornpkg", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.Usage = func() {
+		app.usage(usageOutput)
+	}
+	app.initFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil, errHelp
+		}
+		return nil, err
+	}
+	return app, nil
+}
 
-options:
-  -h, --help       show this help message and exit
-  --config CONFIG  path to alternative Reticulum config directory
-  -v, --verbose    increase verbosity
-  -q, --quiet      decrease verbosity
-  --exampleconfig  print verbose configuration example to stdout and exit
-  --version        show program's version number and exit
-`)
+func (a *appT) usage(w io.Writer) {
+	_, _ = io.WriteString(w, usageText)
 }
 
 func (a *appT) initFlags(fs *flag.FlagSet) {
@@ -56,3 +64,17 @@ func (a *appT) initFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&a.exampleConfig, "exampleconfig", false, "print verbose configuration example to stdout and exit")
 	fs.BoolVar(&a.version, "version", false, "show program's version number and exit")
 }
+
+const usageText = `
+usage: gornpkg [-h] [--config CONFIG] [-v] [-q] [--exampleconfig] [--version]
+
+Go Reticulum Meta Package Manager
+
+options:
+  -h, --help       show this help message and exit
+  --config CONFIG  path to alternative Reticulum config directory
+  -v, --verbose
+  -q, --quiet
+  --exampleconfig  print verbose configuration example to stdout and exit
+  --version        show program's version number and exit
+`

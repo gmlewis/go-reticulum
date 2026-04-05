@@ -93,7 +93,6 @@ func (a *appT) usage(w io.Writer) {
 }
 
 const usageText = `
-
 usage: gornpath [-h] [--config CONFIG] [--version] [-t] [-m hops] [-r] [-d] [-D] [-x] [-w seconds] [-R hash]
                 [-i path] [-W seconds] [-b] [-B] [-U] [--duration DURATION] [--reason REASON] [-p] [-j] [-v]
                 [destination] [list_filter]

@@ -124,6 +124,23 @@ func runGorncpBackground(t *testing.T, configDir string, args ...string) (*exec.
 	return cmd, buf
 }
 
+func writeMinimalConfig(t *testing.T, configDir string) {
+	t.Helper()
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll configDir: %v", err)
+	}
+	config := `[reticulum]
+enable_transport = No
+share_instance = No
+loglevel = 4
+
+[interfaces]
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o644); err != nil {
+		t.Fatalf("WriteFile config: %v", err)
+	}
+}
+
 func captureStdout(f func()) string {
 	oldStdout := os.Stdout
 	r, w, _ := os.Pipe()
@@ -149,6 +166,7 @@ func TestVersionParity(t *testing.T) {
 	tmpDir, cleanup := tempDir(t)
 	defer cleanup()
 	configDir := filepath.Join(tmpDir, "config")
+	writeMinimalConfig(t, configDir)
 
 	pyOut := strings.TrimSpace(runPython(t, configDir, "--version"))
 	if !strings.HasPrefix(pyOut, "rncp ") {
@@ -166,9 +184,7 @@ func TestIdentityDisplayParity(t *testing.T) {
 	defer cleanup()
 	idPath := filepath.Join(tmpDir, "identity")
 	configDir := filepath.Join(tmpDir, "config")
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
+	writeMinimalConfig(t, configDir)
 
 	pyOut := runPython(t, configDir, "-i", idPath, "-p", "-l", "-n")
 	goOut := runGorncp(t, configDir, "-i", idPath, "-p", "-l", "-n")

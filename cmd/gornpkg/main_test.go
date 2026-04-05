@@ -8,6 +8,7 @@ package main
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -105,6 +106,61 @@ func TestExitCodeZero(t *testing.T) {
 	out, err := runGornpkg(t, "--config", tmpDir)
 	if err != nil {
 		t.Fatalf("gornpkg exited with error: %v\n%v", err, out)
+	}
+}
+
+func TestProgramSetupUsesVerbosityMinusQuietness(t *testing.T) {
+	originalLevel := rns.GetLogLevel()
+	originalDest := rns.GetLogDest()
+	t.Cleanup(func() {
+		rns.SetLogLevel(originalLevel)
+		rns.SetLogDest(originalDest)
+	})
+
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+
+	var capturedLevel int
+	var capturedDest int
+	var capturedConfigDir string
+	if err := programSetup(tmpDir, 3, 1, func(ts rns.Transport, configDir string) (*rns.Reticulum, error) {
+		capturedLevel = rns.GetLogLevel()
+		capturedDest = rns.GetLogDest()
+		capturedConfigDir = configDir
+		return &rns.Reticulum{}, nil
+	}); err != nil {
+		t.Fatalf("programSetup returned error: %v", err)
+	}
+	if got, want := capturedLevel, 2; got != want {
+		t.Fatalf("log level = %v, want %v", got, want)
+	}
+	if got, want := capturedDest, rns.LogStdout; got != want {
+		t.Fatalf("log dest = %v, want %v", got, want)
+	}
+	if capturedConfigDir != tmpDir {
+		t.Fatalf("config dir = %q, want %q", capturedConfigDir, tmpDir)
+	}
+}
+
+func TestProgramSetupForwardsConfigDirAndClosesReticulum(t *testing.T) {
+	originalLevel := rns.GetLogLevel()
+	originalDest := rns.GetLogDest()
+	t.Cleanup(func() {
+		rns.SetLogLevel(originalLevel)
+		rns.SetLogDest(originalDest)
+	})
+
+	tmpDir, cleanup := tempDir(t)
+	defer cleanup()
+
+	if err := programSetup(tmpDir, 0, 0, rns.NewReticulum); err != nil {
+		t.Fatalf("first programSetup returned error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(tmpDir, "config")); err != nil {
+		t.Fatalf("expected config file to be created in %v: %v", tmpDir, err)
+	}
+	if err := programSetup(tmpDir, 0, 0, rns.NewReticulum); err != nil {
+		t.Fatalf("second programSetup returned error: %v", err)
 	}
 }
 

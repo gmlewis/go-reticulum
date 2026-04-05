@@ -6,8 +6,10 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"io"
+	"strings"
 	"testing"
 )
 
@@ -75,5 +77,56 @@ func TestAppFlags(t *testing.T) {
 	}
 	if !app.exampleConfig {
 		t.Fatal("exampleConfig = false, want true")
+	}
+}
+
+func TestParseFlags(t *testing.T) {
+	t.Parallel()
+
+	var usage bytes.Buffer
+	app, err := parseFlags([]string{"--config", "/tmp/config", "-v", "-q", "--exampleconfig", "--version"}, &usage)
+	if err != nil {
+		t.Fatalf("parseFlags failed: %v", err)
+	}
+	if app.configDir != "/tmp/config" || app.verbose != 1 || app.quiet != 1 || !app.exampleConfig || !app.version {
+		t.Fatalf("unexpected app state: %+v", app)
+	}
+	if usage.Len() != 0 {
+		t.Fatalf("expected no usage output, got %q", usage.String())
+	}
+}
+
+func TestParseFlagsLongAliases(t *testing.T) {
+	t.Parallel()
+
+	app, err := parseFlags([]string{"--config", "/tmp/config", "--verbose", "--quiet", "--exampleconfig", "--version"}, io.Discard)
+	if err != nil {
+		t.Fatalf("parseFlags failed: %v", err)
+	}
+	if app.configDir != "/tmp/config" || app.verbose != 1 || app.quiet != 1 || !app.exampleConfig || !app.version {
+		t.Fatalf("unexpected app state from long aliases: %+v", app)
+	}
+}
+
+func TestParseFlagsHelpOutputsUsage(t *testing.T) {
+	t.Parallel()
+
+	var usage bytes.Buffer
+	_, err := parseFlags([]string{"--help"}, &usage)
+	if err != errHelp {
+		t.Fatalf("parseFlags returned %v, want errHelp", err)
+	}
+	if got := usage.String(); !strings.Contains(got, "usage: gornpkg") || !strings.Contains(got, "--exampleconfig") || !strings.Contains(got, "--version") {
+		t.Fatalf("usage output missing expected text: %q", got)
+	}
+}
+
+func TestUsageText(t *testing.T) {
+	t.Parallel()
+
+	var usage bytes.Buffer
+	newApp().usage(&usage)
+	if got := usage.String(); got != usageText {
+		t.Fatalf("usage text mismatch:\n--- got ---\n%v\n--- want ---\n%v", got, usageText)
 	}
 }

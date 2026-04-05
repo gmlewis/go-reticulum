@@ -11,7 +11,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -32,29 +31,39 @@ func (a *appT) run() {
 		return
 	}
 
-	rns.SetLogDest(rns.LogStdout)
-	if a.verbose != 0 || a.quiet != 0 {
-		rns.SetLogLevel(int(a.verbose) - int(a.quiet))
-	}
-
-	ts := rns.NewTransportSystem()
-	ret, err := rns.NewReticulum(ts, a.configDir)
-	if err != nil {
+	if err := programSetup(a.configDir, a.verbose, a.quiet, rns.NewReticulum); err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v", err)
 	}
+}
+
+type reticulumFactory func(rns.Transport, string) (*rns.Reticulum, error)
+
+func programSetup(configDir string, verbosity, quietness counter, newReticulum reticulumFactory) (err error) {
+	rns.SetLogDest(rns.LogStdout)
+	rns.SetLogLevel(int(verbosity) - int(quietness))
+
+	ts := rns.NewTransportSystem()
+	ret, err := newReticulum(ts, configDir)
+	if err != nil {
+		return err
+	}
 	defer func() {
-		if err := ret.Close(); err != nil {
-			rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+		if closeErr := ret.Close(); closeErr != nil {
+			err = closeErr
 		}
 	}()
-	// TODO: Finish this.
+	return nil
 }
 
 func main() {
 	log.SetFlags(0)
-	app := newApp()
-	app.initFlags(flag.CommandLine)
-	flag.Usage = app.usage
+	app, err := parseFlags(os.Args[1:], os.Stderr)
+	if err != nil {
+		if err == errHelp {
+			return
+		}
+		log.Fatal(err)
+	}
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
@@ -64,6 +73,5 @@ func main() {
 		os.Exit(0)
 	}()
 
-	flag.Parse()
 	app.run()
 }
