@@ -8,7 +8,7 @@ package main
 import (
 	"errors"
 	"flag"
-	"fmt"
+	"io"
 )
 
 var errHelp = errors.New("help requested")
@@ -73,7 +73,7 @@ func parseFlags(args []string) (*appT, error) {
 }
 
 func (a *appT) usage() {
-	_, _ = fmt.Fprintf(flag.CommandLine.Output(), usageText)
+	_, _ = io.WriteString(flag.CommandLine.Output(), usageText)
 }
 
 const usageText = `
