@@ -128,6 +128,28 @@ func main() {
 			}
 			log.Fatal(err)
 		}
+	} else if app.blackhole {
+		if len(app.args) == 0 {
+			log.Fatal("missing destination hash")
+		}
+		hash, err := parseHash(app.args[0])
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := doBlackhole(os.Stdout, ret, hash, app.duration, app.reason); err != nil {
+			log.Fatal(err)
+		}
+	} else if app.unblackhole {
+		if len(app.args) == 0 {
+			log.Fatal("missing destination hash")
+		}
+		hash, err := parseHash(app.args[0])
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := doUnblackhole(os.Stdout, ret, hash); err != nil {
+			log.Fatal(err)
+		}
 	} else if len(app.args) > 0 {
 		destHex := app.args[0]
 		destHash, err := hex.DecodeString(destHex)
