@@ -138,6 +138,7 @@ type AnnounceRateEntry struct {
 // BlackholeIdentityEntry defines an identity that is temporarily or permanently blocked from communication.
 type BlackholeIdentityEntry struct {
 	IdentityHash []byte
+	Source       []byte
 	Until        *time.Time
 	Reason       string
 }
@@ -1489,6 +1490,7 @@ func (ts *TransportSystem) BlackholeIdentity(identityHash []byte, until *int64, 
 
 	entry := BlackholeIdentityEntry{
 		IdentityHash: copyBytes(identityHash),
+		Source:       copyBytes(ts.identityHash()),
 		Reason:       reason,
 	}
 	if until != nil && *until > 0 {
@@ -1766,6 +1768,7 @@ func (ts *TransportSystem) GetBlackholedIdentities() []map[string]any {
 	for _, entry := range ts.blackholedIdentities {
 		item := map[string]any{
 			"identity_hash": copyBytes(entry.IdentityHash),
+			"source":        copyBytes(entry.Source),
 			"reason":        entry.Reason,
 		}
 		if entry.Until != nil {
@@ -1776,6 +1779,13 @@ func (ts *TransportSystem) GetBlackholedIdentities() []map[string]any {
 		out = append(out, item)
 	}
 	return out
+}
+
+func (ts *TransportSystem) identityHash() []byte {
+	if ts == nil || ts.identity == nil {
+		return nil
+	}
+	return ts.identity.Hash
 }
 
 // HasPath returns true if a path to the destination is known.

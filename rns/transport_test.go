@@ -906,6 +906,7 @@ func (i *ifacTransformInterface) ApplyIFACOutbound(data []byte) ([]byte, error) 
 func TestTransportBlackholeRegistry(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem()
+	ts.identity = &Identity{Hash: []byte{0x09, 0x09, 0x09}}
 	hash := []byte{0x01, 0x02, 0x03}
 	until := time.Now().Add(time.Hour).Unix()
 
@@ -916,6 +917,9 @@ func TestTransportBlackholeRegistry(t *testing.T) {
 	entries := ts.GetBlackholedIdentities()
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 blackhole entry, got %v", len(entries))
+	}
+	if got := entries[0]["source"]; got == nil {
+		t.Fatalf("expected blackhole entry source to be recorded")
 	}
 
 	if ok := ts.UnblackholeIdentity(hash); !ok {

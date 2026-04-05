@@ -45,12 +45,12 @@
 package main
 
 import (
-	"cmp"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
-	"slices"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
@@ -95,7 +95,39 @@ func main() {
 	}()
 
 	if app.table {
-		doTable(ts, app.maxHops, app.jsonOut)
+		if err := doTable(os.Stdout, ts, app.maxHops, app.jsonOut); err != nil {
+			log.Fatal(err)
+		}
+	} else if app.rates {
+		var destinationHash []byte
+		if len(app.args) > 0 {
+			destinationHash, err = parseHash(app.args[0])
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+		if err := doRates(os.Stdout, ret, destinationHash, app.jsonOut); err != nil {
+			if errors.Is(err, errNoRateInformation) {
+				os.Exit(1)
+			}
+			log.Fatal(err)
+		}
+	} else if app.blackholed {
+		filter := ""
+		if len(app.args) > 0 {
+			filter = app.args[0]
+		}
+		localIdentity := ret.Transport().Identity()
+		var localIdentityHash []byte
+		if localIdentity != nil {
+			localIdentityHash = localIdentity.Hash
+		}
+		if err := doBlackholed(os.Stdout, ret, filter, localIdentityHash); err != nil {
+			if errors.Is(err, errNoBlackholedInformation) {
+				os.Exit(20)
+			}
+			log.Fatal(err)
+		}
 	} else if len(app.args) > 0 {
 		destHex := app.args[0]
 		destHash, err := hex.DecodeString(destHex)
@@ -121,32 +153,15 @@ func main() {
 	}
 }
 
-func doTable(ts *rns.TransportSystem, maxHops int, jsonOut bool) {
-	paths := ts.GetPathTable()
+type pathTableProvider interface {
+	GetPathTable() []rns.PathInfo
+}
 
-	// Sort by interface then hops
-	slices.SortFunc(paths, func(a, b rns.PathInfo) int {
-		return cmp.Or(
-			cmp.Compare(a.Interface.Name(), b.Interface.Name()),
-			cmp.Compare(a.Hops, b.Hops),
-		)
-	})
-
-	if jsonOut {
-		// Simplified JSON for now
-		fmt.Println("[]")
-		return
+func doTable(out io.Writer, ts pathTableProvider, maxHops int, jsonOut bool) error {
+	rendered, err := renderPathTable(ts.GetPathTable(), maxHops, jsonOut, nil)
+	if err != nil {
+		return err
 	}
-
-	for _, p := range paths {
-		if maxHops > 0 && p.Hops > maxHops {
-			continue
-		}
-		ms := "s"
-		if p.Hops == 1 {
-			ms = ""
-		}
-		fmt.Printf("%x is %v hop%v away via %x on %v expires %v\n",
-			p.Hash, p.Hops, ms, p.NextHop, p.Interface.Name(), p.Expires.Format("2006-01-02 15:04:05"))
-	}
+	_, err = fmt.Fprint(out, rendered)
+	return err
 }
