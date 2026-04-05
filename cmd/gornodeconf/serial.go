@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"time"
 )
 
@@ -43,6 +44,7 @@ type cliRuntime struct {
 	stdin        io.Reader
 	now          func() time.Time
 	sleep        func(time.Duration)
+	runCommand   func(string, ...string) ([]byte, error)
 	debug        bool
 }
 
@@ -52,6 +54,7 @@ func newRuntime() cliRuntime {
 		stdin:      os.Stdin,
 		now:        time.Now,
 		sleep:      time.Sleep,
+		runCommand: defaultRunCommand,
 	}
 }
 
@@ -61,6 +64,10 @@ func (rt cliRuntime) Sleep(duration time.Duration) {
 		return
 	}
 	time.Sleep(duration)
+}
+
+func defaultRunCommand(name string, args ...string) ([]byte, error) {
+	return exec.Command(name, args...).CombinedOutput()
 }
 
 func (rt cliRuntime) rnodeOpenSerial(port string) (serialPort, error) {

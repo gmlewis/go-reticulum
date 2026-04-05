@@ -96,6 +96,10 @@ func (rt cliRuntime) run(args []string) error {
 		return err
 	}
 
+	if opts.extract {
+		return rt.runFirmwareExtract(os.Stdout, port, opts)
+	}
+
 	if opts.eepromBackup {
 		return rt.runEEPROMBackup(os.Stdout, port)
 	}

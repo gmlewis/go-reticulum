@@ -25,6 +25,43 @@ type outcomeDifference struct {
 	want  string
 }
 
+// commandExecutor produces one observable command outcome.
+type commandExecutor func() commandOutcome
+
+// commandComparison bundles the results of two command executions together
+// with the computed differences between them.
+type commandComparison struct {
+	left  commandOutcome
+	right commandOutcome
+	diffs []outcomeDifference
+}
+
+// runCommandComparison executes two command runners and compares the results.
+func runCommandComparison(left, right commandExecutor) commandComparison {
+	leftOutcome := left()
+	rightOutcome := right()
+	return commandComparison{
+		left:  leftOutcome,
+		right: rightOutcome,
+		diffs: compareCommandOutcomes(leftOutcome, rightOutcome),
+	}
+}
+
+// formatOutcomeDifferences renders comparison differences as stable,
+// human-readable lines.
+func formatOutcomeDifferences(diffs []outcomeDifference) []string {
+	lines := make([]string, 0, len(diffs))
+	for _, diff := range diffs {
+		switch diff.field {
+		case "file":
+			lines = append(lines, "file["+diff.path+"] got="+quote(diff.got)+" want="+quote(diff.want))
+		default:
+			lines = append(lines, diff.field+" got="+quote(diff.got)+" want="+quote(diff.want))
+		}
+	}
+	return lines
+}
+
 // compareCommandOutcomes returns a stable list of mismatches between two
 // command outcomes. The caller can use this to record divergences between the
 // Go and Python command traces.
@@ -92,4 +129,8 @@ func itoa(value int) string {
 		digits[index] = '-'
 	}
 	return string(digits[index:])
+}
+
+func quote(value string) string {
+	return "\"" + value + "\""
 }

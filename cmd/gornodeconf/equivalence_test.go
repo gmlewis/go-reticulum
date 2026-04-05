@@ -67,3 +67,44 @@ func TestCompareCommandOutcomesReportsStableDiffs(t *testing.T) {
 		t.Fatalf("diff mismatch:\n got: %#v\nwant: %#v", diffs, gotDiffs)
 	}
 }
+
+func TestRunCommandComparisonExecutesBothSides(t *testing.T) {
+	t.Parallel()
+
+	leftCalled := false
+	rightCalled := false
+	comparison := runCommandComparison(func() commandOutcome {
+		leftCalled = true
+		return commandOutcome{stdout: "left", exitCode: 1}
+	}, func() commandOutcome {
+		rightCalled = true
+		return commandOutcome{stdout: "right", exitCode: 2}
+	})
+
+	if !leftCalled || !rightCalled {
+		t.Fatalf("expected both executors to run, got left=%v right=%v", leftCalled, rightCalled)
+	}
+	if comparison.left.stdout != "left" || comparison.right.stdout != "right" {
+		t.Fatalf("unexpected comparison outcomes: %#v", comparison)
+	}
+	if len(comparison.diffs) != 2 {
+		t.Fatalf("expected two diffs, got %#v", comparison.diffs)
+	}
+}
+
+func TestFormatOutcomeDifferences(t *testing.T) {
+	t.Parallel()
+
+	diffs := []outcomeDifference{
+		{field: "stdout", got: "hello", want: "world"},
+		{field: "file", path: "out.txt", got: "left", want: "right"},
+	}
+	want := []string{
+		"stdout got=\"hello\" want=\"world\"",
+		"file[out.txt] got=\"left\" want=\"right\"",
+	}
+
+	if got := formatOutcomeDifferences(diffs); !reflect.DeepEqual(got, want) {
+		t.Fatalf("formatted diff mismatch:\n got: %#v\nwant: %#v", got, want)
+	}
+}
