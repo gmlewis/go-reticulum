@@ -14,18 +14,27 @@ import (
 var errHelp = errors.New("help requested")
 
 type appT struct {
-	configDir     string
-	table         bool
-	maxHops       int
-	rates         bool
-	drop          bool
-	dropAnnounces bool
-	dropVia       bool
-	timeout       float64
-	jsonOut       bool
-	verbose       bool
-	version       bool
-	args          []string
+	configDir      string
+	table          bool
+	maxHops        int
+	rates          bool
+	drop           bool
+	dropVia        bool
+	dropAnnounces  bool
+	blackholed     bool
+	blackhole      bool
+	unblackhole    bool
+	blackholedList bool
+	identityPath   string
+	remoteHash     string
+	duration       float64
+	reason         string
+	remoteTimeout  float64
+	timeout        float64
+	jsonOut        bool
+	verbose        bool
+	version        bool
+	args           []string
 }
 
 func parseFlags(args []string) (*appT, error) {
@@ -40,6 +49,15 @@ func parseFlags(args []string) (*appT, error) {
 	fs.BoolVar(&app.drop, "d", false, "remove the path to a destination")
 	fs.BoolVar(&app.dropAnnounces, "D", false, "drop all queued announces")
 	fs.BoolVar(&app.dropVia, "x", false, "drop all paths via specified transport instance")
+	fs.BoolVar(&app.blackholed, "b", false, "show locally blackholed identities")
+	fs.BoolVar(&app.blackhole, "B", false, "blackhole an identity")
+	fs.BoolVar(&app.unblackhole, "U", false, "remove an identity from the blackhole list")
+	fs.BoolVar(&app.blackholedList, "p", false, "show blackholed identities published by a remote instance")
+	fs.StringVar(&app.identityPath, "i", "", "path to identity to use for remote access")
+	fs.StringVar(&app.remoteHash, "R", "", "remote transport instance hash")
+	fs.Float64Var(&app.remoteTimeout, "W", 10.0, "timeout before giving up on remote requests")
+	fs.Float64Var(&app.duration, "duration", 0.0, "duration in hours for blackhole entries")
+	fs.StringVar(&app.reason, "reason", "", "reason for blackhole entries")
 	fs.Float64Var(&app.timeout, "w", 15.0, "timeout before giving up")
 	fs.BoolVar(&app.jsonOut, "j", false, "output in JSON format")
 	fs.BoolVar(&app.verbose, "v", false, "increase verbosity")
@@ -56,7 +74,9 @@ func parseFlags(args []string) (*appT, error) {
 
 func (a *appT) usage() {
 	_, _ = fmt.Fprintf(flag.CommandLine.Output(), `usage: gornpath [-h] [--config CONFIG] [-t] [-m MAX_HOPS] [-r] [-d] [-D]
-                  [-x] [-w SECONDS] [-j] [-v] [--version] [destination]
+				  [-x] [-b] [-B] [-U] [-p] [-i IDENTITY] [-R HASH]
+				  [-W SECONDS] [--duration HOURS] [--reason TEXT]
+				  [-w SECONDS] [-j] [-v] [--version] [destination]
 
 Go Reticulum path management utility
 
@@ -69,6 +89,15 @@ options:
   -d               remove the path to a specified destination
   -D               drop all queued announces
   -x               drop all paths via specified transport instance
+	-b               show locally blackholed identities
+	-B               blackhole an identity
+	-U               remove an identity from the blackhole list
+	-p               show blackholed identities published by a remote instance
+	-i IDENTITY      path to identity to use for remote access
+	-R HASH          remote transport instance hash
+	-W SECONDS       timeout before giving up on remote requests
+	--duration HOURS  duration in hours for blackhole entries
+	--reason TEXT     reason for blackhole entries
   -w SECONDS       timeout before giving up on a path request
   -j               output information in JSON format
   -v               increase verbosity

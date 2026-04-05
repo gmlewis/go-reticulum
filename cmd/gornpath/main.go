@@ -10,6 +10,7 @@
 //   - Requesting paths to specific destinations from the network.
 //   - Managing path table entries (dropping paths).
 //   - Viewing announce rate information.
+//   - Managing blackhole and remote path information.
 //
 // Usage:
 //
@@ -21,6 +22,9 @@
 //
 //	Drop a path to a destination:
 //	  gornpath -d <destination_hash> [--config <config_dir>]
+//
+//	Blackhole an identity:
+//	  gornpath -B <destination_hash> [--reason <text>] [--duration <hours>]
 //
 // Flags:
 //
@@ -47,8 +51,6 @@ import (
 	"log"
 	"os"
 	"slices"
-	"strings"
-	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
@@ -68,11 +70,11 @@ func main() {
 		return
 	}
 
-	if !app.dropAnnounces && !app.table && !app.rates && len(app.args) == 0 && !app.dropVia {
+	if !app.dropAnnounces && !app.table && !app.rates && len(app.args) == 0 && !app.dropVia && !app.blackholed && !app.blackhole && !app.unblackhole && !app.blackholedList {
 		fmt.Println("")
 		app.usage()
 		fmt.Println("")
-		log.Fatal("missing required destination hash or operation flag")
+		return
 	}
 
 	targetLogLevel := rns.LogNotice
@@ -102,9 +104,19 @@ func main() {
 		}
 
 		if app.drop {
-			doDrop(ts, destHash)
-		} else {
-			doRequest(ts, destHash, app.timeout)
+			if err := doDrop(os.Stdout, ts, destHash); err != nil {
+				log.Fatal(err)
+			}
+		} else if app.dropVia {
+			if err := doDropVia(os.Stdout, ts, destHash); err != nil {
+				log.Fatal(err)
+			}
+		} else if app.dropAnnounces {
+			if err := doDropAnnounces(os.Stdout, ts); err != nil {
+				log.Fatal(err)
+			}
+		} else if err := doRequest(os.Stdout, ts, destHash, app.timeout); err != nil {
+			log.Fatal(err)
 		}
 	}
 }
@@ -136,43 +148,5 @@ func doTable(ts *rns.TransportSystem, maxHops int, jsonOut bool) {
 		}
 		fmt.Printf("%x is %v hop%v away via %x on %v expires %v\n",
 			p.Hash, p.Hops, ms, p.NextHop, p.Interface.Name(), p.Expires.Format("2006-01-02 15:04:05"))
-	}
-}
-
-func doDrop(_ *rns.TransportSystem, destHash []byte) {
-	// TODO: Implement drop_path in TransportSystem
-	fmt.Printf("Dropped path to %x\n", destHash)
-}
-
-func doRequest(ts *rns.TransportSystem, destHash []byte, timeout float64) {
-	if !ts.HasPath(destHash) {
-		fmt.Printf("Path to <%x> requested  ", destHash)
-		if err := ts.RequestPath(destHash); err != nil {
-			log.Fatalf("Could not request path to <%x>: %v\n", destHash, err)
-		}
-	}
-
-	i := 0
-	syms := []string{"⢄", "⢂", "⢁", "⡁", "⡈", "⡐", "⡠"}
-	deadline := time.Now().Add(time.Duration(timeout * float64(time.Second)))
-	for !ts.HasPath(destHash) && time.Now().Before(deadline) {
-		time.Sleep(100 * time.Millisecond)
-		fmt.Printf("\b\b%v ", syms[i])
-		i = (i + 1) % len(syms)
-	}
-
-	if ts.HasPath(destHash) {
-		// Find hops
-		entry := ts.GetPathEntry(destHash)
-		if entry != nil {
-			ms := "s"
-			if entry.Hops == 1 {
-				ms = ""
-			}
-			fmt.Printf("\rPath found, destination <%x> is %v hop%v away via %x on %v\n",
-				destHash, entry.Hops, ms, entry.NextHop, entry.Interface.Name())
-		}
-	} else {
-		log.Fatalf("\r%v\rPath not found\n", strings.Repeat(" ", 60))
 	}
 }
