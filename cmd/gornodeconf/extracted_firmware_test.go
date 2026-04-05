@@ -16,7 +16,7 @@ func TestReadExtractedFirmwareReleaseInfo(t *testing.T) {
 	t.Parallel()
 
 	dir := tempExtractedFirmwareDir(t)
-	for _, name := range extractedFirmwareRequiredFiles {
+	for _, name := range newExtractedFirmwareState().requiredFiles {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0o644); err != nil {
 			t.Fatalf("write %v: %v", name, err)
 		}
@@ -52,6 +52,21 @@ func TestReadExtractedFirmwareReleaseInfoMissingParts(t *testing.T) {
 		t.Fatalf("write version file: %v", err)
 	}
 	_, _, err := readExtractedFirmwareReleaseInfo(dir)
+	if err == nil || !strings.Contains(err.Error(), "one or more required firmware files are missing") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestExtractedFirmwareStateReadReleaseInfoUsesStateFiles(t *testing.T) {
+	t.Parallel()
+
+	dir := tempExtractedFirmwareDir(t)
+	if err := os.WriteFile(filepath.Join(dir, "extracted_rnode_firmware.version"), []byte("1.2.3 deadbeef"), 0o644); err != nil {
+		t.Fatalf("write version file: %v", err)
+	}
+
+	state := extractedFirmwareState{requiredFiles: []string{"custom-required-file.bin"}}
+	_, _, err := state.readReleaseInfo(dir)
 	if err == nil || !strings.Contains(err.Error(), "one or more required firmware files are missing") {
 		t.Fatalf("unexpected error: %v", err)
 	}

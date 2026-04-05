@@ -11,21 +11,33 @@ import (
 	"path/filepath"
 )
 
-var extractedFirmwareRequiredFiles = []string{
-	"extracted_console_image.bin",
-	"extracted_rnode_firmware.bin",
-	"extracted_rnode_firmware.boot_app0",
-	"extracted_rnode_firmware.bootloader",
-	"extracted_rnode_firmware.partitions",
+type extractedFirmwareState struct {
+	requiredFiles []string
+}
+
+func newExtractedFirmwareState() extractedFirmwareState {
+	return extractedFirmwareState{
+		requiredFiles: []string{
+			"extracted_console_image.bin",
+			"extracted_rnode_firmware.bin",
+			"extracted_rnode_firmware.boot_app0",
+			"extracted_rnode_firmware.bootloader",
+			"extracted_rnode_firmware.partitions",
+		},
+	}
 }
 
 func readExtractedFirmwareReleaseInfo(extractedDir string) (string, string, error) {
+	return newExtractedFirmwareState().readReleaseInfo(extractedDir)
+}
+
+func (s extractedFirmwareState) readReleaseInfo(extractedDir string) (string, string, error) {
 	vfpath := filepath.Join(extractedDir, "extracted_rnode_firmware.version")
 	if _, err := os.Stat(vfpath); err != nil {
 		return "", "", fmt.Errorf("no extracted firmware is available")
 	}
 
-	for _, requiredFile := range extractedFirmwareRequiredFiles {
+	for _, requiredFile := range s.requiredFiles {
 		if _, err := os.Stat(filepath.Join(extractedDir, requiredFile)); err != nil {
 			return "", "", fmt.Errorf("one or more required firmware files are missing from the extracted RNode firmware archive")
 		}

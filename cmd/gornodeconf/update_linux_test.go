@@ -65,7 +65,7 @@ func TestRunFirmwareUpdateUsesExtractedFirmware(t *testing.T) {
 	if err := os.MkdirAll(extractedDir, 0o755); err != nil {
 		t.Fatalf("mkdir extracted dir: %v", err)
 	}
-	for _, name := range extractedFirmwareRequiredFiles {
+	for _, name := range newExtractedFirmwareState().requiredFiles {
 		if err := os.WriteFile(filepath.Join(extractedDir, name), []byte(name), 0o644); err != nil {
 			t.Fatalf("write required file %v: %v", name, err)
 		}

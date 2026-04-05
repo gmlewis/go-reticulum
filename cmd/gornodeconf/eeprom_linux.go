@@ -51,6 +51,30 @@ type eepromDownloaderState struct {
 	writer         eepromDownloaderWriter
 	sleeper        eepromDownloaderSleeper
 	parse          func() error
+	metadata       eepromMetadataState
+}
+
+type eepromMetadataState struct {
+	modelCapabilitiesByCode map[byte]modelCapability
+	productNames            map[byte]string
+}
+
+func newEEPROMMetadataState() eepromMetadataState {
+	return eepromMetadataState{
+		modelCapabilitiesByCode: map[byte]modelCapability{
+			0xa4: {minFreq: 410000000, maxFreq: 525000000, maxOutput: 14, summary: "410 - 525 MHz", modem: "SX1278"},
+		},
+		productNames: map[byte]string{
+			0x03: "RNode",
+		},
+	}
+}
+
+func (s *eepromDownloaderState) metadataState() eepromMetadataState {
+	if len(s.metadata.modelCapabilitiesByCode) == 0 && len(s.metadata.productNames) == 0 {
+		return newEEPROMMetadataState()
+	}
+	return s.metadata
 }
 
 func (s *eepromDownloaderState) downloadEEPROM() error {
@@ -107,7 +131,8 @@ func (s *eepromDownloaderState) parseEEPROM() error {
 	s.checksum = append([]byte(nil), s.eeprom[0x0b:0x1b]...)
 	s.signature = append([]byte(nil), s.eeprom[0x1b:0x9b]...)
 
-	if info, ok := modelCapabilitiesByCode[s.model]; ok {
+	metadata := s.metadataState()
+	if info, ok := metadata.modelCapabilitiesByCode[s.model]; ok {
 		s.minFreq = info.minFreq
 		s.maxFreq = info.maxFreq
 		s.maxOutput = info.maxOutput
@@ -150,8 +175,9 @@ func (s *eepromDownloaderState) deviceInfoLines(timestring string) []string {
 		}
 	}
 
-	productName := productNames[s.product]
-	modelInfo := modelCapabilitiesByCode[s.model]
+	metadata := s.metadataState()
+	productName := metadata.productNames[s.product]
+	modelInfo := metadata.modelCapabilitiesByCode[s.model]
 
 	lines := []string{
 		"",
@@ -200,14 +226,6 @@ type modelCapability struct {
 	maxOutput int
 	summary   string
 	modem     string
-}
-
-var modelCapabilitiesByCode = map[byte]modelCapability{
-	0xa4: {minFreq: 410000000, maxFreq: 525000000, maxOutput: 14, summary: "410 - 525 MHz", modem: "SX1278"},
-}
-
-var productNames = map[byte]string{
-	0x03: "RNode",
 }
 
 func bytesEqual(left, right []byte) bool {

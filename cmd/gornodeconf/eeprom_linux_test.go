@@ -9,6 +9,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/md5"
 	"errors"
 	"testing"
 	"time"
@@ -260,6 +261,63 @@ func TestRNodeParseEEPROMRejectsChecksumMismatch(t *testing.T) {
 	want := "EEPROM checksum mismatch"
 	if err.Error() != want {
 		t.Fatalf("error mismatch: got %q want %q", err.Error(), want)
+	}
+}
+
+func TestRNodeParseEEPROMUsesCustomMetadataState(t *testing.T) {
+	t.Parallel()
+
+	eeprom := make([]byte, 0xa8)
+	eeprom[0x00] = 0x09
+	eeprom[0x01] = 0x44
+	eeprom[0x02] = 0x05
+	eeprom[0x03] = 0x01
+	eeprom[0x04] = 0x02
+	eeprom[0x05] = 0x03
+	eeprom[0x06] = 0x04
+	eeprom[0x07] = 0x05
+	eeprom[0x08] = 0x06
+	eeprom[0x09] = 0x07
+	eeprom[0x0a] = 0x08
+	checksumInput := []byte{0x09, 0x44, 0x05, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
+	checksum := md5.Sum(checksumInput)
+	copy(eeprom[0x0b:0x1b], checksum[:])
+	eeprom[0x9b] = 0x73
+	eeprom[0xa7] = 0x00
+
+	state := &eepromDownloaderState{
+		eeprom: eeprom,
+		metadata: eepromMetadataState{
+			modelCapabilitiesByCode: map[byte]modelCapability{
+				0x44: {minFreq: 123000000, maxFreq: 456000000, maxOutput: 9, summary: "123 - 456 MHz", modem: "TESTMODEM"},
+			},
+			productNames: map[byte]string{
+				0x09: "CustomBoard",
+			},
+		},
+	}
+
+	if err := state.parseEEPROM(); err != nil {
+		t.Fatalf("parseEEPROM returned error: %v", err)
+	}
+
+	if state.minFreq != 123000000 || state.maxFreq != 456000000 || state.maxOutput != 9 {
+		t.Fatalf("custom capability mismatch: min=%v max=%v out=%v", state.minFreq, state.maxFreq, state.maxOutput)
+	}
+
+	lines := state.deviceInfoLines("2026-04-05")
+	joined := bytes.Join(func() [][]byte {
+		out := make([][]byte, 0, len(lines))
+		for _, line := range lines {
+			out = append(out, []byte(line))
+		}
+		return out
+	}(), []byte("\n"))
+	if !bytes.Contains(joined, []byte("CustomBoard 123 - 456 MHz (09:44)")) {
+		t.Fatalf("device info did not use custom metadata: %q", joined)
+	}
+	if !bytes.Contains(joined, []byte("TESTMODEM")) {
+		t.Fatalf("device info did not use custom modem: %q", joined)
 	}
 }
 
