@@ -73,34 +73,42 @@ func parseFlags(args []string) (*appT, error) {
 }
 
 func (a *appT) usage() {
-	_, _ = fmt.Fprintf(flag.CommandLine.Output(), `usage: gornpath [-h] [--config CONFIG] [-t] [-m MAX_HOPS] [-r] [-d] [-D]
-				  [-x] [-b] [-B] [-U] [-p] [-i IDENTITY] [-R HASH]
-				  [-W SECONDS] [--duration HOURS] [--reason TEXT]
-				  [-w SECONDS] [-j] [-v] [--version] [destination]
+	_, _ = fmt.Fprintf(flag.CommandLine.Output(), usageText)
+}
 
-Go Reticulum path management utility
+const usageText = `
+
+usage: gornpath [-h] [--config CONFIG] [--version] [-t] [-m hops] [-r] [-d] [-D] [-x] [-w seconds] [-R hash]
+                [-i path] [-W seconds] [-b] [-B] [-U] [--duration DURATION] [--reason REASON] [-p] [-j] [-v]
+                [destination] [list_filter]
+
+Go Reticulum Path Management Utility
+
+positional arguments:
+  destination           hexadecimal hash of the destination
+  list_filter           filter for remote blackhole list view
 
 options:
-  -h, --help       show this help message and exit
-  --config CONFIG  path to alternative Reticulum config directory
-  -t               show all known paths in the routing table
-  -m MAX_HOPS      maximum hops to filter path table by
-  -r               show announce rate info
-  -d               remove the path to a specified destination
-  -D               drop all queued announces
-  -x               drop all paths via specified transport instance
-	-b               show locally blackholed identities
-	-B               blackhole an identity
-	-U               remove an identity from the blackhole list
-	-p               show blackholed identities published by a remote instance
-	-i IDENTITY      path to identity to use for remote access
-	-R HASH          remote transport instance hash
-	-W SECONDS       timeout before giving up on remote requests
-	--duration HOURS  duration in hours for blackhole entries
-	--reason TEXT     reason for blackhole entries
-  -w SECONDS       timeout before giving up on a path request
-  -j               output information in JSON format
-  -v               increase verbosity
-  --version        show program's version number and exit
-`)
-}
+  -h, --help            show this help message and exit
+  --config CONFIG       path to alternative Reticulum config directory
+  --version             show program's version number and exit
+  -t, --table           show all known paths
+  -m hops, --max hops   maximum hops to filter path table by
+  -r, --rates           show announce rate info
+  -d, --drop            remove the path to a destination
+  -D, --drop-announces  drop all queued announces
+  -x, --drop-via        drop all paths via specified transport instance
+  -w seconds            timeout before giving up
+  -R hash               transport identity hash of remote instance to manage
+  -i path               path to identity used for remote management
+  -W seconds            timeout before giving up on remote queries
+  -b, --blackholed      list blackholed identities
+  -B, --blackhole       blackhole identity
+  -U, --unblackhole     unblackhole identity
+  --duration DURATION   duration of blackhole enforcement in hours
+  --reason REASON       reason for blackholing identity
+  -p, --blackholed-list
+                        view published blackhole list for remote transport instance
+  -j, --json            output in JSON format
+  -v, --verbose
+`

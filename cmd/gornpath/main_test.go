@@ -7,7 +7,10 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -36,6 +39,34 @@ func TestGornpathVersionPrintsProgramVersion(t *testing.T) {
 	}
 	if !strings.Contains(out, "gornpath ") {
 		t.Fatalf("missing version output: %q", out)
+	}
+}
+
+func TestGornpathInvalidFlagExitsTwoAndPrintsUsage(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := tempDir(t)
+	binPath := filepath.Join(tmpDir, "gornpath")
+	buildCmd := exec.Command("go", "build", "-o", binPath, ".")
+	buildCmd.Dir = "."
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to build gornpath: %v\n%v", err, string(out))
+	}
+
+	cmd := exec.Command(binPath, "--does-not-exist")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("expected parse failure, got success")
+	}
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok {
+		t.Fatalf("expected ExitError, got %T", err)
+	}
+	if got, want := exitErr.ExitCode(), 2; got != want {
+		t.Fatalf("exit code = %v, want %v", got, want)
+	}
+	if !strings.Contains(string(out), "usage: gornpath") {
+		t.Fatalf("missing usage output: %v", string(out))
 	}
 }
 
@@ -94,4 +125,20 @@ func runGornpath(args ...string) (string, error) {
 	cmd.Dir = "."
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+func tempDir(t *testing.T) string {
+	t.Helper()
+	baseDir := ""
+	if runtime.GOOS == "darwin" {
+		baseDir = "/tmp"
+	}
+	dir, err := os.MkdirTemp(baseDir, "gornpath-test-")
+	if err != nil {
+		t.Fatalf("tempDir error: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(dir)
+	})
+	return dir
 }
