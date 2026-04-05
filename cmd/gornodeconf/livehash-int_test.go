@@ -3,68 +3,16 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-//go:build linux
+//go:build integration && linux
+// +build integration,linux
 
 package main
 
 import (
 	"bytes"
-	"io"
 	"strings"
-	"sync"
 	"testing"
 )
-
-type liveHashSerial struct {
-	mu           sync.Mutex
-	reads        []byte
-	closed       bool
-	writes       [][]byte
-	blockOnEmpty bool
-	wait         chan struct{}
-	once         sync.Once
-}
-
-func (s *liveHashSerial) Read(data []byte) (int, error) {
-	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
-		return 0, io.EOF
-	}
-	if len(s.reads) == 0 {
-		if s.blockOnEmpty {
-			wait := s.wait
-			s.mu.Unlock()
-			<-wait
-			return 0, io.EOF
-		}
-		s.mu.Unlock()
-		return 0, io.EOF
-	}
-	data[0] = s.reads[0]
-	s.reads = s.reads[1:]
-	s.mu.Unlock()
-	return 1, nil
-}
-
-func (s *liveHashSerial) Write(data []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.writes = append(s.writes, append([]byte(nil), data...))
-	return len(data), nil
-}
-
-func (s *liveHashSerial) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.closed = true
-	s.once.Do(func() {
-		if s.wait != nil {
-			close(s.wait)
-		}
-	})
-	return nil
-}
 
 func TestRunFirmwareHashReadbacksPrintsPythonLines(t *testing.T) {
 	serial := &liveHashSerial{reads: append(validRnodeEEPROMFrame(), []byte{

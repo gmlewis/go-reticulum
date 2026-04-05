@@ -50,7 +50,7 @@ const AppName = "rnx"
 
 func main() {
 	log.SetFlags(0)
-	app, err := parseFlags(os.Args[1:])
+	app, err := parseFlags(os.Args[1:], os.Stderr)
 	if err != nil {
 		if err == errHelp {
 			return
@@ -82,7 +82,7 @@ func main() {
 		// doInteractive(...)
 	} else {
 		if len(app.args) < 2 {
-			app.usage()
+			app.usage(os.Stdout)
 			log.Fatal("destination and command must be specified")
 		}
 		destHashHex := app.args[0]

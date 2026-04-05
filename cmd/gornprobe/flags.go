@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 )
 
 type appT struct {
@@ -24,11 +25,13 @@ type appT struct {
 
 var errHelp = errors.New("help requested")
 
-func parseFlags(args []string) (*appT, error) {
+func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
 	app := &appT{size: DefaultProbeSize, probes: 1}
 	fs := flag.NewFlagSet("gornprobe", flag.ContinueOnError)
-	fs.SetOutput(flag.CommandLine.Output())
-	fs.Usage = app.usage
+	fs.SetOutput(io.Discard)
+	fs.Usage = func() {
+		app.usage(usageOutput)
+	}
 	fs.StringVar(&app.configDir, "config", "", "path to alternative Reticulum config directory")
 	fs.IntVar(&app.size, "s", DefaultProbeSize, "size of probe packet payload in bytes")
 	fs.IntVar(&app.probes, "n", 1, "number of probes to send")
@@ -46,8 +49,8 @@ func parseFlags(args []string) (*appT, error) {
 	return app, nil
 }
 
-func (a *appT) usage() {
-	_, _ = fmt.Fprintf(flag.CommandLine.Output(), `usage: gornprobe [-h] [--config CONFIG] [-n COUNT] [-s SIZE] [-t SECONDS]
+func (a *appT) usage(w io.Writer) {
+	_, _ = fmt.Fprintf(w, `usage: gornprobe [-h] [--config CONFIG] [-n COUNT] [-s SIZE] [-t SECONDS]
                   [-w SECONDS] [-v] [--version] full_name destination_hash
 
 Go Reticulum connectivity probing utility

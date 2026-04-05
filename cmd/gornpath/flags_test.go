@@ -6,17 +6,14 @@
 package main
 
 import (
-	"flag"
 	"io"
 	"testing"
 )
 
 func TestParseFlags(t *testing.T) {
 	t.Parallel()
-	flag.CommandLine = flag.NewFlagSet("gornpath", flag.ContinueOnError)
-	flag.CommandLine.SetOutput(io.Discard)
 
-	app, err := parseFlags([]string{"--config", "/tmp/config", "-t", "-m", "3", "-r", "-d", "-D", "-x", "-b", "-B", "-U", "-p", "-i", "identity.key", "-R", "0123456789abcdef0123456789abcdef", "-W", "44", "--duration", "12", "--reason", "test", "-w", "22", "-j", "-v", "dest"})
+	app, err := parseFlags([]string{"--config", "/tmp/config", "-t", "-m", "3", "-r", "-d", "-D", "-x", "-b", "-B", "-U", "-p", "-i", "identity.key", "-R", "0123456789abcdef0123456789abcdef", "-W", "44", "--duration", "12", "--reason", "test", "-w", "22", "-j", "-v", "dest"}, io.Discard)
 	if err != nil {
 		t.Fatalf("parseFlags failed: %v", err)
 	}
@@ -27,10 +24,8 @@ func TestParseFlags(t *testing.T) {
 
 func TestParseFlagsLongAliases(t *testing.T) {
 	t.Parallel()
-	flag.CommandLine = flag.NewFlagSet("gornpath", flag.ContinueOnError)
-	flag.CommandLine.SetOutput(io.Discard)
 
-	app, err := parseFlags([]string{"--config", "/tmp/config", "--table", "--max", "4", "--rates", "--drop", "--drop-announces", "--drop-via", "--blackholed", "--blackhole", "--unblackhole", "--blackholed-list", "--identity", "identity.key", "--remote", "0123456789abcdef0123456789abcdef", "--duration", "12", "--reason", "test", "--json", "--verbose", "dest"})
+	app, err := parseFlags([]string{"--config", "/tmp/config", "--table", "--max", "4", "--rates", "--drop", "--drop-announces", "--drop-via", "--blackholed", "--blackhole", "--unblackhole", "--blackholed-list", "--identity", "identity.key", "--remote", "0123456789abcdef0123456789abcdef", "--duration", "12", "--reason", "test", "--json", "--verbose", "dest"}, io.Discard)
 	if err != nil {
 		t.Fatalf("parseFlags failed: %v", err)
 	}

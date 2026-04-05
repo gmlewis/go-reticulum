@@ -3,7 +3,8 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-//go:build linux
+//go:build integration && linux
+// +build integration,linux
 
 package main
 
@@ -58,7 +59,7 @@ func TestSignWithoutPortAutoDetectsDiscoveredPort(t *testing.T) {
 			return "/dev/ttyACM0", []string{"/dev/ttyACM0"}, nil
 		},
 	}
-	serial := &liveSignSerial{reads: append(validRnodeEEPROMFrame(), []byte{
+	serial := &liveHashSerial{reads: append(validRnodeEEPROMFrame(), []byte{
 		kissFend, rnodeKISSCommandFWVersion, 0x02, 0x05, kissFend,
 		kissFend, rnodeKISSCommandDevHash,
 		0x01, 0x02, 0x03, 0x04,

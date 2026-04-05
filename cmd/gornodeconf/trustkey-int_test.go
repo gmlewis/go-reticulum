@@ -3,15 +3,14 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-//go:build linux
+//go:build integration && linux
+// +build integration,linux
 
 package main
 
 import (
 	"bytes"
-	"encoding/hex"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -93,39 +92,4 @@ func TestTrustKeyReportsWriteFailure(t *testing.T) {
 	if !strings.Contains(out, wantPath) {
 		t.Fatalf("missing trusted key path: %v", out)
 	}
-}
-
-func runGornodeconfWithEnv(extraEnv map[string]string, args ...string) (string, error) {
-	taskArgs := append([]string{"run", "."}, args...)
-	cmd := exec.Command("go", taskArgs...)
-	cmd.Dir = "."
-	cmd.Env = os.Environ()
-	for key, value := range extraEnv {
-		cmd.Env = append(cmd.Env, key+"="+value)
-	}
-	out, err := cmd.CombinedOutput()
-	return string(out), err
-}
-
-func tempTrustKeyHome(t *testing.T) string {
-	t.Helper()
-
-	dir, err := os.MkdirTemp("", "gornodeconf-trustkey-*")
-	if err != nil {
-		t.Fatalf("create temp home: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir)
-	})
-	return dir
-}
-
-func mustDecodeHex(t *testing.T, hexStr string) []byte {
-	t.Helper()
-
-	data, err := hex.DecodeString(hexStr)
-	if err != nil {
-		t.Fatalf("decode hex: %v", err)
-	}
-	return data
 }

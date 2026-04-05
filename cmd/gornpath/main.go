@@ -57,13 +57,13 @@ import (
 
 func main() {
 	log.SetFlags(0)
-	app, err := parseFlags(os.Args[1:])
+	app, err := parseFlags(os.Args[1:], os.Stderr)
 	if err != nil {
 		if err == errHelp {
 			return
 		}
 		fmt.Fprintln(os.Stderr, err)
-		(&appT{}).usage()
+		(&appT{}).usage(os.Stderr)
 		os.Exit(2)
 	}
 
@@ -74,7 +74,7 @@ func main() {
 
 	if !app.dropAnnounces && !app.table && !app.rates && len(app.args) == 0 && !app.dropVia && !app.blackholed && !app.blackhole && !app.unblackhole && !app.blackholedList {
 		fmt.Println("")
-		app.usage()
+		app.usage(os.Stdout)
 		fmt.Println("")
 		return
 	}

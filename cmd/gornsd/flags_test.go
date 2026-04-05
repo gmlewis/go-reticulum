@@ -6,16 +6,13 @@
 package main
 
 import (
-	"flag"
 	"io"
 	"testing"
 )
 
 func TestParseFlags(t *testing.T) {
 	t.Parallel()
-	flag.CommandLine = flag.NewFlagSet("gornsd", flag.ContinueOnError)
-	flag.CommandLine.SetOutput(io.Discard)
-	app, err := parseFlags([]string{"--config", "/tmp/config", "-v", "-q", "-s", "--exampleconfig", "--version"})
+	app, err := parseFlags([]string{"--config", "/tmp/config", "-v", "-q", "-s", "--exampleconfig", "--version"}, io.Discard)
 	if err != nil {
 		t.Fatalf("parseFlags failed: %v", err)
 	}

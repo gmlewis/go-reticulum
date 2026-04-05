@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 )
 
 type appT struct {
@@ -23,10 +24,13 @@ type appT struct {
 
 var errHelp = errors.New("help requested")
 
-func parseFlags(args []string) (*appT, error) {
+func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
 	app := &appT{}
 	fs := flag.NewFlagSet("gornx", flag.ContinueOnError)
-	fs.SetOutput(flag.CommandLine.Output())
+	fs.SetOutput(io.Discard)
+	fs.Usage = func() {
+		app.usage(usageOutput)
+	}
 	fs.StringVar(&app.configDir, "config", "", "path to alternative Reticulum config directory")
 	fs.StringVar(&app.identityPath, "i", "", "path to identity to use")
 	fs.BoolVar(&app.verbose, "v", false, "increase verbosity")
@@ -43,8 +47,8 @@ func parseFlags(args []string) (*appT, error) {
 	return app, nil
 }
 
-func (a *appT) usage() {
-	_, _ = fmt.Fprintf(flag.CommandLine.Output(), `usage: gornx [-h] [--config CONFIG] [-i IDENTITY] [-v] [-q] [-l] [-x]
+func (a *appT) usage(w io.Writer) {
+	_, _ = fmt.Fprintf(w, `usage: gornx [-h] [--config CONFIG] [-i IDENTITY] [-v] [-q] [-l] [-x]
                [destination_hash command]
 
 Reticulum remote command execution compatible with rnx

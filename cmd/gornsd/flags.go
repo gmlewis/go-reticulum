@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 )
 
 type appT struct {
@@ -22,11 +23,13 @@ type appT struct {
 
 var errHelp = errors.New("help requested")
 
-func parseFlags(args []string) (*appT, error) {
+func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
 	app := &appT{}
 	fs := flag.NewFlagSet("gornsd", flag.ContinueOnError)
-	fs.SetOutput(flag.CommandLine.Output())
-	fs.Usage = app.usage
+	fs.SetOutput(io.Discard)
+	fs.Usage = func() {
+		app.usage(usageOutput)
+	}
 	fs.StringVar(&app.configDir, "config", "", "path to alternative Reticulum config directory")
 	fs.BoolVar(&app.verbose, "v", false, "increase verbosity")
 	fs.BoolVar(&app.quiet, "q", false, "decrease verbosity")
@@ -42,8 +45,8 @@ func parseFlags(args []string) (*appT, error) {
 	return app, nil
 }
 
-func (a *appT) usage() {
-	_, _ = fmt.Fprintf(flag.CommandLine.Output(), `usage: gornsd [-h] [--config CONFIG] [-v] [-q] [-s] [--exampleconfig]
+func (a *appT) usage(w io.Writer) {
+	_, _ = fmt.Fprintf(w, `usage: gornsd [-h] [--config CONFIG] [-v] [-q] [-s] [--exampleconfig]
                   [--version]
 
 Go Reticulum daemon

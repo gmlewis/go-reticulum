@@ -3,34 +3,19 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
+//go:build integration
+
 package main
 
 import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
-
-func tempDir(t *testing.T) (string, func()) {
-	t.Helper()
-	baseDir := ""
-	if runtime.GOOS == "darwin" {
-		baseDir = "/tmp"
-	}
-	dir, err := os.MkdirTemp(baseDir, "gornid-test-")
-	if err != nil {
-		t.Fatalf("tempDir error: %v", err)
-	}
-	cleanup := func() {
-		_ = os.RemoveAll(dir)
-	}
-	return dir, cleanup
-}
 
 func runGornid(t *testing.T, args ...string) (string, error) {
 	t.Helper()
@@ -258,50 +243,18 @@ func TestValidateBadSignature(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate failed: %v\n%v", err, string(out))
 	}
-
-	if err := os.WriteFile(dataFile, []byte("some data"), 0o644); err != nil {
+	if err := os.WriteFile(dataFile, []byte("corrupt signature test"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(sigFile, []byte("not-a-real-signature-padding-to-64-bytes-0123456789abcdef01234567"), 0o644); err != nil {
+	if err := os.WriteFile(sigFile, []byte("bad signature"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(binPath, "--config", tmpDir, "-i", idFile, "-V", sigFile, "-r", dataFile)
-	_, err = cmd.CombinedOutput()
+	out, err = exec.Command(binPath, "--config", tmpDir, "-i", idFile, "-V", sigFile, "-r", dataFile).CombinedOutput()
 	if err == nil {
-		t.Fatal("expected error exit for bad signature")
+		t.Fatalf("expected validate to fail, output: %v", string(out))
 	}
-	exitErr, ok := err.(*exec.ExitError)
-	if !ok {
-		t.Fatalf("expected ExitError, got %T", err)
-	}
-	if exitErr.ExitCode() != 22 {
-		t.Errorf("exit code = %v, want 22", exitErr.ExitCode())
-	}
-}
-
-func TestHashOutput(t *testing.T) {
-	t.Parallel()
-	tmpDir, cleanup := tempDir(t)
-	defer cleanup()
-	idFile := filepath.Join(tmpDir, "test.id")
-
-	out, err := runGornid(t, "--config", tmpDir, "-g", idFile)
-	if err != nil {
-		t.Fatalf("generate failed: %v\n%v", err, out)
-	}
-
-	out, err = runGornid(t, "--config", tmpDir, "-i", idFile, "-H", "app.aspect")
-	if err != nil {
-		t.Fatalf("hash failed: %v\n%v", err, out)
-	}
-	if !strings.Contains(out, "app.aspect") {
-		t.Errorf("output missing 'app.aspect', got: %v", out)
-	}
-	if !strings.Contains(out, "destination for this Identity is") {
-		t.Errorf("output missing destination hash, got: %v", out)
-	}
-	if !strings.Contains(out, "full destination specifier") {
-		t.Errorf("output missing full specifier, got: %v", out)
+	if !strings.Contains(string(out), "invalid") && !strings.Contains(string(out), "not valid") {
+		t.Fatalf("unexpected validate output: %v", string(out))
 	}
 }

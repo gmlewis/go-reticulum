@@ -32,7 +32,7 @@ const (
 
 func main() {
 	log.SetFlags(0)
-	app, err := parseFlags(os.Args[1:])
+	app, err := parseFlags(os.Args[1:], os.Stderr)
 	if err != nil {
 		if err == errHelp {
 			return
@@ -49,7 +49,7 @@ func main() {
 		fmt.Println("")
 		fmt.Println("The full destination name including application name aspects must be specified for the destination")
 		fmt.Println("")
-		app.usage()
+		app.usage(os.Stdout)
 		fmt.Println("")
 		log.Fatal("destination full_name and destination_hash are required")
 	}

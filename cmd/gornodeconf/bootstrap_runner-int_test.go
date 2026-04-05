@@ -3,7 +3,8 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-//go:build linux
+//go:build integration && linux
+// +build integration,linux
 
 package main
 
@@ -31,7 +32,7 @@ func TestRunEEPROMBootstrapBootstrapsDeviceAndBacksItUp(t *testing.T) {
 	home := tempTrustKeyHome(t)
 	t.Setenv("HOME", home)
 
-	serial := &scriptedSerial{reads: append(validRnodeEEPROMFrame(), []byte{kissFend, rnodeKISSCommandPlatform, romPlatformAVR, kissFend}...)}
+	serial := &liveHashSerial{reads: append(validRnodeEEPROMFrame(), []byte{kissFend, rnodeKISSCommandPlatform, romPlatformAVR, kissFend}...)}
 	signer := &bootstrapSignerStub{signature: []byte{0x10, 0x20, 0x30}}
 	rt := cliRuntime{
 		openSerial:          func(settings serialSettings) (serialPort, error) { return serial, nil },
@@ -69,7 +70,7 @@ func TestRunEEPROMBootstrapSkipsProvisionedDeviceWithoutAutoinstall(t *testing.T
 	home := tempTrustKeyHome(t)
 	t.Setenv("HOME", home)
 
-	serial := &scriptedSerial{reads: validRnodeEEPROMFrame()}
+	serial := &liveHashSerial{reads: validRnodeEEPROMFrame()}
 	rt := cliRuntime{openSerial: func(settings serialSettings) (serialPort, error) { return serial, nil }}
 	var out bytes.Buffer
 	if err := rt.runEEPROMBootstrap(&out, "ttyUSB0", options{product: "03", model: "a4", hwrev: 5}); err != nil {
@@ -87,7 +88,7 @@ func TestRunEEPROMBootstrapReturnsSignerError(t *testing.T) {
 	home := tempTrustKeyHome(t)
 	t.Setenv("HOME", home)
 
-	serial := &scriptedSerial{reads: append(validRnodeEEPROMFrame(), []byte{kissFend, rnodeKISSCommandPlatform, romPlatformAVR, kissFend}...)}
+	serial := &liveHashSerial{reads: append(validRnodeEEPROMFrame(), []byte{kissFend, rnodeKISSCommandPlatform, romPlatformAVR, kissFend}...)}
 	wantErr := fmt.Errorf("boom")
 	rt := cliRuntime{
 		openSerial:          func(settings serialSettings) (serialPort, error) { return serial, nil },

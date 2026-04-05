@@ -37,11 +37,13 @@ type appT struct {
 	args           []string
 }
 
-func parseFlags(args []string) (*appT, error) {
+func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
 	app := &appT{timeout: 15.0}
 	fs := flag.NewFlagSet("gornpath", flag.ContinueOnError)
-	fs.SetOutput(flag.CommandLine.Output())
-	fs.Usage = app.usage
+	fs.SetOutput(io.Discard)
+	fs.Usage = func() {
+		app.usage(usageOutput)
+	}
 	fs.StringVar(&app.configDir, "config", "", "path to alternative Reticulum config directory")
 	fs.BoolVar(&app.table, "t", false, "show all known paths")
 	fs.BoolVar(&app.table, "table", false, "show all known paths")
@@ -86,8 +88,8 @@ func parseFlags(args []string) (*appT, error) {
 	return app, nil
 }
 
-func (a *appT) usage() {
-	_, _ = io.WriteString(flag.CommandLine.Output(), usageText)
+func (a *appT) usage(w io.Writer) {
+	_, _ = io.WriteString(w, usageText)
 }
 
 const usageText = `

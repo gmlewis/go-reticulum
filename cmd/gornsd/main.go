@@ -21,7 +21,7 @@ import (
 )
 
 func main() {
-	app, err := parseFlags(os.Args[1:])
+	app, err := parseFlags(os.Args[1:], os.Stderr)
 	if err != nil {
 		if err == errHelp {
 			return
