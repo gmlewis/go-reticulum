@@ -24,3 +24,17 @@ func TestParseFlags(t *testing.T) {
 		t.Fatalf("unexpected app state: %+v", app)
 	}
 }
+
+func TestParseFlagsLongAliases(t *testing.T) {
+	t.Parallel()
+	flag.CommandLine = flag.NewFlagSet("gornpath", flag.ContinueOnError)
+	flag.CommandLine.SetOutput(io.Discard)
+
+	app, err := parseFlags([]string{"--config", "/tmp/config", "--table", "--max", "4", "--rates", "--drop", "--drop-announces", "--drop-via", "--blackholed", "--blackhole", "--unblackhole", "--blackholed-list", "--identity", "identity.key", "--remote", "0123456789abcdef0123456789abcdef", "--duration", "12", "--reason", "test", "--json", "--verbose", "dest"})
+	if err != nil {
+		t.Fatalf("parseFlags failed: %v", err)
+	}
+	if app.configDir != "/tmp/config" || !app.table || app.maxHops != 4 || !app.rates || !app.drop || !app.dropAnnounces || !app.dropVia || !app.blackholed || !app.blackhole || !app.unblackhole || !app.blackholedList || app.identityPath != "identity.key" || app.remoteHash != "0123456789abcdef0123456789abcdef" || app.duration != 12 || app.reason != "test" || !app.jsonOut || !app.verbose || len(app.args) != 1 || app.args[0] != "dest" {
+		t.Fatalf("unexpected app state from long aliases: %+v", app)
+	}
+}
