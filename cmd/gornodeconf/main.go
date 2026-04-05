@@ -100,6 +100,14 @@ func (rt cliRuntime) run(args []string) error {
 		return rt.runEEPROMBackup(os.Stdout, port)
 	}
 
+	if opts.eepromDump {
+		return rt.runEEPROMDump(os.Stdout, port)
+	}
+
+	if opts.eepromWipe {
+		return rt.runEEPROMWipe(os.Stdout, port)
+	}
+
 	if opts.update {
 		return rt.runFirmwareUpdate(os.Stdout, port, opts)
 	}

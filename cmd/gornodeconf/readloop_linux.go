@@ -13,6 +13,7 @@ const (
 	rnodeKISSCommandUnknown   = 0xfe
 	rnodeKISSCommandFrequency = 0x01
 	rnodeKISSCommandBandwidth = 0x02
+	rnodeKISSCommandPlatform  = 0x48
 	rnodeKISSCommandFWVersion = 0x50
 	rnodeKISSCommandROMRead   = 0x51
 	rnodeKISSCommandDevHash   = 0x56
@@ -38,6 +39,7 @@ type rnodeReadLoopState struct {
 	rBandwidth         int
 	majorVersion       byte
 	minorVersion       byte
+	platform           byte
 	deviceHash         []byte
 	firmwareHash       []byte
 	firmwareHashTarget []byte
@@ -91,7 +93,7 @@ func (s *rnodeReadLoopState) feedByte(b byte) (rnodeReadLoopFrame, bool) {
 		return rnodeReadLoopFrame{}, false
 	}
 
-	if s.command != rnodeKISSCommandROMRead && s.command != rnodeKISSCommandCFGRead && s.command != rnodeKISSCommandData && s.command != rnodeKISSCommandFrequency && s.command != rnodeKISSCommandBandwidth && s.command != rnodeKISSCommandFWVersion && s.command != rnodeKISSCommandDevHash && s.command != rnodeKISSCommandHashes {
+	if s.command != rnodeKISSCommandROMRead && s.command != rnodeKISSCommandCFGRead && s.command != rnodeKISSCommandData && s.command != rnodeKISSCommandFrequency && s.command != rnodeKISSCommandBandwidth && s.command != rnodeKISSCommandPlatform && s.command != rnodeKISSCommandFWVersion && s.command != rnodeKISSCommandDevHash && s.command != rnodeKISSCommandHashes {
 		return rnodeReadLoopFrame{}, false
 	}
 
@@ -105,7 +107,7 @@ func (s *rnodeReadLoopState) feedByte(b byte) (rnodeReadLoopFrame, bool) {
 		b = decodeKISSEscapedByte(b)
 	}
 
-	if s.command == rnodeKISSCommandFrequency || s.command == rnodeKISSCommandBandwidth || s.command == rnodeKISSCommandFWVersion || s.command == rnodeKISSCommandDevHash || s.command == rnodeKISSCommandHashes {
+	if s.command == rnodeKISSCommandFrequency || s.command == rnodeKISSCommandBandwidth || s.command == rnodeKISSCommandPlatform || s.command == rnodeKISSCommandFWVersion || s.command == rnodeKISSCommandDevHash || s.command == rnodeKISSCommandHashes {
 		s.commandBuffer = append(s.commandBuffer, b)
 		s.applyCommandBuffer()
 		return rnodeReadLoopFrame{}, false
@@ -129,6 +131,10 @@ func (s *rnodeReadLoopState) applyCommandBuffer() {
 		if len(s.commandBuffer) == 2 {
 			s.majorVersion = s.commandBuffer[0]
 			s.minorVersion = s.commandBuffer[1]
+		}
+	case rnodeKISSCommandPlatform:
+		if len(s.commandBuffer) == 1 {
+			s.platform = s.commandBuffer[0]
 		}
 	case rnodeKISSCommandDevHash:
 		if len(s.commandBuffer) == 32 {

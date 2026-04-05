@@ -19,6 +19,7 @@ func TestRNodeReadLoopCommandStateAccumulation(t *testing.T) {
 	stream := []byte{
 		kissFend, rnodeKISSCommandFrequency, 0x12, 0x34, 0x56, 0x78, kissFend,
 		kissFend, rnodeKISSCommandBandwidth, 0x00, 0x01, 0x86, 0xa0, kissFend,
+		kissFend, rnodeKISSCommandPlatform, 0x70, kissFend,
 		kissFend, rnodeKISSCommandFWVersion, 0x02, 0x05, kissFend,
 		kissFend, rnodeKISSCommandDevHash,
 		0x01, 0x02, 0x03, 0x04,
@@ -66,6 +67,9 @@ func TestRNodeReadLoopCommandStateAccumulation(t *testing.T) {
 	}
 	if state.majorVersion != 0x02 || state.minorVersion != 0x05 {
 		t.Fatalf("firmware version mismatch: got %v.%v want %v.%v", state.majorVersion, state.minorVersion, 0x02, 0x05)
+	}
+	if state.platform != 0x70 {
+		t.Fatalf("platform mismatch: got %#x want %#x", state.platform, 0x70)
 	}
 	wantHash := []byte{
 		0x01, 0x02, 0x03, 0x04,

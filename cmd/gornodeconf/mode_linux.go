@@ -13,6 +13,8 @@ import (
 )
 
 const romPlatformESP32 = 0x80
+const romPlatformNRF52 = 0x70
+const romPlatformAVR = 0x90
 
 type modeSwitchWriter interface {
 	Write([]byte) (int, error)
@@ -40,6 +42,17 @@ func (s *modeSwitchState) setTNCMode() error {
 		if err := s.hardReset(); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (s *modeSwitchState) wipeEEPROM() error {
+	if err := writeModeCommand(s.writer, []byte{kissFend, 0x59, 0xf8, kissFend}, "wiping EEPROM"); err != nil {
+		return err
+	}
+	s.sleeper.Sleep(13 * time.Second)
+	if s.platform == romPlatformNRF52 {
+		s.sleeper.Sleep(10 * time.Second)
 	}
 	return nil
 }
