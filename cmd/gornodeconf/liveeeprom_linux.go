@@ -14,8 +14,6 @@ import (
 	"time"
 )
 
-var errReadEEPROMTimeout = errors.New("timed out while reading device EEPROM")
-
 func captureRnodeEEPROM(portName string, port serialPort, timeout time.Duration) (*eepromDownloaderState, error) {
 	state := newRnodeReadLoopState()
 
@@ -70,7 +68,7 @@ func captureRnodeEEPROM(portName string, port serialPort, timeout time.Duration)
 			}
 		case <-deadline:
 			_ = port.Close()
-			return nil, errReadEEPROMTimeout
+			return nil, state.eepromTimeoutError()
 		}
 	}
 }

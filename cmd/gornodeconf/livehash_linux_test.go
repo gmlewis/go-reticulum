@@ -9,7 +9,6 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"sync"
 	"testing"
@@ -141,7 +140,7 @@ func TestCaptureRnodeHashesTimesOut(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
-	if !errors.Is(err, errReadHashesTimeout) {
+	if err.Error() != "timed out while reading device hashes" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

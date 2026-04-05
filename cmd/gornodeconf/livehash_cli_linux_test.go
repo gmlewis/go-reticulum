@@ -9,7 +9,6 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"strings"
 	"sync"
@@ -129,7 +128,7 @@ func TestRunFirmwareHashReadbacksReturnsTimeoutError(t *testing.T) {
 
 	var out bytes.Buffer
 	err := rt.runFirmwareHashReadbacks(&out, "ttyUSB0", options{getTargetFirmwareHash: true})
-	if !errors.Is(err, errReadEEPROMTimeout) {
+	if err == nil || err.Error() != "timed out while reading device EEPROM" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

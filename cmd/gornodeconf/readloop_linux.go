@@ -7,6 +7,8 @@
 
 package main
 
+import "errors"
+
 const (
 	rnodeKISSCommandUnknown   = 0xfe
 	rnodeKISSCommandFrequency = 0x01
@@ -39,10 +41,26 @@ type rnodeReadLoopState struct {
 	deviceHash         []byte
 	firmwareHash       []byte
 	firmwareHashTarget []byte
+	hashTimeoutErr     error
+	eepromTimeoutErr   error
 }
 
 func newRnodeReadLoopState() *rnodeReadLoopState {
 	return &rnodeReadLoopState{command: rnodeKISSCommandUnknown}
+}
+
+func (s *rnodeReadLoopState) hashesTimeoutError() error {
+	if s.hashTimeoutErr == nil {
+		s.hashTimeoutErr = errors.New("timed out while reading device hashes")
+	}
+	return s.hashTimeoutErr
+}
+
+func (s *rnodeReadLoopState) eepromTimeoutError() error {
+	if s.eepromTimeoutErr == nil {
+		s.eepromTimeoutErr = errors.New("timed out while reading device EEPROM")
+	}
+	return s.eepromTimeoutErr
 }
 
 func (s *rnodeReadLoopState) feedByte(b byte) (rnodeReadLoopFrame, bool) {

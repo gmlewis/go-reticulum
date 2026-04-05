@@ -13,8 +13,6 @@ import (
 	"time"
 )
 
-var errReadHashesTimeout = errors.New("timed out while reading device hashes")
-
 type rnodeHashSnapshot struct {
 	deviceHash         []byte
 	firmwareHashTarget []byte
@@ -67,7 +65,7 @@ func captureRnodeHashes(port serialPort, timeout time.Duration) (rnodeHashSnapsh
 			return rnodeHashSnapshot{}, err
 		case <-deadline:
 			_ = port.Close()
-			return rnodeHashSnapshot{}, errReadHashesTimeout
+			return rnodeHashSnapshot{}, state.hashesTimeoutError()
 		case <-readDone:
 			for len(byteCh) > 0 {
 				state.feedByte(<-byteCh)

@@ -9,7 +9,6 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"testing"
 	"time"
 )
@@ -77,7 +76,7 @@ func TestCaptureRnodeEEPROMTimesOut(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
-	if !errors.Is(err, errReadEEPROMTimeout) {
+	if err.Error() != "timed out while reading device EEPROM" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
