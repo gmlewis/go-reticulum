@@ -69,6 +69,9 @@ func TestRunFirmwareHashReadbacksPrintsPythonLines(t *testing.T) {
 }
 
 func TestRunFirmwareHashReadbacksReturnsTimeoutError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
 	serial := &liveHashSerial{blockOnEmpty: true, wait: make(chan struct{})}
 	rt := cliRuntime{openSerial: func(settings serialSettings) (serialPort, error) {
 		return serial, nil
