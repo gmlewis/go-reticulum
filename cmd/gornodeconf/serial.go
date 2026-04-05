@@ -39,22 +39,24 @@ type serialSettings struct {
 type serialOpener func(serialSettings) (serialPort, error)
 
 type cliRuntime struct {
-	openSerial   serialOpener
-	discoverPort func() (string, []string, error)
-	stdin        io.Reader
-	now          func() time.Time
-	sleep        func(time.Duration)
-	runCommand   func(string, ...string) ([]byte, error)
-	debug        bool
+	openSerial          serialOpener
+	discoverPort        func() (string, []string, error)
+	stdin               io.Reader
+	now                 func() time.Time
+	sleep               func(time.Duration)
+	runCommand          func(string, ...string) ([]byte, error)
+	loadBootstrapSigner func(string) (bootstrapChecksumSigner, error)
+	debug               bool
 }
 
 func newRuntime() cliRuntime {
 	return cliRuntime{
-		openSerial: defaultOpenSerial,
-		stdin:      os.Stdin,
-		now:        time.Now,
-		sleep:      time.Sleep,
-		runCommand: defaultRunCommand,
+		openSerial:          defaultOpenSerial,
+		stdin:               os.Stdin,
+		now:                 time.Now,
+		sleep:               time.Sleep,
+		runCommand:          defaultRunCommand,
+		loadBootstrapSigner: loadBootstrapSigner,
 	}
 }
 

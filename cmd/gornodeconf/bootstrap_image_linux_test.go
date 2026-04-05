@@ -1,0 +1,37 @@
+// Copyright 2026 Glenn Lewis. All rights reserved.
+//
+// Use of this source code is governed by the Reticulum License
+// that can be found in the LICENSE file.
+
+//go:build linux
+
+package main
+
+import (
+	"bytes"
+	"testing"
+)
+
+func TestBootstrapEEPROMImageMatchesPythonLayout(t *testing.T) {
+	t.Parallel()
+
+	image := bootstrapEEPROMImage(0x03, 0xa4, 0x35, 0x01020304, 0x05060708, []byte{0x10, 0x20, 0x30})
+	if len(image) != 0xa8 {
+		t.Fatalf("image length mismatch: got %v want %v", len(image), 0xa8)
+	}
+	if image[0x00] != 0x03 || image[0x01] != 0xa4 || image[0x02] != 0x35 {
+		t.Fatalf("identity mismatch: %x %x %x", image[0x00], image[0x01], image[0x02])
+	}
+	if !bytes.Equal(image[0x03:0x0b], []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}) {
+		t.Fatalf("serial/time mismatch: %x", image[0x03:0x0b])
+	}
+	if !bytes.Equal(image[0x0b:0x1b], []byte{0xd8, 0x15, 0xcd, 0xb2, 0x39, 0x02, 0x4a, 0x6b, 0x77, 0x9c, 0xc7, 0x07, 0xc9, 0xb0, 0xae, 0xe4}) {
+		t.Fatalf("checksum mismatch: %x", image[0x0b:0x1b])
+	}
+	if !bytes.Equal(image[0x1b:0x1e], []byte{0x10, 0x20, 0x30}) {
+		t.Fatalf("signature mismatch: %x", image[0x1b:0x1e])
+	}
+	if image[0x9b] != 0x73 {
+		t.Fatalf("lock byte mismatch: %#x", image[0x9b])
+	}
+}

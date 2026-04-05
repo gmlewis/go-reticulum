@@ -71,3 +71,41 @@ func TestFlasherCommandArgsAVR2560(t *testing.T) {
 		t.Fatalf("AVR 2560 flasher prefix mismatch:\n got: %#v\nwant: %#v", got, want)
 	}
 }
+
+func TestFlasherCommandCallESP32(t *testing.T) {
+	t.Parallel()
+
+	got, err := flasherCommandCall(equivalencePlatformESP32, 0xa1, "ttyUSB0", "921600", "/tmp/firmware", "rnode_firmware_esp32_generic.zip")
+	if err != nil {
+		t.Fatalf("flasherCommandCall returned error: %v", err)
+	}
+	want := []string{
+		"python",
+		"/tmp/firmware/recovery_esptool.py",
+		"--chip", "esp32",
+		"--port", "ttyUSB0",
+		"--baud", "921600",
+		"--before", "default_reset",
+		"--after", "hard_reset",
+		"write_flash", "-z",
+		"--flash_mode", "dio",
+		"--flash_freq", "80m",
+		"--flash_size", "4MB",
+		"0xe000", "/tmp/firmware/rnode_firmware_esp32_generic.zip.boot_app0",
+		"0x1000", "/tmp/firmware/rnode_firmware_esp32_generic.zip.bootloader",
+		"0x10000", "/tmp/firmware/rnode_firmware_esp32_generic.zip.bin",
+		"0x210000", "/tmp/firmware/extracted_console_image.bin",
+		"0x8000", "/tmp/firmware/rnode_firmware_esp32_generic.zip.partitions",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ESP32 flasher call mismatch:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestFlasherCommandCallUnsupportedPlatform(t *testing.T) {
+	t.Parallel()
+
+	if _, err := flasherCommandCall(0x01, 0x01, "ttyUSB0", "921600", "/tmp/firmware", "fw.hex"); err == nil {
+		t.Fatal("expected unsupported platform error")
+	}
+}

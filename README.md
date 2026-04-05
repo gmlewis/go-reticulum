@@ -12,6 +12,129 @@ This is an experimental port of the [Reticulum Network Stack](https://github.com
 - **Supply-Chain Risk Posture**: This design is deliberate to minimize dependency-chain
   attack surface, informed by incidents such as the Jia Tan/XZ backdoor.
 
+## Manual RNode Workflow on Linux
+
+The Go utilities in this repository are designed to talk to a live RNode over a
+serial port on Linux. The commands below exercise the common manual workflow in
+the same order you would normally use on a fresh or already-provisioned device.
+
+Before starting, make sure:
+
+- You have access to the serial device, for example `/dev/ttyUSB0` or `/dev/ttyACM0`.
+- Your user can open the serial device without permission errors.
+- You are willing to let the tools write under `~/.config/rnodeconf/`.
+
+If you want the run to stay isolated from your everyday Reticulum config, point
+`HOME` at a temporary directory before invoking the commands. The tools will
+then store firmware artifacts, EEPROM backups, and generated keys under that
+temporary home instead of your normal profile.
+
+### 1. Inspect the device
+
+Start by checking the device and recording its current state:
+
+```bash
+gornodeconf -i /dev/ttyUSB0
+gornodeconf --public /dev/ttyUSB0
+gornodeconf --get-firmware-hash /dev/ttyUSB0
+gornodeconf --get-target-firmware-hash /dev/ttyUSB0
+```
+
+The info command shows the current EEPROM contents and mode. The public-key and
+hash commands are useful when you want to compare the live device against a
+known-good build or a saved firmware image.
+
+### 2. Generate local signing material
+
+Before bootstrapping or signing a device, generate the local firmware keys once:
+
+```bash
+gornodeconf --key
+gornodeconf --public
+```
+
+This creates `signing.key` and `device.key` under `~/.config/rnodeconf/firmware/`.
+The `--public` command prints the EEPROM signing public key and the device
+signing public key so you can verify what was created.
+
+### 3. Back up the current EEPROM
+
+If the device already has useful settings, take a backup before changing it:
+
+```bash
+gornodeconf --eeprom-backup /dev/ttyUSB0
+gornodeconf --eeprom-dump /dev/ttyUSB0
+```
+
+`--eeprom-backup` writes a timestamped binary backup under
+`~/.config/rnodeconf/eeprom/`. `--eeprom-dump` prints the full EEPROM contents
+to the terminal so you can inspect the live state before modifying anything.
+
+### 4. Bootstrap a fresh device
+
+For a new device, or after a full wipe, bootstrap the EEPROM with the live
+serial port:
+
+```bash
+gornodeconf --rom --product 03 --model a4 --hwrev 5 /dev/ttyUSB0
+```
+
+The bootstrap flow uses the local `signing.key`, writes the EEPROM identity,
+stores a device_db backup, and records the next serial number under
+`~/.config/rnodeconf/firmware/serial.counter`.
+
+Use `--autoinstall` with the same bootstrap path if you want the tool to wipe
+old EEPROM contents before provisioning the new identity.
+
+### 5. Flash or update firmware
+
+Once the device identity is in place, you can flash or update firmware:
+
+```bash
+gornodeconf --extract /dev/ttyUSB0
+gornodeconf --flash /dev/ttyUSB0
+gornodeconf --update /dev/ttyUSB0
+gornodeconf --update --use-extracted /dev/ttyUSB0
+```
+
+`--extract` saves firmware artifacts under `~/.config/rnodeconf/update/`.
+`--flash` programs the current firmware choice and then bootstraps EEPROM.
+`--update` performs the same workflow but follows the update path and version
+selection logic. `--use-extracted` tells the updater to reuse firmware that was
+previously extracted from a compatible device.
+
+### 6. Maintain or recover the device
+
+These commands are useful once the device is provisioned:
+
+```bash
+gornodeconf --firmware-hash <hex-sha256> /dev/ttyUSB0
+gornodeconf --sign /dev/ttyUSB0
+gornodeconf --eeprom-wipe /dev/ttyUSB0
+gornodeconf --clear-cache
+```
+
+`--firmware-hash` records the installed firmware hash on the device.
+`--sign` writes a device signature when a valid local device key is available.
+`--eeprom-wipe` clears the EEPROM contents and resets the device on supported
+platforms. `--clear-cache` removes locally cached firmware downloads.
+
+### Practical order of operations
+
+A sensible manual session is usually:
+
+1. Inspect the device.
+2. Back up the EEPROM.
+3. Generate signing keys if they do not already exist.
+4. Bootstrap or wipe/flash the device as needed.
+5. Re-run `--eeprom-dump`, `--public`, and the firmware hash commands to
+  confirm the device now matches the expected state.
+
+That sequence keeps the live device state observable at each step and makes it
+easy to recover if you need to back out of a change.
+
+---
+
 What follows is Mark Qvist's original README.md.
 
 ==========
@@ -148,8 +271,8 @@ network, and vice versa.
 
 ## How do I get started?
 The best way to get started with the Reticulum Network Stack depends on what
-you want to do. For full details and examples, have a look at the 
-[Getting Started Fast](https://markqvist.github.io/Reticulum/manual/gettingstartedfast.html) 
+you want to do. For full details and examples, have a look at the
+[Getting Started Fast](https://markqvist.github.io/Reticulum/manual/gettingstartedfast.html)
 section of the [Reticulum Manual](https://markqvist.github.io/Reticulum/manual/).
 
 To simply install Reticulum and related utilities on your system, the easiest way is via `pip`.
@@ -182,15 +305,15 @@ creating a more complex configuration.
 
 If you have an old version of `pip` on your system, you may need to upgrade it first with `pip install pip --upgrade`. If you no not already have `pip` installed, you can install it using the package manager of your system with `sudo apt install python3-pip` or similar.
 
-For more detailed examples on how to expand communication over many mediums such 
-as packet radio or LoRa, serial ports, or over fast IP links and the Internet using 
-the UDP and TCP interfaces, take a look at the [Supported Interfaces](https://markqvist.github.io/Reticulum/manual/interfaces.html) 
+For more detailed examples on how to expand communication over many mediums such
+as packet radio or LoRa, serial ports, or over fast IP links and the Internet using
+the UDP and TCP interfaces, take a look at the [Supported Interfaces](https://markqvist.github.io/Reticulum/manual/interfaces.html)
 section of the [Reticulum Manual](https://markqvist.github.io/Reticulum/manual/).
 
 ## Included Utilities
-Reticulum includes a range of useful utilities for managing your networks, 
-viewing status and information, and other tasks. You can read more about these 
-programs in the [Included Utility Programs](https://markqvist.github.io/Reticulum/manual/using.html#included-utility-programs) 
+Reticulum includes a range of useful utilities for managing your networks,
+viewing status and information, and other tasks. You can read more about these
+programs in the [Included Utility Programs](https://markqvist.github.io/Reticulum/manual/using.html#included-utility-programs)
 section of the [Reticulum Manual](https://markqvist.github.io/Reticulum/manual/).
 
 - The system daemon `rnsd` for running Reticulum as an always-available service

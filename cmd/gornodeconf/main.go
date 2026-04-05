@@ -112,6 +112,14 @@ func (rt cliRuntime) run(args []string) error {
 		return rt.runEEPROMWipe(os.Stdout, port)
 	}
 
+	if opts.rom {
+		return rt.runEEPROMBootstrap(os.Stdout, port, opts)
+	}
+
+	if opts.flash {
+		return rt.runFirmwareFlash(os.Stdout, port, opts)
+	}
+
 	if opts.update {
 		return rt.runFirmwareUpdate(os.Stdout, port, opts)
 	}
