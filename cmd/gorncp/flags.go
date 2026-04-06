@@ -10,6 +10,7 @@ import (
 	"flag"
 	"io"
 
+	"github.com/gmlewis/go-reticulum/rns"
 	"github.com/gmlewis/go-reticulum/utils"
 )
 
@@ -17,6 +18,7 @@ var errHelp = errors.New("help requested")
 
 type appT struct {
 	configDir        string
+	logger           *rns.Logger
 	identityPath     string
 	verbose          bool
 	quiet            bool

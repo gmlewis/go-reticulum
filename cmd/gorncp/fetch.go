@@ -71,10 +71,14 @@ func waitForDownloadCompletion(done <-chan struct{}, timeout time.Duration, onTi
 	}
 }
 
-func doFetch(ts rns.Transport, idPath string, destHashHex string, fileName string, noCompress bool, silent bool, savePath string, overwrite bool, phyRates bool, timeoutSec float64) {
-	_ = noCompress
-	_ = phyRates
-	id := prepareIdentity(idPath)
+func (a *appT) doFetch(ts rns.Transport, destHashHex string, fileName string) {
+	silent := a.silent
+	savePath := a.savePath
+	overwrite := a.overwrite
+	timeoutSec := a.timeoutSec
+	id := a.prepareIdentity(a.identityPath)
+	_ = a.noCompress
+	_ = a.phyRates
 
 	destHash, err := parseDestinationHash(destHashHex)
 	if err != nil {

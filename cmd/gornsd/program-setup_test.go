@@ -7,6 +7,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,6 +31,16 @@ loglevel = %v
 	if err := os.WriteFile(filepath.Join(dir, "config"), []byte(config), 0o600); err != nil {
 		t.Fatalf("write config error: %v", err)
 	}
+}
+
+func reserveTCPPort(t *testing.T) int {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserveTCPPort: %v", err)
+	}
+	defer func() { _ = listener.Close() }()
+	return listener.Addr().(*net.TCPAddr).Port
 }
 
 func captureLoggerState(t *testing.T, logger *rns.Logger) {
@@ -136,7 +147,23 @@ func TestProgramSetupServiceUsesFileLogging(t *testing.T) {
 func TestProgramSetupConnectedSharedInstanceLogsWarning(t *testing.T) {
 	configDir, cleanup := testutils.TempDir(t, "gornsd-program-shared-")
 	defer cleanup()
-	writeGornsdConfig(t, configDir, "Yes", 4)
+	sharedPort := reserveTCPPort(t)
+	rpcPort := reserveTCPPort(t)
+	config := fmt.Sprintf(`[reticulum]
+instance_name = %v
+share_instance = Yes
+shared_instance_type = tcp
+shared_instance_port = %v
+instance_control_port = %v
+
+[logging]
+loglevel = 4
+
+[interfaces]
+`, "gornsd-program-shared", sharedPort, rpcPort)
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("write config error: %v", err)
+	}
 
 	logger := rns.NewLogger()
 	captureLoggerState(t, logger)

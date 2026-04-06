@@ -82,7 +82,18 @@ func newFetchRequestHandler(allowFetch bool, jail string, noCompress bool, linkF
 	}
 }
 
-func doListen(ts rns.Transport, idPath string, noCompress bool, silent bool, allowFetch bool, jail string, savePath string, overwrite bool, announceInterval int, allowed []string, noAuth bool, printIdentity bool) {
+func (a *appT) doListen(ts rns.Transport) {
+	logger := a.getLogger()
+	idPath := a.identityPath
+	noCompress := a.noCompress
+	allowFetch := a.allowFetch
+	jail := a.jail
+	savePath := a.savePath
+	overwrite := a.overwrite
+	announceInterval := a.announceInterval
+	allowed := a.allowed
+	noAuth := a.noAuth
+	printIdentity := a.printIdentity
 	if idPath == "" {
 		home, _ := os.UserHomeDir()
 		idPath = filepath.Join(home, ".reticulum", "identities", AppName)
@@ -92,11 +103,11 @@ func doListen(ts rns.Transport, idPath string, noCompress bool, silent bool, all
 	if _, err := os.Stat(idPath); err == nil {
 		id, err = rns.FromFile(idPath)
 		if err != nil {
-			rns.Logf("Could not load identity for rncp. The identity file at \"%v\" may be corrupt or unreadable.", rns.LogError, false, idPath)
+			logger.Log(fmt.Sprintf("Could not load identity for rncp. The identity file at \"%v\" may be corrupt or unreadable.", idPath), rns.LogError, false)
 			os.Exit(2)
 		}
 	} else {
-		rns.Log("No valid saved identity found, creating new...", rns.LogInfo, false)
+		logger.Log("No valid saved identity found, creating new...", rns.LogInfo, false)
 		var err error
 		id, err = rns.NewIdentity(true)
 		if err != nil {

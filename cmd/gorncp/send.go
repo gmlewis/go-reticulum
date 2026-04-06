@@ -54,7 +54,11 @@ func sendTransferError(status int) error {
 	return fmt.Errorf("The transfer failed")
 }
 
-func doSend(ts rns.Transport, idPath string, destHashHex string, filePath string, noCompress bool, silent bool, phyRates bool, timeoutSec float64) {
+func (a *appT) doSend(ts rns.Transport, destHashHex string, filePath string) {
+	noCompress := a.noCompress
+	silent := a.silent
+	phyRates := a.phyRates
+	timeoutSec := a.timeoutSec
 	destHash, err := parseDestinationHash(destHashHex)
 	if err != nil {
 		log.Fatalf("%v\n", err)
@@ -68,7 +72,7 @@ func doSend(ts rns.Transport, idPath string, destHashHex string, filePath string
 		log.Fatalf("Could not read file: %v\n", err)
 	}
 
-	id := prepareIdentity(idPath)
+	id := a.prepareIdentity(a.identityPath)
 
 	remoteID := rns.RecallIdentity(ts, destHash)
 	if remoteID == nil {

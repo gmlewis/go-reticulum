@@ -63,7 +63,8 @@ func validateIdentityHash(hash string) error {
 
 // prepareIdentity loads an identity from the specified path, or creates a new one if it doesn't exist.
 // Matches Python's prepare_identity behavior.
-func prepareIdentity(identityPath string) *rns.Identity {
+func (a *appT) prepareIdentity(identityPath string) *rns.Identity {
+	logger := a.getLogger()
 	if identityPath == "" {
 		home, _ := os.UserHomeDir()
 		identityPath = filepath.Join(home, ".reticulum", "identities", AppName)
@@ -74,13 +75,13 @@ func prepareIdentity(identityPath string) *rns.Identity {
 		var err error
 		id, err = rns.FromFile(identityPath)
 		if err != nil {
-			rns.Logf("Could not load identity for rncp. The identity file at \"%v\" may be corrupt or unreadable.", rns.LogError, false, identityPath)
+			logger.Log(fmt.Sprintf("Could not load identity for rncp. The identity file at \"%v\" may be corrupt or unreadable.", identityPath), rns.LogError, false)
 			os.Exit(2)
 		}
 	}
 
 	if id == nil {
-		rns.Log("No valid saved identity found, creating new...", rns.LogInfo, false)
+		logger.Log("No valid saved identity found, creating new...", rns.LogInfo, false)
 		// Create directory first (matches Python behavior)
 		identityDir := filepath.Dir(identityPath)
 		if err := os.MkdirAll(identityDir, 0o700); err != nil {
@@ -101,6 +102,13 @@ func prepareIdentity(identityPath string) *rns.Identity {
 
 // AppName is the name of the application used for identity generation.
 const AppName = "rncp"
+
+func (a *appT) getLogger() *rns.Logger {
+	if a.logger == nil {
+		a.logger = rns.NewLogger()
+	}
+	return a.logger
+}
 
 // eraseStr is the terminal escape sequence to clear the current line and return to column 0.
 // Matches Python's erase_str = "\33[2K\r"
@@ -148,7 +156,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger := rns.NewLogger()
+	logger := app.getLogger()
 	if app.verbose {
 		logger.SetLogLevel(rns.LogVerbose)
 	}
@@ -173,7 +181,7 @@ func main() {
 	}
 
 	if app.listenMode {
-		doListen(ts, app.identityPath, app.noCompress, app.silent, app.allowFetch, app.jail, app.savePath, app.overwrite, app.announceInterval, app.allowed, app.noAuth, app.printIdentity)
+		app.doListen(ts)
 		os.Exit(0)
 	} else if app.fetchMode {
 		if len(app.args) < 2 {
@@ -182,7 +190,7 @@ func main() {
 		}
 		destHashHex := app.args[0]
 		fileName := app.args[1]
-		doFetch(ts, app.identityPath, destHashHex, fileName, app.noCompress, app.silent, app.savePath, app.overwrite, app.phyRates, app.timeoutSec)
+		app.doFetch(ts, destHashHex, fileName)
 	} else {
 		if len(app.args) < 2 {
 			app.usage(os.Stderr)
@@ -190,6 +198,6 @@ func main() {
 		}
 		destHashHex := app.args[0]
 		filePath := app.args[1]
-		doSend(ts, app.identityPath, destHashHex, filePath, app.noCompress, app.silent, app.phyRates, app.timeoutSec)
+		app.doSend(ts, destHashHex, filePath)
 	}
 }

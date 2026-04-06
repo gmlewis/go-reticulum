@@ -978,10 +978,6 @@ func (l *Link) Request(path string, data any, responseCallback, failedCallback, 
 			return nil, err
 		}
 
-		if err := l.send(p); err != nil {
-			return nil, err
-		}
-
 		rr := &RequestReceipt{
 			Link:             l,
 			RequestID:        p.GetTruncatedHash(), // Match Reticulum behavior
@@ -996,6 +992,11 @@ func (l *Link) Request(path string, data any, responseCallback, failedCallback, 
 		l.mu.Lock()
 		l.pendingRequests = append(l.pendingRequests, rr)
 		l.mu.Unlock()
+
+		if err := l.send(p); err != nil {
+			l.removePendingRequest(rr)
+			return nil, err
+		}
 
 		return rr, nil
 	} else {
