@@ -43,7 +43,10 @@ func main() {
 		return
 	}
 
-	setupSignalHandler(nil)
+	cleanup := func() {}
+	setupSignalHandler(func() {
+		cleanup()
+	})
 
 	if len(app.args) < 2 {
 		fmt.Println("")
@@ -54,6 +57,11 @@ func main() {
 
 	fullName := app.args[0]
 	destHex := app.args[1]
+	destHash, err := parseProbeDestinationHash(destHex)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 
 	targetLogLevel := rns.LogNotice
 	if app.verbose {
@@ -66,17 +74,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
-	defer func() {
+	cleanup = func() {
 		if err := ret.Close(); err != nil {
 			rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
 		}
+	}
+	defer func() {
+		cleanup()
 	}()
 
-	destHash, err := parseProbeDestinationHash(destHex)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
 	firstHopTimeout, err := ret.FirstHopTimeout(destHash)
 	if err != nil {
 		log.Fatalf("Could not determine first hop timeout: %v\n", err)
