@@ -47,6 +47,7 @@ type appT struct {
 	identityPath  string
 	generatePath  string
 	importStr     string
+	logger        *rns.Logger
 	export        bool
 	verbose       counter
 	quiet         counter
@@ -78,8 +79,16 @@ func logf(logger *rns.Logger, format string, level int, pt bool, args ...any) {
 	logger.Log(fmt.Sprintf(format, args...), level, pt)
 }
 
+func (a *appT) getLogger() *rns.Logger {
+	if a != nil && a.logger != nil {
+		return a.logger
+	}
+	return rns.NewLogger()
+}
+
 func (a *appT) run() {
-	logger := rns.NewLogger()
+	a.logger = rns.NewLogger()
+	logger := a.logger
 	var ops int
 	for _, op := range []bool{a.encryptFile != "", a.decryptFile != "", a.validateFile != "", a.signFile != ""} {
 		if op {
@@ -117,7 +126,7 @@ func (a *appT) run() {
 	}
 
 	if a.importStr != "" {
-		doImport(logger, a.importStr, a.useBase64, a.useBase32, a.printPrivate, a.writeFile, a.force)
+		a.doImport(a.importStr, a.useBase64, a.useBase32, a.printPrivate, a.writeFile, a.force)
 		return
 	}
 
@@ -144,35 +153,35 @@ func (a *appT) run() {
 	}
 
 	if a.generatePath != "" {
-		doGenerate(logger, a.generatePath, a.force)
+		a.doGenerate(a.generatePath, a.force)
 		return
 	}
 
-	id := loadIdentity(logger, ret.Transport(), a.identityPath, a.requestID, a.timeout)
+	id := a.loadIdentity(ret.Transport(), a.identityPath, a.requestID, a.timeout)
 	if id == nil {
 		log.Fatal("Could not load or recall identity")
 	}
 
 	if a.printIdentity {
-		doPrintIdentity(logger, id, a.useBase64, a.useBase32, a.printPrivate)
+		a.doPrintIdentity(id, a.useBase64, a.useBase32, a.printPrivate)
 		os.Exit(0)
 	}
 
 	if a.export {
-		doExport(logger, id, a.useBase64, a.useBase32)
+		a.doExport(id, a.useBase64, a.useBase32)
 		os.Exit(0)
 	}
 
 	if a.hashAspects != "" {
-		doHash(logger, ts, id, a.hashAspects)
+		a.doHash(ts, id, a.hashAspects)
 	}
 
 	if a.announce != "" {
-		doAnnounce(logger, ts, id, a.announce)
+		a.doAnnounce(ts, id, a.announce)
 	}
 
 	if a.encryptFile != "" || a.decryptFile != "" || a.signFile != "" || a.validateFile != "" {
-		doFileOps(logger, id, a.readFile, a.writeFile, a.encryptFile, a.decryptFile, a.signFile, a.validateFile, a.force, a.useStdout)
+		a.doFileOps(id, a.readFile, a.writeFile, a.encryptFile, a.decryptFile, a.signFile, a.validateFile, a.force, a.useStdout)
 	}
 }
 
@@ -188,7 +197,8 @@ func main() {
 	app.run()
 }
 
-func doImport(logger *rns.Logger, data string, b64, b32, prv bool, writePath string, force bool) {
+func (a *appT) doImport(data string, b64, b32, prv bool, writePath string, force bool) {
+	logger := a.getLogger()
 	var idBytes []byte
 	var err error
 	if b64 {
@@ -211,7 +221,7 @@ func doImport(logger *rns.Logger, data string, b64, b32, prv bool, writePath str
 	}
 
 	logMessage(logger, "Identity imported", rns.LogNotice, false)
-	doPrintIdentity(logger, id, b64, b32, prv)
+	a.doPrintIdentity(id, b64, b32, prv)
 
 	if writePath != "" {
 		wp := expandUser(writePath)
@@ -229,7 +239,8 @@ func doImport(logger *rns.Logger, data string, b64, b32, prv bool, writePath str
 	}
 }
 
-func doGenerate(logger *rns.Logger, path string, force bool) {
+func (a *appT) doGenerate(path string, force bool) {
+	logger := a.getLogger()
 	if _, err := os.Stat(path); err == nil && !force {
 		logMessage(logger, fmt.Sprintf("Identity file %v already exists. Not overwriting.", path), rns.LogError, false)
 		os.Exit(3)
@@ -248,7 +259,12 @@ func doGenerate(logger *rns.Logger, path string, force bool) {
 	logf(logger, "New identity %v written to %v", rns.LogNotice, false, rns.PrettyHexFromString(id.HexHash), path)
 }
 
-func loadIdentity(logger *rns.Logger, ts rns.Transport, path string, request bool, timeout float64) *rns.Identity {
+func loadIdentity(ts rns.Transport, path string, request bool, timeout float64) *rns.Identity {
+	return (&appT{logger: rns.NewLogger()}).loadIdentity(ts, path, request, timeout)
+}
+
+func (a *appT) loadIdentity(ts rns.Transport, path string, request bool, timeout float64) *rns.Identity {
+	logger := a.getLogger()
 	if path == "" {
 		return nil
 	}
@@ -319,7 +335,8 @@ func loadIdentity(logger *rns.Logger, ts rns.Transport, path string, request boo
 	return id
 }
 
-func doPrintIdentity(logger *rns.Logger, id *rns.Identity, b64, b32, prv bool) {
+func (a *appT) doPrintIdentity(id *rns.Identity, b64, b32, prv bool) {
+	logger := a.getLogger()
 	pub := id.GetPublicKey()
 	var pubStr string
 	if b64 {
@@ -349,7 +366,8 @@ func doPrintIdentity(logger *rns.Logger, id *rns.Identity, b64, b32, prv bool) {
 	}
 }
 
-func doExport(logger *rns.Logger, id *rns.Identity, b64, b32 bool) {
+func (a *appT) doExport(id *rns.Identity, b64, b32 bool) {
+	logger := a.getLogger()
 	priv := id.GetPrivateKey()
 	if priv == nil {
 		logMessage(logger, "Identity doesn't hold a private key, cannot export", rns.LogNotice, false)
@@ -366,7 +384,8 @@ func doExport(logger *rns.Logger, id *rns.Identity, b64, b32 bool) {
 	logMessage(logger, fmt.Sprintf("Exported Identity : %v", privStr), rns.LogNotice, false)
 }
 
-func doHash(logger *rns.Logger, ts rns.Transport, id *rns.Identity, aspects string) {
+func (a *appT) doHash(ts rns.Transport, id *rns.Identity, aspects string) {
+	logger := a.getLogger()
 	parts := strings.Split(aspects, ".")
 	if len(parts) == 0 {
 		logMessage(logger, "Invalid destination aspects specified", rns.LogError, false)
@@ -395,7 +414,8 @@ func doHash(logger *rns.Logger, ts rns.Transport, id *rns.Identity, aspects stri
 	os.Exit(0)
 }
 
-func doAnnounce(logger *rns.Logger, ts rns.Transport, id *rns.Identity, aspects string) {
+func (a *appT) doAnnounce(ts rns.Transport, id *rns.Identity, aspects string) {
+	logger := a.getLogger()
 	parts := strings.Split(aspects, ".")
 	if len(parts) < 2 {
 		logMessage(logger, "Invalid destination aspects specified", rns.LogError, false)
@@ -448,7 +468,8 @@ func expandUser(path string) string {
 
 const chunkSize = 16 * 1024 * 1024
 
-func doFileOps(logger *rns.Logger, id *rns.Identity, readPath, writePath, encFile, decFile, sgnFile, valFile string, force, stdout bool) {
+func (a *appT) doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile, sgnFile, valFile string, force, stdout bool) {
+	logger := a.getLogger()
 	idStr := rns.PrettyHexFromString(id.HexHash)
 
 	if valFile != "" {
