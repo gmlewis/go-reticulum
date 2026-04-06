@@ -314,7 +314,7 @@ requested:
 			if overwrite {
 				if _, err := os.Stat(fullSavePath); err == nil {
 					if err := os.Remove(fullSavePath); err != nil {
-						rns.Logf("Could not overwrite existing file %v, renaming instead", rns.LogError, false, fullSavePath)
+						a.getLogger().Log(fmt.Sprintf("Could not overwrite existing file %v, renaming instead", fullSavePath), rns.LogError, false)
 					}
 				}
 			}

@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -772,4 +773,45 @@ loglevel = 1
 			t.Errorf("got exit code %v, want 210 for ERROR_THROTTLED", lastExitCode)
 		}
 	})
+}
+
+func TestRemoteInitLogsThroughClientLogger(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	rnsDir := filepath.Join(tmpDir, "rns")
+	if err := os.MkdirAll(rnsDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	writeRNSConfig(t, rnsDir)
+
+	var captured []string
+	logger := rns.NewLogger()
+	logger.SetLogLevel(rns.LogVerbose)
+	logger.SetLogDest(rns.LogCallback)
+	logger.SetLogCallback(func(msg string) {
+		captured = append(captured, msg)
+	})
+
+	c := &clientT{exitFn: func(int) {}, logger: logger}
+	ret, err := c.remoteInit(filepath.Join(tmpDir, "missing"), rnsDir, 0, 0, "")
+	if err != nil {
+		t.Fatalf("remoteInit: %v", err)
+	}
+	defer closeReticulum(t, ret)
+
+	if len(captured) == 0 {
+		t.Fatal("expected remoteInit to log through the client-owned logger")
+	}
+	found := false
+	for _, msg := range captured {
+		if strings.Contains(msg, "Specified configuration directory does not exist") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("captured logs did not contain the expected message: %v", captured)
+	}
 }

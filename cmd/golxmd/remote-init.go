@@ -25,33 +25,33 @@ func (c *clientT) remoteInit(configDirArg string, rnsConfigDir string, verbosity
 		c.identity = nil
 
 		if !isDir(resolvedConfigDir) {
-			rns.Logf("Specified configuration directory does not exist, exiting now", rns.LogError, false)
+			logger.Log("Specified configuration directory does not exist, exiting now", rns.LogError, false)
 			c.exit(201)
 			return nil, nil
 		}
 		if !isFile(c.identitypath) {
-			rns.Logf("Identity file not found in specified configuration directory, exiting now", rns.LogError, false)
+			logger.Log("Identity file not found in specified configuration directory, exiting now", rns.LogError, false)
 			c.exit(202)
 			return nil, nil
 		} else {
 			var err error
 			c.identity, err = rns.FromFile(c.identitypath)
 			if err != nil {
-				rns.Logf("Could not load the Primary Identity from %v", rns.LogError, false, c.identitypath)
+				logger.Log(fmt.Sprintf("Could not load the Primary Identity from %v", c.identitypath), rns.LogError, false)
 				c.exit(4)
 				return nil, nil
 			}
 		}
 	} else {
 		if !isFile(identityPathArg) {
-			rns.Logf("Identity file not found in specified configuration directory, exiting now", rns.LogError, false)
+			logger.Log("Identity file not found in specified configuration directory, exiting now", rns.LogError, false)
 			c.exit(202)
 			return nil, nil
 		} else {
 			var err error
 			c.identity, err = rns.FromFile(identityPathArg)
 			if err != nil {
-				rns.Logf("Could not load the Primary Identity from %v", rns.LogError, false, identityPathArg)
+				logger.Log(fmt.Sprintf("Could not load the Primary Identity from %v", identityPathArg), rns.LogError, false)
 				c.exit(4)
 				return nil, nil
 			}
@@ -60,7 +60,7 @@ func (c *clientT) remoteInit(configDirArg string, rnsConfigDir string, verbosity
 
 	targetloglevel := -1
 	if c.configpath != "" {
-		if cfg, err := loadConfig(filepath.Dir(c.configpath)); err == nil && cfg != nil {
+		if cfg, err := loadConfig(logger, filepath.Dir(c.configpath)); err == nil && cfg != nil {
 			targetloglevel = cfg.LogLevel
 		}
 	}
@@ -76,7 +76,7 @@ func (c *clientT) remoteInit(configDirArg string, rnsConfigDir string, verbosity
 	}
 	reticulum, err := rns.NewReticulumWithLogger(c.ts, rnsConfigDir, logger)
 	if err != nil {
-		rns.Logf("Could not initialize Reticulum, exiting now", rns.LogError, false)
+		logger.Log("Could not initialize Reticulum, exiting now", rns.LogError, false)
 		c.exit(1)
 		return nil, nil
 	}
@@ -203,6 +203,7 @@ func (c *clientT) queryStatus(id *rns.Identity, remoteIdentityArg *rns.Identity,
 }
 
 func (c *clientT) getStatus(remote string, configDirArg string, rnsConfigDir string, verbosity int, quietness int, timeout time.Duration, showStatus bool, showPeers bool, identityPathArg string) {
+	logger := c.getLogger()
 	reticulum, err := c.remoteInit(configDirArg, rnsConfigDir, verbosity, quietness, identityPathArg)
 	if err != nil {
 		fmt.Printf("Remote initialization failed: %v\n", err)
@@ -212,7 +213,7 @@ func (c *clientT) getStatus(remote string, configDirArg string, rnsConfigDir str
 	defer func() {
 		if reticulum != nil {
 			if err := reticulum.Close(); err != nil {
-				rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+				logger.Log(fmt.Sprintf("Warning: Could not close Reticulum properly: %v", err), rns.LogWarning, false)
 			}
 		}
 	}()
@@ -620,6 +621,7 @@ func peerResponseCode(response any) (int, bool) {
 }
 
 func (c *clientT) requestSync(target string, remote string, configDirArg string, rnsConfigDir string, verbosity int, quietness int, timeout time.Duration, identityPathArg string) {
+	logger := c.getLogger()
 	peerDestinationHash, err := rns.HexToBytes(target)
 	if err != nil || len(peerDestinationHash) != rns.TruncatedHashLength/8 {
 		var msg string
@@ -642,7 +644,7 @@ func (c *clientT) requestSync(target string, remote string, configDirArg string,
 	defer func() {
 		if reticulum != nil {
 			if err := reticulum.Close(); err != nil {
-				rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+				logger.Log(fmt.Sprintf("Warning: Could not close Reticulum properly: %v", err), rns.LogWarning, false)
 			}
 		}
 	}()
@@ -715,6 +717,7 @@ func (c *clientT) requestSync(target string, remote string, configDirArg string,
 }
 
 func (c *clientT) requestUnpeer(target string, remote string, configDirArg string, rnsConfigDir string, verbosity int, quietness int, timeout time.Duration, identityPathArg string) {
+	logger := c.getLogger()
 	peerDestinationHash, err := rns.HexToBytes(target)
 	if err != nil || len(peerDestinationHash) != rns.TruncatedHashLength/8 {
 		var msg string
@@ -737,7 +740,7 @@ func (c *clientT) requestUnpeer(target string, remote string, configDirArg strin
 	defer func() {
 		if reticulum != nil {
 			if err := reticulum.Close(); err != nil {
-				rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+				logger.Log(fmt.Sprintf("Warning: Could not close Reticulum properly: %v", err), rns.LogWarning, false)
 			}
 		}
 	}()

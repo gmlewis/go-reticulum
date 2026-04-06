@@ -24,24 +24,18 @@ func TestStartupLogMessages(t *testing.T) {
 	}
 
 	var capturedLogs []string
-	rns.SetLogDest(rns.LogCallback)
-	rns.SetLogCallback(func(msg string) {
+	logger := rns.NewLogger()
+	logger.SetLogDest(rns.LogCallback)
+	logger.SetLogCallback(func(msg string) {
 		capturedLogs = append(capturedLogs, msg)
 	})
-	defer func() {
-		rns.SetLogDest(rns.LogStdout)
-		rns.SetLogCallback(nil)
-		rns.SetLogLevel(rns.LogNotice)
-	}()
-
-	// We set LogLevel high enough to see all messages
-	rns.SetLogLevel(rns.LogVerbose)
+	logger.SetLogLevel(rns.LogVerbose)
 
 	// Mocking the environment
 	identityPath := filepath.Join(configDir, "identity")
 
 	// Call loadOrCreateIdentity - should log something after fix
-	_, err := loadOrCreateIdentity(identityPath)
+	_, err := loadOrCreateIdentity(logger, identityPath)
 	if err != nil {
 		t.Fatalf("loadOrCreateIdentity: %v", err)
 	}
@@ -66,7 +60,7 @@ func TestStartupLogMessages(t *testing.T) {
 
 	// Now test loading existing identity
 	capturedLogs = nil
-	_, err = loadOrCreateIdentity(identityPath)
+	_, err = loadOrCreateIdentity(logger, identityPath)
 	if err != nil {
 		t.Fatalf("loadOrCreateIdentity (existing): %v", err)
 	}

@@ -264,23 +264,21 @@ func TestPropagationNodeSetup(t *testing.T) {
 func TestAuthWarningMessage(t *testing.T) {
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
+	var capturedLog string
 	c := &clientT{
 		ts:         rns.NewTransportSystem(),
 		ac:         &activeConfig{AuthRequired: true, AllowedIdentities: nil},
 		configpath: filepath.Join(tmpDir, "config"),
+		logger: func() *rns.Logger {
+			logger := rns.NewLogger()
+			logger.SetLogDest(rns.LogCallback)
+			logger.SetLogCallback(func(s string) {
+				capturedLog += s
+			})
+			logger.SetLogLevel(rns.LogInfo)
+			return logger
+		}(),
 	}
-
-	var capturedLog string
-	rns.SetLogDest(rns.LogCallback)
-	rns.SetLogCallback(func(s string) {
-		capturedLog = s
-	})
-	rns.SetLogLevel(rns.LogInfo)
-	defer func() {
-		rns.SetLogDest(rns.LogStdout)
-		rns.SetLogCallback(nil)
-		rns.SetLogLevel(rns.LogNotice)
-	}()
 
 	id, err := rns.NewIdentity(true)
 	mustTest(t, err)
@@ -365,7 +363,7 @@ func TestRouterConstruction(t *testing.T) {
 			"propagation_stamp_cost_target": "25",
 		},
 	}
-	ac, err := applyConfig(cfg)
+	ac, err := applyConfig(rns.NewLogger(), cfg)
 	mustTest(t, err)
 
 	identity, err := rns.NewIdentity(true)
@@ -467,7 +465,7 @@ func TestLoadOrCreateIdentityCreateThenReload(t *testing.T) {
 		t.Fatalf("mkdir identity dir: %v", err)
 	}
 
-	created, err := loadOrCreateIdentity(identityPath)
+	created, err := loadOrCreateIdentity(rns.NewLogger(), identityPath)
 	if err != nil {
 		t.Fatalf("loadOrCreateIdentity(create): %v", err)
 	}
@@ -475,7 +473,7 @@ func TestLoadOrCreateIdentityCreateThenReload(t *testing.T) {
 		t.Fatal("expected created identity with non-empty hash")
 	}
 
-	reloaded, err := loadOrCreateIdentity(identityPath)
+	reloaded, err := loadOrCreateIdentity(rns.NewLogger(), identityPath)
 	if err != nil {
 		t.Fatalf("loadOrCreateIdentity(reload): %v", err)
 	}
@@ -498,7 +496,7 @@ func TestLoadOrCreateIdentityCorruptFile(t *testing.T) {
 		t.Fatalf("write corrupt identity: %v", err)
 	}
 
-	if _, err := loadOrCreateIdentity(identityPath); err == nil {
+	if _, err := loadOrCreateIdentity(rns.NewLogger(), identityPath); err == nil {
 		t.Fatal("expected error for corrupt identity file")
 	}
 }

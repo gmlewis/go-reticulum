@@ -963,7 +963,7 @@ func TestFetchRemoteErrorWhenLinkIsMissing(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	handler := newFetchRequestHandler(true, "", false, nilFetchLinkResolver{})
+	handler := newFetchRequestHandler(rns.NewLogger(), true, "", false, nilFetchLinkResolver{})
 	response := handler("fetch_file", []byte(testFile), []byte("request-id"), []byte("link-id"), nil, time.Now())
 
 	if response != nil {

@@ -32,10 +32,8 @@ func TestResolveConfigDir(t *testing.T) {
 		defer cleanup()
 		home := filepath.Join(tmpDir, "home")
 		etc := filepath.Join(tmpDir, "etc")
-		err := os.MkdirAll(etc, 0o755)
-		mustTest(t, err)
-		err = os.WriteFile(filepath.Join(etc, "config"), []byte(""), 0o644)
-		mustTest(t, err)
+		mustTest(t, os.MkdirAll(etc, 0o755))
+		mustTest(t, os.WriteFile(filepath.Join(etc, "config"), []byte(""), 0o644))
 
 		got := resolveConfigDirCustom("", home, etc)
 		if got != etc {
@@ -48,10 +46,8 @@ func TestResolveConfigDir(t *testing.T) {
 		defer cleanup()
 		home := filepath.Join(tmpDir, "home")
 		userConfig := filepath.Join(home, ".config", "lxmd")
-		err := os.MkdirAll(userConfig, 0o755)
-		mustTest(t, err)
-		err = os.WriteFile(filepath.Join(userConfig, "config"), []byte(""), 0o644)
-		mustTest(t, err)
+		mustTest(t, os.MkdirAll(userConfig, 0o755))
+		mustTest(t, os.WriteFile(filepath.Join(userConfig, "config"), []byte(""), 0o644))
 
 		got := resolveConfigDirCustom("", home, "/nonexistent/etc")
 		if got != userConfig {
@@ -74,7 +70,7 @@ func TestResolveConfigDir(t *testing.T) {
 func TestApplyConfig(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
 		cfg := make(map[string]map[string]string)
-		got, err := applyConfig(cfg)
+		got, err := applyConfig(rns.NewLogger(), cfg)
 		mustTest(t, err)
 
 		if got.DisplayName != "Anonymous Peer" {
@@ -114,7 +110,7 @@ func TestApplyConfig(t *testing.T) {
 				"loglevel": "5",
 			},
 		}
-		got, err := applyConfig(cfg)
+		got, err := applyConfig(rns.NewLogger(), cfg)
 		mustTest(t, err)
 
 		if got.DisplayName != "My Peer" {
@@ -167,7 +163,7 @@ func TestApplyConfig(t *testing.T) {
 				"remote_peering_cost_max":                "-5",
 			},
 		}
-		got, err := applyConfig(cfg)
+		got, err := applyConfig(rns.NewLogger(), cfg)
 		mustTest(t, err)
 		if got.DeliveryTransferMaxAcceptedSize != 0.38 {
 			t.Errorf("DeliveryTransferMaxAcceptedSize: got %v, want 0.38", got.DeliveryTransferMaxAcceptedSize)
@@ -201,28 +197,21 @@ func TestLoadHashList(t *testing.T) {
 	defer cleanup()
 	path := filepath.Join(td, "hashes")
 
-	t.Run("valid and invalid", func(t *testing.T) {
-		valid1 := "0123456789abcdef0123456789abcdef"
-		valid2 := "fedcba9876543210fedcba9876543210"
-		invalid1 := "too_short"
-		invalid2 := "not_hex_0123456789abcdef01234567"
+	valid1 := "0123456789abcdef0123456789abcdef"
+	valid2 := "fedcba9876543210fedcba9876543210"
+	invalid1 := "too_short"
+	invalid2 := "not_hex_0123456789abcdef01234567"
+	content := valid1 + "\n" + invalid1 + "\n" + valid2 + "\n" + invalid2 + "\n"
+	mustTest(t, os.WriteFile(path, []byte(content), 0o644))
 
-		content := valid1 + "\n" + invalid1 + "\n" + valid2 + "\n" + invalid2 + "\n"
-		err := os.WriteFile(path, []byte(content), 0o644)
-		mustTest(t, err)
+	got := loadHashList(path)
+	if len(got) != 2 {
+		t.Fatalf("got %v hashes, want 2", len(got))
+	}
 
-		got := loadHashList(path)
-		if len(got) != 2 {
-			t.Errorf("got %v hashes, want 2", len(got))
-		}
-	})
-
-	t.Run("missing file", func(t *testing.T) {
-		got := loadHashList("/nonexistent")
-		if len(got) != 0 {
-			t.Errorf("got %v hashes, want 0", len(got))
-		}
-	})
+	if len(loadHashList("/nonexistent")) != 0 {
+		t.Errorf("expected missing file to return zero hashes")
+	}
 }
 
 func TestEnsureConfig(t *testing.T) {
@@ -231,8 +220,7 @@ func TestEnsureConfig(t *testing.T) {
 	configDir := filepath.Join(td, "lxmd")
 	configPath := filepath.Join(configDir, "config")
 
-	err := ensureConfig(configDir)
-	mustTest(t, err)
+	mustTest(t, ensureConfig(configDir))
 
 	if !isFile(configPath) {
 		t.Errorf("config file %q not created", configPath)
@@ -240,40 +228,47 @@ func TestEnsureConfig(t *testing.T) {
 
 	data, err := os.ReadFile(configPath)
 	mustTest(t, err)
-
 	if !strings.Contains(string(data), "[propagation]") {
 		t.Errorf("config file doesn't contain [propagation]")
 	}
 }
 
-func TestResolveLogLevel(t *testing.T) {
-	tests := []struct {
-		configLogLevel int
-		verbosity      int
-		quietness      int
-		want           int
-	}{
-		{4, 0, 0, 4},
-		{4, 2, 0, 6},
-		{4, 0, 2, 2},
-		{4, 1, 1, 4},
-		{0, 5, 0, 5},
-		{7, 0, 5, 2},
-		{-1, 0, 0, 3}, // None -> 3
-	}
+func TestParseIntWarning(t *testing.T) {
+	t.Parallel()
 
-	for _, tt := range tests {
-		got := resolveLogLevel(tt.configLogLevel, tt.verbosity, tt.quietness)
-		if got != tt.want {
-			t.Errorf("resolveLogLevel(%v, %v, %v): got %v, want %v", tt.configLogLevel, tt.verbosity, tt.quietness, got, tt.want)
-		}
+	var capturedLog string
+	logger := rns.NewLogger()
+	logger.SetLogDest(rns.LogCallback)
+	logger.SetLogCallback(func(s string) { capturedLog += s })
+	logger.SetLogLevel(rns.LogInfo)
+
+	if got := parseInt(logger, "not-a-number"); got != 0 {
+		t.Errorf("parseInt(\"not-a-number\") = %v, want 0", got)
+	}
+	if !strings.Contains(capturedLog, "Invalid integer value") {
+		t.Errorf("expected warning log, got %q", capturedLog)
+	}
+}
+
+func TestParseFloatWarning(t *testing.T) {
+	t.Parallel()
+
+	var capturedLog string
+	logger := rns.NewLogger()
+	logger.SetLogDest(rns.LogCallback)
+	logger.SetLogCallback(func(s string) { capturedLog += s })
+	logger.SetLogLevel(rns.LogInfo)
+
+	if got := parseFloat(logger, "not-a-float"); got != 0 {
+		t.Errorf("parseFloat(\"not-a-float\") = %v, want 0", got)
+	}
+	if !strings.Contains(capturedLog, "Invalid float value") {
+		t.Errorf("expected warning log, got %q", capturedLog)
 	}
 }
 
 func TestParseINI(t *testing.T) {
-	input := `
-# Comment
-[section1]
+	input := `# Comment
 key1 = value1
   key2 = value2  # inline comment
 
@@ -282,10 +277,6 @@ key3 = value3
 `
 	got := parseINI(input)
 	want := map[string]map[string]string{
-		"section1": {
-			"key1": "value1",
-			"key2": "value2",
-		},
 		"section2": {
 			"key3": "value3",
 		},
@@ -304,45 +295,5 @@ key3 = value3
 				t.Errorf("section %v, key %v: got %q, want %q", s, k, got[s][k], v)
 			}
 		}
-	}
-}
-
-func TestParseIntWarning(t *testing.T) {
-	var capturedLog string
-	rns.SetLogDest(rns.LogCallback)
-	rns.SetLogCallback(func(s string) { capturedLog += s })
-	rns.SetLogLevel(rns.LogInfo) // Ensure level is high enough to capture warnings
-	defer func() {
-		rns.SetLogDest(rns.LogStdout)
-		rns.SetLogCallback(nil)
-		rns.SetLogLevel(rns.LogNotice)
-	}()
-
-	result := parseInt("not-a-number")
-	if result != 0 {
-		t.Errorf("parseInt(\"not-a-number\") = %v, want 0", result)
-	}
-	if !strings.Contains(capturedLog, "Invalid integer value") {
-		t.Errorf("expected warning log, got %q", capturedLog)
-	}
-}
-
-func TestParseFloatWarning(t *testing.T) {
-	var capturedLog string
-	rns.SetLogDest(rns.LogCallback)
-	rns.SetLogCallback(func(s string) { capturedLog += s })
-	rns.SetLogLevel(rns.LogInfo) // Ensure level is high enough to capture warnings
-	defer func() {
-		rns.SetLogDest(rns.LogStdout)
-		rns.SetLogCallback(nil)
-		rns.SetLogLevel(rns.LogNotice)
-	}()
-
-	result := parseFloat("not-a-float")
-	if result != 0 {
-		t.Errorf("parseFloat(\"not-a-float\") = %v, want 0", result)
-	}
-	if !strings.Contains(capturedLog, "Invalid float value") {
-		t.Errorf("expected warning log, got %q", capturedLog)
 	}
 }

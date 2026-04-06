@@ -21,11 +21,14 @@ type fetchLinkFinder interface {
 	FindLink(linkID []byte) *rns.Link
 }
 
-func newFetchRequestHandler(allowFetch bool, jail string, noCompress bool, linkFinder fetchLinkFinder) func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func newFetchRequestHandler(logger *rns.Logger, allowFetch bool, jail string, noCompress bool, linkFinder fetchLinkFinder) func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+	if logger == nil {
+		logger = rns.NewLogger()
+	}
 	return func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
-		rns.Logf("FETCH_HANDLER CALLED: allowFetch=%v, path=%v, data=%v, requestID=%x", rns.LogVerbose, false, allowFetch, path, string(data), requestID)
+		logger.Log(fmt.Sprintf("FETCH_HANDLER CALLED: allowFetch=%v, path=%v, data=%v, requestID=%x", allowFetch, path, string(data), requestID), rns.LogVerbose, false)
 		if !allowFetch {
-			rns.Logf("fetch not allowed, returning 0xF0", rns.LogVerbose, false)
+			logger.Log("fetch not allowed, returning 0xF0", rns.LogVerbose, false)
 			return byte(0xF0)
 		}
 
@@ -36,7 +39,7 @@ func newFetchRequestHandler(allowFetch bool, jail string, noCompress bool, linkF
 			}
 			filePath := filepath.Clean(filepath.Join(jail, dataStr))
 			if !strings.HasPrefix(filePath, jail+"/") {
-				rns.Logf("Disallowing fetch request for %v outside of fetch jail %v", rns.LogWarning, false, filePath, jail)
+				logger.Log(fmt.Sprintf("Disallowing fetch request for %v outside of fetch jail %v", filePath, jail), rns.LogWarning, false)
 				return byte(0xF0)
 			}
 			data = []byte(filePath)
@@ -44,19 +47,19 @@ func newFetchRequestHandler(allowFetch bool, jail string, noCompress bool, linkF
 
 		filePath := string(data)
 		if _, err := os.Stat(filePath); err != nil {
-			rns.Logf("Client-requested file not found: %v", rns.LogVerbose, false, filePath)
+			logger.Log(fmt.Sprintf("Client-requested file not found: %v", filePath), rns.LogVerbose, false)
 			return false
 		}
 
 		link := linkFinder.FindLink(linkID)
 		if link == nil {
-			rns.Logf("Link not found for request %x", rns.LogError, false, requestID)
+			logger.Log(fmt.Sprintf("Link not found for request %x", requestID), rns.LogError, false)
 			return nil
 		}
 
 		fileData, err := os.ReadFile(filePath)
 		if err != nil {
-			rns.Logf("Could not read file %v: %v", rns.LogError, false, filePath, err)
+			logger.Log(fmt.Sprintf("Could not read file %v: %v", filePath, err), rns.LogError, false)
 			return false
 		}
 
@@ -69,15 +72,15 @@ func newFetchRequestHandler(allowFetch bool, jail string, noCompress bool, linkF
 			Metadata:     metadata,
 		})
 		if err != nil {
-			rns.Logf("Could not create resource: %v", rns.LogError, false, err)
+			logger.Log(fmt.Sprintf("Could not create resource: %v", err), rns.LogError, false)
 			return false
 		}
 		if err := resource.Advertise(); err != nil {
-			rns.Logf("Could not advertise resource: %v", rns.LogError, false, err)
+			logger.Log(fmt.Sprintf("Could not advertise resource: %v", err), rns.LogError, false)
 			return false
 		}
 
-		rns.Logf("Sending file %v to client", rns.LogVerbose, false, filePath)
+		logger.Log(fmt.Sprintf("Sending file %v to client", filePath), rns.LogVerbose, false)
 		return true
 	}
 }
@@ -144,7 +147,7 @@ func (a *appT) doListen(ts rns.Transport) {
 	if allowedFile != "" {
 		data, err := os.ReadFile(allowedFile)
 		if err != nil {
-			rns.Logf("Error while parsing allowed_identities file: %v", rns.LogError, false, err)
+			logger.Log(fmt.Sprintf("Error while parsing allowed_identities file: %v", err), rns.LogError, false)
 		} else {
 			lines := strings.ReplaceAll(string(data), "\r", "")
 			parts := strings.Split(lines, "\n")
@@ -164,7 +167,7 @@ func (a *appT) doListen(ts rns.Transport) {
 				if len(fileAllowed) > 1 {
 					suffix = "ies"
 				}
-				rns.Logf("Loaded %d allowed identit%s from %v", rns.LogVerbose, false, len(fileAllowed), suffix, allowedFile)
+				logger.Log(fmt.Sprintf("Loaded %d allowed identit%s from %v", len(fileAllowed), suffix, allowedFile), rns.LogVerbose, false)
 			}
 		}
 	}
@@ -188,43 +191,43 @@ func (a *appT) doListen(ts rns.Transport) {
 	if savePath != "" {
 		sp := filepath.Clean(savePath)
 		if _, err := os.Stat(sp); err != nil {
-			rns.Logf("Output directory not found", rns.LogError, false)
+			logger.Log("Output directory not found", rns.LogError, false)
 			os.Exit(3)
 		}
 		// Test if directory is writable by trying to open a temp file
 		tmpFile := filepath.Join(sp, ".gorncp_write_test")
 		f, err := os.OpenFile(tmpFile, os.O_CREATE|os.O_WRONLY, 0o600)
 		if err != nil {
-			rns.Logf("Output directory not writable", rns.LogError, false)
+			logger.Log("Output directory not writable", rns.LogError, false)
 			os.Exit(4)
 		}
 		if err := f.Close(); err != nil {
-			rns.Logf("Warning: Could not close temporary write test file %v: %v", rns.LogWarning, false, tmpFile, err)
+			logger.Log(fmt.Sprintf("Warning: Could not close temporary write test file %v: %v", tmpFile, err), rns.LogWarning, false)
 		}
 		if err := os.Remove(tmpFile); err != nil {
-			rns.Logf("Warning: Could not remove temporary write test file %v: %v", rns.LogWarning, false, tmpFile, err)
+			logger.Log(fmt.Sprintf("Warning: Could not remove temporary write test file %v: %v", tmpFile, err), rns.LogWarning, false)
 		}
-		rns.Logf("Saving received files in %q", rns.LogVerbose, false, sp)
+		logger.Log(fmt.Sprintf("Saving received files in %q", sp), rns.LogVerbose, false)
 	}
 
 	if overwrite {
-		rns.Log("Allowing overwrite of received files", rns.LogVerbose, false)
+		logger.Log("Allowing overwrite of received files", rns.LogVerbose, false)
 	}
 
 	if jail != "" {
 		fetchJail := filepath.Clean(jail)
-		rns.Logf("Restricting fetch requests to paths under %q", rns.LogVerbose, false, fetchJail)
+		logger.Log(fmt.Sprintf("Restricting fetch requests to paths under %q", fetchJail), rns.LogVerbose, false)
 	}
 
 	if len(allowed) > 0 {
-		rns.Logf("Allowing %d identity hash(es)", rns.LogVerbose, false, len(allowed))
+		logger.Log(fmt.Sprintf("Allowing %d identity hash(es)", len(allowed)), rns.LogVerbose, false)
 		for _, a := range allowed {
-			rns.Logf("  Allowed: %v", rns.LogVerbose, false, a)
+			logger.Log(fmt.Sprintf("  Allowed: %v", a), rns.LogVerbose, false)
 		}
 	}
 
 	if noAuth {
-		rns.Log("Accepting unauthenticated requests", rns.LogVerbose, false)
+		logger.Log("Accepting unauthenticated requests", rns.LogVerbose, false)
 	} else if len(allowedIdentityHashes) == 0 {
 		fmt.Println("Warning: No allowed identities configured, rncp will not accept any files!")
 	}
@@ -236,11 +239,11 @@ func (a *appT) doListen(ts rns.Transport) {
 	}
 
 	// Always register fetch handler, but check allowFetch inside (matches Python behavior)
-	rns.Logf("Registering fetch_file handler, allowFetch=%v", rns.LogVerbose, false, allowFetch)
-	dest.RegisterRequestHandler("fetch_file", newFetchRequestHandler(allowFetch, jail, noCompress, ts), rns.AllowAll, nil, !noCompress)
+	logger.Log(fmt.Sprintf("Registering fetch_file handler, allowFetch=%v", allowFetch), rns.LogVerbose, false)
+	dest.RegisterRequestHandler("fetch_file", newFetchRequestHandler(logger, allowFetch, jail, noCompress, ts), rns.AllowAll, nil, !noCompress)
 
 	dest.SetLinkEstablishedCallback(func(l *rns.Link) {
-		rns.Log("Incoming link established", rns.LogVerbose, false)
+		logger.Log("Incoming link established", rns.LogVerbose, false)
 		l.SetRemoteIdentifiedCallback(func(link *rns.Link, identity *rns.Identity) {
 			if identity != nil {
 				found := false
@@ -251,10 +254,10 @@ func (a *appT) doListen(ts rns.Transport) {
 					}
 				}
 				if found {
-					rns.Log("Authenticated sender", rns.LogVerbose, false)
+					logger.Log("Authenticated sender", rns.LogVerbose, false)
 				} else {
 					if !noAuth {
-						rns.Log("Sender not allowed, tearing down link", rns.LogVerbose, false)
+						logger.Log("Sender not allowed, tearing down link", rns.LogVerbose, false)
 						link.Teardown()
 					}
 				}
@@ -282,21 +285,21 @@ func (a *appT) doListen(ts rns.Transport) {
 			if remoteID := l.GetRemoteIdentity(); remoteID != nil {
 				idStr = " from " + rns.PrettyHex(remoteID.Hash)
 			}
-			rns.Logf("Starting resource transfer %x%s", rns.LogInfo, false, res.Hash(), idStr)
+			logger.Log(fmt.Sprintf("Starting resource transfer %x%s", res.Hash(), idStr), rns.LogInfo, false)
 		})
 		l.SetResourceConcludedCallback(func(res *rns.Resource) {
 			if res.Status() == rns.ResourceStatusComplete {
-				rns.Logf("%v completed", rns.LogInfo, false, res)
+				logger.Log(fmt.Sprintf("%v completed", res), rns.LogInfo, false)
 
 				metadata := res.Metadata()
 				if metadata == nil {
-					rns.Log("Invalid data received, ignoring resource", rns.LogError, false)
+					logger.Log("Invalid data received, ignoring resource", rns.LogError, false)
 					return
 				}
 
 				nameBytes, ok := metadata["name"]
 				if !ok {
-					rns.Log("Invalid data received, ignoring resource", rns.LogError, false)
+					logger.Log("Invalid data received, ignoring resource", rns.LogError, false)
 					return
 				}
 
@@ -307,7 +310,7 @@ func (a *appT) doListen(ts rns.Transport) {
 				if savePath != "" {
 					savedFilename = filepath.Clean(filepath.Join(savePath, filename))
 					if !strings.HasPrefix(savedFilename, savePath+"/") {
-						rns.Logf("Invalid save path %v, ignoring", rns.LogError, false, savedFilename)
+						logger.Log(fmt.Sprintf("Invalid save path %v, ignoring", savedFilename), rns.LogError, false)
 						return
 					}
 				} else {
@@ -318,7 +321,7 @@ func (a *appT) doListen(ts rns.Transport) {
 				if overwrite {
 					if _, err := os.Stat(fullSavePath); err == nil {
 						if err := os.Remove(fullSavePath); err != nil {
-							rns.Logf("Could not overwrite existing file %v, renaming instead", rns.LogError, false, fullSavePath)
+							logger.Log(fmt.Sprintf("Could not overwrite existing file %v, renaming instead", fullSavePath), rns.LogError, false)
 							overwrite = false
 						}
 					}
@@ -333,13 +336,13 @@ func (a *appT) doListen(ts rns.Transport) {
 				}
 
 				if err := os.WriteFile(fullSavePath, res.Data(), 0o644); err != nil {
-					rns.Logf("An error occurred while saving received resource: %v", rns.LogError, false, err)
+					logger.Log(fmt.Sprintf("An error occurred while saving received resource: %v", err), rns.LogError, false)
 					return
 				}
 
-				rns.Logf("Saved resource to %v", rns.LogVerbose, false, fullSavePath)
+				logger.Log(fmt.Sprintf("Saved resource to %v", fullSavePath), rns.LogVerbose, false)
 			} else {
-				rns.Log("Resource failed", rns.LogError, false)
+				logger.Log("Resource failed", rns.LogError, false)
 			}
 		})
 	})
@@ -347,16 +350,16 @@ func (a *appT) doListen(ts rns.Transport) {
 	fmt.Printf("Listening on : <%x>\n", dest.Hash)
 
 	if announceInterval >= 0 {
-		rns.Logf("Announcing destination (interval=%v)", rns.LogVerbose, false, announceInterval)
+		logger.Log(fmt.Sprintf("Announcing destination (interval=%v)", announceInterval), rns.LogVerbose, false)
 		if err := dest.Announce(nil); err != nil {
-			rns.Logf("Announce failed: %v", rns.LogError, false, err)
+			logger.Log(fmt.Sprintf("Announce failed: %v", err), rns.LogError, false)
 		}
 		if announceInterval > 0 {
 			go func() {
 				for {
 					time.Sleep(time.Duration(announceInterval) * time.Second)
 					if err := dest.Announce(nil); err != nil {
-						rns.Logf("Announce failed: %v", rns.LogError, false, err)
+						logger.Log(fmt.Sprintf("Announce failed: %v", err), rns.LogError, false)
 					}
 				}
 			}()
