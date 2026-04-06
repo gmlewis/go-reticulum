@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
@@ -100,9 +99,7 @@ func main() {
 	sent := 0
 	replies := 0
 	for count := 0; count < app.probes; count++ {
-		if sent > 0 {
-			time.Sleep(time.Duration(app.wait * float64(time.Second)))
-		}
+		sleepBetweenProbes(sent, app.wait, time.Sleep)
 
 		payload := make([]byte, app.size)
 		rand.Read(payload)
@@ -127,28 +124,11 @@ func main() {
 			continue
 		}
 
-		i := 0
-		syms := []string{"⢄", "⢂", "⢁", "⡁", "⡈", "⡐", "⡠"}
-		deadline := time.Now().Add(time.Duration(probeTimeout * float64(time.Second)))
-
-		delivered := false
-		for time.Now().Before(deadline) {
-			if receipt.Status == rns.ReceiptDelivered {
-				delivered = true
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-			fmt.Printf("\b\b%v ", syms[i])
-			i = (i + 1) % len(syms)
-		}
-
-		if delivered {
+		if waitForProbeReceiptAt(os.Stdout, receipt, probeTimeout, time.Now, time.Sleep) {
 			fmt.Printf("\b\b \n")
 			replies++
 			hops := ts.GetPathEntry(destHash).Hops
 			fmt.Print(formatProbeReplyLine(destHash, time.Since(startTime).Seconds(), hops, ""))
-		} else {
-			fmt.Printf("\r%v\rProbe timed out\n", strings.Repeat(" ", 64))
 		}
 	}
 
