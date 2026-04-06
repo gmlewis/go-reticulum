@@ -8,8 +8,9 @@ package main
 import (
 	"errors"
 	"flag"
-	"fmt"
 	"io"
+
+	"github.com/gmlewis/go-reticulum/utils"
 )
 
 type appT struct {
@@ -23,6 +24,22 @@ type appT struct {
 }
 
 var errHelp = errors.New("help requested")
+
+const usageText = `
+usage: gornx [-h] [--config CONFIG] [-i IDENTITY] [-v] [-q] [-l] [-x]
+							 [destination_hash command]
+
+Reticulum remote command execution compatible with rnx
+
+options:
+	-h, --help       show this help message and exit
+	--config CONFIG  path to alternative Reticulum config directory
+	-i IDENTITY      path to identity to use
+	-v               increase verbosity
+	-q               decrease verbosity
+	-l               listen for incoming commands
+	-x               enter interactive mode
+`
 
 func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
 	app := &appT{}
@@ -48,18 +65,5 @@ func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
 }
 
 func (a *appT) usage(w io.Writer) {
-	_, _ = fmt.Fprintf(w, `usage: gornx [-h] [--config CONFIG] [-i IDENTITY] [-v] [-q] [-l] [-x]
-               [destination_hash command]
-
-Reticulum remote command execution compatible with rnx
-
-options:
-  -h, --help       show this help message and exit
-  --config CONFIG  path to alternative Reticulum config directory
-  -i IDENTITY      path to identity to use
-  -v               increase verbosity
-  -q               decrease verbosity
-  -l               listen for incoming commands
-  -x               enter interactive mode
-`)
+	utils.WriteText(w, usageText)
 }

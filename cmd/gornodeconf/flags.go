@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-const helpText = `usage: gornodeconf [-h] [-i] [-a] [-u] [-U] [--fw-version version]
+const usageText = `usage: gornodeconf [-h] [-i] [-a] [-u] [-U] [--fw-version version]
                     [--fw-url url] [--nocheck] [-e] [-E] [-C]
                     [--baud-flash baud_flash] [-N] [-T] [-b] [-B] [-p]
                     [-w mode] [--channel channel] [--ssid ssid] [--psk psk]
@@ -156,7 +156,7 @@ type options struct {
 }
 
 func printHelp() {
-	fmt.Print(helpText)
+	fmt.Print(usageText)
 }
 
 func hasHelp(args []string) bool {

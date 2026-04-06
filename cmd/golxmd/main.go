@@ -11,7 +11,6 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -25,6 +24,7 @@ import (
 
 	"github.com/gmlewis/go-reticulum/lxmf"
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/utils"
 )
 
 type clientT struct {
@@ -57,10 +57,13 @@ const (
 
 func main() {
 	log.SetFlags(0)
-	app := newApp()
-	app.initFlags(flag.CommandLine)
-	flag.Usage = app.usage
-	flag.Parse()
+	app, err := parseFlags(os.Args[1:], os.Stderr)
+	if err != nil {
+		if err == utils.ErrHelp {
+			return
+		}
+		log.Fatal(err)
+	}
 	app.run()
 }
 

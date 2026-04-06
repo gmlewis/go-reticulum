@@ -7,12 +7,13 @@ package main
 
 import (
 	"flag"
+	"io"
 	"testing"
 )
 
 func TestAppFlags(t *testing.T) {
 	t.Parallel()
-	app, err := parseFlags([]string{"--config", "/tmp/config", "--silent", "--allow-fetch", "--jail", "/home", "--save", "/tmp/save", "--overwrite", "-b", "5", "-a", "abc123", "--no-auth", "--print-identity", "--phy-rates", "-w", "30", "--version"})
+	app, err := parseFlags([]string{"--config", "/tmp/config", "--silent", "--allow-fetch", "--jail", "/home", "--save", "/tmp/save", "--overwrite", "-b", "5", "-a", "abc123", "--no-auth", "--print-identity", "--phy-rates", "-w", "30", "--version"}, io.Discard)
 	if err != nil {
 		t.Fatalf("parseFlags failed: %v", err)
 	}

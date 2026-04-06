@@ -135,7 +135,7 @@ func sizeStr(num float64, suffix string) string {
 
 func main() {
 	log.SetFlags(0)
-	app, err := parseFlags(os.Args[1:])
+	app, err := parseFlags(os.Args[1:], os.Stderr)
 	if err != nil {
 		if err == errHelp {
 			return
@@ -176,7 +176,7 @@ func main() {
 		os.Exit(0)
 	} else if app.fetchMode {
 		if len(app.args) < 2 {
-			app.usage()
+			app.usage(os.Stderr)
 			log.Fatal("destination and file must be specified")
 		}
 		destHashHex := app.args[0]
@@ -184,7 +184,7 @@ func main() {
 		doFetch(ts, app.identityPath, destHashHex, fileName, app.noCompress, app.silent, app.savePath, app.overwrite, app.phyRates, app.timeoutSec)
 	} else {
 		if len(app.args) < 2 {
-			app.usage()
+			app.usage(os.Stderr)
 			log.Fatal("destination and file must be specified")
 		}
 		destHashHex := app.args[0]

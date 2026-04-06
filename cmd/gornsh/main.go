@@ -58,8 +58,11 @@ const (
 var nonWordRE = regexp.MustCompile(`\W+`)
 
 func main() {
-	opts, err := parseFlags(os.Args[1:])
+	opts, err := parseFlags(os.Args[1:], os.Stderr)
 	if err != nil {
+		if err == errHelp {
+			return
+		}
 		log.Fatalf("gornsh: %v", err)
 	}
 

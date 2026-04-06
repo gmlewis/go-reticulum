@@ -9,6 +9,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
+	"os"
+
+	"github.com/gmlewis/go-reticulum/utils"
 )
 
 var errHelp = errors.New("help requested")
@@ -72,11 +76,17 @@ type appT struct {
 	args             []string
 }
 
-func parseFlags(args []string) (*appT, error) {
+func (a *appT) usage(w io.Writer) {
+	utils.WriteText(w, usageText)
+}
+
+func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
 	app := &appT{timeoutSec: 15.0, announceInterval: -1}
 	fs := flag.NewFlagSet("gorncp", flag.ContinueOnError)
-	fs.SetOutput(flag.CommandLine.Output())
-	fs.Usage = app.usage
+	fs.SetOutput(io.Discard)
+	fs.Usage = func() {
+		app.usage(usageOutput)
+	}
 	fs.StringVar(&app.configDir, "config", "", "path to alternative Reticulum config directory")
 	fs.StringVar(&app.identityPath, "i", "", "path to identity to use")
 	fs.BoolVar(&app.verbose, "v", false, "increase verbosity")
@@ -118,12 +128,8 @@ func parseFlags(args []string) (*appT, error) {
 	return app, nil
 }
 
-func (a *appT) usage() {
-	fmt.Print(usageText)
-}
-
 func printUsage() {
-	fmt.Print(usageText)
+	_, _ = fmt.Fprint(os.Stdout, usageText)
 }
 
 func (a *appT) validate() error {

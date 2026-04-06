@@ -6,9 +6,12 @@
 package main
 
 import (
+	"errors"
 	"flag"
-	"fmt"
+	"io"
 	"strconv"
+
+	"github.com/gmlewis/go-reticulum/utils"
 )
 
 // counter implements flag.Value for a counted flag (e.g. -v -v -v).
@@ -31,8 +34,8 @@ type appT struct {
 
 func newApp() *appT { return &appT{} }
 
-func (a *appT) usage() {
-	_, _ = fmt.Fprint(flag.CommandLine.Output(), usageText)
+func (a *appT) usage(w io.Writer) {
+	utils.WriteText(w, usageText)
 }
 
 func (a *appT) initFlags(fs *flag.FlagSet) {
@@ -43,6 +46,21 @@ func (a *appT) initFlags(fs *flag.FlagSet) {
 	fs.Var(&a.quiet, "quiet", "decrease verbosity")
 	fs.BoolVar(&a.exampleConfig, "exampleconfig", false, "print verbose configuration example to stdout and exit")
 	fs.BoolVar(&a.version, "version", false, "show program's version number and exit")
+}
+
+func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
+	app := newApp()
+	fs := utils.NewFlagSet("gornir", func() {
+		app.usage(usageOutput)
+	})
+	app.initFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil, utils.ErrHelp
+		}
+		return nil, err
+	}
+	return app, nil
 }
 
 const usageText = `

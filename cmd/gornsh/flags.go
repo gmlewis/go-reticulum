@@ -6,6 +6,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -18,6 +19,8 @@ const usageText = `Usage:
   gornsh [-c <configdir>] [-i <identityfile>] [-v | -q] -p
   gornsh [-c <configdir>] [-i <identityfile>] [-v | -q] <destination_hash> [--] [program [args ...]]
 `
+
+var errHelp = errors.New("help requested")
 
 type options struct {
 	configDir     string
@@ -59,13 +62,13 @@ func usage(w io.Writer) {
 	_, _ = fmt.Fprint(w, usageText)
 }
 
-func parseFlags(args []string) (options, error) {
+func parseFlags(args []string, usageOutput io.Writer) (options, error) {
 	var opts options
 
 	fs := flag.NewFlagSet("gornsh", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	fs.Usage = func() {
-		usage(io.Discard)
+		usage(usageOutput)
 	}
 
 	configShort := fs.String("c", "", "alternate Reticulum config directory")
@@ -104,6 +107,9 @@ func parseFlags(args []string) (options, error) {
 	fs.Var(&allowValues, "allowed", "identity hash allowed to connect")
 
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return options{}, errHelp
+		}
 		return options{}, err
 	}
 

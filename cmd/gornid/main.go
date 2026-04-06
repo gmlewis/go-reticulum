@@ -32,7 +32,6 @@ import (
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/hex"
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -40,6 +39,7 @@ import (
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/utils"
 )
 
 type appT struct {
@@ -84,7 +84,7 @@ func (a *appT) run() {
 	}
 
 	if a.version {
-		fmt.Printf("gornid %v\n", rns.VERSION)
+		utils.PrintVersion(os.Stdout, "gornid", rns.VERSION)
 		return
 	}
 
@@ -113,8 +113,8 @@ func (a *appT) run() {
 	}
 
 	if a.generatePath == "" && a.identityPath == "" {
-		_, _ = fmt.Fprint(flag.CommandLine.Output(), "\nNo identity provided, cannot continue\n")
-		flag.Usage()
+		_, _ = fmt.Fprint(os.Stderr, "\nNo identity provided, cannot continue\n")
+		a.usage(os.Stderr)
 		os.Exit(2)
 	}
 
@@ -169,10 +169,13 @@ func (a *appT) run() {
 
 func main() {
 	log.SetFlags(0)
-	app := newApp()
-	app.initFlags(flag.CommandLine)
-	flag.Usage = app.usage
-	flag.Parse()
+	app, err := parseFlags(os.Args[1:], os.Stderr)
+	if err != nil {
+		if err == utils.ErrHelp {
+			return
+		}
+		log.Fatal(err)
+	}
 	app.run()
 }
 

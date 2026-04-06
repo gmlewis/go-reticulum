@@ -6,10 +6,14 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"strconv"
 	"time"
+
+	"github.com/gmlewis/go-reticulum/utils"
 )
 
 const usageText = `
@@ -65,8 +69,8 @@ func newApp() *appT {
 	return &appT{}
 }
 
-func (a *appT) usage() {
-	_, _ = fmt.Fprint(flag.CommandLine.Output(), usageText)
+func (a *appT) usage(w io.Writer) {
+	utils.WriteText(w, usageText)
 }
 
 func (a *appT) initFlags(fs *flag.FlagSet) {
@@ -94,6 +98,23 @@ func (a *appT) initFlags(fs *flag.FlagSet) {
 	fs.Var(&a.verbosity, "verbose", "enable verbose logging (stackable)")
 	fs.Var(&a.quietness, "q", "reduce log verbosity (stackable)")
 	fs.Var(&a.quietness, "quiet", "reduce log verbosity (stackable)")
+}
+
+func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
+	app := newApp()
+	fs := flag.NewFlagSet("golxmd", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.Usage = func() {
+		app.usage(usageOutput)
+	}
+	app.initFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil, utils.ErrHelp
+		}
+		return nil, err
+	}
+	return app, nil
 }
 
 type timeoutFlag time.Duration

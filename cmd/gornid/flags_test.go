@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"io"
 	"testing"
@@ -65,5 +66,23 @@ func TestLongFormParserAliases(t *testing.T) {
 	}
 	if app.generatePath != "out.id" || app.identityPath != "in.id" || !app.printIdentity {
 		t.Fatalf("unexpected alias state: %+v", app)
+	}
+}
+
+func TestParseFlags(t *testing.T) {
+	t.Parallel()
+	app, err := parseFlags([]string{"--verbose", "--quiet", "--version"}, io.Discard)
+	if err != nil {
+		t.Fatalf("parseFlags failed: %v", err)
+	}
+	if app.verbose != 1 || app.quiet != 1 || !app.version {
+		t.Fatalf("unexpected app state: %+v", app)
+	}
+}
+
+func TestUsageText(t *testing.T) {
+	t.Parallel()
+	if got := bytes.NewBufferString(usageText).String(); got == "" || !bytes.Contains([]byte(got), []byte("Go Reticulum Identity & Encryption Utility")) {
+		t.Fatalf("usageText missing expected content: %q", got)
 	}
 }

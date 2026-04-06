@@ -6,9 +6,12 @@
 package main
 
 import (
+	"errors"
 	"flag"
-	"fmt"
+	"io"
 	"strconv"
+
+	"github.com/gmlewis/go-reticulum/utils"
 )
 
 // counter implements flag.Value for a counted flag (e.g. -v -v -v).
@@ -21,11 +24,28 @@ func (c *counter) Set(string) error {
 }
 func (c *counter) IsBoolFlag() bool { return true }
 
-func newApp() *appT { return &appT{timeout: 15.0} }
-
-func (a *appT) usage() {
-	_, _ = fmt.Fprint(flag.CommandLine.Output(), usageText)
+func (a *appT) usage(w io.Writer) {
+	utils.WriteText(w, usageText)
 }
+
+func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
+	app := newApp()
+	fs := flag.NewFlagSet("gornid", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.Usage = func() {
+		app.usage(usageOutput)
+	}
+	app.initFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil, utils.ErrHelp
+		}
+		return nil, err
+	}
+	return app, nil
+}
+
+func newApp() *appT { return &appT{timeout: 15.0} }
 
 func (a *appT) initFlags(fs *flag.FlagSet) {
 	fs.StringVar(&a.configDir, "config", "", "path to alternative Reticulum config directory")

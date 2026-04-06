@@ -36,4 +36,3 @@ func PrintVersion(w io.Writer, appName, version string) {
 func WriteText(w io.Writer, text string) {
 	_, _ = io.WriteString(w, text)
 }
-

@@ -21,8 +21,8 @@ func TestHelpOutputMatchesPythonSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("gornodeconf --help failed: %v\n%v", err, out)
 	}
-	if strings.TrimSpace(out) != strings.TrimSpace(helpText) {
-		t.Fatalf("help output mismatch:\n--- got ---\n%v\n--- want ---\n%v", out, helpText)
+	if strings.TrimSpace(out) != strings.TrimSpace(usageText) {
+		t.Fatalf("help output mismatch:\n--- got ---\n%v\n--- want ---\n%v", out, usageText)
 	}
 }
 
@@ -32,8 +32,8 @@ func TestNoPortPrintsHelpAndExitsZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("gornodeconf without port failed: %v\n%v", err, out)
 	}
-	if strings.TrimSpace(out) != strings.TrimSpace(helpText) {
-		t.Fatalf("no-port output mismatch:\n--- got ---\n%v\n--- want ---\n%v", out, helpText)
+	if strings.TrimSpace(out) != strings.TrimSpace(usageText) {
+		t.Fatalf("no-port output mismatch:\n--- got ---\n%v\n--- want ---\n%v", out, usageText)
 	}
 }
 
