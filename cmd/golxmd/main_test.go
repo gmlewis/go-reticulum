@@ -50,6 +50,29 @@ func TestAppFlags(t *testing.T) {
 	}
 }
 
+func TestNewRuntimeOwnsLogger(t *testing.T) {
+	t.Parallel()
+	runtime := newRuntime(newApp())
+	if runtime == nil {
+		t.Fatal("newRuntime returned nil")
+	}
+	if runtime.logger == nil {
+		t.Fatal("runtime logger is nil")
+	}
+	if runtime.client == nil {
+		t.Fatal("runtime client is nil")
+	}
+	if runtime.client.logger != runtime.logger {
+		t.Fatalf("client logger %p does not match runtime logger %p", runtime.client.logger, runtime.logger)
+	}
+	if runtime.client.ts == nil {
+		t.Fatal("runtime client transport system is nil")
+	}
+	if runtime.client.now == nil {
+		t.Fatal("runtime client clock is nil")
+	}
+}
+
 func TestJobs(t *testing.T) {
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()

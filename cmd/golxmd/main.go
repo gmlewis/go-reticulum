@@ -51,6 +51,12 @@ type clientT struct {
 	mockRequestUnpeer func(id *rns.Identity, targetHash []byte, remoteIdentity *rns.Identity, timeout time.Duration, exitOnFail bool) (any, error)
 }
 
+type runtimeT struct {
+	app    *appT
+	logger *rns.Logger
+	client *clientT
+}
+
 const (
 	jobsInterval        = 5 * time.Second
 	maintenanceInterval = 10 // Maintenance every 10 ticks (50s)
@@ -65,7 +71,7 @@ func main() {
 		}
 		log.Fatal(err)
 	}
-	app.run()
+	newRuntime(app).run()
 }
 
 func (c *clientT) exit(code int) {
@@ -83,7 +89,27 @@ func (c *clientT) getLogger() *rns.Logger {
 	return c.logger
 }
 
+func newRuntime(app *appT) *runtimeT {
+	if app == nil {
+		app = newApp()
+	}
+	logger := rns.NewLogger()
+	return &runtimeT{
+		app:    app,
+		logger: logger,
+		client: &clientT{ts: rns.NewTransportSystem(), now: time.Now, logger: logger},
+	}
+}
+
 func (a *appT) run() {
+	newRuntime(a).run()
+}
+
+func (r *runtimeT) run() {
+	if r == nil {
+		return
+	}
+	a := r.app
 	if a.timeout == 0 {
 		a.timeout = applyTimeoutDefaults(a.displayStatus, a.displayPeers, a.syncHash, a.unpeerHash)
 	}
@@ -98,10 +124,7 @@ func (a *appT) run() {
 		return
 	}
 
-	c := &clientT{
-		ts:  rns.NewTransportSystem(),
-		now: time.Now,
-	}
+	c := r.client
 
 	if a.displayStatus || a.displayPeers {
 		c.getStatus(a.remoteHash, a.configDir, a.rnsConfigDir, int(a.verbosity), int(a.quietness), a.timeout, a.displayStatus, a.displayPeers, a.identityPath)
@@ -118,25 +141,23 @@ func (a *appT) run() {
 		return
 	}
 
-	loadLogger := rns.NewLogger()
 	a.configDir = resolveConfigDir(a.configDir)
 	if err := ensureConfig(a.configDir); err != nil {
 		log.Fatalf("ensure config: %v", err)
 	}
 
 	var err error
-	c.ac, err = loadConfig(loadLogger, a.configDir)
+	c.ac, err = loadConfig(r.logger, a.configDir)
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
 
-	logger := rns.NewLogger()
-	logger.SetLogLevel(resolveLogLevel(c.ac.LogLevel, int(a.verbosity), int(a.quietness)))
+	r.logger.SetLogLevel(resolveLogLevel(c.ac.LogLevel, int(a.verbosity), int(a.quietness)))
 
-	setupLogging(logger, a.runAsService, a.configDir)
-	logger.Log(fmt.Sprintf("Configuration loaded from %v", a.configDir), rns.LogVerbose, false)
+	setupLogging(r.logger, a.runAsService, a.configDir)
+	r.logger.Log(fmt.Sprintf("Configuration loaded from %v", a.configDir), rns.LogVerbose, false)
 
-	logger.Log("Substantiating Reticulum...", rns.LogInfo, false)
+	r.logger.Log("Substantiating Reticulum...", rns.LogInfo, false)
 	if _, err := rns.NewReticulum(c.ts, a.rnsConfigDir); err != nil {
 		log.Fatalf("initialize Reticulum: %v", err)
 	}
@@ -147,10 +168,11 @@ func (a *appT) run() {
 		log.Fatalf("resolve paths: %v", err)
 	}
 
-	identity, err := loadOrCreateIdentity(logger, resolvedIdentityPath)
+	identity, err := loadOrCreateIdentity(r.logger, resolvedIdentityPath)
 	if err != nil {
 		log.Fatalf("load identity: %v", err)
 	}
+	c.identity = identity
 
 	if a.cmdOnInbound != "" {
 		// Note: Python's lxmd.py accepts the --on-inbound CLI arg but fails to
@@ -160,7 +182,7 @@ func (a *appT) run() {
 	}
 
 	router, err := lxmf.NewRouterFromConfig(c.ts, lxmf.RouterConfig{
-		Identity:                   c.identity,
+		Identity:                   identity,
 		StoragePath:                resolvedStorage,
 		Autopeer:                   c.ac.Autopeer,
 		AutopeerMaxdepth:           c.ac.AutopeerMaxdepth,
@@ -190,7 +212,7 @@ func (a *appT) run() {
 	if err != nil {
 		log.Fatalf("register delivery destination: %v", err)
 	}
-	logger.Log(fmt.Sprintf("LXMF Router ready to receive on %v", rns.PrettyHex(lxmfDestination.Hash)), rns.LogInfo, false)
+	r.logger.Log(fmt.Sprintf("LXMF Router ready to receive on %v", rns.PrettyHex(lxmfDestination.Hash)), rns.LogInfo, false)
 
 	c.ts.Remember(nil, lxmfDestination.Hash, identity.GetPublicKey(), nil)
 
@@ -213,7 +235,7 @@ func (a *appT) run() {
 		if err != nil {
 			log.Fatalf("register propagation destination: %v", err)
 		}
-		logger.Log(fmt.Sprintf("LXMF Propagation Node started on %v", rns.PrettyHex(propDest.Hash)), rns.LogInfo, false)
+		r.logger.Log(fmt.Sprintf("LXMF Propagation Node started on %v", rns.PrettyHex(propDest.Hash)), rns.LogInfo, false)
 
 		allowed := make([][]byte, 0, len(c.ac.ControlAllowedIdentities))
 		for _, s := range c.ac.ControlAllowedIdentities {
@@ -236,7 +258,7 @@ func (a *appT) run() {
 	}
 
 	log.Printf("golxmd running with identity %x", identity.Hash)
-	logger.Log(fmt.Sprintf("Started golxmd version %v", rns.VERSION), rns.LogNotice, false)
+	r.logger.Log(fmt.Sprintf("Started golxmd version %v", rns.VERSION), rns.LogNotice, false)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
