@@ -94,7 +94,10 @@ func TestUDPInterfaceParity(t *testing.T) {
 
 	received := make(chan []byte, 1)
 	handler := func(data []byte, iface Interface) {
-		received <- data
+		select {
+		case received <- data:
+		default:
+		}
 	}
 
 	goIface := mustTestNewUDPInterface(t, "go_udp", "127.0.0.1", goListenPort, "127.0.0.1", pyListenPort, handler)
@@ -105,17 +108,24 @@ func TestUDPInterfaceParity(t *testing.T) {
 	})
 
 	msg := []byte("hello from go to python")
-	if err := goIface.Send(msg); err != nil {
-		t.Fatalf("failed to send data to Python: %v", err)
-	}
-
-	select {
-	case data := <-received:
-		if !bytes.Equal(msg, data) {
-			t.Errorf("received data mismatch: expected %s, got %s", msg, data)
+	deadline := time.After(10 * time.Second)
+	for {
+		if err := goIface.Send(msg); err != nil {
+			t.Fatalf("failed to send data to Python: %v", err)
 		}
-	case <-time.After(10 * time.Second):
-		t.Errorf("timed out waiting for echo from Python")
+
+		select {
+		case data := <-received:
+			if !bytes.Equal(msg, data) {
+				t.Errorf("received data mismatch: expected %s, got %s", msg, data)
+			}
+			return
+		case <-time.After(100 * time.Millisecond):
+			continue
+		case <-deadline:
+			t.Errorf("timed out waiting for echo from Python")
+			return
+		}
 	}
 }
 
