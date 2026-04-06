@@ -48,3 +48,15 @@ func formatProbeHopSuffix(hops int) string {
 func formatProbeReplyLine(destHash []byte, rttSeconds float64, hops int, receptionStats string) string {
 	return fmt.Sprintf("Valid reply from %v\nRound-trip time is %v over %v hop%v%v\n", rns.PrettyHex(destHash), formatProbeRTTString(rttSeconds), hops, formatProbeHopSuffix(hops), receptionStats)
 }
+
+func formatProbeLossSummary(sent, received int) (string, int) {
+	if sent == 0 {
+		return "Sent 0, received 0, packet loss 0.00%", 0
+	}
+	loss := (1.0 - float64(received)/float64(sent)) * 100.0
+	exitCode := 0
+	if loss > 0 {
+		exitCode = 2
+	}
+	return fmt.Sprintf("Sent %v, received %v, packet loss %.2f%%", sent, received, loss), exitCode
+}

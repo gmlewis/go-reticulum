@@ -60,3 +60,32 @@ func TestProbeHopSuffix(t *testing.T) {
 		t.Fatalf("formatProbeHopSuffix(2) = %q, want %q", got, want)
 	}
 }
+
+func TestProbeLossSummary(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		sent     int
+		received int
+		wantText string
+		wantExit int
+	}{
+		{name: "no loss", sent: 4, received: 4, wantText: "Sent 4, received 4, packet loss 0.00%", wantExit: 0},
+		{name: "partial loss", sent: 10, received: 7, wantText: "Sent 10, received 7, packet loss 30.00%", wantExit: 2},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			gotText, gotExit := formatProbeLossSummary(tc.sent, tc.received)
+			if gotText != tc.wantText {
+				t.Fatalf("formatProbeLossSummary text = %q, want %q", gotText, tc.wantText)
+			}
+			if gotExit != tc.wantExit {
+				t.Fatalf("formatProbeLossSummary exit = %v, want %v", gotExit, tc.wantExit)
+			}
+		})
+	}
+}

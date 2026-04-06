@@ -152,9 +152,10 @@ func main() {
 		}
 	}
 
-	loss := (1.0 - float64(replies)/float64(sent)) * 100.0
-	fmt.Printf("Sent %v, received %v, packet loss %.2f%%\n", sent, replies, loss)
-	if loss > 0 {
-		os.Exit(2)
+	if summary, exitCode := formatProbeLossSummary(sent, replies); true {
+		fmt.Println(summary)
+		if exitCode > 0 {
+			os.Exit(exitCode)
+		}
 	}
 }
