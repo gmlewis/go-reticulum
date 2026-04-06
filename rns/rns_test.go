@@ -12,10 +12,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
 )
+
+var testTCPPortCounter atomic.Uint32
 
 func closeReticulum(t *testing.T, r *Reticulum) {
 	t.Helper()
@@ -29,16 +32,22 @@ func closeReticulum(t *testing.T, r *Reticulum) {
 
 func reserveTCPPort(t *testing.T) int {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("reserveTCPPort listen error: %v", err)
+	for {
+		port := 43000 + int(testTCPPortCounter.Add(1)%20000)
+		l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%v", port))
+		if err != nil {
+			continue
+		}
+		addr, ok := l.Addr().(*net.TCPAddr)
+		if !ok {
+			_ = l.Close()
+			t.Fatalf("reserveTCPPort unexpected addr type: %T", l.Addr())
+		}
+		if err := l.Close(); err != nil {
+			t.Fatalf("reserveTCPPort close error: %v", err)
+		}
+		return addr.Port
 	}
-	defer func() { _ = l.Close() }()
-	addr, ok := l.Addr().(*net.TCPAddr)
-	if !ok {
-		t.Fatalf("reserveTCPPort unexpected addr type: %T", l.Addr())
-	}
-	return addr.Port
 }
 
 func tempDir(t *testing.T) (string, func()) {

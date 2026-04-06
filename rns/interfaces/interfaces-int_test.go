@@ -24,13 +24,6 @@ func getPythonPath() string {
 	if path := os.Getenv("ORIGINAL_RETICULUM_REPO_DIR"); path != "" {
 		return path
 	}
-	// Fallback for local development if env var is not set but symlink exists
-	if _, err := os.Stat("original-reticulum-repo"); err == nil {
-		abs, err := filepath.Abs("original-reticulum-repo")
-		if err == nil {
-			return abs
-		}
-	}
 	log.Fatalf("missing required environment variable: ORIGINAL_RETICULUM_REPO_DIR")
 	return ""
 }

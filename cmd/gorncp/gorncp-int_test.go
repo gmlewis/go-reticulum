@@ -63,7 +63,7 @@ func runPython(t *testing.T, configDir string, args ...string) string {
 	t.Helper()
 	repoDir := os.Getenv("ORIGINAL_RETICULUM_REPO_DIR")
 	if repoDir == "" {
-		repoDir = "../../original-reticulum-repo"
+		t.Fatal("missing required environment variable ORIGINAL_RETICULUM_REPO_DIR (set by scripts/test-integration.sh)")
 	}
 	scriptPath := filepath.Join(repoDir, "RNS", "Utilities", "rncp.py")
 	fullArgs := append([]string{"-u", scriptPath, "--config", configDir}, args...)
@@ -80,7 +80,7 @@ func runPythonBackground(t *testing.T, configDir string, args ...string) (*exec.
 	t.Helper()
 	repoDir := os.Getenv("ORIGINAL_RETICULUM_REPO_DIR")
 	if repoDir == "" {
-		repoDir = "../../original-reticulum-repo"
+		t.Fatal("missing required environment variable ORIGINAL_RETICULUM_REPO_DIR (set by scripts/test-integration.sh)")
 	}
 	scriptPath := filepath.Join(repoDir, "RNS", "Utilities", "rncp.py")
 	fullArgs := append([]string{"-u", scriptPath, "--config", configDir}, args...)

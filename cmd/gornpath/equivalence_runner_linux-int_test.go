@@ -3,7 +3,8 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-//go:build linux
+//go:build integration && linux
+// +build integration,linux
 
 package main
 
@@ -440,7 +441,7 @@ func runPythonRnpathOutcome(t *testing.T, args ...string) commandOutcome {
 
 	repoDir := os.Getenv("ORIGINAL_RETICULUM_REPO_DIR")
 	if repoDir == "" {
-		repoDir = filepath.Join("..", "..", "original-reticulum-repo")
+		t.Fatal("missing required environment variable ORIGINAL_RETICULUM_REPO_DIR (set by scripts/test-integration.sh)")
 	}
 	scriptPath := filepath.Join(repoDir, "RNS", "Utilities", "rnpath.py")
 	cmd := exec.Command("python3", append([]string{"-u", scriptPath}, args...)...)
