@@ -57,3 +57,22 @@ func mustTestNewReticulum(t *testing.T, ts Transport, configDir string) *Reticul
 	mustTest(t, err)
 	return ret
 }
+
+func mustTestNewReticulumWithLogger(t *testing.T, ts Transport, configDir string, logger *Logger) *Reticulum {
+	t.Helper()
+	// Ensure isolation if no config exists
+	configPath := filepath.Join(configDir, "config")
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		writeConfig(t, configDir, "[reticulum]\nshare_instance = No\n")
+	}
+	ret, err := NewReticulumWithLogger(ts, configDir, logger)
+	mustTest(t, err)
+	return ret
+}
+
+func mustTestLogger(t *testing.T, level int) *Logger {
+	t.Helper()
+	logger := NewLogger()
+	logger.SetLogLevel(level)
+	return logger
+}

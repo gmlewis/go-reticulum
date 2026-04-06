@@ -905,9 +905,10 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 		t.Fatalf("failed to WriteFile config: %v", err)
 	}
 
-	SetLogLevel(LogDebug)
+	logger := NewLogger()
+	logger.SetLogLevel(LogDebug)
 	ts := NewTransportSystem()
-	r := mustTestNewReticulum(t, ts, goConfigDir)
+	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
 	// Wait for announce (path) from Python
@@ -1061,9 +1062,9 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 		t.Fatalf("failed to WriteFile config: %v", err)
 	}
 
-	SetLogLevel(LogDebug)
+	logger := mustTestLogger(t, LogDebug)
 	ts := NewTransportSystem()
-	r := mustTestNewReticulum(t, ts, goConfigDir)
+	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
 	pathDeadline := time.Now().Add(10 * time.Second)
@@ -1153,9 +1154,9 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 		t.Fatalf("failed to WriteFile config: %v", err)
 	}
 
-	SetLogLevel(LogDebug)
+	logger := mustTestLogger(t, LogDebug)
 	ts := NewTransportSystem()
-	r := mustTestNewReticulum(t, ts, goConfigDir)
+	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
 	// Create Go destination
@@ -1257,9 +1258,9 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 		t.Fatalf("failed to WriteFile config: %v", err)
 	}
 
-	SetLogLevel(LogDebug)
+	logger := mustTestLogger(t, LogDebug)
 	ts := NewTransportSystem()
-	r := mustTestNewReticulum(t, ts, goConfigDir)
+	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
 	id := mustTestNewIdentity(t, true)
@@ -1377,9 +1378,9 @@ func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 		t.Fatalf("failed to WriteFile config: %v", err)
 	}
 
-	SetLogLevel(LogDebug)
+	logger := mustTestLogger(t, LogDebug)
 	ts := NewTransportSystem()
-	r := mustTestNewReticulum(t, ts, goConfigDir)
+	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
 	initialDeadline := time.Now().Add(10 * time.Second)
@@ -1443,9 +1444,9 @@ func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
 		t.Fatalf("failed to WriteFile config: %v", err)
 	}
 
-	SetLogLevel(LogDebug)
+	logger := mustTestLogger(t, LogDebug)
 	ts := NewTransportSystem()
-	r := mustTestNewReticulum(t, ts, goConfigDir)
+	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
 	id := mustTestNewIdentity(t, true)
@@ -1529,9 +1530,9 @@ func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 		t.Fatalf("failed to WriteFile config: %v", err)
 	}
 
-	SetLogLevel(LogDebug)
+	logger := mustTestLogger(t, LogDebug)
 	ts := NewTransportSystem()
-	r := mustTestNewReticulum(t, ts, goConfigDir)
+	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
 	var outIface interfaces.Interface
@@ -1652,9 +1653,9 @@ enable_transport = False
 		t.Fatalf("failed to WriteFile config: %v", err)
 	}
 
-	SetLogLevel(LogDebug)
+	logger := mustTestLogger(t, LogDebug)
 	ts := NewTransportSystem()
-	r := mustTestNewReticulum(t, ts, goConfigDir)
+	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
 	sinkConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: sinkPort})
@@ -1739,9 +1740,9 @@ enable_transport = False
 		t.Fatalf("failed to WriteFile config: %v", err)
 	}
 
-	SetLogLevel(LogDebug)
+	logger := mustTestLogger(t, LogDebug)
 	ts := NewTransportSystem()
-	r := mustTestNewReticulum(t, ts, goConfigDir)
+	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
 	requestConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: requesterPort})
@@ -1895,9 +1896,9 @@ enable_transport = False
 		t.Fatalf("failed to WriteFile config: %v", err)
 	}
 
-	SetLogLevel(LogDebug)
+	logger := mustTestLogger(t, LogDebug)
 	ts := NewTransportSystem()
-	r := mustTestNewReticulum(t, ts, goConfigDir)
+	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
 	responderConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: responderPort})
@@ -2372,9 +2373,9 @@ func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 		t.Fatalf("failed to WriteFile config: %v", err)
 	}
 
-	SetLogLevel(LogDebug)
+	logger := mustTestLogger(t, LogDebug)
 	ts := NewTransportSystem()
-	r := mustTestNewReticulum(t, ts, goConfigDir)
+	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
 	id := mustTestNewIdentity(t, true)
@@ -2554,9 +2555,9 @@ enable_transport = False
 		t.Fatalf("failed to WriteFile config: %v", err)
 	}
 
-	SetLogLevel(LogDebug)
+	logger := mustTestLogger(t, LogDebug)
 	ts := NewTransportSystem()
-	r := mustTestNewReticulum(t, ts, goConfigDir)
+	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
 	requestConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: requesterPort})

@@ -259,7 +259,7 @@ func Log(msg string, level int, pt bool) {
 	logger.Log(msg, level, pt)
 }
 
-// Logf provides string formatting convenience over the standard logging function.
+// Logf formats and writes a message using the package-level logger.
 func Logf(format string, level int, pt bool, args ...any) {
 	Log(fmt.Sprintf(format, args...), level, pt)
 }

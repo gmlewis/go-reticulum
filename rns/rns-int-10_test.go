@@ -415,9 +415,10 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 		t.Fatalf("failed to WriteFile config: %v", err)
 	}
 
-	SetLogLevel(LogDebug)
+	logger := NewLogger()
+	logger.SetLogLevel(LogDebug)
 	ts := NewTransportSystem()
-	r := mustTestNewReticulum(t, ts, goConfigDir)
+	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
 	// Wait for Python destination info and announce
@@ -526,9 +527,9 @@ func TestRatchetPythonToGoParity(t *testing.T) {
 		t.Fatalf("failed to WriteFile config: %v", err)
 	}
 
-	SetLogLevel(LogDebug)
+	logger := mustTestLogger(t, LogDebug)
 	ts := NewTransportSystem()
-	r := mustTestNewReticulum(t, ts, goConfigDir)
+	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
 	// Create Go destination with ratchets
@@ -626,9 +627,9 @@ func TestRatchetRotationParity(t *testing.T) {
 		t.Fatalf("failed to WriteFile config: %v", err)
 	}
 
-	SetLogLevel(LogDebug)
+	logger := mustTestLogger(t, LogDebug)
 	ts := NewTransportSystem()
-	r := mustTestNewReticulum(t, ts, goConfigDir)
+	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
 	id := mustTestNewIdentity(t, true)
@@ -729,9 +730,9 @@ func TestRatchetRetentionWindowParity(t *testing.T) {
 		t.Fatalf("failed to WriteFile config: %v", err)
 	}
 
-	SetLogLevel(LogDebug)
+	logger := mustTestLogger(t, LogDebug)
 	ts := NewTransportSystem()
-	r := mustTestNewReticulum(t, ts, goConfigDir)
+	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
 	id := mustTestNewIdentity(t, true)

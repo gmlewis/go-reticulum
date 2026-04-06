@@ -288,9 +288,10 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			SetLogLevel(LogDebug)
+			logger := NewLogger()
+			logger.SetLogLevel(LogDebug)
 			ts := NewTransportSystem()
-			r := mustTestNewReticulum(t, ts, goConfigDir)
+			r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 			defer closeReticulum(t, r)
 
 			transport := r.Transport()
@@ -592,9 +593,9 @@ func TestIntegratedResponseResourceCompressionPolicyPythonToGo(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			SetLogLevel(LogDebug)
+			logger := mustTestLogger(t, LogDebug)
 			ts := NewTransportSystem()
-			r := mustTestNewReticulum(t, ts, goConfigDir)
+			r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 			defer closeReticulum(t, r)
 
 			id := mustTestNewIdentity(t, true)
