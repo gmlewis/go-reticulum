@@ -57,6 +57,33 @@ const (
 
 var nonWordRE = regexp.MustCompile(`\W+`)
 
+func configureLogger(verbose, quiet bool) *rns.Logger {
+	logger := rns.NewLogger()
+	if verbose {
+		logger.SetLogLevel(rns.LogVerbose)
+	}
+	if quiet {
+		logger.SetLogLevel(rns.LogWarning)
+	}
+	return logger
+}
+
+type runtimeT struct {
+	opts   options
+	logger *rns.Logger
+}
+
+func newRuntime(opts options) *runtimeT {
+	return &runtimeT{opts: opts, logger: configureLogger(opts.verbose, opts.quiet)}
+}
+
+func (rt *runtimeT) applyLogger() {
+	if rt == nil || rt.logger == nil {
+		return
+	}
+	rns.SetLogLevel(rt.logger.GetLogLevel())
+}
+
 func main() {
 	opts, err := parseFlags(os.Args[1:], os.Stderr)
 	if err != nil {
@@ -71,33 +98,29 @@ func main() {
 		return
 	}
 
-	if opts.verbose {
-		rns.SetLogLevel(rns.LogVerbose)
-	}
-	if opts.quiet {
-		rns.SetLogLevel(rns.LogWarning)
-	}
+	rt := newRuntime(opts)
+	rt.applyLogger()
 
-	if opts.printIdentity {
-		if err := printIdentity(opts); err != nil {
+	if rt.opts.printIdentity {
+		if err := printIdentity(rt.opts); err != nil {
 			log.Fatalf("gornsh: %v", err)
 		}
 		return
 	}
 
-	if opts.listen {
-		if err := doListen(opts); err != nil {
+	if rt.opts.listen {
+		if err := doListen(rt.opts); err != nil {
 			log.Fatalf("gornsh: %v", err)
 		}
 		return
 	}
 
-	if opts.destination == "" {
+	if rt.opts.destination == "" {
 		usage(os.Stderr)
 		os.Exit(2)
 	}
 
-	code, err := doInitiate(opts)
+	code, err := doInitiate(rt.opts)
 	if err != nil {
 		log.Fatalf("gornsh: %v", err)
 	}

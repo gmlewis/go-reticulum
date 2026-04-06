@@ -238,18 +238,18 @@ loglevel = 1
 			t.Fatalf("WriteFile: %v", err)
 		}
 
-		c := &clientT{exitFn: exitFn}
+		c := &clientT{exitFn: exitFn, logger: rns.NewLogger()}
 		ret, err := c.remoteInit(tmpDir, rnsConfigDir, 2, 1, "") // 3 + 2 - 1 = 4
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
 		}
 		defer closeReticulum(t, ret)
-		if want := 4; rns.GetLogLevel() != want {
-			t.Errorf("got log level %v, want %v", rns.GetLogLevel(), want)
+		if want := 4; c.logger.GetLogLevel() != want {
+			t.Errorf("got log level %v, want %v", c.logger.GetLogLevel(), want)
 		}
 
-		if rns.GetLogDest() != rns.LogStdout {
-			t.Errorf("got log dest %v, want LogStdout", rns.GetLogDest())
+		if c.logger.GetLogDest() != rns.LogStdout {
+			t.Errorf("got log dest %v, want LogStdout", c.logger.GetLogDest())
 		}
 	})
 
@@ -278,14 +278,14 @@ loglevel = 1
 		}
 		writeRNSConfig(t, rnsConfigDir)
 
-		c := &clientT{exitFn: exitFn}
+		c := &clientT{exitFn: exitFn, logger: rns.NewLogger()}
 		ret, err := c.remoteInit(tmpDir, rnsConfigDir, 0, 0, "")
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
 		}
 		defer closeReticulum(t, ret)
-		if want := 6; rns.GetLogLevel() != want {
-			t.Errorf("got log level %v, want %v", rns.GetLogLevel(), want)
+		if want := 6; c.logger.GetLogLevel() != want {
+			t.Errorf("got log level %v, want %v", c.logger.GetLogLevel(), want)
 		}
 	})
 

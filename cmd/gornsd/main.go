@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
@@ -53,8 +55,31 @@ func main() {
 
 	rns.Log(fmt.Sprintf("Started gornsd version %v", rns.VERSION), rns.LogNotice, false)
 
-	// Keep alive
-	select {}
+	if app.interactive {
+		waitForInteractiveShell()
+	} else {
+		waitForInterruptSignal()
+	}
+}
+
+func waitForInterrupt(stop <-chan os.Signal, onInterrupt func()) {
+	<-stop
+	if onInterrupt != nil {
+		onInterrupt()
+	}
+}
+
+func waitForInterruptSignal() {
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(stop)
+	waitForInterrupt(stop, func() {
+		fmt.Println()
+	})
+}
+
+func waitForInteractiveShell() {
+	waitForInterruptSignal()
 }
 
 const exampleRNSConfig = `# This is an example Reticulum config file.

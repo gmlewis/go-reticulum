@@ -30,6 +30,7 @@ import (
 type clientT struct {
 	ac     *activeConfig
 	lxmdir string
+	logger *rns.Logger
 
 	lastPeerAnnounce time.Time
 	lastNodeAnnounce time.Time
@@ -73,6 +74,13 @@ func (c *clientT) exit(code int) {
 		return
 	}
 	os.Exit(code)
+}
+
+func (c *clientT) getLogger() *rns.Logger {
+	if c.logger == nil {
+		c.logger = rns.NewLogger()
+	}
+	return c.logger
 }
 
 func (a *appT) run() {
@@ -121,8 +129,9 @@ func (a *appT) run() {
 		log.Fatalf("load config: %v", err)
 	}
 
-	rns.SetLogLevel(resolveLogLevel(c.ac.LogLevel, int(a.verbosity), int(a.quietness)))
-	setupLogging(a.runAsService, a.configDir)
+	logger := rns.NewLogger()
+	logger.SetLogLevel(resolveLogLevel(c.ac.LogLevel, int(a.verbosity), int(a.quietness)))
+	setupLogging(logger, a.runAsService, a.configDir)
 	rns.Logf("Configuration loaded from %v", rns.LogVerbose, false, a.configDir)
 
 	rns.Logf("Substantiating Reticulum...", rns.LogInfo, false)
@@ -320,12 +329,15 @@ func (c *clientT) tick(router *lxmf.Router, lxmfDestination *rns.Destination) {
 	}
 }
 
-func setupLogging(service bool, configDir string) {
+func setupLogging(logger *rns.Logger, service bool, configDir string) {
+	if logger == nil {
+		logger = rns.NewLogger()
+	}
 	if service {
-		rns.SetLogDest(rns.LogDestFile)
-		rns.SetLogFilePath(filepath.Join(configDir, "logfile"))
+		logger.SetLogDest(rns.LogDestFile)
+		logger.SetLogFilePath(filepath.Join(configDir, "logfile"))
 	} else {
-		rns.SetLogDest(rns.LogStdout)
+		logger.SetLogDest(rns.LogStdout)
 	}
 }
 

@@ -16,6 +16,7 @@ import (
 )
 
 func (c *clientT) remoteInit(configDirArg string, rnsConfigDir string, verbosity int, quietness int, identityPathArg string) (*rns.Reticulum, error) {
+	logger := c.getLogger()
 	if identityPathArg == "" {
 		resolvedConfigDir := resolveConfigDir(configDirArg)
 
@@ -73,15 +74,15 @@ func (c *clientT) remoteInit(configDirArg string, rnsConfigDir string, verbosity
 	if c.ts == nil {
 		c.ts = rns.NewTransportSystem()
 	}
-	reticulum, err := rns.NewReticulum(c.ts, rnsConfigDir)
+	reticulum, err := rns.NewReticulumWithLogger(c.ts, rnsConfigDir, logger)
 	if err != nil {
 		rns.Logf("Could not initialize Reticulum, exiting now", rns.LogError, false)
 		c.exit(1)
 		return nil, nil
 	}
 
-	rns.SetLogLevel(targetloglevel)
-	rns.SetLogDest(rns.LogStdout)
+	logger.SetLogLevel(targetloglevel)
+	logger.SetLogDest(rns.LogStdout)
 
 	return reticulum, nil
 }

@@ -395,20 +395,16 @@ func TestServiceLogging(t *testing.T) {
 	err := os.MkdirAll(configDir, 0o755)
 	mustTest(t, err)
 
-	// We'll test a function that sets up logging based on service flag and config dir
-	setupLogging(true, configDir)
+	logger := rns.NewLogger()
+	setupLogging(logger, true, configDir)
 
-	if rns.GetLogDest() != rns.LogDestFile {
-		t.Errorf("LogDest: got %v, want %v", rns.GetLogDest(), rns.LogDestFile)
+	if logger.GetLogDest() != rns.LogDestFile {
+		t.Errorf("LogDest: got %v, want %v", logger.GetLogDest(), rns.LogDestFile)
 	}
 	wantLogPath := filepath.Join(configDir, "logfile")
-	if rns.GetLogFilePath() != wantLogPath {
-		t.Errorf("LogFilePath: got %q, want %q", rns.GetLogFilePath(), wantLogPath)
+	if logger.GetLogFilePath() != wantLogPath {
+		t.Errorf("LogFilePath: got %q, want %q", logger.GetLogFilePath(), wantLogPath)
 	}
-
-	// Reset for other tests
-	rns.SetLogDest(rns.LogStdout)
-	rns.SetLogFilePath("")
 }
 
 func TestApplyTimeoutDefaults(t *testing.T) {

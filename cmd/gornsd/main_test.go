@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"testing"
+	"time"
 )
 
 func runMainWithArgs(t *testing.T, args ...string) (stdout string, stderr string) {
@@ -56,6 +57,26 @@ func runMainWithArgs(t *testing.T, args ...string) (stdout string, stderr string
 	_ = stderrReader.Close()
 
 	return string(stdoutBytes), string(stderrBytes)
+}
+
+func TestWaitForInterruptSignalsCallback(t *testing.T) {
+	t.Parallel()
+
+	stop := make(chan os.Signal, 1)
+	done := make(chan struct{}, 1)
+	go func() {
+		waitForInterrupt(stop, func() {
+			done <- struct{}{}
+		})
+	}()
+
+	stop <- os.Interrupt
+
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timeout waiting for interrupt callback")
+	}
 }
 
 func TestMainVersionOutput(t *testing.T) {

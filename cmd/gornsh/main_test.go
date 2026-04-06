@@ -8,6 +8,8 @@ package main
 import (
 	"reflect"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/rns"
 )
 
 const tempDirPrefix = "gornsh-test-"
@@ -171,5 +173,45 @@ func TestJoinCommandArgs(t *testing.T) {
 
 	if got := joinCommandArgs([]string{"echo", "hello", "world"}); got != "echo hello world" {
 		t.Fatalf("joinCommandArgs()=%q, want %q", got, "echo hello world")
+	}
+}
+
+func TestConfigureLogger(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		verbose   bool
+		quiet     bool
+		wantLevel int
+	}{
+		{name: "default", wantLevel: rns.LogNotice},
+		{name: "verbose", verbose: true, wantLevel: rns.LogVerbose},
+		{name: "quiet", quiet: true, wantLevel: rns.LogWarning},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			logger := configureLogger(tc.verbose, tc.quiet)
+			if got := logger.GetLogLevel(); got != tc.wantLevel {
+				t.Fatalf("log level=%v, want %v", got, tc.wantLevel)
+			}
+		})
+	}
+}
+
+func TestNewRuntime(t *testing.T) {
+	t.Parallel()
+	rt := newRuntime(options{verbose: true})
+	if rt == nil {
+		t.Fatal("newRuntime returned nil")
+	}
+	if rt.logger == nil {
+		t.Fatal("newRuntime returned nil logger")
+	}
+	if got := rt.logger.GetLogLevel(); got != rns.LogVerbose {
+		t.Fatalf("log level=%v, want %v", got, rns.LogVerbose)
 	}
 }
