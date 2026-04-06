@@ -22,8 +22,9 @@ func TestProgramSetupExitsCleanly(t *testing.T) {
 	})
 	defer cleanup()
 	var buf bytes.Buffer
+	logger := rns.NewLogger()
 	ts := rns.NewTransportSystem()
-	r, err := rns.NewReticulum(ts, tmpDir)
+	r, err := rns.NewReticulumWithLogger(ts, tmpDir, logger)
 	if err != nil {
 		t.Fatalf("NewReticulum: %v", err)
 	}
@@ -37,6 +38,7 @@ func TestProgramSetupExitsCleanly(t *testing.T) {
 		configDir:   tmpDir,
 		mustExit:    true,
 		rnsInstance: r,
+		logger:      logger,
 		writer:      &buf,
 	})
 
@@ -48,10 +50,12 @@ func TestProgramSetupExitsCleanly(t *testing.T) {
 func TestProgramSetupNoSharedInstance(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
+	logger := rns.NewLogger()
 
 	exitCode := programSetup(programSetupParams{
 		configDir: "/nonexistent/path/that/should/fail",
 		mustExit:  true,
+		logger:    logger,
 		writer:    &buf,
 	})
 
@@ -63,10 +67,12 @@ func TestProgramSetupNoSharedInstance(t *testing.T) {
 func TestProgramSetupNoSharedInstanceNoExit(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
+	logger := rns.NewLogger()
 
 	exitCode := programSetup(programSetupParams{
 		configDir: "/nonexistent/path/that/should/fail",
 		mustExit:  false,
+		logger:    logger,
 		writer:    &buf,
 	})
 

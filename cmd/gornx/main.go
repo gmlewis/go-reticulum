@@ -58,26 +58,27 @@ func main() {
 		log.Fatal(err)
 	}
 
+	logger := rns.NewLogger()
 	if app.verbose {
-		rns.SetLogLevel(rns.LogVerbose)
+		logger.SetLogLevel(rns.LogVerbose)
 	}
 	if app.quiet {
-		rns.SetLogLevel(rns.LogWarning)
+		logger.SetLogLevel(rns.LogWarning)
 	}
 
 	ts := rns.NewTransportSystem()
-	ret, err := rns.NewReticulum(ts, app.configDir)
+	ret, err := rns.NewReticulumWithLogger(ts, app.configDir, logger)
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
 	defer func() {
 		if err := ret.Close(); err != nil {
-			rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+			logger.Log(fmt.Sprintf("Warning: Could not close Reticulum properly: %v", err), rns.LogWarning, false)
 		}
 	}()
 
 	if app.listenMode {
-		doListen(app.identityPath)
+		doListen(app.identityPath, logger)
 	} else if app.interactive {
 		// doInteractive(...)
 	} else {
@@ -91,7 +92,7 @@ func main() {
 	}
 }
 
-func doListen(idPath string) {
+func doListen(idPath string, logger *rns.Logger) {
 	if idPath == "" {
 		home, _ := os.UserHomeDir()
 		idPath = filepath.Join(home, ".reticulum", "identities", AppName)
@@ -132,7 +133,7 @@ func doListen(idPath string) {
 
 	dest.RegisterRequestHandler("command", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 		if remoteIdentity == nil {
-			rns.Log("Rejected unauthenticated command request", rns.LogWarning, false)
+			logger.Log("Rejected unauthenticated command request", rns.LogWarning, false)
 			return nil
 		}
 
@@ -145,38 +146,38 @@ func doListen(idPath string) {
 			}
 		}
 		if !allowed {
-			rns.Log(fmt.Sprintf("Rejected unauthorized command request from %v", remoteIdentity.HexHash), rns.LogWarning, false)
+			logger.Log(fmt.Sprintf("Rejected unauthorized command request from %v", remoteIdentity.HexHash), rns.LogWarning, false)
 			return nil
 		}
 
 		// Limit input size to 64KB
 		if len(data) > 64*1024 {
-			rns.Log("Rejected command: input too large", rns.LogWarning, false)
+			logger.Log("Rejected command: input too large", rns.LogWarning, false)
 			return []any{false, int64(127), []byte{}, []byte("command too large"), int64(0), int64(len("command too large")), float64(time.Now().UnixNano()) / 1e9, float64(time.Now().UnixNano()) / 1e9}
 		}
 
 		unpacked, err := rns.Unpack(data)
 		if err != nil {
-			rns.Log(fmt.Sprintf("Failed to unpack command: %v", err), rns.LogWarning, false)
+			logger.Log(fmt.Sprintf("Failed to unpack command: %v", err), rns.LogWarning, false)
 			return []any{false, int64(127), []byte{}, []byte("invalid command encoding"), int64(0), int64(len("invalid command encoding")), float64(time.Now().UnixNano()) / 1e9, float64(time.Now().UnixNano()) / 1e9}
 		}
 		parts, ok := unpacked.([]any)
 		if !ok || len(parts) == 0 {
-			rns.Log("Malformed command parts", rns.LogWarning, false)
+			logger.Log("Malformed command parts", rns.LogWarning, false)
 			return []any{false, int64(127), []byte{}, []byte("malformed command"), int64(0), int64(len("malformed command")), float64(time.Now().UnixNano()) / 1e9, float64(time.Now().UnixNano()) / 1e9}
 		}
 		cmdBytes, ok := parts[0].([]byte)
 		if !ok {
-			rns.Log("Malformed command: not []byte", rns.LogWarning, false)
+			logger.Log("Malformed command: not []byte", rns.LogWarning, false)
 			return []any{false, int64(127), []byte{}, []byte("malformed command"), int64(0), int64(len("malformed command")), float64(time.Now().UnixNano()) / 1e9, float64(time.Now().UnixNano()) / 1e9}
 		}
 		if len(cmdBytes) > 64*1024 {
-			rns.Log("Rejected command: command string too large", rns.LogWarning, false)
+			logger.Log("Rejected command: command string too large", rns.LogWarning, false)
 			return []any{false, int64(127), []byte{}, []byte("command string too large"), int64(0), int64(len("command string too large")), float64(time.Now().UnixNano()) / 1e9, float64(time.Now().UnixNano()) / 1e9}
 		}
 		cmdStr := string(cmdBytes)
 
-		rns.Log(fmt.Sprintf("Executing authorized command from %v: %v", remoteIdentity.HexHash, cmdStr), rns.LogInfo, false)
+		logger.Log(fmt.Sprintf("Executing authorized command from %v: %v", remoteIdentity.HexHash, cmdStr), rns.LogInfo, false)
 
 		cmd := exec.Command("sh", "-c", cmdStr)
 		var stdout, stderr bytes.Buffer

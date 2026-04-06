@@ -31,6 +31,7 @@ type programSetupParams struct {
 	remoteTimeout      float64
 	mustExit           bool
 	rnsInstance        *rns.Reticulum
+	logger             *rns.Logger
 	trafficTotals      bool
 	discoveredIfaces   bool
 	configEntries      bool
@@ -45,6 +46,10 @@ func programSetup(p programSetupParams) int {
 	if w == nil {
 		w = os.Stdout
 	}
+	logger := p.logger
+	if logger == nil {
+		logger = rns.NewLogger()
+	}
 
 	var reticulum *rns.Reticulum
 	if p.rnsInstance != nil {
@@ -52,7 +57,7 @@ func programSetup(p programSetupParams) int {
 		p.mustExit = false
 	} else {
 		ts := rns.NewTransportSystem()
-		r, err := rns.NewReticulum(ts, p.configDir)
+		r, err := rns.NewReticulumWithLogger(ts, p.configDir, logger)
 		if err != nil {
 			_, _ = fmt.Fprintln(w, "No shared RNS instance available to get status from")
 			if p.mustExit {
@@ -63,7 +68,7 @@ func programSetup(p programSetupParams) int {
 		reticulum = r
 		defer func() {
 			if err := reticulum.Close(); err != nil {
-				_, _ = fmt.Fprintf(w, "Error closing Reticulum: %v\n", err)
+				logger.Log(fmt.Sprintf("Error closing Reticulum: %v", err), rns.LogWarning, false)
 			}
 		}()
 	}

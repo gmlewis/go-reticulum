@@ -32,19 +32,20 @@ func (a *appT) run() {
 		return
 	}
 
-	rns.SetLogDest(rns.LogStdout)
+	logger := rns.NewLogger()
+	logger.SetLogDest(rns.LogStdout)
 	if a.verbose != 0 || a.quiet != 0 {
-		rns.SetLogLevel(int(a.verbose) - int(a.quiet))
+		logger.SetLogLevel(int(a.verbose) - int(a.quiet))
 	}
 
 	ts := rns.NewTransportSystem()
-	ret, err := rns.NewReticulum(ts, a.configDir)
+	ret, err := rns.NewReticulumWithLogger(ts, a.configDir, logger)
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v", err)
 	}
 	defer func() {
 		if err := ret.Close(); err != nil {
-			rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+			logger.Log(fmt.Sprintf("Warning: Could not close Reticulum properly: %v", err), rns.LogWarning, false)
 		}
 	}()
 	// TODO: finish this

@@ -27,18 +27,19 @@ func (a *appT) run(nameFilter string) {
 		return
 	}
 
-	rns.SetLogDest(rns.LogStdout)
+	logger := rns.NewLogger()
+	logger.SetLogDest(rns.LogStdout)
 	verbosity := int(a.verbose)
 
 	if a.monitorMode {
 		ts := rns.NewTransportSystem()
-		ret, err := rns.NewReticulum(ts, a.configDir)
+		ret, err := rns.NewReticulumWithLogger(ts, a.configDir, logger)
 		if err != nil {
 			log.Fatal("No shared RNS instance available to get status from")
 		}
 		defer func() {
 			if err := ret.Close(); err != nil {
-				rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+				logger.Log(fmt.Sprintf("Warning: Could not close Reticulum properly: %v", err), rns.LogWarning, false)
 			}
 		}()
 		runMonitor(ret, nameFilter, verbosity, a)
@@ -62,6 +63,7 @@ func (a *appT) run(nameFilter string) {
 		trafficTotals:      a.trafficTotals,
 		discoveredIfaces:   a.discovered,
 		configEntries:      a.detailedDiscovered,
+		logger:             logger,
 	})
 	os.Exit(exitCode)
 }

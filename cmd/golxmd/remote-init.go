@@ -209,8 +209,10 @@ func (c *clientT) getStatus(remote string, configDirArg string, rnsConfigDir str
 		return
 	}
 	defer func() {
-		if err := reticulum.Close(); err != nil {
-			rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+		if reticulum != nil {
+			if err := reticulum.Close(); err != nil {
+				rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+			}
 		}
 	}()
 
@@ -637,8 +639,10 @@ func (c *clientT) requestSync(target string, remote string, configDirArg string,
 		return
 	}
 	defer func() {
-		if err := reticulum.Close(); err != nil {
-			rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+		if reticulum != nil {
+			if err := reticulum.Close(); err != nil {
+				rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+			}
 		}
 	}()
 
@@ -730,8 +734,10 @@ func (c *clientT) requestUnpeer(target string, remote string, configDirArg strin
 		return
 	}
 	defer func() {
-		if err := reticulum.Close(); err != nil {
-			rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+		if reticulum != nil {
+			if err := reticulum.Close(); err != nil {
+				rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+			}
 		}
 	}()
 
