@@ -27,7 +27,7 @@ func (a *appT) run() {
 	}
 
 	if a.exampleConfig {
-		fmt.Print(exampleRnpkgConfig)
+		fmt.Print(exampleRnpkgConfig + "\n")
 		return
 	}
 

@@ -80,7 +80,7 @@ func TestExampleConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("gornpkg --exampleconfig failed: %v\n%v", err, out)
 	}
-	want := "# This is an example package manager configuration file.\n"
+	want := "# This is an example package manager configuration file.\n\n"
 	if out != want {
 		t.Errorf("exampleconfig output = %q, want %q", out, want)
 	}

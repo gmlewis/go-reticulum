@@ -10,7 +10,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1325,8 +1324,8 @@ func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 	copy(destinationsToAnnounce, ts.destinations)
 	interfacesAfter := len(ts.interfaces)
 	ts.mu.Unlock()
-	log.Printf("[Transport] RegisterInterface: %s, interfaces before: %d, destinations: %d", iface.Name(), interfacesBefore, destinationsBefore)
-	log.Printf("[Transport] RegisterInterface: %s, interfaces after: %d, will announce %d destinations", iface.Name(), interfacesAfter, len(destinationsToAnnounce))
+	Logf("[Transport] RegisterInterface: %s, interfaces before: %d, destinations: %d", LogDebug, false, iface.Name(), interfacesBefore, destinationsBefore)
+	Logf("[Transport] RegisterInterface: %s, interfaces after: %d, will announce %d destinations", LogDebug, false, iface.Name(), interfacesAfter, len(destinationsToAnnounce))
 
 	// Start inbound processor for this interface
 	if reader, ok := iface.(interface {
@@ -1345,11 +1344,11 @@ func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 
 	for _, d := range destinationsToAnnounce {
 		if d.direction == DestinationIn && d.Type == DestinationSingle {
-			log.Printf("[Transport] Re-announcing destination %x on new interface %v", d.Hash, iface.Name())
+			Logf("[Transport] Re-announcing destination %x on new interface %v", LogDebug, false, d.Hash, iface.Name())
 			if err := d.Announce(nil); err != nil {
 				Logf("Failed to re-announce destination %x on new interface %v: %v", LogDebug, false, d.Hash, iface.Name(), err)
 			} else {
-				log.Printf("[Transport] Re-announce of %x on %v completed", d.Hash, iface.Name())
+				Logf("[Transport] Re-announce of %x on %v completed", LogDebug, false, d.Hash, iface.Name())
 			}
 		}
 	}
