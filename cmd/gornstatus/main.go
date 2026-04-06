@@ -11,7 +11,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -19,9 +18,10 @@ import (
 	"syscall"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/utils"
 )
 
-func (a *appT) run() {
+func (a *appT) run(nameFilter string) {
 	if a.showVersion {
 		fmt.Printf("gornstatus %v\n", rns.VERSION)
 		return
@@ -29,8 +29,6 @@ func (a *appT) run() {
 
 	rns.SetLogDest(rns.LogStdout)
 	verbosity := int(a.verbose)
-
-	nameFilter := flag.Arg(0)
 
 	if a.monitorMode {
 		ts := rns.NewTransportSystem()
@@ -70,9 +68,6 @@ func (a *appT) run() {
 
 func main() {
 	log.SetFlags(0)
-	app := newApp()
-	app.initFlags(flag.CommandLine)
-	flag.Usage = app.usage
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
@@ -82,6 +77,16 @@ func main() {
 		os.Exit(0)
 	}()
 
-	flag.Parse()
-	app.run()
+	app, args, err := parseFlags(os.Args[1:], os.Stdout)
+	if err != nil {
+		if err == utils.ErrHelp {
+			return
+		}
+		log.Fatal(err)
+	}
+	nameFilter := ""
+	if len(args) > 0 {
+		nameFilter = args[0]
+	}
+	app.run(nameFilter)
 }

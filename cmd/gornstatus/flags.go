@@ -6,9 +6,12 @@
 package main
 
 import (
+	"errors"
 	"flag"
-	"fmt"
+	"io"
 	"strconv"
+
+	"github.com/gmlewis/go-reticulum/utils"
 )
 
 // counter implements flag.Value for a counted flag (e.g. -v -v -v).
@@ -43,8 +46,7 @@ type appT struct {
 
 func newApp() *appT { return &appT{} }
 
-func (a *appT) usage() {
-	_, _ = fmt.Fprintf(flag.CommandLine.Output(), `
+const usageText = `
 usage: gornstatus [-h] [--config CONFIG] [--version] [-a] [-A] [-l] [-t]
                   [-s SORT] [-r] [-j] [-R hash] [-i path] [-w seconds]
                   [-d] [-D] [-m] [-I seconds] [-v]
@@ -78,7 +80,10 @@ options:
   -I seconds, --monitor-interval seconds
                         refresh interval for monitor mode (default: 1)
   -v, --verbose
-`)
+`
+
+func (a *appT) usage(w io.Writer) {
+	utils.WriteText(w, usageText)
 }
 
 func (a *appT) initFlags(fs *flag.FlagSet) {
@@ -110,4 +115,19 @@ func (a *appT) initFlags(fs *flag.FlagSet) {
 	fs.Float64Var(&a.monitorInterval, "monitor-interval", 1.0, "refresh interval for monitor mode (default: 1)")
 	fs.Var(&a.verbose, "v", "increase verbosity")
 	fs.Var(&a.verbose, "verbose", "increase verbosity")
+}
+
+func parseFlags(args []string, usage io.Writer) (*appT, []string, error) {
+	app := newApp()
+	fs := utils.NewFlagSet("gornstatus", func() {
+		app.usage(usage)
+	})
+	app.initFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return app, fs.Args(), utils.ErrHelp
+		}
+		return nil, nil, err
+	}
+	return app, fs.Args(), nil
 }

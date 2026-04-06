@@ -6,9 +6,11 @@
 package main
 
 import (
-	"flag"
+	"bytes"
 	"io"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/utils"
 )
 
 func TestCounter(t *testing.T) {
@@ -60,12 +62,12 @@ func TestCounterString(t *testing.T) {
 
 func TestAppFlags(t *testing.T) {
 	t.Parallel()
-	app := newApp()
-	fs := flag.NewFlagSet("gornstatus", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	app.initFlags(fs)
-	if err := fs.Parse([]string{"--config", "/tmp/config", "--all", "--json", "--verbose", "--monitor-interval", "2"}); err != nil {
+	app, args, err := parseFlags([]string{"--config", "/tmp/config", "--all", "--json", "--verbose", "--monitor-interval", "2", "filter"}, io.Discard)
+	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
+	}
+	if len(args) != 1 || args[0] != "filter" {
+		t.Fatalf("args = %v, want [filter]", args)
 	}
 	if app.configDir != "/tmp/config" {
 		t.Fatalf("configDir = %q, want %q", app.configDir, "/tmp/config")
@@ -81,5 +83,28 @@ func TestAppFlags(t *testing.T) {
 	}
 	if app.monitorInterval != 2 {
 		t.Fatalf("monitorInterval = %v, want 2", app.monitorInterval)
+	}
+}
+
+func TestParseFlagsHelp(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	app, args, err := parseFlags([]string{"--help"}, &buf)
+	if err != utils.ErrHelp {
+		t.Fatalf("parseFlags error = %v, want %v", err, utils.ErrHelp)
+	}
+	if app == nil {
+		t.Fatal("parseFlags returned nil app")
+	}
+	if len(args) != 0 {
+		t.Fatalf("args = %v, want empty", args)
+	}
+	if buf.Len() == 0 {
+		t.Fatal("help output was empty")
+	}
+	for _, want := range []string{"Reticulum Network Stack Status", "-a, --all", "-v, --verbose"} {
+		if !bytes.Contains(buf.Bytes(), []byte(want)) {
+			t.Fatalf("help output missing %q: %v", want, buf.String())
+		}
 	}
 }
