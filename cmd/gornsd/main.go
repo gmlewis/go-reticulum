@@ -40,7 +40,8 @@ func main() {
 		return
 	}
 
-	ret, err := programSetup(app.configDir, app.verbose, app.quiet, app.service)
+	logger := rns.NewLogger()
+	ret, err := programSetup(logger, app.configDir, app.verbose, app.quiet, app.service)
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}

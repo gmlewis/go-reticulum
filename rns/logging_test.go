@@ -5,72 +5,107 @@
 
 package rns
 
-import "testing"
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
-func TestLoggerStateDefaultsAndMutation(t *testing.T) {
+func TestNewLoggerDefaultsAndMutation(t *testing.T) {
 	t.Parallel()
 
-	state := newLoggerState()
-	defer func() {
-		state.SetAlwaysOverride(false)
-		state.SetCompactLogFmt(false)
-		state.SetLogLevel(LogNotice)
-		state.SetLogFilePath("")
-		state.SetLogDest(LogStdout)
-		state.SetLogCallback(nil)
-	}()
-
-	if got := state.GetLogLevel(); got != LogNotice {
+	logger := NewLogger()
+	if got := logger.GetLogLevel(); got != LogNotice {
 		t.Fatalf("GetLogLevel() = %v, want %v", got, LogNotice)
 	}
-	if got := state.GetLogDest(); got != LogStdout {
+	if got := logger.GetLogDest(); got != LogStdout {
 		t.Fatalf("GetLogDest() = %v, want %v", got, LogStdout)
 	}
-	if state.GetAlwaysOverride() {
+	if logger.GetAlwaysOverride() {
 		t.Fatal("GetAlwaysOverride() = true, want false")
 	}
-	if state.GetCompactLogFmt() {
+	if logger.GetCompactLogFmt() {
 		t.Fatal("GetCompactLogFmt() = true, want false")
 	}
-	if got := state.GetLogFilePath(); got != "" {
+	if got := logger.GetLogFilePath(); got != "" {
 		t.Fatalf("GetLogFilePath() = %q, want empty", got)
 	}
-	if got := state.GetLogCallback(); got != nil {
+	if got := logger.GetLogCallback(); got != nil {
 		t.Fatal("GetLogCallback() = non-nil, want nil")
 	}
 
-	state.SetAlwaysOverride(true)
-	state.SetCompactLogFmt(true)
-	state.SetLogLevel(LogDebug)
-	state.SetLogFilePath("/tmp/logfile")
-	state.SetLogDest(LogDestFile)
+	logger.SetAlwaysOverride(true)
+	logger.SetCompactLogFmt(true)
+	logger.SetLogLevel(LogDebug)
+	logger.SetLogFilePath("/tmp/logfile")
+	logger.SetLogDest(LogDestFile)
 
 	var callbackCalled bool
-	state.SetLogCallback(func(msg string) {
+	logger.SetLogCallback(func(msg string) {
 		callbackCalled = msg == "hello"
 	})
 
-	if !state.GetAlwaysOverride() {
+	if !logger.GetAlwaysOverride() {
 		t.Fatal("GetAlwaysOverride() = false, want true")
 	}
-	if !state.GetCompactLogFmt() {
+	if !logger.GetCompactLogFmt() {
 		t.Fatal("GetCompactLogFmt() = false, want true")
 	}
-	if got := state.GetLogLevel(); got != LogDebug {
+	if got := logger.GetLogLevel(); got != LogDebug {
 		t.Fatalf("GetLogLevel() = %v, want %v", got, LogDebug)
 	}
-	if got := state.GetLogFilePath(); got != "/tmp/logfile" {
+	if got := logger.GetLogFilePath(); got != "/tmp/logfile" {
 		t.Fatalf("GetLogFilePath() = %q, want %q", got, "/tmp/logfile")
 	}
-	if got := state.GetLogDest(); got != LogDestFile {
+	if got := logger.GetLogDest(); got != LogDestFile {
 		t.Fatalf("GetLogDest() = %v, want %v", got, LogDestFile)
 	}
-	if got := state.GetLogCallback(); got == nil {
+	if got := logger.GetLogCallback(); got == nil {
 		t.Fatal("GetLogCallback() = nil, want function")
 	} else {
 		got("hello")
 	}
 	if !callbackCalled {
 		t.Fatal("callback was not called")
+	}
+}
+
+func TestNewLoggerWritesToCallbackAndFile(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	logger.SetLogLevel(LogExtreme)
+
+	var callback bytes.Buffer
+	logger.SetLogDest(LogCallback)
+	logger.SetLogCallback(func(msg string) {
+		callback.WriteString(msg)
+	})
+	logger.Log("callback message", LogNotice, false)
+	if got, want := callback.String(), "["; !strings.HasPrefix(got, want) || !strings.Contains(got, "callback message") {
+		t.Fatalf("callback output = %q, want message containing %q", got, "callback message")
+	}
+
+	tmpDir, err := os.MkdirTemp("", "logger-test-")
+	if err != nil {
+		t.Fatalf("MkdirTemp error: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Fatalf("RemoveAll error: %v", err)
+		}
+	})
+	logPath := filepath.Join(tmpDir, "logfile")
+	logger.SetLogFilePath(logPath)
+	logger.SetLogDest(LogDestFile)
+	logger.Log("file message", LogNotice, false)
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("ReadFile error: %v", err)
+	}
+	if !strings.Contains(string(data), "file message") {
+		t.Fatalf("logfile output = %q, want message containing %q", string(data), "file message")
 	}
 }

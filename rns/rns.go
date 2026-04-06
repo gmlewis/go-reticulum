@@ -57,6 +57,7 @@ type Reticulum struct {
 	config    *Config
 	configDir string
 	transport Transport
+	logger    *Logger
 
 	networkIdentity     *Identity
 	networkIdentityPath string
@@ -129,6 +130,14 @@ func (r *Reticulum) Close() error {
 
 // NewReticulum initializes a new Reticulum stack with a specific transport system.
 func NewReticulum(ts Transport, configDir string) (*Reticulum, error) {
+	return NewReticulumWithLogger(ts, configDir, logger)
+}
+
+// NewReticulumWithLogger initializes a new Reticulum stack with a specific transport system and logger.
+func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger) (*Reticulum, error) {
+	if logger == nil {
+		logger = NewLogger()
+	}
 	resolvedConfigDir, err := resolveConfigDir(configDir)
 	if err != nil {
 		return nil, err
@@ -138,6 +147,7 @@ func NewReticulum(ts Transport, configDir string) (*Reticulum, error) {
 	r := &Reticulum{
 		configDir:            configDir,
 		transport:            ts,
+		logger:               logger,
 		shareInstance:        true,
 		sharedInstanceType:   "",
 		linkMTUDiscovery:     true,
@@ -234,7 +244,9 @@ func (r *Reticulum) applyConfig() error {
 			if _, err := fmt.Sscanf(lvlStr, "%v", &lvl); err != nil {
 				Logf("Invalid loglevel value %q in config: %v", LogWarning, false, lvlStr, err)
 			} else {
-				SetLogLevel(lvl)
+				if r.logger != nil {
+					r.logger.SetLogLevel(lvl)
+				}
 			}
 		}
 	}

@@ -17,22 +17,23 @@ import (
 const tempDirPrefix = "gornpkg-test-"
 
 func TestProgramSetupUsesVerbosityMinusQuietness(t *testing.T) {
-	originalLevel := rns.GetLogLevel()
-	originalDest := rns.GetLogDest()
-	t.Cleanup(func() {
-		rns.SetLogLevel(originalLevel)
-		rns.SetLogDest(originalDest)
-	})
-
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
+
+	logger := rns.NewLogger()
+	var originalLevel = logger.GetLogLevel()
+	var originalDest = logger.GetLogDest()
+	t.Cleanup(func() {
+		logger.SetLogLevel(originalLevel)
+		logger.SetLogDest(originalDest)
+	})
 
 	var capturedLevel int
 	var capturedDest int
 	var capturedConfigDir string
-	if err := programSetup(tmpDir, 3, 1, func(ts rns.Transport, configDir string) (*rns.Reticulum, error) {
-		capturedLevel = rns.GetLogLevel()
-		capturedDest = rns.GetLogDest()
+	if err := programSetup(logger, tmpDir, 3, 1, func(ts rns.Transport, configDir string, logger *rns.Logger) (*rns.Reticulum, error) {
+		capturedLevel = logger.GetLogLevel()
+		capturedDest = logger.GetLogDest()
 		capturedConfigDir = configDir
 		return &rns.Reticulum{}, nil
 	}); err != nil {
@@ -50,23 +51,17 @@ func TestProgramSetupUsesVerbosityMinusQuietness(t *testing.T) {
 }
 
 func TestProgramSetupForwardsConfigDirAndClosesReticulum(t *testing.T) {
-	originalLevel := rns.GetLogLevel()
-	originalDest := rns.GetLogDest()
-	t.Cleanup(func() {
-		rns.SetLogLevel(originalLevel)
-		rns.SetLogDest(originalDest)
-	})
-
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
+	logger := rns.NewLogger()
 
-	if err := programSetup(tmpDir, 0, 0, rns.NewReticulum); err != nil {
+	if err := programSetup(logger, tmpDir, 0, 0, rns.NewReticulumWithLogger); err != nil {
 		t.Fatalf("first programSetup returned error: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(tmpDir, "config")); err != nil {
 		t.Fatalf("expected config file to be created in %v: %v", tmpDir, err)
 	}
-	if err := programSetup(tmpDir, 0, 0, rns.NewReticulum); err != nil {
+	if err := programSetup(logger, tmpDir, 0, 0, rns.NewReticulumWithLogger); err != nil {
 		t.Fatalf("second programSetup returned error: %v", err)
 	}
 }

@@ -19,7 +19,8 @@ const (
 	LogTimeFmtP = "15:04:05.000"
 )
 
-type loggerState struct {
+// Logger stores the configuration and sinks for Reticulum log output.
+type Logger struct {
 	mu sync.RWMutex
 
 	level int
@@ -33,14 +34,15 @@ type loggerState struct {
 	lock sync.Mutex
 }
 
-func newLoggerState() *loggerState {
-	return &loggerState{
+// NewLogger creates a logger with the default notice level and stdout output.
+func NewLogger() *Logger {
+	return &Logger{
 		level: LogNotice,
 		dest:  LogStdout,
 	}
 }
 
-var logger = newLoggerState()
+var logger = NewLogger()
 
 // SetAlwaysOverride safely updates the AlwaysOverride setting.
 func SetAlwaysOverride(override bool) {
@@ -102,81 +104,81 @@ func GetLogCallback() func(string) {
 	return logger.GetLogCallback()
 }
 
-func (s *loggerState) SetAlwaysOverride(override bool) {
+func (s *Logger) SetAlwaysOverride(override bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.override = override
 }
 
-func (s *loggerState) GetAlwaysOverride() bool {
+func (s *Logger) GetAlwaysOverride() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.override
 }
 
-func (s *loggerState) SetCompactLogFmt(compact bool) {
+func (s *Logger) SetCompactLogFmt(compact bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.compact = compact
 }
 
-func (s *loggerState) GetCompactLogFmt() bool {
+func (s *Logger) GetCompactLogFmt() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.compact
 }
 
-func (s *loggerState) SetLogLevel(level int) {
+func (s *Logger) SetLogLevel(level int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.level = level
 }
 
-func (s *loggerState) GetLogLevel() int {
+func (s *Logger) GetLogLevel() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.level
 }
 
-func (s *loggerState) SetLogFilePath(path string) {
+func (s *Logger) SetLogFilePath(path string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.filePath = path
 }
 
-func (s *loggerState) GetLogFilePath() string {
+func (s *Logger) GetLogFilePath() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.filePath
 }
 
-func (s *loggerState) SetLogDest(dest int) {
+func (s *Logger) SetLogDest(dest int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.dest = dest
 }
 
-func (s *loggerState) GetLogDest() int {
+func (s *Logger) GetLogDest() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.dest
 }
 
-func (s *loggerState) SetLogCallback(call func(string)) {
+func (s *Logger) SetLogCallback(call func(string)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.call = call
 }
 
-func (s *loggerState) GetLogCallback() func(string) {
+func (s *Logger) GetLogCallback() func(string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.call
 }
 
 // Log constructs, formats, and safely writes a distinct log message to the configured system destination.
-func Log(msg string, level int, pt bool) {
-	currentLogLevel := logger.GetLogLevel()
+func (s *Logger) Log(msg string, level int, pt bool) {
+	currentLogLevel := s.GetLogLevel()
 	if currentLogLevel == LogNone {
 		return
 	}
@@ -192,24 +194,24 @@ func Log(msg string, level int, pt bool) {
 			timeStr = now.Format(LogTimeFmt)
 		}
 
-		if logger.GetCompactLogFmt() {
+		if s.GetCompactLogFmt() {
 			logString = fmt.Sprintf("[%v] %v", timeStr, msg)
 		} else {
 			logString = fmt.Sprintf("[%v] %v %v", timeStr, LogLevelName(level), msg)
 		}
 
-		logger.lock.Lock()
-		defer logger.lock.Unlock()
+		s.lock.Lock()
+		defer s.lock.Unlock()
 
-		dest := logger.GetLogDest()
-		filePath := logger.GetLogFilePath()
+		dest := s.GetLogDest()
+		filePath := s.GetLogFilePath()
 
-		if dest == LogStdout || logger.GetAlwaysOverride() {
+		if dest == LogStdout || s.GetAlwaysOverride() {
 			fmt.Println(logString)
 		} else if dest == LogDestFile && filePath != "" {
 			f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 			if err != nil {
-				logger.SetAlwaysOverride(true)
+				s.SetAlwaysOverride(true)
 				fmt.Printf("[%v] [Critical] Exception occurred while writing log message to log file: %v\n", timeStr, err)
 				fmt.Printf("[%v] [Critical] Dumping future log events to console!\n", timeStr)
 				fmt.Println(logString)
@@ -217,13 +219,13 @@ func Log(msg string, level int, pt bool) {
 			}
 			defer func() {
 				if closeErr := f.Close(); closeErr != nil {
-					logger.SetAlwaysOverride(true)
+					s.SetAlwaysOverride(true)
 					fmt.Printf("[%v] [Critical] Exception occurred while closing log file: %v\n", timeStr, closeErr)
 				}
 			}()
 
 			if _, err := f.WriteString(logString + "\n"); err != nil {
-				logger.SetAlwaysOverride(true)
+				s.SetAlwaysOverride(true)
 				fmt.Printf("[%v] [Critical] Exception occurred while writing log message to log file: %v\n", timeStr, err)
 				fmt.Printf("[%v] [Critical] Dumping future log events to console!\n", timeStr)
 				fmt.Println(logString)
@@ -235,21 +237,26 @@ func Log(msg string, level int, pt bool) {
 				prevFile := filePath + ".1"
 				if _, err := os.Stat(prevFile); err == nil {
 					if rmErr := os.Remove(prevFile); rmErr != nil {
-						logger.SetAlwaysOverride(true)
+						s.SetAlwaysOverride(true)
 						fmt.Printf("[%v] [Critical] Exception occurred while rotating log file: %v\n", timeStr, rmErr)
 					}
 				}
 				if renameErr := os.Rename(filePath, prevFile); renameErr != nil {
-					logger.SetAlwaysOverride(true)
+					s.SetAlwaysOverride(true)
 					fmt.Printf("[%v] [Critical] Exception occurred while rotating log file: %v\n", timeStr, renameErr)
 				}
 			}
 		} else if dest == LogCallback {
-			if callback := logger.GetLogCallback(); callback != nil {
+			if callback := s.GetLogCallback(); callback != nil {
 				callback(logString)
 			}
 		}
 	}
+}
+
+// Log writes a message using the package-level logger.
+func Log(msg string, level int, pt bool) {
+	logger.Log(msg, level, pt)
 }
 
 // Logf provides string formatting convenience over the standard logging function.

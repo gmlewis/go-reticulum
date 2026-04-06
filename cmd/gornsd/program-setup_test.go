@@ -32,17 +32,17 @@ loglevel = %v
 	}
 }
 
-func captureLoggerState(t *testing.T) {
+func captureLoggerState(t *testing.T, logger *rns.Logger) {
 	t.Helper()
-	level := rns.GetLogLevel()
-	dest := rns.GetLogDest()
-	filePath := rns.GetLogFilePath()
-	callback := rns.GetLogCallback()
+	level := logger.GetLogLevel()
+	dest := logger.GetLogDest()
+	filePath := logger.GetLogFilePath()
+	callback := logger.GetLogCallback()
 	t.Cleanup(func() {
-		rns.SetLogLevel(level)
-		rns.SetLogDest(dest)
-		rns.SetLogFilePath(filePath)
-		rns.SetLogCallback(callback)
+		logger.SetLogLevel(level)
+		logger.SetLogDest(dest)
+		logger.SetLogFilePath(filePath)
+		logger.SetLogCallback(callback)
 	})
 }
 
@@ -78,14 +78,15 @@ func TestProgramSetupAppliesVerbosityAndLogsNotice(t *testing.T) {
 	defer cleanup()
 	writeGornsdConfig(t, configDir, "No", 4)
 
-	captureLoggerState(t)
+	logger := rns.NewLogger()
+	captureLoggerState(t, logger)
 	var messages []string
-	rns.SetLogDest(rns.LogCallback)
-	rns.SetLogCallback(func(message string) {
+	logger.SetLogDest(rns.LogCallback)
+	logger.SetLogCallback(func(message string) {
 		messages = append(messages, message)
 	})
 
-	ret, err := programSetup(configDir, 2, 1, false)
+	ret, err := programSetup(logger, configDir, 2, 1, false)
 	if err != nil {
 		t.Fatalf("programSetup error: %v", err)
 	}
@@ -95,10 +96,10 @@ func TestProgramSetupAppliesVerbosityAndLogsNotice(t *testing.T) {
 		}
 	})
 
-	if got, want := rns.GetLogLevel(), 5; got != want {
+	if got, want := logger.GetLogLevel(), 5; got != want {
 		t.Fatalf("log level = %v, want %v", got, want)
 	}
-	if got, want := rns.GetLogDest(), rns.LogCallback; got != want {
+	if got, want := logger.GetLogDest(), rns.LogCallback; got != want {
 		t.Fatalf("log dest = %v, want %v", got, want)
 	}
 	if len(messages) == 0 || !strings.Contains(messages[len(messages)-1], "Started gornsd version") {
@@ -111,8 +112,9 @@ func TestProgramSetupServiceUsesFileLogging(t *testing.T) {
 	defer cleanup()
 	writeGornsdConfig(t, configDir, "No", 4)
 
-	captureLoggerState(t)
-	ret, err := programSetup(configDir, 0, 0, true)
+	logger := rns.NewLogger()
+	captureLoggerState(t, logger)
+	ret, err := programSetup(logger, configDir, 0, 0, true)
 	if err != nil {
 		t.Fatalf("programSetup error: %v", err)
 	}
@@ -122,10 +124,10 @@ func TestProgramSetupServiceUsesFileLogging(t *testing.T) {
 		}
 	})
 
-	if got, want := rns.GetLogDest(), rns.LogDestFile; got != want {
+	if got, want := logger.GetLogDest(), rns.LogDestFile; got != want {
 		t.Fatalf("log dest = %v, want %v", got, want)
 	}
-	if got, want := rns.GetLogFilePath(), filepath.Join(configDir, "logfile"); got != want {
+	if got, want := logger.GetLogFilePath(), filepath.Join(configDir, "logfile"); got != want {
 		t.Fatalf("log file path = %q, want %q", got, want)
 	}
 	waitForFileContains(t, filepath.Join(configDir, "logfile"), "Started gornsd version")
@@ -136,10 +138,11 @@ func TestProgramSetupConnectedSharedInstanceLogsWarning(t *testing.T) {
 	defer cleanup()
 	writeGornsdConfig(t, configDir, "Yes", 4)
 
-	captureLoggerState(t)
+	logger := rns.NewLogger()
+	captureLoggerState(t, logger)
 	var messages []string
-	rns.SetLogDest(rns.LogCallback)
-	rns.SetLogCallback(func(message string) {
+	logger.SetLogDest(rns.LogCallback)
+	logger.SetLogCallback(func(message string) {
 		messages = append(messages, message)
 	})
 
@@ -155,7 +158,7 @@ func TestProgramSetupConnectedSharedInstanceLogsWarning(t *testing.T) {
 	})
 
 	messages = nil
-	ret, err := programSetup(configDir, 0, 0, false)
+	ret, err := programSetup(logger, configDir, 0, 0, false)
 	if err != nil {
 		t.Fatalf("programSetup error: %v", err)
 	}

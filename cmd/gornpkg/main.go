@@ -31,19 +31,23 @@ func (a *appT) run() {
 		return
 	}
 
-	if err := programSetup(a.configDir, a.verbose, a.quiet, rns.NewReticulum); err != nil {
+	logger := rns.NewLogger()
+	if err := programSetup(logger, a.configDir, a.verbose, a.quiet, rns.NewReticulumWithLogger); err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v", err)
 	}
 }
 
-type reticulumFactory func(rns.Transport, string) (*rns.Reticulum, error)
+type reticulumFactory func(rns.Transport, string, *rns.Logger) (*rns.Reticulum, error)
 
-func programSetup(configDir string, verbosity, quietness counter, newReticulum reticulumFactory) (err error) {
-	rns.SetLogDest(rns.LogStdout)
-	rns.SetLogLevel(int(verbosity) - int(quietness))
+func programSetup(logger *rns.Logger, configDir string, verbosity, quietness counter, newReticulum reticulumFactory) (err error) {
+	if logger == nil {
+		logger = rns.NewLogger()
+	}
+	logger.SetLogDest(rns.LogStdout)
+	logger.SetLogLevel(int(verbosity) - int(quietness))
 
 	ts := rns.NewTransportSystem()
-	ret, err := newReticulum(ts, configDir)
+	ret, err := newReticulum(ts, configDir, logger)
 	if err != nil {
 		return err
 	}
