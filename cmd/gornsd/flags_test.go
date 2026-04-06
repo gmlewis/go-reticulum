@@ -8,16 +8,17 @@ package main
 import (
 	"bytes"
 	"io"
+	"strings"
 	"testing"
 )
 
-func TestParseFlags(t *testing.T) {
+func TestParseFlagsSupportsAliasesAndCounts(t *testing.T) {
 	t.Parallel()
-	app, err := parseFlags([]string{"--config", "/tmp/config", "-v", "-q", "-s", "--exampleconfig", "--version"}, io.Discard)
+	app, err := parseFlags([]string{"--config", "/tmp/config", "-v", "-v", "--verbose", "-q", "--quiet", "-s", "--service", "-i", "--interactive", "--exampleconfig", "--version"}, io.Discard)
 	if err != nil {
 		t.Fatalf("parseFlags failed: %v", err)
 	}
-	if app.configDir != "/tmp/config" || !app.verbose || !app.quiet || !app.service || !app.exampleConfig || !app.version {
+	if app.configDir != "/tmp/config" || app.verbose != 3 || app.quiet != 2 || !app.service || !app.interactive || !app.exampleConfig || !app.version {
 		t.Fatalf("unexpected app state: %+v", app)
 	}
 }
@@ -31,6 +32,28 @@ func TestParseFlagsHelp(t *testing.T) {
 	}
 	if got := buf.String(); got != usageText {
 		t.Fatalf("help output mismatch:\n--- got ---\n%v\n--- want ---\n%v", got, usageText)
+	}
+}
+
+func TestParseFlagsRejectsUnknownFlags(t *testing.T) {
+	t.Parallel()
+	_, err := parseFlags([]string{"--bogus"}, io.Discard)
+	if err == nil {
+		t.Fatal("parseFlags error = nil, want non-nil")
+	}
+	if got := err.Error(); !strings.Contains(got, "unrecognized arguments: --bogus") {
+		t.Fatalf("error = %q, want unrecognized-arguments failure", got)
+	}
+}
+
+func TestParseFlagsRejectsPositionalArgs(t *testing.T) {
+	t.Parallel()
+	_, err := parseFlags([]string{"dest"}, io.Discard)
+	if err == nil {
+		t.Fatal("parseFlags error = nil, want non-nil")
+	}
+	if got := err.Error(); !strings.Contains(got, "unrecognized arguments: dest") {
+		t.Fatalf("error = %q, want unrecognized-arguments failure", got)
 	}
 }
 

@@ -21,6 +21,7 @@ import (
 )
 
 func main() {
+	log.SetFlags(0)
 	app, err := parseFlags(os.Args[1:], os.Stderr)
 	if err != nil {
 		if err == errHelp {
@@ -39,18 +40,7 @@ func main() {
 		return
 	}
 
-	if app.verbose {
-		rns.SetLogLevel(rns.LogVerbose)
-	}
-	if app.quiet {
-		rns.SetLogLevel(rns.LogWarning)
-	}
-	if app.service {
-		rns.SetLogDest(rns.LogDestFile)
-	}
-
-	ts := rns.NewTransportSystem()
-	ret, err := rns.NewReticulum(ts, app.configDir)
+	ret, err := programSetup(app.configDir, app.verbose, app.quiet, app.service)
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
@@ -66,8 +56,7 @@ func main() {
 	select {}
 }
 
-const exampleRNSConfig = `
-# This is an example Reticulum config file.
+const exampleRNSConfig = `# This is an example Reticulum config file.
 # You should probably edit it to include any additional,
 # interfaces and settings you might need.
 
