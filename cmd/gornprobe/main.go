@@ -43,6 +43,8 @@ func main() {
 		return
 	}
 
+	setupSignalHandler(nil)
+
 	if len(app.args) < 2 {
 		fmt.Println("")
 		app.usage(os.Stdout)
