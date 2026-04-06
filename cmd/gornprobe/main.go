@@ -82,24 +82,11 @@ func main() {
 	}
 	probeTimeout := probeTimeoutSeconds(app.timeout, firstHopTimeout)
 
-	if !ts.HasPath(destHash) {
-		fmt.Printf("Path to <%x> requested  ", destHash)
-		if err := ts.RequestPath(destHash); err != nil {
-			log.Fatalf("Could not request path to <%x>: %v\n", destHash, err)
+	if err := waitForProbePath(os.Stdout, ts, destHash, probeTimeout); err != nil {
+		if err == errPathRequestTimedOut {
+			os.Exit(1)
 		}
-	}
-
-	i := 0
-	syms := []string{"⢄", "⢂", "⢁", "⡁", "⡈", "⡐", "⡠"}
-	deadline := time.Now().Add(time.Duration(probeTimeout * float64(time.Second)))
-	for !ts.HasPath(destHash) && time.Now().Before(deadline) {
-		time.Sleep(100 * time.Millisecond)
-		fmt.Printf("\b\b%v ", syms[i])
-		i = (i + 1) % len(syms)
-	}
-
-	if !ts.HasPath(destHash) {
-		log.Fatalf("\r%v\rPath request timed out\n", strings.Repeat(" ", 60))
+		log.Fatal(err)
 	}
 
 	remoteID := rns.RecallIdentity(ts, destHash)
@@ -139,10 +126,11 @@ func main() {
 			continue
 		}
 
+		i := 0
+		syms := []string{"⢄", "⢂", "⢁", "⡁", "⡈", "⡐", "⡠"}
 		deadline := time.Now().Add(time.Duration(probeTimeout * float64(time.Second)))
 
 		delivered := false
-		i = 0
 		for time.Now().Before(deadline) {
 			if receipt.Status == rns.ReceiptDelivered {
 				delivered = true
