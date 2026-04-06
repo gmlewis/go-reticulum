@@ -27,6 +27,7 @@ type activeCommand struct {
 	mu       sync.Mutex
 	stdin    io.WriteCloser
 	kill     func() error
+	logger   *rns.Logger
 	closed   bool
 	finished bool
 }
@@ -62,6 +63,10 @@ func (c *activeCommand) markFinished() {
 }
 
 func (c *activeCommand) close() {
+	logger := c.logger
+	if logger == nil {
+		logger = rns.NewLogger()
+	}
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -75,12 +80,12 @@ func (c *activeCommand) close() {
 
 	if stdin != nil {
 		if err := stdin.Close(); err != nil {
-			rns.Logf("Warning: Could not close stdin for active command: %v", rns.LogWarning, false, err)
+			logger.Log(fmt.Sprintf("Warning: Could not close stdin for active command: %v", err), rns.LogWarning, false)
 		}
 	}
 	if shouldKill {
 		if err := kill(); err != nil {
-			rns.Logf("Warning: Could not kill active command properly: %v", rns.LogWarning, false, err)
+			logger.Log(fmt.Sprintf("Warning: Could not kill active command properly: %v", err), rns.LogWarning, false)
 		}
 	}
 }

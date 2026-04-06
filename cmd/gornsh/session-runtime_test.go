@@ -8,12 +8,23 @@ package main
 import (
 	"errors"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
+
+type closeErrorWriteCloser struct{}
+
+func (c *closeErrorWriteCloser) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
+func (c *closeErrorWriteCloser) Close() error {
+	return errors.New("close failed")
+}
 
 type fakeSender struct {
 	mu   sync.Mutex
@@ -176,6 +187,33 @@ func TestActiveCommandCloseDoesNotKillWhenFinished(t *testing.T) {
 
 	if killed != 0 {
 		t.Fatalf("kill called %v times, want 0", killed)
+	}
+}
+
+func TestActiveCommandCloseLogsThroughInjectedLogger(t *testing.T) {
+	t.Parallel()
+
+	var captured string
+	logger := rns.NewLogger()
+	logger.SetLogDest(rns.LogCallback)
+	logger.SetLogCallback(func(msg string) {
+		captured += msg
+	})
+	logger.SetLogLevel(rns.LogWarning)
+
+	cmd := &activeCommand{
+		stdin:  &closeErrorWriteCloser{},
+		kill:   func() error { return errors.New("kill failed") },
+		logger: logger,
+	}
+
+	cmd.close()
+
+	if !strings.Contains(captured, "Warning: Could not close stdin for active command") {
+		t.Fatalf("missing stdin close warning in %q", captured)
+	}
+	if !strings.Contains(captured, "Warning: Could not kill active command properly") {
+		t.Fatalf("missing kill warning in %q", captured)
 	}
 }
 

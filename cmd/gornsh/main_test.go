@@ -7,6 +7,7 @@ package main
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns"
@@ -213,5 +214,32 @@ func TestNewRuntime(t *testing.T) {
 	}
 	if got := rt.logger.GetLogLevel(); got != rns.LogVerbose {
 		t.Fatalf("log level=%v, want %v", got, rns.LogVerbose)
+	}
+}
+
+func TestBuildAllowPolicyLogsThroughInjectedLogger(t *testing.T) {
+	t.Parallel()
+
+	var captured string
+	logger := rns.NewLogger()
+	logger.SetLogDest(rns.LogCallback)
+	logger.SetLogCallback(func(msg string) {
+		captured += msg
+	})
+	logger.SetLogLevel(rns.LogWarning)
+
+	mode, allowed := buildAllowPolicy(logger, options{allowHashes: []string{"not-a-hash"}})
+
+	if mode != rns.AllowList {
+		t.Fatalf("mode=%v, want %v", mode, rns.AllowList)
+	}
+	if len(allowed) != 0 {
+		t.Fatalf("allowed=%v, want empty", allowed)
+	}
+	if !strings.Contains(captured, "Ignoring invalid allowed identity hash") {
+		t.Fatalf("missing invalid-hash warning in %q", captured)
+	}
+	if !strings.Contains(captured, "Authentication enabled but no allowed identities configured") {
+		t.Fatalf("missing empty-policy warning in %q", captured)
 	}
 }

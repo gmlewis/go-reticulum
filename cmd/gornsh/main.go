@@ -77,13 +77,6 @@ func newRuntime(opts options) *runtimeT {
 	return &runtimeT{opts: opts, logger: configureLogger(opts.verbose, opts.quiet)}
 }
 
-func (rt *runtimeT) applyLogger() {
-	if rt == nil || rt.logger == nil {
-		return
-	}
-	rns.SetLogLevel(rt.logger.GetLogLevel())
-}
-
 func main() {
 	opts, err := parseFlags(os.Args[1:], os.Stderr)
 	if err != nil {
@@ -99,17 +92,16 @@ func main() {
 	}
 
 	rt := newRuntime(opts)
-	rt.applyLogger()
 
 	if rt.opts.printIdentity {
-		if err := printIdentity(rt.opts); err != nil {
+		if err := rt.printIdentity(); err != nil {
 			log.Fatalf("gornsh: %v", err)
 		}
 		return
 	}
 
 	if rt.opts.listen {
-		if err := doListen(rt.opts); err != nil {
+		if err := rt.doListen(); err != nil {
 			log.Fatalf("gornsh: %v", err)
 		}
 		return
@@ -120,14 +112,15 @@ func main() {
 		os.Exit(2)
 	}
 
-	code, err := doInitiate(rt.opts)
+	code, err := rt.doInitiate()
 	if err != nil {
 		log.Fatalf("gornsh: %v", err)
 	}
 	os.Exit(code)
 }
 
-func printIdentity(opts options) error {
+func (rt *runtimeT) printIdentity() error {
+	opts := rt.opts
 	ts := rns.NewTransportSystem()
 	ret, err := rns.NewReticulum(ts, opts.configDir)
 	if err != nil {
@@ -187,7 +180,12 @@ func resolveIdentityPath(opts options) (string, error) {
 	return filepath.Join(configDir, "storage", "identities", identityName), nil
 }
 
-func doListen(opts options) error {
+func (rt *runtimeT) doListen() error {
+	opts := rt.opts
+	logger := rt.logger
+	if logger == nil {
+		logger = rns.NewLogger()
+	}
 	ts := rns.NewTransportSystem()
 	ret, err := rns.NewReticulum(ts, opts.configDir)
 	if err != nil {
@@ -214,7 +212,7 @@ func doListen(opts options) error {
 		return fmt.Errorf("could not create destination: %w", err)
 	}
 
-	allowMode, allowedList := buildAllowPolicy(opts)
+	allowMode, allowedList := buildAllowPolicy(logger, opts)
 	destination.SetLinkEstablishedCallback(func(link *rns.Link) {
 		wireListenerChannelSession(link, opts, allowedList)
 	})
@@ -266,15 +264,19 @@ func doListen(opts options) error {
 	select {}
 }
 
-func doInitiate(opts options) (int, error) {
+func (rt *runtimeT) doInitiate() (int, error) {
+	opts := rt.opts
 	ts := rns.NewTransportSystem()
-	ret, err := rns.NewReticulum(ts, opts.configDir)
+	if rt.logger == nil {
+		rt.logger = rns.NewLogger()
+	}
+	ret, err := rns.NewReticulumWithLogger(ts, opts.configDir, rt.logger)
 	if err != nil {
 		return 1, fmt.Errorf("could not initialize Reticulum: %w", err)
 	}
 	defer func() {
 		if err := ret.Close(); err != nil {
-			rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+			rt.logger.Log(fmt.Sprintf("Warning: Could not close Reticulum properly: %v", err), rns.LogWarning, false)
 		}
 	}()
 
@@ -406,7 +408,10 @@ func toBytes(value any) ([]byte, bool) {
 	}
 }
 
-func buildAllowPolicy(opts options) (int, [][]byte) {
+func buildAllowPolicy(logger *rns.Logger, opts options) (int, [][]byte) {
+	if logger == nil {
+		logger = rns.NewLogger()
+	}
 	if opts.noAuth {
 		return rns.AllowAll, nil
 	}
@@ -417,14 +422,14 @@ func buildAllowPolicy(opts options) (int, [][]byte) {
 	for _, hash := range hashes {
 		decoded, ok := parseAllowedIdentityHash(hash)
 		if !ok {
-			rns.Logf("Ignoring invalid allowed identity hash %q", rns.LogWarning, false, hash)
+			logger.Log(fmt.Sprintf("Ignoring invalid allowed identity hash %q", hash), rns.LogWarning, false)
 			continue
 		}
 		allowedList = append(allowedList, decoded)
 	}
 
 	if len(allowedList) == 0 {
-		rns.Log("Authentication enabled but no allowed identities configured; denying all command requests", rns.LogWarning, false)
+		logger.Log("Authentication enabled but no allowed identities configured; denying all command requests", rns.LogWarning, false)
 	}
 
 	return rns.AllowList, allowedList
