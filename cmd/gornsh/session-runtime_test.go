@@ -51,7 +51,7 @@ func TestStreamPipeSendsDataAndEOF(t *testing.T) {
 
 	sender := &fakeSender{}
 	reader := io.NopCloser(bytesReader("hello"))
-	streamPipe(sender, reader, streamIDStdout)
+	streamPipe(rns.NewLogger(), sender, reader, streamIDStdout)
 
 	msgs := sender.messages()
 	if len(msgs) != 2 {
@@ -214,6 +214,25 @@ func TestActiveCommandCloseLogsThroughInjectedLogger(t *testing.T) {
 	}
 	if !strings.Contains(captured, "Warning: Could not kill active command properly") {
 		t.Fatalf("missing kill warning in %q", captured)
+	}
+}
+
+func TestSendProtocolErrorToSenderLogsThroughInjectedLogger(t *testing.T) {
+	t.Parallel()
+
+	var captured string
+	logger := rns.NewLogger()
+	logger.SetLogDest(rns.LogCallback)
+	logger.SetLogCallback(func(msg string) {
+		captured += msg
+	})
+	logger.SetLogLevel(rns.LogWarning)
+
+	sender := &failingSender{}
+	sendProtocolErrorToSender(logger, sender, "boom", true)
+
+	if !strings.Contains(captured, "Failed to send protocol error") {
+		t.Fatalf("missing protocol error warning in %q", captured)
 	}
 }
 

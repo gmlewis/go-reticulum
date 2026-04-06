@@ -128,7 +128,7 @@ func (rt *runtimeT) printIdentity() error {
 	}
 	defer func() {
 		if err := ret.Close(); err != nil {
-			rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+			rt.logger.Log(fmt.Sprintf("Warning: Could not close Reticulum properly: %v", err), rns.LogWarning, false)
 		}
 	}()
 
@@ -193,7 +193,7 @@ func (rt *runtimeT) doListen() error {
 	}
 	defer func() {
 		if err := ret.Close(); err != nil {
-			rns.Logf("Warning: Could not close Reticulum properly: %v", rns.LogWarning, false, err)
+			rt.logger.Log(fmt.Sprintf("Warning: Could not close Reticulum properly: %v", err), rns.LogWarning, false)
 		}
 	}()
 
@@ -214,16 +214,16 @@ func (rt *runtimeT) doListen() error {
 
 	allowMode, allowedList := buildAllowPolicy(logger, opts)
 	destination.SetLinkEstablishedCallback(func(link *rns.Link) {
-		wireListenerChannelSession(link, opts, allowedList)
+		wireListenerChannelSession(logger, link, opts, allowedList)
 	})
 	destination.RegisterRequestHandler("command", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 		if !opts.noAuth && remoteIdentity == nil {
-			rns.Log("Rejected unauthenticated command request", rns.LogWarning, false)
+			logger.Log("Rejected unauthenticated command request", rns.LogWarning, false)
 			return nil
 		}
 
 		if !opts.noAuth && remoteIdentity != nil && len(allowedList) > 0 && !identityAllowed(remoteIdentity.Hash, allowedList) {
-			rns.Logf("Rejected unauthorized command request from %v", rns.LogWarning, false, remoteIdentity.HexHash)
+			logger.Log(fmt.Sprintf("Rejected unauthorized command request from %v", remoteIdentity.HexHash), rns.LogWarning, false)
 			return nil
 		}
 
@@ -244,7 +244,7 @@ func (rt *runtimeT) doListen() error {
 
 	if opts.announceEvery >= 0 {
 		if err := destination.Announce(nil); err != nil {
-			rns.Logf("Initial announce failed: %v", rns.LogWarning, false, err)
+			logger.Log(fmt.Sprintf("Initial announce failed: %v", err), rns.LogWarning, false)
 		}
 	}
 
@@ -255,7 +255,7 @@ func (rt *runtimeT) doListen() error {
 			defer ticker.Stop()
 			for range ticker.C {
 				if err := destination.Announce(nil); err != nil {
-					rns.Logf("Periodic announce failed: %v", rns.LogWarning, false, err)
+					logger.Log(fmt.Sprintf("Periodic announce failed: %v", err), rns.LogWarning, false)
 				}
 			}
 		}()
@@ -330,7 +330,7 @@ func (rt *runtimeT) doInitiate() (int, error) {
 		}
 	}
 
-	return runInitiatorChannelSession(link, opts)
+	return runInitiatorChannelSessionWithLogger(rt.logger, link, opts)
 }
 
 func resolveRemoteIdentity(ts rns.Transport, destHash []byte, timeout time.Duration) (*rns.Identity, error) {

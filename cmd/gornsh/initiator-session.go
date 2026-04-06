@@ -167,6 +167,10 @@ func (s *initiatorChannelSession) terminalSnapshot() initiatorTerminalSnapshot {
 }
 
 func runInitiatorChannelSession(link *rns.Link, opts options) (int, error) {
+	return runInitiatorChannelSessionWithLogger(nil, link, opts)
+}
+
+func runInitiatorChannelSessionWithLogger(logger *rns.Logger, link *rns.Link, opts options) (int, error) {
 	channel := link.GetChannel()
 	registerProtocolMessageTypes(channel)
 	stopCh := make(chan struct{})
@@ -188,7 +192,6 @@ func runInitiatorChannelSession(link *rns.Link, opts options) (int, error) {
 }
 
 func runInitiatorProtocolFlow(channel channelSession, opts options, linkClosedCh <-chan struct{}, stopCh <-chan struct{}, pumpInput bool) (int, *initiatorChannelSession, error) {
-
 	session := newInitiatorChannelSession()
 	channel.AddMessageHandler(session.handleMessage)
 	timeout := time.Duration(opts.timeoutSec) * time.Second
@@ -333,7 +336,7 @@ func pumpInitiatorStdin(sender messageSender) {
 		}
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
-				sendProtocolErrorToSender(sender, err.Error(), false)
+				sendProtocolErrorToSender(nil, sender, err.Error(), true)
 			}
 			_ = sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamIDStdin, Data: nil, EOF: true, Compressed: false}, time.Now().Add(2*time.Second))
 			return

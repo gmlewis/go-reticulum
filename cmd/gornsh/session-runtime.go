@@ -90,7 +90,10 @@ func (c *activeCommand) close() {
 	}
 }
 
-func wireListenerChannelSession(link *rns.Link, opts options, allowedList [][]byte) {
+func wireListenerChannelSession(logger *rns.Logger, link *rns.Link, opts options, allowedList [][]byte) {
+	if logger == nil {
+		logger = rns.NewLogger()
+	}
 	session := newListenerSession(listenerSessionConfig{
 		AllowAll:           opts.noAuth,
 		AllowRemoteCommand: !opts.noRemoteCmd,
@@ -111,7 +114,7 @@ func wireListenerChannelSession(link *rns.Link, opts options, allowedList [][]by
 			allowed = identityAllowed(id.Hash, allowedList)
 		}
 		if err := session.onInitiatorIdentified(id.Hash, allowed); err != nil {
-			sendProtocolError(channel, err.Error(), true)
+			sendProtocolError(logger, channel, err.Error(), true)
 		}
 	})
 
@@ -134,19 +137,19 @@ func wireListenerChannelSession(link *rns.Link, opts options, allowedList [][]by
 		case *versionInfoMessage:
 			response, err := session.handleVersion(*typed)
 			if err != nil {
-				sendProtocolError(channel, err.Error(), true)
+				sendProtocolError(logger, channel, err.Error(), true)
 				return true
 			}
 			if response != nil {
 				if err := sendMessageWithRetry(channel, response, time.Now().Add(2*time.Second)); err != nil {
-					rns.Logf("Failed to send version info response: %v", rns.LogWarning, false, err)
+					logger.Log(fmt.Sprintf("Failed to send version info response: %v", err), rns.LogWarning, false)
 				}
 			}
 			return true
 		case *executeCommandMessage:
 			cmdline, err := session.handleExecute(*typed)
 			if err != nil {
-				sendProtocolError(channel, err.Error(), true)
+				sendProtocolError(logger, channel, err.Error(), true)
 				return true
 			}
 			commandMu.Lock()
@@ -154,10 +157,10 @@ func wireListenerChannelSession(link *rns.Link, opts options, allowedList [][]by
 				command.close()
 				command = nil
 			}
-			started, err := startSessionCommand(channel, cmdline, link.GetRemoteIdentity(), typed)
+			started, err := startSessionCommand(logger, channel, cmdline, link.GetRemoteIdentity(), typed)
 			if err != nil {
 				commandMu.Unlock()
-				sendProtocolError(channel, normalizeCommandStartError(err), true)
+				sendProtocolError(logger, channel, normalizeCommandStartError(err), true)
 				return true
 			}
 			command = started
@@ -165,34 +168,34 @@ func wireListenerChannelSession(link *rns.Link, opts options, allowedList [][]by
 			return true
 		case *windowSizeMessage:
 			if err := session.handleWindowSize(*typed); err != nil {
-				sendProtocolError(channel, err.Error(), true)
+				sendProtocolError(logger, channel, err.Error(), true)
 				return true
 			}
 			return true
 		case *streamDataMessage:
 			if err := session.handleStreamData(*typed); err != nil {
-				sendProtocolError(channel, err.Error(), true)
+				sendProtocolError(logger, channel, err.Error(), true)
 				return true
 			}
 			commandMu.Lock()
 			active := command
 			commandMu.Unlock()
 			if active == nil {
-				sendProtocolError(channel, "no active command for stdin stream", true)
+				sendProtocolError(logger, channel, "no active command for stdin stream", true)
 				return true
 			}
 			if err := active.writeStdin(typed.Data, typed.EOF); err != nil {
 				if errors.Is(err, errStdinClosed) || errors.Is(err, io.ErrClosedPipe) {
 					return true
 				}
-				sendProtocolError(channel, err.Error(), true)
+				sendProtocolError(logger, channel, err.Error(), true)
 				return true
 			}
 			return true
 		case *noopMessage:
 			if session.isRunning() {
 				if err := sendMessageWithRetry(channel, &noopMessage{}, time.Now().Add(2*time.Second)); err != nil {
-					rns.Logf("Failed to echo noop message: %v", rns.LogWarning, false, err)
+					logger.Log(fmt.Sprintf("Failed to echo noop message: %v", err), rns.LogWarning, false)
 				}
 			}
 			return true
@@ -209,7 +212,7 @@ func normalizeCommandStartError(err error) string {
 	return "command start failed: " + err.Error()
 }
 
-func startSessionCommand(sender messageSender, commandLine []string, remoteIdentity *rns.Identity, execute *executeCommandMessage) (*activeCommand, error) {
+func startSessionCommand(logger *rns.Logger, sender messageSender, commandLine []string, remoteIdentity *rns.Identity, execute *executeCommandMessage) (*activeCommand, error) {
 	if len(commandLine) == 0 {
 		return nil, errors.New("no command to execute")
 	}
@@ -244,8 +247,8 @@ func startSessionCommand(sender messageSender, commandLine []string, remoteIdent
 		},
 	}
 
-	go streamPipe(sender, stdoutPipe, streamIDStdout)
-	go streamPipe(sender, stderrPipe, streamIDStderr)
+	go streamPipe(logger, sender, stdoutPipe, streamIDStdout)
+	go streamPipe(logger, sender, stderrPipe, streamIDStderr)
 
 	go func() {
 		err := cmd.Wait()
@@ -255,7 +258,7 @@ func startSessionCommand(sender messageSender, commandLine []string, remoteIdent
 				exitCode = exitErr.ExitCode()
 			} else {
 				exitCode = 127
-				sendProtocolErrorToSender(sender, err.Error(), true)
+				sendProtocolErrorToSender(logger, sender, err.Error(), true)
 			}
 		}
 		active.markFinished()
@@ -308,10 +311,13 @@ func upsertEnv(env []string, key, value string) []string {
 	return updated
 }
 
-func streamPipe(sender messageSender, reader io.ReadCloser, streamID int) {
+func streamPipe(logger *rns.Logger, sender messageSender, reader io.ReadCloser, streamID int) {
+	if logger == nil {
+		logger = rns.NewLogger()
+	}
 	defer func() {
 		if err := reader.Close(); err != nil {
-			sendProtocolErrorToSender(sender, fmt.Sprintf("stream close failed: %v", err), false)
+			sendProtocolErrorToSender(logger, sender, fmt.Sprintf("stream close failed: %v", err), false)
 		}
 	}()
 
@@ -325,7 +331,7 @@ func streamPipe(sender messageSender, reader io.ReadCloser, streamID int) {
 		}
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
-				sendProtocolErrorToSender(sender, err.Error(), true)
+				sendProtocolErrorToSender(logger, sender, err.Error(), true)
 			}
 			_ = sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamID, Data: nil, EOF: true, Compressed: false}, time.Now().Add(2*time.Second))
 			return
@@ -333,15 +339,21 @@ func streamPipe(sender messageSender, reader io.ReadCloser, streamID int) {
 	}
 }
 
-func sendProtocolError(channel *rns.Channel, message string, fatal bool) {
+func sendProtocolError(logger *rns.Logger, channel *rns.Channel, message string, fatal bool) {
+	if logger == nil {
+		logger = rns.NewLogger()
+	}
 	err := sendMessageWithRetry(channel, &errorMessage{Message: message, Fatal: fatal, Data: nil}, time.Now().Add(2*time.Second))
 	if err != nil {
-		rns.Logf("Failed to send protocol error %q: %v", rns.LogWarning, false, message, err)
+		logger.Log(fmt.Sprintf("Failed to send protocol error %q: %v", message, err), rns.LogWarning, false)
 	}
 }
 
-func sendProtocolErrorToSender(sender messageSender, message string, fatal bool) {
+func sendProtocolErrorToSender(logger *rns.Logger, sender messageSender, message string, fatal bool) {
+	if logger == nil {
+		logger = rns.NewLogger()
+	}
 	if err := sendMessageWithRetry(sender, &errorMessage{Message: message, Fatal: fatal, Data: nil}, time.Now().Add(2*time.Second)); err != nil {
-		rns.Logf("Failed to send protocol error %q: %v", rns.LogWarning, false, message, err)
+		logger.Log(fmt.Sprintf("Failed to send protocol error %q: %v", message, err), rns.LogWarning, false)
 	}
 }
