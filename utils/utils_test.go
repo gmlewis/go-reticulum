@@ -11,12 +11,9 @@ import (
 	"flag"
 	"strings"
 	"testing"
-)
 
-func normalizeOutput(text string) string {
-	text = strings.NewReplacer("\r", " ", "\b", "").Replace(text)
-	return strings.Join(strings.Fields(text), " ")
-}
+	"github.com/gmlewis/go-reticulum/testutils"
+)
 
 func TestErrHelp(t *testing.T) {
 	t.Parallel()
@@ -45,7 +42,7 @@ func TestPrintVersionLine(t *testing.T) {
 func TestNormalizeOutput(t *testing.T) {
 	t.Parallel()
 
-	got := normalizeOutput("gornprobe\r\n\b  hello\nworld\t  42")
+	got := testutils.NormalizeOutput("gornprobe\r\n\b  hello\nworld\t  42")
 	if got != "gornprobe hello world 42" {
 		t.Fatalf("NormalizeOutput = %q", got)
 	}
@@ -69,7 +66,7 @@ func TestNewFlagSetInvokesUsageOnHelp(t *testing.T) {
 func TestNormalizeOutputTrimsWhitespace(t *testing.T) {
 	t.Parallel()
 
-	if got := normalizeOutput("   multiple    spaces\n\n  preserved   "); got != "multiple spaces preserved" {
+	if got := testutils.NormalizeOutput("   multiple    spaces\n\n  preserved   "); got != "multiple spaces preserved" {
 		t.Fatalf("NormalizeOutput = %q", got)
 	}
 }

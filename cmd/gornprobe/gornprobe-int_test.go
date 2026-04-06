@@ -13,13 +13,13 @@ import (
 	"os"
 	osexec "os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 type probeCommandOutcome struct {
@@ -69,7 +69,8 @@ func TestGornprobeKeyboardInterrupt(t *testing.T) {
 	t.Parallel()
 
 	binPath := buildGornprobeBinary(t)
-	configDir := tempDir(t)
+	configDir, cleanup := testutils.TempDir(t, "gornprobe-int-")
+	defer cleanup()
 	configText := `[reticulum]
 share_instance = No
 instance_control_port = 0
@@ -303,20 +304,4 @@ func renderProbePacketLossScenario() probeCommandOutcome {
 	summary, exitCode := formatProbeLossSummary(2, 1)
 	out.WriteString(summary + "\n")
 	return probeCommandOutcome{stdout: normalizeProbeOutput(out.String()), exitCode: exitCode}
-}
-
-func tempDir(t *testing.T) string {
-	t.Helper()
-	baseDir := ""
-	if runtime.GOOS == "darwin" {
-		baseDir = "/tmp"
-	}
-	dir, err := os.MkdirTemp(baseDir, "gornprobe-int-")
-	if err != nil {
-		t.Fatalf("tempDir error: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir)
-	})
-	return dir
 }

@@ -8,27 +8,11 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
-
-func tempDir(t *testing.T) (string, func()) {
-	t.Helper()
-	baseDir := ""
-	if runtime.GOOS == "darwin" {
-		baseDir = "/tmp"
-	}
-	dir, err := os.MkdirTemp(baseDir, "gornpkg-test-")
-	if err != nil {
-		t.Fatalf("tempDir error: %v", err)
-	}
-	cleanup := func() {
-		_ = os.RemoveAll(dir)
-	}
-	return dir, cleanup
-}
 
 func TestProgramSetupUsesVerbosityMinusQuietness(t *testing.T) {
 	originalLevel := rns.GetLogLevel()
@@ -38,7 +22,7 @@ func TestProgramSetupUsesVerbosityMinusQuietness(t *testing.T) {
 		rns.SetLogDest(originalDest)
 	})
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, "gornpkg-test-")
 	defer cleanup()
 
 	var capturedLevel int
@@ -71,7 +55,7 @@ func TestProgramSetupForwardsConfigDirAndClosesReticulum(t *testing.T) {
 		rns.SetLogDest(originalDest)
 	})
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, "gornpkg-test-")
 	defer cleanup()
 
 	if err := programSetup(tmpDir, 0, 0, rns.NewReticulum); err != nil {

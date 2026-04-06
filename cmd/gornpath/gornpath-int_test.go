@@ -10,44 +10,28 @@ package main
 
 import (
 	"bytes"
-	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
-
-func tempDir(t *testing.T) string {
-	t.Helper()
-	baseDir := ""
-	if runtime.GOOS == "darwin" {
-		baseDir = "/tmp"
-	}
-	dir, err := os.MkdirTemp(baseDir, "gornpath-test-")
-	if err != nil {
-		t.Fatalf("tempDir error: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir)
-	})
-	return dir
-}
 
 func buildGornpath(t *testing.T) (string, func()) {
 	t.Helper()
-	tmpDir := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, "gornpath-test-")
 	bin := filepath.Join(tmpDir, "gornpath")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Dir = "."
 	out, err := cmd.CombinedOutput()
 	if err != nil {
+		cleanup()
 		t.Fatalf("failed to build gornpath: %v\n%v", err, string(out))
 	}
-	return bin, func() { _ = os.RemoveAll(tmpDir) }
+	return bin, cleanup
 }
 
 func TestIntegration_NoArgsPrintsUsageAndExitsZero(t *testing.T) {

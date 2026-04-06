@@ -49,3 +49,15 @@ func TestTempBaseDir(t *testing.T) {
 		t.Fatalf("tempBaseDir() = %q, want empty on %v", got, runtime.GOOS)
 	}
 }
+
+func TestNormalizeOutput(t *testing.T) {
+	t.Parallel()
+
+	if got := NormalizeOutput("gornprobe\r\n\b  hello\nworld\t  42"); got != "gornprobe hello world 42" {
+		t.Fatalf("NormalizeOutput = %q", got)
+	}
+
+	if got := NormalizeOutput("   multiple    spaces\n\n  preserved   "); got != "multiple spaces preserved" {
+		t.Fatalf("NormalizeOutput = %q", got)
+	}
+}

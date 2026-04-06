@@ -8,30 +8,17 @@ package lxmf
 import (
 	"encoding/hex"
 	"errors"
-	"os"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func tempDir(t *testing.T) (string, func()) {
-	t.Helper()
-	baseDir := ""
-	if runtime.GOOS == "darwin" {
-		baseDir = "/tmp"
-	}
-	dir, err := os.MkdirTemp(baseDir, "lxmf-test-")
-	if err != nil {
-		t.Fatalf("tempDir error: %v", err)
-	}
-	cleanup := func() {
-		_ = os.RemoveAll(dir)
-	}
-	return dir, cleanup
+	return testutils.TempDir(t, "lxmf-test-")
 }
 
 func TestNewRouterRequiresStoragePath(t *testing.T) {

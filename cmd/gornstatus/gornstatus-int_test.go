@@ -8,49 +8,20 @@
 package main
 
 import (
-	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
-
-func tempDir(t *testing.T) (string, func()) {
-	t.Helper()
-	baseDir := ""
-	if runtime.GOOS == "darwin" {
-		baseDir = "/tmp"
-	}
-	dir, err := os.MkdirTemp(baseDir, "gornstatus-test-")
-	if err != nil {
-		t.Fatalf("tempDir error: %v", err)
-	}
-	cleanup := func() {
-		_ = os.RemoveAll(dir)
-	}
-	return dir, cleanup
-}
-
-func tempDirWithConfig(t *testing.T) (string, func()) {
-	t.Helper()
-	dir, cleanup := tempDir(t)
-	instanceName := filepath.Base(dir)
-	config := "[reticulum]\nenable_transport = False\nshare_instance = Yes\ninstance_name = " + instanceName + "\n\n[logging]\nloglevel = 2\n"
-	if err := os.WriteFile(filepath.Join(dir, "config"), []byte(config), 0o600); err != nil {
-		cleanup()
-		t.Fatalf("writeTestConfig: %v", err)
-	}
-	return dir, cleanup
-}
 
 func buildGornstatus(t *testing.T) (string, func()) {
 	t.Helper()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, "gornstatus-test-")
 	bin := filepath.Join(tmpDir, "gornstatus")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Dir = "."

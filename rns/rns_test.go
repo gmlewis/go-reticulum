@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 var testTCPPortCounter atomic.Uint32
@@ -51,19 +52,7 @@ func reserveTCPPort(t *testing.T) int {
 }
 
 func tempDir(t *testing.T) (string, func()) {
-	t.Helper()
-	baseDir := ""
-	if runtime.GOOS == "darwin" {
-		baseDir = "/tmp"
-	}
-	dir, err := os.MkdirTemp(baseDir, "rns-test-")
-	if err != nil {
-		t.Fatalf("tempDir error: %v", err)
-	}
-	cleanup := func() {
-		_ = os.RemoveAll(dir)
-	}
-	return dir, cleanup
+	return testutils.TempDir(t, "rns-test-")
 }
 
 // newTestTransportSystem creates a minimal TransportSystem for testing.
