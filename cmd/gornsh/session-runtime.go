@@ -90,7 +90,8 @@ func (c *activeCommand) close() {
 	}
 }
 
-func wireListenerChannelSession(logger *rns.Logger, link *rns.Link, opts options, allowedList [][]byte) {
+func (rt *runtimeT) wireListenerChannelSession(link *rns.Link, opts options, allowedList [][]byte) {
+	logger := rt.logger
 	if logger == nil {
 		logger = rns.NewLogger()
 	}
@@ -203,6 +204,10 @@ func wireListenerChannelSession(logger *rns.Logger, link *rns.Link, opts options
 			return false
 		}
 	})
+}
+
+func (rt *runtimeT) runInitiatorChannelSession(link *rns.Link, opts options) (int, error) {
+	return runInitiatorChannelSessionWithLogger(rt.logger, link, opts)
 }
 
 func normalizeCommandStartError(err error) string {

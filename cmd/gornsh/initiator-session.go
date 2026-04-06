@@ -184,7 +184,7 @@ func runInitiatorChannelSessionWithLogger(logger *rns.Logger, link *rns.Link, op
 		}
 	})
 
-	exitCode, session, err := runInitiatorProtocolFlow(channel, opts, linkClosedCh, stopCh, true)
+	exitCode, session, err := (&runtimeT{logger: logger}).runInitiatorProtocolFlow(channel, opts, linkClosedCh, stopCh, true)
 	if session != nil {
 		writeInitiatorStreams(session)
 	}
@@ -192,6 +192,14 @@ func runInitiatorChannelSessionWithLogger(logger *rns.Logger, link *rns.Link, op
 }
 
 func runInitiatorProtocolFlow(channel channelSession, opts options, linkClosedCh <-chan struct{}, stopCh <-chan struct{}, pumpInput bool) (int, *initiatorChannelSession, error) {
+	return runInitiatorProtocolFlowWithLogger(nil, channel, opts, linkClosedCh, stopCh, pumpInput)
+}
+
+func runInitiatorProtocolFlowWithLogger(_ *rns.Logger, channel channelSession, opts options, linkClosedCh <-chan struct{}, stopCh <-chan struct{}, pumpInput bool) (int, *initiatorChannelSession, error) {
+	return (&runtimeT{}).runInitiatorProtocolFlow(channel, opts, linkClosedCh, stopCh, pumpInput)
+}
+
+func (rt *runtimeT) runInitiatorProtocolFlow(channel channelSession, opts options, linkClosedCh <-chan struct{}, stopCh <-chan struct{}, pumpInput bool) (int, *initiatorChannelSession, error) {
 	session := newInitiatorChannelSession()
 	channel.AddMessageHandler(session.handleMessage)
 	timeout := time.Duration(opts.timeoutSec) * time.Second

@@ -214,7 +214,7 @@ func (rt *runtimeT) doListen() error {
 
 	allowMode, allowedList := buildAllowPolicy(logger, opts)
 	destination.SetLinkEstablishedCallback(func(link *rns.Link) {
-		wireListenerChannelSession(logger, link, opts, allowedList)
+		rt.wireListenerChannelSession(link, opts, allowedList)
 	})
 	destination.RegisterRequestHandler("command", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 		if !opts.noAuth && remoteIdentity == nil {
@@ -330,7 +330,7 @@ func (rt *runtimeT) doInitiate() (int, error) {
 		}
 	}
 
-	return runInitiatorChannelSessionWithLogger(rt.logger, link, opts)
+	return rt.runInitiatorChannelSession(link, opts)
 }
 
 func resolveRemoteIdentity(ts rns.Transport, destHash []byte, timeout time.Duration) (*rns.Identity, error) {
