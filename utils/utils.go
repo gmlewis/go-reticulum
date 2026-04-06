@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 )
 
 // ErrHelp reports that command-line help was requested.
@@ -29,10 +30,14 @@ func NewFlagSet(name string, usage func()) *flag.FlagSet {
 
 // PrintVersion writes a standard "name version" line to the given writer.
 func PrintVersion(w io.Writer, appName, version string) {
-	_, _ = fmt.Fprintf(w, "%v %v\n", appName, version)
+	if _, err := fmt.Fprintf(w, "%v %v\n", appName, version); err != nil {
+		log.Fatalf("utils.PrintVersion: %v", err)
+	}
 }
 
 // WriteText writes the provided text to the given writer.
 func WriteText(w io.Writer, text string) {
-	_, _ = io.WriteString(w, text)
+	if _, err := io.WriteString(w, text); err != nil {
+		log.Fatalf("utils.WriteText: %v", err)
+	}
 }
