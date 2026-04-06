@@ -110,7 +110,18 @@ func main() {
 			os.Exit(3)
 		}
 
-		fmt.Print(formatProbeSentLine(sent+1, app.size, destHash, ""))
+		more := ""
+		if app.verbose {
+			entry := ts.GetPathEntry(destHash)
+			if entry != nil {
+				ifName := ""
+				if entry.Interface != nil {
+					ifName = entry.Interface.Name()
+				}
+				more = formatProbeVerboseMore(entry.NextHop, ifName)
+			}
+		}
+		fmt.Print(formatProbeSentLine(sent+1, app.size, destHash, more))
 
 		startTime := time.Now()
 		if err := p.Send(); err != nil {
@@ -128,7 +139,27 @@ func main() {
 			fmt.Printf("\b\b \n")
 			replies++
 			hops := ts.GetPathEntry(destHash).Hops
-			fmt.Print(formatProbeReplyLine(destHash, time.Since(startTime).Seconds(), hops, ""))
+			receptionStats := ""
+			if app.verbose {
+				var rssi, snr, q *float64
+				if value, err := ret.PacketRSSI(receipt.Hash); err == nil {
+					if typed, ok := value.(float64); ok {
+						rssi = &typed
+					}
+				}
+				if value, err := ret.PacketSNR(receipt.Hash); err == nil {
+					if typed, ok := value.(float64); ok {
+						snr = &typed
+					}
+				}
+				if value, err := ret.PacketQ(receipt.Hash); err == nil {
+					if typed, ok := value.(float64); ok {
+						q = &typed
+					}
+				}
+				receptionStats = formatProbeReceptionStats(rssi, snr, q)
+			}
+			fmt.Print(formatProbeReplyLine(destHash, time.Since(startTime).Seconds(), hops, receptionStats))
 		}
 	}
 

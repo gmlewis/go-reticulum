@@ -27,6 +27,31 @@ func TestProbeSentLine(t *testing.T) {
 	}
 }
 
+func TestProbeVerboseMore(t *testing.T) {
+	t.Parallel()
+
+	if got, want := formatProbeVerboseMore(nil, "None"), ""; got != want {
+		t.Fatalf("formatProbeVerboseMore(nil, \"None\") = %q, want %q", got, want)
+	}
+	if got, want := formatProbeVerboseMore([]byte{0x11, 0x22}, "eth0"), " via "+rns.PrettyHex([]byte{0x11, 0x22})+" on eth0"; got != want {
+		t.Fatalf("formatProbeVerboseMore() = %q, want %q", got, want)
+	}
+}
+
+func TestProbeReceptionStats(t *testing.T) {
+	t.Parallel()
+
+	rssi := -73.5
+	snr := 9.25
+	q := 0.87
+	if got, want := formatProbeReceptionStats(&rssi, &snr, &q), " [RSSI -73.5 dBm] [SNR 9.25 dB] [Link Quality 0.87%]"; got != want {
+		t.Fatalf("formatProbeReceptionStats() = %q, want %q", got, want)
+	}
+	if got, want := formatProbeReceptionStats(nil, nil, nil), ""; got != want {
+		t.Fatalf("formatProbeReceptionStats(nil) = %q, want %q", got, want)
+	}
+}
+
 func TestProbeRTTString(t *testing.T) {
 	t.Parallel()
 

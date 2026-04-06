@@ -22,6 +22,17 @@ func formatProbeSentLine(sent, size int, destHash []byte, more string) string {
 	return fmt.Sprintf("\rSent probe %v (%v bytes) to %v%v  ", sent, size, rns.PrettyHex(destHash), more)
 }
 
+func formatProbeVerboseMore(nextHop []byte, ifName string) string {
+	more := ""
+	if len(nextHop) > 0 {
+		more += " via " + rns.PrettyHex(nextHop)
+	}
+	if ifName != "" && ifName != "None" {
+		more += " on " + ifName
+	}
+	return more
+}
+
 func formatProbeRTTString(rttSeconds float64) string {
 	rounded := 0.0
 	units := "seconds"
@@ -47,6 +58,28 @@ func formatProbeHopSuffix(hops int) string {
 
 func formatProbeReplyLine(destHash []byte, rttSeconds float64, hops int, receptionStats string) string {
 	return fmt.Sprintf("Valid reply from %v\nRound-trip time is %v over %v hop%v%v\n", rns.PrettyHex(destHash), formatProbeRTTString(rttSeconds), hops, formatProbeHopSuffix(hops), receptionStats)
+}
+
+func formatProbePythonFloat(value float64) string {
+	text := strconv.FormatFloat(value, 'f', -1, 64)
+	if !strings.Contains(text, ".") {
+		text += ".0"
+	}
+	return text
+}
+
+func formatProbeReceptionStats(rssi, snr, q *float64) string {
+	stats := ""
+	if rssi != nil {
+		stats += " [RSSI " + formatProbePythonFloat(*rssi) + " dBm]"
+	}
+	if snr != nil {
+		stats += " [SNR " + formatProbePythonFloat(*snr) + " dB]"
+	}
+	if q != nil {
+		stats += " [Link Quality " + formatProbePythonFloat(*q) + "%]"
+	}
+	return stats
 }
 
 func formatProbeLossSummary(sent, received int) (string, int) {
