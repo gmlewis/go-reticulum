@@ -14,7 +14,6 @@ import (
 	osexec "os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -34,12 +33,6 @@ type probeIntegrationClock struct {
 
 func (c *probeIntegrationClock) Now() time.Time        { return c.now }
 func (c *probeIntegrationClock) Sleep(d time.Duration) { c.now = c.now.Add(d) }
-
-var (
-	gornprobeBuildOnce sync.Once
-	gornprobeBinPath   string
-	gornprobeBuildErr  error
-)
 
 func TestGornprobeCLIParity(t *testing.T) {
 	t.Parallel()
@@ -159,23 +152,17 @@ func TestGornprobeScenarioParity(t *testing.T) {
 
 func buildGornprobeBinary(t *testing.T) string {
 	t.Helper()
-	gornprobeBuildOnce.Do(func() {
-		binDir, err := os.MkdirTemp("", "gornprobe-int-bin-")
-		if err != nil {
-			gornprobeBuildErr = err
-			return
-		}
-		gornprobeBinPath = filepath.Join(binDir, "gornprobe")
-		cmd := osexec.Command("go", "build", "-o", gornprobeBinPath, ".")
-		cmd.Dir = "."
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		gornprobeBuildErr = cmd.Run()
-	})
-	if gornprobeBuildErr != nil {
-		t.Fatalf("failed to build gornprobe: %v", gornprobeBuildErr)
+	binDir, cleanup := testutils.TempDir(t, "gornprobe-int-bin-")
+	t.Cleanup(cleanup)
+	binPath := filepath.Join(binDir, "gornprobe")
+	cmd := osexec.Command("go", "build", "-o", binPath, ".")
+	cmd.Dir = "."
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to build gornprobe: %v", err)
 	}
-	return gornprobeBinPath
+	return binPath
 }
 
 func runGornprobeCommand(t *testing.T, args ...string) probeCommandOutcome {
