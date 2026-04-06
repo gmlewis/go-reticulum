@@ -46,18 +46,21 @@ func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
 }
 
 func (a *appT) usage(w io.Writer) {
-	_, _ = fmt.Fprintf(w, `usage: gornsd [-h] [--config CONFIG] [-v] [-q] [-s] [--exampleconfig]
-                  [--version]
+	_, _ = fmt.Fprint(w, usageText)
+}
 
-Go Reticulum daemon
+const usageText = `
+usage: gornsd [-h] [--config CONFIG] [-v] [-q] [-s] [-i] [--exampleconfig] [--version]
+
+Go Reticulum Network Stack Daemon
 
 options:
-  -h, --help       show this help message and exit
-  --config CONFIG  path to alternative Reticulum config directory
-  -v               increase verbosity
-  -q               decrease verbosity
-  -s               log to file as a service
-  --exampleconfig  print verbose configuration example to stdout and exit
-  --version        show program's version number and exit
-`)
-}
+  -h, --help         show this help message and exit
+  --config CONFIG    path to alternative Reticulum config directory
+  -v, --verbose
+  -q, --quiet
+  -s, --service      rnsd is running as a service and should log to file
+  -i, --interactive  drop into interactive shell after initialisation
+  --exampleconfig    print verbose configuration example to stdout and exit
+  --version          show program's version number and exit
+`

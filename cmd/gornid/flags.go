@@ -76,3 +76,40 @@ func (a *appT) initFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&a.useStdout, "stdout", false, "write output to STDOUT")
 	fs.BoolVar(&a.version, "version", false, "show program's version number and exit")
 }
+
+const usageText = `
+usage: gornid [-h] [--config path] [-i identity] [-g file] [-m identity_data] [-x] [-v] [-q] [-a aspects]
+              [-H aspects] [-e file] [-d file] [-s path] [-V path] [-r file] [-w file] [-f] [-R] [-t seconds] [-p]
+              [-P] [-b] [-B] [--version]
+
+Go Reticulum Identity & Encryption Utility
+
+options:
+  -h, --help            show this help message and exit
+  --config path         path to alternative Reticulum config directory
+  -i, --identity identity
+                        hexadecimal Reticulum identity or destination hash, or path to Identity file
+  -g, --generate file   generate a new Identity
+  -m, --import identity_data
+                        import Reticulum identity in hex, base32 or base64 format
+  -x, --export          export identity to hex, base32 or base64 format
+  -v, --verbose         increase verbosity
+  -q, --quiet           decrease verbosity
+  -a, --announce aspects
+                        announce a destination based on this Identity
+  -H, --hash aspects    show destination hashes for other aspects for this Identity
+  -e, --encrypt file    encrypt file
+  -d, --decrypt file    decrypt file
+  -s, --sign path       sign file
+  -V, --validate path   validate signature
+  -r, --read file       input file path
+  -w, --write file      output file path
+  -f, --force           write output even if it overwrites existing files
+  -R, --request         request unknown Identities from the network
+  -t seconds            identity request timeout before giving up
+  -p, --print-identity  print identity info and exit
+  -P, --print-private   allow displaying private keys
+  -b, --base64          Use base64-encoded input and output
+  -B, --base32          Use base32-encoded input and output
+  --version             show program's version number and exit
+`

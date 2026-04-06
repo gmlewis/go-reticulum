@@ -32,19 +32,7 @@ type appT struct {
 func newApp() *appT { return &appT{} }
 
 func (a *appT) usage() {
-	_, _ = fmt.Fprintf(flag.CommandLine.Output(), `
-usage: gornir [-h] [--config CONFIG] [-v] [-q] [--exampleconfig] [--version]
-
-Go Reticulum Distributed Identity Resolver
-
-options:
-  -h, --help       show this help message and exit
-  --config CONFIG  path to alternative Reticulum config directory
-  -v, --verbose    increase verbosity
-  -q, --quiet      decrease verbosity
-  --exampleconfig  print verbose configuration example to stdout and exit
-  --version        show program's version number and exit
-`)
+	_, _ = fmt.Fprint(flag.CommandLine.Output(), usageText)
 }
 
 func (a *appT) initFlags(fs *flag.FlagSet) {
@@ -56,3 +44,17 @@ func (a *appT) initFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&a.exampleConfig, "exampleconfig", false, "print verbose configuration example to stdout and exit")
 	fs.BoolVar(&a.version, "version", false, "show program's version number and exit")
 }
+
+const usageText = `
+usage: gornir [-h] [--config CONFIG] [-v] [-q] [--exampleconfig] [--version]
+
+Go Reticulum Distributed Identity Resolver
+
+options:
+  -h, --help       show this help message and exit
+  --config CONFIG  path to alternative Reticulum config directory
+  -v, --verbose    increase verbosity
+  -q, --quiet      decrease verbosity
+  --exampleconfig  print verbose configuration example to stdout and exit
+  --version        show program's version number and exit
+`
