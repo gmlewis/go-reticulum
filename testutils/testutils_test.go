@@ -13,10 +13,12 @@ import (
 	"testing"
 )
 
+const tempDirPrefix = "testutils-tempdir-"
+
 func TestTempDirCreatesAndCleansUpDirectory(t *testing.T) {
 	t.Parallel()
 
-	dir, cleanup := TempDir(t, "testutils-tempdir-")
+	dir, cleanup := TempDir(t, tempDirPrefix)
 
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -25,7 +27,7 @@ func TestTempDirCreatesAndCleansUpDirectory(t *testing.T) {
 	if !info.IsDir() {
 		t.Fatalf("TempDir returned non-directory path %q", dir)
 	}
-	if !strings.Contains(filepath.Base(dir), "testutils-tempdir-") {
+	if !strings.Contains(filepath.Base(dir), tempDirPrefix) {
 		t.Fatalf("TempDir directory name %q does not contain prefix", filepath.Base(dir))
 	}
 
@@ -39,7 +41,7 @@ func TestTempDirWithConfigCreatesConfigFile(t *testing.T) {
 	t.Parallel()
 
 	config := "[reticulum]\ninstance_name = test\n"
-	dir, cleanup := TempDirWithConfig(t, "testutils-config-", func(string) string { return config })
+	dir, cleanup := TempDirWithConfig(t, tempDirPrefix, func(string) string { return config })
 
 	configPath := filepath.Join(dir, "config")
 	data, err := os.ReadFile(configPath)
@@ -68,17 +70,5 @@ func TestTempBaseDir(t *testing.T) {
 
 	if got := tempBaseDir(); got != "" {
 		t.Fatalf("tempBaseDir() = %q, want empty on %v", got, runtime.GOOS)
-	}
-}
-
-func TestNormalizeOutput(t *testing.T) {
-	t.Parallel()
-
-	if got := NormalizeOutput("gornprobe\r\n\b  hello\nworld\t  42"); got != "gornprobe hello world 42" {
-		t.Fatalf("NormalizeOutput = %q", got)
-	}
-
-	if got := NormalizeOutput("   multiple    spaces\n\n  preserved   "); got != "multiple spaces preserved" {
-		t.Fatalf("NormalizeOutput = %q", got)
 	}
 }

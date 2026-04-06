@@ -21,7 +21,7 @@ import (
 
 func buildGornstatus(t *testing.T) (string, func()) {
 	t.Helper()
-	tmpDir, cleanup := testutils.TempDir(t, "gornstatus-test-")
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	bin := filepath.Join(tmpDir, "gornstatus")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Dir = "."
@@ -85,7 +85,10 @@ func TestIntegration_ExitCodeZero(t *testing.T) {
 	t.Parallel()
 	bin, cleanupBin := buildGornstatus(t)
 	defer cleanupBin()
-	tmpDir, cleanup := tempDirWithConfig(t)
+	tmpDir, cleanup := testutils.TempDirWithConfig(t, tempDirPrefix, func(dir string) string {
+		instanceName := filepath.Base(dir)
+		return "[reticulum]\nenable_transport = False\nshare_instance = Yes\ninstance_name = " + instanceName + "\n\n[logging]\nloglevel = 2\n"
+	})
 	defer cleanup()
 	cmd := exec.Command(bin, "--config", tmpDir)
 	out, err := cmd.CombinedOutput()
@@ -98,7 +101,10 @@ func TestIntegration_SIGINTCleanExit(t *testing.T) {
 	t.Parallel()
 	bin, cleanupBin := buildGornstatus(t)
 	defer cleanupBin()
-	tmpDir, cleanup := tempDirWithConfig(t)
+	tmpDir, cleanup := testutils.TempDirWithConfig(t, tempDirPrefix, func(dir string) string {
+		instanceName := filepath.Base(dir)
+		return "[reticulum]\nenable_transport = False\nshare_instance = Yes\ninstance_name = " + instanceName + "\n\n[logging]\nloglevel = 2\n"
+	})
 	defer cleanup()
 	cmd := exec.Command(bin, "--config", tmpDir, "-m", "-I", "10")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -120,7 +126,10 @@ func TestIntegration_MonitorModeSIGINT(t *testing.T) {
 	t.Parallel()
 	bin, cleanupBin := buildGornstatus(t)
 	defer cleanupBin()
-	tmpDir, cleanup := tempDirWithConfig(t)
+	tmpDir, cleanup := testutils.TempDirWithConfig(t, tempDirPrefix, func(dir string) string {
+		instanceName := filepath.Base(dir)
+		return "[reticulum]\nenable_transport = False\nshare_instance = Yes\ninstance_name = " + instanceName + "\n\n[logging]\nloglevel = 2\n"
+	})
 	defer cleanup()
 	cmd := exec.Command(bin, "--config", tmpDir, "-m", "-I", "0.1")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

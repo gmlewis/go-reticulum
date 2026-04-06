@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 const lxmfDecodeDirectPy = `import LXMF
@@ -96,7 +97,7 @@ func pythonPathEnv(lxmfPath, reticulumPath string) string {
 func TestIntegrationDirectGoToPython(t *testing.T) {
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	decodeScriptPath := filepath.Join(tmpDir, "decode_direct.py")
 	if err := os.WriteFile(decodeScriptPath, []byte(lxmfDecodeDirectPy), 0o644); err != nil {
@@ -150,7 +151,7 @@ func TestIntegrationDirectGoToPython(t *testing.T) {
 func TestIntegrationDirectPythonToGo(t *testing.T) {
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	generateScriptPath := filepath.Join(tmpDir, "generate_direct.py")
 	if err := os.WriteFile(generateScriptPath, []byte(lxmfGenerateDirectPy), 0o644); err != nil {

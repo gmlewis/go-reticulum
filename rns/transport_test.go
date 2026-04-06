@@ -14,11 +14,12 @@ import (
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestTransport(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 
 	ts := NewTransportSystem()
@@ -730,7 +731,7 @@ func TestCullStaleTransportTables(t *testing.T) {
 
 func TestPathTablePersistenceRoundTrip(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 
 	iface := &capturingInterface{name: "persist-iface"}

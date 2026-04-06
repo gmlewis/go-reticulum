@@ -19,9 +19,11 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
+const tempDirPrefix = "gornir-test-"
+
 func buildGornir(t *testing.T) (string, func()) {
 	t.Helper()
-	tmpDir, cleanup := testutils.TempDir(t, "gornir-test-")
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	bin := filepath.Join(tmpDir, "gornir")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Dir = "."
@@ -83,7 +85,7 @@ func TestIntegration_ExitCodeZero(t *testing.T) {
 	t.Parallel()
 	bin, cleanup := buildGornir(t)
 	defer cleanup()
-	tmpDir, cleanup := testutils.TempDir(t, "gornir-test-")
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	cmd := exec.Command(bin, "--config", tmpDir)
 	out, err := cmd.CombinedOutput()
@@ -165,7 +167,7 @@ func TestIntegration_SIGINTCleanExit(t *testing.T) {
 	t.Parallel()
 	bin, cleanup := buildGornir(t)
 	defer cleanup()
-	tmpDir, cleanupDir := testutils.TempDir(t, "gornir-test-")
+	tmpDir, cleanupDir := testutils.TempDir(t, tempDirPrefix)
 	defer cleanupDir()
 	cmd := exec.Command(bin, "--config", tmpDir, "-v", "-v", "-v")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

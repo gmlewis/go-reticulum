@@ -11,6 +11,8 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
+const tempDirPrefix = "gornstatus-test-"
+
 func intPtr(v int) *int { return &v }
 
 func TestModeString(t *testing.T) {

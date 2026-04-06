@@ -13,6 +13,8 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
+const tempDirPrefix = "gornpath-test-"
+
 func TestDoTableUsesRenderer(t *testing.T) {
 	t.Parallel()
 

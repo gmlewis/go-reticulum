@@ -12,11 +12,12 @@ import (
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestResolveConfigDir(t *testing.T) {
 	t.Run("explicit config dir", func(t *testing.T) {
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		home := filepath.Join(tmpDir, "home")
 		explicit := filepath.Join(tmpDir, "explicit")
@@ -27,7 +28,7 @@ func TestResolveConfigDir(t *testing.T) {
 	})
 
 	t.Run("etc config dir exists", func(t *testing.T) {
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		home := filepath.Join(tmpDir, "home")
 		etc := filepath.Join(tmpDir, "etc")
@@ -43,7 +44,7 @@ func TestResolveConfigDir(t *testing.T) {
 	})
 
 	t.Run("user config dir exists", func(t *testing.T) {
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		home := filepath.Join(tmpDir, "home")
 		userConfig := filepath.Join(home, ".config", "lxmd")
@@ -59,7 +60,7 @@ func TestResolveConfigDir(t *testing.T) {
 	})
 
 	t.Run("fallback to dot lxmd", func(t *testing.T) {
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		home := filepath.Join(tmpDir, "home")
 		dotLxmd := filepath.Join(home, ".lxmd")
@@ -196,7 +197,7 @@ func TestApplyConfig(t *testing.T) {
 }
 
 func TestLoadHashList(t *testing.T) {
-	td, cleanup := tempDir(t)
+	td, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	path := filepath.Join(td, "hashes")
 
@@ -225,7 +226,7 @@ func TestLoadHashList(t *testing.T) {
 }
 
 func TestEnsureConfig(t *testing.T) {
-	td, cleanup := tempDir(t)
+	td, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	configDir := filepath.Join(td, "lxmd")
 	configPath := filepath.Join(configDir, "config")

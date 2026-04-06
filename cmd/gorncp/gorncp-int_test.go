@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 type nilFetchLinkResolver struct{}
@@ -163,7 +164,7 @@ func captureStdout(f func()) string {
 }
 
 func TestVersionParity(t *testing.T) {
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	configDir := filepath.Join(tmpDir, "config")
 	writeMinimalConfig(t, configDir)
@@ -180,7 +181,7 @@ func TestVersionParity(t *testing.T) {
 }
 
 func TestIdentityDisplayParity(t *testing.T) {
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	idPath := filepath.Join(tmpDir, "identity")
 	configDir := filepath.Join(tmpDir, "config")
@@ -255,9 +256,9 @@ func TestHelpParity(t *testing.T) {
 }
 
 func TestUnauthenticatedTransferParity(t *testing.T) {
-	skipShortIntegration(t)
+	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 
 	serverConfigDir := filepath.Join(tmpDir, "server_config")
@@ -409,7 +410,7 @@ share_instance = No
 
 func TestListenModeIdentityCreation(t *testing.T) {
 	// Create a temp directory for config
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, "gorncp-test-")
 	defer cleanup()
 	identityDir := filepath.Join(tmpDir, "identities")
 	identityPath := filepath.Join(identityDir, AppName)
@@ -453,9 +454,9 @@ func TestListenModeIdentityCreation(t *testing.T) {
 }
 
 func TestFetchFileNotFoundOnRemote(t *testing.T) {
-	skipShortIntegration(t)
+	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 
 	serverConfigDir := filepath.Join(tmpDir, "server_config")
@@ -566,9 +567,9 @@ share_instance = No
 }
 
 func TestFetchPathLookupTimeout(t *testing.T) {
-	skipShortIntegration(t)
+	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 
 	configDir := filepath.Join(tmpDir, "config")
@@ -612,9 +613,9 @@ func TestFetchPathLookupTimeout(t *testing.T) {
 }
 
 func TestFetchLinkEstablishmentTimeout(t *testing.T) {
-	skipShortIntegration(t)
+	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 
 	configDir := filepath.Join(tmpDir, "config")
@@ -668,9 +669,9 @@ func TestFetchLinkEstablishmentTimeout(t *testing.T) {
 }
 
 func TestFetchRequestTimeout(t *testing.T) {
-	skipShortIntegration(t)
+	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 
 	serverConfigDir := filepath.Join(tmpDir, "server_config")
@@ -795,7 +796,7 @@ enable_transport = Yes
 }
 
 func TestFetchDownloadTimeout(t *testing.T) {
-	skipShortIntegration(t)
+	testutils.SkipShortIntegration(t)
 
 	done := make(chan struct{})
 	err := waitForDownloadCompletion(done, 20*time.Millisecond, nil)
@@ -808,7 +809,7 @@ func TestFetchDownloadTimeout(t *testing.T) {
 }
 
 func TestSendTransferTimeout(t *testing.T) {
-	skipShortIntegration(t)
+	testutils.SkipShortIntegration(t)
 
 	done := make(chan struct{})
 	err := waitForTransferCompletion(done, 20*time.Millisecond, nil)
@@ -821,9 +822,9 @@ func TestSendTransferTimeout(t *testing.T) {
 }
 
 func TestFetchNotAllowedByRemote(t *testing.T) {
-	skipShortIntegration(t)
+	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 
 	serverConfigDir := filepath.Join(tmpDir, "server_config")
@@ -950,11 +951,11 @@ func TestSendTransferFailure(t *testing.T) {
 }
 
 func TestFetchRemoteErrorWhenLinkIsMissing(t *testing.T) {
-	skipShortIntegration(t)
+	testutils.SkipShortIntegration(t)
 
 	t.Parallel()
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, "gorncp-test-")
 	defer cleanup()
 
 	testFile := filepath.Join(tmpDir, "test.txt")
@@ -971,7 +972,7 @@ func TestFetchRemoteErrorWhenLinkIsMissing(t *testing.T) {
 }
 
 func TestFetchUnknownUnauthorizedError(t *testing.T) {
-	skipShortIntegration(t)
+	testutils.SkipShortIntegration(t)
 
 	t.Parallel()
 

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func rpcWriteFrame(t *testing.T, conn net.Conn, v any) {
@@ -77,7 +78,7 @@ func TestRPCAuthAndGetEndpoints(t *testing.T) {
 	rpcPort := reserveTCPPort(t)
 	rpcKeyHex := "00112233445566778899aabbccddeeff"
 
-	cfg, cleanup := tempDir(t)
+	cfg, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
 instance_name = %v
@@ -134,7 +135,7 @@ func TestRPCRejectsInvalidAuth(t *testing.T) {
 	sharedPort := reserveTCPPort(t)
 	rpcPort := reserveTCPPort(t)
 
-	cfg, cleanup := tempDir(t)
+	cfg, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
 instance_name = %v
@@ -175,7 +176,7 @@ func TestRPCAcceptsByteAuthKey(t *testing.T) {
 	rpcPort := reserveTCPPort(t)
 	rpcKeyHex := "00112233445566778899aabbccddeeff"
 
-	cfg, cleanup := tempDir(t)
+	cfg, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
 instance_name = %v
@@ -227,9 +228,9 @@ loglevel = 4
 [interfaces]
 `
 
-	cfg1, cleanup1 := tempDir(t)
+	cfg1, cleanup1 := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup1()
-	cfg2, cleanup2 := tempDir(t)
+	cfg2, cleanup2 := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup2()
 	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name()+"-1", sharedPort, rpcPort, rpcKeyHex))
 	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name()+"-2", sharedPort, rpcPort, rpcKeyHex))
@@ -266,7 +267,7 @@ func TestRPCExpandedGetDropAndBlackholeSurface(t *testing.T) {
 	rpcPort := reserveTCPPort(t)
 	rpcKeyHex := "00112233445566778899aabbccddeeff"
 
-	cfg, cleanup := tempDir(t)
+	cfg, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
 instance_name = %v
@@ -349,9 +350,9 @@ loglevel = 4
 [interfaces]
 `
 
-	cfg1, cleanup1 := tempDir(t)
+	cfg1, cleanup1 := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup1()
-	cfg2, cleanup2 := tempDir(t)
+	cfg2, cleanup2 := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup2()
 	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name()+"-1", sharedPort, rpcPort, rpcKeyHex))
 	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name()+"-2", sharedPort, rpcPort, rpcKeyHex))
@@ -776,9 +777,9 @@ func TestConnectedInstanceManagementCallsRecoverAfterRPCServerRestart(t *testing
 			rpcPort := reserveTCPPort(t)
 			rpcKeyHex := "00112233445566778899aabbccddeeff"
 
-			cfg1, cleanup1 := tempDir(t)
+			cfg1, cleanup1 := testutils.TempDir(t, tempDirPrefix)
 			defer cleanup1()
-			cfg2, cleanup2 := tempDir(t)
+			cfg2, cleanup2 := testutils.TempDir(t, tempDirPrefix)
 			defer cleanup2()
 			if tc.sameConfigDir {
 				cfg2 = cfg1

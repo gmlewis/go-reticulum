@@ -14,6 +14,8 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
+const tempDirPrefix = "gornpkg-test-"
+
 func TestProgramSetupUsesVerbosityMinusQuietness(t *testing.T) {
 	originalLevel := rns.GetLogLevel()
 	originalDest := rns.GetLogDest()
@@ -22,7 +24,7 @@ func TestProgramSetupUsesVerbosityMinusQuietness(t *testing.T) {
 		rns.SetLogDest(originalDest)
 	})
 
-	tmpDir, cleanup := testutils.TempDir(t, "gornpkg-test-")
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 
 	var capturedLevel int
@@ -55,7 +57,7 @@ func TestProgramSetupForwardsConfigDirAndClosesReticulum(t *testing.T) {
 		rns.SetLogDest(originalDest)
 	})
 
-	tmpDir, cleanup := testutils.TempDir(t, "gornpkg-test-")
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 
 	if err := programSetup(tmpDir, 0, 0, rns.NewReticulum); err != nil {

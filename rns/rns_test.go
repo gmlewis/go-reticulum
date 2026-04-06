@@ -19,6 +19,8 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
+const tempDirPrefix = "rns-test-"
+
 var testTCPPortCounter atomic.Uint32
 
 func closeReticulum(t *testing.T, r *Reticulum) {
@@ -58,9 +60,6 @@ func newTestTransportSystem(t *testing.T) *TransportSystem {
 	ts := NewTransportSystem()
 	ts.identity = id
 	return ts
-}
-func tempDir(t *testing.T) (string, func()) {
-	return testutils.TempDir(t, "rns-test-")
 }
 
 // newTestPipes creates a pair of connected PipeInterfaces wired to the
@@ -113,9 +112,9 @@ loglevel = 4
 [interfaces]
 `
 
-	cfg1, cleanup1 := tempDir(t)
+	cfg1, cleanup1 := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup1()
-	cfg2, cleanup2 := tempDir(t)
+	cfg2, cleanup2 := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup2()
 	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name(), port, controlPort))
 	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name(), port, controlPort))
@@ -143,7 +142,7 @@ func TestNewReticulumShareInstanceNoStandalone(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem()
 
-	cfg, cleanup := tempDir(t)
+	cfg, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
 share_instance = No
@@ -174,7 +173,7 @@ func TestNewReticulumSharedInstanceUnixServerThenClientSameConfigDir(t *testing.
 	ts1 := NewTransportSystem()
 	ts2 := NewTransportSystem()
 
-	cfg, cleanup := tempDir(t)
+	cfg, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	// Use a shorter name for the socket to avoid path length limits on macOS
 	instanceName := "rns-test"

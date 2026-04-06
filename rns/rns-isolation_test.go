@@ -9,13 +9,15 @@ import (
 	"bytes"
 	"testing"
 	"time"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestStackIsolation(t *testing.T) {
 	t.Parallel()
 
 	// Stack A
-	cfgA, cleanupA := tempDir(t)
+	cfgA, cleanupA := testutils.TempDir(t, tempDirPrefix)
 	defer cleanupA()
 	writeConfig(t, cfgA, "[reticulum]\nshare_instance = No\n")
 	tsA := NewTransportSystem()
@@ -26,7 +28,7 @@ func TestStackIsolation(t *testing.T) {
 	defer closeReticulum(t, r1)
 
 	// Stack B
-	cfgB, cleanupB := tempDir(t)
+	cfgB, cleanupB := testutils.TempDir(t, tempDirPrefix)
 	defer cleanupB()
 	writeConfig(t, cfgB, "[reticulum]\nshare_instance = No\n")
 	tsB := NewTransportSystem()

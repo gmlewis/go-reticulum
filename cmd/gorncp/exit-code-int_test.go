@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestInvalidIdentityHashExitCode(t *testing.T) {
@@ -69,7 +71,7 @@ func TestMalformedDestinationHashExitCode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tmpDir, cleanup := tempDir(t)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 			defer cleanup()
 
 			configDir := filepath.Join(tmpDir, "config")
@@ -109,7 +111,7 @@ func TestMalformedDestinationHashExitCode(t *testing.T) {
 func TestMissingSendFileExitCode(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 
 	configDir := filepath.Join(tmpDir, "config")
@@ -144,7 +146,7 @@ func TestMainExitCodeHelper(t *testing.T) {
 	t.Parallel()
 
 	// Test that os.Exit is called with correct codes
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	mustTest(t, os.Setenv("HOME", tmpDir))
 	defer func() { _ = os.Unsetenv("HOME") }()
@@ -166,7 +168,7 @@ func TestMainExitCodeHelper(t *testing.T) {
 func TestCorruptIdentityFileExitCode(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	configDir := filepath.Join(tmpDir, "config")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
@@ -205,7 +207,7 @@ func TestCorruptIdentityFileExitCode(t *testing.T) {
 func TestOutputDirectoryNotFoundExitCode(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	configDir := filepath.Join(tmpDir, "config")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
@@ -246,7 +248,7 @@ func TestOutputDirectoryNotFoundExitCode(t *testing.T) {
 func TestOutputDirectoryNotWritableExitCode(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	configDir := filepath.Join(tmpDir, "config")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {

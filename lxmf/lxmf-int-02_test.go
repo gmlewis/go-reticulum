@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 const lxmfDecodeOpportunisticPy = `import LXMF
@@ -79,7 +80,7 @@ if __name__ == "__main__":
 func TestIntegrationOpportunisticGoToPython(t *testing.T) {
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	decodeScriptPath := filepath.Join(tmpDir, "decode_opportunistic.py")
 	if err := os.WriteFile(decodeScriptPath, []byte(lxmfDecodeOpportunisticPy), 0o644); err != nil {
@@ -134,7 +135,7 @@ func TestIntegrationOpportunisticGoToPython(t *testing.T) {
 func TestIntegrationOpportunisticPythonToGo(t *testing.T) {
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	generateScriptPath := filepath.Join(tmpDir, "generate_opportunistic.py")
 	if err := os.WriteFile(generateScriptPath, []byte(lxmfGenerateOpportunisticPy), 0o644); err != nil {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/gmlewis/go-reticulum/rns"
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestMessagePackUnpackRoundTrip(t *testing.T) {
@@ -173,7 +174,7 @@ func TestWriteToDirectory(t *testing.T) {
 
 	msg := mustTestNewMessage(t, dest, src, "hello", "greet", nil)
 
-	dir, cleanup := tempDir(t)
+	dir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	path, err := msg.WriteToDirectory(dir)
 	if err != nil {

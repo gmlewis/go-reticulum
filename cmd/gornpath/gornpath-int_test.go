@@ -22,7 +22,7 @@ import (
 
 func buildGornpath(t *testing.T) (string, func()) {
 	t.Helper()
-	tmpDir, cleanup := testutils.TempDir(t, "gornpath-test-")
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	bin := filepath.Join(tmpDir, "gornpath")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Dir = "."

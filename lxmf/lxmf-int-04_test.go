@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 const lxmfDecodeResourcePy = `import LXMF
@@ -80,7 +81,7 @@ if __name__ == "__main__":
 func TestIntegrationResourceGoToPython(t *testing.T) {
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	decodeScriptPath := filepath.Join(tmpDir, "decode_resource.py")
 	if err := os.WriteFile(decodeScriptPath, []byte(lxmfDecodeResourcePy), 0o644); err != nil {
@@ -108,7 +109,7 @@ func TestIntegrationResourceGoToPython(t *testing.T) {
 	contentLen := rns.MDU * 3
 	message := mustTestNewMessage(t, destinationDest, sourceDest, strings.Repeat("G", contentLen), "go-resource-title", nil)
 
-	td, cleanup := tempDir(t)
+	td, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, td)
 	router.hasPath = func(_ []byte) bool { return true }
@@ -155,7 +156,7 @@ func TestIntegrationResourceGoToPython(t *testing.T) {
 func TestIntegrationResourcePythonToGo(t *testing.T) {
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	generateScriptPath := filepath.Join(tmpDir, "generate_resource.py")
 	if err := os.WriteFile(generateScriptPath, []byte(lxmfGenerateResourcePy), 0o644); err != nil {

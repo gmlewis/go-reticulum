@@ -10,30 +10,16 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/lxmf"
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-func tempDir(t *testing.T) (string, func()) {
-	t.Helper()
-	baseDir := ""
-	if runtime.GOOS == "darwin" {
-		baseDir = "/tmp"
-	}
-	dir, err := os.MkdirTemp(baseDir, "golxmd-test-")
-	if err != nil {
-		t.Fatalf("tempDir error: %v", err)
-	}
-	cleanup := func() {
-		_ = os.RemoveAll(dir)
-	}
-	return dir, cleanup
-}
+const tempDirPrefix = "golxmd-test-"
 
 func TestAppFlags(t *testing.T) {
 	t.Parallel()
@@ -65,7 +51,7 @@ func TestAppFlags(t *testing.T) {
 }
 
 func TestJobs(t *testing.T) {
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	identity, err := rns.NewIdentity(true)
 	mustTest(t, err)
@@ -112,7 +98,7 @@ func TestJobsRecovery(t *testing.T) {
 }
 
 func TestAnnounceAtStart(t *testing.T) {
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	identity, err := rns.NewIdentity(true)
 	mustTest(t, err)
@@ -185,7 +171,7 @@ func TestJobsStartAfterDeferred(t *testing.T) {
 }
 
 func TestLXMFDelivery(t *testing.T) {
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	c := &clientT{
 		lxmdir: filepath.Join(tmpDir, "messages"),
@@ -235,7 +221,7 @@ func TestLXMFDelivery(t *testing.T) {
 }
 
 func TestPropagationNodeSetup(t *testing.T) {
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	identity, err := rns.NewIdentity(true)
 	mustTest(t, err)
@@ -276,7 +262,7 @@ func TestPropagationNodeSetup(t *testing.T) {
 }
 
 func TestAuthWarningMessage(t *testing.T) {
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	c := &clientT{
 		ts:         rns.NewTransportSystem(),
@@ -309,7 +295,7 @@ func TestAuthWarningMessage(t *testing.T) {
 }
 
 func TestAuthSetup(t *testing.T) {
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	identity, err := rns.NewIdentity(true)
 	mustTest(t, err)
@@ -345,7 +331,7 @@ func TestIdentityRemember(t *testing.T) {
 }
 
 func TestIgnoreDestinations(t *testing.T) {
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	identity, err := rns.NewIdentity(true)
 	mustTest(t, err)
@@ -366,7 +352,7 @@ func TestIgnoreDestinations(t *testing.T) {
 }
 
 func TestRouterConstruction(t *testing.T) {
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	configDir := filepath.Join(tmpDir, "lxmd")
 	err := os.MkdirAll(configDir, 0o755)
@@ -403,7 +389,7 @@ func TestRouterConstruction(t *testing.T) {
 }
 
 func TestServiceLogging(t *testing.T) {
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	configDir := filepath.Join(tmpDir, "lxmd")
 	err := os.MkdirAll(configDir, 0o755)
@@ -452,7 +438,7 @@ func TestApplyTimeoutDefaults(t *testing.T) {
 }
 
 func TestResolvePathsDefaults(t *testing.T) {
-	td, cleanup := tempDir(t)
+	td, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	storageRoot := td
 	c := &clientT{}
@@ -478,7 +464,7 @@ func TestResolvePathsDefaults(t *testing.T) {
 }
 
 func TestLoadOrCreateIdentityCreateThenReload(t *testing.T) {
-	td, cleanup := tempDir(t)
+	td, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	identityPath := filepath.Join(td, "identities", "lxmd")
 	if err := os.MkdirAll(filepath.Dir(identityPath), 0o755); err != nil {
@@ -506,7 +492,7 @@ func TestLoadOrCreateIdentityCreateThenReload(t *testing.T) {
 }
 
 func TestLoadOrCreateIdentityCorruptFile(t *testing.T) {
-	td, cleanup := tempDir(t)
+	td, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	identityPath := filepath.Join(td, "identities", "lxmd")
 	if err := os.MkdirAll(filepath.Dir(identityPath), 0o755); err != nil {
@@ -522,7 +508,7 @@ func TestLoadOrCreateIdentityCorruptFile(t *testing.T) {
 }
 
 func TestRuntimeTrackerLifecycle(t *testing.T) {
-	td, cleanup := tempDir(t)
+	td, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	statePath := filepath.Join(td, "lxmf", "golxmd-state.json")
 
@@ -569,7 +555,7 @@ func TestRuntimeTrackerLifecycle(t *testing.T) {
 }
 
 func TestRuntimeTrackerDetectsUncleanRestart(t *testing.T) {
-	td, cleanup := tempDir(t)
+	td, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	statePath := filepath.Join(td, "lxmf", "golxmd-state.json")
 	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
@@ -590,7 +576,7 @@ func TestRuntimeTrackerDetectsUncleanRestart(t *testing.T) {
 }
 
 func TestLoadRuntimeStateCorruptData(t *testing.T) {
-	td, cleanup := tempDir(t)
+	td, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	statePath := filepath.Join(td, "lxmf", "golxmd-state.json")
 	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {

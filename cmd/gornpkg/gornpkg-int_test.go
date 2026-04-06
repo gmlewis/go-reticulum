@@ -22,10 +22,6 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-func tempDir(t *testing.T) (string, func()) {
-	return testutils.TempDir(t, "gornpkg-test-")
-}
-
 type safeBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -45,7 +41,7 @@ func (b *safeBuffer) String() string {
 
 func buildGornpkg(t *testing.T) (string, func()) {
 	t.Helper()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	bin := filepath.Join(tmpDir, "gornpkg")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Dir = "."
@@ -135,7 +131,7 @@ func TestIntegration_ExitCodeZero(t *testing.T) {
 	t.Parallel()
 	bin, cleanup := buildGornpkg(t)
 	defer cleanup()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	cmd := exec.Command(bin, "--config", tmpDir)
 	out, err := cmd.CombinedOutput()
@@ -147,7 +143,7 @@ func TestIntegration_ExitCodeZero(t *testing.T) {
 func TestIntegration_SIGINTCleanExit(t *testing.T) {
 	bin, cleanup := buildGornpkg(t)
 	defer cleanup()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 
 	cmd := exec.Command(bin, "--config", tmpDir, "-v", "-v", "-v")
@@ -238,7 +234,7 @@ func TestParity_StartupOutput(t *testing.T) {
 	gornpkgBin, cleanup := buildGornpkg(t)
 	defer cleanup()
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 
 	pyOut, pyExit := runPkgCommand(t, rnpkgBin, "--config", tmpDir)
@@ -261,7 +257,7 @@ func TestParity_VerbosityStackingOutput(t *testing.T) {
 	gornpkgBin, cleanup := buildGornpkg(t)
 	defer cleanup()
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 
 	pyOut, pyExit := runPkgCommand(t, rnpkgBin, "--config", tmpDir, "-v", "-v")
@@ -282,7 +278,7 @@ func TestParity_QuietnessStackingOutput(t *testing.T) {
 	gornpkgBin, cleanup := buildGornpkg(t)
 	defer cleanup()
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 
 	pyOut, pyExit := runPkgCommand(t, rnpkgBin, "--config", tmpDir, "-q", "-q")
@@ -345,7 +341,7 @@ func TestEquivalence_StartupExitCode(t *testing.T) {
 	gornpkgBin, cleanup := buildGornpkg(t)
 	defer cleanup()
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 
 	_, pyExit := runPkgCommand(t, rnpkgBin, "--config", tmpDir)

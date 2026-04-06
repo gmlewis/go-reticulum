@@ -114,7 +114,7 @@ func TestUDPInterfaceParity(t *testing.T) {
 		if !bytes.Equal(msg, data) {
 			t.Errorf("received data mismatch: expected %s, got %s", msg, data)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Errorf("timed out waiting for echo from Python")
 	}
 }

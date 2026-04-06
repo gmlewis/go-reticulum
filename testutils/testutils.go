@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 )
 
@@ -61,11 +60,4 @@ func SkipShortIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-}
-
-// NormalizeOutput collapses whitespace and removes carriage-control artifacts
-// from command output before it is compared in tests.
-func NormalizeOutput(text string) string {
-	text = strings.NewReplacer("\r", " ", "\b", "").Replace(text)
-	return strings.Join(strings.Fields(text), " ")
 }

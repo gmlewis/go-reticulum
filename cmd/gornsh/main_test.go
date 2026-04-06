@@ -10,6 +10,8 @@ import (
 	"testing"
 )
 
+const tempDirPrefix = "gornsh-test-"
+
 func TestParseAllowedIdentityHash(t *testing.T) {
 	t.Parallel()
 

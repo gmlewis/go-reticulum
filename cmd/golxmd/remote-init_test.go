@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func closeReticulum(t *testing.T, r *rns.Reticulum) {
@@ -68,7 +69,7 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("config dir doesn't exist", func(t *testing.T) {
 		lastExitCode = 0
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		nonExistent := filepath.Join(tmpDir, "nonexistent")
 		rnsDir := filepath.Join(tmpDir, "rns")
@@ -90,7 +91,7 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("identity file doesn't exist", func(t *testing.T) {
 		lastExitCode = 0
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		if err := os.MkdirAll(tmpDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
@@ -114,7 +115,7 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("identity file from argument doesn't exist", func(t *testing.T) {
 		lastExitCode = 0
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		nonExistentIdentity := filepath.Join(tmpDir, "nonexistent_identity")
 		rnsDir := filepath.Join(tmpDir, "rns")
@@ -136,7 +137,7 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("load valid identity", func(t *testing.T) {
 		lastExitCode = 0
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
 
@@ -171,7 +172,7 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("load valid identity from path argument", func(t *testing.T) {
 		lastExitCode = 0
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity_arg")
 
@@ -206,7 +207,7 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("test log level and reticulum init", func(t *testing.T) {
 		lastExitCode = 0
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true)
@@ -254,7 +255,7 @@ loglevel = 1
 
 	t.Run("config-file loglevel applied in remoteInit", func(t *testing.T) {
 		lastExitCode = 0
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true)
@@ -289,7 +290,7 @@ loglevel = 1
 	})
 
 	t.Run("testGetTargetIdentityLocal", func(t *testing.T) {
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true)
@@ -355,7 +356,7 @@ loglevel = 1
 			ts:     rns.NewTransportSystem(),
 			exitFn: exitFn,
 		}
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		rnsDir := filepath.Join(tmpDir, "rns")
 		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
@@ -401,7 +402,7 @@ loglevel = 1
 			ts:     rns.NewTransportSystem(),
 			exitFn: exitFn,
 		}
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		rnsDir := filepath.Join(tmpDir, "rns")
 		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
@@ -441,7 +442,7 @@ loglevel = 1
 		c.ts.Remember(nil, id.Hash, id.GetPublicKey(), nil)
 
 		// Create a mock RNS config
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		rnsConfigDir := filepath.Join(tmpDir, "rns")
 		if err := os.MkdirAll(rnsConfigDir, 0o755); err != nil {
@@ -490,7 +491,7 @@ loglevel = 1
 			ts:     rns.NewTransportSystem(),
 			exitFn: exitFn,
 		}
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		rnsDir := filepath.Join(tmpDir, "rns")
 		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
@@ -521,7 +522,7 @@ loglevel = 1
 			ts:     rns.NewTransportSystem(),
 			exitFn: exitFn,
 		}
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true)
@@ -554,7 +555,7 @@ loglevel = 1
 			ts:     rns.NewTransportSystem(),
 			exitFn: exitFn,
 		}
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true)
@@ -586,7 +587,7 @@ loglevel = 1
 			ts:     rns.NewTransportSystem(),
 			exitFn: exitFn,
 		}
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true)
@@ -618,7 +619,7 @@ loglevel = 1
 			ts:     rns.NewTransportSystem(),
 			exitFn: exitFn,
 		}
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true)
@@ -650,7 +651,7 @@ loglevel = 1
 			ts:     rns.NewTransportSystem(),
 			exitFn: exitFn,
 		}
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true)
@@ -682,7 +683,7 @@ loglevel = 1
 			ts:     rns.NewTransportSystem(),
 			exitFn: exitFn,
 		}
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true)
@@ -714,7 +715,7 @@ loglevel = 1
 			ts:     rns.NewTransportSystem(),
 			exitFn: exitFn,
 		}
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true)
@@ -746,7 +747,7 @@ loglevel = 1
 			ts:     rns.NewTransportSystem(),
 			exitFn: exitFn,
 		}
-		tmpDir, cleanup := tempDir(t)
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true)

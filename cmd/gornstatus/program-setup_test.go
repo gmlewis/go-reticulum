@@ -7,14 +7,19 @@ package main
 
 import (
 	"bytes"
+	"path/filepath"
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestProgramSetupExitsCleanly(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := tempDirWithConfig(t)
+	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornstatus-test-", func(dir string) string {
+		instanceName := filepath.Base(dir)
+		return "[reticulum]\nenable_transport = False\nshare_instance = Yes\ninstance_name = " + instanceName + "\n\n[logging]\nloglevel = 2\n"
+	})
 	defer cleanup()
 	var buf bytes.Buffer
 	ts := rns.NewTransportSystem()

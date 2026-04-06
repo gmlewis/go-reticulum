@@ -14,11 +14,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func buildGolxmd(t *testing.T) (string, func()) {
 	t.Helper()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	bin := filepath.Join(tmpDir, "golxmd")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Dir = "."
@@ -126,7 +128,7 @@ func TestGolxmd_Status_WithNoRemote(t *testing.T) {
 	t.Parallel()
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
-	tmpDir, tmpCleanup := tempDir(t)
+	tmpDir, tmpCleanup := testutils.TempDir(t, tempDirPrefix)
 	defer tmpCleanup()
 
 	// Create a minimal config
@@ -164,7 +166,7 @@ func TestGolxmd_Break_WithInvalidHash(t *testing.T) {
 	t.Parallel()
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
-	tmpDir, tmpCleanup := tempDir(t)
+	tmpDir, tmpCleanup := testutils.TempDir(t, tempDirPrefix)
 	defer tmpCleanup()
 
 	// Create a minimal config
@@ -196,7 +198,7 @@ func TestGolxmd_Sync_WithInvalidHash(t *testing.T) {
 	t.Parallel()
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
-	tmpDir, tmpCleanup := tempDir(t)
+	tmpDir, tmpCleanup := testutils.TempDir(t, tempDirPrefix)
 	defer tmpCleanup()
 
 	// Create a minimal config
@@ -228,7 +230,7 @@ func TestGolxmd_Status_OutputFormat(t *testing.T) {
 	t.Parallel()
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
-	tmpDir, tmpCleanup := tempDir(t)
+	tmpDir, tmpCleanup := testutils.TempDir(t, tempDirPrefix)
 	defer tmpCleanup()
 
 	// Create a minimal config
@@ -268,7 +270,7 @@ func TestGolxmd_Status_WithShowStatusFlag(t *testing.T) {
 	t.Parallel()
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
-	tmpDir, tmpCleanup := tempDir(t)
+	tmpDir, tmpCleanup := testutils.TempDir(t, tempDirPrefix)
 	defer tmpCleanup()
 
 	// Create a minimal config
@@ -310,7 +312,7 @@ func TestGolxmd_Peers_OutputFormat(t *testing.T) {
 	t.Parallel()
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
-	tmpDir, tmpCleanup := tempDir(t)
+	tmpDir, tmpCleanup := testutils.TempDir(t, tempDirPrefix)
 	defer tmpCleanup()
 
 	// Create a minimal config
@@ -362,7 +364,7 @@ func TestGolxmd_Break_Timeout(t *testing.T) {
 	t.Parallel()
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
-	tmpDir, tmpCleanup := tempDir(t)
+	tmpDir, tmpCleanup := testutils.TempDir(t, tempDirPrefix)
 	defer tmpCleanup()
 
 	// Create a minimal config

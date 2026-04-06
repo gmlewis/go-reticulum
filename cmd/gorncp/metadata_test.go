@@ -11,12 +11,15 @@ import (
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
+
+const tempDirPrefix = "gorncp-test-"
 
 func TestResourceMetadataInOptions(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 
 	// Create a test file

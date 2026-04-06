@@ -19,10 +19,6 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-func tempDir(t *testing.T) (string, func()) {
-	return testutils.TempDir(t, "gornsh-test-")
-}
-
 func TestProtocolPayloadParityWithPython(t *testing.T) {
 	t.Parallel()
 
@@ -31,7 +27,7 @@ func TestProtocolPayloadParityWithPython(t *testing.T) {
 		t.Skip("python3 not found")
 	}
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	payloadPath := filepath.Join(tmpDir, "payload.msgpack")
 
@@ -74,7 +70,7 @@ func TestErrorExitOrderingPayloadParityWithPython(t *testing.T) {
 		t.Skip("python3 not found")
 	}
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	payloadPath := filepath.Join(tmpDir, "ordered.msgpack")
 
@@ -155,7 +151,7 @@ func TestRetryMetadataAndExitPayloadParityWithPython(t *testing.T) {
 		t.Skip("python3 not found")
 	}
 
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	payloadPath := filepath.Join(tmpDir, "retry_ordered.msgpack")
 

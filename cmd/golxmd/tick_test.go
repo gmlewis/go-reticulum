@@ -11,6 +11,7 @@ import (
 
 	"github.com/gmlewis/go-reticulum/lxmf"
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestJobs_RecoverFromPanic(t *testing.T) {
@@ -46,7 +47,7 @@ func TestJobs_RecoverFromPanic(t *testing.T) {
 }
 
 func TestTick(t *testing.T) {
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	identity, err := rns.NewIdentity(true)
 	mustTest(t, err)

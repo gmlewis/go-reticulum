@@ -17,9 +17,7 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-func tempDir(t *testing.T) (string, func()) {
-	return testutils.TempDir(t, "lxmf-test-")
-}
+const tempDirPrefix = "lxmf-test-"
 
 func TestNewRouterRequiresStoragePath(t *testing.T) {
 	ts := rns.NewTransportSystem()
@@ -30,7 +28,7 @@ func TestNewRouterRequiresStoragePath(t *testing.T) {
 
 func TestRegisterDeliveryIdentitySingleDestinationOnly(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -51,7 +49,7 @@ func TestRegisterDeliveryIdentitySingleDestinationOnly(t *testing.T) {
 
 func TestHandleOutboundValidatesMessage(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -62,7 +60,7 @@ func TestHandleOutboundValidatesMessage(t *testing.T) {
 
 func TestProcessOutboundDirectRequestsPathWhenUnavailable(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -103,7 +101,7 @@ func TestProcessOutboundDirectRequestsPathWhenUnavailable(t *testing.T) {
 
 func TestProcessOutboundOpportunisticPathRecoversWithoutPathRequest(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -168,7 +166,7 @@ func TestProcessOutboundOpportunisticPathRecoversWithoutPathRequest(t *testing.T
 
 func TestProcessOutboundOpportunisticEscalatesToPathRequestThenSends(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -229,7 +227,7 @@ func TestProcessOutboundOpportunisticEscalatesToPathRequestThenSends(t *testing.
 
 func TestProcessOutboundSendFailureEventuallyFails(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 	sourceID := mustTestNewIdentity(t, true)
@@ -261,7 +259,7 @@ func TestProcessOutboundSendFailureEventuallyFails(t *testing.T) {
 
 func TestProcessOutboundSendSuccessSetsSent(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -287,7 +285,7 @@ func TestProcessOutboundSendSuccessSetsSent(t *testing.T) {
 
 func TestProcessOutboundSentMessageNotResentUntilTimeout(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -324,7 +322,7 @@ func TestProcessOutboundSentMessageNotResentUntilTimeout(t *testing.T) {
 
 func TestProcessOutboundTimeoutRequeuesForRetry(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -377,7 +375,7 @@ func TestProcessOutboundTimeoutRequeuesForRetry(t *testing.T) {
 
 func TestProcessOutboundDeliveryCallbackSetsDeliveredAndPreventsTimeoutRequeue(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -424,7 +422,7 @@ func TestProcessOutboundDeliveryCallbackSetsDeliveredAndPreventsTimeoutRequeue(t
 
 func TestProcessOutboundSelectsPacketRepresentation(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -461,7 +459,7 @@ func TestProcessOutboundSelectsPacketRepresentation(t *testing.T) {
 
 func TestProcessOutboundSelectsResourceRepresentation(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -506,7 +504,7 @@ func TestProcessOutboundSelectsResourceRepresentation(t *testing.T) {
 
 func TestProcessOutboundResourceUnsupportedFails(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -549,7 +547,7 @@ func TestProcessOutboundResourceUnsupportedFails(t *testing.T) {
 
 func TestProcessOutboundResourceLinkPendingRetryNoAttemptIncrement(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -593,7 +591,7 @@ func TestProcessOutboundResourceLinkPendingRetryNoAttemptIncrement(t *testing.T)
 
 func TestSendMessageResourceLockedEstablishError(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -623,7 +621,7 @@ func TestSendMessageResourceLockedEstablishError(t *testing.T) {
 
 func TestProcessOutboundResourceSendFailureEventuallyFails(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -660,7 +658,7 @@ func TestProcessOutboundResourceSendFailureEventuallyFails(t *testing.T) {
 
 func TestProcessOutboundResourceSendRetriesThenSucceeds(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -707,7 +705,7 @@ func TestProcessOutboundResourceSendRetriesThenSucceeds(t *testing.T) {
 
 func TestProcessOutboundDropsTerminalStatesFromQueue(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -725,7 +723,7 @@ func TestProcessOutboundDropsTerminalStatesFromQueue(t *testing.T) {
 
 func TestHandleInboundResourceDataDeliversMessage(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -759,7 +757,7 @@ func TestHandleInboundResourceDataDeliversMessage(t *testing.T) {
 
 func TestHandleInboundResourceDataIgnoresInvalidPayload(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -777,7 +775,7 @@ func TestHandleInboundResourceDataIgnoresInvalidPayload(t *testing.T) {
 
 func TestRegisterPropagationControlDestination(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -800,7 +798,7 @@ func TestRegisterPropagationControlDestination(t *testing.T) {
 
 func TestControlStatsGetRequest(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -838,7 +836,7 @@ func TestControlStatsGetRequest(t *testing.T) {
 
 func TestControlStatsGetRequestAccessErrors(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -858,7 +856,7 @@ func TestControlStatsGetRequestAccessErrors(t *testing.T) {
 
 func TestControlPeerSyncAndUnpeerRequests(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -884,7 +882,7 @@ func TestControlPeerSyncAndUnpeerRequests(t *testing.T) {
 
 func TestControlPeerSyncBackoff(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -913,7 +911,7 @@ func TestControlPeerSyncBackoff(t *testing.T) {
 
 func TestPruneStalePeers(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -943,7 +941,7 @@ func TestPruneStalePeers(t *testing.T) {
 
 func TestControlPeerSyncAndUnpeerErrors(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -984,7 +982,7 @@ func TestControlPeerSyncAndUnpeerErrors(t *testing.T) {
 
 func TestRegisterPropagationDestination(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1007,7 +1005,7 @@ func TestRegisterPropagationDestination(t *testing.T) {
 
 func TestOfferRequestReturnsWantedIDs(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1041,7 +1039,7 @@ func TestOfferRequestReturnsWantedIDs(t *testing.T) {
 
 func TestOfferRequestInvalidKey(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1061,7 +1059,7 @@ func TestOfferRequestInvalidKey(t *testing.T) {
 
 func TestOfferRequestThrottled(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1087,7 +1085,7 @@ func TestOfferRequestThrottled(t *testing.T) {
 
 func TestOfferRequestStaticOnlyNoAccess(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1109,7 +1107,7 @@ func TestOfferRequestStaticOnlyNoAccess(t *testing.T) {
 
 func TestOfferRequestPeeringCostValidation(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 	router.peeringCost = 2
@@ -1147,7 +1145,7 @@ func TestOfferRequestPeeringCostValidation(t *testing.T) {
 
 func TestRouterPolicyConfigurationAPIs(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 	now := time.Unix(1700000000, 0)
@@ -1226,7 +1224,7 @@ func TestRouterPolicyConfigurationAPIs(t *testing.T) {
 
 func TestApplyPolicyConfig(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1288,7 +1286,7 @@ func TestApplyPolicyConfig(t *testing.T) {
 
 func TestApplyPolicyConfigErrors(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1320,7 +1318,7 @@ func TestNewRouterWithConfigAppliesPolicy(t *testing.T) {
 	remotePropagationHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
 
 	ts := rns.NewTransportSystem()
-	td, cleanup := tempDir(t)
+	td, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouterWithConfig(t, ts, nil, td, map[string]any{
 		"peering_cost":     2,
@@ -1349,7 +1347,7 @@ func TestNewRouterWithConfigAppliesPolicy(t *testing.T) {
 
 func TestNewRouterWithConfigReturnsPolicyError(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	td, cleanup := tempDir(t)
+	td, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	if _, err := NewRouterWithConfig(ts, nil, td, map[string]any{"peering_cost": "bad"}); err == nil {
 		t.Fatal("expected policy config error")
@@ -1358,7 +1356,7 @@ func TestNewRouterWithConfigReturnsPolicyError(t *testing.T) {
 
 func TestMessageGetRequestListAndFetch(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1417,7 +1415,7 @@ func TestMessageGetRequestListAndFetch(t *testing.T) {
 
 func TestMessageGetRequestRequiresIdentity(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1434,7 +1432,7 @@ func TestMessageGetRequestRequiresIdentity(t *testing.T) {
 
 func TestMessageGetRequestNoAccessWhenAuthRequired(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1467,7 +1465,7 @@ func (e assertErr) Error() string {
 
 func TestDeliveryPacketOpportunisticAndDirect(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1524,7 +1522,7 @@ func TestNewRouterFromConfig(t *testing.T) {
 	staticPeer := rns.CalculateHash(id, AppName, "propagation")
 
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouterFromConfig(t, ts, RouterConfig{
 		Identity:         id,
@@ -1557,7 +1555,7 @@ func TestNewRouterFromConfig(t *testing.T) {
 
 func TestNewRouterFromConfigDefaults(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	td, cleanup := tempDir(t)
+	td, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouterFromConfig(t, ts, RouterConfig{
 		StoragePath: td,
@@ -1583,7 +1581,7 @@ func TestNewRouterFromConfigDefaults(t *testing.T) {
 
 func TestNewRouterFromConfigSyncLimitClamped(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	td, cleanup := tempDir(t)
+	td, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouterFromConfig(t, ts, RouterConfig{
 		StoragePath:      td,
@@ -1599,7 +1597,7 @@ func TestNewRouterFromConfigSyncLimitClamped(t *testing.T) {
 
 func TestRouterIgnoreDestination(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1618,7 +1616,7 @@ func TestRouterIgnoreDestination(t *testing.T) {
 
 func TestRouterEnforceStamps(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1635,7 +1633,7 @@ func TestRouterEnforceStamps(t *testing.T) {
 
 func TestRouterMessageStorageLimit(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1652,7 +1650,7 @@ func TestRouterMessageStorageLimit(t *testing.T) {
 
 func TestRouterPrioritise(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1671,7 +1669,7 @@ func TestRouterPrioritise(t *testing.T) {
 
 func TestRouterSetInboundStampCost(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1717,7 +1715,7 @@ func TestRouterSetInboundStampCost(t *testing.T) {
 
 func TestRouterAnnounce(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1741,7 +1739,7 @@ func TestRouterAnnounce(t *testing.T) {
 
 func TestRequestMessagesNoPropNode(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 	// No propagation node set — should log and return without panicking.
@@ -1753,7 +1751,7 @@ func TestRequestMessagesNoPropNode(t *testing.T) {
 
 func TestRequestMessagesPathRequested(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1779,7 +1777,7 @@ func TestRequestMessagesPathRequested(t *testing.T) {
 
 func TestRequestMessagesLinkEstablished(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1804,7 +1802,7 @@ func TestRequestMessagesLinkEstablished(t *testing.T) {
 
 func TestRequestMessagesLinkFailed(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1828,7 +1826,7 @@ func TestRequestMessagesLinkFailed(t *testing.T) {
 
 func TestCancelPropagationResetsState(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1860,7 +1858,7 @@ func TestCancelPropagationResetsState(t *testing.T) {
 
 func TestProcessOutboundPropagatedNoNodeFails(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1894,7 +1892,7 @@ func TestProcessOutboundPropagatedNoNodeFails(t *testing.T) {
 
 func TestProcessOutboundPropagatedRequestsPathThenSends(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1950,7 +1948,7 @@ func TestProcessOutboundPropagatedRequestsPathThenSends(t *testing.T) {
 
 func TestProcessOutboundPropagatedSentRemovesFromQueue(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1991,7 +1989,7 @@ func TestProcessOutboundPropagatedSentRemovesFromQueue(t *testing.T) {
 
 func TestProcessOutboundTryPropagationOnFailFallback(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -2050,7 +2048,7 @@ func TestProcessOutboundTryPropagationOnFailFallback(t *testing.T) {
 
 func TestProcessOutboundFailedCallbackInvoked(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -2089,7 +2087,7 @@ func TestProcessOutboundFailedCallbackInvoked(t *testing.T) {
 
 func TestSetDisplayNameAndAnnounceAppData(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -2144,7 +2142,7 @@ func TestSetDisplayNameAndAnnounceAppData(t *testing.T) {
 
 func TestSetDisplayNameNilReturnsNilAppData(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -2164,7 +2162,7 @@ func TestSetDisplayNameNilReturnsNilAppData(t *testing.T) {
 
 func TestSetDisplayNameNoStampCost(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -2202,7 +2200,7 @@ func TestSetDisplayNameNoStampCost(t *testing.T) {
 
 func TestAnnounceIncludesAppData(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -2281,7 +2279,7 @@ func TestAnnounceIncludesAppData(t *testing.T) {
 
 func TestAnnounceWithoutDisplayNamePassesNilAppData(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -2313,7 +2311,7 @@ func TestAnnounceWithoutDisplayNamePassesNilAppData(t *testing.T) {
 
 func TestRouterPropagationToggle(t *testing.T) {
 	ts := rns.NewTransportSystem()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
