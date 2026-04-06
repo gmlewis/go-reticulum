@@ -9,11 +9,9 @@ package main
 
 import (
 	"bytes"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -21,22 +19,11 @@ import (
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func tempDir(t *testing.T) (string, func()) {
-	t.Helper()
-	baseDir := ""
-	if runtime.GOOS == "darwin" {
-		baseDir = "/tmp"
-	}
-	dir, err := os.MkdirTemp(baseDir, "gornpkg-test-")
-	if err != nil {
-		t.Fatalf("tempDir error: %v", err)
-	}
-	cleanup := func() {
-		_ = os.RemoveAll(dir)
-	}
-	return dir, cleanup
+	return testutils.TempDir(t, "gornpkg-test-")
 }
 
 type safeBuffer struct {

@@ -6,7 +6,6 @@
 package main
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -14,13 +13,8 @@ import (
 )
 
 func tempDirWithConfig(t *testing.T) (string, func()) {
-	t.Helper()
-	dir, cleanup := testutils.TempDir(t, "gornstatus-test-")
-	instanceName := filepath.Base(dir)
-	config := "[reticulum]\nenable_transport = False\nshare_instance = Yes\ninstance_name = " + instanceName + "\n\n[logging]\nloglevel = 2\n"
-	if err := os.WriteFile(filepath.Join(dir, "config"), []byte(config), 0o600); err != nil {
-		cleanup()
-		t.Fatalf("writeTestConfig: %v", err)
-	}
-	return dir, cleanup
+	return testutils.TempDirWithConfig(t, "gornstatus-test-", func(dir string) string {
+		instanceName := filepath.Base(dir)
+		return "[reticulum]\nenable_transport = False\nshare_instance = Yes\ninstance_name = " + instanceName + "\n\n[logging]\nloglevel = 2\n"
+	})
 }

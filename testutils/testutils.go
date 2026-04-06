@@ -9,6 +9,7 @@ package testutils
 
 import (
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -38,6 +39,28 @@ func TempDir(t *testing.T, prefix string) (string, func()) {
 	}
 
 	return dir, cleanup
+}
+
+// TempDirWithConfig creates a temporary directory containing a config file and
+// returns a cleanup function that removes it.
+func TempDirWithConfig(t *testing.T, prefix string, config func(dir string) string) (string, func()) {
+	t.Helper()
+
+	dir, cleanup := TempDir(t, prefix)
+	if err := os.WriteFile(filepath.Join(dir, "config"), []byte(config(dir)), 0o600); err != nil {
+		cleanup()
+		t.Fatalf("TempDirWithConfig error: %v", err)
+	}
+
+	return dir, cleanup
+}
+
+// SkipShortIntegration skips integration-heavy tests when testing.Short is set.
+func SkipShortIntegration(t *testing.T) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
 }
 
 // NormalizeOutput collapses whitespace and removes carriage-control artifacts

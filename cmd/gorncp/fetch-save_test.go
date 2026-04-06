@@ -13,19 +13,20 @@ import (
 
 	"github.com/gmlewis/go-reticulum/rns"
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestFetchModeSavesReceivedFiles(t *testing.T) {
-	skipShortIntegration(t)
+	testutils.SkipShortIntegration(t)
 
 	// Create temp directories
-	listenerDir, cleanup1 := tempDir(t)
+	listenerDir, cleanup1 := testutils.TempDir(t, "gorncp-test-")
 	defer cleanup1()
-	fetcherDir, cleanup2 := tempDir(t)
+	fetcherDir, cleanup2 := testutils.TempDir(t, "gorncp-test-")
 	defer cleanup2()
-	saveDir, cleanup3 := tempDir(t)
+	saveDir, cleanup3 := testutils.TempDir(t, "gorncp-test-")
 	defer cleanup3()
-	testFileDir, cleanup4 := tempDir(t)
+	testFileDir, cleanup4 := testutils.TempDir(t, "gorncp-test-")
 	defer cleanup4()
 
 	// Create test file on listener side

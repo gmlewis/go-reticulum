@@ -8,37 +8,20 @@
 package main
 
 import (
-	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
-
-func tempDir(t *testing.T) (string, func()) {
-	t.Helper()
-	baseDir := ""
-	if runtime.GOOS == "darwin" {
-		baseDir = "/tmp"
-	}
-	dir, err := os.MkdirTemp(baseDir, "gornir-test-")
-	if err != nil {
-		t.Fatalf("tempDir error: %v", err)
-	}
-	cleanup := func() {
-		_ = os.RemoveAll(dir)
-	}
-	return dir, cleanup
-}
 
 func buildGornir(t *testing.T) (string, func()) {
 	t.Helper()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, "gornir-test-")
 	bin := filepath.Join(tmpDir, "gornir")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Dir = "."
@@ -100,7 +83,7 @@ func TestIntegration_ExitCodeZero(t *testing.T) {
 	t.Parallel()
 	bin, cleanup := buildGornir(t)
 	defer cleanup()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, "gornir-test-")
 	defer cleanup()
 	cmd := exec.Command(bin, "--config", tmpDir)
 	out, err := cmd.CombinedOutput()
@@ -182,7 +165,7 @@ func TestIntegration_SIGINTCleanExit(t *testing.T) {
 	t.Parallel()
 	bin, cleanup := buildGornir(t)
 	defer cleanup()
-	tmpDir, cleanupDir := tempDir(t)
+	tmpDir, cleanupDir := testutils.TempDir(t, "gornir-test-")
 	defer cleanupDir()
 	cmd := exec.Command(bin, "--config", tmpDir, "-v", "-v", "-v")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

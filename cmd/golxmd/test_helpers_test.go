@@ -5,11 +5,12 @@
 
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
+)
 
 func skipShortIntegration(t *testing.T) {
-	t.Helper()
-	if testing.Short() {
-		t.Skip("skipping integration parity test in -short mode")
-	}
+	testutils.SkipShortIntegration(t)
 }

@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func runGornid(t *testing.T, args ...string) (string, error) {
@@ -41,7 +42,7 @@ func TestVersionOutput(t *testing.T) {
 
 func TestNoIdentityError(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, "gornid-test-")
 	defer cleanup()
 
 	// Build the binary first (go run doesn't preserve exit codes reliably)
@@ -71,7 +72,7 @@ func TestNoIdentityError(t *testing.T) {
 
 func TestGenerateRoundTrip(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, "gornid-test-")
 	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 
@@ -112,7 +113,7 @@ func TestLoadIdentityFallsBackToIdentityHash(t *testing.T) {
 
 func TestImportExportRoundTrip(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, "gornid-test-")
 	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 
@@ -153,7 +154,7 @@ func TestImportExportRoundTrip(t *testing.T) {
 
 func TestEncryptDecryptRoundTrip(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, "gornid-test-")
 	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 	plainFile := filepath.Join(tmpDir, "plain.txt")
@@ -191,7 +192,7 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 
 func TestSignValidateRoundTrip(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, "gornid-test-")
 	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 	dataFile := filepath.Join(tmpDir, "data.txt")
@@ -225,7 +226,7 @@ func TestSignValidateRoundTrip(t *testing.T) {
 
 func TestValidateBadSignature(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := tempDir(t)
+	tmpDir, cleanup := testutils.TempDir(t, "gornid-test-")
 	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 	dataFile := filepath.Join(tmpDir, "data.txt")

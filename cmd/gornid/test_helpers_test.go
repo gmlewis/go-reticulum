@@ -12,12 +12,5 @@ import (
 )
 
 func skipShortIntegration(t *testing.T) {
-	t.Helper()
-	if testing.Short() {
-		t.Skip("skipping integration parity test in -short mode")
-	}
-}
-
-func tempDir(t *testing.T) (string, func()) {
-	return testutils.TempDir(t, "gornid-test-")
+	testutils.SkipShortIntegration(t)
 }

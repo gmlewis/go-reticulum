@@ -51,10 +51,6 @@ func reserveTCPPort(t *testing.T) int {
 	}
 }
 
-func tempDir(t *testing.T) (string, func()) {
-	return testutils.TempDir(t, "rns-test-")
-}
-
 // newTestTransportSystem creates a minimal TransportSystem for testing.
 func newTestTransportSystem(t *testing.T) *TransportSystem {
 	t.Helper()
@@ -62,6 +58,9 @@ func newTestTransportSystem(t *testing.T) *TransportSystem {
 	ts := NewTransportSystem()
 	ts.identity = id
 	return ts
+}
+func tempDir(t *testing.T) (string, func()) {
+	return testutils.TempDir(t, "rns-test-")
 }
 
 // newTestPipes creates a pair of connected PipeInterfaces wired to the

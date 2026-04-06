@@ -5,11 +5,16 @@
 
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
+)
+
+func tempDir(t *testing.T) (string, func()) {
+	return testutils.TempDir(t, "gorncp-test-")
+}
 
 func skipShortIntegration(t *testing.T) {
-	t.Helper()
-	if testing.Short() {
-		t.Skip("skipping timeout-heavy integration test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 }

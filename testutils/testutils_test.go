@@ -35,6 +35,27 @@ func TestTempDirCreatesAndCleansUpDirectory(t *testing.T) {
 	}
 }
 
+func TestTempDirWithConfigCreatesConfigFile(t *testing.T) {
+	t.Parallel()
+
+	config := "[reticulum]\ninstance_name = test\n"
+	dir, cleanup := TempDirWithConfig(t, "testutils-config-", func(string) string { return config })
+
+	configPath := filepath.Join(dir, "config")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("TempDirWithConfig missing config file %q: %v", configPath, err)
+	}
+	if got := string(data); got != config {
+		t.Fatalf("TempDirWithConfig config = %q, want %q", got, config)
+	}
+
+	cleanup()
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("TempDirWithConfig cleanup left directory behind: %v", err)
+	}
+}
+
 func TestTempBaseDir(t *testing.T) {
 	t.Parallel()
 
