@@ -88,11 +88,11 @@ func TestParity_Base64ImportExport(t *testing.T) {
 		t.Fatalf("base64 export mismatch:\n  Go:     %v\n  Python: %v", goKeys["Exported Identity :"], pyKeys["Exported Identity :"])
 	}
 
-	goImportOut, err := exec.Command(gornidBin, "--config", tmpDir, "-m", goKeys["Exported Identity :"], "-b", "-P").CombinedOutput()
+	goImportOut, err := exec.Command(gornidBin, "--config", tmpDir, "--import="+goKeys["Exported Identity :"], "-b", "-P").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornid base64 import failed: %v\n%v", err, string(goImportOut))
 	}
-	pyImportOut, err := exec.Command(rnidBin, "--config", tmpDir, "-m", pyKeys["Exported Identity :"], "-b", "-P").CombinedOutput()
+	pyImportOut, err := exec.Command(rnidBin, "--config", tmpDir, "--import="+pyKeys["Exported Identity :"], "-b", "-P").CombinedOutput()
 	if err != nil {
 		t.Fatalf("rnid base64 import failed: %v\n%v", err, string(pyImportOut))
 	}

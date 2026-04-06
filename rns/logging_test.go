@@ -11,6 +11,14 @@ func TestLoggerStateDefaultsAndMutation(t *testing.T) {
 	t.Parallel()
 
 	state := newLoggerState()
+	defer func() {
+		state.SetAlwaysOverride(false)
+		state.SetCompactLogFmt(false)
+		state.SetLogLevel(LogNotice)
+		state.SetLogFilePath("")
+		state.SetLogDest(LogStdout)
+		state.SetLogCallback(nil)
+	}()
 
 	if got := state.GetLogLevel(); got != LogNotice {
 		t.Fatalf("GetLogLevel() = %v, want %v", got, LogNotice)

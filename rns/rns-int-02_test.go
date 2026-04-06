@@ -1307,7 +1307,7 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 		if gotSize != payloadSize {
 			t.Fatalf("unexpected large request payload size: got %v want %v", gotSize, payloadSize)
 		}
-	case <-time.After(60 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("timed out waiting for large request from Python")
 	}
 
