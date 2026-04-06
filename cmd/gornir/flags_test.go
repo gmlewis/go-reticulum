@@ -6,9 +6,12 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"io"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/utils"
 )
 
 func TestCounter(t *testing.T) {
@@ -89,5 +92,28 @@ func TestLongFormParserAliases(t *testing.T) {
 	}
 	if app.verbose != 1 || app.quiet != 1 || !app.exampleConfig {
 		t.Fatalf("unexpected alias state: %+v", app)
+	}
+}
+
+func TestParseFlagsHelp(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	_, err := parseFlags([]string{"--help"}, &buf)
+	if err != utils.ErrHelp {
+		t.Fatalf("parseFlags error = %v, want %v", err, utils.ErrHelp)
+	}
+	if got := buf.String(); got != usageText {
+		t.Fatalf("help output mismatch:\n--- got ---\n%v\n--- want ---\n%v", got, usageText)
+	}
+}
+
+func TestParseFlagsVersion(t *testing.T) {
+	t.Parallel()
+	app, err := parseFlags([]string{"--version"}, io.Discard)
+	if err != nil {
+		t.Fatalf("parseFlags failed: %v", err)
+	}
+	if !app.version {
+		t.Fatal("version = false, want true")
 	}
 }

@@ -10,6 +10,8 @@ import (
 	"io"
 	"testing"
 	"time"
+
+	"github.com/gmlewis/go-reticulum/utils"
 )
 
 func TestTimeoutFlag(t *testing.T) {
@@ -86,5 +88,28 @@ func TestUsageText(t *testing.T) {
 	t.Parallel()
 	if got := bytes.NewBufferString(usageText).String(); got == "" || !bytes.Contains([]byte(got), []byte("Go Lightweight Extensible Messaging Daemon")) {
 		t.Fatalf("usageText missing expected content: %q", got)
+	}
+}
+
+func TestParseFlagsHelp(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	_, err := parseFlags([]string{"--help"}, &buf)
+	if err != utils.ErrHelp {
+		t.Fatalf("parseFlags error = %v, want %v", err, utils.ErrHelp)
+	}
+	if got := buf.String(); got != usageText {
+		t.Fatalf("help output mismatch:\n--- got ---\n%v\n--- want ---\n%v", got, usageText)
+	}
+}
+
+func TestParseFlagsVersion(t *testing.T) {
+	t.Parallel()
+	app, err := parseFlags([]string{"--version"}, io.Discard)
+	if err != nil {
+		t.Fatalf("parseFlags failed: %v", err)
+	}
+	if !app.version {
+		t.Fatal("version = false, want true")
 	}
 }

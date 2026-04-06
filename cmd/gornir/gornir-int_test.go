@@ -8,13 +8,33 @@
 package main
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
+
+func tempDir(t *testing.T) (string, func()) {
+	t.Helper()
+	baseDir := ""
+	if runtime.GOOS == "darwin" {
+		baseDir = "/tmp"
+	}
+	dir, err := os.MkdirTemp(baseDir, "gornir-test-")
+	if err != nil {
+		t.Fatalf("tempDir error: %v", err)
+	}
+	cleanup := func() {
+		_ = os.RemoveAll(dir)
+	}
+	return dir, cleanup
+}
 
 func buildGornir(t *testing.T) (string, func()) {
 	t.Helper()
@@ -155,5 +175,44 @@ func TestParity_HelpFlags(t *testing.T) {
 		if !strings.Contains(goStr, flag) {
 			t.Errorf("Go help missing %q", flag)
 		}
+	}
+}
+
+func TestIntegration_SIGINTCleanExit(t *testing.T) {
+	t.Parallel()
+	bin, cleanup := buildGornir(t)
+	defer cleanup()
+	tmpDir, cleanupDir := tempDir(t)
+	defer cleanupDir()
+	cmd := exec.Command(bin, "--config", tmpDir, "-v", "-v", "-v")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start gornir: %v", err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	_ = cmd.Process.Signal(syscall.SIGINT)
+	err := cmd.Wait()
+	if err != nil {
+		exitErr, ok := err.(*exec.ExitError)
+		if !ok || exitErr.ExitCode() > 1 {
+			t.Errorf("expected clean exit, got: %v", err)
+		}
+	}
+}
+
+func TestIntegration_VerboseStacking(t *testing.T) {
+	t.Parallel()
+	bin, cleanup := buildGornir(t)
+	defer cleanup()
+	out, err := exec.Command(bin, "-v", "-v", "-v").CombinedOutput()
+	if err != nil {
+		t.Fatalf("gornir -v -v -v failed: %v\n%v", err, string(out))
+	}
+	output := string(out)
+	if strings.Contains(output, "panic") || strings.Contains(output, "fatal") {
+		t.Fatalf("verbose output contains a crash: %v", output)
+	}
+	if output != "" && !strings.Contains(output, "Started ") {
+		t.Logf("verbose output did not include startup logs in this environment: %v", output)
 	}
 }

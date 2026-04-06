@@ -8,9 +8,7 @@ package main
 import (
 	"errors"
 	"flag"
-	"fmt"
 	"io"
-	"os"
 
 	"github.com/gmlewis/go-reticulum/utils"
 )
@@ -90,10 +88,6 @@ func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
 	}
 	app.args = append([]string{}, fs.Args()...)
 	return app, nil
-}
-
-func printUsage() {
-	_, _ = fmt.Fprint(os.Stdout, usageText)
 }
 
 func (a *appT) validate() error {

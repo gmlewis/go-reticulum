@@ -6,9 +6,6 @@
 package main
 
 import (
-	"bytes"
-	"io"
-	"os"
 	"strings"
 	"testing"
 )
@@ -165,27 +162,7 @@ func TestHelpOutput(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Capture printUsage output
-			oldStdout := os.Stdout
-			r, w, _ := os.Pipe()
-			os.Stdout = w
-
-			var buf bytes.Buffer
-			done := make(chan struct{})
-			go func() {
-				_, err := io.Copy(&buf, r)
-				mustTest(t, err)
-				close(done)
-			}()
-
-			printUsage()
-
-			mustTest(t, w.Close())
-			<-done
-
-			os.Stdout = oldStdout
-
-			output := buf.String()
+			output := usageText
 			if !tt.check(output) {
 				t.Errorf("Help output check failed for %s\ngot: %v", tt.name, output)
 			}

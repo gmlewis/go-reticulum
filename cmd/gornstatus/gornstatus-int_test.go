@@ -3,6 +3,8 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
+//go:build integration
+
 package main
 
 import (
@@ -34,11 +36,6 @@ func tempDir(t *testing.T) (string, func()) {
 	return dir, cleanup
 }
 
-// tempDirWithConfig returns a temp directory pre-populated with a
-// Reticulum config that uses a unique instance_name derived from
-// the directory name. This prevents abstract-socket collisions
-// when multiple test processes create Reticulum instances
-// concurrently on Linux.
 func tempDirWithConfig(t *testing.T) (string, func()) {
 	t.Helper()
 	dir, cleanup := tempDir(t)
@@ -65,7 +62,7 @@ func buildGornstatus(t *testing.T) (string, func()) {
 	return bin, cleanup
 }
 
-func TestVersionOutput(t *testing.T) {
+func TestIntegration_VersionOutput(t *testing.T) {
 	t.Parallel()
 	bin, cleanupBin := buildGornstatus(t)
 	defer cleanupBin()
@@ -80,7 +77,7 @@ func TestVersionOutput(t *testing.T) {
 	}
 }
 
-func TestHelpOutput(t *testing.T) {
+func TestIntegration_HelpOutput(t *testing.T) {
 	t.Parallel()
 	bin, cleanupBin := buildGornstatus(t)
 	defer cleanupBin()
@@ -113,7 +110,7 @@ func TestHelpOutput(t *testing.T) {
 	}
 }
 
-func TestExitCodeZero(t *testing.T) {
+func TestIntegration_ExitCodeZero(t *testing.T) {
 	t.Parallel()
 	bin, cleanupBin := buildGornstatus(t)
 	defer cleanupBin()
@@ -126,7 +123,7 @@ func TestExitCodeZero(t *testing.T) {
 	}
 }
 
-func TestSIGINTCleanExit(t *testing.T) {
+func TestIntegration_SIGINTCleanExit(t *testing.T) {
 	t.Parallel()
 	bin, cleanupBin := buildGornstatus(t)
 	defer cleanupBin()
@@ -148,7 +145,7 @@ func TestSIGINTCleanExit(t *testing.T) {
 	}
 }
 
-func TestMonitorModeSIGINT(t *testing.T) {
+func TestIntegration_MonitorModeSIGINT(t *testing.T) {
 	t.Parallel()
 	bin, cleanupBin := buildGornstatus(t)
 	defer cleanupBin()
@@ -170,7 +167,7 @@ func TestMonitorModeSIGINT(t *testing.T) {
 	}
 }
 
-func TestVerboseStacking(t *testing.T) {
+func TestIntegration_VerboseStacking(t *testing.T) {
 	t.Parallel()
 	bin, cleanupBin := buildGornstatus(t)
 	defer cleanupBin()

@@ -10,12 +10,91 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
+
+func tempDir(t *testing.T) string {
+	t.Helper()
+	baseDir := ""
+	if runtime.GOOS == "darwin" {
+		baseDir = "/tmp"
+	}
+	dir, err := os.MkdirTemp(baseDir, "gornpath-test-")
+	if err != nil {
+		t.Fatalf("tempDir error: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(dir)
+	})
+	return dir
+}
+
+func buildGornpath(t *testing.T) (string, func()) {
+	t.Helper()
+	tmpDir := tempDir(t)
+	bin := filepath.Join(tmpDir, "gornpath")
+	cmd := exec.Command("go", "build", "-o", bin, ".")
+	cmd.Dir = "."
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("failed to build gornpath: %v\n%v", err, string(out))
+	}
+	return bin, func() { _ = os.RemoveAll(tmpDir) }
+}
+
+func TestIntegration_NoArgsPrintsUsageAndExitsZero(t *testing.T) {
+	t.Parallel()
+	bin, cleanup := buildGornpath(t)
+	defer cleanup()
+	out, err := exec.Command(bin).CombinedOutput()
+	if err != nil {
+		t.Fatalf("gornpath with no args failed: %v\n%v", err, string(out))
+	}
+	if !strings.Contains(string(out), "usage: gornpath") {
+		t.Fatalf("missing usage text: %q", string(out))
+	}
+}
+
+func TestIntegration_VersionPrintsProgramVersion(t *testing.T) {
+	t.Parallel()
+	bin, cleanup := buildGornpath(t)
+	defer cleanup()
+	out, err := exec.Command(bin, "--version").CombinedOutput()
+	if err != nil {
+		t.Fatalf("gornpath --version failed: %v\n%v", err, string(out))
+	}
+	if !strings.Contains(string(out), "gornpath ") {
+		t.Fatalf("missing version output: %q", string(out))
+	}
+}
+
+func TestIntegration_InvalidFlagExitsTwoAndPrintsUsage(t *testing.T) {
+	t.Parallel()
+	bin, cleanup := buildGornpath(t)
+	defer cleanup()
+	out, err := exec.Command(bin, "--does-not-exist").CombinedOutput()
+	if err == nil {
+		t.Fatal("expected parse failure, got success")
+	}
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok {
+		t.Fatalf("expected ExitError, got %T", err)
+	}
+	if got, want := exitErr.ExitCode(), 2; got != want {
+		t.Fatalf("exit code = %v, want %v", got, want)
+	}
+	if !strings.Contains(string(out), "usage: gornpath") {
+		t.Fatalf("missing usage output: %v", string(out))
+	}
+}
 
 func TestIntegrationRenderPathTable(t *testing.T) {
 	t.Parallel()

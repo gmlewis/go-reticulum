@@ -105,6 +105,22 @@ func TestGolxmd_Help(t *testing.T) {
 	}
 }
 
+func TestGolxmd_LongFormParserAliases(t *testing.T) {
+	t.Parallel()
+	golxmdBin, cleanup := buildGolxmd(t)
+	defer cleanup()
+
+	out, err := exec.Command(golxmdBin, "--verbose", "--quiet", "--exampleconfig").CombinedOutput()
+	if err != nil {
+		t.Fatalf("golxmd --verbose --quiet --exampleconfig failed: %v\n%v", err, string(out))
+	}
+	for _, want := range []string{"[propagation]", "[lxmf]", "[logging]"} {
+		if !strings.Contains(string(out), want) {
+			t.Fatalf("parser alias output missing %q: %v", want, string(out))
+		}
+	}
+}
+
 func TestGolxmd_Status_WithNoRemote(t *testing.T) {
 	skipShortIntegration(t)
 	t.Parallel()

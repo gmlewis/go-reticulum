@@ -227,7 +227,7 @@ func TestIdentityDisplayParity(t *testing.T) {
 
 func TestHelpParity(t *testing.T) {
 	_ = runPython(t, "/tmp/nonexistent-py", "--help")
-	goOut := captureStdout(printUsage)
+	goOut := usageText
 
 	if !strings.Contains(goOut, "usage: gorncp") {
 		t.Errorf("Go help output missing usage line: %q", goOut)
