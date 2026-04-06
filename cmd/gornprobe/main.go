@@ -28,6 +28,18 @@ const (
 	DefaultTimeout = 12.0
 )
 
+type runtimeT struct {
+	app    *appT
+	logger *rns.Logger
+}
+
+func newRuntime(app *appT) *runtimeT {
+	if app == nil {
+		app = &appT{}
+	}
+	return &runtimeT{app: app, logger: rns.NewLogger()}
+}
+
 func main() {
 	log.SetFlags(0)
 	app, err := parseFlags(os.Args[1:], os.Stderr)
@@ -37,6 +49,16 @@ func main() {
 		}
 		log.Fatal(err)
 	}
+	newRuntime(app).run()
+}
+
+func (rt *runtimeT) run() {
+	if rt == nil || rt.app == nil {
+		return
+	}
+	app := rt.app
+	logger := rt.logger
+	app.logger = logger
 
 	if app.version {
 		fmt.Printf("gornprobe %v\n", rns.VERSION)
@@ -63,7 +85,6 @@ func main() {
 		return
 	}
 
-	logger := rns.NewLogger()
 	targetLogLevel := rns.LogNotice
 	if app.verbose {
 		targetLogLevel = rns.LogInfo

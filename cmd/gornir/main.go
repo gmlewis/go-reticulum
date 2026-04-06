@@ -21,25 +21,42 @@ import (
 	"github.com/gmlewis/go-reticulum/utils"
 )
 
-func (a *appT) run() {
-	if a.version {
+type runtimeT struct {
+	app    *appT
+	logger *rns.Logger
+}
+
+func newRuntime(app *appT) *runtimeT {
+	if app == nil {
+		app = newApp()
+	}
+	return &runtimeT{app: app, logger: rns.NewLogger()}
+}
+
+func (rt *runtimeT) run() {
+	if rt == nil || rt.app == nil {
+		return
+	}
+	app := rt.app
+	logger := rt.logger
+
+	if app.version {
 		utils.PrintVersion(os.Stdout, "gornir", rns.VERSION)
 		return
 	}
 
-	if a.exampleConfig {
+	if app.exampleConfig {
 		fmt.Print(exampleRNSConfig)
 		return
 	}
 
-	logger := rns.NewLogger()
 	logger.SetLogDest(rns.LogStdout)
-	if a.verbose != 0 || a.quiet != 0 {
-		logger.SetLogLevel(int(a.verbose) - int(a.quiet))
+	if app.verbose != 0 || app.quiet != 0 {
+		logger.SetLogLevel(int(app.verbose) - int(app.quiet))
 	}
 
 	ts := rns.NewTransportSystem()
-	ret, err := rns.NewReticulumWithLogger(ts, a.configDir, logger)
+	ret, err := rns.NewReticulumWithLogger(ts, app.configDir, logger)
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v", err)
 	}
@@ -69,5 +86,5 @@ func main() {
 		}
 		log.Fatal(err)
 	}
-	app.run()
+	newRuntime(app).run()
 }

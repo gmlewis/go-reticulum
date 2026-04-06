@@ -11,6 +11,8 @@ import (
 	"io"
 	"strconv"
 	"strings"
+
+	"github.com/gmlewis/go-reticulum/rns"
 )
 
 type appT struct {
@@ -19,6 +21,7 @@ type appT struct {
 	probes    int
 	timeout   float64
 	wait      float64
+	logger    *rns.Logger
 	verbose   bool
 	version   bool
 	args      []string

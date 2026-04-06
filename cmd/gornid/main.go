@@ -71,6 +71,20 @@ type appT struct {
 	version       bool
 }
 
+type runtimeT struct {
+	app    *appT
+	logger *rns.Logger
+}
+
+func newRuntime(app *appT) *runtimeT {
+	if app == nil {
+		app = newApp()
+	}
+	logger := rns.NewLogger()
+	app.logger = logger
+	return &runtimeT{app: app, logger: logger}
+}
+
 func logMessage(logger *rns.Logger, msg string, level int, pt bool) {
 	logger.Log(msg, level, pt)
 }
@@ -87,7 +101,9 @@ func (a *appT) getLogger() *rns.Logger {
 }
 
 func (a *appT) run() {
-	a.logger = rns.NewLogger()
+	if a.logger == nil {
+		a.logger = rns.NewLogger()
+	}
 	logger := a.logger
 	var ops int
 	for _, op := range []bool{a.encryptFile != "", a.decryptFile != "", a.validateFile != "", a.signFile != ""} {
@@ -194,7 +210,23 @@ func main() {
 		}
 		log.Fatal(err)
 	}
-	app.run()
+	newRuntime(app).run()
+}
+
+func (rt *runtimeT) run() {
+	if rt == nil || rt.app == nil {
+		return
+	}
+	rt.app.logger = rt.logger
+	rt.app.run()
+}
+
+func (rt *runtimeT) loadIdentity(ts rns.Transport, path string, request bool, timeout float64) *rns.Identity {
+	if rt == nil || rt.app == nil {
+		return nil
+	}
+	rt.app.logger = rt.logger
+	return rt.app.loadIdentity(ts, path, request, timeout)
 }
 
 func (a *appT) doImport(data string, b64, b32, prv bool, writePath string, force bool) {
@@ -257,10 +289,6 @@ func (a *appT) doGenerate(path string, force bool) {
 		os.Exit(4)
 	}
 	logf(logger, "New identity %v written to %v", rns.LogNotice, false, rns.PrettyHexFromString(id.HexHash), path)
-}
-
-func loadIdentity(ts rns.Transport, path string, request bool, timeout float64) *rns.Identity {
-	return (&appT{logger: rns.NewLogger()}).loadIdentity(ts, path, request, timeout)
 }
 
 func (a *appT) loadIdentity(ts rns.Transport, path string, request bool, timeout float64) *rns.Identity {

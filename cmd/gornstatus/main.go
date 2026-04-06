@@ -21,19 +21,36 @@ import (
 	"github.com/gmlewis/go-reticulum/utils"
 )
 
-func (a *appT) run(nameFilter string) {
-	if a.showVersion {
+type runtimeT struct {
+	app    *appT
+	logger *rns.Logger
+}
+
+func newRuntime(app *appT) *runtimeT {
+	if app == nil {
+		app = newApp()
+	}
+	return &runtimeT{app: app, logger: rns.NewLogger()}
+}
+
+func (rt *runtimeT) run(nameFilter string) {
+	if rt == nil || rt.app == nil {
+		return
+	}
+	app := rt.app
+	logger := rt.logger
+
+	if app.showVersion {
 		fmt.Printf("gornstatus %v\n", rns.VERSION)
 		return
 	}
 
-	logger := rns.NewLogger()
 	logger.SetLogDest(rns.LogStdout)
-	verbosity := int(a.verbose)
+	verbosity := int(app.verbose)
 
-	if a.monitorMode {
+	if app.monitorMode {
 		ts := rns.NewTransportSystem()
-		ret, err := rns.NewReticulumWithLogger(ts, a.configDir, logger)
+		ret, err := rns.NewReticulumWithLogger(ts, app.configDir, logger)
 		if err != nil {
 			log.Fatal("No shared RNS instance available to get status from")
 		}
@@ -42,27 +59,27 @@ func (a *appT) run(nameFilter string) {
 				logger.Log(fmt.Sprintf("Warning: Could not close Reticulum properly: %v", err), rns.LogWarning, false)
 			}
 		}()
-		runMonitor(ret, nameFilter, verbosity, a)
+		runMonitor(ret, nameFilter, verbosity, app)
 		return
 	}
 
 	exitCode := programSetup(programSetupParams{
-		configDir:          a.configDir,
-		dispAll:            a.showAll,
+		configDir:          app.configDir,
+		dispAll:            app.showAll,
 		verbosity:          verbosity,
 		nameFilter:         nameFilter,
-		jsonOutput:         a.jsonOutput,
-		announceStats:      a.announceStats,
-		linkStats:          a.linkStats,
-		sorting:            a.sortKey,
-		sortReverse:        a.sortReverse,
-		remote:             a.remoteHash,
-		managementIdentity: a.identityPath,
-		remoteTimeout:      a.remoteTimeout,
+		jsonOutput:         app.jsonOutput,
+		announceStats:      app.announceStats,
+		linkStats:          app.linkStats,
+		sorting:            app.sortKey,
+		sortReverse:        app.sortReverse,
+		remote:             app.remoteHash,
+		managementIdentity: app.identityPath,
+		remoteTimeout:      app.remoteTimeout,
 		mustExit:           true,
-		trafficTotals:      a.trafficTotals,
-		discoveredIfaces:   a.discovered,
-		configEntries:      a.detailedDiscovered,
+		trafficTotals:      app.trafficTotals,
+		discoveredIfaces:   app.discovered,
+		configEntries:      app.detailedDiscovered,
 		logger:             logger,
 	})
 	os.Exit(exitCode)
@@ -90,5 +107,5 @@ func main() {
 	if len(args) > 0 {
 		nameFilter = args[0]
 	}
-	app.run(nameFilter)
+	newRuntime(app).run(nameFilter)
 }

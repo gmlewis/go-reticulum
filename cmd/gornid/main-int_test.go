@@ -102,7 +102,7 @@ func TestLoadIdentityFallsBackToIdentityHash(t *testing.T) {
 	destHash := rns.FullHash([]byte("gornid-test-destination"))[:rns.TruncatedHashLength/8]
 	ts.Remember([]byte("packet-hash"), destHash, id.GetPublicKey(), nil)
 
-	recalled := loadIdentity(ts, id.HexHash, false, 0)
+	recalled := newRuntime(nil).loadIdentity(ts, id.HexHash, false, 0)
 	if recalled == nil {
 		t.Fatal("expected identity to be recalled by identity hash")
 	}

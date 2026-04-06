@@ -65,3 +65,18 @@ func TestProgramSetupForwardsConfigDirAndClosesReticulum(t *testing.T) {
 		t.Fatalf("second programSetup returned error: %v", err)
 	}
 }
+
+func TestNewRuntime(t *testing.T) {
+	t.Parallel()
+
+	rt := newRuntime(nil)
+	if rt == nil {
+		t.Fatal("newRuntime() returned nil")
+	}
+	if rt.app == nil {
+		t.Fatal("newRuntime() did not initialize the app state")
+	}
+	if rt.logger == nil {
+		t.Fatal("newRuntime() did not initialize a logger")
+	}
+}
