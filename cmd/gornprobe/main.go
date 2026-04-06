@@ -109,10 +109,11 @@ func main() {
 
 		p := rns.NewPacket(remoteDest, payload)
 		if err := p.Pack(); err != nil {
-			log.Fatalf("Error: Probe packet size of %v bytes exceed MTU of %v bytes\n", len(p.Raw), rns.MTU)
+			fmt.Println(formatProbeMTUError(len(p.Raw)))
+			os.Exit(3)
 		}
 
-		fmt.Printf("\rSent probe %v (%v bytes) to <%x>  ", sent+1, app.size, destHash)
+		fmt.Print(formatProbeSentLine(sent+1, app.size, destHash, ""))
 
 		startTime := time.Now()
 		if err := p.Send(); err != nil {
@@ -144,21 +145,8 @@ func main() {
 		if delivered {
 			fmt.Printf("\b\b \n")
 			replies++
-			rtt := time.Since(startTime).Seconds()
-			rttStr := ""
-			if rtt >= 1.0 {
-				rttStr = fmt.Sprintf("%.3f seconds", rtt)
-			} else {
-				rttStr = fmt.Sprintf("%.3f milliseconds", rtt*1000)
-			}
-
 			hops := ts.GetPathEntry(destHash).Hops
-			ms := "s"
-			if hops == 1 {
-				ms = ""
-			}
-
-			fmt.Printf("Valid reply from <%x>\nRound-trip time is %v over %v hop%v\n", destHash, rttStr, hops, ms)
+			fmt.Print(formatProbeReplyLine(destHash, time.Since(startTime).Seconds(), hops, ""))
 		} else {
 			fmt.Printf("\r%v\rProbe timed out\n", strings.Repeat(" ", 64))
 		}
