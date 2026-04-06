@@ -25,22 +25,6 @@ type appT struct {
 
 var errHelp = errors.New("help requested")
 
-const usageText = `
-usage: gornx [-h] [--config CONFIG] [-i IDENTITY] [-v] [-q] [-l] [-x]
-							 [destination_hash command]
-
-Reticulum remote command execution compatible with rnx
-
-options:
-	-h, --help       show this help message and exit
-	--config CONFIG  path to alternative Reticulum config directory
-	-i IDENTITY      path to identity to use
-	-v               increase verbosity
-	-q               decrease verbosity
-	-l               listen for incoming commands
-	-x               enter interactive mode
-`
-
 func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
 	app := &appT{}
 	fs := flag.NewFlagSet("gornx", flag.ContinueOnError)
@@ -67,3 +51,37 @@ func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
 func (a *appT) usage(w io.Writer) {
 	utils.WriteText(w, usageText)
 }
+
+const usageText = `
+usage: gornx [-h] [--config path] [-v] [-q] [-p] [-l] [-i identity] [-x] [-b] [-a allowed_hash] [-n] [-N] [-d]
+             [-m] [-w seconds] [-W seconds] [--stdin STDIN] [--stdout STDOUT] [--stderr STDERR] [--version]
+             [destination] [command]
+
+Go Reticulum Remote Execution Utility
+
+positional arguments:
+  destination           hexadecimal hash of the listener
+  command               command to be execute
+
+options:
+  -h, --help            show this help message and exit
+  --config path         path to alternative Reticulum config directory
+  -v, --verbose         increase verbosity
+  -q, --quiet           decrease verbosity
+  -p, --print-identity  print identity and destination info and exit
+  -l, --listen          listen for incoming commands
+  -i identity           path to identity to use
+  -x, --interactive     enter interactive mode
+  -b, --no-announce     don't announce at program start
+  -a allowed_hash       accept from this identity
+  -n, --noauth          accept commands from anyone
+  -N, --noid            don't identify to listener
+  -d, --detailed        show detailed result output
+  -m                    mirror exit code of remote command
+  -w seconds            connect and request timeout before giving up
+  -W seconds            max result download time
+  --stdin STDIN         pass input to stdin
+  --stdout STDOUT       max size in bytes of returned stdout
+  --stderr STDERR       max size in bytes of returned stderr
+  --version             show program's version number and exit
+`

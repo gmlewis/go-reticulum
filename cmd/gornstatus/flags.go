@@ -46,42 +46,6 @@ type appT struct {
 
 func newApp() *appT { return &appT{} }
 
-const usageText = `
-usage: gornstatus [-h] [--config CONFIG] [--version] [-a] [-A] [-l] [-t]
-                  [-s SORT] [-r] [-j] [-R hash] [-i path] [-w seconds]
-                  [-d] [-D] [-m] [-I seconds] [-v]
-                  [filter]
-
-Reticulum Network Stack Status
-
-positional arguments:
-  filter                only display interfaces with names including filter
-
-options:
-  -h, --help            show this help message and exit
-  --config CONFIG       path to alternative Reticulum config directory
-  --version             show program's version number and exit
-  -a, --all             show all interfaces
-  -A, --announce-stats  show announce stats
-  -l, --link-stats      show link stats
-  -t, --totals          display traffic totals
-  -s SORT, --sort SORT  sort interfaces by [rate, traffic, rx, tx, rxs, txs,
-                        announces, arx, atx, held]
-  -r, --reverse         reverse sorting
-  -j, --json            output in JSON format
-  -R hash               transport identity hash of remote instance to get
-                        status from
-  -i path               path to identity used for remote management
-  -w seconds            timeout before giving up on remote queries
-  -d, --discovered      list discovered interfaces
-  -D                    show details and config entries for discovered
-                        interfaces
-  -m, --monitor         continuously monitor status
-  -I seconds, --monitor-interval seconds
-                        refresh interval for monitor mode (default: 1)
-  -v, --verbose
-`
-
 func (a *appT) usage(w io.Writer) {
 	utils.WriteText(w, usageText)
 }
@@ -131,3 +95,39 @@ func parseFlags(args []string, usage io.Writer) (*appT, []string, error) {
 	}
 	return app, fs.Args(), nil
 }
+
+const usageText = `
+usage: gornstatus [-h] [--config CONFIG] [--version] [-a] [-A] [-l] [-t]
+                  [-s SORT] [-r] [-j] [-R hash] [-i path] [-w seconds]
+                  [-d] [-D] [-m] [-I seconds] [-v]
+                  [filter]
+
+Go Reticulum Network Stack Status
+
+positional arguments:
+  filter                only display interfaces with names including filter
+
+options:
+  -h, --help            show this help message and exit
+  --config CONFIG       path to alternative Reticulum config directory
+  --version             show program's version number and exit
+  -a, --all             show all interfaces
+  -A, --announce-stats  show announce stats
+  -l, --link-stats      show link stats
+  -t, --totals          display traffic totals
+  -s SORT, --sort SORT  sort interfaces by [rate, traffic, rx, tx, rxs, txs,
+                        announces, arx, atx, held]
+  -r, --reverse         reverse sorting
+  -j, --json            output in JSON format
+  -R hash               transport identity hash of remote instance to get
+                        status from
+  -i path               path to identity used for remote management
+  -w seconds            timeout before giving up on remote queries
+  -d, --discovered      list discovered interfaces
+  -D                    show details and config entries for discovered
+                        interfaces
+  -m, --monitor         continuously monitor status
+  -I seconds, --monitor-interval seconds
+                        refresh interval for monitor mode (default: 1)
+  -v, --verbose
+`

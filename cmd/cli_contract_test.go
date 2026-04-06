@@ -13,6 +13,10 @@ import (
 	"testing"
 )
 
+var (
+	usageTextRE = regexp.MustCompile(`(?m)^\s*(const|var)\s+usageText\b`)
+)
+
 func TestCLIContract(t *testing.T) {
 	t.Parallel()
 
@@ -41,7 +45,7 @@ func TestCLIContract(t *testing.T) {
 			mainSrc := readText(t, mainPath)
 			flagsSrc := readText(t, flagsPath)
 
-			if !regexp.MustCompile(`(?m)^\s*(const|var)\s+usageText\b`).MatchString(flagsSrc) {
+			if !usageTextRE.MatchString(flagsSrc) {
 				t.Fatalf("%v: flags.go must define usageText", entry.Name())
 			}
 			if strings.Contains(mainSrc, "flag.CommandLine") || strings.Contains(flagsSrc, "flag.CommandLine") {

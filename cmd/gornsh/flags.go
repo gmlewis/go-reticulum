@@ -14,12 +14,6 @@ import (
 	"strings"
 )
 
-const usageText = `Usage:
-  gornsh -l [-c <configdir>] [-i <identityfile> | -s <service_name>] [-v | -q] -p
-  gornsh [-c <configdir>] [-i <identityfile>] [-v | -q] -p
-  gornsh [-c <configdir>] [-i <identityfile>] [-v | -q] <destination_hash> [--] [program [args ...]]
-`
-
 var errHelp = errors.New("help requested")
 
 type options struct {
@@ -162,3 +156,10 @@ func parseFlags(args []string, usageOutput io.Writer) (options, error) {
 
 	return opts, nil
 }
+
+const usageText = `
+Usage:
+  gornsh -l [-c <configdir>] [-i <identityfile> | -s <service_name>] [-v | -q] -p
+  gornsh [-c <configdir>] [-i <identityfile>] [-v | -q] -p
+  gornsh [-c <configdir>] [-i <identityfile>] [-v | -q] <destination_hash> [--] [program [args ...]]
+`

@@ -17,42 +17,6 @@ import (
 
 var errHelp = errors.New("help requested")
 
-const usageText = `usage: gorncp [-h] [--config path] [-v] [-q] [-S] [-l] [-C] [-F] [-f] [-j path]
-					[-s path] [-O] [-b seconds] [-a allowed_hash] [-n] [-p]
-					[-i identity] [-w seconds] [-P] [--version]
-					[file] [destination]
-
-Go Reticulum File Transfer Utility
-
-positional arguments:
-	file                  file to be transferred
-	destination           hexadecimal hash of the receiver
-
-options:
-	-h, --help            show this help message and exit
-	--config path         path to alternative Reticulum config directory
-	-v, --verbose         increase verbosity
-	-q, --quiet           decrease verbosity
-	-S, --silent          disable transfer progress output
-	-l, --listen          listen for incoming transfer requests
-	-C, --no-compress     disable automatic compression
-	-F, --allow-fetch     allow authenticated clients to fetch files
-	-f, --fetch           fetch file from remote listener instead of sending
-	-j path, --jail path  restrict fetch requests to specified path
-	-s path, --save path  save received files in specified path
-	-O, --overwrite       Allow overwriting received files, instead of adding
-												postfix
-	-b seconds            announce interval, 0 to only announce at startup
-	-a allowed_hash       allow this identity (or add in
-												~/.rncp/allowed_identities)
-	-n, --no-auth         accept requests from anyone
-	-p, --print-identity  print identity and destination info and exit
-	-i identity           path to identity to use
-	-w seconds            sender timeout before giving up
-	-P, --phy-rates       display physical layer transfer rates
-	--version             show program's version number and exit
-`
-
 type appT struct {
 	configDir        string
 	identityPath     string
@@ -140,3 +104,37 @@ func (a *appT) validate() error {
 	}
 	return nil
 }
+
+const usageText = `
+usage: gorncp [-h] [--config path] [-v] [-q] [-S] [-l] [-C] [-F] [-f] [-j path] [-s path] [-O] [-b seconds]
+              [-a allowed_hash] [-n] [-p] [-i identity] [-w seconds] [-P] [--version]
+              [file] [destination]
+
+Go Reticulum File Transfer Utility
+
+positional arguments:
+  file                  file to be transferred
+  destination           hexadecimal hash of the receiver
+
+options:
+  -h, --help            show this help message and exit
+  --config path         path to alternative Reticulum config directory
+  -v, --verbose         increase verbosity
+  -q, --quiet           decrease verbosity
+  -S, --silent          disable transfer progress output
+  -l, --listen          listen for incoming transfer requests
+  -C, --no-compress     disable automatic compression
+  -F, --allow-fetch     allow authenticated clients to fetch files
+  -f, --fetch           fetch file from remote listener instead of sending
+  -j path, --jail path  restrict fetch requests to specified path
+  -s path, --save path  save received files in specified path
+  -O, --overwrite       Allow overwriting received files, instead of adding postfix
+  -b seconds            announce interval, 0 to only announce at startup
+  -a allowed_hash       allow this identity (or add in ~/.rncp/allowed_identities)
+  -n, --no-auth         accept requests from anyone
+  -p, --print-identity  print identity and destination info and exit
+  -i identity           path to identity to use
+  -w seconds            sender timeout before giving up
+  -P, --phy-rates       display physical layer transfer rates
+  --version             show program's version number and exit
+`

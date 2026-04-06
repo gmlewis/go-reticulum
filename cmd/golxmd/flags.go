@@ -16,36 +16,6 @@ import (
 	"github.com/gmlewis/go-reticulum/utils"
 )
 
-const usageText = `
-usage: golxmd [-h] [--config CONFIG] [--rnsconfig RNSCONFIG] [-p] [-i PATH] [-v] [-q] [-s]
-              [--status] [--peers] [--sync SYNC] [-b UNPEER] [--timeout TIMEOUT] [-r REMOTE]
-              [--identity IDENTITY] [--exampleconfig] [--version]
-
-Go Lightweight Extensible Messaging Daemon
-
-options:
-  -h, --help            show this help message and exit
-  --config CONFIG       path to alternative golxmd config directory
-  --rnsconfig RNSCONFIG
-                        path to alternative Reticulum config directory
-  -p, --propagation-node
-                        run an LXMF Propagation Node
-  -i, --on-inbound PATH
-                        executable to run when a message is received
-  -v, --verbose
-  -q, --quiet
-  -s, --service         golxmd is running as a service and should log to file
-  --status              display node status
-  --peers               display peered nodes
-  --sync SYNC           request a sync with the specified peer
-  -b, --break UNPEER    break peering with the specified peer
-  --timeout TIMEOUT     timeout in seconds for query operations
-  -r, --remote REMOTE   remote propagation node destination hash
-  --identity IDENTITY   path to identity used for remote requests
-  --exampleconfig       print verbose configuration example to stdout and exit
-  --version             show program's version number and exit
-`
-
 type appT struct {
 	configDir            string
 	rnsConfigDir         string
@@ -149,3 +119,33 @@ func (c *countFlag) Set(s string) error {
 func (c *countFlag) IsBoolFlag() bool {
 	return true
 }
+
+const usageText = `
+usage: golxmd [-h] [--config CONFIG] [--rnsconfig RNSCONFIG] [-p] [-i PATH] [-v] [-q] [-s]
+              [--status] [--peers] [--sync SYNC] [-b UNPEER] [--timeout TIMEOUT] [-r REMOTE]
+              [--identity IDENTITY] [--exampleconfig] [--version]
+
+Go Lightweight Extensible Messaging Daemon
+
+options:
+  -h, --help            show this help message and exit
+  --config CONFIG       path to alternative golxmd config directory
+  --rnsconfig RNSCONFIG
+                        path to alternative Reticulum config directory
+  -p, --propagation-node
+                        run an LXMF Propagation Node
+  -i, --on-inbound PATH
+                        executable to run when a message is received
+  -v, --verbose
+  -q, --quiet
+  -s, --service         golxmd is running as a service and should log to file
+  --status              display node status
+  --peers               display peered nodes
+  --sync SYNC           request a sync with the specified peer
+  -b, --break UNPEER    break peering with the specified peer
+  --timeout TIMEOUT     timeout in seconds for query operations
+  -r, --remote REMOTE   remote propagation node destination hash
+  --identity IDENTITY   path to identity used for remote requests
+  --exampleconfig       print verbose configuration example to stdout and exit
+  --version             show program's version number and exit
+`
