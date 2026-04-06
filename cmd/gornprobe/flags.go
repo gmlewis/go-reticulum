@@ -7,9 +7,10 @@ package main
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 )
 
 type appT struct {
@@ -27,42 +28,173 @@ var errHelp = errors.New("help requested")
 
 func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
 	app := &appT{size: DefaultProbeSize, probes: 1}
-	fs := flag.NewFlagSet("gornprobe", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	fs.Usage = func() {
-		app.usage(usageOutput)
-	}
-	fs.StringVar(&app.configDir, "config", "", "path to alternative Reticulum config directory")
-	fs.IntVar(&app.size, "s", DefaultProbeSize, "size of probe packet payload in bytes")
-	fs.IntVar(&app.probes, "n", 1, "number of probes to send")
-	fs.Float64Var(&app.timeout, "t", 0, "timeout before giving up")
-	fs.Float64Var(&app.wait, "w", 0, "time between each probe")
-	fs.BoolVar(&app.verbose, "v", false, "increase verbosity")
-	fs.BoolVar(&app.version, "version", false, "show version and exit")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			app.args = append(app.args, args[i+1:]...)
+			break
+		}
+		if arg == "-h" || arg == "--help" {
+			app.usage(usageOutput)
 			return nil, errHelp
 		}
-		return nil, err
+		if arg == "--version" {
+			app.version = true
+			continue
+		}
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			app.args = append(app.args, arg)
+			continue
+		}
+		if strings.HasPrefix(arg, "--") {
+			name := strings.TrimPrefix(arg, "--")
+			switch name {
+			case "config":
+				value, next, err := consumeValue(args, i)
+				if err != nil {
+					return nil, err
+				}
+				app.configDir = value
+				i = next
+			case "size":
+				value, next, err := consumeValue(args, i)
+				if err != nil {
+					return nil, err
+				}
+				n, err := strconv.Atoi(value)
+				if err != nil {
+					return nil, err
+				}
+				app.size = n
+				i = next
+			case "probes":
+				value, next, err := consumeValue(args, i)
+				if err != nil {
+					return nil, err
+				}
+				n, err := strconv.Atoi(value)
+				if err != nil {
+					return nil, err
+				}
+				app.probes = n
+				i = next
+			case "timeout":
+				value, next, err := consumeValue(args, i)
+				if err != nil {
+					return nil, err
+				}
+				n, err := strconv.ParseFloat(value, 64)
+				if err != nil {
+					return nil, err
+				}
+				app.timeout = n
+				i = next
+			case "wait":
+				value, next, err := consumeValue(args, i)
+				if err != nil {
+					return nil, err
+				}
+				n, err := strconv.ParseFloat(value, 64)
+				if err != nil {
+					return nil, err
+				}
+				app.wait = n
+				i = next
+			case "verbose":
+				app.verbose = true
+			default:
+				return nil, fmt.Errorf("flag provided but not defined: %v", arg)
+			}
+			continue
+		}
+		for pos := 1; pos < len(arg); pos++ {
+			flagName := arg[pos]
+			switch flagName {
+			case 'v':
+				app.verbose = true
+			case 's', 'n', 't', 'w':
+				if pos != len(arg)-1 {
+					return nil, fmt.Errorf("flag needs an argument: -%c", flagName)
+				}
+				if i+1 >= len(args) {
+					return nil, fmt.Errorf("flag needs an argument: -%c", flagName)
+				}
+				value := args[i+1]
+				i++
+				if err := applyShortFlag(app, flagName, value); err != nil {
+					return nil, err
+				}
+			default:
+				return nil, fmt.Errorf("flag provided but not defined: -%c", flagName)
+			}
+		}
 	}
-	app.args = append([]string{}, fs.Args()...)
 	return app, nil
 }
 
 func (a *appT) usage(w io.Writer) {
-	_, _ = fmt.Fprintf(w, `usage: gornprobe [-h] [--config CONFIG] [-n COUNT] [-s SIZE] [-t SECONDS]
-                  [-w SECONDS] [-v] [--version] full_name destination_hash
+	_, _ = io.WriteString(w, usageText)
+}
 
-Go Reticulum connectivity probing utility
+func applyShortFlag(app *appT, flagName byte, value string) error {
+	switch flagName {
+	case 's':
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return err
+		}
+		app.size = n
+	case 'n':
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return err
+		}
+		app.probes = n
+	case 't':
+		n, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return err
+		}
+		app.timeout = n
+	case 'w':
+		n, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return err
+		}
+		app.wait = n
+	default:
+		return fmt.Errorf("flag provided but not defined: -%c", flagName)
+	}
+	return nil
+}
+
+func consumeValue(args []string, index int) (string, int, error) {
+	if index+1 >= len(args) {
+		return "", index, fmt.Errorf("flag needs an argument: %v", args[index])
+	}
+	return args[index+1], index + 1, nil
+}
+
+const usageText = `
+usage: gornprobe [-h] [--config CONFIG] [-s SIZE] [-n PROBES] [-t seconds] [-w seconds] [--version] [-v]
+                 [full_name] [destination_hash]
+
+Go Reticulum Probe Utility
+
+positional arguments:
+  full_name             full destination name in dotted notation
+  destination_hash      hexadecimal hash of the destination
 
 options:
-  -h, --help       show this help message and exit
-  --config CONFIG  path to alternative Reticulum config directory
-  -n COUNT         number of probes to send
-  -s SIZE          size of probe packet payload in bytes
-  -t SECONDS       timeout before giving up
-  -w SECONDS       time between each probe
-  -v               increase verbosity
-  --version        show program's version number and exit
-`)
-}
+  -h, --help            show this help message and exit
+  --config CONFIG       path to alternative Reticulum config directory
+	-s SIZE, --size SIZE  size of probe packet payload in bytes
+	-n PROBES, --probes PROBES
+                        number of probes to send
+  -t seconds, --timeout seconds
+                        timeout before giving up
+  -w seconds, --wait seconds
+                        time between each probe
+  --version             show program's version number and exit
+  -v, --verbose
+`

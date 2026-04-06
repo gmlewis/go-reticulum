@@ -13,7 +13,6 @@ package main
 
 import (
 	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
@@ -47,11 +46,9 @@ func main() {
 
 	if len(app.args) < 2 {
 		fmt.Println("")
-		fmt.Println("The full destination name including application name aspects must be specified for the destination")
-		fmt.Println("")
 		app.usage(os.Stdout)
 		fmt.Println("")
-		log.Fatal("destination full_name and destination_hash are required")
+		return
 	}
 
 	fullName := app.args[0]
@@ -74,10 +71,16 @@ func main() {
 		}
 	}()
 
-	destHash, err := hex.DecodeString(destHex)
+	destHash, err := parseProbeDestinationHash(destHex)
 	if err != nil {
-		log.Fatalf("Invalid destination hash: %v\n", err)
+		fmt.Println(err)
+		return
 	}
+	firstHopTimeout, err := ret.FirstHopTimeout(destHash)
+	if err != nil {
+		log.Fatalf("Could not determine first hop timeout: %v\n", err)
+	}
+	probeTimeout := probeTimeoutSeconds(app.timeout, firstHopTimeout)
 
 	if !ts.HasPath(destHash) {
 		fmt.Printf("Path to <%x> requested  ", destHash)
@@ -88,7 +91,7 @@ func main() {
 
 	i := 0
 	syms := []string{"⢄", "⢂", "⢁", "⡁", "⡈", "⡐", "⡠"}
-	deadline := time.Now().Add(time.Duration(15.0 * float64(time.Second)))
+	deadline := time.Now().Add(time.Duration(probeTimeout * float64(time.Second)))
 	for !ts.HasPath(destHash) && time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
 		fmt.Printf("\b\b%v ", syms[i])
@@ -100,15 +103,7 @@ func main() {
 	}
 
 	remoteID := rns.RecallIdentity(ts, destHash)
-	parts := strings.Split(fullName, ".")
-	if len(parts) == 0 {
-		log.Fatalf("Invalid full name")
-	}
-	appName := parts[0]
-	var aspects []string
-	if len(parts) > 1 {
-		aspects = parts[1:]
-	}
+	appName, aspects := splitProbeFullName(fullName)
 
 	remoteDest, err := rns.NewDestination(ts, remoteID, rns.DestinationOut, rns.DestinationSingle, appName, aspects...)
 	if err != nil {
@@ -144,10 +139,6 @@ func main() {
 			continue
 		}
 
-		probeTimeout := app.timeout
-		if probeTimeout == 0 {
-			probeTimeout = DefaultTimeout
-		}
 		deadline := time.Now().Add(time.Duration(probeTimeout * float64(time.Second)))
 
 		delivered := false
