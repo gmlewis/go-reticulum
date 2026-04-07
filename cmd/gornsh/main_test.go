@@ -6,11 +6,13 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"os"
 	"reflect"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -283,6 +285,75 @@ func TestListeningDestinationLine(t *testing.T) {
 
 	if got := listeningDestinationLine([]byte{0xde, 0xad, 0xbe, 0xef}); got != "rnsh listening for commands on <deadbeef>" {
 		t.Fatalf("listeningDestinationLine()=%q, want %q", got, "rnsh listening for commands on <deadbeef>")
+	}
+}
+
+func TestDoListenHandlesSIGINT(t *testing.T) {
+	configDir, err := os.MkdirTemp("", "gornsh-do-listen-sigint-*")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() error: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(configDir)
+	})
+
+	rt := newRuntime(options{configDir: configDir, listen: true, noAuth: true})
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() error: %v", err)
+	}
+	os.Stdout = w
+	t.Cleanup(func() {
+		os.Stdout = oldStdout
+		_ = r.Close()
+	})
+
+	doneCh := make(chan error, 1)
+	go func() {
+		doneCh <- rt.doListen()
+	}()
+
+	readyCh := make(chan struct{}, 1)
+	outputCh := make(chan string, 1)
+	go func() {
+		var output bytes.Buffer
+		scanner := bufio.NewScanner(r)
+		for scanner.Scan() {
+			line := scanner.Text()
+			output.WriteString(line)
+			output.WriteByte('\n')
+			if strings.Contains(line, "rnsh listening...") {
+				readyCh <- struct{}{}
+			}
+		}
+		outputCh <- output.String()
+	}()
+
+	select {
+	case <-readyCh:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for readiness line")
+	}
+
+	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
+		t.Fatalf("syscall.Kill() error: %v", err)
+	}
+
+	select {
+	case err := <-doneCh:
+		if err != nil {
+			t.Fatalf("doListen() error: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for doListen to exit")
+	}
+
+	_ = w.Close()
+	output := <-outputCh
+	if !strings.Contains(output, "Shutting down") {
+		t.Fatalf("listener output %q missing shutdown log", output)
 	}
 }
 

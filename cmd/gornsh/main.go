@@ -42,9 +42,11 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
@@ -213,6 +215,9 @@ func resolveIdentityPath(opts options) (string, error) {
 func (rt *runtimeT) doListen() error {
 	opts := rt.opts
 	logger := rt.logger
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
 	logServiceName(logger, opts.serviceName)
 	_, _ = fmt.Println(listeningReadyLine())
 	ts := rns.NewTransportSystem(logger)
@@ -270,9 +275,12 @@ func (rt *runtimeT) doListen() error {
 	}, allowMode, allowedList, true)
 
 	_, _ = fmt.Fprintln(os.Stdout, listeningDestinationLine(destination.Hash))
-	_ = startAnnouncements(destination, opts.announceEvery, rt.logger)
+	stopAnnouncements := startAnnouncements(destination, opts.announceEvery, rt.logger)
+	defer stopAnnouncements()
 
-	select {}
+	<-sigCh
+	logger.Info("Shutting down")
+	return nil
 }
 
 func startAnnouncements(destination announcer, announceEvery *int, logger *rns.Logger) func() {
