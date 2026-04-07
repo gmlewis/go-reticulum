@@ -102,3 +102,31 @@ func (r *replT) cmdLogLevel(args []string) string {
 	r.logger.SetLogLevel(level)
 	return fmt.Sprintf("log level set to %v %v", level, strings.TrimSpace(rns.LogLevelName(level)))
 }
+
+func (r *replT) dispatch(line string) (output string, done bool) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return "", false
+	}
+
+	parts := strings.Fields(line)
+	command := strings.ToLower(parts[0])
+	args := parts[1:]
+
+	switch command {
+	case "help":
+		return r.cmdHelp(), false
+	case "version":
+		return r.cmdVersion(), false
+	case "status":
+		return r.cmdStatus(), false
+	case "interfaces":
+		return r.cmdInterfaces(), false
+	case "loglevel":
+		return r.cmdLogLevel(args), false
+	case "quit", "exit":
+		return "Goodbye.", true
+	default:
+		return fmt.Sprintf("unknown command: %v", command), false
+	}
+}

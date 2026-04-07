@@ -160,3 +160,58 @@ func TestReplCmdLogLevel(t *testing.T) {
 		t.Fatalf("cmdLogLevel(nil logger) = %q, want no-logger error", got)
 	}
 }
+
+func TestReplDispatchHelp(t *testing.T) {
+	t.Parallel()
+	output, done := newREPL(nil, nil, strings.NewReader(""), io.Discard).dispatch("help")
+	if done {
+		t.Fatal("dispatch(\"help\") returned done = true, want false")
+	}
+	if strings.TrimSpace(output) == "" {
+		t.Fatal("dispatch(\"help\") returned empty output")
+	}
+}
+
+func TestReplDispatchUnknown(t *testing.T) {
+	t.Parallel()
+	output, done := newREPL(nil, nil, strings.NewReader(""), io.Discard).dispatch("bogus")
+	if done {
+		t.Fatal("dispatch(\"bogus\") returned done = true, want false")
+	}
+	if strings.TrimSpace(output) == "" {
+		t.Fatal("dispatch(\"bogus\") returned empty output")
+	}
+}
+
+func TestReplDispatchExitOnQuit(t *testing.T) {
+	t.Parallel()
+	output, done := newREPL(nil, nil, strings.NewReader(""), io.Discard).dispatch("quit")
+	if !done {
+		t.Fatal("dispatch(\"quit\") returned done = false, want true")
+	}
+	if got, want := output, "Goodbye."; got != want {
+		t.Fatalf("dispatch(\"quit\") = %q, want %q", got, want)
+	}
+}
+
+func TestReplDispatchExitOnExit(t *testing.T) {
+	t.Parallel()
+	output, done := newREPL(nil, nil, strings.NewReader(""), io.Discard).dispatch("exit")
+	if !done {
+		t.Fatal("dispatch(\"exit\") returned done = false, want true")
+	}
+	if got, want := output, "Goodbye."; got != want {
+		t.Fatalf("dispatch(\"exit\") = %q, want %q", got, want)
+	}
+}
+
+func TestReplDispatchEmptyLine(t *testing.T) {
+	t.Parallel()
+	output, done := newREPL(nil, nil, strings.NewReader(""), io.Discard).dispatch("")
+	if done {
+		t.Fatal("dispatch(\"\") returned done = true, want false")
+	}
+	if got, want := output, ""; got != want {
+		t.Fatalf("dispatch(\"\") = %q, want %q", got, want)
+	}
+}
