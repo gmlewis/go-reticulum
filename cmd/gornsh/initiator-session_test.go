@@ -485,6 +485,49 @@ func TestInitiatorSessionTerminalSnapshotCopiesExit(t *testing.T) {
 	}
 }
 
+func TestProcessInitiatorTTYInputChunk(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		input      []byte
+		wantOut    string
+		wantStop   bool
+		wantHelp   bool
+		wantToggle bool
+		wantLine   bool
+	}{
+		{name: "terminate", input: []byte("\r~."), wantOut: "\r", wantStop: true},
+		{name: "literal tilde", input: []byte("\r~~"), wantOut: "\r~"},
+		{name: "help", input: []byte("\r~?"), wantOut: "\r", wantHelp: true},
+		{name: "toggle line mode", input: []byte("\r~L"), wantOut: "\r", wantToggle: true, wantLine: true},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			state := &initiatorTTYInputState{}
+			gotOut, action := processInitiatorTTYInputChunk(tc.input, state)
+			if string(gotOut) != tc.wantOut {
+				t.Fatalf("output=%q, want %q", string(gotOut), tc.wantOut)
+			}
+			if action.stop != tc.wantStop {
+				t.Fatalf("stop=%v, want %v", action.stop, tc.wantStop)
+			}
+			if action.help != tc.wantHelp {
+				t.Fatalf("help=%v, want %v", action.help, tc.wantHelp)
+			}
+			if action.toggleLine != tc.wantToggle {
+				t.Fatalf("toggleLine=%v, want %v", action.toggleLine, tc.wantToggle)
+			}
+			if state.lineMode != tc.wantLine {
+				t.Fatalf("lineMode=%v, want %v", state.lineMode, tc.wantLine)
+			}
+		})
+	}
+}
+
 func TestWriteInitiatorStreamsResetsBuffers(t *testing.T) {
 	s := newInitiatorChannelSession()
 	s.stdout.WriteString("hello")

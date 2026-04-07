@@ -344,11 +344,37 @@ func parsePositiveEnvInt(name string) *int {
 
 func (rt *runtimeT) pumpInitiatorStdin(sender messageSender) {
 	buf := make([]byte, 32*1024)
+	tty, _ := newTTYRestorer(int(os.Stdin.Fd()))
+	useTTY := !rt.opts.noTTY && tty != nil && tty.active
+	state := &initiatorTTYInputState{}
 	for {
 		n, err := os.Stdin.Read(buf)
 		if n > 0 {
 			chunk := make([]byte, n)
 			copy(chunk, buf[:n])
+			if useTTY {
+				payload, action := processInitiatorTTYInputChunk(chunk, state)
+				if len(payload) > 0 {
+					if sendErr := sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamIDStdin, Data: payload, EOF: false, Compressed: false}, time.Now().Add(2*time.Second)); sendErr != nil {
+						return
+					}
+				}
+				if action.help {
+					writeInitiatorEscapeHelp()
+				}
+				if action.toggleLine {
+					if state.lineMode {
+						_, _ = os.Stdout.Write([]byte("\n\rLine-interactive mode enabled\n\r"))
+					} else {
+						_, _ = os.Stdout.Write([]byte("\n\rLine-interactive mode disabled\n\r"))
+					}
+				}
+				if action.stop {
+					return
+				}
+				continue
+			}
+
 			payload, compressed, compressErr := compressAdaptiveStreamData(chunk, messageSenderMDU(sender))
 			if compressErr != nil {
 				rt.sendProtocolErrorToSender(sender, compressErr.Error(), true)
@@ -398,6 +424,71 @@ func compressAdaptiveStreamData(data []byte, maxSize int) ([]byte, bool, error) 
 		return compressed.Bytes(), true, nil
 	}
 	return append([]byte(nil), data...), false, nil
+}
+
+type initiatorTTYInputState struct {
+	preEscape bool
+	escape    bool
+	lineMode  bool
+}
+
+type initiatorTTYInputAction struct {
+	stop       bool
+	help       bool
+	toggleLine bool
+}
+
+func processInitiatorTTYInputChunk(data []byte, state *initiatorTTYInputState) ([]byte, initiatorTTYInputAction) {
+	output := make([]byte, 0, len(data))
+	action := initiatorTTYInputAction{}
+	if state == nil {
+		state = &initiatorTTYInputState{}
+	}
+	for _, b := range data {
+		if state.escape {
+			state.escape = false
+			switch b {
+			case '~':
+				output = append(output, '~')
+			case '.':
+				action.stop = true
+				return output, action
+			case 'L':
+				state.lineMode = !state.lineMode
+				action.toggleLine = true
+			case '?':
+				action.help = true
+			default:
+				output = append(output, '~', b)
+			}
+			continue
+		}
+
+		if state.preEscape && b == '~' {
+			state.preEscape = false
+			state.escape = true
+			continue
+		}
+
+		if b == '\n' || b == '\r' {
+			state.preEscape = true
+			output = append(output, b)
+			continue
+		}
+
+		state.preEscape = false
+		output = append(output, b)
+	}
+	return output, action
+}
+
+func writeInitiatorEscapeHelp() {
+	_, _ = os.Stdout.Write([]byte("\n\r\n\rSupported rnsh escape sequences:"))
+	_, _ = os.Stdout.Write([]byte("\n\r  ~~  Send the escape character by typing it twice"))
+	_, _ = os.Stdout.Write([]byte("\n\r  ~.  Terminate session and exit immediately"))
+	_, _ = os.Stdout.Write([]byte("\n\r  ~L  Toggle line-interactive mode"))
+	_, _ = os.Stdout.Write([]byte("\n\r  ~?  Display this quick reference\n\r"))
+	_, _ = os.Stdout.Write([]byte("\n\r(Escape sequences are only recognized immediately after newline)\n\r"))
 }
 
 func pumpWindowSizeUpdates(sender messageSender, stop <-chan struct{}, interval time.Duration, initialRows, initialCols *int) {
