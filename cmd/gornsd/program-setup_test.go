@@ -213,3 +213,48 @@ loglevel = 4
 		waitForMessageContains(t, &messages, "connected to another shared local instance")
 	}
 }
+
+func TestProgramSetupAppliesVerbosityBeforeStartupLogging(t *testing.T) {
+	configDir, cleanup := testutils.TempDir(t, "gornsd-program-verbosity-")
+	defer cleanup()
+	writeGornsdConfig(t, configDir, "No", 4)
+
+	logger := rns.NewLogger()
+	var messages []string
+	logger.SetLogDest(rns.LogCallback)
+	logger.SetLogCallback(func(message string) {
+		messages = append(messages, message)
+	})
+
+	app := &appT{
+		logger:    logger,
+		configDir: configDir,
+		verbose:   2,
+		quiet:     0,
+		service:   false,
+	}
+	ret, err := app.programSetup()
+	if err != nil {
+		t.Fatalf("first programSetup error: %v", err)
+	}
+	t.Cleanup(func() {
+		if closeErr := ret.Close(); closeErr != nil {
+			t.Fatalf("first ret.Close error: %v", closeErr)
+		}
+	})
+
+	messages = nil
+	ret2, err := app.programSetup()
+	if err != nil {
+		t.Fatalf("second programSetup error: %v", err)
+	}
+	t.Cleanup(func() {
+		if closeErr := ret2.Close(); closeErr != nil {
+			t.Fatalf("second ret.Close error: %v", closeErr)
+		}
+	})
+
+	if got := countMessageContains(messages, "Loaded Transport Identity from storage"); got == 0 {
+		t.Fatalf("expected startup verbosity message, got messages=%#v", messages)
+	}
+}

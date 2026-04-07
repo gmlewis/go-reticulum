@@ -13,6 +13,9 @@ import (
 
 func (app *appT) programSetup() (*rns.Reticulum, error) {
 	logger := app.logger
+	if !app.service {
+		logger.SetPendingDelta(app.verbose - app.quiet)
+	}
 	if app.service {
 		logger.SetLogDest(rns.LogDestFile)
 		logger.SetLogFilePath(filepath.Join(app.configDir, "logfile"))
@@ -22,17 +25,6 @@ func (app *appT) programSetup() (*rns.Reticulum, error) {
 	ret, err := rns.NewReticulumWithLogger(ts, app.configDir, logger)
 	if err != nil {
 		return nil, err
-	}
-
-	if !app.service {
-		adjustedLevel := logger.GetLogLevel() + app.verbose - app.quiet
-		if adjustedLevel < 0 {
-			adjustedLevel = 0
-		}
-		if adjustedLevel > 7 {
-			adjustedLevel = 7
-		}
-		logger.SetLogLevel(adjustedLevel)
 	}
 
 	if ret.IsConnectedToSharedInstance() {

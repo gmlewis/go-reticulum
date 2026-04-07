@@ -25,9 +25,10 @@ type Logger struct {
 	// mu ensures that state changes are atomic
 	mu sync.RWMutex
 
-	level int
-	dest  int
-	call  func(string)
+	level        int
+	pendingDelta int
+	dest         int
+	call         func(string)
 
 	filePath string
 	compact  bool
@@ -87,6 +88,16 @@ func (s *Logger) SetLogLevel(level int) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.pendingDelta != 0 {
+		level += s.pendingDelta
+		if level < 0 {
+			level = 0
+		}
+		if level > 7 {
+			level = 7
+		}
+		s.pendingDelta = 0
+	}
 	s.level = level
 }
 
@@ -97,6 +108,17 @@ func (s *Logger) GetLogLevel() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.level
+}
+
+// SetPendingDelta configures an adjustment that will be applied to the next
+// SetLogLevel call.
+func (s *Logger) SetPendingDelta(delta int) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pendingDelta = delta
 }
 
 func (s *Logger) SetLogFilePath(path string) {
