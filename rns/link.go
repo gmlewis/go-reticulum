@@ -73,6 +73,7 @@ type LinkCallbacks struct {
 
 // Link manages a stateful, encrypted, and authenticated bidirectional connection between two Reticulum endpoints.
 type Link struct {
+	logger      *Logger
 	destination *Destination
 	initiator   bool
 	status      int
@@ -167,6 +168,7 @@ func NewLink(ts Transport, destination *Destination) (*Link, error) {
 	}
 
 	l := &Link{
+		logger:               ts.GetLogger(),
 		destination:          destination,
 		initiator:            true,
 		status:               LinkPending,
@@ -209,7 +211,7 @@ func (l *Link) Establish() error {
 		return errors.New("only the initiator can start establishment")
 	}
 
-	Logf("Establishing link to %v", LogVerbose, false, l.destination.name)
+	l.logger.Verbose("Establishing link to %v", l.destination.name)
 
 	// requestData = self.pub_bytes+self.sig_pub_bytes+signalling_bytes
 	sigBytes := l.signallingBytes()
@@ -248,7 +250,7 @@ func LinkIDFromLR(packet *Packet) []byte {
 }
 
 // ValidateRequest intercepts an inbound link request, validates its structure, and conditionally spawns a responding link instance.
-func ValidateRequest(destination *Destination, data []byte, packet *Packet) (*Link, error) {
+func ValidateRequest(logger *Logger, destination *Destination, data []byte, packet *Packet) (*Link, error) {
 	if len(data) < LinkECPubSize {
 		return nil, fmt.Errorf("invalid link request payload size: %v", len(data))
 	}
@@ -287,7 +289,7 @@ func ValidateRequest(destination *Destination, data []byte, packet *Packet) (*Li
 		l.transport.RegisterLink(l)
 	}
 
-	Logf("Incoming link request %x accepted", LogVerbose, false, l.linkID)
+	l.logger.Verbose("Incoming link request %x accepted", l.linkID)
 
 	// Send proof
 	if err := l.Prove(); err != nil {
@@ -339,10 +341,10 @@ func (l *Link) receive(packet *Packet) {
 	l.lastInbound = time.Now()
 	l.mu.Unlock()
 
-	Logf("Link %x receive: packet context=%v", LogVerbose, false, l.linkID, packet.Context)
+	l.logger.Verbose("Link %x receive: packet context=%v", l.linkID, packet.Context)
 	if packet.Context == ContextLrproof {
 		if err := l.ValidateProof(packet); err != nil {
-			Logf("Failed to validate link proof: %v", LogDebug, false, err)
+			l.logger.Debug("Failed to validate link proof: %v", err)
 		}
 		return
 	}
@@ -363,26 +365,26 @@ func (l *Link) receive(packet *Packet) {
 	if shouldDecrypt {
 		plaintext, err := l.Decrypt(packet.Data)
 		if err != nil {
-			Logf("Failed to decrypt packet for link %x: %v", LogDebug, false, l.linkID, err)
+			l.logger.Debug("Failed to decrypt packet for link %x: %v", l.linkID, err)
 			return
 		}
 		packet.Data = plaintext
-		Logf("Link %x decrypted packet, new len=%v", LogVerbose, false, l.linkID, len(packet.Data))
+		l.logger.Verbose("Link %x decrypted packet, new len=%v", l.linkID, len(packet.Data))
 	}
-	Logf("Link %x received packet: type=%v, context=%x, size=%v", LogVerbose, false, l.linkID, packet.PacketType, packet.Context, len(packet.Data))
+	l.logger.Verbose("Link %x received packet: type=%v, context=%x, size=%v", l.linkID, packet.PacketType, packet.Context, len(packet.Data))
 
 	switch packet.Context {
 	case ContextResourceAdv:
 		packet.Destination = l
 		adv, err := UnpackResourceAdvertisement(packet.Data)
 		if err != nil {
-			Logf("Failed to unpack resource advertisement: %v", LogDebug, false, err)
+			l.logger.Debug("Failed to unpack resource advertisement: %v", err)
 			return
 		}
 
 		if adv.IsRequest {
 			if _, err := Accept(packet, l.requestResourceConcluded, l.callbacks.ResourceStarted, nil); err != nil {
-				Logf("Failed to accept request resource advertisement: %v", LogDebug, false, err)
+				l.logger.Debug("Failed to accept request resource advertisement: %v", err)
 			}
 			return
 		}
@@ -398,7 +400,7 @@ func (l *Link) receive(packet *Packet) {
 			}
 			l.mu.Unlock()
 			if _, err := Accept(packet, l.responseResourceConcluded, l.callbacks.ResourceStarted, progressCB); err != nil {
-				Logf("Failed to accept response resource advertisement: %v", LogDebug, false, err)
+				l.logger.Debug("Failed to accept response resource advertisement: %v", err)
 			}
 			return
 		}
@@ -412,11 +414,11 @@ func (l *Link) receive(packet *Packet) {
 
 		if accept {
 			if _, err := Accept(packet, l.callbacks.ResourceConcluded, l.callbacks.ResourceStarted, nil); err != nil {
-				Logf("Failed to accept resource advertisement: %v", LogDebug, false, err)
+				l.logger.Debug("Failed to accept resource advertisement: %v", err)
 			}
 		} else {
 			if err := Reject(packet); err != nil {
-				Logf("Failed to reject resource advertisement: %v", LogDebug, false, err)
+				l.logger.Debug("Failed to reject resource advertisement: %v", err)
 			}
 		}
 
@@ -424,22 +426,22 @@ func (l *Link) receive(packet *Packet) {
 		requestID := packet.GetTruncatedHash()
 		unpackedRequest, err := msgpack.Unpack(packet.Data)
 		if err != nil {
-			Logf("Failed to unpack request: %v", LogError, false, err)
+			l.logger.Error("Failed to unpack request: %v", err)
 			return
 		}
 		go l.handleRequest(requestID, unpackedRequest.([]any))
 
 	case ContextResponse:
-		Logf("Received ContextResponse packet, data len=%v", LogVerbose, false, len(packet.Data))
+		l.logger.Verbose("Received ContextResponse packet, data len=%v", len(packet.Data))
 		unpackedResponse, err := msgpack.Unpack(packet.Data)
 		if err != nil {
-			Logf("Failed to unpack response: %v", LogError, false, err)
+			l.logger.Error("Failed to unpack response: %v", err)
 			return
 		}
 		resList := unpackedResponse.([]any)
 		requestID := resList[0].([]byte)
 		responseData := resList[1]
-		Logf("Calling handleResponse for requestID=%x, responseData=%v (type: %T)", LogVerbose, false, requestID, responseData, responseData)
+		l.logger.Verbose("Calling handleResponse for requestID=%x, responseData=%v (type: %T)", requestID, responseData, responseData)
 		l.handleResponse(requestID, responseData, nil)
 
 	case ContextResourceReq:
@@ -460,7 +462,7 @@ func (l *Link) receive(packet *Packet) {
 			if bytes.Equal(r.hash, resourceHash) {
 				go func(resource *Resource, requestData []byte) {
 					if err := resource.Request(requestData); err != nil {
-						Logf("Failed to handle resource request: %v", LogDebug, false, err)
+						l.logger.Debug("Failed to handle resource request: %v", err)
 					}
 				}(r, append([]byte(nil), packet.Data...))
 				break
@@ -473,7 +475,7 @@ func (l *Link) receive(packet *Packet) {
 		for _, r := range l.incomingResources {
 			go func(resource *Resource, part *Packet) {
 				if err := resource.ReceivePart(part); err != nil {
-					Logf("Failed receiving resource part: %v", LogDebug, false, err)
+					l.logger.Debug("Failed receiving resource part: %v", err)
 				}
 			}(r, packet)
 		}
@@ -505,7 +507,7 @@ func (l *Link) receive(packet *Packet) {
 				signature := packet.Data[keySize:]
 				signedData := append(l.linkID, publicKey...)
 
-				id, err := NewIdentity(false)
+				id, err := NewIdentity(false, l.logger)
 				if err == nil {
 					if err := id.LoadPublicKey(publicKey); err == nil {
 						if id.Verify(signature, signedData) {
@@ -526,7 +528,7 @@ func (l *Link) receive(packet *Packet) {
 			keepalivePacket := NewPacketWithTransport(l.transport, l, []byte{0xFE})
 			keepalivePacket.Context = ContextKeepalive
 			if err := l.send(keepalivePacket); err != nil {
-				Logf("Failed sending keepalive response: %v", LogDebug, false, err)
+				l.logger.Debug("Failed sending keepalive response: %v", err)
 			}
 		}
 
@@ -555,7 +557,7 @@ func (l *Link) send(p *Packet) error {
 	l.lastOutbound = time.Now()
 	iface := l.attachedInterface
 	l.mu.Unlock()
-	Logf("Link.send: packet Context=%v, Data len=%v, attachedInterface=%v", LogVerbose, false, p.Context, len(p.Data), iface != nil)
+	l.logger.Verbose("Link.send: packet Context=%v, Data len=%v, attachedInterface=%v", p.Context, len(p.Data), iface != nil)
 	if iface != nil {
 		if !p.Packed {
 			if err := p.Pack(); err != nil {
@@ -564,7 +566,7 @@ func (l *Link) send(p *Packet) error {
 		}
 		// Send directly through the attached interface for link-specific packets
 		if err := iface.Send(p.Raw); err != nil {
-			Logf("Link.send: failed to send via attached interface: %v", LogError, false, err)
+			l.logger.Error("Link.send: failed to send via attached interface: %v", err)
 			return err
 		}
 		p.Sent = true
@@ -572,11 +574,11 @@ func (l *Link) send(p *Packet) error {
 		if p.Receipt != nil {
 			p.Receipt.MarkSent(p.SentAt)
 		}
-		Logf("Link.send: packet sent via attached interface, err=<nil>", LogVerbose, false)
+		l.logger.Verbose("Link.send: packet sent via attached interface, err=<nil>")
 		return nil
 	}
 	err := p.Send()
-	Logf("Link.send: packet sent via transport, err=%v", LogVerbose, false, err)
+	l.logger.Verbose("Link.send: packet sent via transport, err=%v", err)
 	return err
 }
 
@@ -630,7 +632,7 @@ func (l *Link) ValidateProof(packet *Packet) error {
 		l.transport.ActivateLink(l)
 	}
 
-	Logf("Link %x active, RTT is %v", LogVerbose, false, l.linkID, time.Duration(l.rtt*float64(time.Second)))
+	l.logger.Verbose("Link %x active, RTT is %v", l.linkID, time.Duration(l.rtt*float64(time.Second)))
 	// Send RTT packet with msgpack-packed RTT value
 	rttData, err := msgpack.Pack(l.rtt)
 	if err != nil {
@@ -652,7 +654,7 @@ func (l *Link) ValidateProof(packet *Packet) error {
 
 // HandleRTT processes an incoming Round Trip Time packet to finalize activation for non-initiator link instances.
 func (l *Link) HandleRTT(packet *Packet) {
-	Logf("Handling RTT for %x", LogExtreme, false, l.linkID)
+	l.logger.Extreme("Handling RTT for %x", l.linkID)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -662,7 +664,7 @@ func (l *Link) HandleRTT(packet *Packet) {
 		if l.transport != nil {
 			l.transport.ActivateLink(l)
 		}
-		Logf("Link %x active after RTT", LogVerbose, false, l.linkID)
+		l.logger.Verbose("Link %x active after RTT", l.linkID)
 		if l.callbacks.LinkEstablished != nil {
 			go l.callbacks.LinkEstablished(l)
 		}
@@ -951,7 +953,7 @@ func (l *Link) teardown(reason int) {
 		go l.callbacks.LinkClosed(l)
 	}
 
-	Logf("Link %x closed: reason=%v", LogVerbose, false, l.linkID, reason)
+	l.logger.Verbose("Link %x closed: reason=%v", l.linkID, reason)
 }
 
 // Request fires a generalized structured request packet asynchronously, expecting a correlated logical response from the remote peer.
@@ -970,7 +972,7 @@ func (l *Link) Request(path string, data any, responseCallback, failedCallback, 
 	}
 
 	if len(packedRequest) <= l.mdu {
-		Logf("Sending request %v for %v over link %x", LogDebug, false, TruncatedHash(packedRequest), path, l.linkID)
+		l.logger.Debug("Sending request %v for %v over link %x", TruncatedHash(packedRequest), path, l.linkID)
 		p := NewPacketWithTransport(l.transport, l, packedRequest)
 		p.Context = ContextRequest
 
@@ -979,6 +981,7 @@ func (l *Link) Request(path string, data any, responseCallback, failedCallback, 
 		}
 
 		rr := &RequestReceipt{
+			logger:           l.logger,
 			Link:             l,
 			RequestID:        p.GetTruncatedHash(), // Match Reticulum behavior
 			Status:           RequestSent,
@@ -1001,7 +1004,7 @@ func (l *Link) Request(path string, data any, responseCallback, failedCallback, 
 		return rr, nil
 	} else {
 		requestID := TruncatedHash(packedRequest)
-		Logf("Sending request %x as resource.", LogDebug, false, requestID)
+		l.logger.Debug("Sending request %x as resource.", requestID)
 
 		// request_resource = RNS.Resource(packed_request, self, request_id = request_id, is_response = False, timeout = timeout)
 		r, err := NewResource(packedRequest, l)
@@ -1012,6 +1015,7 @@ func (l *Link) Request(path string, data any, responseCallback, failedCallback, 
 		r.isResponse = false
 
 		rr := &RequestReceipt{
+			logger:           l.logger,
 			Link:             l,
 			RequestID:        requestID,
 			Resource:         r,
@@ -1042,7 +1046,7 @@ func (l *Link) handleRequest(requestID []byte, unpackedRequest []any) {
 	}
 
 	if len(unpackedRequest) < 3 {
-		Log("Received malformed request packet, ignoring", LogDebug, false)
+		l.logger.Debug("Received malformed request packet, ignoring")
 		return
 	}
 
@@ -1050,7 +1054,7 @@ func (l *Link) handleRequest(requestID []byte, unpackedRequest []any) {
 	pathHash, ok1 := unpackedRequest[1].([]byte)
 	requestData, ok2 := unpackedRequest[2].([]byte)
 	if !ok1 {
-		Log("Received malformed request packet (bad path hash), ignoring", LogDebug, false)
+		l.logger.Debug("Received malformed request packet (bad path hash), ignoring")
 		return
 	}
 	// requestData can be nil
@@ -1059,7 +1063,7 @@ func (l *Link) handleRequest(requestID []byte, unpackedRequest []any) {
 		ok2 = true
 	}
 	if !ok2 {
-		Log("Received malformed request packet (bad request data), ignoring", LogDebug, false)
+		l.logger.Debug("Received malformed request packet (bad request data), ignoring")
 		return
 	}
 
@@ -1071,7 +1075,7 @@ func (l *Link) handleRequest(requestID []byte, unpackedRequest []any) {
 	if handler != nil {
 		handlerPath = handler.Path
 	}
-	Logf("Request handler lookup: pathHash=%x, ok=%v, handler.Path=%v", LogVerbose, false, pathHash, ok, handlerPath)
+	l.logger.Verbose("Request handler lookup: pathHash=%x, ok=%v, handler.Path=%v", pathHash, ok, handlerPath)
 	if ok {
 		allowed := false
 		if handler.Allow == AllowAll {
@@ -1087,17 +1091,17 @@ func (l *Link) handleRequest(requestID []byte, unpackedRequest []any) {
 			}
 		}
 
-		Logf("Request allowed check: allowed=%v, handler.Allow=%v", LogVerbose, false, allowed, handler.Allow)
+		l.logger.Verbose("Request allowed check: allowed=%v, handler.Allow=%v", allowed, handler.Allow)
 		if allowed {
-			Logf("Handling request %v for %v", LogVerbose, false, requestID, handler.Path)
+			l.logger.Verbose("Handling request %v for %v", requestID, handler.Path)
 			response := handler.ResponseGenerator(handler.Path, requestData, requestID, l.linkID, l.remoteIdentity, requestedAt)
-			Logf("Handler response: %v (type: %T)", LogVerbose, false, response, response)
+			l.logger.Verbose("Handler response: %v (type: %T)", response, response)
 
 			if response != nil {
-				Logf("Sending response for request %x", LogVerbose, false, requestID)
+				l.logger.Verbose("Sending response for request %x", requestID)
 				packedResponse, err := msgpack.Pack([]any{requestID, response})
 				if err != nil {
-					Logf("Failed to pack response: %v", LogError, false, err)
+					l.logger.Error("Failed to pack response: %v", err)
 					return
 				}
 
@@ -1105,7 +1109,7 @@ func (l *Link) handleRequest(requestID []byte, unpackedRequest []any) {
 					p := NewPacketWithTransport(l.transport, l, packedResponse)
 					p.Context = ContextResponse
 					if err := l.send(p); err != nil {
-						Logf("Failed to send response packet: %v", LogError, false, err)
+						l.logger.Error("Failed to send response packet: %v", err)
 					}
 				} else {
 					// Send as resource
@@ -1114,35 +1118,35 @@ func (l *Link) handleRequest(requestID []byte, unpackedRequest []any) {
 						AutoCompressLimit: handler.AutoCompressLimit,
 					})
 					if err != nil {
-						Logf("Failed to create response resource: %v", LogError, false, err)
+						l.logger.Error("Failed to create response resource: %v", err)
 						return
 					}
 					r.requestID = requestID
 					r.isResponse = true
 					if err := r.Advertise(); err != nil {
-						Logf("Failed to advertise response resource: %v", LogError, false, err)
+						l.logger.Error("Failed to advertise response resource: %v", err)
 					}
 				}
 			}
 		} else {
-			Logf("Request %v not allowed", LogDebug, false, requestID)
+			l.logger.Debug("Request %v not allowed", requestID)
 		}
 	}
 }
 
 func (l *Link) handleResponse(requestID []byte, responseData any, metadata any) {
-	Logf("handleResponse called: requestID=%x, responseData=%v (type: %T)", LogVerbose, false, requestID, responseData, responseData)
+	l.logger.Verbose("handleResponse called: requestID=%x, responseData=%v (type: %T)", requestID, responseData, responseData)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	if l.status != LinkActive {
-		Logf("handleResponse: link not active, status=%v", LogVerbose, false, l.status)
+		l.logger.Verbose("handleResponse: link not active, status=%v", l.status)
 		return
 	}
 
 	for i, rr := range l.pendingRequests {
 		if bytes.Equal(rr.RequestID, requestID) {
-			Logf("handleResponse: found pending request, calling responseReceived", LogVerbose, false)
+			l.logger.Verbose("handleResponse: found pending request, calling responseReceived")
 			// Found it
 			rr.responseReceived(responseData, metadata)
 			// Remove from pending
@@ -1150,7 +1154,7 @@ func (l *Link) handleResponse(requestID []byte, responseData any, metadata any) 
 			break
 		}
 	}
-	Logf("handleResponse: done", LogVerbose, false)
+	l.logger.Verbose("handleResponse: done")
 }
 
 func (l *Link) removePendingRequest(rr *RequestReceipt) {
@@ -1168,19 +1172,19 @@ func (l *Link) responseResourceConcluded(resource *Resource) {
 	if resource.status == ResourceStatusComplete {
 		unpackedResponse, err := msgpack.Unpack(resource.data)
 		if err != nil {
-			Logf("Failed to unpack response resource: %v", LogError, false, err)
+			l.logger.Error("Failed to unpack response resource: %v", err)
 			return
 		}
 
 		resList, ok := unpackedResponse.([]any)
 		if !ok || len(resList) < 2 {
-			Logf("Unexpected response resource shape: %T", LogError, false, unpackedResponse)
+			l.logger.Error("Unexpected response resource shape: %T", unpackedResponse)
 			return
 		}
 
 		requestID, ok := resList[0].([]byte)
 		if !ok {
-			Logf("Unexpected response resource request ID type: %T", LogError, false, resList[0])
+			l.logger.Error("Unexpected response resource request ID type: %T", resList[0])
 			return
 		}
 
@@ -1193,13 +1197,13 @@ func (l *Link) requestResourceConcluded(resource *Resource) {
 	if resource.status == ResourceStatusComplete {
 		unpackedRequest, err := msgpack.Unpack(resource.data)
 		if err != nil {
-			Logf("Failed to unpack request resource: %v", LogError, false, err)
+			l.logger.Error("Failed to unpack request resource: %v", err)
 			return
 		}
 
 		requestList, ok := unpackedRequest.([]any)
 		if !ok {
-			Logf("Unexpected request resource shape: %T", LogError, false, unpackedRequest)
+			l.logger.Error("Unexpected request resource shape: %T", unpackedRequest)
 			return
 		}
 

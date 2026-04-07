@@ -29,8 +29,8 @@ func TestNewRuntime(t *testing.T) {
 func TestRuntimeLoadIdentityFallsBackToIdentityHash(t *testing.T) {
 	t.Parallel()
 
-	ts := rns.NewTransportSystem()
-	id, err := rns.NewIdentity(true)
+	ts := rns.NewTransportSystem(nil)
+	id, err := rns.NewIdentity(true, nil)
 	mustTest(t, err)
 
 	destHash := rns.FullHash([]byte("gornid-test-destination"))[:rns.TruncatedHashLength/8]

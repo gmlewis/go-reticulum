@@ -745,8 +745,9 @@ func TestConcurrentPumpInitiatorStdinEOFAndWindowUpdates(t *testing.T) {
 	stdinDone := make(chan struct{})
 	windowDone := make(chan struct{})
 
+	rt := &runtimeT{}
 	go func() {
-		pumpInitiatorStdin(sender)
+		rt.pumpInitiatorStdin(sender)
 		close(stdinDone)
 	}()
 

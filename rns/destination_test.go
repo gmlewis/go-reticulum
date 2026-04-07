@@ -15,7 +15,7 @@ func TestDestination(t *testing.T) {
 	id := mustTestNewIdentity(t, true)
 
 	// Test IN SINGLE destination
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "testapp", "aspect1", "aspect2")
 	if dest.Type != DestinationSingle {
 		t.Errorf("expected SINGLE destination type")
@@ -41,7 +41,7 @@ func TestDestination(t *testing.T) {
 
 func TestDestinationEncryption(t *testing.T) {
 	id := mustTestNewIdentity(t, true)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "testapp")
 
 	msg := []byte("secret message")
@@ -58,7 +58,7 @@ func TestDestinationEncryption(t *testing.T) {
 
 func TestRegisterRequestHandlerWithAutoCompressLimit(t *testing.T) {
 	id := mustTestNewIdentity(t, true)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "testapp")
 
 	dest.RegisterRequestHandlerWithAutoCompressLimit(
@@ -87,7 +87,7 @@ func TestRegisterRequestHandlerWithAutoCompressLimit(t *testing.T) {
 
 func TestRegisterRequestHandlerAutoCompressDefaults(t *testing.T) {
 	id := mustTestNewIdentity(t, true)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "testapp")
 
 	handlerFn := func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {

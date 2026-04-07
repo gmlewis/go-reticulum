@@ -11,10 +11,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
@@ -85,11 +87,11 @@ func (rt cliRuntime) run(args []string) error {
 	}
 
 	if opts.public {
-		return handlePublicKeys()
+		return rt.handlePublicKeys()
 	}
 
 	if opts.key {
-		return handleGenerateKeys(opts.autoinstall)
+		return rt.handleGenerateKeys(opts.autoinstall)
 	}
 
 	if port, err = rt.resolveLivePort(port, opts); err != nil {
@@ -160,4 +162,36 @@ func (e exitCodeError) Error() string {
 
 func (e exitCodeError) Unwrap() error {
 	return e.err
+}
+
+type cliRuntime struct {
+	logger              *rns.Logger
+	openSerial          serialOpener
+	discoverPort        func() (string, []string, error)
+	stdin               io.Reader
+	now                 func() time.Time
+	sleep               func(time.Duration)
+	runCommand          func(string, ...string) ([]byte, error)
+	loadBootstrapSigner func(string) (bootstrapChecksumSigner, error)
+	debug               bool
+}
+
+func newRuntime() cliRuntime {
+	return cliRuntime{
+		logger:              rns.NewLogger(),
+		openSerial:          defaultOpenSerial,
+		stdin:               os.Stdin,
+		now:                 time.Now,
+		sleep:               time.Sleep,
+		runCommand:          defaultRunCommand,
+		loadBootstrapSigner: loadBootstrapSigner,
+	}
+}
+
+func (rt cliRuntime) Sleep(duration time.Duration) {
+	if rt.sleep != nil {
+		rt.sleep(duration)
+		return
+	}
+	time.Sleep(duration)
 }

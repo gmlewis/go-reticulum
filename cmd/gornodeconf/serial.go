@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"os/exec"
 	"time"
 )
@@ -37,36 +36,6 @@ type serialSettings struct {
 }
 
 type serialOpener func(serialSettings) (serialPort, error)
-
-type cliRuntime struct {
-	openSerial          serialOpener
-	discoverPort        func() (string, []string, error)
-	stdin               io.Reader
-	now                 func() time.Time
-	sleep               func(time.Duration)
-	runCommand          func(string, ...string) ([]byte, error)
-	loadBootstrapSigner func(string) (bootstrapChecksumSigner, error)
-	debug               bool
-}
-
-func newRuntime() cliRuntime {
-	return cliRuntime{
-		openSerial:          defaultOpenSerial,
-		stdin:               os.Stdin,
-		now:                 time.Now,
-		sleep:               time.Sleep,
-		runCommand:          defaultRunCommand,
-		loadBootstrapSigner: loadBootstrapSigner,
-	}
-}
-
-func (rt cliRuntime) Sleep(duration time.Duration) {
-	if rt.sleep != nil {
-		rt.sleep(duration)
-		return
-	}
-	time.Sleep(duration)
-}
 
 func defaultRunCommand(name string, args ...string) ([]byte, error) {
 	return exec.Command(name, args...).CombinedOutput()

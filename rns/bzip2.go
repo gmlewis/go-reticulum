@@ -8,6 +8,7 @@ package rns
 import (
 	"bytes"
 	"io"
+	"log"
 
 	vendoredbzip2 "github.com/gmlewis/go-reticulum/compress/bzip2"
 )
@@ -21,7 +22,7 @@ func CompressBzip2(input []byte, level int) ([]byte, error) {
 	}
 	if _, err := w.Write(input); err != nil {
 		if cerr := w.Close(); cerr != nil {
-			Logf("Warning: Could not close bzip2 writer during error recovery: %v", LogWarning, false, cerr)
+			log.Printf("Warning: Could not close bzip2 writer during error recovery: %v", cerr)
 		}
 		return nil, err
 	}
@@ -39,8 +40,8 @@ func DecompressBzip2(input []byte) ([]byte, error) {
 	}
 	out, err := io.ReadAll(r)
 	if err != nil {
-		if cerr := r.Close(); cerr != nil {
-			Logf("Warning: Could not close bzip2 reader during error recovery: %v", LogWarning, false, cerr)
+		if cerr := r.Close(); cerr != nil { // should not happen
+			log.Printf("Warning: Could not close bzip2 reader during error recovery: %v", cerr)
 		}
 		return nil, err
 	}

@@ -111,7 +111,7 @@ func TestFromBytes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			id, err := FromBytes(tt.input)
+			id, err := FromBytes(tt.input, nil)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("FromBytes() expected error, got nil")

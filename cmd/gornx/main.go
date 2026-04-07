@@ -86,14 +86,14 @@ func (rt *runtimeT) run() {
 		logger.SetLogLevel(rns.LogWarning)
 	}
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(logger)
 	ret, err := rns.NewReticulumWithLogger(ts, app.configDir, logger)
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
 	defer func() {
 		if err := ret.Close(); err != nil {
-			logger.Log(fmt.Sprintf("Warning: Could not close Reticulum properly: %v", err), rns.LogWarning, false)
+			logger.Warning("Could not close Reticulum properly: %v", err)
 		}
 	}()
 
@@ -120,19 +120,19 @@ func doListen(idPath string, logger *rns.Logger) {
 
 	var id *rns.Identity
 	if _, err := os.Stat(idPath); err == nil {
-		id, err = rns.FromFile(idPath)
+		id, err = rns.FromFile(idPath, logger)
 		if err != nil {
 			log.Fatalf("Could not load identity: %v\n", err)
 		}
 	} else {
 		fmt.Println("Creating new identity...")
-		id, _ = rns.NewIdentity(true)
+		id, _ = rns.NewIdentity(true, logger)
 		if err := id.ToFile(idPath); err != nil {
 			log.Fatalf("Could not save identity %q: %v\n", idPath, err)
 		}
 	}
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(logger)
 	dest, err := rns.NewDestination(ts, id, rns.DestinationIn, rns.DestinationSingle, AppName, "execute")
 	if err != nil {
 		log.Fatalf("Could not create destination: %v\n", err)
@@ -153,7 +153,7 @@ func doListen(idPath string, logger *rns.Logger) {
 
 	dest.RegisterRequestHandler("command", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 		if remoteIdentity == nil {
-			logger.Log("Rejected unauthenticated command request", rns.LogWarning, false)
+			logger.Warning("Rejected unauthenticated command request")
 			return nil
 		}
 
@@ -166,38 +166,38 @@ func doListen(idPath string, logger *rns.Logger) {
 			}
 		}
 		if !allowed {
-			logger.Log(fmt.Sprintf("Rejected unauthorized command request from %v", remoteIdentity.HexHash), rns.LogWarning, false)
+			logger.Warning("Rejected unauthorized command request from %v", remoteIdentity.HexHash)
 			return nil
 		}
 
 		// Limit input size to 64KB
 		if len(data) > 64*1024 {
-			logger.Log("Rejected command: input too large", rns.LogWarning, false)
+			logger.Warning("Rejected command: input too large")
 			return []any{false, int64(127), []byte{}, []byte("command too large"), int64(0), int64(len("command too large")), float64(time.Now().UnixNano()) / 1e9, float64(time.Now().UnixNano()) / 1e9}
 		}
 
 		unpacked, err := rns.Unpack(data)
 		if err != nil {
-			logger.Log(fmt.Sprintf("Failed to unpack command: %v", err), rns.LogWarning, false)
+			logger.Warning("Failed to unpack command: %v", err)
 			return []any{false, int64(127), []byte{}, []byte("invalid command encoding"), int64(0), int64(len("invalid command encoding")), float64(time.Now().UnixNano()) / 1e9, float64(time.Now().UnixNano()) / 1e9}
 		}
 		parts, ok := unpacked.([]any)
 		if !ok || len(parts) == 0 {
-			logger.Log("Malformed command parts", rns.LogWarning, false)
+			logger.Warning("Malformed command parts")
 			return []any{false, int64(127), []byte{}, []byte("malformed command"), int64(0), int64(len("malformed command")), float64(time.Now().UnixNano()) / 1e9, float64(time.Now().UnixNano()) / 1e9}
 		}
 		cmdBytes, ok := parts[0].([]byte)
 		if !ok {
-			logger.Log("Malformed command: not []byte", rns.LogWarning, false)
+			logger.Warning("Malformed command: not []byte")
 			return []any{false, int64(127), []byte{}, []byte("malformed command"), int64(0), int64(len("malformed command")), float64(time.Now().UnixNano()) / 1e9, float64(time.Now().UnixNano()) / 1e9}
 		}
 		if len(cmdBytes) > 64*1024 {
-			logger.Log("Rejected command: command string too large", rns.LogWarning, false)
+			logger.Warning("Rejected command: command string too large")
 			return []any{false, int64(127), []byte{}, []byte("command string too large"), int64(0), int64(len("command string too large")), float64(time.Now().UnixNano()) / 1e9, float64(time.Now().UnixNano()) / 1e9}
 		}
 		cmdStr := string(cmdBytes)
 
-		logger.Log(fmt.Sprintf("Executing authorized command from %v: %v", remoteIdentity.HexHash, cmdStr), rns.LogInfo, false)
+		logger.Info("Executing authorized command from %v: %v", remoteIdentity.HexHash, cmdStr)
 
 		cmd := exec.Command("sh", "-c", cmdStr)
 		var stdout, stderr bytes.Buffer
@@ -257,7 +257,7 @@ func doExecute(ts rns.Transport, idPath string, destHashHex string, command stri
 		}
 		idPath = filepath.Join(home, ".reticulum", "identities", AppName)
 	}
-	id, err := rns.FromFile(idPath)
+	id, err := rns.FromFile(idPath, ts.GetLogger())
 	if err != nil {
 		log.Fatalf("Could not load identity: %v\n", err)
 	}

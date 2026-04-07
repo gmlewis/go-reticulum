@@ -11,41 +11,6 @@ import (
 )
 
 const (
-	// LogNone completely disables the output of the logging subsystem.
-	LogNone = -1
-	// LogCritical designates the most severe level of failure, requiring immediate attention.
-	LogCritical = 0
-	// LogError designates an error state that interrupts a specific operation but not the entire system.
-	LogError = 1
-	// LogWarning designates a potential issue or unexpected condition that does not halt the system.
-	LogWarning = 2
-	// LogNotice designates a significant event that is not an error.
-	LogNotice = 3
-	// LogInfo designates informational progress about routine operations.
-	LogInfo = 4
-	// LogVerbose designates detailed information primarily useful for tracing operations.
-	LogVerbose = 5
-	// LogDebug designates low-level system details for in-depth troubleshooting.
-	LogDebug = 6
-	// LogExtreme designates an exhaustive level of logging, outputting almost all internal events.
-	LogExtreme = 7
-)
-
-const (
-	// LogStdout configures the logging subsystem to write to standard output.
-	LogStdout = 0x91
-	// LogDestFile configures the logging subsystem to append output to a specific file on disk.
-	LogDestFile = 0x92
-	// LogCallback configures the logging subsystem to route messages to a custom callback function.
-	LogCallback = 0x93
-)
-
-const (
-	// LogMaxSize defines the maximum file size (in bytes) before a log rotation is triggered.
-	LogMaxSize = 5 * 1024 * 1024
-)
-
-const (
 	// MTU defines the Maximum Transmission Unit for generic packets across the Reticulum network.
 	MTU = 500
 )
@@ -69,30 +34,6 @@ const (
 	// MDU defines the Maximum Data Unit payload size after subtracting theoretical maximum header overhead.
 	MDU = MTU - HeaderMaxSize - IFACMinSize
 )
-
-// LogLevelName maps an integer logging level back to its human-readable console tag representation.
-func LogLevelName(level int) string {
-	switch level {
-	case LogCritical:
-		return "[Critical]"
-	case LogError:
-		return "[Error]   "
-	case LogWarning:
-		return "[Warning] "
-	case LogNotice:
-		return "[Notice]  "
-	case LogInfo:
-		return "[Info]    "
-	case LogVerbose:
-		return "[Verbose] "
-	case LogDebug:
-		return "[Debug]   "
-	case LogExtreme:
-		return "[Extra]   "
-	default:
-		return "[Unknown] "
-	}
-}
 
 // PrettySize dynamically formats a precise byte count into an easily readable string with magnitude suffixes.
 func PrettySize(num float64, suffix string) string {

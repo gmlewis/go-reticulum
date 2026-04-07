@@ -79,7 +79,7 @@ func (c *remoteLinkClient) Close() error {
 	return nil
 }
 
-func connectRemoteClient(out io.Writer, ts rns.Transport, remoteHash []byte, identityPath string, timeout float64, purpose remotePurpose, noOutput bool) (remoteRequestClient, error) {
+func (rt *runtimeT) connectRemoteClient(out io.Writer, ts rns.Transport, remoteHash []byte, identityPath string, timeout float64, purpose remotePurpose, noOutput bool) (remoteRequestClient, error) {
 	if !ts.HasPath(remoteHash) {
 		if !noOutput {
 			if _, err := fmt.Fprintf(out, "Path to %v requested  ", rns.PrettyHex(remoteHash)); err != nil {
@@ -137,7 +137,7 @@ func connectRemoteClient(out io.Writer, ts rns.Transport, remoteHash []byte, ide
 		if identityPath == "" {
 			return nil, fmt.Errorf("Could not load management identity from %v", identityPath)
 		}
-		authIdentity, err = loadIdentityFromPath(identityPath)
+		authIdentity, err = rt.loadIdentityFromPath(identityPath)
 		if err != nil {
 			return nil, fmt.Errorf("Could not load management identity from %v", identityPath)
 		}
@@ -179,7 +179,7 @@ func buildRemoteDestination(ts rns.Transport, identity *rns.Identity, purpose re
 	}
 }
 
-func loadIdentityFromPath(identityPath string) (*rns.Identity, error) {
+func (rt *runtimeT) loadIdentityFromPath(identityPath string) (*rns.Identity, error) {
 	if identityPath == "" {
 		return nil, fmt.Errorf("identity path is required")
 	}
@@ -191,7 +191,7 @@ func loadIdentityFromPath(identityPath string) (*rns.Identity, error) {
 		}
 		resolvedPath = filepath.Join(homeDir, identityPath[1:])
 	}
-	return rns.FromFile(resolvedPath)
+	return rns.FromFile(resolvedPath, rt.logger)
 }
 
 func doRemoteTable(out io.Writer, client remoteRequestClient, destinationHash []byte, maxHops int, jsonOut bool, timeout float64) error {

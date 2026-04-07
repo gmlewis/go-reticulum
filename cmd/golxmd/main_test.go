@@ -76,10 +76,10 @@ func TestNewRuntimeOwnsLogger(t *testing.T) {
 func TestJobs(t *testing.T) {
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
-	identity, err := rns.NewIdentity(true)
+	identity, err := rns.NewIdentity(true, nil)
 	mustTest(t, err)
 	c := &clientT{
-		ts:  rns.NewTransportSystem(),
+		ts:  rns.NewTransportSystem(nil),
 		now: time.Now,
 	}
 	router, err := lxmf.NewRouter(c.ts, identity, tmpDir)
@@ -123,10 +123,10 @@ func TestJobsRecovery(t *testing.T) {
 func TestAnnounceAtStart(t *testing.T) {
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
-	identity, err := rns.NewIdentity(true)
+	identity, err := rns.NewIdentity(true, nil)
 	mustTest(t, err)
 	c := &clientT{
-		ts:  rns.NewTransportSystem(),
+		ts:  rns.NewTransportSystem(nil),
 		now: time.Now,
 	}
 	router, err := lxmf.NewRouter(c.ts, identity, tmpDir)
@@ -203,9 +203,9 @@ func TestLXMFDelivery(t *testing.T) {
 	mustTest(t, err)
 
 	// Mock message
-	id, err := rns.NewIdentity(true)
+	id, err := rns.NewIdentity(true, nil)
 	mustTest(t, err)
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	dest, err := rns.NewDestination(ts, id, rns.DestinationIn, rns.DestinationSingle, "lxmf", "delivery")
 	mustTest(t, err)
 	lxm, err := lxmf.NewMessage(dest, dest, "Hello", "Content", nil)
@@ -246,10 +246,10 @@ func TestLXMFDelivery(t *testing.T) {
 func TestPropagationNodeSetup(t *testing.T) {
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
-	identity, err := rns.NewIdentity(true)
+	identity, err := rns.NewIdentity(true, nil)
 	mustTest(t, err)
 	c := &clientT{
-		ts: rns.NewTransportSystem(),
+		ts: rns.NewTransportSystem(nil),
 	}
 	router, err := lxmf.NewRouter(c.ts, identity, tmpDir)
 	mustTest(t, err)
@@ -289,7 +289,7 @@ func TestAuthWarningMessage(t *testing.T) {
 	defer cleanup()
 	var capturedLog string
 	c := &clientT{
-		ts:         rns.NewTransportSystem(),
+		ts:         rns.NewTransportSystem(nil),
 		ac:         &activeConfig{AuthRequired: true, AllowedIdentities: nil},
 		configpath: filepath.Join(tmpDir, "config"),
 		logger: func() *rns.Logger {
@@ -303,7 +303,7 @@ func TestAuthWarningMessage(t *testing.T) {
 		}(),
 	}
 
-	id, err := rns.NewIdentity(true)
+	id, err := rns.NewIdentity(true, nil)
 	mustTest(t, err)
 	router, _ := lxmf.NewRouter(c.ts, id, tmpDir)
 
@@ -318,9 +318,9 @@ func TestAuthWarningMessage(t *testing.T) {
 func TestAuthSetup(t *testing.T) {
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
-	identity, err := rns.NewIdentity(true)
+	identity, err := rns.NewIdentity(true, nil)
 	mustTest(t, err)
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	router, _ := lxmf.NewRouter(ts, identity, tmpDir)
 
 	allowed := [][]byte{
@@ -337,9 +337,9 @@ func TestAuthSetup(t *testing.T) {
 }
 
 func TestIdentityRemember(t *testing.T) {
-	identity, err := rns.NewIdentity(true)
+	identity, err := rns.NewIdentity(true, nil)
 	mustTest(t, err)
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	dest, err := rns.NewDestination(ts, identity, rns.DestinationIn, rns.DestinationSingle, "lxmf", "delivery")
 	mustTest(t, err)
 
@@ -354,9 +354,9 @@ func TestIdentityRemember(t *testing.T) {
 func TestIgnoreDestinations(t *testing.T) {
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
-	identity, err := rns.NewIdentity(true)
+	identity, err := rns.NewIdentity(true, nil)
 	mustTest(t, err)
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	router, _ := lxmf.NewRouter(ts, identity, tmpDir)
 
 	ignored := [][]byte{
@@ -386,12 +386,13 @@ func TestRouterConstruction(t *testing.T) {
 			"propagation_stamp_cost_target": "25",
 		},
 	}
-	ac, err := applyConfig(rns.NewLogger(), cfg)
+	c := &clientT{}
+	ac, err := c.applyConfig(cfg)
 	mustTest(t, err)
 
-	identity, err := rns.NewIdentity(true)
+	identity, err := rns.NewIdentity(true, nil)
 	mustTest(t, err)
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	router, err := lxmf.NewRouterFromConfig(ts, lxmf.RouterConfig{
 		Identity:         identity,
 		StoragePath:      tmpDir,
@@ -407,25 +408,6 @@ func TestRouterConstruction(t *testing.T) {
 	}
 	// Note: We can't easily check private fields of Router unless we add getters or the test is in lxmf package.
 	// But NewRouterFromConfig is in lxmf package.
-}
-
-func TestServiceLogging(t *testing.T) {
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
-	configDir := filepath.Join(tmpDir, "lxmd")
-	err := os.MkdirAll(configDir, 0o755)
-	mustTest(t, err)
-
-	logger := rns.NewLogger()
-	setupLogging(logger, true, configDir)
-
-	if logger.GetLogDest() != rns.LogDestFile {
-		t.Errorf("LogDest: got %v, want %v", logger.GetLogDest(), rns.LogDestFile)
-	}
-	wantLogPath := filepath.Join(configDir, "logfile")
-	if logger.GetLogFilePath() != wantLogPath {
-		t.Errorf("LogFilePath: got %q, want %q", logger.GetLogFilePath(), wantLogPath)
-	}
 }
 
 func TestApplyTimeoutDefaults(t *testing.T) {
@@ -488,7 +470,8 @@ func TestLoadOrCreateIdentityCreateThenReload(t *testing.T) {
 		t.Fatalf("mkdir identity dir: %v", err)
 	}
 
-	created, err := loadOrCreateIdentity(rns.NewLogger(), identityPath)
+	c := &clientT{}
+	created, err := c.loadOrCreateIdentity(identityPath)
 	if err != nil {
 		t.Fatalf("loadOrCreateIdentity(create): %v", err)
 	}
@@ -496,7 +479,7 @@ func TestLoadOrCreateIdentityCreateThenReload(t *testing.T) {
 		t.Fatal("expected created identity with non-empty hash")
 	}
 
-	reloaded, err := loadOrCreateIdentity(rns.NewLogger(), identityPath)
+	reloaded, err := c.loadOrCreateIdentity(identityPath)
 	if err != nil {
 		t.Fatalf("loadOrCreateIdentity(reload): %v", err)
 	}
@@ -519,7 +502,8 @@ func TestLoadOrCreateIdentityCorruptFile(t *testing.T) {
 		t.Fatalf("write corrupt identity: %v", err)
 	}
 
-	if _, err := loadOrCreateIdentity(rns.NewLogger(), identityPath); err == nil {
+	c := &clientT{}
+	if _, err := c.loadOrCreateIdentity(identityPath); err == nil {
 		t.Fatal("expected error for corrupt identity file")
 	}
 }

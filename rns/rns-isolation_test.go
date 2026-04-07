@@ -20,7 +20,7 @@ func TestStackIsolation(t *testing.T) {
 	cfgA, cleanupA := testutils.TempDir(t, tempDirPrefix)
 	defer cleanupA()
 	writeConfig(t, cfgA, "[reticulum]\nshare_instance = No\n")
-	tsA := NewTransportSystem()
+	tsA := NewTransportSystem(nil)
 	r1, err := NewReticulum(tsA, cfgA)
 	if err != nil {
 		t.Fatalf("failed to create r1: %v", err)
@@ -31,7 +31,7 @@ func TestStackIsolation(t *testing.T) {
 	cfgB, cleanupB := testutils.TempDir(t, tempDirPrefix)
 	defer cleanupB()
 	writeConfig(t, cfgB, "[reticulum]\nshare_instance = No\n")
-	tsB := NewTransportSystem()
+	tsB := NewTransportSystem(nil)
 	r2, err := NewReticulum(tsB, cfgB)
 	if err != nil {
 		t.Fatalf("failed to create r2: %v", err)

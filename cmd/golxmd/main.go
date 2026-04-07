@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"syscall"
@@ -82,22 +83,16 @@ func (c *clientT) exit(code int) {
 	os.Exit(code)
 }
 
-func (c *clientT) getLogger() *rns.Logger {
-	if c.logger == nil {
-		c.logger = rns.NewLogger()
-	}
-	return c.logger
-}
-
 func newRuntime(app *appT) *runtimeT {
 	if app == nil {
 		app = newApp()
 	}
 	logger := rns.NewLogger()
+	ts := rns.NewTransportSystem(logger)
 	return &runtimeT{
 		app:    app,
 		logger: logger,
-		client: &clientT{ts: rns.NewTransportSystem(), now: time.Now, logger: logger},
+		client: &clientT{ts: ts, now: time.Now, logger: logger},
 	}
 }
 
@@ -147,17 +142,23 @@ func (r *runtimeT) run() {
 	}
 
 	var err error
-	c.ac, err = loadConfig(r.logger, a.configDir)
+	c.ac, err = c.loadConfig(a.configDir)
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
 
 	r.logger.SetLogLevel(resolveLogLevel(c.ac.LogLevel, int(a.verbosity), int(a.quietness)))
 
-	setupLogging(r.logger, a.runAsService, a.configDir)
-	r.logger.Log(fmt.Sprintf("Configuration loaded from %v", a.configDir), rns.LogVerbose, false)
+	if a.runAsService {
+		r.logger.SetLogDest(rns.LogDestFile)
+		r.logger.SetLogFilePath(filepath.Join(a.configDir, "logfile"))
+	} else {
+		r.logger.SetLogDest(rns.LogStdout)
+	}
 
-	r.logger.Log("Substantiating Reticulum...", rns.LogInfo, false)
+	r.logger.Verbose("Configuration loaded from %v", a.configDir)
+
+	r.logger.Info("Substantiating Reticulum...")
 	if _, err := rns.NewReticulum(c.ts, a.rnsConfigDir); err != nil {
 		log.Fatalf("initialize Reticulum: %v", err)
 	}
@@ -168,7 +169,7 @@ func (r *runtimeT) run() {
 		log.Fatalf("resolve paths: %v", err)
 	}
 
-	identity, err := loadOrCreateIdentity(r.logger, resolvedIdentityPath)
+	identity, err := c.loadOrCreateIdentity(resolvedIdentityPath)
 	if err != nil {
 		log.Fatalf("load identity: %v", err)
 	}
@@ -212,7 +213,7 @@ func (r *runtimeT) run() {
 	if err != nil {
 		log.Fatalf("register delivery destination: %v", err)
 	}
-	r.logger.Log(fmt.Sprintf("LXMF Router ready to receive on %v", rns.PrettyHex(lxmfDestination.Hash)), rns.LogInfo, false)
+	r.logger.Info("LXMF Router ready to receive on %v", rns.PrettyHex(lxmfDestination.Hash))
 
 	c.ts.Remember(nil, lxmfDestination.Hash, identity.GetPublicKey(), nil)
 
@@ -235,7 +236,7 @@ func (r *runtimeT) run() {
 		if err != nil {
 			log.Fatalf("register propagation destination: %v", err)
 		}
-		r.logger.Log(fmt.Sprintf("LXMF Propagation Node started on %v", rns.PrettyHex(propDest.Hash)), rns.LogInfo, false)
+		r.logger.Info("LXMF Propagation Node started on %v", rns.PrettyHex(propDest.Hash))
 
 		allowed := make([][]byte, 0, len(c.ac.ControlAllowedIdentities))
 		for _, s := range c.ac.ControlAllowedIdentities {
@@ -258,7 +259,7 @@ func (r *runtimeT) run() {
 	}
 
 	log.Printf("golxmd running with identity %x", identity.Hash)
-	r.logger.Log(fmt.Sprintf("Started golxmd version %v", rns.VERSION), rns.LogNotice, false)
+	r.logger.Notice("Started golxmd version %v", rns.VERSION)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
@@ -285,13 +286,14 @@ func applyTimeoutDefaults(displayStatus, displayPeers bool, syncHash, unpeerHash
 	}
 	return 0
 }
+
 func (c *clientT) jobs(router *lxmf.Router, lxmfDestination *rns.Destination, stop <-chan struct{}, interval time.Duration) {
-	logger := c.getLogger()
 	for {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					logger.Log(fmt.Sprintf("An error occurred while running periodic jobs. The contained exception was: %v", r), rns.LogError, false)
+					stackTrace := debug.Stack()
+					c.logger.Error("An error occurred while running periodic jobs. The contained exception was: %v\nstack trace:\n%s", r, stackTrace)
 				}
 			}()
 			c.tick(router, lxmfDestination)
@@ -305,7 +307,6 @@ func (c *clientT) jobs(router *lxmf.Router, lxmfDestination *rns.Destination, st
 }
 
 func (c *clientT) tick(router *lxmf.Router, lxmfDestination *rns.Destination) {
-	logger := c.getLogger()
 	if c.ac == nil {
 		return
 	}
@@ -315,14 +316,14 @@ func (c *clientT) tick(router *lxmf.Router, lxmfDestination *rns.Destination) {
 
 	if c.ac.PeerAnnounceInterval != nil {
 		if currentTime.Sub(c.lastPeerAnnounce) > time.Duration(*c.ac.PeerAnnounceInterval)*time.Second {
-			logger.Log("Sending announce for LXMF delivery destination", rns.LogVerbose, false)
+			c.logger.Verbose("Sending announce for LXMF delivery destination")
 			if err := router.Announce(lxmfDestination.Hash); err != nil {
-				logger.Log(fmt.Sprintf("Failed to announce delivery destination: %v", err), rns.LogError, false)
+				c.logger.Error("Failed to announce delivery destination: %v", err)
 			}
 			c.lastPeerAnnounce = currentTime
 			if c.tr != nil {
 				if err := c.tr.RecordAnnounce(c.lastPeerAnnounce); err != nil {
-					logger.Log(fmt.Sprintf("Failed to record announce: %v", err), rns.LogWarning, false)
+					c.logger.Warning("Failed to record announce: %v", err)
 				}
 			}
 		}
@@ -330,14 +331,14 @@ func (c *clientT) tick(router *lxmf.Router, lxmfDestination *rns.Destination) {
 
 	if c.ac.NodeAnnounceInterval != nil {
 		if currentTime.Sub(c.lastNodeAnnounce) > time.Duration(*c.ac.NodeAnnounceInterval)*time.Second {
-			logger.Log("Sending announce for LXMF Propagation Node", rns.LogVerbose, false)
+			c.logger.Verbose("Sending announce for LXMF Propagation Node")
 			if err := router.Announce(lxmfDestination.Hash); err != nil {
-				logger.Log(fmt.Sprintf("Failed to announce propagation destination: %v", err), rns.LogError, false)
+				c.logger.Error("Failed to announce propagation destination: %v", err)
 			}
 			c.lastNodeAnnounce = currentTime
 			if c.tr != nil {
 				if err := c.tr.RecordSync(c.lastNodeAnnounce); err != nil {
-					logger.Log(fmt.Sprintf("Failed to record sync: %v", err), rns.LogWarning, false)
+					c.logger.Warning("Failed to record sync: %v", err)
 				}
 			}
 		}
@@ -350,62 +351,48 @@ func (c *clientT) tick(router *lxmf.Router, lxmfDestination *rns.Destination) {
 	if c.tickCount%maintenanceInterval == 0 && router != nil {
 		pruned := router.PruneStalePeers()
 		if pruned > 0 {
-			logger.Log(fmt.Sprintf("golxmd pruned %v stale peers", pruned), rns.LogInfo, false)
+			c.logger.Info("golxmd pruned %v stale peers", pruned)
 		}
 	}
 }
 
-func setupLogging(logger *rns.Logger, service bool, configDir string) {
-	if logger == nil {
-		logger = rns.NewLogger()
-	}
-	if service {
-		logger.SetLogDest(rns.LogDestFile)
-		logger.SetLogFilePath(filepath.Join(configDir, "logfile"))
-	} else {
-		logger.SetLogDest(rns.LogStdout)
-	}
-}
-
 func (c *clientT) lxmfDelivery(lxm *lxmf.Message) {
-	logger := c.getLogger()
 	writtenPath, err := lxm.WriteToDirectory(c.lxmdir)
 	if err != nil {
-		logger.Log(fmt.Sprintf("Error occurred while processing received message %v. The contained exception was: %v", lxm, err), rns.LogError, false)
+		c.logger.Error("Error occurred while processing received message %v. The contained exception was: %v", lxm, err)
 		return
 	}
-	logger.Log(fmt.Sprintf("Received %v written to %v", lxm, writtenPath), rns.LogDebug, false)
+	c.logger.Debug("Received %v written to %v", lxm, writtenPath)
 
 	if c.ac != nil && c.ac.OnInbound != "" {
-		logger.Log("Calling external program to handle message", rns.LogDebug, false)
+		c.logger.Debug("Calling external program to handle message")
 		parts := strings.Fields(c.ac.OnInbound)
 		if len(parts) > 0 {
 			cmd := exec.Command(parts[0], append(parts[1:], writtenPath)...)
 			cmd.Stdout = nil
 			cmd.Stderr = nil
 			if err := cmd.Run(); err != nil {
-				logger.Log(fmt.Sprintf("Error occurred while calling external program: %v", err), rns.LogError, false)
+				c.logger.Error("Error occurred while calling external program: %v", err)
 			}
 		}
 	} else {
-		logger.Log("No action defined for inbound messages, ignoring", rns.LogDebug, false)
+		c.logger.Debug("No action defined for inbound messages, ignoring")
 	}
 }
 
 func (c *clientT) runDeferredThenJobs(delay time.Duration, router *lxmf.Router, lxmfDestination *rns.Destination, stopJobs <-chan struct{}, jobsInterval time.Duration) {
-	logger := c.getLogger()
 	time.Sleep(delay)
-	logger.Log("Running deferred start jobs", rns.LogDebug, false)
+	c.logger.Debug("Running deferred start jobs")
 
 	if c.ac != nil && c.ac.PeerAnnounceAtStart && router != nil && lxmfDestination != nil {
-		logger.Log("Sending announce for LXMF delivery destination", rns.LogExtreme, false)
+		c.logger.Extreme("Sending announce for LXMF delivery destination")
 		if err := router.Announce(lxmfDestination.Hash); err != nil {
-			logger.Log(fmt.Sprintf("Failed to announce delivery destination at start: %v", err), rns.LogError, false)
+			c.logger.Error("Failed to announce delivery destination at start: %v", err)
 		}
 	}
 
 	if c.ac != nil && c.ac.NodeAnnounceAtStart && router != nil {
-		logger.Log("Sending announce for LXMF Propagation Node", rns.LogExtreme, false)
+		c.logger.Extreme("Sending announce for LXMF Propagation Node")
 		router.AnnouncePropagationNode()
 	}
 
@@ -416,7 +403,6 @@ func (c *clientT) runDeferredThenJobs(delay time.Duration, router *lxmf.Router, 
 }
 
 func (c *clientT) setupAuth(router *lxmf.Router) {
-	logger := c.getLogger()
 	if c.ac.AuthRequired {
 		router.SetAuthRequired(true)
 		if len(c.ac.AllowedIdentities) > 0 {
@@ -425,7 +411,7 @@ func (c *clientT) setupAuth(router *lxmf.Router) {
 			}
 		} else {
 			allowedPath := filepath.Join(filepath.Dir(c.configpath), "allowed")
-			logger.Log(fmt.Sprintf("Client authentication was enabled, but no identity hashes could be loaded from %v. Nobody will be able to sync messages from this propagation node.", allowedPath), rns.LogWarning, false)
+			c.logger.Warning("Client authentication was enabled, but no identity hashes could be loaded from %v. Nobody will be able to sync messages from this propagation node.", allowedPath)
 		}
 	}
 }
@@ -450,23 +436,20 @@ func (c *clientT) resolvePaths(storagePath, identityPath, configDir string) (str
 	return storagePath, identityPath, nil
 }
 
-func loadOrCreateIdentity(logger *rns.Logger, identityPath string) (*rns.Identity, error) {
-	if logger == nil {
-		logger = rns.NewLogger()
-	}
+func (c *clientT) loadOrCreateIdentity(identityPath string) (*rns.Identity, error) {
 	if _, err := os.Stat(identityPath); err == nil {
-		identity, err := rns.FromFile(identityPath)
+		identity, err := rns.FromFile(identityPath, c.logger)
 		if err != nil {
 			return nil, fmt.Errorf("read identity from %q: %w", identityPath, err)
 		}
 		if identity != nil {
-			logger.Log(fmt.Sprintf("Loaded Primary Identity %v", identity), rns.LogInfo, false)
+			c.logger.Info("Loaded Primary Identity %v", identity)
 		}
 		return identity, nil
 	}
 
-	logger.Log("No Primary Identity file found, creating new...", rns.LogInfo, false)
-	identity, err := rns.NewIdentity(true)
+	c.logger.Info("No Primary Identity file found, creating new...")
+	identity, err := rns.NewIdentity(true, c.logger)
 	if err != nil {
 		return nil, fmt.Errorf("create identity: %w", err)
 	}
@@ -474,7 +457,7 @@ func loadOrCreateIdentity(logger *rns.Logger, identityPath string) (*rns.Identit
 		return nil, fmt.Errorf("persist identity to %q: %w", identityPath, err)
 	}
 
-	logger.Log(fmt.Sprintf("Created new Primary Identity %v", identity), rns.LogInfo, false)
+	c.logger.Info("Created new Primary Identity %v", identity)
 	return identity, nil
 }
 

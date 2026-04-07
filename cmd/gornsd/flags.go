@@ -10,9 +10,12 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/gmlewis/go-reticulum/rns"
 )
 
 type appT struct {
+	logger        *rns.Logger
 	configDir     string
 	verbose       int
 	quiet         int

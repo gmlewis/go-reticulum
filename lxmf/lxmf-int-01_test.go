@@ -104,15 +104,15 @@ func TestIntegrationDirectGoToPython(t *testing.T) {
 		t.Fatalf("write python decode script: %v", err)
 	}
 
-	sourceID, err := rns.NewIdentity(true)
+	sourceID, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(source): %v", err)
 	}
-	destinationID, err := rns.NewIdentity(true)
+	destinationID, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(destination): %v", err)
 	}
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	sourceDest, err := rns.NewDestination(ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	if err != nil {
 		t.Fatalf("NewDestination(source): %v", err)
@@ -171,7 +171,7 @@ func TestIntegrationDirectPythonToGo(t *testing.T) {
 		t.Fatalf("read python packed message: %v", err)
 	}
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	message, err := UnpackMessageFromBytes(ts, packed, MethodDirect)
 	if err != nil {
 		t.Fatalf("UnpackMessageFromBytes: %v", err)

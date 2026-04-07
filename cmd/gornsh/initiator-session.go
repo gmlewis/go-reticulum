@@ -223,7 +223,7 @@ func (rt *runtimeT) runInitiatorProtocolFlow(channel channelSession, opts option
 	}
 
 	if pumpInput {
-		go pumpInitiatorStdin(channel)
+		go rt.pumpInitiatorStdin(channel)
 	}
 	if pumpInput && !opts.noTTY {
 		go pumpWindowSizeUpdates(channel, stopCh, 500*time.Millisecond, executeMessage.Rows, executeMessage.Cols)
@@ -331,7 +331,7 @@ func parsePositiveEnvInt(name string) *int {
 	return &out
 }
 
-func pumpInitiatorStdin(sender messageSender) {
+func (rt *runtimeT) pumpInitiatorStdin(sender messageSender) {
 	buf := make([]byte, 32*1024)
 	for {
 		n, err := os.Stdin.Read(buf)
@@ -344,7 +344,7 @@ func pumpInitiatorStdin(sender messageSender) {
 		}
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
-				sendProtocolErrorToSender(nil, sender, err.Error(), true)
+				rt.sendProtocolErrorToSender(sender, err.Error(), true)
 			}
 			_ = sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamIDStdin, Data: nil, EOF: true, Compressed: false}, time.Now().Add(2*time.Second))
 			return

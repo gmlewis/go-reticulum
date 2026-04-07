@@ -312,7 +312,7 @@ func Accept(packet *Packet, callback func(*Resource), startedCallback func(*Reso
 	l.incomingResources = append(l.incomingResources, r)
 	l.mu.Unlock()
 
-	Logf("Accepted resource advertisement for %x", LogDebug, false, r.hash)
+	r.link.logger.Debug("Accepted resource advertisement for %x", r.hash)
 
 	if startedCallback != nil {
 		go startedCallback(r)
@@ -320,7 +320,7 @@ func Accept(packet *Packet, callback func(*Resource), startedCallback func(*Reso
 
 	go func() {
 		if err := r.RequestNext(); err != nil {
-			Logf("Failed to request initial resource parts: %v", LogDebug, false, err)
+			r.link.logger.Debug("Failed to request initial resource parts: %v", err)
 		}
 	}()
 
@@ -757,16 +757,16 @@ func (r *Resource) ReceivePart(packet *Packet) error {
 	}
 
 	if !matched {
-		Logf("Received resource part with unmatched maphash for %x", LogDebug, false, r.hash)
+		r.link.logger.Debug("Received resource part with unmatched maphash for %x", r.hash)
 	}
 
 	if r.receivedCount == r.totalParts {
-		Logf("Received all %v resource parts for %x; assembling", LogDebug, false, r.totalParts, r.hash)
+		r.link.logger.Debug("Received all %v resource parts for %x; assembling", r.totalParts, r.hash)
 		go r.Assemble()
 	} else {
 		go func() {
 			if err := r.RequestNext(); err != nil {
-				Logf("Failed to request next resource parts: %v", LogDebug, false, err)
+				r.link.logger.Debug("Failed to request next resource parts: %v", err)
 			}
 		}()
 	}
@@ -794,7 +794,7 @@ func (r *Resource) Assemble() {
 	if r.encrypted {
 		plaintext, err := r.link.Decrypt(assembled)
 		if err != nil {
-			Logf("Failed to decrypt assembled resource %x: %v", LogDebug, false, r.hash, err)
+			r.link.logger.Debug("Failed to decrypt assembled resource %x: %v", r.hash, err)
 			r.status = ResourceStatusFailed
 			return
 		}
@@ -802,7 +802,7 @@ func (r *Resource) Assemble() {
 	}
 
 	if len(assembled) < ResourceRandomHashSize {
-		Logf("Assembled resource %x too small to contain random hash", LogDebug, false, r.hash)
+		r.link.logger.Debug("Assembled resource %x too small to contain random hash", r.hash)
 		r.status = ResourceStatusCorrupt
 		return
 	}
@@ -817,7 +817,7 @@ func (r *Resource) Assemble() {
 			packedMetadata := rawPayload[3 : 3+metadataSize]
 			unpacked, err := msgpack.Unpack(packedMetadata)
 			if err != nil {
-				Logf("Failed to unpack metadata: %v", LogDebug, false, err)
+				r.link.logger.Debug("Failed to unpack metadata: %v", err)
 			} else {
 				if m, ok := unpacked.(map[any]any); ok {
 					r.metadata = make(map[string][]byte)
@@ -837,7 +837,7 @@ func (r *Resource) Assemble() {
 	if r.compressed {
 		decompressed, err := DecompressBzip2(payload)
 		if err != nil {
-			Logf("Failed to decompress assembled resource %x: %v", LogDebug, false, r.hash, err)
+			r.link.logger.Debug("Failed to decompress assembled resource %x: %v", r.hash, err)
 			r.status = ResourceStatusFailed
 			return
 		}
@@ -845,7 +845,7 @@ func (r *Resource) Assemble() {
 	}
 	calculatedHash := FullHash(append(copyBytes(payload), r.randomHash...))
 	if !bytes.Equal(calculatedHash, r.hash) {
-		Logf("Assembled resource %x failed payload hash validation", LogDebug, false, r.hash)
+		r.link.logger.Debug("Assembled resource %x failed payload hash validation", r.hash)
 		r.status = ResourceStatusCorrupt
 		return
 	}
@@ -853,9 +853,9 @@ func (r *Resource) Assemble() {
 	r.data = copyBytes(payload)
 	r.status = ResourceStatusComplete
 	if err := r.prove(); err != nil {
-		Logf("Failed to send resource proof for %x: %v", LogDebug, false, r.hash, err)
+		r.link.logger.Debug("Failed to send resource proof for %x: %v", r.hash, err)
 	} else {
-		Logf("Sent resource proof for %x", LogDebug, false, r.hash)
+		r.link.logger.Debug("Sent resource proof for %x", r.hash)
 	}
 	if r.callback != nil {
 		go r.callback(r)

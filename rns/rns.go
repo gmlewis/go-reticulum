@@ -130,6 +130,7 @@ func (r *Reticulum) Close() error {
 
 // NewReticulum initializes a new Reticulum stack with a specific transport system.
 func NewReticulum(ts Transport, configDir string) (*Reticulum, error) {
+	logger := NewLogger()
 	return NewReticulumWithLogger(ts, configDir, logger)
 }
 
@@ -176,12 +177,12 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger) (*Re
 
 	configPath := filepath.Join(configDir, "config")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		Log("Could not load config file, creating default configuration file...", LogNotice, false)
+		r.logger.Notice("Could not load config file, creating default configuration file...")
 		// Create default config
 		if err := r.createDefaultConfig(configPath); err != nil {
 			return nil, err
 		}
-		Logf("Default config file created. Make any necessary changes in %v and restart Reticulum if needed.", LogNotice, false, configPath)
+		r.logger.Notice("Default config file created. Make any necessary changes in %v and restart Reticulum if needed.", configPath)
 	}
 
 	cfg, err := LoadConfig(configPath)
@@ -206,7 +207,7 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger) (*Re
 	r.startLocalInterface()
 	if err := r.startRPCListener(); err != nil {
 		if cerr := r.Close(); cerr != nil {
-			Logf("Warning: Could not close Reticulum properly after initialization failure: %v", LogWarning, false, cerr)
+			r.logger.Warning("Could not close Reticulum properly after initialization failure: %v", cerr)
 		}
 		return nil, err
 	}
@@ -217,7 +218,7 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger) (*Re
 		// Initialize interfaces from config
 		if err := r.initInterfaces(); err != nil {
 			if cerr := r.Close(); cerr != nil {
-				Logf("Warning: Could not close Reticulum properly after initialization failure: %v", LogWarning, false, cerr)
+				r.logger.Warning("Could not close Reticulum properly after initialization failure: %v", cerr)
 			}
 			return nil, err
 		}
@@ -242,7 +243,7 @@ func (r *Reticulum) applyConfig() error {
 		if lvlStr, ok := logSection.GetProperty("loglevel"); ok {
 			var lvl int
 			if _, err := fmt.Sscanf(lvlStr, "%v", &lvl); err != nil {
-				Logf("Invalid loglevel value %q in config: %v", LogWarning, false, lvlStr, err)
+				r.logger.Warning("Invalid loglevel value %q in config: %v", lvlStr, err)
 			} else {
 				if r.logger != nil {
 					r.logger.SetLogLevel(lvl)
@@ -277,7 +278,7 @@ func (r *Reticulum) applyConfig() error {
 				if key, err := hex.DecodeString(v); err == nil {
 					r.rpcKey = key
 				} else {
-					Log("Invalid shared instance RPC key specified, falling back to default key", LogError, false)
+					r.logger.Error("Invalid shared instance RPC key specified, falling back to default key")
 				}
 			}
 		}
@@ -447,13 +448,13 @@ func (r *Reticulum) initNetworkIdentity() error {
 		return fmt.Errorf("could not expand network identity path %q: %w", r.networkIdentityPath, err)
 	}
 
-	id, err := FromFile(identityPath)
+	id, err := FromFile(identityPath, r.logger)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("could not load network identity from %q: %w", identityPath, err)
 		}
 
-		id, err = NewIdentity(true)
+		id, err = NewIdentity(true, r.logger)
 		if err != nil {
 			return fmt.Errorf("could not create network identity for %q: %w", identityPath, err)
 		}
@@ -463,9 +464,9 @@ func (r *Reticulum) initNetworkIdentity() error {
 		if err := id.ToFile(identityPath); err != nil {
 			return fmt.Errorf("could not persist network identity to %q: %w", identityPath, err)
 		}
-		Logf("Network identity generated and persisted to %v", LogVerbose, false, identityPath)
+		r.logger.Verbose("Network identity generated and persisted to %v", identityPath)
 	} else {
-		Logf("Network identity loaded from %v", LogVerbose, false, identityPath)
+		r.logger.Verbose("Network identity loaded from %v", identityPath)
 	}
 
 	r.networkIdentity = id
@@ -538,7 +539,7 @@ func (r *Reticulum) startLocalInterface() {
 	}
 	if err == nil {
 		if detachErr := client.Detach(); detachErr != nil {
-			Logf("Failed to detach inactive shared-instance client: %v", LogError, false, detachErr)
+			r.logger.Error("Failed to detach inactive shared-instance client: %v", detachErr)
 		}
 		r.isSharedInstance = false
 		r.isStandaloneInstance = true
@@ -546,7 +547,7 @@ func (r *Reticulum) startLocalInterface() {
 		return
 	}
 
-	Logf("Local shared instance appears to be running, but it could not be connected: %v", LogError, false, err)
+	r.logger.Error("Local shared instance appears to be running, but it could not be connected: %v", err)
 	r.isSharedInstance = false
 	r.isStandaloneInstance = true
 	r.isConnectedToSharedInstance = false
@@ -636,12 +637,12 @@ func (r *Reticulum) initInterfaces() error {
 				r.transport.RegisterInterface(peer)
 			})
 			if err != nil {
-				Logf("Failed to initialize Auto interface %v: %v", LogError, false, sub.Name, err)
+				r.logger.Error("Failed to initialize Auto interface %v: %v", sub.Name, err)
 				continue
 			}
 			applyIFACConfig(iface, ifacConfig)
 			r.transport.RegisterInterface(iface)
-			Logf("Started Auto interface %v", LogInfo, false, sub.Name)
+			r.logger.Info("Started Auto interface %v", sub.Name)
 
 		case "UDPInterface":
 			// Parse UDP interface properties
@@ -651,14 +652,14 @@ func (r *Reticulum) initInterfaces() error {
 			}
 			var listenPort int
 			if _, err := fmt.Sscanf(sub.Properties["listen_port"], "%v", &listenPort); err != nil {
-				Logf("Invalid listen_port for UDP interface %v: %v", LogWarning, false, sub.Name, err)
+				r.logger.Warning("Invalid listen_port for UDP interface %v: %v", sub.Name, err)
 				continue
 			}
 
 			forwardIP, _ := sub.GetProperty("forward_ip")
 			var forwardPort int
 			if _, err := fmt.Sscanf(sub.Properties["forward_port"], "%v", &forwardPort); err != nil {
-				Logf("Invalid forward_port for UDP interface %v: %v", LogWarning, false, sub.Name, err)
+				r.logger.Warning("Invalid forward_port for UDP interface %v: %v", sub.Name, err)
 				continue
 			}
 
@@ -669,18 +670,18 @@ func (r *Reticulum) initInterfaces() error {
 
 			iface, err := interfaces.NewUDPInterface(sub.Name, listenIP, listenPort, forwardIP, forwardPort, handler)
 			if err != nil {
-				Logf("Failed to initialize UDP interface %v: %v", LogError, false, sub.Name, err)
+				r.logger.Error("Failed to initialize UDP interface %v: %v", sub.Name, err)
 				continue
 			}
 			applyIFACConfig(iface, ifacConfig)
 			r.transport.RegisterInterface(iface)
-			Logf("Started UDP interface %v", LogInfo, false, sub.Name)
+			r.logger.Info("Started UDP interface %v", sub.Name)
 
 		case "TCPClientInterface":
 			targetHost, _ := sub.GetProperty("target_host")
 			var targetPort int
 			if _, err := fmt.Sscanf(sub.Properties["target_port"], "%v", &targetPort); err != nil {
-				Logf("Invalid target_port for TCP client interface %v: %v", LogWarning, false, sub.Name, err)
+				r.logger.Warning("Invalid target_port for TCP client interface %v: %v", sub.Name, err)
 				continue
 			}
 
@@ -690,12 +691,12 @@ func (r *Reticulum) initInterfaces() error {
 
 			iface, err := interfaces.NewTCPClientInterface(sub.Name, targetHost, targetPort, false, handler)
 			if err != nil {
-				Logf("Failed to initialize TCP client interface %v: %v", LogError, false, sub.Name, err)
+				r.logger.Error("Failed to initialize TCP client interface %v: %v", sub.Name, err)
 				continue
 			}
 			applyIFACConfig(iface, ifacConfig)
 			r.transport.RegisterInterface(iface)
-			Logf("Started TCP client interface %v to %v:%v", LogInfo, false, sub.Name, targetHost, targetPort)
+			r.logger.Info("Started TCP client interface %v to %v:%v", sub.Name, targetHost, targetPort)
 
 		case "TCPServerInterface":
 			listenIP, _ := sub.GetProperty("listen_ip")
@@ -704,7 +705,7 @@ func (r *Reticulum) initInterfaces() error {
 			}
 			var listenPort int
 			if _, err := fmt.Sscanf(sub.Properties["listen_port"], "%v", &listenPort); err != nil {
-				Logf("Invalid listen_port for TCP server interface %v: %v", LogWarning, false, sub.Name, err)
+				r.logger.Warning("Invalid listen_port for TCP server interface %v: %v", sub.Name, err)
 				continue
 			}
 
@@ -719,12 +720,12 @@ func (r *Reticulum) initInterfaces() error {
 
 			iface, err := interfaces.NewTCPServerInterface(sub.Name, listenIP, listenPort, handler, onConnect)
 			if err != nil {
-				Logf("Failed to initialize TCP server interface %v: %v", LogError, false, sub.Name, err)
+				r.logger.Error("Failed to initialize TCP server interface %v: %v", sub.Name, err)
 				continue
 			}
 			applyIFACConfig(iface, ifacConfig)
 			r.transport.RegisterInterface(iface)
-			Logf("Started TCP server interface %v on %v:%v", LogInfo, false, sub.Name, listenIP, listenPort)
+			r.logger.Info("Started TCP server interface %v on %v:%v", sub.Name, listenIP, listenPort)
 
 		case "I2PInterface":
 			handler := func(data []byte, iface interfaces.Interface) {
@@ -759,7 +760,7 @@ func (r *Reticulum) initInterfaces() error {
 				}
 
 				if listenPort <= 0 {
-					Logf("Failed to initialize I2P interface %v: connectable requires bind_port/listen_port", LogError, false, sub.Name)
+					r.logger.Error("Failed to initialize I2P interface %v: connectable requires bind_port/listen_port", sub.Name)
 				} else {
 					onConnect := func(iface interfaces.Interface) {
 						applyIFACConfig(iface, ifacConfig)
@@ -768,12 +769,12 @@ func (r *Reticulum) initInterfaces() error {
 
 					iface, err := interfaces.NewI2PInterface(sub.Name, listenIP, listenPort, handler, onConnect)
 					if err != nil {
-						Logf("Failed to initialize I2P interface %v: %v", LogError, false, sub.Name, err)
+						r.logger.Error("Failed to initialize I2P interface %v: %v", sub.Name, err)
 					} else {
 						applyIFACConfig(iface, ifacConfig)
 						r.transport.RegisterInterface(iface)
 						registeredAny = true
-						Logf("Started I2P interface %v on %v:%v", LogInfo, false, sub.Name, listenIP, listenPort)
+						r.logger.Info("Started I2P interface %v on %v:%v", sub.Name, listenIP, listenPort)
 					}
 				}
 			}
@@ -798,31 +799,31 @@ func (r *Reticulum) initInterfaces() error {
 
 				host, portText, ok := strings.Cut(peer, ":")
 				if !ok || strings.TrimSpace(host) == "" {
-					Logf("Failed to initialize I2P peer for %v: invalid peer target %q (expected host:port)", LogError, false, sub.Name, peer)
+					r.logger.Error("Failed to initialize I2P peer for %v: invalid peer target %q (expected host:port)", sub.Name, peer)
 					continue
 				}
 
 				port, err := strconv.Atoi(strings.TrimSpace(portText))
 				if err != nil || port <= 0 {
-					Logf("Failed to initialize I2P peer for %v: invalid peer port in %q", LogError, false, sub.Name, peer)
+					r.logger.Error("Failed to initialize I2P peer for %v: invalid peer port in %q", sub.Name, peer)
 					continue
 				}
 
 				peerName := fmt.Sprintf("%v to %v", sub.Name, peer)
 				iface, err := interfaces.NewI2PInterfacePeer(peerName, strings.TrimSpace(host), port, handler)
 				if err != nil {
-					Logf("Failed to initialize I2P peer interface %v: %v", LogError, false, peerName, err)
+					r.logger.Error("Failed to initialize I2P peer interface %v: %v", peerName, err)
 					continue
 				}
 
 				applyIFACConfig(iface, ifacConfig)
 				r.transport.RegisterInterface(iface)
 				registeredAny = true
-				Logf("Started I2P peer interface %v", LogInfo, false, peerName)
+				r.logger.Info("Started I2P peer interface %v", peerName)
 			}
 
 			if !registeredAny {
-				Logf("Failed to initialize I2P interface %v: no connectable endpoint or valid peers configured", LogError, false, sub.Name)
+				r.logger.Error("Failed to initialize I2P interface %v: no connectable endpoint or valid peers configured", sub.Name)
 			}
 
 		case "BackboneInterface":
@@ -843,7 +844,7 @@ func (r *Reticulum) initInterfaces() error {
 				}
 			}
 			if listenPort <= 0 {
-				Logf("Failed to initialize Backbone interface %v: missing listen_port/port", LogError, false, sub.Name)
+				r.logger.Error("Failed to initialize Backbone interface %v: missing listen_port/port", sub.Name)
 				continue
 			}
 
@@ -858,17 +859,17 @@ func (r *Reticulum) initInterfaces() error {
 
 			iface, err := interfaces.NewBackboneInterface(sub.Name, listenIP, listenPort, handler, onConnect)
 			if err != nil {
-				Logf("Failed to initialize Backbone interface %v: %v", LogError, false, sub.Name, err)
+				r.logger.Error("Failed to initialize Backbone interface %v: %v", sub.Name, err)
 				continue
 			}
 			applyIFACConfig(iface, ifacConfig)
 			r.transport.RegisterInterface(iface)
-			Logf("Started Backbone interface %v on %v:%v", LogInfo, false, sub.Name, listenIP, listenPort)
+			r.logger.Info("Started Backbone interface %v on %v:%v", sub.Name, listenIP, listenPort)
 
 		case "BackboneClientInterface":
 			targetHost, _ := sub.GetProperty("target_host")
 			if strings.TrimSpace(targetHost) == "" {
-				Logf("Failed to initialize Backbone client interface %v: missing target_host", LogError, false, sub.Name)
+				r.logger.Error("Failed to initialize Backbone client interface %v: missing target_host", sub.Name)
 				continue
 			}
 
@@ -879,7 +880,7 @@ func (r *Reticulum) initInterfaces() error {
 				}
 			}
 			if targetPort <= 0 {
-				Logf("Failed to initialize Backbone client interface %v: missing target_port", LogError, false, sub.Name)
+				r.logger.Error("Failed to initialize Backbone client interface %v: missing target_port", sub.Name)
 				continue
 			}
 
@@ -889,17 +890,17 @@ func (r *Reticulum) initInterfaces() error {
 
 			iface, err := interfaces.NewBackboneClientInterface(sub.Name, targetHost, targetPort, handler)
 			if err != nil {
-				Logf("Failed to initialize Backbone client interface %v: %v", LogError, false, sub.Name, err)
+				r.logger.Error("Failed to initialize Backbone client interface %v: %v", sub.Name, err)
 				continue
 			}
 			applyIFACConfig(iface, ifacConfig)
 			r.transport.RegisterInterface(iface)
-			Logf("Started Backbone client interface %v to %v:%v", LogInfo, false, sub.Name, targetHost, targetPort)
+			r.logger.Info("Started Backbone client interface %v to %v:%v", sub.Name, targetHost, targetPort)
 
 		case "KISSInterface":
 			port, _ := sub.GetProperty("port")
 			if strings.TrimSpace(port) == "" {
-				Logf("Failed to initialize KISS interface %v: missing port", LogError, false, sub.Name)
+				r.logger.Error("Failed to initialize KISS interface %v: missing port", sub.Name)
 				continue
 			}
 
@@ -937,17 +938,17 @@ func (r *Reticulum) initInterfaces() error {
 
 			iface, err := interfaces.NewKISSInterface(sub.Name, port, speed, databits, stopbits, parity, handler)
 			if err != nil {
-				Logf("Failed to initialize KISS interface %v: %v", LogError, false, sub.Name, err)
+				r.logger.Error("Failed to initialize KISS interface %v: %v", sub.Name, err)
 				continue
 			}
 			applyIFACConfig(iface, ifacConfig)
 			r.transport.RegisterInterface(iface)
-			Logf("Started KISS interface %v on %v at %v bps", LogInfo, false, sub.Name, port, speed)
+			r.logger.Info("Started KISS interface %v on %v at %v bps", sub.Name, port, speed)
 
 		case "RNodeInterface":
 			port, _ := sub.GetProperty("port")
 			if strings.TrimSpace(port) == "" {
-				Logf("Failed to initialize RNode interface %v: missing port", LogError, false, sub.Name)
+				r.logger.Error("Failed to initialize RNode interface %v: missing port", sub.Name)
 				continue
 			}
 
@@ -965,27 +966,27 @@ func (r *Reticulum) initInterfaces() error {
 
 			frequency, ok := parseRequiredInt("frequency")
 			if !ok {
-				Logf("Failed to initialize RNode interface %v: missing/invalid frequency", LogError, false, sub.Name)
+				r.logger.Error("Failed to initialize RNode interface %v: missing/invalid frequency", sub.Name)
 				continue
 			}
 			bandwidth, ok := parseRequiredInt("bandwidth")
 			if !ok {
-				Logf("Failed to initialize RNode interface %v: missing/invalid bandwidth", LogError, false, sub.Name)
+				r.logger.Error("Failed to initialize RNode interface %v: missing/invalid bandwidth", sub.Name)
 				continue
 			}
 			txpower, ok := parseRequiredInt("txpower")
 			if !ok {
-				Logf("Failed to initialize RNode interface %v: missing/invalid txpower", LogError, false, sub.Name)
+				r.logger.Error("Failed to initialize RNode interface %v: missing/invalid txpower", sub.Name)
 				continue
 			}
 			spreadingFactor, ok := parseRequiredInt("spreadingfactor")
 			if !ok {
-				Logf("Failed to initialize RNode interface %v: missing/invalid spreadingfactor", LogError, false, sub.Name)
+				r.logger.Error("Failed to initialize RNode interface %v: missing/invalid spreadingfactor", sub.Name)
 				continue
 			}
 			codingRate, ok := parseRequiredInt("codingrate")
 			if !ok {
-				Logf("Failed to initialize RNode interface %v: missing/invalid codingrate", LogError, false, sub.Name)
+				r.logger.Error("Failed to initialize RNode interface %v: missing/invalid codingrate", sub.Name)
 				continue
 			}
 
@@ -1036,18 +1037,18 @@ func (r *Reticulum) initInterfaces() error {
 
 			iface, err := interfaces.NewRNodeInterface(sub.Name, port, speed, databits, stopbits, parity, frequency, bandwidth, txpower, spreadingFactor, codingRate, flowControl, idInterval, idCallsign, handler)
 			if err != nil {
-				Logf("Failed to initialize RNode interface %v: %v", LogError, false, sub.Name, err)
+				r.logger.Error("Failed to initialize RNode interface %v: %v", sub.Name, err)
 				continue
 			}
 
 			applyIFACConfig(iface, ifacConfig)
 			r.transport.RegisterInterface(iface)
-			Logf("Started RNode interface %v on %v", LogInfo, false, sub.Name, port)
+			r.logger.Info("Started RNode interface %v on %v", sub.Name, port)
 
 		case "RNodeMultiInterface":
 			port, _ := sub.GetProperty("port")
 			if strings.TrimSpace(port) == "" {
-				Logf("Failed to initialize RNodeMulti interface %v: missing port", LogError, false, sub.Name)
+				r.logger.Error("Failed to initialize RNodeMulti interface %v: missing port", sub.Name)
 				continue
 			}
 
@@ -1151,7 +1152,7 @@ func (r *Reticulum) initInterfaces() error {
 			}
 
 			if len(subCfgs) == 0 {
-				Logf("Failed to initialize RNodeMulti interface %v: no valid subinterfaces configured", LogError, false, sub.Name)
+				r.logger.Error("Failed to initialize RNodeMulti interface %v: no valid subinterfaces configured", sub.Name)
 				continue
 			}
 
@@ -1161,18 +1162,18 @@ func (r *Reticulum) initInterfaces() error {
 
 			iface, err := interfaces.NewRNodeMultiInterface(sub.Name, port, speed, databits, stopbits, parity, idInterval, idCallsign, subCfgs, handler)
 			if err != nil {
-				Logf("Failed to initialize RNodeMulti interface %v: %v", LogError, false, sub.Name, err)
+				r.logger.Error("Failed to initialize RNodeMulti interface %v: %v", sub.Name, err)
 				continue
 			}
 
 			applyIFACConfig(iface, ifacConfig)
 			r.transport.RegisterInterface(iface)
-			Logf("Started RNodeMulti interface %v on %v", LogInfo, false, sub.Name, port)
+			r.logger.Info("Started RNodeMulti interface %v on %v", sub.Name, port)
 
 		case "AX25KISSInterface":
 			port, _ := sub.GetProperty("port")
 			if strings.TrimSpace(port) == "" {
-				Logf("Failed to initialize AX.25 KISS interface %v: missing port", LogError, false, sub.Name)
+				r.logger.Error("Failed to initialize AX.25 KISS interface %v: missing port", sub.Name)
 				continue
 			}
 
@@ -1206,7 +1207,7 @@ func (r *Reticulum) initInterfaces() error {
 
 			callsign, _ := sub.GetProperty("callsign")
 			if strings.TrimSpace(callsign) == "" {
-				Logf("Failed to initialize AX.25 KISS interface %v: missing callsign", LogError, false, sub.Name)
+				r.logger.Error("Failed to initialize AX.25 KISS interface %v: missing callsign", sub.Name)
 				continue
 			}
 
@@ -1256,17 +1257,17 @@ func (r *Reticulum) initInterfaces() error {
 
 			iface, err := interfaces.NewAX25KISSInterface(sub.Name, port, speed, databits, stopbits, parity, callsign, ssid, preamble, txTail, persistence, slotTime, flowControl, handler)
 			if err != nil {
-				Logf("Failed to initialize AX.25 KISS interface %v: %v", LogError, false, sub.Name, err)
+				r.logger.Error("Failed to initialize AX.25 KISS interface %v: %v", sub.Name, err)
 				continue
 			}
 			applyIFACConfig(iface, ifacConfig)
 			r.transport.RegisterInterface(iface)
-			Logf("Started AX.25 KISS interface %v on %v at %v bps", LogInfo, false, sub.Name, port, speed)
+			r.logger.Info("Started AX.25 KISS interface %v on %v at %v bps", sub.Name, port, speed)
 
 		case "PipeInterface":
 			command, _ := sub.GetProperty("command")
 			if strings.TrimSpace(command) == "" {
-				Logf("Failed to initialize Pipe interface %v: missing command", LogError, false, sub.Name)
+				r.logger.Error("Failed to initialize Pipe interface %v: missing command", sub.Name)
 				continue
 			}
 
@@ -1283,17 +1284,17 @@ func (r *Reticulum) initInterfaces() error {
 
 			iface, err := interfaces.NewPipeSubprocessInterface(sub.Name, command, respawnDelay, handler)
 			if err != nil {
-				Logf("Failed to initialize Pipe interface %v: %v", LogError, false, sub.Name, err)
+				r.logger.Error("Failed to initialize Pipe interface %v: %v", sub.Name, err)
 				continue
 			}
 			applyIFACConfig(iface, ifacConfig)
 			r.transport.RegisterInterface(iface)
-			Logf("Started Pipe interface %v", LogInfo, false, sub.Name)
+			r.logger.Info("Started Pipe interface %v", sub.Name)
 
 		case "WeaveInterface":
 			port, _ := sub.GetProperty("port")
 			if strings.TrimSpace(port) == "" {
-				Logf("Failed to initialize Weave interface %v: missing port", LogError, false, sub.Name)
+				r.logger.Error("Failed to initialize Weave interface %v: missing port", sub.Name)
 				continue
 			}
 
@@ -1310,18 +1311,18 @@ func (r *Reticulum) initInterfaces() error {
 
 			iface, err := interfaces.NewWeaveInterface(sub.Name, port, configuredBitrate, handler)
 			if err != nil {
-				Logf("Failed to initialize Weave interface %v: %v", LogError, false, sub.Name, err)
+				r.logger.Error("Failed to initialize Weave interface %v: %v", sub.Name, err)
 				continue
 			}
 
 			applyIFACConfig(iface, ifacConfig)
 			r.transport.RegisterInterface(iface)
-			Logf("Started Weave interface %v on %v", LogInfo, false, sub.Name, port)
+			r.logger.Info("Started Weave interface %v on %v", sub.Name, port)
 
 		case "SerialInterface":
 			port, _ := sub.GetProperty("port")
 			if strings.TrimSpace(port) == "" {
-				Logf("Failed to initialize Serial interface %v: missing port", LogError, false, sub.Name)
+				r.logger.Error("Failed to initialize Serial interface %v: missing port", sub.Name)
 				continue
 			}
 
@@ -1359,12 +1360,12 @@ func (r *Reticulum) initInterfaces() error {
 
 			iface, err := interfaces.NewSerialInterface(sub.Name, port, speed, databits, stopbits, parity, handler)
 			if err != nil {
-				Logf("Failed to initialize Serial interface %v: %v", LogError, false, sub.Name, err)
+				r.logger.Error("Failed to initialize Serial interface %v: %v", sub.Name, err)
 				continue
 			}
 			applyIFACConfig(iface, ifacConfig)
 			r.transport.RegisterInterface(iface)
-			Logf("Started Serial interface %v on %v at %v bps", LogInfo, false, sub.Name, port, speed)
+			r.logger.Info("Started Serial interface %v on %v at %v bps", sub.Name, port, speed)
 		}
 	}
 	return nil

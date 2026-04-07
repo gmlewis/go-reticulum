@@ -55,14 +55,14 @@ func (rt *runtimeT) run() {
 		logger.SetLogLevel(int(app.verbose) - int(app.quiet))
 	}
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(rt.logger)
 	ret, err := rns.NewReticulumWithLogger(ts, app.configDir, logger)
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v", err)
 	}
 	defer func() {
 		if err := ret.Close(); err != nil {
-			logger.Log(fmt.Sprintf("Warning: Could not close Reticulum properly: %v", err), rns.LogWarning, false)
+			logger.Warning("Could not close Reticulum properly: %v", err)
 		}
 	}()
 	// TODO: finish this

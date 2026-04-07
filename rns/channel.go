@@ -107,6 +107,7 @@ func (env *Envelope) Unpack(factories map[uint16]func() Message) error {
 
 // Channel provides a robust, reliable, and sequenced delivery mechanism for discrete messages over a Link.
 type Channel struct {
+	logger           Logger
 	outlet           ChannelOutlet
 	mu               sync.RWMutex
 	stopCh           chan struct{}
@@ -416,7 +417,7 @@ func (c *Channel) packetTimeout(pr *PacketReceipt) {
 
 	env := c.txRing[envIdx]
 	if env.Tries >= c.maxTries {
-		Logf("Retry count exceeded on %v, shutting down channel.", LogError, false, c)
+		c.logger.Error("Retry count exceeded on %v, shutting down channel.", c)
 		c.mu.Unlock()
 		c.Shutdown()
 		return
@@ -445,7 +446,7 @@ func (c *Channel) packetTimeout(pr *PacketReceipt) {
 	// Resend
 	resentPacket, err := c.outlet.Resend(packet)
 	if err != nil {
-		Logf("Failed to resend packet: %v", LogError, false, err)
+		c.logger.Error("Failed to resend packet: %v", err)
 		return
 	}
 
@@ -496,7 +497,7 @@ func (c *Channel) Receive(raw []byte) {
 	c.mu.Lock()
 	if err := env.Unpack(c.messageFactories); err != nil {
 		c.mu.Unlock()
-		Logf("Failed to unpack channel envelope: %v", LogDebug, false, err)
+		c.logger.Debug("Failed to unpack channel envelope: %v", err)
 		return
 	}
 
@@ -506,19 +507,19 @@ func (c *Channel) Receive(raw []byte) {
 		if windowOverflow < c.nextRXSequence {
 			if env.Sequence > windowOverflow {
 				c.mu.Unlock()
-				Logf("Invalid packet sequence %v received on channel", LogExtreme, false, env.Sequence)
+				c.logger.Extreme("Invalid packet sequence %v received on channel", env.Sequence)
 				return
 			}
 		} else {
 			c.mu.Unlock()
-			Logf("Invalid packet sequence %v received on channel", LogExtreme, false, env.Sequence)
+			c.logger.Extreme("Invalid packet sequence %v received on channel", env.Sequence)
 			return
 		}
 	}
 
 	if !c.emplaceEnvelope(env, &c.rxRing) {
 		c.mu.Unlock()
-		Logf("Duplicate message %v received on channel", LogExtreme, false, env.Sequence)
+		c.logger.Extreme("Duplicate message %v received on channel", env.Sequence)
 		return
 	}
 

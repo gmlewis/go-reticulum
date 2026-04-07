@@ -35,7 +35,7 @@ func (r *Reticulum) startRPCListener() error {
 
 	listener, err := r.makeRPCListener()
 	if err != nil {
-		Logf("Could not start RPC listener: %v", LogError, false, err)
+		r.logger.Error("Could not start RPC listener: %v", err)
 		return err
 	}
 	r.mu.Lock()
@@ -92,7 +92,7 @@ func (r *Reticulum) rpcLoop() {
 func (r *Reticulum) handleRPCConn(conn net.Conn) {
 	defer func() {
 		if err := conn.Close(); err != nil {
-			Logf("Failed closing RPC connection: %v", LogDebug, false, err)
+			r.logger.Debug("Failed closing RPC connection: %v", err)
 		}
 	}()
 
@@ -130,7 +130,7 @@ func (r *Reticulum) handleRPCConn(conn net.Conn) {
 		req, err := readRPCFrame(conn)
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
-				Logf("An error occurred while handling RPC call from local client: %v", LogError, false, err)
+				r.logger.Error("An error occurred while handling RPC call from local client: %v", err)
 			}
 			return
 		}
@@ -903,7 +903,7 @@ func (r *Reticulum) callRPCOnce(req any) (any, error) {
 	}
 	defer func() {
 		if closeErr := conn.Close(); closeErr != nil {
-			Logf("Failed closing RPC client connection: %v", LogDebug, false, closeErr)
+			r.logger.Debug("Failed closing RPC client connection: %v", closeErr)
 		}
 	}()
 

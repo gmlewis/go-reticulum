@@ -204,7 +204,7 @@ func TestAnnouncePacketParity(t *testing.T) {
 	}
 
 	id := mustTestNewIdentity(t, true)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "parityapp", "aspect1")
 
 	appData := []byte("parity data")
@@ -290,7 +290,7 @@ func TestLinkProofPacketParity(t *testing.T) {
 	}
 
 	id := mustTestNewIdentity(t, true)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "parityapp")
 	l := mustTestNewLink(t, ts, dest)
 	l.initiator = false // Set as receiver side
@@ -347,7 +347,7 @@ func TestLinkRequestPacketParity(t *testing.T) {
 	}
 
 	id := mustTestNewIdentity(t, true)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "parityapp")
 	l := mustTestNewLink(t, ts, dest)
 

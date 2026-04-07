@@ -22,6 +22,7 @@ const (
 
 // Identity encapsulates the fundamental cryptographic material representing a unique node or user within the Reticulum network.
 type Identity struct {
+	logger *Logger
 	prv    *crypto.X25519PrivateKey
 	pub    *crypto.X25519PublicKey
 	sigPrv *crypto.Ed25519PrivateKey
@@ -33,8 +34,8 @@ type Identity struct {
 }
 
 // NewIdentity allocates a new structural container, optionally auto-generating pristine cryptographic keys.
-func NewIdentity(createKeys bool) (*Identity, error) {
-	id := &Identity{}
+func NewIdentity(createKeys bool, logger *Logger) (*Identity, error) {
+	id := &Identity{logger: logger}
 	if createKeys {
 		if err := id.CreateKeys(); err != nil {
 			return nil, err
@@ -88,8 +89,8 @@ func (id *Identity) GetPrivateKey() []byte {
 // FromBytes creates a new Identity from private key bytes, matching
 // Python's Identity.from_bytes. It returns an error if the bytes
 // cannot be loaded as a valid private key.
-func FromBytes(prvBytes []byte) (*Identity, error) {
-	id, err := NewIdentity(false)
+func FromBytes(prvBytes []byte, logger *Logger) (*Identity, error) {
+	id, err := NewIdentity(false, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -183,6 +184,7 @@ func ValidateAnnounce(ts Transport, packet *Packet) bool {
 	if packet.PacketType != PacketAnnounce {
 		return false
 	}
+	logger := ts.GetLogger()
 
 	keySize := IdentityKeySize / 8
 	nameHashLen := NameHashLength / 8
@@ -200,8 +202,8 @@ func ValidateAnnounce(ts Transport, packet *Packet) bool {
 	randomHash = packet.Data[keySize+nameHashLen : keySize+nameHashLen+10]
 
 	offset := keySize + nameHashLen + 10
-	Logf("ValidateAnnounce: Raw[:120]=%x", LogDebug, false, packet.Raw[:120])
-	Logf("ValidateAnnounce: Data size=%v, offset=%v, context_flag=%v", LogDebug, false, len(packet.Data), offset, packet.ContextFlag)
+	logger.Debug("ValidateAnnounce: Raw[:120]=%x", packet.Raw[:120])
+	logger.Debug("ValidateAnnounce: Data size=%v, offset=%v, context_flag=%v", len(packet.Data), offset, packet.ContextFlag)
 	if packet.ContextFlag == FlagSet {
 		ratchetsize := 32 // X25519 public key size
 		ratchet = packet.Data[offset : offset+ratchetsize]
@@ -224,7 +226,7 @@ func ValidateAnnounce(ts Transport, packet *Packet) bool {
 	signedData = append(signedData, ratchet...)
 	signedData = append(signedData, appData...)
 
-	id, err := NewIdentity(false)
+	id, err := NewIdentity(false, logger)
 	if err != nil {
 		return false
 	}
@@ -233,7 +235,7 @@ func ValidateAnnounce(ts Transport, packet *Packet) bool {
 	}
 
 	if !id.Verify(signature, signedData) {
-		Log("Announce validation failed: signature mismatch", LogDebug, false)
+		logger.Debug("Announce validation failed: signature mismatch")
 		return false
 	}
 
@@ -245,14 +247,14 @@ func ValidateAnnounce(ts Transport, packet *Packet) bool {
 	expectedHash := FullHash(hashMaterial)[:TruncatedHashLength/8]
 
 	if string(packet.DestinationHash) != string(expectedHash) {
-		Logf("Announce validation failed: hash mismatch. Expected %x, got %x", LogDebug, false, expectedHash, packet.DestinationHash)
+		logger.Debug("Announce validation failed: hash mismatch. Expected %x, got %x", expectedHash, packet.DestinationHash)
 		return false
 	}
 
 	if ts != nil {
 		ts.Remember(packet.PacketHash, packet.DestinationHash, publicKey, appData)
 		if len(ratchet) > 0 {
-			Logf("Learned ratchet %x for %x", LogDebug, false, ratchet, packet.DestinationHash)
+			logger.Debug("Learned ratchet %x for %x", ratchet, packet.DestinationHash)
 			ts.SetRatchet(packet.DestinationHash, ratchet)
 		}
 	}
@@ -282,7 +284,7 @@ func (id *Identity) Encrypt(plaintext []byte, ratchetPubBytes []byte) ([]byte, e
 		return nil, err
 	}
 	ephemeralPubBytes := ephemeralKey.PublicKey().PublicBytes()
-	Logf("Encrypt: Ephemeral Pub: %x", LogDebug, false, ephemeralPubBytes)
+	id.logger.Debug("Encrypt: Ephemeral Pub: %x", ephemeralPubBytes)
 
 	sharedKey, err := ephemeralKey.Exchange(targetPub)
 	if err != nil {
@@ -293,7 +295,7 @@ func (id *Identity) Encrypt(plaintext []byte, ratchetPubBytes []byte) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	Logf("Encrypt: Derived Key for %x: %x (salt: %x, shared: %x)", LogDebug, false, id.Hash, derivedKey, id.Hash, sharedKey)
+	id.logger.Debug("Encrypt: Derived Key for %x: %x (salt: %x, shared: %x)", id.Hash, derivedKey, id.Hash, sharedKey)
 
 	token, err := crypto.NewToken(derivedKey)
 	if err != nil {
@@ -338,7 +340,7 @@ func (id *Identity) Decrypt(ciphertext []byte, ratchets []*crypto.X25519PrivateK
 		if err != nil {
 			continue
 		}
-		Logf("Decrypt: Trial Derived Key for %x: %x (salt: %x)", LogDebug, false, id.Hash, derivedKey, id.Hash)
+		id.logger.Debug("Decrypt: Trial Derived Key for %x: %x (salt: %x)", id.Hash, derivedKey, id.Hash)
 
 		token, err := crypto.NewToken(derivedKey)
 		if err != nil {
@@ -378,12 +380,12 @@ func (id *Identity) Decrypt(ciphertext []byte, ratchets []*crypto.X25519PrivateK
 }
 
 // FromFile instantiates a fully operational Identity context strictly by loading raw material from disk.
-func FromFile(path string) (*Identity, error) {
+func FromFile(path string, logger *Logger) (*Identity, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	id, err := NewIdentity(false)
+	id, err := NewIdentity(false, logger)
 	if err != nil {
 		return nil, err
 	}

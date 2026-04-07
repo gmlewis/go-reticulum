@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 )
@@ -40,7 +41,7 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	defer func() {
 		if err := f.Close(); err != nil {
-			Logf("Warning: Could not close config file %v properly: %v", LogWarning, false, path, err)
+			log.Printf("Warning: Could not close config file %v properly: %v", path, err)
 		}
 	}()
 	return ParseConfig(f)

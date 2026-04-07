@@ -49,7 +49,7 @@ func TestJobs_RecoverFromPanic(t *testing.T) {
 func TestTick(t *testing.T) {
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
-	identity, err := rns.NewIdentity(true)
+	identity, err := rns.NewIdentity(true, nil)
 	mustTest(t, err)
 
 	// Mock clock
@@ -57,7 +57,7 @@ func TestTick(t *testing.T) {
 	peerInterval := 1 // 1 second for test
 	nodeInterval := 1 // 1 second for test
 	c := &clientT{
-		ts: rns.NewTransportSystem(),
+		ts: rns.NewTransportSystem(nil),
 		ac: &activeConfig{
 			PeerAnnounceInterval: &peerInterval,
 			NodeAnnounceInterval: &nodeInterval,

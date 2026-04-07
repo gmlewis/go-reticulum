@@ -43,17 +43,18 @@ func main() {
 	}
 
 	logger := rns.NewLogger()
-	ret, err := programSetup(logger, app.configDir, app.verbose, app.quiet, app.service)
+	app.logger = logger
+	ret, err := app.programSetup()
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
 	defer func() {
 		if err := ret.Close(); err != nil {
-			logger.Log(fmt.Sprintf("Warning: Could not close Reticulum properly: %v", err), rns.LogWarning, false)
+			logger.Warning("Could not close Reticulum properly: %v", err)
 		}
 	}()
 
-	logger.Log(fmt.Sprintf("Started gornsd version %v", rns.VERSION), rns.LogNotice, false)
+	logger.Notice("Started gornsd version %v", rns.VERSION)
 
 	if app.interactive {
 		waitForInteractiveShell()

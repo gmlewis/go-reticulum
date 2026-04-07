@@ -907,7 +907,7 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 
 	logger := NewLogger()
 	logger.SetLogLevel(LogDebug)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(logger)
 	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
@@ -1063,7 +1063,7 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 	}
 
 	logger := mustTestLogger(t, LogDebug)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(logger)
 	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
@@ -1155,7 +1155,7 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 	}
 
 	logger := mustTestLogger(t, LogDebug)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(logger)
 	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
@@ -1180,7 +1180,7 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 	go func() {
 		for {
 			if err := dest.Announce(nil); err != nil {
-				Logf("failed to announce: %v", LogError, false, err)
+				logger.Error("failed to announce: %v", err)
 			}
 			time.Sleep(500 * time.Millisecond)
 		}
@@ -1259,7 +1259,7 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 	}
 
 	logger := mustTestLogger(t, LogDebug)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(logger)
 	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
@@ -1275,7 +1275,7 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 	go func() {
 		for {
 			if err := dest.Announce(nil); err != nil {
-				Logf("failed to announce: %v", LogError, false, err)
+				logger.Error("failed to announce: %v", err)
 			}
 			time.Sleep(500 * time.Millisecond)
 		}
@@ -1379,7 +1379,7 @@ func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 	}
 
 	logger := mustTestLogger(t, LogDebug)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(logger)
 	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
@@ -1445,7 +1445,7 @@ func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
 	}
 
 	logger := mustTestLogger(t, LogDebug)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(logger)
 	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
@@ -1531,7 +1531,7 @@ func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 	}
 
 	logger := mustTestLogger(t, LogDebug)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(logger)
 	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
@@ -1654,7 +1654,7 @@ enable_transport = False
 	}
 
 	logger := mustTestLogger(t, LogDebug)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(logger)
 	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
@@ -1741,7 +1741,7 @@ enable_transport = False
 	}
 
 	logger := mustTestLogger(t, LogDebug)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(logger)
 	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
@@ -1897,7 +1897,7 @@ enable_transport = False
 	}
 
 	logger := mustTestLogger(t, LogDebug)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(logger)
 	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
@@ -2080,7 +2080,7 @@ func TestIntegratedRelayedPathResponsePropagationPythonRelayUDP(t *testing.T) {
 	// TODO: Investigate this.
 	remoteDest := mustTestNewDestination(t, nil, remoteID, DestinationIn, DestinationSingle, "relay", "python_relay_target")
 
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	pathReqDest := mustTestNewDestination(t, ts, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 
 	tag := bytes.Repeat([]byte{0xA5}, TruncatedHashLength/8)
@@ -2374,7 +2374,7 @@ func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 	}
 
 	logger := mustTestLogger(t, LogDebug)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(logger)
 	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
@@ -2395,7 +2395,7 @@ func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 			select {
 			case <-ticker.C:
 				if err := dest.Announce(nil); err != nil {
-					Logf("failed to announce: %v", LogError, false, err)
+					logger.Error("failed to announce: %v", err)
 				}
 			case <-stopAnnounce:
 				return
@@ -2556,7 +2556,7 @@ enable_transport = False
 	}
 
 	logger := mustTestLogger(t, LogDebug)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(logger)
 	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
@@ -2728,7 +2728,7 @@ waitPacket:
 		t.Fatalf("failed unpacking emitted path request packet: %v", err)
 	}
 
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	pathReqDest := mustTestNewDestination(t, ts, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 
 	if packet.PacketType != PacketData {
@@ -2878,7 +2878,7 @@ relayReady:
 		t.Fatalf("failed unpacking forwarded inbound path request: %v", err)
 	}
 
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	pathReqDest := mustTestNewDestination(t, ts, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 
 	if packet.PacketType != PacketData {

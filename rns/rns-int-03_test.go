@@ -290,7 +290,7 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 
 			logger := NewLogger()
 			logger.SetLogLevel(LogDebug)
-			ts := NewTransportSystem()
+			ts := NewTransportSystem(logger)
 			r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 			defer closeReticulum(t, r)
 
@@ -594,7 +594,7 @@ func TestIntegratedResponseResourceCompressionPolicyPythonToGo(t *testing.T) {
 			}
 
 			logger := mustTestLogger(t, LogDebug)
-			ts := NewTransportSystem()
+			ts := NewTransportSystem(logger)
 			r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 			defer closeReticulum(t, r)
 

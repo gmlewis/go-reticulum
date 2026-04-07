@@ -57,15 +57,14 @@ const (
 
 var nonWordRE = regexp.MustCompile(`\W+`)
 
-func configureLogger(verbose, quiet bool) *rns.Logger {
-	logger := rns.NewLogger()
+func (rt *runtimeT) configureLogger(verbose, quiet bool) {
+	rt.logger = rns.NewLogger()
 	if verbose {
-		logger.SetLogLevel(rns.LogVerbose)
+		rt.logger.SetLogLevel(rns.LogVerbose)
 	}
 	if quiet {
-		logger.SetLogLevel(rns.LogWarning)
+		rt.logger.SetLogLevel(rns.LogWarning)
 	}
-	return logger
 }
 
 type runtimeT struct {
@@ -74,7 +73,9 @@ type runtimeT struct {
 }
 
 func newRuntime(opts options) *runtimeT {
-	return &runtimeT{opts: opts, logger: configureLogger(opts.verbose, opts.quiet)}
+	rt := &runtimeT{opts: opts}
+	rt.configureLogger(opts.verbose, opts.quiet)
+	return rt
 }
 
 func main() {
@@ -121,14 +122,14 @@ func main() {
 
 func (rt *runtimeT) printIdentity() error {
 	opts := rt.opts
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(rt.logger)
 	ret, err := rns.NewReticulum(ts, opts.configDir)
 	if err != nil {
 		return fmt.Errorf("could not initialize Reticulum: %w", err)
 	}
 	defer func() {
 		if err := ret.Close(); err != nil {
-			rt.logger.Log(fmt.Sprintf("Warning: Could not close Reticulum properly: %v", err), rns.LogWarning, false)
+			rt.logger.Warning("Could not close Reticulum properly: %v", err)
 		}
 	}()
 
@@ -137,7 +138,7 @@ func (rt *runtimeT) printIdentity() error {
 		return err
 	}
 
-	id, err := loadOrCreateIdentity(identityPath)
+	id, err := rt.loadOrCreateIdentity(identityPath)
 	if err != nil {
 		return err
 	}
@@ -183,17 +184,14 @@ func resolveIdentityPath(opts options) (string, error) {
 func (rt *runtimeT) doListen() error {
 	opts := rt.opts
 	logger := rt.logger
-	if logger == nil {
-		logger = rns.NewLogger()
-	}
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(logger)
 	ret, err := rns.NewReticulum(ts, opts.configDir)
 	if err != nil {
 		return fmt.Errorf("could not initialize Reticulum: %w", err)
 	}
 	defer func() {
 		if err := ret.Close(); err != nil {
-			rt.logger.Log(fmt.Sprintf("Warning: Could not close Reticulum properly: %v", err), rns.LogWarning, false)
+			rt.logger.Warning("Could not close Reticulum properly: %v", err)
 		}
 	}()
 
@@ -202,7 +200,7 @@ func (rt *runtimeT) doListen() error {
 		return err
 	}
 
-	id, err := loadOrCreateIdentity(identityPath)
+	id, err := rt.loadOrCreateIdentity(identityPath)
 	if err != nil {
 		return err
 	}
@@ -212,18 +210,18 @@ func (rt *runtimeT) doListen() error {
 		return fmt.Errorf("could not create destination: %w", err)
 	}
 
-	allowMode, allowedList := buildAllowPolicy(logger, opts)
+	allowMode, allowedList := rt.buildAllowPolicy(opts)
 	destination.SetLinkEstablishedCallback(func(link *rns.Link) {
 		rt.wireListenerChannelSession(link, opts, allowedList)
 	})
 	destination.RegisterRequestHandler("command", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 		if !opts.noAuth && remoteIdentity == nil {
-			logger.Log("Rejected unauthenticated command request", rns.LogWarning, false)
+			rt.logger.Warning("Rejected unauthenticated command request")
 			return nil
 		}
 
 		if !opts.noAuth && remoteIdentity != nil && len(allowedList) > 0 && !identityAllowed(remoteIdentity.Hash, allowedList) {
-			logger.Log(fmt.Sprintf("Rejected unauthorized command request from %v", remoteIdentity.HexHash), rns.LogWarning, false)
+			rt.logger.Warning("Rejected unauthorized command request from %v", remoteIdentity.HexHash)
 			return nil
 		}
 
@@ -244,7 +242,7 @@ func (rt *runtimeT) doListen() error {
 
 	if opts.announceEvery >= 0 {
 		if err := destination.Announce(nil); err != nil {
-			logger.Log(fmt.Sprintf("Initial announce failed: %v", err), rns.LogWarning, false)
+			rt.logger.Warning("Initial announce failed: %v", err)
 		}
 	}
 
@@ -255,7 +253,7 @@ func (rt *runtimeT) doListen() error {
 			defer ticker.Stop()
 			for range ticker.C {
 				if err := destination.Announce(nil); err != nil {
-					logger.Log(fmt.Sprintf("Periodic announce failed: %v", err), rns.LogWarning, false)
+					rt.logger.Warning("Periodic announce failed: %v", err)
 				}
 			}
 		}()
@@ -266,17 +264,17 @@ func (rt *runtimeT) doListen() error {
 
 func (rt *runtimeT) doInitiate() (int, error) {
 	opts := rt.opts
-	ts := rns.NewTransportSystem()
 	if rt.logger == nil {
 		rt.logger = rns.NewLogger()
 	}
+	ts := rns.NewTransportSystem(rt.logger)
 	ret, err := rns.NewReticulumWithLogger(ts, opts.configDir, rt.logger)
 	if err != nil {
 		return 1, fmt.Errorf("could not initialize Reticulum: %w", err)
 	}
 	defer func() {
 		if err := ret.Close(); err != nil {
-			rt.logger.Log(fmt.Sprintf("Warning: Could not close Reticulum properly: %v", err), rns.LogWarning, false)
+			rt.logger.Warning("Could not close Reticulum properly: %v", err)
 		}
 	}()
 
@@ -285,7 +283,7 @@ func (rt *runtimeT) doInitiate() (int, error) {
 		return 1, err
 	}
 
-	id, err := loadOrCreateIdentity(identityPath)
+	id, err := rt.loadOrCreateIdentity(identityPath)
 	if err != nil {
 		return 1, err
 	}
@@ -408,10 +406,7 @@ func toBytes(value any) ([]byte, bool) {
 	}
 }
 
-func buildAllowPolicy(logger *rns.Logger, opts options) (int, [][]byte) {
-	if logger == nil {
-		logger = rns.NewLogger()
-	}
+func (rt *runtimeT) buildAllowPolicy(opts options) (int, [][]byte) {
 	if opts.noAuth {
 		return rns.AllowAll, nil
 	}
@@ -422,14 +417,14 @@ func buildAllowPolicy(logger *rns.Logger, opts options) (int, [][]byte) {
 	for _, hash := range hashes {
 		decoded, ok := parseAllowedIdentityHash(hash)
 		if !ok {
-			logger.Log(fmt.Sprintf("Ignoring invalid allowed identity hash %q", hash), rns.LogWarning, false)
+			rt.logger.Warning("Ignoring invalid allowed identity hash %q", hash)
 			continue
 		}
 		allowedList = append(allowedList, decoded)
 	}
 
 	if len(allowedList) == 0 {
-		logger.Log("Authentication enabled but no allowed identities configured; denying all command requests", rns.LogWarning, false)
+		rt.logger.Warning("Authentication enabled but no allowed identities configured; denying all command requests")
 	}
 
 	return rns.AllowList, allowedList
@@ -571,8 +566,8 @@ func executeCommand(commandLine []string, remoteIdentity *rns.Identity) (int, []
 	return 127, stdout.Bytes(), []byte(err.Error())
 }
 
-func loadOrCreateIdentity(identityPath string) (*rns.Identity, error) {
-	id, err := rns.FromFile(identityPath)
+func (rt *runtimeT) loadOrCreateIdentity(identityPath string) (*rns.Identity, error) {
+	id, err := rns.FromFile(identityPath, rt.logger)
 	if err == nil {
 		return id, nil
 	}
@@ -584,7 +579,7 @@ func loadOrCreateIdentity(identityPath string) (*rns.Identity, error) {
 		return nil, fmt.Errorf("could not create identity directory: %w", mkErr)
 	}
 
-	id, err = rns.NewIdentity(true)
+	id, err = rns.NewIdentity(true, rt.logger)
 	if err != nil {
 		return nil, fmt.Errorf("could not create identity: %w", err)
 	}

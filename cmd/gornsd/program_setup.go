@@ -6,30 +6,26 @@
 package main
 
 import (
-	"fmt"
 	"path/filepath"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-func programSetup(logger *rns.Logger, configDir string, verbosity, quietness int, service bool) (*rns.Reticulum, error) {
-	if logger == nil {
-		logger = rns.NewLogger()
-	}
-
-	if service {
+func (app *appT) programSetup() (*rns.Reticulum, error) {
+	logger := app.logger
+	if app.service {
 		logger.SetLogDest(rns.LogDestFile)
-		logger.SetLogFilePath(filepath.Join(configDir, "logfile"))
+		logger.SetLogFilePath(filepath.Join(app.configDir, "logfile"))
 	}
 
-	ts := rns.NewTransportSystem()
-	ret, err := rns.NewReticulumWithLogger(ts, configDir, logger)
+	ts := rns.NewTransportSystem(logger)
+	ret, err := rns.NewReticulumWithLogger(ts, app.configDir, logger)
 	if err != nil {
 		return nil, err
 	}
 
-	if !service {
-		adjustedLevel := logger.GetLogLevel() + verbosity - quietness
+	if !app.service {
+		adjustedLevel := logger.GetLogLevel() + app.verbose - app.quiet
 		if adjustedLevel < 0 {
 			adjustedLevel = 0
 		}
@@ -40,9 +36,9 @@ func programSetup(logger *rns.Logger, configDir string, verbosity, quietness int
 	}
 
 	if ret.IsConnectedToSharedInstance() {
-		logger.Log(fmt.Sprintf("Started gornsd version %v connected to another shared local instance, this is probably NOT what you want!", rns.VERSION), rns.LogWarning, false)
+		logger.Warning("Started gornsd version %v connected to another shared local instance, this is probably NOT what you want!", rns.VERSION)
 	} else {
-		logger.Log(fmt.Sprintf("Started gornsd version %v", rns.VERSION), rns.LogNotice, false)
+		logger.Notice("Started gornsd version %v", rns.VERSION)
 	}
 
 	return ret, nil

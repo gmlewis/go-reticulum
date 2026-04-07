@@ -46,17 +46,17 @@ func programSetup(p programSetupParams) int {
 	if w == nil {
 		w = os.Stdout
 	}
-	logger := p.logger
-	if logger == nil {
-		logger = rns.NewLogger()
+	if p.logger == nil {
+		p.logger = rns.NewLogger()
 	}
+	logger := p.logger
 
 	var reticulum *rns.Reticulum
 	if p.rnsInstance != nil {
 		reticulum = p.rnsInstance
 		p.mustExit = false
 	} else {
-		ts := rns.NewTransportSystem()
+		ts := rns.NewTransportSystem(logger)
 		r, err := rns.NewReticulumWithLogger(ts, p.configDir, logger)
 		if err != nil {
 			_, _ = fmt.Fprintln(w, "No shared RNS instance available to get status from")
@@ -68,7 +68,7 @@ func programSetup(p programSetupParams) int {
 		reticulum = r
 		defer func() {
 			if err := reticulum.Close(); err != nil {
-				logger.Log(fmt.Sprintf("Error closing Reticulum: %v", err), rns.LogWarning, false)
+				logger.Warning("Error closing Reticulum: %v", err)
 			}
 		}()
 	}

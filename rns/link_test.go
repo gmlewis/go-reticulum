@@ -13,7 +13,7 @@ import (
 
 func TestLink(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	// Create receiver identity
 	receiverID := mustTestNewIdentity(t, true)
 
@@ -119,7 +119,7 @@ func TestLinkHandshakeFull(t *testing.T) {
 
 func TestLinkIdentification(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	receiverID := mustTestNewIdentity(t, true)
 	receiverDest := mustTestNewDestination(t, ts, receiverID, DestinationIn, DestinationSingle, "receiver")
 
@@ -142,7 +142,7 @@ func TestLinkIdentification(t *testing.T) {
 
 func TestLinkIdentifyInvalidState(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	receiverID := mustTestNewIdentity(t, true)
 	receiverDest := mustTestNewDestination(t, ts, receiverID, DestinationIn, DestinationSingle, "receiver")
 	link := mustTestNewLink(t, ts, receiverDest)

@@ -35,8 +35,8 @@ func TestStartupLogMessages(t *testing.T) {
 	identityPath := filepath.Join(configDir, "identity")
 
 	// Call loadOrCreateIdentity - should log something after fix
-	_, err := loadOrCreateIdentity(logger, identityPath)
-	if err != nil {
+	c := &clientT{logger: logger}
+	if _, err := c.loadOrCreateIdentity(identityPath); err != nil {
 		t.Fatalf("loadOrCreateIdentity: %v", err)
 	}
 
@@ -60,8 +60,7 @@ func TestStartupLogMessages(t *testing.T) {
 
 	// Now test loading existing identity
 	capturedLogs = nil
-	_, err = loadOrCreateIdentity(logger, identityPath)
-	if err != nil {
+	if _, err := c.loadOrCreateIdentity(identityPath); err != nil {
 		t.Fatalf("loadOrCreateIdentity (existing): %v", err)
 	}
 

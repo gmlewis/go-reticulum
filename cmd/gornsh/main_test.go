@@ -195,8 +195,9 @@ func TestConfigureLogger(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			logger := configureLogger(tc.verbose, tc.quiet)
-			if got := logger.GetLogLevel(); got != tc.wantLevel {
+			rt := &runtimeT{}
+			rt.configureLogger(tc.verbose, tc.quiet)
+			if got := rt.logger.GetLogLevel(); got != tc.wantLevel {
 				t.Fatalf("log level=%v, want %v", got, tc.wantLevel)
 			}
 		})
@@ -228,7 +229,8 @@ func TestBuildAllowPolicyLogsThroughInjectedLogger(t *testing.T) {
 	})
 	logger.SetLogLevel(rns.LogWarning)
 
-	mode, allowed := buildAllowPolicy(logger, options{allowHashes: []string{"not-a-hash"}})
+	rt := &runtimeT{logger: logger}
+	mode, allowed := rt.buildAllowPolicy(options{allowHashes: []string{"not-a-hash"}})
 
 	if mode != rns.AllowList {
 		t.Fatalf("mode=%v, want %v", mode, rns.AllowList)

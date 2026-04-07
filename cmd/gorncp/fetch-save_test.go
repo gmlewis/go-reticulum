@@ -41,9 +41,9 @@ func TestFetchModeSavesReceivedFiles(t *testing.T) {
 	fetcherID := mustCreateIdentity(t, fetcherDir, "fetcher")
 
 	// Create transport systems with identities
-	listenerTS := rns.NewTransportSystem()
+	listenerTS := rns.NewTransportSystem(nil)
 	listenerTS.SetNetworkIdentity(listenerID)
-	fetcherTS := rns.NewTransportSystem()
+	fetcherTS := rns.NewTransportSystem(nil)
 	fetcherTS.SetNetworkIdentity(fetcherID)
 
 	// Create pipe interfaces
@@ -248,14 +248,14 @@ func mustCreateIdentity(t *testing.T, dir, name string) *rns.Identity {
 	if err := os.MkdirAll(filepath.Dir(idPath), 0o700); err != nil {
 		t.Fatalf("Failed to create identity dir: %v", err)
 	}
-	id, err := rns.NewIdentity(true)
+	id, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("Failed to create identity: %v", err)
 	}
 	if err := id.ToFile(idPath); err != nil {
 		t.Fatalf("Failed to save identity: %v", err)
 	}
-	loaded, err := rns.FromFile(idPath)
+	loaded, err := rns.FromFile(idPath, nil)
 	if err != nil {
 		t.Fatalf("Failed to load identity: %v", err)
 	}

@@ -428,7 +428,7 @@ func TestListenModeIdentityCreation(t *testing.T) {
 			t.Fatalf("Could not create identity directory: %v", err)
 		}
 		var err error
-		id, err = rns.NewIdentity(true)
+		id, err = rns.NewIdentity(true, nil)
 		if err != nil {
 			t.Fatalf("Could not create identity: %v", err)
 		}
@@ -443,7 +443,7 @@ func TestListenModeIdentityCreation(t *testing.T) {
 	}
 
 	// Verify identity can be loaded
-	loadedID, err := rns.FromFile(identityPath)
+	loadedID, err := rns.FromFile(identityPath, nil)
 	if err != nil {
 		t.Fatalf("Identity should be loadable: %v", err)
 	}
@@ -628,8 +628,8 @@ func TestFetchLinkEstablishmentTimeout(t *testing.T) {
 		t.Fatalf("WriteFile config: %v", err)
 	}
 
-	seedTS := rns.NewTransportSystem()
-	seedID, err := rns.NewIdentity(true)
+	seedTS := rns.NewTransportSystem(nil)
+	seedID, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity: %v", err)
 	}
@@ -720,13 +720,13 @@ enable_transport = Yes
 		t.Fatalf("WriteFile client config: %v", err)
 	}
 
-	listenerStack, err := rns.NewReticulum(rns.NewTransportSystem(), serverConfigDir)
+	listenerStack, err := rns.NewReticulum(rns.NewTransportSystem(nil), serverConfigDir)
 	if err != nil {
 		t.Fatalf("NewReticulum listener: %v", err)
 	}
 	defer func() { _ = listenerStack.Close() }()
 
-	listenerID, err := rns.FromFile(listenerIdentityPath)
+	listenerID, err := rns.FromFile(listenerIdentityPath, nil)
 	if err != nil {
 		t.Fatalf("FromFile listener identity: %v", err)
 	}
@@ -736,7 +736,7 @@ enable_transport = Yes
 	}
 	_ = listenerDest
 
-	clientSeed := rns.NewTransportSystem()
+	clientSeed := rns.NewTransportSystem(nil)
 	clientSeed.Remember([]byte("seed-request"), listenerDest.Hash, listenerID.GetPublicKey(), nil)
 	clientSeed.SaveKnownDestinations(filepath.Join(clientConfigDir, "storage"))
 

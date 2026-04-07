@@ -696,10 +696,10 @@ func TestIntegrationPropagationOfferPythonToGo(t *testing.T) {
 		t.Fatalf("write python script: %v", err)
 	}
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
-	remoteIdentity, err := rns.NewIdentity(true)
+	remoteIdentity, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(remote): %v", err)
 	}
@@ -747,10 +747,10 @@ func TestIntegrationPropagationOfferInvalidKeyPythonToGo(t *testing.T) {
 		t.Fatalf("write python script: %v", err)
 	}
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
-	remoteIdentity, err := rns.NewIdentity(true)
+	remoteIdentity, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(remote): %v", err)
 	}
@@ -784,12 +784,12 @@ func TestIntegrationPropagationOfferThrottledPythonToGo(t *testing.T) {
 		t.Fatalf("write python script: %v", err)
 	}
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
 
-	remoteIdentity, err := rns.NewIdentity(true)
+	remoteIdentity, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(remote): %v", err)
 	}
@@ -827,13 +827,13 @@ func TestIntegrationPropagationOfferThrottleExpiredPythonToGo(t *testing.T) {
 		t.Fatalf("write python script: %v", err)
 	}
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
 
-	remoteIdentity, err := rns.NewIdentity(true)
+	remoteIdentity, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(remote): %v", err)
 	}
@@ -874,11 +874,11 @@ func TestIntegrationPropagationOfferStaticOnlyPythonToGo(t *testing.T) {
 		t.Fatalf("write python script: %v", err)
 	}
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 	router.fromStaticOnly = true
 
-	remoteIdentity, err := rns.NewIdentity(true)
+	remoteIdentity, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(remote): %v", err)
 	}
@@ -914,11 +914,11 @@ func TestIntegrationPropagationOfferStaticAllowedPythonToGo(t *testing.T) {
 		t.Fatalf("write python script: %v", err)
 	}
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 	router.fromStaticOnly = true
 
-	remoteIdentity, err := rns.NewIdentity(true)
+	remoteIdentity, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(remote): %v", err)
 	}
@@ -956,10 +956,10 @@ func TestIntegrationPropagationOfferAllKnownPythonToGo(t *testing.T) {
 		t.Fatalf("write python script: %v", err)
 	}
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
-	remoteIdentity, err := rns.NewIdentity(true)
+	remoteIdentity, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(remote): %v", err)
 	}
@@ -997,10 +997,10 @@ func TestIntegrationPropagationOfferAllMissingPythonToGo(t *testing.T) {
 		t.Fatalf("write python script: %v", err)
 	}
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
-	remoteIdentity, err := rns.NewIdentity(true)
+	remoteIdentity, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(remote): %v", err)
 	}
@@ -1316,10 +1316,10 @@ func TestIntegrationPropagationMessageGetRetryPythonToGo(t *testing.T) {
 		t.Fatalf("write python script: %v", err)
 	}
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
-	remoteIdentity, err := rns.NewIdentity(true)
+	remoteIdentity, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(remote): %v", err)
 	}
@@ -1400,7 +1400,7 @@ func TestIntegrationPropagationMessageGetAccessPythonToGo(t *testing.T) {
 		t.Fatalf("read not-allowed hash: %v", err)
 	}
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 	router.SetAuthRequired(true)
 	if err := router.SetAllowedList([][]byte{allowedHash}); err != nil {
@@ -1563,14 +1563,14 @@ func TestIntegrationPropagationControlRecoveryPythonToGo(t *testing.T) {
 		t.Fatalf("read peer hash: %v", err)
 	}
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	if got := router.peerSyncRequest("", peerHash, nil, nil, nil, time.Now()); got != peerErrorNoIdentity {
 		t.Fatalf("sync no identity=%v want=%v", got, peerErrorNoIdentity)
 	}
 
-	remoteIdentity, err := rns.NewIdentity(true)
+	remoteIdentity, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(remote): %v", err)
 	}
@@ -1618,7 +1618,7 @@ func TestIntegrationPropagationControlPeerSyncBackoffPythonToGo(t *testing.T) {
 		t.Fatalf("read peer hash: %v", err)
 	}
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	now := time.Unix(1700000000, 0)
@@ -1627,7 +1627,7 @@ func TestIntegrationPropagationControlPeerSyncBackoffPythonToGo(t *testing.T) {
 		t.Fatalf("SetPeerSyncBackoff: %v", err)
 	}
 
-	remoteIdentity, err := rns.NewIdentity(true)
+	remoteIdentity, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(remote): %v", err)
 	}
@@ -1671,7 +1671,7 @@ func TestIntegrationPropagationControlPeerPrunePythonToGo(t *testing.T) {
 		t.Fatalf("read new peer hash: %v", err)
 	}
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	now := time.Unix(1700000000, 0)
@@ -1777,7 +1777,7 @@ func TestIntegrationPropagationControlStatsPythonToGo(t *testing.T) {
 		t.Fatalf("read not-allowed hash: %v", err)
 	}
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	if got := router.statsGetRequest("", nil, nil, nil, nil, time.Now()); got != peerErrorNoIdentity {
@@ -2031,11 +2031,11 @@ func TestIntegrationPeeringKeyValidationGoToPython(t *testing.T) {
 		t.Fatalf("write python script: %v", err)
 	}
 
-	localIdentity, err := rns.NewIdentity(true)
+	localIdentity, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(local): %v", err)
 	}
-	remoteIdentity, err := rns.NewIdentity(true)
+	remoteIdentity, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(remote): %v", err)
 	}
@@ -2081,11 +2081,11 @@ func TestIntegrationPeeringKeyValidationPythonToGo(t *testing.T) {
 		t.Fatalf("write python script: %v", err)
 	}
 
-	localIdentity, err := rns.NewIdentity(true)
+	localIdentity, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(local): %v", err)
 	}
-	remoteIdentity, err := rns.NewIdentity(true)
+	remoteIdentity, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(remote): %v", err)
 	}

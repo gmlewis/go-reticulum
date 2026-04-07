@@ -22,7 +22,7 @@ func TestTransport(t *testing.T) {
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	if err := ts.Start(tmpDir); err != nil {
 		t.Fatalf("Transport start failed: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestTransport(t *testing.T) {
 func TestHandleAnnounce(t *testing.T) {
 	t.Parallel()
 	// LogLevel = LogDebug
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	id := mustTestNewIdentity(t, true)
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle,
 		"testapp")
@@ -104,7 +104,7 @@ func TestHandleAnnounce(t *testing.T) {
 
 func TestRequestPathThrottleAndTag(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 
 	capIface := &capturingInterface{name: "cap"}
 	ts.interfaces = append(ts.interfaces, capIface)
@@ -145,7 +145,7 @@ func TestRequestPathThrottleAndTag(t *testing.T) {
 
 func TestHandlePathRequestEmitsTargetedPathResponse(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 
 	tsid := mustTestNewIdentity(t, true)
 	ts.identity = tsid
@@ -198,7 +198,7 @@ func TestHandlePathRequestEmitsTargetedPathResponse(t *testing.T) {
 
 func TestAnnounceRebroadcastProcessing(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	tsID := mustTestNewIdentity(t, true)
 	ts.identity = tsID
 
@@ -270,7 +270,7 @@ func TestAnnounceRebroadcastProcessing(t *testing.T) {
 
 func TestPathResponseAnnounceNotRebroadcast(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 
 	source := &capturingInterface{name: "source"}
 	outbound := &capturingInterface{name: "outbound"}
@@ -326,7 +326,7 @@ func TestPathResponseAnnounceNotRebroadcast(t *testing.T) {
 
 func TestInvalidatePathByHash(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 
 	hash := []byte("destination-hash-1")
 	ts.pathTable[string(hash)] = &PathEntry{Hops: 1, Expires: time.Now().Add(time.Hour)}
@@ -349,7 +349,7 @@ func TestInvalidatePathByHash(t *testing.T) {
 
 func TestInvalidatePathsViaInterface(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 
 	ifaceA := &capturingInterface{name: "A"}
 	ifaceB := &capturingInterface{name: "B"}
@@ -375,7 +375,7 @@ func TestInvalidatePathsViaInterface(t *testing.T) {
 
 func TestCullExpiredPaths(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 
 	now := time.Now()
 	ts.pathTable["expired"] = &PathEntry{Expires: now.Add(-time.Minute)}
@@ -393,7 +393,7 @@ func TestCullExpiredPaths(t *testing.T) {
 
 func TestOutboundSendFailureInvalidatesPaths(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 
 	failing := &failingInterface{name: "failing"}
 	good := &capturingInterface{name: "good"}
@@ -424,7 +424,7 @@ func TestOutboundSendFailureInvalidatesPaths(t *testing.T) {
 
 func TestInboundIFACHookDrop(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 
 	id := mustTestNewIdentity(t, true)
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle,
@@ -447,7 +447,7 @@ func TestInboundIFACHookDrop(t *testing.T) {
 
 func TestOutboundIFACEgressTransform(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 
 	iface := &ifacTransformInterface{name: "ifac-transform"}
 	ts.interfaces = append(ts.interfaces, iface)
@@ -474,7 +474,7 @@ func TestOutboundIFACEgressTransform(t *testing.T) {
 
 func TestOutboundUsesKnownPathSingleHop(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 
 	routeIface := &capturingInterface{name: "route"}
 	otherIface := &capturingInterface{name: "other"}
@@ -506,7 +506,7 @@ func TestOutboundUsesKnownPathSingleHop(t *testing.T) {
 
 func TestOutboundUsesKnownPathMultiHopHeader2(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 
 	routeIface := &capturingInterface{name: "route"}
 	otherIface := &capturingInterface{name: "other"}
@@ -553,7 +553,7 @@ func TestOutboundUsesKnownPathMultiHopHeader2(t *testing.T) {
 
 func TestInboundForwardsWhenTransportIDMatches(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	ts.SetEnabled(true)
 
 	identity := mustTestNewIdentity(t, true)
@@ -616,7 +616,7 @@ func TestInboundForwardsWhenTransportIDMatches(t *testing.T) {
 
 func TestInboundForwardFinalHopStripsTransportHeader(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	ts.SetEnabled(true)
 
 	identity := mustTestNewIdentity(t, true)
@@ -674,7 +674,7 @@ func TestInboundForwardFinalHopStripsTransportHeader(t *testing.T) {
 
 func TestSeenOrRememberPacketHashRotation(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	ts.packetHashRotateAt = 2
 
 	now := time.Now()
@@ -699,7 +699,7 @@ func TestSeenOrRememberPacketHashRotation(t *testing.T) {
 
 func TestCullStaleTransportTables(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 
 	now := time.Now()
 	ts.reverseTable["stale"] = &ReverseEntry{Timestamp: now.Add(-reverseEntryTimeout - time.Minute)}
@@ -735,7 +735,7 @@ func TestPathTablePersistenceRoundTrip(t *testing.T) {
 	defer cleanup()
 
 	iface := &capturingInterface{name: "persist-iface"}
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	ts.storagePath = tmpDir
 	ts.interfaces = []interfaces.Interface{iface}
 
@@ -760,7 +760,7 @@ func TestPathTablePersistenceRoundTrip(t *testing.T) {
 		t.Fatalf("expected persisted destination_table file: %v", err)
 	}
 
-	tsLoaded := NewTransportSystem()
+	tsLoaded := NewTransportSystem(nil)
 	tsLoaded.storagePath = tmpDir
 
 	tsLoaded.loadPathTableLocked()
@@ -906,7 +906,7 @@ func (i *ifacTransformInterface) ApplyIFACOutbound(data []byte) ([]byte, error) 
 
 func TestTransportBlackholeRegistry(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	ts.identity = &Identity{Hash: []byte{0x09, 0x09, 0x09}}
 	hash := []byte{0x01, 0x02, 0x03}
 	until := time.Now().Add(time.Hour).Unix()
@@ -935,7 +935,7 @@ func TestTransportBlackholeRegistry(t *testing.T) {
 
 func TestTransportDropAnnounceQueues(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	ts.mu.Lock()
 	ts.ensureStateLocked()
 	ts.announceTable["dest1"] = &AnnounceEntry{}
@@ -958,7 +958,7 @@ func TestTransportDropAnnounceQueues(t *testing.T) {
 
 func TestTransportPacketMetricCaches(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	ts.mu.Lock()
 	ts.ensureStateLocked()
 	key := string([]byte{0xaa, 0xbb})

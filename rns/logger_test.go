@@ -83,7 +83,7 @@ func TestNewLoggerWritesToCallbackAndFile(t *testing.T) {
 	logger.SetLogCallback(func(msg string) {
 		callback.WriteString(msg)
 	})
-	logger.Log("callback message", LogNotice, false)
+	logger.Notice("callback message")
 	if got, want := callback.String(), "["; !strings.HasPrefix(got, want) || !strings.Contains(got, "callback message") {
 		t.Fatalf("callback output = %q, want message containing %q", got, "callback message")
 	}
@@ -100,7 +100,7 @@ func TestNewLoggerWritesToCallbackAndFile(t *testing.T) {
 	logPath := filepath.Join(tmpDir, "logfile")
 	logger.SetLogFilePath(logPath)
 	logger.SetLogDest(LogDestFile)
-	logger.Log("file message", LogNotice, false)
+	logger.Notice("file message")
 	data, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatalf("ReadFile error: %v", err)

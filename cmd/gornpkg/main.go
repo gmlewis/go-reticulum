@@ -21,50 +21,47 @@ import (
 )
 
 type runtimeT struct {
-	app    *appT
-	logger *rns.Logger
+	app          *appT
+	logger       *rns.Logger
+	newReticulum reticulumFactory
 }
 
 func newRuntime(app *appT) *runtimeT {
 	if app == nil {
 		app = &appT{}
 	}
-	return &runtimeT{app: app, logger: rns.NewLogger()}
+	return &runtimeT{app: app, logger: rns.NewLogger(), newReticulum: rns.NewReticulumWithLogger}
 }
 
 func (rt *runtimeT) run() {
 	if rt == nil || rt.app == nil {
 		return
 	}
-	app := rt.app
-	logger := rt.logger
 
-	if app.version {
+	if rt.app.version {
 		fmt.Printf("gornpkg %v\n", rns.VERSION)
 		return
 	}
 
-	if app.exampleConfig {
+	if rt.app.exampleConfig {
 		fmt.Print(exampleRnpkgConfig + "\n")
 		return
 	}
 
-	if err := programSetup(logger, app.configDir, app.verbose, app.quiet, rns.NewReticulumWithLogger); err != nil {
+	if err := rt.programSetup(); err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v", err)
 	}
 }
 
 type reticulumFactory func(rns.Transport, string, *rns.Logger) (*rns.Reticulum, error)
 
-func programSetup(logger *rns.Logger, configDir string, verbosity, quietness counter, newReticulum reticulumFactory) (err error) {
-	if logger == nil {
-		logger = rns.NewLogger()
-	}
+func (rt *runtimeT) programSetup() (err error) {
+	logger := rt.logger
 	logger.SetLogDest(rns.LogStdout)
-	logger.SetLogLevel(int(verbosity) - int(quietness))
+	logger.SetLogLevel(int(rt.app.verbose) - int(rt.app.quiet))
 
-	ts := rns.NewTransportSystem()
-	ret, err := newReticulum(ts, configDir, logger)
+	ts := rns.NewTransportSystem(logger)
+	ret, err := rt.newReticulum(ts, rt.app.configDir, logger)
 	if err != nil {
 		return err
 	}

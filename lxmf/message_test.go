@@ -17,16 +17,16 @@ import (
 )
 
 func TestMessagePackUnpackRoundTrip(t *testing.T) {
-	destinationID, err := rns.NewIdentity(true)
+	destinationID, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(destination): %v", err)
 	}
-	sourceID, err := rns.NewIdentity(true)
+	sourceID, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(source): %v", err)
 	}
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	destination, err := rns.NewDestination(ts, destinationID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	if err != nil {
 		t.Fatalf("NewDestination(destination): %v", err)
@@ -79,16 +79,16 @@ func TestMessagePackUnpackRoundTrip(t *testing.T) {
 }
 
 func TestMessagePackIncludesStampAndUnpacksIt(t *testing.T) {
-	destinationID, err := rns.NewIdentity(true)
+	destinationID, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(destination): %v", err)
 	}
-	sourceID, err := rns.NewIdentity(true)
+	sourceID, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(source): %v", err)
 	}
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	destination, err := rns.NewDestination(ts, destinationID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	if err != nil {
 		t.Fatalf("NewDestination(destination): %v", err)
@@ -119,16 +119,16 @@ func TestMessagePackIncludesStampAndUnpacksIt(t *testing.T) {
 }
 
 func TestMessageHashMatchesProtocolMaterial(t *testing.T) {
-	destinationID, err := rns.NewIdentity(true)
+	destinationID, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(destination): %v", err)
 	}
-	sourceID, err := rns.NewIdentity(true)
+	sourceID, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(source): %v", err)
 	}
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	destination, err := rns.NewDestination(ts, destinationID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	if err != nil {
 		t.Fatalf("NewDestination(destination): %v", err)
@@ -162,11 +162,11 @@ func TestMessageHashMatchesProtocolMaterial(t *testing.T) {
 }
 
 func TestWriteToDirectory(t *testing.T) {
-	destID, err := rns.NewIdentity(true)
+	destID, err := rns.NewIdentity(true, nil)
 	mustTest(t, err)
-	srcID, err := rns.NewIdentity(true)
+	srcID, err := rns.NewIdentity(true, nil)
 	mustTest(t, err)
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(nil)
 	dest, err := rns.NewDestination(ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	mustTest(t, err)
 	src, err := rns.NewDestination(ts, srcID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")

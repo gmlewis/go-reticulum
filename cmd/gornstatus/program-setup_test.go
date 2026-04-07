@@ -23,7 +23,7 @@ func TestProgramSetupExitsCleanly(t *testing.T) {
 	defer cleanup()
 	var buf bytes.Buffer
 	logger := rns.NewLogger()
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(logger)
 	r, err := rns.NewReticulumWithLogger(ts, tmpDir, logger)
 	if err != nil {
 		t.Fatalf("NewReticulum: %v", err)

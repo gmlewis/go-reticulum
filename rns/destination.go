@@ -73,6 +73,7 @@ type RequestHandler struct {
 
 // Destination represents an addressable endpoint on the Reticulum network, anchoring cryptographic identities and routing paths.
 type Destination struct {
+	logger        *Logger
 	identity      *Identity
 	direction     int
 	Type          int
@@ -111,7 +112,13 @@ func NewDestination(ts Transport, identity *Identity, direction, destType int, a
 		}
 	}
 
+	var logger *Logger
+	if ts != nil { // not typical, but can be nil in integration tests
+		logger = ts.GetLogger()
+	}
+
 	d := &Destination{
+		logger:             logger,
 		identity:           identity,
 		direction:          direction,
 		Type:               destType,
@@ -127,7 +134,7 @@ func NewDestination(ts Transport, identity *Identity, direction, destType int, a
 
 	if identity == nil && direction == DestinationIn && destType != DestinationPlain {
 		var err error
-		d.identity, err = NewIdentity(true)
+		d.identity, err = NewIdentity(true, ts.GetLogger())
 		if err != nil {
 			return nil, err
 		}
@@ -252,7 +259,7 @@ func (d *Destination) EnableRatchets(path string) error {
 
 func (d *Destination) reloadRatchets(path string) error {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		Logf("No existing ratchet data found, initializing new ratchet file for %v", LogDebug, false, d.name)
+		d.logger.Debug("No existing ratchet data found, initializing new ratchet file for %v", d.name)
 		d.ratchets = make([]*crypto.X25519PrivateKey, 0)
 		return d.persistRatchets()
 	}
@@ -356,7 +363,7 @@ func (d *Destination) RotateRatchets() error {
 		return nil
 	}
 
-	Logf("Rotating ratchets for %v", LogDebug, false, d.name)
+	d.logger.Debug("Rotating ratchets for %v", d.name)
 	newRatchet, err := crypto.GenerateX25519PrivateKey()
 	if err != nil {
 		return err
@@ -506,10 +513,10 @@ func (d *Destination) Decrypt(ciphertext []byte) ([]byte, error) {
 		}
 		// If decryption failed, try reloading ratchets from storage and retrying
 		if d.ratchetsPath != "" {
-			Logf("Decryption with ratchets failed on %v, reloading from storage", LogDebug, false, d.name)
+			d.logger.Debug("Decryption with ratchets failed on %v, reloading from storage", d.name)
 			d.mu.Lock()
 			if reloadErr := d.reloadRatchets(d.ratchetsPath); reloadErr != nil {
-				Logf("Failed reloading ratchets for %v from %v: %v", LogWarning, false, d.name, d.ratchetsPath, reloadErr)
+				d.logger.Warning("Failed reloading ratchets for %v from %v: %v", d.name, d.ratchetsPath, reloadErr)
 			}
 			ratchets := d.ratchets
 			d.mu.Unlock()

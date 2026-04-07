@@ -31,12 +31,21 @@ func TestProgramSetupUsesVerbosityMinusQuietness(t *testing.T) {
 	var capturedLevel int
 	var capturedDest int
 	var capturedConfigDir string
-	if err := programSetup(logger, tmpDir, 3, 1, func(ts rns.Transport, configDir string, logger *rns.Logger) (*rns.Reticulum, error) {
-		capturedLevel = logger.GetLogLevel()
-		capturedDest = logger.GetLogDest()
-		capturedConfigDir = configDir
-		return &rns.Reticulum{}, nil
-	}); err != nil {
+	rt := &runtimeT{
+		app: &appT{
+			configDir: tmpDir,
+			verbose:   3,
+			quiet:     1,
+		},
+		logger: logger,
+		newReticulum: func(ts rns.Transport, configDir string, logger *rns.Logger) (*rns.Reticulum, error) {
+			capturedLevel = logger.GetLogLevel()
+			capturedDest = logger.GetLogDest()
+			capturedConfigDir = configDir
+			return &rns.Reticulum{}, nil
+		},
+	}
+	if err := rt.programSetup(); err != nil {
 		t.Fatalf("programSetup returned error: %v", err)
 	}
 	if got, want := capturedLevel, 2; got != want {
@@ -55,13 +64,22 @@ func TestProgramSetupForwardsConfigDirAndClosesReticulum(t *testing.T) {
 	defer cleanup()
 	logger := rns.NewLogger()
 
-	if err := programSetup(logger, tmpDir, 0, 0, rns.NewReticulumWithLogger); err != nil {
+	rt := &runtimeT{
+		app: &appT{
+			configDir: tmpDir,
+			verbose:   0,
+			quiet:     0,
+		},
+		logger:       logger,
+		newReticulum: rns.NewReticulumWithLogger,
+	}
+	if err := rt.programSetup(); err != nil {
 		t.Fatalf("first programSetup returned error: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(tmpDir, "config")); err != nil {
 		t.Fatalf("expected config file to be created in %v: %v", tmpDir, err)
 	}
-	if err := programSetup(logger, tmpDir, 0, 0, rns.NewReticulumWithLogger); err != nil {
+	if err := rt.programSetup(); err != nil {
 		t.Fatalf("second programSetup returned error: %v", err)
 	}
 }

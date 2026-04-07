@@ -67,10 +67,13 @@ type Transport interface {
 
 	LoadKnownDestinations(storagePath string)
 	SaveKnownDestinations(storagePath string)
+
+	GetLogger() *Logger
 }
 
 // TransportSystem manages routing, packet forwarding, and global state.
 type TransportSystem struct {
+	logger      *Logger
 	identity    *Identity
 	networkID   *Identity
 	storagePath string
@@ -218,8 +221,9 @@ const (
 )
 
 // NewTransportSystem constructs an independent TransportSystem.
-func NewTransportSystem() *TransportSystem {
+func NewTransportSystem(logger *Logger) *TransportSystem {
 	return &TransportSystem{
+		logger:               logger,
 		interfaces:           make([]interfaces.Interface, 0),
 		destinations:         make([]*Destination, 0),
 		pendingLinks:         make([]*Link, 0),
@@ -242,6 +246,13 @@ func NewTransportSystem() *TransportSystem {
 		knownDestinations:    make(map[string][]any),
 		knownRatchets:        make(map[string][]byte),
 	}
+}
+
+func (ts *TransportSystem) GetLogger() *Logger {
+	if ts == nil {
+		return nil
+	}
+	return ts.logger
 }
 
 func (ts *TransportSystem) Identity() *Identity {
@@ -362,25 +373,25 @@ func (ts *TransportSystem) Start(storagePath string) error {
 	// Load or create transport identity
 	identityPath := filepath.Join(ts.storagePath, "transport_identity")
 	if _, err := os.Stat(identityPath); err == nil {
-		id, err := FromFile(identityPath)
+		id, err := FromFile(identityPath, ts.logger)
 		if err != nil {
-			Log(fmt.Sprintf("Could not load transport identity: %v", err), LogError, false)
+			ts.logger.Error("Could not load transport identity: %v", err)
 		} else {
 			ts.identity = id
-			Log("Loaded Transport Identity from storage", LogVerbose, false)
+			ts.logger.Verbose("Loaded Transport Identity from storage")
 		}
 	}
 
 	if ts.identity == nil {
-		Log("No valid Transport Identity in storage, creating...", LogVerbose, false)
-		id, err := NewIdentity(true)
+		ts.logger.Verbose("No valid Transport Identity in storage, creating...")
+		id, err := NewIdentity(true, ts.logger)
 		if err != nil {
 			ts.mu.Unlock()
 			return err
 		}
 		ts.identity = id
 		if err := ts.identity.ToFile(identityPath); err != nil {
-			Logf("Could not save transport identity: %v", LogError, false, err)
+			ts.logger.Error("Could not save transport identity: %v", err)
 		}
 	}
 	ts.loadPathTableLocked()
@@ -436,7 +447,7 @@ func (ts *TransportSystem) Stop() {
 	defer ts.mu.Unlock()
 	for _, iface := range ts.interfaces {
 		if err := iface.Detach(); err != nil {
-			Logf("Error detaching interface %v during transport stop: %v", LogError, false, iface.Name(), err)
+			ts.logger.Error("Error detaching interface %v during transport stop: %v", iface.Name(), err)
 		}
 	}
 	ts.interfaces = nil
@@ -554,7 +565,7 @@ func (ts *TransportSystem) CleanRatchets() {
 	entries, err := os.ReadDir(ratchetDir)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			Logf("Failed to read ratchet directory for cleaning: %v", LogError, false, err)
+			ts.logger.Error("Failed to read ratchet directory for cleaning: %v", err)
 		}
 		return
 	}
@@ -585,7 +596,7 @@ func (ts *TransportSystem) CleanRatchets() {
 			received := m["received"].(float64)
 			if now > received+expiry {
 				if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-					Logf("Failed to remove expired ratchet file %v: %v", LogError, false, entry.Name(), err)
+					ts.logger.Error("Failed to remove expired ratchet file %v: %v", entry.Name(), err)
 				}
 				// Also remove from memory if present
 				ts.mu.Lock()
@@ -702,21 +713,21 @@ func (ts *TransportSystem) persistPathTable() {
 
 	packed, err := msgpack.Pack(snapshot)
 	if err != nil {
-		Logf("Failed to pack path table for persistence: %v", LogError, false, err)
+		ts.logger.Error("Failed to pack path table for persistence: %v", err)
 		return
 	}
 
 	tmp := filePath + ".out"
 	if err := os.MkdirAll(filepath.Dir(filePath), 0o700); err != nil {
-		Logf("Failed to create path table directory: %v", LogError, false, err)
+		ts.logger.Error("Failed to create path table directory: %v", err)
 		return
 	}
 	if err := os.WriteFile(tmp, packed, 0o600); err != nil {
-		Logf("Failed to write path table temp file: %v", LogError, false, err)
+		ts.logger.Error("Failed to write path table temp file: %v", err)
 		return
 	}
 	if err := os.Rename(tmp, filePath); err != nil {
-		Logf("Failed to persist path table atomically: %v", LogError, false, err)
+		ts.logger.Error("Failed to persist path table atomically: %v", err)
 		return
 	}
 }
@@ -749,20 +760,20 @@ func (ts *TransportSystem) loadPathTableLocked() {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			Logf("Failed reading path table from storage: %v", LogError, false, err)
+			ts.logger.Error("Failed reading path table from storage: %v", err)
 		}
 		return
 	}
 
 	unpacked, err := msgpack.Unpack(data)
 	if err != nil {
-		Logf("Failed unpacking path table from storage: %v", LogError, false, err)
+		ts.logger.Error("Failed unpacking path table from storage: %v", err)
 		return
 	}
 
 	list, ok := unpacked.([]any)
 	if !ok {
-		Log("Invalid persisted path table format; expected list", LogError, false)
+		ts.logger.Error("Invalid persisted path table format; expected list")
 		return
 	}
 
@@ -826,7 +837,7 @@ func (ts *TransportSystem) loadPathTableLocked() {
 	}
 
 	ts.resolvePathInterfacesLocked()
-	Logf("Loaded %v path table entries from storage", LogVerbose, false, len(ts.pathTable))
+	ts.logger.Verbose("Loaded %v path table entries from storage", len(ts.pathTable))
 }
 
 // extraLinkProofTimeout returns additional timeout based on interface bitrate
@@ -964,7 +975,7 @@ func (ts *TransportSystem) processAnnounceTable(now time.Time) {
 		}
 
 		if err := job.iface.Send(raw); err != nil {
-			Logf("Failed to re-broadcast announce on %v: %v", LogError, false, job.iface.Name(), err)
+			ts.logger.Error("Failed to re-broadcast announce on %v: %v", job.iface.Name(), err)
 			ts.InvalidatePathsViaInterface(job.iface)
 		}
 	}
@@ -1018,14 +1029,14 @@ func (ts *TransportSystem) forwardPathRequest(packet *Packet, source interfaces.
 
 	pathReqDst, err := NewDestination(ts, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 	if err != nil {
-		Logf("Failed creating relay path request destination: %v", LogError, false, err)
+		ts.logger.Error("Failed creating relay path request destination: %v", err)
 		return
 	}
 
 	relayReq := NewPacket(pathReqDst, copyBytes(packet.Data))
 	relayReq.TransportType = TransportBroadcast
 	if err := relayReq.Pack(); err != nil {
-		Logf("Failed packing relay path request packet: %v", LogError, false, err)
+		ts.logger.Error("Failed packing relay path request packet: %v", err)
 		return
 	}
 
@@ -1051,14 +1062,14 @@ func (ts *TransportSystem) forwardPathRequest(packet *Packet, source interfaces.
 		if ifac, ok := job.iface.(ifacOutboundHook); ok {
 			processed, err := ifac.ApplyIFACOutbound(raw)
 			if err != nil {
-				Logf("Failed IFAC egress for forwarded path request on %v: %v", LogError, false, job.iface.Name(), err)
+				ts.logger.Error("Failed IFAC egress for forwarded path request on %v: %v", job.iface.Name(), err)
 				continue
 			}
 			raw = processed
 		}
 
 		if err := job.iface.Send(raw); err != nil {
-			Logf("Failed forwarding path request on %v: %v", LogError, false, job.iface.Name(), err)
+			ts.logger.Error("Failed forwarding path request on %v: %v", job.iface.Name(), err)
 			ts.InvalidatePathsViaInterface(job.iface)
 		}
 	}
@@ -1109,14 +1120,14 @@ func (ts *TransportSystem) forwardPathResponseToRequesters(packet *Packet, sourc
 		if ifac, ok := job.iface.(ifacOutboundHook); ok {
 			processed, err := ifac.ApplyIFACOutbound(raw)
 			if err != nil {
-				Logf("Failed IFAC egress for forwarded path response on %v: %v", LogError, false, job.iface.Name(), err)
+				ts.logger.Error("Failed IFAC egress for forwarded path response on %v: %v", job.iface.Name(), err)
 				continue
 			}
 			raw = processed
 		}
 
 		if err := job.iface.Send(raw); err != nil {
-			Logf("Failed forwarding path response on %v: %v", LogError, false, job.iface.Name(), err)
+			ts.logger.Error("Failed forwarding path response on %v: %v", job.iface.Name(), err)
 			ts.InvalidatePathsViaInterface(job.iface)
 			continue
 		}
@@ -1187,7 +1198,7 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) {
 	}
 
 	targetHash := data[:TruncatedHashLength/8]
-	Logf("Path request for %x", LogDebug, false, targetHash)
+	ts.logger.Debug("Path request for %x", targetHash)
 
 	ts.mu.Lock()
 	var localDest *Destination
@@ -1200,7 +1211,7 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) {
 	ts.mu.Unlock()
 
 	if localDest != nil {
-		Logf("Answering path request for %x, destination is local", LogDebug, false, targetHash)
+		ts.logger.Debug("Answering path request for %x, destination is local", targetHash)
 		// Extract tag if present
 		var tag []byte
 		if len(data) > (TruncatedHashLength/8)*2 {
@@ -1214,7 +1225,7 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) {
 
 		announcePacket, err := localDest.buildAnnouncePacket(tag)
 		if err != nil {
-			Logf("Failed to build path response announce: %v", LogError, false, err)
+			ts.logger.Error("Failed to build path response announce: %v", err)
 			return
 		}
 
@@ -1226,7 +1237,7 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) {
 		}
 
 		if err := announcePacket.Pack(); err != nil {
-			Logf("Failed to pack path response announce: %v", LogError, false, err)
+			ts.logger.Error("Failed to pack path response announce: %v", err)
 			return
 		}
 
@@ -1235,21 +1246,21 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) {
 			if ifac, ok := packet.ReceivingInterface.(ifacOutboundHook); ok {
 				processed, err := ifac.ApplyIFACOutbound(raw)
 				if err != nil {
-					Logf("Failed IFAC egress for path response on %v: %v", LogError, false, packet.ReceivingInterface.Name(), err)
+					ts.logger.Error("Failed IFAC egress for path response on %v: %v", packet.ReceivingInterface.Name(), err)
 					return
 				}
 				raw = processed
 			}
 
 			if err := packet.ReceivingInterface.Send(raw); err != nil {
-				Logf("Failed to send path response announce on %v: %v", LogError, false, packet.ReceivingInterface.Name(), err)
+				ts.logger.Error("Failed to send path response announce on %v: %v", packet.ReceivingInterface.Name(), err)
 				return
 			}
 			return
 		}
 
 		if err := ts.Outbound(announcePacket); err != nil {
-			Logf("Failed broadcasting fallback path response announce: %v", LogError, false, err)
+			ts.logger.Error("Failed broadcasting fallback path response announce: %v", err)
 		}
 	}
 }
@@ -1261,7 +1272,7 @@ func (ts *TransportSystem) RegisterDestination(d *Destination) {
 		defer ts.mu.Unlock()
 		for _, existing := range ts.destinations {
 			if bytes.Equal(d.Hash, existing.Hash) {
-				Logf("Attempt to register an already registered destination %x", LogError, false, d.Hash)
+				ts.logger.Error("Attempt to register an already registered destination %x", d.Hash)
 				return
 			}
 		}
@@ -1288,11 +1299,11 @@ func (ts *TransportSystem) ActivateLink(l *Link) {
 			ts.pendingLinks = append(ts.pendingLinks[:i], ts.pendingLinks[i+1:]...)
 			// Add to active
 			ts.activeLinks = append(ts.activeLinks, l)
-			Log(fmt.Sprintf("Activated link %x", l.linkID), LogVerbose, false)
+			ts.logger.Verbose("Activated link %x", l.linkID)
 			return
 		}
 	}
-	Log(fmt.Sprintf("Attempted to activate a link %x that was not in the pending table", l.linkID), LogError, false)
+	ts.logger.Error("Attempted to activate a link %x that was not in the pending table", l.linkID)
 }
 
 // FindLink finds a link by its ID.
@@ -1324,8 +1335,8 @@ func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 	copy(destinationsToAnnounce, ts.destinations)
 	interfacesAfter := len(ts.interfaces)
 	ts.mu.Unlock()
-	Logf("[Transport] RegisterInterface: %s, interfaces before: %d, destinations: %d", LogDebug, false, iface.Name(), interfacesBefore, destinationsBefore)
-	Logf("[Transport] RegisterInterface: %s, interfaces after: %d, will announce %d destinations", LogDebug, false, iface.Name(), interfacesAfter, len(destinationsToAnnounce))
+	ts.logger.Debug("[Transport] RegisterInterface: %s, interfaces before: %d, destinations: %d", iface.Name(), interfacesBefore, destinationsBefore)
+	ts.logger.Debug("[Transport] RegisterInterface: %s, interfaces after: %d, will announce %d destinations", iface.Name(), interfacesAfter, len(destinationsToAnnounce))
 
 	// Start inbound processor for this interface
 	if reader, ok := iface.(interface {
@@ -1344,11 +1355,11 @@ func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 
 	for _, d := range destinationsToAnnounce {
 		if d.direction == DestinationIn && d.Type == DestinationSingle {
-			Logf("[Transport] Re-announcing destination %x on new interface %v", LogDebug, false, d.Hash, iface.Name())
+			ts.logger.Debug("[Transport] Re-announcing destination %x on new interface %v", d.Hash, iface.Name())
 			if err := d.Announce(nil); err != nil {
-				Logf("Failed to re-announce destination %x on new interface %v: %v", LogDebug, false, d.Hash, iface.Name(), err)
+				ts.logger.Debug("Failed to re-announce destination %x on new interface %v: %v", d.Hash, iface.Name(), err)
 			} else {
-				Logf("[Transport] Re-announce of %x on %v completed", LogDebug, false, d.Hash, iface.Name())
+				ts.logger.Debug("[Transport] Re-announce of %x on %v completed", d.Hash, iface.Name())
 			}
 		}
 	}
@@ -1526,13 +1537,13 @@ func (ts *TransportSystem) Recall(targetHash []byte) *Identity {
 	// Check destination hashes
 	if data, ok := ts.knownDestinations[string(targetHash)]; ok {
 		pubKey := data[2].([]byte)
-		id, err := NewIdentity(false)
+		id, err := NewIdentity(false, ts.logger)
 		if err != nil {
-			Logf("Failed to create identity during recall: %v", LogError, false, err)
+			ts.logger.Error("Failed to create identity during recall: %v", err)
 			return nil
 		}
 		if err := id.LoadPublicKey(pubKey); err != nil {
-			Logf("Failed to load recalled public key: %v", LogError, false, err)
+			ts.logger.Error("Failed to load recalled public key: %v", err)
 			return nil
 		}
 		if data[3] != nil {
@@ -1545,13 +1556,13 @@ func (ts *TransportSystem) Recall(targetHash []byte) *Identity {
 	for _, data := range ts.knownDestinations {
 		pubKey := data[2].([]byte)
 		if bytes.Equal(targetHash, TruncatedHash(pubKey)) {
-			id, err := NewIdentity(false)
+			id, err := NewIdentity(false, ts.logger)
 			if err != nil {
-				Logf("Failed to create identity during recall: %v", LogError, false, err)
+				ts.logger.Error("Failed to create identity during recall: %v", err)
 				return nil
 			}
 			if err := id.LoadPublicKey(pubKey); err != nil {
-				Logf("Failed to load recalled public key: %v", LogError, false, err)
+				ts.logger.Error("Failed to load recalled public key: %v", err)
 				return nil
 			}
 			if data[3] != nil {
@@ -1564,13 +1575,13 @@ func (ts *TransportSystem) Recall(targetHash []byte) *Identity {
 	// Also check registered destinations in transport
 	for _, d := range ts.destinations {
 		if bytes.Equal(targetHash, d.Hash) {
-			id, err := NewIdentity(false)
+			id, err := NewIdentity(false, ts.logger)
 			if err != nil {
-				Logf("Failed to create identity during transport recall: %v", LogError, false, err)
+				ts.logger.Error("Failed to create identity during transport recall: %v", err)
 				return nil
 			}
 			if err := id.LoadPublicKey(d.identity.GetPublicKey()); err != nil {
-				Logf("Failed to load transport destination public key: %v", LogError, false, err)
+				ts.logger.Error("Failed to load transport destination public key: %v", err)
 				return nil
 			}
 			return id
@@ -1604,13 +1615,13 @@ func (ts *TransportSystem) GetRatchet(destHash []byte) []byte {
 
 	data, err := os.ReadFile(ratchetPath)
 	if err != nil {
-		Logf("Failed to read ratchet file for %v: %v", LogError, false, hexHash, err)
+		ts.logger.Error("Failed to read ratchet file for %v: %v", hexHash, err)
 		return nil
 	}
 
 	unpacked, err := msgpack.Unpack(data)
 	if err != nil {
-		Logf("Failed to unpack ratchet data for %v: %v", LogError, false, hexHash, err)
+		ts.logger.Error("Failed to unpack ratchet data for %v: %v", hexHash, err)
 		return nil
 	}
 
@@ -1627,7 +1638,7 @@ func (ts *TransportSystem) GetRatchet(destHash []byte) []byte {
 		}
 		// Expired
 		if err := os.Remove(ratchetPath); err != nil && !os.IsNotExist(err) {
-			Logf("Failed to remove expired ratchet file for %v: %v", LogError, false, hexHash, err)
+			ts.logger.Error("Failed to remove expired ratchet file for %v: %v", hexHash, err)
 		}
 	}
 
@@ -1654,7 +1665,7 @@ func (ts *TransportSystem) SetRatchet(destHash, ratchetPub []byte) {
 func (ts *TransportSystem) persistRatchet(storagePath string, destHash, ratchetPub []byte) {
 	ratchetDir := filepath.Join(storagePath, "ratchets")
 	if err := os.MkdirAll(ratchetDir, 0o700); err != nil {
-		Logf("Failed to create ratchet directory: %v", LogError, false, err)
+		ts.logger.Error("Failed to create ratchet directory: %v", err)
 		return
 	}
 
@@ -1669,17 +1680,17 @@ func (ts *TransportSystem) persistRatchet(storagePath string, destHash, ratchetP
 
 	data, err := msgpack.Pack(ratchetData)
 	if err != nil {
-		Logf("Failed to pack ratchet data for %v: %v", LogError, false, hexHash, err)
+		ts.logger.Error("Failed to pack ratchet data for %v: %v", hexHash, err)
 		return
 	}
 
 	if err := os.WriteFile(outPath, data, 0o600); err != nil {
-		Logf("Failed to write ratchet file for %v: %v", LogError, false, hexHash, err)
+		ts.logger.Error("Failed to write ratchet file for %v: %v", hexHash, err)
 		return
 	}
 
 	if err := os.Rename(outPath, finalPath); err != nil {
-		Logf("Failed to finalize ratchet file for %v: %v", LogError, false, hexHash, err)
+		ts.logger.Error("Failed to finalize ratchet file for %v: %v", hexHash, err)
 	}
 }
 
@@ -1696,13 +1707,13 @@ func (ts *TransportSystem) LoadKnownDestinations(storagePath string) {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		Logf("Failed to read known destinations: %v", LogError, false, err)
+		ts.logger.Error("Failed to read known destinations: %v", err)
 		return
 	}
 
 	unpacked, err := Unpack(data)
 	if err != nil {
-		Logf("Failed to unpack known destinations: %v", LogError, false, err)
+		ts.logger.Error("Failed to unpack known destinations: %v", err)
 		return
 	}
 
@@ -1712,7 +1723,7 @@ func (ts *TransportSystem) LoadKnownDestinations(storagePath string) {
 			ts.knownDestinations[k.(string)] = v.([]any)
 		}
 		ts.mu.Unlock()
-		Logf("Loaded %v known destination from storage", LogVerbose, false, len(ts.knownDestinations))
+		ts.logger.Verbose("Loaded %v known destination from storage", len(ts.knownDestinations))
 	}
 }
 
@@ -1720,7 +1731,7 @@ func (ts *TransportSystem) LoadKnownDestinations(storagePath string) {
 func (ts *TransportSystem) SaveKnownDestinations(storagePath string) {
 	path := filepath.Join(storagePath, "known_destinations")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		Logf("Failed to create known destinations directory: %v", LogError, false, err)
+		ts.logger.Error("Failed to create known destinations directory: %v", err)
 		return
 	}
 
@@ -1730,15 +1741,15 @@ func (ts *TransportSystem) SaveKnownDestinations(storagePath string) {
 	ts.mu.Unlock()
 
 	if err != nil {
-		Logf("Failed to pack known destinations: %v", LogError, false, err)
+		ts.logger.Error("Failed to pack known destinations: %v", err)
 		return
 	}
 
 	if err := os.WriteFile(path, data, 0600); err != nil {
-		Logf("Failed to save known destinations: %v", LogError, false, err)
+		ts.logger.Error("Failed to save known destinations: %v", err)
 		return
 	}
-	Logf("Saved %v known destinations to storage", LogDebug, false, count)
+	ts.logger.Debug("Saved %v known destinations to storage", count)
 }
 
 // UnblackholeIdentity removes an identity hash from the local blackhole registry.
@@ -1810,7 +1821,7 @@ func (ts *TransportSystem) RequestPath(destHash []byte) error {
 	ts.ensureStateLocked()
 	if lastRequested, ok := ts.pathRequests[destinationHash]; ok && now.Sub(lastRequested) < pathRequestMinInterval {
 		ts.mu.Unlock()
-		Logf("Suppressing path request for %x due to minimum interval", LogDebug, false, destHash)
+		ts.logger.Debug("Suppressing path request for %x due to minimum interval", destHash)
 		return nil
 	}
 	ts.pathRequests[destinationHash] = now
@@ -1832,11 +1843,11 @@ func (ts *TransportSystem) RequestPath(destHash []byte) error {
 
 // Inbound processes a raw packet received from an interface.
 func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
-	Logf("Inbound: received packet of %d bytes from %s", LogDebug, false, len(raw), iface.Name())
+	ts.logger.Debug("Inbound: received packet of %d bytes from %s", len(raw), iface.Name())
 	if ifac, ok := iface.(ifacInboundHook); ok {
 		processed, accepted := ifac.ApplyIFACInbound(raw)
 		if !accepted {
-			Logf("Dropped packet by IFAC ingress policy on %v", LogDebug, false, iface.Name())
+			ts.logger.Debug("Dropped packet by IFAC ingress policy on %v", iface.Name())
 			return
 		}
 		raw = processed
@@ -1845,17 +1856,17 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 	packet := NewPacketFromRaw(raw)
 	packet.ReceivingInterface = iface
 	if err := packet.Unpack(); err != nil {
-		Logf("Received malformed packet, dropping it: %v", LogExtreme, false, err)
+		ts.logger.Extreme("Received malformed packet, dropping it: %v", err)
 		return
 	}
-	Logf("Inbound packet: type=%v, dest=%x, hops=%v, hash=%x", LogDebug, false, packet.PacketType, packet.DestinationHash, packet.Hops, packet.PacketHash)
+	ts.logger.Debug("Inbound packet: type=%v, dest=%x, hops=%v, hash=%x", packet.PacketType, packet.DestinationHash, packet.Hops, packet.PacketHash)
 
 	packet.Hops++
 
 	// Duplicate detection
 	ts.mu.Lock()
 	if ts.seenOrRememberPacketHashLocked(packet.PacketHash, time.Now()) {
-		Logf("Inbound: dropping duplicate packet %x", LogVerbose, false, packet.PacketHash)
+		ts.logger.Verbose("Inbound: dropping duplicate packet %x", packet.PacketHash)
 		ts.mu.Unlock()
 		return
 	}
@@ -1960,14 +1971,14 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 					}
 
 					ts.mu.Unlock()
-					Logf("Inbound: transmitting forwarded packet on %s", LogDebug, false, entry.Interface.Name())
+					ts.logger.Debug("Inbound: transmitting forwarded packet on %s", entry.Interface.Name())
 					if err := entry.Interface.Send(newRaw); err != nil {
-						Log(fmt.Sprintf("Failed to forward packet: %v", err), LogError, false)
+						ts.logger.Error("Failed to forward packet: %v", err)
 						ts.InvalidatePath(packet.DestinationHash)
 					}
 					return
 				}
-				Logf("Inbound: no path found in ts.pathTable for %x", LogDebug, false, packet.DestinationHash)
+				ts.logger.Debug("Inbound: no path found in ts.pathTable for %x", packet.DestinationHash)
 				ts.mu.Unlock()
 			}
 		}
@@ -2017,7 +2028,7 @@ func nextHopFromAnnounce(packet *Packet) ([]byte, error) {
 
 func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Interface) {
 	if !ValidateAnnounce(ts, packet) {
-		Log(fmt.Sprintf("Received invalid announce for %x, dropping", packet.DestinationHash), LogDebug, false)
+		ts.logger.Debug("Received invalid announce for %x, dropping", packet.DestinationHash)
 		return
 	}
 
@@ -2058,7 +2069,7 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 			if packet.Hops <= entry.Hops {
 				nextHop, err := nextHopFromAnnounce(packet)
 				if err != nil {
-					Logf("Announce next-hop extraction failed for %x: %v", LogDebug, false, packet.DestinationHash, err)
+					ts.logger.Debug("Announce next-hop extraction failed for %x: %v", packet.DestinationHash, err)
 					return
 				}
 				entry.Timestamp = time.Now()
@@ -2077,7 +2088,7 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 		} else {
 			nextHop, err := nextHopFromAnnounce(packet)
 			if err != nil {
-				Logf("Announce next-hop extraction failed for %x: %v", LogDebug, false, packet.DestinationHash, err)
+				ts.logger.Debug("Announce next-hop extraction failed for %x: %v", packet.DestinationHash, err)
 				return
 			}
 			// New path
@@ -2094,7 +2105,7 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 				InterfaceName: iface.Name(),
 				Expires:       time.Now().Add(24 * 7 * time.Hour), // 1 week default
 			}
-			Log(fmt.Sprintf("Learned path to %x via %v, %v hops", packet.DestinationHash, iface.Name(), packet.Hops), LogInfo, false)
+			ts.logger.Info("Learned path to %x via %v, %v hops", packet.DestinationHash, iface.Name(), packet.Hops)
 		}
 
 		// Propagation logic (re-broadcasting announces)
@@ -2153,8 +2164,8 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 
 func (d *Destination) receive(packet *Packet) {
 	if packet.PacketType == PacketLinkRequest {
-		if _, err := ValidateRequest(d, packet.Data, packet); err != nil {
-			Log(fmt.Sprintf("Failed to validate link request for %v: %v", d.name, err), LogDebug, false)
+		if _, err := ValidateRequest(d.logger, d, packet.Data, packet); err != nil {
+			d.logger.Debug("Failed to validate link request for %v: %v", d.name, err)
 		}
 		return
 	}
@@ -2163,7 +2174,7 @@ func (d *Destination) receive(packet *Packet) {
 	if d.callbacks.Packet != nil {
 		plaintext, err := d.Decrypt(packet.Data)
 		if err != nil {
-			Log(fmt.Sprintf("Failed to decrypt packet for %v: %v", d.name, err), LogDebug, false)
+			d.logger.Debug("Failed to decrypt packet for %v: %v", d.name, err)
 			return
 		}
 		d.callbacks.Packet(plaintext, packet)
@@ -2197,14 +2208,14 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 		if ifac, ok := pathEntry.Interface.(ifacOutboundHook); ok {
 			processed, err := ifac.ApplyIFACOutbound(raw)
 			if err != nil {
-				Log(fmt.Sprintf("Could not apply IFAC egress on %v: %v", pathEntry.Interface.Name(), err), LogError, false)
+				ts.logger.Error("Could not apply IFAC egress on %v: %v", pathEntry.Interface.Name(), err)
 				return nil
 			}
 			raw = processed
 		}
 
 		if err := pathEntry.Interface.Send(raw); err != nil {
-			Log(fmt.Sprintf("Could not transmit on %v: %v", pathEntry.Interface.Name(), err), LogError, false)
+			ts.logger.Error("Could not transmit on %v: %v", pathEntry.Interface.Name(), err)
 			ts.InvalidatePath(packet.DestinationHash)
 		}
 
@@ -2223,14 +2234,14 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 		if ifac, ok := iface.(ifacOutboundHook); ok {
 			processed, err := ifac.ApplyIFACOutbound(raw)
 			if err != nil {
-				Log(fmt.Sprintf("Could not apply IFAC egress on %v: %v", iface.Name(), err), LogError, false)
+				ts.logger.Error("Could not apply IFAC egress on %v: %v", iface.Name(), err)
 				continue
 			}
 			raw = processed
 		}
 
 		if err := iface.Send(raw); err != nil {
-			Log(fmt.Sprintf("Could not transmit on %v: %v", iface.Name(), err), LogError, false)
+			ts.logger.Error("Could not transmit on %v: %v", iface.Name(), err)
 			ts.InvalidatePathsViaInterface(iface)
 		}
 	}

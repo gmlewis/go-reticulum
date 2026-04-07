@@ -94,7 +94,7 @@ loglevel = 4
 [interfaces]
 `, t.Name(), sharedPort, rpcPort, rpcKeyHex))
 
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	r := mustTestNewReticulum(t, ts, cfg)
 	defer closeReticulum(t, r)
 	if !r.isSharedInstance {
@@ -151,7 +151,7 @@ loglevel = 4
 [interfaces]
 `, t.Name(), sharedPort, rpcPort))
 
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	r := mustTestNewReticulum(t, ts, cfg)
 	defer closeReticulum(t, r)
 
@@ -192,7 +192,7 @@ loglevel = 4
 [interfaces]
 `, t.Name(), sharedPort, rpcPort, rpcKeyHex))
 
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	r := mustTestNewReticulum(t, ts, cfg)
 	defer closeReticulum(t, r)
 
@@ -235,7 +235,7 @@ loglevel = 4
 	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name()+"-1", sharedPort, rpcPort, rpcKeyHex))
 	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name()+"-2", sharedPort, rpcPort, rpcKeyHex))
 
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	r1 := mustTestNewReticulum(t, ts, cfg1)
 	defer closeReticulum(t, r1)
 	if !r1.isSharedInstance {
@@ -283,7 +283,7 @@ loglevel = 4
 [interfaces]
 `, t.Name(), sharedPort, rpcPort, rpcKeyHex))
 
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	r := mustTestNewReticulum(t, ts, cfg)
 	defer closeReticulum(t, r)
 
@@ -357,7 +357,7 @@ loglevel = 4
 	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name()+"-1", sharedPort, rpcPort, rpcKeyHex))
 	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name()+"-2", sharedPort, rpcPort, rpcKeyHex))
 
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	r1 := mustTestNewReticulum(t, ts, cfg1)
 	defer closeReticulum(t, r1)
 
@@ -495,7 +495,7 @@ func TestConnectedInstanceBlackholeIdentityInvalidHashShortCircuits(t *testing.T
 func TestRPCPathTableSchemaIncludesTimestamp(t *testing.T) {
 	t.Parallel()
 
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	now := time.Now().Truncate(time.Second)
 	destHash := []byte("0123456789abcdef")
 	nextHop := []byte("fedcba9876543210")
@@ -538,7 +538,7 @@ func TestRPCPathTableSchemaIncludesTimestamp(t *testing.T) {
 func TestRPCInterfaceStatsSchemaIncludesCoreFields(t *testing.T) {
 	t.Parallel()
 
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	iface := &dummyInterface{name: "stats-iface"}
 	ts.RegisterInterface(iface)
 
@@ -808,7 +808,7 @@ loglevel = 4
 				writeConfig(t, cfg2, configBody)
 			}
 
-			ts := NewTransportSystem()
+			ts := NewTransportSystem(nil)
 			r1 := mustTestNewReticulum(t, ts, cfg1)
 			defer closeReticulum(t, r1)
 			if !r1.isSharedInstance {

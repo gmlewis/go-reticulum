@@ -49,14 +49,14 @@ func (rt *runtimeT) run(nameFilter string) {
 	verbosity := int(app.verbose)
 
 	if app.monitorMode {
-		ts := rns.NewTransportSystem()
+		ts := rns.NewTransportSystem(logger)
 		ret, err := rns.NewReticulumWithLogger(ts, app.configDir, logger)
 		if err != nil {
 			log.Fatal("No shared RNS instance available to get status from")
 		}
 		defer func() {
 			if err := ret.Close(); err != nil {
-				logger.Log(fmt.Sprintf("Warning: Could not close Reticulum properly: %v", err), rns.LogWarning, false)
+				logger.Warning("Could not close Reticulum properly: %v", err)
 			}
 		}()
 		runMonitor(ret, nameFilter, verbosity, app)

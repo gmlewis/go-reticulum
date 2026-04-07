@@ -143,7 +143,7 @@ func TestRemoteInit(t *testing.T) {
 		identityPath := filepath.Join(tmpDir, "identity")
 
 		// Create a valid identity
-		id, err := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true, nil)
 		mustTest(t, err)
 		if err := id.ToFile(identityPath); err != nil {
 			t.Fatal(err)
@@ -178,7 +178,7 @@ func TestRemoteInit(t *testing.T) {
 		identityPath := filepath.Join(tmpDir, "identity_arg")
 
 		// Create a valid identity
-		id, err := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true, nil)
 		mustTest(t, err)
 		if err := id.ToFile(identityPath); err != nil {
 			t.Fatal(err)
@@ -191,7 +191,7 @@ func TestRemoteInit(t *testing.T) {
 		writeRNSConfig(t, rnsDir)
 
 		c := &clientT{exitFn: exitFn}
-		ret, err := c.remoteInit("", rnsDir, 0, 0, identityPath)
+		ret, err := c.remoteInit(tmpDir, rnsDir, 0, 0, identityPath)
 		if err != nil {
 			t.Fatalf("remoteInit: %v", err)
 		}
@@ -211,7 +211,7 @@ func TestRemoteInit(t *testing.T) {
 		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
-		id, err := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
 			t.Fatalf("NewIdentity: %v", err)
 		}
@@ -259,7 +259,7 @@ loglevel = 1
 		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
-		id, err := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
 			t.Fatalf("NewIdentity: %v", err)
 		}
@@ -294,7 +294,7 @@ loglevel = 1
 		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
-		id, err := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
 			t.Fatalf("NewIdentity: %v", err)
 		}
@@ -333,12 +333,12 @@ loglevel = 1
 	})
 
 	t.Run("testGetTargetIdentityRecall", func(t *testing.T) {
-		id, err := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
 			t.Fatalf("NewIdentity: %v", err)
 		}
 		c := &clientT{
-			ts:     rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
 		c.ts.Remember(nil, id.Hash, id.GetPublicKey(), nil)
@@ -354,7 +354,7 @@ loglevel = 1
 
 	t.Run("testGetTargetIdentityNetwork", func(t *testing.T) {
 		c := &clientT{
-			ts:     rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
 		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -372,7 +372,7 @@ loglevel = 1
 		defer closeReticulum(t, ret)
 
 		lastExitCode = 0
-		id, err := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
 			t.Fatalf("NewIdentity: %v", err)
 		}
@@ -400,7 +400,7 @@ loglevel = 1
 
 	t.Run("testGetTargetIdentityTimeout", func(t *testing.T) {
 		c := &clientT{
-			ts:     rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
 		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -417,7 +417,7 @@ loglevel = 1
 		defer closeReticulum(t, ret)
 
 		lastExitCode = 0
-		id, err := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
 			t.Fatalf("NewIdentity: %v", err)
 		}
@@ -432,11 +432,11 @@ loglevel = 1
 
 	t.Run("testQueryStatusTimeout", func(t *testing.T) {
 		c := &clientT{
-			ts:     rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
 		lastExitCode = 0
-		id, err := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
 			t.Fatalf("NewIdentity: %v", err)
 		}
@@ -489,7 +489,7 @@ loglevel = 1
 
 	t.Run("testRequestSyncInternalTimeout", func(t *testing.T) {
 		c := &clientT{
-			ts:     rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
 		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -507,7 +507,7 @@ loglevel = 1
 		defer closeReticulum(t, ret)
 
 		lastExitCode = 0
-		id, err := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
 			t.Fatalf("NewIdentity: %v", err)
 		}
@@ -520,13 +520,13 @@ loglevel = 1
 	t.Run("requestSync handles ERROR_INVALID_KEY", func(t *testing.T) {
 		lastExitCode = 0
 		c := &clientT{
-			ts:     rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
 		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
-		id, err := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
 			t.Fatalf("NewIdentity: %v", err)
 		}
@@ -553,13 +553,13 @@ loglevel = 1
 	t.Run("requestSync handles int64 ERROR_INVALID_KEY", func(t *testing.T) {
 		lastExitCode = 0
 		c := &clientT{
-			ts:     rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
 		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
-		id, err := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
 			t.Fatalf("NewIdentity: %v", err)
 		}
@@ -585,13 +585,13 @@ loglevel = 1
 	t.Run("requestSync handles ERROR_INVALID_STAMP", func(t *testing.T) {
 		lastExitCode = 0
 		c := &clientT{
-			ts:     rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
 		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
-		id, err := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
 			t.Fatalf("NewIdentity: %v", err)
 		}
@@ -617,13 +617,13 @@ loglevel = 1
 	t.Run("requestSync handles ERROR_THROTTLED", func(t *testing.T) {
 		lastExitCode = 0
 		c := &clientT{
-			ts:     rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
 		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
-		id, err := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
 			t.Fatalf("NewIdentity: %v", err)
 		}
@@ -649,13 +649,13 @@ loglevel = 1
 	t.Run("requestUnpeer handles ERROR_INVALID_KEY", func(t *testing.T) {
 		lastExitCode = 0
 		c := &clientT{
-			ts:     rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
 		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
-		id, err := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
 			t.Fatalf("NewIdentity: %v", err)
 		}
@@ -681,13 +681,13 @@ loglevel = 1
 	t.Run("requestUnpeer handles int64 ERROR_INVALID_KEY", func(t *testing.T) {
 		lastExitCode = 0
 		c := &clientT{
-			ts:     rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
 		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
-		id, err := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
 			t.Fatalf("NewIdentity: %v", err)
 		}
@@ -713,13 +713,13 @@ loglevel = 1
 	t.Run("requestUnpeer handles ERROR_INVALID_STAMP", func(t *testing.T) {
 		lastExitCode = 0
 		c := &clientT{
-			ts:     rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
 		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
-		id, err := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
 			t.Fatalf("NewIdentity: %v", err)
 		}
@@ -745,13 +745,13 @@ loglevel = 1
 	t.Run("requestUnpeer handles ERROR_THROTTLED", func(t *testing.T) {
 		lastExitCode = 0
 		c := &clientT{
-			ts:     rns.NewTransportSystem(),
+			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
 		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 		defer cleanup()
 		identityPath := filepath.Join(tmpDir, "identity")
-		id, err := rns.NewIdentity(true)
+		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
 			t.Fatalf("NewIdentity: %v", err)
 		}

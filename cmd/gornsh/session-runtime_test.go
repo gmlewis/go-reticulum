@@ -51,7 +51,8 @@ func TestStreamPipeSendsDataAndEOF(t *testing.T) {
 
 	sender := &fakeSender{}
 	reader := io.NopCloser(bytesReader("hello"))
-	streamPipe(rns.NewLogger(), sender, reader, streamIDStdout)
+	ac := &activeCommand{rt: &runtimeT{}}
+	ac.streamPipe(sender, reader, streamIDStdout)
 
 	msgs := sender.messages()
 	if len(msgs) != 2 {
@@ -79,7 +80,7 @@ func TestActiveCommandWriteStdin(t *testing.T) {
 	t.Parallel()
 
 	reader, writer := io.Pipe()
-	cmd := &activeCommand{stdin: writer}
+	cmd := &activeCommand{stdin: writer, rt: &runtimeT{}}
 
 	readDone := make(chan []byte, 1)
 	go func() {
@@ -115,7 +116,7 @@ func TestActiveCommandWriteStdinClosedErrorType(t *testing.T) {
 
 	reader, writer := io.Pipe()
 	_ = reader.Close()
-	cmd := &activeCommand{stdin: writer, closed: true}
+	cmd := &activeCommand{stdin: writer, closed: true, rt: &runtimeT{}}
 	err := cmd.writeStdin([]byte("x"), false)
 	if !errors.Is(err, errStdinClosed) {
 		t.Fatalf("expected errStdinClosed, got %v", err)
@@ -127,7 +128,7 @@ func TestActiveCommandWriteStdinClosedPipeErrorType(t *testing.T) {
 
 	reader, writer := io.Pipe()
 	_ = reader.Close()
-	cmd := &activeCommand{stdin: writer}
+	cmd := &activeCommand{stdin: writer, rt: &runtimeT{}}
 	err := cmd.writeStdin([]byte("x"), false)
 	if !errors.Is(err, io.ErrClosedPipe) {
 		t.Fatalf("expected io.ErrClosedPipe, got %v", err)
@@ -151,6 +152,7 @@ func TestActiveCommandCloseKillsWhenNotFinished(t *testing.T) {
 			killed++
 			return nil
 		},
+		rt: &runtimeT{},
 	}
 
 	cmd.close()
@@ -181,6 +183,7 @@ func TestActiveCommandCloseDoesNotKillWhenFinished(t *testing.T) {
 			killed++
 			return nil
 		},
+		rt: &runtimeT{},
 	}
 	cmd.markFinished()
 	cmd.close()
@@ -202,17 +205,17 @@ func TestActiveCommandCloseLogsThroughInjectedLogger(t *testing.T) {
 	logger.SetLogLevel(rns.LogWarning)
 
 	cmd := &activeCommand{
-		stdin:  &closeErrorWriteCloser{},
-		kill:   func() error { return errors.New("kill failed") },
-		logger: logger,
+		stdin: &closeErrorWriteCloser{},
+		kill:  func() error { return errors.New("kill failed") },
+		rt:    &runtimeT{logger: logger},
 	}
 
 	cmd.close()
 
-	if !strings.Contains(captured, "Warning: Could not close stdin for active command") {
+	if !strings.Contains(captured, "Could not close stdin for active command") {
 		t.Fatalf("missing stdin close warning in %q", captured)
 	}
-	if !strings.Contains(captured, "Warning: Could not kill active command properly") {
+	if !strings.Contains(captured, "Could not kill active command properly") {
 		t.Fatalf("missing kill warning in %q", captured)
 	}
 }
@@ -229,7 +232,8 @@ func TestSendProtocolErrorToSenderLogsThroughInjectedLogger(t *testing.T) {
 	logger.SetLogLevel(rns.LogWarning)
 
 	sender := &failingSender{}
-	sendProtocolErrorToSender(logger, sender, "boom", true)
+	rt := &runtimeT{logger: logger}
+	rt.sendProtocolErrorToSender(sender, "boom", true)
 
 	if !strings.Contains(captured, "Failed to send protocol error") {
 		t.Fatalf("missing protocol error warning in %q", captured)

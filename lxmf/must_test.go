@@ -20,7 +20,7 @@ func mustTest(t *testing.T, err error) {
 
 func mustTestNewIdentity(t *testing.T, createKeys bool) *rns.Identity {
 	t.Helper()
-	id, err := rns.NewIdentity(createKeys)
+	id, err := rns.NewIdentity(createKeys, nil)
 	mustTest(t, err)
 	return id
 }

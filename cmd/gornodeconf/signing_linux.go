@@ -21,7 +21,7 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-func handlePublicKeys() error {
+func (rt cliRuntime) handlePublicKeys() error {
 	configDir, err := rnodeconfConfigDir()
 	if err != nil {
 		return err
@@ -54,7 +54,7 @@ func handlePublicKeys() error {
 		}
 	}
 
-	if deviceSigner, err := rns.FromFile(devicePath); err == nil {
+	if deviceSigner, err := rns.FromFile(devicePath, rt.logger); err == nil {
 		fmt.Println("")
 		fmt.Println("Device Signing Public key:")
 		fmt.Println(colonHex(deviceSigner.GetPublicKey()[32:]))
@@ -65,7 +65,7 @@ func handlePublicKeys() error {
 	return errors.Join(errs...)
 }
 
-func handleGenerateKeys(autoinstall bool) error {
+func (rt cliRuntime) handleGenerateKeys(autoinstall bool) error {
 	configDir, err := rnodeconfConfigDir()
 	if err != nil {
 		return err
@@ -78,7 +78,7 @@ func handleGenerateKeys(autoinstall bool) error {
 
 	if _, err := os.Stat(filepath.Join(firmwareDir, "device.key")); os.IsNotExist(err) {
 		fmt.Println("Generating a new device signing key...")
-		deviceSigner, err := rns.NewIdentity(true)
+		deviceSigner, err := rns.NewIdentity(true, rt.logger)
 		if err != nil {
 			return err
 		}

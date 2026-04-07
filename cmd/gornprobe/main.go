@@ -91,14 +91,14 @@ func (rt *runtimeT) run() {
 	}
 	logger.SetLogLevel(targetLogLevel)
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(logger)
 	ret, err := rns.NewReticulumWithLogger(ts, app.configDir, logger)
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
 	cleanup = func() {
 		if err := ret.Close(); err != nil {
-			logger.Log(fmt.Sprintf("Warning: Could not close Reticulum properly: %v", err), rns.LogWarning, false)
+			logger.Warning("Could not close Reticulum properly: %v", err)
 		}
 	}
 	defer func() {

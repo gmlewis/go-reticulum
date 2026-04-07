@@ -43,20 +43,6 @@ func reserveTCPPort(t *testing.T) int {
 	return listener.Addr().(*net.TCPAddr).Port
 }
 
-func captureLoggerState(t *testing.T, logger *rns.Logger) {
-	t.Helper()
-	level := logger.GetLogLevel()
-	dest := logger.GetLogDest()
-	filePath := logger.GetLogFilePath()
-	callback := logger.GetLogCallback()
-	t.Cleanup(func() {
-		logger.SetLogLevel(level)
-		logger.SetLogDest(dest)
-		logger.SetLogFilePath(filePath)
-		logger.SetLogCallback(callback)
-	})
-}
-
 func waitForFileContains(t *testing.T, path string, want string) {
 	t.Helper()
 	deadline := time.Now().Add(500 * time.Millisecond)
@@ -90,14 +76,20 @@ func TestProgramSetupAppliesVerbosityAndLogsNotice(t *testing.T) {
 	writeGornsdConfig(t, configDir, "No", 4)
 
 	logger := rns.NewLogger()
-	captureLoggerState(t, logger)
 	var messages []string
 	logger.SetLogDest(rns.LogCallback)
 	logger.SetLogCallback(func(message string) {
 		messages = append(messages, message)
 	})
 
-	ret, err := programSetup(logger, configDir, 2, 1, false)
+	app := &appT{
+		logger:    logger,
+		configDir: configDir,
+		verbose:   2,
+		quiet:     1,
+		service:   false,
+	}
+	ret, err := app.programSetup()
 	if err != nil {
 		t.Fatalf("programSetup error: %v", err)
 	}
@@ -124,8 +116,14 @@ func TestProgramSetupServiceUsesFileLogging(t *testing.T) {
 	writeGornsdConfig(t, configDir, "No", 4)
 
 	logger := rns.NewLogger()
-	captureLoggerState(t, logger)
-	ret, err := programSetup(logger, configDir, 0, 0, true)
+	app := &appT{
+		logger:    logger,
+		configDir: configDir,
+		verbose:   0,
+		quiet:     0,
+		service:   true,
+	}
+	ret, err := app.programSetup()
 	if err != nil {
 		t.Fatalf("programSetup error: %v", err)
 	}
@@ -166,14 +164,13 @@ loglevel = 4
 	}
 
 	logger := rns.NewLogger()
-	captureLoggerState(t, logger)
 	var messages []string
 	logger.SetLogDest(rns.LogCallback)
 	logger.SetLogCallback(func(message string) {
 		messages = append(messages, message)
 	})
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(logger)
 	shared, err := rns.NewReticulum(ts, configDir)
 	if err != nil {
 		t.Fatalf("failed to start shared instance: %v", err)
@@ -185,7 +182,14 @@ loglevel = 4
 	})
 
 	messages = nil
-	ret, err := programSetup(logger, configDir, 0, 0, false)
+	app := &appT{
+		logger:    logger,
+		configDir: configDir,
+		verbose:   0,
+		quiet:     0,
+		service:   false,
+	}
+	ret, err := app.programSetup()
 	if err != nil {
 		t.Fatalf("programSetup error: %v", err)
 	}

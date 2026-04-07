@@ -57,7 +57,7 @@ func reserveTCPPort(t *testing.T) int {
 func newTestTransportSystem(t *testing.T) *TransportSystem {
 	t.Helper()
 	id := mustTestNewIdentity(t, true)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	ts.identity = id
 	return ts
 }
@@ -93,8 +93,8 @@ func writeConfig(t *testing.T, dir, content string) {
 
 func TestNewReticulumSharedInstanceServerThenClient(t *testing.T) {
 	t.Parallel()
-	ts1 := NewTransportSystem()
-	ts2 := NewTransportSystem()
+	ts1 := NewTransportSystem(nil)
+	ts2 := NewTransportSystem(nil)
 
 	port := reserveTCPPort(t)
 	controlPort := reserveTCPPort(t)
@@ -140,7 +140,7 @@ loglevel = 4
 
 func TestNewReticulumShareInstanceNoStandalone(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 
 	cfg, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -170,8 +170,8 @@ func TestNewReticulumSharedInstanceUnixServerThenClientSameConfigDir(t *testing.
 	}
 
 	t.Parallel()
-	ts1 := NewTransportSystem()
-	ts2 := NewTransportSystem()
+	ts1 := NewTransportSystem(nil)
+	ts2 := NewTransportSystem(nil)
 
 	cfg, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()

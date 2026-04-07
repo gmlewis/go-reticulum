@@ -46,7 +46,7 @@ func TestSignWithoutPortAutoDetectsDiscoveredPort(t *testing.T) {
 	if err := os.MkdirAll(firmwareDir, 0o755); err != nil {
 		t.Fatalf("mkdir firmware dir: %v", err)
 	}
-	deviceSigner, err := rns.NewIdentity(true)
+	deviceSigner, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("create device signer: %v", err)
 	}

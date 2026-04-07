@@ -106,14 +106,14 @@ func (rt *runtimeT) run() {
 	}
 	logger.SetLogLevel(targetLogLevel)
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(logger)
 	ret, err := rns.NewReticulumWithLogger(ts, app.configDir, logger)
 	if err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
 	defer func() {
 		if err := ret.Close(); err != nil {
-			logger.Log(fmt.Sprintf("Warning: Could not close Reticulum properly: %v", err), rns.LogWarning, false)
+			logger.Warning("Could not close Reticulum properly: %v", err)
 		}
 	}()
 
@@ -134,7 +134,7 @@ func (rt *runtimeT) run() {
 			if err != nil {
 				log.Fatal(err)
 			}
-			client, err := connectRemoteClient(os.Stdout, ret.Transport(), remoteHash, app.identityPath, app.remoteTimeout, remotePurposeManagement, false)
+			client, err := rt.connectRemoteClient(os.Stdout, ret.Transport(), remoteHash, app.identityPath, app.remoteTimeout, remotePurposeManagement, false)
 			if err != nil {
 				if errors.Is(err, errPathRequestTimedOut) {
 					os.Exit(12)
@@ -192,7 +192,7 @@ func (rt *runtimeT) run() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		client, err := connectRemoteClient(os.Stdout, ret.Transport(), sourceHash, "", app.remoteTimeout, remotePurposeBlackhole, false)
+		client, err := rt.connectRemoteClient(os.Stdout, ret.Transport(), sourceHash, "", app.remoteTimeout, remotePurposeBlackhole, false)
 		if err != nil {
 			if errors.Is(err, errPathRequestTimedOut) {
 				os.Exit(12)

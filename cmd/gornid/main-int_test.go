@@ -95,8 +95,8 @@ func TestGenerateRoundTrip(t *testing.T) {
 
 func TestLoadIdentityFallsBackToIdentityHash(t *testing.T) {
 	t.Parallel()
-	ts := rns.NewTransportSystem()
-	id, err := rns.NewIdentity(true)
+	ts := rns.NewTransportSystem(nil)
+	id, err := rns.NewIdentity(true, nil)
 	mustTest(t, err)
 
 	destHash := rns.FullHash([]byte("gornid-test-destination"))[:rns.TruncatedHashLength/8]

@@ -146,7 +146,7 @@ func TestIdentityPythonToGoParity(t *testing.T) {
 	}
 
 	// Load with Go
-	id, err := FromFile(idPath)
+	id, err := FromFile(idPath, nil)
 	if err != nil {
 		t.Fatalf("Failed to load identity from file: %v", err)
 	}

@@ -68,9 +68,10 @@ func TestResolveConfigDir(t *testing.T) {
 }
 
 func TestApplyConfig(t *testing.T) {
+	c := &clientT{}
 	t.Run("defaults", func(t *testing.T) {
 		cfg := make(map[string]map[string]string)
-		got, err := applyConfig(rns.NewLogger(), cfg)
+		got, err := c.applyConfig(cfg)
 		mustTest(t, err)
 
 		if got.DisplayName != "Anonymous Peer" {
@@ -110,7 +111,7 @@ func TestApplyConfig(t *testing.T) {
 				"loglevel": "5",
 			},
 		}
-		got, err := applyConfig(rns.NewLogger(), cfg)
+		got, err := c.applyConfig(cfg)
 		mustTest(t, err)
 
 		if got.DisplayName != "My Peer" {
@@ -163,7 +164,7 @@ func TestApplyConfig(t *testing.T) {
 				"remote_peering_cost_max":                "-5",
 			},
 		}
-		got, err := applyConfig(rns.NewLogger(), cfg)
+		got, err := c.applyConfig(cfg)
 		mustTest(t, err)
 		if got.DeliveryTransferMaxAcceptedSize != 0.38 {
 			t.Errorf("DeliveryTransferMaxAcceptedSize: got %v, want 0.38", got.DeliveryTransferMaxAcceptedSize)
@@ -242,7 +243,8 @@ func TestParseIntWarning(t *testing.T) {
 	logger.SetLogCallback(func(s string) { capturedLog += s })
 	logger.SetLogLevel(rns.LogInfo)
 
-	if got := parseInt(logger, "not-a-number"); got != 0 {
+	c := &clientT{logger: logger}
+	if got := c.parseInt("not-a-number"); got != 0 {
 		t.Errorf("parseInt(\"not-a-number\") = %v, want 0", got)
 	}
 	if !strings.Contains(capturedLog, "Invalid integer value") {
@@ -259,7 +261,8 @@ func TestParseFloatWarning(t *testing.T) {
 	logger.SetLogCallback(func(s string) { capturedLog += s })
 	logger.SetLogLevel(rns.LogInfo)
 
-	if got := parseFloat(logger, "not-a-float"); got != 0 {
+	c := &clientT{logger: logger}
+	if got := c.parseFloat("not-a-float"); got != 0 {
 		t.Errorf("parseFloat(\"not-a-float\") = %v, want 0", got)
 	}
 	if !strings.Contains(capturedLog, "Invalid float value") {

@@ -134,7 +134,7 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 	}
 	if identity == nil {
 		var err error
-		identity, err = rns.NewIdentity(true)
+		identity, err = rns.NewIdentity(true, ts.GetLogger())
 		if err != nil {
 			return nil, fmt.Errorf("create router identity: %w", err)
 		}

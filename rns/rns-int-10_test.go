@@ -417,7 +417,7 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 
 	logger := NewLogger()
 	logger.SetLogLevel(LogDebug)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(logger)
 	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
@@ -528,7 +528,7 @@ func TestRatchetPythonToGoParity(t *testing.T) {
 	}
 
 	logger := mustTestLogger(t, LogDebug)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(logger)
 	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
@@ -548,7 +548,7 @@ func TestRatchetPythonToGoParity(t *testing.T) {
 				return
 			default:
 				if err := dest.Announce(nil); err != nil {
-					Logf("failed to announce: %v", LogError, false, err)
+					logger.Error("failed to announce: %v", err)
 				}
 				time.Sleep(500 * time.Millisecond)
 			}
@@ -628,7 +628,7 @@ func TestRatchetRotationParity(t *testing.T) {
 	}
 
 	logger := mustTestLogger(t, LogDebug)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(logger)
 	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
@@ -731,7 +731,7 @@ func TestRatchetRetentionWindowParity(t *testing.T) {
 	}
 
 	logger := mustTestLogger(t, LogDebug)
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(logger)
 	r := mustTestNewReticulumWithLogger(t, ts, goConfigDir, logger)
 	defer closeReticulum(t, r)
 
@@ -819,7 +819,7 @@ func TestRatchetEnforceParity(t *testing.T) {
 		}
 	})
 
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 	id := mustTestNewIdentity(t, true)
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "ratchet_test", "parity")
 	if err := dest.EnableRatchets(filepath.Join(tmpDir, "ratchets_file")); err != nil {
@@ -875,7 +875,7 @@ func TestRatchetFileInteropParity(t *testing.T) {
 		}
 	})
 
-	ts := NewTransportSystem()
+	ts := NewTransportSystem(nil)
 
 	scriptPath := filepath.Join(tmpDir, "ratchet_file_interop.py")
 	if err := os.WriteFile(scriptPath, []byte(ratchetFileInteropPy), 0o644); err != nil {
@@ -934,7 +934,7 @@ func TestRatchetFileInteropParity(t *testing.T) {
 	}
 	pyRatchetPub, _ := HexToBytes(pyRatchetPubHex)
 
-	goLoadedID, err := FromFile(pyIDPath)
+	goLoadedID, err := FromFile(pyIDPath, nil)
 	if err != nil {
 		t.Fatalf("failed loading python identity in go: %v", err)
 	}

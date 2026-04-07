@@ -15,8 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/gmlewis/go-reticulum/rns"
 )
 
 func resolveLogLevel(configLogLevel int, verbosity int, quietness int) int {
@@ -92,10 +90,7 @@ type activeConfig struct {
 	AllowedIdentities                  [][]byte
 }
 
-func applyConfig(logger *rns.Logger, cfg map[string]map[string]string) (*activeConfig, error) {
-	if logger == nil {
-		logger = rns.NewLogger()
-	}
+func (c *clientT) applyConfig(cfg map[string]map[string]string) (*activeConfig, error) {
 	ac := &activeConfig{
 		DisplayName:                        "Anonymous Peer",
 		PeerAnnounceAtStart:                false,
@@ -135,11 +130,11 @@ func applyConfig(logger *rns.Logger, cfg map[string]map[string]string) (*activeC
 			ac.PeerAnnounceAtStart = parseBool(val)
 		}
 		if val, ok := section["announce_interval"]; ok {
-			i := parseInt(logger, val) * 60
+			i := c.parseInt(val) * 60
 			ac.PeerAnnounceInterval = &i
 		}
 		if val, ok := section["delivery_transfer_max_accepted_size"]; ok {
-			ac.DeliveryTransferMaxAcceptedSize = parseFloat(logger, val)
+			ac.DeliveryTransferMaxAcceptedSize = c.parseFloat(val)
 			if ac.DeliveryTransferMaxAcceptedSize < 0.38 {
 				ac.DeliveryTransferMaxAcceptedSize = 0.38
 			}
@@ -167,57 +162,57 @@ func applyConfig(logger *rns.Logger, cfg map[string]map[string]string) (*activeC
 			ac.Autopeer = parseBool(val)
 		}
 		if val, ok := section["autopeer_maxdepth"]; ok {
-			i := parseInt(logger, val)
+			i := c.parseInt(val)
 			ac.AutopeerMaxdepth = &i
 		}
 		if val, ok := section["announce_interval"]; ok {
-			i := parseInt(logger, val) * 60
+			i := c.parseInt(val) * 60
 			ac.NodeAnnounceInterval = &i
 		}
 		if val, ok := section["message_storage_limit"]; ok {
-			ac.MessageStorageLimit = parseFloat(logger, val)
+			ac.MessageStorageLimit = c.parseFloat(val)
 			if ac.MessageStorageLimit < 0.005 {
 				ac.MessageStorageLimit = 0.005
 			}
 		}
 		// Python checks both propagation_transfer_max_accepted_size and propagation_message_max_accepted_size
 		if val, ok := section["propagation_transfer_max_accepted_size"]; ok {
-			ac.PropagationTransferMaxAcceptedSize = parseFloat(logger, val)
+			ac.PropagationTransferMaxAcceptedSize = c.parseFloat(val)
 		}
 		if val, ok := section["propagation_message_max_accepted_size"]; ok {
-			ac.PropagationTransferMaxAcceptedSize = parseFloat(logger, val)
+			ac.PropagationTransferMaxAcceptedSize = c.parseFloat(val)
 		}
 		if ac.PropagationTransferMaxAcceptedSize < 0.38 {
 			ac.PropagationTransferMaxAcceptedSize = 0.38
 		}
 
 		if val, ok := section["propagation_sync_max_accepted_size"]; ok {
-			ac.PropagationSyncMaxAcceptedSize = parseFloat(logger, val)
+			ac.PropagationSyncMaxAcceptedSize = c.parseFloat(val)
 			if ac.PropagationSyncMaxAcceptedSize < 0.38 {
 				ac.PropagationSyncMaxAcceptedSize = 0.38
 			}
 		}
 
 		if val, ok := section["propagation_stamp_cost_target"]; ok {
-			ac.PropagationStampCostTarget = parseInt(logger, val)
+			ac.PropagationStampCostTarget = c.parseInt(val)
 			if ac.PropagationStampCostTarget < 13 { // LXMF.LXMRouter.PROPAGATION_COST_MIN
 				ac.PropagationStampCostTarget = 13
 			}
 		}
 		if val, ok := section["propagation_stamp_cost_flexibility"]; ok {
-			ac.PropagationStampCostFlexibility = parseInt(logger, val)
+			ac.PropagationStampCostFlexibility = c.parseInt(val)
 			if ac.PropagationStampCostFlexibility < 0 {
 				ac.PropagationStampCostFlexibility = 0
 			}
 		}
 		if val, ok := section["peering_cost"]; ok {
-			ac.PeeringCost = parseInt(logger, val)
+			ac.PeeringCost = c.parseInt(val)
 			if ac.PeeringCost < 0 {
 				ac.PeeringCost = 0
 			}
 		}
 		if val, ok := section["remote_peering_cost_max"]; ok {
-			ac.RemotePeeringCostMax = parseInt(logger, val)
+			ac.RemotePeeringCostMax = c.parseInt(val)
 			if ac.RemotePeeringCostMax < 0 {
 				ac.RemotePeeringCostMax = 0
 			}
@@ -237,7 +232,7 @@ func applyConfig(logger *rns.Logger, cfg map[string]map[string]string) (*activeC
 			}
 		}
 		if val, ok := section["max_peers"]; ok {
-			i := parseInt(logger, val)
+			i := c.parseInt(val)
 			ac.MaxPeers = &i
 		}
 		if val, ok := section["from_static_only"]; ok {
@@ -248,7 +243,7 @@ func applyConfig(logger *rns.Logger, cfg map[string]map[string]string) (*activeC
 	// [logging]
 	if section, ok := cfg["logging"]; ok {
 		if val, ok := section["loglevel"]; ok {
-			ac.LogLevel = parseInt(logger, val)
+			ac.LogLevel = c.parseInt(val)
 		}
 	}
 
@@ -260,32 +255,23 @@ func parseBool(s string) bool {
 	return s == "yes" || s == "true" || s == "on" || s == "1"
 }
 
-func parseInt(logger *rns.Logger, s string) int {
-	if logger == nil {
-		logger = rns.NewLogger()
-	}
+func (c *clientT) parseInt(s string) int {
 	i, err := strconv.Atoi(s)
 	if err != nil {
-		logger.Log(fmt.Sprintf("Invalid integer value %q in config: %v", s, err), rns.LogWarning, false)
+		c.logger.Warning("Invalid integer value %q in config: %v", s, err)
 	}
 	return i
 }
 
-func parseFloat(logger *rns.Logger, s string) float64 {
-	if logger == nil {
-		logger = rns.NewLogger()
-	}
+func (c *clientT) parseFloat(s string) float64 {
 	f, err := strconv.ParseFloat(s, 64)
 	if err != nil {
-		logger.Log(fmt.Sprintf("Invalid float value %q in config: %v", s, err), rns.LogWarning, false)
+		c.logger.Warning("Invalid float value %q in config: %v", s, err)
 	}
 	return f
 }
 
-func loadConfig(logger *rns.Logger, configDir string) (*activeConfig, error) {
-	if logger == nil {
-		logger = rns.NewLogger()
-	}
+func (c *clientT) loadConfig(configDir string) (*activeConfig, error) {
 	configPath := filepath.Join(configDir, "config")
 	var cfg map[string]map[string]string
 	if isFile(configPath) {
@@ -298,7 +284,7 @@ func loadConfig(logger *rns.Logger, configDir string) (*activeConfig, error) {
 		cfg = make(map[string]map[string]string)
 	}
 
-	ac, err := applyConfig(logger, cfg)
+	ac, err := c.applyConfig(cfg)
 	if err != nil {
 		return nil, err
 	}

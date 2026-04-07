@@ -45,7 +45,7 @@ func TestGenerateKeysCreatesFirmwareKeyFiles(t *testing.T) {
 		t.Fatalf("signing.key missing: %v", err)
 	}
 
-	deviceSigner, err := rns.FromFile(filepath.Join(firmwareDir, "device.key"))
+	deviceSigner, err := rns.FromFile(filepath.Join(firmwareDir, "device.key"), nil)
 	if err != nil {
 		t.Fatalf("load device.key: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestPublicDisplaysSigningKeyMaterial(t *testing.T) {
 		t.Fatalf("mkdir firmware dir: %v", err)
 	}
 
-	deviceSigner, err := rns.NewIdentity(true)
+	deviceSigner, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("create device identity: %v", err)
 	}

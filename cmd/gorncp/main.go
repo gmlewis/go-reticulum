@@ -73,28 +73,28 @@ func (a *appT) prepareIdentity(identityPath string) *rns.Identity {
 	var id *rns.Identity
 	if _, err := os.Stat(identityPath); err == nil {
 		var err error
-		id, err = rns.FromFile(identityPath)
+		id, err = rns.FromFile(identityPath, logger)
 		if err != nil {
-			logger.Log(fmt.Sprintf("Could not load identity for rncp. The identity file at \"%v\" may be corrupt or unreadable.", identityPath), rns.LogError, false)
+			logger.Error("Could not load identity for rncp. The identity file at %q may be corrupt or unreadable.", identityPath)
 			os.Exit(2)
 		}
 	}
 
 	if id == nil {
-		logger.Log("No valid saved identity found, creating new...", rns.LogInfo, false)
+		logger.Info("No valid saved identity found, creating new...")
 		// Create directory first (matches Python behavior)
 		identityDir := filepath.Dir(identityPath)
 		if err := os.MkdirAll(identityDir, 0o700); err != nil {
-			log.Fatalf("Could not create identity directory: %v\n", err)
+			log.Fatalf("Could not create identity directory: %v", err)
 		}
 
 		var err error
-		id, err = rns.NewIdentity(true)
+		id, err = rns.NewIdentity(true, logger)
 		if err != nil {
-			log.Fatalf("Could not create new identity: %v\n", err)
+			log.Fatalf("Could not create new identity: %v", err)
 		}
 		if err := id.ToFile(identityPath); err != nil {
-			log.Fatalf("Could not persist identity %q: %v\n", identityPath, err)
+			log.Fatalf("Could not persist identity %q: %v", identityPath, err)
 		}
 	}
 	return id
@@ -164,14 +164,14 @@ func main() {
 		logger.SetLogLevel(rns.LogWarning)
 	}
 
-	ts := rns.NewTransportSystem()
+	ts := rns.NewTransportSystem(logger)
 	ret, err := rns.NewReticulumWithLogger(ts, app.configDir, logger)
 	if err != nil {
-		log.Fatalf("Could not initialize Reticulum: %v\n", err)
+		log.Fatalf("Could not initialize Reticulum: %v", err)
 	}
 	defer func() {
 		if err := ret.Close(); err != nil {
-			logger.Log(fmt.Sprintf("Warning: Could not close Reticulum properly: %v", err), rns.LogWarning, false)
+			logger.Warning("Could not close Reticulum properly: %v", err)
 		}
 	}()
 

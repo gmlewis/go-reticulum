@@ -31,6 +31,7 @@ const (
 
 // RequestReceipt represents a receipt for a sent request.
 type RequestReceipt struct {
+	logger        *Logger
 	Link          *Link
 	RequestID     []byte
 	PacketReceipt *PacketReceipt
@@ -83,7 +84,7 @@ func (rr *RequestReceipt) requestResourceConcluded(resource *Resource) {
 	defer rr.mu.Unlock()
 
 	if resource.status == ResourceStatusComplete {
-		Logf("Request %v successfully sent as resource.", LogDebug, false, rr.RequestID)
+		rr.logger.Debug("Request %v successfully sent as resource.", rr.RequestID)
 		if rr.StartedAt.IsZero() {
 			rr.StartedAt = time.Now()
 		}
@@ -91,7 +92,7 @@ func (rr *RequestReceipt) requestResourceConcluded(resource *Resource) {
 		responseTimeout := time.Now().Add(rr.Timeout)
 		go rr.responseTimeoutJob(responseTimeout)
 	} else {
-		Logf("Sending request %v as resource failed", LogDebug, false, rr.RequestID)
+		rr.logger.Debug("Sending request %v as resource failed", rr.RequestID)
 		rr.Status = RequestFailed
 		rr.ConcludedAt = time.Now()
 
