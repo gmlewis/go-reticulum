@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"strconv"
@@ -128,5 +129,30 @@ func (r *replT) dispatch(line string) (output string, done bool) {
 		return "Goodbye.", true
 	default:
 		return fmt.Sprintf("unknown command: %v", command), false
+	}
+}
+
+func (r *replT) Run() {
+	if r == nil || r.in == nil || r.out == nil {
+		return
+	}
+
+	if _, err := fmt.Fprintf(r.out, "gornsd %v\n", rns.VERSION); err != nil {
+		return
+	}
+	scanner := bufio.NewScanner(r.in)
+	for scanner.Scan() {
+		if _, err := fmt.Fprint(r.out, ">>> "); err != nil {
+			return
+		}
+		output, done := r.dispatch(scanner.Text())
+		if output != "" {
+			if _, err := fmt.Fprintln(r.out, output); err != nil {
+				return
+			}
+		}
+		if done {
+			return
+		}
 	}
 }

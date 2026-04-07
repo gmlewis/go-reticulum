@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -213,5 +214,70 @@ func TestReplDispatchEmptyLine(t *testing.T) {
 	}
 	if got, want := output, ""; got != want {
 		t.Fatalf("dispatch(\"\") = %q, want %q", got, want)
+	}
+}
+
+func TestReplRunExitsOnEOF(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	repl := newREPL(nil, nil, strings.NewReader(""), &out)
+	repl.Run()
+	if got := out.String(); !strings.Contains(got, "gornsd") || !strings.Contains(got, rns.VERSION) {
+		t.Fatalf("Run() output = %q, want welcome banner", got)
+	}
+}
+
+func TestReplRunExitsOnQuit(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	repl := newREPL(nil, nil, strings.NewReader("quit\n"), &out)
+	repl.Run()
+	if got := out.String(); !strings.Contains(got, "Goodbye.") {
+		t.Fatalf("Run() output = %q, want Goodbye.", got)
+	}
+}
+
+func TestReplRunPrintsWelcomeBanner(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	repl := newREPL(nil, nil, strings.NewReader(""), &out)
+	repl.Run()
+	got := out.String()
+	if !strings.Contains(got, "gornsd") || !strings.Contains(got, rns.VERSION) {
+		t.Fatalf("Run() output = %q, want welcome banner containing version", got)
+	}
+}
+
+func TestReplRunPrintsPrompt(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	repl := newREPL(nil, nil, strings.NewReader("help\nquit\n"), &out)
+	repl.Run()
+	if !strings.Contains(out.String(), ">>> ") {
+		t.Fatalf("Run() output = %q, want prompt", out.String())
+	}
+}
+
+func TestReplRunMultipleCommands(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	repl := newREPL(nil, nil, strings.NewReader("version\nhelp\nquit\n"), &out)
+	repl.Run()
+	got := out.String()
+	for _, want := range []string{"gornsd " + rns.VERSION, "help", "Goodbye."} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("Run() output = %q, want %q", got, want)
+		}
+	}
+}
+
+func TestReplRunUnknownCommandContinues(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	repl := newREPL(nil, nil, strings.NewReader("bogus\nquit\n"), &out)
+	repl.Run()
+	got := out.String()
+	if !strings.Contains(got, "unknown command") || !strings.Contains(got, "Goodbye.") {
+		t.Fatalf("Run() output = %q, want unknown command and Goodbye.", got)
 	}
 }
