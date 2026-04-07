@@ -152,6 +152,34 @@ func TestProgramSetupServiceUsesFileLogging(t *testing.T) {
 	waitForFileContains(t, filepath.Join(configDir, "logfile"), "Started gornsd version")
 }
 
+func TestProgramSetupServiceKeepsConfigLogLevel(t *testing.T) {
+	configDir, cleanup := testutils.TempDir(t, "gornsd-program-service-level-")
+	defer cleanup()
+	writeGornsdConfig(t, configDir, "No", 4)
+
+	logger := rns.NewLogger()
+	app := &appT{
+		logger:    logger,
+		configDir: configDir,
+		verbose:   2,
+		quiet:     0,
+		service:   true,
+	}
+	ret, err := app.programSetup()
+	if err != nil {
+		t.Fatalf("programSetup error: %v", err)
+	}
+	t.Cleanup(func() {
+		if closeErr := ret.Close(); closeErr != nil {
+			t.Fatalf("ret.Close error: %v", closeErr)
+		}
+	})
+
+	if got, want := logger.GetLogLevel(), 4; got != want {
+		t.Fatalf("log level = %v, want %v", got, want)
+	}
+}
+
 func TestProgramSetupConnectedSharedInstanceLogsWarning(t *testing.T) {
 	configDir, cleanup := testutils.TempDir(t, "gornsd-program-shared-")
 	defer cleanup()
