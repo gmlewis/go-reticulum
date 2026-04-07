@@ -114,7 +114,12 @@ func main() {
 func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	_ = stdin
 
-	opts, err := parseFlags(args, stdout)
+	usageOutput := io.Discard
+	if hasHelpFlag(args) {
+		usageOutput = stdout
+	}
+
+	opts, err := parseFlags(args, usageOutput)
 	if err != nil {
 		if err == errHelp {
 			return 0
@@ -155,6 +160,15 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		log.Fatalf("gornsh: %v", err)
 	}
 	return code
+}
+
+func hasHelpFlag(args []string) bool {
+	for _, arg := range args {
+		if arg == "-h" || arg == "--help" {
+			return true
+		}
+	}
+	return false
 }
 
 func (rt *runtimeT) printIdentity() error {
@@ -399,6 +413,7 @@ func (rt *runtimeT) doInitiate() (int, error) {
 	}
 
 	if !opts.noID {
+		time.Sleep(50 * time.Millisecond)
 		if err := link.Identify(id); err != nil {
 			return 1, fmt.Errorf("identify failed: %w", err)
 		}

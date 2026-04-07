@@ -60,6 +60,42 @@ func TestRunHelpOutput(t *testing.T) {
 	}
 }
 
+func TestRunUnknownFlag(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	exitCode := run([]string{"--unknown-flag-xyz"}, strings.NewReader(""), &stdout, &stderr)
+
+	if exitCode == 0 {
+		t.Fatal("exit code = 0, want non-zero")
+	}
+	if stderr.Len() == 0 {
+		t.Fatal("stderr = empty, want error output")
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+}
+
+func TestRunNoArguments(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	exitCode := run([]string{}, strings.NewReader(""), &stdout, &stderr)
+
+	if exitCode == 0 {
+		t.Fatal("exit code = 0, want non-zero")
+	}
+	if stdout.Len() == 0 && stderr.Len() == 0 {
+		t.Fatal("expected usage output on stdout or stderr")
+	}
+	if !strings.Contains(stdout.String()+stderr.String(), "gornsh") {
+		t.Fatalf("usage output missing gornsh hint:\nstdout=%q\nstderr=%q", stdout.String(), stderr.String())
+	}
+}
+
 func TestParseAllowedIdentityHash(t *testing.T) {
 	t.Parallel()
 
