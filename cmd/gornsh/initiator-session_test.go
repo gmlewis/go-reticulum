@@ -37,6 +37,7 @@ type fakeChannelSession struct {
 	mu       sync.Mutex
 	handlers []func(rns.Message) bool
 	onSend   func(rns.Message)
+	mdu      int
 }
 
 type timedEvent struct {
@@ -55,6 +56,13 @@ func (f *fakeChannelSession) AddMessageHandler(handler func(rns.Message) bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.handlers = append(f.handlers, handler)
+}
+
+func (f *fakeChannelSession) MDU() int {
+	if f.mdu <= 0 {
+		return 4096
+	}
+	return f.mdu
 }
 
 func (f *fakeChannelSession) emit(msg rns.Message) {
@@ -107,6 +115,55 @@ func TestInitiatorSessionDecompressesCompressedStreams(t *testing.T) {
 	}
 	if got := s.stdout.String(); got != "compressed hello" {
 		t.Fatalf("buffered stdout=%q, want %q", got, "compressed hello")
+	}
+}
+
+func TestCompressAdaptiveStreamData(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		input     []byte
+		maxSize   int
+		wantComp  bool
+		wantBytes []byte
+	}{
+		{
+			name:      "small stays raw",
+			input:     []byte("abc"),
+			maxSize:   4096,
+			wantComp:  false,
+			wantBytes: []byte("abc"),
+		},
+		{
+			name:     "repetitive compresses",
+			input:    bytes.Repeat([]byte("aaaaabbbbbccccc"), 64),
+			maxSize:  4096,
+			wantComp: true,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			gotBytes, gotComp, err := compressAdaptiveStreamData(tc.input, tc.maxSize)
+			if err != nil {
+				t.Fatalf("compressAdaptiveStreamData() error: %v", err)
+			}
+			if gotComp != tc.wantComp {
+				t.Fatalf("compressed=%v, want %v", gotComp, tc.wantComp)
+			}
+			if tc.wantComp {
+				if len(gotBytes) >= len(tc.input) {
+					t.Fatalf("compressed size=%v, want smaller than %v", len(gotBytes), len(tc.input))
+				}
+				return
+			}
+			if !bytes.Equal(gotBytes, tc.wantBytes) {
+				t.Fatalf("bytes=%q, want %q", string(gotBytes), string(tc.wantBytes))
+			}
+		})
 	}
 }
 

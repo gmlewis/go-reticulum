@@ -349,7 +349,12 @@ func (rt *runtimeT) pumpInitiatorStdin(sender messageSender) {
 		if n > 0 {
 			chunk := make([]byte, n)
 			copy(chunk, buf[:n])
-			if sendErr := sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamIDStdin, Data: chunk, EOF: false, Compressed: false}, time.Now().Add(2*time.Second)); sendErr != nil {
+			payload, compressed, compressErr := compressAdaptiveStreamData(chunk, messageSenderMDU(sender))
+			if compressErr != nil {
+				rt.sendProtocolErrorToSender(sender, compressErr.Error(), true)
+				return
+			}
+			if sendErr := sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamIDStdin, Data: payload, EOF: false, Compressed: compressed}, time.Now().Add(2*time.Second)); sendErr != nil {
 				return
 			}
 		}
@@ -361,6 +366,38 @@ func (rt *runtimeT) pumpInitiatorStdin(sender messageSender) {
 			return
 		}
 	}
+}
+
+func messageSenderMDU(sender messageSender) int {
+	type mduProvider interface {
+		MDU() int
+	}
+	if provider, ok := sender.(mduProvider); ok {
+		return provider.MDU()
+	}
+	return 0
+}
+
+func compressAdaptiveStreamData(data []byte, maxSize int) ([]byte, bool, error) {
+	if len(data) == 0 {
+		return data, false, nil
+	}
+
+	var compressed bytes.Buffer
+	writer, err := bzip2.NewWriter(&compressed, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	if _, err := writer.Write(data); err != nil {
+		return nil, false, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, false, err
+	}
+	if compressed.Len() < len(data) && (maxSize <= 0 || compressed.Len() <= maxSize) {
+		return compressed.Bytes(), true, nil
+	}
+	return append([]byte(nil), data...), false, nil
 }
 
 func pumpWindowSizeUpdates(sender messageSender, stop <-chan struct{}, interval time.Duration, initialRows, initialCols *int) {
