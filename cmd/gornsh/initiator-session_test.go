@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"cmp"
 	"errors"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gmlewis/go-reticulum/compress/bzip2"
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
@@ -61,6 +63,50 @@ func (f *fakeChannelSession) emit(msg rns.Message) {
 	f.mu.Unlock()
 	for _, handler := range handlers {
 		handler(msg)
+	}
+}
+
+func TestInitiatorSessionDecompressesCompressedStreams(t *testing.T) {
+	s := newInitiatorChannelSession()
+	s.state = initiatorWaitExit
+
+	var compressed bytes.Buffer
+	writer, err := bzip2.NewWriter(&compressed, nil)
+	if err != nil {
+		t.Fatalf("bzip2.NewWriter() error: %v", err)
+	}
+	if _, err := writer.Write([]byte("compressed hello")); err != nil {
+		t.Fatalf("writer.Write() error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("writer.Close() error: %v", err)
+	}
+
+	oldStdout := os.Stdout
+	stdoutReader, stdoutWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() error: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = stdoutReader.Close()
+		_ = stdoutWriter.Close()
+		os.Stdout = oldStdout
+	})
+	os.Stdout = stdoutWriter
+
+	if !s.handleMessage(&streamDataMessage{StreamID: streamIDStdout, Data: compressed.Bytes(), Compressed: true}) {
+		t.Fatal("compressed stdout stream not handled")
+	}
+
+	decoded := make([]byte, len("compressed hello"))
+	if _, err := io.ReadFull(stdoutReader, decoded); err != nil {
+		t.Fatalf("stdout ReadFull error: %v", err)
+	}
+	if got := string(decoded); got != "compressed hello" {
+		t.Fatalf("stdout=%q, want %q", got, "compressed hello")
+	}
+	if got := s.stdout.String(); got != "compressed hello" {
+		t.Fatalf("buffered stdout=%q, want %q", got, "compressed hello")
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gmlewis/go-reticulum/compress/bzip2"
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
@@ -83,6 +84,14 @@ func (s *initiatorChannelSession) handleMessage(message rns.Message) bool {
 	case *streamDataMessage:
 		if s.state != initiatorWaitExit {
 			return true
+		}
+		if msg.Compressed {
+			decoded, err := decodeCompressedStreamData(msg.Data)
+			if err != nil {
+				s.emitErrLocked(err)
+				return true
+			}
+			msg = &streamDataMessage{StreamID: msg.StreamID, Data: decoded, EOF: msg.EOF, Compressed: false}
 		}
 		s.appendStreamLocked(msg)
 		return true
@@ -410,6 +419,21 @@ func writeInitiatorStreams(session *initiatorChannelSession) {
 	defer session.mu.Unlock()
 	session.stdout.Reset()
 	session.stderr.Reset()
+}
+
+func decodeCompressedStreamData(data []byte) ([]byte, error) {
+	reader, err := bzip2.NewReader(bytes.NewReader(data), nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = reader.Close()
+	}()
+	decoded, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+	return decoded, nil
 }
 
 func sendMessageWithRetry(sender messageSender, msg rns.Message, deadline time.Time) error {
