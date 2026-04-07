@@ -12,6 +12,29 @@ import (
 	"testing"
 )
 
+const pythonHelpText = `usage: rnsd.py [-h] [--config CONFIG] [-v] [-q] [-s] [-i] [--exampleconfig]
+							 [--version]
+
+Reticulum Network Stack Daemon
+
+options:
+	-h, --help         show this help message and exit
+	--config CONFIG    path to alternative Reticulum config directory
+	-v, --verbose
+	-q, --quiet
+	-s, --service      rnsd is running as a service and should log to file
+	-i, --interactive  drop into interactive shell after initialisation
+	--exampleconfig    print verbose configuration example to stdout and exit
+	--version          show program's version number and exit
+`
+
+func normalizeHelpText(text string) string {
+	text = strings.ReplaceAll(text, "gornsd", "rnsd")
+	text = strings.ReplaceAll(text, "rnsd.py", "rnsd")
+	text = strings.ReplaceAll(text, "Go Reticulum", "Reticulum")
+	return strings.Join(strings.Fields(text), " ")
+}
+
 func TestCountFlagAccumulates(t *testing.T) {
 	t.Parallel()
 
@@ -60,6 +83,36 @@ func TestParseFlagsHelp(t *testing.T) {
 	}
 	if got := buf.String(); got != usageText {
 		t.Fatalf("help output mismatch:\n--- got ---\n%v\n--- want ---\n%v", got, usageText)
+	}
+}
+
+func TestUsageTextNormalizedParity(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "full help text", want: pythonHelpText},
+		{name: "service description", want: "-s, --service rnsd is running as a service and should log to file"},
+		{name: "interactive description", want: "-i, --interactive drop into interactive shell after initialisation"},
+		{name: "exampleconfig description", want: "--exampleconfig print verbose configuration example to stdout and exit"},
+		{name: "version description", want: "--version show program's version number and exit"},
+	}
+	got := normalizeHelpText(usageText)
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if test.name == "full help text" {
+				if got != normalizeHelpText(test.want) {
+					t.Fatalf("normalized usage text mismatch:\n--- got ---\n%v\n--- want ---\n%v", got, normalizeHelpText(test.want))
+				}
+				return
+			}
+			if !strings.Contains(got, normalizeHelpText(test.want)) {
+				t.Fatalf("normalized usage text missing %q in %q", normalizeHelpText(test.want), got)
+			}
+		})
 	}
 }
 
