@@ -7,6 +7,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -221,7 +222,7 @@ func TestReplRunExitsOnEOF(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
 	repl := newREPL(nil, nil, strings.NewReader(""), &out)
-	repl.Run()
+	repl.Run(context.Background())
 	if got := out.String(); !strings.Contains(got, "gornsd") || !strings.Contains(got, rns.VERSION) {
 		t.Fatalf("Run() output = %q, want welcome banner", got)
 	}
@@ -231,7 +232,7 @@ func TestReplRunExitsOnQuit(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
 	repl := newREPL(nil, nil, strings.NewReader("quit\n"), &out)
-	repl.Run()
+	repl.Run(context.Background())
 	if got := out.String(); !strings.Contains(got, "Goodbye.") {
 		t.Fatalf("Run() output = %q, want Goodbye.", got)
 	}
@@ -241,7 +242,7 @@ func TestReplRunPrintsWelcomeBanner(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
 	repl := newREPL(nil, nil, strings.NewReader(""), &out)
-	repl.Run()
+	repl.Run(context.Background())
 	got := out.String()
 	if !strings.Contains(got, "gornsd") || !strings.Contains(got, rns.VERSION) {
 		t.Fatalf("Run() output = %q, want welcome banner containing version", got)
@@ -252,7 +253,7 @@ func TestReplRunPrintsPrompt(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
 	repl := newREPL(nil, nil, strings.NewReader("help\nquit\n"), &out)
-	repl.Run()
+	repl.Run(context.Background())
 	if !strings.Contains(out.String(), ">>> ") {
 		t.Fatalf("Run() output = %q, want prompt", out.String())
 	}
@@ -262,7 +263,7 @@ func TestReplRunMultipleCommands(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
 	repl := newREPL(nil, nil, strings.NewReader("version\nhelp\nquit\n"), &out)
-	repl.Run()
+	repl.Run(context.Background())
 	got := out.String()
 	for _, want := range []string{"gornsd " + rns.VERSION, "help", "Goodbye."} {
 		if !strings.Contains(got, want) {
@@ -275,9 +276,25 @@ func TestReplRunUnknownCommandContinues(t *testing.T) {
 	t.Parallel()
 	var out bytes.Buffer
 	repl := newREPL(nil, nil, strings.NewReader("bogus\nquit\n"), &out)
-	repl.Run()
+	repl.Run(context.Background())
 	got := out.String()
 	if !strings.Contains(got, "unknown command") || !strings.Contains(got, "Goodbye.") {
 		t.Fatalf("Run() output = %q, want unknown command and Goodbye.", got)
+	}
+}
+
+func TestReplRunExitsOnContextCancel(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	repl := newREPL(nil, nil, strings.NewReader("version\nquit\n"), &out)
+	repl.Run(ctx)
+	got := out.String()
+	if !strings.Contains(got, "gornsd") || !strings.Contains(got, rns.VERSION) {
+		t.Fatalf("Run(ctx) output = %q, want welcome banner", got)
+	}
+	if strings.Contains(got, "Goodbye.") {
+		t.Fatalf("Run(ctx) output = %q, want no Goodbye after cancelled context", got)
 	}
 }

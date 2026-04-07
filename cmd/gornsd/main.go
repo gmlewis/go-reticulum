@@ -13,6 +13,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -68,7 +69,23 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 	}()
 
 	if app.interactive {
-		waitForInteractiveShell()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		stop := make(chan os.Signal, 1)
+		signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+		defer signal.Stop(stop)
+
+		go func() {
+			<-stop
+			cancel()
+		}()
+
+		repl := newREPL(ret, logger, stdin, stdout)
+		repl.Run(ctx)
+		if _, err := fmt.Fprintln(stdout); err != nil {
+			return 1
+		}
 	} else {
 		waitForInterruptSignal()
 	}
@@ -90,10 +107,6 @@ func waitForInterruptSignal() {
 	waitForInterrupt(stop, func() {
 		fmt.Println()
 	})
-}
-
-func waitForInteractiveShell() {
-	waitForInterruptSignal()
 }
 
 const exampleRNSConfig = `# This is an example Reticulum config file.

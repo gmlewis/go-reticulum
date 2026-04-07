@@ -7,6 +7,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"strconv"
@@ -132,27 +133,51 @@ func (r *replT) dispatch(line string) (output string, done bool) {
 	}
 }
 
-func (r *replT) Run() {
+func (r *replT) Run(ctx context.Context) {
 	if r == nil || r.in == nil || r.out == nil {
 		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	if _, err := fmt.Fprintf(r.out, "gornsd %v\n", rns.VERSION); err != nil {
 		return
 	}
-	scanner := bufio.NewScanner(r.in)
-	for scanner.Scan() {
-		if _, err := fmt.Fprint(r.out, ">>> "); err != nil {
-			return
-		}
-		output, done := r.dispatch(scanner.Text())
-		if output != "" {
-			if _, err := fmt.Fprintln(r.out, output); err != nil {
+
+	lines := make(chan string)
+	go func() {
+		defer close(lines)
+		scanner := bufio.NewScanner(r.in)
+		for scanner.Scan() {
+			select {
+			case lines <- scanner.Text():
+			case <-ctx.Done():
 				return
 			}
 		}
-		if done {
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
 			return
+		case line, ok := <-lines:
+			if !ok {
+				return
+			}
+			if _, err := fmt.Fprint(r.out, ">>> "); err != nil {
+				return
+			}
+			output, done := r.dispatch(line)
+			if output != "" {
+				if _, err := fmt.Fprintln(r.out, output); err != nil {
+					return
+				}
+			}
+			if done {
+				return
+			}
 		}
 	}
 }

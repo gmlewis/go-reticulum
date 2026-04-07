@@ -7,18 +7,27 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func runMainWithArgs(t *testing.T, args ...string) (stdoutText string, stderrText string, exitCode int) {
 	t.Helper()
+	return runMainWithInput(t, strings.NewReader(""), args...)
+}
+
+func runMainWithInput(t *testing.T, stdin io.Reader, args ...string) (stdoutText string, stderrText string, exitCode int) {
+	t.Helper()
 
 	var stdoutBuf bytes.Buffer
 	var stderrBuf bytes.Buffer
-	exitCode = run(args, strings.NewReader(""), &stdoutBuf, &stderrBuf)
+	exitCode = run(args, stdin, &stdoutBuf, &stderrBuf)
 	return stdoutBuf.String(), stderrBuf.String(), exitCode
 }
 
@@ -122,5 +131,28 @@ func TestMainUnknownFlagExitCode2(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "usage: gornsd") {
 		t.Fatalf("stderr = %q, want usage text", stderr)
+	}
+}
+
+func TestMainInteractiveModeREPL(t *testing.T) {
+	t.Parallel()
+	configDir, cleanup := testutils.TempDir(t, "gornsd-main-interactive-")
+	defer cleanup()
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte("[reticulum]\nshare_instance = No\n\n[interfaces]\n"), 0o600); err != nil {
+		t.Fatalf("write config error: %v", err)
+	}
+
+	stdout, stderr, exitCode := runMainWithInput(t, strings.NewReader("version\nquit\n"), "--config", configDir, "-i")
+	if exitCode != 0 {
+		t.Fatalf("exit code = %v, want 0\nstdout=%q\nstderr=%q", exitCode, stdout, stderr)
+	}
+	if stderr != "" {
+		t.Fatalf("stderr = %q, want empty", stderr)
+	}
+	if !strings.Contains(stdout, "gornsd 0.1.0") {
+		t.Fatalf("stdout = %q, want version output", stdout)
+	}
+	if !strings.Contains(stdout, "Goodbye.") {
+		t.Fatalf("stdout = %q, want goodbye output", stdout)
 	}
 }
