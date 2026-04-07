@@ -104,9 +104,10 @@ func waitForInterruptSignal() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(stop)
-	waitForInterrupt(stop, func() {
+	sig := <-stop
+	if sig == os.Interrupt {
 		fmt.Println()
-	})
+	}
 }
 
 const exampleRNSConfig = `# This is an example Reticulum config file.
