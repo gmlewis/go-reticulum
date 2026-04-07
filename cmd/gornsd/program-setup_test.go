@@ -70,6 +70,16 @@ func waitForMessageContains(t *testing.T, messages *[]string, want string) {
 	t.Fatalf("messages did not contain %q: %#v", want, *messages)
 }
 
+func countMessageContains(messages []string, want string) int {
+	count := 0
+	for _, message := range messages {
+		if strings.Contains(message, want) {
+			count++
+		}
+	}
+	return count
+}
+
 func TestProgramSetupAppliesVerbosityAndLogsNotice(t *testing.T) {
 	configDir, cleanup := testutils.TempDir(t, "gornsd-program-setup-")
 	defer cleanup()
@@ -105,8 +115,8 @@ func TestProgramSetupAppliesVerbosityAndLogsNotice(t *testing.T) {
 	if got, want := logger.GetLogDest(), rns.LogCallback; got != want {
 		t.Fatalf("log dest = %v, want %v", got, want)
 	}
-	if len(messages) == 0 || !strings.Contains(messages[len(messages)-1], "Started gornsd version") {
-		t.Fatalf("startup notice missing from messages: %#v", messages)
+	if got, want := countMessageContains(messages, "Started gornsd version"), 1; got != want {
+		t.Fatalf("startup notice count = %v, want %v; messages=%#v", got, want, messages)
 	}
 }
 

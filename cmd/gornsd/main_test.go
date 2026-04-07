@@ -8,6 +8,8 @@ package main
 import (
 	"io"
 	"os"
+	"os/exec"
+	"strings"
 	"testing"
 	"time"
 )
@@ -107,4 +109,74 @@ func TestMainHelpOutput(t *testing.T) {
 	if stderr != usageText {
 		t.Fatalf("stderr mismatch:\n--- got ---\n%v--- want ---\n%v", stderr, usageText)
 	}
+}
+
+func TestMainUnknownFlagExitCode2(t *testing.T) {
+	t.Parallel()
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestMainHelperProcess", "--", "--bogus")
+	cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
+	stdout, stderr, exitCode := runCommand(t, cmd)
+	if exitCode != 2 {
+		t.Fatalf("exit code = %v, want 2\nstdout=%q\nstderr=%q", exitCode, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "flag provided but not defined: -bogus") {
+		t.Fatalf("stderr = %q, want flag parser error", stderr)
+	}
+	if !strings.Contains(stderr, "usage: gornsd") {
+		t.Fatalf("stderr = %q, want usage text", stderr)
+	}
+}
+
+func TestMainHelperProcess(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+	args := os.Args
+	for i := range args {
+		if args[i] == "--" {
+			os.Args = append([]string{"gornsd"}, args[i+1:]...)
+			break
+		}
+	}
+	main()
+	os.Exit(0)
+}
+
+func runCommand(t *testing.T, cmd *exec.Cmd) (stdout string, stderr string, exitCode int) {
+	t.Helper()
+	stdoutBytes, stderrBytes, err := runCommandOutput(cmd)
+	if err == nil {
+		return string(stdoutBytes), string(stderrBytes), 0
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		return string(stdoutBytes), string(stderrBytes), exitErr.ExitCode()
+	}
+	t.Fatalf("command failed: %v", err)
+	return "", "", 0
+}
+
+func runCommandOutput(cmd *exec.Cmd) ([]byte, []byte, error) {
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, nil, err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, nil, err
+	}
+	stdoutBytes, err := io.ReadAll(stdout)
+	if err != nil {
+		_ = cmd.Wait()
+		return nil, nil, err
+	}
+	stderrBytes, err := io.ReadAll(stderr)
+	if err != nil {
+		_ = cmd.Wait()
+		return nil, nil, err
+	}
+	return stdoutBytes, stderrBytes, cmd.Wait()
 }

@@ -56,8 +56,6 @@ func main() {
 		}
 	}()
 
-	logger.Notice("Started gornsd version %v", rns.VERSION)
-
 	if app.interactive {
 		waitForInteractiveShell()
 	} else {
