@@ -14,6 +14,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -24,24 +25,34 @@ import (
 
 func main() {
 	log.SetFlags(0)
-	app, err := parseFlags(os.Args[1:], os.Stderr)
+	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+}
+
+func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
+	app, err := parseFlags(args, stderr)
 	if err != nil {
 		if err == errHelp {
-			return
+			return 0
 		}
-		fmt.Fprintln(os.Stderr, err)
-		(&appT{}).usage(os.Stderr)
-		os.Exit(2)
+		if _, writeErr := fmt.Fprintln(stderr, err); writeErr != nil {
+			return 1
+		}
+		(&appT{}).usage(stderr)
+		return 2
 	}
 
 	if app.version {
-		fmt.Printf("gornsd %v\n", rns.VERSION)
-		return
+		if _, writeErr := fmt.Fprintf(stdout, "gornsd %v\n", rns.VERSION); writeErr != nil {
+			return 1
+		}
+		return 0
 	}
 
 	if app.exampleConfig {
-		fmt.Print(exampleRNSConfig)
-		return
+		if _, writeErr := fmt.Fprint(stdout, exampleRNSConfig); writeErr != nil {
+			return 1
+		}
+		return 0
 	}
 
 	logger := rns.NewLogger()
@@ -61,6 +72,8 @@ func main() {
 	} else {
 		waitForInterruptSignal()
 	}
+
+	return 0
 }
 
 func waitForInterrupt(stop <-chan os.Signal, onInterrupt func()) {
