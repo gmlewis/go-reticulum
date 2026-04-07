@@ -39,6 +39,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -73,13 +74,8 @@ type realAnnouncementTicker struct {
 	ticker *time.Ticker
 }
 
-func (t *realAnnouncementTicker) C() <-chan time.Time {
-	return t.ticker.C
-}
-
-func (t *realAnnouncementTicker) Stop() {
-	t.ticker.Stop()
-}
+func (t *realAnnouncementTicker) C() <-chan time.Time { return t.ticker.C }
+func (t *realAnnouncementTicker) Stop()               { t.ticker.Stop() }
 
 var newAnnouncementTicker = func(interval time.Duration) announcementTicker {
 	return &realAnnouncementTicker{ticker: time.NewTicker(interval)}
@@ -111,17 +107,26 @@ func newRuntime(opts options) *runtimeT {
 }
 
 func main() {
-	opts, err := parseFlags(os.Args[1:], os.Stderr)
+	log.SetFlags(0)
+	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+}
+
+func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
+	_ = stdin
+
+	opts, err := parseFlags(args, stdout)
 	if err != nil {
 		if err == errHelp {
-			return
+			return 0
 		}
-		log.Fatalf("gornsh: %v", err)
+		_, _ = fmt.Fprintln(stderr, err)
+		usage(stderr)
+		return 2
 	}
 
 	if opts.version {
-		_, _ = fmt.Printf("gornsh %v\n", rns.VERSION)
-		return
+		_, _ = fmt.Fprintf(stdout, "gornsh %v\n", rns.VERSION)
+		return 0
 	}
 
 	rt := newRuntime(opts)
@@ -130,26 +135,26 @@ func main() {
 		if err := rt.printIdentity(); err != nil {
 			log.Fatalf("gornsh: %v", err)
 		}
-		return
+		return 0
 	}
 
 	if rt.opts.listen {
 		if err := rt.doListen(); err != nil {
 			log.Fatalf("gornsh: %v", err)
 		}
-		return
+		return 0
 	}
 
 	if rt.opts.destination == "" {
-		usage(os.Stderr)
-		os.Exit(2)
+		usage(stderr)
+		return 2
 	}
 
 	code, err := rt.doInitiate()
 	if err != nil {
 		log.Fatalf("gornsh: %v", err)
 	}
-	os.Exit(code)
+	return code
 }
 
 func (rt *runtimeT) printIdentity() error {

@@ -21,6 +21,45 @@ import (
 
 const tempDirPrefix = "gornsh-test-"
 
+func TestRunVersionOutput(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	exitCode := run([]string{"--version"}, strings.NewReader(""), &stdout, &stderr)
+
+	if exitCode != 0 {
+		t.Fatalf("exit code = %v, want 0", exitCode)
+	}
+	if got, want := stdout.String(), "gornsh "+rns.VERSION+"\n"; got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRunHelpOutput(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	exitCode := run([]string{"--help"}, strings.NewReader(""), &stdout, &stderr)
+
+	if exitCode != 0 {
+		t.Fatalf("exit code = %v, want 0", exitCode)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+	got := stdout.String()
+	for _, want := range []string{"--listen", "--config", "--identity", "--service", "--announce", "--allowed", "--no-auth", "--no-id", "--mirror", "--timeout", "--no-tty", "--remote-command-as-args", "--no-remote-command", "--print-identity"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("help output missing %q in:\n%v", want, got)
+		}
+	}
+}
+
 func TestParseAllowedIdentityHash(t *testing.T) {
 	t.Parallel()
 
