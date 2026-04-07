@@ -311,6 +311,21 @@ func TestInitiatorShutdownWatcher(t *testing.T) {
 	}
 }
 
+func TestTTYRestorerNoOp(t *testing.T) {
+	t.Parallel()
+
+	restorer, err := newTTYRestorer(int(os.Stdin.Fd()))
+	if err != nil {
+		t.Fatalf("newTTYRestorer() error: %v", err)
+	}
+	if err := restorer.raw(); err != nil {
+		t.Fatalf("raw() error: %v", err)
+	}
+	if err := restorer.restore(); err != nil {
+		t.Fatalf("restore() error: %v", err)
+	}
+}
+
 func TestDoListenHandlesSIGINT(t *testing.T) {
 	configDir, err := os.MkdirTemp("", "gornsh-do-listen-sigint-*")
 	if err != nil {

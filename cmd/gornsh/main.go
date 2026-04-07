@@ -399,6 +399,21 @@ func (rt *runtimeT) doInitiate() (int, error) {
 		}
 	}
 
+	tty, err := newTTYRestorer(int(os.Stdin.Fd()))
+	if err != nil {
+		return 1, err
+	}
+	if !opts.noTTY {
+		if err := tty.raw(); err != nil {
+			return 1, err
+		}
+		defer func() {
+			if err := tty.restore(); err != nil {
+				rt.logger.Warning("Could not restore terminal mode: %v", err)
+			}
+		}()
+	}
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigCh)
