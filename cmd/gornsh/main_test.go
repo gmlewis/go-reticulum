@@ -6,6 +6,8 @@
 package main
 
 import (
+	"bytes"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -247,6 +249,51 @@ func TestBuildAllowPolicyLogsThroughInjectedLogger(t *testing.T) {
 	}
 	if !strings.Contains(captured, "Authentication enabled but no allowed identities configured") {
 		t.Fatalf("missing empty-policy warning in %q", captured)
+	}
+}
+
+func TestPrintIdentityUsesPrettyHexDestination(t *testing.T) {
+	configDir, err := os.MkdirTemp("", "gornsh-print-identity-*")
+	if err != nil {
+		t.Fatalf("os.MkdirTemp() error: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(configDir)
+	})
+
+	rt := newRuntime(options{configDir: configDir, listen: true})
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() error: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = r.Close()
+	})
+	os.Stdout = w
+	t.Cleanup(func() {
+		os.Stdout = oldStdout
+	})
+
+	outputCh := make(chan string, 1)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = buf.ReadFrom(r)
+		outputCh <- buf.String()
+	}()
+
+	if err := rt.printIdentity(); err != nil {
+		t.Fatalf("printIdentity() error: %v", err)
+	}
+	_ = w.Close()
+
+	output := <-outputCh
+	if !strings.Contains(output, "Listening on : <") {
+		t.Fatalf("printIdentity output %q missing pretty hex destination", output)
+	}
+	if !strings.Contains(output, ">") {
+		t.Fatalf("printIdentity output %q missing closing angle bracket", output)
 	}
 }
 

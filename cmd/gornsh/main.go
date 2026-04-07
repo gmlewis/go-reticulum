@@ -182,7 +182,7 @@ func (rt *runtimeT) printIdentity() error {
 		if err != nil {
 			return fmt.Errorf("could not create destination: %w", err)
 		}
-		_, _ = fmt.Printf("Listening on : %x\n", destination.Hash)
+		_, _ = fmt.Printf("Listening on : %v\n", rns.PrettyHex(destination.Hash))
 	}
 
 	return nil
