@@ -17,8 +17,6 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
-var resourceRandRead = rand.Read
-
 const (
 	// ResourceMapHashLen specifies the length of the map hash used for verifying resource parts.
 	ResourceMapHashLen = 4
@@ -384,8 +382,15 @@ func NewResource(data []byte, link *Link) (*Resource, error) {
 
 // NewResourceWithOptions initializes a new resource transfer, allowing explicit configuration of parameters like compression policy.
 func NewResourceWithOptions(data []byte, link *Link, opts ResourceOptions) (*Resource, error) {
+	return newResourceWithOptions(data, link, opts, rand.Read)
+}
+
+func newResourceWithOptions(data []byte, link *Link, opts ResourceOptions, randRead func([]byte) (int, error)) (*Resource, error) {
 	if link.status != LinkActive {
 		return nil, fmt.Errorf("link is not active")
+	}
+	if randRead == nil {
+		randRead = rand.Read
 	}
 
 	r := &Resource{
@@ -416,7 +421,7 @@ func NewResourceWithOptions(data []byte, link *Link, opts ResourceOptions) (*Res
 	}
 
 	r.randomHash = make([]byte, ResourceRandomHashSize)
-	if _, err := resourceRandRead(r.randomHash); err != nil {
+	if _, err := randRead(r.randomHash); err != nil {
 		return nil, fmt.Errorf("failed to generate random hash for resource: %w", err)
 	}
 

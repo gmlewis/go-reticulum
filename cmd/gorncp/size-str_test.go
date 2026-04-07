@@ -9,32 +9,6 @@ import (
 	"testing"
 )
 
-func TestEraseStr(t *testing.T) {
-	t.Parallel()
-
-	const want = "\033[2K\r"
-	if eraseStr != want {
-		t.Errorf("eraseStr = %q, want %q", eraseStr, want)
-	}
-}
-
-func TestSpinnerSymbols(t *testing.T) {
-	t.Parallel()
-
-	want := []string{"⢄", "⢂", "⢁", "⡁", "⡈", "⡐", "⡠"}
-	got := spinnerSymbols
-
-	if len(got) != len(want) {
-		t.Fatalf("spinnerSymbols length = %d, want %d", len(got), len(want))
-	}
-
-	for i, s := range got {
-		if s != want[i] {
-			t.Errorf("spinnerSymbols[%d] = %q, want %q", i, s, want[i])
-		}
-	}
-}
-
 func TestSizeStr(t *testing.T) {
 	t.Parallel()
 

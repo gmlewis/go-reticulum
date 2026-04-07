@@ -41,13 +41,7 @@ func TestNewResourceFailsOnRandomHashGenerationError(t *testing.T) {
 		mdu:    MDU,
 	}
 
-	originalRandRead := resourceRandRead
-	resourceRandRead = func(p []byte) (int, error) {
-		return errReader{}.Read(p)
-	}
-	defer func() { resourceRandRead = originalRandRead }()
-
-	_, err = NewResource([]byte("payload"), link)
+	_, err = newResourceWithOptions([]byte("payload"), link, ResourceOptions{}, errReader{}.Read)
 	if err == nil {
 		t.Fatalf("expected random hash generation error, got nil")
 	}

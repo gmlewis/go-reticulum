@@ -28,16 +28,15 @@ func (m *StreamDataMessage) GetMsgType() uint16 {
 	return SMTStreamData
 }
 
-// StreamIDMax defines the maximum allowable stream identifier value within the protocol limits.
-const StreamIDMax = 0x3fff
-
 const (
+	// DefaultChannelWriterCompressionEnabled controls whether ChannelWriter instances created without explicit options attempt bzip2 compression by default.
+	DefaultChannelWriterCompressionEnabled = true
+	// StreamIDMax defines the maximum allowable stream identifier value within the protocol limits.
+	StreamIDMax = 0x3fff
+
 	bufferMaxChunkLen      = 16 * 1024
 	bufferCompressionTries = 4
 )
-
-// DefaultChannelWriterCompressionEnabled controls whether ChannelWriter instances created without explicit options attempt bzip2 compression by default.
-var DefaultChannelWriterCompressionEnabled = true
 
 // ChannelWriterOptions configures the runtime stream chunk compression behavior for a ChannelWriter.
 type ChannelWriterOptions struct {
