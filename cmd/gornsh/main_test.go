@@ -252,6 +252,24 @@ func TestBuildAllowPolicyLogsThroughInjectedLogger(t *testing.T) {
 	}
 }
 
+func TestLogServiceName(t *testing.T) {
+	t.Parallel()
+
+	var captured string
+	logger := rns.NewLogger()
+	logger.SetLogDest(rns.LogCallback)
+	logger.SetLogCallback(func(msg string) {
+		captured += msg
+	})
+	logger.SetLogLevel(rns.LogInfo)
+
+	logServiceName(logger, "svc")
+
+	if !strings.Contains(captured, "Using service name svc") {
+		t.Fatalf("missing service-name log in %q", captured)
+	}
+}
+
 func TestPrintIdentityUsesPrettyHexDestination(t *testing.T) {
 	configDir, err := os.MkdirTemp("", "gornsh-print-identity-*")
 	if err != nil {

@@ -213,6 +213,7 @@ func resolveIdentityPath(opts options) (string, error) {
 func (rt *runtimeT) doListen() error {
 	opts := rt.opts
 	logger := rt.logger
+	logServiceName(logger, opts.serviceName)
 	ts := rns.NewTransportSystem(logger)
 	ret, err := rns.NewReticulum(ts, opts.configDir)
 	if err != nil {
@@ -305,6 +306,13 @@ func startAnnouncements(destination announcer, announceEvery *int, logger *rns.L
 		close(done)
 		ticker.Stop()
 	}
+}
+
+func logServiceName(logger *rns.Logger, serviceName string) {
+	if logger == nil || serviceName == "" {
+		return
+	}
+	logger.Info("Using service name %v", serviceName)
 }
 
 func (rt *runtimeT) doInitiate() (int, error) {
