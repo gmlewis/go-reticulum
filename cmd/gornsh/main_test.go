@@ -270,6 +270,22 @@ func TestLogServiceName(t *testing.T) {
 	}
 }
 
+func TestListeningReadyLine(t *testing.T) {
+	t.Parallel()
+
+	if got := listeningReadyLine(); got != "rnsh listening..." {
+		t.Fatalf("listeningReadyLine()=%q, want %q", got, "rnsh listening...")
+	}
+}
+
+func TestListeningDestinationLine(t *testing.T) {
+	t.Parallel()
+
+	if got := listeningDestinationLine([]byte{0xde, 0xad, 0xbe, 0xef}); got != "rnsh listening for commands on <deadbeef>" {
+		t.Fatalf("listeningDestinationLine()=%q, want %q", got, "rnsh listening for commands on <deadbeef>")
+	}
+}
+
 func TestPrintIdentityUsesPrettyHexDestination(t *testing.T) {
 	configDir, err := os.MkdirTemp("", "gornsh-print-identity-*")
 	if err != nil {

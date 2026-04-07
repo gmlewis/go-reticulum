@@ -214,6 +214,7 @@ func (rt *runtimeT) doListen() error {
 	opts := rt.opts
 	logger := rt.logger
 	logServiceName(logger, opts.serviceName)
+	_, _ = fmt.Println(listeningReadyLine())
 	ts := rns.NewTransportSystem(logger)
 	ret, err := rns.NewReticulum(ts, opts.configDir)
 	if err != nil {
@@ -268,7 +269,7 @@ func (rt *runtimeT) doListen() error {
 		return []any{true, int64(retval), stdout, stderr, int64(len(stdout)), int64(len(stderr)), float64(started.UnixNano()) / 1e9, float64(concluded.UnixNano()) / 1e9}
 	}, allowMode, allowedList, true)
 
-	_, _ = fmt.Printf("rnsh listening on %x\n", destination.Hash)
+	_, _ = fmt.Fprintln(os.Stdout, listeningDestinationLine(destination.Hash))
 	_ = startAnnouncements(destination, opts.announceEvery, rt.logger)
 
 	select {}
@@ -313,6 +314,14 @@ func logServiceName(logger *rns.Logger, serviceName string) {
 		return
 	}
 	logger.Info("Using service name %v", serviceName)
+}
+
+func listeningReadyLine() string {
+	return "rnsh listening..."
+}
+
+func listeningDestinationLine(hash []byte) string {
+	return fmt.Sprintf("rnsh listening for commands on %v", rns.PrettyHex(hash))
 }
 
 func (rt *runtimeT) doInitiate() (int, error) {
