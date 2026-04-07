@@ -216,6 +216,10 @@ func (rt *runtimeT) startSessionCommand(sender messageSender, commandLine []stri
 		return nil, errors.New("no command to execute")
 	}
 
+	if shouldUsePTYExecution(execute) {
+		return rt.startPTYSessionCommand(sender, commandLine, remoteIdentity, execute)
+	}
+
 	cmd := exec.Command(commandLine[0], commandLine[1:]...)
 	cmd.Env = buildSessionCommandEnv(os.Environ(), remoteIdentity, execute)
 
@@ -267,6 +271,10 @@ func (rt *runtimeT) startSessionCommand(sender messageSender, commandLine []stri
 	}()
 
 	return active, nil
+}
+
+func shouldUsePTYExecution(execute *executeCommandMessage) bool {
+	return execute != nil && execute.TCFlags != nil && !execute.PipeStdin
 }
 
 func buildSessionCommandEnv(base []string, remoteIdentity *rns.Identity, execute *executeCommandMessage) []string {

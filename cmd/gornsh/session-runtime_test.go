@@ -135,6 +135,75 @@ func TestActiveCommandWriteStdinClosedPipeErrorType(t *testing.T) {
 	}
 }
 
+func TestShouldUsePTYExecution(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		execute *executeCommandMessage
+		want    bool
+	}{
+		{name: "nil execute", execute: nil, want: false},
+		{name: "pipe stdin", execute: &executeCommandMessage{PipeStdin: true, TCFlags: []any{1}}, want: false},
+		{name: "tcflags and tty", execute: &executeCommandMessage{PipeStdin: false, TCFlags: []any{1}}, want: true},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := shouldUsePTYExecution(tc.execute); got != tc.want {
+				t.Fatalf("shouldUsePTYExecution()=%v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestStartSessionCommandUsesPTYForTCFlags(t *testing.T) {
+	t.Parallel()
+
+	rt := &runtimeT{logger: rns.NewLogger()}
+	sender := &fakeSender{}
+	execute := &executeCommandMessage{PipeStdin: false, TCFlags: []any{1, 2, 3, 4, 5, 6, []any{7, 8}}}
+
+	active, err := rt.startSessionCommand(sender, []string{"/bin/sh", "-c", "printf pty"}, nil, execute)
+	if err != nil {
+		t.Fatalf("startSessionCommand() error: %v", err)
+	}
+	if active == nil {
+		t.Fatal("startSessionCommand returned nil active command")
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		msgs := sender.messages()
+		for _, msg := range msgs {
+			if done, ok := msg.(*commandExitedMessage); ok {
+				if done.ReturnCode != 0 {
+					t.Fatalf("exit code=%v, want 0", done.ReturnCode)
+				}
+				var sawStdout bool
+				for _, candidate := range msgs {
+					stream, ok := candidate.(*streamDataMessage)
+					if !ok {
+						continue
+					}
+					if stream.StreamID == streamIDStdout && strings.Contains(string(stream.Data), "pty") {
+						sawStdout = true
+					}
+				}
+				if !sawStdout {
+					t.Fatal("missing PTY stdout output")
+				}
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatal("timed out waiting for PTY command to exit")
+}
+
 func TestActiveCommandCloseKillsWhenNotFinished(t *testing.T) {
 	t.Parallel()
 

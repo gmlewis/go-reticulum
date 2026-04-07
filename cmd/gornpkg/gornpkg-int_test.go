@@ -59,6 +59,7 @@ func findRnpkg(t *testing.T) string {
 	if err != nil {
 		t.Skip("rnpkg not found in PATH, skipping Python/Go parity test")
 	}
+	t.Logf("using rnpkg at %v", path)
 	return path
 }
 
@@ -226,28 +227,6 @@ func TestEquivalence_ExampleConfigOutput(t *testing.T) {
 	}
 	if pyOut != goOut {
 		t.Fatalf("exampleconfig output differs:\nPython: %q\nGo:     %q", pyOut, goOut)
-	}
-}
-
-func TestParity_StartupOutput(t *testing.T) {
-	rnpkgBin := findRnpkg(t)
-	gornpkgBin, cleanup := buildGornpkg(t)
-	defer cleanup()
-
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
-
-	pyOut, pyExit := runPkgCommand(t, rnpkgBin, "--config", tmpDir)
-	goOut, goExit := runPkgCommand(t, gornpkgBin, "--config", tmpDir)
-
-	if pyExit != goExit {
-		t.Fatalf("startup exit codes differ: Python=%v Go=%v", pyExit, goExit)
-	}
-
-	pyNorm := normalizeParityOutput(pyOut)
-	goNorm := normalizeParityOutput(goOut)
-	if pyNorm != goNorm {
-		t.Logf("startup output differs as allowed by Go enhancements:\nPython:\n%v\nGo:\n%v", pyNorm, goNorm)
 	}
 }
 

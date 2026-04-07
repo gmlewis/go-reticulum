@@ -9,6 +9,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
+	"os/user"
+	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -215,7 +219,7 @@ func (s *listenerSession) handleStreamData(msg streamDataMessage) error {
 func (s *listenerSession) resolveCommand(remoteCommand []string) ([]string, error) {
 	base := append([]string{}, s.defaultCommand...)
 	if len(base) == 0 {
-		base = []string{"/bin/sh"}
+		base = []string{loginShell()}
 	}
 
 	if len(remoteCommand) > 0 && !s.allowRemoteCommand {
@@ -231,4 +235,49 @@ func (s *listenerSession) resolveCommand(remoteCommand []string) ([]string, erro
 	}
 
 	return append([]string{}, remoteCommand...), nil
+}
+
+func loginShell() string {
+	if shell := loginShellFromPasswd(); shell != "" {
+		return shell
+	}
+	if shell := strings.TrimSpace(os.Getenv("SHELL")); shell != "" {
+		return shell
+	}
+	return "/bin/sh"
+}
+
+func loginShellFromPasswd() string {
+	currentUser, err := user.Current()
+	if err != nil || currentUser == nil {
+		return ""
+	}
+
+	passwdData, err := os.ReadFile("/etc/passwd")
+	if err != nil {
+		return ""
+	}
+
+	for _, line := range strings.Split(string(passwdData), "\n") {
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Split(line, ":")
+		if len(fields) < 7 {
+			continue
+		}
+		if fields[0] != currentUser.Username && fields[2] != currentUser.Uid {
+			continue
+		}
+		shell := strings.TrimSpace(fields[6])
+		if shell == "" {
+			return ""
+		}
+		if _, err := strconv.Atoi(fields[2]); err != nil {
+			continue
+		}
+		return shell
+	}
+
+	return ""
 }

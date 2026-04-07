@@ -120,6 +120,19 @@ func TestSessionExecutePolicy(t *testing.T) {
 	}
 }
 
+func TestSessionResolveCommandUsesLoginShell(t *testing.T) {
+	t.Parallel()
+
+	s := newListenerSession(listenerSessionConfig{AllowAll: true, AllowRemoteCommand: true})
+	if got, err := s.resolveCommand(nil); err != nil {
+		t.Fatalf("resolveCommand error: %v", err)
+	} else if len(got) == 0 {
+		t.Fatal("resolveCommand returned empty command")
+	} else if got[0] != "/bin/bash" {
+		t.Fatalf("resolveCommand first element=%q, want %q", got[0], "/bin/bash")
+	}
+}
+
 func TestSessionWindowSizeOnlyInRunning(t *testing.T) {
 	t.Parallel()
 
