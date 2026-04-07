@@ -46,6 +46,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -398,7 +399,52 @@ func (rt *runtimeT) doInitiate() (int, error) {
 		}
 	}
 
-	return rt.runInitiatorChannelSession(link, opts)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+	watcher, stopWatcher := startInitiatorShutdownWatcher(sigCh, link.Teardown)
+	defer stopWatcher()
+
+	code, err := rt.runInitiatorChannelSession(link, opts)
+	if watcher.requested() {
+		return 1, nil
+	}
+	return code, err
+}
+
+type initiatorShutdownWatcher struct {
+	mu                sync.Mutex
+	shutdownRequested bool
+}
+
+func (w *initiatorShutdownWatcher) requested() bool {
+	if w == nil {
+		return false
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.shutdownRequested
+}
+
+func startInitiatorShutdownWatcher(sigCh <-chan os.Signal, teardown func()) (*initiatorShutdownWatcher, func()) {
+	watcher := &initiatorShutdownWatcher{}
+	doneCh := make(chan struct{})
+	go func() {
+		select {
+		case <-sigCh:
+			watcher.mu.Lock()
+			watcher.shutdownRequested = true
+			watcher.mu.Unlock()
+			if teardown != nil {
+				teardown()
+			}
+		case <-doneCh:
+		}
+	}()
+	stop := func() {
+		close(doneCh)
+	}
+	return watcher, stop
 }
 
 func resolveRemoteIdentity(ts rns.Transport, destHash []byte, timeout time.Duration) (*rns.Identity, error) {

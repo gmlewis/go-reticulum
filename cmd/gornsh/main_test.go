@@ -288,6 +288,29 @@ func TestListeningDestinationLine(t *testing.T) {
 	}
 }
 
+func TestInitiatorShutdownWatcher(t *testing.T) {
+	t.Parallel()
+
+	sigCh := make(chan os.Signal, 1)
+	teardownCh := make(chan struct{}, 1)
+	watcher, stop := startInitiatorShutdownWatcher(sigCh, func() {
+		teardownCh <- struct{}{}
+	})
+	t.Cleanup(stop)
+
+	sigCh <- syscall.SIGINT
+
+	select {
+	case <-teardownCh:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for teardown")
+	}
+
+	if !watcher.requested() {
+		t.Fatal("watcher did not record shutdown request")
+	}
+}
+
 func TestDoListenHandlesSIGINT(t *testing.T) {
 	configDir, err := os.MkdirTemp("", "gornsh-do-listen-sigint-*")
 	if err != nil {
