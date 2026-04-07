@@ -84,6 +84,8 @@ var newAnnouncementTicker = func(interval time.Duration) announcementTicker {
 
 func (rt *runtimeT) configureLogger(verbose, quiet int) {
 	rt.logger = rns.NewLogger()
+	// rnsh follows the Python baseline of LogInfo here, which differs from
+	// the other cmd/* tools in this repository that start from LogNotice.
 	level := rns.LogInfo + verbose - quiet
 	if level < rns.LogCritical {
 		level = rns.LogCritical
