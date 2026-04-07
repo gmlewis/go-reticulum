@@ -6,7 +6,6 @@
 package main
 
 import (
-	"bytes"
 	"cmp"
 	"errors"
 	"io"
@@ -132,17 +131,66 @@ func TestInitiatorSessionRejectsIncompatibleVersion(t *testing.T) {
 }
 
 func TestInitiatorSessionCollectsStreamsAndExit(t *testing.T) {
-	t.Parallel()
-
 	s := newInitiatorChannelSession()
 	s.state = initiatorWaitExit
+
+	oldStdout := os.Stdout
+	oldStderr := os.Stderr
+	stdoutReader, stdoutWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() stdout error: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = stdoutReader.Close()
+	})
+	stderrReader, stderrWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() stderr error: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = stderrReader.Close()
+	})
+	os.Stdout = stdoutWriter
+	os.Stderr = stderrWriter
+	t.Cleanup(func() {
+		os.Stdout = oldStdout
+		os.Stderr = oldStderr
+		_ = stdoutWriter.Close()
+		_ = stderrWriter.Close()
+	})
 
 	if !s.handleMessage(&streamDataMessage{StreamID: streamIDStdout, Data: []byte("out")}) {
 		t.Fatal("stdout stream not handled")
 	}
+	stdoutData := make([]byte, 3)
+	if _, err := io.ReadFull(stdoutReader, stdoutData); err != nil {
+		t.Fatalf("stdout ReadFull error: %v", err)
+	}
+	if string(stdoutData) != "out" {
+		t.Fatalf("stdout data=%q, want out", string(stdoutData))
+	}
+	select {
+	case code := <-s.doneCh:
+		t.Fatalf("doneCh fired early with code %v", code)
+	default:
+	}
+
 	if !s.handleMessage(&streamDataMessage{StreamID: streamIDStderr, Data: []byte("err")}) {
 		t.Fatal("stderr stream not handled")
 	}
+	stderrData := make([]byte, 3)
+	if _, err := io.ReadFull(stderrReader, stderrData); err != nil {
+		t.Fatalf("stderr ReadFull error: %v", err)
+	}
+	if string(stderrData) != "err" {
+		t.Fatalf("stderr data=%q, want err", string(stderrData))
+	}
+	select {
+	case code := <-s.doneCh:
+		t.Fatalf("doneCh fired early with code %v", code)
+	default:
+	}
+
 	if !s.handleMessage(&commandExitedMessage{ReturnCode: 7}) {
 		t.Fatal("command exited not handled")
 	}
@@ -335,8 +383,6 @@ func TestInitiatorSessionTerminalSnapshotCopiesExit(t *testing.T) {
 }
 
 func TestWriteInitiatorStreamsResetsBuffers(t *testing.T) {
-	t.Parallel()
-
 	s := newInitiatorChannelSession()
 	s.stdout.WriteString("hello")
 	s.stderr.WriteString("warn")
@@ -358,11 +404,11 @@ func TestWriteInitiatorStreamsResetsBuffers(t *testing.T) {
 
 	stdoutData, _ := io.ReadAll(stdoutReader)
 	stderrData, _ := io.ReadAll(stderrReader)
-	if !bytes.Equal(stdoutData, []byte("hello")) {
-		t.Fatalf("stdoutData=%q", string(stdoutData))
+	if len(stdoutData) != 0 {
+		t.Fatalf("stdoutData=%q, want empty", string(stdoutData))
 	}
-	if !bytes.Equal(stderrData, []byte("warn")) {
-		t.Fatalf("stderrData=%q", string(stderrData))
+	if len(stderrData) != 0 {
+		t.Fatalf("stderrData=%q, want empty", string(stderrData))
 	}
 	if s.stdout.Len() != 0 || s.stderr.Len() != 0 {
 		t.Fatalf("buffers not reset: stdout=%v stderr=%v", s.stdout.Len(), s.stderr.Len())

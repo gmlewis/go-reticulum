@@ -122,8 +122,10 @@ func (s *initiatorChannelSession) handleMessage(message rns.Message) bool {
 func (s *initiatorChannelSession) appendStreamLocked(msg *streamDataMessage) {
 	switch msg.StreamID {
 	case streamIDStdout:
+		_, _ = os.Stdout.Write(msg.Data)
 		s.stdout.Write(msg.Data)
 	case streamIDStderr:
+		_, _ = os.Stderr.Write(msg.Data)
 		s.stderr.Write(msg.Data)
 	}
 }
@@ -406,14 +408,8 @@ func (s *initiatorChannelSession) stdoutString() string {
 func writeInitiatorStreams(session *initiatorChannelSession) {
 	session.mu.Lock()
 	defer session.mu.Unlock()
-	if session.stdout.Len() > 0 {
-		_, _ = os.Stdout.Write(session.stdout.Bytes())
-		session.stdout.Reset()
-	}
-	if session.stderr.Len() > 0 {
-		_, _ = os.Stderr.Write(session.stderr.Bytes())
-		session.stderr.Reset()
-	}
+	session.stdout.Reset()
+	session.stderr.Reset()
 }
 
 func sendMessageWithRetry(sender messageSender, msg rns.Message, deadline time.Time) error {
