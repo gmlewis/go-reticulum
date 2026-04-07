@@ -7,9 +7,9 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
@@ -27,38 +27,54 @@ type appT struct {
 
 var errHelp = errors.New("help requested")
 
+type countFlag struct {
+	target *int
+}
+
+func (f *countFlag) String() string {
+	if f == nil || f.target == nil {
+		return "0"
+	}
+	return fmt.Sprintf("%v", *f.target)
+}
+
+func (f *countFlag) Set(string) error {
+	if f != nil && f.target != nil {
+		*f.target = *f.target + 1
+	}
+	return nil
+}
+
+func (f *countFlag) IsBoolFlag() bool {
+	return true
+}
+
 func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
 	app := &appT{}
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch arg {
-		case "-h", "--help":
-			app.usage(usageOutput)
+	fs := flag.NewFlagSet("gornsd", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.Usage = func() {
+		app.usage(usageOutput)
+	}
+	fs.StringVar(&app.configDir, "config", "", "path to alternative Reticulum config directory")
+	fs.Var(&countFlag{target: &app.verbose}, "v", "")
+	fs.Var(&countFlag{target: &app.verbose}, "verbose", "")
+	fs.Var(&countFlag{target: &app.quiet}, "q", "")
+	fs.Var(&countFlag{target: &app.quiet}, "quiet", "")
+	fs.BoolVar(&app.service, "s", false, "rnsd is running as a service and should log to file")
+	fs.BoolVar(&app.service, "service", false, "rnsd is running as a service and should log to file")
+	fs.BoolVar(&app.interactive, "i", false, "drop into interactive shell after initialisation")
+	fs.BoolVar(&app.interactive, "interactive", false, "drop into interactive shell after initialisation")
+	fs.BoolVar(&app.exampleConfig, "exampleconfig", false, "print verbose configuration example to stdout and exit")
+	fs.BoolVar(&app.version, "version", false, "show program's version number and exit")
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
 			return nil, errHelp
-		case "--config":
-			i++
-			if i >= len(args) {
-				return nil, fmt.Errorf("unrecognized arguments: --config")
-			}
-			app.configDir = args[i]
-		case "-v", "--verbose":
-			app.verbose++
-		case "-q", "--quiet":
-			app.quiet++
-		case "-s", "--service":
-			app.service = true
-		case "-i", "--interactive":
-			app.interactive = true
-		case "--exampleconfig":
-			app.exampleConfig = true
-		case "--version":
-			app.version = true
-		default:
-			if strings.HasPrefix(arg, "-") {
-				return nil, fmt.Errorf("unrecognized arguments: %v", arg)
-			}
-			return nil, fmt.Errorf("unrecognized arguments: %v", arg)
 		}
+		return nil, err
+	}
+	if remaining := fs.Args(); len(remaining) > 0 {
+		return nil, errors.New("unrecognized arguments: " + remaining[0])
 	}
 	return app, nil
 }

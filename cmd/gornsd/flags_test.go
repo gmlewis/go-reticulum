@@ -12,6 +12,34 @@ import (
 	"testing"
 )
 
+func TestCountFlagAccumulates(t *testing.T) {
+	t.Parallel()
+
+	var verbose int
+	count := countFlag{target: &verbose}
+	if got := count.String(); got != "0" {
+		t.Fatalf("count.String() = %q, want 0", got)
+	}
+	if !count.IsBoolFlag() {
+		t.Fatal("count.IsBoolFlag() = false, want true")
+	}
+	if err := count.Set("true"); err != nil {
+		t.Fatalf("count.Set failed: %v", err)
+	}
+	if err := count.Set("true"); err != nil {
+		t.Fatalf("count.Set failed: %v", err)
+	}
+	if got, want := verbose, 2; got != want {
+		t.Fatalf("verbose = %v, want %v", got, want)
+	}
+	if err := count.Set("true"); err != nil {
+		t.Fatalf("count.Set failed: %v", err)
+	}
+	if got, want := verbose, 3; got != want {
+		t.Fatalf("verbose = %v, want %v", got, want)
+	}
+}
+
 func TestParseFlagsSupportsAliasesAndCounts(t *testing.T) {
 	t.Parallel()
 	app, err := parseFlags([]string{"--config", "/tmp/config", "-v", "-v", "--verbose", "-q", "--quiet", "-s", "--service", "-i", "--interactive", "--exampleconfig", "--version"}, io.Discard)
@@ -41,14 +69,25 @@ func TestParseFlagsRejectsUnknownFlags(t *testing.T) {
 	if err == nil {
 		t.Fatal("parseFlags error = nil, want non-nil")
 	}
-	if got := err.Error(); !strings.Contains(got, "unrecognized arguments: --bogus") {
-		t.Fatalf("error = %q, want unrecognized-arguments failure", got)
+	if got := err.Error(); !strings.Contains(got, "flag provided but not defined: -bogus") {
+		t.Fatalf("error = %q, want flag parser failure", got)
 	}
 }
 
 func TestParseFlagsRejectsPositionalArgs(t *testing.T) {
 	t.Parallel()
 	_, err := parseFlags([]string{"dest"}, io.Discard)
+	if err == nil {
+		t.Fatal("parseFlags error = nil, want non-nil")
+	}
+	if got := err.Error(); !strings.Contains(got, "unrecognized arguments: dest") {
+		t.Fatalf("error = %q, want unrecognized-arguments failure", got)
+	}
+}
+
+func TestParseFlagsRejectsArgsAfterDoubleDash(t *testing.T) {
+	t.Parallel()
+	_, err := parseFlags([]string{"--", "dest"}, io.Discard)
 	if err == nil {
 		t.Fatal("parseFlags error = nil, want non-nil")
 	}

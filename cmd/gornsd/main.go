@@ -29,7 +29,9 @@ func main() {
 		if err == errHelp {
 			return
 		}
-		log.Fatal(err)
+		fmt.Fprintln(os.Stderr, err)
+		(&appT{}).usage(os.Stderr)
+		os.Exit(2)
 	}
 
 	if app.version {
