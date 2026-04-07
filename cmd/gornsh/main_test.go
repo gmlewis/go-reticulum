@@ -8,7 +8,9 @@ package main
 import (
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
@@ -182,13 +184,15 @@ func TestConfigureLogger(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		verbose   bool
-		quiet     bool
+		verbose   int
+		quiet     int
 		wantLevel int
 	}{
-		{name: "default", wantLevel: rns.LogNotice},
-		{name: "verbose", verbose: true, wantLevel: rns.LogVerbose},
-		{name: "quiet", quiet: true, wantLevel: rns.LogWarning},
+		{name: "default", wantLevel: rns.LogInfo},
+		{name: "verbose", verbose: 1, wantLevel: rns.LogVerbose},
+		{name: "more verbose", verbose: 2, wantLevel: rns.LogDebug},
+		{name: "quiet", quiet: 1, wantLevel: rns.LogNotice},
+		{name: "more quiet", quiet: 2, wantLevel: rns.LogWarning},
 	}
 
 	for _, tc := range tests {
@@ -206,7 +210,7 @@ func TestConfigureLogger(t *testing.T) {
 
 func TestNewRuntime(t *testing.T) {
 	t.Parallel()
-	rt := newRuntime(options{verbose: true})
+	rt := newRuntime(options{verbose: 1})
 	if rt == nil {
 		t.Fatal("newRuntime returned nil")
 	}
@@ -244,4 +248,99 @@ func TestBuildAllowPolicyLogsThroughInjectedLogger(t *testing.T) {
 	if !strings.Contains(captured, "Authentication enabled but no allowed identities configured") {
 		t.Fatalf("missing empty-policy warning in %q", captured)
 	}
+}
+
+type recordingAnnouncer struct {
+	mu    sync.Mutex
+	calls int
+	ch    chan struct{}
+}
+
+func (a *recordingAnnouncer) Announce([]byte) error {
+	a.mu.Lock()
+	a.calls++
+	ch := a.ch
+	a.mu.Unlock()
+	if ch != nil {
+		ch <- struct{}{}
+	}
+	return nil
+}
+
+func (a *recordingAnnouncer) Count() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.calls
+}
+
+type fakeAnnouncementTicker struct {
+	ch chan time.Time
+}
+
+func (t *fakeAnnouncementTicker) C() <-chan time.Time {
+	return t.ch
+}
+
+func (t *fakeAnnouncementTicker) Stop() {}
+
+func TestStartAnnouncements(t *testing.T) {
+	oldTickerFactory := newAnnouncementTicker
+	t.Cleanup(func() {
+		newAnnouncementTicker = oldTickerFactory
+	})
+
+	tests := []struct {
+		name       string
+		announce   *int
+		wantCalls  int
+		withTicker bool
+	}{
+		{name: "unset", announce: nil, wantCalls: 0},
+		{name: "startup only", announce: intPtr(0), wantCalls: 1},
+		{name: "periodic", announce: intPtr(30), wantCalls: 2, withTicker: true},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			a := &recordingAnnouncer{}
+			if tc.withTicker {
+				called := make(chan struct{}, 2)
+				a.ch = called
+				fakeTicker := &fakeAnnouncementTicker{ch: make(chan time.Time, 1)}
+				newAnnouncementTicker = func(time.Duration) announcementTicker {
+					return fakeTicker
+				}
+				stop := startAnnouncements(a, tc.announce, rns.NewLogger())
+				if got := a.Count(); got != 1 {
+					t.Fatalf("initial announce count=%v, want 1", got)
+				}
+				select {
+				case <-called:
+				default:
+					t.Fatal("missing initial announce signal")
+				}
+				fakeTicker.ch <- time.Now()
+				select {
+				case <-called:
+				case <-time.After(time.Second):
+					t.Fatal("timed out waiting for periodic announce")
+				}
+				stop()
+				if got := a.Count(); got != tc.wantCalls {
+					t.Fatalf("announce count=%v, want %v", got, tc.wantCalls)
+				}
+				return
+			}
+
+			startAnnouncements(a, tc.announce, rns.NewLogger())
+			if got := a.Count(); got != tc.wantCalls {
+				t.Fatalf("announce count=%v, want %v", got, tc.wantCalls)
+			}
+		})
+	}
+}
+
+func intPtr(v int) *int {
+	return &v
 }

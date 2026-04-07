@@ -57,14 +57,41 @@ const (
 
 var nonWordRE = regexp.MustCompile(`\W+`)
 
-func (rt *runtimeT) configureLogger(verbose, quiet bool) {
+type announcer interface {
+	Announce([]byte) error
+}
+
+type announcementTicker interface {
+	C() <-chan time.Time
+	Stop()
+}
+
+type realAnnouncementTicker struct {
+	ticker *time.Ticker
+}
+
+func (t *realAnnouncementTicker) C() <-chan time.Time {
+	return t.ticker.C
+}
+
+func (t *realAnnouncementTicker) Stop() {
+	t.ticker.Stop()
+}
+
+var newAnnouncementTicker = func(interval time.Duration) announcementTicker {
+	return &realAnnouncementTicker{ticker: time.NewTicker(interval)}
+}
+
+func (rt *runtimeT) configureLogger(verbose, quiet int) {
 	rt.logger = rns.NewLogger()
-	if verbose {
-		rt.logger.SetLogLevel(rns.LogVerbose)
+	level := rns.LogInfo + verbose - quiet
+	if level < rns.LogCritical {
+		level = rns.LogCritical
 	}
-	if quiet {
-		rt.logger.SetLogLevel(rns.LogWarning)
+	if level > rns.LogDebug {
+		level = rns.LogDebug
 	}
+	rt.logger.SetLogLevel(level)
 }
 
 type runtimeT struct {
@@ -239,27 +266,43 @@ func (rt *runtimeT) doListen() error {
 	}, allowMode, allowedList, true)
 
 	_, _ = fmt.Printf("rnsh listening on %x\n", destination.Hash)
-
-	if opts.announceEvery >= 0 {
-		if err := destination.Announce(nil); err != nil {
-			rt.logger.Warning("Initial announce failed: %v", err)
-		}
-	}
-
-	if opts.announceEvery > 0 {
-		interval := time.Duration(opts.announceEvery) * time.Second
-		go func() {
-			ticker := time.NewTicker(interval)
-			defer ticker.Stop()
-			for range ticker.C {
-				if err := destination.Announce(nil); err != nil {
-					rt.logger.Warning("Periodic announce failed: %v", err)
-				}
-			}
-		}()
-	}
+	_ = startAnnouncements(destination, opts.announceEvery, rt.logger)
 
 	select {}
+}
+
+func startAnnouncements(destination announcer, announceEvery *int, logger *rns.Logger) func() {
+	if announceEvery == nil {
+		return func() {}
+	}
+
+	if err := destination.Announce(nil); err != nil && logger != nil {
+		logger.Warning("Initial announce failed: %v", err)
+	}
+
+	if *announceEvery <= 0 {
+		return func() {}
+	}
+
+	ticker := newAnnouncementTicker(time.Duration(*announceEvery) * time.Second)
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C():
+				if err := destination.Announce(nil); err != nil && logger != nil {
+					logger.Warning("Periodic announce failed: %v", err)
+				}
+			}
+		}
+	}()
+
+	return func() {
+		close(done)
+		ticker.Stop()
+	}
 }
 
 func (rt *runtimeT) doInitiate() (int, error) {
