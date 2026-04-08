@@ -10,6 +10,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"flag"
 	"log"
 	"os"
@@ -179,7 +180,7 @@ func TestIntegrationGoListenerGoInitiatorEcho(t *testing.T) {
 	var output string
 	var exitCode int
 	for attempt := 0; time.Now().Before(deadline); attempt++ {
-		output, exitCode = runGornshCommand(t, configDir, "--timeout", "1", "-T", readyHash, "echo", "hello")
+		output, exitCode = runGornshCommand(t, configDir, 3*time.Second, "--timeout", "1", "-T", readyHash, "echo", "hello")
 		if exitCode == 0 && strings.Contains(output, "hello") {
 			return
 		}
@@ -237,6 +238,10 @@ func startGornshListener(t *testing.T, configDir string) *gornshListenerProcess 
 	}
 
 	go func() {
+		defer func() {
+			// Ensure we close the reader when done to prevent resource leaks
+			_ = reader.Close()
+		}()
 		scanner := bufio.NewScanner(reader)
 		for scanner.Scan() {
 			line := scanner.Text()
@@ -318,21 +323,34 @@ func (p *gornshListenerProcess) stop(t *testing.T) {
 	}
 }
 
-func runGornshCommand(t *testing.T, configDir string, args ...string) (string, int) {
+func runGornshCommand(t *testing.T, configDir string, timeout time.Duration, args ...string) (string, int) {
 	t.Helper()
 
-	cmd := exec.Command(getGornshBinaryPath(t), append([]string{"--config", configDir}, args...)...)
+	// Create a context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, getGornshBinaryPath(t), append([]string{"--config", configDir}, args...)...)
 	cmd.Stdin = strings.NewReader("")
 	cmd.Env = gornshIntegrationEnv()
+
+	t.Logf("Running gornsh command: %v", append([]string{"--config", configDir}, args...))
 	out, err := cmd.CombinedOutput()
+	t.Logf("Command finished. Output: %q, Error: %v", string(out), err)
 	if err == nil {
 		return string(out), 0
 	}
 	if exitErr, ok := err.(*exec.ExitError); ok {
+		t.Logf("Command exited with code: %d", exitErr.ExitCode())
 		return string(out), exitErr.ExitCode()
 	}
-	t.Fatalf("failed to run gornsh %v: %v\n%v", args, err, string(out))
-	return "", 0
+	// Check if it's a context deadline exceeded error
+	if ctx.Err() == context.DeadlineExceeded {
+		t.Fatalf("timeout running gornsh %v after %v: %v\n%v", args, timeout, err, string(out))
+	}
+	// Log the error for debugging
+	t.Logf("failed to run gornsh %v: %v\n%v", args, err, string(out))
+	return string(out), -1
 }
 
 func getGornshBinaryPath(t *testing.T) string {
