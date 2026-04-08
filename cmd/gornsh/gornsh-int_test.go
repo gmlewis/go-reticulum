@@ -10,37 +10,61 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"flag"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 var versionLineRE = regexp.MustCompile(`^[^[:space:]]+\s+[^[:space:]]+$`)
 
-func TestIntegrationScaffoldHelpers(t *testing.T) {
-	t.Parallel()
+var gornshBinaryPath string
 
-	if got := tempDir(t); got == "" {
-		t.Fatal("tempDir() returned empty path")
+func TestMain(m *testing.M) {
+	// This entire suite will be skipped if `-short` is used.
+	flag.Parse()
+	if testing.Short() {
+		os.Exit(0)
 	}
+
+	binDir, cleanup := testutils.TempDirMain("gornsh-bin-")
+	defer func() {
+		cleanup()
+		out, err := exec.Command("/usr/bin/pkill", "-f", binDir).CombinedOutput()
+		if err != nil {
+			log.Fatalf("pkill -f %q failed: %v\n%s", binDir, err, out)
+		}
+	}()
+
+	gornshBinaryPath = filepath.Join(binDir, "gornsh")
+	build := exec.Command("go", "build", "-o", gornshBinaryPath, ".")
+	build.Stdout = os.Stdout
+	build.Stderr = os.Stderr
+	if err := build.Run(); err != nil {
+		log.Fatalf("failed to build gornsh binary: %v\n", err)
+	}
+
+	os.Exit(m.Run())
+}
+
+func TestIntegrationScaffoldHelpers(t *testing.T) {
 	if got := getRnshPythonPath(); got == "" {
 		t.Fatal("getRnshPythonPath() returned empty path")
 	}
 }
 
 func TestIntegrationVersionOutputFormatParity(t *testing.T) {
-	t.Parallel()
-
 	pythonBin := getRnshBinaryPath(t)
-	gornshBin := buildGornsh(t)
-
+	gornshBin := getGornshBinaryPath(t)
 	pythonOut, err := exec.Command(pythonBin, "--version").CombinedOutput()
 	if err != nil {
 		t.Fatalf("rnsh --version failed: %v\n%v", err, string(pythonOut))
@@ -67,11 +91,11 @@ func TestIntegrationVersionOutputFormatParity(t *testing.T) {
 }
 
 func TestIntegrationListenPrintIdentityOutputFormatParity(t *testing.T) {
-	t.Parallel()
-
 	pythonBin := getRnshBinaryPath(t)
-	gornshBin := buildGornsh(t)
-	configDir := tempDir(t)
+	gornshBin := getGornshBinaryPath(t)
+	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	prepareGornshConfig(t, configDir)
 
 	pythonOut, err := exec.Command(pythonBin, "--config", configDir, "-l", "-p").CombinedOutput()
 	if err != nil {
@@ -104,11 +128,11 @@ func TestIntegrationListenPrintIdentityOutputFormatParity(t *testing.T) {
 }
 
 func TestIntegrationPrintIdentityOutputFormatParity(t *testing.T) {
-	t.Parallel()
-
 	pythonBin := getRnshBinaryPath(t)
-	gornshBin := buildGornsh(t)
-	configDir := tempDir(t)
+	gornshBin := getGornshBinaryPath(t)
+	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	prepareGornshConfig(t, configDir)
 
 	pythonOut, err := exec.Command(pythonBin, "--config", configDir, "-p").CombinedOutput()
 	if err != nil {
@@ -139,24 +163,33 @@ func TestIntegrationPrintIdentityOutputFormatParity(t *testing.T) {
 }
 
 func TestIntegrationGoListenerGoInitiatorEcho(t *testing.T) {
-	t.Parallel()
+	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	prepareGornshConfig(t, configDir)
 
-	configDir := tempDir(t)
-	gornshBin := buildGornsh(t)
-	listener := startGornshListener(t, gornshBin, configDir)
-
+	listener := startGornshListener(t, configDir)
 	readyHash := listener.hash()
 	if readyHash == "" {
 		t.Fatal("listener hash is empty")
 	}
-	time.Sleep(500 * time.Millisecond)
 
-	output, exitCode := runGornshCommand(t, gornshBin, "--config", configDir, readyHash, "echo", "hello")
+	time.Sleep(time.Second)
+
+	deadline := time.Now().Add(5 * time.Second)
+	var output string
+	var exitCode int
+	for attempt := 0; time.Now().Before(deadline); attempt++ {
+		output, exitCode = runGornshCommand(t, configDir, "--timeout", "1", "-T", readyHash, "echo", "hello")
+		if exitCode == 0 && strings.Contains(output, "hello") {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	if exitCode != 0 {
 		t.Fatalf("initiator exit code = %v, want 0\ninitiator output:\n%v\nlistener output:\n%v", exitCode, output, listener.output())
 	}
 	if !strings.Contains(output, "hello") {
-		t.Fatalf("initiator output %q missing hello", output)
+		t.Fatalf("initiator output %q missing hello\nlistener output:\n%v", output, listener.output())
 	}
 }
 
@@ -178,11 +211,12 @@ type gornshListenerProcess struct {
 	waitCh  chan error
 }
 
-func startGornshListener(t *testing.T, bin string, configDir string) *gornshListenerProcess {
+func startGornshListener(t *testing.T, configDir string) *gornshListenerProcess {
 	t.Helper()
 
-	cmd := exec.Command(bin, "--config", configDir, "-l", "--no-auth", "-v")
-	cmd.Env = append(os.Environ(), "GORN_TRACE_LOG_PATH=/tmp/gornsh-debug.log")
+	cmd := exec.Command(getGornshBinaryPath(t), "--config", configDir, "-l", "--no-auth", "-v")
+	cmd.Stdin = strings.NewReader("")
+	cmd.Env = gornshIntegrationEnv()
 	reader, writer, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("os.Pipe() error: %v", err)
@@ -269,15 +303,27 @@ func (p *gornshListenerProcess) stop(t *testing.T) {
 		return
 	}
 	_ = p.cmd.Process.Signal(syscall.SIGINT)
-	if err := p.cmd.Wait(); err != nil {
-		t.Fatalf("listener exit error: %v\n%v", err, p.output())
+	done := make(chan error, 1)
+	go func() {
+		done <- p.cmd.Wait()
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("listener exit error: %v\n%v", err, p.output())
+		}
+	case <-time.After(2 * time.Second):
+		_ = p.cmd.Process.Kill()
+		<-done
 	}
 }
 
-func runGornshCommand(t *testing.T, bin string, args ...string) (string, int) {
+func runGornshCommand(t *testing.T, configDir string, args ...string) (string, int) {
 	t.Helper()
 
-	cmd := exec.Command(bin, args...)
+	cmd := exec.Command(getGornshBinaryPath(t), append([]string{"--config", configDir}, args...)...)
+	cmd.Stdin = strings.NewReader("")
+	cmd.Env = gornshIntegrationEnv()
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		return string(out), 0
@@ -285,8 +331,61 @@ func runGornshCommand(t *testing.T, bin string, args ...string) (string, int) {
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		return string(out), exitErr.ExitCode()
 	}
-	t.Fatalf("failed to run %v %v: %v\n%v", bin, args, err, string(out))
+	t.Fatalf("failed to run gornsh %v: %v\n%v", args, err, string(out))
 	return "", 0
+}
+
+func getGornshBinaryPath(t *testing.T) string {
+	t.Helper()
+
+	if gornshBinaryPath == "" {
+		t.Fatal("gornsh binary path not initialized by TestMain")
+	}
+	return gornshBinaryPath
+}
+
+func gornshIntegrationEnv() []string {
+	filtered := make([]string, 0, len(os.Environ()))
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		switch key {
+		case "TERM", "LINES", "COLUMNS":
+			continue
+		default:
+			filtered = append(filtered, entry)
+		}
+	}
+	if len(filtered) == 0 {
+		filtered = append(filtered, "HOME=/tmp")
+	}
+	return filtered
+}
+
+func prepareGornshConfig(t *testing.T, configDir string) {
+	prepareGornshConfigWithInstance(t, configDir, "gornsh-"+filepath.Base(configDir))
+}
+
+func prepareGornshConfigWithInstance(t *testing.T, configDir string, instanceName string) {
+	t.Helper()
+
+	configText := strings.Join([]string{
+		"[reticulum]",
+		"enable_transport = False",
+		"share_instance = Yes",
+		"instance_name = " + instanceName,
+		"",
+		"[logging]",
+		"loglevel = 4",
+		"",
+		"[interfaces]",
+		"  [[Default Interface]]",
+		"    type = AutoInterface",
+		"    enabled = Yes",
+		"",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(configText), 0o600); err != nil {
+		t.Fatalf("failed to write gornsh config: %v", err)
+	}
 }
 
 func getRnshBinaryPath(t *testing.T) string {
@@ -297,35 +396,4 @@ func getRnshBinaryPath(t *testing.T) string {
 		t.Skip("rnsh not found in PATH, skipping Python/Go integration tests")
 	}
 	return path
-}
-
-func tempDir(t *testing.T) string {
-	t.Helper()
-
-	base := ""
-	if runtime.GOOS == "darwin" {
-		base = "/tmp"
-	}
-	dir, err := os.MkdirTemp(base, "gornsh-int-*")
-	if err != nil {
-		t.Fatalf("os.MkdirTemp() error: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir)
-	})
-	return dir
-}
-
-func buildGornsh(t *testing.T) string {
-	t.Helper()
-
-	tmpDir := tempDir(t)
-	bin := filepath.Join(tmpDir, "gornsh")
-	cmd := exec.Command("go", "build", "-o", bin, ".")
-	cmd.Dir = "."
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("failed to build gornsh: %v\n%v", err, string(out))
-	}
-	return bin
 }

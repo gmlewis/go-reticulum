@@ -20,8 +20,6 @@ import (
 )
 
 func TestProtocolPayloadParityWithPython(t *testing.T) {
-	t.Parallel()
-
 	pythonPath, err := exec.LookPath("python3")
 	if err != nil {
 		t.Skip("python3 not found")
@@ -63,8 +61,6 @@ print('ok')
 }
 
 func TestErrorExitOrderingPayloadParityWithPython(t *testing.T) {
-	t.Parallel()
-
 	pythonPath, err := exec.LookPath("python3")
 	if err != nil {
 		t.Skip("python3 not found")
@@ -144,8 +140,6 @@ print('ok')
 }
 
 func TestRetryMetadataAndExitPayloadParityWithPython(t *testing.T) {
-	t.Parallel()
-
 	pythonPath, err := exec.LookPath("python3")
 	if err != nil {
 		t.Skip("python3 not found")

@@ -320,7 +320,7 @@ func (c *Channel) Send(msg Message) (*Envelope, error) {
 	if err != nil {
 		return nil, err
 	}
-	traceDebugf("Channel.Send msgType=%v seq=%v rawLen=%v", msg.GetMsgType(), env.Sequence, len(raw))
+	c.logger.Extreme("Channel.Send msgType=%v seq=%v rawLen=%v\n", msg.GetMsgType(), env.Sequence, len(raw))
 	if len(raw) > c.outlet.MDU() {
 		return nil, fmt.Errorf("message too big: %v > %v", len(raw), c.outlet.MDU())
 	}
@@ -534,7 +534,7 @@ func (c *Channel) Receive(raw []byte) {
 	c.mu.Unlock()
 
 	for _, e := range contiguous {
-		traceDebugf("Channel.Receive msgType=%v seq=%v rawLen=%v", e.Message.GetMsgType(), e.Sequence, len(raw))
+		c.logger.Extreme("Channel.Receive msgType=%v seq=%v rawLen=%v\n", e.Message.GetMsgType(), e.Sequence, len(raw))
 		c.handleMessage(e.Message)
 	}
 }

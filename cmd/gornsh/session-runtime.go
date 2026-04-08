@@ -274,6 +274,8 @@ func (rt *runtimeT) startSessionCommand(sender messageSender, commandLine []stri
 			}
 		}
 		active.markFinished()
+		<-streamDone
+		<-streamDone
 		deadline := time.Now().Add(10 * time.Second)
 		for {
 			if _, err := sender.Send(&commandExitedMessage{ReturnCode: exitCode}); err == nil {
@@ -285,8 +287,6 @@ func (rt *runtimeT) startSessionCommand(sender messageSender, commandLine []stri
 				time.Sleep(20 * time.Millisecond)
 			}
 		}
-		<-streamDone
-		<-streamDone
 		active.close()
 	}()
 
@@ -342,6 +342,9 @@ func upsertEnv(env []string, key, value string) []string {
 func (ac *activeCommand) streamPipe(sender messageSender, reader io.ReadCloser, streamID int) {
 	defer func() {
 		if err := reader.Close(); err != nil {
+			if errors.Is(err, os.ErrClosed) || errors.Is(err, io.ErrClosedPipe) {
+				return
+			}
 			ac.rt.sendProtocolErrorToSender(sender, fmt.Sprintf("stream close failed: %v", err), false)
 		}
 	}()
@@ -355,9 +358,14 @@ func (ac *activeCommand) streamPipe(sender messageSender, reader io.ReadCloser, 
 			_ = sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamID, Data: chunk, EOF: false, Compressed: false}, time.Now().Add(2*time.Second))
 		}
 		if err != nil {
-			if !errors.Is(err, io.EOF) {
-				ac.rt.sendProtocolErrorToSender(sender, err.Error(), true)
+			if errors.Is(err, io.EOF) {
+				_ = sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamID, Data: nil, EOF: true, Compressed: false}, time.Now().Add(2*time.Second))
+				return
 			}
+			if errors.Is(err, os.ErrClosed) || errors.Is(err, io.ErrClosedPipe) {
+				return
+			}
+			ac.rt.sendProtocolErrorToSender(sender, err.Error(), true)
 			_ = sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamID, Data: nil, EOF: true, Compressed: false}, time.Now().Add(2*time.Second))
 			return
 		}

@@ -233,7 +233,7 @@ func (rt *runtimeT) runInitiatorProtocolFlow(channel channelSession, opts option
 		return 1, session, fmt.Errorf("failed to send execute command: %w", err)
 	}
 
-	if pumpInput {
+	if pumpInput && !opts.noTTY {
 		go rt.pumpInitiatorStdin(channel)
 	}
 	if pumpInput && !opts.noTTY {

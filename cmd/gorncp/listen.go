@@ -175,13 +175,11 @@ func (a *appT) doListen(ts rns.Transport) {
 	// Validate and build allowed identity hashes
 	for _, a := range allowed {
 		if len(a) != destLen {
-			fmt.Fprintf(os.Stderr, "Allowed destination length is invalid, must be %v hexadecimal characters (%v bytes).\n", destLen, destLen/2)
-			os.Exit(1)
+			log.Fatalf("Allowed destination length is invalid, must be %v hexadecimal characters (%v bytes).\n", destLen, destLen/2)
 		}
 		h, err := rns.HexToBytes(a)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Invalid destination entered. Check your input.\n")
-			os.Exit(1)
+			log.Fatalf("Invalid destination entered. Check your input.\n")
 		}
 		if h != nil {
 			allowedIdentityHashes = append(allowedIdentityHashes, h)

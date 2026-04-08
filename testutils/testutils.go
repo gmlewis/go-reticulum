@@ -8,11 +8,25 @@
 package testutils
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 )
+
+type testMainTB struct{}
+
+func (testMainTB) Helper() {}
+
+func (t testMainTB) Fatalf(format string, args ...any) {
+	log.Fatalf(format, args...)
+}
+
+type tempDirTB interface {
+	Helper()
+	Fatalf(format string, args ...any)
+}
 
 func tempBaseDir() string {
 	if runtime.GOOS == "darwin" {
@@ -24,6 +38,16 @@ func tempBaseDir() string {
 // TempDir creates a temporary directory for a test and returns a cleanup
 // function that removes it.
 func TempDir(t *testing.T, prefix string) (string, func()) {
+	return tempDir(t, prefix)
+}
+
+// TempDirMain creates a temporary directory for a TestMain suite and returns a cleanup
+// function that removes it.
+func TempDirMain(prefix string) (string, func()) {
+	return tempDir(testMainTB{}, prefix)
+}
+
+func tempDir(t tempDirTB, prefix string) (string, func()) {
 	t.Helper()
 
 	dir, err := os.MkdirTemp(tempBaseDir(), prefix)
