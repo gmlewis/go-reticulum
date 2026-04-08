@@ -294,9 +294,11 @@ func (rt *runtimeT) doListen() error {
 		return []any{true, int64(retval), stdout, stderr, int64(len(stdout)), int64(len(stderr)), float64(started.UnixNano()) / 1e9, float64(concluded.UnixNano()) / 1e9}
 	}, allowMode, allowedList, true)
 
-	_, _ = fmt.Fprintln(os.Stdout, listeningDestinationLine(destination.Hash))
 	stopAnnouncements := startAnnouncements(destination, opts.announceEvery, rt.logger)
 	defer stopAnnouncements()
+	time.Sleep(250 * time.Millisecond)
+
+	_, _ = fmt.Fprintln(os.Stdout, listeningDestinationLine(destination.Hash))
 
 	<-sigCh
 	logger.Info("Shutting down")
@@ -304,12 +306,18 @@ func (rt *runtimeT) doListen() error {
 }
 
 func startAnnouncements(destination announcer, announceEvery *int, logger *rns.Logger) func() {
-	if announceEvery == nil {
-		return func() {}
-	}
-
 	if err := destination.Announce(nil); err != nil && logger != nil {
 		logger.Warning("Initial announce failed: %v", err)
+	}
+
+	if announceEvery == nil {
+		go func() {
+			time.Sleep(250 * time.Millisecond)
+			if err := destination.Announce(nil); err != nil && logger != nil {
+				logger.Warning("Follow-up announce failed: %v", err)
+			}
+		}()
+		return func() {}
 	}
 
 	if *announceEvery <= 0 {
@@ -417,6 +425,7 @@ func (rt *runtimeT) doInitiate() (int, error) {
 		if err := link.Identify(id); err != nil {
 			return 1, fmt.Errorf("identify failed: %w", err)
 		}
+		time.Sleep(250 * time.Millisecond)
 	}
 
 	tty, err := newTTYRestorer(int(os.Stdin.Fd()))

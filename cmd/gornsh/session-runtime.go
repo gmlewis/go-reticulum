@@ -89,6 +89,7 @@ func (ac *activeCommand) close() {
 
 func (rt *runtimeT) wireListenerChannelSession(link *rns.Link, opts options, allowedList [][]byte) {
 	logger := rt.logger
+	logger.Verbose("Wiring listener session for link %v", link)
 	session := newListenerSession(listenerSessionConfig{
 		AllowAll:           opts.noAuth,
 		AllowRemoteCommand: !opts.noRemoteCmd,
@@ -251,8 +252,15 @@ func (rt *runtimeT) startSessionCommand(sender messageSender, commandLine []stri
 		},
 	}
 
-	go active.streamPipe(sender, stdoutPipe, streamIDStdout)
-	go active.streamPipe(sender, stderrPipe, streamIDStderr)
+	streamDone := make(chan struct{}, 2)
+	go func() {
+		active.streamPipe(sender, stdoutPipe, streamIDStdout)
+		streamDone <- struct{}{}
+	}()
+	go func() {
+		active.streamPipe(sender, stderrPipe, streamIDStderr)
+		streamDone <- struct{}{}
+	}()
 
 	go func() {
 		err := cmd.Wait()
@@ -266,7 +274,19 @@ func (rt *runtimeT) startSessionCommand(sender messageSender, commandLine []stri
 			}
 		}
 		active.markFinished()
-		_ = sendMessageWithRetry(sender, &commandExitedMessage{ReturnCode: exitCode}, time.Now().Add(2*time.Second))
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			if _, err := sender.Send(&commandExitedMessage{ReturnCode: exitCode}); err == nil {
+				break
+			} else {
+				if !time.Now().Before(deadline) {
+					break
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+		}
+		<-streamDone
+		<-streamDone
 		active.close()
 	}()
 

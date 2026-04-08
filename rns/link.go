@@ -515,7 +515,7 @@ func (l *Link) receive(packet *Packet) {
 							l.remoteIdentity = id
 							l.mu.Unlock()
 							if l.callbacks.RemoteIdentified != nil {
-								go l.callbacks.RemoteIdentified(l, id)
+								l.callbacks.RemoteIdentified(l, id)
 							}
 						}
 					}
@@ -537,10 +537,11 @@ func (l *Link) receive(packet *Packet) {
 
 	case ContextChannel:
 		l.mu.Lock()
-		if l.channel != nil {
-			l.channel.Receive(packet.Data)
-		}
+		channel := l.channel
 		l.mu.Unlock()
+		if channel != nil {
+			channel.Receive(packet.Data)
+		}
 
 	default:
 		l.mu.Lock()
@@ -557,6 +558,7 @@ func (l *Link) send(p *Packet) error {
 	l.lastOutbound = time.Now()
 	iface := l.attachedInterface
 	l.mu.Unlock()
+	traceDebugf("Link.send context=%v packetType=%v rawLen=%v attachedInterface=%v", p.Context, p.PacketType, len(p.Raw), iface != nil)
 	l.logger.Verbose("Link.send: packet Context=%v, Data len=%v, attachedInterface=%v", p.Context, len(p.Data), iface != nil)
 	if iface != nil {
 		if !p.Packed {
@@ -574,10 +576,12 @@ func (l *Link) send(p *Packet) error {
 		if p.Receipt != nil {
 			p.Receipt.MarkSent(p.SentAt)
 		}
+		traceDebugf("Link.send sent context=%v packetType=%v rawLen=%v via interface", p.Context, p.PacketType, len(p.Raw))
 		l.logger.Verbose("Link.send: packet sent via attached interface, err=<nil>")
 		return nil
 	}
 	err := p.Send()
+	traceDebugf("Link.send sent context=%v packetType=%v rawLen=%v via transport err=%v", p.Context, p.PacketType, len(p.Raw), err)
 	l.logger.Verbose("Link.send: packet sent via transport, err=%v", err)
 	return err
 }
@@ -894,11 +898,15 @@ type LinkChannelOutlet struct {
 
 // Send dynamically wraps raw channel data into a formatted packet and delegates physical transmission to the link transport.
 func (o *LinkChannelOutlet) Send(raw []byte) (*Packet, error) {
+	traceDebugf("LinkChannelOutlet.Send rawLen=%v", len(raw))
 	p := NewPacketWithTransport(o.link.transport, o.link, raw)
 	p.Context = ContextChannel
+	traceDebugf("LinkChannelOutlet.Send built context=%v packetType=%v rawLen=%v", p.Context, p.PacketType, len(p.Raw))
 	if err := o.link.send(p); err != nil {
+		traceDebugf("LinkChannelOutlet.Send failed context=%v packetType=%v err=%v", p.Context, p.PacketType, err)
 		return nil, err
 	}
+	traceDebugf("LinkChannelOutlet.Send done context=%v packetType=%v rawLen=%v", p.Context, p.PacketType, len(p.Raw))
 	return p, nil
 }
 

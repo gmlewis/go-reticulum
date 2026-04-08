@@ -560,7 +560,7 @@ func TestStartAnnouncements(t *testing.T) {
 		wantCalls  int
 		withTicker bool
 	}{
-		{name: "unset", announce: nil, wantCalls: 0},
+		{name: "unset", announce: nil, wantCalls: 1},
 		{name: "startup only", announce: intPtr(0), wantCalls: 1},
 		{name: "periodic", announce: intPtr(30), wantCalls: 2, withTicker: true},
 	}

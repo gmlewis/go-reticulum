@@ -137,7 +137,7 @@ type messageHandlerEntry struct {
 
 const (
 	// ChannelWindowDefault specifies the initial transmission window size for a new Channel.
-	ChannelWindowDefault = 2
+	ChannelWindowDefault = 4
 	// ChannelWindowMin defines the absolute minimum allowable transmission window size.
 	ChannelWindowMin = 2
 	// ChannelWindowMinSlow establishes the minimum transmission window size during slow network conditions.
@@ -320,7 +320,7 @@ func (c *Channel) Send(msg Message) (*Envelope, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	traceDebugf("Channel.Send msgType=%v seq=%v rawLen=%v", msg.GetMsgType(), env.Sequence, len(raw))
 	if len(raw) > c.outlet.MDU() {
 		return nil, fmt.Errorf("message too big: %v > %v", len(raw), c.outlet.MDU())
 	}
@@ -534,6 +534,7 @@ func (c *Channel) Receive(raw []byte) {
 	c.mu.Unlock()
 
 	for _, e := range contiguous {
+		traceDebugf("Channel.Receive msgType=%v seq=%v rawLen=%v", e.Message.GetMsgType(), e.Sequence, len(raw))
 		c.handleMessage(e.Message)
 	}
 }

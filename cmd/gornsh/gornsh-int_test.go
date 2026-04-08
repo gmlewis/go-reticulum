@@ -149,10 +149,11 @@ func TestIntegrationGoListenerGoInitiatorEcho(t *testing.T) {
 	if readyHash == "" {
 		t.Fatal("listener hash is empty")
 	}
+	time.Sleep(500 * time.Millisecond)
 
 	output, exitCode := runGornshCommand(t, gornshBin, "--config", configDir, readyHash, "echo", "hello")
 	if exitCode != 0 {
-		t.Fatalf("initiator exit code = %v, want 0\n%v", exitCode, output)
+		t.Fatalf("initiator exit code = %v, want 0\ninitiator output:\n%v\nlistener output:\n%v", exitCode, output, listener.output())
 	}
 	if !strings.Contains(output, "hello") {
 		t.Fatalf("initiator output %q missing hello", output)
@@ -180,7 +181,8 @@ type gornshListenerProcess struct {
 func startGornshListener(t *testing.T, bin string, configDir string) *gornshListenerProcess {
 	t.Helper()
 
-	cmd := exec.Command(bin, "--config", configDir, "-l", "--no-auth")
+	cmd := exec.Command(bin, "--config", configDir, "-l", "--no-auth", "-v")
+	cmd.Env = append(os.Environ(), "GORN_TRACE_LOG_PATH=/tmp/gornsh-debug.log")
 	reader, writer, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("os.Pipe() error: %v", err)
