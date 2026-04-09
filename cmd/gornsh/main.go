@@ -450,6 +450,7 @@ func (rt *runtimeT) doInitiate() (int, error) {
 	defer stopWatcher()
 
 	code, err := rt.runInitiatorChannelSession(link, opts)
+	link.Teardown()
 	if watcher.requested() {
 		return 1, nil
 	}

@@ -486,7 +486,31 @@ func startPythonListener(t *testing.T, configDir string) *pythonListenerProcess 
 	}
 	env = append(env, "PYTHONPATH="+pythonPath)
 
-	cmd := exec.Command("python3", "-m", "rnsh.rnsh", "-l", "--no-auth", "-b", "0", "-c", configDir)
+	// Write a Python-specific config file in a separate directory
+	// to avoid storage conflicts with Go Reticulum
+	pyConfigDir := filepath.Join(configDir, "pyconfig")
+	if err := os.MkdirAll(pyConfigDir, 0o755); err != nil {
+		t.Fatalf("failed to create Python config dir: %v", err)
+	}
+	configText := strings.Join([]string{
+		"[reticulum]",
+		"enable_transport = False",
+		"share_instance = No",
+		"",
+		"[logging]",
+		"loglevel = 4",
+		"",
+		"[interfaces]",
+		"  [[Default Interface]]",
+		"    type = AutoInterface",
+		"    enabled = Yes",
+		"",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(pyConfigDir, "config"), []byte(configText), 0o600); err != nil {
+		t.Fatalf("failed to write Python config: %v", err)
+	}
+
+	cmd := exec.Command("python3", "-m", "rnsh.rnsh", "-l", "--no-auth", "-b", "0", "-c", pyConfigDir)
 	cmd.Stdin = strings.NewReader("")
 	cmd.Env = env
 	reader, writer, err := os.Pipe()

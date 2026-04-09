@@ -107,12 +107,15 @@ func (r *Reticulum) Transport() Transport {
 	return r.transport
 }
 
-// Close tears down the Reticulum instance, detaching the shared-instance
-// interface and closing the RPC listener if active.
+// Close tears down the Reticulum instance, stopping the transport system,
+// detaching the shared-instance interface and closing the RPC listener if active.
 func (r *Reticulum) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var closeErr error
+	if ts, ok := r.transport.(*TransportSystem); ok && ts != nil {
+		ts.Stop()
+	}
 	if r.sharedInstanceInterface != nil {
 		if err := r.sharedInstanceInterface.Detach(); err != nil {
 			closeErr = errors.Join(closeErr, err)
