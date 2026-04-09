@@ -479,8 +479,12 @@ func startPythonListener(t *testing.T, configDir string) *pythonListenerProcess 
 	if len(env) == 0 {
 		env = append(env, "HOME=/tmp")
 	}
-	// Add the Python path for Reticulum
-	env = append(env, "PYTHONPATH=/home/glenn/src/github.com/markqvist/Reticulum")
+	// Add the Python paths for Reticulum and rnsh
+	pythonPath := getRnshPythonPath()
+	if pythonPath == "" {
+		t.Skip("Required environment variables not set for Python integration tests")
+	}
+	env = append(env, "PYTHONPATH="+pythonPath)
 
 	cmd := exec.Command("python3", "-m", "rnsh.rnsh", "-l", "--no-auth", "-b", "0", "-c", configDir)
 	cmd.Stdin = strings.NewReader("")
