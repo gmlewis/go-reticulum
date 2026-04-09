@@ -706,7 +706,19 @@ func executeCommand(commandLine []string, remoteIdentity *rns.Identity) (int, []
 
 	cmd := exec.Command(commandLine[0], commandLine[1:]...)
 	if remoteIdentity != nil {
-		cmd.Env = append(os.Environ(), "RNS_REMOTE_IDENTITY="+remoteIdentity.HexHash)
+		// Create minimal environment like Python initiator/listener do
+		env := map[string]string{
+			"TERM":                os.Getenv("TERM"),
+			"RNS_REMOTE_IDENTITY": remoteIdentity.HexHash,
+		}
+		// Filter out nil values
+		filteredEnv := []string{}
+		for k, v := range env {
+			if v != "" {
+				filteredEnv = append(filteredEnv, k+"="+v)
+			}
+		}
+		cmd.Env = filteredEnv
 	}
 
 	var stdout bytes.Buffer

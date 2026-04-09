@@ -415,3 +415,169 @@ func getRnshBinaryPath(t *testing.T) string {
 	}
 	return path
 }
+
+// TODO E06: End-to-end echo test (Python listener ↔ Go initiator).
+// Start `rnsh -l --no-auth` as a subprocess; wait for readiness line; connect with Go initiator;
+// verify stdout and exit code.
+func TestIntegrationPythonListenerGoInitiatorEcho(t *testing.T) {
+	// Set up temporary directory for Python listener config
+	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	prepareGornshConfig(t, configDir)
+
+	// Start Python listener as subprocess
+	pythonListener := startPythonListener(t, configDir)
+	readyHash := pythonListener.hash()
+	if readyHash == "" {
+		t.Fatal("Python listener hash is empty")
+	}
+
+	time.Sleep(time.Second)
+
+	// Try to connect with Go initiator for up to 5 seconds
+	deadline := time.Now().Add(5 * time.Second)
+	var output string
+	var exitCode int
+	for attempt := 0; time.Now().Before(deadline); attempt++ {
+		output, exitCode = runGornshCommand(t, configDir, 3*time.Second, "--timeout", "1", "-T", readyHash, "echo", "hello")
+		if exitCode == 0 && strings.Contains(output, "hello") {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if exitCode != 0 {
+		t.Fatalf("initiator exit code = %v, want 0\ninitiator output:\n%v\nlistener output:\n%v", exitCode, output, pythonListener.output())
+	}
+	if !strings.Contains(output, "hello") {
+		t.Fatalf("initiator output %q missing hello\nlistener output:\n%v", output, pythonListener.output())
+	}
+}
+
+type pythonListenerProcess struct {
+	cmd     *exec.Cmd
+	stdout  *bytes.Buffer
+	value   string
+	hashMu  sync.Mutex
+	readyCh chan struct{}
+	waitCh  chan error
+}
+
+func startPythonListener(t *testing.T, configDir string) *pythonListenerProcess {
+	t.Helper()
+
+	// Set up environment for Python rnsh
+	env := make([]string, 0, len(os.Environ()))
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		switch key {
+		case "TERM", "LINES", "COLUMNS":
+			continue
+		default:
+			env = append(env, entry)
+		}
+	}
+	if len(env) == 0 {
+		env = append(env, "HOME=/tmp")
+	}
+	// Add the Python path for Reticulum
+	env = append(env, "PYTHONPATH=/home/glenn/src/github.com/markqvist/Reticulum")
+
+	cmd := exec.Command("python3", "-m", "rnsh.rnsh", "-l", "--no-auth", "-b", "0", "-c", configDir)
+	cmd.Stdin = strings.NewReader("")
+	cmd.Env = env
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() error: %v", err)
+	}
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Start(); err != nil {
+		_ = reader.Close()
+		_ = writer.Close()
+		t.Fatalf("failed to start Python listener: %v", err)
+	}
+
+	proc := &pythonListenerProcess{
+		cmd:     cmd,
+		stdout:  &bytes.Buffer{},
+		readyCh: make(chan struct{}),
+		waitCh:  make(chan error, 1),
+	}
+
+	go func() {
+		defer func() {
+			// Ensure we close the reader when done to prevent resource leaks
+			_ = reader.Close()
+		}()
+		scanner := bufio.NewScanner(reader)
+		for scanner.Scan() {
+			line := scanner.Text()
+			proc.hashMu.Lock()
+			proc.stdout.WriteString(line)
+			proc.stdout.WriteByte('\n')
+			if proc.value == "" {
+				if hash := parseListenerHash(line); hash != "" {
+					proc.value = hash
+					close(proc.readyCh)
+				}
+			}
+			proc.hashMu.Unlock()
+		}
+		if err := scanner.Err(); err != nil {
+			proc.waitCh <- err
+			return
+		}
+		proc.waitCh <- nil
+	}()
+
+	select {
+	case <-proc.readyCh:
+	case err := <-proc.waitCh:
+		if err == nil {
+			t.Fatal("Python listener exited before readiness line")
+		}
+		t.Fatalf("Python listener failed before readiness line: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatalf("timed out waiting for Python listener readiness; output so far:\n%v", proc.output())
+	}
+
+	t.Cleanup(func() {
+		proc.stop(t)
+	})
+
+	_ = writer.Close()
+	return proc
+}
+
+func (p *pythonListenerProcess) hash() string {
+	p.hashMu.Lock()
+	defer p.hashMu.Unlock()
+	return p.value
+}
+
+func (p *pythonListenerProcess) output() string {
+	p.hashMu.Lock()
+	defer p.hashMu.Unlock()
+	return p.stdout.String()
+}
+
+func (p *pythonListenerProcess) stop(t *testing.T) {
+	t.Helper()
+	if p == nil || p.cmd == nil || p.cmd.Process == nil {
+		return
+	}
+	_ = p.cmd.Process.Signal(syscall.SIGINT)
+	done := make(chan error, 1)
+	go func() {
+		done <- p.cmd.Wait()
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Python listener exit error: %v\n%v", err, p.output())
+		}
+	case <-time.After(2 * time.Second):
+		_ = p.cmd.Process.Kill()
+		<-done
+	}
+}
