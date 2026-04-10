@@ -489,12 +489,8 @@ func startPythonListener(t *testing.T, configDir, instanceName string) *pythonLi
 	}
 	env = append(env, "PYTHONPATH="+pythonPath)
 
-	// Write a Python-specific config file with the same shared instance name
-	// so Go and Python can communicate via the shared instance protocol
-	pyConfigDir := filepath.Join(configDir, "pyconfig")
-	if err := os.MkdirAll(pyConfigDir, 0o755); err != nil {
-		t.Fatalf("failed to create Python config dir: %v", err)
-	}
+	// Python uses the same config directory as Go so they share identities
+	// and storage. Both use the same instance_name to communicate via shared instance.
 	configText := strings.Join([]string{
 		"[reticulum]",
 		"enable_transport = False",
@@ -510,11 +506,11 @@ func startPythonListener(t *testing.T, configDir, instanceName string) *pythonLi
 		"    enabled = Yes",
 		"",
 	}, "\n")
-	if err := os.WriteFile(filepath.Join(pyConfigDir, "config"), []byte(configText), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(configText), 0o600); err != nil {
 		t.Fatalf("failed to write Python config: %v", err)
 	}
 
-	cmd := exec.Command("python3", "-m", "rnsh.rnsh", "-l", "--no-auth", "-b", "0", "-c", pyConfigDir)
+	cmd := exec.Command("python3", "-m", "rnsh.rnsh", "-l", "--no-auth", "-b", "0", "-c", configDir)
 	cmd.Stdin = strings.NewReader("")
 	cmd.Env = env
 	reader, writer, err := os.Pipe()
