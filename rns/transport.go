@@ -58,6 +58,7 @@ type Transport interface {
 	SetNetworkIdentity(identity *Identity)
 	Start(storagePath string) error
 	StartedAt() time.Time
+	Stop()
 	UnblackholeIdentity(identityHash []byte) bool
 
 	Remember(packetHash, destHash, publicKey, appData []byte)

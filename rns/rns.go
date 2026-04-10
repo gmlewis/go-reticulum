@@ -113,8 +113,8 @@ func (r *Reticulum) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var closeErr error
-	if ts, ok := r.transport.(*TransportSystem); ok && ts != nil {
-		ts.Stop()
+	if r.transport != nil {
+		r.transport.Stop()
 	}
 	if r.sharedInstanceInterface != nil {
 		if err := r.sharedInstanceInterface.Detach(); err != nil {

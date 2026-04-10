@@ -21,6 +21,7 @@ func TestJobs_RecoverFromPanic(t *testing.T) {
 	peerInterval := 1
 	currentTime := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
 	c := &clientT{
+		logger: rns.NewLogger(),
 		ac: &activeConfig{
 			PeerAnnounceInterval: &peerInterval,
 		},
@@ -57,7 +58,8 @@ func TestTick(t *testing.T) {
 	peerInterval := 1 // 1 second for test
 	nodeInterval := 1 // 1 second for test
 	c := &clientT{
-		ts: rns.NewTransportSystem(nil),
+		ts:     rns.NewTransportSystem(nil),
+		logger: rns.NewLogger(),
 		ac: &activeConfig{
 			PeerAnnounceInterval: &peerInterval,
 			NodeAnnounceInterval: &nodeInterval,
