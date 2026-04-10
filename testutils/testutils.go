@@ -8,10 +8,13 @@
 package testutils
 
 import (
+	"fmt"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 	"testing"
 )
 
@@ -83,5 +86,30 @@ func SkipShortIntegration(t *testing.T) {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
+	}
+}
+
+// Global TCP port counter for integration tests.
+var testTCPPortCounter atomic.Uint32
+
+// ReserveTCPPort reserves a unique TCP port for integration tests.
+// It uses a global counter to ensure ports don't conflict between tests.
+func ReserveTCPPort(t *testing.T) int {
+	t.Helper()
+	for {
+		port := 43000 + int(testTCPPortCounter.Add(1)%20000)
+		l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", port)))
+		if err != nil {
+			continue
+		}
+		addr, ok := l.Addr().(*net.TCPAddr)
+		if !ok {
+			_ = l.Close()
+			t.Fatalf("ReserveTCPPort: unexpected addr type %T", l.Addr())
+		}
+		if err := l.Close(); err != nil {
+			t.Fatalf("ReserveTCPPort: close error: %v", err)
+		}
+		return addr.Port
 	}
 }

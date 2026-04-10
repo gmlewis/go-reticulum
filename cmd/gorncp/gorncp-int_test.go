@@ -953,8 +953,6 @@ func TestSendTransferFailure(t *testing.T) {
 func TestFetchRemoteErrorWhenLinkIsMissing(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	t.Parallel()
-
 	tmpDir, cleanup := testutils.TempDir(t, "gorncp-test-")
 	defer cleanup()
 
@@ -973,8 +971,6 @@ func TestFetchRemoteErrorWhenLinkIsMissing(t *testing.T) {
 
 func TestFetchUnknownUnauthorizedError(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-
-	t.Parallel()
 
 	rr := &rns.RequestReceipt{Status: rns.RequestSent}
 	msg := getFetchErrorMessage(rr, "testfile.txt")

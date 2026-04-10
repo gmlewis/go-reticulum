@@ -99,7 +99,6 @@ func normalizeProgramName(output string) string {
 }
 
 func TestIntegration_VersionOutput(t *testing.T) {
-	t.Parallel()
 	bin, cleanup := buildGornpkg(t)
 	defer cleanup()
 	out, err := exec.Command(bin, "--version").CombinedOutput()
@@ -114,7 +113,6 @@ func TestIntegration_VersionOutput(t *testing.T) {
 }
 
 func TestIntegration_ExampleConfigOutput(t *testing.T) {
-	t.Parallel()
 	bin, cleanup := buildGornpkg(t)
 	defer cleanup()
 	out, err := exec.Command(bin, "--exampleconfig").CombinedOutput()
@@ -129,7 +127,6 @@ func TestIntegration_ExampleConfigOutput(t *testing.T) {
 }
 
 func TestIntegration_ExitCodeZero(t *testing.T) {
-	t.Parallel()
 	bin, cleanup := buildGornpkg(t)
 	defer cleanup()
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -172,7 +169,6 @@ func TestIntegration_SIGINTCleanExit(t *testing.T) {
 }
 
 func TestIntegration_HelpOutput(t *testing.T) {
-	t.Parallel()
 	bin, cleanup := buildGornpkg(t)
 	defer cleanup()
 	out, _ := exec.Command(bin, "--help").CombinedOutput()
@@ -192,7 +188,6 @@ func TestIntegration_HelpOutput(t *testing.T) {
 }
 
 func TestParity_ExampleConfig(t *testing.T) {
-	t.Parallel()
 	rnpkgBin := findRnpkg(t)
 	gornpkgBin, cleanup := buildGornpkg(t)
 	defer cleanup()
@@ -214,7 +209,6 @@ func TestParity_ExampleConfig(t *testing.T) {
 }
 
 func TestEquivalence_ExampleConfigOutput(t *testing.T) {
-	t.Parallel()
 	rnpkgBin := findRnpkg(t)
 	gornpkgBin, cleanup := buildGornpkg(t)
 	defer cleanup()
@@ -231,7 +225,6 @@ func TestEquivalence_ExampleConfigOutput(t *testing.T) {
 }
 
 func TestParity_VerbosityStackingOutput(t *testing.T) {
-	t.Parallel()
 	rnpkgBin := findRnpkg(t)
 	gornpkgBin, cleanup := buildGornpkg(t)
 	defer cleanup()
@@ -252,7 +245,6 @@ func TestParity_VerbosityStackingOutput(t *testing.T) {
 }
 
 func TestParity_QuietnessStackingOutput(t *testing.T) {
-	t.Parallel()
 	rnpkgBin := findRnpkg(t)
 	gornpkgBin, cleanup := buildGornpkg(t)
 	defer cleanup()
@@ -273,7 +265,6 @@ func TestParity_QuietnessStackingOutput(t *testing.T) {
 }
 
 func TestParity_HelpFlags(t *testing.T) {
-	t.Parallel()
 	rnpkgBin := findRnpkg(t)
 	gornpkgBin, cleanup := buildGornpkg(t)
 	defer cleanup()
@@ -295,7 +286,6 @@ func TestParity_HelpFlags(t *testing.T) {
 }
 
 func TestEquivalence_HelpUsageText(t *testing.T) {
-	t.Parallel()
 	rnpkgBin := findRnpkg(t)
 	gornpkgBin, cleanup := buildGornpkg(t)
 	defer cleanup()
@@ -315,7 +305,6 @@ func TestEquivalence_HelpUsageText(t *testing.T) {
 }
 
 func TestEquivalence_StartupExitCode(t *testing.T) {
-	t.Parallel()
 	rnpkgBin := findRnpkg(t)
 	gornpkgBin, cleanup := buildGornpkg(t)
 	defer cleanup()

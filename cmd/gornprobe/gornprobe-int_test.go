@@ -35,7 +35,6 @@ func (c *probeIntegrationClock) Now() time.Time        { return c.now }
 func (c *probeIntegrationClock) Sleep(d time.Duration) { c.now = c.now.Add(d) }
 
 func TestGornprobeCLIParity(t *testing.T) {
-	t.Parallel()
 
 	tests := []struct {
 		name string
@@ -50,7 +49,6 @@ func TestGornprobeCLIParity(t *testing.T) {
 	for _, tc := range tests {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			got := runGornprobeCommand(t, tc.args...)
 			want := runRnprobeCommand(t, tc.args...)
 			compareProbeOutcomes(t, got, want)
@@ -59,7 +57,6 @@ func TestGornprobeCLIParity(t *testing.T) {
 }
 
 func TestGornprobeKeyboardInterrupt(t *testing.T) {
-	t.Parallel()
 
 	binPath := buildGornprobeBinary(t)
 	configDir, cleanup := testutils.TempDir(t, "gornprobe-int-")
@@ -108,7 +105,6 @@ loglevel = 4
 }
 
 func TestGornprobeScenarioParity(t *testing.T) {
-	t.Parallel()
 
 	tests := []struct {
 		name string
@@ -144,7 +140,6 @@ func TestGornprobeScenarioParity(t *testing.T) {
 	for _, tc := range tests {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			compareProbeOutcomes(t, tc.got(), tc.want)
 		})
 	}

@@ -62,7 +62,6 @@ func findRnid(t *testing.T) string {
 
 func TestParity_Base64ImportExport(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	t.Parallel()
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
 	defer cleanup1()
@@ -110,7 +109,6 @@ func TestParity_Base64ImportExport(t *testing.T) {
 
 func TestParity_PrintIdentity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	t.Parallel()
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
 	defer cleanup1()
@@ -148,7 +146,6 @@ func TestParity_PrintIdentity(t *testing.T) {
 
 func TestParity_Export(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	t.Parallel()
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
 	defer cleanup1()
@@ -180,7 +177,6 @@ func TestParity_Export(t *testing.T) {
 
 func TestParity_Hash(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	t.Parallel()
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
 	defer cleanup1()
@@ -218,7 +214,6 @@ func TestParity_Hash(t *testing.T) {
 
 func TestParity_ImportHex(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	t.Parallel()
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
 	defer cleanup1()
@@ -266,7 +261,6 @@ func TestParity_ImportHex(t *testing.T) {
 
 func TestParity_SignGoValidatePython(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	t.Parallel()
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
 	defer cleanup1()
@@ -300,7 +294,6 @@ func TestParity_SignGoValidatePython(t *testing.T) {
 
 func TestParity_SignPythonValidateGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	t.Parallel()
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
 	defer cleanup1()
@@ -334,7 +327,6 @@ func TestParity_SignPythonValidateGo(t *testing.T) {
 
 func TestParity_EncryptGoDecryptPython(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	t.Parallel()
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
 	defer cleanup1()
@@ -373,7 +365,6 @@ func TestParity_EncryptGoDecryptPython(t *testing.T) {
 
 func TestParity_EncryptPythonDecryptGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	t.Parallel()
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
 	defer cleanup1()

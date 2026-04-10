@@ -251,7 +251,6 @@ func normalizeMultilineWhitespace(text string) string {
 }
 
 func TestGornsdHelpParity(t *testing.T) {
-	t.Parallel()
 	got := runGornsdOutcome(t, "--help")
 	want := runRnsdOutcome(t, "--help")
 	if got.exitCode != want.exitCode {
@@ -266,7 +265,6 @@ func TestGornsdHelpParity(t *testing.T) {
 }
 
 func TestGornsdExampleConfigParity(t *testing.T) {
-	t.Parallel()
 	got := runGornsdOutcome(t, "--exampleconfig")
 	want := runRnsdOutcome(t, "--exampleconfig")
 	if got.exitCode != want.exitCode {
@@ -281,7 +279,6 @@ func TestGornsdExampleConfigParity(t *testing.T) {
 }
 
 func TestGornsdVersionOutputs(t *testing.T) {
-	t.Parallel()
 	got := runGornsdOutcome(t, "--version")
 	want := runRnsdOutcome(t, "--version")
 	if got.exitCode != 0 || want.exitCode != 0 {
@@ -299,7 +296,6 @@ func TestGornsdVersionOutputs(t *testing.T) {
 }
 
 func TestGornsdUnknownFlagExitCode2(t *testing.T) {
-	t.Parallel()
 	binaryPath := buildGornsdBinary(t)
 	cmd := exec.Command(binaryPath, "--bogus-flag")
 	var stdout bytes.Buffer

@@ -423,10 +423,13 @@ func TestIntegrationPythonListenerGoInitiatorEcho(t *testing.T) {
 	// Set up temporary directory for Python listener config
 	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
-	prepareGornshConfig(t, configDir)
+
+	// Use unique instance name for this test to avoid conflicts
+	instanceName := "pyrnsh-" + filepath.Base(configDir)
+	prepareGornshConfigWithInstance(t, configDir, instanceName)
 
 	// Start Python listener as subprocess
-	pythonListener := startPythonListener(t, configDir)
+	pythonListener := startPythonListener(t, configDir, instanceName)
 	readyHash := pythonListener.hash()
 	if readyHash == "" {
 		t.Fatal("Python listener hash is empty")
@@ -462,7 +465,7 @@ type pythonListenerProcess struct {
 	waitCh  chan error
 }
 
-func startPythonListener(t *testing.T, configDir string) *pythonListenerProcess {
+func startPythonListener(t *testing.T, configDir, instanceName string) *pythonListenerProcess {
 	t.Helper()
 
 	// Set up environment for Python rnsh
@@ -486,8 +489,8 @@ func startPythonListener(t *testing.T, configDir string) *pythonListenerProcess 
 	}
 	env = append(env, "PYTHONPATH="+pythonPath)
 
-	// Write a Python-specific config file in a separate directory
-	// to avoid storage conflicts with Go Reticulum
+	// Write a Python-specific config file with the same shared instance name
+	// so Go and Python can communicate via the shared instance protocol
 	pyConfigDir := filepath.Join(configDir, "pyconfig")
 	if err := os.MkdirAll(pyConfigDir, 0o755); err != nil {
 		t.Fatalf("failed to create Python config dir: %v", err)
@@ -495,7 +498,8 @@ func startPythonListener(t *testing.T, configDir string) *pythonListenerProcess 
 	configText := strings.Join([]string{
 		"[reticulum]",
 		"enable_transport = False",
-		"share_instance = No",
+		"share_instance = Yes",
+		"instance_name = " + instanceName,
 		"",
 		"[logging]",
 		"loglevel = 4",

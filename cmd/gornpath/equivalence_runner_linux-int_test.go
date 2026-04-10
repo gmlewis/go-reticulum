@@ -21,7 +21,6 @@ import (
 )
 
 func TestRunEquivalenceScenarioAggregatesStepComparisons(t *testing.T) {
-	t.Parallel()
 
 	leftCalls := 0
 	rightCalls := 0
@@ -84,7 +83,6 @@ func TestRunEquivalenceScenarioAggregatesStepComparisons(t *testing.T) {
 }
 
 func TestRunEquivalenceScenarioComparesRealVersionCommands(t *testing.T) {
-	t.Parallel()
 
 	fixture := defaultEquivalenceFixtures()[0]
 	scenario := equivalenceScenario{
@@ -115,7 +113,6 @@ func TestRunEquivalenceScenarioComparesRealVersionCommands(t *testing.T) {
 }
 
 func TestRunEquivalenceScenarioLocalTableHasNoDiffs(t *testing.T) {
-	t.Parallel()
 
 	fixtures := defaultEquivalenceFixtures()
 	var localTableFixture equivalenceFixture
@@ -188,7 +185,6 @@ func (f *equivalencePathRequestFake) GetPathEntry([]byte) *rns.PathInfo {
 }
 
 func TestRunEquivalenceScenarioDiscoveryHasNoDiffs(t *testing.T) {
-	t.Parallel()
 
 	fixtures := defaultEquivalenceFixtures()
 	var discoveryFixture equivalenceFixture
@@ -242,7 +238,6 @@ func (f *equivalenceDropperFake) InvalidatePathsViaNextHop([]byte) int {
 }
 
 func TestRunEquivalenceScenarioDropHasNoDiffs(t *testing.T) {
-	t.Parallel()
 
 	fixtures := defaultEquivalenceFixtures()
 	var dropFixture equivalenceFixture
@@ -286,7 +281,6 @@ func TestRunEquivalenceScenarioDropHasNoDiffs(t *testing.T) {
 }
 
 func TestRunEquivalenceScenarioRatesHasNoDiffs(t *testing.T) {
-	t.Parallel()
 
 	fixtures := defaultEquivalenceFixtures()
 	var ratesFixture equivalenceFixture
@@ -337,7 +331,6 @@ func TestRunEquivalenceScenarioRatesHasNoDiffs(t *testing.T) {
 }
 
 func TestRunEquivalenceScenarioBlackholeHasNoDiffs(t *testing.T) {
-	t.Parallel()
 
 	fixtures := defaultEquivalenceFixtures()
 	var blackholeFixture equivalenceFixture
@@ -381,7 +374,6 @@ func TestRunEquivalenceScenarioBlackholeHasNoDiffs(t *testing.T) {
 }
 
 func TestRunEquivalenceScenarioRemoteLinkHasNoDiffs(t *testing.T) {
-	t.Parallel()
 
 	fixtures := defaultEquivalenceFixtures()
 	var remoteFixture equivalenceFixture
