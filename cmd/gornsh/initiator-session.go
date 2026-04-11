@@ -258,6 +258,8 @@ func (rt *runtimeT) runInitiatorProtocolFlow(channel channelSession, opts option
 			return 0, session, nil
 		case <-linkClosedCh:
 			// Link closure is the lowest priority; check for errors or exits first.
+			// Give it a tiny bit of time for final messages to be processed.
+			time.Sleep(100 * time.Millisecond)
 			select {
 			case err := <-session.errCh:
 				return 1, session, err
@@ -573,6 +575,6 @@ func sendMessageWithRetry(sender messageSender, msg rns.Message, deadline time.T
 		if !time.Now().Before(deadline) {
 			return err
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 }

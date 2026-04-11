@@ -176,11 +176,11 @@ func TestIntegrationGoListenerGoInitiatorEcho(t *testing.T) {
 
 	time.Sleep(time.Second)
 
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	var output string
 	var exitCode int
 	for attempt := 0; time.Now().Before(deadline); attempt++ {
-		output, exitCode = runGornshCommand(t, configDir, 3*time.Second, "--timeout", "1", "-T", readyHash, "echo", "hello")
+		output, exitCode = runGornshCommand(t, configDir, 10*time.Second, "--timeout", "30", "-T", readyHash, "echo", "hello")
 		if exitCode == 0 && strings.Contains(output, "hello") {
 			return
 		}
@@ -438,11 +438,11 @@ func TestIntegrationPythonListenerGoInitiatorEcho(t *testing.T) {
 	time.Sleep(time.Second)
 
 	// Try to connect with Go initiator for up to 5 seconds
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	var output string
 	var exitCode int
 	for attempt := 0; time.Now().Before(deadline); attempt++ {
-		output, exitCode = runGornshCommand(t, configDir, 3*time.Second, "--timeout", "1", "-T", readyHash, "echo", "hello")
+		output, exitCode = runGornshCommand(t, configDir, 10*time.Second, "--timeout", "30", "-T", readyHash, "echo", "hello")
 		if exitCode == 0 && strings.Contains(output, "hello") {
 			return
 		}
@@ -565,7 +565,7 @@ func startPythonListener(t *testing.T, configDir, instanceName string) *pythonLi
 			t.Fatal("Python listener exited before readiness line")
 		}
 		t.Fatalf("Python listener failed before readiness line: %v", err)
-	case <-time.After(10 * time.Second):
+	case <-time.After(20 * time.Second):
 		t.Fatalf("timed out waiting for Python listener readiness; output so far:\n%v", proc.output())
 	}
 

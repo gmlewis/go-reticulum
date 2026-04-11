@@ -37,7 +37,7 @@ func TestRuntimeLoadIdentityFallsBackToIdentityHash(t *testing.T) {
 	ts.Remember([]byte("packet-hash"), destHash, id.GetPublicKey(), nil)
 
 	rt := newRuntime(nil)
-	recalled := rt.loadIdentity(ts, id.HexHash, false, 0)
+	recalled, _ := rt.loadIdentity(ts, id.HexHash, false, 0)
 	if recalled == nil {
 		t.Fatal("expected identity to be recalled by identity hash")
 	}

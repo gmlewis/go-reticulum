@@ -531,7 +531,9 @@ func (ts *TransportSystem) isLocalClientInterface(iface interfaces.Interface) bo
 	}
 	// On Linux, local client interfaces are typically LocalClientInterface.
 	// We can check the type name or use an interface check.
-	return iface.Type() == "LocalInterface" && strings.Contains(iface.Name(), "Local Client")
+	// We check for both names used in the Go port and original Python implementation.
+	name := iface.Name()
+	return iface.Type() == "LocalInterface" && (strings.Contains(name, "Local Client") || strings.Contains(name, "Local shared instance"))
 }
 
 func (ts *TransportSystem) isForLocalClient(p *Packet) bool {

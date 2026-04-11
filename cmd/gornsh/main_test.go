@@ -138,60 +138,6 @@ func TestSplitAllowedFile(t *testing.T) {
 	}
 }
 
-func TestChooseCommand(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name          string
-		opts          options
-		remoteCommand string
-		want          []string
-		wantErr       bool
-	}{
-		{
-			name:          "no remote command uses base",
-			opts:          options{commandLine: []string{"/bin/echo", "hello"}},
-			remoteCommand: "",
-			want:          []string{"/bin/echo", "hello"},
-		},
-		{
-			name:          "remote command disabled with remote command errors",
-			opts:          options{commandLine: []string{"/bin/echo"}, noRemoteCmd: true},
-			remoteCommand: "id",
-			wantErr:       true,
-		},
-		{
-			name:          "remote command as args appends",
-			opts:          options{commandLine: []string{"/bin/echo", "base"}, remoteAsArgs: true},
-			remoteCommand: "one two",
-			want:          []string{"/bin/echo", "base", "one", "two"},
-		},
-		{
-			name:          "remote command uses shell by default",
-			opts:          options{},
-			remoteCommand: "echo hi",
-			want:          []string{"/bin/sh", "-lc", "echo hi"},
-		},
-	}
-
-	for _, tc := range tests {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got, err := chooseCommand(tc.opts, tc.remoteCommand)
-			if (err != nil) != tc.wantErr {
-				t.Fatalf("err=%v, wantErr=%v", err, tc.wantErr)
-			}
-			if tc.wantErr {
-				return
-			}
-			if !reflect.DeepEqual(got, tc.want) {
-				t.Fatalf("chooseCommand()=%v, want %v", got, tc.want)
-			}
-		})
-	}
-}
-
 func TestParseCommandResponse(t *testing.T) {
 	t.Parallel()
 

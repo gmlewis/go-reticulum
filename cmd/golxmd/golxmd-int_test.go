@@ -8,6 +8,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -131,10 +132,15 @@ func TestGolxmd_Status_WithNoRemote(t *testing.T) {
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)
 	}
+	configPath := filepath.Join(configDir, "config")
+	configData := fmt.Sprintf("[reticulum]\ninstance_name = %v\n", filepath.Base(tmpDir))
+	if err := os.WriteFile(configPath, []byte(configData), 0o600); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
 
 	// Create identity
 	identityPath := filepath.Join(configDir, "identity")
-	genOut, err := exec.Command("go", "run", "../gornid", "-g", identityPath).CombinedOutput()
+	genOut, err := exec.Command("go", "run", "../gornid", "--config", configDir, "-g", identityPath).CombinedOutput()
 	if err != nil {
 		t.Skipf("could not generate identity for status test: %v\n%v", err, string(genOut))
 	}
@@ -168,10 +174,15 @@ func TestGolxmd_Break_WithInvalidHash(t *testing.T) {
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)
 	}
+	configPath := filepath.Join(configDir, "config")
+	configData := fmt.Sprintf("[reticulum]\ninstance_name = %v\n", filepath.Base(tmpDir))
+	if err := os.WriteFile(configPath, []byte(configData), 0o600); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
 
 	// Create identity
 	identityPath := filepath.Join(configDir, "identity")
-	genOut, err := exec.Command("go", "run", "../gornid", "-g", identityPath).CombinedOutput()
+	genOut, err := exec.Command("go", "run", "../gornid", "--config", configDir, "-g", identityPath).CombinedOutput()
 	if err != nil {
 		t.Fatalf("could not generate identity: %v\n%v", err, string(genOut))
 	}
@@ -199,10 +210,15 @@ func TestGolxmd_Sync_WithInvalidHash(t *testing.T) {
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)
 	}
+	configPath := filepath.Join(configDir, "config")
+	configData := fmt.Sprintf("[reticulum]\ninstance_name = %v\n", filepath.Base(tmpDir))
+	if err := os.WriteFile(configPath, []byte(configData), 0o600); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
 
 	// Create identity
 	identityPath := filepath.Join(configDir, "identity")
-	genOut, err := exec.Command("go", "run", "../gornid", "-g", identityPath).CombinedOutput()
+	genOut, err := exec.Command("go", "run", "../gornid", "--config", configDir, "-g", identityPath).CombinedOutput()
 	if err != nil {
 		t.Fatalf("could not generate identity: %v\n%v", err, string(genOut))
 	}
@@ -230,10 +246,15 @@ func TestGolxmd_Status_OutputFormat(t *testing.T) {
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)
 	}
+	configPath := filepath.Join(configDir, "config")
+	configData := fmt.Sprintf("[reticulum]\ninstance_name = %v\n", filepath.Base(tmpDir))
+	if err := os.WriteFile(configPath, []byte(configData), 0o600); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
 
 	// Create identity
 	identityPath := filepath.Join(configDir, "identity")
-	genOut, err := exec.Command("go", "run", "../gornid", "-g", identityPath).CombinedOutput()
+	genOut, err := exec.Command("go", "run", "../gornid", "--config", configDir, "-g", identityPath).CombinedOutput()
 	if err != nil {
 		t.Fatalf("could not generate identity: %v\n%v", err, string(genOut))
 	}
@@ -269,10 +290,15 @@ func TestGolxmd_Status_WithShowStatusFlag(t *testing.T) {
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)
 	}
+	configPath := filepath.Join(configDir, "config")
+	configData := fmt.Sprintf("[reticulum]\ninstance_name = %v\n", filepath.Base(tmpDir))
+	if err := os.WriteFile(configPath, []byte(configData), 0o600); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
 
 	// Create identity
 	identityPath := filepath.Join(configDir, "identity")
-	genOut, err := exec.Command("go", "run", "../gornid", "-g", identityPath).CombinedOutput()
+	genOut, err := exec.Command("go", "run", "../gornid", "--config", configDir, "-g", identityPath).CombinedOutput()
 	if err != nil {
 		t.Fatalf("could not generate identity: %v\n%v", err, string(genOut))
 	}
@@ -310,10 +336,15 @@ func TestGolxmd_Peers_OutputFormat(t *testing.T) {
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)
 	}
+	configPath := filepath.Join(configDir, "config")
+	configData := fmt.Sprintf("[reticulum]\ninstance_name = %v\n", filepath.Base(tmpDir))
+	if err := os.WriteFile(configPath, []byte(configData), 0o600); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
 
 	// Create identity
 	identityPath := filepath.Join(configDir, "identity")
-	genOut, err := exec.Command("go", "run", "../gornid", "-g", identityPath).CombinedOutput()
+	genOut, err := exec.Command("go", "run", "../gornid", "--config", configDir, "-g", identityPath).CombinedOutput()
 	if err != nil {
 		t.Fatalf("could not generate identity: %v\n%v", err, string(genOut))
 	}
@@ -361,10 +392,15 @@ func TestGolxmd_Break_Timeout(t *testing.T) {
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)
 	}
+	configPath := filepath.Join(configDir, "config")
+	configData := fmt.Sprintf("[reticulum]\ninstance_name = %v\n", filepath.Base(tmpDir))
+	if err := os.WriteFile(configPath, []byte(configData), 0o600); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
 
 	// Create identity
 	identityPath := filepath.Join(configDir, "identity")
-	genOut, err := exec.Command("go", "run", "../gornid", "-g", identityPath).CombinedOutput()
+	genOut, err := exec.Command("go", "run", "../gornid", "--config", configDir, "-g", identityPath).CombinedOutput()
 	if err != nil {
 		t.Fatalf("could not generate identity: %v\n%v", err, string(genOut))
 	}

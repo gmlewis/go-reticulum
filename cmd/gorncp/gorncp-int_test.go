@@ -315,8 +315,13 @@ share_instance = No
 
 	listenerReady := make(chan string, 1)
 	listenerDone := make(chan struct{}, 1)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	defer wg.Wait()
+	defer close(listenerDone)
 
 	go func() {
+		defer wg.Done()
 		lCmd, buf := runGorncpBackground(t, serverConfigDir, "-l", "-n", "-s", saveDir, "-i", serverIdentity, "-b", "2", "-v")
 		defer func() {
 			_ = lCmd.Process.Signal(os.Interrupt)
@@ -404,8 +409,6 @@ share_instance = No
 	if string(data) != testData {
 		t.Errorf("Received data mismatch: expected %q, got %q", testData, string(data))
 	}
-
-	close(listenerDone)
 }
 
 func TestListenModeIdentityCreation(t *testing.T) {
@@ -509,8 +512,13 @@ share_instance = No
 
 	listenerReady := make(chan string, 1)
 	listenerDone := make(chan struct{}, 1)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	defer wg.Wait()
+	defer close(listenerDone)
 
 	go func() {
+		defer wg.Done()
 		lCmd, buf := runGorncpBackground(t, serverConfigDir, "-l", "-n", "-F", "-i", serverIdentity, "-b", "2", "-v")
 		defer func() {
 			_ = lCmd.Process.Signal(os.Interrupt)
@@ -562,8 +570,6 @@ share_instance = No
 	if !strings.Contains(fOut, "was not found on the remote") {
 		t.Errorf("Fetcher output does not contain expected error message")
 	}
-
-	close(listenerDone)
 }
 
 func TestFetchPathLookupTimeout(t *testing.T) {
@@ -877,8 +883,13 @@ share_instance = No
 
 	listenerReady := make(chan string, 1)
 	listenerDone := make(chan struct{}, 1)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	defer wg.Wait()
+	defer close(listenerDone)
 
 	go func() {
+		defer wg.Done()
 		lCmd, buf := runGorncpBackground(t, serverConfigDir, "-l", "-n", "-i", serverIdentity, "-b", "2", "-v")
 		defer func() {
 			_ = lCmd.Process.Signal(os.Interrupt)
@@ -937,8 +948,6 @@ share_instance = No
 	if !strings.Contains(fOut, "was not allowed by the remote") {
 		t.Errorf("Fetcher output does not contain expected error message")
 	}
-
-	close(listenerDone)
 }
 
 func TestSendTransferFailure(t *testing.T) {

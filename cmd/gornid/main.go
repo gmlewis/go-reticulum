@@ -85,7 +85,7 @@ func newRuntime(app *appT) *runtimeT {
 	return &runtimeT{app: app, logger: logger}
 }
 
-func (a *appT) run() {
+func (a *appT) run() int {
 	if a.logger == nil {
 		a.logger = rns.NewLogger()
 	}
@@ -99,12 +99,12 @@ func (a *appT) run() {
 
 	if ops > 1 {
 		logger.Error("This utility currently only supports one of the encrypt, decrypt, sign or verify operations per invocation")
-		os.Exit(1)
+		return 1
 	}
 
 	if a.version {
 		utils.PrintVersion(os.Stdout, "gornid", rns.VERSION)
-		return
+		return 0
 	}
 
 	if a.verbose != 0 || a.quiet != 0 {
@@ -127,20 +127,20 @@ func (a *appT) run() {
 	}
 
 	if a.importStr != "" {
-		a.doImport(a.importStr, a.useBase64, a.useBase32, a.printPrivate, a.writeFile, a.force)
-		return
+		return a.doImport(a.importStr, a.useBase64, a.useBase32, a.printPrivate, a.writeFile, a.force)
 	}
 
 	if a.generatePath == "" && a.identityPath == "" {
 		_, _ = fmt.Fprint(os.Stderr, "\nNo identity provided, cannot continue\n")
 		a.usage(os.Stderr)
-		os.Exit(2)
+		return 2
 	}
 
 	ts := rns.NewTransportSystem(a.logger)
 	ret, err := rns.NewReticulumWithLogger(ts, a.configDir, logger)
 	if err != nil {
-		log.Fatalf("Could not initialize Reticulum: %v\n", err)
+		logger.Error("Could not initialize Reticulum: %v", err)
+		return 1
 	}
 	defer func() {
 		if err := ret.Close(); err != nil {
@@ -154,36 +154,39 @@ func (a *appT) run() {
 	}
 
 	if a.generatePath != "" {
-		a.doGenerate(a.generatePath, a.force)
-		return
+		return a.doGenerate(a.generatePath, a.force)
 	}
 
-	id := a.loadIdentity(ret.Transport(), a.identityPath, a.requestID, a.timeout)
+	id, exitCode := a.loadIdentity(ret.Transport(), a.identityPath, a.requestID, a.timeout)
 	if id == nil {
-		log.Fatal("Could not load or recall identity")
+		if exitCode != 0 {
+			return exitCode
+		}
+		logger.Error("Could not load or recall identity")
+		return 1
 	}
 
 	if a.printIdentity {
-		a.doPrintIdentity(id, a.useBase64, a.useBase32, a.printPrivate)
-		os.Exit(0)
+		return a.doPrintIdentity(id, a.useBase64, a.useBase32, a.printPrivate)
 	}
 
 	if a.export {
-		a.doExport(id, a.useBase64, a.useBase32)
-		os.Exit(0)
+		return a.doExport(id, a.useBase64, a.useBase32)
 	}
 
 	if a.hashAspects != "" {
-		a.doHash(ts, id, a.hashAspects)
+		return a.doHash(ts, id, a.hashAspects)
 	}
 
 	if a.announce != "" {
-		a.doAnnounce(ts, id, a.announce)
+		return a.doAnnounce(ts, id, a.announce)
 	}
 
 	if a.encryptFile != "" || a.decryptFile != "" || a.signFile != "" || a.validateFile != "" {
-		a.doFileOps(id, a.readFile, a.writeFile, a.encryptFile, a.decryptFile, a.signFile, a.validateFile, a.force, a.useStdout)
+		return a.doFileOps(id, a.readFile, a.writeFile, a.encryptFile, a.decryptFile, a.signFile, a.validateFile, a.force, a.useStdout)
 	}
+
+	return 0
 }
 
 func main() {
@@ -193,28 +196,29 @@ func main() {
 		if err == utils.ErrHelp {
 			return
 		}
-		log.Fatal(err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
-	newRuntime(app).run()
+	os.Exit(newRuntime(app).run())
 }
 
-func (rt *runtimeT) run() {
+func (rt *runtimeT) run() int {
 	if rt == nil || rt.app == nil {
-		return
+		return 1
 	}
 	rt.app.logger = rt.logger
-	rt.app.run()
+	return rt.app.run()
 }
 
-func (rt *runtimeT) loadIdentity(ts rns.Transport, path string, request bool, timeout float64) *rns.Identity {
+func (rt *runtimeT) loadIdentity(ts rns.Transport, path string, request bool, timeout float64) (*rns.Identity, int) {
 	if rt == nil || rt.app == nil {
-		return nil
+		return nil, 1
 	}
 	rt.app.logger = rt.logger
 	return rt.app.loadIdentity(ts, path, request, timeout)
 }
 
-func (a *appT) doImport(data string, b64, b32, prv bool, writePath string, force bool) {
+func (a *appT) doImport(data string, b64, b32, prv bool, writePath string, force bool) int {
 	logger := a.logger
 	var idBytes []byte
 	var err error
@@ -228,13 +232,13 @@ func (a *appT) doImport(data string, b64, b32, prv bool, writePath string, force
 
 	if err != nil {
 		fmt.Printf("Invalid identity data specified for import: %v\n", err)
-		os.Exit(41)
+		return 41
 	}
 
 	id, err := rns.FromBytes(idBytes, a.logger)
 	if err != nil {
 		fmt.Printf("Could not create Reticulum identity from specified data: %v\n", err)
-		os.Exit(42)
+		return 42
 	}
 
 	logger.Notice("Identity imported")
@@ -245,39 +249,41 @@ func (a *appT) doImport(data string, b64, b32, prv bool, writePath string, force
 		if !force {
 			if _, err := os.Stat(wp); err == nil {
 				fmt.Printf("File %v already exists, not overwriting\n", wp)
-				os.Exit(43)
+				return 43
 			}
 		}
 		if err := id.ToFile(wp); err != nil {
 			fmt.Printf("Error while writing imported identity to file: %v\n", err)
-			os.Exit(44)
+			return 44
 		}
 		logger.Notice("Wrote imported identity to %v", writePath)
 	}
+	return 0
 }
 
-func (a *appT) doGenerate(path string, force bool) {
+func (a *appT) doGenerate(path string, force bool) int {
 	logger := a.logger
 	if _, err := os.Stat(path); err == nil && !force {
 		logger.Error("Identity file %v already exists. Not overwriting.", path)
-		os.Exit(3)
+		return 3
 	}
 	id, err := rns.NewIdentity(true, a.logger)
 	if err != nil {
 		logger.Error("An error ocurred while saving the generated Identity: %v", err)
-		os.Exit(4)
+		return 4
 	}
 	if err := id.ToFile(path); err != nil {
 		logger.Error("An error ocurred while saving the generated Identity: %v", err)
-		os.Exit(4)
+		return 4
 	}
 	logger.Notice("New identity %v written to %v", rns.PrettyHexFromString(id.HexHash), path)
+	return 0
 }
 
-func (a *appT) loadIdentity(ts rns.Transport, path string, request bool, timeout float64) *rns.Identity {
+func (a *appT) loadIdentity(ts rns.Transport, path string, request bool, timeout float64) (*rns.Identity, int) {
 	logger := a.logger
 	if path == "" {
-		return nil
+		return nil, 0
 	}
 
 	hashStrLen := rns.TruncatedHashLength / 8 * 2
@@ -288,7 +294,7 @@ func (a *appT) loadIdentity(ts rns.Transport, path string, request bool, timeout
 		hash, err := hex.DecodeString(path)
 		if err != nil {
 			logger.Error("Invalid hexadecimal hash provided")
-			os.Exit(7)
+			return nil, 7
 		}
 
 		id := ts.Recall(hash)
@@ -304,11 +310,11 @@ func (a *appT) loadIdentity(ts rns.Transport, path string, request bool, timeout
 			if !request {
 				logger.Error("Could not recall Identity for %v.", rns.PrettyHex(hash))
 				logger.Error("You can query the network for unknown Identities with the -R option.")
-				os.Exit(5)
+				return nil, 5
 			}
 			if err := ts.RequestPath(hash); err != nil {
 				logger.Error("Identity request failed for %v: %v", rns.PrettyHex(hash), err)
-				os.Exit(6)
+				return nil, 6
 			}
 			deadline := time.Now().Add(time.Duration(timeout * float64(time.Second)))
 			for time.Now().Before(deadline) {
@@ -316,11 +322,11 @@ func (a *appT) loadIdentity(ts rns.Transport, path string, request bool, timeout
 				id = ts.Recall(hash)
 				if id != nil {
 					logger.Notice("Received Identity %v for destination %v from the network", rns.PrettyHexFromString(id.HexHash), rns.PrettyHex(hash))
-					return id
+					return id, 0
 				}
 			}
 			logger.Error("Identity request timed out")
-			os.Exit(6)
+			return nil, 6
 		}
 
 		identStr := rns.PrettyHexFromString(id.HexHash)
@@ -330,23 +336,23 @@ func (a *appT) loadIdentity(ts rns.Transport, path string, request bool, timeout
 		} else {
 			logger.Notice("Recalled Identity %v for destination %v", identStr, hashStr)
 		}
-		return id
+		return id, 0
 	}
 
 	if !isFile {
 		logger.Notice("Specified Identity file not found")
-		os.Exit(8)
+		return nil, 8
 	}
 	id, err := rns.FromFile(path, a.logger)
 	if err != nil {
 		logger.Notice("Could not decode Identity from specified file")
-		os.Exit(9)
+		return nil, 9
 	}
 	logger.Notice("Loaded Identity %v from %v", rns.PrettyHexFromString(id.HexHash), path)
-	return id
+	return id, 0
 }
 
-func (a *appT) doPrintIdentity(id *rns.Identity, b64, b32, prv bool) {
+func (a *appT) doPrintIdentity(id *rns.Identity, b64, b32, prv bool) int {
 	logger := a.logger
 	pub := id.GetPublicKey()
 	var pubStr string
@@ -375,14 +381,15 @@ func (a *appT) doPrintIdentity(id *rns.Identity, b64, b32, prv bool) {
 			logger.Notice("Private Key : Hidden")
 		}
 	}
+	return 0
 }
 
-func (a *appT) doExport(id *rns.Identity, b64, b32 bool) {
+func (a *appT) doExport(id *rns.Identity, b64, b32 bool) int {
 	logger := a.logger
 	priv := id.GetPrivateKey()
 	if priv == nil {
 		logger.Notice("Identity doesn't hold a private key, cannot export")
-		os.Exit(50)
+		return 50
 	}
 	var privStr string
 	if b64 {
@@ -393,14 +400,15 @@ func (a *appT) doExport(id *rns.Identity, b64, b32 bool) {
 		privStr = hex.EncodeToString(priv)
 	}
 	logger.Notice("Exported Identity : %v", privStr)
+	return 0
 }
 
-func (a *appT) doHash(ts rns.Transport, id *rns.Identity, aspects string) {
+func (a *appT) doHash(ts rns.Transport, id *rns.Identity, aspects string) int {
 	logger := a.logger
 	parts := strings.Split(aspects, ".")
 	if len(parts) == 0 {
 		logger.Error("Invalid destination aspects specified")
-		os.Exit(32)
+		return 32
 	}
 	appName := parts[0]
 	var subAspects []string
@@ -411,26 +419,26 @@ func (a *appT) doHash(ts rns.Transport, id *rns.Identity, aspects string) {
 	if id.GetPublicKey() == nil {
 		logger.Error("An error ocurred while attempting to send the announce.")
 		logger.Error("The contained exception was: No public key known")
-		os.Exit(0)
+		return 0
 	}
 	dest, err := rns.NewDestination(ts, id, rns.DestinationOut, rns.DestinationSingle, appName, subAspects...)
 	if err != nil {
 		logger.Error("An error ocurred while attempting to send the announce.")
 		logger.Error("The contained exception was: %v", err)
-		os.Exit(0)
+		return 0
 	}
 	logger.Notice("The %v destination for this Identity is %v", aspects, rns.PrettyHex(dest.Hash))
 	logger.Notice("The full destination specifier is %v", dest)
 	time.Sleep(250 * time.Millisecond)
-	os.Exit(0)
+	return 0
 }
 
-func (a *appT) doAnnounce(ts rns.Transport, id *rns.Identity, aspects string) {
+func (a *appT) doAnnounce(ts rns.Transport, id *rns.Identity, aspects string) int {
 	logger := a.logger
 	parts := strings.Split(aspects, ".")
 	if len(parts) < 2 {
 		logger.Error("Invalid destination aspects specified")
-		os.Exit(32)
+		return 32
 	}
 	appName := parts[0]
 	subAspects := parts[1:]
@@ -440,7 +448,7 @@ func (a *appT) doAnnounce(ts rns.Transport, id *rns.Identity, aspects string) {
 		if err != nil {
 			logger.Error("An error ocurred while attempting to send the announce.")
 			logger.Error("The contained exception was: %v", err)
-			os.Exit(32)
+			return 32
 		}
 		logger.Notice("Created destination %v", dest)
 		logger.Notice("Announcing destination %v", rns.PrettyHex(dest.Hash))
@@ -448,23 +456,23 @@ func (a *appT) doAnnounce(ts rns.Transport, id *rns.Identity, aspects string) {
 		if err := dest.Announce(nil); err != nil {
 			logger.Error("An error ocurred while attempting to send the announce.")
 			logger.Error("The contained exception was: %v", err)
-			os.Exit(32)
+			return 32
 		}
 		time.Sleep(250 * time.Millisecond)
-		os.Exit(0)
+		return 0
 	}
 
 	dest, err := rns.NewDestination(ts, id, rns.DestinationOut, rns.DestinationSingle, appName, subAspects...)
 	if err != nil {
 		logger.Error("An error ocurred while attempting to send the announce.")
 		logger.Error("The contained exception was: %v", err)
-		os.Exit(32)
+		return 32
 	}
 	logger.Notice("The %v destination for this Identity is %v", aspects, rns.PrettyHex(dest.Hash))
 	logger.Notice("The full destination specifier is %v", dest)
 	logger.Notice("Cannot announce this destination, since the private key is not held")
 	time.Sleep(250 * time.Millisecond)
-	os.Exit(33)
+	return 33
 }
 
 func expandUser(path string) string {
@@ -479,22 +487,22 @@ func expandUser(path string) string {
 
 const chunkSize = 16 * 1024 * 1024
 
-func (a *appT) doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile, sgnFile, valFile string, force, stdout bool) {
+func (a *appT) doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile, sgnFile, valFile string, force, stdout bool) int {
 	logger := a.logger
 	idStr := rns.PrettyHexFromString(id.HexHash)
 
 	if valFile != "" {
 		if _, err := os.Stat(valFile); err != nil {
-			logger.Error("Signature file %v not found", readPath)
-			os.Exit(10)
+			logger.Error("Signature file %v not found", valFile)
+			return 10
 		}
 		if readPath == "" {
 			logger.Error("Signature verification requested, but no input data specified")
-			os.Exit(11)
+			return 11
 		}
 		if _, err := os.Stat(readPath); err != nil {
 			logger.Error("Input file %v not found", readPath)
-			os.Exit(11)
+			return 11
 		}
 	}
 
@@ -502,13 +510,13 @@ func (a *appT) doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile
 	if readPath != "" {
 		if _, err := os.Stat(readPath); err != nil {
 			logger.Error("Input file %v not found", readPath)
-			os.Exit(12)
+			return 12
 		}
 		f, err := os.Open(readPath)
 		if err != nil {
 			logger.Error("Could not open input file for reading")
 			logger.Error("The contained exception was: %v", err)
-			os.Exit(13)
+			return 13
 		}
 		defer func() {
 			if err := f.Close(); err != nil {
@@ -526,7 +534,7 @@ func (a *appT) doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile
 	}
 	if sgnFile != "" && id.GetPrivateKey() == nil {
 		logger.Error("Specified Identity does not hold a private key. Cannot sign.")
-		os.Exit(14)
+		return 14
 	}
 	if sgnFile != "" && writePath == "" && !stdout && readPath != "" {
 		writePath = readPath + ".rsg"
@@ -537,14 +545,14 @@ func (a *appT) doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile
 		if !force {
 			if _, err := os.Stat(writePath); err == nil {
 				logger.Error("Output file %v already exists. Not overwriting.", writePath)
-				os.Exit(15)
+				return 15
 			}
 		}
 		f, err := os.Create(writePath)
 		if err != nil {
 			logger.Error("Could not open output file for writing")
 			logger.Error("The contained exception was: %v", err)
-			os.Exit(15)
+			return 15
 		}
 		defer func() {
 			if err := f.Close(); err != nil {
@@ -557,19 +565,19 @@ func (a *appT) doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile
 	if sgnFile != "" {
 		if id.GetPrivateKey() == nil {
 			logger.Error("Specified Identity does not hold a private key. Cannot sign.")
-			os.Exit(16)
+			return 16
 		}
 		if dataInput == nil {
 			if !stdout {
 				logger.Error("Signing requested, but no input data specified")
 			}
-			os.Exit(17)
+			return 17
 		}
 		if dataOutput == nil {
 			if !stdout {
 				logger.Error("Signing requested, but no output specified")
 			}
-			os.Exit(18)
+			return 18
 		}
 		if !stdout {
 			logger.Notice("Signing %v", readPath)
@@ -580,7 +588,7 @@ func (a *appT) doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile
 				logger.Error("An error ocurred while encrypting data.")
 				logger.Error("The contained exception was: %v", err)
 			}
-			os.Exit(19)
+			return 19
 		}
 		sig, err := id.Sign(data)
 		if err != nil {
@@ -588,19 +596,19 @@ func (a *appT) doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile
 				logger.Error("An error ocurred while encrypting data.")
 				logger.Error("The contained exception was: %v", err)
 			}
-			os.Exit(19)
+			return 19
 		}
 		if _, err := dataOutput.Write(sig); err != nil {
 			if !stdout {
 				logger.Error("An error ocurred while encrypting data.")
 				logger.Error("The contained exception was: %v", err)
 			}
-			os.Exit(19)
+			return 19
 		}
 		if !stdout && readPath != "" {
 			logger.Notice("File %v signed with %v to %v", readPath, idStr, writePath)
 		}
-		os.Exit(0)
+		return 0
 	}
 
 	if valFile != "" {
@@ -608,13 +616,13 @@ func (a *appT) doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile
 			if !stdout {
 				logger.Error("Signature verification requested, but no input data specified")
 			}
-			os.Exit(20)
+			return 20
 		}
 		sigData, err := os.ReadFile(valFile)
 		if err != nil {
 			logger.Error("An error ocurred while opening %v.", valFile)
 			logger.Error("The contained exception was: %v", err)
-			os.Exit(21)
+			return 21
 		}
 		inputData, err := os.ReadFile(readPath)
 		if err != nil {
@@ -622,18 +630,18 @@ func (a *appT) doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile
 				logger.Error("An error ocurred while validating signature.")
 				logger.Error("The contained exception was: %v", err)
 			}
-			os.Exit(23)
+			return 23
 		}
 		if !id.Verify(sigData, inputData) {
 			if !stdout {
 				logger.Error("Signature %v for file %v is invalid", valFile, readPath)
 			}
-			os.Exit(22)
+			return 22
 		}
 		if !stdout {
 			logger.Notice("Signature %v for file %v made by Identity %v is valid", valFile, readPath, idStr)
 		}
-		os.Exit(0)
+		return 0
 	}
 
 	if encFile != "" {
@@ -641,13 +649,13 @@ func (a *appT) doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile
 			if !stdout {
 				logger.Error("Encryption requested, but no input data specified")
 			}
-			os.Exit(24)
+			return 24
 		}
 		if dataOutput == nil {
 			if !stdout {
 				logger.Error("Encryption requested, but no output specified")
 			}
-			os.Exit(25)
+			return 25
 		}
 		if !stdout {
 			logger.Notice("Encrypting %v", readPath)
@@ -662,14 +670,14 @@ func (a *appT) doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile
 						logger.Error("An error ocurred while encrypting data.")
 						logger.Error("The contained exception was: %v", encErr)
 					}
-					os.Exit(26)
+					return 26
 				}
 				if _, wErr := dataOutput.Write(ct); wErr != nil {
 					if !stdout {
 						logger.Error("An error ocurred while encrypting data.")
 						logger.Error("The contained exception was: %v", wErr)
 					}
-					os.Exit(26)
+					return 26
 				}
 			}
 			if err != nil {
@@ -679,25 +687,25 @@ func (a *appT) doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile
 		if !stdout && readPath != "" {
 			logger.Notice("File %v encrypted for %v to %v", readPath, idStr, writePath)
 		}
-		os.Exit(0)
+		return 0
 	}
 
 	if decFile != "" {
 		if id.GetPrivateKey() == nil {
 			logger.Error("Specified Identity does not hold a private key. Cannot decrypt.")
-			os.Exit(27)
+			return 27
 		}
 		if dataInput == nil {
 			if !stdout {
 				logger.Error("Decryption requested, but no input data specified")
 			}
-			os.Exit(28)
+			return 28
 		}
 		if dataOutput == nil {
 			if !stdout {
 				logger.Error("Decryption requested, but no output specified")
 			}
-			os.Exit(29)
+			return 29
 		}
 		if !stdout {
 			logger.Notice("Decrypting %v...", readPath)
@@ -711,14 +719,14 @@ func (a *appT) doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile
 					if !stdout {
 						logger.Notice("Data could not be decrypted with the specified Identity")
 					}
-					os.Exit(30)
+					return 30
 				}
 				if _, wErr := dataOutput.Write(plaintext); wErr != nil {
 					if !stdout {
 						logger.Error("An error ocurred while decrypting data.")
 						logger.Error("The contained exception was: %v", wErr)
 					}
-					os.Exit(31)
+					return 31
 				}
 			}
 			if err != nil {
@@ -728,6 +736,7 @@ func (a *appT) doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile
 		if !stdout && readPath != "" {
 			logger.Notice("File %v decrypted with %v to %v", readPath, idStr, writePath)
 		}
-		os.Exit(0)
+		return 0
 	}
+	return 0
 }

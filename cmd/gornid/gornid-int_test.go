@@ -8,6 +8,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,9 +19,13 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
+func minimalConfig(dir string) string {
+	return fmt.Sprintf("[reticulum]\nshare_instance = No\ninstance_name = %v\n", filepath.Base(dir))
+}
+
 func buildGornid(t *testing.T) (string, func()) {
 	t.Helper()
-	tmpDir, cleanup := testutils.TempDir(t, "gornid-test-")
+	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	bin := filepath.Join(tmpDir, "gornid")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Dir = "."
@@ -65,7 +70,7 @@ func TestParity_Base64ImportExport(t *testing.T) {
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
 	defer cleanup1()
-	tmpDir, cleanup := testutils.TempDir(t, "gornid-test-")
+	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 
@@ -112,7 +117,7 @@ func TestParity_PrintIdentity(t *testing.T) {
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
 	defer cleanup1()
-	tmpDir, cleanup := testutils.TempDir(t, "gornid-test-")
+	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 
@@ -128,7 +133,7 @@ func TestParity_PrintIdentity(t *testing.T) {
 	}
 
 	// Print identity with Python.
-	pyOut, err := exec.Command(rnidBin, "-i", idFile, "-p", "-P").CombinedOutput()
+	pyOut, err := exec.Command(rnidBin, "--config", tmpDir, "-i", idFile, "-p", "-P").CombinedOutput()
 	if err != nil {
 		t.Fatalf("rnid -p failed: %v\n%v", err, string(pyOut))
 	}
@@ -149,7 +154,7 @@ func TestParity_Export(t *testing.T) {
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
 	defer cleanup1()
-	tmpDir, cleanup := testutils.TempDir(t, "gornid-test-")
+	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 
@@ -162,7 +167,7 @@ func TestParity_Export(t *testing.T) {
 		t.Fatalf("gornid -x failed: %v\n%v", err, string(goOut))
 	}
 
-	pyOut, err := exec.Command(rnidBin, "-i", idFile, "-x").CombinedOutput()
+	pyOut, err := exec.Command(rnidBin, "--config", tmpDir, "-i", idFile, "-x").CombinedOutput()
 	if err != nil {
 		t.Fatalf("rnid -x failed: %v\n%v", err, string(pyOut))
 	}
@@ -180,7 +185,7 @@ func TestParity_Hash(t *testing.T) {
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
 	defer cleanup1()
-	tmpDir, cleanup := testutils.TempDir(t, "gornid-test-")
+	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 
@@ -195,7 +200,7 @@ func TestParity_Hash(t *testing.T) {
 		t.Fatalf("gornid -H failed: %v\n%v", err, string(goOut))
 	}
 
-	pyOut, err := exec.Command(rnidBin, "-i", idFile, "-H", aspect).CombinedOutput()
+	pyOut, err := exec.Command(rnidBin, "--config", tmpDir, "-i", idFile, "-H", aspect).CombinedOutput()
 	if err != nil {
 		t.Fatalf("rnid -H failed: %v\n%v", err, string(pyOut))
 	}
@@ -217,7 +222,7 @@ func TestParity_ImportHex(t *testing.T) {
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
 	defer cleanup1()
-	tmpDir, cleanup := testutils.TempDir(t, "gornid-test-")
+	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 
@@ -243,7 +248,7 @@ func TestParity_ImportHex(t *testing.T) {
 	}
 
 	// Import with Python.
-	pyOut, err := exec.Command(rnidBin, "-m", hexStr, "-P").CombinedOutput()
+	pyOut, err := exec.Command(rnidBin, "--config", tmpDir, "-m", hexStr, "-P").CombinedOutput()
 	if err != nil {
 		t.Fatalf("rnid -m failed: %v\n%v", err, string(pyOut))
 	}
@@ -264,7 +269,7 @@ func TestParity_SignGoValidatePython(t *testing.T) {
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
 	defer cleanup1()
-	tmpDir, cleanup := testutils.TempDir(t, "gornid-test-")
+	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 	dataFile := filepath.Join(tmpDir, "data.txt")
@@ -283,7 +288,7 @@ func TestParity_SignGoValidatePython(t *testing.T) {
 	sigFile := dataFile + ".rsg"
 
 	// Validate with Python.
-	pyOut, err := exec.Command(rnidBin, "-i", idFile, "-V", sigFile, "-r", dataFile).CombinedOutput()
+	pyOut, err := exec.Command(rnidBin, "--config", tmpDir, "-i", idFile, "-V", sigFile, "-r", dataFile).CombinedOutput()
 	if err != nil {
 		t.Fatalf("rnid -V failed (Go signature rejected by Python): %v\n%v", err, string(pyOut))
 	}
@@ -297,7 +302,7 @@ func TestParity_SignPythonValidateGo(t *testing.T) {
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
 	defer cleanup1()
-	tmpDir, cleanup := testutils.TempDir(t, "gornid-test-")
+	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 	dataFile := filepath.Join(tmpDir, "data.txt")
@@ -311,7 +316,7 @@ func TestParity_SignPythonValidateGo(t *testing.T) {
 	}
 
 	// Sign with Python.
-	if out, err := exec.Command(rnidBin, "-i", idFile, "-s", dataFile).CombinedOutput(); err != nil {
+	if out, err := exec.Command(rnidBin, "--config", tmpDir, "-i", idFile, "-s", dataFile).CombinedOutput(); err != nil {
 		t.Fatalf("rnid -s failed: %v\n%v", err, string(out))
 	}
 
@@ -330,7 +335,7 @@ func TestParity_EncryptGoDecryptPython(t *testing.T) {
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
 	defer cleanup1()
-	tmpDir, cleanup := testutils.TempDir(t, "gornid-test-")
+	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 	plainFile := filepath.Join(tmpDir, "plain.txt")
@@ -350,10 +355,10 @@ func TestParity_EncryptGoDecryptPython(t *testing.T) {
 	if out, err := exec.Command(gornidBin, "-i", idFile, "-e", plainFile).CombinedOutput(); err != nil {
 		t.Fatalf("gornid -e failed: %v\n%v", err, string(out))
 	}
-
 	// Decrypt with Python.
-	if out, err := exec.Command(rnidBin, "-i", idFile, "-d", encFile, "-w", decFile).CombinedOutput(); err != nil {
-		t.Fatalf("rnid -d failed (Go ciphertext rejected by Python): %v\n%v", err, string(out))
+	pyOut, err := exec.Command(rnidBin, "--config", tmpDir, "-i", idFile, "-d", encFile, "-w", decFile).CombinedOutput()
+	if err != nil {
+		t.Fatalf("rnid -d failed (Go ciphertext rejected by Python): %v\n%v", err, string(pyOut))
 	}
 
 	got, err := os.ReadFile(decFile)
@@ -368,7 +373,7 @@ func TestParity_EncryptPythonDecryptGo(t *testing.T) {
 	rnidBin := findRnid(t)
 	gornidBin, cleanup1 := buildGornid(t)
 	defer cleanup1()
-	tmpDir, cleanup := testutils.TempDir(t, "gornid-test-")
+	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 	plainFile := filepath.Join(tmpDir, "plain.txt")
@@ -385,7 +390,7 @@ func TestParity_EncryptPythonDecryptGo(t *testing.T) {
 	}
 
 	// Encrypt with Python.
-	if out, err := exec.Command(rnidBin, "-i", idFile, "-e", plainFile).CombinedOutput(); err != nil {
+	if out, err := exec.Command(rnidBin, "--config", tmpDir, "-i", idFile, "-e", plainFile).CombinedOutput(); err != nil {
 		t.Fatalf("rnid -e failed: %v\n%v", err, string(out))
 	}
 

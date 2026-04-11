@@ -42,7 +42,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"regexp"
@@ -266,33 +265,10 @@ func (rt *runtimeT) doListen() error {
 		return fmt.Errorf("could not create destination: %w", err)
 	}
 
-	allowMode, allowedList := rt.buildAllowPolicy(opts)
+	_, allowedList := rt.buildAllowPolicy(opts)
 	destination.SetLinkEstablishedCallback(func(link *rns.Link) {
 		rt.wireListenerChannelSession(link, opts, allowedList)
 	})
-	destination.RegisterRequestHandler("command", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
-		if !opts.noAuth && remoteIdentity == nil {
-			rt.logger.Warning("Rejected unauthenticated command request")
-			return nil
-		}
-
-		if !opts.noAuth && remoteIdentity != nil && len(allowedList) > 0 && !identityAllowed(remoteIdentity.Hash, allowedList) {
-			rt.logger.Warning("Rejected unauthorized command request from %v", remoteIdentity.HexHash)
-			return nil
-		}
-
-		remoteCommand := decodeRemoteCommand(data)
-		commandToRun, err := chooseCommand(opts, remoteCommand)
-		if err != nil {
-			return []any{false, int64(126), []byte{}, []byte(err.Error()), int64(0), int64(len(err.Error())), float64(time.Now().UnixNano()) / 1e9, float64(time.Now().UnixNano()) / 1e9}
-		}
-
-		started := time.Now()
-		retval, stdout, stderr := executeCommand(commandToRun, remoteIdentity)
-		concluded := time.Now()
-
-		return []any{true, int64(retval), stdout, stderr, int64(len(stdout)), int64(len(stderr)), float64(started.UnixNano()) / 1e9, float64(concluded.UnixNano()) / 1e9}
-	}, allowMode, allowedList, true)
 
 	stopAnnouncements := startAnnouncements(destination, opts.announceEvery, rt.logger)
 	defer stopAnnouncements()
@@ -648,95 +624,6 @@ func identityAllowed(remoteHash []byte, allowedList [][]byte) bool {
 		}
 	}
 	return false
-}
-
-func decodeRemoteCommand(data []byte) string {
-	if len(data) == 0 {
-		return ""
-	}
-
-	unpacked, err := rns.Unpack(data)
-	if err != nil {
-		return ""
-	}
-
-	parts, ok := unpacked.([]any)
-	if !ok || len(parts) == 0 {
-		return ""
-	}
-
-	switch first := parts[0].(type) {
-	case []byte:
-		return strings.TrimSpace(string(first))
-	case string:
-		return strings.TrimSpace(first)
-	default:
-		return ""
-	}
-}
-
-func chooseCommand(opts options, remoteCommand string) ([]string, error) {
-	base := append([]string{}, opts.commandLine...)
-	if len(base) == 0 {
-		shell := strings.TrimSpace(os.Getenv("SHELL"))
-		if shell == "" {
-			shell = "/bin/sh"
-		}
-		base = []string{shell}
-	}
-
-	if opts.noRemoteCmd && remoteCommand != "" {
-		return nil, errors.New("remote command rejected by listener policy")
-	}
-
-	if opts.noRemoteCmd || remoteCommand == "" {
-		return base, nil
-	}
-
-	if opts.remoteAsArgs {
-		return append(base, strings.Fields(remoteCommand)...), nil
-	}
-
-	return []string{"/bin/sh", "-lc", remoteCommand}, nil
-}
-
-func executeCommand(commandLine []string, remoteIdentity *rns.Identity) (int, []byte, []byte) {
-	if len(commandLine) == 0 {
-		return 127, nil, []byte("no command to execute")
-	}
-
-	cmd := exec.Command(commandLine[0], commandLine[1:]...)
-	if remoteIdentity != nil {
-		// Create minimal environment like Python initiator/listener do
-		env := map[string]string{
-			"TERM":                os.Getenv("TERM"),
-			"RNS_REMOTE_IDENTITY": remoteIdentity.HexHash,
-		}
-		// Filter out nil values
-		filteredEnv := []string{}
-		for k, v := range env {
-			if v != "" {
-				filteredEnv = append(filteredEnv, k+"="+v)
-			}
-		}
-		cmd.Env = filteredEnv
-	}
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	if err == nil {
-		return 0, stdout.Bytes(), stderr.Bytes()
-	}
-
-	if exitErr, ok := err.(*exec.ExitError); ok {
-		return exitErr.ExitCode(), stdout.Bytes(), stderr.Bytes()
-	}
-
-	return 127, stdout.Bytes(), []byte(err.Error())
 }
 
 func (rt *runtimeT) loadOrCreateIdentity(identityPath string) (*rns.Identity, error) {
