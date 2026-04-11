@@ -147,9 +147,35 @@ func (l *Link) UpdateMDU() {
 	l.mdu = l.mtu - HeaderMaxSize - IFACMinSize
 }
 
+// ProvePacket generates and sends a cryptographic proof for the given packet over this link.
+func (l *Link) ProvePacket(packet *Packet) {
+	if l.sigPrv == nil {
+		l.logger.Error("Link cannot sign proof: no private key")
+		return
+	}
+	signature := l.sigPrv.Sign(packet.PacketHash)
+
+	proofData := make([]byte, 0, len(packet.PacketHash)+len(signature))
+	proofData = append(proofData, packet.PacketHash...)
+	proofData = append(proofData, signature...)
+
+	proof := NewPacketWithTransport(l.transport, l, proofData)
+	proof.PacketType = PacketProof
+	if err := l.send(proof); err != nil {
+		l.logger.Debug("Failed to send link proof: %v", err)
+	}
+	l.hadOutbound()
+}
+
 // GetHash returns the truncated cryptographic hash identifying this link.
 func (l *Link) GetHash() []byte {
 	return l.linkID
+}
+
+func (l *Link) hadOutbound() {
+	l.mu.Lock()
+	l.lastOutbound = time.Now()
+	l.mu.Unlock()
 }
 
 // GetType returns the destination type for a link.

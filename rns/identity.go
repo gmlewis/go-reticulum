@@ -404,6 +404,32 @@ func (id *Identity) ToFile(path string) error {
 	return os.WriteFile(path, data, 0600)
 }
 
+// Prove generates and sends a cryptographic proof for the given packet.
+func (id *Identity) Prove(packet *Packet, destination PacketDestination) {
+	if id.sigPrv == nil {
+		id.logger.Error("Identity cannot sign proof: no private key")
+		return
+	}
+	signature := id.sigPrv.Sign(packet.PacketHash)
+
+	var proofData []byte
+	// TODO: Respect use_implicit_proof config
+	proofData = make([]byte, 0, len(packet.PacketHash)+len(signature))
+	proofData = append(proofData, packet.PacketHash...)
+	proofData = append(proofData, signature...)
+
+	if destination == nil {
+		destination = packet.GenerateProofDestination()
+	}
+
+	proof := NewPacketWithTransport(packet.transport, destination, proofData)
+	proof.PacketType = PacketProof
+	proof.ReceivingInterface = packet.ReceivingInterface
+	if err := proof.Send(); err != nil {
+		id.logger.Debug("Failed to send proof: %v", err)
+	}
+}
+
 // String returns a bracketed hex representation of the identity hash,
 // matching Python's str(identity) output.
 func (id *Identity) String() string {

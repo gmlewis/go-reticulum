@@ -367,6 +367,53 @@ func (p *Packet) GetTruncatedHash() []byte {
 	return TruncatedHash(p.GetHashablePart())
 }
 
+type proofDestination struct {
+	hash      []byte
+	transport Transport
+}
+
+func (pd *proofDestination) GetHash() []byte         { return pd.hash }
+func (pd *proofDestination) GetType() int            { return DestinationSingle }
+func (pd *proofDestination) GetTransport() Transport { return pd.transport }
+func (pd *proofDestination) Decrypt(ciphertext []byte) ([]byte, error) {
+	return ciphertext, nil
+}
+func (pd *proofDestination) Encrypt(plaintext []byte) ([]byte, error) {
+	return plaintext, nil
+}
+func (pd *proofDestination) Sign(data []byte) ([]byte, error) {
+	return nil, errors.New("proof destination cannot sign")
+}
+func (pd *proofDestination) Verify(signature, data []byte) bool {
+	return false
+}
+
+// Prove generates and sends a cryptographic proof for this packet.
+func (p *Packet) Prove(destination PacketDestination) {
+	if p.FromPacked {
+		if p.Destination != nil {
+			var identity *Identity
+			if d, ok := p.Destination.(*Destination); ok {
+				identity = d.identity
+			}
+			if identity != nil && identity.GetPrivateKey() != nil {
+				identity.Prove(p, destination)
+			}
+		} else if l, ok := p.Destination.(*Link); ok {
+			l.ProvePacket(p)
+		}
+	}
+}
+
+// GenerateProofDestination generates a special destination that allows Reticulum
+// to direct the proof back to the proved packet's sender.
+func (p *Packet) GenerateProofDestination() PacketDestination {
+	return &proofDestination{
+		hash:      p.PacketHash[:TruncatedHashLength/8],
+		transport: p.transport,
+	}
+}
+
 // PacketReceipt represents a receipt for a sent packet.
 type PacketReceipt struct {
 	Hash          []byte

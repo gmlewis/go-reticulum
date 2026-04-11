@@ -543,3 +543,46 @@ func (d *Destination) Verify(signature, data []byte) bool {
 	}
 	return d.identity.Verify(signature, data)
 }
+
+func (d *Destination) receive(packet *Packet) {
+	if packet.PacketType == PacketLinkRequest {
+		if _, err := ValidateRequest(d.logger, d, packet.Data, packet); err != nil {
+			d.logger.Debug("Failed to validate link request for %v: %v", d.name, err)
+		}
+		return
+	}
+
+	if packet.PacketType == PacketData {
+		plaintext, err := d.Decrypt(packet.Data)
+		if err != nil {
+			d.logger.Debug("Failed to decrypt packet for %v: %v", d.name, err)
+			return
+		}
+
+		// Handle proof strategy
+		d.mu.Lock()
+		strategy := d.proofStrategy
+		callback := d.callbacks.Packet
+		proofRequested := d.callbacks.ProofRequested
+		d.mu.Unlock()
+
+		if strategy == ProveAll {
+			packet.Prove(nil)
+		} else if strategy == ProveApp {
+			if proofRequested != nil && proofRequested(packet) {
+				packet.Prove(nil)
+			}
+		}
+
+		if callback != nil {
+			callback(plaintext, packet)
+		}
+	}
+}
+
+// SetProofStrategy configures the destination's proof strategy.
+func (d *Destination) SetProofStrategy(strategy int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.proofStrategy = strategy
+}

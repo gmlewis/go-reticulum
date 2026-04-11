@@ -2245,25 +2245,6 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 	}
 }
 
-func (d *Destination) receive(packet *Packet) {
-	if packet.PacketType == PacketLinkRequest {
-		if _, err := ValidateRequest(d.logger, d, packet.Data, packet); err != nil {
-			d.logger.Debug("Failed to validate link request for %v: %v", d.name, err)
-		}
-		return
-	}
-
-	// For DATA packets, decrypt and call callback
-	if d.callbacks.Packet != nil {
-		plaintext, err := d.Decrypt(packet.Data)
-		if err != nil {
-			d.logger.Debug("Failed to decrypt packet for %v: %v", d.name, err)
-			return
-		}
-		d.callbacks.Packet(plaintext, packet)
-	}
-}
-
 // Outbound sends a packet over the network.
 func (ts *TransportSystem) Outbound(packet *Packet) error {
 	if !packet.Packed {
