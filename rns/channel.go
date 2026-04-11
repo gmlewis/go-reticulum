@@ -354,6 +354,14 @@ func (c *Channel) Send(msg Message) (*Envelope, error) {
 		p.Receipt.SetTimeoutCallback(c.packetTimeout)
 		p.Receipt.SetTimeout(c.getPacketTimeoutSeconds(env.Tries))
 		c.updatePacketTimeouts()
+	} else {
+		// Local delivery, no receipt. Remove from ring immediately.
+		for i, ringEnv := range c.txRing {
+			if ringEnv == env {
+				c.txRing = append(c.txRing[:i], c.txRing[i+1:]...)
+				break
+			}
+		}
 	}
 	c.mu.Unlock()
 
@@ -572,7 +580,7 @@ func (c *Channel) handleMessage(msg Message) {
 
 	for _, handler := range handlers {
 		if handler(msg) {
-			break
+			return
 		}
 	}
 }

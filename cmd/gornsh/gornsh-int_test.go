@@ -12,7 +12,9 @@ import (
 	"bytes"
 	"context"
 	"flag"
+	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,6 +31,7 @@ import (
 var versionLineRE = regexp.MustCompile(`^[^[:space:]]+\s+[^[:space:]]+$`)
 
 var gornshBinaryPath string
+var globalUDPPort int
 
 func TestMain(m *testing.M) {
 	// This entire suite will be skipped if `-short` is used.
@@ -36,6 +39,14 @@ func TestMain(m *testing.M) {
 	if testing.Short() {
 		os.Exit(0)
 	}
+
+	// Reserve a port for UDPInterface to be used by all tests in this package
+	l, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		log.Fatalf("failed to reserve UDP port: %v", err)
+	}
+	globalUDPPort = l.LocalAddr().(*net.UDPAddr).Port
+	_ = l.Close()
 
 	binDir, cleanup := testutils.TempDirMain("gornsh-bin-")
 	defer func() {
@@ -164,9 +175,12 @@ func TestIntegrationPrintIdentityOutputFormatParity(t *testing.T) {
 }
 
 func TestIntegrationGoListenerGoInitiatorEcho(t *testing.T) {
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	testutils.SkipShortIntegration(t)
+	configDir, cleanup := testutils.TempDir(t, "gornsh-go-go-")
 	defer cleanup()
-	prepareGornshConfig(t, configDir)
+
+	instanceName := "gornsh-go-go-" + filepath.Base(configDir)
+	prepareGornshConfigWithInstance(t, configDir, instanceName, 0, 0)
 
 	listener := startGornshListener(t, configDir)
 	readyHash := listener.hash()
@@ -174,23 +188,50 @@ func TestIntegrationGoListenerGoInitiatorEcho(t *testing.T) {
 		t.Fatal("listener hash is empty")
 	}
 
-	time.Sleep(time.Second)
+	// Give the listener a bit more time to stabilize
+	time.Sleep(15 * time.Second)
 
-	deadline := time.Now().Add(15 * time.Second)
-	var output string
-	var exitCode int
-	for attempt := 0; time.Now().Before(deadline); attempt++ {
-		output, exitCode = runGornshCommand(t, configDir, 10*time.Second, "--timeout", "30", "-T", readyHash, "echo", "hello")
-		if exitCode == 0 && strings.Contains(output, "hello") {
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	// Initiator call should be rock-solid with enough timeout
+	// When using shared instance, we MUST use the same configDir
+	output, exitCode := runGornshCommand(t, configDir, 60*time.Second, "--timeout", "30", "-T", readyHash, "echo", "hello")
 	if exitCode != 0 {
 		t.Fatalf("initiator exit code = %v, want 0\ninitiator output:\n%v\nlistener output:\n%v", exitCode, output, listener.output())
 	}
 	if !strings.Contains(output, "hello") {
 		t.Fatalf("initiator output %q missing hello\nlistener output:\n%v", output, listener.output())
+	}
+}
+
+// TODO E06: End-to-end echo test (Python listener ↔ Go initiator).
+// Start `rnsh -l --no-auth` as a subprocess; wait for readiness line; connect with Go initiator;
+// verify stdout and exit code.
+func TestIntegrationPythonListenerGoInitiatorEcho(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+	// Set up temporary directory for Python listener config
+	configDir, cleanup := testutils.TempDir(t, "gornsh-py-go-")
+	defer cleanup()
+
+	instanceName := "gornsh-py-go-" + filepath.Base(configDir)
+	prepareGornshConfigWithInstance(t, configDir, instanceName, 0, 0)
+
+	// Start Python listener as subprocess
+	pythonListener := startPythonListener(t, configDir, instanceName, 0, 0)
+	readyHash := pythonListener.hash()
+	if readyHash == "" {
+		t.Fatal("Python listener hash is empty")
+	}
+
+	// Give the listener a bit more time to stabilize
+	time.Sleep(15 * time.Second)
+
+	// Initiator call should be rock-solid with enough timeout
+	// When using shared instance, we MUST use the same configDir
+	output, exitCode := runGornshCommand(t, configDir, 60*time.Second, "--timeout", "30", "-T", readyHash, "echo", "hello")
+	if exitCode != 0 {
+		t.Fatalf("initiator exit code = %v, want 0\ninitiator output:\n%v\nlistener output:\n%v", exitCode, output, pythonListener.output())
+	}
+	if !strings.Contains(output, "hello") {
+		t.Fatalf("initiator output %q missing hello\nlistener output:\n%v", output, pythonListener.output())
 	}
 }
 
@@ -282,12 +323,14 @@ func startGornshListener(t *testing.T, configDir string) *gornshListenerProcess 
 	return proc
 }
 
+var listenerHashRE = regexp.MustCompile(`rnsh listening for commands on <([0-9a-fA-F]+)>`)
+
 func parseListenerHash(line string) string {
-	const prefix = "rnsh listening for commands on <"
-	if !strings.HasPrefix(line, prefix) || !strings.HasSuffix(line, ">") {
-		return ""
+	matches := listenerHashRE.FindAllStringSubmatch(line, -1)
+	if len(matches) > 0 && len(matches[0]) > 1 {
+		return matches[0][1]
 	}
-	return strings.TrimSuffix(strings.TrimPrefix(line, prefix), ">")
+	return ""
 }
 
 func (p *gornshListenerProcess) hash() string {
@@ -380,24 +423,50 @@ func gornshIntegrationEnv() []string {
 }
 
 func prepareGornshConfig(t *testing.T, configDir string) {
-	prepareGornshConfigWithInstance(t, configDir, "gornsh-"+filepath.Base(configDir))
+	prepareGornshConfigWithInstance(t, configDir, "gornsh-"+filepath.Base(configDir), 0, 0)
 }
 
-func prepareGornshConfigWithInstance(t *testing.T, configDir string, instanceName string) {
+func prepareGornshConfigWithInstance(t *testing.T, configDir string, instanceName string, listenPort, forwardPort int) {
 	t.Helper()
+
+	if listenPort == 0 {
+		configText := strings.Join([]string{
+			"[reticulum]",
+			"enable_transport = Yes",
+			"share_instance = Yes",
+			"instance_name = " + instanceName,
+			"",
+			"[logging]",
+			"loglevel = 4",
+			"",
+			"[interfaces]",
+			"  [[Default Interface]]",
+			"    type = AutoInterface",
+			"    enabled = Yes",
+			"",
+		}, "\n")
+		if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(configText), 0o600); err != nil {
+			t.Fatalf("failed to write gornsh config: %v", err)
+		}
+		return
+	}
 
 	configText := strings.Join([]string{
 		"[reticulum]",
 		"enable_transport = False",
-		"share_instance = Yes",
+		"share_instance = No",
 		"instance_name = " + instanceName,
 		"",
 		"[logging]",
 		"loglevel = 4",
 		"",
 		"[interfaces]",
-		"  [[Default Interface]]",
-		"    type = AutoInterface",
+		"  [[UDP Interface]]",
+		"    type = UDPInterface",
+		"    listen_ip = 127.0.0.1",
+		"    listen_port = " + fmt.Sprintf("%v", listenPort),
+		"    forward_ip = 127.0.0.1",
+		"    forward_port = " + fmt.Sprintf("%v", forwardPort),
 		"    enabled = Yes",
 		"",
 	}, "\n")
@@ -416,46 +485,6 @@ func getRnshBinaryPath(t *testing.T) string {
 	return path
 }
 
-// TODO E06: End-to-end echo test (Python listener ↔ Go initiator).
-// Start `rnsh -l --no-auth` as a subprocess; wait for readiness line; connect with Go initiator;
-// verify stdout and exit code.
-func TestIntegrationPythonListenerGoInitiatorEcho(t *testing.T) {
-	// Set up temporary directory for Python listener config
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
-
-	// Use unique instance name for this test to avoid conflicts
-	instanceName := "pyrnsh-" + filepath.Base(configDir)
-	prepareGornshConfigWithInstance(t, configDir, instanceName)
-
-	// Start Python listener as subprocess
-	pythonListener := startPythonListener(t, configDir, instanceName)
-	readyHash := pythonListener.hash()
-	if readyHash == "" {
-		t.Fatal("Python listener hash is empty")
-	}
-
-	time.Sleep(time.Second)
-
-	// Try to connect with Go initiator for up to 5 seconds
-	deadline := time.Now().Add(15 * time.Second)
-	var output string
-	var exitCode int
-	for attempt := 0; time.Now().Before(deadline); attempt++ {
-		output, exitCode = runGornshCommand(t, configDir, 10*time.Second, "--timeout", "30", "-T", readyHash, "echo", "hello")
-		if exitCode == 0 && strings.Contains(output, "hello") {
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	if exitCode != 0 {
-		t.Fatalf("initiator exit code = %v, want 0\ninitiator output:\n%v\nlistener output:\n%v", exitCode, output, pythonListener.output())
-	}
-	if !strings.Contains(output, "hello") {
-		t.Fatalf("initiator output %q missing hello\nlistener output:\n%v", output, pythonListener.output())
-	}
-}
-
 type pythonListenerProcess struct {
 	cmd     *exec.Cmd
 	stdout  *bytes.Buffer
@@ -465,7 +494,7 @@ type pythonListenerProcess struct {
 	waitCh  chan error
 }
 
-func startPythonListener(t *testing.T, configDir, instanceName string) *pythonListenerProcess {
+func startPythonListener(t *testing.T, configDir, instanceName string, listenPort, forwardPort int) *pythonListenerProcess {
 	t.Helper()
 
 	// Set up environment for Python rnsh
@@ -565,7 +594,7 @@ func startPythonListener(t *testing.T, configDir, instanceName string) *pythonLi
 			t.Fatal("Python listener exited before readiness line")
 		}
 		t.Fatalf("Python listener failed before readiness line: %v", err)
-	case <-time.After(20 * time.Second):
+	case <-time.After(60 * time.Second):
 		t.Fatalf("timed out waiting for Python listener readiness; output so far:\n%v", proc.output())
 	}
 

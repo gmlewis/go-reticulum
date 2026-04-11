@@ -426,6 +426,8 @@ func (rt *runtimeT) doInitiate() (int, error) {
 	defer stopWatcher()
 
 	code, err := rt.runInitiatorChannelSession(link, opts)
+	// Give final messages time to arrive
+	time.Sleep(2 * time.Second)
 	link.Teardown()
 	if watcher.requested() {
 		return 1, nil

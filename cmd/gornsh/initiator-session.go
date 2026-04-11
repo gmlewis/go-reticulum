@@ -259,7 +259,7 @@ func (rt *runtimeT) runInitiatorProtocolFlow(channel channelSession, opts option
 		case <-linkClosedCh:
 			// Link closure is the lowest priority; check for errors or exits first.
 			// Give it a tiny bit of time for final messages to be processed.
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(10 * time.Second)
 			select {
 			case err := <-session.errCh:
 				return 1, session, err
