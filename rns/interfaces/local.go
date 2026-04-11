@@ -36,6 +36,7 @@ type LocalClientInterface struct {
 	path string
 	port int
 
+	identityHash   []byte
 	inboundHandler InboundHandler
 	running        int32
 	mu             sync.RWMutex
@@ -186,6 +187,18 @@ func (lci *LocalClientInterface) Type() string {
 
 func (lci *LocalClientInterface) IsOut() bool {
 	return true
+}
+
+func (lci *LocalClientInterface) GetHash() []byte {
+	lci.mu.RLock()
+	defer lci.mu.RUnlock()
+	return lci.identityHash
+}
+
+func (lci *LocalClientInterface) SetHash(hash []byte) {
+	lci.mu.Lock()
+	defer lci.mu.Unlock()
+	lci.identityHash = hash
 }
 
 func (lci *LocalClientInterface) Detach() error {

@@ -566,10 +566,13 @@ func (d *Destination) receive(packet *Packet) {
 		proofRequested := d.callbacks.ProofRequested
 		d.mu.Unlock()
 
+		d.logger.Debug("Destination %v: received DATA packet %x, strategy=%v", d.name, packet.PacketHash, strategy)
 		if strategy == ProveAll {
+			d.logger.Debug("Destination %v: generating PROOF for packet %x (strategy ProveAll)", d.name, packet.PacketHash)
 			packet.Prove(nil)
 		} else if strategy == ProveApp {
 			if proofRequested != nil && proofRequested(packet) {
+				d.logger.Debug("Destination %v: generating PROOF for packet %x (strategy ProveApp)", d.name, packet.PacketHash)
 				packet.Prove(nil)
 			}
 		}

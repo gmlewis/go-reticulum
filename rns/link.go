@@ -161,6 +161,10 @@ func (l *Link) ProvePacket(packet *Packet) {
 
 	proof := NewPacketWithTransport(l.transport, l, proofData)
 	proof.PacketType = PacketProof
+	l.mu.Lock()
+	iface := l.attachedInterface
+	l.mu.Unlock()
+	proof.AttachedInterface = iface
 	if err := l.send(proof); err != nil {
 		l.logger.Debug("Failed to send link proof: %v", err)
 	}
@@ -567,13 +571,15 @@ func (l *Link) receive(packet *Packet) {
 		channel := l.channel
 		l.mu.Unlock()
 		if channel != nil {
-			channel.Receive(packet.Data)
+			channel.Receive(packet.Data, packet)
 		}
 
 	default:
 		l.mu.Lock()
 		cb := l.callbacks.Packet
 		l.mu.Unlock()
+		l.logger.Debug("Link %x: received DATA packet %x, generating PROOF", l.linkID, packet.PacketHash)
+		l.ProvePacket(packet)
 		if cb != nil {
 			cb(l, packet)
 		}
@@ -964,6 +970,11 @@ func (o *LinkChannelOutlet) RTT() float64 {
 // IsUsable safely reports whether the physical link remains in an active state capable of sustaining channel traffic.
 func (o *LinkChannelOutlet) IsUsable() bool {
 	return o.link.status == LinkActive
+}
+
+// TimedOut is called by the channel when it has exceeded its maximum retry count.
+func (o *LinkChannelOutlet) TimedOut() {
+	o.link.Teardown()
 }
 
 // Teardown actively closes the link, destroying related channels, and notifying any observers that data transmission has halted.

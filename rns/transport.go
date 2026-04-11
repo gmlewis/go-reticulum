@@ -1908,12 +1908,16 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 
 	if localDest != nil {
 		// Delivery to local destination
+		ts.logger.Debug("Inbound: delivering packet %x to local destination %v", packet.PacketHash, localDest)
+		packet.Destination = localDest
 		localDest.receive(packet)
 		return
 	}
 
 	// Check if it's for a local link
 	if link := ts.FindLink(packet.DestinationHash); link != nil {
+		ts.logger.Debug("Inbound: delivering packet %x to local link %x", packet.PacketHash, link.linkID)
+		packet.Destination = link
 		link.receive(packet)
 		return
 	}
@@ -1991,6 +1995,7 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 
 	// Proof handling
 	if packet.PacketType == PacketProof {
+		ts.logger.Debug("Inbound: processing PROOF packet %x for dest %x", packet.PacketHash, packet.DestinationHash)
 		if packet.Context == ContextLrproof {
 			ts.mu.Lock()
 			// This is a link request proof, check if it needs to be transported
@@ -2029,6 +2034,26 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 			}
 
 			ts.mu.Lock()
+			// Forward to local client interfaces if they match the proof hash
+			for _, ifaceEntry := range ts.interfaces {
+				if ts.isLocalClientInterface(ifaceEntry) {
+					// Check if this interface hash matches the proof destination
+					if ifaceHash, ok := ifaceEntry.(interface{ GetHash() []byte }); ok {
+						if bytes.Equal(ifaceHash.GetHash(), packet.DestinationHash) {
+							ts.logger.Debug("Inbound: delivering proof %x to local client interface %v", packet.PacketHash, ifaceEntry.Name())
+							newRaw := make([]byte, len(packet.Raw))
+							copy(newRaw, packet.Raw)
+							newRaw[1] = byte(packet.Hops)
+							ts.mu.Unlock()
+							if err := ifaceEntry.Send(newRaw); err != nil {
+								ts.logger.Error("Failed to deliver proof to local client: %v", err)
+							}
+							return
+						}
+					}
+				}
+			}
+
 			// Check if this proof needs to be transported
 			if entry, ok := ts.reverseTable[string(packet.DestinationHash)]; ok {
 				newRaw := make([]byte, len(packet.Raw))
@@ -2043,6 +2068,7 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 
 			// Match against outstanding receipts
 			var validatedReceipts []*PacketReceipt
+			ts.logger.Debug("Inbound: matching proof against %v outstanding receipts", len(ts.receipts))
 			for i := 0; i < len(ts.receipts); i++ {
 				r := ts.receipts[i]
 				validated := false
@@ -2055,6 +2081,7 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 				}
 
 				if validated {
+					ts.logger.Debug("Inbound: successfully matched proof to receipt for packet %x", r.Hash)
 					validatedReceipts = append(validatedReceipts, r)
 					ts.receipts = append(ts.receipts[:i], ts.receipts[i+1:]...)
 					i--
@@ -2254,9 +2281,39 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 	}
 
 	ts.mu.Lock()
+	attachedIface := packet.AttachedInterface
 	interfacesSnapshot := append([]interfaces.Interface(nil), ts.interfaces...)
 	pathEntry, hasPath := ts.pathTable[string(packet.DestinationHash)]
 	ts.mu.Unlock()
+
+	if attachedIface != nil {
+		raw := packet.Raw
+		if ifac, ok := attachedIface.(ifacOutboundHook); ok {
+			processed, err := ifac.ApplyIFACOutbound(raw)
+			if err == nil {
+				raw = processed
+			}
+		}
+		if err := attachedIface.Send(raw); err != nil {
+			ts.logger.Error("Could not transmit on %v: %v", attachedIface.Name(), err)
+		}
+
+		ts.mu.Lock()
+		packet.Sent = true
+		packet.SentAt = float64(time.Now().UnixNano()) / 1e9
+		if packet.Receipt != nil {
+			packet.Receipt.MarkSent(packet.SentAt)
+			// Register in TransportSystem if it's a DATA packet
+			if packet.PacketType == PacketData &&
+				packet.DestinationType != DestinationPlain &&
+				!(packet.Context >= ContextKeepalive && packet.Context <= ContextLrproof) &&
+				!(packet.Context >= ContextResource && packet.Context <= ContextResourceRcl) {
+				ts.receipts = append(ts.receipts, packet.Receipt)
+			}
+		}
+		ts.mu.Unlock()
+		return nil
+	}
 
 	if hasPath && packet.PacketType != PacketAnnounce && packet.DestinationType != DestinationPlain && packet.DestinationType != DestinationGroup && pathEntry != nil && pathEntry.Interface != nil {
 		raw := packet.Raw

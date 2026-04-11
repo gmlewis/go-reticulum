@@ -35,6 +35,7 @@ type ChannelOutlet interface {
 	MDU() int
 	RTT() float64
 	IsUsable() bool
+	TimedOut()
 }
 
 // MessageState defines an enumeration representing the various lifecycle stages of a message in transit.
@@ -327,8 +328,10 @@ func (c *Channel) Send(msg Message) (*Envelope, error) {
 
 	p, err := c.outlet.Send(raw)
 	if err != nil {
+		fmt.Printf("DEBUG: Go Channel Send failed: %v\n", err)
 		return nil, err
 	}
+	fmt.Printf("DEBUG: Go Channel sent msg %T seq %v\n", msg, env.Sequence)
 
 	c.mu.Lock()
 	env.Packet = p
@@ -428,6 +431,7 @@ func (c *Channel) packetTimeout(pr *PacketReceipt) {
 		c.logger.Error("Retry count exceeded on %v, shutting down channel.", c)
 		c.mu.Unlock()
 		c.Shutdown()
+		c.outlet.TimedOut()
 		return
 	}
 
@@ -496,18 +500,22 @@ func (c *Channel) isReadyToSend() bool {
 }
 
 // Receive processes raw byte payloads inbound from the outlet, deserializing envelopes and dispatching validated messages to handlers.
-func (c *Channel) Receive(raw []byte) {
+func (c *Channel) Receive(raw []byte, packet *Packet) {
+	fmt.Printf("DEBUG: Go Channel received raw %v bytes\n", len(raw))
 	env := &Envelope{
-		TS:  time.Now(),
-		Raw: raw,
+		TS:     time.Now(),
+		Raw:    raw,
+		Packet: packet,
 	}
 
 	c.mu.Lock()
 	if err := env.Unpack(c.messageFactories); err != nil {
 		c.mu.Unlock()
+		fmt.Printf("DEBUG: Go Channel failed to unpack envelope: %v\n", err)
 		c.logger.Debug("Failed to unpack channel envelope: %v", err)
 		return
 	}
+	fmt.Printf("DEBUG: Go Channel unpacked seq %v msg %T\n", env.Sequence, env.Message)
 
 	// Duplicate detection and window check
 	if env.Sequence < c.nextRXSequence {
@@ -525,10 +533,17 @@ func (c *Channel) Receive(raw []byte) {
 		}
 	}
 
-	if !c.emplaceEnvelope(env, &c.rxRing) {
+	isNew := c.emplaceEnvelope(env, &c.rxRing)
+	if !isNew {
 		c.mu.Unlock()
-		c.logger.Extreme("Duplicate message %v received on channel", env.Sequence)
+		c.logger.Extreme("Duplicate message received on channel %v", c)
 		return
+	}
+
+	// Immediate ACK for all new packets to satisfy reliable transport
+	if env.Packet != nil {
+		fmt.Printf("DEBUG: Go Channel generating proof for seq %v\n", env.Sequence)
+		env.Packet.Prove(nil)
 	}
 
 	// Process contiguous messages
@@ -542,12 +557,12 @@ func (c *Channel) Receive(raw []byte) {
 	c.mu.Unlock()
 
 	for _, e := range contiguous {
-		c.logger.Extreme("Channel.Receive msgType=%v seq=%v rawLen=%v\n", e.Message.GetMsgType(), e.Sequence, len(raw))
 		c.handleMessage(e.Message)
 	}
 }
 
 func (c *Channel) emplaceEnvelope(env *Envelope, ring *[]*Envelope) bool {
+	fmt.Printf("DEBUG: Channel.emplaceEnvelope: env.Seq=%v, nextRX=%v, len(ring)=%v\n", env.Sequence, c.nextRXSequence, len(*ring))
 	for i, existing := range *ring {
 		if env.Sequence == existing.Sequence {
 			return false

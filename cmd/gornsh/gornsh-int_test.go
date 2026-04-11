@@ -258,7 +258,7 @@ func startGornshListener(t *testing.T, configDir string) *gornshListenerProcess 
 
 	cmd := exec.Command(getGornshBinaryPath(t), "--config", configDir, "-l", "--no-auth", "-v")
 	cmd.Stdin = strings.NewReader("")
-	cmd.Env = gornshIntegrationEnv()
+	cmd.Env = gornshIntegrationEnv("")
 	reader, writer, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("os.Pipe() error: %v", err)
@@ -375,7 +375,7 @@ func runGornshCommand(t *testing.T, configDir string, timeout time.Duration, arg
 
 	cmd := exec.CommandContext(ctx, getGornshBinaryPath(t), append([]string{"--config", configDir}, args...)...)
 	cmd.Stdin = strings.NewReader("")
-	cmd.Env = gornshIntegrationEnv()
+	cmd.Env = gornshIntegrationEnv("")
 
 	t.Logf("Running gornsh command: %v", append([]string{"--config", configDir}, args...))
 	out, err := cmd.CombinedOutput()
@@ -405,12 +405,12 @@ func getGornshBinaryPath(t *testing.T) string {
 	return gornshBinaryPath
 }
 
-func gornshIntegrationEnv() []string {
+func gornshIntegrationEnv(pythonPathOverride string) []string {
 	filtered := make([]string, 0, len(os.Environ()))
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
 		switch key {
-		case "TERM", "LINES", "COLUMNS":
+		case "TERM", "LINES", "COLUMNS", "PYTHONPATH":
 			continue
 		default:
 			filtered = append(filtered, entry)
@@ -418,6 +418,14 @@ func gornshIntegrationEnv() []string {
 	}
 	if len(filtered) == 0 {
 		filtered = append(filtered, "HOME=/tmp")
+	}
+	if pythonPathOverride != "" {
+		filtered = append(filtered, "PYTHONPATH="+pythonPathOverride)
+	} else {
+		pythonPath := getRnshPythonPath()
+		if pythonPath != "" {
+			filtered = append(filtered, "PYTHONPATH="+pythonPath)
+		}
 	}
 	return filtered
 }
@@ -498,25 +506,7 @@ func startPythonListener(t *testing.T, configDir, instanceName string, listenPor
 	t.Helper()
 
 	// Set up environment for Python rnsh
-	env := make([]string, 0, len(os.Environ()))
-	for _, entry := range os.Environ() {
-		key, _, _ := strings.Cut(entry, "=")
-		switch key {
-		case "TERM", "LINES", "COLUMNS":
-			continue
-		default:
-			env = append(env, entry)
-		}
-	}
-	if len(env) == 0 {
-		env = append(env, "HOME=/tmp")
-	}
-	// Add the Python paths for Reticulum and rnsh
-	pythonPath := getRnshPythonPath()
-	if pythonPath == "" {
-		t.Skip("Required environment variables not set for Python integration tests")
-	}
-	env = append(env, "PYTHONPATH="+pythonPath)
+	env := gornshIntegrationEnv("/tmp/debug-python")
 
 	// Python uses the same config directory as Go so they share identities
 	// and storage. Both use the same instance_name to communicate via shared instance.

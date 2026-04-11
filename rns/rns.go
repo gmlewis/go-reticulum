@@ -530,6 +530,9 @@ func (r *Reticulum) startLocalInterface() {
 
 	client, err := interfaces.NewLocalClientInterface("Local shared instance", localPath, r.localInterfacePort, handler)
 	if err == nil && client.Status() {
+		if r.networkIdentity != nil {
+			client.SetHash(r.networkIdentity.Hash)
+		}
 		r.applyForcedSharedBitrate(client)
 		r.transport.RegisterInterface(client)
 		r.mu.Lock()

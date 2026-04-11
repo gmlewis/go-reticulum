@@ -27,6 +27,7 @@ func (o *mockOutlet) Resend(p *Packet) (*Packet, error) { return p, nil }
 func (o *mockOutlet) MDU() int                          { return o.mdu }
 func (o *mockOutlet) RTT() float64                      { return o.rtt }
 func (o *mockOutlet) IsUsable() bool                    { return true }
+func (o *mockOutlet) TimedOut()                         {}
 
 func TestBuffer(t *testing.T) {
 	outlet := &mockOutlet{mdu: 500, rtt: 0.1}
@@ -37,7 +38,7 @@ func TestBuffer(t *testing.T) {
 
 	// Simulate loopback
 	outlet.onSend = func(raw []byte) {
-		channel.Receive(raw)
+		channel.Receive(raw, nil)
 	}
 
 	msg := []byte("hello world")
@@ -70,10 +71,10 @@ func TestBidirectionalBuffer(t *testing.T) {
 
 	// Connect them
 	outlet1.onSend = func(raw []byte) {
-		channel2.Receive(raw)
+		channel2.Receive(raw, nil)
 	}
 	outlet2.onSend = func(raw []byte) {
-		channel1.Receive(raw)
+		channel1.Receive(raw, nil)
 	}
 
 	bb1 := Buffer.CreateBidirectionalBuffer(1, 2, channel1)
@@ -176,7 +177,7 @@ func TestChannelWriterCompressesWhenSmaller(t *testing.T) {
 				sawCompressed = true
 			}
 		}
-		channel.Receive(raw)
+		channel.Receive(raw, nil)
 	}
 
 	original := bytes.Repeat([]byte("A"), 4096)
@@ -212,7 +213,7 @@ func TestChannelWriterCompressionCanBeDisabled(t *testing.T) {
 				t.Fatalf("expected uncompressed stream chunk when compression disabled")
 			}
 		}
-		channel.Receive(raw)
+		channel.Receive(raw, nil)
 	}
 
 	original := bytes.Repeat([]byte("A"), 4096)

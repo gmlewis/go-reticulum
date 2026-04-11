@@ -35,6 +35,7 @@ func (o *maintenanceMockOutlet) Resend(p *Packet) (*Packet, error) {
 func (o *maintenanceMockOutlet) MDU() int       { return o.mdu }
 func (o *maintenanceMockOutlet) RTT() float64   { return o.rtt }
 func (o *maintenanceMockOutlet) IsUsable() bool { return true }
+func (o *maintenanceMockOutlet) TimedOut()      {}
 
 func TestChannelMediumRTTAdaptiveWindowGrowth(t *testing.T) {
 	outlet := &maintenanceMockOutlet{mdu: 512, rtt: 0.5}

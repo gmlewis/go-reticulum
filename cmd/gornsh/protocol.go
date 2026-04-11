@@ -6,6 +6,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"github.com/gmlewis/go-reticulum/rns"
@@ -115,24 +116,31 @@ type streamDataMessage struct {
 }
 
 func (m streamDataMessage) pack() ([]byte, error) {
-	return msgpack.Pack([]any{m.StreamID, m.Data, m.EOF, m.Compressed})
+	if m.StreamID > 0x3fff {
+		return nil, fmt.Errorf("stream ID too large: %v", m.StreamID)
+	}
+	headerVal := uint16(m.StreamID & 0x3fff)
+	if m.EOF {
+		headerVal |= 0x8000
+	}
+	if m.Compressed {
+		headerVal |= 0x4000
+	}
+	out := make([]byte, 2+len(m.Data))
+	binary.BigEndian.PutUint16(out[0:2], headerVal)
+	copy(out[2:], m.Data)
+	return out, nil
 }
 
 func (m *streamDataMessage) unpack(raw []byte) error {
-	data, err := msgpack.Unpack(raw)
-	if err != nil {
-		return err
+	if len(raw) < 2 {
+		return fmt.Errorf("stream data message too short: %v", len(raw))
 	}
-	parts, ok := data.([]any)
-	if !ok || len(parts) != 4 {
-		return fmt.Errorf("invalid stream data payload: %#v", data)
-	}
-	m.StreamID, _ = toInt(parts[0])
-	if b, ok := toBytes(parts[1]); ok {
-		m.Data = b
-	}
-	m.EOF = toBool(parts[2])
-	m.Compressed = toBool(parts[3])
+	headerVal := binary.BigEndian.Uint16(raw[0:2])
+	m.EOF = (headerVal & 0x8000) != 0
+	m.Compressed = (headerVal & 0x4000) != 0
+	m.StreamID = int(headerVal & 0x3fff)
+	m.Data = raw[2:]
 	return nil
 }
 

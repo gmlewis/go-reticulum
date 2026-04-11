@@ -425,6 +425,7 @@ func (id *Identity) Prove(packet *Packet, destination PacketDestination) {
 	proof := NewPacketWithTransport(packet.transport, destination, proofData)
 	proof.PacketType = PacketProof
 	proof.ReceivingInterface = packet.ReceivingInterface
+	proof.AttachedInterface = packet.ReceivingInterface
 	if err := proof.Send(); err != nil {
 		id.logger.Debug("Failed to send proof: %v", err)
 	}

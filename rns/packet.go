@@ -136,6 +136,7 @@ type Packet struct {
 	Ciphertext      []byte
 
 	ReceivingInterface interfaces.Interface
+	AttachedInterface  interfaces.Interface
 
 	// Optional fields for received packets
 	RSSI *float64
@@ -392,16 +393,24 @@ func (pd *proofDestination) Verify(signature, data []byte) bool {
 func (p *Packet) Prove(destination PacketDestination) {
 	if p.FromPacked {
 		if p.Destination != nil {
-			var identity *Identity
 			if d, ok := p.Destination.(*Destination); ok {
-				identity = d.identity
+				identity := d.identity
+				if identity != nil && identity.GetPrivateKey() != nil {
+					fmt.Printf("DEBUG: Packet.Prove: proving via identity %v\n", identity)
+					identity.Prove(p, destination)
+					return
+				}
+			} else if l, ok := p.Destination.(*Link); ok {
+				fmt.Printf("DEBUG: Packet.Prove: proving via link %x\n", l.linkID)
+				l.ProvePacket(p)
+				return
 			}
-			if identity != nil && identity.GetPrivateKey() != nil {
-				identity.Prove(p, destination)
-			}
-		} else if l, ok := p.Destination.(*Link); ok {
-			l.ProvePacket(p)
+			fmt.Printf("DEBUG: Packet.Prove: cannot prove, destination type=%T\n", p.Destination)
+		} else {
+			fmt.Printf("DEBUG: Packet.Prove: packet has no destination\n")
 		}
+	} else {
+		fmt.Printf("DEBUG: Packet.Prove: packet not FromPacked\n")
 	}
 }
 
