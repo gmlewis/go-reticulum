@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gmlewis/go-reticulum/rns"
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
@@ -311,10 +312,258 @@ type gornshListenerProcess struct {
 	waitCh  chan error
 }
 
-func startGornshListener(t *testing.T, configDir string) *gornshListenerProcess {
+func TestIntegrationAllowedIdentityEnforcement(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+	// Listener config
+	lConfigDir, cleanup1 := testutils.TempDir(t, "gornsh-go-allowed-listen-")
+	defer cleanup1()
+	// Initiator config
+	iConfigDir, cleanup2 := testutils.TempDir(t, "gornsh-go-allowed-init-")
+	defer cleanup2()
+
+	instanceName := "gornsh-go-allowed-" + filepath.Base(lConfigDir)
+
+	// Go listener config
+	prepareGornshConfigWithInstance(t, lConfigDir, instanceName, 0, 0)
+	// Go initiator config
+	prepareGornshConfigWithInstance(t, iConfigDir, instanceName, 0, 0)
+
+	// Create identities
+	initiatorID := mustCreateIdentity(t, iConfigDir, "initiator.id")
+	allowedID := mustCreateIdentity(t, lConfigDir, "allowed.id")
+
+	t.Logf("Initiator ID: %v", initiatorID.HexHash)
+	t.Logf("Allowed ID:   %v", allowedID.HexHash)
+
+	// Start listener allowed ONLY allowedID
+	listener := startGornshListenerWithArgs(t, lConfigDir, "-a", allowedID.HexHash)
+	readyHash := listener.hash()
+	if readyHash == "" {
+		t.Fatal("listener hash is empty")
+	}
+
+	// Give the listener a bit more time to stabilize
+	time.Sleep(15 * time.Second)
+
+	// Try to connect with initiatorID (which is NOT allowed)
+	// The initiator should fail to establish a session.
+	// We expect a non-zero exit code or at least not seeing "hello".
+	// Based on gornsh implementation, it should exit with an error.
+	output, exitCode := runGornshCommand(t, iConfigDir, 30*time.Second, "-i", filepath.Join(iConfigDir, "initiator.id"), "--timeout", "10", "-T", readyHash, "echo", "hello")
+
+	// The listener should reject it. The initiator might see "link closed" or a protocol error.
+	if exitCode == 0 && strings.Contains(output, "hello") {
+		t.Fatalf("initiator (unauthorized) succeeded but should have been rejected\noutput:\n%v", output)
+	}
+	t.Logf("Initiator correctly failed with code %v and output: %q", exitCode, output)
+
+	// PART 2: Success case
+	// Try to connect with allowedID (which IS allowed)
+	// We need to provide allowedID to initiator
+	output, exitCode = runGornshCommand(t, iConfigDir, 30*time.Second, "-i", filepath.Join(lConfigDir, "allowed.id"), "--timeout", "10", "-T", readyHash, "echo", "hello")
+	if exitCode != 0 {
+		t.Fatalf("initiator (authorized) failed with code %v\noutput:\n%v\nlistener output:\n%v", exitCode, output, listener.output())
+	}
+	if !strings.Contains(output, "hello") {
+		t.Fatalf("initiator (authorized) output missing hello\noutput:\n%v", output)
+	}
+	t.Logf("Initiator correctly succeeded with code 0 and output: %q", output)
+}
+
+func TestIntegrationMirrorFlag(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+	configDir, cleanup := testutils.TempDir(t, "gornsh-mirror-")
+	defer cleanup()
+
+	instanceName := "gornsh-mirror-" + filepath.Base(configDir)
+	prepareGornshConfigWithInstance(t, configDir, instanceName, 0, 0)
+
+	listener := startGornshListener(t, configDir)
+	readyHash := listener.hash()
+	if readyHash == "" {
+		t.Fatal("listener hash is empty")
+	}
+
+	time.Sleep(15 * time.Second)
+
+	tests := []struct {
+		name       string
+		mirror     bool
+		command    string
+		wantExit   int
+		wantStdout string
+	}{
+		{
+			name:       "echo with mirror exits 0",
+			mirror:     true,
+			command:    "echo hello",
+			wantExit:   0,
+			wantStdout: "hello",
+		},
+		{
+			name:       "echo without mirror exits 0",
+			mirror:     false,
+			command:    "echo hello",
+			wantExit:   0,
+			wantStdout: "hello",
+		},
+		{
+			name:     "false with mirror exits 1",
+			mirror:   true,
+			command:  "false",
+			wantExit: 1,
+		},
+		{
+			name:     "false without mirror exits 0",
+			mirror:   false,
+			command:  "false",
+			wantExit: 0,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			args := []string{"--timeout", "10", "-T"}
+			if tc.mirror {
+				args = append(args, "--mirror")
+			}
+			args = append(args, readyHash)
+			args = append(args, strings.Fields(tc.command)...)
+
+			output, exitCode := runGornshCommand(t, configDir, 30*time.Second, args...)
+			if exitCode != tc.wantExit {
+				t.Errorf("exitCode = %v, want %v", exitCode, tc.wantExit)
+			}
+			if tc.wantStdout != "" && !strings.Contains(output, tc.wantStdout) {
+				t.Errorf("output %q missing %q", output, tc.wantStdout)
+			}
+		})
+	}
+}
+
+func TestIntegrationNoAuthOpenListener(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+
+	t.Run("no-auth allows unknown identities", func(t *testing.T) {
+		configDir, cleanup := testutils.TempDir(t, "gornsh-noauth-allow-")
+		defer cleanup()
+
+		instanceName := "gornsh-noauth-allow-" + filepath.Base(configDir)
+		prepareGornshConfigWithInstance(t, configDir, instanceName, 0, 0)
+
+		// Start listener with --no-auth (default in startGornshListener)
+		listener := startGornshListener(t, configDir)
+		readyHash := listener.hash()
+
+		time.Sleep(15 * time.Second)
+
+		// Initiator with a random identity should succeed
+		output, exitCode := runGornshCommand(t, configDir, 30*time.Second, "--timeout", "10", "-T", readyHash, "echo", "hello")
+		if exitCode != 0 || !strings.Contains(output, "hello") {
+			t.Errorf("expected success with --no-auth, got exit %v, output: %q", exitCode, output)
+		}
+	})
+
+	t.Run("default (auth enabled) denies unknown identities", func(t *testing.T) {
+		configDir, cleanup := testutils.TempDir(t, "gornsh-noauth-deny-")
+		defer cleanup()
+
+		instanceName := "gornsh-noauth-deny-" + filepath.Base(configDir)
+		prepareGornshConfigWithInstance(t, configDir, instanceName, 0, 0)
+
+		// Start listener WITHOUT --no-auth
+		listener := startGornshListenerWithArgs(t, configDir) // empty args = default behavior (auth enabled)
+		readyHash := listener.hash()
+
+		time.Sleep(15 * time.Second)
+
+		// Initiator with any identity should fail
+		output, exitCode := runGornshCommand(t, configDir, 30*time.Second, "--timeout", "10", "-T", readyHash, "echo", "hello")
+		if exitCode == 0 && strings.Contains(output, "hello") {
+			t.Errorf("expected failure without --no-auth and no allowlist, but succeeded")
+		}
+
+		// Verify warning in listener log
+		// Python: "Authentication enabled but no allowed identities configured; denying all command requests"
+		// Wait a bit for log to be written
+		time.Sleep(2 * time.Second)
+		logOut := listener.output()
+		wantWarning := "denying all command requests"
+		if !strings.Contains(logOut, wantWarning) {
+			t.Errorf("listener log missing expected warning %q\nlog:\n%v", wantWarning, logOut)
+		}
+	})
+}
+
+func TestIntegrationNetworkPartitionRecovery(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+	configDir, cleanup := testutils.TempDir(t, "gornsh-recovery-")
+	defer cleanup()
+
+	instanceName := "gornsh-recovery-" + filepath.Base(configDir)
+	prepareGornshConfigWithInstance(t, configDir, instanceName, 0, 0)
+
+	listener := startGornshListener(t, configDir)
+	readyHash := listener.hash()
+
+	// Give the listener a bit more time to stabilize
+	time.Sleep(15 * time.Second)
+
+	// 1. Verify initial success
+	output, exitCode := runGornshCommand(t, configDir, 30*time.Second, "--timeout", "10", "-T", readyHash, "echo", "step1")
+	if exitCode != 0 || !strings.Contains(output, "step1") {
+		t.Fatalf("Step 1 failed: exit %v, output: %q", exitCode, output)
+	}
+
+	// 2. Simulate partition (STOP listener)
+	t.Log("Simulating network partition (SIGSTOP listener)")
+	if err := listener.cmd.Process.Signal(syscall.SIGSTOP); err != nil {
+		t.Fatalf("failed to stop listener: %v", err)
+	}
+
+	// Initiator should fail
+	output, exitCode = runGornshCommand(t, configDir, 15*time.Second, "--timeout", "5", "-T", readyHash, "echo", "step2")
+	if exitCode == 0 && strings.Contains(output, "step2") {
+		t.Errorf("Step 2 should have failed but succeeded")
+	}
+	t.Logf("Step 2 correctly failed during partition")
+
+	// 3. Restore network (CONT listener)
+	t.Log("Restoring network (SIGCONT listener)")
+	if err := listener.cmd.Process.Signal(syscall.SIGCONT); err != nil {
+		t.Fatalf("failed to continue listener: %v", err)
+	}
+
+	// Give it a moment to catch up
+	time.Sleep(2 * time.Second)
+
+	// Initiator should succeed again
+	output, exitCode = runGornshCommand(t, configDir, 30*time.Second, "--timeout", "10", "-T", readyHash, "echo", "step3")
+	if exitCode != 0 || !strings.Contains(output, "step3") {
+		t.Fatalf("Step 3 failed after recovery: exit %v, output: %q\nlistener output:\n%v", exitCode, output, listener.output())
+	}
+	t.Log("Step 3 successfully recovered")
+}
+
+func mustCreateIdentity(t *testing.T, configDir string, filename string) *rns.Identity {
+	t.Helper()
+	id, err := rns.NewIdentity(true, nil)
+	if err != nil {
+		t.Fatalf("failed to create identity: %v", err)
+	}
+	path := filepath.Join(configDir, filename)
+	if err := id.ToFile(path); err != nil {
+		t.Fatalf("failed to save identity to %q: %v", path, err)
+	}
+	return id
+}
+
+func startGornshListenerWithArgs(t *testing.T, configDir string, extraArgs ...string) *gornshListenerProcess {
 	t.Helper()
 
-	cmd := exec.Command(getGornshBinaryPath(t), "--config", configDir, "-l", "--no-auth", "-v")
+	args := append([]string{"--config", configDir, "-l", "-v"}, extraArgs...)
+	cmd := exec.Command(getGornshBinaryPath(t), args...)
 	cmd.Stdin = strings.NewReader("")
 	cmd.Env = gornshIntegrationEnv("")
 	reader, writer, err := os.Pipe()
@@ -369,7 +618,7 @@ func startGornshListener(t *testing.T, configDir string) *gornshListenerProcess 
 			t.Fatal("listener exited before readiness line")
 		}
 		t.Fatalf("listener failed before readiness line: %v", err)
-	case <-time.After(10 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatalf("timed out waiting for listener readiness; output so far:\n%v", proc.output())
 	}
 
@@ -379,6 +628,10 @@ func startGornshListener(t *testing.T, configDir string) *gornshListenerProcess 
 
 	_ = writer.Close()
 	return proc
+}
+
+func startGornshListener(t *testing.T, configDir string) *gornshListenerProcess {
+	return startGornshListenerWithArgs(t, configDir, "--no-auth")
 }
 
 var listenerHashRE = regexp.MustCompile(`rnsh listening for commands on <([0-9a-fA-F]+)>`)

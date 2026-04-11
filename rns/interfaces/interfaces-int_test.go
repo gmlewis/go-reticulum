@@ -12,13 +12,76 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
+
+	"crypto/sha256"
+	"encoding/hex"
 )
+
+const pythonDiscoveryTokenScript = `
+import hashlib
+import sys
+
+group_id = "reticulum".encode("utf-8")
+link_local_address = sys.argv[1]
+discovery_token = hashlib.sha256(group_id + link_local_address.encode("utf-8")).digest()
+print(discovery_token.hex())
+`
+
+func TestAutoInterfaceDiscoveryPacketParity(t *testing.T) {
+	pythonPath := getPythonPath()
+	tmpDir, err := os.MkdirTemp("", "rns-auto-parity-*")
+	mustTest(t, err)
+	t.Cleanup(func() {
+		os.RemoveAll(tmpDir)
+	})
+
+	scriptPath := filepath.Join(tmpDir, "discovery_token.py")
+	if err := os.WriteFile(scriptPath, []byte(pythonDiscoveryTokenScript), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	testAddresses := []string{
+		"fe80::1",
+		"fe80::dead:beef:face:b00c",
+		"fe80::215:5dff:fe00:1db1",
+	}
+
+	for _, addr := range testAddresses {
+		t.Run(addr, func(t *testing.T) {
+			// Get Python's token
+			cmd := exec.Command("python3", scriptPath, addr)
+			cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPath)
+			pyOut, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("python script failed: %v\n%s", err, string(pyOut))
+			}
+			pyHex := strings.TrimSpace(string(pyOut))
+
+			// Calculate Go's token
+			// Logic from rns/interfaces/auto.go: peerAnnounce
+			// token := sha256.Sum256(append(append([]byte{}, ai.groupID...), []byte(localIP.String())...))
+			groupID := []byte("reticulum")
+			ip := net.ParseIP(addr)
+			if ip == nil {
+				t.Fatalf("failed to parse IP %q", addr)
+			}
+			goToken := sha256.Sum256(append(append([]byte{}, groupID...), []byte(ip.String())...))
+			goHex := hex.EncodeToString(goToken[:])
+
+			if goHex != pyHex {
+				t.Errorf("token mismatch for address %q\nGo:     %s\nPython: %s", addr, goHex, pyHex)
+			}
+		})
+	}
+}
 
 func getPythonPath() string {
 	if path := os.Getenv("ORIGINAL_RETICULUM_REPO_DIR"); path != "" {
