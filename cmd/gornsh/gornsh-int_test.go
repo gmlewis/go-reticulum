@@ -235,6 +235,64 @@ func TestIntegrationPythonListenerGoInitiatorEcho(t *testing.T) {
 	}
 }
 
+func TestIntegrationGoListenerPythonInitiatorEcho(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+	// Listener config
+	lConfigDir, cleanup1 := testutils.TempDir(t, "gornsh-go-listen-")
+	defer cleanup1()
+	// Initiator config
+	iConfigDir, cleanup2 := testutils.TempDir(t, "gornsh-py-init-")
+	defer cleanup2()
+
+	instanceName := "gornsh-go-py-" + filepath.Base(lConfigDir)
+
+	// Go listener config
+	prepareGornshConfigWithInstance(t, lConfigDir, instanceName, 0, 0)
+	// Python initiator config
+	prepareGornshConfigWithInstance(t, iConfigDir, instanceName, 0, 0)
+
+	listener := startGornshListener(t, lConfigDir)
+	readyHash := listener.hash()
+	if readyHash == "" {
+		t.Fatal("listener hash is empty")
+	}
+
+	// Give the listener a bit more time to stabilize
+	time.Sleep(15 * time.Second)
+
+	// Initiator call (Python)
+	output, exitCode := runRnshCommand(t, iConfigDir, 60*time.Second, "--timeout", "30", "-T", readyHash, "echo", "hello")
+	if exitCode != 0 {
+		t.Fatalf("Python initiator exit code = %v, want 0\ninitiator output:\n%v\nlistener output:\n%v", exitCode, output, listener.output())
+	}
+	if !strings.Contains(output, "hello") {
+		t.Fatalf("Python initiator output %q missing hello\nlistener output:\n%v", output, listener.output())
+	}
+}
+
+func runRnshCommand(t *testing.T, configDir string, timeout time.Duration, args ...string) (string, int) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	fullArgs := append([]string{"-m", "rnsh.rnsh", "--config", configDir}, args...)
+	cmd := exec.CommandContext(ctx, "python3", fullArgs...)
+	cmd.Stdin = strings.NewReader("")
+	cmd.Env = gornshIntegrationEnv("")
+
+	t.Logf("Running rnsh command: python3 %v", fullArgs)
+	out, err := cmd.CombinedOutput()
+	t.Logf("Command finished. Output: %q, Error: %v", string(out), err)
+	if err == nil {
+		return string(out), 0
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		return string(out), exitErr.ExitCode()
+	}
+	return string(out), -1
+}
+
 func firstLineWithPrefix(output, prefix string) string {
 	for _, line := range strings.Split(output, "\n") {
 		if strings.HasPrefix(line, prefix) {
