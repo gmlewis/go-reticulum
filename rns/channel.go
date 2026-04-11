@@ -328,10 +328,8 @@ func (c *Channel) Send(msg Message) (*Envelope, error) {
 
 	p, err := c.outlet.Send(raw)
 	if err != nil {
-		fmt.Printf("DEBUG: Go Channel Send failed: %v\n", err)
 		return nil, err
 	}
-	fmt.Printf("DEBUG: Go Channel sent msg %T seq %v\n", msg, env.Sequence)
 
 	c.mu.Lock()
 	env.Packet = p
@@ -501,7 +499,6 @@ func (c *Channel) isReadyToSend() bool {
 
 // Receive processes raw byte payloads inbound from the outlet, deserializing envelopes and dispatching validated messages to handlers.
 func (c *Channel) Receive(raw []byte, packet *Packet) {
-	fmt.Printf("DEBUG: Go Channel received raw %v bytes\n", len(raw))
 	env := &Envelope{
 		TS:     time.Now(),
 		Raw:    raw,
@@ -511,11 +508,9 @@ func (c *Channel) Receive(raw []byte, packet *Packet) {
 	c.mu.Lock()
 	if err := env.Unpack(c.messageFactories); err != nil {
 		c.mu.Unlock()
-		fmt.Printf("DEBUG: Go Channel failed to unpack envelope: %v\n", err)
 		c.logger.Debug("Failed to unpack channel envelope: %v", err)
 		return
 	}
-	fmt.Printf("DEBUG: Go Channel unpacked seq %v msg %T\n", env.Sequence, env.Message)
 
 	// Duplicate detection and window check
 	if env.Sequence < c.nextRXSequence {
@@ -542,7 +537,6 @@ func (c *Channel) Receive(raw []byte, packet *Packet) {
 
 	// Immediate ACK for all new packets to satisfy reliable transport
 	if env.Packet != nil {
-		fmt.Printf("DEBUG: Go Channel generating proof for seq %v\n", env.Sequence)
 		env.Packet.Prove(nil)
 	}
 
@@ -562,7 +556,6 @@ func (c *Channel) Receive(raw []byte, packet *Packet) {
 }
 
 func (c *Channel) emplaceEnvelope(env *Envelope, ring *[]*Envelope) bool {
-	fmt.Printf("DEBUG: Channel.emplaceEnvelope: env.Seq=%v, nextRX=%v, len(ring)=%v\n", env.Sequence, c.nextRXSequence, len(*ring))
 	for i, existing := range *ring {
 		if env.Sequence == existing.Sequence {
 			return false

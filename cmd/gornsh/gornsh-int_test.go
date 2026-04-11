@@ -506,7 +506,7 @@ func startPythonListener(t *testing.T, configDir, instanceName string, listenPor
 	t.Helper()
 
 	// Set up environment for Python rnsh
-	env := gornshIntegrationEnv("/tmp/debug-python")
+	env := gornshIntegrationEnv("")
 
 	// Python uses the same config directory as Go so they share identities
 	// and storage. Both use the same instance_name to communicate via shared instance.
