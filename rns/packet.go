@@ -6,9 +6,11 @@
 package rns
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
 )
@@ -375,10 +377,81 @@ type PacketReceipt struct {
 	Proved        bool
 	Status        int
 	Destination   PacketDestination
+	ConcludedAt   float64
+	ProofPacket   *Packet
 
 	timeoutCallback  func(*PacketReceipt)
 	deliveryCallback func(*PacketReceipt)
 	mu               sync.Mutex
+}
+
+const (
+	// ExplLength is the length of an explicit proof.
+	ExplLength = TruncatedHashLength/8 + 64
+	// ImplLength is the length of an implicit proof.
+	ImplLength = 64
+)
+
+// ValidateProofPacket evaluates a raw proof packet against the receipt.
+func (pr *PacketReceipt) ValidateProofPacket(proofPacket *Packet) bool {
+	if l, ok := pr.Destination.(*Link); ok {
+		return pr.ValidateLinkProof(proofPacket.Data, l, proofPacket)
+	}
+	return pr.ValidateProof(proofPacket.Data, proofPacket)
+}
+
+// ValidateLinkProof validates a raw proof for a link.
+func (pr *PacketReceipt) ValidateLinkProof(proof []byte, link *Link, proofPacket *Packet) bool {
+	if len(proof) == ExplLength {
+		proofHash := proof[:TruncatedHashLength/8]
+		signature := proof[TruncatedHashLength/8 : TruncatedHashLength/8+64]
+		if bytes.Equal(proofHash, pr.TruncatedHash) {
+			if link.remoteIdentity != nil && link.remoteIdentity.Verify(signature, pr.Hash) {
+				pr.mu.Lock()
+				pr.Status = ReceiptDelivered
+				pr.Proved = true
+				pr.ConcludedAt = float64(time.Now().UnixNano()) / 1e9
+				pr.ProofPacket = proofPacket
+				link.lastProof = pr.ConcludedAt
+				cb := pr.deliveryCallback
+				pr.mu.Unlock()
+				if cb != nil {
+					cb(pr)
+				}
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ValidateProof validates a raw proof for a destination.
+func (pr *PacketReceipt) ValidateProof(proof []byte, proofPacket *Packet) bool {
+	if len(proof) == ExplLength {
+		proofHash := proof[:TruncatedHashLength/8]
+		signature := proof[TruncatedHashLength/8 : TruncatedHashLength/8+64]
+		if bytes.Equal(proofHash, pr.TruncatedHash) {
+			// Get destination identity to verify
+			var id *Identity
+			if d, ok := pr.Destination.(*Destination); ok {
+				id = d.identity
+			}
+			if id != nil && id.Verify(signature, pr.Hash) {
+				pr.mu.Lock()
+				pr.Status = ReceiptDelivered
+				pr.Proved = true
+				pr.ConcludedAt = float64(time.Now().UnixNano()) / 1e9
+				pr.ProofPacket = proofPacket
+				cb := pr.deliveryCallback
+				pr.mu.Unlock()
+				if cb != nil {
+					cb(pr)
+				}
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // SetTimeoutCallback assigns a function to be executed when the receipt's timeout window expires without delivery.

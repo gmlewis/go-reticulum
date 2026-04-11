@@ -104,6 +104,7 @@ type Link struct {
 	lastOutbound time.Time
 	activatedAt  time.Time
 	requestTime  time.Time
+	lastProof    float64
 
 	callbacks LinkCallbacks
 	mu        sync.Mutex

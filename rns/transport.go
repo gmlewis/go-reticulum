@@ -116,6 +116,8 @@ type TransportSystem struct {
 
 	announceHandlers []*AnnounceHandler
 
+	receipts []*PacketReceipt
+
 	enabled          bool
 	linkMTUDiscovery bool
 	mu               sync.Mutex
@@ -1987,6 +1989,84 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 		}
 	}
 
+	// Proof handling
+	if packet.PacketType == PacketProof {
+		if packet.Context == ContextLrproof {
+			ts.mu.Lock()
+			// This is a link request proof, check if it needs to be transported
+			if entry, ok := ts.linkTable[string(packet.DestinationHash)]; ok {
+				if packet.Hops == entry.RemainingHops && iface == entry.OutboundInterface {
+					// Validate and forward link request proof
+					// In a real implementation we should validate the signature here
+					// but for now we'll just forward it as Python does.
+					newRaw := make([]byte, len(packet.Raw))
+					copy(newRaw, packet.Raw)
+					newRaw[1] = byte(packet.Hops)
+					entry.Validated = true
+					ts.mu.Unlock()
+					if err := entry.ReceivedInterface.Send(newRaw); err != nil {
+						ts.logger.Error("Failed to forward link proof: %v", err)
+					}
+					return
+				}
+			}
+			ts.mu.Unlock()
+
+			// Check if we can deliver it to a local pending link
+			if l := ts.FindLink(packet.DestinationHash); l != nil {
+				if l.GetStatus() == LinkPending {
+					l.receive(packet)
+					return
+				}
+			}
+		} else {
+			// Normal proof
+			var proofHash []byte
+			if packet.Context == ContextLinkProof {
+				if len(packet.Data) >= TruncatedHashLength/8 {
+					proofHash = packet.Data[:TruncatedHashLength/8]
+				}
+			}
+
+			ts.mu.Lock()
+			// Check if this proof needs to be transported
+			if entry, ok := ts.reverseTable[string(packet.DestinationHash)]; ok {
+				newRaw := make([]byte, len(packet.Raw))
+				copy(newRaw, packet.Raw)
+				newRaw[1] = byte(packet.Hops)
+				ts.mu.Unlock()
+				if err := entry.ReceivedInterface.Send(newRaw); err != nil {
+					ts.logger.Error("Failed to forward proof: %v", err)
+				}
+				return
+			}
+
+			// Match against outstanding receipts
+			var validatedReceipts []*PacketReceipt
+			for i := 0; i < len(ts.receipts); i++ {
+				r := ts.receipts[i]
+				validated := false
+				if len(proofHash) > 0 {
+					if bytes.Equal(r.TruncatedHash, proofHash) {
+						validated = r.ValidateProofPacket(packet)
+					}
+				} else {
+					validated = r.ValidateProofPacket(packet)
+				}
+
+				if validated {
+					validatedReceipts = append(validatedReceipts, r)
+					ts.receipts = append(ts.receipts[:i], ts.receipts[i+1:]...)
+					i--
+				}
+			}
+			ts.mu.Unlock()
+			if len(validatedReceipts) > 0 {
+				return
+			}
+		}
+	}
+
 	// Announce propagation
 	if packet.PacketType == PacketAnnounce {
 		if packet.Context == ContextPathResponse {
@@ -2227,6 +2307,13 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 		packet.SentAt = float64(time.Now().UnixNano()) / 1e9
 		if packet.Receipt != nil {
 			packet.Receipt.MarkSent(packet.SentAt)
+			// Register in TransportSystem if it's a DATA packet
+			if packet.PacketType == PacketData &&
+				packet.DestinationType != DestinationPlain &&
+				!(packet.Context >= ContextKeepalive && packet.Context <= ContextLrproof) &&
+				!(packet.Context >= ContextResource && packet.Context <= ContextResourceRcl) {
+				ts.receipts = append(ts.receipts, packet.Receipt)
+			}
 		}
 		ts.mu.Unlock()
 		return nil
@@ -2254,6 +2341,13 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 	packet.SentAt = float64(time.Now().UnixNano()) / 1e9
 	if packet.Receipt != nil {
 		packet.Receipt.MarkSent(packet.SentAt)
+		// Register in TransportSystem if it's a DATA packet
+		if packet.PacketType == PacketData &&
+			packet.DestinationType != DestinationPlain &&
+			!(packet.Context >= ContextKeepalive && packet.Context <= ContextLrproof) &&
+			!(packet.Context >= ContextResource && packet.Context <= ContextResourceRcl) {
+			ts.receipts = append(ts.receipts, packet.Receipt)
+		}
 	}
 	ts.mu.Unlock()
 	return nil
