@@ -44,6 +44,12 @@ func TempDir(t *testing.T, prefix string) (string, func()) {
 	return tempDir(t, prefix)
 }
 
+// TempDirBench creates a temporary directory for a benchmark and returns a cleanup
+// function that removes it.
+func TempDirBench(b *testing.B, prefix string) (string, func()) {
+	return tempDir(b, prefix)
+}
+
 // TempDirMain creates a temporary directory for a TestMain suite and returns a cleanup
 // function that removes it.
 func TempDirMain(prefix string) (string, func()) {

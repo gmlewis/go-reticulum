@@ -8,6 +8,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -45,6 +46,8 @@ type remoteStatusResult struct {
 }
 
 func getRemoteStatus(reticulum *rns.Reticulum, p programSetupParams) (*remoteStatusResult, error) {
+	fmt.Printf("DEBUG: getRemoteStatus starting, waiting for interfaces...\n")
+	time.Sleep(5 * time.Second)
 	w := p.writer
 	if w == nil {
 		w = os.Stdout
@@ -62,10 +65,6 @@ func getRemoteStatus(reticulum *rns.Reticulum, p programSetupParams) (*remoteSta
 		}
 		logger.Debug("Requesting path to %v", rns.PrettyHexRep(targetHash))
 
-		// If we are connecting to a shared instance, we might need to announce
-		// ourselves to ensure the other side knows where to send replies.
-		// However, RequestPath should be enough if transport is working.
-
 		if err := ts.RequestPath(targetHash); err != nil {
 			return nil, fmt.Errorf("path request failed: %w", err)
 		}
@@ -80,6 +79,7 @@ func getRemoteStatus(reticulum *rns.Reticulum, p programSetupParams) (*remoteSta
 					_, _ = fmt.Print("\r                                                          \r")
 					_, _ = fmt.Println("Path request timed out")
 				}
+				logger.Debug("Timed out waiting for path to %v after %v", rns.PrettyHexRep(targetHash), time.Since(start))
 				if p.mustExit {
 					os.Exit(12)
 				}
@@ -87,6 +87,7 @@ func getRemoteStatus(reticulum *rns.Reticulum, p programSetupParams) (*remoteSta
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
+		logger.Debug("Path to %v found after %v", rns.PrettyHexRep(targetHash), time.Since(start))
 	}
 
 	remoteIdentity := rns.RecallIdentity(ts, targetHash)
@@ -157,6 +158,10 @@ func getRemoteStatus(reticulum *rns.Reticulum, p programSetupParams) (*remoteSta
 		}
 	})
 
+	if err := link.Establish(); err != nil {
+		return nil, fmt.Errorf("failed to establish management link: %w", err)
+	}
+
 	link.SetLinkClosedCallback(func(l *rns.Link) {
 		reason := l.TeardownReason()
 		if !p.jsonOutput {
@@ -193,6 +198,7 @@ func getRemoteStatus(reticulum *rns.Reticulum, p programSetupParams) (*remoteSta
 // function. It initializes Reticulum, retrieves interface statistics,
 // and renders the output.
 func programSetup(p programSetupParams) int {
+	fmt.Printf("DEBUG: programSetup starting with remote=%v, configDir=%v\n", p.remote, p.configDir)
 	w := p.writer
 	if w == nil {
 		w = os.Stdout
@@ -211,6 +217,12 @@ func programSetup(p programSetupParams) int {
 		}
 		logger.SetLogLevel(level)
 	}
+	logger.SetLogDest(rns.LogCallback)
+	logger.SetLogCallback(func(msg string) {
+		if _, err := fmt.Fprintln(w, msg); err != nil {
+			log.Fatalf("logging failure: %v; msg:\n%v", err, msg)
+		}
+	})
 
 	var reticulum *rns.Reticulum
 	if p.rnsInstance != nil {
@@ -223,7 +235,7 @@ func programSetup(p programSetupParams) int {
 		// In our Go port, NewReticulum handles the configuration.
 		r, err := rns.NewReticulumWithLogger(ts, p.configDir, logger)
 		if err != nil {
-			_, _ = fmt.Fprintln(w, "No shared RNS instance available to get status from")
+			_, _ = fmt.Fprintf(w, "No shared RNS instance available to get status from: %v\n", err)
 			if p.mustExit {
 				return 1
 			}

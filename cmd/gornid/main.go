@@ -196,8 +196,7 @@ func main() {
 		if err == utils.ErrHelp {
 			return
 		}
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("Error: %v\n", err)
 	}
 	os.Exit(newRuntime(app).run())
 }

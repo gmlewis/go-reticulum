@@ -6,6 +6,7 @@
 package rns
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -156,6 +157,15 @@ func FullHash(data []byte) []byte {
 // TruncatedHash computes a SHA-256 digest but aggressively truncates it to align with internal routing lengths.
 func TruncatedHash(data []byte) []byte {
 	return FullHash(data)[:TruncatedHashLength/8]
+}
+
+// RandomHash generates a random SHA-256 hash truncated to TruncatedHashLength bits.
+func RandomHash() ([]byte, error) {
+	randBytes := make([]byte, TruncatedHashLength/8)
+	if _, err := rand.Read(randBytes); err != nil {
+		return nil, err
+	}
+	return TruncatedHash(randBytes), nil
 }
 
 // RatchetID generates the unique internal identifier corresponding directly to a specific ratchet public key.

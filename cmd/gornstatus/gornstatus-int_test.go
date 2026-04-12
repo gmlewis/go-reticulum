@@ -190,11 +190,12 @@ func TestIntegration_RemoteStatus(t *testing.T) {
 		"",
 		"[interfaces]",
 		"  [[Default Interface]]",
-		"    type = TCPInterface",
+		"    type = UDPInterface",
 		"    enabled = Yes",
-		"    mode = listen",
-		"    bind_ip = 127.0.0.1",
-		"    bind_port = 42426",
+		"    listen_ip = 127.0.0.1",
+		"    listen_port = 42435",
+		"    forward_ip = 127.0.0.1",
+		"    forward_port = 42436",
 		"",
 		"[remote_management]",
 		"  enabled = Yes",
@@ -204,7 +205,7 @@ func TestIntegration_RemoteStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pyCmd := exec.Command("python3", "-m", "RNS.Utilities.rnsd", "--config", pyConfigDir, "-v")
+	pyCmd := exec.Command("python3", "-u", "/tmp/py_server.py", pyConfigDir, mgmtIDPath)
 	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 	pyOut := &safeBuffer{}
 	pyCmd.Stdout = pyOut
@@ -214,25 +215,47 @@ func TestIntegration_RemoteStatus(t *testing.T) {
 	}
 	defer pyCmd.Process.Kill()
 
-	time.Sleep(5 * time.Second)
-	identityFile := filepath.Join(pyConfigDir, "storage", "transport_identity")
-	serverID, err := rns.FromFile(identityFile, nil)
-	if err != nil {
-		t.Fatalf("failed to read server identity: %v\nPython output:\n%v", err, pyOut.String())
+	// Wait for Python to start and print "ready"
+	var serverHash string
+	var managementHash string
+	start := time.Now()
+	for time.Since(start) < 30*time.Second {
+		out := pyOut.String()
+		if strings.Contains(out, "DEBUG: Server starting") && serverHash == "" {
+			lines := strings.Split(out, "\n")
+			for _, line := range lines {
+				if strings.Contains(line, "DEBUG: Server starting") {
+					parts := strings.Split(line, "identity <")
+					if len(parts) > 1 {
+						serverHash = strings.Split(parts[1], ">")[0]
+					}
+				}
+			}
+		}
+		if strings.Contains(out, "DEBUG: Management destination") && managementHash == "" {
+			lines := strings.Split(out, "\n")
+			for _, line := range lines {
+				if strings.Contains(line, "DEBUG: Management destination") {
+					parts := strings.Split(line, "destination <")
+					if len(parts) > 1 {
+						managementHash = strings.Split(parts[1], ">")[0]
+					}
+				}
+			}
+		}
+		if serverHash != "" && managementHash != "" {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
-	serverHash := serverID.HexHash
+
+	if serverHash == "" || managementHash == "" {
+		t.Fatalf("timed out waiting for Python server hashes\nserverHash=%q, managementHash=%q\noutput:\n%v", serverHash, managementHash, pyOut.String())
+	}
 	t.Logf("Python server hash: %v", serverHash)
+	t.Logf("Python management hash: %v", managementHash)
 
-	// 2. Trigger Python announcement
-	announceCmd := exec.Command("python3", "/tmp/py_announce.py", pyConfigDir)
-	announceCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
-	if err := announceCmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	defer announceCmd.Process.Kill()
-	time.Sleep(10 * time.Second)
-
-	// 3. Setup Go Node (Initiator)
+	// 2. Setup Go Node (Initiator)
 	goConfigDir, cleanupGo := testutils.TempDir(t, "gornstatus-go-client-")
 	defer cleanupGo()
 	goInstanceName := "gornstatus-go-client-" + filepath.Base(goConfigDir)
@@ -245,18 +268,29 @@ func TestIntegration_RemoteStatus(t *testing.T) {
 		"",
 		"[interfaces]",
 		"  [[Default Interface]]",
-		"    type = TCPInterface",
+		"    type = UDPInterface",
 		"    enabled = Yes",
-		"    mode = client",
-		"    target_host = 127.0.0.1",
-		"    target_port = 42426",
+		"    listen_ip = 127.0.0.1",
+		"    listen_port = 42436",
+		"    forward_ip = 127.0.0.1",
+		"    forward_port = 42435",
 	}, "\n")
 	if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	// Run gornstatus -R
-	cmd := exec.Command(bin, "--config", goConfigDir, "-R", serverHash, "-i", mgmtIDPath, "-w", "20", "-v")
+	// Trigger an announcement from Python so Go sees it
+	announceCmd := exec.Command("python3", "/tmp/py_announce.py", pyConfigDir)
+	announceCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	if err := announceCmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer announceCmd.Process.Kill()
+	time.Sleep(10 * time.Second)
+
+	// Run gornstatus -R using managementHash
+	cmd := exec.Command(bin, "--config", goConfigDir, "-R", managementHash, "-i", mgmtIDPath, "-w", "20", "-v")
+
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornstatus -R failed: %v\noutput:\n%v\nPython output:\n%v", err, string(out), pyOut.String())

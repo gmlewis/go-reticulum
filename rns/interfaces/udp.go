@@ -7,6 +7,7 @@ package interfaces
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -91,6 +92,7 @@ func (ui *UDPInterface) listenLoop() {
 }
 
 func (ui *UDPInterface) Send(data []byte) error {
+	log.Printf("Go UDPInterface %v sending %v bytes to %v", ui.name, len(data), ui.forwardAddr)
 	ui.mu.Lock()
 	conn := ui.conn
 	ui.mu.Unlock()

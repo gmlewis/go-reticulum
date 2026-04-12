@@ -41,6 +41,7 @@ type TCPClientInterface struct {
 // It establishes the link, configures framing mode, and starts read/write
 // goroutines.
 func NewTCPClientInterface(name, host string, port int, kiss bool, handler InboundHandler) (*TCPClientInterface, error) {
+	log.Printf("NewTCPClientInterface %v target=%v:%v", name, host, port)
 	bi := NewBaseInterface(name, ModeFull, TCPBitrateGuess)
 	tci := &TCPClientInterface{
 		BaseInterface:  bi,
@@ -54,6 +55,7 @@ func NewTCPClientInterface(name, host string, port int, kiss bool, handler Inbou
 		// In Python it starts a reconnection thread if initial connect fails
 		go tci.reconnectLoop()
 	} else {
+		atomic.StoreInt32(&tci.running, 1)
 		go tci.readLoop()
 	}
 
@@ -62,10 +64,13 @@ func NewTCPClientInterface(name, host string, port int, kiss bool, handler Inbou
 
 func (tci *TCPClientInterface) connect() error {
 	addr := fmt.Sprintf("%v:%v", tci.targetHost, tci.targetPort)
+	log.Printf("Go TCPClientInterface %v connecting to %v", tci.name, addr)
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
+		log.Printf("Go TCPClientInterface %v connect failed: %v", tci.name, err)
 		return err
 	}
+	log.Printf("Go TCPClientInterface %v connected", tci.name)
 	// Disable Nagle's algorithm to ensure small packets are sent immediately
 	if tcpConn, ok := conn.(*net.TCPConn); ok {
 		if err := tcpConn.SetNoDelay(true); err != nil {
@@ -90,6 +95,7 @@ func (tci *TCPClientInterface) reconnectLoop() {
 }
 
 func (tci *TCPClientInterface) readLoop() {
+	log.Printf("Go TCPClientInterface %v readLoop starting", tci.name)
 	buf := make([]byte, 4096)
 	frameBuffer := make([]byte, 0, TCPHWMTU)
 

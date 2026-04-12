@@ -1294,6 +1294,7 @@ func (ts *TransportSystem) RegisterLink(l *Link) {
 
 // ActivateLink transitions a link from pending to active.
 func (ts *TransportSystem) ActivateLink(l *Link) {
+	ts.logger.Debug("Go Transport.ActivateLink(%x)", l.linkID)
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 
@@ -1807,10 +1808,9 @@ func (ts *TransportSystem) identityHash() []byte {
 func (ts *TransportSystem) HasPath(destHash []byte) bool {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
-	if _, ok := ts.pathTable[string(destHash)]; ok {
-		return true
-	}
-	return false
+	_, ok := ts.pathTable[string(destHash)]
+	ts.logger.Debug("Go Transport.HasPath(%x) = %v (pathTable size=%v)", destHash, ok, len(ts.pathTable))
+	return ok
 }
 
 // RequestPath requests a path to the destination from the network.
@@ -1832,8 +1832,8 @@ func (ts *TransportSystem) RequestPath(destHash []byte) error {
 	ts.pathRequests[destinationHash] = now
 	ts.mu.Unlock()
 
-	requestTag := make([]byte, 32)
-	if _, err := rand.Read(requestTag); err != nil {
+	requestTag, err := RandomHash()
+	if err != nil {
 		return err
 	}
 
@@ -1856,7 +1856,7 @@ func (ts *TransportSystem) RequestPath(destHash []byte) error {
 
 // Inbound processes a raw packet received from an interface.
 func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
-	ts.logger.Debug("Inbound: received packet of %d bytes from %s", len(raw), iface.Name())
+	ts.logger.Debug("Go Transport.Inbound received %v bytes from %v, type=%v\n", len(raw), iface.Name(), raw[0]>>4)
 	if ifac, ok := iface.(ifacInboundHook); ok {
 		processed, accepted := ifac.ApplyIFACInbound(raw)
 		if !accepted {
