@@ -495,11 +495,6 @@ func (t *fakeAnnouncementTicker) C() <-chan time.Time {
 func (t *fakeAnnouncementTicker) Stop() {}
 
 func TestStartAnnouncements(t *testing.T) {
-	oldTickerFactory := newAnnouncementTicker
-	t.Cleanup(func() {
-		newAnnouncementTicker = oldTickerFactory
-	})
-
 	tests := []struct {
 		name       string
 		announce   *int
@@ -515,14 +510,15 @@ func TestStartAnnouncements(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			a := &recordingAnnouncer{}
+			rt := &runtimeT{logger: rns.NewLogger()}
 			if tc.withTicker {
 				called := make(chan struct{}, 2)
 				a.ch = called
 				fakeTicker := &fakeAnnouncementTicker{ch: make(chan time.Time, 1)}
-				newAnnouncementTicker = func(time.Duration) announcementTicker {
+				rt.newAnnouncementTicker = func(time.Duration) announcementTicker {
 					return fakeTicker
 				}
-				stop := startAnnouncements(a, tc.announce, rns.NewLogger())
+				stop := rt.startAnnouncements(a, tc.announce)
 				if got := a.Count(); got != 1 {
 					t.Fatalf("initial announce count=%v, want 1", got)
 				}
@@ -544,7 +540,7 @@ func TestStartAnnouncements(t *testing.T) {
 				return
 			}
 
-			startAnnouncements(a, tc.announce, rns.NewLogger())
+			rt.startAnnouncements(a, tc.announce)
 			if got := a.Count(); got != tc.wantCalls {
 				t.Fatalf("announce count=%v, want %v", got, tc.wantCalls)
 			}

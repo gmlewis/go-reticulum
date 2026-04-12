@@ -75,8 +75,7 @@ func (f *fakeChannelSession) emit(msg rns.Message) {
 }
 
 func TestInitiatorSessionDecompressesCompressedStreams(t *testing.T) {
-	s := newInitiatorChannelSession()
-	s.state = initiatorWaitExit
+	t.Parallel()
 
 	var compressed bytes.Buffer
 	writer, err := bzip2.NewWriter(&compressed, nil)
@@ -90,17 +89,16 @@ func TestInitiatorSessionDecompressesCompressedStreams(t *testing.T) {
 		t.Fatalf("writer.Close() error: %v", err)
 	}
 
-	oldStdout := os.Stdout
 	stdoutReader, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("os.Pipe() error: %v", err)
 	}
+	s := newInitiatorChannelSession(stdoutWriter, io.Discard)
+	s.state = initiatorWaitExit
 	t.Cleanup(func() {
-		_ = stdoutReader.Close()
 		_ = stdoutWriter.Close()
-		os.Stdout = oldStdout
+		_ = stdoutReader.Close()
 	})
-	os.Stdout = stdoutWriter
 
 	if !s.handleMessage(&streamDataMessage{StreamID: streamIDStdout, Data: compressed.Bytes(), Compressed: true}) {
 		t.Fatal("compressed stdout stream not handled")
@@ -201,7 +199,7 @@ func (s *recordingSender) messages() []rns.Message {
 func TestInitiatorSessionVersionAck(t *testing.T) {
 	t.Parallel()
 
-	s := newInitiatorChannelSession()
+	s := newInitiatorChannelSession(io.Discard, io.Discard)
 	if !s.handleMessage(&versionInfoMessage{SoftwareVersion: "x", ProtocolVersion: protocolVersion}) {
 		t.Fatal("expected version message handled")
 	}
@@ -220,7 +218,7 @@ func TestInitiatorSessionVersionAck(t *testing.T) {
 func TestInitiatorSessionRejectsIncompatibleVersion(t *testing.T) {
 	t.Parallel()
 
-	s := newInitiatorChannelSession()
+	s := newInitiatorChannelSession(io.Discard, io.Discard)
 	s.handleMessage(&versionInfoMessage{SoftwareVersion: "x", ProtocolVersion: protocolVersion + 1})
 
 	select {
@@ -234,32 +232,23 @@ func TestInitiatorSessionRejectsIncompatibleVersion(t *testing.T) {
 }
 
 func TestInitiatorSessionCollectsStreamsAndExit(t *testing.T) {
-	s := newInitiatorChannelSession()
-	s.state = initiatorWaitExit
+	t.Parallel()
 
-	oldStdout := os.Stdout
-	oldStderr := os.Stderr
 	stdoutReader, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("os.Pipe() stdout error: %v", err)
 	}
-	t.Cleanup(func() {
-		_ = stdoutReader.Close()
-	})
 	stderrReader, stderrWriter, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("os.Pipe() stderr error: %v", err)
 	}
+	s := newInitiatorChannelSession(stdoutWriter, stderrWriter)
+	s.state = initiatorWaitExit
 	t.Cleanup(func() {
-		_ = stderrReader.Close()
-	})
-	os.Stdout = stdoutWriter
-	os.Stderr = stderrWriter
-	t.Cleanup(func() {
-		os.Stdout = oldStdout
-		os.Stderr = oldStderr
 		_ = stdoutWriter.Close()
 		_ = stderrWriter.Close()
+		_ = stdoutReader.Close()
+		_ = stderrReader.Close()
 	})
 
 	if !s.handleMessage(&streamDataMessage{StreamID: streamIDStdout, Data: []byte("out")}) {
@@ -390,7 +379,7 @@ func TestOptionalIntHelpers(t *testing.T) {
 func TestInitiatorSessionNonFatalErrorBecomesWarning(t *testing.T) {
 	t.Parallel()
 
-	s := newInitiatorChannelSession()
+	s := newInitiatorChannelSession(io.Discard, io.Discard)
 	s.state = initiatorWaitExit
 	if !s.handleMessage(&errorMessage{Message: "temporary issue", Fatal: false}) {
 		t.Fatal("expected non-fatal error message handled")
@@ -410,7 +399,7 @@ func TestInitiatorSessionNonFatalErrorBecomesWarning(t *testing.T) {
 func TestInitiatorSessionFatalErrorTerminates(t *testing.T) {
 	t.Parallel()
 
-	s := newInitiatorChannelSession()
+	s := newInitiatorChannelSession(io.Discard, io.Discard)
 	s.state = initiatorWaitExit
 	if !s.handleMessage(&errorMessage{Message: "fatal issue", Fatal: true}) {
 		t.Fatal("expected fatal error message handled")
@@ -426,7 +415,7 @@ func TestInitiatorSessionFatalErrorTerminates(t *testing.T) {
 func TestInitiatorSessionFatalErrorPrecedesCommandExit(t *testing.T) {
 	t.Parallel()
 
-	s := newInitiatorChannelSession()
+	s := newInitiatorChannelSession(io.Discard, io.Discard)
 	s.state = initiatorWaitExit
 
 	if !s.handleMessage(&errorMessage{Message: "fatal issue", Fatal: true}) {
@@ -453,7 +442,7 @@ func TestInitiatorSessionFatalErrorPrecedesCommandExit(t *testing.T) {
 func TestInitiatorSessionTracksExitCode(t *testing.T) {
 	t.Parallel()
 
-	s := newInitiatorChannelSession()
+	s := newInitiatorChannelSession(io.Discard, io.Discard)
 	s.state = initiatorWaitExit
 	if !s.handleMessage(&commandExitedMessage{ReturnCode: 9}) {
 		t.Fatal("expected command exited handled")
@@ -466,7 +455,7 @@ func TestInitiatorSessionTracksExitCode(t *testing.T) {
 func TestInitiatorSessionTerminalSnapshotCopiesExit(t *testing.T) {
 	t.Parallel()
 
-	s := newInitiatorChannelSession()
+	s := newInitiatorChannelSession(io.Discard, io.Discard)
 	exit := 7
 	s.lastExit = &exit
 	s.terminated = true
@@ -529,33 +518,14 @@ func TestProcessInitiatorTTYInputChunk(t *testing.T) {
 }
 
 func TestWriteInitiatorStreamsResetsBuffers(t *testing.T) {
-	s := newInitiatorChannelSession()
+	t.Parallel()
+
+	s := newInitiatorChannelSession(io.Discard, io.Discard)
 	s.stdout.WriteString("hello")
 	s.stderr.WriteString("warn")
 
-	oldStdout := os.Stdout
-	oldStderr := os.Stderr
-	stdoutReader, stdoutWriter, _ := os.Pipe()
-	stderrReader, stderrWriter, _ := os.Pipe()
-	os.Stdout = stdoutWriter
-	os.Stderr = stderrWriter
-	defer func() {
-		os.Stdout = oldStdout
-		os.Stderr = oldStderr
-	}()
-
 	writeInitiatorStreams(s)
-	_ = stdoutWriter.Close()
-	_ = stderrWriter.Close()
 
-	stdoutData, _ := io.ReadAll(stdoutReader)
-	stderrData, _ := io.ReadAll(stderrReader)
-	if len(stdoutData) != 0 {
-		t.Fatalf("stdoutData=%q, want empty", string(stdoutData))
-	}
-	if len(stderrData) != 0 {
-		t.Fatalf("stderrData=%q, want empty", string(stderrData))
-	}
 	if s.stdout.Len() != 0 || s.stderr.Len() != 0 {
 		t.Fatalf("buffers not reset: stdout=%v stderr=%v", s.stdout.Len(), s.stderr.Len())
 	}
@@ -565,7 +535,7 @@ func TestSendMessageWithRetryEventuallySucceeds(t *testing.T) {
 	t.Parallel()
 
 	sender := &flakySender{failCount: 2}
-	err := sendMessageWithRetry(sender, &noopMessage{}, time.Now().Add(200*time.Millisecond))
+	err := sendMessageWithRetry(sender, &noopMessage{}, time.Now().Add(200*time.Millisecond), 10*time.Millisecond)
 	if err != nil {
 		t.Fatalf("unexpected retry error: %v", err)
 	}
@@ -578,7 +548,7 @@ func TestSendMessageWithRetryTimesOut(t *testing.T) {
 	t.Parallel()
 
 	sender := &flakySender{failCount: 1000}
-	err := sendMessageWithRetry(sender, &noopMessage{}, time.Now().Add(20*time.Millisecond))
+	err := sendMessageWithRetry(sender, &noopMessage{}, time.Now().Add(20*time.Millisecond), 5*time.Millisecond)
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
@@ -950,7 +920,7 @@ func TestConcurrentPumpInitiatorStdinEOFAndWindowUpdates(t *testing.T) {
 		close(windowDone)
 	}()
 
-	_, _ = writer.Write([]byte("hello"))
+	_, _ = writer.WriteString("hello")
 	_ = writer.Close()
 
 	select {

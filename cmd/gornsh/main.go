@@ -76,10 +76,6 @@ type realAnnouncementTicker struct {
 func (t *realAnnouncementTicker) C() <-chan time.Time { return t.ticker.C }
 func (t *realAnnouncementTicker) Stop()               { t.ticker.Stop() }
 
-var newAnnouncementTicker = func(interval time.Duration) announcementTicker {
-	return &realAnnouncementTicker{ticker: time.NewTicker(interval)}
-}
-
 func (rt *runtimeT) configureLogger(verbose, quiet int) {
 	rt.logger = rns.NewLogger()
 	// rnsh follows the Python baseline of LogInfo here, which differs from
@@ -95,12 +91,34 @@ func (rt *runtimeT) configureLogger(verbose, quiet int) {
 }
 
 type runtimeT struct {
-	opts   options
-	logger *rns.Logger
+	opts                  options
+	logger                *rns.Logger
+	retrySleep            time.Duration
+	linkClosedGrace       time.Duration
+	protocolErrDeadline   time.Duration
+	newAnnouncementTicker func(interval time.Duration) announcementTicker
+	stdout                io.Writer
+	stderr                io.Writer
 }
 
+const (
+	defaultRetrySleep          = 100 * time.Millisecond
+	defaultLinkClosedGrace     = 2 * time.Second
+	defaultProtocolErrDeadline = 2 * time.Second
+)
+
 func newRuntime(opts options) *runtimeT {
-	rt := &runtimeT{opts: opts}
+	rt := &runtimeT{
+		opts:                opts,
+		retrySleep:          defaultRetrySleep,
+		linkClosedGrace:     defaultLinkClosedGrace,
+		protocolErrDeadline: defaultProtocolErrDeadline,
+		newAnnouncementTicker: func(interval time.Duration) announcementTicker {
+			return &realAnnouncementTicker{ticker: time.NewTicker(interval)}
+		},
+		stdout: os.Stdout,
+		stderr: os.Stderr,
+	}
 	rt.configureLogger(opts.verbose, opts.quiet)
 	return rt
 }
@@ -270,27 +288,27 @@ func (rt *runtimeT) doListen() error {
 		rt.wireListenerChannelSession(link, opts, allowedList)
 	})
 
-	stopAnnouncements := startAnnouncements(destination, opts.announceEvery, rt.logger)
+	stopAnnouncements := rt.startAnnouncements(destination, opts.announceEvery)
 	defer stopAnnouncements()
 	time.Sleep(250 * time.Millisecond)
 
-	_, _ = fmt.Fprintln(os.Stdout, listeningDestinationLine(destination.Hash))
+	_, _ = fmt.Fprintln(rt.stdout, listeningDestinationLine(destination.Hash))
 
 	<-sigCh
 	logger.Info("Shutting down")
 	return nil
 }
 
-func startAnnouncements(destination announcer, announceEvery *int, logger *rns.Logger) func() {
-	if err := destination.Announce(nil); err != nil && logger != nil {
-		logger.Warning("Initial announce failed: %v", err)
+func (rt *runtimeT) startAnnouncements(destination announcer, announceEvery *int) func() {
+	if err := destination.Announce(nil); err != nil && rt.logger != nil {
+		rt.logger.Warning("Initial announce failed: %v", err)
 	}
 
 	if announceEvery == nil {
 		go func() {
 			time.Sleep(250 * time.Millisecond)
-			if err := destination.Announce(nil); err != nil && logger != nil {
-				logger.Warning("Follow-up announce failed: %v", err)
+			if err := destination.Announce(nil); err != nil && rt.logger != nil {
+				rt.logger.Warning("Follow-up announce failed: %v", err)
 			}
 		}()
 		return func() {}
@@ -300,7 +318,7 @@ func startAnnouncements(destination announcer, announceEvery *int, logger *rns.L
 		return func() {}
 	}
 
-	ticker := newAnnouncementTicker(time.Duration(*announceEvery) * time.Second)
+	ticker := rt.newAnnouncementTicker(time.Duration(*announceEvery) * time.Second)
 	done := make(chan struct{})
 	go func() {
 		for {
@@ -308,8 +326,8 @@ func startAnnouncements(destination announcer, announceEvery *int, logger *rns.L
 			case <-done:
 				return
 			case <-ticker.C():
-				if err := destination.Announce(nil); err != nil && logger != nil {
-					logger.Warning("Periodic announce failed: %v", err)
+				if err := destination.Announce(nil); err != nil && rt.logger != nil {
+					rt.logger.Warning("Periodic announce failed: %v", err)
 				}
 			}
 		}

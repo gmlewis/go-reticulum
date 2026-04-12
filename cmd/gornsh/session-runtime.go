@@ -137,7 +137,7 @@ func (rt *runtimeT) wireListenerChannelSession(link *rns.Link, opts options, all
 				return true
 			}
 			if response != nil {
-				if err := sendMessageWithRetry(channel, response, time.Now().Add(2*time.Second)); err != nil {
+				if err := sendMessageWithRetry(channel, response, time.Now().Add(2*time.Second), defaultRetrySleep); err != nil {
 					logger.Warning("Failed to send version info response: %v", err)
 				}
 			}
@@ -190,7 +190,7 @@ func (rt *runtimeT) wireListenerChannelSession(link *rns.Link, opts options, all
 			return true
 		case *noopMessage:
 			if session.isRunning() {
-				if err := sendMessageWithRetry(channel, &noopMessage{}, time.Now().Add(2*time.Second)); err != nil {
+				if err := sendMessageWithRetry(channel, &noopMessage{}, time.Now().Add(2*time.Second), defaultRetrySleep); err != nil {
 					logger.Warning("Failed to echo noop message: %v", err)
 				}
 			}
@@ -357,32 +357,32 @@ func (ac *activeCommand) streamPipe(sender messageSender, reader io.ReadCloser, 
 		if n > 0 {
 			chunk := make([]byte, n)
 			copy(chunk, buf[:n])
-			_ = sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamID, Data: chunk, EOF: false, Compressed: false}, time.Now().Add(2*time.Second))
+			_ = sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamID, Data: chunk, EOF: false, Compressed: false}, time.Now().Add(2*time.Second), defaultRetrySleep)
 		}
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				_ = sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamID, Data: nil, EOF: true, Compressed: false}, time.Now().Add(2*time.Second))
+				_ = sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamID, Data: nil, EOF: true, Compressed: false}, time.Now().Add(2*time.Second), defaultRetrySleep)
 				return
 			}
 			if errors.Is(err, os.ErrClosed) || errors.Is(err, io.ErrClosedPipe) {
 				return
 			}
 			ac.rt.sendProtocolErrorToSender(sender, err.Error(), true)
-			_ = sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamID, Data: nil, EOF: true, Compressed: false}, time.Now().Add(2*time.Second))
+			_ = sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamID, Data: nil, EOF: true, Compressed: false}, time.Now().Add(2*time.Second), defaultRetrySleep)
 			return
 		}
 	}
 }
 
 func (rt *runtimeT) sendProtocolError(channel *rns.Channel, message string, fatal bool) {
-	err := sendMessageWithRetry(channel, &errorMessage{Message: message, Fatal: fatal, Data: nil}, time.Now().Add(2*time.Second))
+	err := sendMessageWithRetry(channel, &errorMessage{Message: message, Fatal: fatal, Data: nil}, time.Now().Add(rt.protocolErrDeadline), defaultRetrySleep)
 	if err != nil {
 		rt.logger.Warning("Failed to send protocol error %q: %v", message, err)
 	}
 }
 
 func (rt *runtimeT) sendProtocolErrorToSender(sender messageSender, message string, fatal bool) {
-	if err := sendMessageWithRetry(sender, &errorMessage{Message: message, Fatal: fatal, Data: nil}, time.Now().Add(2*time.Second)); err != nil {
+	if err := sendMessageWithRetry(sender, &errorMessage{Message: message, Fatal: fatal, Data: nil}, time.Now().Add(rt.protocolErrDeadline), defaultRetrySleep); err != nil {
 		rt.logger.Warning("Failed to send protocol error %q: %v", message, err)
 	}
 }

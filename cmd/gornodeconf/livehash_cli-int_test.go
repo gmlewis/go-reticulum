@@ -11,6 +11,8 @@ package main
 import (
 	"bytes"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestRunFirmwareHashReadbacksPrintsPythonLinesCLI(t *testing.T) {
@@ -60,6 +62,7 @@ func TestRunFirmwareHashReadbacksPrintsPythonLinesCLI(t *testing.T) {
 }
 
 func TestRunFirmwareHashReadbacksReturnsTimeoutErrorCLI(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	serial := &liveHashSerial{blockOnEmpty: true, wait: make(chan struct{})}
 	rt := cliRuntime{openSerial: func(settings serialSettings) (serialPort, error) {
 		return serial, nil

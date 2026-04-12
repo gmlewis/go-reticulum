@@ -36,8 +36,10 @@ type initiatorChannelSession struct {
 	doneCh       chan int
 	errCh        chan error
 
-	stdout bytes.Buffer
-	stderr bytes.Buffer
+	stdout       bytes.Buffer
+	stderr       bytes.Buffer
+	stdoutWriter io.Writer
+	stderrWriter io.Writer
 
 	terminated bool
 	lastExit   *int
@@ -55,12 +57,14 @@ type channelSession interface {
 	AddMessageHandler(func(rns.Message) bool)
 }
 
-func newInitiatorChannelSession() *initiatorChannelSession {
+func newInitiatorChannelSession(stdout, stderr io.Writer) *initiatorChannelSession {
 	return &initiatorChannelSession{
 		state:        initiatorWaitVersion,
 		versionAckCh: make(chan struct{}, 1),
 		doneCh:       make(chan int, 1),
 		errCh:        make(chan error, 1),
+		stdoutWriter: stdout,
+		stderrWriter: stderr,
 	}
 }
 
@@ -131,10 +135,14 @@ func (s *initiatorChannelSession) handleMessage(message rns.Message) bool {
 func (s *initiatorChannelSession) appendStreamLocked(msg *streamDataMessage) {
 	switch msg.StreamID {
 	case streamIDStdout:
-		_, _ = os.Stdout.Write(msg.Data)
+		if s.stdoutWriter != nil {
+			_, _ = s.stdoutWriter.Write(msg.Data)
+		}
 		s.stdout.Write(msg.Data)
 	case streamIDStderr:
-		_, _ = os.Stderr.Write(msg.Data)
+		if s.stderrWriter != nil {
+			_, _ = s.stderrWriter.Write(msg.Data)
+		}
 		s.stderr.Write(msg.Data)
 	}
 }
@@ -195,7 +203,7 @@ func runInitiatorChannelSessionWithLogger(logger *rns.Logger, link *rns.Link, op
 		}
 	})
 
-	exitCode, session, err := (&runtimeT{logger: logger}).runInitiatorProtocolFlow(channel, opts, linkClosedCh, stopCh, true)
+	exitCode, session, err := (&runtimeT{logger: logger, stdout: os.Stdout, stderr: os.Stderr}).runInitiatorProtocolFlow(channel, opts, linkClosedCh, stopCh, true)
 	if session != nil {
 		writeInitiatorStreams(session)
 	}
@@ -211,12 +219,12 @@ func runInitiatorProtocolFlowWithLogger(_ *rns.Logger, channel channelSession, o
 }
 
 func (rt *runtimeT) runInitiatorProtocolFlow(channel channelSession, opts options, linkClosedCh <-chan struct{}, stopCh <-chan struct{}, pumpInput bool) (int, *initiatorChannelSession, error) {
-	session := newInitiatorChannelSession()
+	session := newInitiatorChannelSession(rt.stdout, rt.stderr)
 	channel.AddMessageHandler(session.handleMessage)
 	timeout := time.Duration(opts.timeoutSec) * time.Second
 
 	versionMessage := &versionInfoMessage{SoftwareVersion: "gornsh " + rns.VERSION, ProtocolVersion: protocolVersion}
-	if err := sendMessageWithRetry(channel, versionMessage, time.Now().Add(timeout)); err != nil {
+	if err := sendMessageWithRetry(channel, versionMessage, time.Now().Add(timeout), rt.retrySleep); err != nil {
 		return 1, session, fmt.Errorf("failed to send version info: %w", err)
 	}
 
@@ -229,7 +237,7 @@ func (rt *runtimeT) runInitiatorProtocolFlow(channel channelSession, opts option
 	}
 
 	executeMessage := buildExecuteCommandMessage(opts)
-	if err := sendMessageWithRetry(channel, executeMessage, time.Now().Add(timeout)); err != nil {
+	if err := sendMessageWithRetry(channel, executeMessage, time.Now().Add(timeout), rt.retrySleep); err != nil {
 		return 1, session, fmt.Errorf("failed to send execute command: %w", err)
 	}
 
@@ -259,7 +267,7 @@ func (rt *runtimeT) runInitiatorProtocolFlow(channel channelSession, opts option
 		case <-linkClosedCh:
 			// Link closure is the lowest priority; check for errors or exits first.
 			// Give it a tiny bit of time for final messages to be processed.
-			time.Sleep(10 * time.Second)
+			time.Sleep(rt.linkClosedGrace)
 			select {
 			case err := <-session.errCh:
 				return 1, session, err
@@ -357,18 +365,18 @@ func (rt *runtimeT) pumpInitiatorStdin(sender messageSender) {
 			if useTTY {
 				payload, action := processInitiatorTTYInputChunk(chunk, state)
 				if len(payload) > 0 {
-					if sendErr := sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamIDStdin, Data: payload, EOF: false, Compressed: false}, time.Now().Add(2*time.Second)); sendErr != nil {
+					if sendErr := sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamIDStdin, Data: payload, EOF: false, Compressed: false}, time.Now().Add(2*time.Second), defaultRetrySleep); sendErr != nil {
 						return
 					}
 				}
 				if action.help {
-					writeInitiatorEscapeHelp()
+					writeInitiatorEscapeHelp(rt.stdout)
 				}
 				if action.toggleLine {
 					if state.lineMode {
-						_, _ = os.Stdout.Write([]byte("\n\rLine-interactive mode enabled\n\r"))
+						_, _ = fmt.Fprint(rt.stdout, "\n\rLine-interactive mode enabled\n\r")
 					} else {
-						_, _ = os.Stdout.Write([]byte("\n\rLine-interactive mode disabled\n\r"))
+						_, _ = fmt.Fprint(rt.stdout, "\n\rLine-interactive mode disabled\n\r")
 					}
 				}
 				if action.stop {
@@ -382,7 +390,7 @@ func (rt *runtimeT) pumpInitiatorStdin(sender messageSender) {
 				rt.sendProtocolErrorToSender(sender, compressErr.Error(), true)
 				return
 			}
-			if sendErr := sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamIDStdin, Data: payload, EOF: false, Compressed: compressed}, time.Now().Add(2*time.Second)); sendErr != nil {
+			if sendErr := sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamIDStdin, Data: payload, EOF: false, Compressed: compressed}, time.Now().Add(2*time.Second), defaultRetrySleep); sendErr != nil {
 				return
 			}
 		}
@@ -390,7 +398,7 @@ func (rt *runtimeT) pumpInitiatorStdin(sender messageSender) {
 			if !errors.Is(err, io.EOF) {
 				rt.sendProtocolErrorToSender(sender, err.Error(), true)
 			}
-			_ = sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamIDStdin, Data: nil, EOF: true, Compressed: false}, time.Now().Add(2*time.Second))
+			_ = sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamIDStdin, Data: nil, EOF: true, Compressed: false}, time.Now().Add(2*time.Second), defaultRetrySleep)
 			return
 		}
 	}
@@ -484,13 +492,16 @@ func processInitiatorTTYInputChunk(data []byte, state *initiatorTTYInputState) (
 	return output, action
 }
 
-func writeInitiatorEscapeHelp() {
-	_, _ = os.Stdout.Write([]byte("\n\r\n\rSupported rnsh escape sequences:"))
-	_, _ = os.Stdout.Write([]byte("\n\r  ~~  Send the escape character by typing it twice"))
-	_, _ = os.Stdout.Write([]byte("\n\r  ~.  Terminate session and exit immediately"))
-	_, _ = os.Stdout.Write([]byte("\n\r  ~L  Toggle line-interactive mode"))
-	_, _ = os.Stdout.Write([]byte("\n\r  ~?  Display this quick reference\n\r"))
-	_, _ = os.Stdout.Write([]byte("\n\r(Escape sequences are only recognized immediately after newline)\n\r"))
+func writeInitiatorEscapeHelp(w io.Writer) {
+	_, _ = w.Write([]byte(`
+
+Supported rnsh escape sequences:")
+  ~~  Send the escape character by typing it twice")
+  ~.  Terminate session and exit immediately")
+  ~L  Toggle line-interactive mode")
+  ~?  Display this quick reference
+(Escape sequences are only recognized immediately after newline)
+`))
 }
 
 func pumpWindowSizeUpdates(sender messageSender, stop <-chan struct{}, interval time.Duration, initialRows, initialCols *int) {
@@ -510,7 +521,7 @@ func pumpWindowSizeUpdates(sender messageSender, stop <-chan struct{}, interval 
 			}
 			lastRows = cloneOptionalInt(rows)
 			lastCols = cloneOptionalInt(cols)
-			if err := sendMessageWithRetry(sender, &windowSizeMessage{Rows: rows, Cols: cols, HPix: nil, VPix: nil}, time.Now().Add(2*time.Second)); err != nil {
+			if err := sendMessageWithRetry(sender, &windowSizeMessage{Rows: rows, Cols: cols, HPix: nil, VPix: nil}, time.Now().Add(2*time.Second), defaultRetrySleep); err != nil {
 				return
 			}
 		}
@@ -566,7 +577,7 @@ func decodeCompressedStreamData(data []byte) ([]byte, error) {
 	return decoded, nil
 }
 
-func sendMessageWithRetry(sender messageSender, msg rns.Message, deadline time.Time) error {
+func sendMessageWithRetry(sender messageSender, msg rns.Message, deadline time.Time, retrySleep time.Duration) error {
 	for {
 		_, err := sender.Send(msg)
 		if err == nil {
@@ -575,6 +586,6 @@ func sendMessageWithRetry(sender messageSender, msg rns.Message, deadline time.T
 		if !time.Now().Before(deadline) {
 			return err
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(retrySleep)
 	}
 }

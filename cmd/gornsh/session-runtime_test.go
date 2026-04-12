@@ -301,7 +301,7 @@ func TestSendProtocolErrorToSenderLogsThroughInjectedLogger(t *testing.T) {
 	logger.SetLogLevel(rns.LogWarning)
 
 	sender := &failingSender{}
-	rt := &runtimeT{logger: logger}
+	rt := &runtimeT{logger: logger, protocolErrDeadline: 10 * time.Millisecond, retrySleep: time.Millisecond}
 	rt.sendProtocolErrorToSender(sender, "boom", true)
 
 	if !strings.Contains(captured, "Failed to send protocol error") {
@@ -312,7 +312,7 @@ func TestSendProtocolErrorToSenderLogsThroughInjectedLogger(t *testing.T) {
 func TestRunInitiatorSessionHandlesFatalError(t *testing.T) {
 	t.Parallel()
 
-	s := newInitiatorChannelSession()
+	s := newInitiatorChannelSession(io.Discard, io.Discard)
 	s.state = initiatorWaitExit
 	if !s.handleMessage(&errorMessage{Message: "boom", Fatal: true}) {
 		t.Fatal("expected error message handled")
