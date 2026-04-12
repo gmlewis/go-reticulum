@@ -8,14 +8,18 @@
 package main
 
 import (
+	"bytes"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/rns/msgpack"
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
@@ -154,4 +158,179 @@ func TestIntegration_VerboseStacking(t *testing.T) {
 	if got != want {
 		t.Errorf("version output = %q, want %q", got, want)
 	}
+}
+
+func TestIntegration_RemoteStatus(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+	bin, cleanupBin := buildGornstatus(t)
+	defer cleanupBin()
+
+	// 1. Setup Python Node (Server)
+	pyConfigDir, cleanupPy := testutils.TempDir(t, "gornstatus-py-server-")
+	defer cleanupPy()
+	pyInstanceName := "gornstatus-py-server-" + filepath.Base(pyConfigDir)
+
+	mgmtIDPath := filepath.Join(pyConfigDir, "management.id")
+	mgmtID, err := rns.NewIdentity(true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mgmtID.ToFile(mgmtIDPath); err != nil {
+		t.Fatal(err)
+	}
+
+	pyConfig := strings.Join([]string{
+		"[reticulum]",
+		"enable_transport = Yes",
+		"share_instance = No",
+		"instance_name = " + pyInstanceName,
+		"",
+		"[logging]",
+		"loglevel = 4",
+		"",
+		"[interfaces]",
+		"  [[Default Interface]]",
+		"    type = TCPInterface",
+		"    enabled = Yes",
+		"    mode = listen",
+		"    bind_ip = 127.0.0.1",
+		"    bind_port = 42426",
+		"",
+		"[remote_management]",
+		"  enabled = Yes",
+		"  allowed_identities = " + mgmtID.HexHash,
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(pyConfigDir, "config"), []byte(pyConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	pyCmd := exec.Command("python3", "-m", "RNS.Utilities.rnsd", "--config", pyConfigDir, "-v")
+	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	pyOut := &safeBuffer{}
+	pyCmd.Stdout = pyOut
+	pyCmd.Stderr = pyOut
+	if err := pyCmd.Start(); err != nil {
+		t.Fatalf("failed to start Python RNS: %v", err)
+	}
+	defer pyCmd.Process.Kill()
+
+	time.Sleep(5 * time.Second)
+	identityFile := filepath.Join(pyConfigDir, "storage", "transport_identity")
+	serverID, err := rns.FromFile(identityFile, nil)
+	if err != nil {
+		t.Fatalf("failed to read server identity: %v\nPython output:\n%v", err, pyOut.String())
+	}
+	serverHash := serverID.HexHash
+	t.Logf("Python server hash: %v", serverHash)
+
+	// 2. Trigger Python announcement
+	announceCmd := exec.Command("python3", "/tmp/py_announce.py", pyConfigDir)
+	announceCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	if err := announceCmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer announceCmd.Process.Kill()
+	time.Sleep(10 * time.Second)
+
+	// 3. Setup Go Node (Initiator)
+	goConfigDir, cleanupGo := testutils.TempDir(t, "gornstatus-go-client-")
+	defer cleanupGo()
+	goInstanceName := "gornstatus-go-client-" + filepath.Base(goConfigDir)
+
+	goConfig := strings.Join([]string{
+		"[reticulum]",
+		"enable_transport = Yes",
+		"share_instance = No",
+		"instance_name = " + goInstanceName,
+		"",
+		"[interfaces]",
+		"  [[Default Interface]]",
+		"    type = TCPInterface",
+		"    enabled = Yes",
+		"    mode = client",
+		"    target_host = 127.0.0.1",
+		"    target_port = 42426",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Run gornstatus -R
+	cmd := exec.Command(bin, "--config", goConfigDir, "-R", serverHash, "-i", mgmtIDPath, "-w", "20", "-v")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("gornstatus -R failed: %v\noutput:\n%v\nPython output:\n%v", err, string(out), pyOut.String())
+	}
+
+	got := string(out)
+	if !strings.Contains(got, "Transport Instance <"+serverHash+"> running") {
+		t.Errorf("output missing server status\ngot:\n%v", got)
+	}
+}
+
+func TestIntegration_Discovered(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+	bin, cleanupBin := buildGornstatus(t)
+	defer cleanupBin()
+
+	tmpDir, cleanup := testutils.TempDir(t, "gornstatus-int-disc-")
+	defer cleanup()
+
+	// Setup mock discovery data in shared storage
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	mockData := map[string]any{
+		"name":       "Discovery Test Interface",
+		"type":       "UDPInterface",
+		"last_heard": now - 30,
+		"value":      999,
+	}
+	data, err := msgpack.Pack(mockData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(storagePath, "disc.data"), data, 0o644); err != nil {
+		t.Fatalf("failed to write mock data: %v", err)
+	}
+
+	// We need a Reticulum instance to provide the config directory
+	// but gornstatus -d will create one.
+	cmd := exec.Command(bin, "--config", tmpDir, "-d")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("gornstatus -d failed: %v\noutput:\n%v", err, string(out))
+	}
+
+	got := string(out)
+	if !strings.Contains(got, "Discovery Test Interface") {
+		t.Errorf("output missing Discovery Test Interface\ngot:\n%v", got)
+	}
+	if !strings.Contains(got, "UDP") {
+		t.Errorf("output missing UDP type\ngot:\n%v", got)
+	}
+}
+
+func getPythonPath() string {
+	return "/tmp/debug-python"
+}
+
+type safeBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (s *safeBuffer) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *safeBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
 }

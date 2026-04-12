@@ -129,6 +129,16 @@ func toJSONSnapshot(s *rns.InterfaceStatsSnapshot) jsonStatsSnapshot {
 	return out
 }
 
+// renderDiscoveredJSON encodes discovered interfaces to w as JSON.
+func renderDiscoveredJSON(w io.Writer, ifs []rns.DiscoveredInterface) error {
+	data, err := json.MarshalIndent(ifs, "", "  ")
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(w, string(data))
+	return err
+}
+
 // renderJSON writes the JSON representation of stats to w.
 func renderJSON(w io.Writer, stats *rns.InterfaceStatsSnapshot) error {
 	snapshot := toJSONSnapshot(stats)

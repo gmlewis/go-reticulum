@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
 func mustTest(t *testing.T, err error) {
@@ -75,4 +77,12 @@ func mustTestLogger(t *testing.T, level int) *Logger {
 	logger := NewLogger()
 	logger.SetLogLevel(level)
 	return logger
+}
+
+func mustMsgpackPack(v any) []byte {
+	data, err := msgpack.Pack(v)
+	if err != nil {
+		panic(err)
+	}
+	return data
 }

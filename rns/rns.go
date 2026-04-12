@@ -107,6 +107,10 @@ func (r *Reticulum) Transport() Transport {
 	return r.transport
 }
 
+func (r *Reticulum) Logger() *Logger {
+	return r.logger
+}
+
 // Close tears down the Reticulum instance, stopping the transport system,
 // detaching the shared-instance interface and closing the RPC listener if active.
 func (r *Reticulum) Close() error {

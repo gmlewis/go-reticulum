@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
@@ -442,6 +443,96 @@ func TestRenderTransportFooterNoTransportNoLinks(t *testing.T) {
 
 	if got != "" {
 		t.Errorf("expected empty output, got:\n%v", got)
+	}
+}
+
+func TestRenderDiscoveredInterfaces(t *testing.T) {
+	t.Parallel()
+	now := float64(time.Now().UnixNano()) / 1e9
+	ifs := []rns.DiscoveredInterface{
+		{
+			Name:      "Test UDP",
+			Type:      "UDPInterface",
+			Status:    "available",
+			LastHeard: now - 30,
+			Value:     100,
+			Latitude:  float64Ptr(34.0522),
+			Longitude: float64Ptr(-118.2437),
+		},
+		{
+			Name:      "Stale RNode",
+			Type:      "RNodeInterface",
+			Status:    "stale",
+			LastHeard: now - 400000,
+			Value:     50,
+		},
+	}
+
+	var buf bytes.Buffer
+	renderDiscoveredInterfaces(&buf, ifs)
+	got := buf.String()
+
+	// Check table headers and content
+	for _, want := range []string{
+		"Name                      Type         Status       Last Heard   Value    Location       ",
+		"-----------------------------------------------------------------------------------------",
+		"Test UDP                  UDP          ✓ Available  Just now     100      34.0522, -118.2437",
+		"Stale RNode               RNode        × Stale      4d ago       50       N/A            ",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q\ngot:\n%v", want, got)
+		}
+	}
+}
+
+func TestRenderDiscoveredInterfaceDetails(t *testing.T) {
+	t.Parallel()
+	now := float64(time.Now().UnixNano()) / 1e9
+	ifs := []rns.DiscoveredInterface{
+		{
+			Name:        "Detailed Interface",
+			Type:        "RNodeInterface",
+			Status:      "available",
+			Transport:   true,
+			Hops:        1,
+			Discovered:  now - 3600,
+			LastHeard:   now - 600,
+			Latitude:    float64Ptr(1.2345),
+			Longitude:   float64Ptr(6.7890),
+			Height:      float64Ptr(150),
+			Frequency:   intPtr(915000000),
+			Bandwidth:   intPtr(125000),
+			SF:          intPtr(7),
+			CR:          intPtr(5),
+			Value:       500,
+			ConfigEntry: "[[Detailed Interface]]\n  type = RNodeInterface\n  port = /dev/ttyUSB0",
+		},
+	}
+
+	var buf bytes.Buffer
+	renderDiscoveredInterfaceDetails(&buf, ifs)
+	got := buf.String()
+
+	for _, want := range []string{
+		"Name         : Detailed Interface",
+		"Type         : RNodeInterface",
+		"Status       : Available",
+		"Transport    : Enabled",
+		"Distance     : 1 hop",
+		"Location     : 1.2345, 6.7890, 150m h",
+		"Frequency    : 915,000,000 Hz",
+		"Bandwidth    : 125,000 Hz",
+		"Sprd. Factor : 7",
+		"Coding Rate  : 5",
+		"Stamp Value  : 500",
+		"Configuration Entry:",
+		"  [[Detailed Interface]]",
+		"  type = RNodeInterface",
+		"  port = /dev/ttyUSB0",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q\ngot:\n%v", want, got)
+		}
 	}
 }
 

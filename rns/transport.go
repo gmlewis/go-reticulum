@@ -1832,14 +1832,22 @@ func (ts *TransportSystem) RequestPath(destHash []byte) error {
 	ts.pathRequests[destinationHash] = now
 	ts.mu.Unlock()
 
-	requestTag := make([]byte, TruncatedHashLength/8)
+	requestTag := make([]byte, 32)
 	if _, err := rand.Read(requestTag); err != nil {
 		return err
 	}
 
-	data := make([]byte, 0, len(destHash)+len(requestTag))
-	data = append(data, destHash...)
-	data = append(data, requestTag...)
+	var data []byte
+	if ts.identity != nil {
+		data = make([]byte, 0, len(destHash)+len(ts.identity.Hash)+len(requestTag))
+		data = append(data, destHash...)
+		data = append(data, ts.identity.Hash...)
+		data = append(data, requestTag...)
+	} else {
+		data = make([]byte, 0, len(destHash)+len(requestTag))
+		data = append(data, destHash...)
+		data = append(data, requestTag...)
+	}
 
 	p := NewPacket(pathRequestDst, data)
 	p.TransportType = TransportBroadcast

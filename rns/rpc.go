@@ -658,11 +658,11 @@ func (r *Reticulum) InterfaceStats() (*InterfaceStatsSnapshot, error) {
 		if err != nil {
 			return nil, err
 		}
-		return decodeInterfaceStats(resp), nil
+		return DecodeInterfaceStats(resp), nil
 	}
 
 	local := r.getInterfaceStats()
-	return decodeInterfaceStats(local), nil
+	return DecodeInterfaceStats(local), nil
 }
 
 // PathTable retrieves the current path table from the transport system, optionally limiting the results to a maximum number of hops.
@@ -958,7 +958,7 @@ func (r *Reticulum) dialRPCServer() (net.Conn, error) {
 	return net.Dial("tcp", addr)
 }
 
-func decodeInterfaceStats(raw any) *InterfaceStatsSnapshot {
+func DecodeInterfaceStats(raw any) *InterfaceStatsSnapshot {
 	out := &InterfaceStatsSnapshot{}
 	m := asAnyMap(raw)
 	if m == nil {
@@ -1040,183 +1040,4 @@ func decodeInterfaceStats(raw any) *InterfaceStatsSnapshot {
 	}
 
 	return out
-}
-
-func asAnyMap(v any) map[any]any {
-	switch m := v.(type) {
-	case map[any]any:
-		return m
-	case map[string]any:
-		out := make(map[any]any, len(m))
-		for k, val := range m {
-			out[k] = val
-		}
-		return out
-	default:
-		return nil
-	}
-}
-
-func lookupAny(m map[any]any, key string) (any, bool) {
-	if m == nil {
-		return nil, false
-	}
-	v, ok := m[key]
-	if ok {
-		return v, true
-	}
-	for mk, mv := range m {
-		if ks, ok := mk.(string); ok && ks == key {
-			return mv, true
-		}
-	}
-	return nil, false
-}
-
-func lookupAnyValue(m map[any]any, key string) any {
-	v, _ := lookupAny(m, key)
-	return v
-}
-
-func asString(v any) string {
-	switch t := v.(type) {
-	case string:
-		return t
-	case []byte:
-		return string(t)
-	default:
-		return ""
-	}
-}
-
-func asBool(v any) bool {
-	switch t := v.(type) {
-	case bool:
-		return t
-	case int:
-		return t != 0
-	case int64:
-		return t != 0
-	case uint64:
-		return t != 0
-	default:
-		return false
-	}
-}
-
-func asInt(v any) int {
-	switch t := v.(type) {
-	case int:
-		return t
-	case int64:
-		return int(t)
-	case int32:
-		return int(t)
-	case uint64:
-		return int(t)
-	case uint32:
-		return int(t)
-	case float64:
-		return int(t)
-	default:
-		return 0
-	}
-}
-
-func asFloat64(v any) float64 {
-	switch t := v.(type) {
-	case float64:
-		return t
-	case float32:
-		return float64(t)
-	case int:
-		return float64(t)
-	case int64:
-		return float64(t)
-	case uint64:
-		return float64(t)
-	default:
-		return 0
-	}
-}
-
-func lookupOptFloat64(m map[any]any, key string) *float64 {
-	v, ok := lookupAny(m, key)
-	if !ok || v == nil {
-		return nil
-	}
-	f := asFloat64(v)
-	return &f
-}
-
-func lookupOptInt(m map[any]any, key string) *int {
-	v, ok := lookupAny(m, key)
-	if !ok || v == nil {
-		return nil
-	}
-	i := asInt(v)
-	return &i
-}
-
-func lookupOptString(m map[any]any, key string) *string {
-	v, ok := lookupAny(m, key)
-	if !ok || v == nil {
-		return nil
-	}
-	s := asString(v)
-	return &s
-}
-
-func lookupOptBool(m map[any]any, key string) *bool {
-	v, ok := lookupAny(m, key)
-	if !ok || v == nil {
-		return nil
-	}
-	b := asBool(v)
-	return &b
-}
-
-func asBytes(v any) []byte {
-	switch t := v.(type) {
-	case []byte:
-		return t
-	case string:
-		return []byte(t)
-	default:
-		return nil
-	}
-}
-
-func lookupOptBytes(m map[any]any, key string) []byte {
-	v, ok := lookupAny(m, key)
-	if !ok || v == nil {
-		return nil
-	}
-	return asBytes(v)
-}
-
-func asUint64(v any) uint64 {
-	switch t := v.(type) {
-	case uint64:
-		return t
-	case uint32:
-		return uint64(t)
-	case int:
-		if t < 0 {
-			return 0
-		}
-		return uint64(t)
-	case int64:
-		if t < 0 {
-			return 0
-		}
-		return uint64(t)
-	case float64:
-		if t < 0 {
-			return 0
-		}
-		return uint64(t)
-	default:
-		return 0
-	}
 }

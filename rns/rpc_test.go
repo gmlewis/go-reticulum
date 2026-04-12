@@ -616,7 +616,7 @@ func TestDecodeInterfaceStatsAllFields(t *testing.T) {
 		},
 	}
 
-	snap := decodeInterfaceStats(raw)
+	snap := DecodeInterfaceStats(raw)
 	if snap.RXB != 1000 {
 		t.Errorf("RXB = %v, want 1000", snap.RXB)
 	}
@@ -722,7 +722,7 @@ func TestDecodeInterfaceStatsNilOptionals(t *testing.T) {
 			},
 		},
 	}
-	snap := decodeInterfaceStats(raw)
+	snap := DecodeInterfaceStats(raw)
 	if len(snap.Interfaces) != 1 {
 		t.Fatalf("len(Interfaces) = %v, want 1", len(snap.Interfaces))
 	}

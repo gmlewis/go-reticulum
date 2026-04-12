@@ -15,6 +15,176 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
+// renderDiscoveredInterfaces writes a table of discovered interfaces to w,
+// matching the Python rnstatus.py format exactly.
+func renderDiscoveredInterfaces(w io.Writer, ifs []rns.DiscoveredInterface) {
+	if len(ifs) == 0 {
+		return
+	}
+
+	_, _ = fmt.Fprintf(w, "%-25s %-12v %-12v %-12v %-8v %-15v\n", "Name", "Type", "Status", "Last Heard", "Value", "Location")
+	_, _ = fmt.Fprintln(w, strings.Repeat("-", 89))
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	for _, i := range ifs {
+		name := i.Name
+		if len(name) > 24 {
+			name = name[:24] + "…"
+		}
+
+		ifType := strings.TrimSuffix(i.Type, "Interface")
+
+		statusDisplay := i.Status
+		switch i.Status {
+		case "available":
+			statusDisplay = "✓ Available"
+		case "unknown":
+			statusDisplay = "? Unknown"
+		case "stale":
+			statusDisplay = "× Stale"
+		}
+
+		diff := now - i.LastHeard
+		lastHeardDisplay := ""
+		if diff < 60 {
+			lastHeardDisplay = "Just now"
+		} else if diff < 3600 {
+			lastHeardDisplay = fmt.Sprintf("%vm ago", int(diff/60))
+		} else if diff < 86400 {
+			lastHeardDisplay = fmt.Sprintf("%vh ago", int(diff/3600))
+		} else {
+			lastHeardDisplay = fmt.Sprintf("%vd ago", int(diff/86400))
+		}
+
+		location := "N/A"
+		if i.Latitude != nil && i.Longitude != nil {
+			location = fmt.Sprintf("%.4f, %.4f", *i.Latitude, *i.Longitude)
+		}
+
+		_, _ = fmt.Fprintf(w, "%-25s %-12v %-12v %-12v %-8v %-15v\n",
+			name, ifType, statusDisplay, lastHeardDisplay, i.Value, location)
+	}
+}
+
+// renderDiscoveredInterfaceDetails writes detailed info for discovered interfaces to w,
+// matching the Python rnstatus.py format exactly.
+func renderDiscoveredInterfaceDetails(w io.Writer, ifs []rns.DiscoveredInterface) {
+	now := float64(time.Now().UnixNano()) / 1e9
+	for idx, i := range ifs {
+		statusDisplay := i.Status
+		switch i.Status {
+		case "available":
+			statusDisplay = "Available"
+		case "unknown":
+			statusDisplay = "Unknown"
+		case "stale":
+			statusDisplay = "Stale"
+		default:
+			if len(statusDisplay) > 0 {
+				statusDisplay = strings.ToUpper(statusDisplay[:1]) + statusDisplay[1:]
+			}
+		}
+
+		dago := now - i.Discovered
+		hago := now - i.LastHeard
+		discoveredDisplay := rns.PrettyTime(dago, true, true) + " ago"
+		lastHeardDisplay := rns.PrettyTime(hago, true, true) + " ago"
+
+		transportStr := "Disabled"
+		if i.Transport {
+			transportStr = "Enabled"
+		}
+
+		location := "Unknown"
+		if i.Latitude != nil && i.Longitude != nil {
+			heightStr := ""
+			if i.Height != nil {
+				heightStr = fmt.Sprintf(", %vm h", *i.Height)
+			}
+			location = fmt.Sprintf("%.4f, %.4f%v", *i.Latitude, *i.Longitude, heightStr)
+		}
+
+		network := ""
+		if i.TransportID != "" && i.NetworkID != "" && i.TransportID != i.NetworkID {
+			network = i.NetworkID
+		}
+
+		if idx > 0 {
+			_, _ = fmt.Fprintln(w, "\n"+strings.Repeat("=", 32)+"\n")
+		}
+
+		if network != "" {
+			_, _ = fmt.Fprintf(w, "Network   ID : %v\n", network)
+		}
+		if i.TransportID != "" {
+			_, _ = fmt.Fprintf(w, "Transport ID : %v\n", i.TransportID)
+		}
+
+		_, _ = fmt.Fprintf(w, "Name         : %v\n", i.Name)
+		_, _ = fmt.Fprintf(w, "Type         : %v\n", i.Type)
+		_, _ = fmt.Fprintf(w, "Status       : %v\n", statusDisplay)
+		_, _ = fmt.Fprintf(w, "Transport    : %v\n", transportStr)
+		_, _ = fmt.Fprintf(w, "Distance     : %v hop%v\n", i.Hops, plural(i.Hops))
+		_, _ = fmt.Fprintf(w, "Discovered   : %v\n", discoveredDisplay)
+		_, _ = fmt.Fprintf(w, "Last Heard   : %v\n", lastHeardDisplay)
+		_, _ = fmt.Fprintf(w, "Location     : %v\n", location)
+
+		if i.Frequency != nil {
+			_, _ = fmt.Fprintf(w, "Frequency    : %v Hz\n", formatInt(*i.Frequency))
+		}
+		if i.Bandwidth != nil {
+			_, _ = fmt.Fprintf(w, "Bandwidth    : %v Hz\n", formatInt(*i.Bandwidth))
+		}
+		if i.SF != nil {
+			_, _ = fmt.Fprintf(w, "Sprd. Factor : %v\n", *i.SF)
+		}
+		if i.CR != nil {
+			_, _ = fmt.Fprintf(w, "Coding Rate  : %v\n", *i.CR)
+		}
+		if i.Modulation != "" {
+			_, _ = fmt.Fprintf(w, "Modulation   : %v\n", i.Modulation)
+		}
+		if i.ReachableOn != "" {
+			_, _ = fmt.Fprintf(w, "Address      : %v\n", i.ReachableOn)
+		}
+		if i.Port != nil {
+			_, _ = fmt.Fprintf(w, "Port         : %v\n", *i.Port)
+		}
+
+		_, _ = fmt.Fprintf(w, "Stamp Value  : %v\n", i.Value)
+
+		_, _ = fmt.Fprintln(w, "\nConfiguration Entry:")
+		configLines := strings.Split(strings.TrimSpace(i.ConfigEntry), "\n")
+		for _, line := range configLines {
+			_, _ = fmt.Fprintf(w, "  %v\n", line)
+		}
+	}
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+func formatInt(n int) string {
+	// Simple comma-formatter for integers
+	s := fmt.Sprintf("%d", n)
+	if n < 1000 {
+		return s
+	}
+	var res []string
+	for len(s) > 3 {
+		res = append([]string{s[len(s)-3:]}, res...)
+		s = s[:len(s)-3]
+	}
+	if len(s) > 0 {
+		res = append([]string{s}, res...)
+	}
+	return strings.Join(res, ",")
+}
+
 // renderInterface writes the per-interface output block to w,
 // matching the Python rnstatus.py format exactly.
 func renderInterface(w io.Writer, ifstat rns.InterfaceStat, astats bool) {

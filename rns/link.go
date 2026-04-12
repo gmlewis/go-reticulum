@@ -60,6 +60,19 @@ const (
 	AcceptAll = 0x02
 )
 
+const (
+	// TeardownTimeout indicates that the link was closed because a communication timeout occurred.
+	TeardownTimeout = 0x00
+	// TeardownDestinationClosed indicates that the link was closed by the remote destination.
+	TeardownDestinationClosed = 0x01
+	// TeardownInitiatorClosed indicates that the link was closed by the local initiator.
+	TeardownInitiatorClosed = 0x02
+	// TeardownTransportClosed indicates that the link was closed by the transport system.
+	TeardownTransportClosed = 0x03
+	// TeardownStale indicates that the link was closed because it became stale.
+	TeardownStale = 0x04
+)
+
 // LinkCallbacks aggregates optional application-level hooks for asynchronous events occurring over a link's lifecycle.
 type LinkCallbacks struct {
 	LinkEstablished   func(*Link)
@@ -121,6 +134,7 @@ type Link struct {
 	pendingRequests      []*RequestReceipt
 	trafficTimeoutFactor float64
 	channel              *Channel
+	teardownReason       int
 }
 
 func (l *Link) signallingBytes() []byte {
@@ -139,6 +153,12 @@ func (l *Link) GetStatus() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.status
+}
+
+func (l *Link) TeardownReason() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.teardownReason
 }
 
 // UpdateMDU proactively recalculates the Maximum Data Unit payload size based on the current MTU and header overhead.

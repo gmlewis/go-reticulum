@@ -7,12 +7,84 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/rns/msgpack"
 	"github.com/gmlewis/go-reticulum/testutils"
 )
+
+func mustMsgpackPack(v any) []byte {
+	data, err := msgpack.Pack(v)
+	if err != nil {
+		panic(err)
+	}
+	return data
+}
+
+func TestProgramSetupDiscovery(t *testing.T) {
+	t.Parallel()
+	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornstatus-discovery-", func(dir string) string {
+		instanceName := filepath.Base(dir)
+		return "[reticulum]\nenable_transport = False\nshare_instance = Yes\ninstance_name = " + instanceName + "\n\n[logging]\nloglevel = 2\n"
+	})
+	defer cleanup()
+
+	// Setup mock discovery data
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	mockData := map[string]any{
+		"name":       "Mock Interface",
+		"type":       "UDPInterface",
+		"last_heard": now - 30,
+		"value":      123,
+	}
+	data := mustMsgpackPack(mockData)
+	if err := os.WriteFile(filepath.Join(storagePath, "mock.data"), data, 0o644); err != nil {
+		t.Fatalf("failed to write mock data: %v", err)
+	}
+
+	var buf bytes.Buffer
+	logger := rns.NewLogger()
+	ts := rns.NewTransportSystem(logger)
+	r, err := rns.NewReticulumWithLogger(ts, tmpDir, logger)
+	if err != nil {
+		t.Fatalf("NewReticulum: %v", err)
+	}
+	defer func() {
+		if err := r.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	}()
+
+	exitCode := programSetup(programSetupParams{
+		configDir:        tmpDir,
+		discoveredIfaces: true,
+		rnsInstance:      r,
+		logger:           logger,
+		writer:           &buf,
+	})
+
+	if exitCode != 0 {
+		t.Errorf("programSetup exit code = %v, want 0; output: %v", exitCode, buf.String())
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "Mock Interface") {
+		t.Errorf("output missing Mock Interface\ngot:\n%v", got)
+	}
+	if !strings.Contains(got, "✓ Available") {
+		t.Errorf("output missing Available status\ngot:\n%v", got)
+	}
+}
 
 func TestProgramSetupExitsCleanly(t *testing.T) {
 	t.Parallel()
