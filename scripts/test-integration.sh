@@ -36,7 +36,22 @@ echo "Using go test tags: ${GO_TEST_TAGS}"
 cd "${REPO_ROOT}"
 
 go fmt ./...
-go test -race -tags="${GO_TEST_TAGS}" -count=1 -timeout "${GO_TEST_TIMEOUT}" "$@" ./...
+
+# Parse args to check if a directory/package was provided
+has_dir=false
+for arg in "$@"; do
+	if [[ ! "$arg" =~ ^- ]]; then
+		has_dir=true
+		break
+	fi
+done
+
+if [[ "$has_dir" == true ]]; then
+	go test -race -tags="${GO_TEST_TAGS}" -count=1 -timeout "${GO_TEST_TIMEOUT}" "$@"
+else
+	go test -race -tags="${GO_TEST_TAGS}" -count=1 -timeout "${GO_TEST_TIMEOUT}" "$@" ./...
+fi
+
 go vet ./...
 "${ERRCHECK_BIN}" ./...
 "${STATICCHECK_BIN}" -checks=SA* ./...

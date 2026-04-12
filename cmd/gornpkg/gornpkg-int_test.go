@@ -225,6 +225,7 @@ func TestEquivalence_ExampleConfigOutput(t *testing.T) {
 }
 
 func TestParity_VerbosityStackingOutput(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	rnpkgBin := findRnpkg(t)
 	gornpkgBin, cleanup := buildGornpkg(t)
 	defer cleanup()
@@ -245,6 +246,7 @@ func TestParity_VerbosityStackingOutput(t *testing.T) {
 }
 
 func TestParity_QuietnessStackingOutput(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	rnpkgBin := findRnpkg(t)
 	gornpkgBin, cleanup := buildGornpkg(t)
 	defer cleanup()
@@ -305,6 +307,7 @@ func TestEquivalence_HelpUsageText(t *testing.T) {
 }
 
 func TestEquivalence_StartupExitCode(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	rnpkgBin := findRnpkg(t)
 	gornpkgBin, cleanup := buildGornpkg(t)
 	defer cleanup()

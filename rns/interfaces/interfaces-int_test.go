@@ -23,6 +23,8 @@ import (
 
 	"crypto/sha256"
 	"encoding/hex"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 const pythonDiscoveryTokenScript = `
@@ -239,6 +241,7 @@ except KeyboardInterrupt:
 `
 
 func TestTCPInterfaceParity(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	pythonPath := getPythonPath()
 	tmpDir, err := os.MkdirTemp("", "rns-tcp-parity-*")
 	mustTest(t, err)
@@ -306,6 +309,7 @@ func TestTCPInterfaceParity(t *testing.T) {
 }
 
 func TestTCPInterfaceParityKISS(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	pythonPath := getPythonPath()
 	tmpDir, err := os.MkdirTemp("", "rns-tcp-kiss-parity-*")
 	mustTest(t, err)

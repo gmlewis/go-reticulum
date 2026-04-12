@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 const pythonSerialEchoScript = `
@@ -56,6 +58,7 @@ except KeyboardInterrupt:
 `
 
 func TestSerialInterfaceParity(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	pythonPath := getPythonPath()
 	tmpDir, err := os.MkdirTemp("", "rns-serial-parity-*")
 	mustTest(t, err)

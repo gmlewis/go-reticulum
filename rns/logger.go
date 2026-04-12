@@ -178,7 +178,7 @@ func (s *Logger) GetLogCallback() func(string) {
 // log constructs, formats, and safely writes a distinct log message to the configured system destination.
 func (s *Logger) log(msg string, level int, preciseTimestamp bool) {
 	if s == nil {
-		log.Printf("WARNING: no logger: %v", msg)
+		log.Printf("(nil logger): %v", msg)
 		return
 	}
 

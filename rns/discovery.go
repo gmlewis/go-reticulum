@@ -110,11 +110,13 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 		path := filepath.Join(storagePath, entry.Name())
 		data, err := os.ReadFile(path)
 		if err != nil {
+			id.owner.logger.Warning("failed to read discovery file %q: %v", path, err)
 			continue
 		}
 
 		unpacked, err := msgpack.Unpack(data)
 		if err != nil {
+			id.owner.logger.Warning("failed to unpack discovery file %q: %v", path, err)
 			continue
 		}
 		m, ok := unpacked.(map[any]any)
@@ -127,7 +129,9 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 
 		// Threshold for removal (7 days)
 		if heardDelta > ThresholdRemove {
-			_ = os.Remove(path)
+			if err := os.Remove(path); err != nil {
+				id.owner.logger.Warning("failed to remove expired discovery file %q: %v", path, err)
+			}
 			continue
 		}
 

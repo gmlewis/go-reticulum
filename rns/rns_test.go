@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sync/atomic"
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
@@ -20,8 +19,6 @@ import (
 )
 
 const tempDirPrefix = "rns-test-"
-
-var testTCPPortCounter atomic.Uint32
 
 func closeReticulum(t *testing.T, r *Reticulum) {
 	t.Helper()
@@ -35,22 +32,22 @@ func closeReticulum(t *testing.T, r *Reticulum) {
 
 func reserveTCPPort(t *testing.T) int {
 	t.Helper()
-	for {
-		port := 43000 + int(testTCPPortCounter.Add(1)%20000)
-		l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%v", port))
-		if err != nil {
-			continue
-		}
-		addr, ok := l.Addr().(*net.TCPAddr)
-		if !ok {
-			_ = l.Close()
-			t.Fatalf("reserveTCPPort unexpected addr type: %T", l.Addr())
-		}
-		if err := l.Close(); err != nil {
-			t.Fatalf("reserveTCPPort close error: %v", err)
-		}
-		return addr.Port
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserveTCPPort: %v", err)
 	}
+	addr, ok := l.Addr().(*net.TCPAddr)
+	if !ok {
+		_ = l.Close()
+		t.Fatalf("reserveTCPPort unexpected addr type: %T", l.Addr())
+	}
+	port := addr.Port
+	// Close immediately; NewReticulum will rebind to this port from the config.
+	// On Linux, SO_REUSEADDR (set by default in Go) allows rebinding after close.
+	if err := l.Close(); err != nil {
+		t.Fatalf("reserveTCPPort: unable to close port %v: %v", port, err)
+	}
+	return port
 }
 
 // newTestTransportSystem creates a minimal TransportSystem for testing.

@@ -14,7 +14,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,7 +31,6 @@ import (
 var versionLineRE = regexp.MustCompile(`^[^[:space:]]+\s+[^[:space:]]+$`)
 
 var gornshBinaryPath string
-var globalUDPPort int
 
 func TestMain(m *testing.M) {
 	// This entire suite will be skipped if `-short` is used.
@@ -40,14 +38,6 @@ func TestMain(m *testing.M) {
 	if testing.Short() {
 		os.Exit(0)
 	}
-
-	// Reserve a port for UDPInterface to be used by all tests in this package
-	l, err := net.ListenPacket("udp", "127.0.0.1:0")
-	if err != nil {
-		log.Fatalf("failed to reserve UDP port: %v", err)
-	}
-	globalUDPPort = l.LocalAddr().(*net.UDPAddr).Port
-	_ = l.Close()
 
 	binDir, cleanup := testutils.TempDirMain("gornsh-bin-")
 	defer func() {
@@ -189,8 +179,10 @@ func TestIntegrationGoListenerGoInitiatorEcho(t *testing.T) {
 		t.Fatal("listener hash is empty")
 	}
 
-	// Give the listener a bit more time to stabilize
-	time.Sleep(15 * time.Second)
+	// Wait for the shared instance transport to propagate the listener's path.
+	// Do NOT use waitForGornshConnection here — the probe creates a real session
+	// on the listener, leaving stale PTY state that corrupts the actual test command.
+	time.Sleep(5 * time.Second)
 
 	// Initiator call should be rock-solid with enough timeout
 	// When using shared instance, we MUST use the same configDir
@@ -222,8 +214,10 @@ func TestIntegrationPythonListenerGoInitiatorEcho(t *testing.T) {
 		t.Fatal("Python listener hash is empty")
 	}
 
-	// Give the listener a bit more time to stabilize
-	time.Sleep(15 * time.Second)
+	// Wait for the shared instance transport to propagate the listener's path.
+	// Do NOT use waitForGornshConnection here — the probe creates a real session
+	// on the listener, leaving stale PTY state that corrupts the actual test command.
+	time.Sleep(5 * time.Second)
 
 	// Initiator call should be rock-solid with enough timeout
 	// When using shared instance, we MUST use the same configDir
@@ -258,8 +252,10 @@ func TestIntegrationGoListenerPythonInitiatorEcho(t *testing.T) {
 		t.Fatal("listener hash is empty")
 	}
 
-	// Give the listener a bit more time to stabilize
-	time.Sleep(15 * time.Second)
+	// Wait for the shared instance transport to propagate the listener's path.
+	// Do NOT use waitForGornshConnection here — the probe creates a real session
+	// on the listener, leaving stale PTY state that corrupts the actual test command.
+	time.Sleep(5 * time.Second)
 
 	// Initiator call (Python)
 	output, exitCode := runRnshCommand(t, iConfigDir, 60*time.Second, "--timeout", "30", "-T", readyHash, "echo", "hello")
@@ -342,8 +338,10 @@ func TestIntegrationAllowedIdentityEnforcement(t *testing.T) {
 		t.Fatal("listener hash is empty")
 	}
 
-	// Give the listener a bit more time to stabilize
-	time.Sleep(15 * time.Second)
+	// Wait for the shared instance transport to propagate.
+	// Do NOT use waitForGornshConnection — it creates a real session on the listener
+	// that interferes with subsequent test commands.
+	time.Sleep(5 * time.Second)
 
 	// Try to connect with initiatorID (which is NOT allowed)
 	// The initiator should fail to establish a session.
@@ -384,7 +382,10 @@ func TestIntegrationMirrorFlag(t *testing.T) {
 		t.Fatal("listener hash is empty")
 	}
 
-	time.Sleep(15 * time.Second)
+	// Wait for the shared instance transport to propagate.
+	// Do NOT use waitForGornshConnection — it creates a real session on the listener
+	// that interferes with subsequent test commands.
+	time.Sleep(5 * time.Second)
 
 	tests := []struct {
 		name       string
@@ -456,7 +457,10 @@ func TestIntegrationNoAuthOpenListener(t *testing.T) {
 		listener := startGornshListener(t, configDir)
 		readyHash := listener.hash()
 
-		time.Sleep(15 * time.Second)
+		// Wait for the shared instance transport to propagate.
+		// Do NOT use waitForGornshConnection — it creates a real session on the listener
+		// that interferes with subsequent test commands.
+		time.Sleep(5 * time.Second)
 
 		// Initiator with a random identity should succeed
 		output, exitCode := runGornshCommand(t, configDir, 30*time.Second, "--timeout", "10", "-T", readyHash, "echo", "hello")
@@ -476,7 +480,10 @@ func TestIntegrationNoAuthOpenListener(t *testing.T) {
 		listener := startGornshListenerWithArgs(t, configDir) // empty args = default behavior (auth enabled)
 		readyHash := listener.hash()
 
-		time.Sleep(15 * time.Second)
+		// Wait for the listener's path to propagate through the shared instance.
+		// waitForGornshConnection cannot probe this listener since all identities
+		// are denied (no allowlist configured). Use a fixed sleep instead.
+		time.Sleep(5 * time.Second)
 
 		// Initiator with any identity should fail
 		output, exitCode := runGornshCommand(t, configDir, 30*time.Second, "--timeout", "10", "-T", readyHash, "echo", "hello")
@@ -507,8 +514,8 @@ func TestIntegrationNetworkPartitionRecovery(t *testing.T) {
 	listener := startGornshListener(t, configDir)
 	readyHash := listener.hash()
 
-	// Give the listener a bit more time to stabilize
-	time.Sleep(15 * time.Second)
+	// Wait for the shared instance transport to propagate.
+	time.Sleep(5 * time.Second)
 
 	// 1. Verify initial success
 	output, exitCode := runGornshCommand(t, configDir, 30*time.Second, "--timeout", "10", "-T", readyHash, "echo", "step1")
@@ -535,8 +542,8 @@ func TestIntegrationNetworkPartitionRecovery(t *testing.T) {
 		t.Fatalf("failed to continue listener: %v", err)
 	}
 
-	// Give it a moment to catch up
-	time.Sleep(2 * time.Second)
+	// Wait for the listener to recover from SIGSTOP
+	time.Sleep(5 * time.Second)
 
 	// Initiator should succeed again
 	output, exitCode = runGornshCommand(t, configDir, 30*time.Second, "--timeout", "10", "-T", readyHash, "echo", "step3")
@@ -816,29 +823,7 @@ type pythonListenerProcess struct {
 func startPythonListener(t *testing.T, configDir, instanceName string, listenPort, forwardPort int) *pythonListenerProcess {
 	t.Helper()
 
-	// Set up environment for Python rnsh
 	env := gornshIntegrationEnv("")
-
-	// Python uses the same config directory as Go so they share identities
-	// and storage. Both use the same instance_name to communicate via shared instance.
-	configText := strings.Join([]string{
-		"[reticulum]",
-		"enable_transport = False",
-		"share_instance = Yes",
-		"instance_name = " + instanceName,
-		"",
-		"[logging]",
-		"loglevel = 4",
-		"",
-		"[interfaces]",
-		"  [[Default Interface]]",
-		"    type = AutoInterface",
-		"    enabled = Yes",
-		"",
-	}, "\n")
-	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(configText), 0o600); err != nil {
-		t.Fatalf("failed to write Python config: %v", err)
-	}
 
 	cmd := exec.Command("python3", "-m", "rnsh.rnsh", "-l", "--no-auth", "-b", "0", "-c", configDir)
 	cmd.Stdin = strings.NewReader("")
@@ -864,22 +849,26 @@ func startPythonListener(t *testing.T, configDir, instanceName string, listenPor
 
 	go func() {
 		defer func() {
-			// Ensure we close the reader when done to prevent resource leaks
 			_ = reader.Close()
 		}()
+		lineCount := 0
 		scanner := bufio.NewScanner(reader)
 		for scanner.Scan() {
 			line := scanner.Text()
+			lineCount++
+			log.Printf("[PY-SCANNER] line %v: %q", lineCount, line)
 			proc.hashMu.Lock()
 			proc.stdout.WriteString(line)
 			proc.stdout.WriteByte('\n')
 			if proc.value == "" {
 				if hash := parseListenerHash(line); hash != "" {
 					proc.value = hash
+					log.Printf("[PY-SCANNER] hash found: %v, closing readyCh", hash)
 					close(proc.readyCh)
 				}
 			}
 			proc.hashMu.Unlock()
+			log.Printf("[PY-SCANNER] scanner done, lineCount=%v, err=%v", lineCount, scanner.Err())
 		}
 		if err := scanner.Err(); err != nil {
 			proc.waitCh <- err
