@@ -9,6 +9,8 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,6 +24,67 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 	"github.com/gmlewis/go-reticulum/testutils"
 )
+
+const pyServerScript = `
+import RNS
+import time
+import sys
+import os
+
+config_dir = sys.argv[1]
+allowed_identity_path = sys.argv[2]
+
+reticulum = RNS.Reticulum(configdir=config_dir)
+RNS.logdest = RNS.LOG_STDOUT
+RNS.loglevel = RNS.LOG_DEBUG
+
+identity = RNS.Identity.from_file(config_dir + "/storage/transport_identity")
+dest = RNS.Destination(identity, RNS.Destination.IN, RNS.Destination.SINGLE, "rnstransport", "remote", "management")
+
+allowed_identity = RNS.Identity.from_file(allowed_identity_path)
+allowed_list = [allowed_identity.hash]
+
+def status_request_handler(path, data, request_id, link_id, remote_identity, requested_at):
+    print(f"DEBUG: Received request for {path} from {RNS.prettyhexrep(remote_identity.hash)}")
+    stats = {
+        "transport_id": RNS.Transport.identity.hash,
+        "interfaces": [
+            {"name": "Mock Interface", "type": "Test", "status": True, "bitrate": 1000, "rxb": 123, "txb": 456}
+        ]
+    }
+    return [stats, 5]
+
+dest.register_request_handler("/status", status_request_handler, allow=RNS.Destination.ALLOW_LIST, allowed_list=allowed_list)
+
+print(f"DEBUG: Server starting with identity {RNS.prettyhexrep(identity.hash)}")
+print(f"DEBUG: Management destination {RNS.prettyhexrep(dest.hash)}")
+print(f"DEBUG: Allowing identity {RNS.prettyhexrep(allowed_identity.hash)}")
+print("DEBUG: Server ready and waiting")
+
+while True:
+    dest.announce()
+    print("DEBUG: Sent announcement")
+    time.sleep(5)
+`
+
+const pyAnnounceScript = `
+import RNS
+import time
+import sys
+import os
+
+config_dir = sys.argv[1]
+reticulum = RNS.Reticulum(configdir=config_dir)
+time.sleep(2)
+
+identity = RNS.Identity.from_file(config_dir + "/storage/transport_identity")
+dest = RNS.Destination(identity, RNS.Destination.IN, RNS.Destination.SINGLE, "rnstransport", "remote", "management")
+
+print(f"DEBUG: Announcing management destination {RNS.prettyhexrep(dest.hash)} repeatedly...")
+for _ in range(15):
+    dest.announce()
+    time.sleep(2)
+`
 
 func buildGornstatus(t *testing.T) (string, func()) {
 	t.Helper()
@@ -167,7 +230,6 @@ func TestIntegration_VerboseStacking(t *testing.T) {
 }
 
 func TestIntegration_RemoteStatus(t *testing.T) {
-	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	bin, cleanupBin := buildGornstatus(t)
 	defer cleanupBin()
@@ -186,6 +248,18 @@ func TestIntegration_RemoteStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	pyServerPath := filepath.Join(pyConfigDir, "py_server.py")
+	if err := os.WriteFile(pyServerPath, []byte(pyServerScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pyAnnouncePath := filepath.Join(pyConfigDir, "py_announce.py")
+	if err := os.WriteFile(pyAnnouncePath, []byte(pyAnnounceScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	listenPort := reserveUDPPort(t)
+	forwardPort := reserveUDPPort(t)
+
 	pyConfig := strings.Join([]string{
 		"[reticulum]",
 		"enable_transport = Yes",
@@ -200,9 +274,9 @@ func TestIntegration_RemoteStatus(t *testing.T) {
 		"    type = UDPInterface",
 		"    enabled = Yes",
 		"    listen_ip = 127.0.0.1",
-		"    listen_port = 42435",
+		"    listen_port = " + fmt.Sprintf("%v", listenPort),
 		"    forward_ip = 127.0.0.1",
-		"    forward_port = 42436",
+		"    forward_port = " + fmt.Sprintf("%v", forwardPort),
 		"",
 		"[remote_management]",
 		"  enabled = Yes",
@@ -212,7 +286,7 @@ func TestIntegration_RemoteStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pyCmd := exec.Command("python3", "-u", "/tmp/py_server.py", pyConfigDir, mgmtIDPath)
+	pyCmd := exec.Command("python3", "-u", pyServerPath, pyConfigDir, mgmtIDPath)
 	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 	pyOut := &safeBuffer{}
 	pyCmd.Stdout = pyOut
@@ -278,16 +352,16 @@ func TestIntegration_RemoteStatus(t *testing.T) {
 		"    type = UDPInterface",
 		"    enabled = Yes",
 		"    listen_ip = 127.0.0.1",
-		"    listen_port = 42436",
+		"    listen_port = " + fmt.Sprintf("%v", forwardPort),
 		"    forward_ip = 127.0.0.1",
-		"    forward_port = 42435",
+		"    forward_port = " + fmt.Sprintf("%v", listenPort),
 	}, "\n")
 	if err := os.WriteFile(filepath.Join(goConfigDir, "config"), []byte(goConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	// Trigger an announcement from Python so Go sees it
-	announceCmd := exec.Command("python3", "/tmp/py_announce.py", pyConfigDir)
+	announceCmd := exec.Command("python3", pyAnnouncePath, pyConfigDir)
 	announceCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 	if err := announceCmd.Start(); err != nil {
 		t.Fatal(err)
@@ -357,7 +431,20 @@ func TestIntegration_Discovered(t *testing.T) {
 }
 
 func getPythonPath() string {
-	return "/tmp/debug-python"
+	if path := os.Getenv("ORIGINAL_RETICULUM_REPO_DIR"); path != "" {
+		return path
+	}
+	return ""
+}
+
+func reserveUDPPort(t *testing.T) int {
+	t.Helper()
+	conn, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserveUDPPort: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	return conn.LocalAddr().(*net.UDPAddr).Port
 }
 
 type safeBuffer struct {
