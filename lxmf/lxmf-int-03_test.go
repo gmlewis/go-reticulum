@@ -160,19 +160,20 @@ import RNS
 import RNS.vendor.umsgpack as msgpack
 import os
 import sys
-import tempfile
 import time
 
-if len(sys.argv) != 2:
+if len(sys.argv) != 3:
 	print("ERROR: missing args")
 	sys.exit(1)
 
 out_path = sys.argv[1]
-config_dir = tempfile.mkdtemp()
+store_dir = sys.argv[2]
+config_dir = os.path.join(store_dir, "rnsconfig")
+if not os.path.exists(config_dir): os.makedirs(config_dir)
 with open(os.path.join(config_dir, "config"), "w") as f:
 	f.write("[reticulum]\nshare_instance = No\n")
 RNS.Reticulum(configdir=config_dir)
-router = LXMF.LXMRouter(storagepath="/tmp")
+router = LXMF.LXMRouter(storagepath=store_dir)
 router.auth_required = True
 
 allowed_identity = RNS.Identity()
@@ -275,19 +276,20 @@ import RNS
 import RNS.vendor.umsgpack as msgpack
 import os
 import sys
-import tempfile
 import time
 
-if len(sys.argv) != 2:
+if len(sys.argv) != 3:
 	print("ERROR: missing args")
 	sys.exit(1)
 
 out_path = sys.argv[1]
-config_dir = tempfile.mkdtemp()
+store_dir = sys.argv[2]
+config_dir = os.path.join(store_dir, "rnsconfig")
+if not os.path.exists(config_dir): os.makedirs(config_dir)
 with open(os.path.join(config_dir, "config"), "w") as f:
 	f.write("[reticulum]\nshare_instance = No\n")
 RNS.Reticulum(configdir=config_dir)
-router = LXMF.LXMRouter(storagepath="/tmp")
+router = LXMF.LXMRouter(storagepath=store_dir)
 remote_identity = RNS.Identity()
 router.control_allowed_list = [remote_identity.hash]
 
@@ -319,19 +321,20 @@ import RNS
 import RNS.vendor.umsgpack as msgpack
 import os
 import sys
-import tempfile
 import time
 
-if len(sys.argv) != 2:
+if len(sys.argv) != 3:
 	print("ERROR: missing args")
 	sys.exit(1)
 
 out_path = sys.argv[1]
-config_dir = tempfile.mkdtemp()
+store_dir = sys.argv[2]
+config_dir = os.path.join(store_dir, "rnsconfig")
+if not os.path.exists(config_dir): os.makedirs(config_dir)
 with open(os.path.join(config_dir, "config"), "w") as f:
 	f.write("[reticulum]\nshare_instance = No\n")
 RNS.Reticulum(configdir=config_dir)
-router = LXMF.LXMRouter(storagepath="/tmp")
+router = LXMF.LXMRouter(storagepath=store_dir)
 
 allowed_identity = RNS.Identity()
 not_allowed_identity = RNS.Identity()
@@ -401,19 +404,20 @@ import RNS
 import RNS.vendor.umsgpack as msgpack
 import os
 import sys
-import tempfile
 import time
 
-if len(sys.argv) != 2:
+if len(sys.argv) != 3:
 	print("ERROR: missing args")
 	sys.exit(1)
 
 out_path = sys.argv[1]
-config_dir = tempfile.mkdtemp()
+store_dir = sys.argv[2]
+config_dir = os.path.join(store_dir, "rnsconfig")
+if not os.path.exists(config_dir): os.makedirs(config_dir)
 with open(os.path.join(config_dir, "config"), "w") as f:
 	f.write("[reticulum]\nshare_instance = No\n")
 RNS.Reticulum(configdir=config_dir)
-router = LXMF.LXMRouter(storagepath="/tmp")
+router = LXMF.LXMRouter(storagepath=store_dir)
 router.propagation_node = True
 router.propagation_node_start_time = time.time()
 allowed_identity = RNS.Identity()
@@ -453,19 +457,20 @@ import RNS
 import RNS.vendor.umsgpack as msgpack
 import os
 import sys
-import tempfile
 import time
 
-if len(sys.argv) != 2:
+if len(sys.argv) != 3:
 	print("ERROR: missing args")
 	sys.exit(1)
 
 out_path = sys.argv[1]
-config_dir = tempfile.mkdtemp()
+store_dir = sys.argv[2]
+config_dir = os.path.join(store_dir, "rnsconfig")
+if not os.path.exists(config_dir): os.makedirs(config_dir)
 with open(os.path.join(config_dir, "config"), "w") as f:
 	f.write("[reticulum]\nshare_instance = No\n")
 RNS.Reticulum(configdir=config_dir)
-router = LXMF.LXMRouter(storagepath="/tmp")
+router = LXMF.LXMRouter(storagepath=store_dir)
 remote_identity = RNS.Identity()
 transient_id = RNS.Identity.full_hash(b"offer-invalid-key")
 
@@ -480,19 +485,20 @@ import RNS
 import RNS.vendor.umsgpack as msgpack
 import os
 import sys
-import tempfile
 import time
 
-if len(sys.argv) != 2:
+if len(sys.argv) != 3:
 	print("ERROR: missing args")
 	sys.exit(1)
 
 out_path = sys.argv[1]
-config_dir = tempfile.mkdtemp()
+store_dir = sys.argv[2]
+config_dir = os.path.join(store_dir, "rnsconfig")
+if not os.path.exists(config_dir): os.makedirs(config_dir)
 with open(os.path.join(config_dir, "config"), "w") as f:
 	f.write("[reticulum]\nshare_instance = No\n")
 RNS.Reticulum(configdir=config_dir)
-router = LXMF.LXMRouter(storagepath="/tmp")
+router = LXMF.LXMRouter(storagepath=store_dir)
 remote_identity = RNS.Identity()
 remote_destination = RNS.Destination(remote_identity, RNS.Destination.OUT, RNS.Destination.SINGLE, LXMF.APP_NAME, "propagation")
 router.throttled_peers[remote_destination.hash] = time.time()+60
@@ -509,19 +515,20 @@ import RNS
 import RNS.vendor.umsgpack as msgpack
 import os
 import sys
-import tempfile
 import time
 
-if len(sys.argv) != 2:
+if len(sys.argv) != 3:
 	print("ERROR: missing args")
 	sys.exit(1)
 
 out_path = sys.argv[1]
-config_dir = tempfile.mkdtemp()
+store_dir = sys.argv[2]
+config_dir = os.path.join(store_dir, "rnsconfig")
+if not os.path.exists(config_dir): os.makedirs(config_dir)
 with open(os.path.join(config_dir, "config"), "w") as f:
 	f.write("[reticulum]\nshare_instance = No\n")
 RNS.Reticulum(configdir=config_dir)
-router = LXMF.LXMRouter(storagepath="/tmp", peering_cost=0)
+router = LXMF.LXMRouter(storagepath=store_dir, peering_cost=0)
 remote_identity = RNS.Identity()
 remote_destination = RNS.Destination(remote_identity, RNS.Destination.OUT, RNS.Destination.SINGLE, LXMF.APP_NAME, "propagation")
 router.throttled_peers[remote_destination.hash] = time.time()-1
@@ -538,19 +545,20 @@ import RNS
 import RNS.vendor.umsgpack as msgpack
 import os
 import sys
-import tempfile
 import time
 
-if len(sys.argv) != 2:
+if len(sys.argv) != 3:
 	print("ERROR: missing args")
 	sys.exit(1)
 
 out_path = sys.argv[1]
-config_dir = tempfile.mkdtemp()
+store_dir = sys.argv[2]
+config_dir = os.path.join(store_dir, "rnsconfig")
+if not os.path.exists(config_dir): os.makedirs(config_dir)
 with open(os.path.join(config_dir, "config"), "w") as f:
 	f.write("[reticulum]\nshare_instance = No\n")
 RNS.Reticulum(configdir=config_dir)
-router = LXMF.LXMRouter(storagepath="/tmp", from_static_only=True)
+router = LXMF.LXMRouter(storagepath=store_dir, from_static_only=True)
 remote_identity = RNS.Identity()
 
 transient_id = RNS.Identity.full_hash(b"offer-static-only")
@@ -565,21 +573,22 @@ import RNS
 import RNS.vendor.umsgpack as msgpack
 import os
 import sys
-import tempfile
 import time
 
-if len(sys.argv) != 2:
+if len(sys.argv) != 3:
 	print("ERROR: missing args")
 	sys.exit(1)
 
 out_path = sys.argv[1]
-config_dir = tempfile.mkdtemp()
+store_dir = sys.argv[2]
+config_dir = os.path.join(store_dir, "rnsconfig")
+if not os.path.exists(config_dir): os.makedirs(config_dir)
 with open(os.path.join(config_dir, "config"), "w") as f:
 	f.write("[reticulum]\nshare_instance = No\n")
 RNS.Reticulum(configdir=config_dir)
 remote_identity = RNS.Identity()
 remote_destination = RNS.Destination(remote_identity, RNS.Destination.OUT, RNS.Destination.SINGLE, LXMF.APP_NAME, "propagation")
-router = LXMF.LXMRouter(storagepath="/tmp", from_static_only=True, static_peers=[remote_destination.hash], peering_cost=0)
+router = LXMF.LXMRouter(storagepath=store_dir, from_static_only=True, static_peers=[remote_destination.hash], peering_cost=0)
 
 transient_id = RNS.Identity.full_hash(b"offer-static-allowed")
 response = router.offer_request("", [b"key", [transient_id]], None, b"link-id", remote_identity, time.time())
@@ -593,26 +602,27 @@ import RNS
 import RNS.vendor.umsgpack as msgpack
 import os
 import sys
-import tempfile
 import time
 
-if len(sys.argv) != 2:
+if len(sys.argv) != 3:
 	print("ERROR: missing args")
 	sys.exit(1)
 
 out_path = sys.argv[1]
-config_dir = tempfile.mkdtemp()
+store_dir = sys.argv[2]
+config_dir = os.path.join(store_dir, "rnsconfig")
+if not os.path.exists(config_dir): os.makedirs(config_dir)
 with open(os.path.join(config_dir, "config"), "w") as f:
 	f.write("[reticulum]\nshare_instance = No\n")
 RNS.Reticulum(configdir=config_dir)
-router = LXMF.LXMRouter(storagepath="/tmp", peering_cost=0)
+router = LXMF.LXMRouter(storagepath=store_dir, peering_cost=0)
 remote_identity = RNS.Identity()
 
 id_one = RNS.Identity.full_hash(b"offer-all-known-one")
 id_two = RNS.Identity.full_hash(b"offer-all-known-two")
 
-router.propagation_entries[id_one] = [b"dest-hash-123456", "/tmp/nonexistent-a"]
-router.propagation_entries[id_two] = [b"dest-hash-123456", "/tmp/nonexistent-b"]
+router.propagation_entries[id_one] = [b"dest-hash-123456", os.path.join(store_dir, "nonexistent-a")]
+router.propagation_entries[id_two] = [b"dest-hash-123456", os.path.join(store_dir, "nonexistent-b")]
 
 response = router.offer_request("", [b"key", [id_one, id_two]], None, b"link-id", remote_identity, time.time())
 
@@ -625,19 +635,20 @@ import RNS
 import RNS.vendor.umsgpack as msgpack
 import os
 import sys
-import tempfile
 import time
 
-if len(sys.argv) != 2:
+if len(sys.argv) != 3:
 	print("ERROR: missing args")
 	sys.exit(1)
 
 out_path = sys.argv[1]
-config_dir = tempfile.mkdtemp()
+store_dir = sys.argv[2]
+config_dir = os.path.join(store_dir, "rnsconfig")
+if not os.path.exists(config_dir): os.makedirs(config_dir)
 with open(os.path.join(config_dir, "config"), "w") as f:
 	f.write("[reticulum]\nshare_instance = No\n")
 RNS.Reticulum(configdir=config_dir)
-router = LXMF.LXMRouter(storagepath="/tmp", peering_cost=0)
+router = LXMF.LXMRouter(storagepath=store_dir, peering_cost=0)
 remote_identity = RNS.Identity()
 
 id_one = RNS.Identity.full_hash(b"offer-all-missing-one")
@@ -1281,7 +1292,7 @@ func TestIntegrationPropagationMessageGetAccessGoToPython(t *testing.T) {
 	}
 
 	responsePath := filepath.Join(tmpDir, "message_get_access_response.msgpack")
-	cmd := exec.Command("python3", scriptPath, responsePath)
+	cmd := exec.Command("python3", scriptPath, responsePath, tmpDir)
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("python message_get access flow failed: %v output=%v", err, string(out))
@@ -1454,7 +1465,7 @@ func TestIntegrationPropagationControlRecoveryGoToPython(t *testing.T) {
 	}
 
 	responsePath := filepath.Join(tmpDir, "control_recovery_response.msgpack")
-	cmd := exec.Command("python3", scriptPath, responsePath)
+	cmd := exec.Command("python3", scriptPath, responsePath, tmpDir)
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("python control recovery flow failed: %v output=%v", err, string(out))
@@ -1504,7 +1515,7 @@ func TestIntegrationPropagationControlPeerErrorsGoToPython(t *testing.T) {
 	}
 
 	responsePath := filepath.Join(tmpDir, "control_peer_errors_response.msgpack")
-	cmd := exec.Command("python3", scriptPath, responsePath)
+	cmd := exec.Command("python3", scriptPath, responsePath, tmpDir)
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("python control peer errors flow failed: %v output=%v", err, string(out))
@@ -1726,7 +1737,7 @@ func TestIntegrationPropagationControlStatsGoToPython(t *testing.T) {
 	}
 
 	responsePath := filepath.Join(tmpDir, "control_stats_response.msgpack")
-	cmd := exec.Command("python3", scriptPath, responsePath)
+	cmd := exec.Command("python3", scriptPath, responsePath, tmpDir)
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("python control stats flow failed: %v output=%v", err, string(out))
@@ -1830,7 +1841,7 @@ func TestIntegrationPropagationOfferInvalidKeyGoToPython(t *testing.T) {
 	}
 
 	responsePath := filepath.Join(tmpDir, "offer_invalid_key_response.msgpack")
-	cmd := exec.Command("python3", scriptPath, responsePath)
+	cmd := exec.Command("python3", scriptPath, responsePath, tmpDir)
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("python offer invalid-key run failed: %v output=%v", err, string(out))
@@ -1863,7 +1874,7 @@ func TestIntegrationPropagationOfferThrottledGoToPython(t *testing.T) {
 	}
 
 	responsePath := filepath.Join(tmpDir, "offer_throttled_response.msgpack")
-	cmd := exec.Command("python3", scriptPath, responsePath)
+	cmd := exec.Command("python3", scriptPath, responsePath, tmpDir)
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("python offer throttled run failed: %v output=%v", err, string(out))
@@ -1896,7 +1907,7 @@ func TestIntegrationPropagationOfferThrottleExpiredGoToPython(t *testing.T) {
 	}
 
 	responsePath := filepath.Join(tmpDir, "offer_throttle_expired_response.msgpack")
-	cmd := exec.Command("python3", scriptPath, responsePath)
+	cmd := exec.Command("python3", scriptPath, responsePath, tmpDir)
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("python offer throttle-expired run failed: %v output=%v", err, string(out))
@@ -1929,7 +1940,7 @@ func TestIntegrationPropagationOfferStaticOnlyGoToPython(t *testing.T) {
 	}
 
 	responsePath := filepath.Join(tmpDir, "offer_static_only_response.msgpack")
-	cmd := exec.Command("python3", scriptPath, responsePath)
+	cmd := exec.Command("python3", scriptPath, responsePath, tmpDir)
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("python offer static-only run failed: %v output=%v", err, string(out))
@@ -1962,7 +1973,7 @@ func TestIntegrationPropagationOfferStaticAllowedGoToPython(t *testing.T) {
 	}
 
 	responsePath := filepath.Join(tmpDir, "offer_static_allowed_response.msgpack")
-	cmd := exec.Command("python3", scriptPath, responsePath)
+	cmd := exec.Command("python3", scriptPath, responsePath, tmpDir)
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("python offer static-allowed run failed: %v output=%v", err, string(out))
@@ -1995,7 +2006,7 @@ func TestIntegrationPropagationOfferAllKnownGoToPython(t *testing.T) {
 	}
 
 	responsePath := filepath.Join(tmpDir, "offer_all_known_response.msgpack")
-	cmd := exec.Command("python3", scriptPath, responsePath)
+	cmd := exec.Command("python3", scriptPath, responsePath, tmpDir)
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("python offer all-known run failed: %v output=%v", err, string(out))
@@ -2028,7 +2039,7 @@ func TestIntegrationPropagationOfferAllMissingGoToPython(t *testing.T) {
 	}
 
 	responsePath := filepath.Join(tmpDir, "offer_all_missing_response.msgpack")
-	cmd := exec.Command("python3", scriptPath, responsePath)
+	cmd := exec.Command("python3", scriptPath, responsePath, tmpDir)
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("python offer all-missing run failed: %v output=%v", err, string(out))
