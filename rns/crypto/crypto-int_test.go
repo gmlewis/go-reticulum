@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func getPythonPath() string {
@@ -209,13 +211,8 @@ if __name__ == "__main__":
 
 func TestHMACParity(t *testing.T) {
 	t.Parallel()
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-crypto-parity-*")
+	defer cleanup()
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
 	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0o644); err != nil {
@@ -241,13 +238,8 @@ func TestHMACParity(t *testing.T) {
 
 func TestEd25519Parity(t *testing.T) {
 	t.Parallel()
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-crypto-parity-*")
+	defer cleanup()
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
 	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0o644); err != nil {
@@ -275,13 +267,8 @@ func TestEd25519Parity(t *testing.T) {
 
 func TestX25519Parity(t *testing.T) {
 	t.Parallel()
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-crypto-parity-*")
+	defer cleanup()
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
 	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0o644); err != nil {
@@ -313,13 +300,8 @@ func TestX25519Parity(t *testing.T) {
 
 func TestHKDFParity(t *testing.T) {
 	t.Parallel()
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-crypto-parity-*")
+	defer cleanup()
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
 	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0o644); err != nil {
@@ -348,13 +330,8 @@ func TestHKDFParity(t *testing.T) {
 
 func TestTokenParity(t *testing.T) {
 	t.Parallel()
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-crypto-parity-*")
+	defer cleanup()
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
 	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0o644); err != nil {
@@ -383,13 +360,8 @@ func TestTokenParity(t *testing.T) {
 
 func TestSHA256Parity(t *testing.T) {
 	t.Parallel()
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-crypto-parity-*")
+	defer cleanup()
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
 	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0o644); err != nil {
@@ -414,13 +386,8 @@ func TestSHA256Parity(t *testing.T) {
 
 func TestSHA512Parity(t *testing.T) {
 	t.Parallel()
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-crypto-parity-*")
+	defer cleanup()
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
 	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0o644); err != nil {
@@ -445,13 +412,8 @@ func TestSHA512Parity(t *testing.T) {
 
 func TestPKCS7Parity(t *testing.T) {
 	t.Parallel()
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-crypto-parity-*")
+	defer cleanup()
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
 	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0o644); err != nil {
@@ -492,13 +454,8 @@ func TestPKCS7Parity(t *testing.T) {
 
 func TestAES128Parity(t *testing.T) {
 	t.Parallel()
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-crypto-parity-*")
+	defer cleanup()
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
 	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0o644); err != nil {
@@ -542,13 +499,8 @@ func TestAES128Parity(t *testing.T) {
 
 func TestAES256Parity(t *testing.T) {
 	t.Parallel()
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-crypto-parity-*")
+	defer cleanup()
 
 	scriptPath := filepath.Join(tmpDir, "check_crypto_parity.py")
 	if err := os.WriteFile(scriptPath, []byte(checkCryptoParityPy), 0o644); err != nil {

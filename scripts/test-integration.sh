@@ -15,6 +15,12 @@ if [[ -z "${ERRCHECK_BIN}" ]]; then
 	ERRCHECK_BIN="$(go env GOPATH)/bin/errcheck"
 fi
 
+GOIMPORTS_BIN="$(command -v goimports || true)"
+if [[ -z "${GOIMPORTS_BIN}" ]]; then
+	go install golang.org/x/tools/cmd/goimports@latest
+	GOIMPORTS_BIN="$(go env GOPATH)/bin/goimports"
+fi
+
 STATICCHECK_BIN="$(command -v staticcheck || true)"
 if [[ -z "${STATICCHECK_BIN}" ]]; then
 	go install honnef.co/go/tools/cmd/staticcheck@latest
@@ -35,7 +41,7 @@ echo "Using go test tags: ${GO_TEST_TAGS}"
 
 cd "${REPO_ROOT}"
 
-go fmt ./...
+"${GOIMPORTS_BIN}" -w .
 
 # Parse args to check if a directory/package was provided
 has_dir=false

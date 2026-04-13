@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestReadExtractedFirmwareReleaseInfo(t *testing.T) {
@@ -75,12 +77,7 @@ func TestExtractedFirmwareStateReadReleaseInfoUsesStateFiles(t *testing.T) {
 func tempExtractedFirmwareDir(t *testing.T) string {
 	t.Helper()
 
-	dir, err := os.MkdirTemp("", "gornodeconf-extracted-*")
-	if err != nil {
-		t.Fatalf("create temp dir: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir)
-	})
+	dir, cleanup := testutils.TempDir(t, "gornodeconf-extracted-*")
+	t.Cleanup(cleanup)
 	return dir
 }

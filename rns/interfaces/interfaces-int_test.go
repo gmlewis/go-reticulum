@@ -39,11 +39,8 @@ print(discovery_token.hex())
 
 func TestAutoInterfaceDiscoveryPacketParity(t *testing.T) {
 	pythonPath := getPythonPath()
-	tmpDir, err := os.MkdirTemp("", "rns-auto-parity-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		os.RemoveAll(tmpDir)
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "rns-auto-parity-*")
+	defer cleanup()
 
 	scriptPath := filepath.Join(tmpDir, "discovery_token.py")
 	if err := os.WriteFile(scriptPath, []byte(pythonDiscoveryTokenScript), 0o644); err != nil {
@@ -125,13 +122,8 @@ except KeyboardInterrupt:
 
 func TestUDPInterfaceParity(t *testing.T) {
 	pythonPath := getPythonPath()
-	tmpDir, err := os.MkdirTemp("", "rns-udp-parity-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "rns-udp-parity-*")
+	defer cleanup()
 
 	scriptPath := filepath.Join(tmpDir, "udp_echo.py")
 	if err := os.WriteFile(scriptPath, []byte(pythonUDPEchoScript), 0o644); err != nil {
@@ -243,13 +235,8 @@ except KeyboardInterrupt:
 func TestTCPInterfaceParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	pythonPath := getPythonPath()
-	tmpDir, err := os.MkdirTemp("", "rns-tcp-parity-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "rns-tcp-parity-*")
+	defer cleanup()
 
 	scriptPath := filepath.Join(tmpDir, "tcp_echo.py")
 	if err := os.WriteFile(scriptPath, []byte(pythonTCPEchoScript), 0o644); err != nil {
@@ -311,13 +298,8 @@ func TestTCPInterfaceParity(t *testing.T) {
 func TestTCPInterfaceParityKISS(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	pythonPath := getPythonPath()
-	tmpDir, err := os.MkdirTemp("", "rns-tcp-kiss-parity-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "rns-tcp-kiss-parity-*")
+	defer cleanup()
 
 	const pythonTCPKISSEchoScript = `
 import RNS.Interfaces.TCPInterface as TCPInterface
@@ -487,13 +469,8 @@ if __name__ == "__main__":
 
 func TestLocalInterfaceParity(t *testing.T) {
 	pythonPath := getPythonPath()
-	tmpDir, err := os.MkdirTemp("", "rns-local-parity-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "rns-local-parity-*")
+	defer cleanup()
 
 	scriptPath := filepath.Join(tmpDir, "local_echo.py")
 	if err := os.WriteFile(scriptPath, []byte(pythonLocalEchoScript), 0o644); err != nil {
@@ -502,6 +479,7 @@ func TestLocalInterfaceParity(t *testing.T) {
 
 	var cmd *exec.Cmd
 	var goIface *LocalClientInterface
+	var err error
 	pyPort := reserveTCPPort(t)
 	socketPath := filepath.Join(tmpDir, "rns-test.sock")
 
@@ -651,13 +629,8 @@ while True:
 `
 
 func TestPipeInterfaceParity(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "rns-pipe-parity-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "rns-pipe-parity-*")
+	defer cleanup()
 
 	scriptPath := filepath.Join(tmpDir, "pipe_echo.py")
 	if err := os.WriteFile(scriptPath, []byte(pythonPipeEchoScript), 0o644); err != nil {

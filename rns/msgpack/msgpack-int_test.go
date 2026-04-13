@@ -18,6 +18,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func getPythonPath() string {
@@ -74,13 +76,8 @@ if __name__ == "__main__":
 
 func TestMessagePackParity(t *testing.T) {
 	t.Parallel()
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-msgpack-parity-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-msgpack-parity-*")
+	defer cleanup()
 
 	scriptPath := filepath.Join(tmpDir, "check_msgpack_parity.py")
 	if err := os.WriteFile(scriptPath, []byte(checkMsgpackParityPy), 0o644); err != nil {
@@ -173,13 +170,8 @@ func TestMessagePackParity(t *testing.T) {
 
 func TestMessagePackPythonToGoParity(t *testing.T) {
 	t.Parallel()
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-msgpack-parity-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-msgpack-parity-*")
+	defer cleanup()
 
 	const generateMsgpackParityPyExtended = `import RNS.vendor.umsgpack as umsgpack
 import sys

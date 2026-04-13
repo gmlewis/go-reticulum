@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestResolveFirmwareDownloadPlanUsesExplicitVersion(t *testing.T) {
@@ -79,12 +81,7 @@ func TestResolveFirmwareDownloadPlanUsesExtractedFirmware(t *testing.T) {
 func tempFirmwarePlanHome(t *testing.T) string {
 	t.Helper()
 
-	dir, err := os.MkdirTemp("", "gornodeconf-firmware-plan-*")
-	if err != nil {
-		t.Fatalf("create temp dir: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir)
-	})
+	dir, cleanup := testutils.TempDir(t, "gornodeconf-firmware-plan-*")
+	t.Cleanup(cleanup)
 	return dir
 }

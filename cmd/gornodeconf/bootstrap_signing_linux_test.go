@@ -16,16 +16,15 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestLoadBootstrapSignerSignsChecksums(t *testing.T) {
 	t.Parallel()
 
-	dir, err := os.MkdirTemp("", "gornodeconf-bootstrap-signing-*")
-	if err != nil {
-		t.Fatalf("mkdir temp dir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir, cleanup := testutils.TempDir(t, "gornodeconf-bootstrap-signing-*")
+	t.Cleanup(cleanup)
 	firmwareDir := filepath.Join(dir, "firmware")
 	if err := os.MkdirAll(firmwareDir, 0o755); err != nil {
 		t.Fatalf("mkdir firmware dir: %v", err)

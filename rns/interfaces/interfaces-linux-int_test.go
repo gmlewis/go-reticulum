@@ -60,13 +60,8 @@ except KeyboardInterrupt:
 func TestSerialInterfaceParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	pythonPath := getPythonPath()
-	tmpDir, err := os.MkdirTemp("", "rns-serial-parity-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "rns-serial-parity-")
+	t.Cleanup(cleanup)
 
 	scriptPath := filepath.Join(tmpDir, "serial_echo.py")
 	if err := os.WriteFile(scriptPath, []byte(pythonSerialEchoScript), 0o644); err != nil {

@@ -78,6 +78,9 @@ func TestMalformedDestinationHashExitCode(t *testing.T) {
 			if err := os.MkdirAll(configDir, 0o755); err != nil {
 				t.Fatalf("failed to create config dir: %v", err)
 			}
+			if err := os.WriteFile(filepath.Join(configDir, "config"), []byte("[reticulum]\nshare_instance = No\n"), 0o600); err != nil {
+				t.Fatalf("failed to write config: %v", err)
+			}
 
 			identityPath := filepath.Join(tmpDir, "identity")
 			_ = os.Remove(identityPath)
@@ -117,6 +120,9 @@ func TestMissingSendFileExitCode(t *testing.T) {
 	configDir := filepath.Join(tmpDir, "config")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte("[reticulum]\nshare_instance = No\n"), 0o600); err != nil {
+		t.Fatalf("failed to write config: %v", err)
 	}
 
 	identityPath := filepath.Join(tmpDir, "identity")
@@ -174,6 +180,9 @@ func TestCorruptIdentityFileExitCode(t *testing.T) {
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte("[reticulum]\nshare_instance = No\n"), 0o600); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
 	identityPath := filepath.Join(tmpDir, "identity")
 
 	// Write corrupt data to identity file
@@ -212,6 +221,9 @@ func TestOutputDirectoryNotFoundExitCode(t *testing.T) {
 	configDir := filepath.Join(tmpDir, "config")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte("[reticulum]\nshare_instance = No\n"), 0o600); err != nil {
+		t.Fatalf("failed to write config: %v", err)
 	}
 	// Create identity directory to avoid identity creation failure
 	identityDir := filepath.Join(tmpDir, ".reticulum", "identities")
@@ -253,6 +265,9 @@ func TestOutputDirectoryNotWritableExitCode(t *testing.T) {
 	configDir := filepath.Join(tmpDir, "config")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte("[reticulum]\nshare_instance = No\n"), 0o600); err != nil {
+		t.Fatalf("failed to write config: %v", err)
 	}
 	// Create identity directory to avoid identity creation failure
 	identityDir := filepath.Join(tmpDir, ".reticulum", "identities")

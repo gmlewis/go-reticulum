@@ -14,6 +14,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestRunFirmwareFlashUsesExtractedFirmwareCommand(t *testing.T) {
@@ -116,12 +118,7 @@ func TestRunFirmwareFlashRejectsUnsupportedPlatform(t *testing.T) {
 func tempFlashHome(t *testing.T) string {
 	t.Helper()
 
-	dir, err := os.MkdirTemp("", "gornodeconf-flash-*")
-	if err != nil {
-		t.Fatalf("create temp dir: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir)
-	})
+	dir, cleanup := testutils.TempDir(t, "gornodeconf-flash-*")
+	t.Cleanup(cleanup)
 	return dir
 }

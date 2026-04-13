@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestNewLoggerDefaultsAndMutation(t *testing.T) {
@@ -88,15 +90,9 @@ func TestNewLoggerWritesToCallbackAndFile(t *testing.T) {
 		t.Fatalf("callback output = %q, want message containing %q", got, "callback message")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "logger-test-")
-	if err != nil {
-		t.Fatalf("MkdirTemp error: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Fatalf("RemoveAll error: %v", err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "logger-test-")
+	defer cleanup()
+
 	logPath := filepath.Join(tmpDir, "logfile")
 	logger.SetLogFilePath(logPath)
 	logger.SetLogDest(LogDestFile)

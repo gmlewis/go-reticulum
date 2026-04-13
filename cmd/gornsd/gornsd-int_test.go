@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 type cliOutcome struct {
@@ -58,13 +59,8 @@ func repoRoot(t *testing.T) string {
 
 func buildGornsdBinary(t *testing.T) string {
 	t.Helper()
-	buildDir, err := os.MkdirTemp("", "gornsd-int-bin-*")
-	if err != nil {
-		t.Fatalf("failed to create build dir: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.RemoveAll(buildDir)
-	})
+	buildDir, cleanup := testutils.TempDir(t, "gornsd-int-bin-")
+	t.Cleanup(cleanup)
 
 	binaryPath := filepath.Join(buildDir, "gornsd")
 	cmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/gornsd")
@@ -312,11 +308,8 @@ func TestGornsdUnknownFlagExitCode2(t *testing.T) {
 
 func TestGornsdStartupAndSIGTERM(t *testing.T) {
 	t.Parallel()
-	configDir, err := os.MkdirTemp("", "gornsd-int-startup-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(configDir) })
+	configDir, cleanup := testutils.TempDir(t, "gornsd-int-startup-")
+	t.Cleanup(cleanup)
 	writeGornsdConfig(t, configDir, "No", 4)
 
 	binaryPath := buildGornsdBinary(t)
@@ -335,11 +328,8 @@ func TestGornsdStartupAndSIGTERM(t *testing.T) {
 
 func TestGornsdSIGINTBlankLine(t *testing.T) {
 	t.Parallel()
-	configDir, err := os.MkdirTemp("", "gornsd-int-sigint-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(configDir) })
+	configDir, cleanup := testutils.TempDir(t, "gornsd-int-sigint-")
+	t.Cleanup(cleanup)
 	writeGornsdConfig(t, configDir, "No", 4)
 
 	binaryPath := buildGornsdBinary(t)
@@ -358,11 +348,8 @@ func TestGornsdSIGINTBlankLine(t *testing.T) {
 
 func TestGornsdServiceModeLogsToFile(t *testing.T) {
 	t.Parallel()
-	configDir, err := os.MkdirTemp("", "gornsd-int-service-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(configDir) })
+	configDir, cleanup := testutils.TempDir(t, "gornsd-int-service-")
+	t.Cleanup(cleanup)
 	writeGornsdConfig(t, configDir, "No", 4)
 
 	binaryPath := buildGornsdBinary(t)
@@ -381,11 +368,8 @@ func TestGornsdServiceModeLogsToFile(t *testing.T) {
 
 func TestGornsdVerbosityIncreases(t *testing.T) {
 
-	configDir, err := os.MkdirTemp("", "gornsd-int-verbose-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(configDir) })
+	configDir, cleanup := testutils.TempDir(t, "gornsd-int-verbose-")
+	t.Cleanup(cleanup)
 	listenPort := reserveUDPPort(t)
 	forwardPort := reserveUDPPort(t)
 	writeGornsdUDPConfig(t, configDir, "No", 4, listenPort, forwardPort)
@@ -406,11 +390,8 @@ func TestGornsdVerbosityIncreases(t *testing.T) {
 
 func TestGornsdQuietDecreases(t *testing.T) {
 	t.Parallel()
-	configDir, err := os.MkdirTemp("", "gornsd-int-quiet-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(configDir) })
+	configDir, cleanup := testutils.TempDir(t, "gornsd-int-quiet-")
+	t.Cleanup(cleanup)
 	listenPort := reserveUDPPort(t)
 	forwardPort := reserveUDPPort(t)
 	writeGornsdUDPConfig(t, configDir, "No", 4, listenPort, forwardPort)
@@ -432,11 +413,8 @@ func TestGornsdQuietDecreases(t *testing.T) {
 
 func TestGornsdSharedInstanceWarning(t *testing.T) {
 	t.Parallel()
-	configDir, err := os.MkdirTemp("", "gornsd-int-shared-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(configDir) })
+	configDir, cleanup := testutils.TempDir(t, "gornsd-int-shared-")
+	t.Cleanup(cleanup)
 	sharedPort := reserveTCPPortForIntegration(t)
 	rpcPort := reserveTCPPortForIntegration(t)
 	config := fmt.Sprintf(`[reticulum]
@@ -482,11 +460,8 @@ loglevel = 4
 
 func TestGornsdInteractiveModeREPL(t *testing.T) {
 	t.Parallel()
-	configDir, err := os.MkdirTemp("", "gornsd-int-repl-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(configDir) })
+	configDir, cleanup := testutils.TempDir(t, "gornsd-int-shared-")
+	t.Cleanup(cleanup)
 	writeGornsdConfig(t, configDir, "No", 4)
 
 	binaryPath := buildGornsdBinary(t)

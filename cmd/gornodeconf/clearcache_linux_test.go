@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestClearCacheDeletesUpdateDirectory(t *testing.T) {
@@ -57,12 +59,7 @@ func TestClearCacheFailsWhenUpdateDirectoryIsMissing(t *testing.T) {
 func tempClearCacheHome(t *testing.T) string {
 	t.Helper()
 
-	dir, err := os.MkdirTemp("", "gornodeconf-clearcache-*")
-	if err != nil {
-		t.Fatalf("create temp home: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir)
-	})
+	dir, cleanup := testutils.TempDir(t, "gornodeconf-clearcache-*")
+	t.Cleanup(cleanup)
 	return dir
 }

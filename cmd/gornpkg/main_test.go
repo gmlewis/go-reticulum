@@ -62,6 +62,9 @@ func TestProgramSetupUsesVerbosityMinusQuietness(t *testing.T) {
 func TestProgramSetupForwardsConfigDirAndClosesReticulum(t *testing.T) {
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
+	if err := os.WriteFile(filepath.Join(tmpDir, "config"), []byte("[reticulum]\nshare_instance = No\n"), 0o600); err != nil {
+		t.Fatalf("write config error: %v", err)
+	}
 	logger := rns.NewLogger()
 
 	rt := &runtimeT{

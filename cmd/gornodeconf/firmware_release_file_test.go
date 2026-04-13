@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestReadFirmwareReleaseInfoFile(t *testing.T) {
@@ -41,12 +43,7 @@ func TestReadFirmwareReleaseInfoFileMissing(t *testing.T) {
 func tempFirmwareReleaseFileDir(t *testing.T) string {
 	t.Helper()
 
-	dir, err := os.MkdirTemp("", "gornodeconf-release-file-*")
-	if err != nil {
-		t.Fatalf("create temp dir: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir)
-	})
+	dir, cleanup := testutils.TempDir(t, "gornodeconf-release-file-*")
+	t.Cleanup(cleanup)
 	return dir
 }

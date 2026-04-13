@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestWriteEEPROMBackupWritesTimestampedFile(t *testing.T) {
@@ -67,12 +69,7 @@ func TestRunEEPROMBackupWritesExpectedMessage(t *testing.T) {
 func tempEEPROMBackupHome(t *testing.T) string {
 	t.Helper()
 
-	dir, err := os.MkdirTemp("", "gornodeconf-eeprom-backup-*")
-	if err != nil {
-		t.Fatalf("create temp dir: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir)
-	})
+	dir, cleanup := testutils.TempDir(t, "gornodeconf-eeprom-backup-*")
+	t.Cleanup(cleanup)
 	return dir
 }

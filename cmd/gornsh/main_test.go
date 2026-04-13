@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"bytes"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 const tempDirPrefix = "gornsh-test-"
@@ -348,13 +350,11 @@ func TestTTYRestorerNoOp(t *testing.T) {
 }
 
 func TestDoListenHandlesSIGINT(t *testing.T) {
-	configDir, err := os.MkdirTemp("", "gornsh-do-listen-sigint-*")
-	if err != nil {
-		t.Fatalf("os.MkdirTemp() error: %v", err)
+	configDir, cleanup := testutils.TempDir(t, "gornsh-do-listen-sigint-")
+	t.Cleanup(cleanup)
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte("[reticulum]\nshare_instance = No\n"), 0o600); err != nil {
+		t.Fatalf("write config error: %v", err)
 	}
-	t.Cleanup(func() {
-		_ = os.RemoveAll(configDir)
-	})
 
 	rt := newRuntime(options{configDir: configDir, listen: true, noAuth: true})
 
@@ -417,13 +417,11 @@ func TestDoListenHandlesSIGINT(t *testing.T) {
 }
 
 func TestPrintIdentityUsesPrettyHexDestination(t *testing.T) {
-	configDir, err := os.MkdirTemp("", "gornsh-print-identity-*")
-	if err != nil {
-		t.Fatalf("os.MkdirTemp() error: %v", err)
+	configDir, cleanup := testutils.TempDir(t, "gornsh-print-identity-")
+	t.Cleanup(cleanup)
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte("[reticulum]\nshare_instance = No\n"), 0o600); err != nil {
+		t.Fatalf("write config error: %v", err)
 	}
-	t.Cleanup(func() {
-		_ = os.RemoveAll(configDir)
-	})
 
 	rt := newRuntime(options{configDir: configDir, listen: true})
 

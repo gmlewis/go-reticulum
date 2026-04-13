@@ -6,19 +6,15 @@
 package main
 
 import (
-	"os"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func tempTrustKeyHome(t *testing.T) string {
 	t.Helper()
 
-	dir, err := os.MkdirTemp("", "gornodeconf-trustkey-*")
-	if err != nil {
-		t.Fatalf("create temp home: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir)
-	})
+	dir, cleanup := testutils.TempDir(t, "gornodeconf-trustkey-*")
+	t.Cleanup(cleanup)
 	return dir
 }

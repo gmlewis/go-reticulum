@@ -40,13 +40,6 @@ func TestMain(m *testing.M) {
 	}
 
 	binDir, cleanup := testutils.TempDirMain("gornsh-bin-")
-	defer func() {
-		cleanup()
-		out, err := exec.Command("/usr/bin/pkill", "-f", binDir).CombinedOutput()
-		if err != nil {
-			log.Fatalf("pkill -f %q failed: %v\n%s", binDir, err, out)
-		}
-	}()
 
 	gornshBinaryPath = filepath.Join(binDir, "gornsh")
 	build := exec.Command("go", "build", "-o", gornshBinaryPath, ".")
@@ -56,7 +49,18 @@ func TestMain(m *testing.M) {
 		log.Fatalf("failed to build gornsh binary: %v\n", err)
 	}
 
-	os.Exit(m.Run())
+	exitCode := m.Run()
+
+	// This section used to be in a `defer func() {...}()` but the `os.Exit` was
+	// preventing it from being run, so this section ensures that it actually runs
+	// before the process exits.
+	cleanup()
+	out, err := exec.Command("/usr/bin/pkill", "-f", binDir).CombinedOutput()
+	if err != nil {
+		log.Printf("pkill -f %q failed: %v\n%s", binDir, err, out)
+	}
+
+	os.Exit(exitCode)
 }
 
 func TestIntegrationScaffoldHelpers(t *testing.T) {
@@ -204,7 +208,6 @@ func TestIntegrationGoListenerGoInitiatorEcho(t *testing.T) {
 // Start `rnsh -l --no-auth` as a subprocess; wait for readiness line; connect with Go initiator;
 // verify stdout and exit code.
 func TestIntegrationPythonListenerGoInitiatorEcho(t *testing.T) {
-
 	testutils.SkipShortIntegration(t)
 	// Set up temporary directory for Python listener config
 	configDir, cleanup := testutils.TempDir(t, "gornsh-py-go-")

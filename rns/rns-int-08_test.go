@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 const ifacParityPy = `import RNS
@@ -139,9 +140,8 @@ func runPythonIFAC(t *testing.T, scriptPath, mode string, payload []byte, size i
 }
 
 func TestIFACParityWithPython(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-ifac-parity-*")
-	mustTest(t, err)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-ifac-parity-*")
+	defer cleanup()
 
 	scriptPath := filepath.Join(tmpDir, "ifac_parity.py")
 	if err := os.WriteFile(scriptPath, []byte(ifacParityPy), 0o644); err != nil {

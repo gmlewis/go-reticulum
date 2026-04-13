@@ -124,12 +124,12 @@ func TestParity_PrintIdentity(t *testing.T) {
 	idFile := filepath.Join(tmpDir, "test.id")
 
 	// Generate identity with Go.
-	if out, err := exec.Command(gornidBin, "-g", idFile).CombinedOutput(); err != nil {
+	if out, err := exec.Command(gornidBin, "--config", tmpDir, "-g", idFile).CombinedOutput(); err != nil {
 		t.Fatalf("gornid -g failed: %v\n%v", err, string(out))
 	}
 
 	// Print identity with Go.
-	goOut, err := exec.Command(gornidBin, "-i", idFile, "-p", "-P").CombinedOutput()
+	goOut, err := exec.Command(gornidBin, "--config", tmpDir, "-i", idFile, "-p", "-P").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornid -p failed: %v\n%v", err, string(goOut))
 	}
@@ -161,11 +161,11 @@ func TestParity_Export(t *testing.T) {
 	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 
-	if out, err := exec.Command(gornidBin, "-g", idFile).CombinedOutput(); err != nil {
+	if out, err := exec.Command(gornidBin, "--config", tmpDir, "-g", idFile).CombinedOutput(); err != nil {
 		t.Fatalf("gornid -g failed: %v\n%v", err, string(out))
 	}
 
-	goOut, err := exec.Command(gornidBin, "-i", idFile, "-x").CombinedOutput()
+	goOut, err := exec.Command(gornidBin, "--config", tmpDir, "-i", idFile, "-x").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornid -x failed: %v\n%v", err, string(goOut))
 	}
@@ -193,13 +193,13 @@ func TestParity_Hash(t *testing.T) {
 	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 
-	if out, err := exec.Command(gornidBin, "-g", idFile).CombinedOutput(); err != nil {
+	if out, err := exec.Command(gornidBin, "--config", tmpDir, "-g", idFile).CombinedOutput(); err != nil {
 		t.Fatalf("gornid -g failed: %v\n%v", err, string(out))
 	}
 
 	aspect := "myapp.delivery"
 
-	goOut, err := exec.Command(gornidBin, "-i", idFile, "-H", aspect).CombinedOutput()
+	goOut, err := exec.Command(gornidBin, "--config", tmpDir, "-i", idFile, "-H", aspect).CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornid -H failed: %v\n%v", err, string(goOut))
 	}
@@ -231,12 +231,12 @@ func TestParity_ImportHex(t *testing.T) {
 	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
 
-	if out, err := exec.Command(gornidBin, "-g", idFile).CombinedOutput(); err != nil {
+	if out, err := exec.Command(gornidBin, "--config", tmpDir, "-g", idFile).CombinedOutput(); err != nil {
 		t.Fatalf("gornid -g failed: %v\n%v", err, string(out))
 	}
 
 	// Export with Go to get hex.
-	goExpOut, err := exec.Command(gornidBin, "-i", idFile, "-x").CombinedOutput()
+	goExpOut, err := exec.Command(gornidBin, "--config", tmpDir, "-i", idFile, "-x").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornid -x failed: %v\n%v", err, string(goExpOut))
 	}
@@ -247,7 +247,7 @@ func TestParity_ImportHex(t *testing.T) {
 	}
 
 	// Import with Go.
-	goOut, err := exec.Command(gornidBin, "-m", hexStr, "-P").CombinedOutput()
+	goOut, err := exec.Command(gornidBin, "--config", tmpDir, "-m", hexStr, "-P").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornid -m failed: %v\n%v", err, string(goOut))
 	}
@@ -280,7 +280,7 @@ func TestParity_SignGoValidatePython(t *testing.T) {
 	idFile := filepath.Join(tmpDir, "test.id")
 	dataFile := filepath.Join(tmpDir, "data.txt")
 
-	if out, err := exec.Command(gornidBin, "-g", idFile).CombinedOutput(); err != nil {
+	if out, err := exec.Command(gornidBin, "--config", tmpDir, "-g", idFile).CombinedOutput(); err != nil {
 		t.Fatalf("gornid -g failed: %v\n%v", err, string(out))
 	}
 	if err := os.WriteFile(dataFile, []byte("cross-validation test data"), 0o644); err != nil {
@@ -288,7 +288,7 @@ func TestParity_SignGoValidatePython(t *testing.T) {
 	}
 
 	// Sign with Go.
-	if out, err := exec.Command(gornidBin, "-i", idFile, "-s", dataFile).CombinedOutput(); err != nil {
+	if out, err := exec.Command(gornidBin, "--config", tmpDir, "-i", idFile, "-s", dataFile).CombinedOutput(); err != nil {
 		t.Fatalf("gornid -s failed: %v\n%v", err, string(out))
 	}
 	sigFile := dataFile + ".rsg"
@@ -315,7 +315,7 @@ func TestParity_SignPythonValidateGo(t *testing.T) {
 	dataFile := filepath.Join(tmpDir, "data.txt")
 	sigFile := filepath.Join(tmpDir, "data.txt.rsg")
 
-	if out, err := exec.Command(gornidBin, "-g", idFile).CombinedOutput(); err != nil {
+	if out, err := exec.Command(gornidBin, "--config", tmpDir, "-g", idFile).CombinedOutput(); err != nil {
 		t.Fatalf("gornid -g failed: %v\n%v", err, string(out))
 	}
 	if err := os.WriteFile(dataFile, []byte("reverse cross-validation test"), 0o644); err != nil {
@@ -328,7 +328,7 @@ func TestParity_SignPythonValidateGo(t *testing.T) {
 	}
 
 	// Validate with Go.
-	goOut, err := exec.Command(gornidBin, "-i", idFile, "-V", sigFile, "-r", dataFile).CombinedOutput()
+	goOut, err := exec.Command(gornidBin, "--config", tmpDir, "-i", idFile, "-V", sigFile, "-r", dataFile).CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornid -V failed (Python signature rejected by Go): %v\n%v", err, string(goOut))
 	}
@@ -350,7 +350,7 @@ func TestParity_EncryptGoDecryptPython(t *testing.T) {
 	encFile := filepath.Join(tmpDir, "plain.txt.rfe")
 	decFile := filepath.Join(tmpDir, "decrypted.txt")
 
-	if out, err := exec.Command(gornidBin, "-g", idFile).CombinedOutput(); err != nil {
+	if out, err := exec.Command(gornidBin, "--config", tmpDir, "-g", idFile).CombinedOutput(); err != nil {
 		t.Fatalf("gornid -g failed: %v\n%v", err, string(out))
 	}
 
@@ -360,7 +360,7 @@ func TestParity_EncryptGoDecryptPython(t *testing.T) {
 	}
 
 	// Encrypt with Go.
-	if out, err := exec.Command(gornidBin, "-i", idFile, "-e", plainFile).CombinedOutput(); err != nil {
+	if out, err := exec.Command(gornidBin, "--config", tmpDir, "-i", idFile, "-e", plainFile).CombinedOutput(); err != nil {
 		t.Fatalf("gornid -e failed: %v\n%v", err, string(out))
 	}
 	// Decrypt with Python.
@@ -389,7 +389,7 @@ func TestParity_EncryptPythonDecryptGo(t *testing.T) {
 	encFile := filepath.Join(tmpDir, "plain.txt.rfe")
 	decFile := filepath.Join(tmpDir, "decrypted.txt")
 
-	if out, err := exec.Command(gornidBin, "-g", idFile).CombinedOutput(); err != nil {
+	if out, err := exec.Command(gornidBin, "--config", tmpDir, "-g", idFile).CombinedOutput(); err != nil {
 		t.Fatalf("gornid -g failed: %v\n%v", err, string(out))
 	}
 
@@ -404,7 +404,7 @@ func TestParity_EncryptPythonDecryptGo(t *testing.T) {
 	}
 
 	// Decrypt with Go.
-	if out, err := exec.Command(gornidBin, "-i", idFile, "-d", encFile, "-w", decFile).CombinedOutput(); err != nil {
+	if out, err := exec.Command(gornidBin, "--config", tmpDir, "-i", idFile, "-d", encFile, "-w", decFile).CombinedOutput(); err != nil {
 		t.Fatalf("gornid -d failed (Python ciphertext rejected by Go): %v\n%v", err, string(out))
 	}
 

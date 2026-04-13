@@ -15,6 +15,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestRunFirmwareExtractWritesExpectedArtifacts(t *testing.T) {
@@ -143,12 +145,7 @@ func TestRunFirmwareExtractRejectsNonESP32(t *testing.T) {
 func tempExtractFirmwareHome(t *testing.T) string {
 	t.Helper()
 
-	dir, err := os.MkdirTemp("", "gornodeconf-extract-firmware-*")
-	if err != nil {
-		t.Fatalf("create temp dir: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir)
-	})
+	dir, cleanup := testutils.TempDir(t, "gornodeconf-extract-firmware-*")
+	t.Cleanup(cleanup)
 	return dir
 }

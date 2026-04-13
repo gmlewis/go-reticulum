@@ -19,6 +19,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func runPythonRatchetEncrypt(t *testing.T, initScriptPath, pyStorage string, destHash, pubKey, msg []byte, pyListenPort, goListenPort int, announceFn func() error) ([]byte, []byte, string) {
@@ -367,13 +369,8 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-ratchet-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-ratchet-*")
+	defer cleanup()
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -506,13 +503,8 @@ func TestRatchetPythonToGoParity(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-ratchet-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-ratchet-*")
+	defer cleanup()
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -606,13 +598,8 @@ func TestRatchetRotationParity(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-ratchet-rotation-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-ratchet-rotation-*")
+	defer cleanup()
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -709,13 +696,8 @@ func TestRatchetRetentionWindowParity(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-ratchet-retention-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-ratchet-retention-*")
+	defer cleanup()
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -811,13 +793,8 @@ func TestRatchetEnforceParity(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-ratchet-enforce-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-ratchet-enforce-*")
+	defer cleanup()
 
 	ts := NewTransportSystem(nil)
 	id := mustTestNewIdentity(t, true)
@@ -867,13 +844,8 @@ func TestRatchetFileInteropParity(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-ratchet-file-interop-*")
-	mustTest(t, err)
-	t.Cleanup(func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-		}
-	})
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-ratchet-file-interop-*")
+	defer cleanup()
 
 	ts := NewTransportSystem(nil)
 

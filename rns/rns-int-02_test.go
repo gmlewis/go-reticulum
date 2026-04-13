@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 const integratedReceiverPy = `import RNS
@@ -835,9 +836,8 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 		t.Skip("Skipping integrated test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-integrated-*")
-	mustTest(t, err)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-integrated-*")
+	defer cleanup()
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -988,9 +988,8 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 		t.Skip("Skipping integrated test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-large-request-*")
-	mustTest(t, err)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-large-request-*")
+	defer cleanup()
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -1131,9 +1130,8 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 		t.Skip("Skipping integrated test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-integrated-*")
-	mustTest(t, err)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-integrated-*")
+	defer cleanup()
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -1237,9 +1235,8 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 		t.Skip("Skipping integrated test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-large-py-to-go-*")
-	mustTest(t, err)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-large-py-to-go-*")
+	defer cleanup()
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -1322,9 +1319,8 @@ func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 		t.Skip("Skipping integrated test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-integrated-*")
-	mustTest(t, err)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-integrated-*")
+	defer cleanup()
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -1429,9 +1425,8 @@ func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
 		t.Skip("Skipping integrated test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-*")
-	mustTest(t, err)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-*")
+	defer cleanup()
 
 	goListenPort, requesterPort := allocateUDPPortPair(t)
 
@@ -1515,9 +1510,8 @@ func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 		t.Skip("Skipping integrated test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-*")
-	mustTest(t, err)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-*")
+	defer cleanup()
 
 	goListenPort, sinkPort := allocateUDPPortPair(t)
 
@@ -1615,9 +1609,8 @@ func TestIntegratedPathResponseAnnounceNotRebroadcastUDP(t *testing.T) {
 		t.Skip("Skipping integrated test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-pathresp-norebroadcast-*")
-	mustTest(t, err)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-pathresp-norebroadcast-*")
+	defer cleanup()
 
 	ingressListenPort := allocateUDPPort(t)
 	ingressForwardPort := allocateUDPPort(t)
@@ -1702,9 +1695,8 @@ func TestIntegratedRelayedPathResponsePropagationUDP(t *testing.T) {
 		t.Skip("Skipping integrated test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-pathresp-relay-*")
-	mustTest(t, err)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-pathresp-relay-*")
+	defer cleanup()
 
 	relayIngressListenPort := allocateUDPPort(t)
 	relayEgressListenPort := allocateUDPPort(t)
@@ -1858,9 +1850,8 @@ func TestIntegratedRelayedPathResponsePropagationPythonRequesterUDP(t *testing.T
 		t.Skip("Skipping integrated test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-pathresp-python-requester-*")
-	mustTest(t, err)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-pathresp-python-requester-*")
+	defer cleanup()
 
 	pyListenPort := allocateUDPPort(t)
 	relayIngressListenPort := allocateUDPPort(t)
@@ -2015,9 +2006,8 @@ func TestIntegratedRelayedPathResponsePropagationPythonRelayUDP(t *testing.T) {
 		t.Skip("Skipping integrated test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-pathresp-python-relay-*")
-	mustTest(t, err)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-pathresp-python-relay-")
+	defer cleanup()
 
 	pyIngressListenPort := allocateUDPPort(t)
 	requesterPort := allocateUDPPort(t)
@@ -2194,9 +2184,8 @@ func TestIntegratedAnnouncePropagationPythonRelayUDP(t *testing.T) {
 		t.Skip("Skipping integrated test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-announce-python-relay-*")
-	mustTest(t, err)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-announce-python-relay-")
+	defer cleanup()
 
 	pyIngressListenPort := allocateUDPPort(t)
 	requesterPort := allocateUDPPort(t)
@@ -2358,9 +2347,8 @@ func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 		t.Skip("Skipping integrated test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-path-invalidate-py-*")
-	mustTest(t, err)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-path-invalidate-py-")
+	defer cleanup()
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -2472,9 +2460,8 @@ func TestIntegratedRelayedPathResponseGoRequesterToPythonTargetUDP(t *testing.T)
 		t.Skip("Skipping integrated test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-pathresp-go-relay-python-target-*")
-	mustTest(t, err)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-pathresp-go-relay-python-target-")
+	defer cleanup()
 
 	pyListenPort := allocateUDPPort(t)
 	relayEgressListenPort := allocateUDPPort(t)
@@ -2632,9 +2619,8 @@ func TestIntegratedPythonRelayPathRequestEmissionUDP(t *testing.T) {
 		t.Skip("Skipping integrated test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-python-relay-pr-emitter-*")
-	mustTest(t, err)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-python-relay-pr-emitter-")
+	defer cleanup()
 
 	pyIngressListenPort := allocateUDPPort(t)
 	requesterPort := allocateUDPPort(t)
@@ -2643,9 +2629,6 @@ func TestIntegratedPythonRelayPathRequestEmissionUDP(t *testing.T) {
 
 	targetID := mustTestNewIdentity(t, true)
 	targetDest := mustTestNewDestination(t, nil, targetID, DestinationIn, DestinationSingle, "relay", "forward_target")
-	if err != nil {
-		t.Fatalf("failed creating target destination: %v", err)
-	}
 	tag := bytes.Repeat([]byte{0x3C}, TruncatedHashLength/8)
 
 	scriptPath := filepath.Join(tmpDir, "integrated_relay_path_request_emitter.py")
@@ -2758,9 +2741,8 @@ func TestIntegratedPythonRelayInboundPathRequestForwardingUDP(t *testing.T) {
 		t.Skip("Skipping integrated test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "go-reticulum-python-relay-inbound-forward-*")
-	mustTest(t, err)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-python-relay-inbound-forward-")
+	defer cleanup()
 
 	pyRelayIngressListenPort := allocateUDPPort(t)
 	pyRequesterListenPort := allocateUDPPort(t)
@@ -2769,9 +2751,6 @@ func TestIntegratedPythonRelayInboundPathRequestForwardingUDP(t *testing.T) {
 
 	targetID := mustTestNewIdentity(t, true)
 	targetDest := mustTestNewDestination(t, nil, targetID, DestinationIn, DestinationSingle, "relay", "inbound_forward_target")
-	if err != nil {
-		t.Fatalf("failed creating target destination: %v", err)
-	}
 	tag := bytes.Repeat([]byte{0x52}, TruncatedHashLength/8)
 
 	relayScriptPath := filepath.Join(tmpDir, "integrated_relay.py")

@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 const integratedBzip2PolicyResponderPy = `import RNS
@@ -222,13 +223,8 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, err := os.MkdirTemp("", "go-reticulum-policy-go2py-*")
-			mustTest(t, err)
-			t.Cleanup(func() {
-				if err := os.RemoveAll(tmpDir); err != nil {
-					t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-				}
-			})
+			tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-policy-go2py-*")
+			defer cleanup()
 
 			pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -575,13 +571,8 @@ func TestIntegratedResponseResourceCompressionPolicyPythonToGo(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, err := os.MkdirTemp("", "go-reticulum-policy-py2go-*")
-			mustTest(t, err)
-			t.Cleanup(func() {
-				if err := os.RemoveAll(tmpDir); err != nil {
-					t.Logf("failed to remove temp dir %v: %v", tmpDir, err)
-				}
-			})
+			tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-policy-py2go-*")
+			defer cleanup()
 
 			pyListenPort, goListenPort := allocateUDPPortPair(t)
 

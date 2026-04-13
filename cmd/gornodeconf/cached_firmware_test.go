@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestLoadCachedFirmwareReleaseInfo(t *testing.T) {
@@ -93,12 +95,7 @@ func TestLoadCachedFirmwareReleaseInfoMissingFirmwareFile(t *testing.T) {
 func tempCachedFirmwareDir(t *testing.T) string {
 	t.Helper()
 
-	dir, err := os.MkdirTemp("", "gornodeconf-cached-firmware-*")
-	if err != nil {
-		t.Fatalf("create temp dir: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir)
-	})
+	dir, cleanup := testutils.TempDir(t, "gornodeconf-cached-firmware-*")
+	t.Cleanup(cleanup)
 	return dir
 }

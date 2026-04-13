@@ -11,16 +11,15 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestWriteDeviceIdentityBackupWritesSerialNamedFile(t *testing.T) {
 	t.Parallel()
 
-	dir, err := os.MkdirTemp("", "gornodeconf-device-db-*")
-	if err != nil {
-		t.Fatalf("mkdir temp dir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir, cleanup := testutils.TempDir(t, "gornodeconf-device-db-*")
+	t.Cleanup(cleanup)
 
 	path, err := writeDeviceIdentityBackup(dir, 0x01020304, []byte{0xaa, 0xbb, 0xcc})
 	if err != nil {

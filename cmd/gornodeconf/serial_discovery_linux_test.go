@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestDiscoverRnodeSerialPortPrefersJTAGSymlink(t *testing.T) {
@@ -83,13 +85,8 @@ func TestResolveLivePortUsesDiscoveredPort(t *testing.T) {
 func tempSerialDiscoveryDir(t *testing.T) string {
 	t.Helper()
 
-	dir, err := os.MkdirTemp("", "gornodeconf-discovery-*")
-	if err != nil {
-		t.Fatalf("create temp discovery dir: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir)
-	})
+	dir, cleanup := testutils.TempDir(t, "gornodeconf-discovery-*")
+	t.Cleanup(cleanup)
 	return dir
 }
 

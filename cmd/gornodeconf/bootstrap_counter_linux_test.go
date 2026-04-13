@@ -11,16 +11,15 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestNextBootstrapSerialNumberDefaultsToOne(t *testing.T) {
 	t.Parallel()
 
-	dir, err := os.MkdirTemp("", "gornodeconf-bootstrap-counter-*")
-	if err != nil {
-		t.Fatalf("mkdir temp dir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir, cleanup := testutils.TempDir(t, "gornodeconf-bootstrap-counter-*")
+	t.Cleanup(cleanup)
 
 	got, err := nextBootstrapSerialNumber(dir)
 	if err != nil {
@@ -41,11 +40,8 @@ func TestNextBootstrapSerialNumberDefaultsToOne(t *testing.T) {
 func TestNextBootstrapSerialNumberIncrementsExistingValue(t *testing.T) {
 	t.Parallel()
 
-	dir, err := os.MkdirTemp("", "gornodeconf-bootstrap-counter-*")
-	if err != nil {
-		t.Fatalf("mkdir temp dir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir, cleanup := testutils.TempDir(t, "gornodeconf-bootstrap-counter-*")
+	t.Cleanup(cleanup)
 	counterPath := filepath.Join(dir, "firmware", "serial.counter")
 	if err := os.MkdirAll(filepath.Dir(counterPath), 0o755); err != nil {
 		t.Fatalf("mkdir firmware dir: %v", err)

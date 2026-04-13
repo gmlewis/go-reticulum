@@ -6,25 +6,16 @@
 package main
 
 import (
-	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func tempSerialPort(t *testing.T) string {
 	t.Helper()
 
-	base := ""
-	if runtime.GOOS == "darwin" {
-		base = "/tmp"
-	}
-	dir, err := os.MkdirTemp(base, "gornodeconf-port-*")
-	if err != nil {
-		t.Fatalf("create temp dir: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.RemoveAll(dir)
-	})
+	dir, cleanup := testutils.TempDir(t, "gornodeconf-port-*")
+	t.Cleanup(cleanup)
 	return filepath.Join(dir, "port")
 }

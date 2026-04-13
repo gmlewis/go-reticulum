@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func allowClosedNetworkErr(err error) bool {
@@ -37,11 +39,8 @@ func TestLocalUnixServerClientLifecycleAndRestart(t *testing.T) {
 		received <- data
 	}
 
-	tmp, err := os.MkdirTemp("/tmp", "go-ret-local-*")
-	if err != nil {
-		t.Fatalf("MkdirTemp error: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(tmp) }()
+	tmp, cleanup := testutils.TempDir(t, "go-ret-local-*")
+	defer cleanup()
 
 	socketPath := filepath.Join(tmp, "local.sock")
 
@@ -125,11 +124,8 @@ func TestLocalServerRemovesStaleSocketPath(t *testing.T) {
 		t.Skip("unix sockets not supported on windows")
 	}
 
-	tmp, err := os.MkdirTemp("/tmp", "go-ret-local-stale-*")
-	if err != nil {
-		t.Fatalf("MkdirTemp error: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(tmp) }()
+	tmp, cleanup := testutils.TempDir(t, "go-ret-local-stale-*")
+	defer cleanup()
 
 	socketPath := filepath.Join(tmp, "stale.sock")
 
@@ -153,11 +149,8 @@ func TestLocalServerRejectsTakeoverWhenSocketActive(t *testing.T) {
 		t.Skip("unix sockets not supported on windows")
 	}
 
-	tmp, err := os.MkdirTemp("/tmp", "go-ret-local-active-*")
-	if err != nil {
-		t.Fatalf("MkdirTemp error: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(tmp) }()
+	tmp, cleanup := testutils.TempDir(t, "go-ret-local-active-*")
+	defer cleanup()
 
 	socketPath := filepath.Join(tmp, "active.sock")
 
