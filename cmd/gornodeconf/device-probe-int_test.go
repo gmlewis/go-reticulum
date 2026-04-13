@@ -87,6 +87,7 @@ func (s *loopbackSleeper) Sleep(duration time.Duration) {
 }
 
 func TestDeviceProbeSucceedsOverSocatLoopback(t *testing.T) {
+	t.Parallel()
 	hostPath, devicePath := startSocatPTYPair(t)
 
 	hostPort, err := rnodeOpenSerial(hostPath)
@@ -133,6 +134,7 @@ func TestDeviceProbeSucceedsOverSocatLoopback(t *testing.T) {
 }
 
 func TestDeviceProbeFailsOverSocatLoopbackWithoutResponse(t *testing.T) {
+	t.Parallel()
 	hostPath, _ := startSocatPTYPair(t)
 
 	hostPort, err := rnodeOpenSerial(hostPath)

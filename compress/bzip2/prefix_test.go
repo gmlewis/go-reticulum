@@ -12,6 +12,7 @@ import (
 )
 
 func TestDegenerateCodes(t *testing.T) {
+	t.Parallel()
 	vectors := []struct {
 		input  prefix.PrefixCodes
 		output prefix.PrefixCodes

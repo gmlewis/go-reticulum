@@ -15,6 +15,7 @@ import (
 )
 
 func TestRunFirmwareHashReadbacksPrintsPythonLines(t *testing.T) {
+	t.Parallel()
 	serial := &liveHashSerial{reads: append(validRnodeEEPROMFrame(), []byte{
 		kissFend, rnodeKISSCommandFWVersion, 0x02, 0x05, kissFend,
 		kissFend, rnodeKISSCommandDevHash,
@@ -69,6 +70,7 @@ func TestRunFirmwareHashReadbacksPrintsPythonLines(t *testing.T) {
 }
 
 func TestRunFirmwareHashReadbacksReturnsTimeoutError(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}

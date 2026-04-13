@@ -14,6 +14,7 @@ import (
 )
 
 func TestRunFirmwareHashSetWritesPythonFrame(t *testing.T) {
+	t.Parallel()
 	serial := &liveHashSerial{reads: validRnodeEEPROMFrame()}
 	rt := cliRuntime{openSerial: func(settings serialSettings) (serialPort, error) {
 		return serial, nil
@@ -46,6 +47,7 @@ func TestRunFirmwareHashSetWritesPythonFrame(t *testing.T) {
 }
 
 func TestRunFirmwareHashSetRejectsInvalidInput(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	if err := newRuntime().runFirmwareHashSet(&out, "ttyUSB0", "not-a-hash"); err == nil {
 		t.Fatal("expected invalid hash error")
@@ -56,6 +58,7 @@ func TestRunFirmwareHashSetRejectsInvalidInput(t *testing.T) {
 }
 
 func TestRunFirmwareHashSetCanRestoreOriginalValue(t *testing.T) {
+	t.Parallel()
 	serials := []*liveHashSerial{
 		{reads: validRnodeEEPROMFrame()},
 		{reads: validRnodeEEPROMFrame()},

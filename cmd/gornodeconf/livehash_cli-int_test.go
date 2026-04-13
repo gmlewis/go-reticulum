@@ -16,6 +16,7 @@ import (
 )
 
 func TestRunFirmwareHashReadbacksPrintsPythonLinesCLI(t *testing.T) {
+	t.Parallel()
 	serial := &liveHashSerial{reads: append(validRnodeEEPROMFrame(), []byte{
 		kissFend, rnodeKISSCommandFWVersion, 0x02, 0x05, kissFend,
 		kissFend, rnodeKISSCommandDevHash,
@@ -62,6 +63,7 @@ func TestRunFirmwareHashReadbacksPrintsPythonLinesCLI(t *testing.T) {
 }
 
 func TestRunFirmwareHashReadbacksReturnsTimeoutErrorCLI(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	serial := &liveHashSerial{blockOnEmpty: true, wait: make(chan struct{})}
 	rt := cliRuntime{openSerial: func(settings serialSettings) (serialPort, error) {

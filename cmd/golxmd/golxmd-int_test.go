@@ -34,6 +34,7 @@ func buildGolxmd(t *testing.T) (string, func()) {
 }
 
 func TestGolxmd_Version(t *testing.T) {
+	t.Parallel()
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
 
@@ -49,6 +50,7 @@ func TestGolxmd_Version(t *testing.T) {
 }
 
 func TestGolxmd_ExampleConfig(t *testing.T) {
+	t.Parallel()
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
 
@@ -76,6 +78,7 @@ func TestGolxmd_ExampleConfig(t *testing.T) {
 }
 
 func TestGolxmd_Help(t *testing.T) {
+	t.Parallel()
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
 
@@ -106,6 +109,7 @@ func TestGolxmd_Help(t *testing.T) {
 }
 
 func TestGolxmd_LongFormParserAliases(t *testing.T) {
+	t.Parallel()
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
 
@@ -121,6 +125,7 @@ func TestGolxmd_LongFormParserAliases(t *testing.T) {
 }
 
 func TestGolxmd_Status_WithNoRemote(t *testing.T) {
+	t.Parallel()
 	skipShortIntegration(t)
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
@@ -163,6 +168,7 @@ func TestGolxmd_Status_WithNoRemote(t *testing.T) {
 }
 
 func TestGolxmd_Break_WithInvalidHash(t *testing.T) {
+	t.Parallel()
 	skipShortIntegration(t)
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
@@ -199,6 +205,7 @@ func TestGolxmd_Break_WithInvalidHash(t *testing.T) {
 }
 
 func TestGolxmd_Sync_WithInvalidHash(t *testing.T) {
+	t.Parallel()
 	skipShortIntegration(t)
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
@@ -235,6 +242,7 @@ func TestGolxmd_Sync_WithInvalidHash(t *testing.T) {
 }
 
 func TestGolxmd_Status_OutputFormat(t *testing.T) {
+	t.Parallel()
 	skipShortIntegration(t)
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
@@ -279,6 +287,7 @@ func TestGolxmd_Status_OutputFormat(t *testing.T) {
 }
 
 func TestGolxmd_Status_WithShowStatusFlag(t *testing.T) {
+	t.Parallel()
 	skipShortIntegration(t)
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
@@ -325,6 +334,7 @@ func TestGolxmd_Status_WithShowStatusFlag(t *testing.T) {
 }
 
 func TestGolxmd_Peers_OutputFormat(t *testing.T) {
+	t.Parallel()
 	skipShortIntegration(t)
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()
@@ -381,6 +391,7 @@ func TestGolxmd_Peers_OutputFormat(t *testing.T) {
 }
 
 func TestGolxmd_Break_Timeout(t *testing.T) {
+	t.Parallel()
 	skipShortIntegration(t)
 	golxmdBin, cleanup := buildGolxmd(t)
 	defer cleanup()

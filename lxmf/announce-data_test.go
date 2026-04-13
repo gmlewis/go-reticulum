@@ -12,6 +12,7 @@ import (
 )
 
 func TestDisplayNameFromAppData(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		appData []byte

@@ -12,6 +12,7 @@ import (
 
 // TestHelpOutput verifies that the help output matches Python's argparse format.
 func TestHelpOutput(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		check func(output string) bool

@@ -17,6 +17,7 @@ import (
 )
 
 func TestMessagePackUnpackRoundTrip(t *testing.T) {
+	t.Parallel()
 	destinationID, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(destination): %v", err)
@@ -79,6 +80,7 @@ func TestMessagePackUnpackRoundTrip(t *testing.T) {
 }
 
 func TestMessagePackIncludesStampAndUnpacksIt(t *testing.T) {
+	t.Parallel()
 	destinationID, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(destination): %v", err)
@@ -119,6 +121,7 @@ func TestMessagePackIncludesStampAndUnpacksIt(t *testing.T) {
 }
 
 func TestMessageHashMatchesProtocolMaterial(t *testing.T) {
+	t.Parallel()
 	destinationID, err := rns.NewIdentity(true, nil)
 	if err != nil {
 		t.Fatalf("NewIdentity(destination): %v", err)
@@ -162,6 +165,7 @@ func TestMessageHashMatchesProtocolMaterial(t *testing.T) {
 }
 
 func TestWriteToDirectory(t *testing.T) {
+	t.Parallel()
 	destID, err := rns.NewIdentity(true, nil)
 	mustTest(t, err)
 	srcID, err := rns.NewIdentity(true, nil)

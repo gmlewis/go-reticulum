@@ -20,19 +20,20 @@ import (
 
 func writeGornsdConfig(t *testing.T, dir string, shareInstance string, loglevel int) {
 	t.Helper()
+	instanceName := filepath.Base(dir)
 	config := fmt.Sprintf(`[reticulum]
 share_instance = %v
+instance_name = %v
 
 [logging]
 loglevel = %v
 
 [interfaces]
-`, shareInstance, loglevel)
+`, shareInstance, instanceName, loglevel)
 	if err := os.WriteFile(filepath.Join(dir, "config"), []byte(config), 0o600); err != nil {
 		t.Fatalf("write config error: %v", err)
 	}
 }
-
 func reserveTCPPort(t *testing.T) int {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -81,6 +82,7 @@ func countMessageContains(messages []string, want string) int {
 }
 
 func TestProgramSetupAppliesVerbosityAndLogsNotice(t *testing.T) {
+	t.Parallel()
 	configDir, cleanup := testutils.TempDir(t, "gornsd-program-setup-")
 	defer cleanup()
 	writeGornsdConfig(t, configDir, "No", 4)
@@ -121,6 +123,7 @@ func TestProgramSetupAppliesVerbosityAndLogsNotice(t *testing.T) {
 }
 
 func TestProgramSetupServiceUsesFileLogging(t *testing.T) {
+	t.Parallel()
 	configDir, cleanup := testutils.TempDir(t, "gornsd-program-service-")
 	defer cleanup()
 	writeGornsdConfig(t, configDir, "No", 4)
@@ -153,6 +156,7 @@ func TestProgramSetupServiceUsesFileLogging(t *testing.T) {
 }
 
 func TestProgramSetupServiceKeepsConfigLogLevel(t *testing.T) {
+	t.Parallel()
 	configDir, cleanup := testutils.TempDir(t, "gornsd-program-service-level-")
 	defer cleanup()
 	writeGornsdConfig(t, configDir, "No", 4)
@@ -181,6 +185,7 @@ func TestProgramSetupServiceKeepsConfigLogLevel(t *testing.T) {
 }
 
 func TestProgramSetupConnectedSharedInstanceLogsWarning(t *testing.T) {
+	t.Parallel()
 	configDir, cleanup := testutils.TempDir(t, "gornsd-program-shared-")
 	defer cleanup()
 	sharedPort := reserveTCPPort(t)
@@ -243,6 +248,7 @@ loglevel = 4
 }
 
 func TestProgramSetupAppliesVerbosityBeforeStartupLogging(t *testing.T) {
+	t.Parallel()
 	configDir, cleanup := testutils.TempDir(t, "gornsd-program-verbosity-")
 	defer cleanup()
 	writeGornsdConfig(t, configDir, "No", 4)

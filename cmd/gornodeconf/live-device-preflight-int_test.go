@@ -13,6 +13,7 @@ import (
 )
 
 func TestLiveRnodeSerialPreflight(t *testing.T) {
+	t.Parallel()
 	port := os.Getenv("GORNODECONF_LIVE_SERIAL_PORT")
 	if port == "" {
 		t.Skip("GORNODECONF_LIVE_SERIAL_PORT not set")

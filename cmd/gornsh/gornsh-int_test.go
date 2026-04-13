@@ -60,12 +60,14 @@ func TestMain(m *testing.M) {
 }
 
 func TestIntegrationScaffoldHelpers(t *testing.T) {
+	t.Parallel()
 	if got := getRnshPythonPath(); got == "" {
 		t.Fatal("getRnshPythonPath() returned empty path")
 	}
 }
 
 func TestIntegrationVersionOutputFormatParity(t *testing.T) {
+	t.Parallel()
 	pythonBin := getRnshBinaryPath(t)
 	gornshBin := getGornshBinaryPath(t)
 	pythonOut, err := exec.Command(pythonBin, "--version").CombinedOutput()
@@ -94,6 +96,7 @@ func TestIntegrationVersionOutputFormatParity(t *testing.T) {
 }
 
 func TestIntegrationListenPrintIdentityOutputFormatParity(t *testing.T) {
+	t.Parallel()
 	pythonBin := getRnshBinaryPath(t)
 	gornshBin := getGornshBinaryPath(t)
 	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -131,6 +134,7 @@ func TestIntegrationListenPrintIdentityOutputFormatParity(t *testing.T) {
 }
 
 func TestIntegrationPrintIdentityOutputFormatParity(t *testing.T) {
+	t.Parallel()
 	pythonBin := getRnshBinaryPath(t)
 	gornshBin := getGornshBinaryPath(t)
 	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -166,6 +170,7 @@ func TestIntegrationPrintIdentityOutputFormatParity(t *testing.T) {
 }
 
 func TestIntegrationGoListenerGoInitiatorEcho(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	configDir, cleanup := testutils.TempDir(t, "gornsh-go-go-")
 	defer cleanup()
@@ -199,6 +204,7 @@ func TestIntegrationGoListenerGoInitiatorEcho(t *testing.T) {
 // Start `rnsh -l --no-auth` as a subprocess; wait for readiness line; connect with Go initiator;
 // verify stdout and exit code.
 func TestIntegrationPythonListenerGoInitiatorEcho(t *testing.T) {
+
 	testutils.SkipShortIntegration(t)
 	// Set up temporary directory for Python listener config
 	configDir, cleanup := testutils.TempDir(t, "gornsh-py-go-")
@@ -231,6 +237,7 @@ func TestIntegrationPythonListenerGoInitiatorEcho(t *testing.T) {
 }
 
 func TestIntegrationGoListenerPythonInitiatorEcho(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	// Listener config
 	lConfigDir, cleanup1 := testutils.TempDir(t, "gornsh-go-listen-")
@@ -309,6 +316,7 @@ type gornshListenerProcess struct {
 }
 
 func TestIntegrationAllowedIdentityEnforcement(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	// Listener config
 	lConfigDir, cleanup1 := testutils.TempDir(t, "gornsh-go-allowed-listen-")
@@ -369,6 +377,7 @@ func TestIntegrationAllowedIdentityEnforcement(t *testing.T) {
 }
 
 func TestIntegrationMirrorFlag(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	configDir, cleanup := testutils.TempDir(t, "gornsh-mirror-")
 	defer cleanup()
@@ -444,6 +453,7 @@ func TestIntegrationMirrorFlag(t *testing.T) {
 }
 
 func TestIntegrationNoAuthOpenListener(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
 	t.Run("no-auth allows unknown identities", func(t *testing.T) {
@@ -504,6 +514,7 @@ func TestIntegrationNoAuthOpenListener(t *testing.T) {
 }
 
 func TestIntegrationNetworkPartitionRecovery(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	configDir, cleanup := testutils.TempDir(t, "gornsh-recovery-")
 	defer cleanup()
@@ -840,6 +851,12 @@ func startPythonListener(t *testing.T, configDir, instanceName string, listenPor
 		t.Fatalf("failed to start Python listener: %v", err)
 	}
 
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+	})
+
 	proc := &pythonListenerProcess{
 		cmd:     cmd,
 		stdout:  &bytes.Buffer{},
@@ -850,6 +867,7 @@ func startPythonListener(t *testing.T, configDir, instanceName string, listenPor
 	go func() {
 		defer func() {
 			_ = reader.Close()
+			_ = writer.Close()
 		}()
 		lineCount := 0
 		scanner := bufio.NewScanner(reader)
@@ -868,12 +886,13 @@ func startPythonListener(t *testing.T, configDir, instanceName string, listenPor
 				}
 			}
 			proc.hashMu.Unlock()
-			log.Printf("[PY-SCANNER] scanner done, lineCount=%v, err=%v", lineCount, scanner.Err())
 		}
 		if err := scanner.Err(); err != nil {
+			log.Printf("[PY-SCANNER] scanner error after %v lines: %v", lineCount, err)
 			proc.waitCh <- err
 			return
 		}
+		log.Printf("[PY-SCANNER] scanner finished after %v lines", lineCount)
 		proc.waitCh <- nil
 	}()
 

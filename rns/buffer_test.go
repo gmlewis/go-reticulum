@@ -30,6 +30,7 @@ func (o *mockOutlet) IsUsable() bool                    { return true }
 func (o *mockOutlet) TimedOut()                         {}
 
 func TestBuffer(t *testing.T) {
+	t.Parallel()
 	outlet := &mockOutlet{mdu: 500, rtt: 0.1}
 	channel := NewChannel(outlet)
 
@@ -63,6 +64,7 @@ func TestBuffer(t *testing.T) {
 }
 
 func TestBidirectionalBuffer(t *testing.T) {
+	t.Parallel()
 	outlet1 := &mockOutlet{mdu: 500, rtt: 0.1}
 	channel1 := NewChannel(outlet1)
 
@@ -111,6 +113,7 @@ func TestBidirectionalBuffer(t *testing.T) {
 }
 
 func TestBidirectionalBufferCloseRemovesOnlyItsHandler(t *testing.T) {
+	t.Parallel()
 	outlet := &mockOutlet{mdu: 500, rtt: 0.1}
 	channel := NewChannel(outlet)
 
@@ -139,6 +142,7 @@ func TestBidirectionalBufferCloseRemovesOnlyItsHandler(t *testing.T) {
 }
 
 func TestStreamDataMessageUnpackDecompressesCompressedPayload(t *testing.T) {
+	t.Parallel()
 	original := bytes.Repeat([]byte("abc123"), 128)
 	compressed, err := CompressBzip2(original, 0)
 	if err != nil {
@@ -164,6 +168,7 @@ func TestStreamDataMessageUnpackDecompressesCompressedPayload(t *testing.T) {
 }
 
 func TestChannelWriterCompressesWhenSmaller(t *testing.T) {
+	t.Parallel()
 	var sawCompressed bool
 	outlet := &mockOutlet{mdu: 5000, rtt: 0.1}
 	channel := NewChannel(outlet)
@@ -201,6 +206,7 @@ func TestChannelWriterCompressesWhenSmaller(t *testing.T) {
 }
 
 func TestChannelWriterCompressionCanBeDisabled(t *testing.T) {
+	t.Parallel()
 	outlet := &mockOutlet{mdu: 5000, rtt: 0.1}
 	channel := NewChannel(outlet)
 	reader := Buffer.CreateReader(2, channel)

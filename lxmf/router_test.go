@@ -20,6 +20,7 @@ import (
 const tempDirPrefix = "lxmf-test-"
 
 func TestNewRouterRequiresStoragePath(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	if _, err := NewRouter(ts, nil, ""); err == nil {
 		t.Fatal("expected error when storage path is empty")
@@ -27,6 +28,7 @@ func TestNewRouterRequiresStoragePath(t *testing.T) {
 }
 
 func TestRegisterDeliveryIdentitySingleDestinationOnly(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -48,6 +50,7 @@ func TestRegisterDeliveryIdentitySingleDestinationOnly(t *testing.T) {
 }
 
 func TestHandleOutboundValidatesMessage(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -59,6 +62,7 @@ func TestHandleOutboundValidatesMessage(t *testing.T) {
 }
 
 func TestProcessOutboundDirectRequestsPathWhenUnavailable(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -100,6 +104,7 @@ func TestProcessOutboundDirectRequestsPathWhenUnavailable(t *testing.T) {
 }
 
 func TestProcessOutboundOpportunisticPathRecoversWithoutPathRequest(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -165,6 +170,7 @@ func TestProcessOutboundOpportunisticPathRecoversWithoutPathRequest(t *testing.T
 }
 
 func TestProcessOutboundOpportunisticEscalatesToPathRequestThenSends(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -226,6 +232,7 @@ func TestProcessOutboundOpportunisticEscalatesToPathRequestThenSends(t *testing.
 }
 
 func TestProcessOutboundSendFailureEventuallyFails(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -258,6 +265,7 @@ func TestProcessOutboundSendFailureEventuallyFails(t *testing.T) {
 }
 
 func TestProcessOutboundSendSuccessSetsSent(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -284,6 +292,7 @@ func TestProcessOutboundSendSuccessSetsSent(t *testing.T) {
 }
 
 func TestProcessOutboundSentMessageNotResentUntilTimeout(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -321,6 +330,7 @@ func TestProcessOutboundSentMessageNotResentUntilTimeout(t *testing.T) {
 }
 
 func TestProcessOutboundTimeoutRequeuesForRetry(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -374,6 +384,7 @@ func TestProcessOutboundTimeoutRequeuesForRetry(t *testing.T) {
 }
 
 func TestProcessOutboundDeliveryCallbackSetsDeliveredAndPreventsTimeoutRequeue(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -421,6 +432,7 @@ func TestProcessOutboundDeliveryCallbackSetsDeliveredAndPreventsTimeoutRequeue(t
 }
 
 func TestProcessOutboundSelectsPacketRepresentation(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -458,6 +470,7 @@ func TestProcessOutboundSelectsPacketRepresentation(t *testing.T) {
 }
 
 func TestProcessOutboundSelectsResourceRepresentation(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -503,6 +516,7 @@ func TestProcessOutboundSelectsResourceRepresentation(t *testing.T) {
 }
 
 func TestProcessOutboundResourceUnsupportedFails(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -546,6 +560,7 @@ func TestProcessOutboundResourceUnsupportedFails(t *testing.T) {
 }
 
 func TestProcessOutboundResourceLinkPendingRetryNoAttemptIncrement(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -590,6 +605,7 @@ func TestProcessOutboundResourceLinkPendingRetryNoAttemptIncrement(t *testing.T)
 }
 
 func TestSendMessageResourceLockedEstablishError(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -620,6 +636,7 @@ func TestSendMessageResourceLockedEstablishError(t *testing.T) {
 }
 
 func TestProcessOutboundResourceSendFailureEventuallyFails(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -657,6 +674,7 @@ func TestProcessOutboundResourceSendFailureEventuallyFails(t *testing.T) {
 }
 
 func TestProcessOutboundResourceSendRetriesThenSucceeds(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -704,6 +722,7 @@ func TestProcessOutboundResourceSendRetriesThenSucceeds(t *testing.T) {
 }
 
 func TestProcessOutboundDropsTerminalStatesFromQueue(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -722,6 +741,7 @@ func TestProcessOutboundDropsTerminalStatesFromQueue(t *testing.T) {
 }
 
 func TestHandleInboundResourceDataDeliversMessage(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -756,6 +776,7 @@ func TestHandleInboundResourceDataDeliversMessage(t *testing.T) {
 }
 
 func TestHandleInboundResourceDataIgnoresInvalidPayload(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -774,6 +795,7 @@ func TestHandleInboundResourceDataIgnoresInvalidPayload(t *testing.T) {
 }
 
 func TestRegisterPropagationControlDestination(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -797,6 +819,7 @@ func TestRegisterPropagationControlDestination(t *testing.T) {
 }
 
 func TestControlStatsGetRequest(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -835,6 +858,7 @@ func TestControlStatsGetRequest(t *testing.T) {
 }
 
 func TestControlStatsGetRequestAccessErrors(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -855,6 +879,7 @@ func TestControlStatsGetRequestAccessErrors(t *testing.T) {
 }
 
 func TestControlPeerSyncAndUnpeerRequests(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -881,6 +906,7 @@ func TestControlPeerSyncAndUnpeerRequests(t *testing.T) {
 }
 
 func TestControlPeerSyncBackoff(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -910,6 +936,7 @@ func TestControlPeerSyncBackoff(t *testing.T) {
 }
 
 func TestPruneStalePeers(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -940,6 +967,7 @@ func TestPruneStalePeers(t *testing.T) {
 }
 
 func TestControlPeerSyncAndUnpeerErrors(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -981,6 +1009,7 @@ func TestControlPeerSyncAndUnpeerErrors(t *testing.T) {
 }
 
 func TestRegisterPropagationDestination(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1004,6 +1033,7 @@ func TestRegisterPropagationDestination(t *testing.T) {
 }
 
 func TestOfferRequestReturnsWantedIDs(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1038,6 +1068,7 @@ func TestOfferRequestReturnsWantedIDs(t *testing.T) {
 }
 
 func TestOfferRequestInvalidKey(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1058,6 +1089,7 @@ func TestOfferRequestInvalidKey(t *testing.T) {
 }
 
 func TestOfferRequestThrottled(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1084,6 +1116,7 @@ func TestOfferRequestThrottled(t *testing.T) {
 }
 
 func TestOfferRequestStaticOnlyNoAccess(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1106,6 +1139,7 @@ func TestOfferRequestStaticOnlyNoAccess(t *testing.T) {
 }
 
 func TestOfferRequestPeeringCostValidation(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1144,6 +1178,7 @@ func TestOfferRequestPeeringCostValidation(t *testing.T) {
 }
 
 func TestRouterPolicyConfigurationAPIs(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1223,6 +1258,7 @@ func TestRouterPolicyConfigurationAPIs(t *testing.T) {
 }
 
 func TestApplyPolicyConfig(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1285,6 +1321,7 @@ func TestApplyPolicyConfig(t *testing.T) {
 }
 
 func TestApplyPolicyConfigErrors(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1314,6 +1351,7 @@ func TestApplyPolicyConfigErrors(t *testing.T) {
 }
 
 func TestNewRouterWithConfigAppliesPolicy(t *testing.T) {
+	t.Parallel()
 	remoteIdentity := mustTestNewIdentity(t, true)
 	remotePropagationHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
 
@@ -1346,6 +1384,7 @@ func TestNewRouterWithConfigAppliesPolicy(t *testing.T) {
 }
 
 func TestNewRouterWithConfigReturnsPolicyError(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	td, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1355,6 +1394,7 @@ func TestNewRouterWithConfigReturnsPolicyError(t *testing.T) {
 }
 
 func TestMessageGetRequestListAndFetch(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1414,6 +1454,7 @@ func TestMessageGetRequestListAndFetch(t *testing.T) {
 }
 
 func TestMessageGetRequestRequiresIdentity(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1431,6 +1472,7 @@ func TestMessageGetRequestRequiresIdentity(t *testing.T) {
 }
 
 func TestMessageGetRequestNoAccessWhenAuthRequired(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1464,6 +1506,7 @@ func (e assertErr) Error() string {
 }
 
 func TestDeliveryPacketOpportunisticAndDirect(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1516,6 +1559,7 @@ func TestDeliveryPacketOpportunisticAndDirect(t *testing.T) {
 }
 
 func TestNewRouterFromConfig(t *testing.T) {
+	t.Parallel()
 	id := mustTestNewIdentity(t, true)
 
 	maxPeers := 5
@@ -1554,6 +1598,7 @@ func TestNewRouterFromConfig(t *testing.T) {
 }
 
 func TestNewRouterFromConfigDefaults(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	td, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1580,6 +1625,7 @@ func TestNewRouterFromConfigDefaults(t *testing.T) {
 }
 
 func TestNewRouterFromConfigSyncLimitClamped(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	td, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1596,6 +1642,7 @@ func TestNewRouterFromConfigSyncLimitClamped(t *testing.T) {
 }
 
 func TestRouterIgnoreDestination(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1615,6 +1662,7 @@ func TestRouterIgnoreDestination(t *testing.T) {
 }
 
 func TestRouterEnforceStamps(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1632,6 +1680,7 @@ func TestRouterEnforceStamps(t *testing.T) {
 }
 
 func TestRouterMessageStorageLimit(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1649,6 +1698,7 @@ func TestRouterMessageStorageLimit(t *testing.T) {
 }
 
 func TestRouterPrioritise(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1668,6 +1718,7 @@ func TestRouterPrioritise(t *testing.T) {
 }
 
 func TestRouterSetInboundStampCost(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1714,6 +1765,7 @@ func TestRouterSetInboundStampCost(t *testing.T) {
 }
 
 func TestRouterAnnounce(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1738,6 +1790,7 @@ func TestRouterAnnounce(t *testing.T) {
 }
 
 func TestRequestMessagesNoPropNode(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1750,6 +1803,7 @@ func TestRequestMessagesNoPropNode(t *testing.T) {
 }
 
 func TestRequestMessagesPathRequested(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1776,6 +1830,7 @@ func TestRequestMessagesPathRequested(t *testing.T) {
 }
 
 func TestRequestMessagesLinkEstablished(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1801,6 +1856,7 @@ func TestRequestMessagesLinkEstablished(t *testing.T) {
 }
 
 func TestRequestMessagesLinkFailed(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1825,6 +1881,7 @@ func TestRequestMessagesLinkFailed(t *testing.T) {
 }
 
 func TestCancelPropagationResetsState(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1857,6 +1914,7 @@ func TestCancelPropagationResetsState(t *testing.T) {
 }
 
 func TestProcessOutboundPropagatedNoNodeFails(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1891,6 +1949,7 @@ func TestProcessOutboundPropagatedNoNodeFails(t *testing.T) {
 }
 
 func TestProcessOutboundPropagatedRequestsPathThenSends(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1947,6 +2006,7 @@ func TestProcessOutboundPropagatedRequestsPathThenSends(t *testing.T) {
 }
 
 func TestProcessOutboundPropagatedSentRemovesFromQueue(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -1988,6 +2048,7 @@ func TestProcessOutboundPropagatedSentRemovesFromQueue(t *testing.T) {
 }
 
 func TestProcessOutboundTryPropagationOnFailFallback(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -2047,6 +2108,7 @@ func TestProcessOutboundTryPropagationOnFailFallback(t *testing.T) {
 }
 
 func TestProcessOutboundFailedCallbackInvoked(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -2086,6 +2148,7 @@ func TestProcessOutboundFailedCallbackInvoked(t *testing.T) {
 }
 
 func TestSetDisplayNameAndAnnounceAppData(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -2141,6 +2204,7 @@ func TestSetDisplayNameAndAnnounceAppData(t *testing.T) {
 }
 
 func TestSetDisplayNameNilReturnsNilAppData(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -2161,6 +2225,7 @@ func TestSetDisplayNameNilReturnsNilAppData(t *testing.T) {
 }
 
 func TestSetDisplayNameNoStampCost(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -2199,6 +2264,7 @@ func TestSetDisplayNameNoStampCost(t *testing.T) {
 }
 
 func TestAnnounceIncludesAppData(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -2278,6 +2344,7 @@ func TestAnnounceIncludesAppData(t *testing.T) {
 }
 
 func TestAnnounceWithoutDisplayNamePassesNilAppData(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -2310,6 +2377,7 @@ func TestAnnounceWithoutDisplayNamePassesNilAppData(t *testing.T) {
 }
 
 func TestRouterPropagationToggle(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()

@@ -17,6 +17,7 @@ import (
 )
 
 func TestFetchModeSavesReceivedFiles(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
 	// Create temp directories

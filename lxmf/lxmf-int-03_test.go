@@ -687,6 +687,7 @@ with open(out_path, "wb") as f:
 `
 
 func TestIntegrationPropagationOfferPythonToGo(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -738,6 +739,7 @@ func TestIntegrationPropagationOfferPythonToGo(t *testing.T) {
 }
 
 func TestIntegrationPropagationOfferInvalidKeyPythonToGo(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -775,6 +777,7 @@ func TestIntegrationPropagationOfferInvalidKeyPythonToGo(t *testing.T) {
 }
 
 func TestIntegrationPropagationOfferThrottledPythonToGo(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -818,6 +821,7 @@ func TestIntegrationPropagationOfferThrottledPythonToGo(t *testing.T) {
 }
 
 func TestIntegrationPropagationOfferThrottleExpiredPythonToGo(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -865,6 +869,7 @@ func TestIntegrationPropagationOfferThrottleExpiredPythonToGo(t *testing.T) {
 }
 
 func TestIntegrationPropagationOfferStaticOnlyPythonToGo(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -905,6 +910,7 @@ func TestIntegrationPropagationOfferStaticOnlyPythonToGo(t *testing.T) {
 }
 
 func TestIntegrationPropagationOfferStaticAllowedPythonToGo(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -947,6 +953,7 @@ func TestIntegrationPropagationOfferStaticAllowedPythonToGo(t *testing.T) {
 }
 
 func TestIntegrationPropagationOfferAllKnownPythonToGo(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -988,6 +995,7 @@ func TestIntegrationPropagationOfferAllKnownPythonToGo(t *testing.T) {
 }
 
 func TestIntegrationPropagationOfferAllMissingPythonToGo(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -1027,6 +1035,7 @@ func TestIntegrationPropagationOfferAllMissingPythonToGo(t *testing.T) {
 }
 
 func TestIntegrationPropagationMessageGetGoToPython(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -1100,6 +1109,7 @@ func TestIntegrationPropagationMessageGetGoToPython(t *testing.T) {
 }
 
 func TestIntegrationPropagationMessageGetRetryGoToPython(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -1169,6 +1179,7 @@ func TestIntegrationPropagationMessageGetRetryGoToPython(t *testing.T) {
 }
 
 func TestIntegrationPropagationMessageGetPurgeRetryGoToPython(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -1259,6 +1270,7 @@ func TestIntegrationPropagationMessageGetPurgeRetryGoToPython(t *testing.T) {
 }
 
 func TestIntegrationPropagationMessageGetAccessGoToPython(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -1307,6 +1319,7 @@ func TestIntegrationPropagationMessageGetAccessGoToPython(t *testing.T) {
 }
 
 func TestIntegrationPropagationMessageGetRetryPythonToGo(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -1374,6 +1387,7 @@ func TestIntegrationPropagationMessageGetRetryPythonToGo(t *testing.T) {
 }
 
 func TestIntegrationPropagationMessageGetAccessPythonToGo(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -1429,6 +1443,7 @@ func TestIntegrationPropagationMessageGetAccessPythonToGo(t *testing.T) {
 }
 
 func TestIntegrationPropagationControlRecoveryGoToPython(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -1478,6 +1493,7 @@ func TestIntegrationPropagationControlRecoveryGoToPython(t *testing.T) {
 }
 
 func TestIntegrationPropagationControlPeerErrorsGoToPython(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -1542,6 +1558,7 @@ func TestIntegrationPropagationControlPeerErrorsGoToPython(t *testing.T) {
 }
 
 func TestIntegrationPropagationControlRecoveryPythonToGo(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -1597,6 +1614,7 @@ func TestIntegrationPropagationControlRecoveryPythonToGo(t *testing.T) {
 }
 
 func TestIntegrationPropagationControlPeerSyncBackoffPythonToGo(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -1645,6 +1663,7 @@ func TestIntegrationPropagationControlPeerSyncBackoffPythonToGo(t *testing.T) {
 }
 
 func TestIntegrationPropagationControlPeerPrunePythonToGo(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -1696,6 +1715,7 @@ func TestIntegrationPropagationControlPeerPrunePythonToGo(t *testing.T) {
 }
 
 func TestIntegrationPropagationControlStatsGoToPython(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -1751,6 +1771,7 @@ func TestIntegrationPropagationControlStatsGoToPython(t *testing.T) {
 }
 
 func TestIntegrationPropagationControlStatsPythonToGo(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -1798,6 +1819,7 @@ func TestIntegrationPropagationControlStatsPythonToGo(t *testing.T) {
 }
 
 func TestIntegrationPropagationOfferInvalidKeyGoToPython(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -1830,6 +1852,7 @@ func TestIntegrationPropagationOfferInvalidKeyGoToPython(t *testing.T) {
 }
 
 func TestIntegrationPropagationOfferThrottledGoToPython(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -1862,6 +1885,7 @@ func TestIntegrationPropagationOfferThrottledGoToPython(t *testing.T) {
 }
 
 func TestIntegrationPropagationOfferThrottleExpiredGoToPython(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -1894,6 +1918,7 @@ func TestIntegrationPropagationOfferThrottleExpiredGoToPython(t *testing.T) {
 }
 
 func TestIntegrationPropagationOfferStaticOnlyGoToPython(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -1926,6 +1951,7 @@ func TestIntegrationPropagationOfferStaticOnlyGoToPython(t *testing.T) {
 }
 
 func TestIntegrationPropagationOfferStaticAllowedGoToPython(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -1958,6 +1984,7 @@ func TestIntegrationPropagationOfferStaticAllowedGoToPython(t *testing.T) {
 }
 
 func TestIntegrationPropagationOfferAllKnownGoToPython(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -1990,6 +2017,7 @@ func TestIntegrationPropagationOfferAllKnownGoToPython(t *testing.T) {
 }
 
 func TestIntegrationPropagationOfferAllMissingGoToPython(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -2022,6 +2050,7 @@ func TestIntegrationPropagationOfferAllMissingGoToPython(t *testing.T) {
 }
 
 func TestIntegrationPeeringKeyValidationGoToPython(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -2072,6 +2101,7 @@ func TestIntegrationPeeringKeyValidationGoToPython(t *testing.T) {
 }
 
 func TestIntegrationPeeringKeyValidationPythonToGo(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)

@@ -66,6 +66,7 @@ func (s *debugSerialStub) Close() error {
 }
 
 func TestRnodeOpenSerialUsesPythonSettings(t *testing.T) {
+	t.Parallel()
 	var got serialSettings
 	rt := cliRuntime{openSerial: func(settings serialSettings) (serialPort, error) {
 		got = settings
@@ -104,6 +105,7 @@ func TestRnodeOpenSerialUsesPythonSettings(t *testing.T) {
 }
 
 func TestDebugSerialLogsTraffic(t *testing.T) {
+	t.Parallel()
 	var logOutput bytes.Buffer
 	oldFlags := log.Flags()
 	oldPrefix := log.Prefix()
@@ -153,6 +155,7 @@ func TestDebugSerialLogsTraffic(t *testing.T) {
 }
 
 func TestGracefulExitLeavesRNodeBeforeExiting(t *testing.T) {
+	t.Parallel()
 	controller := newExitController()
 	leaver := &stubLeaver{}
 	serial := &stubSerial{}
@@ -180,6 +183,7 @@ func TestGracefulExitLeavesRNodeBeforeExiting(t *testing.T) {
 }
 
 func TestGracefulExitClosesRawSerialWhenNoRNode(t *testing.T) {
+	t.Parallel()
 	controller := newExitController()
 	serial := &stubSerial{}
 	controller.activeRNode = nil

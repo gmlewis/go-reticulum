@@ -208,6 +208,7 @@ if __name__ == "__main__":
 `
 
 func TestHMACParity(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
 	mustTest(t, err)
 	t.Cleanup(func() {
@@ -239,6 +240,7 @@ func TestHMACParity(t *testing.T) {
 }
 
 func TestEd25519Parity(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
 	mustTest(t, err)
 	t.Cleanup(func() {
@@ -272,6 +274,7 @@ func TestEd25519Parity(t *testing.T) {
 }
 
 func TestX25519Parity(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
 	mustTest(t, err)
 	t.Cleanup(func() {
@@ -309,6 +312,7 @@ func TestX25519Parity(t *testing.T) {
 }
 
 func TestHKDFParity(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
 	mustTest(t, err)
 	t.Cleanup(func() {
@@ -343,6 +347,7 @@ func TestHKDFParity(t *testing.T) {
 }
 
 func TestTokenParity(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
 	mustTest(t, err)
 	t.Cleanup(func() {
@@ -377,6 +382,7 @@ func TestTokenParity(t *testing.T) {
 }
 
 func TestSHA256Parity(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
 	mustTest(t, err)
 	t.Cleanup(func() {
@@ -407,6 +413,7 @@ func TestSHA256Parity(t *testing.T) {
 }
 
 func TestSHA512Parity(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
 	mustTest(t, err)
 	t.Cleanup(func() {
@@ -437,6 +444,7 @@ func TestSHA512Parity(t *testing.T) {
 }
 
 func TestPKCS7Parity(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
 	mustTest(t, err)
 	t.Cleanup(func() {
@@ -483,6 +491,7 @@ func TestPKCS7Parity(t *testing.T) {
 }
 
 func TestAES128Parity(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
 	mustTest(t, err)
 	t.Cleanup(func() {
@@ -532,6 +541,7 @@ func TestAES128Parity(t *testing.T) {
 }
 
 func TestAES256Parity(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-crypto-parity-*")
 	mustTest(t, err)
 	t.Cleanup(func() {

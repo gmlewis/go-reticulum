@@ -11,6 +11,7 @@ import (
 )
 
 func TestTicketStoreGenerateAndReuse(t *testing.T) {
+	t.Parallel()
 	store := NewTicketStore()
 	destinationHash := []byte("destination-hash-01")
 	now := time.Unix(1700000000, 0)
@@ -33,6 +34,7 @@ func TestTicketStoreGenerateAndReuse(t *testing.T) {
 }
 
 func TestTicketStoreDeliveryIntervalGate(t *testing.T) {
+	t.Parallel()
 	store := NewTicketStore()
 	destinationHash := []byte("destination-hash-02")
 	now := time.Unix(1700000000, 0)
@@ -45,6 +47,7 @@ func TestTicketStoreDeliveryIntervalGate(t *testing.T) {
 }
 
 func TestTicketStoreOutboundAndInboundQueries(t *testing.T) {
+	t.Parallel()
 	store := NewTicketStore()
 	destinationHash := []byte("destination-hash-03")
 	now := time.Unix(1700000000, 0)

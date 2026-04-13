@@ -164,6 +164,7 @@ func captureStdout(f func()) string {
 }
 
 func TestVersionParity(t *testing.T) {
+	t.Parallel()
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	configDir := filepath.Join(tmpDir, "config")
@@ -181,6 +182,7 @@ func TestVersionParity(t *testing.T) {
 }
 
 func TestIdentityDisplayParity(t *testing.T) {
+	t.Parallel()
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	idPath := filepath.Join(tmpDir, "identity")
@@ -227,6 +229,7 @@ func TestIdentityDisplayParity(t *testing.T) {
 }
 
 func TestHelpParity(t *testing.T) {
+	t.Parallel()
 	_ = runPython(t, "/tmp/nonexistent-py", "--help")
 	goOut := usageText
 
@@ -256,6 +259,7 @@ func TestHelpParity(t *testing.T) {
 }
 
 func TestUnauthenticatedTransferParity(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -412,6 +416,7 @@ share_instance = No
 }
 
 func TestListenModeIdentityCreation(t *testing.T) {
+	t.Parallel()
 	// Create a temp directory for config
 	tmpDir, cleanup := testutils.TempDir(t, "gorncp-test-")
 	defer cleanup()
@@ -457,6 +462,7 @@ func TestListenModeIdentityCreation(t *testing.T) {
 }
 
 func TestFetchFileNotFoundOnRemote(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -573,6 +579,7 @@ share_instance = No
 }
 
 func TestFetchPathLookupTimeout(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -619,6 +626,7 @@ func TestFetchPathLookupTimeout(t *testing.T) {
 }
 
 func TestFetchLinkEstablishmentTimeout(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -675,6 +683,7 @@ func TestFetchLinkEstablishmentTimeout(t *testing.T) {
 }
 
 func TestFetchRequestTimeout(t *testing.T) {
+
 	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -802,6 +811,7 @@ enable_transport = Yes
 }
 
 func TestFetchDownloadTimeout(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
 	done := make(chan struct{})
@@ -815,6 +825,7 @@ func TestFetchDownloadTimeout(t *testing.T) {
 }
 
 func TestSendTransferTimeout(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
 	done := make(chan struct{})
@@ -828,6 +839,7 @@ func TestSendTransferTimeout(t *testing.T) {
 }
 
 func TestFetchNotAllowedByRemote(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -951,6 +963,7 @@ share_instance = No
 }
 
 func TestSendTransferFailure(t *testing.T) {
+	t.Parallel()
 	if got := sendTransferError(rns.ResourceStatusFailed); got == nil || got.Error() != "The transfer failed" {
 		t.Fatalf("sendTransferError(ResourceStatusFailed) = %v, want %q", got, "The transfer failed")
 	}
@@ -960,6 +973,7 @@ func TestSendTransferFailure(t *testing.T) {
 }
 
 func TestFetchRemoteErrorWhenLinkIsMissing(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "gorncp-test-")
@@ -979,6 +993,7 @@ func TestFetchRemoteErrorWhenLinkIsMissing(t *testing.T) {
 }
 
 func TestFetchUnknownUnauthorizedError(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
 	rr := &rns.RequestReceipt{Status: rns.RequestSent}

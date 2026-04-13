@@ -19,6 +19,7 @@ import (
 var discoveryTestData []byte
 
 func TestListDiscoveredInterfaces(t *testing.T) {
+	t.Parallel()
 	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-")
 	defer cleanup()
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
@@ -72,6 +73,7 @@ func TestListDiscoveredInterfaces(t *testing.T) {
 }
 
 func TestListDiscoveredInterfaces_StatusThresholds(t *testing.T) {
+	t.Parallel()
 	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-status-")
 	defer cleanup()
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")

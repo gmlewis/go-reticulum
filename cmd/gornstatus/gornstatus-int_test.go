@@ -38,6 +38,7 @@ func buildGornstatus(t *testing.T) (string, func()) {
 }
 
 func TestIntegration_VersionOutput(t *testing.T) {
+	t.Parallel()
 	bin, cleanupBin := buildGornstatus(t)
 	defer cleanupBin()
 	out, err := exec.Command(bin, "--version").CombinedOutput()
@@ -52,6 +53,7 @@ func TestIntegration_VersionOutput(t *testing.T) {
 }
 
 func TestIntegration_HelpOutput(t *testing.T) {
+	t.Parallel()
 	bin, cleanupBin := buildGornstatus(t)
 	defer cleanupBin()
 	out, err := exec.Command(bin, "--help").CombinedOutput()
@@ -84,6 +86,7 @@ func TestIntegration_HelpOutput(t *testing.T) {
 }
 
 func TestIntegration_ExitCodeZero(t *testing.T) {
+	t.Parallel()
 	bin, cleanupBin := buildGornstatus(t)
 	defer cleanupBin()
 	tmpDir, cleanup := testutils.TempDirWithConfig(t, tempDirPrefix, func(dir string) string {
@@ -99,6 +102,7 @@ func TestIntegration_ExitCodeZero(t *testing.T) {
 }
 
 func TestIntegration_SIGINTCleanExit(t *testing.T) {
+	t.Parallel()
 	bin, cleanupBin := buildGornstatus(t)
 	defer cleanupBin()
 	tmpDir, cleanup := testutils.TempDirWithConfig(t, tempDirPrefix, func(dir string) string {
@@ -123,6 +127,7 @@ func TestIntegration_SIGINTCleanExit(t *testing.T) {
 }
 
 func TestIntegration_MonitorModeSIGINT(t *testing.T) {
+	t.Parallel()
 	bin, cleanupBin := buildGornstatus(t)
 	defer cleanupBin()
 	tmpDir, cleanup := testutils.TempDirWithConfig(t, tempDirPrefix, func(dir string) string {
@@ -147,6 +152,7 @@ func TestIntegration_MonitorModeSIGINT(t *testing.T) {
 }
 
 func TestIntegration_VerboseStacking(t *testing.T) {
+	t.Parallel()
 	bin, cleanupBin := buildGornstatus(t)
 	defer cleanupBin()
 	out, err := exec.Command(bin, "-v", "-v", "--version").CombinedOutput()
@@ -161,6 +167,7 @@ func TestIntegration_VerboseStacking(t *testing.T) {
 }
 
 func TestIntegration_RemoteStatus(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	bin, cleanupBin := buildGornstatus(t)
 	defer cleanupBin()
@@ -303,6 +310,7 @@ func TestIntegration_RemoteStatus(t *testing.T) {
 }
 
 func TestIntegration_Discovered(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	bin, cleanupBin := buildGornstatus(t)
 	defer cleanupBin()

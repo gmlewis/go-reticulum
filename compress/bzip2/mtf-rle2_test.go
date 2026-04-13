@@ -12,6 +12,7 @@ import (
 )
 
 func TestMoveToFront(t *testing.T) {
+	t.Parallel()
 	getDict := func(buf []byte) []uint8 {
 		var dictMap [256]bool
 		for _, b := range buf {

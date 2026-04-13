@@ -13,6 +13,7 @@ import (
 )
 
 func TestPreflightRnodeSerialReturnsOpenPort(t *testing.T) {
+	t.Parallel()
 	serial := &stubSerial{}
 	rt := cliRuntime{openSerial: func(settings serialSettings) (serialPort, error) {
 		return serial, nil
@@ -31,6 +32,7 @@ func TestPreflightRnodeSerialReturnsOpenPort(t *testing.T) {
 }
 
 func TestPreflightRnodeSerialReturnsOpenError(t *testing.T) {
+	t.Parallel()
 	wantErr := errors.New("serial missing")
 	rt := cliRuntime{openSerial: func(settings serialSettings) (serialPort, error) {
 		return nil, wantErr

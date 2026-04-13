@@ -15,6 +15,7 @@ import (
 )
 
 func TestCaptureRnodeEEPROMReadsPythonFrame(t *testing.T) {
+	t.Parallel()
 
 	serial := &liveHashSerial{reads: validRnodeEEPROMFrame()}
 	state, err := captureRnodeEEPROM("ttyUSB0", serial, time.Second)
@@ -33,6 +34,7 @@ func TestCaptureRnodeEEPROMReadsPythonFrame(t *testing.T) {
 }
 
 func TestCaptureRnodeEEPROMTimesOut(t *testing.T) {
+	t.Parallel()
 
 	serial := &liveHashSerial{blockOnEmpty: true, wait: make(chan struct{})}
 	_, err := captureRnodeEEPROM("ttyUSB0", serial, 5*time.Millisecond)

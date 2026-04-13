@@ -12,6 +12,7 @@ import (
 )
 
 func TestRequestResponse(t *testing.T) {
+	t.Parallel()
 	tsInitiator := newTestTransportSystem(t)
 	tsReceiver := newTestTransportSystem(t)
 
@@ -62,6 +63,7 @@ func TestRequestResponse(t *testing.T) {
 }
 
 func TestRequestResponseAutoCompressPolicyInlineAndResource(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		responseData []byte

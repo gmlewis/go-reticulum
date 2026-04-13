@@ -13,6 +13,7 @@ import (
 )
 
 func TestRnodeOpenSerialReturnsPlatformError(t *testing.T) {
+	t.Parallel()
 	_, err := rnodeOpenSerial(tempSerialPort(t))
 	if err == nil {
 		t.Fatalf("expected error on %v", runtime.GOOS)

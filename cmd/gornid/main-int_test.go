@@ -28,6 +28,7 @@ func runGornid(t *testing.T, args ...string) (string, error) {
 }
 
 func TestVersionOutput(t *testing.T) {
+	t.Parallel()
 	out, err := runGornid(t, "--version")
 	if err != nil {
 		t.Fatalf("gornid --version failed: %v\n%v", err, out)
@@ -40,6 +41,7 @@ func TestVersionOutput(t *testing.T) {
 }
 
 func TestNoIdentityError(t *testing.T) {
+	t.Parallel()
 	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	defer cleanup()
 
@@ -69,6 +71,7 @@ func TestNoIdentityError(t *testing.T) {
 }
 
 func TestGenerateRoundTrip(t *testing.T) {
+	t.Parallel()
 	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
@@ -91,6 +94,7 @@ func TestGenerateRoundTrip(t *testing.T) {
 }
 
 func TestLoadIdentityFallsBackToIdentityHash(t *testing.T) {
+	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	id, err := rns.NewIdentity(true, nil)
 	mustTest(t, err)
@@ -108,6 +112,7 @@ func TestLoadIdentityFallsBackToIdentityHash(t *testing.T) {
 }
 
 func TestImportExportRoundTrip(t *testing.T) {
+	t.Parallel()
 	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
@@ -148,6 +153,7 @@ func TestImportExportRoundTrip(t *testing.T) {
 }
 
 func TestEncryptDecryptRoundTrip(t *testing.T) {
+	t.Parallel()
 	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
@@ -185,6 +191,7 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 }
 
 func TestSignValidateRoundTrip(t *testing.T) {
+	t.Parallel()
 	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")
@@ -218,6 +225,7 @@ func TestSignValidateRoundTrip(t *testing.T) {
 }
 
 func TestValidateBadSignature(t *testing.T) {
+	t.Parallel()
 	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	defer cleanup()
 	idFile := filepath.Join(tmpDir, "test.id")

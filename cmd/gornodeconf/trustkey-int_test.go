@@ -21,6 +21,7 @@ const trustKeyFixtureHex = "30819f300d06092a864886f70d010101050003818d0030818902
 const trustKeyFixtureHash = "cbc2cf229adc279096ade6bba0c26176fa70adcf1d59d926253e6f0bea73aa46"
 
 func TestTrustKeyWritesTrustedKeyFile(t *testing.T) {
+	t.Parallel()
 
 	home := tempTrustKeyHome(t)
 	out, err := runGornodeconfWithEnv(map[string]string{"HOME": home}, "--trust-key", trustKeyFixtureHex)
@@ -43,6 +44,7 @@ func TestTrustKeyWritesTrustedKeyFile(t *testing.T) {
 }
 
 func TestTrustKeyRejectsInvalidHex(t *testing.T) {
+	t.Parallel()
 
 	home := tempTrustKeyHome(t)
 	out, err := runGornodeconfWithEnv(map[string]string{"HOME": home}, "--trust-key", "not-hex")
@@ -55,6 +57,7 @@ func TestTrustKeyRejectsInvalidHex(t *testing.T) {
 }
 
 func TestTrustKeyRejectsInvalidDer(t *testing.T) {
+	t.Parallel()
 
 	home := tempTrustKeyHome(t)
 	out, err := runGornodeconfWithEnv(map[string]string{"HOME": home}, "--trust-key", "00")
@@ -67,6 +70,7 @@ func TestTrustKeyRejectsInvalidDer(t *testing.T) {
 }
 
 func TestTrustKeyReportsWriteFailure(t *testing.T) {
+	t.Parallel()
 
 	home := tempTrustKeyHome(t)
 	trustedDir := filepath.Join(home, ".config", "rnodeconf", "trusted_keys")

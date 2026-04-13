@@ -26,6 +26,7 @@ func (errReader) Read(_ []byte) (int, error) {
 }
 
 func TestNewResourceFailsOnRandomHashGenerationError(t *testing.T) {
+	t.Parallel()
 	randReaderMu.Lock()
 	defer randReaderMu.Unlock()
 
@@ -70,6 +71,7 @@ func testActiveResourceLink(t *testing.T) *Link {
 }
 
 func TestNewResourceWithOptionsCompressesWhenSmaller(t *testing.T) {
+	t.Parallel()
 	link := testActiveResourceLink(t)
 	data := bytes.Repeat([]byte("AAAAAAAAAAAAAAAA"), 1024)
 
@@ -95,6 +97,7 @@ func TestNewResourceWithOptionsCompressesWhenSmaller(t *testing.T) {
 }
 
 func TestNewResourceWithOptionsRespectsCompressionLimit(t *testing.T) {
+	t.Parallel()
 	link := testActiveResourceLink(t)
 	data := bytes.Repeat([]byte("A"), 2048)
 
@@ -105,6 +108,7 @@ func TestNewResourceWithOptionsRespectsCompressionLimit(t *testing.T) {
 }
 
 func TestResourceStatusAndDataAccessors(t *testing.T) {
+	t.Parallel()
 	r := &Resource{
 		status: ResourceStatusComplete,
 		data:   []byte{0x01, 0x02, 0x03},
@@ -127,6 +131,7 @@ func TestResourceStatusAndDataAccessors(t *testing.T) {
 }
 
 func TestResourceValidateProofSuccess(t *testing.T) {
+	t.Parallel()
 	payload := []byte("payload")
 	randomHash := []byte{0x01, 0x02, 0x03, 0x04}
 	hash := FullHash(append(append([]byte{}, payload...), randomHash...))
@@ -156,6 +161,7 @@ func TestResourceValidateProofSuccess(t *testing.T) {
 }
 
 func TestResourceValidateProofFailure(t *testing.T) {
+	t.Parallel()
 	payload := []byte("payload")
 	randomHash := []byte{0x01, 0x02, 0x03, 0x04}
 	hash := FullHash(append(append([]byte{}, payload...), randomHash...))

@@ -16,6 +16,7 @@ import (
 )
 
 func TestStartupLogMessages(t *testing.T) {
+	t.Parallel()
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	configDir := filepath.Join(tmpDir, "lxmd")

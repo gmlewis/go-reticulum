@@ -11,6 +11,7 @@ import (
 )
 
 func TestBurrowsWheelerTransform(t *testing.T) {
+	t.Parallel()
 	vectors := []struct {
 		input  []byte // The input test string
 		output []byte // Expected output string after BWT

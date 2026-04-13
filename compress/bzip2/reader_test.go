@@ -14,6 +14,7 @@ import (
 )
 
 func TestReader(t *testing.T) {
+	t.Parallel()
 	db := testutil.MustDecodeBitGen
 
 	errFuncs := map[string]func(error) bool{

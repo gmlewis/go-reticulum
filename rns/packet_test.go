@@ -11,6 +11,7 @@ import (
 )
 
 func TestPacket(t *testing.T) {
+	t.Parallel()
 	id := mustTestNewIdentity(t, true)
 	ts := NewTransportSystem(nil)
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "testapp")
@@ -55,6 +56,7 @@ func TestPacket(t *testing.T) {
 }
 
 func TestPacketEncryption(t *testing.T) {
+	t.Parallel()
 	id := mustTestNewIdentity(t, true)
 	ts := NewTransportSystem(nil)
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "testapp")

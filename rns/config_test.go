@@ -11,6 +11,7 @@ import (
 )
 
 func TestParseConfig(t *testing.T) {
+	t.Parallel()
 	input := `
 [reticulum]
 enable_transport = False
@@ -57,6 +58,7 @@ loglevel = 4
 }
 
 func TestParseConfigNestedSubsections(t *testing.T) {
+	t.Parallel()
 	input := `
 [interfaces]
 [[RNode Multi]]

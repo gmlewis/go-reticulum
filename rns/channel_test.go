@@ -38,6 +38,7 @@ func (o *maintenanceMockOutlet) IsUsable() bool { return true }
 func (o *maintenanceMockOutlet) TimedOut()      {}
 
 func TestChannelMediumRTTAdaptiveWindowGrowth(t *testing.T) {
+	t.Parallel()
 	outlet := &maintenanceMockOutlet{mdu: 512, rtt: 0.5}
 	channel := NewChannel(outlet)
 
@@ -58,6 +59,7 @@ func TestChannelMediumRTTAdaptiveWindowGrowth(t *testing.T) {
 }
 
 func TestChannelFastRTTAdaptiveWindowGrowth(t *testing.T) {
+	t.Parallel()
 	outlet := &maintenanceMockOutlet{mdu: 512, rtt: 0.1}
 	channel := NewChannel(outlet)
 
@@ -78,6 +80,7 @@ func TestChannelFastRTTAdaptiveWindowGrowth(t *testing.T) {
 }
 
 func TestChannelTimeoutBackoffDecreasesWindowAndTimeout(t *testing.T) {
+	t.Parallel()
 	outlet := &maintenanceMockOutlet{mdu: 512, rtt: 0.2}
 	channel := NewChannel(outlet)
 	channel.window = 8
@@ -111,6 +114,7 @@ func TestChannelTimeoutBackoffDecreasesWindowAndTimeout(t *testing.T) {
 }
 
 func TestChannelAutomaticTimeoutTriggersResend(t *testing.T) {
+	t.Parallel()
 	resendCalls := 0
 	outlet := &maintenanceMockOutlet{mdu: 512, rtt: 0.01}
 	outlet.resendFn = func(p *Packet) (*Packet, error) {

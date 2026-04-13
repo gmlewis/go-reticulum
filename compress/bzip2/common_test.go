@@ -12,6 +12,7 @@ import (
 )
 
 func TestCRC(t *testing.T) {
+	t.Parallel()
 	vectors := []struct {
 		crc uint32
 		str string

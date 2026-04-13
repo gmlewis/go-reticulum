@@ -79,25 +79,12 @@ func buildGornsdBinary(t *testing.T) string {
 	return binaryPath
 }
 
-func writeGornsdConfigFile(t *testing.T, dir string, shareInstance string, loglevel int) {
-	t.Helper()
-	config := fmt.Sprintf(`[reticulum]
-share_instance = %v
-
-[logging]
-loglevel = %v
-
-[interfaces]
-`, shareInstance, loglevel)
-	if err := os.WriteFile(filepath.Join(dir, "config"), []byte(config), 0o600); err != nil {
-		t.Fatalf("write config error: %v", err)
-	}
-}
-
 func writeGornsdUDPConfig(t *testing.T, dir string, shareInstance string, loglevel int, listenPort int, forwardPort int) {
 	t.Helper()
+	instanceName := filepath.Base(dir)
 	config := fmt.Sprintf(`[reticulum]
 share_instance = %v
+instance_name = %v
 
 [logging]
 loglevel = %v
@@ -110,7 +97,7 @@ loglevel = %v
     listen_port = %v
 	forward_ip = 127.0.0.1
 	forward_port = %v
-`, shareInstance, loglevel, listenPort, forwardPort)
+`, shareInstance, instanceName, loglevel, listenPort, forwardPort)
 	if err := os.WriteFile(filepath.Join(dir, "config"), []byte(config), 0o600); err != nil {
 		t.Fatalf("write config error: %v", err)
 	}
@@ -146,6 +133,11 @@ func startGornsdBinary(t *testing.T, binaryPath string, args ...string) (*exec.C
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("failed to start gornsd binary: %v", err)
 	}
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+	})
 	return cmd, &stdout, &stderr
 }
 
@@ -251,6 +243,7 @@ func normalizeMultilineWhitespace(text string) string {
 }
 
 func TestGornsdHelpParity(t *testing.T) {
+	t.Parallel()
 	got := runGornsdOutcome(t, "--help")
 	want := runRnsdOutcome(t, "--help")
 	if got.exitCode != want.exitCode {
@@ -265,6 +258,7 @@ func TestGornsdHelpParity(t *testing.T) {
 }
 
 func TestGornsdExampleConfigParity(t *testing.T) {
+	t.Parallel()
 	got := runGornsdOutcome(t, "--exampleconfig")
 	want := runRnsdOutcome(t, "--exampleconfig")
 	if got.exitCode != want.exitCode {
@@ -279,6 +273,7 @@ func TestGornsdExampleConfigParity(t *testing.T) {
 }
 
 func TestGornsdVersionOutputs(t *testing.T) {
+	t.Parallel()
 	got := runGornsdOutcome(t, "--version")
 	want := runRnsdOutcome(t, "--version")
 	if got.exitCode != 0 || want.exitCode != 0 {
@@ -296,6 +291,7 @@ func TestGornsdVersionOutputs(t *testing.T) {
 }
 
 func TestGornsdUnknownFlagExitCode2(t *testing.T) {
+	t.Parallel()
 	binaryPath := buildGornsdBinary(t)
 	cmd := exec.Command(binaryPath, "--bogus-flag")
 	var stdout bytes.Buffer
@@ -315,12 +311,13 @@ func TestGornsdUnknownFlagExitCode2(t *testing.T) {
 }
 
 func TestGornsdStartupAndSIGTERM(t *testing.T) {
+	t.Parallel()
 	configDir, err := os.MkdirTemp("", "gornsd-int-startup-*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(configDir) })
-	writeGornsdConfigFile(t, configDir, "No", 4)
+	writeGornsdConfig(t, configDir, "No", 4)
 
 	binaryPath := buildGornsdBinary(t)
 	cmd, stdout, stderr := startGornsdBinary(t, binaryPath, "--config", configDir)
@@ -337,12 +334,13 @@ func TestGornsdStartupAndSIGTERM(t *testing.T) {
 }
 
 func TestGornsdSIGINTBlankLine(t *testing.T) {
+	t.Parallel()
 	configDir, err := os.MkdirTemp("", "gornsd-int-sigint-*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(configDir) })
-	writeGornsdConfigFile(t, configDir, "No", 4)
+	writeGornsdConfig(t, configDir, "No", 4)
 
 	binaryPath := buildGornsdBinary(t)
 	cmd, stdout, stderr := startGornsdBinary(t, binaryPath, "--config", configDir)
@@ -359,12 +357,13 @@ func TestGornsdSIGINTBlankLine(t *testing.T) {
 }
 
 func TestGornsdServiceModeLogsToFile(t *testing.T) {
+	t.Parallel()
 	configDir, err := os.MkdirTemp("", "gornsd-int-service-*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(configDir) })
-	writeGornsdConfigFile(t, configDir, "No", 4)
+	writeGornsdConfig(t, configDir, "No", 4)
 
 	binaryPath := buildGornsdBinary(t)
 	cmd, stdout, stderr := startGornsdBinary(t, binaryPath, "--config", configDir, "-s")
@@ -381,6 +380,7 @@ func TestGornsdServiceModeLogsToFile(t *testing.T) {
 }
 
 func TestGornsdVerbosityIncreases(t *testing.T) {
+
 	configDir, err := os.MkdirTemp("", "gornsd-int-verbose-*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
@@ -405,6 +405,7 @@ func TestGornsdVerbosityIncreases(t *testing.T) {
 }
 
 func TestGornsdQuietDecreases(t *testing.T) {
+	t.Parallel()
 	configDir, err := os.MkdirTemp("", "gornsd-int-quiet-*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
@@ -430,6 +431,7 @@ func TestGornsdQuietDecreases(t *testing.T) {
 }
 
 func TestGornsdSharedInstanceWarning(t *testing.T) {
+	t.Parallel()
 	configDir, err := os.MkdirTemp("", "gornsd-int-shared-*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
@@ -479,12 +481,13 @@ loglevel = 4
 }
 
 func TestGornsdInteractiveModeREPL(t *testing.T) {
+	t.Parallel()
 	configDir, err := os.MkdirTemp("", "gornsd-int-repl-*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(configDir) })
-	writeGornsdConfigFile(t, configDir, "No", 4)
+	writeGornsdConfig(t, configDir, "No", 4)
 
 	binaryPath := buildGornsdBinary(t)
 	cmd := exec.Command(binaryPath, "--config", configDir, "-i")

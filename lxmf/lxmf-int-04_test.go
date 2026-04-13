@@ -79,6 +79,7 @@ if __name__ == "__main__":
 `
 
 func TestIntegrationResourceGoToPython(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -154,6 +155,7 @@ func TestIntegrationResourceGoToPython(t *testing.T) {
 }
 
 func TestIntegrationResourcePythonToGo(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)

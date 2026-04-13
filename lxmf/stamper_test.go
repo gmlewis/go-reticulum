@@ -10,6 +10,7 @@ import (
 )
 
 func TestStampWorkblockDeterministic(t *testing.T) {
+	t.Parallel()
 	material := []byte("material-for-stamps")
 	w1, err := StampWorkblock(material, 2)
 	if err != nil {
@@ -29,6 +30,7 @@ func TestStampWorkblockDeterministic(t *testing.T) {
 }
 
 func TestStampValidAndGenerateStamp(t *testing.T) {
+	t.Parallel()
 	material := []byte("message-id")
 	stamp, value, rounds, err := GenerateStamp(material, 4, 1)
 	if err != nil {
@@ -54,6 +56,7 @@ func TestStampValidAndGenerateStamp(t *testing.T) {
 }
 
 func TestStampValueLeadingZeroBits(t *testing.T) {
+	t.Parallel()
 	workblock := []byte{0x01, 0x02, 0x03}
 	stamp := make([]byte, StampSize)
 	value := StampValue(workblock, stamp)
@@ -63,6 +66,7 @@ func TestStampValueLeadingZeroBits(t *testing.T) {
 }
 
 func TestValidatePeeringKey(t *testing.T) {
+	t.Parallel()
 	peeringID := []byte("router-hash-remote-hash")
 	key, value, _, err := GenerateStamp(peeringID, 4, WorkblockExpandRoundsPeering)
 	if err != nil {

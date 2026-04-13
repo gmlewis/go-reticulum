@@ -73,6 +73,7 @@ if __name__ == "__main__":
 `
 
 func TestMessagePackParity(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-msgpack-parity-*")
 	mustTest(t, err)
 	t.Cleanup(func() {
@@ -171,6 +172,7 @@ func TestMessagePackParity(t *testing.T) {
 }
 
 func TestMessagePackPythonToGoParity(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "go-reticulum-msgpack-parity-*")
 	mustTest(t, err)
 	t.Cleanup(func() {

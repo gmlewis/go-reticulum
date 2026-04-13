@@ -18,6 +18,7 @@ import (
 )
 
 func TestInvalidIdentityHashExitCode(t *testing.T) {
+	t.Parallel()
 
 	tests := []struct {
 		name         string
@@ -49,6 +50,7 @@ func TestInvalidIdentityHashExitCode(t *testing.T) {
 }
 
 func TestMalformedDestinationHashExitCode(t *testing.T) {
+	t.Parallel()
 
 	tests := []struct {
 		name     string
@@ -107,6 +109,7 @@ func TestMalformedDestinationHashExitCode(t *testing.T) {
 }
 
 func TestMissingSendFileExitCode(t *testing.T) {
+	t.Parallel()
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -140,6 +143,7 @@ func TestMissingSendFileExitCode(t *testing.T) {
 }
 
 func TestMainExitCodeHelper(t *testing.T) {
+	t.Parallel()
 
 	// Test that os.Exit is called with correct codes
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -162,6 +166,7 @@ func TestMainExitCodeHelper(t *testing.T) {
 }
 
 func TestCorruptIdentityFileExitCode(t *testing.T) {
+	t.Parallel()
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -200,6 +205,7 @@ func TestCorruptIdentityFileExitCode(t *testing.T) {
 }
 
 func TestOutputDirectoryNotFoundExitCode(t *testing.T) {
+	t.Parallel()
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -240,6 +246,7 @@ func TestOutputDirectoryNotFoundExitCode(t *testing.T) {
 }
 
 func TestOutputDirectoryNotWritableExitCode(t *testing.T) {
+	t.Parallel()
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()

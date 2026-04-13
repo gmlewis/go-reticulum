@@ -78,6 +78,7 @@ if __name__ == "__main__":
 `
 
 func TestIntegrationOpportunisticGoToPython(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -133,6 +134,7 @@ func TestIntegrationOpportunisticGoToPython(t *testing.T) {
 }
 
 func TestIntegrationOpportunisticPythonToGo(t *testing.T) {
+	t.Parallel()
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)

@@ -14,6 +14,7 @@ import (
 )
 
 func TestRunLengthEncoder(t *testing.T) {
+	t.Parallel()
 	vectors := []struct {
 		size   int
 		input  string
@@ -89,6 +90,7 @@ func TestRunLengthEncoder(t *testing.T) {
 }
 
 func TestRunLengthDecoder(t *testing.T) {
+	t.Parallel()
 	vectors := []struct {
 		input  string
 		output string
