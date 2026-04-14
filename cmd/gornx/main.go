@@ -67,11 +67,14 @@ func main() {
 		if err == errHelp {
 			return
 		}
+		if err == errVersion {
+			fmt.Printf("gornx %v\n", rns.VERSION)
+			return
+		}
 		log.Fatal(err)
 	}
 	newRuntime(app).run()
 }
-
 func (rt *runtimeT) run() {
 	if rt == nil || rt.app == nil {
 		return
@@ -79,13 +82,20 @@ func (rt *runtimeT) run() {
 	app := rt.app
 	logger := rt.logger
 
-	if app.verbose {
-		logger.SetLogLevel(rns.LogVerbose)
-	}
-	if app.quiet {
-		logger.SetLogLevel(rns.LogWarning)
+	if !app.listenMode && !app.printIdentity && !app.interactive && len(app.args) == 0 {
+		fmt.Println("")
+		app.usage(os.Stdout)
+		fmt.Println("")
+		return
 	}
 
+	if app.verbosity > 0 {
+
+		logger.SetLogLevel(rns.LogVerbose)
+	}
+	if app.quietness > 0 {
+		logger.SetLogLevel(rns.LogWarning)
+	}
 	ts := rns.NewTransportSystem(logger)
 	ret, err := rns.NewReticulumWithLogger(ts, app.configDir, logger)
 	if err != nil {
