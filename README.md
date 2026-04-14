@@ -1,6 +1,20 @@
 # Go Reticulum Network Stack <a href="https://github.com/gmlewis/go-reticulum/actions/workflows/build.yml"><img align="right" src="https://github.com/gmlewis/go-reticulum/actions/workflows/build.yml/badge.svg"/></a>
 
 This is an experimental port of the [Reticulum Network Stack](https://github.com/markqvist/Reticulum) from Python to Go.
+It is based upon the following Python original works:
+
+* https://github.com/markqvist/lxmf
+  `commit 269ce43afc6552e934c212887c2450718311396a`
+  `Author: Mark Qvist <mark@unsigned.io>`
+  `Date:   Sat Jan 10 21:50:42 2026 +0100`
+* https://github.com/markqvist/Reticulum
+  `commit 1b50b7f446e096cc9f893f5f45d24ea266889b4d`
+  `Author: Mark Qvist <mark@unsigned.io>`
+  `Date:   Thu Mar 12 00:56:18 2026 +0100`
+* https://github.com/acehoss/rnsh
+  `commit 50f042008e9dafa7ae906ef9870b4b17b8a2aa45`
+  `Author: acehoss <5148966+acehoss@users.noreply.github.com>`
+  `Date:   Mon Jan 12 09:17:07 2026 -0500`
 
 ## Go Port Security & Dependency Policy
 - **Vendored Compression Snapshot**: A local in-repo snapshot (with source commit
