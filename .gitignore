@@ -6,5 +6,6 @@
 /compress
 
 # Handy symlinks
+/pull.sh
 /test-all.sh
 original-*

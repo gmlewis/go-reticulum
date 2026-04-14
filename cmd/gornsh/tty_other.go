@@ -7,7 +7,9 @@
 
 package main
 
-type ttyRestorer struct{}
+type ttyRestorer struct {
+	active bool
+}
 
 func newTTYRestorer(int) (*ttyRestorer, error) {
 	return &ttyRestorer{}, nil

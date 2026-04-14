@@ -3,13 +3,12 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-//go:build !linux || windows
+//go:build !linux && !darwin
 
 package main
 
 import (
 	"fmt"
-	"syscall"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
@@ -24,6 +23,6 @@ func openPTY() (*ptyPair, error) {
 	return nil, fmt.Errorf("PTY execution is not supported on this platform")
 }
 
-func termiosFromTCFlags(raw any) (*syscall.Termios, error) {
+func termiosFromTCFlags(raw any) (any, error) {
 	return nil, fmt.Errorf("PTY execution is not supported on this platform")
 }
