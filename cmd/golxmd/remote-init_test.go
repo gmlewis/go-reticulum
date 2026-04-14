@@ -42,24 +42,10 @@ instance_control_port = %v
 loglevel = 0
 
 [interfaces]
-`, reserveTCPPort(t), reserveTCPPort(t))
+`, testutils.ReserveTCPPort(t), testutils.ReserveTCPPort(t))
 	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("writeRNSConfig: %v", err)
 	}
-}
-
-func reserveTCPPort(t *testing.T) int {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("reserveTCPPort: %v", err)
-	}
-	defer func() {
-		if err := l.Close(); err != nil {
-			t.Logf("failed to close listener: %v", err)
-		}
-	}()
-	return l.Addr().(*net.TCPAddr).Port
 }
 
 func TestRemoteInit(t *testing.T) {
@@ -234,7 +220,7 @@ instance_control_port = %v
 loglevel = 1
 
 [interfaces]
-`, reserveTCPPort(t), reserveTCPPort(t))
+`, testutils.ReserveTCPPort(t), testutils.ReserveTCPPort(t))
 		if err := os.WriteFile(filepath.Join(rnsConfigDir, "config"), []byte(content), 0o644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
 		}

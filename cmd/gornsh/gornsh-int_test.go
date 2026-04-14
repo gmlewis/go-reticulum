@@ -11,6 +11,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"flag"
 	"fmt"
 	"log"
@@ -18,6 +19,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -64,7 +66,7 @@ var versionLineRE = regexp.MustCompile(`^[^[:space:]]+\s+[^[:space:]]+$`)
 
 const (
 	listenerReadinessTimeout  = 15 * time.Second
-	sharedInstancePathTimeout = 20 * time.Second
+	sharedInstancePathTimeout = 10 * time.Second
 )
 
 var gornshBinaryPath string
@@ -292,6 +294,162 @@ func TestIntegrationGoListenerPythonInitiatorEcho(t *testing.T) {
 	}
 }
 
+func TestIntegrationPythonListenerGoInitiatorEchoWithoutGornpathPolling(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+	oldPath := gornpathBinaryPath
+	gornpathBinaryPath = filepath.Join(os.TempDir(), "missing-gornpath-binary")
+	t.Cleanup(func() {
+		gornpathBinaryPath = oldPath
+	})
+
+	listenerConfigDir, initiatorConfigDir, cleanup := prepareGornshDirectUDPConfigPair(t, "gornsh-py-go-nopath-")
+	defer cleanup()
+
+	pythonListener := startPythonListener(t, listenerConfigDir, "-b", "1")
+	readyHash := pythonListener.hash()
+	if readyHash == "" {
+		t.Fatal("Python listener hash is empty")
+	}
+
+	output, exitCode := runGornshCommand(t, initiatorConfigDir, 15*time.Second, "--timeout", "8", "-T", readyHash, "echo", "hello")
+	if exitCode != 0 {
+		t.Fatalf("initiator exit code = %v, want 0\ninitiator output:\n%v\nlistener output:\n%v", exitCode, output, pythonListener.output())
+	}
+	if !strings.Contains(output, "hello") {
+		t.Fatalf("initiator output %q missing hello\nlistener output:\n%v", output, pythonListener.output())
+	}
+}
+
+func TestIntegrationPythonListenerGoInitiatorEchoRepeatedHandshakes(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+
+	for iteration := 0; iteration < 3; iteration++ {
+		iteration := iteration
+		t.Run(fmt.Sprintf("iteration-%d", iteration), func(t *testing.T) {
+			listenerConfigDir, initiatorConfigDir, cleanup := prepareGornshDirectUDPConfigPair(t, fmt.Sprintf("gornsh-py-go-repeat-%d-", iteration))
+			defer cleanup()
+
+			pythonListener := startPythonListener(t, listenerConfigDir, "-b", "1")
+			readyHash := pythonListener.hash()
+			if readyHash == "" {
+				t.Fatalf("iteration %d: Python listener hash is empty", iteration)
+			}
+
+			output, exitCode := runGornshCommand(t, initiatorConfigDir, 15*time.Second, "--timeout", "8", "-T", readyHash, "echo", fmt.Sprintf("hello-%d", iteration))
+			if exitCode != 0 {
+				t.Fatalf("iteration %d: initiator exit code = %v, want 0\ninitiator output:\n%v\nlistener output:\n%v", iteration, exitCode, output, pythonListener.output())
+			}
+			if !strings.Contains(output, fmt.Sprintf("hello-%d", iteration)) {
+				t.Fatalf("iteration %d: initiator output %q missing hello\nlistener output:\n%v", iteration, output, pythonListener.output())
+			}
+		})
+	}
+}
+
+func TestIntegrationGoListenerPythonInitiatorEchoWithoutGornpathPolling(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+	oldPath := gornpathBinaryPath
+	gornpathBinaryPath = filepath.Join(os.TempDir(), "missing-gornpath-binary")
+	t.Cleanup(func() {
+		gornpathBinaryPath = oldPath
+	})
+
+	listenerConfigDir, initiatorConfigDir, cleanup := prepareGornshDirectUDPConfigPair(t, "gornsh-go-py-nopath-")
+	defer cleanup()
+
+	listener := startGornshListenerWithArgs(t, listenerConfigDir, "--no-auth", "--announce", "1")
+	readyHash := listener.hash()
+	if readyHash == "" {
+		t.Fatal("listener hash is empty")
+	}
+
+	output, exitCode := runRnshCommand(t, initiatorConfigDir, 15*time.Second, "--timeout", "8", "-T", readyHash, "echo", "hello")
+	if exitCode != 0 {
+		t.Fatalf("Python initiator exit code = %v, want 0\ninitiator output:\n%v\nlistener output:\n%v", exitCode, output, listener.output())
+	}
+	if !strings.Contains(output, "hello") {
+		t.Fatalf("Python initiator output %q missing hello\nlistener output:\n%v", output, listener.output())
+	}
+}
+
+func TestIntegrationGoListenerPythonInitiatorEchoRepeatedHandshakes(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+
+	for iteration := 0; iteration < 3; iteration++ {
+		iteration := iteration
+		t.Run(fmt.Sprintf("iteration-%d", iteration), func(t *testing.T) {
+			listenerConfigDir, initiatorConfigDir, cleanup := prepareGornshDirectUDPConfigPair(t, fmt.Sprintf("gornsh-go-py-repeat-%d-", iteration))
+			defer cleanup()
+
+			listener := startGornshListenerWithArgs(t, listenerConfigDir, "--no-auth", "--announce", "1")
+			readyHash := listener.hash()
+			if readyHash == "" {
+				t.Fatalf("iteration %d: listener hash is empty", iteration)
+			}
+
+			output, exitCode := runRnshCommand(t, initiatorConfigDir, 15*time.Second, "--timeout", "8", "-T", readyHash, "echo", fmt.Sprintf("hello-%d", iteration))
+			if exitCode != 0 {
+				t.Fatalf("iteration %d: Python initiator exit code = %v, want 0\ninitiator output:\n%v\nlistener output:\n%v", iteration, exitCode, output, listener.output())
+			}
+			if !strings.Contains(output, fmt.Sprintf("hello-%d", iteration)) {
+				t.Fatalf("iteration %d: Python initiator output %q missing hello\nlistener output:\n%v", iteration, output, listener.output())
+			}
+		})
+	}
+}
+
+func TestIntegrationReadyListenerServesUnderModerateLocalLoad(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+
+	listenerConfigDir, initiatorConfigDir, cleanup := prepareGornshDirectUDPConfigPair(t, "gornsh-load-")
+	defer cleanup()
+
+	listener := startGornshListenerWithArgs(t, listenerConfigDir, "--no-auth", "--announce", "1")
+	readyHash := listener.hash()
+	if readyHash == "" {
+		t.Fatal("listener hash is empty")
+	}
+
+	workerCount := runtime.GOMAXPROCS(0) / 2
+	if workerCount < 2 {
+		workerCount = 2
+	}
+	stopLoad := make(chan struct{})
+	var loadWG sync.WaitGroup
+	for worker := 0; worker < workerCount; worker++ {
+		loadWG.Add(1)
+		go func(seed byte) {
+			defer loadWG.Done()
+			payload := bytes.Repeat([]byte{seed}, 2048)
+			for {
+				select {
+				case <-stopLoad:
+					return
+				default:
+					_ = sha256.Sum256(payload)
+				}
+			}
+		}(byte(worker + 1))
+	}
+	defer func() {
+		close(stopLoad)
+		loadWG.Wait()
+	}()
+
+	started := time.Now()
+	output, exitCode := runGornshCommand(t, initiatorConfigDir, 10*time.Second, "--timeout", "5", "-T", readyHash, "echo", "loaded")
+	elapsed := time.Since(started)
+	if exitCode != 0 {
+		t.Fatalf("initiator exit code = %v, want 0\ninitiator output:\n%v\nlistener output:\n%v", exitCode, output, listener.output())
+	}
+	if !strings.Contains(output, "loaded") {
+		t.Fatalf("initiator output %q missing loaded\nlistener output:\n%v", output, listener.output())
+	}
+	if elapsed > 10*time.Second {
+		t.Fatalf("loaded request completed in %v, want <= 10s", elapsed)
+	}
+}
+
 func runRnshCommand(t *testing.T, configDir string, timeout time.Duration, args ...string) (string, int) {
 	t.Helper()
 
@@ -370,12 +528,106 @@ func prepareGornshDirectUDPConfig(t *testing.T, configDir, instanceName string, 
 }
 
 type gornshListenerProcess struct {
-	cmd     *exec.Cmd
-	stdout  *bytes.Buffer
-	value   string
-	hashMu  sync.Mutex
-	readyCh chan struct{}
-	waitCh  chan error
+	cmd          *exec.Cmd
+	stdout       *bytes.Buffer
+	value        string
+	bootstrapped bool
+	hashMu       sync.Mutex
+	readyCh      chan struct{}
+	waitCh       chan error
+}
+
+func TestWaitForListenerReadinessTimesOutAfterBootstrapLine(t *testing.T) {
+	t.Parallel()
+
+	proc := &pythonListenerProcess{
+		stdout:  &bytes.Buffer{},
+		readyCh: make(chan struct{}),
+		waitCh:  make(chan error, 1),
+	}
+	proc.recordLine(listeningReadyLine())
+
+	start := time.Now()
+	err := waitForListenerReadiness("Python listener", proc.readyCh, proc.waitCh, proc.output, proc.bootstrappedReadyLineSeen, 50*time.Millisecond)
+	if err == nil {
+		t.Fatal("waitForListenerReadiness() error = nil, want bootstrap stall error")
+	}
+	if !strings.Contains(err.Error(), "stalled after bootstrap line before destination hash") {
+		t.Fatalf("waitForListenerReadiness() error = %q, want bootstrap stall detail", err)
+	}
+	if !strings.Contains(err.Error(), listeningReadyLine()) {
+		t.Fatalf("waitForListenerReadiness() error missing captured bootstrap output: %q", err)
+	}
+	if strings.Contains(err.Error(), "Execute command message") {
+		t.Fatalf("waitForListenerReadiness() error = %q, want failure before any command execution begins", err)
+	}
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Fatalf("waitForListenerReadiness() took %v, want under 500ms", elapsed)
+	}
+}
+
+func TestWaitForListenerReadinessReportsExitBeforeReadinessLine(t *testing.T) {
+	t.Parallel()
+
+	proc := &pythonListenerProcess{
+		stdout:  &bytes.Buffer{},
+		readyCh: make(chan struct{}),
+		waitCh:  make(chan error, 1),
+	}
+	proc.waitCh <- nil
+
+	err := waitForListenerReadiness("Python listener", proc.readyCh, proc.waitCh, proc.output, proc.bootstrappedReadyLineSeen, 50*time.Millisecond)
+	if err == nil {
+		t.Fatal("waitForListenerReadiness() error = nil, want early-exit error")
+	}
+	if !strings.Contains(err.Error(), "exited before readiness line") {
+		t.Fatalf("waitForListenerReadiness() error = %q, want early-exit detail", err)
+	}
+}
+
+func TestWaitForListenerReadinessIgnoresPostReadyFailure(t *testing.T) {
+	t.Parallel()
+
+	proc := &pythonListenerProcess{
+		stdout:  &bytes.Buffer{},
+		readyCh: make(chan struct{}),
+		waitCh:  make(chan error, 1),
+	}
+	proc.recordLine(listeningReadyLine())
+	if !proc.recordLine("rnsh listening for commands on <deadbeef>") {
+		t.Fatal("recordLine() = false, want readiness hash detection")
+	}
+	close(proc.readyCh)
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		proc.waitCh <- fmt.Errorf("later link failure")
+	}()
+
+	if err := waitForListenerReadiness("Python listener", proc.readyCh, proc.waitCh, proc.output, proc.bootstrappedReadyLineSeen, 50*time.Millisecond); err != nil {
+		t.Fatalf("waitForListenerReadiness() error = %v, want nil after readiness", err)
+	}
+}
+
+func TestListenerReadinessTimeoutBounded(t *testing.T) {
+	t.Parallel()
+
+	if listenerReadinessTimeout >= 120*time.Second {
+		t.Fatalf("listenerReadinessTimeout = %v, want far below legacy 120s waits", listenerReadinessTimeout)
+	}
+	if listenerReadinessTimeout > 15*time.Second {
+		t.Fatalf("listenerReadinessTimeout = %v, want low-double-digit bound", listenerReadinessTimeout)
+	}
+}
+
+func TestSharedInstancePathTimeoutBounded(t *testing.T) {
+	t.Parallel()
+
+	if sharedInstancePathTimeout >= 120*time.Second {
+		t.Fatalf("sharedInstancePathTimeout = %v, want far below legacy 120s waits", sharedInstancePathTimeout)
+	}
+	if sharedInstancePathTimeout > 10*time.Second {
+		t.Fatalf("sharedInstancePathTimeout = %v, want helper polling window no greater than 10s", sharedInstancePathTimeout)
+	}
 }
 
 func TestIntegrationAllowedIdentityEnforcement(t *testing.T) {
@@ -597,6 +849,10 @@ func TestIntegrationNetworkPartitionRecovery(t *testing.T) {
 	if exitCode != 0 || !strings.Contains(output, "step3") {
 		t.Fatalf("Step 3 failed after recovery: exit %v, output: %q\nlistener output:\n%v", exitCode, output, listener.output())
 	}
+	logOut := strings.ToLower(listener.output())
+	if !strings.Contains(logOut, "broken pipe") {
+		t.Fatalf("listener recovery log missing expected broken-pipe symptom\nlistener output:\n%v", listener.output())
+	}
 	t.Log("Step 3 successfully recovered")
 }
 
@@ -650,21 +906,14 @@ func startGornshListenerWithArgs(t *testing.T, configDir string, extraArgs ...st
 			line := scanner.Text()
 			lineCount++
 			log.Printf("[GO-SCANNER] line %v: %q", lineCount, line)
-			proc.hashMu.Lock()
-			proc.stdout.WriteString(line)
-			proc.stdout.WriteByte('\n')
-			if proc.value == "" {
-				if hash := parseListenerHash(line); hash != "" {
-					proc.value = hash
-					log.Printf("[GO-SCANNER] hash found: %v, closing readyCh", hash)
-					select {
-					case <-proc.readyCh:
-					default:
-						close(proc.readyCh)
-					}
+			if proc.recordLine(line) {
+				log.Printf("[GO-SCANNER] hash found: %v, closing readyCh", proc.hash())
+				select {
+				case <-proc.readyCh:
+				default:
+					close(proc.readyCh)
 				}
 			}
-			proc.hashMu.Unlock()
 		}
 		if err := scanner.Err(); err != nil {
 			log.Printf("[GO-SCANNER] scanner error after %v lines: %v", lineCount, err)
@@ -675,17 +924,10 @@ func startGornshListenerWithArgs(t *testing.T, configDir string, extraArgs ...st
 		proc.waitCh <- nil
 	}()
 
-	select {
-	case <-proc.readyCh:
-		log.Printf("gornsh listener hash is ready: %v", proc.hash())
-	case err := <-proc.waitCh:
-		if err == nil {
-			t.Fatal("listener exited before readiness line")
-		}
-		t.Fatalf("listener failed before readiness line: %v", err)
-	case <-time.After(listenerReadinessTimeout):
-		t.Fatalf("timed out waiting for listener readiness; output so far:\n%v", proc.output())
+	if err := waitForListenerReadiness("gornsh listener", proc.readyCh, proc.waitCh, proc.output, proc.bootstrappedReadyLineSeen, listenerReadinessTimeout); err != nil {
+		t.Fatal(err)
 	}
+	log.Printf("gornsh listener hash is ready: %v", proc.hash())
 
 	t.Cleanup(func() {
 		proc.stop(t)
@@ -716,10 +958,22 @@ func (p *gornshListenerProcess) hash() string {
 	return p.value
 }
 
+func (p *gornshListenerProcess) bootstrappedReadyLineSeen() bool {
+	p.hashMu.Lock()
+	defer p.hashMu.Unlock()
+	return p.bootstrapped
+}
+
 func (p *gornshListenerProcess) output() string {
 	p.hashMu.Lock()
 	defer p.hashMu.Unlock()
 	return p.stdout.String()
+}
+
+func (p *gornshListenerProcess) recordLine(line string) bool {
+	p.hashMu.Lock()
+	defer p.hashMu.Unlock()
+	return recordListenerLine(p.stdout, &p.value, &p.bootstrapped, line)
 }
 
 func (p *gornshListenerProcess) stop(t *testing.T) {
@@ -889,12 +1143,13 @@ func getRnshBinaryPath(t *testing.T) string {
 }
 
 type pythonListenerProcess struct {
-	cmd     *exec.Cmd
-	stdout  *bytes.Buffer
-	value   string
-	hashMu  sync.Mutex
-	readyCh chan struct{}
-	waitCh  chan error
+	cmd          *exec.Cmd
+	stdout       *bytes.Buffer
+	value        string
+	bootstrapped bool
+	hashMu       sync.Mutex
+	readyCh      chan struct{}
+	waitCh       chan error
 }
 
 func startPythonListener(t *testing.T, configDir string, extraArgs ...string) *pythonListenerProcess {
@@ -951,21 +1206,14 @@ func startPythonListener(t *testing.T, configDir string, extraArgs ...string) *p
 			line := scanner.Text()
 			lineCount++
 			log.Printf("[PY-SCANNER] line %v: %q", lineCount, line)
-			proc.hashMu.Lock()
-			proc.stdout.WriteString(line)
-			proc.stdout.WriteByte('\n')
-			if proc.value == "" {
-				if hash := parseListenerHash(line); hash != "" {
-					proc.value = hash
-					log.Printf("[PY-SCANNER] hash found: %v, closing readyCh", hash)
-					select {
-					case <-proc.readyCh:
-					default:
-						close(proc.readyCh)
-					}
+			if proc.recordLine(line) {
+				log.Printf("[PY-SCANNER] hash found: %v, closing readyCh", proc.hash())
+				select {
+				case <-proc.readyCh:
+				default:
+					close(proc.readyCh)
 				}
 			}
-			proc.hashMu.Unlock()
 		}
 		if err := scanner.Err(); err != nil {
 			log.Printf("[PY-SCANNER] scanner error after %v lines: %v", lineCount, err)
@@ -976,15 +1224,10 @@ func startPythonListener(t *testing.T, configDir string, extraArgs ...string) *p
 		proc.waitCh <- nil
 	}()
 
-	// Wait for listener hash
-	select {
-	case <-proc.readyCh:
-		log.Printf("gornsh listener hash is ready: %v", proc.hash())
-	case err := <-proc.waitCh:
-		t.Fatalf("gornsh listener failed before readiness line: %v", err)
-	case <-time.After(listenerReadinessTimeout):
-		t.Fatalf("timed out waiting for gornsh listener readiness; output so far:\n%v", proc.output())
+	if err := waitForListenerReadiness("Python listener", proc.readyCh, proc.waitCh, proc.output, proc.bootstrappedReadyLineSeen, listenerReadinessTimeout); err != nil {
+		t.Fatal(err)
 	}
+	log.Printf("gornsh listener hash is ready: %v", proc.hash())
 
 	t.Cleanup(func() {
 		proc.stop(t)
@@ -1000,10 +1243,60 @@ func (p *pythonListenerProcess) hash() string {
 	return p.value
 }
 
+func (p *pythonListenerProcess) bootstrappedReadyLineSeen() bool {
+	p.hashMu.Lock()
+	defer p.hashMu.Unlock()
+	return p.bootstrapped
+}
+
 func (p *pythonListenerProcess) output() string {
 	p.hashMu.Lock()
 	defer p.hashMu.Unlock()
 	return p.stdout.String()
+}
+
+func (p *pythonListenerProcess) recordLine(line string) bool {
+	p.hashMu.Lock()
+	defer p.hashMu.Unlock()
+	return recordListenerLine(p.stdout, &p.value, &p.bootstrapped, line)
+}
+
+func recordListenerLine(stdout *bytes.Buffer, value *string, bootstrapped *bool, line string) bool {
+	stdout.WriteString(line)
+	stdout.WriteByte('\n')
+	if !*bootstrapped && strings.Contains(line, listeningReadyLine()) {
+		*bootstrapped = true
+	}
+	if *value == "" {
+		if hash := parseListenerHash(line); hash != "" {
+			*value = hash
+			return true
+		}
+	}
+	return false
+}
+
+func waitForListenerReadiness(name string, readyCh <-chan struct{}, waitCh <-chan error, outputFn func() string, bootstrappedFn func() bool, timeout time.Duration) error {
+	select {
+	case <-readyCh:
+		return nil
+	case err := <-waitCh:
+		if err == nil {
+			if bootstrappedFn() {
+				return fmt.Errorf("%v exited after bootstrap line before destination hash; output so far:\n%v", name, outputFn())
+			}
+			return fmt.Errorf("%v exited before readiness line; output so far:\n%v", name, outputFn())
+		}
+		if bootstrappedFn() {
+			return fmt.Errorf("%v failed after bootstrap line before destination hash: %v\noutput so far:\n%v", name, err, outputFn())
+		}
+		return fmt.Errorf("%v failed before readiness line: %v\noutput so far:\n%v", name, err, outputFn())
+	case <-time.After(timeout):
+		if bootstrappedFn() {
+			return fmt.Errorf("%v stalled after bootstrap line before destination hash within %v; output so far:\n%v", name, timeout, outputFn())
+		}
+		return fmt.Errorf("%v timed out waiting for readiness line within %v; output so far:\n%v", name, timeout, outputFn())
+	}
 }
 
 func (p *pythonListenerProcess) stop(t *testing.T) {

@@ -416,6 +416,58 @@ func (rt *runtimeT) handleCommandRequest(path string, data []byte, requestID []b
 	return result
 }
 
+type requestLink interface {
+	Request(path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), timeout time.Duration) (*rns.RequestReceipt, error)
+}
+
+func (rt *runtimeT) packExecuteRequestPayload(command string) ([]byte, error) {
+	app := rt.app
+
+	var stdoutL, stderrL any
+	if app.stdoutLimit >= 0 {
+		stdoutL = int64(app.stdoutLimit)
+	}
+	if app.stderrLimit >= 0 {
+		stderrL = int64(app.stderrLimit)
+	}
+
+	payload := []any{
+		[]byte(command),
+		app.timeout,
+		stdoutL,
+		stderrL,
+		[]byte(app.stdin),
+	}
+
+	return rns.Pack(payload)
+}
+
+func (rt *runtimeT) requestExecute(link requestLink, command string, responseCallback, failedCallback func(*rns.RequestReceipt)) error {
+	_, err := rt.requestExecuteWithProgress(link, command, responseCallback, failedCallback, nil)
+	return err
+}
+
+func (rt *runtimeT) requestExecuteWithProgress(link requestLink, command string, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt)) (*rns.RequestReceipt, error) {
+	packedPayload, err := rt.packExecuteRequestPayload(command)
+	if err != nil {
+		return nil, err
+	}
+
+	return link.Request("command", packedPayload, responseCallback, failedCallback, progressCallback, time.Duration(rt.app.timeout*float64(time.Second)))
+}
+
+func (rt *runtimeT) successExitCode(returnValue any) int {
+	if !rt.app.mirror {
+		return 0
+	}
+
+	retval, ok := utils.AsInt(returnValue)
+	if !ok {
+		return 240
+	}
+	return retval
+}
+
 func (rt *runtimeT) doExecute(ts rns.Transport, destHashHex string, command string) {
 	app := rt.app
 	logger := rt.logger
@@ -479,45 +531,53 @@ func (rt *runtimeT) doExecute(ts rns.Transport, destHashHex string, command stri
 		_ = link.Identify(id)
 	}
 
-	// Payload: [command_bytes, timeout, stdout_limit, stderr_limit, stdin_bytes]
-	var stdoutL, stderrL any
-	if app.stdoutLimit >= 0 {
-		stdoutL = int64(app.stdoutLimit)
-	}
-	if app.stderrLimit >= 0 {
-		stderrL = int64(app.stderrLimit)
-	}
-
-	payload := []any{
-		[]byte(command),
-		app.timeout,
-		stdoutL,
-		stderrL,
-		[]byte(app.stdin),
-	}
-
-	packedPayload, err := rns.Pack(payload)
-	if err != nil {
-		log.Fatalf("Could not pack request payload: %v\n", err)
-	}
-
 	done := make(chan struct{})
-	if _, err := link.Request("command", packedPayload, func(receipt *rns.RequestReceipt) {
+	failed := make(chan struct{})
+	receiving := make(chan struct{})
+	closeOnce := func(ch chan struct{}) {
+		select {
+		case <-ch:
+		default:
+			close(ch)
+		}
+	}
+	_, err = rt.requestExecuteWithProgress(link, command, func(receipt *rns.RequestReceipt) {
 		rt.handleResponse(receipt.RequestID, receipt.Response)
-		close(done)
+		closeOnce(done)
 	}, func(receipt *rns.RequestReceipt) {
-		fmt.Println("Request failed")
-		close(done)
-		os.Exit(1)
-	}, nil, time.Duration(app.timeout*float64(time.Second))); err != nil {
+		closeOnce(failed)
+	}, func(receipt *rns.RequestReceipt) {
+		if receipt.GetStatus() == rns.RequestReceiving {
+			closeOnce(receiving)
+		}
+	})
+	if err != nil {
 		log.Fatalf("Could not send request: %v\n", err)
 	}
 
-	// Wait for response or safety timeout
+	resultTimeout := time.Duration((app.timeout + 10.0) * float64(time.Second))
+	if app.resultTimeout > 0 {
+		resultTimeout = time.Duration(app.resultTimeout * float64(time.Second))
+	}
+
 	select {
 	case <-done:
-		// OK
-	case <-time.After(time.Duration((app.timeout + 10.0) * float64(time.Second))):
+		return
+	case <-failed:
+		fmt.Println("No result was received")
+		os.Exit(245)
+	case <-receiving:
+		select {
+		case <-done:
+			return
+		case <-failed:
+			fmt.Println("Receiving result failed")
+			os.Exit(246)
+		case <-time.After(resultTimeout):
+			fmt.Println("Receiving result failed")
+			os.Exit(246)
+		}
+	case <-time.After(time.Duration(app.timeout * float64(time.Second))):
 		log.Fatalf("Initiator timed out waiting for response\n")
 	}
 }
@@ -532,7 +592,6 @@ func (rt *runtimeT) handleResponse(requestID []byte, response any) {
 	}
 
 	executed, _ := result[0].(bool)
-	returnValue, _ := utils.AsInt(result[1])
 	stdout, _ := result[2].([]byte)
 	stderr, _ := result[3].([]byte)
 	stdoutLen, _ := utils.AsInt(result[4])
@@ -583,16 +642,22 @@ func (rt *runtimeT) handleResponse(requestID []byte, response any) {
 			}
 			_ = os.Stdout.Sync()
 			_ = os.Stderr.Sync()
+
+			if (app.stdoutLimit != 0 && len(stdout) < stdoutLen) || (app.stderrLimit != 0 && len(stderr) < stderrLen) {
+				fmt.Println("\nOutput truncated before being returned:")
+				if len(stdout) != 0 && len(stdout) < stdoutLen {
+					fmt.Printf("  stdout truncated to %v bytes\n", len(stdout))
+				}
+				if len(stderr) != 0 && len(stderr) < stderrLen {
+					fmt.Printf("  stderr truncated to %v bytes\n", len(stderr))
+				}
+			}
 		}
 
-		if app.mirror {
-			os.Exit(returnValue)
-		} else {
-			os.Exit(0)
-		}
+		os.Exit(rt.successExitCode(result[1]))
 	} else {
 		fmt.Println("Remote could not execute command")
-		os.Exit(1)
+		os.Exit(248)
 	}
 }
 
@@ -660,14 +725,15 @@ func (rt *runtimeT) doInteractive(ts rns.Transport, destHashHex string) {
 	}
 
 	scanner := bufio.NewScanner(os.Stdin)
-	prompt := rns.PrettyHexRep(destHash) + "> "
+	prompt := "> "
 	fmt.Print(prompt)
 	for scanner.Scan() {
 		command := scanner.Text()
-		if command == "quit" || command == "exit" {
+		commandLower := strings.ToLower(command)
+		if commandLower == "quit" || commandLower == "exit" {
 			os.Exit(0)
 		}
-		if command == "clear" {
+		if commandLower == "clear" {
 			fmt.Print("\033c")
 		} else if command != "" {
 			// Payload: [command_bytes, timeout, stdout_limit, stderr_limit, stdin_bytes]

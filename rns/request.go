@@ -150,9 +150,9 @@ func (rr *RequestReceipt) responseResourceProgress(resource *Resource) {
 		return
 	}
 	rr.mu.Lock()
-	defer rr.mu.Unlock()
 
 	if rr.Status == RequestFailed {
+		rr.mu.Unlock()
 		return
 	}
 	rr.Status = RequestReceiving
@@ -163,5 +163,11 @@ func (rr *RequestReceipt) responseResourceProgress(resource *Resource) {
 			rr.PacketReceipt.Proved = true
 		}
 		rr.PacketReceipt.mu.Unlock()
+	}
+	cb := rr.progressCallback
+	rr.mu.Unlock()
+
+	if cb != nil {
+		go cb(rr)
 	}
 }

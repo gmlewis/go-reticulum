@@ -7,6 +7,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,6 +16,19 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 	"github.com/gmlewis/go-reticulum/testutils"
 )
+
+type fakeRequestLink struct {
+	path    string
+	data    any
+	timeout time.Duration
+}
+
+func (f *fakeRequestLink) Request(path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), timeout time.Duration) (*rns.RequestReceipt, error) {
+	f.path = path
+	f.data = data
+	f.timeout = timeout
+	return &rns.RequestReceipt{}, nil
+}
 
 func TestNewRuntime(t *testing.T) {
 	t.Parallel()
@@ -132,6 +146,82 @@ func TestDecodeRequestPayload(t *testing.T) {
 	}
 	if !bytes.Equal(gotStdin, stdin) {
 		t.Errorf("got stdin %q, want %q", gotStdin, stdin)
+	}
+}
+
+func TestPackExecuteRequestPayloadPythonParity(t *testing.T) {
+	t.Parallel()
+
+	rt := newRuntime(&appT{
+		timeout:     12.5,
+		stdoutLimit: 7,
+		stderrLimit: 9,
+		stdin:       "stdin-data",
+	})
+
+	got, err := rt.packExecuteRequestPayload("echo hi")
+	if err != nil {
+		t.Fatalf("packExecuteRequestPayload failed: %v", err)
+	}
+
+	want, err := hex.DecodeString("95c4076563686f206869cb40290000000000000709c40a737464696e2d64617461")
+	if err != nil {
+		t.Fatalf("hex.DecodeString failed: %v", err)
+	}
+
+	if !bytes.Equal(got, want) {
+		t.Fatalf("packed payload = %x, want %x", got, want)
+	}
+}
+
+func TestRequestExecuteSendsPackedPayload(t *testing.T) {
+	t.Parallel()
+
+	rt := newRuntime(&appT{
+		timeout:     12.5,
+		stdoutLimit: 7,
+		stderrLimit: 9,
+		stdin:       "stdin-data",
+	})
+	link := &fakeRequestLink{}
+
+	if err := rt.requestExecute(link, "echo hi", nil, nil); err != nil {
+		t.Fatalf("requestExecute failed: %v", err)
+	}
+
+	if link.path != "command" {
+		t.Fatalf("request path = %q, want %q", link.path, "command")
+	}
+
+	packed, ok := link.data.([]byte)
+	if !ok {
+		t.Fatalf("request data type = %T, want []byte", link.data)
+	}
+
+	want, err := hex.DecodeString("95c4076563686f206869cb40290000000000000709c40a737464696e2d64617461")
+	if err != nil {
+		t.Fatalf("hex.DecodeString failed: %v", err)
+	}
+	if !bytes.Equal(packed, want) {
+		t.Fatalf("request payload = %x, want %x", packed, want)
+	}
+}
+
+func TestSuccessExitCodeMirrorUsesRemoteReturnValue(t *testing.T) {
+	t.Parallel()
+
+	rt := newRuntime(&appT{mirror: true})
+	if got := rt.successExitCode(int64(7)); got != 7 {
+		t.Fatalf("successExitCode(int64(7)) = %v, want 7", got)
+	}
+}
+
+func TestSuccessExitCodeMirrorUsesFallback240ForNil(t *testing.T) {
+	t.Parallel()
+
+	rt := newRuntime(&appT{mirror: true})
+	if got := rt.successExitCode(nil); got != 240 {
+		t.Fatalf("successExitCode(nil) = %v, want 240", got)
 	}
 }
 

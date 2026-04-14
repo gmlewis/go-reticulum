@@ -22,20 +22,10 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("failed to open integration lock file %v: %v", lockPath, err)
 	}
-	defer func() {
-		if err := lockFile.Close(); err != nil {
-			log.Fatalf("unable to close lockFile %q", lockPath)
-		}
-	}()
 
 	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
 		log.Fatalf("failed to acquire integration lock %v: %v", lockPath, err)
 	}
-	defer func() {
-		if err := os.Remove(lockPath); err != nil {
-			log.Fatalf("unable to remove lockFile %q", lockPath)
-		}
-	}()
 
 	code := m.Run()
 
@@ -47,6 +37,12 @@ func TestMain(m *testing.M) {
 	}
 	if err := lockFile.Close(); err != nil {
 		log.Printf("failed to close integration lock file %v: %v", lockPath, err)
+		if code == 0 {
+			code = 1
+		}
+	}
+	if err := os.Remove(lockPath); err != nil {
+		log.Printf("unable to remove lockFile %q: %v", lockPath, err)
 		if code == 0 {
 			code = 1
 		}

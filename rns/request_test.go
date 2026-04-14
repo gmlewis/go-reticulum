@@ -135,3 +135,79 @@ func TestRequestResponseAutoCompressPolicyInlineAndResource(t *testing.T) {
 		})
 	}
 }
+
+func TestRequestResponseResourceProgressCallback(t *testing.T) {
+	t.Parallel()
+
+	tsInitiator := newTestTransportSystem(t)
+	tsReceiver := newTestTransportSystem(t)
+
+	pipeInitiator, pipeReceiver, cleanup := newTestPipes(t, tsInitiator, tsReceiver)
+	defer cleanup()
+	tsInitiator.RegisterInterface(pipeInitiator)
+	tsReceiver.RegisterInterface(pipeReceiver)
+
+	receiverDest := mustTestNewDestination(t, tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
+	receiverDest.RegisterRequestHandlerWithAutoCompressLimit(
+		"/test/path",
+		func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
+			return bytes.Repeat([]byte("R"), 4096)
+		},
+		AllowAll,
+		nil,
+		true,
+		ResourceAutoCompressMaxSize,
+	)
+
+	link := mustTestNewLink(t, tsInitiator, receiverDest)
+
+	establishedInitiator := make(chan bool, 1)
+	link.callbacks.LinkEstablished = func(l *Link) {
+		establishedInitiator <- true
+	}
+
+	if err := link.Establish(); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case <-establishedInitiator:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Timeout waiting for link establishment")
+	}
+
+	progressObserved := make(chan int, 1)
+	responseReceived := make(chan struct{}, 1)
+	_, err := link.Request(
+		"/test/path",
+		[]byte("hello"),
+		func(rr *RequestReceipt) {
+			responseReceived <- struct{}{}
+		},
+		nil,
+		func(rr *RequestReceipt) {
+			select {
+			case progressObserved <- rr.GetStatus():
+			default:
+			}
+		},
+		0,
+	)
+
+	mustTest(t, err)
+
+	select {
+	case status := <-progressObserved:
+		if status != RequestReceiving {
+			t.Fatalf("progress callback status = %v, want %v", status, RequestReceiving)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Timeout waiting for request progress callback")
+	}
+
+	select {
+	case <-responseReceived:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Timeout waiting for response")
+	}
+}
