@@ -3,7 +3,7 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-//go:build !linux
+//go:build !linux && !darwin
 
 package interfaces
 

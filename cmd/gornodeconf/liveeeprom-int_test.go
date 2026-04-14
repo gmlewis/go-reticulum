@@ -3,8 +3,8 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-//go:build integration && linux
-// +build integration,linux
+//go:build integration
+// +build integration
 
 package main
 

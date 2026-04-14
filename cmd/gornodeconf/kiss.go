@@ -10,6 +10,18 @@ const (
 	kissFesc  = 0xdb
 	kissTfend = 0xdc
 	kissTfesc = 0xdd
+
+	rnodeKISSCommandUnknown         = 0xfe
+	rnodeKISSCommandFrequency       = 0x01
+	rnodeKISSCommandBandwidth       = 0x02
+	rnodeKISSCommandPlatform        = 0x48
+	rnodeKISSCommandFWVersion       = 0x50
+	rnodeKISSCommandROMRead         = 0x51
+	rnodeKISSCommandDevHash         = 0x56
+	rnodeKISSCommandDeviceSignature = 0x57
+	rnodeKISSCommandHashes          = 0x60
+	rnodeKISSCommandCFGRead         = 0x6d
+	rnodeKISSCommandData            = 0x00
 )
 
 func kissEscape(data []byte) []byte {

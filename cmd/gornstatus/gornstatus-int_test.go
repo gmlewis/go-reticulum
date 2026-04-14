@@ -151,9 +151,28 @@ func TestIntegration_ExitCodeZero(t *testing.T) {
 	t.Parallel()
 	bin, cleanupBin := buildGornstatus(t)
 	defer cleanupBin()
+	listenPort := testutils.ReserveUDPPort(t)
+	forwardPort := testutils.ReserveUDPPort(t)
 	tmpDir, cleanup := testutils.TempDirWithConfig(t, tempDirPrefix, func(dir string) string {
 		instanceName := filepath.Base(dir)
-		return "[reticulum]\nenable_transport = False\nshare_instance = Yes\ninstance_name = " + instanceName + "\n\n[logging]\nloglevel = 2\n"
+		return strings.Join([]string{
+			"[reticulum]",
+			"enable_transport = Yes",
+			"share_instance = No",
+			"instance_name = " + instanceName,
+			"",
+			"[logging]",
+			"loglevel = 2",
+			"",
+			"[interfaces]",
+			"  [[Default Interface]]",
+			"    type = UDPInterface",
+			"    enabled = Yes",
+			"    listen_ip = 127.0.0.1",
+			"    listen_port = " + fmt.Sprintf("%v", listenPort),
+			"    forward_ip = 127.0.0.1",
+			"    forward_port = " + fmt.Sprintf("%v", forwardPort),
+		}, "\n")
 	})
 	defer cleanup()
 	cmd := exec.Command(bin, "--config", tmpDir)
@@ -173,7 +192,7 @@ func TestIntegration_SIGINTCleanExit(t *testing.T) {
 	})
 	defer cleanup()
 	cmd := exec.Command(bin, "--config", tmpDir, "-m", "-I", "10")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	setProcessGroup(cmd)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("failed to start: %v", err)
 	}
@@ -198,7 +217,7 @@ func TestIntegration_MonitorModeSIGINT(t *testing.T) {
 	})
 	defer cleanup()
 	cmd := exec.Command(bin, "--config", tmpDir, "-m", "-I", "0.1")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	setProcessGroup(cmd)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("failed to start: %v", err)
 	}

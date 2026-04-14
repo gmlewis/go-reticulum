@@ -3,12 +3,15 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-//go:build !linux
+//go:build integration && !windows
 
 package main
 
-import "errors"
+import (
+	"os/exec"
+	"syscall"
+)
 
-func handleTrustKey(string) error {
-	return errors.New("trust-key is only supported on linux")
+func setProcessGroup(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 }

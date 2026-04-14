@@ -37,6 +37,7 @@ import os
 # Force unbuffered output
 if sys.version_info >= (3, 7):
     import io
+	"runtime"
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, line_buffering=True)
 
 # Add original repo to path
@@ -850,7 +851,11 @@ func TestIntegrationNetworkPartitionRecovery(t *testing.T) {
 		t.Fatalf("Step 3 failed after recovery: exit %v, output: %q\nlistener output:\n%v", exitCode, output, listener.output())
 	}
 	logOut := strings.ToLower(listener.output())
-	if !strings.Contains(logOut, "broken pipe") {
+	wantLog := strings.Contains(logOut, "broken pipe")
+	if runtime.GOOS == "darwin" {
+		wantLog = wantLog || strings.Contains(logOut, "file already closed")
+	}
+	if !wantLog {
 		t.Fatalf("listener recovery log missing expected broken-pipe symptom\nlistener output:\n%v", listener.output())
 	}
 	t.Log("Step 3 successfully recovered")

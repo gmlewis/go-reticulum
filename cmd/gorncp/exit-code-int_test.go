@@ -154,8 +154,6 @@ func TestMainExitCodeHelper(t *testing.T) {
 	// Test that os.Exit is called with correct codes
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
-	mustTest(t, os.Setenv("HOME", tmpDir))
-	defer func() { _ = os.Unsetenv("HOME") }()
 
 	// This test verifies the exit code behavior
 	cmd := exec.Command("go", "run", ".", "-a", "invalid")

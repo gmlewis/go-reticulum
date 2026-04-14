@@ -30,7 +30,9 @@ fi
 GO_TEST_TIMEOUT="${GO_TEST_TIMEOUT:-4m}"
 
 if [[ -z "${GO_TEST_TAGS:-}" ]]; then
-	if [[ "$(uname -s)" == "Linux" ]]; then
+	if [[ "$(uname -a)" == *"Darwin"* ]]; then
+		GO_TEST_TAGS="integration,darwin"
+	elif [[ "$(uname -a)" == *"Linux"* ]]; then
 		GO_TEST_TAGS="integration,linux"
 	else
 		GO_TEST_TAGS="integration"

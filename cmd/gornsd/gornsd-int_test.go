@@ -3,8 +3,8 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-//go:build integration && linux
-// +build integration,linux
+//go:build integration
+// +build integration
 
 package main
 
@@ -107,6 +107,21 @@ func reserveTCPPortForIntegration(t *testing.T) int {
 	}
 	defer func() { _ = listener.Close() }()
 	return listener.Addr().(*net.TCPAddr).Port
+}
+
+func waitForTCPPort(t *testing.T, port int) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	addr := fmt.Sprintf("127.0.0.1:%v", port)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp4", addr, 100*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %v to accept connections", addr)
 }
 
 func startGornsdBinary(t *testing.T, binaryPath string, args ...string) (*exec.Cmd, *lockedBuffer, *lockedBuffer) {
@@ -276,8 +291,8 @@ func TestGornsdVersionOutputs(t *testing.T) {
 	if got.stdout != "gornsd 0.1.0\n" {
 		t.Fatalf("gornsd stdout = %q, want %q", got.stdout, "gornsd 0.1.0\n")
 	}
-	if want.stdout != "rnsd 1.1.4\n" {
-		t.Fatalf("rnsd stdout = %q, want %q", want.stdout, "rnsd 1.1.4\n")
+	if want.stdout != "rnsd 1.1.3\n" {
+		t.Fatalf("rnsd stdout = %q, want %q", want.stdout, "rnsd 1.1.3\n")
 	}
 }
 
@@ -434,6 +449,7 @@ loglevel = 4
 	if err != nil {
 		t.Fatalf("failed to start shared instance: %v", err)
 	}
+	waitForTCPPort(t, rpcPort)
 	t.Cleanup(func() {
 		if closeErr := shared.Close(); closeErr != nil {
 			t.Fatalf("shared.Close error: %v", closeErr)

@@ -9,20 +9,7 @@ package main
 
 import "errors"
 
-const (
-	rnodeKISSCommandUnknown   = 0xfe
-	rnodeKISSCommandFrequency = 0x01
-	rnodeKISSCommandBandwidth = 0x02
-	rnodeKISSCommandPlatform  = 0x48
-	rnodeKISSCommandFWVersion = 0x50
-	rnodeKISSCommandROMRead   = 0x51
-	rnodeKISSCommandDevHash   = 0x56
-	rnodeKISSCommandHashes    = 0x60
-	rnodeKISSCommandCFGRead   = 0x6d
-	rnodeKISSCommandData      = 0x00
-
-	rnodeReadLoopFrameLimit = 1024
-)
+const rnodeReadLoopFrameLimit = 1024
 
 type rnodeReadLoopFrame struct {
 	command byte

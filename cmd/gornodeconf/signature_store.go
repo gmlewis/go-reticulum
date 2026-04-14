@@ -9,8 +9,6 @@ package main
 
 import "fmt"
 
-const rnodeKISSCommandDeviceSignature = 0x57
-
 // storeSignature writes a device signature using the Python KISS frame format.
 func storeSignature(writer eepromDownloaderWriter, sigBytes []byte) error {
 	payload := append([]byte{rnodeKISSCommandDeviceSignature}, kissEscape(sigBytes)...)

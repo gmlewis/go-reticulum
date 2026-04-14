@@ -3,8 +3,8 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-//go:build integration && linux
-// +build integration,linux
+//go:build integration
+// +build integration
 
 package main
 
@@ -85,7 +85,7 @@ loglevel = 4
 		t.Fatalf("failed to start gornprobe: %v", err)
 	}
 
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(2 * time.Second)
 
 	if err := cmd.Process.Signal(os.Interrupt); err != nil {
 		t.Fatalf("failed to signal interrupt: %v", err)

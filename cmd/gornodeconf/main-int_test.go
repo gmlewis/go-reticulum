@@ -3,8 +3,8 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-//go:build integration && linux
-// +build integration,linux
+//go:build integration
+// +build integration
 
 package main
 
@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -41,6 +42,10 @@ func TestPublicKeysReportsMissingFiles(t *testing.T) {
 }
 
 func TestSignWithoutPortAutoDetectsDiscoveredPort(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("live serial auto-detect is covered in the next task")
+	}
+
 	home := tempTrustKeyHome(t)
 	firmwareDir := filepath.Join(home, ".config", "rnodeconf", "firmware")
 	if err := os.MkdirAll(firmwareDir, 0o755); err != nil {

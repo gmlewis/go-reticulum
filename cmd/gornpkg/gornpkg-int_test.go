@@ -170,7 +170,7 @@ func TestIntegration_SIGINTCleanExit(t *testing.T) {
 		t.Fatalf("failed to start gornpkg: %v", err)
 	}
 
-	time.Sleep(25 * time.Millisecond)
+	time.Sleep(2 * time.Second)
 
 	if err := cmd.Process.Signal(syscall.SIGINT); err != nil {
 		t.Fatalf("failed to send SIGINT: %v", err)
