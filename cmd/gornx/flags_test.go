@@ -13,6 +13,16 @@ import (
 	"testing"
 )
 
+func TestCountFlag(t *testing.T) {
+	t.Parallel()
+	var v countFlag
+	_ = v.Set("true")
+	_ = v.Set("true")
+	if int(v) != 2 {
+		t.Errorf("got %v, want 2", int(v))
+	}
+}
+
 func TestParseFlags(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -59,8 +69,10 @@ func TestParseFlags(t *testing.T) {
 			name: "minimal",
 			args: []string{"dest_hash"},
 			want: &appT{
-				timeout: 15.0, // default value from RNS.Transport.PATH_REQUEST_TIMEOUT
-				args:    []string{"dest_hash"},
+				timeout:     15.0, // default value from RNS.Transport.PATH_REQUEST_TIMEOUT
+				stdoutLimit: -1,
+				stderrLimit: -1,
+				args:        []string{"dest_hash"},
 			},
 		},
 		{
@@ -71,6 +83,8 @@ func TestParseFlags(t *testing.T) {
 				quietness:     2,
 				allowedHashes: []string{"hash1", "hash2"},
 				timeout:       15.0,
+				stdoutLimit:   -1,
+				stderrLimit:   -1,
 				args:          []string{"dest"},
 			},
 		},
@@ -78,8 +92,10 @@ func TestParseFlags(t *testing.T) {
 			name: "no arguments",
 			args: []string{},
 			want: &appT{
-				timeout: 15.0,
-				args:    []string{},
+				timeout:     15.0,
+				stdoutLimit: -1,
+				stderrLimit: -1,
+				args:        []string{},
 			},
 		},
 	}
@@ -121,11 +137,4 @@ func TestParseFlagsHelp(t *testing.T) {
 			t.Errorf("help output missing option %q", opt)
 		}
 	}
-}
-
-func TestParseFlagsVersion(t *testing.T) {
-	t.Parallel()
-	// Version often exits directly or returns a special error.
-	// Python argparse -v prints version and exits.
-	// Go flag package doesn't have a standard version flag that behaves exactly like Python's.
 }

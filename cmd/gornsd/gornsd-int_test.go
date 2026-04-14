@@ -99,16 +99,6 @@ loglevel = %v
 	}
 }
 
-func reserveUDPPort(t *testing.T) int {
-	t.Helper()
-	conn, err := net.ListenPacket("udp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("reserveUDPPort: %v", err)
-	}
-	defer func() { _ = conn.Close() }()
-	return conn.LocalAddr().(*net.UDPAddr).Port
-}
-
 func reserveTCPPortForIntegration(t *testing.T) int {
 	t.Helper()
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
@@ -374,8 +364,8 @@ func TestGornsdVerbosityIncreases(t *testing.T) {
 
 	configDir, cleanup := testutils.TempDir(t, "gornsd-int-verbose-")
 	t.Cleanup(cleanup)
-	listenPort := reserveUDPPort(t)
-	forwardPort := reserveUDPPort(t)
+	listenPort := testutils.ReserveUDPPort(t)
+	forwardPort := testutils.ReserveUDPPort(t)
 	writeGornsdUDPConfig(t, configDir, "No", 4, listenPort, forwardPort)
 
 	binaryPath := buildGornsdBinary(t)
@@ -395,8 +385,8 @@ func TestGornsdVerbosityIncreases(t *testing.T) {
 func TestGornsdQuietDecreases(t *testing.T) {
 	configDir, cleanup := testutils.TempDir(t, "gornsd-int-quiet-")
 	t.Cleanup(cleanup)
-	listenPort := reserveUDPPort(t)
-	forwardPort := reserveUDPPort(t)
+	listenPort := testutils.ReserveUDPPort(t)
+	forwardPort := testutils.ReserveUDPPort(t)
 	writeGornsdUDPConfig(t, configDir, "No", 4, listenPort, forwardPort)
 
 	binaryPath := buildGornsdBinary(t)

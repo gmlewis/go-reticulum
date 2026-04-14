@@ -119,3 +119,22 @@ func ReserveTCPPort(t *testing.T) int {
 		return addr.Port
 	}
 }
+
+// ReserveUDPPort reserves a unique UDP port for integration tests.
+func ReserveUDPPort(t *testing.T) int {
+	t.Helper()
+	addr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("ReserveUDPPort: %v", err)
+	}
+	conn, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		t.Fatalf("ReserveUDPPort: %v", err)
+	}
+	defer func() {
+		if err := conn.Close(); err != nil {
+			t.Fatal("unable to close UDP port")
+		}
+	}()
+	return conn.LocalAddr().(*net.UDPAddr).Port
+}

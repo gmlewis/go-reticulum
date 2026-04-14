@@ -47,6 +47,11 @@ func Unpack(data []byte) (any, error) {
 	return msgpack.Unpack(data)
 }
 
+// Pack serializes a value to MessagePack data.
+func Pack(v any) ([]byte, error) {
+	return msgpack.Pack(v)
+}
+
 // RecallIdentity recalls an identity from its hash using the provided transport.
 func RecallIdentity(ts Transport, hash []byte) *Identity {
 	return ts.Recall(hash)

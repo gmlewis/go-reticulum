@@ -69,7 +69,9 @@ func (s *stringSliceFlag) Set(val string) error {
 
 func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
 	app := &appT{
-		timeout: 15.0, // RNS.Transport.PATH_REQUEST_TIMEOUT
+		timeout:     15.0, // RNS.Transport.PATH_REQUEST_TIMEOUT
+		stdoutLimit: -1,   // No limit by default
+		stderrLimit: -1,   // No limit by default
 	}
 	fs := flag.NewFlagSet("gornx", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -97,8 +99,8 @@ func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
 	fs.Float64Var(&app.timeout, "w", 15.0, "")
 	fs.Float64Var(&app.resultTimeout, "W", 0, "")
 	fs.StringVar(&app.stdin, "stdin", "", "")
-	fs.IntVar(&app.stdoutLimit, "stdout", 0, "")
-	fs.IntVar(&app.stderrLimit, "stderr", 0, "")
+	fs.IntVar(&app.stdoutLimit, "stdout", -1, "")
+	fs.IntVar(&app.stderrLimit, "stderr", -1, "")
 	fs.BoolVar(&app.version, "version", false, "")
 
 	// Long names for compatibility

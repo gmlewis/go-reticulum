@@ -62,6 +62,11 @@ if __name__ == "__main__":
 
 var versionLineRE = regexp.MustCompile(`^[^[:space:]]+\s+[^[:space:]]+$`)
 
+const (
+	listenerReadinessTimeout  = 15 * time.Second
+	sharedInstancePathTimeout = 20 * time.Second
+)
+
 var gornshBinaryPath string
 var gornstatusBinaryPath string
 var gornpathBinaryPath string
@@ -106,7 +111,7 @@ func TestMain(m *testing.M) {
 	// before the process exits.
 	cleanup()
 	out, err := exec.Command("/usr/bin/pkill", "-f", binDir).CombinedOutput()
-	if err != nil {
+	if err != nil && err.Error() != "exit status 1" {
 		log.Printf("pkill -f %q failed: %v\n%s", binDir, err, out)
 	}
 
@@ -234,7 +239,7 @@ func TestIntegrationGoListenerGoInitiatorEcho(t *testing.T) {
 	}
 
 	// Wait for the shared instance transport to propagate the listener's path.
-	waitForPathInSharedInstance(t, configDir, readyHash, 30*time.Second)
+	waitForPathInSharedInstance(t, configDir, readyHash, sharedInstancePathTimeout)
 
 	// Initiator call should be rock-solid with enough timeout
 	// When using shared instance, we MUST use the same configDir
@@ -249,26 +254,16 @@ func TestIntegrationGoListenerGoInitiatorEcho(t *testing.T) {
 
 func TestIntegrationPythonListenerGoInitiatorEcho(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	// Set up temporary directory for Python listener config
-	configDir, cleanup := testutils.TempDir(t, "gornsh-py-go-")
+	listenerConfigDir, initiatorConfigDir, cleanup := prepareGornshDirectUDPConfigPair(t, "gornsh-py-go-")
 	defer cleanup()
 
-	instanceName := "gornsh-py-go-" + filepath.Base(configDir)
-	prepareGornshConfigWithInstance(t, configDir, instanceName, 0, 0)
-
-	// Start Python listener as subprocess
-	pythonListener := startPythonListener(t, configDir, instanceName, 0, 0)
+	pythonListener := startPythonListener(t, listenerConfigDir, "-b", "1")
 	readyHash := pythonListener.hash()
 	if readyHash == "" {
 		t.Fatal("Python listener hash is empty")
 	}
 
-	// Wait for the shared instance transport to propagate the listener's path.
-	waitForPathInSharedInstance(t, configDir, readyHash, 30*time.Second)
-
-	// Initiator call should be rock-solid with enough timeout
-	// When using shared instance, we MUST use the same configDir
-	output, exitCode := runGornshCommand(t, configDir, 60*time.Second, "--timeout", "30", "-T", readyHash, "echo", "hello")
+	output, exitCode := runGornshCommand(t, initiatorConfigDir, 15*time.Second, "--timeout", "8", "-T", readyHash, "echo", "hello")
 	if exitCode != 0 {
 		t.Fatalf("initiator exit code = %v, want 0\ninitiator output:\n%v\nlistener output:\n%v", exitCode, output, pythonListener.output())
 	}
@@ -279,23 +274,16 @@ func TestIntegrationPythonListenerGoInitiatorEcho(t *testing.T) {
 
 func TestIntegrationGoListenerPythonInitiatorEcho(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	configDir, cleanup := testutils.TempDir(t, "gornsh-go-py-")
+	listenerConfigDir, initiatorConfigDir, cleanup := prepareGornshDirectUDPConfigPair(t, "gornsh-go-py-")
 	defer cleanup()
 
-	instanceName := "gornsh-go-py-" + filepath.Base(configDir)
-	prepareGornshConfigWithInstance(t, configDir, instanceName, 0, 0)
-
-	listener := startGornshListener(t, configDir)
+	listener := startGornshListenerWithArgs(t, listenerConfigDir, "--no-auth", "--announce", "1")
 	readyHash := listener.hash()
 	if readyHash == "" {
 		t.Fatal("listener hash is empty")
 	}
 
-	// Wait for the shared instance transport to propagate the listener's path.
-	waitForPathInSharedInstance(t, configDir, readyHash, 30*time.Second)
-
-	// Initiator call (Python)
-	output, exitCode := runRnshCommand(t, configDir, 60*time.Second, "--timeout", "30", "-T", readyHash, "echo", "hello")
+	output, exitCode := runRnshCommand(t, initiatorConfigDir, 15*time.Second, "--timeout", "8", "-T", readyHash, "echo", "hello")
 	if exitCode != 0 {
 		t.Fatalf("Python initiator exit code = %v, want 0\ninitiator output:\n%v\nlistener output:\n%v", exitCode, output, listener.output())
 	}
@@ -336,6 +324,51 @@ func firstLineWithPrefix(output, prefix string) string {
 	return ""
 }
 
+func prepareGornshDirectUDPConfigPair(t *testing.T, prefix string) (string, string, func()) {
+	t.Helper()
+
+	listenerConfigDir, cleanupListener := testutils.TempDir(t, prefix+"listener-")
+	initiatorConfigDir, cleanupInitiator := testutils.TempDir(t, prefix+"initiator-")
+	cleanup := func() {
+		cleanupInitiator()
+		cleanupListener()
+	}
+
+	listenerPort := testutils.ReserveUDPPort(t)
+	initiatorPort := testutils.ReserveUDPPort(t)
+	prepareGornshDirectUDPConfig(t, listenerConfigDir, "gornsh-listener-"+filepath.Base(listenerConfigDir), listenerPort, initiatorPort)
+	prepareGornshDirectUDPConfig(t, initiatorConfigDir, "gornsh-initiator-"+filepath.Base(initiatorConfigDir), initiatorPort, listenerPort)
+
+	return listenerConfigDir, initiatorConfigDir, cleanup
+}
+
+func prepareGornshDirectUDPConfig(t *testing.T, configDir, instanceName string, listenPort, forwardPort int) {
+	t.Helper()
+
+	configText := strings.Join([]string{
+		"[reticulum]",
+		"enable_transport = Yes",
+		"share_instance = No",
+		"instance_name = " + instanceName,
+		"",
+		"[logging]",
+		"loglevel = 4",
+		"",
+		"[interfaces]",
+		"  [[Default Interface]]",
+		"    type = UDPInterface",
+		"    enabled = Yes",
+		"    listen_ip = 127.0.0.1",
+		"    listen_port = " + fmt.Sprintf("%v", listenPort),
+		"    forward_ip = 127.0.0.1",
+		"    forward_port = " + fmt.Sprintf("%v", forwardPort),
+		"",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(configText), 0o600); err != nil {
+		t.Fatalf("failed to write gornsh direct UDP config: %v", err)
+	}
+}
+
 type gornshListenerProcess struct {
 	cmd     *exec.Cmd
 	stdout  *bytes.Buffer
@@ -368,7 +401,7 @@ func TestIntegrationAllowedIdentityEnforcement(t *testing.T) {
 	}
 
 	// Wait for the shared instance transport to propagate.
-	waitForPathInSharedInstance(t, configDir, readyHash, 30*time.Second)
+	waitForPathInSharedInstance(t, configDir, readyHash, sharedInstancePathTimeout)
 
 	// Try to connect with initiatorID (which is NOT allowed)
 	output, exitCode := runGornshCommand(t, configDir, 30*time.Second, "-i", filepath.Join(configDir, "initiator.id"), "--timeout", "10", "-T", readyHash, "echo", "hello")
@@ -404,7 +437,7 @@ func TestIntegrationMirrorFlag(t *testing.T) {
 	}
 
 	// Wait for the shared instance transport to propagate.
-	waitForPathInSharedInstance(t, configDir, readyHash, 30*time.Second)
+	waitForPathInSharedInstance(t, configDir, readyHash, sharedInstancePathTimeout)
 
 	tests := []struct {
 		name       string
@@ -477,7 +510,7 @@ func TestIntegrationNoAuthOpenListener(t *testing.T) {
 		readyHash := listener.hash()
 
 		// Wait for the shared instance transport to propagate.
-		waitForPathInSharedInstance(t, configDir, readyHash, 30*time.Second)
+		waitForPathInSharedInstance(t, configDir, readyHash, sharedInstancePathTimeout)
 
 		// Initiator with a random identity should succeed
 		output, exitCode := runGornshCommand(t, configDir, 30*time.Second, "--timeout", "10", "-T", readyHash, "echo", "hello")
@@ -498,7 +531,7 @@ func TestIntegrationNoAuthOpenListener(t *testing.T) {
 		readyHash := listener.hash()
 
 		// Wait for the listener's path to propagate through the shared instance.
-		waitForPathInSharedInstance(t, configDir, readyHash, 30*time.Second)
+		waitForPathInSharedInstance(t, configDir, readyHash, sharedInstancePathTimeout)
 
 		// Initiator with any identity should fail
 		output, exitCode := runGornshCommand(t, configDir, 30*time.Second, "--timeout", "10", "-T", readyHash, "echo", "hello")
@@ -529,7 +562,7 @@ func TestIntegrationNetworkPartitionRecovery(t *testing.T) {
 	readyHash := listener.hash()
 
 	// Wait for the shared instance transport to propagate.
-	waitForPathInSharedInstance(t, configDir, readyHash, 30*time.Second)
+	waitForPathInSharedInstance(t, configDir, readyHash, sharedInstancePathTimeout)
 
 	// 1. Verify initial success
 	output, exitCode := runGornshCommand(t, configDir, 30*time.Second, "--timeout", "10", "-T", readyHash, "echo", "step1")
@@ -557,7 +590,7 @@ func TestIntegrationNetworkPartitionRecovery(t *testing.T) {
 	}
 
 	// Wait for the listener to recover from SIGSTOP
-	waitForPathInSharedInstance(t, configDir, readyHash, 30*time.Second)
+	waitForPathInSharedInstance(t, configDir, readyHash, sharedInstancePathTimeout)
 
 	// Initiator should succeed again
 	output, exitCode = runGornshCommand(t, configDir, 30*time.Second, "--timeout", "10", "-T", readyHash, "echo", "step3")
@@ -611,35 +644,46 @@ func startGornshListenerWithArgs(t *testing.T, configDir string, extraArgs ...st
 			// Ensure we close the reader when done to prevent resource leaks
 			_ = reader.Close()
 		}()
+		lineCount := 0
 		scanner := bufio.NewScanner(reader)
 		for scanner.Scan() {
 			line := scanner.Text()
+			lineCount++
+			log.Printf("[GO-SCANNER] line %v: %q", lineCount, line)
 			proc.hashMu.Lock()
 			proc.stdout.WriteString(line)
 			proc.stdout.WriteByte('\n')
 			if proc.value == "" {
 				if hash := parseListenerHash(line); hash != "" {
 					proc.value = hash
-					close(proc.readyCh)
+					log.Printf("[GO-SCANNER] hash found: %v, closing readyCh", hash)
+					select {
+					case <-proc.readyCh:
+					default:
+						close(proc.readyCh)
+					}
 				}
 			}
 			proc.hashMu.Unlock()
 		}
 		if err := scanner.Err(); err != nil {
+			log.Printf("[GO-SCANNER] scanner error after %v lines: %v", lineCount, err)
 			proc.waitCh <- err
 			return
 		}
+		log.Printf("[GO-SCANNER] scanner finished after %v lines", lineCount)
 		proc.waitCh <- nil
 	}()
 
 	select {
 	case <-proc.readyCh:
+		log.Printf("gornsh listener hash is ready: %v", proc.hash())
 	case err := <-proc.waitCh:
 		if err == nil {
 			t.Fatal("listener exited before readiness line")
 		}
 		t.Fatalf("listener failed before readiness line: %v", err)
-	case <-time.After(30 * time.Second):
+	case <-time.After(listenerReadinessTimeout):
 		t.Fatalf("timed out waiting for listener readiness; output so far:\n%v", proc.output())
 	}
 
@@ -655,13 +699,14 @@ func startGornshListener(t *testing.T, configDir string) *gornshListenerProcess 
 	return startGornshListenerWithArgs(t, configDir, "--no-auth")
 }
 
-var listenerHashRE = regexp.MustCompile(`rnsh listening for commands on <([0-9a-fA-F]+)>`)
+var listenerHashRE = regexp.MustCompile(`(?i)rnsh listening for commands on <([0-9a-fA-F]+)>`)
 
 func parseListenerHash(line string) string {
 	matches := listenerHashRE.FindAllStringSubmatch(line, -1)
 	if len(matches) > 0 && len(matches[0]) > 1 {
 		return matches[0][1]
 	}
+	// log.Printf("[DEBUG] parseListenerHash: no match for %q", line)
 	return ""
 }
 
@@ -852,7 +897,7 @@ type pythonListenerProcess struct {
 	waitCh  chan error
 }
 
-func startPythonListener(t *testing.T, configDir, instanceName string, listenPort, forwardPort int) *pythonListenerProcess {
+func startPythonListener(t *testing.T, configDir string, extraArgs ...string) *pythonListenerProcess {
 	t.Helper()
 
 	wrapperPath := filepath.Join(os.TempDir(), "gornsh_py_wrapper_"+filepath.Base(configDir)+".py")
@@ -863,8 +908,9 @@ func startPythonListener(t *testing.T, configDir, instanceName string, listenPor
 
 	env := gornshIntegrationEnv("")
 
-	// Use the wrapper script instead of -m rnsh.rnsh
-	cmd := exec.Command("python3", wrapperPath, "-l", "--no-auth", "-b", "0", "-c", configDir)
+	args := append([]string{wrapperPath, "-l", "--no-auth"}, extraArgs...)
+	args = append(args, "-c", configDir)
+	cmd := exec.Command("python3", args...)
 	cmd.Stdin = strings.NewReader("")
 	cmd.Env = env
 	reader, writer, err := os.Pipe()
@@ -933,11 +979,11 @@ func startPythonListener(t *testing.T, configDir, instanceName string, listenPor
 	// Wait for listener hash
 	select {
 	case <-proc.readyCh:
-		log.Printf("Python listener hash is ready: %v", proc.hash())
+		log.Printf("gornsh listener hash is ready: %v", proc.hash())
 	case err := <-proc.waitCh:
-		t.Fatalf("Python listener failed before readiness line: %v", err)
-	case <-time.After(60 * time.Second):
-		t.Fatalf("timed out waiting for Python listener readiness; output so far:\n%v", proc.output())
+		t.Fatalf("gornsh listener failed before readiness line: %v", err)
+	case <-time.After(listenerReadinessTimeout):
+		t.Fatalf("timed out waiting for gornsh listener readiness; output so far:\n%v", proc.output())
 	}
 
 	t.Cleanup(func() {

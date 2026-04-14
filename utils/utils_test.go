@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"errors"
 	"flag"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -59,5 +60,55 @@ func TestWriteText(t *testing.T) {
 	WriteText(&out, strings.Repeat("x", 3))
 	if got, want := out.String(), "xxx"; got != want {
 		t.Fatalf("WriteText output = %q, want %q", got, want)
+	}
+}
+
+func TestAsInt(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		v    any
+		want int
+		ok   bool
+	}{
+		{int(42), 42, true},
+		{int64(42), 42, true},
+		{uint64(42), 42, true},
+		{float64(42), 42, true},
+		{"42", 0, false},
+		{nil, 0, false},
+	}
+	for _, tc := range tests {
+		got, ok := AsInt(tc.v)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("AsInt(%v) = %v, %v; want %v, %v", tc.v, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
+func TestShlexSplit(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		s       string
+		want    []string
+		wantErr bool
+	}{
+		{`ls -l`, []string{"ls", "-l"}, false},
+		{`echo "hello world"`, []string{"echo", "hello world"}, false},
+		{`echo 'hello world'`, []string{"echo", "hello world"}, false},
+		{`cmd "arg with 'quotes'"`, []string{"cmd", "arg with 'quotes'"}, false},
+		{`unclosed "quote`, nil, true},
+		{`  multiple   spaces  `, []string{"multiple", "spaces"}, false},
+	}
+	for _, tc := range tests {
+		got, err := ShlexSplit(tc.s)
+		if (err != nil) != tc.wantErr {
+			t.Errorf("ShlexSplit(%q) error = %v, wantErr %v", tc.s, err, tc.wantErr)
+			continue
+		}
+		if err == nil {
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("ShlexSplit(%q) = %v, want %v", tc.s, got, tc.want)
+			}
+		}
 	}
 }

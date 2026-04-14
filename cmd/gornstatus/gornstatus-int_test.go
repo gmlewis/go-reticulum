@@ -10,7 +10,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -257,8 +256,8 @@ func TestIntegration_RemoteStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	listenPort := reserveUDPPort(t)
-	forwardPort := reserveUDPPort(t)
+	listenPort := testutils.ReserveUDPPort(t)
+	forwardPort := testutils.ReserveUDPPort(t)
 
 	pyConfig := strings.Join([]string{
 		"[reticulum]",
@@ -435,16 +434,6 @@ func getPythonPath() string {
 		return path
 	}
 	return ""
-}
-
-func reserveUDPPort(t *testing.T) int {
-	t.Helper()
-	conn, err := net.ListenPacket("udp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("reserveUDPPort: %v", err)
-	}
-	defer func() { _ = conn.Close() }()
-	return conn.LocalAddr().(*net.UDPAddr).Port
 }
 
 type safeBuffer struct {

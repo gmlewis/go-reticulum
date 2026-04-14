@@ -10,10 +10,10 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -88,24 +88,19 @@ func getRnshPythonPath() string {
 	return ""
 }
 
-func reserveUDPPort(t *testing.T) int {
-	t.Helper()
-	conn, err := net.ListenPacket("udp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("reserveUDPPort: %v", err)
-	}
-	defer func() { _ = conn.Close() }()
-	return conn.LocalAddr().(*net.UDPAddr).Port
-}
-
 type safeBuffer struct {
+	mu  sync.Mutex
 	buf bytes.Buffer
 }
 
 func (s *safeBuffer) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.buf.Write(p)
 }
 
 func (s *safeBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.buf.String()
 }
