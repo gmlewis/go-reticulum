@@ -7,18 +7,6 @@
 
 package main
 
-type ttyRestorer struct {
-	active bool
-}
-
 func newTTYRestorer(int) (*ttyRestorer, error) {
 	return &ttyRestorer{}, nil
-}
-
-func (t *ttyRestorer) raw() error {
-	return nil
-}
-
-func (t *ttyRestorer) restore() error {
-	return nil
 }

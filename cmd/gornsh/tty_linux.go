@@ -13,49 +13,38 @@ import (
 	"unsafe"
 )
 
-type ttyRestorer struct {
-	fd     int
-	saved  syscall.Termios
-	active bool
-}
-
 func newTTYRestorer(fd int) (*ttyRestorer, error) {
-	restorer := &ttyRestorer{fd: fd}
 	if fd < 0 {
-		return restorer, nil
+		return &ttyRestorer{}, nil
 	}
-	if _, err := ioctlGetTermios(fd, &restorer.saved); err != nil {
-		return restorer, nil
+
+	var saved syscall.Termios
+	if _, err := ioctlGetTermios(fd, &saved); err != nil {
+		return &ttyRestorer{}, nil
 	}
+
+	restorer := &ttyRestorer{}
 	restorer.active = true
+	restorer.rawFn = func() error {
+		raw := saved
+		raw.Iflag &^= syscall.BRKINT | syscall.ICRNL | syscall.INPCK | syscall.ISTRIP | syscall.IXON
+		raw.Oflag &^= syscall.OPOST
+		raw.Lflag &^= syscall.ECHO | syscall.ICANON | syscall.IEXTEN | syscall.ISIG
+		raw.Cflag |= syscall.CS8
+		raw.Cc[syscall.VMIN] = 1
+		raw.Cc[syscall.VTIME] = 0
+		if err := ioctlSetTermios(fd, &raw); err != nil {
+			return fmt.Errorf("could not enable raw mode: %w", err)
+		}
+		return nil
+	}
+	restorer.restoreFn = func() error {
+		if err := ioctlSetTermios(fd, &saved); err != nil {
+			return fmt.Errorf("could not restore terminal mode: %w", err)
+		}
+		return nil
+	}
 	return restorer, nil
-}
-
-func (t *ttyRestorer) raw() error {
-	if t == nil || !t.active {
-		return nil
-	}
-	raw := t.saved
-	raw.Iflag &^= syscall.BRKINT | syscall.ICRNL | syscall.INPCK | syscall.ISTRIP | syscall.IXON
-	raw.Oflag &^= syscall.OPOST
-	raw.Lflag &^= syscall.ECHO | syscall.ICANON | syscall.IEXTEN | syscall.ISIG
-	raw.Cflag |= syscall.CS8
-	raw.Cc[syscall.VMIN] = 1
-	raw.Cc[syscall.VTIME] = 0
-	if err := ioctlSetTermios(t.fd, &raw); err != nil {
-		return fmt.Errorf("could not enable raw mode: %w", err)
-	}
-	return nil
-}
-
-func (t *ttyRestorer) restore() error {
-	if t == nil || !t.active {
-		return nil
-	}
-	if err := ioctlSetTermios(t.fd, &t.saved); err != nil {
-		return fmt.Errorf("could not restore terminal mode: %w", err)
-	}
-	return nil
 }
 
 func ioctlGetTermios(fd int, termios *syscall.Termios) (syscall.Errno, error) {

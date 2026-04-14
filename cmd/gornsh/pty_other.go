@@ -18,11 +18,3 @@ type ptyPair struct{}
 func (rt *runtimeT) startPTYSessionCommand(sender messageSender, commandLine []string, remoteIdentity *rns.Identity, execute *executeCommandMessage) (*activeCommand, error) {
 	return nil, fmt.Errorf("PTY execution is not supported on this platform")
 }
-
-func openPTY() (*ptyPair, error) {
-	return nil, fmt.Errorf("PTY execution is not supported on this platform")
-}
-
-func termiosFromTCFlags(raw any) (any, error) {
-	return nil, fmt.Errorf("PTY execution is not supported on this platform")
-}
