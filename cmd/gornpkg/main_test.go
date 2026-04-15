@@ -16,7 +16,7 @@ import (
 
 const tempDirPrefix = "gornpkg-test-"
 
-func TestProgramSetupUsesVerbosityMinusQuietness(t *testing.T) {
+func TestInitReticulumUsesVerbosityMinusQuietness(t *testing.T) {
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 
@@ -45,8 +45,12 @@ func TestProgramSetupUsesVerbosityMinusQuietness(t *testing.T) {
 			return &rns.Reticulum{}, nil
 		},
 	}
-	if err := rt.programSetup(); err != nil {
-		t.Fatalf("programSetup returned error: %v", err)
+	ret, err := rt.initReticulum()
+	if err != nil {
+		t.Fatalf("initReticulum returned error: %v", err)
+	}
+	if ret == nil {
+		t.Fatal("initReticulum returned nil reticulum")
 	}
 	if got, want := capturedLevel, 2; got != want {
 		t.Fatalf("log level = %v, want %v", got, want)
@@ -59,7 +63,7 @@ func TestProgramSetupUsesVerbosityMinusQuietness(t *testing.T) {
 	}
 }
 
-func TestProgramSetupForwardsConfigDirAndClosesReticulum(t *testing.T) {
+func TestInitReticulumForwardsConfigDirAndClosesReticulum(t *testing.T) {
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	if err := os.WriteFile(filepath.Join(tmpDir, "config"), []byte("[reticulum]\nshare_instance = No\n"), 0o600); err != nil {
@@ -76,14 +80,28 @@ func TestProgramSetupForwardsConfigDirAndClosesReticulum(t *testing.T) {
 		logger:       logger,
 		newReticulum: rns.NewReticulumWithLogger,
 	}
-	if err := rt.programSetup(); err != nil {
-		t.Fatalf("first programSetup returned error: %v", err)
+	ret, err := rt.initReticulum()
+	if err != nil {
+		t.Fatalf("first initReticulum returned error: %v", err)
+	}
+	if ret == nil {
+		t.Fatal("first initReticulum returned nil reticulum")
+	}
+	if err := ret.Close(); err != nil {
+		t.Fatalf("first close returned error: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(tmpDir, "config")); err != nil {
 		t.Fatalf("expected config file to be created in %v: %v", tmpDir, err)
 	}
-	if err := rt.programSetup(); err != nil {
-		t.Fatalf("second programSetup returned error: %v", err)
+	ret2, err := rt.initReticulum()
+	if err != nil {
+		t.Fatalf("second initReticulum returned error: %v", err)
+	}
+	if ret2 == nil {
+		t.Fatal("second initReticulum returned nil reticulum")
+	}
+	if err := ret2.Close(); err != nil {
+		t.Fatalf("second close returned error: %v", err)
 	}
 }
 

@@ -33,45 +33,45 @@ func newRuntime(app *appT) *runtimeT {
 	return &runtimeT{app: app, logger: rns.NewLogger(), newReticulum: rns.NewReticulumWithLogger}
 }
 
-func (rt *runtimeT) run() bool {
+func (rt *runtimeT) run() {
 	if rt == nil || rt.app == nil {
-		return false
+		return
 	}
 
 	if rt.app.version {
 		fmt.Printf("gornpkg %v\n", rns.VERSION)
-		return false
+		return
 	}
 
 	if rt.app.exampleConfig {
 		fmt.Print(exampleRnpkgConfig + "\n")
-		return false
+		return
 	}
 
-	if err := rt.programSetup(); err != nil {
-		log.Fatalf("Could not initialize Reticulum: %v", err)
-	}
-	return true
+	rt.programSetup()
 }
 
 type reticulumFactory func(rns.Transport, string, *rns.Logger) (*rns.Reticulum, error)
 
-func (rt *runtimeT) programSetup() (err error) {
+func (rt *runtimeT) programSetup() {
+	ret, err := rt.initReticulum()
+	if err != nil {
+		rt.logger.Error("Could not initialize Reticulum, exiting now")
+		os.Exit(1)
+	}
+	if err := ret.Close(); err != nil {
+		rt.logger.Warning("Warning: Could not close Reticulum properly: %v", err)
+	}
+	os.Exit(0)
+}
+
+func (rt *runtimeT) initReticulum() (*rns.Reticulum, error) {
 	logger := rt.logger
 	logger.SetLogDest(rns.LogStdout)
 	logger.SetLogLevel(int(rt.app.verbose) - int(rt.app.quiet))
 
 	ts := rns.NewTransportSystem(logger)
-	ret, err := rt.newReticulum(ts, rt.app.configDir, logger)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if closeErr := ret.Close(); closeErr != nil {
-			err = closeErr
-		}
-	}()
-	return nil
+	return rt.newReticulum(ts, rt.app.configDir, logger)
 }
 
 func main() {
@@ -86,12 +86,11 @@ func main() {
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(sig)
+	go func() {
+		<-sig
+		fmt.Println()
+		os.Exit(0)
+	}()
 
-	if newRuntime(app).run() {
-		sig := <-sig
-		if sig == os.Interrupt {
-			fmt.Println()
-		}
-	}
+	newRuntime(app).run()
 }
