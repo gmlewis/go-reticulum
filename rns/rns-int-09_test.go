@@ -196,6 +196,8 @@ if __name__ == "__main__":
 `
 
 func TestAnnouncePacketParity(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-parity-*")
 	defer cleanup()
 
@@ -281,6 +283,8 @@ func TestAnnouncePacketParity(t *testing.T) {
 }
 
 func TestLinkProofPacketParity(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-parity-*")
 	defer cleanup()
 
@@ -337,6 +341,8 @@ func TestLinkProofPacketParity(t *testing.T) {
 }
 
 func TestLinkRequestPacketParity(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-parity-*")
 	defer cleanup()
 

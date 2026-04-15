@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	vendoredbzip2 "github.com/gmlewis/go-reticulum/compress/bzip2"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func runPythonHexTransform(t *testing.T, script string, inputHex string) string {
@@ -36,6 +37,8 @@ func runPythonHexTransform(t *testing.T, script string, inputHex string) string 
 }
 
 func TestBzip2ParityGoToPython(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+
 	payload := bytes.Repeat([]byte("go-reticulum-bzip2-parity-"), 256)
 
 	compressed, err := CompressBzip2(payload, vendoredbzip2.DefaultCompression)
@@ -58,6 +61,8 @@ func TestBzip2ParityGoToPython(t *testing.T) {
 }
 
 func TestBzip2ParityPythonToGo(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+
 	payload := bytes.Repeat([]byte{0x00, 0x01, 0x02, 0xFE, 0xFF, 0x10, 0x20, 0x30}, 512)
 	payloadHex := hex.EncodeToString(payload)
 
@@ -80,6 +85,8 @@ func TestBzip2ParityPythonToGo(t *testing.T) {
 }
 
 func TestBzip2ParityRejectsInvalidPayload(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+
 	invalid := []byte("not-a-bzip2-stream")
 	_, err := DecompressBzip2(invalid)
 	if err == nil {

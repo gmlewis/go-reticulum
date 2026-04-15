@@ -72,6 +72,8 @@ if __name__ == "__main__":
 `
 
 func TestIdentityParity(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-parity-*")
 	defer cleanup()
 
@@ -116,6 +118,8 @@ func TestIdentityParity(t *testing.T) {
 }
 
 func TestIdentityPythonToGoParity(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-parity-*")
 	defer cleanup()
 

@@ -16,6 +16,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 var ptyLinePattern = regexp.MustCompile(`PTY is (.+)$`)
@@ -88,6 +90,7 @@ func (s *loopbackSleeper) Sleep(duration time.Duration) {
 
 func TestDeviceProbeSucceedsOverSocatLoopback(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	hostPath, devicePath := startSocatPTYPair(t)
 
 	hostPort, err := rnodeOpenSerial(hostPath)
@@ -135,6 +138,7 @@ func TestDeviceProbeSucceedsOverSocatLoopback(t *testing.T) {
 
 func TestDeviceProbeFailsOverSocatLoopbackWithoutResponse(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	hostPath, _ := startSocatPTYPair(t)
 
 	hostPort, err := rnodeOpenSerial(hostPath)

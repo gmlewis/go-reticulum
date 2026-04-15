@@ -46,6 +46,7 @@ func findRnir(t *testing.T) string {
 
 func TestIntegration_VersionOutput(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	bin, cleanup := buildGornir(t)
 	defer cleanup()
 	out, err := exec.Command(bin, "--version").CombinedOutput()
@@ -61,6 +62,7 @@ func TestIntegration_VersionOutput(t *testing.T) {
 
 func TestIntegration_ExampleConfigOutput(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	bin, cleanup := buildGornir(t)
 	defer cleanup()
 	out, err := exec.Command(bin, "--exampleconfig").CombinedOutput()
@@ -83,6 +85,7 @@ func TestIntegration_ExampleConfigOutput(t *testing.T) {
 
 func TestIntegration_ExitCodeZero(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	bin, cleanup := buildGornir(t)
 	defer cleanup()
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -96,6 +99,7 @@ func TestIntegration_ExitCodeZero(t *testing.T) {
 
 func TestIntegration_HelpOutput(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	bin, cleanup := buildGornir(t)
 	defer cleanup()
 	out, _ := exec.Command(bin, "--help").CombinedOutput()
@@ -116,6 +120,7 @@ func TestIntegration_HelpOutput(t *testing.T) {
 
 func TestParity_ExampleConfig(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	rnirBin := findRnir(t)
 	gornirBin, cleanup := buildGornir(t)
 	defer cleanup()
@@ -143,6 +148,7 @@ func TestParity_ExampleConfig(t *testing.T) {
 
 func TestParity_HelpFlags(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	rnirBin := findRnir(t)
 	gornirBin, cleanup := buildGornir(t)
 	defer cleanup()
@@ -165,6 +171,7 @@ func TestParity_HelpFlags(t *testing.T) {
 
 func TestIntegration_SIGINTCleanExit(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	bin, cleanup := buildGornir(t)
 	defer cleanup()
 	tmpDir, cleanupDir := testutils.TempDir(t, tempDirPrefix)
@@ -187,6 +194,7 @@ func TestIntegration_SIGINTCleanExit(t *testing.T) {
 
 func TestIntegration_VerboseStacking(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	bin, cleanup := buildGornir(t)
 	defer cleanup()
 	out, err := exec.Command(bin, "-v", "-v", "-v").CombinedOutput()

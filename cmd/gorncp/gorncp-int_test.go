@@ -165,6 +165,7 @@ func captureStdout(f func()) string {
 
 func TestVersionParity(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	configDir := filepath.Join(tmpDir, "config")
@@ -183,6 +184,7 @@ func TestVersionParity(t *testing.T) {
 
 func TestIdentityDisplayParity(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	idPath := filepath.Join(tmpDir, "identity")
@@ -230,6 +232,7 @@ func TestIdentityDisplayParity(t *testing.T) {
 
 func TestHelpParity(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	_ = runPython(t, "/tmp/nonexistent-py", "--help")
 	goOut := usageText
 
@@ -414,6 +417,7 @@ share_instance = No
 
 func TestListenModeIdentityCreation(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	// Create a temp directory for config
 	tmpDir, cleanup := testutils.TempDir(t, "gorncp-test-")
 	defer cleanup()
@@ -955,6 +959,7 @@ share_instance = No
 
 func TestSendTransferFailure(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	if got := sendTransferError(rns.ResourceStatusFailed); got == nil || got.Error() != "The transfer failed" {
 		t.Fatalf("sendTransferError(ResourceStatusFailed) = %v, want %q", got, "The transfer failed")
 	}

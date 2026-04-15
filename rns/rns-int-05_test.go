@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	vendoredbzip2 "github.com/gmlewis/go-reticulum/compress/bzip2"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func runPythonBufferTransform(t *testing.T, script string, args ...string) string {
@@ -37,6 +38,8 @@ func runPythonBufferTransform(t *testing.T, script string, args ...string) strin
 }
 
 func TestStreamDataMessageCompressedGoToPythonParity(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+
 	plaintext := bytes.Repeat([]byte("stream-parity-go-to-python-"), 128)
 	compressed, err := CompressBzip2(plaintext, vendoredbzip2.DefaultCompression)
 	if err != nil {
@@ -85,6 +88,8 @@ print(f"{m.stream_id}:{1 if m.compressed else 0}:{1 if m.eof else 0}:{binascii.h
 }
 
 func TestStreamDataMessageCompressedPythonToGoParity(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+
 	plaintext := bytes.Repeat([]byte{0x00, 0x01, 0xFE, 0xFF, 0x20, 0x30, 0x40}, 256)
 	plaintextHex := hex.EncodeToString(plaintext)
 

@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 const trustKeyFixtureHex = "30819f300d06092a864886f70d010101050003818d0030818902818100c511e59807af9fbcfce46f8617949c46ded93fffcf5c20cd826eea42dabe69f9b9e5a65232a46941a5e57c9daf387b9db40fe92f45ee863b0d7073169eded685ff9b78907090539b9eb47d1012f0a813a0bb79889b42afb56ae073cb8814e2c34d403b097951d3a862c20a6798e8e89ad583e55ae3e7c308dd0274d26ae0db6b0203010001"
@@ -22,6 +24,7 @@ const trustKeyFixtureHash = "cbc2cf229adc279096ade6bba0c26176fa70adcf1d59d926253
 
 func TestTrustKeyWritesTrustedKeyFile(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 
 	home := tempTrustKeyHome(t)
 	out, err := runGornodeconfWithEnv(map[string]string{"HOME": home}, "--trust-key", trustKeyFixtureHex)
@@ -45,6 +48,7 @@ func TestTrustKeyWritesTrustedKeyFile(t *testing.T) {
 
 func TestTrustKeyRejectsInvalidHex(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 
 	home := tempTrustKeyHome(t)
 	out, err := runGornodeconfWithEnv(map[string]string{"HOME": home}, "--trust-key", "not-hex")
@@ -58,6 +62,7 @@ func TestTrustKeyRejectsInvalidHex(t *testing.T) {
 
 func TestTrustKeyRejectsInvalidDer(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 
 	home := tempTrustKeyHome(t)
 	out, err := runGornodeconfWithEnv(map[string]string{"HOME": home}, "--trust-key", "00")
@@ -71,6 +76,7 @@ func TestTrustKeyRejectsInvalidDer(t *testing.T) {
 
 func TestTrustKeyReportsWriteFailure(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 
 	home := tempTrustKeyHome(t)
 	trustedDir := filepath.Join(home, ".config", "rnodeconf", "trusted_keys")

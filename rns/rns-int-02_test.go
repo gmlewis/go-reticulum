@@ -832,9 +832,7 @@ if __name__ == "__main__":
 `
 
 func TestIntegratedHandshakeGoToPython(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integrated test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-integrated-*")
 	defer cleanup()
@@ -984,9 +982,7 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 }
 
 func TestIntegratedLargeRequestGoToPython(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integrated test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-large-request-*")
 	defer cleanup()
@@ -1126,9 +1122,7 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 }
 
 func TestIntegratedHandshakePythonToGo(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integrated test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-integrated-*")
 	defer cleanup()
@@ -1231,9 +1225,7 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 }
 
 func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integrated test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-large-py-to-go-*")
 	defer cleanup()
@@ -1315,9 +1307,7 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 }
 
 func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integrated test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-integrated-*")
 	defer cleanup()
@@ -1421,9 +1411,7 @@ func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 }
 
 func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integrated test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-*")
 	defer cleanup()
@@ -1506,9 +1494,7 @@ func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
 }
 
 func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integrated test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-*")
 	defer cleanup()
@@ -1605,9 +1591,7 @@ func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 }
 
 func TestIntegratedPathResponseAnnounceNotRebroadcastUDP(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integrated test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-pathresp-norebroadcast-*")
 	defer cleanup()
@@ -1691,9 +1675,7 @@ enable_transport = False
 }
 
 func TestIntegratedRelayedPathResponsePropagationUDP(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integrated test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-pathresp-relay-*")
 	defer cleanup()
@@ -1846,9 +1828,7 @@ enable_transport = False
 }
 
 func TestIntegratedRelayedPathResponsePropagationPythonRequesterUDP(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integrated test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-pathresp-python-requester-*")
 	defer cleanup()
@@ -2002,9 +1982,7 @@ enable_transport = False
 }
 
 func TestIntegratedRelayedPathResponsePropagationPythonRelayUDP(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integrated test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-pathresp-python-relay-")
 	defer cleanup()
@@ -2180,9 +2158,7 @@ func TestIntegratedRelayedPathResponsePropagationPythonRelayUDP(t *testing.T) {
 }
 
 func TestIntegratedAnnouncePropagationPythonRelayUDP(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integrated test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-announce-python-relay-")
 	defer cleanup()
@@ -2343,9 +2319,7 @@ func TestIntegratedAnnouncePropagationPythonRelayUDP(t *testing.T) {
 }
 
 func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integrated test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-path-invalidate-py-")
 	defer cleanup()
@@ -2456,9 +2430,7 @@ func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 }
 
 func TestIntegratedRelayedPathResponseGoRequesterToPythonTargetUDP(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integrated test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-pathresp-go-relay-python-target-")
 	defer cleanup()
@@ -2615,9 +2587,7 @@ enable_transport = False
 }
 
 func TestIntegratedPythonRelayPathRequestEmissionUDP(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integrated test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-python-relay-pr-emitter-")
 	defer cleanup()
@@ -2737,9 +2707,7 @@ waitPacket:
 }
 
 func TestIntegratedPythonRelayInboundPathRequestForwardingUDP(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integrated test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-python-relay-inbound-forward-")
 	defer cleanup()

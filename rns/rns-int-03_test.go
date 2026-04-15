@@ -206,9 +206,7 @@ if __name__ == "__main__":
 `
 
 func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integrated test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 	if RaceEnabled {
 		t.Skip("Skipping in race mode due known concurrent hash access in request path under this stress pattern")
 	}
@@ -436,9 +434,7 @@ func setupGoOnlyIntegrationLinkPair(t *testing.T) (*Link, *Link) {
 }
 
 func TestIntegratedGoOnlyLargeResourceCompressionOnOff(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integrated test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tests := []struct {
 		name              string
@@ -507,9 +503,7 @@ func TestIntegratedGoOnlyLargeResourceCompressionOnOff(t *testing.T) {
 }
 
 func TestIntegratedGoOnlyChannelStreamCompressedChunks(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integrated test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	initiatorLink, receiverLink := setupGoOnlyIntegrationLinkPair(t)
 
@@ -554,9 +548,7 @@ func TestIntegratedGoOnlyChannelStreamCompressedChunks(t *testing.T) {
 }
 
 func TestIntegratedResponseResourceCompressionPolicyPythonToGo(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integrated test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	cases := []struct {
 		name              string

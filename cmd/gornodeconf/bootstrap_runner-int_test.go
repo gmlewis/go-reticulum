@@ -16,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 type bootstrapSignerStub struct {
@@ -70,6 +72,7 @@ func TestRunEEPROMBootstrapBootstrapsDeviceAndBacksItUp(t *testing.T) {
 }
 
 func TestRunEEPROMBootstrapSkipsProvisionedDeviceWithoutAutoinstall(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	home := tempTrustKeyHome(t)
 	t.Setenv("HOME", home)
 

@@ -250,6 +250,7 @@ func normalizeMultilineWhitespace(text string) string {
 
 func TestGornsdHelpParity(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	got := runGornsdOutcome(t, "--help")
 	want := runRnsdOutcome(t, "--help")
 	if got.exitCode != want.exitCode {
@@ -265,6 +266,7 @@ func TestGornsdHelpParity(t *testing.T) {
 
 func TestGornsdExampleConfigParity(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	got := runGornsdOutcome(t, "--exampleconfig")
 	want := runRnsdOutcome(t, "--exampleconfig")
 	if got.exitCode != want.exitCode {
@@ -280,6 +282,7 @@ func TestGornsdExampleConfigParity(t *testing.T) {
 
 func TestGornsdVersionOutputs(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	got := runGornsdOutcome(t, "--version")
 	want := runRnsdOutcome(t, "--version")
 	if got.exitCode != 0 || want.exitCode != 0 {
@@ -298,6 +301,7 @@ func TestGornsdVersionOutputs(t *testing.T) {
 
 func TestGornsdUnknownFlagExitCode2(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	binaryPath := buildGornsdBinary(t)
 	cmd := exec.Command(binaryPath, "--bogus-flag")
 	var stdout bytes.Buffer
@@ -318,6 +322,7 @@ func TestGornsdUnknownFlagExitCode2(t *testing.T) {
 
 func TestGornsdStartupAndSIGTERM(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	configDir, cleanup := testutils.TempDir(t, "gornsd-int-startup-")
 	t.Cleanup(cleanup)
 	writeGornsdConfig(t, configDir, "No", 4)
@@ -338,6 +343,7 @@ func TestGornsdStartupAndSIGTERM(t *testing.T) {
 
 func TestGornsdSIGINTBlankLine(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	configDir, cleanup := testutils.TempDir(t, "gornsd-int-sigint-")
 	t.Cleanup(cleanup)
 	writeGornsdConfig(t, configDir, "No", 4)
@@ -357,6 +363,7 @@ func TestGornsdSIGINTBlankLine(t *testing.T) {
 }
 
 func TestGornsdServiceModeLogsToFile(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	configDir, cleanup := testutils.TempDir(t, "gornsd-int-service-")
 	t.Cleanup(cleanup)
 	writeGornsdConfig(t, configDir, "No", 4)
@@ -376,7 +383,7 @@ func TestGornsdServiceModeLogsToFile(t *testing.T) {
 }
 
 func TestGornsdVerbosityIncreases(t *testing.T) {
-
+	testutils.SkipShortIntegration(t)
 	configDir, cleanup := testutils.TempDir(t, "gornsd-int-verbose-")
 	t.Cleanup(cleanup)
 	listenPort := testutils.ReserveUDPPort(t)
@@ -398,6 +405,7 @@ func TestGornsdVerbosityIncreases(t *testing.T) {
 }
 
 func TestGornsdQuietDecreases(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	configDir, cleanup := testutils.TempDir(t, "gornsd-int-quiet-")
 	t.Cleanup(cleanup)
 	listenPort := testutils.ReserveUDPPort(t)
@@ -421,6 +429,7 @@ func TestGornsdQuietDecreases(t *testing.T) {
 
 func TestGornsdSharedInstanceWarning(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	configDir, cleanup := testutils.TempDir(t, "gornsd-int-shared-")
 	t.Cleanup(cleanup)
 	sharedPort := reserveTCPPortForIntegration(t)
@@ -468,6 +477,7 @@ loglevel = 4
 }
 
 func TestGornsdInteractiveModeREPL(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	configDir, cleanup := testutils.TempDir(t, "gornsd-int-repl-")
 
 	t.Cleanup(cleanup)

@@ -12,10 +12,13 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestRunFirmwareHashReadbacksPrintsPythonLines(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	serial := &liveHashSerial{reads: append(validRnodeEEPROMFrame(), []byte{
 		kissFend, rnodeKISSCommandFWVersion, 0x02, 0x05, kissFend,
 		kissFend, rnodeKISSCommandDevHash,

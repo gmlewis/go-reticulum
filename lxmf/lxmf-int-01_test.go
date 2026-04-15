@@ -96,6 +96,7 @@ func pythonPathEnv(lxmfPath, reticulumPath string) string {
 
 func TestIntegrationDirectGoToPython(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -151,6 +152,7 @@ func TestIntegrationDirectGoToPython(t *testing.T) {
 
 func TestIntegrationDirectPythonToGo(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)

@@ -365,9 +365,7 @@ func runPythonInteropCmd(t *testing.T, scriptPath, mode string, args ...string) 
 }
 
 func TestRatchetGoToPythonParity(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-ratchet-*")
 	defer cleanup()
@@ -499,9 +497,7 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 }
 
 func TestRatchetPythonToGoParity(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-ratchet-*")
 	defer cleanup()
@@ -594,9 +590,7 @@ func TestRatchetPythonToGoParity(t *testing.T) {
 }
 
 func TestRatchetRotationParity(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-ratchet-rotation-*")
 	defer cleanup()
@@ -692,9 +686,7 @@ func TestRatchetRotationParity(t *testing.T) {
 }
 
 func TestRatchetRetentionWindowParity(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-ratchet-retention-*")
 	defer cleanup()
@@ -789,9 +781,7 @@ func TestRatchetRetentionWindowParity(t *testing.T) {
 }
 
 func TestRatchetEnforceParity(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-ratchet-enforce-*")
 	defer cleanup()
@@ -840,9 +830,7 @@ func TestRatchetEnforceParity(t *testing.T) {
 }
 
 func TestRatchetFileInteropParity(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-ratchet-file-interop-*")
 	defer cleanup()

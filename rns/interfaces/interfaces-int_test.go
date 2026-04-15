@@ -38,6 +38,7 @@ print(discovery_token.hex())
 `
 
 func TestAutoInterfaceDiscoveryPacketParity(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	pythonPath := getPythonPath()
 	tmpDir, cleanup := testutils.TempDir(t, "rns-auto-parity-*")
 	defer cleanup()
@@ -121,6 +122,7 @@ except KeyboardInterrupt:
 `
 
 func TestUDPInterfaceParity(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	pythonPath := getPythonPath()
 	tmpDir, cleanup := testutils.TempDir(t, "rns-udp-parity-*")
 	defer cleanup()
@@ -468,6 +470,7 @@ if __name__ == "__main__":
 `
 
 func TestLocalInterfaceParity(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	pythonPath := getPythonPath()
 	tmpDir, cleanup := testutils.TempDir(t, "rns-local-parity-*")
 	defer cleanup()
@@ -769,6 +772,7 @@ while True:
 `
 
 func TestPipeInterfaceParity(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	tmpDir, cleanup := testutils.TempDir(t, "rns-pipe-parity-*")
 	defer cleanup()
 

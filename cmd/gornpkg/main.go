@@ -33,24 +33,25 @@ func newRuntime(app *appT) *runtimeT {
 	return &runtimeT{app: app, logger: rns.NewLogger(), newReticulum: rns.NewReticulumWithLogger}
 }
 
-func (rt *runtimeT) run() {
+func (rt *runtimeT) run() bool {
 	if rt == nil || rt.app == nil {
-		return
+		return false
 	}
 
 	if rt.app.version {
 		fmt.Printf("gornpkg %v\n", rns.VERSION)
-		return
+		return false
 	}
 
 	if rt.app.exampleConfig {
 		fmt.Print(exampleRnpkgConfig + "\n")
-		return
+		return false
 	}
 
 	if err := rt.programSetup(); err != nil {
 		log.Fatalf("Could not initialize Reticulum: %v", err)
 	}
+	return true
 }
 
 type reticulumFactory func(rns.Transport, string, *rns.Logger) (*rns.Reticulum, error)
@@ -85,11 +86,12 @@ func main() {
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-sig
-		fmt.Println()
-		os.Exit(0)
-	}()
+	defer signal.Stop(sig)
 
-	newRuntime(app).run()
+	if newRuntime(app).run() {
+		sig := <-sig
+		if sig == os.Interrupt {
+			fmt.Println()
+		}
+	}
 }

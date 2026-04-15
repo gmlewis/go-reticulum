@@ -36,6 +36,7 @@ func buildGornpath(t *testing.T) (string, func()) {
 
 func TestIntegration_NoArgsPrintsUsageAndExitsZero(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	bin, cleanup := buildGornpath(t)
 	defer cleanup()
 	out, err := exec.Command(bin).CombinedOutput()
@@ -49,6 +50,7 @@ func TestIntegration_NoArgsPrintsUsageAndExitsZero(t *testing.T) {
 
 func TestIntegration_VersionPrintsProgramVersion(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	bin, cleanup := buildGornpath(t)
 	defer cleanup()
 	out, err := exec.Command(bin, "--version").CombinedOutput()
@@ -62,6 +64,7 @@ func TestIntegration_VersionPrintsProgramVersion(t *testing.T) {
 
 func TestIntegration_InvalidFlagExitsTwoAndPrintsUsage(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	bin, cleanup := buildGornpath(t)
 	defer cleanup()
 	out, err := exec.Command(bin, "--does-not-exist").CombinedOutput()
@@ -82,6 +85,7 @@ func TestIntegration_InvalidFlagExitsTwoAndPrintsUsage(t *testing.T) {
 
 func TestIntegrationRenderPathTable(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 
 	paths := []rns.PathInfo{{
 		Hash:      []byte{0x01},
@@ -111,6 +115,7 @@ func TestIntegrationRenderPathTable(t *testing.T) {
 
 func TestIntegrationRenderRateTable(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 
 	now := time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC)
 	rows := []any{
@@ -135,6 +140,7 @@ func TestIntegrationRenderRateTable(t *testing.T) {
 
 func TestIntegrationRenderBlackholedIdentities(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 
 	now := time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC)
 	rows := []any{
@@ -183,6 +189,7 @@ func (f *integrationPathRequestFake) GetPathEntry([]byte) *rns.PathInfo {
 
 func TestIntegrationDoRequest(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 
 	fake := &integrationPathRequestFake{}
 	var out bytes.Buffer
@@ -197,6 +204,7 @@ func TestIntegrationDoRequest(t *testing.T) {
 
 func TestIntegrationBlackholeRoundTrip(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 
 	fake := &blackholeFake{entries: map[string]map[string]any{}}
 	var out bytes.Buffer
@@ -231,6 +239,7 @@ func (f *integrationDropperFake) InvalidatePathsViaNextHop([]byte) int {
 
 func TestIntegrationDropOperations(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 
 	fake := &integrationDropperFake{dropPathResult: true, dropViaCount: 2}
 	var out bytes.Buffer

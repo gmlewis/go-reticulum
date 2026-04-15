@@ -18,9 +18,11 @@ import (
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestPublicKeysReportsMissingFiles(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	home := tempTrustKeyHome(t)
 	t.Setenv("HOME", home)
 
@@ -42,6 +44,7 @@ func TestPublicKeysReportsMissingFiles(t *testing.T) {
 }
 
 func TestSignWithoutPortAutoDetectsDiscoveredPort(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	if runtime.GOOS == "darwin" {
 		t.Skip("live serial auto-detect is covered in the next task")
 	}
@@ -115,6 +118,7 @@ func TestSignWithoutPortAutoDetectsDiscoveredPort(t *testing.T) {
 
 func TestFwVersionRejectsNonNumericValue(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	out, err := runGornodeconf("--fw-version", "abc")
 	if err != nil {
 		t.Fatalf("gornodeconf --fw-version abc failed: %v\n%v", err, out)

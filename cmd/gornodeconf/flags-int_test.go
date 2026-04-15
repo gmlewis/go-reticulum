@@ -13,10 +13,12 @@ import (
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestHelpOutputMatchesPythonSnapshot(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	out, err := runGornodeconf("--help")
 	if err != nil {
 		t.Fatalf("gornodeconf --help failed: %v\n%v", err, out)
@@ -28,6 +30,7 @@ func TestHelpOutputMatchesPythonSnapshot(t *testing.T) {
 
 func TestNoPortPrintsHelpAndExitsZero(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	out, err := runGornodeconf()
 	if err != nil {
 		t.Fatalf("gornodeconf without port failed: %v\n%v", err, out)
@@ -39,6 +42,7 @@ func TestNoPortPrintsHelpAndExitsZero(t *testing.T) {
 
 func TestUnknownFlagPrintsHelpText(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	out, err := runGornodeconf("-v")
 	if err == nil {
 		t.Fatal("expected gornodeconf -v to fail")
@@ -53,6 +57,7 @@ func TestUnknownFlagPrintsHelpText(t *testing.T) {
 
 func TestPositionalPortIsAcceptedWithFlags(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	out, err := runGornodeconf("-i", tempSerialPort(t))
 	if err != nil {
 		t.Fatalf("gornodeconf positional port failed: %v\n%v", err, out)
@@ -64,6 +69,7 @@ func TestPositionalPortIsAcceptedWithFlags(t *testing.T) {
 
 func TestVersionUsesSharedGoVersion(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 	out, err := runGornodeconf("--version")
 	if err != nil {
 		t.Fatalf("gornodeconf --version failed: %v\n%v", err, out)
@@ -76,6 +82,7 @@ func TestVersionUsesSharedGoVersion(t *testing.T) {
 
 func TestParseArgsAcceptsPythonStyleLongFlags(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 
 	opts, port, err := parseArgs([]string{"--sign", "--firmware-hash", "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff", "ttyUSB0"})
 	if err != nil {
@@ -94,6 +101,7 @@ func TestParseArgsAcceptsPythonStyleLongFlags(t *testing.T) {
 
 func TestParseArgsAcceptsLongAliases(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 
 	tests := []struct {
 		name  string
