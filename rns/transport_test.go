@@ -791,6 +791,25 @@ func TestPathTablePersistenceRoundTrip(t *testing.T) {
 	}
 }
 
+func TestRememberSkipsPersistenceWhenTransportStopped(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	ts := NewTransportSystem(nil)
+	if err := ts.Start(tmpDir); err != nil {
+		t.Fatalf("Transport start failed: %v", err)
+	}
+	ts.Stop()
+
+	ts.Remember([]byte("packet-hash"), []byte("dest-hash"), []byte("public-key"), nil)
+
+	if _, err := os.Stat(filepath.Join(tmpDir, "known_destinations")); !os.IsNotExist(err) {
+		t.Fatalf("expected no known_destinations persistence after stop, got %v", err)
+	}
+}
+
 type dummyInterface struct {
 	name string
 }

@@ -28,6 +28,8 @@ if [[ -z "${STATICCHECK_BIN}" ]]; then
 fi
 
 GO_TEST_TIMEOUT="${GO_TEST_TIMEOUT:-4m}"
+GO_TEST_P="${GO_TEST_P:-1}"
+GO_TEST_PARALLEL="${GO_TEST_PARALLEL:-1}"
 
 if [[ -z "${GO_TEST_TAGS:-}" ]]; then
 	if [[ "$(uname -a)" == *"Darwin"* ]]; then
@@ -40,6 +42,8 @@ if [[ -z "${GO_TEST_TAGS:-}" ]]; then
 fi
 
 echo "Using go test tags: ${GO_TEST_TAGS}"
+echo "Using go test package parallelism: ${GO_TEST_P}"
+echo "Using go test intra-package parallelism: ${GO_TEST_PARALLEL}"
 
 cd "${REPO_ROOT}"
 
@@ -55,9 +59,9 @@ for arg in "$@"; do
 done
 
 if [[ "$has_dir" == true ]]; then
-	go test -race -tags="${GO_TEST_TAGS}" -count=1 -timeout "${GO_TEST_TIMEOUT}" "$@"
+	go test -p "${GO_TEST_P}" -parallel "${GO_TEST_PARALLEL}" -race -tags="${GO_TEST_TAGS}" -count=1 -timeout "${GO_TEST_TIMEOUT}" "$@"
 else
-	go test -race -tags="${GO_TEST_TAGS}" -count=1 -timeout "${GO_TEST_TIMEOUT}" "$@" ./...
+	go test -p "${GO_TEST_P}" -parallel "${GO_TEST_PARALLEL}" -race -tags="${GO_TEST_TAGS}" -count=1 -timeout "${GO_TEST_TIMEOUT}" "$@" ./...
 fi
 
 go vet ./...
