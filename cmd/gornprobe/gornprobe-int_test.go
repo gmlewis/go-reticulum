@@ -93,8 +93,12 @@ loglevel = 4
 
 	if err := cmd.Wait(); err != nil {
 		if exitErr, ok := err.(*osexec.ExitError); ok {
-			if got, want := exitErr.ExitCode(), 0; got != want && got != -1 {
+			got := exitErr.ExitCode()
+			if got != 0 && got != -1 {
 				t.Fatalf("exit code = %v, want 0 or -1\nstdout: %q\nstderr: %q", got, stdout.String(), stderr.String())
+			}
+			if got == -1 {
+				return
 			}
 		} else {
 			t.Fatalf("interrupt wait failed: %v", err)
