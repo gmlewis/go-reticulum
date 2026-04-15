@@ -1124,6 +1124,7 @@ func TestReticulumOptionParityForceBitratePanicAndDiscover(t *testing.T) {
 	// defer setPanicOnInterfaceErrorEnabled(origPanic)
 
 	sharedPort := reserveTCPPort(t)
+	controlPort := reserveTCPPort(t)
 	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	forcedBitrate := 24680
@@ -1132,6 +1133,7 @@ func TestReticulumOptionParityForceBitratePanicAndDiscover(t *testing.T) {
 share_instance = Yes
 shared_instance_type = tcp
 shared_instance_port = ` + strconv.Itoa(sharedPort) + `
+instance_control_port = ` + strconv.Itoa(controlPort) + `
 force_shared_instance_bitrate = ` + strconv.Itoa(forcedBitrate) + `
 panic_on_interface_error = Yes
 discover_interfaces = Yes

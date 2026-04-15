@@ -262,7 +262,6 @@ func TestHelpParity(t *testing.T) {
 }
 
 func TestUnauthenticatedTransferParity(t *testing.T) {
-	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)

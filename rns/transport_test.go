@@ -810,6 +810,21 @@ func TestRememberSkipsPersistenceWhenTransportStopped(t *testing.T) {
 	}
 }
 
+func TestSaveKnownDestinationsPersistsWithoutStart(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	ts := NewTransportSystem(nil)
+	ts.Remember([]byte("packet-hash"), []byte("dest-hash"), []byte("public-key"), nil)
+	ts.SaveKnownDestinations(tmpDir)
+
+	if _, err := os.Stat(filepath.Join(tmpDir, "known_destinations")); err != nil {
+		t.Fatalf("expected known_destinations persistence without start: %v", err)
+	}
+}
+
 type dummyInterface struct {
 	name string
 }

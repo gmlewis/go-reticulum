@@ -1527,9 +1527,10 @@ func (ts *TransportSystem) Remember(packetHash, destHash, publicKey, appData []b
 		appData,
 	}
 	path := ts.storagePath
+	running := ts.running
 	ts.mu.Unlock()
 
-	if path != "" {
+	if path != "" && running {
 		ts.SaveKnownDestinations(path)
 	}
 }
@@ -1661,21 +1662,16 @@ func (ts *TransportSystem) SetRatchet(destHash, ratchetPub []byte) {
 	}
 	ts.knownRatchets[destHashStr] = ratchetPub
 	path := ts.storagePath
+	running := ts.running
 	ts.mu.Unlock()
 
-	if path != "" {
+	if path != "" && running {
 		ts.persistRatchet(path, destHash, ratchetPub)
 	}
 }
 
 func (ts *TransportSystem) persistRatchet(storagePath string, destHash, ratchetPub []byte) {
 	if storagePath == "" {
-		return
-	}
-
-	ts.mu.Lock()
-	defer ts.mu.Unlock()
-	if !ts.running {
 		return
 	}
 
@@ -1751,18 +1747,15 @@ func (ts *TransportSystem) SaveKnownDestinations(storagePath string) {
 
 	path := filepath.Join(storagePath, "known_destinations")
 	ts.mu.Lock()
-	defer ts.mu.Unlock()
-	if !ts.running {
-		return
-	}
+	data, err := msgpack.Pack(ts.knownDestinations)
+	count := len(ts.knownDestinations)
+	ts.mu.Unlock()
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		ts.logger.Error("Failed to create known destinations directory: %v", err)
 		return
 	}
 
-	data, err := msgpack.Pack(ts.knownDestinations)
-	count := len(ts.knownDestinations)
 	if err != nil {
 		ts.logger.Error("Failed to pack known destinations: %v", err)
 		return
