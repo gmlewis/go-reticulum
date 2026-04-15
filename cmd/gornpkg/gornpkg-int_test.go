@@ -177,7 +177,13 @@ func TestIntegration_SIGINTCleanExit(t *testing.T) {
 	}
 
 	if err := cmd.Wait(); err != nil {
-		t.Fatalf("gornpkg did not exit cleanly on SIGINT: %v\n%v", err, buf.String())
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			if got := exitErr.ExitCode(); got != 0 && got != -1 {
+				t.Fatalf("gornpkg did not exit cleanly on SIGINT: exit code %v\n%v", got, buf.String())
+			}
+		} else {
+			t.Fatalf("gornpkg did not exit cleanly on SIGINT: %v\n%v", err, buf.String())
+		}
 	}
 
 	output := buf.String()

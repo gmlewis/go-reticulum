@@ -202,6 +202,7 @@ func (c *clientT) queryStatus(id *rns.Identity, remoteIdentityArg *rns.Identity,
 }
 
 func (c *clientT) getStatus(remote string, configDirArg string, rnsConfigDir string, verbosity int, quietness int, timeout time.Duration, showStatus bool, showPeers bool, identityPathArg string) {
+	startedAt := time.Now()
 	reticulum, err := c.remoteInit(configDirArg, rnsConfigDir, verbosity, quietness, identityPathArg)
 	if err != nil {
 		fmt.Printf("Remote initialization failed: %v\n", err)
@@ -216,8 +217,14 @@ func (c *clientT) getStatus(remote string, configDirArg string, rnsConfigDir str
 		}
 	}()
 
-	targetIdentity := c.getTargetIdentity(remote, timeout)
-	response, err := c.queryStatus(c.identity, targetIdentity, timeout, true)
+	remainingTimeout := timeout - time.Since(startedAt)
+	if remainingTimeout <= 0 {
+		fmt.Println("Getting lxmd statistics timed out, exiting now")
+		c.exit(200)
+		return
+	}
+	targetIdentity := c.getTargetIdentity(remote, remainingTimeout)
+	response, err := c.queryStatus(c.identity, targetIdentity, remainingTimeout, true)
 	if err != nil {
 		fmt.Printf("Query status failed: %v\n", err)
 		c.exit(1)
@@ -619,6 +626,7 @@ func peerResponseCode(response any) (int, bool) {
 }
 
 func (c *clientT) requestSync(target string, remote string, configDirArg string, rnsConfigDir string, verbosity int, quietness int, timeout time.Duration, identityPathArg string) {
+	startedAt := time.Now()
 	peerDestinationHash, err := rns.HexToBytes(target)
 	if err != nil || len(peerDestinationHash) != rns.TruncatedHashLength/8 {
 		var msg string
@@ -646,7 +654,13 @@ func (c *clientT) requestSync(target string, remote string, configDirArg string,
 		}
 	}()
 
-	targetIdentity := c.getTargetIdentity(remote, timeout)
+	remainingTimeout := timeout - time.Since(startedAt)
+	if remainingTimeout <= 0 {
+		fmt.Println("Requesting lxmd sync timed out, exiting now")
+		c.exit(200)
+		return
+	}
+	targetIdentity := c.getTargetIdentity(remote, remainingTimeout)
 	if c.ts == nil {
 		c.ts = reticulum.Transport()
 	}
@@ -654,7 +668,7 @@ func (c *clientT) requestSync(target string, remote string, configDirArg string,
 	var response any
 	if c.mockRequestSync != nil {
 		var mockErr error
-		response, mockErr = c.mockRequestSync(c.identity, peerDestinationHash, targetIdentity, timeout, true)
+		response, mockErr = c.mockRequestSync(c.identity, peerDestinationHash, targetIdentity, remainingTimeout, true)
 		if mockErr != nil {
 			fmt.Printf("Request sync failed: %v\n", mockErr)
 			c.exit(1)
@@ -662,7 +676,7 @@ func (c *clientT) requestSync(target string, remote string, configDirArg string,
 		}
 	} else {
 		var syncErr error
-		response, syncErr = c.requestSyncInternal(c.identity, peerDestinationHash, targetIdentity, timeout, true)
+		response, syncErr = c.requestSyncInternal(c.identity, peerDestinationHash, targetIdentity, remainingTimeout, true)
 		if syncErr != nil {
 			fmt.Printf("Request sync failed: %v\n", syncErr)
 			c.exit(1)
@@ -714,6 +728,7 @@ func (c *clientT) requestSync(target string, remote string, configDirArg string,
 }
 
 func (c *clientT) requestUnpeer(target string, remote string, configDirArg string, rnsConfigDir string, verbosity int, quietness int, timeout time.Duration, identityPathArg string) {
+	startedAt := time.Now()
 	peerDestinationHash, err := rns.HexToBytes(target)
 	if err != nil || len(peerDestinationHash) != rns.TruncatedHashLength/8 {
 		var msg string
@@ -741,7 +756,13 @@ func (c *clientT) requestUnpeer(target string, remote string, configDirArg strin
 		}
 	}()
 
-	targetIdentity := c.getTargetIdentity(remote, timeout)
+	remainingTimeout := timeout - time.Since(startedAt)
+	if remainingTimeout <= 0 {
+		fmt.Println("Requesting lxmd peering break timed out, exiting now")
+		c.exit(200)
+		return
+	}
+	targetIdentity := c.getTargetIdentity(remote, remainingTimeout)
 	if c.ts == nil {
 		c.ts = reticulum.Transport()
 	}
@@ -749,7 +770,7 @@ func (c *clientT) requestUnpeer(target string, remote string, configDirArg strin
 	var response any
 	if c.mockRequestUnpeer != nil {
 		var mockErr error
-		response, mockErr = c.mockRequestUnpeer(c.identity, peerDestinationHash, targetIdentity, timeout, true)
+		response, mockErr = c.mockRequestUnpeer(c.identity, peerDestinationHash, targetIdentity, remainingTimeout, true)
 		if mockErr != nil {
 			fmt.Printf("Request unpeer failed: %v\n", mockErr)
 			c.exit(1)
@@ -757,7 +778,7 @@ func (c *clientT) requestUnpeer(target string, remote string, configDirArg strin
 		}
 	} else {
 		var unpeerErr error
-		response, unpeerErr = c.requestUnpeerInternal(c.identity, peerDestinationHash, targetIdentity, timeout, true)
+		response, unpeerErr = c.requestUnpeerInternal(c.identity, peerDestinationHash, targetIdentity, remainingTimeout, true)
 		if unpeerErr != nil {
 			fmt.Printf("Request unpeer failed: %v\n", unpeerErr)
 			c.exit(1)

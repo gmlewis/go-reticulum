@@ -152,7 +152,7 @@ func TestGolxmd_Status_WithNoRemote(t *testing.T) {
 
 	// Try to get status (will fail without a running remote, but should fail gracefully)
 	// This test verifies the error handling path
-	out, err := exec.Command(golxmdBin, "--status", "--config", configDir, "--timeout", "1").CombinedOutput()
+	out, err := exec.Command(golxmdBin, "--status", "--config", configDir, "--rnsconfig", configDir, "--timeout", "1").CombinedOutput()
 	// We expect this to fail (no remote running), but it should fail with a proper error
 	if err == nil {
 		// If it succeeds, that's fine too - it means a local instance is running
@@ -194,7 +194,7 @@ func TestGolxmd_Break_WithInvalidHash(t *testing.T) {
 	}
 
 	// Try to break peering with invalid hash
-	out, err := exec.Command(golxmdBin, "-b", "invalid_hash", "--config", configDir, "--timeout", "1").CombinedOutput()
+	out, err := exec.Command(golxmdBin, "-b", "invalid_hash", "--config", configDir, "--rnsconfig", configDir, "--timeout", "1").CombinedOutput()
 	if err == nil {
 		t.Errorf("expected error for invalid hash, got success")
 	}
@@ -231,7 +231,7 @@ func TestGolxmd_Sync_WithInvalidHash(t *testing.T) {
 	}
 
 	// Try to sync with invalid hash
-	out, err := exec.Command(golxmdBin, "--sync", "invalid_hash", "--config", configDir, "--timeout", "1").CombinedOutput()
+	out, err := exec.Command(golxmdBin, "--sync", "invalid_hash", "--config", configDir, "--rnsconfig", configDir, "--timeout", "1").CombinedOutput()
 	if err == nil {
 		t.Errorf("expected error for invalid hash, got success")
 	}
@@ -268,7 +268,7 @@ func TestGolxmd_Status_OutputFormat(t *testing.T) {
 	}
 
 	// Run with --status (will timeout but we can check output format)
-	out, _ := exec.Command(golxmdBin, "--status", "--config", configDir, "--timeout", "1").CombinedOutput()
+	out, _ := exec.Command(golxmdBin, "--status", "--config", configDir, "--rnsconfig", configDir, "--timeout", "1").CombinedOutput()
 	output := string(out)
 
 	// If we got a successful response (unlikely without remote), check format
@@ -313,7 +313,7 @@ func TestGolxmd_Status_WithShowStatusFlag(t *testing.T) {
 	}
 
 	// Run with --status (the flag enables detailed status output)
-	out, _ := exec.Command(golxmdBin, "--status", "--config", configDir, "--timeout", "1").CombinedOutput()
+	out, _ := exec.Command(golxmdBin, "--status", "--config", configDir, "--rnsconfig", configDir, "--timeout", "1").CombinedOutput()
 	output := string(out)
 
 	// If successful response, verify detailed status fields would be present
@@ -360,7 +360,7 @@ func TestGolxmd_Peers_OutputFormat(t *testing.T) {
 	}
 
 	// Run with --peers
-	out, _ := exec.Command(golxmdBin, "--peers", "--config", configDir, "--timeout", "1").CombinedOutput()
+	out, _ := exec.Command(golxmdBin, "--peers", "--config", configDir, "--rnsconfig", configDir, "--timeout", "1").CombinedOutput()
 	output := string(out)
 
 	// If successful response, verify peer format
@@ -421,7 +421,7 @@ func TestGolxmd_Break_Timeout(t *testing.T) {
 
 	// Run with -b (break/unpeer) - should timeout since no remote running
 	start := time.Now()
-	out, err := exec.Command(golxmdBin, "-b", validHash, "--config", configDir, "--timeout", "1").CombinedOutput()
+	out, err := exec.Command(golxmdBin, "-b", validHash, "--config", configDir, "--rnsconfig", configDir, "--timeout", "1").CombinedOutput()
 	elapsed := time.Since(start)
 	output := string(out)
 

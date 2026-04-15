@@ -83,13 +83,14 @@ func main() {
 		log.Fatal(err)
 	}
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-sig
-		fmt.Println()
-		os.Exit(0)
-	}()
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(stop)
 
 	newRuntime(app).run()
+
+	sig := <-stop
+	if sig == os.Interrupt {
+		fmt.Println()
+	}
 }

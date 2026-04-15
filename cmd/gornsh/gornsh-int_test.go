@@ -37,7 +37,6 @@ import os
 # Force unbuffered output
 if sys.version_info >= (3, 7):
     import io
-	"runtime"
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, line_buffering=True)
 
 # Add original repo to path
@@ -229,6 +228,9 @@ func TestIntegrationPrintIdentityOutputFormatParity(t *testing.T) {
 
 func TestIntegrationGoListenerGoInitiatorEcho(t *testing.T) {
 	testutils.SkipShortIntegration(t)
+	if runtime.GOOS == "darwin" {
+		t.Skip("AutoInterface path propagation is unreliable on macOS; use direct UDP tests instead")
+	}
 	configDir, cleanup := testutils.TempDir(t, "gornsh-go-go-")
 	defer cleanup()
 

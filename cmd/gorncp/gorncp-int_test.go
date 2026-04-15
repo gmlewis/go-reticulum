@@ -349,10 +349,7 @@ share_instance = No
 						destHash = strings.Split(parts[1], ">")[0]
 						t.Logf("listener goroutine: ready at %s", destHash)
 						listenerReady <- destHash
-						select {
-						case <-listenerDone:
-						case <-time.After(2 * time.Second):
-						}
+						<-listenerDone
 						t.Logf("=== LISTENER OUTPUT (complete) ===\n%s", buf.String())
 						return
 					}
@@ -548,10 +545,7 @@ share_instance = No
 						destHash = strings.Split(parts[1], ">")[0]
 						t.Logf("listener goroutine: ready at %s", destHash)
 						listenerReady <- destHash
-						select {
-						case <-listenerDone:
-						case <-time.After(2 * time.Second):
-						}
+						<-listenerDone
 						return
 					}
 				}
@@ -926,10 +920,7 @@ share_instance = No
 						destHash = strings.Split(parts[1], ">")[0]
 						t.Logf("listener goroutine: ready at %s", destHash)
 						listenerReady <- destHash
-						select {
-						case <-listenerDone:
-						case <-time.After(2 * time.Second):
-						}
+						<-listenerDone
 						return
 					}
 				}

@@ -307,7 +307,7 @@ func (c *clientT) jobs(router *lxmf.Router, lxmfDestination *rns.Destination, st
 }
 
 func (c *clientT) tick(router *lxmf.Router, lxmfDestination *rns.Destination) {
-	if c.ac == nil {
+	if c.ac == nil || router == nil || lxmfDestination == nil {
 		return
 	}
 
