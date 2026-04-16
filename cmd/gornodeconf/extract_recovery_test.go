@@ -3,13 +3,19 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-//go:build linux
+//go:build linux || darwin
 
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestRecoveryEsptoolCommandArgs(t *testing.T) {
@@ -28,7 +34,6 @@ func TestRecoveryEsptoolCommandArgs(t *testing.T) {
 			size:       0x4650,
 			outputFile: "/tmp/extracted_rnode_firmware.bootloader",
 			want: []string{
-				"python",
 				"/tmp/recovery_esptool.py",
 				"--chip", "esp32",
 				"--port", "ttyUSB0",
@@ -47,7 +52,6 @@ func TestRecoveryEsptoolCommandArgs(t *testing.T) {
 			size:       0x1f0000,
 			outputFile: "/tmp/extracted_console_image.bin",
 			want: []string{
-				"python",
 				"/tmp/recovery_esptool.py",
 				"--chip", "esp32",
 				"--port", "ttyUSB0",
@@ -70,6 +74,56 @@ func TestRecoveryEsptoolCommandArgs(t *testing.T) {
 				t.Fatalf("recoveryEsptoolCommandArgs mismatch:\n got: %#v\nwant: %#v", got, test.want)
 			}
 		})
+	}
+}
+
+func TestEnsureRecoveryEsptoolAtWritesExecutableSourceOfTruthFile(t *testing.T) {
+	t.Parallel()
+
+	dir, cleanup := testutils.TempDir(t, "gornodeconf-recovery-helper-*")
+	t.Cleanup(cleanup)
+	path := filepath.Join(dir, "recovery_esptool.py")
+	if err := ensureRecoveryEsptoolAt(path); err != nil {
+		t.Fatalf("ensureRecoveryEsptoolAt returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%q): %v", path, err)
+	}
+	sum := sha256.Sum256(data)
+	if got := hex.EncodeToString(sum[:]); got != recoveryEsptoolSHA256 {
+		t.Fatalf("helper sha256 = %q, want %q", got, recoveryEsptoolSHA256)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat(%q): %v", path, err)
+	}
+	if info.Mode().Perm() != 0o755 {
+		t.Fatalf("file mode = %v, want 0o755", info.Mode().Perm())
+	}
+}
+
+func TestEnsureRecoveryEsptoolAtRewritesStaleFile(t *testing.T) {
+	t.Parallel()
+
+	dir, cleanup := testutils.TempDir(t, "gornodeconf-recovery-helper-*")
+	t.Cleanup(cleanup)
+	path := filepath.Join(dir, "recovery_esptool.py")
+	if err := os.WriteFile(path, []byte("stale"), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", path, err)
+	}
+
+	if err := ensureRecoveryEsptoolAt(path); err != nil {
+		t.Fatalf("ensureRecoveryEsptoolAt returned error: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%q): %v", path, err)
+	}
+	sum := sha256.Sum256(data)
+	if got := hex.EncodeToString(sum[:]); got != recoveryEsptoolSHA256 {
+		t.Fatalf("helper sha256 = %q, want %q", got, recoveryEsptoolSHA256)
 	}
 }
 

@@ -3,11 +3,60 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-//go:build linux
+//go:build linux || darwin
 
 package main
 
-import "fmt"
+import (
+	"bytes"
+	_ "embed"
+	"fmt"
+	"os"
+	"path/filepath"
+)
+
+const (
+	recoveryEsptoolFilename = "recovery_esptool.py"
+	recoveryEsptoolSHA256   = "3ff47c999807a1ecf732016f65b6b863c3c80f56e39464694490c4a0c456b943"
+)
+
+// recoveryEsptoolSource is generated mechanically from the original Python
+// source-of-truth extract_recovery_esptool() helper.
+//
+//go:embed recovery_esptool.py
+var recoveryEsptoolSource []byte
+
+func recoveryEsptoolPath(dir string) string {
+	return filepath.Join(dir, recoveryEsptoolFilename)
+}
+
+func ensureRecoveryEsptoolAt(path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if current, err := os.ReadFile(path); err == nil {
+		if bytes.Equal(current, recoveryEsptoolSource) {
+			return os.Chmod(path, 0o755)
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	tempPath := path + ".tmp"
+	if err := os.WriteFile(tempPath, recoveryEsptoolSource, 0o755); err != nil {
+		return err
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		_ = os.Remove(tempPath)
+		return err
+	}
+	return nil
+}
+
+func ensureRecoveryEsptoolInDir(dir string) (string, error) {
+	path := recoveryEsptoolPath(dir)
+	return path, ensureRecoveryEsptoolAt(path)
+}
 
 // extractTarget describes one flash region read by the extraction workflow.
 type extractTarget struct {
@@ -33,7 +82,6 @@ func defaultExtractTargets() []extractTarget {
 // read one flash region with the Python recovery esptool helper.
 func recoveryEsptoolCommandArgs(esptoolPath, port, baud string, offset, size int, outputFile string) []string {
 	return []string{
-		"python",
 		esptoolPath,
 		"--chip", "esp32",
 		"--port", port,

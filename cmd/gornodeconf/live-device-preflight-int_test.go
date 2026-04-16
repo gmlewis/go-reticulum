@@ -8,19 +8,12 @@
 package main
 
 import (
-	"os"
 	"testing"
-
-	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestLiveRnodeSerialPreflight(t *testing.T) {
 	t.Parallel()
-	testutils.SkipShortIntegration(t)
-	port := os.Getenv("GORNODECONF_LIVE_SERIAL_PORT")
-	if port == "" {
-		t.Skip("GORNODECONF_LIVE_SERIAL_PORT not set")
-	}
+	port := requireLiveHardwarePort(t, liveSerialSafetyReadOnly)
 
 	serial, err := preflightRnodeSerial(port)
 	if err != nil {

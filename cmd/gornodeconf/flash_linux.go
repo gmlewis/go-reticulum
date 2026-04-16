@@ -46,12 +46,19 @@ func (rt cliRuntime) runFirmwareFlash(out io.Writer, port string, opts options) 
 	if firmwareDir == "" {
 		firmwareDir = filepath.Join(configDir, "update", "latest")
 	}
+	if _, err := ensureRecoveryEsptoolInDir(firmwareDir); err != nil {
+		return err
+	}
 
 	serial, err := rt.rnodeOpenSerial(port)
 	if err != nil {
 		return err
 	}
+	serialClosed := false
 	defer func() {
+		if serialClosed {
+			return
+		}
 		if closeErr := serial.Close(); err == nil && closeErr != nil {
 			err = closeErr
 		}
@@ -61,6 +68,10 @@ func (rt cliRuntime) runFirmwareFlash(out io.Writer, port string, opts options) 
 	if err != nil {
 		return err
 	}
+	if err := serial.Close(); err != nil {
+		return err
+	}
+	serialClosed = true
 
 	if _, err := fmt.Fprintln(out, "Flashing RNode firmware to device on "+port); err != nil {
 		return err

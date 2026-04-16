@@ -62,8 +62,7 @@ func flasherCommandCall(platform, model byte, port, baudFlash, firmwareDir, fwFi
 			baudFlash = "921600"
 		}
 		return []string{
-			"python",
-			filepathJoin(firmwareDir, "recovery_esptool.py"),
+			filepathJoin(firmwareDir, recoveryEsptoolFilename),
 			"--chip", "esp32",
 			"--port", port,
 			"--baud", baudFlash,

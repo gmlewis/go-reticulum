@@ -3,7 +3,7 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-//go:build linux
+//go:build linux || darwin
 
 package main
 
@@ -28,7 +28,11 @@ func (rt cliRuntime) runFirmwareExtract(out io.Writer, port string, opts options
 	if err != nil {
 		return err
 	}
+	serialClosed := false
 	defer func() {
+		if serialClosed {
+			return
+		}
 		if closeErr := serial.Close(); err == nil && closeErr != nil {
 			err = closeErr
 		}
@@ -64,6 +68,10 @@ func (rt cliRuntime) runFirmwareExtract(out io.Writer, port string, opts options
 	if err != nil {
 		return err
 	}
+	if err := serial.Close(); err != nil {
+		return err
+	}
+	serialClosed = true
 
 	configDir, err := rnodeconfConfigDir()
 	if err != nil {
@@ -78,11 +86,17 @@ func (rt cliRuntime) runFirmwareExtract(out io.Writer, port string, opts options
 	if baud == "" {
 		baud = "921600"
 	}
-	esptoolPath := filepath.Join(configDir, "recovery_esptool.py")
+	esptoolPath, err := ensureRecoveryEsptoolInDir(configDir)
+	if err != nil {
+		return err
+	}
 	for _, target := range defaultExtractTargets() {
 		outputPath := filepath.Join(extractedDir, target.filename)
 		args := recoveryEsptoolCommandArgs(esptoolPath, port, baud, target.offset, target.size, outputPath)
-		if _, err := rt.runCommand(args[0], args[1:]...); err != nil {
+		if output, err := rt.runCommand(args[0], args[1:]...); err != nil {
+			if trimmed := strings.TrimSpace(string(output)); trimmed != "" {
+				return fmt.Errorf("The extraction failed, the following command did not complete successfully:\n%v\n%v", strings.Join(args, " "), trimmed)
+			}
 			return fmt.Errorf("The extraction failed, the following command did not complete successfully:\n%v", strings.Join(args, " "))
 		}
 	}

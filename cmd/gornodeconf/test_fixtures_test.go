@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -107,10 +108,15 @@ func validRnodeEEPROMFrame() []byte {
 }
 
 func runGornodeconfWithEnv(extraEnv map[string]string, args ...string) (string, error) {
+	return runGornodeconfWithInputAndEnv("", extraEnv, args...)
+}
+
+func runGornodeconfWithInputAndEnv(input string, extraEnv map[string]string, args ...string) (string, error) {
 	taskArgs := append([]string{"run", "."}, args...)
 	cmd := exec.Command("go", taskArgs...)
 	cmd.Dir = "."
 	cmd.Env = os.Environ()
+	cmd.Stdin = strings.NewReader(input)
 	for key, value := range extraEnv {
 		cmd.Env = append(cmd.Env, key+"="+value)
 	}

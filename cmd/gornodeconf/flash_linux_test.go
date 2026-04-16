@@ -57,7 +57,6 @@ func TestRunFirmwareFlashUsesExtractedFirmwareCommand(t *testing.T) {
 		t.Fatalf("runFirmwareFlash returned error: %v\n%v", err, out.String())
 	}
 	wantArgs := []string{
-		"python",
 		filepath.Join(configDir, "extracted", "recovery_esptool.py"),
 		"--chip", "esp32",
 		"--port", "ttyUSB0",
@@ -76,6 +75,9 @@ func TestRunFirmwareFlashUsesExtractedFirmwareCommand(t *testing.T) {
 	}
 	if !reflect.DeepEqual(gotArgs, wantArgs) {
 		t.Fatalf("flash command mismatch:\n got: %#v\nwant: %#v", gotArgs, wantArgs)
+	}
+	if _, err := os.Stat(filepath.Join(extractedDir, "recovery_esptool.py")); err != nil {
+		t.Fatalf("expected recovery helper in extracted dir: %v", err)
 	}
 	if !strings.Contains(out.String(), "Flashing RNode firmware to device on ttyUSB0") || !strings.Contains(out.String(), "Done flashing") {
 		t.Fatalf("unexpected output: %q", out.String())
@@ -112,6 +114,47 @@ func TestRunFirmwareFlashRejectsUnsupportedPlatform(t *testing.T) {
 	err = rt.runFirmwareFlash(&out, "ttyUSB0", options{useExtracted: true})
 	if err == nil || !strings.Contains(err.Error(), "unsupported platform") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunFirmwareFlashClosesSerialBeforeRunningFlasher(t *testing.T) {
+	home := tempFlashHome(t)
+	t.Setenv("HOME", home)
+
+	configDir, err := rnodeconfConfigDir()
+	if err != nil {
+		t.Fatalf("rnodeconfConfigDir returned error: %v", err)
+	}
+	extractedDir := filepath.Join(configDir, "extracted")
+	if err := os.MkdirAll(extractedDir, 0o755); err != nil {
+		t.Fatalf("mkdir extracted dir: %v", err)
+	}
+	for _, name := range newExtractedFirmwareState().requiredFiles {
+		if err := os.WriteFile(filepath.Join(extractedDir, name), []byte(name), 0o644); err != nil {
+			t.Fatalf("write required file %v: %v", name, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(extractedDir, "extracted_rnode_firmware.version"), []byte("9.9.9 cafebabe"), 0o644); err != nil {
+		t.Fatalf("write extracted version file: %v", err)
+	}
+
+	serial := &scriptedSerial{reads: []byte{kissFend, rnodeKISSCommandPlatform, romPlatformESP32, kissFend}}
+	rt := cliRuntime{
+		openSerial: func(settings serialSettings) (serialPort, error) {
+			return serial, nil
+		},
+		runCommand: func(name string, args ...string) ([]byte, error) {
+			if !serial.closed {
+				t.Fatal("expected serial port to be closed before flasher command")
+			}
+			return nil, nil
+		},
+		stdin: strings.NewReader("\n"),
+	}
+
+	var out bytes.Buffer
+	if err := rt.runFirmwareFlash(&out, "ttyUSB0", options{useExtracted: true, baudFlash: "921600"}); err != nil {
+		t.Fatalf("runFirmwareFlash returned error: %v\n%v", err, out.String())
 	}
 }
 
