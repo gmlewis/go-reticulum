@@ -15,7 +15,7 @@ import (
 func TestFlasherCommandArgsESP32(t *testing.T) {
 	t.Parallel()
 
-	got, err := flasherCommandArgs(equivalencePlatformESP32, 0xa1, "ttyUSB0", "921600")
+	got, err := flasherCommandArgs(romPlatformESP32, 0xa1, "ttyUSB0", "921600")
 	if err != nil {
 		t.Fatalf("flasherCommandArgs returned error: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestFlasherCommandArgsAVR2560(t *testing.T) {
 func TestFlasherCommandCallESP32(t *testing.T) {
 	t.Parallel()
 
-	got, err := flasherCommandCall(equivalencePlatformESP32, 0xa1, "ttyUSB0", "921600", "/tmp/firmware", "rnode_firmware_esp32_generic.zip")
+	got, err := flasherCommandCall(romPlatformESP32, 0xa1, "ttyUSB0", "921600", "/tmp/firmware", "rnode_firmware_esp32_generic.zip")
 	if err != nil {
 		t.Fatalf("flasherCommandCall returned error: %v", err)
 	}

@@ -42,7 +42,7 @@ func (rt cliRuntime) runFirmwareExtract(out io.Writer, port string, opts options
 	if err != nil {
 		return err
 	}
-	if platform != equivalencePlatformESP32 {
+	if platform != romPlatformESP32 {
 		return errors.New("Firmware extraction is currently only supported on ESP32-based RNodes.")
 	}
 

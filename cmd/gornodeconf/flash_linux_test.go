@@ -39,7 +39,7 @@ func TestRunFirmwareFlashUsesExtractedFirmwareCommand(t *testing.T) {
 		t.Fatalf("write extracted version file: %v", err)
 	}
 
-	serial := &scriptedSerial{reads: []byte{kissFend, rnodeKISSCommandPlatform, equivalencePlatformESP32, kissFend}}
+	serial := &scriptedSerial{reads: []byte{kissFend, rnodeKISSCommandPlatform, romPlatformESP32, kissFend}}
 	var gotArgs []string
 	rt := cliRuntime{
 		openSerial: func(settings serialSettings) (serialPort, error) {

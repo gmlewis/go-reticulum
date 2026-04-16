@@ -944,19 +944,6 @@ func bootstrapEEPROM(writer eepromDownloaderWriter, product, model byte, hwRev b
 	return nil
 }
 
-func rnodeDetectCommand() []byte {
-	return []byte{
-		kissFend, 0x08, 0x73, kissFend,
-		kissFend, 0x50, 0x00, kissFend,
-		kissFend, 0x48, 0x00, kissFend,
-		kissFend, 0x49, 0x00, kissFend,
-		kissFend, 0x47, 0x00, kissFend,
-		kissFend, 0x56, 0x01, kissFend,
-		kissFend, 0x60, 0x01, kissFend,
-		kissFend, 0x60, 0x02, kissFend,
-	}
-}
-
 func formatBootstrapEEPROMError(err error) error {
 	if err == nil {
 		return nil

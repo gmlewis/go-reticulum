@@ -29,7 +29,7 @@ func TestRunFirmwareExtractWritesExpectedArtifacts(t *testing.T) {
 	}
 	extractedDir := filepath.Join(configDir, "extracted")
 
-	serial := &scriptedSerial{reads: append([]byte{kissFend, rnodeKISSCommandPlatform, equivalencePlatformESP32, kissFend}, []byte{
+	serial := &scriptedSerial{reads: append([]byte{kissFend, rnodeKISSCommandPlatform, romPlatformESP32, kissFend}, []byte{
 		kissFend, rnodeKISSCommandFWVersion, 0x02, 0x05, kissFend,
 		kissFend, rnodeKISSCommandDevHash,
 		0x01, 0x02, 0x03, 0x04,

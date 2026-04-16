@@ -13,7 +13,7 @@ import "fmt"
 // for the supported platform families.
 func flasherCommandArgs(platform, model byte, port, baudFlash string) ([]string, error) {
 	switch platform {
-	case equivalencePlatformESP32:
+	case romPlatformESP32:
 		if baudFlash == "" {
 			baudFlash = "921600"
 		}
@@ -57,7 +57,7 @@ func flasherCommandArgs(platform, model byte, port, baudFlash string) ([]string,
 // firmware bundle layout.
 func flasherCommandCall(platform, model byte, port, baudFlash, firmwareDir, fwFilename string) ([]string, error) {
 	switch platform {
-	case equivalencePlatformESP32:
+	case romPlatformESP32:
 		if baudFlash == "" {
 			baudFlash = "921600"
 		}
