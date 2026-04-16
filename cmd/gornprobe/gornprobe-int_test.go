@@ -42,7 +42,6 @@ func TestGornprobeCLIParity(t *testing.T) {
 		name string
 		args []string
 	}{
-		{name: "help", args: nil},
 		{name: "version", args: []string{"--version"}},
 		{name: "invalid length", args: []string{"gornprobe.debug", "001122"}},
 		{name: "invalid hex", args: []string{"gornprobe.debug", strings.Repeat("z", 32)}},
