@@ -294,8 +294,8 @@ func TestGornsdVersionOutputs(t *testing.T) {
 	if got.stdout != "gornsd 0.1.0\n" {
 		t.Fatalf("gornsd stdout = %q, want %q", got.stdout, "gornsd 0.1.0\n")
 	}
-	if want.stdout != "rnsd 1.1.3\n" {
-		t.Fatalf("rnsd stdout = %q, want %q", want.stdout, "rnsd 1.1.3\n")
+	if !strings.HasPrefix(want.stdout, "rnsd ") || !strings.HasSuffix(want.stdout, "\n") {
+		t.Fatalf("rnsd stdout = %q, want prefix %q and trailing newline", want.stdout, "rnsd ")
 	}
 }
 

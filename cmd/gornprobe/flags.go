@@ -180,8 +180,8 @@ func consumeValue(args []string, index int) (string, int, error) {
 
 const usageText = `
 usage: gornprobe [-h] [--config CONFIG] [-s SIZE] [-n PROBES] [-t seconds]
-				 [-w seconds] [--version] [-v]
-                 [full_name] [destination_hash]
+                  [-w seconds] [--version] [-v]
+                  [full_name] [destination_hash]
 
 Go Reticulum Probe Utility
 
@@ -192,11 +192,13 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   --config CONFIG       path to alternative Reticulum config directory
-	-s, --size SIZE       size of probe packet payload in bytes
-	-n, --probes PROBES   number of probes to send
-	-t, --timeout seconds
-												timeout before giving up
-	-w, --wait seconds    time between each probe
+  -s SIZE, --size SIZE  size of probe packet payload in bytes
+  -n PROBES, --probes PROBES
+                        number of probes to send
+  -t seconds, --timeout seconds
+                        timeout before giving up
+  -w seconds, --wait seconds
+                        time between each probe
   --version             show program's version number and exit
   -v, --verbose
 `

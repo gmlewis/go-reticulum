@@ -91,6 +91,14 @@ func getPythonPath() string {
 	return ""
 }
 
+func requirePythonModule(t *testing.T, module string) {
+	t.Helper()
+	cmd := exec.Command("python3", "-c", "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec(sys.argv[1]) else 1)", module)
+	if err := cmd.Run(); err != nil {
+		t.Skipf("skipping integration test: python module %q is not available", module)
+	}
+}
+
 const pythonUDPEchoScript = `
 import RNS.Interfaces.UDPInterface as UDPInterface
 import time
@@ -612,6 +620,10 @@ except KeyboardInterrupt:
 
 func TestSerialInterfaceParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
+	if _, err := exec.LookPath("socat"); err != nil {
+		t.Skip("skipping integration test: socat not installed")
+	}
+	requirePythonModule(t, "serial")
 	pythonPath := getPythonPath()
 	tmpDir, cleanup := testutils.TempDir(t, "rns-serial-parity-")
 	defer cleanup()
