@@ -228,27 +228,47 @@ func TestIntegrationPrintIdentityOutputFormatParity(t *testing.T) {
 
 func TestIntegrationGoListenerGoInitiatorEcho(t *testing.T) {
 	testutils.SkipShortIntegration(t)
+	configDir := ""
+	initiatorConfigDir := ""
+	listenerArgs := []string{"--no-auth"}
+	commandTimeout := 60 * time.Second
+	commandArgs := []string{"--timeout", "30"}
+
 	if runtime.GOOS == "darwin" {
-		t.Skip("AutoInterface path propagation is unreliable on macOS; use direct UDP tests instead")
+		listenerConfigDir, directInitiatorConfigDir, cleanup := prepareGornshDirectUDPConfigPair(t, "gornsh-go-go-")
+		defer cleanup()
+		configDir = listenerConfigDir
+		initiatorConfigDir = directInitiatorConfigDir
+		listenerArgs = append(listenerArgs, "--announce", "1")
+		commandTimeout = 15 * time.Second
+		commandArgs = []string{"--timeout", "8"}
+	} else {
+		sharedConfigDir, cleanup := testutils.TempDir(t, "gornsh-go-go-")
+		defer cleanup()
+		configDir = sharedConfigDir
+		initiatorConfigDir = sharedConfigDir
+
+		instanceName := "gornsh-go-go-" + filepath.Base(configDir)
+		prepareGornshConfigWithInstance(t, configDir, instanceName, 0, 0)
 	}
-	configDir, cleanup := testutils.TempDir(t, "gornsh-go-go-")
-	defer cleanup()
 
-	instanceName := "gornsh-go-go-" + filepath.Base(configDir)
-	prepareGornshConfigWithInstance(t, configDir, instanceName, 0, 0)
-
-	listener := startGornshListener(t, configDir)
+	listener := startGornshListenerWithArgs(t, configDir, listenerArgs...)
 	readyHash := listener.hash()
 	if readyHash == "" {
 		t.Fatal("listener hash is empty")
 	}
 
-	// Wait for the shared instance transport to propagate the listener's path.
-	waitForPathInSharedInstance(t, configDir, readyHash, sharedInstancePathTimeout)
+	if runtime.GOOS != "darwin" {
+		// Wait for the shared instance transport to propagate the listener's path.
+		waitForPathInSharedInstance(t, configDir, readyHash, sharedInstancePathTimeout)
+	}
 
-	// Initiator call should be rock-solid with enough timeout
-	// When using shared instance, we MUST use the same configDir
-	output, exitCode := runGornshCommand(t, configDir, 60*time.Second, "--timeout", "30", "-T", readyHash, "echo", "hello")
+	output, exitCode := runGornshCommand(
+		t,
+		initiatorConfigDir,
+		commandTimeout,
+		append(commandArgs, "-T", readyHash, "echo", "hello")...,
+	)
 	if exitCode != 0 {
 		t.Fatalf("initiator exit code = %v, want 0\ninitiator output:\n%v\nlistener output:\n%v", exitCode, output, listener.output())
 	}
@@ -313,6 +333,7 @@ func TestIntegrationPythonListenerGoInitiatorEchoWithoutGornpathPolling(t *testi
 	if readyHash == "" {
 		t.Fatal("Python listener hash is empty")
 	}
+	waitForPathWithoutGornpath(t, initiatorConfigDir, readyHash, sharedInstancePathTimeout)
 
 	output, exitCode := runGornshCommand(t, initiatorConfigDir, 15*time.Second, "--timeout", "8", "-T", readyHash, "echo", "hello")
 	if exitCode != 0 {
@@ -365,6 +386,7 @@ func TestIntegrationGoListenerPythonInitiatorEchoWithoutGornpathPolling(t *testi
 	if readyHash == "" {
 		t.Fatal("listener hash is empty")
 	}
+	waitForPathWithoutGornpath(t, initiatorConfigDir, readyHash, sharedInstancePathTimeout)
 
 	output, exitCode := runRnshCommand(t, initiatorConfigDir, 15*time.Second, "--timeout", "8", "-T", readyHash, "echo", "hello")
 	if exitCode != 0 {
@@ -630,6 +652,76 @@ func TestSharedInstancePathTimeoutBounded(t *testing.T) {
 	}
 	if sharedInstancePathTimeout > 10*time.Second {
 		t.Fatalf("sharedInstancePathTimeout = %v, want helper polling window no greater than 10s", sharedInstancePathTimeout)
+	}
+}
+
+func TestWaitForPathReadinessReturnsWhenPathAppears(t *testing.T) {
+	t.Parallel()
+
+	var requests int
+	pathVisible := false
+	if err := waitForPathReadiness(
+		"test path",
+		func() bool { return pathVisible },
+		func() error {
+			requests++
+			if requests >= 2 {
+				pathVisible = true
+			}
+			return nil
+		},
+		250*time.Millisecond,
+	); err != nil {
+		t.Fatalf("waitForPathReadiness() error = %v, want nil", err)
+	}
+	if requests < 2 {
+		t.Fatalf("requestPath call count = %v, want at least 2", requests)
+	}
+}
+
+func TestWaitForPathReadinessSurvivesTransientRequestError(t *testing.T) {
+	t.Parallel()
+
+	var requests int
+	pathVisible := false
+	if err := waitForPathReadiness(
+		"test path",
+		func() bool { return pathVisible },
+		func() error {
+			requests++
+			if requests == 1 {
+				return fmt.Errorf("temporary path request failure")
+			}
+			pathVisible = true
+			return nil
+		},
+		250*time.Millisecond,
+	); err != nil {
+		t.Fatalf("waitForPathReadiness() error = %v, want nil after retry", err)
+	}
+	if requests < 2 {
+		t.Fatalf("requestPath call count = %v, want retry after transient failure", requests)
+	}
+}
+
+func TestWaitForPathReadinessTimesOutPromptly(t *testing.T) {
+	t.Parallel()
+
+	start := time.Now()
+	err := waitForPathReadiness(
+		"test path",
+		func() bool { return false },
+		func() error { return nil },
+		50*time.Millisecond,
+	)
+	if err == nil {
+		t.Fatal("waitForPathReadiness() error = nil, want timeout")
+	}
+	if !strings.Contains(err.Error(), "timed out waiting for test path") {
+		t.Fatalf("waitForPathReadiness() error = %q, want timeout detail", err)
+	}
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Fatalf("waitForPathReadiness() took %v, want under 500ms", elapsed)
 	}
 }
 
@@ -1020,6 +1112,61 @@ func waitForPathInSharedInstance(t *testing.T, configDir, hash string, timeout t
 		time.Sleep(1 * time.Second)
 	}
 	t.Fatalf("timed out waiting for path to %v in shared instance", hash)
+}
+
+func waitForPathWithoutGornpath(t *testing.T, configDir, hash string, timeout time.Duration) {
+	t.Helper()
+
+	destHash, err := rns.HexToBytes(hash)
+	if err != nil {
+		t.Fatalf("invalid destination hash %q: %v", hash, err)
+	}
+
+	logger := rns.NewLogger()
+	logger.SetLogLevel(rns.LogCritical)
+	ts := rns.NewTransportSystem(logger)
+	ret, err := rns.NewReticulum(ts, configDir)
+	if err != nil {
+		t.Fatalf("failed to initialize Reticulum for path wait: %v", err)
+	}
+	defer func() {
+		if err := ret.Close(); err != nil {
+			t.Fatalf("failed to close Reticulum after path wait: %v", err)
+		}
+	}()
+
+	if err := waitForPathReadiness(
+		fmt.Sprintf("path to %v without gornpath", hash),
+		func() bool { return ret.Transport().HasPath(destHash) },
+		func() error { return ret.Transport().RequestPath(destHash) },
+		timeout,
+	); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func waitForPathReadiness(name string, hasPath func() bool, requestPath func() error, timeout time.Duration) error {
+	if hasPath() {
+		return nil
+	}
+
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for {
+		if err := requestPath(); err != nil {
+			lastErr = err
+		}
+		if hasPath() {
+			return nil
+		}
+		if !time.Now().Before(deadline) {
+			if lastErr != nil {
+				return fmt.Errorf("timed out waiting for %v within %v: last path request failed: %w", name, timeout, lastErr)
+			}
+			return fmt.Errorf("timed out waiting for %v within %v", name, timeout)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 func runGornshCommand(t *testing.T, configDir string, timeout time.Duration, args ...string) (string, int) {

@@ -26,20 +26,25 @@ import (
 func runPythonRatchetEncrypt(t *testing.T, initScriptPath, pyStorage string, destHash, pubKey, msg []byte, pyListenPort, goListenPort int, announceFn func() error) ([]byte, []byte, string) {
 	t.Helper()
 
-	cmd := exec.Command("python3", initScriptPath, pyStorage, fmt.Sprintf("%x", destHash), fmt.Sprintf("%x", pubKey), fmt.Sprintf("%x", msg), strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort))
+	runStorage, err := os.MkdirTemp(pyStorage, "ratchet-encrypt-*")
+	if err != nil {
+		t.Fatalf("failed to create Python ratchet storage: %v", err)
+	}
+
+	cmd := exec.Command("python3", initScriptPath, runStorage, fmt.Sprintf("%x", destHash), fmt.Sprintf("%x", pubKey), fmt.Sprintf("%x", msg), strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort))
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 
 	announceErr := make(chan error, 1)
 	go func() {
-		var err error
+		var announceErrValue error
 		for i := 0; i < 3; i++ {
 			time.Sleep(50 * time.Millisecond)
 			if e := announceFn(); e != nil {
-				err = e
+				announceErrValue = e
 				break
 			}
 		}
-		announceErr <- err
+		announceErr <- announceErrValue
 	}()
 
 	out, err := cmd.CombinedOutput()
@@ -207,6 +212,9 @@ share_instance = No
         remote_identity = RNS.Identity(create_keys=False)
         remote_identity.load_public_key(pub_key)
         destination = RNS.Destination(remote_identity, RNS.Destination.OUT, RNS.Destination.SINGLE, "ratchet_test", "parity")
+        timeout = time.time() + 10
+        while not destination.latest_ratchet_id and time.time() < timeout:
+            time.sleep(0.1)
         print(f"Python Initiator: Dest Hash: {destination.hash.hex()}")
         sys.stdout.flush()
 

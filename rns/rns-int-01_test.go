@@ -41,7 +41,7 @@ func TestMain(m *testing.M) {
 			code = 1
 		}
 	}
-	if err := os.Remove(lockPath); err != nil {
+	if err := os.Remove(lockPath); err != nil && !os.IsNotExist(err) {
 		log.Printf("unable to remove lockFile %q: %v", lockPath, err)
 		if code == 0 {
 			code = 1

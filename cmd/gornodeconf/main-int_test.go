@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -45,10 +44,6 @@ func TestPublicKeysReportsMissingFiles(t *testing.T) {
 
 func TestSignWithoutPortAutoDetectsDiscoveredPort(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	if runtime.GOOS == "darwin" {
-		t.Skip("live serial auto-detect is covered in the next task")
-	}
-
 	home := tempTrustKeyHome(t)
 	firmwareDir := filepath.Join(home, ".config", "rnodeconf", "firmware")
 	if err := os.MkdirAll(firmwareDir, 0o755); err != nil {
