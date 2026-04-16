@@ -35,19 +35,34 @@ func runPythonRatchetEncrypt(t *testing.T, initScriptPath, pyStorage string, des
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
 
 	announceErr := make(chan error, 1)
+	announceStop := make(chan struct{})
 	go func() {
-		var announceErrValue error
-		for i := 0; i < 3; i++ {
-			time.Sleep(50 * time.Millisecond)
+		defer close(announceErr)
+		initialDelay := time.NewTimer(50 * time.Millisecond)
+		initialTick := initialDelay.C
+		defer initialDelay.Stop()
+		ticker := time.NewTicker(200 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-announceStop:
+				announceErr <- nil
+				return
+			case <-initialTick:
+				initialTick = nil
+			case <-ticker.C:
+			}
+
 			if e := announceFn(); e != nil {
-				announceErrValue = e
-				break
+				announceErr <- e
+				return
 			}
 		}
-		announceErr <- announceErrValue
 	}()
 
 	out, err := cmd.CombinedOutput()
+	close(announceStop)
 	if announceErrVal := <-announceErr; announceErrVal != nil {
 		t.Fatalf("failed to announce during Python initiator run: %v", announceErrVal)
 	}
@@ -204,17 +219,27 @@ share_instance = No
         dest_hash = bytes.fromhex(dest_hash_hex)
         pub_key = bytes.fromhex(pub_key_hex)
 
-        # Wait for announce with ratchet
+        # Wait for path discovery first, actively requesting it while the Go
+        # side continues to announce.
         timeout = time.time() + 10
         while not RNS.Transport.has_path(dest_hash) and time.time() < timeout:
-            time.sleep(0.5)
+            RNS.Transport.request_path(dest_hash)
+            time.sleep(0.1)
+        if not RNS.Transport.has_path(dest_hash):
+            print("Error: timed out waiting for path")
+            sys.exit(1)
 
         remote_identity = RNS.Identity(create_keys=False)
         remote_identity.load_public_key(pub_key)
         destination = RNS.Destination(remote_identity, RNS.Destination.OUT, RNS.Destination.SINGLE, "ratchet_test", "parity")
         timeout = time.time() + 10
-        while not destination.latest_ratchet_id and time.time() < timeout:
+        while not RNS.Identity.current_ratchet_id(dest_hash) and time.time() < timeout:
+            RNS.Transport.request_path(dest_hash)
             time.sleep(0.1)
+        remembered_ratchet_id = RNS.Identity.current_ratchet_id(dest_hash)
+        if not remembered_ratchet_id:
+            print("Error: timed out waiting for remembered ratchet id")
+            sys.exit(1)
         print(f"Python Initiator: Dest Hash: {destination.hash.hex()}")
         sys.stdout.flush()
 
@@ -224,6 +249,8 @@ share_instance = No
         print(f"Encrypted: {encrypted.hex()}")
         if destination.latest_ratchet_id:
             print(f"RatchetID: {destination.latest_ratchet_id.hex()}")
+        else:
+            print(f"RatchetID: {remembered_ratchet_id.hex()}")
         sys.stdout.flush()
 
     except Exception as e:
@@ -745,31 +772,31 @@ func TestRatchetRetentionWindowParity(t *testing.T) {
 	forceRotate()
 	ratchetAID := RatchetID(dest.ratchets[0].PublicKey().PublicBytes())
 	msgA := []byte("retention-msg-a")
-	cipherA, pyRatchetAID, _ := runPythonRatchetEncrypt(t, initScriptPath, pyStorage, dest.Hash, id.GetPublicKey(), msgA, pyListenPort, goListenPort, func() error {
+	cipherA, pyRatchetAID, outA := runPythonRatchetEncrypt(t, initScriptPath, pyStorage, dest.Hash, id.GetPublicKey(), msgA, pyListenPort, goListenPort, func() error {
 		return dest.Announce(nil)
 	})
 	if !bytes.Equal(pyRatchetAID, ratchetAID) {
-		t.Fatalf("ratchet A ID mismatch\nGo: %x\nPy: %x", ratchetAID, pyRatchetAID)
+		t.Fatalf("ratchet A ID mismatch\nGo: %x\nPy: %x\nOutput: %v", ratchetAID, pyRatchetAID, outA)
 	}
 
 	forceRotate()
 	ratchetBID := RatchetID(dest.ratchets[0].PublicKey().PublicBytes())
 	msgB := []byte("retention-msg-b")
-	cipherB, pyRatchetBID, _ := runPythonRatchetEncrypt(t, initScriptPath, pyStorage, dest.Hash, id.GetPublicKey(), msgB, pyListenPort, goListenPort, func() error {
+	cipherB, pyRatchetBID, outB := runPythonRatchetEncrypt(t, initScriptPath, pyStorage, dest.Hash, id.GetPublicKey(), msgB, pyListenPort, goListenPort, func() error {
 		return dest.Announce(nil)
 	})
 	if !bytes.Equal(pyRatchetBID, ratchetBID) {
-		t.Fatalf("ratchet B ID mismatch\nGo: %x\nPy: %x", ratchetBID, pyRatchetBID)
+		t.Fatalf("ratchet B ID mismatch\nGo: %x\nPy: %x\nOutput: %v", ratchetBID, pyRatchetBID, outB)
 	}
 
 	forceRotate()
 	ratchetCID := RatchetID(dest.ratchets[0].PublicKey().PublicBytes())
 	msgC := []byte("retention-msg-c")
-	cipherC, pyRatchetCID, _ := runPythonRatchetEncrypt(t, initScriptPath, pyStorage, dest.Hash, id.GetPublicKey(), msgC, pyListenPort, goListenPort, func() error {
+	cipherC, pyRatchetCID, outC := runPythonRatchetEncrypt(t, initScriptPath, pyStorage, dest.Hash, id.GetPublicKey(), msgC, pyListenPort, goListenPort, func() error {
 		return dest.Announce(nil)
 	})
 	if !bytes.Equal(pyRatchetCID, ratchetCID) {
-		t.Fatalf("ratchet C ID mismatch\nGo: %x\nPy: %x", ratchetCID, pyRatchetCID)
+		t.Fatalf("ratchet C ID mismatch\nGo: %x\nPy: %x\nOutput: %v", ratchetCID, pyRatchetCID, outC)
 	}
 
 	if len(dest.ratchets) != 2 {

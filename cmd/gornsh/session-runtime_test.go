@@ -8,6 +8,7 @@ package main
 import (
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -132,6 +133,28 @@ func TestActiveCommandWriteStdinClosedPipeErrorType(t *testing.T) {
 	err := cmd.writeStdin([]byte("x"), false)
 	if !errors.Is(err, io.ErrClosedPipe) {
 		t.Fatalf("expected io.ErrClosedPipe, got %v", err)
+	}
+}
+
+func TestActiveCommandWriteStdinIgnoresAlreadyClosedEOF(t *testing.T) {
+	t.Parallel()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() error: %v", err)
+	}
+	defer func() {
+		if err := reader.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
+			t.Fatalf("reader close failed: %v", err)
+		}
+	}()
+	if err := writer.Close(); err != nil {
+		t.Fatalf("writer close failed: %v", err)
+	}
+
+	cmd := &activeCommand{stdin: writer, rt: &runtimeT{}}
+	if err := cmd.writeStdin(nil, true); err != nil {
+		t.Fatalf("writeStdin eof error = %v, want nil for already-closed stdin", err)
 	}
 }
 

@@ -50,10 +50,26 @@ func (ac *activeCommand) writeStdin(data []byte, eof bool) error {
 
 	if eof {
 		ac.closed = true
-		return ac.stdin.Close()
+		if err := ac.stdin.Close(); err != nil {
+			if isIgnorableStdinCloseError(err) {
+				return nil
+			}
+			return err
+		}
+		return nil
 	}
 
 	return nil
+}
+
+func isIgnorableStdinCloseError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, errStdinClosed) || errors.Is(err, io.ErrClosedPipe) || errors.Is(err, os.ErrClosed) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "file already closed")
 }
 
 func (ac *activeCommand) markFinished() {

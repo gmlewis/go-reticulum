@@ -261,6 +261,8 @@ func TestIntegrationGoListenerGoInitiatorEcho(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		// Wait for the shared instance transport to propagate the listener's path.
 		waitForPathInSharedInstance(t, configDir, readyHash, sharedInstancePathTimeout)
+	} else {
+		waitForPathWithoutGornpath(t, initiatorConfigDir, readyHash, sharedInstancePathTimeout)
 	}
 
 	output, exitCode := runGornshCommand(
@@ -287,6 +289,7 @@ func TestIntegrationPythonListenerGoInitiatorEcho(t *testing.T) {
 	if readyHash == "" {
 		t.Fatal("Python listener hash is empty")
 	}
+	waitForPathWithoutGornpath(t, initiatorConfigDir, readyHash, sharedInstancePathTimeout)
 
 	output, exitCode := runGornshCommand(t, initiatorConfigDir, 15*time.Second, "--timeout", "8", "-T", readyHash, "echo", "hello")
 	if exitCode != 0 {
@@ -307,6 +310,7 @@ func TestIntegrationGoListenerPythonInitiatorEcho(t *testing.T) {
 	if readyHash == "" {
 		t.Fatal("listener hash is empty")
 	}
+	waitForPathWithoutGornpath(t, initiatorConfigDir, readyHash, sharedInstancePathTimeout)
 
 	output, exitCode := runRnshCommand(t, initiatorConfigDir, 15*time.Second, "--timeout", "8", "-T", readyHash, "echo", "hello")
 	if exitCode != 0 {
@@ -358,6 +362,7 @@ func TestIntegrationPythonListenerGoInitiatorEchoRepeatedHandshakes(t *testing.T
 			if readyHash == "" {
 				t.Fatalf("iteration %d: Python listener hash is empty", iteration)
 			}
+			waitForPathWithoutGornpath(t, initiatorConfigDir, readyHash, sharedInstancePathTimeout)
 
 			output, exitCode := runGornshCommand(t, initiatorConfigDir, 15*time.Second, "--timeout", "8", "-T", readyHash, "echo", fmt.Sprintf("hello-%d", iteration))
 			if exitCode != 0 {
@@ -411,6 +416,7 @@ func TestIntegrationGoListenerPythonInitiatorEchoRepeatedHandshakes(t *testing.T
 			if readyHash == "" {
 				t.Fatalf("iteration %d: listener hash is empty", iteration)
 			}
+			waitForPathWithoutGornpath(t, initiatorConfigDir, readyHash, sharedInstancePathTimeout)
 
 			output, exitCode := runRnshCommand(t, initiatorConfigDir, 15*time.Second, "--timeout", "8", "-T", readyHash, "echo", fmt.Sprintf("hello-%d", iteration))
 			if exitCode != 0 {
@@ -434,6 +440,7 @@ func TestIntegrationReadyListenerServesUnderModerateLocalLoad(t *testing.T) {
 	if readyHash == "" {
 		t.Fatal("listener hash is empty")
 	}
+	waitForPathWithoutGornpath(t, initiatorConfigDir, readyHash, sharedInstancePathTimeout)
 
 	workerCount := runtime.GOMAXPROCS(0) / 2
 	if workerCount < 2 {
