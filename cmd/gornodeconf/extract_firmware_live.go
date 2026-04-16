@@ -90,14 +90,32 @@ func (rt cliRuntime) runFirmwareExtract(out io.Writer, port string, opts options
 	if err != nil {
 		return err
 	}
+	useNoStubFallback := false
 	for _, target := range defaultExtractTargets() {
 		outputPath := filepath.Join(extractedDir, target.filename)
 		args := recoveryEsptoolCommandArgs(esptoolPath, port, baud, target.offset, target.size, outputPath)
-		if output, err := rt.runCommand(args[0], args[1:]...); err != nil {
-			if trimmed := strings.TrimSpace(string(output)); trimmed != "" {
-				return fmt.Errorf("The extraction failed, the following command did not complete successfully:\n%v\n%v", strings.Join(args, " "), trimmed)
+		if useNoStubFallback {
+			args = recoveryEsptoolNoStubCommandArgs(esptoolPath, port, baud, target.offset, target.size, outputPath)
+		}
+		commandName, commandArgs, err := rt.prepareRecoveryEsptoolCommand(args)
+		if err != nil {
+			return err
+		}
+		output, commandErr := rt.runCommand(commandName, commandArgs...)
+		if commandErr != nil && !useNoStubFallback && shouldRetryRecoveryEsptoolNoStub(output) {
+			useNoStubFallback = true
+			if _, err := fmt.Fprintln(out, "Recovery helper stub failed; retrying extraction via ROM bootloader path."); err != nil {
+				return err
 			}
-			return fmt.Errorf("The extraction failed, the following command did not complete successfully:\n%v", strings.Join(args, " "))
+			args = recoveryEsptoolNoStubCommandArgs(esptoolPath, port, baud, target.offset, target.size, outputPath)
+			commandName, commandArgs, err = rt.prepareRecoveryEsptoolCommand(args)
+			if err != nil {
+				return err
+			}
+			output, commandErr = rt.runCommand(commandName, commandArgs...)
+		}
+		if commandErr != nil {
+			return recoveryEsptoolCommandError(args, output)
 		}
 	}
 
@@ -110,4 +128,22 @@ func (rt cliRuntime) runFirmwareExtract(out io.Writer, port string, opts options
 		return err
 	}
 	return nil
+}
+
+func shouldRetryRecoveryEsptoolNoStub(output []byte) bool {
+	trimmed := strings.TrimSpace(string(output))
+	if trimmed == "" {
+		return false
+	}
+	if strings.Contains(trimmed, "Wrong --chip argument?") {
+		return true
+	}
+	return strings.Contains(trimmed, "Guru Meditation Error") && strings.Contains(trimmed, "Invalid head of packet")
+}
+
+func recoveryEsptoolCommandError(args []string, output []byte) error {
+	if trimmed := strings.TrimSpace(string(output)); trimmed != "" {
+		return fmt.Errorf("The extraction failed, the following command did not complete successfully:\n%v\n%v", strings.Join(args, " "), trimmed)
+	}
+	return fmt.Errorf("The extraction failed, the following command did not complete successfully:\n%v", strings.Join(args, " "))
 }

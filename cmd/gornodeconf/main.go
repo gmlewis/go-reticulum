@@ -165,26 +165,28 @@ func (e exitCodeError) Unwrap() error {
 }
 
 type cliRuntime struct {
-	logger              *rns.Logger
-	openSerial          serialOpener
-	discoverPort        func() (string, []string, error)
-	stdin               io.Reader
-	now                 func() time.Time
-	sleep               func(time.Duration)
-	runCommand          func(string, ...string) ([]byte, error)
-	loadBootstrapSigner func(string) (bootstrapChecksumSigner, error)
-	debug               bool
+	logger                *rns.Logger
+	openSerial            serialOpener
+	discoverPort          func() (string, []string, error)
+	stdin                 io.Reader
+	now                   func() time.Time
+	sleep                 func(time.Duration)
+	runCommand            func(string, ...string) ([]byte, error)
+	loadBootstrapSigner   func(string) (bootstrapChecksumSigner, error)
+	resolveRecoveryPython func() (string, error)
+	debug                 bool
 }
 
 func newRuntime() cliRuntime {
 	return cliRuntime{
-		logger:              rns.NewLogger(),
-		openSerial:          defaultOpenSerial,
-		stdin:               os.Stdin,
-		now:                 time.Now,
-		sleep:               time.Sleep,
-		runCommand:          defaultRunCommand,
-		loadBootstrapSigner: loadBootstrapSigner,
+		logger:                rns.NewLogger(),
+		openSerial:            defaultOpenSerial,
+		stdin:                 os.Stdin,
+		now:                   time.Now,
+		sleep:                 time.Sleep,
+		runCommand:            defaultRunCommand,
+		loadBootstrapSigner:   loadBootstrapSigner,
+		resolveRecoveryPython: defaultResolveRecoveryPython,
 	}
 }
 

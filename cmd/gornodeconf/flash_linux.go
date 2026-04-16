@@ -80,7 +80,11 @@ func (rt cliRuntime) runFirmwareFlash(out io.Writer, port string, opts options) 
 	if err != nil {
 		return err
 	}
-	if _, err := rt.runCommand(args[0], args[1:]...); err != nil {
+	commandName, commandArgs, err := rt.prepareRecoveryEsptoolCommand(args)
+	if err != nil {
+		return err
+	}
+	if _, err := rt.runCommand(commandName, commandArgs...); err != nil {
 		return fmt.Errorf("the flashing command did not complete successfully: %v", err)
 	}
 	if _, err := fmt.Fprintln(out, "Done flashing"); err != nil {

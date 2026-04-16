@@ -108,7 +108,13 @@ Reticulum source emits, not what seems convenient locally.
 ## Important caveats
 
 1. This helper still depends on host Python support, including `pyserial`.
-2. The helper is executed directly via its shebang, not via a guessed
-   `python` binary.
-3. If a board fails during extract/flash, that can still be a helper/device
+2. `gornodeconf` resolves a Python interpreter that can actually import
+   `serial` before launching the helper. It first honors
+   `GORNODECONF_RECOVERY_PYTHON`, then checks the active virtualenv, standard
+   `python3`/`python`, and finally a `pipx install pyserial` interpreter if one
+   can be found.
+3. If no usable interpreter is found, extract/flash will fail with an explicit
+   error telling the caller to set `GORNODECONF_RECOVERY_PYTHON`, activate a
+   virtualenv, or install `pyserial` for `python3`.
+4. If a board fails during extract/flash, that can still be a helper/device
    compatibility problem even when helper materialization is working correctly.

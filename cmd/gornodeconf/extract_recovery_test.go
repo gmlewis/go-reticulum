@@ -77,6 +77,28 @@ func TestRecoveryEsptoolCommandArgs(t *testing.T) {
 	}
 }
 
+func TestRecoveryEsptoolNoStubCommandArgs(t *testing.T) {
+	t.Parallel()
+
+	got := recoveryEsptoolNoStubCommandArgs("/tmp/recovery_esptool.py", "ttyUSB0", "921600", 0xe000, 0x2000, "/tmp/extracted_rnode_firmware.boot_app0")
+	want := []string{
+		"/tmp/recovery_esptool.py",
+		"--chip", "auto",
+		"--port", "ttyUSB0",
+		"--baud", "921600",
+		"--before", "usb_reset",
+		"--after", "hard_reset",
+		"--no-stub",
+		"read_flash",
+		"0xe000",
+		"0x2000",
+		"/tmp/extracted_rnode_firmware.boot_app0",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("recoveryEsptoolNoStubCommandArgs mismatch:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
 func TestEnsureRecoveryEsptoolAtWritesExecutableSourceOfTruthFile(t *testing.T) {
 	t.Parallel()
 

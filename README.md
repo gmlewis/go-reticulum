@@ -26,11 +26,12 @@ It is based upon the following Python original works:
 - **Supply-Chain Risk Posture**: This design is deliberate to minimize dependency-chain
   attack surface, informed by incidents such as the Jia Tan/XZ backdoor.
 
-## Manual RNode Workflow on Linux
+## Manual RNode Workflow on Linux or Mac
 
 The Go utilities in this repository are designed to talk to a live RNode over a
-serial port on Linux. The commands below exercise the common manual workflow in
+serial port on Linux or Mac. The commands below exercise the common manual workflow in
 the same order you would normally use on a fresh or already-provisioned device.
+You may need to install `python3-serial` or `pyserial` for full functionality.
 
 Before starting, make sure:
 

@@ -125,9 +125,6 @@ func TestLiveFirmwareExtractCLI(t *testing.T) {
 
 	out, err := runGornodeconfWithInputAndEnv("\n", map[string]string{"HOME": home}, "--extract", port)
 	if err != nil {
-		if strings.Contains(out, "Wrong --chip argument?") || strings.Contains(out, "Invalid head of packet") {
-			t.Skipf("source-of-truth recovery helper does not support the attached ESP32 variant yet:\n%v", out)
-		}
 		t.Fatalf("runGornodeconf firmware extract failed: %v\n%v", err, out)
 	}
 	for _, want := range []string{

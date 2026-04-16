@@ -81,16 +81,34 @@ func defaultExtractTargets() []extractTarget {
 // recoveryEsptoolCommandArgs returns the exact command-line arguments used to
 // read one flash region with the Python recovery esptool helper.
 func recoveryEsptoolCommandArgs(esptoolPath, port, baud string, offset, size int, outputFile string) []string {
-	return []string{
+	return recoveryEsptoolReadFlashCommandArgs(esptoolPath, "esp32", port, baud, "default_reset", "hard_reset", false, offset, size, outputFile)
+}
+
+// recoveryEsptoolNoStubCommandArgs switches to the helper's ROM-only path.
+//
+// This is slower than the default stub-assisted read, but it avoids the
+// helper's known ESP32-S3 stub crash.
+func recoveryEsptoolNoStubCommandArgs(esptoolPath, port, baud string, offset, size int, outputFile string) []string {
+	return recoveryEsptoolReadFlashCommandArgs(esptoolPath, "auto", port, baud, "usb_reset", "hard_reset", true, offset, size, outputFile)
+}
+
+func recoveryEsptoolReadFlashCommandArgs(esptoolPath, chip, port, baud, before, after string, noStub bool, offset, size int, outputFile string) []string {
+	args := []string{
 		esptoolPath,
-		"--chip", "esp32",
+		"--chip", chip,
 		"--port", port,
 		"--baud", baud,
-		"--before", "default_reset",
-		"--after", "hard_reset",
+		"--before", before,
+		"--after", after,
+	}
+	if noStub {
+		args = append(args, "--no-stub")
+	}
+	args = append(args,
 		"read_flash",
 		fmt.Sprintf("0x%x", offset),
 		fmt.Sprintf("0x%x", size),
 		outputFile,
-	}
+	)
+	return args
 }

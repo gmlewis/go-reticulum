@@ -80,7 +80,6 @@ func TestFlasherCommandCallESP32(t *testing.T) {
 		t.Fatalf("flasherCommandCall returned error: %v", err)
 	}
 	want := []string{
-		"python",
 		"/tmp/firmware/recovery_esptool.py",
 		"--chip", "esp32",
 		"--port", "ttyUSB0",
