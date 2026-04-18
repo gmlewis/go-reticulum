@@ -10,16 +10,14 @@ import (
 	"crypto/sha512"
 )
 
-// SHA256 calculates and returns the standard SHA-256 cryptographic hash digest of the input data.
-// It is utilized extensively across the network stack for producing uniform, collision-resistant checksums of arbitrary payloads.
+// SHA256 returns the SHA-256 hash digest of [data].
 func SHA256(data []byte) []byte {
 	digest := sha256.New()
 	digest.Write(data)
 	return digest.Sum(nil)
 }
 
-// SHA512 calculates and returns the robust SHA-512 cryptographic hash digest of the input data.
-// It provides a higher security margin and a wider bit-space, deployed in scenarios demanding maximum collision resistance.
+// SHA512 returns the SHA-512 hash digest of [data].
 func SHA512(data []byte) []byte {
 	digest := sha512.New()
 	digest.Write(data)

@@ -152,6 +152,8 @@ func (lci *LocalClientInterface) readLoop() {
 	}
 }
 
+// Send HDLC-frames the payload and writes it to the connected local shared
+// instance transport.
 func (lci *LocalClientInterface) Send(data []byte) error {
 	if atomic.LoadInt32(&lci.running) != 1 {
 		return fmt.Errorf("interface %v is not running", lci.name)
@@ -177,30 +179,38 @@ func (lci *LocalClientInterface) Send(data []byte) error {
 	return nil
 }
 
+// Status reports whether the local client connection is currently active.
 func (lci *LocalClientInterface) Status() bool {
 	return atomic.LoadInt32(&lci.running) == 1
 }
 
+// Type identifies this interface as a local shared-instance transport.
 func (lci *LocalClientInterface) Type() string {
 	return "LocalInterface"
 }
 
+// IsOut reports whether the local client can originate outbound traffic.
 func (lci *LocalClientInterface) IsOut() bool {
 	return true
 }
 
+// GetHash returns the identity hash currently associated with this local
+// connection.
 func (lci *LocalClientInterface) GetHash() []byte {
 	lci.mu.RLock()
 	defer lci.mu.RUnlock()
 	return lci.identityHash
 }
 
+// SetHash associates an identity hash with this local connection.
 func (lci *LocalClientInterface) SetHash(hash []byte) {
 	lci.mu.Lock()
 	defer lci.mu.Unlock()
 	lci.identityHash = hash
 }
 
+// Detach closes the underlying local transport connection and marks the
+// interface detached.
 func (lci *LocalClientInterface) Detach() error {
 	if lci.IsDetached() {
 		return nil
@@ -320,22 +330,31 @@ func (lsi *LocalServerInterface) handleConnection(conn net.Conn) {
 	go lci.readLoop()
 }
 
+// Send is a no-op for the server wrapper because spawned client connections
+// perform the actual transmission.
 func (lsi *LocalServerInterface) Send(data []byte) error {
 	return nil
 }
 
+// Status reports whether the local listener is currently accepting
+// connections.
 func (lsi *LocalServerInterface) Status() bool {
 	return atomic.LoadInt32(&lsi.running) == 1
 }
 
+// Type identifies this interface as a local shared-instance transport.
 func (lsi *LocalServerInterface) Type() string {
 	return "LocalInterface"
 }
 
+// IsOut reports whether the server can originate traffic through spawned
+// client connections.
 func (lsi *LocalServerInterface) IsOut() bool {
 	return true
 }
 
+// Detach stops the listener, detaches spawned clients, and removes any
+// filesystem socket path owned by the server.
 func (lsi *LocalServerInterface) Detach() error {
 	if lsi.IsDetached() {
 		return nil

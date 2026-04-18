@@ -16,8 +16,8 @@ const (
 	hkdfHashLen = 32
 )
 
-// HKDF implements the HMAC-based Extract-and-Expand Key Derivation Function (HKDF) utilizing SHA-256, conforming to Reticulum's core cryptographic specifications.
-// It deterministically expands initial key material into a cryptographically robust key of the specified length, suitable for subsequent symmetric encryption operations.
+// HKDF implements the HMAC-based Key Derivation Function (HKDF) with SHA-256.
+// It expands [deriveFrom] into [length] bytes using [salt] and optional [context].
 func HKDF(length int, deriveFrom, salt, context []byte) ([]byte, error) {
 	if length < 1 {
 		return nil, errors.New("invalid output key length")

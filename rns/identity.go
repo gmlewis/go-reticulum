@@ -15,13 +15,15 @@ import (
 )
 
 const (
-	// IdentityCurve specifies the elliptic curve standard used for Ephemeral Diffie-Hellman key exchanges within Reticulum.
+	// IdentityCurve names the Curve25519 family used for X25519 key exchange and
+	// Ed25519 signatures.
 	IdentityCurve = "Curve25519"
-	// IdentityKeySize specifies the combined total size in bits of both the encryption and signing keypairs.
+	// IdentityKeySize is the combined size in bits of the encryption and signing
+	// private keys.
 	IdentityKeySize = 256 * 2
 )
 
-// Identity encapsulates the fundamental cryptographic material representing a unique node or user within the Reticulum network.
+// Identity holds the key material and hashes for a Reticulum identity.
 type Identity struct {
 	logger *Logger
 	prv    *crypto.X25519PrivateKey
@@ -34,7 +36,7 @@ type Identity struct {
 	AppData []byte
 }
 
-// NewIdentity allocates a new structural container, optionally auto-generating pristine cryptographic keys.
+// NewIdentity creates an Identity and optionally generates new keys for it.
 func NewIdentity(createKeys bool, logger *Logger) (*Identity, error) {
 	id := &Identity{logger: logger}
 	if createKeys {
@@ -45,7 +47,7 @@ func NewIdentity(createKeys bool, logger *Logger) (*Identity, error) {
 	return id, nil
 }
 
-// CreateKeys securely computes fresh, tightly coupled encryption and signature keypairs for this identity.
+// CreateKeys generates new X25519 and Ed25519 key pairs for the identity.
 func (id *Identity) CreateKeys() error {
 	prv, err := crypto.GenerateX25519PrivateKey()
 	if err != nil {
@@ -65,13 +67,13 @@ func (id *Identity) CreateKeys() error {
 	return nil
 }
 
-// UpdateHashes re-calculates the internal cryptographic hash values corresponding to the underlying public key.
+// UpdateHashes recomputes the identity hash values from the public keys.
 func (id *Identity) UpdateHashes() {
 	id.Hash = TruncatedHash(id.GetPublicKey())
 	id.HexHash = fmt.Sprintf("%x", id.Hash)
 }
 
-// GetPublicKey extracts and concatenates the strict byte representations of the public encryption and signature keys.
+// GetPublicKey returns the concatenated public encryption and signing keys.
 func (id *Identity) GetPublicKey() []byte {
 	if id.pub == nil || id.sigPub == nil {
 		return nil
@@ -79,7 +81,7 @@ func (id *Identity) GetPublicKey() []byte {
 	return append(id.pub.PublicBytes(), id.sigPub.PublicBytes()...)
 }
 
-// GetPrivateKey extracts and concatenates the strict byte representations of the private encryption and signature keys.
+// GetPrivateKey returns the concatenated private encryption and signing keys.
 func (id *Identity) GetPrivateKey() []byte {
 	if id.prv == nil || id.sigPrv == nil {
 		return nil
@@ -101,7 +103,7 @@ func FromBytes(prvBytes []byte, logger *Logger) (*Identity, error) {
 	return id, nil
 }
 
-// LoadPrivateKey meticulously parses raw bytes to securely reinstantiate the underlying private key materials.
+// LoadPrivateKey loads concatenated private encryption and signing keys.
 func (id *Identity) LoadPrivateKey(data []byte) error {
 	half := IdentityKeySize / 8 / 2
 	if len(data) != half*2 {
@@ -126,7 +128,7 @@ func (id *Identity) LoadPrivateKey(data []byte) error {
 	return nil
 }
 
-// LoadPublicKey safely interprets raw network bytes to populate the associated public verification materials.
+// LoadPublicKey loads concatenated public encryption and signing keys.
 func (id *Identity) LoadPublicKey(data []byte) error {
 	half := IdentityKeySize / 8 / 2
 	if len(data) != half*2 {
@@ -149,17 +151,17 @@ func (id *Identity) LoadPublicKey(data []byte) error {
 	return nil
 }
 
-// FullHash computes an unmodified SHA-256 digest over arbitrary binary data.
+// FullHash returns the SHA-256 hash of data.
 func FullHash(data []byte) []byte {
 	return crypto.SHA256(data)
 }
 
-// TruncatedHash computes a SHA-256 digest but aggressively truncates it to align with internal routing lengths.
+// TruncatedHash returns the first TruncatedHashLength bits of SHA-256(data).
 func TruncatedHash(data []byte) []byte {
 	return FullHash(data)[:TruncatedHashLength/8]
 }
 
-// RandomHash generates a random SHA-256 hash truncated to TruncatedHashLength bits.
+// RandomHash returns a random truncated hash.
 func RandomHash() ([]byte, error) {
 	randBytes := make([]byte, TruncatedHashLength/8)
 	if _, err := rand.Read(randBytes); err != nil {
@@ -168,12 +170,12 @@ func RandomHash() ([]byte, error) {
 	return TruncatedHash(randBytes), nil
 }
 
-// RatchetID generates the unique internal identifier corresponding directly to a specific ratchet public key.
+// RatchetID returns the identifier used for a ratchet public key.
 func RatchetID(ratchetPubBytes []byte) []byte {
 	return FullHash(ratchetPubBytes)[:NameHashLength/8]
 }
 
-// Sign delegates the generation of an Ed25519 cryptographic signature utilizing the identity's private signing key.
+// Sign signs message using the identity's Ed25519 private key.
 func (id *Identity) Sign(message []byte) ([]byte, error) {
 	if id.sigPrv == nil {
 		return nil, errors.New("identity does not hold a private signing key")
@@ -181,7 +183,7 @@ func (id *Identity) Sign(message []byte) ([]byte, error) {
 	return id.sigPrv.Sign(message), nil
 }
 
-// Verify securely validates an Ed25519 cryptographic signature against an arbitrary message utilizing the identity's public key.
+// Verify reports whether signature is valid for message.
 func (id *Identity) Verify(signature, message []byte) bool {
 	if id.sigPub == nil {
 		return false
@@ -189,7 +191,7 @@ func (id *Identity) Verify(signature, message []byte) bool {
 	return id.sigPub.Verify(signature, message)
 }
 
-// ValidateAnnounce exhaustively processes a newly received announce packet, verifying cryptographic proofs and logical constraints.
+// ValidateAnnounce verifies the signature and structure of an announce packet.
 func ValidateAnnounce(ts Transport, packet *Packet) bool {
 	if packet.PacketType != PacketAnnounce {
 		return false
@@ -272,7 +274,9 @@ func ValidateAnnounce(ts Transport, packet *Packet) bool {
 	return true
 }
 
-// Encrypt constructs a highly secure cipher envelope over the payload, bootstrapping session keys via ephemeral Diffie-Hellman handshakes.
+// Encrypt encrypts plaintext for this identity.
+// If ratchetPubBytes is non-empty, it is used as the recipient public key
+// instead of the identity's primary public key.
 func (id *Identity) Encrypt(plaintext []byte, ratchetPubBytes []byte) ([]byte, error) {
 	var targetPub *crypto.X25519PublicKey
 	var err error
@@ -324,7 +328,8 @@ func (id *Identity) encryptWithToken(token *crypto.Token, plaintext []byte) ([]b
 	return token.Encrypt(plaintext)
 }
 
-// Decrypt attempts to symmetrically invert an encrypted payload utilizing dynamic fallback between ephemeral ratchets and static keys.
+// Decrypt decrypts ciphertext using ratchets first and then the identity's
+// primary private key unless enforceRatchets is true.
 func (id *Identity) Decrypt(ciphertext []byte, ratchets []*crypto.X25519PrivateKey, enforceRatchets bool) ([]byte, error) {
 	half := IdentityKeySize / 8 / 2
 	if len(ciphertext) < half {
@@ -389,7 +394,7 @@ func (id *Identity) Decrypt(ciphertext []byte, ratchets []*crypto.X25519PrivateK
 	return token.Decrypt(tokenCiphertext)
 }
 
-// FromFile instantiates a fully operational Identity context strictly by loading raw material from disk.
+// FromFile loads an identity from a private-key file.
 func FromFile(path string, logger *Logger) (*Identity, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -405,7 +410,7 @@ func FromFile(path string, logger *Logger) (*Identity, error) {
 	return id, nil
 }
 
-// ToFile safely exports the core private identity bytes directly to a specified system path, restricted strictly for owner access.
+// ToFile writes the private key material for the identity to path.
 func (id *Identity) ToFile(path string) error {
 	data := id.GetPrivateKey()
 	if data == nil {

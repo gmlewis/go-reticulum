@@ -41,9 +41,9 @@ type pipeSubprocessInterface struct {
 }
 
 // NewPipeSubprocessInterface forks a child OS process and establishes a
-// bidirectional HDLC-framed communication channel over its standard I/O
-// streams. It provides a resilient bridge and can automatically respawn the
-// external command if it terminates unexpectedly.
+// bidirectional High-Level Data Link Control (HDLC)-framed communication channel
+// over its standard I/O streams. It provides a resilient bridge and can automatically
+// respawn the external command if it terminates unexpectedly.
 func NewPipeSubprocessInterface(name, command string, respawnDelay time.Duration, handler InboundHandler) (Interface, error) {
 	if strings.TrimSpace(command) == "" {
 		return nil, fmt.Errorf("no command specified for PipeInterface")

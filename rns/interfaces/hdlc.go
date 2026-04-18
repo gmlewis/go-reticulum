@@ -5,18 +5,18 @@
 
 package interfaces
 
-// HDLCFlag defines the HDLC frame boundary marker byte. It is the
-// synchronization primitive used to assert the start and end of discrete
-// packets over raw serial interfaces.
+// HDLCFlag defines the High-Level Data Link Control (HDLC) frame boundary
+// marker. It is the synchronization primitive used to assert the start and
+// end of discrete packets over raw serial interfaces.
 const HDLCFlag = 0x7E
 
-// HDLCEsc specifies the escape character used to escape reserved bytes inside
-// a frame payload. It prevents embedded flag markers from being misinterpreted
+// HDLCEsc escapes reserved bytes inside an HDLC payload.
+// It prevents embedded flag markers from being misinterpreted
 // as structural boundaries.
 const HDLCEsc = 0x7D
 
-// HDLCEscMask provides the XOR modifier applied to escaped bytes within the
-// HDLC stream. It ensures escaped bytes are transformed safely for transport.
+// HDLCEscMask is XORed with escaped bytes in an HDLC frame.
+// It ensures escaped bytes are transformed safely for transport.
 const HDLCEscMask = 0x20
 
 // HDLCEscape scans and reformats a binary payload to comply with HDLC framing

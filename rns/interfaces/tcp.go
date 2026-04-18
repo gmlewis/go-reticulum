@@ -187,6 +187,8 @@ func (tci *TCPClientInterface) readLoop() {
 	}
 }
 
+// Send frames and writes data to the remote TCP peer using the interface's
+// configured HDLC or KISS transport framing.
 func (tci *TCPClientInterface) Send(data []byte) error {
 	if atomic.LoadInt32(&tci.running) != 1 {
 		return fmt.Errorf("interface %v is not running", tci.name)
@@ -221,18 +223,22 @@ func (tci *TCPClientInterface) Send(data []byte) error {
 	return nil
 }
 
+// Status reports whether the TCP client is currently connected and running.
 func (tci *TCPClientInterface) Status() bool {
 	return atomic.LoadInt32(&tci.running) == 1
 }
 
+// Type identifies this interface as a TCP transport.
 func (tci *TCPClientInterface) Type() string {
 	return "TCPInterface"
 }
 
+// IsOut reports whether this interface can originate outbound traffic.
 func (tci *TCPClientInterface) IsOut() bool {
 	return true
 }
 
+// Detach closes the client connection and suppresses any future reconnect loop.
 func (tci *TCPClientInterface) Detach() error {
 	tci.SetDetached(true)
 	atomic.StoreInt32(&tci.running, 0)
@@ -334,6 +340,7 @@ func (tsi *TCPServerInterface) handleConnection(conn net.Conn) {
 	}
 }
 
+// Send forwards the payload to each active spawned client connection.
 func (tsi *TCPServerInterface) Send(data []byte) error {
 	tsi.mu.Lock()
 	defer tsi.mu.Unlock()
@@ -347,18 +354,24 @@ func (tsi *TCPServerInterface) Send(data []byte) error {
 	return nil
 }
 
+// Status reports whether the TCP server listener is still running.
 func (tsi *TCPServerInterface) Status() bool {
 	return atomic.LoadInt32(&tsi.running) == 1
 }
 
+// Type identifies this interface as a TCP transport.
 func (tsi *TCPServerInterface) Type() string {
 	return "TCPInterface"
 }
 
+// IsOut reports whether the server can originate traffic through its spawned
+// client interfaces.
 func (tsi *TCPServerInterface) IsOut() bool {
 	return true
 }
 
+// Detach stops accepting connections, detaches spawned clients, and closes the
+// listening socket.
 func (tsi *TCPServerInterface) Detach() error {
 	atomic.StoreInt32(&tsi.running, 0)
 	tsi.mu.Lock()

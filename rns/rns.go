@@ -16,8 +16,9 @@
 //   - Link: Manages end-to-end encrypted sessions between peers.
 //   - Transport: Handles routing, packet forwarding, and interface management.
 //
-// Reticulum uses modern cryptographic primitives (X25519, Ed25519, AES-CBC,
-// and HKDF) to ensure all communication is secure and private.
+// Reticulum uses modern cryptographic primitives including X25519 key
+// exchange, Ed25519 signatures, AES Cipher Block Chaining (AES-CBC)
+// encryption, and HMAC-based Key Derivation Function (HKDF) key derivation.
 package rns
 
 import (
@@ -112,6 +113,7 @@ func (r *Reticulum) Transport() Transport {
 	return r.transport
 }
 
+// Logger returns the logger associated with this Reticulum instance.
 func (r *Reticulum) Logger() *Logger {
 	return r.logger
 }

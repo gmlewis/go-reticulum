@@ -18,43 +18,75 @@ import (
 
 // Message represents a fully materialized LXMF message, encompassing routing metadata, cryptographic signatures, and the structured payload for network transport.
 type Message struct {
-	Destination     *rns.Destination
-	Source          *rns.Destination
+	// Destination is the delivery destination the message is addressed to.
+	Destination *rns.Destination
+	// Source is the destination that signs and originates the message.
+	Source *rns.Destination
+	// DestinationHash is the truncated Reticulum hash of Destination.
 	DestinationHash []byte
-	SourceHash      []byte
+	// SourceHash is the truncated Reticulum hash of Source.
+	SourceHash []byte
 
-	Title   []byte
+	// Title holds the optional message title as raw bytes.
+	Title []byte
+	// Content holds the main message body as raw bytes.
 	Content []byte
-	Fields  map[any]any
+	// Fields carries optional structured LXMF metadata fields.
+	Fields map[any]any
 
+	// Timestamp records when the message payload was created, in Unix seconds.
 	Timestamp float64
-	Stamp     []byte
+	// Stamp holds an optional proof-of-work stamp attached to the payload.
+	Stamp []byte
 
+	// Payload stores the unpacked LXMF payload elements used for packing or
+	// validating the message.
 	Payload []any
 
-	Hash      []byte
+	// Hash is the LXMF message hash over addressing metadata and payload.
+	Hash []byte
+	// MessageID is the stable identifier used for message tracking.
 	MessageID []byte
+	// Signature holds the source destination's signature over the signed LXMF
+	// material.
 	Signature []byte
-	Packed    []byte
+	// Packed contains the serialized LXMF wire representation.
+	Packed []byte
 
+	// State tracks the current lifecycle state of the message.
 	State int
 
-	DesiredMethod  int
-	Method         int
+	// DesiredMethod is the preferred delivery method requested by the sender.
+	DesiredMethod int
+	// Method is the delivery method actually used or observed.
+	Method int
+	// Representation records whether the message traveled as a packet or as a
+	// resource.
 	Representation int
 
-	DeliveryAttempts    int
+	// DeliveryAttempts counts how many delivery attempts have been made.
+	DeliveryAttempts int
+	// NextDeliveryAttempt is the Unix timestamp for the next scheduled retry.
 	NextDeliveryAttempt float64
 
-	Incoming           bool
+	// Incoming reports whether the message was received from the network instead
+	// of constructed locally for transmission.
+	Incoming bool
+	// SignatureValidated reports whether Signature was successfully verified.
 	SignatureValidated bool
-	UnverifiedReason   int
+	// UnverifiedReason describes why signature validation could not succeed.
+	UnverifiedReason int
 
+	// TryPropagationOnFail requests propagated delivery after direct delivery
+	// fails.
 	TryPropagationOnFail bool
-	IncludeTicket        bool
+	// IncludeTicket requests ticket metadata to be included when applicable.
+	IncludeTicket bool
 
+	// DeliveryCallback runs after successful delivery.
 	DeliveryCallback func(*Message)
-	FailedCallback   func(*Message)
+	// FailedCallback runs after the message permanently fails delivery.
+	FailedCallback func(*Message)
 }
 
 // NewMessage constructs a fresh, outbound LXMF message bound for the specified destination, securely anchoring it to the originating source identity.

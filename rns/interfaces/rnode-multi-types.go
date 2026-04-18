@@ -5,10 +5,10 @@
 
 package interfaces
 
-// RNodeMultiSubinterfaceConfig describes the hardware tuning parameters for a
-// child radio within a multiplexed RNode cluster. It includes RF characteristics
+// RNodeMultiSubinterfaceConfig describes the radio settings for one child
+// interface within a multiplexed RNode configuration. It includes RF characteristics
 // such as frequency, bandwidth, spreading factor, and coding rate for local
-// optimization.
+// optimization. [SpreadingFactor] and [CodingRate] are LoRa modulation settings.
 type RNodeMultiSubinterfaceConfig struct {
 	Name            string
 	Enabled         bool

@@ -3,9 +3,8 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// Package utils provides small reusable helpers used across this repository.
-// The package collects shared routines that reduce duplication and can also
-// be reused by external Go Reticulum tools when appropriate.
+// Package utils provides small shared helpers for command-line tools and
+// internal packages in this repository.
 package utils
 
 import (
@@ -43,7 +42,8 @@ func WriteText(w io.Writer, text string) {
 	}
 }
 
-// AsInt converts a numeric value to int.
+// AsInt converts a supported numeric value to int and reports whether the
+// conversion succeeded.
 func AsInt(v any) (int, bool) {
 	switch val := v.(type) {
 	case int:
@@ -58,7 +58,8 @@ func AsInt(v any) (int, bool) {
 	return 0, false
 }
 
-// ShlexSplit splits a string into tokens like a shell would, matching Python shlex.split.
+// ShlexSplit splits s on shell-like whitespace while honoring single and
+// double quotes, similar to Python's shlex.split.
 func ShlexSplit(s string) ([]string, error) {
 	var tokens []string
 	var token strings.Builder

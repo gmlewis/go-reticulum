@@ -100,13 +100,24 @@ const (
 	pathRequestWait     = 7 * time.Second
 	maxPathlessTries    = 1
 
-	DefaultMaxPeers                 = 20
-	DefaultAutopeer                 = true
-	DefaultPropagationCost          = 16
-	PropagationCostMin              = 13
+	// DefaultMaxPeers is the default cap on active peering relationships.
+	DefaultMaxPeers = 20
+	// DefaultAutopeer controls whether routers automatically peer by default.
+	DefaultAutopeer = true
+	// DefaultPropagationCost is the default proof-of-work cost advertised by a
+	// propagation node.
+	DefaultPropagationCost = 16
+	// PropagationCostMin is the minimum cost accepted for propagation-node
+	// peering and ticketing logic.
+	PropagationCostMin = 13
+	// DefaultPropagationLimit is the default per-transfer propagation limit in
+	// kilobytes.
 	DefaultPropagationLimit float64 = 256
-	DefaultSyncLimit        float64 = 256 * 40
-	DefaultDeliveryLimit    float64 = 1000
+	// DefaultSyncLimit is the default per-sync propagation limit in kilobytes.
+	DefaultSyncLimit float64 = 256 * 40
+	// DefaultDeliveryLimit is the default maximum direct-delivery resource size
+	// in kilobytes.
+	DefaultDeliveryLimit float64 = 1000
 
 	statsGetPath      = "/pn/get/stats"
 	peerSyncPath      = "/pn/peer/sync"
@@ -1146,21 +1157,45 @@ func (r *Router) deliveryPacket(data []byte, packet *rns.Packet) {
 
 // RouterConfig provides the full set of constructor parameters matching the Python LXMRouter's arguments, granting fine-grained control over routing limits and policies.
 type RouterConfig struct {
-	Identity                   *rns.Identity
-	StoragePath                string
-	Autopeer                   bool
-	AutopeerMaxdepth           *int
-	PropagationLimit           float64 // per-transfer limit in KB; 0 uses default (256)
-	SyncLimit                  float64 // per-sync limit in KB; 0 uses default (256*40)
-	DeliveryLimit              float64 // per-delivery limit in KB; 0 uses default (1000)
-	MaxPeers                   *int    // nil uses default (20)
-	StaticPeers                [][]byte
-	FromStaticOnly             bool
-	PropagationCost            int // clamped to >= PropagationCostMin
+	// Identity is the Reticulum identity used to build the router's delivery
+	// destination.
+	Identity *rns.Identity
+	// StoragePath is the base directory used for LXMF state and on-disk storage.
+	StoragePath string
+	// Autopeer enables or disables automatic peering.
+	Autopeer bool
+	// AutopeerMaxdepth optionally caps automatic peering depth when non-nil.
+	AutopeerMaxdepth *int
+	// PropagationLimit is the per-transfer propagation limit in kilobytes; zero
+	// keeps the default.
+	PropagationLimit float64
+	// SyncLimit is the per-sync propagation limit in kilobytes; zero keeps the
+	// default.
+	SyncLimit float64
+	// DeliveryLimit is the per-delivery transfer limit in kilobytes; zero keeps
+	// the default.
+	DeliveryLimit float64
+	// MaxPeers optionally caps the number of active peers; nil keeps the default.
+	MaxPeers *int
+	// StaticPeers lists the propagation hashes this router may use as fixed
+	// peers.
+	StaticPeers [][]byte
+	// FromStaticOnly restricts propagation traffic to the configured static
+	// peers.
+	FromStaticOnly bool
+	// PropagationCost advertises the router's propagation proof-of-work cost.
+	PropagationCost int
+	// PropagationCostFlexibility allows the router to tolerate nearby
+	// propagation costs when evaluating peers.
 	PropagationCostFlexibility int
-	PeeringCost                int
-	MaxPeeringCost             int
-	Name                       string
+	// PeeringCost is the proof-of-work cost peers must satisfy to peer with this
+	// router.
+	PeeringCost int
+	// MaxPeeringCost limits the maximum remote peering cost this router accepts.
+	MaxPeeringCost int
+	// Name assigns an optional friendly name used in announce data and operator
+	// tooling.
+	Name string
 }
 
 // NewRouterFromConfig creates a Router using the comprehensive configuration object, configuring the routing instance to mirror specific network constraints.

@@ -12,8 +12,8 @@ import (
 	"runtime"
 )
 
-// NewRNodeMultiInterface acts as a non-functional compilation stub for unsupported platforms.
-// It reliably returns an error, failing safely when multiplexed RNode support is physically impossible on the host OS.
+// NewRNodeMultiInterface reports that multiplexed RNode serial support is
+// unavailable on the current platform.
 func NewRNodeMultiInterface(name, port string, speed, databits, stopbits int, parity string, idInterval int, idCallsign string, subinterfaces []RNodeMultiSubinterfaceConfig, handler InboundHandler) (Interface, error) {
 	return nil, fmt.Errorf("serial port not supported on platform %v", runtime.GOOS)
 }

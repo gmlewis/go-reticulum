@@ -7,10 +7,11 @@ package lxmf
 
 import "github.com/gmlewis/go-reticulum/rns/msgpack"
 
-// DisplayNameFromAppData extracts the display name from an LXMF announce app_data payload, providing a seamless way to identify peers within the Reticulum network.
+// DisplayNameFromAppData extracts the display name from an LXMF announce [appData]
+// payload, providing a seamless way to identify peers within the Reticulum network.
 //
-// It handles both the v0.5.0+ msgpack list format and the original raw
-// UTF-8 string format to ensure backward compatibility across diverse LXMF deployments.
+// It understands both the v0.5.0+ MessagePack list format and the original raw
+// UTF-8 string format used by earlier LXMF versions.
 func DisplayNameFromAppData(appData []byte) string {
 	if len(appData) == 0 {
 		return ""

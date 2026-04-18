@@ -91,6 +91,7 @@ func (ui *UDPInterface) listenLoop() {
 	}
 }
 
+// Send writes the datagram to the configured forward UDP address.
 func (ui *UDPInterface) Send(data []byte) error {
 	log.Printf("Go UDPInterface %v sending %v bytes to %v", ui.name, len(data), ui.forwardAddr)
 	ui.mu.Lock()
@@ -121,10 +122,12 @@ func (ui *UDPInterface) Status() bool {
 	return atomic.LoadInt32(&ui.running) == 1
 }
 
+// Type identifies this interface as a UDP transport.
 func (ui *UDPInterface) Type() string {
 	return "UDPInterface"
 }
 
+// IsOut reports whether this interface can originate outbound datagrams.
 func (ui *UDPInterface) IsOut() bool {
 	return true
 }

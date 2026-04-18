@@ -10,6 +10,8 @@ import (
 	"fmt"
 )
 
+// PrettyHexRep returns a lowercase hexadecimal representation of b wrapped in
+// angle brackets.
 func PrettyHexRep(b []byte) string {
 	return fmt.Sprintf("<%v>", hex.EncodeToString(b))
 }

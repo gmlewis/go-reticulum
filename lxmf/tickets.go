@@ -13,8 +13,11 @@ import (
 
 // TicketEntry structures the metadata for an authorized delivery ticket, pairing the raw cryptographic material with its absolute expiration timestamp.
 type TicketEntry struct {
+	// Expires is the absolute Unix timestamp, in seconds, after which the
+	// ticket is no longer valid.
 	Expires float64
-	Ticket  []byte
+	// Ticket is the opaque ticket payload exchanged between LXMF peers.
+	Ticket []byte
 }
 
 // TicketStore manages the thread-safe persistence and lifecycle of delivery tickets, segregating inbound access grants from outbound delivery authorizations.

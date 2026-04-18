@@ -20,55 +20,105 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
-// Transport defines the required methods for any transport system within the Reticulum network.
+// Transport is the interface implemented by Reticulum transport systems.
 type Transport interface {
+	// ActivateLink moves a pending link into the active link set.
 	ActivateLink(l *Link)
+	// AnnounceHandlers returns the registered announce handlers.
 	AnnounceHandlers() []*AnnounceHandler
+	// BlackholeIdentity blocks traffic from the given identity until it is
+	// explicitly cleared or expires.
 	BlackholeIdentity(identityHash []byte, until *int64, reason string) bool
+	// DiscoverInterfaces refreshes dynamic transport interface discovery.
 	DiscoverInterfaces()
+	// DiscoverInterfacesCallCount reports how many discovery passes have run.
 	DiscoverInterfacesCallCount() int
+	// DropAnnounceQueues clears queued announce rebroadcast state.
 	DropAnnounceQueues() int
+	// Enabled reports whether the transport currently accepts traffic.
 	Enabled() bool
+	// FindLink returns the active link matching linkID, if any.
 	FindLink(linkID []byte) *Link
+	// GetBlackholedIdentities returns the current blackhole list in RPC-friendly
+	// form.
 	GetBlackholedIdentities() []map[string]any
+	// GetInterfaces returns the registered transport interfaces.
 	GetInterfaces() []interfaces.Interface
+	// GetPacketQ returns the cached link-quality estimate for packetHash.
 	GetPacketQ(packetHash []byte) (float64, bool)
+	// GetPacketRSSI returns the cached Received Signal Strength Indicator (RSSI)
+	// for packetHash.
 	GetPacketRSSI(packetHash []byte) (float64, bool)
+	// GetPacketSNR returns the cached Signal-to-Noise Ratio (SNR) for
+	// packetHash.
 	GetPacketSNR(packetHash []byte) (float64, bool)
+	// GetPathEntry returns routing information for destHash, if known.
 	GetPathEntry(destHash []byte) *PathInfo
+	// GetPathTable returns the current known path table.
 	GetPathTable() []PathInfo
+	// GetRateTable returns current announce-rate tracking state.
 	GetRateTable() []map[string]any
+	// HasPath reports whether a path to destHash is known.
 	HasPath(destHash []byte) bool
+	// HopsTo returns the hop count to destHash, or a sentinel when unknown.
 	HopsTo(destHash []byte) int
+	// Identity returns the transport's local identity.
 	Identity() *Identity
+	// Inbound processes a raw inbound frame received on iface.
 	Inbound(raw []byte, iface interfaces.Interface)
+	// InvalidatePath removes any known path to destHash.
 	InvalidatePath(destHash []byte) bool
+	// InvalidatePathsViaNextHop removes all paths that depend on nextHop.
 	InvalidatePathsViaNextHop(nextHop []byte) int
+	// LinkMTUDiscovery reports whether link MTU discovery is enabled.
 	LinkMTUDiscovery() bool
+	// LinkTable returns the active transport link table.
 	LinkTable() map[string]*LinkEntry
+	// NetworkIdentityHash returns the hash of the transport's network identity.
 	NetworkIdentityHash() []byte
+	// Outbound processes an outbound packet before transmission.
 	Outbound(packet *Packet) error
+	// RegisterAnnounceHandler registers an announce handler.
 	RegisterAnnounceHandler(handler *AnnounceHandler)
+	// RegisterDestination registers a destination with the transport.
 	RegisterDestination(d *Destination)
+	// RegisterInterface registers a transport interface.
 	RegisterInterface(iface interfaces.Interface)
+	// RegisterLink registers a link with the transport.
 	RegisterLink(l *Link)
+	// RequestPath asks the network to discover a path to destHash.
 	RequestPath(destHash []byte) error
+	// SetEnabled enables or disables transport processing.
 	SetEnabled(enabled bool)
+	// SetLinkMTUDiscovery enables or disables link MTU discovery.
 	SetLinkMTUDiscovery(enabled bool)
+	// SetNetworkIdentity sets the network identity used by the transport.
 	SetNetworkIdentity(identity *Identity)
+	// Start starts the transport using the provided storage path.
 	Start(storagePath string) error
+	// StartedAt returns when the transport last started.
 	StartedAt() time.Time
+	// Stop stops the transport and its background processing.
 	Stop()
+	// UnblackholeIdentity removes a previously blackholed identity.
 	UnblackholeIdentity(identityHash []byte) bool
 
+	// Remember stores identity information associated with packetHash and
+	// destHash for later recall.
 	Remember(packetHash, destHash, publicKey, appData []byte)
+	// Recall retrieves a previously remembered identity by hash.
 	Recall(targetHash []byte) *Identity
+	// GetRatchet returns the ratchet public key recorded for destHash.
 	GetRatchet(destHash []byte) []byte
+	// SetRatchet stores a ratchet public key for destHash.
 	SetRatchet(destHash, ratchetPub []byte)
 
+	// LoadKnownDestinations loads persisted recalled destination data.
 	LoadKnownDestinations(storagePath string)
+	// SaveKnownDestinations persists recalled destination data.
 	SaveKnownDestinations(storagePath string)
 
+	// GetLogger returns the logger associated with the transport.
 	GetLogger() *Logger
 }
 
@@ -251,6 +301,7 @@ func NewTransportSystem(logger *Logger) *TransportSystem {
 	}
 }
 
+// GetLogger returns the logger associated with this transport system.
 func (ts *TransportSystem) GetLogger() *Logger {
 	if ts == nil {
 		return nil
@@ -258,18 +309,21 @@ func (ts *TransportSystem) GetLogger() *Logger {
 	return ts.logger
 }
 
+// Identity returns the local identity assigned to the transport system.
 func (ts *TransportSystem) Identity() *Identity {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	return ts.identity
 }
 
+// StartedAt returns the time when the transport system was started.
 func (ts *TransportSystem) StartedAt() time.Time {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	return ts.startedAt
 }
 
+// LinkTable returns the active link table managed by the transport system.
 func (ts *TransportSystem) LinkTable() map[string]*LinkEntry {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
@@ -1452,7 +1506,8 @@ func (ts *TransportSystem) GetRateTable() []map[string]any {
 	return out
 }
 
-// GetPacketRSSI returns RSSI metadata for a packet hash when available.
+// GetPacketRSSI returns Received Signal Strength Indicator (RSSI) metadata for
+// a packet hash when available.
 func (ts *TransportSystem) GetPacketRSSI(packetHash []byte) (float64, bool) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
@@ -1460,7 +1515,8 @@ func (ts *TransportSystem) GetPacketRSSI(packetHash []byte) (float64, bool) {
 	return v, ok
 }
 
-// GetPacketSNR returns SNR metadata for a packet hash when available.
+// GetPacketSNR returns Signal-to-Noise Ratio (SNR) metadata for a packet hash
+// when available.
 func (ts *TransportSystem) GetPacketSNR(packetHash []byte) (float64, bool) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
@@ -1739,7 +1795,8 @@ func (ts *TransportSystem) LoadKnownDestinations(storagePath string) {
 	}
 }
 
-// SaveKnownDestinations serializes and safely flushes the currently cached known network identities to persistent storage.
+// SaveKnownDestinations serializes and safely flushes the currently cached
+// known network identities to persistent storage.
 func (ts *TransportSystem) SaveKnownDestinations(storagePath string) {
 	if storagePath == "" {
 		return

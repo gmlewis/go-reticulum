@@ -72,14 +72,26 @@ var (
 // AutoInterfaceConfig defines the comprehensive suite of initialization parameters required to bootstrap an AutoInterface.
 // It exposes low-level tuning for network namespaces, port allocations, and device binding constraints.
 type AutoInterfaceConfig struct {
-	GroupID              string
-	DiscoveryScope       string
-	DiscoveryPort        int
+	// GroupID scopes discovery traffic so only peers with the same group
+	// participate in the same AutoInterface overlay.
+	GroupID string
+	// DiscoveryScope selects the IPv6 multicast scope used for discovery
+	// announcements, for example link, site, or global.
+	DiscoveryScope string
+	// DiscoveryPort is the UDP port used for multicast discovery announcements.
+	DiscoveryPort int
+	// MulticastAddressType selects the multicast address class used when
+	// deriving the discovery address.
 	MulticastAddressType string
-	DataPort             int
-	Devices              []string
-	IgnoredDevices       []string
-	ConfiguredBitrate    int
+	// DataPort is the UDP port used for direct peer-to-peer payload traffic.
+	DataPort int
+	// Devices restricts discovery to the named network interfaces when non-empty.
+	Devices []string
+	// IgnoredDevices excludes specific network interfaces from discovery.
+	IgnoredDevices []string
+	// ConfiguredBitrate overrides the default bitrate estimate reported by the
+	// interface when greater than zero.
+	ConfiguredBitrate int
 }
 
 type autoPeerState struct {
@@ -706,19 +718,27 @@ func (ai *AutoInterface) sendToPeer(peer *AutoInterfacePeer, data []byte) error 
 	return nil
 }
 
+// Name returns the configured interface name.
 func (ai *AutoInterface) Name() string { return ai.BaseInterface.Name() }
 
+// Type identifies this interface as an AutoInterface.
 func (ai *AutoInterface) Type() string { return "AutoInterface" }
 
+// Status reports whether discovery is running and at least one viable adopted
+// interface is currently considered online.
 func (ai *AutoInterface) Status() bool {
 	return atomic.LoadInt32(&ai.running) == 1 && atomic.LoadInt32(&ai.online) == 1
 }
 
+// IsOut reports whether the parent AutoInterface sends frames directly.
+// Outbound traffic is carried by spawned peer interfaces instead.
 func (ai *AutoInterface) IsOut() bool { return false }
 
 // Send is intentionally a no-op for the parent AutoInterface; peer interfaces carry outbound frames.
 func (ai *AutoInterface) Send(_ []byte) error { return nil }
 
+// Detach stops discovery, closes all sockets, detaches spawned peers, and
+// releases any outbound UDP socket owned by the interface.
 func (ai *AutoInterface) Detach() error {
 	var detachErr error
 
@@ -762,12 +782,15 @@ func (ai *AutoInterface) Detach() error {
 	return detachErr
 }
 
+// PeerCount returns the current number of discovered peer subinterfaces.
 func (ai *AutoInterface) PeerCount() int {
 	ai.mu.Lock()
 	defer ai.mu.Unlock()
 	return len(ai.spawnedInterfaces)
 }
 
+// AdoptedInterfaces returns the sorted set of local interface names currently
+// participating in AutoInterface discovery.
 func (ai *AutoInterface) AdoptedInterfaces() []string {
 	ai.mu.Lock()
 	defer ai.mu.Unlock()
@@ -789,14 +812,21 @@ type AutoInterfacePeer struct {
 	online        atomic.Bool
 }
 
+// Type identifies this subinterface as an AutoInterfacePeer.
 func (p *AutoInterfacePeer) Type() string { return "AutoInterfacePeer" }
 
+// Status reports whether the peer is still online and its parent
+// AutoInterface is still running.
 func (p *AutoInterfacePeer) Status() bool {
 	return p.online.Load() && atomic.LoadInt32(&p.owner.running) == 1 && atomic.LoadInt32(&p.owner.online) == 1
 }
 
+// IsOut reports whether the peer is directly marked as outbound-capable.
+// Peer transmission is delegated through the parent AutoInterface.
 func (p *AutoInterfacePeer) IsOut() bool { return false }
 
+// Send transmits data to this specific discovered peer through the parent
+// AutoInterface's UDP data channel.
 func (p *AutoInterfacePeer) Send(data []byte) error {
 	if !p.Status() {
 		return fmt.Errorf("peer interface is offline")
@@ -804,6 +834,8 @@ func (p *AutoInterfacePeer) Send(data []byte) error {
 	return p.owner.sendToPeer(p, data)
 }
 
+// Detach marks the peer offline and prevents further traffic from being sent
+// through it.
 func (p *AutoInterfacePeer) Detach() error {
 	p.online.Store(false)
 	p.SetDetached(true)

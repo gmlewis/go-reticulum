@@ -23,18 +23,30 @@ const (
 
 // Message defines the standard interface that any custom data structure must implement to be transmitted over a Channel.
 type Message interface {
+	// GetMsgType returns the wire type identifier for the message.
 	GetMsgType() uint16
+	// Pack serializes the message payload for channel transport.
 	Pack() ([]byte, error)
+	// Unpack decodes the message payload from channel transport bytes.
 	Unpack(data []byte) error
 }
 
 // ChannelOutlet defines the required transport layer interface that a Channel uses to physically send and manage packets.
 type ChannelOutlet interface {
+	// Send transmits a freshly encoded channel payload.
 	Send(raw []byte) (*Packet, error)
+	// Resend retransmits an already created packet.
 	Resend(p *Packet) (*Packet, error)
+	// MDU returns the maximum payload size that can fit in a single channel
+	// transmission.
 	MDU() int
+	// RTT returns the current round-trip-time estimate used by channel retry
+	// logic.
 	RTT() float64
+	// IsUsable reports whether the outlet can currently carry channel traffic.
 	IsUsable() bool
+	// TimedOut notifies the outlet that channel delivery has exceeded its retry
+	// budget.
 	TimedOut()
 }
 

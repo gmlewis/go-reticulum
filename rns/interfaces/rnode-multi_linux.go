@@ -57,6 +57,8 @@ func NewRNodeMultiInterface(name, port string, speed, databits, stopbits int, pa
 	return &RNodeMultiInterface{children: children, created: time.Now()}, nil
 }
 
+// Name returns the name of the first child interface, or an empty string when
+// no child interfaces are configured.
 func (r *RNodeMultiInterface) Name() string {
 	if len(r.children) == 0 {
 		return ""
@@ -64,10 +66,12 @@ func (r *RNodeMultiInterface) Name() string {
 	return r.children[0].Name()
 }
 
+// Type identifies this interface as an aggregated multi-RNode transport.
 func (r *RNodeMultiInterface) Type() string {
 	return "RNodeMultiInterface"
 }
 
+// Status reports whether any child interface is currently active.
 func (r *RNodeMultiInterface) Status() bool {
 	for _, child := range r.children {
 		if child.Status() {
@@ -77,6 +81,7 @@ func (r *RNodeMultiInterface) Status() bool {
 	return false
 }
 
+// IsOut reports whether any child interface can originate outbound traffic.
 func (r *RNodeMultiInterface) IsOut() bool {
 	for _, child := range r.children {
 		if child.IsOut() {
@@ -86,6 +91,8 @@ func (r *RNodeMultiInterface) IsOut() bool {
 	return false
 }
 
+// Mode returns the mode of the first child interface, or ModeFull when no
+// children are present.
 func (r *RNodeMultiInterface) Mode() int {
 	if len(r.children) == 0 {
 		return ModeFull
@@ -93,6 +100,7 @@ func (r *RNodeMultiInterface) Mode() int {
 	return r.children[0].Mode()
 }
 
+// Bitrate returns the aggregate bitrate reported by all child interfaces.
 func (r *RNodeMultiInterface) Bitrate() int {
 	total := 0
 	for _, child := range r.children {
@@ -101,6 +109,8 @@ func (r *RNodeMultiInterface) Bitrate() int {
 	return total
 }
 
+// Send dispatches the payload to one child interface using round-robin
+// selection.
 func (r *RNodeMultiInterface) Send(data []byte) error {
 	if len(r.children) == 0 {
 		return fmt.Errorf("RNodeMultiInterface has no child interfaces")
@@ -109,6 +119,7 @@ func (r *RNodeMultiInterface) Send(data []byte) error {
 	return r.children[index].Send(data)
 }
 
+// BytesReceived returns the total bytes received across all child interfaces.
 func (r *RNodeMultiInterface) BytesReceived() uint64 {
 	var total uint64
 	for _, child := range r.children {
@@ -117,6 +128,7 @@ func (r *RNodeMultiInterface) BytesReceived() uint64 {
 	return total
 }
 
+// BytesSent returns the total bytes sent across all child interfaces.
 func (r *RNodeMultiInterface) BytesSent() uint64 {
 	var total uint64
 	for _, child := range r.children {
@@ -125,6 +137,7 @@ func (r *RNodeMultiInterface) BytesSent() uint64 {
 	return total
 }
 
+// Detach detaches every child interface and returns the first error observed.
 func (r *RNodeMultiInterface) Detach() error {
 	var firstErr error
 	for _, child := range r.children {
@@ -135,6 +148,7 @@ func (r *RNodeMultiInterface) Detach() error {
 	return firstErr
 }
 
+// IsDetached reports whether every child interface has been detached.
 func (r *RNodeMultiInterface) IsDetached() bool {
 	if len(r.children) == 0 {
 		return true
@@ -147,6 +161,7 @@ func (r *RNodeMultiInterface) IsDetached() bool {
 	return true
 }
 
+// Age returns how long the aggregate interface has existed.
 func (r *RNodeMultiInterface) Age() time.Duration {
 	if !r.created.IsZero() {
 		return time.Since(r.created)
@@ -157,6 +172,8 @@ func (r *RNodeMultiInterface) Age() time.Duration {
 	return r.children[0].Age()
 }
 
+// SetBitrate propagates a bitrate override to all child interfaces that
+// support it.
 func (r *RNodeMultiInterface) SetBitrate(bitrate int) {
 	for _, child := range r.children {
 		if setter, ok := child.(interface{ SetBitrate(int) }); ok {
@@ -165,6 +182,8 @@ func (r *RNodeMultiInterface) SetBitrate(bitrate int) {
 	}
 }
 
+// SetIFACConfig applies Interface Authentication Codes (IFAC) configuration to
+// all child interfaces that support it.
 func (r *RNodeMultiInterface) SetIFACConfig(cfg IFACConfig) {
 	for _, child := range r.children {
 		if setter, ok := child.(interface{ SetIFACConfig(IFACConfig) }); ok {

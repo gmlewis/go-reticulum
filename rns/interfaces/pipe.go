@@ -53,6 +53,7 @@ func (p *PipeInterface) SetOther(other *PipeInterface) {
 	p.other = other
 }
 
+// Send queues a copy of the payload for delivery to the paired PipeInterface.
 func (p *PipeInterface) Send(data []byte) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -69,8 +70,13 @@ func (p *PipeInterface) Send(data []byte) error {
 	return nil
 }
 
+// Type identifies this interface as an in-memory pipe transport.
 func (p *PipeInterface) Type() string { return "PipeInterface" }
-func (p *PipeInterface) IsOut() bool  { return true }
+
+// IsOut reports whether the pipe may originate outbound traffic.
+func (p *PipeInterface) IsOut() bool { return true }
+
+// Status reports whether the in-memory pipe is available for use.
 func (p *PipeInterface) Status() bool { return true }
 
 // Detach closes the internal queue channel, stopping the background

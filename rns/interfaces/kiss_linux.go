@@ -43,6 +43,8 @@ type kissInterface struct {
 	mu      sync.Mutex
 }
 
+// NewKISSInterface opens and configures a serial KISS link to a TNC (Terminal
+// Node Controller) using the supplied serial settings.
 func NewKISSInterface(name, port string, speed, databits, stopbits int, parity string, handler InboundHandler) (Interface, error) {
 	if strings.TrimSpace(port) == "" {
 		return nil, fmt.Errorf("no port specified for KISS interface")

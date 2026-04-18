@@ -155,6 +155,7 @@ func (l *Link) GetStatus() int {
 	return l.status
 }
 
+// TeardownReason returns the reason code recorded when the link was torn down.
 func (l *Link) TeardownReason() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()

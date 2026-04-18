@@ -99,12 +99,19 @@ const (
 // PacketDestination defines the operational contract for any entity that can
 // serve as a network destination, including Destinations and Links.
 type PacketDestination interface {
+	// GetHash returns the truncated destination hash used for routing.
 	GetHash() []byte
+	// GetType returns the destination type code used by packet handling logic.
 	GetType() int
+	// GetTransport returns the transport responsible for this destination.
 	GetTransport() Transport
+	// Encrypt encrypts packet payload data for this destination.
 	Encrypt([]byte) ([]byte, error)
+	// Decrypt decrypts packet payload data received for this destination.
 	Decrypt([]byte) ([]byte, error)
+	// Sign signs proof material for this destination.
 	Sign([]byte) ([]byte, error)
+	// Verify reports whether sig is a valid signature over data.
 	Verify([]byte, []byte) bool
 }
 

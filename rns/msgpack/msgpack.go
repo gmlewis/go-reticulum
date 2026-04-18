@@ -3,12 +3,10 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// Package msgpack provides a minimal MessagePack serializer and deserializer
-// required by the Reticulum Network Stack.
+// Package msgpack implements the subset of MessagePack used by Reticulum.
 //
-// This implementation focuses on the subset of the MessagePack specification
-// used by Reticulum for internal state persistence and communication protocols.
-// It supports nil, booleans, integers, floats, strings, byte slices, arrays, and maps.
+// It supports nil, booleans, integers, floats, strings, byte slices, arrays,
+// and maps.
 package msgpack
 
 import (
@@ -65,8 +63,7 @@ const (
 	// negFixIntMax = 0xff
 )
 
-// Pack serializes the provided Go data structure into a compact MessagePack byte slice.
-// It uses reflection to dynamically determine the most efficient MessagePack encoding format for the given value, ensuring optimized data payloads for Reticulum network transmissions.
+// Pack serializes v into MessagePack format.
 func Pack(v any) ([]byte, error) {
 	var buf bytes.Buffer
 	err := pack(&buf, reflect.ValueOf(v))
@@ -323,8 +320,8 @@ func packMap(w io.Writer, v reflect.Value) error {
 	return nil
 }
 
-// Unpack deserializes a MessagePack encoded byte slice back into a native Go data structure.
-// It analyzes the byte stream to infer the correct types, recursively reconstructing complex elements such as maps and arrays, and returns an any interface that the caller can safely type-assert.
+// Unpack deserializes MessagePack data into native Go values.
+// The result is returned as any; callers should use type assertions.
 func Unpack(data []byte) (any, error) {
 	r := bytes.NewReader(data)
 	return unpack(r)

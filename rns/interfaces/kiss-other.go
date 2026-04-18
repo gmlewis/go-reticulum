@@ -19,6 +19,8 @@ const (
 	KISSDefaultParity   = "N"
 )
 
+// NewKISSInterface reports that serial KISS interfaces are unavailable on the
+// current platform.
 func NewKISSInterface(name, port string, speed, databits, stopbits int, parity string, handler InboundHandler) (Interface, error) {
 	return nil, fmt.Errorf("serial port not supported on platform %v", runtime.GOOS)
 }

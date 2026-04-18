@@ -22,6 +22,7 @@ func NewI2PInterface(name, bindIP string, bindPort int, handler InboundHandler, 
 	return &I2PInterface{TCPServerInterface: inner}, nil
 }
 
+// Type identifies this listener as an I2P-backed server interface.
 func (i *I2PInterface) Type() string {
 	return "I2PInterface"
 }
@@ -43,6 +44,7 @@ func NewI2PInterfacePeer(name, targetHost string, targetPort int, handler Inboun
 	return &I2PInterfacePeer{TCPClientInterface: inner}, nil
 }
 
+// Type identifies this peer as an outbound I2P-backed interface.
 func (i *I2PInterfacePeer) Type() string {
 	return "I2PInterfacePeer"
 }

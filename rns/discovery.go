@@ -34,41 +34,61 @@ func (ia *InterfaceAnnouncer) Start() {
 	ia.logger.Info("On-network interface discovery requires LXMF, which is not available in this Go port.")
 }
 
-// DiscoveredInterface metadata constants
+// Discovered-interface age thresholds and status values.
 const (
+	// ThresholdUnknown is the age in seconds after which an interface is marked
+	// unknown.
 	ThresholdUnknown = 24 * 60 * 60
-	ThresholdStale   = 3 * 24 * 60 * 60
-	ThresholdRemove  = 7 * 24 * 60 * 60
+	// ThresholdStale is the age in seconds after which an interface is marked
+	// stale.
+	ThresholdStale = 3 * 24 * 60 * 60
+	// ThresholdRemove is the age in seconds after which cached discovery data is
+	// removed.
+	ThresholdRemove = 7 * 24 * 60 * 60
 
-	StatusStale     = 0
-	StatusUnknown   = 100
+	// StatusStale marks an interface as stale.
+	StatusStale = 0
+	// StatusUnknown marks an interface as unknown.
+	StatusUnknown = 100
+	// StatusAvailable marks an interface as available.
 	StatusAvailable = 1000
 )
 
-// DiscoveredInterface represents metadata for a discovered interface.
+// DiscoveredInterface describes one interface discovered from cached announce
+// data.
 type DiscoveredInterface struct {
-	Name        string   `json:"name"`
-	Type        string   `json:"type"`
-	Status      string   `json:"status"`
-	StatusCode  int      `json:"status_code"`
-	Hops        int      `json:"hops"`
-	Discovered  float64  `json:"discovered"`
-	LastHeard   float64  `json:"last_heard"`
-	Transport   bool     `json:"transport"`
-	Latitude    *float64 `json:"latitude"`
-	Longitude   *float64 `json:"longitude"`
-	Height      *float64 `json:"height"`
-	Value       int      `json:"value"`
-	ConfigEntry string   `json:"config_entry"`
-	NetworkID   string   `json:"network_id,omitempty"`
-	TransportID string   `json:"transport_id,omitempty"`
-	ReachableOn string   `json:"reachable_on,omitempty"`
-	Port        *int     `json:"port,omitempty"`
-	Frequency   *int     `json:"frequency,omitempty"`
-	Bandwidth   *int     `json:"bandwidth,omitempty"`
-	SF          *int     `json:"sf,omitempty"`
-	CR          *int     `json:"cr,omitempty"`
-	Modulation  string   `json:"modulation,omitempty"`
+	// Name is the discovered interface name.
+	Name string `json:"name"`
+	// Type is the discovered interface type.
+	Type string `json:"type"`
+	// Status is the human-readable availability state.
+	Status string `json:"status"`
+	// StatusCode is the numeric availability state.
+	StatusCode int `json:"status_code"`
+	// Hops is the reported hop count to the interface.
+	Hops int `json:"hops"`
+	// Discovered is the Unix timestamp when the interface was first recorded.
+	Discovered float64 `json:"discovered"`
+	// LastHeard is the Unix timestamp of the latest discovery update.
+	LastHeard float64 `json:"last_heard"`
+	// Transport reports whether the interface acts as a transport node.
+	Transport bool     `json:"transport"`
+	Latitude  *float64 `json:"latitude"`
+	Longitude *float64 `json:"longitude"`
+	Height    *float64 `json:"height"`
+	// Value is the discovery ranking value carried in the cache entry.
+	Value int `json:"value"`
+	// ConfigEntry is a generated config snippet for recreating the interface.
+	ConfigEntry string `json:"config_entry"`
+	NetworkID   string `json:"network_id,omitempty"`
+	TransportID string `json:"transport_id,omitempty"`
+	ReachableOn string `json:"reachable_on,omitempty"`
+	Port        *int   `json:"port,omitempty"`
+	Frequency   *int   `json:"frequency,omitempty"`
+	Bandwidth   *int   `json:"bandwidth,omitempty"`
+	SF          *int   `json:"sf,omitempty"`
+	CR          *int   `json:"cr,omitempty"`
+	Modulation  string `json:"modulation,omitempty"`
 }
 
 // InterfaceDiscovery actively listens for and processes inbound presence announcements from remote nodes to establish automatic connections.

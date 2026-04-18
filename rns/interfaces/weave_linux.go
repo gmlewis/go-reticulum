@@ -47,25 +47,52 @@ func NewWeaveInterface(name, port string, configuredBitrate int, handler Inbound
 	return wi, nil
 }
 
-func (w *WeaveInterface) Name() string           { return w.inner.Name() }
-func (w *WeaveInterface) Type() string           { return "WeaveInterface" }
-func (w *WeaveInterface) Status() bool           { return w.inner.Status() }
-func (w *WeaveInterface) IsOut() bool            { return w.inner.IsOut() }
-func (w *WeaveInterface) Mode() int              { return w.inner.Mode() }
-func (w *WeaveInterface) Bitrate() int           { return w.inner.Bitrate() }
-func (w *WeaveInterface) Send(data []byte) error { return w.inner.Send(data) }
-func (w *WeaveInterface) BytesReceived() uint64  { return w.inner.BytesReceived() }
-func (w *WeaveInterface) BytesSent() uint64      { return w.inner.BytesSent() }
-func (w *WeaveInterface) Detach() error          { return w.inner.Detach() }
-func (w *WeaveInterface) IsDetached() bool       { return w.inner.IsDetached() }
-func (w *WeaveInterface) Age() time.Duration     { return w.inner.Age() }
+// Name returns the configured interface name.
+func (w *WeaveInterface) Name() string { return w.inner.Name() }
 
+// Type identifies this interface as a Weave serial transport.
+func (w *WeaveInterface) Type() string { return "WeaveInterface" }
+
+// Status reports whether the wrapped interface is currently active.
+func (w *WeaveInterface) Status() bool { return w.inner.Status() }
+
+// IsOut reports whether the wrapped interface can originate outbound traffic.
+func (w *WeaveInterface) IsOut() bool { return w.inner.IsOut() }
+
+// Mode returns the operating mode of the wrapped interface.
+func (w *WeaveInterface) Mode() int { return w.inner.Mode() }
+
+// Bitrate returns the bitrate reported by the wrapped interface.
+func (w *WeaveInterface) Bitrate() int { return w.inner.Bitrate() }
+
+// Send forwards the payload to the wrapped interface.
+func (w *WeaveInterface) Send(data []byte) error { return w.inner.Send(data) }
+
+// BytesReceived returns the total bytes received by the wrapped interface.
+func (w *WeaveInterface) BytesReceived() uint64 { return w.inner.BytesReceived() }
+
+// BytesSent returns the total bytes sent by the wrapped interface.
+func (w *WeaveInterface) BytesSent() uint64 { return w.inner.BytesSent() }
+
+// Detach detaches the wrapped interface.
+func (w *WeaveInterface) Detach() error { return w.inner.Detach() }
+
+// IsDetached reports whether the wrapped interface has been detached.
+func (w *WeaveInterface) IsDetached() bool { return w.inner.IsDetached() }
+
+// Age returns how long the wrapped interface has existed.
+func (w *WeaveInterface) Age() time.Duration { return w.inner.Age() }
+
+// SetBitrate propagates a bitrate override to the wrapped serial interface
+// when it supports that operation.
 func (w *WeaveInterface) SetBitrate(bitrate int) {
 	if setter, ok := w.inner.(interface{ SetBitrate(int) }); ok {
 		setter.SetBitrate(bitrate)
 	}
 }
 
+// SetIFACConfig propagates IFAC configuration to the wrapped serial interface
+// when it supports that operation.
 func (w *WeaveInterface) SetIFACConfig(cfg IFACConfig) {
 	if setter, ok := w.inner.(interface{ SetIFACConfig(IFACConfig) }); ok {
 		setter.SetIFACConfig(cfg)

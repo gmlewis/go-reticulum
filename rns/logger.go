@@ -46,6 +46,8 @@ func NewLogger() *Logger {
 	}
 }
 
+// SetAlwaysOverride forces log output to stdout even when another destination
+// is configured.
 func (s *Logger) SetAlwaysOverride(override bool) {
 	if s == nil {
 		return // for tests
@@ -55,6 +57,7 @@ func (s *Logger) SetAlwaysOverride(override bool) {
 	s.override = override
 }
 
+// GetAlwaysOverride reports whether stdout override is currently enabled.
 func (s *Logger) GetAlwaysOverride() bool {
 	if s == nil {
 		return false // for tests
@@ -64,6 +67,7 @@ func (s *Logger) GetAlwaysOverride() bool {
 	return s.override
 }
 
+// SetCompactLogFmt toggles the compact log format that omits severity labels.
 func (s *Logger) SetCompactLogFmt(compact bool) {
 	if s == nil {
 		return // for tests
@@ -73,6 +77,7 @@ func (s *Logger) SetCompactLogFmt(compact bool) {
 	s.compact = compact
 }
 
+// GetCompactLogFmt reports whether compact log formatting is enabled.
 func (s *Logger) GetCompactLogFmt() bool {
 	if s == nil {
 		return false // for tests
@@ -82,6 +87,7 @@ func (s *Logger) GetCompactLogFmt() bool {
 	return s.compact
 }
 
+// SetLogLevel sets the minimum severity level that will be emitted.
 func (s *Logger) SetLogLevel(level int) {
 	if s == nil {
 		return // for tests
@@ -101,6 +107,7 @@ func (s *Logger) SetLogLevel(level int) {
 	s.level = level
 }
 
+// GetLogLevel returns the current minimum log severity.
 func (s *Logger) GetLogLevel() int {
 	if s == nil {
 		return 0 // for tests
@@ -121,6 +128,7 @@ func (s *Logger) SetPendingDelta(delta int) {
 	s.pendingDelta = delta
 }
 
+// SetLogFilePath sets the path used when the logger writes to a file sink.
 func (s *Logger) SetLogFilePath(path string) {
 	if s == nil {
 		return // for tests
@@ -130,6 +138,7 @@ func (s *Logger) SetLogFilePath(path string) {
 	s.filePath = path
 }
 
+// GetLogFilePath returns the configured log file path.
 func (s *Logger) GetLogFilePath() string {
 	if s == nil {
 		return "" // for tests
@@ -139,6 +148,7 @@ func (s *Logger) GetLogFilePath() string {
 	return s.filePath
 }
 
+// SetLogDest selects the active log destination.
 func (s *Logger) SetLogDest(dest int) {
 	if s == nil {
 		return // for tests
@@ -148,6 +158,7 @@ func (s *Logger) SetLogDest(dest int) {
 	s.dest = dest
 }
 
+// GetLogDest returns the active log destination.
 func (s *Logger) GetLogDest() int {
 	if s == nil {
 		return 0 // for tests
@@ -157,6 +168,8 @@ func (s *Logger) GetLogDest() int {
 	return s.dest
 }
 
+// SetLogCallback registers the callback used when the log destination is
+// LogCallback.
 func (s *Logger) SetLogCallback(call func(string)) {
 	if s == nil {
 		return // for tests
@@ -166,6 +179,7 @@ func (s *Logger) SetLogCallback(call func(string)) {
 	s.call = call
 }
 
+// GetLogCallback returns the currently configured log callback.
 func (s *Logger) GetLogCallback() func(string) {
 	if s == nil {
 		return func(string) {} // for tests

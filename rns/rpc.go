@@ -958,6 +958,8 @@ func (r *Reticulum) dialRPCServer() (net.Conn, error) {
 	return net.Dial("tcp", addr)
 }
 
+// DecodeInterfaceStats decodes the transport RPC "interface stats" payload
+// into a structured snapshot.
 func DecodeInterfaceStats(raw any) *InterfaceStatsSnapshot {
 	out := &InterfaceStatsSnapshot{}
 	m := asAnyMap(raw)

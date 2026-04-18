@@ -32,9 +32,10 @@ const (
 	rNodeCallsignMaxLen = 32
 )
 
-// RNodeInterface provides a high-level abstraction around a physical RNode radio modem.
-// It proxies routing interactions to an underlying KISS-framed serial link and enforces
-// strict RF parameter boundaries to ensure hardware remains within supported limits.
+// RNodeInterface wraps a serial connection to an RNode LoRa (Long Range) radio
+// modem.
+// It uses KISS (Keep It Simple, Stupid) framing and validates radio settings
+// such as frequency, bandwidth, spreading factor, and coding rate.
 type RNodeInterface struct {
 	inner Interface
 }
@@ -98,25 +99,52 @@ func NewRNodeInterface(name, port string, speed, databits, stopbits int, parity 
 	return &RNodeInterface{inner: iface}, nil
 }
 
-func (r *RNodeInterface) Name() string           { return r.inner.Name() }
-func (r *RNodeInterface) Type() string           { return "RNodeInterface" }
-func (r *RNodeInterface) Mode() int              { return r.inner.Mode() }
-func (r *RNodeInterface) Bitrate() int           { return r.inner.Bitrate() }
-func (r *RNodeInterface) IsOut() bool            { return r.inner.IsOut() }
-func (r *RNodeInterface) Status() bool           { return r.inner.Status() }
-func (r *RNodeInterface) Send(data []byte) error { return r.inner.Send(data) }
-func (r *RNodeInterface) BytesReceived() uint64  { return r.inner.BytesReceived() }
-func (r *RNodeInterface) BytesSent() uint64      { return r.inner.BytesSent() }
-func (r *RNodeInterface) Detach() error          { return r.inner.Detach() }
-func (r *RNodeInterface) IsDetached() bool       { return r.inner.IsDetached() }
-func (r *RNodeInterface) Age() time.Duration     { return r.inner.Age() }
+// Name returns the configured interface name.
+func (r *RNodeInterface) Name() string { return r.inner.Name() }
 
+// Type identifies this interface as an RNode radio interface.
+func (r *RNodeInterface) Type() string { return "RNodeInterface" }
+
+// Mode returns the current operating mode reported by the wrapped interface.
+func (r *RNodeInterface) Mode() int { return r.inner.Mode() }
+
+// Bitrate returns the bitrate reported by the wrapped interface.
+func (r *RNodeInterface) Bitrate() int { return r.inner.Bitrate() }
+
+// IsOut reports whether the wrapped interface can originate outbound traffic.
+func (r *RNodeInterface) IsOut() bool { return r.inner.IsOut() }
+
+// Status reports whether the wrapped interface is currently active.
+func (r *RNodeInterface) Status() bool { return r.inner.Status() }
+
+// Send forwards the payload to the wrapped interface.
+func (r *RNodeInterface) Send(data []byte) error { return r.inner.Send(data) }
+
+// BytesReceived returns the total bytes received by the wrapped interface.
+func (r *RNodeInterface) BytesReceived() uint64 { return r.inner.BytesReceived() }
+
+// BytesSent returns the total bytes sent by the wrapped interface.
+func (r *RNodeInterface) BytesSent() uint64 { return r.inner.BytesSent() }
+
+// Detach detaches the wrapped interface.
+func (r *RNodeInterface) Detach() error { return r.inner.Detach() }
+
+// IsDetached reports whether the wrapped interface has been detached.
+func (r *RNodeInterface) IsDetached() bool { return r.inner.IsDetached() }
+
+// Age returns how long the wrapped interface has existed.
+func (r *RNodeInterface) Age() time.Duration { return r.inner.Age() }
+
+// SetBitrate propagates a bitrate override to the wrapped interface when it
+// supports that operation.
 func (r *RNodeInterface) SetBitrate(bitrate int) {
 	if setter, ok := r.inner.(interface{ SetBitrate(int) }); ok {
 		setter.SetBitrate(bitrate)
 	}
 }
 
+// SetIFACConfig applies Interface Authentication Codes (IFAC) configuration to
+// the wrapped interface when supported.
 func (r *RNodeInterface) SetIFACConfig(cfg IFACConfig) {
 	if setter, ok := r.inner.(interface{ SetIFACConfig(IFACConfig) }); ok {
 		setter.SetIFACConfig(cfg)
