@@ -1401,6 +1401,38 @@ func TestParseDiscoveryConfigPromotesRNodeToAccessPoint(t *testing.T) {
 	}
 }
 
+func TestParseDiscoveryConfigSupportsKISSAndChannel(t *testing.T) {
+	t.Parallel()
+
+	cfg, mode := parseDiscoveryConfig(&ConfigSection{Properties: map[string]string{
+		"discoverable":         "yes",
+		"announce_interval":    "15",
+		"discovery_channel":    "11",
+		"discovery_frequency":  "433920000",
+		"discovery_bandwidth":  "12500",
+		"discovery_modulation": "afsk",
+	}}, "KISSInterface", interfaces.ModeFull)
+
+	if !cfg.SupportsDiscovery || !cfg.Discoverable {
+		t.Fatalf("unexpected discovery flags: %+v", cfg)
+	}
+	if mode != interfaces.ModeGateway {
+		t.Fatalf("discoverable KISS should promote mode to gateway, got %v", mode)
+	}
+	if cfg.Channel == nil || *cfg.Channel != 11 {
+		t.Fatalf("Channel = %v, want 11", cfg.Channel)
+	}
+	if cfg.Frequency == nil || *cfg.Frequency != 433920000 {
+		t.Fatalf("Frequency = %v, want 433920000", cfg.Frequency)
+	}
+	if cfg.Bandwidth == nil || *cfg.Bandwidth != 12500 {
+		t.Fatalf("Bandwidth = %v, want 12500", cfg.Bandwidth)
+	}
+	if cfg.Modulation != "afsk" {
+		t.Fatalf("Modulation = %q, want %q", cfg.Modulation, "afsk")
+	}
+}
+
 func TestReticulumInterfaceDiscoveryConfig(t *testing.T) {
 	t.Parallel()
 

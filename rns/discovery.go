@@ -272,13 +272,21 @@ func discoveryInterfaceType(iface interfaces.Interface) string {
 	case "TCPServerInterface", "TCPClientInterface":
 		return iface.Type()
 	case "TCPInterface":
-		if _, ok := iface.(interface{ BindPort() int }); ok {
+		if getter, ok := iface.(interface{ BindPort() int }); ok && getter.BindPort() > 0 {
 			return "TCPServerInterface"
 		}
 		return "TCPClientInterface"
 	default:
 		return ""
 	}
+}
+
+func isKISSFramedInterface(iface interfaces.Interface) bool {
+	if iface == nil {
+		return false
+	}
+	getter, ok := iface.(interface{ KISSFraming() bool })
+	return ok && getter.KISSFraming()
 }
 
 func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interface) ([]byte, error) {
@@ -292,8 +300,13 @@ func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interfac
 	}
 
 	interfaceType := discoveryInterfaceType(iface)
-	switch interfaceType {
-	case "BackboneInterface", "TCPServerInterface":
+	advertisedType := interfaceType
+	if interfaceType == "TCPClientInterface" && isKISSFramedInterface(iface) {
+		advertisedType = "KISSInterface"
+	}
+
+	switch advertisedType {
+	case "BackboneInterface", "TCPServerInterface", "RNodeInterface", "WeaveInterface", "KISSInterface":
 	default:
 		return nil, nil
 	}
@@ -314,7 +327,7 @@ func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interfac
 	}
 
 	info := map[any]any{
-		discoveryFieldInterfaceType: interfaceType,
+		discoveryFieldInterfaceType: advertisedType,
 		discoveryFieldTransport:     ia.owner.transport.Enabled(),
 		discoveryFieldTransportID:   append([]byte(nil), transportIdentity.Hash...),
 		discoveryFieldName:          name,
@@ -339,11 +352,41 @@ func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interfac
 	}
 	info[discoveryFieldReachableOn] = reachableOn
 
-	portGetter, ok := iface.(interface{ BindPort() int })
-	if !ok || portGetter.BindPort() <= 0 {
-		return nil, fmt.Errorf("missing bind port")
+	switch advertisedType {
+	case "BackboneInterface", "TCPServerInterface":
+		portGetter, ok := iface.(interface{ BindPort() int })
+		if !ok || portGetter.BindPort() <= 0 {
+			return nil, fmt.Errorf("missing bind port")
+		}
+		info[discoveryFieldPort] = portGetter.BindPort()
+	case "RNodeInterface":
+		if cfg.Frequency == nil || cfg.Bandwidth == nil || cfg.SpreadingFactor == nil || cfg.CodingRate == nil {
+			return nil, fmt.Errorf("missing RNode discovery radio parameters")
+		}
+		info[discoveryFieldFrequency] = *cfg.Frequency
+		info[discoveryFieldBandwidth] = *cfg.Bandwidth
+		info[discoveryFieldSpreadingFactor] = *cfg.SpreadingFactor
+		info[discoveryFieldCodingRate] = *cfg.CodingRate
+	case "WeaveInterface":
+		if cfg.Frequency == nil || cfg.Bandwidth == nil || cfg.Channel == nil {
+			return nil, fmt.Errorf("missing Weave discovery radio parameters")
+		}
+		info[discoveryFieldFrequency] = *cfg.Frequency
+		info[discoveryFieldBandwidth] = *cfg.Bandwidth
+		info[discoveryFieldChannel] = *cfg.Channel
+		if modulation := sanitizeDiscoveryString(cfg.Modulation); modulation != "" {
+			info[discoveryFieldModulation] = modulation
+		}
+	case "KISSInterface":
+		if cfg.Frequency == nil || cfg.Bandwidth == nil {
+			return nil, fmt.Errorf("missing KISS discovery radio parameters")
+		}
+		info[discoveryFieldFrequency] = *cfg.Frequency
+		info[discoveryFieldBandwidth] = *cfg.Bandwidth
+		if modulation := sanitizeDiscoveryString(cfg.Modulation); modulation != "" {
+			info[discoveryFieldModulation] = modulation
+		}
 	}
-	info[discoveryFieldPort] = portGetter.BindPort()
 
 	if cfg.PublishIFAC {
 		if ifacGetter, ok := iface.(interface{ IFACConfig() interfaces.IFACConfig }); ok {

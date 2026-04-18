@@ -84,6 +84,9 @@ func TestBaseInterfaceDiscoveryRoundTrip(t *testing.T) {
 	height := 90.12
 	freq := 123456789
 	bw := 250000
+	sf := 7
+	cr := 5
+	channel := 11
 	wantLat := lat
 	wantFreq := freq
 	cfg := DiscoveryConfig{
@@ -100,6 +103,9 @@ func TestBaseInterfaceDiscoveryRoundTrip(t *testing.T) {
 		Height:            &height,
 		Frequency:         &freq,
 		Bandwidth:         &bw,
+		SpreadingFactor:   &sf,
+		CodingRate:        &cr,
+		Channel:           &channel,
 		Modulation:        "lora",
 	}
 
@@ -118,6 +124,9 @@ func TestBaseInterfaceDiscoveryRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected discovery coordinates: %+v", stored)
 	}
 	if stored.Height == nil || *stored.Height != height || stored.Frequency == nil || *stored.Frequency != freq || stored.Bandwidth == nil || *stored.Bandwidth != bw {
+		t.Fatalf("unexpected discovery radio values: %+v", stored)
+	}
+	if stored.SpreadingFactor == nil || *stored.SpreadingFactor != sf || stored.CodingRate == nil || *stored.CodingRate != cr || stored.Channel == nil || *stored.Channel != channel {
 		t.Fatalf("unexpected discovery radio values: %+v", stored)
 	}
 

@@ -558,6 +558,165 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsInsufficientStampValue(t *tes
 	}
 }
 
+func TestInterfaceDiscoveryReceiveAndPersistAdditionalTypes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		payload         map[any]any
+		wantType        string
+		wantReachableOn string
+		wantFrequency   int
+		wantBandwidth   int
+		wantSF          int
+		wantCR          int
+		wantModulation  string
+		wantConfigEntry string
+	}{
+		{
+			name: "i2p",
+			payload: map[any]any{
+				discoveryFieldInterfaceType: "I2PInterface",
+				discoveryFieldTransport:     true,
+				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldName:          "Discovered I2P",
+				discoveryFieldReachableOn:   "exampleabcdefghijklmnopqrstuvwxyz.b32.i2p",
+			},
+			wantType:        "I2PInterface",
+			wantReachableOn: "exampleabcdefghijklmnopqrstuvwxyz.b32.i2p",
+			wantConfigEntry: "[[Discovered I2P]]\n  type = I2PInterface\n  enabled = yes\n  peers = exampleabcdefghijklmnopqrstuvwxyz.b32.i2p\n  transport_identity = deadbeef",
+		},
+		{
+			name: "rnode",
+			payload: map[any]any{
+				discoveryFieldInterfaceType:   "RNodeInterface",
+				discoveryFieldTransport:       true,
+				discoveryFieldTransportID:     []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldName:            "Discovered RNode",
+				discoveryFieldReachableOn:     "rnode.example.net",
+				discoveryFieldFrequency:       915000000,
+				discoveryFieldBandwidth:       125000,
+				discoveryFieldSpreadingFactor: 7,
+				discoveryFieldCodingRate:      5,
+			},
+			wantType:        "RNodeInterface",
+			wantReachableOn: "rnode.example.net",
+			wantFrequency:   915000000,
+			wantBandwidth:   125000,
+			wantSF:          7,
+			wantCR:          5,
+			wantConfigEntry: "[[Discovered RNode]]\n  type = RNodeInterface\n  enabled = yes\n  port = \n  frequency = 915000000\n  bandwidth = 125000\n  spreadingfactor = 7\n  codingrate = 5\n  txpower = ",
+		},
+		{
+			name: "weave",
+			payload: map[any]any{
+				discoveryFieldInterfaceType: "WeaveInterface",
+				discoveryFieldTransport:     true,
+				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldName:          "Discovered Weave",
+				discoveryFieldReachableOn:   "weave.example.net",
+				discoveryFieldFrequency:     2450000000,
+				discoveryFieldBandwidth:     2000000,
+				discoveryFieldChannel:       11,
+				discoveryFieldModulation:    "gmsk",
+			},
+			wantType:        "WeaveInterface",
+			wantReachableOn: "weave.example.net",
+			wantFrequency:   2450000000,
+			wantBandwidth:   2000000,
+			wantModulation:  "gmsk",
+			wantConfigEntry: "[[Discovered Weave]]\n  type = WeaveInterface\n  enabled = yes\n  port = ",
+		},
+		{
+			name: "kiss",
+			payload: map[any]any{
+				discoveryFieldInterfaceType: "KISSInterface",
+				discoveryFieldTransport:     true,
+				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldName:          "Discovered KISS",
+				discoveryFieldReachableOn:   "kiss.example.net",
+				discoveryFieldFrequency:     433920000,
+				discoveryFieldBandwidth:     12500,
+				discoveryFieldModulation:    "afsk",
+			},
+			wantType:        "KISSInterface",
+			wantReachableOn: "kiss.example.net",
+			wantFrequency:   433920000,
+			wantBandwidth:   12500,
+			wantModulation:  "afsk",
+			wantConfigEntry: "[[Discovered KISS]]\n  type = KISSInterface\n  enabled = yes\n  port = \n  # Frequency: 433920000\n  # Bandwidth: 12500\n  # Modulation: afsk\n  transport_identity = deadbeef",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-extra-")
+			defer cleanup()
+
+			ts := NewTransportSystem(nil)
+			destinationHash := []byte("discovery-destination")
+			ts.pathTable[string(destinationHash)] = &PathEntry{Hops: 2, Expires: time.Now().Add(time.Hour)}
+
+			r := &Reticulum{
+				configDir: tmpDir,
+				transport: ts,
+				logger:    NewLogger(),
+			}
+			discovery := NewInterfaceDiscovery(r)
+
+			sourceIdentity := mustTestNewIdentity(t, true)
+			appData := mustDiscoveryAnnounceAppData(t, tt.payload, 2)
+
+			var callbackErr error
+			handler := NewInterfaceAnnounceHandler(r, 2, func(info map[string]any) {
+				callbackErr = discovery.persistDiscoveredInterface(info)
+			})
+
+			handler.receivedAnnounce(destinationHash, sourceIdentity, appData)
+			if callbackErr != nil {
+				t.Fatalf("persist callback failed: %v", callbackErr)
+			}
+
+			discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+			if err != nil {
+				t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+			}
+			if got, want := len(discovered), 1; got != want {
+				t.Fatalf("expected %v discovered interface, got %v", want, got)
+			}
+
+			got := discovered[0]
+			if got.Type != tt.wantType {
+				t.Fatalf("Type = %q, want %q", got.Type, tt.wantType)
+			}
+			if got.ReachableOn != tt.wantReachableOn {
+				t.Fatalf("ReachableOn = %q, want %q", got.ReachableOn, tt.wantReachableOn)
+			}
+			if tt.wantFrequency != 0 && (got.Frequency == nil || *got.Frequency != tt.wantFrequency) {
+				t.Fatalf("Frequency = %v, want %v", got.Frequency, tt.wantFrequency)
+			}
+			if tt.wantBandwidth != 0 && (got.Bandwidth == nil || *got.Bandwidth != tt.wantBandwidth) {
+				t.Fatalf("Bandwidth = %v, want %v", got.Bandwidth, tt.wantBandwidth)
+			}
+			if tt.wantSF != 0 && (got.SF == nil || *got.SF != tt.wantSF) {
+				t.Fatalf("SF = %v, want %v", got.SF, tt.wantSF)
+			}
+			if tt.wantCR != 0 && (got.CR == nil || *got.CR != tt.wantCR) {
+				t.Fatalf("CR = %v, want %v", got.CR, tt.wantCR)
+			}
+			if tt.wantModulation != "" && got.Modulation != tt.wantModulation {
+				t.Fatalf("Modulation = %q, want %q", got.Modulation, tt.wantModulation)
+			}
+			if got.ConfigEntry != tt.wantConfigEntry {
+				t.Fatalf("ConfigEntry = %q, want %q", got.ConfigEntry, tt.wantConfigEntry)
+			}
+		})
+	}
+}
+
 func mustDiscoveryAnnounceAppData(t *testing.T, payload map[any]any, targetCost int) []byte {
 	t.Helper()
 
@@ -967,6 +1126,7 @@ type announceTestInterface struct {
 	ifaceType string
 	bindIP    string
 	bindPort  int
+	kiss      bool
 }
 
 func (a *announceTestInterface) Type() string      { return a.ifaceType }
@@ -976,6 +1136,7 @@ func (a *announceTestInterface) Send([]byte) error { return nil }
 func (a *announceTestInterface) Detach() error     { a.SetDetached(true); return nil }
 func (a *announceTestInterface) BindIP() string    { return a.bindIP }
 func (a *announceTestInterface) BindPort() int     { return a.bindPort }
+func (a *announceTestInterface) KISSFraming() bool { return a.kiss }
 
 type announceCaptureTransport struct {
 	*TransportSystem
@@ -1250,5 +1411,177 @@ func TestInterfaceAnnouncerParity(t *testing.T) {
 	}
 	if got := asInt(lookupDiscoveryValue(info, discoveryFieldPort)); got != 4244 {
 		t.Fatalf("port = %v, want 4244", got)
+	}
+}
+
+func TestInterfaceAnnouncerPayloadRadioInterfaces(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	ts := newAnnounceCaptureTransport(logger)
+	transportIdentity := mustTestNewIdentity(t, true)
+	ts.identity = transportIdentity
+	ts.SetEnabled(true)
+
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+
+	tests := []struct {
+		name                string
+		ifaceType           string
+		kiss                bool
+		cfg                 interfaces.DiscoveryConfig
+		wantInterfaceType   string
+		wantFrequency       int
+		wantBandwidth       int
+		wantSpreadingFactor int
+		wantCodingRate      int
+		wantChannel         int
+		wantModulation      string
+	}{
+		{
+			name:      "rnode",
+			ifaceType: "RNodeInterface",
+			cfg: interfaces.DiscoveryConfig{
+				SupportsDiscovery: true,
+				Discoverable:      true,
+				AnnounceInterval:  time.Hour,
+				Name:              "RNode",
+				ReachableOn:       "radio.example.net",
+				Frequency:         intPtr(868100000),
+				Bandwidth:         intPtr(125000),
+				SpreadingFactor:   intPtr(7),
+				CodingRate:        intPtr(5),
+			},
+			wantInterfaceType:   "RNodeInterface",
+			wantFrequency:       868100000,
+			wantBandwidth:       125000,
+			wantSpreadingFactor: 7,
+			wantCodingRate:      5,
+		},
+		{
+			name:      "weave",
+			ifaceType: "WeaveInterface",
+			cfg: interfaces.DiscoveryConfig{
+				SupportsDiscovery: true,
+				Discoverable:      true,
+				AnnounceInterval:  time.Hour,
+				Name:              "Weave",
+				ReachableOn:       "weave.example.net",
+				Frequency:         intPtr(2450000000),
+				Bandwidth:         intPtr(2000000),
+				Channel:           intPtr(11),
+				Modulation:        "gmsk",
+			},
+			wantInterfaceType: "WeaveInterface",
+			wantFrequency:     2450000000,
+			wantBandwidth:     2000000,
+			wantChannel:       11,
+			wantModulation:    "gmsk",
+		},
+		{
+			name:      "kiss",
+			ifaceType: "KISSInterface",
+			cfg: interfaces.DiscoveryConfig{
+				SupportsDiscovery: true,
+				Discoverable:      true,
+				AnnounceInterval:  time.Hour,
+				Name:              "KISS",
+				ReachableOn:       "kiss.example.net",
+				Frequency:         intPtr(145500000),
+				Bandwidth:         intPtr(25000),
+				Modulation:        " afsk \n",
+			},
+			wantInterfaceType: "KISSInterface",
+			wantFrequency:     145500000,
+			wantBandwidth:     25000,
+			wantModulation:    "afsk",
+		},
+		{
+			name:      "tcp-client-kiss-normalizes-type",
+			ifaceType: "TCPInterface",
+			kiss:      true,
+			cfg: interfaces.DiscoveryConfig{
+				SupportsDiscovery: true,
+				Discoverable:      true,
+				AnnounceInterval:  time.Hour,
+				Name:              "TCP KISS",
+				ReachableOn:       "tcp-kiss.example.net",
+				Frequency:         intPtr(433920000),
+				Bandwidth:         intPtr(12500),
+				Modulation:        "LoRa",
+			},
+			wantInterfaceType: "KISSInterface",
+			wantFrequency:     433920000,
+			wantBandwidth:     12500,
+			wantModulation:    "LoRa",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			iface := &announceTestInterface{
+				BaseInterface: interfaces.NewBaseInterface(tt.name, interfaces.ModeGateway, 1000),
+				ifaceType:     tt.ifaceType,
+				kiss:          tt.kiss,
+			}
+			iface.SetDiscoveryConfig(tt.cfg)
+
+			appData, err := announcer.getInterfaceAnnounceData(iface)
+			if err != nil {
+				t.Fatalf("getInterfaceAnnounceData() error = %v", err)
+			}
+			payload := appData[1:]
+			packed := payload[:len(payload)-discoveryStampSize]
+
+			unpacked, err := msgpack.Unpack(packed)
+			if err != nil {
+				t.Fatalf("msgpack.Unpack() error = %v", err)
+			}
+			info := asAnyMap(unpacked)
+			if info == nil {
+				t.Fatalf("unexpected announce payload type %T", unpacked)
+			}
+
+			if got := asString(lookupDiscoveryValue(info, discoveryFieldInterfaceType)); got != tt.wantInterfaceType {
+				t.Fatalf("interface type = %q, want %q", got, tt.wantInterfaceType)
+			}
+			if tt.wantFrequency != 0 {
+				if got := asInt(lookupDiscoveryValue(info, discoveryFieldFrequency)); got != tt.wantFrequency {
+					t.Fatalf("frequency = %v, want %v", got, tt.wantFrequency)
+				}
+			}
+			if tt.wantBandwidth != 0 {
+				if got := asInt(lookupDiscoveryValue(info, discoveryFieldBandwidth)); got != tt.wantBandwidth {
+					t.Fatalf("bandwidth = %v, want %v", got, tt.wantBandwidth)
+				}
+			}
+			if tt.wantSpreadingFactor != 0 {
+				if got := asInt(lookupDiscoveryValue(info, discoveryFieldSpreadingFactor)); got != tt.wantSpreadingFactor {
+					t.Fatalf("spreading factor = %v, want %v", got, tt.wantSpreadingFactor)
+				}
+			}
+			if tt.wantCodingRate != 0 {
+				if got := asInt(lookupDiscoveryValue(info, discoveryFieldCodingRate)); got != tt.wantCodingRate {
+					t.Fatalf("coding rate = %v, want %v", got, tt.wantCodingRate)
+				}
+			}
+			if tt.wantChannel != 0 {
+				if got := asInt(lookupDiscoveryValue(info, discoveryFieldChannel)); got != tt.wantChannel {
+					t.Fatalf("channel = %v, want %v", got, tt.wantChannel)
+				}
+			}
+			if tt.wantModulation != "" {
+				if got := asString(lookupDiscoveryValue(info, discoveryFieldModulation)); got != tt.wantModulation {
+					t.Fatalf("modulation = %q, want %q", got, tt.wantModulation)
+				}
+			}
+		})
 	}
 }

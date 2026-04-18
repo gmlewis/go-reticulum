@@ -256,7 +256,7 @@ func parseInterfaceModeValue(v string) (int, bool) {
 
 func interfaceSupportsDiscovery(ifaceType string) bool {
 	switch ifaceType {
-	case "TCPInterface", "TCPClientInterface", "TCPServerInterface", "BackboneInterface", "I2PInterface", "RNodeInterface", "WeaveInterface":
+	case "TCPInterface", "TCPClientInterface", "TCPServerInterface", "BackboneInterface", "I2PInterface", "KISSInterface", "RNodeInterface", "WeaveInterface":
 		return true
 	default:
 		return false
@@ -321,6 +321,9 @@ func parseDiscoveryConfig(sub *ConfigSection, ifaceType string, mode int) (inter
 	}
 	if v, ok := sub.GetProperty("discovery_bandwidth"); ok {
 		cfg.Bandwidth = parseOptionalInt(v)
+	}
+	if v, ok := sub.GetProperty("discovery_channel"); ok {
+		cfg.Channel = parseOptionalInt(v)
 	}
 	if v, ok := sub.GetProperty("discovery_modulation"); ok {
 		cfg.Modulation = strings.TrimSpace(v)

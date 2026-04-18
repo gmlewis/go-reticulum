@@ -214,6 +214,59 @@ func TestRequestResponseResourceProgressCallback(t *testing.T) {
 	}
 }
 
+func TestRequestReceiptResponseResourceProgressParity(t *testing.T) {
+	t.Parallel()
+
+	progressCalled := 0
+	deliveryCalled := 0
+	rr := &RequestReceipt{
+		Status: RequestDelivered,
+		PacketReceipt: &PacketReceipt{
+			Status: ReceiptSent,
+		},
+	}
+	rr.PacketReceipt.SetDeliveryCallback(func(pr *PacketReceipt) {
+		deliveryCalled++
+	})
+	rr.progressCallback = func(got *RequestReceipt) {
+		progressCalled++
+		if got != rr {
+			t.Fatalf("progress callback receipt = %p, want %p", got, rr)
+		}
+		if status := got.GetStatus(); status != RequestReceiving {
+			t.Fatalf("progress callback status = %v, want %v", status, RequestReceiving)
+		}
+	}
+
+	rr.responseResourceProgress(&Resource{})
+
+	if got, want := progressCalled, 1; got != want {
+		t.Fatalf("progress callback calls = %v, want %v", got, want)
+	}
+	if got, want := deliveryCalled, 1; got != want {
+		t.Fatalf("delivery callback calls = %v, want %v", got, want)
+	}
+	if got, want := rr.GetStatus(), RequestReceiving; got != want {
+		t.Fatalf("request status = %v, want %v", got, want)
+	}
+	if rr.PacketReceipt.ConcludedAt == 0 {
+		t.Fatal("packet receipt ConcludedAt was not set")
+	}
+	if got, want := rr.PacketReceipt.Status, ReceiptDelivered; got != want {
+		t.Fatalf("packet receipt status = %v, want %v", got, want)
+	}
+
+	rr.responseReceived([]byte("done"), nil)
+	rr.responseResourceProgress(&Resource{})
+
+	if got, want := progressCalled, 1; got != want {
+		t.Fatalf("progress callback calls after ready = %v, want %v", got, want)
+	}
+	if got, want := rr.GetStatus(), RequestReady; got != want {
+		t.Fatalf("request status after ready = %v, want %v", got, want)
+	}
+}
+
 func TestRequestReceiptStoresMetadata(t *testing.T) {
 	t.Parallel()
 

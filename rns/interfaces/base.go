@@ -40,6 +40,9 @@ type DiscoveryConfig struct {
 	Height            *float64
 	Frequency         *int
 	Bandwidth         *int
+	SpreadingFactor   *int
+	CodingRate        *int
+	Channel           *int
 	Modulation        string
 }
 
@@ -218,6 +221,9 @@ func cloneDiscoveryConfig(cfg DiscoveryConfig) DiscoveryConfig {
 	cfg.Height = cloneOptionalFloat64(cfg.Height)
 	cfg.Frequency = cloneOptionalInt(cfg.Frequency)
 	cfg.Bandwidth = cloneOptionalInt(cfg.Bandwidth)
+	cfg.SpreadingFactor = cloneOptionalInt(cfg.SpreadingFactor)
+	cfg.CodingRate = cloneOptionalInt(cfg.CodingRate)
+	cfg.Channel = cloneOptionalInt(cfg.Channel)
 	return cfg
 }
 

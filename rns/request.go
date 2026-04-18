@@ -154,23 +154,31 @@ func (rr *RequestReceipt) responseResourceProgress(resource *Resource) {
 	}
 	rr.mu.Lock()
 
-	if rr.Status == RequestFailed {
+	if rr.Status == RequestFailed || rr.Status == RequestReady {
 		rr.mu.Unlock()
 		return
 	}
 	rr.Status = RequestReceiving
+	var deliveryCB func(*PacketReceipt)
+	var packetReceipt *PacketReceipt
 	if rr.PacketReceipt != nil {
 		rr.PacketReceipt.mu.Lock()
 		if rr.PacketReceipt.Status != ReceiptDelivered {
 			rr.PacketReceipt.Status = ReceiptDelivered
 			rr.PacketReceipt.Proved = true
+			rr.PacketReceipt.ConcludedAt = float64(time.Now().UnixNano()) / 1e9
+			deliveryCB = rr.PacketReceipt.deliveryCallback
+			packetReceipt = rr.PacketReceipt
 		}
 		rr.PacketReceipt.mu.Unlock()
 	}
 	cb := rr.progressCallback
 	rr.mu.Unlock()
 
+	if deliveryCB != nil {
+		deliveryCB(packetReceipt)
+	}
 	if cb != nil {
-		go cb(rr)
+		cb(rr)
 	}
 }

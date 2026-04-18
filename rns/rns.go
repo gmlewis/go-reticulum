@@ -1107,6 +1107,10 @@ func (r *Reticulum) initInterfaces() error {
 				continue
 			}
 
+			discoveryConfig.Frequency = intPtr(frequency)
+			discoveryConfig.Bandwidth = intPtr(bandwidth)
+			discoveryConfig.SpreadingFactor = intPtr(spreadingFactor)
+			discoveryConfig.CodingRate = intPtr(codingRate)
 			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig)
 			r.transport.RegisterInterface(iface)
 			r.logger.Info("Started RNode interface %v on %v", sub.Name, port)
@@ -1435,4 +1439,8 @@ func (r *Reticulum) initInterfaces() error {
 		}
 	}
 	return nil
+}
+
+func intPtr(v int) *int {
+	return &v
 }
