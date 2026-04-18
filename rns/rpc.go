@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gmlewis/go-reticulum/rns/interfaces"
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
@@ -386,6 +387,21 @@ func (r *Reticulum) getInterfaceStats() map[string]any {
 		tx := iface.BytesSent()
 		totalRX += rx
 		totalTX += tx
+		var ifacSize any
+		var ifacNetname any
+		if cfgGetter, ok := iface.(interface{ IFACConfig() interfaces.IFACConfig }); ok {
+			cfg := cfgGetter.IFACConfig()
+			if cfg.Enabled {
+				ifacSize = cfg.Size
+				ifacNetname = cfg.NetName
+			}
+		}
+		var autoconnectSource any
+		if sourceGetter, ok := iface.(interface{ AutoconnectSource() string }); ok {
+			if source := sourceGetter.AutoconnectSource(); source != "" {
+				autoconnectSource = source
+			}
+		}
 		interfacesOut = append(interfacesOut, map[string]any{
 			"name":                        iface.Name(),
 			"short_name":                  iface.Name(),
@@ -405,9 +421,9 @@ func (r *Reticulum) getInterfaceStats() map[string]any {
 			"announce_queue":              nil,
 			"peers":                       nil,
 			"ifac_signature":              nil,
-			"ifac_size":                   nil,
-			"ifac_netname":                nil,
-			"autoconnect_source":          nil,
+			"ifac_size":                   ifacSize,
+			"ifac_netname":                ifacNetname,
+			"autoconnect_source":          autoconnectSource,
 		})
 	}
 

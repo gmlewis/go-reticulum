@@ -66,11 +66,14 @@ type BaseInterface struct {
 	ifacMu  sync.RWMutex
 
 	discoveryMu sync.RWMutex
+	autoMu      sync.RWMutex
 
 	ifacConfig      IFACConfig
 	ifacKey         []byte
 	ifacSigner      *rnscrypto.Ed25519PrivateKey
 	discoveryConfig DiscoveryConfig
+	autoconnectHash []byte
+	autoconnectSrc  string
 }
 
 // NewBaseInterface allocates and initializes a BaseInterface with the given
@@ -232,6 +235,31 @@ func (bi *BaseInterface) DiscoveryConfig() DiscoveryConfig {
 	bi.discoveryMu.RLock()
 	defer bi.discoveryMu.RUnlock()
 	return cloneDiscoveryConfig(bi.discoveryConfig)
+}
+
+// SetAutoconnect records discovery-driven metadata for interfaces that were
+// synthesized from on-network interface discovery.
+func (bi *BaseInterface) SetAutoconnect(hash []byte, source string) {
+	bi.autoMu.Lock()
+	defer bi.autoMu.Unlock()
+	bi.autoconnectHash = append(bi.autoconnectHash[:0], hash...)
+	bi.autoconnectSrc = source
+}
+
+// AutoconnectHash returns the stable endpoint hash associated with a
+// discovery-autoconnected interface.
+func (bi *BaseInterface) AutoconnectHash() []byte {
+	bi.autoMu.RLock()
+	defer bi.autoMu.RUnlock()
+	return append([]byte(nil), bi.autoconnectHash...)
+}
+
+// AutoconnectSource returns the discovery source network identity hash that
+// produced this auto-connected interface.
+func (bi *BaseInterface) AutoconnectSource() string {
+	bi.autoMu.RLock()
+	defer bi.autoMu.RUnlock()
+	return bi.autoconnectSrc
 }
 
 // ApplyIFACInbound processes incoming raw bytes and validates cryptographic

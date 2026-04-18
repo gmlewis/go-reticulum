@@ -20,6 +20,7 @@ import (
 	"time"
 
 	rcrypto "github.com/gmlewis/go-reticulum/rns/crypto"
+	"github.com/gmlewis/go-reticulum/rns/interfaces"
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
@@ -204,6 +205,8 @@ type DiscoveredInterface struct {
 	SF          *int   `json:"sf,omitempty"`
 	CR          *int   `json:"cr,omitempty"`
 	Modulation  string `json:"modulation,omitempty"`
+	IFACNetname string `json:"ifac_netname,omitempty"`
+	IFACNetkey  string `json:"ifac_netkey,omitempty"`
 }
 
 // InterfaceDiscovery actively listens for and processes inbound presence announcements from remote nodes to establish automatic connections.
@@ -238,9 +241,17 @@ func (id *InterfaceDiscovery) Start(requiredValue int) error {
 		if err := id.persistDiscoveredInterface(info); err != nil && id.owner != nil && id.owner.logger != nil {
 			id.owner.logger.Error("failed to persist discovered interface: %v", err)
 		}
+		if discovered, ok := mapToDiscoveredInterface(info); ok {
+			if err := id.autoconnect(discovered); err != nil && id.owner != nil && id.owner.logger != nil {
+				id.owner.logger.Error("failed to auto-connect discovered interface %v: %v", discovered.Name, err)
+			}
+		}
 	})
 	if id.owner.transport != nil {
 		id.owner.transport.RegisterAnnounceHandler(id.handler.AnnounceHandler())
+	}
+	if id.owner.shouldAutoconnectDiscoveredInterfaces() {
+		id.connectDiscovered()
 	}
 	return nil
 }
@@ -416,6 +427,8 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 			TransportID: asString(lookupAnyValue(m, "transport_id")),
 			ReachableOn: asString(lookupAnyValue(m, "reachable_on")),
 			Modulation:  asString(lookupAnyValue(m, "modulation")),
+			IFACNetname: asString(lookupAnyValue(m, "ifac_netname")),
+			IFACNetkey:  asString(lookupAnyValue(m, "ifac_netkey")),
 		}
 
 		di.Latitude = lookupOptFloat64(m, "latitude")
@@ -510,6 +523,174 @@ func cloneStringAnyMap(m map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+func mapToDiscoveredInterface(info map[string]any) (DiscoveredInterface, bool) {
+	if info == nil {
+		return DiscoveredInterface{}, false
+	}
+
+	out := DiscoveredInterface{
+		Name:        asString(info["name"]),
+		Type:        asString(info["type"]),
+		Status:      asString(info["status"]),
+		StatusCode:  asInt(info["status_code"]),
+		Hops:        asInt(info["hops"]),
+		Discovered:  asFloat64(info["discovered"]),
+		LastHeard:   asFloat64(info["last_heard"]),
+		Transport:   asBool(info["transport"]),
+		Value:       asInt(info["value"]),
+		ConfigEntry: asString(info["config_entry"]),
+		NetworkID:   asString(info["network_id"]),
+		TransportID: asString(info["transport_id"]),
+		ReachableOn: asString(info["reachable_on"]),
+		Modulation:  asString(info["modulation"]),
+		IFACNetname: asString(info["ifac_netname"]),
+		IFACNetkey:  asString(info["ifac_netkey"]),
+	}
+
+	if v, ok := info["latitude"]; ok && v != nil {
+		f := asFloat64(v)
+		out.Latitude = &f
+	}
+	if v, ok := info["longitude"]; ok && v != nil {
+		f := asFloat64(v)
+		out.Longitude = &f
+	}
+	if v, ok := info["height"]; ok && v != nil {
+		f := asFloat64(v)
+		out.Height = &f
+	}
+	if v, ok := info["port"]; ok && v != nil {
+		i := asInt(v)
+		out.Port = &i
+	}
+	if v, ok := info["frequency"]; ok && v != nil {
+		i := asInt(v)
+		out.Frequency = &i
+	}
+	if v, ok := info["bandwidth"]; ok && v != nil {
+		i := asInt(v)
+		out.Bandwidth = &i
+	}
+	if v, ok := info["sf"]; ok && v != nil {
+		i := asInt(v)
+		out.SF = &i
+	}
+	if v, ok := info["cr"]; ok && v != nil {
+		i := asInt(v)
+		out.CR = &i
+	}
+
+	return out, out.Type != ""
+}
+
+func (id *InterfaceDiscovery) connectDiscovered() {
+	discovered, err := id.ListDiscoveredInterfaces(false, true)
+	if err != nil {
+		if id.owner != nil && id.owner.logger != nil {
+			id.owner.logger.Error("failed to load discovered interfaces for autoconnect: %v", err)
+		}
+		return
+	}
+
+	for _, info := range discovered {
+		if id.autoconnectCount() >= id.owner.maxAutoconnectedInterfaces() {
+			return
+		}
+		if err := id.autoconnect(info); err != nil && id.owner != nil && id.owner.logger != nil {
+			id.owner.logger.Error("failed to auto-connect discovered interface %v: %v", info.Name, err)
+		}
+	}
+}
+
+func (id *InterfaceDiscovery) autoconnectCount() int {
+	if id == nil || id.owner == nil || id.owner.transport == nil {
+		return 0
+	}
+
+	count := 0
+	for _, iface := range id.owner.transport.GetInterfaces() {
+		if meta, ok := iface.(interface{ AutoconnectHash() []byte }); ok && len(meta.AutoconnectHash()) > 0 {
+			count++
+		}
+	}
+	return count
+}
+
+func (id *InterfaceDiscovery) autoconnect(info DiscoveredInterface) error {
+	if id == nil || id.owner == nil || id.owner.transport == nil || !id.owner.shouldAutoconnectDiscoveredInterfaces() {
+		return nil
+	}
+	if id.autoconnectCount() >= id.owner.maxAutoconnectedInterfaces() {
+		return nil
+	}
+	if info.Type != "BackboneInterface" {
+		return nil
+	}
+	if info.ReachableOn == "" || info.Port == nil || *info.Port <= 0 {
+		return fmt.Errorf("missing reachable_on/port")
+	}
+	if id.interfaceExists(info) {
+		return nil
+	}
+
+	handler := func(data []byte, iface interfaces.Interface) {
+		id.owner.transport.Inbound(data, iface)
+	}
+	iface, err := interfaces.NewBackboneClientInterface(info.Name, info.ReachableOn, *info.Port, handler)
+	if err != nil {
+		return err
+	}
+
+	if setter, ok := iface.(interface{ SetAutoconnect([]byte, string) }); ok {
+		setter.SetAutoconnect(id.endpointHash(info), info.NetworkID)
+	}
+	if setter, ok := iface.(interface{ SetBitrate(int) }); ok {
+		setter.SetBitrate(5_000_000)
+	}
+	if info.IFACNetname != "" || info.IFACNetkey != "" {
+		if setter, ok := iface.(interface{ SetIFACConfig(interfaces.IFACConfig) }); ok {
+			setter.SetIFACConfig(interfaces.IFACConfig{
+				Enabled: true,
+				NetName: info.IFACNetname,
+				NetKey:  info.IFACNetkey,
+				Size:    16,
+			})
+		}
+	}
+	id.owner.transport.RegisterInterface(iface)
+	return nil
+}
+
+func (id *InterfaceDiscovery) interfaceExists(info DiscoveredInterface) bool {
+	if id == nil || id.owner == nil || id.owner.transport == nil {
+		return false
+	}
+
+	endpointHash := id.endpointHash(info)
+	for _, iface := range id.owner.transport.GetInterfaces() {
+		if meta, ok := iface.(interface{ AutoconnectHash() []byte }); ok && bytes.Equal(meta.AutoconnectHash(), endpointHash) {
+			return true
+		}
+
+		hostPortMatcher, ok := iface.(interface {
+			TargetHost() string
+			TargetPort() int
+		})
+		if ok && hostPortMatcher.TargetHost() == info.ReachableOn && info.Port != nil && hostPortMatcher.TargetPort() == *info.Port {
+			return true
+		}
+	}
+	return false
+}
+
+func (id *InterfaceDiscovery) endpointHash(info DiscoveredInterface) []byte {
+	endpoint := info.ReachableOn
+	if info.Port != nil {
+		endpoint = fmt.Sprintf("%v:%v", endpoint, *info.Port)
+	}
+	return FullHash([]byte(endpoint))
 }
 
 func (h *InterfaceAnnounceHandler) decodeDiscoveryInfo(destinationHash []byte, announcedIdentity *Identity, packed, stamp []byte, value int) (map[string]any, error) {

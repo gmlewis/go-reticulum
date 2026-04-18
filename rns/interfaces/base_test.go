@@ -127,3 +127,23 @@ func TestBaseInterfaceDiscoveryRoundTrip(t *testing.T) {
 		t.Fatalf("stored discovery config should not alias caller pointers: %+v", stored)
 	}
 }
+
+func TestBaseInterfaceAutoconnectRoundTrip(t *testing.T) {
+	bi := NewBaseInterface("auto-test", ModeFull, 1000)
+	hash := []byte{0xaa, 0xbb, 0xcc}
+	bi.SetAutoconnect(hash, "deadbeef")
+
+	hash[0] = 0
+	gotHash := bi.AutoconnectHash()
+	if len(gotHash) != 3 || gotHash[0] != 0xaa || gotHash[1] != 0xbb || gotHash[2] != 0xcc {
+		t.Fatalf("AutoconnectHash()=%x want aabbcc", gotHash)
+	}
+	if gotSrc := bi.AutoconnectSource(); gotSrc != "deadbeef" {
+		t.Fatalf("AutoconnectSource()=%q want %q", gotSrc, "deadbeef")
+	}
+
+	gotHash[1] = 0
+	if again := bi.AutoconnectHash(); again[1] != 0xbb {
+		t.Fatalf("AutoconnectHash() returned aliasing slice: %x", again)
+	}
+}

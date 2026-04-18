@@ -108,6 +108,17 @@ func (r *Reticulum) IsStandaloneInstance() bool { return r.isStandaloneInstance 
 // connected to an existing shared instance (client).
 func (r *Reticulum) IsConnectedToSharedInstance() bool { return r.isConnectedToSharedInstance }
 
+func (r *Reticulum) shouldAutoconnectDiscoveredInterfaces() bool {
+	return r != nil && r.autoconnectDiscover > 0
+}
+
+func (r *Reticulum) maxAutoconnectedInterfaces() int {
+	if r == nil {
+		return 0
+	}
+	return r.autoconnectDiscover
+}
+
 // Transport returns the transport system for this Reticulum instance.
 // Transport returns the transport system instance associated with this Reticulum stack.
 func (r *Reticulum) Transport() Transport {

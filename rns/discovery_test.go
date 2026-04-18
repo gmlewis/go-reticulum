@@ -8,12 +8,14 @@ package rns
 import (
 	_ "embed"
 	"encoding/hex"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 	"time"
 
+	"github.com/gmlewis/go-reticulum/rns/interfaces"
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 	"github.com/gmlewis/go-reticulum/testutils"
 )
@@ -572,4 +574,218 @@ func mustDiscoveryAnnounceAppData(t *testing.T, payload map[any]any, targetCost 
 	appData = append(appData, packed...)
 	appData = append(appData, stamp...)
 	return appData
+}
+
+func TestInterfaceDiscoveryStartReconnectsCachedBackbone(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-reconnect-")
+	defer cleanup()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("listener.Close() error = %v", err)
+		}
+	})
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		accepted <- conn
+	}()
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "cached-backbone.data"), mustMsgpackPack(map[string]any{
+		"name":         "Cached Backbone",
+		"type":         "BackboneInterface",
+		"transport":    true,
+		"last_heard":   now - 60,
+		"discovered":   now - 120,
+		"reachable_on": "127.0.0.1",
+		"port":         port,
+		"network_id":   "01020304",
+		"ifac_netname": "mesh",
+		"ifac_netkey":  "secret",
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write cached discovery file: %v", err)
+	}
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	var acceptedConn net.Conn
+	select {
+	case acceptedConn = <-accepted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for auto-connected backbone client")
+	}
+	t.Cleanup(func() {
+		if acceptedConn != nil {
+			if err := acceptedConn.Close(); err != nil {
+				t.Errorf("acceptedConn.Close() error = %v", err)
+			}
+		}
+	})
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected 1 auto-connected interface, got %v", got)
+	}
+	if got := len(ts.AnnounceHandlers()); got != 1 {
+		t.Fatalf("expected 1 announce handler, got %v", got)
+	}
+
+	iface := ts.GetInterfaces()[0]
+	if iface.Type() != "BackboneClientInterface" {
+		t.Fatalf("Type() = %q, want %q", iface.Type(), "BackboneClientInterface")
+	}
+	meta, ok := iface.(interface {
+		AutoconnectHash() []byte
+		AutoconnectSource() string
+		IFACConfig() interfaces.IFACConfig
+		TargetHost() string
+		TargetPort() int
+	})
+	if !ok {
+		t.Fatalf("auto-connected interface does not expose expected metadata")
+	}
+	if len(meta.AutoconnectHash()) == 0 {
+		t.Fatalf("expected autoconnect hash to be set")
+	}
+	if got := meta.AutoconnectSource(); got != "01020304" {
+		t.Fatalf("AutoconnectSource() = %q, want %q", got, "01020304")
+	}
+	if got := meta.TargetHost(); got != "127.0.0.1" {
+		t.Fatalf("TargetHost() = %q, want %q", got, "127.0.0.1")
+	}
+	if got := meta.TargetPort(); got != port {
+		t.Fatalf("TargetPort() = %v, want %v", got, port)
+	}
+	if got := meta.IFACConfig(); !got.Enabled || got.NetName != "mesh" || got.NetKey != "secret" || got.Size != 16 {
+		t.Fatalf("IFACConfig() = %+v, want enabled mesh/secret size 16", got)
+	}
+	if got := iface.Bitrate(); got != 5_000_000 {
+		t.Fatalf("Bitrate() = %v, want %v", got, 5_000_000)
+	}
+
+	discovery.connectDiscovered()
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected cached autoconnect dedupe to keep 1 interface, got %v", got)
+	}
+
+	_ = iface.Detach()
+}
+
+func TestInterfaceDiscoveryStartAutoconnectsReceivedBackboneAnnounce(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-autoconnect-")
+	defer cleanup()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("listener.Close() error = %v", err)
+		}
+	})
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		accepted <- conn
+	}()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	destinationHash := []byte("autoconnect-destination")
+	ts.pathTable[string(destinationHash)] = &PathEntry{Hops: 3, Expires: time.Now().Add(time.Hour)}
+
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	sourceIdentity := mustTestNewIdentity(t, true)
+	port := listener.Addr().(*net.TCPAddr).Port
+	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
+		discoveryFieldInterfaceType: "BackboneInterface",
+		discoveryFieldTransport:     true,
+		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldName:          "Live Backbone",
+		discoveryFieldReachableOn:   "127.0.0.1",
+		discoveryFieldPort:          port,
+		discoveryFieldIFACNetname:   "mesh",
+		discoveryFieldIFACNetkey:    "secret",
+	}, 2)
+
+	discovery.handler.receivedAnnounce(destinationHash, sourceIdentity, appData)
+
+	var acceptedConn net.Conn
+	select {
+	case acceptedConn = <-accepted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for auto-connected announce listener")
+	}
+	t.Cleanup(func() {
+		if acceptedConn != nil {
+			if err := acceptedConn.Close(); err != nil {
+				t.Errorf("acceptedConn.Close() error = %v", err)
+			}
+		}
+	})
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected 1 auto-connected interface from announce, got %v", got)
+	}
+	iface := ts.GetInterfaces()[0]
+	if iface.Type() != "BackboneClientInterface" {
+		t.Fatalf("Type() = %q, want %q", iface.Type(), "BackboneClientInterface")
+	}
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+	}
+	if got := len(discovered); got != 1 {
+		t.Fatalf("expected 1 persisted discovered interface, got %v", got)
+	}
+	if discovered[0].Name != "Live Backbone" {
+		t.Fatalf("discovered[0].Name = %q, want %q", discovered[0].Name, "Live Backbone")
+	}
+
+	_ = iface.Detach()
 }

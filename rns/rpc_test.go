@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gmlewis/go-reticulum/rns/interfaces"
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 	"github.com/gmlewis/go-reticulum/testutils"
 )
@@ -579,6 +580,52 @@ func TestRPCInterfaceStatsSchemaIncludesCoreFields(t *testing.T) {
 		if _, ok := entry[key]; !ok {
 			t.Fatalf("expected key %q in interface entry, got %#v", key, entry)
 		}
+	}
+}
+
+type rpcStatsMetadataInterface struct {
+	dummyInterface
+}
+
+func (i *rpcStatsMetadataInterface) IFACConfig() interfaces.IFACConfig {
+	return interfaces.IFACConfig{Enabled: true, NetName: "mesh", NetKey: "secret", Size: 16}
+}
+
+func (i *rpcStatsMetadataInterface) AutoconnectSource() string {
+	return "feedface"
+}
+
+func TestRPCInterfaceStatsIncludesIFACAndAutoconnectMetadata(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	iface := &rpcStatsMetadataInterface{dummyInterface: dummyInterface{name: "stats-meta-iface"}}
+	ts.RegisterInterface(iface)
+
+	r := &Reticulum{transport: ts}
+	resp := r.handleRPCRequest(map[any]any{"get": "interface_stats"})
+	stats, ok := resp.(map[string]any)
+	if !ok {
+		t.Fatalf("expected stats map[string]any, got %#v", resp)
+	}
+
+	entries, ok := stats["interfaces"].([]any)
+	if !ok || len(entries) != 1 {
+		t.Fatalf("expected one interface entry, got %#v", stats["interfaces"])
+	}
+	entry, ok := entries[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected interface entry map[string]any, got %#v", entries[0])
+	}
+
+	if got := asInt(entry["ifac_size"]); got != 16 {
+		t.Fatalf("ifac_size = %v, want 16", got)
+	}
+	if got := asString(entry["ifac_netname"]); got != "mesh" {
+		t.Fatalf("ifac_netname = %q, want %q", got, "mesh")
+	}
+	if got := asString(entry["autoconnect_source"]); got != "feedface" {
+		t.Fatalf("autoconnect_source = %q, want %q", got, "feedface")
 	}
 }
 

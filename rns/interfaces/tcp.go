@@ -62,6 +62,12 @@ func NewTCPClientInterface(name, host string, port int, kiss bool, handler Inbou
 	return tci, nil
 }
 
+// TargetHost returns the remote host configured for this client interface.
+func (tci *TCPClientInterface) TargetHost() string { return tci.targetHost }
+
+// TargetPort returns the remote TCP port configured for this client interface.
+func (tci *TCPClientInterface) TargetPort() int { return tci.targetPort }
+
 func (tci *TCPClientInterface) connect() error {
 	addr := fmt.Sprintf("%v:%v", tci.targetHost, tci.targetPort)
 	log.Printf("Go TCPClientInterface %v connecting to %v", tci.name, addr)
