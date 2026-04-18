@@ -80,6 +80,7 @@ type Reticulum struct {
 	blackholeSources    [][]byte
 	interfaceSources    [][]byte
 	autoconnectDiscover int
+	interfaceDiscovery  *InterfaceDiscovery
 
 	mu                          sync.Mutex
 	shareInstance               bool
@@ -237,6 +238,13 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger) (*Re
 			return nil, err
 		}
 		if r.discoverInterfaces && r.transport != nil {
+			r.interfaceDiscovery = NewInterfaceDiscovery(r)
+			if err := r.interfaceDiscovery.Start(r.requiredDiscoveryV); err != nil {
+				if cerr := r.Close(); cerr != nil {
+					r.logger.Warning("Could not close Reticulum properly after discovery initialization failure: %v", cerr)
+				}
+				return nil, err
+			}
 			r.transport.DiscoverInterfaces()
 		}
 	}

@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -421,4 +422,154 @@ func TestPersistDiscoveredInterface_ExistingEntryPreservesDiscoveryTime(t *testi
 	if got := asInt(lookupAnyValue(m, "value")); got != 5678 {
 		t.Fatalf("value = %v, want 5678", got)
 	}
+}
+
+func TestInterfaceDiscoveryReceiveAndPersist(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-")
+	defer cleanup()
+
+	ts := NewTransportSystem(nil)
+	destinationHash := []byte("discovery-destination")
+	ts.pathTable[string(destinationHash)] = &PathEntry{Hops: 2, Expires: time.Now().Add(time.Hour)}
+
+	r := &Reticulum{
+		configDir: tmpDir,
+		transport: ts,
+		logger:    NewLogger(),
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	sourceIdentity := mustTestNewIdentity(t, true)
+	transportID := []byte{0xde, 0xad, 0xbe, 0xef}
+	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
+		discoveryFieldInterfaceType: "TCPServerInterface",
+		discoveryFieldTransport:     true,
+		discoveryFieldTransportID:   transportID,
+		discoveryFieldName:          "Discovered TCP",
+		discoveryFieldReachableOn:   "discovery.example.net",
+		discoveryFieldPort:          4242,
+		discoveryFieldIFACNetname:   "mesh",
+		discoveryFieldIFACNetkey:    "secret",
+	}, 2)
+
+	var callbackErr error
+	handler := NewInterfaceAnnounceHandler(r, 2, func(info map[string]any) {
+		callbackErr = discovery.persistDiscoveredInterface(info)
+	})
+
+	handler.receivedAnnounce(destinationHash, sourceIdentity, appData)
+	if callbackErr != nil {
+		t.Fatalf("persist callback failed: %v", callbackErr)
+	}
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+	}
+	if got, want := len(discovered), 1; got != want {
+		t.Fatalf("expected %v discovered interface, got %v", want, got)
+	}
+
+	got := discovered[0]
+	if got.Name != "Discovered TCP" {
+		t.Fatalf("Name = %q, want %q", got.Name, "Discovered TCP")
+	}
+	if got.Type != "TCPServerInterface" {
+		t.Fatalf("Type = %q, want %q", got.Type, "TCPServerInterface")
+	}
+	if got.Hops != 2 {
+		t.Fatalf("Hops = %v, want 2", got.Hops)
+	}
+	if got.TransportID != "deadbeef" {
+		t.Fatalf("TransportID = %q, want %q", got.TransportID, "deadbeef")
+	}
+	if got.NetworkID != sourceIdentity.HexHash {
+		t.Fatalf("NetworkID = %q, want %q", got.NetworkID, sourceIdentity.HexHash)
+	}
+	if got.ReachableOn != "discovery.example.net" {
+		t.Fatalf("ReachableOn = %q, want %q", got.ReachableOn, "discovery.example.net")
+	}
+	if got.Port == nil || *got.Port != 4242 {
+		t.Fatalf("Port = %v, want 4242", got.Port)
+	}
+	if got.Value < 2 {
+		t.Fatalf("Value = %v, want >= 2", got.Value)
+	}
+
+	connectionType := "BackboneInterface"
+	remoteKey := "remote"
+	if runtime.GOOS == "windows" {
+		connectionType = "TCPClientInterface"
+		remoteKey = "target_host"
+	}
+	wantConfigEntry := "[[Discovered TCP]]\n  type = " + connectionType +
+		"\n  enabled = yes\n  " + remoteKey + " = discovery.example.net\n  target_port = 4242" +
+		"\n  transport_identity = deadbeef\n  network_name = mesh\n  passphrase = secret"
+	if got.ConfigEntry != wantConfigEntry {
+		t.Fatalf("ConfigEntry = %q, want %q", got.ConfigEntry, wantConfigEntry)
+	}
+}
+
+func TestInterfaceDiscoveryReceiveAndPersistRejectsInsufficientStampValue(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-invalid-")
+	defer cleanup()
+
+	ts := NewTransportSystem(nil)
+	r := &Reticulum{
+		configDir: tmpDir,
+		transport: ts,
+		logger:    NewLogger(),
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	callbackCalled := false
+	handler := NewInterfaceAnnounceHandler(r, 20, func(info map[string]any) {
+		callbackCalled = true
+	})
+
+	sourceIdentity := mustTestNewIdentity(t, true)
+	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
+		discoveryFieldInterfaceType: "TCPServerInterface",
+		discoveryFieldTransport:     true,
+		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldName:          "Broken",
+		discoveryFieldReachableOn:   "discovery.example.net",
+		discoveryFieldPort:          4242,
+	}, 2)
+
+	handler.receivedAnnounce([]byte("discovery-destination"), sourceIdentity, appData)
+	if callbackCalled {
+		t.Fatal("expected insufficient-value stamp announce to be ignored")
+	}
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+	}
+	if len(discovered) != 0 {
+		t.Fatalf("expected no persisted discovered interfaces, got %v", len(discovered))
+	}
+}
+
+func mustDiscoveryAnnounceAppData(t *testing.T, payload map[any]any, targetCost int) []byte {
+	t.Helper()
+
+	packed, err := msgpack.Pack(payload)
+	if err != nil {
+		t.Fatalf("msgpack.Pack(payload) error = %v", err)
+	}
+	stamp, _, err := generateDiscoveryStamp(FullHash(packed), targetCost)
+	if err != nil {
+		t.Fatalf("generateDiscoveryStamp error = %v", err)
+	}
+
+	appData := make([]byte, 1, 1+len(packed)+len(stamp))
+	appData[0] = 0
+	appData = append(appData, packed...)
+	appData = append(appData, stamp...)
+	return appData
 }

@@ -1229,6 +1229,19 @@ loglevel = 4
 	if r.Transport().DiscoverInterfacesCallCount() == 0 {
 		t.Fatalf("expected discover interfaces hook to be invoked")
 	}
+	if r.interfaceDiscovery == nil {
+		t.Fatalf("expected interface discovery to be initialized")
+	}
+	handlers := r.Transport().AnnounceHandlers()
+	if len(handlers) != 1 {
+		t.Fatalf("expected 1 discovery announce handler, got %v", len(handlers))
+	}
+	if handlers[0].AspectFilter != discoveryAppName+".discovery.interface" {
+		t.Fatalf("AspectFilter = %q, want %q", handlers[0].AspectFilter, discoveryAppName+".discovery.interface")
+	}
+	if _, err := os.Stat(filepath.Join(configDir, "discovery", "interfaces")); err != nil {
+		t.Fatalf("expected discovery storage path to exist: %v", err)
+	}
 
 	if r.forceSharedBitrate != forcedBitrate {
 		t.Fatalf("expected force_shared_instance_bitrate=%v, got %v", forcedBitrate, r.forceSharedBitrate)

@@ -7,16 +7,46 @@ package rns
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"math/bits"
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
 
+	rcrypto "github.com/gmlewis/go-reticulum/rns/crypto"
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
+)
+
+const (
+	discoveryAppName              = "rnstransport"
+	discoveryDefaultStampValue    = 14
+	discoveryWorkblockRounds      = 20
+	discoveryStampSize            = 32
+	discoveryFlagSigned           = 0b00000001
+	discoveryFlagEncrypted        = 0b00000010
+	discoveryFieldName            = 0xFF
+	discoveryFieldTransportID     = 0xFE
+	discoveryFieldInterfaceType   = 0x00
+	discoveryFieldTransport       = 0x01
+	discoveryFieldReachableOn     = 0x02
+	discoveryFieldLatitude        = 0x03
+	discoveryFieldLongitude       = 0x04
+	discoveryFieldHeight          = 0x05
+	discoveryFieldPort            = 0x06
+	discoveryFieldIFACNetname     = 0x07
+	discoveryFieldIFACNetkey      = 0x08
+	discoveryFieldFrequency       = 0x09
+	discoveryFieldBandwidth       = 0x0A
+	discoveryFieldSpreadingFactor = 0x0B
+	discoveryFieldCodingRate      = 0x0C
+	discoveryFieldModulation      = 0x0D
+	discoveryFieldChannel         = 0x0E
 )
 
 // InterfaceAnnouncer manages the periodic broadcast of local interface availability to dynamically discoverable peers on the network.
@@ -37,6 +67,86 @@ func NewInterfaceAnnouncer(owner *Reticulum, logger *Logger) *InterfaceAnnouncer
 func (ia *InterfaceAnnouncer) Start() {
 	// Minimal implementation without LXMF dependency
 	ia.logger.Info("On-network interface discovery requires LXMF, which is not available in this Go port.")
+}
+
+// InterfaceAnnounceHandler validates and decodes interface discovery announces.
+type InterfaceAnnounceHandler struct {
+	owner         *Reticulum
+	requiredValue int
+	callback      func(map[string]any)
+}
+
+// NewInterfaceAnnounceHandler creates a discovery announce handler with Python's
+// default stamp cost when requiredValue is zero.
+func NewInterfaceAnnounceHandler(owner *Reticulum, requiredValue int, callback func(map[string]any)) *InterfaceAnnounceHandler {
+	if requiredValue <= 0 {
+		requiredValue = discoveryDefaultStampValue
+	}
+	return &InterfaceAnnounceHandler{
+		owner:         owner,
+		requiredValue: requiredValue,
+		callback:      callback,
+	}
+}
+
+// AnnounceHandler adapts the handler to the transport announce callback API.
+func (h *InterfaceAnnounceHandler) AnnounceHandler() *AnnounceHandler {
+	if h == nil {
+		return nil
+	}
+	return &AnnounceHandler{
+		AspectFilter:     discoveryAppName + ".discovery.interface",
+		ReceivedAnnounce: h.receivedAnnounce,
+	}
+}
+
+func (h *InterfaceAnnounceHandler) receivedAnnounce(destinationHash []byte, announcedIdentity *Identity, appData []byte) {
+	if h == nil || len(appData) <= discoveryStampSize+1 {
+		return
+	}
+
+	if len(h.owner.interfaceSources) > 0 {
+		if announcedIdentity == nil || !hasDiscoverySource(h.owner.interfaceSources, announcedIdentity.Hash) {
+			return
+		}
+	}
+
+	flags := appData[0]
+	payload := appData[1:]
+	if flags&discoveryFlagEncrypted != 0 {
+		if h.owner == nil || h.owner.networkIdentity == nil {
+			return
+		}
+		decrypted, err := h.owner.networkIdentity.Decrypt(payload, nil, false)
+		if err != nil || len(decrypted) == 0 {
+			return
+		}
+		payload = decrypted
+	}
+	if len(payload) <= discoveryStampSize {
+		return
+	}
+
+	stamp := payload[len(payload)-discoveryStampSize:]
+	packed := payload[:len(payload)-discoveryStampSize]
+	infohash := FullHash(packed)
+	workblock, err := discoveryStampWorkblock(infohash, discoveryWorkblockRounds)
+	if err != nil {
+		return
+	}
+	value := discoveryStampValue(workblock, stamp)
+	if !discoveryStampValid(stamp, h.requiredValue, workblock) || value < h.requiredValue {
+		return
+	}
+
+	info, err := h.decodeDiscoveryInfo(destinationHash, announcedIdentity, packed, stamp, value)
+	if err != nil || info == nil {
+		return
+	}
+
+	if h.callback != nil {
+		h.callback(info)
+	}
 }
 
 // Discovered-interface age thresholds and status values.
@@ -98,7 +208,8 @@ type DiscoveredInterface struct {
 
 // InterfaceDiscovery actively listens for and processes inbound presence announcements from remote nodes to establish automatic connections.
 type InterfaceDiscovery struct {
-	owner *Reticulum
+	owner   *Reticulum
+	handler *InterfaceAnnounceHandler
 }
 
 // NewInterfaceDiscovery initializes a discovery listener bound to the provided local Reticulum configuration.
@@ -106,6 +217,32 @@ func NewInterfaceDiscovery(owner *Reticulum) *InterfaceDiscovery {
 	return &InterfaceDiscovery{
 		owner: owner,
 	}
+}
+
+// Start initializes on-disk discovery storage and registers the announce
+// handler used for inbound interface discovery updates.
+func (id *InterfaceDiscovery) Start(requiredValue int) error {
+	if id == nil || id.owner == nil {
+		return fmt.Errorf("no Reticulum instance")
+	}
+
+	storagePath := filepath.Join(id.owner.configDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		return err
+	}
+	if id.handler != nil {
+		return nil
+	}
+
+	id.handler = NewInterfaceAnnounceHandler(id.owner, requiredValue, func(info map[string]any) {
+		if err := id.persistDiscoveredInterface(info); err != nil && id.owner != nil && id.owner.logger != nil {
+			id.owner.logger.Error("failed to persist discovered interface: %v", err)
+		}
+	})
+	if id.owner.transport != nil {
+		id.owner.transport.RegisterAnnounceHandler(id.handler.AnnounceHandler())
+	}
+	return nil
 }
 
 func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) error {
@@ -373,4 +510,270 @@ func cloneStringAnyMap(m map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+func (h *InterfaceAnnounceHandler) decodeDiscoveryInfo(destinationHash []byte, announcedIdentity *Identity, packed, stamp []byte, value int) (map[string]any, error) {
+	unpacked, err := msgpack.Unpack(packed)
+	if err != nil {
+		return nil, err
+	}
+	m := asAnyMap(unpacked)
+	if m == nil {
+		return nil, fmt.Errorf("unexpected discovery announce type %T", unpacked)
+	}
+
+	interfaceType := asString(lookupDiscoveryValue(m, discoveryFieldInterfaceType))
+	if interfaceType == "" {
+		return nil, fmt.Errorf("missing interface type")
+	}
+	transportID := asBytes(lookupDiscoveryValue(m, discoveryFieldTransportID))
+	if len(transportID) == 0 {
+		return nil, fmt.Errorf("missing transport ID")
+	}
+	name := asString(lookupDiscoveryValue(m, discoveryFieldName))
+	if name == "" {
+		name = fmt.Sprintf("Discovered %v", interfaceType)
+	}
+
+	info := map[string]any{
+		"type":         interfaceType,
+		"transport":    asBool(lookupDiscoveryValue(m, discoveryFieldTransport)),
+		"name":         name,
+		"received":     float64(time.Now().UnixNano()) / 1e9,
+		"stamp":        append([]byte(nil), stamp...),
+		"value":        value,
+		"transport_id": hex.EncodeToString(transportID),
+		"hops":         PathfinderM,
+	}
+	if h.owner != nil && h.owner.transport != nil {
+		info["hops"] = h.owner.transport.HopsTo(destinationHash)
+	}
+	if announcedIdentity != nil {
+		info["network_id"] = hex.EncodeToString(announcedIdentity.Hash)
+	}
+	if v, ok := lookupDiscovery(m, discoveryFieldLatitude); ok && v != nil {
+		info["latitude"] = asFloat64(v)
+	}
+	if v, ok := lookupDiscovery(m, discoveryFieldLongitude); ok && v != nil {
+		info["longitude"] = asFloat64(v)
+	}
+	if v, ok := lookupDiscovery(m, discoveryFieldHeight); ok && v != nil {
+		info["height"] = asFloat64(v)
+	}
+
+	if reachableOn := asString(lookupDiscoveryValue(m, discoveryFieldReachableOn)); reachableOn != "" {
+		if !isReachableOnValue(reachableOn) {
+			return nil, fmt.Errorf("invalid reachable_on value")
+		}
+		info["reachable_on"] = reachableOn
+	}
+	if ifacNetname := asString(lookupDiscoveryValue(m, discoveryFieldIFACNetname)); ifacNetname != "" {
+		info["ifac_netname"] = ifacNetname
+	}
+	if ifacNetkey := asString(lookupDiscoveryValue(m, discoveryFieldIFACNetkey)); ifacNetkey != "" {
+		info["ifac_netkey"] = ifacNetkey
+	}
+	if v, ok := lookupDiscovery(m, discoveryFieldPort); ok && v != nil {
+		info["port"] = asInt(v)
+	}
+	if v, ok := lookupDiscovery(m, discoveryFieldFrequency); ok && v != nil {
+		info["frequency"] = asInt(v)
+	}
+	if v, ok := lookupDiscovery(m, discoveryFieldBandwidth); ok && v != nil {
+		info["bandwidth"] = asInt(v)
+	}
+	if v, ok := lookupDiscovery(m, discoveryFieldSpreadingFactor); ok && v != nil {
+		info["sf"] = asInt(v)
+	}
+	if v, ok := lookupDiscovery(m, discoveryFieldCodingRate); ok && v != nil {
+		info["cr"] = asInt(v)
+	}
+	if modulation := asString(lookupDiscoveryValue(m, discoveryFieldModulation)); modulation != "" {
+		info["modulation"] = modulation
+	}
+	if v, ok := lookupDiscovery(m, discoveryFieldChannel); ok && v != nil {
+		info["channel"] = asInt(v)
+	}
+
+	info["config_entry"] = discoveryConfigEntry(info)
+	info["discovery_hash"] = FullHash([]byte(info["transport_id"].(string) + name))
+	return info, nil
+}
+
+func discoveryConfigEntry(info map[string]any) string {
+	interfaceType := asString(info["type"])
+	name := asString(info["name"])
+	transportID := asString(info["transport_id"])
+	reachableOn := asString(info["reachable_on"])
+	ifacNetname := asString(info["ifac_netname"])
+	ifacNetkey := asString(info["ifac_netkey"])
+	cfgNetname := ""
+	if ifacNetname != "" {
+		cfgNetname = "\n  network_name = " + ifacNetname
+	}
+	cfgNetkey := ""
+	if ifacNetkey != "" {
+		cfgNetkey = "\n  passphrase = " + ifacNetkey
+	}
+	cfgIdentity := ""
+	if transportID != "" {
+		cfgIdentity = "\n  transport_identity = " + transportID
+	}
+
+	switch interfaceType {
+	case "BackboneInterface", "TCPServerInterface":
+		connectionType := "BackboneInterface"
+		remoteKey := "remote"
+		if runtime.GOOS == "windows" {
+			connectionType = "TCPClientInterface"
+			remoteKey = "target_host"
+		}
+		return fmt.Sprintf("[[%v]]\n  type = %v\n  enabled = yes\n  %v = %v\n  target_port = %v%v%v%v",
+			name, connectionType, remoteKey, reachableOn, asInt(info["port"]), cfgIdentity, cfgNetname, cfgNetkey)
+	case "I2PInterface":
+		return fmt.Sprintf("[[%v]]\n  type = I2PInterface\n  enabled = yes\n  peers = %v%v%v%v",
+			name, reachableOn, cfgIdentity, cfgNetname, cfgNetkey)
+	case "RNodeInterface":
+		return fmt.Sprintf("[[%v]]\n  type = RNodeInterface\n  enabled = yes\n  port = \n  frequency = %v\n  bandwidth = %v\n  spreadingfactor = %v\n  codingrate = %v\n  txpower = %v%v",
+			name, asInt(info["frequency"]), asInt(info["bandwidth"]), asInt(info["sf"]), asInt(info["cr"]), cfgNetname, cfgNetkey)
+	case "WeaveInterface":
+		return fmt.Sprintf("[[%v]]\n  type = WeaveInterface\n  enabled = yes\n  port = %v%v",
+			name, cfgNetname, cfgNetkey)
+	case "KISSInterface":
+		return fmt.Sprintf("[[%v]]\n  type = KISSInterface\n  enabled = yes\n  port = \n  # Frequency: %v\n  # Bandwidth: %v\n  # Modulation: %v%v%v%v",
+			name, asInt(info["frequency"]), asInt(info["bandwidth"]), asString(info["modulation"]), cfgIdentity, cfgNetname, cfgNetkey)
+	default:
+		return ""
+	}
+}
+
+func lookupDiscoveryValue(m map[any]any, key int) any {
+	v, _ := lookupDiscovery(m, key)
+	return v
+}
+
+func lookupDiscovery(m map[any]any, key int) (any, bool) {
+	if m == nil {
+		return nil, false
+	}
+	for mk, mv := range m {
+		switch k := mk.(type) {
+		case int:
+			if k == key {
+				return mv, true
+			}
+		case int8:
+			if int(k) == key {
+				return mv, true
+			}
+		case int16:
+			if int(k) == key {
+				return mv, true
+			}
+		case int32:
+			if int(k) == key {
+				return mv, true
+			}
+		case int64:
+			if int(k) == key {
+				return mv, true
+			}
+		case uint8:
+			if int(k) == key {
+				return mv, true
+			}
+		case uint16:
+			if int(k) == key {
+				return mv, true
+			}
+		case uint32:
+			if int(k) == key {
+				return mv, true
+			}
+		case uint64:
+			if int(k) == key {
+				return mv, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func discoveryStampWorkblock(material []byte, expandRounds int) ([]byte, error) {
+	if len(material) == 0 {
+		return nil, fmt.Errorf("stamp workblock material is required")
+	}
+	if expandRounds <= 0 {
+		expandRounds = discoveryWorkblockRounds
+	}
+
+	workblock := make([]byte, 0, expandRounds*256)
+	for n := 0; n < expandRounds; n++ {
+		nPacked, err := msgpack.Pack(int64(n))
+		if err != nil {
+			return nil, fmt.Errorf("pack round value %v: %w", n, err)
+		}
+		saltMaterial := make([]byte, 0, len(material)+len(nPacked))
+		saltMaterial = append(saltMaterial, material...)
+		saltMaterial = append(saltMaterial, nPacked...)
+		salt := FullHash(saltMaterial)
+
+		part, err := rcrypto.HKDF(256, material, salt, nil)
+		if err != nil {
+			return nil, fmt.Errorf("derive workblock round %v: %w", n, err)
+		}
+		workblock = append(workblock, part...)
+	}
+
+	return workblock, nil
+}
+
+func discoveryStampValue(workblock, stamp []byte) int {
+	material := make([]byte, 0, len(workblock)+len(stamp))
+	material = append(material, workblock...)
+	material = append(material, stamp...)
+	h := FullHash(material)
+	return leadingZeroBits(h)
+}
+
+func discoveryStampValid(stamp []byte, targetCost int, workblock []byte) bool {
+	if targetCost <= 0 {
+		return true
+	}
+	if targetCost > 256 {
+		return false
+	}
+	return discoveryStampValue(workblock, stamp) >= targetCost
+}
+
+func generateDiscoveryStamp(material []byte, targetCost int) ([]byte, int, error) {
+	if targetCost <= 0 {
+		return nil, 0, nil
+	}
+	workblock, err := discoveryStampWorkblock(material, discoveryWorkblockRounds)
+	if err != nil {
+		return nil, 0, err
+	}
+	for {
+		candidate := make([]byte, discoveryStampSize)
+		if _, err := rand.Read(candidate); err != nil {
+			return nil, 0, err
+		}
+		if discoveryStampValid(candidate, targetCost, workblock) {
+			return candidate, discoveryStampValue(workblock, candidate), nil
+		}
+	}
+}
+
+func leadingZeroBits(data []byte) int {
+	count := 0
+	for _, b := range data {
+		if b == 0 {
+			count += 8
+			continue
+		}
+		count += bits.LeadingZeros8(uint8(b))
+		break
+	}
+	return count
 }
