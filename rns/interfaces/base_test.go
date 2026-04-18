@@ -8,6 +8,7 @@ package interfaces
 import (
 	"fmt"
 	"testing"
+	"time"
 )
 
 func TestBaseInterfaceIFACRoundTrip(t *testing.T) {
@@ -72,5 +73,57 @@ func TestBaseInterfaceIFACDropsFlaggedWhenDisabled(t *testing.T) {
 	flagged := []byte{0x80, 0x01, 0x02, 0x03}
 	if _, ok := bi.ApplyIFACInbound(flagged); ok {
 		t.Fatalf("expected inbound drop when IFAC flag is set on non-IFAC interface")
+	}
+}
+
+func TestBaseInterfaceDiscoveryRoundTrip(t *testing.T) {
+	bi := NewBaseInterface("discovery-test", ModeFull, 1000)
+
+	lat := 12.34
+	lon := 56.78
+	height := 90.12
+	freq := 123456789
+	bw := 250000
+	wantLat := lat
+	wantFreq := freq
+	cfg := DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  6 * time.Hour,
+		StampValue:        14,
+		Name:              "Discovery Node",
+		Encrypt:           true,
+		ReachableOn:       "example.net",
+		PublishIFAC:       true,
+		Latitude:          &lat,
+		Longitude:         &lon,
+		Height:            &height,
+		Frequency:         &freq,
+		Bandwidth:         &bw,
+		Modulation:        "lora",
+	}
+
+	bi.SetDiscoveryConfig(cfg)
+	stored := bi.DiscoveryConfig()
+	if !stored.SupportsDiscovery || !stored.Discoverable {
+		t.Fatalf("unexpected discovery flags: %+v", stored)
+	}
+	if stored.AnnounceInterval != 6*time.Hour || stored.StampValue != 14 || stored.Name != "Discovery Node" {
+		t.Fatalf("unexpected discovery config stored: %+v", stored)
+	}
+	if stored.ReachableOn != "example.net" || !stored.PublishIFAC || !stored.Encrypt || stored.Modulation != "lora" {
+		t.Fatalf("unexpected discovery metadata stored: %+v", stored)
+	}
+	if stored.Latitude == nil || *stored.Latitude != lat || stored.Longitude == nil || *stored.Longitude != lon {
+		t.Fatalf("unexpected discovery coordinates: %+v", stored)
+	}
+	if stored.Height == nil || *stored.Height != height || stored.Frequency == nil || *stored.Frequency != freq || stored.Bandwidth == nil || *stored.Bandwidth != bw {
+		t.Fatalf("unexpected discovery radio values: %+v", stored)
+	}
+
+	*cfg.Latitude = 0
+	*cfg.Frequency = 0
+	if *stored.Latitude != wantLat || *stored.Frequency != wantFreq {
+		t.Fatalf("stored discovery config should not alias caller pointers: %+v", stored)
 	}
 }

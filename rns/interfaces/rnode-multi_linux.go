@@ -182,6 +182,16 @@ func (r *RNodeMultiInterface) SetBitrate(bitrate int) {
 	}
 }
 
+// SetMode propagates a routing-mode override to all child interfaces that
+// support it.
+func (r *RNodeMultiInterface) SetMode(mode int) {
+	for _, child := range r.children {
+		if setter, ok := child.(interface{ SetMode(int) }); ok {
+			setter.SetMode(mode)
+		}
+	}
+}
+
 // SetIFACConfig applies Interface Authentication Codes (IFAC) configuration to
 // all child interfaces that support it.
 func (r *RNodeMultiInterface) SetIFACConfig(cfg IFACConfig) {
@@ -190,4 +200,26 @@ func (r *RNodeMultiInterface) SetIFACConfig(cfg IFACConfig) {
 			setter.SetIFACConfig(cfg)
 		}
 	}
+}
+
+// SetDiscoveryConfig applies discovery metadata to all child interfaces that
+// support it.
+func (r *RNodeMultiInterface) SetDiscoveryConfig(cfg DiscoveryConfig) {
+	for _, child := range r.children {
+		if setter, ok := child.(interface{ SetDiscoveryConfig(DiscoveryConfig) }); ok {
+			setter.SetDiscoveryConfig(cfg)
+		}
+	}
+}
+
+// DiscoveryConfig returns the discovery metadata of the first child interface,
+// or a zero-value config when no children exist.
+func (r *RNodeMultiInterface) DiscoveryConfig() DiscoveryConfig {
+	if len(r.children) == 0 {
+		return DiscoveryConfig{}
+	}
+	if getter, ok := r.children[0].(interface{ DiscoveryConfig() DiscoveryConfig }); ok {
+		return getter.DiscoveryConfig()
+	}
+	return DiscoveryConfig{}
 }

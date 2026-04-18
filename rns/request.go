@@ -37,7 +37,10 @@ type RequestReceipt struct {
 	PacketReceipt *PacketReceipt
 	Resource      *Resource
 
-	Response    any
+	Response any
+	// Metadata carries optional response metadata, such as resource metadata
+	// attached by the remote peer.
+	Metadata    any
 	Status      int
 	SentAt      time.Time
 	StartedAt   time.Time
@@ -66,11 +69,11 @@ func (rr *RequestReceipt) GetStatus() int {
 }
 
 func (rr *RequestReceipt) responseReceived(response, metadata any) {
-	// TODO: Why is metadata unused?
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
 
 	rr.Response = response
+	rr.Metadata = metadata
 	rr.Status = RequestReady
 	rr.ConcludedAt = time.Now()
 

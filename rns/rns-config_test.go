@@ -9,7 +9,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/gmlewis/go-reticulum/rns/interfaces"
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
@@ -231,6 +233,73 @@ loglevel = 4
 	l := mustTestNewLink(t, r.Transport(), nil)
 	if got := l.signallingBytes(); len(got) != 0 {
 		t.Fatalf("expected signalling bytes omitted when link_mtu_discovery disabled, got len=%v", len(got))
+	}
+}
+
+func TestParseUseImplicitProof(t *testing.T) {
+	t.Parallel()
+
+	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	config := `[reticulum]
+share_instance = No
+use_implicit_proof = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	if r.useImplicitProof {
+		t.Fatal("expected use_implicit_proof = false from config")
+	}
+	if ts.UseImplicitProof() {
+		t.Fatal("expected transport to receive use_implicit_proof = false from config")
+	}
+}
+
+func TestParsePanicOnInterfaceError(t *testing.T) {
+	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	config := `[reticulum]
+share_instance = No
+panic_on_interface_error = Yes
+
+[logging]
+loglevel = 4
+
+[interfaces]
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	interfaces.SetPanicOnInterfaceErrorEnabled(false)
+	t.Cleanup(func() {
+		interfaces.SetPanicOnInterfaceErrorEnabled(false)
+	})
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	if !r.panicOnIfaceError {
+		t.Fatal("expected panic_on_interface_error = true from config")
+	}
+	if !interfaces.PanicOnInterfaceErrorEnabled() {
+		t.Fatal("expected interfaces package to receive panic_on_interface_error = true from config")
 	}
 }
 
@@ -1118,8 +1187,6 @@ loglevel = 4
 }
 
 func TestReticulumOptionParityForceBitratePanicAndDiscover(t *testing.T) {
-	t.Parallel()
-
 	// origPanic := panicOnInterfaceErrorEnabled()
 	// defer setPanicOnInterfaceErrorEnabled(origPanic)
 
@@ -1221,6 +1288,177 @@ loglevel = 4
 	}
 	if len(r.interfaceSources) != 2 {
 		t.Fatalf("expected 2 unique interface_discovery_sources, got %v", len(r.interfaceSources))
+	}
+}
+
+func TestParseInterfaceMode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		ifaceType string
+		props     map[string]string
+		want      int
+	}{
+		{
+			name:      "interface_mode alias wins",
+			ifaceType: "UDPInterface",
+			props:     map[string]string{"interface_mode": "ap"},
+			want:      interfaces.ModeAccessPoint,
+		},
+		{
+			name:      "mode alias applies on non tcp-interface selector",
+			ifaceType: "SerialInterface",
+			props:     map[string]string{"mode": "gw"},
+			want:      interfaces.ModeGateway,
+		},
+		{
+			name:      "tcp interface client mode is not treated as interface mode",
+			ifaceType: "TCPInterface",
+			props:     map[string]string{"mode": "client"},
+			want:      interfaces.ModeFull,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			sub := &ConfigSection{Properties: tt.props}
+			if got := parseInterfaceMode(sub, tt.ifaceType); got != tt.want {
+				t.Fatalf("parseInterfaceMode(%v) = %v, want %v", tt.ifaceType, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseDiscoveryConfig(t *testing.T) {
+	t.Parallel()
+
+	sub := &ConfigSection{Properties: map[string]string{
+		"discoverable":          "yes",
+		"announce_interval":     "1",
+		"discovery_stamp_value": "11",
+		"discovery_name":        "Discovery Node",
+		"discovery_encrypt":     "yes",
+		"reachable_on":          "discovery.example.net",
+		"publish_ifac":          "yes",
+		"latitude":              "12.34",
+		"longitude":             "56.78",
+		"height":                "90.12",
+		"discovery_frequency":   "123456789",
+		"discovery_bandwidth":   "250000",
+		"discovery_modulation":  "lora",
+	}}
+
+	cfg, mode := parseDiscoveryConfig(sub, "TCPServerInterface", interfaces.ModePointToPoint)
+	if !cfg.SupportsDiscovery || !cfg.Discoverable {
+		t.Fatalf("unexpected discovery flags: %+v", cfg)
+	}
+	if mode != interfaces.ModeGateway {
+		t.Fatalf("discoverable TCP server should promote mode to gateway, got %v", mode)
+	}
+	if cfg.AnnounceInterval != 5*time.Minute {
+		t.Fatalf("announce interval = %v, want %v", cfg.AnnounceInterval, 5*time.Minute)
+	}
+	if cfg.StampValue != 11 || cfg.Name != "Discovery Node" || !cfg.Encrypt || cfg.ReachableOn != "discovery.example.net" || !cfg.PublishIFAC {
+		t.Fatalf("unexpected discovery config values: %+v", cfg)
+	}
+	if cfg.Latitude == nil || *cfg.Latitude != 12.34 || cfg.Longitude == nil || *cfg.Longitude != 56.78 || cfg.Height == nil || *cfg.Height != 90.12 {
+		t.Fatalf("unexpected discovery coordinates: %+v", cfg)
+	}
+	if cfg.Frequency == nil || *cfg.Frequency != 123456789 || cfg.Bandwidth == nil || *cfg.Bandwidth != 250000 || cfg.Modulation != "lora" {
+		t.Fatalf("unexpected discovery radio config: %+v", cfg)
+	}
+}
+
+func TestParseDiscoveryConfigPromotesRNodeToAccessPoint(t *testing.T) {
+	t.Parallel()
+
+	cfg, mode := parseDiscoveryConfig(&ConfigSection{Properties: map[string]string{
+		"discoverable": "yes",
+	}}, "RNodeInterface", interfaces.ModeFull)
+	if !cfg.Discoverable {
+		t.Fatalf("expected discoverable RNode config")
+	}
+	if mode != interfaces.ModeAccessPoint {
+		t.Fatalf("discoverable RNode should promote mode to access point, got %v", mode)
+	}
+	if cfg.AnnounceInterval != 6*time.Hour {
+		t.Fatalf("default announce interval = %v, want %v", cfg.AnnounceInterval, 6*time.Hour)
+	}
+}
+
+func TestReticulumInterfaceDiscoveryConfig(t *testing.T) {
+	t.Parallel()
+
+	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	port := reserveTCPPort(t)
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[Discovery TCP]]
+type = TCPServerInterface
+listen_ip = 127.0.0.1
+listen_port = ` + strconv.Itoa(port) + `
+interface_mode = ptp
+discoverable = Yes
+announce_interval = 1
+discovery_stamp_value = 9
+discovery_name = Test Discovery Interface
+discovery_encrypt = Yes
+reachable_on = discovery.example.net
+publish_ifac = Yes
+latitude = 12.34
+longitude = 56.78
+height = 90.12
+discovery_frequency = 123456789
+discovery_bandwidth = 250000
+discovery_modulation = lora
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	ifaces := ts.GetInterfaces()
+	if len(ifaces) != 1 {
+		t.Fatalf("expected 1 interface, got %v", len(ifaces))
+	}
+
+	if got := ifaces[0].Mode(); got != interfaces.ModeGateway {
+		t.Fatalf("Mode() = %v, want %v", got, interfaces.ModeGateway)
+	}
+
+	getter, ok := ifaces[0].(interface {
+		DiscoveryConfig() interfaces.DiscoveryConfig
+	})
+	if !ok {
+		t.Fatalf("interface %T does not expose DiscoveryConfig()", ifaces[0])
+	}
+	cfg := getter.DiscoveryConfig()
+	if !cfg.SupportsDiscovery || !cfg.Discoverable {
+		t.Fatalf("unexpected discovery flags: %+v", cfg)
+	}
+	if cfg.AnnounceInterval != 5*time.Minute || cfg.StampValue != 9 || cfg.Name != "Test Discovery Interface" {
+		t.Fatalf("unexpected discovery timing/name config: %+v", cfg)
+	}
+	if !cfg.Encrypt || cfg.ReachableOn != "discovery.example.net" || !cfg.PublishIFAC || cfg.Modulation != "lora" {
+		t.Fatalf("unexpected discovery metadata: %+v", cfg)
+	}
+	if cfg.Latitude == nil || *cfg.Latitude != 12.34 || cfg.Longitude == nil || *cfg.Longitude != 56.78 || cfg.Height == nil || *cfg.Height != 90.12 {
+		t.Fatalf("unexpected discovery coordinates: %+v", cfg)
+	}
+	if cfg.Frequency == nil || *cfg.Frequency != 123456789 || cfg.Bandwidth == nil || *cfg.Bandwidth != 250000 {
+		t.Fatalf("unexpected discovery radio config: %+v", cfg)
 	}
 }
 

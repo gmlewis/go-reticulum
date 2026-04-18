@@ -24,6 +24,25 @@ type IFACConfig struct {
 	Size    int
 }
 
+// DiscoveryConfig captures the per-interface metadata and policy used by
+// Reticulum's on-network interface discovery mechanism.
+type DiscoveryConfig struct {
+	SupportsDiscovery bool
+	Discoverable      bool
+	AnnounceInterval  time.Duration
+	StampValue        int
+	Name              string
+	Encrypt           bool
+	ReachableOn       string
+	PublishIFAC       bool
+	Latitude          *float64
+	Longitude         *float64
+	Height            *float64
+	Frequency         *int
+	Bandwidth         *int
+	Modulation        string
+}
+
 // InboundHandler rigorously defines the callback signature invoked universally across all interface types whenever a valid payload frame is successfully reassembled.
 // It acts as the critical bridge, injecting raw network bytes back into the core routing engine for cryptographic validation and dispatch.
 type InboundHandler func(data []byte, iface Interface)
@@ -46,9 +65,12 @@ type BaseInterface struct {
 	txBytes uint64
 	ifacMu  sync.RWMutex
 
-	ifacConfig IFACConfig
-	ifacKey    []byte
-	ifacSigner *rnscrypto.Ed25519PrivateKey
+	discoveryMu sync.RWMutex
+
+	ifacConfig      IFACConfig
+	ifacKey         []byte
+	ifacSigner      *rnscrypto.Ed25519PrivateKey
+	discoveryConfig DiscoveryConfig
 }
 
 // NewBaseInterface allocates and initializes a BaseInterface with the given
@@ -72,6 +94,9 @@ func (bi *BaseInterface) Name() string { return bi.name }
 // It indicates whether the interface can participate in bidirectional or
 // unidirectional routing topologies.
 func (bi *BaseInterface) Mode() int { return bi.mode }
+
+// SetMode updates the interface's operational routing mode.
+func (bi *BaseInterface) SetMode(mode int) { bi.mode = mode }
 
 // Bitrate returns the estimated transmission capacity of the interface in bits
 // per second. The routing engine uses this metric to calculate transit costs and
@@ -166,6 +191,47 @@ func (bi *BaseInterface) IFACConfig() IFACConfig {
 	bi.ifacMu.RLock()
 	defer bi.ifacMu.RUnlock()
 	return bi.ifacConfig
+}
+
+func cloneOptionalFloat64(v *float64) *float64 {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
+}
+
+func cloneOptionalInt(v *int) *int {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
+}
+
+func cloneDiscoveryConfig(cfg DiscoveryConfig) DiscoveryConfig {
+	cfg.Latitude = cloneOptionalFloat64(cfg.Latitude)
+	cfg.Longitude = cloneOptionalFloat64(cfg.Longitude)
+	cfg.Height = cloneOptionalFloat64(cfg.Height)
+	cfg.Frequency = cloneOptionalInt(cfg.Frequency)
+	cfg.Bandwidth = cloneOptionalInt(cfg.Bandwidth)
+	return cfg
+}
+
+// SetDiscoveryConfig stores the interface discovery metadata used by the
+// discovery announcer and listener subsystems.
+func (bi *BaseInterface) SetDiscoveryConfig(cfg DiscoveryConfig) {
+	bi.discoveryMu.Lock()
+	defer bi.discoveryMu.Unlock()
+	bi.discoveryConfig = cloneDiscoveryConfig(cfg)
+}
+
+// DiscoveryConfig returns a copy of the configured interface discovery
+// metadata.
+func (bi *BaseInterface) DiscoveryConfig() DiscoveryConfig {
+	bi.discoveryMu.RLock()
+	defer bi.discoveryMu.RUnlock()
+	return cloneDiscoveryConfig(bi.discoveryConfig)
 }
 
 // ApplyIFACInbound processes incoming raw bytes and validates cryptographic

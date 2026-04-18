@@ -240,15 +240,7 @@ func (p *Packet) Pack() error {
 
 		if shouldEncrypt {
 			var err error
-			// If destination is a Link, use Link.Encrypt
-			if l, ok := p.Destination.(*Link); ok {
-				p.Ciphertext, err = l.Encrypt(p.Data)
-			} else if d, ok := p.Destination.(*Destination); ok {
-				p.Ciphertext, err = d.Encrypt(p.Data)
-			} else {
-				return errors.New("unsupported destination type for encryption")
-			}
-
+			p.Ciphertext, err = p.Destination.Encrypt(p.Data)
 			if err != nil {
 				return err
 			}

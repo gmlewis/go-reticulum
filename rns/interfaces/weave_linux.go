@@ -91,12 +91,36 @@ func (w *WeaveInterface) SetBitrate(bitrate int) {
 	}
 }
 
+// SetMode propagates an interface mode override to the wrapped serial
+// interface when it supports that operation.
+func (w *WeaveInterface) SetMode(mode int) {
+	if setter, ok := w.inner.(interface{ SetMode(int) }); ok {
+		setter.SetMode(mode)
+	}
+}
+
 // SetIFACConfig propagates IFAC configuration to the wrapped serial interface
 // when it supports that operation.
 func (w *WeaveInterface) SetIFACConfig(cfg IFACConfig) {
 	if setter, ok := w.inner.(interface{ SetIFACConfig(IFACConfig) }); ok {
 		setter.SetIFACConfig(cfg)
 	}
+}
+
+// SetDiscoveryConfig propagates discovery metadata to the wrapped serial
+// interface when supported.
+func (w *WeaveInterface) SetDiscoveryConfig(cfg DiscoveryConfig) {
+	if setter, ok := w.inner.(interface{ SetDiscoveryConfig(DiscoveryConfig) }); ok {
+		setter.SetDiscoveryConfig(cfg)
+	}
+}
+
+// DiscoveryConfig returns the wrapped discovery metadata when available.
+func (w *WeaveInterface) DiscoveryConfig() DiscoveryConfig {
+	if getter, ok := w.inner.(interface{ DiscoveryConfig() DiscoveryConfig }); ok {
+		return getter.DiscoveryConfig()
+	}
+	return DiscoveryConfig{}
 }
 
 func validWeavePort(port string) bool {

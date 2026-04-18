@@ -196,6 +196,49 @@ func TestUDPInterfaceParity(t *testing.T) {
 	}
 }
 
+func TestInterfaceErrorPolicyUDPReadLoop(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+
+	panicCh := make(chan string, 1)
+	restoreHook := setInterfacePanicHookForTest(func(msg string) {
+		select {
+		case panicCh <- msg:
+		default:
+		}
+	})
+	defer restoreHook()
+
+	SetPanicOnInterfaceErrorEnabled(true)
+	defer SetPanicOnInterfaceErrorEnabled(false)
+
+	listenPort, forwardPort := allocateUDPPortPair(t)
+	iface := mustTestNewUDPInterface(t, "policy_udp", "127.0.0.1", listenPort, "127.0.0.1", forwardPort, nil)
+	t.Cleanup(func() {
+		if err := iface.Detach(); err != nil && !strings.Contains(err.Error(), "closed network connection") {
+			t.Logf("failed to detach UDP interface: %v", err)
+		}
+	})
+
+	iface.mu.Lock()
+	conn := iface.conn
+	iface.mu.Unlock()
+	if conn == nil {
+		t.Fatal("expected UDP interface connection")
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatalf("failed to close UDP socket: %v", err)
+	}
+
+	select {
+	case msg := <-panicCh:
+		if !strings.Contains(msg, "udp interface") {
+			t.Fatalf("unexpected panic hook message: %q", msg)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for UDP read-loop policy hook")
+	}
+}
+
 const pythonTCPEchoScript = `
 import RNS.Interfaces.TCPInterface as TCPInterface
 import time

@@ -1530,14 +1530,14 @@ func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 	remoteDest := mustTestNewDestination(t, nil, remoteID, DestinationOut, DestinationSingle, "multihop", "target")
 
 	nextHop := bytes.Repeat([]byte{0x7A}, TruncatedHashLength/8)
-	ts.GetMutex().Lock()
+	ts.mu.Lock()
 	ts.pathTable[string(remoteDest.Hash)] = &PathEntry{
 		Interface: outIface,
 		Hops:      3,
 		NextHop:   nextHop,
 		Expires:   time.Now().Add(time.Hour),
 	}
-	ts.GetMutex().Unlock()
+	ts.mu.Unlock()
 
 	sinkConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: sinkPort})
 	if err != nil {

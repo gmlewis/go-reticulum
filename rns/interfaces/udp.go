@@ -78,6 +78,9 @@ func (ui *UDPInterface) listenLoop() {
 	for atomic.LoadInt32(&ui.running) == 1 {
 		n, _, err := ui.conn.ReadFromUDP(buf)
 		if err != nil {
+			if atomic.LoadInt32(&ui.running) == 1 && !ui.IsDetached() {
+				panicOnInterfaceErrorf("udp interface %v read failed: %v", ui.name, err)
+			}
 			break
 		}
 

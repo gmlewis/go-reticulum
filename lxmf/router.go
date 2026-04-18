@@ -711,20 +711,6 @@ func parseLimitBytes(values []any, index int) int {
 	}
 }
 
-// TODO: Find out where this is needed or delete it.
-// func (r *Router) resolvePeerHash(data []byte, linkID []byte, remoteIdentity *rns.Identity) []byte {
-// 	if len(data) > 0 {
-// 		return append([]byte{}, data...)
-// 	}
-// 	if remoteIdentity != nil {
-// 		return append([]byte{}, remoteIdentity.Hash...)
-// 	}
-// 	if len(linkID) > 0 {
-// 		return append([]byte{}, linkID...)
-// 	}
-// 	return nil
-// }
-
 // RegisterDeliveryIdentity sets up the primary identity and associated destination for receiving direct LXMF messages.
 func (r *Router) RegisterDeliveryIdentity(identity *rns.Identity, displayName string, stampCost *int) (*rns.Destination, error) {
 	r.mu.Lock()

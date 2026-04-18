@@ -65,7 +65,6 @@ func (rt *runtimeT) run() {
 			logger.Warning("Could not close Reticulum properly: %v", err)
 		}
 	}()
-	// TODO: finish this
 }
 
 func main() {

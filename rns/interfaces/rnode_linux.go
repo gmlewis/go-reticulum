@@ -143,10 +143,35 @@ func (r *RNodeInterface) SetBitrate(bitrate int) {
 	}
 }
 
+// SetMode propagates an interface mode override to the wrapped interface when
+// supported.
+func (r *RNodeInterface) SetMode(mode int) {
+	if setter, ok := r.inner.(interface{ SetMode(int) }); ok {
+		setter.SetMode(mode)
+	}
+}
+
 // SetIFACConfig applies Interface Authentication Codes (IFAC) configuration to
 // the wrapped interface when supported.
 func (r *RNodeInterface) SetIFACConfig(cfg IFACConfig) {
 	if setter, ok := r.inner.(interface{ SetIFACConfig(IFACConfig) }); ok {
 		setter.SetIFACConfig(cfg)
 	}
+}
+
+// SetDiscoveryConfig applies interface discovery metadata to the wrapped
+// interface when supported.
+func (r *RNodeInterface) SetDiscoveryConfig(cfg DiscoveryConfig) {
+	if setter, ok := r.inner.(interface{ SetDiscoveryConfig(DiscoveryConfig) }); ok {
+		setter.SetDiscoveryConfig(cfg)
+	}
+}
+
+// DiscoveryConfig returns the wrapped interface discovery metadata when
+// available.
+func (r *RNodeInterface) DiscoveryConfig() DiscoveryConfig {
+	if getter, ok := r.inner.(interface{ DiscoveryConfig() DiscoveryConfig }); ok {
+		return getter.DiscoveryConfig()
+	}
+	return DiscoveryConfig{}
 }

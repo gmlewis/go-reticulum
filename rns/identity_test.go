@@ -10,6 +10,16 @@ import (
 	"testing"
 )
 
+type proofCaptureTransport struct {
+	*TransportSystem
+	lastPacket *Packet
+}
+
+func (ts *proofCaptureTransport) Outbound(packet *Packet) error {
+	ts.lastPacket = packet
+	return nil
+}
+
 func TestIdentity(t *testing.T) {
 	id := mustTestNewIdentity(t, true)
 
@@ -134,5 +144,54 @@ func TestFromBytes(t *testing.T) {
 				t.Errorf("FromBytes() public key mismatch")
 			}
 		})
+	}
+}
+
+func TestIdentityProveExplicit(t *testing.T) {
+	t.Parallel()
+
+	id := mustTestNewIdentity(t, true)
+	ts := &proofCaptureTransport{TransportSystem: NewTransportSystem(nil)}
+	ts.SetUseImplicitProof(false)
+
+	packetHash := bytes.Repeat([]byte{0x42}, 32)
+	packet := &Packet{
+		PacketHash: packetHash,
+		transport:  ts,
+	}
+
+	id.Prove(packet, nil)
+
+	if ts.lastPacket == nil {
+		t.Fatal("expected proof packet to be sent")
+	}
+	signature := id.sigPrv.Sign(packetHash)
+	want := append(append([]byte{}, packetHash...), signature...)
+	if !bytes.Equal(ts.lastPacket.Data, want) {
+		t.Fatalf("explicit proof payload mismatch: got %x want %x", ts.lastPacket.Data, want)
+	}
+}
+
+func TestIdentityProveImplicit(t *testing.T) {
+	t.Parallel()
+
+	id := mustTestNewIdentity(t, true)
+	ts := &proofCaptureTransport{TransportSystem: NewTransportSystem(nil)}
+	ts.SetUseImplicitProof(true)
+
+	packetHash := bytes.Repeat([]byte{0x24}, 32)
+	packet := &Packet{
+		PacketHash: packetHash,
+		transport:  ts,
+	}
+
+	id.Prove(packet, nil)
+
+	if ts.lastPacket == nil {
+		t.Fatal("expected proof packet to be sent")
+	}
+	want := id.sigPrv.Sign(packetHash)
+	if !bytes.Equal(ts.lastPacket.Data, want) {
+		t.Fatalf("implicit proof payload mismatch: got %x want %x", ts.lastPacket.Data, want)
 	}
 }

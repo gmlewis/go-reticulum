@@ -9,6 +9,8 @@ import (
 	"bytes"
 	"testing"
 	"time"
+
+	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
 func TestRequestResponse(t *testing.T) {
@@ -209,5 +211,93 @@ func TestRequestResponseResourceProgressCallback(t *testing.T) {
 	case <-responseReceived:
 	case <-time.After(10 * time.Second):
 		t.Fatal("Timeout waiting for response")
+	}
+}
+
+func TestRequestReceiptStoresMetadata(t *testing.T) {
+	t.Parallel()
+
+	metadata := map[string][]byte{
+		"name": []byte("example.txt"),
+	}
+	rr := &RequestReceipt{}
+
+	rr.responseReceived([]byte("payload"), metadata)
+
+	if got, want := rr.GetStatus(), RequestReady; got != want {
+		t.Fatalf("status = %v, want %v", got, want)
+	}
+	if got, want := rr.Response.([]byte), []byte("payload"); !bytes.Equal(got, want) {
+		t.Fatalf("response = %q, want %q", got, want)
+	}
+	got, ok := rr.Metadata.(map[string][]byte)
+	if !ok {
+		t.Fatalf("metadata type = %T, want map[string][]byte", rr.Metadata)
+	}
+	if !bytes.Equal(got["name"], metadata["name"]) {
+		t.Fatalf("metadata[name] = %q, want %q", got["name"], metadata["name"])
+	}
+}
+
+func TestLinkResponseMetadata(t *testing.T) {
+	t.Parallel()
+
+	requestID := []byte("request-id")
+	metadata := map[string][]byte{
+		"name": []byte("inline.txt"),
+	}
+	rr := &RequestReceipt{RequestID: requestID}
+	link := &Link{
+		logger:          NewLogger(),
+		status:          LinkActive,
+		pendingRequests: []*RequestReceipt{rr},
+	}
+
+	link.handleResponse(requestID, []byte("inline"), metadata)
+
+	got, ok := rr.Metadata.(map[string][]byte)
+	if !ok {
+		t.Fatalf("metadata type = %T, want map[string][]byte", rr.Metadata)
+	}
+	if !bytes.Equal(got["name"], metadata["name"]) {
+		t.Fatalf("metadata[name] = %q, want %q", got["name"], metadata["name"])
+	}
+	if len(link.pendingRequests) != 0 {
+		t.Fatalf("pendingRequests len = %v, want 0", len(link.pendingRequests))
+	}
+}
+
+func TestResourceResponseMetadata(t *testing.T) {
+	t.Parallel()
+
+	requestID := []byte("resource-request-id")
+	metadata := map[string][]byte{
+		"name": []byte("resource.bin"),
+	}
+	packedResponse, err := msgpack.Pack([]any{requestID, []byte("resource-response")})
+	if err != nil {
+		t.Fatalf("failed to pack response: %v", err)
+	}
+	rr := &RequestReceipt{RequestID: requestID}
+	link := &Link{
+		logger:          NewLogger(),
+		status:          LinkActive,
+		pendingRequests: []*RequestReceipt{rr},
+	}
+	resource := &Resource{
+		link:     link,
+		status:   ResourceStatusComplete,
+		data:     packedResponse,
+		metadata: metadata,
+	}
+
+	link.responseResourceConcluded(resource)
+
+	got, ok := rr.Metadata.(map[string][]byte)
+	if !ok {
+		t.Fatalf("metadata type = %T, want map[string][]byte", rr.Metadata)
+	}
+	if !bytes.Equal(got["name"], metadata["name"]) {
+		t.Fatalf("metadata[name] = %q, want %q", got["name"], metadata["name"])
 	}
 }

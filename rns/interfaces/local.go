@@ -107,6 +107,9 @@ func (lci *LocalClientInterface) readLoop() {
 		}
 		n, err := conn.Read(buf)
 		if err != nil {
+			if atomic.LoadInt32(&lci.running) == 1 && !lci.IsDetached() {
+				panicOnInterfaceErrorf("local interface %v read failed: %v", lci.name, err)
+			}
 			break
 		}
 
@@ -302,6 +305,9 @@ func (lsi *LocalServerInterface) acceptLoop() {
 		}
 		conn, err := listener.Accept()
 		if err != nil {
+			if atomic.LoadInt32(&lsi.running) == 1 && !lsi.IsDetached() {
+				panicOnInterfaceErrorf("local interface %v accept failed: %v", lsi.name, err)
+			}
 			break
 		}
 

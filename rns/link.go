@@ -1256,7 +1256,7 @@ func (l *Link) responseResourceConcluded(resource *Resource) {
 		}
 
 		responseData := resList[1]
-		l.handleResponse(requestID, responseData, nil)
+		l.handleResponse(requestID, responseData, resource.Metadata())
 	}
 }
 

@@ -72,6 +72,9 @@ type Transport interface {
 	InvalidatePathsViaNextHop(nextHop []byte) int
 	// LinkMTUDiscovery reports whether link MTU discovery is enabled.
 	LinkMTUDiscovery() bool
+	// UseImplicitProof reports whether identity proofs omit the packet hash and
+	// send only the signature.
+	UseImplicitProof() bool
 	// LinkTable returns the active transport link table.
 	LinkTable() map[string]*LinkEntry
 	// NetworkIdentityHash returns the hash of the transport's network identity.
@@ -92,6 +95,8 @@ type Transport interface {
 	SetEnabled(enabled bool)
 	// SetLinkMTUDiscovery enables or disables link MTU discovery.
 	SetLinkMTUDiscovery(enabled bool)
+	// SetUseImplicitProof enables or disables implicit identity proofs.
+	SetUseImplicitProof(enabled bool)
 	// SetNetworkIdentity sets the network identity used by the transport.
 	SetNetworkIdentity(identity *Identity)
 	// Start starts the transport using the provided storage path.
@@ -170,6 +175,7 @@ type TransportSystem struct {
 
 	enabled          bool
 	linkMTUDiscovery bool
+	useImplicitProof bool
 	mu               sync.Mutex
 }
 
@@ -399,11 +405,25 @@ func (ts *TransportSystem) LinkMTUDiscovery() bool {
 	return ts.linkMTUDiscovery
 }
 
+// UseImplicitProof returns whether identity proofs should omit the packet hash.
+func (ts *TransportSystem) UseImplicitProof() bool {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.useImplicitProof
+}
+
 // SetLinkMTUDiscovery sets whether link MTU discovery is enabled.
 func (ts *TransportSystem) SetLinkMTUDiscovery(enabled bool) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	ts.linkMTUDiscovery = enabled
+}
+
+// SetUseImplicitProof sets whether identity proofs should omit the packet hash.
+func (ts *TransportSystem) SetUseImplicitProof(enabled bool) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.useImplicitProof = enabled
 }
 
 // Start initializes the transport system.
@@ -1428,12 +1448,6 @@ func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 // GetInterfaces returns the list of network interfaces.
 func (ts *TransportSystem) GetInterfaces() []interfaces.Interface {
 	return ts.interfaces
-}
-
-// GetMutex returns the transport system's mutex.
-// TODO: kill this
-func (ts *TransportSystem) GetMutex() *sync.Mutex {
-	return &ts.mu
 }
 
 // PathInfo represents a flattened path table entry.

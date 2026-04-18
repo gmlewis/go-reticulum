@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
 )
@@ -128,6 +129,37 @@ func applyIFACConfig(iface interfaces.Interface, cfg interfaces.IFACConfig) {
 	setter.SetIFACConfig(cfg)
 }
 
+func applyInterfaceMode(iface interfaces.Interface, mode int) {
+	setter, ok := iface.(interface {
+		SetMode(int)
+	})
+	if !ok {
+		return
+	}
+	setter.SetMode(mode)
+}
+
+func applyDiscoveryConfig(iface interfaces.Interface, cfg interfaces.DiscoveryConfig) {
+	setter, ok := iface.(interface {
+		SetDiscoveryConfig(interfaces.DiscoveryConfig)
+	})
+	if !ok {
+		return
+	}
+	setter.SetDiscoveryConfig(cfg)
+}
+
+func applyInterfaceConfig(iface interfaces.Interface, mode int, ifac interfaces.IFACConfig, discovery interfaces.DiscoveryConfig) {
+	applyInterfaceMode(iface, mode)
+	applyIFACConfig(iface, ifac)
+	applyDiscoveryConfig(iface, discovery)
+}
+
+func applySpawnedInterfaceConfig(iface interfaces.Interface, mode int, ifac interfaces.IFACConfig) {
+	applyInterfaceMode(iface, mode)
+	applyIFACConfig(iface, ifac)
+}
+
 func parseListProperty(v string) []string {
 	v = strings.TrimSpace(v)
 	if v == "" {
@@ -164,4 +196,143 @@ func parseBoolLike(v string) bool {
 	default:
 		return false
 	}
+}
+
+func parseOptionalFloat64(v string) *float64 {
+	n, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+	if err != nil {
+		return nil
+	}
+	return &n
+}
+
+func parseOptionalInt(v string) *int {
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil {
+		return nil
+	}
+	return &n
+}
+
+func parseInterfaceMode(sub *ConfigSection, ifaceType string) int {
+	if sub == nil {
+		return interfaces.ModeFull
+	}
+	if v, ok := sub.GetProperty("interface_mode"); ok {
+		if mode, ok := parseInterfaceModeValue(v); ok {
+			return mode
+		}
+	}
+	if v, ok := sub.GetProperty("mode"); ok {
+		trimmed := strings.TrimSpace(strings.ToLower(v))
+		if ifaceType == "TCPInterface" && (trimmed == "client" || trimmed == "listen" || trimmed == "server") {
+			return interfaces.ModeFull
+		}
+		if mode, ok := parseInterfaceModeValue(trimmed); ok {
+			return mode
+		}
+	}
+	return interfaces.ModeFull
+}
+
+func parseInterfaceModeValue(v string) (int, bool) {
+	switch strings.TrimSpace(strings.ToLower(v)) {
+	case "full":
+		return interfaces.ModeFull, true
+	case "access_point", "accesspoint", "ap":
+		return interfaces.ModeAccessPoint, true
+	case "pointtopoint", "ptp":
+		return interfaces.ModePointToPoint, true
+	case "roaming":
+		return interfaces.ModeRoaming, true
+	case "boundary":
+		return interfaces.ModeBoundary, true
+	case "gateway", "gw":
+		return interfaces.ModeGateway, true
+	default:
+		return 0, false
+	}
+}
+
+func interfaceSupportsDiscovery(ifaceType string) bool {
+	switch ifaceType {
+	case "TCPInterface", "TCPClientInterface", "TCPServerInterface", "BackboneInterface", "I2PInterface", "RNodeInterface", "WeaveInterface":
+		return true
+	default:
+		return false
+	}
+}
+
+func parseDiscoveryConfig(sub *ConfigSection, ifaceType string, mode int) (interfaces.DiscoveryConfig, int) {
+	cfg := interfaces.DiscoveryConfig{
+		SupportsDiscovery: interfaceSupportsDiscovery(ifaceType),
+	}
+	if sub == nil {
+		return cfg, mode
+	}
+
+	if v, ok := sub.GetProperty("discoverable"); ok {
+		cfg.Discoverable = parseBoolLike(v)
+	}
+	if !cfg.Discoverable {
+		return cfg, mode
+	}
+
+	if v, ok := sub.GetProperty("announce_interval"); ok {
+		if minutes, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && minutes > 0 {
+			cfg.AnnounceInterval = time.Duration(minutes) * time.Minute
+			if cfg.AnnounceInterval < 5*time.Minute {
+				cfg.AnnounceInterval = 5 * time.Minute
+			}
+		}
+	}
+	if cfg.AnnounceInterval == 0 {
+		cfg.AnnounceInterval = 6 * time.Hour
+	}
+
+	if v, ok := sub.GetProperty("discovery_stamp_value"); ok {
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			cfg.StampValue = n
+		}
+	}
+	if v, ok := sub.GetProperty("discovery_name"); ok {
+		cfg.Name = strings.TrimSpace(v)
+	}
+	if v, ok := sub.GetProperty("discovery_encrypt"); ok {
+		cfg.Encrypt = parseBoolLike(v)
+	}
+	if v, ok := sub.GetProperty("reachable_on"); ok {
+		cfg.ReachableOn = strings.TrimSpace(v)
+	}
+	if v, ok := sub.GetProperty("publish_ifac"); ok {
+		cfg.PublishIFAC = parseBoolLike(v)
+	}
+	if v, ok := sub.GetProperty("latitude"); ok {
+		cfg.Latitude = parseOptionalFloat64(v)
+	}
+	if v, ok := sub.GetProperty("longitude"); ok {
+		cfg.Longitude = parseOptionalFloat64(v)
+	}
+	if v, ok := sub.GetProperty("height"); ok {
+		cfg.Height = parseOptionalFloat64(v)
+	}
+	if v, ok := sub.GetProperty("discovery_frequency"); ok {
+		cfg.Frequency = parseOptionalInt(v)
+	}
+	if v, ok := sub.GetProperty("discovery_bandwidth"); ok {
+		cfg.Bandwidth = parseOptionalInt(v)
+	}
+	if v, ok := sub.GetProperty("discovery_modulation"); ok {
+		cfg.Modulation = strings.TrimSpace(v)
+	}
+
+	if mode != interfaces.ModeGateway && mode != interfaces.ModeAccessPoint {
+		if ifaceType == "RNodeInterface" || ifaceType == "RNodeMultiInterface" {
+			mode = interfaces.ModeAccessPoint
+		} else {
+			mode = interfaces.ModeGateway
+		}
+	}
+
+	return cfg, mode
 }

@@ -9,6 +9,8 @@
 package rns
 
 import (
+	"bytes"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -69,6 +71,44 @@ if __name__ == "__main__":
         sys.exit(1)
     
     generate_identity(sys.argv[1])
+`
+
+const implicitProofParityPy = `import binascii
+import RNS
+import sys
+
+class FakePacket:
+    def __init__(self, packet_hash):
+        self.packet_hash = packet_hash
+        self.receiving_interface = None
+    def generate_proof_destination(self):
+        return None
+
+orig_packet = RNS.Packet
+
+class CapturedPacket:
+    PROOF = orig_packet.PROOF
+    last = None
+    def __init__(self, destination, data, packet_type, attached_interface=None, context=None):
+        self.destination = destination
+        self.data = data
+        self.packet_type = packet_type
+        self.attached_interface = attached_interface
+        self.context = context
+        CapturedPacket.last = self
+    def send(self):
+        return None
+
+identity = RNS.Identity.from_file(sys.argv[1])
+packet_hash = binascii.unhexlify(sys.argv[2])
+use_implicit = sys.argv[3] == "1"
+RNS.Reticulum._Reticulum__use_implicit_proof = use_implicit
+RNS.Packet = CapturedPacket
+try:
+    identity.prove(FakePacket(packet_hash))
+    print(binascii.hexlify(CapturedPacket.last.data).decode())
+finally:
+    RNS.Packet = orig_packet
 `
 
 func TestIdentityParity(t *testing.T) {
@@ -161,5 +201,61 @@ func TestIdentityPythonToGoParity(t *testing.T) {
 
 	if pyHash != fmt.Sprintf("%x", id.Hash) {
 		t.Errorf("Hash mismatch!\nGo: %x\nPy: %v", id.Hash, pyHash)
+	}
+}
+
+func TestImplicitProofParityWithPython(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+
+	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-implicit-proof-*")
+	defer cleanup()
+
+	id := mustTestNewIdentity(t, true)
+	idPath := filepath.Join(tmpDir, "id")
+	if err := id.ToFile(idPath); err != nil {
+		t.Fatalf("failed to write identity: %v", err)
+	}
+
+	packetHash := bytes.Repeat([]byte{0x5A}, 32)
+
+	tests := []struct {
+		name             string
+		useImplicitProof bool
+	}{
+		{name: "explicit", useImplicitProof: false},
+		{name: "implicit", useImplicitProof: true},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			ts := &proofCaptureTransport{TransportSystem: NewTransportSystem(nil)}
+			ts.SetUseImplicitProof(tc.useImplicitProof)
+
+			packet := &Packet{
+				PacketHash: packetHash,
+				transport:  ts,
+			}
+			id.Prove(packet, nil)
+			if ts.lastPacket == nil {
+				t.Fatal("expected Go proof packet to be captured")
+			}
+
+			pythonHex := runPythonBufferTransform(
+				t,
+				implicitProofParityPy,
+				idPath,
+				hex.EncodeToString(packetHash),
+				map[bool]string{false: "0", true: "1"}[tc.useImplicitProof],
+			)
+			pythonProof, err := hex.DecodeString(pythonHex)
+			if err != nil {
+				t.Fatalf("failed to decode python proof hex: %v", err)
+			}
+
+			if !bytes.Equal(ts.lastPacket.Data, pythonProof) {
+				t.Fatalf("proof mismatch:\nGo: %x\nPy: %x", ts.lastPacket.Data, pythonProof)
+			}
+		})
 	}
 }

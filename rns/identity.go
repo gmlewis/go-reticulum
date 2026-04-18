@@ -425,13 +425,21 @@ func (id *Identity) Prove(packet *Packet, destination PacketDestination) {
 		id.logger.Error("Identity cannot sign proof: no private key")
 		return
 	}
+	if packet == nil {
+		id.logger.Error("Identity cannot sign proof: nil packet")
+		return
+	}
 	signature := id.sigPrv.Sign(packet.PacketHash)
 
 	var proofData []byte
-	// TODO: Respect use_implicit_proof config
-	proofData = make([]byte, 0, len(packet.PacketHash)+len(signature))
-	proofData = append(proofData, packet.PacketHash...)
-	proofData = append(proofData, signature...)
+	if packet.transport != nil && packet.transport.UseImplicitProof() {
+		proofData = make([]byte, 0, len(signature))
+		proofData = append(proofData, signature...)
+	} else {
+		proofData = make([]byte, 0, len(packet.PacketHash)+len(signature))
+		proofData = append(proofData, packet.PacketHash...)
+		proofData = append(proofData, signature...)
+	}
 
 	if destination == nil {
 		destination = packet.GenerateProofDestination()
