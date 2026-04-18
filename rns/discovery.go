@@ -13,10 +13,12 @@ import (
 	"math/bits"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	rcrypto "github.com/gmlewis/go-reticulum/rns/crypto"
@@ -26,6 +28,7 @@ import (
 
 const (
 	discoveryAppName              = "rnstransport"
+	discoveryAnnouncerJobInterval = 60 * time.Second
 	discoveryDefaultStampValue    = 14
 	discoveryWorkblockRounds      = 20
 	discoveryStampSize            = 32
@@ -54,20 +57,347 @@ const (
 type InterfaceAnnouncer struct {
 	logger *Logger
 	owner  *Reticulum
+
+	mu                   sync.Mutex
+	discoveryDestination *Destination
+	lastAnnounced        map[interfaces.Interface]time.Time
+	stampCache           map[string][]byte
+	jobInterval          time.Duration
+	stopCh               chan struct{}
+	running              bool
 }
 
 // NewInterfaceAnnouncer initializes a new announcer component bound to the provided local Reticulum instance.
 func NewInterfaceAnnouncer(owner *Reticulum, logger *Logger) *InterfaceAnnouncer {
 	return &InterfaceAnnouncer{
-		logger: logger,
-		owner:  owner,
+		logger:        logger,
+		owner:         owner,
+		lastAnnounced: make(map[interfaces.Interface]time.Time),
+		stampCache:    make(map[string][]byte),
+		jobInterval:   discoveryAnnouncerJobInterval,
 	}
 }
 
 // Start triggers the underlying background mechanism that begins transmitting interface presence announcements.
 func (ia *InterfaceAnnouncer) Start() {
-	// Minimal implementation without LXMF dependency
-	ia.logger.Info("On-network interface discovery requires LXMF, which is not available in this Go port.")
+	if ia == nil || ia.owner == nil || ia.owner.transport == nil {
+		return
+	}
+
+	ia.mu.Lock()
+	if ia.running {
+		ia.mu.Unlock()
+		return
+	}
+
+	if ia.discoveryDestination == nil {
+		identity := ia.owner.networkIdentity
+		if identity == nil {
+			identity = ia.owner.transport.Identity()
+		}
+		if identity == nil {
+			ia.mu.Unlock()
+			if ia.logger != nil {
+				ia.logger.Error("could not start discovery announcer: no transport identity available")
+			}
+			return
+		}
+
+		destination, err := NewDestination(ia.owner.transport, identity, DestinationIn, DestinationSingle, discoveryAppName, "discovery", "interface")
+		if err != nil {
+			ia.mu.Unlock()
+			if ia.logger != nil {
+				ia.logger.Error("could not start discovery announcer: %v", err)
+			}
+			return
+		}
+		ia.discoveryDestination = destination
+	}
+
+	stopCh := make(chan struct{})
+	interval := ia.jobInterval
+	if interval <= 0 {
+		interval = discoveryAnnouncerJobInterval
+	}
+	ia.stopCh = stopCh
+	ia.running = true
+	ia.mu.Unlock()
+
+	go ia.job(stopCh, interval)
+}
+
+// Stop halts the background discovery announce job.
+func (ia *InterfaceAnnouncer) Stop() {
+	if ia == nil {
+		return
+	}
+
+	ia.mu.Lock()
+	defer ia.mu.Unlock()
+	if ia.stopCh != nil {
+		close(ia.stopCh)
+		ia.stopCh = nil
+	}
+	ia.running = false
+}
+
+func (ia *InterfaceAnnouncer) job(stopCh <-chan struct{}, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stopCh:
+			return
+		case now := <-ticker.C:
+			ia.announceOnce(now)
+		}
+	}
+}
+
+func (ia *InterfaceAnnouncer) announceOnce(now time.Time) {
+	if ia == nil || ia.owner == nil || ia.owner.transport == nil {
+		return
+	}
+
+	type dueInterface struct {
+		iface   interfaces.Interface
+		overdue time.Duration
+	}
+
+	ia.mu.Lock()
+	destination := ia.discoveryDestination
+	due := make([]dueInterface, 0)
+	for _, iface := range ia.owner.transport.GetInterfaces() {
+		cfg, ok := discoveryConfigForInterface(iface)
+		if !ok || !cfg.SupportsDiscovery || !cfg.Discoverable {
+			continue
+		}
+
+		interval := cfg.AnnounceInterval
+		if interval <= 0 {
+			interval = 6 * time.Hour
+		}
+		last := ia.lastAnnounced[iface]
+		if last.IsZero() || now.After(last.Add(interval)) {
+			due = append(due, dueInterface{
+				iface:   iface,
+				overdue: now.Sub(last),
+			})
+		}
+	}
+
+	sort.Slice(due, func(i, j int) bool {
+		return due[i].overdue > due[j].overdue
+	})
+
+	var selected interfaces.Interface
+	if len(due) > 0 {
+		selected = due[0].iface
+		ia.lastAnnounced[selected] = now
+	}
+	ia.mu.Unlock()
+
+	if selected == nil || destination == nil {
+		return
+	}
+
+	appData, err := ia.getInterfaceAnnounceData(selected)
+	if err != nil {
+		if ia.logger != nil {
+			ia.logger.Error("failed generating discovery announce for %v: %v", selected.Name(), err)
+		}
+		return
+	}
+	if len(appData) == 0 {
+		return
+	}
+	if err := destination.Announce(appData); err != nil && ia.logger != nil {
+		ia.logger.Error("failed sending discovery announce for %v: %v", selected.Name(), err)
+	}
+}
+
+func discoveryConfigForInterface(iface interfaces.Interface) (interfaces.DiscoveryConfig, bool) {
+	if iface == nil {
+		return interfaces.DiscoveryConfig{}, false
+	}
+	getter, ok := iface.(interface {
+		DiscoveryConfig() interfaces.DiscoveryConfig
+	})
+	if !ok {
+		return interfaces.DiscoveryConfig{}, false
+	}
+	return getter.DiscoveryConfig(), true
+}
+
+func sanitizeDiscoveryString(v string) string {
+	v = strings.ReplaceAll(v, "\n", "")
+	v = strings.ReplaceAll(v, "\r", "")
+	return strings.TrimSpace(v)
+}
+
+func (ia *InterfaceAnnouncer) resolveReachableOn(raw string) (string, error) {
+	reachableOn := sanitizeDiscoveryString(raw)
+	if reachableOn == "" {
+		return "", nil
+	}
+
+	if runtime.GOOS != "windows" {
+		execPath, err := expandUserPath(reachableOn)
+		if err == nil {
+			if info, statErr := os.Stat(execPath); statErr == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+				output, err := exec.Command(execPath).Output()
+				if err != nil {
+					return "", fmt.Errorf("evaluating reachable_on executable %q: %w", raw, err)
+				}
+				reachableOn = sanitizeDiscoveryString(string(output))
+			}
+		}
+	}
+
+	if !isReachableOnValue(reachableOn) {
+		return "", fmt.Errorf("invalid reachable_on value %q", reachableOn)
+	}
+	return reachableOn, nil
+}
+
+func discoveryInterfaceType(iface interfaces.Interface) string {
+	if iface == nil {
+		return ""
+	}
+
+	switch iface.Type() {
+	case "BackboneInterface", "I2PInterface", "RNodeInterface", "WeaveInterface", "KISSInterface":
+		return iface.Type()
+	case "TCPServerInterface", "TCPClientInterface":
+		return iface.Type()
+	case "TCPInterface":
+		if _, ok := iface.(interface{ BindPort() int }); ok {
+			return "TCPServerInterface"
+		}
+		return "TCPClientInterface"
+	default:
+		return ""
+	}
+}
+
+func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interface) ([]byte, error) {
+	if ia == nil || ia.owner == nil || ia.owner.transport == nil {
+		return nil, fmt.Errorf("no Reticulum transport available")
+	}
+
+	cfg, ok := discoveryConfigForInterface(iface)
+	if !ok || !cfg.SupportsDiscovery || !cfg.Discoverable {
+		return nil, nil
+	}
+
+	interfaceType := discoveryInterfaceType(iface)
+	switch interfaceType {
+	case "BackboneInterface", "TCPServerInterface":
+	default:
+		return nil, nil
+	}
+
+	transportIdentity := ia.owner.transport.Identity()
+	if transportIdentity == nil || len(transportIdentity.Hash) == 0 {
+		return nil, fmt.Errorf("missing transport identity")
+	}
+
+	stampValue := cfg.StampValue
+	if stampValue <= 0 {
+		stampValue = discoveryDefaultStampValue
+	}
+
+	name := sanitizeDiscoveryString(cfg.Name)
+	if name == "" {
+		name = sanitizeDiscoveryString(iface.Name())
+	}
+
+	info := map[any]any{
+		discoveryFieldInterfaceType: interfaceType,
+		discoveryFieldTransport:     ia.owner.transport.Enabled(),
+		discoveryFieldTransportID:   append([]byte(nil), transportIdentity.Hash...),
+		discoveryFieldName:          name,
+	}
+
+	if cfg.Latitude != nil {
+		info[discoveryFieldLatitude] = *cfg.Latitude
+	}
+	if cfg.Longitude != nil {
+		info[discoveryFieldLongitude] = *cfg.Longitude
+	}
+	if cfg.Height != nil {
+		info[discoveryFieldHeight] = *cfg.Height
+	}
+
+	reachableOn, err := ia.resolveReachableOn(cfg.ReachableOn)
+	if err != nil {
+		return nil, err
+	}
+	if reachableOn == "" {
+		return nil, fmt.Errorf("missing reachable_on")
+	}
+	info[discoveryFieldReachableOn] = reachableOn
+
+	portGetter, ok := iface.(interface{ BindPort() int })
+	if !ok || portGetter.BindPort() <= 0 {
+		return nil, fmt.Errorf("missing bind port")
+	}
+	info[discoveryFieldPort] = portGetter.BindPort()
+
+	if cfg.PublishIFAC {
+		if ifacGetter, ok := iface.(interface{ IFACConfig() interfaces.IFACConfig }); ok {
+			ifacCfg := ifacGetter.IFACConfig()
+			if ifacCfg.NetName != "" {
+				info[discoveryFieldIFACNetname] = sanitizeDiscoveryString(ifacCfg.NetName)
+			}
+			if ifacCfg.NetKey != "" {
+				info[discoveryFieldIFACNetkey] = sanitizeDiscoveryString(ifacCfg.NetKey)
+			}
+		}
+	}
+
+	packed, err := msgpack.Pack(info)
+	if err != nil {
+		return nil, err
+	}
+
+	infoHash := FullHash(packed)
+	cacheKey := hex.EncodeToString(infoHash)
+
+	ia.mu.Lock()
+	stamp := append([]byte(nil), ia.stampCache[cacheKey]...)
+	ia.mu.Unlock()
+	if len(stamp) == 0 {
+		generated, _, err := generateDiscoveryStamp(infoHash, stampValue)
+		if err != nil {
+			return nil, err
+		}
+		stamp = generated
+		ia.mu.Lock()
+		ia.stampCache[cacheKey] = append([]byte(nil), stamp...)
+		ia.mu.Unlock()
+	}
+
+	var flags byte
+	payload := append([]byte(nil), packed...)
+	payload = append(payload, stamp...)
+	if cfg.Encrypt {
+		if ia.owner.networkIdentity == nil {
+			return nil, fmt.Errorf("discovery encryption requested without network identity")
+		}
+		encrypted, err := ia.owner.networkIdentity.Encrypt(payload, nil)
+		if err != nil {
+			return nil, err
+		}
+		payload = encrypted
+		flags |= discoveryFlagEncrypted
+	}
+
+	appData := make([]byte, 1, 1+len(payload))
+	appData[0] = flags
+	appData = append(appData, payload...)
+	return appData, nil
 }
 
 // InterfaceAnnounceHandler validates and decodes interface discovery announces.
@@ -211,14 +541,27 @@ type DiscoveredInterface struct {
 
 // InterfaceDiscovery actively listens for and processes inbound presence announcements from remote nodes to establish automatic connections.
 type InterfaceDiscovery struct {
-	owner   *Reticulum
+	owner *Reticulum
+
 	handler *InterfaceAnnounceHandler
+
+	monitorMu              sync.Mutex
+	monitoredInterfaces    []interfaces.Interface
+	autoconnectDownSince   map[interfaces.Interface]time.Time
+	monitoringAutoconnects bool
+	initialAutoconnectRan  bool
+	monitorInterval        time.Duration
+	detachThreshold        time.Duration
+	monitorStopCh          chan struct{}
 }
 
 // NewInterfaceDiscovery initializes a discovery listener bound to the provided local Reticulum configuration.
 func NewInterfaceDiscovery(owner *Reticulum) *InterfaceDiscovery {
 	return &InterfaceDiscovery{
-		owner: owner,
+		owner:                owner,
+		autoconnectDownSince: make(map[interfaces.Interface]time.Time),
+		monitorInterval:      5 * time.Second,
+		detachThreshold:      12 * time.Second,
 	}
 }
 
@@ -251,6 +594,22 @@ func (id *InterfaceDiscovery) Start(requiredValue int) error {
 		id.owner.transport.RegisterAnnounceHandler(id.handler.AnnounceHandler())
 	}
 	return nil
+}
+
+// Stop halts any background autoconnect monitoring started by the discovery
+// subsystem.
+func (id *InterfaceDiscovery) Stop() {
+	if id == nil {
+		return
+	}
+
+	id.monitorMu.Lock()
+	defer id.monitorMu.Unlock()
+	if id.monitorStopCh != nil {
+		close(id.monitorStopCh)
+		id.monitorStopCh = nil
+	}
+	id.monitoringAutoconnects = false
 }
 
 func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) error {
@@ -583,6 +942,9 @@ func mapToDiscoveredInterface(info map[string]any) (DiscoveredInterface, bool) {
 }
 
 func (id *InterfaceDiscovery) connectDiscovered() {
+	if id == nil {
+		return
+	}
 	discovered, err := id.ListDiscoveredInterfaces(false, true)
 	if err != nil {
 		if id.owner != nil && id.owner.logger != nil {
@@ -593,12 +955,16 @@ func (id *InterfaceDiscovery) connectDiscovered() {
 
 	for _, info := range discovered {
 		if id.autoconnectCount() >= id.owner.maxAutoconnectedInterfaces() {
-			return
+			break
 		}
 		if err := id.autoconnect(info); err != nil && id.owner != nil && id.owner.logger != nil {
 			id.owner.logger.Error("failed to auto-connect discovered interface %v: %v", info.Name, err)
 		}
 	}
+
+	id.monitorMu.Lock()
+	id.initialAutoconnectRan = true
+	id.monitorMu.Unlock()
 }
 
 func (id *InterfaceDiscovery) autoconnectCount() int {
@@ -657,6 +1023,7 @@ func (id *InterfaceDiscovery) autoconnect(info DiscoveredInterface) error {
 		}
 	}
 	id.owner.transport.RegisterInterface(iface)
+	id.monitorInterface(iface)
 	return nil
 }
 
@@ -688,6 +1055,132 @@ func (id *InterfaceDiscovery) endpointHash(info DiscoveredInterface) []byte {
 		endpoint = fmt.Sprintf("%v:%v", endpoint, *info.Port)
 	}
 	return FullHash([]byte(endpoint))
+}
+
+func (id *InterfaceDiscovery) monitorInterface(iface interfaces.Interface) {
+	if id == nil || iface == nil {
+		return
+	}
+
+	id.monitorMu.Lock()
+	for _, existing := range id.monitoredInterfaces {
+		if existing == iface {
+			id.monitorMu.Unlock()
+			return
+		}
+	}
+	id.monitoredInterfaces = append(id.monitoredInterfaces, iface)
+	if id.monitorInterval <= 0 || id.monitoringAutoconnects {
+		id.monitorMu.Unlock()
+		return
+	}
+
+	id.monitoringAutoconnects = true
+	stopCh := make(chan struct{})
+	id.monitorStopCh = stopCh
+	interval := id.monitorInterval
+	id.monitorMu.Unlock()
+
+	go id.monitorLoop(stopCh, interval)
+}
+
+func (id *InterfaceDiscovery) monitorLoop(stopCh <-chan struct{}, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stopCh:
+			return
+		case now := <-ticker.C:
+			id.monitorAutoconnectsOnce(now)
+		}
+	}
+}
+
+func (id *InterfaceDiscovery) monitorAutoconnectsOnce(now time.Time) {
+	if id == nil {
+		return
+	}
+
+	id.monitorMu.Lock()
+	interfacesSnapshot := append([]interfaces.Interface(nil), id.monitoredInterfaces...)
+	detached := make([]interfaces.Interface, 0)
+	initialAutoconnectRan := id.initialAutoconnectRan
+	for _, iface := range interfacesSnapshot {
+		if iface == nil {
+			continue
+		}
+		if iface.Status() {
+			delete(id.autoconnectDownSince, iface)
+			continue
+		}
+
+		downSince, ok := id.autoconnectDownSince[iface]
+		if !ok {
+			id.autoconnectDownSince[iface] = now
+			continue
+		}
+		if now.Sub(downSince) >= id.detachThreshold {
+			detached = append(detached, iface)
+		}
+	}
+	id.monitorMu.Unlock()
+
+	autoconnectedInterfaces := id.autoconnectCount()
+	if initialAutoconnectRan && id.owner != nil && id.owner.shouldAutoconnectDiscoveredInterfaces() {
+		maxAutoconnectedInterfaces := id.owner.maxAutoconnectedInterfaces()
+		freeSlots := max(0, maxAutoconnectedInterfaces-autoconnectedInterfaces)
+		reservedSlots := maxAutoconnectedInterfaces / 4
+		if freeSlots > reservedSlots {
+			candidates, err := id.ListDiscoveredInterfaces(true, true)
+			if err != nil {
+				if id.owner.logger != nil {
+					id.owner.logger.Error("failed loading discovered interfaces for monitor autoconnect: %v", err)
+				}
+			} else if len(candidates) > 0 {
+				for _, candidate := range candidates {
+					if id.interfaceExists(candidate) {
+						continue
+					}
+					if err := id.autoconnect(candidate); err != nil {
+						if id.owner.logger != nil {
+							id.owner.logger.Error("failed auto-connecting monitored discovered interface %v: %v", candidate.Name, err)
+						}
+						continue
+					}
+					break
+				}
+			}
+		}
+	}
+
+	for _, iface := range detached {
+		id.teardownInterface(iface)
+	}
+}
+
+func (id *InterfaceDiscovery) teardownInterface(iface interfaces.Interface) {
+	if id == nil || iface == nil {
+		return
+	}
+
+	if err := iface.Detach(); err != nil && id.owner != nil && id.owner.logger != nil {
+		id.owner.logger.Error("failed detaching auto-connected interface %v: %v", iface.Name(), err)
+	}
+	if remover, ok := id.owner.transport.(interface{ RemoveInterface(interfaces.Interface) }); ok {
+		remover.RemoveInterface(iface)
+	}
+
+	id.monitorMu.Lock()
+	delete(id.autoconnectDownSince, iface)
+	for i, existing := range id.monitoredInterfaces {
+		if existing == iface {
+			id.monitoredInterfaces = append(id.monitoredInterfaces[:i], id.monitoredInterfaces[i+1:]...)
+			break
+		}
+	}
+	id.monitorMu.Unlock()
 }
 
 func (h *InterfaceAnnounceHandler) decodeDiscoveryInfo(destinationHash []byte, announcedIdentity *Identity, packed, stamp []byte, value int) (map[string]any, error) {

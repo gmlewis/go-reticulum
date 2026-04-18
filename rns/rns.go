@@ -81,6 +81,7 @@ type Reticulum struct {
 	interfaceSources    [][]byte
 	autoconnectDiscover int
 	interfaceDiscovery  *InterfaceDiscovery
+	interfaceAnnouncer  *InterfaceAnnouncer
 
 	mu                          sync.Mutex
 	shareInstance               bool
@@ -136,6 +137,12 @@ func (r *Reticulum) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var closeErr error
+	if r.interfaceDiscovery != nil {
+		r.interfaceDiscovery.Stop()
+	}
+	if r.interfaceAnnouncer != nil {
+		r.interfaceAnnouncer.Stop()
+	}
 	if r.transport != nil {
 		r.transport.Stop()
 	}
@@ -261,9 +268,26 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger) (*Re
 			}
 			r.transport.DiscoverInterfaces()
 		}
+		if hasDiscoverableInterfaces(r.transport) {
+			r.interfaceAnnouncer = NewInterfaceAnnouncer(r, r.logger)
+			r.interfaceAnnouncer.Start()
+		}
 	}
 
 	return r, nil
+}
+
+func hasDiscoverableInterfaces(ts Transport) bool {
+	if ts == nil {
+		return false
+	}
+	for _, iface := range ts.GetInterfaces() {
+		cfg, ok := discoveryConfigForInterface(iface)
+		if ok && cfg.SupportsDiscovery && cfg.Discoverable {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Reticulum) createDefaultConfig(path string) error {

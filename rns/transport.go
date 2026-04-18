@@ -1462,6 +1462,19 @@ func (ts *TransportSystem) GetInterfaces() []interfaces.Interface {
 	return ts.interfaces
 }
 
+// RemoveInterface removes a previously registered interface from the transport.
+func (ts *TransportSystem) RemoveInterface(iface interfaces.Interface) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	for i, existing := range ts.interfaces {
+		if existing == iface {
+			ts.interfaces = append(ts.interfaces[:i], ts.interfaces[i+1:]...)
+			ts.resolvePathInterfacesLocked()
+			return
+		}
+	}
+}
+
 // PathInfo represents a flattened path table entry.
 type PathInfo struct {
 	Timestamp time.Time

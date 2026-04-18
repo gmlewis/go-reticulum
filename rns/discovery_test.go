@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -790,4 +791,464 @@ func TestInterfaceDiscoveryStartAutoconnectsReceivedBackboneAnnounce(t *testing.
 	}
 
 	_ = iface.Detach()
+}
+
+type monitorTestInterface struct {
+	*interfaces.BaseInterface
+	online   bool
+	detached bool
+}
+
+func (m *monitorTestInterface) Type() string      { return "monitor-test" }
+func (m *monitorTestInterface) Status() bool      { return m.online }
+func (m *monitorTestInterface) IsOut() bool       { return true }
+func (m *monitorTestInterface) Send([]byte) error { return nil }
+func (m *monitorTestInterface) Detach() error     { m.detached = true; m.SetDetached(true); return nil }
+
+func TestInterfaceDiscoveryMonitorDetachesOfflineAutoconnect(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(NewLogger())
+	iface := &monitorTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("monitored", interfaces.ModeFull, 1000),
+		online:        true,
+	}
+	ts.RegisterInterface(iface)
+
+	discovery := NewInterfaceDiscovery(&Reticulum{
+		transport: ts,
+		logger:    NewLogger(),
+	})
+	discovery.monitorInterval = 0
+	discovery.detachThreshold = 12 * time.Second
+	discovery.monitorInterface(iface)
+
+	start := time.Unix(100, 0)
+	iface.online = false
+	discovery.monitorAutoconnectsOnce(start)
+	if iface.detached {
+		t.Fatal("expected interface to remain attached on first offline observation")
+	}
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected interface to remain registered, got %v interfaces", got)
+	}
+
+	discovery.monitorAutoconnectsOnce(start.Add(13 * time.Second))
+	if !iface.detached {
+		t.Fatal("expected interface to be detached after staying offline past threshold")
+	}
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected interface to be removed from transport, got %v interfaces", got)
+	}
+}
+
+func TestInterfaceDiscoveryMonitorReconnectResetsDownTimer(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(NewLogger())
+	iface := &monitorTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("monitored-reset", interfaces.ModeFull, 1000),
+		online:        true,
+	}
+	ts.RegisterInterface(iface)
+
+	discovery := NewInterfaceDiscovery(&Reticulum{
+		transport: ts,
+		logger:    NewLogger(),
+	})
+	discovery.monitorInterval = 0
+	discovery.detachThreshold = 12 * time.Second
+	discovery.monitorInterface(iface)
+
+	start := time.Unix(200, 0)
+	iface.online = false
+	discovery.monitorAutoconnectsOnce(start)
+
+	iface.online = true
+	discovery.monitorAutoconnectsOnce(start.Add(5 * time.Second))
+
+	iface.online = false
+	discovery.monitorAutoconnectsOnce(start.Add(10 * time.Second))
+	discovery.monitorAutoconnectsOnce(start.Add(21 * time.Second))
+	if iface.detached {
+		t.Fatal("expected reconnect to reset down timer before threshold elapses again")
+	}
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected interface to remain registered, got %v interfaces", got)
+	}
+
+	discovery.monitorAutoconnectsOnce(start.Add(23 * time.Second))
+	if !iface.detached {
+		t.Fatal("expected interface to detach after second offline period crosses threshold")
+	}
+}
+
+func TestInterfaceDiscoveryMonitorAutoconnectsAvailableCandidate(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-monitor-autoconnect-")
+	defer cleanup()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("listener.Close() error = %v", err)
+		}
+	})
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		accepted <- conn
+	}()
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "monitor-candidate.data"), mustMsgpackPack(map[string]any{
+		"name":         "Monitor Candidate",
+		"type":         "BackboneInterface",
+		"transport":    true,
+		"last_heard":   now - 30,
+		"discovered":   now - 60,
+		"reachable_on": "127.0.0.1",
+		"port":         port,
+		"network_id":   "0a0b0c0d",
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write cached discovery file: %v", err)
+	}
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	discovery := NewInterfaceDiscovery(&Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 4,
+	})
+	discovery.monitorInterval = 0
+	discovery.initialAutoconnectRan = true
+
+	discovery.monitorAutoconnectsOnce(time.Unix(300, 0))
+
+	var acceptedConn net.Conn
+	select {
+	case acceptedConn = <-accepted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for monitor-triggered auto-connect")
+	}
+	t.Cleanup(func() {
+		if acceptedConn != nil {
+			if err := acceptedConn.Close(); err != nil {
+				t.Errorf("acceptedConn.Close() error = %v", err)
+			}
+		}
+	})
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected 1 auto-connected interface, got %v", got)
+	}
+	if got := ts.GetInterfaces()[0].Type(); got != "BackboneClientInterface" {
+		t.Fatalf("Type() = %q, want %q", got, "BackboneClientInterface")
+	}
+}
+
+type announceTestInterface struct {
+	*interfaces.BaseInterface
+	ifaceType string
+	bindIP    string
+	bindPort  int
+}
+
+func (a *announceTestInterface) Type() string      { return a.ifaceType }
+func (a *announceTestInterface) Status() bool      { return true }
+func (a *announceTestInterface) IsOut() bool       { return true }
+func (a *announceTestInterface) Send([]byte) error { return nil }
+func (a *announceTestInterface) Detach() error     { a.SetDetached(true); return nil }
+func (a *announceTestInterface) BindIP() string    { return a.bindIP }
+func (a *announceTestInterface) BindPort() int     { return a.bindPort }
+
+type announceCaptureTransport struct {
+	*TransportSystem
+
+	mu         sync.Mutex
+	lastPacket *Packet
+	packets    chan *Packet
+}
+
+func newAnnounceCaptureTransport(logger *Logger) *announceCaptureTransport {
+	return &announceCaptureTransport{
+		TransportSystem: NewTransportSystem(logger),
+		packets:         make(chan *Packet, 8),
+	}
+}
+
+func (ts *announceCaptureTransport) Outbound(packet *Packet) error {
+	ts.mu.Lock()
+	ts.lastPacket = packet
+	ts.mu.Unlock()
+	select {
+	case ts.packets <- packet:
+	default:
+	}
+	return nil
+}
+
+func TestInterfaceAnnouncerPayload(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	ts := newAnnounceCaptureTransport(logger)
+	transportIdentity := mustTestNewIdentity(t, true)
+	ts.identity = transportIdentity
+	ts.SetEnabled(true)
+
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+
+	lat := 12.34
+	lon := 56.78
+	height := 90.12
+	iface := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("announce-backbone", interfaces.ModeGateway, 1000),
+		ifaceType:     "BackboneInterface",
+		bindIP:        "127.0.0.1",
+		bindPort:      4242,
+	}
+	iface.SetIFACConfig(interfaces.IFACConfig{
+		Enabled: true,
+		NetName: "mesh",
+		NetKey:  "secret",
+		Size:    16,
+	})
+	iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  6 * time.Hour,
+		StampValue:        6,
+		Name:              "Discovery Backbone\n",
+		ReachableOn:       "discovery.example.net",
+		PublishIFAC:       true,
+		Latitude:          &lat,
+		Longitude:         &lon,
+		Height:            &height,
+	})
+
+	appData, err := announcer.getInterfaceAnnounceData(iface)
+	if err != nil {
+		t.Fatalf("getInterfaceAnnounceData() error = %v", err)
+	}
+	if len(appData) <= 1+discoveryStampSize {
+		t.Fatalf("getInterfaceAnnounceData() returned %v bytes, want > %v", len(appData), 1+discoveryStampSize)
+	}
+	if got := appData[0]; got != 0 {
+		t.Fatalf("flags = %08b, want 00000000", got)
+	}
+
+	payload := appData[1:]
+	packed := payload[:len(payload)-discoveryStampSize]
+	stamp := payload[len(payload)-discoveryStampSize:]
+	workblock, err := discoveryStampWorkblock(FullHash(packed), discoveryWorkblockRounds)
+	if err != nil {
+		t.Fatalf("discoveryStampWorkblock() error = %v", err)
+	}
+	if !discoveryStampValid(stamp, 6, workblock) {
+		t.Fatal("expected generated stamp to satisfy configured stamp cost")
+	}
+
+	unpacked, err := msgpack.Unpack(packed)
+	if err != nil {
+		t.Fatalf("msgpack.Unpack() error = %v", err)
+	}
+	info := asAnyMap(unpacked)
+	if info == nil {
+		t.Fatalf("unexpected announce payload type %T", unpacked)
+	}
+
+	if got := asString(lookupDiscoveryValue(info, discoveryFieldInterfaceType)); got != "BackboneInterface" {
+		t.Fatalf("interface type = %q, want %q", got, "BackboneInterface")
+	}
+	if got := asBool(lookupDiscoveryValue(info, discoveryFieldTransport)); !got {
+		t.Fatal("expected transport flag to be true")
+	}
+	if got := asBytes(lookupDiscoveryValue(info, discoveryFieldTransportID)); hex.EncodeToString(got) != transportIdentity.HexHash {
+		t.Fatalf("transport ID = %x, want %v", got, transportIdentity.HexHash)
+	}
+	if got := asString(lookupDiscoveryValue(info, discoveryFieldName)); got != "Discovery Backbone" {
+		t.Fatalf("name = %q, want %q", got, "Discovery Backbone")
+	}
+	if got := asString(lookupDiscoveryValue(info, discoveryFieldReachableOn)); got != "discovery.example.net" {
+		t.Fatalf("reachable_on = %q, want %q", got, "discovery.example.net")
+	}
+	if got := asInt(lookupDiscoveryValue(info, discoveryFieldPort)); got != 4242 {
+		t.Fatalf("port = %v, want 4242", got)
+	}
+	if got := asString(lookupDiscoveryValue(info, discoveryFieldIFACNetname)); got != "mesh" {
+		t.Fatalf("ifac netname = %q, want %q", got, "mesh")
+	}
+	if got := asString(lookupDiscoveryValue(info, discoveryFieldIFACNetkey)); got != "secret" {
+		t.Fatalf("ifac netkey = %q, want %q", got, "secret")
+	}
+	if got := asFloat64(lookupDiscoveryValue(info, discoveryFieldLatitude)); got != lat {
+		t.Fatalf("latitude = %v, want %v", got, lat)
+	}
+	if got := asFloat64(lookupDiscoveryValue(info, discoveryFieldLongitude)); got != lon {
+		t.Fatalf("longitude = %v, want %v", got, lon)
+	}
+	if got := asFloat64(lookupDiscoveryValue(info, discoveryFieldHeight)); got != height {
+		t.Fatalf("height = %v, want %v", got, height)
+	}
+}
+
+func TestInterfaceAnnouncerStart(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	ts := newAnnounceCaptureTransport(logger)
+	ts.identity = mustTestNewIdentity(t, true)
+
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+	announcer.jobInterval = 10 * time.Millisecond
+
+	iface := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("announce-start", interfaces.ModeGateway, 1000),
+		ifaceType:     "BackboneInterface",
+		bindIP:        "127.0.0.1",
+		bindPort:      4243,
+	}
+	iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  time.Hour,
+		Name:              "Start Backbone",
+		ReachableOn:       "start.example.net",
+	})
+	ts.RegisterInterface(iface)
+
+	announcer.Start()
+	defer announcer.Stop()
+
+	select {
+	case <-ts.packets:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for discovery announce packet")
+	}
+
+	ts.mu.Lock()
+	ts.lastPacket = nil
+	ts.mu.Unlock()
+
+	select {
+	case packet := <-ts.packets:
+		t.Fatalf("received unexpected second announce packet before interval elapsed: %#v", packet)
+	case <-time.After(40 * time.Millisecond):
+	}
+}
+
+func TestInterfaceAnnouncerParity(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("reachable_on executable parity path is not used on Windows")
+	}
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-announce-")
+	defer cleanup()
+
+	reachableScript := filepath.Join(tmpDir, "reachable-on.sh")
+	if err := os.WriteFile(reachableScript, []byte("#!/bin/sh\necho script.example.net\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile(reachableScript) error = %v", err)
+	}
+
+	logger := NewLogger()
+	ts := newAnnounceCaptureTransport(logger)
+	transportIdentity := mustTestNewIdentity(t, true)
+	networkIdentity := mustTestNewIdentity(t, true)
+	ts.identity = transportIdentity
+
+	r := &Reticulum{
+		transport:          ts,
+		logger:             logger,
+		networkIdentity:    networkIdentity,
+		requiredDiscoveryV: 7,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+
+	iface := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("announce-tcp", interfaces.ModeGateway, 1000),
+		ifaceType:     "TCPInterface",
+		bindIP:        "127.0.0.1",
+		bindPort:      4244,
+	}
+	iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  6 * time.Hour,
+		StampValue:        7,
+		Name:              "Encrypted TCP\n",
+		Encrypt:           true,
+		ReachableOn:       reachableScript,
+	})
+
+	appData, err := announcer.getInterfaceAnnounceData(iface)
+	if err != nil {
+		t.Fatalf("getInterfaceAnnounceData() error = %v", err)
+	}
+	if len(appData) <= 1 {
+		t.Fatalf("getInterfaceAnnounceData() returned %v bytes, want > 1", len(appData))
+	}
+	if got := appData[0]; got != discoveryFlagEncrypted {
+		t.Fatalf("flags = %08b, want %08b", got, discoveryFlagEncrypted)
+	}
+
+	decrypted, err := networkIdentity.Decrypt(appData[1:], nil, false)
+	if err != nil {
+		t.Fatalf("networkIdentity.Decrypt() error = %v", err)
+	}
+	packed := decrypted[:len(decrypted)-discoveryStampSize]
+	stamp := decrypted[len(decrypted)-discoveryStampSize:]
+	workblock, err := discoveryStampWorkblock(FullHash(packed), discoveryWorkblockRounds)
+	if err != nil {
+		t.Fatalf("discoveryStampWorkblock() error = %v", err)
+	}
+	if !discoveryStampValid(stamp, 7, workblock) {
+		t.Fatal("expected encrypted announce stamp to satisfy configured stamp cost")
+	}
+
+	unpacked, err := msgpack.Unpack(packed)
+	if err != nil {
+		t.Fatalf("msgpack.Unpack() error = %v", err)
+	}
+	info := asAnyMap(unpacked)
+	if info == nil {
+		t.Fatalf("unexpected announce payload type %T", unpacked)
+	}
+	if got := asString(lookupDiscoveryValue(info, discoveryFieldInterfaceType)); got != "TCPServerInterface" {
+		t.Fatalf("interface type = %q, want %q", got, "TCPServerInterface")
+	}
+	if got := asBytes(lookupDiscoveryValue(info, discoveryFieldTransportID)); hex.EncodeToString(got) != transportIdentity.HexHash {
+		t.Fatalf("transport ID = %x, want %v", got, transportIdentity.HexHash)
+	}
+	if got := asString(lookupDiscoveryValue(info, discoveryFieldReachableOn)); got != "script.example.net" {
+		t.Fatalf("reachable_on = %q, want %q", got, "script.example.net")
+	}
+	if got := asInt(lookupDiscoveryValue(info, discoveryFieldPort)); got != 4244 {
+		t.Fatalf("port = %v, want 4244", got)
+	}
 }

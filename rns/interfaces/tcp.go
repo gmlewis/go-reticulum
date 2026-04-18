@@ -68,6 +68,10 @@ func (tci *TCPClientInterface) TargetHost() string { return tci.targetHost }
 // TargetPort returns the remote TCP port configured for this client interface.
 func (tci *TCPClientInterface) TargetPort() int { return tci.targetPort }
 
+// KISSFraming reports whether this client interface uses KISS framing instead of
+// raw HDLC framing.
+func (tci *TCPClientInterface) KISSFraming() bool { return tci.kissFraming }
+
 func (tci *TCPClientInterface) connect() error {
 	addr := fmt.Sprintf("%v:%v", tci.targetHost, tci.targetPort)
 	log.Printf("Go TCPClientInterface %v connecting to %v", tci.name, addr)
@@ -303,6 +307,12 @@ func NewTCPServerInterface(name, bindIP string, bindPort int, handler InboundHan
 
 	return tsi, nil
 }
+
+// BindIP returns the configured listen address for this TCP server interface.
+func (tsi *TCPServerInterface) BindIP() string { return tsi.bindIP }
+
+// BindPort returns the configured listen TCP port for this server interface.
+func (tsi *TCPServerInterface) BindPort() int { return tsi.bindPort }
 
 func (tsi *TCPServerInterface) acceptLoop() {
 	for atomic.LoadInt32(&tsi.running) == 1 {

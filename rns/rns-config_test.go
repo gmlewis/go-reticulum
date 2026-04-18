@@ -1442,6 +1442,10 @@ discovery_modulation = lora
 	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
+	if r.interfaceAnnouncer == nil {
+		t.Fatalf("expected interface announcer to be initialized for discoverable interface")
+	}
+
 	ifaces := ts.GetInterfaces()
 	if len(ifaces) != 1 {
 		t.Fatalf("expected 1 interface, got %v", len(ifaces))
