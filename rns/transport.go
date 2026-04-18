@@ -165,6 +165,7 @@ type TransportSystem struct {
 
 	blackholedIdentities map[string]BlackholeIdentityEntry
 	discoverCalls        int
+	discoverHook         func()
 
 	knownDestinations map[string][]any
 	knownRatchets     map[string][]byte
@@ -555,9 +556,12 @@ func (ts *TransportSystem) NetworkIdentityHash() []byte {
 // DiscoverInterfaces initiates a discovery process to find available interfaces on the network.
 func (ts *TransportSystem) DiscoverInterfaces() {
 	ts.mu.Lock()
-	defer ts.mu.Unlock()
 	ts.discoverCalls++
-	// TODO - unimplemented
+	hook := ts.discoverHook
+	ts.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 }
 
 // DiscoverInterfacesCallCount returns the number of times the discovery interface process has been called.
@@ -565,6 +569,14 @@ func (ts *TransportSystem) DiscoverInterfacesCallCount() int {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	return ts.discoverCalls
+}
+
+// SetDiscoverInterfacesHook registers the callback that should run when
+// DiscoverInterfaces is invoked.
+func (ts *TransportSystem) SetDiscoverInterfacesHook(hook func()) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.discoverHook = hook
 }
 
 // HopsTo returns the number of hops to the given destination hash,

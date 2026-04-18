@@ -256,6 +256,9 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger) (*Re
 				}
 				return nil, err
 			}
+			if setter, ok := r.transport.(interface{ SetDiscoverInterfacesHook(func()) }); ok {
+				setter.SetDiscoverInterfacesHook(r.interfaceDiscovery.connectDiscovered)
+			}
 			r.transport.DiscoverInterfaces()
 		}
 	}

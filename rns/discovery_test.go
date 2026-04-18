@@ -635,6 +635,8 @@ func TestInterfaceDiscoveryStartReconnectsCachedBackbone(t *testing.T) {
 	if err := discovery.Start(2); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
+	ts.SetDiscoverInterfacesHook(discovery.connectDiscovered)
+	ts.DiscoverInterfaces()
 
 	var acceptedConn net.Conn
 	select {

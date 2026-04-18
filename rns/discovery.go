@@ -250,9 +250,6 @@ func (id *InterfaceDiscovery) Start(requiredValue int) error {
 	if id.owner.transport != nil {
 		id.owner.transport.RegisterAnnounceHandler(id.handler.AnnounceHandler())
 	}
-	if id.owner.shouldAutoconnectDiscoveredInterfaces() {
-		id.connectDiscovered()
-	}
 	return nil
 }
 
