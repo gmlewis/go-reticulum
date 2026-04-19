@@ -893,6 +893,31 @@ func (r *Reticulum) initInterfaces() error {
 					} else {
 						applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 						r.transport.RegisterInterface(iface)
+						if bootstrapOnly {
+							name := sub.Name
+							listenIPCopy := listenIP
+							listenPortCopy := listenPort
+							selectedModeCopy := selectedMode
+							ifacConfigCopy := ifacConfig
+							discoveryConfigCopy := discoveryConfig
+							r.registerBootstrapRestarter(func() error {
+								handler := func(data []byte, iface interfaces.Interface) {
+									r.transport.Inbound(data, iface)
+								}
+								onConnect := func(iface interfaces.Interface) {
+									applySpawnedInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, r.panicOnIfaceError)
+									r.transport.RegisterInterface(iface)
+								}
+
+								iface, err := interfaces.NewI2PInterface(name, listenIPCopy, listenPortCopy, handler, onConnect)
+								if err != nil {
+									return err
+								}
+								applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+								r.transport.RegisterInterface(iface)
+								return nil
+							})
+						}
 						registeredAny = true
 						r.logger.Info("Started I2P interface %v on %v:%v", sub.Name, listenIP, listenPort)
 					}
@@ -1039,6 +1064,27 @@ func (r *Reticulum) initInterfaces() error {
 			}
 			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
+			if bootstrapOnly {
+				name := sub.Name
+				targetHostCopy := targetHost
+				targetPortCopy := targetPort
+				selectedModeCopy := selectedMode
+				ifacConfigCopy := ifacConfig
+				discoveryConfigCopy := discoveryConfig
+				r.registerBootstrapRestarter(func() error {
+					handler := func(data []byte, iface interfaces.Interface) {
+						r.transport.Inbound(data, iface)
+					}
+
+					iface, err := interfaces.NewBackboneClientInterface(name, targetHostCopy, targetPortCopy, handler)
+					if err != nil {
+						return err
+					}
+					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+					r.transport.RegisterInterface(iface)
+					return nil
+				})
+			}
 			r.logger.Info("Started Backbone client interface %v to %v:%v", sub.Name, targetHost, targetPort)
 
 		case "KISSInterface":

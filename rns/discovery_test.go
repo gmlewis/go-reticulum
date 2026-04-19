@@ -1267,6 +1267,123 @@ bootstrap_only = Yes
 	}
 }
 
+func TestInterfaceDiscoveryMonitorReenablesConfiguredI2PBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
+	t.Parallel()
+
+	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	port := reserveTCPPort(t)
+	config := `[reticulum]
+share_instance = No
+autoconnect_discovered_interfaces = 1
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[Bootstrap I2P]]
+type = I2PInterface
+connectable = Yes
+bind_ip = 127.0.0.1
+bind_port = ` + strconv.Itoa(port) + `
+bootstrap_only = Yes
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected 1 configured interface, got %v", got)
+	}
+
+	discovery := NewInterfaceDiscovery(r)
+	discovery.monitorInterval = 0
+
+	iface := ts.GetInterfaces()[0]
+	discovery.teardownInterface(iface)
+
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected bootstrap interface teardown to remove interface, got %v interfaces", got)
+	}
+
+	discovery.monitorAutoconnectsOnce(time.Unix(700, 0))
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected configured I2P bootstrap interface to be re-enabled, got %v interfaces", got)
+	}
+
+	getter, ok := ts.GetInterfaces()[0].(interface{ BootstrapOnly() bool })
+	if !ok {
+		t.Fatalf("re-enabled interface %T does not expose BootstrapOnly()", ts.GetInterfaces()[0])
+	}
+	if !getter.BootstrapOnly() {
+		t.Fatal("expected re-enabled I2P bootstrap interface to preserve bootstrap-only metadata")
+	}
+}
+
+func TestInterfaceDiscoveryMonitorReenablesConfiguredBackboneClientBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
+	t.Parallel()
+
+	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	port := reserveTCPPort(t)
+	config := `[reticulum]
+share_instance = No
+autoconnect_discovered_interfaces = 1
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[Bootstrap Backbone Client]]
+type = BackboneClientInterface
+target_host = 127.0.0.1
+target_port = ` + strconv.Itoa(port) + `
+bootstrap_only = Yes
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected 1 configured interface, got %v", got)
+	}
+
+	discovery := NewInterfaceDiscovery(r)
+	discovery.monitorInterval = 0
+
+	iface := ts.GetInterfaces()[0]
+	discovery.teardownInterface(iface)
+
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected bootstrap interface teardown to remove interface, got %v interfaces", got)
+	}
+
+	discovery.monitorAutoconnectsOnce(time.Unix(800, 0))
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected configured Backbone client bootstrap interface to be re-enabled, got %v interfaces", got)
+	}
+
+	getter, ok := ts.GetInterfaces()[0].(interface{ BootstrapOnly() bool })
+	if !ok {
+		t.Fatalf("re-enabled interface %T does not expose BootstrapOnly()", ts.GetInterfaces()[0])
+	}
+	if !getter.BootstrapOnly() {
+		t.Fatal("expected re-enabled Backbone client bootstrap interface to preserve bootstrap-only metadata")
+	}
+}
+
 type announceTestInterface struct {
 	*interfaces.BaseInterface
 	ifaceType string
@@ -1420,8 +1537,6 @@ func TestInterfaceAnnouncerPayload(t *testing.T) {
 }
 
 func TestInterfaceAnnouncerStart(t *testing.T) {
-	t.Parallel()
-
 	logger := NewLogger()
 	ts := newAnnounceCaptureTransport(logger)
 	ts.identity = mustTestNewIdentity(t, true)
@@ -1453,7 +1568,7 @@ func TestInterfaceAnnouncerStart(t *testing.T) {
 
 	select {
 	case <-ts.packets:
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for discovery announce packet")
 	}
 

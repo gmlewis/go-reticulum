@@ -213,6 +213,60 @@ func TestLinkIdentifyPacketFlow(t *testing.T) {
 	}
 }
 
+func TestLinkIdentifyWaitsForReceiverEstablishedCallback(t *testing.T) {
+	t.Parallel()
+
+	tsInitiator := newTestTransportSystem(t)
+	tsReceiver := newTestTransportSystem(t)
+
+	pipeInitiator, pipeReceiver, cleanup := newTestPipes(t, tsInitiator, tsReceiver)
+	defer cleanup()
+	tsInitiator.RegisterInterface(pipeInitiator)
+	tsReceiver.RegisterInterface(pipeReceiver)
+
+	receiverDest := mustTestNewDestination(t, tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
+	allowReceiverSetup := make(chan struct{})
+	identified := make(chan *Identity, 1)
+	receiverDest.SetLinkEstablishedCallback(func(l *Link) {
+		<-allowReceiverSetup
+		l.SetRemoteIdentifiedCallback(func(_ *Link, id *Identity) {
+			identified <- id
+		})
+	})
+
+	link := mustTestNewLink(t, tsInitiator, receiverDest)
+	establishedInitiator := make(chan struct{}, 1)
+	link.SetLinkEstablishedCallback(func(*Link) {
+		establishedInitiator <- struct{}{}
+	})
+
+	if err := link.Establish(); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case <-establishedInitiator:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for initiator link establishment")
+	}
+
+	if err := link.Identify(tsInitiator.identity); err != nil {
+		t.Fatalf("Identify() error: %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+	close(allowReceiverSetup)
+
+	select {
+	case id := <-identified:
+		if !bytes.Equal(id.Hash, tsInitiator.identity.Hash) {
+			t.Fatalf("identified hash mismatch: got %x want %x", id.Hash, tsInitiator.identity.Hash)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for receiver remote identification")
+	}
+}
+
 func TestSetResourceStrategyValidatesInput(t *testing.T) {
 	t.Parallel()
 	l := &Link{}

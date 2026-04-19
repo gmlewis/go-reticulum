@@ -643,14 +643,14 @@ func (l *Link) send(p *Packet) error {
 // ValidateProof evaluates an incoming link proof packet and formally transitions the link into an active state upon success.
 func (l *Link) ValidateProof(packet *Packet) error {
 	l.mu.Lock()
-	defer l.mu.Unlock()
-
 	if l.status != LinkPending {
+		l.mu.Unlock()
 		return errors.New("link is not in pending state")
 	}
 
 	// data = signature (64) + peerPubBytes (32) + signalling_bytes (optional, 3)
 	if len(packet.Data) < 64+32 {
+		l.mu.Unlock()
 		return errors.New("invalid proof data length")
 	}
 
@@ -665,10 +665,12 @@ func (l *Link) ValidateProof(packet *Packet) error {
 	peerSigPubBytes := l.destination.identity.GetPublicKey()[32:64]
 
 	if err := l.LoadPeer(peerPubBytes, peerSigPubBytes); err != nil {
+		l.mu.Unlock()
 		return err
 	}
 
 	if err := l.handshake(); err != nil {
+		l.mu.Unlock()
 		return err
 	}
 
@@ -679,12 +681,15 @@ func (l *Link) ValidateProof(packet *Packet) error {
 	signedData = append(signedData, sigBytes...)
 
 	if !l.destination.identity.Verify(signature, signedData) {
+		l.mu.Unlock()
 		return errors.New("invalid link proof signature")
 	}
 
 	l.status = LinkActive
 	l.activatedAt = time.Now()
 	l.rtt = time.Since(l.requestTime).Seconds()
+	callback := l.callbacks.LinkEstablished
+	l.mu.Unlock()
 
 	if l.transport != nil {
 		l.transport.ActivateLink(l)
@@ -699,12 +704,12 @@ func (l *Link) ValidateProof(packet *Packet) error {
 	rttPacket := NewPacketWithTransport(l.transport, l, rttData)
 	rttPacket.PacketType = PacketData
 	rttPacket.Context = ContextLrrtt
-	if err := rttPacket.Send(); err != nil {
+	if err := l.send(rttPacket); err != nil {
 		return fmt.Errorf("sending RTT packet: %w", err)
 	}
 
-	if l.callbacks.LinkEstablished != nil {
-		go l.callbacks.LinkEstablished(l)
+	if callback != nil {
+		callback(l)
 	}
 
 	return nil
@@ -714,19 +719,21 @@ func (l *Link) ValidateProof(packet *Packet) error {
 func (l *Link) HandleRTT(packet *Packet) {
 	l.logger.Extreme("Handling RTT for %x", l.linkID)
 	l.mu.Lock()
-	defer l.mu.Unlock()
-
 	if l.status == LinkHandshake || l.status == LinkPending {
 		l.status = LinkActive
 		l.activatedAt = time.Now()
+		callback := l.callbacks.LinkEstablished
+		l.mu.Unlock()
 		if l.transport != nil {
 			l.transport.ActivateLink(l)
 		}
 		l.logger.Verbose("Link %x active after RTT", l.linkID)
-		if l.callbacks.LinkEstablished != nil {
-			go l.callbacks.LinkEstablished(l)
+		if callback != nil {
+			callback(l)
 		}
+		return
 	}
+	l.mu.Unlock()
 }
 
 // Handshake triggers the underlying Diffie-Hellman cryptographic exchange, deriving secure symmetric session keys.
