@@ -855,7 +855,12 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 				shouldRemove = true
 			} else {
 				networkID, err := hex.DecodeString(networkIDHex)
-				if err != nil || !hasDiscoverySource(discoverySources, networkID) {
+				if err != nil {
+					id.owner.logger.Error("error while loading discovered interface data: %v", err)
+					id.owner.logger.Error("the interface data file %v may be corrupt", path)
+					continue
+				}
+				if !hasDiscoverySource(discoverySources, networkID) {
 					shouldRemove = true
 				}
 			}

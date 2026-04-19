@@ -353,6 +353,11 @@ func TestListDiscoveredInterfaces_SourceAndReachableFiltering(t *testing.T) {
 		"last_heard": now - 3600,
 		"network_id": "ffeeddccbbaa00998877665544332211",
 	})
+	writeData("invalid-network-id-hex", map[string]any{
+		"name":       "InvalidNetworkIDHex",
+		"last_heard": now - 3600,
+		"network_id": "not-hex",
+	})
 	writeData("invalid-reachable", map[string]any{
 		"name":         "InvalidReachable",
 		"last_heard":   now - 3600,
@@ -381,6 +386,9 @@ func TestListDiscoveredInterfaces_SourceAndReachableFiltering(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(storagePath, name)); !os.IsNotExist(err) {
 			t.Fatalf("expected filtered discovery file %q to be removed", name)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(storagePath, "invalid-network-id-hex.data")); err != nil {
+		t.Fatalf("expected malformed network_id discovery file to remain for corrupt-file handling parity: %v", err)
 	}
 }
 
