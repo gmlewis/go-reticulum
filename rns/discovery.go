@@ -323,9 +323,6 @@ func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interfac
 	}
 
 	name := sanitizeDiscoveryString(cfg.Name)
-	if name == "" {
-		name = sanitizeDiscoveryString(iface.Name())
-	}
 
 	info := map[any]any{
 		discoveryFieldInterfaceType: advertisedType,

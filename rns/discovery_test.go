@@ -2757,6 +2757,58 @@ func TestInterfaceAnnouncerPayload(t *testing.T) {
 	}
 }
 
+func TestInterfaceAnnouncerPayloadKeepsEmptyDiscoveryName(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	ts := newAnnounceCaptureTransport(logger)
+	transportIdentity := mustTestNewIdentity(t, true)
+	ts.identity = transportIdentity
+	ts.SetEnabled(true)
+
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+
+	iface := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("announce-backbone-fallback", interfaces.ModeGateway, 1000),
+		ifaceType:     "BackboneInterface",
+		bindIP:        "127.0.0.1",
+		bindPort:      4242,
+	}
+	iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  6 * time.Hour,
+		StampValue:        6,
+		Name:              "",
+		ReachableOn:       "discovery.example.net",
+	})
+
+	appData, err := announcer.getInterfaceAnnounceData(iface)
+	if err != nil {
+		t.Fatalf("getInterfaceAnnounceData() error = %v", err)
+	}
+
+	payload := appData[1:]
+	packed := payload[:len(payload)-discoveryStampSize]
+
+	unpacked, err := msgpack.Unpack(packed)
+	if err != nil {
+		t.Fatalf("msgpack.Unpack() error = %v", err)
+	}
+	info := asAnyMap(unpacked)
+	if info == nil {
+		t.Fatalf("unexpected announce payload type %T", unpacked)
+	}
+
+	if got := asString(lookupDiscoveryValue(info, discoveryFieldName)); got != "" {
+		t.Fatalf("name = %q, want empty string", got)
+	}
+}
+
 func TestInterfaceAnnouncerPayloadI2P(t *testing.T) {
 	t.Parallel()
 
