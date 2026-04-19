@@ -89,6 +89,34 @@ func startSocatLinkedPTYPair(t *testing.T) (string, string) {
 	return "", ""
 }
 
+type targetHostTestInterface struct {
+	*interfaces.BaseInterface
+	ifaceType   string
+	targetHost  string
+	targetPort  int
+	detachError error
+}
+
+func newTargetHostTestInterface(name, ifaceType, targetHost string, targetPort int) *targetHostTestInterface {
+	return &targetHostTestInterface{
+		BaseInterface: interfaces.NewBaseInterface(name, interfaces.ModeFull, 0),
+		ifaceType:     ifaceType,
+		targetHost:    targetHost,
+		targetPort:    targetPort,
+	}
+}
+
+func (i *targetHostTestInterface) Type() string      { return i.ifaceType }
+func (i *targetHostTestInterface) Status() bool      { return true }
+func (i *targetHostTestInterface) IsOut() bool       { return true }
+func (i *targetHostTestInterface) Send([]byte) error { return nil }
+func (i *targetHostTestInterface) Detach() error {
+	i.SetDetached(true)
+	return i.detachError
+}
+func (i *targetHostTestInterface) TargetHost() string { return i.targetHost }
+func (i *targetHostTestInterface) TargetPort() int    { return i.targetPort }
+
 func TestListDiscoveredInterfaces(t *testing.T) {
 	t.Parallel()
 	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-")
@@ -970,6 +998,33 @@ func TestInterfaceDiscoveryConnectDiscoveredSkipsWhenAutoconnectDisabled(t *test
 	}
 	if got := len(ts.GetInterfaces()); got != 0 {
 		t.Fatalf("expected no auto-connected interfaces when autoconnect is disabled, got %v", got)
+	}
+}
+
+func TestInterfaceDiscoveryInterfaceExistsMatchesHostWithoutPort(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	existing := newTargetHostTestInterface(
+		"Existing I2P",
+		"I2PInterfacePeer",
+		"exampleabcdefghijklmnopqrstuvwxyz.b32.i2p",
+		1234,
+	)
+	ts.RegisterInterface(existing)
+
+	if !discovery.interfaceExists(DiscoveredInterface{
+		Type:        "I2PInterface",
+		ReachableOn: "exampleabcdefghijklmnopqrstuvwxyz.b32.i2p",
+	}) {
+		t.Fatal("expected host-only discovered interface to match existing target host")
 	}
 }
 

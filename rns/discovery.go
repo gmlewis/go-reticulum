@@ -1100,8 +1100,10 @@ func (id *InterfaceDiscovery) interfaceExists(info DiscoveredInterface) bool {
 			TargetHost() string
 			TargetPort() int
 		})
-		if ok && hostPortMatcher.TargetHost() == info.ReachableOn && info.Port != nil && hostPortMatcher.TargetPort() == *info.Port {
-			return true
+		if ok && hostPortMatcher.TargetHost() == info.ReachableOn {
+			if info.Port == nil || hostPortMatcher.TargetPort() == *info.Port {
+				return true
+			}
 		}
 	}
 	return false
