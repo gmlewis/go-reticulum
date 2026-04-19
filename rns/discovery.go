@@ -1223,28 +1223,7 @@ func (id *InterfaceDiscovery) monitorAutoconnectsOnce(now time.Time) {
 		if iface == nil {
 			continue
 		}
-		func() {
-			defer func() {
-				if recovered := recover(); recovered != nil && id.owner != nil && id.owner.logger != nil {
-					id.owner.logger.Error("error while checking auto-connected interface state for %v: %v", iface, recovered)
-				}
-			}()
-
-			if iface.Status() {
-				onlineInterfaces++
-				delete(id.autoconnectDownSince, iface)
-				return
-			}
-
-			downSince, ok := id.autoconnectDownSince[iface]
-			if !ok {
-				id.autoconnectDownSince[iface] = now
-				return
-			}
-			if now.Sub(downSince) >= id.detachThreshold {
-				detached = append(detached, iface)
-			}
-		}()
+		id.checkMonitoredInterfaceState(now, iface, &onlineInterfaces, &detached)
 	}
 	id.monitorMu.Unlock()
 
@@ -1290,8 +1269,41 @@ func (id *InterfaceDiscovery) monitorAutoconnectsOnce(now time.Time) {
 	}
 
 	for _, iface := range detached {
-		id.teardownInterface(iface)
+		id.teardownMonitoredInterface(iface)
 	}
+}
+
+func (id *InterfaceDiscovery) checkMonitoredInterfaceState(now time.Time, iface interfaces.Interface, onlineInterfaces *int, detached *[]interfaces.Interface) {
+	defer func() {
+		if recovered := recover(); recovered != nil && id.owner != nil && id.owner.logger != nil {
+			id.owner.logger.Error("error while checking auto-connected interface state for %v: %v", iface, recovered)
+		}
+	}()
+
+	if iface.Status() {
+		*onlineInterfaces = *onlineInterfaces + 1
+		delete(id.autoconnectDownSince, iface)
+		return
+	}
+
+	downSince, ok := id.autoconnectDownSince[iface]
+	if !ok {
+		id.autoconnectDownSince[iface] = now
+		return
+	}
+	if now.Sub(downSince) >= id.detachThreshold {
+		*detached = append(*detached, iface)
+	}
+}
+
+func (id *InterfaceDiscovery) teardownMonitoredInterface(iface interfaces.Interface) {
+	defer func() {
+		if recovered := recover(); recovered != nil && id.owner != nil && id.owner.logger != nil {
+			id.owner.logger.Error("error while de-registering auto-connected interface from transport: %v", recovered)
+		}
+	}()
+
+	id.teardownInterface(iface)
 }
 
 func interfaceBootstrapOnly(iface interfaces.Interface) bool {

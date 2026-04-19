@@ -611,6 +611,38 @@ func TestRunInitiatorProtocolFlowLinkClosed(t *testing.T) {
 	}
 }
 
+func TestRunInitiatorProtocolFlowLinkClosedWaitsForLateExitWithinGrace(t *testing.T) {
+	t.Parallel()
+
+	linkClosedCh := make(chan struct{}, 1)
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	fake := &fakeChannelSession{}
+	fake.onSend = func(msg rns.Message) {
+		switch msg.(type) {
+		case *versionInfoMessage:
+			go fake.emit(&versionInfoMessage{SoftwareVersion: "listener", ProtocolVersion: protocolVersion})
+		case *executeCommandMessage:
+			go func() {
+				linkClosedCh <- struct{}{}
+				time.Sleep(20 * time.Millisecond)
+				fake.emit(&commandExitedMessage{ReturnCode: 0})
+			}()
+		}
+	}
+
+	rt := &runtimeT{linkClosedGrace: 40 * time.Millisecond}
+	opts := options{timeoutSec: 1, mirror: true, noTTY: true}
+	code, _, err := rt.runInitiatorProtocolFlow(fake, opts, linkClosedCh, stopCh, false)
+	if err != nil {
+		t.Fatalf("runInitiatorProtocolFlow error: %v", err)
+	}
+	if code != 0 {
+		t.Fatalf("exit code=%v, want 0", code)
+	}
+}
+
 func TestRunInitiatorProtocolFlowFatalErrorPrecedesExit(t *testing.T) {
 	t.Parallel()
 
