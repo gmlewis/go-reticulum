@@ -117,6 +117,30 @@ func (i *targetHostTestInterface) Detach() error {
 func (i *targetHostTestInterface) TargetHost() string { return i.targetHost }
 func (i *targetHostTestInterface) TargetPort() int    { return i.targetPort }
 
+type b32TestInterface struct {
+	*interfaces.BaseInterface
+	ifaceType string
+	b32       string
+}
+
+func newB32TestInterface(name, ifaceType, b32 string) *b32TestInterface {
+	return &b32TestInterface{
+		BaseInterface: interfaces.NewBaseInterface(name, interfaces.ModeFull, 0),
+		ifaceType:     ifaceType,
+		b32:           b32,
+	}
+}
+
+func (i *b32TestInterface) Type() string      { return i.ifaceType }
+func (i *b32TestInterface) Status() bool      { return true }
+func (i *b32TestInterface) IsOut() bool       { return true }
+func (i *b32TestInterface) Send([]byte) error { return nil }
+func (i *b32TestInterface) Detach() error {
+	i.SetDetached(true)
+	return nil
+}
+func (i *b32TestInterface) B32() string { return i.b32 }
+
 func TestListDiscoveredInterfaces(t *testing.T) {
 	t.Parallel()
 	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-")
@@ -1263,6 +1287,32 @@ func TestInterfaceDiscoveryInterfaceExistsMatchesHostWithoutPort(t *testing.T) {
 		ReachableOn: "exampleabcdefghijklmnopqrstuvwxyz.b32.i2p",
 	}) {
 		t.Fatal("expected host-only discovered interface to match existing target host")
+	}
+}
+
+func TestInterfaceDiscoveryInterfaceExistsMatchesI2PB32(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	existing := newB32TestInterface(
+		"Existing I2P B32",
+		"I2PInterfacePeer",
+		"exampleabcdefghijklmnopqrstuvwxyz.b32.i2p",
+	)
+	ts.RegisterInterface(existing)
+
+	if !discovery.interfaceExists(DiscoveredInterface{
+		Type:        "I2PInterface",
+		ReachableOn: "exampleabcdefghijklmnopqrstuvwxyz.b32.i2p",
+	}) {
+		t.Fatal("expected discovered I2P interface to match existing b32 address")
 	}
 }
 

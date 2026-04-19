@@ -1156,6 +1156,11 @@ func (id *InterfaceDiscovery) interfaceExists(info DiscoveredInterface) bool {
 				return true
 			}
 		}
+
+		b32Matcher, ok := iface.(interface{ B32() string })
+		if ok && b32Matcher.B32() == info.ReachableOn {
+			return true
+		}
 	}
 	return false
 }
