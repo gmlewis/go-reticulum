@@ -6,10 +6,12 @@
 package rns
 
 import (
+	"bytes"
 	_ "embed"
 	"encoding/hex"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -41,6 +43,50 @@ func reserveUDPPort(t *testing.T) int {
 		}
 	}()
 	return conn.LocalAddr().(*net.UDPAddr).Port
+}
+
+func startSocatLinkedPTYPair(t *testing.T) (string, string) {
+	t.Helper()
+
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skipf("serial bootstrap test not supported on %v", runtime.GOOS)
+	}
+	if _, err := exec.LookPath("socat"); err != nil {
+		t.Skip("socat not installed")
+	}
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-pty-")
+	t.Cleanup(cleanup)
+
+	left := filepath.Join(tmpDir, "pty0")
+	right := filepath.Join(tmpDir, "pty1")
+	cmd := exec.Command("socat", "-d", "-d",
+		"PTY,link="+left+",raw,echo=0",
+		"PTY,link="+right+",raw,echo=0")
+	stderr := &bytes.Buffer{}
+	cmd.Stderr = stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start socat: %v", err)
+	}
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+	})
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(left); err == nil {
+			if _, err := os.Stat(right); err == nil {
+				return left, right
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting for socat PTY links: %s", stderr.String())
+	return "", ""
 }
 
 func TestListDiscoveredInterfaces(t *testing.T) {
@@ -1719,6 +1765,62 @@ bootstrap_only = Yes
 	}
 	if !getter.BootstrapOnly() {
 		t.Fatal("expected re-enabled Auto bootstrap interface to preserve bootstrap-only metadata")
+	}
+}
+
+func TestInterfaceDiscoveryMonitorReenablesConfiguredSerialBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
+	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	serialPort, _ := startSocatLinkedPTYPair(t)
+	config := `[reticulum]
+share_instance = No
+autoconnect_discovered_interfaces = 1
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[Bootstrap Serial]]
+type = SerialInterface
+port = ` + serialPort + `
+speed = 115200
+bootstrap_only = Yes
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected 1 configured interface, got %v", got)
+	}
+
+	discovery := NewInterfaceDiscovery(r)
+	discovery.monitorInterval = 0
+
+	iface := ts.GetInterfaces()[0]
+	discovery.teardownInterface(iface)
+
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected bootstrap interface teardown to remove interface, got %v interfaces", got)
+	}
+
+	discovery.monitorAutoconnectsOnce(time.Unix(697, 0))
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected configured Serial bootstrap interface to be re-enabled, got %v interfaces", got)
+	}
+
+	getter, ok := ts.GetInterfaces()[0].(interface{ BootstrapOnly() bool })
+	if !ok {
+		t.Fatalf("re-enabled interface %T does not expose BootstrapOnly()", ts.GetInterfaces()[0])
+	}
+	if !getter.BootstrapOnly() {
+		t.Fatal("expected re-enabled Serial bootstrap interface to preserve bootstrap-only metadata")
 	}
 }
 

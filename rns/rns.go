@@ -1648,6 +1648,30 @@ func (r *Reticulum) initInterfaces() error {
 			}
 			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
+			if bootstrapOnly {
+				name := sub.Name
+				portCopy := port
+				speedCopy := speed
+				databitsCopy := databits
+				stopbitsCopy := stopbits
+				parityCopy := parity
+				selectedModeCopy := selectedMode
+				ifacConfigCopy := ifacConfig
+				discoveryConfigCopy := discoveryConfig
+				r.registerBootstrapRestarter(func() error {
+					handler := func(data []byte, iface interfaces.Interface) {
+						r.transport.Inbound(data, iface)
+					}
+
+					iface, err := interfaces.NewSerialInterface(name, portCopy, speedCopy, databitsCopy, stopbitsCopy, parityCopy, handler)
+					if err != nil {
+						return err
+					}
+					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+					r.transport.RegisterInterface(iface)
+					return nil
+				})
+			}
 			r.logger.Info("Started Serial interface %v on %v at %v bps", sub.Name, port, speed)
 		}
 	}
