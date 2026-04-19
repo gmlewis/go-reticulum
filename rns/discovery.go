@@ -1223,20 +1223,28 @@ func (id *InterfaceDiscovery) monitorAutoconnectsOnce(now time.Time) {
 		if iface == nil {
 			continue
 		}
-		if iface.Status() {
-			onlineInterfaces++
-			delete(id.autoconnectDownSince, iface)
-			continue
-		}
+		func() {
+			defer func() {
+				if recovered := recover(); recovered != nil && id.owner != nil && id.owner.logger != nil {
+					id.owner.logger.Error("error while checking auto-connected interface state for %v: %v", iface, recovered)
+				}
+			}()
 
-		downSince, ok := id.autoconnectDownSince[iface]
-		if !ok {
-			id.autoconnectDownSince[iface] = now
-			continue
-		}
-		if now.Sub(downSince) >= id.detachThreshold {
-			detached = append(detached, iface)
-		}
+			if iface.Status() {
+				onlineInterfaces++
+				delete(id.autoconnectDownSince, iface)
+				return
+			}
+
+			downSince, ok := id.autoconnectDownSince[iface]
+			if !ok {
+				id.autoconnectDownSince[iface] = now
+				return
+			}
+			if now.Sub(downSince) >= id.detachThreshold {
+				detached = append(detached, iface)
+			}
+		}()
 	}
 	id.monitorMu.Unlock()
 

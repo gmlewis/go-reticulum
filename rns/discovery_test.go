@@ -1630,10 +1630,16 @@ type monitorTestInterface struct {
 	online        bool
 	detached      bool
 	bootstrapOnly bool
+	panicStatus   bool
 }
 
-func (m *monitorTestInterface) Type() string      { return "monitor-test" }
-func (m *monitorTestInterface) Status() bool      { return m.online }
+func (m *monitorTestInterface) Type() string { return "monitor-test" }
+func (m *monitorTestInterface) Status() bool {
+	if m.panicStatus {
+		panic("boom")
+	}
+	return m.online
+}
 func (m *monitorTestInterface) IsOut() bool       { return true }
 func (m *monitorTestInterface) Send([]byte) error { return nil }
 func (m *monitorTestInterface) Detach() error     { m.detached = true; m.SetDetached(true); return nil }
@@ -1716,6 +1722,51 @@ func TestInterfaceDiscoveryMonitorReconnectResetsDownTimer(t *testing.T) {
 	discovery.monitorAutoconnectsOnce(start.Add(23 * time.Second))
 	if !iface.detached {
 		t.Fatal("expected interface to detach after second offline period crosses threshold")
+	}
+}
+
+func TestInterfaceDiscoveryMonitorRecoversStatusPanic(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	panicking := &monitorTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("panicking", interfaces.ModeFull, 1000),
+		panicStatus:   true,
+	}
+	offline := &monitorTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("offline", interfaces.ModeFull, 1000),
+		online:        false,
+	}
+	ts.RegisterInterface(panicking)
+	ts.RegisterInterface(offline)
+
+	discovery := NewInterfaceDiscovery(&Reticulum{
+		transport: ts,
+		logger:    logger,
+	})
+	discovery.monitorInterval = 0
+	discovery.detachThreshold = 10 * time.Second
+	discovery.monitorInterface(panicking)
+	discovery.monitorInterface(offline)
+	discovery.monitorMu.Lock()
+	discovery.autoconnectDownSince[offline] = time.Unix(100, 0)
+	discovery.monitorMu.Unlock()
+
+	func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				t.Fatalf("monitorAutoconnectsOnce() propagated status panic: %v", recovered)
+			}
+		}()
+		discovery.monitorAutoconnectsOnce(time.Unix(111, 0))
+	}()
+
+	if !offline.detached {
+		t.Fatal("expected non-panicking offline interface to still detach")
+	}
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected panicking interface to remain registered, got %v interfaces", got)
 	}
 }
 
