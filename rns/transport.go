@@ -170,6 +170,8 @@ type TransportSystem struct {
 	blackholedIdentities map[string]BlackholeIdentityEntry
 	enableBlackholeCalls int
 	discoverCalls        int
+	blackholeUpdaterOn   bool
+	discoveryOn          bool
 	enableBlackholeHook  func()
 	discoverHook         func()
 
@@ -562,6 +564,11 @@ func (ts *TransportSystem) NetworkIdentityHash() []byte {
 // DiscoverInterfaces initiates a discovery process to find available interfaces on the network.
 func (ts *TransportSystem) DiscoverInterfaces() {
 	ts.mu.Lock()
+	if ts.discoveryOn {
+		ts.mu.Unlock()
+		return
+	}
+	ts.discoveryOn = true
 	ts.discoverCalls++
 	hook := ts.discoverHook
 	ts.mu.Unlock()
@@ -573,6 +580,11 @@ func (ts *TransportSystem) DiscoverInterfaces() {
 // EnableBlackholeUpdater starts the configured blackhole updater flow.
 func (ts *TransportSystem) EnableBlackholeUpdater() {
 	ts.mu.Lock()
+	if ts.blackholeUpdaterOn {
+		ts.mu.Unlock()
+		return
+	}
+	ts.blackholeUpdaterOn = true
 	ts.enableBlackholeCalls++
 	hook := ts.enableBlackholeHook
 	ts.mu.Unlock()

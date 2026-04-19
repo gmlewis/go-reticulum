@@ -844,6 +844,26 @@ func TestDiscoverInterfacesRunsHook(t *testing.T) {
 	}
 }
 
+func TestDiscoverInterfacesOnlyRunsHookOnce(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	called := 0
+	ts.SetDiscoverInterfacesHook(func() {
+		called++
+	})
+
+	ts.DiscoverInterfaces()
+	ts.DiscoverInterfaces()
+
+	if got := ts.DiscoverInterfacesCallCount(); got != 1 {
+		t.Fatalf("DiscoverInterfacesCallCount() = %v, want 1", got)
+	}
+	if called != 1 {
+		t.Fatalf("discover hook called %v times, want 1", called)
+	}
+}
+
 func TestEnableBlackholeUpdaterRunsHook(t *testing.T) {
 	t.Parallel()
 
@@ -853,6 +873,26 @@ func TestEnableBlackholeUpdaterRunsHook(t *testing.T) {
 		called++
 	})
 
+	ts.EnableBlackholeUpdater()
+
+	if got := ts.EnableBlackholeUpdaterCallCount(); got != 1 {
+		t.Fatalf("EnableBlackholeUpdaterCallCount() = %v, want 1", got)
+	}
+	if called != 1 {
+		t.Fatalf("blackhole updater hook called %v times, want 1", called)
+	}
+}
+
+func TestEnableBlackholeUpdaterOnlyRunsHookOnce(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	called := 0
+	ts.SetEnableBlackholeUpdaterHook(func() {
+		called++
+	})
+
+	ts.EnableBlackholeUpdater()
 	ts.EnableBlackholeUpdater()
 
 	if got := ts.EnableBlackholeUpdaterCallCount(); got != 1 {
