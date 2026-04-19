@@ -1824,6 +1824,66 @@ bootstrap_only = Yes
 	}
 }
 
+func TestInterfaceDiscoveryMonitorReenablesConfiguredI2PPeerBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
+	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	config := `[reticulum]
+share_instance = No
+autoconnect_discovered_interfaces = 1
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[Bootstrap I2P Peer]]
+type = I2PInterface
+peers = 127.0.0.1:9
+bootstrap_only = Yes
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected 1 configured interface, got %v", got)
+	}
+	if got := ts.GetInterfaces()[0].Type(); got != "I2PInterfacePeer" {
+		t.Fatalf("registered interface type = %q, want I2PInterfacePeer", got)
+	}
+
+	discovery := NewInterfaceDiscovery(r)
+	discovery.monitorInterval = 0
+
+	iface := ts.GetInterfaces()[0]
+	discovery.teardownInterface(iface)
+
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected bootstrap interface teardown to remove interface, got %v interfaces", got)
+	}
+
+	discovery.monitorAutoconnectsOnce(time.Unix(698, 0))
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected configured I2P peer bootstrap interface to be re-enabled, got %v interfaces", got)
+	}
+	if got := ts.GetInterfaces()[0].Type(); got != "I2PInterfacePeer" {
+		t.Fatalf("re-enabled interface type = %q, want I2PInterfacePeer", got)
+	}
+
+	getter, ok := ts.GetInterfaces()[0].(interface{ BootstrapOnly() bool })
+	if !ok {
+		t.Fatalf("re-enabled interface %T does not expose BootstrapOnly()", ts.GetInterfaces()[0])
+	}
+	if !getter.BootstrapOnly() {
+		t.Fatal("expected re-enabled I2P peer bootstrap interface to preserve bootstrap-only metadata")
+	}
+}
+
 func TestInterfaceDiscoveryMonitorReenablesConfiguredI2PBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
 	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()

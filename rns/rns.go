@@ -926,8 +926,10 @@ func (r *Reticulum) initInterfaces() error {
 			}
 
 			registeredAny := false
+			listenIP := ""
+			listenPort := 0
 			if connectable {
-				listenIP, _ := sub.GetProperty("bind_ip")
+				listenIP, _ = sub.GetProperty("bind_ip")
 				if strings.TrimSpace(listenIP) == "" {
 					listenIP, _ = sub.GetProperty("listen_ip")
 				}
@@ -935,7 +937,6 @@ func (r *Reticulum) initInterfaces() error {
 					listenIP = "127.0.0.1"
 				}
 
-				listenPort := 0
 				if v, ok := sub.GetProperty("bind_port"); ok {
 					if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
 						listenPort = n
@@ -961,31 +962,6 @@ func (r *Reticulum) initInterfaces() error {
 					} else {
 						applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 						r.transport.RegisterInterface(iface)
-						if bootstrapOnly {
-							name := sub.Name
-							listenIPCopy := listenIP
-							listenPortCopy := listenPort
-							selectedModeCopy := selectedMode
-							ifacConfigCopy := ifacConfig
-							discoveryConfigCopy := discoveryConfig
-							r.registerBootstrapRestarter(func() error {
-								handler := func(data []byte, iface interfaces.Interface) {
-									r.transport.Inbound(data, iface)
-								}
-								onConnect := func(iface interfaces.Interface) {
-									applySpawnedInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, r.panicOnIfaceError)
-									r.transport.RegisterInterface(iface)
-								}
-
-								iface, err := interfaces.NewI2PInterface(name, listenIPCopy, listenPortCopy, handler, onConnect)
-								if err != nil {
-									return err
-								}
-								applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
-								r.transport.RegisterInterface(iface)
-								return nil
-							})
-						}
 						registeredAny = true
 						r.logger.Info("Started I2P interface %v on %v:%v", sub.Name, listenIP, listenPort)
 					}
@@ -1033,6 +1009,70 @@ func (r *Reticulum) initInterfaces() error {
 				r.transport.RegisterInterface(iface)
 				registeredAny = true
 				r.logger.Info("Started I2P peer interface %v", peerName)
+			}
+
+			if bootstrapOnly && registeredAny {
+				name := sub.Name
+				connectableCopy := connectable
+				listenIPCopy := listenIP
+				listenPortCopy := listenPort
+				peerTargetsCopy := append([]string(nil), peerTargets...)
+				selectedModeCopy := selectedMode
+				ifacConfigCopy := ifacConfig
+				discoveryConfigCopy := discoveryConfig
+				r.registerBootstrapRestarter(func() error {
+					handler := func(data []byte, iface interfaces.Interface) {
+						r.transport.Inbound(data, iface)
+					}
+					registeredAny := false
+
+					if connectableCopy && listenPortCopy > 0 {
+						onConnect := func(iface interfaces.Interface) {
+							applySpawnedInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, r.panicOnIfaceError)
+							r.transport.RegisterInterface(iface)
+						}
+
+						iface, err := interfaces.NewI2PInterface(name, listenIPCopy, listenPortCopy, handler, onConnect)
+						if err != nil {
+							return err
+						}
+						applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+						r.transport.RegisterInterface(iface)
+						registeredAny = true
+					}
+
+					for _, peer := range peerTargetsCopy {
+						peer = strings.TrimSpace(peer)
+						if peer == "" {
+							continue
+						}
+
+						host, portText, ok := strings.Cut(peer, ":")
+						if !ok || strings.TrimSpace(host) == "" {
+							continue
+						}
+
+						port, err := strconv.Atoi(strings.TrimSpace(portText))
+						if err != nil || port <= 0 {
+							continue
+						}
+
+						peerName := fmt.Sprintf("%v to %v", name, peer)
+						iface, err := interfaces.NewI2PInterfacePeer(peerName, strings.TrimSpace(host), port, handler)
+						if err != nil {
+							return err
+						}
+
+						applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+						r.transport.RegisterInterface(iface)
+						registeredAny = true
+					}
+
+					if !registeredAny {
+						return fmt.Errorf("no connectable endpoint or valid peers configured")
+					}
+					return nil
+				})
 			}
 
 			if !registeredAny {
