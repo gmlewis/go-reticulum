@@ -108,7 +108,7 @@ func (lci *LocalClientInterface) readLoop() {
 		n, err := conn.Read(buf)
 		if err != nil {
 			if atomic.LoadInt32(&lci.running) == 1 && !lci.IsDetached() {
-				panicOnInterfaceErrorf("local interface %v read failed: %v", lci.name, err)
+				lci.panicOnInterfaceErrorf("local interface %v read failed: %v", lci.name, err)
 			}
 			break
 		}
@@ -306,7 +306,7 @@ func (lsi *LocalServerInterface) acceptLoop() {
 		conn, err := listener.Accept()
 		if err != nil {
 			if atomic.LoadInt32(&lsi.running) == 1 && !lsi.IsDetached() {
-				panicOnInterfaceErrorf("local interface %v accept failed: %v", lsi.name, err)
+				lsi.panicOnInterfaceErrorf("local interface %v accept failed: %v", lsi.name, err)
 			}
 			break
 		}
@@ -328,6 +328,7 @@ func newLocalClientInterfaceFromConn(name string, conn net.Conn, handler Inbound
 func (lsi *LocalServerInterface) handleConnection(conn net.Conn) {
 	name := fmt.Sprintf("Local Client %v", conn.RemoteAddr().String())
 	lci := newLocalClientInterfaceFromConn(name, conn, lsi.inboundHandler)
+	lci.copyPanicOnInterfaceErrorFrom(lsi.BaseInterface)
 
 	lsi.mu.Lock()
 	lsi.spawnedInterfaces = append(lsi.spawnedInterfaces, lci)

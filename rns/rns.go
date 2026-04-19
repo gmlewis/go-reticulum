@@ -494,7 +494,6 @@ func (r *Reticulum) applyConfig() error {
 
 	r.transport.SetLinkMTUDiscovery(r.linkMTUDiscovery)
 	r.transport.SetUseImplicitProof(r.useImplicitProof)
-	interfaces.SetPanicOnInterfaceErrorEnabled(r.panicOnIfaceError)
 
 	return nil
 }
@@ -598,6 +597,7 @@ func (r *Reticulum) startLocalInterface() {
 	server, err := interfaces.NewLocalServerInterface("Local shared instance", localPath, r.localInterfacePort, handler)
 	if err == nil {
 		r.applyForcedSharedBitrate(server)
+		applyInterfaceErrorPolicy(server, r.panicOnIfaceError)
 		r.transport.RegisterInterface(server)
 		r.mu.Lock()
 		r.sharedInstanceInterface = server
@@ -614,6 +614,7 @@ func (r *Reticulum) startLocalInterface() {
 			client.SetHash(r.networkIdentity.Hash)
 		}
 		r.applyForcedSharedBitrate(client)
+		applyInterfaceErrorPolicy(client, r.panicOnIfaceError)
 		r.transport.RegisterInterface(client)
 		r.mu.Lock()
 		r.sharedInstanceInterface = client
@@ -731,7 +732,7 @@ func (r *Reticulum) initInterfaces() error {
 				r.logger.Error("Failed to initialize Auto interface %v: %v", sub.Name, err)
 				continue
 			}
-			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly)
+			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			r.logger.Info("Started Auto interface %v", sub.Name)
 
@@ -764,7 +765,7 @@ func (r *Reticulum) initInterfaces() error {
 				r.logger.Error("Failed to initialize UDP interface %v: %v", sub.Name, err)
 				continue
 			}
-			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly)
+			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			r.logger.Info("Started UDP interface %v", sub.Name)
 
@@ -787,7 +788,7 @@ func (r *Reticulum) initInterfaces() error {
 					r.logger.Error("Failed to initialize TCP client interface %v: %v", sub.Name, err)
 					continue
 				}
-				applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly)
+				applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 				r.transport.RegisterInterface(iface)
 				r.logger.Info("Started TCP client interface %v to %v:%v", sub.Name, targetHost, targetPort)
 
@@ -807,7 +808,7 @@ func (r *Reticulum) initInterfaces() error {
 				}
 
 				onConnect := func(iface interfaces.Interface) {
-					applySpawnedInterfaceConfig(iface, selectedMode, ifacConfig)
+					applySpawnedInterfaceConfig(iface, selectedMode, ifacConfig, r.panicOnIfaceError)
 					r.transport.RegisterInterface(iface)
 				}
 
@@ -816,7 +817,7 @@ func (r *Reticulum) initInterfaces() error {
 					r.logger.Error("Failed to initialize TCP server interface %v: %v", sub.Name, err)
 					continue
 				}
-				applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly)
+				applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 				r.transport.RegisterInterface(iface)
 				r.logger.Info("Started TCP server interface %v on %v:%v", sub.Name, listenIP, listenPort)
 			}
@@ -857,7 +858,7 @@ func (r *Reticulum) initInterfaces() error {
 					r.logger.Error("Failed to initialize I2P interface %v: connectable requires bind_port/listen_port", sub.Name)
 				} else {
 					onConnect := func(iface interfaces.Interface) {
-						applySpawnedInterfaceConfig(iface, selectedMode, ifacConfig)
+						applySpawnedInterfaceConfig(iface, selectedMode, ifacConfig, r.panicOnIfaceError)
 						r.transport.RegisterInterface(iface)
 					}
 
@@ -865,7 +866,7 @@ func (r *Reticulum) initInterfaces() error {
 					if err != nil {
 						r.logger.Error("Failed to initialize I2P interface %v: %v", sub.Name, err)
 					} else {
-						applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly)
+						applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 						r.transport.RegisterInterface(iface)
 						registeredAny = true
 						r.logger.Info("Started I2P interface %v on %v:%v", sub.Name, listenIP, listenPort)
@@ -910,7 +911,7 @@ func (r *Reticulum) initInterfaces() error {
 					continue
 				}
 
-				applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly)
+				applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 				r.transport.RegisterInterface(iface)
 				registeredAny = true
 				r.logger.Info("Started I2P peer interface %v", peerName)
@@ -947,7 +948,7 @@ func (r *Reticulum) initInterfaces() error {
 			}
 
 			onConnect := func(iface interfaces.Interface) {
-				applySpawnedInterfaceConfig(iface, selectedMode, ifacConfig)
+				applySpawnedInterfaceConfig(iface, selectedMode, ifacConfig, r.panicOnIfaceError)
 				r.transport.RegisterInterface(iface)
 			}
 
@@ -956,7 +957,7 @@ func (r *Reticulum) initInterfaces() error {
 				r.logger.Error("Failed to initialize Backbone interface %v: %v", sub.Name, err)
 				continue
 			}
-			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly)
+			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			if bootstrapOnly {
 				name := sub.Name
@@ -970,14 +971,14 @@ func (r *Reticulum) initInterfaces() error {
 						r.transport.Inbound(data, iface)
 					}
 					onConnect := func(iface interfaces.Interface) {
-						applySpawnedInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy)
+						applySpawnedInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, r.panicOnIfaceError)
 						r.transport.RegisterInterface(iface)
 					}
 					iface, err := interfaces.NewBackboneInterface(name, listenIPCopy, listenPortCopy, handler, onConnect)
 					if err != nil {
 						return err
 					}
-					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true)
+					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
 					r.transport.RegisterInterface(iface)
 					return nil
 				})
@@ -1011,7 +1012,7 @@ func (r *Reticulum) initInterfaces() error {
 				r.logger.Error("Failed to initialize Backbone client interface %v: %v", sub.Name, err)
 				continue
 			}
-			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly)
+			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			r.logger.Info("Started Backbone client interface %v to %v:%v", sub.Name, targetHost, targetPort)
 
@@ -1059,7 +1060,7 @@ func (r *Reticulum) initInterfaces() error {
 				r.logger.Error("Failed to initialize KISS interface %v: %v", sub.Name, err)
 				continue
 			}
-			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly)
+			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			r.logger.Info("Started KISS interface %v on %v at %v bps", sub.Name, port, speed)
 
@@ -1163,7 +1164,7 @@ func (r *Reticulum) initInterfaces() error {
 			discoveryConfig.Bandwidth = intPtr(bandwidth)
 			discoveryConfig.SpreadingFactor = intPtr(spreadingFactor)
 			discoveryConfig.CodingRate = intPtr(codingRate)
-			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly)
+			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			r.logger.Info("Started RNode interface %v on %v", sub.Name, port)
 
@@ -1288,7 +1289,7 @@ func (r *Reticulum) initInterfaces() error {
 				continue
 			}
 
-			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly)
+			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			r.logger.Info("Started RNodeMulti interface %v on %v", sub.Name, port)
 
@@ -1382,7 +1383,7 @@ func (r *Reticulum) initInterfaces() error {
 				r.logger.Error("Failed to initialize AX.25 KISS interface %v: %v", sub.Name, err)
 				continue
 			}
-			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly)
+			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			r.logger.Info("Started AX.25 KISS interface %v on %v at %v bps", sub.Name, port, speed)
 
@@ -1409,7 +1410,7 @@ func (r *Reticulum) initInterfaces() error {
 				r.logger.Error("Failed to initialize Pipe interface %v: %v", sub.Name, err)
 				continue
 			}
-			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly)
+			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			r.logger.Info("Started Pipe interface %v", sub.Name)
 
@@ -1437,7 +1438,7 @@ func (r *Reticulum) initInterfaces() error {
 				continue
 			}
 
-			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly)
+			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			r.logger.Info("Started Weave interface %v on %v", sub.Name, port)
 
@@ -1485,7 +1486,7 @@ func (r *Reticulum) initInterfaces() error {
 				r.logger.Error("Failed to initialize Serial interface %v: %v", sub.Name, err)
 				continue
 			}
-			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly)
+			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			r.logger.Info("Started Serial interface %v on %v at %v bps", sub.Name, port, speed)
 		}

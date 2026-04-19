@@ -7,25 +7,55 @@ package interfaces
 
 import "testing"
 
-func TestInterfaceErrorPolicy(t *testing.T) {
+func TestBaseInterfaceErrorPolicyIsolation(t *testing.T) {
+	alpha := NewBaseInterface("alpha", ModeFull, 1000)
+	beta := NewBaseInterface("beta", ModeFull, 1000)
+
+	var alphaGot string
+	restoreAlpha := alpha.setInterfacePanicHookForTest(func(msg string) {
+		alphaGot = msg
+	})
+	defer restoreAlpha()
+
+	var betaGot string
+	restoreBeta := beta.setInterfacePanicHookForTest(func(msg string) {
+		betaGot = msg
+	})
+	defer restoreBeta()
+
+	alpha.SetPanicOnInterfaceErrorEnabled(true)
+	beta.SetPanicOnInterfaceErrorEnabled(false)
+
+	alpha.panicOnInterfaceErrorf("interface %v failed", alpha.Name())
+	beta.panicOnInterfaceErrorf("interface %v failed", beta.Name())
+
+	if alphaGot == "" {
+		t.Fatal("enabled interface did not trigger hard stop hook")
+	}
+	if betaGot != "" {
+		t.Fatalf("disabled interface unexpectedly triggered hard stop with %q", betaGot)
+	}
+}
+
+func TestBaseInterfaceErrorPolicyCopy(t *testing.T) {
+	parent := NewBaseInterface("parent", ModeFull, 1000)
+	child := NewBaseInterface("child", ModeFull, 1000)
+
 	var got string
-	restoreHook := setInterfacePanicHookForTest(func(msg string) {
+	restoreHook := parent.setInterfacePanicHookForTest(func(msg string) {
 		got = msg
 	})
 	defer restoreHook()
 
-	prevEnabled := PanicOnInterfaceErrorEnabled()
-	defer SetPanicOnInterfaceErrorEnabled(prevEnabled)
+	parent.SetPanicOnInterfaceErrorEnabled(true)
+	child.copyPanicOnInterfaceErrorFrom(parent)
 
-	SetPanicOnInterfaceErrorEnabled(false)
-	panicOnInterfaceErrorf("interface %v failed", "alpha")
-	if got != "" {
-		t.Fatalf("disabled policy unexpectedly triggered hard stop with %q", got)
+	if !child.PanicOnInterfaceErrorEnabled() {
+		t.Fatal("expected copied interface policy to be enabled")
 	}
 
-	SetPanicOnInterfaceErrorEnabled(true)
-	panicOnInterfaceErrorf("interface %v failed", "beta")
+	child.panicOnInterfaceErrorf("interface %v failed", child.Name())
 	if got == "" {
-		t.Fatal("enabled policy did not trigger hard stop hook")
+		t.Fatal("copied interface policy did not trigger inherited hook")
 	}
 }

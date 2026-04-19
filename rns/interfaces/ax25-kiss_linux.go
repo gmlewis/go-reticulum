@@ -307,14 +307,14 @@ func (ai *ax25KISSInterface) readLoop() {
 			if ai.IsDetached() {
 				return
 			}
-			panicOnInterfaceErrorf("AX.25 KISS interface %v read failed: %v", ai.name, err)
+			ai.panicOnInterfaceErrorf("AX.25 KISS interface %v read failed: %v", ai.name, err)
 			time.Sleep(ax25KISSReconnectDelay)
 			if err := ai.openAndConfigure(); err != nil {
-				panicOnInterfaceErrorf("AX.25 KISS interface %v reopen failed: %v", ai.name, err)
+				ai.panicOnInterfaceErrorf("AX.25 KISS interface %v reopen failed: %v", ai.name, err)
 				continue
 			}
 			if err := ai.configureDevice(); err != nil {
-				panicOnInterfaceErrorf("AX.25 KISS interface %v reconfigure failed: %v", ai.name, err)
+				ai.panicOnInterfaceErrorf("AX.25 KISS interface %v reconfigure failed: %v", ai.name, err)
 				_ = ai.closePort()
 				continue
 			}

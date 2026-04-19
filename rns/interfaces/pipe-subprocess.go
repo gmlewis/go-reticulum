@@ -186,11 +186,11 @@ func (pi *pipeSubprocessInterface) readLoop() {
 		atomic.StoreInt32(&pi.running, 0)
 		if killErr := pi.killProcess(); killErr != nil {
 			log.Printf("readLoop: failed to kill pipe process: %v", killErr)
-			panicOnInterfaceErrorf("pipe interface %v failed tearing down subprocess: %v", pi.name, killErr)
+			pi.panicOnInterfaceErrorf("pipe interface %v failed tearing down subprocess: %v", pi.name, killErr)
 		}
 		if err != nil {
 			log.Printf("readLoop: failed to read pipe frames: %v", err)
-			panicOnInterfaceErrorf("pipe interface %v failed reading subprocess output: %v", pi.name, err)
+			pi.panicOnInterfaceErrorf("pipe interface %v failed reading subprocess output: %v", pi.name, err)
 		}
 
 		timer := time.NewTimer(pi.respawnDelay)

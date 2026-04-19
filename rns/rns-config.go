@@ -159,16 +159,28 @@ func applyBootstrapOnly(iface interfaces.Interface, bootstrapOnly bool) {
 	setter.SetBootstrapOnly(bootstrapOnly)
 }
 
-func applyInterfaceConfig(iface interfaces.Interface, mode int, ifac interfaces.IFACConfig, discovery interfaces.DiscoveryConfig, bootstrapOnly bool) {
+func applyInterfaceErrorPolicy(iface interfaces.Interface, enabled bool) {
+	setter, ok := iface.(interface {
+		SetPanicOnInterfaceErrorEnabled(bool)
+	})
+	if !ok {
+		return
+	}
+	setter.SetPanicOnInterfaceErrorEnabled(enabled)
+}
+
+func applyInterfaceConfig(iface interfaces.Interface, mode int, ifac interfaces.IFACConfig, discovery interfaces.DiscoveryConfig, bootstrapOnly bool, panicOnInterfaceError bool) {
 	applyInterfaceMode(iface, mode)
 	applyIFACConfig(iface, ifac)
 	applyDiscoveryConfig(iface, discovery)
 	applyBootstrapOnly(iface, bootstrapOnly)
+	applyInterfaceErrorPolicy(iface, panicOnInterfaceError)
 }
 
-func applySpawnedInterfaceConfig(iface interfaces.Interface, mode int, ifac interfaces.IFACConfig) {
+func applySpawnedInterfaceConfig(iface interfaces.Interface, mode int, ifac interfaces.IFACConfig, panicOnInterfaceError bool) {
 	applyInterfaceMode(iface, mode)
 	applyIFACConfig(iface, ifac)
+	applyInterfaceErrorPolicy(iface, panicOnInterfaceError)
 }
 
 func parseListProperty(v string) []string {

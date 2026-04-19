@@ -114,7 +114,7 @@ func (tci *TCPClientInterface) readLoop() {
 		if err != nil {
 			log.Printf("[TCP] %s: readLoop Read error: %v", tci.name, err)
 			if atomic.LoadInt32(&tci.running) == 1 && !tci.IsDetached() {
-				panicOnInterfaceErrorf("tcp interface %v read failed: %v", tci.name, err)
+				tci.panicOnInterfaceErrorf("tcp interface %v read failed: %v", tci.name, err)
 			}
 			break
 		}
@@ -319,7 +319,7 @@ func (tsi *TCPServerInterface) acceptLoop() {
 		conn, err := tsi.listener.Accept()
 		if err != nil {
 			if atomic.LoadInt32(&tsi.running) == 1 && !tsi.IsDetached() {
-				panicOnInterfaceErrorf("tcp interface %v accept failed: %v", tsi.name, err)
+				tsi.panicOnInterfaceErrorf("tcp interface %v accept failed: %v", tsi.name, err)
 			}
 			break
 		}
@@ -339,6 +339,7 @@ func (tsi *TCPServerInterface) handleConnection(conn net.Conn) {
 	}
 	// Create a TCPClientInterface from the connected socket
 	bi := NewBaseInterface(name, ModeFull, TCPBitrateGuess)
+	bi.copyPanicOnInterfaceErrorFrom(tsi.BaseInterface)
 	tci := &TCPClientInterface{
 		BaseInterface:  bi,
 		conn:           conn,

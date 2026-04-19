@@ -68,16 +68,19 @@ type BaseInterface struct {
 	txBytes uint64
 	ifacMu  sync.RWMutex
 
-	discoveryMu sync.RWMutex
-	autoMu      sync.RWMutex
+	errorPolicyMu sync.RWMutex
+	discoveryMu   sync.RWMutex
+	autoMu        sync.RWMutex
 
-	ifacConfig      IFACConfig
-	ifacKey         []byte
-	ifacSigner      *rnscrypto.Ed25519PrivateKey
-	discoveryConfig DiscoveryConfig
-	bootstrapOnly   bool
-	autoconnectHash []byte
-	autoconnectSrc  string
+	panicOnError       atomic.Bool
+	ifacConfig         IFACConfig
+	ifacKey            []byte
+	ifacSigner         *rnscrypto.Ed25519PrivateKey
+	interfacePanicHook func(string)
+	discoveryConfig    DiscoveryConfig
+	bootstrapOnly      bool
+	autoconnectHash    []byte
+	autoconnectSrc     string
 }
 
 // NewBaseInterface allocates and initializes a BaseInterface with the given

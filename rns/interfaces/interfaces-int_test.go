@@ -200,19 +200,16 @@ func TestInterfaceErrorPolicyUDPReadLoop(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
 	panicCh := make(chan string, 1)
-	restoreHook := setInterfacePanicHookForTest(func(msg string) {
+	listenPort, forwardPort := allocateUDPPortPair(t)
+	iface := mustTestNewUDPInterface(t, "policy_udp", "127.0.0.1", listenPort, "127.0.0.1", forwardPort, nil)
+	restoreHook := iface.setInterfacePanicHookForTest(func(msg string) {
 		select {
 		case panicCh <- msg:
 		default:
 		}
 	})
 	defer restoreHook()
-
-	SetPanicOnInterfaceErrorEnabled(true)
-	defer SetPanicOnInterfaceErrorEnabled(false)
-
-	listenPort, forwardPort := allocateUDPPortPair(t)
-	iface := mustTestNewUDPInterface(t, "policy_udp", "127.0.0.1", listenPort, "127.0.0.1", forwardPort, nil)
+	iface.SetPanicOnInterfaceErrorEnabled(true)
 	t.Cleanup(func() {
 		if err := iface.Detach(); err != nil && !strings.Contains(err.Error(), "closed network connection") {
 			t.Logf("failed to detach UDP interface: %v", err)

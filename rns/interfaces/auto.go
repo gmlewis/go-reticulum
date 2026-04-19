@@ -411,7 +411,7 @@ func (ai *AutoInterface) discoveryLoop(ifname string, conn *net.UDPConn) {
 		n, src, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			if atomic.LoadInt32(&ai.running) == 1 {
-				panicOnInterfaceErrorf("auto interface %v discovery read failed: %v", ifname, err)
+				ai.panicOnInterfaceErrorf("auto interface %v discovery read failed: %v", ifname, err)
 				continue
 			}
 			return
@@ -503,7 +503,7 @@ func (ai *AutoInterface) dataLoop(conn *net.UDPConn) {
 		n, src, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			if atomic.LoadInt32(&ai.running) == 1 {
-				panicOnInterfaceErrorf("auto interface data read failed: %v", err)
+				ai.panicOnInterfaceErrorf("auto interface data read failed: %v", err)
 				continue
 			}
 			return
@@ -544,6 +544,7 @@ func (ai *AutoInterface) addPeer(addr, ifname string) {
 		addr:          addr,
 		interfaceName: ifname,
 	}
+	peer.copyPanicOnInterfaceErrorFrom(ai.BaseInterface)
 	peer.online.Store(true)
 	peer.SetIFACConfig(ai.IFACConfig())
 

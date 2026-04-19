@@ -7,55 +7,70 @@ package interfaces
 
 import (
 	"fmt"
-	"os"
-	"sync"
-	"sync/atomic"
+	"log"
 )
 
-var (
-	panicOnInterfaceErrorEnabled atomic.Bool
-
-	interfacePanicHookMu sync.Mutex
-	interfacePanicHook   = func(string) {
-		os.Exit(255)
+// SetPanicOnInterfaceErrorEnabled controls whether unrecoverable errors on this
+// interface immediately terminate the process, matching Python's RNS.panic().
+func (bi *BaseInterface) SetPanicOnInterfaceErrorEnabled(enabled bool) {
+	if bi == nil {
+		return
 	}
-)
-
-// SetPanicOnInterfaceErrorEnabled controls whether unrecoverable interface
-// errors immediately terminate the process, matching Python's RNS.panic().
-func SetPanicOnInterfaceErrorEnabled(enabled bool) {
-	panicOnInterfaceErrorEnabled.Store(enabled)
+	bi.panicOnError.Store(enabled)
 }
 
-// PanicOnInterfaceErrorEnabled reports whether unrecoverable interface errors
-// currently trigger an immediate hard stop.
-func PanicOnInterfaceErrorEnabled() bool {
-	return panicOnInterfaceErrorEnabled.Load()
+// PanicOnInterfaceErrorEnabled reports whether unrecoverable errors on this
+// interface currently trigger an immediate hard stop.
+func (bi *BaseInterface) PanicOnInterfaceErrorEnabled() bool {
+	return bi != nil && bi.panicOnError.Load()
 }
 
-func panicOnInterfaceErrorf(format string, args ...any) {
-	if !panicOnInterfaceErrorEnabled.Load() {
+func (bi *BaseInterface) panicOnInterfaceErrorf(format string, args ...any) {
+	if bi == nil || !bi.PanicOnInterfaceErrorEnabled() {
 		return
 	}
 
 	msg := fmt.Sprintf(format, args...)
 
-	interfacePanicHookMu.Lock()
-	hook := interfacePanicHook
-	interfacePanicHookMu.Unlock()
+	bi.errorPolicyMu.RLock()
+	hook := bi.interfacePanicHook
+	bi.errorPolicyMu.RUnlock()
 
+	if hook == nil {
+		log.Fatalf("%v", msg)
+	}
 	hook(msg)
 }
 
-func setInterfacePanicHookForTest(hook func(string)) func() {
-	interfacePanicHookMu.Lock()
-	prev := interfacePanicHook
-	interfacePanicHook = hook
-	interfacePanicHookMu.Unlock()
+func (bi *BaseInterface) setInterfacePanicHookForTest(hook func(string)) func() {
+	if bi == nil {
+		return func() {}
+	}
+
+	bi.errorPolicyMu.Lock()
+	prev := bi.interfacePanicHook
+	bi.interfacePanicHook = hook
+	bi.errorPolicyMu.Unlock()
 
 	return func() {
-		interfacePanicHookMu.Lock()
-		interfacePanicHook = prev
-		interfacePanicHookMu.Unlock()
+		bi.errorPolicyMu.Lock()
+		bi.interfacePanicHook = prev
+		bi.errorPolicyMu.Unlock()
 	}
+}
+
+func (bi *BaseInterface) copyPanicOnInterfaceErrorFrom(src *BaseInterface) {
+	if bi == nil || src == nil {
+		return
+	}
+
+	bi.SetPanicOnInterfaceErrorEnabled(src.PanicOnInterfaceErrorEnabled())
+
+	src.errorPolicyMu.RLock()
+	hook := src.interfacePanicHook
+	src.errorPolicyMu.RUnlock()
+
+	bi.errorPolicyMu.Lock()
+	bi.interfacePanicHook = hook
+	bi.errorPolicyMu.Unlock()
 }

@@ -179,10 +179,10 @@ func (si *serialInterface) readLoop() {
 			if si.IsDetached() {
 				return
 			}
-			panicOnInterfaceErrorf("serial interface %v read failed: %v", si.name, err)
+			si.panicOnInterfaceErrorf("serial interface %v read failed: %v", si.name, err)
 			time.Sleep(serialReconnectDelay)
 			if err := si.openAndConfigure(); err != nil {
-				panicOnInterfaceErrorf("serial interface %v reopen failed: %v", si.name, err)
+				si.panicOnInterfaceErrorf("serial interface %v reopen failed: %v", si.name, err)
 				continue
 			}
 			atomic.StoreInt32(&si.running, 1)

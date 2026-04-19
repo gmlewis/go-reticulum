@@ -271,6 +271,7 @@ loglevel = 4
 func TestParsePanicOnInterfaceError(t *testing.T) {
 	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
+	port := reserveTCPPort(t)
 
 	config := `[reticulum]
 share_instance = No
@@ -280,16 +281,16 @@ panic_on_interface_error = Yes
 loglevel = 4
 
 [interfaces]
+  [[Policy Test Interface]]
+    type = TCPServerInterface
+    enabled = Yes
+    listen_ip = 127.0.0.1
+    listen_port = ` + strconv.Itoa(port) + `
 `
 
 	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
-
-	interfaces.SetPanicOnInterfaceErrorEnabled(false)
-	t.Cleanup(func() {
-		interfaces.SetPanicOnInterfaceErrorEnabled(false)
-	})
 
 	ts := NewTransportSystem(nil)
 	r := mustTestNewReticulum(t, ts, configDir)
@@ -298,8 +299,15 @@ loglevel = 4
 	if !r.panicOnIfaceError {
 		t.Fatal("expected panic_on_interface_error = true from config")
 	}
-	if !interfaces.PanicOnInterfaceErrorEnabled() {
-		t.Fatal("expected interfaces package to receive panic_on_interface_error = true from config")
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected 1 configured interface, got %v", got)
+	}
+	getter, ok := ts.GetInterfaces()[0].(interface{ PanicOnInterfaceErrorEnabled() bool })
+	if !ok {
+		t.Fatalf("configured interface %T does not expose PanicOnInterfaceErrorEnabled()", ts.GetInterfaces()[0])
+	}
+	if !getter.PanicOnInterfaceErrorEnabled() {
+		t.Fatal("expected configured interface to receive panic_on_interface_error = true from config")
 	}
 }
 
@@ -1187,9 +1195,6 @@ loglevel = 4
 }
 
 func TestReticulumOptionParityForceBitratePanicAndDiscover(t *testing.T) {
-	// origPanic := panicOnInterfaceErrorEnabled()
-	// defer setPanicOnInterfaceErrorEnabled(origPanic)
-
 	sharedPort := reserveTCPPort(t)
 	controlPort := reserveTCPPort(t)
 	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
