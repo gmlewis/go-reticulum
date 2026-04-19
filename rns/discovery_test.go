@@ -877,6 +877,10 @@ func TestInterfaceDiscoveryStartReconnectsCachedBackbone(t *testing.T) {
 		}
 	})
 
+	deadline := time.Now().Add(5 * time.Second)
+	for len(ts.GetInterfaces()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if got := len(ts.GetInterfaces()); got != 1 {
 		t.Fatalf("expected 1 auto-connected interface, got %v", got)
 	}

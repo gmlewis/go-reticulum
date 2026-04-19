@@ -573,7 +573,7 @@ func (ts *TransportSystem) DiscoverInterfaces() {
 	hook := ts.discoverHook
 	ts.mu.Unlock()
 	if hook != nil {
-		hook()
+		go hook()
 	}
 }
 
@@ -589,7 +589,7 @@ func (ts *TransportSystem) EnableBlackholeUpdater() {
 	hook := ts.enableBlackholeHook
 	ts.mu.Unlock()
 	if hook != nil {
-		hook()
+		go hook()
 	}
 }
 
@@ -1503,7 +1503,9 @@ func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 
 // GetInterfaces returns the list of network interfaces.
 func (ts *TransportSystem) GetInterfaces() []interfaces.Interface {
-	return ts.interfaces
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return append([]interfaces.Interface(nil), ts.interfaces...)
 }
 
 // RemoveInterface removes a previously registered interface from the transport.

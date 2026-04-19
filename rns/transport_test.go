@@ -829,9 +829,9 @@ func TestDiscoverInterfacesRunsHook(t *testing.T) {
 	t.Parallel()
 
 	ts := NewTransportSystem(nil)
-	called := 0
+	called := make(chan struct{}, 1)
 	ts.SetDiscoverInterfacesHook(func() {
-		called++
+		called <- struct{}{}
 	})
 
 	ts.DiscoverInterfaces()
@@ -839,8 +839,10 @@ func TestDiscoverInterfacesRunsHook(t *testing.T) {
 	if got := ts.DiscoverInterfacesCallCount(); got != 1 {
 		t.Fatalf("DiscoverInterfacesCallCount() = %v, want 1", got)
 	}
-	if called != 1 {
-		t.Fatalf("discover hook called %v times, want 1", called)
+	select {
+	case <-called:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for discover hook call")
 	}
 }
 
@@ -848,9 +850,9 @@ func TestDiscoverInterfacesOnlyRunsHookOnce(t *testing.T) {
 	t.Parallel()
 
 	ts := NewTransportSystem(nil)
-	called := 0
+	called := make(chan struct{}, 2)
 	ts.SetDiscoverInterfacesHook(func() {
-		called++
+		called <- struct{}{}
 	})
 
 	ts.DiscoverInterfaces()
@@ -859,18 +861,57 @@ func TestDiscoverInterfacesOnlyRunsHookOnce(t *testing.T) {
 	if got := ts.DiscoverInterfacesCallCount(); got != 1 {
 		t.Fatalf("DiscoverInterfacesCallCount() = %v, want 1", got)
 	}
-	if called != 1 {
-		t.Fatalf("discover hook called %v times, want 1", called)
+	select {
+	case <-called:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for discover hook call")
 	}
+	select {
+	case <-called:
+		t.Fatal("discover hook ran more than once")
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestDiscoverInterfacesRunsHookAsync(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan struct{})
+	ts.SetDiscoverInterfacesHook(func() {
+		close(started)
+		<-release
+	})
+
+	go func() {
+		ts.DiscoverInterfaces()
+		close(done)
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for discover hook to start")
+	}
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("expected DiscoverInterfaces to return before hook completed")
+	}
+
+	close(release)
 }
 
 func TestEnableBlackholeUpdaterRunsHook(t *testing.T) {
 	t.Parallel()
 
 	ts := NewTransportSystem(nil)
-	called := 0
+	called := make(chan struct{}, 1)
 	ts.SetEnableBlackholeUpdaterHook(func() {
-		called++
+		called <- struct{}{}
 	})
 
 	ts.EnableBlackholeUpdater()
@@ -878,8 +919,10 @@ func TestEnableBlackholeUpdaterRunsHook(t *testing.T) {
 	if got := ts.EnableBlackholeUpdaterCallCount(); got != 1 {
 		t.Fatalf("EnableBlackholeUpdaterCallCount() = %v, want 1", got)
 	}
-	if called != 1 {
-		t.Fatalf("blackhole updater hook called %v times, want 1", called)
+	select {
+	case <-called:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for blackhole updater hook call")
 	}
 }
 
@@ -887,9 +930,9 @@ func TestEnableBlackholeUpdaterOnlyRunsHookOnce(t *testing.T) {
 	t.Parallel()
 
 	ts := NewTransportSystem(nil)
-	called := 0
+	called := make(chan struct{}, 2)
 	ts.SetEnableBlackholeUpdaterHook(func() {
-		called++
+		called <- struct{}{}
 	})
 
 	ts.EnableBlackholeUpdater()
@@ -898,9 +941,48 @@ func TestEnableBlackholeUpdaterOnlyRunsHookOnce(t *testing.T) {
 	if got := ts.EnableBlackholeUpdaterCallCount(); got != 1 {
 		t.Fatalf("EnableBlackholeUpdaterCallCount() = %v, want 1", got)
 	}
-	if called != 1 {
-		t.Fatalf("blackhole updater hook called %v times, want 1", called)
+	select {
+	case <-called:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for blackhole updater hook call")
 	}
+	select {
+	case <-called:
+		t.Fatal("blackhole updater hook ran more than once")
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestEnableBlackholeUpdaterRunsHookAsync(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan struct{})
+	ts.SetEnableBlackholeUpdaterHook(func() {
+		close(started)
+		<-release
+	})
+
+	go func() {
+		ts.EnableBlackholeUpdater()
+		close(done)
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for blackhole updater hook to start")
+	}
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("expected EnableBlackholeUpdater to return before hook completed")
+	}
+
+	close(release)
 }
 
 type dummyInterface struct {
