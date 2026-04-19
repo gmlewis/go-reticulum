@@ -710,6 +710,46 @@ func TestInterfaceDiscoveryReceiveAndPersistEncryptedWithTransportNetworkIdentit
 	}
 }
 
+func TestInterfaceAnnounceHandlerRecoversCallbackPanic(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-handler-panic-")
+	defer cleanup()
+
+	ts := NewTransportSystem(NewLogger())
+	destinationHash := []byte("discovery-destination")
+	ts.pathTable[string(destinationHash)] = &PathEntry{Hops: 2, Expires: time.Now().Add(time.Hour)}
+
+	r := &Reticulum{
+		configDir: tmpDir,
+		transport: ts,
+		logger:    NewLogger(),
+	}
+
+	handler := NewInterfaceAnnounceHandler(r, 2, func(map[string]any) {
+		panic("boom")
+	})
+
+	sourceIdentity := mustTestNewIdentity(t, true)
+	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
+		discoveryFieldInterfaceType: "TCPServerInterface",
+		discoveryFieldTransport:     true,
+		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldName:          "Callback Boom",
+		discoveryFieldReachableOn:   "discovery.example.net",
+		discoveryFieldPort:          4242,
+	}, 2)
+
+	func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				t.Fatalf("receivedAnnounce() propagated callback panic: %v", recovered)
+			}
+		}()
+		handler.receivedAnnounce(destinationHash, sourceIdentity, appData)
+	}()
+}
+
 func TestInterfaceDiscoveryReceiveAndPersistAdditionalTypes(t *testing.T) {
 	t.Parallel()
 

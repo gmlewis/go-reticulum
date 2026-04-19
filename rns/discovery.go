@@ -529,9 +529,19 @@ func (h *InterfaceAnnounceHandler) receivedAnnounce(destinationHash []byte, anno
 		return
 	}
 
-	if h.callback != nil {
-		h.callback(info)
+	h.invokeCallback(info)
+}
+
+func (h *InterfaceAnnounceHandler) invokeCallback(info map[string]any) {
+	if h == nil || h.callback == nil {
+		return
 	}
+	defer func() {
+		if recovered := recover(); recovered != nil && h.owner != nil && h.owner.logger != nil {
+			h.owner.logger.Error("error while processing interface discovery callback: %v", recovered)
+		}
+	}()
+	h.callback(info)
 }
 
 // Discovered-interface age thresholds and status values.
