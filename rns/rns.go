@@ -767,6 +767,29 @@ func (r *Reticulum) initInterfaces() error {
 			}
 			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
+			if bootstrapOnly {
+				name := sub.Name
+				listenIPCopy := listenIP
+				listenPortCopy := listenPort
+				forwardIPCopy := forwardIP
+				forwardPortCopy := forwardPort
+				selectedModeCopy := selectedMode
+				ifacConfigCopy := ifacConfig
+				discoveryConfigCopy := discoveryConfig
+				r.registerBootstrapRestarter(func() error {
+					handler := func(data []byte, iface interfaces.Interface) {
+						r.transport.Inbound(data, iface)
+					}
+
+					iface, err := interfaces.NewUDPInterface(name, listenIPCopy, listenPortCopy, forwardIPCopy, forwardPortCopy, handler)
+					if err != nil {
+						return err
+					}
+					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+					r.transport.RegisterInterface(iface)
+					return nil
+				})
+			}
 			r.logger.Info("Started UDP interface %v", sub.Name)
 
 		case "TCPInterface", "TCPClientInterface", "TCPServerInterface":
@@ -790,6 +813,27 @@ func (r *Reticulum) initInterfaces() error {
 				}
 				applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 				r.transport.RegisterInterface(iface)
+				if bootstrapOnly {
+					name := sub.Name
+					targetHostCopy := targetHost
+					targetPortCopy := targetPort
+					selectedModeCopy := selectedMode
+					ifacConfigCopy := ifacConfig
+					discoveryConfigCopy := discoveryConfig
+					r.registerBootstrapRestarter(func() error {
+						handler := func(data []byte, iface interfaces.Interface) {
+							r.transport.Inbound(data, iface)
+						}
+
+						iface, err := interfaces.NewTCPClientInterface(name, targetHostCopy, targetPortCopy, false, handler)
+						if err != nil {
+							return err
+						}
+						applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+						r.transport.RegisterInterface(iface)
+						return nil
+					})
+				}
 				r.logger.Info("Started TCP client interface %v to %v:%v", sub.Name, targetHost, targetPort)
 
 			} else if ifaceType == "TCPServerInterface" || (ifaceType == "TCPInterface" && mode == "listen") {

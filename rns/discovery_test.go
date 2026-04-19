@@ -25,6 +25,24 @@ import (
 //go:embed testdata/discovery_test.data
 var discoveryTestData []byte
 
+func reserveUDPPort(t *testing.T) int {
+	t.Helper()
+	addr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("ResolveUDPAddr() error = %v", err)
+	}
+	conn, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		t.Fatalf("ListenUDP() error = %v", err)
+	}
+	defer func() {
+		if err := conn.Close(); err != nil {
+			t.Fatalf("Close() error = %v", err)
+		}
+	}()
+	return conn.LocalAddr().(*net.UDPAddr).Port
+}
+
 func TestListDiscoveredInterfaces(t *testing.T) {
 	t.Parallel()
 	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-")
@@ -1264,6 +1282,125 @@ bootstrap_only = Yes
 	}
 	if !getter.BootstrapOnly() {
 		t.Fatal("expected re-enabled TCP bootstrap interface to preserve bootstrap-only metadata")
+	}
+}
+
+func TestInterfaceDiscoveryMonitorReenablesConfiguredTCPClientBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
+	t.Parallel()
+
+	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	port := reserveTCPPort(t)
+	config := `[reticulum]
+share_instance = No
+autoconnect_discovered_interfaces = 1
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[Bootstrap TCP Client]]
+type = TCPClientInterface
+target_host = 127.0.0.1
+target_port = ` + strconv.Itoa(port) + `
+bootstrap_only = Yes
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected 1 configured interface, got %v", got)
+	}
+
+	discovery := NewInterfaceDiscovery(r)
+	discovery.monitorInterval = 0
+
+	iface := ts.GetInterfaces()[0]
+	discovery.teardownInterface(iface)
+
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected bootstrap interface teardown to remove interface, got %v interfaces", got)
+	}
+
+	discovery.monitorAutoconnectsOnce(time.Unix(650, 0))
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected configured TCP client bootstrap interface to be re-enabled, got %v interfaces", got)
+	}
+
+	getter, ok := ts.GetInterfaces()[0].(interface{ BootstrapOnly() bool })
+	if !ok {
+		t.Fatalf("re-enabled interface %T does not expose BootstrapOnly()", ts.GetInterfaces()[0])
+	}
+	if !getter.BootstrapOnly() {
+		t.Fatal("expected re-enabled TCP client bootstrap interface to preserve bootstrap-only metadata")
+	}
+}
+
+func TestInterfaceDiscoveryMonitorReenablesConfiguredUDPBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
+	t.Parallel()
+
+	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	listenPort := reserveUDPPort(t)
+	forwardPort := reserveUDPPort(t)
+	config := `[reticulum]
+share_instance = No
+autoconnect_discovered_interfaces = 1
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[Bootstrap UDP]]
+type = UDPInterface
+listen_ip = 127.0.0.1
+listen_port = ` + strconv.Itoa(listenPort) + `
+forward_ip = 127.0.0.1
+forward_port = ` + strconv.Itoa(forwardPort) + `
+bootstrap_only = Yes
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected 1 configured interface, got %v", got)
+	}
+
+	discovery := NewInterfaceDiscovery(r)
+	discovery.monitorInterval = 0
+
+	iface := ts.GetInterfaces()[0]
+	discovery.teardownInterface(iface)
+
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected bootstrap interface teardown to remove interface, got %v interfaces", got)
+	}
+
+	discovery.monitorAutoconnectsOnce(time.Unix(675, 0))
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected configured UDP bootstrap interface to be re-enabled, got %v interfaces", got)
+	}
+
+	getter, ok := ts.GetInterfaces()[0].(interface{ BootstrapOnly() bool })
+	if !ok {
+		t.Fatalf("re-enabled interface %T does not expose BootstrapOnly()", ts.GetInterfaces()[0])
+	}
+	if !getter.BootstrapOnly() {
+		t.Fatal("expected re-enabled UDP bootstrap interface to preserve bootstrap-only metadata")
 	}
 }
 
