@@ -651,6 +651,65 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsInsufficientStampValue(t *tes
 	}
 }
 
+func TestInterfaceDiscoveryReceiveAndPersistEncryptedWithTransportNetworkIdentity(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-encrypted-")
+	defer cleanup()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	destinationHash := []byte("discovery-destination")
+	ts.pathTable[string(destinationHash)] = &PathEntry{Hops: 2, Expires: time.Now().Add(time.Hour)}
+
+	networkIdentity := mustTestNewIdentity(t, true)
+	ts.SetNetworkIdentity(networkIdentity)
+
+	r := &Reticulum{
+		configDir: tmpDir,
+		transport: ts,
+		logger:    logger,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	sourceIdentity := mustTestNewIdentity(t, true)
+	plain := mustDiscoveryAnnounceAppData(t, map[any]any{
+		discoveryFieldInterfaceType: "TCPServerInterface",
+		discoveryFieldTransport:     true,
+		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldName:          "Encrypted TCP",
+		discoveryFieldReachableOn:   "discovery.example.net",
+		discoveryFieldPort:          4242,
+	}, 2)
+
+	encryptedPayload, err := networkIdentity.Encrypt(plain[1:], nil)
+	if err != nil {
+		t.Fatalf("networkIdentity.Encrypt() error = %v", err)
+	}
+	appData := append([]byte{discoveryFlagEncrypted}, encryptedPayload...)
+
+	var callbackErr error
+	handler := NewInterfaceAnnounceHandler(r, 2, func(info map[string]any) {
+		callbackErr = discovery.persistDiscoveredInterface(info)
+	})
+
+	handler.receivedAnnounce(destinationHash, sourceIdentity, appData)
+	if callbackErr != nil {
+		t.Fatalf("persist callback failed: %v", callbackErr)
+	}
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+	}
+	if got, want := len(discovered), 1; got != want {
+		t.Fatalf("expected %v discovered interface, got %v", want, got)
+	}
+	if got := discovered[0].Name; got != "Encrypted TCP" {
+		t.Fatalf("Name = %q, want %q", got, "Encrypted TCP")
+	}
+}
+
 func TestInterfaceDiscoveryReceiveAndPersistAdditionalTypes(t *testing.T) {
 	t.Parallel()
 
@@ -1221,6 +1280,93 @@ func TestInterfaceDiscoveryStartInvokesDiscoveryCallbackAfterAutoconnect(t *test
 		t.Fatal("timed out waiting for callback auto-connected listener")
 	}
 
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected 1 auto-connected interface, got %v", got)
+	}
+}
+
+func TestInterfaceDiscoveryStartRecoversDiscoveryCallbackPanic(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-callback-panic-")
+	defer cleanup()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("listener.Close() error = %v", err)
+		}
+	})
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		accepted <- conn
+	}()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	destinationHash := []byte("callback-panic-destination")
+	ts.pathTable[string(destinationHash)] = &PathEntry{Hops: 3, Expires: time.Now().Add(time.Hour)}
+
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+	discovery.SetDiscoveryCallback(func(map[string]any) {
+		panic("boom")
+	})
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	sourceIdentity := mustTestNewIdentity(t, true)
+	port := listener.Addr().(*net.TCPAddr).Port
+	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
+		discoveryFieldInterfaceType: "BackboneInterface",
+		discoveryFieldTransport:     true,
+		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldName:          "Callback Panic Backbone",
+		discoveryFieldReachableOn:   "127.0.0.1",
+		discoveryFieldPort:          port,
+	}, 2)
+
+	func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				t.Fatalf("receivedAnnounce() propagated callback panic: %v", recovered)
+			}
+		}()
+		discovery.handler.receivedAnnounce(destinationHash, sourceIdentity, appData)
+	}()
+
+	select {
+	case conn := <-accepted:
+		t.Cleanup(func() {
+			if err := conn.Close(); err != nil {
+				t.Errorf("accepted conn.Close() error = %v", err)
+			}
+		})
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for auto-connect after callback panic")
+	}
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces() error = %v", err)
+	}
+	if got := len(discovered); got != 1 {
+		t.Fatalf("expected 1 persisted discovered interface, got %v", got)
+	}
 	if got := len(ts.GetInterfaces()); got != 1 {
 		t.Fatalf("expected 1 auto-connected interface, got %v", got)
 	}

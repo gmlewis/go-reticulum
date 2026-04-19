@@ -549,6 +549,14 @@ func (ts *TransportSystem) SetNetworkIdentity(identity *Identity) {
 	ts.identity = identity
 }
 
+// NetworkIdentity returns the network identity configured for transport-level
+// operations, if one is available.
+func (ts *TransportSystem) NetworkIdentity() *Identity {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.networkID
+}
+
 // NetworkIdentityHash retrieves the hash of the current network identity, if one is configured.
 func (ts *TransportSystem) NetworkIdentityHash() []byte {
 	ts.mu.Lock()

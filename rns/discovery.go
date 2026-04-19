@@ -490,10 +490,19 @@ func (h *InterfaceAnnounceHandler) receivedAnnounce(destinationHash []byte, anno
 	flags := appData[0]
 	payload := appData[1:]
 	if flags&discoveryFlagEncrypted != 0 {
-		if h.owner == nil || h.owner.networkIdentity == nil {
+		var networkIdentity *Identity
+		if h.owner != nil {
+			networkIdentity = h.owner.networkIdentity
+			if networkIdentity == nil && h.owner.transport != nil {
+				if getter, ok := h.owner.transport.(interface{ NetworkIdentity() *Identity }); ok {
+					networkIdentity = getter.NetworkIdentity()
+				}
+			}
+		}
+		if networkIdentity == nil {
 			return
 		}
-		decrypted, err := h.owner.networkIdentity.Decrypt(payload, nil, false)
+		decrypted, err := networkIdentity.Decrypt(payload, nil, false)
 		if err != nil || len(decrypted) == 0 {
 			return
 		}
@@ -626,6 +635,24 @@ func (id *InterfaceDiscovery) SetDiscoveryCallback(callback func(map[string]any)
 	id.discoveryCallback = callback
 }
 
+func (id *InterfaceDiscovery) invokeDiscoveryCallback(info map[string]any) {
+	if id == nil {
+		return
+	}
+	id.callbackMu.RLock()
+	callback := id.discoveryCallback
+	id.callbackMu.RUnlock()
+	if callback == nil {
+		return
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil && id.owner != nil && id.owner.logger != nil {
+			id.owner.logger.Error("error while processing external interface discovery callback: %v", recovered)
+		}
+	}()
+	callback(info)
+}
+
 func shuffleDiscoveredInterfaces(candidates []DiscoveredInterface) {
 	for i := len(candidates) - 1; i > 0; i-- {
 		n, err := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
@@ -664,12 +691,7 @@ func (id *InterfaceDiscovery) Start(requiredValue int) error {
 				id.owner.logger.Error("failed to auto-connect discovered interface %v: %v", discovered.Name, err)
 			}
 		}
-		id.callbackMu.RLock()
-		callback := id.discoveryCallback
-		id.callbackMu.RUnlock()
-		if callback != nil {
-			callback(info)
-		}
+		id.invokeDiscoveryCallback(info)
 	})
 	if id.owner.transport != nil {
 		id.owner.transport.RegisterAnnounceHandler(id.handler.AnnounceHandler())
