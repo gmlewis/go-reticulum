@@ -1120,6 +1120,112 @@ func TestInterfaceDiscoveryStartAutoconnectsReceivedBackboneAnnounce(t *testing.
 	_ = iface.Detach()
 }
 
+func TestInterfaceDiscoveryStartInvokesDiscoveryCallbackAfterAutoconnect(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-callback-")
+	defer cleanup()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("listener.Close() error = %v", err)
+		}
+	})
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		accepted <- conn
+	}()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	destinationHash := []byte("callback-destination")
+	ts.pathTable[string(destinationHash)] = &PathEntry{Hops: 3, Expires: time.Now().Add(time.Hour)}
+
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	type callbackResult struct {
+		name            string
+		interfacesCount int
+		discoveredCount int
+		err             error
+	}
+	callbackCh := make(chan callbackResult, 1)
+	discovery.SetDiscoveryCallback(func(info map[string]any) {
+		discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+		callbackCh <- callbackResult{
+			name:            asString(info["name"]),
+			interfacesCount: len(ts.GetInterfaces()),
+			discoveredCount: len(discovered),
+			err:             err,
+		}
+	})
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	sourceIdentity := mustTestNewIdentity(t, true)
+	port := listener.Addr().(*net.TCPAddr).Port
+	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
+		discoveryFieldInterfaceType: "BackboneInterface",
+		discoveryFieldTransport:     true,
+		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldName:          "Callback Backbone",
+		discoveryFieldReachableOn:   "127.0.0.1",
+		discoveryFieldPort:          port,
+	}, 2)
+
+	discovery.handler.receivedAnnounce(destinationHash, sourceIdentity, appData)
+
+	var result callbackResult
+	select {
+	case result = <-callbackCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for discovery callback")
+	}
+	if result.err != nil {
+		t.Fatalf("callback ListDiscoveredInterfaces() error = %v", result.err)
+	}
+	if result.name != "Callback Backbone" {
+		t.Fatalf("callback name = %q, want %q", result.name, "Callback Backbone")
+	}
+	if result.interfacesCount != 1 {
+		t.Fatalf("callback interfaces count = %v, want 1", result.interfacesCount)
+	}
+	if result.discoveredCount != 1 {
+		t.Fatalf("callback discovered count = %v, want 1", result.discoveredCount)
+	}
+
+	select {
+	case conn := <-accepted:
+		t.Cleanup(func() {
+			if err := conn.Close(); err != nil {
+				t.Errorf("accepted conn.Close() error = %v", err)
+			}
+		})
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for callback auto-connected listener")
+	}
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected 1 auto-connected interface, got %v", got)
+	}
+}
+
 func TestInterfaceDiscoveryStartSkipsAutoconnectWhenPersistFails(t *testing.T) {
 	t.Parallel()
 

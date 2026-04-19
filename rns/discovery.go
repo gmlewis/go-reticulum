@@ -590,6 +590,9 @@ type InterfaceDiscovery struct {
 
 	handler *InterfaceAnnounceHandler
 
+	callbackMu        sync.RWMutex
+	discoveryCallback func(map[string]any)
+
 	monitorMu              sync.Mutex
 	monitoredInterfaces    []interfaces.Interface
 	autoconnectDownSince   map[interfaces.Interface]time.Time
@@ -610,6 +613,17 @@ func NewInterfaceDiscovery(owner *Reticulum) *InterfaceDiscovery {
 		detachThreshold:      12 * time.Second,
 		shuffleCandidates:    shuffleDiscoveredInterfaces,
 	}
+}
+
+// SetDiscoveryCallback registers the external callback invoked after a
+// discovered interface has been persisted and processed for autoconnect.
+func (id *InterfaceDiscovery) SetDiscoveryCallback(callback func(map[string]any)) {
+	if id == nil {
+		return
+	}
+	id.callbackMu.Lock()
+	defer id.callbackMu.Unlock()
+	id.discoveryCallback = callback
 }
 
 func shuffleDiscoveredInterfaces(candidates []DiscoveredInterface) {
@@ -649,6 +663,12 @@ func (id *InterfaceDiscovery) Start(requiredValue int) error {
 			if err := id.autoconnect(discovered); err != nil && id.owner != nil && id.owner.logger != nil {
 				id.owner.logger.Error("failed to auto-connect discovered interface %v: %v", discovered.Name, err)
 			}
+		}
+		id.callbackMu.RLock()
+		callback := id.discoveryCallback
+		id.callbackMu.RUnlock()
+		if callback != nil {
+			callback(info)
 		}
 	})
 	if id.owner.transport != nil {
