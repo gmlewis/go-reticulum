@@ -10,32 +10,14 @@ package rns
 
 import (
 	"fmt"
-	"net"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func allocateUDPPort(t *testing.T) int {
 	t.Helper()
-
-	pc, err := net.ListenPacket("udp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("failed to allocate UDP port: %v", err)
-	}
-	defer func() {
-		if err := pc.Close(); err != nil {
-			t.Logf("failed to close packet conn: %v", err)
-		}
-	}()
-
-	addr, ok := pc.LocalAddr().(*net.UDPAddr)
-	if !ok {
-		t.Fatalf("unexpected local address type: %T", pc.LocalAddr())
-	}
-	if addr.Port <= 0 {
-		t.Fatalf("invalid allocated UDP port: %v", addr.Port)
-	}
-
-	return addr.Port
+	return testutils.ReserveUDPPort(t)
 }
 
 func allocateUDPPortPair(t *testing.T) (int, int) {

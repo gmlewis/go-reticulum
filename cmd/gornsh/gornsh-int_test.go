@@ -564,6 +564,7 @@ type gornshListenerProcess struct {
 	stdout       *bytes.Buffer
 	value        string
 	bootstrapped bool
+	hashLines    int
 	hashMu       sync.Mutex
 	readyCh      chan struct{}
 	waitCh       chan error
@@ -627,7 +628,9 @@ func TestWaitForListenerReadinessIgnoresPostReadyFailure(t *testing.T) {
 	}
 	proc.recordLine(listeningReadyLine())
 	if !proc.recordLine("rnsh listening for commands on <deadbeef>") {
-		t.Fatal("recordLine() = false, want readiness hash detection")
+		if !proc.recordLine("rnsh listening for commands on <deadbeef>") {
+			t.Fatal("recordLine() = false, want readiness hash detection after post-setup hash")
+		}
 	}
 	close(proc.readyCh)
 	go func() {
@@ -637,6 +640,30 @@ func TestWaitForListenerReadinessIgnoresPostReadyFailure(t *testing.T) {
 
 	if err := waitForListenerReadiness("Python listener", proc.readyCh, proc.waitCh, proc.output, proc.bootstrappedReadyLineSeen, 50*time.Millisecond); err != nil {
 		t.Fatalf("waitForListenerReadiness() error = %v, want nil after readiness", err)
+	}
+}
+
+func TestPythonListenerRecordLineRequiresSecondDestinationLine(t *testing.T) {
+	t.Parallel()
+
+	proc := &pythonListenerProcess{
+		stdout: &bytes.Buffer{},
+	}
+
+	proc.recordLine(listeningReadyLine())
+	if got := proc.bootstrappedReadyLineSeen(); !got {
+		t.Fatal("bootstrappedReadyLineSeen() = false, want true")
+	}
+
+	if proc.recordLine("rnsh listening for commands on <deadbeef>") {
+		t.Fatal("recordLine() = true on first destination line, want false")
+	}
+	if got := proc.hash(); got != "deadbeef" {
+		t.Fatalf("hash() = %q, want deadbeef", got)
+	}
+
+	if !proc.recordLine("rnsh listening for commands on <deadbeef>") {
+		t.Fatal("recordLine() = false on second destination line, want true")
 	}
 }
 
@@ -1033,6 +1060,9 @@ func startGornshListenerWithArgs(t *testing.T, configDir string, extraArgs ...st
 	if err := waitForListenerReadiness("gornsh listener", proc.readyCh, proc.waitCh, proc.output, proc.bootstrappedReadyLineSeen, listenerReadinessTimeout); err != nil {
 		t.Fatal(err)
 	}
+	if configSharesInstance(t, configDir) {
+		waitForPathInSharedInstance(t, configDir, proc.hash(), sharedInstancePathTimeout)
+	}
 	log.Printf("gornsh listener hash is ready: %v", proc.hash())
 
 	t.Cleanup(func() {
@@ -1079,7 +1109,7 @@ func (p *gornshListenerProcess) output() string {
 func (p *gornshListenerProcess) recordLine(line string) bool {
 	p.hashMu.Lock()
 	defer p.hashMu.Unlock()
-	return recordListenerLine(p.stdout, &p.value, &p.bootstrapped, line)
+	return recordListenerLine(p.stdout, &p.value, &p.bootstrapped, &p.hashLines, 1, line)
 }
 
 func (p *gornshListenerProcess) stop(t *testing.T) {
@@ -1119,6 +1149,17 @@ func waitForPathInSharedInstance(t *testing.T, configDir, hash string, timeout t
 		time.Sleep(1 * time.Second)
 	}
 	t.Fatalf("timed out waiting for path to %v in shared instance", hash)
+}
+
+func configSharesInstance(t *testing.T, configDir string) bool {
+	t.Helper()
+
+	configBytes, err := os.ReadFile(filepath.Join(configDir, "config"))
+	if err != nil {
+		t.Fatalf("failed to read config for shared-instance detection: %v", err)
+	}
+
+	return strings.Contains(strings.ToLower(string(configBytes)), "share_instance = yes")
 }
 
 func waitForPathWithoutGornpath(t *testing.T, configDir, hash string, timeout time.Duration) {
@@ -1308,6 +1349,7 @@ type pythonListenerProcess struct {
 	stdout       *bytes.Buffer
 	value        string
 	bootstrapped bool
+	hashLines    int
 	hashMu       sync.Mutex
 	readyCh      chan struct{}
 	waitCh       chan error
@@ -1419,20 +1461,23 @@ func (p *pythonListenerProcess) output() string {
 func (p *pythonListenerProcess) recordLine(line string) bool {
 	p.hashMu.Lock()
 	defer p.hashMu.Unlock()
-	return recordListenerLine(p.stdout, &p.value, &p.bootstrapped, line)
+	return recordListenerLine(p.stdout, &p.value, &p.bootstrapped, &p.hashLines, 2, line)
 }
 
-func recordListenerLine(stdout *bytes.Buffer, value *string, bootstrapped *bool, line string) bool {
+func recordListenerLine(stdout *bytes.Buffer, value *string, bootstrapped *bool, hashLines *int, requiredHashLines int, line string) bool {
 	stdout.WriteString(line)
 	stdout.WriteByte('\n')
 	if !*bootstrapped && strings.Contains(line, listeningReadyLine()) {
 		*bootstrapped = true
 	}
-	if *value == "" {
-		if hash := parseListenerHash(line); hash != "" {
+	if hash := parseListenerHash(line); hash != "" {
+		if *value == "" {
 			*value = hash
-			return true
 		}
+		if hash == *value {
+			*hashLines++
+		}
+		return *hashLines >= requiredHashLines
 	}
 	return false
 }

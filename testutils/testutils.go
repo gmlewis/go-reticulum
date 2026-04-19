@@ -98,12 +98,20 @@ func SkipShortIntegration(t *testing.T) {
 // Global TCP port counter for integration tests.
 var testTCPPortCounter atomic.Uint32
 
+// Global UDP port counter for integration tests.
+var testUDPPortCounter atomic.Uint32
+
+func nextTestPort(counter *atomic.Uint32) int {
+	seed := uint32(os.Getpid()) * 977
+	return 43000 + int((seed+counter.Add(1))%20000)
+}
+
 // ReserveTCPPort reserves a unique TCP port for integration tests.
 // It uses a global counter to ensure ports don't conflict between tests.
 func ReserveTCPPort(t *testing.T) int {
 	t.Helper()
 	for {
-		port := 43000 + int(testTCPPortCounter.Add(1)%20000)
+		port := nextTestPort(&testTCPPortCounter)
 		l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", port)))
 		if err != nil {
 			continue
@@ -123,18 +131,16 @@ func ReserveTCPPort(t *testing.T) int {
 // ReserveUDPPort reserves a unique UDP port for integration tests.
 func ReserveUDPPort(t *testing.T) int {
 	t.Helper()
-	addr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("ReserveUDPPort: %v", err)
-	}
-	conn, err := net.ListenUDP("udp", addr)
-	if err != nil {
-		t.Fatalf("ReserveUDPPort: %v", err)
-	}
-	defer func() {
-		if err := conn.Close(); err != nil {
-			t.Fatal("unable to close UDP port")
+
+	for {
+		port := nextTestPort(&testUDPPortCounter)
+		conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: port})
+		if err != nil {
+			continue
 		}
-	}()
-	return conn.LocalAddr().(*net.UDPAddr).Port
+		if err := conn.Close(); err != nil {
+			t.Fatalf("ReserveUDPPort: close error: %v", err)
+		}
+		return port
+	}
 }

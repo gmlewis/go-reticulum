@@ -329,6 +329,9 @@ func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interfac
 		discoveryFieldTransport:     ia.owner.transport.Enabled(),
 		discoveryFieldTransportID:   append([]byte(nil), transportIdentity.Hash...),
 		discoveryFieldName:          name,
+		discoveryFieldLatitude:      nil,
+		discoveryFieldLongitude:     nil,
+		discoveryFieldHeight:        nil,
 	}
 
 	if cfg.Latitude != nil {
@@ -373,18 +376,14 @@ func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interfac
 		info[discoveryFieldFrequency] = *cfg.Frequency
 		info[discoveryFieldBandwidth] = *cfg.Bandwidth
 		info[discoveryFieldChannel] = *cfg.Channel
-		if modulation := sanitizeDiscoveryString(cfg.Modulation); modulation != "" {
-			info[discoveryFieldModulation] = modulation
-		}
+		info[discoveryFieldModulation] = cfg.Modulation
 	case "KISSInterface":
 		if cfg.Frequency == nil || cfg.Bandwidth == nil {
 			return nil, fmt.Errorf("missing KISS discovery radio parameters")
 		}
 		info[discoveryFieldFrequency] = *cfg.Frequency
 		info[discoveryFieldBandwidth] = *cfg.Bandwidth
-		if modulation := sanitizeDiscoveryString(cfg.Modulation); modulation != "" {
-			info[discoveryFieldModulation] = modulation
-		}
+		info[discoveryFieldModulation] = sanitizeDiscoveryString(cfg.Modulation)
 	}
 
 	if cfg.PublishIFAC {

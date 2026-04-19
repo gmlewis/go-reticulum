@@ -2809,6 +2809,148 @@ func TestInterfaceAnnouncerPayloadKeepsEmptyDiscoveryName(t *testing.T) {
 	}
 }
 
+func TestInterfaceAnnouncerPayloadKeepsNilCoordinates(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	ts := newAnnounceCaptureTransport(logger)
+	transportIdentity := mustTestNewIdentity(t, true)
+	ts.identity = transportIdentity
+	ts.SetEnabled(true)
+
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+
+	iface := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("announce-backbone-nil-coords", interfaces.ModeGateway, 1000),
+		ifaceType:     "BackboneInterface",
+		bindIP:        "127.0.0.1",
+		bindPort:      4242,
+	}
+	iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  6 * time.Hour,
+		StampValue:        6,
+		Name:              "No Coords",
+		ReachableOn:       "discovery.example.net",
+	})
+
+	appData, err := announcer.getInterfaceAnnounceData(iface)
+	if err != nil {
+		t.Fatalf("getInterfaceAnnounceData() error = %v", err)
+	}
+
+	payload := appData[1:]
+	packed := payload[:len(payload)-discoveryStampSize]
+	unpacked, err := msgpack.Unpack(packed)
+	if err != nil {
+		t.Fatalf("msgpack.Unpack() error = %v", err)
+	}
+	info := asAnyMap(unpacked)
+	if info == nil {
+		t.Fatalf("unexpected announce payload type %T", unpacked)
+	}
+
+	for _, field := range []int{discoveryFieldLatitude, discoveryFieldLongitude, discoveryFieldHeight} {
+		if got, ok := lookupDiscovery(info, field); !ok {
+			t.Fatalf("field %v missing, want present nil field", field)
+		} else if got != nil {
+			t.Fatalf("field %v = %v, want nil", field, got)
+		}
+	}
+}
+
+func TestInterfaceAnnouncerPayloadKeepsEmptyModulationField(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	ts := newAnnounceCaptureTransport(logger)
+	transportIdentity := mustTestNewIdentity(t, true)
+	ts.identity = transportIdentity
+	ts.SetEnabled(true)
+
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+
+	tests := []struct {
+		name      string
+		ifaceType string
+		cfg       interfaces.DiscoveryConfig
+	}{
+		{
+			name:      "weave",
+			ifaceType: "WeaveInterface",
+			cfg: interfaces.DiscoveryConfig{
+				SupportsDiscovery: true,
+				Discoverable:      true,
+				AnnounceInterval:  time.Hour,
+				Name:              "Weave Empty Mod",
+				ReachableOn:       "weave.example.net",
+				Frequency:         intPtr(2450000000),
+				Bandwidth:         intPtr(2000000),
+				Channel:           intPtr(11),
+				Modulation:        "",
+			},
+		},
+		{
+			name:      "kiss",
+			ifaceType: "KISSInterface",
+			cfg: interfaces.DiscoveryConfig{
+				SupportsDiscovery: true,
+				Discoverable:      true,
+				AnnounceInterval:  time.Hour,
+				Name:              "KISS Empty Mod",
+				ReachableOn:       "kiss.example.net",
+				Frequency:         intPtr(145500000),
+				Bandwidth:         intPtr(25000),
+				Modulation:        "",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			iface := &announceTestInterface{
+				BaseInterface: interfaces.NewBaseInterface(tt.name, interfaces.ModeGateway, 1000),
+				ifaceType:     tt.ifaceType,
+			}
+			iface.SetDiscoveryConfig(tt.cfg)
+
+			appData, err := announcer.getInterfaceAnnounceData(iface)
+			if err != nil {
+				t.Fatalf("getInterfaceAnnounceData() error = %v", err)
+			}
+
+			payload := appData[1:]
+			packed := payload[:len(payload)-discoveryStampSize]
+			unpacked, err := msgpack.Unpack(packed)
+			if err != nil {
+				t.Fatalf("msgpack.Unpack() error = %v", err)
+			}
+			info := asAnyMap(unpacked)
+			if info == nil {
+				t.Fatalf("unexpected announce payload type %T", unpacked)
+			}
+
+			if got, ok := lookupDiscovery(info, discoveryFieldModulation); !ok {
+				t.Fatal("modulation field missing, want present empty field")
+			} else if got != "" {
+				t.Fatalf("modulation = %v, want empty string", got)
+			}
+		})
+	}
+}
+
 func TestInterfaceAnnouncerPayloadI2P(t *testing.T) {
 	t.Parallel()
 

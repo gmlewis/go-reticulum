@@ -6,6 +6,7 @@
 package testutils
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -70,5 +71,25 @@ func TestTempBaseDir(t *testing.T) {
 
 	if got := tempBaseDir(); got != "" {
 		t.Fatalf("tempBaseDir() = %q, want empty on %v", got, runtime.GOOS)
+	}
+}
+
+func TestReserveUDPPortReturnsDistinctBindablePorts(t *testing.T) {
+	t.Parallel()
+
+	first := ReserveUDPPort(t)
+	second := ReserveUDPPort(t)
+	if first == second {
+		t.Fatalf("ReserveUDPPort() returned duplicate ports: %v", first)
+	}
+
+	for _, port := range []int{first, second} {
+		conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: port})
+		if err != nil {
+			t.Fatalf("ListenUDP(%v) error = %v", port, err)
+		}
+		if err := conn.Close(); err != nil {
+			t.Fatalf("Close() error = %v", err)
+		}
 	}
 }
