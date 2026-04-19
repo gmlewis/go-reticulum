@@ -307,7 +307,7 @@ func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interfac
 	}
 
 	switch advertisedType {
-	case "BackboneInterface", "TCPServerInterface", "RNodeInterface", "WeaveInterface", "KISSInterface":
+	case "BackboneInterface", "TCPServerInterface", "I2PInterface", "RNodeInterface", "WeaveInterface", "KISSInterface":
 	default:
 		return nil, nil
 	}
@@ -360,6 +360,7 @@ func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interfac
 			return nil, fmt.Errorf("missing bind port")
 		}
 		info[discoveryFieldPort] = portGetter.BindPort()
+	case "I2PInterface":
 	case "RNodeInterface":
 		if cfg.Frequency == nil || cfg.Bandwidth == nil || cfg.SpreadingFactor == nil || cfg.CodingRate == nil {
 			return nil, fmt.Errorf("missing RNode discovery radio parameters")

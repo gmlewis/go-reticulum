@@ -2193,6 +2193,79 @@ func TestInterfaceAnnouncerPayload(t *testing.T) {
 	}
 }
 
+func TestInterfaceAnnouncerPayloadI2P(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	ts := newAnnounceCaptureTransport(logger)
+	transportIdentity := mustTestNewIdentity(t, true)
+	ts.identity = transportIdentity
+	ts.SetEnabled(true)
+
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+
+	iface := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("announce-i2p", interfaces.ModeGateway, 1000),
+		ifaceType:     "I2PInterface",
+	}
+	iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  6 * time.Hour,
+		StampValue:        6,
+		Name:              "Discovery I2P\n",
+		ReachableOn:       "exampleabcdefghijklmnopqrstuvwxyz.b32.i2p",
+	})
+
+	appData, err := announcer.getInterfaceAnnounceData(iface)
+	if err != nil {
+		t.Fatalf("getInterfaceAnnounceData() error = %v", err)
+	}
+	if len(appData) <= 1+discoveryStampSize {
+		t.Fatalf("getInterfaceAnnounceData() returned %v bytes, want > %v", len(appData), 1+discoveryStampSize)
+	}
+	if got := appData[0]; got != 0 {
+		t.Fatalf("flags = %08b, want 00000000", got)
+	}
+
+	payload := appData[1:]
+	packed := payload[:len(payload)-discoveryStampSize]
+	stamp := payload[len(payload)-discoveryStampSize:]
+	workblock, err := discoveryStampWorkblock(FullHash(packed), discoveryWorkblockRounds)
+	if err != nil {
+		t.Fatalf("discoveryStampWorkblock() error = %v", err)
+	}
+	if !discoveryStampValid(stamp, 6, workblock) {
+		t.Fatal("expected generated stamp to satisfy configured stamp cost")
+	}
+
+	unpacked, err := msgpack.Unpack(packed)
+	if err != nil {
+		t.Fatalf("msgpack.Unpack() error = %v", err)
+	}
+	info := asAnyMap(unpacked)
+	if info == nil {
+		t.Fatalf("unexpected announce payload type %T", unpacked)
+	}
+
+	if got := asString(lookupDiscoveryValue(info, discoveryFieldInterfaceType)); got != "I2PInterface" {
+		t.Fatalf("interface type = %q, want %q", got, "I2PInterface")
+	}
+	if got := asString(lookupDiscoveryValue(info, discoveryFieldName)); got != "Discovery I2P" {
+		t.Fatalf("name = %q, want %q", got, "Discovery I2P")
+	}
+	if got := asString(lookupDiscoveryValue(info, discoveryFieldReachableOn)); got != "exampleabcdefghijklmnopqrstuvwxyz.b32.i2p" {
+		t.Fatalf("reachable_on = %q, want %q", got, "exampleabcdefghijklmnopqrstuvwxyz.b32.i2p")
+	}
+	if got := lookupDiscoveryValue(info, discoveryFieldPort); got != nil {
+		t.Fatalf("port = %v, want nil", got)
+	}
+}
+
 func TestInterfaceAnnouncerStart(t *testing.T) {
 	logger := NewLogger()
 	ts := newAnnounceCaptureTransport(logger)
