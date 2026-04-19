@@ -734,6 +734,27 @@ func (r *Reticulum) initInterfaces() error {
 			}
 			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
+			if bootstrapOnly {
+				name := sub.Name
+				autoCfgCopy := autoCfg
+				selectedModeCopy := selectedMode
+				ifacConfigCopy := ifacConfig
+				discoveryConfigCopy := discoveryConfig
+				r.registerBootstrapRestarter(func() error {
+					handler := func(data []byte, iface interfaces.Interface) {
+						r.transport.Inbound(data, iface)
+					}
+					iface, err := interfaces.NewAutoInterface(name, autoCfgCopy, handler, func(peer interfaces.Interface) {
+						r.transport.RegisterInterface(peer)
+					})
+					if err != nil {
+						return err
+					}
+					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+					r.transport.RegisterInterface(iface)
+					return nil
+				})
+			}
 			r.logger.Info("Started Auto interface %v", sub.Name)
 
 		case "UDPInterface":
@@ -1527,6 +1548,27 @@ func (r *Reticulum) initInterfaces() error {
 			}
 			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
+			if bootstrapOnly {
+				name := sub.Name
+				commandCopy := command
+				respawnDelayCopy := respawnDelay
+				selectedModeCopy := selectedMode
+				ifacConfigCopy := ifacConfig
+				discoveryConfigCopy := discoveryConfig
+				r.registerBootstrapRestarter(func() error {
+					handler := func(data []byte, iface interfaces.Interface) {
+						r.transport.Inbound(data, iface)
+					}
+
+					iface, err := interfaces.NewPipeSubprocessInterface(name, commandCopy, respawnDelayCopy, handler)
+					if err != nil {
+						return err
+					}
+					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+					r.transport.RegisterInterface(iface)
+					return nil
+				})
+			}
 			r.logger.Info("Started Pipe interface %v", sub.Name)
 
 		case "WeaveInterface":

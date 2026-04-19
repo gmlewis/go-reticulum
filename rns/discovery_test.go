@@ -1228,8 +1228,6 @@ func TestInterfaceDiscoveryMonitorReenablesBootstrapInterfacesWhenAutoconnectsGo
 }
 
 func TestInterfaceDiscoveryMonitorReenablesConfiguredTCPBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
-	t.Parallel()
-
 	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	port := reserveTCPPort(t)
@@ -1286,8 +1284,6 @@ bootstrap_only = Yes
 }
 
 func TestInterfaceDiscoveryMonitorReenablesConfiguredTCPClientBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
-	t.Parallel()
-
 	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	port := reserveTCPPort(t)
@@ -1344,8 +1340,6 @@ bootstrap_only = Yes
 }
 
 func TestInterfaceDiscoveryMonitorReenablesConfiguredUDPBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
-	t.Parallel()
-
 	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	listenPort := reserveUDPPort(t)
@@ -1404,9 +1398,116 @@ bootstrap_only = Yes
 	}
 }
 
-func TestInterfaceDiscoveryMonitorReenablesConfiguredI2PBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
-	t.Parallel()
+func TestInterfaceDiscoveryMonitorReenablesConfiguredPipeBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
+	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	config := `[reticulum]
+share_instance = No
+autoconnect_discovered_interfaces = 1
 
+[logging]
+loglevel = 4
+
+[interfaces]
+[[Bootstrap Pipe]]
+type = PipeInterface
+command = cat
+respawn_delay = 1
+bootstrap_only = Yes
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected 1 configured interface, got %v", got)
+	}
+
+	discovery := NewInterfaceDiscovery(r)
+	discovery.monitorInterval = 0
+
+	iface := ts.GetInterfaces()[0]
+	discovery.teardownInterface(iface)
+
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected bootstrap interface teardown to remove interface, got %v interfaces", got)
+	}
+
+	discovery.monitorAutoconnectsOnce(time.Unix(690, 0))
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected configured Pipe bootstrap interface to be re-enabled, got %v interfaces", got)
+	}
+
+	getter, ok := ts.GetInterfaces()[0].(interface{ BootstrapOnly() bool })
+	if !ok {
+		t.Fatalf("re-enabled interface %T does not expose BootstrapOnly()", ts.GetInterfaces()[0])
+	}
+	if !getter.BootstrapOnly() {
+		t.Fatal("expected re-enabled Pipe bootstrap interface to preserve bootstrap-only metadata")
+	}
+}
+
+func TestInterfaceDiscoveryMonitorReenablesConfiguredAutoBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
+	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	config := `[reticulum]
+share_instance = No
+autoconnect_discovered_interfaces = 1
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[Bootstrap Auto]]
+type = AutoInterface
+devices = bootstrap-test-device-that-does-not-exist
+bootstrap_only = Yes
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected 1 configured interface, got %v", got)
+	}
+
+	discovery := NewInterfaceDiscovery(r)
+	discovery.monitorInterval = 0
+
+	iface := ts.GetInterfaces()[0]
+	discovery.teardownInterface(iface)
+
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected bootstrap interface teardown to remove interface, got %v interfaces", got)
+	}
+
+	discovery.monitorAutoconnectsOnce(time.Unix(695, 0))
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected configured Auto bootstrap interface to be re-enabled, got %v interfaces", got)
+	}
+
+	getter, ok := ts.GetInterfaces()[0].(interface{ BootstrapOnly() bool })
+	if !ok {
+		t.Fatalf("re-enabled interface %T does not expose BootstrapOnly()", ts.GetInterfaces()[0])
+	}
+	if !getter.BootstrapOnly() {
+		t.Fatal("expected re-enabled Auto bootstrap interface to preserve bootstrap-only metadata")
+	}
+}
+
+func TestInterfaceDiscoveryMonitorReenablesConfiguredI2PBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
 	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	port := reserveTCPPort(t)
@@ -1464,8 +1565,6 @@ bootstrap_only = Yes
 }
 
 func TestInterfaceDiscoveryMonitorReenablesConfiguredBackboneClientBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
-	t.Parallel()
-
 	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	port := reserveTCPPort(t)
