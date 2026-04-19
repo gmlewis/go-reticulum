@@ -819,6 +819,31 @@ func (r *Reticulum) initInterfaces() error {
 				}
 				applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 				r.transport.RegisterInterface(iface)
+				if bootstrapOnly {
+					name := sub.Name
+					listenIPCopy := listenIP
+					listenPortCopy := listenPort
+					selectedModeCopy := selectedMode
+					ifacConfigCopy := ifacConfig
+					discoveryConfigCopy := discoveryConfig
+					r.registerBootstrapRestarter(func() error {
+						handler := func(data []byte, iface interfaces.Interface) {
+							r.transport.Inbound(data, iface)
+						}
+						onConnect := func(iface interfaces.Interface) {
+							applySpawnedInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, r.panicOnIfaceError)
+							r.transport.RegisterInterface(iface)
+						}
+
+						iface, err := interfaces.NewTCPServerInterface(name, listenIPCopy, listenPortCopy, handler, onConnect)
+						if err != nil {
+							return err
+						}
+						applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+						r.transport.RegisterInterface(iface)
+						return nil
+					})
+				}
 				r.logger.Info("Started TCP server interface %v on %v:%v", sub.Name, listenIP, listenPort)
 			}
 
