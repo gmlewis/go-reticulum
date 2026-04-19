@@ -750,6 +750,125 @@ func TestInterfaceAnnounceHandlerRecoversCallbackPanic(t *testing.T) {
 	}()
 }
 
+func TestInterfaceDiscoveryReceiveAndPersistRejectsMissingRequiredFields(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		payload map[any]any
+	}{
+		{
+			name: "tcp-missing-port",
+			payload: map[any]any{
+				discoveryFieldInterfaceType: "TCPServerInterface",
+				discoveryFieldTransport:     true,
+				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldName:          "Broken TCP",
+				discoveryFieldReachableOn:   "discovery.example.net",
+			},
+		},
+		{
+			name: "tcp-missing-reachable-on",
+			payload: map[any]any{
+				discoveryFieldInterfaceType: "TCPServerInterface",
+				discoveryFieldTransport:     true,
+				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldName:          "Broken TCP",
+				discoveryFieldPort:          4242,
+			},
+		},
+		{
+			name: "i2p-missing-reachable-on",
+			payload: map[any]any{
+				discoveryFieldInterfaceType: "I2PInterface",
+				discoveryFieldTransport:     true,
+				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldName:          "Broken I2P",
+			},
+		},
+		{
+			name: "rnode-missing-frequency",
+			payload: map[any]any{
+				discoveryFieldInterfaceType:   "RNodeInterface",
+				discoveryFieldTransport:       true,
+				discoveryFieldTransportID:     []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldName:            "Broken RNode",
+				discoveryFieldReachableOn:     "rnode.example.net",
+				discoveryFieldBandwidth:       125000,
+				discoveryFieldSpreadingFactor: 7,
+				discoveryFieldCodingRate:      5,
+			},
+		},
+		{
+			name: "weave-missing-channel",
+			payload: map[any]any{
+				discoveryFieldInterfaceType: "WeaveInterface",
+				discoveryFieldTransport:     true,
+				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldName:          "Broken Weave",
+				discoveryFieldReachableOn:   "weave.example.net",
+				discoveryFieldFrequency:     2450000000,
+				discoveryFieldBandwidth:     2000000,
+				discoveryFieldModulation:    "gmsk",
+			},
+		},
+		{
+			name: "kiss-missing-modulation",
+			payload: map[any]any{
+				discoveryFieldInterfaceType: "KISSInterface",
+				discoveryFieldTransport:     true,
+				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldName:          "Broken KISS",
+				discoveryFieldReachableOn:   "kiss.example.net",
+				discoveryFieldFrequency:     433920000,
+				discoveryFieldBandwidth:     12500,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-missing-")
+			defer cleanup()
+
+			ts := NewTransportSystem(nil)
+			destinationHash := []byte("discovery-destination")
+			ts.pathTable[string(destinationHash)] = &PathEntry{Hops: 2, Expires: time.Now().Add(time.Hour)}
+
+			r := &Reticulum{
+				configDir: tmpDir,
+				transport: ts,
+				logger:    NewLogger(),
+			}
+			discovery := NewInterfaceDiscovery(r)
+
+			callbackCalled := false
+			handler := NewInterfaceAnnounceHandler(r, 2, func(info map[string]any) {
+				callbackCalled = true
+			})
+
+			sourceIdentity := mustTestNewIdentity(t, true)
+			appData := mustDiscoveryAnnounceAppData(t, tt.payload, 2)
+
+			handler.receivedAnnounce(destinationHash, sourceIdentity, appData)
+			if callbackCalled {
+				t.Fatal("expected malformed discovery announce to be ignored")
+			}
+
+			discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+			if err != nil {
+				t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+			}
+			if len(discovered) != 0 {
+				t.Fatalf("expected no persisted discovered interfaces, got %v", len(discovered))
+			}
+		})
+	}
+}
+
 func TestInterfaceDiscoveryReceiveAndPersistAdditionalTypes(t *testing.T) {
 	t.Parallel()
 

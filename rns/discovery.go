@@ -1426,6 +1426,103 @@ func (h *InterfaceAnnounceHandler) decodeDiscoveryInfo(destinationHash []byte, a
 		info["channel"] = asInt(v)
 	}
 
+	requiredValue := func(field byte, name string) (any, error) {
+		v, ok := lookupDiscovery(m, int(field))
+		if !ok || v == nil {
+			return nil, fmt.Errorf("missing %s", name)
+		}
+		return v, nil
+	}
+	requiredReachableOn := func() (string, error) {
+		v, err := requiredValue(discoveryFieldReachableOn, "reachable_on")
+		if err != nil {
+			return "", err
+		}
+		reachableOn := asString(v)
+		if !isReachableOnValue(reachableOn) {
+			return "", fmt.Errorf("invalid reachable_on value")
+		}
+		return reachableOn, nil
+	}
+
+	switch interfaceType {
+	case "BackboneInterface", "TCPServerInterface":
+		reachableOn, err := requiredReachableOn()
+		if err != nil {
+			return nil, err
+		}
+		portValue, err := requiredValue(discoveryFieldPort, "port")
+		if err != nil {
+			return nil, err
+		}
+		info["reachable_on"] = reachableOn
+		info["port"] = asInt(portValue)
+	case "I2PInterface":
+		reachableOn, err := requiredReachableOn()
+		if err != nil {
+			return nil, err
+		}
+		info["reachable_on"] = reachableOn
+	case "RNodeInterface":
+		frequency, err := requiredValue(discoveryFieldFrequency, "frequency")
+		if err != nil {
+			return nil, err
+		}
+		bandwidth, err := requiredValue(discoveryFieldBandwidth, "bandwidth")
+		if err != nil {
+			return nil, err
+		}
+		sf, err := requiredValue(discoveryFieldSpreadingFactor, "sf")
+		if err != nil {
+			return nil, err
+		}
+		cr, err := requiredValue(discoveryFieldCodingRate, "cr")
+		if err != nil {
+			return nil, err
+		}
+		info["frequency"] = asInt(frequency)
+		info["bandwidth"] = asInt(bandwidth)
+		info["sf"] = asInt(sf)
+		info["cr"] = asInt(cr)
+	case "WeaveInterface":
+		frequency, err := requiredValue(discoveryFieldFrequency, "frequency")
+		if err != nil {
+			return nil, err
+		}
+		bandwidth, err := requiredValue(discoveryFieldBandwidth, "bandwidth")
+		if err != nil {
+			return nil, err
+		}
+		channel, err := requiredValue(discoveryFieldChannel, "channel")
+		if err != nil {
+			return nil, err
+		}
+		modulation, err := requiredValue(discoveryFieldModulation, "modulation")
+		if err != nil {
+			return nil, err
+		}
+		info["frequency"] = asInt(frequency)
+		info["bandwidth"] = asInt(bandwidth)
+		info["channel"] = asInt(channel)
+		info["modulation"] = asString(modulation)
+	case "KISSInterface":
+		frequency, err := requiredValue(discoveryFieldFrequency, "frequency")
+		if err != nil {
+			return nil, err
+		}
+		bandwidth, err := requiredValue(discoveryFieldBandwidth, "bandwidth")
+		if err != nil {
+			return nil, err
+		}
+		modulation, err := requiredValue(discoveryFieldModulation, "modulation")
+		if err != nil {
+			return nil, err
+		}
+		info["frequency"] = asInt(frequency)
+		info["bandwidth"] = asInt(bandwidth)
+		info["modulation"] = asString(modulation)
+	}
+
 	info["config_entry"] = discoveryConfigEntry(info)
 	info["discovery_hash"] = FullHash([]byte(info["transport_id"].(string) + name))
 	return info, nil
