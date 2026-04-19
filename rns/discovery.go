@@ -1357,18 +1357,33 @@ func (h *InterfaceAnnounceHandler) decodeDiscoveryInfo(destinationHash []byte, a
 	if interfaceType == "" {
 		return nil, fmt.Errorf("missing interface type")
 	}
+	requiredValue := func(field byte, name string) (any, error) {
+		v, ok := lookupDiscovery(m, int(field))
+		if !ok || v == nil {
+			return nil, fmt.Errorf("missing %s", name)
+		}
+		return v, nil
+	}
 	transportID := asBytes(lookupDiscoveryValue(m, discoveryFieldTransportID))
 	if len(transportID) == 0 {
 		return nil, fmt.Errorf("missing transport ID")
 	}
-	name := asString(lookupDiscoveryValue(m, discoveryFieldName))
+	transportValue, err := requiredValue(discoveryFieldTransport, "transport")
+	if err != nil {
+		return nil, err
+	}
+	nameValue, err := requiredValue(discoveryFieldName, "name")
+	if err != nil {
+		return nil, err
+	}
+	name := asString(nameValue)
 	if name == "" {
 		name = fmt.Sprintf("Discovered %v", interfaceType)
 	}
 
 	info := map[string]any{
 		"type":         interfaceType,
-		"transport":    asBool(lookupDiscoveryValue(m, discoveryFieldTransport)),
+		"transport":    asBool(transportValue),
 		"name":         name,
 		"received":     float64(time.Now().UnixNano()) / 1e9,
 		"stamp":        append([]byte(nil), stamp...),
@@ -1426,13 +1441,6 @@ func (h *InterfaceAnnounceHandler) decodeDiscoveryInfo(destinationHash []byte, a
 		info["channel"] = asInt(v)
 	}
 
-	requiredValue := func(field byte, name string) (any, error) {
-		v, ok := lookupDiscovery(m, int(field))
-		if !ok || v == nil {
-			return nil, fmt.Errorf("missing %s", name)
-		}
-		return v, nil
-	}
 	requiredReachableOn := func() (string, error) {
 		v, err := requiredValue(discoveryFieldReachableOn, "reachable_on")
 		if err != nil {

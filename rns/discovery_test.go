@@ -758,6 +758,26 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsMissingRequiredFields(t *test
 		payload map[any]any
 	}{
 		{
+			name: "missing-transport",
+			payload: map[any]any{
+				discoveryFieldInterfaceType: "TCPServerInterface",
+				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldName:          "Broken TCP",
+				discoveryFieldReachableOn:   "discovery.example.net",
+				discoveryFieldPort:          4242,
+			},
+		},
+		{
+			name: "missing-name",
+			payload: map[any]any{
+				discoveryFieldInterfaceType: "TCPServerInterface",
+				discoveryFieldTransport:     true,
+				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldReachableOn:   "discovery.example.net",
+				discoveryFieldPort:          4242,
+			},
+		},
+		{
 			name: "tcp-missing-port",
 			payload: map[any]any{
 				discoveryFieldInterfaceType: "TCPServerInterface",
