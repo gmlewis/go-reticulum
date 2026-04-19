@@ -292,6 +292,9 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger) (*Re
 			}
 			r.transport.DiscoverInterfaces()
 		}
+		if len(r.blackholeSources) > 0 && r.transport != nil {
+			r.transport.EnableBlackholeUpdater()
+		}
 		if hasDiscoverableInterfaces(r.transport) {
 			r.interfaceAnnouncer = NewInterfaceAnnouncer(r, r.logger)
 			r.interfaceAnnouncer.Start()

@@ -88,6 +88,31 @@ func writeConfig(t *testing.T, dir, content string) {
 	}
 }
 
+func TestNewReticulumEnablesBlackholeUpdaterWhenSourcesConfigured(t *testing.T) {
+	t.Parallel()
+
+	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	writeConfig(t, configDir, `[reticulum]
+share_instance = No
+blackhole_sources = [00112233445566778899aabbccddeeff]
+
+[logging]
+loglevel = 4
+`)
+
+	ts := NewTransportSystem(nil)
+	r, err := NewReticulum(ts, configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum() error = %v", err)
+	}
+	defer closeReticulum(t, r)
+
+	if got := ts.EnableBlackholeUpdaterCallCount(); got != 1 {
+		t.Fatalf("EnableBlackholeUpdaterCallCount() = %v, want 1", got)
+	}
+}
+
 func TestNewReticulumSharedInstanceServerThenClient(t *testing.T) {
 	t.Parallel()
 	ts1 := NewTransportSystem(nil)

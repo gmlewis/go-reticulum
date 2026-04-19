@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"math/bits"
 	"net"
 	"os"
@@ -596,6 +597,7 @@ type InterfaceDiscovery struct {
 	monitorInterval        time.Duration
 	detachThreshold        time.Duration
 	monitorStopCh          chan struct{}
+	shuffleCandidates      func([]DiscoveredInterface)
 }
 
 // NewInterfaceDiscovery initializes a discovery listener bound to the provided local Reticulum configuration.
@@ -605,6 +607,18 @@ func NewInterfaceDiscovery(owner *Reticulum) *InterfaceDiscovery {
 		autoconnectDownSince: make(map[interfaces.Interface]time.Time),
 		monitorInterval:      5 * time.Second,
 		detachThreshold:      12 * time.Second,
+		shuffleCandidates:    shuffleDiscoveredInterfaces,
+	}
+}
+
+func shuffleDiscoveredInterfaces(candidates []DiscoveredInterface) {
+	for i := len(candidates) - 1; i > 0; i-- {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
+		if err != nil {
+			return
+		}
+		j := int(n.Int64())
+		candidates[i], candidates[j] = candidates[j], candidates[i]
 	}
 }
 
@@ -1198,17 +1212,16 @@ func (id *InterfaceDiscovery) monitorAutoconnectsOnce(now time.Time) {
 					id.owner.logger.Error("failed loading discovered interfaces for monitor autoconnect: %v", err)
 				}
 			} else if len(candidates) > 0 {
-				for _, candidate := range candidates {
-					if id.interfaceExists(candidate) {
-						continue
-					}
+				if id.shuffleCandidates != nil {
+					id.shuffleCandidates(candidates)
+				}
+				candidate := candidates[0]
+				if !id.interfaceExists(candidate) {
 					if err := id.autoconnect(candidate); err != nil {
 						if id.owner.logger != nil {
 							id.owner.logger.Error("failed auto-connecting monitored discovered interface %v: %v", candidate.Name, err)
 						}
-						continue
 					}
-					break
 				}
 			}
 		}

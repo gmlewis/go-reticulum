@@ -1150,6 +1150,221 @@ func TestInterfaceDiscoveryMonitorAutoconnectsAvailableCandidate(t *testing.T) {
 	}
 }
 
+func TestInterfaceDiscoveryMonitorAutoconnectUsesShuffledCandidateOrder(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-monitor-shuffle-")
+	defer cleanup()
+
+	listenerA, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen(listenerA) error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listenerA.Close(); err != nil {
+			t.Errorf("listenerA.Close() error = %v", err)
+		}
+	})
+	listenerB, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen(listenerB) error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listenerB.Close(); err != nil {
+			t.Errorf("listenerB.Close() error = %v", err)
+		}
+	})
+
+	acceptA := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listenerA.Accept()
+		if err == nil {
+			acceptA <- conn
+		}
+	}()
+	acceptB := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listenerB.Accept()
+		if err == nil {
+			acceptB <- conn
+		}
+	}()
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+	now := float64(time.Now().UnixNano()) / 1e9
+	portA := listenerA.Addr().(*net.TCPAddr).Port
+	portB := listenerB.Addr().(*net.TCPAddr).Port
+	if err := os.WriteFile(filepath.Join(storagePath, "candidate-a.data"), mustMsgpackPack(map[string]any{
+		"name":         "Candidate A",
+		"type":         "BackboneInterface",
+		"transport":    true,
+		"last_heard":   now - 10,
+		"discovered":   now - 60,
+		"reachable_on": "127.0.0.1",
+		"port":         portA,
+		"network_id":   "aaaaaaaa",
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write candidate A: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(storagePath, "candidate-b.data"), mustMsgpackPack(map[string]any{
+		"name":         "Candidate B",
+		"type":         "BackboneInterface",
+		"transport":    true,
+		"last_heard":   now - 20,
+		"discovered":   now - 60,
+		"reachable_on": "127.0.0.1",
+		"port":         portB,
+		"network_id":   "bbbbbbbb",
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write candidate B: %v", err)
+	}
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	discovery := NewInterfaceDiscovery(&Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 4,
+	})
+	discovery.monitorInterval = 0
+	discovery.initialAutoconnectRan = true
+	discovery.shuffleCandidates = func(candidates []DiscoveredInterface) {
+		if len(candidates) >= 2 {
+			candidates[0], candidates[1] = candidates[1], candidates[0]
+		}
+	}
+
+	discovery.monitorAutoconnectsOnce(time.Unix(301, 0))
+
+	select {
+	case conn := <-acceptB:
+		t.Cleanup(func() {
+			if err := conn.Close(); err != nil {
+				t.Errorf("acceptB conn.Close() error = %v", err)
+			}
+		})
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for shuffled candidate to be auto-connected")
+	}
+
+	select {
+	case conn := <-acceptA:
+		_ = conn.Close()
+		t.Fatal("unexpected connection to unshuffled first candidate")
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected 1 auto-connected interface, got %v", got)
+	}
+	meta, ok := ts.GetInterfaces()[0].(interface{ TargetPort() int })
+	if !ok {
+		t.Fatalf("auto-connected interface %T does not expose TargetPort()", ts.GetInterfaces()[0])
+	}
+	if got := meta.TargetPort(); got != portB {
+		t.Fatalf("TargetPort() = %v, want %v", got, portB)
+	}
+}
+
+func TestInterfaceDiscoveryMonitorDoesNotFallbackPastSelectedExistingCandidate(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-monitor-selected-")
+	defer cleanup()
+
+	existingPort := reserveTCPPort(t)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("listener.Close() error = %v", err)
+		}
+	})
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			accepted <- conn
+		}
+	}()
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "selected-existing.data"), mustMsgpackPack(map[string]any{
+		"name":         "Selected Existing",
+		"type":         "BackboneInterface",
+		"transport":    true,
+		"last_heard":   now - 10,
+		"discovered":   now - 60,
+		"reachable_on": "127.0.0.1",
+		"port":         existingPort,
+		"network_id":   "01010101",
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write existing candidate: %v", err)
+	}
+	otherPort := listener.Addr().(*net.TCPAddr).Port
+	if err := os.WriteFile(filepath.Join(storagePath, "other-candidate.data"), mustMsgpackPack(map[string]any{
+		"name":         "Other Candidate",
+		"type":         "BackboneInterface",
+		"transport":    true,
+		"last_heard":   now - 20,
+		"discovered":   now - 60,
+		"reachable_on": "127.0.0.1",
+		"port":         otherPort,
+		"network_id":   "02020202",
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write other candidate: %v", err)
+	}
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	existing, err := interfaces.NewBackboneClientInterface("Existing", "127.0.0.1", existingPort, func(data []byte, iface interfaces.Interface) {
+		ts.Inbound(data, iface)
+	})
+	if err != nil {
+		t.Fatalf("NewBackboneClientInterface(existing) error = %v", err)
+	}
+	ts.RegisterInterface(existing)
+	t.Cleanup(func() {
+		if err := existing.Detach(); err != nil {
+			t.Errorf("existing.Detach() error = %v", err)
+		}
+	})
+
+	discovery := NewInterfaceDiscovery(&Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 4,
+	})
+	discovery.monitorInterval = 0
+	discovery.initialAutoconnectRan = true
+	discovery.shuffleCandidates = func([]DiscoveredInterface) {}
+
+	discovery.monitorAutoconnectsOnce(time.Unix(302, 0))
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected monitor to stop after selected existing candidate, got %v interfaces", got)
+	}
+
+	select {
+	case conn := <-accepted:
+		_ = conn.Close()
+		t.Fatal("unexpected fallback autoconnect to second candidate")
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
 func TestInterfaceDiscoveryMonitorDetachesBootstrapOnlyWhenTargetReached(t *testing.T) {
 	t.Parallel()
 

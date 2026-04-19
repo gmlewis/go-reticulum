@@ -29,6 +29,10 @@ type Transport interface {
 	// BlackholeIdentity blocks traffic from the given identity until it is
 	// explicitly cleared or expires.
 	BlackholeIdentity(identityHash []byte, until *int64, reason string) bool
+	// EnableBlackholeUpdater starts any configured remote blackhole update flow.
+	EnableBlackholeUpdater()
+	// EnableBlackholeUpdaterCallCount reports how many times the updater has been enabled.
+	EnableBlackholeUpdaterCallCount() int
 	// DiscoverInterfaces refreshes dynamic transport interface discovery.
 	DiscoverInterfaces()
 	// DiscoverInterfacesCallCount reports how many discovery passes have run.
@@ -164,7 +168,9 @@ type TransportSystem struct {
 	packetQCache    map[string]float64
 
 	blackholedIdentities map[string]BlackholeIdentityEntry
+	enableBlackholeCalls int
 	discoverCalls        int
+	enableBlackholeHook  func()
 	discoverHook         func()
 
 	knownDestinations map[string][]any
@@ -564,6 +570,24 @@ func (ts *TransportSystem) DiscoverInterfaces() {
 	}
 }
 
+// EnableBlackholeUpdater starts the configured blackhole updater flow.
+func (ts *TransportSystem) EnableBlackholeUpdater() {
+	ts.mu.Lock()
+	ts.enableBlackholeCalls++
+	hook := ts.enableBlackholeHook
+	ts.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
+}
+
+// EnableBlackholeUpdaterCallCount reports how many updater-enable calls have run.
+func (ts *TransportSystem) EnableBlackholeUpdaterCallCount() int {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.enableBlackholeCalls
+}
+
 // DiscoverInterfacesCallCount returns the number of times the discovery interface process has been called.
 func (ts *TransportSystem) DiscoverInterfacesCallCount() int {
 	ts.mu.Lock()
@@ -577,6 +601,14 @@ func (ts *TransportSystem) SetDiscoverInterfacesHook(hook func()) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	ts.discoverHook = hook
+}
+
+// SetEnableBlackholeUpdaterHook registers the callback that should run when
+// EnableBlackholeUpdater is invoked.
+func (ts *TransportSystem) SetEnableBlackholeUpdaterHook(hook func()) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.enableBlackholeHook = hook
 }
 
 // HopsTo returns the number of hops to the given destination hash,

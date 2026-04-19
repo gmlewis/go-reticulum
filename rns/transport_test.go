@@ -844,6 +844,25 @@ func TestDiscoverInterfacesRunsHook(t *testing.T) {
 	}
 }
 
+func TestEnableBlackholeUpdaterRunsHook(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	called := 0
+	ts.SetEnableBlackholeUpdaterHook(func() {
+		called++
+	})
+
+	ts.EnableBlackholeUpdater()
+
+	if got := ts.EnableBlackholeUpdaterCallCount(); got != 1 {
+		t.Fatalf("EnableBlackholeUpdaterCallCount() = %v, want 1", got)
+	}
+	if called != 1 {
+		t.Fatalf("blackhole updater hook called %v times, want 1", called)
+	}
+}
+
 type dummyInterface struct {
 	name string
 }
