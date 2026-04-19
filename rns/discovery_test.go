@@ -925,6 +925,50 @@ func TestInterfaceDiscoveryStartReconnectsCachedBackbone(t *testing.T) {
 	_ = iface.Detach()
 }
 
+func TestInterfaceDiscoveryConnectDiscoveredSkipsWhenAutoconnectDisabled(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-disabled-")
+	defer cleanup()
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "cached-backbone.data"), mustMsgpackPack(map[string]any{
+		"name":         "Cached Backbone",
+		"type":         "BackboneInterface",
+		"transport":    true,
+		"last_heard":   now - 60,
+		"discovered":   now - 120,
+		"reachable_on": "127.0.0.1",
+		"port":         4242,
+		"network_id":   "01020304",
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write cached discovery file: %v", err)
+	}
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 0,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	discovery.connectDiscovered()
+
+	if discovery.initialAutoconnectRan {
+		t.Fatal("expected initialAutoconnectRan to remain false when autoconnect is disabled")
+	}
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected no auto-connected interfaces when autoconnect is disabled, got %v", got)
+	}
+}
+
 func TestInterfaceDiscoveryStartAutoconnectsReceivedBackboneAnnounce(t *testing.T) {
 	t.Parallel()
 

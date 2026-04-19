@@ -999,7 +999,7 @@ func mapToDiscoveredInterface(info map[string]any) (DiscoveredInterface, bool) {
 }
 
 func (id *InterfaceDiscovery) connectDiscovered() {
-	if id == nil {
+	if id == nil || id.owner == nil || !id.owner.shouldAutoconnectDiscoveredInterfaces() {
 		return
 	}
 	discovered, err := id.ListDiscoveredInterfaces(false, true)
