@@ -1120,6 +1120,80 @@ func TestInterfaceDiscoveryStartAutoconnectsReceivedBackboneAnnounce(t *testing.
 	_ = iface.Detach()
 }
 
+func TestInterfaceDiscoveryStartSkipsAutoconnectWhenPersistFails(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-autoconnect-fail-")
+	defer cleanup()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("listener.Close() error = %v", err)
+		}
+	})
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		accepted <- conn
+	}()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	destinationHash := []byte("autoconnect-destination")
+	ts.pathTable[string(destinationHash)] = &PathEntry{Hops: 3, Expires: time.Now().Add(time.Hour)}
+
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.RemoveAll(storagePath); err != nil {
+		t.Fatalf("RemoveAll(storagePath) error = %v", err)
+	}
+	if err := os.WriteFile(storagePath, []byte("not-a-directory"), 0o644); err != nil {
+		t.Fatalf("WriteFile(storagePath) error = %v", err)
+	}
+
+	sourceIdentity := mustTestNewIdentity(t, true)
+	port := listener.Addr().(*net.TCPAddr).Port
+	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
+		discoveryFieldInterfaceType: "BackboneInterface",
+		discoveryFieldTransport:     true,
+		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldName:          "Broken Backbone",
+		discoveryFieldReachableOn:   "127.0.0.1",
+		discoveryFieldPort:          port,
+	}, 2)
+
+	discovery.handler.receivedAnnounce(destinationHash, sourceIdentity, appData)
+
+	select {
+	case conn := <-accepted:
+		_ = conn.Close()
+		t.Fatal("unexpected auto-connect when discovered interface persistence failed")
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected no auto-connected interfaces when persistence fails, got %v", got)
+	}
+}
+
 type monitorTestInterface struct {
 	*interfaces.BaseInterface
 	online        bool

@@ -641,6 +641,9 @@ func (id *InterfaceDiscovery) Start(requiredValue int) error {
 	id.handler = NewInterfaceAnnounceHandler(id.owner, requiredValue, func(info map[string]any) {
 		if err := id.persistDiscoveredInterface(info); err != nil && id.owner != nil && id.owner.logger != nil {
 			id.owner.logger.Error("failed to persist discovered interface: %v", err)
+			return
+		} else if err != nil {
+			return
 		}
 		if discovered, ok := mapToDiscoveredInterface(info); ok {
 			if err := id.autoconnect(discovered); err != nil && id.owner != nil && id.owner.logger != nil {
