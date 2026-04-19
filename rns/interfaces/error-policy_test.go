@@ -8,13 +8,14 @@ package interfaces
 import "testing"
 
 func TestInterfaceErrorPolicy(t *testing.T) {
-	t.Parallel()
-
 	var got string
 	restoreHook := setInterfacePanicHookForTest(func(msg string) {
 		got = msg
 	})
 	defer restoreHook()
+
+	prevEnabled := PanicOnInterfaceErrorEnabled()
+	defer SetPanicOnInterfaceErrorEnabled(prevEnabled)
 
 	SetPanicOnInterfaceErrorEnabled(false)
 	panicOnInterfaceErrorf("interface %v failed", "alpha")

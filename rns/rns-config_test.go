@@ -1511,6 +1511,49 @@ discovery_modulation = lora
 	}
 }
 
+func TestReticulumBootstrapOnlyInterfaceConfig(t *testing.T) {
+	t.Parallel()
+
+	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	port := reserveTCPPort(t)
+	config := `[reticulum]
+share_instance = No
+autoconnect_discovered_interfaces = 2
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[Bootstrap Backbone]]
+type = BackboneInterface
+listen_ip = 127.0.0.1
+listen_port = ` + strconv.Itoa(port) + `
+bootstrap_only = Yes
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	ifaces := ts.GetInterfaces()
+	if len(ifaces) != 1 {
+		t.Fatalf("expected 1 interface, got %v", len(ifaces))
+	}
+
+	getter, ok := ifaces[0].(interface{ BootstrapOnly() bool })
+	if !ok {
+		t.Fatalf("interface %T does not expose BootstrapOnly()", ifaces[0])
+	}
+	if !getter.BootstrapOnly() {
+		t.Fatal("expected bootstrap_only interface metadata to be preserved from config")
+	}
+}
+
 func TestReticulumOptionParityDiscoveryValueNonPositiveClears(t *testing.T) {
 	t.Parallel()
 

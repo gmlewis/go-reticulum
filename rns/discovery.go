@@ -1150,11 +1150,13 @@ func (id *InterfaceDiscovery) monitorAutoconnectsOnce(now time.Time) {
 	interfacesSnapshot := append([]interfaces.Interface(nil), id.monitoredInterfaces...)
 	detached := make([]interfaces.Interface, 0)
 	initialAutoconnectRan := id.initialAutoconnectRan
+	onlineInterfaces := 0
 	for _, iface := range interfacesSnapshot {
 		if iface == nil {
 			continue
 		}
 		if iface.Status() {
+			onlineInterfaces++
 			delete(id.autoconnectDownSince, iface)
 			continue
 		}
@@ -1171,6 +1173,20 @@ func (id *InterfaceDiscovery) monitorAutoconnectsOnce(now time.Time) {
 	id.monitorMu.Unlock()
 
 	autoconnectedInterfaces := id.autoconnectCount()
+	if id.owner != nil && id.owner.transport != nil {
+		maxAutoconnectedInterfaces := id.owner.maxAutoconnectedInterfaces()
+		if maxAutoconnectedInterfaces > 0 && onlineInterfaces >= maxAutoconnectedInterfaces {
+			for _, iface := range id.owner.transport.GetInterfaces() {
+				if !interfaceBootstrapOnly(iface) || containsInterface(detached, iface) {
+					continue
+				}
+				detached = append(detached, iface)
+			}
+		}
+		if onlineInterfaces == 0 && id.bootstrapInterfaceCount() == 0 {
+			id.owner.reenableBootstrapInterfaces()
+		}
+	}
 	if initialAutoconnectRan && id.owner != nil && id.owner.shouldAutoconnectDiscoveredInterfaces() {
 		maxAutoconnectedInterfaces := id.owner.maxAutoconnectedInterfaces()
 		freeSlots := max(0, maxAutoconnectedInterfaces-autoconnectedInterfaces)
@@ -1201,6 +1217,36 @@ func (id *InterfaceDiscovery) monitorAutoconnectsOnce(now time.Time) {
 	for _, iface := range detached {
 		id.teardownInterface(iface)
 	}
+}
+
+func interfaceBootstrapOnly(iface interfaces.Interface) bool {
+	if iface == nil {
+		return false
+	}
+	getter, ok := iface.(interface{ BootstrapOnly() bool })
+	return ok && getter.BootstrapOnly()
+}
+
+func (id *InterfaceDiscovery) bootstrapInterfaceCount() int {
+	if id == nil || id.owner == nil || id.owner.transport == nil {
+		return 0
+	}
+	count := 0
+	for _, iface := range id.owner.transport.GetInterfaces() {
+		if interfaceBootstrapOnly(iface) {
+			count++
+		}
+	}
+	return count
+}
+
+func containsInterface(interfacesList []interfaces.Interface, target interfaces.Interface) bool {
+	for _, iface := range interfacesList {
+		if iface == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (id *InterfaceDiscovery) teardownInterface(iface interfaces.Interface) {

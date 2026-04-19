@@ -732,9 +732,9 @@ func (r *Resource) ValidateProof(proofData []byte) {
 // ReceivePart incorporates a newly arrived data part into the resource, triggering assembly if all parts have been accumulated.
 func (r *Resource) ReceivePart(packet *Packet) error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	if r.status == ResourceStatusFailed {
+		r.mu.Unlock()
 		return fmt.Errorf("resource transfer failed")
 	}
 
@@ -744,6 +744,7 @@ func (r *Resource) ReceivePart(packet *Packet) error {
 	partData := packet.Data
 	partHash := r.getMapHash(partData)
 	matched := false
+	var progressCB func(*Resource)
 
 	// Check if part matches any in our hashmap
 	for i, mh := range r.hashmap {
@@ -752,20 +753,23 @@ func (r *Resource) ReceivePart(packet *Packet) error {
 			if r.parts[i] != nil && r.parts[i].ReceivedData == nil {
 				r.parts[i].ReceivedData = partData
 				r.receivedCount++
-
-				if r.progressCallback != nil {
-					go r.progressCallback(r)
-				}
+				progressCB = r.progressCallback
 			}
 			break
 		}
+	}
+	shouldAssemble := r.receivedCount == r.totalParts
+	r.mu.Unlock()
+
+	if progressCB != nil {
+		progressCB(r)
 	}
 
 	if !matched {
 		r.link.logger.Debug("Received resource part with unmatched maphash for %x", r.hash)
 	}
 
-	if r.receivedCount == r.totalParts {
+	if shouldAssemble {
 		r.link.logger.Debug("Received all %v resource parts for %x; assembling", r.totalParts, r.hash)
 		go r.Assemble()
 	} else {

@@ -954,8 +954,9 @@ func TestInterfaceDiscoveryStartAutoconnectsReceivedBackboneAnnounce(t *testing.
 
 type monitorTestInterface struct {
 	*interfaces.BaseInterface
-	online   bool
-	detached bool
+	online        bool
+	detached      bool
+	bootstrapOnly bool
 }
 
 func (m *monitorTestInterface) Type() string      { return "monitor-test" }
@@ -963,6 +964,9 @@ func (m *monitorTestInterface) Status() bool      { return m.online }
 func (m *monitorTestInterface) IsOut() bool       { return true }
 func (m *monitorTestInterface) Send([]byte) error { return nil }
 func (m *monitorTestInterface) Detach() error     { m.detached = true; m.SetDetached(true); return nil }
+func (m *monitorTestInterface) BootstrapOnly() bool {
+	return m.bootstrapOnly
+}
 
 func TestInterfaceDiscoveryMonitorDetachesOfflineAutoconnect(t *testing.T) {
 	t.Parallel()
@@ -1116,8 +1120,91 @@ func TestInterfaceDiscoveryMonitorAutoconnectsAvailableCandidate(t *testing.T) {
 	if got := len(ts.GetInterfaces()); got != 1 {
 		t.Fatalf("expected 1 auto-connected interface, got %v", got)
 	}
-	if got := ts.GetInterfaces()[0].Type(); got != "BackboneClientInterface" {
+	iface := ts.GetInterfaces()[0]
+	t.Cleanup(func() {
+		if err := iface.Detach(); err != nil {
+			t.Errorf("iface.Detach() error = %v", err)
+		}
+	})
+	if got := iface.Type(); got != "BackboneClientInterface" {
 		t.Fatalf("Type() = %q, want %q", got, "BackboneClientInterface")
+	}
+}
+
+func TestInterfaceDiscoveryMonitorDetachesBootstrapOnlyWhenTargetReached(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(NewLogger())
+	autoA := &monitorTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("auto-a", interfaces.ModeFull, 1000),
+		online:        true,
+	}
+	autoB := &monitorTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("auto-b", interfaces.ModeFull, 1000),
+		online:        true,
+	}
+	bootstrap := &monitorTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("bootstrap", interfaces.ModeFull, 1000),
+		online:        true,
+		bootstrapOnly: true,
+	}
+	ts.RegisterInterface(autoA)
+	ts.RegisterInterface(autoB)
+	ts.RegisterInterface(bootstrap)
+
+	discovery := NewInterfaceDiscovery(&Reticulum{
+		transport:           ts,
+		logger:              NewLogger(),
+		autoconnectDiscover: 2,
+	})
+	discovery.monitorInterval = 0
+	discovery.monitorInterface(autoA)
+	discovery.monitorInterface(autoB)
+
+	discovery.monitorAutoconnectsOnce(time.Unix(400, 0))
+
+	if !bootstrap.detached {
+		t.Fatal("expected bootstrap-only interface to detach once online autoconnect target is reached")
+	}
+	if got := len(ts.GetInterfaces()); got != 2 {
+		t.Fatalf("expected bootstrap-only interface to be removed from transport, got %v interfaces", got)
+	}
+}
+
+func TestInterfaceDiscoveryMonitorReenablesBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(NewLogger())
+	owner := &Reticulum{
+		transport:           ts,
+		logger:              NewLogger(),
+		autoconnectDiscover: 2,
+		bootstrapRestarters: []func() error{
+			func() error {
+				iface := &monitorTestInterface{
+					BaseInterface: interfaces.NewBaseInterface("bootstrap-restored", interfaces.ModeFull, 1000),
+					online:        true,
+					bootstrapOnly: true,
+				}
+				ts.RegisterInterface(iface)
+				return nil
+			},
+		},
+	}
+	discovery := NewInterfaceDiscovery(owner)
+	discovery.monitorInterval = 0
+
+	discovery.monitorAutoconnectsOnce(time.Unix(500, 0))
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected bootstrap interface to be re-enabled, got %v interfaces", got)
+	}
+	getter, ok := ts.GetInterfaces()[0].(interface{ BootstrapOnly() bool })
+	if !ok {
+		t.Fatalf("re-enabled interface %T does not expose BootstrapOnly()", ts.GetInterfaces()[0])
+	}
+	if !getter.BootstrapOnly() {
+		t.Fatal("expected re-enabled bootstrap interface to preserve bootstrap-only metadata")
 	}
 }
 

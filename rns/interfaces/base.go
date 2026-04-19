@@ -75,6 +75,7 @@ type BaseInterface struct {
 	ifacKey         []byte
 	ifacSigner      *rnscrypto.Ed25519PrivateKey
 	discoveryConfig DiscoveryConfig
+	bootstrapOnly   bool
 	autoconnectHash []byte
 	autoconnectSrc  string
 }
@@ -250,6 +251,22 @@ func (bi *BaseInterface) SetAutoconnect(hash []byte, source string) {
 	defer bi.autoMu.Unlock()
 	bi.autoconnectHash = append(bi.autoconnectHash[:0], hash...)
 	bi.autoconnectSrc = source
+}
+
+// SetBootstrapOnly marks the interface as a bootstrap-only helper that may be
+// torn down once enough auto-discovered interfaces are online.
+func (bi *BaseInterface) SetBootstrapOnly(bootstrapOnly bool) {
+	bi.autoMu.Lock()
+	defer bi.autoMu.Unlock()
+	bi.bootstrapOnly = bootstrapOnly
+}
+
+// BootstrapOnly reports whether the interface was configured for bootstrap-only
+// use.
+func (bi *BaseInterface) BootstrapOnly() bool {
+	bi.autoMu.RLock()
+	defer bi.autoMu.RUnlock()
+	return bi.bootstrapOnly
 }
 
 // AutoconnectHash returns the stable endpoint hash associated with a

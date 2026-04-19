@@ -149,10 +149,21 @@ func applyDiscoveryConfig(iface interfaces.Interface, cfg interfaces.DiscoveryCo
 	setter.SetDiscoveryConfig(cfg)
 }
 
-func applyInterfaceConfig(iface interfaces.Interface, mode int, ifac interfaces.IFACConfig, discovery interfaces.DiscoveryConfig) {
+func applyBootstrapOnly(iface interfaces.Interface, bootstrapOnly bool) {
+	setter, ok := iface.(interface {
+		SetBootstrapOnly(bool)
+	})
+	if !ok {
+		return
+	}
+	setter.SetBootstrapOnly(bootstrapOnly)
+}
+
+func applyInterfaceConfig(iface interfaces.Interface, mode int, ifac interfaces.IFACConfig, discovery interfaces.DiscoveryConfig, bootstrapOnly bool) {
 	applyInterfaceMode(iface, mode)
 	applyIFACConfig(iface, ifac)
 	applyDiscoveryConfig(iface, discovery)
+	applyBootstrapOnly(iface, bootstrapOnly)
 }
 
 func applySpawnedInterfaceConfig(iface interfaces.Interface, mode int, ifac interfaces.IFACConfig) {
