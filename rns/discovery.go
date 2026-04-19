@@ -1090,7 +1090,16 @@ func (id *InterfaceDiscovery) autoconnectCount() int {
 	return count
 }
 
-func (id *InterfaceDiscovery) autoconnect(info DiscoveredInterface) error {
+func (id *InterfaceDiscovery) autoconnect(info DiscoveredInterface) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			if id != nil && id.owner != nil && id.owner.logger != nil {
+				id.owner.logger.Error("error while auto-connecting discovered interface: %v", recovered)
+			}
+			err = nil
+		}
+	}()
+
 	if id == nil || id.owner == nil || id.owner.transport == nil || !id.owner.shouldAutoconnectDiscoveredInterfaces() {
 		return nil
 	}

@@ -141,6 +141,27 @@ func (i *b32TestInterface) Detach() error {
 }
 func (i *b32TestInterface) B32() string { return i.b32 }
 
+type panicTargetHostTestInterface struct {
+	*interfaces.BaseInterface
+}
+
+func newPanicTargetHostTestInterface(name string) *panicTargetHostTestInterface {
+	return &panicTargetHostTestInterface{
+		BaseInterface: interfaces.NewBaseInterface(name, interfaces.ModeFull, 0),
+	}
+}
+
+func (i *panicTargetHostTestInterface) Type() string      { return "panic-target-host" }
+func (i *panicTargetHostTestInterface) Status() bool      { return true }
+func (i *panicTargetHostTestInterface) IsOut() bool       { return true }
+func (i *panicTargetHostTestInterface) Send([]byte) error { return nil }
+func (i *panicTargetHostTestInterface) Detach() error {
+	i.SetDetached(true)
+	return nil
+}
+func (i *panicTargetHostTestInterface) TargetHost() string { panic("boom") }
+func (i *panicTargetHostTestInterface) TargetPort() int    { return 0 }
+
 func TestListDiscoveredInterfaces(t *testing.T) {
 	t.Parallel()
 	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-")
@@ -1278,6 +1299,38 @@ func TestInterfaceDiscoveryAutoconnectCountIncludesEmptyAutoconnectHash(t *testi
 
 	if got := discovery.autoconnectCount(); got != 1 {
 		t.Fatalf("autoconnectCount() = %v, want 1", got)
+	}
+}
+
+func TestInterfaceDiscoveryAutoconnectRecoversInterfaceExistsPanic(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	ts.RegisterInterface(newPanicTargetHostTestInterface("panic-host"))
+
+	discovery := NewInterfaceDiscovery(&Reticulum{
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 2,
+	})
+
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			t.Fatalf("autoconnect() propagated panic: %v", recovered)
+		}
+	}()
+
+	if err := discovery.autoconnect(DiscoveredInterface{
+		Name:        "Candidate",
+		Type:        "BackboneInterface",
+		ReachableOn: "127.0.0.1",
+		Port:        intPtr(4242),
+	}); err != nil {
+		t.Fatalf("autoconnect() error = %v, want nil after panic recovery", err)
+	}
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected autoconnect panic recovery to leave transport unchanged, got %v interfaces", got)
 	}
 }
 
