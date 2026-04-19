@@ -1263,6 +1263,24 @@ func TestInterfaceDiscoveryConnectDiscoveredSkipsWhenAutoconnectDisabled(t *test
 	}
 }
 
+func TestInterfaceDiscoveryAutoconnectCountIncludesEmptyAutoconnectHash(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(NewLogger())
+	ts.RegisterInterface(&autoconnectCountTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("autoconnect-capable", interfaces.ModeFull, 1000),
+	})
+
+	discovery := NewInterfaceDiscovery(&Reticulum{
+		transport: ts,
+		logger:    NewLogger(),
+	})
+
+	if got := discovery.autoconnectCount(); got != 1 {
+		t.Fatalf("autoconnectCount() = %v, want 1", got)
+	}
+}
+
 func TestInterfaceDiscoveryInterfaceExistsMatchesHostWithoutPort(t *testing.T) {
 	t.Parallel()
 
@@ -1406,6 +1424,85 @@ func TestInterfaceDiscoveryStartAutoconnectsReceivedBackboneAnnounce(t *testing.
 	}
 
 	_ = iface.Detach()
+}
+
+func TestInterfaceDiscoveryStartDoesNotAutoconnectReceivedTCPServerAnnounce(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-no-autoconnect-tcp-")
+	defer cleanup()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("listener.Close() error = %v", err)
+		}
+	})
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		accepted <- conn
+	}()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	destinationHash := []byte("no-autoconnect-tcp-destination")
+	ts.pathTable[string(destinationHash)] = &PathEntry{Hops: 3, Expires: time.Now().Add(time.Hour)}
+
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	sourceIdentity := mustTestNewIdentity(t, true)
+	port := listener.Addr().(*net.TCPAddr).Port
+	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
+		discoveryFieldInterfaceType: "TCPServerInterface",
+		discoveryFieldTransport:     true,
+		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldName:          "Live TCP Server",
+		discoveryFieldReachableOn:   "127.0.0.1",
+		discoveryFieldPort:          port,
+		discoveryFieldIFACNetname:   "mesh",
+		discoveryFieldIFACNetkey:    "secret",
+	}, 2)
+
+	discovery.handler.receivedAnnounce(destinationHash, sourceIdentity, appData)
+
+	select {
+	case conn := <-accepted:
+		_ = conn.Close()
+		t.Fatal("unexpected auto-connect for discovered TCPServerInterface")
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected no auto-connected interfaces from tcp-server announce, got %v", got)
+	}
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+	}
+	if got := len(discovered); got != 1 {
+		t.Fatalf("expected 1 persisted discovered interface, got %v", got)
+	}
+	if discovered[0].Type != "TCPServerInterface" {
+		t.Fatalf("discovered[0].Type = %q, want %q", discovered[0].Type, "TCPServerInterface")
+	}
 }
 
 func TestInterfaceDiscoveryStartInvokesDiscoveryCallbackAfterAutoconnect(t *testing.T) {
@@ -1704,6 +1801,18 @@ func (m *monitorTestInterface) Detach() error {
 func (m *monitorTestInterface) BootstrapOnly() bool {
 	return m.bootstrapOnly
 }
+
+type autoconnectCountTestInterface struct {
+	*interfaces.BaseInterface
+	autoconnectHash []byte
+}
+
+func (a *autoconnectCountTestInterface) Type() string            { return "autoconnect-count-test" }
+func (a *autoconnectCountTestInterface) Status() bool            { return true }
+func (a *autoconnectCountTestInterface) IsOut() bool             { return true }
+func (a *autoconnectCountTestInterface) Send([]byte) error       { return nil }
+func (a *autoconnectCountTestInterface) Detach() error           { return nil }
+func (a *autoconnectCountTestInterface) AutoconnectHash() []byte { return a.autoconnectHash }
 
 func TestInterfaceDiscoveryMonitorDetachesOfflineAutoconnect(t *testing.T) {
 	t.Parallel()

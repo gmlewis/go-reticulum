@@ -1083,7 +1083,7 @@ func (id *InterfaceDiscovery) autoconnectCount() int {
 
 	count := 0
 	for _, iface := range id.owner.transport.GetInterfaces() {
-		if meta, ok := iface.(interface{ AutoconnectHash() []byte }); ok && len(meta.AutoconnectHash()) > 0 {
+		if _, ok := iface.(interface{ AutoconnectHash() []byte }); ok {
 			count++
 		}
 	}
