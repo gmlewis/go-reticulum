@@ -565,6 +565,78 @@ func TestPersistDiscoveredInterface_ExistingEntryPreservesDiscoveryTime(t *testi
 	}
 }
 
+func TestPersistDiscoveredInterface_CorruptExistingEntryMissingHeardCountFailsClosed(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-corrupt-")
+	defer cleanup()
+
+	r := &Reticulum{configDir: tmpDir}
+	discovery := NewInterfaceDiscovery(r)
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+	filePath := filepath.Join(storagePath, "aabbcc.data")
+	original := map[string]any{
+		"name":         "Persisted",
+		"type":         "TCPServerInterface",
+		"discovered":   1234.0,
+		"last_heard":   1234.0,
+		"received":     1234.0,
+		"value":        1,
+		"transport":    true,
+		"network_id":   "01020304",
+		"reachable_on": "127.0.0.1",
+		"port":         4242,
+	}
+	if err := os.WriteFile(filePath, mustMsgpackPack(original), 0o644); err != nil {
+		t.Fatalf("failed to seed corrupt discovery file: %v", err)
+	}
+
+	info := map[string]any{
+		"name":           "Persisted",
+		"type":           "TCPServerInterface",
+		"received":       1300.0,
+		"discovery_hash": "aabbcc",
+		"value":          5678,
+	}
+
+	if err := discovery.persistDiscoveredInterface(info); err == nil {
+		t.Fatal("persistDiscoveredInterface() error = nil, want error for corrupt cached record")
+	}
+
+	if _, ok := info["discovered"]; ok {
+		t.Fatalf("info[\"discovered\"] unexpectedly set on corrupt-cache error: %v", info["discovered"])
+	}
+	if _, ok := info["heard_count"]; ok {
+		t.Fatalf("info[\"heard_count\"] unexpectedly set on corrupt-cache error: %v", info["heard_count"])
+	}
+	if _, ok := info["last_heard"]; ok {
+		t.Fatalf("info[\"last_heard\"] unexpectedly set on corrupt-cache error: %v", info["last_heard"])
+	}
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("failed to read discovery file after failed persist: %v", err)
+	}
+	unpacked, err := msgpack.Unpack(data)
+	if err != nil {
+		t.Fatalf("failed to unpack discovery file after failed persist: %v", err)
+	}
+	m := asAnyMap(unpacked)
+	if m == nil {
+		t.Fatalf("unexpected persisted discovery type %T", unpacked)
+	}
+	if got := asFloat64(lookupAnyValue(m, "discovered")); got != 1234.0 {
+		t.Fatalf("discovered = %v, want %v", got, 1234.0)
+	}
+	if _, ok := m["heard_count"]; ok {
+		t.Fatalf("heard_count unexpectedly added to corrupt discovery file: %v", m["heard_count"])
+	}
+}
+
 func TestInterfaceDiscoveryReceiveAndPersist(t *testing.T) {
 	t.Parallel()
 

@@ -744,11 +744,11 @@ func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) er
 	filePath := filepath.Join(storagePath, discoveryHash+".data")
 	persisted := cloneStringAnyMap(info)
 	persisted["last_heard"] = receivedAt
-	info["last_heard"] = receivedAt
 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		persisted["discovered"] = receivedAt
 		persisted["heard_count"] = 0
+		info["last_heard"] = receivedAt
 		info["discovered"] = receivedAt
 		info["heard_count"] = 0
 		data, err := msgpack.Pack(persisted)
@@ -773,13 +773,24 @@ func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) er
 		return fmt.Errorf("unexpected discovery cache type %T", unpacked)
 	}
 
-	discoveredAt := asFloat64(lookupAnyValue(lastInfo, "discovered"))
-	if discoveredAt == 0 {
-		discoveredAt = receivedAt
+	discoveredValue, ok := lastInfo["discovered"]
+	if !ok || discoveredValue == nil {
+		return fmt.Errorf("corrupt discovery cache missing discovered")
 	}
-	heardCount := asInt(lookupAnyValue(lastInfo, "heard_count")) + 1
+	heardCountValue, ok := lastInfo["heard_count"]
+	if !ok {
+		return fmt.Errorf("corrupt discovery cache missing heard_count")
+	}
+
+	discoveredAt := asFloat64(discoveredValue)
+	heardCount := 1
+	if heardCountValue != nil {
+		heardCount = asInt(heardCountValue) + 1
+	}
+
 	persisted["discovered"] = discoveredAt
 	persisted["heard_count"] = heardCount
+	info["last_heard"] = receivedAt
 	info["discovered"] = discoveredAt
 	info["heard_count"] = heardCount
 
