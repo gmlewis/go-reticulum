@@ -44,12 +44,17 @@ type initiatorChannelSession struct {
 	terminated bool
 	lastExit   *int
 	lastErr    error
+	sawStdout  bool
+	sawStderr  bool
+	stdoutEOF  bool
+	stderrEOF  bool
 }
 
 type initiatorTerminalSnapshot struct {
-	terminated bool
-	lastExit   *int
-	lastErr    error
+	terminated         bool
+	lastExit           *int
+	lastErr            error
+	streamEOFsComplete bool
 }
 
 type channelSession interface {
@@ -135,11 +140,19 @@ func (s *initiatorChannelSession) handleMessage(message rns.Message) bool {
 func (s *initiatorChannelSession) appendStreamLocked(msg *streamDataMessage) {
 	switch msg.StreamID {
 	case streamIDStdout:
+		s.sawStdout = true
+		if msg.EOF {
+			s.stdoutEOF = true
+		}
 		if s.stdoutWriter != nil {
 			_, _ = s.stdoutWriter.Write(msg.Data)
 		}
 		s.stdout.Write(msg.Data)
 	case streamIDStderr:
+		s.sawStderr = true
+		if msg.EOF {
+			s.stderrEOF = true
+		}
 		if s.stderrWriter != nil {
 			_, _ = s.stderrWriter.Write(msg.Data)
 		}
@@ -179,10 +192,24 @@ func (s *initiatorChannelSession) terminalSnapshot() initiatorTerminalSnapshot {
 	}
 
 	return initiatorTerminalSnapshot{
-		terminated: s.terminated,
-		lastExit:   lastExit,
-		lastErr:    s.lastErr,
+		terminated:         s.terminated,
+		lastExit:           lastExit,
+		lastErr:            s.lastErr,
+		streamEOFsComplete: s.outputStreamEOFsCompleteLocked(),
 	}
+}
+
+func (s *initiatorChannelSession) outputStreamEOFsCompleteLocked() bool {
+	if !s.sawStdout && !s.sawStderr {
+		return false
+	}
+	if s.sawStdout && !s.stdoutEOF {
+		return false
+	}
+	if s.sawStderr && !s.stderrEOF {
+		return false
+	}
+	return true
 }
 
 func runInitiatorChannelSession(link *rns.Link, opts options) (int, error) {
@@ -290,6 +317,12 @@ func (rt *runtimeT) runInitiatorProtocolFlow(channel channelSession, opts option
 				return 0, session, nil
 			}
 			if snapshot.terminated {
+				if opts.mirror {
+					return 0, session, nil
+				}
+				return 0, session, nil
+			}
+			if snapshot.streamEOFsComplete {
 				if opts.mirror {
 					return 0, session, nil
 				}

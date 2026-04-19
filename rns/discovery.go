@@ -744,10 +744,13 @@ func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) er
 	filePath := filepath.Join(storagePath, discoveryHash+".data")
 	persisted := cloneStringAnyMap(info)
 	persisted["last_heard"] = receivedAt
+	info["last_heard"] = receivedAt
 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		persisted["discovered"] = receivedAt
 		persisted["heard_count"] = 0
+		info["discovered"] = receivedAt
+		info["heard_count"] = 0
 		data, err := msgpack.Pack(persisted)
 		if err != nil {
 			return err
@@ -774,8 +777,11 @@ func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) er
 	if discoveredAt == 0 {
 		discoveredAt = receivedAt
 	}
+	heardCount := asInt(lookupAnyValue(lastInfo, "heard_count")) + 1
 	persisted["discovered"] = discoveredAt
-	persisted["heard_count"] = asInt(lookupAnyValue(lastInfo, "heard_count")) + 1
+	persisted["heard_count"] = heardCount
+	info["discovered"] = discoveredAt
+	info["heard_count"] = heardCount
 
 	data, err := msgpack.Pack(persisted)
 	if err != nil {

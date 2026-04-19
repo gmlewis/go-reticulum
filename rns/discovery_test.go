@@ -1664,6 +1664,90 @@ func TestInterfaceDiscoveryStartInvokesDiscoveryCallbackAfterAutoconnect(t *test
 	}
 }
 
+func TestInterfaceDiscoveryStartCallbackReceivesPersistedMetadata(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-callback-meta-")
+	defer cleanup()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	destinationHash := []byte("callback-meta-destination")
+	ts.pathTable[string(destinationHash)] = &PathEntry{Hops: 3, Expires: time.Now().Add(time.Hour)}
+
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	type callbackResult struct {
+		received   float64
+		discovered float64
+		lastHeard  float64
+		heardCount int
+	}
+	callbackCh := make(chan callbackResult, 2)
+	discovery.SetDiscoveryCallback(func(info map[string]any) {
+		callbackCh <- callbackResult{
+			received:   asFloat64(info["received"]),
+			discovered: asFloat64(info["discovered"]),
+			lastHeard:  asFloat64(info["last_heard"]),
+			heardCount: asInt(info["heard_count"]),
+		}
+	})
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	sourceIdentity := mustTestNewIdentity(t, true)
+	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
+		discoveryFieldInterfaceType: "TCPServerInterface",
+		discoveryFieldTransport:     true,
+		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldName:          "Callback TCP Server",
+		discoveryFieldReachableOn:   "127.0.0.1",
+		discoveryFieldPort:          4242,
+	}, 2)
+
+	discovery.handler.receivedAnnounce(destinationHash, sourceIdentity, appData)
+	discovery.handler.receivedAnnounce(destinationHash, sourceIdentity, appData)
+
+	var first, second callbackResult
+	select {
+	case first = <-callbackCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for first discovery callback")
+	}
+	select {
+	case second = <-callbackCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for second discovery callback")
+	}
+
+	if first.discovered != first.received {
+		t.Fatalf("first callback discovered = %v, want received %v", first.discovered, first.received)
+	}
+	if first.lastHeard != first.received {
+		t.Fatalf("first callback last_heard = %v, want received %v", first.lastHeard, first.received)
+	}
+	if first.heardCount != 0 {
+		t.Fatalf("first callback heard_count = %v, want 0", first.heardCount)
+	}
+
+	if second.discovered != first.received {
+		t.Fatalf("second callback discovered = %v, want first received %v", second.discovered, first.received)
+	}
+	if second.lastHeard != second.received {
+		t.Fatalf("second callback last_heard = %v, want received %v", second.lastHeard, second.received)
+	}
+	if second.heardCount != 1 {
+		t.Fatalf("second callback heard_count = %v, want 1", second.heardCount)
+	}
+}
+
 func TestInterfaceDiscoveryStartRecoversDiscoveryCallbackPanic(t *testing.T) {
 	t.Parallel()
 
