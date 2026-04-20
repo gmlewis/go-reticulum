@@ -392,6 +392,33 @@ func TestListDiscoveredInterfaces_SourceAndReachableFiltering(t *testing.T) {
 	}
 }
 
+func TestIsHostnameMatchesPython(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{name: "trailing dot", in: "example.com.", want: true},
+		{name: "numeric tld", in: "example.123", want: false},
+		{name: "localhost", in: "localhost", want: true},
+		{name: "trailing hyphen", in: "a-", want: false},
+		{name: "leading hyphen", in: "-a", want: false},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := isHostname(tt.in); got != tt.want {
+				t.Fatalf("isHostname(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestListDiscoveredInterfaces_SortsLikePython(t *testing.T) {
 	t.Parallel()
 

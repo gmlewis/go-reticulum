@@ -966,10 +966,27 @@ func isReachableOnValue(v string) bool {
 }
 
 func isHostname(v string) bool {
+	if len(v) == 0 {
+		return false
+	}
+	if v[len(v)-1] == '.' {
+		v = v[:len(v)-1]
+	}
 	if len(v) == 0 || len(v) > 253 {
 		return false
 	}
 	labels := strings.Split(v, ".")
+	last := labels[len(labels)-1]
+	allDigits := len(last) > 0
+	for _, r := range last {
+		if r < '0' || r > '9' {
+			allDigits = false
+			break
+		}
+	}
+	if allDigits {
+		return false
+	}
 	for _, label := range labels {
 		if len(label) == 0 || len(label) > 63 {
 			return false
