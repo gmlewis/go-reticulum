@@ -351,16 +351,17 @@ func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interfac
 	if reachableOn == "" {
 		return nil, fmt.Errorf("missing reachable_on")
 	}
-	info[discoveryFieldReachableOn] = reachableOn
 
 	switch advertisedType {
 	case "BackboneInterface", "TCPServerInterface":
+		info[discoveryFieldReachableOn] = reachableOn
 		portGetter, ok := iface.(interface{ BindPort() int })
 		if !ok || portGetter.BindPort() <= 0 {
 			return nil, fmt.Errorf("missing bind port")
 		}
 		info[discoveryFieldPort] = portGetter.BindPort()
 	case "I2PInterface":
+		info[discoveryFieldReachableOn] = reachableOn
 	case "RNodeInterface":
 		if cfg.Frequency == nil || cfg.Bandwidth == nil || cfg.SpreadingFactor == nil || cfg.CodingRate == nil {
 			return nil, fmt.Errorf("missing RNode discovery radio parameters")
@@ -389,12 +390,8 @@ func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interfac
 	if cfg.PublishIFAC {
 		if ifacGetter, ok := iface.(interface{ IFACConfig() interfaces.IFACConfig }); ok {
 			ifacCfg := ifacGetter.IFACConfig()
-			if ifacCfg.NetName != "" {
-				info[discoveryFieldIFACNetname] = sanitizeDiscoveryString(ifacCfg.NetName)
-			}
-			if ifacCfg.NetKey != "" {
-				info[discoveryFieldIFACNetkey] = sanitizeDiscoveryString(ifacCfg.NetKey)
-			}
+			info[discoveryFieldIFACNetname] = sanitizeDiscoveryString(ifacCfg.NetName)
+			info[discoveryFieldIFACNetkey] = sanitizeDiscoveryString(ifacCfg.NetKey)
 		}
 	}
 

@@ -6,8 +6,11 @@
 package lxmf
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -831,8 +834,8 @@ func TestControlStatsGetRequest(t *testing.T) {
 	router.clientPropagationMessagesServed = 7
 	router.unpeeredPropagationIncoming = 3
 	router.unpeeredPropagationRXBytes = 512
-	router.peers["peer-1"] = time.Now()
-	router.peers["peer-2"] = time.Now()
+	router.peers["peer-1"] = &Peer{destinationHash: []byte("peer-1"), lastHeard: peerTime(time.Now())}
+	router.peers["peer-2"] = &Peer{destinationHash: []byte("peer-2"), lastHeard: peerTime(time.Now())}
 
 	responseAny := router.statsGetRequest("", nil, nil, nil, remoteIdentity, time.Now())
 	response, ok := responseAny.(map[string]any)
@@ -889,7 +892,7 @@ func TestControlPeerSyncAndUnpeerRequests(t *testing.T) {
 
 	peerIdentity := mustTestNewIdentity(t, true)
 	peerHash := append([]byte{}, peerIdentity.Hash...)
-	router.peers[string(peerHash)] = time.Now().Add(-time.Hour)
+	router.peers[string(peerHash)] = &Peer{destinationHash: append([]byte{}, peerHash...), lastHeard: peerTime(time.Now().Add(-time.Hour))}
 
 	syncResponse := router.peerSyncRequest("", peerHash, nil, nil, remoteIdentity, time.Now())
 	if syncResponse != true {
@@ -923,7 +926,7 @@ func TestControlPeerSyncBackoff(t *testing.T) {
 
 	peerIdentity := mustTestNewIdentity(t, true)
 	peerHash := append([]byte{}, peerIdentity.Hash...)
-	router.peers[string(peerHash)] = now
+	router.peers[string(peerHash)] = &Peer{destinationHash: append([]byte{}, peerHash...), lastHeard: peerTime(now)}
 
 	if got := router.peerSyncRequest("", peerHash, nil, nil, remoteIdentity, now); got != peerErrorThrottled {
 		t.Fatalf("sync throttled=%v want=%v", got, peerErrorThrottled)
@@ -951,8 +954,8 @@ func TestPruneStalePeers(t *testing.T) {
 
 	peerOld := []byte("peer-old-01234567")
 	peerNew := []byte("peer-new-01234567")
-	router.peers[string(peerOld)] = now.Add(-2 * time.Minute)
-	router.peers[string(peerNew)] = now.Add(-10 * time.Second)
+	router.peers[string(peerOld)] = &Peer{destinationHash: append([]byte{}, peerOld...), lastHeard: peerTime(now.Add(-2 * time.Minute))}
+	router.peers[string(peerNew)] = &Peer{destinationHash: append([]byte{}, peerNew...), lastHeard: peerTime(now.Add(-10 * time.Second))}
 
 	removed := router.PruneStalePeers()
 	if removed != 1 {
@@ -1453,6 +1456,40 @@ func TestMessageGetRequestListAndFetch(t *testing.T) {
 	}
 }
 
+func TestMessageGetRequestPurgeRemovesPersistedFile(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.EnablePropagation()
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+
+	transientID := router.storePropagationMessage(remoteDestinationHash, []byte("persisted-payload"))
+	entry := router.propagationEntries[string(transientID)]
+	if entry == nil || entry.path == "" {
+		t.Fatalf("expected persisted propagation entry for %x", transientID)
+	}
+	if _, err := os.Stat(entry.path); err != nil {
+		t.Fatalf("expected persisted message file, Stat() error = %v", err)
+	}
+
+	request, err := msgpack.Pack([]any{nil, []any{transientID}})
+	if err != nil {
+		t.Fatalf("Pack purge request: %v", err)
+	}
+	_ = router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
+
+	if _, exists := router.propagationEntries[string(transientID)]; exists {
+		t.Fatal("expected purged message to be removed from propagationEntries")
+	}
+	if _, err := os.Stat(entry.path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected persisted message file to be removed, Stat() error = %v", err)
+	}
+}
+
 func TestMessageGetRequestRequiresIdentity(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -1694,6 +1731,43 @@ func TestRouterMessageStorageLimit(t *testing.T) {
 
 	if got := router.MessageStorageLimit(); got != 2000 {
 		t.Fatalf("MessageStorageLimit=%v want=2000", got)
+	}
+}
+
+func TestPropagationStoreRestartRecovery(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.EnablePropagation()
+
+	destinationHash := bytes.Repeat([]byte{0x42}, DestinationLength)
+	payload := []byte("stored-after-restart")
+	transientID := router.storePropagationMessage(destinationHash, payload)
+
+	messageStorePath := filepath.Join(tmpDir, "lxmf", "messagestore")
+	entries, err := os.ReadDir(messageStorePath)
+	if err != nil {
+		t.Fatalf("ReadDir(messagestore) error = %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("messagestore entries = %v, want 1", len(entries))
+	}
+
+	recovered := mustTestNewRouter(t, ts, nil, tmpDir)
+	recovered.EnablePropagation()
+
+	entry := recovered.propagationEntries[string(transientID)]
+	if entry == nil {
+		t.Fatalf("recovered propagation entry for %x not found", transientID)
+	}
+	if !bytes.Equal(entry.destinationHash, destinationHash) {
+		t.Fatalf("recovered destination hash = %x, want %x", entry.destinationHash, destinationHash)
+	}
+	if !bytes.Equal(entry.payload, payload) {
+		t.Fatalf("recovered payload = %q, want %q", entry.payload, payload)
 	}
 }
 

@@ -7,9 +7,41 @@ package rns
 
 import (
 	"bytes"
+	"math"
 	"testing"
 	"time"
 )
+
+func TestLinkMDUCalculation(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	receiverID := mustTestNewIdentity(t, true)
+	receiverDest := mustTestNewDestination(t, ts, receiverID, DestinationIn, DestinationSingle, "receiver")
+	link := mustTestNewLink(t, ts, receiverDest)
+
+	tests := []struct {
+		mtu  int
+		want int
+	}{
+		{mtu: 500, want: 431},
+		{mtu: 400, want: 319},
+		{mtu: 100, want: 31},
+	}
+
+	for _, tt := range tests {
+		link.mtu = tt.mtu
+		link.UpdateMDU()
+
+		expected := int(math.Floor(float64(tt.mtu-IFACMinSize-HeaderMinSize-TokenOverhead)/float64(AES128BlockSize)))*AES128BlockSize - 1
+		if expected != tt.want {
+			t.Fatalf("test expectation mismatch for mtu=%v: expected=%v want=%v", tt.mtu, expected, tt.want)
+		}
+		if link.mdu != tt.want {
+			t.Fatalf("UpdateMDU() with mtu=%v set mdu=%v, want %v", tt.mtu, link.mdu, tt.want)
+		}
+	}
+}
 
 func TestLink(t *testing.T) {
 	t.Parallel()

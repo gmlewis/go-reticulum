@@ -3844,6 +3844,65 @@ func TestInterfaceAnnouncerPayloadKeepsEmptyDiscoveryName(t *testing.T) {
 	}
 }
 
+func TestInterfaceAnnouncerPayloadKeepsEmptyIFACFields(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	ts := newAnnounceCaptureTransport(logger)
+	transportIdentity := mustTestNewIdentity(t, true)
+	ts.identity = transportIdentity
+	ts.SetEnabled(true)
+
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+
+	iface := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("announce-backbone-empty-ifac", interfaces.ModeGateway, 1000),
+		ifaceType:     "BackboneInterface",
+		bindIP:        "127.0.0.1",
+		bindPort:      4242,
+	}
+	iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  6 * time.Hour,
+		StampValue:        6,
+		Name:              "Discovery Backbone",
+		ReachableOn:       "discovery.example.net",
+		PublishIFAC:       true,
+	})
+
+	appData, err := announcer.getInterfaceAnnounceData(iface)
+	if err != nil {
+		t.Fatalf("getInterfaceAnnounceData() error = %v", err)
+	}
+
+	unpacked, err := msgpack.Unpack(appData[1 : len(appData)-discoveryStampSize])
+	if err != nil {
+		t.Fatalf("msgpack.Unpack() error = %v", err)
+	}
+	info := asAnyMap(unpacked)
+	if info == nil {
+		t.Fatalf("unexpected announce payload type %T", unpacked)
+	}
+
+	if got := asString(lookupDiscoveryValue(info, discoveryFieldIFACNetname)); got != "" {
+		t.Fatalf("ifac netname = %q, want empty string", got)
+	}
+	if got := asString(lookupDiscoveryValue(info, discoveryFieldIFACNetkey)); got != "" {
+		t.Fatalf("ifac netkey = %q, want empty string", got)
+	}
+	if _, ok := lookupDiscovery(info, discoveryFieldIFACNetname); !ok {
+		t.Fatal("expected ifac netname key to be present")
+	}
+	if _, ok := lookupDiscovery(info, discoveryFieldIFACNetkey); !ok {
+		t.Fatal("expected ifac netkey key to be present")
+	}
+}
+
 func TestInterfaceAnnouncerPayloadKeepsNilCoordinates(t *testing.T) {
 	t.Parallel()
 
@@ -4219,6 +4278,7 @@ func TestInterfaceAnnouncerPayloadRadioInterfaces(t *testing.T) {
 		kiss                bool
 		cfg                 interfaces.DiscoveryConfig
 		wantInterfaceType   string
+		wantReachableOn     bool
 		wantFrequency       int
 		wantBandwidth       int
 		wantSpreadingFactor int
@@ -4241,6 +4301,7 @@ func TestInterfaceAnnouncerPayloadRadioInterfaces(t *testing.T) {
 				CodingRate:        intPtr(5),
 			},
 			wantInterfaceType:   "RNodeInterface",
+			wantReachableOn:     false,
 			wantFrequency:       868100000,
 			wantBandwidth:       125000,
 			wantSpreadingFactor: 7,
@@ -4261,6 +4322,7 @@ func TestInterfaceAnnouncerPayloadRadioInterfaces(t *testing.T) {
 				Modulation:        "gmsk",
 			},
 			wantInterfaceType: "WeaveInterface",
+			wantReachableOn:   false,
 			wantFrequency:     2450000000,
 			wantBandwidth:     2000000,
 			wantChannel:       11,
@@ -4280,6 +4342,7 @@ func TestInterfaceAnnouncerPayloadRadioInterfaces(t *testing.T) {
 				Modulation:        " afsk \n",
 			},
 			wantInterfaceType: "KISSInterface",
+			wantReachableOn:   false,
 			wantFrequency:     145500000,
 			wantBandwidth:     25000,
 			wantModulation:    "afsk",
@@ -4299,6 +4362,7 @@ func TestInterfaceAnnouncerPayloadRadioInterfaces(t *testing.T) {
 				Modulation:        "LoRa",
 			},
 			wantInterfaceType: "KISSInterface",
+			wantReachableOn:   false,
 			wantFrequency:     433920000,
 			wantBandwidth:     12500,
 			wantModulation:    "LoRa",
@@ -4335,6 +4399,9 @@ func TestInterfaceAnnouncerPayloadRadioInterfaces(t *testing.T) {
 
 			if got := asString(lookupDiscoveryValue(info, discoveryFieldInterfaceType)); got != tt.wantInterfaceType {
 				t.Fatalf("interface type = %q, want %q", got, tt.wantInterfaceType)
+			}
+			if _, ok := lookupDiscovery(info, discoveryFieldReachableOn); ok != tt.wantReachableOn {
+				t.Fatalf("reachable_on presence = %v, want %v", ok, tt.wantReachableOn)
 			}
 			if tt.wantFrequency != 0 {
 				if got := asInt(lookupDiscoveryValue(info, discoveryFieldFrequency)); got != tt.wantFrequency {

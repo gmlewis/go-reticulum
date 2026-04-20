@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -164,8 +165,8 @@ func (l *Link) TeardownReason() int {
 
 // UpdateMDU proactively recalculates the Maximum Data Unit payload size based on the current MTU and header overhead.
 func (l *Link) UpdateMDU() {
-	// Simple calculation for now
 	l.mdu = l.mtu - HeaderMaxSize - IFACMinSize
+	l.mdu = int(math.Floor(float64(l.mtu-IFACMinSize-HeaderMinSize-TokenOverhead)/float64(AES128BlockSize)))*AES128BlockSize - 1
 }
 
 // ProvePacket generates and sends a cryptographic proof for the given packet over this link.

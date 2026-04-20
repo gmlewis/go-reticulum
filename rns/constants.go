@@ -31,8 +31,12 @@ const (
 	HeaderMaxSize = 2 + 1 + (TruncatedHashLength/8)*2
 	// IFACMinSize specifies the minimum number of bytes allocated for interface control data.
 	IFACMinSize = 1
-	// MDU defines the Maximum Data Unit payload size after subtracting theoretical maximum header overhead.
-	MDU = MTU - HeaderMaxSize - IFACMinSize
+	// TokenOverhead specifies the AEAD token overhead applied to encrypted link payloads.
+	TokenOverhead = 48
+	// AES128BlockSize specifies the block size used by Python's aligned link MDU calculation.
+	AES128BlockSize = 16
+	// MDU defines the Python-compatible block-aligned Maximum Data Unit payload size.
+	MDU = ((MTU - IFACMinSize - HeaderMinSize - TokenOverhead) / AES128BlockSize * AES128BlockSize) - 1
 )
 
 // PrettySize dynamically formats a precise byte count into an easily readable string with magnitude suffixes.

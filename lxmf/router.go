@@ -7,11 +7,14 @@ package lxmf
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +26,11 @@ type propagationEntry struct {
 	destinationHash []byte
 	payload         []byte
 	receivedAt      time.Time
+	handledBy       [][]byte
+	unhandledBy     [][]byte
+	path            string
+	size            int
+	stampValue      int
 }
 
 // Router encapsulates the routing logic, delivery mechanisms, and state management for the LXMF messaging protocol.
@@ -62,7 +70,7 @@ type Router struct {
 
 	controlDestination *rns.Destination
 	controlAllowed     map[string]struct{}
-	peers              map[string]time.Time
+	peers              map[string]*Peer
 
 	propagationPerTransferLimit   float64
 	propagationPerSyncLimit       float64
@@ -184,7 +192,7 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 		peerSyncBackoff:     0,
 		peerMaxAge:          0,
 		controlAllowed:      map[string]struct{}{},
-		peers:               map[string]time.Time{},
+		peers:               map[string]*Peer{},
 
 		propagationPerTransferLimit: DefaultPropagationLimit,
 		propagationPerSyncLimit:     DefaultSyncLimit,
@@ -239,12 +247,26 @@ func (r *Router) storePropagationMessage(destinationHash []byte, payload []byte)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	receivedAt := r.now()
 	transientID := rns.FullHash(payload)
-	r.propagationEntries[string(transientID)] = &propagationEntry{
+	entry := &propagationEntry{
 		destinationHash: append([]byte{}, destinationHash...),
 		payload:         append([]byte{}, payload...),
-		receivedAt:      time.Now(),
+		receivedAt:      receivedAt,
+		handledBy:       [][]byte{},
+		unhandledBy:     [][]byte{},
+		size:            len(payload),
+		stampValue:      0,
 	}
+	if r.propagationEnabled {
+		if path, size, err := r.writePropagationMessageFile(transientID, receivedAt, 0, destinationHash, payload); err != nil {
+			log.Printf("Could not persist propagation message %x: %v", transientID, err)
+		} else {
+			entry.path = path
+			entry.size = size
+		}
+	}
+	r.propagationEntries[string(transientID)] = entry
 
 	return transientID
 }
@@ -376,8 +398,8 @@ func (r *Router) PruneStalePeers() int {
 
 	now := r.now()
 	removed := 0
-	for peerHash, lastSeen := range r.peers {
-		if now.Sub(lastSeen) <= r.peerMaxAge {
+	for peerHash, peer := range r.peers {
+		if peer == nil || now.Sub(timeFromPeerValue(peer.lastHeard)) <= r.peerMaxAge {
 			continue
 		}
 		delete(r.peers, peerHash)
@@ -454,17 +476,17 @@ func (r *Router) peerSyncRequest(_ string, data []byte, _ []byte, linkID []byte,
 	if len(data) != rns.TruncatedHashLength/8 {
 		return peerErrorInvalidData
 	}
-	lastSeen, exists := r.peers[string(data)]
-	if !exists {
+	peer, exists := r.peers[string(data)]
+	if !exists || peer == nil {
 		return peerErrorNotFound
 	}
 
 	now := r.now()
-	if r.peerSyncBackoff > 0 && now.Sub(lastSeen) < r.peerSyncBackoff {
+	if r.peerSyncBackoff > 0 && now.Sub(timeFromPeerValue(peer.lastHeard)) < r.peerSyncBackoff {
 		return peerErrorThrottled
 	}
 
-	r.peers[string(data)] = now
+	peer.lastHeard = peerTime(now)
 
 	_ = linkID
 	return true
@@ -606,6 +628,11 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 		}
 		if bytes.Equal(entry.destinationHash, remoteDestinationHash) {
 			delete(r.propagationEntries, string(transientID))
+			if entry.path != "" {
+				if err := os.Remove(entry.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+					log.Printf("Could not remove persisted propagation message %x: %v", transientID, err)
+				}
+			}
 		}
 	}
 
@@ -1298,6 +1325,11 @@ func (r *Router) IsPrioritised(destinationHash []byte) bool {
 func (r *Router) EnablePropagation() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := os.MkdirAll(r.propagationMessageStorePath(), 0o755); err != nil {
+		log.Printf("Could not create LXMF propagation store: %v", err)
+		return
+	}
+	r.reindexPropagationStoreLocked()
 	r.propagationEnabled = true
 }
 
@@ -1313,6 +1345,92 @@ func (r *Router) PropagationEnabled() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.propagationEnabled
+}
+
+func (r *Router) propagationMessageStorePath() string {
+	return filepath.Join(r.storagePath, "messagestore")
+}
+
+func (r *Router) writePropagationMessageFile(transientID []byte, receivedAt time.Time, stampValue int, destinationHash []byte, payload []byte) (string, int, error) {
+	storePath := r.propagationMessageStorePath()
+	if err := os.MkdirAll(storePath, 0o755); err != nil {
+		return "", 0, err
+	}
+
+	timestamp := strconv.FormatFloat(peerTime(receivedAt), 'f', -1, 64)
+	filePath := filepath.Join(storePath, fmt.Sprintf("%x_%s_%v", transientID, timestamp, stampValue))
+	fileData := make([]byte, 0, len(destinationHash)+len(payload))
+	fileData = append(fileData, destinationHash...)
+	fileData = append(fileData, payload...)
+	if err := os.WriteFile(filePath, fileData, 0o644); err != nil {
+		return "", 0, err
+	}
+
+	return filePath, len(fileData), nil
+}
+
+func (r *Router) reindexPropagationStoreLocked() {
+	indexed := map[string]*propagationEntry{}
+	entries, err := os.ReadDir(r.propagationMessageStorePath())
+	if err != nil {
+		log.Printf("Could not read LXMF propagation store: %v", err)
+		r.propagationEntries = indexed
+		return
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		transientID, receivedAt, stampValue, ok := parsePropagationStoreFilename(entry.Name())
+		if !ok {
+			continue
+		}
+
+		filePath := filepath.Join(r.propagationMessageStorePath(), entry.Name())
+		fileData, err := os.ReadFile(filePath)
+		if err != nil || len(fileData) < DestinationLength {
+			continue
+		}
+
+		destinationHash := cloneBytes(fileData[:DestinationLength])
+		payload := cloneBytes(fileData[DestinationLength:])
+		indexed[string(transientID)] = &propagationEntry{
+			destinationHash: destinationHash,
+			payload:         payload,
+			receivedAt:      receivedAt,
+			handledBy:       [][]byte{},
+			unhandledBy:     [][]byte{},
+			path:            filePath,
+			size:            len(fileData),
+			stampValue:      stampValue,
+		}
+	}
+
+	r.propagationEntries = indexed
+}
+
+func parsePropagationStoreFilename(name string) ([]byte, time.Time, int, bool) {
+	components := strings.Split(name, "_")
+	if len(components) < 3 {
+		return nil, time.Time{}, 0, false
+	}
+
+	transientID, err := hex.DecodeString(components[0])
+	if err != nil {
+		return nil, time.Time{}, 0, false
+	}
+	received, err := strconv.ParseFloat(components[1], 64)
+	if err != nil || received <= 0 {
+		return nil, time.Time{}, 0, false
+	}
+	stampValue, err := strconv.Atoi(components[2])
+	if err != nil {
+		return nil, time.Time{}, 0, false
+	}
+
+	return transientID, timeFromPeerValue(received), stampValue, true
 }
 
 // PropagationDestination returns the specific Reticulum destination allocated for handling propagation traffic, or nil if unconfigured.

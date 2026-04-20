@@ -1629,7 +1629,7 @@ func TestIntegrationPropagationControlRecoveryPythonToGo(t *testing.T) {
 		t.Fatalf("sync not found=%v want=%v", got, peerErrorNotFound)
 	}
 
-	router.peers[string(peerHash)] = time.Now().Add(-time.Hour)
+	router.peers[string(peerHash)] = &Peer{destinationHash: append([]byte{}, peerHash...), lastHeard: peerTime(time.Now().Add(-time.Hour))}
 	if got := router.peerSyncRequest("", peerHash, nil, nil, remoteIdentity, time.Now()); got != true {
 		t.Fatalf("sync existing peer=%v want=true", got)
 	}
@@ -1679,7 +1679,7 @@ func TestIntegrationPropagationControlPeerSyncBackoffPythonToGo(t *testing.T) {
 		t.Fatalf("NewIdentity(remote): %v", err)
 	}
 	router.controlAllowed[string(remoteIdentity.Hash)] = struct{}{}
-	router.peers[string(peerHash)] = now
+	router.peers[string(peerHash)] = &Peer{destinationHash: append([]byte{}, peerHash...), lastHeard: peerTime(now)}
 
 	if got := router.peerSyncRequest("", peerHash, nil, nil, remoteIdentity, now); got != peerErrorThrottled {
 		t.Fatalf("sync throttled=%v want=%v", got, peerErrorThrottled)
@@ -1729,8 +1729,8 @@ func TestIntegrationPropagationControlPeerPrunePythonToGo(t *testing.T) {
 		t.Fatalf("SetPeerMaxAge: %v", err)
 	}
 
-	router.peers[string(peerOld)] = now.Add(-2 * time.Minute)
-	router.peers[string(peerNew)] = now.Add(-10 * time.Second)
+	router.peers[string(peerOld)] = &Peer{destinationHash: append([]byte{}, peerOld...), lastHeard: peerTime(now.Add(-2 * time.Minute))}
+	router.peers[string(peerNew)] = &Peer{destinationHash: append([]byte{}, peerNew...), lastHeard: peerTime(now.Add(-10 * time.Second))}
 
 	removed := router.PruneStalePeers()
 	if removed != 1 {
