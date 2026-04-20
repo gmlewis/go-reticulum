@@ -2086,6 +2086,53 @@ func TestInterfaceDiscoveryStartCallbackReceivesPersistedMetadata(t *testing.T) 
 	}
 }
 
+func TestInterfaceDiscoveryStartCallbackMissingValueFailsBeforePersist(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-start-missing-value-")
+	defer cleanup()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	callbackCalled := false
+	discovery.SetDiscoveryCallback(func(map[string]any) {
+		callbackCalled = true
+	})
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	info := map[string]any{
+		"name":           "Missing Value TCP",
+		"type":           "TCPServerInterface",
+		"discovery_hash": "aabbccdd",
+		"received":       1234.0,
+		"hops":           1,
+	}
+	discovery.handler.callback(info)
+
+	if callbackCalled {
+		t.Fatal("expected external discovery callback not to run for malformed discovered info")
+	}
+	if _, ok := info["discovered"]; ok {
+		t.Fatalf("info[\"discovered\"] unexpectedly set: %v", info["discovered"])
+	}
+	if _, ok := info["last_heard"]; ok {
+		t.Fatalf("info[\"last_heard\"] unexpectedly set: %v", info["last_heard"])
+	}
+	if _, err := os.Stat(filepath.Join(tmpDir, "discovery", "interfaces", "aabbccdd.data")); !os.IsNotExist(err) {
+		t.Fatalf("expected malformed discovered info not to be persisted, stat err=%v", err)
+	}
+}
+
 func TestInterfaceDiscoveryStartRecoversDiscoveryCallbackPanic(t *testing.T) {
 	t.Parallel()
 

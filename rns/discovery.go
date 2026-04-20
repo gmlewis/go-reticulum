@@ -686,6 +686,12 @@ func (id *InterfaceDiscovery) Start(requiredValue int) error {
 	}
 
 	id.handler = NewInterfaceAnnounceHandler(id.owner, requiredValue, func(info map[string]any) {
+		if err := validateDiscoveredInfoForProcessing(info); err != nil {
+			if id.owner != nil && id.owner.logger != nil {
+				id.owner.logger.Error("error processing discovered interface data: %v", err)
+			}
+			return
+		}
 		if err := id.persistDiscoveredInterface(info); err != nil && id.owner != nil && id.owner.logger != nil {
 			id.owner.logger.Error("failed to persist discovered interface: %v", err)
 			return
@@ -1093,6 +1099,18 @@ func cloneStringAnyMap(m map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+func validateDiscoveredInfoForProcessing(info map[string]any) error {
+	if info == nil {
+		return fmt.Errorf("missing discovery info")
+	}
+	for _, key := range []string{"name", "value", "type", "discovery_hash", "hops"} {
+		if _, ok := info[key]; !ok {
+			return fmt.Errorf("missing %v", key)
+		}
+	}
+	return nil
 }
 
 func mapToDiscoveredInterface(info map[string]any) (DiscoveredInterface, bool) {
