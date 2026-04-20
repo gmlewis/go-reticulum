@@ -77,6 +77,31 @@ func TestStreamPipeSendsDataAndEOF(t *testing.T) {
 	}
 }
 
+func TestStreamPipeLogsSendFailure(t *testing.T) {
+	t.Parallel()
+
+	var captured string
+	logger := rns.NewLogger()
+	logger.SetLogDest(rns.LogCallback)
+	logger.SetLogCallback(func(msg string) {
+		captured += msg
+	})
+	logger.SetLogLevel(rns.LogWarning)
+
+	ac := &activeCommand{
+		rt: &runtimeT{
+			logger:              logger,
+			protocolErrDeadline: 10 * time.Millisecond,
+			retrySleep:          time.Millisecond,
+		},
+	}
+	ac.streamPipe(&failingSender{}, io.NopCloser(bytesReader("hello")), streamIDStdout)
+
+	if !strings.Contains(captured, "Failed to send stdout stream data") {
+		t.Fatalf("missing stream send warning in %q", captured)
+	}
+}
+
 func TestActiveCommandWriteStdin(t *testing.T) {
 	t.Parallel()
 

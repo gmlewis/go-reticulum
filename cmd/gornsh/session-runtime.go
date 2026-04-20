@@ -19,6 +19,8 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
+const minStreamSendDeadline = 10 * time.Second
+
 type messageSender interface {
 	Send(msg rns.Message) (*rns.Envelope, error)
 }
@@ -373,11 +375,16 @@ func (ac *activeCommand) streamPipe(sender messageSender, reader io.ReadCloser, 
 		if n > 0 {
 			chunk := make([]byte, n)
 			copy(chunk, buf[:n])
-			_ = sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamID, Data: chunk, EOF: false, Compressed: false}, time.Now().Add(2*time.Second), defaultRetrySleep)
+			if sendErr := sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamID, Data: chunk, EOF: false, Compressed: false}, time.Now().Add(ac.streamSendDeadline()), ac.retrySleep()); sendErr != nil {
+				ac.logStreamSendFailure(streamID, false, sendErr)
+				return
+			}
 		}
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				_ = sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamID, Data: nil, EOF: true, Compressed: false}, time.Now().Add(2*time.Second), defaultRetrySleep)
+				if sendErr := sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamID, Data: nil, EOF: true, Compressed: false}, time.Now().Add(ac.streamSendDeadline()), ac.retrySleep()); sendErr != nil {
+					ac.logStreamSendFailure(streamID, true, sendErr)
+				}
 				return
 			}
 			if errors.Is(err, os.ErrClosed) || errors.Is(err, io.ErrClosedPipe) {
@@ -387,6 +394,44 @@ func (ac *activeCommand) streamPipe(sender messageSender, reader io.ReadCloser, 
 			_ = sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamID, Data: nil, EOF: true, Compressed: false}, time.Now().Add(2*time.Second), defaultRetrySleep)
 			return
 		}
+	}
+}
+
+func (ac *activeCommand) streamSendDeadline() time.Duration {
+	if ac == nil || ac.rt == nil || ac.rt.protocolErrDeadline < minStreamSendDeadline {
+		return minStreamSendDeadline
+	}
+	return ac.rt.protocolErrDeadline
+}
+
+func (ac *activeCommand) retrySleep() time.Duration {
+	if ac == nil || ac.rt == nil || ac.rt.retrySleep <= 0 {
+		return defaultRetrySleep
+	}
+	return ac.rt.retrySleep
+}
+
+func (ac *activeCommand) logStreamSendFailure(streamID int, eof bool, err error) {
+	if err == nil || ac == nil || ac.rt == nil || ac.rt.logger == nil {
+		return
+	}
+	phase := "data"
+	if eof {
+		phase = "EOF"
+	}
+	ac.rt.logger.Warning("Failed to send %v stream %v: %v", streamName(streamID), phase, err)
+}
+
+func streamName(streamID int) string {
+	switch streamID {
+	case streamIDStdin:
+		return "stdin"
+	case streamIDStdout:
+		return "stdout"
+	case streamIDStderr:
+		return "stderr"
+	default:
+		return fmt.Sprintf("stream-%v", streamID)
 	}
 }
 
