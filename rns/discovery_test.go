@@ -452,6 +452,67 @@ func TestListDiscoveredInterfaces_CorruptNonMapFileLogsAndRemains(t *testing.T) 
 	}
 }
 
+func TestListDiscoveredInterfaces_MissingLastHeardLogsAndRemains(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-missing-last-heard-")
+	defer cleanup()
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(map[string]any{
+		"name":       "Valid",
+		"last_heard": now - 60,
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write valid discovery file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(storagePath, "missing-last-heard.data"), mustMsgpackPack(map[string]any{
+		"name": "MissingLastHeard",
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write corrupt discovery file: %v", err)
+	}
+
+	var logs bytes.Buffer
+	logger := NewLogger()
+	logger.SetLogLevel(LogExtreme)
+	logger.SetLogDest(LogCallback)
+	logger.SetLogCallback(func(msg string) {
+		logs.WriteString(msg)
+		logs.WriteByte('\n')
+	})
+
+	r := &Reticulum{
+		configDir: tmpDir,
+		logger:    logger,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+	}
+	if len(discovered) != 1 {
+		t.Fatalf("expected 1 valid discovered interface, got %v", len(discovered))
+	}
+	if discovered[0].Name != "Valid" {
+		t.Fatalf("unexpected surviving interface %q", discovered[0].Name)
+	}
+	if _, err := os.Stat(filepath.Join(storagePath, "missing-last-heard.data")); err != nil {
+		t.Fatalf("expected corrupt discovery file to remain on disk: %v", err)
+	}
+
+	logOutput := logs.String()
+	if !strings.Contains(logOutput, "error while loading discovered interface data") {
+		t.Fatalf("expected corrupt-file error log, got %q", logOutput)
+	}
+	if !strings.Contains(logOutput, "missing-last-heard.data") || !strings.Contains(logOutput, "may be corrupt") {
+		t.Fatalf("expected corrupt-file path warning in logs, got %q", logOutput)
+	}
+}
+
 func TestIsHostnameMatchesPython(t *testing.T) {
 	t.Parallel()
 

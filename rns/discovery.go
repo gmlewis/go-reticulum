@@ -844,7 +844,33 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 			continue
 		}
 
-		heardAt := asFloat64(lookupAnyValue(m, "last_heard"))
+		heardValue, ok := lookupAny(m, "last_heard")
+		if !ok || heardValue == nil {
+			id.logDiscoveryFileLoadError(path, fmt.Errorf("corrupt discovery cache missing last_heard"))
+			continue
+		}
+		var heardAt float64
+		switch t := heardValue.(type) {
+		case float64:
+			heardAt = t
+		case float32:
+			heardAt = float64(t)
+		case int:
+			heardAt = float64(t)
+		case int64:
+			heardAt = float64(t)
+		case int32:
+			heardAt = float64(t)
+		case uint64:
+			heardAt = float64(t)
+		case uint32:
+			heardAt = float64(t)
+		case uint:
+			heardAt = float64(t)
+		default:
+			id.logDiscoveryFileLoadError(path, fmt.Errorf("invalid discovery cache last_heard type %T", heardValue))
+			continue
+		}
 		heardDelta := now - heardAt
 
 		shouldRemove := false
