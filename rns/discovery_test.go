@@ -252,21 +252,25 @@ func TestListDiscoveredInterfaces_StatusThresholds(t *testing.T) {
 	availableData := map[string]any{
 		"name":       "Available",
 		"last_heard": now - 3600,
+		"value":      100,
 	}
 	// Unknown: heard 2 days ago
 	unknownData := map[string]any{
 		"name":       "Unknown",
 		"last_heard": now - (ThresholdUnknown + 3600),
+		"value":      200,
 	}
 	// Stale: heard 4 days ago
 	staleData := map[string]any{
 		"name":       "Stale",
 		"last_heard": now - (ThresholdStale + 3600),
+		"value":      300,
 	}
 	// Expired: heard 8 days ago (should be removed)
 	expiredData := map[string]any{
 		"name":       "Expired",
 		"last_heard": now - (ThresholdRemove + 3600),
+		"value":      400,
 	}
 
 	writeData := func(name string, m map[string]any) {
@@ -342,6 +346,7 @@ func TestListDiscoveredInterfaces_SourceAndReachableFiltering(t *testing.T) {
 	writeData("matching", map[string]any{
 		"name":         "Matching",
 		"last_heard":   now - 3600,
+		"value":        100,
 		"network_id":   sourceHex,
 		"reachable_on": "discovery.example.net",
 	})
@@ -407,6 +412,7 @@ func TestListDiscoveredInterfaces_CorruptNonMapFileLogsAndRemains(t *testing.T) 
 	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(map[string]any{
 		"name":       "Valid",
 		"last_heard": now - 60,
+		"value":      1,
 	}), 0o644); err != nil {
 		t.Fatalf("failed to write valid discovery file: %v", err)
 	}
@@ -466,6 +472,7 @@ func TestListDiscoveredInterfaces_MissingLastHeardLogsAndRemains(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(map[string]any{
 		"name":       "Valid",
 		"last_heard": now - 60,
+		"value":      1,
 	}), 0o644); err != nil {
 		t.Fatalf("failed to write valid discovery file: %v", err)
 	}
@@ -528,6 +535,7 @@ func TestListDiscoveredInterfaces_OnlyTransportMissingTransportLogsAndRemains(t 
 		"name":       "Valid",
 		"last_heard": now - 60,
 		"transport":  true,
+		"value":      1,
 	}), 0o644); err != nil {
 		t.Fatalf("failed to write valid discovery file: %v", err)
 	}
@@ -573,6 +581,43 @@ func TestListDiscoveredInterfaces_OnlyTransportMissingTransportLogsAndRemains(t 
 	}
 	if !strings.Contains(logOutput, "missing-transport.data") || !strings.Contains(logOutput, "may be corrupt") {
 		t.Fatalf("expected corrupt-file path warning in logs, got %q", logOutput)
+	}
+}
+
+func TestListDiscoveredInterfaces_MissingValueReturnsErrorAndRemains(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-missing-value-")
+	defer cleanup()
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(map[string]any{
+		"name":       "Valid",
+		"last_heard": now - 60,
+		"transport":  true,
+		"value":      1,
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write valid discovery file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(storagePath, "missing-value.data"), mustMsgpackPack(map[string]any{
+		"name":       "MissingValue",
+		"last_heard": now - 60,
+		"transport":  true,
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write corrupt discovery file: %v", err)
+	}
+
+	discovery := NewInterfaceDiscovery(&Reticulum{configDir: tmpDir})
+
+	if _, err := discovery.ListDiscoveredInterfaces(false, false); err == nil {
+		t.Fatal("ListDiscoveredInterfaces() error = nil, want error for missing value")
+	}
+	if _, err := os.Stat(filepath.Join(storagePath, "missing-value.data")); err != nil {
+		t.Fatalf("expected corrupt discovery file to remain on disk: %v", err)
 	}
 }
 
@@ -1440,6 +1485,7 @@ func TestInterfaceDiscoveryStartReconnectsCachedBackbone(t *testing.T) {
 		"transport":    true,
 		"last_heard":   now - 60,
 		"discovered":   now - 120,
+		"value":        1,
 		"reachable_on": "127.0.0.1",
 		"port":         port,
 		"network_id":   "01020304",
@@ -1548,6 +1594,7 @@ func TestInterfaceDiscoveryConnectDiscoveredSkipsWhenAutoconnectDisabled(t *test
 		"transport":    true,
 		"last_heard":   now - 60,
 		"discovered":   now - 120,
+		"value":        1,
 		"reachable_on": "127.0.0.1",
 		"port":         4242,
 		"network_id":   "01020304",
@@ -2452,6 +2499,7 @@ func TestInterfaceDiscoveryMonitorAutoconnectsAvailableCandidate(t *testing.T) {
 		"transport":    true,
 		"last_heard":   now - 30,
 		"discovered":   now - 60,
+		"value":        1,
 		"reachable_on": "127.0.0.1",
 		"port":         port,
 		"network_id":   "0a0b0c0d",
@@ -2553,6 +2601,7 @@ func TestInterfaceDiscoveryMonitorAutoconnectUsesShuffledCandidateOrder(t *testi
 		"transport":    true,
 		"last_heard":   now - 10,
 		"discovered":   now - 60,
+		"value":        20,
 		"reachable_on": "127.0.0.1",
 		"port":         portA,
 		"network_id":   "aaaaaaaa",
@@ -2565,6 +2614,7 @@ func TestInterfaceDiscoveryMonitorAutoconnectUsesShuffledCandidateOrder(t *testi
 		"transport":    true,
 		"last_heard":   now - 20,
 		"discovered":   now - 60,
+		"value":        10,
 		"reachable_on": "127.0.0.1",
 		"port":         portB,
 		"network_id":   "bbbbbbbb",
@@ -2656,6 +2706,7 @@ func TestInterfaceDiscoveryMonitorDoesNotFallbackPastSelectedExistingCandidate(t
 		"transport":    true,
 		"last_heard":   now - 10,
 		"discovered":   now - 60,
+		"value":        20,
 		"reachable_on": "127.0.0.1",
 		"port":         existingPort,
 		"network_id":   "01010101",
@@ -2669,6 +2720,7 @@ func TestInterfaceDiscoveryMonitorDoesNotFallbackPastSelectedExistingCandidate(t
 		"transport":    true,
 		"last_heard":   now - 20,
 		"discovered":   now - 60,
+		"value":        10,
 		"reachable_on": "127.0.0.1",
 		"port":         otherPort,
 		"network_id":   "02020202",

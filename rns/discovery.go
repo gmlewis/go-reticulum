@@ -931,6 +931,32 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 			continue
 		}
 
+		valueField, ok := lookupAny(m, "value")
+		if !ok || valueField == nil {
+			return nil, fmt.Errorf("corrupt discovery cache missing value in %v", path)
+		}
+		var value int
+		switch t := valueField.(type) {
+		case int:
+			value = t
+		case int64:
+			value = int(t)
+		case int32:
+			value = int(t)
+		case uint64:
+			value = int(t)
+		case uint32:
+			value = int(t)
+		case uint:
+			value = int(t)
+		case float64:
+			value = int(t)
+		case float32:
+			value = int(t)
+		default:
+			return nil, fmt.Errorf("invalid discovery cache value type %T in %v", valueField, path)
+		}
+
 		di := DiscoveredInterface{
 			Name:        asString(lookupAnyValue(m, "name")),
 			Type:        asString(lookupAnyValue(m, "type")),
@@ -940,7 +966,7 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 			Discovered:  asFloat64(lookupAnyValue(m, "discovered")),
 			LastHeard:   heardAt,
 			Transport:   transport,
-			Value:       asInt(lookupAnyValue(m, "value")),
+			Value:       value,
 			ConfigEntry: asString(lookupAnyValue(m, "config_entry")),
 			NetworkID:   asString(lookupAnyValue(m, "network_id")),
 			TransportID: asString(lookupAnyValue(m, "transport_id")),
