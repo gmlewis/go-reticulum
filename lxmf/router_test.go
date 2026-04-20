@@ -1838,6 +1838,105 @@ func TestPropagationStoreRestartRecovery(t *testing.T) {
 	}
 }
 
+func TestPropagationPeerAndNodeStatsRestartRecovery(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.EnablePropagation()
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
+	ts.Remember([]byte("peer-packet"), remoteHash, remoteIdentity.GetPublicKey(), nil)
+
+	peer := NewPeer(router, remoteHash)
+	peer.lastHeard = peerTime(time.Now())
+	peer.peeringTimebase = 12345
+	router.peers[string(remoteHash)] = peer
+	router.clientPropagationMessagesReceived = 3
+	router.clientPropagationMessagesServed = 4
+	router.unpeeredPropagationIncoming = 5
+	router.unpeeredPropagationRXBytes = 6
+
+	if err := router.Close(); err != nil {
+		t.Fatalf("router.Close(): %v", err)
+	}
+
+	recovered := mustTestNewRouter(t, ts, nil, tmpDir)
+	recovered.EnablePropagation()
+
+	recoveredPeer := recovered.peers[string(remoteHash)]
+	if recoveredPeer == nil {
+		t.Fatalf("expected recovered peer for %x", remoteHash)
+	}
+	if got, want := recoveredPeer.peeringTimebase, peer.peeringTimebase; got != want {
+		t.Fatalf("recovered peer peeringTimebase = %v, want %v", got, want)
+	}
+	if got, want := recoveredPeer.lastHeard, peer.lastHeard; got != want {
+		t.Fatalf("recovered peer lastHeard = %v, want %v", got, want)
+	}
+	if recovered.clientPropagationMessagesReceived != 3 {
+		t.Fatalf("clientPropagationMessagesReceived = %v, want 3", recovered.clientPropagationMessagesReceived)
+	}
+	if recovered.clientPropagationMessagesServed != 4 {
+		t.Fatalf("clientPropagationMessagesServed = %v, want 4", recovered.clientPropagationMessagesServed)
+	}
+	if recovered.unpeeredPropagationIncoming != 5 {
+		t.Fatalf("unpeeredPropagationIncoming = %v, want 5", recovered.unpeeredPropagationIncoming)
+	}
+	if recovered.unpeeredPropagationRXBytes != 6 {
+		t.Fatalf("unpeeredPropagationRXBytes = %v, want 6", recovered.unpeeredPropagationRXBytes)
+	}
+}
+
+func TestOutboundStampCostRestartRecovery(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	destinationHash := bytes.Repeat([]byte{0x51}, DestinationLength)
+	router.updateStampCost(destinationHash, 8)
+
+	if err := router.Close(); err != nil {
+		t.Fatalf("router.Close(): %v", err)
+	}
+
+	recovered := mustTestNewRouter(t, ts, nil, tmpDir)
+	stampCost, ok := recovered.OutboundStampCost(destinationHash)
+	if !ok || stampCost != 8 {
+		t.Fatalf("recovered OutboundStampCost = (%v,%v), want (8,true)", stampCost, ok)
+	}
+}
+
+func TestOutboundStampCostRestartDropsExpiredEntries(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	destinationHash := bytes.Repeat([]byte{0x52}, DestinationLength)
+	router.outboundStampCosts[string(destinationHash)] = outboundStampCostEntry{
+		updatedAt: time.Unix(0, 0),
+		stampCost: 9,
+	}
+	if err := router.SaveOutboundStampCosts(); err != nil {
+		t.Fatalf("router.SaveOutboundStampCosts(): %v", err)
+	}
+
+	recovered := mustTestNewRouter(t, ts, nil, tmpDir)
+	if stampCost, ok := recovered.OutboundStampCost(destinationHash); ok {
+		t.Fatalf("expired OutboundStampCost = (%v,%v), want missing entry", stampCost, ok)
+	}
+}
+
 func TestMessageGetRequestListSortedByMessageSize(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)

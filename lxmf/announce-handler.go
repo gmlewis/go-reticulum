@@ -108,7 +108,10 @@ func (r *Router) updateStampCost(destinationHash []byte, stampCost int) {
 		delete(r.outboundStampCosts, string(destinationHash))
 		return
 	}
-	r.outboundStampCosts[string(destinationHash)] = stampCost
+	r.outboundStampCosts[string(destinationHash)] = outboundStampCostEntry{
+		updatedAt: r.now(),
+		stampCost: stampCost,
+	}
 }
 
 // OutboundStampCost returns the most recently announced inbound stamp cost for
@@ -116,8 +119,8 @@ func (r *Router) updateStampCost(destinationHash []byte, stampCost int) {
 func (r *Router) OutboundStampCost(destinationHash []byte) (int, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	stampCost, ok := r.outboundStampCosts[string(destinationHash)]
-	return stampCost, ok
+	entry, ok := r.outboundStampCosts[string(destinationHash)]
+	return entry.stampCost, ok
 }
 
 func equalHashes(a, b []byte) bool {

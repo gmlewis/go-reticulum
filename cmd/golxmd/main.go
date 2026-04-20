@@ -264,11 +264,19 @@ func (r *runtimeT) run() {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	stopJobs := make(chan struct{})
-	go c.runDeferredThenJobs(10*time.Second, router, lxmfDestination, stopJobs, jobsInterval)
+	jobsDone := make(chan struct{})
+	go func() {
+		defer close(jobsDone)
+		c.runDeferredThenJobs(10*time.Second, router, lxmfDestination, stopJobs, jobsInterval)
+	}()
 
 	<-stop
 	fmt.Println()
 	close(stopJobs)
+	<-jobsDone
+	if err := router.Close(); err != nil {
+		log.Printf("golxmd failed to persist router state: %v", err)
+	}
 	if err := c.tr.MarkCleanShutdown(); err != nil {
 		log.Printf("golxmd failed to persist clean shutdown marker: %v", err)
 	}

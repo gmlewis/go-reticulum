@@ -34,7 +34,13 @@ type propagationEntry struct {
 	stampValue      int
 }
 
+type outboundStampCostEntry struct {
+	updatedAt time.Time
+	stampCost int
+}
+
 const messageExpiry = 30 * 24 * time.Hour
+const stampCostExpiry = 45 * 24 * time.Hour
 
 // Router encapsulates the routing logic, delivery mechanisms, and state management for the LXMF messaging protocol.
 type Router struct {
@@ -44,7 +50,7 @@ type Router struct {
 
 	deliveryDestinations map[string]*rns.Destination
 	inboundStampCosts    map[string]int
-	outboundStampCosts   map[string]int
+	outboundStampCosts   map[string]outboundStampCostEntry
 	displayNames         map[string]string
 
 	pendingOutbound []*Message
@@ -185,7 +191,7 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 		storagePath:          base,
 		deliveryDestinations: map[string]*rns.Destination{},
 		inboundStampCosts:    map[string]int{},
-		outboundStampCosts:   map[string]int{},
+		outboundStampCosts:   map[string]outboundStampCostEntry{},
 		displayNames:         map[string]string{},
 		pendingOutbound:      []*Message{},
 		hasPath:              ts.HasPath,
@@ -226,6 +232,9 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 	router.sendResource = router.sendMessageResourceLocked
 	router.processOutbound = router.ProcessOutbound
 	router.registerAnnounceHandlers()
+	if err := router.LoadOutboundStampCosts(); err != nil {
+		log.Printf("Could not load outbound stamp costs from storage: %v", err)
+	}
 
 	return router, nil
 }
@@ -734,11 +743,20 @@ func anySliceToByteSlices(value any) [][]byte {
 }
 
 func anyToBytes(value any) []byte {
-	b, ok := value.([]byte)
-	if !ok || len(b) == 0 {
+	switch v := value.(type) {
+	case []byte:
+		if len(v) == 0 {
+			return nil
+		}
+		return append([]byte{}, v...)
+	case string:
+		if v == "" {
+			return nil
+		}
+		return []byte(v)
+	default:
 		return nil
 	}
-	return append([]byte{}, b...)
 }
 
 func parseLimitBytes(values []any, index int) int {
@@ -1361,14 +1379,26 @@ func (r *Router) IsPrioritised(destinationHash []byte) bool {
 // EnablePropagation marks the router as an active propagation node, empowering the network to forward and distribute messages asynchronously.
 func (r *Router) EnablePropagation() {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	if r.propagationEnabled {
+		r.mu.Unlock()
+		return
+	}
 	if err := os.MkdirAll(r.propagationMessageStorePath(), 0o755); err != nil {
+		r.mu.Unlock()
 		log.Printf("Could not create LXMF propagation store: %v", err)
 		return
 	}
 	r.reindexPropagationStoreLocked()
 	r.propagationEnabled = true
 	r.cleanMessageStoreLocked()
+	r.mu.Unlock()
+
+	if err := r.LoadPeers(); err != nil {
+		log.Printf("Could not load propagation peers from storage: %v", err)
+	}
+	if err := r.LoadNodeStats(); err != nil {
+		log.Printf("Could not load propagation node stats from storage: %v", err)
+	}
 }
 
 // DisablePropagation gracefully withdraws the router from participating as an active propagation node in the network.
@@ -1387,6 +1417,271 @@ func (r *Router) PropagationEnabled() bool {
 
 func (r *Router) propagationMessageStorePath() string {
 	return filepath.Join(r.storagePath, "messagestore")
+}
+
+func (r *Router) peersPath() string {
+	return filepath.Join(r.storagePath, "peers")
+}
+
+func (r *Router) nodeStatsPath() string {
+	return filepath.Join(r.storagePath, "node_stats")
+}
+
+func (r *Router) outboundStampCostsPath() string {
+	return filepath.Join(r.storagePath, "outbound_stamp_costs")
+}
+
+// FlushQueues merges queued peer message bookkeeping into the in-memory
+// propagation-entry state before persistence.
+func (r *Router) FlushQueues() {
+	r.mu.Lock()
+	peers := make([]*Peer, 0, len(r.peers))
+	for _, peer := range r.peers {
+		peers = append(peers, peer)
+	}
+	r.mu.Unlock()
+
+	for _, peer := range peers {
+		peer.ProcessQueues()
+	}
+}
+
+// SavePeers persists propagation peer synchronisation state using the Python
+// msgpack list-of-bytes layout.
+func (r *Router) SavePeers() error {
+	r.mu.Lock()
+	enabled := r.propagationEnabled
+	peers := make([]*Peer, 0, len(r.peers))
+	for _, peer := range r.peers {
+		peers = append(peers, peer)
+	}
+	r.mu.Unlock()
+
+	if !enabled {
+		return nil
+	}
+	if err := os.MkdirAll(r.storagePath, 0o755); err != nil {
+		return err
+	}
+
+	serialised := make([]any, 0, len(peers))
+	for _, peer := range peers {
+		peerBytes, err := peer.ToBytes()
+		if err != nil {
+			return err
+		}
+		serialised = append(serialised, peerBytes)
+	}
+
+	packed, err := msgpack.Pack(serialised)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(r.peersPath(), packed, 0o644)
+}
+
+// LoadPeers restores persisted propagation peer synchronisation state.
+func (r *Router) LoadPeers() error {
+	data, err := os.ReadFile(r.peersPath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if len(data) == 0 {
+		return nil
+	}
+
+	entries, err := decodeAnyList(data)
+	if err != nil {
+		return err
+	}
+
+	loaded := make(map[string]*Peer, len(entries))
+	for _, entry := range entries {
+		peerBytes := anyToBytes(entry)
+		if len(peerBytes) == 0 {
+			continue
+		}
+		peer, err := r.PeerFromBytes(peerBytes)
+		if err != nil {
+			return err
+		}
+		if peer.identity == nil {
+			continue
+		}
+		loaded[string(peer.destinationHash)] = peer
+	}
+
+	r.mu.Lock()
+	for destinationHash, peer := range loaded {
+		r.peers[destinationHash] = peer
+	}
+	r.mu.Unlock()
+	return nil
+}
+
+// SaveNodeStats persists local propagation-node accounting.
+func (r *Router) SaveNodeStats() error {
+	r.mu.Lock()
+	nodeStats := map[string]any{
+		"client_propagation_messages_received": r.clientPropagationMessagesReceived,
+		"client_propagation_messages_served":   r.clientPropagationMessagesServed,
+		"unpeered_propagation_incoming":        r.unpeeredPropagationIncoming,
+		"unpeered_propagation_rx_bytes":        r.unpeeredPropagationRXBytes,
+	}
+	r.mu.Unlock()
+
+	if err := os.MkdirAll(r.storagePath, 0o755); err != nil {
+		return err
+	}
+	packed, err := msgpack.Pack(nodeStats)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(r.nodeStatsPath(), packed, 0o644)
+}
+
+// SaveOutboundStampCosts persists cached outbound delivery stamp costs using the
+// Python msgpack dictionary layout.
+func (r *Router) SaveOutboundStampCosts() error {
+	r.mu.Lock()
+	payload := make(map[string]any, len(r.outboundStampCosts))
+	for destinationHash, entry := range r.outboundStampCosts {
+		payload[destinationHash] = []any{peerTime(entry.updatedAt), entry.stampCost}
+	}
+	r.mu.Unlock()
+
+	if err := os.MkdirAll(r.storagePath, 0o755); err != nil {
+		return err
+	}
+	packed, err := msgpack.Pack(payload)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(r.outboundStampCostsPath(), packed, 0o644)
+}
+
+// LoadOutboundStampCosts restores cached outbound delivery stamp costs from
+// storage and drops expired entries.
+func (r *Router) LoadOutboundStampCosts() error {
+	data, err := os.ReadFile(r.outboundStampCostsPath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if len(data) == 0 {
+		return nil
+	}
+
+	unpacked, err := msgpack.Unpack(data)
+	if err != nil {
+		return err
+	}
+	dictionary := map[any]any{}
+	switch v := unpacked.(type) {
+	case map[any]any:
+		dictionary = v
+	case map[string]any:
+		for key, value := range v {
+			dictionary[key] = value
+		}
+	default:
+		return fmt.Errorf("invalid outbound stamp cost payload type %T", unpacked)
+	}
+
+	now := r.now()
+	loaded := make(map[string]outboundStampCostEntry, len(dictionary))
+	for destinationHashValue, entryValue := range dictionary {
+		destinationHash := anyToBytes(destinationHashValue)
+		if len(destinationHash) == 0 {
+			continue
+		}
+		items, ok := entryValue.([]any)
+		if !ok || len(items) < 2 {
+			continue
+		}
+		updatedAtSeconds, err := anyToFloat64(items[0])
+		if err != nil {
+			continue
+		}
+		stampCost, err := anyToInt(items[1])
+		if err != nil || stampCost <= 0 {
+			continue
+		}
+		updatedAt := time.Unix(0, 0).Add(time.Duration(updatedAtSeconds * float64(time.Second)))
+		if now.Sub(updatedAt) > stampCostExpiry {
+			continue
+		}
+		loaded[string(destinationHash)] = outboundStampCostEntry{
+			updatedAt: updatedAt,
+			stampCost: stampCost,
+		}
+	}
+
+	r.mu.Lock()
+	r.outboundStampCosts = loaded
+	r.mu.Unlock()
+	return nil
+}
+
+// LoadNodeStats restores local propagation-node accounting from storage.
+func (r *Router) LoadNodeStats() error {
+	data, err := os.ReadFile(r.nodeStatsPath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if len(data) == 0 {
+		return nil
+	}
+
+	unpacked, err := msgpack.Unpack(data)
+	if err != nil {
+		return err
+	}
+	nodeStats, ok := unpacked.(map[any]any)
+	if !ok {
+		return fmt.Errorf("invalid node stats payload type %T", unpacked)
+	}
+
+	mustInt := func(value any) int {
+		n, err := anyToInt(value)
+		if err != nil {
+			return 0
+		}
+		return n
+	}
+
+	r.mu.Lock()
+	r.clientPropagationMessagesReceived = mustInt(nodeStats["client_propagation_messages_received"])
+	r.clientPropagationMessagesServed = mustInt(nodeStats["client_propagation_messages_served"])
+	r.unpeeredPropagationIncoming = mustInt(nodeStats["unpeered_propagation_incoming"])
+	r.unpeeredPropagationRXBytes = mustInt(nodeStats["unpeered_propagation_rx_bytes"])
+	r.mu.Unlock()
+	return nil
+}
+
+// Close flushes in-memory propagation state to disk.
+func (r *Router) Close() error {
+	r.FlushQueues()
+
+	var closeErr error
+	if err := r.SaveOutboundStampCosts(); err != nil {
+		closeErr = errors.Join(closeErr, err)
+	}
+	if err := r.SavePeers(); err != nil {
+		closeErr = errors.Join(closeErr, err)
+	}
+	if err := r.SaveNodeStats(); err != nil {
+		closeErr = errors.Join(closeErr, err)
+	}
+	return closeErr
 }
 
 func (r *Router) writePropagationMessageFile(transientID []byte, receivedAt time.Time, stampValue int, destinationHash []byte, payload []byte) (string, int, error) {
