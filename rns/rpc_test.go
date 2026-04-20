@@ -629,6 +629,42 @@ func TestRPCInterfaceStatsIncludesIFACAndAutoconnectMetadata(t *testing.T) {
 	}
 }
 
+func TestRPCInterfaceStatsIncludesAnnounceQueueDepth(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	iface := &dummyInterface{name: "stats-queue-iface"}
+	ts.RegisterInterface(iface)
+	ts.mu.Lock()
+	ts.ensureStateLocked()
+	ts.announceQueues[iface] = &announceQueueState{
+		queue: []announceQueueEntry{
+			{destinationHash: "one"},
+			{destinationHash: "two"},
+		},
+	}
+	ts.mu.Unlock()
+
+	r := &Reticulum{transport: ts}
+	resp := r.handleRPCRequest(map[any]any{"get": "interface_stats"})
+	stats, ok := resp.(map[string]any)
+	if !ok {
+		t.Fatalf("expected stats map[string]any, got %#v", resp)
+	}
+
+	entries, ok := stats["interfaces"].([]any)
+	if !ok || len(entries) != 1 {
+		t.Fatalf("expected one interface entry, got %#v", stats["interfaces"])
+	}
+	entry, ok := entries[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected interface entry map[string]any, got %#v", entries[0])
+	}
+	if got := asInt(entry["announce_queue"]); got != 2 {
+		t.Fatalf("announce_queue = %v, want 2", got)
+	}
+}
+
 func TestDecodeInterfaceStatsAllFields(t *testing.T) {
 	t.Parallel()
 	clients := 5

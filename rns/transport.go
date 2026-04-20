@@ -159,6 +159,7 @@ type TransportSystem struct {
 	packetHashRotateAt   int
 	announceTable        map[string]*AnnounceEntry
 	announceRateTable    map[string]*AnnounceRateEntry
+	announceQueues       map[interfaces.Interface]*announceQueueState
 	pathRequests         map[string]time.Time
 	pendingPathRequests  map[string][]interfaces.Interface
 	pendingPathRequestAt map[string]time.Time
@@ -195,6 +196,20 @@ type AnnounceEntry struct {
 	Hops              int
 	NextRebroadcastAt time.Time
 	Retries           int
+}
+
+type announceQueueEntry struct {
+	destinationHash string
+	queuedAt        time.Time
+	hops            int
+	emitted         uint64
+	raw             []byte
+}
+
+type announceQueueState struct {
+	allowedAt time.Time
+	queue     []announceQueueEntry
+	timer     *time.Timer
 }
 
 // AnnounceRateEntry tracks the rate of announces received for a specific destination.
@@ -271,6 +286,9 @@ const (
 	pathfinderRandomWindow   = 500 * time.Millisecond
 	localRebroadcastsMax     = 2
 	announceCheckInterval    = 1 * time.Second
+	announceCapDefault       = 2
+	maxQueuedAnnounces       = 16384
+	queuedAnnounceLife       = 24 * time.Hour
 	pathRequestMinInterval   = 20 * time.Second
 	pathRequestCullAfter     = 2 * pathRequestMinInterval
 	pendingPathRequestTTL    = 20 * time.Second
@@ -304,6 +322,7 @@ func NewTransportSystem(logger *Logger) *TransportSystem {
 		packetHashRotateAt:   packetHashRotateDefault,
 		announceTable:        make(map[string]*AnnounceEntry),
 		announceRateTable:    make(map[string]*AnnounceRateEntry),
+		announceQueues:       make(map[interfaces.Interface]*announceQueueState),
 		pathRequests:         make(map[string]time.Time),
 		pendingPathRequests:  make(map[string][]interfaces.Interface),
 		pendingPathRequestAt: make(map[string]time.Time),
@@ -369,6 +388,9 @@ func (ts *TransportSystem) ensureStateLocked() {
 	}
 	if ts.announceRateTable == nil {
 		ts.announceRateTable = make(map[string]*AnnounceRateEntry)
+	}
+	if ts.announceQueues == nil {
+		ts.announceQueues = make(map[interfaces.Interface]*announceQueueState)
 	}
 	if ts.pathRequests == nil {
 		ts.pathRequests = make(map[string]time.Time)
@@ -531,6 +553,9 @@ func (ts *TransportSystem) Stop() {
 
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
+	for _, state := range ts.announceQueues {
+		ts.stopAnnounceQueueTimerLocked(state)
+	}
 	for _, iface := range ts.interfaces {
 		if err := iface.Detach(); err != nil {
 			ts.logger.Error("Error detaching interface %v during transport stop: %v", iface.Name(), err)
@@ -1064,6 +1089,199 @@ func (ts *TransportSystem) randomDuration(max time.Duration) time.Duration {
 	return time.Duration(int64(b[0]) * int64(max) / 255)
 }
 
+func (ts *TransportSystem) announceQueueStateLocked(iface interfaces.Interface) *announceQueueState {
+	state := ts.announceQueues[iface]
+	if state == nil {
+		state = &announceQueueState{}
+		ts.announceQueues[iface] = state
+	}
+	return state
+}
+
+func announceWaitDuration(rawLen, bitrate int) time.Duration {
+	if rawLen <= 0 || bitrate <= 0 {
+		return 0
+	}
+	txTime := float64(rawLen*8) / float64(bitrate)
+	wait := txTime / announceCapDefault
+	return time.Duration(wait * float64(time.Second))
+}
+
+func announceEmissionFromPacket(packet *Packet) uint64 {
+	if packet == nil {
+		return 0
+	}
+	randomBlobStart := IdentityKeySize/8 + NameHashLength/8
+	randomBlobEnd := randomBlobStart + 10
+	if len(packet.Data) < randomBlobEnd {
+		return 0
+	}
+	var emitted uint64
+	for _, b := range packet.Data[randomBlobStart+5 : randomBlobEnd] {
+		emitted = (emitted << 8) | uint64(b)
+	}
+	return emitted
+}
+
+func announceEmissionFromRaw(raw []byte) uint64 {
+	packet := NewPacketFromRaw(raw)
+	if err := packet.Unpack(); err != nil {
+		return 0
+	}
+	return announceEmissionFromPacket(packet)
+}
+
+func (ts *TransportSystem) stopAnnounceQueueTimerLocked(state *announceQueueState) {
+	if state == nil || state.timer == nil {
+		return
+	}
+	state.timer.Stop()
+	state.timer = nil
+}
+
+func (ts *TransportSystem) scheduleAnnounceQueueTimerLocked(iface interfaces.Interface, state *announceQueueState, delay time.Duration) {
+	if state == nil {
+		return
+	}
+	ts.stopAnnounceQueueTimerLocked(state)
+	if delay < 0 {
+		delay = 0
+	}
+	state.timer = time.AfterFunc(delay, func() {
+		ts.processAnnounceQueue(iface, time.Now())
+	})
+}
+
+func (ts *TransportSystem) queueOrSendAnnounceLocked(now time.Time, iface interfaces.Interface, destinationHash string, raw []byte, hops int) []byte {
+	state := ts.announceQueueStateLocked(iface)
+	queuedAnnounces := len(state.queue) > 0
+	bitrate := iface.Bitrate()
+	if bitrate <= 0 {
+		return append([]byte(nil), raw...)
+	}
+	if !queuedAnnounces && now.After(state.allowedAt) {
+		state.allowedAt = now.Add(announceWaitDuration(len(raw), bitrate))
+		return append([]byte(nil), raw...)
+	}
+	if len(state.queue) >= maxQueuedAnnounces {
+		return nil
+	}
+
+	emitted := announceEmissionFromRaw(raw)
+	for i := range state.queue {
+		if state.queue[i].destinationHash != destinationHash {
+			continue
+		}
+		if emitted > state.queue[i].emitted {
+			state.queue[i].queuedAt = now
+			state.queue[i].hops = hops
+			state.queue[i].emitted = emitted
+			state.queue[i].raw = append(state.queue[i].raw[:0], raw...)
+		}
+		return nil
+	}
+
+	state.queue = append(state.queue, announceQueueEntry{
+		destinationHash: destinationHash,
+		queuedAt:        now,
+		hops:            hops,
+		emitted:         emitted,
+		raw:             append([]byte(nil), raw...),
+	})
+	if !queuedAnnounces {
+		delay := state.allowedAt.Sub(now)
+		if delay < 0 {
+			delay = 0
+		}
+		ts.scheduleAnnounceQueueTimerLocked(iface, state, delay)
+	}
+	return nil
+}
+
+func (ts *TransportSystem) announceQueueLength(iface interfaces.Interface) int {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.ensureStateLocked()
+	state := ts.announceQueues[iface]
+	if state == nil {
+		return 0
+	}
+	return len(state.queue)
+}
+
+func (ts *TransportSystem) processAnnounceQueue(iface interfaces.Interface, now time.Time) {
+	if iface == nil {
+		return
+	}
+
+	var raw []byte
+	var nextDelay time.Duration
+
+	ts.mu.Lock()
+	ts.ensureStateLocked()
+	state := ts.announceQueues[iface]
+	if state == nil {
+		ts.mu.Unlock()
+		return
+	}
+	state.timer = nil
+
+	pruned := state.queue[:0]
+	for _, entry := range state.queue {
+		if now.Sub(entry.queuedAt) <= queuedAnnounceLife {
+			pruned = append(pruned, entry)
+		}
+	}
+	state.queue = pruned
+	if len(state.queue) == 0 {
+		ts.mu.Unlock()
+		return
+	}
+
+	selectedIndex := 0
+	for i := 1; i < len(state.queue); i++ {
+		selected := state.queue[selectedIndex]
+		candidate := state.queue[i]
+		if candidate.hops < selected.hops || (candidate.hops == selected.hops && candidate.queuedAt.Before(selected.queuedAt)) {
+			selectedIndex = i
+		}
+	}
+	selected := state.queue[selectedIndex]
+	raw = append([]byte(nil), selected.raw...)
+	state.queue = append(state.queue[:selectedIndex], state.queue[selectedIndex+1:]...)
+	nextDelay = announceWaitDuration(len(raw), iface.Bitrate())
+	state.allowedAt = now.Add(nextDelay)
+	if len(state.queue) > 0 {
+		ts.scheduleAnnounceQueueTimerLocked(iface, state, nextDelay)
+	}
+	ts.mu.Unlock()
+
+	ts.sendRebroadcast(iface, raw)
+}
+
+func (ts *TransportSystem) sendRebroadcast(iface interfaces.Interface, raw []byte) {
+	if iface == nil || len(raw) == 0 {
+		return
+	}
+	if ts.identity != nil {
+		parsed := NewPacketFromRaw(raw)
+		if err := parsed.Unpack(); err == nil && parsed.PacketType == PacketAnnounce {
+			newFlags := byte((Header2 << 6) | (parsed.ContextFlag << 5) | (TransportForward << 4) | (parsed.DestinationType << 2) | parsed.PacketType)
+			rebuilt := make([]byte, 0, 2+TruncatedHashLength/8+TruncatedHashLength/8+1+len(parsed.Data))
+			rebuilt = append(rebuilt, newFlags, byte(parsed.Hops))
+			rebuilt = append(rebuilt, ts.identity.Hash...)
+			rebuilt = append(rebuilt, parsed.DestinationHash...)
+			rebuilt = append(rebuilt, byte(parsed.Context))
+			rebuilt = append(rebuilt, parsed.Data...)
+			raw = rebuilt
+		}
+	}
+	if err := iface.Send(raw); err != nil {
+		ts.logger.Error("Failed to re-broadcast announce on %v: %v", iface.Name(), err)
+		ts.InvalidatePathsViaInterface(iface)
+	}
+}
+
 func (ts *TransportSystem) processAnnounceTable(now time.Time) {
 	type sendJob struct {
 		iface interfaces.Interface
@@ -1088,9 +1306,10 @@ func (ts *TransportSystem) processAnnounceTable(now time.Time) {
 			if outIface == entry.SourceInterface {
 				continue
 			}
-			raw := make([]byte, len(entry.PacketRaw))
-			copy(raw, entry.PacketRaw)
-			jobs = append(jobs, sendJob{iface: outIface, raw: raw})
+			raw := ts.queueOrSendAnnounceLocked(now, outIface, destinationHash, entry.PacketRaw, entry.Hops)
+			if len(raw) > 0 {
+				jobs = append(jobs, sendJob{iface: outIface, raw: raw})
+			}
 		}
 
 		entry.Retries++
@@ -1102,25 +1321,7 @@ func (ts *TransportSystem) processAnnounceTable(now time.Time) {
 	ts.mu.Unlock()
 
 	for _, job := range jobs {
-		raw := job.raw
-		if ts.identity != nil {
-			parsed := NewPacketFromRaw(job.raw)
-			if err := parsed.Unpack(); err == nil && parsed.PacketType == PacketAnnounce {
-				newFlags := byte((Header2 << 6) | (parsed.ContextFlag << 5) | (TransportForward << 4) | (parsed.DestinationType << 2) | parsed.PacketType)
-				rebuilt := make([]byte, 0, 2+TruncatedHashLength/8+TruncatedHashLength/8+1+len(parsed.Data))
-				rebuilt = append(rebuilt, newFlags, byte(parsed.Hops))
-				rebuilt = append(rebuilt, ts.identity.Hash...)
-				rebuilt = append(rebuilt, parsed.DestinationHash...)
-				rebuilt = append(rebuilt, byte(parsed.Context))
-				rebuilt = append(rebuilt, parsed.Data...)
-				raw = rebuilt
-			}
-		}
-
-		if err := job.iface.Send(raw); err != nil {
-			ts.logger.Error("Failed to re-broadcast announce on %v: %v", job.iface.Name(), err)
-			ts.InvalidatePathsViaInterface(job.iface)
-		}
+		ts.sendRebroadcast(job.iface, job.raw)
 	}
 }
 
@@ -1190,9 +1391,15 @@ func (ts *TransportSystem) forwardPathRequest(packet *Packet, source interfaces.
 	jobs := make([]sendJob, 0)
 	ts.mu.Lock()
 	ts.ensureStateLocked()
+	now := time.Now()
 	for _, outIface := range ts.interfaces {
 		if outIface == source {
 			continue
+		}
+		if state := ts.announceQueues[outIface]; state != nil {
+			if len(state.queue) > 0 || now.Before(state.allowedAt) {
+				continue
+			}
 		}
 		raw := make([]byte, len(relayReq.Raw))
 		copy(raw, relayReq.Raw)
@@ -1634,6 +1841,12 @@ func (ts *TransportSystem) DropAnnounceQueues() int {
 	count := len(ts.announceTable)
 	for k := range ts.announceTable {
 		delete(ts.announceTable, k)
+	}
+	for _, state := range ts.announceQueues {
+		ts.stopAnnounceQueueTimerLocked(state)
+		if state != nil {
+			state.queue = nil
+		}
 	}
 	for k := range ts.pendingPathRequests {
 		delete(ts.pendingPathRequests, k)

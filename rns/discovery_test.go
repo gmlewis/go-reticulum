@@ -1498,6 +1498,32 @@ func TestInterfaceDiscoveryReceiveAndPersistAdditionalTypes(t *testing.T) {
 	}
 }
 
+func TestDiscoveryConfigEntryKeepsEmptyTransportIdentityForBackbone(t *testing.T) {
+	t.Parallel()
+
+	connectionType := "BackboneInterface"
+	remoteKey := "remote"
+	if runtime.GOOS == "windows" {
+		connectionType = "TCPClientInterface"
+		remoteKey = "target_host"
+	}
+
+	got := discoveryConfigEntry(map[string]any{
+		"type":         "BackboneInterface",
+		"name":         "Discovered TCP",
+		"transport_id": "",
+		"reachable_on": "discovery.example.net",
+		"port":         4242,
+	})
+
+	want := "[[Discovered TCP]]\n  type = " + connectionType +
+		"\n  enabled = yes\n  " + remoteKey + " = discovery.example.net\n  target_port = 4242" +
+		"\n  transport_identity = "
+	if got != want {
+		t.Fatalf("discoveryConfigEntry() = %q, want %q", got, want)
+	}
+}
+
 func mustDiscoveryAnnounceAppData(t *testing.T, payload map[any]any, targetCost int) []byte {
 	t.Helper()
 

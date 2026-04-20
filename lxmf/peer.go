@@ -51,7 +51,7 @@ type Peer struct {
 	syncStrategy int
 	peeringKey   []any
 	peeringCost  *int
-	metadata     map[string]any
+	metadata     map[any]any
 
 	nextSyncAttempt float64
 	lastSyncAttempt float64
@@ -579,20 +579,16 @@ func peerBool(dictionary map[any]any, key string) bool {
 	return ok && b
 }
 
-func peerMetadata(value any) map[string]any {
+func peerMetadata(value any) map[any]any {
 	switch metadata := value.(type) {
 	case nil:
 		return nil
-	case map[string]any:
-		return cloneMetadata(metadata)
 	case map[any]any:
-		out := make(map[string]any, len(metadata))
+		return cloneMetadata(metadata)
+	case map[string]any:
+		out := make(map[any]any, len(metadata))
 		for key, item := range metadata {
-			keyString, ok := key.(string)
-			if !ok {
-				continue
-			}
-			out[keyString] = item
+			out[key] = item
 		}
 		return out
 	default:
@@ -600,11 +596,11 @@ func peerMetadata(value any) map[string]any {
 	}
 }
 
-func cloneMetadata(in map[string]any) map[string]any {
+func cloneMetadata(in map[any]any) map[any]any {
 	if in == nil {
 		return nil
 	}
-	out := make(map[string]any, len(in))
+	out := make(map[any]any, len(in))
 	for key, value := range in {
 		out[key] = value
 	}

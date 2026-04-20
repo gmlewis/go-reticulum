@@ -268,6 +268,140 @@ func TestAnnounceRebroadcastProcessing(t *testing.T) {
 	}
 }
 
+func TestAnnounceQueueQueuesAndDrainsOnCappedInterface(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	ts.identity = mustTestNewIdentity(t, true)
+
+	source := &capturingInterface{name: "source"}
+	outbound := &capturingInterface{name: "outbound", bitrate: 1000}
+	ts.interfaces = append(ts.interfaces, source, outbound)
+
+	id := mustTestNewIdentity(t, true)
+	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "queued-announce")
+	packet := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 1)
+	packet.Hops = 1
+
+	now := time.Now()
+	ts.mu.Lock()
+	ts.ensureStateLocked()
+	ts.announceQueues[outbound] = &announceQueueState{allowedAt: now.Add(time.Minute)}
+	ts.mu.Unlock()
+
+	ts.handleAnnounce(packet, source)
+	ts.processAnnounceTable(now.Add(10 * time.Second))
+
+	if outbound.sendCount != 0 {
+		t.Fatalf("expected announce to be queued during active cap, got %v sends", outbound.sendCount)
+	}
+
+	ts.mu.Lock()
+	state := ts.announceQueues[outbound]
+	if state == nil || len(state.queue) != 1 {
+		t.Fatalf("expected one queued announce, got %v", len(state.queue))
+	}
+	allowedAt := state.allowedAt
+	ts.mu.Unlock()
+
+	ts.processAnnounceQueue(outbound, allowedAt.Add(time.Millisecond))
+	if outbound.sendCount != 1 {
+		t.Fatalf("expected one drained announce, got %v sends", outbound.sendCount)
+	}
+}
+
+func TestAnnounceQueueDeduplicatesNewerDestination(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	ts.identity = mustTestNewIdentity(t, true)
+
+	source := &capturingInterface{name: "source"}
+	outbound := &capturingInterface{name: "outbound", bitrate: 1000}
+	ts.interfaces = append(ts.interfaces, source, outbound)
+
+	id := mustTestNewIdentity(t, true)
+	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "queued-dedup")
+	first := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 1)
+	second := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 2)
+	first.Hops = 1
+	second.Hops = 1
+
+	now := time.Now()
+	ts.mu.Lock()
+	ts.ensureStateLocked()
+	ts.announceQueues[outbound] = &announceQueueState{allowedAt: now.Add(time.Minute)}
+	ts.mu.Unlock()
+
+	ts.handleAnnounce(first, source)
+	ts.processAnnounceTable(now.Add(10 * time.Second))
+
+	ts.handleAnnounce(second, source)
+	ts.processAnnounceTable(now.Add(20 * time.Second))
+
+	ts.mu.Lock()
+	state := ts.announceQueues[outbound]
+	if state == nil || len(state.queue) != 1 {
+		t.Fatalf("expected one deduplicated queued announce, got %v", len(state.queue))
+	}
+	allowedAt := state.allowedAt
+	ts.mu.Unlock()
+
+	ts.processAnnounceQueue(outbound, allowedAt.Add(time.Millisecond))
+	if outbound.sendCount != 1 {
+		t.Fatalf("expected one drained announce, got %v sends", outbound.sendCount)
+	}
+
+	rebroadcast := NewPacketFromRaw(outbound.lastSent)
+	if err := rebroadcast.Unpack(); err != nil {
+		t.Fatalf("failed unpacking rebroadcast packet: %v", err)
+	}
+	randomBlobStart := IdentityKeySize/8 + NameHashLength/8
+	if len(rebroadcast.Data) < randomBlobStart+10 {
+		t.Fatalf("rebroadcast data too short for random blob")
+	}
+	var gotEmission uint64
+	for _, b := range rebroadcast.Data[randomBlobStart+5 : randomBlobStart+10] {
+		gotEmission = (gotEmission << 8) | uint64(b)
+	}
+	if gotEmission != 2 {
+		t.Fatalf("queued announce emission=%v, want 2", gotEmission)
+	}
+}
+
+func TestAnnounceQueueBlocksForwardedPathRequests(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	source := &capturingInterface{name: "source"}
+	outbound := &capturingInterface{name: "outbound", bitrate: 1000}
+	ts.interfaces = append(ts.interfaces, source, outbound)
+
+	ts.mu.Lock()
+	ts.ensureStateLocked()
+	ts.announceQueues[outbound] = &announceQueueState{
+		queue: []announceQueueEntry{{destinationHash: "queued"}},
+	}
+	ts.mu.Unlock()
+
+	pathRequestDst, err := NewDestination(ts, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
+	if err != nil {
+		t.Fatalf("NewDestination(path request): %v", err)
+	}
+
+	targetHash := bytes.Repeat([]byte{0xAA}, TruncatedHashLength/8)
+	requestTag := bytes.Repeat([]byte{0xBB}, TruncatedHashLength/8)
+	packet := NewPacket(pathRequestDst, append(targetHash, requestTag...))
+	if err := packet.Pack(); err != nil {
+		t.Fatalf("Pack(path request): %v", err)
+	}
+
+	ts.forwardPathRequest(packet, source)
+	if outbound.sendCount != 0 {
+		t.Fatalf("expected queued announces to block forwarded path request, got %v sends", outbound.sendCount)
+	}
+}
+
 func TestPathResponseAnnounceNotRebroadcast(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
@@ -1006,14 +1140,20 @@ type capturingInterface struct {
 	name      string
 	sendCount int
 	lastSent  []byte
+	bitrate   int
 }
 
-func (c *capturingInterface) Name() string          { return c.name }
-func (c *capturingInterface) Type() string          { return "capture" }
-func (c *capturingInterface) IsOut() bool           { return true }
-func (c *capturingInterface) Status() bool          { return true }
-func (c *capturingInterface) Mode() int             { return 1 }
-func (c *capturingInterface) Bitrate() int          { return 1000 }
+func (c *capturingInterface) Name() string { return c.name }
+func (c *capturingInterface) Type() string { return "capture" }
+func (c *capturingInterface) IsOut() bool  { return true }
+func (c *capturingInterface) Status() bool { return true }
+func (c *capturingInterface) Mode() int    { return 1 }
+func (c *capturingInterface) Bitrate() int {
+	if c.bitrate > 0 {
+		return c.bitrate
+	}
+	return 1000
+}
 func (c *capturingInterface) BytesReceived() uint64 { return 0 }
 func (c *capturingInterface) BytesSent() uint64     { return 0 }
 func (c *capturingInterface) Detach() error         { return nil }
@@ -1098,6 +1238,42 @@ func (i *ifacTransformInterface) ApplyIFACOutbound(data []byte) ([]byte, error) 
 	return out, nil
 }
 
+func mustTestAnnouncePacketWithEmission(t *testing.T, _ *TransportSystem, id *Identity, dest *Destination, emission uint64) *Packet {
+	t.Helper()
+
+	nameHash := FullHash([]byte(dest.appName))[:NameHashLength/8]
+	randomBlob := make([]byte, 10)
+	for i := 0; i < 5; i++ {
+		randomBlob[9-i] = byte(emission & 0xff)
+		emission >>= 8
+	}
+
+	signedData := make([]byte, 0, 128)
+	signedData = append(signedData, dest.Hash...)
+	signedData = append(signedData, id.GetPublicKey()...)
+	signedData = append(signedData, nameHash...)
+	signedData = append(signedData, randomBlob...)
+
+	sig, err := id.Sign(signedData)
+	if err != nil {
+		t.Fatalf("Sign(announce): %v", err)
+	}
+
+	announceData := make([]byte, 0, 256)
+	announceData = append(announceData, id.GetPublicKey()...)
+	announceData = append(announceData, nameHash...)
+	announceData = append(announceData, randomBlob...)
+	announceData = append(announceData, sig...)
+
+	packet := NewPacket(dest, announceData)
+	packet.PacketType = PacketAnnounce
+	packet.Data = announceData
+	if err := packet.Pack(); err != nil {
+		t.Fatalf("Pack(announce): %v", err)
+	}
+	return packet
+}
+
 func TestTransportBlackholeRegistry(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
@@ -1130,12 +1306,16 @@ func TestTransportBlackholeRegistry(t *testing.T) {
 func TestTransportDropAnnounceQueues(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
+	iface := &capturingInterface{name: "queued"}
 	ts.mu.Lock()
 	ts.ensureStateLocked()
 	ts.announceTable["dest1"] = &AnnounceEntry{}
 	ts.announceTable["dest2"] = &AnnounceEntry{}
 	ts.pendingPathRequests["dest1"] = nil
 	ts.pendingPathRequestAt["dest1"] = time.Now()
+	ts.announceQueues[iface] = &announceQueueState{
+		queue: []announceQueueEntry{{destinationHash: "queued-dest"}},
+	}
 	ts.mu.Unlock()
 
 	dropped := ts.DropAnnounceQueues()
@@ -1147,6 +1327,9 @@ func TestTransportDropAnnounceQueues(t *testing.T) {
 	defer ts.mu.Unlock()
 	if len(ts.announceTable) != 0 || len(ts.pendingPathRequests) != 0 || len(ts.pendingPathRequestAt) != 0 {
 		t.Fatalf("expected announce and pending queues to be cleared")
+	}
+	if state := ts.announceQueues[iface]; state != nil && len(state.queue) != 0 {
+		t.Fatalf("expected per-interface announce queue to be cleared")
 	}
 }
 

@@ -1048,7 +1048,15 @@ func TestOfferRequestReturnsWantedIDs(t *testing.T) {
 	haveID := router.storePropagationMessage(destinationHash, []byte("msg-have"))
 	wantID := rns.FullHash([]byte("missing"))
 
-	requestData, err := msgpack.Pack([]any{[]byte("key"), []any{haveID, wantID}})
+	peeringID := make([]byte, 0, len(router.identity.Hash)+len(remoteIdentity.Hash))
+	peeringID = append(peeringID, router.identity.Hash...)
+	peeringID = append(peeringID, remoteIdentity.Hash...)
+	validKey, _, _, err := GenerateStamp(peeringID, router.peeringCost, WorkblockExpandRoundsPeering)
+	if err != nil {
+		t.Fatalf("GenerateStamp(valid key): %v", err)
+	}
+
+	requestData, err := msgpack.Pack([]any{validKey, []any{haveID, wantID}})
 	if err != nil {
 		t.Fatalf("Pack request data: %v", err)
 	}
@@ -1956,6 +1964,30 @@ func TestRouterRegistersDeliveryAnnounceHandler(t *testing.T) {
 	}
 }
 
+func TestRouterRegistersPropagationAnnounceHandler(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	_, err := NewRouter(ts, nil, tmpDir)
+	if err != nil {
+		t.Fatalf("NewRouter: %v", err)
+	}
+
+	found := false
+	for _, handler := range ts.AnnounceHandlers() {
+		if handler != nil && handler.AspectFilter == AppName+".propagation" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("announce handlers = %+v, want %q registered", ts.AnnounceHandlers(), AppName+".propagation")
+	}
+}
+
 func TestDeliveryAnnounceHandlerUpdatesStampCostAndRetriesPendingOutbound(t *testing.T) {
 	t.Parallel()
 
@@ -2002,6 +2034,122 @@ func TestDeliveryAnnounceHandlerUpdatesStampCostAndRetriesPendingOutbound(t *tes
 	case <-retried:
 	case <-time.After(time.Second):
 		t.Fatal("delivery announce did not trigger outbound processing")
+	}
+}
+
+func TestPropagationAnnounceHandlerAutopeersWithinDepth(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.propagationEnabled = true
+	router.maxPeeringCost = 26
+	router.hopsTo = func([]byte) int { return 2 }
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
+	appData, err := msgpack.Pack([]any{
+		false,
+		1700000000,
+		true,
+		128,
+		256,
+		[]any{11, 3, 7},
+		map[any]any{PNMetaName: []byte("Node A")},
+	})
+	if err != nil {
+		t.Fatalf("Pack propagation app data: %v", err)
+	}
+
+	router.handlePropagationAnnounce(remoteHash, remoteIdentity, appData)
+
+	peer := router.peers[string(remoteHash)]
+	if peer == nil {
+		t.Fatal("expected peer to be auto-created")
+	}
+	if !peer.alive {
+		t.Fatal("expected peer to be alive")
+	}
+	if peer.peeringTimebase != 1700000000 {
+		t.Fatalf("peeringTimebase=%v want=1700000000", peer.peeringTimebase)
+	}
+	if peer.propagationTransferLimit == nil || *peer.propagationTransferLimit != 128 {
+		t.Fatalf("propagationTransferLimit=%v want=128", peer.propagationTransferLimit)
+	}
+	if peer.propagationSyncLimit == nil || *peer.propagationSyncLimit != 256 {
+		t.Fatalf("propagationSyncLimit=%v want=256", peer.propagationSyncLimit)
+	}
+	if peer.propagationStampCost == nil || *peer.propagationStampCost != 11 {
+		t.Fatalf("propagationStampCost=%v want=11", peer.propagationStampCost)
+	}
+	if peer.propagationStampCostFlexibility == nil || *peer.propagationStampCostFlexibility != 3 {
+		t.Fatalf("propagationStampCostFlexibility=%v want=3", peer.propagationStampCostFlexibility)
+	}
+	if peer.peeringCost == nil || *peer.peeringCost != 7 {
+		t.Fatalf("peeringCost=%v want=7", peer.peeringCost)
+	}
+	if got := peer.metadata[int64(PNMetaName)]; !bytes.Equal(got.([]byte), []byte("Node A")) {
+		t.Fatalf("metadata name=%v want %q", got, "Node A")
+	}
+}
+
+func TestPropagationAnnounceHandlerUnpeersDisabledOrOutOfRangeNodes(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.propagationEnabled = true
+	router.maxPeeringCost = 26
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
+	router.peers[string(remoteHash)] = &Peer{
+		destinationHash: append([]byte{}, remoteHash...),
+		peeringTimebase: 10,
+	}
+
+	outOfRangeAppData, err := msgpack.Pack([]any{
+		false,
+		11,
+		true,
+		128,
+		256,
+		[]any{11, 3, 7},
+		map[any]any{},
+	})
+	if err != nil {
+		t.Fatalf("Pack out-of-range app data: %v", err)
+	}
+	router.hopsTo = func([]byte) int { return 99 }
+	router.handlePropagationAnnounce(remoteHash, remoteIdentity, outOfRangeAppData)
+	if _, exists := router.peers[string(remoteHash)]; exists {
+		t.Fatal("expected out-of-range peer to be removed")
+	}
+
+	router.peers[string(remoteHash)] = &Peer{
+		destinationHash: append([]byte{}, remoteHash...),
+		peeringTimebase: 10,
+	}
+	disabledAppData, err := msgpack.Pack([]any{
+		false,
+		12,
+		false,
+		128,
+		256,
+		[]any{11, 3, 7},
+		map[any]any{},
+	})
+	if err != nil {
+		t.Fatalf("Pack disabled app data: %v", err)
+	}
+	router.hopsTo = func([]byte) int { return 1 }
+	router.handlePropagationAnnounce(remoteHash, remoteIdentity, disabledAppData)
+	if _, exists := router.peers[string(remoteHash)]; exists {
+		t.Fatal("expected disabled propagation node to be unpeered")
 	}
 }
 

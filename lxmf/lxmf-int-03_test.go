@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -21,18 +22,23 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-const lxmfGenerateOfferRequestPy = `import RNS.vendor.umsgpack as msgpack
+const lxmfGenerateOfferRequestPy = `import LXMF.LXStamper as LXStamper
+import RNS.vendor.umsgpack as msgpack
 import sys
 
-if len(sys.argv) != 4:
+if len(sys.argv) < 6:
     print("ERROR: missing args")
     sys.exit(1)
 
 out_path = sys.argv[1]
-have_id = bytes.fromhex(sys.argv[2])
-want_id = bytes.fromhex(sys.argv[3])
+local_hash = bytes.fromhex(sys.argv[2])
+remote_hash = bytes.fromhex(sys.argv[3])
+target_cost = int(sys.argv[4])
+transient_ids = [bytes.fromhex(arg) for arg in sys.argv[5:]]
 
-payload = [b"peering-key", [have_id, want_id]]
+peering_id = local_hash + remote_hash
+stamp, value = LXStamper.generate_stamp(peering_id, target_cost, expand_rounds=LXStamper.WORKBLOCK_EXPAND_ROUNDS_PEERING)
+payload = [stamp, transient_ids]
 with open(out_path, "wb") as f:
     f.write(msgpack.packb(payload))
 `
@@ -697,6 +703,39 @@ with open(out_path, "wb") as f:
 	f.write(msgpack.packb([stamp, value]))
 `
 
+func mustPythonOfferRequest(t *testing.T, tmpDir, lxmfPath, reticulumPath string, router *Router, remoteIdentity *rns.Identity, transientIDs ...[]byte) []byte {
+	t.Helper()
+
+	scriptPath := filepath.Join(tmpDir, "generate_offer_request.py")
+	if err := os.WriteFile(scriptPath, []byte(lxmfGenerateOfferRequestPy), 0o644); err != nil {
+		t.Fatalf("write python script: %v", err)
+	}
+
+	requestPath := filepath.Join(tmpDir, "offer_request.msgpack")
+	args := []string{
+		scriptPath,
+		requestPath,
+		hex.EncodeToString(router.identity.Hash),
+		hex.EncodeToString(remoteIdentity.Hash),
+		strconv.Itoa(router.peeringCost),
+	}
+	for _, transientID := range transientIDs {
+		args = append(args, hex.EncodeToString(transientID))
+	}
+
+	cmd := exec.Command("python3", args...)
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("python offer request generation failed: %v output=%v", err, string(out))
+	}
+
+	requestData, err := os.ReadFile(requestPath)
+	if err != nil {
+		t.Fatalf("read python-generated request: %v", err)
+	}
+	return requestData
+}
+
 func TestIntegrationPropagationOfferPythonToGo(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
@@ -704,11 +743,6 @@ func TestIntegrationPropagationOfferPythonToGo(t *testing.T) {
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
-	scriptPath := filepath.Join(tmpDir, "generate_offer_request.py")
-	if err := os.WriteFile(scriptPath, []byte(lxmfGenerateOfferRequestPy), 0o644); err != nil {
-		t.Fatalf("write python script: %v", err)
-	}
-
 	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -721,17 +755,7 @@ func TestIntegrationPropagationOfferPythonToGo(t *testing.T) {
 	haveID := router.storePropagationMessage(destinationHash, []byte("stored-message"))
 	wantID := rns.FullHash([]byte("wanted-message"))
 
-	requestPath := filepath.Join(tmpDir, "offer_request.msgpack")
-	cmd := exec.Command("python3", scriptPath, requestPath, hex.EncodeToString(haveID), hex.EncodeToString(wantID))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("python offer request generation failed: %v output=%v", err, string(out))
-	}
-
-	requestData, err := os.ReadFile(requestPath)
-	if err != nil {
-		t.Fatalf("read python-generated request: %v", err)
-	}
+	requestData := mustPythonOfferRequest(t, tmpDir, lxmfPath, reticulumPath, router, remoteIdentity, haveID, wantID)
 
 	response := router.offerRequest("", requestData, nil, []byte("link"), remoteIdentity, time.Now())
 	wanted, ok := response.([]any)
@@ -796,11 +820,6 @@ func TestIntegrationPropagationOfferThrottledPythonToGo(t *testing.T) {
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
-	scriptPath := filepath.Join(tmpDir, "generate_offer_request.py")
-	if err := os.WriteFile(scriptPath, []byte(lxmfGenerateOfferRequestPy), 0o644); err != nil {
-		t.Fatalf("write python script: %v", err)
-	}
-
 	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 	now := time.Unix(1700000000, 0)
@@ -816,17 +835,7 @@ func TestIntegrationPropagationOfferThrottledPythonToGo(t *testing.T) {
 	haveID := rns.FullHash([]byte("have-throttled"))
 	wantID := rns.FullHash([]byte("want-throttled"))
 
-	requestPath := filepath.Join(tmpDir, "offer_request.msgpack")
-	cmd := exec.Command("python3", scriptPath, requestPath, hex.EncodeToString(haveID), hex.EncodeToString(wantID))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("python offer request generation failed: %v output=%v", err, string(out))
-	}
-
-	requestData, err := os.ReadFile(requestPath)
-	if err != nil {
-		t.Fatalf("read request data: %v", err)
-	}
+	requestData := mustPythonOfferRequest(t, tmpDir, lxmfPath, reticulumPath, router, remoteIdentity, haveID, wantID)
 
 	response := router.offerRequest("", requestData, nil, []byte("link"), remoteIdentity, now)
 	if response != peerErrorThrottled {
@@ -841,11 +850,6 @@ func TestIntegrationPropagationOfferThrottleExpiredPythonToGo(t *testing.T) {
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
-	scriptPath := filepath.Join(tmpDir, "generate_offer_request.py")
-	if err := os.WriteFile(scriptPath, []byte(lxmfGenerateOfferRequestPy), 0o644); err != nil {
-		t.Fatalf("write python script: %v", err)
-	}
-
 	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -862,17 +866,7 @@ func TestIntegrationPropagationOfferThrottleExpiredPythonToGo(t *testing.T) {
 	haveID := rns.FullHash([]byte("have-expired-throttle"))
 	wantID := rns.FullHash([]byte("want-expired-throttle"))
 
-	requestPath := filepath.Join(tmpDir, "offer_request.msgpack")
-	cmd := exec.Command("python3", scriptPath, requestPath, hex.EncodeToString(haveID), hex.EncodeToString(wantID))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("python offer request generation failed: %v output=%v", err, string(out))
-	}
-
-	requestData, err := os.ReadFile(requestPath)
-	if err != nil {
-		t.Fatalf("read request data: %v", err)
-	}
+	requestData := mustPythonOfferRequest(t, tmpDir, lxmfPath, reticulumPath, router, remoteIdentity, haveID, wantID)
 
 	response := router.offerRequest("", requestData, nil, []byte("link"), remoteIdentity, now)
 	if response != true {
@@ -890,11 +884,6 @@ func TestIntegrationPropagationOfferStaticOnlyPythonToGo(t *testing.T) {
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
-	scriptPath := filepath.Join(tmpDir, "generate_offer_request.py")
-	if err := os.WriteFile(scriptPath, []byte(lxmfGenerateOfferRequestPy), 0o644); err != nil {
-		t.Fatalf("write python script: %v", err)
-	}
-
 	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 	router.fromStaticOnly = true
@@ -907,17 +896,7 @@ func TestIntegrationPropagationOfferStaticOnlyPythonToGo(t *testing.T) {
 	haveID := rns.FullHash([]byte("have-static"))
 	wantID := rns.FullHash([]byte("want-static"))
 
-	requestPath := filepath.Join(tmpDir, "offer_request.msgpack")
-	cmd := exec.Command("python3", scriptPath, requestPath, hex.EncodeToString(haveID), hex.EncodeToString(wantID))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("python offer request generation failed: %v output=%v", err, string(out))
-	}
-
-	requestData, err := os.ReadFile(requestPath)
-	if err != nil {
-		t.Fatalf("read request data: %v", err)
-	}
+	requestData := mustPythonOfferRequest(t, tmpDir, lxmfPath, reticulumPath, router, remoteIdentity, haveID, wantID)
 
 	response := router.offerRequest("", requestData, nil, []byte("link"), remoteIdentity, time.Now())
 	if response != peerErrorNoAccess {
@@ -932,11 +911,6 @@ func TestIntegrationPropagationOfferStaticAllowedPythonToGo(t *testing.T) {
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
-	scriptPath := filepath.Join(tmpDir, "generate_offer_request.py")
-	if err := os.WriteFile(scriptPath, []byte(lxmfGenerateOfferRequestPy), 0o644); err != nil {
-		t.Fatalf("write python script: %v", err)
-	}
-
 	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 	router.fromStaticOnly = true
@@ -951,17 +925,7 @@ func TestIntegrationPropagationOfferStaticAllowedPythonToGo(t *testing.T) {
 	haveID := rns.FullHash([]byte("have-static-allowed"))
 	wantID := rns.FullHash([]byte("want-static-allowed"))
 
-	requestPath := filepath.Join(tmpDir, "offer_request.msgpack")
-	cmd := exec.Command("python3", scriptPath, requestPath, hex.EncodeToString(haveID), hex.EncodeToString(wantID))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("python offer request generation failed: %v output=%v", err, string(out))
-	}
-
-	requestData, err := os.ReadFile(requestPath)
-	if err != nil {
-		t.Fatalf("read request data: %v", err)
-	}
+	requestData := mustPythonOfferRequest(t, tmpDir, lxmfPath, reticulumPath, router, remoteIdentity, haveID, wantID)
 
 	response := router.offerRequest("", requestData, nil, []byte("link"), remoteIdentity, time.Now())
 	if response != true {
@@ -976,11 +940,6 @@ func TestIntegrationPropagationOfferAllKnownPythonToGo(t *testing.T) {
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
-	scriptPath := filepath.Join(tmpDir, "generate_offer_request.py")
-	if err := os.WriteFile(scriptPath, []byte(lxmfGenerateOfferRequestPy), 0o644); err != nil {
-		t.Fatalf("write python script: %v", err)
-	}
-
 	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -994,17 +953,7 @@ func TestIntegrationPropagationOfferAllKnownPythonToGo(t *testing.T) {
 	router.propagationEntries[string(idOne)] = &propagationEntry{payload: []byte("known-one"), receivedAt: time.Now()}
 	router.propagationEntries[string(idTwo)] = &propagationEntry{payload: []byte("known-two"), receivedAt: time.Now()}
 
-	requestPath := filepath.Join(tmpDir, "offer_request.msgpack")
-	cmd := exec.Command("python3", scriptPath, requestPath, hex.EncodeToString(idOne), hex.EncodeToString(idTwo))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("python offer request generation failed: %v output=%v", err, string(out))
-	}
-
-	requestData, err := os.ReadFile(requestPath)
-	if err != nil {
-		t.Fatalf("read request data: %v", err)
-	}
+	requestData := mustPythonOfferRequest(t, tmpDir, lxmfPath, reticulumPath, router, remoteIdentity, idOne, idTwo)
 
 	response := router.offerRequest("", requestData, nil, []byte("link"), remoteIdentity, time.Now())
 	if response != false {
@@ -1019,11 +968,6 @@ func TestIntegrationPropagationOfferAllMissingPythonToGo(t *testing.T) {
 
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
-	scriptPath := filepath.Join(tmpDir, "generate_offer_request.py")
-	if err := os.WriteFile(scriptPath, []byte(lxmfGenerateOfferRequestPy), 0o644); err != nil {
-		t.Fatalf("write python script: %v", err)
-	}
-
 	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1035,17 +979,7 @@ func TestIntegrationPropagationOfferAllMissingPythonToGo(t *testing.T) {
 	idOne := rns.FullHash([]byte("offer-all-missing-one"))
 	idTwo := rns.FullHash([]byte("offer-all-missing-two"))
 
-	requestPath := filepath.Join(tmpDir, "offer_request.msgpack")
-	cmd := exec.Command("python3", scriptPath, requestPath, hex.EncodeToString(idOne), hex.EncodeToString(idTwo))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("python offer request generation failed: %v output=%v", err, string(out))
-	}
-
-	requestData, err := os.ReadFile(requestPath)
-	if err != nil {
-		t.Fatalf("read request data: %v", err)
-	}
+	requestData := mustPythonOfferRequest(t, tmpDir, lxmfPath, reticulumPath, router, remoteIdentity, idOne, idTwo)
 
 	response := router.offerRequest("", requestData, nil, []byte("link"), remoteIdentity, time.Now())
 	if response != true {

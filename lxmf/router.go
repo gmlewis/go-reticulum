@@ -52,6 +52,7 @@ type Router struct {
 	deliveryCallback func(*Message)
 
 	hasPath         func([]byte) bool
+	hopsTo          func([]byte) int
 	requestPath     func([]byte) error
 	sendPacket      func(*rns.Packet) error
 	sendResource    func(*Message) error
@@ -117,9 +118,18 @@ const (
 	DefaultMaxPeers = 20
 	// DefaultAutopeer controls whether routers automatically peer by default.
 	DefaultAutopeer = true
+	// DefaultAutopeerMaxDepth matches Python's LXMRouter.AUTOPEER_MAXDEPTH.
+	DefaultAutopeerMaxDepth = 4
+	// DefaultMaxPeeringCost matches Python's LXMRouter.MAX_PEERING_COST.
+	DefaultMaxPeeringCost = 26
+	// DefaultPeeringCost matches Python's LXMRouter.PEERING_COST.
+	DefaultPeeringCost = 18
 	// DefaultPropagationCost is the default proof-of-work cost advertised by a
 	// propagation node.
 	DefaultPropagationCost = 16
+	// DefaultPropagationCostFlexibility matches Python's
+	// LXMRouter.PROPAGATION_COST_FLEX.
+	DefaultPropagationCostFlexibility = 3
 	// PropagationCostMin is the minimum cost accepted for propagation-node
 	// peering and ticketing logic.
 	PropagationCostMin = 13
@@ -179,14 +189,17 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 		displayNames:         map[string]string{},
 		pendingOutbound:      []*Message{},
 		hasPath:              ts.HasPath,
+		hopsTo:               ts.HopsTo,
 		requestPath:          ts.RequestPath,
 		sendPacket: func(packet *rns.Packet) error {
 			return packet.Send()
 		},
-		newLink:     rns.NewLink,
-		newResource: rns.NewResource,
-		now:         time.Now,
-		peeringCost: 0,
+		newLink:                    rns.NewLink,
+		newResource:                rns.NewResource,
+		now:                        time.Now,
+		peeringCost:                DefaultPeeringCost,
+		propagationCost:            DefaultPropagationCost,
+		propagationCostFlexibility: DefaultPropagationCostFlexibility,
 
 		resourceLinks:       map[string]*rns.Link{},
 		resourceLinkPending: map[string]bool{},
@@ -205,6 +218,8 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 		deliveryPerTransferLimit:    DefaultDeliveryLimit,
 		maxPeers:                    DefaultMaxPeers,
 		autopeer:                    DefaultAutopeer,
+		autopeerMaxdepth:            DefaultAutopeerMaxDepth,
+		maxPeeringCost:              DefaultMaxPeeringCost,
 		ignoredList:                 map[string]struct{}{},
 		prioritisedList:             map[string]struct{}{},
 	}

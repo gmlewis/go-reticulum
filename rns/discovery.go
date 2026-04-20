@@ -1701,10 +1701,7 @@ func discoveryConfigEntry(info map[string]any) string {
 	if ifacNetkey != "" {
 		cfgNetkey = "\n  passphrase = " + ifacNetkey
 	}
-	cfgIdentity := ""
-	if transportID != "" {
-		cfgIdentity = "\n  transport_identity = " + transportID
-	}
+	cfgIdentity := "\n  transport_identity = " + transportID
 
 	switch interfaceType {
 	case "BackboneInterface", "TCPServerInterface":

@@ -402,6 +402,12 @@ func (r *Reticulum) getInterfaceStats() map[string]any {
 				autoconnectSource = source
 			}
 		}
+		var announceQueue any
+		if queueGetter, ok := ts.(interface {
+			announceQueueLength(interfaces.Interface) int
+		}); ok {
+			announceQueue = queueGetter.announceQueueLength(iface)
+		}
 		interfacesOut = append(interfacesOut, map[string]any{
 			"name":                        iface.Name(),
 			"short_name":                  iface.Name(),
@@ -418,7 +424,7 @@ func (r *Reticulum) getInterfaceStats() map[string]any {
 			"incoming_announce_frequency": 0.0,
 			"outgoing_announce_frequency": 0.0,
 			"held_announces":              0,
-			"announce_queue":              nil,
+			"announce_queue":              announceQueue,
 			"peers":                       nil,
 			"ifac_signature":              nil,
 			"ifac_size":                   ifacSize,

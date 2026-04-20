@@ -37,7 +37,7 @@ func TestPeerRoundTrip(t *testing.T) {
 	peer := NewPeer(router, peerHash)
 	peer.peeringTimebase = 1.25
 	peer.alive = true
-	peer.metadata = map[string]any{"name": "peer"}
+	peer.metadata = map[any]any{"name": "peer"}
 	peer.lastHeard = 2.5
 	peer.syncStrategy = PeerStrategyLazy
 	peer.peeringKey = []any{[]byte("key"), 3}
