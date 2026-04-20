@@ -829,17 +829,18 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 		path := filepath.Join(storagePath, entry.Name())
 		data, err := os.ReadFile(path)
 		if err != nil {
-			id.owner.logger.Warning("failed to read discovery file %q: %v", path, err)
+			id.logDiscoveryFileLoadError(path, err)
 			continue
 		}
 
 		unpacked, err := msgpack.Unpack(data)
 		if err != nil {
-			id.owner.logger.Warning("failed to unpack discovery file %q: %v", path, err)
+			id.logDiscoveryFileLoadError(path, err)
 			continue
 		}
 		m, ok := unpacked.(map[any]any)
 		if !ok {
+			id.logDiscoveryFileLoadError(path, fmt.Errorf("unexpected discovery cache type %T", unpacked))
 			continue
 		}
 
@@ -856,8 +857,7 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 			} else {
 				networkID, err := hex.DecodeString(networkIDHex)
 				if err != nil {
-					id.owner.logger.Error("error while loading discovered interface data: %v", err)
-					id.owner.logger.Error("the interface data file %v may be corrupt", path)
+					id.logDiscoveryFileLoadError(path, err)
 					continue
 				}
 				if !hasDiscoverySource(discoverySources, networkID) {
@@ -952,6 +952,14 @@ func hasDiscoverySource(sources [][]byte, networkID []byte) bool {
 		}
 	}
 	return false
+}
+
+func (id *InterfaceDiscovery) logDiscoveryFileLoadError(path string, err error) {
+	if err == nil || id == nil || id.owner == nil || id.owner.logger == nil {
+		return
+	}
+	id.owner.logger.Error("error while loading discovered interface data: %v", err)
+	id.owner.logger.Error("the interface data file %v may be corrupt", path)
 }
 
 func isReachableOnValue(v string) bool {
