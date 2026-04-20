@@ -916,11 +916,17 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 			statusCode = StatusUnknown
 		}
 
+		transportValue, hasTransport := lookupAny(m, "transport")
+		if (onlyAvailable || onlyTransport) && (!hasTransport || transportValue == nil) {
+			id.logDiscoveryFileLoadError(path, fmt.Errorf("corrupt discovery cache missing transport"))
+			continue
+		}
+
 		if onlyAvailable && status != "available" {
 			continue
 		}
 
-		transport := asBool(lookupAnyValue(m, "transport"))
+		transport := asBool(transportValue)
 		if onlyTransport && !transport {
 			continue
 		}
