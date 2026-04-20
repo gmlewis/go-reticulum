@@ -13,6 +13,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,6 +34,8 @@ type propagationEntry struct {
 	stampValue      int
 }
 
+const messageExpiry = 30 * 24 * time.Hour
+
 // Router encapsulates the routing logic, delivery mechanisms, and state management for the LXMF messaging protocol.
 type Router struct {
 	transport   rns.Transport
@@ -41,19 +44,21 @@ type Router struct {
 
 	deliveryDestinations map[string]*rns.Destination
 	inboundStampCosts    map[string]int
+	outboundStampCosts   map[string]int
 	displayNames         map[string]string
 
 	pendingOutbound []*Message
 
 	deliveryCallback func(*Message)
 
-	hasPath      func([]byte) bool
-	requestPath  func([]byte) error
-	sendPacket   func(*rns.Packet) error
-	sendResource func(*Message) error
-	newLink      func(rns.Transport, *rns.Destination) (*rns.Link, error)
-	newResource  func([]byte, *rns.Link) (*rns.Resource, error)
-	now          func() time.Time
+	hasPath         func([]byte) bool
+	requestPath     func([]byte) error
+	sendPacket      func(*rns.Packet) error
+	sendResource    func(*Message) error
+	processOutbound func()
+	newLink         func(rns.Transport, *rns.Destination) (*rns.Link, error)
+	newResource     func([]byte, *rns.Link) (*rns.Resource, error)
+	now             func() time.Time
 
 	resourceLinks       map[string]*rns.Link
 	resourceLinkPending map[string]bool
@@ -170,6 +175,7 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 		storagePath:          base,
 		deliveryDestinations: map[string]*rns.Destination{},
 		inboundStampCosts:    map[string]int{},
+		outboundStampCosts:   map[string]int{},
 		displayNames:         map[string]string{},
 		pendingOutbound:      []*Message{},
 		hasPath:              ts.HasPath,
@@ -203,6 +209,8 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 		prioritisedList:             map[string]struct{}{},
 	}
 	router.sendResource = router.sendMessageResourceLocked
+	router.processOutbound = router.ProcessOutbound
+	router.registerAnnounceHandlers()
 
 	return router, nil
 }
@@ -255,7 +263,7 @@ func (r *Router) storePropagationMessage(destinationHash []byte, payload []byte)
 		receivedAt:      receivedAt,
 		handledBy:       [][]byte{},
 		unhandledBy:     [][]byte{},
-		size:            len(payload),
+		size:            len(destinationHash) + len(payload),
 		stampValue:      0,
 	}
 	if r.propagationEnabled {
@@ -611,12 +619,26 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 	haves := anySliceToByteSlices(request[1])
 
 	if request[0] == nil && request[1] == nil {
-		available := make([]any, 0)
+		type availableEntry struct {
+			transientID []byte
+			size        int
+		}
+		availableMessages := make([]availableEntry, 0)
 		for transientID, entry := range r.propagationEntries {
 			if !bytes.Equal(entry.destinationHash, remoteDestinationHash) {
 				continue
 			}
-			available = append(available, []byte(transientID))
+			availableMessages = append(availableMessages, availableEntry{
+				transientID: []byte(transientID),
+				size:        entry.size,
+			})
+		}
+		sort.Slice(availableMessages, func(i, j int) bool {
+			return availableMessages[i].size < availableMessages[j].size
+		})
+		available := make([]any, 0, len(availableMessages))
+		for _, entry := range availableMessages {
+			available = append(available, append([]byte{}, entry.transientID...))
 		}
 		return available
 	}
@@ -1331,6 +1353,7 @@ func (r *Router) EnablePropagation() {
 	}
 	r.reindexPropagationStoreLocked()
 	r.propagationEnabled = true
+	r.cleanMessageStoreLocked()
 }
 
 // DisablePropagation gracefully withdraws the router from participating as an active propagation node in the network.
@@ -1409,6 +1432,122 @@ func (r *Router) reindexPropagationStoreLocked() {
 	}
 
 	r.propagationEntries = indexed
+}
+
+func (r *Router) messageStorageSize() float64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.messageStorageSizeLocked()
+}
+
+func (r *Router) messageStorageSizeLocked() float64 {
+	if !r.propagationEnabled {
+		return 0
+	}
+	var total int
+	for _, entry := range r.propagationEntries {
+		if entry != nil {
+			total += entry.size
+		}
+	}
+	return float64(total)
+}
+
+func (r *Router) getWeightLocked(transientID string) float64 {
+	entry := r.propagationEntries[transientID]
+	if entry == nil {
+		return 0
+	}
+
+	ageWeight := (r.now().Sub(entry.receivedAt).Seconds() / 60 / 60 / 24 / 4)
+	if ageWeight < 1 {
+		ageWeight = 1
+	}
+
+	priorityWeight := 1.0
+	if _, ok := r.prioritisedList[string(entry.destinationHash)]; ok {
+		priorityWeight = 0.1
+	}
+
+	return priorityWeight * ageWeight * float64(entry.size)
+}
+
+func (r *Router) removePropagationEntryLocked(transientID string) {
+	entry, ok := r.propagationEntries[transientID]
+	if !ok {
+		return
+	}
+	delete(r.propagationEntries, transientID)
+	if entry.path != "" {
+		if err := os.Remove(entry.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.Printf("Could not remove persisted propagation message %x: %v", transientID, err)
+		}
+	}
+}
+
+func (r *Router) cleanMessageStore() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.cleanMessageStoreLocked()
+}
+
+func (r *Router) cleanMessageStoreLocked() {
+	now := r.now()
+	removed := make([]string, 0)
+	for transientID, entry := range r.propagationEntries {
+		if entry == nil {
+			continue
+		}
+		if entry.path == "" {
+			continue
+		}
+		filename := filepath.Base(entry.path)
+		parsedID, timestamp, stampValue, ok := parsePropagationStoreFilename(filename)
+		if !ok || !bytes.Equal(parsedID, []byte(transientID)) || peerTime(timestamp) != peerTime(entry.receivedAt) || stampValue != entry.stampValue {
+			removed = append(removed, transientID)
+			continue
+		}
+		if now.After(timestamp.Add(messageExpiry)) {
+			removed = append(removed, transientID)
+		}
+	}
+	for _, transientID := range removed {
+		r.removePropagationEntryLocked(transientID)
+	}
+
+	if r.messageStorageLimit <= 0 {
+		return
+	}
+	messageStorageSize := r.messageStorageSizeLocked()
+	if messageStorageSize <= r.messageStorageLimit {
+		return
+	}
+
+	bytesNeeded := messageStorageSize - r.messageStorageLimit
+	type weightedEntry struct {
+		transientID string
+		weight      float64
+	}
+	weightedEntries := make([]weightedEntry, 0, len(r.propagationEntries))
+	for transientID := range r.propagationEntries {
+		weightedEntries = append(weightedEntries, weightedEntry{
+			transientID: transientID,
+			weight:      r.getWeightLocked(transientID),
+		})
+	}
+	sort.Slice(weightedEntries, func(i, j int) bool {
+		return weightedEntries[i].weight > weightedEntries[j].weight
+	})
+
+	var bytesCleaned float64
+	for _, entry := range weightedEntries {
+		if bytesCleaned >= bytesNeeded {
+			break
+		}
+		size := float64(r.propagationEntries[entry.transientID].size)
+		r.removePropagationEntryLocked(entry.transientID)
+		bytesCleaned += size
+	}
 }
 
 func parsePropagationStoreFilename(name string) ([]byte, time.Time, int, bool) {
@@ -1557,13 +1696,28 @@ func (r *Router) AnnouncePropagationNode() {
 }
 
 func (r *Router) getPropagationNodeAppDataLocked() []byte {
-	peerData := []any{
-		r.autopeer,
-		r.peeringCost,
-		r.autopeerMaxdepth,
-		r.name,
+	metadata := map[any]any{}
+	if r.name != "" {
+		metadata[PNMetaName] = []byte(r.name)
 	}
-	packed, err := msgpack.Pack(peerData)
+
+	nodeState := r.propagationEnabled && !r.fromStaticOnly
+	stampCost := []any{
+		r.propagationCost,
+		r.propagationCostFlexibility,
+		r.peeringCost,
+	}
+	announceData := []any{
+		false,
+		int(r.now().Unix()),
+		nodeState,
+		r.propagationPerTransferLimit,
+		r.propagationPerSyncLimit,
+		stampCost,
+		metadata,
+	}
+
+	packed, err := msgpack.Pack(announceData)
 	if err != nil {
 		log.Printf("Could not pack propagation node app data: %v", err)
 		return nil

@@ -53,6 +53,25 @@ const (
 )
 
 const (
+	// LinkKeepaliveMaxRTT matches Python's Link.KEEPALIVE_MAX_RTT.
+	LinkKeepaliveMaxRTT = 1.75
+	// LinkKeepaliveTimeoutFactor matches Python's Link.KEEPALIVE_TIMEOUT_FACTOR.
+	LinkKeepaliveTimeoutFactor = 4.0
+	// LinkStaleGrace matches Python's Link.STALE_GRACE.
+	LinkStaleGrace = 5 * time.Second
+	// LinkKeepaliveMax matches Python's Link.KEEPALIVE_MAX.
+	LinkKeepaliveMax = 360 * time.Second
+	// LinkKeepaliveMin matches Python's Link.KEEPALIVE_MIN.
+	LinkKeepaliveMin = 5 * time.Second
+	// LinkKeepaliveDefault matches Python's Link.KEEPALIVE default.
+	LinkKeepaliveDefault = LinkKeepaliveMax
+	// LinkStaleFactor matches Python's Link.STALE_FACTOR.
+	LinkStaleFactor = 2
+	// LinkWatchdogMaxSleep matches Python's Link.WATCHDOG_MAX_SLEEP.
+	LinkWatchdogMaxSleep = 5 * time.Second
+)
+
+const (
 	// AcceptNone strictly denies all incoming resource advertisements on the link.
 	AcceptNone = 0x00
 	// AcceptApp defers the decision to accept a resource advertisement to an application-provided callback.
@@ -114,11 +133,12 @@ type Link struct {
 	mtu int
 	mdu int
 
-	lastInbound  time.Time
-	lastOutbound time.Time
-	activatedAt  time.Time
-	requestTime  time.Time
-	lastProof    float64
+	lastInbound   time.Time
+	lastOutbound  time.Time
+	lastKeepalive time.Time
+	activatedAt   time.Time
+	requestTime   time.Time
+	lastProof     time.Time
 
 	callbacks LinkCallbacks
 	mu        sync.Mutex
@@ -129,13 +149,18 @@ type Link struct {
 	attachedInterface    interfaces.Interface
 	transport            Transport
 
-	resourceStrategy     int
-	outgoingResources    []*Resource
-	incomingResources    []*Resource
-	pendingRequests      []*RequestReceipt
-	trafficTimeoutFactor float64
-	channel              *Channel
-	teardownReason       int
+	resourceStrategy       int
+	outgoingResources      []*Resource
+	incomingResources      []*Resource
+	pendingRequests        []*RequestReceipt
+	trafficTimeoutFactor   float64
+	keepaliveTimeoutFactor float64
+	keepalive              time.Duration
+	staleTime              time.Duration
+	channel                *Channel
+	teardownReason         int
+	watchdogOnce           sync.Once
+	watchdogStop           chan struct{}
 }
 
 func (l *Link) signallingBytes() []byte {
@@ -204,6 +229,33 @@ func (l *Link) hadOutbound() {
 	l.mu.Unlock()
 }
 
+func (l *Link) hadKeepaliveOutbound() {
+	now := time.Now()
+	l.mu.Lock()
+	l.lastOutbound = now
+	l.lastKeepalive = now
+	l.mu.Unlock()
+}
+
+func (l *Link) updateKeepalive() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.updateKeepaliveLocked()
+}
+
+func (l *Link) updateKeepaliveLocked() {
+	keepaliveSeconds := l.rtt * (float64(LinkKeepaliveMax) / float64(time.Second)) / LinkKeepaliveMaxRTT
+	keepalive := time.Duration(keepaliveSeconds * float64(time.Second))
+	if keepalive < LinkKeepaliveMin {
+		keepalive = LinkKeepaliveMin
+	}
+	if keepalive > LinkKeepaliveMax {
+		keepalive = LinkKeepaliveMax
+	}
+	l.keepalive = keepalive
+	l.staleTime = time.Duration(LinkStaleFactor) * keepalive
+}
+
 // GetType returns the destination type for a link.
 func (l *Link) GetType() int {
 	return DestinationLink
@@ -221,14 +273,18 @@ func NewLink(ts Transport, destination *Destination) (*Link, error) {
 	}
 
 	l := &Link{
-		logger:               ts.GetLogger(),
-		destination:          destination,
-		initiator:            true,
-		status:               LinkPending,
-		mode:                 LinkModeAES256CBC,
-		mtu:                  MTU,
-		transport:            ts,
-		trafficTimeoutFactor: 6.0,
+		logger:                 ts.GetLogger(),
+		destination:            destination,
+		initiator:              true,
+		status:                 LinkPending,
+		mode:                   LinkModeAES256CBC,
+		mtu:                    MTU,
+		transport:              ts,
+		trafficTimeoutFactor:   6.0,
+		keepaliveTimeoutFactor: LinkKeepaliveTimeoutFactor,
+		keepalive:              LinkKeepaliveDefault,
+		staleTime:              LinkStaleFactor * LinkKeepaliveDefault,
+		watchdogStop:           make(chan struct{}),
 	}
 	l.UpdateMDU()
 
@@ -248,8 +304,7 @@ func NewLink(ts Transport, destination *Destination) (*Link, error) {
 	if destination != nil {
 		// Initiator side
 		l.initiator = true
-		// In a real implementation, we'd calculate timeout based on hops
-		l.establishmentTimeout = 5 * time.Second
+		l.establishmentTimeout = establishmentTimeoutPerHop
 	} else {
 		// Receiver side
 		l.initiator = false
@@ -283,6 +338,7 @@ func (l *Link) Establish() error {
 	l.linkID = LinkIDFromLR(p)
 	l.hash = l.linkID
 	l.requestTime = time.Now()
+	l.startWatchdog()
 
 	// Register with Transport
 	if l.transport != nil {
@@ -332,6 +388,8 @@ func ValidateRequest(logger *Logger, destination *Destination, data []byte, pack
 
 	l.linkID = LinkIDFromLR(packet)
 	l.hash = l.linkID
+	l.establishmentTimeout = establishmentTimeoutPerHop * time.Duration(max(1, packet.Hops))
+	l.establishmentTimeout += LinkKeepaliveDefault
 
 	if err := l.handshake(); err != nil {
 		return nil, err
@@ -341,6 +399,9 @@ func ValidateRequest(logger *Logger, destination *Destination, data []byte, pack
 	if l.transport != nil {
 		l.transport.RegisterLink(l)
 	}
+	l.requestTime = time.Now()
+	l.lastInbound = l.requestTime
+	l.startWatchdog()
 
 	l.logger.Verbose("Incoming link request %x accepted", l.linkID)
 
@@ -582,11 +643,19 @@ func (l *Link) receive(packet *Packet) {
 			keepalivePacket.Context = ContextKeepalive
 			if err := l.send(keepalivePacket); err != nil {
 				l.logger.Debug("Failed sending keepalive response: %v", err)
+			} else {
+				l.hadKeepaliveOutbound()
 			}
 		}
 
 	case ContextLinkClose:
-		l.teardown(LinkClosed)
+		if bytes.Equal(packet.Data, l.linkID) {
+			if l.initiator {
+				l.teardown(TeardownDestinationClosed)
+			} else {
+				l.teardown(TeardownInitiatorClosed)
+			}
+		}
 
 	case ContextChannel:
 		l.mu.Lock()
@@ -689,6 +758,7 @@ func (l *Link) ValidateProof(packet *Packet) error {
 	l.status = LinkActive
 	l.activatedAt = time.Now()
 	l.rtt = time.Since(l.requestTime).Seconds()
+	l.updateKeepaliveLocked()
 	callback := l.callbacks.LinkEstablished
 	l.mu.Unlock()
 
@@ -721,8 +791,34 @@ func (l *Link) HandleRTT(packet *Packet) {
 	l.logger.Extreme("Handling RTT for %x", l.linkID)
 	l.mu.Lock()
 	if l.status == LinkHandshake || l.status == LinkPending {
+		measuredRTT := time.Since(l.requestTime).Seconds()
+		l.mu.Unlock()
+
+		plaintext, err := l.Decrypt(packet.Data)
+		if err != nil {
+			l.logger.Error("Error occurred while processing RTT packet, tearing down link: %v", err)
+			l.Teardown()
+			return
+		}
+
+		unpackedRTT, err := msgpack.Unpack(plaintext)
+		if err != nil {
+			l.logger.Error("Error occurred while processing RTT packet, tearing down link: %v", err)
+			l.Teardown()
+			return
+		}
+		receivedRTT, ok := unpackedRTT.(float64)
+		if !ok {
+			l.logger.Error("Error occurred while processing RTT packet, tearing down link: invalid RTT type %T", unpackedRTT)
+			l.Teardown()
+			return
+		}
+
+		l.mu.Lock()
+		l.rtt = math.Max(measuredRTT, receivedRTT)
 		l.status = LinkActive
 		l.activatedAt = time.Now()
+		l.updateKeepaliveLocked()
 		callback := l.callbacks.LinkEstablished
 		l.mu.Unlock()
 		if l.transport != nil {
@@ -735,6 +831,143 @@ func (l *Link) HandleRTT(packet *Packet) {
 		return
 	}
 	l.mu.Unlock()
+}
+
+func (l *Link) startWatchdog() {
+	l.watchdogOnce.Do(func() {
+		go l.watchdogJob()
+	})
+}
+
+func (l *Link) watchdogJob() {
+	for {
+		sleep := l.watchdogStep(time.Now())
+
+		l.mu.Lock()
+		closed := l.status == LinkClosed
+		l.mu.Unlock()
+		if closed {
+			return
+		}
+
+		if sleep <= 0 {
+			sleep = time.Millisecond
+		}
+
+		timer := time.NewTimer(sleep)
+		select {
+		case <-timer.C:
+		case <-l.watchdogStop:
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return
+		}
+	}
+}
+
+func (l *Link) watchdogStep(now time.Time) time.Duration {
+	var callback func(*Link)
+
+	l.mu.Lock()
+	switch l.status {
+	case LinkClosed:
+		l.mu.Unlock()
+		return 0
+
+	case LinkPending, LinkHandshake:
+		nextCheck := l.requestTime.Add(l.establishmentTimeout)
+		sleep := nextCheck.Sub(now)
+		if !now.Before(nextCheck) {
+			l.status = LinkClosed
+			l.teardownReason = TeardownTimeout
+			if l.channel != nil {
+				l.channel.Shutdown()
+			}
+			callback = l.callbacks.LinkClosed
+			sleep = time.Millisecond
+		}
+		l.mu.Unlock()
+		if callback != nil {
+			go callback(l)
+		}
+		if sleep > LinkWatchdogMaxSleep {
+			return LinkWatchdogMaxSleep
+		}
+		return sleep
+
+	case LinkActive:
+		lastInbound := l.activatedAt
+		if l.lastInbound.After(lastInbound) {
+			lastInbound = l.lastInbound
+		}
+		if l.lastProof.After(lastInbound) {
+			lastInbound = l.lastProof
+		}
+
+		if !now.Before(lastInbound.Add(l.keepalive)) {
+			sendKeepalive := l.initiator && !now.Before(l.lastKeepalive.Add(l.keepalive))
+			if sendKeepalive {
+				l.lastKeepalive = now
+			}
+
+			if !now.Before(lastInbound.Add(l.staleTime)) {
+				l.status = LinkStale
+				sleep := time.Duration(l.rtt*l.keepaliveTimeoutFactor*float64(time.Second)) + LinkStaleGrace
+				l.mu.Unlock()
+				if sendKeepalive {
+					l.sendKeepalive()
+				}
+				if sleep > LinkWatchdogMaxSleep {
+					return LinkWatchdogMaxSleep
+				}
+				return sleep
+			}
+
+			sleep := l.keepalive
+			l.mu.Unlock()
+			if sendKeepalive {
+				l.sendKeepalive()
+			}
+			if sleep > LinkWatchdogMaxSleep {
+				return LinkWatchdogMaxSleep
+			}
+			return sleep
+		}
+
+		sleep := lastInbound.Add(l.keepalive).Sub(now)
+		l.mu.Unlock()
+		if sleep > LinkWatchdogMaxSleep {
+			return LinkWatchdogMaxSleep
+		}
+		return sleep
+
+	case LinkStale:
+		l.status = LinkClosed
+		l.teardownReason = TeardownTimeout
+		if l.channel != nil {
+			l.channel.Shutdown()
+		}
+		callback = l.callbacks.LinkClosed
+		l.mu.Unlock()
+		if callback != nil {
+			go callback(l)
+		}
+		return time.Millisecond
+	}
+
+	l.mu.Unlock()
+	return LinkWatchdogMaxSleep
+}
+
+func (l *Link) sendKeepalive() {
+	keepalivePacket := NewPacketWithTransport(l.transport, l, []byte{0xFF})
+	keepalivePacket.Context = ContextKeepalive
+	if err := l.send(keepalivePacket); err != nil {
+		l.logger.Debug("Failed sending keepalive: %v", err)
+		return
+	}
+	l.hadKeepaliveOutbound()
 }
 
 // Handshake triggers the underlying Diffie-Hellman cryptographic exchange, deriving secure symmetric session keys.
@@ -1008,27 +1241,56 @@ func (o *LinkChannelOutlet) TimedOut() {
 
 // Teardown actively closes the link, destroying related channels, and notifying any observers that data transmission has halted.
 func (l *Link) Teardown() {
-	l.teardown(LinkClosed)
+	if l.status != LinkPending && l.status != LinkClosed {
+		l.sendTeardownPacket()
+	}
+	if l.initiator {
+		l.teardown(TeardownInitiatorClosed)
+		return
+	}
+	l.teardown(TeardownDestinationClosed)
 }
 
 func (l *Link) teardown(reason int) {
 	l.mu.Lock()
-	defer l.mu.Unlock()
-
 	if l.status == LinkClosed {
+		l.mu.Unlock()
 		return
 	}
 
 	l.status = LinkClosed
+	l.teardownReason = reason
 	if l.channel != nil {
 		l.channel.Shutdown()
 	}
+	callback := l.callbacks.LinkClosed
+	watchdogStop := l.watchdogStop
+	l.mu.Unlock()
 
-	if l.callbacks.LinkClosed != nil {
-		go l.callbacks.LinkClosed(l)
+	if watchdogStop != nil {
+		select {
+		case <-watchdogStop:
+		default:
+			close(watchdogStop)
+		}
+	}
+
+	if callback != nil {
+		go callback(l)
 	}
 
 	l.logger.Verbose("Link %x closed: reason=%v", l.linkID, reason)
+}
+
+func (l *Link) sendTeardownPacket() {
+	if len(l.linkID) == 0 {
+		return
+	}
+	teardownPacket := NewPacketWithTransport(l.transport, l, l.linkID)
+	teardownPacket.Context = ContextLinkClose
+	if err := l.send(teardownPacket); err != nil {
+		l.logger.Debug("Failed sending teardown packet: %v", err)
+	}
 }
 
 // Request fires a generalized structured request packet asynchronously, expecting a correlated logical response from the remote peer.

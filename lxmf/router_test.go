@@ -1734,6 +1734,65 @@ func TestRouterMessageStorageLimit(t *testing.T) {
 	}
 }
 
+func TestPropagationStoreRemovesExpiredEntryOnEnable(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	destinationHash := bytes.Repeat([]byte{0x44}, DestinationLength)
+	payload := []byte("expired-payload")
+	transientID := rns.FullHash(payload)
+	receivedAt := time.Now().Add(-(messageExpiry + 24*time.Hour))
+	filePath, _, err := router.writePropagationMessageFile(transientID, receivedAt, 0, destinationHash, payload)
+	if err != nil {
+		t.Fatalf("writePropagationMessageFile() error = %v", err)
+	}
+
+	router.EnablePropagation()
+
+	if _, exists := router.propagationEntries[string(transientID)]; exists {
+		t.Fatalf("expected expired propagation entry %x to be removed", transientID)
+	}
+	if _, err := os.Stat(filePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected expired file to be removed, Stat() error = %v", err)
+	}
+}
+
+func TestPropagationStoreRespectsStorageLimit(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.EnablePropagation()
+
+	prioritisedHash := bytes.Repeat([]byte{0x45}, DestinationLength)
+	ordinaryHash := bytes.Repeat([]byte{0x46}, DestinationLength)
+	router.Prioritise(prioritisedHash)
+
+	now := time.Unix(1_700_000_000, 0)
+	router.now = func() time.Time { return now }
+
+	keepID := router.storePropagationMessage(prioritisedHash, bytes.Repeat([]byte("k"), 40))
+	now = now.Add(-10 * 24 * time.Hour)
+	dropID := router.storePropagationMessage(ordinaryHash, bytes.Repeat([]byte("d"), 60))
+
+	router.SetMessageStorageLimit(80)
+	router.cleanMessageStore()
+
+	if _, exists := router.propagationEntries[string(dropID)]; exists {
+		t.Fatalf("expected over-limit ordinary entry %x to be removed", dropID)
+	}
+	if _, exists := router.propagationEntries[string(keepID)]; !exists {
+		t.Fatalf("expected prioritised entry %x to remain", keepID)
+	}
+	if got := router.messageStorageSize(); got > router.MessageStorageLimit() {
+		t.Fatalf("messageStorageSize() = %v, want <= %v", got, router.MessageStorageLimit())
+	}
+}
+
 func TestPropagationStoreRestartRecovery(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -1768,6 +1827,41 @@ func TestPropagationStoreRestartRecovery(t *testing.T) {
 	}
 	if !bytes.Equal(entry.payload, payload) {
 		t.Fatalf("recovered payload = %q, want %q", entry.payload, payload)
+	}
+}
+
+func TestMessageGetRequestListSortedByMessageSize(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.EnablePropagation()
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+
+	smallID := router.storePropagationMessage(remoteDestinationHash, []byte("small"))
+	largeID := router.storePropagationMessage(remoteDestinationHash, bytes.Repeat([]byte("L"), 50))
+
+	listRequest, err := msgpack.Pack([]any{nil, nil})
+	if err != nil {
+		t.Fatalf("Pack list request: %v", err)
+	}
+	listResponse := router.messageGetRequest("", listRequest, nil, nil, remoteIdentity, time.Now())
+	available, ok := listResponse.([]any)
+	if !ok {
+		t.Fatalf("unexpected list response type %T", listResponse)
+	}
+	if len(available) != 2 {
+		t.Fatalf("available len=%v want=2", len(available))
+	}
+
+	if got, ok := available[0].([]byte); !ok || !bytes.Equal(got, smallID) {
+		t.Fatalf("available[0]=%x want small message %x", got, smallID)
+	}
+	if got, ok := available[1].([]byte); !ok || !bytes.Equal(got, largeID) {
+		t.Fatalf("available[1]=%x want large message %x", got, largeID)
 	}
 }
 
@@ -1835,6 +1929,79 @@ func TestRouterSetInboundStampCost(t *testing.T) {
 	// Unknown destination should fail
 	if router.SetInboundStampCost([]byte("unknown"), &cost8) {
 		t.Fatal("SetInboundStampCost for unknown dest should return false")
+	}
+}
+
+func TestRouterRegistersDeliveryAnnounceHandler(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	_, err := NewRouter(ts, nil, tmpDir)
+	if err != nil {
+		t.Fatalf("NewRouter: %v", err)
+	}
+
+	found := false
+	for _, handler := range ts.AnnounceHandlers() {
+		if handler != nil && handler.AspectFilter == AppName+".delivery" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("announce handlers = %+v, want %q registered", ts.AnnounceHandlers(), AppName+".delivery")
+	}
+}
+
+func TestDeliveryAnnounceHandlerUpdatesStampCostAndRetriesPendingOutbound(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	id := mustTestNewIdentity(t, true)
+	var zero int
+	dest, err := router.RegisterDeliveryIdentity(id, "", &zero)
+	if err != nil {
+		t.Fatalf("RegisterDeliveryIdentity: %v", err)
+	}
+
+	message := &Message{
+		Destination:         dest,
+		DestinationHash:     append([]byte{}, dest.Hash...),
+		Method:              MethodDirect,
+		NextDeliveryAttempt: float64(time.Now().Add(time.Hour).UnixNano()) / 1e9,
+	}
+	router.pendingOutbound = append(router.pendingOutbound, message)
+	retried := make(chan struct{}, 1)
+	router.processOutbound = func() {
+		retried <- struct{}{}
+	}
+
+	appData, err := msgpack.Pack([]any{[]byte("Carol"), 8})
+	if err != nil {
+		t.Fatalf("Pack announce app data: %v", err)
+	}
+
+	nowSeconds := float64(time.Now().UnixNano()) / 1e9
+	router.handleDeliveryAnnounce(dest.Hash, nil, appData)
+
+	stampCost, ok := router.OutboundStampCost(dest.Hash)
+	if !ok || stampCost != 8 {
+		t.Fatalf("OutboundStampCost = (%v,%v), want (8,true)", stampCost, ok)
+	}
+	if message.NextDeliveryAttempt > nowSeconds+0.5 {
+		t.Fatalf("NextDeliveryAttempt = %v, want immediate retry", message.NextDeliveryAttempt)
+	}
+	select {
+	case <-retried:
+	case <-time.After(time.Second):
+		t.Fatal("delivery announce did not trigger outbound processing")
 	}
 }
 
@@ -2414,6 +2581,72 @@ func TestAnnounceIncludesAppData(t *testing.T) {
 	}
 	if string(nameBytes) != "TestNode" {
 		t.Fatalf("display name=%q want=%q", string(nameBytes), "TestNode")
+	}
+}
+
+func TestPropagationNodeAppDataMatchesPythonShape(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.now = func() time.Time { return time.Unix(1700000000, 0) }
+	router.propagationEnabled = true
+	router.fromStaticOnly = false
+	router.propagationPerTransferLimit = 256
+	router.propagationPerSyncLimit = 512
+	router.propagationCost = 11
+	router.propagationCostFlexibility = 3
+	router.peeringCost = 7
+	router.name = "Node A"
+
+	appData := router.getPropagationNodeAppDataLocked()
+	unpacked, err := msgpack.Unpack(appData)
+	if err != nil {
+		t.Fatalf("Unpack propagation app data: %v", err)
+	}
+	announceData, ok := unpacked.([]any)
+	if !ok {
+		t.Fatalf("unpacked type=%T want []any", unpacked)
+	}
+	if len(announceData) != 7 {
+		t.Fatalf("len(announceData)=%v want=7", len(announceData))
+	}
+	if legacy, ok := announceData[0].(bool); !ok || legacy {
+		t.Fatalf("legacy support flag=%v want=false", announceData[0])
+	}
+	if timebase, ok := announceData[1].(int64); !ok || timebase != 1700000000 {
+		t.Fatalf("timebase=%v want=1700000000", announceData[1])
+	}
+	if nodeState, ok := announceData[2].(bool); !ok || !nodeState {
+		t.Fatalf("node state=%v want=true", announceData[2])
+	}
+	if transferLimit, ok := announceData[3].(float64); !ok || transferLimit != 256 {
+		t.Fatalf("transfer limit=%v want=256", announceData[3])
+	}
+	if syncLimit, ok := announceData[4].(float64); !ok || syncLimit != 512 {
+		t.Fatalf("sync limit=%v want=512", announceData[4])
+	}
+
+	stampCost, ok := announceData[5].([]any)
+	if !ok || len(stampCost) != 3 {
+		t.Fatalf("stamp cost=%T/%v want []any len 3", announceData[5], announceData[5])
+	}
+	if stampCost[0] != int64(11) || stampCost[1] != int64(3) || stampCost[2] != int64(7) {
+		t.Fatalf("stamp cost=%v want [11 3 7]", stampCost)
+	}
+
+	metadata, ok := announceData[6].(map[any]any)
+	if !ok {
+		t.Fatalf("metadata type=%T want map[any]any", announceData[6])
+	}
+	nameValue, ok := metadata[int64(PNMetaName)].([]byte)
+	if !ok {
+		t.Fatalf("metadata[%v]=%T/%v want []byte", PNMetaName, metadata[int64(PNMetaName)], metadata[int64(PNMetaName)])
+	}
+	if string(nameValue) != "Node A" {
+		t.Fatalf("metadata name=%q want=%q", string(nameValue), "Node A")
 	}
 }
 

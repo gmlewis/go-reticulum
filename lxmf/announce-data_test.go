@@ -76,3 +76,53 @@ func TestDisplayNameFromAppData(t *testing.T) {
 		})
 	}
 }
+
+func TestStampCostFromAppData(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		appData []byte
+		want    int
+		wantOK  bool
+	}{
+		{
+			name:   "nil data",
+			wantOK: false,
+		},
+		{
+			name:    "raw utf8",
+			appData: []byte("Alice"),
+			wantOK:  false,
+		},
+		{
+			name: "msgpack list without stamp cost",
+			appData: func() []byte {
+				data, _ := msgpack.Pack([]any{[]byte("Bob")})
+				return data
+			}(),
+			wantOK: false,
+		},
+		{
+			name: "msgpack list with stamp cost",
+			appData: func() []byte {
+				data, _ := msgpack.Pack([]any{[]byte("Carol"), 8})
+				return data
+			}(),
+			want:   8,
+			wantOK: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := StampCostFromAppData(tc.appData)
+			if ok != tc.wantOK {
+				t.Fatalf("StampCostFromAppData(%v) ok=%v want=%v", tc.appData, ok, tc.wantOK)
+			}
+			if got != tc.want {
+				t.Fatalf("StampCostFromAppData(%v) = %v, want %v", tc.appData, got, tc.want)
+			}
+		})
+	}
+}

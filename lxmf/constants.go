@@ -10,6 +10,8 @@ import "github.com/gmlewis/go-reticulum/rns"
 const (
 	// AppName defines the core application name for LXMF routing and addressing.
 	AppName = "lxmf"
+	// PNMetaName matches Python's LXMF.PN_META_NAME metadata key.
+	PNMetaName = 0x01
 
 	// FieldEmbeddedLXMS indicates an embedded LXMS field type in an LXMF message.
 	FieldEmbeddedLXMS = 0x01

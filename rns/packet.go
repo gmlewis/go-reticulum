@@ -458,9 +458,10 @@ func (pr *PacketReceipt) ValidateLinkProof(proof []byte, link *Link, proofPacket
 				pr.mu.Lock()
 				pr.Status = ReceiptDelivered
 				pr.Proved = true
-				pr.ConcludedAt = float64(time.Now().UnixNano()) / 1e9
+				now := time.Now()
+				pr.ConcludedAt = float64(now.UnixNano()) / 1e9
 				pr.ProofPacket = proofPacket
-				link.lastProof = pr.ConcludedAt
+				link.lastProof = now
 				cb := pr.deliveryCallback
 				pr.mu.Unlock()
 				if cb != nil {

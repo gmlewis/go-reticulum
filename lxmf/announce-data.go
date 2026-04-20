@@ -40,3 +40,35 @@ func DisplayNameFromAppData(appData []byte) string {
 	// Original format: raw UTF-8
 	return string(appData)
 }
+
+// StampCostFromAppData extracts the announced outbound stamp cost from an LXMF
+// announce payload.
+func StampCostFromAppData(appData []byte) (int, bool) {
+	if len(appData) == 0 {
+		return 0, false
+	}
+
+	if (appData[0] < 0x90 || appData[0] > 0x9f) && appData[0] != 0xdc {
+		return 0, false
+	}
+
+	result, err := msgpack.Unpack(appData)
+	if err != nil {
+		return 0, false
+	}
+	peerData, ok := result.([]any)
+	if !ok || len(peerData) < 2 {
+		return 0, false
+	}
+
+	switch value := peerData[1].(type) {
+	case int:
+		return value, true
+	case int64:
+		return int(value), true
+	case uint64:
+		return int(value), true
+	default:
+		return 0, false
+	}
+}
