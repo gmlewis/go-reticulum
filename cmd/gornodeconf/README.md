@@ -7,6 +7,31 @@ The rest of this repository is still a Go port. This file is the current
 exception because `gornodeconf` needs an ESP recovery/extract helper that the
 original Python utility also generated dynamically.
 
+## Platform support and live-device contract
+
+`gornodeconf` currently has an explicit checked-in support boundary:
+
+| Surface | Linux | macOS (Darwin) | Windows / other |
+| --- | --- | --- | --- |
+| Live serial access to an RNode | **Supported** | **Supported** | **Unsupported** |
+| EEPROM inspect / backup / bootstrap / wipe flows | **Supported** | **Supported** | **Unsupported** |
+| Firmware `--extract`, `--flash`, and `--update` via the recovery helper | **Supported** | **Supported** | **Unsupported** |
+
+Important operating rules:
+
+1. Live-device tests are intentionally opt-in. Set `ENABLE_LIVE_RNODE_TESTS=1`
+   before running the live `gornodeconf` integration suite.
+2. Mutating live-hardware tests require `GORNODECONF_LIVE_ALLOW_WRITES=1`.
+3. Destructive live-hardware tests require
+   `GORNODECONF_LIVE_ALLOW_DESTRUCTIVE=1`.
+4. If you do not want writes under your normal profile, point `HOME` at a
+   temporary directory before running the tool.
+5. The recovery helper still needs a usable Python interpreter with `pyserial`.
+
+In practice, commands such as bootstrap, flash, update, EEPROM wipe, firmware
+hash changes, and signing should be treated as live-device operations and run
+only when you are prepared to restore the device from backups if needed.
+
 ## Where it came from
 
 The immediate source of truth is the original Reticulum utility:

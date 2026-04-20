@@ -192,6 +192,42 @@ func TestRemoteInit(t *testing.T) {
 		}
 	})
 
+	t.Run("load valid identity from tilde-expanded path argument", func(t *testing.T) {
+		lastExitCode = 0
+		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+		defer cleanup()
+		t.Setenv("HOME", tmpDir)
+
+		identityPath := filepath.Join(tmpDir, "identity_tilde")
+
+		id, err := rns.NewIdentity(true, nil)
+		mustTest(t, err)
+		if err := id.ToFile(identityPath); err != nil {
+			t.Fatal(err)
+		}
+
+		rnsDir := filepath.Join(tmpDir, "rns")
+		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		writeRNSConfig(t, rnsDir)
+
+		c := &clientT{exitFn: exitFn}
+		ret, err := c.remoteInit("", rnsDir, 0, 0, "~/identity_tilde")
+		if err != nil {
+			t.Fatalf("remoteInit: %v", err)
+		}
+		defer closeReticulum(t, ret)
+		if lastExitCode != 0 {
+			t.Errorf("got exit code %v, want 0", lastExitCode)
+		}
+		if c.identity == nil {
+			t.Error("identity was not loaded")
+		} else if c.identity.HexHash != id.HexHash {
+			t.Errorf("loaded identity hexhash %v, want %v", c.identity.HexHash, id.HexHash)
+		}
+	})
+
 	t.Run("test log level and reticulum init", func(t *testing.T) {
 		lastExitCode = 0
 		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -443,8 +479,16 @@ loglevel = 1
 		}
 		defer closeReticulum(t, ret)
 
-		// TODO: fully test this.
-		_, _ = c.queryStatus(id, id, 100*time.Millisecond, false)
+		got, err := c.queryStatus(id, id, 100*time.Millisecond, false)
+		if err == nil || err.Error() != "timeout" {
+			t.Fatalf("queryStatus() error = %v, want timeout", err)
+		}
+		if got != nil {
+			t.Fatalf("queryStatus() response = %v, want nil on timeout", got)
+		}
+		if lastExitCode != 0 {
+			t.Fatalf("queryStatus() exit code = %v, want 0 when exitOnFail is false", lastExitCode)
+		}
 	})
 
 	t.Run("testGetStatusFormatting", func(t *testing.T) {
@@ -499,8 +543,16 @@ loglevel = 1
 		}
 		c.ts.Remember(nil, id.Hash, id.GetPublicKey(), nil)
 
-		// TODO: fix this.
-		_, _ = c.requestSyncInternal(id, id.Hash, id, 100*time.Millisecond, false)
+		got, err := c.requestSyncInternal(id, id.Hash, id, 100*time.Millisecond, false)
+		if err == nil || err.Error() != "timeout" {
+			t.Fatalf("requestSyncInternal() error = %v, want timeout", err)
+		}
+		if got != nil {
+			t.Fatalf("requestSyncInternal() response = %v, want nil on timeout", got)
+		}
+		if lastExitCode != 0 {
+			t.Fatalf("requestSyncInternal() exit code = %v, want 0 when exitOnFail is false", lastExitCode)
+		}
 	})
 
 	t.Run("requestSync handles ERROR_INVALID_KEY", func(t *testing.T) {

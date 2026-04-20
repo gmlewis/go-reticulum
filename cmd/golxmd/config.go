@@ -368,6 +368,22 @@ func resolveConfigDir(configDir string) string {
 	return resolveConfigDirCustom(configDir, home, "/etc/lxmd")
 }
 
+func expandUserPath(path string) string {
+	if path == "" {
+		return ""
+	}
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			if path == "~" {
+				return home
+			}
+			return filepath.Join(home, strings.TrimPrefix(path, "~/"))
+		}
+	}
+	return path
+}
+
 // resolveConfigDirCustom allows injecting paths for testing.
 func resolveConfigDirCustom(configDir, userHome, etcDir string) string {
 	if configDir != "" {

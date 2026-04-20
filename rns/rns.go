@@ -38,6 +38,14 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
+var (
+	newKISSInterface       = interfaces.NewKISSInterface
+	newRNodeInterface      = interfaces.NewRNodeInterface
+	newRNodeMultiInterface = interfaces.NewRNodeMultiInterface
+	newAX25KISSInterface   = interfaces.NewAX25KISSInterface
+	newWeaveInterface      = interfaces.NewWeaveInterface
+)
+
 // HexToBytes converts a hex string to a byte slice.
 func HexToBytes(s string) ([]byte, error) {
 	return hex.DecodeString(s)
@@ -1234,13 +1242,37 @@ func (r *Reticulum) initInterfaces() error {
 				r.transport.Inbound(data, iface)
 			}
 
-			iface, err := interfaces.NewKISSInterface(sub.Name, port, speed, databits, stopbits, parity, handler)
+			iface, err := newKISSInterface(sub.Name, port, speed, databits, stopbits, parity, handler)
 			if err != nil {
 				r.logger.Error("Failed to initialize KISS interface %v: %v", sub.Name, err)
 				continue
 			}
 			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
+			if bootstrapOnly {
+				name := sub.Name
+				portCopy := port
+				speedCopy := speed
+				databitsCopy := databits
+				stopbitsCopy := stopbits
+				parityCopy := parity
+				selectedModeCopy := selectedMode
+				ifacConfigCopy := ifacConfig
+				discoveryConfigCopy := discoveryConfig
+				r.registerBootstrapRestarter(func() error {
+					handler := func(data []byte, iface interfaces.Interface) {
+						r.transport.Inbound(data, iface)
+					}
+
+					iface, err := newKISSInterface(name, portCopy, speedCopy, databitsCopy, stopbitsCopy, parityCopy, handler)
+					if err != nil {
+						return err
+					}
+					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+					r.transport.RegisterInterface(iface)
+					return nil
+				})
+			}
 			r.logger.Info("Started KISS interface %v on %v at %v bps", sub.Name, port, speed)
 
 		case "RNodeInterface":
@@ -1333,7 +1365,7 @@ func (r *Reticulum) initInterfaces() error {
 				r.transport.Inbound(data, iface)
 			}
 
-			iface, err := interfaces.NewRNodeInterface(sub.Name, port, speed, databits, stopbits, parity, frequency, bandwidth, txpower, spreadingFactor, codingRate, flowControl, idInterval, idCallsign, handler)
+			iface, err := newRNodeInterface(sub.Name, port, speed, databits, stopbits, parity, frequency, bandwidth, txpower, spreadingFactor, codingRate, flowControl, idInterval, idCallsign, handler)
 			if err != nil {
 				r.logger.Error("Failed to initialize RNode interface %v: %v", sub.Name, err)
 				continue
@@ -1345,6 +1377,38 @@ func (r *Reticulum) initInterfaces() error {
 			discoveryConfig.CodingRate = intPtr(codingRate)
 			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
+			if bootstrapOnly {
+				name := sub.Name
+				portCopy := port
+				speedCopy := speed
+				databitsCopy := databits
+				stopbitsCopy := stopbits
+				parityCopy := parity
+				frequencyCopy := frequency
+				bandwidthCopy := bandwidth
+				txpowerCopy := txpower
+				spreadingFactorCopy := spreadingFactor
+				codingRateCopy := codingRate
+				flowControlCopy := flowControl
+				idIntervalCopy := idInterval
+				idCallsignCopy := idCallsign
+				selectedModeCopy := selectedMode
+				ifacConfigCopy := ifacConfig
+				discoveryConfigCopy := discoveryConfig
+				r.registerBootstrapRestarter(func() error {
+					handler := func(data []byte, iface interfaces.Interface) {
+						r.transport.Inbound(data, iface)
+					}
+
+					iface, err := newRNodeInterface(name, portCopy, speedCopy, databitsCopy, stopbitsCopy, parityCopy, frequencyCopy, bandwidthCopy, txpowerCopy, spreadingFactorCopy, codingRateCopy, flowControlCopy, idIntervalCopy, idCallsignCopy, handler)
+					if err != nil {
+						return err
+					}
+					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+					r.transport.RegisterInterface(iface)
+					return nil
+				})
+			}
 			r.logger.Info("Started RNode interface %v on %v", sub.Name, port)
 
 		case "RNodeMultiInterface":
@@ -1462,7 +1526,7 @@ func (r *Reticulum) initInterfaces() error {
 				r.transport.Inbound(data, iface)
 			}
 
-			iface, err := interfaces.NewRNodeMultiInterface(sub.Name, port, speed, databits, stopbits, parity, idInterval, idCallsign, subCfgs, handler)
+			iface, err := newRNodeMultiInterface(sub.Name, port, speed, databits, stopbits, parity, idInterval, idCallsign, subCfgs, handler)
 			if err != nil {
 				r.logger.Error("Failed to initialize RNodeMulti interface %v: %v", sub.Name, err)
 				continue
@@ -1470,6 +1534,33 @@ func (r *Reticulum) initInterfaces() error {
 
 			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
+			if bootstrapOnly {
+				name := sub.Name
+				portCopy := port
+				speedCopy := speed
+				databitsCopy := databits
+				stopbitsCopy := stopbits
+				parityCopy := parity
+				idIntervalCopy := idInterval
+				idCallsignCopy := idCallsign
+				subCfgsCopy := append([]interfaces.RNodeMultiSubinterfaceConfig(nil), subCfgs...)
+				selectedModeCopy := selectedMode
+				ifacConfigCopy := ifacConfig
+				discoveryConfigCopy := discoveryConfig
+				r.registerBootstrapRestarter(func() error {
+					handler := func(data []byte, iface interfaces.Interface) {
+						r.transport.Inbound(data, iface)
+					}
+
+					iface, err := newRNodeMultiInterface(name, portCopy, speedCopy, databitsCopy, stopbitsCopy, parityCopy, idIntervalCopy, idCallsignCopy, subCfgsCopy, handler)
+					if err != nil {
+						return err
+					}
+					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+					r.transport.RegisterInterface(iface)
+					return nil
+				})
+			}
 			r.logger.Info("Started RNodeMulti interface %v on %v", sub.Name, port)
 
 		case "AX25KISSInterface":
@@ -1557,13 +1648,44 @@ func (r *Reticulum) initInterfaces() error {
 				r.transport.Inbound(data, iface)
 			}
 
-			iface, err := interfaces.NewAX25KISSInterface(sub.Name, port, speed, databits, stopbits, parity, callsign, ssid, preamble, txTail, persistence, slotTime, flowControl, handler)
+			iface, err := newAX25KISSInterface(sub.Name, port, speed, databits, stopbits, parity, callsign, ssid, preamble, txTail, persistence, slotTime, flowControl, handler)
 			if err != nil {
 				r.logger.Error("Failed to initialize AX.25 KISS interface %v: %v", sub.Name, err)
 				continue
 			}
 			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
+			if bootstrapOnly {
+				name := sub.Name
+				portCopy := port
+				speedCopy := speed
+				databitsCopy := databits
+				stopbitsCopy := stopbits
+				parityCopy := parity
+				callsignCopy := callsign
+				ssidCopy := ssid
+				preambleCopy := preamble
+				txTailCopy := txTail
+				persistenceCopy := persistence
+				slotTimeCopy := slotTime
+				flowControlCopy := flowControl
+				selectedModeCopy := selectedMode
+				ifacConfigCopy := ifacConfig
+				discoveryConfigCopy := discoveryConfig
+				r.registerBootstrapRestarter(func() error {
+					handler := func(data []byte, iface interfaces.Interface) {
+						r.transport.Inbound(data, iface)
+					}
+
+					iface, err := newAX25KISSInterface(name, portCopy, speedCopy, databitsCopy, stopbitsCopy, parityCopy, callsignCopy, ssidCopy, preambleCopy, txTailCopy, persistenceCopy, slotTimeCopy, flowControlCopy, handler)
+					if err != nil {
+						return err
+					}
+					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+					r.transport.RegisterInterface(iface)
+					return nil
+				})
+			}
 			r.logger.Info("Started AX.25 KISS interface %v on %v at %v bps", sub.Name, port, speed)
 
 		case "PipeInterface":
@@ -1632,7 +1754,7 @@ func (r *Reticulum) initInterfaces() error {
 				r.transport.Inbound(data, iface)
 			}
 
-			iface, err := interfaces.NewWeaveInterface(sub.Name, port, configuredBitrate, handler)
+			iface, err := newWeaveInterface(sub.Name, port, configuredBitrate, handler)
 			if err != nil {
 				r.logger.Error("Failed to initialize Weave interface %v: %v", sub.Name, err)
 				continue
@@ -1640,6 +1762,27 @@ func (r *Reticulum) initInterfaces() error {
 
 			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
+			if bootstrapOnly {
+				name := sub.Name
+				portCopy := port
+				configuredBitrateCopy := configuredBitrate
+				selectedModeCopy := selectedMode
+				ifacConfigCopy := ifacConfig
+				discoveryConfigCopy := discoveryConfig
+				r.registerBootstrapRestarter(func() error {
+					handler := func(data []byte, iface interfaces.Interface) {
+						r.transport.Inbound(data, iface)
+					}
+
+					iface, err := newWeaveInterface(name, portCopy, configuredBitrateCopy, handler)
+					if err != nil {
+						return err
+					}
+					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+					r.transport.RegisterInterface(iface)
+					return nil
+				})
+			}
 			r.logger.Info("Started Weave interface %v on %v", sub.Name, port)
 
 		case "SerialInterface":

@@ -42,15 +42,17 @@ func (c *clientT) remoteInit(configDirArg string, rnsConfigDir string, verbosity
 			}
 		}
 	} else {
-		if !isFile(identityPathArg) {
+		resolvedIdentityPath := expandUserPath(identityPathArg)
+		c.identitypath = resolvedIdentityPath
+		if !isFile(resolvedIdentityPath) {
 			c.logger.Error("Identity file not found in specified configuration directory, exiting now")
 			c.exit(202)
 			return nil, nil
 		} else {
 			var err error
-			c.identity, err = rns.FromFile(identityPathArg, c.logger)
+			c.identity, err = rns.FromFile(resolvedIdentityPath, c.logger)
 			if err != nil {
-				c.logger.Error("Could not load the Primary Identity from %v", identityPathArg)
+				c.logger.Error("Could not load the Primary Identity from %v", resolvedIdentityPath)
 				c.exit(4)
 				return nil, nil
 			}

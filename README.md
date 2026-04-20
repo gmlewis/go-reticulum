@@ -26,18 +26,46 @@ It is based upon the following Python original works:
 - **Supply-Chain Risk Posture**: This design is deliberate to minimize dependency-chain
   attack surface, informed by incidents such as the Jia Tan/XZ backdoor.
 
-## Manual RNode Workflow on Linux or Mac
+## Go Port Support Matrix
+
+The checked-in Go tree is currently verified on **Linux** and **macOS
+(Darwin)**. When the upstream Python README later in this file makes broader
+claims, this support matrix is the one that applies to the Go port.
+
+| Surface | Linux | macOS (Darwin) | Windows / other |
+| --- | --- | --- | --- |
+| Core `rns`, `lxmf`, and CLI unit/integration suites from this repo | **Supported** and verified | **Supported** and verified | **Unsupported** in the checked-in certification matrix |
+| Live serial `gornodeconf` workflows | **Supported** | **Supported** | **Unsupported** |
+| `gornodeconf` firmware `--extract`, `--flash`, and `--update` recovery flows | **Supported** | **Supported** | **Unsupported** |
+| Live RNode destructive tests | Opt-in only | Opt-in only | Unsupported |
+| External Python interface plugins | Unsupported | Unsupported | Unsupported |
+
+Additional notes:
+
+- The Go codebase includes checked-in support for I2P, Weave, KISS, RNode, TCP,
+  UDP, pipe, and serial-facing interface paths, but the actively verified Go
+  platform matrix today is Linux and macOS.
+- Windows and other non-Linux/non-Darwin platforms intentionally return explicit
+  `not supported on platform %v` errors for serial and live-hardware `gornodeconf`
+  flows.
+- The `cmd/gornodeconf` README below the command directory is the detailed
+  support contract for live RNode and recovery workflows.
+
+## Manual RNode Workflow on Linux or macOS
 
 The Go utilities in this repository are designed to talk to a live RNode over a
-serial port on Linux or Mac. The commands below exercise the common manual workflow in
-the same order you would normally use on a fresh or already-provisioned device.
-You may need to install `python3-serial` or `pyserial` for full functionality.
+serial port on Linux or macOS. The commands below exercise the common manual
+workflow in the same order you would normally use on a fresh or
+already-provisioned device. You may need to install `python3-serial` or
+`pyserial` for full functionality.
 
 Before starting, make sure:
 
 - You have access to the serial device, for example `/dev/ttyUSB0` or `/dev/ttyACM0`.
 - Your user can open the serial device without permission errors.
 - You are willing to let the tools write under `~/.config/rnodeconf/`.
+- You understand that `--rom`, `--flash`, `--update`, and `--eeprom-wipe` can
+  change live device state.
 
 If you want the run to stay isolated from your everyday Reticulum config, point
 `HOME` at a temporary directory before invoking the commands. The tools will
@@ -151,6 +179,9 @@ easy to recover if you need to back out of a change.
 ---
 
 What follows is Mark Qvist's original README.md.
+
+If anything below conflicts with the Go port support matrix above, the Go port
+matrix wins.
 
 ==========
 

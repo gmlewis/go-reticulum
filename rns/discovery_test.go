@@ -90,6 +90,75 @@ func startSocatLinkedPTYPair(t *testing.T) (string, string) {
 	return "", ""
 }
 
+type bootstrapConstructorTestInterface struct {
+	*interfaces.BaseInterface
+	ifaceType string
+}
+
+func newBootstrapConstructorTestInterface(name, ifaceType string) *bootstrapConstructorTestInterface {
+	return &bootstrapConstructorTestInterface{
+		BaseInterface: interfaces.NewBaseInterface(name, interfaces.ModeFull, 0),
+		ifaceType:     ifaceType,
+	}
+}
+
+func (i *bootstrapConstructorTestInterface) Type() string      { return i.ifaceType }
+func (i *bootstrapConstructorTestInterface) Status() bool      { return true }
+func (i *bootstrapConstructorTestInterface) IsOut() bool       { return true }
+func (i *bootstrapConstructorTestInterface) Send([]byte) error { return nil }
+func (i *bootstrapConstructorTestInterface) Detach() error {
+	i.SetDetached(true)
+	return nil
+}
+
+func runBootstrapReenableConstructorTest(t *testing.T, config, wantType string) {
+	t.Helper()
+
+	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected 1 configured interface, got %v", got)
+	}
+	if got := ts.GetInterfaces()[0].Type(); got != wantType {
+		t.Fatalf("registered interface type = %q, want %q", got, wantType)
+	}
+
+	discovery := NewInterfaceDiscovery(r)
+	discovery.monitorInterval = 0
+
+	iface := ts.GetInterfaces()[0]
+	discovery.teardownInterface(iface)
+
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected bootstrap interface teardown to remove interface, got %v interfaces", got)
+	}
+
+	discovery.monitorAutoconnectsOnce(time.Unix(810, 0))
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected configured %v bootstrap interface to be re-enabled, got %v interfaces", wantType, got)
+	}
+	if got := ts.GetInterfaces()[0].Type(); got != wantType {
+		t.Fatalf("re-enabled interface type = %q, want %q", got, wantType)
+	}
+
+	getter, ok := ts.GetInterfaces()[0].(interface{ BootstrapOnly() bool })
+	if !ok {
+		t.Fatalf("re-enabled interface %T does not expose BootstrapOnly()", ts.GetInterfaces()[0])
+	}
+	if !getter.BootstrapOnly() {
+		t.Fatalf("expected re-enabled %v bootstrap interface to preserve bootstrap-only metadata", wantType)
+	}
+}
+
 type targetHostTestInterface struct {
 	*interfaces.BaseInterface
 	ifaceType   string
@@ -3397,6 +3466,177 @@ bootstrap_only = Yes
 	}
 	if !getter.BootstrapOnly() {
 		t.Fatal("expected re-enabled Backbone client bootstrap interface to preserve bootstrap-only metadata")
+	}
+}
+
+func TestInterfaceDiscoveryMonitorReenablesConfiguredKISSBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
+	original := newKISSInterface
+	defer func() { newKISSInterface = original }()
+
+	var calls int
+	newKISSInterface = func(name, port string, speed, databits, stopbits int, parity string, handler interfaces.InboundHandler) (interfaces.Interface, error) {
+		calls++
+		return newBootstrapConstructorTestInterface(name, "KISSInterface"), nil
+	}
+
+	config := `[reticulum]
+share_instance = No
+autoconnect_discovered_interfaces = 1
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[Bootstrap KISS]]
+type = KISSInterface
+port = /dev/ttyKISS0
+speed = 9600
+bootstrap_only = Yes
+`
+
+	runBootstrapReenableConstructorTest(t, config, "KISSInterface")
+
+	if calls != 2 {
+		t.Fatalf("KISS constructor call count = %v, want 2", calls)
+	}
+}
+
+func TestInterfaceDiscoveryMonitorReenablesConfiguredRNodeBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
+	original := newRNodeInterface
+	defer func() { newRNodeInterface = original }()
+
+	var calls int
+	newRNodeInterface = func(name, port string, speed, databits, stopbits int, parity string, frequency, bandwidth, txpower, spreadingFactor, codingRate int, flowControl bool, idInterval int, idCallsign string, handler interfaces.InboundHandler) (interfaces.Interface, error) {
+		calls++
+		return newBootstrapConstructorTestInterface(name, "RNodeInterface"), nil
+	}
+
+	config := `[reticulum]
+share_instance = No
+autoconnect_discovered_interfaces = 1
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[Bootstrap RNode]]
+type = RNodeInterface
+port = /dev/ttyRNode0
+frequency = 433050000
+bandwidth = 125000
+txpower = 10
+spreadingfactor = 7
+codingrate = 5
+bootstrap_only = Yes
+`
+
+	runBootstrapReenableConstructorTest(t, config, "RNodeInterface")
+
+	if calls != 2 {
+		t.Fatalf("RNode constructor call count = %v, want 2", calls)
+	}
+}
+
+func TestInterfaceDiscoveryMonitorReenablesConfiguredRNodeMultiBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
+	original := newRNodeMultiInterface
+	defer func() { newRNodeMultiInterface = original }()
+
+	var calls int
+	newRNodeMultiInterface = func(name, port string, speed, databits, stopbits int, parity string, idInterval int, idCallsign string, subinterfaces []interfaces.RNodeMultiSubinterfaceConfig, handler interfaces.InboundHandler) (interfaces.Interface, error) {
+		calls++
+		return newBootstrapConstructorTestInterface(name, "RNodeMultiInterface"), nil
+	}
+
+	config := `[reticulum]
+share_instance = No
+autoconnect_discovered_interfaces = 1
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[Bootstrap RNode Multi]]
+type = RNodeMultiInterface
+port = /dev/ttyRNodeMulti0
+bootstrap_only = Yes
+
+  [[[sub0]]]
+  interface_enabled = Yes
+  frequency = 433050000
+  bandwidth = 125000
+  txpower = 10
+  spreadingfactor = 7
+  codingrate = 5
+`
+
+	runBootstrapReenableConstructorTest(t, config, "RNodeMultiInterface")
+
+	if calls != 2 {
+		t.Fatalf("RNodeMulti constructor call count = %v, want 2", calls)
+	}
+}
+
+func TestInterfaceDiscoveryMonitorReenablesConfiguredAX25KISSBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
+	original := newAX25KISSInterface
+	defer func() { newAX25KISSInterface = original }()
+
+	var calls int
+	newAX25KISSInterface = func(name, port string, speed, databits, stopbits int, parity, callsign string, ssid, preambleMS, txTailMS, persistence, slotTimeMS int, flowControl bool, handler interfaces.InboundHandler) (interfaces.Interface, error) {
+		calls++
+		return newBootstrapConstructorTestInterface(name, "AX25KISSInterface"), nil
+	}
+
+	config := `[reticulum]
+share_instance = No
+autoconnect_discovered_interfaces = 1
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[Bootstrap AX25]]
+type = AX25KISSInterface
+port = /dev/ttyAX250
+callsign = N0CALL
+ssid = 0
+bootstrap_only = Yes
+`
+
+	runBootstrapReenableConstructorTest(t, config, "AX25KISSInterface")
+
+	if calls != 2 {
+		t.Fatalf("AX25KISS constructor call count = %v, want 2", calls)
+	}
+}
+
+func TestInterfaceDiscoveryMonitorReenablesConfiguredWeaveBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
+	original := newWeaveInterface
+	defer func() { newWeaveInterface = original }()
+
+	var calls int
+	newWeaveInterface = func(name, port string, configuredBitrate int, handler interfaces.InboundHandler) (interfaces.Interface, error) {
+		calls++
+		return newBootstrapConstructorTestInterface(name, "WeaveInterface"), nil
+	}
+
+	config := `[reticulum]
+share_instance = No
+autoconnect_discovered_interfaces = 1
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[Bootstrap Weave]]
+type = WeaveInterface
+port = /dev/ttyWeave0
+bootstrap_only = Yes
+`
+
+	runBootstrapReenableConstructorTest(t, config, "WeaveInterface")
+
+	if calls != 2 {
+		t.Fatalf("Weave constructor call count = %v, want 2", calls)
 	}
 }
 

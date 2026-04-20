@@ -2045,7 +2045,7 @@ func TestIntegratedRelayedPathResponsePropagationPythonRelayUDP(t *testing.T) {
 	defer func() { _ = responderConn.Close() }()
 
 	remoteID := mustTestNewIdentity(t, true)
-	// TODO: Investigate this.
+	// This test only needs the derived destination hash for the remote relay target.
 	remoteDest := mustTestNewDestination(t, nil, remoteID, DestinationIn, DestinationSingle, "relay", "python_relay_target")
 
 	ts := NewTransportSystem(nil)

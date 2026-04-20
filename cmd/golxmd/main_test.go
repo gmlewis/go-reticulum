@@ -116,8 +116,24 @@ func TestJobs(t *testing.T) {
 }
 
 func TestJobsRecovery(t *testing.T) {
-	// For testing, we'll verify the panic recovery works if we could trigger it.
-	// TODO: tick() is no longer package-global.
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	identity, err := rns.NewIdentity(true, nil)
+	mustTest(t, err)
+	c := &clientT{
+		ts:  rns.NewTransportSystem(nil),
+		now: func() time.Time { panic("boom") },
+	}
+	router, err := lxmf.NewRouter(c.ts, identity, tmpDir)
+	mustTest(t, err)
+	dest, err := router.RegisterDeliveryIdentity(identity, "Test Peer", nil)
+	mustTest(t, err)
+	c.ac = &activeConfig{}
+
+	stop := make(chan struct{})
+	close(stop)
+
+	c.jobs(router, dest, stop, 10*time.Millisecond)
 }
 
 func TestAnnounceAtStart(t *testing.T) {
@@ -240,6 +256,28 @@ func TestLXMFDelivery(t *testing.T) {
 	c.lxmfDelivery(lxm)
 	if _, err := os.Stat(resultPath); os.IsNotExist(err) {
 		t.Errorf("multi-word on_inbound script was not called")
+	}
+
+	// Case 4: Quoted argument parsing should match Python shlex.split behavior.
+	quotedResultPath := filepath.Join(tmpDir, "quoted-result")
+	quotedScriptPath := filepath.Join(tmpDir, "quoted-handler.sh")
+	err = os.WriteFile(quotedScriptPath, []byte("#!/bin/sh\nprintf '%s\\n' \"$1\" \"$2\" > "+quotedResultPath), 0o755)
+	mustTest(t, err)
+
+	c.ac = &activeConfig{OnInbound: quotedScriptPath + " --label 'quoted value'"}
+	c.lxmfDelivery(lxm)
+
+	quotedResult, err := os.ReadFile(quotedResultPath)
+	mustTest(t, err)
+	gotLines := strings.Split(strings.TrimSpace(string(quotedResult)), "\n")
+	wantLines := []string{"--label", "quoted value"}
+	if len(gotLines) != len(wantLines) {
+		t.Fatalf("quoted on_inbound arg count = %v, want %v (%q)", len(gotLines), len(wantLines), quotedResult)
+	}
+	for i, want := range wantLines {
+		if gotLines[i] != want {
+			t.Fatalf("quoted on_inbound arg %v = %q, want %q", i, gotLines[i], want)
+		}
 	}
 }
 

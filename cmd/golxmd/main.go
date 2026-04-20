@@ -18,7 +18,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -366,14 +365,19 @@ func (c *clientT) lxmfDelivery(lxm *lxmf.Message) {
 
 	if c.ac != nil && c.ac.OnInbound != "" {
 		c.logger.Debug("Calling external program to handle message")
-		parts := strings.Fields(c.ac.OnInbound)
-		if len(parts) > 0 {
-			cmd := exec.Command(parts[0], append(parts[1:], writtenPath)...)
-			cmd.Stdout = nil
-			cmd.Stderr = nil
-			if err := cmd.Run(); err != nil {
-				c.logger.Error("Error occurred while calling external program: %v", err)
-			}
+		parts, err := utils.ShlexSplit(c.ac.OnInbound)
+		if err != nil {
+			c.logger.Error("Error occurred while parsing external command: %v", err)
+			return
+		}
+		if len(parts) == 0 {
+			return
+		}
+		cmd := exec.Command(parts[0], append(parts[1:], writtenPath)...)
+		cmd.Stdout = nil
+		cmd.Stderr = nil
+		if err := cmd.Run(); err != nil {
+			c.logger.Error("Error occurred while calling external program: %v", err)
 		}
 	} else {
 		c.logger.Debug("No action defined for inbound messages, ignoring")
