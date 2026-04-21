@@ -64,6 +64,90 @@ func TestHandleOutboundValidatesMessage(t *testing.T) {
 	}
 }
 
+func TestHandleOutboundIncludesReplyTicketBeforePacking(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	now := time.Now().UTC().Truncate(time.Second)
+	router.now = func() time.Time { return now }
+	router.hasPath = func(_ []byte) bool { return false }
+	router.requestPath = func(_ []byte) error { return nil }
+
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+	msg.IncludeTicket = true
+
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+
+	entry := outboundTicketFieldEntry(msg.Fields, now)
+	if entry == nil {
+		t.Fatal("expected outbound message to include a reply ticket")
+	}
+	if entry.Expires <= float64(now.UnixNano())/1e9 {
+		t.Fatalf("ticket expiry=%v want future timestamp", entry.Expires)
+	}
+
+	inboundTickets := router.ticketStore.InboundTickets(destination.Hash, now)
+	if len(inboundTickets) != 1 {
+		t.Fatalf("inbound tickets=%d want=1", len(inboundTickets))
+	}
+	if !bytes.Equal(inboundTickets[0], entry.Ticket) {
+		t.Fatalf("generated ticket=%x want=%x", inboundTickets[0], entry.Ticket)
+	}
+}
+
+func TestHandleOutboundDeliveryMarksTicketDelivery(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	now := time.Now().UTC().Truncate(time.Second)
+	router.now = func() time.Time { return now }
+	router.hasPath = func(_ []byte) bool { return true }
+
+	var sentPacket *rns.Packet
+	router.sendPacket = func(packet *rns.Packet) error {
+		sentPacket = packet
+		packet.Receipt = &rns.PacketReceipt{}
+		return nil
+	}
+
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+	msg.IncludeTicket = true
+
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+	if sentPacket == nil || sentPacket.Receipt == nil {
+		t.Fatal("expected HandleOutbound to send a packet with a receipt")
+	}
+
+	sentPacket.Receipt.TriggerDelivery()
+
+	if got, want := msg.State, StateDelivered; got != want {
+		t.Fatalf("message state=%v want=%v", got, want)
+	}
+	if got := router.ticketStore.lastDeliveries[string(destination.Hash)]; got != float64(now.UnixNano())/1e9 {
+		t.Fatalf("last delivery=%v want=%v", got, float64(now.UnixNano())/1e9)
+	}
+}
+
 func TestProcessOutboundDirectRequestsPathWhenUnavailable(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -78,7 +162,7 @@ func TestProcessOutboundDirectRequestsPathWhenUnavailable(t *testing.T) {
 
 	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 
-	now := time.Unix(1700000000, 0)
+	now := time.Now().UTC().Truncate(time.Second)
 	router.now = func() time.Time { return now }
 	router.hasPath = func(_ []byte) bool { return false }
 	requestCount := 0
@@ -1889,6 +1973,86 @@ func TestPropagationPeerAndNodeStatsRestartRecovery(t *testing.T) {
 	}
 	if recovered.unpeeredPropagationRXBytes != 6 {
 		t.Fatalf("unpeeredPropagationRXBytes = %v, want 6", recovered.unpeeredPropagationRXBytes)
+	}
+}
+
+func TestAvailableTicketsSaveLoadRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	now := time.Now().UTC().Truncate(time.Second)
+	router.now = func() time.Time { return now }
+
+	sourceID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	replyTicketDestinationID := mustTestNewIdentity(t, true)
+	replyTicketDestination := mustTestNewDestination(t, ts, replyTicketDestinationID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	inboundEntry := router.ticketStore.GenerateInboundTicket(replyTicketDestination.Hash, now, DefaultTicketExpirySeconds)
+	if inboundEntry == nil {
+		t.Fatal("expected inbound ticket")
+	}
+	router.ticketStore.MarkDelivery(replyTicketDestination.Hash, now)
+
+	outboundTicket := bytes.Repeat([]byte{0x44}, TicketLength)
+	expiry := float64(now.Add(48*time.Hour).UnixNano()) / 1e9
+	router.ticketStore.RememberOutboundTicket(sourceDest.Hash, TicketEntry{Expires: expiry, Ticket: outboundTicket})
+
+	if err := router.SaveAvailableTickets(); err != nil {
+		t.Fatalf("SaveAvailableTickets(): %v", err)
+	}
+
+	router.ticketStore = NewTicketStore()
+	if err := router.LoadAvailableTickets(); err != nil {
+		t.Fatalf("LoadAvailableTickets(): %v", err)
+	}
+
+	gotInbound := router.ticketStore.InboundTickets(replyTicketDestination.Hash, now)
+	if len(gotInbound) != 1 || !bytes.Equal(gotInbound[0], inboundEntry.Ticket) {
+		t.Fatalf("recovered inbound tickets=%x want=%x", gotInbound, inboundEntry.Ticket)
+	}
+	if got := router.ticketStore.OutboundTicket(sourceDest.Hash, now); !bytes.Equal(got, outboundTicket) {
+		t.Fatalf("recovered outbound ticket=%x want=%x", got, outboundTicket)
+	}
+	if got := router.ticketStore.lastDeliveries[string(replyTicketDestination.Hash)]; got != float64(now.UnixNano())/1e9 {
+		t.Fatalf("recovered last delivery=%v want=%v", got, float64(now.UnixNano())/1e9)
+	}
+}
+
+func TestDeliveryPacketRemembersOutboundTicket(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	now := time.Now().UTC().Truncate(time.Second)
+	router.now = func() time.Time { return now }
+
+	sourceID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	ts.Remember(nil, sourceDest.Hash, sourceID.GetPublicKey(), nil)
+	localID := mustTestNewIdentity(t, true)
+	localDestination := mustTestNewDestination(t, ts, localID, rns.DestinationIn, rns.DestinationSingle, AppName, "delivery")
+
+	outboundTicket := bytes.Repeat([]byte{0x44}, TicketLength)
+	expiry := float64(now.Add(48*time.Hour).UnixNano()) / 1e9
+	inboundMessage := mustTestNewMessage(t, localDestination, sourceDest, "payload", "title", map[any]any{
+		FieldTicket: []any{expiry, outboundTicket},
+	})
+	if err := inboundMessage.Pack(); err != nil {
+		t.Fatalf("Pack(): %v", err)
+	}
+	packet := &rns.Packet{DestinationType: rns.DestinationLink}
+	router.deliveryPacket(inboundMessage.Packed, packet)
+
+	if got := router.ticketStore.OutboundTicket(sourceDest.Hash, now); !bytes.Equal(got, outboundTicket) {
+		t.Fatalf("outbound ticket=%x want=%x", got, outboundTicket)
 	}
 }
 

@@ -52,6 +52,7 @@ type Router struct {
 	inboundStampCosts    map[string]int
 	outboundStampCosts   map[string]outboundStampCostEntry
 	displayNames         map[string]string
+	ticketStore          *TicketStore
 
 	pendingOutbound []*Message
 
@@ -193,6 +194,7 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 		inboundStampCosts:    map[string]int{},
 		outboundStampCosts:   map[string]outboundStampCostEntry{},
 		displayNames:         map[string]string{},
+		ticketStore:          NewTicketStore(),
 		pendingOutbound:      []*Message{},
 		hasPath:              ts.HasPath,
 		hopsTo:               ts.HopsTo,
@@ -232,6 +234,9 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 	router.sendResource = router.sendMessageResourceLocked
 	router.processOutbound = router.ProcessOutbound
 	router.registerAnnounceHandlers()
+	if err := router.LoadAvailableTickets(); err != nil {
+		log.Printf("Could not load available tickets from storage: %v", err)
+	}
 	if err := router.LoadOutboundStampCosts(); err != nil {
 		log.Printf("Could not load outbound stamp costs from storage: %v", err)
 	}
@@ -759,6 +764,51 @@ func anyToBytes(value any) []byte {
 	}
 }
 
+func anyToMap(value any) (map[any]any, bool) {
+	switch v := value.(type) {
+	case map[any]any:
+		return v, true
+	case map[string]any:
+		result := make(map[any]any, len(v))
+		for key, entry := range v {
+			result[key] = entry
+		}
+		return result, true
+	default:
+		return nil, false
+	}
+}
+
+func messageField(fields map[any]any, key uint8) (any, bool) {
+	if len(fields) == 0 {
+		return nil, false
+	}
+	if value, ok := fields[key]; ok {
+		return value, true
+	}
+	for candidate, value := range fields {
+		switch typed := candidate.(type) {
+		case uint8:
+			if typed == key {
+				return value, true
+			}
+		case int:
+			if typed == int(key) {
+				return value, true
+			}
+		case int64:
+			if typed == int64(key) {
+				return value, true
+			}
+		case uint64:
+			if typed == uint64(key) {
+				return value, true
+			}
+		}
+	}
+	return nil, false
+}
+
 func parseLimitBytes(values []any, index int) int {
 	if index >= len(values) {
 		return 0
@@ -842,11 +892,6 @@ func (r *Router) HandleOutbound(message *Message) error {
 	if message.Source == nil {
 		return errors.New("lxmf message source is nil")
 	}
-	if len(message.Packed) == 0 {
-		if err := message.Pack(); err != nil {
-			return err
-		}
-	}
 
 	message.State = StateOutbound
 
@@ -855,6 +900,20 @@ func (r *Router) HandleOutbound(message *Message) error {
 		sendMethod = MethodDirect
 	}
 	message.Method = sendMethod
+
+	if len(message.Packed) == 0 {
+		if _, hasTicket := messageField(message.Fields, FieldTicket); message.IncludeTicket && message.Destination != nil && !hasTicket && r.ticketStore != nil {
+			if message.Fields == nil {
+				message.Fields = map[any]any{}
+			}
+			if ticketEntry := r.ticketStore.GenerateInboundTicket(message.Destination.Hash, r.now(), DefaultTicketExpirySeconds); ticketEntry != nil {
+				message.Fields[FieldTicket] = []any{ticketEntry.Expires, cloneBytes(ticketEntry.Ticket)}
+			}
+		}
+		if err := message.Pack(); err != nil {
+			return err
+		}
+	}
 
 	r.mu.Lock()
 	r.pendingOutbound = append(r.pendingOutbound, message)
@@ -1055,6 +1114,7 @@ func (r *Router) sendMessagePacketLocked(message *Message) error {
 			r.mu.Lock()
 			defer r.mu.Unlock()
 			message.State = StateDelivered
+			r.markTicketDeliveryLocked(message)
 		})
 		packet.Receipt.SetTimeoutCallback(func(_ *rns.PacketReceipt) {
 			r.mu.Lock()
@@ -1102,6 +1162,7 @@ func (r *Router) sendMessageResourceLocked(message *Message) error {
 			defer r.mu.Unlock()
 			if resource != nil && resource.Status() == rns.ResourceStatusComplete {
 				message.State = StateDelivered
+				r.markTicketDeliveryLocked(message)
 				return
 			}
 			if message.State != StateDelivered && message.State != StateCancelled {
@@ -1212,6 +1273,11 @@ func (r *Router) deliveryPacket(data []byte, packet *rns.Packet) {
 	message, err := UnpackMessageFromBytes(r.transport, lxmfData, method)
 	if err != nil {
 		return
+	}
+	if r.ticketStore != nil && message.SignatureValidated {
+		if ticketEntry := outboundTicketFieldEntry(message.Fields, r.now()); ticketEntry != nil {
+			r.ticketStore.RememberOutboundTicket(message.SourceHash, *ticketEntry)
+		}
 	}
 
 	r.mu.Lock()
@@ -1431,6 +1497,10 @@ func (r *Router) outboundStampCostsPath() string {
 	return filepath.Join(r.storagePath, "outbound_stamp_costs")
 }
 
+func (r *Router) availableTicketsPath() string {
+	return filepath.Join(r.storagePath, "available_tickets")
+}
+
 // FlushQueues merges queued peer message bookkeeping into the in-memory
 // propagation-entry state before persistence.
 func (r *Router) FlushQueues() {
@@ -1541,6 +1611,187 @@ func (r *Router) SaveNodeStats() error {
 		return err
 	}
 	return os.WriteFile(r.nodeStatsPath(), packed, 0o644)
+}
+
+// SaveAvailableTickets persists inbound/outbound delivery ticket state using the
+// Python available_tickets dictionary shape.
+func (r *Router) SaveAvailableTickets() error {
+	if r.ticketStore == nil {
+		return nil
+	}
+
+	r.ticketStore.mu.RLock()
+	lastDeliveries := make(map[string]any, len(r.ticketStore.lastDeliveries))
+	for destinationHash, deliveredAt := range r.ticketStore.lastDeliveries {
+		lastDeliveries[destinationHash] = deliveredAt
+	}
+	outbound := make(map[string]any, len(r.ticketStore.outbound))
+	for destinationHash, entry := range r.ticketStore.outbound {
+		outbound[destinationHash] = []any{entry.Expires, cloneBytes(entry.Ticket)}
+	}
+	inbound := make(map[string]any, len(r.ticketStore.inbound))
+	for destinationHash, ticketEntries := range r.ticketStore.inbound {
+		destinationTickets := make(map[string]any, len(ticketEntries))
+		for ticket, entry := range ticketEntries {
+			destinationTickets[ticket] = []any{entry.Expires}
+		}
+		inbound[destinationHash] = destinationTickets
+	}
+	r.ticketStore.mu.RUnlock()
+
+	payload := map[string]any{
+		"outbound":        outbound,
+		"inbound":         inbound,
+		"last_deliveries": lastDeliveries,
+	}
+
+	if err := os.MkdirAll(r.storagePath, 0o755); err != nil {
+		return err
+	}
+	packed, err := msgpack.Pack(payload)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(r.availableTicketsPath(), packed, 0o644)
+}
+
+// LoadAvailableTickets restores available ticket state and drops expired
+// outbound and stale inbound entries.
+func (r *Router) LoadAvailableTickets() error {
+	data, err := os.ReadFile(r.availableTicketsPath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if len(data) == 0 {
+		return nil
+	}
+
+	unpacked, err := msgpack.Unpack(data)
+	if err != nil {
+		return err
+	}
+
+	root, ok := anyToMap(unpacked)
+	if !ok {
+		return fmt.Errorf("invalid available_tickets payload type %T", unpacked)
+	}
+
+	nowSeconds := float64(r.now().UnixNano()) / 1e9
+	store := NewTicketStore()
+
+	if lastDeliveries, ok := anyToMap(root["last_deliveries"]); ok {
+		for destinationHashValue, deliveredAtValue := range lastDeliveries {
+			destinationHash := anyToBytes(destinationHashValue)
+			if len(destinationHash) == 0 {
+				continue
+			}
+			deliveredAt, err := anyToFloat64(deliveredAtValue)
+			if err != nil {
+				continue
+			}
+			store.lastDeliveries[string(destinationHash)] = deliveredAt
+		}
+	}
+
+	if outbound, ok := anyToMap(root["outbound"]); ok {
+		for destinationHashValue, entryValue := range outbound {
+			destinationHash := anyToBytes(destinationHashValue)
+			if len(destinationHash) == 0 {
+				continue
+			}
+			items, ok := entryValue.([]any)
+			if !ok || len(items) < 2 {
+				continue
+			}
+			expires, err := anyToFloat64(items[0])
+			if err != nil || expires <= nowSeconds {
+				continue
+			}
+			ticket := anyToBytes(items[1])
+			if len(ticket) != TicketLength {
+				continue
+			}
+			store.outbound[string(destinationHash)] = TicketEntry{
+				Expires: expires,
+				Ticket:  ticket,
+			}
+		}
+	}
+
+	if inbound, ok := anyToMap(root["inbound"]); ok {
+		for destinationHashValue, destinationTicketsValue := range inbound {
+			destinationHash := anyToBytes(destinationHashValue)
+			if len(destinationHash) == 0 {
+				continue
+			}
+			destinationTickets, ok := anyToMap(destinationTicketsValue)
+			if !ok {
+				continue
+			}
+			for ticketValue, entryValue := range destinationTickets {
+				ticket := anyToBytes(ticketValue)
+				if len(ticket) != TicketLength {
+					continue
+				}
+				items, ok := entryValue.([]any)
+				if !ok || len(items) == 0 {
+					continue
+				}
+				expires, err := anyToFloat64(items[0])
+				if err != nil || nowSeconds > expires+DefaultTicketGraceSeconds {
+					continue
+				}
+				destinationKey := string(destinationHash)
+				if store.inbound[destinationKey] == nil {
+					store.inbound[destinationKey] = map[string]TicketEntry{}
+				}
+				store.inbound[destinationKey][string(ticket)] = TicketEntry{
+					Expires: expires,
+					Ticket:  ticket,
+				}
+			}
+		}
+	}
+
+	r.ticketStore = store
+	return nil
+}
+
+func (r *Router) markTicketDeliveryLocked(message *Message) {
+	if r.ticketStore == nil || message == nil || !message.IncludeTicket || message.Destination == nil {
+		return
+	}
+	if outboundTicketFieldEntry(message.Fields, r.now()) == nil {
+		return
+	}
+	r.ticketStore.MarkDelivery(message.Destination.Hash, r.now())
+}
+
+func outboundTicketFieldEntry(fields map[any]any, now time.Time) *TicketEntry {
+	value, ok := messageField(fields, FieldTicket)
+	if !ok {
+		return nil
+	}
+	items, ok := value.([]any)
+	if !ok || len(items) < 2 {
+		return nil
+	}
+	expires, err := anyToFloat64(items[0])
+	if err != nil || expires <= float64(now.UnixNano())/1e9 {
+		return nil
+	}
+	ticket := anyToBytes(items[1])
+	if len(ticket) != TicketLength {
+		return nil
+	}
+	entry := TicketEntry{
+		Expires: expires,
+		Ticket:  cloneBytes(ticket),
+	}
+	return &entry
 }
 
 // SaveOutboundStampCosts persists cached outbound delivery stamp costs using the
@@ -1672,6 +1923,9 @@ func (r *Router) Close() error {
 	r.FlushQueues()
 
 	var closeErr error
+	if err := r.SaveAvailableTickets(); err != nil {
+		closeErr = errors.Join(closeErr, err)
+	}
 	if err := r.SaveOutboundStampCosts(); err != nil {
 		closeErr = errors.Join(closeErr, err)
 	}
