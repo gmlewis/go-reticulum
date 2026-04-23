@@ -69,7 +69,10 @@ type Router struct {
 	processOutbound             func()
 	newLink                     func(rns.Transport, *rns.Destination) (*rns.Link, error)
 	newResource                 func([]byte, *rns.Link) (*rns.Resource, error)
+	linkStatus                  func(*rns.Link) int
+	setLinkEstablishedCallback  func(*rns.Link, func(*rns.Link))
 	identifyLink                func(*rns.Link, *rns.Identity) error
+	establishLink               func(*rns.Link) error
 	requestLink                 func(*rns.Link, string, any, func(*rns.RequestReceipt), func(*rns.RequestReceipt), func(*rns.RequestReceipt), time.Duration) (*rns.RequestReceipt, error)
 	requestProgress             func(*rns.RequestReceipt) float64
 	startRequestMessagesPathJob func()
@@ -223,8 +226,17 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 		},
 		newLink:     rns.NewLink,
 		newResource: rns.NewResource,
+		linkStatus: func(link *rns.Link) int {
+			return link.GetStatus()
+		},
+		setLinkEstablishedCallback: func(link *rns.Link, callback func(*rns.Link)) {
+			link.SetLinkEstablishedCallback(callback)
+		},
 		identifyLink: func(link *rns.Link, identity *rns.Identity) error {
 			return link.Identify(identity)
+		},
+		establishLink: func(link *rns.Link) error {
+			return link.Establish()
 		},
 		requestLink: func(link *rns.Link, path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), timeout time.Duration) (*rns.RequestReceipt, error) {
 			return link.Request(path, data, responseCallback, failedCallback, progressCallback, timeout)
@@ -2655,7 +2667,8 @@ func (r *Router) RequestMessagesFromPropagationNode(limit *int) {
 	identity := r.identity
 	r.mu.Unlock()
 
-	if activeLink != nil {
+	if activeLink != nil && r.linkStatus(activeLink) == rns.LinkActive {
+		r.configureOutboundPropagationLink(activeLink)
 		r.mu.Lock()
 		r.wantsDownloadOnPathAvailableFrom = nil
 		r.wantsDownloadOnPathAvailableTo = nil
@@ -2680,6 +2693,10 @@ func (r *Router) RequestMessagesFromPropagationNode(limit *int) {
 		r.mu.Lock()
 		r.propagationTransferState = PRRequestSent
 		r.mu.Unlock()
+		return
+	}
+	if activeLink != nil {
+		log.Printf("Waiting for propagation node link to become active")
 		return
 	}
 
@@ -2719,14 +2736,30 @@ func (r *Router) RequestMessagesFromPropagationNode(limit *int) {
 			return
 		}
 
+		r.configureOutboundPropagationLink(link)
+		r.setLinkEstablishedCallback(link, func(_ *rns.Link) {
+			var nextLimit *int
+			r.mu.Lock()
+			maxMessages := r.propagationTransferMaxMessages
+			r.mu.Unlock()
+			if maxMessages != 0 {
+				nextLimit = &maxMessages
+			}
+			r.RequestMessagesFromPropagationNode(nextLimit)
+		})
 		r.mu.Lock()
 		r.outboundPropagationLink = link
-		r.propagationTransferState = PRLinkEstablished
 		r.mu.Unlock()
-		log.Printf("Link established to propagation node %x via %v", outboundNode, link)
-		r.mu.Lock()
-		r.propagationTransferState = PRRequestSent
-		r.mu.Unlock()
+		if err := r.establishLink(link); err != nil {
+			log.Printf("Cannot establish link to propagation node: %v", err)
+			r.mu.Lock()
+			if r.outboundPropagationLink == link {
+				r.outboundPropagationLink = nil
+			}
+			r.propagationTransferState = PRLinkFailed
+			r.mu.Unlock()
+			return
+		}
 	} else {
 		log.Printf("No path known for message download from propagation node %x, requesting path...", outboundNode)
 		if r.requestPath != nil {
@@ -2770,6 +2803,39 @@ func (r *Router) requestMessagesPathJob() {
 	log.Printf("Propagation node path request timed out")
 	failureState := PRNoPath
 	r.acknowledgeSyncCompletion(false, &failureState)
+}
+
+func (r *Router) configureOutboundPropagationLink(link *rns.Link) {
+	if link == nil {
+		return
+	}
+	link.SetLinkClosedCallback(func(closed *rns.Link) {
+		r.handleOutboundPropagationLinkClosed(closed)
+	})
+}
+
+func (r *Router) handleOutboundPropagationLinkClosed(link *rns.Link) {
+	r.mu.Lock()
+	if r.outboundPropagationLink == nil || (link != nil && r.outboundPropagationLink != link) {
+		r.mu.Unlock()
+		return
+	}
+	state := r.propagationTransferState
+	r.outboundPropagationLink = nil
+	r.mu.Unlock()
+
+	switch {
+	case state == PRComplete:
+		r.acknowledgeSyncCompletion(false, nil)
+	case state < PRLinkEstablished:
+		failureState := PRLinkFailed
+		r.acknowledgeSyncCompletion(false, &failureState)
+	case state >= PRLinkEstablished && state < PRComplete:
+		failureState := PRTransferFailed
+		r.acknowledgeSyncCompletion(false, &failureState)
+	default:
+		r.acknowledgeSyncCompletion(false, nil)
+	}
 }
 
 func (r *Router) messageListResponse(receipt *rns.RequestReceipt) {

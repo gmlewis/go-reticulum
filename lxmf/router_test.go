@@ -2836,6 +2836,7 @@ func TestRequestMessagesPathJobResumesSyncWhenPathAppears(t *testing.T) {
 	hasPath := false
 	router.hasPath = func(_ []byte) bool { return hasPath }
 	router.requestPath = func(_ []byte) error { return nil }
+	router.linkStatus = func(*rns.Link) int { return rns.LinkActive }
 	router.pathWaitSleep = func(time.Duration) {
 		hasPath = true
 		router.outboundPropagationLink = &rns.Link{}
@@ -2891,14 +2892,58 @@ func TestRequestMessagesLinkEstablished(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Path available and link succeeds — should transition to PRRequestSent.
+	// Path available and link succeeds — should wait for establishment before
+	// issuing the list request.
 	router.hasPath = func(_ []byte) bool { return true }
+	link := &rns.Link{}
+	var status int
+	var establishedCallback func(*rns.Link)
+	var establishCount int
+	var requestCount int
+	router.linkStatus = func(*rns.Link) int { return status }
 	router.newLink = func(rns.Transport, *rns.Destination) (*rns.Link, error) {
-		return &rns.Link{}, nil
+		return link, nil
+	}
+	router.setLinkEstablishedCallback = func(got *rns.Link, callback func(*rns.Link)) {
+		if got != link {
+			t.Fatal("setLinkEstablishedCallback got unexpected link")
+		}
+		establishedCallback = callback
+	}
+	router.establishLink = func(got *rns.Link) error {
+		if got != link {
+			t.Fatal("establishLink got unexpected link")
+		}
+		establishCount++
+		return nil
+	}
+	router.identifyLink = func(*rns.Link, *rns.Identity) error { return nil }
+	router.requestLink = func(*rns.Link, string, any, func(*rns.RequestReceipt), func(*rns.RequestReceipt), func(*rns.RequestReceipt), time.Duration) (*rns.RequestReceipt, error) {
+		requestCount++
+		return nil, nil
 	}
 	router.RequestMessagesFromPropagationNode(nil)
+	if router.PropagationTransferState() != PRLinkEstablishing {
+		t.Fatalf("state = %v, want PRLinkEstablishing", router.PropagationTransferState())
+	}
+	if establishCount != 1 {
+		t.Fatalf("establish count = %d, want 1", establishCount)
+	}
+	if requestCount != 0 {
+		t.Fatalf("request count before callback = %d, want 0", requestCount)
+	}
+	if establishedCallback == nil {
+		t.Fatal("expected established callback to be installed")
+	}
+
+	status = rns.LinkActive
+	establishedCallback(link)
+
 	if router.PropagationTransferState() != PRRequestSent {
-		t.Fatalf("state = %v, want PRRequestSent", router.PropagationTransferState())
+		t.Fatalf("state after callback = %v, want PRRequestSent", router.PropagationTransferState())
+	}
+	if requestCount != 1 {
+		t.Fatalf("request count after callback = %d, want 1", requestCount)
 	}
 }
 
@@ -2924,6 +2969,36 @@ func TestRequestMessagesLinkFailed(t *testing.T) {
 	router.RequestMessagesFromPropagationNode(nil)
 	if router.PropagationTransferState() != PRLinkFailed {
 		t.Fatalf("state = %v, want PRLinkFailed", router.PropagationTransferState())
+	}
+}
+
+func TestRequestMessagesEstablishFailed(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	peerID := mustTestNewIdentity(t, true)
+	peerDest := mustTestNewDestination(t, ts, peerID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+	ts.Remember(nil, peerDest.Hash, peerID.GetPublicKey(), nil)
+	if err := router.SetOutboundPropagationNode(peerDest.Hash); err != nil {
+		t.Fatal(err)
+	}
+
+	router.hasPath = func(_ []byte) bool { return true }
+	link := &rns.Link{}
+	router.newLink = func(rns.Transport, *rns.Destination) (*rns.Link, error) { return link, nil }
+	router.setLinkEstablishedCallback = func(*rns.Link, func(*rns.Link)) {}
+	router.establishLink = func(*rns.Link) error { return errors.New("establish failed") }
+
+	router.RequestMessagesFromPropagationNode(nil)
+
+	if router.PropagationTransferState() != PRLinkFailed {
+		t.Fatalf("state = %v, want PRLinkFailed", router.PropagationTransferState())
+	}
+	if router.outboundPropagationLink != nil {
+		t.Fatal("expected outbound propagation link to be cleared after establish failure")
 	}
 }
 
@@ -2976,6 +3051,7 @@ func TestRequestMessagesUsesExistingPropagationLink(t *testing.T) {
 	}
 
 	router.outboundPropagationLink = &rns.Link{}
+	router.linkStatus = func(*rns.Link) int { return rns.LinkActive }
 
 	var identifiedWith *rns.Identity
 	var requestedPath string
@@ -3237,6 +3313,107 @@ func TestPropagationSyncMessageGetResponseTracksDuplicatesAndPurges(t *testing.T
 	}
 	if _, err := os.Stat(filepath.Join(router.storagePath, "locally_processed")); err != nil {
 		t.Fatalf("expected locally_processed file: %v", err)
+	}
+}
+
+func TestPropagationSyncClosedLinkAfterCompleteResetsToIdle(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	router.outboundPropagationLink = &rns.Link{}
+	router.propagationTransferState = PRComplete
+	router.propagationTransferProgress = 1.0
+	router.propagationTransferLastResult = 3
+	router.wantsDownloadOnPathAvailableFrom = []byte("pending")
+	router.wantsDownloadOnPathAvailableTo = router.identity
+
+	router.handleOutboundPropagationLinkClosed(router.outboundPropagationLink)
+
+	if router.outboundPropagationLink != nil {
+		t.Fatal("expected outbound propagation link to be cleared")
+	}
+	if router.PropagationTransferState() != PRIdle {
+		t.Fatalf("state = %v, want PRIdle", router.PropagationTransferState())
+	}
+	if router.PropagationTransferProgress() != 0.0 {
+		t.Fatalf("progress = %v, want 0.0", router.PropagationTransferProgress())
+	}
+	if router.wantsDownloadOnPathAvailableFrom != nil || router.wantsDownloadOnPathAvailableTo != nil {
+		t.Fatal("expected pending path state to be cleared")
+	}
+}
+
+func TestPropagationSyncClosedLinkBeforeEstablishBecomesLinkFailed(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	router.outboundPropagationLink = &rns.Link{}
+	router.propagationTransferState = PRPathRequested
+	router.propagationTransferProgress = 0.4
+
+	router.handleOutboundPropagationLinkClosed(router.outboundPropagationLink)
+
+	if router.PropagationTransferState() != PRLinkFailed {
+		t.Fatalf("state = %v, want PRLinkFailed", router.PropagationTransferState())
+	}
+	if router.PropagationTransferProgress() != 0.0 {
+		t.Fatalf("progress = %v, want 0.0", router.PropagationTransferProgress())
+	}
+}
+
+func TestPropagationSyncClosedLinkMidTransferBecomesTransferFailed(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	router.outboundPropagationLink = &rns.Link{}
+	router.propagationTransferState = PRReceiving
+	router.propagationTransferProgress = 0.7
+
+	router.handleOutboundPropagationLinkClosed(router.outboundPropagationLink)
+
+	if router.PropagationTransferState() != PRTransferFailed {
+		t.Fatalf("state = %v, want PRTransferFailed", router.PropagationTransferState())
+	}
+	if router.PropagationTransferProgress() != 0.0 {
+		t.Fatalf("progress = %v, want 0.0", router.PropagationTransferProgress())
+	}
+}
+
+func TestPropagationSyncMessageGetFailedTearsDownIntoTransferFailed(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	link := &rns.Link{}
+	router.outboundPropagationLink = link
+	router.propagationTransferState = PRRequestSent
+	var teardownCount int
+	router.teardownLink = func(closed *rns.Link) {
+		if closed != link {
+			t.Fatal("teardown called with unexpected link")
+		}
+		teardownCount++
+		router.handleOutboundPropagationLinkClosed(closed)
+	}
+
+	router.messageGetFailed(&rns.RequestReceipt{})
+
+	if teardownCount != 1 {
+		t.Fatalf("teardown count = %d, want 1", teardownCount)
+	}
+	if router.PropagationTransferState() != PRTransferFailed {
+		t.Fatalf("state = %v, want PRTransferFailed", router.PropagationTransferState())
 	}
 }
 
