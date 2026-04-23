@@ -41,6 +41,7 @@ type outboundStampCostEntry struct {
 
 const messageExpiry = 30 * 24 * time.Hour
 const stampCostExpiry = 45 * 24 * time.Hour
+const transientIDCacheExpiry = messageExpiry * 6
 
 // Router encapsulates the routing logic, delivery mechanisms, and state management for the LXMF messaging protocol.
 type Router struct {
@@ -53,6 +54,8 @@ type Router struct {
 	outboundStampCosts   map[string]outboundStampCostEntry
 	displayNames         map[string]string
 	ticketStore          *TicketStore
+	locallyDeliveredIDs  map[string]time.Time
+	locallyProcessedIDs  map[string]time.Time
 
 	pendingOutbound []*Message
 
@@ -195,6 +198,8 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 		outboundStampCosts:   map[string]outboundStampCostEntry{},
 		displayNames:         map[string]string{},
 		ticketStore:          NewTicketStore(),
+		locallyDeliveredIDs:  map[string]time.Time{},
+		locallyProcessedIDs:  map[string]time.Time{},
 		pendingOutbound:      []*Message{},
 		hasPath:              ts.HasPath,
 		hopsTo:               ts.HopsTo,
@@ -236,6 +241,9 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 	router.registerAnnounceHandlers()
 	if err := router.LoadAvailableTickets(); err != nil {
 		log.Printf("Could not load available tickets from storage: %v", err)
+	}
+	if err := router.LoadLocalTransientIDCaches(); err != nil {
+		log.Printf("Could not load local transient ID caches from storage: %v", err)
 	}
 	if err := router.LoadOutboundStampCosts(); err != nil {
 		log.Printf("Could not load outbound stamp costs from storage: %v", err)
@@ -1255,14 +1263,7 @@ func (r *Router) handleInboundResourceData(data []byte) {
 	if err != nil {
 		return
 	}
-
-	r.mu.Lock()
-	callback := r.deliveryCallback
-	r.mu.Unlock()
-
-	if callback != nil {
-		callback(message)
-	}
+	r.handleInboundMessage(message)
 }
 
 func (r *Router) deliveryPacket(data []byte, packet *rns.Packet) {
@@ -1292,19 +1293,7 @@ func (r *Router) deliveryPacket(data []byte, packet *rns.Packet) {
 	if err != nil {
 		return
 	}
-	if r.ticketStore != nil && message.SignatureValidated {
-		if ticketEntry := outboundTicketFieldEntry(message.Fields, r.now()); ticketEntry != nil {
-			r.ticketStore.RememberOutboundTicket(message.SourceHash, *ticketEntry)
-		}
-	}
-
-	r.mu.Lock()
-	callback := r.deliveryCallback
-	r.mu.Unlock()
-
-	if callback != nil {
-		callback(message)
-	}
+	r.handleInboundMessage(message)
 }
 
 // RouterConfig provides the full set of constructor parameters matching the Python LXMRouter's arguments, granting fine-grained control over routing limits and policies.
@@ -1517,6 +1506,14 @@ func (r *Router) outboundStampCostsPath() string {
 
 func (r *Router) availableTicketsPath() string {
 	return filepath.Join(r.storagePath, "available_tickets")
+}
+
+func (r *Router) localDeliveriesPath() string {
+	return filepath.Join(r.storagePath, "local_deliveries")
+}
+
+func (r *Router) locallyProcessedPath() string {
+	return filepath.Join(r.storagePath, "locally_processed")
 }
 
 // FlushQueues merges queued peer message bookkeeping into the in-memory
@@ -1778,6 +1775,148 @@ func (r *Router) LoadAvailableTickets() error {
 	return nil
 }
 
+// SaveLocalTransientIDCaches persists the Python local_deliveries and
+// locally_processed dictionaries used for duplicate suppression.
+func (r *Router) SaveLocalTransientIDCaches() error {
+	r.mu.Lock()
+	r.cleanTransientIDCachesLocked()
+	delivered := make(map[string]any, len(r.locallyDeliveredIDs))
+	for transientID, deliveredAt := range r.locallyDeliveredIDs {
+		delivered[transientID] = peerTime(deliveredAt)
+	}
+	processed := make(map[string]any, len(r.locallyProcessedIDs))
+	for transientID, processedAt := range r.locallyProcessedIDs {
+		processed[transientID] = peerTime(processedAt)
+	}
+	r.mu.Unlock()
+
+	if err := os.MkdirAll(r.storagePath, 0o755); err != nil {
+		return err
+	}
+	if len(delivered) > 0 {
+		packed, err := msgpack.Pack(delivered)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(r.localDeliveriesPath(), packed, 0o644); err != nil {
+			return err
+		}
+	}
+	if len(processed) > 0 {
+		packed, err := msgpack.Pack(processed)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(r.locallyProcessedPath(), packed, 0o644); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// LoadLocalTransientIDCaches restores and cleans the duplicate-suppression
+// caches used for direct delivery and propagation processing.
+func (r *Router) LoadLocalTransientIDCaches() error {
+	delivered, err := r.loadTransientIDCache(r.localDeliveriesPath())
+	if err != nil {
+		return err
+	}
+	processed, err := r.loadTransientIDCache(r.locallyProcessedPath())
+	if err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	r.locallyDeliveredIDs = delivered
+	r.locallyProcessedIDs = processed
+	r.cleanTransientIDCachesLocked()
+	r.mu.Unlock()
+	return nil
+}
+
+func (r *Router) loadTransientIDCache(path string) (map[string]time.Time, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string]time.Time{}, nil
+		}
+		return nil, err
+	}
+	if len(data) == 0 {
+		return map[string]time.Time{}, nil
+	}
+
+	unpacked, err := msgpack.Unpack(data)
+	if err != nil {
+		return nil, err
+	}
+	cache, ok := anyToMap(unpacked)
+	if !ok {
+		return map[string]time.Time{}, nil
+	}
+
+	loaded := make(map[string]time.Time, len(cache))
+	for transientIDValue, timestampValue := range cache {
+		transientID := anyToBytes(transientIDValue)
+		if len(transientID) == 0 {
+			continue
+		}
+		timestampSeconds, err := anyToFloat64(timestampValue)
+		if err != nil {
+			continue
+		}
+		loaded[string(transientID)] = timeFromPeerValue(timestampSeconds)
+	}
+	return loaded, nil
+}
+
+func (r *Router) cleanTransientIDCachesLocked() {
+	now := r.now()
+	for transientID, deliveredAt := range r.locallyDeliveredIDs {
+		if now.After(deliveredAt.Add(transientIDCacheExpiry)) {
+			delete(r.locallyDeliveredIDs, transientID)
+		}
+	}
+	for transientID, processedAt := range r.locallyProcessedIDs {
+		if now.After(processedAt.Add(transientIDCacheExpiry)) {
+			delete(r.locallyProcessedIDs, transientID)
+		}
+	}
+}
+
+func (r *Router) hasDeliveredTransientIDLocked(transientID []byte) bool {
+	if len(transientID) == 0 {
+		return false
+	}
+	_, ok := r.locallyDeliveredIDs[string(transientID)]
+	return ok
+}
+
+func (r *Router) handleInboundMessage(message *Message) {
+	if message == nil {
+		return
+	}
+
+	r.mu.Lock()
+	if r.hasDeliveredTransientIDLocked(message.Hash) {
+		r.mu.Unlock()
+		return
+	}
+	r.locallyDeliveredIDs[string(append([]byte{}, message.Hash...))] = r.now()
+	if r.ticketStore != nil && message.SignatureValidated {
+		if ticketEntry := outboundTicketFieldEntry(message.Fields, r.now()); ticketEntry != nil {
+			r.ticketStore.RememberOutboundTicket(message.SourceHash, *ticketEntry)
+		}
+	}
+	callback := r.deliveryCallback
+	r.mu.Unlock()
+
+	if callback != nil {
+		callback(message)
+	}
+}
+
 func (r *Router) markTicketDeliveryLocked(message *Message) {
 	if r.ticketStore == nil || message == nil || !message.IncludeTicket || message.Destination == nil {
 		return
@@ -1942,6 +2081,9 @@ func (r *Router) Close() error {
 
 	var closeErr error
 	if err := r.SaveAvailableTickets(); err != nil {
+		closeErr = errors.Join(closeErr, err)
+	}
+	if err := r.SaveLocalTransientIDCaches(); err != nil {
 		closeErr = errors.Join(closeErr, err)
 	}
 	if err := r.SaveOutboundStampCosts(); err != nil {

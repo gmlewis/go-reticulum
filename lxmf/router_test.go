@@ -342,7 +342,7 @@ func TestProcessOutboundOpportunisticPathRecoversWithoutPathRequest(t *testing.T
 	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 	msg.DesiredMethod = MethodOpportunistic
 
-	now := time.Unix(1700000000, 0)
+	now := time.Now().UTC().Truncate(time.Second)
 	router.now = func() time.Time { return now }
 	hasPath := false
 	router.hasPath = func(_ []byte) bool { return hasPath }
@@ -408,7 +408,7 @@ func TestProcessOutboundOpportunisticEscalatesToPathRequestThenSends(t *testing.
 	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 	msg.DesiredMethod = MethodOpportunistic
 
-	now := time.Unix(1700000000, 0)
+	now := time.Now().UTC().Truncate(time.Second)
 	router.now = func() time.Time { return now }
 	hasPath := false
 	router.hasPath = func(_ []byte) bool { return hasPath }
@@ -1790,7 +1790,7 @@ func TestDeliveryPacketOpportunisticAndDirect(t *testing.T) {
 	}
 
 	var mu sync.Mutex
-	received := make([]*Message, 0, 2)
+	received := make([]*Message, 0, 1)
 	router.RegisterDeliveryCallback(func(m *Message) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -1810,17 +1810,14 @@ func TestDeliveryPacketOpportunisticAndDirect(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	if len(received) != 2 {
-		t.Fatalf("received count=%v want=2", len(received))
+	if len(received) != 1 {
+		t.Fatalf("received count=%v want=1", len(received))
 	}
-	if received[0].ContentString() != "content" || received[1].ContentString() != "content" {
-		t.Fatalf("unexpected content values: %q and %q", received[0].ContentString(), received[1].ContentString())
+	if received[0].ContentString() != "content" {
+		t.Fatalf("unexpected content value: %q", received[0].ContentString())
 	}
 	if received[0].Method != MethodOpportunistic {
 		t.Fatalf("first method=%v want=%v", received[0].Method, MethodOpportunistic)
-	}
-	if received[1].Method != MethodDirect {
-		t.Fatalf("second method=%v want=%v", received[1].Method, MethodDirect)
 	}
 }
 
@@ -2113,6 +2110,94 @@ func TestPropagationPeerAndNodeStatsRestartRecovery(t *testing.T) {
 	}
 }
 
+func TestLocalTransientIDCachesRestartRecovery(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.now = func() time.Time { return now }
+
+	deliveredID := bytes.Repeat([]byte{0x61}, 32)
+	processedID := bytes.Repeat([]byte{0x62}, 32)
+	router.locallyDeliveredIDs[string(deliveredID)] = now
+	router.locallyProcessedIDs[string(processedID)] = now.Add(-time.Minute)
+
+	if err := router.SaveLocalTransientIDCaches(); err != nil {
+		t.Fatalf("SaveLocalTransientIDCaches(): %v", err)
+	}
+
+	recovered := mustTestNewRouter(t, ts, nil, tmpDir)
+	recovered.now = func() time.Time { return now }
+
+	if got := recovered.locallyDeliveredIDs[string(deliveredID)]; !got.Equal(now) {
+		t.Fatalf("recovered delivered timestamp = %v, want %v", got, now)
+	}
+	if got := recovered.locallyProcessedIDs[string(processedID)]; !got.Equal(now.Add(-time.Minute)) {
+		t.Fatalf("recovered processed timestamp = %v, want %v", got, now.Add(-time.Minute))
+	}
+}
+
+func TestLocalTransientIDCachesDropExpiredEntriesOnLoad(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	now := time.Unix(1700000000, 0)
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.now = func() time.Time { return now }
+
+	expiredID := bytes.Repeat([]byte{0x71}, 32)
+	freshID := bytes.Repeat([]byte{0x72}, 32)
+	expiredAt := peerTime(now.Add(-transientIDCacheExpiry - time.Second))
+	freshAt := peerTime(now.Add(-time.Minute))
+
+	deliveredPayload, err := msgpack.Pack(map[string]any{
+		string(expiredID): expiredAt,
+		string(freshID):   freshAt,
+	})
+	if err != nil {
+		t.Fatalf("Pack delivered cache: %v", err)
+	}
+	processedPayload, err := msgpack.Pack(map[string]any{
+		string(expiredID): expiredAt,
+		string(freshID):   freshAt,
+	})
+	if err != nil {
+		t.Fatalf("Pack processed cache: %v", err)
+	}
+	if err := os.WriteFile(router.localDeliveriesPath(), deliveredPayload, 0o644); err != nil {
+		t.Fatalf("WriteFile(local_deliveries): %v", err)
+	}
+	if err := os.WriteFile(router.locallyProcessedPath(), processedPayload, 0o644); err != nil {
+		t.Fatalf("WriteFile(locally_processed): %v", err)
+	}
+
+	router.locallyDeliveredIDs = map[string]time.Time{}
+	router.locallyProcessedIDs = map[string]time.Time{}
+	if err := router.LoadLocalTransientIDCaches(); err != nil {
+		t.Fatalf("LoadLocalTransientIDCaches(): %v", err)
+	}
+
+	if _, ok := router.locallyDeliveredIDs[string(expiredID)]; ok {
+		t.Fatalf("expired delivered transient ID %x should be dropped", expiredID)
+	}
+	if _, ok := router.locallyProcessedIDs[string(expiredID)]; ok {
+		t.Fatalf("expired processed transient ID %x should be dropped", expiredID)
+	}
+	if got := router.locallyDeliveredIDs[string(freshID)]; !got.Equal(now.Add(-time.Minute)) {
+		t.Fatalf("fresh delivered timestamp = %v, want %v", got, now.Add(-time.Minute))
+	}
+	if got := router.locallyProcessedIDs[string(freshID)]; !got.Equal(now.Add(-time.Minute)) {
+		t.Fatalf("fresh processed timestamp = %v, want %v", got, now.Add(-time.Minute))
+	}
+}
+
 func TestAvailableTicketsSaveLoadRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -2160,6 +2245,43 @@ func TestAvailableTicketsSaveLoadRoundTrip(t *testing.T) {
 	}
 }
 
+func TestDeliveryPacketSuppressesDuplicateLocalDelivery(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	localID := mustTestNewIdentity(t, true)
+	localDestination := mustTestNewDestination(t, ts, localID, rns.DestinationIn, rns.DestinationSingle, AppName, "delivery")
+	sourceID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	ts.Remember(nil, sourceDest.Hash, sourceID.GetPublicKey(), nil)
+
+	var deliveries int
+	router.RegisterDeliveryCallback(func(*Message) {
+		deliveries++
+	})
+
+	message := mustTestNewMessage(t, localDestination, sourceDest, "payload", "title", nil)
+	if err := message.Pack(); err != nil {
+		t.Fatalf("Pack(): %v", err)
+	}
+
+	packet := &rns.Packet{DestinationType: rns.DestinationLink}
+	router.deliveryPacket(message.Packed, packet)
+	router.deliveryPacket(message.Packed, packet)
+
+	if deliveries != 1 {
+		t.Fatalf("deliveries = %v, want 1", deliveries)
+	}
+	if _, ok := router.locallyDeliveredIDs[string(message.Hash)]; !ok {
+		t.Fatalf("expected local delivery cache entry for %x", message.Hash)
+	}
+}
+
 func TestDeliveryPacketRemembersOutboundTicket(t *testing.T) {
 	t.Parallel()
 
@@ -2187,6 +2309,39 @@ func TestDeliveryPacketRemembersOutboundTicket(t *testing.T) {
 	}
 	packet := &rns.Packet{DestinationType: rns.DestinationLink}
 	router.deliveryPacket(inboundMessage.Packed, packet)
+
+	if got := router.ticketStore.OutboundTicket(sourceDest.Hash, now); !bytes.Equal(got, outboundTicket) {
+		t.Fatalf("outbound ticket=%x want=%x", got, outboundTicket)
+	}
+}
+
+func TestHandleInboundResourceDataRemembersOutboundTicket(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	now := time.Now().UTC().Truncate(time.Second)
+	router.now = func() time.Time { return now }
+
+	sourceID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	ts.Remember(nil, sourceDest.Hash, sourceID.GetPublicKey(), nil)
+	localID := mustTestNewIdentity(t, true)
+	localDestination := mustTestNewDestination(t, ts, localID, rns.DestinationIn, rns.DestinationSingle, AppName, "delivery")
+
+	outboundTicket := bytes.Repeat([]byte{0x45}, TicketLength)
+	expiry := float64(now.Add(48*time.Hour).UnixNano()) / 1e9
+	inboundMessage := mustTestNewMessage(t, localDestination, sourceDest, "payload", "title", map[any]any{
+		FieldTicket: []any{expiry, outboundTicket},
+	})
+	if err := inboundMessage.Pack(); err != nil {
+		t.Fatalf("Pack(): %v", err)
+	}
+
+	router.handleInboundResourceData(inboundMessage.Packed)
 
 	if got := router.ticketStore.OutboundTicket(sourceDest.Hash, now); !bytes.Equal(got, outboundTicket) {
 		t.Fatalf("outbound ticket=%x want=%x", got, outboundTicket)
