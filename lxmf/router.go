@@ -61,15 +61,21 @@ type Router struct {
 
 	deliveryCallback func(*Message)
 
-	hasPath         func([]byte) bool
-	hopsTo          func([]byte) int
-	requestPath     func([]byte) error
-	sendPacket      func(*rns.Packet) error
-	sendResource    func(*Message) error
-	processOutbound func()
-	newLink         func(rns.Transport, *rns.Destination) (*rns.Link, error)
-	newResource     func([]byte, *rns.Link) (*rns.Resource, error)
-	now             func() time.Time
+	hasPath                     func([]byte) bool
+	hopsTo                      func([]byte) int
+	requestPath                 func([]byte) error
+	sendPacket                  func(*rns.Packet) error
+	sendResource                func(*Message) error
+	processOutbound             func()
+	newLink                     func(rns.Transport, *rns.Destination) (*rns.Link, error)
+	newResource                 func([]byte, *rns.Link) (*rns.Resource, error)
+	identifyLink                func(*rns.Link, *rns.Identity) error
+	requestLink                 func(*rns.Link, string, any, func(*rns.RequestReceipt), func(*rns.RequestReceipt), func(*rns.RequestReceipt), time.Duration) (*rns.RequestReceipt, error)
+	requestProgress             func(*rns.RequestReceipt) float64
+	startRequestMessagesPathJob func()
+	pathWaitSleep               func(time.Duration)
+	teardownLink                func(*rns.Link)
+	now                         func() time.Time
 
 	resourceLinks       map[string]*rns.Link
 	resourceLinkPending map[string]bool
@@ -88,21 +94,28 @@ type Router struct {
 	controlAllowed     map[string]struct{}
 	peers              map[string]*Peer
 
-	propagationPerTransferLimit   float64
-	propagationPerSyncLimit       float64
-	deliveryPerTransferLimit      float64
-	maxPeers                      int
-	autopeer                      bool
-	autopeerMaxdepth              int
-	enforceStampsEnabled          bool
-	ignoredList                   map[string]struct{}
-	messageStorageLimit           float64
-	prioritisedList               map[string]struct{}
-	propagationEnabled            bool
-	outboundPropagationNode       []byte
-	propagationTransferState      int
-	propagationTransferLastResult int
-	propagationTransferProgress   float64
+	propagationPerTransferLimit       float64
+	propagationPerSyncLimit           float64
+	deliveryPerTransferLimit          float64
+	maxPeers                          int
+	autopeer                          bool
+	autopeerMaxdepth                  int
+	enforceStampsEnabled              bool
+	ignoredList                       map[string]struct{}
+	messageStorageLimit               float64
+	prioritisedList                   map[string]struct{}
+	propagationEnabled                bool
+	outboundPropagationNode           []byte
+	outboundPropagationLink           *rns.Link
+	wantsDownloadOnPathAvailableFrom  []byte
+	wantsDownloadOnPathAvailableTo    *rns.Identity
+	wantsDownloadOnPathAvailableAt    time.Time
+	propagationTransferState          int
+	propagationTransferLastResult     int
+	propagationTransferLastDuplicates int
+	propagationTransferMaxMessages    int
+	propagationTransferProgress       float64
+	retainSyncedOnNode                bool
 
 	propagationCost            int
 	propagationCostFlexibility int
@@ -119,10 +132,11 @@ type Router struct {
 }
 
 const (
-	maxDeliveryAttempts = 5
-	deliveryRetryWait   = 10 * time.Second
-	pathRequestWait     = 7 * time.Second
-	maxPathlessTries    = 1
+	maxDeliveryAttempts    = 5
+	deliveryRetryWait      = 10 * time.Second
+	pathRequestWait        = 7 * time.Second
+	maxPathlessTries       = 1
+	propagationPathTimeout = 10 * time.Second
 
 	// DefaultMaxPeers is the default cap on active peering relationships.
 	DefaultMaxPeers = 20
@@ -207,8 +221,21 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 		sendPacket: func(packet *rns.Packet) error {
 			return packet.Send()
 		},
-		newLink:                    rns.NewLink,
-		newResource:                rns.NewResource,
+		newLink:     rns.NewLink,
+		newResource: rns.NewResource,
+		identifyLink: func(link *rns.Link, identity *rns.Identity) error {
+			return link.Identify(identity)
+		},
+		requestLink: func(link *rns.Link, path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), timeout time.Duration) (*rns.RequestReceipt, error) {
+			return link.Request(path, data, responseCallback, failedCallback, progressCallback, timeout)
+		},
+		requestProgress: func(receipt *rns.RequestReceipt) float64 {
+			return receipt.GetProgress()
+		},
+		pathWaitSleep: time.Sleep,
+		teardownLink: func(link *rns.Link) {
+			link.Teardown()
+		},
 		now:                        time.Now,
 		peeringCost:                DefaultPeeringCost,
 		propagationCost:            DefaultPropagationCost,
@@ -235,6 +262,9 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 		maxPeeringCost:              DefaultMaxPeeringCost,
 		ignoredList:                 map[string]struct{}{},
 		prioritisedList:             map[string]struct{}{},
+	}
+	router.startRequestMessagesPathJob = func() {
+		go router.requestMessagesPathJob()
 	}
 	router.sendResource = router.sendMessageResourceLocked
 	router.processOutbound = router.ProcessOutbound
@@ -1893,6 +1923,67 @@ func (r *Router) hasDeliveredTransientIDLocked(transientID []byte) bool {
 	return ok
 }
 
+func (r *Router) hasProcessedTransientIDLocked(transientID []byte) bool {
+	if len(transientID) == 0 {
+		return false
+	}
+	_, ok := r.locallyProcessedIDs[string(transientID)]
+	return ok
+}
+
+func responseErrorCode(response any) (int64, bool) {
+	switch value := response.(type) {
+	case int:
+		return int64(value), true
+	case int8:
+		return int64(value), true
+	case int16:
+		return int64(value), true
+	case int32:
+		return int64(value), true
+	case int64:
+		return value, true
+	case uint:
+		return int64(value), true
+	case uint8:
+		return int64(value), true
+	case uint16:
+		return int64(value), true
+	case uint32:
+		return int64(value), true
+	case uint64:
+		if value > uint64(^uint64(0)>>1) {
+			return 0, false
+		}
+		return int64(value), true
+	default:
+		return 0, false
+	}
+}
+
+func transientIDsFromResponse(response any) ([][]byte, bool) {
+	switch values := response.(type) {
+	case [][]byte:
+		result := make([][]byte, 0, len(values))
+		for _, value := range values {
+			result = append(result, append([]byte{}, value...))
+		}
+		return result, true
+	case []any:
+		result := make([][]byte, 0, len(values))
+		for _, value := range values {
+			entry, ok := value.([]byte)
+			if !ok {
+				return nil, false
+			}
+			result = append(result, append([]byte{}, entry...))
+		}
+		return result, true
+	default:
+		return nil, false
+	}
+}
+
 func (r *Router) handleInboundMessage(message *Message) {
 	if message == nil {
 		return
@@ -1915,6 +2006,39 @@ func (r *Router) handleInboundMessage(message *Message) {
 	if callback != nil {
 		callback(message)
 	}
+}
+
+func (r *Router) handlePropagatedInbound(payload []byte) bool {
+	if len(payload) < DestinationLength {
+		return false
+	}
+
+	transientID := rns.FullHash(payload)
+	destinationHash := append([]byte{}, payload[:DestinationLength]...)
+
+	r.mu.Lock()
+	if _, ok := r.propagationEntries[string(transientID)]; ok || r.hasProcessedTransientIDLocked(transientID) {
+		r.mu.Unlock()
+		return true
+	}
+	r.locallyProcessedIDs[string(append([]byte{}, transientID...))] = r.now()
+	_, isLocalDelivery := r.deliveryDestinations[string(destinationHash)]
+	r.mu.Unlock()
+
+	if !isLocalDelivery {
+		return false
+	}
+
+	message, err := UnpackMessageFromBytes(r.transport, payload, MethodPropagated)
+	if err != nil {
+		return false
+	}
+
+	r.handleInboundMessage(message)
+	r.mu.Lock()
+	r.locallyDeliveredIDs[string(append([]byte{}, transientID...))] = r.now()
+	r.mu.Unlock()
+	return false
 }
 
 func (r *Router) markTicketDeliveryLocked(message *Message) {
@@ -2515,66 +2639,342 @@ func (r *Router) PropagationTransferProgress() float64 {
 // RequestMessagesFromPropagationNode orchestrates the complex sequence of establishing a link and downloading queued messages from the designated outbound propagation node.
 func (r *Router) RequestMessagesFromPropagationNode(limit *int) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	if r.outboundPropagationNode == nil {
+		r.mu.Unlock()
 		log.Printf("Cannot request LXMF propagation node sync, no default propagation node configured")
 		return
 	}
-
+	outboundNode := append([]byte{}, r.outboundPropagationNode...)
+	activeLink := r.outboundPropagationLink
 	r.propagationTransferProgress = 0.0
-
 	maxMessages := 0
 	if limit != nil {
 		maxMessages = *limit
 	}
+	r.propagationTransferMaxMessages = maxMessages
+	identity := r.identity
+	r.mu.Unlock()
 
-	if r.hasPath != nil && r.hasPath(r.outboundPropagationNode) {
-		r.propagationTransferState = PRLinkEstablishing
-		log.Printf("Establishing link to %x for message download (limit=%v)", r.outboundPropagationNode, maxMessages)
-
-		identity := r.transport.Recall(r.outboundPropagationNode)
-		if identity == nil {
-			log.Printf("Cannot recall identity for propagation node %x", r.outboundPropagationNode)
+	if activeLink != nil {
+		r.mu.Lock()
+		r.wantsDownloadOnPathAvailableFrom = nil
+		r.wantsDownloadOnPathAvailableTo = nil
+		r.wantsDownloadOnPathAvailableAt = time.Time{}
+		r.propagationTransferState = PRLinkEstablished
+		r.mu.Unlock()
+		log.Printf("Requesting message list from propagation node")
+		if err := r.identifyLink(activeLink, identity); err != nil {
+			log.Printf("Could not identify to propagation node: %v", err)
+			r.mu.Lock()
 			r.propagationTransferState = PRFailed
+			r.mu.Unlock()
+			return
+		}
+		if _, err := r.requestLink(activeLink, messageGetPath, []any{nil, nil}, r.messageListResponse, r.messageGetFailed, nil, 0); err != nil {
+			log.Printf("Could not request message list from propagation node: %v", err)
+			r.mu.Lock()
+			r.propagationTransferState = PRFailed
+			r.mu.Unlock()
+			return
+		}
+		r.mu.Lock()
+		r.propagationTransferState = PRRequestSent
+		r.mu.Unlock()
+		return
+	}
+
+	if r.hasPath != nil && r.hasPath(outboundNode) {
+		r.mu.Lock()
+		r.wantsDownloadOnPathAvailableFrom = nil
+		r.wantsDownloadOnPathAvailableTo = nil
+		r.wantsDownloadOnPathAvailableAt = time.Time{}
+		r.propagationTransferState = PRLinkEstablishing
+		r.mu.Unlock()
+		log.Printf("Establishing link to %x for message download (limit=%v)", outboundNode, maxMessages)
+
+		peerIdentity := r.transport.Recall(outboundNode)
+		if peerIdentity == nil {
+			log.Printf("Cannot recall identity for propagation node %x", outboundNode)
+			r.mu.Lock()
+			r.propagationTransferState = PRFailed
+			r.mu.Unlock()
 			return
 		}
 
-		dest, err := rns.NewDestination(r.transport, identity, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+		dest, err := rns.NewDestination(r.transport, peerIdentity, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
 		if err != nil {
 			log.Printf("Cannot create destination for propagation node: %v", err)
+			r.mu.Lock()
 			r.propagationTransferState = PRFailed
+			r.mu.Unlock()
 			return
 		}
 
 		link, err := r.newLink(r.transport, dest)
 		if err != nil {
 			log.Printf("Cannot establish link to propagation node: %v", err)
+			r.mu.Lock()
 			r.propagationTransferState = PRLinkFailed
+			r.mu.Unlock()
 			return
 		}
 
+		r.mu.Lock()
+		r.outboundPropagationLink = link
 		r.propagationTransferState = PRLinkEstablished
-		log.Printf("Link established to propagation node %x via %v", r.outboundPropagationNode, link)
+		r.mu.Unlock()
+		log.Printf("Link established to propagation node %x via %v", outboundNode, link)
+		r.mu.Lock()
 		r.propagationTransferState = PRRequestSent
+		r.mu.Unlock()
 	} else {
-		log.Printf("No path known for message download from propagation node %x, requesting path...", r.outboundPropagationNode)
+		log.Printf("No path known for message download from propagation node %x, requesting path...", outboundNode)
 		if r.requestPath != nil {
-			if err := r.requestPath(r.outboundPropagationNode); err != nil {
+			if err := r.requestPath(outboundNode); err != nil {
 				log.Printf("Path request failed: %v", err)
+				r.mu.Lock()
 				r.propagationTransferState = PRNoPath
+				r.mu.Unlock()
 				return
 			}
 		}
+		r.mu.Lock()
+		r.wantsDownloadOnPathAvailableFrom = append([]byte{}, outboundNode...)
+		r.wantsDownloadOnPathAvailableTo = identity
+		r.wantsDownloadOnPathAvailableAt = r.now().Add(propagationPathTimeout)
 		r.propagationTransferState = PRPathRequested
+		r.mu.Unlock()
+		r.startRequestMessagesPathJob()
+	}
+}
+
+func (r *Router) requestMessagesPathJob() {
+	r.mu.Lock()
+	from := append([]byte{}, r.wantsDownloadOnPathAvailableFrom...)
+	deadline := r.wantsDownloadOnPathAvailableAt
+	maxMessages := r.propagationTransferMaxMessages
+	r.mu.Unlock()
+
+	for len(from) > 0 && (deadline.IsZero() || r.now().Before(deadline)) {
+		if r.hasPath != nil && r.hasPath(from) {
+			var limit *int
+			if maxMessages != 0 {
+				limit = &maxMessages
+			}
+			r.RequestMessagesFromPropagationNode(limit)
+			return
+		}
+		r.pathWaitSleep(100 * time.Millisecond)
+	}
+
+	log.Printf("Propagation node path request timed out")
+	failureState := PRNoPath
+	r.acknowledgeSyncCompletion(false, &failureState)
+}
+
+func (r *Router) messageListResponse(receipt *rns.RequestReceipt) {
+	if receipt == nil {
+		return
+	}
+	if code, ok := responseErrorCode(receipt.Response); ok {
+		switch code {
+		case peerErrorNoIdentity:
+			log.Printf("Propagation node indicated missing identification on list request, tearing down link.")
+			r.mu.Lock()
+			link := r.outboundPropagationLink
+			r.propagationTransferState = PRNoIdentityRcvd
+			r.mu.Unlock()
+			if link != nil {
+				r.teardownLink(link)
+			}
+			return
+		case peerErrorNoAccess:
+			log.Printf("Propagation node did not allow list request, tearing down link.")
+			r.mu.Lock()
+			link := r.outboundPropagationLink
+			r.propagationTransferState = PRNoAccess
+			r.mu.Unlock()
+			if link != nil {
+				r.teardownLink(link)
+			}
+			return
+		}
+	}
+
+	transientIDs, ok := transientIDsFromResponse(receipt.Response)
+	if !ok {
+		log.Printf("Invalid message list data received from propagation node")
+		r.mu.Lock()
+		link := r.outboundPropagationLink
+		r.mu.Unlock()
+		if link != nil {
+			r.teardownLink(link)
+		}
+		return
+	}
+
+	if len(transientIDs) == 0 {
+		r.mu.Lock()
+		r.propagationTransferState = PRComplete
+		r.propagationTransferProgress = 1.0
+		r.propagationTransferLastResult = 0
+		r.mu.Unlock()
+		return
+	}
+
+	r.mu.Lock()
+	maxMessages := r.propagationTransferMaxMessages
+	retainSynced := r.retainSyncedOnNode
+	deliveryLimit := r.deliveryPerTransferLimit
+	r.mu.Unlock()
+
+	haves := make([][]byte, 0, len(transientIDs))
+	wants := make([][]byte, 0, len(transientIDs))
+	for _, transientID := range transientIDs {
+		r.mu.Lock()
+		hasMessage := r.hasDeliveredTransientIDLocked(transientID)
+		r.mu.Unlock()
+		if hasMessage {
+			if !retainSynced {
+				haves = append(haves, append([]byte{}, transientID...))
+			}
+			continue
+		}
+		if maxMessages == 0 || len(wants) < maxMessages {
+			wants = append(wants, append([]byte{}, transientID...))
+		}
+	}
+
+	if _, err := r.requestLink(receipt.Link, messageGetPath, []any{wants, haves, deliveryLimit}, r.messageGetResponse, r.messageGetFailed, r.messageGetProgress, 0); err != nil {
+		log.Printf("Could not request messages from propagation node: %v", err)
+		r.mu.Lock()
+		r.propagationTransferState = PRFailed
+		r.mu.Unlock()
 	}
 }
 
 // CancelPropagationNodeRequests forcefully aborts any currently active or pending synchronization requests directed at the outbound propagation node.
 func (r *Router) CancelPropagationNodeRequests() {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	link := r.outboundPropagationLink
+	r.outboundPropagationLink = nil
+	r.mu.Unlock()
+	if link != nil {
+		r.teardownLink(link)
+	}
+	r.acknowledgeSyncCompletion(true, nil)
 	log.Printf("Cancelling propagation node requests")
-	r.propagationTransferState = PRIdle
+}
+
+func (r *Router) messageGetResponse(receipt *rns.RequestReceipt) {
+	if receipt == nil {
+		return
+	}
+	if code, ok := responseErrorCode(receipt.Response); ok {
+		switch code {
+		case peerErrorNoIdentity:
+			log.Printf("Propagation node indicated missing identification on get request, tearing down link.")
+			r.mu.Lock()
+			link := r.outboundPropagationLink
+			r.propagationTransferState = PRNoIdentityRcvd
+			r.mu.Unlock()
+			if link != nil {
+				r.teardownLink(link)
+			}
+			return
+		case peerErrorNoAccess:
+			log.Printf("Propagation node did not allow get request, tearing down link.")
+			r.mu.Lock()
+			link := r.outboundPropagationLink
+			r.propagationTransferState = PRNoAccess
+			r.mu.Unlock()
+			if link != nil {
+				r.teardownLink(link)
+			}
+			return
+		}
+	}
+
+	payloads, ok := transientIDsFromResponse(receipt.Response)
+	if !ok {
+		payloadList, listOK := receipt.Response.([]any)
+		if !listOK {
+			payloads = nil
+		} else {
+			payloads = make([][]byte, 0, len(payloadList))
+			for _, value := range payloadList {
+				payload, ok := value.([]byte)
+				if !ok {
+					payloads = nil
+					break
+				}
+				payloads = append(payloads, append([]byte{}, payload...))
+			}
+		}
+	}
+	if payloads == nil {
+		log.Printf("Invalid message data received from propagation node")
+		return
+	}
+
+	duplicates := 0
+	haves := make([][]byte, 0, len(payloads))
+	for _, payload := range payloads {
+		if r.handlePropagatedInbound(payload) {
+			duplicates++
+		}
+		haves = append(haves, rns.FullHash(payload))
+	}
+	if len(haves) > 0 {
+		if _, err := r.requestLink(receipt.Link, messageGetPath, []any{nil, haves}, nil, r.messageGetFailed, nil, 0); err != nil {
+			log.Printf("Could not acknowledge propagation sync completion: %v", err)
+		}
+	}
+
+	r.mu.Lock()
+	r.propagationTransferState = PRComplete
+	r.propagationTransferProgress = 1.0
+	r.propagationTransferLastDuplicates = duplicates
+	r.propagationTransferLastResult = len(payloads)
+	r.mu.Unlock()
+	if err := r.SaveLocalTransientIDCaches(); err != nil {
+		log.Printf("Could not save local transient ID caches: %v", err)
+	}
+}
+
+func (r *Router) messageGetProgress(receipt *rns.RequestReceipt) {
+	if receipt == nil {
+		return
+	}
+	r.mu.Lock()
+	r.propagationTransferState = PRReceiving
+	r.propagationTransferProgress = r.requestProgress(receipt)
+	r.mu.Unlock()
+}
+
+func (r *Router) messageGetFailed(_ *rns.RequestReceipt) {
+	log.Printf("Message list/get request failed")
+	r.mu.Lock()
+	link := r.outboundPropagationLink
+	r.mu.Unlock()
+	if link != nil {
+		r.teardownLink(link)
+	}
+}
+
+func (r *Router) acknowledgeSyncCompletion(resetState bool, failureState *int) {
+	r.mu.Lock()
+	r.propagationTransferLastResult = 0
+	if resetState || r.propagationTransferState <= PRComplete {
+		if failureState == nil {
+			r.propagationTransferState = PRIdle
+		} else {
+			r.propagationTransferState = *failureState
+		}
+	}
 	r.propagationTransferProgress = 0.0
+	r.wantsDownloadOnPathAvailableFrom = nil
+	r.wantsDownloadOnPathAvailableTo = nil
+	r.wantsDownloadOnPathAvailableAt = time.Time{}
+	r.mu.Unlock()
 }

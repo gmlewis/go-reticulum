@@ -68,6 +68,17 @@ func (rr *RequestReceipt) GetStatus() int {
 	return rr.Status
 }
 
+// GetProgress returns response-transfer progress as a value from 0.0 to 1.0.
+func (rr *RequestReceipt) GetProgress() float64 {
+	rr.mu.Lock()
+	resource := rr.Resource
+	rr.mu.Unlock()
+	if resource == nil {
+		return 0
+	}
+	return resource.GetProgress()
+}
+
 func (rr *RequestReceipt) responseReceived(response, metadata any) {
 	rr.mu.Lock()
 	defer rr.mu.Unlock()

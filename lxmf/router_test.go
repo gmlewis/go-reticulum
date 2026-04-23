@@ -2773,6 +2773,109 @@ func TestRequestMessagesPathRequested(t *testing.T) {
 	}
 }
 
+func TestRequestMessagesPathTimeoutSetsNoPath(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	propNode := make([]byte, 16)
+	for i := range propNode {
+		propNode[i] = byte(i)
+	}
+	if err := router.SetOutboundPropagationNode(propNode); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan struct{})
+	router.hasPath = func(_ []byte) bool { return false }
+	router.requestPath = func(_ []byte) error { return nil }
+	router.pathWaitSleep = func(time.Duration) {}
+	router.startRequestMessagesPathJob = func() {
+		go func() {
+			router.mu.Lock()
+			router.wantsDownloadOnPathAvailableAt = router.now()
+			router.mu.Unlock()
+			router.requestMessagesPathJob()
+			close(done)
+		}()
+	}
+
+	router.RequestMessagesFromPropagationNode(nil)
+	<-done
+
+	if router.PropagationTransferState() != PRNoPath {
+		t.Fatalf("state = %v, want PRNoPath", router.PropagationTransferState())
+	}
+	if router.PropagationTransferProgress() != 0.0 {
+		t.Fatalf("progress = %v, want 0.0", router.PropagationTransferProgress())
+	}
+	if router.wantsDownloadOnPathAvailableFrom != nil || router.wantsDownloadOnPathAvailableTo != nil {
+		t.Fatal("expected pending path download state to be cleared after timeout")
+	}
+}
+
+func TestRequestMessagesPathJobResumesSyncWhenPathAppears(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	propNode := make([]byte, 16)
+	for i := range propNode {
+		propNode[i] = byte(i + 1)
+	}
+	if err := router.SetOutboundPropagationNode(propNode); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan struct{})
+	requested := make(chan struct{}, 1)
+	hasPath := false
+	router.hasPath = func(_ []byte) bool { return hasPath }
+	router.requestPath = func(_ []byte) error { return nil }
+	router.pathWaitSleep = func(time.Duration) {
+		hasPath = true
+		router.outboundPropagationLink = &rns.Link{}
+	}
+	router.identifyLink = func(_ *rns.Link, identity *rns.Identity) error {
+		if identity != router.identity {
+			t.Fatal("path job resumed sync with wrong identity")
+		}
+		return nil
+	}
+	router.requestLink = func(_ *rns.Link, path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), _ time.Duration) (*rns.RequestReceipt, error) {
+		if path != messageGetPath {
+			t.Fatalf("request path = %q, want %q", path, messageGetPath)
+		}
+		requested <- struct{}{}
+		return nil, nil
+	}
+	router.startRequestMessagesPathJob = func() {
+		go func() {
+			router.requestMessagesPathJob()
+			close(done)
+		}()
+	}
+
+	router.RequestMessagesFromPropagationNode(nil)
+	select {
+	case <-requested:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for resumed sync request")
+	}
+	<-done
+
+	if router.PropagationTransferState() != PRRequestSent {
+		t.Fatalf("state = %v, want PRRequestSent", router.PropagationTransferState())
+	}
+	if router.wantsDownloadOnPathAvailableFrom != nil || router.wantsDownloadOnPathAvailableTo != nil {
+		t.Fatal("expected pending path download state to be cleared after path became available")
+	}
+}
+
 func TestRequestMessagesLinkEstablished(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -2854,6 +2957,286 @@ func TestCancelPropagationResetsState(t *testing.T) {
 	}
 	if router.PropagationTransferProgress() != 0.0 {
 		t.Fatalf("progress after cancel = %v, want 0.0", router.PropagationTransferProgress())
+	}
+}
+
+func TestRequestMessagesUsesExistingPropagationLink(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	propNode := make([]byte, rns.TruncatedHashLength/8)
+	for i := range propNode {
+		propNode[i] = byte(i + 1)
+	}
+	if err := router.SetOutboundPropagationNode(propNode); err != nil {
+		t.Fatal(err)
+	}
+
+	router.outboundPropagationLink = &rns.Link{}
+
+	var identifiedWith *rns.Identity
+	var requestedPath string
+	var requestedData any
+	router.identifyLink = func(_ *rns.Link, identity *rns.Identity) error {
+		identifiedWith = identity
+		return nil
+	}
+	router.requestLink = func(_ *rns.Link, path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), _ time.Duration) (*rns.RequestReceipt, error) {
+		if responseCallback == nil {
+			t.Fatal("expected response callback")
+		}
+		if failedCallback == nil {
+			t.Fatal("expected failed callback")
+		}
+		if progressCallback != nil {
+			t.Fatal("did not expect progress callback for initial list request")
+		}
+		requestedPath = path
+		requestedData = data
+		return nil, nil
+	}
+
+	router.RequestMessagesFromPropagationNode(nil)
+
+	if identifiedWith != router.identity {
+		t.Fatal("existing propagation link was not identified with router identity")
+	}
+	if requestedPath != messageGetPath {
+		t.Fatalf("request path = %q, want %q", requestedPath, messageGetPath)
+	}
+	fields, ok := requestedData.([]any)
+	if !ok {
+		t.Fatalf("request data type = %T, want []any", requestedData)
+	}
+	if len(fields) != 2 {
+		t.Fatalf("request field count = %d, want 2", len(fields))
+	}
+	if fields[0] != nil || fields[1] != nil {
+		t.Fatalf("request data = %#v, want [nil nil]", fields)
+	}
+	if router.PropagationTransferState() != PRRequestSent {
+		t.Fatalf("state = %v, want PRRequestSent", router.PropagationTransferState())
+	}
+}
+
+func TestPropagationSyncMessageListResponseRequestsWantedMessages(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	haveID := rns.FullHash([]byte("have"))
+	want1 := rns.FullHash([]byte("want-1"))
+	want2 := rns.FullHash([]byte("want-2"))
+	router.locallyDeliveredIDs[string(haveID)] = time.Now()
+	router.propagationTransferMaxMessages = 1
+
+	var requestedPath string
+	var requestedData any
+	router.requestLink = func(_ *rns.Link, path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), _ time.Duration) (*rns.RequestReceipt, error) {
+		if responseCallback == nil {
+			t.Fatal("expected response callback")
+		}
+		if failedCallback == nil {
+			t.Fatal("expected failed callback")
+		}
+		if progressCallback == nil {
+			t.Fatal("expected progress callback")
+		}
+		requestedPath = path
+		requestedData = data
+		return nil, nil
+	}
+
+	router.messageListResponse(&rns.RequestReceipt{
+		Link:     &rns.Link{},
+		Response: []any{haveID, want1, want2},
+	})
+
+	if requestedPath != messageGetPath {
+		t.Fatalf("request path = %q, want %q", requestedPath, messageGetPath)
+	}
+	fields, ok := requestedData.([]any)
+	if !ok {
+		t.Fatalf("request data type = %T, want []any", requestedData)
+	}
+	if len(fields) != 3 {
+		t.Fatalf("request field count = %d, want 3", len(fields))
+	}
+	wants, ok := fields[0].([][]byte)
+	if !ok {
+		t.Fatalf("wants type = %T, want [][]byte", fields[0])
+	}
+	haves, ok := fields[1].([][]byte)
+	if !ok {
+		t.Fatalf("haves type = %T, want [][]byte", fields[1])
+	}
+	if len(wants) != 1 || !bytes.Equal(wants[0], want1) {
+		t.Fatalf("wants = %x, want [%x]", wants, want1)
+	}
+	if len(haves) != 1 || !bytes.Equal(haves[0], haveID) {
+		t.Fatalf("haves = %x, want [%x]", haves, haveID)
+	}
+	limit, ok := fields[2].(float64)
+	if !ok {
+		t.Fatalf("limit type = %T, want float64", fields[2])
+	}
+	if got, want := limit, router.deliveryPerTransferLimit; got != want {
+		t.Fatalf("limit = %v, want %v", got, want)
+	}
+}
+
+func TestPropagationSyncMessageListResponseEmptyCompletes(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	router.messageListResponse(&rns.RequestReceipt{
+		Link:     &rns.Link{},
+		Response: []any{},
+	})
+
+	if router.PropagationTransferState() != PRComplete {
+		t.Fatalf("state = %v, want PRComplete", router.PropagationTransferState())
+	}
+	if router.PropagationTransferProgress() != 1.0 {
+		t.Fatalf("progress = %v, want 1.0", router.PropagationTransferProgress())
+	}
+	if router.PropagationTransferLastResult() != 0 {
+		t.Fatalf("last result = %v, want 0", router.PropagationTransferLastResult())
+	}
+}
+
+func TestPropagationSyncMessageGetProgressUpdatesState(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	router.requestProgress = func(_ *rns.RequestReceipt) float64 { return 0.625 }
+
+	router.messageGetProgress(&rns.RequestReceipt{})
+
+	if router.PropagationTransferState() != PRReceiving {
+		t.Fatalf("state = %v, want PRReceiving", router.PropagationTransferState())
+	}
+	if router.PropagationTransferProgress() != 0.625 {
+		t.Fatalf("progress = %v, want 0.625", router.PropagationTransferProgress())
+	}
+}
+
+func TestPropagationSyncMessageGetResponseTracksDuplicatesAndPurges(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	ts.Remember(nil, sourceDest.Hash, sourceID.GetPublicKey(), nil)
+	var zero int
+	localDest, err := router.RegisterDeliveryIdentity(destID, "", &zero)
+	if err != nil {
+		t.Fatalf("RegisterDeliveryIdentity: %v", err)
+	}
+
+	duplicateMsg := mustTestNewMessage(t, localDest, sourceDest, "duplicate", "title", nil)
+	freshMsg := mustTestNewMessage(t, localDest, sourceDest, "fresh", "title", nil)
+	if err := duplicateMsg.Pack(); err != nil {
+		t.Fatalf("duplicateMsg.Pack: %v", err)
+	}
+	if err := freshMsg.Pack(); err != nil {
+		t.Fatalf("freshMsg.Pack: %v", err)
+	}
+	duplicateTransientID := rns.FullHash(duplicateMsg.Packed)
+	freshTransientID := rns.FullHash(freshMsg.Packed)
+	router.locallyProcessedIDs[string(duplicateTransientID)] = time.Now()
+
+	var delivered []*Message
+	router.deliveryCallback = func(message *Message) {
+		delivered = append(delivered, message)
+	}
+
+	var requestedPath string
+	var requestedData any
+	router.requestLink = func(_ *rns.Link, path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), _ time.Duration) (*rns.RequestReceipt, error) {
+		if failedCallback == nil {
+			t.Fatal("expected failed callback")
+		}
+		if responseCallback != nil {
+			t.Fatal("did not expect response callback for purge request")
+		}
+		if progressCallback != nil {
+			t.Fatal("did not expect progress callback for purge request")
+		}
+		requestedPath = path
+		requestedData = data
+		return nil, nil
+	}
+
+	router.messageGetResponse(&rns.RequestReceipt{
+		Link:     &rns.Link{},
+		Response: []any{duplicateMsg.Packed, freshMsg.Packed},
+	})
+
+	if requestedPath != messageGetPath {
+		t.Fatalf("request path = %q, want %q", requestedPath, messageGetPath)
+	}
+	fields, ok := requestedData.([]any)
+	if !ok {
+		t.Fatalf("request data type = %T, want []any", requestedData)
+	}
+	if len(fields) != 2 {
+		t.Fatalf("request field count = %d, want 2", len(fields))
+	}
+	if fields[0] != nil {
+		t.Fatalf("purge wants field = %#v, want nil", fields[0])
+	}
+	haves, ok := fields[1].([][]byte)
+	if !ok {
+		t.Fatalf("purge haves type = %T, want [][]byte", fields[1])
+	}
+	if len(haves) != 2 || !bytes.Equal(haves[0], duplicateTransientID) || !bytes.Equal(haves[1], freshTransientID) {
+		t.Fatalf("purge haves = %x, want [%x %x]", haves, duplicateTransientID, freshTransientID)
+	}
+	if len(delivered) != 1 {
+		t.Fatalf("delivered count = %d, want 1", len(delivered))
+	}
+	if !bytes.Equal(delivered[0].Packed, freshMsg.Packed) {
+		t.Fatalf("delivered packed = %x, want %x", delivered[0].Packed, freshMsg.Packed)
+	}
+	if router.propagationTransferLastDuplicates != 1 {
+		t.Fatalf("last duplicates = %v, want 1", router.propagationTransferLastDuplicates)
+	}
+	if router.PropagationTransferLastResult() != 2 {
+		t.Fatalf("last result = %v, want 2", router.PropagationTransferLastResult())
+	}
+	if router.PropagationTransferState() != PRComplete {
+		t.Fatalf("state = %v, want PRComplete", router.PropagationTransferState())
+	}
+	if router.PropagationTransferProgress() != 1.0 {
+		t.Fatalf("progress = %v, want 1.0", router.PropagationTransferProgress())
+	}
+	if _, ok := router.locallyProcessedIDs[string(freshTransientID)]; !ok {
+		t.Fatal("expected fresh transient ID in locally processed cache")
+	}
+	if _, ok := router.locallyDeliveredIDs[string(freshTransientID)]; !ok {
+		t.Fatal("expected fresh transient ID in locally delivered cache")
+	}
+	if _, err := os.Stat(filepath.Join(router.storagePath, "local_deliveries")); err != nil {
+		t.Fatalf("expected local_deliveries file: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(router.storagePath, "locally_processed")); err != nil {
+		t.Fatalf("expected locally_processed file: %v", err)
 	}
 }
 
