@@ -99,9 +99,14 @@ func TestMessagePackIncludesStampAndUnpacksIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewDestination(source): %v", err)
 	}
+	ts.Remember(nil, destination.Hash, destinationID.GetPublicKey(), nil)
+	ts.Remember(nil, source.Hash, sourceID.GetPublicKey(), nil)
 
 	m := mustTestNewMessage(t, destination, source, "content", "title", nil)
+	stampCost := 4
+	m.StampCost = &stampCost
 	m.Stamp = []byte{0xAA, 0xBB, 0xCC}
+	m.DeferStamp = false
 
 	if err := m.Pack(); err != nil {
 		t.Fatalf("Pack: %v", err)
@@ -114,6 +119,9 @@ func TestMessagePackIncludesStampAndUnpacksIt(t *testing.T) {
 
 	if !bytes.Equal(unpacked.Stamp, []byte{0xAA, 0xBB, 0xCC}) {
 		t.Fatalf("stamp mismatch: %x", unpacked.Stamp)
+	}
+	if !unpacked.SignatureValidated {
+		t.Fatalf("expected stamped message signature to validate, reason=%v", unpacked.UnverifiedReason)
 	}
 	if len(unpacked.Payload) != 4 {
 		t.Fatalf("unpacked payload length=%v want=4", len(unpacked.Payload))

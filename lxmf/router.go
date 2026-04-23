@@ -901,6 +901,24 @@ func (r *Router) HandleOutbound(message *Message) error {
 	}
 	message.Method = sendMethod
 
+	destinationHash := message.Destination.Hash
+	if message.StampCost == nil {
+		if stampCost, ok := r.OutboundStampCost(destinationHash); ok {
+			message.StampCost = cloneOptionalInt(&stampCost)
+		}
+	}
+	if r.ticketStore != nil {
+		if outboundTicket := r.ticketStore.OutboundTicket(destinationHash, r.now()); len(outboundTicket) > 0 {
+			message.OutboundTicket = outboundTicket
+		}
+	}
+	if len(message.OutboundTicket) > 0 && message.DeferStamp {
+		message.DeferStamp = false
+	}
+	if message.StampCost == nil && message.DeferStamp {
+		message.DeferStamp = false
+	}
+
 	if len(message.Packed) == 0 {
 		if _, hasTicket := messageField(message.Fields, FieldTicket); message.IncludeTicket && message.Destination != nil && !hasTicket && r.ticketStore != nil {
 			if message.Fields == nil {

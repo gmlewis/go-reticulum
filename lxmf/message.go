@@ -38,6 +38,18 @@ type Message struct {
 	Timestamp float64
 	// Stamp holds an optional proof-of-work stamp attached to the payload.
 	Stamp []byte
+	// StampCost is the required proof-of-work cost for this message, or nil when
+	// no stamp is required.
+	StampCost *int
+	// OutboundTicket holds a cached remote reply ticket that can replace hashcash
+	// work for outbound delivery.
+	OutboundTicket []byte
+	// DeferStamp mirrors Python's default behavior of postponing stamp
+	// generation until the router decides it must happen immediately.
+	DeferStamp bool
+	// DeferPropagationStamp mirrors Python's propagation-node stamp deferral
+	// flag, even though propagated deferred stamping is not yet fully wired.
+	DeferPropagationStamp bool
 
 	// Payload stores the unpacked LXMF payload elements used for packing or
 	// validating the message.
@@ -99,20 +111,46 @@ func NewMessage(destination, source *rns.Destination, content, title string, fie
 	}
 
 	m := &Message{
-		Destination:     destination,
-		Source:          source,
-		DestinationHash: cloneBytes(destination.Hash),
-		SourceHash:      cloneBytes(source.Hash),
-		Title:           []byte(title),
-		Content:         []byte(content),
-		Fields:          ensureFields(fields),
-		State:           StateGenerating,
-		DesiredMethod:   MethodDirect,
-		Method:          RepresentationUnknown,
-		Representation:  RepresentationUnknown,
+		Destination:           destination,
+		Source:                source,
+		DestinationHash:       cloneBytes(destination.Hash),
+		SourceHash:            cloneBytes(source.Hash),
+		Title:                 []byte(title),
+		Content:               []byte(content),
+		Fields:                ensureFields(fields),
+		State:                 StateGenerating,
+		DesiredMethod:         MethodDirect,
+		Method:                RepresentationUnknown,
+		Representation:        RepresentationUnknown,
+		DeferStamp:            true,
+		DeferPropagationStamp: true,
 	}
 
 	return m, nil
+}
+
+// GetStamp returns the current delivery stamp, generating it if needed from an
+// outbound ticket or the configured stamp cost.
+func (m *Message) GetStamp() ([]byte, error) {
+	if len(m.OutboundTicket) == TicketLength && len(m.MessageID) > 0 {
+		material := make([]byte, 0, len(m.OutboundTicket)+len(m.MessageID))
+		material = append(material, m.OutboundTicket...)
+		material = append(material, m.MessageID...)
+		return rns.TruncatedHash(material), nil
+	}
+
+	if m.StampCost == nil || *m.StampCost <= 0 {
+		return nil, nil
+	}
+	if len(m.Stamp) > 0 {
+		return cloneBytes(m.Stamp), nil
+	}
+
+	stamp, _, _, err := GenerateStamp(m.MessageID, *m.StampCost, WorkblockExpandRounds)
+	if err != nil {
+		return nil, err
+	}
+	return stamp, nil
 }
 
 // SetTitleString intuitively mutates the underlying byte array representing the message title using a standard Go string.
@@ -158,12 +196,9 @@ func (m *Message) Pack() error {
 		m.Timestamp = float64(time.Now().UnixNano()) / 1e9
 	}
 
-	m.Payload = []any{m.Timestamp, m.Title, m.Content, ensureFields(m.Fields)}
-	if len(m.Stamp) > 0 {
-		m.Payload = append(m.Payload, cloneBytes(m.Stamp))
-	}
+	basePayload := []any{m.Timestamp, m.Title, m.Content, ensureFields(m.Fields)}
 
-	packedPayload, err := msgpack.Pack(m.Payload)
+	packedPayload, err := msgpack.Pack(basePayload)
 	if err != nil {
 		return fmt.Errorf("pack lxmf payload: %w", err)
 	}
@@ -175,6 +210,19 @@ func (m *Message) Pack() error {
 
 	m.Hash = rns.FullHash(hashedPart)
 	m.MessageID = cloneBytes(m.Hash)
+
+	if !m.DeferStamp {
+		stamp, err := m.GetStamp()
+		if err != nil {
+			return fmt.Errorf("generate lxmf stamp: %w", err)
+		}
+		m.Stamp = cloneBytes(stamp)
+	}
+
+	m.Payload = basePayload
+	if len(m.Stamp) > 0 {
+		m.Payload = append(m.Payload, cloneBytes(m.Stamp))
+	}
 
 	signedPart := make([]byte, 0, len(hashedPart)+len(m.Hash))
 	signedPart = append(signedPart, hashedPart...)
@@ -189,6 +237,11 @@ func (m *Message) Pack() error {
 	}
 	m.Signature = signature
 	m.SignatureValidated = true
+
+	packedPayload, err = msgpack.Pack(m.Payload)
+	if err != nil {
+		return fmt.Errorf("pack stamped lxmf payload: %w", err)
+	}
 
 	m.Packed = make([]byte, 0, len(m.DestinationHash)+len(m.SourceHash)+len(m.Signature)+len(packedPayload))
 	m.Packed = append(m.Packed, m.DestinationHash...)

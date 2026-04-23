@@ -75,6 +75,9 @@ func TestHandleOutboundIncludesReplyTicketBeforePacking(t *testing.T) {
 	destID := mustTestNewIdentity(t, true)
 	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	ts.Remember(nil, sourceDest.Hash, sourceID.GetPublicKey(), nil)
+	ts.Remember(nil, sourceDest.Hash, sourceID.GetPublicKey(), nil)
+	ts.Remember(nil, sourceDest.Hash, sourceID.GetPublicKey(), nil)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	router.now = func() time.Time { return now }
@@ -116,6 +119,9 @@ func TestHandleOutboundDeliveryMarksTicketDelivery(t *testing.T) {
 	destID := mustTestNewIdentity(t, true)
 	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	ts.Remember(nil, sourceDest.Hash, sourceID.GetPublicKey(), nil)
+	ts.Remember(nil, sourceDest.Hash, sourceID.GetPublicKey(), nil)
+	ts.Remember(nil, sourceDest.Hash, sourceID.GetPublicKey(), nil)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	router.now = func() time.Time { return now }
@@ -145,6 +151,137 @@ func TestHandleOutboundDeliveryMarksTicketDelivery(t *testing.T) {
 	}
 	if got := router.ticketStore.lastDeliveries[string(destination.Hash)]; got != float64(now.UnixNano())/1e9 {
 		t.Fatalf("last delivery=%v want=%v", got, float64(now.UnixNano())/1e9)
+	}
+}
+
+func TestHandleOutboundUsesCachedOutboundTicketForStamp(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	ts.Remember(nil, sourceDest.Hash, sourceID.GetPublicKey(), nil)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	router.now = func() time.Time { return now }
+	router.hasPath = func(_ []byte) bool { return false }
+	router.requestPath = func(_ []byte) error { return nil }
+
+	ticket := bytes.Repeat([]byte{0x4a}, TicketLength)
+	expiry := float64(now.Add(48*time.Hour).UnixNano()) / 1e9
+	router.ticketStore.RememberOutboundTicket(destination.Hash, TicketEntry{Expires: expiry, Ticket: ticket})
+
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+
+	if msg.DeferStamp {
+		t.Fatal("expected outbound ticket to disable deferred stamping")
+	}
+	if !bytes.Equal(msg.OutboundTicket, ticket) {
+		t.Fatalf("outbound ticket=%x want=%x", msg.OutboundTicket, ticket)
+	}
+	expectedStamp := rns.TruncatedHash(append(append([]byte{}, ticket...), msg.MessageID...))
+	if !bytes.Equal(msg.Stamp, expectedStamp) {
+		t.Fatalf("stamp=%x want=%x", msg.Stamp, expectedStamp)
+	}
+
+	unpacked, err := UnpackMessageFromBytes(ts, msg.Packed, MethodDirect)
+	if err != nil {
+		t.Fatalf("UnpackMessageFromBytes: %v", err)
+	}
+	if !unpacked.SignatureValidated {
+		t.Fatalf("expected packed ticket-backed stamp message to validate, reason=%v", unpacked.UnverifiedReason)
+	}
+	if !bytes.Equal(unpacked.Stamp, expectedStamp) {
+		t.Fatalf("unpacked stamp=%x want=%x", unpacked.Stamp, expectedStamp)
+	}
+}
+
+func TestHandleOutboundAutoconfiguresOutboundStampCostBeforePacking(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	ts.Remember(nil, sourceDest.Hash, sourceID.GetPublicKey(), nil)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	router.now = func() time.Time { return now }
+	router.hasPath = func(_ []byte) bool { return false }
+	router.requestPath = func(_ []byte) error { return nil }
+	router.updateStampCost(destination.Hash, 4)
+
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+	msg.DeferStamp = false
+
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+
+	if msg.StampCost == nil || *msg.StampCost != 4 {
+		t.Fatalf("stamp cost=%v want=4", msg.StampCost)
+	}
+	if len(msg.Stamp) != StampSize {
+		t.Fatalf("stamp length=%v want=%v", len(msg.Stamp), StampSize)
+	}
+	workblock, err := StampWorkblock(msg.MessageID, WorkblockExpandRounds)
+	if err != nil {
+		t.Fatalf("StampWorkblock: %v", err)
+	}
+	if !StampValid(msg.Stamp, *msg.StampCost, workblock) {
+		t.Fatal("generated stamp should satisfy announced outbound cost")
+	}
+
+	unpacked, err := UnpackMessageFromBytes(ts, msg.Packed, MethodDirect)
+	if err != nil {
+		t.Fatalf("UnpackMessageFromBytes: %v", err)
+	}
+	if !unpacked.SignatureValidated {
+		t.Fatalf("expected packed announced-cost message to validate, reason=%v", unpacked.UnverifiedReason)
+	}
+}
+
+func TestHandleOutboundDisablesDeferredStampWhenNoStampIsRequired(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	now := time.Now().UTC().Truncate(time.Second)
+	router.now = func() time.Time { return now }
+	router.hasPath = func(_ []byte) bool { return false }
+	router.requestPath = func(_ []byte) error { return nil }
+
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+
+	if msg.DeferStamp {
+		t.Fatal("expected HandleOutbound to clear deferred stamping when no stamp is required")
+	}
+	if len(msg.Stamp) != 0 {
+		t.Fatalf("stamp=%x want empty", msg.Stamp)
 	}
 }
 
