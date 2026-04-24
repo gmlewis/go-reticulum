@@ -1996,6 +1996,257 @@ func TestPropagationResourceConcludedRejectsClientMultiMessageTransfer(t *testin
 	}
 }
 
+func TestPropagationResourceConcludedAccountsUnpeeredIdentifiedTransfer(t *testing.T) {
+	t.Parallel()
+
+	ts := newPropagationPacketCaptureTransport()
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.propagationEnabled = true
+	router.propagationCost = 1
+	router.propagationCostFlexibility = 0
+
+	sourceID := mustTestNewIdentity(t, true)
+	finalID := mustTestNewIdentity(t, true)
+	remoteIdentity := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	finalDest := mustTestNewDestination(t, ts, finalID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	remoteDest := mustTestNewDestination(t, ts, remoteIdentity, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+
+	message := mustTestNewMessage(t, finalDest, sourceDest, "payload", "title", nil)
+	if err := message.Pack(); err != nil {
+		t.Fatalf("Pack(): %v", err)
+	}
+	propagationStamp, stampValue, _, err := GenerateStamp(rns.FullHash(message.Packed), router.propagationCost, WorkblockExpandRoundsPN)
+	if err != nil {
+		t.Fatalf("GenerateStamp(): %v", err)
+	}
+	transientData := append(append([]byte{}, message.Packed...), propagationStamp...)
+	resourceData, err := msgpack.Pack([]any{float64(1), []any{transientData}})
+	if err != nil {
+		t.Fatalf("Pack resource data: %v", err)
+	}
+
+	link, err := rns.NewLink(ts, remoteDest)
+	if err != nil {
+		t.Fatalf("NewLink(): %v", err)
+	}
+	activateRouterTestLink(t, link)
+	setRouterLinkField(t, link, "remoteIdentity", remoteIdentity)
+	setRouterLinkField(t, link, "linkID", []byte("unpeered-identified-link"))
+
+	resource := &rns.Resource{}
+	setResourceField(t, resource, "link", link)
+	setResourceField(t, resource, "data", resourceData)
+	setResourceIntField(t, resource, "status", rns.ResourceStatusComplete)
+
+	router.propagationResourceConcluded(link, resource)
+
+	transientID := rns.FullHash(message.Packed)
+	entry := router.propagationEntries[string(transientID)]
+	if entry == nil {
+		t.Fatalf("expected propagation entry for %x", transientID)
+	}
+	if got, want := entry.stampValue, stampValue; got != want {
+		t.Fatalf("stampValue=%v want=%v", got, want)
+	}
+	if got, want := router.unpeeredPropagationIncoming, 1; got != want {
+		t.Fatalf("unpeeredPropagationIncoming=%v want=%v", got, want)
+	}
+	if got, want := router.unpeeredPropagationRXBytes, len(message.Packed); got != want {
+		t.Fatalf("unpeeredPropagationRXBytes=%v want=%v", got, want)
+	}
+	if got, want := router.clientPropagationMessagesReceived, 0; got != want {
+		t.Fatalf("clientPropagationMessagesReceived=%v want=%v", got, want)
+	}
+	if got := link.GetStatus(); got != rns.LinkActive {
+		t.Fatalf("link status=%v want=%v", got, rns.LinkActive)
+	}
+}
+
+func TestPropagationResourceConcludedAcceptsValidatedPeerMultiMessageTransfer(t *testing.T) {
+	t.Parallel()
+
+	ts := newPropagationPacketCaptureTransport()
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.propagationEnabled = true
+	router.propagationCost = 1
+	router.propagationCostFlexibility = 0
+
+	sourceID := mustTestNewIdentity(t, true)
+	finalID := mustTestNewIdentity(t, true)
+	remoteIdentity := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	finalDest := mustTestNewDestination(t, ts, finalID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	remoteDest := mustTestNewDestination(t, ts, remoteIdentity, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+
+	remotePropagationHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
+	ts.Remember(nil, remotePropagationHash, remoteIdentity.GetPublicKey(), nil)
+	peer := NewPeer(router, remotePropagationHash)
+	router.peers[string(remotePropagationHash)] = peer
+
+	link, err := rns.NewLink(ts, remoteDest)
+	if err != nil {
+		t.Fatalf("NewLink(): %v", err)
+	}
+	activateRouterTestLink(t, link)
+	setRouterLinkField(t, link, "remoteIdentity", remoteIdentity)
+	linkID := []byte("validated-peer-link")
+	setRouterLinkField(t, link, "linkID", linkID)
+
+	transientIDs := make([][]byte, 0, 2)
+	transientData := make([]any, 0, 2)
+	for _, content := range []string{"one", "two"} {
+		message := mustTestNewMessage(t, finalDest, sourceDest, content, "title", nil)
+		if err := message.Pack(); err != nil {
+			t.Fatalf("Pack(%q): %v", content, err)
+		}
+		transientIDs = append(transientIDs, rns.FullHash(message.Packed))
+		propagationStamp, _, _, err := GenerateStamp(rns.FullHash(message.Packed), router.propagationCost, WorkblockExpandRoundsPN)
+		if err != nil {
+			t.Fatalf("GenerateStamp(%q): %v", content, err)
+		}
+		transientData = append(transientData, append(append([]byte{}, message.Packed...), propagationStamp...))
+	}
+	resourceData, err := msgpack.Pack([]any{float64(1), transientData})
+	if err != nil {
+		t.Fatalf("Pack resource data: %v", err)
+	}
+
+	peeringID := make([]byte, 0, len(router.identity.Hash)+len(remoteIdentity.Hash))
+	peeringID = append(peeringID, router.identity.Hash...)
+	peeringID = append(peeringID, remoteIdentity.Hash...)
+	validKey, _, _, err := GenerateStamp(peeringID, router.peeringCost, WorkblockExpandRoundsPeering)
+	if err != nil {
+		t.Fatalf("GenerateStamp(valid key): %v", err)
+	}
+	requestData, err := msgpack.Pack([]any{validKey, []any{transientIDs[0], transientIDs[1]}})
+	if err != nil {
+		t.Fatalf("Pack request data: %v", err)
+	}
+	if response := router.offerRequest("", requestData, nil, linkID, remoteIdentity, time.Now()); response != true {
+		t.Fatalf("offer response=%v want=true", response)
+	}
+
+	resource := &rns.Resource{}
+	setResourceField(t, resource, "link", link)
+	setResourceField(t, resource, "data", resourceData)
+	setResourceIntField(t, resource, "status", rns.ResourceStatusComplete)
+
+	router.propagationResourceConcluded(link, resource)
+	router.FlushQueues()
+
+	if got, want := peer.incoming, 2; got != want {
+		t.Fatalf("peer incoming=%v want=%v", got, want)
+	}
+	var wantRX int
+	for _, transientID := range transientIDs {
+		entry := router.propagationEntries[string(transientID)]
+		if entry == nil {
+			t.Fatalf("expected propagation entry for %x", transientID)
+		}
+		wantRX += len(entry.payload)
+		if !containsByteSlice(entry.handledBy, remotePropagationHash) {
+			t.Fatalf("expected handledBy to include peer for %x", transientID)
+		}
+		if containsByteSlice(entry.unhandledBy, remotePropagationHash) {
+			t.Fatalf("did not expect unhandledBy to include source peer for %x", transientID)
+		}
+	}
+	if got, want := peer.rxBytes, wantRX; got != want {
+		t.Fatalf("peer rxBytes=%v want=%v", got, want)
+	}
+	if got, want := router.unpeeredPropagationIncoming, 0; got != want {
+		t.Fatalf("unpeeredPropagationIncoming=%v want=%v", got, want)
+	}
+	if got, want := router.clientPropagationMessagesReceived, 0; got != want {
+		t.Fatalf("clientPropagationMessagesReceived=%v want=%v", got, want)
+	}
+	if got := link.GetStatus(); got != rns.LinkActive {
+		t.Fatalf("link status=%v want=%v", got, rns.LinkActive)
+	}
+}
+
+func TestPropagationResourceConcludedThrottlesInvalidIdentifiedTransfer(t *testing.T) {
+	t.Parallel()
+
+	ts := newPropagationPacketCaptureTransport()
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.propagationEnabled = true
+	router.propagationCost = 1
+	router.propagationCostFlexibility = 0
+	now := time.Unix(1700000000, 0)
+	router.now = func() time.Time { return now }
+
+	sourceID := mustTestNewIdentity(t, true)
+	finalID := mustTestNewIdentity(t, true)
+	remoteIdentity := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	finalDest := mustTestNewDestination(t, ts, finalID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	remoteDest := mustTestNewDestination(t, ts, remoteIdentity, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+
+	message := mustTestNewMessage(t, finalDest, sourceDest, "payload", "title", nil)
+	if err := message.Pack(); err != nil {
+		t.Fatalf("Pack(): %v", err)
+	}
+	workblock, err := StampWorkblock(rns.FullHash(message.Packed), WorkblockExpandRoundsPN)
+	if err != nil {
+		t.Fatalf("StampWorkblock(): %v", err)
+	}
+	var invalidStamp []byte
+	for candidate := 0; candidate < 256; candidate++ {
+		stamp := bytes.Repeat([]byte{byte(candidate)}, StampSize)
+		if !StampValid(stamp, router.propagationCost, workblock) {
+			invalidStamp = stamp
+			break
+		}
+	}
+	if invalidStamp == nil {
+		t.Fatal("expected invalid propagation stamp")
+	}
+
+	transientData := append(append([]byte{}, message.Packed...), invalidStamp...)
+	resourceData, err := msgpack.Pack([]any{float64(1), []any{transientData}})
+	if err != nil {
+		t.Fatalf("Pack resource data: %v", err)
+	}
+
+	link, err := rns.NewLink(ts, remoteDest)
+	if err != nil {
+		t.Fatalf("NewLink(): %v", err)
+	}
+	activateRouterTestLink(t, link)
+	setRouterLinkField(t, link, "remoteIdentity", remoteIdentity)
+	setRouterLinkField(t, link, "linkID", []byte("invalid-identified-link"))
+
+	resource := &rns.Resource{}
+	setResourceField(t, resource, "link", link)
+	setResourceField(t, resource, "data", resourceData)
+	setResourceIntField(t, resource, "status", rns.ResourceStatusComplete)
+
+	router.propagationResourceConcluded(link, resource)
+
+	remotePropagationHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
+	until, ok := router.throttledPeers[string(remotePropagationHash)]
+	if !ok {
+		t.Fatalf("expected throttled peer entry for %x", remotePropagationHash)
+	}
+	if want := now.Add(180 * time.Second); !until.Equal(want) {
+		t.Fatalf("throttle until=%v want=%v", until, want)
+	}
+	if got, want := router.unpeeredPropagationIncoming, 0; got != want {
+		t.Fatalf("unpeeredPropagationIncoming=%v want=%v", got, want)
+	}
+	if got := link.GetStatus(); got != rns.LinkClosed {
+		t.Fatalf("link status=%v want=%v", got, rns.LinkClosed)
+	}
+}
+
 func TestOfferRequestReturnsWantedIDs(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -2036,6 +2287,40 @@ func TestOfferRequestReturnsWantedIDs(t *testing.T) {
 	}
 	if string(wantedID) != string(wantID) {
 		t.Fatalf("wanted id mismatch got=%x want=%x", wantedID, wantID)
+	}
+}
+
+func TestOfferRequestMarksValidatedPeerLink(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	wantID := rns.FullHash([]byte("validated-link-wanted"))
+	linkID := []byte("validated-link-id")
+
+	peeringID := make([]byte, 0, len(router.identity.Hash)+len(remoteIdentity.Hash))
+	peeringID = append(peeringID, router.identity.Hash...)
+	peeringID = append(peeringID, remoteIdentity.Hash...)
+	validKey, _, _, err := GenerateStamp(peeringID, router.peeringCost, WorkblockExpandRoundsPeering)
+	if err != nil {
+		t.Fatalf("GenerateStamp(valid key): %v", err)
+	}
+
+	requestData, err := msgpack.Pack([]any{validKey, []any{wantID}})
+	if err != nil {
+		t.Fatalf("Pack request data: %v", err)
+	}
+
+	response := router.offerRequest("", requestData, nil, linkID, remoteIdentity, time.Now())
+	if response != true {
+		t.Fatalf("response=%v want=true", response)
+	}
+	if !router.validatedPeerLinks[string(linkID)] {
+		t.Fatalf("expected validated peer link for %x", linkID)
 	}
 }
 

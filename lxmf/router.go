@@ -100,6 +100,7 @@ type Router struct {
 	propagationDestination *rns.Destination
 	propagationEntries     map[string]*propagationEntry
 	throttledPeers         map[string]time.Time
+	validatedPeerLinks     map[string]bool
 	fromStaticOnly         bool
 	staticPeers            map[string]struct{}
 	authRequired           bool
@@ -155,6 +156,7 @@ const (
 	pathRequestWait        = 7 * time.Second
 	maxPathlessTries       = 1
 	propagationPathTimeout = 10 * time.Second
+	pnStampThrottle        = 180 * time.Second
 
 	// DefaultMaxPeers is the default cap on active peering relationships.
 	DefaultMaxPeers = 20
@@ -275,6 +277,7 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 		resourceLinkPending: map[string]bool{},
 		propagationEntries:  map[string]*propagationEntry{},
 		throttledPeers:      map[string]time.Time{},
+		validatedPeerLinks:  map[string]bool{},
 		staticPeers:         map[string]struct{}{},
 		authRequired:        false,
 		allowedList:         map[string]struct{}{},
@@ -466,11 +469,21 @@ func (r *Router) propagationResourceConcluded(link *rns.Link, resource *rns.Reso
 	if len(messages) == 0 {
 		return
 	}
-	if link.GetRemoteIdentity() == nil && len(messages) > 1 {
-		link.Teardown()
-		return
+
+	remoteIdentity := link.GetRemoteIdentity()
+	var remotePropagationHash []byte
+	var peer *Peer
+	peeringKeyValid := false
+	if remoteIdentity != nil {
+		remotePropagationHash = rns.CalculateHash(remoteIdentity, AppName, "propagation")
+		r.mu.Lock()
+		peer = r.peers[string(remotePropagationHash)]
+		peeringKeyValid = r.validatedPeerLinks[string(link.GetHash())]
+		r.mu.Unlock()
 	}
-	if link.GetRemoteIdentity() != nil {
+
+	if !peeringKeyValid && len(messages) > 1 {
+		link.Teardown()
 		return
 	}
 
@@ -479,19 +492,32 @@ func (r *Router) propagationResourceConcluded(link *rns.Link, resource *rns.Reso
 		minAcceptedCost = 0
 	}
 
-	received := 0
 	validated := validatePropagationMessages(messages, minAcceptedCost)
 	for _, entry := range validated {
-		if r.ingestPropagationMessage(entry.lxmfData, nil, entry.stampValue) {
-			received++
+		r.mu.Lock()
+		switch {
+		case peer != nil:
+			peer.incoming++
+			peer.rxBytes += len(entry.lxmfData)
+		case remoteIdentity != nil:
+			r.unpeeredPropagationIncoming++
+			r.unpeeredPropagationRXBytes += len(entry.lxmfData)
+		default:
+			r.clientPropagationMessagesReceived++
+		}
+		r.mu.Unlock()
+		r.ingestPropagationMessage(entry.lxmfData, peer, entry.stampValue)
+		if peer != nil {
+			peer.QueueHandledMessage(entry.transientID)
 		}
 	}
 
-	r.mu.Lock()
-	r.clientPropagationMessagesReceived += received
-	r.mu.Unlock()
-
 	if len(validated) != len(messages) {
+		if len(remotePropagationHash) == rns.TruncatedHashLength/8 {
+			r.mu.Lock()
+			r.throttledPeers[string(append([]byte{}, remotePropagationHash...))] = r.now().Add(pnStampThrottle)
+			r.mu.Unlock()
+		}
 		link.Teardown()
 	}
 }
@@ -844,6 +870,9 @@ func (r *Router) offerRequest(_ string, data []byte, _ []byte, linkID []byte, re
 	transientIDs := anySliceToByteSlices(request[1])
 	if len(transientIDs) == 0 {
 		return peerErrorInvalidData
+	}
+	if len(linkID) > 0 {
+		r.validatedPeerLinks[string(append([]byte{}, linkID...))] = true
 	}
 
 	wantedIDs := make([]any, 0)
