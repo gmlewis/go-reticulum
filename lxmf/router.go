@@ -57,7 +57,8 @@ type Router struct {
 	locallyDeliveredIDs  map[string]time.Time
 	locallyProcessedIDs  map[string]time.Time
 
-	pendingOutbound []*Message
+	pendingOutbound       []*Message
+	pendingDeferredStamps map[string]*Message
 
 	deliveryCallback func(*Message)
 
@@ -79,6 +80,7 @@ type Router struct {
 	pathWaitSleep               func(time.Duration)
 	teardownLink                func(*rns.Link)
 	now                         func() time.Time
+	processingDeferredStamps    bool
 
 	resourceLinks       map[string]*rns.Link
 	resourceLinkPending map[string]bool
@@ -110,6 +112,7 @@ type Router struct {
 	propagationEnabled                bool
 	outboundPropagationNode           []byte
 	outboundPropagationLink           *rns.Link
+	outboundPropagationLinkMessage    *Message
 	wantsDownloadOnPathAvailableFrom  []byte
 	wantsDownloadOnPathAvailableTo    *rns.Identity
 	wantsDownloadOnPathAvailableAt    time.Time
@@ -177,12 +180,13 @@ const (
 	offerRequestPath = "/offer"
 	messageGetPath   = "/get"
 
-	peerErrorNoIdentity  = 0xf0
-	peerErrorNoAccess    = 0xf1
-	peerErrorInvalidKey  = 0xf3
-	peerErrorInvalidData = 0xf4
-	peerErrorThrottled   = 0xf6
-	peerErrorNotFound    = 0xfd
+	peerErrorNoIdentity   = 0xf0
+	peerErrorNoAccess     = 0xf1
+	peerErrorInvalidKey   = 0xf3
+	peerErrorInvalidData  = 0xf4
+	peerErrorInvalidStamp = 0xf5
+	peerErrorThrottled    = 0xf6
+	peerErrorNotFound     = 0xfd
 )
 
 var errResourceRepresentationNotSupported = errors.New("lxmf resource representation not supported")
@@ -207,20 +211,21 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 	}
 
 	router := &Router{
-		transport:            ts,
-		identity:             identity,
-		storagePath:          base,
-		deliveryDestinations: map[string]*rns.Destination{},
-		inboundStampCosts:    map[string]int{},
-		outboundStampCosts:   map[string]outboundStampCostEntry{},
-		displayNames:         map[string]string{},
-		ticketStore:          NewTicketStore(),
-		locallyDeliveredIDs:  map[string]time.Time{},
-		locallyProcessedIDs:  map[string]time.Time{},
-		pendingOutbound:      []*Message{},
-		hasPath:              ts.HasPath,
-		hopsTo:               ts.HopsTo,
-		requestPath:          ts.RequestPath,
+		transport:             ts,
+		identity:              identity,
+		storagePath:           base,
+		deliveryDestinations:  map[string]*rns.Destination{},
+		inboundStampCosts:     map[string]int{},
+		outboundStampCosts:    map[string]outboundStampCostEntry{},
+		displayNames:          map[string]string{},
+		ticketStore:           NewTicketStore(),
+		locallyDeliveredIDs:   map[string]time.Time{},
+		locallyProcessedIDs:   map[string]time.Time{},
+		pendingOutbound:       []*Message{},
+		pendingDeferredStamps: map[string]*Message{},
+		hasPath:               ts.HasPath,
+		hopsTo:                ts.HopsTo,
+		requestPath:           ts.RequestPath,
 		sendPacket: func(packet *rns.Packet) error {
 			return packet.Send()
 		},
@@ -982,12 +987,89 @@ func (r *Router) HandleOutbound(message *Message) error {
 			return err
 		}
 	}
+	message.DetermineTransportEncryption()
 
+	queueDeferred := message.DeferStamp || (message.DesiredMethod == MethodPropagated && message.DeferPropagationStamp)
 	r.mu.Lock()
-	r.pendingOutbound = append(r.pendingOutbound, message)
+	if queueDeferred {
+		r.pendingDeferredStamps[string(message.MessageID)] = message
+	} else {
+		r.pendingOutbound = append(r.pendingOutbound, message)
+	}
 	r.mu.Unlock()
 
-	r.ProcessOutbound()
+	if !queueDeferred {
+		r.processOutbound()
+	}
+
+	return nil
+}
+
+// GetOutboundProgress returns the current progress of an outbound message by its
+// LXMF hash, scanning both the active outbound queue and deferred-stamp queue.
+func (r *Router) GetOutboundProgress(lxmHash []byte) *float64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, message := range r.pendingOutbound {
+		if bytes.Equal(message.Hash, lxmHash) {
+			progress := message.Progress
+			return &progress
+		}
+	}
+	for _, message := range r.pendingDeferredStamps {
+		if bytes.Equal(message.Hash, lxmHash) {
+			progress := message.Progress
+			return &progress
+		}
+	}
+
+	return nil
+}
+
+// GetOutboundLXMStampCost returns the direct-delivery stamp cost for an
+// outbound message by its LXMF hash, or nil when a cached outbound ticket is in
+// use or when the message is unknown.
+func (r *Router) GetOutboundLXMStampCost(lxmHash []byte) *int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, message := range r.pendingOutbound {
+		if bytes.Equal(message.Hash, lxmHash) {
+			if len(message.OutboundTicket) > 0 {
+				return nil
+			}
+			return cloneOptionalInt(message.StampCost)
+		}
+	}
+	for _, message := range r.pendingDeferredStamps {
+		if bytes.Equal(message.Hash, lxmHash) {
+			if len(message.OutboundTicket) > 0 {
+				return nil
+			}
+			return cloneOptionalInt(message.StampCost)
+		}
+	}
+
+	return nil
+}
+
+// GetOutboundLXMPropagationStampCost returns the propagation-node stamp cost
+// associated with an outbound message by its LXMF hash.
+func (r *Router) GetOutboundLXMPropagationStampCost(lxmHash []byte) *int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, message := range r.pendingOutbound {
+		if bytes.Equal(message.Hash, lxmHash) {
+			return cloneOptionalInt(message.PropagationTargetCost)
+		}
+	}
+	for _, message := range r.pendingDeferredStamps {
+		if bytes.Equal(message.Hash, lxmHash) {
+			return cloneOptionalInt(message.PropagationTargetCost)
+		}
+	}
 
 	return nil
 }
@@ -1014,6 +1096,8 @@ func (r *Router) configureDeliveryLink(link *rns.Link) {
 
 // ProcessOutbound iterates over the pending outbound queue and actively attempts to transmit messages via the Reticulum network.
 func (r *Router) ProcessOutbound() {
+	r.ProcessDeferredStamps()
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -1031,7 +1115,15 @@ func (r *Router) ProcessOutbound() {
 			}
 			remaining = append(remaining, message)
 			continue
-		case StateDelivered, StateCancelled, StateFailed:
+		case StateDelivered, StateFailed:
+			continue
+		case StateCancelled, StateRejected:
+			if r.outboundPropagationLinkMessage == message {
+				r.outboundPropagationLinkMessage = nil
+			}
+			if message.FailedCallback != nil {
+				message.FailedCallback(message)
+			}
 			continue
 		}
 
@@ -1079,6 +1171,7 @@ func (r *Router) ProcessOutbound() {
 				continue
 			}
 			if link := r.outboundPropagationLink; link != nil {
+				r.configureOutboundPropagationLink(link)
 				switch r.linkStatus(link) {
 				case rns.LinkActive:
 					if message.State == StateSending {
@@ -1207,6 +1300,135 @@ func (r *Router) ProcessOutbound() {
 	r.pendingOutbound = remaining
 }
 
+// ProcessDeferredStamps mirrors Python's process_deferred_stamps by moving at
+// most one deferred message back into the outbound queue once stamp generation
+// completes or by failing/cancelling it if that work cannot finish.
+func (r *Router) ProcessDeferredStamps() {
+	r.mu.Lock()
+	if len(r.pendingDeferredStamps) == 0 || r.processingDeferredStamps {
+		r.mu.Unlock()
+		return
+	}
+	r.processingDeferredStamps = true
+	keys := make([]string, 0, len(r.pendingDeferredStamps))
+	for messageID := range r.pendingDeferredStamps {
+		keys = append(keys, messageID)
+	}
+	sort.Strings(keys)
+	selectedMessageID := keys[0]
+	selected := r.pendingDeferredStamps[selectedMessageID]
+	r.mu.Unlock()
+
+	defer func() {
+		r.mu.Lock()
+		r.processingDeferredStamps = false
+		r.mu.Unlock()
+	}()
+
+	if selected == nil {
+		return
+	}
+
+	if selected.State == StateCancelled {
+		r.mu.Lock()
+		delete(r.pendingDeferredStamps, selectedMessageID)
+		selected.StampGenerationFailed = true
+		failedCallback := selected.FailedCallback
+		r.mu.Unlock()
+		if failedCallback != nil {
+			failedCallback(selected)
+		}
+		return
+	}
+
+	stampGenerationSuccess := !selected.DeferStamp || len(selected.Stamp) > 0
+	propagationStampGenerationSuccess := selected.DesiredMethod != MethodPropagated ||
+		!selected.DeferPropagationStamp || len(selected.PropagationStamp) > 0
+
+	if !stampGenerationSuccess {
+		generatedStamp, err := selected.GetStamp()
+		if err != nil || len(generatedStamp) == 0 {
+			r.mu.Lock()
+			delete(r.pendingDeferredStamps, selectedMessageID)
+			selected.StampGenerationFailed = true
+			if selected.State == StateCancelled {
+				failedCallback := selected.FailedCallback
+				r.mu.Unlock()
+				if failedCallback != nil {
+					failedCallback(selected)
+				}
+				return
+			}
+			r.failMessageLocked(selected)
+			r.mu.Unlock()
+			return
+		}
+
+		selected.Stamp = cloneBytes(generatedStamp)
+		selected.DeferStamp = false
+		selected.resetPackedState(false)
+		if err := selected.Pack(); err != nil {
+			r.mu.Lock()
+			delete(r.pendingDeferredStamps, selectedMessageID)
+			selected.StampGenerationFailed = true
+			r.failMessageLocked(selected)
+			r.mu.Unlock()
+			return
+		}
+		stampGenerationSuccess = true
+	}
+
+	if !propagationStampGenerationSuccess {
+		targetCost, ok := r.getOutboundPropagationStampCost()
+		if !ok {
+			r.mu.Lock()
+			delete(r.pendingDeferredStamps, selectedMessageID)
+			selected.StampGenerationFailed = true
+			r.failMessageLocked(selected)
+			r.mu.Unlock()
+			return
+		}
+
+		propagationStamp, err := selected.GetPropagationStamp(targetCost)
+		if err != nil || len(propagationStamp) == 0 {
+			r.mu.Lock()
+			delete(r.pendingDeferredStamps, selectedMessageID)
+			selected.StampGenerationFailed = true
+			if selected.State == StateCancelled {
+				failedCallback := selected.FailedCallback
+				r.mu.Unlock()
+				if failedCallback != nil {
+					failedCallback(selected)
+				}
+				return
+			}
+			r.failMessageLocked(selected)
+			r.mu.Unlock()
+			return
+		}
+
+		selected.PropagationStamp = cloneBytes(propagationStamp)
+		selected.DeferPropagationStamp = false
+		selected.resetPackedState(true)
+		if err := selected.Pack(); err != nil {
+			r.mu.Lock()
+			delete(r.pendingDeferredStamps, selectedMessageID)
+			selected.StampGenerationFailed = true
+			r.failMessageLocked(selected)
+			r.mu.Unlock()
+			return
+		}
+		propagationStampGenerationSuccess = true
+	}
+
+	if stampGenerationSuccess && propagationStampGenerationSuccess {
+		r.mu.Lock()
+		delete(r.pendingDeferredStamps, selectedMessageID)
+		r.pendingOutbound = append(r.pendingOutbound, selected)
+		r.mu.Unlock()
+	}
+}
+
 // failMessageLocked marks a message as failed and invokes its FailedCallback.
 // Mirrors Python LXMRouter.fail_message() lines 2389-2402.
 func (r *Router) failMessageLocked(message *Message) {
@@ -1222,6 +1444,7 @@ func (r *Router) sendMessagePacketLocked(message *Message) error {
 	message.Representation = RepresentationPacket
 
 	if message.Method == MethodPropagated && message.deliveryDestination != nil {
+		r.outboundPropagationLinkMessage = message
 		packet, err := message.asPacket()
 		if err != nil {
 			return err
@@ -1238,6 +1461,9 @@ func (r *Router) sendMessagePacketLocked(message *Message) error {
 				r.mu.Lock()
 				message.State = StateSent
 				message.Progress = 1.0
+				if r.outboundPropagationLinkMessage == message {
+					r.outboundPropagationLinkMessage = nil
+				}
 				deliveryCallback = message.DeliveryCallback
 				r.mu.Unlock()
 				if deliveryCallback != nil {
@@ -1251,6 +1477,9 @@ func (r *Router) sendMessagePacketLocked(message *Message) error {
 					message.State = StateOutbound
 					message.Progress = 0.0
 					message.NextDeliveryAttempt = float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
+				}
+				if r.outboundPropagationLinkMessage == message {
+					r.outboundPropagationLinkMessage = nil
 				}
 			})
 		}
@@ -1323,10 +1552,42 @@ func (r *Router) sendMessageLocked(message *Message) error {
 	return r.sendMessagePacketLocked(message)
 }
 
+// CancelOutbound cancels a deferred or queued outbound message and mirrors
+// Python's cancel_outbound() state transition behavior.
+func (r *Router) CancelOutbound(messageID []byte, cancelState int) {
+	if cancelState == 0 {
+		cancelState = StateCancelled
+	}
+
+	processOutbound := false
+
+	r.mu.Lock()
+	if deferred := r.pendingDeferredStamps[string(messageID)]; deferred != nil {
+		deferred.State = cancelState
+	}
+	for _, message := range r.pendingOutbound {
+		if !bytes.Equal(message.MessageID, messageID) {
+			continue
+		}
+		message.State = cancelState
+		if message.Representation == RepresentationResource && message.ResourceRepresentation != nil {
+			message.ResourceRepresentation.Cancel()
+		}
+		processOutbound = true
+		break
+	}
+	r.mu.Unlock()
+
+	if processOutbound {
+		r.processOutbound()
+	}
+}
+
 func (r *Router) sendMessageResourceLocked(message *Message) error {
 	message.Representation = RepresentationResource
 
 	if message.Method == MethodPropagated && message.deliveryDestination != nil {
+		r.outboundPropagationLinkMessage = message
 		resource, err := message.asResource()
 		if err != nil {
 			return err
@@ -1345,11 +1606,17 @@ func (r *Router) sendMessageResourceLocked(message *Message) error {
 			if resource != nil && resource.Status() == rns.ResourceStatusComplete {
 				message.State = StateSent
 				message.Progress = 1.0
+				if r.outboundPropagationLinkMessage == message {
+					r.outboundPropagationLinkMessage = nil
+				}
 				deliveryCallback = message.DeliveryCallback
 			} else if message.State != StateCancelled {
 				message.State = StateOutbound
 				message.Progress = 0.0
 				message.NextDeliveryAttempt = float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
+				if r.outboundPropagationLinkMessage == message {
+					r.outboundPropagationLinkMessage = nil
+				}
 			}
 			r.mu.Unlock()
 			if deliveryCallback != nil {
@@ -2953,6 +3220,7 @@ func (r *Router) configureOutboundPropagationLink(link *rns.Link) {
 	if link == nil {
 		return
 	}
+	link.SetPacketCallback(r.propagationTransferSignallingPacket)
 	link.SetLinkClosedCallback(func(closed *rns.Link) {
 		r.handleOutboundPropagationLinkClosed(closed)
 	})
@@ -2975,6 +3243,7 @@ func (r *Router) handleOutboundPropagationLinkClosed(link *rns.Link) {
 		}
 	}
 	r.outboundPropagationLink = nil
+	r.outboundPropagationLinkMessage = nil
 	r.mu.Unlock()
 
 	switch {
@@ -2989,6 +3258,52 @@ func (r *Router) handleOutboundPropagationLinkClosed(link *rns.Link) {
 	default:
 		r.acknowledgeSyncCompletion(false, nil)
 	}
+}
+
+func (r *Router) getOutboundPropagationStampCost() (int, bool) {
+	if cost, ok := r.cachedOutboundPropagationStampCost(); ok {
+		return cost, true
+	}
+	if len(r.outboundPropagationNode) == 0 {
+		return 0, false
+	}
+
+	log.Printf("Could not retrieve cached propagation node config. Requesting path to propagation node to get target propagation cost...")
+	_ = r.requestPath(r.outboundPropagationNode)
+
+	const waitStep = 500 * time.Millisecond
+	waitSteps := int(pathRequestWait / waitStep)
+	if waitSteps < 1 {
+		waitSteps = 1
+	}
+	for i := 0; i < waitSteps; i++ {
+		if cost, ok := r.cachedOutboundPropagationStampCost(); ok {
+			return cost, true
+		}
+		r.pathWaitSleep(waitStep)
+	}
+
+	if cost, ok := r.cachedOutboundPropagationStampCost(); ok {
+		return cost, true
+	}
+
+	log.Printf("Propagation node stamp cost still unavailable after path request")
+	return 0, false
+}
+
+func (r *Router) cachedOutboundPropagationStampCost() (int, bool) {
+	if len(r.outboundPropagationNode) == 0 {
+		return 0, false
+	}
+	identity := r.transport.Recall(r.outboundPropagationNode)
+	if identity == nil || len(identity.AppData) == 0 {
+		return 0, false
+	}
+	announceData, ok := decodePropagationAnnounceData(identity.AppData)
+	if !ok || announceData.propagationStampCost <= 0 {
+		return 0, false
+	}
+	return announceData.propagationStampCost, true
 }
 
 func (r *Router) messageListResponse(receipt *rns.RequestReceipt) {
@@ -3077,12 +3392,38 @@ func (r *Router) CancelPropagationNodeRequests() {
 	r.mu.Lock()
 	link := r.outboundPropagationLink
 	r.outboundPropagationLink = nil
+	r.outboundPropagationLinkMessage = nil
 	r.mu.Unlock()
 	if link != nil {
 		r.teardownLink(link)
 	}
 	r.acknowledgeSyncCompletion(true, nil)
 	log.Printf("Cancelling propagation node requests")
+}
+
+func (r *Router) propagationTransferSignallingPacket(data []byte, _ *rns.Packet) {
+	unpacked, err := msgpack.Unpack(data)
+	if err != nil {
+		return
+	}
+	signals, ok := unpacked.([]any)
+	if !ok || len(signals) == 0 {
+		return
+	}
+	signal, ok := responseErrorCode(signals[0])
+	if !ok || signal != peerErrorInvalidStamp {
+		return
+	}
+
+	r.mu.Lock()
+	message := r.outboundPropagationLinkMessage
+	r.mu.Unlock()
+	if message == nil {
+		return
+	}
+
+	log.Printf("Message rejected by propagation node")
+	r.CancelOutbound(message.MessageID, StateRejected)
 }
 
 func (r *Router) messageGetResponse(receipt *rns.RequestReceipt) {

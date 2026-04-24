@@ -8,6 +8,7 @@ package lxmf
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"reflect"
 	"time"
@@ -41,6 +42,8 @@ type Message struct {
 	// StampCost is the required proof-of-work cost for this message, or nil when
 	// no stamp is required.
 	StampCost *int
+	// StampValue records the effective value of the attached delivery stamp.
+	StampValue *int
 	// OutboundTicket holds a cached remote reply ticket that can replace hashcash
 	// work for outbound delivery.
 	OutboundTicket []byte
@@ -69,6 +72,16 @@ type Message struct {
 	TransientID []byte
 	// PropagationPacked stores the propagated-delivery msgpack wire payload.
 	PropagationPacked []byte
+	// PropagationStamp holds the optional proof-of-work stamp appended to the
+	// propagated transport payload.
+	PropagationStamp []byte
+	// PropagationStampValue records the effective value of PropagationStamp.
+	PropagationStampValue *int
+	// PropagationTargetCost stores the propagation-node target cost used when
+	// generating PropagationStamp.
+	PropagationTargetCost *int
+	// StampGenerationFailed tracks Python's deferred-stamp failure marker.
+	StampGenerationFailed bool
 
 	// State tracks the current lifecycle state of the message.
 	State int
@@ -120,7 +133,8 @@ type Message struct {
 	// used for outbound transport.
 	ResourceRepresentation *rns.Resource
 
-	deliveryDestination rns.PacketDestination
+	deliveryDestination      rns.PacketDestination
+	propagationEncryptedData []byte
 }
 
 // NewMessage constructs a fresh, outbound LXMF message bound for the specified destination, securely anchoring it to the originating source identity.
@@ -158,20 +172,54 @@ func (m *Message) GetStamp() ([]byte, error) {
 		material := make([]byte, 0, len(m.OutboundTicket)+len(m.MessageID))
 		material = append(material, m.OutboundTicket...)
 		material = append(material, m.MessageID...)
+		stampValue := TicketCostValue
+		m.StampValue = cloneOptionalInt(&stampValue)
 		return rns.TruncatedHash(material), nil
 	}
 
 	if m.StampCost == nil || *m.StampCost <= 0 {
+		m.StampValue = nil
 		return nil, nil
 	}
 	if len(m.Stamp) > 0 {
 		return cloneBytes(m.Stamp), nil
 	}
 
-	stamp, _, _, err := GenerateStamp(m.MessageID, *m.StampCost, WorkblockExpandRounds)
+	stamp, stampValue, _, err := GenerateStamp(m.MessageID, *m.StampCost, WorkblockExpandRounds)
 	if err != nil {
 		return nil, err
 	}
+	m.StampValue = cloneOptionalInt(&stampValue)
+	return stamp, nil
+}
+
+// GetPropagationStamp returns the current propagated-delivery stamp, generating
+// it if needed for the configured propagation-node target cost.
+func (m *Message) GetPropagationStamp(targetCost int) ([]byte, error) {
+	if len(m.PropagationStamp) > 0 {
+		return cloneBytes(m.PropagationStamp), nil
+	}
+
+	m.PropagationTargetCost = cloneOptionalInt(&targetCost)
+	if m.PropagationTargetCost == nil || *m.PropagationTargetCost <= 0 {
+		return nil, fmt.Errorf("cannot generate propagation stamp without configured target propagation cost")
+	}
+
+	if len(m.TransientID) == 0 {
+		if len(m.Packed) == 0 {
+			if err := m.Pack(); err != nil {
+				return nil, err
+			}
+		} else if err := m.packPropagated(); err != nil {
+			return nil, err
+		}
+	}
+
+	stamp, stampValue, _, err := GenerateStamp(m.TransientID, *m.PropagationTargetCost, WorkblockExpandRoundsPN)
+	if err != nil {
+		return nil, err
+	}
+	m.PropagationStampValue = cloneOptionalInt(&stampValue)
 	return stamp, nil
 }
 
@@ -379,6 +427,71 @@ func UnpackMessageFromBytes(ts rns.Transport, data []byte, originalMethod int) (
 	return m, nil
 }
 
+// UnpackMessageFromFile reconstructs an LXMF message from a msgpack container
+// written by WriteToDirectory, restoring the saved transport metadata fields
+// that Python's unpack_from_file() also reapplies.
+func UnpackMessageFromFile(ts rns.Transport, lxmfFile io.Reader) (*Message, error) {
+	if lxmfFile == nil {
+		return nil, errors.New("lxmf file reader is required")
+	}
+
+	data, err := io.ReadAll(lxmfFile)
+	if err != nil {
+		return nil, fmt.Errorf("read lxmf container: %w", err)
+	}
+
+	unpacked, err := msgpack.Unpack(data)
+	if err != nil {
+		return nil, fmt.Errorf("unpack lxmf container: %w", err)
+	}
+
+	container, ok := unpacked.(map[any]any)
+	if !ok {
+		return nil, fmt.Errorf("invalid lxmf container type %T", unpacked)
+	}
+
+	lxmfBytes, ok := container["lxmf_bytes"].([]byte)
+	if !ok {
+		return nil, fmt.Errorf("invalid lxmf container bytes type %T", container["lxmf_bytes"])
+	}
+
+	message, err := UnpackMessageFromBytes(ts, lxmfBytes, RepresentationUnknown)
+	if err != nil {
+		return nil, err
+	}
+
+	if state, ok := container["state"]; ok {
+		parsedState, err := containerInt(state)
+		if err != nil {
+			return nil, err
+		}
+		message.State = parsedState
+	}
+	if transportEncrypted, ok := container["transport_encrypted"]; ok {
+		parsedTransportEncrypted, ok := transportEncrypted.(bool)
+		if !ok {
+			return nil, fmt.Errorf("invalid lxmf container transport_encrypted type %T", transportEncrypted)
+		}
+		message.TransportEncrypted = parsedTransportEncrypted
+	}
+	if transportEncryption, ok := container["transport_encryption"]; ok {
+		parsedTransportEncryption, ok := transportEncryption.(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid lxmf container transport_encryption type %T", transportEncryption)
+		}
+		message.TransportEncryption = parsedTransportEncryption
+	}
+	if method, ok := container["method"]; ok {
+		parsedMethod, err := containerInt(method)
+		if err != nil {
+			return nil, err
+		}
+		message.Method = parsedMethod
+	}
+
+	return message, nil
+}
+
 func ensureFields(fields map[any]any) map[any]any {
 	if fields == nil {
 		return map[any]any{}
@@ -426,6 +539,33 @@ func payloadMap(v any) (map[any]any, error) {
 		return nil, fmt.Errorf("invalid lxmf fields type %T", v)
 	}
 	return m, nil
+}
+
+func containerInt(v any) (int, error) {
+	switch value := v.(type) {
+	case int:
+		return value, nil
+	case int8:
+		return int(value), nil
+	case int16:
+		return int(value), nil
+	case int32:
+		return int(value), nil
+	case int64:
+		return int(value), nil
+	case uint:
+		return int(value), nil
+	case uint8:
+		return int(value), nil
+	case uint16:
+		return int(value), nil
+	case uint32:
+		return int(value), nil
+	case uint64:
+		return int(value), nil
+	default:
+		return 0, fmt.Errorf("invalid lxmf container integer type %T", v)
+	}
 }
 
 func extractStamp(payload []any) ([]byte, []any) {
@@ -516,24 +656,31 @@ func (m *Message) packPropagated() error {
 		return errors.New("packed lxmf message too short for propagated payload")
 	}
 
-	encryptedData, err := m.Destination.Encrypt(m.Packed[DestinationLength:])
-	if err != nil {
-		return fmt.Errorf("encrypt propagated payload: %w", err)
+	if len(m.propagationEncryptedData) == 0 {
+		encryptedData, err := m.Destination.Encrypt(m.Packed[DestinationLength:])
+		if err != nil {
+			return fmt.Errorf("encrypt propagated payload: %w", err)
+		}
+		m.propagationEncryptedData = encryptedData
 	}
 
-	lxmfData := make([]byte, 0, DestinationLength+len(encryptedData))
+	lxmfData := make([]byte, 0, DestinationLength+len(m.propagationEncryptedData))
 	lxmfData = append(lxmfData, m.DestinationHash...)
-	lxmfData = append(lxmfData, encryptedData...)
+	lxmfData = append(lxmfData, m.propagationEncryptedData...)
 	m.TransientID = rns.FullHash(lxmfData)
+	if len(m.PropagationStamp) > 0 {
+		lxmfData = append(lxmfData, m.PropagationStamp...)
+	}
 
 	propagationPayload := []any{
 		float64(time.Now().UnixNano()) / 1e9,
 		[]any{cloneBytes(lxmfData)},
 	}
-	m.PropagationPacked, err = msgpack.Pack(propagationPayload)
+	propagationPacked, err := msgpack.Pack(propagationPayload)
 	if err != nil {
 		return fmt.Errorf("pack propagated lxmf payload: %w", err)
 	}
+	m.PropagationPacked = propagationPacked
 
 	m.Method = MethodPropagated
 	if len(m.PropagationPacked) <= LinkPacketMaxContent {
@@ -660,4 +807,19 @@ func cloneBytes(in []byte) []byte {
 	out := make([]byte, len(in))
 	copy(out, in)
 	return out
+}
+
+func (m *Message) resetPackedState(preservePropagationEncryptedData bool) {
+	m.Payload = nil
+	m.Hash = nil
+	m.MessageID = nil
+	m.Signature = nil
+	m.Packed = nil
+	m.TransientID = nil
+	m.PropagationPacked = nil
+	m.PacketRepresentation = nil
+	m.ResourceRepresentation = nil
+	if !preservePropagationEncryptedData {
+		m.propagationEncryptedData = nil
+	}
 }

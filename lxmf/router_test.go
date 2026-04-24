@@ -288,6 +288,243 @@ func TestHandleOutboundDisablesDeferredStampWhenNoStampIsRequired(t *testing.T) 
 	}
 }
 
+func TestDeferredStamps(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	now := time.Unix(1700000000, 0).UTC()
+	router.now = func() time.Time { return now }
+	router.hasPath = func(_ []byte) bool { return false }
+	router.requestPath = func(_ []byte) error { return nil }
+
+	stampCost := 1
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+	msg.StampCost = &stampCost
+
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+
+	if got := len(router.pendingOutbound); got != 0 {
+		t.Fatalf("pendingOutbound length=%v want=0", got)
+	}
+	if got := len(router.pendingDeferredStamps); got != 1 {
+		t.Fatalf("pendingDeferredStamps length=%v want=1", got)
+	}
+	if msg.State != StateOutbound {
+		t.Fatalf("state=%v want=%v", msg.State, StateOutbound)
+	}
+	if len(msg.Stamp) != 0 {
+		t.Fatalf("stamp=%x want empty before deferred processing", msg.Stamp)
+	}
+
+	progress := router.GetOutboundProgress(msg.Hash)
+	if progress == nil || *progress != 0 {
+		t.Fatalf("GetOutboundProgress() = %v, want 0", progress)
+	}
+	queuedStampCost := router.GetOutboundLXMStampCost(msg.Hash)
+	if queuedStampCost == nil || *queuedStampCost != stampCost {
+		t.Fatalf("GetOutboundLXMStampCost() = %v, want %v", queuedStampCost, stampCost)
+	}
+
+	router.ProcessDeferredStamps()
+
+	if got := len(router.pendingDeferredStamps); got != 0 {
+		t.Fatalf("pendingDeferredStamps length after processing=%v want=0", got)
+	}
+	if got := len(router.pendingOutbound); got != 1 {
+		t.Fatalf("pendingOutbound length after processing=%v want=1", got)
+	}
+	if len(msg.Stamp) != StampSize {
+		t.Fatalf("stamp length=%v want=%v", len(msg.Stamp), StampSize)
+	}
+	workblock, err := StampWorkblock(msg.MessageID, WorkblockExpandRounds)
+	if err != nil {
+		t.Fatalf("StampWorkblock: %v", err)
+	}
+	if !StampValid(msg.Stamp, stampCost, workblock) {
+		t.Fatal("generated deferred stamp should satisfy outbound stamp cost")
+	}
+}
+
+func TestDeferredPropagationStamps(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	now := time.Unix(1700000000, 0).UTC()
+	router.now = func() time.Time { return now }
+	router.hasPath = func(_ []byte) bool { return false }
+	router.requestPath = func(_ []byte) error { return nil }
+	router.pathWaitSleep = func(time.Duration) {}
+
+	router.outboundPropagationNode = rns.CalculateHash(destID, AppName, "propagation")
+	appData, err := msgpack.Pack([]any{
+		false,
+		float64(now.Unix()),
+		true,
+		128,
+		256,
+		[]any{11, 3, 7},
+		map[any]any{PNMetaName: []byte("Node A")},
+	})
+	if err != nil {
+		t.Fatalf("Pack propagation app data: %v", err)
+	}
+	ts.Remember(nil, router.outboundPropagationNode, destID.GetPublicKey(), appData)
+
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+	msg.DesiredMethod = MethodPropagated
+
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+
+	if got := len(router.pendingOutbound); got != 0 {
+		t.Fatalf("pendingOutbound length=%v want=0", got)
+	}
+	if got := len(router.pendingDeferredStamps); got != 1 {
+		t.Fatalf("pendingDeferredStamps length=%v want=1", got)
+	}
+	if msg.DeferStamp {
+		t.Fatal("expected normal deferred stamping to be cleared when no direct stamp is required")
+	}
+	if !msg.DeferPropagationStamp {
+		t.Fatal("expected propagation stamp generation to remain deferred")
+	}
+	if got := router.GetOutboundLXMPropagationStampCost(msg.Hash); got != nil {
+		t.Fatalf("GetOutboundLXMPropagationStampCost() before generation=%v want=nil", *got)
+	}
+
+	router.ProcessDeferredStamps()
+
+	if got := len(router.pendingDeferredStamps); got != 0 {
+		t.Fatalf("pendingDeferredStamps length after processing=%v want=0", got)
+	}
+	if got := len(router.pendingOutbound); got != 1 {
+		t.Fatalf("pendingOutbound length after processing=%v want=1", got)
+	}
+	if msg.PropagationTargetCost == nil || *msg.PropagationTargetCost != 11 {
+		t.Fatalf("propagation target cost=%v want=11", msg.PropagationTargetCost)
+	}
+	if len(msg.PropagationStamp) != StampSize {
+		t.Fatalf("propagation stamp length=%v want=%v", len(msg.PropagationStamp), StampSize)
+	}
+	workblock, err := StampWorkblock(msg.TransientID, WorkblockExpandRoundsPN)
+	if err != nil {
+		t.Fatalf("StampWorkblock: %v", err)
+	}
+	if !StampValid(msg.PropagationStamp, *msg.PropagationTargetCost, workblock) {
+		t.Fatal("generated propagation stamp should satisfy propagation target cost")
+	}
+	unpackedAny, err := msgpack.Unpack(msg.PropagationPacked)
+	if err != nil {
+		t.Fatalf("Unpack propagation payload: %v", err)
+	}
+	unpacked, ok := unpackedAny.([]any)
+	if !ok || len(unpacked) != 2 {
+		t.Fatalf("propagation payload=%#v want [timestamp, [lxmf_data]]", unpackedAny)
+	}
+	entries, ok := unpacked[1].([]any)
+	if !ok || len(entries) != 1 {
+		t.Fatalf("propagation entries=%#v want single entry", unpacked[1])
+	}
+	lxmfData, ok := entries[0].([]byte)
+	if !ok {
+		t.Fatalf("propagation entry type=%T want []byte", entries[0])
+	}
+	if !bytes.HasSuffix(lxmfData, msg.PropagationStamp) {
+		t.Fatalf("propagation payload=%x want suffix %x", lxmfData, msg.PropagationStamp)
+	}
+}
+
+func TestDeferredOutboundProgress(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	stampCost := 5
+	propagationCost := 11
+
+	pendingOutbound := mustTestNewMessage(t, destination, sourceDest, "queued", "title", nil)
+	pendingOutbound.Progress = 0.25
+	pendingOutbound.StampCost = &stampCost
+	if err := pendingOutbound.Pack(); err != nil {
+		t.Fatalf("Pack pendingOutbound: %v", err)
+	}
+
+	deferred := mustTestNewMessage(t, destination, sourceDest, "deferred", "title", nil)
+	deferred.Progress = 0.75
+	deferred.StampCost = &stampCost
+	deferred.PropagationTargetCost = &propagationCost
+	if err := deferred.Pack(); err != nil {
+		t.Fatalf("Pack deferred: %v", err)
+	}
+
+	router.pendingOutbound = append(router.pendingOutbound, pendingOutbound)
+	router.pendingDeferredStamps[string(deferred.MessageID)] = deferred
+
+	if got := router.GetOutboundProgress(pendingOutbound.Hash); got == nil || *got != pendingOutbound.Progress {
+		t.Fatalf("GetOutboundProgress(pendingOutbound)=%v want=%v", got, pendingOutbound.Progress)
+	}
+	if got := router.GetOutboundProgress(deferred.Hash); got == nil || *got != deferred.Progress {
+		t.Fatalf("GetOutboundProgress(deferred)=%v want=%v", got, deferred.Progress)
+	}
+	if got := router.GetOutboundLXMStampCost(pendingOutbound.Hash); got == nil || *got != stampCost {
+		t.Fatalf("GetOutboundLXMStampCost(pendingOutbound)=%v want=%v", got, stampCost)
+	}
+	if got := router.GetOutboundLXMStampCost(deferred.Hash); got == nil || *got != stampCost {
+		t.Fatalf("GetOutboundLXMStampCost(deferred)=%v want=%v", got, stampCost)
+	}
+	if got := router.GetOutboundLXMPropagationStampCost(deferred.Hash); got == nil || *got != propagationCost {
+		t.Fatalf("GetOutboundLXMPropagationStampCost(deferred)=%v want=%v", got, propagationCost)
+	}
+
+	cancelled := false
+	deferred.FailedCallback = func(*Message) { cancelled = true }
+	router.CancelOutbound(deferred.MessageID, StateCancelled)
+	if deferred.State != StateCancelled {
+		t.Fatalf("deferred state after cancel=%v want=%v", deferred.State, StateCancelled)
+	}
+
+	router.ProcessDeferredStamps()
+
+	if got := len(router.pendingDeferredStamps); got != 0 {
+		t.Fatalf("pendingDeferredStamps length after cancel=%v want=0", got)
+	}
+	if !cancelled {
+		t.Fatal("expected cancelled deferred message to invoke failed callback")
+	}
+	if !deferred.StampGenerationFailed {
+		t.Fatal("expected cancelled deferred message to mark stamp generation as failed")
+	}
+}
+
 func TestProcessOutboundDirectRequestsPathWhenUnavailable(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -3434,6 +3671,7 @@ func TestProcessOutboundPropagatedNoNodeFails(t *testing.T) {
 
 	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 	msg.DesiredMethod = MethodPropagated
+	msg.DeferPropagationStamp = false
 
 	// No outbound propagation node set — should fail immediately.
 	failedCalled := false
@@ -3469,6 +3707,7 @@ func TestProcessOutboundPropagatedRequestsPathThenSends(t *testing.T) {
 
 	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 	msg.DesiredMethod = MethodPropagated
+	msg.DeferPropagationStamp = false
 
 	propNodeID := mustTestNewIdentity(t, true)
 	propNodeDest := mustTestNewDestination(t, ts, propNodeID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
@@ -3590,6 +3829,7 @@ func TestProcessOutboundPropagatedActiveLinkUsesPropagationLink(t *testing.T) {
 
 	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 	msg.DesiredMethod = MethodPropagated
+	msg.DeferPropagationStamp = false
 	if err := router.SetOutboundPropagationNode(propNodeDest.Hash); err != nil {
 		t.Fatal(err)
 	}
@@ -3643,6 +3883,7 @@ func TestProcessOutboundPropagatedPendingLinkWaits(t *testing.T) {
 
 	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 	msg.DesiredMethod = MethodPropagated
+	msg.DeferPropagationStamp = false
 	if err := router.SetOutboundPropagationNode(propNodeDest.Hash); err != nil {
 		t.Fatal(err)
 	}
@@ -3693,6 +3934,7 @@ func TestProcessOutboundPropagatedClosedLinkClearsAndRetries(t *testing.T) {
 
 	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 	msg.DesiredMethod = MethodPropagated
+	msg.DeferPropagationStamp = false
 	if err := router.SetOutboundPropagationNode(propNodeDest.Hash); err != nil {
 		t.Fatal(err)
 	}
@@ -3782,6 +4024,7 @@ func TestProcessOutboundPropagatedSentRemovesFromQueue(t *testing.T) {
 
 	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 	msg.DesiredMethod = MethodPropagated
+	msg.DeferPropagationStamp = false
 
 	propNodeID := mustTestNewIdentity(t, true)
 	propNodeDest := mustTestNewDestination(t, ts, propNodeID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
@@ -3936,6 +4179,7 @@ func TestPropagationTransferDelivered(t *testing.T) {
 
 	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 	msg.DesiredMethod = MethodPropagated
+	msg.DeferPropagationStamp = false
 	if err := router.SetOutboundPropagationNode(propNodeDest.Hash); err != nil {
 		t.Fatal(err)
 	}
@@ -3998,6 +4242,7 @@ func TestPropagationTransferTimeout(t *testing.T) {
 
 	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 	msg.DesiredMethod = MethodPropagated
+	msg.DeferPropagationStamp = false
 	if err := router.SetOutboundPropagationNode(propNodeDest.Hash); err != nil {
 		t.Fatal(err)
 	}
@@ -4047,6 +4292,7 @@ func TestPropagationTransferProgress(t *testing.T) {
 
 	msg := mustTestNewMessage(t, destination, sourceDest, string(bytes.Repeat([]byte("P"), LinkPacketMaxContent)), "title", nil)
 	msg.DesiredMethod = MethodPropagated
+	msg.DeferPropagationStamp = false
 	if err := router.SetOutboundPropagationNode(propNodeDest.Hash); err != nil {
 		t.Fatal(err)
 	}
@@ -4130,6 +4376,72 @@ func TestPropagationTransferClosedLink(t *testing.T) {
 	}
 }
 
+func TestPropagationTransferInvalidStampSignalRejectsMessage(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	propNodeID := mustTestNewIdentity(t, true)
+	propNodeDest := mustTestNewDestination(t, ts, propNodeID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+	msg.DesiredMethod = MethodPropagated
+	msg.DeferPropagationStamp = false
+	if err := router.SetOutboundPropagationNode(propNodeDest.Hash); err != nil {
+		t.Fatal(err)
+	}
+	router.outboundPropagationLink, _ = rns.NewLink(ts, propNodeDest)
+	router.linkStatus = func(link *rns.Link) int {
+		if link == router.outboundPropagationLink {
+			return rns.LinkActive
+		}
+		return link.GetStatus()
+	}
+
+	failed := false
+	msg.FailedCallback = func(_ *Message) { failed = true }
+	router.sendPacket = func(packet *rns.Packet) error {
+		packet.Receipt = &rns.PacketReceipt{}
+		return nil
+	}
+
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+	if got, want := msg.State, StateSending; got != want {
+		t.Fatalf("state after send=%v want=%v", got, want)
+	}
+	if len(router.pendingOutbound) != 1 {
+		t.Fatalf("pending outbound=%v want=1", len(router.pendingOutbound))
+	}
+
+	signalData, err := msgpack.Pack([]any{peerErrorInvalidStamp})
+	if err != nil {
+		t.Fatalf("Pack invalid stamp signal: %v", err)
+	}
+	invokeRouterLinkPacketCallback(t, router.outboundPropagationLink, signalData)
+
+	if got, want := msg.State, StateRejected; got != want {
+		t.Fatalf("state after invalid stamp signal=%v want=%v", got, want)
+	}
+	if !failed {
+		t.Fatal("expected failed callback after invalid propagation stamp signal")
+	}
+	if len(router.pendingOutbound) != 0 {
+		t.Fatalf("pending outbound after rejection=%v want=0", len(router.pendingOutbound))
+	}
+	if router.outboundPropagationLinkMessage != nil {
+		t.Fatal("expected propagation link message tracking to be cleared")
+	}
+}
+
 func activateRouterTestLink(t *testing.T, link *rns.Link) {
 	t.Helper()
 	setRouterLinkField(t, link, "status", rns.LinkActive)
@@ -4139,6 +4451,17 @@ func activateRouterTestLink(t *testing.T, link *rns.Link) {
 		t.Fatalf("NewToken: %v", err)
 	}
 	setRouterLinkField(t, link, "token", token)
+}
+
+func invokeRouterLinkPacketCallback(t *testing.T, link *rns.Link, data []byte) {
+	t.Helper()
+	callbackField := reflect.ValueOf(link).Elem().FieldByName("callbacks")
+	packetCallback := reflect.NewAt(callbackField.Type(), unsafe.Pointer(callbackField.UnsafeAddr())).Elem().FieldByName("Packet")
+	if packetCallback.IsNil() {
+		t.Fatal("expected link packet callback to be installed")
+	}
+	packet := &rns.Packet{Data: data, Destination: link}
+	packetCallback.Interface().(func(*rns.Link, *rns.Packet))(link, packet)
 }
 
 func setRouterLinkField(t *testing.T, link *rns.Link, name string, value any) {

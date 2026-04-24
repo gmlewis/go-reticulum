@@ -228,6 +228,67 @@ func TestWriteToDirectory(t *testing.T) {
 	}
 }
 
+func TestUnpackMessageFromFileRestoresContainerState(t *testing.T) {
+	t.Parallel()
+
+	destinationID := mustTestNewIdentity(t, true)
+	sourceID := mustTestNewIdentity(t, true)
+	ts := rns.NewTransportSystem(nil)
+	destination := mustTestNewDestination(t, ts, destinationID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	source := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	ts.Remember(nil, source.Hash, sourceID.GetPublicKey(), nil)
+
+	message := mustTestNewMessage(t, destination, source, "hello", "greet", nil)
+	message.DesiredMethod = MethodPropagated
+	message.DeferPropagationStamp = false
+	message.State = StateSent
+	if err := message.Pack(); err != nil {
+		t.Fatalf("Pack: %v", err)
+	}
+	message.DetermineTransportEncryption()
+
+	dir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	path, err := message.WriteToDirectory(dir)
+	if err != nil {
+		t.Fatalf("WriteToDirectory: %v", err)
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := file.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
+
+	got, err := UnpackMessageFromFile(ts, file)
+	if err != nil {
+		t.Fatalf("UnpackMessageFromFile: %v", err)
+	}
+
+	if got.State != StateSent {
+		t.Fatalf("state=%v want=%v", got.State, StateSent)
+	}
+	if got.Method != MethodPropagated {
+		t.Fatalf("method=%v want=%v", got.Method, MethodPropagated)
+	}
+	if !got.TransportEncrypted {
+		t.Fatal("expected transport_encrypted to be restored from container")
+	}
+	if got.TransportEncryption != EncryptionDescriptionEC {
+		t.Fatalf("transport_encryption=%q want=%q", got.TransportEncryption, EncryptionDescriptionEC)
+	}
+	if !bytes.Equal(got.Packed, message.Packed) {
+		t.Fatalf("packed=%x want=%x", got.Packed, message.Packed)
+	}
+	if !got.SignatureValidated {
+		t.Fatalf("expected restored message signature to validate, reason=%v", got.UnverifiedReason)
+	}
+}
+
 func TestMessagePropagatedPackProducesPropagationWireFormat(t *testing.T) {
 	t.Parallel()
 
