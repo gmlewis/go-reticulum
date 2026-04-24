@@ -39,6 +39,12 @@ type outboundStampCostEntry struct {
 	stampCost int
 }
 
+type validatedPropagationMessage struct {
+	transientID []byte
+	lxmfData    []byte
+	stampValue  int
+}
+
 type peerDistributionEntry struct {
 	transientID  []byte
 	fromPeerHash []byte
@@ -336,13 +342,165 @@ func (r *Router) RegisterPropagationDestination() (*rns.Destination, error) {
 
 	destination.RegisterRequestHandler(offerRequestPath, r.offerRequest, rns.AllowAll, nil, false)
 	destination.RegisterRequestHandler(messageGetPath, r.messageGetRequest, rns.AllowAll, nil, false)
+	destination.SetLinkEstablishedCallback(r.propagationLinkEstablished)
+	destination.SetPacketCallback(r.propagationPacket)
 
 	r.propagationDestination = destination
 
 	return destination, nil
 }
 
+func (r *Router) propagationLinkEstablished(link *rns.Link) {
+	r.configurePropagationIngressLink(link)
+}
+
+func (r *Router) configurePropagationIngressLink(link *rns.Link) {
+	if link == nil {
+		return
+	}
+	link.SetPacketCallback(r.propagationPacket)
+	if err := link.SetResourceStrategy(rns.AcceptApp); err != nil {
+		return
+	}
+	link.SetResourceCallback(func(adv *rns.ResourceAdvertisement) bool {
+		return r.propagationResourceAdvertised(link, adv)
+	})
+	link.SetResourceStartedCallback(func(resource *rns.Resource) {
+		r.propagationResourceBegan(link, resource)
+	})
+	link.SetResourceConcludedCallback(func(resource *rns.Resource) {
+		r.propagationResourceConcluded(link, resource)
+	})
+}
+
+func (r *Router) propagationResourceAdvertised(link *rns.Link, adv *rns.ResourceAdvertisement) bool {
+	if adv == nil {
+		return false
+	}
+	if r.fromStaticOnly {
+		remoteIdentity := link.GetRemoteIdentity()
+		if remoteIdentity == nil {
+			return false
+		}
+		remoteHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
+		r.mu.Lock()
+		_, allowed := r.staticPeers[string(remoteHash)]
+		r.mu.Unlock()
+		if !allowed {
+			return false
+		}
+	}
+
+	limit := r.PropagationPerSyncLimit()
+	if limit > 0 && float64(adv.D) > limit*1000 {
+		return false
+	}
+	return true
+}
+
+func (r *Router) propagationPacket(data []byte, packet *rns.Packet) {
+	if packet == nil || packet.DestinationType != rns.DestinationLink {
+		return
+	}
+
+	entries, err := decodeAnyList(data)
+	if err != nil || len(entries) != 2 {
+		return
+	}
+	if _, err := anyToFloat64(entries[0]); err != nil {
+		return
+	}
+
+	messages := anySliceToByteSlices(entries[1])
+	if len(messages) == 0 {
+		return
+	}
+
+	minAcceptedCost := r.propagationCost - r.propagationCostFlexibility
+	if minAcceptedCost < 0 {
+		minAcceptedCost = 0
+	}
+
+	validated := validatePropagationMessages(messages, minAcceptedCost)
+	for _, entry := range validated {
+		if r.ingestPropagationMessage(entry.lxmfData, nil, entry.stampValue) {
+			r.mu.Lock()
+			r.clientPropagationMessagesReceived++
+			r.mu.Unlock()
+		}
+	}
+
+	if len(validated) == len(messages) {
+		packet.Prove(nil)
+		return
+	}
+
+	rejectData, err := msgpack.Pack([]any{peerErrorInvalidStamp})
+	if err == nil {
+		rejectPacket := rns.NewPacket(packet.Destination, rejectData)
+		if err := rejectPacket.Send(); err != nil {
+			log.Printf("Could not send invalid propagation stamp signal: %v", err)
+		}
+	}
+	if link, ok := packet.Destination.(*rns.Link); ok {
+		link.Teardown()
+	}
+}
+
+func (r *Router) propagationResourceBegan(_ *rns.Link, _ *rns.Resource) {}
+
+func (r *Router) propagationResourceConcluded(link *rns.Link, resource *rns.Resource) {
+	if link == nil || resource == nil || resource.Status() != rns.ResourceStatusComplete {
+		return
+	}
+
+	entries, err := decodeAnyList(resource.Data())
+	if err != nil || len(entries) != 2 {
+		return
+	}
+	if _, err := anyToFloat64(entries[0]); err != nil {
+		return
+	}
+
+	messages := anySliceToByteSlices(entries[1])
+	if len(messages) == 0 {
+		return
+	}
+	if link.GetRemoteIdentity() == nil && len(messages) > 1 {
+		link.Teardown()
+		return
+	}
+	if link.GetRemoteIdentity() != nil {
+		return
+	}
+
+	minAcceptedCost := r.propagationCost - r.propagationCostFlexibility
+	if minAcceptedCost < 0 {
+		minAcceptedCost = 0
+	}
+
+	received := 0
+	validated := validatePropagationMessages(messages, minAcceptedCost)
+	for _, entry := range validated {
+		if r.ingestPropagationMessage(entry.lxmfData, nil, entry.stampValue) {
+			received++
+		}
+	}
+
+	r.mu.Lock()
+	r.clientPropagationMessagesReceived += received
+	r.mu.Unlock()
+
+	if len(validated) != len(messages) {
+		link.Teardown()
+	}
+}
+
 func (r *Router) storePropagationMessage(destinationHash []byte, payload []byte) []byte {
+	return r.storePropagationMessageStamped(destinationHash, payload, 0, nil)
+}
+
+func (r *Router) storePropagationMessageStamped(destinationHash []byte, payload []byte, stampValue int, fromPeer *Peer) []byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -355,10 +513,10 @@ func (r *Router) storePropagationMessage(destinationHash []byte, payload []byte)
 		handledBy:       [][]byte{},
 		unhandledBy:     [][]byte{},
 		size:            len(destinationHash) + len(payload),
-		stampValue:      0,
+		stampValue:      stampValue,
 	}
 	if r.propagationEnabled {
-		if path, size, err := r.writePropagationMessageFile(transientID, receivedAt, 0, destinationHash, payload); err != nil {
+		if path, size, err := r.writePropagationMessageFile(transientID, receivedAt, stampValue, destinationHash, payload); err != nil {
 			log.Printf("Could not persist propagation message %x: %v", transientID, err)
 		} else {
 			entry.path = path
@@ -366,7 +524,7 @@ func (r *Router) storePropagationMessage(destinationHash []byte, payload []byte)
 		}
 	}
 	r.propagationEntries[string(transientID)] = entry
-	r.enqueuePeerDistributionLocked(transientID, nil)
+	r.enqueuePeerDistributionLocked(transientID, fromPeer)
 
 	return transientID
 }
@@ -2461,6 +2619,70 @@ func transientIDsFromResponse(response any) ([][]byte, bool) {
 	default:
 		return nil, false
 	}
+}
+
+func validatePropagationMessages(messages [][]byte, targetCost int) []validatedPropagationMessage {
+	validated := make([]validatedPropagationMessage, 0, len(messages))
+	for _, message := range messages {
+		entry, ok := validatePropagationMessage(message, targetCost)
+		if !ok {
+			continue
+		}
+		validated = append(validated, entry)
+	}
+	return validated
+}
+
+func validatePropagationMessage(transientData []byte, targetCost int) (validatedPropagationMessage, bool) {
+	if len(transientData) <= (2*DestinationLength)+SignatureLength+StampSize {
+		return validatedPropagationMessage{}, false
+	}
+
+	lxmfData := cloneBytes(transientData[:len(transientData)-StampSize])
+	stampData := transientData[len(transientData)-StampSize:]
+	transientID := rns.FullHash(lxmfData)
+	workblock, err := StampWorkblock(transientID, WorkblockExpandRoundsPN)
+	if err != nil || !StampValid(stampData, targetCost, workblock) {
+		return validatedPropagationMessage{}, false
+	}
+
+	return validatedPropagationMessage{
+		transientID: transientID,
+		lxmfData:    lxmfData,
+		stampValue:  StampValue(workblock, stampData),
+	}, true
+}
+
+func (r *Router) ingestPropagationMessage(lxmfData []byte, fromPeer *Peer, stampValue int) bool {
+	if len(lxmfData) < DestinationLength {
+		return false
+	}
+
+	transientID := rns.FullHash(lxmfData)
+	destinationHash := append([]byte{}, lxmfData[:DestinationLength]...)
+
+	r.mu.Lock()
+	if _, ok := r.propagationEntries[string(transientID)]; ok || r.hasProcessedTransientIDLocked(transientID) {
+		r.mu.Unlock()
+		return false
+	}
+	r.locallyProcessedIDs[string(append([]byte{}, transientID...))] = r.now()
+	_, isLocalDelivery := r.deliveryDestinations[string(destinationHash)]
+	propagationEnabled := r.propagationEnabled
+	r.mu.Unlock()
+
+	if isLocalDelivery {
+		if r.handlePropagatedInbound(lxmfData) {
+			return true
+		}
+		return true
+	}
+	if !propagationEnabled {
+		return false
+	}
+
+	storedID := r.storePropagationMessageStamped(destinationHash, lxmfData, stampValue, fromPeer)
+	return len(storedID) > 0
 }
 
 func (r *Router) handleInboundMessage(message *Message) {

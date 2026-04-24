@@ -1494,6 +1494,506 @@ func TestRegisterPropagationDestination(t *testing.T) {
 	if again != destination {
 		t.Fatal("expected idempotent propagation destination registration")
 	}
+
+	callbackField := reflect.ValueOf(destination).Elem().FieldByName("callbacks")
+	destinationCallbacks := reflect.NewAt(callbackField.Type(), unsafe.Pointer(callbackField.UnsafeAddr())).Elem()
+	if destinationCallbacks.FieldByName("Packet").IsNil() {
+		t.Fatal("expected propagation destination packet callback to be installed")
+	}
+	linkEstablished := destinationCallbacks.FieldByName("LinkEstablished")
+	if linkEstablished.IsNil() {
+		t.Fatal("expected propagation destination link-established callback to be installed")
+	}
+
+	link := &rns.Link{}
+	linkEstablished.Interface().(func(*rns.Link))(link)
+
+	linkCallbacksField := reflect.ValueOf(link).Elem().FieldByName("callbacks")
+	linkCallbacks := reflect.NewAt(linkCallbacksField.Type(), unsafe.Pointer(linkCallbacksField.UnsafeAddr())).Elem()
+	if linkCallbacks.FieldByName("Packet").IsNil() {
+		t.Fatal("expected propagation link packet callback to be installed")
+	}
+	if linkCallbacks.FieldByName("Resource").IsNil() {
+		t.Fatal("expected propagation link resource callback to be installed")
+	}
+	if linkCallbacks.FieldByName("ResourceStarted").IsNil() {
+		t.Fatal("expected propagation link resource-started callback to be installed")
+	}
+	if linkCallbacks.FieldByName("ResourceConcluded").IsNil() {
+		t.Fatal("expected propagation link resource-concluded callback to be installed")
+	}
+
+	resourceStrategyField := reflect.ValueOf(link).Elem().FieldByName("resourceStrategy")
+	resourceStrategy := reflect.NewAt(resourceStrategyField.Type(), unsafe.Pointer(resourceStrategyField.UnsafeAddr())).Elem().Int()
+	if int(resourceStrategy) != rns.AcceptApp {
+		t.Fatalf("propagation link resourceStrategy=%v want=%v", resourceStrategy, rns.AcceptApp)
+	}
+}
+
+func TestPropagationLinkResourceAdvertisedRejectsOversize(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.propagationPerSyncLimit = 1
+
+	destination, err := router.RegisterPropagationDestination()
+	if err != nil {
+		t.Fatalf("RegisterPropagationDestination: %v", err)
+	}
+
+	callbackField := reflect.ValueOf(destination).Elem().FieldByName("callbacks")
+	linkEstablished := reflect.NewAt(callbackField.Type(), unsafe.Pointer(callbackField.UnsafeAddr())).Elem().FieldByName("LinkEstablished")
+	link := &rns.Link{}
+	linkEstablished.Interface().(func(*rns.Link))(link)
+
+	linkCallbacksField := reflect.ValueOf(link).Elem().FieldByName("callbacks")
+	resourceCallback := reflect.NewAt(linkCallbacksField.Type(), unsafe.Pointer(linkCallbacksField.UnsafeAddr())).Elem().FieldByName("Resource")
+	if resourceCallback.IsNil() {
+		t.Fatal("expected propagation link resource callback to be installed")
+	}
+
+	accepted := resourceCallback.Interface().(func(*rns.ResourceAdvertisement) bool)(&rns.ResourceAdvertisement{D: 1001})
+	if accepted {
+		t.Fatal("expected oversize propagation resource to be rejected")
+	}
+}
+
+func TestPropagationLinkResourceAdvertisedRespectsStaticOnly(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.SetFromStaticOnly(true)
+	router.propagationPerSyncLimit = 10
+
+	destination, err := router.RegisterPropagationDestination()
+	if err != nil {
+		t.Fatalf("RegisterPropagationDestination: %v", err)
+	}
+
+	callbackField := reflect.ValueOf(destination).Elem().FieldByName("callbacks")
+	linkEstablished := reflect.NewAt(callbackField.Type(), unsafe.Pointer(callbackField.UnsafeAddr())).Elem().FieldByName("LinkEstablished")
+	link := &rns.Link{}
+	linkEstablished.Interface().(func(*rns.Link))(link)
+
+	linkCallbacksField := reflect.ValueOf(link).Elem().FieldByName("callbacks")
+	resourceCallback := reflect.NewAt(linkCallbacksField.Type(), unsafe.Pointer(linkCallbacksField.UnsafeAddr())).Elem().FieldByName("Resource")
+	if resourceCallback.IsNil() {
+		t.Fatal("expected propagation link resource callback to be installed")
+	}
+	callback := resourceCallback.Interface().(func(*rns.ResourceAdvertisement) bool)
+
+	if callback(&rns.ResourceAdvertisement{D: 500}) {
+		t.Fatal("expected unidentified propagation resource to be rejected in static-only mode")
+	}
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	setRouterLinkField(t, link, "remoteIdentity", remoteIdentity)
+	if callback(&rns.ResourceAdvertisement{D: 500}) {
+		t.Fatal("expected non-static propagation peer resource to be rejected")
+	}
+
+	remoteHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
+	router.staticPeers[string(remoteHash)] = struct{}{}
+	if !callback(&rns.ResourceAdvertisement{D: 500}) {
+		t.Fatal("expected static propagation peer resource to be accepted")
+	}
+}
+
+type propagationPacketCaptureTransport struct {
+	*rns.TransportSystem
+
+	mu      sync.Mutex
+	packets []*rns.Packet
+}
+
+func newPropagationPacketCaptureTransport() *propagationPacketCaptureTransport {
+	return &propagationPacketCaptureTransport{
+		TransportSystem: rns.NewTransportSystem(nil),
+	}
+}
+
+func (ts *propagationPacketCaptureTransport) Outbound(packet *rns.Packet) error {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+
+	ts.packets = append(ts.packets, packet)
+	return nil
+}
+
+func (ts *propagationPacketCaptureTransport) snapshots() []*rns.Packet {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+
+	packets := make([]*rns.Packet, len(ts.packets))
+	copy(packets, ts.packets)
+	return packets
+}
+
+func TestPropagationPacketStoresValidClientMessageAndProves(t *testing.T) {
+	t.Parallel()
+
+	ts := newPropagationPacketCaptureTransport()
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.propagationEnabled = true
+	router.propagationCost = 1
+	router.propagationCostFlexibility = 0
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	remoteDest := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	message := mustTestNewMessage(t, remoteDest, sourceDest, "payload", "title", nil)
+	if err := message.Pack(); err != nil {
+		t.Fatalf("Pack(): %v", err)
+	}
+
+	propagationStamp, stampValue, _, err := GenerateStamp(rns.FullHash(message.Packed), router.propagationCost, WorkblockExpandRoundsPN)
+	if err != nil {
+		t.Fatalf("GenerateStamp(): %v", err)
+	}
+	transientData := append(append([]byte{}, message.Packed...), propagationStamp...)
+	packedData, err := msgpack.Pack([]any{float64(1), []any{transientData}})
+	if err != nil {
+		t.Fatalf("Pack propagation packet: %v", err)
+	}
+
+	link, err := rns.NewLink(ts, remoteDest)
+	if err != nil {
+		t.Fatalf("NewLink(): %v", err)
+	}
+	activateRouterTestLink(t, link)
+
+	packet := &rns.Packet{
+		Destination:     link,
+		DestinationType: rns.DestinationLink,
+		FromPacked:      true,
+		PacketHash:      bytes.Repeat([]byte{0x11}, 32),
+	}
+
+	router.propagationPacket(packedData, packet)
+
+	transientID := rns.FullHash(message.Packed)
+	entry := router.propagationEntries[string(transientID)]
+	if entry == nil {
+		t.Fatalf("expected propagation entry for %x", transientID)
+	}
+	if !bytes.Equal(entry.payload, message.Packed) {
+		t.Fatalf("stored payload=%x want=%x", entry.payload, message.Packed)
+	}
+	if got, want := entry.stampValue, stampValue; got != want {
+		t.Fatalf("stampValue=%v want=%v", got, want)
+	}
+	if got, want := router.clientPropagationMessagesReceived, 1; got != want {
+		t.Fatalf("clientPropagationMessagesReceived=%v want=%v", got, want)
+	}
+	if _, ok := router.locallyProcessedIDs[string(transientID)]; !ok {
+		t.Fatalf("expected locally processed entry for %x", transientID)
+	}
+
+	packets := ts.snapshots()
+	if len(packets) != 1 {
+		t.Fatalf("sent packets=%v want=1", len(packets))
+	}
+	if got, want := packets[0].PacketType, rns.PacketProof; got != want {
+		t.Fatalf("proof packet type=%v want=%v", got, want)
+	}
+	if got := link.GetStatus(); got != rns.LinkActive {
+		t.Fatalf("link status=%v want=%v", got, rns.LinkActive)
+	}
+}
+
+func TestPropagationPacketRejectsInvalidClientTransferAfterAcceptingValidEntries(t *testing.T) {
+	t.Parallel()
+
+	ts := newPropagationPacketCaptureTransport()
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.propagationEnabled = true
+	router.propagationCost = 1
+	router.propagationCostFlexibility = 0
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	remoteDest := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	validMessage := mustTestNewMessage(t, remoteDest, sourceDest, "valid", "title", nil)
+	if err := validMessage.Pack(); err != nil {
+		t.Fatalf("valid Pack(): %v", err)
+	}
+	validStamp, _, _, err := GenerateStamp(rns.FullHash(validMessage.Packed), router.propagationCost, WorkblockExpandRoundsPN)
+	if err != nil {
+		t.Fatalf("GenerateStamp(valid): %v", err)
+	}
+
+	invalidMessage := mustTestNewMessage(t, remoteDest, sourceDest, "invalid", "title", nil)
+	if err := invalidMessage.Pack(); err != nil {
+		t.Fatalf("invalid Pack(): %v", err)
+	}
+	workblock, err := StampWorkblock(rns.FullHash(invalidMessage.Packed), WorkblockExpandRoundsPN)
+	if err != nil {
+		t.Fatalf("StampWorkblock(invalid): %v", err)
+	}
+	var invalidStamp []byte
+	for candidate := 0; candidate < 256; candidate++ {
+		stamp := bytes.Repeat([]byte{byte(candidate)}, StampSize)
+		if !StampValid(stamp, router.propagationCost, workblock) {
+			invalidStamp = stamp
+			break
+		}
+	}
+	if invalidStamp == nil {
+		t.Fatal("expected to find an invalid propagation stamp candidate")
+	}
+
+	validTransientData := append(append([]byte{}, validMessage.Packed...), validStamp...)
+	invalidTransientData := append(append([]byte{}, invalidMessage.Packed...), invalidStamp...)
+	packedData, err := msgpack.Pack([]any{float64(1), []any{validTransientData, invalidTransientData}})
+	if err != nil {
+		t.Fatalf("Pack propagation packet: %v", err)
+	}
+
+	link, err := rns.NewLink(ts, remoteDest)
+	if err != nil {
+		t.Fatalf("NewLink(): %v", err)
+	}
+	activateRouterTestLink(t, link)
+
+	packet := &rns.Packet{
+		Destination:     link,
+		DestinationType: rns.DestinationLink,
+		FromPacked:      true,
+		PacketHash:      bytes.Repeat([]byte{0x22}, 32),
+	}
+
+	router.propagationPacket(packedData, packet)
+
+	validTransientID := rns.FullHash(validMessage.Packed)
+	if _, ok := router.propagationEntries[string(validTransientID)]; !ok {
+		t.Fatalf("expected valid propagation entry for %x", validTransientID)
+	}
+	invalidTransientID := rns.FullHash(invalidMessage.Packed)
+	if _, ok := router.propagationEntries[string(invalidTransientID)]; ok {
+		t.Fatalf("did not expect invalid propagation entry for %x", invalidTransientID)
+	}
+	if got, want := router.clientPropagationMessagesReceived, 1; got != want {
+		t.Fatalf("clientPropagationMessagesReceived=%v want=%v", got, want)
+	}
+
+	packets := ts.snapshots()
+	if len(packets) < 1 {
+		t.Fatalf("sent packets=%v want at least 1", len(packets))
+	}
+	rejectData, err := msgpack.Pack([]any{peerErrorInvalidStamp})
+	if err != nil {
+		t.Fatalf("Pack reject data: %v", err)
+	}
+	if !bytes.Equal(packets[0].Data, rejectData) {
+		t.Fatalf("reject packet data=%x want=%x", packets[0].Data, rejectData)
+	}
+	for _, sent := range packets {
+		if sent.PacketType == rns.PacketProof {
+			t.Fatal("did not expect proof packet for invalid client transfer")
+		}
+	}
+	if got := link.GetStatus(); got != rns.LinkClosed {
+		t.Fatalf("link status=%v want=%v", got, rns.LinkClosed)
+	}
+}
+
+func TestPropagationResourceConcludedStoresValidClientMessage(t *testing.T) {
+	t.Parallel()
+
+	ts := newPropagationPacketCaptureTransport()
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.propagationEnabled = true
+	router.propagationCost = 1
+	router.propagationCostFlexibility = 0
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	remoteDest := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	message := mustTestNewMessage(t, remoteDest, sourceDest, "payload", "title", nil)
+	if err := message.Pack(); err != nil {
+		t.Fatalf("Pack(): %v", err)
+	}
+
+	propagationStamp, stampValue, _, err := GenerateStamp(rns.FullHash(message.Packed), router.propagationCost, WorkblockExpandRoundsPN)
+	if err != nil {
+		t.Fatalf("GenerateStamp(): %v", err)
+	}
+	transientData := append(append([]byte{}, message.Packed...), propagationStamp...)
+	resourceData, err := msgpack.Pack([]any{float64(1), []any{transientData}})
+	if err != nil {
+		t.Fatalf("Pack resource data: %v", err)
+	}
+
+	link, err := rns.NewLink(ts, remoteDest)
+	if err != nil {
+		t.Fatalf("NewLink(): %v", err)
+	}
+	activateRouterTestLink(t, link)
+
+	resource := &rns.Resource{}
+	setResourceField(t, resource, "link", link)
+	setResourceField(t, resource, "data", resourceData)
+	setResourceIntField(t, resource, "status", rns.ResourceStatusComplete)
+
+	router.propagationResourceConcluded(link, resource)
+
+	transientID := rns.FullHash(message.Packed)
+	entry := router.propagationEntries[string(transientID)]
+	if entry == nil {
+		t.Fatalf("expected propagation entry for %x", transientID)
+	}
+	if got, want := entry.stampValue, stampValue; got != want {
+		t.Fatalf("stampValue=%v want=%v", got, want)
+	}
+	if got, want := router.clientPropagationMessagesReceived, 1; got != want {
+		t.Fatalf("clientPropagationMessagesReceived=%v want=%v", got, want)
+	}
+	if got := link.GetStatus(); got != rns.LinkActive {
+		t.Fatalf("link status=%v want=%v", got, rns.LinkActive)
+	}
+}
+
+func TestPropagationResourceConcludedRejectsInvalidClientStamp(t *testing.T) {
+	t.Parallel()
+
+	ts := newPropagationPacketCaptureTransport()
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.propagationEnabled = true
+	router.propagationCost = 1
+	router.propagationCostFlexibility = 0
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	remoteDest := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	message := mustTestNewMessage(t, remoteDest, sourceDest, "payload", "title", nil)
+	if err := message.Pack(); err != nil {
+		t.Fatalf("Pack(): %v", err)
+	}
+	workblock, err := StampWorkblock(rns.FullHash(message.Packed), WorkblockExpandRoundsPN)
+	if err != nil {
+		t.Fatalf("StampWorkblock(): %v", err)
+	}
+	var invalidStamp []byte
+	for candidate := 0; candidate < 256; candidate++ {
+		stamp := bytes.Repeat([]byte{byte(candidate)}, StampSize)
+		if !StampValid(stamp, router.propagationCost, workblock) {
+			invalidStamp = stamp
+			break
+		}
+	}
+	if invalidStamp == nil {
+		t.Fatal("expected invalid propagation stamp")
+	}
+
+	transientData := append(append([]byte{}, message.Packed...), invalidStamp...)
+	resourceData, err := msgpack.Pack([]any{float64(1), []any{transientData}})
+	if err != nil {
+		t.Fatalf("Pack resource data: %v", err)
+	}
+
+	link, err := rns.NewLink(ts, remoteDest)
+	if err != nil {
+		t.Fatalf("NewLink(): %v", err)
+	}
+	activateRouterTestLink(t, link)
+
+	resource := &rns.Resource{}
+	setResourceField(t, resource, "link", link)
+	setResourceField(t, resource, "data", resourceData)
+	setResourceIntField(t, resource, "status", rns.ResourceStatusComplete)
+
+	router.propagationResourceConcluded(link, resource)
+
+	transientID := rns.FullHash(message.Packed)
+	if _, ok := router.propagationEntries[string(transientID)]; ok {
+		t.Fatalf("did not expect propagation entry for %x", transientID)
+	}
+	if got, want := router.clientPropagationMessagesReceived, 0; got != want {
+		t.Fatalf("clientPropagationMessagesReceived=%v want=%v", got, want)
+	}
+	if got := link.GetStatus(); got != rns.LinkClosed {
+		t.Fatalf("link status=%v want=%v", got, rns.LinkClosed)
+	}
+}
+
+func TestPropagationResourceConcludedRejectsClientMultiMessageTransfer(t *testing.T) {
+	t.Parallel()
+
+	ts := newPropagationPacketCaptureTransport()
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.propagationEnabled = true
+	router.propagationCost = 1
+	router.propagationCostFlexibility = 0
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	remoteDest := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	messages := make([]any, 0, 2)
+	transientIDs := make([][]byte, 0, 2)
+	for _, content := range []string{"one", "two"} {
+		message := mustTestNewMessage(t, remoteDest, sourceDest, content, "title", nil)
+		if err := message.Pack(); err != nil {
+			t.Fatalf("Pack(%q): %v", content, err)
+		}
+		transientIDs = append(transientIDs, rns.FullHash(message.Packed))
+		propagationStamp, _, _, err := GenerateStamp(rns.FullHash(message.Packed), router.propagationCost, WorkblockExpandRoundsPN)
+		if err != nil {
+			t.Fatalf("GenerateStamp(%q): %v", content, err)
+		}
+		messages = append(messages, append(append([]byte{}, message.Packed...), propagationStamp...))
+	}
+	resourceData, err := msgpack.Pack([]any{float64(1), messages})
+	if err != nil {
+		t.Fatalf("Pack resource data: %v", err)
+	}
+
+	link, err := rns.NewLink(ts, remoteDest)
+	if err != nil {
+		t.Fatalf("NewLink(): %v", err)
+	}
+	activateRouterTestLink(t, link)
+
+	resource := &rns.Resource{}
+	setResourceField(t, resource, "link", link)
+	setResourceField(t, resource, "data", resourceData)
+	setResourceIntField(t, resource, "status", rns.ResourceStatusComplete)
+
+	router.propagationResourceConcluded(link, resource)
+
+	for _, transientID := range transientIDs {
+		if _, ok := router.propagationEntries[string(transientID)]; ok {
+			t.Fatalf("did not expect propagation entry for %x", transientID)
+		}
+	}
+	if got, want := router.clientPropagationMessagesReceived, 0; got != want {
+		t.Fatalf("clientPropagationMessagesReceived=%v want=%v", got, want)
+	}
+	if got := link.GetStatus(); got != rns.LinkClosed {
+		t.Fatalf("link status=%v want=%v", got, rns.LinkClosed)
+	}
 }
 
 func TestOfferRequestReturnsWantedIDs(t *testing.T) {
@@ -4795,6 +5295,12 @@ func setResourceIntField(t *testing.T, resource *rns.Resource, name string, valu
 	t.Helper()
 	field := reflect.ValueOf(resource).Elem().FieldByName(name)
 	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().SetInt(int64(value))
+}
+
+func setResourceField(t *testing.T, resource *rns.Resource, name string, value any) {
+	t.Helper()
+	field := reflect.ValueOf(resource).Elem().FieldByName(name)
+	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Set(reflect.ValueOf(value))
 }
 
 func invokeResourceProgressCallback(t *testing.T, resource *rns.Resource) {
