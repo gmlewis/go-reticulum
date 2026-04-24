@@ -175,14 +175,14 @@ func decodePropagationAnnounceData(appData []byte) (propagationAnnounceData, boo
 		return propagationAnnounceData{}, false
 	}
 
-	var propagationSyncLimit *int
-	if items[4] != nil {
-		value, err := anyToInt(items[4])
-		if err != nil {
-			return propagationAnnounceData{}, false
-		}
-		propagationSyncLimit = &value
+	if items[4] == nil {
+		return propagationAnnounceData{}, false
 	}
+	value, err := anyToInt(items[4])
+	if err != nil {
+		return propagationAnnounceData{}, false
+	}
+	propagationSyncLimit := &value
 
 	stampCostItems, ok := items[5].([]any)
 	if !ok || len(stampCostItems) < 3 {
@@ -200,6 +200,10 @@ func decodePropagationAnnounceData(appData []byte) (propagationAnnounceData, boo
 	if err != nil {
 		return propagationAnnounceData{}, false
 	}
+	metadata := peerMetadata(items[6])
+	if metadata == nil {
+		return propagationAnnounceData{}, false
+	}
 
 	return propagationAnnounceData{
 		nodeTimebase:                    nodeTimebase,
@@ -209,7 +213,7 @@ func decodePropagationAnnounceData(appData []byte) (propagationAnnounceData, boo
 		propagationStampCost:            propagationStampCost,
 		propagationStampCostFlexibility: propagationStampCostFlexibility,
 		peeringCost:                     peeringCost,
-		metadata:                        peerMetadata(items[6]),
+		metadata:                        metadata,
 	}, true
 }
 

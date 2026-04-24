@@ -3126,6 +3126,74 @@ func TestPropagationAnnounceHandlerUnpeersDisabledOrOutOfRangeNodes(t *testing.T
 	}
 }
 
+func TestPropagationAnnounceHandlerRejectsInvalidAnnounceShape(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		appData []any
+	}{
+		{
+			name: "missing sync limit",
+			appData: []any{
+				false,
+				1700002000,
+				true,
+				128,
+				nil,
+				[]any{11, 3, 7},
+				map[any]any{PNMetaName: []byte("Node B")},
+			},
+		},
+		{
+			name: "non-map metadata",
+			appData: []any{
+				false,
+				1700002000,
+				true,
+				128,
+				256,
+				[]any{11, 3, 7},
+				[]any{"not", "metadata"},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+
+			autopeerMaxDepth := 2
+			router := mustTestNewRouterFromConfig(t, ts, RouterConfig{
+				StoragePath:      tmpDir,
+				Autopeer:         true,
+				AutopeerMaxdepth: &autopeerMaxDepth,
+			})
+			router.propagationEnabled = true
+			router.maxPeeringCost = 26
+			router.hopsTo = func([]byte) int { return 1 }
+
+			remoteIdentity := mustTestNewIdentity(t, true)
+			remoteHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
+			packed, err := msgpack.Pack(tc.appData)
+			if err != nil {
+				t.Fatalf("Pack propagation app data: %v", err)
+			}
+
+			router.handlePropagationAnnounce(remoteHash, remoteIdentity, packed)
+
+			if peer := router.peers[string(remoteHash)]; peer != nil {
+				t.Fatal("expected invalid announce to be ignored")
+			}
+		})
+	}
+}
+
 func TestRouterAnnounce(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -3475,10 +3543,16 @@ func TestRequestMessagesUsesExistingPropagationLink(t *testing.T) {
 	var requestedPath string
 	var requestedData any
 	router.identifyLink = func(_ *rns.Link, identity *rns.Identity) error {
+		if router.PropagationTransferState() != PRLinkEstablished {
+			t.Fatalf("state during identify = %v, want PRLinkEstablished", router.PropagationTransferState())
+		}
 		identifiedWith = identity
 		return nil
 	}
 	router.requestLink = func(_ *rns.Link, path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), _ time.Duration) (*rns.RequestReceipt, error) {
+		if router.PropagationTransferState() != PRLinkEstablished {
+			t.Fatalf("state during request = %v, want PRLinkEstablished", router.PropagationTransferState())
+		}
 		if responseCallback == nil {
 			t.Fatal("expected response callback")
 		}
