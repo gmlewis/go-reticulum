@@ -39,6 +39,11 @@ type outboundStampCostEntry struct {
 	stampCost int
 }
 
+type peerDistributionEntry struct {
+	transientID  []byte
+	fromPeerHash []byte
+}
+
 const messageExpiry = 30 * 24 * time.Hour
 const stampCostExpiry = 45 * 24 * time.Hour
 const transientIDCacheExpiry = messageExpiry * 6
@@ -59,6 +64,7 @@ type Router struct {
 
 	pendingOutbound       []*Message
 	pendingDeferredStamps map[string]*Message
+	peerDistributionQueue []peerDistributionEntry
 
 	deliveryCallback func(*Message)
 
@@ -223,6 +229,7 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 		locallyProcessedIDs:   map[string]time.Time{},
 		pendingOutbound:       []*Message{},
 		pendingDeferredStamps: map[string]*Message{},
+		peerDistributionQueue: []peerDistributionEntry{},
 		hasPath:               ts.HasPath,
 		hopsTo:                ts.HopsTo,
 		requestPath:           ts.RequestPath,
@@ -359,8 +366,28 @@ func (r *Router) storePropagationMessage(destinationHash []byte, payload []byte)
 		}
 	}
 	r.propagationEntries[string(transientID)] = entry
+	r.enqueuePeerDistributionLocked(transientID, nil)
 
 	return transientID
+}
+
+func (r *Router) enqueuePeerDistribution(transientID []byte, fromPeer *Peer) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.enqueuePeerDistributionLocked(transientID, fromPeer)
+}
+
+func (r *Router) enqueuePeerDistributionLocked(transientID []byte, fromPeer *Peer) {
+	if len(transientID) == 0 {
+		return
+	}
+	entry := peerDistributionEntry{
+		transientID: cloneBytes(transientID),
+	}
+	if fromPeer != nil {
+		entry.fromPeerHash = cloneBytes(fromPeer.destinationHash)
+	}
+	r.peerDistributionQueue = append(r.peerDistributionQueue, entry)
 }
 
 // SetPeeringCost establishes the computational hashcash cost required for other nodes to peer with this router.
@@ -1972,6 +1999,8 @@ func (r *Router) locallyProcessedPath() string {
 // FlushQueues merges queued peer message bookkeeping into the in-memory
 // propagation-entry state before persistence.
 func (r *Router) FlushQueues() {
+	r.flushPeerDistributionQueue()
+
 	r.mu.Lock()
 	peers := make([]*Peer, 0, len(r.peers))
 	for _, peer := range r.peers {
@@ -1981,6 +2010,33 @@ func (r *Router) FlushQueues() {
 
 	for _, peer := range peers {
 		peer.ProcessQueues()
+	}
+}
+
+func (r *Router) flushPeerDistributionQueue() {
+	r.mu.Lock()
+	entries := make([]peerDistributionEntry, len(r.peerDistributionQueue))
+	copy(entries, r.peerDistributionQueue)
+	r.peerDistributionQueue = nil
+	peers := make([]*Peer, 0, len(r.peers))
+	for _, peer := range r.peers {
+		peers = append(peers, peer)
+	}
+	r.mu.Unlock()
+
+	for _, peer := range peers {
+		if peer == nil {
+			continue
+		}
+		for _, entry := range entries {
+			if len(entry.transientID) == 0 {
+				continue
+			}
+			if len(entry.fromPeerHash) > 0 && bytes.Equal(peer.destinationHash, entry.fromPeerHash) {
+				continue
+			}
+			peer.QueueUnhandledMessage(entry.transientID)
+		}
 	}
 }
 

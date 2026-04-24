@@ -2296,6 +2296,75 @@ func TestPropagationStoreRestartRecovery(t *testing.T) {
 	}
 }
 
+func TestPropagationStoreQueuesPeerDistributionOnFlush(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.EnablePropagation()
+
+	peerAHash := bytes.Repeat([]byte{0x21}, rns.TruncatedHashLength/8)
+	peerBHash := bytes.Repeat([]byte{0x22}, rns.TruncatedHashLength/8)
+	peerA := NewPeer(router, peerAHash)
+	peerB := NewPeer(router, peerBHash)
+	router.peers[string(peerAHash)] = peerA
+	router.peers[string(peerBHash)] = peerB
+
+	destinationHash := bytes.Repeat([]byte{0x42}, DestinationLength)
+	transientID := router.storePropagationMessage(destinationHash, []byte("queued-for-peers"))
+
+	router.FlushQueues()
+
+	entry := router.propagationEntries[string(transientID)]
+	if entry == nil {
+		t.Fatalf("expected propagation entry for %x", transientID)
+	}
+	if len(entry.handledBy) != 0 {
+		t.Fatalf("handledBy = %x, want empty", entry.handledBy)
+	}
+	if got := peerA.UnhandledMessageCount(); got != 1 {
+		t.Fatalf("peerA.UnhandledMessageCount() = %v, want 1", got)
+	}
+	if got := peerB.UnhandledMessageCount(); got != 1 {
+		t.Fatalf("peerB.UnhandledMessageCount() = %v, want 1", got)
+	}
+}
+
+func TestFlushQueuesSkipsSourcePeerInDistribution(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.EnablePropagation()
+
+	peerAHash := bytes.Repeat([]byte{0x31}, rns.TruncatedHashLength/8)
+	peerBHash := bytes.Repeat([]byte{0x32}, rns.TruncatedHashLength/8)
+	peerA := NewPeer(router, peerAHash)
+	peerB := NewPeer(router, peerBHash)
+	router.peers[string(peerAHash)] = peerA
+	router.peers[string(peerBHash)] = peerB
+
+	destinationHash := bytes.Repeat([]byte{0x52}, DestinationLength)
+	transientID := router.storePropagationMessage(destinationHash, []byte("from-peer-a"))
+	router.peerDistributionQueue = nil
+	router.enqueuePeerDistribution(transientID, peerA)
+
+	router.FlushQueues()
+
+	if got := peerA.UnhandledMessageCount(); got != 0 {
+		t.Fatalf("peerA.UnhandledMessageCount() = %v, want 0", got)
+	}
+	if got := peerB.UnhandledMessageCount(); got != 1 {
+		t.Fatalf("peerB.UnhandledMessageCount() = %v, want 1", got)
+	}
+}
+
 func TestPropagationPeerAndNodeStatsRestartRecovery(t *testing.T) {
 	t.Parallel()
 
