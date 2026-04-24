@@ -2890,6 +2890,184 @@ func TestPropagationAnnounceHandlerAutopeersWithinDepth(t *testing.T) {
 	}
 }
 
+func TestPropagationAnnounceHandlerRefreshesStaticPeerConfig(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.propagationEnabled = true
+	router.maxPeeringCost = 26
+
+	now := time.Unix(1700001234, 0).UTC()
+	router.now = func() time.Time { return now }
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
+	oldStampCost := 3
+	oldSyncLimit := 32
+	oldTransferLimit := 64.0
+	oldFlexibility := 1
+	oldPeeringCost := 2
+	router.staticPeers[string(remoteHash)] = struct{}{}
+	router.peers[string(remoteHash)] = &Peer{
+		destinationHash:                 append([]byte{}, remoteHash...),
+		alive:                           false,
+		lastHeard:                       1,
+		peeringTimebase:                 10,
+		metadata:                        map[any]any{int64(PNMetaName): []byte("Old Node")},
+		propagationStampCost:            cloneOptionalInt(&oldStampCost),
+		propagationSyncLimit:            cloneOptionalInt(&oldSyncLimit),
+		propagationTransferLimit:        cloneOptionalFloat64(&oldTransferLimit),
+		propagationStampCostFlexibility: cloneOptionalInt(&oldFlexibility),
+		peeringCost:                     cloneOptionalInt(&oldPeeringCost),
+	}
+
+	appData, err := msgpack.Pack([]any{
+		false,
+		1700002000,
+		true,
+		128,
+		256,
+		[]any{11, 3, 7},
+		map[any]any{PNMetaName: []byte("Node B")},
+	})
+	if err != nil {
+		t.Fatalf("Pack propagation app data: %v", err)
+	}
+
+	router.handlePropagationAnnounce(remoteHash, remoteIdentity, appData)
+
+	peer := router.peers[string(remoteHash)]
+	if peer == nil {
+		t.Fatal("expected static peer to remain present")
+	}
+	if !peer.alive {
+		t.Fatal("expected static peer to be refreshed alive")
+	}
+	if peer.peeringTimebase != 1700002000 {
+		t.Fatalf("peeringTimebase=%v want=1700002000", peer.peeringTimebase)
+	}
+	if peer.lastHeard != peerTime(now) {
+		t.Fatalf("lastHeard=%v want=%v", peer.lastHeard, peerTime(now))
+	}
+	if peer.propagationTransferLimit == nil || *peer.propagationTransferLimit != 128 {
+		t.Fatalf("propagationTransferLimit=%v want=128", peer.propagationTransferLimit)
+	}
+	if peer.propagationSyncLimit == nil || *peer.propagationSyncLimit != 256 {
+		t.Fatalf("propagationSyncLimit=%v want=256", peer.propagationSyncLimit)
+	}
+	if peer.propagationStampCost == nil || *peer.propagationStampCost != 11 {
+		t.Fatalf("propagationStampCost=%v want=11", peer.propagationStampCost)
+	}
+	if got := peer.metadata[int64(PNMetaName)]; !bytes.Equal(got.([]byte), []byte("Node B")) {
+		t.Fatalf("metadata name=%v want %q", got, "Node B")
+	}
+}
+
+func TestPropagationAnnounceHandlerIgnoresPathResponseForHeardStaticPeer(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.propagationEnabled = true
+	router.maxPeeringCost = 26
+
+	now := time.Unix(1700001234, 0).UTC()
+	router.now = func() time.Time { return now }
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
+	oldStampCost := 3
+	oldSyncLimit := 32
+	oldTransferLimit := 64.0
+	oldFlexibility := 1
+	oldPeeringCost := 2
+	router.staticPeers[string(remoteHash)] = struct{}{}
+	router.peers[string(remoteHash)] = &Peer{
+		destinationHash:                 append([]byte{}, remoteHash...),
+		alive:                           false,
+		lastHeard:                       1,
+		peeringTimebase:                 10,
+		metadata:                        map[any]any{int64(PNMetaName): []byte("Old Node")},
+		propagationStampCost:            cloneOptionalInt(&oldStampCost),
+		propagationSyncLimit:            cloneOptionalInt(&oldSyncLimit),
+		propagationTransferLimit:        cloneOptionalFloat64(&oldTransferLimit),
+		propagationStampCostFlexibility: cloneOptionalInt(&oldFlexibility),
+		peeringCost:                     cloneOptionalInt(&oldPeeringCost),
+	}
+
+	appData, err := msgpack.Pack([]any{
+		false,
+		1700002000,
+		true,
+		128,
+		256,
+		[]any{11, 3, 7},
+		map[any]any{PNMetaName: []byte("Node B")},
+	})
+	if err != nil {
+		t.Fatalf("Pack propagation app data: %v", err)
+	}
+
+	router.handlePropagationAnnounceWithContext(remoteHash, remoteIdentity, appData, true)
+
+	peer := router.peers[string(remoteHash)]
+	if peer == nil {
+		t.Fatal("expected static peer to remain present")
+	}
+	if peer.alive {
+		t.Fatal("expected path response not to refresh heard static peer")
+	}
+	if peer.peeringTimebase != 10 {
+		t.Fatalf("peeringTimebase=%v want=10", peer.peeringTimebase)
+	}
+	if got := peer.metadata[int64(PNMetaName)]; !bytes.Equal(got.([]byte), []byte("Old Node")) {
+		t.Fatalf("metadata name=%v want %q", got, "Old Node")
+	}
+}
+
+func TestPropagationAnnounceHandlerIgnoresPathResponseForAutopeer(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	autopeerMaxDepth := 2
+	router := mustTestNewRouterFromConfig(t, ts, RouterConfig{
+		StoragePath:      tmpDir,
+		Autopeer:         true,
+		AutopeerMaxdepth: &autopeerMaxDepth,
+	})
+	router.propagationEnabled = true
+	router.maxPeeringCost = 26
+	router.hopsTo = func([]byte) int { return 1 }
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
+	appData, err := msgpack.Pack([]any{
+		false,
+		1700002000,
+		true,
+		128,
+		256,
+		[]any{11, 3, 7},
+		map[any]any{PNMetaName: []byte("Node B")},
+	})
+	if err != nil {
+		t.Fatalf("Pack propagation app data: %v", err)
+	}
+
+	router.handlePropagationAnnounceWithContext(remoteHash, remoteIdentity, appData, true)
+
+	if peer := router.peers[string(remoteHash)]; peer != nil {
+		t.Fatal("expected autopeer path response to be ignored")
+	}
+}
+
 func TestPropagationAnnounceHandlerUnpeersDisabledOrOutOfRangeNodes(t *testing.T) {
 	t.Parallel()
 

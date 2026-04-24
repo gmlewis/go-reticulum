@@ -458,6 +458,72 @@ func TestPathResponseAnnounceNotRebroadcast(t *testing.T) {
 	}
 }
 
+func TestAnnounceHandlerPathResponseDelivery(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	id := mustTestNewIdentity(t, true)
+	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "testapp")
+
+	nameHash := FullHash([]byte("testapp"))[:NameHashLength/8]
+	randomHash := make([]byte, 10)
+	for i := range randomHash {
+		randomHash[i] = byte(i)
+	}
+
+	signedData := make([]byte, 0, 128)
+	signedData = append(signedData, dest.Hash...)
+	signedData = append(signedData, id.GetPublicKey()...)
+	signedData = append(signedData, nameHash...)
+	signedData = append(signedData, randomHash...)
+
+	sig, _ := id.Sign(signedData)
+
+	announceData := make([]byte, 0, 256)
+	announceData = append(announceData, id.GetPublicKey()...)
+	announceData = append(announceData, nameHash...)
+	announceData = append(announceData, randomHash...)
+	announceData = append(announceData, sig...)
+
+	packet := NewPacket(dest, announceData)
+	packet.PacketType = PacketAnnounce
+	packet.Context = ContextPathResponse
+	packet.Data = announceData
+	if err := packet.Pack(); err != nil {
+		t.Fatalf("Pack failed: %v", err)
+	}
+
+	var defaultCalled bool
+	var extendedCalled bool
+	var extendedPathResponse bool
+	ts.RegisterAnnounceHandler(&AnnounceHandler{
+		AspectFilter: "testapp",
+		ReceivedAnnounce: func(destinationHash []byte, announcedIdentity *Identity, appData []byte) {
+			defaultCalled = true
+		},
+	})
+	ts.RegisterAnnounceHandler(&AnnounceHandler{
+		AspectFilter:         "testapp",
+		ReceivePathResponses: true,
+		ReceivedAnnounceWithContext: func(destinationHash []byte, announcedIdentity *Identity, appData []byte, isPathResponse bool) {
+			extendedCalled = true
+			extendedPathResponse = isPathResponse
+		},
+	})
+
+	ts.handleAnnounce(packet, &dummyInterface{name: "dummy"})
+
+	if defaultCalled {
+		t.Fatal("expected default announce handler not to receive path response")
+	}
+	if !extendedCalled {
+		t.Fatal("expected extended announce handler to receive path response")
+	}
+	if !extendedPathResponse {
+		t.Fatal("expected path response flag to be true")
+	}
+}
+
 func TestInvalidatePathByHash(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)

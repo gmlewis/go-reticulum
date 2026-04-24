@@ -264,8 +264,10 @@ type LinkEntry struct {
 // matching a given aspect filter. It mirrors the Python
 // RNS.Transport.register_announce_handler() pattern.
 type AnnounceHandler struct {
-	AspectFilter     string
-	ReceivedAnnounce func(destinationHash []byte, announcedIdentity *Identity, appData []byte)
+	AspectFilter                string
+	ReceivePathResponses        bool
+	ReceivedAnnounce            func(destinationHash []byte, announcedIdentity *Identity, appData []byte)
+	ReceivedAnnounceWithContext func(destinationHash []byte, announcedIdentity *Identity, appData []byte, isPathResponse bool)
 }
 
 type ifacInboundHook interface {
@@ -673,7 +675,7 @@ func (ts *TransportSystem) HopsTo(destinationHash []byte) int {
 // RegisterAnnounceHandler registers a handler that will be called when
 // an announce matching the handler's AspectFilter is received.
 func (ts *TransportSystem) RegisterAnnounceHandler(handler *AnnounceHandler) {
-	if handler == nil || handler.ReceivedAnnounce == nil {
+	if handler == nil || (handler.ReceivedAnnounce == nil && handler.ReceivedAnnounceWithContext == nil) {
 		return
 	}
 	ts.mu.Lock()
@@ -2645,8 +2647,17 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 					}
 				}
 
+				if packet.Context == ContextPathResponse && !handler.ReceivePathResponses {
+					executeCallback = false
+				}
+
 				if executeCallback {
-					handler.ReceivedAnnounce(packet.DestinationHash, announceIdentity, announceIdentity.AppData)
+					isPathResponse := packet.Context == ContextPathResponse
+					if handler.ReceivedAnnounceWithContext != nil {
+						handler.ReceivedAnnounceWithContext(packet.DestinationHash, announceIdentity, announceIdentity.AppData, isPathResponse)
+					} else if handler.ReceivedAnnounce != nil {
+						handler.ReceivedAnnounce(packet.DestinationHash, announceIdentity, announceIdentity.AppData)
+					}
 				}
 			}
 		}

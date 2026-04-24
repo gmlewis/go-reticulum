@@ -20,8 +20,9 @@ func (r *Router) registerAnnounceHandlers() {
 
 func (r *Router) deliveryAnnounceHandler() *rns.AnnounceHandler {
 	return &rns.AnnounceHandler{
-		AspectFilter:     AppName + ".delivery",
-		ReceivedAnnounce: r.handleDeliveryAnnounce,
+		AspectFilter:         AppName + ".delivery",
+		ReceivePathResponses: true,
+		ReceivedAnnounce:     r.handleDeliveryAnnounce,
 	}
 }
 
@@ -55,12 +56,17 @@ func (r *Router) handleDeliveryAnnounce(destinationHash []byte, _ *rns.Identity,
 
 func (r *Router) propagationAnnounceHandler() *rns.AnnounceHandler {
 	return &rns.AnnounceHandler{
-		AspectFilter:     AppName + ".propagation",
-		ReceivedAnnounce: r.handlePropagationAnnounce,
+		AspectFilter:                AppName + ".propagation",
+		ReceivePathResponses:        true,
+		ReceivedAnnounceWithContext: r.handlePropagationAnnounceWithContext,
 	}
 }
 
 func (r *Router) handlePropagationAnnounce(destinationHash []byte, _ *rns.Identity, appData []byte) {
+	r.handlePropagationAnnounceWithContext(destinationHash, nil, appData, false)
+}
+
+func (r *Router) handlePropagationAnnounceWithContext(destinationHash []byte, _ *rns.Identity, appData []byte, isPathResponse bool) {
 	if !r.propagationEnabled || len(appData) == 0 {
 		return
 	}
@@ -72,13 +78,13 @@ func (r *Router) handlePropagationAnnounce(destinationHash []byte, _ *rns.Identi
 
 	if _, staticPeer := r.staticPeers[string(destinationHash)]; staticPeer {
 		peer := r.peers[string(destinationHash)]
-		if peer == nil || peer.lastHeard == 0 {
+		if !isPathResponse || peer == nil || peer.lastHeard == 0 {
 			r.peer(destinationHash, announceData)
 		}
 		return
 	}
 
-	if !r.autopeer {
+	if !r.autopeer || isPathResponse {
 		return
 	}
 
