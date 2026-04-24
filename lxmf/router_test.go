@@ -11,11 +11,14 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	rnscrypto "github.com/gmlewis/go-reticulum/rns/crypto"
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 	"github.com/gmlewis/go-reticulum/testutils"
 )
@@ -3467,11 +3470,10 @@ func TestProcessOutboundPropagatedRequestsPathThenSends(t *testing.T) {
 	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 	msg.DesiredMethod = MethodPropagated
 
-	propNode := make([]byte, 16)
-	for i := range propNode {
-		propNode[i] = 0xAA
-	}
-	if err := router.SetOutboundPropagationNode(propNode); err != nil {
+	propNodeID := mustTestNewIdentity(t, true)
+	propNodeDest := mustTestNewDestination(t, ts, propNodeID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+	ts.Remember(nil, propNodeDest.Hash, propNodeID.GetPublicKey(), nil)
+	if err := router.SetOutboundPropagationNode(propNodeDest.Hash); err != nil {
 		t.Fatal(err)
 	}
 
@@ -3481,8 +3483,51 @@ func TestProcessOutboundPropagatedRequestsPathThenSends(t *testing.T) {
 	requestCount := 0
 	router.hasPath = func(_ []byte) bool { return hasPath }
 	router.requestPath = func(_ []byte) error { requestCount++; return nil }
+	fakeLink, err := rns.NewLink(ts, propNodeDest)
+	if err != nil {
+		t.Fatalf("NewLink(fake): %v", err)
+	}
+	var established func(*rns.Link)
+	newLinkCount := 0
+	establishCount := 0
+	linkState := rns.LinkPending
+	router.newLink = func(_ rns.Transport, dest *rns.Destination) (*rns.Link, error) {
+		newLinkCount++
+		if !bytes.Equal(dest.Hash, propNodeDest.Hash) {
+			t.Fatalf("newLink destination hash = %x, want %x", dest.Hash, propNodeDest.Hash)
+		}
+		return fakeLink, nil
+	}
+	router.setLinkEstablishedCallback = func(link *rns.Link, callback func(*rns.Link)) {
+		if link != fakeLink {
+			t.Fatal("setLinkEstablishedCallback received unexpected link")
+		}
+		established = callback
+	}
+	router.establishLink = func(link *rns.Link) error {
+		if link != fakeLink {
+			t.Fatal("establishLink received unexpected link")
+		}
+		establishCount++
+		return nil
+	}
+	router.linkStatus = func(link *rns.Link) int {
+		if link == fakeLink {
+			return linkState
+		}
+		return link.GetStatus()
+	}
 	sendCount := 0
-	router.sendPacket = func(_ *rns.Packet) error { sendCount++; return nil }
+	router.sendPacket = func(packet *rns.Packet) error {
+		sendCount++
+		if packet.Destination != fakeLink {
+			t.Fatal("expected propagated send to target the propagation link")
+		}
+		if !bytes.Equal(packet.Data, msg.PropagationPacked) {
+			t.Fatal("expected propagated packet data")
+		}
+		return nil
+	}
 
 	if err := router.HandleOutbound(msg); err != nil {
 		t.Fatalf("HandleOutbound: %v", err)
@@ -3495,17 +3540,231 @@ func TestProcessOutboundPropagatedRequestsPathThenSends(t *testing.T) {
 	if msg.State != StateOutbound {
 		t.Fatalf("state=%v want=%v", msg.State, StateOutbound)
 	}
+	if newLinkCount != 0 || establishCount != 0 || sendCount != 0 {
+		t.Fatalf("before path, newLink=%v establish=%v send=%v want 0/0/0", newLinkCount, establishCount, sendCount)
+	}
 
-	// Advance past path request wait, path now available.
+	// Advance past path request wait, path now available. Python should
+	// establish a propagation link before sending.
 	now = now.Add(pathRequestWait + time.Second)
 	hasPath = true
 	router.ProcessOutbound()
+
+	if newLinkCount != 1 {
+		t.Fatalf("new link count=%v want=1", newLinkCount)
+	}
+	if establishCount != 1 {
+		t.Fatalf("establish count=%v want=1", establishCount)
+	}
+	if sendCount != 0 {
+		t.Fatalf("send count=%v want=0 before link establishment", sendCount)
+	}
+	if established == nil {
+		t.Fatal("expected link-established callback to be installed")
+	}
+
+	linkState = rns.LinkActive
+	established(fakeLink)
+
+	if sendCount != 1 {
+		t.Fatalf("send count=%v want=1 after link establishment", sendCount)
+	}
+	if msg.State != StateSent {
+		t.Fatalf("state=%v want=%v", msg.State, StateSent)
+	}
+}
+
+func TestProcessOutboundPropagatedActiveLinkUsesPropagationLink(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	propNodeID := mustTestNewIdentity(t, true)
+	propNodeDest := mustTestNewDestination(t, ts, propNodeID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+	msg.DesiredMethod = MethodPropagated
+	if err := router.SetOutboundPropagationNode(propNodeDest.Hash); err != nil {
+		t.Fatal(err)
+	}
+	router.outboundPropagationLink, _ = rns.NewLink(ts, propNodeDest)
+	router.linkStatus = func(link *rns.Link) int {
+		if link == router.outboundPropagationLink {
+			return rns.LinkActive
+		}
+		return link.GetStatus()
+	}
+	router.hasPath = func(_ []byte) bool { t.Fatal("did not expect path lookup with active propagation link"); return false }
+	router.requestPath = func(_ []byte) error { t.Fatal("did not expect path request with active propagation link"); return nil }
+
+	sendCount := 0
+	router.sendPacket = func(packet *rns.Packet) error {
+		sendCount++
+		if packet.Destination != router.outboundPropagationLink {
+			t.Fatal("expected packet destination to be the active propagation link")
+		}
+		if !bytes.Equal(packet.Data, msg.PropagationPacked) {
+			t.Fatal("expected propagated packet payload")
+		}
+		return nil
+	}
+
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
 
 	if sendCount != 1 {
 		t.Fatalf("send count=%v want=1", sendCount)
 	}
 	if msg.State != StateSent {
 		t.Fatalf("state=%v want=%v", msg.State, StateSent)
+	}
+}
+
+func TestProcessOutboundPropagatedPendingLinkWaits(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	propNodeID := mustTestNewIdentity(t, true)
+	propNodeDest := mustTestNewDestination(t, ts, propNodeID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+	msg.DesiredMethod = MethodPropagated
+	if err := router.SetOutboundPropagationNode(propNodeDest.Hash); err != nil {
+		t.Fatal(err)
+	}
+	router.outboundPropagationLink, _ = rns.NewLink(ts, propNodeDest)
+	router.linkStatus = func(link *rns.Link) int {
+		if link == router.outboundPropagationLink {
+			return rns.LinkPending
+		}
+		return link.GetStatus()
+	}
+
+	sendCount := 0
+	router.sendPacket = func(_ *rns.Packet) error { sendCount++; return nil }
+	router.requestPath = func(_ []byte) error {
+		t.Fatal("did not expect path request while propagation link is pending")
+		return nil
+	}
+
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+
+	if sendCount != 0 {
+		t.Fatalf("send count=%v want=0", sendCount)
+	}
+	if msg.State != StateOutbound {
+		t.Fatalf("state=%v want=%v", msg.State, StateOutbound)
+	}
+	if len(router.pendingOutbound) != 1 {
+		t.Fatalf("pending outbound=%v want=1", len(router.pendingOutbound))
+	}
+}
+
+func TestProcessOutboundPropagatedClosedLinkClearsAndRetries(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	propNodeID := mustTestNewIdentity(t, true)
+	propNodeDest := mustTestNewDestination(t, ts, propNodeID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+	ts.Remember(nil, propNodeDest.Hash, propNodeID.GetPublicKey(), nil)
+
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+	msg.DesiredMethod = MethodPropagated
+	if err := router.SetOutboundPropagationNode(propNodeDest.Hash); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1700000000, 0)
+	router.now = func() time.Time { return now }
+
+	closedLink, err := rns.NewLink(ts, propNodeDest)
+	if err != nil {
+		t.Fatalf("NewLink(closed): %v", err)
+	}
+	freshLink, err := rns.NewLink(ts, propNodeDest)
+	if err != nil {
+		t.Fatalf("NewLink(fresh): %v", err)
+	}
+	router.outboundPropagationLink = closedLink
+	router.linkStatus = func(link *rns.Link) int {
+		switch link {
+		case closedLink:
+			return rns.LinkClosed
+		case freshLink:
+			return rns.LinkPending
+		default:
+			return link.GetStatus()
+		}
+	}
+	router.hasPath = func(hash []byte) bool { return bytes.Equal(hash, propNodeDest.Hash) }
+	newLinkCount := 0
+	establishCount := 0
+	router.newLink = func(_ rns.Transport, dest *rns.Destination) (*rns.Link, error) {
+		newLinkCount++
+		if !bytes.Equal(dest.Hash, propNodeDest.Hash) {
+			t.Fatalf("newLink destination hash = %x, want %x", dest.Hash, propNodeDest.Hash)
+		}
+		return freshLink, nil
+	}
+	router.establishLink = func(link *rns.Link) error {
+		if link != freshLink {
+			t.Fatal("expected fresh propagation link to be established")
+		}
+		establishCount++
+		return nil
+	}
+	sendCount := 0
+	router.sendPacket = func(_ *rns.Packet) error { sendCount++; return nil }
+
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+
+	if sendCount != 0 {
+		t.Fatalf("send count=%v want=0", sendCount)
+	}
+	if router.outboundPropagationLink != nil {
+		t.Fatal("expected closed propagation link to be cleared")
+	}
+	if newLinkCount != 0 || establishCount != 0 {
+		t.Fatalf("newLink=%v establish=%v want 0/0 before retry", newLinkCount, establishCount)
+	}
+	if msg.NextDeliveryAttempt <= 0 {
+		t.Fatal("expected retry to be scheduled after closed link")
+	}
+	now = now.Add(deliveryRetryWait + time.Second)
+	router.ProcessOutbound()
+
+	if newLinkCount != 1 {
+		t.Fatalf("new link count=%v want=1 after retry", newLinkCount)
+	}
+	if establishCount != 1 {
+		t.Fatalf("establish count=%v want=1 after retry", establishCount)
+	}
+	if router.outboundPropagationLink != freshLink {
+		t.Fatal("expected retry to install a fresh propagation link")
 	}
 }
 
@@ -3524,16 +3783,18 @@ func TestProcessOutboundPropagatedSentRemovesFromQueue(t *testing.T) {
 	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 	msg.DesiredMethod = MethodPropagated
 
-	propNode := make([]byte, 16)
-	for i := range propNode {
-		propNode[i] = 0xBB
-	}
-	if err := router.SetOutboundPropagationNode(propNode); err != nil {
+	propNodeID := mustTestNewIdentity(t, true)
+	propNodeDest := mustTestNewDestination(t, ts, propNodeID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+	if err := router.SetOutboundPropagationNode(propNodeDest.Hash); err != nil {
 		t.Fatal(err)
 	}
-
-	router.hasPath = func(_ []byte) bool { return true }
-	router.requestPath = func(_ []byte) error { return nil }
+	router.outboundPropagationLink, _ = rns.NewLink(ts, propNodeDest)
+	router.linkStatus = func(link *rns.Link) int {
+		if link == router.outboundPropagationLink {
+			return rns.LinkActive
+		}
+		return link.GetStatus()
+	}
 	router.sendPacket = func(_ *rns.Packet) error { return nil }
 
 	if err := router.HandleOutbound(msg); err != nil {
@@ -3567,11 +3828,10 @@ func TestProcessOutboundTryPropagationOnFailFallback(t *testing.T) {
 	msg.DesiredMethod = MethodDirect
 	msg.TryPropagationOnFail = true
 
-	propNode := make([]byte, 16)
-	for i := range propNode {
-		propNode[i] = 0xCC
-	}
-	if err := router.SetOutboundPropagationNode(propNode); err != nil {
+	propNodeID := mustTestNewIdentity(t, true)
+	propNodeDest := mustTestNewDestination(t, ts, propNodeID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+	ts.Remember(nil, propNodeDest.Hash, propNodeID.GetPublicKey(), nil)
+	if err := router.SetOutboundPropagationNode(propNodeDest.Hash); err != nil {
 		t.Fatal(err)
 	}
 
@@ -3579,9 +3839,46 @@ func TestProcessOutboundTryPropagationOnFailFallback(t *testing.T) {
 	router.now = func() time.Time { return now }
 	router.hasPath = func(_ []byte) bool { return true }
 	router.requestPath = func(_ []byte) error { return nil }
+	fakeLink, err := rns.NewLink(ts, propNodeDest)
+	if err != nil {
+		t.Fatalf("NewLink(fake): %v", err)
+	}
+	var established func(*rns.Link)
+	linkState := rns.LinkPending
+	router.newLink = func(_ rns.Transport, dest *rns.Destination) (*rns.Link, error) {
+		if !bytes.Equal(dest.Hash, propNodeDest.Hash) {
+			t.Fatalf("newLink destination hash = %x, want %x", dest.Hash, propNodeDest.Hash)
+		}
+		return fakeLink, nil
+	}
+	router.setLinkEstablishedCallback = func(link *rns.Link, callback func(*rns.Link)) {
+		if link != fakeLink {
+			t.Fatal("setLinkEstablishedCallback got unexpected link")
+		}
+		established = callback
+	}
+	router.establishLink = func(link *rns.Link) error {
+		if link != fakeLink {
+			t.Fatal("establishLink got unexpected link")
+		}
+		return nil
+	}
+	router.linkStatus = func(link *rns.Link) int {
+		if link == fakeLink {
+			return linkState
+		}
+		return link.GetStatus()
+	}
 
 	// Fail every direct send attempt.
-	router.sendPacket = func(_ *rns.Packet) error { return assertErr("direct send failed") }
+	sendCount := 0
+	router.sendPacket = func(packet *rns.Packet) error {
+		if packet.Destination == fakeLink {
+			sendCount++
+			return nil
+		}
+		return assertErr("direct send failed")
+	}
 
 	if err := router.HandleOutbound(msg); err != nil {
 		t.Fatalf("HandleOutbound: %v", err)
@@ -3601,14 +3898,273 @@ func TestProcessOutboundTryPropagationOnFailFallback(t *testing.T) {
 		t.Fatal("expected message NOT to be in failed state after fallback to propagation")
 	}
 
-	// Now make propagation succeed.
-	router.sendPacket = func(_ *rns.Packet) error { return nil }
-	now = now.Add(deliveryRetryWait + time.Second)
-	router.ProcessOutbound()
+	if established == nil {
+		now = now.Add(deliveryRetryWait + time.Second)
+		router.ProcessOutbound()
+	}
+	if established == nil {
+		t.Fatal("expected propagation fallback to establish a link")
+	}
+	if sendCount != 0 {
+		t.Fatalf("send count=%v want=0 before link establishment", sendCount)
+	}
+
+	linkState = rns.LinkActive
+	established(fakeLink)
 
 	if msg.State != StateSent {
 		t.Fatalf("state after propagation=%v want=%v", msg.State, StateSent)
 	}
+	if sendCount != 1 {
+		t.Fatalf("send count=%v want=1 after propagation fallback", sendCount)
+	}
+}
+
+func TestPropagationTransferDelivered(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	propNodeID := mustTestNewIdentity(t, true)
+	propNodeDest := mustTestNewDestination(t, ts, propNodeID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+	msg.DesiredMethod = MethodPropagated
+	if err := router.SetOutboundPropagationNode(propNodeDest.Hash); err != nil {
+		t.Fatal(err)
+	}
+	router.outboundPropagationLink, _ = rns.NewLink(ts, propNodeDest)
+	router.linkStatus = func(link *rns.Link) int {
+		if link == router.outboundPropagationLink {
+			return rns.LinkActive
+		}
+		return link.GetStatus()
+	}
+
+	delivered := false
+	msg.DeliveryCallback = func(_ *Message) { delivered = true }
+	var lastPacket *rns.Packet
+	router.sendPacket = func(packet *rns.Packet) error {
+		lastPacket = packet
+		packet.Receipt = &rns.PacketReceipt{}
+		return nil
+	}
+
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+	if lastPacket == nil || lastPacket.Receipt == nil {
+		t.Fatal("expected propagated packet receipt")
+	}
+	if got, want := msg.State, StateSending; got != want {
+		t.Fatalf("state after send=%v want=%v", got, want)
+	}
+	if got, want := msg.Progress, 0.50; got != want {
+		t.Fatalf("progress after send=%v want=%v", got, want)
+	}
+
+	lastPacket.Receipt.TriggerDelivery()
+
+	if got, want := msg.State, StateSent; got != want {
+		t.Fatalf("state after delivery=%v want=%v", got, want)
+	}
+	if got, want := msg.Progress, 1.0; got != want {
+		t.Fatalf("progress after delivery=%v want=%v", got, want)
+	}
+	if !delivered {
+		t.Fatal("expected delivery callback after propagated proof")
+	}
+}
+
+func TestPropagationTransferTimeout(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	propNodeID := mustTestNewIdentity(t, true)
+	propNodeDest := mustTestNewDestination(t, ts, propNodeID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+	msg.DesiredMethod = MethodPropagated
+	if err := router.SetOutboundPropagationNode(propNodeDest.Hash); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1700000000, 0)
+	router.now = func() time.Time { return now }
+	router.outboundPropagationLink, _ = rns.NewLink(ts, propNodeDest)
+	router.linkStatus = func(link *rns.Link) int {
+		if link == router.outboundPropagationLink {
+			return rns.LinkActive
+		}
+		return link.GetStatus()
+	}
+
+	var lastPacket *rns.Packet
+	router.sendPacket = func(packet *rns.Packet) error {
+		lastPacket = packet
+		packet.Receipt = &rns.PacketReceipt{}
+		return nil
+	}
+
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+	lastPacket.Receipt.TriggerTimeout()
+
+	if got, want := msg.State, StateOutbound; got != want {
+		t.Fatalf("state after timeout=%v want=%v", got, want)
+	}
+	if got, want := msg.Progress, 0.0; got != want {
+		t.Fatalf("progress after timeout=%v want=%v", got, want)
+	}
+}
+
+func TestPropagationTransferProgress(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	propNodeID := mustTestNewIdentity(t, true)
+	propNodeDest := mustTestNewDestination(t, ts, propNodeID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+
+	msg := mustTestNewMessage(t, destination, sourceDest, string(bytes.Repeat([]byte("P"), LinkPacketMaxContent)), "title", nil)
+	msg.DesiredMethod = MethodPropagated
+	if err := router.SetOutboundPropagationNode(propNodeDest.Hash); err != nil {
+		t.Fatal(err)
+	}
+	link, err := rns.NewLink(ts, propNodeDest)
+	if err != nil {
+		t.Fatalf("NewLink: %v", err)
+	}
+	activateRouterTestLink(t, link)
+	router.outboundPropagationLink = link
+	router.linkStatus = func(candidate *rns.Link) int {
+		if candidate == link {
+			return rns.LinkActive
+		}
+		return candidate.GetStatus()
+	}
+
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+	if msg.ResourceRepresentation == nil {
+		t.Fatal("expected propagated resource representation")
+	}
+	if got, want := msg.State, StateSending; got != want {
+		t.Fatalf("state after resource start=%v want=%v", got, want)
+	}
+	if got, want := msg.Progress, 0.10; got != want {
+		t.Fatalf("progress after resource start=%v want=%v", got, want)
+	}
+
+	setResourceIntField(t, msg.ResourceRepresentation, "sentParts", 5)
+	setResourceIntField(t, msg.ResourceRepresentation, "totalParts", 10)
+	invokeResourceProgressCallback(t, msg.ResourceRepresentation)
+	if got, want := msg.Progress, 0.55; got != want {
+		t.Fatalf("progress after resource update=%v want=%v", got, want)
+	}
+
+	setResourceIntField(t, msg.ResourceRepresentation, "status", rns.ResourceStatusComplete)
+	invokeResourceCallback(t, msg.ResourceRepresentation)
+	if got, want := msg.State, StateSent; got != want {
+		t.Fatalf("state after resource completion=%v want=%v", got, want)
+	}
+	if got, want := msg.Progress, 1.0; got != want {
+		t.Fatalf("progress after resource completion=%v want=%v", got, want)
+	}
+}
+
+func TestPropagationTransferClosedLink(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	propNodeID := mustTestNewIdentity(t, true)
+	propNodeDest := mustTestNewDestination(t, ts, propNodeID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+	msg.DesiredMethod = MethodPropagated
+	msg.Method = MethodPropagated
+	msg.State = StateSending
+	msg.Progress = 0.4
+	now := time.Unix(1700000000, 0)
+	router.now = func() time.Time { return now }
+	router.pendingOutbound = []*Message{msg}
+	router.outboundPropagationLink, _ = rns.NewLink(ts, propNodeDest)
+
+	router.handleOutboundPropagationLinkClosed(router.outboundPropagationLink)
+
+	if got, want := msg.State, StateOutbound; got != want {
+		t.Fatalf("state after closed link=%v want=%v", got, want)
+	}
+	if got, want := msg.Progress, 0.0; got != want {
+		t.Fatalf("progress after closed link=%v want=%v", got, want)
+	}
+	if msg.NextDeliveryAttempt <= 0 {
+		t.Fatal("expected closed link recovery to schedule a retry")
+	}
+}
+
+func activateRouterTestLink(t *testing.T, link *rns.Link) {
+	t.Helper()
+	setRouterLinkField(t, link, "status", rns.LinkActive)
+
+	token, err := rnscrypto.NewToken(bytes.Repeat([]byte{0xA5}, 32))
+	if err != nil {
+		t.Fatalf("NewToken: %v", err)
+	}
+	setRouterLinkField(t, link, "token", token)
+}
+
+func setRouterLinkField(t *testing.T, link *rns.Link, name string, value any) {
+	t.Helper()
+	field := reflect.ValueOf(link).Elem().FieldByName(name)
+	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Set(reflect.ValueOf(value))
+}
+
+func setResourceIntField(t *testing.T, resource *rns.Resource, name string, value int) {
+	t.Helper()
+	field := reflect.ValueOf(resource).Elem().FieldByName(name)
+	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().SetInt(int64(value))
+}
+
+func invokeResourceProgressCallback(t *testing.T, resource *rns.Resource) {
+	t.Helper()
+	field := reflect.ValueOf(resource).Elem().FieldByName("progressCallback")
+	callback := reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Interface().(func(*rns.Resource))
+	callback(resource)
+}
+
+func invokeResourceCallback(t *testing.T, resource *rns.Resource) {
+	t.Helper()
+	field := reflect.ValueOf(resource).Elem().FieldByName("callback")
+	callback := reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Interface().(func(*rns.Resource))
+	callback(resource)
 }
 
 func TestProcessOutboundFailedCallbackInvoked(t *testing.T) {

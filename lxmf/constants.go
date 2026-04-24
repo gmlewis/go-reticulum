@@ -115,6 +115,26 @@ const (
 )
 
 const (
+	// TimestampSize mirrors Python's fixed LXMF timestamp size accounting.
+	TimestampSize = 8
+	// StructOverhead mirrors Python's msgpack structure overhead accounting.
+	StructOverhead = 8
+	// LXMFOverhead is Python's fixed non-content overhead for an LXMF payload.
+	LXMFOverhead = (2 * DestinationLength) + SignatureLength + TimestampSize + StructOverhead
+	// LinkPacketMaxContent matches Python's single-packet content limit over a link.
+	LinkPacketMaxContent = rns.MDU - LXMFOverhead
+)
+
+const (
+	// EncryptionDescriptionAES matches Python's group-transport encryption label.
+	EncryptionDescriptionAES = "AES-128"
+	// EncryptionDescriptionEC matches Python's public-key transport encryption label.
+	EncryptionDescriptionEC = "Curve25519"
+	// EncryptionDescriptionUnencrypted matches Python's plaintext transport label.
+	EncryptionDescriptionUnencrypted = "Unencrypted"
+)
+
+const (
 	// PRIdle indicates that the propagation node sync process is currently inactive.
 	PRIdle = 0x00
 	// PRPathRequested indicates that a path to the propagation node has been requested from the network.

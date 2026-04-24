@@ -64,6 +64,11 @@ type Message struct {
 	Signature []byte
 	// Packed contains the serialized LXMF wire representation.
 	Packed []byte
+	// TransientID tracks the propagated-delivery transient identifier derived from
+	// the propagation payload.
+	TransientID []byte
+	// PropagationPacked stores the propagated-delivery msgpack wire payload.
+	PropagationPacked []byte
 
 	// State tracks the current lifecycle state of the message.
 	State int
@@ -75,6 +80,15 @@ type Message struct {
 	// Representation records whether the message traveled as a packet or as a
 	// resource.
 	Representation int
+	// Progress tracks Python-style outbound transfer progress in the range
+	// 0.0-1.0.
+	Progress float64
+	// TransportEncrypted reports whether the outer transport layer encrypts the
+	// message in transit.
+	TransportEncrypted bool
+	// TransportEncryption describes the transport encryption mode using Python's
+	// human-readable strings.
+	TransportEncryption string
 
 	// DeliveryAttempts counts how many delivery attempts have been made.
 	DeliveryAttempts int
@@ -99,6 +113,14 @@ type Message struct {
 	DeliveryCallback func(*Message)
 	// FailedCallback runs after the message permanently fails delivery.
 	FailedCallback func(*Message)
+	// PacketRepresentation stores the last synthesized packet representation used
+	// for outbound transport.
+	PacketRepresentation *rns.Packet
+	// ResourceRepresentation stores the last synthesized resource representation
+	// used for outbound transport.
+	ResourceRepresentation *rns.Resource
+
+	deliveryDestination rns.PacketDestination
 }
 
 // NewMessage constructs a fresh, outbound LXMF message bound for the specified destination, securely anchoring it to the originating source identity.
@@ -248,6 +270,12 @@ func (m *Message) Pack() error {
 	m.Packed = append(m.Packed, m.SourceHash...)
 	m.Packed = append(m.Packed, m.Signature...)
 	m.Packed = append(m.Packed, packedPayload...)
+
+	if m.DesiredMethod == MethodPropagated {
+		if err := m.packPropagated(); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -476,11 +504,137 @@ func (m *Message) PackedContainer() ([]byte, error) {
 	container := map[string]any{
 		"state":                m.State,
 		"lxmf_bytes":           m.Packed,
-		"transport_encrypted":  false,
-		"transport_encryption": 0,
+		"transport_encrypted":  m.TransportEncrypted,
+		"transport_encryption": m.TransportEncryption,
 		"method":               m.Method,
 	}
 	return msgpack.Pack(container)
+}
+
+func (m *Message) packPropagated() error {
+	if len(m.Packed) <= DestinationLength {
+		return errors.New("packed lxmf message too short for propagated payload")
+	}
+
+	encryptedData, err := m.Destination.Encrypt(m.Packed[DestinationLength:])
+	if err != nil {
+		return fmt.Errorf("encrypt propagated payload: %w", err)
+	}
+
+	lxmfData := make([]byte, 0, DestinationLength+len(encryptedData))
+	lxmfData = append(lxmfData, m.DestinationHash...)
+	lxmfData = append(lxmfData, encryptedData...)
+	m.TransientID = rns.FullHash(lxmfData)
+
+	propagationPayload := []any{
+		float64(time.Now().UnixNano()) / 1e9,
+		[]any{cloneBytes(lxmfData)},
+	}
+	m.PropagationPacked, err = msgpack.Pack(propagationPayload)
+	if err != nil {
+		return fmt.Errorf("pack propagated lxmf payload: %w", err)
+	}
+
+	m.Method = MethodPropagated
+	if len(m.PropagationPacked) <= LinkPacketMaxContent {
+		m.Representation = RepresentationPacket
+	} else {
+		m.Representation = RepresentationResource
+	}
+
+	return nil
+}
+
+// DetermineTransportEncryption mirrors Python's transport-encryption labeling
+// for the message's selected delivery method.
+func (m *Message) DetermineTransportEncryption() {
+	switch m.Method {
+	case MethodOpportunistic, MethodPropagated, MethodPaper:
+		switch {
+		case m.Destination != nil && m.Destination.Type == rns.DestinationSingle:
+			m.TransportEncrypted = true
+			m.TransportEncryption = EncryptionDescriptionEC
+		case m.Destination != nil && m.Destination.Type == rns.DestinationGroup:
+			m.TransportEncrypted = true
+			m.TransportEncryption = EncryptionDescriptionAES
+		default:
+			m.TransportEncrypted = false
+			m.TransportEncryption = EncryptionDescriptionUnencrypted
+		}
+	case MethodDirect:
+		m.TransportEncrypted = true
+		m.TransportEncryption = EncryptionDescriptionEC
+	default:
+		m.TransportEncrypted = false
+		m.TransportEncryption = EncryptionDescriptionUnencrypted
+	}
+}
+
+func (m *Message) setDeliveryDestination(destination rns.PacketDestination) {
+	m.deliveryDestination = destination
+}
+
+func (m *Message) asPacket() (*rns.Packet, error) {
+	if len(m.Packed) == 0 {
+		if err := m.Pack(); err != nil {
+			return nil, err
+		}
+	}
+	if m.deliveryDestination == nil {
+		return nil, errors.New("can't synthesize packet for lxmf message before delivery destination is known")
+	}
+
+	switch m.Method {
+	case MethodOpportunistic:
+		if len(m.Packed) <= DestinationLength {
+			return nil, errors.New("packed lxmf message too short for packet encoding")
+		}
+		return rns.NewPacket(m.deliveryDestination, m.Packed[DestinationLength:]), nil
+	case MethodDirect:
+		return rns.NewPacket(m.deliveryDestination, m.Packed), nil
+	case MethodPropagated:
+		if len(m.PropagationPacked) == 0 {
+			if err := m.packPropagated(); err != nil {
+				return nil, err
+			}
+		}
+		return rns.NewPacket(m.deliveryDestination, m.PropagationPacked), nil
+	default:
+		return nil, fmt.Errorf("unsupported lxmf packet method %v", m.Method)
+	}
+}
+
+func (m *Message) asResource() (*rns.Resource, error) {
+	if len(m.Packed) == 0 {
+		if err := m.Pack(); err != nil {
+			return nil, err
+		}
+	}
+	if m.deliveryDestination == nil {
+		return nil, errors.New("can't synthesize resource for lxmf message before delivery destination is known")
+	}
+
+	link, ok := m.deliveryDestination.(*rns.Link)
+	if !ok {
+		return nil, errors.New("tried to synthesize resource for lxmf message on a delivery destination that was not a link")
+	}
+	if link.GetStatus() != rns.LinkActive {
+		return nil, errors.New("tried to synthesize resource for lxmf message on a link that was not active")
+	}
+
+	switch m.Method {
+	case MethodDirect:
+		return rns.NewResource(m.Packed, link)
+	case MethodPropagated:
+		if len(m.PropagationPacked) == 0 {
+			if err := m.packPropagated(); err != nil {
+				return nil, err
+			}
+		}
+		return rns.NewResource(m.PropagationPacked, link)
+	default:
+		return nil, fmt.Errorf("unsupported lxmf resource method %v", m.Method)
+	}
 }
 
 // WriteToDirectory writes the message to the given directory as a msgpack
