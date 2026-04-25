@@ -6471,3 +6471,22 @@ func TestEnablePropagationRequestsPathForPersistedUnheardStaticPeer(t *testing.T
 		t.Fatalf("requested paths=%x want [%x]", requested, remoteHash)
 	}
 }
+
+func TestEnablePropagationLeavesRouterDisabledOnCorruptPeersFile(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	if err := os.WriteFile(router.peersPath(), []byte{0xc1}, 0o644); err != nil {
+		t.Fatalf("WriteFile(peers): %v", err)
+	}
+
+	router.EnablePropagation()
+
+	if router.PropagationEnabled() {
+		t.Fatal("propagation should remain disabled when peers file is corrupt")
+	}
+}

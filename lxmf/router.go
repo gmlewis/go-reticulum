@@ -2170,13 +2170,16 @@ func (r *Router) EnablePropagation() {
 		return
 	}
 	r.reindexPropagationStoreLocked()
-	r.propagationEnabled = true
 	r.cleanMessageStoreLocked()
 	r.mu.Unlock()
 
 	if err := r.LoadPeers(); err != nil {
 		log.Printf("Could not load propagation peers from storage: %v", err)
+		return
 	}
+	r.mu.Lock()
+	r.propagationEnabled = true
+	r.mu.Unlock()
 	r.activateStaticPeers()
 	if err := r.LoadNodeStats(); err != nil {
 		log.Printf("Could not load propagation node stats from storage: %v", err)
