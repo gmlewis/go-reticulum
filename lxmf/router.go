@@ -134,6 +134,7 @@ type Router struct {
 	wantsDownloadOnPathAvailableAt    time.Time
 	propagationTransferState          int
 	propagationTransferLastResult     int
+	propagationTransferLastResultSet  bool
 	propagationTransferLastDuplicates int
 	propagationTransferMaxMessages    int
 	propagationTransferProgress       float64
@@ -3464,11 +3465,13 @@ func (r *Router) PropagationTransferState() int {
 	return r.propagationTransferState
 }
 
-// PropagationTransferLastResult yields the total count of messages successfully retrieved during the most recent propagation node sync.
-func (r *Router) PropagationTransferLastResult() int {
+// PropagationTransferLastResult yields the total count of messages successfully
+// retrieved during the most recent propagation node sync and reports whether a
+// result is currently available.
+func (r *Router) PropagationTransferLastResult() (int, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.propagationTransferLastResult
+	return r.propagationTransferLastResult, r.propagationTransferLastResultSet
 }
 
 // PropagationTransferProgress exposes the ongoing completion percentage of an active propagation sync, represented as a float between 0.0 and 1.0.
@@ -3771,6 +3774,7 @@ func (r *Router) messageListResponse(receipt *rns.RequestReceipt) {
 		r.propagationTransferState = PRComplete
 		r.propagationTransferProgress = 1.0
 		r.propagationTransferLastResult = 0
+		r.propagationTransferLastResultSet = true
 		r.mu.Unlock()
 		return
 	}
@@ -3915,6 +3919,7 @@ func (r *Router) messageGetResponse(receipt *rns.RequestReceipt) {
 	r.propagationTransferProgress = 1.0
 	r.propagationTransferLastDuplicates = duplicates
 	r.propagationTransferLastResult = len(payloads)
+	r.propagationTransferLastResultSet = true
 	r.mu.Unlock()
 	if err := r.saveLocallyDeliveredTransientIDs(); err != nil {
 		log.Printf("Could not save locally delivered message ID cache: %v", err)
@@ -3944,6 +3949,7 @@ func (r *Router) messageGetFailed(_ *rns.RequestReceipt) {
 func (r *Router) acknowledgeSyncCompletion(resetState bool, failureState *int) {
 	r.mu.Lock()
 	r.propagationTransferLastResult = 0
+	r.propagationTransferLastResultSet = false
 	if resetState || r.propagationTransferState <= PRComplete {
 		if failureState == nil {
 			r.propagationTransferState = PRIdle

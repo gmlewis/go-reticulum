@@ -4790,6 +4790,8 @@ func TestCancelPropagationResetsState(t *testing.T) {
 	// Simulate an in-progress sync.
 	router.hasPath = func(_ []byte) bool { return false }
 	router.requestPath = func(_ []byte) error { return nil }
+	router.propagationTransferLastResult = 4
+	router.propagationTransferLastResultSet = true
 	router.RequestMessagesFromPropagationNode(nil)
 	if router.PropagationTransferState() != PRPathRequested {
 		t.Fatalf("state = %v, want PRPathRequested", router.PropagationTransferState())
@@ -4802,6 +4804,9 @@ func TestCancelPropagationResetsState(t *testing.T) {
 	}
 	if router.PropagationTransferProgress() != 0.0 {
 		t.Fatalf("progress after cancel = %v, want 0.0", router.PropagationTransferProgress())
+	}
+	if got, ok := router.PropagationTransferLastResult(); ok {
+		t.Fatalf("last result after cancel = (%v,%v), want cleared result", got, ok)
 	}
 }
 
@@ -4960,8 +4965,8 @@ func TestPropagationSyncMessageListResponseEmptyCompletes(t *testing.T) {
 	if router.PropagationTransferProgress() != 1.0 {
 		t.Fatalf("progress = %v, want 1.0", router.PropagationTransferProgress())
 	}
-	if router.PropagationTransferLastResult() != 0 {
-		t.Fatalf("last result = %v, want 0", router.PropagationTransferLastResult())
+	if got, ok := router.PropagationTransferLastResult(); !ok || got != 0 {
+		t.Fatalf("last result = (%v,%v), want (0,true)", got, ok)
 	}
 }
 
@@ -5069,8 +5074,8 @@ func TestPropagationSyncMessageGetResponseTracksDuplicatesAndPurges(t *testing.T
 	if router.propagationTransferLastDuplicates != 1 {
 		t.Fatalf("last duplicates = %v, want 1", router.propagationTransferLastDuplicates)
 	}
-	if router.PropagationTransferLastResult() != 2 {
-		t.Fatalf("last result = %v, want 2", router.PropagationTransferLastResult())
+	if got, ok := router.PropagationTransferLastResult(); !ok || got != 2 {
+		t.Fatalf("last result = (%v,%v), want (2,true)", got, ok)
 	}
 	if router.PropagationTransferState() != PRComplete {
 		t.Fatalf("state = %v, want PRComplete", router.PropagationTransferState())
@@ -5111,6 +5116,7 @@ func TestPropagationSyncClosedLinkAfterCompleteResetsToIdle(t *testing.T) {
 	router.propagationTransferState = PRComplete
 	router.propagationTransferProgress = 1.0
 	router.propagationTransferLastResult = 3
+	router.propagationTransferLastResultSet = true
 	router.wantsDownloadOnPathAvailableFrom = []byte("pending")
 	router.wantsDownloadOnPathAvailableTo = router.identity
 
@@ -5124,6 +5130,9 @@ func TestPropagationSyncClosedLinkAfterCompleteResetsToIdle(t *testing.T) {
 	}
 	if router.PropagationTransferProgress() != 0.0 {
 		t.Fatalf("progress = %v, want 0.0", router.PropagationTransferProgress())
+	}
+	if got, ok := router.PropagationTransferLastResult(); ok {
+		t.Fatalf("last result = (%v,%v), want cleared result", got, ok)
 	}
 	if router.wantsDownloadOnPathAvailableFrom != nil || router.wantsDownloadOnPathAvailableTo != nil {
 		t.Fatal("expected pending path state to be cleared")
