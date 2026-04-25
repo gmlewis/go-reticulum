@@ -42,6 +42,7 @@ type outboundStampCostEntry struct {
 type validatedPropagationMessage struct {
 	transientID []byte
 	lxmfData    []byte
+	stampData   []byte
 	stampValue  int
 }
 
@@ -426,7 +427,7 @@ func (r *Router) propagationPacket(data []byte, packet *rns.Packet) {
 
 	validated := validatePropagationMessages(messages, minAcceptedCost)
 	for _, entry := range validated {
-		if r.ingestPropagationMessage(entry.lxmfData, nil, entry.stampValue) {
+		if r.ingestPropagationMessage(entry.lxmfData, entry.stampData, nil, entry.stampValue) {
 			r.mu.Lock()
 			r.clientPropagationMessagesReceived++
 			r.mu.Unlock()
@@ -476,6 +477,7 @@ func (r *Router) propagationResourceConcluded(link *rns.Link, resource *rns.Reso
 	peeringKeyValid := false
 	if remoteIdentity != nil {
 		remotePropagationHash = rns.CalculateHash(remoteIdentity, AppName, "propagation")
+		r.maybeAutopeerIdentifiedPropagationSender(remotePropagationHash)
 		r.mu.Lock()
 		peer = r.peers[string(remotePropagationHash)]
 		peeringKeyValid = r.validatedPeerLinks[string(link.GetHash())]
@@ -506,7 +508,7 @@ func (r *Router) propagationResourceConcluded(link *rns.Link, resource *rns.Reso
 			r.clientPropagationMessagesReceived++
 		}
 		r.mu.Unlock()
-		r.ingestPropagationMessage(entry.lxmfData, peer, entry.stampValue)
+		r.ingestPropagationMessage(entry.lxmfData, entry.stampData, peer, entry.stampValue)
 		if peer != nil {
 			peer.QueueHandledMessage(entry.transientID)
 		}
@@ -522,11 +524,36 @@ func (r *Router) propagationResourceConcluded(link *rns.Link, resource *rns.Reso
 	}
 }
 
-func (r *Router) storePropagationMessage(destinationHash []byte, payload []byte) []byte {
-	return r.storePropagationMessageStamped(destinationHash, payload, 0, nil)
+func (r *Router) maybeAutopeerIdentifiedPropagationSender(remotePropagationHash []byte) {
+	if len(remotePropagationHash) == 0 || !r.autopeer || r.transport == nil {
+		return
+	}
+
+	hops := rns.PathfinderM
+	if r.hopsTo != nil {
+		hops = r.hopsTo(remotePropagationHash)
+	}
+	if hops > r.autopeerMaxdepth {
+		return
+	}
+
+	identity := r.transport.Recall(remotePropagationHash)
+	if identity == nil || len(identity.AppData) == 0 {
+		return
+	}
+
+	announceData, ok := decodePropagationAnnounceData(identity.AppData)
+	if !ok || !announceData.propagationEnabled {
+		return
+	}
+	r.peer(remotePropagationHash, announceData)
 }
 
-func (r *Router) storePropagationMessageStamped(destinationHash []byte, payload []byte, stampValue int, fromPeer *Peer) []byte {
+func (r *Router) storePropagationMessage(destinationHash []byte, payload []byte) []byte {
+	return r.storePropagationMessageStamped(destinationHash, payload, nil, 0, nil)
+}
+
+func (r *Router) storePropagationMessageStamped(destinationHash []byte, payload []byte, stampData []byte, stampValue int, fromPeer *Peer) []byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -542,7 +569,7 @@ func (r *Router) storePropagationMessageStamped(destinationHash []byte, payload 
 		stampValue:      stampValue,
 	}
 	if r.propagationEnabled {
-		if path, size, err := r.writePropagationMessageFile(transientID, receivedAt, stampValue, destinationHash, payload); err != nil {
+		if path, size, err := r.writePropagationMessageFile(transientID, receivedAt, stampValue, destinationHash, payload, stampData); err != nil {
 			log.Printf("Could not persist propagation message %x: %v", transientID, err)
 		} else {
 			entry.path = path
@@ -2045,7 +2072,9 @@ func NewRouterFromConfig(ts rns.Transport, cfg RouterConfig) (*Router, error) {
 	router.peeringCost = cost
 	router.propagationCost = cost
 	router.propagationCostFlexibility = cfg.PropagationCostFlexibility
-	router.maxPeeringCost = cfg.MaxPeeringCost
+	if cfg.MaxPeeringCost > 0 {
+		router.maxPeeringCost = cfg.MaxPeeringCost
+	}
 	router.name = cfg.Name
 	router.fromStaticOnly = cfg.FromStaticOnly
 
@@ -2678,11 +2707,12 @@ func validatePropagationMessage(transientData []byte, targetCost int) (validated
 	return validatedPropagationMessage{
 		transientID: transientID,
 		lxmfData:    lxmfData,
+		stampData:   cloneBytes(stampData),
 		stampValue:  StampValue(workblock, stampData),
 	}, true
 }
 
-func (r *Router) ingestPropagationMessage(lxmfData []byte, fromPeer *Peer, stampValue int) bool {
+func (r *Router) ingestPropagationMessage(lxmfData, stampData []byte, fromPeer *Peer, stampValue int) bool {
 	if len(lxmfData) < DestinationLength {
 		return false
 	}
@@ -2710,7 +2740,7 @@ func (r *Router) ingestPropagationMessage(lxmfData []byte, fromPeer *Peer, stamp
 		return false
 	}
 
-	storedID := r.storePropagationMessageStamped(destinationHash, lxmfData, stampValue, fromPeer)
+	storedID := r.storePropagationMessageStamped(destinationHash, lxmfData, stampData, stampValue, fromPeer)
 	return len(storedID) > 0
 }
 
@@ -2952,7 +2982,7 @@ func (r *Router) Close() error {
 	return closeErr
 }
 
-func (r *Router) writePropagationMessageFile(transientID []byte, receivedAt time.Time, stampValue int, destinationHash []byte, payload []byte) (string, int, error) {
+func (r *Router) writePropagationMessageFile(transientID []byte, receivedAt time.Time, stampValue int, destinationHash []byte, payload, stampData []byte) (string, int, error) {
 	storePath := r.propagationMessageStorePath()
 	if err := os.MkdirAll(storePath, 0o755); err != nil {
 		return "", 0, err
@@ -2960,9 +2990,14 @@ func (r *Router) writePropagationMessageFile(transientID []byte, receivedAt time
 
 	timestamp := strconv.FormatFloat(peerTime(receivedAt), 'f', -1, 64)
 	filePath := filepath.Join(storePath, fmt.Sprintf("%x_%s_%v", transientID, timestamp, stampValue))
-	fileData := make([]byte, 0, len(destinationHash)+len(payload))
-	fileData = append(fileData, destinationHash...)
-	fileData = append(fileData, payload...)
+	fileData := make([]byte, 0, len(destinationHash)+len(payload)+len(stampData))
+	if len(stampData) > 0 {
+		fileData = append(fileData, payload...)
+		fileData = append(fileData, stampData...)
+	} else {
+		fileData = append(fileData, destinationHash...)
+		fileData = append(fileData, payload...)
+	}
 	if err := os.WriteFile(filePath, fileData, 0o644); err != nil {
 		return "", 0, err
 	}
@@ -2996,7 +3031,18 @@ func (r *Router) reindexPropagationStoreLocked() {
 		}
 
 		destinationHash := cloneBytes(fileData[:DestinationLength])
-		payload := cloneBytes(fileData[DestinationLength:])
+		var payload []byte
+		if len(fileData) >= DestinationLength+StampSize {
+			candidatePayload := fileData[:len(fileData)-StampSize]
+			if bytes.Equal(rns.FullHash(candidatePayload), transientID) && len(candidatePayload) >= DestinationLength {
+				destinationHash = cloneBytes(candidatePayload[:DestinationLength])
+				payload = cloneBytes(candidatePayload)
+			} else {
+				payload = cloneBytes(fileData[DestinationLength:])
+			}
+		} else {
+			payload = cloneBytes(fileData[DestinationLength:])
+		}
 		indexed[string(transientID)] = &propagationEntry{
 			destinationHash: destinationHash,
 			payload:         payload,
