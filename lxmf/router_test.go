@@ -9,9 +9,11 @@ import (
 	"bytes"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -3185,6 +3187,72 @@ func TestPropagationStoreRemovesExpiredEntryOnEnable(t *testing.T) {
 	}
 }
 
+func TestWritePropagationMessageFileOmitsZeroStampSuffix(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	destinationHash := bytes.Repeat([]byte{0x44}, DestinationLength)
+	payload := []byte("unstamped-payload")
+	transientID := rns.FullHash(payload)
+	receivedAt := time.Now().Add(-time.Hour)
+
+	filePath, _, err := router.writePropagationMessageFile(transientID, receivedAt, 0, destinationHash, payload, nil)
+	if err != nil {
+		t.Fatalf("writePropagationMessageFile() error = %v", err)
+	}
+
+	wantName := fmt.Sprintf("%x_%s", transientID, strconv.FormatFloat(peerTime(receivedAt), 'f', -1, 64))
+	if got := filepath.Base(filePath); got != wantName {
+		t.Fatalf("file name=%q want=%q", got, wantName)
+	}
+}
+
+func TestPropagationStoreReindexesPythonStyleUnstampedFilename(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	destinationHash := bytes.Repeat([]byte{0x44}, DestinationLength)
+	lxmfPayload := append(append([]byte{}, destinationHash...), []byte("python-style-unstamped")...)
+	stampData := make([]byte, StampSize)
+	transientID := rns.FullHash(lxmfPayload)
+	receivedAt := time.Now().Add(-time.Hour)
+
+	storePath := router.propagationMessageStorePath()
+	if err := os.MkdirAll(storePath, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", storePath, err)
+	}
+	fileName := fmt.Sprintf("%x_%s", transientID, strconv.FormatFloat(peerTime(receivedAt), 'f', -1, 64))
+	filePath := filepath.Join(storePath, fileName)
+	fileData := append(append([]byte{}, lxmfPayload...), stampData...)
+	if err := os.WriteFile(filePath, fileData, 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", filePath, err)
+	}
+
+	router.EnablePropagation()
+
+	entry := router.propagationEntries[string(transientID)]
+	if entry == nil {
+		t.Fatalf("expected reindexed propagation entry for %x", transientID)
+	}
+	if !bytes.Equal(entry.destinationHash, destinationHash) {
+		t.Fatalf("destinationHash=%x want=%x", entry.destinationHash, destinationHash)
+	}
+	if !bytes.Equal(entry.payload, lxmfPayload) {
+		t.Fatalf("payload=%x want=%x", entry.payload, lxmfPayload)
+	}
+	if got, want := entry.stampValue, 0; got != want {
+		t.Fatalf("stampValue=%v want=%v", got, want)
+	}
+}
+
 func TestPropagationStoreRespectsStorageLimit(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -3463,6 +3531,45 @@ func TestLocalTransientIDCachesDropExpiredEntriesOnLoad(t *testing.T) {
 	}
 	if got := router.locallyProcessedIDs[string(freshID)]; !got.Equal(now.Add(-time.Minute)) {
 		t.Fatalf("fresh processed timestamp = %v, want %v", got, now.Add(-time.Minute))
+	}
+}
+
+func TestLocalTransientIDCachesLoadEachCacheIndependently(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.now = func() time.Time { return now }
+
+	processedID := bytes.Repeat([]byte{0x73}, 32)
+	processedPayload, err := msgpack.Pack(map[string]any{
+		string(processedID): peerTime(now.Add(-time.Minute)),
+	})
+	if err != nil {
+		t.Fatalf("Pack processed cache: %v", err)
+	}
+	if err := os.WriteFile(router.localDeliveriesPath(), []byte{0xc1}, 0o644); err != nil {
+		t.Fatalf("WriteFile(local_deliveries): %v", err)
+	}
+	if err := os.WriteFile(router.locallyProcessedPath(), processedPayload, 0o644); err != nil {
+		t.Fatalf("WriteFile(locally_processed): %v", err)
+	}
+
+	router.locallyDeliveredIDs = map[string]time.Time{"stale": now}
+	router.locallyProcessedIDs = map[string]time.Time{}
+	if err := router.LoadLocalTransientIDCaches(); err != nil {
+		t.Fatalf("LoadLocalTransientIDCaches(): %v", err)
+	}
+
+	if len(router.locallyDeliveredIDs) != 0 {
+		t.Fatalf("locallyDeliveredIDs=%v want empty after corrupt cache", router.locallyDeliveredIDs)
+	}
+	if got := router.locallyProcessedIDs[string(processedID)]; !got.Equal(now.Add(-time.Minute)) {
+		t.Fatalf("processed timestamp = %v, want %v", got, now.Add(-time.Minute))
 	}
 }
 

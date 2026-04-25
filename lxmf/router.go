@@ -55,6 +55,8 @@ const messageExpiry = 30 * 24 * time.Hour
 const stampCostExpiry = 45 * 24 * time.Hour
 const transientIDCacheExpiry = messageExpiry * 6
 
+var errInvalidTransientIDCacheFormat = errors.New("invalid transient ID cache format")
+
 // Router encapsulates the routing logic, delivery mechanisms, and state management for the LXMF messaging protocol.
 type Router struct {
 	transport   rns.Transport
@@ -2543,14 +2545,8 @@ func (r *Router) SaveLocalTransientIDCaches() error {
 // LoadLocalTransientIDCaches restores and cleans the duplicate-suppression
 // caches used for direct delivery and propagation processing.
 func (r *Router) LoadLocalTransientIDCaches() error {
-	delivered, err := r.loadTransientIDCache(r.localDeliveriesPath())
-	if err != nil {
-		return err
-	}
-	processed, err := r.loadTransientIDCache(r.locallyProcessedPath())
-	if err != nil {
-		return err
-	}
+	delivered := r.loadTransientIDCacheOrEmpty(r.localDeliveriesPath(), "locally delivered")
+	processed := r.loadTransientIDCacheOrEmpty(r.locallyProcessedPath(), "locally processed")
 
 	r.mu.Lock()
 	r.locallyDeliveredIDs = delivered
@@ -2558,6 +2554,19 @@ func (r *Router) LoadLocalTransientIDCaches() error {
 	r.cleanTransientIDCachesLocked()
 	r.mu.Unlock()
 	return nil
+}
+
+func (r *Router) loadTransientIDCacheOrEmpty(path, label string) map[string]time.Time {
+	cache, err := r.loadTransientIDCache(path)
+	if err == nil {
+		return cache
+	}
+	if errors.Is(err, errInvalidTransientIDCacheFormat) {
+		log.Printf("Invalid data format for loaded %s transient IDs, recreating...", label)
+	} else {
+		log.Printf("Could not load %s message ID cache from storage: %v", label, err)
+	}
+	return map[string]time.Time{}
 }
 
 func (r *Router) loadTransientIDCache(path string) (map[string]time.Time, error) {
@@ -2578,7 +2587,7 @@ func (r *Router) loadTransientIDCache(path string) (map[string]time.Time, error)
 	}
 	cache, ok := anyToMap(unpacked)
 	if !ok {
-		return map[string]time.Time{}, nil
+		return nil, errInvalidTransientIDCacheFormat
 	}
 
 	loaded := make(map[string]time.Time, len(cache))
@@ -2989,7 +2998,11 @@ func (r *Router) writePropagationMessageFile(transientID []byte, receivedAt time
 	}
 
 	timestamp := strconv.FormatFloat(peerTime(receivedAt), 'f', -1, 64)
-	filePath := filepath.Join(storePath, fmt.Sprintf("%x_%s_%v", transientID, timestamp, stampValue))
+	fileName := fmt.Sprintf("%x_%s", transientID, timestamp)
+	if stampValue > 0 {
+		fileName = fmt.Sprintf("%s_%v", fileName, stampValue)
+	}
+	filePath := filepath.Join(storePath, fileName)
 	fileData := make([]byte, 0, len(destinationHash)+len(payload)+len(stampData))
 	if len(stampData) > 0 {
 		fileData = append(fileData, payload...)
@@ -3176,7 +3189,7 @@ func (r *Router) cleanMessageStoreLocked() {
 
 func parsePropagationStoreFilename(name string) ([]byte, time.Time, int, bool) {
 	components := strings.Split(name, "_")
-	if len(components) < 3 {
+	if len(components) < 2 {
 		return nil, time.Time{}, 0, false
 	}
 
@@ -3188,9 +3201,12 @@ func parsePropagationStoreFilename(name string) ([]byte, time.Time, int, bool) {
 	if err != nil || received <= 0 {
 		return nil, time.Time{}, 0, false
 	}
-	stampValue, err := strconv.Atoi(components[2])
-	if err != nil {
-		return nil, time.Time{}, 0, false
+	stampValue := 0
+	if len(components) >= 3 {
+		stampValue, err = strconv.Atoi(components[2])
+		if err != nil {
+			return nil, time.Time{}, 0, false
+		}
 	}
 
 	return transientID, timeFromPeerValue(received), stampValue, true
