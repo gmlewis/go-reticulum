@@ -589,6 +589,205 @@ func TestListDiscoveredInterfaces_MissingLastHeardLogsAndRemains(t *testing.T) {
 	}
 }
 
+func TestListDiscoveredInterfaces_EmptyReachableOnLogsAndRemains(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-empty-reachable-")
+	defer cleanup()
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(map[string]any{
+		"name":       "Valid",
+		"last_heard": now - 60,
+		"value":      1,
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write valid discovery file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(storagePath, "empty-reachable.data"), mustMsgpackPack(map[string]any{
+		"name":         "EmptyReachable",
+		"last_heard":   now - 60,
+		"value":        2,
+		"reachable_on": "",
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write empty reachable discovery file: %v", err)
+	}
+
+	var logs bytes.Buffer
+	logger := NewLogger()
+	logger.SetLogLevel(LogExtreme)
+	logger.SetLogDest(LogCallback)
+	logger.SetLogCallback(func(msg string) {
+		logs.WriteString(msg)
+		logs.WriteByte('\n')
+	})
+
+	r := &Reticulum{
+		configDir: tmpDir,
+		logger:    logger,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+	}
+	if len(discovered) != 1 {
+		t.Fatalf("expected 1 valid discovered interface, got %v", len(discovered))
+	}
+	if discovered[0].Name != "Valid" {
+		t.Fatalf("unexpected surviving interface %q", discovered[0].Name)
+	}
+	if _, err := os.Stat(filepath.Join(storagePath, "empty-reachable.data")); err != nil {
+		t.Fatalf("expected empty reachable discovery file to remain on disk: %v", err)
+	}
+
+	logOutput := logs.String()
+	if !strings.Contains(logOutput, "error while loading discovered interface data") {
+		t.Fatalf("expected corrupt-file error log, got %q", logOutput)
+	}
+	if !strings.Contains(logOutput, "empty-reachable.data") || !strings.Contains(logOutput, "may be corrupt") {
+		t.Fatalf("expected corrupt-file path warning in logs, got %q", logOutput)
+	}
+}
+
+func TestListDiscoveredInterfaces_BytesReachableOnLogsAndRemains(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-bytes-reachable-")
+	defer cleanup()
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(map[string]any{
+		"name":       "Valid",
+		"last_heard": now - 60,
+		"value":      1,
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write valid discovery file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(storagePath, "bytes-reachable.data"), mustMsgpackPack(map[string]any{
+		"name":         "BytesReachable",
+		"last_heard":   now - 60,
+		"value":        2,
+		"reachable_on": []byte("127.0.0.1"),
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write bytes reachable discovery file: %v", err)
+	}
+
+	var logs bytes.Buffer
+	logger := NewLogger()
+	logger.SetLogLevel(LogExtreme)
+	logger.SetLogDest(LogCallback)
+	logger.SetLogCallback(func(msg string) {
+		logs.WriteString(msg)
+		logs.WriteByte('\n')
+	})
+
+	r := &Reticulum{
+		configDir: tmpDir,
+		logger:    logger,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+	}
+	if len(discovered) != 1 {
+		t.Fatalf("expected 1 valid discovered interface, got %v", len(discovered))
+	}
+	if discovered[0].Name != "Valid" {
+		t.Fatalf("unexpected surviving interface %q", discovered[0].Name)
+	}
+	if _, err := os.Stat(filepath.Join(storagePath, "bytes-reachable.data")); err != nil {
+		t.Fatalf("expected bytes reachable discovery file to remain on disk: %v", err)
+	}
+
+	logOutput := logs.String()
+	if !strings.Contains(logOutput, "error while loading discovered interface data") {
+		t.Fatalf("expected corrupt-file error log, got %q", logOutput)
+	}
+	if !strings.Contains(logOutput, "bytes-reachable.data") || !strings.Contains(logOutput, "may be corrupt") {
+		t.Fatalf("expected corrupt-file path warning in logs, got %q", logOutput)
+	}
+}
+
+func TestListDiscoveredInterfaces_InvalidNetworkIDTypeLogsAndRemains(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-network-id-type-")
+	defer cleanup()
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(map[string]any{
+		"name":       "Valid",
+		"last_heard": now - 60,
+		"value":      1,
+		"transport":  true,
+		"network_id": "aabb",
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write valid discovery file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(storagePath, "invalid-network-id-type.data"), mustMsgpackPack(map[string]any{
+		"name":       "InvalidNetworkIDType",
+		"last_heard": now - 60,
+		"value":      2,
+		"transport":  true,
+		"network_id": 123,
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write invalid network_id type discovery file: %v", err)
+	}
+
+	var logs bytes.Buffer
+	logger := NewLogger()
+	logger.SetLogLevel(LogExtreme)
+	logger.SetLogDest(LogCallback)
+	logger.SetLogCallback(func(msg string) {
+		logs.WriteString(msg)
+		logs.WriteByte('\n')
+	})
+
+	r := &Reticulum{
+		configDir:        tmpDir,
+		logger:           logger,
+		interfaceSources: [][]byte{{0xaa, 0xbb}},
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+	}
+	if len(discovered) != 1 {
+		t.Fatalf("expected 1 valid discovered interface, got %v", len(discovered))
+	}
+	if discovered[0].Name != "Valid" {
+		t.Fatalf("unexpected surviving interface %q", discovered[0].Name)
+	}
+	if _, err := os.Stat(filepath.Join(storagePath, "invalid-network-id-type.data")); err != nil {
+		t.Fatalf("expected invalid network_id type discovery file to remain on disk: %v", err)
+	}
+
+	logOutput := logs.String()
+	if !strings.Contains(logOutput, "error while loading discovered interface data") {
+		t.Fatalf("expected corrupt-file error log, got %q", logOutput)
+	}
+	if !strings.Contains(logOutput, "invalid-network-id-type.data") || !strings.Contains(logOutput, "may be corrupt") {
+		t.Fatalf("expected corrupt-file path warning in logs, got %q", logOutput)
+	}
+}
+
 func TestListDiscoveredInterfaces_OnlyTransportMissingTransportLogsAndRemains(t *testing.T) {
 	t.Parallel()
 

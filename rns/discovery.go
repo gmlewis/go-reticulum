@@ -880,10 +880,15 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 		if heardDelta > ThresholdRemove {
 			shouldRemove = true
 		} else if len(discoverySources) > 0 {
-			networkIDHex := asString(lookupAnyValue(m, "network_id"))
-			if networkIDHex == "" {
+			networkIDValue, ok := lookupAny(m, "network_id")
+			if !ok || networkIDValue == nil {
 				shouldRemove = true
 			} else {
+				networkIDHex, ok := networkIDValue.(string)
+				if !ok {
+					id.logDiscoveryFileLoadError(path, fmt.Errorf("invalid discovery cache network_id type %T", networkIDValue))
+					continue
+				}
 				networkID, err := hex.DecodeString(networkIDHex)
 				if err != nil {
 					id.logDiscoveryFileLoadError(path, err)
@@ -895,9 +900,15 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 			}
 		}
 		if !shouldRemove {
-			reachableOn := asString(lookupAnyValue(m, "reachable_on"))
-			if reachableOn != "" && !isReachableOnValue(reachableOn) {
-				shouldRemove = true
+			if reachableValue, ok := lookupAny(m, "reachable_on"); ok {
+				reachableOn, err := discoveryReachableOnCacheValue(reachableValue)
+				if err != nil {
+					id.logDiscoveryFileLoadError(path, err)
+					continue
+				}
+				if !isReachableOnValue(reachableOn) {
+					shouldRemove = true
+				}
 			}
 		}
 
@@ -1032,6 +1043,18 @@ func isReachableOnValue(v string) bool {
 		return true
 	}
 	return isHostname(v)
+}
+
+func discoveryReachableOnCacheValue(v any) (string, error) {
+	switch t := v.(type) {
+	case string:
+		if t == "" {
+			return "", fmt.Errorf("invalid discovery cache reachable_on value")
+		}
+		return t, nil
+	default:
+		return "", fmt.Errorf("invalid discovery cache reachable_on type %T", v)
+	}
 }
 
 func isHostname(v string) bool {
