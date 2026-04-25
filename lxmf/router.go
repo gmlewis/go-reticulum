@@ -308,11 +308,21 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 	if err := router.LoadAvailableTickets(); err != nil {
 		log.Printf("Could not load available tickets from storage: %v", err)
 	}
+	if _, err := os.Stat(router.availableTicketsPath()); err == nil {
+		if err := router.SaveAvailableTickets(); err != nil {
+			log.Printf("Could not save available tickets to storage: %v", err)
+		}
+	}
 	if err := router.LoadLocalTransientIDCaches(); err != nil {
 		log.Printf("Could not load local transient ID caches from storage: %v", err)
 	}
 	if err := router.LoadOutboundStampCosts(); err != nil {
 		log.Printf("Could not load outbound stamp costs from storage: %v", err)
+	}
+	if _, err := os.Stat(router.outboundStampCostsPath()); err == nil {
+		if err := router.SaveOutboundStampCosts(); err != nil {
+			log.Printf("Could not save outbound stamp costs to storage: %v", err)
+		}
 	}
 
 	return router, nil
@@ -2167,8 +2177,34 @@ func (r *Router) EnablePropagation() {
 	if err := r.LoadPeers(); err != nil {
 		log.Printf("Could not load propagation peers from storage: %v", err)
 	}
+	r.activateStaticPeers()
 	if err := r.LoadNodeStats(); err != nil {
 		log.Printf("Could not load propagation node stats from storage: %v", err)
+	}
+}
+
+func (r *Router) activateStaticPeers() {
+	r.mu.Lock()
+	if len(r.staticPeers) == 0 {
+		r.mu.Unlock()
+		return
+	}
+
+	pathRequests := make([][]byte, 0, len(r.staticPeers))
+	for peerKey := range r.staticPeers {
+		peer := r.peers[peerKey]
+		if peer == nil {
+			peer = NewPeer(r, []byte(peerKey))
+			r.peers[peerKey] = peer
+		}
+		if peer.lastHeard == 0 {
+			pathRequests = append(pathRequests, append([]byte{}, peer.destinationHash...))
+		}
+	}
+	r.mu.Unlock()
+
+	for _, destinationHash := range pathRequests {
+		_ = r.requestPath(destinationHash)
 	}
 }
 

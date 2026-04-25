@@ -3676,6 +3676,83 @@ func TestAvailableTicketsSaveLoadRoundTrip(t *testing.T) {
 	}
 }
 
+func TestAvailableTicketsRestartCleansAndRewritesExpiredEntries(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	now := time.Unix(1700000000, 0).UTC()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.now = func() time.Time { return now }
+
+	destinationHash := bytes.Repeat([]byte{0x45}, DestinationLength)
+	outboundTicket := bytes.Repeat([]byte{0x46}, TicketLength)
+	router.ticketStore.outbound[string(destinationHash)] = TicketEntry{
+		Expires: float64(now.Add(-time.Second).UnixNano()) / 1e9,
+		Ticket:  outboundTicket,
+	}
+
+	inboundTicket := bytes.Repeat([]byte{0x47}, TicketLength)
+	router.ticketStore.inbound[string(destinationHash)] = map[string]TicketEntry{
+		string(inboundTicket): {
+			Expires: float64(now.Add(-time.Duration(DefaultTicketGraceSeconds)*time.Second-time.Second).UnixNano()) / 1e9,
+			Ticket:  inboundTicket,
+		},
+	}
+	router.ticketStore.lastDeliveries[string(destinationHash)] = 1234
+
+	if err := router.SaveAvailableTickets(); err != nil {
+		t.Fatalf("SaveAvailableTickets(): %v", err)
+	}
+
+	recovered := mustTestNewRouter(t, ts, nil, tmpDir)
+	if got := recovered.ticketStore.OutboundTicket(destinationHash, now); len(got) != 0 {
+		t.Fatalf("recovered outbound ticket=%x want empty", got)
+	}
+	if got := recovered.ticketStore.InboundTickets(destinationHash, now); len(got) != 0 {
+		t.Fatalf("recovered inbound tickets=%x want empty", got)
+	}
+	if got := recovered.ticketStore.lastDeliveries[string(destinationHash)]; got != 1234 {
+		t.Fatalf("recovered last delivery=%v want=1234", got)
+	}
+
+	data, err := os.ReadFile(recovered.availableTicketsPath())
+	if err != nil {
+		t.Fatalf("ReadFile(available_tickets): %v", err)
+	}
+	unpacked, err := msgpack.Unpack(data)
+	if err != nil {
+		t.Fatalf("Unpack(available_tickets): %v", err)
+	}
+	payload, ok := anyToMap(unpacked)
+	if !ok {
+		t.Fatalf("available_tickets payload type=%T want map", unpacked)
+	}
+	outbound, ok := anyToMap(payload["outbound"])
+	if !ok {
+		t.Fatalf("outbound payload type=%T want map", payload["outbound"])
+	}
+	if len(outbound) != 0 {
+		t.Fatalf("outbound payload=%v want empty map", outbound)
+	}
+	inbound, ok := anyToMap(payload["inbound"])
+	if !ok {
+		t.Fatalf("inbound payload type=%T want map", payload["inbound"])
+	}
+	if len(inbound) != 0 {
+		t.Fatalf("inbound payload=%v want empty map", inbound)
+	}
+	lastDeliveries, ok := anyToMap(payload["last_deliveries"])
+	if !ok {
+		t.Fatalf("last_deliveries payload type=%T want map", payload["last_deliveries"])
+	}
+	if len(lastDeliveries) != 1 {
+		t.Fatalf("last_deliveries payload=%v want one preserved entry", lastDeliveries)
+	}
+}
+
 func TestDeliveryPacketSuppressesDuplicateLocalDelivery(t *testing.T) {
 	t.Parallel()
 
@@ -3821,6 +3898,22 @@ func TestOutboundStampCostRestartDropsExpiredEntries(t *testing.T) {
 	recovered := mustTestNewRouter(t, ts, nil, tmpDir)
 	if stampCost, ok := recovered.OutboundStampCost(destinationHash); ok {
 		t.Fatalf("expired OutboundStampCost = (%v,%v), want missing entry", stampCost, ok)
+	}
+
+	data, err := os.ReadFile(recovered.outboundStampCostsPath())
+	if err != nil {
+		t.Fatalf("ReadFile(outbound_stamp_costs): %v", err)
+	}
+	unpacked, err := msgpack.Unpack(data)
+	if err != nil {
+		t.Fatalf("Unpack(outbound_stamp_costs): %v", err)
+	}
+	payload, ok := anyToMap(unpacked)
+	if !ok {
+		t.Fatalf("outbound_stamp_costs payload type=%T want map", unpacked)
+	}
+	if len(payload) != 0 {
+		t.Fatalf("outbound_stamp_costs payload=%v want empty map after startup cleanup", payload)
 	}
 }
 
@@ -6303,5 +6396,78 @@ func TestRouterPropagationToggle(t *testing.T) {
 
 	if router.PropagationEnabled() {
 		t.Fatal("propagation should be disabled after DisablePropagation()")
+	}
+}
+
+func TestEnablePropagationActivatesStaticPeersAndRequestsPath(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	remoteHash := bytes.Repeat([]byte{0x55}, rns.TruncatedHashLength/8)
+	router.staticPeers[string(remoteHash)] = struct{}{}
+
+	var requested [][]byte
+	router.requestPath = func(destinationHash []byte) error {
+		requested = append(requested, append([]byte{}, destinationHash...))
+		return nil
+	}
+
+	router.EnablePropagation()
+
+	peer := router.peers[string(remoteHash)]
+	if peer == nil {
+		t.Fatal("expected static peer to be activated during EnablePropagation")
+	}
+	if peer.lastHeard != 0 {
+		t.Fatalf("lastHeard=%v want=0", peer.lastHeard)
+	}
+	if len(requested) != 1 || !bytes.Equal(requested[0], remoteHash) {
+		t.Fatalf("requested paths=%x want [%x]", requested, remoteHash)
+	}
+}
+
+func TestEnablePropagationRequestsPathForPersistedUnheardStaticPeer(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
+	ts.Remember(nil, remoteHash, remoteIdentity.GetPublicKey(), nil)
+
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.EnablePropagation()
+	router.staticPeers[string(remoteHash)] = struct{}{}
+	router.peers[string(remoteHash)] = NewPeer(router, remoteHash)
+	if err := router.SavePeers(); err != nil {
+		t.Fatalf("SavePeers(): %v", err)
+	}
+
+	recovered := mustTestNewRouter(t, ts, nil, tmpDir)
+	recovered.staticPeers[string(remoteHash)] = struct{}{}
+
+	var requested [][]byte
+	recovered.requestPath = func(destinationHash []byte) error {
+		requested = append(requested, append([]byte{}, destinationHash...))
+		return nil
+	}
+
+	recovered.EnablePropagation()
+
+	peer := recovered.peers[string(remoteHash)]
+	if peer == nil {
+		t.Fatal("expected persisted static peer to be rebuilt")
+	}
+	if peer.lastHeard != 0 {
+		t.Fatalf("lastHeard=%v want=0", peer.lastHeard)
+	}
+	if len(requested) != 1 || !bytes.Equal(requested[0], remoteHash) {
+		t.Fatalf("requested paths=%x want [%x]", requested, remoteHash)
 	}
 }
