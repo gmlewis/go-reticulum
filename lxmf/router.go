@@ -998,7 +998,11 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 		if !bytes.Equal(entry.destinationHash, remoteDestinationHash) {
 			continue
 		}
-		nextSize := cumulativeSize + len(entry.payload) + perMessageOverhead
+		messageSize := entry.size
+		if messageSize <= 0 {
+			messageSize = len(entry.payload)
+		}
+		nextSize := cumulativeSize + messageSize + perMessageOverhead
 		if limitBytes > 0 && nextSize > limitBytes {
 			continue
 		}
@@ -1007,10 +1011,6 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 	}
 
 	r.clientPropagationMessagesServed += len(response)
-	if len(response) == 0 && len(wants) > 0 {
-		return peerErrorNotFound
-	}
-
 	return response
 }
 
@@ -2505,15 +2505,29 @@ func (r *Router) LoadAvailableTickets() error {
 // SaveLocalTransientIDCaches persists the Python local_deliveries and
 // locally_processed dictionaries used for duplicate suppression.
 func (r *Router) SaveLocalTransientIDCaches() error {
+	return r.saveLocalTransientIDCaches(true, true)
+}
+
+func (r *Router) saveLocallyDeliveredTransientIDs() error {
+	return r.saveLocalTransientIDCaches(true, false)
+}
+
+func (r *Router) saveLocalTransientIDCaches(saveDelivered, saveProcessed bool) error {
 	r.mu.Lock()
 	r.cleanTransientIDCachesLocked()
-	delivered := make(map[string]any, len(r.locallyDeliveredIDs))
-	for transientID, deliveredAt := range r.locallyDeliveredIDs {
-		delivered[transientID] = peerTime(deliveredAt)
+	var delivered map[string]any
+	if saveDelivered {
+		delivered = make(map[string]any, len(r.locallyDeliveredIDs))
+		for transientID, deliveredAt := range r.locallyDeliveredIDs {
+			delivered[transientID] = peerTime(deliveredAt)
+		}
 	}
-	processed := make(map[string]any, len(r.locallyProcessedIDs))
-	for transientID, processedAt := range r.locallyProcessedIDs {
-		processed[transientID] = peerTime(processedAt)
+	var processed map[string]any
+	if saveProcessed {
+		processed = make(map[string]any, len(r.locallyProcessedIDs))
+		for transientID, processedAt := range r.locallyProcessedIDs {
+			processed[transientID] = peerTime(processedAt)
+		}
 	}
 	r.mu.Unlock()
 
@@ -2998,9 +3012,9 @@ func (r *Router) writePropagationMessageFile(transientID []byte, receivedAt time
 	}
 
 	timestamp := strconv.FormatFloat(peerTime(receivedAt), 'f', -1, 64)
-	fileName := fmt.Sprintf("%x_%s", transientID, timestamp)
-	if stampValue > 0 {
-		fileName = fmt.Sprintf("%s_%v", fileName, stampValue)
+	fileName := fmt.Sprintf("%x_%s_%v", transientID, timestamp, stampValue)
+	if len(stampData) > 0 && stampValue <= 0 {
+		fileName = fmt.Sprintf("%x_%s", transientID, timestamp)
 	}
 	filePath := filepath.Join(storePath, fileName)
 	fileData := make([]byte, 0, len(destinationHash)+len(payload)+len(stampData))
@@ -3189,7 +3203,7 @@ func (r *Router) cleanMessageStoreLocked() {
 
 func parsePropagationStoreFilename(name string) ([]byte, time.Time, int, bool) {
 	components := strings.Split(name, "_")
-	if len(components) < 2 {
+	if len(components) < 3 {
 		return nil, time.Time{}, 0, false
 	}
 
@@ -3201,12 +3215,9 @@ func parsePropagationStoreFilename(name string) ([]byte, time.Time, int, bool) {
 	if err != nil || received <= 0 {
 		return nil, time.Time{}, 0, false
 	}
-	stampValue := 0
-	if len(components) >= 3 {
-		stampValue, err = strconv.Atoi(components[2])
-		if err != nil {
-			return nil, time.Time{}, 0, false
-		}
+	stampValue, err := strconv.Atoi(components[2])
+	if err != nil {
+		return nil, time.Time{}, 0, false
 	}
 
 	return transientID, timeFromPeerValue(received), stampValue, true
@@ -3866,8 +3877,8 @@ func (r *Router) messageGetResponse(receipt *rns.RequestReceipt) {
 	r.propagationTransferLastDuplicates = duplicates
 	r.propagationTransferLastResult = len(payloads)
 	r.mu.Unlock()
-	if err := r.SaveLocalTransientIDCaches(); err != nil {
-		log.Printf("Could not save local transient ID caches: %v", err)
+	if err := r.saveLocallyDeliveredTransientIDs(); err != nil {
+		log.Printf("Could not save locally delivered message ID cache: %v", err)
 	}
 }
 

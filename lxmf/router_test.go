@@ -2920,6 +2920,71 @@ func TestMessageGetRequestPurgeRemovesPersistedFile(t *testing.T) {
 	}
 }
 
+func TestMessageGetRequestMissingWantedMessagesReturnsEmptyList(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	missingID := rns.FullHash([]byte("missing-message"))
+	request, err := msgpack.Pack([]any{[]any{missingID}, nil})
+	if err != nil {
+		t.Fatalf("Pack request: %v", err)
+	}
+
+	response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
+	payloads, ok := response.([]any)
+	if !ok {
+		t.Fatalf("response type=%T want=[]any", response)
+	}
+	if len(payloads) != 0 {
+		t.Fatalf("payloads len=%v want=0", len(payloads))
+	}
+}
+
+func TestMessageGetRequestUsesStampedFileSizeForTransferLimit(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.EnablePropagation()
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+	stampData := bytes.Repeat([]byte{0x7a}, StampSize)
+	payloadOne := append(append([]byte{}, remoteDestinationHash...), bytes.Repeat([]byte("a"), 32)...)
+	payloadTwo := append(append([]byte{}, remoteDestinationHash...), bytes.Repeat([]byte("b"), 32)...)
+
+	idOne := router.storePropagationMessageStamped(remoteDestinationHash, payloadOne, stampData, 1, nil)
+	idTwo := router.storePropagationMessageStamped(remoteDestinationHash, payloadTwo, stampData, 1, nil)
+
+	request, err := msgpack.Pack([]any{[]any{idOne, idTwo}, nil, 0.17})
+	if err != nil {
+		t.Fatalf("Pack request: %v", err)
+	}
+
+	response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
+	payloads, ok := response.([]any)
+	if !ok {
+		t.Fatalf("response type=%T want=[]any", response)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("payloads len=%v want=1", len(payloads))
+	}
+	payload, ok := payloads[0].([]byte)
+	if !ok {
+		t.Fatalf("payload type=%T want=[]byte", payloads[0])
+	}
+	if !bytes.Equal(payload, payloadOne) {
+		t.Fatalf("payload=%x want=%x", payload, payloadOne)
+	}
+}
+
 func TestMessageGetRequestRequiresIdentity(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -3187,7 +3252,7 @@ func TestPropagationStoreRemovesExpiredEntryOnEnable(t *testing.T) {
 	}
 }
 
-func TestWritePropagationMessageFileOmitsZeroStampSuffix(t *testing.T) {
+func TestWritePropagationMessageFileOmitsZeroStampSuffixForStampedZeroValue(t *testing.T) {
 	t.Parallel()
 
 	ts := rns.NewTransportSystem(nil)
@@ -3196,11 +3261,12 @@ func TestWritePropagationMessageFileOmitsZeroStampSuffix(t *testing.T) {
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	destinationHash := bytes.Repeat([]byte{0x44}, DestinationLength)
-	payload := []byte("unstamped-payload")
+	payload := append(append([]byte{}, destinationHash...), []byte("zero-stamp-payload")...)
+	stampData := make([]byte, StampSize)
 	transientID := rns.FullHash(payload)
 	receivedAt := time.Now().Add(-time.Hour)
 
-	filePath, _, err := router.writePropagationMessageFile(transientID, receivedAt, 0, destinationHash, payload, nil)
+	filePath, _, err := router.writePropagationMessageFile(transientID, receivedAt, 0, destinationHash, payload, stampData)
 	if err != nil {
 		t.Fatalf("writePropagationMessageFile() error = %v", err)
 	}
@@ -3211,7 +3277,7 @@ func TestWritePropagationMessageFileOmitsZeroStampSuffix(t *testing.T) {
 	}
 }
 
-func TestPropagationStoreReindexesPythonStyleUnstampedFilename(t *testing.T) {
+func TestPropagationStoreIgnoresPythonStyleZeroStampFilenameOnRestart(t *testing.T) {
 	t.Parallel()
 
 	ts := rns.NewTransportSystem(nil)
@@ -3238,18 +3304,8 @@ func TestPropagationStoreReindexesPythonStyleUnstampedFilename(t *testing.T) {
 
 	router.EnablePropagation()
 
-	entry := router.propagationEntries[string(transientID)]
-	if entry == nil {
-		t.Fatalf("expected reindexed propagation entry for %x", transientID)
-	}
-	if !bytes.Equal(entry.destinationHash, destinationHash) {
-		t.Fatalf("destinationHash=%x want=%x", entry.destinationHash, destinationHash)
-	}
-	if !bytes.Equal(entry.payload, lxmfPayload) {
-		t.Fatalf("payload=%x want=%x", entry.payload, lxmfPayload)
-	}
-	if got, want := entry.stampValue, 0; got != want {
-		t.Fatalf("stampValue=%v want=%v", got, want)
+	if entry := router.propagationEntries[string(transientID)]; entry != nil {
+		t.Fatalf("expected Python-style zero-stamp file %x to be ignored on restart, got %#v", transientID, entry)
 	}
 }
 
@@ -4938,8 +4994,16 @@ func TestPropagationSyncMessageGetResponseTracksDuplicatesAndPurges(t *testing.T
 	if _, err := os.Stat(filepath.Join(router.storagePath, "local_deliveries")); err != nil {
 		t.Fatalf("expected local_deliveries file: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(router.storagePath, "locally_processed")); err != nil {
-		t.Fatalf("expected locally_processed file: %v", err)
+	if _, err := os.Stat(filepath.Join(router.storagePath, "locally_processed")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected no locally_processed file after sync completion, Stat() error = %v", err)
+	}
+
+	recovered := mustTestNewRouter(t, ts, nil, tmpDir)
+	if _, ok := recovered.locallyDeliveredIDs[string(freshTransientID)]; !ok {
+		t.Fatal("expected recovered local_deliveries cache to retain fresh transient ID")
+	}
+	if len(recovered.locallyProcessedIDs) != 0 {
+		t.Fatalf("recovered locallyProcessedIDs = %v, want empty", recovered.locallyProcessedIDs)
 	}
 }
 
