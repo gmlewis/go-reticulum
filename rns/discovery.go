@@ -808,7 +808,7 @@ func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) er
 	}
 
 	discoveredValue, ok := lastInfo["discovered"]
-	if !ok || discoveredValue == nil {
+	if !ok {
 		return fmt.Errorf("corrupt discovery cache missing discovered")
 	}
 	heardCountValue, ok := lastInfo["heard_count"]
@@ -817,6 +817,13 @@ func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) er
 	}
 
 	discoveredPersisted := discoveredValue
+	if discoveredPersisted == nil {
+		replacement, ok := info["discovered"]
+		if !ok {
+			return fmt.Errorf("corrupt discovery cache missing discovered")
+		}
+		discoveredPersisted = replacement
+	}
 	var heardCountPersisted any = 1
 	if heardCountValue != nil {
 		var ok bool
@@ -902,13 +909,13 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 
 	now := float64(time.Now().UnixNano()) / 1e9
 	discoverySources := id.owner.interfaceSources
-	var discovered []DiscoveredInterface
+	type discoveredRecord struct {
+		item      DiscoveredInterface
+		sortValue float64
+	}
+	var discovered []discoveredRecord
 
 	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-
 		path := filepath.Join(storagePath, entry.Name())
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -994,7 +1001,7 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 		}
 
 		transportValue, hasTransport := lookupAny(m, "transport")
-		if (onlyAvailable || onlyTransport) && (!hasTransport || transportValue == nil) {
+		if onlyTransport && (!hasTransport || transportValue == nil) {
 			id.logDiscoveryFileLoadError(path, fmt.Errorf("corrupt discovery cache missing transport"))
 			continue
 		}
@@ -1013,6 +1020,10 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 			return nil, fmt.Errorf("corrupt discovery cache missing value in %v", path)
 		}
 		value, ok := numericIntValue(valueField)
+		if !ok {
+			return nil, fmt.Errorf("invalid discovery cache value type %T in %v", valueField, path)
+		}
+		sortValue, ok := numericFloat64Value(valueField)
 		if !ok {
 			return nil, fmt.Errorf("invalid discovery cache value type %T in %v", valueField, path)
 		}
@@ -1045,22 +1056,29 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 		di.SF = lookupOptInt(m, "sf")
 		di.CR = lookupOptInt(m, "cr")
 
-		discovered = append(discovered, di)
+		discovered = append(discovered, discoveredRecord{
+			item:      di,
+			sortValue: sortValue,
+		})
 	}
 
 	sort.Slice(discovered, func(i, j int) bool {
 		left := discovered[i]
 		right := discovered[j]
-		if left.StatusCode != right.StatusCode {
-			return left.StatusCode > right.StatusCode
+		if left.item.StatusCode != right.item.StatusCode {
+			return left.item.StatusCode > right.item.StatusCode
 		}
-		if left.Value != right.Value {
-			return left.Value > right.Value
+		if left.sortValue != right.sortValue {
+			return left.sortValue > right.sortValue
 		}
-		return left.LastHeard > right.LastHeard
+		return left.item.LastHeard > right.item.LastHeard
 	})
 
-	return discovered, nil
+	out := make([]DiscoveredInterface, 0, len(discovered))
+	for _, record := range discovered {
+		out = append(out, record.item)
+	}
+	return out, nil
 }
 
 func hasDiscoverySource(sources [][]byte, networkID []byte) bool {

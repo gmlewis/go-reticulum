@@ -74,6 +74,15 @@ func (f *fakeChannelSession) emit(msg rns.Message) {
 	}
 }
 
+func setIsTTYFileForTest(t *testing.T, fn func(*os.File) bool) {
+	t.Helper()
+	previous := isTTYFile
+	isTTYFile = fn
+	t.Cleanup(func() {
+		isTTYFile = previous
+	})
+}
+
 func TestInitiatorSessionDecompressesCompressedStreams(t *testing.T) {
 	t.Parallel()
 
@@ -305,7 +314,7 @@ func TestInitiatorSessionCollectsStreamsAndExit(t *testing.T) {
 }
 
 func TestBuildExecuteCommandMessageNoTTY(t *testing.T) {
-	t.Parallel()
+	setIsTTYFileForTest(t, func(*os.File) bool { return true })
 
 	opts := options{noTTY: true, commandLine: []string{"/bin/sh", "-lc", "echo hi"}}
 	msg := buildExecuteCommandMessage(opts)
@@ -319,6 +328,8 @@ func TestBuildExecuteCommandMessageNoTTY(t *testing.T) {
 }
 
 func TestBuildExecuteCommandMessageTTYFromEnv(t *testing.T) {
+	setIsTTYFileForTest(t, func(*os.File) bool { return true })
+
 	t.Setenv("TERM", "xterm-256color")
 	t.Setenv("LINES", "48")
 	t.Setenv("COLUMNS", "160")
@@ -341,6 +352,8 @@ func TestBuildExecuteCommandMessageTTYFromEnv(t *testing.T) {
 }
 
 func TestBuildExecuteCommandMessageTTYUsesDefaultTERM(t *testing.T) {
+	setIsTTYFileForTest(t, func(*os.File) bool { return true })
+
 	t.Setenv("TERM", "")
 	t.Setenv("LINES", "25")
 	t.Setenv("COLUMNS", "90")
@@ -356,6 +369,29 @@ func TestBuildExecuteCommandMessageTTYUsesDefaultTERM(t *testing.T) {
 	}
 	if msg.Cols == nil || *msg.Cols != 90 {
 		t.Fatalf("unexpected cols=%v", msg.Cols)
+	}
+}
+
+func TestBuildExecuteCommandMessageAutoDetectsPerStreamPipes(t *testing.T) {
+	setIsTTYFileForTest(t, func(file *os.File) bool {
+		return file == initiatorStdinFile
+	})
+
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("LINES", "48")
+	t.Setenv("COLUMNS", "160")
+
+	opts := options{noTTY: false, commandLine: []string{"/bin/sh"}}
+	msg := buildExecuteCommandMessage(opts)
+
+	if msg.PipeStdin {
+		t.Fatalf("expected stdin tty mode, got %+v", msg)
+	}
+	if !msg.PipeStdout || !msg.PipeStderr {
+		t.Fatalf("expected stdout/stderr pipe mode, got %+v", msg)
+	}
+	if msg.Term == nil || *msg.Term != "xterm-256color" {
+		t.Fatalf("unexpected term=%v", msg.Term)
 	}
 }
 
@@ -875,6 +911,7 @@ func TestRunInitiatorProtocolFlowTTYExecuteMessageIncludesTerminalMetadata(t *te
 	t.Setenv("TERM", "xterm-256color")
 	t.Setenv("LINES", "44")
 	t.Setenv("COLUMNS", "132")
+	setIsTTYFileForTest(t, func(*os.File) bool { return true })
 
 	linkClosedCh := make(chan struct{}, 1)
 	stopCh := make(chan struct{})

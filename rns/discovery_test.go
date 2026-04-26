@@ -529,6 +529,66 @@ func TestListDiscoveredInterfaces_CorruptNonMapFileLogsAndRemains(t *testing.T) 
 	}
 }
 
+func TestListDiscoveredInterfaces_CorruptDirectoryLogsAndRemains(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-corrupt-dir-")
+	defer cleanup()
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(map[string]any{
+		"name":       "Valid",
+		"last_heard": now - 60,
+		"value":      1,
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write valid discovery file: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(storagePath, "corrupt-dir"), 0o755); err != nil {
+		t.Fatalf("failed to create corrupt discovery directory: %v", err)
+	}
+
+	var logs bytes.Buffer
+	logger := NewLogger()
+	logger.SetLogLevel(LogExtreme)
+	logger.SetLogDest(LogCallback)
+	logger.SetLogCallback(func(msg string) {
+		logs.WriteString(msg)
+		logs.WriteByte('\n')
+	})
+
+	r := &Reticulum{
+		configDir: tmpDir,
+		logger:    logger,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+	}
+	if len(discovered) != 1 {
+		t.Fatalf("expected 1 valid discovered interface, got %v", len(discovered))
+	}
+	if discovered[0].Name != "Valid" {
+		t.Fatalf("unexpected surviving interface %q", discovered[0].Name)
+	}
+	if fi, err := os.Stat(filepath.Join(storagePath, "corrupt-dir")); err != nil || !fi.IsDir() {
+		t.Fatalf("expected corrupt discovery directory to remain on disk, stat err=%v", err)
+	}
+
+	logOutput := logs.String()
+	if !strings.Contains(logOutput, "error while loading discovered interface data") {
+		t.Fatalf("expected corrupt-directory error log, got %q", logOutput)
+	}
+	if !strings.Contains(logOutput, "corrupt-dir") || !strings.Contains(logOutput, "may be corrupt") {
+		t.Fatalf("expected corrupt-directory path warning in logs, got %q", logOutput)
+	}
+}
+
 func TestListDiscoveredInterfaces_MissingLastHeardLogsAndRemains(t *testing.T) {
 	t.Parallel()
 
@@ -700,6 +760,54 @@ func TestListDiscoveredInterfaces_BoolValueSortsLikePython(t *testing.T) {
 	wantValues := []int{5, 1, 0}
 	if !reflect.DeepEqual(gotValues, wantValues) {
 		t.Fatalf("values = %v, want %v", gotValues, wantValues)
+	}
+}
+
+func TestListDiscoveredInterfaces_FloatValueSortsLikePython(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-float-value-")
+	defer cleanup()
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	entries := []struct {
+		filename  string
+		name      string
+		lastHeard float64
+		value     any
+	}{
+		{filename: "higher-float.data", name: "HigherFloatValue", lastHeard: now - 120, value: 7.9},
+		{filename: "lower-float.data", name: "LowerFloatValue", lastHeard: now - 60, value: 7.1},
+	}
+	for _, tc := range entries {
+		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(map[string]any{
+			"name":       tc.name,
+			"last_heard": tc.lastHeard,
+			"value":      tc.value,
+		}), 0o644); err != nil {
+			t.Fatalf("failed to write discovery file %q: %v", tc.filename, err)
+		}
+	}
+
+	r := &Reticulum{configDir: tmpDir}
+	discovery := NewInterfaceDiscovery(r)
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+	}
+	if len(discovered) != 2 {
+		t.Fatalf("expected 2 discovered interfaces, got %v", len(discovered))
+	}
+
+	gotNames := []string{discovered[0].Name, discovered[1].Name}
+	wantNames := []string{"HigherFloatValue", "LowerFloatValue"}
+	if !reflect.DeepEqual(gotNames, wantNames) {
+		t.Fatalf("names = %v, want %v", gotNames, wantNames)
 	}
 }
 
@@ -1118,6 +1226,61 @@ func TestListDiscoveredInterfaces_OnlyTransportMissingTransportLogsAndRemains(t 
 	}
 	if !strings.Contains(logOutput, "missing-transport.data") || !strings.Contains(logOutput, "may be corrupt") {
 		t.Fatalf("expected corrupt-file path warning in logs, got %q", logOutput)
+	}
+}
+
+func TestListDiscoveredInterfaces_OnlyAvailableDoesNotRequireTransport(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-only-available-transport-")
+	defer cleanup()
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "missing-transport.data"), mustMsgpackPack(map[string]any{
+		"name":       "MissingTransport",
+		"last_heard": now - 60,
+		"value":      42,
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write discovery file: %v", err)
+	}
+
+	var logs bytes.Buffer
+	logger := NewLogger()
+	logger.SetLogLevel(LogExtreme)
+	logger.SetLogDest(LogCallback)
+	logger.SetLogCallback(func(msg string) {
+		logs.WriteString(msg)
+		logs.WriteByte('\n')
+	})
+
+	r := &Reticulum{
+		configDir: tmpDir,
+		logger:    logger,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	discovered, err := discovery.ListDiscoveredInterfaces(true, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+	}
+	if len(discovered) != 1 {
+		t.Fatalf("expected 1 available discovered interface, got %v", len(discovered))
+	}
+	if discovered[0].Name != "MissingTransport" {
+		t.Fatalf("unexpected surviving interface %q", discovered[0].Name)
+	}
+	if discovered[0].Status != "available" {
+		t.Fatalf("status = %q, want available", discovered[0].Status)
+	}
+	if got := logs.String(); strings.Contains(got, "error while loading discovered interface data") {
+		t.Fatalf("unexpected corrupt-file log output: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(storagePath, "missing-transport.data")); err != nil {
+		t.Fatalf("expected discovery file to remain on disk: %v", err)
 	}
 }
 
@@ -2061,6 +2224,70 @@ func TestPersistDiscoveredInterface_ExistingEntryFloatHeardCountPreservesFractio
 	got := lookupAnyValue(m, "heard_count")
 	if gotFloat, ok := got.(float64); !ok || gotFloat != 8.5 {
 		t.Fatalf("heard_count = %#v, want float64(8.5)", got)
+	}
+}
+
+func TestPersistDiscoveredInterface_ExistingEntryNilDiscoveredUsesIncomingDiscovered(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-nil-discovered-")
+	defer cleanup()
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+	filePath := filepath.Join(storagePath, "aabbcc.data")
+	if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
+		"discovered":  nil,
+		"heard_count": 2,
+	}), 0o644); err != nil {
+		t.Fatalf("failed to seed discovery file: %v", err)
+	}
+
+	r := &Reticulum{configDir: tmpDir}
+	discovery := NewInterfaceDiscovery(r)
+	info := map[string]any{
+		"name":           "Persisted",
+		"type":           "TCPServerInterface",
+		"received":       5.0,
+		"discovered":     7.0,
+		"discovery_hash": "aabbcc",
+		"value":          5678,
+	}
+	if err := discovery.persistDiscoveredInterface(info); err != nil {
+		t.Fatalf("persistDiscoveredInterface failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("failed to read persisted discovery file: %v", err)
+	}
+	unpacked, err := msgpack.Unpack(data)
+	if err != nil {
+		t.Fatalf("failed to unpack persisted discovery file: %v", err)
+	}
+	m := asAnyMap(unpacked)
+	if m == nil {
+		t.Fatalf("unexpected persisted discovery type %T", unpacked)
+	}
+	if got := asFloat64(lookupAnyValue(m, "discovered")); got != 7.0 {
+		t.Fatalf("persisted discovered = %v, want 7.0", got)
+	}
+	if got := asFloat64(lookupAnyValue(m, "last_heard")); got != 5.0 {
+		t.Fatalf("persisted last_heard = %v, want 5.0", got)
+	}
+	if got := asInt(lookupAnyValue(m, "heard_count")); got != 3 {
+		t.Fatalf("persisted heard_count = %v, want 3", got)
+	}
+	if got := asFloat64(info["discovered"]); got != 7.0 {
+		t.Fatalf("info[\"discovered\"] = %v, want 7.0", got)
+	}
+	if got := asFloat64(info["last_heard"]); got != 5.0 {
+		t.Fatalf("info[\"last_heard\"] = %v, want 5.0", got)
+	}
+	if got := asInt(info["heard_count"]); got != 3 {
+		t.Fatalf("info[\"heard_count\"] = %v, want 3", got)
 	}
 }
 

@@ -58,6 +58,13 @@ type initiatorTerminalSnapshot struct {
 	sawOutput          bool
 }
 
+var (
+	initiatorStdinFile  = os.Stdin
+	initiatorStdoutFile = os.Stdout
+	initiatorStderrFile = os.Stderr
+	isTTYFile           = fileIsTTY
+)
+
 type channelSession interface {
 	messageSender
 	AddMessageHandler(func(rns.Message) bool)
@@ -339,15 +346,17 @@ func (rt *runtimeT) runInitiatorProtocolFlow(channel channelSession, opts option
 }
 
 func buildExecuteCommandMessage(opts options) *executeCommandMessage {
-	pipeMode := opts.noTTY
+	pipeStdin := opts.noTTY || !isTTYFile(initiatorStdinFile)
+	pipeStdout := opts.noTTY || !isTTYFile(initiatorStdoutFile)
+	pipeStderr := opts.noTTY || !isTTYFile(initiatorStderrFile)
 	term := determineTerminalName(opts.noTTY)
 	rows, cols := determineTerminalSize(opts.noTTY)
 
 	return &executeCommandMessage{
 		CommandLine: opts.commandLine,
-		PipeStdin:   pipeMode,
-		PipeStdout:  pipeMode,
-		PipeStderr:  pipeMode,
+		PipeStdin:   pipeStdin,
+		PipeStdout:  pipeStdout,
+		PipeStderr:  pipeStderr,
 		TCFlags:     nil,
 		Term:        term,
 		Rows:        rows,
@@ -355,6 +364,17 @@ func buildExecuteCommandMessage(opts options) *executeCommandMessage {
 		HPix:        nil,
 		VPix:        nil,
 	}
+}
+
+func fileIsTTY(file *os.File) bool {
+	if file == nil {
+		return false
+	}
+	restorer, err := newTTYRestorer(int(file.Fd()))
+	if err != nil || restorer == nil {
+		return false
+	}
+	return restorer.active
 }
 
 func determineTerminalName(noTTY bool) *string {
