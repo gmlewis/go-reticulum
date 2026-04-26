@@ -99,7 +99,7 @@ func (s *initiatorChannelSession) handleMessage(message rns.Message) bool {
 		return true
 
 	case *streamDataMessage:
-		if s.state != initiatorWaitExit {
+		if s.state == initiatorWaitVersion {
 			return true
 		}
 		if msg.Compressed {
@@ -296,8 +296,14 @@ func (rt *runtimeT) runInitiatorProtocolFlow(channel channelSession, opts option
 				return 1, session, err
 			default:
 			}
+			rt.drainPostExitStreams(session, stopCh)
 			if opts.mirror {
 				return exitCode, session, nil
+			}
+			select {
+			case err := <-session.errCh:
+				return 1, session, err
+			default:
 			}
 			return 0, session, nil
 		case <-linkClosedCh:
@@ -343,6 +349,43 @@ func (rt *runtimeT) runInitiatorProtocolFlow(channel channelSession, opts option
 			return 1, session, errors.New("link closed before command completed")
 		}
 	}
+}
+
+func (rt *runtimeT) drainPostExitStreams(session *initiatorChannelSession, stopCh <-chan struct{}) {
+	if session == nil {
+		return
+	}
+
+	deadline := time.Now().Add(rt.postExitDrainWindow())
+	for {
+		snapshot := session.terminalSnapshot()
+		if snapshot.lastErr != nil || snapshot.sawOutput || snapshot.streamEOFsComplete {
+			return
+		}
+		if !time.Now().Before(deadline) {
+			return
+		}
+
+		select {
+		case <-stopCh:
+			return
+		case <-time.After(rt.postExitDrainPoll()):
+		}
+	}
+}
+
+func (rt *runtimeT) postExitDrainWindow() time.Duration {
+	if rt == nil || rt.postExitDrainGrace <= 0 {
+		return defaultPostExitDrainGrace
+	}
+	return rt.postExitDrainGrace
+}
+
+func (rt *runtimeT) postExitDrainPoll() time.Duration {
+	if rt == nil || rt.retrySleep <= 0 || rt.retrySleep > 10*time.Millisecond {
+		return 10 * time.Millisecond
+	}
+	return rt.retrySleep
 }
 
 func buildExecuteCommandMessage(opts options) *executeCommandMessage {

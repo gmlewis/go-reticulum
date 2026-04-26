@@ -615,7 +615,9 @@ type DiscoveredInterface struct {
 	IFACNetname string `json:"ifac_netname,omitempty"`
 	IFACNetkey  string `json:"ifac_netkey,omitempty"`
 
-	hasConfigEntry bool
+	hasConfigEntry       bool
+	hasStringReachableOn bool
+	endpointReachableOn  string
 }
 
 type discoveredRecord struct {
@@ -1045,12 +1047,17 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 		sortValue, _ := numericFloat64Value(valueField)
 
 		nameValue, hasName := lookupAny(m, "name")
-
-		_, hasConfigEntry := lookupAny(m, "config_entry")
+		typeValue, hasType := lookupAny(m, "type")
+		configEntryValue, hasConfigEntry := lookupAny(m, "config_entry")
+		ifacNetnameValue, hasIFACNetname := lookupAny(m, "ifac_netname")
+		ifacNetkeyValue, hasIFACNetkey := lookupAny(m, "ifac_netkey")
+		modulationValue, hasModulation := lookupAny(m, "modulation")
+		networkIDValue, hasNetworkID := lookupAny(m, "network_id")
+		transportIDValue, hasTransportID := lookupAny(m, "transport_id")
 
 		di := DiscoveredInterface{
 			Name:        discoveryDisplayString(nameValue, hasName),
-			Type:        asString(lookupAnyValue(m, "type")),
+			Type:        discoveryDisplayString(typeValue, hasType),
 			Status:      status,
 			StatusCode:  statusCode,
 			Hops:        asInt(lookupAnyValue(m, "hops")),
@@ -1058,13 +1065,13 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 			LastHeard:   heardAt,
 			Transport:   transport,
 			Value:       value,
-			ConfigEntry: asString(lookupAnyValue(m, "config_entry")),
-			NetworkID:   asString(lookupAnyValue(m, "network_id")),
-			TransportID: asString(lookupAnyValue(m, "transport_id")),
+			ConfigEntry: discoveryDisplayString(configEntryValue, hasConfigEntry),
+			NetworkID:   discoveryDisplayString(networkIDValue, hasNetworkID),
+			TransportID: discoveryDisplayString(transportIDValue, hasTransportID),
 			ReachableOn: discoveryReachableOnDisplayValue(lookupAnyValue(m, "reachable_on")),
-			Modulation:  asString(lookupAnyValue(m, "modulation")),
-			IFACNetname: asString(lookupAnyValue(m, "ifac_netname")),
-			IFACNetkey:  asString(lookupAnyValue(m, "ifac_netkey")),
+			Modulation:  discoveryDisplayString(modulationValue, hasModulation),
+			IFACNetname: discoveryDisplayString(ifacNetnameValue, hasIFACNetname),
+			IFACNetkey:  discoveryDisplayString(ifacNetkeyValue, hasIFACNetkey),
 
 			hasConfigEntry: hasConfigEntry,
 		}
@@ -1470,12 +1477,17 @@ func mapToDiscoveredInterface(info map[string]any) (DiscoveredInterface, bool) {
 	}
 
 	nameValue, hasName := info["name"]
+	typeValue, hasType := info["type"]
+	ifacNetnameValue, hasIFACNetname := info["ifac_netname"]
+	ifacNetkeyValue, hasIFACNetkey := info["ifac_netkey"]
+	networkIDValue, hasNetworkID := info["network_id"]
+	reachableOnValue, hasReachableOn := info["reachable_on"]
 
 	_, hasConfigEntry := info["config_entry"]
 
 	out := DiscoveredInterface{
 		Name:        discoveryDisplayString(nameValue, hasName),
-		Type:        asString(info["type"]),
+		Type:        discoveryDisplayString(typeValue, hasType),
 		Status:      asString(info["status"]),
 		StatusCode:  asInt(info["status_code"]),
 		Hops:        asInt(info["hops"]),
@@ -1484,14 +1496,20 @@ func mapToDiscoveredInterface(info map[string]any) (DiscoveredInterface, bool) {
 		Transport:   discoveryTruthyBool(info["transport"]),
 		Value:       asInt(info["value"]),
 		ConfigEntry: asString(info["config_entry"]),
-		NetworkID:   asString(info["network_id"]),
+		NetworkID:   discoveryDisplayString(networkIDValue, hasNetworkID),
 		TransportID: asString(info["transport_id"]),
-		ReachableOn: asString(info["reachable_on"]),
+		ReachableOn: asString(reachableOnValue),
 		Modulation:  asString(info["modulation"]),
-		IFACNetname: asString(info["ifac_netname"]),
-		IFACNetkey:  asString(info["ifac_netkey"]),
+		IFACNetname: discoveryDisplayString(ifacNetnameValue, hasIFACNetname),
+		IFACNetkey:  discoveryDisplayString(ifacNetkeyValue, hasIFACNetkey),
 
 		hasConfigEntry: hasConfigEntry,
+	}
+	if reachableOnString, ok := reachableOnValue.(string); ok {
+		out.hasStringReachableOn = true
+		out.endpointReachableOn = reachableOnString
+	} else if hasReachableOn {
+		out.endpointReachableOn = discoveryDisplayString(reachableOnValue, true)
 	}
 
 	if v, ok := info["latitude"]; ok && v != nil {
@@ -1527,7 +1545,7 @@ func mapToDiscoveredInterface(info map[string]any) (DiscoveredInterface, bool) {
 		out.CR = &i
 	}
 
-	return out, out.Type != ""
+	return out, hasType
 }
 
 func discoveryDisplayString(v any, present bool) string {
@@ -1641,31 +1659,37 @@ func (id *InterfaceDiscovery) interfaceExists(info DiscoveredInterface) bool {
 	}
 
 	endpointHash := id.endpointHash(info)
+	allowStringReachableOnMatch := info.hasStringReachableOn || (info.ReachableOn != "" && info.endpointReachableOn == "")
 	for _, iface := range id.owner.transport.GetInterfaces() {
 		if meta, ok := iface.(interface{ AutoconnectHash() []byte }); ok && bytes.Equal(meta.AutoconnectHash(), endpointHash) {
 			return true
 		}
 
-		hostPortMatcher, ok := iface.(interface {
-			TargetHost() string
-			TargetPort() int
-		})
-		if ok && hostPortMatcher.TargetHost() == info.ReachableOn {
-			if info.Port == nil || hostPortMatcher.TargetPort() == *info.Port {
+		if allowStringReachableOnMatch {
+			hostPortMatcher, ok := iface.(interface {
+				TargetHost() string
+				TargetPort() int
+			})
+			if ok && hostPortMatcher.TargetHost() == info.ReachableOn {
+				if info.Port == nil || hostPortMatcher.TargetPort() == *info.Port {
+					return true
+				}
+			}
+
+			b32Matcher, ok := iface.(interface{ B32() string })
+			if ok && b32Matcher.B32() == info.ReachableOn {
 				return true
 			}
-		}
-
-		b32Matcher, ok := iface.(interface{ B32() string })
-		if ok && b32Matcher.B32() == info.ReachableOn {
-			return true
 		}
 	}
 	return false
 }
 
 func (id *InterfaceDiscovery) endpointHash(info DiscoveredInterface) []byte {
-	endpoint := info.ReachableOn
+	endpoint := info.endpointReachableOn
+	if endpoint == "" {
+		endpoint = info.ReachableOn
+	}
 	if info.Port != nil {
 		endpoint = fmt.Sprintf("%v:%v", endpoint, *info.Port)
 	}

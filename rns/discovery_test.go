@@ -1729,6 +1729,190 @@ func TestListDiscoveredInterfaces_PresentNilNameDisplaysAsPythonNone(t *testing.
 	}
 }
 
+func TestListDiscoveredInterfaces_BytesTransportIDDisplaysAsPythonBytes(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-bytes-transport-id-")
+	defer cleanup()
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "bytes-transport-id.data"), mustMsgpackPack(map[string]any{
+		"name":         "Bytes Transport ID",
+		"type":         "TCPServerInterface",
+		"last_heard":   now - 60,
+		"transport":    true,
+		"value":        1,
+		"transport_id": []byte("deadbeef"),
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write discovery file: %v", err)
+	}
+
+	discovery := NewInterfaceDiscovery(&Reticulum{configDir: tmpDir})
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces() error = %v", err)
+	}
+	if got, want := len(discovered), 1; got != want {
+		t.Fatalf("len(discovered) = %v, want %v", got, want)
+	}
+	if got := discovered[0].TransportID; got != "b'deadbeef'" {
+		t.Fatalf("TransportID = %q, want %q", got, "b'deadbeef'")
+	}
+}
+
+func TestListDiscoveredInterfaces_BytesConfigEntryDisplaysAsPythonBytes(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-bytes-config-entry-")
+	defer cleanup()
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "bytes-config-entry.data"), mustMsgpackPack(map[string]any{
+		"name":         "Bytes Config Entry",
+		"type":         "TCPServerInterface",
+		"last_heard":   now - 60,
+		"transport":    true,
+		"value":        1,
+		"config_entry": []byte("[[Bytes]]"),
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write discovery file: %v", err)
+	}
+
+	discovery := NewInterfaceDiscovery(&Reticulum{configDir: tmpDir})
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces() error = %v", err)
+	}
+	if got, want := len(discovered), 1; got != want {
+		t.Fatalf("len(discovered) = %v, want %v", got, want)
+	}
+	if got := discovered[0].ConfigEntry; got != "b'[[Bytes]]'" {
+		t.Fatalf("ConfigEntry = %q, want %q", got, "b'[[Bytes]]'")
+	}
+}
+
+func TestListDiscoveredInterfaces_BytesNetworkIDDisplaysAsPythonBytes(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-bytes-network-id-")
+	defer cleanup()
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "bytes-network-id.data"), mustMsgpackPack(map[string]any{
+		"name":       "Bytes Network ID",
+		"type":       "TCPServerInterface",
+		"last_heard": now - 60,
+		"transport":  true,
+		"value":      1,
+		"network_id": []byte("01020304"),
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write discovery file: %v", err)
+	}
+
+	discovery := NewInterfaceDiscovery(&Reticulum{configDir: tmpDir})
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces() error = %v", err)
+	}
+	if got, want := len(discovered), 1; got != want {
+		t.Fatalf("len(discovered) = %v, want %v", got, want)
+	}
+	if got := discovered[0].NetworkID; got != "b'01020304'" {
+		t.Fatalf("NetworkID = %q, want %q", got, "b'01020304'")
+	}
+}
+
+func TestListDiscoveredInterfaces_BytesIFACFieldsDisplayAsPythonBytes(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-bytes-ifac-fields-")
+	defer cleanup()
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "bytes-ifac-fields.data"), mustMsgpackPack(map[string]any{
+		"name":         "Bytes IFAC",
+		"type":         "TCPServerInterface",
+		"last_heard":   now - 60,
+		"transport":    true,
+		"value":        1,
+		"ifac_netname": []byte("mesh"),
+		"ifac_netkey":  []byte("secret"),
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write discovery file: %v", err)
+	}
+
+	discovery := NewInterfaceDiscovery(&Reticulum{configDir: tmpDir})
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces() error = %v", err)
+	}
+	if got, want := len(discovered), 1; got != want {
+		t.Fatalf("len(discovered) = %v, want %v", got, want)
+	}
+	if got := discovered[0].IFACNetname; got != "b'mesh'" {
+		t.Fatalf("IFACNetname = %q, want %q", got, "b'mesh'")
+	}
+	if got := discovered[0].IFACNetkey; got != "b'secret'" {
+		t.Fatalf("IFACNetkey = %q, want %q", got, "b'secret'")
+	}
+}
+
+func TestListDiscoveredInterfaces_BytesModulationDisplaysAsPythonBytes(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-bytes-modulation-")
+	defer cleanup()
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "bytes-modulation.data"), mustMsgpackPack(map[string]any{
+		"name":       "Bytes Modulation",
+		"type":       "KISSInterface",
+		"last_heard": now - 60,
+		"transport":  true,
+		"value":      1,
+		"modulation": []byte("lora"),
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write discovery file: %v", err)
+	}
+
+	discovery := NewInterfaceDiscovery(&Reticulum{configDir: tmpDir})
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces() error = %v", err)
+	}
+	if got, want := len(discovered), 1; got != want {
+		t.Fatalf("len(discovered) = %v, want %v", got, want)
+	}
+	if got := discovered[0].Modulation; got != "b'lora'" {
+		t.Fatalf("Modulation = %q, want %q", got, "b'lora'")
+	}
+}
+
 func TestIsHostnameMatchesPython(t *testing.T) {
 	t.Parallel()
 
@@ -4376,6 +4560,90 @@ func TestInterfaceDiscoveryConnectDiscoveredMissingConfigEntrySkipsAutoconnect(t
 	}
 }
 
+func TestInterfaceDiscoveryConnectDiscoveredBytesTypeSkipsAutoconnectLikePython(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-connect-bytes-type-")
+	defer cleanup()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("listener.Close() error = %v", err)
+		}
+	})
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			accepted <- conn
+		}
+	}()
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "cached-backbone-bytes-type.data"), mustMsgpackPack(map[string]any{
+		"name":         "Cached Bytes Type",
+		"type":         []byte("BackboneInterface"),
+		"transport":    true,
+		"last_heard":   now - 60,
+		"discovered":   now - 120,
+		"value":        1,
+		"config_entry": "[[Cached Bytes Type]]",
+		"reachable_on": "127.0.0.1",
+		"port":         port,
+		"network_id":   "01020304",
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write cached discovery file: %v", err)
+	}
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces() error = %v", err)
+	}
+	if got := len(discovered); got != 1 {
+		t.Fatalf("expected 1 cached discovered interface, got %v", got)
+	}
+	if got := discovered[0].Type; got != "b'BackboneInterface'" {
+		t.Fatalf("discovered[0].Type = %q, want %q", got, "b'BackboneInterface'")
+	}
+
+	discovery.connectDiscovered()
+
+	select {
+	case conn := <-accepted:
+		t.Cleanup(func() {
+			if err := conn.Close(); err != nil {
+				t.Errorf("accepted conn.Close() error = %v", err)
+			}
+		})
+		t.Fatal("unexpected cached auto-connect for bytes-typed discovery type")
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected bytes-typed cached reconnect to keep 0 interfaces, got %v", got)
+	}
+}
+
 func TestInterfaceDiscoveryConnectDiscoveredSkipsWhenAutoconnectDisabled(t *testing.T) {
 	t.Parallel()
 
@@ -4521,6 +4789,76 @@ func TestInterfaceDiscoveryInterfaceExistsMatchesI2PB32(t *testing.T) {
 		ReachableOn: "exampleabcdefghijklmnopqrstuvwxyz.b32.i2p",
 	}) {
 		t.Fatal("expected discovered I2P interface to match existing b32 address")
+	}
+}
+
+func TestInterfaceDiscoveryStartCallbackBytesReachableOnDoesNotDeduplicateAgainstStringHost(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-callback-bytes-reachable-on-")
+	defer cleanup()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("listener.Close() error = %v", err)
+		}
+	})
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			accepted <- conn
+		}
+	}()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	port := listener.Addr().(*net.TCPAddr).Port
+	ts.RegisterInterface(newTargetHostTestInterface("Existing Backbone", "BackboneClientInterface", "127.0.0.1", port))
+
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 2,
+	}
+	discovery := NewInterfaceDiscovery(r)
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	discovery.handler.callback(map[string]any{
+		"name":           "Bytes ReachableOn",
+		"value":          7,
+		"type":           "BackboneInterface",
+		"discovery_hash": []byte{0xaa, 0xd2},
+		"config_entry":   "[[bytes-reachable-on]]",
+		"hops":           1,
+		"received":       1234.0,
+		"reachable_on":   []byte("127.0.0.1"),
+		"port":           port,
+		"network_id":     "01020304",
+	})
+
+	var acceptedConn net.Conn
+	select {
+	case acceptedConn = <-accepted:
+		t.Cleanup(func() {
+			if err := acceptedConn.Close(); err != nil {
+				t.Errorf("acceptedConn.Close() error = %v", err)
+			}
+		})
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for callback autoconnect with bytes reachable_on")
+	}
+
+	if got := len(ts.GetInterfaces()); got != 2 {
+		t.Fatalf("expected existing interface plus new auto-connected interface, got %v", got)
 	}
 }
 
@@ -5374,6 +5712,261 @@ func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsNilNameLikePython(t *t
 	}
 	if got := ts.GetInterfaces()[0].Name(); got != "None" {
 		t.Fatalf("Name() = %q, want %q", got, "None")
+	}
+}
+
+func TestInterfaceDiscoveryStartCallbackBytesTypeSkipsAutoconnectLikePython(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-callback-bytes-type-")
+	defer cleanup()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("listener.Close() error = %v", err)
+		}
+	})
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			accepted <- conn
+		}
+	}()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	callbackCh := make(chan map[string]any, 1)
+	discovery.SetDiscoveryCallback(func(info map[string]any) {
+		callbackCh <- cloneStringAnyMap(info)
+	})
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	port := listener.Addr().(*net.TCPAddr).Port
+	discovery.handler.callback(map[string]any{
+		"name":           "Bytes Type Backbone",
+		"value":          7,
+		"type":           []byte("BackboneInterface"),
+		"discovery_hash": []byte{0xaa, 0xcf},
+		"config_entry":   "[[bytes-type]]",
+		"hops":           1,
+		"received":       1234.0,
+		"reachable_on":   "127.0.0.1",
+		"port":           port,
+		"network_id":     "01020304",
+	})
+
+	select {
+	case callbackInfo := <-callbackCh:
+		if got, ok := callbackInfo["type"].([]byte); !ok || string(got) != "BackboneInterface" {
+			t.Fatalf("callback type = %#v, want []byte(\"BackboneInterface\")", callbackInfo["type"])
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for external discovery callback")
+	}
+
+	select {
+	case conn := <-accepted:
+		t.Cleanup(func() {
+			if err := conn.Close(); err != nil {
+				t.Errorf("accepted conn.Close() error = %v", err)
+			}
+		})
+		t.Fatal("unexpected auto-connect for bytes-typed discovery type")
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected 0 auto-connected interfaces, got %v", got)
+	}
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", "aacf.data"))
+	if err != nil {
+		t.Fatalf("failed to read persisted discovery file: %v", err)
+	}
+	unpacked, err := msgpack.Unpack(data)
+	if err != nil {
+		t.Fatalf("msgpack.Unpack() error = %v", err)
+	}
+	m := asAnyMap(unpacked)
+	if m == nil {
+		t.Fatalf("unexpected persisted discovery type %T", unpacked)
+	}
+	if got, ok := lookupAny(m, "type"); !ok {
+		t.Fatal("persisted type missing")
+	} else if b, ok := got.([]byte); !ok || string(b) != "BackboneInterface" {
+		t.Fatalf("persisted type = %#v, want []byte(\"BackboneInterface\")", got)
+	}
+}
+
+func TestInterfaceDiscoveryStartCallbackBytesNetworkIDUsesPythonBytesAutoconnectSource(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-callback-bytes-network-id-")
+	defer cleanup()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("listener.Close() error = %v", err)
+		}
+	})
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			accepted <- conn
+		}
+	}()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	port := listener.Addr().(*net.TCPAddr).Port
+	discovery.handler.callback(map[string]any{
+		"name":           "Bytes Network ID",
+		"value":          7,
+		"type":           "BackboneInterface",
+		"discovery_hash": []byte{0xaa, 0xd0},
+		"config_entry":   "[[bytes-network-id]]",
+		"hops":           1,
+		"received":       1234.0,
+		"reachable_on":   "127.0.0.1",
+		"port":           port,
+		"network_id":     []byte("01020304"),
+	})
+
+	var acceptedConn net.Conn
+	select {
+	case acceptedConn = <-accepted:
+		t.Cleanup(func() {
+			if err := acceptedConn.Close(); err != nil {
+				t.Errorf("acceptedConn.Close() error = %v", err)
+			}
+		})
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for callback autoconnect with bytes network_id")
+	}
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected 1 auto-connected interface, got %v", got)
+	}
+	meta, ok := ts.GetInterfaces()[0].(interface {
+		AutoconnectSource() string
+	})
+	if !ok {
+		t.Fatal("auto-connected interface does not expose AutoconnectSource")
+	}
+	if got := meta.AutoconnectSource(); got != "b'01020304'" {
+		t.Fatalf("AutoconnectSource() = %q, want %q", got, "b'01020304'")
+	}
+}
+
+func TestInterfaceDiscoveryStartCallbackBytesIFACUsesPythonBytesStrings(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-callback-bytes-ifac-")
+	defer cleanup()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("listener.Close() error = %v", err)
+		}
+	})
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			accepted <- conn
+		}
+	}()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	port := listener.Addr().(*net.TCPAddr).Port
+	discovery.handler.callback(map[string]any{
+		"name":           "Bytes IFAC",
+		"value":          7,
+		"type":           "BackboneInterface",
+		"discovery_hash": []byte{0xaa, 0xd1},
+		"config_entry":   "[[bytes-ifac]]",
+		"hops":           1,
+		"received":       1234.0,
+		"reachable_on":   "127.0.0.1",
+		"port":           port,
+		"network_id":     "01020304",
+		"ifac_netname":   []byte("mesh"),
+		"ifac_netkey":    []byte("secret"),
+	})
+
+	var acceptedConn net.Conn
+	select {
+	case acceptedConn = <-accepted:
+		t.Cleanup(func() {
+			if err := acceptedConn.Close(); err != nil {
+				t.Errorf("acceptedConn.Close() error = %v", err)
+			}
+		})
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for callback autoconnect with bytes IFAC")
+	}
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected 1 auto-connected interface, got %v", got)
+	}
+	meta, ok := ts.GetInterfaces()[0].(interface {
+		IFACConfig() interfaces.IFACConfig
+	})
+	if !ok {
+		t.Fatal("auto-connected interface does not expose IFACConfig")
+	}
+	if got := meta.IFACConfig(); got.NetName != "b'mesh'" || got.NetKey != "b'secret'" {
+		t.Fatalf("IFACConfig() = %+v, want NetName/NetKey Python bytes repr", got)
 	}
 }
 

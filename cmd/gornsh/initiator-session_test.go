@@ -488,6 +488,28 @@ func TestInitiatorSessionTracksExitCode(t *testing.T) {
 	}
 }
 
+func TestInitiatorSessionAcceptsLateStreamAfterExit(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	s := newInitiatorChannelSession(&stdout, io.Discard)
+	s.state = initiatorWaitExit
+
+	if !s.handleMessage(&commandExitedMessage{ReturnCode: 0}) {
+		t.Fatal("expected command exited handled")
+	}
+	if !s.handleMessage(&streamDataMessage{StreamID: streamIDStdout, Data: []byte("late"), EOF: true}) {
+		t.Fatal("expected late stdout handled")
+	}
+
+	if got := stdout.String(); got != "late" {
+		t.Fatalf("stdout=%q, want %q", got, "late")
+	}
+	if got := s.stdoutString(); got != "late" {
+		t.Fatalf("session stdout=%q, want %q", got, "late")
+	}
+}
+
 func TestInitiatorSessionTerminalSnapshotCopiesExit(t *testing.T) {
 	t.Parallel()
 
@@ -676,6 +698,44 @@ func TestRunInitiatorProtocolFlowLinkClosedWaitsForLateExitWithinGrace(t *testin
 	}
 	if code != 0 {
 		t.Fatalf("exit code=%v, want 0", code)
+	}
+}
+
+func TestRunInitiatorProtocolFlowWaitsForLateStreamAfterExitWithinGrace(t *testing.T) {
+	t.Parallel()
+
+	linkClosedCh := make(chan struct{}, 1)
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+
+	fake := &fakeChannelSession{}
+	fake.onSend = func(msg rns.Message) {
+		switch msg.(type) {
+		case *versionInfoMessage:
+			go fake.emit(&versionInfoMessage{SoftwareVersion: "listener", ProtocolVersion: protocolVersion})
+		case *executeCommandMessage:
+			go func() {
+				fake.emit(&commandExitedMessage{ReturnCode: 0})
+				time.Sleep(20 * time.Millisecond)
+				fake.emit(&streamDataMessage{StreamID: streamIDStdout, Data: []byte("late"), EOF: true})
+			}()
+		}
+	}
+
+	rt := &runtimeT{postExitDrainGrace: 40 * time.Millisecond, retrySleep: time.Millisecond}
+	opts := options{timeoutSec: 1, mirror: false, noTTY: true}
+	code, session, err := rt.runInitiatorProtocolFlow(fake, opts, linkClosedCh, stopCh, false)
+	if err != nil {
+		t.Fatalf("runInitiatorProtocolFlow error: %v", err)
+	}
+	if code != 0 {
+		t.Fatalf("exit code=%v, want 0", code)
+	}
+	if session == nil {
+		t.Fatal("expected session")
+	}
+	if got := session.stdoutString(); got != "late" {
+		t.Fatalf("session stdout=%q, want %q", got, "late")
 	}
 }
 
