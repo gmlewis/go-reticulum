@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -972,12 +973,12 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 		}
 		if !shouldRemove {
 			if reachableValue, ok := lookupAny(m, "reachable_on"); ok {
-				reachableOn, err := discoveryReachableOnCacheValue(reachableValue)
+				reachableOn, validateString, err := discoveryReachableOnCacheValue(reachableValue)
 				if err != nil {
 					id.logDiscoveryFileLoadError(path, err)
 					continue
 				}
-				if !isReachableOnValue(reachableOn) {
+				if validateString && !isReachableOnValue(reachableOn) {
 					shouldRemove = true
 				}
 			}
@@ -1011,7 +1012,7 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 			continue
 		}
 
-		transport := asBool(transportValue)
+		transport := discoveryTruthyBool(transportValue)
 		if onlyTransport && !transport {
 			continue
 		}
@@ -1055,7 +1056,7 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 			ConfigEntry: asString(lookupAnyValue(m, "config_entry")),
 			NetworkID:   asString(lookupAnyValue(m, "network_id")),
 			TransportID: asString(lookupAnyValue(m, "transport_id")),
-			ReachableOn: asString(lookupAnyValue(m, "reachable_on")),
+			ReachableOn: discoveryReachableOnDisplayValue(lookupAnyValue(m, "reachable_on")),
 			Modulation:  asString(lookupAnyValue(m, "modulation")),
 			IFACNetname: asString(lookupAnyValue(m, "ifac_netname")),
 			IFACNetkey:  asString(lookupAnyValue(m, "ifac_netkey")),
@@ -1116,15 +1117,87 @@ func isReachableOnValue(v string) bool {
 	return isHostname(v)
 }
 
-func discoveryReachableOnCacheValue(v any) (string, error) {
+func discoveryTruthyBool(v any) bool {
+	switch t := v.(type) {
+	case bool:
+		return t
+	case int:
+		return t != 0
+	case int64:
+		return t != 0
+	case int32:
+		return t != 0
+	case uint:
+		return t != 0
+	case uint64:
+		return t != 0
+	case uint32:
+		return t != 0
+	case float64:
+		return t != 0
+	case float32:
+		return t != 0
+	case string:
+		return t != ""
+	case []byte:
+		return len(t) != 0
+	case []any:
+		return len(t) != 0
+	case map[any]any:
+		return len(t) != 0
+	case map[string]any:
+		return len(t) != 0
+	default:
+		return v != nil
+	}
+}
+
+func discoveryReachableOnCacheValue(v any) (string, bool, error) {
 	switch t := v.(type) {
 	case string:
 		if t == "" {
-			return "", fmt.Errorf("invalid discovery cache reachable_on value")
+			return "", true, fmt.Errorf("invalid discovery cache reachable_on value")
 		}
-		return t, nil
+		return t, true, nil
+	case bool:
+		return strconv.FormatBool(t), false, nil
+	case int:
+		return strconv.Itoa(t), false, nil
+	case int64:
+		return strconv.FormatInt(t, 10), false, nil
+	case int32:
+		return strconv.FormatInt(int64(t), 10), false, nil
+	case uint:
+		return strconv.FormatUint(uint64(t), 10), false, nil
+	case uint64:
+		return strconv.FormatUint(t, 10), false, nil
+	case uint32:
+		return strconv.FormatUint(uint64(t), 10), false, nil
 	default:
-		return "", fmt.Errorf("invalid discovery cache reachable_on type %T", v)
+		return "", true, fmt.Errorf("invalid discovery cache reachable_on type %T", v)
+	}
+}
+
+func discoveryReachableOnDisplayValue(v any) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case bool:
+		return strconv.FormatBool(t)
+	case int:
+		return strconv.Itoa(t)
+	case int64:
+		return strconv.FormatInt(t, 10)
+	case int32:
+		return strconv.FormatInt(int64(t), 10)
+	case uint:
+		return strconv.FormatUint(uint64(t), 10)
+	case uint64:
+		return strconv.FormatUint(t, 10)
+	case uint32:
+		return strconv.FormatUint(uint64(t), 10)
+	default:
+		return ""
 	}
 }
 
@@ -1272,7 +1345,7 @@ func mapToDiscoveredInterface(info map[string]any) (DiscoveredInterface, bool) {
 		Hops:        asInt(info["hops"]),
 		Discovered:  asFloat64(info["discovered"]),
 		LastHeard:   asFloat64(info["last_heard"]),
-		Transport:   asBool(info["transport"]),
+		Transport:   discoveryTruthyBool(info["transport"]),
 		Value:       asInt(info["value"]),
 		ConfigEntry: asString(info["config_entry"]),
 		NetworkID:   asString(info["network_id"]),
