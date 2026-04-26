@@ -816,9 +816,16 @@ func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) er
 	}
 
 	discoveredPersisted := discoveredValue
-	heardCount := 1
+	var heardCountPersisted any = 1
 	if heardCountValue != nil {
-		heardCount = asInt(heardCountValue) + 1
+		var ok bool
+		heardCountPersisted, ok = incrementDiscoveryHeardCount(heardCountValue)
+		if !ok {
+			if err := createEmptyDiscoveryCacheFile(filePath); err != nil {
+				return err
+			}
+			return fmt.Errorf("invalid heard_count type %T", heardCountValue)
+		}
 	}
 
 	if !receivedPresent {
@@ -830,10 +837,10 @@ func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) er
 	if receivedValue == nil {
 		persisted["last_heard"] = nil
 		persisted["discovered"] = discoveredPersisted
-		persisted["heard_count"] = heardCount
+		persisted["heard_count"] = heardCountPersisted
 		info["last_heard"] = nil
 		info["discovered"] = discoveredPersisted
-		info["heard_count"] = heardCount
+		info["heard_count"] = heardCountPersisted
 		data, err := msgpack.Pack(persisted)
 		if err != nil {
 			return err
@@ -843,10 +850,10 @@ func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) er
 	if !receivedOK {
 		persisted["last_heard"] = receivedValue
 		persisted["discovered"] = discoveredPersisted
-		persisted["heard_count"] = heardCount
+		persisted["heard_count"] = heardCountPersisted
 		info["last_heard"] = receivedValue
 		info["discovered"] = discoveredPersisted
-		info["heard_count"] = heardCount
+		info["heard_count"] = heardCountPersisted
 		data, err := msgpack.Pack(persisted)
 		if err != nil {
 			return err
@@ -856,10 +863,10 @@ func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) er
 
 	persisted["last_heard"] = receivedAt
 	persisted["discovered"] = discoveredPersisted
-	persisted["heard_count"] = heardCount
+	persisted["heard_count"] = heardCountPersisted
 	info["last_heard"] = receivedAt
 	info["discovered"] = discoveredPersisted
-	info["heard_count"] = heardCount
+	info["heard_count"] = heardCountPersisted
 
 	data, err := msgpack.Pack(persisted)
 	if err != nil {
@@ -926,6 +933,12 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 		}
 		var heardAt float64
 		switch t := heardValue.(type) {
+		case bool:
+			if t {
+				heardAt = 1
+			} else {
+				heardAt = 0
+			}
 		case float64:
 			heardAt = t
 		case float32:
@@ -1023,6 +1036,12 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 		}
 		var value int
 		switch t := valueField.(type) {
+		case bool:
+			if t {
+				value = 1
+			} else {
+				value = 0
+			}
 		case int:
 			value = t
 		case int64:
@@ -1252,6 +1271,11 @@ func discoveryHashFilename(v any) (string, error) {
 			return "", fmt.Errorf("missing discovery hash")
 		}
 		return t, nil
+	case bool:
+		if t {
+			return "01", nil
+		}
+		return "00", nil
 	case int:
 		return fmt.Sprintf("%02x", t), nil
 	case int8:
@@ -1308,6 +1332,42 @@ func discoveryReceivedTimestamp(v any) (float64, bool) {
 	}
 }
 
+func incrementDiscoveryHeardCount(v any) (any, bool) {
+	switch t := v.(type) {
+	case bool:
+		if t {
+			return 2, true
+		}
+		return 1, true
+	case int:
+		return t + 1, true
+	case int8:
+		return int(t) + 1, true
+	case int16:
+		return int(t) + 1, true
+	case int32:
+		return int(t) + 1, true
+	case int64:
+		return t + 1, true
+	case uint:
+		return t + 1, true
+	case uint8:
+		return uint(t) + 1, true
+	case uint16:
+		return uint(t) + 1, true
+	case uint32:
+		return uint64(t) + 1, true
+	case uint64:
+		return t + 1, true
+	case float32:
+		return float64(t) + 1, true
+	case float64:
+		return t + 1, true
+	default:
+		return nil, false
+	}
+}
+
 func validateDiscoveredInfoForProcessing(info map[string]any) error {
 	if info == nil {
 		return fmt.Errorf("missing discovery info")
@@ -1325,7 +1385,7 @@ func validateDiscoveredInfoForProcessing(info map[string]any) error {
 
 func processableDiscoveryHashValue(v any) bool {
 	switch v.(type) {
-	case []byte, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+	case []byte, bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
 		return true
 	default:
 		return false

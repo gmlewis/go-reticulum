@@ -80,6 +80,11 @@ func asBool(v any) bool {
 
 func asInt(v any) int {
 	switch t := v.(type) {
+	case bool:
+		if t {
+			return 1
+		}
+		return 0
 	case int:
 		return t
 	case int64:
@@ -99,6 +104,11 @@ func asInt(v any) int {
 
 func asFloat64(v any) float64 {
 	switch t := v.(type) {
+	case bool:
+		if t {
+			return 1
+		}
+		return 0
 	case float64:
 		return t
 	case float32:
