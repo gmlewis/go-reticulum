@@ -309,7 +309,7 @@ func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interfac
 	}
 
 	switch advertisedType {
-	case "BackboneInterface", "TCPServerInterface", "I2PInterface", "RNodeInterface", "WeaveInterface", "KISSInterface":
+	case "BackboneInterface", "TCPServerInterface", "TCPClientInterface", "I2PInterface", "RNodeInterface", "WeaveInterface", "KISSInterface":
 	default:
 		return nil, nil
 	}
@@ -1025,7 +1025,7 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 		sortValue, _ := numericFloat64Value(valueField)
 
 		di := DiscoveredInterface{
-			Name:        asString(lookupAnyValue(m, "name")),
+			Name:        discoveryDisplayString(lookupAnyValue(m, "name")),
 			Type:        asString(lookupAnyValue(m, "type")),
 			Status:      status,
 			StatusCode:  statusCode,
@@ -1444,7 +1444,7 @@ func mapToDiscoveredInterface(info map[string]any) (DiscoveredInterface, bool) {
 	}
 
 	out := DiscoveredInterface{
-		Name:        asString(info["name"]),
+		Name:        discoveryDisplayString(info["name"]),
 		Type:        asString(info["type"]),
 		Status:      asString(info["status"]),
 		StatusCode:  asInt(info["status_code"]),
@@ -1496,6 +1496,13 @@ func mapToDiscoveredInterface(info map[string]any) (DiscoveredInterface, bool) {
 	}
 
 	return out, out.Type != ""
+}
+
+func discoveryDisplayString(v any) string {
+	if v == nil {
+		return ""
+	}
+	return pythonDiscoveryValueString(v)
 }
 
 func (id *InterfaceDiscovery) connectDiscovered() {

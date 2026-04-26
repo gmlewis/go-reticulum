@@ -4897,6 +4897,144 @@ func TestInterfaceDiscoveryStartRecoversDiscoveryCallbackPanic(t *testing.T) {
 	}
 }
 
+func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsBytesNameLikePython(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-callback-bytes-name-")
+	defer cleanup()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("listener.Close() error = %v", err)
+		}
+	})
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			accepted <- conn
+		}
+	}()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	port := listener.Addr().(*net.TCPAddr).Port
+	discovery.handler.callback(map[string]any{
+		"name":           []byte("BytesName"),
+		"value":          7,
+		"type":           "BackboneInterface",
+		"discovery_hash": []byte{0xaa, 0xbb},
+		"hops":           1,
+		"received":       1234.0,
+		"reachable_on":   "127.0.0.1",
+		"port":           port,
+		"network_id":     "01020304",
+	})
+
+	select {
+	case conn := <-accepted:
+		t.Cleanup(func() {
+			if err := conn.Close(); err != nil {
+				t.Errorf("accepted conn.Close() error = %v", err)
+			}
+		})
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for callback autoconnect with bytes name")
+	}
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected 1 auto-connected interface, got %v", got)
+	}
+	if got := ts.GetInterfaces()[0].Name(); got != "b'BytesName'" {
+		t.Fatalf("Name() = %q, want %q", got, "b'BytesName'")
+	}
+}
+
+func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsListNameLikePython(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-callback-list-name-")
+	defer cleanup()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("listener.Close() error = %v", err)
+		}
+	})
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			accepted <- conn
+		}
+	}()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	port := listener.Addr().(*net.TCPAddr).Port
+	discovery.handler.callback(map[string]any{
+		"name":           []any{"list", "name"},
+		"value":          7,
+		"type":           "BackboneInterface",
+		"discovery_hash": []byte{0xaa, 0xcc},
+		"hops":           1,
+		"received":       1234.0,
+		"reachable_on":   "127.0.0.1",
+		"port":           port,
+		"network_id":     "01020304",
+	})
+
+	select {
+	case conn := <-accepted:
+		t.Cleanup(func() {
+			if err := conn.Close(); err != nil {
+				t.Errorf("accepted conn.Close() error = %v", err)
+			}
+		})
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for callback autoconnect with list name")
+	}
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected 1 auto-connected interface, got %v", got)
+	}
+	if got := ts.GetInterfaces()[0].Name(); got != "['list', 'name']" {
+		t.Fatalf("Name() = %q, want %q", got, "['list', 'name']")
+	}
+}
+
 func TestInterfaceDiscoveryStartSkipsAutoconnectWhenPersistFails(t *testing.T) {
 	t.Parallel()
 
@@ -6754,6 +6892,79 @@ func TestInterfaceAnnouncerPayloadI2P(t *testing.T) {
 	}
 	if got := asString(lookupDiscoveryValue(info, discoveryFieldReachableOn)); got != "exampleabcdefghijklmnopqrstuvwxyz.b32.i2p" {
 		t.Fatalf("reachable_on = %q, want %q", got, "exampleabcdefghijklmnopqrstuvwxyz.b32.i2p")
+	}
+	if got := lookupDiscoveryValue(info, discoveryFieldPort); got != nil {
+		t.Fatalf("port = %v, want nil", got)
+	}
+}
+
+func TestInterfaceAnnouncerPayloadPlainTCPClient(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	ts := newAnnounceCaptureTransport(logger)
+	transportIdentity := mustTestNewIdentity(t, true)
+	ts.identity = transportIdentity
+	ts.SetEnabled(true)
+
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+
+	iface := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("announce-tcp-client", interfaces.ModeGateway, 1000),
+		ifaceType:     "TCPClientInterface",
+	}
+	iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  6 * time.Hour,
+		StampValue:        6,
+		Name:              "Discovery TCP Client\n",
+		ReachableOn:       "client.example.net",
+	})
+
+	appData, err := announcer.getInterfaceAnnounceData(iface)
+	if err != nil {
+		t.Fatalf("getInterfaceAnnounceData() error = %v", err)
+	}
+	if len(appData) <= 1+discoveryStampSize {
+		t.Fatalf("getInterfaceAnnounceData() returned %v bytes, want > %v", len(appData), 1+discoveryStampSize)
+	}
+	if got := appData[0]; got != 0 {
+		t.Fatalf("flags = %08b, want 00000000", got)
+	}
+
+	payload := appData[1:]
+	packed := payload[:len(payload)-discoveryStampSize]
+	stamp := payload[len(payload)-discoveryStampSize:]
+	workblock, err := discoveryStampWorkblock(FullHash(packed), discoveryWorkblockRounds)
+	if err != nil {
+		t.Fatalf("discoveryStampWorkblock() error = %v", err)
+	}
+	if !discoveryStampValid(stamp, 6, workblock) {
+		t.Fatal("expected generated stamp to satisfy configured stamp cost")
+	}
+
+	unpacked, err := msgpack.Unpack(packed)
+	if err != nil {
+		t.Fatalf("msgpack.Unpack() error = %v", err)
+	}
+	info := asAnyMap(unpacked)
+	if info == nil {
+		t.Fatalf("unexpected announce payload type %T", unpacked)
+	}
+
+	if got := asString(lookupDiscoveryValue(info, discoveryFieldInterfaceType)); got != "TCPClientInterface" {
+		t.Fatalf("interface type = %q, want %q", got, "TCPClientInterface")
+	}
+	if got := asString(lookupDiscoveryValue(info, discoveryFieldName)); got != "Discovery TCP Client" {
+		t.Fatalf("name = %q, want %q", got, "Discovery TCP Client")
+	}
+	if got := lookupDiscoveryValue(info, discoveryFieldReachableOn); got != nil {
+		t.Fatalf("reachable_on = %v, want nil", got)
 	}
 	if got := lookupDiscoveryValue(info, discoveryFieldPort); got != nil {
 		t.Fatalf("port = %v, want nil", got)
