@@ -292,6 +292,24 @@ func isKISSFramedInterface(iface interfaces.Interface) bool {
 	return ok && getter.KISSFraming()
 }
 
+func advertisedI2PReachableOn(iface interfaces.Interface, fallback string) string {
+	if iface == nil {
+		return fallback
+	}
+	connectable, ok := iface.(interface{ Connectable() bool })
+	if !ok || !connectable.Connectable() {
+		return fallback
+	}
+	b32Getter, ok := iface.(interface{ B32() string })
+	if !ok {
+		return fallback
+	}
+	if b32 := sanitizeDiscoveryString(b32Getter.B32()); b32 != "" {
+		return b32
+	}
+	return fallback
+}
+
 func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interface) ([]byte, error) {
 	if ia == nil || ia.owner == nil || ia.owner.transport == nil {
 		return nil, fmt.Errorf("no Reticulum transport available")
@@ -363,7 +381,7 @@ func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interfac
 		}
 		info[discoveryFieldPort] = portGetter.BindPort()
 	case "I2PInterface":
-		info[discoveryFieldReachableOn] = reachableOn
+		info[discoveryFieldReachableOn] = advertisedI2PReachableOn(iface, reachableOn)
 	case "RNodeInterface":
 		if cfg.Frequency == nil || cfg.Bandwidth == nil || cfg.SpreadingFactor == nil || cfg.CodingRate == nil {
 			return nil, fmt.Errorf("missing RNode discovery radio parameters")
@@ -596,6 +614,8 @@ type DiscoveredInterface struct {
 	Modulation  string `json:"modulation,omitempty"`
 	IFACNetname string `json:"ifac_netname,omitempty"`
 	IFACNetkey  string `json:"ifac_netkey,omitempty"`
+
+	hasConfigEntry bool
 }
 
 type discoveredRecord struct {
@@ -1003,7 +1023,7 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 		}
 
 		transportValue, hasTransport := lookupAny(m, "transport")
-		if onlyTransport && (!hasTransport || transportValue == nil) {
+		if (onlyAvailable || onlyTransport) && !hasTransport {
 			id.logDiscoveryFileLoadError(path, fmt.Errorf("corrupt discovery cache missing transport"))
 			continue
 		}
@@ -1026,6 +1046,8 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 
 		nameValue, hasName := lookupAny(m, "name")
 
+		_, hasConfigEntry := lookupAny(m, "config_entry")
+
 		di := DiscoveredInterface{
 			Name:        discoveryDisplayString(nameValue, hasName),
 			Type:        asString(lookupAnyValue(m, "type")),
@@ -1043,6 +1065,8 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 			Modulation:  asString(lookupAnyValue(m, "modulation")),
 			IFACNetname: asString(lookupAnyValue(m, "ifac_netname")),
 			IFACNetkey:  asString(lookupAnyValue(m, "ifac_netkey")),
+
+			hasConfigEntry: hasConfigEntry,
 		}
 
 		di.Latitude = lookupOptFloat64(m, "latitude")
@@ -1447,6 +1471,8 @@ func mapToDiscoveredInterface(info map[string]any) (DiscoveredInterface, bool) {
 
 	nameValue, hasName := info["name"]
 
+	_, hasConfigEntry := info["config_entry"]
+
 	out := DiscoveredInterface{
 		Name:        discoveryDisplayString(nameValue, hasName),
 		Type:        asString(info["type"]),
@@ -1464,6 +1490,8 @@ func mapToDiscoveredInterface(info map[string]any) (DiscoveredInterface, bool) {
 		Modulation:  asString(info["modulation"]),
 		IFACNetname: asString(info["ifac_netname"]),
 		IFACNetkey:  asString(info["ifac_netkey"]),
+
+		hasConfigEntry: hasConfigEntry,
 	}
 
 	if v, ok := info["latitude"]; ok && v != nil {
@@ -1568,11 +1596,14 @@ func (id *InterfaceDiscovery) autoconnect(info DiscoveredInterface) (err error) 
 	if info.Type != "BackboneInterface" {
 		return nil
 	}
-	if info.ReachableOn == "" || info.Port == nil || *info.Port <= 0 {
-		return fmt.Errorf("missing reachable_on/port")
-	}
 	if id.interfaceExists(info) {
 		return nil
+	}
+	if !info.hasConfigEntry {
+		return fmt.Errorf("missing config_entry")
+	}
+	if info.ReachableOn == "" || info.Port == nil || *info.Port <= 0 {
+		return fmt.Errorf("missing reachable_on/port")
 	}
 
 	handler := func(data []byte, iface interfaces.Interface) {

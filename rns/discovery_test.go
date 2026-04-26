@@ -1412,7 +1412,7 @@ func TestListDiscoveredInterfaces_OnlyTransportMissingTransportLogsAndRemains(t 
 	}
 }
 
-func TestListDiscoveredInterfaces_OnlyAvailableDoesNotRequireTransport(t *testing.T) {
+func TestListDiscoveredInterfaces_OnlyAvailableMissingTransportLogsAndRemains(t *testing.T) {
 	t.Parallel()
 
 	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-only-available-transport-")
@@ -1450,19 +1450,123 @@ func TestListDiscoveredInterfaces_OnlyAvailableDoesNotRequireTransport(t *testin
 	if err != nil {
 		t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
 	}
+	if len(discovered) != 0 {
+		t.Fatalf("expected 0 available discovered interfaces, got %v", len(discovered))
+	}
+	logOutput := logs.String()
+	if !strings.Contains(logOutput, "error while loading discovered interface data") {
+		t.Fatalf("expected corrupt-file error log, got %q", logOutput)
+	}
+	if !strings.Contains(logOutput, "missing-transport.data") || !strings.Contains(logOutput, "may be corrupt") {
+		t.Fatalf("expected corrupt-file path warning in logs, got %q", logOutput)
+	}
+	if _, err := os.Stat(filepath.Join(storagePath, "missing-transport.data")); err != nil {
+		t.Fatalf("expected discovery file to remain on disk: %v", err)
+	}
+}
+
+func TestListDiscoveredInterfaces_OnlyAvailableAllowsNilTransport(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-only-available-nil-transport-")
+	defer cleanup()
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "nil-transport.data"), mustMsgpackPack(map[string]any{
+		"name":       "NilTransport",
+		"last_heard": now - 60,
+		"transport":  nil,
+		"value":      42,
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write discovery file: %v", err)
+	}
+
+	var logs bytes.Buffer
+	logger := NewLogger()
+	logger.SetLogLevel(LogExtreme)
+	logger.SetLogDest(LogCallback)
+	logger.SetLogCallback(func(msg string) {
+		logs.WriteString(msg)
+		logs.WriteByte('\n')
+	})
+
+	r := &Reticulum{
+		configDir: tmpDir,
+		logger:    logger,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	discovered, err := discovery.ListDiscoveredInterfaces(true, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+	}
 	if len(discovered) != 1 {
 		t.Fatalf("expected 1 available discovered interface, got %v", len(discovered))
 	}
-	if discovered[0].Name != "MissingTransport" {
+	if discovered[0].Name != "NilTransport" {
 		t.Fatalf("unexpected surviving interface %q", discovered[0].Name)
 	}
 	if discovered[0].Status != "available" {
 		t.Fatalf("status = %q, want available", discovered[0].Status)
 	}
+	if discovered[0].Transport {
+		t.Fatal("expected nil transport to map to Transport=false")
+	}
 	if got := logs.String(); strings.Contains(got, "error while loading discovered interface data") {
 		t.Fatalf("unexpected corrupt-file log output: %q", got)
 	}
-	if _, err := os.Stat(filepath.Join(storagePath, "missing-transport.data")); err != nil {
+}
+
+func TestListDiscoveredInterfaces_OnlyTransportNilTransportSkipsWithoutLog(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-only-transport-nil-transport-")
+	defer cleanup()
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "nil-transport.data"), mustMsgpackPack(map[string]any{
+		"name":       "NilTransport",
+		"last_heard": now - 60,
+		"transport":  nil,
+		"value":      42,
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write discovery file: %v", err)
+	}
+
+	var logs bytes.Buffer
+	logger := NewLogger()
+	logger.SetLogLevel(LogExtreme)
+	logger.SetLogDest(LogCallback)
+	logger.SetLogCallback(func(msg string) {
+		logs.WriteString(msg)
+		logs.WriteByte('\n')
+	})
+
+	r := &Reticulum{
+		configDir: tmpDir,
+		logger:    logger,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, true)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+	}
+	if len(discovered) != 0 {
+		t.Fatalf("expected 0 transport discovered interfaces, got %v", len(discovered))
+	}
+	if got := logs.String(); strings.Contains(got, "error while loading discovered interface data") {
+		t.Fatalf("unexpected corrupt-file log output: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(storagePath, "nil-transport.data")); err != nil {
 		t.Fatalf("expected discovery file to remain on disk: %v", err)
 	}
 }
@@ -4109,6 +4213,7 @@ func TestInterfaceDiscoveryStartReconnectsCachedBackbone(t *testing.T) {
 		"last_heard":   now - 60,
 		"discovered":   now - 120,
 		"value":        1,
+		"config_entry": "[[Cached Backbone]]",
 		"reachable_on": "127.0.0.1",
 		"port":         port,
 		"network_id":   "01020304",
@@ -4198,6 +4303,77 @@ func TestInterfaceDiscoveryStartReconnectsCachedBackbone(t *testing.T) {
 	}
 
 	_ = iface.Detach()
+}
+
+func TestInterfaceDiscoveryConnectDiscoveredMissingConfigEntrySkipsAutoconnect(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-connect-missing-config-entry-")
+	defer cleanup()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("listener.Close() error = %v", err)
+		}
+	})
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			accepted <- conn
+		}
+	}()
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "cached-backbone.data"), mustMsgpackPack(map[string]any{
+		"name":         "Cached Backbone",
+		"type":         "BackboneInterface",
+		"transport":    true,
+		"last_heard":   now - 60,
+		"discovered":   now - 120,
+		"value":        1,
+		"reachable_on": "127.0.0.1",
+		"port":         port,
+		"network_id":   "01020304",
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write cached discovery file: %v", err)
+	}
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	discovery.connectDiscovered()
+
+	select {
+	case conn := <-accepted:
+		_ = conn.Close()
+		t.Fatal("unexpected auto-connect without config_entry")
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected no auto-connected interfaces, got %v", got)
+	}
+	if _, err := os.Stat(filepath.Join(storagePath, "cached-backbone.data")); err != nil {
+		t.Fatalf("expected cached discovery file to remain on disk: %v", err)
+	}
 }
 
 func TestInterfaceDiscoveryConnectDiscoveredSkipsWhenAutoconnectDisabled(t *testing.T) {
@@ -5034,6 +5210,7 @@ func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsBytesNameLikePython(t 
 		"value":          7,
 		"type":           "BackboneInterface",
 		"discovery_hash": []byte{0xaa, 0xbb},
+		"config_entry":   "[[BytesName]]",
 		"hops":           1,
 		"received":       1234.0,
 		"reachable_on":   "127.0.0.1",
@@ -5103,6 +5280,7 @@ func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsListNameLikePython(t *
 		"value":          7,
 		"type":           "BackboneInterface",
 		"discovery_hash": []byte{0xaa, 0xcc},
+		"config_entry":   "[[list-name]]",
 		"hops":           1,
 		"received":       1234.0,
 		"reachable_on":   "127.0.0.1",
@@ -5172,6 +5350,7 @@ func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsNilNameLikePython(t *t
 		"value":          7,
 		"type":           "BackboneInterface",
 		"discovery_hash": []byte{0xaa, 0xcd},
+		"config_entry":   "[[nil-name]]",
 		"hops":           1,
 		"received":       1234.0,
 		"reachable_on":   "127.0.0.1",
@@ -5195,6 +5374,103 @@ func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsNilNameLikePython(t *t
 	}
 	if got := ts.GetInterfaces()[0].Name(); got != "None" {
 		t.Fatalf("Name() = %q, want %q", got, "None")
+	}
+}
+
+func TestInterfaceDiscoveryStartCallbackMissingConfigEntrySkipsAutoconnectButStillCallsCallback(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-callback-missing-config-entry-")
+	defer cleanup()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("listener.Close() error = %v", err)
+		}
+	})
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			accepted <- conn
+		}
+	}()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	callbackCh := make(chan map[string]any, 1)
+	discovery.SetDiscoveryCallback(func(info map[string]any) {
+		callbackCh <- cloneStringAnyMap(info)
+	})
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	port := listener.Addr().(*net.TCPAddr).Port
+	receivedAt := float64(time.Now().UnixNano()) / 1e9
+	discovery.handler.callback(map[string]any{
+		"name":           "No Config Entry",
+		"value":          7,
+		"type":           "BackboneInterface",
+		"discovery_hash": []byte{0xaa, 0xce},
+		"hops":           1,
+		"received":       receivedAt,
+		"reachable_on":   "127.0.0.1",
+		"port":           port,
+		"network_id":     "01020304",
+	})
+
+	select {
+	case info := <-callbackCh:
+		if got := asString(info["name"]); got != "No Config Entry" {
+			t.Fatalf("callback name = %q, want %q", got, "No Config Entry")
+		}
+		if got := asFloat64(info["discovered"]); got != receivedAt {
+			t.Fatalf("callback discovered = %v, want %v", got, receivedAt)
+		}
+		if got := asFloat64(info["last_heard"]); got != receivedAt {
+			t.Fatalf("callback last_heard = %v, want %v", got, receivedAt)
+		}
+		if got := asInt(info["heard_count"]); got != 0 {
+			t.Fatalf("callback heard_count = %v, want 0", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for external discovery callback")
+	}
+
+	select {
+	case conn := <-accepted:
+		_ = conn.Close()
+		t.Fatal("unexpected auto-connect without config_entry")
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected no auto-connected interfaces, got %v", got)
+	}
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces() error = %v", err)
+	}
+	if got := len(discovered); got != 1 {
+		t.Fatalf("expected 1 persisted discovered interface, got %v", got)
+	}
+	if got := discovered[0].Name; got != "No Config Entry" {
+		t.Fatalf("discovered[0].Name = %q, want %q", got, "No Config Entry")
 	}
 }
 
@@ -5525,6 +5801,7 @@ func TestInterfaceDiscoveryMonitorAutoconnectsAvailableCandidate(t *testing.T) {
 		"last_heard":   now - 30,
 		"discovered":   now - 60,
 		"value":        1,
+		"config_entry": "[[Monitor Candidate]]",
 		"reachable_on": "127.0.0.1",
 		"port":         port,
 		"network_id":   "0a0b0c0d",
@@ -5627,6 +5904,7 @@ func TestInterfaceDiscoveryMonitorAutoconnectUsesShuffledCandidateOrder(t *testi
 		"last_heard":   now - 10,
 		"discovered":   now - 60,
 		"value":        20,
+		"config_entry": "[[Candidate A]]",
 		"reachable_on": "127.0.0.1",
 		"port":         portA,
 		"network_id":   "aaaaaaaa",
@@ -5640,6 +5918,7 @@ func TestInterfaceDiscoveryMonitorAutoconnectUsesShuffledCandidateOrder(t *testi
 		"last_heard":   now - 20,
 		"discovered":   now - 60,
 		"value":        10,
+		"config_entry": "[[Candidate B]]",
 		"reachable_on": "127.0.0.1",
 		"port":         portB,
 		"network_id":   "bbbbbbbb",
@@ -5732,6 +6011,7 @@ func TestInterfaceDiscoveryMonitorDoesNotFallbackPastSelectedExistingCandidate(t
 		"last_heard":   now - 10,
 		"discovered":   now - 60,
 		"value":        20,
+		"config_entry": "[[Selected Existing]]",
 		"reachable_on": "127.0.0.1",
 		"port":         existingPort,
 		"network_id":   "01010101",
@@ -5746,6 +6026,7 @@ func TestInterfaceDiscoveryMonitorDoesNotFallbackPastSelectedExistingCandidate(t
 		"last_heard":   now - 20,
 		"discovered":   now - 60,
 		"value":        10,
+		"config_entry": "[[Other Candidate]]",
 		"reachable_on": "127.0.0.1",
 		"port":         otherPort,
 		"network_id":   "02020202",
@@ -6585,10 +6866,12 @@ bootstrap_only = Yes
 
 type announceTestInterface struct {
 	*interfaces.BaseInterface
-	ifaceType string
-	bindIP    string
-	bindPort  int
-	kiss      bool
+	ifaceType   string
+	bindIP      string
+	bindPort    int
+	kiss        bool
+	connectable bool
+	b32         string
 }
 
 func (a *announceTestInterface) Type() string      { return a.ifaceType }
@@ -6599,6 +6882,8 @@ func (a *announceTestInterface) Detach() error     { a.SetDetached(true); return
 func (a *announceTestInterface) BindIP() string    { return a.bindIP }
 func (a *announceTestInterface) BindPort() int     { return a.bindPort }
 func (a *announceTestInterface) KISSFraming() bool { return a.kiss }
+func (a *announceTestInterface) Connectable() bool { return a.connectable }
+func (a *announceTestInterface) B32() string       { return a.b32 }
 
 type announceCaptureTransport struct {
 	*TransportSystem
@@ -7058,6 +7343,55 @@ func TestInterfaceAnnouncerPayloadI2P(t *testing.T) {
 	}
 	if got := lookupDiscoveryValue(info, discoveryFieldPort); got != nil {
 		t.Fatalf("port = %v, want nil", got)
+	}
+}
+
+func TestInterfaceAnnouncerPayloadI2PConnectableUsesB32(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	ts := newAnnounceCaptureTransport(logger)
+	transportIdentity := mustTestNewIdentity(t, true)
+	ts.identity = transportIdentity
+	ts.SetEnabled(true)
+
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+
+	iface := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("announce-i2p-connectable", interfaces.ModeGateway, 1000),
+		ifaceType:     "I2PInterface",
+		connectable:   true,
+		b32:           "liveannouncedestinationabcdefghijklmnopqrstuvwxyz.b32.i2p",
+	}
+	iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  6 * time.Hour,
+		StampValue:        6,
+		Name:              "Discovery I2P Connectable",
+		ReachableOn:       "configured.example.net",
+	})
+
+	appData, err := announcer.getInterfaceAnnounceData(iface)
+	if err != nil {
+		t.Fatalf("getInterfaceAnnounceData() error = %v", err)
+	}
+
+	unpacked, err := msgpack.Unpack(appData[1 : len(appData)-discoveryStampSize])
+	if err != nil {
+		t.Fatalf("msgpack.Unpack() error = %v", err)
+	}
+	info := asAnyMap(unpacked)
+	if info == nil {
+		t.Fatalf("unexpected announce payload type %T", unpacked)
+	}
+
+	if got := asString(lookupDiscoveryValue(info, discoveryFieldReachableOn)); got != "liveannouncedestinationabcdefghijklmnopqrstuvwxyz.b32.i2p" {
+		t.Fatalf("reachable_on = %q, want %q", got, "liveannouncedestinationabcdefghijklmnopqrstuvwxyz.b32.i2p")
 	}
 }
 
