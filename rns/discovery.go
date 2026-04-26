@@ -734,11 +734,6 @@ func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) er
 		return err
 	}
 
-	receivedAt := asFloat64(info["received"])
-	if receivedAt == 0 {
-		return fmt.Errorf("missing received timestamp")
-	}
-
 	storagePath := filepath.Join(id.owner.configDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		return err
@@ -746,9 +741,43 @@ func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) er
 
 	filePath := filepath.Join(storagePath, discoveryHash+".data")
 	persisted := cloneStringAnyMap(info)
-	persisted["last_heard"] = receivedAt
+	receivedValue, receivedPresent := info["received"]
+	receivedAt, receivedOK := discoveryReceivedTimestamp(receivedValue)
 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		if !receivedPresent {
+			if err := createEmptyDiscoveryCacheFile(filePath); err != nil {
+				return err
+			}
+			return fmt.Errorf("missing received timestamp")
+		}
+		if receivedValue == nil {
+			persisted["last_heard"] = nil
+			persisted["discovered"] = nil
+			persisted["heard_count"] = 0
+			info["last_heard"] = nil
+			info["discovered"] = nil
+			info["heard_count"] = 0
+			data, err := msgpack.Pack(persisted)
+			if err != nil {
+				return err
+			}
+			return os.WriteFile(filePath, data, 0o644)
+		}
+		if !receivedOK {
+			persisted["last_heard"] = receivedValue
+			persisted["discovered"] = receivedValue
+			persisted["heard_count"] = 0
+			info["last_heard"] = receivedValue
+			info["discovered"] = receivedValue
+			info["heard_count"] = 0
+			data, err := msgpack.Pack(persisted)
+			if err != nil {
+				return err
+			}
+			return os.WriteFile(filePath, data, 0o644)
+		}
+		persisted["last_heard"] = receivedAt
 		persisted["discovered"] = receivedAt
 		persisted["heard_count"] = 0
 		info["last_heard"] = receivedAt
@@ -785,16 +814,50 @@ func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) er
 		return fmt.Errorf("corrupt discovery cache missing heard_count")
 	}
 
-	discoveredAt := asFloat64(discoveredValue)
+	discoveredPersisted := discoveredValue
 	heardCount := 1
 	if heardCountValue != nil {
 		heardCount = asInt(heardCountValue) + 1
 	}
 
-	persisted["discovered"] = discoveredAt
+	if !receivedPresent {
+		if err := createEmptyDiscoveryCacheFile(filePath); err != nil {
+			return err
+		}
+		return fmt.Errorf("missing received timestamp")
+	}
+	if receivedValue == nil {
+		persisted["last_heard"] = nil
+		persisted["discovered"] = discoveredPersisted
+		persisted["heard_count"] = heardCount
+		info["last_heard"] = nil
+		info["discovered"] = discoveredPersisted
+		info["heard_count"] = heardCount
+		data, err := msgpack.Pack(persisted)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filePath, data, 0o644)
+	}
+	if !receivedOK {
+		persisted["last_heard"] = receivedValue
+		persisted["discovered"] = discoveredPersisted
+		persisted["heard_count"] = heardCount
+		info["last_heard"] = receivedValue
+		info["discovered"] = discoveredPersisted
+		info["heard_count"] = heardCount
+		data, err := msgpack.Pack(persisted)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filePath, data, 0o644)
+	}
+
+	persisted["last_heard"] = receivedAt
+	persisted["discovered"] = discoveredPersisted
 	persisted["heard_count"] = heardCount
 	info["last_heard"] = receivedAt
-	info["discovered"] = discoveredAt
+	info["discovered"] = discoveredPersisted
 	info["heard_count"] = heardCount
 
 	data, err := msgpack.Pack(persisted)
@@ -802,6 +865,14 @@ func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) er
 		return err
 	}
 	return os.WriteFile(filePath, data, 0o644)
+}
+
+func createEmptyDiscoveryCacheFile(path string) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	return f.Close()
 }
 
 // ListDiscoveredInterfaces returns a list of discovered interfaces.
@@ -1121,6 +1192,29 @@ func cloneStringAnyMap(m map[string]any) map[string]any {
 	return out
 }
 
+func discoveryReceivedTimestamp(v any) (float64, bool) {
+	switch t := v.(type) {
+	case float64:
+		return t, true
+	case float32:
+		return float64(t), true
+	case int:
+		return float64(t), true
+	case int64:
+		return float64(t), true
+	case int32:
+		return float64(t), true
+	case uint:
+		return float64(t), true
+	case uint64:
+		return float64(t), true
+	case uint32:
+		return float64(t), true
+	default:
+		return 0, false
+	}
+}
+
 func validateDiscoveredInfoForProcessing(info map[string]any) error {
 	if info == nil {
 		return fmt.Errorf("missing discovery info")
@@ -1130,7 +1224,19 @@ func validateDiscoveredInfoForProcessing(info map[string]any) error {
 			return fmt.Errorf("missing %v", key)
 		}
 	}
+	if !processableDiscoveryHashValue(info["discovery_hash"]) {
+		return fmt.Errorf("invalid discovery_hash type %T", info["discovery_hash"])
+	}
 	return nil
+}
+
+func processableDiscoveryHashValue(v any) bool {
+	switch v.(type) {
+	case []byte, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return true
+	default:
+		return false
+	}
 }
 
 func mapToDiscoveredInterface(info map[string]any) (DiscoveredInterface, bool) {

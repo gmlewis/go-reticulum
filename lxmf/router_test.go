@@ -4787,12 +4787,14 @@ func TestCancelPropagationResetsState(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Simulate an in-progress sync.
-	router.hasPath = func(_ []byte) bool { return false }
-	router.requestPath = func(_ []byte) error { return nil }
+	// Simulate an in-progress sync without starting the asynchronous
+	// path-wait job, since Python can race that timeout back to PRNoPath
+	// after cancellation.
+	router.propagationTransferState = PRPathRequested
+	router.wantsDownloadOnPathAvailableFrom = append([]byte{}, propNode...)
+	router.wantsDownloadOnPathAvailableTo = router.identity
 	router.propagationTransferLastResult = 4
 	router.propagationTransferLastResultSet = true
-	router.RequestMessagesFromPropagationNode(nil)
 	if router.PropagationTransferState() != PRPathRequested {
 		t.Fatalf("state = %v, want PRPathRequested", router.PropagationTransferState())
 	}
