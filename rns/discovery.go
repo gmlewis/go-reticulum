@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"math/big"
 	"math/bits"
 	"net"
@@ -618,6 +619,9 @@ type DiscoveredInterface struct {
 	hasConfigEntry       bool
 	hasStringReachableOn bool
 	endpointReachableOn  string
+	endpointPort         string
+	hasSpecifiedPort     bool
+	hasComparablePort    bool
 }
 
 type discoveredRecord struct {
@@ -1079,6 +1083,11 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 		di.Latitude = lookupOptFloat64(m, "latitude")
 		di.Longitude = lookupOptFloat64(m, "longitude")
 		di.Height = lookupOptFloat64(m, "height")
+		if portValue, ok := lookupAny(m, "port"); ok {
+			di.endpointPort = pythonDiscoveryValueString(portValue)
+			di.hasSpecifiedPort = true
+			_, di.hasComparablePort = discoveryComparablePortValue(portValue)
+		}
 		di.Port = lookupOptInt(m, "port")
 		di.Frequency = lookupOptInt(m, "frequency")
 		di.Bandwidth = lookupOptInt(m, "bandwidth")
@@ -1511,6 +1520,11 @@ func mapToDiscoveredInterface(info map[string]any) (DiscoveredInterface, bool) {
 	} else if hasReachableOn {
 		out.endpointReachableOn = discoveryDisplayString(reachableOnValue, true)
 	}
+	if portValue, ok := info["port"]; ok {
+		out.endpointPort = pythonDiscoveryValueString(portValue)
+		out.hasSpecifiedPort = true
+		_, out.hasComparablePort = discoveryComparablePortValue(portValue)
+	}
 
 	if v, ok := info["latitude"]; ok && v != nil {
 		f := asFloat64(v)
@@ -1671,7 +1685,11 @@ func (id *InterfaceDiscovery) interfaceExists(info DiscoveredInterface) bool {
 				TargetPort() int
 			})
 			if ok && hostPortMatcher.TargetHost() == info.ReachableOn {
-				if info.Port == nil || hostPortMatcher.TargetPort() == *info.Port {
+				if !info.hasSpecifiedPort {
+					if info.Port == nil || hostPortMatcher.TargetPort() == *info.Port {
+						return true
+					}
+				} else if info.hasComparablePort && info.Port != nil && hostPortMatcher.TargetPort() == *info.Port {
 					return true
 				}
 			}
@@ -1690,10 +1708,42 @@ func (id *InterfaceDiscovery) endpointHash(info DiscoveredInterface) []byte {
 	if endpoint == "" {
 		endpoint = info.ReachableOn
 	}
-	if info.Port != nil {
-		endpoint = fmt.Sprintf("%v:%v", endpoint, *info.Port)
+	port := info.endpointPort
+	if port == "" && info.Port != nil {
+		port = fmt.Sprintf("%v", *info.Port)
+	}
+	if port != "" {
+		endpoint = fmt.Sprintf("%v:%v", endpoint, port)
 	}
 	return FullHash([]byte(endpoint))
+}
+
+func discoveryComparablePortValue(v any) (int, bool) {
+	switch t := v.(type) {
+	case bool:
+		return boolToInt(t), true
+	case float32:
+		f := float64(t)
+		if math.IsNaN(f) || math.IsInf(f, 0) || math.Trunc(f) != f {
+			return 0, false
+		}
+		return int(f), true
+	case float64:
+		if math.IsNaN(t) || math.IsInf(t, 0) || math.Trunc(t) != t {
+			return 0, false
+		}
+		return int(t), true
+	}
+
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return int(rv.Int()), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return int(rv.Uint()), true
+	default:
+		return 0, false
+	}
 }
 
 func (id *InterfaceDiscovery) monitorInterface(iface interfaces.Interface) {

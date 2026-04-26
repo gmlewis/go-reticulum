@@ -1041,11 +1041,12 @@ func TestListDiscoveredInterfaces_BoolPortUsesPythonNumericSemantics(t *testing.
 
 	now := float64(time.Now().UnixNano()) / 1e9
 	if err := os.WriteFile(filepath.Join(storagePath, "bool-port.data"), mustMsgpackPack(map[string]any{
-		"name":       "BoolPort",
-		"last_heard": now - 60,
-		"discovered": now - 60,
-		"value":      5,
-		"port":       true,
+		"name":         "BoolPort",
+		"last_heard":   now - 60,
+		"discovered":   now - 60,
+		"reachable_on": "127.0.0.1",
+		"value":        5,
+		"port":         true,
 	}), 0o644); err != nil {
 		t.Fatalf("failed to write bool port discovery file: %v", err)
 	}
@@ -1062,6 +1063,50 @@ func TestListDiscoveredInterfaces_BoolPortUsesPythonNumericSemantics(t *testing.
 	}
 	if discovered[0].Port == nil || *discovered[0].Port != 1 {
 		t.Fatalf("Port = %v, want 1", discovered[0].Port)
+	}
+	if got, want := hex.EncodeToString(discovery.endpointHash(discovered[0])), hex.EncodeToString(FullHash([]byte("127.0.0.1:True"))); got != want {
+		t.Fatalf("endpointHash(bool port) = %q, want %q", got, want)
+	}
+}
+
+func TestListDiscoveredInterfaces_NonIntegralFloatPortDoesNotDeduplicateAgainstIntegerHost(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-float-port-dedupe-")
+	defer cleanup()
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "float-port.data"), mustMsgpackPack(map[string]any{
+		"name":         "FloatPort",
+		"last_heard":   now - 60,
+		"discovered":   now - 60,
+		"reachable_on": "127.0.0.1",
+		"value":        5,
+		"port":         1.5,
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write float port discovery file: %v", err)
+	}
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	ts.RegisterInterface(newTargetHostTestInterface("Existing", "BackboneClientInterface", "127.0.0.1", 1))
+
+	r := &Reticulum{configDir: tmpDir, transport: ts, logger: logger}
+	discovery := NewInterfaceDiscovery(r)
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+	}
+	if len(discovered) != 1 {
+		t.Fatalf("expected 1 discovered interface, got %v", len(discovered))
+	}
+	if discovery.interfaceExists(discovered[0]) {
+		t.Fatal("expected non-integral float port not to match existing integer target port")
 	}
 }
 
@@ -4789,6 +4834,67 @@ func TestInterfaceDiscoveryInterfaceExistsMatchesI2PB32(t *testing.T) {
 		ReachableOn: "exampleabcdefghijklmnopqrstuvwxyz.b32.i2p",
 	}) {
 		t.Fatal("expected discovered I2P interface to match existing b32 address")
+	}
+}
+
+func TestInterfaceDiscoveryInterfaceExistsMatchesPythonBoolPortAutoconnectHash(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	ts.RegisterInterface(&autoconnectCountTestInterface{
+		BaseInterface:   interfaces.NewBaseInterface("Existing Bool Port", interfaces.ModeFull, 1000),
+		autoconnectHash: FullHash([]byte("127.0.0.1:True")),
+	})
+
+	info, ok := mapToDiscoveredInterface(map[string]any{
+		"name":         "Bool Port Backbone",
+		"type":         "BackboneInterface",
+		"config_entry": "[[bool-port]]",
+		"reachable_on": "127.0.0.1",
+		"port":         true,
+	})
+	if !ok {
+		t.Fatal("mapToDiscoveredInterface() = false, want true")
+	}
+
+	if !discovery.interfaceExists(info) {
+		t.Fatal("expected live bool-port discovery info to match Python-shaped autoconnect hash")
+	}
+}
+
+func TestInterfaceDiscoveryInterfaceExistsPresentNilPortDoesNotMatchExistingTargetPort(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	ts.RegisterInterface(newTargetHostTestInterface("Existing Backbone", "BackboneClientInterface", "127.0.0.1", 1))
+
+	info, ok := mapToDiscoveredInterface(map[string]any{
+		"name":         "Nil Port Backbone",
+		"type":         "BackboneInterface",
+		"config_entry": "[[nil-port]]",
+		"reachable_on": "127.0.0.1",
+		"port":         nil,
+	})
+	if !ok {
+		t.Fatal("mapToDiscoveredInterface() = false, want true")
+	}
+
+	if discovery.interfaceExists(info) {
+		t.Fatal("expected present nil port not to match an existing concrete target port")
 	}
 }
 
