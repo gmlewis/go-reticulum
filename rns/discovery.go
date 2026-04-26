@@ -1199,10 +1199,11 @@ func discoveryHashFilename(v any) (string, error) {
 			return "", fmt.Errorf("missing discovery hash")
 		}
 		return t, nil
-	case bool:
-		return fmt.Sprintf("%02x", boolToInt(t)), nil
 	default:
-		if s, ok := discoveryNumericHexString(v); ok {
+		if s, ok := discoveryHexLikeString(v); ok {
+			if s == "" {
+				return "", fmt.Errorf("missing discovery hash")
+			}
 			return s, nil
 		}
 		return "", fmt.Errorf("unsupported discovery hash type %T", v)
@@ -1321,12 +1322,11 @@ func validateDiscoveredInfoForProcessing(info map[string]any) error {
 }
 
 func processableDiscoveryHashValue(v any) bool {
-	switch v.(type) {
-	case []byte, bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-		return true
-	default:
+	if _, ok := v.(string); ok {
 		return false
 	}
+	_, ok := discoveryHexLikeString(v)
+	return ok
 }
 
 func mapToDiscoveredInterface(info map[string]any) (DiscoveredInterface, bool) {
@@ -1717,6 +1717,9 @@ func (h *InterfaceAnnounceHandler) decodeDiscoveryInfo(destinationHash []byte, a
 	if err != nil {
 		return nil, err
 	}
+	if announcedIdentity == nil {
+		return nil, fmt.Errorf("missing announced identity")
+	}
 	m := asAnyMap(unpacked)
 	if m == nil {
 		return nil, fmt.Errorf("unexpected discovery announce type %T", unpacked)
@@ -1733,8 +1736,12 @@ func (h *InterfaceAnnounceHandler) decodeDiscoveryInfo(destinationHash []byte, a
 		}
 		return v, nil
 	}
-	transportID := asBytes(lookupDiscoveryValue(m, discoveryFieldTransportID))
-	if len(transportID) == 0 {
+	transportIDValue, ok := lookupDiscovery(m, discoveryFieldTransportID)
+	if !ok {
+		return nil, fmt.Errorf("missing transport ID")
+	}
+	transportID, ok := discoveryHexValue(transportIDValue)
+	if !ok {
 		return nil, fmt.Errorf("missing transport ID")
 	}
 	transportValue, err := requiredValue(discoveryFieldTransport, "transport")
@@ -1745,81 +1752,62 @@ func (h *InterfaceAnnounceHandler) decodeDiscoveryInfo(destinationHash []byte, a
 	if err != nil {
 		return nil, err
 	}
-	name := asString(nameValue)
-	if name == "" {
-		name = fmt.Sprintf("Discovered %v", interfaceType)
+	name, err := discoveryAnnounceNameValue(nameValue, interfaceType)
+	if err != nil {
+		return nil, err
 	}
 
 	info := map[string]any{
 		"type":         interfaceType,
-		"transport":    asBool(transportValue),
+		"transport":    transportValue,
 		"name":         name,
 		"received":     float64(time.Now().UnixNano()) / 1e9,
 		"stamp":        append([]byte(nil), stamp...),
 		"value":        value,
-		"transport_id": hex.EncodeToString(transportID),
+		"transport_id": transportID,
 		"hops":         PathfinderM,
 	}
 	if h.owner != nil && h.owner.transport != nil {
 		info["hops"] = h.owner.transport.HopsTo(destinationHash)
 	}
-	if announcedIdentity != nil {
-		info["network_id"] = hex.EncodeToString(announcedIdentity.Hash)
-	}
-	if v, ok := lookupDiscovery(m, discoveryFieldLatitude); ok && v != nil {
-		info["latitude"] = asFloat64(v)
-	}
-	if v, ok := lookupDiscovery(m, discoveryFieldLongitude); ok && v != nil {
-		info["longitude"] = asFloat64(v)
-	}
-	if v, ok := lookupDiscovery(m, discoveryFieldHeight); ok && v != nil {
-		info["height"] = asFloat64(v)
+	info["network_id"] = hex.EncodeToString(announcedIdentity.Hash)
+	for _, field := range []struct {
+		key  int
+		name string
+	}{
+		{key: discoveryFieldLatitude, name: "latitude"},
+		{key: discoveryFieldLongitude, name: "longitude"},
+		{key: discoveryFieldHeight, name: "height"},
+	} {
+		v, ok := lookupDiscovery(m, field.key)
+		if !ok {
+			return nil, fmt.Errorf("missing %v", field.name)
+		}
+		info[field.name] = v
 	}
 
-	if reachableOn := asString(lookupDiscoveryValue(m, discoveryFieldReachableOn)); reachableOn != "" {
-		if !isReachableOnValue(reachableOn) {
+	if reachableOn, ok := lookupDiscovery(m, discoveryFieldReachableOn); ok {
+		if !validDiscoveryAnnounceReachableOn(reachableOn) {
 			return nil, fmt.Errorf("invalid reachable_on value")
 		}
 		info["reachable_on"] = reachableOn
 	}
-	if ifacNetname := asString(lookupDiscoveryValue(m, discoveryFieldIFACNetname)); ifacNetname != "" {
+	if ifacNetname, ok := lookupDiscovery(m, discoveryFieldIFACNetname); ok {
 		info["ifac_netname"] = ifacNetname
 	}
-	if ifacNetkey := asString(lookupDiscoveryValue(m, discoveryFieldIFACNetkey)); ifacNetkey != "" {
+	if ifacNetkey, ok := lookupDiscovery(m, discoveryFieldIFACNetkey); ok {
 		info["ifac_netkey"] = ifacNetkey
 	}
-	if v, ok := lookupDiscovery(m, discoveryFieldPort); ok && v != nil {
-		info["port"] = asInt(v)
-	}
-	if v, ok := lookupDiscovery(m, discoveryFieldFrequency); ok && v != nil {
-		info["frequency"] = asInt(v)
-	}
-	if v, ok := lookupDiscovery(m, discoveryFieldBandwidth); ok && v != nil {
-		info["bandwidth"] = asInt(v)
-	}
-	if v, ok := lookupDiscovery(m, discoveryFieldSpreadingFactor); ok && v != nil {
-		info["sf"] = asInt(v)
-	}
-	if v, ok := lookupDiscovery(m, discoveryFieldCodingRate); ok && v != nil {
-		info["cr"] = asInt(v)
-	}
-	if modulation := asString(lookupDiscoveryValue(m, discoveryFieldModulation)); modulation != "" {
-		info["modulation"] = modulation
-	}
-	if v, ok := lookupDiscovery(m, discoveryFieldChannel); ok && v != nil {
-		info["channel"] = asInt(v)
-	}
 
-	requiredReachableOn := func() (string, error) {
+	requiredReachableOn := func() (any, error) {
 		v, err := requiredValue(discoveryFieldReachableOn, "reachable_on")
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		reachableOn := asString(v)
-		if !isReachableOnValue(reachableOn) {
-			return "", fmt.Errorf("invalid reachable_on value")
+		if !validDiscoveryAnnounceReachableOn(v) {
+			return nil, fmt.Errorf("invalid reachable_on value")
 		}
-		return reachableOn, nil
+		return v, nil
 	}
 
 	switch interfaceType {
@@ -1833,7 +1821,7 @@ func (h *InterfaceAnnounceHandler) decodeDiscoveryInfo(destinationHash []byte, a
 			return nil, err
 		}
 		info["reachable_on"] = reachableOn
-		info["port"] = asInt(portValue)
+		info["port"] = portValue
 	case "I2PInterface":
 		reachableOn, err := requiredReachableOn()
 		if err != nil {
@@ -1857,10 +1845,10 @@ func (h *InterfaceAnnounceHandler) decodeDiscoveryInfo(destinationHash []byte, a
 		if err != nil {
 			return nil, err
 		}
-		info["frequency"] = asInt(frequency)
-		info["bandwidth"] = asInt(bandwidth)
-		info["sf"] = asInt(sf)
-		info["cr"] = asInt(cr)
+		info["frequency"] = frequency
+		info["bandwidth"] = bandwidth
+		info["sf"] = sf
+		info["cr"] = cr
 	case "WeaveInterface":
 		frequency, err := requiredValue(discoveryFieldFrequency, "frequency")
 		if err != nil {
@@ -1878,10 +1866,10 @@ func (h *InterfaceAnnounceHandler) decodeDiscoveryInfo(destinationHash []byte, a
 		if err != nil {
 			return nil, err
 		}
-		info["frequency"] = asInt(frequency)
-		info["bandwidth"] = asInt(bandwidth)
-		info["channel"] = asInt(channel)
-		info["modulation"] = asString(modulation)
+		info["frequency"] = frequency
+		info["bandwidth"] = bandwidth
+		info["channel"] = channel
+		info["modulation"] = modulation
 	case "KISSInterface":
 		frequency, err := requiredValue(discoveryFieldFrequency, "frequency")
 		if err != nil {
@@ -1895,9 +1883,9 @@ func (h *InterfaceAnnounceHandler) decodeDiscoveryInfo(destinationHash []byte, a
 		if err != nil {
 			return nil, err
 		}
-		info["frequency"] = asInt(frequency)
-		info["bandwidth"] = asInt(bandwidth)
-		info["modulation"] = asString(modulation)
+		info["frequency"] = frequency
+		info["bandwidth"] = bandwidth
+		info["modulation"] = modulation
 	}
 
 	info["config_entry"] = discoveryConfigEntry(info)
@@ -1909,16 +1897,14 @@ func discoveryConfigEntry(info map[string]any) string {
 	interfaceType := asString(info["type"])
 	name := asString(info["name"])
 	transportID := asString(info["transport_id"])
-	reachableOn := asString(info["reachable_on"])
-	ifacNetname := asString(info["ifac_netname"])
-	ifacNetkey := asString(info["ifac_netkey"])
+	reachableOn := pythonDiscoveryValueString(info["reachable_on"])
 	cfgNetname := ""
-	if ifacNetname != "" {
-		cfgNetname = "\n  network_name = " + ifacNetname
+	if ifacNetname, ok := info["ifac_netname"]; ok && discoveryTruthyBool(ifacNetname) {
+		cfgNetname = "\n  network_name = " + pythonDiscoveryValueString(ifacNetname)
 	}
 	cfgNetkey := ""
-	if ifacNetkey != "" {
-		cfgNetkey = "\n  passphrase = " + ifacNetkey
+	if ifacNetkey, ok := info["ifac_netkey"]; ok && discoveryTruthyBool(ifacNetkey) {
+		cfgNetkey = "\n  passphrase = " + pythonDiscoveryValueString(ifacNetkey)
 	}
 	cfgIdentity := "\n  transport_identity = " + transportID
 
@@ -1931,22 +1917,197 @@ func discoveryConfigEntry(info map[string]any) string {
 			remoteKey = "target_host"
 		}
 		return fmt.Sprintf("[[%v]]\n  type = %v\n  enabled = yes\n  %v = %v\n  target_port = %v%v%v%v",
-			name, connectionType, remoteKey, reachableOn, asInt(info["port"]), cfgIdentity, cfgNetname, cfgNetkey)
+			name, connectionType, remoteKey, reachableOn, pythonDiscoveryValueString(info["port"]), cfgIdentity, cfgNetname, cfgNetkey)
 	case "I2PInterface":
 		return fmt.Sprintf("[[%v]]\n  type = I2PInterface\n  enabled = yes\n  peers = %v%v%v%v",
 			name, reachableOn, cfgIdentity, cfgNetname, cfgNetkey)
 	case "RNodeInterface":
 		return fmt.Sprintf("[[%v]]\n  type = RNodeInterface\n  enabled = yes\n  port = \n  frequency = %v\n  bandwidth = %v\n  spreadingfactor = %v\n  codingrate = %v\n  txpower = %v%v",
-			name, asInt(info["frequency"]), asInt(info["bandwidth"]), asInt(info["sf"]), asInt(info["cr"]), cfgNetname, cfgNetkey)
+			name, pythonDiscoveryValueString(info["frequency"]), pythonDiscoveryValueString(info["bandwidth"]), pythonDiscoveryValueString(info["sf"]), pythonDiscoveryValueString(info["cr"]), cfgNetname, cfgNetkey)
 	case "WeaveInterface":
 		return fmt.Sprintf("[[%v]]\n  type = WeaveInterface\n  enabled = yes\n  port = %v%v",
 			name, cfgNetname, cfgNetkey)
 	case "KISSInterface":
 		return fmt.Sprintf("[[%v]]\n  type = KISSInterface\n  enabled = yes\n  port = \n  # Frequency: %v\n  # Bandwidth: %v\n  # Modulation: %v%v%v%v",
-			name, asInt(info["frequency"]), asInt(info["bandwidth"]), asString(info["modulation"]), cfgIdentity, cfgNetname, cfgNetkey)
+			name, pythonDiscoveryValueString(info["frequency"]), pythonDiscoveryValueString(info["bandwidth"]), pythonDiscoveryValueString(info["modulation"]), cfgIdentity, cfgNetname, cfgNetkey)
 	default:
 		return ""
 	}
+}
+
+func pythonDiscoveryValueString(v any) string {
+	switch t := v.(type) {
+	case nil:
+		return "None"
+	case bool:
+		if t {
+			return "True"
+		}
+		return "False"
+	case []byte:
+		return pythonDiscoveryBytesString(t)
+	default:
+		rv := reflect.ValueOf(v)
+		if !rv.IsValid() {
+			return "None"
+		}
+		switch rv.Kind() {
+		case reflect.Slice, reflect.Array:
+			return pythonDiscoveryListString(rv)
+		default:
+			return fmt.Sprintf("%v", v)
+		}
+	}
+}
+
+func pythonDiscoveryListString(rv reflect.Value) string {
+	parts := make([]string, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		parts[i] = pythonDiscoveryReprString(rv.Index(i).Interface())
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
+}
+
+func pythonDiscoveryReprString(v any) string {
+	switch t := v.(type) {
+	case nil:
+		return "None"
+	case bool:
+		if t {
+			return "True"
+		}
+		return "False"
+	case string:
+		return pythonDiscoveryQuotedString(t)
+	case []byte:
+		return pythonDiscoveryBytesString(t)
+	}
+
+	rv := reflect.ValueOf(v)
+	if !rv.IsValid() {
+		return "None"
+	}
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return fmt.Sprintf("%v", v)
+	case reflect.Slice, reflect.Array:
+		return pythonDiscoveryListString(rv)
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+func pythonDiscoveryQuotedString(v string) string {
+	quoted := strings.ReplaceAll(v, "\\", "\\\\")
+	quoted = strings.ReplaceAll(quoted, "'", "\\'")
+	return "'" + quoted + "'"
+}
+
+func pythonDiscoveryBytesString(v []byte) string {
+	if len(v) == 0 {
+		return "b''"
+	}
+	var b strings.Builder
+	b.WriteString("b'")
+	for _, c := range v {
+		switch {
+		case c == '\\':
+			b.WriteString("\\\\")
+		case c == '\'':
+			b.WriteString("\\'")
+		case c >= 0x20 && c <= 0x7e:
+			b.WriteByte(c)
+		default:
+			b.WriteString(fmt.Sprintf("\\x%02x", c))
+		}
+	}
+	b.WriteByte('\'')
+	return b.String()
+}
+
+func validDiscoveryAnnounceReachableOn(v any) bool {
+	switch t := v.(type) {
+	case string:
+		return isReachableOnValue(t)
+	case bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return true
+	default:
+		return false
+	}
+}
+
+func discoveryHexValue(v any) (string, bool) {
+	return discoveryHexLikeString(v)
+}
+
+func discoveryHexLikeString(v any) (string, bool) {
+	switch t := v.(type) {
+	case []byte:
+		return hex.EncodeToString(t), true
+	}
+
+	rv := reflect.ValueOf(v)
+	if !rv.IsValid() {
+		return "", false
+	}
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return fmt.Sprintf("%02x", rv.Int()), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return fmt.Sprintf("%02x", rv.Uint()), true
+	case reflect.Bool:
+		return fmt.Sprintf("%02x", boolToInt(rv.Bool())), true
+	case reflect.Slice, reflect.Array:
+		var b strings.Builder
+		for i := 0; i < rv.Len(); i++ {
+			part, ok := discoveryHexScalarString(rv.Index(i).Interface())
+			if !ok {
+				return "", false
+			}
+			b.WriteString(part)
+		}
+		return b.String(), true
+	default:
+		return "", false
+	}
+}
+
+func discoveryHexScalarString(v any) (string, bool) {
+	rv := reflect.ValueOf(v)
+	if !rv.IsValid() {
+		return "", false
+	}
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return fmt.Sprintf("%02x", rv.Int()), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return fmt.Sprintf("%02x", rv.Uint()), true
+	case reflect.Bool:
+		return fmt.Sprintf("%02x", boolToInt(rv.Bool())), true
+	default:
+		return "", false
+	}
+}
+
+func discoveryAnnounceNameValue(v any, interfaceType string) (string, error) {
+	if s, ok := v.(string); ok {
+		if s == "" {
+			return fmt.Sprintf("Discovered %v", interfaceType), nil
+		}
+		return s, nil
+	}
+	if b, ok := v.([]byte); ok {
+		if len(b) == 0 {
+			return fmt.Sprintf("Discovered %v", interfaceType), nil
+		}
+		return "", fmt.Errorf("invalid name type %T", v)
+	}
+	if !discoveryTruthyBool(v) {
+		return fmt.Sprintf("Discovered %v", interfaceType), nil
+	}
+	return "", fmt.Errorf("invalid name type %T", v)
 }
 
 func lookupDiscoveryValue(m map[any]any, key int) any {
