@@ -1024,8 +1024,10 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 		value, _ := numericIntValue(valueField)
 		sortValue, _ := numericFloat64Value(valueField)
 
+		nameValue, hasName := lookupAny(m, "name")
+
 		di := DiscoveredInterface{
-			Name:        discoveryDisplayString(lookupAnyValue(m, "name")),
+			Name:        discoveryDisplayString(nameValue, hasName),
 			Type:        asString(lookupAnyValue(m, "type")),
 			Status:      status,
 			StatusCode:  statusCode,
@@ -1443,8 +1445,10 @@ func mapToDiscoveredInterface(info map[string]any) (DiscoveredInterface, bool) {
 		return DiscoveredInterface{}, false
 	}
 
+	nameValue, hasName := info["name"]
+
 	out := DiscoveredInterface{
-		Name:        discoveryDisplayString(info["name"]),
+		Name:        discoveryDisplayString(nameValue, hasName),
 		Type:        asString(info["type"]),
 		Status:      asString(info["status"]),
 		StatusCode:  asInt(info["status_code"]),
@@ -1498,8 +1502,8 @@ func mapToDiscoveredInterface(info map[string]any) (DiscoveredInterface, bool) {
 	return out, out.Type != ""
 }
 
-func discoveryDisplayString(v any) string {
-	if v == nil {
+func discoveryDisplayString(v any, present bool) string {
+	if !present {
 		return ""
 	}
 	return pythonDiscoveryValueString(v)

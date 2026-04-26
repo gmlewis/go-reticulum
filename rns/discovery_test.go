@@ -1591,6 +1591,40 @@ func TestListDiscoveredInterfaces_MissingValueReturnsErrorAndRemains(t *testing.
 	}
 }
 
+func TestListDiscoveredInterfaces_PresentNilNameDisplaysAsPythonNone(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-none-name-")
+	defer cleanup()
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "none-name.data"), mustMsgpackPack(map[string]any{
+		"name":       nil,
+		"last_heard": now - 60,
+		"transport":  true,
+		"value":      1,
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write discovery file: %v", err)
+	}
+
+	discovery := NewInterfaceDiscovery(&Reticulum{configDir: tmpDir})
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces() error = %v", err)
+	}
+	if got, want := len(discovered), 1; got != want {
+		t.Fatalf("len(discovered) = %v, want %v", got, want)
+	}
+	if got := discovered[0].Name; got != "None" {
+		t.Fatalf("Name = %q, want %q", got, "None")
+	}
+}
+
 func TestIsHostnameMatchesPython(t *testing.T) {
 	t.Parallel()
 
@@ -5092,6 +5126,75 @@ func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsListNameLikePython(t *
 	}
 	if got := ts.GetInterfaces()[0].Name(); got != "['list', 'name']" {
 		t.Fatalf("Name() = %q, want %q", got, "['list', 'name']")
+	}
+}
+
+func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsNilNameLikePython(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-callback-nil-name-")
+	defer cleanup()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("listener.Close() error = %v", err)
+		}
+	})
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			accepted <- conn
+		}
+	}()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	port := listener.Addr().(*net.TCPAddr).Port
+	discovery.handler.callback(map[string]any{
+		"name":           nil,
+		"value":          7,
+		"type":           "BackboneInterface",
+		"discovery_hash": []byte{0xaa, 0xcd},
+		"hops":           1,
+		"received":       1234.0,
+		"reachable_on":   "127.0.0.1",
+		"port":           port,
+		"network_id":     "01020304",
+	})
+
+	select {
+	case conn := <-accepted:
+		t.Cleanup(func() {
+			if err := conn.Close(); err != nil {
+				t.Errorf("accepted conn.Close() error = %v", err)
+			}
+		})
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for callback autoconnect with nil name")
+	}
+
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected 1 auto-connected interface, got %v", got)
+	}
+	if got := ts.GetInterfaces()[0].Name(); got != "None" {
+		t.Fatalf("Name() = %q, want %q", got, "None")
 	}
 }
 
