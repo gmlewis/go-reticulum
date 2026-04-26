@@ -1179,6 +1179,26 @@ func discoveryHashFilename(v any) (string, error) {
 			return "", fmt.Errorf("missing discovery hash")
 		}
 		return t, nil
+	case int:
+		return fmt.Sprintf("%02x", t), nil
+	case int8:
+		return fmt.Sprintf("%02x", t), nil
+	case int16:
+		return fmt.Sprintf("%02x", t), nil
+	case int32:
+		return fmt.Sprintf("%02x", t), nil
+	case int64:
+		return fmt.Sprintf("%02x", t), nil
+	case uint:
+		return fmt.Sprintf("%02x", t), nil
+	case uint8:
+		return fmt.Sprintf("%02x", t), nil
+	case uint16:
+		return fmt.Sprintf("%02x", t), nil
+	case uint32:
+		return fmt.Sprintf("%02x", t), nil
+	case uint64:
+		return fmt.Sprintf("%02x", t), nil
 	default:
 		return "", fmt.Errorf("unsupported discovery hash type %T", v)
 	}
