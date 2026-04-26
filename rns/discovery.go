@@ -1952,8 +1952,12 @@ func pythonDiscoveryValueString(v any) string {
 			return "None"
 		}
 		switch rv.Kind() {
+		case reflect.Float32, reflect.Float64:
+			return pythonDiscoveryFloatString(rv.Float())
 		case reflect.Slice, reflect.Array:
 			return pythonDiscoveryListString(rv)
+		case reflect.Map:
+			return pythonDiscoveryMapString(rv)
 		default:
 			return fmt.Sprintf("%v", v)
 		}
@@ -1989,14 +1993,43 @@ func pythonDiscoveryReprString(v any) string {
 	}
 	switch rv.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-		reflect.Float32, reflect.Float64:
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		return fmt.Sprintf("%v", v)
+	case reflect.Float32, reflect.Float64:
+		return pythonDiscoveryFloatString(rv.Float())
 	case reflect.Slice, reflect.Array:
 		return pythonDiscoveryListString(rv)
+	case reflect.Map:
+		return pythonDiscoveryMapString(rv)
 	default:
 		return fmt.Sprintf("%v", v)
 	}
+}
+
+func pythonDiscoveryMapString(rv reflect.Value) string {
+	if rv.Len() == 0 {
+		return "{}"
+	}
+	type mapEntry struct {
+		keyRepr   string
+		valueRepr string
+	}
+	entries := make([]mapEntry, 0, rv.Len())
+	iter := rv.MapRange()
+	for iter.Next() {
+		entries = append(entries, mapEntry{
+			keyRepr:   pythonDiscoveryReprString(iter.Key().Interface()),
+			valueRepr: pythonDiscoveryReprString(iter.Value().Interface()),
+		})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].keyRepr < entries[j].keyRepr
+	})
+	parts := make([]string, len(entries))
+	for i, entry := range entries {
+		parts[i] = entry.keyRepr + ": " + entry.valueRepr
+	}
+	return "{" + strings.Join(parts, ", ") + "}"
 }
 
 func pythonDiscoveryQuotedString(v string) string {
@@ -2025,6 +2058,14 @@ func pythonDiscoveryBytesString(v []byte) string {
 	}
 	b.WriteByte('\'')
 	return b.String()
+}
+
+func pythonDiscoveryFloatString(v float64) string {
+	s := strconv.FormatFloat(v, 'g', -1, 64)
+	if strings.ContainsAny(s, ".eE") {
+		return s
+	}
+	return s + ".0"
 }
 
 func validDiscoveryAnnounceReachableOn(v any) bool {

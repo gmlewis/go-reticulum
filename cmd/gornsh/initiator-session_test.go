@@ -587,7 +587,7 @@ func TestRunInitiatorProtocolFlowSuccess(t *testing.T) {
 	}
 }
 
-func TestRunInitiatorProtocolFlowLinkClosed(t *testing.T) {
+func TestRunInitiatorProtocolFlowLinkClosedWithoutOutputFails(t *testing.T) {
 	t.Parallel()
 
 	linkClosedCh := make(chan struct{}, 1)
@@ -677,7 +677,7 @@ func TestRunInitiatorProtocolFlowLinkClosedAfterCompleteStreamEOFReturnsSuccess(
 	}
 }
 
-func TestRunInitiatorProtocolFlowLinkClosedBeforeStreamEOFFails(t *testing.T) {
+func TestRunInitiatorProtocolFlowLinkClosedBeforeStreamEOFReturnsSuccess(t *testing.T) {
 	t.Parallel()
 
 	linkClosedCh := make(chan struct{}, 1)
@@ -699,9 +699,12 @@ func TestRunInitiatorProtocolFlowLinkClosedBeforeStreamEOFFails(t *testing.T) {
 
 	rt := &runtimeT{linkClosedGrace: 40 * time.Millisecond}
 	opts := options{timeoutSec: 1, mirror: false, noTTY: true}
-	_, session, err := rt.runInitiatorProtocolFlow(fake, opts, linkClosedCh, stopCh, false)
-	if err == nil || err.Error() != "link closed before command completed" {
-		t.Fatalf("unexpected err=%v", err)
+	code, session, err := rt.runInitiatorProtocolFlow(fake, opts, linkClosedCh, stopCh, false)
+	if err != nil {
+		t.Fatalf("runInitiatorProtocolFlow error: %v", err)
+	}
+	if code != 0 {
+		t.Fatalf("exit code=%v, want 0", code)
 	}
 	if session == nil || session.stdoutString() != "partial" {
 		t.Fatalf("session stdout=%q, want %q", session.stdoutString(), "partial")

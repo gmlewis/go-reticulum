@@ -55,6 +55,7 @@ type initiatorTerminalSnapshot struct {
 	lastExit           *int
 	lastErr            error
 	streamEOFsComplete bool
+	sawOutput          bool
 }
 
 type channelSession interface {
@@ -196,6 +197,7 @@ func (s *initiatorChannelSession) terminalSnapshot() initiatorTerminalSnapshot {
 		lastExit:           lastExit,
 		lastErr:            s.lastErr,
 		streamEOFsComplete: s.outputStreamEOFsCompleteLocked(),
+		sawOutput:          s.sawStdout || s.sawStderr,
 	}
 }
 
@@ -326,6 +328,9 @@ func (rt *runtimeT) runInitiatorProtocolFlow(channel channelSession, opts option
 				if opts.mirror {
 					return 0, session, nil
 				}
+				return 0, session, nil
+			}
+			if snapshot.sawOutput {
 				return 0, session, nil
 			}
 			return 1, session, errors.New("link closed before command completed")
