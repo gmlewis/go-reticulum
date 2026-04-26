@@ -3087,7 +3087,6 @@ func TestInterfaceDiscoveryReceiveAndPersistAdditionalTypes(t *testing.T) {
 				discoveryFieldCodingRate:      5,
 			},
 			wantType:        "RNodeInterface",
-			wantReachableOn: "rnode.example.net",
 			wantFrequency:   915000000,
 			wantBandwidth:   125000,
 			wantSF:          7,
@@ -3108,7 +3107,6 @@ func TestInterfaceDiscoveryReceiveAndPersistAdditionalTypes(t *testing.T) {
 				discoveryFieldModulation:    "gmsk",
 			},
 			wantType:        "WeaveInterface",
-			wantReachableOn: "weave.example.net",
 			wantFrequency:   2450000000,
 			wantBandwidth:   2000000,
 			wantModulation:  "gmsk",
@@ -3127,7 +3125,6 @@ func TestInterfaceDiscoveryReceiveAndPersistAdditionalTypes(t *testing.T) {
 				discoveryFieldModulation:    "afsk",
 			},
 			wantType:        "KISSInterface",
-			wantReachableOn: "kiss.example.net",
 			wantFrequency:   433920000,
 			wantBandwidth:   12500,
 			wantModulation:  "afsk",
@@ -3201,6 +3198,69 @@ func TestInterfaceDiscoveryReceiveAndPersistAdditionalTypes(t *testing.T) {
 				t.Fatalf("ConfigEntry = %q, want %q", got.ConfigEntry, tt.wantConfigEntry)
 			}
 		})
+	}
+}
+
+func TestInterfaceDiscoveryReceiveAndPersistPlainTCPClientOmitsConfigEntry(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-tcp-client-")
+	defer cleanup()
+
+	ts := NewTransportSystem(nil)
+	destinationHash := []byte("discovery-destination")
+	ts.pathTable[string(destinationHash)] = &PathEntry{Hops: 2, Expires: time.Now().Add(time.Hour)}
+
+	r := &Reticulum{
+		configDir: tmpDir,
+		transport: ts,
+		logger:    NewLogger(),
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	var callbackInfo map[string]any
+	handler := NewInterfaceAnnounceHandler(r, 2, func(info map[string]any) {
+		callbackInfo = cloneStringAnyMap(info)
+		if err := discovery.persistDiscoveredInterface(info); err != nil {
+			t.Fatalf("persist callback failed: %v", err)
+		}
+	})
+
+	sourceIdentity := mustTestNewIdentity(t, true)
+	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
+		discoveryFieldInterfaceType: "TCPClientInterface",
+		discoveryFieldTransport:     true,
+		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldName:          "Discovered TCP Client",
+		discoveryFieldReachableOn:   "tcp-client.example.net",
+	}, 2)
+
+	handler.receivedAnnounce(destinationHash, sourceIdentity, appData)
+
+	if got, ok := callbackInfo["config_entry"]; ok {
+		t.Fatalf("callback unexpectedly included config_entry %#v", got)
+	}
+	if got, ok := callbackInfo["reachable_on"]; ok {
+		t.Fatalf("callback unexpectedly included reachable_on %#v", got)
+	}
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte("deadbeefDiscovered TCP Client")))+".data"))
+	if err != nil {
+		t.Fatalf("failed to read persisted discovery file: %v", err)
+	}
+	unpacked, err := msgpack.Unpack(data)
+	if err != nil {
+		t.Fatalf("failed to unpack persisted discovery file: %v", err)
+	}
+	m := asAnyMap(unpacked)
+	if m == nil {
+		t.Fatalf("unexpected persisted discovery type %T", unpacked)
+	}
+	if got, ok := lookupAny(m, "config_entry"); ok {
+		t.Fatalf("persisted config_entry unexpectedly present %#v", got)
+	}
+	if got, ok := lookupAny(m, "reachable_on"); ok {
+		t.Fatalf("persisted reachable_on unexpectedly present %#v", got)
 	}
 }
 

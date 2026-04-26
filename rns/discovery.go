@@ -1906,7 +1906,6 @@ func (h *InterfaceAnnounceHandler) decodeDiscoveryInfo(destinationHash []byte, a
 		if !validDiscoveryAnnounceReachableOn(reachableOn) {
 			return nil, fmt.Errorf("invalid reachable_on value")
 		}
-		info["reachable_on"] = reachableOn
 	}
 	if ifacNetname, ok := lookupDiscovery(m, discoveryFieldIFACNetname); ok {
 		info["ifac_netname"] = ifacNetname
@@ -2004,7 +2003,9 @@ func (h *InterfaceAnnounceHandler) decodeDiscoveryInfo(destinationHash []byte, a
 		info["modulation"] = modulation
 	}
 
-	info["config_entry"] = discoveryConfigEntry(info)
+	if configEntry := discoveryConfigEntry(info); configEntry != "" {
+		info["config_entry"] = configEntry
+	}
 	info["discovery_hash"] = FullHash([]byte(info["transport_id"].(string) + name))
 	return info, nil
 }
