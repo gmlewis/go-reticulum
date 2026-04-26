@@ -598,6 +598,12 @@ type DiscoveredInterface struct {
 	IFACNetkey  string `json:"ifac_netkey,omitempty"`
 }
 
+type discoveredRecord struct {
+	item      DiscoveredInterface
+	sortValue float64
+	rawValue  any
+}
+
 // InterfaceDiscovery actively listens for and processes inbound presence announcements from remote nodes to establish automatic connections.
 type InterfaceDiscovery struct {
 	owner *Reticulum
@@ -909,10 +915,6 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 
 	now := float64(time.Now().UnixNano()) / 1e9
 	discoverySources := id.owner.interfaceSources
-	type discoveredRecord struct {
-		item      DiscoveredInterface
-		sortValue float64
-	}
 	var discovered []discoveredRecord
 
 	for _, entry := range entries {
@@ -1016,17 +1018,11 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 		}
 
 		valueField, ok := lookupAny(m, "value")
-		if !ok || valueField == nil {
+		if !ok {
 			return nil, fmt.Errorf("corrupt discovery cache missing value in %v", path)
 		}
-		value, ok := numericIntValue(valueField)
-		if !ok {
-			return nil, fmt.Errorf("invalid discovery cache value type %T in %v", valueField, path)
-		}
-		sortValue, ok := numericFloat64Value(valueField)
-		if !ok {
-			return nil, fmt.Errorf("invalid discovery cache value type %T in %v", valueField, path)
-		}
+		value, _ := numericIntValue(valueField)
+		sortValue, _ := numericFloat64Value(valueField)
 
 		di := DiscoveredInterface{
 			Name:        asString(lookupAnyValue(m, "name")),
@@ -1059,26 +1055,121 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 		discovered = append(discovered, discoveredRecord{
 			item:      di,
 			sortValue: sortValue,
+			rawValue:  valueField,
 		})
 	}
 
-	sort.Slice(discovered, func(i, j int) bool {
-		left := discovered[i]
-		right := discovered[j]
-		if left.item.StatusCode != right.item.StatusCode {
-			return left.item.StatusCode > right.item.StatusCode
-		}
-		if left.sortValue != right.sortValue {
-			return left.sortValue > right.sortValue
-		}
-		return left.item.LastHeard > right.item.LastHeard
-	})
+	if err := sortDiscoveredRecords(discovered); err != nil {
+		return nil, err
+	}
 
 	out := make([]DiscoveredInterface, 0, len(discovered))
 	for _, record := range discovered {
 		out = append(out, record.item)
 	}
 	return out, nil
+}
+
+func sortDiscoveredRecords(records []discoveredRecord) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			switch t := recovered.(type) {
+			case error:
+				err = t
+			default:
+				panic(recovered)
+			}
+		}
+	}()
+
+	sort.Slice(records, func(i, j int) bool {
+		left := records[i]
+		right := records[j]
+		if left.item.StatusCode != right.item.StatusCode {
+			return left.item.StatusCode > right.item.StatusCode
+		}
+		if cmp, cmpErr := compareDiscoverySortValues(left.rawValue, right.rawValue); cmpErr != nil {
+			panic(cmpErr)
+		} else if cmp != 0 {
+			return cmp > 0
+		}
+		return left.item.LastHeard > right.item.LastHeard
+	})
+	return nil
+}
+
+func compareDiscoverySortValues(left, right any) (int, error) {
+	if left == nil || right == nil {
+		switch {
+		case left == nil && right == nil:
+			return 0, nil
+		default:
+			return 0, fmt.Errorf("invalid mixed discovery cache value types %T and %T", left, right)
+		}
+	}
+
+	if lf, lok := numericFloat64Value(left); lok {
+		if rf, rok := numericFloat64Value(right); rok {
+			switch {
+			case lf > rf:
+				return 1, nil
+			case lf < rf:
+				return -1, nil
+			default:
+				return 0, nil
+			}
+		}
+	}
+
+	switch l := left.(type) {
+	case string:
+		r, ok := right.(string)
+		if !ok {
+			return 0, fmt.Errorf("invalid mixed discovery cache value types %T and %T", left, right)
+		}
+		return strings.Compare(l, r), nil
+	case []byte:
+		r, ok := right.([]byte)
+		if !ok {
+			return 0, fmt.Errorf("invalid mixed discovery cache value types %T and %T", left, right)
+		}
+		return bytes.Compare(l, r), nil
+	}
+
+	leftValue := reflect.ValueOf(left)
+	rightValue := reflect.ValueOf(right)
+	if !leftValue.IsValid() || !rightValue.IsValid() {
+		return 0, fmt.Errorf("invalid mixed discovery cache value types %T and %T", left, right)
+	}
+	if !isDiscoverySequenceKind(leftValue.Kind()) || !isDiscoverySequenceKind(rightValue.Kind()) {
+		return 0, fmt.Errorf("invalid discovery cache value type %T", left)
+	}
+	return compareDiscoverySequences(leftValue, rightValue)
+}
+
+func isDiscoverySequenceKind(kind reflect.Kind) bool {
+	return kind == reflect.Slice || kind == reflect.Array
+}
+
+func compareDiscoverySequences(left, right reflect.Value) (int, error) {
+	minLen := min(left.Len(), right.Len())
+	for i := 0; i < minLen; i++ {
+		cmp, err := compareDiscoverySortValues(left.Index(i).Interface(), right.Index(i).Interface())
+		if err != nil {
+			return 0, err
+		}
+		if cmp != 0 {
+			return cmp, nil
+		}
+	}
+	switch {
+	case left.Len() > right.Len():
+		return 1, nil
+	case left.Len() < right.Len():
+		return -1, nil
+	default:
+		return 0, nil
+	}
 }
 
 func hasDiscoverySource(sources [][]byte, networkID []byte) bool {
@@ -1601,7 +1692,7 @@ func (id *InterfaceDiscovery) monitorAutoconnectsOnce(now time.Time) {
 	autoconnectedInterfaces := id.autoconnectCount()
 	if id.owner != nil && id.owner.transport != nil {
 		maxAutoconnectedInterfaces := id.owner.maxAutoconnectedInterfaces()
-		if maxAutoconnectedInterfaces > 0 && onlineInterfaces >= maxAutoconnectedInterfaces {
+		if onlineInterfaces >= maxAutoconnectedInterfaces {
 			for _, iface := range id.owner.transport.GetInterfaces() {
 				if !interfaceBootstrapOnly(iface) || containsInterface(detached, iface) {
 					continue

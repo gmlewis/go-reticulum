@@ -811,6 +811,189 @@ func TestListDiscoveredInterfaces_FloatValueSortsLikePython(t *testing.T) {
 	}
 }
 
+func TestListDiscoveredInterfaces_StringValueSingleEntryDoesNotFail(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-string-value-single-")
+	defer cleanup()
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "string-value.data"), mustMsgpackPack(map[string]any{
+		"name":       "StringValue",
+		"last_heard": now - 60,
+		"value":      "7",
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write string value discovery file: %v", err)
+	}
+
+	var logs bytes.Buffer
+	logger := NewLogger()
+	logger.SetLogLevel(LogExtreme)
+	logger.SetLogDest(LogCallback)
+	logger.SetLogCallback(func(msg string) {
+		logs.WriteString(msg)
+		logs.WriteByte('\n')
+	})
+
+	r := &Reticulum{
+		configDir: tmpDir,
+		logger:    logger,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+	}
+	if len(discovered) != 1 {
+		t.Fatalf("expected 1 discovered interface, got %v", len(discovered))
+	}
+	if discovered[0].Name != "StringValue" {
+		t.Fatalf("unexpected discovered interface %q", discovered[0].Name)
+	}
+	if got := logs.String(); strings.Contains(got, "error while loading discovered interface data") {
+		t.Fatalf("unexpected corrupt-file log output: %q", got)
+	}
+}
+
+func TestListDiscoveredInterfaces_StringValueSortsLikePython(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-string-value-sort-")
+	defer cleanup()
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	entries := []struct {
+		filename  string
+		name      string
+		lastHeard float64
+		value     any
+	}{
+		{filename: "string-seven.data", name: "StringSeven", lastHeard: now - 120, value: "7"},
+		{filename: "string-three.data", name: "StringThree", lastHeard: now - 60, value: "3"},
+	}
+	for _, tc := range entries {
+		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(map[string]any{
+			"name":       tc.name,
+			"last_heard": tc.lastHeard,
+			"value":      tc.value,
+		}), 0o644); err != nil {
+			t.Fatalf("failed to write discovery file %q: %v", tc.filename, err)
+		}
+	}
+
+	r := &Reticulum{configDir: tmpDir}
+	discovery := NewInterfaceDiscovery(r)
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+	}
+	if len(discovered) != 2 {
+		t.Fatalf("expected 2 discovered interfaces, got %v", len(discovered))
+	}
+
+	gotNames := []string{discovered[0].Name, discovered[1].Name}
+	wantNames := []string{"StringSeven", "StringThree"}
+	if !reflect.DeepEqual(gotNames, wantNames) {
+		t.Fatalf("names = %v, want %v", gotNames, wantNames)
+	}
+}
+
+func TestListDiscoveredInterfaces_MixedStringAndIntegerValueReturnsError(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-mixed-value-sort-")
+	defer cleanup()
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	entries := []struct {
+		filename  string
+		name      string
+		lastHeard float64
+		value     any
+	}{
+		{filename: "string-seven.data", name: "StringSeven", lastHeard: now - 120, value: "7"},
+		{filename: "int-three.data", name: "IntThree", lastHeard: now - 60, value: 3},
+	}
+	for _, tc := range entries {
+		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(map[string]any{
+			"name":       tc.name,
+			"last_heard": tc.lastHeard,
+			"value":      tc.value,
+		}), 0o644); err != nil {
+			t.Fatalf("failed to write discovery file %q: %v", tc.filename, err)
+		}
+	}
+
+	r := &Reticulum{configDir: tmpDir}
+	discovery := NewInterfaceDiscovery(r)
+
+	if _, err := discovery.ListDiscoveredInterfaces(false, false); err == nil {
+		t.Fatal("ListDiscoveredInterfaces() error = nil, want error for mixed string and integer values")
+	}
+}
+
+func TestListDiscoveredInterfaces_NilValueSortsByLastHeard(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-nil-value-sort-")
+	defer cleanup()
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	entries := []struct {
+		filename  string
+		name      string
+		lastHeard float64
+		value     any
+	}{
+		{filename: "none-older.data", name: "NoneOlder", lastHeard: now - 120, value: nil},
+		{filename: "none-newer.data", name: "NoneNewer", lastHeard: now - 60, value: nil},
+	}
+	for _, tc := range entries {
+		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(map[string]any{
+			"name":       tc.name,
+			"last_heard": tc.lastHeard,
+			"value":      tc.value,
+		}), 0o644); err != nil {
+			t.Fatalf("failed to write discovery file %q: %v", tc.filename, err)
+		}
+	}
+
+	r := &Reticulum{configDir: tmpDir}
+	discovery := NewInterfaceDiscovery(r)
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+	}
+	if len(discovered) != 2 {
+		t.Fatalf("expected 2 discovered interfaces, got %v", len(discovered))
+	}
+
+	gotNames := []string{discovered[0].Name, discovered[1].Name}
+	wantNames := []string{"NoneNewer", "NoneOlder"}
+	if !reflect.DeepEqual(gotNames, wantNames) {
+		t.Fatalf("names = %v, want %v", gotNames, wantNames)
+	}
+}
+
 func TestListDiscoveredInterfaces_BoolDiscoveredUsesPythonNumericSemantics(t *testing.T) {
 	t.Parallel()
 
@@ -5344,6 +5527,40 @@ func TestInterfaceDiscoveryMonitorDetachesBootstrapOnlyWhenTargetReached(t *test
 		t.Fatal("expected bootstrap-only interface to detach once online autoconnect target is reached")
 	}
 	if got := len(ts.GetInterfaces()); got != 2 {
+		t.Fatalf("expected bootstrap-only interface to be removed from transport, got %v interfaces", got)
+	}
+}
+
+func TestInterfaceDiscoveryMonitorDetachesBootstrapOnlyWhenTargetIsZero(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(NewLogger())
+	auto := &monitorTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("auto", interfaces.ModeFull, 1000),
+		online:        true,
+	}
+	bootstrap := &monitorTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("bootstrap", interfaces.ModeFull, 1000),
+		online:        true,
+		bootstrapOnly: true,
+	}
+	ts.RegisterInterface(auto)
+	ts.RegisterInterface(bootstrap)
+
+	discovery := NewInterfaceDiscovery(&Reticulum{
+		transport:           ts,
+		logger:              NewLogger(),
+		autoconnectDiscover: 0,
+	})
+	discovery.monitorInterval = 0
+	discovery.monitorInterface(auto)
+
+	discovery.monitorAutoconnectsOnce(time.Unix(401, 0))
+
+	if !bootstrap.detached {
+		t.Fatal("expected bootstrap-only interface to detach when auto-discovered target is zero")
+	}
+	if got := len(ts.GetInterfaces()); got != 1 {
 		t.Fatalf("expected bootstrap-only interface to be removed from transport, got %v interfaces", got)
 	}
 }
