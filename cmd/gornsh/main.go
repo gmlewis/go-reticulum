@@ -44,6 +44,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
@@ -534,19 +535,14 @@ func parseCommandResponse(response any) (int, []byte, []byte, error) {
 }
 
 func toInt(value any) (int, bool) {
-	switch n := value.(type) {
-	case int:
-		return n, true
-	case int64:
-		return int(n), true
-	case int32:
-		return int(n), true
-	case uint64:
-		return int(n), true
-	case uint32:
-		return int(n), true
-	case float64:
-		return int(n), true
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return int(rv.Int()), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return int(rv.Uint()), true
+	case reflect.Float32, reflect.Float64:
+		return int(rv.Float()), true
 	default:
 		return 0, false
 	}

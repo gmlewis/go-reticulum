@@ -16,6 +16,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"time"
@@ -299,38 +300,25 @@ func (r *Reticulum) handleRPCRequest(req any) any {
 }
 
 func asOptionalInt(v any) (int, bool) {
-	switch n := v.(type) {
-	case int:
-		return n, true
-	case int64:
-		return int(n), true
-	case int32:
-		return int(n), true
-	case uint64:
-		return int(n), true
-	case uint32:
-		return int(n), true
-	case float64:
-		return int(n), true
-	default:
+	if _, ok := v.(bool); ok {
 		return 0, false
 	}
+	return numericIntValue(v)
 }
 
 func asOptionalInt64(v any) (int64, bool) {
-	switch n := v.(type) {
-	case int:
-		return int64(n), true
-	case int64:
-		return n, true
-	case int32:
-		return int64(n), true
-	case uint64:
-		return int64(n), true
-	case uint32:
-		return int64(n), true
-	case float64:
-		return int64(n), true
+	if _, ok := v.(bool); ok {
+		return 0, false
+	}
+
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return rv.Int(), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return int64(rv.Uint()), true
+	case reflect.Float32, reflect.Float64:
+		return int64(rv.Float()), true
 	default:
 		return 0, false
 	}

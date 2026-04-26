@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math"
+	"reflect"
 	"sync"
 	"time"
 
@@ -153,27 +154,12 @@ func UnpackResourceAdvertisement(data []byte) (*ResourceAdvertisement, error) {
 
 	adv := &ResourceAdvertisement{}
 	toInt64 := func(v any) (int64, bool) {
-		switch n := v.(type) {
-		case int:
-			return int64(n), true
-		case int8:
-			return int64(n), true
-		case int16:
-			return int64(n), true
-		case int32:
-			return int64(n), true
-		case int64:
-			return n, true
-		case uint:
-			return int64(n), true
-		case uint8:
-			return int64(n), true
-		case uint16:
-			return int64(n), true
-		case uint32:
-			return int64(n), true
-		case uint64:
-			return int64(n), true
+		rv := reflect.ValueOf(v)
+		switch rv.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			return rv.Int(), true
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			return int64(rv.Uint()), true
 		default:
 			return 0, false
 		}

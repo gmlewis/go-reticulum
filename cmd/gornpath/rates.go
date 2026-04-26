@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -213,42 +214,63 @@ func asBytes(value any) ([]byte, error) {
 }
 
 func asFloat64(value any) (float64, error) {
-	switch v := value.(type) {
-	case float64:
-		return v, nil
-	case float32:
-		return float64(v), nil
-	case int:
-		return float64(v), nil
-	case int64:
-		return float64(v), nil
-	case int32:
-		return float64(v), nil
-	case json.Number:
-		return v.Float64()
-	default:
-		return 0, fmt.Errorf("unexpected numeric type %T", value)
+	if f, ok := numericFloat64Value(value); ok {
+		return f, nil
 	}
+	return 0, fmt.Errorf("unexpected numeric type %T", value)
 }
 
 func asInt(value any) (int, error) {
-	switch v := value.(type) {
-	case int:
-		return v, nil
-	case int64:
-		return int(v), nil
-	case int32:
-		return int(v), nil
-	case float64:
-		return int(v), nil
-	case float32:
-		return int(v), nil
-	case json.Number:
-		ival, err := v.Int64()
-		return int(ival), err
-	default:
-		return 0, fmt.Errorf("unexpected integer type %T", value)
+	if i, ok := numericIntValue(value); ok {
+		return i, nil
 	}
+	return 0, fmt.Errorf("unexpected integer type %T", value)
+}
+
+func numericFloat64Value(value any) (float64, bool) {
+	if n, ok := value.(json.Number); ok {
+		f, err := n.Float64()
+		return f, err == nil
+	}
+
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Float32, reflect.Float64:
+		return rv.Float(), true
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return float64(rv.Int()), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return float64(rv.Uint()), true
+	default:
+		return 0, false
+	}
+}
+
+func numericInt64Value(value any) (int64, bool) {
+	if n, ok := value.(json.Number); ok {
+		i, err := n.Int64()
+		return i, err == nil
+	}
+
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return rv.Int(), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return int64(rv.Uint()), true
+	case reflect.Float32, reflect.Float64:
+		return int64(rv.Float()), true
+	default:
+		return 0, false
+	}
+}
+
+func numericIntValue(value any) (int, bool) {
+	i, ok := numericInt64Value(value)
+	if !ok {
+		return 0, false
+	}
+	return int(i), true
 }
 
 func asFloat64Slice(value any) ([]float64, error) {

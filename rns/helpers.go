@@ -8,6 +8,7 @@ package rns
 import (
 	"encoding/hex"
 	"fmt"
+	"reflect"
 )
 
 // PrettyHexRep returns a lowercase hexadecimal representation of b wrapped in
@@ -79,48 +80,59 @@ func asBool(v any) bool {
 }
 
 func asInt(v any) int {
-	switch t := v.(type) {
-	case bool:
-		if t {
-			return 1
-		}
-		return 0
-	case int:
-		return t
-	case int64:
-		return int(t)
-	case int32:
-		return int(t)
-	case uint64:
-		return int(t)
-	case uint32:
-		return int(t)
-	case float64:
-		return int(t)
-	default:
-		return 0
+	if i, ok := numericIntValue(v); ok {
+		return i
 	}
+	return 0
 }
 
 func asFloat64(v any) float64 {
-	switch t := v.(type) {
-	case bool:
-		if t {
-			return 1
-		}
-		return 0
-	case float64:
-		return t
-	case float32:
-		return float64(t)
-	case int:
-		return float64(t)
-	case int64:
-		return float64(t)
-	case uint64:
-		return float64(t)
+	if f, ok := numericFloat64Value(v); ok {
+		return f
+	}
+	return 0
+}
+
+func boolToInt(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
+}
+
+func numericIntValue(v any) (int, bool) {
+	if b, ok := v.(bool); ok {
+		return boolToInt(b), true
+	}
+
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return int(rv.Int()), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return int(rv.Uint()), true
+	case reflect.Float32, reflect.Float64:
+		return int(rv.Float()), true
 	default:
-		return 0
+		return 0, false
+	}
+}
+
+func numericFloat64Value(v any) (float64, bool) {
+	if b, ok := v.(bool); ok {
+		return float64(boolToInt(b)), true
+	}
+
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Float32, reflect.Float64:
+		return rv.Float(), true
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return float64(rv.Int()), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return float64(rv.Uint()), true
+	default:
+		return 0, false
 	}
 }
 

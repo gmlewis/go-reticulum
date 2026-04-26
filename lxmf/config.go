@@ -8,6 +8,7 @@ package lxmf
 import (
 	"encoding/hex"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
@@ -89,13 +90,14 @@ func (r *Router) ApplyPolicyConfig(cfg map[string]any) error {
 }
 
 func anyToInt(value any) (int, error) {
-	switch n := value.(type) {
-	case int:
-		return n, nil
-	case int64:
-		return int(n), nil
-	case float64:
-		return int(n), nil
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return int(rv.Int()), nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return int(rv.Uint()), nil
+	case reflect.Float32, reflect.Float64:
+		return int(rv.Float()), nil
 	default:
 		return 0, fmt.Errorf("expected numeric value, got %T", value)
 	}
@@ -113,13 +115,14 @@ func anyToDurationSeconds(value any) (time.Duration, error) {
 }
 
 func anyToFloat64(value any) (float64, error) {
-	switch n := value.(type) {
-	case int:
-		return float64(n), nil
-	case int64:
-		return float64(n), nil
-	case float64:
-		return n, nil
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Float32, reflect.Float64:
+		return rv.Float(), nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return float64(rv.Int()), nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return float64(rv.Uint()), nil
 	default:
 		return 0, fmt.Errorf("expected numeric value, got %T", value)
 	}

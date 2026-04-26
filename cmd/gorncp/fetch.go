@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -18,26 +19,12 @@ import (
 )
 
 func fetchResponseCode(response any) (int, bool) {
-	switch code := response.(type) {
-	case int:
-		return code, true
-	case int8:
-		return int(code), true
-	case int16:
-		return int(code), true
-	case int32:
-		return int(code), true
-	case int64:
-		return int(code), true
-	case uint:
-		return int(code), true
-	case uint8:
-		return int(code), true
-	case uint16:
-		return int(code), true
-	case uint32:
-		return int(code), true
-	case uint64:
+	rv := reflect.ValueOf(response)
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return int(rv.Int()), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		code := rv.Uint()
 		if code > uint64(^uint(0)>>1) {
 			return 0, false
 		}

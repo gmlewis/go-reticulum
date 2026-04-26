@@ -153,18 +153,8 @@ func truncateBlackholeReason(reason string) string {
 }
 
 func asInt64(value any) (int64, error) {
-	switch v := value.(type) {
-	case int:
-		return int64(v), nil
-	case int64:
-		return v, nil
-	case int32:
-		return int64(v), nil
-	case float64:
-		return int64(v), nil
-	case float32:
-		return int64(v), nil
-	default:
-		return 0, fmt.Errorf("unexpected integer type %T", value)
+	if i, ok := numericInt64Value(value); ok {
+		return i, nil
 	}
+	return 0, fmt.Errorf("unexpected integer type %T", value)
 }

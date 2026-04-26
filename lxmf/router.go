@@ -13,6 +13,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -2690,26 +2691,12 @@ func (r *Router) hasProcessedTransientIDLocked(transientID []byte) bool {
 }
 
 func responseErrorCode(response any) (int64, bool) {
-	switch value := response.(type) {
-	case int:
-		return int64(value), true
-	case int8:
-		return int64(value), true
-	case int16:
-		return int64(value), true
-	case int32:
-		return int64(value), true
-	case int64:
-		return value, true
-	case uint:
-		return int64(value), true
-	case uint8:
-		return int64(value), true
-	case uint16:
-		return int64(value), true
-	case uint32:
-		return int64(value), true
-	case uint64:
+	rv := reflect.ValueOf(response)
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return rv.Int(), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		value := rv.Uint()
 		if value > uint64(^uint64(0)>>1) {
 			return 0, false
 		}

@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sort"
 	"strconv"
@@ -931,31 +932,8 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 			id.logDiscoveryFileLoadError(path, fmt.Errorf("corrupt discovery cache missing last_heard"))
 			continue
 		}
-		var heardAt float64
-		switch t := heardValue.(type) {
-		case bool:
-			if t {
-				heardAt = 1
-			} else {
-				heardAt = 0
-			}
-		case float64:
-			heardAt = t
-		case float32:
-			heardAt = float64(t)
-		case int:
-			heardAt = float64(t)
-		case int64:
-			heardAt = float64(t)
-		case int32:
-			heardAt = float64(t)
-		case uint64:
-			heardAt = float64(t)
-		case uint32:
-			heardAt = float64(t)
-		case uint:
-			heardAt = float64(t)
-		default:
+		heardAt, ok := numericFloat64Value(heardValue)
+		if !ok {
 			id.logDiscoveryFileLoadError(path, fmt.Errorf("invalid discovery cache last_heard type %T", heardValue))
 			continue
 		}
@@ -1034,31 +1012,8 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 		if !ok || valueField == nil {
 			return nil, fmt.Errorf("corrupt discovery cache missing value in %v", path)
 		}
-		var value int
-		switch t := valueField.(type) {
-		case bool:
-			if t {
-				value = 1
-			} else {
-				value = 0
-			}
-		case int:
-			value = t
-		case int64:
-			value = int(t)
-		case int32:
-			value = int(t)
-		case uint64:
-			value = int(t)
-		case uint32:
-			value = int(t)
-		case uint:
-			value = int(t)
-		case float64:
-			value = int(t)
-		case float32:
-			value = int(t)
-		default:
+		value, ok := numericIntValue(valueField)
+		if !ok {
 			return nil, fmt.Errorf("invalid discovery cache value type %T in %v", valueField, path)
 		}
 
@@ -1178,46 +1133,19 @@ func discoveryReachableOnCacheValue(v any) (string, bool, error) {
 			return "", true, fmt.Errorf("invalid discovery cache reachable_on value")
 		}
 		return t, true, nil
-	case bool:
-		return strconv.FormatBool(t), false, nil
-	case int:
-		return strconv.Itoa(t), false, nil
-	case int64:
-		return strconv.FormatInt(t, 10), false, nil
-	case int32:
-		return strconv.FormatInt(int64(t), 10), false, nil
-	case uint:
-		return strconv.FormatUint(uint64(t), 10), false, nil
-	case uint64:
-		return strconv.FormatUint(t, 10), false, nil
-	case uint32:
-		return strconv.FormatUint(uint64(t), 10), false, nil
 	default:
+		if s, ok := discoveryScalarString(v); ok {
+			return s, false, nil
+		}
 		return "", true, fmt.Errorf("invalid discovery cache reachable_on type %T", v)
 	}
 }
 
 func discoveryReachableOnDisplayValue(v any) string {
-	switch t := v.(type) {
-	case string:
-		return t
-	case bool:
-		return strconv.FormatBool(t)
-	case int:
-		return strconv.Itoa(t)
-	case int64:
-		return strconv.FormatInt(t, 10)
-	case int32:
-		return strconv.FormatInt(int64(t), 10)
-	case uint:
-		return strconv.FormatUint(uint64(t), 10)
-	case uint64:
-		return strconv.FormatUint(t, 10)
-	case uint32:
-		return strconv.FormatUint(uint64(t), 10)
-	default:
-		return ""
+	if s, ok := discoveryScalarString(v); ok {
+		return s
 	}
+	return ""
 }
 
 func isHostname(v string) bool {
@@ -1272,31 +1200,11 @@ func discoveryHashFilename(v any) (string, error) {
 		}
 		return t, nil
 	case bool:
-		if t {
-			return "01", nil
-		}
-		return "00", nil
-	case int:
-		return fmt.Sprintf("%02x", t), nil
-	case int8:
-		return fmt.Sprintf("%02x", t), nil
-	case int16:
-		return fmt.Sprintf("%02x", t), nil
-	case int32:
-		return fmt.Sprintf("%02x", t), nil
-	case int64:
-		return fmt.Sprintf("%02x", t), nil
-	case uint:
-		return fmt.Sprintf("%02x", t), nil
-	case uint8:
-		return fmt.Sprintf("%02x", t), nil
-	case uint16:
-		return fmt.Sprintf("%02x", t), nil
-	case uint32:
-		return fmt.Sprintf("%02x", t), nil
-	case uint64:
-		return fmt.Sprintf("%02x", t), nil
+		return fmt.Sprintf("%02x", boolToInt(t)), nil
 	default:
+		if s, ok := discoveryNumericHexString(v); ok {
+			return s, nil
+		}
 		return "", fmt.Errorf("unsupported discovery hash type %T", v)
 	}
 }
@@ -1310,45 +1218,70 @@ func cloneStringAnyMap(m map[string]any) map[string]any {
 }
 
 func discoveryReceivedTimestamp(v any) (float64, bool) {
-	switch t := v.(type) {
-	case float64:
-		return t, true
-	case float32:
-		return float64(t), true
-	case int:
-		return float64(t), true
-	case int64:
-		return float64(t), true
-	case int32:
-		return float64(t), true
-	case uint:
-		return float64(t), true
-	case uint64:
-		return float64(t), true
-	case uint32:
-		return float64(t), true
-	default:
+	if _, ok := v.(bool); ok {
 		return 0, false
+	}
+	return numericFloat64Value(v)
+}
+
+func discoveryScalarString(v any) (string, bool) {
+	switch t := v.(type) {
+	case string:
+		return t, true
+	case bool:
+		return strconv.FormatBool(t), true
+	}
+
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return strconv.FormatInt(rv.Int(), 10), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return strconv.FormatUint(rv.Uint(), 10), true
+	default:
+		return "", false
+	}
+}
+
+func discoveryNumericHexString(v any) (string, bool) {
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return fmt.Sprintf("%02x", rv.Int()), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return fmt.Sprintf("%02x", rv.Uint()), true
+	default:
+		return "", false
 	}
 }
 
 func incrementDiscoveryHeardCount(v any) (any, bool) {
 	switch t := v.(type) {
 	case bool:
-		if t {
-			return 2, true
-		}
-		return 1, true
-	case int:
-		return t + 1, true
-	case int8:
-		return int(t) + 1, true
-	case int16:
-		return int(t) + 1, true
-	case int32:
-		return int(t) + 1, true
+		return boolToInt(t) + 1, true
+	case int, int8, int16, int32:
+		return incrementDiscoverySignedInt(v)
 	case int64:
 		return t + 1, true
+	case uint, uint8, uint16, uint32, uint64:
+		return incrementDiscoveryUnsignedInt(v)
+	case float32, float64:
+		return incrementDiscoveryFloat(v)
+	default:
+		return nil, false
+	}
+}
+
+func incrementDiscoverySignedInt(v any) (int, bool) {
+	i, ok := numericIntValue(v)
+	if !ok {
+		return 0, false
+	}
+	return i + 1, true
+}
+
+func incrementDiscoveryUnsignedInt(v any) (any, bool) {
+	switch t := v.(type) {
 	case uint:
 		return t + 1, true
 	case uint8:
@@ -1359,13 +1292,17 @@ func incrementDiscoveryHeardCount(v any) (any, bool) {
 		return uint64(t) + 1, true
 	case uint64:
 		return t + 1, true
-	case float32:
-		return float64(t) + 1, true
-	case float64:
-		return t + 1, true
 	default:
 		return nil, false
 	}
+}
+
+func incrementDiscoveryFloat(v any) (float64, bool) {
+	f, ok := numericFloat64Value(v)
+	if !ok {
+		return 0, false
+	}
+	return f + 1, true
 }
 
 func validateDiscoveredInfoForProcessing(info map[string]any) error {

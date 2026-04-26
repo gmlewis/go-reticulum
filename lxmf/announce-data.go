@@ -5,7 +5,11 @@
 
 package lxmf
 
-import "github.com/gmlewis/go-reticulum/rns/msgpack"
+import (
+	"reflect"
+
+	"github.com/gmlewis/go-reticulum/rns/msgpack"
+)
 
 // DisplayNameFromAppData extracts the display name from an LXMF announce [appData]
 // payload, providing a seamless way to identify peers within the Reticulum network.
@@ -61,13 +65,12 @@ func StampCostFromAppData(appData []byte) (int, bool) {
 		return 0, false
 	}
 
-	switch value := peerData[1].(type) {
-	case int:
-		return value, true
-	case int64:
-		return int(value), true
-	case uint64:
-		return int(value), true
+	rv := reflect.ValueOf(peerData[1])
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return int(rv.Int()), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return int(rv.Uint()), true
 	default:
 		return 0, false
 	}

@@ -500,23 +500,18 @@ func ensureFields(fields map[any]any) map[any]any {
 }
 
 func payloadTimestamp(v any) (float64, error) {
-	switch t := v.(type) {
-	case float64:
-		return t, nil
-	case float32:
-		return float64(t), nil
-	case int:
-		return float64(t), nil
-	case int32:
-		return float64(t), nil
-	case int64:
-		return float64(t), nil
-	case uint:
-		return float64(t), nil
-	case uint32:
-		return float64(t), nil
-	case uint64:
-		return float64(t), nil
+	if _, ok := v.(bool); ok {
+		return 0, fmt.Errorf("invalid lxmf timestamp type %T value %#v", v, v)
+	}
+
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Float32, reflect.Float64:
+		return rv.Float(), nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return float64(rv.Int()), nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return float64(rv.Uint()), nil
 	default:
 		return 0, fmt.Errorf("invalid lxmf timestamp type %T value %#v", v, v)
 	}
@@ -542,27 +537,12 @@ func payloadMap(v any) (map[any]any, error) {
 }
 
 func containerInt(v any) (int, error) {
-	switch value := v.(type) {
-	case int:
-		return value, nil
-	case int8:
-		return int(value), nil
-	case int16:
-		return int(value), nil
-	case int32:
-		return int(value), nil
-	case int64:
-		return int(value), nil
-	case uint:
-		return int(value), nil
-	case uint8:
-		return int(value), nil
-	case uint16:
-		return int(value), nil
-	case uint32:
-		return int(value), nil
-	case uint64:
-		return int(value), nil
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return int(rv.Int()), nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return int(rv.Uint()), nil
 	default:
 		return 0, fmt.Errorf("invalid lxmf container integer type %T", v)
 	}
