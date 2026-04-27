@@ -916,13 +916,13 @@ func (id *InterfaceDiscovery) Start(requiredValue int) error {
 	id.handler = NewInterfaceAnnounceHandler(id.owner, requiredValue, func(info map[string]any) {
 		if err := validateDiscoveredInfoForProcessing(info); err != nil {
 			if id.owner != nil && id.owner.logger != nil {
-				id.owner.logger.Error("error processing discovered interface data: %v", err)
+				id.owner.logger.Error("Error processing discovered interface data: %v", err)
 			}
 			return
 		}
 		id.logDiscoveredInterface(info)
 		if err := id.persistDiscoveredInterface(info); err != nil && id.owner != nil && id.owner.logger != nil {
-			id.owner.logger.Error("failed to persist discovered interface: %v", err)
+			id.owner.logger.Error("Error while persisting discovered interface data: %v", err)
 			return
 		} else if err != nil {
 			return
@@ -1653,12 +1653,15 @@ func incrementDiscoveryFloat(v any) (float64, bool) {
 
 func validateDiscoveredInfoForProcessing(info map[string]any) error {
 	if info == nil {
-		return fmt.Errorf("missing discovery info")
+		return fmt.Errorf("'NoneType' object is not subscriptable")
 	}
 	for _, key := range []string{"name", "value", "type", "discovery_hash", "hops"} {
 		if _, ok := info[key]; !ok {
-			return fmt.Errorf("missing %v", key)
+			return fmt.Errorf("'%v'", key)
 		}
+	}
+	if _, ok := info["discovery_hash"].(string); ok {
+		return fmt.Errorf("Unknown format code 'x' for object of type 'str'")
 	}
 	if !processableDiscoveryHashValue(info["discovery_hash"]) {
 		return fmt.Errorf("invalid discovery_hash type %T", info["discovery_hash"])

@@ -34,6 +34,24 @@ type activeCommand struct {
 	finished bool
 }
 
+type serializingSender struct {
+	sender messageSender
+	mu     sync.Mutex
+}
+
+func newSerializingSender(sender messageSender) messageSender {
+	if _, ok := sender.(*serializingSender); ok {
+		return sender
+	}
+	return &serializingSender{sender: sender}
+}
+
+func (s *serializingSender) Send(msg rns.Message) (*rns.Envelope, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sender.Send(msg)
+}
+
 var errStdinClosed = errors.New("stdin is closed")
 
 func (ac *activeCommand) writeStdin(data []byte, eof bool) error {
@@ -234,6 +252,8 @@ func (rt *runtimeT) startSessionCommand(sender messageSender, commandLine []stri
 	if len(commandLine) == 0 {
 		return nil, errors.New("no command to execute")
 	}
+
+	sender = newSerializingSender(sender)
 
 	if shouldUsePTYExecution(execute) {
 		return rt.startPTYSessionCommand(sender, commandLine, remoteIdentity, execute)

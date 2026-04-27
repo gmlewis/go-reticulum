@@ -5763,6 +5763,12 @@ func TestInterfaceDiscoveryStartCallbackMissingValueFailsBeforePersist(t *testin
 	defer cleanup()
 
 	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
 	ts := NewTransportSystem(logger)
 	r := &Reticulum{
 		configDir:           tmpDir,
@@ -5801,6 +5807,13 @@ func TestInterfaceDiscoveryStartCallbackMissingValueFailsBeforePersist(t *testin
 	if _, err := os.Stat(filepath.Join(tmpDir, "discovery", "interfaces", "aabbccdd.data")); !os.IsNotExist(err) {
 		t.Fatalf("expected malformed discovered info not to be persisted, stat err=%v", err)
 	}
+	want := "Error processing discovered interface data: 'value'"
+	for _, msg := range logs {
+		if strings.Contains(msg, want) {
+			return
+		}
+	}
+	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
 func TestInterfaceDiscoveryStartCallbackStringDiscoveryHashFailsBeforePersist(t *testing.T) {
@@ -5810,6 +5823,12 @@ func TestInterfaceDiscoveryStartCallbackStringDiscoveryHashFailsBeforePersist(t 
 	defer cleanup()
 
 	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
 	ts := NewTransportSystem(logger)
 	r := &Reticulum{
 		configDir:           tmpDir,
@@ -5849,6 +5868,126 @@ func TestInterfaceDiscoveryStartCallbackStringDiscoveryHashFailsBeforePersist(t 
 	if _, err := os.Stat(filepath.Join(tmpDir, "discovery", "interfaces", "aabbccdd.data")); !os.IsNotExist(err) {
 		t.Fatalf("expected string discovery hash not to be persisted, stat err=%v", err)
 	}
+	want := "Error processing discovered interface data: Unknown format code 'x' for object of type 'str'"
+	for _, msg := range logs {
+		if strings.Contains(msg, want) {
+			return
+		}
+	}
+	t.Fatalf("expected log containing %q, got %v", want, logs)
+}
+
+func TestInterfaceDiscoveryStartCallbackMissingHopsLogsPythonError(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-start-missing-hops-")
+	defer cleanup()
+
+	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
+
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	callbackCalled := false
+	discovery.SetDiscoveryCallback(func(map[string]any) {
+		callbackCalled = true
+	})
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	info := map[string]any{
+		"name":           "Missing Hops TCP",
+		"type":           "TCPServerInterface",
+		"discovery_hash": []byte{0xaa, 0xbb, 0xcc, 0xdd},
+		"received":       1234.0,
+		"value":          12,
+	}
+	discovery.handler.callback(info)
+
+	if callbackCalled {
+		t.Fatal("expected external discovery callback not to run for missing hops")
+	}
+	if _, ok := info["discovered"]; ok {
+		t.Fatalf("info[\"discovered\"] unexpectedly set: %v", info["discovered"])
+	}
+	if _, ok := info["last_heard"]; ok {
+		t.Fatalf("info[\"last_heard\"] unexpectedly set: %v", info["last_heard"])
+	}
+	if _, err := os.Stat(filepath.Join(tmpDir, "discovery", "interfaces", "aabbccdd.data")); !os.IsNotExist(err) {
+		t.Fatalf("expected missing hops discovered info not to be persisted, stat err=%v", err)
+	}
+	want := "Error processing discovered interface data: 'hops'"
+	for _, msg := range logs {
+		if strings.Contains(msg, want) {
+			return
+		}
+	}
+	t.Fatalf("expected log containing %q, got %v", want, logs)
+}
+
+func TestInterfaceDiscoveryStartCallbackNilInfoLogsPythonError(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-start-nil-info-")
+	defer cleanup()
+
+	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
+
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	callbackCalled := false
+	discovery.SetDiscoveryCallback(func(map[string]any) {
+		callbackCalled = true
+	})
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	discovery.handler.callback(nil)
+
+	if callbackCalled {
+		t.Fatal("expected external discovery callback not to run for nil info")
+	}
+	matches, err := filepath.Glob(filepath.Join(tmpDir, "discovery", "interfaces", "*.data"))
+	if err != nil {
+		t.Fatalf("Glob() error = %v", err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("expected nil discovered info not to be persisted, got %v", matches)
+	}
+	want := "Error processing discovered interface data: 'NoneType' object is not subscriptable"
+	for _, msg := range logs {
+		if strings.Contains(msg, want) {
+			return
+		}
+	}
+	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
 func TestInterfaceDiscoveryStartCallbackBoolDiscoveryHashPersists(t *testing.T) {
@@ -6672,6 +6811,72 @@ func TestInterfaceDiscoveryStartSkipsAutoconnectWhenPersistFails(t *testing.T) {
 	if got := len(ts.GetInterfaces()); got != 0 {
 		t.Fatalf("expected no auto-connected interfaces when persistence fails, got %v", got)
 	}
+}
+
+func TestInterfaceDiscoveryStartLogsPythonPersistFailureMessage(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-persist-log-")
+	defer cleanup()
+
+	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
+
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 0,
+	}
+	discovery := NewInterfaceDiscovery(r)
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.RemoveAll(storagePath); err != nil {
+		t.Fatalf("RemoveAll(storagePath) error = %v", err)
+	}
+	if err := os.WriteFile(storagePath, []byte("not-a-directory"), 0o644); err != nil {
+		t.Fatalf("WriteFile(storagePath) error = %v", err)
+	}
+
+	callbackCalled := false
+	discovery.SetDiscoveryCallback(func(map[string]any) {
+		callbackCalled = true
+	})
+
+	discovery.handler.callback(map[string]any{
+		"name":           "Persist Log Backbone",
+		"value":          7,
+		"type":           "BackboneInterface",
+		"discovery_hash": []byte{0xde, 0xad},
+		"hops":           2,
+		"received":       1234.0,
+		"reachable_on":   "127.0.0.1",
+		"port":           4242,
+	})
+
+	if callbackCalled {
+		t.Fatal("expected external callback to be skipped when persistence fails")
+	}
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected no auto-connected interfaces when persistence fails, got %v", got)
+	}
+
+	want := "Error while persisting discovered interface data:"
+	for _, msg := range logs {
+		if strings.Contains(msg, want) {
+			return
+		}
+	}
+	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
 type monitorTestInterface struct {

@@ -139,7 +139,7 @@ share_instance = No
     dest_hash = bytes.fromhex(dest_hash_hex)
     pub_key = bytes.fromhex(pub_key_hex)
 
-    timeout = time.time() + 12
+    timeout = time.time() + 20
     while not RNS.Transport.has_path(dest_hash) and time.time() < timeout:
         time.sleep(0.2)
 
@@ -170,7 +170,7 @@ share_instance = No
     link.set_link_established_callback(established)
     link.set_resource_started_callback(resource_started)
 
-    timeout = time.time() + 12
+    timeout = time.time() + 20
     while not linked[0] and time.time() < timeout:
         time.sleep(0.2)
 

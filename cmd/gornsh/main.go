@@ -105,7 +105,7 @@ type runtimeT struct {
 
 const (
 	defaultRetrySleep          = 100 * time.Millisecond
-	defaultLinkClosedGrace     = 4 * time.Second
+	defaultLinkClosedGrace     = 5 * time.Second
 	defaultPostExitDrainGrace  = 300 * time.Millisecond
 	defaultProtocolErrDeadline = 2 * time.Second
 )

@@ -47,6 +47,62 @@ func (f *fakeSender) messages() []rns.Message {
 	return out
 }
 
+type trackingSender struct {
+	mu             sync.Mutex
+	activeSends    int
+	maxActiveSends int
+	msgs           []rns.Message
+	delay          time.Duration
+}
+
+func (s *trackingSender) Send(msg rns.Message) (*rns.Envelope, error) {
+	s.mu.Lock()
+	s.activeSends++
+	if s.activeSends > s.maxActiveSends {
+		s.maxActiveSends = s.activeSends
+	}
+	s.mu.Unlock()
+
+	if s.delay > 0 {
+		time.Sleep(s.delay)
+	}
+
+	s.mu.Lock()
+	s.msgs = append(s.msgs, msg)
+	s.activeSends--
+	s.mu.Unlock()
+	return nil, nil
+}
+
+func (s *trackingSender) maxConcurrency() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.maxActiveSends
+}
+
+func TestSerializingSenderSerializesConcurrentCalls(t *testing.T) {
+	t.Parallel()
+
+	inner := &trackingSender{delay: 20 * time.Millisecond}
+	sender := newSerializingSender(inner)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := sender.Send(&noopMessage{}); err != nil {
+				t.Errorf("Send() error: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if got := inner.maxConcurrency(); got != 1 {
+		t.Fatalf("underlying sender max concurrency=%v, want 1", got)
+	}
+}
+
 func TestStreamPipeSendsDataAndEOF(t *testing.T) {
 	t.Parallel()
 
@@ -250,6 +306,39 @@ func TestStartSessionCommandUsesPTYForTCFlags(t *testing.T) {
 	}
 
 	t.Fatal("timed out waiting for PTY command to exit")
+}
+
+func TestStartSessionCommandSerializesOutgoingMessages(t *testing.T) {
+	t.Parallel()
+
+	rt := &runtimeT{logger: rns.NewLogger()}
+	sender := &trackingSender{delay: 20 * time.Millisecond}
+
+	active, err := rt.startSessionCommand(sender, []string{"/bin/sh", "-c", "printf hello"}, nil, nil)
+	if err != nil {
+		t.Fatalf("startSessionCommand() error: %v", err)
+	}
+	if active == nil {
+		t.Fatal("startSessionCommand returned nil active command")
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		sender.mu.Lock()
+		msgs := append([]rns.Message(nil), sender.msgs...)
+		sender.mu.Unlock()
+		for _, msg := range msgs {
+			if _, ok := msg.(*commandExitedMessage); ok {
+				if got := sender.maxConcurrency(); got != 1 {
+					t.Fatalf("outgoing sender max concurrency=%v, want 1", got)
+				}
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatal("timed out waiting for command exit")
 }
 
 func TestActiveCommandCloseKillsWhenNotFinished(t *testing.T) {
