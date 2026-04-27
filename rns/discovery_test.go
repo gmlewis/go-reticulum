@@ -5877,6 +5877,65 @@ func TestInterfaceDiscoveryStartCallbackStringDiscoveryHashFailsBeforePersist(t 
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
+func TestInterfaceDiscoveryStartCallbackNilDiscoveryHashLogsPythonError(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-start-nil-hash-")
+	defer cleanup()
+
+	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	callbackCalled := false
+	discovery.SetDiscoveryCallback(func(map[string]any) {
+		callbackCalled = true
+	})
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	info := map[string]any{
+		"name":           "Nil Hash TCP",
+		"type":           "TCPServerInterface",
+		"discovery_hash": nil,
+		"received":       1234.0,
+		"hops":           1,
+		"value":          12,
+	}
+	discovery.handler.callback(info)
+
+	if callbackCalled {
+		t.Fatal("expected external discovery callback not to run for nil discovery hash")
+	}
+	matches, err := filepath.Glob(filepath.Join(tmpDir, "discovery", "interfaces", "*.data"))
+	if err != nil {
+		t.Fatalf("Glob() error = %v", err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("expected nil discovery hash not to be persisted, got %v", matches)
+	}
+	want := "Error processing discovered interface data: unsupported format string passed to NoneType.__format__"
+	for _, msg := range logs {
+		if strings.Contains(msg, want) {
+			return
+		}
+	}
+	t.Fatalf("expected log containing %q, got %v", want, logs)
+}
+
 func TestInterfaceDiscoveryStartCallbackMissingHopsLogsPythonError(t *testing.T) {
 	t.Parallel()
 
@@ -6871,6 +6930,92 @@ func TestInterfaceDiscoveryStartLogsPythonPersistFailureMessage(t *testing.T) {
 	}
 
 	want := "Error while persisting discovered interface data:"
+	for _, msg := range logs {
+		if strings.Contains(msg, want) {
+			return
+		}
+	}
+	t.Fatalf("expected log containing %q, got %v", want, logs)
+}
+
+func TestInterfaceDiscoveryStartLogsPythonPersistKeyErrorForNilCachedDiscovered(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-persist-keyerror-")
+	defer cleanup()
+
+	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
+
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 0,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	callbackCalled := false
+	discovery.SetDiscoveryCallback(func(map[string]any) {
+		callbackCalled = true
+	})
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	filePath := filepath.Join(storagePath, "aabbccdd.data")
+	if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
+		"discovered":  nil,
+		"heard_count": nil,
+	}), 0o644); err != nil {
+		t.Fatalf("failed to seed cached discovery file: %v", err)
+	}
+
+	discovery.handler.callback(map[string]any{
+		"name":           "Persist KeyError Backbone",
+		"value":          7,
+		"type":           "BackboneInterface",
+		"discovery_hash": []byte{0xaa, 0xbb, 0xcc, 0xdd},
+		"hops":           2,
+		"received":       1234.0,
+		"reachable_on":   "127.0.0.1",
+		"port":           4242,
+	})
+
+	if callbackCalled {
+		t.Fatal("expected external callback to be skipped when persistence fails")
+	}
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected no auto-connected interfaces when persistence fails, got %v", got)
+	}
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("failed to read cached discovery file: %v", err)
+	}
+	unpacked, err := msgpack.Unpack(data)
+	if err != nil {
+		t.Fatalf("failed to unpack cached discovery file: %v", err)
+	}
+	m := asAnyMap(unpacked)
+	if m == nil {
+		t.Fatalf("unexpected cached discovery type %T", unpacked)
+	}
+	if got, ok := lookupAny(m, "discovered"); !ok || got != nil {
+		t.Fatalf("cached discovered = %#v, present=%v, want nil present", got, ok)
+	}
+	if got, ok := lookupAny(m, "heard_count"); !ok || got != nil {
+		t.Fatalf("cached heard_count = %#v, present=%v, want nil present", got, ok)
+	}
+
+	want := "Error while persisting discovered interface data: 'discovered'"
 	for _, msg := range logs {
 		if strings.Contains(msg, want) {
 			return

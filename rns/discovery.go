@@ -1039,18 +1039,18 @@ func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) er
 
 	discoveredValue, ok := lastInfo["discovered"]
 	if !ok {
-		return fmt.Errorf("corrupt discovery cache missing discovered")
+		return fmt.Errorf("'discovered'")
 	}
 	heardCountValue, ok := lastInfo["heard_count"]
 	if !ok {
-		return fmt.Errorf("corrupt discovery cache missing heard_count")
+		return fmt.Errorf("'heard_count'")
 	}
 
 	discoveredPersisted := discoveredValue
 	if discoveredPersisted == nil {
 		replacement, ok := info["discovered"]
 		if !ok {
-			return fmt.Errorf("corrupt discovery cache missing discovered")
+			return fmt.Errorf("'discovered'")
 		}
 		discoveredPersisted = replacement
 	}
@@ -1659,6 +1659,9 @@ func validateDiscoveredInfoForProcessing(info map[string]any) error {
 		if _, ok := info[key]; !ok {
 			return fmt.Errorf("'%v'", key)
 		}
+	}
+	if info["discovery_hash"] == nil {
+		return fmt.Errorf("unsupported format string passed to NoneType.__format__")
 	}
 	if _, ok := info["discovery_hash"].(string); ok {
 		return fmt.Errorf("Unknown format code 'x' for object of type 'str'")
