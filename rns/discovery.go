@@ -981,7 +981,7 @@ func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) er
 			if err := createEmptyDiscoveryCacheFile(filePath); err != nil {
 				return err
 			}
-			return fmt.Errorf("missing received timestamp")
+			return fmt.Errorf("'received'")
 		}
 		if receivedValue == nil {
 			persisted["last_heard"] = nil
@@ -1058,7 +1058,7 @@ func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) er
 		if err := createEmptyDiscoveryCacheFile(filePath); err != nil {
 			return err
 		}
-		return fmt.Errorf("missing received timestamp")
+		return fmt.Errorf("'received'")
 	}
 	lastHeardPersisted := receivedValue
 	if receivedOK {

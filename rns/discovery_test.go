@@ -2284,6 +2284,17 @@ func TestPersistDiscoveredInterface_NewEntryMissingReceivedLeavesEmptyFile(t *te
 
 	if err := discovery.persistDiscoveredInterface(info); err == nil {
 		t.Fatal("persistDiscoveredInterface() error = nil, want error for missing received timestamp")
+	} else if got, want := err.Error(), "'received'"; got != want {
+		t.Fatalf("persistDiscoveredInterface() error = %q, want %q", got, want)
+	}
+	if _, ok := info["discovered"]; ok {
+		t.Fatalf("info[\"discovered\"] unexpectedly set: %v", info["discovered"])
+	}
+	if _, ok := info["last_heard"]; ok {
+		t.Fatalf("info[\"last_heard\"] unexpectedly set: %v", info["last_heard"])
+	}
+	if _, ok := info["heard_count"]; ok {
+		t.Fatalf("info[\"heard_count\"] unexpectedly set: %v", info["heard_count"])
 	}
 
 	path := filepath.Join(tmpDir, "discovery", "interfaces", "aabbcc.data")
@@ -2492,13 +2503,25 @@ func TestPersistDiscoveredInterface_ExistingEntryMissingReceivedTruncatesFile(t 
 		t.Fatalf("first persistDiscoveredInterface failed: %v", err)
 	}
 
-	if err := discovery.persistDiscoveredInterface(map[string]any{
+	info = map[string]any{
 		"name":           "Persisted",
 		"type":           "TCPServerInterface",
 		"discovery_hash": "aabbcc",
 		"value":          5678,
-	}); err == nil {
+	}
+	if err := discovery.persistDiscoveredInterface(info); err == nil {
 		t.Fatal("persistDiscoveredInterface() error = nil, want error for missing received timestamp")
+	} else if got, want := err.Error(), "'received'"; got != want {
+		t.Fatalf("persistDiscoveredInterface() error = %q, want %q", got, want)
+	}
+	if _, ok := info["discovered"]; ok {
+		t.Fatalf("info[\"discovered\"] unexpectedly set: %v", info["discovered"])
+	}
+	if _, ok := info["last_heard"]; ok {
+		t.Fatalf("info[\"last_heard\"] unexpectedly set: %v", info["last_heard"])
+	}
+	if _, ok := info["heard_count"]; ok {
+		t.Fatalf("info[\"heard_count\"] unexpectedly set: %v", info["heard_count"])
 	}
 
 	path := filepath.Join(tmpDir, "discovery", "interfaces", "aabbcc.data")
@@ -7119,6 +7142,102 @@ func TestInterfaceDiscoveryStartLogsPythonPersistTypeErrorForStringHeardCount(t 
 		}
 	}
 	t.Fatalf("expected log containing %q, got %v", want, logs)
+}
+
+func TestInterfaceDiscoveryStartLogsPythonPersistKeyErrorForMissingReceived(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name         string
+		seedExisting bool
+	}{
+		{name: "new entry"},
+		{name: "existing entry", seedExisting: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-persist-missing-received-")
+			defer cleanup()
+
+			logger := NewLogger()
+			logger.SetLogDest(LogCallback)
+
+			var logs []string
+			logger.SetLogCallback(func(msg string) {
+				logs = append(logs, msg)
+			})
+
+			ts := NewTransportSystem(logger)
+			r := &Reticulum{
+				configDir:           tmpDir,
+				transport:           ts,
+				logger:              logger,
+				autoconnectDiscover: 0,
+			}
+			discovery := NewInterfaceDiscovery(r)
+
+			callbackCalled := false
+			discovery.SetDiscoveryCallback(func(map[string]any) {
+				callbackCalled = true
+			})
+			if err := discovery.Start(2); err != nil {
+				t.Fatalf("Start() error = %v", err)
+			}
+
+			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+			filePath := filepath.Join(storagePath, "aabbccdd.data")
+			if tc.seedExisting {
+				if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
+					"discovered":  5.0,
+					"heard_count": 7,
+				}), 0o644); err != nil {
+					t.Fatalf("failed to seed cached discovery file: %v", err)
+				}
+			}
+
+			info := map[string]any{
+				"name":           "Persist Missing Received Backbone",
+				"value":          7,
+				"type":           "BackboneInterface",
+				"discovery_hash": []byte{0xaa, 0xbb, 0xcc, 0xdd},
+				"hops":           2,
+				"reachable_on":   "127.0.0.1",
+				"port":           4242,
+			}
+			discovery.handler.callback(info)
+
+			if callbackCalled {
+				t.Fatal("expected external callback to be skipped when persistence fails")
+			}
+			if got := len(ts.GetInterfaces()); got != 0 {
+				t.Fatalf("expected no auto-connected interfaces when persistence fails, got %v", got)
+			}
+			if _, ok := info["discovered"]; ok {
+				t.Fatalf("info[\"discovered\"] unexpectedly set: %v", info["discovered"])
+			}
+			if _, ok := info["last_heard"]; ok {
+				t.Fatalf("info[\"last_heard\"] unexpectedly set: %v", info["last_heard"])
+			}
+			if _, ok := info["heard_count"]; ok {
+				t.Fatalf("info[\"heard_count\"] unexpectedly set: %v", info["heard_count"])
+			}
+
+			fi, err := os.Stat(filePath)
+			if err != nil {
+				t.Fatalf("expected cached discovery file after persist failure: %v", err)
+			}
+			if fi.Size() != 0 {
+				t.Fatalf("cached discovery file size = %v, want 0", fi.Size())
+			}
+
+			want := "Error while persisting discovered interface data: 'received'"
+			for _, msg := range logs {
+				if strings.Contains(msg, want) {
+					return
+				}
+			}
+			t.Fatalf("expected log containing %q, got %v", want, logs)
+		})
+	}
 }
 
 type monitorTestInterface struct {
