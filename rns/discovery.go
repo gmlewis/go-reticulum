@@ -1054,24 +1054,31 @@ func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) er
 		}
 		discoveredPersisted = replacement
 	}
-	var heardCountPersisted any = 1
-	if heardCountValue != nil {
-		var ok bool
-		heardCountPersisted, ok = incrementDiscoveryHeardCount(heardCountValue)
-		if !ok {
-			if err := createEmptyDiscoveryCacheFile(filePath); err != nil {
-				return err
-			}
-			return fmt.Errorf("invalid heard_count type %T", heardCountValue)
-		}
-	}
-
 	if !receivedPresent {
 		if err := createEmptyDiscoveryCacheFile(filePath); err != nil {
 			return err
 		}
 		return fmt.Errorf("missing received timestamp")
 	}
+	lastHeardPersisted := receivedValue
+	if receivedOK {
+		lastHeardPersisted = receivedAt
+	}
+
+	var heardCountPersisted any = 1
+	if heardCountValue != nil {
+		var ok bool
+		heardCountPersisted, ok = incrementDiscoveryHeardCount(heardCountValue)
+		if !ok {
+			info["discovered"] = discoveredPersisted
+			info["last_heard"] = lastHeardPersisted
+			if err := createEmptyDiscoveryCacheFile(filePath); err != nil {
+				return err
+			}
+			return discoveryHeardCountIncrementError(heardCountValue)
+		}
+	}
+
 	if receivedValue == nil {
 		persisted["last_heard"] = nil
 		persisted["discovered"] = discoveredPersisted
@@ -1615,6 +1622,15 @@ func incrementDiscoveryHeardCount(v any) (any, bool) {
 		return incrementDiscoveryFloat(v)
 	default:
 		return nil, false
+	}
+}
+
+func discoveryHeardCountIncrementError(v any) error {
+	switch v.(type) {
+	case string:
+		return fmt.Errorf(`can only concatenate str (not "int") to str`)
+	default:
+		return fmt.Errorf("invalid heard_count type %T", v)
 	}
 }
 
