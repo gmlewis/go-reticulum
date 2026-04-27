@@ -616,18 +616,192 @@ type DiscoveredInterface struct {
 	IFACNetname string `json:"ifac_netname,omitempty"`
 	IFACNetkey  string `json:"ifac_netkey,omitempty"`
 
-	hasConfigEntry       bool
-	hasStringReachableOn bool
-	endpointReachableOn  string
-	endpointPort         string
-	hasSpecifiedPort     bool
-	hasComparablePort    bool
+	hasConfigEntry bool
+	endpoint       discoveryEndpoint
 }
 
 type discoveredRecord struct {
 	item      DiscoveredInterface
 	sortValue float64
 	rawValue  any
+}
+
+type discoveryBackboneClientConfig struct {
+	Name       string
+	TargetHost any
+	TargetPort any
+}
+
+type discoveryEndpoint struct {
+	hasReachableOnValue       bool
+	rawReachableOn            string
+	rawReachableOnValue       any
+	stringReachableOn         string
+	hasStringReachableOnMatch bool
+	rawPort                   string
+	rawPortValue              any
+	comparablePort            *int
+	hasSpecifiedPort          bool
+}
+
+func cloneDiscoveryEndpointValue(v any) any {
+	if b, ok := v.([]byte); ok {
+		return append([]byte(nil), b...)
+	}
+	return v
+}
+
+func newDiscoveryEndpoint(reachableOn any, hasReachableOn bool, port any, hasPort bool) discoveryEndpoint {
+	var endpoint discoveryEndpoint
+
+	if hasReachableOn {
+		endpoint.hasReachableOnValue = true
+		endpoint.rawReachableOn = discoveryDisplayString(reachableOn, true)
+		endpoint.rawReachableOnValue = cloneDiscoveryEndpointValue(reachableOn)
+		if reachableOnString, ok := reachableOn.(string); ok {
+			endpoint.stringReachableOn = reachableOnString
+			endpoint.hasStringReachableOnMatch = true
+		}
+	}
+
+	if hasPort {
+		endpoint.hasSpecifiedPort = true
+		endpoint.rawPort = pythonDiscoveryValueString(port)
+		endpoint.rawPortValue = cloneDiscoveryEndpointValue(port)
+		if comparablePort, ok := discoveryComparablePortValue(port); ok {
+			endpoint.comparablePort = &comparablePort
+		}
+	}
+
+	return endpoint
+}
+
+func (e discoveryEndpoint) hashInput(fallbackReachableOn string, fallbackPort *int) string {
+	endpoint := fallbackReachableOn
+	if e.hasReachableOnValue {
+		endpoint = e.rawReachableOn
+	}
+
+	port := ""
+	if e.hasSpecifiedPort {
+		port = e.rawPort
+	} else if fallbackPort != nil {
+		port = fmt.Sprintf("%v", *fallbackPort)
+	}
+
+	if port != "" {
+		endpoint = fmt.Sprintf("%v:%v", endpoint, port)
+	}
+
+	return endpoint
+}
+
+func (e discoveryEndpoint) allowsStringReachableOnMatch(fallbackReachableOn string) bool {
+	return e.hasStringReachableOnMatch || (fallbackReachableOn != "" && !e.hasReachableOnValue)
+}
+
+func (e discoveryEndpoint) reachableOnForMatch(fallbackReachableOn string) string {
+	if e.hasStringReachableOnMatch {
+		return e.stringReachableOn
+	}
+	return fallbackReachableOn
+}
+
+func (e discoveryEndpoint) matchesTargetPort(targetPort int, fallbackPort *int) bool {
+	if !e.hasSpecifiedPort {
+		return fallbackPort == nil || (fallbackPort != nil && targetPort == *fallbackPort)
+	}
+	return e.comparablePort != nil && targetPort == *e.comparablePort
+}
+
+func (e discoveryEndpoint) backboneClientConfig(name, fallbackReachableOn string, fallbackPort *int) (discoveryBackboneClientConfig, bool) {
+	if !e.hasReachableOnValue && fallbackReachableOn == "" {
+		return discoveryBackboneClientConfig{}, false
+	}
+	if !e.hasSpecifiedPort && fallbackPort == nil {
+		return discoveryBackboneClientConfig{}, false
+	}
+
+	cfg := discoveryBackboneClientConfig{Name: name}
+	if e.hasReachableOnValue {
+		cfg.TargetHost = cloneDiscoveryEndpointValue(e.rawReachableOnValue)
+	} else {
+		cfg.TargetHost = fallbackReachableOn
+	}
+	if e.hasSpecifiedPort {
+		cfg.TargetPort = cloneDiscoveryEndpointValue(e.rawPortValue)
+	} else if fallbackPort != nil {
+		cfg.TargetPort = *fallbackPort
+	}
+
+	return cfg, true
+}
+
+type discoveryBackboneFactory func(discoveryBackboneClientConfig, interfaces.InboundHandler) (interfaces.Interface, error)
+
+func defaultDiscoveryBackboneClientInterface(config discoveryBackboneClientConfig, handler interfaces.InboundHandler) (interfaces.Interface, error) {
+	targetHost, ok := discoveryBackboneTargetHostValue(config.TargetHost)
+	if !ok {
+		return nil, fmt.Errorf("missing reachable_on/port")
+	}
+	targetPort, err := discoveryBackboneTargetPortValue(config.TargetPort)
+	if err != nil {
+		return nil, err
+	}
+	return interfaces.NewBackboneClientInterface(config.Name, targetHost, targetPort, handler)
+}
+
+func discoveryBackboneTargetHostValue(v any) (string, bool) {
+	switch t := v.(type) {
+	case string:
+		return t, true
+	case []byte:
+		return string(t), true
+	default:
+		return "", false
+	}
+}
+
+func discoveryBackboneTargetPortValue(v any) (int, error) {
+	switch t := v.(type) {
+	case nil:
+		return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not 'NoneType'")
+	case bool:
+		return boolToInt(t), nil
+	case string:
+		i, err := strconv.Atoi(strings.TrimSpace(t))
+		if err != nil {
+			return 0, fmt.Errorf("invalid literal for int() with base 10: %q", t)
+		}
+		return i, nil
+	case []byte:
+		i, err := strconv.Atoi(strings.TrimSpace(string(t)))
+		if err != nil {
+			return 0, fmt.Errorf("invalid literal for int() with base 10: %v", pythonDiscoveryValueString(t))
+		}
+		return i, nil
+	case float32:
+		f := float64(t)
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			return 0, fmt.Errorf("cannot convert float %v to integer", t)
+		}
+		return int(t), nil
+	case float64:
+		if math.IsNaN(t) || math.IsInf(t, 0) {
+			return 0, fmt.Errorf("cannot convert float %v to integer", t)
+		}
+		return int(t), nil
+	}
+
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return int(rv.Int()), nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return int(rv.Uint()), nil
+	default:
+		return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not %q", rv.Type())
+	}
 }
 
 // InterfaceDiscovery actively listens for and processes inbound presence announcements from remote nodes to establish automatic connections.
@@ -648,6 +822,7 @@ type InterfaceDiscovery struct {
 	detachThreshold        time.Duration
 	monitorStopCh          chan struct{}
 	shuffleCandidates      func([]DiscoveredInterface)
+	backboneFactory        discoveryBackboneFactory
 }
 
 // NewInterfaceDiscovery initializes a discovery listener bound to the provided local Reticulum configuration.
@@ -658,6 +833,7 @@ func NewInterfaceDiscovery(owner *Reticulum) *InterfaceDiscovery {
 		monitorInterval:      5 * time.Second,
 		detachThreshold:      12 * time.Second,
 		shuffleCandidates:    shuffleDiscoveredInterfaces,
+		backboneFactory:      defaultDiscoveryBackboneClientInterface,
 	}
 }
 
@@ -688,6 +864,27 @@ func (id *InterfaceDiscovery) invokeDiscoveryCallback(info map[string]any) {
 		}
 	}()
 	callback(info)
+}
+
+func (id *InterfaceDiscovery) logDiscoveredInterface(info map[string]any) {
+	if id == nil || id.owner == nil || id.owner.logger == nil {
+		return
+	}
+
+	hops := asInt(info["hops"])
+	suffix := "s"
+	if hops == 1 {
+		suffix = ""
+	}
+
+	id.owner.logger.Debug(
+		"Discovered %v %v hop%v away with stamp value %v: %v",
+		pythonDiscoveryValueString(info["type"]),
+		hops,
+		suffix,
+		pythonDiscoveryValueString(info["value"]),
+		pythonDiscoveryValueString(info["name"]),
+	)
 }
 
 func shuffleDiscoveredInterfaces(candidates []DiscoveredInterface) {
@@ -723,6 +920,7 @@ func (id *InterfaceDiscovery) Start(requiredValue int) error {
 			}
 			return
 		}
+		id.logDiscoveredInterface(info)
 		if err := id.persistDiscoveredInterface(info); err != nil && id.owner != nil && id.owner.logger != nil {
 			id.owner.logger.Error("failed to persist discovered interface: %v", err)
 			return
@@ -1078,16 +1276,12 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 			IFACNetkey:  discoveryDisplayString(ifacNetkeyValue, hasIFACNetkey),
 
 			hasConfigEntry: hasConfigEntry,
+			endpoint:       newDiscoveryEndpoint(lookupAnyValue(m, "reachable_on"), hasAnyKey(m, "reachable_on"), lookupAnyValue(m, "port"), hasAnyKey(m, "port")),
 		}
 
 		di.Latitude = lookupOptFloat64(m, "latitude")
 		di.Longitude = lookupOptFloat64(m, "longitude")
 		di.Height = lookupOptFloat64(m, "height")
-		if portValue, ok := lookupAny(m, "port"); ok {
-			di.endpointPort = pythonDiscoveryValueString(portValue)
-			di.hasSpecifiedPort = true
-			_, di.hasComparablePort = discoveryComparablePortValue(portValue)
-		}
 		di.Port = lookupOptInt(m, "port")
 		di.Frequency = lookupOptInt(m, "frequency")
 		di.Bandwidth = lookupOptInt(m, "bandwidth")
@@ -1513,17 +1707,7 @@ func mapToDiscoveredInterface(info map[string]any) (DiscoveredInterface, bool) {
 		IFACNetkey:  discoveryDisplayString(ifacNetkeyValue, hasIFACNetkey),
 
 		hasConfigEntry: hasConfigEntry,
-	}
-	if reachableOnString, ok := reachableOnValue.(string); ok {
-		out.hasStringReachableOn = true
-		out.endpointReachableOn = reachableOnString
-	} else if hasReachableOn {
-		out.endpointReachableOn = discoveryDisplayString(reachableOnValue, true)
-	}
-	if portValue, ok := info["port"]; ok {
-		out.endpointPort = pythonDiscoveryValueString(portValue)
-		out.hasSpecifiedPort = true
-		_, out.hasComparablePort = discoveryComparablePortValue(portValue)
+		endpoint:       newDiscoveryEndpoint(reachableOnValue, hasReachableOn, info["port"], hasStringKey(info, "port")),
 	}
 
 	if v, ok := info["latitude"]; ok && v != nil {
@@ -1634,16 +1818,20 @@ func (id *InterfaceDiscovery) autoconnect(info DiscoveredInterface) (err error) 
 	if !info.hasConfigEntry {
 		return fmt.Errorf("missing config_entry")
 	}
-	if info.ReachableOn == "" || info.Port == nil || *info.Port <= 0 {
+	config, ok := info.endpoint.backboneClientConfig(info.Name, info.ReachableOn, info.Port)
+	if !ok {
 		return fmt.Errorf("missing reachable_on/port")
 	}
 
 	handler := func(data []byte, iface interfaces.Interface) {
 		id.owner.transport.Inbound(data, iface)
 	}
-	iface, err := interfaces.NewBackboneClientInterface(info.Name, info.ReachableOn, *info.Port, handler)
+	iface, err := id.backboneFactory(config, handler)
 	if err != nil {
-		return err
+		if id != nil && id.owner != nil && id.owner.logger != nil {
+			id.owner.logger.Error("error while auto-connecting discovered interface: %v", err)
+		}
+		return nil
 	}
 
 	if setter, ok := iface.(interface{ SetAutoconnect([]byte, string) }); ok {
@@ -1673,7 +1861,7 @@ func (id *InterfaceDiscovery) interfaceExists(info DiscoveredInterface) bool {
 	}
 
 	endpointHash := id.endpointHash(info)
-	allowStringReachableOnMatch := info.hasStringReachableOn || (info.ReachableOn != "" && info.endpointReachableOn == "")
+	allowStringReachableOnMatch := info.endpoint.allowsStringReachableOnMatch(info.ReachableOn)
 	for _, iface := range id.owner.transport.GetInterfaces() {
 		if meta, ok := iface.(interface{ AutoconnectHash() []byte }); ok && bytes.Equal(meta.AutoconnectHash(), endpointHash) {
 			return true
@@ -1684,18 +1872,14 @@ func (id *InterfaceDiscovery) interfaceExists(info DiscoveredInterface) bool {
 				TargetHost() string
 				TargetPort() int
 			})
-			if ok && hostPortMatcher.TargetHost() == info.ReachableOn {
-				if !info.hasSpecifiedPort {
-					if info.Port == nil || hostPortMatcher.TargetPort() == *info.Port {
-						return true
-					}
-				} else if info.hasComparablePort && info.Port != nil && hostPortMatcher.TargetPort() == *info.Port {
+			if ok && hostPortMatcher.TargetHost() == info.endpoint.reachableOnForMatch(info.ReachableOn) {
+				if info.endpoint.matchesTargetPort(hostPortMatcher.TargetPort(), info.Port) {
 					return true
 				}
 			}
 
 			b32Matcher, ok := iface.(interface{ B32() string })
-			if ok && b32Matcher.B32() == info.ReachableOn {
+			if ok && b32Matcher.B32() == info.endpoint.reachableOnForMatch(info.ReachableOn) {
 				return true
 			}
 		}
@@ -1704,18 +1888,7 @@ func (id *InterfaceDiscovery) interfaceExists(info DiscoveredInterface) bool {
 }
 
 func (id *InterfaceDiscovery) endpointHash(info DiscoveredInterface) []byte {
-	endpoint := info.endpointReachableOn
-	if endpoint == "" {
-		endpoint = info.ReachableOn
-	}
-	port := info.endpointPort
-	if port == "" && info.Port != nil {
-		port = fmt.Sprintf("%v", *info.Port)
-	}
-	if port != "" {
-		endpoint = fmt.Sprintf("%v:%v", endpoint, port)
-	}
-	return FullHash([]byte(endpoint))
+	return FullHash([]byte(info.endpoint.hashInput(info.ReachableOn, info.Port)))
 }
 
 func discoveryComparablePortValue(v any) (int, bool) {
@@ -1744,6 +1917,16 @@ func discoveryComparablePortValue(v any) (int, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func hasAnyKey(m map[any]any, key string) bool {
+	_, ok := lookupAny(m, key)
+	return ok
+}
+
+func hasStringKey(m map[string]any, key string) bool {
+	_, ok := m[key]
+	return ok
 }
 
 func (id *InterfaceDiscovery) monitorInterface(iface interfaces.Interface) {

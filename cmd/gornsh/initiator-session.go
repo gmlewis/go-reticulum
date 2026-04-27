@@ -314,6 +314,7 @@ func (rt *runtimeT) runInitiatorProtocolFlow(channel channelSession, opts option
 			case err := <-session.errCh:
 				return 1, session, err
 			case exitCode := <-session.doneCh:
+				rt.drainPostExitStreams(session, stopCh)
 				if opts.mirror {
 					return exitCode, session, nil
 				}
@@ -326,6 +327,7 @@ func (rt *runtimeT) runInitiatorProtocolFlow(channel channelSession, opts option
 				return 1, session, snapshot.lastErr
 			}
 			if snapshot.lastExit != nil {
+				rt.drainPostExitStreams(session, stopCh)
 				if opts.mirror {
 					return *snapshot.lastExit, session, nil
 				}
