@@ -860,7 +860,7 @@ func (id *InterfaceDiscovery) invokeDiscoveryCallback(info map[string]any) {
 	}
 	defer func() {
 		if recovered := recover(); recovered != nil && id.owner != nil && id.owner.logger != nil {
-			id.owner.logger.Error("error while processing external interface discovery callback: %v", recovered)
+			id.owner.logger.Error("Error while processing external interface discovery callback: %v", recovered)
 		}
 	}()
 	callback(info)
@@ -1819,7 +1819,7 @@ func (id *InterfaceDiscovery) autoconnect(info DiscoveredInterface) (err error) 
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			if id != nil && id.owner != nil && id.owner.logger != nil {
-				id.owner.logger.Error("error while auto-connecting discovered interface: %v", recovered)
+				id.owner.logger.Error("Error while auto-connecting discovered interface: %v", recovered)
 			}
 			err = nil
 		}
@@ -1835,14 +1835,38 @@ func (id *InterfaceDiscovery) autoconnect(info DiscoveredInterface) (err error) 
 		return nil
 	}
 	if id.interfaceExists(info) {
+		if id.owner.logger != nil {
+			id.owner.logger.Debug("Discovered %v already exists, not auto-connecting", info.Type)
+		}
 		return nil
 	}
+	if id.owner.logger != nil {
+		id.owner.logger.Notice("Auto-connecting discovered %v %v", info.Type, info.Name)
+	}
 	if !info.hasConfigEntry {
-		return fmt.Errorf("missing config_entry")
+		if id.owner.logger != nil {
+			id.owner.logger.Error("Error while auto-connecting discovered interface: 'config_entry'")
+		}
+		return nil
+	}
+	if !info.endpoint.hasReachableOnValue {
+		if id.owner.logger != nil {
+			id.owner.logger.Error("Error while auto-connecting discovered interface: 'reachable_on'")
+		}
+		return nil
+	}
+	if !info.endpoint.hasSpecifiedPort {
+		if id.owner.logger != nil {
+			id.owner.logger.Error("Error while auto-connecting discovered interface: 'port'")
+		}
+		return nil
 	}
 	config, ok := info.endpoint.backboneClientConfig(info.Name, info.ReachableOn, info.Port)
 	if !ok {
-		return fmt.Errorf("missing reachable_on/port")
+		if id.owner.logger != nil {
+			id.owner.logger.Error("Error while auto-connecting discovered interface: missing reachable_on/port")
+		}
+		return nil
 	}
 
 	handler := func(data []byte, iface interfaces.Interface) {
@@ -1851,7 +1875,7 @@ func (id *InterfaceDiscovery) autoconnect(info DiscoveredInterface) (err error) 
 	iface, err := id.backboneFactory(config, handler)
 	if err != nil {
 		if id != nil && id.owner != nil && id.owner.logger != nil {
-			id.owner.logger.Error("error while auto-connecting discovered interface: %v", err)
+			id.owner.logger.Error("Error while auto-connecting discovered interface: %v", err)
 		}
 		return nil
 	}
