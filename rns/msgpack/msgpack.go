@@ -333,77 +333,42 @@ func Unpack(data []byte) (any, error) {
 // bytes using Python-shaped error surfaces for malformed payloads.
 func UnpackStrict(data []byte) (any, error) {
 	r := bytes.NewReader(data)
-	value, err := unpack(r)
+	value, err := unpackWithOptions(r, unpackOptions{
+		strictMapKeys:     true,
+		preserveBinMapKey: true,
+	})
 	if err != nil {
 		return nil, normalizePythonUnpackError(err)
 	}
 	if r.Len() == 0 {
 		return value, nil
 	}
-
-	extra := make([]byte, r.Len())
-	if _, err := io.ReadFull(r, extra); err != nil {
-		return nil, err
-	}
-	return nil, fmt.Errorf("ExtraData(%v, %v)", pythonMsgpackRepr(value), pythonBytesRepr(extra))
+	return nil, fmt.Errorf("unpack(b) received extra data.")
 }
 
 func normalizePythonUnpackError(err error) error {
 	switch {
 	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
-		return fmt.Errorf("ValueError('Unpack failed: incomplete input')")
+		return fmt.Errorf("Unpack failed: incomplete input")
 	case strings.HasPrefix(err.Error(), "unknown type: "):
-		return fmt.Errorf("FormatError()")
+		return fmt.Errorf("")
 	default:
 		return err
 	}
 }
 
-func pythonMsgpackRepr(value any) string {
-	switch value := value.(type) {
-	case nil:
-		return "None"
-	case bool:
-		if value {
-			return "True"
-		}
-		return "False"
-	case string:
-		return "'" + strings.ReplaceAll(strings.ReplaceAll(value, "\\", "\\\\"), "'", "\\'") + "'"
-	case []byte:
-		return pythonBytesRepr(value)
-	default:
-		return fmt.Sprintf("%v", value)
-	}
+type unpackOptions struct {
+	strictMapKeys     bool
+	preserveBinMapKey bool
 }
 
-func pythonBytesRepr(data []byte) string {
-	var b strings.Builder
-	b.WriteString("b'")
-	for _, value := range data {
-		switch value {
-		case '\\', '\'':
-			b.WriteByte('\\')
-			b.WriteByte(value)
-		case '\n':
-			b.WriteString("\\n")
-		case '\r':
-			b.WriteString("\\r")
-		case '\t':
-			b.WriteString("\\t")
-		default:
-			if value >= 0x20 && value <= 0x7e {
-				b.WriteByte(value)
-				continue
-			}
-			fmt.Fprintf(&b, "\\x%02x", value)
-		}
-	}
-	b.WriteByte('\'')
-	return b.String()
-}
+type binaryMapKey string
 
 func unpack(r *bytes.Reader) (any, error) {
+	return unpackWithOptions(r, unpackOptions{})
+}
+
+func unpackWithOptions(r *bytes.Reader, opts unpackOptions) (any, error) {
 	b, err := r.ReadByte()
 	if err != nil {
 		return nil, err
@@ -413,9 +378,9 @@ func unpack(r *bytes.Reader) (any, error) {
 	case b <= posFixIntMax:
 		return int64(b), nil
 	case b >= fixMapMin && b <= fixMapMax:
-		return unpackMap(r, int(b&0x0f))
+		return unpackMapWithOptions(r, int(b&0x0f), opts)
 	case b >= fixArrayMin && b <= fixArrayMax:
-		return unpackArray(r, int(b&0x0f))
+		return unpackArrayWithOptions(r, int(b&0x0f), opts)
 	case b >= fixStrMin && b <= fixStrMax:
 		return unpackStr(r, int(b&0x1f))
 	case b == nilVal:
@@ -525,25 +490,25 @@ func unpack(r *bytes.Reader) (any, error) {
 		if err := binary.Read(r, binary.BigEndian, &l); err != nil {
 			return nil, err
 		}
-		return unpackArray(r, int(l))
+		return unpackArrayWithOptions(r, int(l), opts)
 	case b == array32:
 		var l uint32
 		if err := binary.Read(r, binary.BigEndian, &l); err != nil {
 			return nil, err
 		}
-		return unpackArray(r, int(l))
+		return unpackArrayWithOptions(r, int(l), opts)
 	case b == map16:
 		var l uint16
 		if err := binary.Read(r, binary.BigEndian, &l); err != nil {
 			return nil, err
 		}
-		return unpackMap(r, int(l))
+		return unpackMapWithOptions(r, int(l), opts)
 	case b == map32:
 		var l uint32
 		if err := binary.Read(r, binary.BigEndian, &l); err != nil {
 			return nil, err
 		}
-		return unpackMap(r, int(l))
+		return unpackMapWithOptions(r, int(l), opts)
 	case b >= negFixIntMin:
 		return int64(int8(b)), nil
 	default:
@@ -570,9 +535,13 @@ func unpackBin(r *bytes.Reader, l int) ([]byte, error) {
 }
 
 func unpackArray(r *bytes.Reader, l int) ([]any, error) {
+	return unpackArrayWithOptions(r, l, unpackOptions{})
+}
+
+func unpackArrayWithOptions(r *bytes.Reader, l int, opts unpackOptions) ([]any, error) {
 	a := make([]any, l)
 	for i := 0; i < l; i++ {
-		v, err := unpack(r)
+		v, err := unpackWithOptions(r, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -582,21 +551,62 @@ func unpackArray(r *bytes.Reader, l int) ([]any, error) {
 }
 
 func unpackMap(r *bytes.Reader, l int) (map[any]any, error) {
+	return unpackMapWithOptions(r, l, unpackOptions{})
+}
+
+func unpackMapWithOptions(r *bytes.Reader, l int, opts unpackOptions) (map[any]any, error) {
 	m := make(map[any]any, l)
 	for i := 0; i < l; i++ {
-		k, err := unpack(r)
+		k, err := unpackWithOptions(r, opts)
 		if err != nil {
 			return nil, err
 		}
-		// []byte is not hashable in Go; convert to string for use as map key.
-		if b, ok := k.([]byte); ok {
-			k = string(b)
+		if opts.strictMapKeys {
+			switch k.(type) {
+			case string, []byte:
+			default:
+				return nil, strictMapKeyError(k)
+			}
 		}
-		v, err := unpack(r)
+		if b, ok := k.([]byte); ok {
+			if opts.preserveBinMapKey {
+				k = binaryMapKey(string(b))
+			} else {
+				k = string(b)
+			}
+		}
+		v, err := unpackWithOptions(r, opts)
 		if err != nil {
 			return nil, err
 		}
 		m[k] = v
 	}
 	return m, nil
+}
+
+func strictMapKeyError(key any) error {
+	return fmt.Errorf("%v is not allowed for map key when strict_map_key=True", pythonTypeName(key))
+}
+
+func pythonTypeName(value any) string {
+	switch value.(type) {
+	case nil:
+		return "NoneType"
+	case bool:
+		return "bool"
+	case float32, float64:
+		return "float"
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return "int"
+	case string:
+		return "str"
+	case []byte:
+		return "bytes"
+	case []any:
+		return "list"
+	case map[any]any, map[string]any:
+		return "dict"
+	default:
+		return reflect.TypeOf(value).String()
+	}
 }

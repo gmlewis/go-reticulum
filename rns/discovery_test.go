@@ -7846,7 +7846,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistExtraDataForInvalidMsgpackCache
 		t.Fatalf("cached discovery file changed on invalid-msgpack failure: got %x want %x", data, original)
 	}
 
-	want := "Error while persisting discovered interface data: ExtraData(110, b'ot-msgpack')"
+	want := "Error while persisting discovered interface data: unpack(b) received extra data."
 	for _, msg := range logs {
 		if strings.Contains(msg, want) {
 			return
@@ -7919,7 +7919,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistFormatErrorForInvalidTypeCodeCa
 		t.Fatalf("cached discovery file changed on invalid-type-code failure: got %x want %x", data, original)
 	}
 
-	want := "Error while persisting discovered interface data: FormatError()"
+	want := "Error while persisting discovered interface data:"
 	for _, msg := range logs {
 		if strings.Contains(msg, want) {
 			return
@@ -7992,7 +7992,156 @@ func TestInterfaceDiscoveryStartLogsPythonPersistValueErrorForIncompleteMsgpackC
 		t.Fatalf("cached discovery file changed on incomplete-msgpack failure: got %x want %x", data, original)
 	}
 
-	want := "Error while persisting discovered interface data: ValueError('Unpack failed: incomplete input')"
+	want := "Error while persisting discovered interface data: Unpack failed: incomplete input"
+	for _, msg := range logs {
+		if strings.Contains(msg, want) {
+			return
+		}
+	}
+	t.Fatalf("expected log containing %q, got %v", want, logs)
+}
+
+func TestInterfaceDiscoveryStartLogsPythonPersistValueErrorForIntKeyCache(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-persist-int-key-cache-")
+	defer cleanup()
+
+	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
+
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	callbackCalled := false
+	discovery.SetDiscoveryCallback(func(map[string]any) {
+		callbackCalled = true
+	})
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	filePath := filepath.Join(storagePath, "aabbccdd.data")
+	original := []byte{0x82, 0x01, 0x02, 0x03, 0x04}
+	if err := os.WriteFile(filePath, original, 0o644); err != nil {
+		t.Fatalf("failed to seed cached discovery file: %v", err)
+	}
+
+	discovery.handler.callback(map[string]any{
+		"name":           "Persist Int Key Cache Backbone",
+		"value":          7,
+		"type":           "BackboneInterface",
+		"discovery_hash": []byte{0xaa, 0xbb, 0xcc, 0xdd},
+		"hops":           2,
+		"received":       1234.0,
+		"reachable_on":   "127.0.0.1",
+		"port":           4242,
+	})
+
+	if callbackCalled {
+		t.Fatal("expected external callback to be skipped when persistence fails")
+	}
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected no auto-connected interfaces when persistence fails, got %v", got)
+	}
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("failed to read cached discovery file: %v", err)
+	}
+	if !bytes.Equal(data, original) {
+		t.Fatalf("cached discovery file changed on int-key failure: got %x want %x", data, original)
+	}
+
+	want := "Error while persisting discovered interface data: int is not allowed for map key when strict_map_key=True"
+	for _, msg := range logs {
+		if strings.Contains(msg, want) {
+			return
+		}
+	}
+	t.Fatalf("expected log containing %q, got %v", want, logs)
+}
+
+func TestInterfaceDiscoveryStartLogsPythonPersistKeyErrorForBinaryKeyCache(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-persist-binary-key-cache-")
+	defer cleanup()
+
+	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
+
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	callbackCalled := false
+	discovery.SetDiscoveryCallback(func(map[string]any) {
+		callbackCalled = true
+	})
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	filePath := filepath.Join(storagePath, "aabbccdd.data")
+	original, err := hex.DecodeString("82c40a646973636f766572656401c40b68656172645f636f756e7402")
+	if err != nil {
+		t.Fatalf("hex.DecodeString() error = %v", err)
+	}
+	if err := os.WriteFile(filePath, original, 0o644); err != nil {
+		t.Fatalf("failed to seed cached discovery file: %v", err)
+	}
+
+	discovery.handler.callback(map[string]any{
+		"name":           "Persist Binary Key Cache Backbone",
+		"value":          7,
+		"type":           "BackboneInterface",
+		"discovery_hash": []byte{0xaa, 0xbb, 0xcc, 0xdd},
+		"hops":           2,
+		"received":       1234.0,
+		"reachable_on":   "127.0.0.1",
+		"port":           4242,
+	})
+
+	if callbackCalled {
+		t.Fatal("expected external callback to be skipped when persistence fails")
+	}
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected no auto-connected interfaces when persistence fails, got %v", got)
+	}
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("failed to read cached discovery file: %v", err)
+	}
+	if !bytes.Equal(data, original) {
+		t.Fatalf("cached discovery file changed on binary-key failure: got %x want %x", data, original)
+	}
+
+	want := "Error while persisting discovered interface data: 'discovered'"
 	for _, msg := range logs {
 		if strings.Contains(msg, want) {
 			return
@@ -8374,6 +8523,207 @@ func TestInterfaceDiscoveryStartLogsPythonPersistTypeErrorForStringHeardCount(t 
 		}
 	}
 	t.Fatalf("expected log containing %q, got %v", want, logs)
+}
+
+func TestInterfaceDiscoveryStartLogsPythonPersistTypeErrorForBytesHeardCount(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-persist-bytes-heard-count-")
+	defer cleanup()
+
+	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
+
+	ts := NewTransportSystem(logger)
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 0,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	callbackCalled := false
+	discovery.SetDiscoveryCallback(func(map[string]any) {
+		callbackCalled = true
+	})
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	filePath := filepath.Join(storagePath, "aabbccdd.data")
+	if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
+		"discovered":  5.0,
+		"heard_count": []byte("x"),
+	}), 0o644); err != nil {
+		t.Fatalf("failed to seed cached discovery file: %v", err)
+	}
+
+	info := map[string]any{
+		"name":           "Persist Bytes HeardCount Backbone",
+		"value":          7,
+		"type":           "BackboneInterface",
+		"discovery_hash": []byte{0xaa, 0xbb, 0xcc, 0xdd},
+		"hops":           2,
+		"received":       1234.0,
+		"reachable_on":   "127.0.0.1",
+		"port":           4242,
+	}
+	discovery.handler.callback(info)
+
+	if callbackCalled {
+		t.Fatal("expected external callback to be skipped when persistence fails")
+	}
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected no auto-connected interfaces when persistence fails, got %v", got)
+	}
+	if got := asFloat64(info["discovered"]); got != 5.0 {
+		t.Fatalf("info[\"discovered\"] = %v, want 5.0", got)
+	}
+	if got := asFloat64(info["last_heard"]); got != 1234.0 {
+		t.Fatalf("info[\"last_heard\"] = %v, want 1234.0", got)
+	}
+	if _, ok := info["heard_count"]; ok {
+		t.Fatalf("info[\"heard_count\"] unexpectedly set: %v", info["heard_count"])
+	}
+
+	fi, err := os.Stat(filePath)
+	if err != nil {
+		t.Fatalf("expected truncated cached discovery file: %v", err)
+	}
+	if fi.Size() != 0 {
+		t.Fatalf("truncated cached discovery file size = %v, want 0", fi.Size())
+	}
+
+	want := "Error while persisting discovered interface data: can't concat int to bytes"
+	for _, msg := range logs {
+		if strings.Contains(msg, want) {
+			return
+		}
+	}
+	t.Fatalf("expected log containing %q, got %v", want, logs)
+}
+
+func TestInterfaceDiscoveryStartLogsPythonPersistTypeErrorForCompositeHeardCount(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		root string
+		want string
+	}{
+		{
+			name: "list",
+			root: "rns-discovery-live-persist-list-heard-count-",
+			want: "Error while persisting discovered interface data: 'int' object is not iterable",
+		},
+		{
+			name: "dict",
+			root: "rns-discovery-live-persist-dict-heard-count-",
+			want: "Error while persisting discovered interface data: unsupported operand type(s) for +=: 'dict' and 'int'",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir, cleanup := testutils.TempDir(t, tc.root)
+			defer cleanup()
+
+			logger := NewLogger()
+			logger.SetLogDest(LogCallback)
+
+			var logs []string
+			logger.SetLogCallback(func(msg string) {
+				logs = append(logs, msg)
+			})
+
+			ts := NewTransportSystem(logger)
+			r := &Reticulum{
+				configDir:           tmpDir,
+				transport:           ts,
+				logger:              logger,
+				autoconnectDiscover: 0,
+			}
+			discovery := NewInterfaceDiscovery(r)
+
+			callbackCalled := false
+			discovery.SetDiscoveryCallback(func(map[string]any) {
+				callbackCalled = true
+			})
+			if err := discovery.Start(2); err != nil {
+				t.Fatalf("Start() error = %v", err)
+			}
+
+			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+			filePath := filepath.Join(storagePath, "aabbccdd.data")
+
+			var heardCount any
+			switch tc.name {
+			case "list":
+				heardCount = []any{1}
+			case "dict":
+				heardCount = map[string]any{"a": 1}
+			default:
+				t.Fatalf("unhandled test case %q", tc.name)
+			}
+
+			if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
+				"discovered":  5.0,
+				"heard_count": heardCount,
+			}), 0o644); err != nil {
+				t.Fatalf("failed to seed cached discovery file: %v", err)
+			}
+
+			info := map[string]any{
+				"name":           "Persist Composite HeardCount Backbone",
+				"value":          7,
+				"type":           "BackboneInterface",
+				"discovery_hash": []byte{0xaa, 0xbb, 0xcc, 0xdd},
+				"hops":           2,
+				"received":       1234.0,
+				"reachable_on":   "127.0.0.1",
+				"port":           4242,
+			}
+			discovery.handler.callback(info)
+
+			if callbackCalled {
+				t.Fatal("expected external callback to be skipped when persistence fails")
+			}
+			if got := len(ts.GetInterfaces()); got != 0 {
+				t.Fatalf("expected no auto-connected interfaces when persistence fails, got %v", got)
+			}
+			if got := asFloat64(info["discovered"]); got != 5.0 {
+				t.Fatalf("info[\"discovered\"] = %v, want 5.0", got)
+			}
+			if got := asFloat64(info["last_heard"]); got != 1234.0 {
+				t.Fatalf("info[\"last_heard\"] = %v, want 1234.0", got)
+			}
+			if _, ok := info["heard_count"]; ok {
+				t.Fatalf("info[\"heard_count\"] unexpectedly set: %v", info["heard_count"])
+			}
+
+			fi, err := os.Stat(filePath)
+			if err != nil {
+				t.Fatalf("expected truncated cached discovery file: %v", err)
+			}
+			if fi.Size() != 0 {
+				t.Fatalf("truncated cached discovery file size = %v, want 0", fi.Size())
+			}
+
+			for _, msg := range logs {
+				if strings.Contains(msg, tc.want) {
+					return
+				}
+			}
+			t.Fatalf("expected log containing %q, got %v", tc.want, logs)
+		})
+	}
 }
 
 func TestInterfaceDiscoveryStartLogsPythonPersistKeyErrorForMissingReceived(t *testing.T) {

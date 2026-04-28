@@ -1650,6 +1650,12 @@ func discoveryHeardCountIncrementError(v any) error {
 	switch v.(type) {
 	case string:
 		return fmt.Errorf(`can only concatenate str (not "int") to str`)
+	case []byte:
+		return fmt.Errorf("can't concat int to bytes")
+	case []any:
+		return fmt.Errorf("'int' object is not iterable")
+	case map[any]any, map[string]any:
+		return fmt.Errorf("unsupported operand type(s) for +=: 'dict' and 'int'")
 	default:
 		return fmt.Errorf("invalid heard_count type %T", v)
 	}
