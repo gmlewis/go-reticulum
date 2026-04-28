@@ -871,20 +871,41 @@ func (id *InterfaceDiscovery) logDiscoveredInterface(info map[string]any) {
 		return
 	}
 
-	hops := asInt(info["hops"])
 	suffix := "s"
-	if hops == 1 {
+	if pythonDiscoveryHopIsSingular(info["hops"]) {
 		suffix = ""
 	}
 
 	id.owner.logger.Debug(
 		"Discovered %v %v hop%v away with stamp value %v: %v",
 		pythonDiscoveryValueString(info["type"]),
-		hops,
+		pythonDiscoveryValueString(info["hops"]),
 		suffix,
 		pythonDiscoveryValueString(info["value"]),
 		pythonDiscoveryValueString(info["name"]),
 	)
+}
+
+func pythonDiscoveryHopIsSingular(v any) bool {
+	switch t := v.(type) {
+	case bool:
+		return t
+	}
+
+	rv := reflect.ValueOf(v)
+	if !rv.IsValid() {
+		return false
+	}
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return rv.Int() == 1
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return rv.Uint() == 1
+	case reflect.Float32, reflect.Float64:
+		return rv.Float() == 1
+	default:
+		return false
+	}
 }
 
 func shuffleDiscoveredInterfaces(candidates []DiscoveredInterface) {
@@ -1709,10 +1730,26 @@ func validateDiscoveredInfoForProcessing(info map[string]any) error {
 	if _, ok := info["discovery_hash"].(string); ok {
 		return fmt.Errorf("Unknown format code 'x' for object of type 'str'")
 	}
+	if discoveryHashIsFloat(info["discovery_hash"]) {
+		return fmt.Errorf("Unknown format code 'x' for object of type 'float'")
+	}
 	if !processableDiscoveryHashValue(info["discovery_hash"]) {
 		return fmt.Errorf("invalid discovery_hash type %T", info["discovery_hash"])
 	}
 	return nil
+}
+
+func discoveryHashIsFloat(v any) bool {
+	rv := reflect.ValueOf(v)
+	if !rv.IsValid() {
+		return false
+	}
+	switch rv.Kind() {
+	case reflect.Float32, reflect.Float64:
+		return true
+	default:
+		return false
+	}
 }
 
 func processableDiscoveryHashValue(v any) bool {
@@ -2582,6 +2619,16 @@ func discoveryHexLikeString(v any) (string, bool) {
 		return fmt.Sprintf("%02x", rv.Uint()), true
 	case reflect.Bool:
 		return fmt.Sprintf("%02x", boolToInt(rv.Bool())), true
+	case reflect.Map:
+		var b strings.Builder
+		for _, key := range rv.MapKeys() {
+			part, ok := discoveryHexScalarString(key.Interface())
+			if !ok {
+				return "", false
+			}
+			b.WriteString(part)
+		}
+		return b.String(), true
 	case reflect.Slice, reflect.Array:
 		var b strings.Builder
 		for i := 0; i < rv.Len(); i++ {
