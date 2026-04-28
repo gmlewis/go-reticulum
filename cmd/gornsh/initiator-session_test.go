@@ -786,7 +786,7 @@ func TestRunInitiatorProtocolFlowDefaultGraceCapturesDelayedLateStream(t *testin
 		case *executeCommandMessage:
 			go func() {
 				fake.emit(&commandExitedMessage{ReturnCode: 0})
-				time.Sleep(200 * time.Millisecond)
+				time.Sleep(500 * time.Millisecond)
 				fake.emit(&streamDataMessage{StreamID: streamIDStdout, Data: []byte("late"), EOF: true})
 			}()
 		}

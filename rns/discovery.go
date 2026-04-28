@@ -1076,6 +1076,7 @@ func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) er
 		discoveredPersisted = replacement
 	}
 	if !receivedPresent {
+		info["discovered"] = discoveredPersisted
 		if err := createEmptyDiscoveryCacheFile(filePath); err != nil {
 			return err
 		}
@@ -1389,7 +1390,7 @@ func compareDiscoverySortValues(left, right any) (int, error) {
 		case left == nil && right == nil:
 			return 0, nil
 		default:
-			return 0, fmt.Errorf("invalid mixed discovery cache value types %T and %T", left, right)
+			return 0, pythonDiscoverySortComparisonError(left, right)
 		}
 	}
 
@@ -1410,13 +1411,13 @@ func compareDiscoverySortValues(left, right any) (int, error) {
 	case string:
 		r, ok := right.(string)
 		if !ok {
-			return 0, fmt.Errorf("invalid mixed discovery cache value types %T and %T", left, right)
+			return 0, pythonDiscoverySortComparisonError(left, right)
 		}
 		return strings.Compare(l, r), nil
 	case []byte:
 		r, ok := right.([]byte)
 		if !ok {
-			return 0, fmt.Errorf("invalid mixed discovery cache value types %T and %T", left, right)
+			return 0, pythonDiscoverySortComparisonError(left, right)
 		}
 		return bytes.Compare(l, r), nil
 	}
@@ -1424,12 +1425,46 @@ func compareDiscoverySortValues(left, right any) (int, error) {
 	leftValue := reflect.ValueOf(left)
 	rightValue := reflect.ValueOf(right)
 	if !leftValue.IsValid() || !rightValue.IsValid() {
-		return 0, fmt.Errorf("invalid mixed discovery cache value types %T and %T", left, right)
+		return 0, pythonDiscoverySortComparisonError(left, right)
 	}
 	if !isDiscoverySequenceKind(leftValue.Kind()) || !isDiscoverySequenceKind(rightValue.Kind()) {
-		return 0, fmt.Errorf("invalid discovery cache value type %T", left)
+		return 0, pythonDiscoverySortComparisonError(left, right)
 	}
 	return compareDiscoverySequences(leftValue, rightValue)
+}
+
+func pythonDiscoverySortComparisonError(left, right any) error {
+	return fmt.Errorf(`"'<' not supported between instances of '%v' and '%v'"`, pythonDiscoverySortTypeName(left), pythonDiscoverySortTypeName(right))
+}
+
+func pythonDiscoverySortTypeName(value any) string {
+	switch value.(type) {
+	case nil:
+		return "NoneType"
+	case string:
+		return "str"
+	case []byte:
+		return "bytes"
+	case bool:
+		return "bool"
+	case float32, float64:
+		return "float"
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return "int"
+	}
+
+	rv := reflect.ValueOf(value)
+	if !rv.IsValid() {
+		return "NoneType"
+	}
+	switch rv.Kind() {
+	case reflect.Slice, reflect.Array:
+		return "list"
+	case reflect.Map:
+		return "dict"
+	default:
+		return "object"
+	}
 }
 
 func isDiscoverySequenceKind(kind reflect.Kind) bool {
@@ -1727,29 +1762,13 @@ func validateDiscoveredInfoForProcessing(info map[string]any) error {
 	if info["discovery_hash"] == nil {
 		return fmt.Errorf("unsupported format string passed to NoneType.__format__")
 	}
-	if _, ok := info["discovery_hash"].(string); ok {
-		return fmt.Errorf("Unknown format code 'x' for object of type 'str'")
-	}
-	if discoveryHashIsFloat(info["discovery_hash"]) {
-		return fmt.Errorf("Unknown format code 'x' for object of type 'float'")
+	if err := discoveryHashProcessingError(info["discovery_hash"]); err != nil {
+		return err
 	}
 	if !processableDiscoveryHashValue(info["discovery_hash"]) {
 		return fmt.Errorf("invalid discovery_hash type %T", info["discovery_hash"])
 	}
 	return nil
-}
-
-func discoveryHashIsFloat(v any) bool {
-	rv := reflect.ValueOf(v)
-	if !rv.IsValid() {
-		return false
-	}
-	switch rv.Kind() {
-	case reflect.Float32, reflect.Float64:
-		return true
-	default:
-		return false
-	}
 }
 
 func processableDiscoveryHashValue(v any) bool {
@@ -1758,6 +1777,53 @@ func processableDiscoveryHashValue(v any) bool {
 	}
 	_, ok := discoveryHexLikeString(v)
 	return ok
+}
+
+func discoveryHashProcessingError(v any) error {
+	return discoveryHashProcessingErrorValue(v, false)
+}
+
+func discoveryHashProcessingErrorValue(v any, nested bool) error {
+	switch v.(type) {
+	case string:
+		return fmt.Errorf("Unknown format code 'x' for object of type 'str'")
+	case []byte:
+		if nested {
+			return fmt.Errorf("unsupported format string passed to bytes.__format__")
+		}
+		return nil
+	}
+
+	rv := reflect.ValueOf(v)
+	if !rv.IsValid() {
+		return nil
+	}
+	switch rv.Kind() {
+	case reflect.Float32, reflect.Float64:
+		return fmt.Errorf("Unknown format code 'x' for object of type 'float'")
+	case reflect.Map:
+		if nested {
+			return fmt.Errorf("unsupported format string passed to dict.__format__")
+		}
+		for _, key := range rv.MapKeys() {
+			if err := discoveryHashProcessingErrorValue(key.Interface(), true); err != nil {
+				return err
+			}
+		}
+	case reflect.Slice, reflect.Array:
+		if rv.Kind() == reflect.Slice && rv.Type().Elem().Kind() == reflect.Uint8 {
+			return nil
+		}
+		if nested {
+			return fmt.Errorf("unsupported format string passed to list.__format__")
+		}
+		for i := 0; i < rv.Len(); i++ {
+			if err := discoveryHashProcessingErrorValue(rv.Index(i).Interface(), true); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func mapToDiscoveredInterface(info map[string]any) (DiscoveredInterface, bool) {

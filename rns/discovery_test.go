@@ -811,6 +811,102 @@ func TestListDiscoveredInterfaces_FloatValueSortsLikePython(t *testing.T) {
 	}
 }
 
+func TestListDiscoveredInterfaces_BytesValueSortsLikePython(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-bytes-value-sort-")
+	defer cleanup()
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	entries := []struct {
+		filename  string
+		name      string
+		lastHeard float64
+		value     any
+	}{
+		{filename: "bytes-b.data", name: "BytesB", lastHeard: now - 120, value: []byte("b")},
+		{filename: "bytes-a.data", name: "BytesA", lastHeard: now - 60, value: []byte("a")},
+	}
+	for _, tc := range entries {
+		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(map[string]any{
+			"name":       tc.name,
+			"last_heard": tc.lastHeard,
+			"value":      tc.value,
+		}), 0o644); err != nil {
+			t.Fatalf("failed to write discovery file %q: %v", tc.filename, err)
+		}
+	}
+
+	r := &Reticulum{configDir: tmpDir}
+	discovery := NewInterfaceDiscovery(r)
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces() error = %v", err)
+	}
+	if len(discovered) != 2 {
+		t.Fatalf("expected 2 discovered interfaces, got %v", len(discovered))
+	}
+
+	gotNames := []string{discovered[0].Name, discovered[1].Name}
+	wantNames := []string{"BytesB", "BytesA"}
+	if !reflect.DeepEqual(gotNames, wantNames) {
+		t.Fatalf("names = %v, want %v", gotNames, wantNames)
+	}
+}
+
+func TestListDiscoveredInterfaces_ListValueSortsLikePython(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-list-value-sort-")
+	defer cleanup()
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	entries := []struct {
+		filename  string
+		name      string
+		lastHeard float64
+		value     any
+	}{
+		{filename: "list-12.data", name: "List12", lastHeard: now - 120, value: []any{1, 2}},
+		{filename: "list-11.data", name: "List11", lastHeard: now - 60, value: []any{1, 1}},
+	}
+	for _, tc := range entries {
+		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(map[string]any{
+			"name":       tc.name,
+			"last_heard": tc.lastHeard,
+			"value":      tc.value,
+		}), 0o644); err != nil {
+			t.Fatalf("failed to write discovery file %q: %v", tc.filename, err)
+		}
+	}
+
+	r := &Reticulum{configDir: tmpDir}
+	discovery := NewInterfaceDiscovery(r)
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces() error = %v", err)
+	}
+	if len(discovered) != 2 {
+		t.Fatalf("expected 2 discovered interfaces, got %v", len(discovered))
+	}
+
+	gotNames := []string{discovered[0].Name, discovered[1].Name}
+	wantNames := []string{"List12", "List11"}
+	if !reflect.DeepEqual(gotNames, wantNames) {
+		t.Fatalf("names = %v, want %v", gotNames, wantNames)
+	}
+}
+
 func TestListDiscoveredInterfaces_StringValueSingleEntryDoesNotFail(t *testing.T) {
 	t.Parallel()
 
@@ -943,6 +1039,86 @@ func TestListDiscoveredInterfaces_MixedStringAndIntegerValueReturnsError(t *test
 
 	if _, err := discovery.ListDiscoveredInterfaces(false, false); err == nil {
 		t.Fatal("ListDiscoveredInterfaces() error = nil, want error for mixed string and integer values")
+	}
+}
+
+func TestListDiscoveredInterfaces_MixedBytesAndStringValueReturnsPythonError(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-mixed-bytes-string-sort-")
+	defer cleanup()
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	entries := []struct {
+		filename  string
+		name      string
+		lastHeard float64
+		value     any
+	}{
+		{filename: "bytes-a.data", name: "BytesA", lastHeard: now - 120, value: []byte("a")},
+		{filename: "string-a.data", name: "StringA", lastHeard: now - 60, value: "a"},
+	}
+	for _, tc := range entries {
+		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(map[string]any{
+			"name":       tc.name,
+			"last_heard": tc.lastHeard,
+			"value":      tc.value,
+		}), 0o644); err != nil {
+			t.Fatalf("failed to write discovery file %q: %v", tc.filename, err)
+		}
+	}
+
+	r := &Reticulum{configDir: tmpDir}
+	discovery := NewInterfaceDiscovery(r)
+
+	if _, err := discovery.ListDiscoveredInterfaces(false, false); err == nil {
+		t.Fatal("ListDiscoveredInterfaces() error = nil, want error for mixed bytes and string values")
+	} else if got, want := err.Error(), `"'<' not supported between instances of 'str' and 'bytes'"`; got != want {
+		t.Fatalf("ListDiscoveredInterfaces() error = %q, want %q", got, want)
+	}
+}
+
+func TestListDiscoveredInterfaces_DictValuePairReturnsPythonError(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-dict-value-sort-")
+	defer cleanup()
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	entries := []struct {
+		filename  string
+		name      string
+		lastHeard float64
+		value     any
+	}{
+		{filename: "dict-a.data", name: "DictA", lastHeard: now - 120, value: map[string]any{"a": 1}},
+		{filename: "dict-b.data", name: "DictB", lastHeard: now - 60, value: map[string]any{"b": 1}},
+	}
+	for _, tc := range entries {
+		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(map[string]any{
+			"name":       tc.name,
+			"last_heard": tc.lastHeard,
+			"value":      tc.value,
+		}), 0o644); err != nil {
+			t.Fatalf("failed to write discovery file %q: %v", tc.filename, err)
+		}
+	}
+
+	r := &Reticulum{configDir: tmpDir}
+	discovery := NewInterfaceDiscovery(r)
+
+	if _, err := discovery.ListDiscoveredInterfaces(false, false); err == nil {
+		t.Fatal("ListDiscoveredInterfaces() error = nil, want error for dict value comparison")
+	} else if got, want := err.Error(), `"'<' not supported between instances of 'dict' and 'dict'"`; got != want {
+		t.Fatalf("ListDiscoveredInterfaces() error = %q, want %q", got, want)
 	}
 }
 
@@ -2395,6 +2571,117 @@ func TestPersistDiscoveredInterface_NewEntryAllowsStringReceived(t *testing.T) {
 	}
 }
 
+func TestPersistDiscoveredInterface_NewEntryAllowsBoolReceived(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		got  bool
+		want string
+	}{
+		{name: "true", got: true, want: "True"},
+		{name: "false", got: false, want: "False"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-bool-received-")
+			defer cleanup()
+
+			r := &Reticulum{configDir: tmpDir}
+			discovery := NewInterfaceDiscovery(r)
+			info := map[string]any{
+				"name":           "Persisted",
+				"type":           "TCPServerInterface",
+				"received":       tc.got,
+				"discovery_hash": []byte{0xaa, 0xbb, 0xcc},
+				"value":          1234,
+			}
+
+			if err := discovery.persistDiscoveredInterface(info); err != nil {
+				t.Fatalf("persistDiscoveredInterface failed: %v", err)
+			}
+
+			data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", "aabbcc.data"))
+			if err != nil {
+				t.Fatalf("failed to read persisted discovery file: %v", err)
+			}
+			unpacked, err := msgpack.Unpack(data)
+			if err != nil {
+				t.Fatalf("failed to unpack persisted discovery file: %v", err)
+			}
+			m := asAnyMap(unpacked)
+			if m == nil {
+				t.Fatalf("unexpected persisted discovery type %T", unpacked)
+			}
+
+			if got := pythonDiscoveryReprString(lookupAnyValue(m, "discovered")); got != tc.want {
+				t.Fatalf("discovered = %v, want %v", got, tc.want)
+			}
+			if got := pythonDiscoveryReprString(lookupAnyValue(m, "last_heard")); got != tc.want {
+				t.Fatalf("last_heard = %v, want %v", got, tc.want)
+			}
+			if got := asInt(lookupAnyValue(m, "heard_count")); got != 0 {
+				t.Fatalf("heard_count = %v, want 0", got)
+			}
+		})
+	}
+}
+
+func TestPersistDiscoveredInterface_NewEntryAllowsCompositeReceived(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		got  any
+		want string
+	}{
+		{name: "bytes", got: []byte("x"), want: "b'x'"},
+		{name: "list", got: []any{1}, want: "[1]"},
+		{name: "dict", got: map[string]any{"a": 1}, want: "{'a': 1}"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-composite-received-")
+			defer cleanup()
+
+			r := &Reticulum{configDir: tmpDir}
+			discovery := NewInterfaceDiscovery(r)
+			info := map[string]any{
+				"name":           "Persisted",
+				"type":           "TCPServerInterface",
+				"received":       tc.got,
+				"discovery_hash": []byte{0xaa, 0xbb, 0xcc},
+				"value":          1234,
+			}
+
+			if err := discovery.persistDiscoveredInterface(info); err != nil {
+				t.Fatalf("persistDiscoveredInterface failed: %v", err)
+			}
+
+			data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", "aabbcc.data"))
+			if err != nil {
+				t.Fatalf("failed to read persisted discovery file: %v", err)
+			}
+			unpacked, err := msgpack.Unpack(data)
+			if err != nil {
+				t.Fatalf("failed to unpack persisted discovery file: %v", err)
+			}
+			m := asAnyMap(unpacked)
+			if m == nil {
+				t.Fatalf("unexpected persisted discovery type %T", unpacked)
+			}
+
+			if got := pythonDiscoveryReprString(lookupAnyValue(m, "discovered")); got != tc.want {
+				t.Fatalf("discovered = %v, want %v", got, tc.want)
+			}
+			if got := pythonDiscoveryReprString(lookupAnyValue(m, "last_heard")); got != tc.want {
+				t.Fatalf("last_heard = %v, want %v", got, tc.want)
+			}
+			if got := asInt(lookupAnyValue(m, "heard_count")); got != 0 {
+				t.Fatalf("heard_count = %v, want 0", got)
+			}
+		})
+	}
+}
+
 func TestPersistDiscoveredInterface_NewEntryAllowsIntegerDiscoveryHash(t *testing.T) {
 	t.Parallel()
 
@@ -2483,54 +2770,69 @@ func TestPersistDiscoveredInterface_NewEntryAllowsBoolDiscoveryHash(t *testing.T
 	}
 }
 
-func TestPersistDiscoveredInterface_ExistingEntryMissingReceivedTruncatesFile(t *testing.T) {
+func TestPersistDiscoveredInterface_ExistingEntryMissingReceivedMutatesDiscoveredBeforeTruncatingFile(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-truncate-received-")
-	defer cleanup()
+	for _, tc := range []struct {
+		name              string
+		seedDiscovered    any
+		incomingDiscovery any
+		wantDiscovered    any
+	}{
+		{name: "cached discovered", seedDiscovered: 5.0, wantDiscovered: 5.0},
+		{name: "nil cached discovered uses incoming", seedDiscovered: nil, incomingDiscovery: 7.0, wantDiscovered: 7.0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-truncate-received-")
+			defer cleanup()
 
-	r := &Reticulum{configDir: tmpDir}
-	discovery := NewInterfaceDiscovery(r)
-	info := map[string]any{
-		"name":           "Persisted",
-		"type":           "TCPServerInterface",
-		"received":       5.0,
-		"discovery_hash": "aabbcc",
-		"value":          1234,
-	}
+			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+			if err := os.MkdirAll(storagePath, 0o755); err != nil {
+				t.Fatalf("failed to create storage path: %v", err)
+			}
+			path := filepath.Join(storagePath, "aabbcc.data")
+			if err := os.WriteFile(path, mustMsgpackPack(map[string]any{
+				"discovered":  tc.seedDiscovered,
+				"heard_count": 2,
+			}), 0o644); err != nil {
+				t.Fatalf("failed to seed persisted discovery file: %v", err)
+			}
 
-	if err := discovery.persistDiscoveredInterface(info); err != nil {
-		t.Fatalf("first persistDiscoveredInterface failed: %v", err)
-	}
+			r := &Reticulum{configDir: tmpDir}
+			discovery := NewInterfaceDiscovery(r)
+			info := map[string]any{
+				"name":           "Persisted",
+				"type":           "TCPServerInterface",
+				"discovery_hash": "aabbcc",
+				"value":          5678,
+			}
+			if tc.incomingDiscovery != nil {
+				info["discovered"] = tc.incomingDiscovery
+			}
 
-	info = map[string]any{
-		"name":           "Persisted",
-		"type":           "TCPServerInterface",
-		"discovery_hash": "aabbcc",
-		"value":          5678,
-	}
-	if err := discovery.persistDiscoveredInterface(info); err == nil {
-		t.Fatal("persistDiscoveredInterface() error = nil, want error for missing received timestamp")
-	} else if got, want := err.Error(), "'received'"; got != want {
-		t.Fatalf("persistDiscoveredInterface() error = %q, want %q", got, want)
-	}
-	if _, ok := info["discovered"]; ok {
-		t.Fatalf("info[\"discovered\"] unexpectedly set: %v", info["discovered"])
-	}
-	if _, ok := info["last_heard"]; ok {
-		t.Fatalf("info[\"last_heard\"] unexpectedly set: %v", info["last_heard"])
-	}
-	if _, ok := info["heard_count"]; ok {
-		t.Fatalf("info[\"heard_count\"] unexpectedly set: %v", info["heard_count"])
-	}
+			if err := discovery.persistDiscoveredInterface(info); err == nil {
+				t.Fatal("persistDiscoveredInterface() error = nil, want error for missing received timestamp")
+			} else if got, want := err.Error(), "'received'"; got != want {
+				t.Fatalf("persistDiscoveredInterface() error = %q, want %q", got, want)
+			}
+			if got := pythonDiscoveryReprString(info["discovered"]); got != pythonDiscoveryReprString(tc.wantDiscovered) {
+				t.Fatalf("info[\"discovered\"] = %v, want %v", got, pythonDiscoveryReprString(tc.wantDiscovered))
+			}
+			if _, ok := info["last_heard"]; ok {
+				t.Fatalf("info[\"last_heard\"] unexpectedly set: %v", info["last_heard"])
+			}
+			if _, ok := info["heard_count"]; ok {
+				t.Fatalf("info[\"heard_count\"] unexpectedly set: %v", info["heard_count"])
+			}
 
-	path := filepath.Join(tmpDir, "discovery", "interfaces", "aabbcc.data")
-	fi, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("expected truncated persisted discovery file: %v", err)
-	}
-	if fi.Size() != 0 {
-		t.Fatalf("truncated persisted discovery file size = %v, want 0", fi.Size())
+			fi, err := os.Stat(path)
+			if err != nil {
+				t.Fatalf("expected truncated persisted discovery file: %v", err)
+			}
+			if fi.Size() != 0 {
+				t.Fatalf("truncated persisted discovery file size = %v, want 0", fi.Size())
+			}
+		})
 	}
 }
 
@@ -2648,6 +2950,143 @@ func TestPersistDiscoveredInterface_ExistingEntryAllowsStringReceived(t *testing
 	}
 }
 
+func TestPersistDiscoveredInterface_ExistingEntryAllowsBoolReceived(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		got  bool
+		want string
+	}{
+		{name: "true", got: true, want: "True"},
+		{name: "false", got: false, want: "False"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-existing-bool-")
+			defer cleanup()
+
+			r := &Reticulum{configDir: tmpDir}
+			discovery := NewInterfaceDiscovery(r)
+			info := map[string]any{
+				"name":           "Persisted",
+				"type":           "TCPServerInterface",
+				"received":       5.0,
+				"discovery_hash": "aabbcc",
+				"value":          1234,
+			}
+
+			if err := discovery.persistDiscoveredInterface(info); err != nil {
+				t.Fatalf("first persistDiscoveredInterface failed: %v", err)
+			}
+
+			if err := discovery.persistDiscoveredInterface(map[string]any{
+				"name":           "Persisted",
+				"type":           "TCPServerInterface",
+				"received":       tc.got,
+				"discovery_hash": "aabbcc",
+				"value":          5678,
+			}); err != nil {
+				t.Fatalf("second persistDiscoveredInterface failed: %v", err)
+			}
+
+			data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", "aabbcc.data"))
+			if err != nil {
+				t.Fatalf("failed to read persisted discovery file: %v", err)
+			}
+			unpacked, err := msgpack.Unpack(data)
+			if err != nil {
+				t.Fatalf("failed to unpack persisted discovery file: %v", err)
+			}
+			m := asAnyMap(unpacked)
+			if m == nil {
+				t.Fatalf("unexpected persisted discovery type %T", unpacked)
+			}
+
+			if got := asFloat64(lookupAnyValue(m, "discovered")); got != 5.0 {
+				t.Fatalf("discovered = %v, want 5.0", got)
+			}
+			if got := pythonDiscoveryReprString(lookupAnyValue(m, "last_heard")); got != tc.want {
+				t.Fatalf("last_heard = %v, want %v", got, tc.want)
+			}
+			if got := asInt(lookupAnyValue(m, "heard_count")); got != 1 {
+				t.Fatalf("heard_count = %v, want 1", got)
+			}
+			if got := asInt(lookupAnyValue(m, "value")); got != 5678 {
+				t.Fatalf("value = %v, want 5678", got)
+			}
+		})
+	}
+}
+
+func TestPersistDiscoveredInterface_ExistingEntryAllowsCompositeReceived(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		got  any
+		want string
+	}{
+		{name: "bytes", got: []byte("x"), want: "b'x'"},
+		{name: "list", got: []any{1}, want: "[1]"},
+		{name: "dict", got: map[string]any{"a": 1}, want: "{'a': 1}"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-existing-composite-")
+			defer cleanup()
+
+			r := &Reticulum{configDir: tmpDir}
+			discovery := NewInterfaceDiscovery(r)
+			info := map[string]any{
+				"name":           "Persisted",
+				"type":           "TCPServerInterface",
+				"received":       5.0,
+				"discovery_hash": "aabbcc",
+				"value":          1234,
+			}
+
+			if err := discovery.persistDiscoveredInterface(info); err != nil {
+				t.Fatalf("first persistDiscoveredInterface failed: %v", err)
+			}
+
+			if err := discovery.persistDiscoveredInterface(map[string]any{
+				"name":           "Persisted",
+				"type":           "TCPServerInterface",
+				"received":       tc.got,
+				"discovery_hash": "aabbcc",
+				"value":          5678,
+			}); err != nil {
+				t.Fatalf("second persistDiscoveredInterface failed: %v", err)
+			}
+
+			data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", "aabbcc.data"))
+			if err != nil {
+				t.Fatalf("failed to read persisted discovery file: %v", err)
+			}
+			unpacked, err := msgpack.Unpack(data)
+			if err != nil {
+				t.Fatalf("failed to unpack persisted discovery file: %v", err)
+			}
+			m := asAnyMap(unpacked)
+			if m == nil {
+				t.Fatalf("unexpected persisted discovery type %T", unpacked)
+			}
+
+			if got := asFloat64(lookupAnyValue(m, "discovered")); got != 5.0 {
+				t.Fatalf("discovered = %v, want 5.0", got)
+			}
+			if got := pythonDiscoveryReprString(lookupAnyValue(m, "last_heard")); got != tc.want {
+				t.Fatalf("last_heard = %v, want %v", got, tc.want)
+			}
+			if got := asInt(lookupAnyValue(m, "heard_count")); got != 1 {
+				t.Fatalf("heard_count = %v, want 1", got)
+			}
+			if got := asInt(lookupAnyValue(m, "value")); got != 5678 {
+				t.Fatalf("value = %v, want 5678", got)
+			}
+		})
+	}
+}
+
 func TestPersistDiscoveredInterface_ExistingEntryAllowsIntegerDiscoveryHash(t *testing.T) {
 	t.Parallel()
 
@@ -2749,6 +3188,53 @@ func TestPersistDiscoveredInterface_ExistingEntryBoolTrueHeardCountBecomesTwo(t 
 	}
 	if got := asInt(lookupAnyValue(m, "heard_count")); got != 2 {
 		t.Fatalf("heard_count = %v, want 2", got)
+	}
+}
+
+func TestPersistDiscoveredInterface_ExistingEntryBoolFalseHeardCountBecomesOne(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-bool-false-heard-count-")
+	defer cleanup()
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+	filePath := filepath.Join(storagePath, "aabbcc.data")
+	if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
+		"discovered":  5.0,
+		"heard_count": false,
+	}), 0o644); err != nil {
+		t.Fatalf("failed to seed discovery file: %v", err)
+	}
+
+	r := &Reticulum{configDir: tmpDir}
+	discovery := NewInterfaceDiscovery(r)
+	if err := discovery.persistDiscoveredInterface(map[string]any{
+		"name":           "Persisted",
+		"type":           "TCPServerInterface",
+		"received":       1.0,
+		"discovery_hash": "aabbcc",
+		"value":          5678,
+	}); err != nil {
+		t.Fatalf("persistDiscoveredInterface failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("failed to read persisted discovery file: %v", err)
+	}
+	unpacked, err := msgpack.Unpack(data)
+	if err != nil {
+		t.Fatalf("failed to unpack persisted discovery file: %v", err)
+	}
+	m := asAnyMap(unpacked)
+	if m == nil {
+		t.Fatalf("unexpected persisted discovery type %T", unpacked)
+	}
+	if got := asInt(lookupAnyValue(m, "heard_count")); got != 1 {
+		t.Fatalf("heard_count = %v, want 1", got)
 	}
 }
 
@@ -5607,6 +6093,94 @@ func TestInterfaceDiscoveryStartInvokesDiscoveryCallbackAfterAutoconnect(t *test
 	}
 }
 
+func TestInterfaceDiscoveryStartInvokesDiscoveryCallbackWhenDuplicateAutoconnectSkipped(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-callback-duplicate-")
+	defer cleanup()
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	ts.RegisterInterface(newTargetHostTestInterface("Existing Backbone", "BackboneClientInterface", "127.0.0.1", 4242))
+
+	r := &Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	type callbackResult struct {
+		name            string
+		discovered      float64
+		lastHeard       float64
+		heardCount      int
+		interfacesCount int
+		discoveredCount int
+		err             error
+	}
+	callbackCh := make(chan callbackResult, 1)
+	discovery.SetDiscoveryCallback(func(info map[string]any) {
+		discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+		callbackCh <- callbackResult{
+			name:            asString(info["name"]),
+			discovered:      asFloat64(info["discovered"]),
+			lastHeard:       asFloat64(info["last_heard"]),
+			heardCount:      asInt(info["heard_count"]),
+			interfacesCount: len(ts.GetInterfaces()),
+			discoveredCount: len(discovered),
+			err:             err,
+		}
+	})
+	if err := discovery.Start(2); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	receivedAt := float64(time.Now().UnixNano()) / 1e9
+	discovery.handler.callback(map[string]any{
+		"name":           "Existing Backbone",
+		"value":          7,
+		"type":           "BackboneInterface",
+		"discovery_hash": []byte{0xaa, 0xcf, 0x10},
+		"config_entry":   "[[existing-backbone]]",
+		"hops":           1,
+		"received":       receivedAt,
+		"reachable_on":   "127.0.0.1",
+		"port":           4242,
+		"network_id":     "01020304",
+	})
+
+	var result callbackResult
+	select {
+	case result = <-callbackCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for duplicate-autoconnect discovery callback")
+	}
+
+	if result.err != nil {
+		t.Fatalf("callback ListDiscoveredInterfaces() error = %v", result.err)
+	}
+	if result.name != "Existing Backbone" {
+		t.Fatalf("callback name = %q, want %q", result.name, "Existing Backbone")
+	}
+	if result.discovered != receivedAt {
+		t.Fatalf("callback discovered = %v, want %v", result.discovered, receivedAt)
+	}
+	if result.lastHeard != receivedAt {
+		t.Fatalf("callback last_heard = %v, want %v", result.lastHeard, receivedAt)
+	}
+	if result.heardCount != 0 {
+		t.Fatalf("callback heard_count = %v, want 0", result.heardCount)
+	}
+	if result.interfacesCount != 1 {
+		t.Fatalf("callback interfaces count = %v, want 1", result.interfacesCount)
+	}
+	if result.discoveredCount != 1 {
+		t.Fatalf("callback discovered count = %v, want 1", result.discoveredCount)
+	}
+}
+
 func TestInterfaceDiscoveryStartCallbackReceivesPersistedMetadata(t *testing.T) {
 	t.Parallel()
 
@@ -5838,6 +6412,199 @@ func TestInterfaceDiscoveryStartCallbackReceivesRediscoveryMetadataForNilAndStri
 				}
 			} else if got := asString(lookupAnyValue(m, "last_heard")); got != tc.wantStringHeard {
 				t.Fatalf("persisted last_heard = %q, want %q", got, tc.wantStringHeard)
+			}
+			if got := asInt(lookupAnyValue(m, "heard_count")); got != 3 {
+				t.Fatalf("persisted heard_count = %v, want 3", got)
+			}
+		})
+	}
+}
+
+func TestInterfaceDiscoveryStartCallbackReceivesRediscoveryMetadataForBoolReceived(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		got  bool
+		want string
+	}{
+		{name: "true", got: true, want: "True"},
+		{name: "false", got: false, want: "False"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-rediscovery-bool-received-")
+			defer cleanup()
+
+			logger := NewLogger()
+			ts := NewTransportSystem(logger)
+			r := &Reticulum{
+				configDir:           tmpDir,
+				transport:           ts,
+				logger:              logger,
+				autoconnectDiscover: 0,
+			}
+			discovery := NewInterfaceDiscovery(r)
+
+			callbackCh := make(chan map[string]any, 1)
+			discovery.SetDiscoveryCallback(func(info map[string]any) {
+				callbackCh <- cloneStringAnyMap(info)
+			})
+			if err := discovery.Start(2); err != nil {
+				t.Fatalf("Start() error = %v", err)
+			}
+
+			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+			if err := os.MkdirAll(storagePath, 0o755); err != nil {
+				t.Fatalf("failed to create storage path: %v", err)
+			}
+			filePath := filepath.Join(storagePath, "aabbcc.data")
+			if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
+				"discovered":  7.0,
+				"heard_count": 2,
+			}), 0o644); err != nil {
+				t.Fatalf("failed to seed discovery file: %v", err)
+			}
+
+			discovery.handler.callback(map[string]any{
+				"name":           "Rediscovery Bool Received Backbone",
+				"value":          7,
+				"type":           "BackboneInterface",
+				"discovery_hash": []byte{0xaa, 0xbb, 0xcc},
+				"hops":           1,
+				"received":       tc.got,
+			})
+
+			var callbackInfo map[string]any
+			select {
+			case callbackInfo = <-callbackCh:
+			case <-time.After(5 * time.Second):
+				t.Fatal("timed out waiting for external discovery callback")
+			}
+
+			if got := asFloat64(callbackInfo["discovered"]); got != 7.0 {
+				t.Fatalf("callback discovered = %v, want 7.0", got)
+			}
+			if got := pythonDiscoveryReprString(callbackInfo["last_heard"]); got != tc.want {
+				t.Fatalf("callback last_heard = %v, want %v", got, tc.want)
+			}
+			if got := asInt(callbackInfo["heard_count"]); got != 3 {
+				t.Fatalf("callback heard_count = %v, want 3", got)
+			}
+
+			data, err := os.ReadFile(filePath)
+			if err != nil {
+				t.Fatalf("failed to read persisted discovery file: %v", err)
+			}
+			unpacked, err := msgpack.Unpack(data)
+			if err != nil {
+				t.Fatalf("failed to unpack persisted discovery file: %v", err)
+			}
+			m := asAnyMap(unpacked)
+			if m == nil {
+				t.Fatalf("unexpected persisted discovery type %T", unpacked)
+			}
+			if got := asFloat64(lookupAnyValue(m, "discovered")); got != 7.0 {
+				t.Fatalf("persisted discovered = %v, want 7.0", got)
+			}
+			if got := pythonDiscoveryReprString(lookupAnyValue(m, "last_heard")); got != tc.want {
+				t.Fatalf("persisted last_heard = %v, want %v", got, tc.want)
+			}
+			if got := asInt(lookupAnyValue(m, "heard_count")); got != 3 {
+				t.Fatalf("persisted heard_count = %v, want 3", got)
+			}
+		})
+	}
+}
+
+func TestInterfaceDiscoveryStartCallbackReceivesRediscoveryMetadataForCompositeReceived(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		got  any
+		want string
+	}{
+		{name: "bytes", got: []byte("x"), want: "b'x'"},
+		{name: "list", got: []any{1}, want: "[1]"},
+		{name: "dict", got: map[string]any{"a": 1}, want: "{'a': 1}"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-rediscovery-composite-received-")
+			defer cleanup()
+
+			logger := NewLogger()
+			ts := NewTransportSystem(logger)
+			r := &Reticulum{
+				configDir:           tmpDir,
+				transport:           ts,
+				logger:              logger,
+				autoconnectDiscover: 0,
+			}
+			discovery := NewInterfaceDiscovery(r)
+
+			callbackCh := make(chan map[string]any, 1)
+			discovery.SetDiscoveryCallback(func(info map[string]any) {
+				callbackCh <- cloneStringAnyMap(info)
+			})
+			if err := discovery.Start(2); err != nil {
+				t.Fatalf("Start() error = %v", err)
+			}
+
+			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+			if err := os.MkdirAll(storagePath, 0o755); err != nil {
+				t.Fatalf("failed to create storage path: %v", err)
+			}
+			filePath := filepath.Join(storagePath, "aabbcc.data")
+			if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
+				"discovered":  7.0,
+				"heard_count": 2,
+			}), 0o644); err != nil {
+				t.Fatalf("failed to seed discovery file: %v", err)
+			}
+
+			discovery.handler.callback(map[string]any{
+				"name":           "Rediscovery Composite Received Backbone",
+				"value":          7,
+				"type":           "BackboneInterface",
+				"discovery_hash": []byte{0xaa, 0xbb, 0xcc},
+				"hops":           1,
+				"received":       tc.got,
+			})
+
+			var callbackInfo map[string]any
+			select {
+			case callbackInfo = <-callbackCh:
+			case <-time.After(5 * time.Second):
+				t.Fatal("timed out waiting for external discovery callback")
+			}
+
+			if got := asFloat64(callbackInfo["discovered"]); got != 7.0 {
+				t.Fatalf("callback discovered = %v, want 7.0", got)
+			}
+			if got := pythonDiscoveryReprString(callbackInfo["last_heard"]); got != tc.want {
+				t.Fatalf("callback last_heard = %v, want %v", got, tc.want)
+			}
+			if got := asInt(callbackInfo["heard_count"]); got != 3 {
+				t.Fatalf("callback heard_count = %v, want 3", got)
+			}
+
+			data, err := os.ReadFile(filePath)
+			if err != nil {
+				t.Fatalf("failed to read persisted discovery file: %v", err)
+			}
+			unpacked, err := msgpack.Unpack(data)
+			if err != nil {
+				t.Fatalf("failed to unpack persisted discovery file: %v", err)
+			}
+			m := asAnyMap(unpacked)
+			if m == nil {
+				t.Fatalf("unexpected persisted discovery type %T", unpacked)
+			}
+			if got := asFloat64(lookupAnyValue(m, "discovered")); got != 7.0 {
+				t.Fatalf("persisted discovered = %v, want 7.0", got)
+			}
+			if got := pythonDiscoveryReprString(lookupAnyValue(m, "last_heard")); got != tc.want {
+				t.Fatalf("persisted last_heard = %v, want %v", got, tc.want)
 			}
 			if got := asInt(lookupAnyValue(m, "heard_count")); got != 3 {
 				t.Fatalf("persisted heard_count = %v, want 3", got)
@@ -6302,6 +7069,206 @@ func TestInterfaceDiscoveryStartCallbackReceivesRediscoveryMetadataForNilCachedD
 			}
 			if got := asInt(lookupAnyValue(m, "heard_count")); got != 3 {
 				t.Fatalf("persisted heard_count = %v, want 3", got)
+			}
+		})
+	}
+}
+
+func TestInterfaceDiscoveryStartCallbackPreservesExoticCachedDiscoveredValues(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name       string
+		discovered any
+		wantRepr   string
+	}{
+		{name: "string", discovered: "cached-string", wantRepr: "'cached-string'"},
+		{name: "bool", discovered: true, wantRepr: "True"},
+		{name: "bytes", discovered: []byte("x"), wantRepr: "b'x'"},
+		{name: "list", discovered: []any{1}, wantRepr: "[1]"},
+		{name: "dict", discovered: map[string]any{"x": 1}, wantRepr: "{'x': 1}"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-exotic-cached-discovered-")
+			defer cleanup()
+
+			logger := NewLogger()
+			ts := NewTransportSystem(logger)
+			r := &Reticulum{
+				configDir:           tmpDir,
+				transport:           ts,
+				logger:              logger,
+				autoconnectDiscover: 0,
+			}
+			discovery := NewInterfaceDiscovery(r)
+
+			callbackCh := make(chan map[string]any, 1)
+			discovery.SetDiscoveryCallback(func(info map[string]any) {
+				callbackCh <- cloneStringAnyMap(info)
+			})
+			if err := discovery.Start(2); err != nil {
+				t.Fatalf("Start() error = %v", err)
+			}
+
+			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+			if err := os.MkdirAll(storagePath, 0o755); err != nil {
+				t.Fatalf("failed to create storage path: %v", err)
+			}
+			filePath := filepath.Join(storagePath, "aabbcc.data")
+			if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
+				"discovered":  tc.discovered,
+				"heard_count": 2,
+			}), 0o644); err != nil {
+				t.Fatalf("failed to seed discovery file: %v", err)
+			}
+
+			receivedAt := 1234.0
+			discovery.handler.callback(map[string]any{
+				"name":           "Rediscovery Exotic Cached Discovered Backbone",
+				"value":          7,
+				"type":           "BackboneInterface",
+				"discovery_hash": []byte{0xaa, 0xbb, 0xcc},
+				"hops":           1,
+				"received":       receivedAt,
+			})
+
+			var callbackInfo map[string]any
+			select {
+			case callbackInfo = <-callbackCh:
+			case <-time.After(5 * time.Second):
+				t.Fatal("timed out waiting for external discovery callback")
+			}
+
+			if got := pythonDiscoveryReprString(callbackInfo["discovered"]); got != tc.wantRepr {
+				t.Fatalf("callback discovered = %v, want %v", got, tc.wantRepr)
+			}
+			if got := asFloat64(callbackInfo["last_heard"]); got != receivedAt {
+				t.Fatalf("callback last_heard = %v, want %v", got, receivedAt)
+			}
+			if got := asInt(callbackInfo["heard_count"]); got != 3 {
+				t.Fatalf("callback heard_count = %v, want 3", got)
+			}
+
+			data, err := os.ReadFile(filePath)
+			if err != nil {
+				t.Fatalf("failed to read persisted discovery file: %v", err)
+			}
+			unpacked, err := msgpack.Unpack(data)
+			if err != nil {
+				t.Fatalf("failed to unpack persisted discovery file: %v", err)
+			}
+			m := asAnyMap(unpacked)
+			if m == nil {
+				t.Fatalf("unexpected persisted discovery type %T", unpacked)
+			}
+			if got := pythonDiscoveryReprString(lookupAnyValue(m, "discovered")); got != tc.wantRepr {
+				t.Fatalf("persisted discovered = %v, want %v", got, tc.wantRepr)
+			}
+			if got := asFloat64(lookupAnyValue(m, "last_heard")); got != receivedAt {
+				t.Fatalf("persisted last_heard = %v, want %v", got, receivedAt)
+			}
+			if got := asInt(lookupAnyValue(m, "heard_count")); got != 3 {
+				t.Fatalf("persisted heard_count = %v, want 3", got)
+			}
+		})
+	}
+}
+
+func TestInterfaceDiscoveryStartCallbackPreservesFalsishRediscoveryValues(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name           string
+		seedDiscovered any
+		seedHeardCount any
+		wantDiscovered string
+		wantHeardCount string
+	}{
+		{name: "false discovered", seedDiscovered: false, seedHeardCount: 2, wantDiscovered: "False", wantHeardCount: "3"},
+		{name: "false heard count", seedDiscovered: 0, seedHeardCount: false, wantDiscovered: "0", wantHeardCount: "1"},
+		{name: "float zero heard count", seedDiscovered: 0.0, seedHeardCount: 0.0, wantDiscovered: "0.0", wantHeardCount: "1.0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-falsish-rediscovery-")
+			defer cleanup()
+
+			logger := NewLogger()
+			ts := NewTransportSystem(logger)
+			r := &Reticulum{
+				configDir:           tmpDir,
+				transport:           ts,
+				logger:              logger,
+				autoconnectDiscover: 0,
+			}
+			discovery := NewInterfaceDiscovery(r)
+
+			callbackCh := make(chan map[string]any, 1)
+			discovery.SetDiscoveryCallback(func(info map[string]any) {
+				callbackCh <- cloneStringAnyMap(info)
+			})
+			if err := discovery.Start(2); err != nil {
+				t.Fatalf("Start() error = %v", err)
+			}
+
+			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+			if err := os.MkdirAll(storagePath, 0o755); err != nil {
+				t.Fatalf("failed to create storage path: %v", err)
+			}
+			filePath := filepath.Join(storagePath, "aabbcc.data")
+			if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
+				"discovered":  tc.seedDiscovered,
+				"heard_count": tc.seedHeardCount,
+			}), 0o644); err != nil {
+				t.Fatalf("failed to seed discovery file: %v", err)
+			}
+
+			receivedAt := 9.0
+			discovery.handler.callback(map[string]any{
+				"name":           "Rediscovery Falsish Backbone",
+				"value":          7,
+				"type":           "BackboneInterface",
+				"discovery_hash": []byte{0xaa, 0xbb, 0xcc},
+				"hops":           1,
+				"received":       receivedAt,
+			})
+
+			var callbackInfo map[string]any
+			select {
+			case callbackInfo = <-callbackCh:
+			case <-time.After(5 * time.Second):
+				t.Fatal("timed out waiting for external discovery callback")
+			}
+
+			if got := pythonDiscoveryReprString(callbackInfo["discovered"]); got != tc.wantDiscovered {
+				t.Fatalf("callback discovered = %v, want %v", got, tc.wantDiscovered)
+			}
+			if got := asFloat64(callbackInfo["last_heard"]); got != receivedAt {
+				t.Fatalf("callback last_heard = %v, want %v", got, receivedAt)
+			}
+			if got := pythonDiscoveryReprString(callbackInfo["heard_count"]); got != tc.wantHeardCount {
+				t.Fatalf("callback heard_count = %v, want %v", got, tc.wantHeardCount)
+			}
+
+			data, err := os.ReadFile(filePath)
+			if err != nil {
+				t.Fatalf("failed to read persisted discovery file: %v", err)
+			}
+			unpacked, err := msgpack.Unpack(data)
+			if err != nil {
+				t.Fatalf("failed to unpack persisted discovery file: %v", err)
+			}
+			m := asAnyMap(unpacked)
+			if m == nil {
+				t.Fatalf("unexpected persisted discovery type %T", unpacked)
+			}
+			if got := pythonDiscoveryReprString(lookupAnyValue(m, "discovered")); got != tc.wantDiscovered {
+				t.Fatalf("persisted discovered = %v, want %v", got, tc.wantDiscovered)
+			}
+			if got := asFloat64(lookupAnyValue(m, "last_heard")); got != receivedAt {
+				t.Fatalf("persisted last_heard = %v, want %v", got, receivedAt)
+			}
+			if got := pythonDiscoveryReprString(lookupAnyValue(m, "heard_count")); got != tc.wantHeardCount {
+				t.Fatalf("persisted heard_count = %v, want %v", got, tc.wantHeardCount)
 			}
 		})
 	}
@@ -6989,6 +7956,117 @@ func TestInterfaceDiscoveryStartCallbackIterableMapDiscoveryHashPersists(t *test
 	}
 	if _, err := os.Stat(filepath.Join(tmpDir, "discovery", "interfaces", "01.data")); err != nil {
 		t.Fatalf("expected iterable map discovery hash to be persisted: %v", err)
+	}
+}
+
+func TestInterfaceDiscoveryStartCallbackIterableDiscoveryHashLogsPythonFormatErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		hash any
+		want string
+	}{
+		{
+			name: "slice-string-element",
+			hash: []any{"a"},
+			want: "Error processing discovered interface data: Unknown format code 'x' for object of type 'str'",
+		},
+		{
+			name: "slice-float-element",
+			hash: []any{1.5},
+			want: "Error processing discovered interface data: Unknown format code 'x' for object of type 'float'",
+		},
+		{
+			name: "slice-bytes-element",
+			hash: []any{[]byte{0xaa}},
+			want: "Error processing discovered interface data: unsupported format string passed to bytes.__format__",
+		},
+		{
+			name: "map-string-key",
+			hash: map[string]any{"a": "ignored"},
+			want: "Error processing discovered interface data: Unknown format code 'x' for object of type 'str'",
+		},
+		{
+			name: "map-float-key",
+			hash: map[float64]any{1.5: "ignored"},
+			want: "Error processing discovered interface data: Unknown format code 'x' for object of type 'float'",
+		},
+		{
+			name: "slice-nested-list",
+			hash: []any{[]any{1}},
+			want: "Error processing discovered interface data: unsupported format string passed to list.__format__",
+		},
+		{
+			name: "slice-nested-dict",
+			hash: []any{map[string]any{"a": 1}},
+			want: "Error processing discovered interface data: unsupported format string passed to dict.__format__",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-start-iterable-hash-errors-")
+			defer cleanup()
+
+			logger := NewLogger()
+			logger.SetLogDest(LogCallback)
+
+			var logs []string
+			logger.SetLogCallback(func(msg string) {
+				logs = append(logs, msg)
+			})
+
+			ts := NewTransportSystem(logger)
+			r := &Reticulum{
+				configDir:           tmpDir,
+				transport:           ts,
+				logger:              logger,
+				autoconnectDiscover: 1,
+			}
+			discovery := NewInterfaceDiscovery(r)
+
+			callbackCalled := false
+			discovery.SetDiscoveryCallback(func(map[string]any) {
+				callbackCalled = true
+			})
+			if err := discovery.Start(2); err != nil {
+				t.Fatalf("Start() error = %v", err)
+			}
+
+			info := map[string]any{
+				"name":           "Iterable Error Hash TCP",
+				"type":           "TCPServerInterface",
+				"discovery_hash": tc.hash,
+				"received":       1234.0,
+				"hops":           1,
+				"value":          12,
+			}
+			discovery.handler.callback(info)
+
+			if callbackCalled {
+				t.Fatal("expected external discovery callback not to run for malformed iterable discovery hash")
+			}
+			if _, ok := info["discovered"]; ok {
+				t.Fatalf("info[\"discovered\"] unexpectedly set: %v", info["discovered"])
+			}
+			if _, ok := info["last_heard"]; ok {
+				t.Fatalf("info[\"last_heard\"] unexpectedly set: %v", info["last_heard"])
+			}
+			matches, err := filepath.Glob(filepath.Join(tmpDir, "discovery", "interfaces", "*.data"))
+			if err != nil {
+				t.Fatalf("Glob() error = %v", err)
+			}
+			if len(matches) != 0 {
+				t.Fatalf("expected malformed iterable discovery hash not to be persisted, got %v", matches)
+			}
+			for _, msg := range logs {
+				if strings.Contains(msg, tc.want) {
+					return
+				}
+			}
+			t.Fatalf("expected log containing %q, got %v", tc.want, logs)
+		})
 	}
 }
 
@@ -8922,11 +10000,15 @@ func TestInterfaceDiscoveryStartLogsPythonPersistKeyErrorForMissingReceived(t *t
 	t.Parallel()
 
 	for _, tc := range []struct {
-		name         string
-		seedExisting bool
+		name              string
+		seedExisting      bool
+		seedDiscovered    any
+		incomingDiscovery any
+		wantDiscovered    any
 	}{
 		{name: "new entry"},
-		{name: "existing entry", seedExisting: true},
+		{name: "existing entry", seedExisting: true, seedDiscovered: 5.0, wantDiscovered: 5.0},
+		{name: "existing entry with nil cached discovered", seedExisting: true, seedDiscovered: nil, incomingDiscovery: 7.0, wantDiscovered: 7.0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-persist-missing-received-")
@@ -8961,7 +10043,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistKeyErrorForMissingReceived(t *t
 			filePath := filepath.Join(storagePath, "aabbccdd.data")
 			if tc.seedExisting {
 				if err := os.WriteFile(filePath, mustMsgpackPack(map[string]any{
-					"discovered":  5.0,
+					"discovered":  tc.seedDiscovered,
 					"heard_count": 7,
 				}), 0o644); err != nil {
 					t.Fatalf("failed to seed cached discovery file: %v", err)
@@ -8977,6 +10059,9 @@ func TestInterfaceDiscoveryStartLogsPythonPersistKeyErrorForMissingReceived(t *t
 				"reachable_on":   "127.0.0.1",
 				"port":           4242,
 			}
+			if tc.incomingDiscovery != nil {
+				info["discovered"] = tc.incomingDiscovery
+			}
 			discovery.handler.callback(info)
 
 			if callbackCalled {
@@ -8985,8 +10070,12 @@ func TestInterfaceDiscoveryStartLogsPythonPersistKeyErrorForMissingReceived(t *t
 			if got := len(ts.GetInterfaces()); got != 0 {
 				t.Fatalf("expected no auto-connected interfaces when persistence fails, got %v", got)
 			}
-			if _, ok := info["discovered"]; ok {
-				t.Fatalf("info[\"discovered\"] unexpectedly set: %v", info["discovered"])
+			if tc.wantDiscovered == nil {
+				if _, ok := info["discovered"]; ok {
+					t.Fatalf("info[\"discovered\"] unexpectedly set: %v", info["discovered"])
+				}
+			} else if got := pythonDiscoveryReprString(info["discovered"]); got != pythonDiscoveryReprString(tc.wantDiscovered) {
+				t.Fatalf("info[\"discovered\"] = %v, want %v", got, pythonDiscoveryReprString(tc.wantDiscovered))
 			}
 			if _, ok := info["last_heard"]; ok {
 				t.Fatalf("info[\"last_heard\"] unexpectedly set: %v", info["last_heard"])

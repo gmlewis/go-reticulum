@@ -314,6 +314,7 @@ func (rt *runtimeT) startSessionCommand(sender messageSender, commandLine []stri
 		active.markFinished()
 		<-streamDone
 		<-streamDone
+		time.Sleep(rt.preExitCommandWindow())
 		deadline := time.Now().Add(10 * time.Second)
 		for {
 			if _, err := sender.Send(&commandExitedMessage{ReturnCode: exitCode}); err == nil {
@@ -429,6 +430,13 @@ func (ac *activeCommand) retrySleep() time.Duration {
 		return defaultRetrySleep
 	}
 	return ac.rt.retrySleep
+}
+
+func (rt *runtimeT) preExitCommandWindow() time.Duration {
+	if rt == nil || rt.preExitCommandGrace <= 0 {
+		return defaultPreExitCommandGrace
+	}
+	return rt.preExitCommandGrace
 }
 
 func (ac *activeCommand) logStreamSendFailure(streamID int, eof bool, err error) {

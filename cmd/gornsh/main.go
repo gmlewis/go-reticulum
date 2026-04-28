@@ -97,6 +97,7 @@ type runtimeT struct {
 	retrySleep            time.Duration
 	linkClosedGrace       time.Duration
 	postExitDrainGrace    time.Duration
+	preExitCommandGrace   time.Duration
 	protocolErrDeadline   time.Duration
 	newAnnouncementTicker func(interval time.Duration) announcementTicker
 	stdout                io.Writer
@@ -105,8 +106,9 @@ type runtimeT struct {
 
 const (
 	defaultRetrySleep          = 100 * time.Millisecond
-	defaultLinkClosedGrace     = 5 * time.Second
-	defaultPostExitDrainGrace  = 300 * time.Millisecond
+	defaultLinkClosedGrace     = 8 * time.Second
+	defaultPostExitDrainGrace  = 750 * time.Millisecond
+	defaultPreExitCommandGrace = 150 * time.Millisecond
 	defaultProtocolErrDeadline = 2 * time.Second
 )
 
@@ -116,6 +118,7 @@ func newRuntime(opts options) *runtimeT {
 		retrySleep:          defaultRetrySleep,
 		linkClosedGrace:     defaultLinkClosedGrace,
 		postExitDrainGrace:  defaultPostExitDrainGrace,
+		preExitCommandGrace: defaultPreExitCommandGrace,
 		protocolErrDeadline: defaultProtocolErrDeadline,
 		newAnnouncementTicker: func(interval time.Duration) announcementTicker {
 			return &realAnnouncementTicker{ticker: time.NewTicker(interval)}

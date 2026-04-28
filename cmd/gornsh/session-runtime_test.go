@@ -80,6 +80,31 @@ func (s *trackingSender) maxConcurrency() int {
 	return s.maxActiveSends
 }
 
+type timestampedMessage struct {
+	msg rns.Message
+	at  time.Time
+}
+
+type timestampedSender struct {
+	mu   sync.Mutex
+	msgs []timestampedMessage
+}
+
+func (s *timestampedSender) Send(msg rns.Message) (*rns.Envelope, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.msgs = append(s.msgs, timestampedMessage{msg: msg, at: time.Now()})
+	return nil, nil
+}
+
+func (s *timestampedSender) messages() []timestampedMessage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]timestampedMessage, len(s.msgs))
+	copy(out, s.msgs)
+	return out
+}
+
 func TestSerializingSenderSerializesConcurrentCalls(t *testing.T) {
 	t.Parallel()
 
@@ -334,6 +359,53 @@ func TestStartSessionCommandSerializesOutgoingMessages(t *testing.T) {
 				}
 				return
 			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatal("timed out waiting for command exit")
+}
+
+func TestStartSessionCommandWaitsBeforeSendingExit(t *testing.T) {
+	t.Parallel()
+
+	rt := &runtimeT{
+		logger:              rns.NewLogger(),
+		preExitCommandGrace: 40 * time.Millisecond,
+	}
+	sender := &timestampedSender{}
+
+	active, err := rt.startSessionCommand(sender, []string{"/bin/sh", "-c", "printf hello"}, nil, nil)
+	if err != nil {
+		t.Fatalf("startSessionCommand() error: %v", err)
+	}
+	if active == nil {
+		t.Fatal("startSessionCommand returned nil active command")
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		msgs := sender.messages()
+		var lastEOF time.Time
+		var exitAt time.Time
+		for _, entry := range msgs {
+			if stream, ok := entry.msg.(*streamDataMessage); ok && stream.EOF {
+				if entry.at.After(lastEOF) {
+					lastEOF = entry.at
+				}
+			}
+			if _, ok := entry.msg.(*commandExitedMessage); ok {
+				exitAt = entry.at
+			}
+		}
+		if !exitAt.IsZero() {
+			if lastEOF.IsZero() {
+				t.Fatal("command exit sent before any stream EOF message")
+			}
+			if got := exitAt.Sub(lastEOF); got < 35*time.Millisecond {
+				t.Fatalf("command exit delay=%v, want at least 35ms", got)
+			}
+			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

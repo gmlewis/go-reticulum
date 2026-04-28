@@ -102,6 +102,7 @@ func (rt *runtimeT) startPTYSessionCommand(sender messageSender, commandLine []s
 		active.stdin = nil
 		active.mu.Unlock()
 		<-streamDone
+		time.Sleep(rt.preExitCommandWindow())
 		_ = sendMessageWithRetry(sender, &commandExitedMessage{ReturnCode: exitCode}, time.Now().Add(2*time.Second), defaultRetrySleep)
 		active.close()
 	}()
