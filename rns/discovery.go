@@ -1028,13 +1028,13 @@ func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) er
 	if err != nil {
 		return err
 	}
-	unpacked, err := msgpack.Unpack(lastData)
+	unpacked, err := msgpack.UnpackStrict(lastData)
 	if err != nil {
 		return err
 	}
 	lastInfo := asAnyMap(unpacked)
 	if lastInfo == nil {
-		return fmt.Errorf("unexpected discovery cache type %T", unpacked)
+		return pythonDiscoveryCacheSubscriptError(unpacked)
 	}
 
 	discoveredValue, ok := lastInfo["discovered"]
@@ -1126,6 +1126,27 @@ func createEmptyDiscoveryCacheFile(path string) error {
 		return err
 	}
 	return f.Close()
+}
+
+func pythonDiscoveryCacheSubscriptError(value any) error {
+	switch value.(type) {
+	case nil:
+		return fmt.Errorf("'NoneType' object is not subscriptable")
+	case []any:
+		return fmt.Errorf("list indices must be integers or slices, not str")
+	case []byte:
+		return fmt.Errorf("byte indices must be integers or slices, not str")
+	case string:
+		return fmt.Errorf("string indices must be integers, not 'str'")
+	case bool:
+		return fmt.Errorf("'bool' object is not subscriptable")
+	case float32, float64:
+		return fmt.Errorf("'float' object is not subscriptable")
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return fmt.Errorf("'int' object is not subscriptable")
+	default:
+		return fmt.Errorf("unexpected discovery cache type %T", value)
+	}
 }
 
 // ListDiscoveredInterfaces returns a list of discovered interfaces.

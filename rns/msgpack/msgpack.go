@@ -12,10 +12,12 @@ package msgpack
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"reflect"
+	"strings"
 )
 
 // MessagePack format constants
@@ -325,6 +327,80 @@ func packMap(w io.Writer, v reflect.Value) error {
 func Unpack(data []byte) (any, error) {
 	r := bytes.NewReader(data)
 	return unpack(r)
+}
+
+// UnpackStrict deserializes exactly one MessagePack value and rejects trailing
+// bytes using Python-shaped error surfaces for malformed payloads.
+func UnpackStrict(data []byte) (any, error) {
+	r := bytes.NewReader(data)
+	value, err := unpack(r)
+	if err != nil {
+		return nil, normalizePythonUnpackError(err)
+	}
+	if r.Len() == 0 {
+		return value, nil
+	}
+
+	extra := make([]byte, r.Len())
+	if _, err := io.ReadFull(r, extra); err != nil {
+		return nil, err
+	}
+	return nil, fmt.Errorf("ExtraData(%v, %v)", pythonMsgpackRepr(value), pythonBytesRepr(extra))
+}
+
+func normalizePythonUnpackError(err error) error {
+	switch {
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		return fmt.Errorf("ValueError('Unpack failed: incomplete input')")
+	case strings.HasPrefix(err.Error(), "unknown type: "):
+		return fmt.Errorf("FormatError()")
+	default:
+		return err
+	}
+}
+
+func pythonMsgpackRepr(value any) string {
+	switch value := value.(type) {
+	case nil:
+		return "None"
+	case bool:
+		if value {
+			return "True"
+		}
+		return "False"
+	case string:
+		return "'" + strings.ReplaceAll(strings.ReplaceAll(value, "\\", "\\\\"), "'", "\\'") + "'"
+	case []byte:
+		return pythonBytesRepr(value)
+	default:
+		return fmt.Sprintf("%v", value)
+	}
+}
+
+func pythonBytesRepr(data []byte) string {
+	var b strings.Builder
+	b.WriteString("b'")
+	for _, value := range data {
+		switch value {
+		case '\\', '\'':
+			b.WriteByte('\\')
+			b.WriteByte(value)
+		case '\n':
+			b.WriteString("\\n")
+		case '\r':
+			b.WriteString("\\r")
+		case '\t':
+			b.WriteString("\\t")
+		default:
+			if value >= 0x20 && value <= 0x7e {
+				b.WriteByte(value)
+				continue
+			}
+			fmt.Fprintf(&b, "\\x%02x", value)
+		}
+	}
+	b.WriteByte('\'')
+	return b.String()
 }
 
 func unpack(r *bytes.Reader) (any, error) {
