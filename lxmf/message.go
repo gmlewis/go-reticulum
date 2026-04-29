@@ -135,6 +135,15 @@ type Message struct {
 
 	deliveryDestination      rns.PacketDestination
 	propagationEncryptedData []byte
+	rawStampCost             any
+}
+
+type pythonStampCostTypeError struct {
+	message string
+}
+
+func (e pythonStampCostTypeError) Error() string {
+	return e.message
 }
 
 // NewMessage constructs a fresh, outbound LXMF message bound for the specified destination, securely anchoring it to the originating source identity.
@@ -177,6 +186,10 @@ func (m *Message) GetStamp() ([]byte, error) {
 		return rns.TruncatedHash(material), nil
 	}
 
+	if m.rawStampCost != nil {
+		return nil, pythonStampCostError(m.rawStampCost)
+	}
+
 	if m.StampCost == nil {
 		m.StampValue = nil
 		return nil, nil
@@ -191,6 +204,41 @@ func (m *Message) GetStamp() ([]byte, error) {
 	}
 	m.StampValue = cloneOptionalInt(&stampValue)
 	return stamp, nil
+}
+
+func pythonTypeName(value any) string {
+	switch value.(type) {
+	case nil:
+		return "NoneType"
+	case bool:
+		return "bool"
+	case int, int8, int16, int32, int64:
+		return "int"
+	case uint, uint8, uint16, uint32, uint64:
+		return "int"
+	case float32, float64:
+		return "float"
+	case string:
+		return "str"
+	case []byte:
+		return "bytes"
+	case []any:
+		return "list"
+	case map[any]any, map[string]any:
+		return "dict"
+	default:
+		return reflect.TypeOf(value).String()
+	}
+}
+
+func pythonStampCostError(value any) error {
+	typeName := pythonTypeName(value)
+	switch value.(type) {
+	case float32, float64:
+		return pythonStampCostTypeError{message: fmt.Sprintf("unsupported operand type(s) for <<: 'int' and '%v'", typeName)}
+	default:
+		return pythonStampCostTypeError{message: fmt.Sprintf("unsupported operand type(s) for -: 'int' and '%v'", typeName)}
+	}
 }
 
 // GetPropagationStamp returns the current propagated-delivery stamp, generating
@@ -284,6 +332,10 @@ func (m *Message) Pack() error {
 	if !m.DeferStamp {
 		stamp, err := m.GetStamp()
 		if err != nil {
+			var pyErr pythonStampCostTypeError
+			if errors.As(err, &pyErr) {
+				return err
+			}
 			return fmt.Errorf("generate lxmf stamp: %w", err)
 		}
 		m.Stamp = cloneBytes(stamp)

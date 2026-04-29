@@ -38,7 +38,7 @@ type propagationEntry struct {
 
 type outboundStampCostEntry struct {
 	updatedAt time.Time
-	stampCost int
+	stampCost any
 }
 
 type validatedPropagationMessage struct {
@@ -1264,8 +1264,12 @@ func (r *Router) HandleOutbound(message *Message) error {
 
 	destinationHash := message.Destination.Hash
 	if message.StampCost == nil {
-		if stampCost, ok := r.OutboundStampCost(destinationHash); ok {
-			message.StampCost = cloneOptionalInt(&stampCost)
+		if stampCost, ok := r.outboundStampCostValue(destinationHash); ok {
+			if converted, convertedOK := stampCostAsInt(stampCost); convertedOK {
+				message.StampCost = cloneOptionalInt(&converted)
+			} else {
+				message.rawStampCost = cloneStampCostValue(stampCost)
+			}
 		}
 	}
 	if r.ticketStore != nil {
@@ -2958,7 +2962,7 @@ func (r *Router) SaveOutboundStampCosts() error {
 	r.mu.Lock()
 	payload := make(map[string]any, len(r.outboundStampCosts))
 	for destinationHash, entry := range r.outboundStampCosts {
-		payload[destinationHash] = []any{peerTime(entry.updatedAt), entry.stampCost}
+		payload[destinationHash] = []any{peerTime(entry.updatedAt), cloneStampCostValue(entry.stampCost)}
 	}
 	r.mu.Unlock()
 
@@ -3017,17 +3021,13 @@ func (r *Router) LoadOutboundStampCosts() error {
 		if err != nil {
 			continue
 		}
-		stampCost, err := anyToInt(items[1])
-		if err != nil {
-			continue
-		}
 		updatedAt := time.Unix(0, 0).Add(time.Duration(updatedAtSeconds * float64(time.Second)))
 		if now.Sub(updatedAt) > stampCostExpiry {
 			continue
 		}
 		loaded[string(destinationHash)] = outboundStampCostEntry{
 			updatedAt: updatedAt,
-			stampCost: stampCost,
+			stampCost: cloneStampCostValue(items[1]),
 		}
 	}
 
@@ -3813,6 +3813,47 @@ func (r *Router) messageListResponse(receipt *rns.RequestReceipt) {
 
 	transientIDs, ok := transientIDsFromResponse(receipt.Response)
 	if !ok {
+		entries, listOK := messageListEntriesFromResponse(receipt.Response)
+		if listOK {
+			transientIDs = nil
+			r.mu.Lock()
+			maxMessages := r.propagationTransferMaxMessages
+			retainSynced := r.retainSyncedOnNode
+			deliveryLimit := r.deliveryPerTransferLimit
+			r.mu.Unlock()
+
+			haves := make([]any, 0, len(entries))
+			wants := make([]any, 0, len(entries))
+			for _, transientID := range entries {
+				hasMessage := false
+				if transientIDBytes, ok := transientID.([]byte); ok {
+					r.mu.Lock()
+					hasMessage = r.hasDeliveredTransientIDLocked(transientIDBytes)
+					r.mu.Unlock()
+					if hasMessage {
+						if !retainSynced {
+							haves = append(haves, append([]byte{}, transientIDBytes...))
+						}
+						continue
+					}
+					if maxMessages == 0 || len(wants) < maxMessages {
+						wants = append(wants, append([]byte{}, transientIDBytes...))
+					}
+					continue
+				}
+				if maxMessages == 0 || len(wants) < maxMessages {
+					wants = append(wants, transientID)
+				}
+			}
+
+			if _, err := r.requestLink(receipt.Link, messageGetPath, []any{wants, haves, deliveryLimit}, r.messageGetResponse, r.messageGetFailed, r.messageGetProgress, 0); err != nil {
+				log.Printf("Could not request messages from propagation node: %v", err)
+				r.mu.Lock()
+				r.propagationTransferState = PRFailed
+				r.mu.Unlock()
+			}
+			return
+		}
 		log.Printf("Invalid message list data received from propagation node")
 		r.mu.Lock()
 		link := r.outboundPropagationLink
@@ -3861,6 +3902,50 @@ func (r *Router) messageListResponse(receipt *rns.RequestReceipt) {
 		r.mu.Lock()
 		r.propagationTransferState = PRFailed
 		r.mu.Unlock()
+	}
+}
+
+func messageListEntriesFromResponse(response any) ([]any, bool) {
+	switch values := response.(type) {
+	case []any:
+		result := make([]any, 0, len(values))
+		for _, value := range values {
+			if panicMessage, shouldPanic := unhashableMessageListEntryPanic(value); shouldPanic {
+				panic(panicMessage)
+			}
+			if entry, ok := value.([]byte); ok {
+				result = append(result, append([]byte{}, entry...))
+				continue
+			}
+			result = append(result, value)
+		}
+		return result, true
+	case [][]byte:
+		result := make([]any, 0, len(values))
+		for _, value := range values {
+			result = append(result, append([]byte{}, value...))
+		}
+		return result, true
+	default:
+		return nil, false
+	}
+}
+
+func unhashableMessageListEntryPanic(value any) (string, bool) {
+	if value == nil {
+		return "", false
+	}
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Map:
+		return "unhashable type: 'dict'", true
+	case reflect.Slice, reflect.Array:
+		if _, ok := value.([]byte); ok {
+			return "", false
+		}
+		return "unhashable type: 'list'", true
+	default:
+		return "", false
 	}
 }
 
@@ -3972,7 +4057,7 @@ func (r *Router) messageGetResponse(receipt *rns.RequestReceipt) {
 	}
 	if len(haves) > 0 {
 		if _, err := r.requestLink(receipt.Link, messageGetPath, []any{nil, haves}, nil, r.messageGetFailed, nil, 0); err != nil {
-			log.Printf("Could not acknowledge propagation sync completion: %v", err)
+			panic(err)
 		}
 	}
 
@@ -3991,7 +4076,7 @@ func (r *Router) messageGetResponse(receipt *rns.RequestReceipt) {
 func lenlessMessageGetResponsePanic(response any) (string, bool) {
 	rv := reflect.ValueOf(response)
 	if !rv.IsValid() {
-		return "", false
+		return "object of type 'NoneType' has no len()", true
 	}
 	switch rv.Kind() {
 	case reflect.Array, reflect.Map, reflect.Slice, reflect.String:

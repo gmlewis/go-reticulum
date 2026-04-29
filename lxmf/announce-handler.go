@@ -7,6 +7,7 @@ package lxmf
 
 import (
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
@@ -141,12 +142,44 @@ func (r *Router) handlePropagationAnnounceWithContext(destinationHash []byte, _ 
 	r.unpeer(destinationHash, announceData.nodeTimebase)
 }
 
-func (r *Router) updateStampCost(destinationHash []byte, stampCost int) {
+func cloneStampCostValue(value any) any {
+	switch v := value.(type) {
+	case nil:
+		return nil
+	case []byte:
+		return append([]byte{}, v...)
+	default:
+		return v
+	}
+}
+
+func stampCostAsInt(value any) (int, bool) {
+	if value == nil {
+		return 0, false
+	}
+
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Bool:
+		if rv.Bool() {
+			return 1, true
+		}
+		return 0, true
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return int(rv.Int()), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return int(rv.Uint()), true
+	default:
+		return 0, false
+	}
+}
+
+func (r *Router) updateStampCost(destinationHash []byte, stampCost any) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.outboundStampCosts[string(destinationHash)] = outboundStampCostEntry{
 		updatedAt: r.now(),
-		stampCost: stampCost,
+		stampCost: cloneStampCostValue(stampCost),
 	}
 }
 
@@ -162,7 +195,20 @@ func (r *Router) OutboundStampCost(destinationHash []byte) (int, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	entry, ok := r.outboundStampCosts[string(destinationHash)]
-	return entry.stampCost, ok
+	if !ok {
+		return 0, false
+	}
+	return stampCostAsInt(entry.stampCost)
+}
+
+func (r *Router) outboundStampCostValue(destinationHash []byte) (any, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	entry, ok := r.outboundStampCosts[string(destinationHash)]
+	if !ok {
+		return nil, false
+	}
+	return cloneStampCostValue(entry.stampCost), true
 }
 
 func equalHashes(a, b []byte) bool {

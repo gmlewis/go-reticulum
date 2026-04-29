@@ -6,6 +6,7 @@
 package lxmf
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
@@ -208,4 +209,62 @@ func TestStampCostFromAppDataPanicsOnMalformedMsgpack(t *testing.T) {
 	}()
 
 	_, _ = StampCostFromAppData([]byte{0x91, 0xc1})
+}
+
+func TestStampCostFromAppDataOutcomePreservesRawNonCanonicalValues(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		stampCost any
+	}{
+		{
+			name:      "float",
+			stampCost: 1.5,
+		},
+		{
+			name:      "bytes",
+			stampCost: []byte{0x01, 0x02},
+		},
+		{
+			name:      "string",
+			stampCost: "abc",
+		},
+		{
+			name:      "list",
+			stampCost: []any{int64(1)},
+		},
+		{
+			name:      "dict",
+			stampCost: map[any]any{"a": int64(1)},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			appData, err := msgpack.Pack([]any{[]byte("Carol"), tc.stampCost})
+			if err != nil {
+				t.Fatalf("Pack(): %v", err)
+			}
+
+			got, ok, clear, err := stampCostFromAppDataOutcome(appData)
+			if err != nil {
+				t.Fatalf("stampCostFromAppDataOutcome(): %v", err)
+			}
+			if !ok {
+				t.Fatal("stampCostFromAppDataOutcome() did not preserve raw stamp cost")
+			}
+			if clear {
+				t.Fatal("stampCostFromAppDataOutcome() requested cache clear for raw stamp cost")
+			}
+			if !reflect.DeepEqual(got, tc.stampCost) {
+				t.Fatalf("stampCostFromAppDataOutcome()=%#v want %#v", got, tc.stampCost)
+			}
+
+			converted, convertedOK := StampCostFromAppData(appData)
+			if convertedOK {
+				t.Fatalf("StampCostFromAppData()=(%v,%v), want non-canonical raw value to stay non-int", converted, convertedOK)
+			}
+		})
+	}
 }

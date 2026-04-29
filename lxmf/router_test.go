@@ -304,6 +304,158 @@ func TestHandleOutboundAutoconfiguresZeroOutboundStampCostWithZeroValueStamp(t *
 	}
 }
 
+func TestHandleOutboundFloatAnnounceStampCostOverridesCachedIntegerAndFailsLikePython(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	router.updateStampCost(destination.Hash, 4)
+	appData, err := msgpack.Pack([]any{[]byte("Carol"), 1.5})
+	if err != nil {
+		t.Fatalf("Pack announce app data: %v", err)
+	}
+	router.handleDeliveryAnnounce(destination.Hash, nil, appData)
+
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+	msg.DeferStamp = false
+
+	err = router.HandleOutbound(msg)
+	if err == nil {
+		t.Fatal("HandleOutbound succeeded, want Python float stamp-cost failure")
+	}
+	want := "unsupported operand type(s) for <<: 'int' and 'float'"
+	if err.Error() != want {
+		t.Fatalf("HandleOutbound error = %q, want %q", err, want)
+	}
+	if len(msg.Packed) != 0 {
+		t.Fatalf("packed length=%v want=0 after float stamp-cost failure", len(msg.Packed))
+	}
+}
+
+func TestHandleOutboundBytesAnnounceStampCostOverridesCachedIntegerAndFailsLikePython(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		stampCost []byte
+	}{
+		{
+			name:      "bytes",
+			stampCost: []byte{0x01, 0x02},
+		},
+		{
+			name:      "empty bytes",
+			stampCost: []byte{},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+			router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+			sourceID := mustTestNewIdentity(t, true)
+			destID := mustTestNewIdentity(t, true)
+			sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+			destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+			router.updateStampCost(destination.Hash, 4)
+			appData, err := msgpack.Pack([]any{[]byte("Carol"), tc.stampCost})
+			if err != nil {
+				t.Fatalf("Pack announce app data: %v", err)
+			}
+			router.handleDeliveryAnnounce(destination.Hash, nil, appData)
+
+			msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+			msg.DeferStamp = false
+
+			err = router.HandleOutbound(msg)
+			if err == nil {
+				t.Fatal("HandleOutbound succeeded, want Python bytes stamp-cost failure")
+			}
+			want := "unsupported operand type(s) for -: 'int' and 'bytes'"
+			if err.Error() != want {
+				t.Fatalf("HandleOutbound error = %q, want %q", err, want)
+			}
+			if len(msg.Packed) != 0 {
+				t.Fatalf("packed length=%v want=0 after bytes stamp-cost failure", len(msg.Packed))
+			}
+		})
+	}
+}
+
+func TestHandleOutboundNonNumericAnnounceStampCostFailsLikePython(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		stampCost any
+		want      string
+	}{
+		{
+			name:      "string",
+			stampCost: "abc",
+			want:      "unsupported operand type(s) for -: 'int' and 'str'",
+		},
+		{
+			name:      "list",
+			stampCost: []any{1},
+			want:      "unsupported operand type(s) for -: 'int' and 'list'",
+		},
+		{
+			name:      "dict",
+			stampCost: map[any]any{"a": 1},
+			want:      "unsupported operand type(s) for -: 'int' and 'dict'",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+			router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+			sourceID := mustTestNewIdentity(t, true)
+			destID := mustTestNewIdentity(t, true)
+			sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+			destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+			router.updateStampCost(destination.Hash, 4)
+			appData, err := msgpack.Pack([]any{[]byte("Carol"), tc.stampCost})
+			if err != nil {
+				t.Fatalf("Pack announce app data: %v", err)
+			}
+			router.handleDeliveryAnnounce(destination.Hash, nil, appData)
+
+			msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+			msg.DeferStamp = false
+
+			err = router.HandleOutbound(msg)
+			if err == nil {
+				t.Fatal("HandleOutbound succeeded, want Python non-numeric stamp-cost failure")
+			}
+			if err.Error() != tc.want {
+				t.Fatalf("HandleOutbound error = %q, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestHandleOutboundDisablesDeferredStampWhenNoStampIsRequired(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -4078,6 +4230,38 @@ func TestOutboundStampCostRestartRecovery(t *testing.T) {
 	}
 }
 
+func TestOutboundStampCostRestartRecoveryPreservesFloatRuntimeFailure(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	router.updateStampCost(destination.Hash, 1.5)
+	if err := router.Close(); err != nil {
+		t.Fatalf("router.Close(): %v", err)
+	}
+
+	recovered := mustTestNewRouter(t, ts, nil, tmpDir)
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+	msg.DeferStamp = false
+
+	err := recovered.HandleOutbound(msg)
+	if err == nil {
+		t.Fatal("HandleOutbound succeeded after restart, want Python float stamp-cost failure")
+	}
+	want := "unsupported operand type(s) for <<: 'int' and 'float'"
+	if err.Error() != want {
+		t.Fatalf("HandleOutbound error = %q, want %q", err, want)
+	}
+}
+
 func TestOutboundStampCostRestartRecoveryPreservesZeroCost(t *testing.T) {
 	t.Parallel()
 
@@ -5507,6 +5691,24 @@ func TestRequestMessagesUsesExistingPropagationLink(t *testing.T) {
 	}
 }
 
+func mustListResponseEntries(t *testing.T, value any) []any {
+	t.Helper()
+
+	switch entries := value.(type) {
+	case []any:
+		return entries
+	case [][]byte:
+		result := make([]any, 0, len(entries))
+		for _, entry := range entries {
+			result = append(result, entry)
+		}
+		return result
+	default:
+		t.Fatalf("list response entries type = %T, want []any or [][]byte", value)
+		return nil
+	}
+}
+
 func TestPropagationSyncMessageListResponseRequestsWantedMessages(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -5552,19 +5754,13 @@ func TestPropagationSyncMessageListResponseRequestsWantedMessages(t *testing.T) 
 	if len(fields) != 3 {
 		t.Fatalf("request field count = %d, want 3", len(fields))
 	}
-	wants, ok := fields[0].([][]byte)
-	if !ok {
-		t.Fatalf("wants type = %T, want [][]byte", fields[0])
+	wants := mustListResponseEntries(t, fields[0])
+	haves := mustListResponseEntries(t, fields[1])
+	if len(wants) != 1 || !bytes.Equal(wants[0].([]byte), want1) {
+		t.Fatalf("wants = %#v, want [%x]", wants, want1)
 	}
-	haves, ok := fields[1].([][]byte)
-	if !ok {
-		t.Fatalf("haves type = %T, want [][]byte", fields[1])
-	}
-	if len(wants) != 1 || !bytes.Equal(wants[0], want1) {
-		t.Fatalf("wants = %x, want [%x]", wants, want1)
-	}
-	if len(haves) != 1 || !bytes.Equal(haves[0], haveID) {
-		t.Fatalf("haves = %x, want [%x]", haves, haveID)
+	if len(haves) != 1 || !bytes.Equal(haves[0].([]byte), haveID) {
+		t.Fatalf("haves = %#v, want [%x]", haves, haveID)
 	}
 	limit, ok := fields[2].(float64)
 	if !ok {
@@ -5637,7 +5833,6 @@ func TestPropagationSyncMessageListResponseInvalidShapesTearDown(t *testing.T) {
 		{name: "string", response: "ab"},
 		{name: "map", response: map[string]any{"a": 1}},
 		{name: "scalar int", response: 1},
-		{name: "mixed list", response: []any{[]byte("ab"), "cd"}},
 	}
 
 	for _, tt := range tests {
@@ -5666,6 +5861,100 @@ func TestPropagationSyncMessageListResponseInvalidShapesTearDown(t *testing.T) {
 			if teardownCount != 1 {
 				t.Fatalf("teardown count = %d, want 1", teardownCount)
 			}
+		})
+	}
+}
+
+func TestPropagationSyncMessageListResponseHashableOddEntriesRequestGet(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		entry any
+	}{
+		{name: "string", entry: "ab"},
+		{name: "int", entry: 1},
+		{name: "bool", entry: true},
+		{name: "nil", entry: nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+			router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+			var requestedPath string
+			var requestedData any
+			router.requestLink = func(_ *rns.Link, path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), _ time.Duration) (*rns.RequestReceipt, error) {
+				requestedPath = path
+				requestedData = data
+				return nil, nil
+			}
+
+			router.messageListResponse(&rns.RequestReceipt{
+				Link:     &rns.Link{},
+				Response: []any{tc.entry},
+			})
+
+			if requestedPath != messageGetPath {
+				t.Fatalf("request path = %q, want %q", requestedPath, messageGetPath)
+			}
+			fields, ok := requestedData.([]any)
+			if !ok {
+				t.Fatalf("request data type = %T, want []any", requestedData)
+			}
+			if len(fields) != 3 {
+				t.Fatalf("request field count = %d, want 3", len(fields))
+			}
+			wants := mustListResponseEntries(t, fields[0])
+			haves := mustListResponseEntries(t, fields[1])
+			if len(wants) != 1 || !reflect.DeepEqual(wants[0], tc.entry) {
+				t.Fatalf("wants = %#v, want [%#v]", wants, tc.entry)
+			}
+			if len(haves) != 0 {
+				t.Fatalf("haves = %#v, want empty", haves)
+			}
+		})
+	}
+}
+
+func TestPropagationSyncMessageListResponseUnhashableEntriesPanic(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		response any
+		want     string
+	}{
+		{name: "nested list", response: []any{[]any{1}}, want: "unhashable type: 'list'"},
+		{name: "dict", response: []any{map[string]any{"a": 1}}, want: "unhashable type: 'dict'"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+			router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+			defer func() {
+				recovered := recover()
+				if recovered == nil {
+					t.Fatal("messageListResponse() did not panic")
+				}
+				if got := fmt.Sprint(recovered); got != tc.want {
+					t.Fatalf("panic = %q, want %q", got, tc.want)
+				}
+			}()
+
+			router.messageListResponse(&rns.RequestReceipt{
+				Link:     &rns.Link{},
+				Response: tc.response,
+			})
 		})
 	}
 }
@@ -5712,19 +6001,13 @@ func TestPropagationSyncMessageListResponseAllHavesRequestsPurge(t *testing.T) {
 	if len(fields) != 3 {
 		t.Fatalf("request field count = %d, want 3", len(fields))
 	}
-	wants, ok := fields[0].([][]byte)
-	if !ok {
-		t.Fatalf("wants type = %T, want [][]byte", fields[0])
-	}
+	wants := mustListResponseEntries(t, fields[0])
 	if len(wants) != 0 {
-		t.Fatalf("wants = %x, want empty", wants)
+		t.Fatalf("wants = %#v, want empty", wants)
 	}
-	haves, ok := fields[1].([][]byte)
-	if !ok {
-		t.Fatalf("haves type = %T, want [][]byte", fields[1])
-	}
-	if len(haves) != 1 || !bytes.Equal(haves[0], haveID) {
-		t.Fatalf("haves = %x, want [%x]", haves, haveID)
+	haves := mustListResponseEntries(t, fields[1])
+	if len(haves) != 1 || !bytes.Equal(haves[0].([]byte), haveID) {
+		t.Fatalf("haves = %#v, want [%x]", haves, haveID)
 	}
 }
 
@@ -5921,6 +6204,68 @@ func TestPropagationSyncMessageGetResponseTracksDuplicatesAndPurges(t *testing.T
 	if len(recovered.locallyProcessedIDs) != 0 {
 		t.Fatalf("recovered locallyProcessedIDs = %v, want empty", recovered.locallyProcessedIDs)
 	}
+}
+
+func TestPropagationSyncMessageGetResponsePurgeAckFailureAbortsCompletion(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	ts.Remember(nil, sourceDest.Hash, sourceID.GetPublicKey(), nil)
+	var zero int
+	localDest, err := router.RegisterDeliveryIdentity(destID, "", &zero)
+	if err != nil {
+		t.Fatalf("RegisterDeliveryIdentity: %v", err)
+	}
+
+	msg := mustTestNewMessage(t, localDest, sourceDest, "fresh", "title", nil)
+	if err := msg.Pack(); err != nil {
+		t.Fatalf("msg.Pack: %v", err)
+	}
+
+	router.propagationTransferState = PRReceiving
+	router.propagationTransferProgress = 0.625
+	router.propagationTransferLastResult = 9
+	router.propagationTransferLastResultSet = true
+	router.requestLink = func(_ *rns.Link, path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), _ time.Duration) (*rns.RequestReceipt, error) {
+		if path != messageGetPath {
+			t.Fatalf("request path = %q, want %q", path, messageGetPath)
+		}
+		return nil, errors.New("boom")
+	}
+
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			t.Fatal("messageGetResponse() did not panic")
+		}
+		if got := fmt.Sprint(recovered); got != "boom" {
+			t.Fatalf("panic = %q, want %q", got, "boom")
+		}
+		if router.PropagationTransferState() != PRReceiving {
+			t.Fatalf("state = %v, want PRReceiving", router.PropagationTransferState())
+		}
+		if router.PropagationTransferProgress() != 0.625 {
+			t.Fatalf("progress = %v, want 0.625", router.PropagationTransferProgress())
+		}
+		if got, ok := router.PropagationTransferLastResult(); !ok || got != 9 {
+			t.Fatalf("last result = (%v,%v), want (9,true)", got, ok)
+		}
+		if _, err := os.Stat(filepath.Join(router.storagePath, "local_deliveries")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("expected no local_deliveries file after purge ack failure, Stat() error = %v", err)
+		}
+	}()
+
+	router.messageGetResponse(&rns.RequestReceipt{
+		Link:     &rns.Link{},
+		Response: []any{msg.Packed},
+	})
 }
 
 func TestPropagationSyncMessageGetResponseEmptyBytesCompletes(t *testing.T) {
@@ -6150,6 +6495,90 @@ func TestPropagationSyncMessageGetResponseScalarBoolPanics(t *testing.T) {
 	})
 }
 
+func TestPropagationSyncMessageGetResponseScalarFloatPanics(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			t.Fatal("messageGetResponse() did not panic")
+		}
+		if got := fmt.Sprint(recovered); got != "object of type 'float' has no len()" {
+			t.Fatalf("panic = %q, want %q", got, "object of type 'float' has no len()")
+		}
+	}()
+
+	router.messageGetResponse(&rns.RequestReceipt{
+		Link:     &rns.Link{},
+		Response: 1.5,
+	})
+}
+
+func TestPropagationSyncMessageGetResponseScalarNilPanics(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			t.Fatal("messageGetResponse() did not panic")
+		}
+		if got := fmt.Sprint(recovered); got != "object of type 'NoneType' has no len()" {
+			t.Fatalf("panic = %q, want %q", got, "object of type 'NoneType' has no len()")
+		}
+	}()
+
+	router.messageGetResponse(&rns.RequestReceipt{
+		Link:     &rns.Link{},
+		Response: nil,
+	})
+}
+
+func TestPropagationSyncMessageGetResponsePrimitiveListEntriesPanic(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		response any
+	}{
+		{name: "int entry", response: []any{1}},
+		{name: "bool entry", response: []any{true}},
+		{name: "nil entry", response: []any{nil}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+			router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+			defer func() {
+				recovered := recover()
+				if recovered == nil {
+					t.Fatal("messageGetResponse() did not panic")
+				}
+				if got := fmt.Sprint(recovered); got != "object supporting the buffer API required" {
+					t.Fatalf("panic = %q, want %q", got, "object supporting the buffer API required")
+				}
+			}()
+
+			router.messageGetResponse(&rns.RequestReceipt{
+				Link:     &rns.Link{},
+				Response: tc.response,
+			})
+		})
+	}
+}
+
 func TestPropagationSyncMessageGetResponseNoIdentityTearsDown(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -6335,6 +6764,27 @@ func TestPropagationSyncClosedLinkMidTransferBecomesTransferFailed(t *testing.T)
 	router.outboundPropagationLink = &rns.Link{}
 	router.propagationTransferState = PRReceiving
 	router.propagationTransferProgress = 0.7
+
+	router.handleOutboundPropagationLinkClosed(router.outboundPropagationLink)
+
+	if router.PropagationTransferState() != PRTransferFailed {
+		t.Fatalf("state = %v, want PRTransferFailed", router.PropagationTransferState())
+	}
+	if router.PropagationTransferProgress() != 0.0 {
+		t.Fatalf("progress = %v, want 0.0", router.PropagationTransferProgress())
+	}
+}
+
+func TestPropagationSyncClosedLinkAtLinkEstablishedBecomesTransferFailed(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	router.outboundPropagationLink = &rns.Link{}
+	router.propagationTransferState = PRLinkEstablished
+	router.propagationTransferProgress = 0.5
 
 	router.handleOutboundPropagationLinkClosed(router.outboundPropagationLink)
 
