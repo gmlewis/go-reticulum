@@ -1207,7 +1207,7 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 			continue
 		}
 
-		unpacked, err := msgpack.Unpack(data)
+		unpacked, err := msgpack.UnpackPreserveBinMapKeys(data)
 		if err != nil {
 			id.logDiscoveryFileLoadError(path, err)
 			continue
@@ -1220,6 +1220,10 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 
 		heardValue, ok := lookupAny(m, "last_heard")
 		if !ok || heardValue == nil {
+			if hasPythonEquivalentNonStringKey(m, "last_heard") {
+				id.logDiscoveryFileLoadError(path, fmt.Errorf("'last_heard'"))
+				continue
+			}
 			id.logDiscoveryFileLoadError(path, fmt.Errorf("corrupt discovery cache missing last_heard"))
 			continue
 		}
@@ -1243,7 +1247,7 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 					id.logDiscoveryFileLoadError(path, fmt.Errorf("fromhex() argument must be str, not %v", pythonDiscoverySortTypeName(networkIDValue)))
 					continue
 				}
-				networkID, err := hex.DecodeString(networkIDHex)
+				networkID, err := pythonDiscoveryFromHexString(networkIDHex)
 				if err != nil {
 					id.logDiscoveryFileLoadError(path, err)
 					continue
@@ -1286,7 +1290,7 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 
 		transportValue, hasTransport := lookupAny(m, "transport")
 		if (onlyAvailable || onlyTransport) && !hasTransport {
-			id.logDiscoveryFileLoadError(path, fmt.Errorf("corrupt discovery cache missing transport"))
+			id.logDiscoveryFileLoadError(path, fmt.Errorf("'transport'"))
 			continue
 		}
 
@@ -1593,14 +1597,14 @@ func discoveryReachableOnCacheValue(v any) (string, bool, error) {
 	switch t := v.(type) {
 	case string:
 		if t == "" {
-			return "", true, fmt.Errorf("invalid discovery cache reachable_on value")
+			return "", true, pythonDiscoveryReachableOnCacheError(t)
 		}
 		return t, true, nil
 	default:
 		if s, ok := discoveryScalarString(v); ok {
 			return s, false, nil
 		}
-		return "", true, fmt.Errorf("invalid discovery cache reachable_on type %T", v)
+		return "", true, pythonDiscoveryReachableOnCacheError(v)
 	}
 }
 
@@ -1717,6 +1721,53 @@ func discoveryNumericHexString(v any) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+func pythonDiscoveryFromHexString(v string) ([]byte, error) {
+	for i := 0; i < len(v); i++ {
+		b := v[i]
+		if !((b >= '0' && b <= '9') || (b >= 'a' && b <= 'f') || (b >= 'A' && b <= 'F')) {
+			return nil, fmt.Errorf("non-hexadecimal number found in fromhex() arg at position %v", i)
+		}
+	}
+	if len(v)%2 != 0 {
+		return nil, fmt.Errorf("non-hexadecimal number found in fromhex() arg at position %v", len(v))
+	}
+	return hex.DecodeString(v)
+}
+
+func pythonDiscoveryReachableOnCacheError(v any) error {
+	switch t := v.(type) {
+	case nil:
+		return fmt.Errorf("'NoneType' object is not subscriptable")
+	case string:
+		if t == "" {
+			return fmt.Errorf("string index out of range")
+		}
+	case []byte:
+		if len(t) == 0 {
+			return fmt.Errorf("index out of range")
+		}
+		return fmt.Errorf("a bytes-like object is required, not 'str'")
+	case []any:
+		if len(t) == 0 {
+			return fmt.Errorf("list index out of range")
+		}
+		return fmt.Errorf("'list' object has no attribute 'split'")
+	}
+
+	rv := reflect.ValueOf(v)
+	if rv.IsValid() {
+		switch rv.Kind() {
+		case reflect.Slice, reflect.Array:
+			if rv.Len() == 0 {
+				return fmt.Errorf("list index out of range")
+			}
+			return fmt.Errorf("'list' object has no attribute 'split'")
+		}
+	}
+
+	return fmt.Errorf("invalid discovery cache reachable_on type %T", v)
 }
 
 func incrementDiscoveryHeardCount(v any) (any, bool) {
@@ -1946,7 +1997,7 @@ func (id *InterfaceDiscovery) connectDiscovered() {
 	discovered, err := id.ListDiscoveredInterfaces(false, true)
 	if err != nil {
 		if id.owner != nil && id.owner.logger != nil {
-			id.owner.logger.Error("failed to load discovered interfaces for autoconnect: %v", err)
+			id.owner.logger.Error("Error while reconnecting discovered interfaces: %v", err)
 		}
 		return
 	}
@@ -1995,7 +2046,7 @@ func (id *InterfaceDiscovery) autoconnect(info DiscoveredInterface) (err error) 
 	if id.autoconnectCount() >= id.owner.maxAutoconnectedInterfaces() {
 		return nil
 	}
-	if info.Type != "BackboneInterface" {
+	if info.Type != "BackboneInterface" && info.Type != "TCPServerInterface" {
 		return nil
 	}
 	if id.interfaceExists(info) {
@@ -2011,6 +2062,9 @@ func (id *InterfaceDiscovery) autoconnect(info DiscoveredInterface) (err error) 
 		if id.owner.logger != nil {
 			id.owner.logger.Error("Error while auto-connecting discovered interface: 'config_entry'")
 		}
+		return nil
+	}
+	if info.Type == "TCPServerInterface" {
 		return nil
 	}
 	if !info.endpoint.hasReachableOnValue {

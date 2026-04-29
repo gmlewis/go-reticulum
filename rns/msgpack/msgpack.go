@@ -329,6 +329,14 @@ func Unpack(data []byte) (any, error) {
 	return unpack(r)
 }
 
+// UnpackPreserveBinMapKeys deserializes MessagePack data while preserving binary
+// map keys so callers can distinguish them from string keys. It accepts
+// trailing bytes like Unpack.
+func UnpackPreserveBinMapKeys(data []byte) (any, error) {
+	r := bytes.NewReader(data)
+	return unpackWithOptions(r, unpackOptions{preserveBinMapKey: true})
+}
+
 // UnpackStrict deserializes exactly one MessagePack value and rejects trailing
 // bytes using Python-shaped error surfaces for malformed payloads.
 func UnpackStrict(data []byte) (any, error) {
@@ -350,8 +358,10 @@ func normalizePythonUnpackError(err error) error {
 	switch {
 	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
 		return fmt.Errorf("Unpack failed: incomplete input")
+	case err.Error() == "encountered reserved code: 0xc1":
+		return err
 	case strings.HasPrefix(err.Error(), "unknown type: "):
-		return fmt.Errorf("")
+		return err
 	default:
 		return err
 	}
@@ -512,6 +522,9 @@ func unpackWithOptions(r *bytes.Reader, opts unpackOptions) (any, error) {
 	case b >= negFixIntMin:
 		return int64(int8(b)), nil
 	default:
+		if b == 0xc1 {
+			return nil, fmt.Errorf("encountered reserved code: 0xc1")
+		}
 		return nil, fmt.Errorf("unknown type: 0x%02x", b)
 	}
 }

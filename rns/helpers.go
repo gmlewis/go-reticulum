@@ -53,6 +53,22 @@ func lookupAnyValue(m map[any]any, key string) any {
 	return v
 }
 
+func hasPythonEquivalentNonStringKey(m map[any]any, key string) bool {
+	if m == nil {
+		return false
+	}
+	for mk := range m {
+		if _, ok := mk.(string); ok {
+			continue
+		}
+		rv := reflect.ValueOf(mk)
+		if rv.IsValid() && rv.Kind() == reflect.String && rv.String() == key {
+			return true
+		}
+	}
+	return false
+}
+
 func asString(v any) string {
 	switch t := v.(type) {
 	case string:
