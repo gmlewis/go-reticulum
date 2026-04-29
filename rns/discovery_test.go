@@ -9,6 +9,7 @@ import (
 	"bytes"
 	_ "embed"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -7378,6 +7379,49 @@ func TestInterfaceDiscoveryInterfaceExistsMatchesPythonAutoconnectHashForRawEndp
 	}
 }
 
+func TestInterfaceDiscoveryInterfaceExistsDirectPortComparisonMatchesPythonEquality(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		port    any
+		wantHit bool
+	}{
+		{name: "bool true", port: true, wantHit: true},
+		{name: "integral float", port: 1.0, wantHit: true},
+		{name: "bytes", port: []byte("1"), wantHit: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			logger := NewLogger()
+			ts := NewTransportSystem(logger)
+			discovery := NewInterfaceDiscovery(&Reticulum{
+				transport: ts,
+				logger:    logger,
+			})
+
+			ts.RegisterInterface(newTargetHostTestInterface("Existing Backbone", "BackboneClientInterface", "127.0.0.1", 1))
+
+			info, ok := mapToDiscoveredInterface(map[string]any{
+				"name":         "Direct Match Backbone",
+				"type":         "BackboneInterface",
+				"config_entry": "[[direct-match]]",
+				"reachable_on": "127.0.0.1",
+				"port":         tc.port,
+				"network_id":   "01020304",
+			})
+			if !ok {
+				t.Fatal("mapToDiscoveredInterface() = false, want true")
+			}
+
+			if got := discovery.interfaceExists(info); got != tc.wantHit {
+				t.Fatalf("interfaceExists(port=%T(%v)) = %v, want %v", tc.port, tc.port, got, tc.wantHit)
+			}
+		})
+	}
+}
+
 func TestInterfaceDiscoveryConnectDiscoveredPassesRawEndpointValuesToConstructorSeam(t *testing.T) {
 	t.Parallel()
 
@@ -11910,6 +11954,63 @@ func (m *monitorTestInterface) BootstrapOnly() bool {
 	return m.bootstrapOnly
 }
 
+func TestInterfaceDiscoveryMonitorLogsDisconnectReconnectAndDetach(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+	logger.SetLogLevel(LogDebug)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
+
+	ts := NewTransportSystem(logger)
+	iface := &monitorTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("monitored", interfaces.ModeFull, 1000),
+		online:        true,
+	}
+	ts.RegisterInterface(iface)
+
+	discovery := NewInterfaceDiscovery(&Reticulum{
+		transport: ts,
+		logger:    logger,
+	})
+	discovery.monitorInterval = 0
+	discovery.detachThreshold = 12 * time.Second
+	discovery.monitorInterface(iface)
+
+	start := time.Unix(100, 0)
+	iface.online = false
+	discovery.monitorAutoconnectsOnce(start)
+
+	iface.online = true
+	discovery.monitorAutoconnectsOnce(start.Add(5 * time.Second))
+
+	iface.online = false
+	discovery.monitorAutoconnectsOnce(start.Add(10 * time.Second))
+	discovery.monitorAutoconnectsOnce(start.Add(23 * time.Second))
+
+	for _, want := range []string{
+		"Auto-discovered interface monitored disconnected",
+		"Auto-discovered interface monitored reconnected",
+		"Auto-discovered interface monitored has been down for",
+		"detaching",
+	} {
+		found := false
+		for _, msg := range logs {
+			if strings.Contains(msg, want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected log containing %q, got %v", want, logs)
+		}
+	}
+}
+
 type autoconnectCountTestInterface struct {
 	*interfaces.BaseInterface
 	autoconnectHash []byte
@@ -12095,6 +12196,75 @@ func TestInterfaceDiscoveryMonitorRecoversTeardownPanic(t *testing.T) {
 	}
 }
 
+func TestInterfaceDiscoveryMonitorDoesNotAutoconnectBeforeInitialPass(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-monitor-before-initial-")
+	defer cleanup()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("listener.Close() error = %v", err)
+		}
+	})
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			accepted <- conn
+		}
+	}()
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "before-initial.data"), mustMsgpackPack(map[string]any{
+		"name":         "Before Initial Candidate",
+		"type":         "BackboneInterface",
+		"transport":    true,
+		"last_heard":   now - 30,
+		"discovered":   now - 60,
+		"value":        1,
+		"config_entry": "[[Before Initial Candidate]]",
+		"reachable_on": "127.0.0.1",
+		"port":         port,
+		"network_id":   "0a0b0c0d",
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write cached discovery file: %v", err)
+	}
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	discovery := NewInterfaceDiscovery(&Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 4,
+	})
+	discovery.monitorInterval = 0
+
+	discovery.monitorAutoconnectsOnce(time.Unix(299, 0))
+
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected no auto-connected interfaces before the initial pass, got %v", got)
+	}
+
+	select {
+	case conn := <-accepted:
+		_ = conn.Close()
+		t.Fatal("unexpected connection before initial autoconnect pass completed")
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
 func TestInterfaceDiscoveryMonitorAutoconnectsAvailableCandidate(t *testing.T) {
 	t.Parallel()
 
@@ -12179,6 +12349,82 @@ func TestInterfaceDiscoveryMonitorAutoconnectsAvailableCandidate(t *testing.T) {
 	})
 	if got := iface.Type(); got != "BackboneClientInterface" {
 		t.Fatalf("Type() = %q, want %q", got, "BackboneClientInterface")
+	}
+}
+
+func TestInterfaceDiscoveryMonitorDoesNotAutoconnectWhenFreeSlotsEqualReservedSlots(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-monitor-reserved-slots-")
+	defer cleanup()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("listener.Close() error = %v", err)
+		}
+	})
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			accepted <- conn
+		}
+	}()
+
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "reserved-slot.data"), mustMsgpackPack(map[string]any{
+		"name":         "Reserved Slot Candidate",
+		"type":         "BackboneInterface",
+		"transport":    true,
+		"last_heard":   now - 30,
+		"discovered":   now - 60,
+		"value":        1,
+		"config_entry": "[[Reserved Slot Candidate]]",
+		"reachable_on": "127.0.0.1",
+		"port":         port,
+		"network_id":   "0e0f1011",
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write cached discovery file: %v", err)
+	}
+
+	logger := NewLogger()
+	ts := NewTransportSystem(logger)
+	for i := range 3 {
+		ts.RegisterInterface(&autoconnectCountTestInterface{
+			BaseInterface:   interfaces.NewBaseInterface(fmt.Sprintf("existing-%d", i), interfaces.ModeFull, 1000),
+			autoconnectHash: []byte{byte(i + 1)},
+		})
+	}
+	discovery := NewInterfaceDiscovery(&Reticulum{
+		configDir:           tmpDir,
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 4,
+	})
+	discovery.monitorInterval = 0
+	discovery.initialAutoconnectRan = true
+
+	discovery.monitorAutoconnectsOnce(time.Unix(300, 0))
+
+	if got := len(ts.GetInterfaces()); got != 3 {
+		t.Fatalf("expected reserved slots to prevent new autoconnect, got %v interfaces", got)
+	}
+
+	select {
+	case conn := <-accepted:
+		_ = conn.Close()
+		t.Fatal("unexpected connection when free slots only match reserved slots")
+	case <-time.After(200 * time.Millisecond):
 	}
 }
 
@@ -12445,6 +12691,50 @@ func TestInterfaceDiscoveryMonitorDetachesBootstrapOnlyWhenTargetReached(t *test
 	}
 }
 
+func TestInterfaceDiscoveryMonitorLogsBootstrapTeardown(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+	logger.SetLogLevel(LogInfo)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
+
+	ts := NewTransportSystem(logger)
+	auto := &monitorTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("auto", interfaces.ModeFull, 1000),
+		online:        true,
+	}
+	bootstrap := &monitorTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("bootstrap", interfaces.ModeFull, 1000),
+		online:        true,
+		bootstrapOnly: true,
+	}
+	ts.RegisterInterface(auto)
+	ts.RegisterInterface(bootstrap)
+
+	discovery := NewInterfaceDiscovery(&Reticulum{
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	})
+	discovery.monitorInterval = 0
+	discovery.monitorInterface(auto)
+
+	discovery.monitorAutoconnectsOnce(time.Unix(400, 0))
+
+	want := "Tearing down bootstrap-only bootstrap since target connected auto-discovered interface count has been reached"
+	for _, msg := range logs {
+		if strings.Contains(msg, want) {
+			return
+		}
+	}
+	t.Fatalf("expected log containing %q, got %v", want, logs)
+}
+
 func TestInterfaceDiscoveryMonitorDetachesBootstrapOnlyWhenTargetIsZero(t *testing.T) {
 	t.Parallel()
 
@@ -12477,6 +12767,47 @@ func TestInterfaceDiscoveryMonitorDetachesBootstrapOnlyWhenTargetIsZero(t *testi
 	if got := len(ts.GetInterfaces()); got != 1 {
 		t.Fatalf("expected bootstrap-only interface to be removed from transport, got %v interfaces", got)
 	}
+}
+
+func TestInterfaceDiscoveryMonitorLogsBootstrapReenable(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+	logger.SetLogLevel(LogNotice)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
+
+	ts := NewTransportSystem(logger)
+	owner := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	reenabled := 0
+	owner.registerBootstrapRestarter(func() error {
+		reenabled++
+		return nil
+	})
+
+	discovery := NewInterfaceDiscovery(owner)
+	discovery.monitorInterval = 0
+
+	discovery.monitorAutoconnectsOnce(time.Unix(402, 0))
+
+	if reenabled != 1 {
+		t.Fatalf("expected one bootstrap re-enable attempt, got %v", reenabled)
+	}
+
+	want := "No auto-discovered interfaces connected, re-enabling bootstrap interfaces"
+	for _, msg := range logs {
+		if strings.Contains(msg, want) {
+			return
+		}
+	}
+	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
 func TestInterfaceDiscoveryMonitorReenablesBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
@@ -13220,9 +13551,10 @@ func (a *announceTestInterface) B32() string       { return a.b32 }
 type announceCaptureTransport struct {
 	*TransportSystem
 
-	mu         sync.Mutex
-	lastPacket *Packet
-	packets    chan *Packet
+	mu          sync.Mutex
+	lastPacket  *Packet
+	packets     chan *Packet
+	outboundErr error
 }
 
 func newAnnounceCaptureTransport(logger *Logger) *announceCaptureTransport {
@@ -13236,6 +13568,9 @@ func (ts *announceCaptureTransport) Outbound(packet *Packet) error {
 	ts.mu.Lock()
 	ts.lastPacket = packet
 	ts.mu.Unlock()
+	if ts.outboundErr != nil {
+		return ts.outboundErr
+	}
 	select {
 	case ts.packets <- packet:
 	default:
@@ -13845,6 +14180,240 @@ func TestInterfaceAnnouncerStart(t *testing.T) {
 		t.Fatalf("received unexpected second announce packet before interval elapsed: %#v", packet)
 	case <-time.After(40 * time.Millisecond):
 	}
+}
+
+func TestInterfaceAnnouncerLogsCouldNotGenerateForUnsupportedInterface(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+	logger.SetLogLevel(LogDebug)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
+
+	ts := newAnnounceCaptureTransport(logger)
+	transportIdentity := mustTestNewIdentity(t, true)
+	ts.identity = transportIdentity
+	ts.SetEnabled(true)
+
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+	destination, err := NewDestination(ts, transportIdentity, DestinationIn, DestinationSingle, discoveryAppName, "discovery", "interface")
+	if err != nil {
+		t.Fatalf("NewDestination() error = %v", err)
+	}
+	announcer.discoveryDestination = destination
+
+	iface := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("announce-unsupported", interfaces.ModeGateway, 1000),
+		ifaceType:     "UnsupportedInterface",
+	}
+	iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  time.Hour,
+		Name:              "Unsupported",
+		ReachableOn:       "unsupported.example.net",
+	})
+	ts.RegisterInterface(iface)
+
+	announcer.announceOnce(time.Unix(500, 0))
+
+	want := "Could not generate interface discovery announce data for announce-unsupported"
+	for _, msg := range logs {
+		if strings.Contains(msg, want) {
+			return
+		}
+	}
+	t.Fatalf("expected log containing %q, got %v", want, logs)
+}
+
+func TestInterfaceAnnouncerLogsAbortForInvalidReachableOn(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+	logger.SetLogLevel(LogDebug)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
+
+	ts := newAnnounceCaptureTransport(logger)
+	transportIdentity := mustTestNewIdentity(t, true)
+	ts.identity = transportIdentity
+	ts.SetEnabled(true)
+
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+	destination, err := NewDestination(ts, transportIdentity, DestinationIn, DestinationSingle, discoveryAppName, "discovery", "interface")
+	if err != nil {
+		t.Fatalf("NewDestination() error = %v", err)
+	}
+	announcer.discoveryDestination = destination
+
+	iface := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("announce-invalid", interfaces.ModeGateway, 1000),
+		ifaceType:     "BackboneInterface",
+		bindIP:        "127.0.0.1",
+		bindPort:      4245,
+	}
+	iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  time.Hour,
+		Name:              "Invalid ReachableOn",
+		ReachableOn:       "bad host !",
+	})
+	ts.RegisterInterface(iface)
+
+	announcer.announceOnce(time.Unix(501, 0))
+
+	for _, want := range []string{
+		"The configured reachable_on parameter",
+		"is not a valid IP address or hostname",
+		"Aborting discovery announce",
+		"Could not generate interface discovery announce data for announce-invalid",
+	} {
+		found := false
+		for _, msg := range logs {
+			if strings.Contains(msg, want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected log containing %q, got %v", want, logs)
+		}
+	}
+}
+
+func TestInterfaceAnnouncerLogsAbortForMissingNetworkIdentityEncryption(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+	logger.SetLogLevel(LogDebug)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
+
+	ts := newAnnounceCaptureTransport(logger)
+	transportIdentity := mustTestNewIdentity(t, true)
+	ts.identity = transportIdentity
+	ts.SetEnabled(true)
+
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+	destination, err := NewDestination(ts, transportIdentity, DestinationIn, DestinationSingle, discoveryAppName, "discovery", "interface")
+	if err != nil {
+		t.Fatalf("NewDestination() error = %v", err)
+	}
+	announcer.discoveryDestination = destination
+
+	iface := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("announce-encrypt", interfaces.ModeGateway, 1000),
+		ifaceType:     "BackboneInterface",
+		bindIP:        "127.0.0.1",
+		bindPort:      4246,
+	}
+	iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  time.Hour,
+		Name:              "Encrypted Announce",
+		ReachableOn:       "encrypt.example.net",
+		Encrypt:           true,
+	})
+	ts.RegisterInterface(iface)
+
+	announcer.announceOnce(time.Unix(502, 0))
+
+	for _, want := range []string{
+		"Discovery encryption requested for announce-encrypt, but no network identity configured. Aborting discovery announce.",
+		"Could not generate interface discovery announce data for announce-encrypt",
+	} {
+		found := false
+		for _, msg := range logs {
+			if strings.Contains(msg, want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected log containing %q, got %v", want, logs)
+		}
+	}
+}
+
+func TestInterfaceAnnouncerLogsSendFailureAsPrepareError(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+	logger.SetLogLevel(LogDebug)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
+
+	ts := newAnnounceCaptureTransport(logger)
+	ts.outboundErr = errors.New("send boom")
+	transportIdentity := mustTestNewIdentity(t, true)
+	ts.identity = transportIdentity
+	ts.SetEnabled(true)
+
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+	destination, err := NewDestination(ts, transportIdentity, DestinationIn, DestinationSingle, discoveryAppName, "discovery", "interface")
+	if err != nil {
+		t.Fatalf("NewDestination() error = %v", err)
+	}
+	announcer.discoveryDestination = destination
+
+	iface := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("announce-send-fail", interfaces.ModeGateway, 1000),
+		ifaceType:     "BackboneInterface",
+		bindIP:        "127.0.0.1",
+		bindPort:      4247,
+	}
+	iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  time.Hour,
+		Name:              "Send Failure",
+		ReachableOn:       "send.example.net",
+	})
+	ts.RegisterInterface(iface)
+
+	announcer.announceOnce(time.Unix(503, 0))
+
+	want := "Error while preparing interface discovery announces: send boom"
+	for _, msg := range logs {
+		if strings.Contains(msg, want) {
+			return
+		}
+	}
+	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
 func TestInterfaceAnnouncerParity(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -206,6 +207,9 @@ func (ia *InterfaceAnnouncer) announceOnce(now time.Time) {
 		return
 	}
 
+	if ia.logger != nil {
+		ia.logger.Debug("Preparing interface discovery announce for %v", selected.Name())
+	}
 	appData, err := ia.getInterfaceAnnounceData(selected)
 	if err != nil {
 		if ia.logger != nil {
@@ -214,10 +218,16 @@ func (ia *InterfaceAnnouncer) announceOnce(now time.Time) {
 		return
 	}
 	if len(appData) == 0 {
+		if ia.logger != nil {
+			ia.logger.Error("Could not generate interface discovery announce data for %v", selected.Name())
+		}
 		return
 	}
+	if ia.logger != nil {
+		ia.logger.Debug("Sending interface discovery announce for %v with %vB payload", selected.Name(), len(appData))
+	}
 	if err := destination.Announce(appData); err != nil && ia.logger != nil {
-		ia.logger.Error("failed sending discovery announce for %v: %v", selected.Name(), err)
+		ia.logger.Error("Error while preparing interface discovery announces: %v", err)
 	}
 }
 
@@ -240,10 +250,29 @@ func sanitizeDiscoveryString(v string) string {
 	return strings.TrimSpace(v)
 }
 
+type discoveryReachableOnExecError struct {
+	raw string
+	err error
+}
+
+func (e *discoveryReachableOnExecError) Error() string {
+	return fmt.Sprintf("evaluating reachable_on executable %q: %v", e.raw, e.err)
+}
+
+func (e *discoveryReachableOnExecError) Unwrap() error { return e.err }
+
+type discoveryReachableOnInvalidError struct {
+	value string
+}
+
+func (e *discoveryReachableOnInvalidError) Error() string {
+	return fmt.Sprintf("invalid reachable_on value %q", e.value)
+}
+
 func (ia *InterfaceAnnouncer) resolveReachableOn(raw string) (string, error) {
 	reachableOn := sanitizeDiscoveryString(raw)
 	if reachableOn == "" {
-		return "", nil
+		return "", &discoveryReachableOnInvalidError{value: reachableOn}
 	}
 
 	if runtime.GOOS != "windows" {
@@ -252,7 +281,7 @@ func (ia *InterfaceAnnouncer) resolveReachableOn(raw string) (string, error) {
 			if info, statErr := os.Stat(execPath); statErr == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
 				output, err := exec.Command(execPath).Output()
 				if err != nil {
-					return "", fmt.Errorf("evaluating reachable_on executable %q: %w", raw, err)
+					return "", &discoveryReachableOnExecError{raw: raw, err: err}
 				}
 				reachableOn = sanitizeDiscoveryString(string(output))
 			}
@@ -260,7 +289,7 @@ func (ia *InterfaceAnnouncer) resolveReachableOn(raw string) (string, error) {
 	}
 
 	if !isReachableOnValue(reachableOn) {
-		return "", fmt.Errorf("invalid reachable_on value %q", reachableOn)
+		return "", &discoveryReachableOnInvalidError{value: reachableOn}
 	}
 	return reachableOn, nil
 }
@@ -367,10 +396,27 @@ func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interfac
 
 	reachableOn, err := ia.resolveReachableOn(cfg.ReachableOn)
 	if err != nil {
+		var execErr *discoveryReachableOnExecError
+		if errors.As(err, &execErr) {
+			if ia.logger != nil {
+				ia.logger.Error("Error while getting reachable_on from executable at %v: %v", execErr.raw, execErr.err)
+				ia.logger.Error("Aborting discovery announce")
+			}
+			return nil, nil
+		}
+		var invalidErr *discoveryReachableOnInvalidError
+		if errors.As(err, &invalidErr) {
+			if ia.logger != nil {
+				ia.logger.Error(
+					"The configured reachable_on parameter %q for %v is not a valid IP address or hostname",
+					invalidErr.value,
+					monitoredInterfaceLabel(iface),
+				)
+				ia.logger.Error("Aborting discovery announce")
+			}
+			return nil, nil
+		}
 		return nil, err
-	}
-	if reachableOn == "" {
-		return nil, fmt.Errorf("missing reachable_on")
 	}
 
 	switch advertisedType {
@@ -443,7 +489,13 @@ func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interfac
 	payload = append(payload, stamp...)
 	if cfg.Encrypt {
 		if ia.owner.networkIdentity == nil {
-			return nil, fmt.Errorf("discovery encryption requested without network identity")
+			if ia.logger != nil {
+				ia.logger.Error(
+					"Discovery encryption requested for %v, but no network identity configured. Aborting discovery announce.",
+					monitoredInterfaceLabel(iface),
+				)
+			}
+			return nil, nil
 		}
 		encrypted, err := ia.owner.networkIdentity.Encrypt(payload, nil)
 		if err != nil {
@@ -2317,10 +2369,19 @@ func (id *InterfaceDiscovery) monitorAutoconnectsOnce(now time.Time) {
 				if !interfaceBootstrapOnly(iface) || containsInterface(detached, iface) {
 					continue
 				}
+				if id.owner.logger != nil {
+					id.owner.logger.Info(
+						"Tearing down bootstrap-only %v since target connected auto-discovered interface count has been reached",
+						monitoredInterfaceLabel(iface),
+					)
+				}
 				detached = append(detached, iface)
 			}
 		}
 		if onlineInterfaces == 0 && id.bootstrapInterfaceCount() == 0 {
+			if id.owner.logger != nil {
+				id.owner.logger.Notice("No auto-discovered interfaces connected, re-enabling bootstrap interfaces")
+			}
 			id.owner.reenableBootstrapInterfaces()
 		}
 	}
@@ -2364,18 +2425,44 @@ func (id *InterfaceDiscovery) checkMonitoredInterfaceState(now time.Time, iface 
 
 	if iface.Status() {
 		*onlineInterfaces = *onlineInterfaces + 1
+		if _, ok := id.autoconnectDownSince[iface]; ok && id.owner != nil && id.owner.logger != nil {
+			id.owner.logger.Notice("Auto-discovered interface %v reconnected", monitoredInterfaceLabel(iface))
+		}
 		delete(id.autoconnectDownSince, iface)
 		return
 	}
 
 	downSince, ok := id.autoconnectDownSince[iface]
 	if !ok {
+		if id.owner != nil && id.owner.logger != nil {
+			id.owner.logger.Debug("Auto-discovered interface %v disconnected", monitoredInterfaceLabel(iface))
+		}
 		id.autoconnectDownSince[iface] = now
 		return
 	}
 	if now.Sub(downSince) >= id.detachThreshold {
+		if id.owner != nil && id.owner.logger != nil {
+			id.owner.logger.Debug(
+				"Auto-discovered interface %v has been down for %v, detaching",
+				monitoredInterfaceLabel(iface),
+				PrettyTime(now.Sub(downSince).Seconds(), false, false),
+			)
+		}
 		*detached = append(*detached, iface)
 	}
+}
+
+func monitoredInterfaceLabel(iface interfaces.Interface) string {
+	if iface == nil {
+		return "<nil>"
+	}
+	if stringer, ok := iface.(fmt.Stringer); ok {
+		return stringer.String()
+	}
+	if name := iface.Name(); name != "" {
+		return name
+	}
+	return fmt.Sprintf("%T", iface)
 }
 
 func (id *InterfaceDiscovery) teardownMonitoredInterface(iface interfaces.Interface) {
