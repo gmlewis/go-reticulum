@@ -958,6 +958,17 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 
 	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
 
+	if request[0] != nil {
+		if _, ok := request[0].([]any); !ok {
+			return nil
+		}
+	}
+	if request[1] != nil {
+		if _, ok := request[1].([]any); !ok {
+			return nil
+		}
+	}
+
 	wants := anySliceToByteSlices(request[0])
 	haves := anySliceToByteSlices(request[1])
 
@@ -1001,7 +1012,7 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 		}
 	}
 
-	limitBytes := parseLimitBytes(request, 2)
+	limitBytes, limitSet := parseLimitBytes(request, 2)
 	response := make([]any, 0)
 	cumulativeSize := 24
 	perMessageOverhead := 16
@@ -1019,7 +1030,7 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 			messageSize = len(entry.payload)
 		}
 		nextSize := cumulativeSize + messageSize + perMessageOverhead
-		if limitBytes > 0 && nextSize > limitBytes {
+		if limitSet && nextSize > limitBytes {
 			continue
 		}
 		response = append(response, append([]byte{}, entry.payload...))
@@ -1123,37 +1134,36 @@ func messageField(fields map[any]any, key uint8) (any, bool) {
 	return nil, false
 }
 
-func parseLimitBytes(values []any, index int) int {
+func parseLimitBytes(values []any, index int) (int, bool) {
 	if index >= len(values) {
-		return 0
+		return 0, false
 	}
 	v := values[index]
 	if v == nil {
-		return 0
+		return 0, false
 	}
 	switch n := v.(type) {
+	case bool:
+		if n {
+			return 1000, true
+		}
+		return 0, true
 	case float64:
-		if n <= 0 {
-			return 0
-		}
-		return int(n * 1000)
+		return int(n * 1000), true
 	case float32:
-		if n <= 0 {
-			return 0
-		}
-		return int(float64(n) * 1000)
+		return int(float64(n) * 1000), true
 	case int:
-		if n <= 0 {
-			return 0
-		}
-		return n * 1000
+		return n * 1000, true
 	case int64:
-		if n <= 0 {
-			return 0
+		return int(n * 1000), true
+	case string:
+		parsed, err := strconv.ParseFloat(n, 64)
+		if err != nil {
+			return 0, false
 		}
-		return int(n * 1000)
+		return int(parsed * 1000), true
 	default:
-		return 0
+		return 0, false
 	}
 }
 
@@ -2736,6 +2746,19 @@ func transientIDsFromResponse(response any) ([][]byte, bool) {
 	}
 }
 
+func zeroLengthResponse(response any) bool {
+	rv := reflect.ValueOf(response)
+	if !rv.IsValid() {
+		return false
+	}
+	switch rv.Kind() {
+	case reflect.Array, reflect.Map, reflect.Slice, reflect.String:
+		return rv.Len() == 0
+	default:
+		return false
+	}
+}
+
 func validatePropagationMessages(messages [][]byte, targetCost int) []validatedPropagationMessage {
 	validated := make([]validatedPropagationMessage, 0, len(messages))
 	for _, message := range messages {
@@ -3874,18 +3897,22 @@ func (r *Router) messageGetResponse(receipt *rns.RequestReceipt) {
 
 	payloads, ok := transientIDsFromResponse(receipt.Response)
 	if !ok {
-		payloadList, listOK := receipt.Response.([]any)
-		if !listOK {
-			payloads = nil
+		if zeroLengthResponse(receipt.Response) {
+			payloads = [][]byte{}
 		} else {
-			payloads = make([][]byte, 0, len(payloadList))
-			for _, value := range payloadList {
-				payload, ok := value.([]byte)
-				if !ok {
-					payloads = nil
-					break
+			payloadList, listOK := receipt.Response.([]any)
+			if !listOK {
+				payloads = nil
+			} else {
+				payloads = make([][]byte, 0, len(payloadList))
+				for _, value := range payloadList {
+					payload, ok := value.([]byte)
+					if !ok {
+						payloads = nil
+						break
+					}
+					payloads = append(payloads, append([]byte{}, payload...))
 				}
-				payloads = append(payloads, append([]byte{}, payload...))
 			}
 		}
 	}

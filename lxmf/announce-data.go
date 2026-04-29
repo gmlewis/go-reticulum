@@ -33,9 +33,10 @@ func DisplayNameFromAppData(appData []byte) string {
 			return ""
 		}
 		switch dn := peerData[0].(type) {
-		case string:
-			return dn
 		case []byte:
+			if !utf8.Valid(dn) {
+				return ""
+			}
 			return string(dn)
 		default:
 			return ""
@@ -69,6 +70,11 @@ func stampCostFromAppDataDetailed(appData []byte) (int, bool, error) {
 
 	rv := reflect.ValueOf(peerData[1])
 	switch rv.Kind() {
+	case reflect.Bool:
+		if rv.Bool() {
+			return 1, true, nil
+		}
+		return 0, true, nil
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		return int(rv.Int()), true, nil
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:

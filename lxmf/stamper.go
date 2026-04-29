@@ -83,7 +83,7 @@ func ValidatePeeringKey(peeringID, peeringKey []byte, targetCost int) bool {
 
 // GenerateStamp performs the computational work required to produce a valid stamp meeting the specified target cost.
 func GenerateStamp(material []byte, targetCost int, expandRounds int) ([]byte, int, int, error) {
-	if targetCost <= 0 {
+	if targetCost < 0 {
 		return nil, 0, 0, nil
 	}
 	if targetCost > 256 {

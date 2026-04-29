@@ -65,6 +65,22 @@ func TestDisplayNameFromAppData(t *testing.T) {
 			}(),
 			want: "",
 		},
+		{
+			name: "v0.5.0 msgpack str name fails closed",
+			appData: func() []byte {
+				data, _ := msgpack.Pack([]any{"Alice"})
+				return data
+			}(),
+			want: "",
+		},
+		{
+			name: "v0.5.0 msgpack invalid utf8 bytes fail closed",
+			appData: func() []byte {
+				data, _ := msgpack.Pack([]any{[]byte{0xff}})
+				return data
+			}(),
+			want: "",
+		},
 	}
 
 	for _, tc := range tests {
@@ -139,6 +155,24 @@ func TestStampCostFromAppData(t *testing.T) {
 				return data
 			}(),
 			want:   8,
+			wantOK: true,
+		},
+		{
+			name: "msgpack list with bool true stamp cost",
+			appData: func() []byte {
+				data, _ := msgpack.Pack([]any{[]byte("Carol"), true})
+				return data
+			}(),
+			want:   1,
+			wantOK: true,
+		},
+		{
+			name: "msgpack list with bool false stamp cost",
+			appData: func() []byte {
+				data, _ := msgpack.Pack([]any{[]byte("Carol"), false})
+				return data
+			}(),
+			want:   0,
 			wantOK: true,
 		},
 	}

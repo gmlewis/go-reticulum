@@ -177,7 +177,7 @@ func (m *Message) GetStamp() ([]byte, error) {
 		return rns.TruncatedHash(material), nil
 	}
 
-	if m.StampCost == nil || *m.StampCost <= 0 {
+	if m.StampCost == nil {
 		m.StampValue = nil
 		return nil, nil
 	}

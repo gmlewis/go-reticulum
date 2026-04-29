@@ -259,7 +259,7 @@ func TestHandleOutboundAutoconfiguresOutboundStampCostBeforePacking(t *testing.T
 	}
 }
 
-func TestHandleOutboundAutoconfiguresZeroOutboundStampCostWithoutStamping(t *testing.T) {
+func TestHandleOutboundAutoconfiguresZeroOutboundStampCostWithZeroValueStamp(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
@@ -288,8 +288,19 @@ func TestHandleOutboundAutoconfiguresZeroOutboundStampCostWithoutStamping(t *tes
 	if msg.StampCost == nil || *msg.StampCost != 0 {
 		t.Fatalf("stamp cost=%v want=0", msg.StampCost)
 	}
-	if len(msg.Stamp) != 0 {
-		t.Fatalf("stamp length=%v want=0", len(msg.Stamp))
+	if len(msg.Stamp) != StampSize {
+		t.Fatalf("stamp length=%v want=%v", len(msg.Stamp), StampSize)
+	}
+	workblock, err := StampWorkblock(msg.MessageID, WorkblockExpandRounds)
+	if err != nil {
+		t.Fatalf("StampWorkblock: %v", err)
+	}
+	if !StampValid(msg.Stamp, *msg.StampCost, workblock) {
+		t.Fatal("generated stamp should satisfy announced outbound zero cost")
+	}
+	wantValue := StampValue(workblock, msg.Stamp)
+	if msg.StampValue == nil || *msg.StampValue != wantValue {
+		t.Fatalf("stamp value=%v want=%v", msg.StampValue, wantValue)
 	}
 }
 
@@ -3019,6 +3030,33 @@ func TestMessageGetRequestUsesStampedFileSizeForTransferLimit(t *testing.T) {
 	}
 }
 
+func TestMessageGetRequestFalseTransferLimitReturnsNoMessages(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+	transientID := router.storePropagationMessage(remoteDestinationHash, []byte("payload"))
+
+	request, err := msgpack.Pack([]any{[]any{transientID}, nil, false})
+	if err != nil {
+		t.Fatalf("Pack request: %v", err)
+	}
+
+	response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
+	payloads, ok := response.([]any)
+	if !ok {
+		t.Fatalf("response type=%T want=[]any", response)
+	}
+	if len(payloads) != 0 {
+		t.Fatalf("payloads len=%v want=0", len(payloads))
+	}
+}
+
 func TestMessageGetRequestRequiresIdentity(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -3062,6 +3100,42 @@ func TestMessageGetRequestNoAccessWhenAuthRequired(t *testing.T) {
 	response := router.messageGetRequest("", request, nil, nil, allowedIdentity, time.Now())
 	if _, ok := response.([]any); !ok {
 		t.Fatalf("message_get allowed response type=%T want=[]any", response)
+	}
+}
+
+func TestMessageGetRequestMalformedWantsReturnsNil(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	request, err := msgpack.Pack([]any{1, nil})
+	if err != nil {
+		t.Fatalf("Pack request: %v", err)
+	}
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	if response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now()); response != nil {
+		t.Fatalf("response=%#v want nil", response)
+	}
+}
+
+func TestMessageGetRequestMalformedHavesReturnsNil(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	request, err := msgpack.Pack([]any{nil, 1})
+	if err != nil {
+		t.Fatalf("Pack request: %v", err)
+	}
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	if response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now()); response != nil {
+		t.Fatalf("response=%#v want nil", response)
 	}
 }
 
@@ -5382,6 +5456,91 @@ func TestPropagationSyncMessageListResponseEmptyCompletes(t *testing.T) {
 	}
 }
 
+func TestPropagationSyncMessageListResponseEmptyBytesTearsDown(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	link := &rns.Link{}
+	router.outboundPropagationLink = link
+	var teardownCount int
+	router.teardownLink = func(closed *rns.Link) {
+		if closed != link {
+			t.Fatal("teardown called with unexpected link")
+		}
+		teardownCount++
+	}
+
+	router.messageListResponse(&rns.RequestReceipt{
+		Link:     link,
+		Response: []byte{},
+	})
+
+	if teardownCount != 1 {
+		t.Fatalf("teardown count = %d, want 1", teardownCount)
+	}
+}
+
+func TestPropagationSyncMessageListResponseAllHavesRequestsPurge(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	haveID := []byte("have")
+	router.locallyDeliveredIDs[string(haveID)] = time.Now()
+
+	var requestedPath string
+	var requestedData any
+	router.requestLink = func(_ *rns.Link, path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), _ time.Duration) (*rns.RequestReceipt, error) {
+		if responseCallback == nil {
+			t.Fatal("expected response callback")
+		}
+		if failedCallback == nil {
+			t.Fatal("expected failed callback")
+		}
+		if progressCallback == nil {
+			t.Fatal("expected progress callback")
+		}
+		requestedPath = path
+		requestedData = data
+		return nil, nil
+	}
+
+	router.messageListResponse(&rns.RequestReceipt{
+		Link:     &rns.Link{},
+		Response: []any{haveID},
+	})
+
+	if requestedPath != messageGetPath {
+		t.Fatalf("request path = %q, want %q", requestedPath, messageGetPath)
+	}
+	fields, ok := requestedData.([]any)
+	if !ok {
+		t.Fatalf("request data type = %T, want []any", requestedData)
+	}
+	if len(fields) != 3 {
+		t.Fatalf("request field count = %d, want 3", len(fields))
+	}
+	wants, ok := fields[0].([][]byte)
+	if !ok {
+		t.Fatalf("wants type = %T, want [][]byte", fields[0])
+	}
+	if len(wants) != 0 {
+		t.Fatalf("wants = %x, want empty", wants)
+	}
+	haves, ok := fields[1].([][]byte)
+	if !ok {
+		t.Fatalf("haves type = %T, want [][]byte", fields[1])
+	}
+	if len(haves) != 1 || !bytes.Equal(haves[0], haveID) {
+		t.Fatalf("haves = %x, want [%x]", haves, haveID)
+	}
+}
+
 func TestPropagationSyncMessageGetProgressUpdatesState(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -5514,6 +5673,52 @@ func TestPropagationSyncMessageGetResponseTracksDuplicatesAndPurges(t *testing.T
 	}
 	if len(recovered.locallyProcessedIDs) != 0 {
 		t.Fatalf("recovered locallyProcessedIDs = %v, want empty", recovered.locallyProcessedIDs)
+	}
+}
+
+func TestPropagationSyncMessageGetResponseEmptyBytesCompletes(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	router.messageGetResponse(&rns.RequestReceipt{
+		Link:     &rns.Link{},
+		Response: []byte{},
+	})
+
+	if router.PropagationTransferState() != PRComplete {
+		t.Fatalf("state = %v, want PRComplete", router.PropagationTransferState())
+	}
+	if router.PropagationTransferProgress() != 1.0 {
+		t.Fatalf("progress = %v, want 1.0", router.PropagationTransferProgress())
+	}
+	if got, ok := router.PropagationTransferLastResult(); !ok || got != 0 {
+		t.Fatalf("last result = (%v,%v), want (0,true)", got, ok)
+	}
+}
+
+func TestPropagationSyncMessageGetResponseEmptyStringCompletes(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	router.messageGetResponse(&rns.RequestReceipt{
+		Link:     &rns.Link{},
+		Response: "",
+	})
+
+	if router.PropagationTransferState() != PRComplete {
+		t.Fatalf("state = %v, want PRComplete", router.PropagationTransferState())
+	}
+	if router.PropagationTransferProgress() != 1.0 {
+		t.Fatalf("progress = %v, want 1.0", router.PropagationTransferProgress())
+	}
+	if got, ok := router.PropagationTransferLastResult(); !ok || got != 0 {
+		t.Fatalf("last result = (%v,%v), want (0,true)", got, ok)
 	}
 }
 

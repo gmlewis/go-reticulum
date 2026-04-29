@@ -14324,12 +14324,18 @@ func TestInterfaceAnnouncerStopDuringSleepStillAllowsCurrentCycle(t *testing.T) 
 	announcer.jobInterval = 40 * time.Millisecond
 	sleepStarted := make(chan struct{}, 1)
 	releaseSleep := make(chan struct{})
-	announcer.sleep = func(time.Duration) {
-		select {
-		case sleepStarted <- struct{}{}:
-		default:
+	var sleepCalls int
+	announcer.sleep = func(d time.Duration) {
+		sleepCalls++
+		if sleepCalls == 1 {
+			select {
+			case sleepStarted <- struct{}{}:
+			default:
+			}
+			<-releaseSleep
+			return
 		}
-		<-releaseSleep
+		time.Sleep(d)
 	}
 
 	iface := &announceTestInterface{
@@ -14382,6 +14388,21 @@ func TestInterfaceAnnouncerStartIsIdempotentWhileRunning(t *testing.T) {
 	}
 	announcer := NewInterfaceAnnouncer(r, logger)
 	announcer.jobInterval = 40 * time.Millisecond
+	sleepStarted := make(chan struct{}, 1)
+	releaseSleep := make(chan struct{})
+	var sleepCalls int
+	announcer.sleep = func(d time.Duration) {
+		sleepCalls++
+		if sleepCalls == 1 {
+			select {
+			case sleepStarted <- struct{}{}:
+			default:
+			}
+			<-releaseSleep
+			return
+		}
+		time.Sleep(d)
+	}
 
 	iface := &announceTestInterface{
 		BaseInterface: interfaces.NewBaseInterface("announce-start-once", interfaces.ModeGateway, 1000),
@@ -14399,6 +14420,11 @@ func TestInterfaceAnnouncerStartIsIdempotentWhileRunning(t *testing.T) {
 	ts.RegisterInterface(iface)
 
 	announcer.Start()
+	select {
+	case <-sleepStarted:
+	case <-time.After(time.Second):
+		t.Fatal("expected announcer worker to enter sleep")
+	}
 	firstStopCh := announcer.stopCh
 	announcer.Start()
 	defer announcer.Stop()
@@ -14407,9 +14433,11 @@ func TestInterfaceAnnouncerStartIsIdempotentWhileRunning(t *testing.T) {
 		t.Fatal("expected Start() while running to keep the existing worker state")
 	}
 
+	close(releaseSleep)
+
 	select {
 	case <-ts.packets:
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for discovery announce packet")
 	}
 }
