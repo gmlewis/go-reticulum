@@ -27,6 +27,16 @@ func (c *closeErrorWriteCloser) Close() error {
 	return errors.New("close failed")
 }
 
+type closedWriteCloser struct{}
+
+func (c *closedWriteCloser) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
+func (c *closedWriteCloser) Close() error {
+	return os.ErrClosed
+}
+
 type closedReadCloser struct{}
 
 func (c *closedReadCloser) Read(_ []byte) (int, error) {
@@ -138,7 +148,7 @@ func TestSerializingSenderSerializesConcurrentCalls(t *testing.T) {
 	}
 }
 
-func TestStreamPipeSendsDataAndEOF(t *testing.T) {
+func TestStreamPipeSendsDataWithoutStandaloneEOF(t *testing.T) {
 	t.Parallel()
 
 	sender := &fakeSender{}
@@ -147,8 +157,8 @@ func TestStreamPipeSendsDataAndEOF(t *testing.T) {
 	ac.streamPipe(sender, reader, streamIDStdout)
 
 	msgs := sender.messages()
-	if len(msgs) != 2 {
-		t.Fatalf("message count=%v, want 2", len(msgs))
+	if len(msgs) != 1 {
+		t.Fatalf("message count=%v, want 1", len(msgs))
 	}
 
 	dataMsg, ok := msgs[0].(*streamDataMessage)
@@ -157,14 +167,6 @@ func TestStreamPipeSendsDataAndEOF(t *testing.T) {
 	}
 	if string(dataMsg.Data) != "hello" || dataMsg.EOF {
 		t.Fatalf("unexpected data msg: %+v", dataMsg)
-	}
-
-	eofMsg, ok := msgs[1].(*streamDataMessage)
-	if !ok {
-		t.Fatalf("second message type=%T", msgs[1])
-	}
-	if !eofMsg.EOF {
-		t.Fatalf("expected EOF message, got %+v", eofMsg)
 	}
 }
 
@@ -193,7 +195,7 @@ func TestStreamPipeLogsSendFailure(t *testing.T) {
 	}
 }
 
-func TestStreamPipeSendsEOFOnClosedPipe(t *testing.T) {
+func TestStreamPipeIgnoresClosedPipe(t *testing.T) {
 	t.Parallel()
 
 	sender := &fakeSender{}
@@ -201,15 +203,8 @@ func TestStreamPipeSendsEOFOnClosedPipe(t *testing.T) {
 	ac.streamPipe(sender, &closedReadCloser{}, streamIDStdout)
 
 	msgs := sender.messages()
-	if len(msgs) != 1 {
-		t.Fatalf("message count=%v, want 1", len(msgs))
-	}
-	eofMsg, ok := msgs[0].(*streamDataMessage)
-	if !ok {
-		t.Fatalf("message type=%T", msgs[0])
-	}
-	if !eofMsg.EOF {
-		t.Fatalf("expected EOF message, got %+v", eofMsg)
+	if len(msgs) != 0 {
+		t.Fatalf("message count=%v, want 0", len(msgs))
 	}
 }
 
@@ -416,12 +411,12 @@ func TestStartSessionCommandWaitsBeforeSendingExit(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		msgs := sender.messages()
-		var lastEOF time.Time
+		var lastStream time.Time
 		var exitAt time.Time
 		for _, entry := range msgs {
-			if stream, ok := entry.msg.(*streamDataMessage); ok && stream.EOF {
-				if entry.at.After(lastEOF) {
-					lastEOF = entry.at
+			if _, ok := entry.msg.(*streamDataMessage); ok {
+				if entry.at.After(lastStream) {
+					lastStream = entry.at
 				}
 			}
 			if _, ok := entry.msg.(*commandExitedMessage); ok {
@@ -429,10 +424,10 @@ func TestStartSessionCommandWaitsBeforeSendingExit(t *testing.T) {
 			}
 		}
 		if !exitAt.IsZero() {
-			if lastEOF.IsZero() {
-				t.Fatal("command exit sent before any stream EOF message")
+			if lastStream.IsZero() {
+				t.Fatal("command exit sent before any stream message")
 			}
-			if got := exitAt.Sub(lastEOF); got < 35*time.Millisecond {
+			if got := exitAt.Sub(lastStream); got < 35*time.Millisecond {
 				t.Fatalf("command exit delay=%v, want at least 35ms", got)
 			}
 			return
@@ -441,6 +436,29 @@ func TestStartSessionCommandWaitsBeforeSendingExit(t *testing.T) {
 	}
 
 	t.Fatal("timed out waiting for command exit")
+}
+
+func TestActiveCommandCloseLogsAlreadyClosedStdin(t *testing.T) {
+	t.Parallel()
+
+	var captured string
+	logger := rns.NewLogger()
+	logger.SetLogDest(rns.LogCallback)
+	logger.SetLogCallback(func(msg string) {
+		captured += msg
+	})
+	logger.SetLogLevel(rns.LogWarning)
+
+	cmd := &activeCommand{
+		stdin: &closedWriteCloser{},
+		rt:    &runtimeT{logger: logger},
+	}
+
+	cmd.close()
+
+	if !strings.Contains(strings.ToLower(captured), "could not close stdin for active command") {
+		t.Fatalf("missing closed-stdin warning in %q", captured)
+	}
 }
 
 func TestActiveCommandCloseKillsWhenNotFinished(t *testing.T) {

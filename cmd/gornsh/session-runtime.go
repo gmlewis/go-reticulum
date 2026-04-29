@@ -113,9 +113,7 @@ func (ac *activeCommand) close() {
 
 	if stdin != nil {
 		if err := stdin.Close(); err != nil {
-			if !isIgnorableStdinCloseError(err) {
-				logger.Warning("Could not close stdin for active command: %v", err)
-			}
+			logger.Warning("Could not close stdin for active command: %v", err)
 		}
 	}
 	if shouldKill {
@@ -385,11 +383,9 @@ func upsertEnv(env []string, key, value string) []string {
 func (ac *activeCommand) streamPipe(sender messageSender, reader io.ReadCloser, streamID int) {
 	defer func() {
 		if err := reader.Close(); err != nil {
-			if errors.Is(err, os.ErrClosed) || errors.Is(err, io.ErrClosedPipe) {
-				_ = sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamID, Data: nil, EOF: true, Compressed: false}, time.Now().Add(ac.streamSendDeadline()), ac.retrySleep())
-				return
+			if !errors.Is(err, os.ErrClosed) && !errors.Is(err, io.ErrClosedPipe) {
+				ac.rt.sendProtocolErrorToSender(sender, fmt.Sprintf("stream close failed: %v", err), false)
 			}
-			ac.rt.sendProtocolErrorToSender(sender, fmt.Sprintf("stream close failed: %v", err), false)
 		}
 	}()
 
@@ -406,17 +402,12 @@ func (ac *activeCommand) streamPipe(sender messageSender, reader io.ReadCloser, 
 		}
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				if sendErr := sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamID, Data: nil, EOF: true, Compressed: false}, time.Now().Add(ac.streamSendDeadline()), ac.retrySleep()); sendErr != nil {
-					ac.logStreamSendFailure(streamID, true, sendErr)
-				}
 				return
 			}
 			if errors.Is(err, os.ErrClosed) || errors.Is(err, io.ErrClosedPipe) {
-				_ = sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamID, Data: nil, EOF: true, Compressed: false}, time.Now().Add(ac.streamSendDeadline()), ac.retrySleep())
 				return
 			}
 			ac.rt.sendProtocolErrorToSender(sender, err.Error(), true)
-			_ = sendMessageWithRetry(sender, &streamDataMessage{StreamID: streamID, Data: nil, EOF: true, Compressed: false}, time.Now().Add(2*time.Second), defaultRetrySleep)
 			return
 		}
 	}

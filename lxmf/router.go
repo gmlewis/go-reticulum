@@ -974,6 +974,9 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 			return nil
 		}
 	}
+	if requestListContainsUnhashableEntries(request[0]) || requestListContainsUnhashableEntries(request[1]) {
+		return nil
+	}
 
 	wants := anySliceToByteSlices(request[0])
 	haves := anySliceToByteSlices(request[1])
@@ -1078,6 +1081,28 @@ func anySliceToByteSlices(value any) [][]byte {
 	return result
 }
 
+func requestListContainsUnhashableEntries(value any) bool {
+	items, ok := value.([]any)
+	if !ok {
+		return false
+	}
+	for _, item := range items {
+		switch item.(type) {
+		case []byte, string, nil, bool, float32, float64, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+			continue
+		}
+		rv := reflect.ValueOf(item)
+		if !rv.IsValid() {
+			continue
+		}
+		switch rv.Kind() {
+		case reflect.Map, reflect.Slice, reflect.Array:
+			return true
+		}
+	}
+	return false
+}
+
 func anyToBytes(value any) []byte {
 	switch v := value.(type) {
 	case []byte:
@@ -1164,6 +1189,12 @@ func parseLimitBytes(values []any, index int) (int, bool) {
 		return int(n * 1000), true
 	case string:
 		parsed, err := strconv.ParseFloat(n, 64)
+		if err != nil {
+			return 0, false
+		}
+		return int(parsed * 1000), true
+	case []byte:
+		parsed, err := strconv.ParseFloat(string(n), 64)
 		if err != nil {
 			return 0, false
 		}
@@ -3903,8 +3934,12 @@ func (r *Router) messageGetResponse(receipt *rns.RequestReceipt) {
 
 	payloads, ok := transientIDsFromResponse(receipt.Response)
 	if !ok {
-		if zeroLengthResponse(receipt.Response) {
+		if panicMessage, shouldPanic := lenlessMessageGetResponsePanic(receipt.Response); shouldPanic {
+			panic(panicMessage)
+		} else if zeroLengthResponse(receipt.Response) {
 			payloads = [][]byte{}
+		} else if panicMessage, shouldPanic := invalidMessageGetResponsePanic(receipt.Response); shouldPanic {
+			panic(panicMessage)
 		} else {
 			payloadList, listOK := receipt.Response.([]any)
 			if !listOK {
@@ -3951,6 +3986,58 @@ func (r *Router) messageGetResponse(receipt *rns.RequestReceipt) {
 	if err := r.saveLocallyDeliveredTransientIDs(); err != nil {
 		log.Printf("Could not save locally delivered message ID cache: %v", err)
 	}
+}
+
+func lenlessMessageGetResponsePanic(response any) (string, bool) {
+	rv := reflect.ValueOf(response)
+	if !rv.IsValid() {
+		return "", false
+	}
+	switch rv.Kind() {
+	case reflect.Array, reflect.Map, reflect.Slice, reflect.String:
+		return "", false
+	case reflect.Bool:
+		return "object of type 'bool' has no len()", true
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return "object of type 'int' has no len()", true
+	case reflect.Float32, reflect.Float64:
+		return "object of type 'float' has no len()", true
+	default:
+		return fmt.Sprintf("object of type '%v' has no len()", rv.Kind()), true
+	}
+}
+
+func invalidMessageGetResponsePanic(response any) (string, bool) {
+	switch value := response.(type) {
+	case []byte:
+		if len(value) > 0 {
+			return "object supporting the buffer API required", true
+		}
+	case string:
+		if value != "" {
+			return "Strings must be encoded before hashing", true
+		}
+	case []any:
+		for _, entry := range value {
+			if _, ok := entry.([]byte); ok {
+				continue
+			}
+			if text, ok := entry.(string); ok && text != "" {
+				return "Strings must be encoded before hashing", true
+			}
+			return "object supporting the buffer API required", true
+		}
+	default:
+		rv := reflect.ValueOf(response)
+		if rv.IsValid() && rv.Kind() == reflect.Map && rv.Len() > 0 {
+			if text, ok := rv.MapKeys()[0].Interface().(string); ok && text != "" {
+				return "Strings must be encoded before hashing", true
+			}
+			return "object supporting the buffer API required", true
+		}
+	}
+	return "", false
 }
 
 func (r *Router) messageGetProgress(receipt *rns.RequestReceipt) {

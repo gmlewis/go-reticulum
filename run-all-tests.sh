@@ -1,4 +1,35 @@
-#!/bin/bash -ex
-time ./test-all.sh 2>&1 | tee test-failures.log
-time ./scripts/test-integration.sh -short 2>&1 | tee short-test-failures.log
-time ./scripts/test-integration.sh 2>&1 | tee full-test-failures.log
+#!/bin/bash
+
+set -euo pipefail
+set -x
+
+RUN_ALL_TESTS_TIMEOUT_SECONDS="${RUN_ALL_TESTS_TIMEOUT_SECONDS:-300}"
+
+run_with_timeout() {
+	if command -v timeout >/dev/null 2>&1; then
+		timeout --foreground "${RUN_ALL_TESTS_TIMEOUT_SECONDS}s" "$@"
+		return
+	fi
+	if command -v gtimeout >/dev/null 2>&1; then
+		gtimeout --foreground "${RUN_ALL_TESTS_TIMEOUT_SECONDS}s" "$@"
+		return
+	fi
+
+	python3 - "${RUN_ALL_TESTS_TIMEOUT_SECONDS}" "$@" <<'PY'
+import subprocess
+import sys
+
+timeout = int(sys.argv[1])
+cmd = sys.argv[2:]
+
+try:
+    raise SystemExit(subprocess.run(cmd, check=False, timeout=timeout).returncode)
+except subprocess.TimeoutExpired:
+    print(f"timed out after {timeout}s: {' '.join(cmd)}", file=sys.stderr)
+    raise SystemExit(124)
+PY
+}
+
+time run_with_timeout ./test-all.sh 2>&1 | tee test-failures.log
+time run_with_timeout ./scripts/test-integration.sh -short 2>&1 | tee short-test-failures.log
+time run_with_timeout ./scripts/test-integration.sh 2>&1 | tee full-test-failures.log

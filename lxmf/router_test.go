@@ -3057,6 +3057,33 @@ func TestMessageGetRequestFalseTransferLimitReturnsNoMessages(t *testing.T) {
 	}
 }
 
+func TestMessageGetRequestBytesZeroTransferLimitReturnsNoMessages(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+	transientID := router.storePropagationMessage(remoteDestinationHash, []byte("payload"))
+
+	request, err := msgpack.Pack([]any{[]any{transientID}, nil, []byte("0")})
+	if err != nil {
+		t.Fatalf("Pack request: %v", err)
+	}
+
+	response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
+	payloads, ok := response.([]any)
+	if !ok {
+		t.Fatalf("response type=%T want=[]any", response)
+	}
+	if len(payloads) != 0 {
+		t.Fatalf("payloads len=%v want=0", len(payloads))
+	}
+}
+
 func TestMessageGetRequestRequiresIdentity(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -3165,6 +3192,42 @@ func TestMessageGetRequestShortDecodedListsReturnNil(t *testing.T) {
 				t.Fatalf("response=%#v want nil", response)
 			}
 		})
+	}
+}
+
+func TestMessageGetRequestUnhashableWantsEntryReturnsNil(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	request, err := msgpack.Pack([]any{[]any{[]any{[]byte("nested")}}, nil})
+	if err != nil {
+		t.Fatalf("Pack request: %v", err)
+	}
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	if response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now()); response != nil {
+		t.Fatalf("response=%#v want nil", response)
+	}
+}
+
+func TestMessageGetRequestUnhashableHavesEntryReturnsNil(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	request, err := msgpack.Pack([]any{nil, []any{map[string]any{"a": 1}}})
+	if err != nil {
+		t.Fatalf("Pack request: %v", err)
+	}
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	if response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now()); response != nil {
+		t.Fatalf("response=%#v want nil", response)
 	}
 }
 
@@ -5512,6 +5575,49 @@ func TestPropagationSyncMessageListResponseEmptyBytesTearsDown(t *testing.T) {
 	}
 }
 
+func TestPropagationSyncMessageListResponseInvalidShapesTearDown(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		response any
+	}{
+		{name: "string", response: "ab"},
+		{name: "map", response: map[string]any{"a": 1}},
+		{name: "scalar int", response: 1},
+		{name: "mixed list", response: []any{[]byte("ab"), "cd"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+			router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+			link := &rns.Link{}
+			router.outboundPropagationLink = link
+			var teardownCount int
+			router.teardownLink = func(closed *rns.Link) {
+				if closed != link {
+					t.Fatal("teardown called with unexpected link")
+				}
+				teardownCount++
+			}
+
+			router.messageListResponse(&rns.RequestReceipt{
+				Link:     link,
+				Response: tt.response,
+			})
+
+			if teardownCount != 1 {
+				t.Fatalf("teardown count = %d, want 1", teardownCount)
+			}
+		})
+	}
+}
+
 func TestPropagationSyncMessageListResponseAllHavesRequestsPurge(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -5809,6 +5915,144 @@ func TestPropagationSyncMessageGetResponseEmptyStringCompletes(t *testing.T) {
 	if got, ok := router.PropagationTransferLastResult(); !ok || got != 0 {
 		t.Fatalf("last result = (%v,%v), want (0,true)", got, ok)
 	}
+}
+
+func TestPropagationSyncMessageGetResponseNonZeroBytesPanics(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			t.Fatal("messageGetResponse() did not panic")
+		}
+		if got := fmt.Sprint(recovered); got != "object supporting the buffer API required" {
+			t.Fatalf("panic = %q, want %q", got, "object supporting the buffer API required")
+		}
+	}()
+
+	router.messageGetResponse(&rns.RequestReceipt{
+		Link:     &rns.Link{},
+		Response: []byte("ab"),
+	})
+}
+
+func TestPropagationSyncMessageGetResponseStringEntryPanics(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			t.Fatal("messageGetResponse() did not panic")
+		}
+		if got := fmt.Sprint(recovered); got != "Strings must be encoded before hashing" {
+			t.Fatalf("panic = %q, want %q", got, "Strings must be encoded before hashing")
+		}
+	}()
+
+	router.messageGetResponse(&rns.RequestReceipt{
+		Link:     &rns.Link{},
+		Response: []any{"ab"},
+	})
+}
+
+func TestPropagationSyncMessageGetResponseStringKeyedMapPanics(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			t.Fatal("messageGetResponse() did not panic")
+		}
+		if got := fmt.Sprint(recovered); got != "Strings must be encoded before hashing" {
+			t.Fatalf("panic = %q, want %q", got, "Strings must be encoded before hashing")
+		}
+	}()
+
+	router.messageGetResponse(&rns.RequestReceipt{
+		Link:     &rns.Link{},
+		Response: map[string]any{"a": 1},
+	})
+}
+
+func TestPropagationSyncMessageGetResponseNonStringKeyedMapPanics(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			t.Fatal("messageGetResponse() did not panic")
+		}
+		if got := fmt.Sprint(recovered); got != "object supporting the buffer API required" {
+			t.Fatalf("panic = %q, want %q", got, "object supporting the buffer API required")
+		}
+	}()
+
+	router.messageGetResponse(&rns.RequestReceipt{
+		Link:     &rns.Link{},
+		Response: map[int]any{1: "a"},
+	})
+}
+
+func TestPropagationSyncMessageGetResponseScalarIntPanics(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			t.Fatal("messageGetResponse() did not panic")
+		}
+		if got := fmt.Sprint(recovered); got != "object of type 'int' has no len()" {
+			t.Fatalf("panic = %q, want %q", got, "object of type 'int' has no len()")
+		}
+	}()
+
+	router.messageGetResponse(&rns.RequestReceipt{
+		Link:     &rns.Link{},
+		Response: 1,
+	})
+}
+
+func TestPropagationSyncMessageGetResponseScalarBoolPanics(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			t.Fatal("messageGetResponse() did not panic")
+		}
+		if got := fmt.Sprint(recovered); got != "object of type 'bool' has no len()" {
+			t.Fatalf("panic = %q, want %q", got, "object of type 'bool' has no len()")
+		}
+	}()
+
+	router.messageGetResponse(&rns.RequestReceipt{
+		Link:     &rns.Link{},
+		Response: true,
+	})
 }
 
 func TestPropagationSyncMessageGetResponseNoIdentityTearsDown(t *testing.T) {
