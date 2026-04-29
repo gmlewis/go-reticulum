@@ -102,18 +102,14 @@ func (ia *InterfaceAnnouncer) Start() {
 		}
 		if identity == nil {
 			ia.mu.Unlock()
-			if ia.logger != nil {
-				ia.logger.Error("could not start discovery announcer: no transport identity available")
-			}
+			ia.logger.Error("could not start discovery announcer: no transport identity available")
 			return
 		}
 
 		destination, err := NewDestination(ia.owner.transport, identity, DestinationIn, DestinationSingle, discoveryAppName, "discovery", "interface")
 		if err != nil {
 			ia.mu.Unlock()
-			if ia.logger != nil {
-				ia.logger.Error("could not start discovery announcer: %v", err)
-			}
+			ia.logger.Error("could not start discovery announcer: %v", err)
 			return
 		}
 		ia.discoveryDestination = destination
@@ -207,26 +203,18 @@ func (ia *InterfaceAnnouncer) announceOnce(now time.Time) {
 		return
 	}
 
-	if ia.logger != nil {
-		ia.logger.Debug("Preparing interface discovery announce for %v", selected.Name())
-	}
+	ia.logger.Debug("Preparing interface discovery announce for %v", selected.Name())
 	appData, err := ia.getInterfaceAnnounceData(selected)
 	if err != nil {
-		if ia.logger != nil {
-			ia.logger.Error("failed generating discovery announce for %v: %v", selected.Name(), err)
-		}
+		ia.logger.Error("failed generating discovery announce for %v: %v", selected.Name(), err)
 		return
 	}
 	if len(appData) == 0 {
-		if ia.logger != nil {
-			ia.logger.Error("Could not generate interface discovery announce data for %v", selected.Name())
-		}
+		ia.logger.Error("Could not generate interface discovery announce data for %v", selected.Name())
 		return
 	}
-	if ia.logger != nil {
-		ia.logger.Debug("Sending interface discovery announce for %v with %vB payload", selected.Name(), len(appData))
-	}
-	if err := destination.Announce(appData); err != nil && ia.logger != nil {
+	ia.logger.Debug("Sending interface discovery announce for %v with %vB payload", selected.Name(), len(appData))
+	if err := destination.Announce(appData); err != nil {
 		ia.logger.Error("Error while preparing interface discovery announces: %v", err)
 	}
 }
@@ -398,22 +386,18 @@ func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interfac
 	if err != nil {
 		var execErr *discoveryReachableOnExecError
 		if errors.As(err, &execErr) {
-			if ia.logger != nil {
-				ia.logger.Error("Error while getting reachable_on from executable at %v: %v", execErr.raw, execErr.err)
-				ia.logger.Error("Aborting discovery announce")
-			}
+			ia.logger.Error("Error while getting reachable_on from executable at %v: %v", execErr.raw, execErr.err)
+			ia.logger.Error("Aborting discovery announce")
 			return nil, nil
 		}
 		var invalidErr *discoveryReachableOnInvalidError
 		if errors.As(err, &invalidErr) {
-			if ia.logger != nil {
-				ia.logger.Error(
-					"The configured reachable_on parameter %q for %v is not a valid IP address or hostname",
-					invalidErr.value,
-					monitoredInterfaceLabel(iface),
-				)
-				ia.logger.Error("Aborting discovery announce")
-			}
+			ia.logger.Error(
+				"The configured reachable_on parameter %q for %v is not a valid IP address or hostname",
+				invalidErr.value,
+				monitoredInterfaceLabel(iface),
+			)
+			ia.logger.Error("Aborting discovery announce")
 			return nil, nil
 		}
 		return nil, err
@@ -489,12 +473,10 @@ func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interfac
 	payload = append(payload, stamp...)
 	if cfg.Encrypt {
 		if ia.owner.networkIdentity == nil {
-			if ia.logger != nil {
-				ia.logger.Error(
-					"Discovery encryption requested for %v, but no network identity configured. Aborting discovery announce.",
-					monitoredInterfaceLabel(iface),
-				)
-			}
+			ia.logger.Error(
+				"Discovery encryption requested for %v, but no network identity configured. Aborting discovery announce.",
+				monitoredInterfaceLabel(iface),
+			)
 			return nil, nil
 		}
 		encrypted, err := ia.owner.networkIdentity.Encrypt(payload, nil)
@@ -603,7 +585,7 @@ func (h *InterfaceAnnounceHandler) invokeCallback(info map[string]any) {
 		return
 	}
 	defer func() {
-		if recovered := recover(); recovered != nil && h.owner != nil && h.owner.logger != nil {
+		if recovered := recover(); recovered != nil && h.owner != nil {
 			h.owner.logger.Error("error while processing interface discovery callback: %v", recovered)
 		}
 	}()
@@ -936,7 +918,7 @@ func (id *InterfaceDiscovery) invokeDiscoveryCallback(info map[string]any) {
 		return
 	}
 	defer func() {
-		if recovered := recover(); recovered != nil && id.owner != nil && id.owner.logger != nil {
+		if recovered := recover(); recovered != nil && id.owner != nil {
 			id.owner.logger.Error("Error while processing external interface discovery callback: %v", recovered)
 		}
 	}()
@@ -944,7 +926,7 @@ func (id *InterfaceDiscovery) invokeDiscoveryCallback(info map[string]any) {
 }
 
 func (id *InterfaceDiscovery) logDiscoveredInterface(info map[string]any) {
-	if id == nil || id.owner == nil || id.owner.logger == nil {
+	if id == nil || id.owner == nil {
 		return
 	}
 
@@ -1013,20 +995,20 @@ func (id *InterfaceDiscovery) Start(requiredValue int) error {
 
 	id.handler = NewInterfaceAnnounceHandler(id.owner, requiredValue, func(info map[string]any) {
 		if err := validateDiscoveredInfoForProcessing(info); err != nil {
-			if id.owner != nil && id.owner.logger != nil {
+			if id.owner != nil {
 				id.owner.logger.Error("Error processing discovered interface data: %v", err)
 			}
 			return
 		}
 		id.logDiscoveredInterface(info)
-		if err := id.persistDiscoveredInterface(info); err != nil && id.owner != nil && id.owner.logger != nil {
+		if err := id.persistDiscoveredInterface(info); err != nil && id.owner != nil {
 			id.owner.logger.Error("Error while persisting discovered interface data: %v", err)
 			return
 		} else if err != nil {
 			return
 		}
 		if discovered, ok := mapToDiscoveredInterface(info); ok {
-			if err := id.autoconnect(discovered); err != nil && id.owner != nil && id.owner.logger != nil {
+			if err := id.autoconnect(discovered); err != nil && id.owner != nil {
 				id.owner.logger.Error("failed to auto-connect discovered interface %v: %v", discovered.Name, err)
 			}
 		}
@@ -1620,7 +1602,7 @@ func hasDiscoverySource(sources [][]byte, networkID []byte) bool {
 }
 
 func (id *InterfaceDiscovery) logDiscoveryFileLoadError(path string, err error) {
-	if err == nil || id == nil || id.owner == nil || id.owner.logger == nil {
+	if err == nil || id == nil || id.owner == nil {
 		return
 	}
 	id.owner.logger.Error("error while loading discovered interface data: %v", err)
@@ -2079,7 +2061,7 @@ func (id *InterfaceDiscovery) connectDiscovered() {
 	}
 	discovered, err := id.ListDiscoveredInterfaces(false, true)
 	if err != nil {
-		if id.owner != nil && id.owner.logger != nil {
+		if id.owner != nil {
 			id.owner.logger.Error("Error while reconnecting discovered interfaces: %v", err)
 		}
 		return
@@ -2089,7 +2071,7 @@ func (id *InterfaceDiscovery) connectDiscovered() {
 		if id.autoconnectCount() >= id.owner.maxAutoconnectedInterfaces() {
 			break
 		}
-		if err := id.autoconnect(info); err != nil && id.owner != nil && id.owner.logger != nil {
+		if err := id.autoconnect(info); err != nil && id.owner != nil {
 			id.owner.logger.Error("failed to auto-connect discovered interface %v: %v", info.Name, err)
 		}
 	}
@@ -2116,7 +2098,7 @@ func (id *InterfaceDiscovery) autoconnectCount() int {
 func (id *InterfaceDiscovery) autoconnect(info DiscoveredInterface) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			if id != nil && id.owner != nil && id.owner.logger != nil {
+			if id != nil && id.owner != nil {
 				id.owner.logger.Error("Error while auto-connecting discovered interface: %v", recovered)
 			}
 			err = nil
@@ -2130,55 +2112,39 @@ func (id *InterfaceDiscovery) autoconnect(info DiscoveredInterface) (err error) 
 		return nil
 	}
 	if !info.hasType {
-		if id.owner.logger != nil {
-			id.owner.logger.Error("Error while auto-connecting discovered interface: 'type'")
-		}
+		id.owner.logger.Error("Error while auto-connecting discovered interface: 'type'")
 		return nil
 	}
 	if info.Type != "BackboneInterface" && info.Type != "TCPServerInterface" {
 		return nil
 	}
 	if id.interfaceExists(info) {
-		if id.owner.logger != nil {
-			id.owner.logger.Debug("Discovered %v already exists, not auto-connecting", info.Type)
-		}
+		id.owner.logger.Debug("Discovered %v already exists, not auto-connecting", info.Type)
 		return nil
 	}
 	if !info.hasName {
-		if id.owner.logger != nil {
-			id.owner.logger.Error("Error while auto-connecting discovered interface: 'name'")
-		}
+		id.owner.logger.Error("Error while auto-connecting discovered interface: 'name'")
 		return nil
 	}
-	if id.owner.logger != nil {
-		id.owner.logger.Notice("Auto-connecting discovered %v %v", info.Type, info.Name)
-	}
+	id.owner.logger.Notice("Auto-connecting discovered %v %v", info.Type, info.Name)
 	if !info.hasConfigEntry {
-		if id.owner.logger != nil {
-			id.owner.logger.Error("Error while auto-connecting discovered interface: 'config_entry'")
-		}
+		id.owner.logger.Error("Error while auto-connecting discovered interface: 'config_entry'")
 		return nil
 	}
 	if info.Type == "TCPServerInterface" {
 		return nil
 	}
 	if !info.endpoint.hasReachableOnValue {
-		if id.owner.logger != nil {
-			id.owner.logger.Error("Error while auto-connecting discovered interface: 'reachable_on'")
-		}
+		id.owner.logger.Error("Error while auto-connecting discovered interface: 'reachable_on'")
 		return nil
 	}
 	if !info.endpoint.hasSpecifiedPort {
-		if id.owner.logger != nil {
-			id.owner.logger.Error("Error while auto-connecting discovered interface: 'port'")
-		}
+		id.owner.logger.Error("Error while auto-connecting discovered interface: 'port'")
 		return nil
 	}
 	config, ok := info.endpoint.backboneClientConfig(info.Name, info.ReachableOn, info.Port)
 	if !ok {
-		if id.owner.logger != nil {
-			id.owner.logger.Error("Error while auto-connecting discovered interface: missing reachable_on/port")
-		}
+		id.owner.logger.Error("Error while auto-connecting discovered interface: missing reachable_on/port")
 		return nil
 	}
 
@@ -2187,13 +2153,13 @@ func (id *InterfaceDiscovery) autoconnect(info DiscoveredInterface) (err error) 
 	}
 	iface, err := id.backboneFactory(config, handler)
 	if err != nil {
-		if id != nil && id.owner != nil && id.owner.logger != nil {
+		if id != nil && id.owner != nil {
 			id.owner.logger.Error("Error while auto-connecting discovered interface: %v", err)
 		}
 		return nil
 	}
 	if !info.hasNetworkID {
-		if id.owner != nil && id.owner.logger != nil {
+		if id.owner != nil {
 			id.owner.logger.Error("Error while auto-connecting discovered interface: 'network_id'")
 		}
 		return nil
@@ -2369,19 +2335,15 @@ func (id *InterfaceDiscovery) monitorAutoconnectsOnce(now time.Time) {
 				if !interfaceBootstrapOnly(iface) || containsInterface(detached, iface) {
 					continue
 				}
-				if id.owner.logger != nil {
-					id.owner.logger.Info(
-						"Tearing down bootstrap-only %v since target connected auto-discovered interface count has been reached",
-						monitoredInterfaceLabel(iface),
-					)
-				}
+				id.owner.logger.Info(
+					"Tearing down bootstrap-only %v since target connected auto-discovered interface count has been reached",
+					monitoredInterfaceLabel(iface),
+				)
 				detached = append(detached, iface)
 			}
 		}
 		if onlineInterfaces == 0 && id.bootstrapInterfaceCount() == 0 {
-			if id.owner.logger != nil {
-				id.owner.logger.Notice("No auto-discovered interfaces connected, re-enabling bootstrap interfaces")
-			}
+			id.owner.logger.Notice("No auto-discovered interfaces connected, re-enabling bootstrap interfaces")
 			id.owner.reenableBootstrapInterfaces()
 		}
 	}
@@ -2392,9 +2354,7 @@ func (id *InterfaceDiscovery) monitorAutoconnectsOnce(now time.Time) {
 		if freeSlots > reservedSlots {
 			candidates, err := id.ListDiscoveredInterfaces(true, true)
 			if err != nil {
-				if id.owner.logger != nil {
-					id.owner.logger.Error("failed loading discovered interfaces for monitor autoconnect: %v", err)
-				}
+				id.owner.logger.Error("failed loading discovered interfaces for monitor autoconnect: %v", err)
 			} else if len(candidates) > 0 {
 				if id.shuffleCandidates != nil {
 					id.shuffleCandidates(candidates)
@@ -2402,9 +2362,7 @@ func (id *InterfaceDiscovery) monitorAutoconnectsOnce(now time.Time) {
 				candidate := candidates[0]
 				if !id.interfaceExists(candidate) {
 					if err := id.autoconnect(candidate); err != nil {
-						if id.owner.logger != nil {
-							id.owner.logger.Error("failed auto-connecting monitored discovered interface %v: %v", candidate.Name, err)
-						}
+						id.owner.logger.Error("failed auto-connecting monitored discovered interface %v: %v", candidate.Name, err)
 					}
 				}
 			}
@@ -2418,14 +2376,14 @@ func (id *InterfaceDiscovery) monitorAutoconnectsOnce(now time.Time) {
 
 func (id *InterfaceDiscovery) checkMonitoredInterfaceState(now time.Time, iface interfaces.Interface, onlineInterfaces *int, detached *[]interfaces.Interface) {
 	defer func() {
-		if recovered := recover(); recovered != nil && id.owner != nil && id.owner.logger != nil {
+		if recovered := recover(); recovered != nil && id.owner != nil {
 			id.owner.logger.Error("error while checking auto-connected interface state for %v: %v", iface, recovered)
 		}
 	}()
 
 	if iface.Status() {
 		*onlineInterfaces = *onlineInterfaces + 1
-		if _, ok := id.autoconnectDownSince[iface]; ok && id.owner != nil && id.owner.logger != nil {
+		if _, ok := id.autoconnectDownSince[iface]; ok && id.owner != nil {
 			id.owner.logger.Notice("Auto-discovered interface %v reconnected", monitoredInterfaceLabel(iface))
 		}
 		delete(id.autoconnectDownSince, iface)
@@ -2434,14 +2392,14 @@ func (id *InterfaceDiscovery) checkMonitoredInterfaceState(now time.Time, iface 
 
 	downSince, ok := id.autoconnectDownSince[iface]
 	if !ok {
-		if id.owner != nil && id.owner.logger != nil {
+		if id.owner != nil {
 			id.owner.logger.Debug("Auto-discovered interface %v disconnected", monitoredInterfaceLabel(iface))
 		}
 		id.autoconnectDownSince[iface] = now
 		return
 	}
 	if now.Sub(downSince) >= id.detachThreshold {
-		if id.owner != nil && id.owner.logger != nil {
+		if id.owner != nil {
 			id.owner.logger.Debug(
 				"Auto-discovered interface %v has been down for %v, detaching",
 				monitoredInterfaceLabel(iface),
@@ -2467,7 +2425,7 @@ func monitoredInterfaceLabel(iface interfaces.Interface) string {
 
 func (id *InterfaceDiscovery) teardownMonitoredInterface(iface interfaces.Interface) {
 	defer func() {
-		if recovered := recover(); recovered != nil && id.owner != nil && id.owner.logger != nil {
+		if recovered := recover(); recovered != nil && id.owner != nil {
 			id.owner.logger.Error("error while de-registering auto-connected interface from transport: %v", recovered)
 		}
 	}()
@@ -2510,7 +2468,7 @@ func (id *InterfaceDiscovery) teardownInterface(iface interfaces.Interface) {
 		return
 	}
 
-	if err := iface.Detach(); err != nil && id.owner != nil && id.owner.logger != nil {
+	if err := iface.Detach(); err != nil && id.owner != nil {
 		id.owner.logger.Error("failed detaching auto-connected interface %v: %v", iface.Name(), err)
 	}
 	if remover, ok := id.owner.transport.(interface{ RemoveInterface(interfaces.Interface) }); ok {

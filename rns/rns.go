@@ -146,7 +146,7 @@ func (r *Reticulum) reenableBootstrapInterfaces() {
 	restarters := append([]func() error(nil), r.bootstrapRestarters...)
 	r.mu.Unlock()
 	for _, restarter := range restarters {
-		if err := restarter(); err != nil && r.logger != nil {
+		if err := restarter(); err != nil {
 			r.logger.Error("failed re-enabling bootstrap interface: %v", err)
 		}
 	}
@@ -340,9 +340,7 @@ func (r *Reticulum) applyConfig() error {
 			if _, err := fmt.Sscanf(lvlStr, "%v", &lvl); err != nil {
 				r.logger.Warning("Invalid loglevel value %q in config: %v", lvlStr, err)
 			} else {
-				if r.logger != nil {
-					r.logger.SetLogLevel(lvl)
-				}
+				r.logger.SetLogLevel(lvl)
 			}
 		}
 	}

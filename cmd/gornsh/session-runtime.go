@@ -440,7 +440,7 @@ func (rt *runtimeT) preExitCommandWindow() time.Duration {
 }
 
 func (ac *activeCommand) logStreamSendFailure(streamID int, eof bool, err error) {
-	if err == nil || ac == nil || ac.rt == nil || ac.rt.logger == nil {
+	if err == nil || ac == nil || ac.rt == nil {
 		return
 	}
 	phase := "data"

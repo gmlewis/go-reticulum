@@ -307,14 +307,14 @@ func (rt *runtimeT) doListen() error {
 }
 
 func (rt *runtimeT) startAnnouncements(destination announcer, announceEvery *int) func() {
-	if err := destination.Announce(nil); err != nil && rt.logger != nil {
+	if err := destination.Announce(nil); err != nil {
 		rt.logger.Warning("Initial announce failed: %v", err)
 	}
 
 	if announceEvery == nil {
 		go func() {
 			time.Sleep(250 * time.Millisecond)
-			if err := destination.Announce(nil); err != nil && rt.logger != nil {
+			if err := destination.Announce(nil); err != nil {
 				rt.logger.Warning("Follow-up announce failed: %v", err)
 			}
 		}()
@@ -333,7 +333,7 @@ func (rt *runtimeT) startAnnouncements(destination announcer, announceEvery *int
 			case <-done:
 				return
 			case <-ticker.C():
-				if err := destination.Announce(nil); err != nil && rt.logger != nil {
+				if err := destination.Announce(nil); err != nil {
 					rt.logger.Warning("Periodic announce failed: %v", err)
 				}
 			}
@@ -347,7 +347,7 @@ func (rt *runtimeT) startAnnouncements(destination announcer, announceEvery *int
 }
 
 func logServiceName(logger *rns.Logger, serviceName string) {
-	if logger == nil || serviceName == "" {
+	if serviceName == "" {
 		return
 	}
 	logger.Info("Using service name %v", serviceName)
