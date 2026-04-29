@@ -7,6 +7,7 @@ package lxmf
 
 import (
 	"reflect"
+	"unicode/utf8"
 
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
@@ -25,7 +26,7 @@ func DisplayNameFromAppData(appData []byte) string {
 	if (appData[0] >= 0x90 && appData[0] <= 0x9f) || appData[0] == 0xdc {
 		result, err := msgpack.Unpack(appData)
 		if err != nil {
-			return ""
+			panic(err)
 		}
 		peerData, ok := result.([]any)
 		if !ok || len(peerData) < 1 {
@@ -42,36 +43,47 @@ func DisplayNameFromAppData(appData []byte) string {
 	}
 
 	// Original format: raw UTF-8
+	if !utf8.Valid(appData) {
+		panic("invalid UTF-8 in LXMF announce app data")
+	}
 	return string(appData)
 }
 
-// StampCostFromAppData extracts the announced outbound stamp cost from an LXMF
-// announce payload.
-func StampCostFromAppData(appData []byte) (int, bool) {
+func stampCostFromAppDataDetailed(appData []byte) (int, bool, error) {
 	if len(appData) == 0 {
-		return 0, false
+		return 0, false, nil
 	}
 
 	if (appData[0] < 0x90 || appData[0] > 0x9f) && appData[0] != 0xdc {
-		return 0, false
+		return 0, false, nil
 	}
 
 	result, err := msgpack.Unpack(appData)
 	if err != nil {
-		return 0, false
+		return 0, false, err
 	}
 	peerData, ok := result.([]any)
 	if !ok || len(peerData) < 2 {
-		return 0, false
+		return 0, false, nil
 	}
 
 	rv := reflect.ValueOf(peerData[1])
 	switch rv.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return int(rv.Int()), true
+		return int(rv.Int()), true, nil
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return int(rv.Uint()), true
+		return int(rv.Uint()), true, nil
 	default:
-		return 0, false
+		return 0, false, nil
 	}
+}
+
+// StampCostFromAppData extracts the announced outbound stamp cost from an LXMF
+// announce payload.
+func StampCostFromAppData(appData []byte) (int, bool) {
+	stampCost, ok, err := stampCostFromAppDataDetailed(appData)
+	if err != nil {
+		panic(err)
+	}
+	return stampCost, ok
 }

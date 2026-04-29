@@ -259,6 +259,40 @@ func TestHandleOutboundAutoconfiguresOutboundStampCostBeforePacking(t *testing.T
 	}
 }
 
+func TestHandleOutboundAutoconfiguresZeroOutboundStampCostWithoutStamping(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	ts.Remember(nil, sourceDest.Hash, sourceID.GetPublicKey(), nil)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	router.now = func() time.Time { return now }
+	router.hasPath = func(_ []byte) bool { return false }
+	router.requestPath = func(_ []byte) error { return nil }
+	router.updateStampCost(destination.Hash, 0)
+
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+	msg.DeferStamp = false
+
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+
+	if msg.StampCost == nil || *msg.StampCost != 0 {
+		t.Fatalf("stamp cost=%v want=0", msg.StampCost)
+	}
+	if len(msg.Stamp) != 0 {
+		t.Fatalf("stamp length=%v want=0", len(msg.Stamp))
+	}
+}
+
 func TestHandleOutboundDisablesDeferredStampWhenNoStampIsRequired(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -3878,6 +3912,28 @@ func TestOutboundStampCostRestartRecovery(t *testing.T) {
 	}
 }
 
+func TestOutboundStampCostRestartRecoveryPreservesZeroCost(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	destinationHash := bytes.Repeat([]byte{0x44}, DestinationLength)
+	router.updateStampCost(destinationHash, 0)
+
+	if err := router.Close(); err != nil {
+		t.Fatalf("router.Close(): %v", err)
+	}
+
+	recovered := mustTestNewRouter(t, ts, nil, tmpDir)
+	stampCost, ok := recovered.OutboundStampCost(destinationHash)
+	if !ok || stampCost != 0 {
+		t.Fatalf("recovered OutboundStampCost = (%v,%v), want (0,true)", stampCost, ok)
+	}
+}
+
 func TestOutboundStampCostRestartDropsExpiredEntries(t *testing.T) {
 	t.Parallel()
 
@@ -4116,6 +4172,175 @@ func TestDeliveryAnnounceHandlerUpdatesStampCostAndRetriesPendingOutbound(t *tes
 	}
 }
 
+func TestDeliveryAnnounceHandlerLogsMalformedStampCostAndStillRetriesPendingOutbound(t *testing.T) {
+	t.Parallel()
+
+	logger := rns.NewLogger()
+	logger.SetLogLevel(rns.LogExtreme)
+	logger.SetLogDest(rns.LogCallback)
+	logs := make(chan string, 8)
+	logger.SetLogCallback(func(msg string) {
+		logs <- msg
+	})
+
+	ts := rns.NewTransportSystem(logger)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	id := mustTestNewIdentity(t, true)
+	var zero int
+	dest, err := router.RegisterDeliveryIdentity(id, "", &zero)
+	if err != nil {
+		t.Fatalf("RegisterDeliveryIdentity: %v", err)
+	}
+
+	message := &Message{
+		Destination:         dest,
+		DestinationHash:     append([]byte{}, dest.Hash...),
+		Method:              MethodDirect,
+		NextDeliveryAttempt: float64(time.Now().Add(time.Hour).UnixNano()) / 1e9,
+	}
+	router.pendingOutbound = append(router.pendingOutbound, message)
+	retried := make(chan struct{}, 1)
+	router.processOutbound = func() {
+		retried <- struct{}{}
+	}
+
+	nowSeconds := float64(time.Now().UnixNano()) / 1e9
+	router.handleDeliveryAnnounce(dest.Hash, nil, []byte{0x91, 0xc1})
+
+	select {
+	case msg := <-logs:
+		want := "An error occurred while trying to decode announced stamp cost. The contained exception was: encountered reserved code: 0xc1"
+		if !bytes.Contains([]byte(msg), []byte(want)) {
+			t.Fatalf("log = %q, want substring %q", msg, want)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected malformed stamp-cost log")
+	}
+
+	if _, ok := router.OutboundStampCost(dest.Hash); ok {
+		t.Fatal("OutboundStampCost unexpectedly updated from malformed app data")
+	}
+	if message.NextDeliveryAttempt > nowSeconds+0.5 {
+		t.Fatalf("NextDeliveryAttempt = %v, want immediate retry", message.NextDeliveryAttempt)
+	}
+	select {
+	case <-retried:
+	case <-time.After(time.Second):
+		t.Fatal("delivery announce did not trigger outbound processing")
+	}
+}
+
+func TestDeliveryAnnounceHandlerMatchesPendingOutboundByDestinationHash(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	id := mustTestNewIdentity(t, true)
+	var zero int
+	dest, err := router.RegisterDeliveryIdentity(id, "", &zero)
+	if err != nil {
+		t.Fatalf("RegisterDeliveryIdentity: %v", err)
+	}
+
+	message := &Message{
+		Destination:         nil,
+		DestinationHash:     append([]byte{}, dest.Hash...),
+		Method:              MethodOpportunistic,
+		NextDeliveryAttempt: float64(time.Now().Add(time.Hour).UnixNano()) / 1e9,
+	}
+	router.pendingOutbound = append(router.pendingOutbound, message)
+	retried := make(chan struct{}, 1)
+	router.processOutbound = func() {
+		retried <- struct{}{}
+	}
+
+	appData, err := msgpack.Pack([]any{[]byte("Carol"), 8})
+	if err != nil {
+		t.Fatalf("Pack announce app data: %v", err)
+	}
+
+	nowSeconds := float64(time.Now().UnixNano()) / 1e9
+	router.handleDeliveryAnnounce(dest.Hash, nil, appData)
+
+	if message.NextDeliveryAttempt > nowSeconds+0.5 {
+		t.Fatalf("NextDeliveryAttempt = %v, want immediate retry", message.NextDeliveryAttempt)
+	}
+	select {
+	case <-retried:
+	case <-time.After(time.Second):
+		t.Fatal("delivery announce did not trigger outbound processing")
+	}
+}
+
+func TestDeliveryAnnounceHandlerWaitsForActiveOutboundProcessingBeforeRetrying(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	id := mustTestNewIdentity(t, true)
+	var zero int
+	dest, err := router.RegisterDeliveryIdentity(id, "", &zero)
+	if err != nil {
+		t.Fatalf("RegisterDeliveryIdentity: %v", err)
+	}
+
+	message := &Message{
+		Destination:         dest,
+		DestinationHash:     append([]byte{}, dest.Hash...),
+		Method:              MethodDirect,
+		NextDeliveryAttempt: float64(time.Now().Add(time.Hour).UnixNano()) / 1e9,
+	}
+	router.pendingOutbound = append(router.pendingOutbound, message)
+
+	sleepCalled := make(chan struct{}, 1)
+	releaseSleep := make(chan struct{})
+	retried := make(chan struct{}, 1)
+	router.outboundProcessingActive.Store(true)
+	router.outboundTriggerSleep = func(time.Duration) {
+		select {
+		case sleepCalled <- struct{}{}:
+		default:
+		}
+		<-releaseSleep
+	}
+	router.processOutbound = func() {
+		retried <- struct{}{}
+	}
+
+	appData, err := msgpack.Pack([]any{[]byte("Carol"), 8})
+	if err != nil {
+		t.Fatalf("Pack announce app data: %v", err)
+	}
+
+	router.handleDeliveryAnnounce(dest.Hash, nil, appData)
+
+	select {
+	case <-retried:
+		t.Fatal("delivery announce retried before active outbound processing completed")
+	case <-sleepCalled:
+	case <-time.After(time.Second):
+		t.Fatal("delivery announce did not wait on active outbound processing")
+	}
+
+	router.outboundProcessingActive.Store(false)
+	close(releaseSleep)
+
+	select {
+	case <-retried:
+	case <-time.After(time.Second):
+		t.Fatal("delivery announce did not retry after outbound processing completed")
+	}
+}
+
 func TestPropagationAnnounceHandlerAutopeersWithinDepth(t *testing.T) {
 	t.Parallel()
 
@@ -4314,6 +4539,70 @@ func TestPropagationAnnounceHandlerIgnoresPathResponseForHeardStaticPeer(t *test
 	}
 }
 
+func TestPropagationAnnounceHandlerRefreshesUnheardStaticPeerOnPathResponse(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.propagationEnabled = true
+	router.maxPeeringCost = 26
+
+	now := time.Unix(1700001234, 0).UTC()
+	router.now = func() time.Time { return now }
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
+	oldStampCost := 3
+	oldSyncLimit := 32
+	oldTransferLimit := 64.0
+	oldFlexibility := 1
+	oldPeeringCost := 2
+	router.staticPeers[string(remoteHash)] = struct{}{}
+	router.peers[string(remoteHash)] = &Peer{
+		destinationHash:                 append([]byte{}, remoteHash...),
+		alive:                           false,
+		lastHeard:                       0,
+		peeringTimebase:                 10,
+		metadata:                        map[any]any{int64(PNMetaName): []byte("Old Node")},
+		propagationStampCost:            cloneOptionalInt(&oldStampCost),
+		propagationSyncLimit:            cloneOptionalInt(&oldSyncLimit),
+		propagationTransferLimit:        cloneOptionalFloat64(&oldTransferLimit),
+		propagationStampCostFlexibility: cloneOptionalInt(&oldFlexibility),
+		peeringCost:                     cloneOptionalInt(&oldPeeringCost),
+	}
+
+	appData, err := msgpack.Pack([]any{
+		false,
+		1700002000,
+		true,
+		128,
+		256,
+		[]any{11, 3, 7},
+		map[any]any{PNMetaName: []byte("Node B")},
+	})
+	if err != nil {
+		t.Fatalf("Pack propagation app data: %v", err)
+	}
+
+	router.handlePropagationAnnounceWithContext(remoteHash, remoteIdentity, appData, true)
+
+	peer := router.peers[string(remoteHash)]
+	if peer == nil {
+		t.Fatal("expected static peer to remain present")
+	}
+	if !peer.alive {
+		t.Fatal("expected unheard static peer path response to refresh peer")
+	}
+	if peer.peeringTimebase != 1700002000 {
+		t.Fatalf("peeringTimebase=%v want=1700002000", peer.peeringTimebase)
+	}
+	if peer.lastHeard != peerTime(now) {
+		t.Fatalf("lastHeard=%v want=%v", peer.lastHeard, peerTime(now))
+	}
+}
+
 func TestPropagationAnnounceHandlerIgnoresPathResponseForAutopeer(t *testing.T) {
 	t.Parallel()
 
@@ -4349,6 +4638,107 @@ func TestPropagationAnnounceHandlerIgnoresPathResponseForAutopeer(t *testing.T) 
 
 	if peer := router.peers[string(remoteHash)]; peer != nil {
 		t.Fatal("expected autopeer path response to be ignored")
+	}
+}
+
+func TestPropagationAnnounceHandlerLogsMalformedAppData(t *testing.T) {
+	t.Parallel()
+
+	logger := rns.NewLogger()
+	logger.SetLogLevel(rns.LogExtreme)
+	logger.SetLogDest(rns.LogCallback)
+	logs := make(chan string, 8)
+	logger.SetLogCallback(func(msg string) {
+		logs <- msg
+	})
+
+	ts := rns.NewTransportSystem(logger)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.propagationEnabled = true
+	router.maxPeeringCost = 26
+	router.hopsTo = func([]byte) int { return 1 }
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
+	router.handlePropagationAnnounceWithContext(remoteHash, remoteIdentity, []byte{0x91, 0xc1}, false)
+
+	select {
+	case msg := <-logs:
+		want := "Could not validate propagation node announce data: encountered reserved code: 0xc1"
+		if !bytes.Contains([]byte(msg), []byte(want)) {
+			t.Fatalf("log = %q, want substring %q", msg, want)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected malformed propagation announce log")
+	}
+
+	if peer := router.peers[string(remoteHash)]; peer != nil {
+		t.Fatal("expected malformed propagation announce to be ignored")
+	}
+}
+
+func TestPropagationAnnounceHandlerRecoversPanickingHopsLookup(t *testing.T) {
+	t.Parallel()
+
+	logger := rns.NewLogger()
+	logger.SetLogLevel(rns.LogExtreme)
+	logger.SetLogDest(rns.LogCallback)
+	logs := make(chan string, 8)
+	logger.SetLogCallback(func(msg string) {
+		logs <- msg
+	})
+
+	ts := rns.NewTransportSystem(logger)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	autopeerMaxDepth := 2
+	router := mustTestNewRouterFromConfig(t, ts, RouterConfig{
+		StoragePath:      tmpDir,
+		Autopeer:         true,
+		AutopeerMaxdepth: &autopeerMaxDepth,
+	})
+	router.propagationEnabled = true
+	router.maxPeeringCost = 26
+	router.hopsTo = func([]byte) int {
+		panic("boom")
+	}
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
+	appData, err := msgpack.Pack([]any{
+		false,
+		1700002000,
+		true,
+		128,
+		256,
+		[]any{11, 3, 7},
+		map[any]any{PNMetaName: []byte("Node B")},
+	})
+	if err != nil {
+		t.Fatalf("Pack propagation app data: %v", err)
+	}
+
+	router.handlePropagationAnnounceWithContext(remoteHash, remoteIdentity, appData, false)
+
+	want := []string{
+		"Error while evaluating propagation node announce, ignoring announce.",
+		"The contained exception was: boom",
+	}
+	for _, wantMsg := range want {
+		select {
+		case msg := <-logs:
+			if !bytes.Contains([]byte(msg), []byte(wantMsg)) {
+				t.Fatalf("log = %q, want substring %q", msg, wantMsg)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("expected log containing %q", wantMsg)
+		}
+	}
+
+	if peer := router.peers[string(remoteHash)]; peer != nil {
+		t.Fatal("expected panicking propagation announce to be ignored")
 	}
 }
 
@@ -4416,6 +4806,7 @@ func TestPropagationAnnounceHandlerRejectsInvalidAnnounceShape(t *testing.T) {
 	tests := []struct {
 		name    string
 		appData []any
+		wantLog string
 	}{
 		{
 			name: "missing sync limit",
@@ -4428,6 +4819,7 @@ func TestPropagationAnnounceHandlerRejectsInvalidAnnounceShape(t *testing.T) {
 				[]any{11, 3, 7},
 				map[any]any{PNMetaName: []byte("Node B")},
 			},
+			wantLog: "Could not validate propagation node announce data: Invalid announce data: Could not decode propagation sync limit",
 		},
 		{
 			name: "non-map metadata",
@@ -4440,6 +4832,7 @@ func TestPropagationAnnounceHandlerRejectsInvalidAnnounceShape(t *testing.T) {
 				[]any{11, 3, 7},
 				[]any{"not", "metadata"},
 			},
+			wantLog: "Could not validate propagation node announce data: Invalid announce data: Could not decode metadata",
 		},
 	}
 
@@ -4448,7 +4841,15 @@ func TestPropagationAnnounceHandlerRejectsInvalidAnnounceShape(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			ts := rns.NewTransportSystem(nil)
+			logger := rns.NewLogger()
+			logger.SetLogLevel(rns.LogExtreme)
+			logger.SetLogDest(rns.LogCallback)
+			logs := make(chan string, 8)
+			logger.SetLogCallback(func(msg string) {
+				logs <- msg
+			})
+
+			ts := rns.NewTransportSystem(logger)
 			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 			defer cleanup()
 
@@ -4470,6 +4871,15 @@ func TestPropagationAnnounceHandlerRejectsInvalidAnnounceShape(t *testing.T) {
 			}
 
 			router.handlePropagationAnnounce(remoteHash, remoteIdentity, packed)
+
+			select {
+			case msg := <-logs:
+				if !bytes.Contains([]byte(msg), []byte(tc.wantLog)) {
+					t.Fatalf("log = %q, want substring %q", msg, tc.wantLog)
+				}
+			case <-time.After(time.Second):
+				t.Fatalf("expected invalid announce log containing %q", tc.wantLog)
+			}
 
 			if peer := router.peers[string(remoteHash)]; peer != nil {
 				t.Fatal("expected invalid announce to be ignored")

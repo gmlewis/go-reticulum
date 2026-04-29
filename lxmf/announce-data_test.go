@@ -77,6 +77,35 @@ func TestDisplayNameFromAppData(t *testing.T) {
 	}
 }
 
+func TestDisplayNameFromAppDataPanicsOnMalformedEncodings(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		appData []byte
+	}{
+		{
+			name:    "raw invalid utf8",
+			appData: []byte{0xff},
+		},
+		{
+			name:    "malformed msgpack array",
+			appData: []byte{0x91, 0xc1},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatalf("DisplayNameFromAppData(%v) did not panic", tc.appData)
+				}
+			}()
+			_ = DisplayNameFromAppData(tc.appData)
+		})
+	}
+}
+
 func TestStampCostFromAppData(t *testing.T) {
 	t.Parallel()
 
@@ -125,4 +154,16 @@ func TestStampCostFromAppData(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestStampCostFromAppDataPanicsOnMalformedMsgpack(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("StampCostFromAppData() did not panic")
+		}
+	}()
+
+	_, _ = StampCostFromAppData([]byte{0x91, 0xc1})
 }

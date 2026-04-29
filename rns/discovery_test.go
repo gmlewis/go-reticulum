@@ -13578,6 +13578,22 @@ func (ts *announceCaptureTransport) Outbound(packet *Packet) error {
 	return nil
 }
 
+func mustAnnouncePacketInfo(t *testing.T, packet *Packet) map[any]any {
+	t.Helper()
+	if packet == nil {
+		t.Fatal("packet = nil")
+	}
+	unpacked, err := msgpack.Unpack(packet.Data[1 : len(packet.Data)-discoveryStampSize])
+	if err != nil {
+		t.Fatalf("msgpack.Unpack() error = %v", err)
+	}
+	info := asAnyMap(unpacked)
+	if info == nil {
+		t.Fatalf("unexpected announce payload type %T", unpacked)
+	}
+	return info
+}
+
 func TestInterfaceAnnouncerPayload(t *testing.T) {
 	t.Parallel()
 
@@ -13798,6 +13814,65 @@ func TestInterfaceAnnouncerPayloadKeepsEmptyIFACFields(t *testing.T) {
 	}
 }
 
+func TestInterfaceAnnouncerPayloadSanitizesPublishedIFACValues(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	ts := newAnnounceCaptureTransport(logger)
+	transportIdentity := mustTestNewIdentity(t, true)
+	ts.identity = transportIdentity
+	ts.SetEnabled(true)
+
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+
+	iface := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("announce-backbone-sanitized-ifac", interfaces.ModeGateway, 1000),
+		ifaceType:     "BackboneInterface",
+		bindIP:        "127.0.0.1",
+		bindPort:      4242,
+	}
+	iface.SetIFACConfig(interfaces.IFACConfig{
+		Enabled: true,
+		NetName: " mesh \n",
+		NetKey:  " secret\r\n",
+		Size:    16,
+	})
+	iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  6 * time.Hour,
+		StampValue:        6,
+		Name:              "Discovery Backbone",
+		ReachableOn:       "discovery.example.net",
+		PublishIFAC:       true,
+	})
+
+	appData, err := announcer.getInterfaceAnnounceData(iface)
+	if err != nil {
+		t.Fatalf("getInterfaceAnnounceData() error = %v", err)
+	}
+
+	unpacked, err := msgpack.Unpack(appData[1 : len(appData)-discoveryStampSize])
+	if err != nil {
+		t.Fatalf("msgpack.Unpack() error = %v", err)
+	}
+	info := asAnyMap(unpacked)
+	if info == nil {
+		t.Fatalf("unexpected announce payload type %T", unpacked)
+	}
+
+	if got := asString(lookupDiscoveryValue(info, discoveryFieldIFACNetname)); got != "mesh" {
+		t.Fatalf("ifac netname = %q, want %q", got, "mesh")
+	}
+	if got := asString(lookupDiscoveryValue(info, discoveryFieldIFACNetkey)); got != "secret" {
+		t.Fatalf("ifac netkey = %q, want %q", got, "secret")
+	}
+}
+
 func TestInterfaceAnnouncerPayloadKeepsNilCoordinates(t *testing.T) {
 	t.Parallel()
 
@@ -13937,6 +14012,58 @@ func TestInterfaceAnnouncerPayloadKeepsEmptyModulationField(t *testing.T) {
 				t.Fatalf("modulation = %v, want empty string", got)
 			}
 		})
+	}
+}
+
+func TestInterfaceAnnouncerPayloadWeaveKeepsUnsanitizedModulation(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	ts := newAnnounceCaptureTransport(logger)
+	transportIdentity := mustTestNewIdentity(t, true)
+	ts.identity = transportIdentity
+	ts.SetEnabled(true)
+
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+
+	iface := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("weave-raw-modulation", interfaces.ModeGateway, 1000),
+		ifaceType:     "WeaveInterface",
+	}
+	iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  time.Hour,
+		Name:              "Weave Raw Mod",
+		ReachableOn:       "weave.example.net",
+		Frequency:         intPtr(2450000000),
+		Bandwidth:         intPtr(2000000),
+		Channel:           intPtr(11),
+		Modulation:        " gmsk \n",
+	})
+
+	appData, err := announcer.getInterfaceAnnounceData(iface)
+	if err != nil {
+		t.Fatalf("getInterfaceAnnounceData() error = %v", err)
+	}
+
+	payload := appData[1:]
+	packed := payload[:len(payload)-discoveryStampSize]
+	unpacked, err := msgpack.Unpack(packed)
+	if err != nil {
+		t.Fatalf("msgpack.Unpack() error = %v", err)
+	}
+	info := asAnyMap(unpacked)
+	if info == nil {
+		t.Fatalf("unexpected announce payload type %T", unpacked)
+	}
+
+	if got := asString(lookupDiscoveryValue(info, discoveryFieldModulation)); got != " gmsk \n" {
+		t.Fatalf("modulation = %q, want %q", got, " gmsk \n")
 	}
 }
 
@@ -14182,6 +14309,111 @@ func TestInterfaceAnnouncerStart(t *testing.T) {
 	}
 }
 
+func TestInterfaceAnnouncerStopDuringSleepStillAllowsCurrentCycle(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	ts := newAnnounceCaptureTransport(logger)
+	ts.identity = mustTestNewIdentity(t, true)
+
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+	announcer.jobInterval = 40 * time.Millisecond
+	sleepStarted := make(chan struct{}, 1)
+	releaseSleep := make(chan struct{})
+	announcer.sleep = func(time.Duration) {
+		select {
+		case sleepStarted <- struct{}{}:
+		default:
+		}
+		<-releaseSleep
+	}
+
+	iface := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("announce-stop-sleep", interfaces.ModeGateway, 1000),
+		ifaceType:     "BackboneInterface",
+		bindIP:        "127.0.0.1",
+		bindPort:      4250,
+	}
+	iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  time.Hour,
+		Name:              "Stop Sleep Backbone",
+		ReachableOn:       "stop.example.net",
+	})
+	ts.RegisterInterface(iface)
+
+	announcer.Start()
+	select {
+	case <-sleepStarted:
+	case <-time.After(time.Second):
+		t.Fatal("expected announcer job to enter sleep")
+	}
+	announcer.Stop()
+	close(releaseSleep)
+
+	select {
+	case <-ts.packets:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected one final discovery announce after stop during sleep")
+	}
+
+	select {
+	case packet := <-ts.packets:
+		t.Fatalf("received unexpected extra announce after post-stop cycle: %#v", packet)
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+func TestInterfaceAnnouncerStartIsIdempotentWhileRunning(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	ts := newAnnounceCaptureTransport(logger)
+	ts.identity = mustTestNewIdentity(t, true)
+
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+	announcer.jobInterval = 40 * time.Millisecond
+
+	iface := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("announce-start-once", interfaces.ModeGateway, 1000),
+		ifaceType:     "BackboneInterface",
+		bindIP:        "127.0.0.1",
+		bindPort:      4251,
+	}
+	iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  time.Hour,
+		Name:              "Start Once Backbone",
+		ReachableOn:       "start-once.example.net",
+	})
+	ts.RegisterInterface(iface)
+
+	announcer.Start()
+	firstStopCh := announcer.stopCh
+	announcer.Start()
+	defer announcer.Stop()
+
+	if announcer.stopCh != firstStopCh {
+		t.Fatal("expected Start() while running to keep the existing worker state")
+	}
+
+	select {
+	case <-ts.packets:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for discovery announce packet")
+	}
+}
+
 func TestInterfaceAnnouncerLogsCouldNotGenerateForUnsupportedInterface(t *testing.T) {
 	t.Parallel()
 
@@ -14284,6 +14516,156 @@ func TestInterfaceAnnouncerLogsAbortForInvalidReachableOn(t *testing.T) {
 		"is not a valid IP address or hostname",
 		"Aborting discovery announce",
 		"Could not generate interface discovery announce data for announce-invalid",
+	} {
+		found := false
+		for _, msg := range logs {
+			if strings.Contains(msg, want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected log containing %q, got %v", want, logs)
+		}
+	}
+}
+
+func TestInterfaceAnnouncerLogsAbortForExecutableReachableOnNonZeroExit(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("reachable_on executable parity path is not used on Windows")
+	}
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-announce-exec-fail-")
+	defer cleanup()
+
+	reachableScript := filepath.Join(tmpDir, "reachable-on.sh")
+	if err := os.WriteFile(reachableScript, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile(reachableScript) error = %v", err)
+	}
+
+	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+	logger.SetLogLevel(LogDebug)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
+
+	ts := newAnnounceCaptureTransport(logger)
+	transportIdentity := mustTestNewIdentity(t, true)
+	ts.identity = transportIdentity
+	ts.SetEnabled(true)
+
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+	destination, err := NewDestination(ts, transportIdentity, DestinationIn, DestinationSingle, discoveryAppName, "discovery", "interface")
+	if err != nil {
+		t.Fatalf("NewDestination() error = %v", err)
+	}
+	announcer.discoveryDestination = destination
+
+	iface := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("announce-exec-fail", interfaces.ModeGateway, 1000),
+		ifaceType:     "BackboneInterface",
+		bindIP:        "127.0.0.1",
+		bindPort:      4248,
+	}
+	iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  time.Hour,
+		Name:              "Executable Failure",
+		ReachableOn:       reachableScript,
+	})
+	ts.RegisterInterface(iface)
+
+	announcer.announceOnce(time.Unix(501, 0))
+
+	for _, want := range []string{
+		fmt.Sprintf("Error while getting reachable_on from executable at %v: Non-zero exit code from subprocess", reachableScript),
+		"Aborting discovery announce",
+		"Could not generate interface discovery announce data for announce-exec-fail",
+	} {
+		found := false
+		for _, msg := range logs {
+			if strings.Contains(msg, want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected log containing %q, got %v", want, logs)
+		}
+	}
+}
+
+func TestInterfaceAnnouncerLogsAbortForExecutableReachableOnInvalidOutput(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("reachable_on executable parity path is not used on Windows")
+	}
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-announce-exec-invalid-")
+	defer cleanup()
+
+	reachableScript := filepath.Join(tmpDir, "reachable-on.sh")
+	if err := os.WriteFile(reachableScript, []byte("#!/bin/sh\necho 'bad host !'\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile(reachableScript) error = %v", err)
+	}
+
+	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+	logger.SetLogLevel(LogDebug)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
+
+	ts := newAnnounceCaptureTransport(logger)
+	transportIdentity := mustTestNewIdentity(t, true)
+	ts.identity = transportIdentity
+	ts.SetEnabled(true)
+
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+	destination, err := NewDestination(ts, transportIdentity, DestinationIn, DestinationSingle, discoveryAppName, "discovery", "interface")
+	if err != nil {
+		t.Fatalf("NewDestination() error = %v", err)
+	}
+	announcer.discoveryDestination = destination
+
+	iface := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("announce-exec-invalid", interfaces.ModeGateway, 1000),
+		ifaceType:     "BackboneInterface",
+		bindIP:        "127.0.0.1",
+		bindPort:      4249,
+	}
+	iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  time.Hour,
+		Name:              "Executable Invalid",
+		ReachableOn:       reachableScript,
+	})
+	ts.RegisterInterface(iface)
+
+	announcer.announceOnce(time.Unix(502, 0))
+
+	for _, want := range []string{
+		fmt.Sprintf("Error while getting reachable_on from executable at %v: Valid IP address or hostname was not found in external script output %q", reachableScript, "bad host !"),
+		"Aborting discovery announce",
+		"Could not generate interface discovery announce data for announce-exec-invalid",
 	} {
 		found := false
 		for _, msg := range logs {
@@ -14414,6 +14796,132 @@ func TestInterfaceAnnouncerLogsSendFailureAsPrepareError(t *testing.T) {
 		}
 	}
 	t.Fatalf("expected log containing %q, got %v", want, logs)
+}
+
+func TestInterfaceAnnouncerAnnounceOncePrefersMostOverdueInterface(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	ts := newAnnounceCaptureTransport(logger)
+	transportIdentity := mustTestNewIdentity(t, true)
+	ts.identity = transportIdentity
+	ts.SetEnabled(true)
+
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+	destination, err := NewDestination(ts, transportIdentity, DestinationIn, DestinationSingle, discoveryAppName, "discovery", "interface")
+	if err != nil {
+		t.Fatalf("NewDestination() error = %v", err)
+	}
+	announcer.discoveryDestination = destination
+
+	first := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("announce-less-overdue", interfaces.ModeGateway, 1000),
+		ifaceType:     "BackboneInterface",
+		bindIP:        "127.0.0.1",
+		bindPort:      4252,
+	}
+	first.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  time.Hour,
+		Name:              "Less Overdue",
+		ReachableOn:       "less.example.net",
+	})
+	second := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("announce-more-overdue", interfaces.ModeGateway, 1000),
+		ifaceType:     "BackboneInterface",
+		bindIP:        "127.0.0.1",
+		bindPort:      4253,
+	}
+	second.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  time.Hour,
+		Name:              "More Overdue",
+		ReachableOn:       "more.example.net",
+	})
+	ts.RegisterInterface(first)
+	ts.RegisterInterface(second)
+
+	now := time.Unix(700, 0)
+	announcer.lastAnnounced[first] = now.Add(-2 * time.Hour)
+	announcer.lastAnnounced[second] = now.Add(-4 * time.Hour)
+
+	announcer.announceOnce(now)
+
+	if got := announcer.lastAnnounced[second]; !got.Equal(now) {
+		t.Fatalf("selected lastAnnounced(second) = %v, want %v", got, now)
+	}
+	if got := announcer.lastAnnounced[first]; got.Equal(now) {
+		t.Fatalf("expected less-overdue interface to remain unselected, got %v", got)
+	}
+}
+
+func TestInterfaceAnnouncerAnnounceOncePreservesRegistrationOrderForEqualOverdue(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	ts := newAnnounceCaptureTransport(logger)
+	transportIdentity := mustTestNewIdentity(t, true)
+	ts.identity = transportIdentity
+	ts.SetEnabled(true)
+
+	r := &Reticulum{
+		transport: ts,
+		logger:    logger,
+	}
+	announcer := NewInterfaceAnnouncer(r, logger)
+	destination, err := NewDestination(ts, transportIdentity, DestinationIn, DestinationSingle, discoveryAppName, "discovery", "interface")
+	if err != nil {
+		t.Fatalf("NewDestination() error = %v", err)
+	}
+	announcer.discoveryDestination = destination
+
+	first := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("announce-first-equal", interfaces.ModeGateway, 1000),
+		ifaceType:     "BackboneInterface",
+		bindIP:        "127.0.0.1",
+		bindPort:      4254,
+	}
+	first.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  time.Hour,
+		Name:              "First Equal",
+		ReachableOn:       "first-equal.example.net",
+	})
+	second := &announceTestInterface{
+		BaseInterface: interfaces.NewBaseInterface("announce-second-equal", interfaces.ModeGateway, 1000),
+		ifaceType:     "BackboneInterface",
+		bindIP:        "127.0.0.1",
+		bindPort:      4255,
+	}
+	second.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+		SupportsDiscovery: true,
+		Discoverable:      true,
+		AnnounceInterval:  time.Hour,
+		Name:              "Second Equal",
+		ReachableOn:       "second-equal.example.net",
+	})
+	ts.RegisterInterface(first)
+	ts.RegisterInterface(second)
+
+	now := time.Unix(701, 0)
+	announcer.lastAnnounced[first] = now.Add(-2 * time.Hour)
+	announcer.lastAnnounced[second] = now.Add(-2 * time.Hour)
+
+	announcer.announceOnce(now)
+
+	if got := announcer.lastAnnounced[first]; !got.Equal(now) {
+		t.Fatalf("selected lastAnnounced(first) = %v, want %v", got, now)
+	}
+	if got := announcer.lastAnnounced[second]; got.Equal(now) {
+		t.Fatalf("expected equal-overdue selection to preserve registration order")
+	}
 }
 
 func TestInterfaceAnnouncerParity(t *testing.T) {

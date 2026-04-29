@@ -6,6 +6,9 @@
 package lxmf
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/gmlewis/go-reticulum/rns"
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
@@ -27,7 +30,13 @@ func (r *Router) deliveryAnnounceHandler() *rns.AnnounceHandler {
 }
 
 func (r *Router) handleDeliveryAnnounce(destinationHash []byte, _ *rns.Identity, appData []byte) {
-	if stampCost, ok := StampCostFromAppData(appData); ok {
+	if stampCost, ok, err := stampCostFromAppDataDetailed(appData); err != nil {
+		var logger *rns.Logger
+		if r.transport != nil {
+			logger = r.transport.GetLogger()
+		}
+		logger.Error("An error occurred while trying to decode announced stamp cost. The contained exception was: %v", err)
+	} else if ok {
 		r.updateStampCost(destinationHash, stampCost)
 	}
 
@@ -36,10 +45,14 @@ func (r *Router) handleDeliveryAnnounce(destinationHash []byte, _ *rns.Identity,
 
 	r.mu.Lock()
 	for _, message := range r.pendingOutbound {
-		if message == nil || message.Destination == nil {
+		if message == nil {
 			continue
 		}
-		if !equalHashes(message.Destination.Hash, destinationHash) {
+		messageDestinationHash := message.DestinationHash
+		if len(messageDestinationHash) == 0 && message.Destination != nil {
+			messageDestinationHash = message.Destination.Hash
+		}
+		if !equalHashes(messageDestinationHash, destinationHash) {
 			continue
 		}
 		if message.Method == MethodDirect || message.Method == MethodOpportunistic {
@@ -50,7 +63,16 @@ func (r *Router) handleDeliveryAnnounce(destinationHash []byte, _ *rns.Identity,
 	r.mu.Unlock()
 
 	if shouldProcess {
-		go r.processOutbound()
+		go func() {
+			sleep := r.outboundTriggerSleep
+			if sleep == nil {
+				sleep = time.Sleep
+			}
+			for r.outboundProcessingActive.Load() {
+				sleep(100 * time.Millisecond)
+			}
+			r.processOutbound()
+		}()
 	}
 }
 
@@ -67,11 +89,22 @@ func (r *Router) handlePropagationAnnounce(destinationHash []byte, _ *rns.Identi
 }
 
 func (r *Router) handlePropagationAnnounceWithContext(destinationHash []byte, _ *rns.Identity, appData []byte, isPathResponse bool) {
+	var logger *rns.Logger
+	if r.transport != nil {
+		logger = r.transport.GetLogger()
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			logger.Debug("Error while evaluating propagation node announce, ignoring announce.")
+			logger.Debug("The contained exception was: %v", fmt.Sprint(recovered))
+		}
+	}()
+
 	if !r.propagationEnabled || len(appData) == 0 {
 		return
 	}
 
-	announceData, ok := decodePropagationAnnounceData(appData)
+	announceData, ok := decodePropagationAnnounceData(appData, logger)
 	if !ok {
 		return
 	}
@@ -109,11 +142,6 @@ func (r *Router) handlePropagationAnnounceWithContext(destinationHash []byte, _ 
 func (r *Router) updateStampCost(destinationHash []byte, stampCost int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-
-	if stampCost <= 0 {
-		delete(r.outboundStampCosts, string(destinationHash))
-		return
-	}
 	r.outboundStampCosts[string(destinationHash)] = outboundStampCostEntry{
 		updatedAt: r.now(),
 		stampCost: stampCost,
@@ -152,56 +180,68 @@ type propagationAnnounceData struct {
 	metadata                        map[any]any
 }
 
-func decodePropagationAnnounceData(appData []byte) (propagationAnnounceData, bool) {
+func decodePropagationAnnounceData(appData []byte, logger *rns.Logger) (propagationAnnounceData, bool) {
 	unpacked, err := msgpack.Unpack(appData)
 	if err != nil {
+		logger.Debug("Could not validate propagation node announce data: %v", err)
 		return propagationAnnounceData{}, false
 	}
 	items, ok := unpacked.([]any)
 	if !ok || len(items) < 7 {
+		logger.Debug("Could not validate propagation node announce data: Invalid announce data: Insufficient peer data, likely from deprecated LXMF version")
 		return propagationAnnounceData{}, false
 	}
 
 	nodeTimebase, err := anyToFloat64(items[1])
 	if err != nil {
+		logger.Debug("Could not validate propagation node announce data: Invalid announce data: Could not decode timebase")
 		return propagationAnnounceData{}, false
 	}
 	propagationEnabled, ok := items[2].(bool)
 	if !ok {
+		logger.Debug("Could not validate propagation node announce data: Invalid announce data: Indeterminate propagation node status")
 		return propagationAnnounceData{}, false
 	}
 	propagationTransferLimit, err := anyToFloat64(items[3])
 	if err != nil {
+		logger.Debug("Could not validate propagation node announce data: Invalid announce data: Could not decode propagation transfer limit")
 		return propagationAnnounceData{}, false
 	}
 
 	if items[4] == nil {
+		logger.Debug("Could not validate propagation node announce data: Invalid announce data: Could not decode propagation sync limit")
 		return propagationAnnounceData{}, false
 	}
 	value, err := anyToInt(items[4])
 	if err != nil {
+		logger.Debug("Could not validate propagation node announce data: Invalid announce data: Could not decode propagation sync limit")
 		return propagationAnnounceData{}, false
 	}
 	propagationSyncLimit := &value
 
 	stampCostItems, ok := items[5].([]any)
 	if !ok || len(stampCostItems) < 3 {
+		logger.Debug("Could not validate propagation node announce data: Invalid announce data: Could not decode stamp costs")
 		return propagationAnnounceData{}, false
 	}
 	propagationStampCost, err := anyToInt(stampCostItems[0])
 	if err != nil {
+		logger.Debug("Could not validate propagation node announce data: Invalid announce data: Could not decode target stamp cost")
 		return propagationAnnounceData{}, false
 	}
 	propagationStampCostFlexibility, err := anyToInt(stampCostItems[1])
 	if err != nil {
+		logger.Debug("Could not validate propagation node announce data: Invalid announce data: Could not decode stamp cost flexibility")
 		return propagationAnnounceData{}, false
 	}
 	peeringCost, err := anyToInt(stampCostItems[2])
 	if err != nil {
+		logger.Debug("Could not validate propagation node announce data: Invalid announce data: Could not decode peering cost")
 		return propagationAnnounceData{}, false
 	}
 	metadata := peerMetadata(items[6])
 	if metadata == nil {
+		logger.Debug("Could not validate propagation node announce data: Invalid announce data: Could not decode metadata")
 		return propagationAnnounceData{}, false
 	}
 

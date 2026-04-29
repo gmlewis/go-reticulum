@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
@@ -93,10 +94,12 @@ type Router struct {
 	requestLink                 func(*rns.Link, string, any, func(*rns.RequestReceipt), func(*rns.RequestReceipt), func(*rns.RequestReceipt), time.Duration) (*rns.RequestReceipt, error)
 	requestProgress             func(*rns.RequestReceipt) float64
 	startRequestMessagesPathJob func()
+	outboundTriggerSleep        func(time.Duration)
 	pathWaitSleep               func(time.Duration)
 	teardownLink                func(*rns.Link)
 	now                         func() time.Time
 	processingDeferredStamps    bool
+	outboundProcessingActive    atomic.Bool
 
 	resourceLinks       map[string]*rns.Link
 	resourceLinkPending map[string]bool
@@ -269,7 +272,8 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 		requestProgress: func(receipt *rns.RequestReceipt) float64 {
 			return receipt.GetProgress()
 		},
-		pathWaitSleep: time.Sleep,
+		outboundTriggerSleep: time.Sleep,
+		pathWaitSleep:        time.Sleep,
 		teardownLink: func(link *rns.Link) {
 			link.Teardown()
 		},
@@ -556,7 +560,7 @@ func (r *Router) maybeAutopeerIdentifiedPropagationSender(remotePropagationHash 
 		return
 	}
 
-	announceData, ok := decodePropagationAnnounceData(identity.AppData)
+	announceData, ok := decodePropagationAnnounceData(identity.AppData, r.transport.GetLogger())
 	if !ok || !announceData.propagationEnabled {
 		return
 	}
@@ -1351,6 +1355,9 @@ func (r *Router) configureDeliveryLink(link *rns.Link) {
 
 // ProcessOutbound iterates over the pending outbound queue and actively attempts to transmit messages via the Reticulum network.
 func (r *Router) ProcessOutbound() {
+	r.outboundProcessingActive.Store(true)
+	defer r.outboundProcessingActive.Store(false)
+
 	r.ProcessDeferredStamps()
 
 	r.mu.Lock()
@@ -2951,7 +2958,7 @@ func (r *Router) LoadOutboundStampCosts() error {
 			continue
 		}
 		stampCost, err := anyToInt(items[1])
-		if err != nil || stampCost <= 0 {
+		if err != nil {
 			continue
 		}
 		updatedAt := time.Unix(0, 0).Add(time.Duration(updatedAtSeconds * float64(time.Second)))
@@ -3708,7 +3715,7 @@ func (r *Router) cachedOutboundPropagationStampCost() (int, bool) {
 	if identity == nil || len(identity.AppData) == 0 {
 		return 0, false
 	}
-	announceData, ok := decodePropagationAnnounceData(identity.AppData)
+	announceData, ok := decodePropagationAnnounceData(identity.AppData, r.transport.GetLogger())
 	if !ok || announceData.propagationStampCost <= 0 {
 		return 0, false
 	}

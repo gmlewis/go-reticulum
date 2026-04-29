@@ -68,6 +68,7 @@ type InterfaceAnnouncer struct {
 	lastAnnounced        map[interfaces.Interface]time.Time
 	stampCache           map[string][]byte
 	jobInterval          time.Duration
+	sleep                func(time.Duration)
 	stopCh               chan struct{}
 	running              bool
 }
@@ -80,6 +81,7 @@ func NewInterfaceAnnouncer(owner *Reticulum, logger *Logger) *InterfaceAnnouncer
 		lastAnnounced: make(map[interfaces.Interface]time.Time),
 		stampCache:    make(map[string][]byte),
 		jobInterval:   discoveryAnnouncerJobInterval,
+		sleep:         time.Sleep,
 	}
 }
 
@@ -143,16 +145,20 @@ func (ia *InterfaceAnnouncer) Stop() {
 }
 
 func (ia *InterfaceAnnouncer) job(stopCh <-chan struct{}, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
+	_ = stopCh
+	sleep := ia.sleep
+	if sleep == nil {
+		sleep = time.Sleep
+	}
 	for {
-		select {
-		case <-stopCh:
+		ia.mu.Lock()
+		running := ia.running
+		ia.mu.Unlock()
+		if !running {
 			return
-		case now := <-ticker.C:
-			ia.announceOnce(now)
 		}
+		sleep(interval)
+		ia.announceOnce(time.Now())
 	}
 }
 
@@ -263,12 +269,18 @@ func (ia *InterfaceAnnouncer) resolveReachableOn(raw string) (string, error) {
 		return "", &discoveryReachableOnInvalidError{value: reachableOn}
 	}
 
+	fromExecutable := false
 	if runtime.GOOS != "windows" {
 		execPath, err := expandUserPath(reachableOn)
 		if err == nil {
 			if info, statErr := os.Stat(execPath); statErr == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+				fromExecutable = true
 				output, err := exec.Command(execPath).Output()
 				if err != nil {
+					var exitErr *exec.ExitError
+					if errors.As(err, &exitErr) {
+						return "", &discoveryReachableOnExecError{raw: raw, err: errors.New("Non-zero exit code from subprocess")}
+					}
 					return "", &discoveryReachableOnExecError{raw: raw, err: err}
 				}
 				reachableOn = sanitizeDiscoveryString(string(output))
@@ -277,6 +289,12 @@ func (ia *InterfaceAnnouncer) resolveReachableOn(raw string) (string, error) {
 	}
 
 	if !isReachableOnValue(reachableOn) {
+		if fromExecutable {
+			return "", &discoveryReachableOnExecError{
+				raw: raw,
+				err: fmt.Errorf("Valid IP address or hostname was not found in external script output %q", reachableOn),
+			}
+		}
 		return "", &discoveryReachableOnInvalidError{value: reachableOn}
 	}
 	return reachableOn, nil
