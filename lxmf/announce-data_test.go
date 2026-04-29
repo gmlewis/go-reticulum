@@ -175,6 +175,14 @@ func TestStampCostFromAppData(t *testing.T) {
 			want:   0,
 			wantOK: true,
 		},
+		{
+			name: "msgpack list with nil stamp cost",
+			appData: func() []byte {
+				data, _ := msgpack.Pack([]any{[]byte("Carol"), nil})
+				return data
+			}(),
+			wantOK: false,
+		},
 	}
 
 	for _, tc := range tests {

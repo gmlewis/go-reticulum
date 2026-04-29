@@ -5541,6 +5541,66 @@ func TestPropagationSyncMessageListResponseAllHavesRequestsPurge(t *testing.T) {
 	}
 }
 
+func TestPropagationSyncMessageListResponseNoIdentityTearsDown(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	link := &rns.Link{}
+	router.outboundPropagationLink = link
+	var teardownCount int
+	router.teardownLink = func(closed *rns.Link) {
+		if closed != link {
+			t.Fatal("teardown called with unexpected link")
+		}
+		teardownCount++
+	}
+
+	router.messageListResponse(&rns.RequestReceipt{
+		Link:     link,
+		Response: peerErrorNoIdentity,
+	})
+
+	if teardownCount != 1 {
+		t.Fatalf("teardown count = %d, want 1", teardownCount)
+	}
+	if router.PropagationTransferState() != PRNoIdentityRcvd {
+		t.Fatalf("state = %v, want PRNoIdentityRcvd", router.PropagationTransferState())
+	}
+}
+
+func TestPropagationSyncMessageListResponseNoAccessTearsDown(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	link := &rns.Link{}
+	router.outboundPropagationLink = link
+	var teardownCount int
+	router.teardownLink = func(closed *rns.Link) {
+		if closed != link {
+			t.Fatal("teardown called with unexpected link")
+		}
+		teardownCount++
+	}
+
+	router.messageListResponse(&rns.RequestReceipt{
+		Link:     link,
+		Response: peerErrorNoAccess,
+	})
+
+	if teardownCount != 1 {
+		t.Fatalf("teardown count = %d, want 1", teardownCount)
+	}
+	if router.PropagationTransferState() != PRNoAccess {
+		t.Fatalf("state = %v, want PRNoAccess", router.PropagationTransferState())
+	}
+}
+
 func TestPropagationSyncMessageGetProgressUpdatesState(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -5722,6 +5782,66 @@ func TestPropagationSyncMessageGetResponseEmptyStringCompletes(t *testing.T) {
 	}
 }
 
+func TestPropagationSyncMessageGetResponseNoIdentityTearsDown(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	link := &rns.Link{}
+	router.outboundPropagationLink = link
+	var teardownCount int
+	router.teardownLink = func(closed *rns.Link) {
+		if closed != link {
+			t.Fatal("teardown called with unexpected link")
+		}
+		teardownCount++
+	}
+
+	router.messageGetResponse(&rns.RequestReceipt{
+		Link:     link,
+		Response: peerErrorNoIdentity,
+	})
+
+	if teardownCount != 1 {
+		t.Fatalf("teardown count = %d, want 1", teardownCount)
+	}
+	if router.PropagationTransferState() != PRNoIdentityRcvd {
+		t.Fatalf("state = %v, want PRNoIdentityRcvd", router.PropagationTransferState())
+	}
+}
+
+func TestPropagationSyncMessageGetResponseNoAccessTearsDown(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	link := &rns.Link{}
+	router.outboundPropagationLink = link
+	var teardownCount int
+	router.teardownLink = func(closed *rns.Link) {
+		if closed != link {
+			t.Fatal("teardown called with unexpected link")
+		}
+		teardownCount++
+	}
+
+	router.messageGetResponse(&rns.RequestReceipt{
+		Link:     link,
+		Response: peerErrorNoAccess,
+	})
+
+	if teardownCount != 1 {
+		t.Fatalf("teardown count = %d, want 1", teardownCount)
+	}
+	if router.PropagationTransferState() != PRNoAccess {
+		t.Fatalf("state = %v, want PRNoAccess", router.PropagationTransferState())
+	}
+}
+
 func TestPropagationSyncClosedLinkAfterCompleteResetsToIdle(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -5742,6 +5862,66 @@ func TestPropagationSyncClosedLinkAfterCompleteResetsToIdle(t *testing.T) {
 	if router.outboundPropagationLink != nil {
 		t.Fatal("expected outbound propagation link to be cleared")
 	}
+	if router.PropagationTransferState() != PRIdle {
+		t.Fatalf("state = %v, want PRIdle", router.PropagationTransferState())
+	}
+	if router.PropagationTransferProgress() != 0.0 {
+		t.Fatalf("progress = %v, want 0.0", router.PropagationTransferProgress())
+	}
+	if got, ok := router.PropagationTransferLastResult(); ok {
+		t.Fatalf("last result = (%v,%v), want cleared result", got, ok)
+	}
+	if router.wantsDownloadOnPathAvailableFrom != nil || router.wantsDownloadOnPathAvailableTo != nil {
+		t.Fatal("expected pending path state to be cleared")
+	}
+}
+
+func TestPropagationSyncAcknowledgeCompletionPreservesFailureStateWithoutReset(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	router.propagationTransferState = PRNoIdentityRcvd
+	router.propagationTransferProgress = 0.75
+	router.propagationTransferLastResult = 9
+	router.propagationTransferLastResultSet = true
+	router.wantsDownloadOnPathAvailableFrom = []byte("pending")
+	router.wantsDownloadOnPathAvailableTo = router.identity
+
+	router.acknowledgeSyncCompletion(false, nil)
+
+	if router.PropagationTransferState() != PRNoIdentityRcvd {
+		t.Fatalf("state = %v, want PRNoIdentityRcvd", router.PropagationTransferState())
+	}
+	if router.PropagationTransferProgress() != 0.0 {
+		t.Fatalf("progress = %v, want 0.0", router.PropagationTransferProgress())
+	}
+	if got, ok := router.PropagationTransferLastResult(); ok {
+		t.Fatalf("last result = (%v,%v), want cleared result", got, ok)
+	}
+	if router.wantsDownloadOnPathAvailableFrom != nil || router.wantsDownloadOnPathAvailableTo != nil {
+		t.Fatal("expected pending path state to be cleared")
+	}
+}
+
+func TestPropagationSyncAcknowledgeCompletionResetClearsFailureState(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	router.propagationTransferState = PRNoIdentityRcvd
+	router.propagationTransferProgress = 0.75
+	router.propagationTransferLastResult = 9
+	router.propagationTransferLastResultSet = true
+	router.wantsDownloadOnPathAvailableFrom = []byte("pending")
+	router.wantsDownloadOnPathAvailableTo = router.identity
+
+	router.acknowledgeSyncCompletion(true, nil)
+
 	if router.PropagationTransferState() != PRIdle {
 		t.Fatalf("state = %v, want PRIdle", router.PropagationTransferState())
 	}
