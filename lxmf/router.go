@@ -896,8 +896,11 @@ func (r *Router) offerRequest(_ string, data []byte, _ []byte, linkID []byte, re
 	}
 
 	request, err := decodeAnyList(data)
-	if err != nil || len(request) < 2 {
+	if err != nil {
 		return peerErrorInvalidData
+	}
+	if len(request) < 2 {
+		return nil
 	}
 
 	peeringKey := anyToBytes(request[0])
@@ -952,8 +955,11 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 	}
 
 	request, err := decodeAnyList(data)
-	if err != nil || len(request) < 2 {
+	if err != nil {
 		return peerErrorInvalidData
+	}
+	if len(request) < 2 {
+		return nil
 	}
 
 	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")

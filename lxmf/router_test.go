@@ -3139,6 +3139,35 @@ func TestMessageGetRequestMalformedHavesReturnsNil(t *testing.T) {
 	}
 }
 
+func TestMessageGetRequestShortDecodedListsReturnNil(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	tests := []struct {
+		name    string
+		payload []any
+	}{
+		{name: "empty list", payload: []any{}},
+		{name: "one item", payload: []any{nil}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			request, err := msgpack.Pack(tc.payload)
+			if err != nil {
+				t.Fatalf("Pack request: %v", err)
+			}
+			if response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now()); response != nil {
+				t.Fatalf("response=%#v want nil", response)
+			}
+		})
+	}
+}
+
 type assertErr string
 
 func (e assertErr) Error() string {

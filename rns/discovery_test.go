@@ -14435,11 +14435,17 @@ func TestInterfaceAnnouncerStartIsIdempotentWhileRunning(t *testing.T) {
 
 	close(releaseSleep)
 
-	select {
-	case <-ts.packets:
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for discovery announce packet")
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		announcer.mu.Lock()
+		last := announcer.lastAnnounced[iface]
+		announcer.mu.Unlock()
+		if !last.IsZero() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
+	t.Fatal("timed out waiting for announcer worker to complete a cycle")
 }
 
 func TestInterfaceAnnouncerLogsCouldNotGenerateForUnsupportedInterface(t *testing.T) {

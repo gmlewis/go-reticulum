@@ -27,6 +27,16 @@ func (c *closeErrorWriteCloser) Close() error {
 	return errors.New("close failed")
 }
 
+type closedReadCloser struct{}
+
+func (c *closedReadCloser) Read(_ []byte) (int, error) {
+	return 0, os.ErrClosed
+}
+
+func (c *closedReadCloser) Close() error {
+	return nil
+}
+
 type fakeSender struct {
 	mu   sync.Mutex
 	msgs []rns.Message
@@ -180,6 +190,26 @@ func TestStreamPipeLogsSendFailure(t *testing.T) {
 
 	if !strings.Contains(captured, "Failed to send stdout stream data") {
 		t.Fatalf("missing stream send warning in %q", captured)
+	}
+}
+
+func TestStreamPipeSendsEOFOnClosedPipe(t *testing.T) {
+	t.Parallel()
+
+	sender := &fakeSender{}
+	ac := &activeCommand{rt: &runtimeT{}}
+	ac.streamPipe(sender, &closedReadCloser{}, streamIDStdout)
+
+	msgs := sender.messages()
+	if len(msgs) != 1 {
+		t.Fatalf("message count=%v, want 1", len(msgs))
+	}
+	eofMsg, ok := msgs[0].(*streamDataMessage)
+	if !ok {
+		t.Fatalf("message type=%T", msgs[0])
+	}
+	if !eofMsg.EOF {
+		t.Fatalf("expected EOF message, got %+v", eofMsg)
 	}
 }
 
