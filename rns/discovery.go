@@ -743,6 +743,10 @@ func (e discoveryEndpoint) backboneClientConfig(name, fallbackReachableOn string
 type discoveryBackboneFactory func(discoveryBackboneClientConfig, interfaces.InboundHandler) (interfaces.Interface, error)
 
 func defaultDiscoveryBackboneClientInterface(config discoveryBackboneClientConfig, handler interfaces.InboundHandler) (interfaces.Interface, error) {
+	if config.TargetHost == nil {
+		return interfaces.NewDormantBackboneClientInterface(config.Name, handler), nil
+	}
+
 	targetHost, ok, err := discoveryBackboneTargetHostValue(config.TargetHost)
 	if err != nil {
 		return nil, err
@@ -842,6 +846,8 @@ type InterfaceDiscovery struct {
 	monitorStopCh          chan struct{}
 	shuffleCandidates      func([]DiscoveredInterface)
 	backboneFactory        discoveryBackboneFactory
+	registerAutoconnect    func(interfaces.Interface)
+	monitorAutoconnect     func(interfaces.Interface)
 }
 
 // NewInterfaceDiscovery initializes a discovery listener bound to the provided local Reticulum configuration.
@@ -2157,8 +2163,16 @@ func (id *InterfaceDiscovery) autoconnect(info DiscoveredInterface) (err error) 
 			})
 		}
 	}
-	id.owner.transport.RegisterInterface(iface)
-	id.monitorInterface(iface)
+	if id.registerAutoconnect != nil {
+		id.registerAutoconnect(iface)
+	} else {
+		id.owner.transport.RegisterInterface(iface)
+	}
+	if id.monitorAutoconnect != nil {
+		id.monitorAutoconnect(iface)
+	} else {
+		id.monitorInterface(iface)
+	}
 	return nil
 }
 

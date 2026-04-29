@@ -43,5 +43,16 @@ func NewBackboneClientInterface(name, targetHost string, targetPort int, handler
 	return &BackboneClientInterface{TCPClientInterface: inner}, nil
 }
 
+// NewDormantBackboneClientInterface returns an unconnected Backbone client used
+// for discovery records that Python registers without an initial target.
+func NewDormantBackboneClientInterface(name string, handler InboundHandler) Interface {
+	return &BackboneClientInterface{
+		TCPClientInterface: &TCPClientInterface{
+			BaseInterface:  NewBaseInterface(name, ModeFull, TCPBitrateGuess),
+			inboundHandler: handler,
+		},
+	}
+}
+
 // Type returns the string "BackboneClientInterface" as the runtime type name.
 func (b *BackboneClientInterface) Type() string { return "BackboneClientInterface" }
