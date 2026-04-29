@@ -651,6 +651,153 @@ func TestListDiscoveredInterfaces_MissingLastHeardLogsAndRemains(t *testing.T) {
 	}
 }
 
+func TestListDiscoveredInterfaces_BinaryMapKeysLogPythonKeyErrorAndRemain(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-bytes-map-keys-")
+	defer cleanup()
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(storagePath, "bytes-map-key.data"), mustMsgpackPack(map[any]any{
+		[]byte("last_heard"): float64(time.Now().UnixNano()) / 1e9,
+		[]byte("transport"):  true,
+		[]byte("name"):       "BinaryKey",
+		[]byte("type"):       "BackboneInterface",
+		[]byte("value"):      1,
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write bytes-map-key discovery file: %v", err)
+	}
+
+	var logs bytes.Buffer
+	logger := NewLogger()
+	logger.SetLogLevel(LogExtreme)
+	logger.SetLogDest(LogCallback)
+	logger.SetLogCallback(func(msg string) {
+		logs.WriteString(msg)
+		logs.WriteByte('\n')
+	})
+
+	r := &Reticulum{configDir: tmpDir, logger: logger}
+	discovery := NewInterfaceDiscovery(r)
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+	}
+	if len(discovered) != 0 {
+		t.Fatalf("expected 0 discovered interfaces, got %v", len(discovered))
+	}
+	if _, err := os.Stat(filepath.Join(storagePath, "bytes-map-key.data")); err != nil {
+		t.Fatalf("expected bytes-map-key discovery file to remain on disk: %v", err)
+	}
+
+	logOutput := logs.String()
+	if !strings.Contains(logOutput, "error while loading discovered interface data: 'last_heard'") {
+		t.Fatalf("expected Python KeyError log, got %q", logOutput)
+	}
+	if !strings.Contains(logOutput, "bytes-map-key.data") || !strings.Contains(logOutput, "may be corrupt") {
+		t.Fatalf("expected corrupt-file path warning in logs, got %q", logOutput)
+	}
+}
+
+func TestListDiscoveredInterfaces_TrailingGarbageLoadsLikePython(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-trailing-garbage-")
+	defer cleanup()
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	raw := mustMsgpackPack(map[string]any{
+		"name":       "TrailingGarbage",
+		"last_heard": now - 60,
+		"transport":  true,
+		"type":       "BackboneInterface",
+		"value":      1,
+	})
+	if err := os.WriteFile(filepath.Join(storagePath, "trailing.data"), append(raw, []byte("junk")...), 0o644); err != nil {
+		t.Fatalf("failed to write trailing-garbage discovery file: %v", err)
+	}
+
+	r := &Reticulum{configDir: tmpDir}
+	discovery := NewInterfaceDiscovery(r)
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+	}
+	if len(discovered) != 1 {
+		t.Fatalf("expected 1 discovered interface, got %v", len(discovered))
+	}
+	if discovered[0].Name != "TrailingGarbage" {
+		t.Fatalf("unexpected surviving interface %q", discovered[0].Name)
+	}
+}
+
+func TestListDiscoveredInterfaces_InvalidMsgpackLogsPythonErrorsAndRemains(t *testing.T) {
+	t.Parallel()
+
+	truncatedMap := mustMsgpackPack(map[string]any{"last_heard": 1})
+
+	for _, tc := range []struct {
+		name    string
+		raw     []byte
+		wantLog string
+	}{
+		{name: "reserved code", raw: []byte{0xc1}, wantLog: "error while loading discovered interface data: encountered reserved code: 0xc1"},
+		{name: "truncated map", raw: truncatedMap[:len(truncatedMap)-1], wantLog: "error while loading discovered interface data: "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-invalid-msgpack-")
+			defer cleanup()
+			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+			if err := os.MkdirAll(storagePath, 0o755); err != nil {
+				t.Fatalf("failed to create storage path: %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(storagePath, "invalid.data"), tc.raw, 0o644); err != nil {
+				t.Fatalf("failed to write invalid discovery file: %v", err)
+			}
+
+			var logs bytes.Buffer
+			logger := NewLogger()
+			logger.SetLogLevel(LogExtreme)
+			logger.SetLogDest(LogCallback)
+			logger.SetLogCallback(func(msg string) {
+				logs.WriteString(msg)
+				logs.WriteByte('\n')
+			})
+
+			r := &Reticulum{configDir: tmpDir, logger: logger}
+			discovery := NewInterfaceDiscovery(r)
+
+			discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+			if err != nil {
+				t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+			}
+			if len(discovered) != 0 {
+				t.Fatalf("expected 0 discovered interfaces, got %v", len(discovered))
+			}
+			if _, err := os.Stat(filepath.Join(storagePath, "invalid.data")); err != nil {
+				t.Fatalf("expected invalid discovery file to remain on disk: %v", err)
+			}
+
+			logOutput := logs.String()
+			if !strings.Contains(logOutput, tc.wantLog) {
+				t.Fatalf("expected log containing %q, got %q", tc.wantLog, logOutput)
+			}
+			if !strings.Contains(logOutput, "invalid.data") || !strings.Contains(logOutput, "may be corrupt") {
+				t.Fatalf("expected corrupt-file path warning in logs, got %q", logOutput)
+			}
+		})
+	}
+}
+
 func TestListDiscoveredInterfaces_BoolLastHeardExpiresAndRemoves(t *testing.T) {
 	t.Parallel()
 
@@ -1077,7 +1224,7 @@ func TestListDiscoveredInterfaces_MixedBytesAndStringValueReturnsPythonError(t *
 
 	if _, err := discovery.ListDiscoveredInterfaces(false, false); err == nil {
 		t.Fatal("ListDiscoveredInterfaces() error = nil, want error for mixed bytes and string values")
-	} else if got, want := err.Error(), `"'<' not supported between instances of 'str' and 'bytes'"`; got != want {
+	} else if got, want := err.Error(), `"'<' not supported between instances of 'bytes' and 'str'"`; got != want {
 		t.Fatalf("ListDiscoveredInterfaces() error = %q, want %q", got, want)
 	}
 }
@@ -1119,6 +1266,82 @@ func TestListDiscoveredInterfaces_DictValuePairReturnsPythonError(t *testing.T) 
 		t.Fatal("ListDiscoveredInterfaces() error = nil, want error for dict value comparison")
 	} else if got, want := err.Error(), `"'<' not supported between instances of 'dict' and 'dict'"`; got != want {
 		t.Fatalf("ListDiscoveredInterfaces() error = %q, want %q", got, want)
+	}
+}
+
+func TestListDiscoveredInterfaces_MoreMixedValueErrorsMatchPython(t *testing.T) {
+	t.Parallel()
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	for _, tc := range []struct {
+		name  string
+		files []struct {
+			filename string
+			value    any
+		}
+		want string
+	}{
+		{
+			name: "none and bytes",
+			files: []struct {
+				filename string
+				value    any
+			}{
+				{filename: "none.data", value: nil},
+				{filename: "bytes.data", value: []byte("a")},
+			},
+			want: `"'<' not supported between instances of 'NoneType' and 'bytes'"`,
+		},
+		{
+			name: "bool and string",
+			files: []struct {
+				filename string
+				value    any
+			}{
+				{filename: "bool.data", value: true},
+				{filename: "string.data", value: "a"},
+			},
+			want: `"'<' not supported between instances of 'bool' and 'str'"`,
+		},
+		{
+			name: "nested dict and list",
+			files: []struct {
+				filename string
+				value    any
+			}{
+				{filename: "dict-list.data", value: []any{map[string]any{"a": 1}}},
+				{filename: "list-list.data", value: []any{[]any{1}}},
+			},
+			want: `"'<' not supported between instances of 'dict' and 'list'"`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-more-mixed-value-sort-")
+			defer cleanup()
+			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+			if err := os.MkdirAll(storagePath, 0o755); err != nil {
+				t.Fatalf("failed to create storage path: %v", err)
+			}
+
+			for i, file := range tc.files {
+				if err := os.WriteFile(filepath.Join(storagePath, file.filename), mustMsgpackPack(map[string]any{
+					"name":       file.filename,
+					"last_heard": now - float64(i+1),
+					"value":      file.value,
+				}), 0o644); err != nil {
+					t.Fatalf("failed to write discovery file %q: %v", file.filename, err)
+				}
+			}
+
+			r := &Reticulum{configDir: tmpDir}
+			discovery := NewInterfaceDiscovery(r)
+
+			if _, err := discovery.ListDiscoveredInterfaces(false, false); err == nil {
+				t.Fatal("ListDiscoveredInterfaces() error = nil, want mixed value comparison error")
+			} else if got := err.Error(); got != tc.want {
+				t.Fatalf("ListDiscoveredInterfaces() error = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -1561,10 +1784,79 @@ func TestListDiscoveredInterfaces_InvalidNetworkIDTypeLogsAndRemains(t *testing.
 	}
 
 	logOutput := logs.String()
-	if !strings.Contains(logOutput, "error while loading discovered interface data") {
-		t.Fatalf("expected corrupt-file error log, got %q", logOutput)
+	if !strings.Contains(logOutput, "error while loading discovered interface data: fromhex() argument must be str, not int") {
+		t.Fatalf("expected Python fromhex() type error log, got %q", logOutput)
 	}
 	if !strings.Contains(logOutput, "invalid-network-id-type.data") || !strings.Contains(logOutput, "may be corrupt") {
+		t.Fatalf("expected corrupt-file path warning in logs, got %q", logOutput)
+	}
+}
+
+func TestListDiscoveredInterfaces_BytesNetworkIDLogsPythonTypeErrorAndRemains(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-network-id-bytes-")
+	defer cleanup()
+	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("failed to create storage path: %v", err)
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(map[string]any{
+		"name":       "Valid",
+		"last_heard": now - 60,
+		"value":      1,
+		"transport":  true,
+		"network_id": "aabb",
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write valid discovery file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(storagePath, "bytes-network-id.data"), mustMsgpackPack(map[string]any{
+		"name":       "BytesNetworkID",
+		"last_heard": now - 60,
+		"value":      2,
+		"transport":  true,
+		"network_id": []byte("aabb"),
+	}), 0o644); err != nil {
+		t.Fatalf("failed to write bytes network_id discovery file: %v", err)
+	}
+
+	var logs bytes.Buffer
+	logger := NewLogger()
+	logger.SetLogLevel(LogExtreme)
+	logger.SetLogDest(LogCallback)
+	logger.SetLogCallback(func(msg string) {
+		logs.WriteString(msg)
+		logs.WriteByte('\n')
+	})
+
+	r := &Reticulum{
+		configDir:        tmpDir,
+		logger:           logger,
+		interfaceSources: [][]byte{{0xaa, 0xbb}},
+	}
+	discovery := NewInterfaceDiscovery(r)
+
+	discovered, err := discovery.ListDiscoveredInterfaces(false, false)
+	if err != nil {
+		t.Fatalf("ListDiscoveredInterfaces failed: %v", err)
+	}
+	if len(discovered) != 1 {
+		t.Fatalf("expected 1 valid discovered interface, got %v", len(discovered))
+	}
+	if discovered[0].Name != "Valid" {
+		t.Fatalf("unexpected surviving interface %q", discovered[0].Name)
+	}
+	if _, err := os.Stat(filepath.Join(storagePath, "bytes-network-id.data")); err != nil {
+		t.Fatalf("expected bytes network_id discovery file to remain on disk: %v", err)
+	}
+
+	logOutput := logs.String()
+	if !strings.Contains(logOutput, "error while loading discovered interface data: fromhex() argument must be str, not bytes") {
+		t.Fatalf("expected Python fromhex() bytes type error log, got %q", logOutput)
+	}
+	if !strings.Contains(logOutput, "bytes-network-id.data") || !strings.Contains(logOutput, "may be corrupt") {
 		t.Fatalf("expected corrupt-file path warning in logs, got %q", logOutput)
 	}
 }

@@ -1182,9 +1182,17 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 		return nil, nil
 	}
 
-	entries, err := os.ReadDir(storagePath)
+	dir, err := os.Open(storagePath)
 	if err != nil {
 		return nil, err
+	}
+	entries, err := dir.Readdirnames(-1)
+	closeErr := dir.Close()
+	if err != nil {
+		return nil, err
+	}
+	if closeErr != nil {
+		return nil, closeErr
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
@@ -1192,7 +1200,7 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 	var discovered []discoveredRecord
 
 	for _, entry := range entries {
-		path := filepath.Join(storagePath, entry.Name())
+		path := filepath.Join(storagePath, entry)
 		data, err := os.ReadFile(path)
 		if err != nil {
 			id.logDiscoveryFileLoadError(path, err)
@@ -1232,7 +1240,7 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 			} else {
 				networkIDHex, ok := networkIDValue.(string)
 				if !ok {
-					id.logDiscoveryFileLoadError(path, fmt.Errorf("invalid discovery cache network_id type %T", networkIDValue))
+					id.logDiscoveryFileLoadError(path, fmt.Errorf("fromhex() argument must be str, not %v", pythonDiscoverySortTypeName(networkIDValue)))
 					continue
 				}
 				networkID, err := hex.DecodeString(networkIDHex)
@@ -1368,20 +1376,46 @@ func sortDiscoveredRecords(records []discoveredRecord) (err error) {
 		}
 	}()
 
-	sort.Slice(records, func(i, j int) bool {
-		left := records[i]
-		right := records[j]
-		if left.item.StatusCode != right.item.StatusCode {
-			return left.item.StatusCode > right.item.StatusCode
+	for i := 1; i < len(records); i++ {
+		current := records[i]
+		j := i - 1
+		for ; j >= 0; j-- {
+			cmp, cmpErr := compareDiscoveredRecords(records[j], current)
+			if cmpErr != nil {
+				panic(cmpErr)
+			}
+			if cmp >= 0 {
+				break
+			}
+			records[j+1] = records[j]
 		}
-		if cmp, cmpErr := compareDiscoverySortValues(left.rawValue, right.rawValue); cmpErr != nil {
-			panic(cmpErr)
-		} else if cmp != 0 {
-			return cmp > 0
-		}
-		return left.item.LastHeard > right.item.LastHeard
-	})
+		records[j+1] = current
+	}
 	return nil
+}
+
+func compareDiscoveredRecords(left, right discoveredRecord) (int, error) {
+	if left.item.StatusCode != right.item.StatusCode {
+		switch {
+		case left.item.StatusCode > right.item.StatusCode:
+			return 1, nil
+		case left.item.StatusCode < right.item.StatusCode:
+			return -1, nil
+		}
+	}
+	if cmp, err := compareDiscoverySortValues(left.rawValue, right.rawValue); err != nil {
+		return 0, err
+	} else if cmp != 0 {
+		return cmp, nil
+	}
+	switch {
+	case left.item.LastHeard > right.item.LastHeard:
+		return 1, nil
+	case left.item.LastHeard < right.item.LastHeard:
+		return -1, nil
+	default:
+		return 0, nil
+	}
 }
 
 func compareDiscoverySortValues(left, right any) (int, error) {
