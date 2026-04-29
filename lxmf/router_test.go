@@ -4311,6 +4311,7 @@ func TestDeliveryAnnounceHandlerUpdatesStampCostAndRetriesPendingOutbound(t *tes
 		NextDeliveryAttempt: float64(time.Now().Add(time.Hour).UnixNano()) / 1e9,
 	}
 	router.pendingOutbound = append(router.pendingOutbound, message)
+	router.updateStampCost(dest.Hash, 8)
 	retried := make(chan struct{}, 1)
 	router.processOutbound = func() {
 		retried <- struct{}{}
@@ -4335,6 +4336,54 @@ func TestDeliveryAnnounceHandlerUpdatesStampCostAndRetriesPendingOutbound(t *tes
 	case <-retried:
 	case <-time.After(time.Second):
 		t.Fatal("delivery announce did not trigger outbound processing")
+	}
+}
+
+func TestDeliveryAnnounceHandlerClearsCachedStampCostOnCanonicalNoCostAnnounce(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		appData []byte
+	}{
+		{
+			name:    "raw utf8 announce",
+			appData: []byte("Carol"),
+		},
+		{
+			name: "msgpack list without stamp cost",
+			appData: func() []byte {
+				data, _ := msgpack.Pack([]any{[]byte("Carol")})
+				return data
+			}(),
+		},
+		{
+			name: "msgpack list with nil stamp cost",
+			appData: func() []byte {
+				data, _ := msgpack.Pack([]any{[]byte("Carol"), nil})
+				return data
+			}(),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+			router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+			destinationHash := []byte("destination-hash")
+			router.updateStampCost(destinationHash, 8)
+
+			router.handleDeliveryAnnounce(destinationHash, nil, tc.appData)
+
+			if stampCost, ok := router.OutboundStampCost(destinationHash); ok {
+				t.Fatalf("OutboundStampCost = (%v,%v), want missing entry", stampCost, ok)
+			}
+		})
 	}
 }
 
@@ -4368,6 +4417,7 @@ func TestDeliveryAnnounceHandlerLogsMalformedStampCostAndStillRetriesPendingOutb
 		NextDeliveryAttempt: float64(time.Now().Add(time.Hour).UnixNano()) / 1e9,
 	}
 	router.pendingOutbound = append(router.pendingOutbound, message)
+	router.updateStampCost(dest.Hash, 8)
 	retried := make(chan struct{}, 1)
 	router.processOutbound = func() {
 		retried <- struct{}{}
@@ -4386,8 +4436,8 @@ func TestDeliveryAnnounceHandlerLogsMalformedStampCostAndStillRetriesPendingOutb
 		t.Fatal("expected malformed stamp-cost log")
 	}
 
-	if _, ok := router.OutboundStampCost(dest.Hash); ok {
-		t.Fatal("OutboundStampCost unexpectedly updated from malformed app data")
+	if stampCost, ok := router.OutboundStampCost(dest.Hash); !ok || stampCost != 8 {
+		t.Fatalf("OutboundStampCost = (%v,%v), want (8,true)", stampCost, ok)
 	}
 	if message.NextDeliveryAttempt > nowSeconds+0.5 {
 		t.Fatalf("NextDeliveryAttempt = %v, want immediate retry", message.NextDeliveryAttempt)
@@ -5582,6 +5632,8 @@ func TestPropagationSyncMessageListResponseInvalidShapesTearDown(t *testing.T) {
 		name     string
 		response any
 	}{
+		{name: "nil", response: nil},
+		{name: "non-empty bytes", response: []byte("ab")},
 		{name: "string", response: "ab"},
 		{name: "map", response: map[string]any{"a": 1}},
 		{name: "scalar int", response: 1},
@@ -5961,6 +6013,49 @@ func TestPropagationSyncMessageGetResponseStringEntryPanics(t *testing.T) {
 		Link:     &rns.Link{},
 		Response: []any{"ab"},
 	})
+}
+
+func TestPropagationSyncMessageGetResponseDictEntryPanics(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		response any
+	}{
+		{
+			name:     "string-keyed dict entry",
+			response: []any{map[string]any{"a": 1}},
+		},
+		{
+			name:     "non-string-keyed dict entry",
+			response: []any{map[int]any{1: "a"}},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+			router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+			defer func() {
+				recovered := recover()
+				if recovered == nil {
+					t.Fatal("messageGetResponse() did not panic")
+				}
+				if got := fmt.Sprint(recovered); got != "object supporting the buffer API required" {
+					t.Fatalf("panic = %q, want %q", got, "object supporting the buffer API required")
+				}
+			}()
+
+			router.messageGetResponse(&rns.RequestReceipt{
+				Link:     &rns.Link{},
+				Response: tc.response,
+			})
+		})
+	}
 }
 
 func TestPropagationSyncMessageGetResponseStringKeyedMapPanics(t *testing.T) {

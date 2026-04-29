@@ -30,7 +30,7 @@ func (r *Router) deliveryAnnounceHandler() *rns.AnnounceHandler {
 }
 
 func (r *Router) handleDeliveryAnnounce(destinationHash []byte, _ *rns.Identity, appData []byte) {
-	if stampCost, ok, err := stampCostFromAppDataDetailed(appData); err != nil {
+	if stampCost, ok, clear, err := stampCostFromAppDataOutcome(appData); err != nil {
 		var logger *rns.Logger
 		if r.transport != nil {
 			logger = r.transport.GetLogger()
@@ -38,6 +38,8 @@ func (r *Router) handleDeliveryAnnounce(destinationHash []byte, _ *rns.Identity,
 		logger.Error("An error occurred while trying to decode announced stamp cost. The contained exception was: %v", err)
 	} else if ok {
 		r.updateStampCost(destinationHash, stampCost)
+	} else if clear {
+		r.clearStampCost(destinationHash)
 	}
 
 	nowSeconds := float64(r.now().UnixNano()) / 1e9
@@ -146,6 +148,12 @@ func (r *Router) updateStampCost(destinationHash []byte, stampCost int) {
 		updatedAt: r.now(),
 		stampCost: stampCost,
 	}
+}
+
+func (r *Router) clearStampCost(destinationHash []byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.outboundStampCosts, string(destinationHash))
 }
 
 // OutboundStampCost returns the most recently announced inbound stamp cost for

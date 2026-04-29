@@ -50,38 +50,46 @@ func DisplayNameFromAppData(appData []byte) string {
 	return string(appData)
 }
 
-func stampCostFromAppDataDetailed(appData []byte) (int, bool, error) {
+func stampCostFromAppDataOutcome(appData []byte) (int, bool, bool, error) {
 	if len(appData) == 0 {
-		return 0, false, nil
+		return 0, false, true, nil
 	}
 
 	if (appData[0] < 0x90 || appData[0] > 0x9f) && appData[0] != 0xdc {
-		return 0, false, nil
+		return 0, false, true, nil
 	}
 
 	result, err := msgpack.Unpack(appData)
 	if err != nil {
-		return 0, false, err
+		return 0, false, false, err
 	}
 	peerData, ok := result.([]any)
 	if !ok || len(peerData) < 2 {
-		return 0, false, nil
+		return 0, false, true, nil
+	}
+	if peerData[1] == nil {
+		return 0, false, true, nil
 	}
 
 	rv := reflect.ValueOf(peerData[1])
 	switch rv.Kind() {
 	case reflect.Bool:
 		if rv.Bool() {
-			return 1, true, nil
+			return 1, true, false, nil
 		}
-		return 0, true, nil
+		return 0, true, false, nil
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return int(rv.Int()), true, nil
+		return int(rv.Int()), true, false, nil
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return int(rv.Uint()), true, nil
+		return int(rv.Uint()), true, false, nil
 	default:
-		return 0, false, nil
+		return 0, false, false, nil
 	}
+}
+
+func stampCostFromAppDataDetailed(appData []byte) (int, bool, error) {
+	stampCost, ok, _, err := stampCostFromAppDataOutcome(appData)
+	return stampCost, ok, err
 }
 
 // StampCostFromAppData extracts the announced outbound stamp cost from an LXMF
