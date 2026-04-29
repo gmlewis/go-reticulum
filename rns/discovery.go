@@ -617,6 +617,9 @@ type DiscoveredInterface struct {
 	IFACNetkey  string `json:"ifac_netkey,omitempty"`
 
 	hasConfigEntry bool
+	hasName        bool
+	hasType        bool
+	hasNetworkID   bool
 	endpoint       discoveryEndpoint
 }
 
@@ -740,7 +743,10 @@ func (e discoveryEndpoint) backboneClientConfig(name, fallbackReachableOn string
 type discoveryBackboneFactory func(discoveryBackboneClientConfig, interfaces.InboundHandler) (interfaces.Interface, error)
 
 func defaultDiscoveryBackboneClientInterface(config discoveryBackboneClientConfig, handler interfaces.InboundHandler) (interfaces.Interface, error) {
-	targetHost, ok := discoveryBackboneTargetHostValue(config.TargetHost)
+	targetHost, ok, err := discoveryBackboneTargetHostValue(config.TargetHost)
+	if err != nil {
+		return nil, err
+	}
 	if !ok {
 		return nil, fmt.Errorf("missing reachable_on/port")
 	}
@@ -751,14 +757,27 @@ func defaultDiscoveryBackboneClientInterface(config discoveryBackboneClientConfi
 	return interfaces.NewBackboneClientInterface(config.Name, targetHost, targetPort, handler)
 }
 
-func discoveryBackboneTargetHostValue(v any) (string, bool) {
+func discoveryBackboneTargetHostValue(v any) (string, bool, error) {
 	switch t := v.(type) {
 	case string:
-		return t, true
+		return t, true, nil
 	case []byte:
-		return string(t), true
+		return "", false, fmt.Errorf("a bytes-like object is required, not 'str'")
+	}
+
+	rv := reflect.ValueOf(v)
+	if !rv.IsValid() {
+		return "", false, nil
+	}
+	switch rv.Kind() {
+	case reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return "", false, fmt.Errorf("argument of type '%v' is not iterable", pythonDiscoverySortTypeName(v))
+	case reflect.Slice, reflect.Array, reflect.Map:
+		return pythonDiscoveryValueString(v), true, nil
 	default:
-		return "", false
+		return "", false, nil
 	}
 }
 
@@ -800,7 +819,7 @@ func discoveryBackboneTargetPortValue(v any) (int, error) {
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		return int(rv.Uint()), nil
 	default:
-		return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not %q", rv.Type())
+		return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%v'", pythonDiscoverySortTypeName(v))
 	}
 }
 
@@ -1338,6 +1357,9 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 			IFACNetkey:  discoveryDisplayString(ifacNetkeyValue, hasIFACNetkey),
 
 			hasConfigEntry: hasConfigEntry,
+			hasName:        hasName,
+			hasType:        hasType,
+			hasNetworkID:   hasNetworkID,
 			endpoint:       newDiscoveryEndpoint(lookupAnyValue(m, "reachable_on"), hasAnyKey(m, "reachable_on"), lookupAnyValue(m, "port"), hasAnyKey(m, "port")),
 		}
 
@@ -1944,6 +1966,9 @@ func mapToDiscoveredInterface(info map[string]any) (DiscoveredInterface, bool) {
 		IFACNetkey:  discoveryDisplayString(ifacNetkeyValue, hasIFACNetkey),
 
 		hasConfigEntry: hasConfigEntry,
+		hasName:        hasName,
+		hasType:        hasType,
+		hasNetworkID:   hasNetworkID,
 		endpoint:       newDiscoveryEndpoint(reachableOnValue, hasReachableOn, info["port"], hasStringKey(info, "port")),
 	}
 
@@ -2046,12 +2071,24 @@ func (id *InterfaceDiscovery) autoconnect(info DiscoveredInterface) (err error) 
 	if id.autoconnectCount() >= id.owner.maxAutoconnectedInterfaces() {
 		return nil
 	}
+	if !info.hasType {
+		if id.owner.logger != nil {
+			id.owner.logger.Error("Error while auto-connecting discovered interface: 'type'")
+		}
+		return nil
+	}
 	if info.Type != "BackboneInterface" && info.Type != "TCPServerInterface" {
 		return nil
 	}
 	if id.interfaceExists(info) {
 		if id.owner.logger != nil {
 			id.owner.logger.Debug("Discovered %v already exists, not auto-connecting", info.Type)
+		}
+		return nil
+	}
+	if !info.hasName {
+		if id.owner.logger != nil {
+			id.owner.logger.Error("Error while auto-connecting discovered interface: 'name'")
 		}
 		return nil
 	}
@@ -2094,6 +2131,12 @@ func (id *InterfaceDiscovery) autoconnect(info DiscoveredInterface) (err error) 
 	if err != nil {
 		if id != nil && id.owner != nil && id.owner.logger != nil {
 			id.owner.logger.Error("Error while auto-connecting discovered interface: %v", err)
+		}
+		return nil
+	}
+	if !info.hasNetworkID {
+		if id.owner != nil && id.owner.logger != nil {
+			id.owner.logger.Error("Error while auto-connecting discovered interface: 'network_id'")
 		}
 		return nil
 	}

@@ -6232,6 +6232,7 @@ func TestInterfaceDiscoveryAutoconnectPassesRawEndpointValuesToConstructorSeam(t
 		"config_entry": "[[raw-port]]",
 		"reachable_on": []byte("127.0.0.1"),
 		"port":         "4242",
+		"network_id":   "01020304",
 	})
 	if !ok {
 		t.Fatal("mapToDiscoveredInterface() = false, want true")
@@ -6294,6 +6295,7 @@ func TestInterfaceDiscoveryAutoconnectPythonPortCoercion(t *testing.T) {
 				"config_entry": "[[python-port]]",
 				"reachable_on": "127.0.0.1",
 				"port":         tc.port,
+				"network_id":   "01020304",
 			})
 			if !ok {
 				t.Fatal("mapToDiscoveredInterface() = false, want true")
@@ -6417,6 +6419,384 @@ func TestInterfaceDiscoveryAutoconnectTCPServerLogsNoticeButDoesNotConnect(t *te
 		}
 	}
 	t.Fatalf("expected log containing %q, got %v", want, logs)
+}
+
+func TestInterfaceDiscoveryAutoconnectMissingNetworkIDLogsPythonKeyError(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
+
+	ts := NewTransportSystem(logger)
+	discovery := NewInterfaceDiscovery(&Reticulum{
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	})
+
+	var calls int
+	discovery.backboneFactory = func(config discoveryBackboneClientConfig, handler interfaces.InboundHandler) (interfaces.Interface, error) {
+		calls++
+		return newBootstrapConstructorTestInterface(config.Name, "BackboneClientInterface"), nil
+	}
+
+	info, ok := mapToDiscoveredInterface(map[string]any{
+		"name":         "No Network",
+		"type":         "BackboneInterface",
+		"config_entry": "[[no-network]]",
+		"reachable_on": "127.0.0.1",
+		"port":         4242,
+	})
+	if !ok {
+		t.Fatal("mapToDiscoveredInterface() = false, want true")
+	}
+
+	if err := discovery.autoconnect(info); err != nil {
+		t.Fatalf("autoconnect() error = %v, want nil after Python-style logging", err)
+	}
+	if calls != 1 {
+		t.Fatalf("backboneFactory calls = %v, want 1", calls)
+	}
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected no auto-connected interfaces when network_id is missing, got %v", got)
+	}
+
+	want := "Error while auto-connecting discovered interface: 'network_id'"
+	for _, msg := range logs {
+		if strings.Contains(msg, want) {
+			return
+		}
+	}
+	t.Fatalf("expected log containing %q, got %v", want, logs)
+}
+
+func TestInterfaceDiscoveryAutoconnectMissingTypeLogsPythonKeyError(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
+
+	ts := NewTransportSystem(logger)
+	discovery := NewInterfaceDiscovery(&Reticulum{
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	})
+
+	port := 4242
+	info := DiscoveredInterface{
+		Name:           "No Type",
+		ConfigEntry:    "[[no-type]]",
+		NetworkID:      "01020304",
+		ReachableOn:    "127.0.0.1",
+		Port:           &port,
+		hasName:        true,
+		hasConfigEntry: true,
+		hasNetworkID:   true,
+		endpoint:       newDiscoveryEndpoint("127.0.0.1", true, 4242, true),
+	}
+
+	if err := discovery.autoconnect(info); err != nil {
+		t.Fatalf("autoconnect() error = %v, want nil after Python-style logging", err)
+	}
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected no auto-connected interfaces when type is missing, got %v", got)
+	}
+
+	want := "Error while auto-connecting discovered interface: 'type'"
+	for _, msg := range logs {
+		if strings.Contains(msg, want) {
+			return
+		}
+	}
+	t.Fatalf("expected log containing %q, got %v", want, logs)
+}
+
+func TestInterfaceDiscoveryAutoconnectMissingNameLogsPythonKeyError(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
+
+	ts := NewTransportSystem(logger)
+	discovery := NewInterfaceDiscovery(&Reticulum{
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	})
+
+	var calls int
+	discovery.backboneFactory = func(config discoveryBackboneClientConfig, handler interfaces.InboundHandler) (interfaces.Interface, error) {
+		calls++
+		return newBootstrapConstructorTestInterface(config.Name, "BackboneClientInterface"), nil
+	}
+
+	info, ok := mapToDiscoveredInterface(map[string]any{
+		"type":         "BackboneInterface",
+		"config_entry": "[[no-name]]",
+		"reachable_on": "127.0.0.1",
+		"port":         4242,
+		"network_id":   "01020304",
+	})
+	if !ok {
+		t.Fatal("mapToDiscoveredInterface() = false, want true")
+	}
+
+	if err := discovery.autoconnect(info); err != nil {
+		t.Fatalf("autoconnect() error = %v, want nil after Python-style logging", err)
+	}
+	if calls != 0 {
+		t.Fatalf("backboneFactory calls = %v, want 0 when name is missing", calls)
+	}
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected no auto-connected interfaces when name is missing, got %v", got)
+	}
+
+	want := "Error while auto-connecting discovered interface: 'name'"
+	for _, msg := range logs {
+		if strings.Contains(msg, want) {
+			return
+		}
+	}
+	t.Fatalf("expected log containing %q, got %v", want, logs)
+}
+
+func TestInterfaceDiscoveryAutoconnectListPortLogsPythonTypeError(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
+
+	ts := NewTransportSystem(logger)
+	discovery := NewInterfaceDiscovery(&Reticulum{
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	})
+
+	info, ok := mapToDiscoveredInterface(map[string]any{
+		"name":         "List Port Backbone",
+		"type":         "BackboneInterface",
+		"config_entry": "[[list-port]]",
+		"reachable_on": "127.0.0.1",
+		"port":         []any{1},
+		"network_id":   "01020304",
+	})
+	if !ok {
+		t.Fatal("mapToDiscoveredInterface() = false, want true")
+	}
+
+	if err := discovery.autoconnect(info); err != nil {
+		t.Fatalf("autoconnect() error = %v, want nil after Python-style logging", err)
+	}
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected no auto-connected interfaces for list-typed port, got %v", got)
+	}
+
+	want := "Error while auto-connecting discovered interface: int() argument must be a string, a bytes-like object or a real number, not 'list'"
+	for _, msg := range logs {
+		if strings.Contains(msg, want) {
+			return
+		}
+	}
+	t.Fatalf("expected log containing %q, got %v", want, logs)
+}
+
+func TestInterfaceDiscoveryAutoconnectBytesReachableOnLogsPythonTypeError(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+
+	var logs []string
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
+
+	ts := NewTransportSystem(logger)
+	discovery := NewInterfaceDiscovery(&Reticulum{
+		transport:           ts,
+		logger:              logger,
+		autoconnectDiscover: 1,
+	})
+
+	info, ok := mapToDiscoveredInterface(map[string]any{
+		"name":         "Bytes Reachable Backbone",
+		"type":         "BackboneInterface",
+		"config_entry": "[[bytes-reachable]]",
+		"reachable_on": []byte("127.0.0.1"),
+		"port":         4242,
+		"network_id":   "01020304",
+	})
+	if !ok {
+		t.Fatal("mapToDiscoveredInterface() = false, want true")
+	}
+
+	if err := discovery.autoconnect(info); err != nil {
+		t.Fatalf("autoconnect() error = %v, want nil after Python-style logging", err)
+	}
+	if got := len(ts.GetInterfaces()); got != 0 {
+		t.Fatalf("expected no auto-connected interfaces for bytes reachable_on, got %v", got)
+	}
+
+	want := "Error while auto-connecting discovered interface: a bytes-like object is required, not 'str'"
+	for _, msg := range logs {
+		if strings.Contains(msg, want) {
+			return
+		}
+	}
+	t.Fatalf("expected log containing %q, got %v", want, logs)
+}
+
+func TestInterfaceDiscoveryAutoconnectCompositeReachableOnUsesPythonDisplayHost(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		reachableOn any
+		wantHost    string
+	}{
+		{name: "list", reachableOn: []any{1}, wantHost: "[1]"},
+		{name: "dict", reachableOn: map[string]any{"a": 1}, wantHost: "{'a': 1}"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			logger := NewLogger()
+			logger.SetLogDest(LogCallback)
+
+			var logs []string
+			logger.SetLogCallback(func(msg string) {
+				logs = append(logs, msg)
+			})
+
+			ts := NewTransportSystem(logger)
+			discovery := NewInterfaceDiscovery(&Reticulum{
+				transport:           ts,
+				logger:              logger,
+				autoconnectDiscover: 1,
+			})
+
+			info, ok := mapToDiscoveredInterface(map[string]any{
+				"name":         "Composite Reachable Backbone",
+				"type":         "BackboneInterface",
+				"config_entry": "[[composite-reachable]]",
+				"reachable_on": tc.reachableOn,
+				"port":         4242,
+				"network_id":   "01020304",
+			})
+			if !ok {
+				t.Fatal("mapToDiscoveredInterface() = false, want true")
+			}
+
+			if err := discovery.autoconnect(info); err != nil {
+				t.Fatalf("autoconnect() error = %v", err)
+			}
+			if got := len(ts.GetInterfaces()); got != 1 {
+				t.Fatalf("expected 1 auto-connected interface, got %v", got)
+			}
+
+			iface := ts.GetInterfaces()[0]
+			t.Cleanup(func() {
+				if err := iface.Detach(); err != nil {
+					t.Errorf("Detach() error = %v", err)
+				}
+			})
+
+			meta, ok := iface.(interface{ TargetHost() string })
+			if !ok {
+				t.Fatalf("auto-connected interface %T does not expose TargetHost()", iface)
+			}
+			if got := meta.TargetHost(); got != tc.wantHost {
+				t.Fatalf("TargetHost() = %q, want %q", got, tc.wantHost)
+			}
+
+			for _, msg := range logs {
+				if strings.Contains(msg, "Error while auto-connecting discovered interface:") {
+					t.Fatalf("unexpected discovery error log: %v", logs)
+				}
+			}
+		})
+	}
+}
+
+func TestInterfaceDiscoveryAutoconnectScalarReachableOnLogsPythonTypeError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		reachableOn any
+		wantType    string
+	}{
+		{name: "int", reachableOn: 1, wantType: "int"},
+		{name: "bool", reachableOn: true, wantType: "bool"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			logger := NewLogger()
+			logger.SetLogDest(LogCallback)
+
+			var logs []string
+			logger.SetLogCallback(func(msg string) {
+				logs = append(logs, msg)
+			})
+
+			ts := NewTransportSystem(logger)
+			discovery := NewInterfaceDiscovery(&Reticulum{
+				transport:           ts,
+				logger:              logger,
+				autoconnectDiscover: 1,
+			})
+
+			info, ok := mapToDiscoveredInterface(map[string]any{
+				"name":         "Scalar Reachable Backbone",
+				"type":         "BackboneInterface",
+				"config_entry": "[[scalar-reachable]]",
+				"reachable_on": tc.reachableOn,
+				"port":         4242,
+				"network_id":   "01020304",
+			})
+			if !ok {
+				t.Fatal("mapToDiscoveredInterface() = false, want true")
+			}
+
+			if err := discovery.autoconnect(info); err != nil {
+				t.Fatalf("autoconnect() error = %v, want nil after Python-style logging", err)
+			}
+			if got := len(ts.GetInterfaces()); got != 0 {
+				t.Fatalf("expected no auto-connected interfaces for scalar reachable_on, got %v", got)
+			}
+
+			want := "Error while auto-connecting discovered interface: argument of type '" + tc.wantType + "' is not iterable"
+			for _, msg := range logs {
+				if strings.Contains(msg, want) {
+					return
+				}
+			}
+			t.Fatalf("expected log containing %q, got %v", want, logs)
+		})
+	}
 }
 
 func TestInterfaceDiscoveryInterfaceExistsMatchesHostWithoutPort(t *testing.T) {
@@ -6582,6 +6962,7 @@ func TestInterfaceDiscoveryConnectDiscoveredPassesRawEndpointValuesToConstructor
 		"config_entry": "[[cached-raw-port]]",
 		"reachable_on": "127.0.0.1",
 		"port":         nil,
+		"network_id":   "01020304",
 	}), 0o644); err != nil {
 		t.Fatalf("failed to write cached discovery file: %v", err)
 	}
@@ -6693,7 +7074,7 @@ func TestInterfaceDiscoveryConnectDiscoveredNilPortLogsPythonTypeError(t *testin
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryStartCallbackBytesReachableOnDoesNotDeduplicateAgainstStringHost(t *testing.T) {
+func TestInterfaceDiscoveryStartCallbackBytesReachableOnLogsPythonTypeErrorAndSkipsAutoconnect(t *testing.T) {
 	t.Parallel()
 
 	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-callback-bytes-reachable-on-")
@@ -6717,7 +7098,12 @@ func TestInterfaceDiscoveryStartCallbackBytesReachableOnDoesNotDeduplicateAgains
 		}
 	}()
 
+	var logs []string
 	logger := NewLogger()
+	logger.SetLogDest(LogCallback)
+	logger.SetLogCallback(func(msg string) {
+		logs = append(logs, msg)
+	})
 	ts := NewTransportSystem(logger)
 	port := listener.Addr().(*net.TCPAddr).Port
 	ts.RegisterInterface(newTargetHostTestInterface("Existing Backbone", "BackboneClientInterface", "127.0.0.1", port))
@@ -6746,21 +7132,28 @@ func TestInterfaceDiscoveryStartCallbackBytesReachableOnDoesNotDeduplicateAgains
 		"network_id":     "01020304",
 	})
 
-	var acceptedConn net.Conn
 	select {
-	case acceptedConn = <-accepted:
+	case acceptedConn := <-accepted:
 		t.Cleanup(func() {
 			if err := acceptedConn.Close(); err != nil {
 				t.Errorf("acceptedConn.Close() error = %v", err)
 			}
 		})
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for callback autoconnect with bytes reachable_on")
+		t.Fatal("unexpected callback autoconnect with bytes reachable_on")
+	case <-time.After(300 * time.Millisecond):
 	}
 
-	if got := len(ts.GetInterfaces()); got != 2 {
-		t.Fatalf("expected existing interface plus new auto-connected interface, got %v", got)
+	if got := len(ts.GetInterfaces()); got != 1 {
+		t.Fatalf("expected only the existing interface after bytes reachable_on failure, got %v", got)
 	}
+
+	want := "Error while auto-connecting discovered interface: a bytes-like object is required, not 'str'"
+	for _, msg := range logs {
+		if strings.Contains(msg, want) {
+			return
+		}
+	}
+	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
 func TestInterfaceDiscoveryStartAutoconnectsReceivedBackboneAnnounce(t *testing.T) {
