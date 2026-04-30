@@ -3236,6 +3236,59 @@ func TestMessageGetRequestBytesZeroTransferLimitReturnsNoMessages(t *testing.T) 
 	}
 }
 
+func TestMessageGetRequestStringAndBytesTransferLimitCoercion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		limit     any
+		wantCount int
+	}{
+		{name: "string limit", limit: "0.08", wantCount: 0},
+		{name: "bytes limit", limit: []byte("0.08"), wantCount: 0},
+		{name: "malformed string ignored", limit: "bogus", wantCount: 2},
+		{name: "malformed bytes ignored", limit: []byte("bogus"), wantCount: 2},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+			router := mustTestNewRouter(t, ts, nil, tmpDir)
+			router.EnablePropagation()
+
+			remoteIdentity := mustTestNewIdentity(t, true)
+			remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+			stampData := bytes.Repeat([]byte{0x7a}, StampSize)
+			payloadOne := append(append([]byte{}, remoteDestinationHash...), bytes.Repeat([]byte("a"), 24)...)
+			payloadTwo := append(append([]byte{}, remoteDestinationHash...), bytes.Repeat([]byte("b"), 24)...)
+
+			idOne := router.storePropagationMessageStamped(remoteDestinationHash, payloadOne, stampData, 1, nil)
+			idTwo := router.storePropagationMessageStamped(remoteDestinationHash, payloadTwo, stampData, 1, nil)
+
+			request, err := msgpack.Pack([]any{[]any{idOne, idTwo}, nil, tc.limit})
+			if err != nil {
+				t.Fatalf("Pack request: %v", err)
+			}
+
+			response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
+			payloads, ok := response.([]any)
+			if !ok {
+				t.Fatalf("response type=%T want=[]any", response)
+			}
+			if len(payloads) != tc.wantCount {
+				t.Fatalf("payloads len=%v want=%v", len(payloads), tc.wantCount)
+			}
+			if router.clientPropagationMessagesServed != tc.wantCount {
+				t.Fatalf("clientPropagationMessagesServed=%v want=%v", router.clientPropagationMessagesServed, tc.wantCount)
+			}
+		})
+	}
+}
+
 func TestMessageGetRequestRequiresIdentity(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -3315,6 +3368,168 @@ func TestMessageGetRequestMalformedHavesReturnsNil(t *testing.T) {
 	remoteIdentity := mustTestNewIdentity(t, true)
 	if response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now()); response != nil {
 		t.Fatalf("response=%#v want nil", response)
+	}
+}
+
+func TestMessageGetRequestStringAndBytesWantsReturnEmptyList(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		wants any
+		haves any
+	}{
+		{name: "string wants", wants: "ab", haves: nil},
+		{name: "bytes wants", wants: []byte("ab"), haves: nil},
+		{name: "empty string wants", wants: "", haves: nil},
+		{name: "empty bytes wants", wants: []byte{}, haves: nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+			router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+			remoteIdentity := mustTestNewIdentity(t, true)
+			remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+			transientID := router.storePropagationMessage(remoteDestinationHash, []byte("payload"))
+
+			request, err := msgpack.Pack([]any{tc.wants, tc.haves})
+			if err != nil {
+				t.Fatalf("Pack request: %v", err)
+			}
+
+			response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
+			payloads, ok := response.([]any)
+			if !ok {
+				t.Fatalf("response type=%T want=[]any", response)
+			}
+			if len(payloads) != 0 {
+				t.Fatalf("payloads len=%v want=0", len(payloads))
+			}
+			if _, exists := router.propagationEntries[string(transientID)]; !exists {
+				t.Fatal("expected stored message to remain after string/bytes wants no-op")
+			}
+			if router.clientPropagationMessagesServed != 0 {
+				t.Fatalf("clientPropagationMessagesServed=%v want=0", router.clientPropagationMessagesServed)
+			}
+		})
+	}
+}
+
+func TestMessageGetRequestStringAndBytesHavesReturnEmptyList(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		wants any
+		haves any
+	}{
+		{name: "string haves", wants: nil, haves: "ab"},
+		{name: "bytes haves", wants: nil, haves: []byte("ab")},
+		{name: "empty string haves", wants: nil, haves: ""},
+		{name: "empty bytes haves", wants: nil, haves: []byte{}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+			router := mustTestNewRouter(t, ts, nil, tmpDir)
+			router.EnablePropagation()
+
+			remoteIdentity := mustTestNewIdentity(t, true)
+			remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+			transientID := router.storePropagationMessage(remoteDestinationHash, []byte("persisted-payload"))
+			entry := router.propagationEntries[string(transientID)]
+			if entry == nil || entry.path == "" {
+				t.Fatalf("expected persisted propagation entry for %x", transientID)
+			}
+
+			request, err := msgpack.Pack([]any{tc.wants, tc.haves})
+			if err != nil {
+				t.Fatalf("Pack request: %v", err)
+			}
+
+			response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
+			payloads, ok := response.([]any)
+			if !ok {
+				t.Fatalf("response type=%T want=[]any", response)
+			}
+			if len(payloads) != 0 {
+				t.Fatalf("payloads len=%v want=0", len(payloads))
+			}
+			if _, exists := router.propagationEntries[string(transientID)]; !exists {
+				t.Fatal("expected stored message to remain after string/bytes haves no-op")
+			}
+			if _, err := os.Stat(entry.path); err != nil {
+				t.Fatalf("expected persisted message file to remain, Stat() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestMessageGetRequestMapWantsAndHavesReturnEmptyList(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		wants any
+		haves any
+	}{
+		{name: "string keyed wants map", wants: map[string]any{"x": 1}, haves: nil},
+		{name: "int keyed wants map", wants: map[int]any{1: "a"}, haves: nil},
+		{name: "empty wants map", wants: map[string]any{}, haves: nil},
+		{name: "string keyed haves map", wants: nil, haves: map[string]any{"x": 1}},
+		{name: "int keyed haves map", wants: nil, haves: map[int]any{1: "a"}},
+		{name: "empty haves map", wants: nil, haves: map[string]any{}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+			router := mustTestNewRouter(t, ts, nil, tmpDir)
+			router.EnablePropagation()
+
+			remoteIdentity := mustTestNewIdentity(t, true)
+			remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+			transientID := router.storePropagationMessage(remoteDestinationHash, []byte("persisted-payload"))
+			entry := router.propagationEntries[string(transientID)]
+			if entry == nil || entry.path == "" {
+				t.Fatalf("expected persisted propagation entry for %x", transientID)
+			}
+
+			request, err := msgpack.Pack([]any{tc.wants, tc.haves})
+			if err != nil {
+				t.Fatalf("Pack request: %v", err)
+			}
+
+			response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
+			payloads, ok := response.([]any)
+			if !ok {
+				t.Fatalf("response type=%T want=[]any", response)
+			}
+			if len(payloads) != 0 {
+				t.Fatalf("payloads len=%v want=0", len(payloads))
+			}
+			if _, exists := router.propagationEntries[string(transientID)]; !exists {
+				t.Fatal("expected stored message to remain after map wants/haves no-op")
+			}
+			if _, err := os.Stat(entry.path); err != nil {
+				t.Fatalf("expected persisted message file to remain, Stat() error = %v", err)
+			}
+			if router.clientPropagationMessagesServed != 0 {
+				t.Fatalf("clientPropagationMessagesServed=%v want=0", router.clientPropagationMessagesServed)
+			}
+		})
 	}
 }
 

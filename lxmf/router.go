@@ -964,18 +964,14 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 
 	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
 
-	if request[0] != nil {
-		if _, ok := request[0].([]any); !ok {
-			return nil
-		}
+	wants, wantsOK := messageGetRequestEntries(request[0])
+	if !wantsOK {
+		return nil
 	}
-	if request[1] != nil {
-		if _, ok := request[1].([]any); !ok {
-			return nil
-		}
+	haves, havesOK := messageGetRequestEntries(request[1])
+	if !havesOK {
+		return nil
 	}
-	wants, _ := request[0].([]any)
-	haves, _ := request[1].([]any)
 
 	if request[0] == nil && request[1] == nil {
 		type availableEntry struct {
@@ -1085,6 +1081,30 @@ func messageGetRequestTransientID(value any) ([]byte, bool, bool) {
 		return nil, false, true
 	default:
 		return nil, false, false
+	}
+}
+
+func messageGetRequestEntries(value any) ([]any, bool) {
+	switch typed := value.(type) {
+	case nil:
+		return nil, true
+	case []any:
+		entries := make([]any, 0, len(typed))
+		entries = append(entries, typed...)
+		return entries, true
+	case string, []byte:
+		return nil, true
+	default:
+		rv := reflect.ValueOf(value)
+		if !rv.IsValid() || rv.Kind() != reflect.Map {
+			return nil, false
+		}
+		entries := make([]any, 0, rv.Len())
+		iter := rv.MapRange()
+		for iter.Next() {
+			entries = append(entries, iter.Key().Interface())
+		}
+		return entries, true
 	}
 }
 
