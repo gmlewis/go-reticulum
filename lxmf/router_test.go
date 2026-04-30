@@ -6413,6 +6413,8 @@ func TestPropagationSyncMessageGetResponseStringEntryPanics(t *testing.T) {
 	}{
 		{name: "non-empty string", response: []any{"ab"}},
 		{name: "empty string", response: []any{""}},
+		{name: "typed string slice", response: []string{"ab"}},
+		{name: "typed string array", response: [1]string{"ab"}},
 	}
 
 	for _, tc := range tests {
@@ -6646,6 +6648,8 @@ func TestPropagationSyncMessageGetResponsePrimitiveListEntriesPanic(t *testing.T
 		{name: "int entry", response: []any{1}},
 		{name: "bool entry", response: []any{true}},
 		{name: "nil entry", response: []any{nil}},
+		{name: "typed int slice", response: []int{1}},
+		{name: "typed int array", response: [1]int{1}},
 	}
 
 	for _, tc := range tests {
@@ -6670,6 +6674,102 @@ func TestPropagationSyncMessageGetResponsePrimitiveListEntriesPanic(t *testing.T
 				Link:     &rns.Link{},
 				Response: tc.response,
 			})
+		})
+	}
+}
+
+func TestPropagationSyncMessageGetResponseTypedBytesArrayCompletes(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	payload := []byte("payload")
+	var requestedPath string
+	var requestedData any
+	router.requestLink = func(link *rns.Link, path string, data any, response, failed, progress func(*rns.RequestReceipt), timeout time.Duration) (*rns.RequestReceipt, error) {
+		requestedPath = path
+		requestedData = data
+		return &rns.RequestReceipt{}, nil
+	}
+
+	router.messageGetResponse(&rns.RequestReceipt{
+		Link:     &rns.Link{},
+		Response: [1][]byte{payload},
+	})
+
+	if requestedPath != messageGetPath {
+		t.Fatalf("request path = %q, want %q", requestedPath, messageGetPath)
+	}
+	wantData := []any{nil, [][]byte{rns.FullHash(payload)}}
+	if !reflect.DeepEqual(requestedData, wantData) {
+		t.Fatalf("request data = %#v, want %#v", requestedData, wantData)
+	}
+	if router.PropagationTransferState() != PRComplete {
+		t.Fatalf("state = %v, want %v", router.PropagationTransferState(), PRComplete)
+	}
+	if got, ok := router.PropagationTransferLastResult(); !ok || got != 1 {
+		t.Fatalf("last result = %v, want 1", got)
+	}
+}
+
+func TestPropagationSyncMessageGetResponseBytesKeyedMapCompletes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		response any
+		payload  []byte
+	}{
+		{
+			name:     "non-empty bytes key",
+			response: map[[2]byte]any{{'a', 'b'}: 1},
+			payload:  []byte("ab"),
+		},
+		{
+			name:     "empty bytes key",
+			response: map[[0]byte]any{{}: 1},
+			payload:  []byte{},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+			router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+			var requestedPath string
+			var requestedData any
+			router.requestLink = func(link *rns.Link, path string, data any, response, failed, progress func(*rns.RequestReceipt), timeout time.Duration) (*rns.RequestReceipt, error) {
+				requestedPath = path
+				requestedData = data
+				return &rns.RequestReceipt{}, nil
+			}
+
+			router.messageGetResponse(&rns.RequestReceipt{
+				Link:     &rns.Link{},
+				Response: tc.response,
+			})
+
+			if requestedPath != messageGetPath {
+				t.Fatalf("request path = %q, want %q", requestedPath, messageGetPath)
+			}
+			wantData := []any{nil, [][]byte{rns.FullHash(tc.payload)}}
+			if !reflect.DeepEqual(requestedData, wantData) {
+				t.Fatalf("request data = %#v, want %#v", requestedData, wantData)
+			}
+			if router.PropagationTransferState() != PRComplete {
+				t.Fatalf("state = %v, want %v", router.PropagationTransferState(), PRComplete)
+			}
+			if got, ok := router.PropagationTransferLastResult(); !ok || got != 1 {
+				t.Fatalf("last result = %v, want 1", got)
+			}
 		})
 	}
 }
@@ -6756,6 +6856,40 @@ func TestPropagationSyncClosedLinkAfterCompleteResetsToIdle(t *testing.T) {
 	}
 	if router.PropagationTransferState() != PRIdle {
 		t.Fatalf("state = %v, want PRIdle", router.PropagationTransferState())
+	}
+	if router.PropagationTransferProgress() != 0.0 {
+		t.Fatalf("progress = %v, want 0.0", router.PropagationTransferProgress())
+	}
+	if got, ok := router.PropagationTransferLastResult(); ok {
+		t.Fatalf("last result = (%v,%v), want cleared result", got, ok)
+	}
+	if router.wantsDownloadOnPathAvailableFrom != nil || router.wantsDownloadOnPathAvailableTo != nil {
+		t.Fatal("expected pending path state to be cleared")
+	}
+}
+
+func TestPropagationSyncClosedLinkAfterNoPathPreservesFailureState(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	router.outboundPropagationLink = &rns.Link{}
+	router.propagationTransferState = PRNoPath
+	router.propagationTransferProgress = 0.6
+	router.propagationTransferLastResult = 3
+	router.propagationTransferLastResultSet = true
+	router.wantsDownloadOnPathAvailableFrom = []byte("pending")
+	router.wantsDownloadOnPathAvailableTo = router.identity
+
+	router.handleOutboundPropagationLinkClosed(router.outboundPropagationLink)
+
+	if router.outboundPropagationLink != nil {
+		t.Fatal("expected outbound propagation link to be cleared")
+	}
+	if router.PropagationTransferState() != PRNoPath {
+		t.Fatalf("state = %v, want PRNoPath", router.PropagationTransferState())
 	}
 	if router.PropagationTransferProgress() != 0.0 {
 		t.Fatalf("progress = %v, want 0.0", router.PropagationTransferProgress())

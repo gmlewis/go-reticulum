@@ -2783,7 +2783,38 @@ func transientIDsFromResponse(response any) ([][]byte, bool) {
 		}
 		return result, true
 	default:
-		return nil, false
+		rv := reflect.ValueOf(response)
+		if !rv.IsValid() {
+			return nil, false
+		}
+		switch rv.Kind() {
+		case reflect.Map:
+			result := make([][]byte, 0, rv.Len())
+			iter := rv.MapRange()
+			for iter.Next() {
+				entry, ok := bytesResponsePayload(iter.Key().Interface())
+				if !ok {
+					return nil, false
+				}
+				result = append(result, entry)
+			}
+			return result, true
+		case reflect.Array, reflect.Slice:
+			if isRawByteSequenceType(rv.Type()) {
+				return nil, false
+			}
+			result := make([][]byte, 0, rv.Len())
+			for i := 0; i < rv.Len(); i++ {
+				entry, ok := bytesResponsePayload(rv.Index(i).Interface())
+				if !ok {
+					return nil, false
+				}
+				result = append(result, entry)
+			}
+			return result, true
+		default:
+			return nil, false
+		}
 	}
 }
 
@@ -2797,6 +2828,30 @@ func zeroLengthResponse(response any) bool {
 		return rv.Len() == 0
 	default:
 		return false
+	}
+}
+
+func isRawByteSequenceType(t reflect.Type) bool {
+	return t != nil && (t.Kind() == reflect.Array || t.Kind() == reflect.Slice) && t.Elem().Kind() == reflect.Uint8
+}
+
+func bytesResponsePayload(value any) ([]byte, bool) {
+	rv := reflect.ValueOf(value)
+	if !rv.IsValid() {
+		return nil, false
+	}
+	switch rv.Kind() {
+	case reflect.Array, reflect.Slice:
+		if rv.Type().Elem().Kind() != reflect.Uint8 {
+			return nil, false
+		}
+		payload := make([]byte, rv.Len())
+		for i := 0; i < rv.Len(); i++ {
+			payload[i] = byte(rv.Index(i).Uint())
+		}
+		return payload, true
+	default:
+		return nil, false
 	}
 }
 
@@ -4115,11 +4170,33 @@ func invalidMessageGetResponsePanic(response any) (string, bool) {
 		}
 	default:
 		rv := reflect.ValueOf(response)
-		if rv.IsValid() && rv.Kind() == reflect.Map && rv.Len() > 0 {
-			if _, ok := rv.MapKeys()[0].Interface().(string); ok {
-				return "Strings must be encoded before hashing", true
+		if rv.IsValid() {
+			switch rv.Kind() {
+			case reflect.Array, reflect.Slice:
+				if isRawByteSequenceType(rv.Type()) {
+					if rv.Len() > 0 {
+						return "object supporting the buffer API required", true
+					}
+					return "", false
+				}
+				for i := 0; i < rv.Len(); i++ {
+					entry := rv.Index(i).Interface()
+					if _, ok := entry.([]byte); ok {
+						continue
+					}
+					if _, ok := entry.(string); ok {
+						return "Strings must be encoded before hashing", true
+					}
+					return "object supporting the buffer API required", true
+				}
+			case reflect.Map:
+				if rv.Len() > 0 {
+					if _, ok := rv.MapKeys()[0].Interface().(string); ok {
+						return "Strings must be encoded before hashing", true
+					}
+					return "object supporting the buffer API required", true
+				}
 			}
-			return "object supporting the buffer API required", true
 		}
 	}
 	return "", false
