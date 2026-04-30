@@ -2870,11 +2870,11 @@ func transientIDsFromResponse(response any) ([][]byte, bool) {
 	case []any:
 		result := make([][]byte, 0, len(values))
 		for _, value := range values {
-			entry, ok := value.([]byte)
+			entry, ok := bytesResponsePayload(value)
 			if !ok {
 				return nil, false
 			}
-			result = append(result, append([]byte{}, entry...))
+			result = append(result, entry)
 		}
 		return result, true
 	default:
@@ -4068,8 +4068,8 @@ func messageListEntriesFromResponse(response any) ([]any, bool) {
 			if panicMessage, shouldPanic := unhashableMessageListEntryPanic(value); shouldPanic {
 				panic(panicMessage)
 			}
-			if entry, ok := value.([]byte); ok {
-				result = append(result, append([]byte{}, entry...))
+			if entry, ok := bytesResponsePayload(value); ok {
+				result = append(result, entry)
 				continue
 			}
 			result = append(result, value)
@@ -4095,7 +4095,7 @@ func unhashableMessageListEntryPanic(value any) (string, bool) {
 	case reflect.Map:
 		return "unhashable type: 'dict'", true
 	case reflect.Slice, reflect.Array:
-		if _, ok := value.([]byte); ok {
+		if isRawByteSequenceType(rv.Type()) {
 			return "", false
 		}
 		return "unhashable type: 'list'", true

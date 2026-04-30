@@ -6339,6 +6339,63 @@ func TestPropagationSyncMessageListResponseHashableOddEntriesRequestGet(t *testi
 	}
 }
 
+func TestPropagationSyncMessageListResponseBytesAliasRequestsGet(t *testing.T) {
+	t.Parallel()
+
+	type bytesAlias []byte
+
+	tests := []struct {
+		name  string
+		entry any
+		want  []byte
+	}{
+		{name: "bytes alias", entry: bytesAlias("ab"), want: []byte("ab")},
+		{name: "empty bytes alias", entry: bytesAlias{}, want: []byte{}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+			router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+			var requestedPath string
+			var requestedData any
+			router.requestLink = func(_ *rns.Link, path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), _ time.Duration) (*rns.RequestReceipt, error) {
+				requestedPath = path
+				requestedData = data
+				return nil, nil
+			}
+
+			router.messageListResponse(&rns.RequestReceipt{
+				Link:     &rns.Link{},
+				Response: []any{tc.entry},
+			})
+
+			if requestedPath != messageGetPath {
+				t.Fatalf("request path = %q, want %q", requestedPath, messageGetPath)
+			}
+			fields, ok := requestedData.([]any)
+			if !ok {
+				t.Fatalf("request data type = %T, want []any", requestedData)
+			}
+			if len(fields) != 3 {
+				t.Fatalf("request field count = %d, want 3", len(fields))
+			}
+			wants := mustListResponseEntries(t, fields[0])
+			haves := mustListResponseEntries(t, fields[1])
+			if len(wants) != 1 || !reflect.DeepEqual(wants[0], tc.want) {
+				t.Fatalf("wants = %#v, want [%#v]", wants, tc.want)
+			}
+			if len(haves) != 0 {
+				t.Fatalf("haves = %#v, want empty", haves)
+			}
+		})
+	}
+}
+
 func TestPropagationSyncMessageListResponseUnhashableEntriesPanic(t *testing.T) {
 	t.Parallel()
 
