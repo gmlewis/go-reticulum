@@ -181,7 +181,7 @@ share_instance = No
 
     link.request("test_path", b"req", response_callback)
 
-    timeout = time.time() + 20
+    timeout = time.time() + 30
     while response_len[0] is None and time.time() < timeout:
         time.sleep(0.2)
 

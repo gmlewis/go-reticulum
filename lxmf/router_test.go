@@ -6314,6 +6314,73 @@ func TestPropagationSyncMessageGetResponseEmptyStringCompletes(t *testing.T) {
 	}
 }
 
+func TestPropagationSyncMessageGetResponseEmptyListCompletes(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.requestLink = func(_ *rns.Link, path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), _ time.Duration) (*rns.RequestReceipt, error) {
+		t.Fatalf("unexpected purge ack request path=%q data=%v", path, data)
+		return nil, nil
+	}
+
+	router.messageGetResponse(&rns.RequestReceipt{
+		Link:     &rns.Link{},
+		Response: []any{},
+	})
+
+	if router.PropagationTransferState() != PRComplete {
+		t.Fatalf("state = %v, want PRComplete", router.PropagationTransferState())
+	}
+	if router.PropagationTransferProgress() != 1.0 {
+		t.Fatalf("progress = %v, want 1.0", router.PropagationTransferProgress())
+	}
+	if got, ok := router.PropagationTransferLastResult(); !ok || got != 0 {
+		t.Fatalf("last result = (%v,%v), want (0,true)", got, ok)
+	}
+}
+
+func TestPropagationSyncMessageGetResponseEmptyMapCompletes(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		response any
+	}{
+		{name: "string keyed map", response: map[string]any{}},
+		{name: "non-string keyed map", response: map[int]any{}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+			router := mustTestNewRouter(t, ts, nil, tmpDir)
+			router.requestLink = func(_ *rns.Link, path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), _ time.Duration) (*rns.RequestReceipt, error) {
+				t.Fatalf("unexpected purge ack request path=%q data=%v", path, data)
+				return nil, nil
+			}
+
+			router.messageGetResponse(&rns.RequestReceipt{
+				Link:     &rns.Link{},
+				Response: tc.response,
+			})
+
+			if router.PropagationTransferState() != PRComplete {
+				t.Fatalf("state = %v, want PRComplete", router.PropagationTransferState())
+			}
+			if router.PropagationTransferProgress() != 1.0 {
+				t.Fatalf("progress = %v, want 1.0", router.PropagationTransferProgress())
+			}
+			if got, ok := router.PropagationTransferLastResult(); !ok || got != 0 {
+				t.Fatalf("last result = (%v,%v), want (0,true)", got, ok)
+			}
+		})
+	}
+}
+
 func TestPropagationSyncMessageGetResponseNonZeroBytesPanics(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -6339,25 +6406,39 @@ func TestPropagationSyncMessageGetResponseNonZeroBytesPanics(t *testing.T) {
 
 func TestPropagationSyncMessageGetResponseStringEntryPanics(t *testing.T) {
 	t.Parallel()
-	ts := rns.NewTransportSystem(nil)
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
-	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
-	defer func() {
-		recovered := recover()
-		if recovered == nil {
-			t.Fatal("messageGetResponse() did not panic")
-		}
-		if got := fmt.Sprint(recovered); got != "Strings must be encoded before hashing" {
-			t.Fatalf("panic = %q, want %q", got, "Strings must be encoded before hashing")
-		}
-	}()
+	tests := []struct {
+		name     string
+		response any
+	}{
+		{name: "non-empty string", response: []any{"ab"}},
+		{name: "empty string", response: []any{""}},
+	}
 
-	router.messageGetResponse(&rns.RequestReceipt{
-		Link:     &rns.Link{},
-		Response: []any{"ab"},
-	})
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+			router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+			defer func() {
+				recovered := recover()
+				if recovered == nil {
+					t.Fatal("messageGetResponse() did not panic")
+				}
+				if got := fmt.Sprint(recovered); got != "Strings must be encoded before hashing" {
+					t.Fatalf("panic = %q, want %q", got, "Strings must be encoded before hashing")
+				}
+			}()
+
+			router.messageGetResponse(&rns.RequestReceipt{
+				Link:     &rns.Link{},
+				Response: tc.response,
+			})
+		})
+	}
 }
 
 func TestPropagationSyncMessageGetResponseDictEntryPanics(t *testing.T) {
@@ -6405,25 +6486,39 @@ func TestPropagationSyncMessageGetResponseDictEntryPanics(t *testing.T) {
 
 func TestPropagationSyncMessageGetResponseStringKeyedMapPanics(t *testing.T) {
 	t.Parallel()
-	ts := rns.NewTransportSystem(nil)
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
-	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
-	defer func() {
-		recovered := recover()
-		if recovered == nil {
-			t.Fatal("messageGetResponse() did not panic")
-		}
-		if got := fmt.Sprint(recovered); got != "Strings must be encoded before hashing" {
-			t.Fatalf("panic = %q, want %q", got, "Strings must be encoded before hashing")
-		}
-	}()
+	tests := []struct {
+		name     string
+		response any
+	}{
+		{name: "non-empty string key", response: map[string]any{"a": 1}},
+		{name: "empty string key", response: map[string]any{"": 1}},
+	}
 
-	router.messageGetResponse(&rns.RequestReceipt{
-		Link:     &rns.Link{},
-		Response: map[string]any{"a": 1},
-	})
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+			router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+			defer func() {
+				recovered := recover()
+				if recovered == nil {
+					t.Fatal("messageGetResponse() did not panic")
+				}
+				if got := fmt.Sprint(recovered); got != "Strings must be encoded before hashing" {
+					t.Fatalf("panic = %q, want %q", got, "Strings must be encoded before hashing")
+				}
+			}()
+
+			router.messageGetResponse(&rns.RequestReceipt{
+				Link:     &rns.Link{},
+				Response: tc.response,
+			})
+		})
+	}
 }
 
 func TestPropagationSyncMessageGetResponseNonStringKeyedMapPanics(t *testing.T) {
@@ -6721,6 +6816,68 @@ func TestPropagationSyncAcknowledgeCompletionResetClearsFailureState(t *testing.
 
 	if router.PropagationTransferState() != PRIdle {
 		t.Fatalf("state = %v, want PRIdle", router.PropagationTransferState())
+	}
+	if router.PropagationTransferProgress() != 0.0 {
+		t.Fatalf("progress = %v, want 0.0", router.PropagationTransferProgress())
+	}
+	if got, ok := router.PropagationTransferLastResult(); ok {
+		t.Fatalf("last result = (%v,%v), want cleared result", got, ok)
+	}
+	if router.wantsDownloadOnPathAvailableFrom != nil || router.wantsDownloadOnPathAvailableTo != nil {
+		t.Fatal("expected pending path state to be cleared")
+	}
+}
+
+func TestPropagationSyncAcknowledgeCompletionUsesProvidedFailureStateBeforeComplete(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	router.propagationTransferState = PRComplete
+	router.propagationTransferProgress = 1.0
+	router.propagationTransferLastResult = 9
+	router.propagationTransferLastResultSet = true
+	router.wantsDownloadOnPathAvailableFrom = []byte("pending")
+	router.wantsDownloadOnPathAvailableTo = router.identity
+	failureState := PRTransferFailed
+
+	router.acknowledgeSyncCompletion(false, &failureState)
+
+	if router.PropagationTransferState() != PRTransferFailed {
+		t.Fatalf("state = %v, want PRTransferFailed", router.PropagationTransferState())
+	}
+	if router.PropagationTransferProgress() != 0.0 {
+		t.Fatalf("progress = %v, want 0.0", router.PropagationTransferProgress())
+	}
+	if got, ok := router.PropagationTransferLastResult(); ok {
+		t.Fatalf("last result = (%v,%v), want cleared result", got, ok)
+	}
+	if router.wantsDownloadOnPathAvailableFrom != nil || router.wantsDownloadOnPathAvailableTo != nil {
+		t.Fatal("expected pending path state to be cleared")
+	}
+}
+
+func TestPropagationSyncAcknowledgeCompletionPreservesLaterFailureStateParameterWithoutReset(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	router.propagationTransferState = PRNoIdentityRcvd
+	router.propagationTransferProgress = 0.75
+	router.propagationTransferLastResult = 9
+	router.propagationTransferLastResultSet = true
+	router.wantsDownloadOnPathAvailableFrom = []byte("pending")
+	router.wantsDownloadOnPathAvailableTo = router.identity
+	failureState := PRTransferFailed
+
+	router.acknowledgeSyncCompletion(false, &failureState)
+
+	if router.PropagationTransferState() != PRNoIdentityRcvd {
+		t.Fatalf("state = %v, want PRNoIdentityRcvd", router.PropagationTransferState())
 	}
 	if router.PropagationTransferProgress() != 0.0 {
 		t.Fatalf("progress = %v, want 0.0", router.PropagationTransferProgress())

@@ -4108,7 +4108,7 @@ func invalidMessageGetResponsePanic(response any) (string, bool) {
 			if _, ok := entry.([]byte); ok {
 				continue
 			}
-			if text, ok := entry.(string); ok && text != "" {
+			if _, ok := entry.(string); ok {
 				return "Strings must be encoded before hashing", true
 			}
 			return "object supporting the buffer API required", true
@@ -4116,7 +4116,7 @@ func invalidMessageGetResponsePanic(response any) (string, bool) {
 	default:
 		rv := reflect.ValueOf(response)
 		if rv.IsValid() && rv.Kind() == reflect.Map && rv.Len() > 0 {
-			if text, ok := rv.MapKeys()[0].Interface().(string); ok && text != "" {
+			if _, ok := rv.MapKeys()[0].Interface().(string); ok {
 				return "Strings must be encoded before hashing", true
 			}
 			return "object supporting the buffer API required", true

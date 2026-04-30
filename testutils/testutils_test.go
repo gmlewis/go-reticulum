@@ -6,11 +6,13 @@
 package testutils
 
 import (
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -91,5 +93,44 @@ func TestReserveUDPPortReturnsDistinctBindablePorts(t *testing.T) {
 		if err := conn.Close(); err != nil {
 			t.Fatalf("Close() error = %v", err)
 		}
+	}
+}
+
+func TestIsRetriableRemoveAllError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "plain enotempty",
+			err:  syscall.ENOTEMPTY,
+			want: true,
+		},
+		{
+			name: "wrapped ebusy",
+			err: &os.PathError{
+				Op:   "unlinkat",
+				Path: "/tmp/test",
+				Err:  syscall.EBUSY,
+			},
+			want: true,
+		},
+		{
+			name: "other error",
+			err:  errors.New("boom"),
+			want: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := isRetriableRemoveAllError(tc.err); got != tc.want {
+				t.Fatalf("isRetriableRemoveAllError(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
 	}
 }

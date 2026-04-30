@@ -8,6 +8,7 @@
 package testutils
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -15,7 +16,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync/atomic"
+	"syscall"
 	"testing"
+	"time"
 )
 
 type testMainTB struct{}
@@ -65,12 +68,34 @@ func tempDir(t tempDirTB, prefix string) (string, func()) {
 	}
 
 	cleanup := func() {
-		if err := os.RemoveAll(dir); err != nil {
+		if err := removeAllWithRetry(dir); err != nil {
 			t.Fatalf("os.RemoveAll: %v", err)
 		}
 	}
 
 	return dir, cleanup
+}
+
+func removeAllWithRetry(path string) error {
+	const maxAttempts = 10
+	const retryDelay = 10 * time.Millisecond
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		err := os.RemoveAll(path)
+		if err == nil || os.IsNotExist(err) {
+			return nil
+		}
+		if !isRetriableRemoveAllError(err) {
+			return err
+		}
+		time.Sleep(retryDelay)
+	}
+
+	return os.RemoveAll(path)
+}
+
+func isRetriableRemoveAllError(err error) bool {
+	return errors.Is(err, syscall.ENOTEMPTY) || errors.Is(err, syscall.EBUSY)
 }
 
 // TempDirWithConfig creates a temporary directory containing a config file and
