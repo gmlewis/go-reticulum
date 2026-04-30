@@ -1092,19 +1092,33 @@ func messageGetRequestEntries(value any) ([]any, bool) {
 		entries := make([]any, 0, len(typed))
 		entries = append(entries, typed...)
 		return entries, true
-	case string, []byte:
-		return nil, true
 	default:
 		rv := reflect.ValueOf(value)
-		if !rv.IsValid() || rv.Kind() != reflect.Map {
+		if !rv.IsValid() {
 			return nil, false
 		}
-		entries := make([]any, 0, rv.Len())
-		iter := rv.MapRange()
-		for iter.Next() {
-			entries = append(entries, iter.Key().Interface())
+		switch rv.Kind() {
+		case reflect.String:
+			return nil, true
+		case reflect.Array, reflect.Slice:
+			if isRawByteSequenceType(rv.Type()) {
+				return nil, true
+			}
+			entries := make([]any, 0, rv.Len())
+			for i := 0; i < rv.Len(); i++ {
+				entries = append(entries, rv.Index(i).Interface())
+			}
+			return entries, true
+		case reflect.Map:
+			entries := make([]any, 0, rv.Len())
+			iter := rv.MapRange()
+			for iter.Next() {
+				entries = append(entries, iter.Key().Interface())
+			}
+			return entries, true
+		default:
+			return nil, false
 		}
-		return entries, true
 	}
 }
 
@@ -1258,6 +1272,29 @@ func parseLimitBytes(values []any, index int) (int, bool) {
 		}
 		return int(parsed * 1000), true
 	default:
+		rv := reflect.ValueOf(v)
+		if rv.IsValid() {
+			switch rv.Kind() {
+			case reflect.String:
+				parsed, err := strconv.ParseFloat(rv.String(), 64)
+				if err != nil {
+					return 0, false
+				}
+				return int(parsed * 1000), true
+			case reflect.Array, reflect.Slice:
+				if isRawByteSequenceType(rv.Type()) {
+					payload, ok := bytesResponsePayload(v)
+					if !ok {
+						return 0, false
+					}
+					parsed, err := strconv.ParseFloat(string(payload), 64)
+					if err != nil {
+						return 0, false
+					}
+					return int(parsed * 1000), true
+				}
+			}
+		}
 		return 0, false
 	}
 }

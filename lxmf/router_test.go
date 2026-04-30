@@ -3289,6 +3289,35 @@ func TestMessageGetRequestStringAndBytesTransferLimitCoercion(t *testing.T) {
 	}
 }
 
+func TestParseLimitBytesStringAndBytesAliases(t *testing.T) {
+	t.Parallel()
+
+	type stringAlias string
+	type bytesAlias []byte
+
+	tests := []struct {
+		name      string
+		value     any
+		wantLimit int
+		wantSet   bool
+	}{
+		{name: "string alias valid", value: stringAlias("1.5"), wantLimit: 1500, wantSet: true},
+		{name: "bytes alias valid", value: bytesAlias("1.5"), wantLimit: 1500, wantSet: true},
+		{name: "string alias invalid", value: stringAlias("bad"), wantLimit: 0, wantSet: false},
+		{name: "bytes alias invalid", value: bytesAlias("bad"), wantLimit: 0, wantSet: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			gotLimit, gotSet := parseLimitBytes([]any{nil, nil, tc.value}, 2)
+			if gotLimit != tc.wantLimit || gotSet != tc.wantSet {
+				t.Fatalf("parseLimitBytes() = (%v,%v), want (%v,%v)", gotLimit, gotSet, tc.wantLimit, tc.wantSet)
+			}
+		})
+	}
+}
+
 func TestMessageGetRequestRequiresIdentity(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -3368,6 +3397,68 @@ func TestMessageGetRequestMalformedHavesReturnsNil(t *testing.T) {
 	remoteIdentity := mustTestNewIdentity(t, true)
 	if response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now()); response != nil {
 		t.Fatalf("response=%#v want nil", response)
+	}
+}
+
+func TestMessageGetRequestEntriesStringAndBytesAliasesReturnNoOp(t *testing.T) {
+	t.Parallel()
+
+	type stringAlias string
+	type bytesAlias []byte
+
+	tests := []struct {
+		name  string
+		value any
+	}{
+		{name: "string alias", value: stringAlias("ab")},
+		{name: "bytes alias", value: bytesAlias("ab")},
+		{name: "empty string alias", value: stringAlias("")},
+		{name: "empty bytes alias", value: bytesAlias{}},
+		{name: "bytes array", value: [2]byte{'a', 'b'}},
+		{name: "empty bytes array", value: [0]byte{}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			entries, ok := messageGetRequestEntries(tc.value)
+			if !ok {
+				t.Fatal("messageGetRequestEntries() ok=false, want true")
+			}
+			if entries != nil {
+				t.Fatalf("messageGetRequestEntries() entries=%#v, want nil no-op", entries)
+			}
+		})
+	}
+}
+
+func TestMessageGetRequestEntriesTypedSlicesAndArraysIterate(t *testing.T) {
+	t.Parallel()
+
+	type stringAlias string
+
+	tests := []struct {
+		name  string
+		value any
+		want  []any
+	}{
+		{name: "typed string slice", value: []string{"ab", "cd"}, want: []any{"ab", "cd"}},
+		{name: "string alias slice", value: []stringAlias{"ab"}, want: []any{stringAlias("ab")}},
+		{name: "typed bytes slice", value: [][]byte{[]byte("ab")}, want: []any{[]byte("ab")}},
+		{name: "typed bytes array", value: [1][]byte{[]byte("ab")}, want: []any{[]byte("ab")}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			entries, ok := messageGetRequestEntries(tc.value)
+			if !ok {
+				t.Fatal("messageGetRequestEntries() ok=false, want true")
+			}
+			if !reflect.DeepEqual(entries, tc.want) {
+				t.Fatalf("messageGetRequestEntries() entries=%#v, want %#v", entries, tc.want)
+			}
+		})
 	}
 }
 

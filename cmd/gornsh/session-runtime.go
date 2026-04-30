@@ -301,6 +301,8 @@ func (rt *runtimeT) startSessionCommand(sender messageSender, commandLine []stri
 	}()
 
 	go func() {
+		<-streamDone
+		<-streamDone
 		err := cmd.Wait()
 		exitCode := 0
 		if err != nil {
@@ -312,8 +314,6 @@ func (rt *runtimeT) startSessionCommand(sender messageSender, commandLine []stri
 			}
 		}
 		active.markFinished()
-		<-streamDone
-		<-streamDone
 		time.Sleep(rt.preExitCommandWindow())
 		deadline := time.Now().Add(10 * time.Second)
 		for {
