@@ -3374,6 +3374,9 @@ func TestMessageGetRequestMalformedHavesReturnsNil(t *testing.T) {
 func TestMessageGetRequestStringAndBytesWantsReturnEmptyList(t *testing.T) {
 	t.Parallel()
 
+	type stringAlias string
+	type bytesAlias []byte
+
 	tests := []struct {
 		name  string
 		wants any
@@ -3381,8 +3384,12 @@ func TestMessageGetRequestStringAndBytesWantsReturnEmptyList(t *testing.T) {
 	}{
 		{name: "string wants", wants: "ab", haves: nil},
 		{name: "bytes wants", wants: []byte("ab"), haves: nil},
+		{name: "string alias wants", wants: stringAlias("ab"), haves: nil},
+		{name: "bytes alias wants", wants: bytesAlias("ab"), haves: nil},
 		{name: "empty string wants", wants: "", haves: nil},
 		{name: "empty bytes wants", wants: []byte{}, haves: nil},
+		{name: "empty string alias wants", wants: stringAlias(""), haves: nil},
+		{name: "empty bytes alias wants", wants: bytesAlias{}, haves: nil},
 	}
 
 	for _, tc := range tests {
@@ -3423,6 +3430,9 @@ func TestMessageGetRequestStringAndBytesWantsReturnEmptyList(t *testing.T) {
 func TestMessageGetRequestStringAndBytesHavesReturnEmptyList(t *testing.T) {
 	t.Parallel()
 
+	type stringAlias string
+	type bytesAlias []byte
+
 	tests := []struct {
 		name  string
 		wants any
@@ -3430,8 +3440,12 @@ func TestMessageGetRequestStringAndBytesHavesReturnEmptyList(t *testing.T) {
 	}{
 		{name: "string haves", wants: nil, haves: "ab"},
 		{name: "bytes haves", wants: nil, haves: []byte("ab")},
+		{name: "string alias haves", wants: nil, haves: stringAlias("ab")},
+		{name: "bytes alias haves", wants: nil, haves: bytesAlias("ab")},
 		{name: "empty string haves", wants: nil, haves: ""},
 		{name: "empty bytes haves", wants: nil, haves: []byte{}},
+		{name: "empty string alias haves", wants: nil, haves: stringAlias("")},
+		{name: "empty bytes alias haves", wants: nil, haves: bytesAlias{}},
 	}
 
 	for _, tc := range tests {
@@ -6606,6 +6620,9 @@ func TestPropagationSyncMessageGetResponseEmptyBytesCompletes(t *testing.T) {
 
 func TestPropagationSyncMessageGetResponseEmptyStringCompletes(t *testing.T) {
 	t.Parallel()
+
+	type stringAlias string
+
 	ts := rns.NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
@@ -6613,7 +6630,7 @@ func TestPropagationSyncMessageGetResponseEmptyStringCompletes(t *testing.T) {
 
 	router.messageGetResponse(&rns.RequestReceipt{
 		Link:     &rns.Link{},
-		Response: "",
+		Response: stringAlias(""),
 	})
 
 	if router.PropagationTransferState() != PRComplete {
@@ -6720,6 +6737,8 @@ func TestPropagationSyncMessageGetResponseNonZeroBytesPanics(t *testing.T) {
 func TestPropagationSyncMessageGetResponseStringEntryPanics(t *testing.T) {
 	t.Parallel()
 
+	type stringAlias string
+
 	tests := []struct {
 		name     string
 		response any
@@ -6728,6 +6747,8 @@ func TestPropagationSyncMessageGetResponseStringEntryPanics(t *testing.T) {
 		{name: "empty string", response: []any{""}},
 		{name: "typed string slice", response: []string{"ab"}},
 		{name: "typed string array", response: [1]string{"ab"}},
+		{name: "string alias slice", response: []stringAlias{"ab"}},
+		{name: "string alias array", response: [1]stringAlias{"ab"}},
 	}
 
 	for _, tc := range tests {
@@ -6754,6 +6775,32 @@ func TestPropagationSyncMessageGetResponseStringEntryPanics(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestPropagationSyncMessageGetResponseScalarStringAliasPanics(t *testing.T) {
+	t.Parallel()
+
+	type stringAlias string
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			t.Fatal("messageGetResponse() did not panic")
+		}
+		if got := fmt.Sprint(recovered); got != "Strings must be encoded before hashing" {
+			t.Fatalf("panic = %q, want %q", got, "Strings must be encoded before hashing")
+		}
+	}()
+
+	router.messageGetResponse(&rns.RequestReceipt{
+		Link:     &rns.Link{},
+		Response: stringAlias("ab"),
+	})
 }
 
 func TestPropagationSyncMessageGetResponseMixedListProcessesEarlierPayloadBeforeStringPanic(t *testing.T) {
@@ -6955,12 +7002,16 @@ func TestPropagationSyncMessageGetResponseDictEntryPanics(t *testing.T) {
 func TestPropagationSyncMessageGetResponseStringKeyedMapPanics(t *testing.T) {
 	t.Parallel()
 
+	type stringAlias string
+
 	tests := []struct {
 		name     string
 		response any
 	}{
 		{name: "non-empty string key", response: map[string]any{"a": 1}},
 		{name: "empty string key", response: map[string]any{"": 1}},
+		{name: "non-empty string alias key", response: map[stringAlias]any{"a": 1}},
+		{name: "empty string alias key", response: map[stringAlias]any{"": 1}},
 	}
 
 	for _, tc := range tests {

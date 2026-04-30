@@ -2913,6 +2913,11 @@ func bytesResponsePayload(value any) ([]byte, bool) {
 	}
 }
 
+func isStringLike(value any) bool {
+	rv := reflect.ValueOf(value)
+	return rv.IsValid() && rv.Kind() == reflect.String
+}
+
 func validatePropagationMessages(messages [][]byte, targetCost int) []validatedPropagationMessage {
 	validated := make([]validatedPropagationMessage, 0, len(messages))
 	for _, message := range messages {
@@ -4161,7 +4166,7 @@ func (r *Router) messageGetResponse(receipt *rns.RequestReceipt) {
 	for _, entry := range entries {
 		payload, ok := bytesResponsePayload(entry)
 		if !ok {
-			if _, isString := entry.(string); isString {
+			if isStringLike(entry) {
 				panic("Strings must be encoded before hashing")
 			}
 			panic("object supporting the buffer API required")
@@ -4266,7 +4271,7 @@ func invalidMessageGetResponsePanic(response any) (string, bool) {
 			if _, ok := entry.([]byte); ok {
 				continue
 			}
-			if _, ok := entry.(string); ok {
+			if isStringLike(entry) {
 				return "Strings must be encoded before hashing", true
 			}
 			return "object supporting the buffer API required", true
@@ -4275,6 +4280,10 @@ func invalidMessageGetResponsePanic(response any) (string, bool) {
 		rv := reflect.ValueOf(response)
 		if rv.IsValid() {
 			switch rv.Kind() {
+			case reflect.String:
+				if rv.Len() > 0 {
+					return "Strings must be encoded before hashing", true
+				}
 			case reflect.Array, reflect.Slice:
 				if isRawByteSequenceType(rv.Type()) {
 					if rv.Len() > 0 {
@@ -4287,14 +4296,14 @@ func invalidMessageGetResponsePanic(response any) (string, bool) {
 					if _, ok := entry.([]byte); ok {
 						continue
 					}
-					if _, ok := entry.(string); ok {
+					if isStringLike(entry) {
 						return "Strings must be encoded before hashing", true
 					}
 					return "object supporting the buffer API required", true
 				}
 			case reflect.Map:
 				if rv.Len() > 0 {
-					if _, ok := rv.MapKeys()[0].Interface().(string); ok {
+					if isStringLike(rv.MapKeys()[0].Interface()) {
 						return "Strings must be encoded before hashing", true
 					}
 					return "object supporting the buffer API required", true
