@@ -1272,33 +1272,11 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 		return nil, closeErr
 	}
 
-	type discoveryFileEntry struct {
-		name    string
-		modTime time.Time
-	}
-	fileEntries := make([]discoveryFileEntry, 0, len(entries))
-	for _, entry := range entries {
-		path := filepath.Join(storagePath, entry)
-		info, statErr := os.Stat(path)
-		if statErr != nil {
-			id.logDiscoveryFileLoadError(path, statErr)
-			continue
-		}
-		fileEntries = append(fileEntries, discoveryFileEntry{
-			name:    entry,
-			modTime: info.ModTime(),
-		})
-	}
-	sort.SliceStable(fileEntries, func(i, j int) bool {
-		return fileEntries[i].modTime.Before(fileEntries[j].modTime)
-	})
-
 	now := float64(time.Now().UnixNano()) / 1e9
 	discoverySources := id.owner.interfaceSources
 	var discovered []discoveredRecord
 
-	for _, fileEntry := range fileEntries {
-		entry := fileEntry.name
+	for _, entry := range entries {
 		path := filepath.Join(storagePath, entry)
 		data, err := os.ReadFile(path)
 		if err != nil {
