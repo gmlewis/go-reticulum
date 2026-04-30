@@ -3383,6 +3383,65 @@ func TestMessageGetRequestUnhashableHavesEntryReturnsNil(t *testing.T) {
 	}
 }
 
+func TestMessageGetRequestMixedHavesPurgesBeforeUnhashableFailure(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.EnablePropagation()
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+	transientID := router.storePropagationMessage(remoteDestinationHash, []byte("persisted-payload"))
+	entry := router.propagationEntries[string(transientID)]
+	if entry == nil || entry.path == "" {
+		t.Fatalf("expected persisted propagation entry for %x", transientID)
+	}
+
+	request, err := msgpack.Pack([]any{nil, []any{transientID, []any{[]byte("nested")}}})
+	if err != nil {
+		t.Fatalf("Pack mixed haves request: %v", err)
+	}
+
+	if response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now()); response != nil {
+		t.Fatalf("response=%#v want nil", response)
+	}
+	if _, exists := router.propagationEntries[string(transientID)]; exists {
+		t.Fatal("expected valid haves entry to be purged before unhashable failure")
+	}
+	if _, err := os.Stat(entry.path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected purged message file to be removed, Stat() error = %v", err)
+	}
+}
+
+func TestMessageGetRequestMixedWantsAbortWithoutServing(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+	transientID := router.storePropagationMessage(remoteDestinationHash, []byte("payload"))
+
+	request, err := msgpack.Pack([]any{[]any{transientID, []any{[]byte("nested")}}, nil})
+	if err != nil {
+		t.Fatalf("Pack mixed wants request: %v", err)
+	}
+
+	if response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now()); response != nil {
+		t.Fatalf("response=%#v want nil", response)
+	}
+	if _, exists := router.propagationEntries[string(transientID)]; !exists {
+		t.Fatal("expected message to remain stored after mixed wants failure")
+	}
+	if router.clientPropagationMessagesServed != 0 {
+		t.Fatalf("clientPropagationMessagesServed=%v want=0", router.clientPropagationMessagesServed)
+	}
+}
+
 type assertErr string
 
 func (e assertErr) Error() string {
@@ -4336,6 +4395,45 @@ func TestMessageGetRequestListSortedByMessageSize(t *testing.T) {
 
 	smallID := router.storePropagationMessage(remoteDestinationHash, []byte("small"))
 	largeID := router.storePropagationMessage(remoteDestinationHash, bytes.Repeat([]byte("L"), 50))
+
+	listRequest, err := msgpack.Pack([]any{nil, nil})
+	if err != nil {
+		t.Fatalf("Pack list request: %v", err)
+	}
+	listResponse := router.messageGetRequest("", listRequest, nil, nil, remoteIdentity, time.Now())
+	available, ok := listResponse.([]any)
+	if !ok {
+		t.Fatalf("unexpected list response type %T", listResponse)
+	}
+	if len(available) != 2 {
+		t.Fatalf("available len=%v want=2", len(available))
+	}
+
+	if got, ok := available[0].([]byte); !ok || !bytes.Equal(got, smallID) {
+		t.Fatalf("available[0]=%x want small message %x", got, smallID)
+	}
+	if got, ok := available[1].([]byte); !ok || !bytes.Equal(got, largeID) {
+		t.Fatalf("available[1]=%x want large message %x", got, largeID)
+	}
+}
+
+func TestMessageGetRequestListUsesPersistedFileSizeForSorting(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.EnablePropagation()
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+
+	smallID := router.storePropagationMessage(remoteDestinationHash, []byte("small"))
+	largeID := router.storePropagationMessage(remoteDestinationHash, bytes.Repeat([]byte("L"), 50))
+
+	router.propagationEntries[string(smallID)].size = 999
+	router.propagationEntries[string(largeID)].size = 1
 
 	listRequest, err := msgpack.Pack([]any{nil, nil})
 	if err != nil {

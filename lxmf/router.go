@@ -974,12 +974,8 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 			return nil
 		}
 	}
-	if requestListContainsUnhashableEntries(request[0]) || requestListContainsUnhashableEntries(request[1]) {
-		return nil
-	}
-
-	wants := anySliceToByteSlices(request[0])
-	haves := anySliceToByteSlices(request[1])
+	wants, _ := request[0].([]any)
+	haves, _ := request[1].([]any)
 
 	if request[0] == nil && request[1] == nil {
 		type availableEntry struct {
@@ -993,7 +989,7 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 			}
 			availableMessages = append(availableMessages, availableEntry{
 				transientID: []byte(transientID),
-				size:        entry.size,
+				size:        propagationEntryMessageSize(entry),
 			})
 		}
 		sort.Slice(availableMessages, func(i, j int) bool {
@@ -1006,7 +1002,14 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 		return available
 	}
 
-	for _, transientID := range haves {
+	for _, rawTransientID := range haves {
+		transientID, isBytes, unhashable := messageGetRequestTransientID(rawTransientID)
+		if unhashable {
+			return nil
+		}
+		if !isBytes {
+			continue
+		}
 		entry, exists := r.propagationEntries[string(transientID)]
 		if !exists {
 			continue
@@ -1026,7 +1029,14 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 	cumulativeSize := 24
 	perMessageOverhead := 16
 
-	for _, transientID := range wants {
+	for _, rawTransientID := range wants {
+		transientID, isBytes, unhashable := messageGetRequestTransientID(rawTransientID)
+		if unhashable {
+			return nil
+		}
+		if !isBytes {
+			continue
+		}
 		entry, exists := r.propagationEntries[string(transientID)]
 		if !exists {
 			continue
@@ -1034,10 +1044,7 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 		if !bytes.Equal(entry.destinationHash, remoteDestinationHash) {
 			continue
 		}
-		messageSize := entry.size
-		if messageSize <= 0 {
-			messageSize = len(entry.payload)
-		}
+		messageSize := propagationEntryMessageSize(entry)
 		nextSize := cumulativeSize + messageSize + perMessageOverhead
 		if limitSet && nextSize > limitBytes {
 			continue
@@ -1048,6 +1055,37 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 
 	r.clientPropagationMessagesServed += len(response)
 	return response
+}
+
+func propagationEntryMessageSize(entry *propagationEntry) int {
+	if entry == nil {
+		return 0
+	}
+	if entry.path != "" {
+		if info, err := os.Stat(entry.path); err == nil {
+			return int(info.Size())
+		}
+	}
+	if entry.size > 0 {
+		return entry.size
+	}
+	return len(entry.payload)
+}
+
+func messageGetRequestTransientID(value any) ([]byte, bool, bool) {
+	if entry, ok := bytesResponsePayload(value); ok {
+		return entry, true, false
+	}
+	rv := reflect.ValueOf(value)
+	if !rv.IsValid() {
+		return nil, false, false
+	}
+	switch rv.Kind() {
+	case reflect.Map, reflect.Slice, reflect.Array:
+		return nil, false, true
+	default:
+		return nil, false, false
+	}
 }
 
 func decodeAnyList(data []byte) ([]any, error) {
