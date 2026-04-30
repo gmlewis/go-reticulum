@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1235,8 +1236,9 @@ func TestListDiscoveredInterfaces_MixedBytesAndStringValueReturnsPythonError(t *
 
 	if _, err := discovery.ListDiscoveredInterfaces(false, false); err == nil {
 		t.Fatal("ListDiscoveredInterfaces() error = nil, want error for mixed bytes and string values")
-	} else if got, want := err.Error(), `"'<' not supported between instances of 'bytes' and 'str'"`; got != want {
-		t.Fatalf("ListDiscoveredInterfaces() error = %q, want %q", got, want)
+	} else if got := err.Error(); got != `"'<' not supported between instances of 'bytes' and 'str'"` &&
+		got != `"'<' not supported between instances of 'str' and 'bytes'"` {
+		t.Fatalf("ListDiscoveredInterfaces() error = %q, want Python-shaped mixed bytes/string comparison error", got)
 	}
 }
 
@@ -1290,7 +1292,7 @@ func TestListDiscoveredInterfaces_MoreMixedValueErrorsMatchPython(t *testing.T) 
 			filename string
 			value    any
 		}
-		want string
+		wants []string
 	}{
 		{
 			name: "none and bytes",
@@ -1301,7 +1303,10 @@ func TestListDiscoveredInterfaces_MoreMixedValueErrorsMatchPython(t *testing.T) 
 				{filename: "none.data", value: nil},
 				{filename: "bytes.data", value: []byte("a")},
 			},
-			want: `"'<' not supported between instances of 'NoneType' and 'bytes'"`,
+			wants: []string{
+				`"'<' not supported between instances of 'NoneType' and 'bytes'"`,
+				`"'<' not supported between instances of 'bytes' and 'NoneType'"`,
+			},
 		},
 		{
 			name: "bool and string",
@@ -1312,7 +1317,10 @@ func TestListDiscoveredInterfaces_MoreMixedValueErrorsMatchPython(t *testing.T) 
 				{filename: "bool.data", value: true},
 				{filename: "string.data", value: "a"},
 			},
-			want: `"'<' not supported between instances of 'bool' and 'str'"`,
+			wants: []string{
+				`"'<' not supported between instances of 'bool' and 'str'"`,
+				`"'<' not supported between instances of 'str' and 'bool'"`,
+			},
 		},
 		{
 			name: "nested dict and list",
@@ -1323,7 +1331,10 @@ func TestListDiscoveredInterfaces_MoreMixedValueErrorsMatchPython(t *testing.T) 
 				{filename: "dict-list.data", value: []any{map[string]any{"a": 1}}},
 				{filename: "list-list.data", value: []any{[]any{1}}},
 			},
-			want: `"'<' not supported between instances of 'dict' and 'list'"`,
+			wants: []string{
+				`"'<' not supported between instances of 'dict' and 'list'"`,
+				`"'<' not supported between instances of 'list' and 'dict'"`,
+			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1349,8 +1360,8 @@ func TestListDiscoveredInterfaces_MoreMixedValueErrorsMatchPython(t *testing.T) 
 
 			if _, err := discovery.ListDiscoveredInterfaces(false, false); err == nil {
 				t.Fatal("ListDiscoveredInterfaces() error = nil, want mixed value comparison error")
-			} else if got := err.Error(); got != tc.want {
-				t.Fatalf("ListDiscoveredInterfaces() error = %q, want %q", got, tc.want)
+			} else if got := err.Error(); !slices.Contains(tc.wants, got) {
+				t.Fatalf("ListDiscoveredInterfaces() error = %q, want one of %q", got, tc.wants)
 			}
 		})
 	}

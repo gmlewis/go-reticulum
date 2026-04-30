@@ -423,10 +423,7 @@ func TestStartSessionCommandWaitsBeforeSendingExit(t *testing.T) {
 				exitAt = entry.at
 			}
 		}
-		if !exitAt.IsZero() {
-			if lastStream.IsZero() {
-				t.Fatal("command exit sent before any stream message")
-			}
+		if !exitAt.IsZero() && !lastStream.IsZero() {
 			if got := exitAt.Sub(lastStream); got < 35*time.Millisecond {
 				t.Fatalf("command exit delay=%v, want at least 35ms", got)
 			}
@@ -435,7 +432,28 @@ func TestStartSessionCommandWaitsBeforeSendingExit(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	t.Fatal("timed out waiting for command exit")
+	msgs := sender.messages()
+	var lastStream time.Time
+	var exitAt time.Time
+	for _, entry := range msgs {
+		if _, ok := entry.msg.(*streamDataMessage); ok {
+			if entry.at.After(lastStream) {
+				lastStream = entry.at
+			}
+		}
+		if _, ok := entry.msg.(*commandExitedMessage); ok {
+			exitAt = entry.at
+		}
+	}
+	if exitAt.IsZero() {
+		t.Fatal("timed out waiting for command exit")
+	}
+	if lastStream.IsZero() {
+		t.Fatal("command exit sent before any stream message")
+	}
+	if got := exitAt.Sub(lastStream); got < 35*time.Millisecond {
+		t.Fatalf("command exit delay=%v, want at least 35ms", got)
+	}
 }
 
 func TestActiveCommandCloseLogsAlreadyClosedStdin(t *testing.T) {
