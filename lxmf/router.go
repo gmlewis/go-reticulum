@@ -4110,39 +4110,42 @@ func (r *Router) messageGetResponse(receipt *rns.RequestReceipt) {
 		}
 	}
 
-	payloads, ok := transientIDsFromResponse(receipt.Response)
-	if !ok {
-		if panicMessage, shouldPanic := lenlessMessageGetResponsePanic(receipt.Response); shouldPanic {
-			panic(panicMessage)
-		} else if zeroLengthResponse(receipt.Response) {
-			payloads = [][]byte{}
-		} else if panicMessage, shouldPanic := invalidMessageGetResponsePanic(receipt.Response); shouldPanic {
-			panic(panicMessage)
-		} else {
-			payloadList, listOK := receipt.Response.([]any)
-			if !listOK {
-				payloads = nil
-			} else {
-				payloads = make([][]byte, 0, len(payloadList))
-				for _, value := range payloadList {
-					payload, ok := value.([]byte)
-					if !ok {
-						payloads = nil
-						break
-					}
-					payloads = append(payloads, append([]byte{}, payload...))
-				}
-			}
-		}
+	if panicMessage, shouldPanic := lenlessMessageGetResponsePanic(receipt.Response); shouldPanic {
+		panic(panicMessage)
 	}
-	if payloads == nil {
+	if zeroLengthResponse(receipt.Response) {
+		r.mu.Lock()
+		r.propagationTransferState = PRComplete
+		r.propagationTransferProgress = 1.0
+		r.propagationTransferLastDuplicates = 0
+		r.propagationTransferLastResult = 0
+		r.propagationTransferLastResultSet = true
+		r.mu.Unlock()
+		if err := r.saveLocallyDeliveredTransientIDs(); err != nil {
+			log.Printf("Could not save locally delivered message ID cache: %v", err)
+		}
+		return
+	}
+
+	entries, ok := messageGetResponseEntries(receipt.Response)
+	if !ok {
+		if panicMessage, shouldPanic := invalidMessageGetResponsePanic(receipt.Response); shouldPanic {
+			panic(panicMessage)
+		}
 		log.Printf("Invalid message data received from propagation node")
 		return
 	}
 
 	duplicates := 0
-	haves := make([][]byte, 0, len(payloads))
-	for _, payload := range payloads {
+	haves := make([][]byte, 0, len(entries))
+	for _, entry := range entries {
+		payload, ok := bytesResponsePayload(entry)
+		if !ok {
+			if _, isString := entry.(string); isString {
+				panic("Strings must be encoded before hashing")
+			}
+			panic("object supporting the buffer API required")
+		}
 		if r.handlePropagatedInbound(payload) {
 			duplicates++
 		}
@@ -4158,11 +4161,53 @@ func (r *Router) messageGetResponse(receipt *rns.RequestReceipt) {
 	r.propagationTransferState = PRComplete
 	r.propagationTransferProgress = 1.0
 	r.propagationTransferLastDuplicates = duplicates
-	r.propagationTransferLastResult = len(payloads)
+	r.propagationTransferLastResult = len(entries)
 	r.propagationTransferLastResultSet = true
 	r.mu.Unlock()
 	if err := r.saveLocallyDeliveredTransientIDs(); err != nil {
 		log.Printf("Could not save locally delivered message ID cache: %v", err)
+	}
+}
+
+func messageGetResponseEntries(response any) ([]any, bool) {
+	switch values := response.(type) {
+	case [][]byte:
+		entries := make([]any, 0, len(values))
+		for _, value := range values {
+			entries = append(entries, append([]byte{}, value...))
+		}
+		return entries, true
+	case []any:
+		entries := make([]any, 0, len(values))
+		for _, value := range values {
+			entries = append(entries, value)
+		}
+		return entries, true
+	default:
+		rv := reflect.ValueOf(response)
+		if !rv.IsValid() {
+			return nil, false
+		}
+		switch rv.Kind() {
+		case reflect.Array, reflect.Slice:
+			if isRawByteSequenceType(rv.Type()) {
+				return nil, false
+			}
+			entries := make([]any, 0, rv.Len())
+			for i := 0; i < rv.Len(); i++ {
+				entries = append(entries, rv.Index(i).Interface())
+			}
+			return entries, true
+		case reflect.Map:
+			entries := make([]any, 0, rv.Len())
+			iter := rv.MapRange()
+			for iter.Next() {
+				entries = append(entries, iter.Key().Interface())
+			}
+			return entries, true
+		default:
+			return nil, false
+		}
 	}
 }
 

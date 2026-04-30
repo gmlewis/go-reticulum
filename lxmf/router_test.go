@@ -6541,6 +6541,159 @@ func TestPropagationSyncMessageGetResponseStringEntryPanics(t *testing.T) {
 	}
 }
 
+func TestPropagationSyncMessageGetResponseMixedListProcessesEarlierPayloadBeforeStringPanic(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	ts.Remember(nil, sourceDest.Hash, sourceID.GetPublicKey(), nil)
+	var zero int
+	localDest, err := router.RegisterDeliveryIdentity(destID, "", &zero)
+	if err != nil {
+		t.Fatalf("RegisterDeliveryIdentity: %v", err)
+	}
+
+	freshMsg := mustTestNewMessage(t, localDest, sourceDest, "fresh", "title", nil)
+	if err := freshMsg.Pack(); err != nil {
+		t.Fatalf("freshMsg.Pack: %v", err)
+	}
+	freshTransientID := rns.FullHash(freshMsg.Packed)
+
+	var delivered []*Message
+	router.deliveryCallback = func(message *Message) {
+		delivered = append(delivered, message)
+	}
+	router.propagationTransferState = PRRequestSent
+	router.propagationTransferLastResult = 9
+	router.propagationTransferLastResultSet = true
+
+	var requestedPath string
+	router.requestLink = func(_ *rns.Link, path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), _ time.Duration) (*rns.RequestReceipt, error) {
+		requestedPath = path
+		return nil, nil
+	}
+
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			t.Fatal("messageGetResponse() did not panic")
+		}
+		if got := fmt.Sprint(recovered); got != "Strings must be encoded before hashing" {
+			t.Fatalf("panic = %q, want %q", got, "Strings must be encoded before hashing")
+		}
+		if len(delivered) != 1 {
+			t.Fatalf("delivered count = %d, want 1", len(delivered))
+		}
+		if _, ok := router.locallyProcessedIDs[string(freshTransientID)]; !ok {
+			t.Fatal("expected earlier valid payload to be marked processed before panic")
+		}
+		if requestedPath != "" {
+			t.Fatalf("unexpected purge request path=%q", requestedPath)
+		}
+		if router.PropagationTransferState() != PRRequestSent {
+			t.Fatalf("state = %v, want PRRequestSent after panic", router.PropagationTransferState())
+		}
+		if got, ok := router.PropagationTransferLastResult(); !ok || got != 9 {
+			t.Fatalf("last result = (%v,%v), want unchanged (9,true)", got, ok)
+		}
+	}()
+
+	router.messageGetResponse(&rns.RequestReceipt{
+		Link:     &rns.Link{},
+		Response: []any{freshMsg.Packed, "x"},
+	})
+}
+
+func TestPropagationSyncMessageGetResponseMixedListProcessesEarlierPayloadBeforeBufferPanic(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		invalidEntry any
+	}{
+		{name: "int", invalidEntry: 1},
+		{name: "bool", invalidEntry: true},
+		{name: "nil", invalidEntry: nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+			router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+			sourceID := mustTestNewIdentity(t, true)
+			destID := mustTestNewIdentity(t, true)
+			sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+			ts.Remember(nil, sourceDest.Hash, sourceID.GetPublicKey(), nil)
+			var zero int
+			localDest, err := router.RegisterDeliveryIdentity(destID, "", &zero)
+			if err != nil {
+				t.Fatalf("RegisterDeliveryIdentity: %v", err)
+			}
+
+			freshMsg := mustTestNewMessage(t, localDest, sourceDest, "fresh", "title", nil)
+			if err := freshMsg.Pack(); err != nil {
+				t.Fatalf("freshMsg.Pack: %v", err)
+			}
+			freshTransientID := rns.FullHash(freshMsg.Packed)
+
+			var delivered []*Message
+			router.deliveryCallback = func(message *Message) {
+				delivered = append(delivered, message)
+			}
+			router.propagationTransferState = PRRequestSent
+			router.propagationTransferLastResult = 9
+			router.propagationTransferLastResultSet = true
+
+			var requestedPath string
+			router.requestLink = func(_ *rns.Link, path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), _ time.Duration) (*rns.RequestReceipt, error) {
+				requestedPath = path
+				return nil, nil
+			}
+
+			defer func() {
+				recovered := recover()
+				if recovered == nil {
+					t.Fatal("messageGetResponse() did not panic")
+				}
+				if got := fmt.Sprint(recovered); got != "object supporting the buffer API required" {
+					t.Fatalf("panic = %q, want %q", got, "object supporting the buffer API required")
+				}
+				if len(delivered) != 1 {
+					t.Fatalf("delivered count = %d, want 1", len(delivered))
+				}
+				if _, ok := router.locallyProcessedIDs[string(freshTransientID)]; !ok {
+					t.Fatal("expected earlier valid payload to be marked processed before panic")
+				}
+				if requestedPath != "" {
+					t.Fatalf("unexpected purge request path=%q", requestedPath)
+				}
+				if router.PropagationTransferState() != PRRequestSent {
+					t.Fatalf("state = %v, want PRRequestSent after panic", router.PropagationTransferState())
+				}
+				if got, ok := router.PropagationTransferLastResult(); !ok || got != 9 {
+					t.Fatalf("last result = (%v,%v), want unchanged (9,true)", got, ok)
+				}
+			}()
+
+			router.messageGetResponse(&rns.RequestReceipt{
+				Link:     &rns.Link{},
+				Response: []any{freshMsg.Packed, tc.invalidEntry},
+			})
+		})
+	}
+}
+
 func TestPropagationSyncMessageGetResponseDictEntryPanics(t *testing.T) {
 	t.Parallel()
 
