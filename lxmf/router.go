@@ -1045,12 +1045,32 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 		if limitSet && nextSize > limitBytes {
 			continue
 		}
-		response = append(response, append([]byte{}, entry.payload...))
+		payload, ok := propagationEntryResponsePayload(entry)
+		if !ok {
+			continue
+		}
+		response = append(response, payload)
 		cumulativeSize = nextSize
 	}
 
 	r.clientPropagationMessagesServed += len(response)
 	return response
+}
+
+func propagationEntryResponsePayload(entry *propagationEntry) ([]byte, bool) {
+	if entry == nil {
+		return nil, false
+	}
+	if entry.path != "" {
+		fileData, err := os.ReadFile(entry.path)
+		if err != nil {
+			return nil, false
+		}
+		if entry.stampValue > 0 && len(fileData) >= StampSize {
+			return append([]byte{}, fileData[:len(fileData)-StampSize]...), true
+		}
+	}
+	return append([]byte{}, entry.payload...), true
 }
 
 func propagationEntryMessageSize(entry *propagationEntry) int {
@@ -2878,38 +2898,7 @@ func transientIDsFromResponse(response any) ([][]byte, bool) {
 		}
 		return result, true
 	default:
-		rv := reflect.ValueOf(response)
-		if !rv.IsValid() {
-			return nil, false
-		}
-		switch rv.Kind() {
-		case reflect.Map:
-			result := make([][]byte, 0, rv.Len())
-			iter := rv.MapRange()
-			for iter.Next() {
-				entry, ok := bytesResponsePayload(iter.Key().Interface())
-				if !ok {
-					return nil, false
-				}
-				result = append(result, entry)
-			}
-			return result, true
-		case reflect.Array, reflect.Slice:
-			if isRawByteSequenceType(rv.Type()) {
-				return nil, false
-			}
-			result := make([][]byte, 0, rv.Len())
-			for i := 0; i < rv.Len(); i++ {
-				entry, ok := bytesResponsePayload(rv.Index(i).Interface())
-				if !ok {
-					return nil, false
-				}
-				result = append(result, entry)
-			}
-			return result, true
-		default:
-			return nil, false
-		}
+		return nil, false
 	}
 }
 

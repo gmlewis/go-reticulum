@@ -3142,6 +3142,47 @@ func TestMessageGetRequestMissingWantedMessagesReturnsEmptyList(t *testing.T) {
 	}
 }
 
+func TestMessageGetRequestMissingPersistedWantedFileSkipsMessage(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.EnablePropagation()
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+	transientID := router.storePropagationMessage(remoteDestinationHash, []byte("persisted-payload"))
+	entry := router.propagationEntries[string(transientID)]
+	if entry == nil || entry.path == "" {
+		t.Fatalf("expected persisted propagation entry for %x", transientID)
+	}
+	if err := os.Remove(entry.path); err != nil {
+		t.Fatalf("Remove(%q): %v", entry.path, err)
+	}
+
+	request, err := msgpack.Pack([]any{[]any{transientID}, nil})
+	if err != nil {
+		t.Fatalf("Pack request: %v", err)
+	}
+
+	response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
+	payloads, ok := response.([]any)
+	if !ok {
+		t.Fatalf("response type=%T want=[]any", response)
+	}
+	if len(payloads) != 0 {
+		t.Fatalf("payloads len=%v want=0", len(payloads))
+	}
+	if router.clientPropagationMessagesServed != 0 {
+		t.Fatalf("clientPropagationMessagesServed=%v want=0", router.clientPropagationMessagesServed)
+	}
+	if _, exists := router.propagationEntries[string(transientID)]; !exists {
+		t.Fatal("expected missing-file entry to remain in propagationEntries")
+	}
+}
+
 func TestMessageGetRequestUsesStampedFileSizeForTransferLimit(t *testing.T) {
 	t.Parallel()
 
@@ -6250,6 +6291,8 @@ func TestPropagationSyncMessageListResponseInvalidShapesTearDown(t *testing.T) {
 		{name: "non-empty bytes", response: []byte("ab")},
 		{name: "string", response: "ab"},
 		{name: "map", response: map[string]any{"a": 1}},
+		{name: "bytes keyed map", response: map[[2]byte]any{{'a', 'b'}: 1}},
+		{name: "typed bytes array", response: [1][]byte{[]byte("ab")}},
 		{name: "scalar int", response: 1},
 	}
 
