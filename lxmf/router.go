@@ -983,9 +983,13 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 			if !bytes.Equal(entry.destinationHash, remoteDestinationHash) {
 				continue
 			}
+			messageSize, ok := propagationEntryListSize(entry)
+			if !ok {
+				return nil
+			}
 			availableMessages = append(availableMessages, availableEntry{
 				transientID: []byte(transientID),
-				size:        propagationEntryMessageSize(entry),
+				size:        messageSize,
 			})
 		}
 		sort.Slice(availableMessages, func(i, j int) bool {
@@ -1057,6 +1061,23 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 	return response
 }
 
+func propagationEntryListSize(entry *propagationEntry) (int, bool) {
+	if entry == nil {
+		return 0, false
+	}
+	if entry.path != "" {
+		info, err := os.Stat(entry.path)
+		if err != nil {
+			return 0, false
+		}
+		return int(info.Size()), true
+	}
+	if entry.size > 0 {
+		return entry.size, true
+	}
+	return len(entry.payload), true
+}
+
 func propagationEntryResponsePayload(entry *propagationEntry) ([]byte, bool) {
 	if entry == nil {
 		return nil, false
@@ -1066,7 +1087,10 @@ func propagationEntryResponsePayload(entry *propagationEntry) ([]byte, bool) {
 		if err != nil {
 			return nil, false
 		}
-		if entry.stampValue > 0 && len(fileData) >= StampSize {
+		if entry.stampValue > 0 {
+			if len(fileData) < StampSize {
+				return []byte{}, true
+			}
 			return append([]byte{}, fileData[:len(fileData)-StampSize]...), true
 		}
 	}
@@ -2898,7 +2922,19 @@ func transientIDsFromResponse(response any) ([][]byte, bool) {
 		}
 		return result, true
 	default:
-		return nil, false
+		rv := reflect.ValueOf(response)
+		if !rv.IsValid() || rv.Kind() != reflect.Slice || isRawByteSequenceType(rv.Type()) {
+			return nil, false
+		}
+		result := make([][]byte, 0, rv.Len())
+		for i := 0; i < rv.Len(); i++ {
+			entry, ok := bytesResponsePayload(rv.Index(i).Interface())
+			if !ok {
+				return nil, false
+			}
+			result = append(result, entry)
+		}
+		return result, true
 	}
 }
 
@@ -4071,7 +4107,23 @@ func messageListEntriesFromResponse(response any) ([]any, bool) {
 		}
 		return result, true
 	default:
-		return nil, false
+		rv := reflect.ValueOf(response)
+		if !rv.IsValid() || rv.Kind() != reflect.Slice || isRawByteSequenceType(rv.Type()) {
+			return nil, false
+		}
+		result := make([]any, 0, rv.Len())
+		for i := 0; i < rv.Len(); i++ {
+			value := rv.Index(i).Interface()
+			if panicMessage, shouldPanic := unhashableMessageListEntryPanic(value); shouldPanic {
+				panic(panicMessage)
+			}
+			if entry, ok := bytesResponsePayload(value); ok {
+				result = append(result, entry)
+				continue
+			}
+			result = append(result, value)
+		}
+		return result, true
 	}
 }
 
