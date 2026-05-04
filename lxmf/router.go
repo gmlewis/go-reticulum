@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1087,7 +1088,7 @@ func propagationEntryResponsePayload(entry *propagationEntry) ([]byte, bool) {
 		if err != nil {
 			return nil, false
 		}
-		if entry.stampValue > 0 {
+		if propagationEntryHasPersistedStamp(entry) {
 			if len(fileData) < StampSize {
 				return []byte{}, true
 			}
@@ -1095,6 +1096,16 @@ func propagationEntryResponsePayload(entry *propagationEntry) ([]byte, bool) {
 		}
 	}
 	return append([]byte{}, entry.payload...), true
+}
+
+func propagationEntryHasPersistedStamp(entry *propagationEntry) bool {
+	if entry == nil {
+		return false
+	}
+	if entry.stampValue > 0 {
+		return true
+	}
+	return entry.size-len(entry.payload) >= StampSize
 }
 
 func propagationEntryMessageSize(entry *propagationEntry) int {
@@ -1296,9 +1307,9 @@ func parseLimitBytes(values []any, index int) (int, bool) {
 		}
 		return 0, true
 	case float64:
-		return int(n * 1000), true
+		return limitBytesFromFloat64(n)
 	case float32:
-		return int(float64(n) * 1000), true
+		return limitBytesFromFloat64(float64(n))
 	case int:
 		return n * 1000, true
 	case int64:
@@ -1308,13 +1319,13 @@ func parseLimitBytes(values []any, index int) (int, bool) {
 		if err != nil {
 			return 0, false
 		}
-		return int(parsed * 1000), true
+		return limitBytesFromFloat64(parsed)
 	case []byte:
 		parsed, err := strconv.ParseFloat(string(n), 64)
 		if err != nil {
 			return 0, false
 		}
-		return int(parsed * 1000), true
+		return limitBytesFromFloat64(parsed)
 	default:
 		rv := reflect.ValueOf(v)
 		if rv.IsValid() {
@@ -1324,7 +1335,7 @@ func parseLimitBytes(values []any, index int) (int, bool) {
 				if err != nil {
 					return 0, false
 				}
-				return int(parsed * 1000), true
+				return limitBytesFromFloat64(parsed)
 			case reflect.Array, reflect.Slice:
 				if isRawByteSequenceType(rv.Type()) {
 					payload, ok := bytesResponsePayload(v)
@@ -1335,12 +1346,19 @@ func parseLimitBytes(values []any, index int) (int, bool) {
 					if err != nil {
 						return 0, false
 					}
-					return int(parsed * 1000), true
+					return limitBytesFromFloat64(parsed)
 				}
 			}
 		}
 		return 0, false
 	}
+}
+
+func limitBytesFromFloat64(value float64) (int, bool) {
+	if math.IsNaN(value) {
+		return 0, false
+	}
+	return int(value * 1000), true
 }
 
 // RegisterDeliveryIdentity sets up the primary identity and associated destination for receiving direct LXMF messages.

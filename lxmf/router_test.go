@@ -3213,6 +3213,41 @@ func TestMessageGetRequestMissingPersistedListFileReturnsNil(t *testing.T) {
 	}
 }
 
+func TestMessageGetRequestMixedPersistedListWithMissingFileReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.EnablePropagation()
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+	missingID := router.storePropagationMessage(remoteDestinationHash, []byte("missing"))
+	validID := router.storePropagationMessage(remoteDestinationHash, []byte("valid"))
+	missingEntry := router.propagationEntries[string(missingID)]
+	validEntry := router.propagationEntries[string(validID)]
+	if missingEntry == nil || missingEntry.path == "" {
+		t.Fatalf("expected persisted missing propagation entry for %x", missingID)
+	}
+	if validEntry == nil || validEntry.path == "" {
+		t.Fatalf("expected persisted valid propagation entry for %x", validID)
+	}
+	if err := os.Remove(missingEntry.path); err != nil {
+		t.Fatalf("Remove(%q): %v", missingEntry.path, err)
+	}
+
+	request, err := msgpack.Pack([]any{nil, nil})
+	if err != nil {
+		t.Fatalf("Pack request: %v", err)
+	}
+
+	if response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now()); response != nil {
+		t.Fatalf("response=%#v want nil", response)
+	}
+}
+
 func TestMessageGetRequestTruncatedPersistedWantedFileReturnsEmptyPayload(t *testing.T) {
 	t.Parallel()
 
@@ -3227,6 +3262,53 @@ func TestMessageGetRequestTruncatedPersistedWantedFileReturnsEmptyPayload(t *tes
 	stampData := bytes.Repeat([]byte{0x7a}, StampSize)
 	payload := append(append([]byte{}, remoteDestinationHash...), bytes.Repeat([]byte("a"), 32)...)
 	transientID := router.storePropagationMessageStamped(remoteDestinationHash, payload, stampData, 1, nil)
+	entry := router.propagationEntries[string(transientID)]
+	if entry == nil || entry.path == "" {
+		t.Fatalf("expected persisted propagation entry for %x", transientID)
+	}
+	if err := os.WriteFile(entry.path, []byte("abc"), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", entry.path, err)
+	}
+
+	request, err := msgpack.Pack([]any{[]any{transientID}, nil})
+	if err != nil {
+		t.Fatalf("Pack request: %v", err)
+	}
+
+	response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
+	payloads, ok := response.([]any)
+	if !ok {
+		t.Fatalf("response type=%T want=[]any", response)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("payloads len=%v want=1", len(payloads))
+	}
+	gotPayload, ok := payloads[0].([]byte)
+	if !ok {
+		t.Fatalf("payload type=%T want=[]byte", payloads[0])
+	}
+	if len(gotPayload) != 0 {
+		t.Fatalf("payload=%x want empty", gotPayload)
+	}
+	if router.clientPropagationMessagesServed != 1 {
+		t.Fatalf("clientPropagationMessagesServed=%v want=1", router.clientPropagationMessagesServed)
+	}
+}
+
+func TestMessageGetRequestZeroStampPersistedWantedFileUsesCurrentFileBytes(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.EnablePropagation()
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+	stampData := make([]byte, StampSize)
+	payload := append(append([]byte{}, remoteDestinationHash...), bytes.Repeat([]byte("a"), 32)...)
+	transientID := router.storePropagationMessageStamped(remoteDestinationHash, payload, stampData, 0, nil)
 	entry := router.propagationEntries[string(transientID)]
 	if entry == nil || entry.path == "" {
 		t.Fatalf("expected persisted propagation entry for %x", transientID)
@@ -3362,6 +3444,10 @@ func TestMessageGetRequestStringAndBytesTransferLimitCoercion(t *testing.T) {
 		limit     any
 		wantCount int
 	}{
+		{name: "uint64 zero limit", limit: uint64(0), wantCount: 0},
+		{name: "uint64 one limit", limit: uint64(1), wantCount: 2},
+		{name: "string nan limit", limit: "nan", wantCount: 2},
+		{name: "bytes nan limit", limit: []byte("nan"), wantCount: 2},
 		{name: "string limit", limit: "0.08", wantCount: 0},
 		{name: "bytes limit", limit: []byte("0.08"), wantCount: 0},
 		{name: "malformed string ignored", limit: "bogus", wantCount: 2},
