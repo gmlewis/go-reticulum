@@ -538,7 +538,7 @@ func (l *Link) receive(packet *Packet) {
 
 	case ContextRequest:
 		requestID := packet.GetTruncatedHash()
-		unpackedRequest, err := msgpack.Unpack(packet.Data)
+		unpackedRequest, err := unpackRequestResponseData(packet.Data)
 		if err != nil {
 			l.logger.Error("Failed to unpack request: %v", err)
 			return
@@ -547,7 +547,7 @@ func (l *Link) receive(packet *Packet) {
 
 	case ContextResponse:
 		l.logger.Verbose("Received ContextResponse packet, data len=%v", len(packet.Data))
-		unpackedResponse, err := msgpack.Unpack(packet.Data)
+		unpackedResponse, err := unpackRequestResponseData(packet.Data)
 		if err != nil {
 			l.logger.Error("Failed to unpack response: %v", err)
 			return
@@ -1507,7 +1507,7 @@ func (l *Link) removePendingRequest(rr *RequestReceipt) {
 
 func (l *Link) responseResourceConcluded(resource *Resource) {
 	if resource.status == ResourceStatusComplete {
-		unpackedResponse, err := msgpack.Unpack(resource.data)
+		unpackedResponse, err := unpackRequestResponseData(resource.data)
 		if err != nil {
 			l.logger.Error("Failed to unpack response resource: %v", err)
 			return
@@ -1532,7 +1532,7 @@ func (l *Link) responseResourceConcluded(resource *Resource) {
 
 func (l *Link) requestResourceConcluded(resource *Resource) {
 	if resource.status == ResourceStatusComplete {
-		unpackedRequest, err := msgpack.Unpack(resource.data)
+		unpackedRequest, err := unpackRequestResponseData(resource.data)
 		if err != nil {
 			l.logger.Error("Failed to unpack request resource: %v", err)
 			return
@@ -1547,4 +1547,8 @@ func (l *Link) requestResourceConcluded(resource *Resource) {
 		requestID := TruncatedHash(resource.data)
 		go l.handleRequest(requestID, requestList)
 	}
+}
+
+func unpackRequestResponseData(data []byte) (any, error) {
+	return msgpack.UnpackPreserveBinMapKeys(data)
 }

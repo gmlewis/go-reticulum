@@ -7,11 +7,21 @@ package rns
 
 import (
 	"bytes"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
+
+func packedBinaryKeyMapResponse(requestID, key []byte) []byte {
+	result := []byte{0x92, 0xc4, byte(len(requestID))}
+	result = append(result, requestID...)
+	result = append(result, 0x81, 0xc4, byte(len(key)))
+	result = append(result, key...)
+	result = append(result, 0x01)
+	return result
+}
 
 func TestRequestResponse(t *testing.T) {
 	t.Parallel()
@@ -352,5 +362,81 @@ func TestResourceResponseMetadata(t *testing.T) {
 	}
 	if !bytes.Equal(got["name"], metadata["name"]) {
 		t.Fatalf("metadata[name] = %q, want %q", got["name"], metadata["name"])
+	}
+}
+
+func TestUnpackRequestResponseDataPreservesBinaryMapKeys(t *testing.T) {
+	t.Parallel()
+
+	requestID := []byte("req")
+	unpacked, err := unpackRequestResponseData(packedBinaryKeyMapResponse(requestID, []byte("ab")))
+	if err != nil {
+		t.Fatalf("unpackRequestResponseData: %v", err)
+	}
+	resList, ok := unpacked.([]any)
+	if !ok {
+		t.Fatalf("response type = %T, want []any", unpacked)
+	}
+	if got := resList[0].([]byte); !bytes.Equal(got, requestID) {
+		t.Fatalf("request ID = %x, want %x", got, requestID)
+	}
+
+	got, ok := resList[1].(map[any]any)
+	if !ok {
+		t.Fatalf("response payload type = %T, want map[any]any", resList[1])
+	}
+	if len(got) != 1 {
+		t.Fatalf("response entry count = %v, want 1", len(got))
+	}
+	for key, value := range got {
+		rt := reflect.TypeOf(key)
+		if rt == nil || rt.Kind() != reflect.String || rt.PkgPath() != "github.com/gmlewis/go-reticulum/rns/msgpack" || rt.Name() != "binaryMapKey" {
+			t.Fatalf("response key type = %T (%v %v), want msgpack.binaryMapKey", key, rt.PkgPath(), rt.Name())
+		}
+		if gotKey := []byte(reflect.ValueOf(key).String()); !bytes.Equal(gotKey, []byte("ab")) {
+			t.Fatalf("response key bytes = %x, want %x", gotKey, []byte("ab"))
+		}
+		if value != int64(1) {
+			t.Fatalf("response value = %#v, want int64(1)", value)
+		}
+	}
+}
+
+func TestLinkResponseResourceConcludedPreservesBinaryMapKeys(t *testing.T) {
+	t.Parallel()
+
+	requestID := []byte("req")
+	rr := &RequestReceipt{RequestID: requestID}
+	link := &Link{
+		logger:          NewLogger(),
+		status:          LinkActive,
+		pendingRequests: []*RequestReceipt{rr},
+	}
+	resource := &Resource{
+		link:   link,
+		status: ResourceStatusComplete,
+		data:   packedBinaryKeyMapResponse(requestID, []byte("ab")),
+	}
+
+	link.responseResourceConcluded(resource)
+
+	got, ok := rr.Response.(map[any]any)
+	if !ok {
+		t.Fatalf("response type = %T, want map[any]any", rr.Response)
+	}
+	if len(got) != 1 {
+		t.Fatalf("response entry count = %v, want 1", len(got))
+	}
+	for key, value := range got {
+		rt := reflect.TypeOf(key)
+		if rt == nil || rt.Kind() != reflect.String || rt.PkgPath() != "github.com/gmlewis/go-reticulum/rns/msgpack" || rt.Name() != "binaryMapKey" {
+			t.Fatalf("response key type = %T (%v %v), want msgpack.binaryMapKey", key, rt.PkgPath(), rt.Name())
+		}
+		if gotKey := []byte(reflect.ValueOf(key).String()); !bytes.Equal(gotKey, []byte("ab")) {
+			t.Fatalf("response key bytes = %x, want %x", gotKey, []byte("ab"))
+		}
+		if value != int64(1) {
+			t.Fatalf("response value = %#v, want int64(1)", value)
+		}
 	}
 }

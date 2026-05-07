@@ -955,7 +955,7 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 		}
 	}
 
-	request, err := decodeAnyList(data)
+	request, err := decodeAnyListPreserveBinMapKeys(data)
 	if err != nil {
 		return peerErrorInvalidData
 	}
@@ -1127,6 +1127,9 @@ func messageGetRequestTransientID(value any) ([]byte, bool, bool) {
 	if entry, ok := bytesResponsePayload(value); ok {
 		return entry, true, false
 	}
+	if entry, ok := msgpackBinaryMapKeyBytes(value); ok {
+		return entry, true, false
+	}
 	rv := reflect.ValueOf(value)
 	if !rv.IsValid() {
 		return nil, false, false
@@ -1137,6 +1140,18 @@ func messageGetRequestTransientID(value any) ([]byte, bool, bool) {
 	default:
 		return nil, false, false
 	}
+}
+
+func msgpackBinaryMapKeyBytes(value any) ([]byte, bool) {
+	rv := reflect.ValueOf(value)
+	if !rv.IsValid() || rv.Kind() != reflect.String {
+		return nil, false
+	}
+	rt := rv.Type()
+	if rt.PkgPath() != "github.com/gmlewis/go-reticulum/rns/msgpack" || rt.Name() != "binaryMapKey" {
+		return nil, false
+	}
+	return []byte(rv.String()), true
 }
 
 func messageGetRequestEntries(value any) ([]any, bool) {
@@ -1182,6 +1197,21 @@ func decodeAnyList(data []byte) ([]any, error) {
 		return nil, errors.New("empty request data")
 	}
 	unpacked, err := msgpack.Unpack(data)
+	if err != nil {
+		return nil, err
+	}
+	request, ok := unpacked.([]any)
+	if !ok {
+		return nil, errors.New("request data is not a list")
+	}
+	return request, nil
+}
+
+func decodeAnyListPreserveBinMapKeys(data []byte) ([]any, error) {
+	if len(data) == 0 {
+		return nil, errors.New("empty request data")
+	}
+	unpacked, err := msgpack.UnpackPreserveBinMapKeys(data)
 	if err != nil {
 		return nil, err
 	}
@@ -4261,6 +4291,9 @@ func (r *Router) messageGetResponse(receipt *rns.RequestReceipt) {
 	haves := make([][]byte, 0, len(entries))
 	for _, entry := range entries {
 		payload, ok := bytesResponsePayload(entry)
+		if !ok {
+			payload, ok = msgpackBinaryMapKeyBytes(entry)
+		}
 		if !ok {
 			if isStringLike(entry) {
 				panic("Strings must be encoded before hashing")
