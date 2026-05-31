@@ -4023,8 +4023,14 @@ func (r *Router) PropagationTransferProgress() float64 {
 	return r.propagationTransferProgress
 }
 
-// RequestMessagesFromPropagationNode orchestrates the complex sequence of establishing a link and downloading queued messages from the designated outbound propagation node.
+// RequestMessagesFromPropagationNode orchestrates the complex sequence of
+// establishing a link and downloading queued messages from the designated
+// outbound propagation node.
 func (r *Router) RequestMessagesFromPropagationNode(limit *int) {
+	r.requestMessagesFromPropagationNodeWithIdentity(nil, limit)
+}
+
+func (r *Router) requestMessagesFromPropagationNodeWithIdentity(identity *rns.Identity, limit *int) {
 	r.mu.Lock()
 	if r.outboundPropagationNode == nil {
 		r.mu.Unlock()
@@ -4039,7 +4045,9 @@ func (r *Router) RequestMessagesFromPropagationNode(limit *int) {
 		maxMessages = *limit
 	}
 	r.propagationTransferMaxMessages = maxMessages
-	identity := r.identity
+	if identity == nil {
+		identity = r.identity
+	}
 	r.mu.Unlock()
 
 	if activeLink != nil && r.linkStatus(activeLink) == rns.LinkActive {
@@ -4120,7 +4128,7 @@ func (r *Router) RequestMessagesFromPropagationNode(limit *int) {
 			if maxMessages != 0 {
 				nextLimit = &maxMessages
 			}
-			r.RequestMessagesFromPropagationNode(nextLimit)
+			r.requestMessagesFromPropagationNodeWithIdentity(identity, nextLimit)
 		})
 		r.mu.Lock()
 		r.outboundPropagationLink = link
@@ -4159,6 +4167,7 @@ func (r *Router) RequestMessagesFromPropagationNode(limit *int) {
 func (r *Router) requestMessagesPathJob() {
 	r.mu.Lock()
 	from := append([]byte{}, r.wantsDownloadOnPathAvailableFrom...)
+	identity := r.wantsDownloadOnPathAvailableTo
 	deadline := r.wantsDownloadOnPathAvailableAt
 	maxMessages := r.propagationTransferMaxMessages
 	r.mu.Unlock()
@@ -4169,7 +4178,7 @@ func (r *Router) requestMessagesPathJob() {
 			if maxMessages != 0 {
 				limit = &maxMessages
 			}
-			r.RequestMessagesFromPropagationNode(limit)
+			r.requestMessagesFromPropagationNodeWithIdentity(identity, limit)
 			return
 		}
 		r.pathWaitSleep(100 * time.Millisecond)

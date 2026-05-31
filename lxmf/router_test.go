@@ -7020,6 +7020,8 @@ func TestRequestMessagesPathJobResumesSyncWhenPathAppears(t *testing.T) {
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	originalIdentity := router.identity
+	replacementIdentity := mustTestNewIdentity(t, true)
 
 	propNode := make([]byte, 16)
 	for i := range propNode {
@@ -7036,11 +7038,12 @@ func TestRequestMessagesPathJobResumesSyncWhenPathAppears(t *testing.T) {
 	router.requestPath = func(_ []byte) error { return nil }
 	router.linkStatus = func(*rns.Link) int { return rns.LinkActive }
 	router.pathWaitSleep = func(time.Duration) {
+		router.identity = replacementIdentity
 		hasPath = true
 		router.outboundPropagationLink = &rns.Link{}
 	}
 	router.identifyLink = func(_ *rns.Link, identity *rns.Identity) error {
-		if identity != router.identity {
+		if identity != originalIdentity {
 			t.Fatal("path job resumed sync with wrong identity")
 		}
 		return nil
@@ -7081,6 +7084,8 @@ func TestRequestMessagesLinkEstablished(t *testing.T) {
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	originalIdentity := router.identity
+	replacementIdentity := mustTestNewIdentity(t, true)
 
 	// Create and remember a peer identity.
 	peerID := mustTestNewIdentity(t, true)
@@ -7115,7 +7120,12 @@ func TestRequestMessagesLinkEstablished(t *testing.T) {
 		establishCount++
 		return nil
 	}
-	router.identifyLink = func(*rns.Link, *rns.Identity) error { return nil }
+	router.identifyLink = func(_ *rns.Link, identity *rns.Identity) error {
+		if identity != originalIdentity {
+			t.Fatal("link-established callback resumed sync with wrong identity")
+		}
+		return nil
+	}
 	router.requestLink = func(*rns.Link, string, any, func(*rns.RequestReceipt), func(*rns.RequestReceipt), func(*rns.RequestReceipt), time.Duration) (*rns.RequestReceipt, error) {
 		requestCount++
 		return nil, nil
@@ -7134,6 +7144,7 @@ func TestRequestMessagesLinkEstablished(t *testing.T) {
 		t.Fatal("expected established callback to be installed")
 	}
 
+	router.identity = replacementIdentity
 	status = rns.LinkActive
 	establishedCallback(link)
 
