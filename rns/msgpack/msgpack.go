@@ -347,6 +347,24 @@ func UnpackPreserveBinMapKeyOrder(data []byte) (any, error) {
 	})
 }
 
+// UnpackStrictPreserveBinMapKeyOrder deserializes exactly one MessagePack value
+// while preserving binary map keys and map entry order, rejecting trailing
+// bytes with Python-shaped error surfaces.
+func UnpackStrictPreserveBinMapKeyOrder(data []byte) (any, error) {
+	r := bytes.NewReader(data)
+	value, err := unpackWithOptions(r, unpackOptions{
+		preserveBinMapKey: true,
+		orderedMap:        true,
+	})
+	if err != nil {
+		return nil, normalizePythonUnpackError(err)
+	}
+	if r.Len() == 0 {
+		return value, nil
+	}
+	return nil, fmt.Errorf("unpack(b) received extra data.")
+}
+
 // UnpackStrict deserializes exactly one MessagePack value and rejects trailing
 // bytes using Python-shaped error surfaces for malformed payloads.
 func UnpackStrict(data []byte) (any, error) {

@@ -3988,6 +3988,25 @@ func TestMessageGetRequestNoAccessWhenAuthRequired(t *testing.T) {
 	}
 }
 
+func TestMessageGetRequestTrailingGarbageReturnsInvalidData(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	request, err := msgpack.Pack([]any{nil, nil})
+	if err != nil {
+		t.Fatalf("Pack request: %v", err)
+	}
+	request = append(request, 0xc0)
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	if response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now()); response != peerErrorInvalidData {
+		t.Fatalf("response=%v want=%v", response, peerErrorInvalidData)
+	}
+}
+
 func TestMessageGetRequestMalformedWantsReturnsNil(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)

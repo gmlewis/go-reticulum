@@ -1249,7 +1249,7 @@ func decodeAnyListPreserveBinMapKeys(data []byte) ([]any, error) {
 	if len(data) == 0 {
 		return nil, errors.New("empty request data")
 	}
-	unpacked, err := msgpack.UnpackPreserveBinMapKeyOrder(data)
+	unpacked, err := msgpack.UnpackStrictPreserveBinMapKeyOrder(data)
 	if err != nil {
 		return nil, err
 	}
