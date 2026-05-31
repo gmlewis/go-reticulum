@@ -4038,6 +4038,74 @@ func TestMessageGetRequestNonListRootsReturnNil(t *testing.T) {
 	}
 }
 
+func TestMessageGetRequestStringRootsOfLengthTwoOrMoreReturnEmptyList(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{name: "two chars", value: "ab"},
+		{name: "three chars", value: "abc"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			request, err := msgpack.Pack(tc.value)
+			if err != nil {
+				t.Fatalf("Pack request: %v", err)
+			}
+			response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
+			available, ok := response.([]any)
+			if !ok {
+				t.Fatalf("response type=%T want=[]any", response)
+			}
+			if len(available) != 0 {
+				t.Fatalf("response len=%v want=0", len(available))
+			}
+		})
+	}
+}
+
+func TestMessageGetRequestBytesRootsReturnNil(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	tests := []struct {
+		name  string
+		value []byte
+	}{
+		{name: "short", value: []byte("a")},
+		{name: "two bytes", value: []byte("ab")},
+		{name: "three bytes", value: []byte("abc")},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			request, err := msgpack.Pack(tc.value)
+			if err != nil {
+				t.Fatalf("Pack request: %v", err)
+			}
+			if response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now()); response != nil {
+				t.Fatalf("response=%#v want nil", response)
+			}
+		})
+	}
+}
+
 func TestMessageGetRequestMalformedWantsReturnsNil(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)

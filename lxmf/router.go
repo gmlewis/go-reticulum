@@ -971,7 +971,7 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 	if err != nil {
 		return peerErrorInvalidData
 	}
-	request, ok := unpacked.([]any)
+	request, ok := messageGetRequestRoot(unpacked)
 	if !ok {
 		return nil
 	}
@@ -1254,11 +1254,26 @@ func decodeAnyListPreserveBinMapKeys(data []byte) ([]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	request, ok := unpacked.([]any)
+	request, ok := messageGetRequestRoot(unpacked)
 	if !ok {
 		return nil, errors.New("request data is not a list")
 	}
 	return request, nil
+}
+
+func messageGetRequestRoot(value any) ([]any, bool) {
+	switch root := value.(type) {
+	case []any:
+		return root, true
+	case string:
+		request := make([]any, 0, len(root))
+		for _, r := range root {
+			request = append(request, string(r))
+		}
+		return request, true
+	default:
+		return nil, false
+	}
 }
 
 func decodeAnyPreserveBinMapKeys(data []byte) (any, error) {
