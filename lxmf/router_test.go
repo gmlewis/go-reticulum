@@ -4007,6 +4007,37 @@ func TestMessageGetRequestTrailingGarbageReturnsInvalidData(t *testing.T) {
 	}
 }
 
+func TestMessageGetRequestNonListRootsReturnNil(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	tests := []struct {
+		name  string
+		value any
+	}{
+		{name: "scalar root", value: 1},
+		{name: "map root", value: map[string]any{}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			request, err := msgpack.Pack(tc.value)
+			if err != nil {
+				t.Fatalf("Pack request: %v", err)
+			}
+			if response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now()); response != nil {
+				t.Fatalf("response=%#v want nil", response)
+			}
+		})
+	}
+}
+
 func TestMessageGetRequestMalformedWantsReturnsNil(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)

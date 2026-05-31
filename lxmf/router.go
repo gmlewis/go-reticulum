@@ -967,9 +967,13 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 		}
 	}
 
-	request, err := decodeAnyListPreserveBinMapKeys(data)
+	unpacked, err := decodeAnyPreserveBinMapKeys(data)
 	if err != nil {
 		return peerErrorInvalidData
+	}
+	request, ok := unpacked.([]any)
+	if !ok {
+		return nil
 	}
 	if len(request) < 2 {
 		return nil
@@ -1246,10 +1250,7 @@ func decodeAnyList(data []byte) ([]any, error) {
 }
 
 func decodeAnyListPreserveBinMapKeys(data []byte) ([]any, error) {
-	if len(data) == 0 {
-		return nil, errors.New("empty request data")
-	}
-	unpacked, err := msgpack.UnpackStrictPreserveBinMapKeyOrder(data)
+	unpacked, err := decodeAnyPreserveBinMapKeys(data)
 	if err != nil {
 		return nil, err
 	}
@@ -1258,6 +1259,17 @@ func decodeAnyListPreserveBinMapKeys(data []byte) ([]any, error) {
 		return nil, errors.New("request data is not a list")
 	}
 	return request, nil
+}
+
+func decodeAnyPreserveBinMapKeys(data []byte) (any, error) {
+	if len(data) == 0 {
+		return nil, errors.New("empty request data")
+	}
+	unpacked, err := msgpack.UnpackStrictPreserveBinMapKeyOrder(data)
+	if err != nil {
+		return nil, err
+	}
+	return unpacked, nil
 }
 
 func anySliceToByteSlices(value any) [][]byte {
