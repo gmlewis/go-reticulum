@@ -30,6 +30,7 @@ type propagationEntry struct {
 	destinationHash []byte
 	payload         []byte
 	receivedAt      time.Time
+	order           uint64
 	handledBy       [][]byte
 	unhandledBy     [][]byte
 	path            string
@@ -107,6 +108,7 @@ type Router struct {
 
 	propagationDestination *rns.Destination
 	propagationEntries     map[string]*propagationEntry
+	propagationEntrySeq    uint64
 	throttledPeers         map[string]time.Time
 	validatedPeerLinks     map[string]bool
 	fromStaticOnly         bool
@@ -578,10 +580,12 @@ func (r *Router) storePropagationMessageStamped(destinationHash []byte, payload 
 
 	receivedAt := r.now()
 	transientID := rns.FullHash(payload)
+	order := r.nextPropagationEntryOrderLocked(string(transientID))
 	entry := &propagationEntry{
 		destinationHash: append([]byte{}, destinationHash...),
 		payload:         append([]byte{}, payload...),
 		receivedAt:      receivedAt,
+		order:           order,
 		handledBy:       [][]byte{},
 		unhandledBy:     [][]byte{},
 		size:            len(destinationHash) + len(payload),
@@ -599,6 +603,14 @@ func (r *Router) storePropagationMessageStamped(destinationHash []byte, payload 
 	r.enqueuePeerDistributionLocked(transientID, fromPeer)
 
 	return transientID
+}
+
+func (r *Router) nextPropagationEntryOrderLocked(transientID string) uint64 {
+	if existing := r.propagationEntries[transientID]; existing != nil && existing.order > 0 {
+		return existing.order
+	}
+	r.propagationEntrySeq++
+	return r.propagationEntrySeq
 }
 
 func (r *Router) enqueuePeerDistribution(transientID []byte, fromPeer *Peer) {
@@ -979,6 +991,7 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 			transientID []byte
 			size        int
 			receivedAt  time.Time
+			order       uint64
 		}
 		availableMessages := make([]availableEntry, 0)
 		for transientID, entry := range r.propagationEntries {
@@ -993,11 +1006,15 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 				transientID: []byte(transientID),
 				size:        messageSize,
 				receivedAt:  entry.receivedAt,
+				order:       entry.order,
 			})
 		}
 		sort.Slice(availableMessages, func(i, j int) bool {
 			if availableMessages[i].size != availableMessages[j].size {
 				return availableMessages[i].size < availableMessages[j].size
+			}
+			if availableMessages[i].order > 0 && availableMessages[j].order > 0 && availableMessages[i].order != availableMessages[j].order {
+				return availableMessages[i].order < availableMessages[j].order
 			}
 			if !availableMessages[i].receivedAt.Equal(availableMessages[j].receivedAt) {
 				return availableMessages[i].receivedAt.Before(availableMessages[j].receivedAt)
@@ -3391,24 +3408,42 @@ func (r *Router) writePropagationMessageFile(transientID []byte, receivedAt time
 
 func (r *Router) reindexPropagationStoreLocked() {
 	indexed := map[string]*propagationEntry{}
-	entries, err := os.ReadDir(r.propagationMessageStorePath())
+	dir, err := os.Open(r.propagationMessageStorePath())
 	if err != nil {
 		log.Printf("Could not read LXMF propagation store: %v", err)
 		r.propagationEntries = indexed
+		r.propagationEntrySeq = 0
 		return
 	}
 
-	for _, entry := range entries {
-		if entry.IsDir() {
+	names, err := dir.Readdirnames(-1)
+	closeErr := dir.Close()
+	if err != nil {
+		log.Printf("Could not read LXMF propagation store: %v", err)
+		r.propagationEntries = indexed
+		r.propagationEntrySeq = 0
+		return
+	}
+	if closeErr != nil {
+		log.Printf("Could not close LXMF propagation store: %v", closeErr)
+		r.propagationEntries = indexed
+		r.propagationEntrySeq = 0
+		return
+	}
+
+	var sequence uint64
+	for _, name := range names {
+		info, err := os.Stat(filepath.Join(r.propagationMessageStorePath(), name))
+		if err != nil || info.IsDir() {
 			continue
 		}
 
-		transientID, receivedAt, stampValue, ok := parsePropagationStoreFilename(entry.Name())
+		transientID, receivedAt, stampValue, ok := parsePropagationStoreFilename(name)
 		if !ok {
 			continue
 		}
 
-		filePath := filepath.Join(r.propagationMessageStorePath(), entry.Name())
+		filePath := filepath.Join(r.propagationMessageStorePath(), name)
 		fileData, err := os.ReadFile(filePath)
 		if err != nil || len(fileData) < DestinationLength {
 			continue
@@ -3427,10 +3462,12 @@ func (r *Router) reindexPropagationStoreLocked() {
 		} else {
 			payload = cloneBytes(fileData[DestinationLength:])
 		}
+		sequence++
 		indexed[string(transientID)] = &propagationEntry{
 			destinationHash: destinationHash,
 			payload:         payload,
 			receivedAt:      receivedAt,
+			order:           sequence,
 			handledBy:       [][]byte{},
 			unhandledBy:     [][]byte{},
 			path:            filePath,
@@ -3440,6 +3477,7 @@ func (r *Router) reindexPropagationStoreLocked() {
 	}
 
 	r.propagationEntries = indexed
+	r.propagationEntrySeq = sequence
 }
 
 func (r *Router) messageStorageSize() float64 {

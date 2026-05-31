@@ -3129,6 +3129,64 @@ func TestMessageGetRequestListPreservesInsertionOrderForEqualSizes(t *testing.T)
 	}
 }
 
+func TestMessageGetRequestListPreservesInsertionOrderWhenEqualSizesShareTimestamp(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.EnablePropagation()
+
+	sharedNow := time.Unix(1_700_000_000, 0).UTC()
+	router.now = func() time.Time { return sharedNow }
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+
+	var firstID, secondID []byte
+	for i := 0; i < 256; i++ {
+		firstPayload := append(append([]byte{}, remoteDestinationHash...), bytes.Repeat([]byte{byte(i)}, 8)...)
+		secondPayload := append(append([]byte{}, remoteDestinationHash...), bytes.Repeat([]byte{byte(i + 1)}, 8)...)
+		candidateFirst := rns.FullHash(firstPayload)
+		candidateSecond := rns.FullHash(secondPayload)
+		if bytes.Compare(candidateFirst, candidateSecond) > 0 {
+			firstID = router.storePropagationMessageStamped(remoteDestinationHash, firstPayload, bytes.Repeat([]byte{0x7a}, StampSize), 1, nil)
+			secondID = router.storePropagationMessageStamped(remoteDestinationHash, secondPayload, bytes.Repeat([]byte{0x7a}, StampSize), 1, nil)
+			break
+		}
+	}
+	if len(firstID) == 0 || len(secondID) == 0 {
+		t.Fatal("failed to find transient IDs whose lexical order differs from insertion order")
+	}
+
+	request, err := msgpack.Pack([]any{nil, nil})
+	if err != nil {
+		t.Fatalf("Pack list request: %v", err)
+	}
+
+	response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
+	available, ok := response.([]any)
+	if !ok {
+		t.Fatalf("response type=%T want=[]any", response)
+	}
+	if len(available) != 2 {
+		t.Fatalf("available len=%v want=2", len(available))
+	}
+
+	gotFirst, ok := available[0].([]byte)
+	if !ok {
+		t.Fatalf("available[0] type=%T want=[]byte", available[0])
+	}
+	gotSecond, ok := available[1].([]byte)
+	if !ok {
+		t.Fatalf("available[1] type=%T want=[]byte", available[1])
+	}
+	if !bytes.Equal(gotFirst, firstID) || !bytes.Equal(gotSecond, secondID) {
+		t.Fatalf("available=%x,%x want=%x,%x", gotFirst, gotSecond, firstID, secondID)
+	}
+}
+
 func TestMessageGetRequestPurgeRemovesPersistedFile(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
