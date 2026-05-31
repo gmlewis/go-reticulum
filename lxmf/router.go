@@ -75,9 +75,10 @@ type Router struct {
 	locallyDeliveredIDs  map[string]time.Time
 	locallyProcessedIDs  map[string]time.Time
 
-	pendingOutbound       []*Message
-	pendingDeferredStamps map[string]*Message
-	peerDistributionQueue []peerDistributionEntry
+	pendingOutbound         []*Message
+	pendingDeferredStamps   map[string]*Message
+	pendingDeferredStampSeq uint64
+	peerDistributionQueue   []peerDistributionEntry
 
 	deliveryCallback func(*Message)
 
@@ -1708,6 +1709,8 @@ func (r *Router) HandleOutbound(message *Message) error {
 	queueDeferred := message.DeferStamp || (message.DesiredMethod == MethodPropagated && message.DeferPropagationStamp)
 	r.mu.Lock()
 	if queueDeferred {
+		r.pendingDeferredStampSeq++
+		message.deferredStampOrder = r.pendingDeferredStampSeq
 		r.pendingDeferredStamps[string(message.MessageID)] = message
 	} else {
 		r.pendingOutbound = append(r.pendingOutbound, message)
@@ -2029,12 +2032,25 @@ func (r *Router) ProcessDeferredStamps() {
 		return
 	}
 	r.processingDeferredStamps = true
-	keys := make([]string, 0, len(r.pendingDeferredStamps))
-	for messageID := range r.pendingDeferredStamps {
-		keys = append(keys, messageID)
+	selectedMessageID := ""
+	selectedOrder := ^uint64(0)
+	for messageID, message := range r.pendingDeferredStamps {
+		if message == nil || message.deferredStampOrder == 0 {
+			continue
+		}
+		if selectedMessageID == "" || message.deferredStampOrder < selectedOrder {
+			selectedMessageID = messageID
+			selectedOrder = message.deferredStampOrder
+		}
 	}
-	sort.Strings(keys)
-	selectedMessageID := keys[0]
+	if selectedMessageID == "" {
+		keys := make([]string, 0, len(r.pendingDeferredStamps))
+		for messageID := range r.pendingDeferredStamps {
+			keys = append(keys, messageID)
+		}
+		sort.Strings(keys)
+		selectedMessageID = keys[0]
+	}
 	selected := r.pendingDeferredStamps[selectedMessageID]
 	r.mu.Unlock()
 

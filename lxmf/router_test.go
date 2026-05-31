@@ -655,6 +655,55 @@ func TestDeferredPropagationStamps(t *testing.T) {
 	}
 }
 
+func TestDeferredStampsPreserveInsertionOrder(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	stampCost := 1
+	first := mustTestNewMessage(t, destination, sourceDest, "first", "title", nil)
+	first.StampCost = &stampCost
+	second := mustTestNewMessage(t, destination, sourceDest, "second", "title", nil)
+	second.StampCost = &stampCost
+
+	if err := router.HandleOutbound(first); err != nil {
+		t.Fatalf("HandleOutbound(first): %v", err)
+	}
+	if err := router.HandleOutbound(second); err != nil {
+		t.Fatalf("HandleOutbound(second): %v", err)
+	}
+
+	firstOriginalKey := string(first.MessageID)
+	first.MessageID = bytes.Repeat([]byte{0xff}, len(first.MessageID))
+	delete(router.pendingDeferredStamps, firstOriginalKey)
+	router.pendingDeferredStamps[string(first.MessageID)] = first
+
+	secondOriginalKey := string(second.MessageID)
+	second.MessageID = bytes.Repeat([]byte{0x00}, len(second.MessageID))
+	delete(router.pendingDeferredStamps, secondOriginalKey)
+	router.pendingDeferredStamps[string(second.MessageID)] = second
+
+	router.ProcessDeferredStamps()
+
+	if got := len(router.pendingOutbound); got != 1 {
+		t.Fatalf("pendingOutbound length after processing=%v want=1", got)
+	}
+	if router.pendingOutbound[0] != first {
+		t.Fatal("expected first inserted deferred message to be processed first")
+	}
+	if _, ok := router.pendingDeferredStamps[string(second.MessageID)]; !ok {
+		t.Fatal("expected second deferred message to remain queued")
+	}
+}
+
 func TestDeferredOutboundProgress(t *testing.T) {
 	t.Parallel()
 

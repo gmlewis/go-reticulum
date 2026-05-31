@@ -83,6 +83,8 @@ type Message struct {
 	// StampGenerationFailed tracks Python's deferred-stamp failure marker.
 	StampGenerationFailed bool
 
+	deferredStampOrder uint64
+
 	// State tracks the current lifecycle state of the message.
 	State int
 
