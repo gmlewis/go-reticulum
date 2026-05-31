@@ -978,6 +978,7 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 		type availableEntry struct {
 			transientID []byte
 			size        int
+			receivedAt  time.Time
 		}
 		availableMessages := make([]availableEntry, 0)
 		for transientID, entry := range r.propagationEntries {
@@ -991,10 +992,17 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 			availableMessages = append(availableMessages, availableEntry{
 				transientID: []byte(transientID),
 				size:        messageSize,
+				receivedAt:  entry.receivedAt,
 			})
 		}
 		sort.Slice(availableMessages, func(i, j int) bool {
-			return availableMessages[i].size < availableMessages[j].size
+			if availableMessages[i].size != availableMessages[j].size {
+				return availableMessages[i].size < availableMessages[j].size
+			}
+			if !availableMessages[i].receivedAt.Equal(availableMessages[j].receivedAt) {
+				return availableMessages[i].receivedAt.Before(availableMessages[j].receivedAt)
+			}
+			return bytes.Compare(availableMessages[i].transientID, availableMessages[j].transientID) < 0
 		})
 		available := make([]any, 0, len(availableMessages))
 		for _, entry := range availableMessages {
@@ -1094,6 +1102,13 @@ func propagationEntryResponsePayload(entry *propagationEntry) ([]byte, bool) {
 			}
 			return append([]byte{}, fileData[:len(fileData)-StampSize]...), true
 		}
+		if len(entry.destinationHash) > 0 && len(fileData) >= len(entry.destinationHash) && bytes.Equal(fileData[:len(entry.destinationHash)], entry.destinationHash) {
+			return append([]byte{}, fileData[len(entry.destinationHash):]...), true
+		}
+		if len(fileData) >= DestinationLength {
+			return append([]byte{}, fileData[DestinationLength:]...), true
+		}
+		return append([]byte{}, fileData...), true
 	}
 	return append([]byte{}, entry.payload...), true
 }

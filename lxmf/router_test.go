@@ -3084,6 +3084,51 @@ func TestMessageGetRequestListAndFetch(t *testing.T) {
 	}
 }
 
+func TestMessageGetRequestListPreservesInsertionOrderForEqualSizes(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.EnablePropagation()
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+
+	firstID := router.storePropagationMessageStamped(remoteDestinationHash, append(append([]byte{}, remoteDestinationHash...), bytes.Repeat([]byte("a"), 8)...), bytes.Repeat([]byte{0x7a}, StampSize), 1, nil)
+	time.Sleep(time.Millisecond)
+	secondID := router.storePropagationMessageStamped(remoteDestinationHash, append(append([]byte{}, remoteDestinationHash...), bytes.Repeat([]byte("b"), 8)...), bytes.Repeat([]byte{0x7a}, StampSize), 1, nil)
+	time.Sleep(time.Millisecond)
+	thirdID := router.storePropagationMessageStamped(remoteDestinationHash, append(append([]byte{}, remoteDestinationHash...), bytes.Repeat([]byte("c"), 12)...), bytes.Repeat([]byte{0x7a}, StampSize), 1, nil)
+
+	request, err := msgpack.Pack([]any{nil, nil})
+	if err != nil {
+		t.Fatalf("Pack list request: %v", err)
+	}
+
+	want := [][]byte{firstID, secondID, thirdID}
+	for i := 0; i < 64; i++ {
+		response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
+		available, ok := response.([]any)
+		if !ok {
+			t.Fatalf("response type=%T want=[]any", response)
+		}
+		if len(available) != len(want) {
+			t.Fatalf("available len=%v want=%v", len(available), len(want))
+		}
+		for j, wantID := range want {
+			gotID, ok := available[j].([]byte)
+			if !ok {
+				t.Fatalf("available[%v] type=%T want=[]byte", j, available[j])
+			}
+			if !bytes.Equal(gotID, wantID) {
+				t.Fatalf("iteration %v available[%v]=%x want=%x", i, j, gotID, wantID)
+			}
+		}
+	}
+}
+
 func TestMessageGetRequestPurgeRemovesPersistedFile(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -3560,6 +3605,52 @@ func TestMessageGetRequestZeroStampPersistedWantedFileUsesCurrentFileBytes(t *te
 	}
 	if len(gotPayload) != 0 {
 		t.Fatalf("payload=%x want empty", gotPayload)
+	}
+	if router.clientPropagationMessagesServed != 1 {
+		t.Fatalf("clientPropagationMessagesServed=%v want=1", router.clientPropagationMessagesServed)
+	}
+}
+
+func TestMessageGetRequestUnstampedPersistedWantedFileUsesCurrentFileBytes(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.EnablePropagation()
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+	transientID := router.storePropagationMessage(remoteDestinationHash, []byte("payload"))
+	entry := router.propagationEntries[string(transientID)]
+	if entry == nil || entry.path == "" {
+		t.Fatalf("expected persisted propagation entry for %x", transientID)
+	}
+	replacement := append(append([]byte{}, remoteDestinationHash...), []byte("replacement")...)
+	if err := os.WriteFile(entry.path, replacement, 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", entry.path, err)
+	}
+
+	request, err := msgpack.Pack([]any{[]any{transientID}, nil})
+	if err != nil {
+		t.Fatalf("Pack request: %v", err)
+	}
+
+	response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
+	payloads, ok := response.([]any)
+	if !ok {
+		t.Fatalf("response type=%T want=[]any", response)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("payloads len=%v want=1", len(payloads))
+	}
+	gotPayload, ok := payloads[0].([]byte)
+	if !ok {
+		t.Fatalf("payload type=%T want=[]byte", payloads[0])
+	}
+	if string(gotPayload) != "replacement" {
+		t.Fatalf("payload=%q want=%q", gotPayload, "replacement")
 	}
 	if router.clientPropagationMessagesServed != 1 {
 		t.Fatalf("clientPropagationMessagesServed=%v want=1", router.clientPropagationMessagesServed)
