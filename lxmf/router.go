@@ -1351,38 +1351,22 @@ func parseLimitBytes(values []any, index int) (int, bool) {
 	case int64:
 		return int(n * 1000), true
 	case string:
-		parsed, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
-		if err != nil {
-			return 0, false
-		}
-		return limitBytesFromFloat64(parsed)
+		return parseLimitString(n)
 	case []byte:
-		parsed, err := strconv.ParseFloat(strings.TrimSpace(string(n)), 64)
-		if err != nil {
-			return 0, false
-		}
-		return limitBytesFromFloat64(parsed)
+		return parseLimitString(string(n))
 	default:
 		rv := reflect.ValueOf(v)
 		if rv.IsValid() {
 			switch rv.Kind() {
 			case reflect.String:
-				parsed, err := strconv.ParseFloat(strings.TrimSpace(rv.String()), 64)
-				if err != nil {
-					return 0, false
-				}
-				return limitBytesFromFloat64(parsed)
+				return parseLimitString(rv.String())
 			case reflect.Array, reflect.Slice:
 				if isRawByteSequenceType(rv.Type()) {
 					payload, ok := bytesResponsePayload(v)
 					if !ok {
 						return 0, false
 					}
-					parsed, err := strconv.ParseFloat(strings.TrimSpace(string(payload)), 64)
-					if err != nil {
-						return 0, false
-					}
-					return limitBytesFromFloat64(parsed)
+					return parseLimitString(string(payload))
 				}
 			}
 		}
@@ -1390,9 +1374,39 @@ func parseLimitBytes(values []any, index int) (int, bool) {
 	}
 }
 
+func parseLimitString(value string) (int, bool) {
+	trimmed := strings.TrimSpace(value)
+	switch {
+	case strings.EqualFold(trimmed, "inf"), strings.EqualFold(trimmed, "+inf"),
+		strings.EqualFold(trimmed, "infinity"), strings.EqualFold(trimmed, "+infinity"):
+		return math.MaxInt, true
+	case strings.EqualFold(trimmed, "-inf"), strings.EqualFold(trimmed, "-infinity"):
+		return math.MinInt, true
+	}
+	parsed, err := strconv.ParseFloat(trimmed, 64)
+	if err != nil {
+		return 0, false
+	}
+	return limitBytesFromFloat64(parsed)
+}
+
 func limitBytesFromFloat64(value float64) (int, bool) {
 	if math.IsNaN(value) {
 		return 0, false
+	}
+	if math.IsInf(value, 1) {
+		return math.MaxInt, true
+	}
+	if math.IsInf(value, -1) {
+		return math.MinInt, true
+	}
+	maxLimit := float64(math.MaxInt) / 1000
+	minLimit := float64(math.MinInt) / 1000
+	if value >= maxLimit {
+		return math.MaxInt, true
+	}
+	if value <= minLimit {
+		return math.MinInt, true
 	}
 	return int(value * 1000), true
 }

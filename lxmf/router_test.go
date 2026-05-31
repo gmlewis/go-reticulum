@@ -4370,6 +4370,101 @@ func TestMessageGetRequestMixedWantsAbortWithoutServing(t *testing.T) {
 	}
 }
 
+func TestMessageGetRequestScalarWantsAndHavesReturnNil(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		wants   any
+		haves   any
+		wantNil bool
+	}{
+		{name: "scalar int wants", wants: 1, haves: nil, wantNil: true},
+		{name: "scalar int haves", wants: nil, haves: 1, wantNil: true},
+		{name: "scalar bool wants", wants: true, haves: nil, wantNil: true},
+		{name: "scalar bool haves", wants: nil, haves: false, wantNil: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+			router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+			request, err := msgpack.Pack([]any{tc.wants, tc.haves})
+			if err != nil {
+				t.Fatalf("Pack request: %v", err)
+			}
+
+			remoteIdentity := mustTestNewIdentity(t, true)
+			if response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now()); response != nil {
+				t.Fatalf("response=%#v want nil", response)
+			}
+		})
+	}
+}
+
+func TestMessageGetRequestNumericSlicesAndArraysReturnEmptyList(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		wants any
+		haves any
+	}{
+		{name: "int slice wants", wants: []int{1, 2}, haves: nil},
+		{name: "int64 slice wants", wants: []int64{1, 2}, haves: nil},
+		{name: "int array haves", wants: nil, haves: [2]int{1, 2}},
+		{name: "uint slice haves", wants: nil, haves: []uint{1, 2}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+			router := mustTestNewRouter(t, ts, nil, tmpDir)
+			router.EnablePropagation()
+
+			remoteIdentity := mustTestNewIdentity(t, true)
+			remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+			transientID := router.storePropagationMessage(remoteDestinationHash, []byte("persisted-payload"))
+			entry := router.propagationEntries[string(transientID)]
+			if entry == nil || entry.path == "" {
+				t.Fatalf("expected persisted propagation entry for %x", transientID)
+			}
+
+			request, err := msgpack.Pack([]any{tc.wants, tc.haves})
+			if err != nil {
+				t.Fatalf("Pack request: %v", err)
+			}
+
+			response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
+			payloads, ok := response.([]any)
+			if !ok {
+				t.Fatalf("response type=%T want=[]any", response)
+			}
+			if len(payloads) != 0 {
+				t.Fatalf("payloads len=%v want=0", len(payloads))
+			}
+			if _, exists := router.propagationEntries[string(transientID)]; !exists {
+				t.Fatal("expected stored message to remain after numeric wants/haves no-op")
+			}
+			if _, err := os.Stat(entry.path); err != nil {
+				t.Fatalf("expected persisted message file to remain, Stat() error = %v", err)
+			}
+			if router.clientPropagationMessagesServed != 0 {
+				t.Fatalf("clientPropagationMessagesServed=%v want=0", router.clientPropagationMessagesServed)
+			}
+		})
+	}
+}
+
 type assertErr string
 
 func (e assertErr) Error() string {
