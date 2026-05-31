@@ -4155,6 +4155,37 @@ func TestMessageGetRequestExtRootsReturnNil(t *testing.T) {
 	}
 }
 
+func TestMessageGetRequestExtWantsAndHavesReturnEmptyList(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	tests := []struct {
+		name    string
+		request []byte
+	}{
+		{name: "ext wants", request: []byte{0x92, 0xd4, 0x01, 0x61, 0x90}},
+		{name: "ext haves", request: []byte{0x92, 0x90, 0xd4, 0x01, 0x61}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			response := router.messageGetRequest("", tc.request, nil, nil, remoteIdentity, time.Now())
+			available, ok := response.([]any)
+			if !ok {
+				t.Fatalf("response type=%T want=[]any", response)
+			}
+			if len(available) != 0 {
+				t.Fatalf("response len=%v want=0", len(available))
+			}
+		})
+	}
+}
+
 func TestMessageGetRequestBytesRootsReturnNil(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)

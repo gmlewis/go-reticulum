@@ -1194,6 +1194,8 @@ func messageGetRequestEntries(value any) ([]any, bool) {
 	switch typed := value.(type) {
 	case nil:
 		return nil, true
+	case msgpack.Ext:
+		return []any{int64(typed.Type), append([]byte{}, typed.Data...)}, true
 	case msgpack.OrderedMap:
 		entries := make([]any, 0, len(typed))
 		for _, entry := range typed {
