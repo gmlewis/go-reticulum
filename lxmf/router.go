@@ -1866,7 +1866,7 @@ func (r *Router) ProcessOutbound() {
 			continue
 		}
 
-		if message.DeliveryAttempts >= maxDeliveryAttempts {
+		if sendMethod != MethodPropagated && message.DeliveryAttempts >= maxDeliveryAttempts {
 			// If TryPropagationOnFail is set and a propagation node is
 			// available, switch to propagated delivery instead of failing.
 			// Mirrors Python's fail_message → try_propagation_on_fail logic.
@@ -1889,6 +1889,10 @@ func (r *Router) ProcessOutbound() {
 		if sendMethod == MethodPropagated {
 			if r.outboundPropagationNode == nil {
 				log.Printf("No outbound propagation node for propagated message to %x", destinationHash)
+				r.failMessageLocked(message)
+				continue
+			}
+			if message.DeliveryAttempts > maxDeliveryAttempts {
 				r.failMessageLocked(message)
 				continue
 			}
@@ -1926,48 +1930,48 @@ func (r *Router) ProcessOutbound() {
 			}
 
 			message.setDeliveryDestination(nil)
-			if !r.hasPath(r.outboundPropagationNode) {
-				_ = r.requestPath(r.outboundPropagationNode)
-				message.DeliveryAttempts++
-				message.NextDeliveryAttempt = float64(r.now().Add(pathRequestWait).UnixNano()) / 1e9
-				remaining = append(remaining, message)
-				continue
-			}
-
 			message.DeliveryAttempts++
 			message.NextDeliveryAttempt = float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
-
-			peerIdentity := r.transport.Recall(r.outboundPropagationNode)
-			if peerIdentity == nil {
-				log.Printf("Cannot recall identity for propagation node %x", r.outboundPropagationNode)
-				r.failMessageLocked(message)
-				continue
-			}
-
-			dest, err := rns.NewDestination(r.transport, peerIdentity, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
-			if err != nil {
-				log.Printf("Cannot create destination for propagation node: %v", err)
-				remaining = append(remaining, message)
-				continue
-			}
-
-			link, err := r.newLink(r.transport, dest)
-			if err != nil {
-				log.Printf("Cannot establish link to propagation node: %v", err)
-				remaining = append(remaining, message)
-				continue
-			}
-
-			r.configureOutboundPropagationLink(link)
-			r.setLinkEstablishedCallback(link, func(_ *rns.Link) {
-				r.ProcessOutbound()
-			})
-			r.outboundPropagationLink = link
-			if err := r.establishLink(link); err != nil {
-				if r.outboundPropagationLink == link {
-					r.outboundPropagationLink = nil
+			if message.DeliveryAttempts < maxDeliveryAttempts {
+				if !r.hasPath(r.outboundPropagationNode) {
+					_ = r.requestPath(r.outboundPropagationNode)
+					message.NextDeliveryAttempt = float64(r.now().Add(pathRequestWait).UnixNano()) / 1e9
+					remaining = append(remaining, message)
+					continue
 				}
-				log.Printf("Cannot establish link to propagation node: %v", err)
+
+				peerIdentity := r.transport.Recall(r.outboundPropagationNode)
+				if peerIdentity == nil {
+					log.Printf("Cannot recall identity for propagation node %x", r.outboundPropagationNode)
+					r.failMessageLocked(message)
+					continue
+				}
+
+				dest, err := rns.NewDestination(r.transport, peerIdentity, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+				if err != nil {
+					log.Printf("Cannot create destination for propagation node: %v", err)
+					remaining = append(remaining, message)
+					continue
+				}
+
+				link, err := r.newLink(r.transport, dest)
+				if err != nil {
+					log.Printf("Cannot establish link to propagation node: %v", err)
+					remaining = append(remaining, message)
+					continue
+				}
+
+				r.configureOutboundPropagationLink(link)
+				r.setLinkEstablishedCallback(link, func(_ *rns.Link) {
+					r.ProcessOutbound()
+				})
+				r.outboundPropagationLink = link
+				if err := r.establishLink(link); err != nil {
+					if r.outboundPropagationLink == link {
+						r.outboundPropagationLink = nil
+					}
+					log.Printf("Cannot establish link to propagation node: %v", err)
+				}
 			}
 			remaining = append(remaining, message)
 			continue

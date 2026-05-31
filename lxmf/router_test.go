@@ -9866,6 +9866,61 @@ func TestProcessOutboundPropagatedActiveLinkUsesPropagationLink(t *testing.T) {
 	}
 }
 
+func TestProcessOutboundPropagatedActiveLinkUsesPropagationLinkAtRetryLimit(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	propNodeID := mustTestNewIdentity(t, true)
+	propNodeDest := mustTestNewDestination(t, ts, propNodeID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+	msg.DesiredMethod = MethodPropagated
+	msg.DeferPropagationStamp = false
+	msg.DeliveryAttempts = maxDeliveryAttempts
+	if err := router.SetOutboundPropagationNode(propNodeDest.Hash); err != nil {
+		t.Fatal(err)
+	}
+	router.outboundPropagationLink, _ = rns.NewLink(ts, propNodeDest)
+	router.linkStatus = func(link *rns.Link) int {
+		if link == router.outboundPropagationLink {
+			return rns.LinkActive
+		}
+		return link.GetStatus()
+	}
+	router.hasPath = func(_ []byte) bool { t.Fatal("did not expect path lookup with active propagation link"); return false }
+	router.requestPath = func(_ []byte) error { t.Fatal("did not expect path request with active propagation link"); return nil }
+
+	sendCount := 0
+	router.sendPacket = func(packet *rns.Packet) error {
+		sendCount++
+		if packet.Destination != router.outboundPropagationLink {
+			t.Fatal("expected packet destination to be the active propagation link")
+		}
+		if !bytes.Equal(packet.Data, msg.PropagationPacked) {
+			t.Fatal("expected propagated packet payload")
+		}
+		return nil
+	}
+
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+
+	if sendCount != 1 {
+		t.Fatalf("send count=%v want=1", sendCount)
+	}
+	if msg.State != StateSent {
+		t.Fatalf("state=%v want=%v", msg.State, StateSent)
+	}
+}
+
 func TestProcessOutboundPropagatedPendingLinkWaits(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -10006,6 +10061,62 @@ func TestProcessOutboundPropagatedClosedLinkClearsAndRetries(t *testing.T) {
 	}
 	if router.outboundPropagationLink != freshLink {
 		t.Fatal("expected retry to install a fresh propagation link")
+	}
+}
+
+func TestProcessOutboundPropagatedFinalPathlessRetryDoesNotRequestPath(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+	msg.DesiredMethod = MethodPropagated
+	msg.DeferPropagationStamp = false
+	msg.DeliveryAttempts = maxDeliveryAttempts - 1
+
+	propNodeID := mustTestNewIdentity(t, true)
+	propNodeDest := mustTestNewDestination(t, ts, propNodeID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+	ts.Remember(nil, propNodeDest.Hash, propNodeID.GetPublicKey(), nil)
+	if err := router.SetOutboundPropagationNode(propNodeDest.Hash); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Unix(1700000000, 0)
+	router.now = func() time.Time { return now }
+	router.hasPath = func(_ []byte) bool { return false }
+	requestCount := 0
+	router.requestPath = func(_ []byte) error { requestCount++; return nil }
+	router.sendPacket = func(_ *rns.Packet) error {
+		t.Fatal("sendPacket should not be called when propagated path is unavailable")
+		return nil
+	}
+
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+
+	if requestCount != 0 {
+		t.Fatalf("request path count=%v want=0", requestCount)
+	}
+	if msg.DeliveryAttempts != maxDeliveryAttempts {
+		t.Fatalf("attempts=%v want=%v", msg.DeliveryAttempts, maxDeliveryAttempts)
+	}
+	wantNext := float64(now.Add(deliveryRetryWait).UnixNano()) / 1e9
+	if msg.NextDeliveryAttempt != wantNext {
+		t.Fatalf("next delivery attempt=%v want=%v", msg.NextDeliveryAttempt, wantNext)
+	}
+	if msg.State != StateOutbound {
+		t.Fatalf("state=%v want=%v", msg.State, StateOutbound)
+	}
+	if len(router.pendingOutbound) != 1 {
+		t.Fatalf("pending outbound=%v want=1", len(router.pendingOutbound))
 	}
 }
 
