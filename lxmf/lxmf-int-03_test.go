@@ -9,6 +9,7 @@
 package lxmf
 
 import (
+	"bytes"
 	"encoding/hex"
 	"os"
 	"os/exec"
@@ -206,6 +207,114 @@ with open(response_low_path, "wb") as f:
 	f.write(msgpack.packb(response_low))
 with open(response_high_path, "wb") as f:
 	f.write(msgpack.packb(response_high))
+`
+
+const lxmfRunMessageGetTrueLimitPy = `import LXMF
+import LXMF.LXStamper as LXStamper
+import RNS
+import RNS.vendor.umsgpack as msgpack
+import os
+import sys
+import time
+
+if len(sys.argv) != 6:
+	print("ERROR: missing args")
+	sys.exit(1)
+
+response_true_path = sys.argv[1]
+response_float_path = sys.argv[2]
+store_dir = sys.argv[3]
+id_small = bytes.fromhex(sys.argv[4])
+id_large = bytes.fromhex(sys.argv[5])
+
+config_dir = os.path.join(store_dir, "rnsconfig")
+if not os.path.exists(config_dir): os.makedirs(config_dir)
+with open(os.path.join(config_dir, "config"), "w") as f:
+	f.write("[reticulum]\nshare_instance = No\n")
+RNS.Reticulum(configdir=config_dir)
+router = LXMF.LXMRouter(storagepath=store_dir)
+remote_identity = RNS.Identity()
+remote_destination = RNS.Destination(remote_identity, RNS.Destination.OUT, RNS.Destination.SINGLE, LXMF.APP_NAME, "delivery")
+
+stamp = bytes(LXStamper.STAMP_SIZE)
+small_payload = b"small"
+large_payload = b"L" * 350
+
+small_path = os.path.join(store_dir, "small.msg")
+large_path = os.path.join(store_dir, "large.msg")
+
+with open(small_path, "wb") as f:
+	f.write(small_payload + stamp)
+with open(large_path, "wb") as f:
+	f.write(large_payload + stamp)
+
+router.propagation_entries[id_small] = [remote_destination.hash, small_path]
+router.propagation_entries[id_large] = [remote_destination.hash, large_path]
+
+request_true = [[id_small, id_large], None, True]
+request_float = [[id_small, id_large], None, 1.0]
+
+response_true = router.message_get_request("", request_true, None, remote_identity, time.time())
+response_float = router.message_get_request("", request_float, None, remote_identity, time.time())
+
+with open(response_true_path, "wb") as f:
+	f.write(msgpack.packb(response_true))
+with open(response_float_path, "wb") as f:
+	f.write(msgpack.packb(response_float))
+`
+
+const lxmfRunMessageGetNegativeLimitPy = `import LXMF
+import LXMF.LXStamper as LXStamper
+import RNS
+import RNS.vendor.umsgpack as msgpack
+import os
+import sys
+import time
+
+if len(sys.argv) != 6:
+	print("ERROR: missing args")
+	sys.exit(1)
+
+response_int_path = sys.argv[1]
+response_float_path = sys.argv[2]
+store_dir = sys.argv[3]
+id_small = bytes.fromhex(sys.argv[4])
+id_large = bytes.fromhex(sys.argv[5])
+
+config_dir = os.path.join(store_dir, "rnsconfig")
+if not os.path.exists(config_dir): os.makedirs(config_dir)
+with open(os.path.join(config_dir, "config"), "w") as f:
+	f.write("[reticulum]\nshare_instance = No\n")
+RNS.Reticulum(configdir=config_dir)
+router = LXMF.LXMRouter(storagepath=store_dir)
+remote_identity = RNS.Identity()
+remote_destination = RNS.Destination(remote_identity, RNS.Destination.OUT, RNS.Destination.SINGLE, LXMF.APP_NAME, "delivery")
+
+stamp = bytes(LXStamper.STAMP_SIZE)
+small_payload = b"small"
+large_payload = b"L" * 350
+
+small_path = os.path.join(store_dir, "small.msg")
+large_path = os.path.join(store_dir, "large.msg")
+
+with open(small_path, "wb") as f:
+	f.write(small_payload + stamp)
+with open(large_path, "wb") as f:
+	f.write(large_payload + stamp)
+
+router.propagation_entries[id_small] = [remote_destination.hash, small_path]
+router.propagation_entries[id_large] = [remote_destination.hash, large_path]
+
+request_int = [[id_small, id_large], None, -1]
+request_float = [[id_small, id_large], None, -1.0]
+
+response_int = router.message_get_request("", request_int, None, remote_identity, time.time())
+response_float = router.message_get_request("", request_float, None, remote_identity, time.time())
+
+with open(response_int_path, "wb") as f:
+	f.write(msgpack.packb(response_int))
+with open(response_float_path, "wb") as f:
+	f.write(msgpack.packb(response_float))
 `
 
 const lxmfRunMessageGetAccessPy = `import LXMF
@@ -1304,6 +1413,245 @@ func TestIntegrationPropagationMessageGetDuplicateAccountingPythonToGo(t *testin
 	}
 	if len(goHigh) != 2 {
 		t.Fatalf("high duplicate response len=%v want=2", len(goHigh))
+	}
+}
+
+func TestIntegrationPropagationMessageGetTrueLimitPythonToGo(t *testing.T) {
+	t.Parallel()
+	testutils.SkipShortIntegration(t)
+	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
+
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	scriptPath := filepath.Join(tmpDir, "run_message_get_true_limit.py")
+	if err := os.WriteFile(scriptPath, []byte(lxmfRunMessageGetTrueLimitPy), 0o644); err != nil {
+		t.Fatalf("write python script: %v", err)
+	}
+
+	responseTruePath := filepath.Join(tmpDir, "response_true.msgpack")
+	responseFloatPath := filepath.Join(tmpDir, "response_float.msgpack")
+	storeDir := filepath.Join(tmpDir, "py-store")
+	if err := os.MkdirAll(storeDir, 0o755); err != nil {
+		t.Fatalf("mkdir store dir: %v", err)
+	}
+
+	smallPayload := []byte("small")
+	largePayload := bytes.Repeat([]byte("L"), 350)
+	idSmall := rns.FullHash(smallPayload)
+	idLarge := rns.FullHash(largePayload)
+
+	cmd := exec.Command(
+		"python3",
+		scriptPath,
+		responseTruePath,
+		responseFloatPath,
+		storeDir,
+		hex.EncodeToString(idSmall),
+		hex.EncodeToString(idLarge),
+	)
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("python true-limit flow failed: %v output=%v", err, string(out))
+	}
+
+	unpackMessages := func(t *testing.T, path string) []any {
+		t.Helper()
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %q: %v", path, err)
+		}
+		unpacked, err := msgpack.Unpack(data)
+		if err != nil {
+			t.Fatalf("Unpack(%q): %v", path, err)
+		}
+		messages, ok := unpacked.([]any)
+		if !ok {
+			t.Fatalf("unexpected response type %T from %q", unpacked, path)
+		}
+		return messages
+	}
+
+	pythonTrue := unpackMessages(t, responseTruePath)
+	pythonFloat := unpackMessages(t, responseFloatPath)
+	if len(pythonTrue) != len(pythonFloat) {
+		t.Fatalf("python true len=%v want float len=%v", len(pythonTrue), len(pythonFloat))
+	}
+
+	ts := rns.NewTransportSystem(nil)
+	goStoreDir := filepath.Join(tmpDir, "go-store")
+	if err := os.MkdirAll(goStoreDir, 0o755); err != nil {
+		t.Fatalf("mkdir go store dir: %v", err)
+	}
+	router := mustTestNewRouter(t, ts, nil, goStoreDir)
+	router.EnablePropagation()
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+	storedSmall := router.storePropagationMessageStamped(remoteDestinationHash, smallPayload, make([]byte, StampSize), 1, nil)
+	storedLarge := router.storePropagationMessageStamped(remoteDestinationHash, largePayload, make([]byte, StampSize), 1, nil)
+
+	trueRequest, err := msgpack.Pack([]any{[]any{storedSmall, storedLarge}, nil, true})
+	if err != nil {
+		t.Fatalf("Pack true request: %v", err)
+	}
+	floatRequest, err := msgpack.Pack([]any{[]any{storedSmall, storedLarge}, nil, 1.0})
+	if err != nil {
+		t.Fatalf("Pack float request: %v", err)
+	}
+
+	goTrue, ok := router.messageGetRequest("", trueRequest, nil, nil, remoteIdentity, time.Now()).([]any)
+	if !ok {
+		t.Fatalf("unexpected true Go response type %T", router.messageGetRequest("", trueRequest, nil, nil, remoteIdentity, time.Now()))
+	}
+	goFloat, ok := router.messageGetRequest("", floatRequest, nil, nil, remoteIdentity, time.Now()).([]any)
+	if !ok {
+		t.Fatalf("unexpected float Go response type %T", router.messageGetRequest("", floatRequest, nil, nil, remoteIdentity, time.Now()))
+	}
+
+	if len(goTrue) != len(pythonTrue) {
+		t.Fatalf("true response len=%v want=%v", len(goTrue), len(pythonTrue))
+	}
+	if len(goFloat) != len(pythonFloat) {
+		t.Fatalf("float response len=%v want=%v", len(goFloat), len(pythonFloat))
+	}
+	if len(goTrue) != len(goFloat) {
+		t.Fatalf("go true len=%v want float len=%v", len(goTrue), len(goFloat))
+	}
+
+	for i := range goTrue {
+		got, ok := goTrue[i].([]byte)
+		if !ok {
+			t.Fatalf("goTrue[%v] type=%T want=[]byte", i, goTrue[i])
+		}
+		want, ok := pythonTrue[i].([]byte)
+		if !ok {
+			t.Fatalf("pythonTrue[%v] type=%T want=[]byte", i, pythonTrue[i])
+		}
+		if string(got) != string(want) {
+			t.Fatalf("goTrue[%v]=%x want=%x", i, got, want)
+		}
+	}
+	for i := range goFloat {
+		got, ok := goFloat[i].([]byte)
+		if !ok {
+			t.Fatalf("goFloat[%v] type=%T want=[]byte", i, goFloat[i])
+		}
+		want, ok := pythonFloat[i].([]byte)
+		if !ok {
+			t.Fatalf("pythonFloat[%v] type=%T want=[]byte", i, pythonFloat[i])
+		}
+		if string(got) != string(want) {
+			t.Fatalf("goFloat[%v]=%x want=%x", i, got, want)
+		}
+	}
+	if len(goTrue) != 2 {
+		t.Fatalf("true-limit response len=%v want=2", len(goTrue))
+	}
+}
+
+func TestIntegrationPropagationMessageGetNegativeLimitPythonToGo(t *testing.T) {
+	t.Parallel()
+	testutils.SkipShortIntegration(t)
+	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
+
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	scriptPath := filepath.Join(tmpDir, "run_message_get_negative_limit.py")
+	if err := os.WriteFile(scriptPath, []byte(lxmfRunMessageGetNegativeLimitPy), 0o644); err != nil {
+		t.Fatalf("write python script: %v", err)
+	}
+
+	responseIntPath := filepath.Join(tmpDir, "response_int.msgpack")
+	responseFloatPath := filepath.Join(tmpDir, "response_float.msgpack")
+	storeDir := filepath.Join(tmpDir, "py-store")
+	if err := os.MkdirAll(storeDir, 0o755); err != nil {
+		t.Fatalf("mkdir store dir: %v", err)
+	}
+
+	smallPayload := []byte("small")
+	largePayload := bytes.Repeat([]byte("L"), 350)
+	idSmall := rns.FullHash(smallPayload)
+	idLarge := rns.FullHash(largePayload)
+
+	cmd := exec.Command(
+		"python3",
+		scriptPath,
+		responseIntPath,
+		responseFloatPath,
+		storeDir,
+		hex.EncodeToString(idSmall),
+		hex.EncodeToString(idLarge),
+	)
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("python negative-limit flow failed: %v output=%v", err, string(out))
+	}
+
+	unpackMessages := func(t *testing.T, path string) []any {
+		t.Helper()
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %q: %v", path, err)
+		}
+		unpacked, err := msgpack.Unpack(data)
+		if err != nil {
+			t.Fatalf("Unpack(%q): %v", path, err)
+		}
+		messages, ok := unpacked.([]any)
+		if !ok {
+			t.Fatalf("unexpected response type %T from %q", unpacked, path)
+		}
+		return messages
+	}
+
+	pythonInt := unpackMessages(t, responseIntPath)
+	pythonFloat := unpackMessages(t, responseFloatPath)
+	if len(pythonInt) != len(pythonFloat) {
+		t.Fatalf("python int len=%v want float len=%v", len(pythonInt), len(pythonFloat))
+	}
+
+	ts := rns.NewTransportSystem(nil)
+	goStoreDir := filepath.Join(tmpDir, "go-store")
+	if err := os.MkdirAll(goStoreDir, 0o755); err != nil {
+		t.Fatalf("mkdir go store dir: %v", err)
+	}
+	router := mustTestNewRouter(t, ts, nil, goStoreDir)
+	router.EnablePropagation()
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+	storedSmall := router.storePropagationMessageStamped(remoteDestinationHash, smallPayload, make([]byte, StampSize), 1, nil)
+	storedLarge := router.storePropagationMessageStamped(remoteDestinationHash, largePayload, make([]byte, StampSize), 1, nil)
+
+	intRequest, err := msgpack.Pack([]any{[]any{storedSmall, storedLarge}, nil, -1})
+	if err != nil {
+		t.Fatalf("Pack int request: %v", err)
+	}
+	floatRequest, err := msgpack.Pack([]any{[]any{storedSmall, storedLarge}, nil, -1.0})
+	if err != nil {
+		t.Fatalf("Pack float request: %v", err)
+	}
+
+	goInt, ok := router.messageGetRequest("", intRequest, nil, nil, remoteIdentity, time.Now()).([]any)
+	if !ok {
+		t.Fatalf("unexpected int Go response type %T", router.messageGetRequest("", intRequest, nil, nil, remoteIdentity, time.Now()))
+	}
+	goFloat, ok := router.messageGetRequest("", floatRequest, nil, nil, remoteIdentity, time.Now()).([]any)
+	if !ok {
+		t.Fatalf("unexpected float Go response type %T", router.messageGetRequest("", floatRequest, nil, nil, remoteIdentity, time.Now()))
+	}
+
+	if len(goInt) != len(pythonInt) {
+		t.Fatalf("int response len=%v want=%v", len(goInt), len(pythonInt))
+	}
+	if len(goFloat) != len(pythonFloat) {
+		t.Fatalf("float response len=%v want=%v", len(goFloat), len(pythonFloat))
+	}
+	if len(goInt) != len(goFloat) {
+		t.Fatalf("go int len=%v want float len=%v", len(goInt), len(goFloat))
+	}
+	if len(goInt) != 0 {
+		t.Fatalf("negative-limit response len=%v want=0", len(goInt))
 	}
 }
 
