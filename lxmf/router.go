@@ -1271,6 +1271,8 @@ func messageGetRequestRoot(value any) ([]any, bool) {
 			request = append(request, string(r))
 		}
 		return request, true
+	case msgpack.Ext:
+		return []any{int64(root.Type), append([]byte{}, root.Data...)}, true
 	case msgpack.OrderedMap:
 		return messageGetRequestRootFromOrderedMap(root)
 	default:

@@ -4141,6 +4141,20 @@ func TestMessageGetRequestNumericMapRootsBehaveLikeRequestTuples(t *testing.T) {
 	})
 }
 
+func TestMessageGetRequestExtRootsReturnNil(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	request := []byte{0xd4, 0x01, 0x61} // fixext1(type=1, data="a")
+	if response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now()); response != nil {
+		t.Fatalf("response=%#v want nil", response)
+	}
+}
+
 func TestMessageGetRequestBytesRootsReturnNil(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)

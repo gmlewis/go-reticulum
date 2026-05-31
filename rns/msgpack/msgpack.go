@@ -36,24 +36,24 @@ const (
 	bin8         = 0xc4
 	bin16        = 0xc5
 	bin32        = 0xc6
-	// ext8         = 0xc7
-	// ext16        = 0xc8
-	// ext32        = 0xc9
-	float32Val = 0xca
-	float64Val = 0xcb
-	uint8Val   = 0xcc
-	uint16Val  = 0xcd
-	uint32Val  = 0xce
-	uint64Val  = 0xcf
-	int8Val    = 0xd0
-	int16Val   = 0xd1
-	int32Val   = 0xd2
-	int64Val   = 0xd3
-	// fixExt1      = 0xd4
-	// fixExt2      = 0xd5
-	// fixExt4      = 0xd6
-	// fixExt8      = 0xd7
-	// fixExt16     = 0xd8
+	ext8         = 0xc7
+	ext16        = 0xc8
+	ext32        = 0xc9
+	float32Val   = 0xca
+	float64Val   = 0xcb
+	uint8Val     = 0xcc
+	uint16Val    = 0xcd
+	uint32Val    = 0xce
+	uint64Val    = 0xcf
+	int8Val      = 0xd0
+	int16Val     = 0xd1
+	int32Val     = 0xd2
+	int64Val     = 0xd3
+	fixExt1      = 0xd4
+	fixExt2      = 0xd5
+	fixExt4      = 0xd6
+	fixExt8      = 0xd7
+	fixExt16     = 0xd8
 	str8         = 0xd9
 	str16        = 0xda
 	str32        = 0xdb
@@ -403,6 +403,12 @@ type unpackOptions struct {
 
 type binaryMapKey string
 
+// Ext stores a MessagePack extension value.
+type Ext struct {
+	Type int8
+	Data []byte
+}
+
 // OrderedMapEntry is a single entry in an OrderedMap.
 type OrderedMapEntry struct {
 	Key   any
@@ -458,6 +464,24 @@ func unpackWithOptions(r *bytes.Reader, opts unpackOptions) (any, error) {
 			return nil, err
 		}
 		return unpackBin(r, int(l))
+	case b == ext8:
+		l, err := r.ReadByte()
+		if err != nil {
+			return nil, err
+		}
+		return unpackExt(r, int(l))
+	case b == ext16:
+		var l uint16
+		if err := binary.Read(r, binary.BigEndian, &l); err != nil {
+			return nil, err
+		}
+		return unpackExt(r, int(l))
+	case b == ext32:
+		var l uint32
+		if err := binary.Read(r, binary.BigEndian, &l); err != nil {
+			return nil, err
+		}
+		return unpackExt(r, int(l))
 	case b == float32Val:
 		var f float32
 		if err := binary.Read(r, binary.BigEndian, &f); err != nil {
@@ -518,6 +542,16 @@ func unpackWithOptions(r *bytes.Reader, opts unpackOptions) (any, error) {
 			return nil, err
 		}
 		return v, nil
+	case b == fixExt1:
+		return unpackExt(r, 1)
+	case b == fixExt2:
+		return unpackExt(r, 2)
+	case b == fixExt4:
+		return unpackExt(r, 4)
+	case b == fixExt8:
+		return unpackExt(r, 8)
+	case b == fixExt16:
+		return unpackExt(r, 16)
 	case b == str8:
 		l, err := r.ReadByte()
 		if err != nil {
@@ -592,6 +626,18 @@ func unpackBin(r *bytes.Reader, l int) ([]byte, error) {
 	b := make([]byte, l)
 	_, err := io.ReadFull(r, b)
 	return b, err
+}
+
+func unpackExt(r *bytes.Reader, l int) (Ext, error) {
+	typeByte, err := r.ReadByte()
+	if err != nil {
+		return Ext{}, err
+	}
+	data, err := unpackBin(r, l)
+	if err != nil {
+		return Ext{}, err
+	}
+	return Ext{Type: int8(typeByte), Data: data}, nil
 }
 
 func unpackArray(r *bytes.Reader, l int) ([]any, error) {
@@ -698,6 +744,8 @@ func pythonTypeName(value any) string {
 		return "dict"
 	case OrderedMap:
 		return "dict"
+	case Ext:
+		return "Ext"
 	default:
 		return reflect.TypeOf(value).String()
 	}
