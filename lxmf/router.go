@@ -1508,9 +1508,25 @@ func parseLimitBytes(values []any, index int) (int, bool) {
 	case float32:
 		return limitBytesFromFloat64(float64(n))
 	case int:
-		return n * 1000, true
+		return limitBytesFromSignedInt64(int64(n))
+	case int8:
+		return limitBytesFromSignedInt64(int64(n))
+	case int16:
+		return limitBytesFromSignedInt64(int64(n))
+	case int32:
+		return limitBytesFromSignedInt64(int64(n))
 	case int64:
-		return int(n * 1000), true
+		return limitBytesFromSignedInt64(n)
+	case uint:
+		return limitBytesFromUnsignedUint64(uint64(n))
+	case uint8:
+		return limitBytesFromUnsignedUint64(uint64(n))
+	case uint16:
+		return limitBytesFromUnsignedUint64(uint64(n))
+	case uint32:
+		return limitBytesFromUnsignedUint64(uint64(n))
+	case uint64:
+		return limitBytesFromUnsignedUint64(n)
 	case string:
 		return parseLimitString(n)
 	case []byte:
@@ -1570,6 +1586,28 @@ func limitBytesFromFloat64(value float64) (int, bool) {
 		return math.MinInt, true
 	}
 	return int(value * 1000), true
+}
+
+func limitBytesFromSignedInt64(value int64) (int, bool) {
+	const scale = int64(1000)
+	maxLimit := int64(math.MaxInt / 1000)
+	minLimit := int64(math.MinInt / 1000)
+	if value > maxLimit {
+		return math.MaxInt, true
+	}
+	if value < minLimit {
+		return math.MinInt, true
+	}
+	return int(value * scale), true
+}
+
+func limitBytesFromUnsignedUint64(value uint64) (int, bool) {
+	const scale = uint64(1000)
+	maxLimit := uint64(math.MaxInt / 1000)
+	if value > maxLimit {
+		return math.MaxInt, true
+	}
+	return int(value * scale), true
 }
 
 // RegisterDeliveryIdentity sets up the primary identity and associated destination for receiving direct LXMF messages.

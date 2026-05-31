@@ -4186,6 +4186,55 @@ func TestMessageGetRequestExtWantsAndHavesReturnEmptyList(t *testing.T) {
 	}
 }
 
+func TestMessageGetRequestHugeIntegerLimitsServePayload(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.EnablePropagation()
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+	payload := []byte("payload-data")
+	transientID := router.storePropagationMessageStamped(remoteDestinationHash, payload, bytes.Repeat([]byte{0x42}, StampSize), 1, nil)
+
+	tests := []struct {
+		name  string
+		limit any
+	}{
+		{name: "max int64", limit: int64(math.MaxInt64)},
+		{name: "max uint64", limit: uint64(math.MaxUint64)},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			request, err := msgpack.Pack([]any{[]any{transientID}, []any{}, tc.limit})
+			if err != nil {
+				t.Fatalf("Pack request: %v", err)
+			}
+
+			response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
+			messages, ok := response.([]any)
+			if !ok {
+				t.Fatalf("response type=%T want=[]any", response)
+			}
+			if len(messages) != 1 {
+				t.Fatalf("response len=%v want=1", len(messages))
+			}
+			gotPayload, ok := messages[0].([]byte)
+			if !ok {
+				t.Fatalf("messages[0] type=%T want=[]byte", messages[0])
+			}
+			if !bytes.Equal(gotPayload, payload) {
+				t.Fatalf("messages[0]=%x want=%x", gotPayload, payload)
+			}
+		})
+	}
+}
+
 func TestMessageGetRequestBytesRootsReturnNil(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
