@@ -161,6 +161,53 @@ with open(response_high_path, "wb") as f:
 	f.write(msgpack.packb(response_high))
 `
 
+const lxmfRunMessageGetDuplicateAccountingPy = `import LXMF
+import LXMF.LXStamper as LXStamper
+import RNS
+import RNS.vendor.umsgpack as msgpack
+import os
+import sys
+import time
+
+if len(sys.argv) != 7:
+	print("ERROR: missing args")
+	sys.exit(1)
+
+response_low_path = sys.argv[1]
+response_high_path = sys.argv[2]
+store_dir = sys.argv[3]
+transient_id = bytes.fromhex(sys.argv[4])
+payload = bytes.fromhex(sys.argv[5])
+stamp_value = int(sys.argv[6])
+
+config_dir = os.path.join(store_dir, "rnsconfig")
+if not os.path.exists(config_dir): os.makedirs(config_dir)
+with open(os.path.join(config_dir, "config"), "w") as f:
+	f.write("[reticulum]\nshare_instance = No\n")
+RNS.Reticulum(configdir=config_dir)
+router = LXMF.LXMRouter(storagepath=store_dir)
+remote_identity = RNS.Identity()
+remote_destination = RNS.Destination(remote_identity, RNS.Destination.OUT, RNS.Destination.SINGLE, LXMF.APP_NAME, "delivery")
+
+stamp = bytes(LXStamper.STAMP_SIZE)
+entry_path = os.path.join(store_dir, "duplicate.msg")
+with open(entry_path, "wb") as f:
+	f.write(payload + stamp)
+
+router.propagation_entries[transient_id] = [remote_destination.hash, entry_path]
+
+request_low = [[transient_id, transient_id], None, 0.09]
+request_high = [[transient_id, transient_id], None, 0.2]
+
+response_low = router.message_get_request("", request_low, None, remote_identity, time.time())
+response_high = router.message_get_request("", request_high, None, remote_identity, time.time())
+
+with open(response_low_path, "wb") as f:
+	f.write(msgpack.packb(response_low))
+with open(response_high_path, "wb") as f:
+	f.write(msgpack.packb(response_high))
+`
+
 const lxmfRunMessageGetAccessPy = `import LXMF
 import RNS
 import RNS.vendor.umsgpack as msgpack
@@ -1130,6 +1177,133 @@ func TestIntegrationPropagationMessageGetRetryGoToPython(t *testing.T) {
 	}
 	if len(highMessages) != 2 {
 		t.Fatalf("high response len=%v want=2", len(highMessages))
+	}
+}
+
+func TestIntegrationPropagationMessageGetDuplicateAccountingPythonToGo(t *testing.T) {
+	t.Parallel()
+	testutils.SkipShortIntegration(t)
+	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
+
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	scriptPath := filepath.Join(tmpDir, "run_message_get_duplicate_accounting.py")
+	if err := os.WriteFile(scriptPath, []byte(lxmfRunMessageGetDuplicateAccountingPy), 0o644); err != nil {
+		t.Fatalf("write python script: %v", err)
+	}
+
+	payload := []byte("duplicate-payload")
+	transientID := rns.FullHash(payload)
+	responseLowPath := filepath.Join(tmpDir, "response_low.msgpack")
+	responseHighPath := filepath.Join(tmpDir, "response_high.msgpack")
+	storeDir := filepath.Join(tmpDir, "py-store")
+	if err := os.MkdirAll(storeDir, 0o755); err != nil {
+		t.Fatalf("mkdir store dir: %v", err)
+	}
+
+	cmd := exec.Command(
+		"python3",
+		scriptPath,
+		responseLowPath,
+		responseHighPath,
+		storeDir,
+		hex.EncodeToString(transientID),
+		hex.EncodeToString(payload),
+		"1",
+	)
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("python duplicate-accounting flow failed: %v output=%v", err, string(out))
+	}
+
+	unpackMessages := func(t *testing.T, path string) []any {
+		t.Helper()
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %q: %v", path, err)
+		}
+		unpacked, err := msgpack.Unpack(data)
+		if err != nil {
+			t.Fatalf("Unpack(%q): %v", path, err)
+		}
+		messages, ok := unpacked.([]any)
+		if !ok {
+			t.Fatalf("unexpected response type %T from %q", unpacked, path)
+		}
+		return messages
+	}
+
+	pythonLow := unpackMessages(t, responseLowPath)
+	pythonHigh := unpackMessages(t, responseHighPath)
+
+	ts := rns.NewTransportSystem(nil)
+	goStoreDir := filepath.Join(tmpDir, "go-store")
+	if err := os.MkdirAll(goStoreDir, 0o755); err != nil {
+		t.Fatalf("mkdir go store dir: %v", err)
+	}
+	router := mustTestNewRouter(t, ts, nil, goStoreDir)
+	router.EnablePropagation()
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+	storedID := router.storePropagationMessageStamped(remoteDestinationHash, payload, make([]byte, StampSize), 1, nil)
+
+	lowRequest, err := msgpack.Pack([]any{[]any{storedID, storedID}, nil, 0.09})
+	if err != nil {
+		t.Fatalf("Pack low request: %v", err)
+	}
+	highRequest, err := msgpack.Pack([]any{[]any{storedID, storedID}, nil, 0.2})
+	if err != nil {
+		t.Fatalf("Pack high request: %v", err)
+	}
+
+	goLow, ok := router.messageGetRequest("", lowRequest, nil, nil, remoteIdentity, time.Now()).([]any)
+	if !ok {
+		t.Fatalf("unexpected low Go response type %T", router.messageGetRequest("", lowRequest, nil, nil, remoteIdentity, time.Now()))
+	}
+	goHigh, ok := router.messageGetRequest("", highRequest, nil, nil, remoteIdentity, time.Now()).([]any)
+	if !ok {
+		t.Fatalf("unexpected high Go response type %T", router.messageGetRequest("", highRequest, nil, nil, remoteIdentity, time.Now()))
+	}
+
+	if len(goLow) != len(pythonLow) {
+		t.Fatalf("low response len=%v want=%v", len(goLow), len(pythonLow))
+	}
+	if len(goHigh) != len(pythonHigh) {
+		t.Fatalf("high response len=%v want=%v", len(goHigh), len(pythonHigh))
+	}
+
+	for i := range goLow {
+		got, ok := goLow[i].([]byte)
+		if !ok {
+			t.Fatalf("goLow[%v] type=%T want=[]byte", i, goLow[i])
+		}
+		want, ok := pythonLow[i].([]byte)
+		if !ok {
+			t.Fatalf("pythonLow[%v] type=%T want=[]byte", i, pythonLow[i])
+		}
+		if string(got) != string(want) {
+			t.Fatalf("goLow[%v]=%x want=%x", i, got, want)
+		}
+	}
+	for i := range goHigh {
+		got, ok := goHigh[i].([]byte)
+		if !ok {
+			t.Fatalf("goHigh[%v] type=%T want=[]byte", i, goHigh[i])
+		}
+		want, ok := pythonHigh[i].([]byte)
+		if !ok {
+			t.Fatalf("pythonHigh[%v] type=%T want=[]byte", i, pythonHigh[i])
+		}
+		if string(got) != string(want) {
+			t.Fatalf("goHigh[%v]=%x want=%x", i, got, want)
+		}
+	}
+	if len(goLow) != 1 {
+		t.Fatalf("low duplicate response len=%v want=1", len(goLow))
+	}
+	if len(goHigh) != 2 {
+		t.Fatalf("high duplicate response len=%v want=2", len(goHigh))
 	}
 }
 
