@@ -4576,7 +4576,7 @@ func (r *Router) messageGetResponse(receipt *rns.RequestReceipt) {
 	}
 	if len(haves) > 0 {
 		if _, err := r.requestLink(receipt.Link, messageGetPath, []any{nil, haves}, nil, r.messageGetFailed, nil, 0); err != nil {
-			panic(err)
+			log.Printf("Could not send propagation purge acknowledgement: %v", err)
 		}
 	}
 

@@ -7973,7 +7973,7 @@ func TestPropagationSyncMessageGetResponseTracksDuplicatesAndPurges(t *testing.T
 	}
 }
 
-func TestPropagationSyncMessageGetResponsePurgeAckFailureAbortsCompletion(t *testing.T) {
+func TestPropagationSyncMessageGetResponsePurgeAckSendErrorStillCompletes(t *testing.T) {
 	t.Parallel()
 
 	ts := rns.NewTransportSystem(nil)
@@ -8007,32 +8007,29 @@ func TestPropagationSyncMessageGetResponsePurgeAckFailureAbortsCompletion(t *tes
 		return nil, errors.New("boom")
 	}
 
-	defer func() {
-		recovered := recover()
-		if recovered == nil {
-			t.Fatal("messageGetResponse() did not panic")
-		}
-		if got := fmt.Sprint(recovered); got != "boom" {
-			t.Fatalf("panic = %q, want %q", got, "boom")
-		}
-		if router.PropagationTransferState() != PRReceiving {
-			t.Fatalf("state = %v, want PRReceiving", router.PropagationTransferState())
-		}
-		if router.PropagationTransferProgress() != 0.625 {
-			t.Fatalf("progress = %v, want 0.625", router.PropagationTransferProgress())
-		}
-		if got, ok := router.PropagationTransferLastResult(); !ok || got != 9 {
-			t.Fatalf("last result = (%v,%v), want (9,true)", got, ok)
-		}
-		if _, err := os.Stat(filepath.Join(router.storagePath, "local_deliveries")); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("expected no local_deliveries file after purge ack failure, Stat() error = %v", err)
-		}
-	}()
-
 	router.messageGetResponse(&rns.RequestReceipt{
 		Link:     &rns.Link{},
 		Response: []any{msg.Packed},
 	})
+
+	if router.PropagationTransferState() != PRComplete {
+		t.Fatalf("state = %v, want PRComplete", router.PropagationTransferState())
+	}
+	if router.PropagationTransferProgress() != 1.0 {
+		t.Fatalf("progress = %v, want 1.0", router.PropagationTransferProgress())
+	}
+	if got, ok := router.PropagationTransferLastResult(); !ok || got != 1 {
+		t.Fatalf("last result = (%v,%v), want (1,true)", got, ok)
+	}
+	if _, ok := router.locallyDeliveredIDs[string(rns.FullHash(msg.Packed))]; !ok {
+		t.Fatal("expected fresh transient ID in locally delivered cache")
+	}
+	if _, err := os.Stat(filepath.Join(router.storagePath, "local_deliveries")); err != nil {
+		t.Fatalf("expected local_deliveries file after purge send error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(router.storagePath, "locally_processed")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected no locally_processed file after purge send error, Stat() error = %v", err)
+	}
 }
 
 func TestPropagationSyncMessageGetResponseEmptyBytesCompletes(t *testing.T) {
