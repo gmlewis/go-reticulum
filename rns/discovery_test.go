@@ -14321,8 +14321,6 @@ func TestInterfaceAnnouncerStart(t *testing.T) {
 }
 
 func TestInterfaceAnnouncerStopDuringSleepStillAllowsCurrentCycle(t *testing.T) {
-	t.Parallel()
-
 	logger := NewLogger()
 	ts := newAnnounceCaptureTransport(logger)
 	ts.identity = mustTestNewIdentity(t, true)

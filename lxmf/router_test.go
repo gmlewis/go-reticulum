@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -3671,6 +3672,14 @@ func TestMessageGetRequestStringAndBytesTransferLimitCoercion(t *testing.T) {
 		{name: "uint64 one limit", limit: uint64(1), wantCount: 2},
 		{name: "string nan limit", limit: "nan", wantCount: 2},
 		{name: "bytes nan limit", limit: []byte("nan"), wantCount: 2},
+		{name: "string infinity limit", limit: "Infinity", wantCount: 2},
+		{name: "bytes infinity limit", limit: []byte("Infinity"), wantCount: 2},
+		{name: "string negative infinity limit", limit: "-Infinity", wantCount: 0},
+		{name: "bytes negative infinity limit", limit: []byte("-Infinity"), wantCount: 0},
+		{name: "string underscored limit", limit: "1_0", wantCount: 2},
+		{name: "bytes underscored limit", limit: []byte("1_0"), wantCount: 2},
+		{name: "string signed limit", limit: "+0.08", wantCount: 0},
+		{name: "bytes signed limit", limit: []byte("+0.08"), wantCount: 0},
 		{name: "string limit", limit: "0.08", wantCount: 0},
 		{name: "bytes limit", limit: []byte("0.08"), wantCount: 0},
 		{name: "string limit with spaces", limit: " 0.08 ", wantCount: 0},
@@ -3738,6 +3747,39 @@ func TestParseLimitBytesStringAndBytesAliases(t *testing.T) {
 		{name: "bytes alias valid with spaces", value: bytesAlias(" 1.5 "), wantLimit: 1500, wantSet: true},
 		{name: "string alias invalid", value: stringAlias("bad"), wantLimit: 0, wantSet: false},
 		{name: "bytes alias invalid", value: bytesAlias("bad"), wantLimit: 0, wantSet: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			gotLimit, gotSet := parseLimitBytes([]any{nil, nil, tc.value}, 2)
+			if gotLimit != tc.wantLimit || gotSet != tc.wantSet {
+				t.Fatalf("parseLimitBytes() = (%v,%v), want (%v,%v)", gotLimit, gotSet, tc.wantLimit, tc.wantSet)
+			}
+		})
+	}
+}
+
+func TestParseLimitBytesSpecialFloatStrings(t *testing.T) {
+	t.Parallel()
+
+	posInfLimit, posInfSet := limitBytesFromFloat64(math.Inf(1))
+	negInfLimit, negInfSet := limitBytesFromFloat64(math.Inf(-1))
+
+	tests := []struct {
+		name      string
+		value     any
+		wantLimit int
+		wantSet   bool
+	}{
+		{name: "string infinity", value: "Infinity", wantLimit: posInfLimit, wantSet: posInfSet},
+		{name: "bytes infinity", value: []byte("Infinity"), wantLimit: posInfLimit, wantSet: posInfSet},
+		{name: "string negative infinity", value: "-Infinity", wantLimit: negInfLimit, wantSet: negInfSet},
+		{name: "bytes negative infinity", value: []byte("-Infinity"), wantLimit: negInfLimit, wantSet: negInfSet},
+		{name: "string underscored", value: "1_0", wantLimit: 10000, wantSet: true},
+		{name: "bytes underscored", value: []byte("1_0"), wantLimit: 10000, wantSet: true},
+		{name: "string signed", value: "+0.08", wantLimit: 80, wantSet: true},
+		{name: "bytes signed", value: []byte("+0.08"), wantLimit: 80, wantSet: true},
 	}
 
 	for _, tc := range tests {
@@ -4066,6 +4108,139 @@ func TestMessageGetRequestMapWantsAndHavesReturnEmptyList(t *testing.T) {
 			}
 			if router.clientPropagationMessagesServed != 0 {
 				t.Fatalf("clientPropagationMessagesServed=%v want=0", router.clientPropagationMessagesServed)
+			}
+		})
+	}
+}
+
+func TestMessageGetRequestTypedStringSlicesReturnEmptyList(t *testing.T) {
+	t.Parallel()
+
+	type stringAlias string
+
+	tests := []struct {
+		name  string
+		wants any
+		haves any
+	}{
+		{name: "typed string slice wants", wants: []string{"ab", "cd"}, haves: nil},
+		{name: "string alias slice wants", wants: []stringAlias{"ab"}, haves: nil},
+		{name: "typed string slice haves", wants: nil, haves: []string{"ab", "cd"}},
+		{name: "string alias slice haves", wants: nil, haves: []stringAlias{"ab"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+			router := mustTestNewRouter(t, ts, nil, tmpDir)
+			router.EnablePropagation()
+
+			remoteIdentity := mustTestNewIdentity(t, true)
+			remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+			transientID := router.storePropagationMessage(remoteDestinationHash, []byte("persisted-payload"))
+			entry := router.propagationEntries[string(transientID)]
+			if entry == nil || entry.path == "" {
+				t.Fatalf("expected persisted propagation entry for %x", transientID)
+			}
+
+			request, err := msgpack.Pack([]any{tc.wants, tc.haves})
+			if err != nil {
+				t.Fatalf("Pack request: %v", err)
+			}
+
+			response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
+			payloads, ok := response.([]any)
+			if !ok {
+				t.Fatalf("response type=%T want=[]any", response)
+			}
+			if len(payloads) != 0 {
+				t.Fatalf("payloads len=%v want=0", len(payloads))
+			}
+			if _, exists := router.propagationEntries[string(transientID)]; !exists {
+				t.Fatal("expected stored message to remain after typed string slice no-op")
+			}
+			if _, err := os.Stat(entry.path); err != nil {
+				t.Fatalf("expected persisted message file to remain, Stat() error = %v", err)
+			}
+			if router.clientPropagationMessagesServed != 0 {
+				t.Fatalf("clientPropagationMessagesServed=%v want=0", router.clientPropagationMessagesServed)
+			}
+		})
+	}
+}
+
+func TestMessageGetRequestTypedBytesContainersMatchPython(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		wants      any
+		haves      any
+		wantCount  int
+		wantRemain bool
+	}{
+		{name: "typed bytes slice wants", wants: [][]byte{[]byte("transient-id")}, haves: nil, wantCount: 1, wantRemain: true},
+		{name: "typed bytes array haves", wants: nil, haves: [1][]byte{[]byte("transient-id")}, wantCount: 0, wantRemain: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ts := rns.NewTransportSystem(nil)
+			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+			defer cleanup()
+			router := mustTestNewRouter(t, ts, nil, tmpDir)
+			router.EnablePropagation()
+
+			remoteIdentity := mustTestNewIdentity(t, true)
+			remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+			transientID := router.storePropagationMessage(remoteDestinationHash, []byte("payload"))
+			entry := router.propagationEntries[string(transientID)]
+			if entry == nil || entry.path == "" {
+				t.Fatalf("expected persisted propagation entry for %x", transientID)
+			}
+
+			var wants any = tc.wants
+			var haves any = tc.haves
+			switch wants.(type) {
+			case [][]byte:
+				wants = [][]byte{transientID}
+			}
+			switch haves.(type) {
+			case [1][]byte:
+				haves = [1][]byte{transientID}
+			}
+
+			request, err := msgpack.Pack([]any{wants, haves})
+			if err != nil {
+				t.Fatalf("Pack request: %v", err)
+			}
+
+			response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
+			payloads, ok := response.([]any)
+			if !ok {
+				t.Fatalf("response type=%T want=[]any", response)
+			}
+			if len(payloads) != tc.wantCount {
+				t.Fatalf("payloads len=%v want=%v", len(payloads), tc.wantCount)
+			}
+			if tc.wantCount == 1 {
+				payload, ok := payloads[0].([]byte)
+				if !ok {
+					t.Fatalf("payload type=%T want=[]byte", payloads[0])
+				}
+				if string(payload) != "payload" {
+					t.Fatalf("payload=%q want=%q", payload, "payload")
+				}
+			}
+			_, exists := router.propagationEntries[string(transientID)]
+			if exists != tc.wantRemain {
+				t.Fatalf("message remain=%v want=%v", exists, tc.wantRemain)
 			}
 		})
 	}
