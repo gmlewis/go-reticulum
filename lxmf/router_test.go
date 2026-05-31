@@ -4080,12 +4080,11 @@ func TestMessageGetRequestNumericMapRootsBehaveLikeRequestTuples(t *testing.T) {
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
-	router.EnablePropagation()
 
 	remoteIdentity := mustTestNewIdentity(t, true)
 	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
 	payload := []byte("payload-data")
-	transientID := router.storePropagationMessageStamped(remoteDestinationHash, payload, bytes.Repeat([]byte{0x42}, StampSize), 1, nil)
+	transientID := router.storePropagationMessage(remoteDestinationHash, payload)
 
 	t.Run("list root", func(t *testing.T) {
 		request, err := msgpack.Pack(map[any]any{
@@ -4209,11 +4208,32 @@ func TestMessageGetRequestHugeIntegerLimitsServePayload(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
 			request, err := msgpack.Pack([]any{[]any{transientID}, []any{}, tc.limit})
 			if err != nil {
 				t.Fatalf("Pack request: %v", err)
+			}
+			parsedRequest, err := decodeAnyListPreserveBinMapKeys(request)
+			if err != nil {
+				t.Fatalf("decodeAnyListPreserveBinMapKeys: %v", err)
+			}
+			limitBytes, ok := parseLimitBytes(parsedRequest, 2)
+			if !ok {
+				t.Fatal("parseLimitBytes reported no limit")
+			}
+			if limitBytes != math.MaxInt {
+				t.Fatalf("limitBytes=%v want=%v", limitBytes, math.MaxInt)
+			}
+			entry := router.propagationEntries[string(transientID)]
+			if entry == nil {
+				t.Fatal("stored entry not found")
+			}
+			if !bytes.Equal(entry.destinationHash, remoteDestinationHash) {
+				t.Fatalf("entry destination=%x want=%x", entry.destinationHash, remoteDestinationHash)
+			}
+			messageSize := propagationEntryMessageSize(entry)
+			nextSize := 24 + messageSize + 16
+			if nextSize > limitBytes {
+				t.Fatalf("nextSize=%v unexpectedly exceeds limitBytes=%v", nextSize, limitBytes)
 			}
 
 			response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
@@ -4224,12 +4244,12 @@ func TestMessageGetRequestHugeIntegerLimitsServePayload(t *testing.T) {
 			if len(messages) != 1 {
 				t.Fatalf("response len=%v want=1", len(messages))
 			}
-			gotPayload, ok := messages[0].([]byte)
+			gotResponsePayload, ok := messages[0].([]byte)
 			if !ok {
 				t.Fatalf("messages[0] type=%T want=[]byte", messages[0])
 			}
-			if !bytes.Equal(gotPayload, payload) {
-				t.Fatalf("messages[0]=%x want=%x", gotPayload, payload)
+			if !bytes.Equal(gotResponsePayload, payload) {
+				t.Fatalf("messages[0]=%x want=%x", gotResponsePayload, payload)
 			}
 		})
 	}
