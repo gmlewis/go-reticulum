@@ -3322,6 +3322,54 @@ func rawMessageGetRequestWithBinaryMapKey(first any, second any, key []byte) []b
 	return request
 }
 
+func rawMessageGetRequestWithBinaryMapKeys(keys ...[]byte) []byte {
+	request := []byte{0x92, 0x82}
+	for i, key := range keys {
+		request = append(request, 0xc4, byte(len(key)))
+		request = append(request, key...)
+		request = append(request, byte(i+1))
+	}
+	request = append(request, 0xc0)
+	return request
+}
+
+func rawMessageGetRequestWithBinaryMapKeysAndStringLimit(limit string, keys ...[]byte) []byte {
+	request := []byte{0x93, 0x80 | byte(len(keys))}
+	for i, key := range keys {
+		request = append(request, 0xc4, byte(len(key)))
+		request = append(request, key...)
+		request = append(request, byte(i+1))
+	}
+	request = append(request, 0xc0, 0xa0|byte(len(limit)))
+	request = append(request, limit...)
+	return request
+}
+
+func TestDecodeAnyListPreserveBinMapKeyOrder(t *testing.T) {
+	t.Parallel()
+
+	request, err := decodeAnyListPreserveBinMapKeys(rawMessageGetRequestWithBinaryMapKeys([]byte("aa"), []byte("bb")))
+	if err != nil {
+		t.Fatalf("decodeAnyListPreserveBinMapKeys() error = %v", err)
+	}
+	if len(request) != 2 {
+		t.Fatalf("len(request) = %v, want 2", len(request))
+	}
+	ordered, ok := request[0].(msgpack.OrderedMap)
+	if !ok {
+		t.Fatalf("request[0] type = %T, want msgpack.OrderedMap", request[0])
+	}
+	if len(ordered) != 2 {
+		t.Fatalf("len(request[0]) = %v, want 2", len(ordered))
+	}
+	if got := reflect.ValueOf(ordered[0].Key).String(); got != "aa" {
+		t.Fatalf("first key = %q, want %q", got, "aa")
+	}
+	if got := reflect.ValueOf(ordered[1].Key).String(); got != "bb" {
+		t.Fatalf("second key = %q, want %q", got, "bb")
+	}
+}
+
 func TestMessageGetRequestBinaryKeyedWantsMapServesPayload(t *testing.T) {
 	t.Parallel()
 
@@ -3349,6 +3397,40 @@ func TestMessageGetRequestBinaryKeyedWantsMapServesPayload(t *testing.T) {
 	}
 	if string(payload) != "payload" {
 		t.Fatalf("payload=%q want=%q", payload, "payload")
+	}
+	if router.clientPropagationMessagesServed != 1 {
+		t.Fatalf("clientPropagationMessagesServed=%v want=1", router.clientPropagationMessagesServed)
+	}
+}
+
+func TestMessageGetRequestBinaryKeyedWantsMapPreservesOrderUnderLimit(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+	firstID := router.storePropagationMessage(remoteDestinationHash, []byte("first"))
+	secondID := router.storePropagationMessage(remoteDestinationHash, []byte("second"))
+
+	request := rawMessageGetRequestWithBinaryMapKeysAndStringLimit("0.061", firstID, secondID)
+	response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
+	payloads, ok := response.([]any)
+	if !ok {
+		t.Fatalf("response type=%T want=[]any", response)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("payloads len=%v want=1", len(payloads))
+	}
+	payload, ok := payloads[0].([]byte)
+	if !ok {
+		t.Fatalf("payload type=%T want=[]byte", payloads[0])
+	}
+	if string(payload) != "first" {
+		t.Fatalf("payload=%q want=%q", payload, "first")
 	}
 	if router.clientPropagationMessagesServed != 1 {
 		t.Fatalf("clientPropagationMessagesServed=%v want=1", router.clientPropagationMessagesServed)
@@ -3591,6 +3673,10 @@ func TestMessageGetRequestStringAndBytesTransferLimitCoercion(t *testing.T) {
 		{name: "bytes nan limit", limit: []byte("nan"), wantCount: 2},
 		{name: "string limit", limit: "0.08", wantCount: 0},
 		{name: "bytes limit", limit: []byte("0.08"), wantCount: 0},
+		{name: "string limit with spaces", limit: " 0.08 ", wantCount: 0},
+		{name: "bytes limit with spaces", limit: []byte(" 0.08 "), wantCount: 0},
+		{name: "string limit with tabs and newline", limit: "\t0.08\n", wantCount: 0},
+		{name: "bytes limit with tabs and newline", limit: []byte("\t0.08\n"), wantCount: 0},
 		{name: "malformed string ignored", limit: "bogus", wantCount: 2},
 		{name: "malformed bytes ignored", limit: []byte("bogus"), wantCount: 2},
 	}
@@ -3648,6 +3734,8 @@ func TestParseLimitBytesStringAndBytesAliases(t *testing.T) {
 	}{
 		{name: "string alias valid", value: stringAlias("1.5"), wantLimit: 1500, wantSet: true},
 		{name: "bytes alias valid", value: bytesAlias("1.5"), wantLimit: 1500, wantSet: true},
+		{name: "string alias valid with spaces", value: stringAlias(" 1.5 "), wantLimit: 1500, wantSet: true},
+		{name: "bytes alias valid with spaces", value: bytesAlias(" 1.5 "), wantLimit: 1500, wantSet: true},
 		{name: "string alias invalid", value: stringAlias("bad"), wantLimit: 0, wantSet: false},
 		{name: "bytes alias invalid", value: bytesAlias("bad"), wantLimit: 0, wantSet: false},
 	}

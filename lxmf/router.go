@@ -1158,6 +1158,12 @@ func messageGetRequestEntries(value any) ([]any, bool) {
 	switch typed := value.(type) {
 	case nil:
 		return nil, true
+	case msgpack.OrderedMap:
+		entries := make([]any, 0, len(typed))
+		for _, entry := range typed {
+			entries = append(entries, entry.Key)
+		}
+		return entries, true
 	case []any:
 		entries := make([]any, 0, len(typed))
 		entries = append(entries, typed...)
@@ -1211,7 +1217,7 @@ func decodeAnyListPreserveBinMapKeys(data []byte) ([]any, error) {
 	if len(data) == 0 {
 		return nil, errors.New("empty request data")
 	}
-	unpacked, err := msgpack.UnpackPreserveBinMapKeys(data)
+	unpacked, err := msgpack.UnpackPreserveBinMapKeyOrder(data)
 	if err != nil {
 		return nil, err
 	}
@@ -1345,13 +1351,13 @@ func parseLimitBytes(values []any, index int) (int, bool) {
 	case int64:
 		return int(n * 1000), true
 	case string:
-		parsed, err := strconv.ParseFloat(n, 64)
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
 		if err != nil {
 			return 0, false
 		}
 		return limitBytesFromFloat64(parsed)
 	case []byte:
-		parsed, err := strconv.ParseFloat(string(n), 64)
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(string(n)), 64)
 		if err != nil {
 			return 0, false
 		}
@@ -1361,7 +1367,7 @@ func parseLimitBytes(values []any, index int) (int, bool) {
 		if rv.IsValid() {
 			switch rv.Kind() {
 			case reflect.String:
-				parsed, err := strconv.ParseFloat(rv.String(), 64)
+				parsed, err := strconv.ParseFloat(strings.TrimSpace(rv.String()), 64)
 				if err != nil {
 					return 0, false
 				}
@@ -1372,7 +1378,7 @@ func parseLimitBytes(values []any, index int) (int, bool) {
 					if !ok {
 						return 0, false
 					}
-					parsed, err := strconv.ParseFloat(string(payload), 64)
+					parsed, err := strconv.ParseFloat(strings.TrimSpace(string(payload)), 64)
 					if err != nil {
 						return 0, false
 					}

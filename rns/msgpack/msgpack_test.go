@@ -57,6 +57,41 @@ func TestMsgPackTypes(t *testing.T) {
 	}
 }
 
+func TestUnpackPreserveBinMapKeyOrder(t *testing.T) {
+	t.Parallel()
+
+	raw := []byte{
+		0x82,
+		0xc4, 0x02, 'a', 'a', 0x01,
+		0xc4, 0x02, 'b', 'b', 0x02,
+	}
+
+	unpacked, err := UnpackPreserveBinMapKeyOrder(raw)
+	if err != nil {
+		t.Fatalf("UnpackPreserveBinMapKeyOrder() error = %v", err)
+	}
+
+	ordered, ok := unpacked.(OrderedMap)
+	if !ok {
+		t.Fatalf("unpacked type = %T, want OrderedMap", unpacked)
+	}
+	if len(ordered) != 2 {
+		t.Fatalf("len(ordered) = %v, want 2", len(ordered))
+	}
+	if got := reflect.TypeOf(ordered[0].Key); got == nil || got.Name() != "binaryMapKey" {
+		t.Fatalf("first key type = %T, want binaryMapKey", ordered[0].Key)
+	}
+	if got := reflect.TypeOf(ordered[1].Key); got == nil || got.Name() != "binaryMapKey" {
+		t.Fatalf("second key type = %T, want binaryMapKey", ordered[1].Key)
+	}
+	if got := reflect.ValueOf(ordered[0].Key).String(); got != "aa" {
+		t.Fatalf("first key = %q, want %q", got, "aa")
+	}
+	if got := reflect.ValueOf(ordered[1].Key).String(); got != "bb" {
+		t.Fatalf("second key = %q, want %q", got, "bb")
+	}
+}
+
 func TestPackUnpackExtended(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

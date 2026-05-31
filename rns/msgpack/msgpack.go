@@ -337,6 +337,16 @@ func UnpackPreserveBinMapKeys(data []byte) (any, error) {
 	return unpackWithOptions(r, unpackOptions{preserveBinMapKey: true})
 }
 
+// UnpackPreserveBinMapKeyOrder deserializes MessagePack data while preserving
+// binary map keys and map entry order. Maps are returned as OrderedMap.
+func UnpackPreserveBinMapKeyOrder(data []byte) (any, error) {
+	r := bytes.NewReader(data)
+	return unpackWithOptions(r, unpackOptions{
+		preserveBinMapKey: true,
+		orderedMap:        true,
+	})
+}
+
 // UnpackStrict deserializes exactly one MessagePack value and rejects trailing
 // bytes using Python-shaped error surfaces for malformed payloads.
 func UnpackStrict(data []byte) (any, error) {
@@ -370,9 +380,19 @@ func normalizePythonUnpackError(err error) error {
 type unpackOptions struct {
 	strictMapKeys     bool
 	preserveBinMapKey bool
+	orderedMap        bool
 }
 
 type binaryMapKey string
+
+// OrderedMapEntry is a single entry in an OrderedMap.
+type OrderedMapEntry struct {
+	Key   any
+	Value any
+}
+
+// OrderedMap preserves MessagePack map entry order during decoding.
+type OrderedMap []OrderedMapEntry
 
 func unpack(r *bytes.Reader) (any, error) {
 	return unpackWithOptions(r, unpackOptions{})
@@ -388,6 +408,9 @@ func unpackWithOptions(r *bytes.Reader, opts unpackOptions) (any, error) {
 	case b <= posFixIntMax:
 		return int64(b), nil
 	case b >= fixMapMin && b <= fixMapMax:
+		if opts.orderedMap {
+			return unpackOrderedMapWithOptions(r, int(b&0x0f), opts)
+		}
 		return unpackMapWithOptions(r, int(b&0x0f), opts)
 	case b >= fixArrayMin && b <= fixArrayMax:
 		return unpackArrayWithOptions(r, int(b&0x0f), opts)
@@ -512,11 +535,17 @@ func unpackWithOptions(r *bytes.Reader, opts unpackOptions) (any, error) {
 		if err := binary.Read(r, binary.BigEndian, &l); err != nil {
 			return nil, err
 		}
+		if opts.orderedMap {
+			return unpackOrderedMapWithOptions(r, int(l), opts)
+		}
 		return unpackMapWithOptions(r, int(l), opts)
 	case b == map32:
 		var l uint32
 		if err := binary.Read(r, binary.BigEndian, &l); err != nil {
 			return nil, err
+		}
+		if opts.orderedMap {
+			return unpackOrderedMapWithOptions(r, int(l), opts)
 		}
 		return unpackMapWithOptions(r, int(l), opts)
 	case b >= negFixIntMin:
@@ -597,6 +626,36 @@ func unpackMapWithOptions(r *bytes.Reader, l int, opts unpackOptions) (map[any]a
 	return m, nil
 }
 
+func unpackOrderedMapWithOptions(r *bytes.Reader, l int, opts unpackOptions) (OrderedMap, error) {
+	m := make(OrderedMap, 0, l)
+	for i := 0; i < l; i++ {
+		k, err := unpackWithOptions(r, opts)
+		if err != nil {
+			return nil, err
+		}
+		if opts.strictMapKeys {
+			switch k.(type) {
+			case string, []byte:
+			default:
+				return nil, strictMapKeyError(k)
+			}
+		}
+		if b, ok := k.([]byte); ok {
+			if opts.preserveBinMapKey {
+				k = binaryMapKey(string(b))
+			} else {
+				k = string(b)
+			}
+		}
+		v, err := unpackWithOptions(r, opts)
+		if err != nil {
+			return nil, err
+		}
+		m = append(m, OrderedMapEntry{Key: k, Value: v})
+	}
+	return m, nil
+}
+
 func strictMapKeyError(key any) error {
 	return fmt.Errorf("%v is not allowed for map key when strict_map_key=True", pythonTypeName(key))
 }
@@ -618,6 +677,8 @@ func pythonTypeName(value any) string {
 	case []any:
 		return "list"
 	case map[any]any, map[string]any:
+		return "dict"
+	case OrderedMap:
 		return "dict"
 	default:
 		return reflect.TypeOf(value).String()
