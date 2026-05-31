@@ -14295,6 +14295,7 @@ func TestInterfaceAnnouncerStart(t *testing.T) {
 		SupportsDiscovery: true,
 		Discoverable:      true,
 		AnnounceInterval:  time.Hour,
+		StampValue:        1,
 		Name:              "Start Backbone",
 		ReachableOn:       "start.example.net",
 	})
@@ -14357,6 +14358,7 @@ func TestInterfaceAnnouncerStopDuringSleepStillAllowsCurrentCycle(t *testing.T) 
 		SupportsDiscovery: true,
 		Discoverable:      true,
 		AnnounceInterval:  time.Hour,
+		StampValue:        1,
 		Name:              "Stop Sleep Backbone",
 		ReachableOn:       "stop.example.net",
 	})
@@ -14423,6 +14425,7 @@ func TestInterfaceAnnouncerStartIsIdempotentWhileRunning(t *testing.T) {
 		SupportsDiscovery: true,
 		Discoverable:      true,
 		AnnounceInterval:  time.Hour,
+		StampValue:        1,
 		Name:              "Start Once Backbone",
 		ReachableOn:       "start-once.example.net",
 	})
