@@ -1271,8 +1271,106 @@ func messageGetRequestRoot(value any) ([]any, bool) {
 			request = append(request, string(r))
 		}
 		return request, true
+	case msgpack.OrderedMap:
+		return messageGetRequestRootFromOrderedMap(root)
 	default:
+		rv := reflect.ValueOf(value)
+		if rv.IsValid() && rv.Kind() == reflect.Map {
+			return messageGetRequestRootFromMap(rv)
+		}
 		return nil, false
+	}
+}
+
+func messageGetRequestRootFromOrderedMap(root msgpack.OrderedMap) ([]any, bool) {
+	first, ok := orderedMapIndexValue(root, 0)
+	if !ok {
+		return nil, false
+	}
+	second, ok := orderedMapIndexValue(root, 1)
+	if !ok {
+		return nil, false
+	}
+	request := []any{first, second}
+	if len(root) >= 3 {
+		third, _ := orderedMapIndexValue(root, 2)
+		request = append(request, third)
+	}
+	return request, true
+}
+
+func orderedMapIndexValue(root msgpack.OrderedMap, index int) (any, bool) {
+	for _, entry := range root {
+		if numericRequestIndexMatches(entry.Key, index) {
+			return entry.Value, true
+		}
+	}
+	return nil, false
+}
+
+func messageGetRequestRootFromMap(root reflect.Value) ([]any, bool) {
+	first, ok := mapIndexValue(root, 0)
+	if !ok {
+		return nil, false
+	}
+	second, ok := mapIndexValue(root, 1)
+	if !ok {
+		return nil, false
+	}
+	request := []any{first, second}
+	if root.Len() >= 3 {
+		third, _ := mapIndexValue(root, 2)
+		request = append(request, third)
+	}
+	return request, true
+}
+
+func mapIndexValue(root reflect.Value, index int) (any, bool) {
+	iter := root.MapRange()
+	for iter.Next() {
+		if numericRequestIndexMatches(iter.Key().Interface(), index) {
+			return iter.Value().Interface(), true
+		}
+	}
+	return nil, false
+}
+
+func numericRequestIndexMatches(value any, index int) bool {
+	switch typed := value.(type) {
+	case bool:
+		if index == 0 {
+			return !typed
+		}
+		if index == 1 {
+			return typed
+		}
+		return false
+	case int:
+		return typed == index
+	case int8:
+		return typed == int8(index)
+	case int16:
+		return typed == int16(index)
+	case int32:
+		return typed == int32(index)
+	case int64:
+		return typed == int64(index)
+	case uint:
+		return typed == uint(index)
+	case uint8:
+		return typed == uint8(index)
+	case uint16:
+		return typed == uint16(index)
+	case uint32:
+		return typed == uint32(index)
+	case uint64:
+		return typed == uint64(index)
+	case float32:
+		return float64(typed) == float64(index)
+	case float64:
+		return typed == float64(index)
+	default:
+		return false
 	}
 }
 

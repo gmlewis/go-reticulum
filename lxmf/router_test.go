@@ -4074,6 +4074,73 @@ func TestMessageGetRequestStringRootsOfLengthTwoOrMoreReturnEmptyList(t *testing
 	}
 }
 
+func TestMessageGetRequestNumericMapRootsBehaveLikeRequestTuples(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.EnablePropagation()
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+	payload := []byte("payload-data")
+	transientID := router.storePropagationMessageStamped(remoteDestinationHash, payload, bytes.Repeat([]byte{0x42}, StampSize), 1, nil)
+
+	t.Run("list root", func(t *testing.T) {
+		request, err := msgpack.Pack(map[any]any{
+			int64(0): nil,
+			int64(1): nil,
+		})
+		if err != nil {
+			t.Fatalf("Pack request: %v", err)
+		}
+
+		response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
+		available, ok := response.([]any)
+		if !ok {
+			t.Fatalf("response type=%T want=[]any", response)
+		}
+		if len(available) != 1 {
+			t.Fatalf("response len=%v want=1", len(available))
+		}
+		gotID, ok := available[0].([]byte)
+		if !ok {
+			t.Fatalf("available[0] type=%T want=[]byte", available[0])
+		}
+		if !bytes.Equal(gotID, transientID) {
+			t.Fatalf("available[0]=%x want=%x", gotID, transientID)
+		}
+	})
+
+	t.Run("wanted with limit", func(t *testing.T) {
+		request, err := msgpack.Pack(map[any]any{
+			int64(0): []any{transientID},
+			int64(1): []any{},
+			int64(2): float64(1),
+		})
+		if err != nil {
+			t.Fatalf("Pack request: %v", err)
+		}
+
+		response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
+		messages, ok := response.([]any)
+		if !ok {
+			t.Fatalf("response type=%T want=[]any", response)
+		}
+		if len(messages) != 1 {
+			t.Fatalf("response len=%v want=1", len(messages))
+		}
+		gotPayload, ok := messages[0].([]byte)
+		if !ok {
+			t.Fatalf("messages[0] type=%T want=[]byte", messages[0])
+		}
+		if !bytes.Equal(gotPayload, payload) {
+			t.Fatalf("messages[0]=%x want=%x", gotPayload, payload)
+		}
+	})
+}
+
 func TestMessageGetRequestBytesRootsReturnNil(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
