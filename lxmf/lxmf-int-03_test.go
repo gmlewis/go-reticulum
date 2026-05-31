@@ -11,6 +11,7 @@ package lxmf
 import (
 	"bytes"
 	"encoding/hex"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -423,6 +424,65 @@ with open(response_int_path, "wb") as f:
 	f.write(msgpack.packb(response_int))
 with open(response_float_path, "wb") as f:
 	f.write(msgpack.packb(response_float))
+`
+
+const lxmfRunMessageGetHugeIntegerLimitPy = `import LXMF
+import LXMF.LXStamper as LXStamper
+import RNS
+import RNS.vendor.umsgpack as msgpack
+import os
+import sys
+import time
+
+if len(sys.argv) != 7:
+	print("ERROR: missing args")
+	sys.exit(1)
+
+response_max_int_path = sys.argv[1]
+response_max_uint_path = sys.argv[2]
+response_min_int_path = sys.argv[3]
+store_dir = sys.argv[4]
+id_small = bytes.fromhex(sys.argv[5])
+id_large = bytes.fromhex(sys.argv[6])
+
+config_dir = os.path.join(store_dir, "rnsconfig")
+if not os.path.exists(config_dir): os.makedirs(config_dir)
+with open(os.path.join(config_dir, "config"), "w") as f:
+	f.write("[reticulum]\nshare_instance = No\n")
+RNS.Reticulum(configdir=config_dir)
+router = LXMF.LXMRouter(storagepath=store_dir)
+remote_identity = RNS.Identity()
+remote_destination = RNS.Destination(remote_identity, RNS.Destination.OUT, RNS.Destination.SINGLE, LXMF.APP_NAME, "delivery")
+
+stamp = bytes(LXStamper.STAMP_SIZE)
+small_payload = b"small"
+large_payload = b"L" * 350
+
+small_path = os.path.join(store_dir, "small.msg")
+large_path = os.path.join(store_dir, "large.msg")
+
+with open(small_path, "wb") as f:
+	f.write(small_payload + stamp)
+with open(large_path, "wb") as f:
+	f.write(large_payload + stamp)
+
+router.propagation_entries[id_small] = [remote_destination.hash, small_path]
+router.propagation_entries[id_large] = [remote_destination.hash, large_path]
+
+request_max_int = [[id_small, id_large], None, 9223372036854775807]
+request_max_uint = [[id_small, id_large], None, 18446744073709551615]
+request_min_int = [[id_small, id_large], None, -9223372036854775808]
+
+response_max_int = router.message_get_request("", request_max_int, None, remote_identity, time.time())
+response_max_uint = router.message_get_request("", request_max_uint, None, remote_identity, time.time())
+response_min_int = router.message_get_request("", request_min_int, None, remote_identity, time.time())
+
+with open(response_max_int_path, "wb") as f:
+	f.write(msgpack.packb(response_max_int))
+with open(response_max_uint_path, "wb") as f:
+	f.write(msgpack.packb(response_max_uint))
+with open(response_min_int_path, "wb") as f:
+	f.write(msgpack.packb(response_min_int))
 `
 
 const lxmfRunMessageGetStringBytesLimitPy = `import LXMF
@@ -2031,6 +2091,154 @@ func TestIntegrationPropagationMessageGetPositiveIntLimitPythonToGo(t *testing.T
 	}
 	if len(goInt) != 2 {
 		t.Fatalf("positive-int-limit response len=%v want=2", len(goInt))
+	}
+}
+
+func TestIntegrationPropagationMessageGetHugeIntegerLimitPythonToGo(t *testing.T) {
+	t.Parallel()
+	testutils.SkipShortIntegration(t)
+	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
+
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	scriptPath := filepath.Join(tmpDir, "run_message_get_huge_integer_limit.py")
+	if err := os.WriteFile(scriptPath, []byte(lxmfRunMessageGetHugeIntegerLimitPy), 0o644); err != nil {
+		t.Fatalf("write python script: %v", err)
+	}
+
+	responseMaxIntPath := filepath.Join(tmpDir, "response_max_int.msgpack")
+	responseMaxUintPath := filepath.Join(tmpDir, "response_max_uint.msgpack")
+	responseMinIntPath := filepath.Join(tmpDir, "response_min_int.msgpack")
+	storeDir := filepath.Join(tmpDir, "py-store")
+	if err := os.MkdirAll(storeDir, 0o755); err != nil {
+		t.Fatalf("mkdir store dir: %v", err)
+	}
+
+	smallPayload := []byte("small")
+	largePayload := bytes.Repeat([]byte("L"), 350)
+	idSmall := rns.FullHash(smallPayload)
+	idLarge := rns.FullHash(largePayload)
+
+	cmd := exec.Command(
+		"python3",
+		scriptPath,
+		responseMaxIntPath,
+		responseMaxUintPath,
+		responseMinIntPath,
+		storeDir,
+		hex.EncodeToString(idSmall),
+		hex.EncodeToString(idLarge),
+	)
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("python huge-integer-limit flow failed: %v output=%v", err, string(out))
+	}
+
+	unpackMessages := func(t *testing.T, path string) []any {
+		t.Helper()
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %q: %v", path, err)
+		}
+		unpacked, err := msgpack.Unpack(data)
+		if err != nil {
+			t.Fatalf("Unpack(%q): %v", path, err)
+		}
+		messages, ok := unpacked.([]any)
+		if !ok {
+			t.Fatalf("unexpected response type %T from %q", unpacked, path)
+		}
+		return messages
+	}
+
+	pythonMaxInt := unpackMessages(t, responseMaxIntPath)
+	pythonMaxUint := unpackMessages(t, responseMaxUintPath)
+	pythonMinInt := unpackMessages(t, responseMinIntPath)
+
+	ts := rns.NewTransportSystem(nil)
+	goStoreDir := filepath.Join(tmpDir, "go-store")
+	if err := os.MkdirAll(goStoreDir, 0o755); err != nil {
+		t.Fatalf("mkdir go store dir: %v", err)
+	}
+	router := mustTestNewRouter(t, ts, nil, goStoreDir)
+	router.EnablePropagation()
+
+	remoteIdentity := mustTestNewIdentity(t, true)
+	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
+	storedSmall := router.storePropagationMessageStamped(remoteDestinationHash, smallPayload, make([]byte, StampSize), 1, nil)
+	storedLarge := router.storePropagationMessageStamped(remoteDestinationHash, largePayload, make([]byte, StampSize), 1, nil)
+
+	maxIntRequest, err := msgpack.Pack([]any{[]any{storedSmall, storedLarge}, nil, int64(math.MaxInt64)})
+	if err != nil {
+		t.Fatalf("Pack max-int request: %v", err)
+	}
+	maxUintRequest, err := msgpack.Pack([]any{[]any{storedSmall, storedLarge}, nil, uint64(math.MaxUint64)})
+	if err != nil {
+		t.Fatalf("Pack max-uint request: %v", err)
+	}
+	minIntRequest, err := msgpack.Pack([]any{[]any{storedSmall, storedLarge}, nil, int64(math.MinInt64)})
+	if err != nil {
+		t.Fatalf("Pack min-int request: %v", err)
+	}
+
+	goMaxInt, ok := router.messageGetRequest("", maxIntRequest, nil, nil, remoteIdentity, time.Now()).([]any)
+	if !ok {
+		t.Fatalf("unexpected max-int Go response type %T", router.messageGetRequest("", maxIntRequest, nil, nil, remoteIdentity, time.Now()))
+	}
+	goMaxUint, ok := router.messageGetRequest("", maxUintRequest, nil, nil, remoteIdentity, time.Now()).([]any)
+	if !ok {
+		t.Fatalf("unexpected max-uint Go response type %T", router.messageGetRequest("", maxUintRequest, nil, nil, remoteIdentity, time.Now()))
+	}
+	goMinInt, ok := router.messageGetRequest("", minIntRequest, nil, nil, remoteIdentity, time.Now()).([]any)
+	if !ok {
+		t.Fatalf("unexpected min-int Go response type %T", router.messageGetRequest("", minIntRequest, nil, nil, remoteIdentity, time.Now()))
+	}
+
+	if len(goMaxInt) != len(pythonMaxInt) {
+		t.Fatalf("max-int response len=%v want=%v", len(goMaxInt), len(pythonMaxInt))
+	}
+	if len(goMaxUint) != len(pythonMaxUint) {
+		t.Fatalf("max-uint response len=%v want=%v", len(goMaxUint), len(pythonMaxUint))
+	}
+	if len(goMinInt) != len(pythonMinInt) {
+		t.Fatalf("min-int response len=%v want=%v", len(goMinInt), len(pythonMinInt))
+	}
+
+	for i := range goMaxInt {
+		got, ok := goMaxInt[i].([]byte)
+		if !ok {
+			t.Fatalf("goMaxInt[%v] type=%T want=[]byte", i, goMaxInt[i])
+		}
+		want, ok := pythonMaxInt[i].([]byte)
+		if !ok {
+			t.Fatalf("pythonMaxInt[%v] type=%T want=[]byte", i, pythonMaxInt[i])
+		}
+		if string(got) != string(want) {
+			t.Fatalf("goMaxInt[%v]=%x want=%x", i, got, want)
+		}
+	}
+	for i := range goMaxUint {
+		got, ok := goMaxUint[i].([]byte)
+		if !ok {
+			t.Fatalf("goMaxUint[%v] type=%T want=[]byte", i, goMaxUint[i])
+		}
+		want, ok := pythonMaxUint[i].([]byte)
+		if !ok {
+			t.Fatalf("pythonMaxUint[%v] type=%T want=[]byte", i, pythonMaxUint[i])
+		}
+		if string(got) != string(want) {
+			t.Fatalf("goMaxUint[%v]=%x want=%x", i, got, want)
+		}
+	}
+
+	if len(goMaxInt) != 2 {
+		t.Fatalf("max-int-limit response len=%v want=2", len(goMaxInt))
+	}
+	if len(goMaxUint) != 2 {
+		t.Fatalf("max-uint-limit response len=%v want=2", len(goMaxUint))
+	}
+	if len(goMinInt) != 0 {
+		t.Fatalf("min-int-limit response len=%v want=0", len(goMinInt))
 	}
 }
 
