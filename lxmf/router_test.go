@@ -10619,6 +10619,76 @@ func TestPropagationTransferProgress(t *testing.T) {
 	}
 }
 
+func TestPropagationTransferResourceFailureTearsDownLink(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	propNodeID := mustTestNewIdentity(t, true)
+	propNodeDest := mustTestNewDestination(t, ts, propNodeID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+
+	msg := mustTestNewMessage(t, destination, sourceDest, string(bytes.Repeat([]byte("P"), LinkPacketMaxContent)), "title", nil)
+	msg.DesiredMethod = MethodPropagated
+	msg.DeferPropagationStamp = false
+	if err := router.SetOutboundPropagationNode(propNodeDest.Hash); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1700000000, 0)
+	router.now = func() time.Time { return now }
+	link, err := rns.NewLink(ts, propNodeDest)
+	if err != nil {
+		t.Fatalf("NewLink: %v", err)
+	}
+	activateRouterTestLink(t, link)
+	router.outboundPropagationLink = link
+	router.linkStatus = func(candidate *rns.Link) int {
+		if candidate == link {
+			return rns.LinkActive
+		}
+		return candidate.GetStatus()
+	}
+	teardownCount := 0
+	router.teardownLink = func(closed *rns.Link) {
+		if closed != link {
+			t.Fatal("teardown called with unexpected link")
+		}
+		teardownCount++
+		router.handleOutboundPropagationLinkClosed(closed)
+	}
+
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+	if msg.ResourceRepresentation == nil {
+		t.Fatal("expected propagated resource representation")
+	}
+
+	setResourceIntField(t, msg.ResourceRepresentation, "status", rns.ResourceStatusFailed)
+	invokeResourceCallback(t, msg.ResourceRepresentation)
+
+	if got, want := msg.State, StateOutbound; got != want {
+		t.Fatalf("state after resource failure=%v want=%v", got, want)
+	}
+	if got, want := msg.Progress, 0.0; got != want {
+		t.Fatalf("progress after resource failure=%v want=%v", got, want)
+	}
+	if teardownCount != 1 {
+		t.Fatalf("teardown count=%v want=1", teardownCount)
+	}
+	if router.outboundPropagationLink != nil {
+		t.Fatal("expected propagated resource failure to clear outbound propagation link")
+	}
+	if msg.NextDeliveryAttempt <= float64(now.UnixNano())/1e9 {
+		t.Fatal("expected propagated resource failure to schedule a retry")
+	}
+}
+
 func TestPropagationTransferClosedLink(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)

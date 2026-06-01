@@ -2357,6 +2357,8 @@ func (r *Router) sendMessageResourceLocked(message *Message) error {
 		})
 		resource.SetCallback(func(resource *rns.Resource) {
 			var deliveryCallback func(*Message)
+			var linkToTeardown *rns.Link
+			shouldTeardown := false
 			r.mu.Lock()
 			if resource != nil && resource.Status() == rns.ResourceStatusComplete {
 				message.State = StateSent
@@ -2366,14 +2368,24 @@ func (r *Router) sendMessageResourceLocked(message *Message) error {
 				}
 				deliveryCallback = message.DeliveryCallback
 			} else if message.State != StateCancelled {
+				shouldTeardown = true
 				message.State = StateOutbound
 				message.Progress = 0.0
 				message.NextDeliveryAttempt = float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
+				if destinationLink, ok := message.deliveryDestination.(*rns.Link); ok {
+					linkToTeardown = destinationLink
+				}
 				if r.outboundPropagationLinkMessage == message {
 					r.outboundPropagationLinkMessage = nil
+					if linkToTeardown == nil {
+						linkToTeardown = r.outboundPropagationLink
+					}
 				}
 			}
 			r.mu.Unlock()
+			if shouldTeardown && linkToTeardown != nil {
+				r.teardownLink(linkToTeardown)
+			}
 			if deliveryCallback != nil {
 				deliveryCallback(message)
 			}
