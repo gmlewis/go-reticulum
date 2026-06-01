@@ -1857,6 +1857,9 @@ func (r *Router) ProcessOutbound() {
 			sendMethod = MethodDirect
 		}
 		message.Method = sendMethod
+		if message.Progress < 0.01 {
+			message.Progress = 0.01
+		}
 
 		activePropagationLink := sendMethod == MethodPropagated &&
 			r.outboundPropagationLink != nil &&

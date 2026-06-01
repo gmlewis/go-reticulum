@@ -9841,6 +9841,48 @@ func TestProcessOutboundPropagatedNoNodeFails(t *testing.T) {
 	}
 }
 
+func TestProcessOutboundPropagatedInitializesMinimumProgress(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+	msg.DesiredMethod = MethodPropagated
+	msg.DeferPropagationStamp = false
+	msg.Progress = 0
+
+	propNodeID := mustTestNewIdentity(t, true)
+	propNodeDest := mustTestNewDestination(t, ts, propNodeID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+	if err := router.SetOutboundPropagationNode(propNodeDest.Hash); err != nil {
+		t.Fatal(err)
+	}
+
+	requestCount := 0
+	router.hasPath = func(_ []byte) bool { return false }
+	router.requestPath = func(_ []byte) error {
+		requestCount++
+		return nil
+	}
+
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+
+	if requestCount != 1 {
+		t.Fatalf("request count=%v want=1", requestCount)
+	}
+	if msg.Progress != 0.01 {
+		t.Fatalf("progress=%v want=0.01", msg.Progress)
+	}
+}
+
 func TestProcessOutboundPropagatedRequestsPathThenSends(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
