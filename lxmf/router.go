@@ -2082,7 +2082,7 @@ func (r *Router) ProcessDeferredStamps() {
 
 	stampGenerationSuccess := !selected.DeferStamp || len(selected.Stamp) > 0
 	propagationStampGenerationSuccess := selected.DesiredMethod != MethodPropagated ||
-		!selected.DeferPropagationStamp || len(selected.PropagationStamp) > 0
+		len(selected.PropagationStamp) > 0
 
 	if !stampGenerationSuccess {
 		generatedStamp, err := selected.GetStamp()

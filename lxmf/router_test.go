@@ -655,6 +655,71 @@ func TestDeferredPropagationStamps(t *testing.T) {
 	}
 }
 
+func TestDeferredPropagationStampsGenerateWhenFlagClearedButStampMissing(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	now := time.Unix(1700000000, 0).UTC()
+	router.now = func() time.Time { return now }
+	router.hasPath = func(_ []byte) bool { return false }
+	router.requestPath = func(_ []byte) error { return nil }
+	router.pathWaitSleep = func(time.Duration) {}
+
+	router.outboundPropagationNode = rns.CalculateHash(destID, AppName, "propagation")
+	appData, err := msgpack.Pack([]any{
+		false,
+		float64(now.Unix()),
+		true,
+		128,
+		256,
+		[]any{11, 3, 7},
+		map[any]any{PNMetaName: []byte("Node A")},
+	})
+	if err != nil {
+		t.Fatalf("Pack propagation app data: %v", err)
+	}
+	ts.Remember(nil, router.outboundPropagationNode, destID.GetPublicKey(), appData)
+
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+	msg.DesiredMethod = MethodPropagated
+
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+
+	if got := len(router.pendingDeferredStamps); got != 1 {
+		t.Fatalf("pendingDeferredStamps length=%v want=1", got)
+	}
+
+	msg.DeferPropagationStamp = false
+	msg.PropagationStamp = nil
+	msg.PropagationPacked = nil
+
+	router.ProcessDeferredStamps()
+
+	if got := len(router.pendingDeferredStamps); got != 0 {
+		t.Fatalf("pendingDeferredStamps length after processing=%v want=0", got)
+	}
+	if got := len(router.pendingOutbound); got != 1 {
+		t.Fatalf("pendingOutbound length after processing=%v want=1", got)
+	}
+	if msg.PropagationTargetCost == nil || *msg.PropagationTargetCost != 11 {
+		t.Fatalf("propagation target cost=%v want=11", msg.PropagationTargetCost)
+	}
+	if len(msg.PropagationStamp) != StampSize {
+		t.Fatalf("propagation stamp length=%v want=%v", len(msg.PropagationStamp), StampSize)
+	}
+}
+
 func TestDeferredStampsPreserveInsertionOrder(t *testing.T) {
 	t.Parallel()
 
