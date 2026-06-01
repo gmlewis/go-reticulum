@@ -4165,14 +4165,20 @@ func (r *Router) requestMessagesFromPropagationNodeWithIdentity(identity *rns.Id
 }
 
 func (r *Router) requestMessagesPathJob() {
-	r.mu.Lock()
-	from := append([]byte{}, r.wantsDownloadOnPathAvailableFrom...)
-	identity := r.wantsDownloadOnPathAvailableTo
-	deadline := r.wantsDownloadOnPathAvailableAt
-	maxMessages := r.propagationTransferMaxMessages
-	r.mu.Unlock()
+	for {
+		r.mu.Lock()
+		from := append([]byte{}, r.wantsDownloadOnPathAvailableFrom...)
+		identity := r.wantsDownloadOnPathAvailableTo
+		deadline := r.wantsDownloadOnPathAvailableAt
+		maxMessages := r.propagationTransferMaxMessages
+		r.mu.Unlock()
 
-	for len(from) > 0 && (deadline.IsZero() || r.now().Before(deadline)) {
+		if len(from) == 0 {
+			return
+		}
+		if !deadline.IsZero() && !r.now().Before(deadline) {
+			break
+		}
 		if r.hasPath != nil && r.hasPath(from) {
 			var limit *int
 			if maxMessages != 0 {

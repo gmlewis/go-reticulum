@@ -7167,6 +7167,58 @@ func TestRequestMessagesPathJobResumesSyncWhenPathAppears(t *testing.T) {
 	}
 }
 
+func TestCancelPropagationNodeRequestsPreventsPathJobResume(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	propNode := make([]byte, 16)
+	for i := range propNode {
+		propNode[i] = byte(i + 1)
+	}
+	if err := router.SetOutboundPropagationNode(propNode); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan struct{})
+	hasPath := false
+	requestCount := 0
+	router.hasPath = func(_ []byte) bool { return hasPath }
+	router.requestPath = func(_ []byte) error { return nil }
+	router.linkStatus = func(*rns.Link) int { return rns.LinkActive }
+	router.pathWaitSleep = func(time.Duration) {
+		router.CancelPropagationNodeRequests()
+		hasPath = true
+		router.outboundPropagationLink = &rns.Link{}
+	}
+	router.identifyLink = func(_ *rns.Link, _ *rns.Identity) error { return nil }
+	router.requestLink = func(_ *rns.Link, _ string, _ any, _ func(*rns.RequestReceipt), _ func(*rns.RequestReceipt), _ func(*rns.RequestReceipt), _ time.Duration) (*rns.RequestReceipt, error) {
+		requestCount++
+		return nil, nil
+	}
+	router.startRequestMessagesPathJob = func() {
+		go func() {
+			router.requestMessagesPathJob()
+			close(done)
+		}()
+	}
+
+	router.RequestMessagesFromPropagationNode(nil)
+	<-done
+
+	if requestCount != 0 {
+		t.Fatalf("request count after cancel = %v, want 0", requestCount)
+	}
+	if router.PropagationTransferState() != PRIdle {
+		t.Fatalf("state after cancel = %v, want PRIdle", router.PropagationTransferState())
+	}
+	if router.wantsDownloadOnPathAvailableFrom != nil || router.wantsDownloadOnPathAvailableTo != nil {
+		t.Fatal("expected pending path download state to stay cleared after cancel")
+	}
+}
+
 func TestRequestMessagesLinkEstablished(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
