@@ -2209,16 +2209,32 @@ func (r *Router) sendMessagePacketLocked(message *Message) error {
 					deliveryCallback(message)
 				}
 			})
-			packet.Receipt.SetTimeoutCallback(func(_ *rns.PacketReceipt) {
+			packet.Receipt.SetTimeoutCallback(func(receipt *rns.PacketReceipt) {
+				var linkToTeardown *rns.Link
+				if receipt != nil {
+					if destinationLink, ok := receipt.Destination.(*rns.Link); ok {
+						linkToTeardown = destinationLink
+					}
+				}
+				shouldTeardown := false
 				r.mu.Lock()
-				defer r.mu.Unlock()
-				if message.State != StateCancelled && message.State != StateSent {
-					message.State = StateOutbound
-					message.Progress = 0.0
-					message.NextDeliveryAttempt = float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
+				if message.State != StateCancelled {
+					shouldTeardown = true
+					if message.State != StateSent {
+						message.State = StateOutbound
+						message.Progress = 0.0
+						message.NextDeliveryAttempt = float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
+					}
 				}
 				if r.outboundPropagationLinkMessage == message {
 					r.outboundPropagationLinkMessage = nil
+					if linkToTeardown == nil {
+						linkToTeardown = r.outboundPropagationLink
+					}
+				}
+				r.mu.Unlock()
+				if shouldTeardown && linkToTeardown != nil {
+					r.teardownLink(linkToTeardown)
 				}
 			})
 		}

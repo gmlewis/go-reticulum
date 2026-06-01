@@ -10507,12 +10507,24 @@ func TestPropagationTransferTimeout(t *testing.T) {
 	}
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
-	router.outboundPropagationLink, _ = rns.NewLink(ts, propNodeDest)
+	link, err := rns.NewLink(ts, propNodeDest)
+	if err != nil {
+		t.Fatalf("NewLink: %v", err)
+	}
+	router.outboundPropagationLink = link
 	router.linkStatus = func(link *rns.Link) int {
 		if link == router.outboundPropagationLink {
 			return rns.LinkActive
 		}
 		return link.GetStatus()
+	}
+	teardownCount := 0
+	router.teardownLink = func(closed *rns.Link) {
+		if closed != link {
+			t.Fatal("teardown called with unexpected link")
+		}
+		teardownCount++
+		router.handleOutboundPropagationLinkClosed(closed)
 	}
 
 	var lastPacket *rns.Packet
@@ -10532,6 +10544,15 @@ func TestPropagationTransferTimeout(t *testing.T) {
 	}
 	if got, want := msg.Progress, 0.0; got != want {
 		t.Fatalf("progress after timeout=%v want=%v", got, want)
+	}
+	if teardownCount != 1 {
+		t.Fatalf("teardown count=%v want=1", teardownCount)
+	}
+	if router.outboundPropagationLink != nil {
+		t.Fatal("expected propagated timeout to clear outbound propagation link")
+	}
+	if msg.NextDeliveryAttempt <= float64(now.UnixNano())/1e9 {
+		t.Fatal("expected propagated timeout to schedule a retry")
 	}
 }
 
