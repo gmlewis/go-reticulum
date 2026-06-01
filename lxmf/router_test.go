@@ -1430,6 +1430,44 @@ func TestProcessOutboundResourceLinkPendingRetryNoAttemptIncrement(t *testing.T)
 	}
 }
 
+func TestProcessOutboundResourceLinkPendingInitializesLinkProgress(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	t.Cleanup(func() {
+		_ = router.Close()
+	})
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	content := make([]byte, rns.MDU*2)
+	for i := range content {
+		content[i] = 'D'
+	}
+	msg := mustTestNewMessage(t, destination, sourceDest, string(content), "title", nil)
+
+	now := time.Unix(1700000000, 0)
+	router.now = func() time.Time { return now }
+	router.hasPath = func(_ []byte) bool { return true }
+	router.requestPath = func(_ []byte) error { return nil }
+
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+
+	if got, want := msg.Progress, 0.03; got != want {
+		t.Fatalf("progress=%v want=%v", got, want)
+	}
+	if !router.resourceLinkPending[string(destination.Hash)] {
+		t.Fatal("expected resource link establishment to be pending")
+	}
+}
+
 func TestSendMessageResourceLockedEstablishError(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)

@@ -2011,6 +2011,9 @@ func (r *Router) ProcessOutbound() {
 			}
 			if errors.Is(err, errResourceLinkPending) {
 				message.State = StateOutbound
+				if message.Progress < 0.03 {
+					message.Progress = 0.03
+				}
 				message.NextDeliveryAttempt = float64(r.now().Add(pathRequestWait).UnixNano()) / 1e9
 				remaining = append(remaining, message)
 				continue
