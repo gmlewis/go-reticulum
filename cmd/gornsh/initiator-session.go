@@ -260,7 +260,7 @@ func (rt *runtimeT) runInitiatorProtocolFlow(channel channelSession, opts option
 	timeout := time.Duration(opts.timeoutSec) * time.Second
 
 	versionMessage := &versionInfoMessage{SoftwareVersion: "gornsh " + rns.VERSION, ProtocolVersion: protocolVersion}
-	if err := sendMessageWithRetry(channel, versionMessage, time.Now().Add(timeout), rt.retrySleep); err != nil {
+	if err := sendMessageWithRetry(channel, versionMessage, time.Now().Add(timeout), rt.retrySleepWindow()); err != nil {
 		return 1, session, fmt.Errorf("failed to send version info: %w", err)
 	}
 
@@ -273,7 +273,7 @@ func (rt *runtimeT) runInitiatorProtocolFlow(channel channelSession, opts option
 	}
 
 	executeMessage := buildExecuteCommandMessage(opts)
-	if err := sendMessageWithRetry(channel, executeMessage, time.Now().Add(timeout), rt.retrySleep); err != nil {
+	if err := sendMessageWithRetry(channel, executeMessage, time.Now().Add(timeout), rt.retrySleepWindow()); err != nil {
 		return 1, session, fmt.Errorf("failed to send execute command: %w", err)
 	}
 
@@ -307,48 +307,47 @@ func (rt *runtimeT) runInitiatorProtocolFlow(channel channelSession, opts option
 			}
 			return 0, session, nil
 		case <-linkClosedCh:
-			// Link closure is the lowest priority; check for errors or exits first.
-			// Give it a tiny bit of time for final messages to be processed.
-			time.Sleep(rt.linkClosedGrace)
-			select {
-			case err := <-session.errCh:
-				return 1, session, err
-			case exitCode := <-session.doneCh:
-				rt.drainPostExitStreams(session, stopCh)
-				if opts.mirror {
-					return exitCode, session, nil
+			deadline := time.Now().Add(rt.linkClosedWindow())
+			for {
+				select {
+				case err := <-session.errCh:
+					return 1, session, err
+				case exitCode := <-session.doneCh:
+					rt.drainPostExitStreams(session, stopCh)
+					if opts.mirror {
+						return exitCode, session, nil
+					}
+					return 0, session, nil
+				default:
 				}
-				return 0, session, nil
-			default:
-			}
 
-			snapshot := session.terminalSnapshot()
-			if snapshot.lastErr != nil {
-				return 1, session, snapshot.lastErr
-			}
-			if snapshot.lastExit != nil {
-				rt.drainPostExitStreams(session, stopCh)
-				if opts.mirror {
-					return *snapshot.lastExit, session, nil
+				snapshot := session.terminalSnapshot()
+				if snapshot.lastErr != nil {
+					return 1, session, snapshot.lastErr
 				}
-				return 0, session, nil
-			}
-			if snapshot.terminated {
-				if opts.mirror {
+				if snapshot.lastExit != nil {
+					rt.drainPostExitStreams(session, stopCh)
+					if opts.mirror {
+						return *snapshot.lastExit, session, nil
+					}
 					return 0, session, nil
 				}
-				return 0, session, nil
-			}
-			if snapshot.streamEOFsComplete {
-				if opts.mirror {
+				if snapshot.terminated || snapshot.streamEOFsComplete || snapshot.sawOutput {
+					if opts.mirror {
+						return 0, session, nil
+					}
 					return 0, session, nil
 				}
-				return 0, session, nil
+				if !time.Now().Before(deadline) {
+					return 1, session, errors.New("link closed before command completed")
+				}
+
+				select {
+				case <-stopCh:
+					return 1, session, errors.New("link closed before command completed")
+				case <-time.After(rt.postExitDrainPoll()):
+				}
 			}
-			if snapshot.sawOutput {
-				return 0, session, nil
-			}
-			return 1, session, errors.New("link closed before command completed")
 		}
 	}
 }
@@ -383,9 +382,23 @@ func (rt *runtimeT) postExitDrainWindow() time.Duration {
 	return rt.postExitDrainGrace
 }
 
+func (rt *runtimeT) linkClosedWindow() time.Duration {
+	if rt == nil || rt.linkClosedGrace <= 0 {
+		return defaultLinkClosedGrace
+	}
+	return rt.linkClosedGrace
+}
+
 func (rt *runtimeT) postExitDrainPoll() time.Duration {
 	if rt == nil || rt.retrySleep <= 0 || rt.retrySleep > 10*time.Millisecond {
 		return 10 * time.Millisecond
+	}
+	return rt.retrySleep
+}
+
+func (rt *runtimeT) retrySleepWindow() time.Duration {
+	if rt == nil || rt.retrySleep <= 0 {
+		return defaultRetrySleep
 	}
 	return rt.retrySleep
 }

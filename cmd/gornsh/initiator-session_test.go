@@ -701,7 +701,7 @@ func TestRunInitiatorProtocolFlowLinkClosedWaitsForLateExitWithinGrace(t *testin
 	}
 }
 
-func TestRunInitiatorProtocolFlowDefaultGraceWaitsForLateExit(t *testing.T) {
+func TestRunInitiatorProtocolFlowZeroValueRuntimeWaitsForLateExitWithinDefaultGrace(t *testing.T) {
 	t.Parallel()
 
 	linkClosedCh := make(chan struct{}, 1)
@@ -716,14 +716,14 @@ func TestRunInitiatorProtocolFlowDefaultGraceWaitsForLateExit(t *testing.T) {
 		case *executeCommandMessage:
 			go func() {
 				linkClosedCh <- struct{}{}
-				time.Sleep(4200 * time.Millisecond)
+				time.Sleep(20 * time.Millisecond)
 				fake.emit(&commandExitedMessage{ReturnCode: 0})
 			}()
 		}
 	}
 
-	rt := &runtimeT{linkClosedGrace: defaultLinkClosedGrace}
-	opts := options{timeoutSec: 6, mirror: true, noTTY: true}
+	rt := &runtimeT{}
+	opts := options{timeoutSec: 1, mirror: true, noTTY: true}
 	code, _, err := rt.runInitiatorProtocolFlow(fake, opts, linkClosedCh, stopCh, false)
 	if err != nil {
 		t.Fatalf("runInitiatorProtocolFlow error: %v", err)
