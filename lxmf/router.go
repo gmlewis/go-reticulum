@@ -2174,6 +2174,7 @@ func (r *Router) ProcessDeferredStamps() {
 // failMessageLocked marks a message as failed and invokes its FailedCallback.
 // Mirrors Python LXMRouter.fail_message() lines 2389-2402.
 func (r *Router) failMessageLocked(message *Message) {
+	message.Progress = 0
 	if message.State != StateRejected {
 		message.State = StateFailed
 	}

@@ -556,6 +556,54 @@ func TestDeferredStamps(t *testing.T) {
 	}
 }
 
+func TestDeferredStampsFailureResetsProgress(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	stampCost := 257
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+	msg.StampCost = &stampCost
+	msg.Progress = 0.5
+
+	failedCalled := false
+	msg.FailedCallback = func(failed *Message) {
+		failedCalled = true
+		if failed != msg {
+			t.Fatalf("failed callback message=%p want=%p", failed, msg)
+		}
+	}
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+	if got := len(router.pendingDeferredStamps); got != 1 {
+		t.Fatalf("pendingDeferredStamps length=%v want=1", got)
+	}
+
+	router.ProcessDeferredStamps()
+
+	if got := len(router.pendingDeferredStamps); got != 0 {
+		t.Fatalf("pendingDeferredStamps length after failure=%v want=0", got)
+	}
+	if !failedCalled {
+		t.Fatal("expected FailedCallback to be invoked")
+	}
+	if msg.State != StateFailed {
+		t.Fatalf("state=%v want=%v", msg.State, StateFailed)
+	}
+	if msg.Progress != 0 {
+		t.Fatalf("progress=%v want=0", msg.Progress)
+	}
+}
+
 func TestDeferredPropagationStamps(t *testing.T) {
 	t.Parallel()
 
