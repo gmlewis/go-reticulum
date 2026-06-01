@@ -4032,6 +4032,12 @@ func (r *Router) RequestMessagesFromPropagationNode(limit *int) {
 
 func (r *Router) requestMessagesFromPropagationNodeWithIdentity(identity *rns.Identity, limit *int) {
 	r.mu.Lock()
+	r.propagationTransferProgress = 0.0
+	maxMessages := 0
+	if limit != nil {
+		maxMessages = *limit
+	}
+	r.propagationTransferMaxMessages = maxMessages
 	if r.outboundPropagationNode == nil {
 		r.mu.Unlock()
 		log.Printf("Cannot request LXMF propagation node sync, no default propagation node configured")
@@ -4039,12 +4045,6 @@ func (r *Router) requestMessagesFromPropagationNodeWithIdentity(identity *rns.Id
 	}
 	outboundNode := append([]byte{}, r.outboundPropagationNode...)
 	activeLink := r.outboundPropagationLink
-	r.propagationTransferProgress = 0.0
-	maxMessages := 0
-	if limit != nil {
-		maxMessages = *limit
-	}
-	r.propagationTransferMaxMessages = maxMessages
 	if identity == nil {
 		identity = r.identity
 	}

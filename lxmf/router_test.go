@@ -7009,6 +7009,30 @@ func TestRequestMessagesNoPropNode(t *testing.T) {
 	}
 }
 
+func TestRequestMessagesNoPropNodeResetsProgressAndLimit(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	router.propagationTransferProgress = 0.75
+	router.propagationTransferMaxMessages = 99
+	limit := 3
+
+	router.RequestMessagesFromPropagationNode(&limit)
+
+	if got, want := router.PropagationTransferProgress(), 0.0; got != want {
+		t.Fatalf("progress = %v, want %v", got, want)
+	}
+	if got, want := router.propagationTransferMaxMessages, limit; got != want {
+		t.Fatalf("propagationTransferMaxMessages = %v, want %v", got, want)
+	}
+	if got, want := router.PropagationTransferState(), PRIdle; got != want {
+		t.Fatalf("state = %v, want %v", got, want)
+	}
+}
+
 func TestRequestMessagesPathRequested(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
