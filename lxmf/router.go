@@ -2308,6 +2308,11 @@ func (r *Router) sendMessageLocked(message *Message) error {
 
 	if representation == RepresentationResource {
 		message.Representation = RepresentationResource
+		if message.Method == MethodDirect {
+			if r.resourceLinks[string(message.Destination.Hash)] != nil && message.Progress < 0.05 {
+				message.Progress = 0.05
+			}
+		}
 		return r.sendResource(message)
 	}
 
