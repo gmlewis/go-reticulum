@@ -2,6 +2,7 @@
 *.data
 *.md
 *.result
+.antigravitycli
 .vscode
 /compress
 

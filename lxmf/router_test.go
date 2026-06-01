@@ -11465,3 +11465,39 @@ func TestEnablePropagationLeavesRouterDisabledOnCorruptPeersFile(t *testing.T) {
 		t.Fatal("propagation should remain disabled when peers file is corrupt")
 	}
 }
+
+func TestCleanThrottledPeers(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	now := time.Now()
+	router.now = func() time.Time { return now }
+
+	peerHash := rns.FullHash([]byte("throttled-peer-hash"))[:16]
+	if err := router.ThrottlePeer(peerHash, 100*time.Millisecond); err != nil {
+		t.Fatalf("ThrottlePeer: %v", err)
+	}
+
+	router.cleanThrottledPeers()
+	router.mu.Lock()
+	_, throttled := router.throttledPeers[string(peerHash)]
+	router.mu.Unlock()
+	if !throttled {
+		t.Fatal("expected peer to still be throttled before expiry")
+	}
+
+	// Move time forward past expiry
+	now = now.Add(150 * time.Millisecond)
+	router.cleanThrottledPeers()
+
+	router.mu.Lock()
+	_, throttled = router.throttledPeers[string(peerHash)]
+	router.mu.Unlock()
+	if throttled {
+		t.Fatal("expected peer throttle to be cleaned up after expiry")
+	}
+}

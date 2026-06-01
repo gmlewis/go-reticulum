@@ -725,6 +725,18 @@ func (r *Router) ThrottlePeer(peerPropagationHash []byte, duration time.Duration
 	return nil
 }
 
+func (r *Router) cleanThrottledPeers() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	now := r.now()
+	for key, until := range r.throttledPeers {
+		if now.After(until) {
+			delete(r.throttledPeers, key)
+		}
+	}
+}
+
 // SetPeerSyncBackoff specifies the minimum resting duration required between consecutive peer sync operations.
 func (r *Router) SetPeerSyncBackoff(duration time.Duration) error {
 	if duration < 0 {
