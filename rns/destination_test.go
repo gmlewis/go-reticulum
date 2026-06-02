@@ -122,3 +122,72 @@ func TestRegisterRequestHandlerAutoCompressDefaults(t *testing.T) {
 		t.Fatalf("expected disabled handler limit 0, got %v", falseHandler.AutoCompressLimit)
 	}
 }
+
+func TestDestinationAppData(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	id := mustTestNewIdentity(t, true)
+	dest, err := NewDestination(ts, id, DestinationIn, DestinationSingle, "test", "app")
+	if err != nil {
+		t.Fatalf("NewDestination: %v", err)
+	}
+
+	// AcceptsLinks defaults to true on single destinations.
+	if !dest.AcceptsLinks() {
+		t.Fatal("default AcceptsLinks() should be true for SINGLE destinations")
+	}
+
+	// Disable then re-enable.
+	dest.SetAcceptsLinks(false)
+	if dest.AcceptsLinks() {
+		t.Fatal("AcceptsLinks() should be false after SetAcceptsLinks(false)")
+	}
+	dest.SetAcceptsLinks(true)
+	if !dest.AcceptsLinks() {
+		t.Fatal("AcceptsLinks() should be true after SetAcceptsLinks(true)")
+	}
+
+	// Default app data lifecycle.
+	appData := []byte("default-app-data")
+	dest.SetDefaultAppData(appData)
+	if got := dest.DefaultAppData(); !bytes.Equal(got, appData) {
+		t.Fatalf("DefaultAppData = %q, want %q", got, appData)
+	}
+	dest.ClearDefaultAppData()
+	if dest.DefaultAppData() != nil {
+		t.Fatal("DefaultAppData should be nil after ClearDefaultAppData")
+	}
+}
+
+func TestDestinationRatchetConfig(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	id := mustTestNewIdentity(t, true)
+	dest, err := NewDestination(ts, id, DestinationIn, DestinationSingle, "test", "app")
+	if err != nil {
+		t.Fatalf("NewDestination: %v", err)
+	}
+
+	// SetRatchetInterval stores and reports the configured interval.
+	dest.SetRatchetInterval(15 * time.Minute)
+	if dest.RatchetInterval() != 15*time.Minute {
+		t.Fatalf("RatchetInterval = %v, want 15m", dest.RatchetInterval())
+	}
+
+	// SetRetainedRatchets stores and reports the configured count.
+	dest.SetRetainedRatchets(256)
+	if dest.RetainedRatchets() != 256 {
+		t.Fatalf("RetainedRatchets = %d, want 256", dest.RetainedRatchets())
+	}
+
+	// EnforceRatchets toggles the enforcement flag.
+	if dest.EnforceRatchets() {
+		t.Fatal("EnforceRatchets should default to false")
+	}
+	dest.EnforceRatchets(true)
+	if !dest.EnforceRatchets() {
+		t.Fatal("EnforceRatchets should be true after EnforceRatchets(true)")
+	}
+}

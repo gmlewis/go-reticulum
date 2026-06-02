@@ -193,3 +193,32 @@ func PrettyHex(data []byte) string {
 func PrettyHexFromString(hexStr string) string {
 	return "<" + hexStr + ">"
 }
+
+// RNode KISS command codes. Mirrors the KISS protocol command set
+// used by the RNode firmware. The values are kept in the rns
+// package (rather than the linux-only rnode_linux package) so that
+// cross-platform tests can assert the constants are present.
+const (
+	// RNodeCmdFrequency is the KISS command code for setting the
+	// radio frequency.
+	RNodeCmdFrequency = 0x01
+	// RNodeCmdBandwidth is the KISS command code for setting the
+	// radio bandwidth.
+	RNodeCmdBandwidth = 0x02
+	// RNodeCmdTXPower is the KISS command code for setting the
+	// radio transmit power.
+	RNodeCmdTXPower = 0x03
+	// RNodeCmdSpreadingFactor is the KISS command code for setting
+	// the radio spreading factor.
+	RNodeCmdSpreadingFactor = 0x04
+	// RNodeCmdCodingRate is the KISS command code for setting the
+	// radio coding rate.
+	RNodeCmdCodingRate = 0x05
+	// RNodeCmdSTALock is the KISS command code for STA lock.
+	RNodeCmdSTALock = 0x06
+	// RNodeCmdLTALock is the KISS command code for LTA lock.
+	RNodeCmdLTALock = 0x07
+	// RNodeCmdRadioState is the KISS command code for setting the
+	// radio state (on/off).
+	RNodeCmdRadioState = 0x08
+)

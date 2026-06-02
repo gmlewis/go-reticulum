@@ -140,6 +140,13 @@ type Link struct {
 	requestTime   time.Time
 	lastProof     time.Time
 
+	now func() time.Time
+
+	trackPHYStats bool
+	rssi          float64
+	snr           float64
+	q             float64
+
 	callbacks LinkCallbacks
 	mu        sync.Mutex
 
@@ -1551,4 +1558,203 @@ func (l *Link) requestResourceConcluded(resource *Resource) {
 
 func unpackRequestResponseData(data []byte) (any, error) {
 	return msgpack.UnpackPreserveBinMapKeys(data)
+}
+
+// NoInboundFor returns how long it has been since the link last
+// received a packet from the remote peer. It is the Go port of
+// Python's Link.no_inbound_for().
+func (l *Link) NoInboundFor() time.Duration {
+	if l == nil {
+		return 0
+	}
+	l.mu.Lock()
+	last := l.lastInbound
+	l.mu.Unlock()
+	return l.nowTime().Sub(last)
+}
+
+// NoOutboundFor returns how long it has been since the link last
+// sent a packet to the remote peer. It is the Go port of Python's
+// Link.no_outbound_for().
+func (l *Link) NoOutboundFor() time.Duration {
+	if l == nil {
+		return 0
+	}
+	l.mu.Lock()
+	last := l.lastOutbound
+	l.mu.Unlock()
+	return l.nowTime().Sub(last)
+}
+
+// NoDataFor returns the minimum of NoInboundFor and NoOutboundFor.
+// It is the Go port of Python's Link.no_data_for().
+func (l *Link) NoDataFor() time.Duration {
+	in := l.NoInboundFor()
+	out := l.NoOutboundFor()
+	if in < out {
+		return in
+	}
+	return out
+}
+
+// InactiveFor returns the minimum of NoInboundFor and NoOutboundFor.
+// It is the Go port of Python's Link.inactive_for().
+func (l *Link) InactiveFor() time.Duration {
+	return l.NoDataFor()
+}
+
+// nowTime returns the current time, honoring the optional test
+// clock. If no clock has been installed, it falls back to time.Now.
+func (l *Link) nowTime() time.Time {
+	if l.now != nil {
+		return l.now()
+	}
+	return time.Now()
+}
+
+// TrackPHYStats enables or disables the link-level physical-layer
+// statistics (RSSI, SNR, link quality). It is the Go port of
+// Python's Link.track_phy_stats().
+func (l *Link) TrackPHYStats(track bool) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.trackPHYStats = track
+}
+
+// GetRSSI returns the link's last-recorded RSSI in dBm, or nil if
+// PHY stats tracking is disabled. It is the Go port of Python's
+// Link.get_rssi().
+func (l *Link) GetRSSI() *float64 {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.trackPHYStats {
+		return nil
+	}
+	v := l.rssi
+	return &v
+}
+
+// GetSNR returns the link's last-recorded SNR in dB, or nil if
+// PHY stats tracking is disabled. It is the Go port of Python's
+// Link.get_snr().
+func (l *Link) GetSNR() *float64 {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.trackPHYStats {
+		return nil
+	}
+	v := l.snr
+	return &v
+}
+
+// GetQ returns the link's last-recorded link quality, or nil if
+// PHY stats tracking is disabled. It is the Go port of Python's
+// Link.get_q().
+func (l *Link) GetQ() *float64 {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.trackPHYStats {
+		return nil
+	}
+	v := l.q
+	return &v
+}
+
+// RegisterOutgoingResource adds the resource to the link's outgoing
+// resources list. It is the Go port of Python's
+// Link.register_outgoing_resource().
+func (l *Link) RegisterOutgoingResource(r *Resource) {
+	if l == nil || r == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.outgoingResources = append(l.outgoingResources, r)
+}
+
+// RegisterIncomingResource adds the resource to the link's incoming
+// resources list. It is the Go port of Python's
+// Link.register_incoming_resource().
+func (l *Link) RegisterIncomingResource(r *Resource) {
+	if l == nil || r == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.incomingResources = append(l.incomingResources, r)
+}
+
+// HasIncomingResource reports whether the link currently has the
+// given resource registered as incoming. It is the Go port of
+// Python's Link.has_incoming_resource().
+func (l *Link) HasIncomingResource(r *Resource) bool {
+	if l == nil || r == nil {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, existing := range l.incomingResources {
+		if existing == r {
+			return true
+		}
+	}
+	return false
+}
+
+// CancelOutgoingResource removes the resource from the link's
+// outgoing resources list. It is the Go port of Python's
+// Link.cancel_outgoing_resource().
+func (l *Link) CancelOutgoingResource(r *Resource) {
+	if l == nil || r == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for i, existing := range l.outgoingResources {
+		if existing == r {
+			l.outgoingResources = append(l.outgoingResources[:i], l.outgoingResources[i+1:]...)
+			return
+		}
+	}
+}
+
+// CancelIncomingResource removes the resource from the link's
+// incoming resources list. It is the Go port of Python's
+// Link.cancel_incoming_resource().
+func (l *Link) CancelIncomingResource(r *Resource) {
+	if l == nil || r == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for i, existing := range l.incomingResources {
+		if existing == r {
+			l.incomingResources = append(l.incomingResources[:i], l.incomingResources[i+1:]...)
+			return
+		}
+	}
+}
+
+// ReadyForNewResource reports whether the link is ready to accept
+// new incoming resources. It is the Go port of Python's
+// Link.ready_for_new_resource().
+func (l *Link) ReadyForNewResource() bool {
+	if l == nil {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.outgoingResources) == 0
 }

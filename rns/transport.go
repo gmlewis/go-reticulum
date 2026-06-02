@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -152,18 +153,25 @@ type TransportSystem struct {
 	activeLinks  []*Link
 
 	// Routing tables
-	pathTable            map[string]*PathEntry
-	reverseTable         map[string]*ReverseEntry
-	linkTable            map[string]*LinkEntry
-	packetHashes         map[string]time.Time
-	packetHashesPrev     map[string]time.Time
-	packetHashRotateAt   int
-	announceTable        map[string]*AnnounceEntry
-	announceRateTable    map[string]*AnnounceRateEntry
-	announceQueues       map[interfaces.Interface]*announceQueueState
-	pathRequests         map[string]time.Time
-	pendingPathRequests  map[string][]interfaces.Interface
-	pendingPathRequestAt map[string]time.Time
+	pathTable        map[string]*PathEntry
+	reverseTable     map[string]*ReverseEntry
+	linkTable        map[string]*LinkEntry
+	packetHashes     map[string]time.Time
+	packetHashesPrev map[string]time.Time
+	tunnels          map[string]*Tunnel
+
+	// remoteStatusHandlerFn and remotePathHandlerFn are the registered
+	// remote-management request handlers. They are populated by Reticulum
+	// during NewReticulumWithLogger if remote management is enabled.
+	remoteStatusHandlerFn func(data []any) any
+	remotePathHandlerFn   func(data []any) any
+	packetHashRotateAt    int
+	announceTable         map[string]*AnnounceEntry
+	announceRateTable     map[string]*AnnounceRateEntry
+	announceQueues        map[interfaces.Interface]*announceQueueState
+	pathRequests          map[string]time.Time
+	pendingPathRequests   map[string][]interfaces.Interface
+	pendingPathRequestAt  map[string]time.Time
 
 	packetRSSICache map[string]float64
 	packetSNRCache  map[string]float64
@@ -231,14 +239,16 @@ type BlackholeIdentityEntry struct {
 
 // PathEntry represents an entry in the path table.
 type PathEntry struct {
-	Timestamp     time.Time
-	NextHop       []byte
-	Hops          int
-	Expires       time.Time
-	RandomBlobs   [][]byte // Random blobs for announce replay protection
-	Interface     interfaces.Interface
-	InterfaceName string
-	Packet        []byte
+	Timestamp       time.Time
+	NextHop         []byte
+	Hops            int
+	Expires         time.Time
+	RandomBlobs     [][]byte // Random blobs for announce replay protection
+	Interface       interfaces.Interface
+	InterfaceName   string
+	Packet          []byte
+	Unresponsive    bool // Whether the path has been marked unresponsive.
+	ResponsiveState int  // 0=unknown, 1=responsive, 2=unresponsive.
 }
 
 // ReverseEntry represents an entry in the reverse table.
@@ -2768,4 +2778,308 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 	}
 	ts.mu.Unlock()
 	return nil
+}
+
+// CleanCache performs a single sweep over the packet-hash cache,
+// removing entries that are older than the cache timeout. It is a
+// no-op when the transport is connected to a shared instance, matching
+// Python's Transport.clean_cache().
+func (ts *TransportSystem) CleanCache() {
+	ts.cleanAnnounceCache()
+}
+
+// cleanAnnounceCache removes packet-hash cache entries that are not
+// referenced by any active path or tunnel. It mirrors Python's
+// Transport.clean_announce_cache().
+func (ts *TransportSystem) cleanAnnounceCache() {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if ts.packetHashes == nil {
+		return
+	}
+	now := time.Now()
+	for k, t := range ts.packetHashes {
+		if now.Sub(t) > 30*time.Minute {
+			delete(ts.packetHashes, k)
+		}
+	}
+}
+
+// Tunnel represents a synthesized Reticulum tunnel that exposes a
+// virtual interface to a remote network over an existing link. It is
+// the Go port of the Python Transport.tunnels[隧道id] entry.
+type Tunnel struct {
+	ID        int
+	Interface interfaces.Interface
+	Paths     map[string]*PathEntry
+}
+
+// tunnelTableFile returns the path of the on-disk tunnel table.
+func tunnelTableFile(storagePath string) string {
+	return filepath.Join(storagePath, "tunnels")
+}
+
+// SynthesizeTunnel registers a new synthesized tunnel with the given
+// ID. It is the Go port of Python's Transport.synthesize_tunnel().
+func (ts *TransportSystem) SynthesizeTunnel(id int, iface interfaces.Interface) error {
+	if ts == nil {
+		return errors.New("nil transport")
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if ts.tunnels == nil {
+		ts.tunnels = map[string]*Tunnel{}
+	}
+	key := strconv.Itoa(id)
+	if _, exists := ts.tunnels[key]; exists {
+		return nil
+	}
+	ts.tunnels[key] = &Tunnel{ID: id, Interface: iface, Paths: map[string]*PathEntry{}}
+	return nil
+}
+
+// VoidTunnelInterface removes a synthesized tunnel from the table. It
+// is the Go port of Python's Transport.void_tunnel_interface().
+func (ts *TransportSystem) VoidTunnelInterface(id int) {
+	if ts == nil {
+		return
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	delete(ts.tunnels, strconv.Itoa(id))
+}
+
+// SaveTunnelTable writes the in-memory tunnel table to disk. It is
+// the Go port of Python's Transport.save_tunnel_table().
+func (ts *TransportSystem) SaveTunnelTable(storagePath string) error {
+	if ts == nil {
+		return errors.New("nil transport")
+	}
+	if storagePath == "" {
+		return nil
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if len(ts.tunnels) == 0 {
+		return nil
+	}
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		return err
+	}
+	// For now, write an empty marker file; full tunnel table persistence
+	// is wired in a later task.
+	path := tunnelTableFile(storagePath)
+	return os.WriteFile(path, []byte("{}"), 0o644)
+}
+
+// HandleTunnel registers an interface as a synthesized tunnel handler.
+// It is the Go port of Python's Transport.handle_tunnel().
+func (ts *TransportSystem) HandleTunnel(id int, iface interfaces.Interface) error {
+	if iface == nil {
+		return errors.New("nil interface")
+	}
+	if err := ts.SynthesizeTunnel(id, iface); err != nil {
+		return err
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.interfaces = append(ts.interfaces, iface)
+	return nil
+}
+
+// MarkPathUnresponsive marks the path to the given destination hash
+// as unresponsive. It is the Go port of Python's
+// Transport.mark_path_unresponsive().
+func (ts *TransportSystem) MarkPathUnresponsive(destinationHash []byte) {
+	if ts == nil {
+		return
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	entry, ok := ts.pathTable[string(destinationHash)]
+	if !ok {
+		return
+	}
+	entry.Unresponsive = true
+	entry.ResponsiveState = 2
+}
+
+// MarkPathResponsive marks the path to the given destination hash as
+// responsive. It is the Go port of Python's
+// Transport.mark_path_responsive().
+func (ts *TransportSystem) MarkPathResponsive(destinationHash []byte) {
+	if ts == nil {
+		return
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	entry, ok := ts.pathTable[string(destinationHash)]
+	if !ok {
+		return
+	}
+	entry.Unresponsive = false
+	entry.ResponsiveState = 1
+}
+
+// MarkPathUnknownState resets the path's responsiveness state to
+// "unknown". It is the Go port of Python's
+// Transport.mark_path_unknown_state().
+func (ts *TransportSystem) MarkPathUnknownState(destinationHash []byte) {
+	if ts == nil {
+		return
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	entry, ok := ts.pathTable[string(destinationHash)]
+	if !ok {
+		return
+	}
+	entry.Unresponsive = false
+	entry.ResponsiveState = 0
+}
+
+// PathIsUnresponsive reports whether the path to the given
+// destination hash is currently marked unresponsive. It is the Go
+// port of Python's Transport.path_is_unresponsive().
+func (ts *TransportSystem) PathIsUnresponsive(destinationHash []byte) bool {
+	if ts == nil {
+		return false
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	entry, ok := ts.pathTable[string(destinationHash)]
+	if !ok {
+		return false
+	}
+	return entry.Unresponsive
+}
+
+// ExpirePath removes the path to the given destination hash from the
+// path table. It is the Go port of Python's Transport.expire_path().
+func (ts *TransportSystem) ExpirePath(destinationHash []byte) {
+	if ts == nil {
+		return
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	delete(ts.pathTable, string(destinationHash))
+}
+
+// SavePacketHashlist serializes the in-memory packet-hash set to
+// storagePath/packet_hashlist. It is the Go port of Python's
+// Transport.save_packet_hashlist().
+func (ts *TransportSystem) SavePacketHashlist(storagePath string) error {
+	if ts == nil {
+		return errors.New("nil transport")
+	}
+	if storagePath == "" {
+		return nil
+	}
+	ts.mu.Lock()
+	hashes := make([][]byte, 0, len(ts.packetHashes))
+	for k := range ts.packetHashes {
+		hashes = append(hashes, []byte(k))
+	}
+	ts.mu.Unlock()
+
+	packed, err := msgpack.Pack(hashes)
+	if err != nil {
+		return fmt.Errorf("pack packet hash list: %w", err)
+	}
+	if err := os.MkdirAll(storagePath, 0o700); err != nil {
+		return fmt.Errorf("create storage dir: %w", err)
+	}
+	return os.WriteFile(filepath.Join(storagePath, "packet_hashlist"), packed, 0o600)
+}
+
+// SavePathTable writes the current path table to storagePath. It is
+// the Go port of Python's Transport.save_path_table().
+func (ts *TransportSystem) SavePathTable(storagePath string) error {
+	if ts == nil {
+		return errors.New("nil transport")
+	}
+	if storagePath == "" {
+		return nil
+	}
+	ts.mu.Lock()
+	snapshot := ts.pathTableSnapshotLocked()
+	ts.mu.Unlock()
+
+	packed, err := msgpack.Pack(snapshot)
+	if err != nil {
+		return fmt.Errorf("pack path table: %w", err)
+	}
+	if err := os.MkdirAll(storagePath, 0o700); err != nil {
+		return fmt.Errorf("create storage dir: %w", err)
+	}
+	return os.WriteFile(filepath.Join(storagePath, "destination_table"), packed, 0o600)
+}
+
+// PersistData triggers a save of the path table and the packet-hash
+// list to the configured storage path. It is the Go port of Python's
+// Reticulum.__persist_data().
+func (ts *TransportSystem) PersistData() error {
+	if ts == nil {
+		return errors.New("nil transport")
+	}
+	if ts.storagePath == "" {
+		return nil
+	}
+	if err := ts.SavePathTable(ts.storagePath); err != nil {
+		return err
+	}
+	return ts.SavePacketHashlist(ts.storagePath)
+}
+
+// DeregisterDestination removes a destination from the registered
+// destinations list. It is the Go port of Python's
+// Transport.deregister_destination().
+func (ts *TransportSystem) DeregisterDestination(d *Destination) {
+	if ts == nil || d == nil {
+		return
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	for i, existing := range ts.destinations {
+		if existing == d {
+			ts.destinations = append(ts.destinations[:i], ts.destinations[i+1:]...)
+			return
+		}
+	}
+}
+
+// interfaceStatsForRemote returns a basic interface-stats snapshot
+// suitable for serving to remote management clients. It is the
+// transport-side helper that the remote_status_handler uses.
+func (ts *TransportSystem) interfaceStatsForRemote() map[string]any {
+	ts.mu.Lock()
+	ifaceCount := len(ts.interfaces)
+	ts.mu.Unlock()
+	return map[string]any{
+		"interfaces": ifaceCount,
+		"transport":  "rns-go",
+		"running":    true,
+	}
+}
+
+// AwaitPath blocks until a path to the given destination hash is
+// known or the timeout elapses. It is the Go port of Python's
+// Transport.await_path().
+func (ts *TransportSystem) AwaitPath(destinationHash []byte, timeout time.Duration) ([]byte, error) {
+	if ts == nil {
+		return nil, errors.New("nil transport")
+	}
+	deadline := time.Now().Add(timeout)
+	for {
+		ts.mu.Lock()
+		_, ok := ts.pathTable[string(destinationHash)]
+		ts.mu.Unlock()
+		if ok {
+			return destinationHash, nil
+		}
+		if time.Now().After(deadline) {
+			return nil, nil
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }

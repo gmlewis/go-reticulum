@@ -190,3 +190,44 @@ func TestResourceValidateProofFailure(t *testing.T) {
 		t.Fatal("expected callback to be called")
 	}
 }
+
+func TestResourceAccessors(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	id := mustTestNewIdentity(t, true)
+	dest, err := NewDestination(ts, id, DestinationIn, DestinationSingle, "test", "app")
+	if err != nil {
+		t.Fatalf("NewDestination: %v", err)
+	}
+	link, err := NewLink(ts, dest)
+	if err != nil {
+		t.Fatalf("NewLink: %v", err)
+	}
+
+	res := &Resource{link: link, data: []byte("hello")}
+
+	if got := res.GetDataSize(); got != 5 {
+		t.Fatalf("GetDataSize = %d, want 5", got)
+	}
+	if res.IsRequest() {
+		t.Fatal("IsRequest should default to false")
+	}
+	if res.IsResponse() {
+		t.Fatal("IsResponse should default to false")
+	}
+	res.isResponse = true
+	res.requestID = []byte("req-id-1234567890")
+	if !res.IsResponse() {
+		t.Fatal("IsResponse should be true after set")
+	}
+	if res.IsCompressed() {
+		t.Fatal("IsCompressed should default to false")
+	}
+	// The remaining accessors are not currently populated by the
+	// constructor but the contract is "no panic and reasonable
+	// zero values for un-initialised fields".
+	_ = res.GetParts()
+	_ = res.GetSegments()
+	_ = res.GetTransferSize()
+}

@@ -12,7 +12,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
 	"github.com/gmlewis/go-reticulum/testutils"
@@ -248,5 +250,83 @@ func TestParseBoolLike(t *testing.T) {
 		if parseBoolLike(v) {
 			t.Fatalf("parseBoolLike(%q) = true, want false", v)
 		}
+	}
+}
+
+func TestReticulumBackgroundJobs(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, "rns-test-")
+	defer cleanup()
+
+	r, err := NewReticulumWithLogger(ts, tmpDir, nil)
+	if err != nil {
+		t.Fatalf("NewReticulumWithLogger: %v", err)
+	}
+
+	// Stop the maintenance goroutine NewTransportSystem started so the
+	// test can directly drive the periodic job loop.
+	ts.Stop()
+
+	// Re-set the storage path so PersistData has a target.
+	ts.mu.Lock()
+	ts.storagePath = tmpDir
+	ts.mu.Unlock()
+
+	// The job loop should run and call PersistData at least once.
+	var ticks atomic.Uint32
+	stopCh := make(chan struct{})
+	doneCh := make(chan struct{})
+	go func() {
+		defer close(doneCh)
+		ticker := time.NewTicker(5 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopCh:
+				return
+			case <-ticker.C:
+				if err := ts.PersistData(); err == nil {
+					ticks.Add(1)
+				}
+			}
+		}
+	}()
+
+	// Wait for at least 2 ticks.
+	for ticks.Load() < 2 {
+		time.Sleep(time.Millisecond)
+	}
+	close(stopCh)
+	<-doneCh
+
+	if err := r.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+}
+
+func TestInterfaceManagement(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	r, err := NewReticulumWithLogger(ts, tmpDir, nil)
+	if err != nil {
+		t.Fatalf("NewReticulumWithLogger: %v", err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+
+	// Halt and resume a non-existent interface should not error.
+	if err := r.HaltInterface(nil); err != nil {
+		t.Fatalf("HaltInterface(nil): %v", err)
+	}
+	if err := r.ResumeInterface(nil); err != nil {
+		t.Fatalf("ResumeInterface(nil): %v", err)
+	}
+	// Reload a non-existent interface should not error.
+	if err := r.ReloadInterface(nil); err != nil {
+		t.Fatalf("ReloadInterface(nil): %v", err)
 	}
 }

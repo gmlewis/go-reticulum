@@ -83,6 +83,8 @@ const (
 	RepresentationPacket = 0x01
 	// RepresentationResource specifies that the message requires a multi-packet Reticulum resource for transfer.
 	RepresentationResource = 0x02
+	// RepresentationPaper specifies that the message is encoded as a paper-message URI payload.
+	RepresentationPaper = 0x04
 )
 
 const (
@@ -186,4 +188,84 @@ const (
 	DefaultTicketIntervalSeconds = 1 * 24 * 60 * 60
 	// TicketCostValue sets the nominal computational cost value required to generate a valid ticket.
 	TicketCostValue = 0x100
+)
+
+// Periodic job counters. These mirror the JOB_* constants in Python's
+// LXMRouter and govern the interval (in jobloop ticks) at which each
+// sub-job fires.
+const (
+	// JOB_OUTBOUND_INTERVAL ticks between ProcessOutbound invocations.
+	JOB_OUTBOUND_INTERVAL = 1
+	// JOB_STAMPS_INTERVAL ticks between deferred stamp processing launches.
+	JOB_STAMPS_INTERVAL = 1
+	// JOB_LINKS_INTERVAL ticks between link cleanup invocations.
+	JOB_LINKS_INTERVAL = 1
+	// JOB_TRANSIENT_INTERVAL ticks between transient ID cache cleanups.
+	JOB_TRANSIENT_INTERVAL = 60
+	// JOB_STORE_INTERVAL ticks between propagation message store cleanups.
+	JOB_STORE_INTERVAL = 120
+	// JOB_PEERSYNC_INTERVAL ticks between peer sync invocations.
+	JOB_PEERSYNC_INTERVAL = 6
+	// JOB_ROTATE_INTERVAL ticks between peer rotation culls.
+	JOB_ROTATE_INTERVAL = 56 * 6
+)
+
+// PeerMaxUnreachable matches Python's LXMPeer.MAX_UNREACHABLE.
+const PeerMaxUnreachable = 14 * 24 * 60 * 60
+
+// URISchema is the LXMF paper-message URI schema prefix. Matches Python's
+// LXMessage.URI_SCHEMA of "lxmf".
+const URISchema = "lxmf"
+
+// QRErrorCorrection is the QR error-correction level used when generating
+// paper-message QR codes. Matches Python's LXMessage.QR_ERROR_CORRECTION.
+const QRErrorCorrection = "ERROR_CORRECT_L"
+
+// QRMaxStore is the maximum byte length that fits in a single QR code at
+// the chosen error-correction level. Matches Python's LXMessage.QR_MAX_STORAGE.
+const QRMaxStore = 2953
+
+// PaperMDU is the maximum content length for a paper-message URI payload.
+// Matches Python's LXMessage.PAPER_MDU.
+const PaperMDU = ((QRMaxStore - (len(URISchema) + len("://"))) * 6) / 8
+
+// EncryptedPacketMDU mirrors Python's LXMessage.ENCRYPTED_PACKET_MDU.
+const EncryptedPacketMDU = rns.MDU + TimestampSize
+
+// EncryptedPacketMaxContent mirrors Python's
+// LXMessage.ENCRYPTED_PACKET_MAX_CONTENT.
+const EncryptedPacketMaxContent = EncryptedPacketMDU - LXMFOverhead + DestinationLength
+
+// Audio-mode constants matching Python's LXMF AM_* values.
+const (
+	AMCodec2_450PWB = 0x01
+	AMCodec2_450    = 0x02
+	AMCodec2_700C   = 0x03
+	AMCodec2_1200   = 0x04
+	AMCodec2_1300   = 0x05
+	AMCodec2_1400   = 0x06
+	AMCodec2_1600   = 0x07
+	AMCodec2_2400   = 0x08
+	AMCodec2_3200   = 0x09
+
+	AMOpusOGG       = 0x10
+	AMOpusLBW       = 0x11
+	AMOpusMBW       = 0x12
+	AMOpusPTT       = 0x13
+	AMOpusRT_HDX    = 0x14
+	AMOpusRT_FDX    = 0x15
+	AMOpusStandard  = 0x16
+	AMOpusHQ        = 0x17
+	AMOpusBroadcast = 0x18
+	AMOpusLossless  = 0x19
+
+	AMCustom = 0xFF
+)
+
+// Renderer constants matching Python's LXMF RENDERER_* values.
+const (
+	RendererPlain    = 0x00
+	RendererMicron   = 0x01
+	RendererMarkdown = 0x02
+	RendererBBCode   = 0x03
 )

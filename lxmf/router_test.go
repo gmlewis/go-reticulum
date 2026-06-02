@@ -7,6 +7,7 @@ package lxmf
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -15,7 +16,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unsafe"
@@ -11499,5 +11502,595 @@ func TestCleanThrottledPeers(t *testing.T) {
 	router.mu.Unlock()
 	if throttled {
 		t.Fatal("expected peer throttle to be cleaned up after expiry")
+	}
+}
+
+func TestRouterJobLoop(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	// Stop the jobloop that NewRouter started (it uses the 4s default
+	// interval which is too slow for a unit test) and re-start it with a
+	// short interval so the test is fast and deterministic.
+	router.stopJobLoop()
+	router.processingInterval = 5 * time.Millisecond
+
+	var tickCount atomic.Uint32
+	router.jobsHook = func() {
+		tickCount.Add(1)
+	}
+	router.startJobLoop()
+
+	// Wait until at least 2 ticks fire.
+	done := make(chan struct{})
+	go func() {
+		for tickCount.Load() < 2 {
+			time.Sleep(time.Millisecond)
+		}
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// good
+	case <-time.After(2 * time.Second):
+		t.Fatalf("jobloop did not tick at least twice within 2s (count=%d)", tickCount.Load())
+	}
+
+	// Close should stop the jobloop goroutine cleanly.
+	if err := router.Close(); err != nil {
+		t.Fatalf("router.Close(): %v", err)
+	}
+
+	// After Close, the goroutine should be gone: no new ticks may fire.
+	before := tickCount.Load()
+	time.Sleep(50 * time.Millisecond)
+	if got := tickCount.Load(); got != before {
+		t.Fatalf("jobloop ticked after Close: before=%d after=%d", before, got)
+	}
+}
+
+func TestCancelOutboundStamps(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	t.Cleanup(func() { _ = router.Close() })
+
+	// Set up a high-cost deferred stamp so generation takes a long time.
+	src := mustTestNewIdentity(t, true)
+	dst := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, src, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	dest := mustTestNewDestination(t, ts, dst, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	cost := 22 // sufficiently high to take a noticeable amount of time
+	msg := mustTestNewMessage(t, dest, sourceDest, "hello", "title", nil)
+	msg.DeferStamp = true
+	c := cost
+	msg.StampCost = &c
+	if err := msg.Pack(); err != nil {
+		t.Fatalf("Pack: %v", err)
+	}
+
+	router.mu.Lock()
+	router.pendingDeferredStamps[string(msg.MessageID)] = msg
+	router.processingDeferredStamps = true // so ProcessDeferredStamps returns early
+	router.mu.Unlock()
+
+	// Start stamp generation in a goroutine using a cancelable context.
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = msg.GetStampWithContext(ctx)
+	}()
+
+	// Give it a moment to start.
+	time.Sleep(20 * time.Millisecond)
+
+	// Cancel via CancelOutbound, then trigger the context.
+	router.CancelOutbound(msg.MessageID, StateCancelled)
+	cancel()
+
+	// The goroutine must terminate within a bounded window.
+	select {
+	case <-done:
+		// good
+	case <-time.After(2 * time.Second):
+		t.Fatal("stamp generation goroutine did not honor cancellation within 2s")
+	}
+}
+
+func TestRotatePeers(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	t.Cleanup(func() { _ = router.Close() })
+
+	// Stop the jobloop that NewRouter started so its RotatePeers call
+	// does not race with the test's direct manipulation of `r.peers`.
+	router.stopJobLoop()
+
+	// Enable propagation so the jobloop considers rotation.
+	router.EnablePropagation()
+
+	// Reduce the peer cap so we can hit it with a small number of peers.
+	router.maxPeers = 4
+
+	// Populate the peer table beyond the headroom: max=4, headroom=10% = 0,
+	// floored to 1, so 4 - (4-1) = 1 required drop.
+	hashes := make([][]byte, 0, 6)
+	for i := 0; i < 6; i++ {
+		hash := rns.FullHash([]byte{byte(i), byte(i + 1)})[:16]
+		hashes = append(hashes, hash)
+		p := NewPeer(router, hash)
+		// Mark peers alive, idle, with a non-zero lastSyncAttempt so
+		// they are not "untested" and the rotation is not postponed.
+		p.alive = true
+		p.state = PeerStateIdle
+		p.lastSyncAttempt = 1
+		p.offered = 100
+		// Give each a different acceptance rate so the worst can be culled.
+		p.outgoing = i // 0..5 acceptance rate grows from 0/100 to 5/100
+		router.peers[string(hash)] = p
+	}
+
+	before := len(router.peers)
+	router.RotatePeers()
+	after := len(router.peers)
+
+	if after >= before {
+		t.Fatalf("RotatePeers did not cull any peers: before=%d after=%d", before, after)
+	}
+	// Worst acceptance rate (0/100) should be gone.
+	if _, stillThere := router.peers[string(hashes[0])]; stillThere {
+		t.Fatal("lowest-acceptance-rate peer was not culled")
+	}
+}
+
+func TestSyncPeers(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	t.Cleanup(func() { _ = router.Close() })
+
+	// Stop the jobloop that NewRouter started so SyncPeers is not racing
+	// with the test's direct manipulation of `r.peers`.
+	router.stopJobLoop()
+
+	router.EnablePropagation()
+
+	// Set up a stale peer that should be culled.
+	staleHash := rns.FullHash([]byte("stale-peer"))[:16]
+	stale := NewPeer(router, staleHash)
+	stale.alive = false
+	stale.state = PeerStateIdle
+	stale.lastHeard = float64(router.now().Add(-1000*time.Hour).UnixNano()) / 1e9 // long ago
+	router.peers[string(staleHash)] = stale
+
+	// Set up a healthy peer that should be sync'd.
+	goodHash := rns.FullHash([]byte("good-peer"))[:16]
+	good := NewPeer(router, goodHash)
+	good.alive = true
+	good.state = PeerStateIdle
+	good.lastHeard = float64(router.now().UnixNano()) / 1e9
+	good.unhandledMessagesQueue = [][]byte{rns.FullHash([]byte("msg-1"))}
+	good.umCount = 1
+	good.umCountsSynced = true
+	good.nextSyncAttempt = 0
+	good.lastSyncAttempt = 0
+	good.propagationStampCost = ptrInt(8)
+	good.propagationStampCostFlexibility = ptrInt(1)
+	good.peeringCost = ptrInt(18)
+	router.peers[string(goodHash)] = good
+
+	var synced atomic.Bool
+	good.syncHook = func() {
+		synced.Store(true)
+	}
+
+	router.SyncPeers()
+
+	// Stale peer must be culled.
+	if _, stillThere := router.peers[string(staleHash)]; stillThere {
+		t.Fatal("stale peer was not culled")
+	}
+	// Good peer must be sync'd.
+	if !synced.Load() {
+		t.Fatal("good peer was not sync'd")
+	}
+}
+
+func ptrInt(v int) *int { return &v }
+
+func TestPeerLinkLifecycle(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	t.Cleanup(func() { _ = router.Close() })
+	router.stopJobLoop()
+
+	hash := rns.FullHash([]byte("peer-link-lifecycle"))[:16]
+	peer := NewPeer(router, hash)
+	peer.state = PeerStateLinkEstablishing
+	peer.linkBackoffStep = 30 * time.Second
+
+	// link_established must identify the link, set LINK_READY, reset
+	// nextSyncAttempt, and call Sync.
+	var identified atomic.Bool
+	peer.identifyLinkHook = func(_ *rns.Link, _ *rns.Identity) error {
+		identified.Store(true)
+		return nil
+	}
+	var synced atomic.Bool
+	peer.syncHook = func() { synced.Store(true) }
+
+	peer.LinkEstablished(nil)
+
+	if !identified.Load() {
+		t.Fatal("link_established did not identify the link")
+	}
+	if peer.state != PeerStateLinkReady {
+		t.Fatalf("state = %v, want %v", peer.state, PeerStateLinkReady)
+	}
+	if peer.nextSyncAttempt != 0 {
+		t.Fatalf("nextSyncAttempt = %v, want 0", peer.nextSyncAttempt)
+	}
+	if !synced.Load() {
+		t.Fatal("link_established did not trigger sync")
+	}
+
+	// link_closed must clear the link and revert state to IDLE.
+	peer.link = nil
+	peer.state = PeerStateLinkReady
+	peer.LinkClosed(nil)
+	if peer.state != PeerStateIdle {
+		t.Fatalf("state after LinkClosed = %v, want %v", peer.state, PeerStateIdle)
+	}
+}
+
+func TestPeerOfferResponse(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	t.Cleanup(func() { _ = router.Close() })
+	router.stopJobLoop()
+
+	hash := rns.FullHash([]byte("peer-offer-response"))[:16]
+	peer := NewPeer(router, hash)
+	peer.state = PeerStateLinkReady
+	peer.lastOffer = [][]byte{[]byte("transient-1"), []byte("transient-2")}
+	// Mark these messages as having been "handled" by the peer.
+	peer.addHandledMessage([]byte("transient-1"))
+	peer.addHandledMessage([]byte("transient-2"))
+
+	// offer_response must transition state through RESPONSE_RECEIVED and
+	// back to IDLE when the peer wanted nothing.
+	receipt := &rns.RequestReceipt{}
+	receipt.Response = false // peer already has everything
+
+	peer.OfferResponse(receipt)
+
+	if peer.state != PeerStateIdle {
+		t.Fatalf("state after OfferResponse = %v, want %v", peer.state, PeerStateIdle)
+	}
+}
+
+func TestValidateStampWithTicket(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	t.Cleanup(func() { _ = router.Close() })
+	router.stopJobLoop()
+
+	src := mustTestNewIdentity(t, true)
+	dst := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, src, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	dest := mustTestNewDestination(t, ts, dst, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	msg := mustTestNewMessage(t, dest, sourceDest, "hello", "title", nil)
+	if err := msg.Pack(); err != nil {
+		t.Fatalf("Pack: %v", err)
+	}
+
+	// Provide a ticket and stamp the message with truncated_hash(ticket+message_id).
+	ticketRaw, err := rns.RandomHash()
+	if err != nil {
+		t.Fatalf("RandomHash: %v", err)
+	}
+	ticket := ticketRaw[:rns.TruncatedHashLength/8]
+	// TruncatedHashLength/8 = 16 bytes
+	if len(ticket) != 16 {
+		t.Fatalf("ticket len = %d, want 16", len(ticket))
+	}
+	material := append([]byte{}, ticket...)
+	material = append(material, msg.MessageID...)
+	stamp := rns.TruncatedHash(material)
+	msg.Stamp = stamp
+
+	tickets := [][]byte{ticket}
+	if !msg.ValidateStamp(8, tickets) {
+		t.Fatal("ValidateStamp with matching ticket returned false")
+	}
+	if msg.StampValue == nil || *msg.StampValue != TicketCostValue {
+		t.Fatalf("StampValue = %v, want %v", msg.StampValue, TicketCostValue)
+	}
+}
+
+func TestMessageRatchetID(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	t.Cleanup(func() { _ = router.Close() })
+	router.stopJobLoop()
+
+	src := mustTestNewIdentity(t, true)
+	dst := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, src, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	dest := mustTestNewDestination(t, ts, dst, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	// Enable ratchets on the destination and force a ratchet rotation so
+	// that the ratchet is "current" and propagates to latestRatchetID on
+	// the next Encrypt call.
+	ratchetPath := filepath.Join(tmpDir, "ratchets")
+	if err := dest.EnableRatchets(ratchetPath); err != nil {
+		t.Fatalf("EnableRatchets: %v", err)
+	}
+	if err := dest.RotateRatchets(); err != nil {
+		t.Fatalf("RotateRatchets: %v", err)
+	}
+
+	msg := mustTestNewMessage(t, dest, sourceDest, "hello", "title", nil)
+	msg.DesiredMethod = MethodPropagated
+	if err := msg.Pack(); err != nil {
+		t.Fatalf("Pack: %v", err)
+	}
+
+	if msg.RatchetID == nil {
+		t.Fatal("RatchetID is nil after Pack for propagated message")
+	}
+	if len(msg.RatchetID) == 0 {
+		t.Fatal("RatchetID is empty after Pack for propagated message")
+	}
+}
+
+func TestPaperMessageURI(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	t.Cleanup(func() { _ = router.Close() })
+	router.stopJobLoop()
+	router.EnablePropagation()
+
+	src := mustTestNewIdentity(t, true)
+	dst := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, src, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	dest := mustTestNewDestination(t, ts, dst, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	msg := mustTestNewMessage(t, dest, sourceDest, "hello paper", "title", nil)
+	msg.DesiredMethod = MethodPaper
+	if err := msg.Pack(); err != nil {
+		t.Fatalf("Pack: %v", err)
+	}
+
+	uri, err := msg.AsURI(false)
+	if err != nil {
+		t.Fatalf("AsURI: %v", err)
+	}
+	if !strings.HasPrefix(uri, URISchema+"://") {
+		t.Fatalf("URI %q does not start with %q", uri, URISchema+"://")
+	}
+
+	// Round-trip through the router. EnablePropagation is set so the
+	// ingestion should store the message; we only require the ingestion
+	// pipeline to accept the URI without error.
+	ok, err := router.IngestLXMURI(uri)
+	if err != nil {
+		t.Fatalf("IngestLXMURI: %v", err)
+	}
+	if !ok {
+		t.Fatal("IngestLXMURI returned false")
+	}
+}
+
+func TestOpportunisticSizeLimit(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	t.Cleanup(func() { _ = router.Close() })
+	router.stopJobLoop()
+
+	src := mustTestNewIdentity(t, true)
+	dst := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, src, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	dest := mustTestNewDestination(t, ts, dst, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	// Fill the content with more than the max content size.
+	oversize := make([]byte, EncryptedPacketMaxContent+1)
+	for i := range oversize {
+		oversize[i] = 'A'
+	}
+	msg := mustTestNewMessage(t, dest, sourceDest, string(oversize), "title", nil)
+	msg.DesiredMethod = MethodOpportunistic
+	if err := msg.Pack(); err == nil {
+		t.Fatal("expected error when opportunistic message exceeds size limit")
+	}
+}
+
+func TestBackchannelLink(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	t.Cleanup(func() { _ = router.Close() })
+	router.stopJobLoop()
+
+	hash := rns.FullHash([]byte("backchannel-hash"))[:16]
+
+	if got := router.BackchannelLink(hash); got != nil {
+		t.Fatalf("BackchannelLink(h) = %v, want nil for empty backchannel table", got)
+	}
+	if got := router.DirectLink(hash); got != nil {
+		t.Fatalf("DirectLink(h) = %v, want nil for empty direct-link table", got)
+	}
+
+	// Register a backchannel link and verify the lookup returns it.
+	router.RegisterBackchannelLink(hash, nil)
+	router.mu.Lock()
+	_, present := router.backchannelLinks[string(hash)]
+	router.mu.Unlock()
+	if !present {
+		t.Fatal("backchannel entry not present after RegisterBackchannelLink")
+	}
+
+	// Register a direct link and verify the lookup returns it.
+	router.RegisterDirectLink(hash, nil)
+	router.mu.Lock()
+	_, present = router.directLinks[string(hash)]
+	router.mu.Unlock()
+	if !present {
+		t.Fatal("direct-link entry not present after RegisterDirectLink")
+	}
+
+	// Unregister both and verify they're gone.
+	router.UnregisterBackchannelLink(hash)
+	router.UnregisterDirectLink(hash)
+	router.mu.Lock()
+	_, bPresent := router.backchannelLinks[string(hash)]
+	_, dPresent := router.directLinks[string(hash)]
+	router.mu.Unlock()
+	if bPresent {
+		t.Fatal("backchannel entry still present after UnregisterBackchannelLink")
+	}
+	if dPresent {
+		t.Fatal("direct-link entry still present after UnregisterDirectLink")
+	}
+}
+
+func TestMessageStampValidity(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	t.Cleanup(func() { _ = router.Close() })
+	router.stopJobLoop()
+
+	src := mustTestNewIdentity(t, true)
+	dst := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, src, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	dest := mustTestNewDestination(t, ts, dst, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	msg := mustTestNewMessage(t, dest, sourceDest, "hello", "title", nil)
+	if err := msg.Pack(); err != nil {
+		t.Fatalf("Pack: %v", err)
+	}
+	// Mark the stamp as valid.
+	msg.StampValid = true
+	msg.StampChecked = true
+	if !msg.StampValid {
+		t.Fatal("StampValid was reset to false")
+	}
+	if !msg.StampChecked {
+		t.Fatal("StampChecked was reset to false")
+	}
+}
+
+func TestLXMFConstants(t *testing.T) {
+	t.Parallel()
+
+	checks := []struct {
+		name string
+		got  int
+		want int
+	}{
+		// Audio mode constants.
+		{"AMCodec2_450PWB", AMCodec2_450PWB, 0x01},
+		{"AMCodec2_450", AMCodec2_450, 0x02},
+		{"AMCodec2_700C", AMCodec2_700C, 0x03},
+		{"AMCodec2_1200", AMCodec2_1200, 0x04},
+		{"AMCodec2_1300", AMCodec2_1300, 0x05},
+		{"AMCodec2_1400", AMCodec2_1400, 0x06},
+		{"AMCodec2_1600", AMCodec2_1600, 0x07},
+		{"AMCodec2_2400", AMCodec2_2400, 0x08},
+		{"AMCodec2_3200", AMCodec2_3200, 0x09},
+		{"AMOpusOGG", AMOpusOGG, 0x10},
+		{"AMOpusLBW", AMOpusLBW, 0x11},
+		{"AMOpusMBW", AMOpusMBW, 0x12},
+		{"AMOpusPTT", AMOpusPTT, 0x13},
+		{"AMOpusRT_HDX", AMOpusRT_HDX, 0x14},
+		{"AMOpusRT_FDX", AMOpusRT_FDX, 0x15},
+		{"AMOpusStandard", AMOpusStandard, 0x16},
+		{"AMOpusHQ", AMOpusHQ, 0x17},
+		{"AMOpusBroadcast", AMOpusBroadcast, 0x18},
+		{"AMOpusLossless", AMOpusLossless, 0x19},
+		{"AMCustom", AMCustom, 0xFF},
+		// Renderer constants.
+		{"RendererPlain", RendererPlain, 0x00},
+		{"RendererMicron", RendererMicron, 0x01},
+		{"RendererMarkdown", RendererMarkdown, 0x02},
+		{"RendererBBCode", RendererBBCode, 0x03},
+	}
+	for _, c := range checks {
+		if c.got != c.want {
+			t.Errorf("%s = 0x%x, want 0x%x", c.name, c.got, c.want)
+		}
+	}
+}
+
+func TestPeerName(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	t.Cleanup(func() { _ = router.Close() })
+	router.stopJobLoop()
+
+	hash := rns.FullHash([]byte("peer-name"))[:16]
+	peer := NewPeer(router, hash)
+
+	// No metadata => no name.
+	if got := peer.Name(); got != "" {
+		t.Fatalf("Name() = %q, want %q for empty metadata", got, "")
+	}
+
+	// Metadata with PN_META_NAME key => name returned as utf-8 string.
+	peer.metadata = map[any]any{int(PNMetaName): []byte("Alice")}
+	if got := peer.Name(); got != "Alice" {
+		t.Fatalf("Name() = %q, want %q", got, "Alice")
 	}
 }

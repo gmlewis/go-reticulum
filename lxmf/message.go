@@ -6,6 +6,9 @@
 package lxmf
 
 import (
+	"bytes"
+	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -72,6 +75,8 @@ type Message struct {
 	TransientID []byte
 	// PropagationPacked stores the propagated-delivery msgpack wire payload.
 	PropagationPacked []byte
+	// PaperPacked stores the paper-message URI-ready wire payload.
+	PaperPacked []byte
 	// PropagationStamp holds the optional proof-of-work stamp appended to the
 	// propagated transport payload.
 	PropagationStamp []byte
@@ -82,6 +87,24 @@ type Message struct {
 	PropagationTargetCost *int
 	// StampGenerationFailed tracks Python's deferred-stamp failure marker.
 	StampGenerationFailed bool
+
+	// RatchetID records the ratchet ID used to encrypt this message for
+	// its destination. It is populated by Pack() and on send, and read
+	// by UnpackMessageFromBytes to surface the ratchet identity that the
+	// remote peer used.
+	RatchetID []byte
+
+	// StampValid records whether the message's stamp has been validated
+	// against a target cost (or against an inbound ticket). Mirrors
+	// Python's LXMessage.stamp_valid.
+	StampValid bool
+	// StampChecked records whether the message's stamp has been
+	// inspected at all. Mirrors Python's LXMessage.stamp_checked.
+	StampChecked bool
+	// PropagationStampValid records whether the message's
+	// propagation stamp has been validated. Mirrors Python's
+	// LXMessage.propagation_stamp_valid.
+	PropagationStampValid bool
 
 	deferredStampOrder uint64
 
@@ -179,6 +202,13 @@ func NewMessage(destination, source *rns.Destination, content, title string, fie
 // GetStamp returns the current delivery stamp, generating it if needed from an
 // outbound ticket or the configured stamp cost.
 func (m *Message) GetStamp() ([]byte, error) {
+	return m.GetStampWithContext(context.Background())
+}
+
+// GetStampWithContext is the cancellation-aware variant of GetStamp. The
+// returned stamp slice and error are exactly those returned by GetStamp,
+// but stamp generation can be aborted by canceling the provided context.
+func (m *Message) GetStampWithContext(ctx context.Context) ([]byte, error) {
 	if len(m.OutboundTicket) == TicketLength && len(m.MessageID) > 0 {
 		material := make([]byte, 0, len(m.OutboundTicket)+len(m.MessageID))
 		material = append(material, m.OutboundTicket...)
@@ -200,7 +230,7 @@ func (m *Message) GetStamp() ([]byte, error) {
 		return cloneBytes(m.Stamp), nil
 	}
 
-	stamp, stampValue, _, err := GenerateStamp(m.MessageID, *m.StampCost, WorkblockExpandRounds)
+	stamp, stampValue, _, err := GenerateStampWithContext(ctx, m.MessageID, *m.StampCost, WorkblockExpandRounds)
 	if err != nil {
 		return nil, err
 	}
@@ -246,6 +276,12 @@ func pythonStampCostError(value any) error {
 // GetPropagationStamp returns the current propagated-delivery stamp, generating
 // it if needed for the configured propagation-node target cost.
 func (m *Message) GetPropagationStamp(targetCost int) ([]byte, error) {
+	return m.GetPropagationStampWithContext(context.Background(), targetCost)
+}
+
+// GetPropagationStampWithContext is the cancellation-aware variant of
+// GetPropagationStamp. See GetStampWithContext for the cancellation contract.
+func (m *Message) GetPropagationStampWithContext(ctx context.Context, targetCost int) ([]byte, error) {
 	if len(m.PropagationStamp) > 0 {
 		return cloneBytes(m.PropagationStamp), nil
 	}
@@ -265,7 +301,7 @@ func (m *Message) GetPropagationStamp(targetCost int) ([]byte, error) {
 		}
 	}
 
-	stamp, stampValue, _, err := GenerateStamp(m.TransientID, *m.PropagationTargetCost, WorkblockExpandRoundsPN)
+	stamp, stampValue, _, err := GenerateStampWithContext(ctx, m.TransientID, *m.PropagationTargetCost, WorkblockExpandRoundsPN)
 	if err != nil {
 		return nil, err
 	}
@@ -373,10 +409,31 @@ func (m *Message) Pack() error {
 	m.Packed = append(m.Packed, m.Signature...)
 	m.Packed = append(m.Packed, packedPayload...)
 
+	if m.DesiredMethod == MethodOpportunistic {
+		if len(m.Packed) > EncryptedPacketMaxContent {
+			return fmt.Errorf("lxmf message desired opportunistic delivery method, but content of length %v exceeds single-packet content limit of %v", len(m.Packed), EncryptedPacketMaxContent)
+		}
+		m.Method = MethodOpportunistic
+		m.Representation = RepresentationPacket
+	}
+
 	if m.DesiredMethod == MethodPropagated {
 		if err := m.packPropagated(); err != nil {
 			return err
 		}
+	}
+
+	if m.DesiredMethod == MethodPaper {
+		encryptedData, err := m.Destination.Encrypt(m.Packed[DestinationLength:])
+		if err != nil {
+			return fmt.Errorf("encrypt paper payload: %w", err)
+		}
+		m.PaperPacked = make([]byte, 0, len(m.DestinationHash)+len(encryptedData))
+		m.PaperPacked = append(m.PaperPacked, m.DestinationHash...)
+		m.PaperPacked = append(m.PaperPacked, encryptedData...)
+		m.RatchetID = m.Destination.LatestRatchetID()
+		m.Method = MethodPaper
+		m.Representation = RepresentationPaper
 	}
 
 	return nil
@@ -696,6 +753,7 @@ func (m *Message) packPropagated() error {
 			return fmt.Errorf("encrypt propagated payload: %w", err)
 		}
 		m.propagationEncryptedData = encryptedData
+		m.RatchetID = m.Destination.LatestRatchetID()
 	}
 
 	lxmfData := make([]byte, 0, DestinationLength+len(m.propagationEncryptedData))
@@ -856,4 +914,69 @@ func (m *Message) resetPackedState(preservePropagationEncryptedData bool) {
 	if !preservePropagationEncryptedData {
 		m.propagationEncryptedData = nil
 	}
+}
+
+// ValidateStamp is the Go port of Python's LXMessage.validate_stamp.
+// It first checks whether the message's stamp matches the truncated
+// hash of any of the provided tickets, and if so returns true with the
+// stamp value set to TicketCostValue. Otherwise it falls back to a
+// workblock stamp check.
+func (m *Message) ValidateStamp(targetCost int, tickets [][]byte) bool {
+	if m == nil {
+		return false
+	}
+	if tickets != nil {
+		for _, ticket := range tickets {
+			if len(ticket) == 0 || len(m.MessageID) == 0 {
+				continue
+			}
+			material := make([]byte, 0, len(ticket)+len(m.MessageID))
+			material = append(material, ticket...)
+			material = append(material, m.MessageID...)
+			if bytes.Equal(m.Stamp, rns.TruncatedHash(material)) {
+				value := TicketCostValue
+				m.StampValue = cloneOptionalInt(&value)
+				return true
+			}
+		}
+	}
+	if len(m.Stamp) == 0 {
+		return false
+	}
+	workblock, err := StampWorkblock(m.MessageID, WorkblockExpandRounds)
+	if err != nil {
+		return false
+	}
+	if StampValid(m.Stamp, targetCost, workblock) {
+		value := StampValue(workblock, m.Stamp)
+		m.StampValue = cloneOptionalInt(&value)
+		return true
+	}
+	return false
+}
+
+// AsURI returns the paper-message URI encoding of this message. The
+// caller must have set DesiredMethod to MethodPaper and called Pack()
+// first. This is the Go port of Python's LXMessage.as_uri.
+func (m *Message) AsURI(finalise bool) (string, error) {
+	if m == nil {
+		return "", errors.New("nil message")
+	}
+	if len(m.Packed) == 0 {
+		if err := m.Pack(); err != nil {
+			return "", err
+		}
+	}
+	if m.DesiredMethod != MethodPaper {
+		return "", errors.New("attempt to represent LXM with non-paper delivery method as URI")
+	}
+	if m.Method == MethodPaper && m.PaperPacked != nil {
+		encoded := base64.RawURLEncoding.EncodeToString(m.PaperPacked)
+		uri := URISchema + "://" + encoded
+		if finalise {
+			m.DetermineTransportEncryption()
+		}
+		return uri, nil
+	}
+	return "", errors.New("paper-packed payload not yet generated; call Pack with MethodPaper first")
 }

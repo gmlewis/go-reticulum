@@ -1862,3 +1862,51 @@ func (r *Reticulum) initInterfaces() error {
 func intPtr(v int) *int {
 	return &v
 }
+
+// HaltInterface detaches the given interface, stopping it from
+// processing further traffic. It is the Go port of Python's
+// Reticulum.halt_interface().
+func (r *Reticulum) HaltInterface(iface interfaces.Interface) error {
+	if r == nil {
+		return errors.New("nil reticulum")
+	}
+	if iface == nil {
+		return nil
+	}
+	if err := iface.Detach(); err != nil {
+		return fmt.Errorf("detach interface: %w", err)
+	}
+	return nil
+}
+
+// ResumeInterface re-attaches a previously halted interface. It is
+// the Go port of Python's Reticulum.resume_interface().
+func (r *Reticulum) ResumeInterface(iface interfaces.Interface) error {
+	if r == nil {
+		return errors.New("nil reticulum")
+	}
+	if iface == nil {
+		return nil
+	}
+	if attacher, ok := iface.(interface{ Attach() error }); ok {
+		if err := attacher.Attach(); err != nil {
+			return fmt.Errorf("attach interface: %w", err)
+		}
+	}
+	return nil
+}
+
+// ReloadInterface detaches and re-attaches the given interface. It
+// is the Go port of Python's Reticulum.reload_interface().
+func (r *Reticulum) ReloadInterface(iface interfaces.Interface) error {
+	if r == nil {
+		return errors.New("nil reticulum")
+	}
+	if iface == nil {
+		return nil
+	}
+	if err := r.HaltInterface(iface); err != nil {
+		return err
+	}
+	return r.ResumeInterface(iface)
+}

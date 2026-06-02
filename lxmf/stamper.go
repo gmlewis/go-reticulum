@@ -6,9 +6,12 @@
 package lxmf
 
 import (
+	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"fmt"
 	"math/bits"
+	"sync"
 
 	"github.com/gmlewis/go-reticulum/rns"
 	"github.com/gmlewis/go-reticulum/rns/crypto"
@@ -83,6 +86,15 @@ func ValidatePeeringKey(peeringID, peeringKey []byte, targetCost int) bool {
 
 // GenerateStamp performs the computational work required to produce a valid stamp meeting the specified target cost.
 func GenerateStamp(material []byte, targetCost int, expandRounds int) ([]byte, int, int, error) {
+	return GenerateStampWithContext(context.Background(), material, targetCost, expandRounds)
+}
+
+// GenerateStampWithContext is the cancellation-aware variant of
+// GenerateStamp. The returned stamp, value, and round count match those of
+// GenerateStamp, but the stamp search can be aborted by canceling the
+// provided context. When the context is canceled, GenerateStampWithContext
+// returns ctx.Err() and a nil stamp.
+func GenerateStampWithContext(ctx context.Context, material []byte, targetCost int, expandRounds int) ([]byte, int, int, error) {
 	if targetCost < 0 {
 		return nil, 0, 0, nil
 	}
@@ -96,18 +108,130 @@ func GenerateStamp(material []byte, targetCost int, expandRounds int) ([]byte, i
 	}
 
 	rounds := 0
+	buf := make([]byte, len(workblock)+StampSize)
+	copy(buf, workblock)
+	candidate := buf[len(workblock):]
+
+	if _, err := rand.Read(candidate); err != nil {
+		return nil, 0, rounds, fmt.Errorf("generate random stamp candidate: %w", err)
+	}
+
 	for {
-		candidate := make([]byte, StampSize)
-		if _, err := rand.Read(candidate); err != nil {
-			return nil, 0, rounds, fmt.Errorf("generate random stamp candidate: %w", err)
+		if err := ctx.Err(); err != nil {
+			return nil, 0, rounds, err
 		}
 		rounds++
 
-		if StampValid(candidate, targetCost, workblock) {
-			value := StampValue(workblock, candidate)
-			return candidate, value, rounds, nil
+		h := sha256.Sum256(buf)
+		if val := leadingZeroBits(h[:]); val >= targetCost {
+			stampCopy := make([]byte, StampSize)
+			copy(stampCopy, candidate)
+			return stampCopy, val, rounds, nil
+		}
+
+		for j := 0; j < len(candidate); j++ {
+			candidate[j]++
+			if candidate[j] != 0 {
+				break
+			}
 		}
 	}
+}
+
+// GenerateStampParallel performs the stamp search using the given number
+// of goroutines, each with its own candidate generator. As soon as one
+// goroutine finds a valid stamp, the others exit and the call returns.
+// It is the Go port of Python's job_linux (and the Linux path of
+// generate_stamp). The returned values match those of GenerateStamp;
+// the round count is the sum of rounds executed across all workers.
+func GenerateStampParallel(material []byte, targetCost int, expandRounds int, workers int) ([]byte, int, int, error) {
+	if targetCost < 0 {
+		return nil, 0, 0, nil
+	}
+	if targetCost > 256 {
+		return nil, 0, 0, fmt.Errorf("invalid target cost %v", targetCost)
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > 64 {
+		workers = 64
+	}
+
+	workblock, err := StampWorkblock(material, expandRounds)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+
+	type result struct {
+		stamp []byte
+		round int
+	}
+	results := make(chan result, workers)
+	stopCh := make(chan struct{})
+
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			localRounds := 0
+			buf := make([]byte, len(workblock)+StampSize)
+			copy(buf, workblock)
+			candidate := buf[len(workblock):]
+
+			if _, err := rand.Read(candidate); err != nil {
+				results <- result{nil, localRounds}
+				return
+			}
+
+			for {
+				select {
+				case <-stopCh:
+					results <- result{nil, localRounds}
+					return
+				default:
+				}
+
+				localRounds++
+				h := sha256.Sum256(buf)
+				if val := leadingZeroBits(h[:]); val >= targetCost {
+					stampCopy := make([]byte, StampSize)
+					copy(stampCopy, candidate)
+					results <- result{stampCopy, localRounds}
+					return
+				}
+
+				for j := 0; j < len(candidate); j++ {
+					candidate[j]++
+					if candidate[j] != 0 {
+						break
+					}
+				}
+			}
+		}()
+	}
+
+	// Wait for the first valid stamp.
+	var stamp []byte
+	totalRounds := 0
+	received := 0
+	for received < workers {
+		res := <-results
+		received++
+		totalRounds += res.round
+		if stamp == nil && res.stamp != nil {
+			stamp = res.stamp
+			close(stopCh)
+		}
+	}
+	wg.Wait()
+
+	if stamp == nil {
+		return nil, 0, totalRounds, fmt.Errorf("no worker produced a valid stamp")
+	}
+	value := StampValue(workblock, stamp)
+	return stamp, value, totalRounds, nil
 }
 
 func leadingZeroBits(data []byte) int {

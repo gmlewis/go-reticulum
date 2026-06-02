@@ -3,6 +3,10 @@
 set -euo pipefail
 set -x
 
+export ORIGINAL_RETICULUM_REPO_DIR="${ORIGINAL_RETICULUM_REPO_DIR:-$HOME/src/github.com/markqvist/Reticulum}"
+export ORIGINAL_LXMF_REPO_DIR="${ORIGINAL_LXMF_REPO_DIR:-$HOME/src/github.com/markqvist/lxmf}"
+export ORIGINAL_RNSH_REPO_DIR="${ORIGINAL_RNSH_REPO_DIR:-$HOME/src/github.com/acehoss/rnsh}"
+
 RUN_ALL_TESTS_TIMEOUT_SECONDS="${RUN_ALL_TESTS_TIMEOUT_SECONDS:-500}"
 
 run_with_timeout() {
@@ -33,3 +37,8 @@ PY
 time run_with_timeout ./test-all.sh 2>&1 | tee test-failures.log
 time run_with_timeout ./scripts/test-integration.sh -short 2>&1 | tee short-test-failures.log
 time run_with_timeout ./scripts/test-integration.sh 2>&1 | tee full-test-failures.log
+
+# Run integration tests that are skipped under the race detector:
+time run_with_timeout go test -tags=integration -count=1 ./lxmf -run TestParallelStampGeneration 2>&1 | tee -a full-test-failures.log
+time run_with_timeout go test -tags=integration -count=1 ./rns -run TestIntegratedResponseResourceCompressionPolicyGoToPython 2>&1 | tee -a full-test-failures.log
+

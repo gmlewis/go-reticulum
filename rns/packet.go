@@ -151,6 +151,10 @@ type Packet struct {
 	Q    *float64
 
 	transport Transport
+
+	timeout float64
+	resent  bool
+	status  int
 }
 
 // NewPacket creates a new packet for the given destination and data.
@@ -566,3 +570,61 @@ const (
 	// ReceiptCulled indicates that the packet receipt was culled from memory before delivery or timeout.
 	ReceiptCulled = 0xff
 )
+
+// Packet-status constants. Mirrors the values used by Python's
+// PacketReceipt and Packet.
+const (
+	PacketStatusNone      = 0x00
+	PacketStatusSent      = 0x01
+	PacketStatusDelivered = 0x02
+	PacketStatusFailed    = 0x03
+)
+
+// GetStatus returns the packet's current status. It is the Go port
+// of Python's Packet.get_status().
+func (p *Packet) GetStatus() int {
+	if p == nil {
+		return PacketStatusNone
+	}
+	if p.Sent {
+		return PacketStatusSent
+	}
+	return p.status
+}
+
+// CheckTimeout reports whether the packet has been sent and is
+// now past its configured timeout. It is the Go port of Python's
+// Packet.check_timeout().
+func (p *Packet) CheckTimeout() bool {
+	if p == nil {
+		return false
+	}
+	if p.timeout == 0 || !p.Sent {
+		return false
+	}
+	return p.IsTimedOut()
+}
+
+// IsTimedOut reports whether the packet has been sent and is past
+// its configured timeout.
+func (p *Packet) IsTimedOut() bool {
+	if p == nil {
+		return false
+	}
+	if p.timeout == 0 || p.SentAt == 0 {
+		return false
+	}
+	now := float64(time.Now().UnixNano()) / 1e9
+	return now > p.SentAt+p.timeout
+}
+
+// Resend marks the packet for re-transmission and resets the
+// timeout clock. It is the Go port of Python's Packet.resend().
+func (p *Packet) Resend() {
+	if p == nil {
+		return
+	}
+	p.resent = true
+	p.Sent = true
+	p.SentAt = float64(time.Now().UnixNano()) / 1e9
+}

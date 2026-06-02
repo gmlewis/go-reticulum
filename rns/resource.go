@@ -917,3 +917,112 @@ func (r *Resource) Advertise() error {
 
 	return p.Send()
 }
+
+// GetDataSize returns the size in bytes of the resource's data
+// payload. It is the Go port of Python's Resource.get_data_size().
+func (r *Resource) GetDataSize() int {
+	if r == nil {
+		return 0
+	}
+	return len(r.data)
+}
+
+// GetParts returns the list of part hashes for the resource. It is
+// the Go port of Python's Resource.get_parts().
+func (r *Resource) GetParts() [][]byte {
+	if r == nil {
+		return nil
+	}
+	out := make([][]byte, len(r.parts))
+	for i, p := range r.parts {
+		if p == nil {
+			continue
+		}
+		out[i] = append([]byte(nil), p.Hash...)
+	}
+	return out
+}
+
+// GetSegments returns the segment hashes for the resource. It is
+// the Go port of Python's Resource.get_segments(). The Go port
+// currently tracks segment hashes via ResourcePart and the
+// per-resource map; we return the distinct hashes seen.
+func (r *Resource) GetSegments() [][]byte {
+	if r == nil {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := [][]byte{}
+	for _, p := range r.parts {
+		if p == nil {
+			continue
+		}
+		h := string(p.Hash)
+		if _, ok := seen[h]; ok {
+			continue
+		}
+		seen[h] = struct{}{}
+		out = append(out, append([]byte(nil), p.Hash...))
+	}
+	return out
+}
+
+// GetTransferSize returns the total transfer size of the resource.
+// It is the Go port of Python's Resource.get_transfer_size().
+func (r *Resource) GetTransferSize() int {
+	if r == nil {
+		return 0
+	}
+	return r.GetDataSize() + r.GetMetadataSize() + 16
+}
+
+// GetMetadataSize returns the cumulative size of all metadata
+// entries in the resource, mirroring Python's resource-metadata
+// accounting.
+func (r *Resource) GetMetadataSize() int {
+	if r == nil {
+		return 0
+	}
+	total := 0
+	for _, m := range r.metadata {
+		total += len(m)
+	}
+	return total
+}
+
+// IsCompressed reports whether the resource's data was compressed
+// before transfer. It is the Go port of Python's
+// Resource.is_compressed().
+func (r *Resource) IsCompressed() bool {
+	if r == nil {
+		return false
+	}
+	return r.compressed
+}
+
+// IsRequest reports whether the resource is a request (as opposed
+// to a response). It is the Go port of Python's Resource.is_request().
+func (r *Resource) IsRequest() bool {
+	if r == nil {
+		return false
+	}
+	return r.requestID != nil && !r.isResponse
+}
+
+// IsResponse reports whether the resource is a response. It is the
+// Go port of Python's Resource.is_response().
+func (r *Resource) IsResponse() bool {
+	if r == nil {
+		return false
+	}
+	return r.requestID != nil && r.isResponse
+}
+
+// WatchdogJob is a placeholder for the resource watchdog that runs
+// periodically in the link's maintenance loop. It is the Go port of
+// Python's Resource.watchdog_job().
+func (r *Resource) WatchdogJob() {
+	if r == nil {
+		return
+	}
+}

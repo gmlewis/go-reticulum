@@ -8,6 +8,7 @@ package rns
 import (
 	"bytes"
 	"testing"
+	"time"
 )
 
 func TestPacket(t *testing.T) {
@@ -78,5 +79,42 @@ func TestPacketEncryption(t *testing.T) {
 
 	if !bytes.Equal(data, decrypted) {
 		t.Errorf("decryption failed: expected %s, got %s", data, decrypted)
+	}
+}
+
+func TestPacketResendTimeout(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	id := mustTestNewIdentity(t, true)
+	dest, err := NewDestination(ts, id, DestinationIn, DestinationSingle, "test", "app")
+	if err != nil {
+		t.Fatalf("NewDestination: %v", err)
+	}
+	pkt := NewPacket(dest, []byte("hello"))
+
+	// Initially, the packet has not been sent.
+	if pkt.GetStatus() != PacketStatusNone {
+		t.Fatalf("initial packet status = %v, want PacketStatusNone", pkt.GetStatus())
+	}
+
+	// Manually mark the packet as sent, then check timeout.
+	pkt.SentAt = float64(time.Now().Add(-2*time.Hour).UnixNano()) / 1e9
+	pkt.timeout = 3600.0 // 1h
+
+	if !pkt.IsTimedOut() {
+		t.Fatal("packet should be timed out after 2h with 1h timeout")
+	}
+
+	// Resend resets the timeout clock and bumps the resent count.
+	pkt.Resend()
+	if !pkt.resent {
+		t.Fatal("Resend did not flip the resent flag")
+	}
+	if pkt.GetStatus() != PacketStatusSent {
+		t.Fatalf("packet status after Resend = %v, want PacketStatusSent", pkt.GetStatus())
+	}
+	if pkt.IsTimedOut() {
+		t.Fatal("packet should not be timed out immediately after Resend")
 	}
 }

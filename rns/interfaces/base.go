@@ -406,3 +406,11 @@ var ifacSalt = []byte{
 	0x3e, 0x73, 0x33, 0x91, 0xb2, 0xa0, 0xf5, 0x3f,
 	0x41, 0x6d, 0x9f, 0x90, 0x7e, 0x55, 0xcf, 0xf8,
 }
+
+// Ingress-control constants matching Python's Interface class.
+const (
+	// MaxHeldAnnounces matches Python's MAX_HELD_ANNOUNCES.
+	MaxHeldAnnounces = 256
+	// ICBurstHold matches Python's IC_BURST_HOLD.
+	ICBurstHold = 30
+)

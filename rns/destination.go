@@ -99,6 +99,8 @@ type Destination struct {
 	latestRatchetID   []byte
 	enforceRatchets   bool
 	retainedRatchets  int
+
+	defaultAppData []byte
 }
 
 // NewDestination instantiates a new endpoint bound to a specific, custom transport system instance.
@@ -441,6 +443,18 @@ func (d *Destination) GetHash() []byte {
 	return d.Hash
 }
 
+// LatestRatchetID returns the ratchet ID that was most recently used to
+// encrypt a packet for this destination, or nil if ratchets are not
+// enabled.
+func (d *Destination) LatestRatchetID() []byte {
+	if d == nil {
+		return nil
+	}
+	out := make([]byte, len(d.latestRatchetID))
+	copy(out, d.latestRatchetID)
+	return out
+}
+
 // GetType returns the destination type.
 func (d *Destination) GetType() int {
 	return d.Type
@@ -588,4 +602,133 @@ func (d *Destination) SetProofStrategy(strategy int) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.proofStrategy = strategy
+}
+
+// AcceptsLinks reports whether the destination will accept incoming
+// link requests. It is the Go port of Python's
+// Destination.accepts_links().
+func (d *Destination) AcceptsLinks() bool {
+	if d == nil {
+		return false
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.acceptLinkRequests
+}
+
+// SetAcceptsLinks toggles whether the destination will accept incoming
+// link requests. It is the Go port of Python's
+// Destination.accepts_links(accepts).
+func (d *Destination) SetAcceptsLinks(accept bool) {
+	if d == nil {
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.acceptLinkRequests = accept
+}
+
+// SetDefaultAppData sets a default app-data payload that will be
+// attached to announces emitted by this destination. It is the Go
+// port of Python's Destination.set_default_app_data().
+func (d *Destination) SetDefaultAppData(appData []byte) {
+	if d == nil {
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if appData == nil {
+		d.defaultAppData = nil
+		return
+	}
+	d.defaultAppData = make([]byte, len(appData))
+	copy(d.defaultAppData, appData)
+}
+
+// DefaultAppData returns the default app-data payload set via
+// SetDefaultAppData, or nil if none is configured. It is the Go
+// port of Python's Destination.set_default_app_data() getter.
+func (d *Destination) DefaultAppData() []byte {
+	if d == nil {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.defaultAppData == nil {
+		return nil
+	}
+	out := make([]byte, len(d.defaultAppData))
+	copy(out, d.defaultAppData)
+	return out
+}
+
+// ClearDefaultAppData removes the default app-data payload. It is the
+// Go port of Python's Destination.clear_default_app_data().
+func (d *Destination) ClearDefaultAppData() {
+	if d == nil {
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.defaultAppData = nil
+}
+
+// RatchetInterval returns the current ratchet rotation interval. It is
+// the Go port of Python's Destination.ratchet_interval.
+func (d *Destination) RatchetInterval() time.Duration {
+	if d == nil {
+		return 0
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.ratchetInterval
+}
+
+// SetRatchetInterval sets the ratchet rotation interval. It is the
+// Go port of Python's Destination.set_ratchet_interval().
+func (d *Destination) SetRatchetInterval(interval time.Duration) {
+	if d == nil {
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.ratchetInterval = interval
+}
+
+// RetainedRatchets returns the number of ratchets retained for
+// decryption. It is the Go port of Python's Destination.retained_ratchets.
+func (d *Destination) RetainedRatchets() int {
+	if d == nil {
+		return 0
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.retainedRatchets
+}
+
+// SetRetainedRatchets sets the number of ratchets retained for
+// decryption. It is the Go port of Python's
+// Destination.set_retained_ratchets().
+func (d *Destination) SetRetainedRatchets(retained int) {
+	if d == nil {
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.retainedRatchets = retained
+}
+
+// EnforceRatchets is both a getter and a setter: calling it with no
+// arguments enables ratchet enforcement, and calling it with `false`
+// disables it. It is the Go port of Python's Destination.enforce_ratchets().
+func (d *Destination) EnforceRatchets(opt ...bool) bool {
+	if d == nil {
+		return false
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(opt) > 0 {
+		d.enforceRatchets = opt[0]
+	}
+	return d.enforceRatchets
 }

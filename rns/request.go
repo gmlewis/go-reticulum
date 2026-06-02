@@ -193,3 +193,36 @@ func (rr *RequestReceipt) responseResourceProgress(resource *Resource) {
 		cb(rr)
 	}
 }
+
+// GetResponse returns the response data associated with this
+// receipt, or nil if no response has been received. It is the Go
+// port of Python's RequestReceipt.get_response().
+func (rr *RequestReceipt) GetResponse() []byte {
+	if rr == nil {
+		return nil
+	}
+	if data, ok := rr.Response.([]byte); ok {
+		return data
+	}
+	return nil
+}
+
+// GetResponseTime returns the timestamp at which the response was
+// concluded, or a zero time if no response has been received. It
+// is the Go port of Python's RequestReceipt.get_response_time().
+func (rr *RequestReceipt) GetResponseTime() time.Time {
+	if rr == nil {
+		return time.Time{}
+	}
+	return rr.ConcludedAt
+}
+
+// Concluded reports whether the request has been concluded (either
+// with a response or a timeout). It is the Go port of Python's
+// RequestReceipt.concluded().
+func (rr *RequestReceipt) Concluded() bool {
+	if rr == nil {
+		return false
+	}
+	return !rr.ConcludedAt.IsZero()
+}

@@ -440,3 +440,39 @@ func TestLinkResponseResourceConcludedPreservesBinaryMapKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestRequestReceiptConvenience(t *testing.T) {
+	t.Parallel()
+
+	rr := &RequestReceipt{}
+	now := time.Now()
+
+	// Initially, no response, no concluded.
+	if got := rr.GetResponse(); got != nil {
+		t.Fatalf("GetResponse() = %v, want nil for fresh receipt", got)
+	}
+	if got := rr.GetResponseTime(); !got.IsZero() {
+		t.Fatalf("GetResponseTime() = %v, want zero for fresh receipt", got)
+	}
+
+	// Set response data and ConcludedAt, then verify the accessors.
+	rr.Response = []byte("response-data")
+	rr.ConcludedAt = now
+
+	if got := rr.GetResponse(); !bytes.Equal(got, []byte("response-data")) {
+		t.Fatalf("GetResponse() = %v, want response-data", got)
+	}
+	if got := rr.GetResponseTime(); !got.Equal(now) {
+		t.Fatalf("GetResponseTime() = %v, want %v", got, now)
+	}
+
+	// Concluded reports true when ConcludedAt is set.
+	if !rr.Concluded() {
+		t.Fatal("Concluded() should be true after ConcludedAt is set")
+	}
+
+	rr2 := &RequestReceipt{}
+	if rr2.Concluded() {
+		t.Fatal("Concluded() should be false for fresh receipt")
+	}
+}

@@ -453,3 +453,134 @@ func TestSetResourceStrategyValidatesInput(t *testing.T) {
 		t.Fatal("expected invalid strategy error")
 	}
 }
+
+func TestLinkInactivity(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	id := mustTestNewIdentity(t, true)
+	dest, err := NewDestination(ts, id, DestinationIn, DestinationSingle, "test", "app")
+	if err != nil {
+		t.Fatalf("NewDestination: %v", err)
+	}
+	link, err := NewLink(ts, dest)
+	if err != nil {
+		t.Fatalf("NewLink: %v", err)
+	}
+
+	// Use a synthetic clock to control lastInbound / lastOutbound.
+	now := time.Unix(1700000000, 0)
+	link.now = func() time.Time { return now }
+	link.lastInbound = now.Add(-30 * time.Second)
+	link.lastOutbound = now.Add(-15 * time.Second)
+
+	if got := link.NoInboundFor(); got != 30*time.Second {
+		t.Fatalf("NoInboundFor = %v, want 30s", got)
+	}
+	if got := link.NoOutboundFor(); got != 15*time.Second {
+		t.Fatalf("NoOutboundFor = %v, want 15s", got)
+	}
+	if got := link.NoDataFor(); got != 15*time.Second {
+		t.Fatalf("NoDataFor = %v, want 15s (min of in/out)", got)
+	}
+	if got := link.InactiveFor(); got != 15*time.Second {
+		t.Fatalf("InactiveFor = %v, want 15s", got)
+	}
+}
+
+func TestLinkPHYStats(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	id := mustTestNewIdentity(t, true)
+	dest, err := NewDestination(ts, id, DestinationIn, DestinationSingle, "test", "app")
+	if err != nil {
+		t.Fatalf("NewDestination: %v", err)
+	}
+	link, err := NewLink(ts, dest)
+	if err != nil {
+		t.Fatalf("NewLink: %v", err)
+	}
+
+	// With PHY stats tracking disabled, the accessors return nil.
+	if got := link.GetRSSI(); got != nil {
+		t.Fatalf("GetRSSI() = %v, want nil when tracking is disabled", got)
+	}
+	if got := link.GetSNR(); got != nil {
+		t.Fatalf("GetSNR() = %v, want nil when tracking is disabled", got)
+	}
+	if got := link.GetQ(); got != nil {
+		t.Fatalf("GetQ() = %v, want nil when tracking is disabled", got)
+	}
+
+	// Enable tracking, install synthetic values, and read them back.
+	link.TrackPHYStats(true)
+	link.rssi = -85.0
+	link.snr = 12.5
+	link.q = 7.0
+	if got := link.GetRSSI(); got == nil || *got != -85.0 {
+		t.Fatalf("GetRSSI() = %v, want -85", got)
+	}
+	if got := link.GetSNR(); got == nil || *got != 12.5 {
+		t.Fatalf("GetSNR() = %v, want 12.5", got)
+	}
+	if got := link.GetQ(); got == nil || *got != 7.0 {
+		t.Fatalf("GetQ() = %v, want 7", got)
+	}
+}
+
+func TestLinkResourceManagement(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	id := mustTestNewIdentity(t, true)
+	dest, err := NewDestination(ts, id, DestinationIn, DestinationSingle, "test", "app")
+	if err != nil {
+		t.Fatalf("NewDestination: %v", err)
+	}
+	link, err := NewLink(ts, dest)
+	if err != nil {
+		t.Fatalf("NewLink: %v", err)
+	}
+
+	// Use a placeholder resource for registration tests; we don't
+	// need an active link for these bookkeeping methods.
+	res := &Resource{link: link}
+
+	// Register outgoing.
+	link.RegisterOutgoingResource(res)
+	link.mu.Lock()
+	outCount := len(link.outgoingResources)
+	link.mu.Unlock()
+	if outCount == 0 {
+		t.Fatal("outgoing resource not registered")
+	}
+
+	// Register incoming.
+	link.RegisterIncomingResource(res)
+	link.mu.Lock()
+	inCount := len(link.incomingResources)
+	link.mu.Unlock()
+	if inCount == 0 {
+		t.Fatal("incoming resource not registered")
+	}
+
+	// HasIncomingResource reports true.
+	if !link.HasIncomingResource(res) {
+		t.Fatal("HasIncomingResource should be true after registration")
+	}
+
+	// Cancel outgoing.
+	link.CancelOutgoingResource(res)
+	link.mu.Lock()
+	outCount = len(link.outgoingResources)
+	link.mu.Unlock()
+	if outCount != 0 {
+		t.Fatalf("outgoing resource count = %d, want 0 after cancel", outCount)
+	}
+
+	// ReadyForNewResource reflects the absence of any outgoing resources.
+	if !link.ReadyForNewResource() {
+		t.Fatal("ReadyForNewResource should be true when no outgoing resources are present")
+	}
+}
