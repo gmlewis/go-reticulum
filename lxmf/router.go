@@ -134,6 +134,7 @@ type Router struct {
 	enforceStampsEnabled              bool
 	ignoredList                       map[string]struct{}
 	messageStorageLimit               float64
+	informationStorageLimit           float64
 	prioritisedList                   map[string]struct{}
 	propagationEnabled                bool
 	outboundPropagationNode           []byte
@@ -2719,6 +2720,15 @@ func (r *Router) IsIgnored(destinationHash []byte) bool {
 	return ok
 }
 
+// UnignoreDestination removes a destination hash from the router's ignored list,
+// allowing delivery to and from that destination again. It mirrors Python's
+// unignore_destination. Removing a hash that is not currently ignored is a no-op.
+func (r *Router) UnignoreDestination(destinationHash []byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.ignoredList, string(destinationHash))
+}
+
 // EnforceStamps enables strict stamp enforcement on the router, requiring valid hashcash stamps for processing incoming messages.
 func (r *Router) EnforceStamps() {
 	r.mu.Lock()
@@ -2745,6 +2755,28 @@ func (r *Router) MessageStorageLimit() float64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.messageStorageLimit
+}
+
+// SetInformationStorageLimit configures the maximum information storage size in
+// megabytes. It mirrors Python's set_information_storage_limit.
+func (r *Router) SetInformationStorageLimit(megabytes float64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.informationStorageLimit = megabytes
+}
+
+// InformationStorageLimit returns the currently configured information storage limit
+// in megabytes. It mirrors Python's information_storage_limit.
+func (r *Router) InformationStorageLimit() float64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.informationStorageLimit
+}
+
+// InformationStorageSize returns the current information storage size in megabytes.
+// It mirrors Python's information_storage_size (currently a stub that returns 0).
+func (r *Router) InformationStorageSize() float64 {
+	return 0
 }
 
 // Prioritise adds a destination hash to the priority list, giving its traffic higher precedence during propagation syncs.
@@ -3420,6 +3452,10 @@ func validatePropagationMessage(transientData []byte, targetCost int) (validated
 }
 
 func (r *Router) ingestPropagationMessage(lxmfData, stampData []byte, fromPeer *Peer, stampValue int) bool {
+	return r.ingestPropagationMessageAllowDuplicate(lxmfData, stampData, fromPeer, stampValue, false)
+}
+
+func (r *Router) ingestPropagationMessageAllowDuplicate(lxmfData, stampData []byte, fromPeer *Peer, stampValue int, allowDuplicate bool) bool {
 	if len(lxmfData) < DestinationLength {
 		return false
 	}
@@ -3428,9 +3464,11 @@ func (r *Router) ingestPropagationMessage(lxmfData, stampData []byte, fromPeer *
 	destinationHash := append([]byte{}, lxmfData[:DestinationLength]...)
 
 	r.mu.Lock()
-	if _, ok := r.propagationEntries[string(transientID)]; ok || r.hasProcessedTransientIDLocked(transientID) {
-		r.mu.Unlock()
-		return false
+	if !allowDuplicate {
+		if _, ok := r.propagationEntries[string(transientID)]; ok || r.hasProcessedTransientIDLocked(transientID) {
+			r.mu.Unlock()
+			return false
+		}
 	}
 	r.locallyProcessedIDs[string(append([]byte{}, transientID...))] = r.now()
 	_, isLocalDelivery := r.deliveryDestinations[string(destinationHash)]
@@ -3438,7 +3476,7 @@ func (r *Router) ingestPropagationMessage(lxmfData, stampData []byte, fromPeer *
 	r.mu.Unlock()
 
 	if isLocalDelivery {
-		if r.handlePropagatedInbound(lxmfData) {
+		if r.handlePropagatedInboundAllowDuplicate(lxmfData, allowDuplicate) {
 			return true
 		}
 		return true
@@ -3476,6 +3514,10 @@ func (r *Router) handleInboundMessage(message *Message) {
 }
 
 func (r *Router) handlePropagatedInbound(payload []byte) bool {
+	return r.handlePropagatedInboundAllowDuplicate(payload, false)
+}
+
+func (r *Router) handlePropagatedInboundAllowDuplicate(payload []byte, allowDuplicate bool) bool {
 	if len(payload) < DestinationLength {
 		return false
 	}
@@ -3484,9 +3526,11 @@ func (r *Router) handlePropagatedInbound(payload []byte) bool {
 	destinationHash := append([]byte{}, payload[:DestinationLength]...)
 
 	r.mu.Lock()
-	if _, ok := r.propagationEntries[string(transientID)]; ok || r.hasProcessedTransientIDLocked(transientID) {
-		r.mu.Unlock()
-		return true
+	if !allowDuplicate {
+		if _, ok := r.propagationEntries[string(transientID)]; ok || r.hasProcessedTransientIDLocked(transientID) {
+			r.mu.Unlock()
+			return true
+		}
 	}
 	r.locallyProcessedIDs[string(append([]byte{}, transientID...))] = r.now()
 	_, isLocalDelivery := r.deliveryDestinations[string(destinationHash)]
@@ -5234,7 +5278,35 @@ func (r *Router) IngestLXMURI(uri string) (bool, error) {
 			return false, fmt.Errorf("decode LXM URI: %w", err)
 		}
 	}
-	return r.ingestPropagationMessage(lxmfData, nil, nil, 0), nil
+	return r.ingestPropagationMessageAllowDuplicate(lxmfData, nil, nil, 0, false), nil
+}
+
+// IngestLXMURIAllowDuplicate is like IngestLXMURI but accepts the
+// allowDuplicate flag. When true, a message already known to the router
+// will be re-processed instead of silently discarded.
+func (r *Router) IngestLXMURIAllowDuplicate(uri string, allowDuplicate bool) (bool, error) {
+	if r == nil {
+		return false, errors.New("nil router")
+	}
+	prefix := URISchema + "://"
+	if len(uri) < len(prefix) || !strings.EqualFold(uri[:len(prefix)], prefix) {
+		return false, errors.New("invalid LXM URI: missing schema")
+	}
+	encoded := uri[len(prefix):]
+	encoded = strings.ReplaceAll(encoded, "/", "")
+	encoded = strings.ReplaceAll(encoded, "=", "")
+	lxmfData, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		pad := len(encoded) % 4
+		if pad > 0 {
+			encoded += strings.Repeat("=", 4-pad)
+		}
+		lxmfData, err = base64.URLEncoding.DecodeString(encoded)
+		if err != nil {
+			return false, fmt.Errorf("decode LXM URI: %w", err)
+		}
+	}
+	return r.ingestPropagationMessageAllowDuplicate(lxmfData, nil, nil, 0, allowDuplicate), nil
 }
 
 // DirectLink returns the active direct-delivery link for the given

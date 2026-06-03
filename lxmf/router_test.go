@@ -5316,6 +5316,31 @@ func TestRouterIgnoreDestination(t *testing.T) {
 	}
 }
 
+func TestRouterUnignoreDestination(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	hash := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}
+
+	router.IgnoreDestination(hash)
+	if !router.IsIgnored(hash) {
+		t.Fatal("hash should be ignored after IgnoreDestination")
+	}
+
+	router.UnignoreDestination(hash)
+	if router.IsIgnored(hash) {
+		t.Fatal("hash should not be ignored after UnignoreDestination")
+	}
+
+	router.UnignoreDestination(hash)
+	if router.IsIgnored(hash) {
+		t.Fatal("unignoring a non-ignored hash should be a no-op")
+	}
+}
+
 func TestRouterEnforceStamps(t *testing.T) {
 	t.Parallel()
 	ts := rns.NewTransportSystem(nil)
@@ -5349,6 +5374,28 @@ func TestRouterMessageStorageLimit(t *testing.T) {
 
 	if got := router.MessageStorageLimit(); got != 2000 {
 		t.Fatalf("MessageStorageLimit=%v want=2000", got)
+	}
+}
+
+func TestRouterInformationStorageLimit(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	if got := router.InformationStorageLimit(); got != 0 {
+		t.Fatalf("initial InformationStorageLimit=%v want=0", got)
+	}
+
+	router.SetInformationStorageLimit(500)
+
+	if got := router.InformationStorageLimit(); got != 500 {
+		t.Fatalf("InformationStorageLimit=%v want=500", got)
+	}
+
+	if got := router.InformationStorageSize(); got != 0 {
+		t.Fatalf("InformationStorageSize=%v want=0 (stub)", got)
 	}
 }
 
@@ -11471,7 +11518,7 @@ func TestEnablePropagationLeavesRouterDisabledOnCorruptPeersFile(t *testing.T) {
 	}
 }
 
-func TestCleanThrottledPeers(t *testing.T) {
+func TestRouterCleanThrottledPeers(t *testing.T) {
 	t.Parallel()
 
 	ts := rns.NewTransportSystem(nil)
@@ -12113,5 +12160,111 @@ func TestPeerName(t *testing.T) {
 	peer.metadata = map[any]any{int(PNMetaName): []byte("Alice")}
 	if got := peer.Name(); got != "Alice" {
 		t.Fatalf("Name() = %q, want %q", got, "Alice")
+	}
+}
+
+func TestRouterPropagationAllowDuplicate(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	destID := mustTestNewIdentity(t, true)
+	dest := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	router.deliveryDestinations[string(dest.Hash)] = dest
+
+	payload := append(append([]byte{}, dest.Hash...), []byte("allow-duplicate-payload")...)
+
+	transientID := rns.FullHash(payload)
+
+	if _, exists := router.propagationEntries[string(transientID)]; exists {
+		t.Fatal("transient ID should not exist initially")
+	}
+
+	result := router.handlePropagatedInbound(payload)
+	if result {
+		t.Fatal("local delivery should return false")
+	}
+
+	if _, exists := router.locallyProcessedIDs[string(transientID)]; !exists {
+		t.Fatal("transient ID should be in locallyProcessedIDs after first ingestion")
+	}
+
+	router.mu.Lock()
+	existingEntry := router.propagationEntries[string(transientID)]
+	router.mu.Unlock()
+	if existingEntry != nil {
+		t.Fatal("local delivery should not add to propagationEntries")
+	}
+
+	result = router.handlePropagatedInbound(payload)
+	if !result {
+		t.Fatal("duplicate without allow should return true (already known)")
+	}
+
+	result = router.handlePropagatedInboundAllowDuplicate(payload, true)
+	if result {
+		t.Fatal("duplicate with allowDuplicate=true should still return false (local delivery)")
+	}
+
+	router.mu.Lock()
+	processedCount := 0
+	for id := range router.locallyProcessedIDs {
+		if id == string(transientID) {
+			processedCount++
+		}
+	}
+	router.mu.Unlock()
+
+	if processedCount != 1 {
+		t.Fatalf("expected exactly 1 locallyProcessedIDs entry for transientID, got %d", processedCount)
+	}
+}
+
+func TestRouterIngestPropagationAllowDuplicate(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	defer cleanup()
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.EnablePropagation()
+
+	unknownDestHash := rns.FullHash([]byte("unknown-destination"))[:DestinationLength]
+	payload := append(append([]byte{}, unknownDestHash...), []byte("propagation-allow-dup")...)
+
+	transientID := rns.FullHash(payload)
+
+	router.ingestPropagationMessage(payload, nil, nil, 0)
+
+	router.mu.Lock()
+	_, entryExists := router.propagationEntries[string(transientID)]
+	router.mu.Unlock()
+
+	if !entryExists {
+		t.Fatal("propagation entry should exist after first ingestion")
+	}
+
+	dupResult := router.ingestPropagationMessage(payload, nil, nil, 0)
+	if dupResult {
+		t.Fatal("duplicate without allow should return true (already known)")
+	}
+
+	allowDupResult := router.ingestPropagationMessageAllowDuplicate(payload, nil, nil, 0, true)
+	if !allowDupResult {
+		t.Fatal("duplicate with allowDuplicate=true should be stored successfully for propagation")
+	}
+
+	router.mu.Lock()
+	entryCount := 0
+	for id := range router.propagationEntries {
+		if id == string(transientID) {
+			entryCount++
+		}
+	}
+	router.mu.Unlock()
+
+	if entryCount != 1 {
+		t.Fatalf("expected exactly 1 propagationEntries entry for transientID, got %d", entryCount)
 	}
 }
