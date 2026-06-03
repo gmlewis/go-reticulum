@@ -26,9 +26,10 @@ const (
 type TCPClientInterface struct {
 	*BaseInterface
 
-	conn       net.Conn
-	targetHost string
-	targetPort int
+	conn           net.Conn
+	targetHost     string
+	targetPort     int
+	reconnectDelay time.Duration
 
 	kissFraming    bool
 	inboundHandler InboundHandler
@@ -49,6 +50,7 @@ func NewTCPClientInterface(name, host string, port int, kiss bool, handler Inbou
 		targetPort:     port,
 		kissFraming:    kiss,
 		inboundHandler: handler,
+		reconnectDelay: 5 * time.Second,
 	}
 
 	if err := tci.connect(); err != nil {
@@ -96,7 +98,7 @@ func (tci *TCPClientInterface) connect() error {
 
 func (tci *TCPClientInterface) reconnectLoop() {
 	for atomic.LoadInt32(&tci.running) == 0 && !tci.IsDetached() {
-		time.Sleep(5 * time.Second)
+		time.Sleep(tci.reconnectDelay)
 		if err := tci.connect(); err == nil {
 			go tci.readLoop()
 			return

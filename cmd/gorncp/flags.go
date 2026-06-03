@@ -9,6 +9,8 @@ import (
 	"errors"
 	"flag"
 	"io"
+	"strconv"
+	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
 	"github.com/gmlewis/go-reticulum/utils"
@@ -16,12 +18,21 @@ import (
 
 var errHelp = errors.New("help requested")
 
+type counter int
+
+func (c *counter) String() string { return strconv.Itoa(int(*c)) }
+func (c *counter) Set(string) error {
+	*c++
+	return nil
+}
+func (c *counter) IsBoolFlag() bool { return true }
+
 type appT struct {
 	configDir        string
 	logger           *rns.Logger
 	identityPath     string
-	verbose          bool
-	quiet            bool
+	verbose          counter
+	quiet            counter
 	listenMode       bool
 	fetchMode        bool
 	noCompress       bool
@@ -36,6 +47,8 @@ type appT struct {
 	printIdentity    bool
 	phyRates         bool
 	timeoutSec       float64
+	requestTimeout   time.Duration
+	transferTimeout  time.Duration
 	version          bool
 	args             []string
 	exitCh           chan int
@@ -46,7 +59,7 @@ func (a *appT) usage(w io.Writer) {
 }
 
 func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
-	app := &appT{timeoutSec: 15.0, announceInterval: -1, exitCh: make(chan int, 1)}
+	app := &appT{timeoutSec: 15.0, announceInterval: -1, exitCh: make(chan int, 1), requestTimeout: 10 * time.Second, transferTimeout: 60 * time.Second}
 	fs := flag.NewFlagSet("gorncp", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	fs.Usage = func() {
@@ -54,8 +67,10 @@ func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
 	}
 	fs.StringVar(&app.configDir, "config", "", "path to alternative Reticulum config directory")
 	fs.StringVar(&app.identityPath, "i", "", "path to identity to use")
-	fs.BoolVar(&app.verbose, "v", false, "increase verbosity")
-	fs.BoolVar(&app.quiet, "q", false, "decrease verbosity")
+	fs.Var(&app.verbose, "v", "increase verbosity")
+	fs.Var(&app.verbose, "verbose", "increase verbosity")
+	fs.Var(&app.quiet, "q", "decrease verbosity")
+	fs.Var(&app.quiet, "quiet", "decrease verbosity")
 	fs.BoolVar(&app.listenMode, "l", false, "listen for incoming transfer requests")
 	fs.BoolVar(&app.fetchMode, "f", false, "fetch file from remote listener instead of sending")
 	fs.BoolVar(&app.noCompress, "C", false, "disable automatic compression")

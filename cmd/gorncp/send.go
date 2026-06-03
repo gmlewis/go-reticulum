@@ -226,7 +226,7 @@ established:
 
 	start := time.Now()
 	i = 0
-	if err := waitForTransferCompletion(done, 60*time.Second, func() {
+	if err := waitForTransferCompletion(done, a.transferTimeout, func() {
 		if !silent {
 			// Update progress
 			prg := res.GetProgress()

@@ -10,6 +10,9 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -256,5 +259,97 @@ func TestIntegrationDropOperations(t *testing.T) {
 	}
 	if got, want := out.String(), "Dropped all paths via ccdd\n"; got != want {
 		t.Fatalf("doDropVia output mismatch: got %q want %q", got, want)
+	}
+}
+
+func TestFormatParityPrettyDate(t *testing.T) {
+	pyDir := os.Getenv("ORIGINAL_RETICULUM_REPO_DIR")
+	if pyDir == "" {
+		pyDir = filepath.Join(os.Getenv("HOME"), "src", "github.com", "markqvist", "Reticulum")
+	}
+	if _, err := os.Stat(pyDir); err != nil {
+		t.Skipf("original Reticulum repo not found at %v: %v", pyDir, err)
+	}
+
+	now := time.Unix(1_700_000_000, 0).UTC()
+	nowPy := now.Unix()
+
+	offsets := []int{
+		0, 5, 9, 10, 30, 59, 60, 61, 119, 120, 121, 3599, 3600, 3601, 7199, 7200, 7201,
+		86399, 86400, 86401, 172800, 259200, 604800, 1209600, 2592000, 7776000, 31536000,
+	}
+
+	pyScript := fmt.Sprintf(`
+import sys, json
+from datetime import datetime, timezone
+now = datetime.fromtimestamp(%d, tz=timezone.utc)
+values = json.loads(sys.argv[1])
+results = {}
+for offset in values:
+    past = datetime.fromtimestamp(%d - offset, tz=timezone.utc)
+    diff = now - past
+    second_diff = diff.seconds
+    day_diff = diff.days
+    if day_diff < 0:
+        results[str(offset)] = ""
+    elif day_diff == 0:
+        if second_diff < 10:
+            results[str(offset)] = str(second_diff) + " seconds"
+        elif second_diff < 60:
+            results[str(offset)] = str(second_diff) + " seconds"
+        elif second_diff < 120:
+            results[str(offset)] = "1 minute"
+        elif second_diff < 3600:
+            results[str(offset)] = str(int(second_diff / 60)) + " minutes"
+        elif second_diff < 7200:
+            results[str(offset)] = "an hour"
+        elif second_diff < 86400:
+            results[str(offset)] = str(int(second_diff / 3600)) + " hours"
+    elif day_diff == 1:
+        results[str(offset)] = "1 day"
+    elif day_diff < 7:
+        results[str(offset)] = str(day_diff) + " days"
+    elif day_diff < 31:
+        results[str(offset)] = str(int(day_diff / 7)) + " weeks"
+    elif day_diff < 365:
+        results[str(offset)] = str(int(day_diff / 30)) + " months"
+    else:
+        results[str(offset)] = str(int(day_diff / 365)) + " years"
+print(json.dumps(results))
+`, nowPy, nowPy)
+
+	tmpDir, cleanup := testutils.TempDir(t, "pretty-date-parity-")
+	defer cleanup()
+
+	scriptPath := filepath.Join(tmpDir, "pd.py")
+	if err := os.WriteFile(scriptPath, []byte(pyScript), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	offsetJSON, _ := json.Marshal(offsets)
+
+	cmd := exec.Command("python3", scriptPath, string(offsetJSON))
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("python3 failed: %v\n%s", err, out)
+	}
+
+	var pyResults map[string]string
+	if err := json.Unmarshal(out, &pyResults); err != nil {
+		t.Fatalf("json unmarshal: %v\nraw: %s", err, out)
+	}
+
+	for _, offset := range offsets {
+		key := fmt.Sprintf("%d", offset)
+		pyWant, ok := pyResults[key]
+		if !ok {
+			t.Errorf("no Python result for key %q", key)
+			continue
+		}
+		then := now.Add(-time.Duration(offset) * time.Second)
+		goGot := prettyDateAt(now, then)
+		if goGot != pyWant {
+			t.Errorf("prettyDateAt(now, now-%ds) = %q, want %q (Python)", offset, goGot, pyWant)
+		}
 	}
 }

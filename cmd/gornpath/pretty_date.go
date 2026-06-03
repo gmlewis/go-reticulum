@@ -19,36 +19,40 @@ func prettyDateAt(now, value time.Time) string {
 	if diff < 0 {
 		return ""
 	}
-	seconds := int(diff.Seconds())
-	if seconds < 60 {
-		return fmtInt(seconds, "seconds")
+	totalSeconds := int(diff.Seconds())
+	dayDiff := totalSeconds / 86400
+	secondDiff := totalSeconds % 86400
+	if dayDiff == 0 {
+		if secondDiff < 10 {
+			return fmtInt(secondDiff, "seconds")
+		}
+		if secondDiff < 60 {
+			return fmtInt(secondDiff, "seconds")
+		}
+		if secondDiff < 120 {
+			return "1 minute"
+		}
+		if secondDiff < 3600 {
+			return fmtInt(secondDiff/60, "minutes")
+		}
+		if secondDiff < 7200 {
+			return "an hour"
+		}
+		return fmtInt(secondDiff/3600, "hours")
 	}
-	if seconds < 120 {
-		return "1 minute"
-	}
-	if seconds < 3600 {
-		return fmtInt(seconds/60, "minutes")
-	}
-	if seconds < 7200 {
-		return "an hour"
-	}
-	if seconds < 86400 {
-		return fmtInt(seconds/3600, "hours")
-	}
-	days := int(diff.Hours() / 24)
-	if days == 1 {
+	if dayDiff == 1 {
 		return "1 day"
 	}
-	if days < 7 {
-		return fmtInt(days, "days")
+	if dayDiff < 7 {
+		return fmtInt(dayDiff, "days")
 	}
-	if days < 31 {
-		return fmtInt(days/7, "weeks")
+	if dayDiff < 31 {
+		return fmtInt(dayDiff/7, "weeks")
 	}
-	if days < 365 {
-		return fmtInt(days/30, "months")
+	if dayDiff < 365 {
+		return fmtInt(dayDiff/30, "months")
 	}
-	return fmtInt(days/365, "years")
+	return fmtInt(dayDiff/365, "years")
 }
 
 func fmtInt(value int, unit string) string {

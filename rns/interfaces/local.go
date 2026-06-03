@@ -32,9 +32,10 @@ func isAbstractUnixAddr(path string) bool {
 type LocalClientInterface struct {
 	*BaseInterface
 
-	conn net.Conn
-	path string
-	port int
+	conn           net.Conn
+	path           string
+	port           int
+	reconnectDelay time.Duration
 
 	identityHash   []byte
 	inboundHandler InboundHandler
@@ -52,6 +53,7 @@ func NewLocalClientInterface(name string, path string, port int, handler Inbound
 		path:           path,
 		port:           port,
 		inboundHandler: handler,
+		reconnectDelay: 5 * time.Second,
 	}
 
 	if err := lci.connect(); err != nil {
@@ -86,7 +88,7 @@ func (lci *LocalClientInterface) connect() error {
 
 func (lci *LocalClientInterface) reconnectLoop() {
 	for atomic.LoadInt32(&lci.running) == 0 && !lci.IsDetached() {
-		time.Sleep(5 * time.Second)
+		time.Sleep(lci.reconnectDelay)
 		if err := lci.connect(); err == nil {
 			go lci.readLoop()
 			return

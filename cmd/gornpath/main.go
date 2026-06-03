@@ -105,8 +105,8 @@ func (rt *runtimeT) run() int {
 	}
 
 	targetLogLevel := rns.LogNotice
-	if app.verbose {
-		targetLogLevel = rns.LogInfo
+	if app.verbose != 0 {
+		targetLogLevel = rns.LogNotice + int(app.verbose)
 	}
 	logger.SetLogLevel(targetLogLevel)
 

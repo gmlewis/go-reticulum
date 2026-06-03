@@ -117,3 +117,30 @@ func TestParseFlagsVersion(t *testing.T) {
 		t.Fatal("version = false, want true")
 	}
 }
+
+func TestServiceFlag(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		args        []string
+		wantService bool
+	}{
+		{"no flag", []string{}, false},
+		{"short -s", []string{"-s"}, true},
+		{"long --service", []string{"--service"}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			app, err := parseFlags(tt.args, io.Discard)
+			if err != nil {
+				t.Fatalf("parseFlags failed: %v", err)
+			}
+			if app.service != tt.wantService {
+				t.Errorf("service = %v, want %v", app.service, tt.wantService)
+			}
+		})
+	}
+}

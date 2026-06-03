@@ -41,12 +41,13 @@ type clientT struct {
 	now       func() time.Time
 	tickCount int
 
+	jobsInterval time.Duration
+
 	configpath   string
 	identitypath string
 	identity     *rns.Identity
 	exitFn       func(int)
 
-	// Function pointers for mocking in tests
 	mockRequestSync   func(id *rns.Identity, targetHash []byte, remoteIdentity *rns.Identity, timeout time.Duration, exitOnFail bool) (any, error)
 	mockRequestUnpeer func(id *rns.Identity, targetHash []byte, remoteIdentity *rns.Identity, timeout time.Duration, exitOnFail bool) (any, error)
 }
@@ -58,7 +59,7 @@ type runtimeT struct {
 }
 
 const (
-	jobsInterval        = 5 * time.Second
+	defaultJobsInterval = 5 * time.Second
 	maintenanceInterval = 10 // Maintenance every 10 ticks (50s)
 )
 
@@ -91,7 +92,7 @@ func newRuntime(app *appT) *runtimeT {
 	return &runtimeT{
 		app:    app,
 		logger: logger,
-		client: &clientT{ts: ts, now: time.Now, logger: logger},
+		client: &clientT{ts: ts, now: time.Now, logger: logger, jobsInterval: defaultJobsInterval},
 	}
 }
 
@@ -267,7 +268,7 @@ func (r *runtimeT) run() {
 	jobsDone := make(chan struct{})
 	go func() {
 		defer close(jobsDone)
-		c.runDeferredThenJobs(10*time.Second, router, lxmfDestination, stopJobs, jobsInterval)
+		c.runDeferredThenJobs(10*time.Second, router, lxmfDestination, stopJobs, c.jobsInterval)
 	}()
 
 	<-stop

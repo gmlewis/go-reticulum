@@ -10,6 +10,8 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -295,4 +297,54 @@ func renderProbePacketLossScenario() probeCommandOutcome {
 	summary, exitCode := formatProbeLossSummary(2, 1)
 	out.WriteString(summary + "\n")
 	return probeCommandOutcome{stdout: normalizeProbeOutput(out.String()), exitCode: exitCode}
+}
+
+func TestFormatParityPythonFloat(t *testing.T) {
+	pyDir := os.Getenv("ORIGINAL_RETICULUM_REPO_DIR")
+	if pyDir == "" {
+		pyDir = filepath.Join(os.Getenv("HOME"), "src", "github.com", "markqvist", "Reticulum")
+	}
+	if _, err := os.Stat(pyDir); err != nil {
+		t.Skipf("original Reticulum repo not found at %v: %v", pyDir, err)
+	}
+
+	values := []float64{-73.5, -73.0, 0.0, 0.87, 9.25, 9.0, 100.0, -100.0}
+
+	pyScript := `
+import sys, json
+values = json.loads(sys.argv[1])
+results = {}
+for v in values:
+    results[str(v)] = str(float(v))
+print(json.dumps(results))
+`
+	tmpDir, cleanup := testutils.TempDir(t, "pyfloat-parity-")
+	defer cleanup()
+
+	scriptPath := filepath.Join(tmpDir, "pyfloat.py")
+	if err := os.WriteFile(scriptPath, []byte(pyScript), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	valJSON, _ := json.Marshal(values)
+
+	cmd := osexec.Command("python3", scriptPath, string(valJSON))
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("python3 failed: %v\n%s", err, out)
+	}
+
+	var pyResults map[string]string
+	if err := json.Unmarshal(out, &pyResults); err != nil {
+		t.Fatalf("json unmarshal: %v\nraw: %s", err, out)
+	}
+
+	for _, v := range values {
+		key := fmt.Sprintf("%v", v)
+		pyWant := pyResults[key]
+		goGot := formatProbePythonFloat(v)
+		if goGot != pyWant {
+			t.Errorf("formatProbePythonFloat(%v) = %q, want %q (Python str(float))", v, goGot, pyWant)
+		}
+	}
 }

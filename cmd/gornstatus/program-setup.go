@@ -48,7 +48,10 @@ type programSetupParams struct {
 	discoveredIfaces   bool
 	configEntries      bool
 	writer             io.Writer
+	startupSleep       func()
 }
+
+const defaultStartupSleep = 5 * time.Second
 
 type remoteStatusResult struct {
 	stats     *rns.InterfaceStatsSnapshot
@@ -57,7 +60,11 @@ type remoteStatusResult struct {
 
 func getRemoteStatus(reticulum *rns.Reticulum, p programSetupParams) (*remoteStatusResult, error) {
 	fmt.Printf("DEBUG: getRemoteStatus starting, waiting for interfaces...\n")
-	time.Sleep(5 * time.Second)
+	sleepFn := p.startupSleep
+	if sleepFn == nil {
+		sleepFn = func() { time.Sleep(defaultStartupSleep) }
+	}
+	sleepFn()
 	w := p.writer
 	if w == nil {
 		w = os.Stdout

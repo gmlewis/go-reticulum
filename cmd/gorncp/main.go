@@ -166,11 +166,8 @@ func run(app *appT) {
 	}
 
 	logger := app.getLogger()
-	if app.verbose {
-		logger.SetLogLevel(rns.LogVerbose)
-	}
-	if app.quiet {
-		logger.SetLogLevel(rns.LogWarning)
+	if app.verbose != 0 || app.quiet != 0 {
+		logger.SetLogLevel(int(app.verbose) - int(app.quiet))
 	}
 
 	ts := rns.NewTransportSystem(logger)

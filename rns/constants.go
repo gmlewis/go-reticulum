@@ -58,7 +58,7 @@ func PrettySize(num float64, suffix string) string {
 		num /= 1000.0
 	}
 
-	return fmt.Sprintf("%.2f %v%v", num, lastUnit, suffix)
+	return fmt.Sprintf("%.2f%s%s", num, lastUnit, suffix)
 }
 
 // PrettySpeed formats a bit rate (in bits per second) into a human-readable

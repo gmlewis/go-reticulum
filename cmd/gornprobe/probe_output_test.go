@@ -50,6 +50,18 @@ func TestProbeReceptionStats(t *testing.T) {
 	if got, want := formatProbeReceptionStats(nil, nil, nil), ""; got != want {
 		t.Fatalf("formatProbeReceptionStats(nil) = %q, want %q", got, want)
 	}
+
+	intRSSI := -73.0
+	intSNR := 9.0
+	intQ := 87.0
+	if got, want := formatProbeReceptionStats(&intRSSI, &intSNR, &intQ), " [RSSI -73.0 dBm] [SNR 9.0 dB] [Link Quality 87.0%]"; got != want {
+		t.Fatalf("formatProbeReceptionStats() = %q, want %q", got, want)
+	}
+
+	onlyRSSI := -50.0
+	if got, want := formatProbeReceptionStats(&onlyRSSI, nil, nil), " [RSSI -50.0 dBm]"; got != want {
+		t.Fatalf("formatProbeReceptionStats() = %q, want %q", got, want)
+	}
 }
 
 func TestProbeRTTString(t *testing.T) {

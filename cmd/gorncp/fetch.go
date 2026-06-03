@@ -216,7 +216,7 @@ established:
 	i = 0
 	requestTicker := time.NewTicker(100 * time.Millisecond)
 	defer requestTicker.Stop()
-	requestTimeout := time.NewTimer(10 * time.Second)
+	requestTimeout := time.NewTimer(a.requestTimeout)
 	defer requestTimeout.Stop()
 	for {
 		select {
@@ -335,7 +335,7 @@ requested:
 			a.exitCh <- 1
 			return
 		}
-	case <-time.After(10 * time.Second):
+	case <-time.After(a.requestTimeout):
 		log.Fatalf("Timed out waiting for resource transfer to start")
 	}
 

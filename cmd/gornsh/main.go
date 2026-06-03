@@ -92,37 +92,62 @@ func (rt *runtimeT) configureLogger(verbose, quiet int) {
 }
 
 type runtimeT struct {
-	opts                  options
-	logger                *rns.Logger
-	retrySleep            time.Duration
-	linkClosedGrace       time.Duration
-	postExitDrainGrace    time.Duration
-	preExitCommandGrace   time.Duration
-	protocolErrDeadline   time.Duration
-	minSendDeadline       time.Duration
-	newAnnouncementTicker func(interval time.Duration) announcementTicker
-	stdout                io.Writer
-	stderr                io.Writer
+	opts                     options
+	logger                   *rns.Logger
+	retrySleep               time.Duration
+	linkClosedGrace          time.Duration
+	postExitDrainGrace       time.Duration
+	preExitCommandGrace      time.Duration
+	protocolErrDeadline      time.Duration
+	minSendDeadline          time.Duration
+	postExitDelay            durationOrFunc
+	initiatorPostExitDelay   durationOrFunc
+	windowSizeUpdateInterval time.Duration
+	newAnnouncementTicker    func(interval time.Duration) announcementTicker
+	stdout                   io.Writer
+	stderr                   io.Writer
 }
 
 const (
-	defaultRetrySleep          = 100 * time.Millisecond
-	defaultLinkClosedGrace     = 8 * time.Second
-	defaultPostExitDrainGrace  = 750 * time.Millisecond
-	defaultPreExitCommandGrace = 150 * time.Millisecond
-	defaultProtocolErrDeadline = 2 * time.Second
-	defaultMinSendDeadline     = 10 * time.Second
+	defaultRetrySleep               = 100 * time.Millisecond
+	defaultLinkClosedGrace          = 8 * time.Second
+	defaultPostExitDrainGrace       = 750 * time.Millisecond
+	defaultPreExitCommandGrace      = 150 * time.Millisecond
+	defaultProtocolErrDeadline      = 2 * time.Second
+	defaultMinSendDeadline          = 10 * time.Second
+	defaultPostExitDelay            = 2 * time.Second
+	defaultInitiatorPostExitDelay   = 2 * time.Second
+	defaultWindowSizeUpdateInterval = 500 * time.Millisecond
 )
+
+type durationOrFunc struct {
+	d    time.Duration
+	fn   func()
+	once sync.Once
+}
+
+func (d *durationOrFunc) wait() {
+	d.once.Do(func() {
+		if d.fn != nil {
+			d.fn()
+			return
+		}
+		time.Sleep(d.d)
+	})
+}
 
 func newRuntime(opts options) *runtimeT {
 	rt := &runtimeT{
-		opts:                opts,
-		retrySleep:          defaultRetrySleep,
-		linkClosedGrace:     defaultLinkClosedGrace,
-		postExitDrainGrace:  defaultPostExitDrainGrace,
-		preExitCommandGrace: defaultPreExitCommandGrace,
-		protocolErrDeadline: defaultProtocolErrDeadline,
-		minSendDeadline:     defaultMinSendDeadline,
+		opts:                     opts,
+		retrySleep:               defaultRetrySleep,
+		linkClosedGrace:          defaultLinkClosedGrace,
+		postExitDrainGrace:       defaultPostExitDrainGrace,
+		preExitCommandGrace:      defaultPreExitCommandGrace,
+		protocolErrDeadline:      defaultProtocolErrDeadline,
+		minSendDeadline:          defaultMinSendDeadline,
+		postExitDelay:            durationOrFunc{d: defaultPostExitDelay},
+		initiatorPostExitDelay:   durationOrFunc{d: defaultInitiatorPostExitDelay},
+		windowSizeUpdateInterval: defaultWindowSizeUpdateInterval,
 		newAnnouncementTicker: func(interval time.Duration) announcementTicker {
 			return &realAnnouncementTicker{ticker: time.NewTicker(interval)}
 		},
@@ -454,8 +479,7 @@ func (rt *runtimeT) doInitiate() (int, error) {
 	defer stopWatcher()
 
 	code, err := rt.runInitiatorChannelSession(link, opts)
-	// Give final messages time to arrive
-	time.Sleep(2 * time.Second)
+	rt.initiatorPostExitDelay.wait()
 	link.Teardown()
 	if watcher.requested() {
 		return 1, nil

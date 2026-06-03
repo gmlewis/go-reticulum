@@ -54,17 +54,25 @@ import (
 // AppName is the application name used for default identities and destinations.
 const AppName = "rnx"
 
+const defaultStartupSleep = 2 * time.Second
+
 type runtimeT struct {
-	app    *appT
-	logger *rns.Logger
-	exitCh chan int
+	app          *appT
+	logger       *rns.Logger
+	exitCh       chan int
+	startupSleep func()
 }
 
 func newRuntime(app *appT) *runtimeT {
 	if app == nil {
 		app = &appT{}
 	}
-	return &runtimeT{app: app, logger: rns.NewLogger(), exitCh: make(chan int, 1)}
+	return &runtimeT{
+		app:          app,
+		logger:       rns.NewLogger(),
+		exitCh:       make(chan int, 1),
+		startupSleep: func() { time.Sleep(defaultStartupSleep) },
+	}
 }
 
 func main() {
@@ -141,7 +149,7 @@ func (rt *runtimeT) run() {
 	}()
 
 	// Give interfaces a moment to start
-	time.Sleep(2 * time.Second)
+	rt.startupSleep()
 
 	if app.listenMode || app.printIdentity {
 		rt.doListen(ts)

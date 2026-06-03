@@ -15,6 +15,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/gmlewis/go-reticulum/rns"
@@ -51,7 +52,18 @@ func (rt *runtimeT) run() {
 	}
 
 	logger.SetLogDest(rns.LogStdout)
-	if app.verbose != 0 || app.quiet != 0 {
+	if app.service {
+		logger.SetLogDest(rns.LogDestFile)
+		configDir := app.configDir
+		if configDir == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				log.Fatalf("Could not determine home directory: %v", err)
+			}
+			configDir = filepath.Join(home, ".reticulum")
+		}
+		logger.SetLogFilePath(filepath.Join(configDir, "logfile"))
+	} else if app.verbose != 0 || app.quiet != 0 {
 		logger.SetLogLevel(int(app.verbose) - int(app.quiet))
 	}
 

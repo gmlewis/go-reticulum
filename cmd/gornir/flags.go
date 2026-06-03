@@ -28,6 +28,7 @@ type appT struct {
 	configDir     string
 	verbose       counter
 	quiet         counter
+	service       bool
 	exampleConfig bool
 	version       bool
 }
@@ -44,6 +45,8 @@ func (a *appT) initFlags(fs *flag.FlagSet) {
 	fs.Var(&a.verbose, "verbose", "increase verbosity")
 	fs.Var(&a.quiet, "q", "decrease verbosity")
 	fs.Var(&a.quiet, "quiet", "decrease verbosity")
+	fs.BoolVar(&a.service, "s", false, "run as service and log to file")
+	fs.BoolVar(&a.service, "service", false, "run as service and log to file")
 	fs.BoolVar(&a.exampleConfig, "exampleconfig", false, "print verbose configuration example to stdout and exit")
 	fs.BoolVar(&a.version, "version", false, "show program's version number and exit")
 }
@@ -73,6 +76,8 @@ options:
   --config CONFIG  path to alternative Reticulum config directory
   -v, --verbose    increase verbosity
   -q, --quiet      decrease verbosity
+  -s, --service    run as service and log to file
+  -s, --service    run as service and log to file
   --exampleconfig  print verbose configuration example to stdout and exit
   --version        show program's version number and exit
 `

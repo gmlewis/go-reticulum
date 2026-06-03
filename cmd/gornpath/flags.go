@@ -9,9 +9,19 @@ import (
 	"errors"
 	"flag"
 	"io"
+	"strconv"
 )
 
 var errHelp = errors.New("help requested")
+
+type counter int
+
+func (c *counter) String() string { return strconv.Itoa(int(*c)) }
+func (c *counter) Set(string) error {
+	*c++
+	return nil
+}
+func (c *counter) IsBoolFlag() bool { return true }
 
 type appT struct {
 	configDir      string
@@ -32,7 +42,7 @@ type appT struct {
 	remoteTimeout  float64
 	timeout        float64
 	jsonOut        bool
-	verbose        bool
+	verbose        counter
 	version        bool
 	args           []string
 }
@@ -75,8 +85,8 @@ func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
 	fs.Float64Var(&app.timeout, "w", 15.0, "timeout before giving up")
 	fs.BoolVar(&app.jsonOut, "j", false, "output in JSON format")
 	fs.BoolVar(&app.jsonOut, "json", false, "output in JSON format")
-	fs.BoolVar(&app.verbose, "v", false, "increase verbosity")
-	fs.BoolVar(&app.verbose, "verbose", false, "increase verbosity")
+	fs.Var(&app.verbose, "v", "increase verbosity")
+	fs.Var(&app.verbose, "verbose", "increase verbosity")
 	fs.BoolVar(&app.version, "version", false, "show version and exit")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {

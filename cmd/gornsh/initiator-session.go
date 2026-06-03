@@ -281,7 +281,7 @@ func (rt *runtimeT) runInitiatorProtocolFlow(channel channelSession, opts option
 		go rt.pumpInitiatorStdin(channel)
 	}
 	if pumpInput && !opts.noTTY {
-		go pumpWindowSizeUpdates(channel, stopCh, 500*time.Millisecond, executeMessage.Rows, executeMessage.Cols)
+		go pumpWindowSizeUpdates(channel, stopCh, rt.windowSizeUpdateInterval, executeMessage.Rows, executeMessage.Cols)
 	}
 
 	for {

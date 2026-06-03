@@ -44,9 +44,11 @@ func ensureConfig(configDir string) error {
 	}
 
 	log.Printf("Default config file created. Make any necessary changes in %v and restart golxmd if needed.", configPath)
-	time.Sleep(1500 * time.Millisecond)
+	time.Sleep(configCreationSleepDuration)
 	return nil
 }
+
+var configCreationSleepDuration = 1500 * time.Millisecond
 
 func parseList(s string) []string {
 	parts := strings.Split(s, ",")

@@ -23,6 +23,49 @@ func TestAppFlags(t *testing.T) {
 	}
 }
 
+func TestVerboseCount(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		args         []string
+		wantVerbose  int
+		wantQuiet    int
+		wantLogLevel int
+	}{
+		{"no flags", []string{}, 0, 0, 0},
+		{"single -v", []string{"-v"}, 1, 0, 1},
+		{"double -vv", []string{"-v", "-v"}, 2, 0, 2},
+		{"triple -vvv", []string{"-v", "-v", "-v"}, 3, 0, 3},
+		{"single --verbose", []string{"--verbose"}, 1, 0, 1},
+		{"single -q", []string{"-q"}, 0, 1, -1},
+		{"double -qq", []string{"-q", "-q"}, 0, 2, -2},
+		{"single --quiet", []string{"--quiet"}, 0, 1, -1},
+		{"mixed -v -q", []string{"-v", "-q"}, 1, 1, 0},
+		{"mixed -vv -q", []string{"-v", "-v", "-q"}, 2, 1, 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			app, err := parseFlags(tt.args, io.Discard)
+			if err != nil {
+				t.Fatalf("parseFlags failed: %v", err)
+			}
+			if int(app.verbose) != tt.wantVerbose {
+				t.Errorf("verbose = %d, want %d", int(app.verbose), tt.wantVerbose)
+			}
+			if int(app.quiet) != tt.wantQuiet {
+				t.Errorf("quiet = %d, want %d", int(app.quiet), tt.wantQuiet)
+			}
+			gotLogLevel := int(app.verbose) - int(app.quiet)
+			if gotLogLevel != tt.wantLogLevel {
+				t.Errorf("effective log level = %d, want %d", gotLogLevel, tt.wantLogLevel)
+			}
+		})
+	}
+}
+
 func TestSilentFlag(t *testing.T) {
 	t.Parallel()
 

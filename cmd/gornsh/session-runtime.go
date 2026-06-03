@@ -325,7 +325,7 @@ func (rt *runtimeT) startSessionCommand(sender messageSender, commandLine []stri
 			}
 		}
 		// Give some time for final messages to reach the other side before closing
-		time.Sleep(2 * time.Second)
+		rt.postExitDelay.wait()
 		active.close()
 	}()
 

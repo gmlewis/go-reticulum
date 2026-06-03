@@ -9,6 +9,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -451,6 +452,64 @@ func TestIntegration_Discovered(t *testing.T) {
 	}
 	if !strings.Contains(got, "UDP") {
 		t.Errorf("output missing UDP type\ngot:\n%v", got)
+	}
+}
+
+func TestFormatParitySpeedStr(t *testing.T) {
+	pyDir := getPythonPath()
+	if pyDir == "" {
+		t.Skip("ORIGINAL_RETICULUM_REPO_DIR not set")
+	}
+	rnstatusPath := filepath.Join(pyDir, "RNS", "Utilities", "rnstatus.py")
+	if _, err := os.Stat(rnstatusPath); err != nil {
+		t.Skipf("rnstatus.py not found at %v", rnstatusPath)
+	}
+
+	values := []float64{0, 1, 999, 1000, 1500, 999999, 1e6, 1.5e6, 1.5e9, 1e12, 1e15, 1e18, 1e21, 1e24, 1e27}
+
+	pyScript := fmt.Sprintf(`
+import sys, json
+sys.path.insert(0, %q)
+from RNS.Utilities.rnstatus import speed_str
+values = json.loads(sys.argv[1])
+results = {}
+for v in values:
+    key = f"{v:.0f}"
+    results[key] = speed_str(v)
+print(json.dumps(results))
+`, pyDir)
+
+	tmpDir, cleanup := testutils.TempDir(t, "speed-str-parity-")
+	defer cleanup()
+	scriptPath := filepath.Join(tmpDir, "speed_str.py")
+	if err := os.WriteFile(scriptPath, []byte(pyScript), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	valJSON, _ := json.Marshal(values)
+
+	cmd := exec.Command("python3", scriptPath, string(valJSON))
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("python3 failed: %v\n%s", err, out)
+	}
+
+	var pyResults map[string]string
+	if err := json.Unmarshal(out, &pyResults); err != nil {
+		t.Fatalf("json unmarshal: %v\nraw: %s", err, out)
+	}
+
+	for _, v := range values {
+		key := fmt.Sprintf("%.0f", v)
+		pyWant, ok := pyResults[key]
+		if !ok {
+			t.Errorf("no Python result for key %q", key)
+			continue
+		}
+		goGot := speedStr(v)
+		if goGot != pyWant {
+			t.Errorf("speedStr(%v) = %q, want %q (Python)", v, goGot, pyWant)
+		}
 	}
 }
 

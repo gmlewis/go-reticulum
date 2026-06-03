@@ -9,6 +9,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -996,5 +997,83 @@ func TestFetchUnknownUnauthorizedError(t *testing.T) {
 
 	if !strings.Contains(msg, "due to an unknown error (probably not authorised)") {
 		t.Fatalf("message=%q does not contain expected unknown-error text", msg)
+	}
+}
+
+func TestFormatParitySizeStr(t *testing.T) {
+	pyDir := os.Getenv("ORIGINAL_RETICULUM_REPO_DIR")
+	if pyDir == "" {
+		pyDir = filepath.Join(os.Getenv("HOME"), "src", "github.com", "markqvist", "Reticulum")
+	}
+	if _, err := os.Stat(pyDir); err != nil {
+		t.Skipf("original Reticulum repo not found at %v: %v", pyDir, err)
+	}
+
+	values := []float64{0, 1, 100, 999, 1000, 1500, 1e6, 1.5e6, 1e9, 1e12, 1e15, 1e18, 1e21, 1e24, 1e27}
+	suffixes := []string{"B", "b"}
+
+	pyScript := `
+import sys, json
+
+def size_str(num, suffix='B'):
+    units = ['','K','M','G','T','P','E','Z']
+    last_unit = 'Y'
+    if suffix == 'b':
+        num *= 8
+        units = ['','K','M','G','T','P','E','Z']
+        last_unit = 'Y'
+    for unit in units:
+        if abs(num) < 1000.0:
+            if unit == "":
+                return "%.0f %s%s" % (num, unit, suffix)
+            else:
+                return "%.2f %s%s" % (num, unit, suffix)
+        num /= 1000.0
+    return "%.2f%s%s" % (num, last_unit, suffix)
+
+values = json.loads(sys.argv[1])
+suffixes = json.loads(sys.argv[2])
+results = {}
+for suffix in suffixes:
+    for v in values:
+        key = f"{v:.0f}|{suffix}"
+        results[key] = size_str(v, suffix=suffix)
+print(json.dumps(results))
+`
+	tmpDir, cleanup := testutils.TempDir(t, "size-str-parity-")
+	defer cleanup()
+
+	scriptPath := filepath.Join(tmpDir, "size_str.py")
+	if err := os.WriteFile(scriptPath, []byte(pyScript), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	valJSON, _ := json.Marshal(values)
+	sufJSON, _ := json.Marshal(suffixes)
+
+	cmd := exec.Command("python3", scriptPath, string(valJSON), string(sufJSON))
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("python3 failed: %v\n%s", err, out)
+	}
+
+	var pyResults map[string]string
+	if err := json.Unmarshal(out, &pyResults); err != nil {
+		t.Fatalf("json unmarshal: %v\nraw: %s", err, out)
+	}
+
+	for _, suffix := range suffixes {
+		for _, v := range values {
+			key := fmt.Sprintf("%.0f|%s", v, suffix)
+			pyWant, ok := pyResults[key]
+			if !ok {
+				t.Errorf("no Python result for key %q", key)
+				continue
+			}
+			goGot := sizeStr(v, suffix)
+			if goGot != pyWant {
+				t.Errorf("sizeStr(%v, %q) = %q, want %q (Python)", v, suffix, goGot, pyWant)
+			}
+		}
 	}
 }
