@@ -10447,6 +10447,8 @@ func TestProcessOutboundPropagatedSentRemovesFromQueue(t *testing.T) {
 	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
 	defer cleanup()
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.stopJobLoop()
+	t.Cleanup(func() { _ = router.Close() })
 
 	sourceID := mustTestNewIdentity(t, true)
 	destID := mustTestNewIdentity(t, true)
@@ -11694,12 +11696,20 @@ func TestSyncPeers(t *testing.T) {
 	good.propagationStampCost = ptrInt(8)
 	good.propagationStampCostFlexibility = ptrInt(1)
 	good.peeringCost = ptrInt(18)
+	good.peeringKey = []any{[]byte("key"), 18}
+	good.hasPathFn = func([]byte) bool { return true }
+	testID, _ := rns.NewIdentity(false, nil)
+	good.identity = testID
+	testDest, _ := rns.NewDestination(ts, testID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+	good.destination = testDest
 	router.peers[string(goodHash)] = good
 
 	var synced atomic.Bool
 	good.syncHook = func() {
 		synced.Store(true)
 	}
+	good.hasPathFn = func([]byte) bool { return true }
+	good.unhandledMessagesFn = func() [][]byte { return [][]byte{[]byte("msg1")} }
 
 	router.SyncPeers()
 
@@ -11729,6 +11739,15 @@ func TestPeerLinkLifecycle(t *testing.T) {
 	peer := NewPeer(router, hash)
 	peer.state = PeerStateLinkEstablishing
 	peer.linkBackoffStep = 30 * time.Second
+	peer.propagationStampCost = ptrInt(1)
+	peer.propagationStampCostFlexibility = ptrInt(0)
+	peer.peeringCost = ptrInt(18)
+	peer.peeringKey = []any{[]byte("key"), 18}
+	peer.hasPathFn = func([]byte) bool { return true }
+	lifecycleID, _ := rns.NewIdentity(false, nil)
+	peer.identity = lifecycleID
+	lifecycleDest, _ := rns.NewDestination(ts, lifecycleID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+	peer.destination = lifecycleDest
 
 	// link_established must identify the link, set LINK_READY, reset
 	// nextSyncAttempt, and call Sync.
@@ -11739,6 +11758,8 @@ func TestPeerLinkLifecycle(t *testing.T) {
 	}
 	var synced atomic.Bool
 	peer.syncHook = func() { synced.Store(true) }
+	peer.hasPathFn = func([]byte) bool { return true }
+	peer.unhandledMessagesFn = func() [][]byte { return [][]byte{[]byte("msg1")} }
 
 	peer.LinkEstablished(nil)
 

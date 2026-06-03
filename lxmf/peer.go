@@ -8,6 +8,7 @@ package lxmf
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -37,6 +38,19 @@ const (
 	PeerStrategyPersistent = 0x02
 	// DefaultPeerSyncStrategy matches Python's default peer sync strategy.
 	DefaultPeerSyncStrategy = PeerStrategyPersistent
+
+	// PeerSyncBackoffStep matches Python's SYNC_BACKOFF_STEP (12 minutes
+	// in seconds). After each successful sync, the backoff is increased by
+	// this amount so that the peer is not re-synced too aggressively.
+	PeerSyncBackoffStep = 12 * 60
+
+	// PeerPathRequestGrace matches Python's PATH_REQUEST_GRACE (7.5
+	// seconds). Time to wait after requesting a path before checking
+	// availability.
+	PeerPathRequestGrace = 7.5
+
+	// PeerOfferRequestPath matches Python's OFFER_REQUEST_PATH.
+	PeerOfferRequestPath = "/offer"
 )
 
 // Peer models a propagation peer and its persisted sync state.
@@ -82,9 +96,55 @@ type Peer struct {
 	// sync_peers without actually performing a network sync.
 	syncHook func()
 
+	// syncPostponeHook is an optional test hook that fires when Sync()
+	// postpones due to unmet preconditions. It receives the postponement
+	// reason string, allowing tests to verify which precondition failed.
+	syncPostponeHook func(reason string)
+
 	// identifyLinkHook is an optional test hook that, when set, replaces
 	// the default link.Identify() call during link_established.
 	identifyLinkHook func(*rns.Link, *rns.Identity) error
+
+	// now is an injectable time function for testing. Defaults to time.Now.
+	now func() time.Time
+
+	// generatePeeringKeyFn is an injectable function for generating peering
+	// keys. When nil, defaults to spawning p.GeneratePeeringKey in a
+	// goroutine. Tests can override to run synchronously or skip entirely.
+	generatePeeringKeyFn func()
+
+	// hasPathFn is an optional test override for the HasPath check during
+	// sync. When nil, the real p.router.transport.HasPath is used.
+	hasPathFn func(destHash []byte) bool
+
+	// requestPathFn is an optional test override for the RequestPath call
+	// during sync. When nil, the real p.router.transport.RequestPath is used.
+	requestPathFn func(destHash []byte) error
+
+	// recallIdentityFn is an optional test override for the identity recall
+	// step during sync. When nil, the real rns.RecallIdentity is used.
+	recallIdentityFn func(destHash []byte) *rns.Identity
+
+	// newDestinationFn is an optional test override for creating the
+	// propagation destination during sync. When nil, the real
+	// rns.NewDestination is used.
+	newDestinationFn func(identity *rns.Identity) (*rns.Destination, error)
+
+	// unhandledMessagesFn is an optional test override for the
+	// UnhandledMessages check during sync. When nil, the real
+	// p.UnhandledMessages is used. Tests can use this to simulate
+	// unhandled messages without needing to populate router.propagationEntries.
+	unhandledMessagesFn func() [][]byte
+
+	// establishLinkFn is an optional test override for the link
+	// establishment step during sync. When nil, a real rns.Link is
+	// created from p.destination.
+	establishLinkFn func()
+
+	// pathRequestSleep is an injectable sleep function for the path
+	// request grace period. When nil, defaults to sleeping for
+	// PeerPathRequestGrace seconds. Tests can override to skip the delay.
+	pathRequestSleep func()
 
 	linkBackoffStep time.Duration
 
@@ -751,10 +811,112 @@ func (p *Peer) Sync() {
 		return
 	}
 	p.mu.Lock()
-	p.lastSyncAttempt = peerTime(time.Now())
+	p.lastSyncAttempt = peerTime(p.nowFn()())
 	p.mu.Unlock()
+
+	syncTimeReached := p.nowFn()().After(timeFromPeerValue(p.nextSyncAttempt))
+	stampCostsKnown := p.propagationStampCost != nil && p.propagationStampCostFlexibility != nil && p.peeringCost != nil
+	peeringKeyReady := p.PeeringKeyReady()
+
+	if !syncTimeReached || !stampCostsKnown || !peeringKeyReady {
+		var postponeReason string
+		switch {
+		case !syncTimeReached:
+			postponeReason = " due to previous failures"
+			if p.lastSyncAttempt > p.lastHeard {
+				p.alive = false
+			}
+		case !stampCostsKnown:
+			postponeReason = " since its required stamp costs are not yet known"
+		case !peeringKeyReady:
+			postponeReason = " since a peering key has not been generated yet"
+			if p.generatePeeringKeyFn != nil {
+				p.generatePeeringKeyFn()
+			} else {
+				go p.GeneratePeeringKey()
+			}
+		}
+		if p.syncPostponeHook != nil {
+			p.syncPostponeHook(postponeReason)
+		}
+		return
+	}
+
+	hasPath := p.router.transport.HasPath
+	if p.hasPathFn != nil {
+		hasPath = p.hasPathFn
+	}
+	requestPath := p.router.transport.RequestPath
+	if p.requestPathFn != nil {
+		requestPath = p.requestPathFn
+	}
+
+	if !hasPath(p.destinationHash) {
+		if err := requestPath(p.destinationHash); err != nil {
+			log.Printf("Peer.Sync: path request for %x failed: %v", p.destinationHash, err)
+		}
+		if p.pathRequestSleep != nil {
+			p.pathRequestSleep()
+		} else {
+			time.Sleep(time.Duration(PeerPathRequestGrace * float64(time.Second)))
+		}
+	}
+
+	if !hasPath(p.destinationHash) {
+		return
+	}
+
+	if p.identity == nil {
+		recallIdentity := func(hash []byte) *rns.Identity {
+			return rns.RecallIdentity(p.router.transport, hash)
+		}
+		if p.recallIdentityFn != nil {
+			recallIdentity = p.recallIdentityFn
+		}
+		p.identity = recallIdentity(p.destinationHash)
+		if p.identity != nil {
+			newDest := func(id *rns.Identity) (*rns.Destination, error) {
+				return rns.NewDestination(p.router.transport, id, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+			}
+			if p.newDestinationFn != nil {
+				newDest = p.newDestinationFn
+			}
+			if dst, err := newDest(p.identity); err == nil {
+				p.destination = dst
+			}
+		}
+	}
+
+	if p.destination == nil {
+		return
+	}
+
+	unhandledMessages := p.UnhandledMessages()
+	if p.unhandledMessagesFn != nil {
+		unhandledMessages = p.unhandledMessagesFn()
+	}
+	if len(unhandledMessages) == 0 {
+		return
+	}
+
 	if p.syncHook != nil {
 		p.syncHook()
+		return
+	}
+
+	if p.currentlyTransferringMessages != nil {
+		return
+	}
+
+	if p.state == PeerStateIdle {
+		p.syncBackoff += PeerSyncBackoffStep
+		p.nextSyncAttempt = peerTime(p.nowFn()()) + p.syncBackoff
+		if p.establishLinkFn != nil {
+			p.establishLinkFn()
+		} else if p.destination != nil {
+			p.link, _ = rns.NewLink(p.router.transport, p.destination)
+		}
+		p.state = PeerStateLinkEstablishing
 	}
 }
 
@@ -854,4 +1016,11 @@ func (p *Peer) Name() string {
 		return value
 	}
 	return ""
+}
+
+func (p *Peer) nowFn() func() time.Time {
+	if p != nil && p.now != nil {
+		return p.now
+	}
+	return time.Now
 }

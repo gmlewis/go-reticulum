@@ -43,6 +43,8 @@ func mustTestNewRouter(t *testing.T, ts rns.Transport, identity *rns.Identity, s
 	t.Helper()
 	router, err := NewRouter(ts, identity, storagePath)
 	mustTest(t, err)
+	router.stopJobLoop()
+	t.Cleanup(func() { _ = router.Close() })
 	return router
 }
 
@@ -50,6 +52,8 @@ func mustTestNewRouterWithConfig(t *testing.T, ts rns.Transport, identity *rns.I
 	t.Helper()
 	router, err := NewRouterWithConfig(ts, identity, storagePath, policyConfig)
 	mustTest(t, err)
+	router.stopJobLoop()
+	t.Cleanup(func() { _ = router.Close() })
 	return router
 }
 
@@ -57,5 +61,7 @@ func mustTestNewRouterFromConfig(t *testing.T, ts rns.Transport, cfg RouterConfi
 	t.Helper()
 	router, err := NewRouterFromConfig(ts, cfg)
 	mustTest(t, err)
+	router.stopJobLoop()
+	t.Cleanup(func() { _ = router.Close() })
 	return router
 }

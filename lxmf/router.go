@@ -179,7 +179,8 @@ type Router struct {
 	// Python's LXMRouter.backchannel_links.
 	backchannelLinks map[string]*rns.Link
 
-	mu sync.Mutex
+	mu       sync.Mutex
+	isClosed bool
 }
 
 // DefaultProcessingInterval matches Python's LXMRouter.PROCESSING_INTERVAL of 4s.
@@ -3663,6 +3664,14 @@ func (r *Router) LoadNodeStats() error {
 
 // Close flushes in-memory propagation state to disk.
 func (r *Router) Close() error {
+	r.mu.Lock()
+	if r.isClosed {
+		r.mu.Unlock()
+		return nil
+	}
+	r.isClosed = true
+	r.mu.Unlock()
+
 	r.stopJobLoop()
 	r.FlushQueues()
 

@@ -7,7 +7,10 @@ package lxmf
 
 import (
 	"bytes"
+	"crypto/rand"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
@@ -240,3 +243,519 @@ func TestPeerQueueProcessingAndPeeringKey(t *testing.T) {
 		t.Fatal("PeeringKeyReady() rejected matching peering key value")
 	}
 }
+
+func TestPeerSyncPreconditions(t *testing.T) {
+	t.Parallel()
+
+	destHash := make([]byte, 16)
+	ts := rns.NewTransportSystem(nil)
+	id, _ := rns.NewIdentity(false, nil)
+	dir, cleanup := testutils.TempDir(t, "lxmf-peer-sync-")
+	defer cleanup()
+	router, err := NewRouter(ts, id, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router.stopJobLoop()
+	t.Cleanup(func() { _ = router.Close() })
+	fixedNow := time.Unix(1000, 0)
+
+	tests := []struct {
+		name            string
+		nextSyncAttempt float64
+		stampCost       *int
+		stampCostFlex   *int
+		peeringCost     *int
+		peeringKey      []any
+		wantPostpone    string
+		wantSyncHook    bool
+	}{
+		{
+			name:            "sync_time_not_reached",
+			nextSyncAttempt: peerTime(time.Unix(2000, 0)),
+			stampCost:       intPtr(1),
+			stampCostFlex:   intPtr(2),
+			peeringCost:     intPtr(3),
+			peeringKey:      []any{[]byte("key"), 3},
+			wantPostpone:    "due to previous failures",
+		},
+		{
+			name:            "stamp_costs_not_known",
+			nextSyncAttempt: 0,
+			stampCost:       nil,
+			wantPostpone:    "stamp costs are not yet known",
+		},
+		{
+			name:            "peering_key_not_ready",
+			nextSyncAttempt: 0,
+			stampCost:       intPtr(1),
+			stampCostFlex:   intPtr(2),
+			peeringCost:     intPtr(3),
+			peeringKey:      nil,
+			wantPostpone:    "peering key has not been generated",
+		},
+		{
+			name:            "all_preconditions_met",
+			nextSyncAttempt: 0,
+			stampCost:       intPtr(1),
+			stampCostFlex:   intPtr(2),
+			peeringCost:     intPtr(3),
+			peeringKey:      []any{[]byte("key"), 3},
+			wantSyncHook:    true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			peer := NewPeer(router, destHash)
+			peer.now = func() time.Time { return fixedNow }
+			peer.nextSyncAttempt = tc.nextSyncAttempt
+			peer.propagationStampCost = tc.stampCost
+			peer.propagationStampCostFlexibility = tc.stampCostFlex
+			peer.peeringCost = tc.peeringCost
+			peer.peeringKey = tc.peeringKey
+			peer.generatePeeringKeyFn = func() {}
+			peer.hasPathFn = func([]byte) bool { return true }
+			peer.pathRequestSleep = func() {}
+			testID, _ := rns.NewIdentity(false, nil)
+			peer.identity = testID
+			testDest, _ := rns.NewDestination(ts, testID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+			peer.destination = testDest
+			peer.unhandledMessagesFn = func() [][]byte { return [][]byte{[]byte("msg1")} }
+
+			var postponeReason string
+			var syncHookCalled bool
+			peer.syncPostponeHook = func(reason string) { postponeReason = reason }
+			peer.syncHook = func() { syncHookCalled = true }
+
+			peer.Sync()
+
+			if tc.wantPostpone != "" {
+				if postponeReason == "" {
+					t.Fatalf("expected postpone reason containing %q, got none", tc.wantPostpone)
+				}
+				if !bytes.Contains([]byte(postponeReason), []byte(tc.wantPostpone)) {
+					t.Fatalf("postpone reason %q does not contain %q", postponeReason, tc.wantPostpone)
+				}
+			} else {
+				if postponeReason != "" {
+					t.Fatalf("unexpected postpone reason: %q", postponeReason)
+				}
+			}
+			if tc.wantSyncHook && !syncHookCalled {
+				t.Fatal("expected sync to proceed past preconditions but it was postponed")
+			}
+		})
+	}
+}
+
+func TestPeerSyncIdentityRecall(t *testing.T) {
+	t.Parallel()
+
+	destHash := make([]byte, 16)
+	destHash[0] = 0xBB
+	ts := rns.NewTransportSystem(nil)
+	id, _ := rns.NewIdentity(false, nil)
+	dir, cleanup := testutils.TempDir(t, "lxmf-peer-idrecall-")
+	defer cleanup()
+	router, err := NewRouter(ts, id, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router.stopJobLoop()
+	t.Cleanup(func() { _ = router.Close() })
+	fixedNow := time.Unix(1000, 0)
+
+	newPeerWithPreconditions := func() *Peer {
+		peer := NewPeer(router, destHash)
+		peer.now = func() time.Time { return fixedNow }
+		peer.nextSyncAttempt = 0
+		peer.propagationStampCost = intPtr(1)
+		peer.propagationStampCostFlexibility = intPtr(2)
+		peer.peeringCost = intPtr(3)
+		peer.peeringKey = []any{[]byte("key"), 3}
+		peer.generatePeeringKeyFn = func() {}
+		peer.hasPathFn = func([]byte) bool { return true }
+		peer.pathRequestSleep = func() {}
+		testID, _ := rns.NewIdentity(false, nil)
+		peer.identity = testID
+		testDest, _ := rns.NewDestination(ts, testID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+		peer.destination = testDest
+		peer.unhandledMessagesFn = func() [][]byte { return [][]byte{[]byte("msg1")} }
+		return peer
+	}
+
+	t.Run("identity_already_known", func(t *testing.T) {
+		t.Parallel()
+		peer := newPeerWithPreconditions()
+		existingID, _ := rns.NewIdentity(false, nil)
+		peer.identity = existingID
+		existingDest, _ := rns.NewDestination(ts, existingID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+		peer.destination = existingDest
+
+		var recallCalled bool
+		peer.recallIdentityFn = func([]byte) *rns.Identity { recallCalled = true; return nil }
+
+		var syncHookCalled bool
+		peer.syncHook = func() { syncHookCalled = true }
+
+		peer.Sync()
+
+		if recallCalled {
+			t.Fatal("RecallIdentity should not be called when identity already known")
+		}
+		if !syncHookCalled {
+			t.Fatal("sync should have proceeded past identity recall")
+		}
+	})
+
+	t.Run("identity_recalled_successfully", func(t *testing.T) {
+		t.Parallel()
+		peer := newPeerWithPreconditions()
+		peer.identity = nil
+		peer.destination = nil
+
+		recalledID, _ := rns.NewIdentity(false, nil)
+		var recallCalled bool
+		peer.recallIdentityFn = func([]byte) *rns.Identity {
+			recallCalled = true
+			return recalledID
+		}
+		var newDestCalled bool
+		peer.newDestinationFn = func(identity *rns.Identity) (*rns.Destination, error) {
+			newDestCalled = true
+			if identity != recalledID {
+				t.Fatal("NewDestination called with wrong identity")
+			}
+			dst, _ := rns.NewDestination(ts, identity, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+			return dst, nil
+		}
+
+		var syncHookCalled bool
+		peer.syncHook = func() { syncHookCalled = true }
+
+		peer.Sync()
+
+		if !recallCalled {
+			t.Fatal("RecallIdentity should have been called")
+		}
+		if !newDestCalled {
+			t.Fatal("NewDestination should have been called")
+		}
+		if !syncHookCalled {
+			t.Fatal("sync should have proceeded past identity recall")
+		}
+		if peer.identity != recalledID {
+			t.Fatal("peer identity should be the recalled identity")
+		}
+	})
+
+	t.Run("identity_recall_fails", func(t *testing.T) {
+		t.Parallel()
+		peer := newPeerWithPreconditions()
+		peer.identity = nil
+		peer.destination = nil
+
+		peer.recallIdentityFn = func([]byte) *rns.Identity { return nil }
+
+		var syncHookCalled bool
+		peer.syncHook = func() { syncHookCalled = true }
+
+		peer.Sync()
+
+		if syncHookCalled {
+			t.Fatal("sync should NOT proceed when identity recall fails and destination is nil")
+		}
+	})
+
+	t.Run("identity_recalled_but_destination_creation_fails", func(t *testing.T) {
+		t.Parallel()
+		peer := newPeerWithPreconditions()
+		peer.identity = nil
+		peer.destination = nil
+
+		recalledID, _ := rns.NewIdentity(false, nil)
+		peer.recallIdentityFn = func([]byte) *rns.Identity { return recalledID }
+		peer.newDestinationFn = func(_ *rns.Identity) (*rns.Destination, error) {
+			return nil, fmt.Errorf("destination creation failed")
+		}
+
+		var syncHookCalled bool
+		peer.syncHook = func() { syncHookCalled = true }
+
+		peer.Sync()
+
+		if syncHookCalled {
+			t.Fatal("sync should NOT proceed when destination creation fails")
+		}
+		if peer.destination != nil {
+			t.Fatal("destination should remain nil when creation fails")
+		}
+	})
+}
+
+func TestPeerSyncPathRequest(t *testing.T) {
+	t.Parallel()
+
+	destHash := make([]byte, 16)
+	destHash[0] = 0xAA
+	ts := rns.NewTransportSystem(nil)
+	id, _ := rns.NewIdentity(false, nil)
+	dir, cleanup := testutils.TempDir(t, "lxmf-peer-pathreq-")
+	defer cleanup()
+	router, err := NewRouter(ts, id, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router.stopJobLoop()
+	t.Cleanup(func() { _ = router.Close() })
+	fixedNow := time.Unix(1000, 0)
+
+	newPeerWithPreconditions := func() *Peer {
+		peer := NewPeer(router, destHash)
+		peer.now = func() time.Time { return fixedNow }
+		peer.nextSyncAttempt = 0
+		peer.propagationStampCost = intPtr(1)
+		peer.propagationStampCostFlexibility = intPtr(2)
+		peer.peeringCost = intPtr(3)
+		peer.peeringKey = []any{[]byte("key"), 3}
+		peer.generatePeeringKeyFn = func() {}
+		peer.pathRequestSleep = func() {}
+		testID, _ := rns.NewIdentity(false, nil)
+		peer.identity = testID
+		testDest, _ := rns.NewDestination(ts, testID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+		peer.destination = testDest
+		peer.unhandledMessagesFn = func() [][]byte { return [][]byte{[]byte("msg1")} }
+		return peer
+	}
+
+	t.Run("path_already_exists", func(t *testing.T) {
+		t.Parallel()
+		peer := newPeerWithPreconditions()
+		var requestPathCalled bool
+		peer.hasPathFn = func([]byte) bool { return true }
+		peer.requestPathFn = func([]byte) error { requestPathCalled = true; return nil }
+
+		var syncHookCalled bool
+		peer.syncHook = func() { syncHookCalled = true }
+
+		peer.Sync()
+
+		if requestPathCalled {
+			t.Fatal("RequestPath should not have been called when path already exists")
+		}
+		if !syncHookCalled {
+			t.Fatal("sync should have proceeded past path request")
+		}
+	})
+
+	t.Run("path_requested_and_becomes_available", func(t *testing.T) {
+		t.Parallel()
+		peer := newPeerWithPreconditions()
+		var requestPathCalled bool
+		hasPath := false
+		peer.hasPathFn = func([]byte) bool { return hasPath }
+		peer.requestPathFn = func([]byte) error {
+			requestPathCalled = true
+			hasPath = true
+			return nil
+		}
+
+		var syncHookCalled bool
+		peer.syncHook = func() { syncHookCalled = true }
+
+		peer.Sync()
+
+		if !requestPathCalled {
+			t.Fatal("RequestPath should have been called when no path exists")
+		}
+		if !syncHookCalled {
+			t.Fatal("sync should have proceeded after path became available")
+		}
+	})
+
+	t.Run("path_requested_but_still_unavailable", func(t *testing.T) {
+		t.Parallel()
+		peer := newPeerWithPreconditions()
+		var requestPathCalled bool
+		peer.hasPathFn = func([]byte) bool { return false }
+		peer.requestPathFn = func([]byte) error { requestPathCalled = true; return nil }
+
+		var syncHookCalled bool
+		peer.syncHook = func() { syncHookCalled = true }
+
+		peer.Sync()
+
+		if !requestPathCalled {
+			t.Fatal("RequestPath should have been called")
+		}
+		if syncHookCalled {
+			t.Fatal("sync should NOT have proceeded when path is still unavailable")
+		}
+	})
+}
+
+func TestPeerSyncOfferRequest(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	id, _ := rns.NewIdentity(false, nil)
+	dir, cleanup := testutils.TempDir(t, "lxmf-peer-offer-")
+	defer cleanup()
+	router, err := NewRouter(ts, id, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router.stopJobLoop()
+	t.Cleanup(func() { _ = router.Close() })
+	fixedNow := time.Unix(1000, 0)
+
+	newPeerWithAllPreconditions := func() *Peer {
+		destHash := make([]byte, 16)
+		rand.Read(destHash)
+		peer := NewPeer(router, destHash)
+		peer.now = func() time.Time { return fixedNow }
+		peer.nextSyncAttempt = 0
+		peer.propagationStampCost = intPtr(1)
+		peer.propagationStampCostFlexibility = intPtr(2)
+		peer.peeringCost = intPtr(3)
+		peer.peeringKey = []any{[]byte("key"), 3}
+		peer.generatePeeringKeyFn = func() {}
+		peer.hasPathFn = func([]byte) bool { return true }
+		peer.pathRequestSleep = func() {}
+		testID, _ := rns.NewIdentity(false, nil)
+		peer.identity = testID
+		testDest, _ := rns.NewDestination(ts, testID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+		peer.destination = testDest
+		peer.unhandledMessagesFn = func() [][]byte { return [][]byte{[]byte("msg1")} }
+		return peer
+	}
+
+	t.Run("currently_transferring_returns_early", func(t *testing.T) {
+		peer := newPeerWithAllPreconditions()
+		peer.currentlyTransferringMessages = [][]byte{[]byte("transferring")}
+		peer.state = PeerStateIdle
+
+		var establishLinkCalled bool
+		peer.establishLinkFn = func() { establishLinkCalled = true }
+
+		peer.Sync()
+
+		if establishLinkCalled {
+			t.Fatal("should not establish link when currently transferring")
+		}
+		if peer.state != PeerStateIdle {
+			t.Fatalf("state should remain IDLE, got %v", peer.state)
+		}
+	})
+
+	t.Run("idle_state_establishes_link", func(t *testing.T) {
+		peer := newPeerWithAllPreconditions()
+		peer.state = PeerStateIdle
+		peer.syncBackoff = 0
+
+		var establishLinkCalled bool
+		peer.establishLinkFn = func() { establishLinkCalled = true }
+
+		peer.Sync()
+
+		if !establishLinkCalled {
+			t.Fatal("should have called establishLinkFn when state is IDLE")
+		}
+		if peer.state != PeerStateLinkEstablishing {
+			t.Fatalf("state should be LINK_ESTABLISHING, got %v", peer.state)
+		}
+		if peer.syncBackoff != PeerSyncBackoffStep {
+			t.Fatalf("syncBackoff should be %v, got %v", PeerSyncBackoffStep, peer.syncBackoff)
+		}
+		wantNextSync := peerTime(fixedNow) + PeerSyncBackoffStep
+		if peer.nextSyncAttempt != wantNextSync {
+			t.Fatalf("nextSyncAttempt should be %v, got %v", wantNextSync, peer.nextSyncAttempt)
+		}
+	})
+
+	t.Run("non_idle_non_link_ready_state_does_nothing", func(t *testing.T) {
+		peer := newPeerWithAllPreconditions()
+		peer.state = PeerStateRequestSent
+
+		var establishLinkCalled bool
+		peer.establishLinkFn = func() { establishLinkCalled = true }
+
+		peer.Sync()
+
+		if establishLinkCalled {
+			t.Fatal("should not establish link when state is REQUEST_SENT")
+		}
+		if peer.state != PeerStateRequestSent {
+			t.Fatalf("state should remain REQUEST_SENT, got %v", peer.state)
+		}
+	})
+}
+
+func TestPeerSyncNoUnhandled(t *testing.T) {
+	t.Parallel()
+
+	ts := rns.NewTransportSystem(nil)
+	id, _ := rns.NewIdentity(false, nil)
+	dir, cleanup := testutils.TempDir(t, "lxmf-peer-nounh-")
+	defer cleanup()
+	router, err := NewRouter(ts, id, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router.stopJobLoop()
+	t.Cleanup(func() { _ = router.Close() })
+	fixedNow := time.Unix(1000, 0)
+
+	newPeerWithAllPreconditions := func() *Peer {
+		destHash := make([]byte, 16)
+		rand.Read(destHash)
+		peer := NewPeer(router, destHash)
+		peer.now = func() time.Time { return fixedNow }
+		peer.nextSyncAttempt = 0
+		peer.propagationStampCost = intPtr(1)
+		peer.propagationStampCostFlexibility = intPtr(2)
+		peer.peeringCost = intPtr(3)
+		peer.peeringKey = []any{[]byte("key"), 3}
+		peer.generatePeeringKeyFn = func() {}
+		peer.hasPathFn = func([]byte) bool { return true }
+		peer.pathRequestSleep = func() {}
+		testID, _ := rns.NewIdentity(false, nil)
+		peer.identity = testID
+		testDest, _ := rns.NewDestination(ts, testID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+		peer.destination = testDest
+		return peer
+	}
+
+	t.Run("no_unhandled_returns_early", func(t *testing.T) {
+		peer := newPeerWithAllPreconditions()
+		var syncHookCalled bool
+		peer.syncHook = func() { syncHookCalled = true }
+
+		peer.Sync()
+
+		if syncHookCalled {
+			t.Fatal("sync should return early when no unhandled messages, not reach syncHook")
+		}
+	})
+
+	t.Run("unhandled_messages_proceeds", func(t *testing.T) {
+		peer := newPeerWithAllPreconditions()
+
+		transientID := []byte("test-transient-id-1234")
+		router.propagationEntries[string(transientID)] = &propagationEntry{
+			unhandledBy: [][]byte{peer.destinationHash},
+		}
+
+		var syncHookCalled bool
+		peer.syncHook = func() { syncHookCalled = true }
+
+		peer.Sync()
+
+		if !syncHookCalled {
+			t.Fatal("sync should proceed past no-unhandled check when unhandled messages exist")
+		}
+	})
+}
+
+func intPtr(v int) *int { return &v }
