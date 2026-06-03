@@ -6,6 +6,7 @@
 package lxmf
 
 import (
+	"fmt"
 	"unicode/utf8"
 
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
@@ -15,38 +16,39 @@ import (
 // payload, providing a seamless way to identify peers within the Reticulum network.
 //
 // It understands both the v0.5.0+ MessagePack list format and the original raw
-// UTF-8 string format used by earlier LXMF versions.
-func DisplayNameFromAppData(appData []byte) string {
+// UTF-8 string format used by earlier LXMF versions. If the appData contains
+// a malformed MessagePack encoding or invalid UTF-8, it returns a non-nil error.
+func DisplayNameFromAppData(appData []byte) (string, error) {
 	if len(appData) == 0 {
-		return ""
+		return "", nil
 	}
 
 	// v0.5.0+ format: msgpack fixarray (0x90-0x9f) or array16 (0xdc)
 	if (appData[0] >= 0x90 && appData[0] <= 0x9f) || appData[0] == 0xdc {
 		result, err := msgpack.Unpack(appData)
 		if err != nil {
-			panic(err)
+			return "", fmt.Errorf("unpack lxmf announce app data: %w", err)
 		}
 		peerData, ok := result.([]any)
 		if !ok || len(peerData) < 1 {
-			return ""
+			return "", nil
 		}
 		switch dn := peerData[0].(type) {
 		case []byte:
 			if !utf8.Valid(dn) {
-				return ""
+				return "", nil
 			}
-			return string(dn)
+			return string(dn), nil
 		default:
-			return ""
+			return "", nil
 		}
 	}
 
 	// Original format: raw UTF-8
 	if !utf8.Valid(appData) {
-		panic("invalid UTF-8 in LXMF announce app data")
+		return "", fmt.Errorf("invalid UTF-8 in LXMF announce app data")
 	}
-	return string(appData)
+	return string(appData), nil
 }
 
 func stampCostFromAppDataOutcome(appData []byte) (any, bool, bool, error) {
@@ -83,11 +85,12 @@ func stampCostFromAppDataDetailed(appData []byte) (int, bool, error) {
 }
 
 // StampCostFromAppData extracts the announced outbound stamp cost from an LXMF
-// announce payload.
-func StampCostFromAppData(appData []byte) (int, bool) {
+// announce payload. It returns the stamp cost, whether a stamp cost was present,
+// and any error encountered during unpacking.
+func StampCostFromAppData(appData []byte) (int, bool, error) {
 	stampCost, ok, err := stampCostFromAppDataDetailed(appData)
 	if err != nil {
-		panic(err)
+		return 0, false, fmt.Errorf("unpack lxmf stamp cost from app data: %w", err)
 	}
-	return stampCost, ok
+	return stampCost, ok, nil
 }

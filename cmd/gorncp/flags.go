@@ -38,6 +38,7 @@ type appT struct {
 	timeoutSec       float64
 	version          bool
 	args             []string
+	exitCh           chan int
 }
 
 func (a *appT) usage(w io.Writer) {
@@ -45,7 +46,7 @@ func (a *appT) usage(w io.Writer) {
 }
 
 func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
-	app := &appT{timeoutSec: 15.0, announceInterval: -1}
+	app := &appT{timeoutSec: 15.0, announceInterval: -1, exitCh: make(chan int, 1)}
 	fs := flag.NewFlagSet("gorncp", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	fs.Usage = func() {

@@ -42,19 +42,24 @@ func newRuntime(app *appT) *runtimeT {
 
 func main() {
 	log.SetFlags(0)
-	app, err := parseFlags(os.Args[1:], os.Stderr)
+	os.Exit(run(os.Args[1:]))
+}
+
+func run(args []string) int {
+	app, err := parseFlags(args, os.Stderr)
 	if err != nil {
 		if err == errHelp {
-			return
+			return 0
 		}
 		log.Fatal(err)
 	}
-	newRuntime(app).run()
+	rt := newRuntime(app)
+	return rt.run()
 }
 
-func (rt *runtimeT) run() {
+func (rt *runtimeT) run() int {
 	if rt == nil || rt.app == nil {
-		return
+		return 0
 	}
 	app := rt.app
 	logger := rt.logger
@@ -62,7 +67,7 @@ func (rt *runtimeT) run() {
 
 	if app.version {
 		fmt.Printf("gornprobe %v\n", rns.VERSION)
-		return
+		return 0
 	}
 
 	cleanup := func() {}
@@ -74,7 +79,7 @@ func (rt *runtimeT) run() {
 		fmt.Println("")
 		app.usage(os.Stdout)
 		fmt.Println("")
-		return
+		return 0
 	}
 
 	fullName := app.args[0]
@@ -82,7 +87,7 @@ func (rt *runtimeT) run() {
 	destHash, err := parseProbeDestinationHash(destHex)
 	if err != nil {
 		fmt.Println(err)
-		return
+		return 0
 	}
 
 	targetLogLevel := rns.LogNotice
@@ -113,7 +118,7 @@ func (rt *runtimeT) run() {
 
 	if err := waitForProbePath(os.Stdout, ts, destHash, probeTimeout); err != nil {
 		if err == errPathRequestTimedOut {
-			os.Exit(1)
+			return 1
 		}
 		log.Fatal(err)
 	}
@@ -137,7 +142,7 @@ func (rt *runtimeT) run() {
 		p := rns.NewPacket(remoteDest, payload)
 		if err := p.Pack(); err != nil {
 			fmt.Println(formatProbeMTUError(len(p.Raw)))
-			os.Exit(3)
+			return 3
 		}
 
 		more := ""
@@ -193,10 +198,7 @@ func (rt *runtimeT) run() {
 		}
 	}
 
-	if summary, exitCode := formatProbeLossSummary(sent, replies); true {
-		fmt.Println(summary)
-		if exitCode > 0 {
-			os.Exit(exitCode)
-		}
-	}
+	summary, exitCode := formatProbeLossSummary(sent, replies)
+	fmt.Println(summary)
+	return exitCode
 }

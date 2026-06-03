@@ -28,7 +28,7 @@
 //	-l                            Listen for incoming command requests
 //	-i <identity_file>            Identity path
 //	-config <config_dir>          Reticulum config directory
-//	-x                            Interactive mode (placeholder)
+//	-x                            Interactive mode
 //	-v / -q                       Logging level controls
 package main
 
@@ -57,13 +57,14 @@ const AppName = "rnx"
 type runtimeT struct {
 	app    *appT
 	logger *rns.Logger
+	exitCh chan int
 }
 
 func newRuntime(app *appT) *runtimeT {
 	if app == nil {
 		app = &appT{}
 	}
-	return &runtimeT{app: app, logger: rns.NewLogger()}
+	return &runtimeT{app: app, logger: rns.NewLogger(), exitCh: make(chan int, 1)}
 }
 
 func main() {
@@ -88,7 +89,13 @@ func main() {
 		os.Exit(0)
 	}()
 
-	newRuntime(app).run()
+	rt := newRuntime(app)
+	rt.run()
+	select {
+	case code := <-rt.exitCh:
+		os.Exit(code)
+	default:
+	}
 }
 
 func (rt *runtimeT) run() {
@@ -243,12 +250,14 @@ func (rt *runtimeT) doListen(ts rns.Transport) {
 			destLen := (rns.TruncatedHashLength / 8) * 2
 			if len(a) != destLen {
 				fmt.Printf("Allowed destination length is invalid, must be %v hexadecimal characters (%v bytes).\n", destLen, destLen/2)
-				os.Exit(1)
+				rt.exitCh <- 1
+				return
 			}
 			destinationHash, err := rns.HexToBytes(a)
 			if err != nil {
 				fmt.Println("Invalid destination entered. Check your input.")
-				os.Exit(1)
+				rt.exitCh <- 1
+				return
 			}
 			allowedIdentityHashes = append(allowedIdentityHashes, destinationHash)
 		}
@@ -270,7 +279,8 @@ func (rt *runtimeT) doListen(ts rns.Transport) {
 			}
 		} else {
 			fmt.Println(err)
-			os.Exit(1)
+			rt.exitCh <- 1
+			return
 		}
 	}
 
@@ -565,17 +575,20 @@ func (rt *runtimeT) doExecute(ts rns.Transport, destHashHex string, command stri
 		return
 	case <-failed:
 		fmt.Println("No result was received")
-		os.Exit(245)
+		rt.exitCh <- 245
+		return
 	case <-receiving:
 		select {
 		case <-done:
 			return
 		case <-failed:
 			fmt.Println("Receiving result failed")
-			os.Exit(246)
+			rt.exitCh <- 246
+			return
 		case <-time.After(resultTimeout):
 			fmt.Println("Receiving result failed")
-			os.Exit(246)
+			rt.exitCh <- 246
+			return
 		}
 	case <-time.After(time.Duration(app.timeout * float64(time.Second))):
 		log.Fatalf("Initiator timed out waiting for response\n")
@@ -588,7 +601,8 @@ func (rt *runtimeT) handleResponse(requestID []byte, response any) {
 	result, ok := response.([]any)
 	if !ok || len(result) < 8 {
 		fmt.Println("Received invalid result")
-		os.Exit(247)
+		rt.exitCh <- 247
+		return
 	}
 
 	executed, _ := result[0].(bool)
@@ -654,10 +668,10 @@ func (rt *runtimeT) handleResponse(requestID []byte, response any) {
 			}
 		}
 
-		os.Exit(rt.successExitCode(result[1]))
+		rt.exitCh <- rt.successExitCode(result[1])
 	} else {
 		fmt.Println("Remote could not execute command")
-		os.Exit(248)
+		rt.exitCh <- 248
 	}
 }
 
@@ -731,7 +745,8 @@ func (rt *runtimeT) doInteractive(ts rns.Transport, destHashHex string) {
 		command := scanner.Text()
 		commandLower := strings.ToLower(command)
 		if commandLower == "quit" || commandLower == "exit" {
-			os.Exit(0)
+			rt.exitCh <- 0
+			return
 		}
 		if commandLower == "clear" {
 			fmt.Print("\033c")

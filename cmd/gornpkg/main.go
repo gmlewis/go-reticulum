@@ -33,36 +33,36 @@ func newRuntime(app *appT) *runtimeT {
 	return &runtimeT{app: app, logger: rns.NewLogger(), newReticulum: rns.NewReticulumWithLogger}
 }
 
-func (rt *runtimeT) run() {
+func (rt *runtimeT) run() int {
 	if rt == nil || rt.app == nil {
-		return
+		return 0
 	}
 
 	if rt.app.version {
 		fmt.Printf("gornpkg %v\n", rns.VERSION)
-		return
+		return 0
 	}
 
 	if rt.app.exampleConfig {
 		fmt.Print(exampleRnpkgConfig + "\n")
-		return
+		return 0
 	}
 
-	rt.programSetup()
+	return rt.programSetup()
 }
 
 type reticulumFactory func(rns.Transport, string, *rns.Logger) (*rns.Reticulum, error)
 
-func (rt *runtimeT) programSetup() {
+func (rt *runtimeT) programSetup() int {
 	ret, err := rt.initReticulum()
 	if err != nil {
 		rt.logger.Error("Could not initialize Reticulum, exiting now")
-		os.Exit(1)
+		return 1
 	}
 	if err := ret.Close(); err != nil {
 		rt.logger.Warning("Warning: Could not close Reticulum properly: %v", err)
 	}
-	os.Exit(0)
+	return 0
 }
 
 func (rt *runtimeT) initReticulum() (*rns.Reticulum, error) {
@@ -92,5 +92,5 @@ func main() {
 		os.Exit(0)
 	}()
 
-	newRuntime(app).run()
+	os.Exit(newRuntime(app).run())
 }

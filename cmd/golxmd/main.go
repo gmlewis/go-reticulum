@@ -62,6 +62,14 @@ const (
 	maintenanceInterval = 10 // Maintenance every 10 ticks (50s)
 )
 
+func (c *clientT) exit(code int) {
+	if c != nil && c.exitFn != nil {
+		c.exitFn(code)
+		return
+	}
+	os.Exit(code)
+}
+
 func main() {
 	log.SetFlags(0)
 	app, err := parseFlags(os.Args[1:], os.Stderr)
@@ -72,14 +80,6 @@ func main() {
 		log.Fatal(err)
 	}
 	newRuntime(app).run()
-}
-
-func (c *clientT) exit(code int) {
-	if c != nil && c.exitFn != nil {
-		c.exitFn(code)
-		return
-	}
-	os.Exit(code)
 }
 
 func newRuntime(app *appT) *runtimeT {

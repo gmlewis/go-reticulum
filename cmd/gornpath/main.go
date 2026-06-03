@@ -69,35 +69,39 @@ func newRuntime(app *appT) *runtimeT {
 
 func main() {
 	log.SetFlags(0)
-	app, err := parseFlags(os.Args[1:], os.Stderr)
+	os.Exit(run(os.Args[1:]))
+}
+
+func run(args []string) int {
+	app, err := parseFlags(args, os.Stderr)
 	if err != nil {
 		if err == errHelp {
-			return
+			return 0
 		}
 		fmt.Fprintln(os.Stderr, err)
 		(&appT{}).usage(os.Stderr)
-		os.Exit(2)
+		return 2
 	}
-	newRuntime(app).run()
+	return newRuntime(app).run()
 }
 
-func (rt *runtimeT) run() {
+func (rt *runtimeT) run() int {
 	if rt == nil || rt.app == nil {
-		return
+		return 0
 	}
 	app := rt.app
 	logger := rt.logger
 
 	if app.version {
 		fmt.Printf("gornpath %v\n", rns.VERSION)
-		return
+		return 0
 	}
 
 	if !app.dropAnnounces && !app.table && !app.rates && len(app.args) == 0 && !app.dropVia && !app.blackholed && !app.blackhole && !app.unblackhole && !app.blackholedList {
 		fmt.Println("")
 		app.usage(os.Stdout)
 		fmt.Println("")
-		return
+		return 0
 	}
 
 	targetLogLevel := rns.LogNotice
@@ -125,7 +129,7 @@ func (rt *runtimeT) run() {
 	}()
 
 	if app.remoteHash != "" && (app.drop || app.dropVia || app.dropAnnounces || app.blackholed || app.blackhole || app.unblackhole) {
-		os.Exit(255)
+		return 255
 	}
 
 	if app.table || app.rates {
@@ -137,7 +141,7 @@ func (rt *runtimeT) run() {
 			client, err := rt.connectRemoteClient(os.Stdout, ret.Transport(), remoteHash, app.identityPath, app.remoteTimeout, remotePurposeManagement, false)
 			if err != nil {
 				if errors.Is(err, errPathRequestTimedOut) {
-					os.Exit(12)
+					return 12
 				}
 				log.Fatal(err)
 			}
@@ -156,7 +160,7 @@ func (rt *runtimeT) run() {
 			}
 			if err := doRemoteTable(os.Stdout, remoteClient, destinationHash, app.maxHops, app.jsonOut, app.remoteTimeout); err != nil {
 				if errors.Is(err, errRemoteRequestFailed) {
-					os.Exit(10)
+					return 10
 				}
 				log.Fatal(err)
 			}
@@ -174,13 +178,13 @@ func (rt *runtimeT) run() {
 			}
 			if err := doRemoteRates(os.Stdout, remoteClient, destinationHash, app.jsonOut, app.remoteTimeout); err != nil {
 				if errors.Is(err, errRemoteRequestFailed) {
-					os.Exit(10)
+					return 10
 				}
 				log.Fatal(err)
 			}
 		} else if err := doRates(os.Stdout, ret, nil, app.jsonOut); err != nil {
 			if errors.Is(err, errNoRateInformation) {
-				os.Exit(1)
+				return 1
 			}
 			log.Fatal(err)
 		}
@@ -195,7 +199,7 @@ func (rt *runtimeT) run() {
 		client, err := rt.connectRemoteClient(os.Stdout, ret.Transport(), sourceHash, "", app.remoteTimeout, remotePurposeBlackhole, false)
 		if err != nil {
 			if errors.Is(err, errPathRequestTimedOut) {
-				os.Exit(12)
+				return 12
 			}
 			log.Fatal(err)
 		}
@@ -211,7 +215,7 @@ func (rt *runtimeT) run() {
 		}
 		if err := doRemoteBlackholedList(os.Stdout, remoteClient, filter, localIdentityHash, app.jsonOut, app.remoteTimeout); err != nil {
 			if errors.Is(err, errRemoteRequestFailed) {
-				os.Exit(10)
+				return 10
 			}
 			log.Fatal(err)
 		}
@@ -227,7 +231,7 @@ func (rt *runtimeT) run() {
 		}
 		if err := doBlackholed(os.Stdout, ret, filter, localIdentityHash); err != nil {
 			if errors.Is(err, errNoBlackholedInformation) {
-				os.Exit(20)
+				return 20
 			}
 			log.Fatal(err)
 		}
@@ -276,6 +280,7 @@ func (rt *runtimeT) run() {
 			log.Fatal(err)
 		}
 	}
+	return 0
 }
 
 type pathTableProvider interface {

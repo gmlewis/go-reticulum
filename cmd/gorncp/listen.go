@@ -107,7 +107,8 @@ func (a *appT) doListen(ts rns.Transport) {
 		id, err = rns.FromFile(idPath, logger)
 		if err != nil {
 			logger.Error("Could not load identity for rncp. The identity file at \"%v\" may be corrupt or unreadable.", idPath)
-			os.Exit(2)
+			a.exitCh <- 2
+			return
 		}
 	} else {
 		logger.Info("No valid saved identity found, creating new...")
@@ -190,14 +191,16 @@ func (a *appT) doListen(ts rns.Transport) {
 		sp := filepath.Clean(savePath)
 		if _, err := os.Stat(sp); err != nil {
 			logger.Error("Output directory not found")
-			os.Exit(3)
+			a.exitCh <- 3
+			return
 		}
 		// Test if directory is writable by trying to open a temp file
 		tmpFile := filepath.Join(sp, ".gorncp_write_test")
 		f, err := os.OpenFile(tmpFile, os.O_CREATE|os.O_WRONLY, 0o600)
 		if err != nil {
 			logger.Error("Output directory not writable")
-			os.Exit(4)
+			a.exitCh <- 4
+			return
 		}
 		if err := f.Close(); err != nil {
 			logger.Warning("Could not close temporary write test file %v: %v", tmpFile, err)
@@ -233,7 +236,8 @@ func (a *appT) doListen(ts rns.Transport) {
 	if printIdentity {
 		fmt.Printf("Identity     : %v\n", id)
 		fmt.Printf("Listening on : %v\n", rns.PrettyHex(dest.Hash))
-		os.Exit(0)
+		a.exitCh <- 0
+		return
 	}
 
 	// Always register fetch handler, but check allowFetch inside (matches Python behavior)

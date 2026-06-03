@@ -33,16 +33,16 @@ func newRuntime(app *appT) *runtimeT {
 	return &runtimeT{app: app, logger: rns.NewLogger()}
 }
 
-func (rt *runtimeT) run(nameFilter string) {
+func (rt *runtimeT) run(nameFilter string) int {
 	if rt == nil || rt.app == nil {
-		return
+		return 0
 	}
 	app := rt.app
 	logger := rt.logger
 
 	if app.showVersion {
 		fmt.Printf("gornstatus %v\n", rns.VERSION)
-		return
+		return 0
 	}
 
 	logger.SetLogDest(rns.LogStdout)
@@ -60,7 +60,7 @@ func (rt *runtimeT) run(nameFilter string) {
 			}
 		}()
 		runMonitor(ret, nameFilter, verbosity, app)
-		return
+		return 0
 	}
 
 	exitCode := programSetup(programSetupParams{
@@ -82,7 +82,7 @@ func (rt *runtimeT) run(nameFilter string) {
 		configEntries:      app.detailedDiscovered,
 		logger:             logger,
 	})
-	os.Exit(exitCode)
+	return exitCode
 }
 
 func main() {
@@ -107,5 +107,5 @@ func main() {
 	if len(args) > 0 {
 		nameFilter = args[0]
 	}
-	newRuntime(app).run(nameFilter)
+	os.Exit(newRuntime(app).run(nameFilter))
 }

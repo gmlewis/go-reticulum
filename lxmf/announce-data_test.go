@@ -86,7 +86,11 @@ func TestDisplayNameFromAppData(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := DisplayNameFromAppData(tc.appData)
+			t.Parallel()
+			got, err := DisplayNameFromAppData(tc.appData)
+			if err != nil {
+				t.Fatalf("DisplayNameFromAppData(%v) returned unexpected error: %v", tc.appData, err)
+			}
 			if got != tc.want {
 				t.Fatalf("DisplayNameFromAppData(%v) = %q, want %q", tc.appData, got, tc.want)
 			}
@@ -94,7 +98,7 @@ func TestDisplayNameFromAppData(t *testing.T) {
 	}
 }
 
-func TestDisplayNameFromAppDataPanicsOnMalformedEncodings(t *testing.T) {
+func TestDisplayNameFromAppDataReturnsErrorOnMalformedEncodings(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -113,12 +117,11 @@ func TestDisplayNameFromAppDataPanicsOnMalformedEncodings(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			defer func() {
-				if recover() == nil {
-					t.Fatalf("DisplayNameFromAppData(%v) did not panic", tc.appData)
-				}
-			}()
-			_ = DisplayNameFromAppData(tc.appData)
+			t.Parallel()
+			_, err := DisplayNameFromAppData(tc.appData)
+			if err == nil {
+				t.Fatalf("DisplayNameFromAppData(%v) expected error, got nil", tc.appData)
+			}
 		})
 	}
 }
@@ -188,7 +191,11 @@ func TestStampCostFromAppData(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, ok := StampCostFromAppData(tc.appData)
+			t.Parallel()
+			got, ok, err := StampCostFromAppData(tc.appData)
+			if err != nil {
+				t.Fatalf("StampCostFromAppData(%v) returned unexpected error: %v", tc.appData, err)
+			}
 			if ok != tc.wantOK {
 				t.Fatalf("StampCostFromAppData(%v) ok=%v want=%v", tc.appData, ok, tc.wantOK)
 			}
@@ -199,16 +206,13 @@ func TestStampCostFromAppData(t *testing.T) {
 	}
 }
 
-func TestStampCostFromAppDataPanicsOnMalformedMsgpack(t *testing.T) {
+func TestStampCostFromAppDataReturnsErrorOnMalformedMsgpack(t *testing.T) {
 	t.Parallel()
 
-	defer func() {
-		if recover() == nil {
-			t.Fatal("StampCostFromAppData() did not panic")
-		}
-	}()
-
-	_, _ = StampCostFromAppData([]byte{0x91, 0xc1})
+	_, _, err := StampCostFromAppData([]byte{0x91, 0xc1})
+	if err == nil {
+		t.Fatal("StampCostFromAppData() expected error for malformed msgpack, got nil")
+	}
 }
 
 func TestStampCostFromAppDataOutcomePreservesRawNonCanonicalValues(t *testing.T) {
@@ -261,7 +265,10 @@ func TestStampCostFromAppDataOutcomePreservesRawNonCanonicalValues(t *testing.T)
 				t.Fatalf("stampCostFromAppDataOutcome()=%#v want %#v", got, tc.stampCost)
 			}
 
-			converted, convertedOK := StampCostFromAppData(appData)
+			converted, convertedOK, err := StampCostFromAppData(appData)
+			if err != nil {
+				t.Fatalf("StampCostFromAppData(): %v", err)
+			}
 			if convertedOK {
 				t.Fatalf("StampCostFromAppData()=(%v,%v), want non-canonical raw value to stay non-int", converted, convertedOK)
 			}

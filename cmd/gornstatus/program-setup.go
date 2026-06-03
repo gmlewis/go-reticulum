@@ -16,6 +16,16 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
+// exitCodeError is an error that carries a specific exit code,
+// allowing programSetup to return the correct exit code instead
+// of calling os.Exit directly.
+type exitCodeError struct {
+	code int
+	err  error
+}
+
+func (e exitCodeError) Error() string { return e.err.Error() }
+
 // programSetupParams holds all the parameters for programSetup,
 // matching the Python program_setup() function signature.
 type programSetupParams struct {
@@ -81,7 +91,7 @@ func getRemoteStatus(reticulum *rns.Reticulum, p programSetupParams) (*remoteSta
 				}
 				logger.Debug("Timed out waiting for path to %v after %v", rns.PrettyHexRep(targetHash), time.Since(start))
 				if p.mustExit {
-					os.Exit(12)
+					return nil, exitCodeError{code: 12, err: fmt.Errorf("path request timed out")}
 				}
 				return nil, fmt.Errorf("path request timed out")
 			}
@@ -176,9 +186,10 @@ func getRemoteStatus(reticulum *rns.Reticulum, p programSetupParams) (*remoteSta
 			}
 		}
 		if p.mustExit {
-			os.Exit(10)
+			errCh <- exitCodeError{code: 10, err: fmt.Errorf("link closed")}
+		} else {
+			errCh <- fmt.Errorf("link closed")
 		}
-		errCh <- fmt.Errorf("link closed")
 	})
 
 	select {
@@ -297,9 +308,13 @@ func programSetup(p programSetupParams) int {
 	if p.remote != "" {
 		res, err := getRemoteStatus(reticulum, p)
 		if err != nil {
+			if exitErr, ok := err.(exitCodeError); ok {
+				_, _ = fmt.Fprintln(w, exitErr.Error())
+				return exitErr.code
+			}
 			_, _ = fmt.Fprintln(w, err.Error())
 			if p.mustExit {
-				os.Exit(20)
+				return 20
 			}
 			return 0
 		}

@@ -120,14 +120,15 @@ func renderDiscoveredInterfaceDetails(w io.Writer, ifs []rns.DiscoveredInterface
 			_, _ = fmt.Fprintf(w, "Transport ID : %v\n", i.TransportID)
 		}
 
-		_, _ = fmt.Fprintf(w, "Name         : %v\n", i.Name)
-		_, _ = fmt.Fprintf(w, "Type         : %v\n", i.Type)
-		_, _ = fmt.Fprintf(w, "Status       : %v\n", statusDisplay)
-		_, _ = fmt.Fprintf(w, "Transport    : %v\n", transportStr)
-		_, _ = fmt.Fprintf(w, "Distance     : %v hop%v\n", i.Hops, plural(i.Hops))
-		_, _ = fmt.Fprintf(w, "Discovered   : %v\n", discoveredDisplay)
-		_, _ = fmt.Fprintf(w, "Last Heard   : %v\n", lastHeardDisplay)
-		_, _ = fmt.Fprintf(w, "Location     : %v\n", location)
+		_, _ = fmt.Fprintf(w, `Name         : %v
+Type         : %v
+Status       : %v
+Transport    : %v
+Distance     : %v hop%v
+Discovered   : %v
+Last Heard   : %v
+Location     : %v
+`, i.Name, i.Type, statusDisplay, transportStr, i.Hops, plural(i.Hops), discoveredDisplay, lastHeardDisplay, location)
 
 		if i.Frequency != nil {
 			_, _ = fmt.Fprintf(w, "Frequency    : %v Hz\n", formatInt(*i.Frequency))

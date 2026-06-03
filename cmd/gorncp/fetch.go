@@ -63,7 +63,10 @@ func (a *appT) doFetch(ts rns.Transport, destHashHex string, fileName string) {
 	savePath := a.savePath
 	overwrite := a.overwrite
 	timeoutSec := a.timeoutSec
-	id := a.prepareIdentity(a.identityPath)
+	id, err := a.prepareIdentity(a.identityPath)
+	if err != nil {
+		log.Fatal(err)
+	}
 	_ = a.noCompress
 	_ = a.phyRates
 
@@ -172,7 +175,8 @@ established:
 				fmt.Printf("Fetch request failed, the file %v was not found on the remote\n", fileName)
 				link.Teardown()
 				sleepAfterFetchFailure(time.Sleep)
-				os.Exit(0)
+				a.exitCh <- 0
+				return
 			} else if rr.Response == nil {
 				if !silent {
 					fmt.Printf("\r%v\r", strings.Repeat(" ", 60))
@@ -180,7 +184,8 @@ established:
 				fmt.Printf("Fetch request failed due to an error on the remote system\n")
 				link.Teardown()
 				sleepAfterFetchFailure(time.Sleep)
-				os.Exit(0)
+				a.exitCh <- 0
+				return
 			} else if code, ok := fetchResponseCode(rr.Response); ok && code == int(rns.ReqFetchNotAllowed) {
 				if !silent {
 					fmt.Printf("\r%v\r", strings.Repeat(" ", 60))
@@ -188,7 +193,8 @@ established:
 				fmt.Printf("Fetch request failed, fetching the file %v was not allowed by the remote\n", fileName)
 				link.Teardown()
 				sleepAfterFetchFailure(time.Sleep)
-				os.Exit(0)
+				a.exitCh <- 0
+				return
 			}
 			requestResolved <- true
 		} else {
@@ -198,7 +204,8 @@ established:
 			fmt.Printf("Fetch request failed due to an unknown error (probably not authorised)\n")
 			link.Teardown()
 			sleepAfterFetchFailure(time.Sleep)
-			os.Exit(0)
+			a.exitCh <- 0
+			return
 		}
 	}, nil, nil, 0)
 
@@ -325,7 +332,8 @@ requested:
 			if !silent {
 				fmt.Printf("\nThe transfer failed\n")
 			}
-			os.Exit(1)
+			a.exitCh <- 1
+			return
 		}
 	case <-time.After(10 * time.Second):
 		log.Fatalf("Timed out waiting for resource transfer to start")

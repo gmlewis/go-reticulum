@@ -72,7 +72,10 @@ func (a *appT) doSend(ts rns.Transport, destHashHex string, filePath string) {
 		log.Fatalf("Could not read file: %v\n", err)
 	}
 
-	id := a.prepareIdentity(a.identityPath)
+	id, err := a.prepareIdentity(a.identityPath)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	remoteID := rns.RecallIdentity(ts, destHash)
 	if remoteID == nil {
@@ -290,7 +293,8 @@ established:
 		if !silent {
 			fmt.Printf("\n%v\n", err)
 		}
-		os.Exit(1)
+		a.exitCh <- 1
+		return
 	}
 
 	link.Teardown()

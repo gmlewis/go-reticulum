@@ -63,7 +63,7 @@ func validateIdentityHash(hash string) error {
 
 // prepareIdentity loads an identity from the specified path, or creates a new one if it doesn't exist.
 // Matches Python's prepare_identity behavior.
-func (a *appT) prepareIdentity(identityPath string) *rns.Identity {
+func (a *appT) prepareIdentity(identityPath string) (*rns.Identity, error) {
 	logger := a.getLogger()
 	if identityPath == "" {
 		home, _ := os.UserHomeDir()
@@ -75,29 +75,27 @@ func (a *appT) prepareIdentity(identityPath string) *rns.Identity {
 		var err error
 		id, err = rns.FromFile(identityPath, logger)
 		if err != nil {
-			logger.Error("Could not load identity for rncp. The identity file at %q may be corrupt or unreadable.", identityPath)
-			os.Exit(2)
+			return nil, fmt.Errorf("could not load identity for rncp. The identity file at %q may be corrupt or unreadable", identityPath)
 		}
 	}
 
 	if id == nil {
 		logger.Info("No valid saved identity found, creating new...")
-		// Create directory first (matches Python behavior)
 		identityDir := filepath.Dir(identityPath)
 		if err := os.MkdirAll(identityDir, 0o700); err != nil {
-			log.Fatalf("Could not create identity directory: %v", err)
+			return nil, fmt.Errorf("could not create identity directory: %w", err)
 		}
 
 		var err error
 		id, err = rns.NewIdentity(true, logger)
 		if err != nil {
-			log.Fatalf("Could not create new identity: %v", err)
+			return nil, fmt.Errorf("could not create new identity: %w", err)
 		}
 		if err := id.ToFile(identityPath); err != nil {
-			log.Fatalf("Could not persist identity %q: %v", identityPath, err)
+			return nil, fmt.Errorf("could not persist identity %q: %w", identityPath, err)
 		}
 	}
-	return id
+	return id, nil
 }
 
 // AppName is the name of the application used for identity generation.
@@ -146,14 +144,25 @@ func main() {
 	app, err := parseFlags(os.Args[1:], os.Stderr)
 	if err != nil {
 		if err == errHelp {
-			return
+			os.Exit(0)
 		}
 		log.Fatal(err)
 	}
 
+	run(app)
+
+	select {
+	case code := <-app.exitCh:
+		os.Exit(code)
+	default:
+	}
+}
+
+func run(app *appT) {
 	if err := app.validate(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		app.exitCh <- 1
+		return
 	}
 
 	logger := app.getLogger()
@@ -177,12 +186,12 @@ func main() {
 
 	if app.version {
 		fmt.Printf("gorncp %v\n", rns.VERSION)
+		app.exitCh <- 0
 		return
 	}
 
 	if app.listenMode {
 		app.doListen(ts)
-		os.Exit(0)
 	} else if app.fetchMode {
 		if len(app.args) < 2 {
 			app.usage(os.Stderr)
