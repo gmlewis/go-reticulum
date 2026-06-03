@@ -663,7 +663,13 @@ func TestRunInitiatorProtocolFlowLinkClosedWithoutOutputFails(t *testing.T) {
 	}
 
 	opts := options{timeoutSec: 1, mirror: false, noTTY: true}
-	_, _, err := runInitiatorProtocolFlow(fake, opts, linkClosedCh, stopCh, false)
+	rt := &runtimeT{
+		linkClosedGrace:    50 * time.Millisecond,
+		postExitDrainGrace: 10 * time.Millisecond,
+		minSendDeadline:    10 * time.Millisecond,
+		retrySleep:         time.Millisecond,
+	}
+	_, _, err := rt.runInitiatorProtocolFlow(fake, opts, linkClosedCh, stopCh, false)
 	if err == nil || err.Error() != "link closed before command completed" {
 		t.Fatalf("unexpected err=%v", err)
 	}

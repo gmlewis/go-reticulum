@@ -19,8 +19,6 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-const minStreamSendDeadline = 10 * time.Second
-
 type messageSender interface {
 	Send(msg rns.Message) (*rns.Envelope, error)
 }
@@ -414,8 +412,15 @@ func (ac *activeCommand) streamPipe(sender messageSender, reader io.ReadCloser, 
 }
 
 func (ac *activeCommand) streamSendDeadline() time.Duration {
-	if ac == nil || ac.rt == nil || ac.rt.protocolErrDeadline < minStreamSendDeadline {
-		return minStreamSendDeadline
+	if ac == nil || ac.rt == nil {
+		return defaultMinSendDeadline
+	}
+	minDeadline := ac.rt.minSendDeadline
+	if minDeadline <= 0 {
+		minDeadline = defaultMinSendDeadline
+	}
+	if ac.rt.protocolErrDeadline < minDeadline {
+		return minDeadline
 	}
 	return ac.rt.protocolErrDeadline
 }

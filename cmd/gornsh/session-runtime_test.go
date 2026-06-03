@@ -185,6 +185,7 @@ func TestStreamPipeLogsSendFailure(t *testing.T) {
 		rt: &runtimeT{
 			logger:              logger,
 			protocolErrDeadline: 10 * time.Millisecond,
+			minSendDeadline:     10 * time.Millisecond,
 			retrySleep:          time.Millisecond,
 		},
 	}

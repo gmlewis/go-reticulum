@@ -99,6 +99,7 @@ type runtimeT struct {
 	postExitDrainGrace    time.Duration
 	preExitCommandGrace   time.Duration
 	protocolErrDeadline   time.Duration
+	minSendDeadline       time.Duration
 	newAnnouncementTicker func(interval time.Duration) announcementTicker
 	stdout                io.Writer
 	stderr                io.Writer
@@ -110,6 +111,7 @@ const (
 	defaultPostExitDrainGrace  = 750 * time.Millisecond
 	defaultPreExitCommandGrace = 150 * time.Millisecond
 	defaultProtocolErrDeadline = 2 * time.Second
+	defaultMinSendDeadline     = 10 * time.Second
 )
 
 func newRuntime(opts options) *runtimeT {
@@ -120,6 +122,7 @@ func newRuntime(opts options) *runtimeT {
 		postExitDrainGrace:  defaultPostExitDrainGrace,
 		preExitCommandGrace: defaultPreExitCommandGrace,
 		protocolErrDeadline: defaultProtocolErrDeadline,
+		minSendDeadline:     defaultMinSendDeadline,
 		newAnnouncementTicker: func(interval time.Duration) announcementTicker {
 			return &realAnnouncementTicker{ticker: time.NewTicker(interval)}
 		},
