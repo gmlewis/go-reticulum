@@ -535,7 +535,7 @@ func TestLocalInterfaceParity(t *testing.T) {
 	socketPath := filepath.Join(tmpDir, "rns-test.sock")
 
 	if runtime.GOOS == "linux" {
-		cmd = exec.Command("pipx", "run", "--spec", "rns", "python3", scriptPath, socketPath)
+		cmd = exec.Command("python3", scriptPath, socketPath)
 	} else {
 		cmd = exec.Command("python3", scriptPath, fmt.Sprintf("%v", pyPort))
 	}
