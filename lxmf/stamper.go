@@ -108,27 +108,50 @@ func GenerateStampWithContext(ctx context.Context, material []byte, targetCost i
 	}
 
 	rounds := 0
+	wbState := workblockMidstate(workblock)
+
+	if wbState != nil {
+		candidate := make([]byte, StampSize)
+		if _, err := rand.Read(candidate); err != nil {
+			return nil, 0, rounds, fmt.Errorf("generate random stamp candidate: %w", err)
+		}
+		for {
+			if err := ctx.Err(); err != nil {
+				return nil, 0, rounds, err
+			}
+			rounds++
+			h := hashWithMidstate(wbState, candidate)
+			if val := leadingZeroBits(h[:]); val >= targetCost {
+				stampCopy := make([]byte, StampSize)
+				copy(stampCopy, candidate)
+				return stampCopy, val, rounds, nil
+			}
+			for j := 0; j < len(candidate); j++ {
+				candidate[j]++
+				if candidate[j] != 0 {
+					break
+				}
+			}
+		}
+	}
+
 	buf := make([]byte, len(workblock)+StampSize)
 	copy(buf, workblock)
 	candidate := buf[len(workblock):]
-
 	if _, err := rand.Read(candidate); err != nil {
 		return nil, 0, rounds, fmt.Errorf("generate random stamp candidate: %w", err)
 	}
-
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, 0, rounds, err
 		}
 		rounds++
-
 		h := sha256.Sum256(buf)
 		if val := leadingZeroBits(h[:]); val >= targetCost {
 			stampCopy := make([]byte, StampSize)
 			copy(stampCopy, candidate)
 			return stampCopy, val, rounds, nil
 		}
-
 		for j := 0; j < len(candidate); j++ {
 			candidate[j]++
 			if candidate[j] != 0 {
@@ -170,21 +193,52 @@ func GenerateStampParallel(material []byte, targetCost int, expandRounds int, wo
 	results := make(chan result, workers)
 	stopCh := make(chan struct{})
 
+	wbState := workblockMidstate(workblock)
+
 	var wg sync.WaitGroup
 	wg.Add(workers)
 	for i := 0; i < workers; i++ {
 		go func() {
 			defer wg.Done()
 			localRounds := 0
+
+			if wbState != nil {
+				candidate := make([]byte, StampSize)
+				if _, err := rand.Read(candidate); err != nil {
+					results <- result{nil, localRounds}
+					return
+				}
+				for {
+					select {
+					case <-stopCh:
+						results <- result{nil, localRounds}
+						return
+					default:
+					}
+					localRounds++
+					h := hashWithMidstate(wbState, candidate)
+					if val := leadingZeroBits(h[:]); val >= targetCost {
+						stampCopy := make([]byte, StampSize)
+						copy(stampCopy, candidate)
+						results <- result{stampCopy, localRounds}
+						return
+					}
+					for j := 0; j < len(candidate); j++ {
+						candidate[j]++
+						if candidate[j] != 0 {
+							break
+						}
+					}
+				}
+			}
+
 			buf := make([]byte, len(workblock)+StampSize)
 			copy(buf, workblock)
 			candidate := buf[len(workblock):]
-
 			if _, err := rand.Read(candidate); err != nil {
 				results <- result{nil, localRounds}
 				return
 			}
-
 			for {
 				select {
 				case <-stopCh:
@@ -192,7 +246,6 @@ func GenerateStampParallel(material []byte, targetCost int, expandRounds int, wo
 					return
 				default:
 				}
-
 				localRounds++
 				h := sha256.Sum256(buf)
 				if val := leadingZeroBits(h[:]); val >= targetCost {
@@ -201,7 +254,6 @@ func GenerateStampParallel(material []byte, targetCost int, expandRounds int, wo
 					results <- result{stampCopy, localRounds}
 					return
 				}
-
 				for j := 0; j < len(candidate); j++ {
 					candidate[j]++
 					if candidate[j] != 0 {
@@ -212,7 +264,6 @@ func GenerateStampParallel(material []byte, targetCost int, expandRounds int, wo
 		}()
 	}
 
-	// Wait for the first valid stamp.
 	var stamp []byte
 	totalRounds := 0
 	received := 0
@@ -245,4 +296,51 @@ func leadingZeroBits(data []byte) int {
 		break
 	}
 	return count
+}
+
+type midstate struct {
+	state     []byte
+	workblock []byte
+}
+
+// workblockMidstate pre-hashes the workblock into a SHA-256 midstate that
+// can be restored per round, avoiding the cost of re-hashing the full
+// workblock on every stamp candidate. For small workblocks the overhead
+// of marshaling/unmarshaling outweighs the savings, so this returns nil
+// for workblocks below a size threshold and the caller should fall back
+// to sha256.Sum256.
+func workblockMidstate(workblock []byte) *midstate {
+	if len(workblock) < 128 {
+		return nil
+	}
+	h := sha256.New()
+	h.Write(workblock)
+	type marshaler interface {
+		MarshalBinary() ([]byte, error)
+	}
+	state, err := h.(marshaler).MarshalBinary()
+	if err != nil {
+		return nil
+	}
+	return &midstate{state: state, workblock: workblock}
+}
+
+// hashWithMidstate computes sha256(workblock || suffix) by restoring the
+// pre-digested workblock midstate and writing only the suffix. The caller
+// must ensure ms is not nil.
+func hashWithMidstate(ms *midstate, suffix []byte) [32]byte {
+	h := sha256.New()
+	type unmarshaler interface {
+		UnmarshalBinary([]byte) error
+	}
+	if err := h.(unmarshaler).UnmarshalBinary(ms.state); err != nil {
+		fallback := make([]byte, len(ms.workblock)+len(suffix))
+		copy(fallback, ms.workblock)
+		copy(fallback[len(ms.workblock):], suffix)
+		return sha256.Sum256(fallback)
+	}
+	h.Write(suffix)
+	var out [32]byte
+	copy(out[:], h.Sum(nil))
+	return out
 }

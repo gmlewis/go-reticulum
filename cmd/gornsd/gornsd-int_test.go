@@ -430,11 +430,13 @@ func TestGornsdQuietDecreases(t *testing.T) {
 func TestGornsdSharedInstanceWarning(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	configDir, cleanup := testutils.TempDir(t, "gornsd-int-shared-")
-	t.Cleanup(cleanup)
-	sharedPort := reserveTCPPortForIntegration(t)
-	rpcPort := reserveTCPPortForIntegration(t)
-	config := fmt.Sprintf(`[reticulum]
+
+	const maxAttempts = 5
+	for attempt := 1; ; attempt++ {
+		configDir, cleanup := testutils.TempDir(t, "gornsd-int-shared-")
+		sharedPort := reserveTCPPortForIntegration(t)
+		rpcPort := reserveTCPPortForIntegration(t)
+		config := fmt.Sprintf(`[reticulum]
 instance_name = gornsd-shared-instance
 share_instance = Yes
 shared_instance_type = tcp
@@ -446,33 +448,42 @@ loglevel = 4
 
 [interfaces]
 `, sharedPort, rpcPort)
-	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
-		t.Fatalf("write config error: %v", err)
-	}
-
-	sharedLogger := rns.NewLogger()
-	sharedLogger.SetLogDest(rns.LogCallback)
-	sharedLogger.SetLogCallback(func(string) {})
-	sharedTS := rns.NewTransportSystem(sharedLogger)
-	shared, err := rns.NewReticulumWithLogger(sharedTS, configDir, sharedLogger)
-	if err != nil {
-		t.Fatalf("failed to start shared instance: %v", err)
-	}
-	waitForTCPPort(t, rpcPort)
-	t.Cleanup(func() {
-		if closeErr := shared.Close(); closeErr != nil {
-			t.Fatalf("shared.Close error: %v", closeErr)
+		if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+			cleanup()
+			t.Fatalf("write config error: %v", err)
 		}
-	})
 
-	binaryPath := buildGornsdBinary(t)
-	cmd, stdout, stderr := startGornsdBinary(t, binaryPath, "--config", configDir)
-	waitForCombinedOutput(t, stdout, stderr, "connected to another shared local instance")
-	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
-		t.Fatalf("failed to signal SIGTERM: %v", err)
-	}
-	if got := waitForProcessExit(t, cmd); got != 0 && got != -1 {
-		t.Fatalf("exit code = %v, want 0 or -1", got)
+		sharedLogger := rns.NewLogger()
+		sharedLogger.SetLogDest(rns.LogCallback)
+		sharedLogger.SetLogCallback(func(string) {})
+		sharedTS := rns.NewTransportSystem(sharedLogger)
+		shared, err := rns.NewReticulumWithLogger(sharedTS, configDir, sharedLogger)
+		if err != nil {
+			cleanup()
+			if strings.Contains(err.Error(), "address already in use") && attempt < maxAttempts {
+				t.Logf("port collision on attempt %v, retrying with new ports", attempt)
+				continue
+			}
+			t.Fatalf("failed to start shared instance: %v", err)
+		}
+
+		waitForTCPPort(t, rpcPort)
+		t.Cleanup(func() {
+			if closeErr := shared.Close(); closeErr != nil {
+				t.Fatalf("shared.Close error: %v", closeErr)
+			}
+		})
+
+		binaryPath := buildGornsdBinary(t)
+		cmd, stdout, stderr := startGornsdBinary(t, binaryPath, "--config", configDir)
+		waitForCombinedOutput(t, stdout, stderr, "connected to another shared local instance")
+		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+			t.Fatalf("failed to signal SIGTERM: %v", err)
+		}
+		if got := waitForProcessExit(t, cmd); got != 0 && got != -1 {
+			t.Fatalf("exit code = %v, want 0 or -1", got)
+		}
+		return
 	}
 }
 

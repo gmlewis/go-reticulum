@@ -6,6 +6,7 @@
 package lxmf
 
 import (
+	"crypto/sha256"
 	"testing"
 )
 
@@ -81,5 +82,77 @@ func TestValidatePeeringKey(t *testing.T) {
 	}
 	if ValidatePeeringKey(peeringID, []byte("invalid"), 4) {
 		t.Fatal("expected invalid key to fail validation")
+	}
+}
+
+func TestWorkblockMidstateProducesIdenticalHashes(t *testing.T) {
+	t.Parallel()
+	workblock := make([]byte, 512)
+	for i := range workblock {
+		workblock[i] = byte(i)
+	}
+
+	ms := workblockMidstate(workblock)
+	if ms == nil {
+		t.Fatal("workblockMidstate should return non-nil for 512-byte workblock")
+	}
+
+	candidates := [][]byte{
+		make([]byte, StampSize),
+		make([]byte, StampSize),
+		make([]byte, StampSize),
+	}
+	candidates[0][0] = 0x01
+	candidates[1][0] = 0x02
+	candidates[2][0] = 0x03
+
+	for _, c := range candidates {
+		buf := make([]byte, len(workblock)+len(c))
+		copy(buf, workblock)
+		copy(buf[len(workblock):], c)
+		want := sha256.Sum256(buf)
+		got := hashWithMidstate(ms, c)
+		if want != got {
+			t.Fatalf("hashWithMidstate mismatch:\n  want: %x\n  got:  %x", want, got)
+		}
+	}
+}
+
+func TestWorkblockMidstateNilForSmallWorkblocks(t *testing.T) {
+	t.Parallel()
+	smallWB := make([]byte, 64)
+	ms := workblockMidstate(smallWB)
+	if ms != nil {
+		t.Fatal("workblockMidstate should return nil for workblocks below 128 bytes")
+	}
+
+	largeWB := make([]byte, 128)
+	ms = workblockMidstate(largeWB)
+	if ms == nil {
+		t.Fatal("workblockMidstate should return non-nil for workblocks >= 128 bytes")
+	}
+}
+
+func TestGenerateStampWithLargeWorkblock(t *testing.T) {
+	t.Parallel()
+	material := []byte("large-workblock-material")
+	cost := 8
+	stamp, value, rounds, err := GenerateStamp(material, cost, WorkblockExpandRounds)
+	if err != nil {
+		t.Fatalf("GenerateStamp: %v", err)
+	}
+	if rounds <= 0 {
+		t.Fatalf("rounds=%v want>0", rounds)
+	}
+	if value < cost {
+		t.Fatalf("stamp value=%v want>=%v", value, cost)
+	}
+
+	workblock, err := StampWorkblock(material, WorkblockExpandRounds)
+	if err != nil {
+		t.Fatalf("StampWorkblock: %v", err)
+	}
+	if !StampValid(stamp, cost, workblock) {
+		t.Fatal("generated stamp should be valid")
 	}
 }
