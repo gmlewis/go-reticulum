@@ -1606,6 +1606,7 @@ func TestRemoteManagement(t *testing.T) {
 	ts := NewTransportSystem(nil)
 	tmpDir, cleanup := testutils.TempDir(t, "rns-test-")
 	defer cleanup()
+	writeConfig(t, tmpDir, "[reticulum]\nshare_instance = No\n")
 	r, err := NewReticulumWithLogger(ts, tmpDir, nil)
 	if err != nil {
 		t.Fatalf("NewReticulumWithLogger: %v", err)
