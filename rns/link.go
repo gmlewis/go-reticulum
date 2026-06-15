@@ -690,6 +690,10 @@ func (l *Link) send(p *Packet) error {
 	l.mu.Lock()
 	l.lastOutbound = time.Now()
 	iface := l.attachedInterface
+	if l.status == LinkClosed {
+		l.mu.Unlock()
+		return fmt.Errorf("link %x is closed", l.linkID)
+	}
 	l.mu.Unlock()
 	l.logger.Extreme("Link.send context=%v packetType=%v rawLen=%v attachedInterface=%v\n", p.Context, p.PacketType, len(p.Raw), iface != nil)
 	l.logger.Verbose("Link.send: packet Context=%v, Data len=%v, attachedInterface=%v", p.Context, len(p.Data), iface != nil)
