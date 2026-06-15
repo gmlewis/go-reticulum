@@ -21,7 +21,14 @@ import (
 )
 
 const lxmfDecodeOpportunisticPy = `import LXMF
+import RNS
 import sys
+
+_original_recall = RNS.Identity.recall
+def _patched_recall(target_hash, **kwargs):
+    kwargs.pop("_no_use", None)
+    return _original_recall(target_hash, **kwargs)
+RNS.Identity.recall = _patched_recall
 
 def main():
     if len(sys.argv) != 3:
