@@ -414,8 +414,10 @@ func ValidateRequest(logger *Logger, destination *Destination, data []byte, pack
 
 	// Send proof
 	if err := l.Prove(); err != nil {
+		l.logger.Info("Failed to send proof for link request %x: %v", l.linkID, err)
 		return nil, err
 	}
+	l.logger.Info("Link request %x: proof sent, link registered and awaiting RTT", l.linkID)
 
 	return l, nil
 }
@@ -719,6 +721,7 @@ func (l *Link) send(p *Packet) error {
 
 // ValidateProof evaluates an incoming link proof packet and formally transitions the link into an active state upon success.
 func (l *Link) ValidateProof(packet *Packet) error {
+	l.logger.Info("ValidateProof: link %x, status=%v", l.linkID, l.status)
 	l.mu.Lock()
 	if l.status != LinkPending {
 		l.mu.Unlock()
@@ -762,12 +765,15 @@ func (l *Link) ValidateProof(packet *Packet) error {
 		return errors.New("invalid link proof signature")
 	}
 
+	l.attachedInterface = packet.ReceivingInterface
 	l.status = LinkActive
 	l.activatedAt = time.Now()
 	l.rtt = time.Since(l.requestTime).Seconds()
 	l.updateKeepaliveLocked()
 	callback := l.callbacks.LinkEstablished
 	l.mu.Unlock()
+
+	l.logger.Info("Link %x is now ACTIVE (ValidateProof), attachedInterface=%v, RTT=%v", l.linkID, l.attachedInterface != nil, time.Duration(l.rtt*float64(time.Second)))
 
 	if l.transport != nil {
 		l.transport.ActivateLink(l)
@@ -795,7 +801,7 @@ func (l *Link) ValidateProof(packet *Packet) error {
 
 // HandleRTT processes an incoming Round Trip Time packet to finalize activation for non-initiator link instances.
 func (l *Link) HandleRTT(packet *Packet) {
-	l.logger.Extreme("Handling RTT for %x", l.linkID)
+	l.logger.Info("Handling RTT for link %x, current status=%v", l.linkID, l.status)
 	l.mu.Lock()
 	if l.status == LinkHandshake || l.status == LinkPending {
 		measuredRTT := time.Since(l.requestTime).Seconds()
@@ -828,6 +834,7 @@ func (l *Link) HandleRTT(packet *Packet) {
 		l.updateKeepaliveLocked()
 		callback := l.callbacks.LinkEstablished
 		l.mu.Unlock()
+		l.logger.Info("Link %x is now ACTIVE (HandleRTT), RTT=%v", l.linkID, time.Duration(l.rtt*float64(time.Second)))
 		if l.transport != nil {
 			l.transport.ActivateLink(l)
 		}
@@ -1757,4 +1764,12 @@ func (l *Link) ReadyForNewResource() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return len(l.outgoingResources) == 0
+}
+
+// SendPacket sends a pre-packed packet through the link's attached interface,
+// falling back to the transport's outbound path if no attached interface exists.
+// This is the exported equivalent of the internal send method, enabling
+// applications to send raw data packets through an established link.
+func (l *Link) SendPacket(p *Packet) error {
+	return l.send(p)
 }

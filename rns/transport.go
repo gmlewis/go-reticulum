@@ -2296,11 +2296,13 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 
 	// Check if it's for a local link
 	if link := ts.FindLink(packet.DestinationHash); link != nil {
-		ts.logger.Debug("Inbound: delivering packet %x to local link %x", packet.PacketHash, link.linkID)
+		ts.logger.Info("Inbound: delivering packet %x (type=%v, context=%v) to local link %x", packet.PacketHash, packet.PacketType, packet.Context, link.linkID)
 		packet.Destination = link
 		link.receive(packet)
 		return
 	}
+
+	ts.logger.Debug("Inbound: no local destination or link found for packet %x (dest=%x)", packet.PacketHash, packet.DestinationHash)
 
 	// Transport handling
 	if packet.PacketType != PacketAnnounce {
