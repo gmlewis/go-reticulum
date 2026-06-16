@@ -758,7 +758,7 @@ func (ts *TransportSystem) CleanRatchets() {
 		if entry.IsDir() {
 			continue
 		}
-		if strings.HasSuffix(entry.Name(), ".out") {
+		if strings.HasSuffix(entry.Name(), ".out") || strings.HasSuffix(entry.Name(), ".tmp") {
 			continue
 		}
 
@@ -2043,8 +2043,17 @@ func (ts *TransportSystem) persistRatchet(storagePath string, destHash, ratchetP
 	}
 
 	hexHash := fmt.Sprintf("%x", destHash)
-	outPath := filepath.Join(ratchetDir, hexHash+".out")
 	finalPath := filepath.Join(ratchetDir, hexHash)
+
+	// Use a unique temp file to avoid races when two concurrent persistRatchet
+	// calls target the same destHash. Without uniqueness, both would write to
+	// the same ".out" path and the second Rename would fail with ENOENT.
+	tmpFile, err := os.CreateTemp(ratchetDir, hexHash+".*.tmp")
+	if err != nil {
+		ts.logger.Error("Failed to create temp ratchet file for %v: %v", hexHash, err)
+		return
+	}
+	tmpPath := tmpFile.Name()
 
 	ratchetData := map[string]any{
 		"ratchet":  ratchetPub,
@@ -2054,16 +2063,34 @@ func (ts *TransportSystem) persistRatchet(storagePath string, destHash, ratchetP
 	data, err := msgpack.Pack(ratchetData)
 	if err != nil {
 		ts.logger.Error("Failed to pack ratchet data for %v: %v", hexHash, err)
+		if err := tmpFile.Close(); err != nil {
+			ts.logger.Error("tmpFile.Close: %v", err)
+		}
+		if err := os.Remove(tmpPath); err != nil {
+			ts.logger.Error("os.Remove: %v", err)
+		}
 		return
 	}
 
-	if err := os.WriteFile(outPath, data, 0o600); err != nil {
+	if _, err := tmpFile.Write(data); err != nil {
 		ts.logger.Error("Failed to write ratchet file for %v: %v", hexHash, err)
+		if err := tmpFile.Close(); err != nil {
+			ts.logger.Error("tmpFile.Close: %v", err)
+		}
+		if err := os.Remove(tmpPath); err != nil {
+			ts.logger.Error("os.Remove: %v", err)
+		}
 		return
 	}
+	if err := tmpFile.Close(); err != nil {
+		ts.logger.Error("tmpFile.Close: %v", err)
+	}
 
-	if err := os.Rename(outPath, finalPath); err != nil {
+	if err := os.Rename(tmpPath, finalPath); err != nil {
 		ts.logger.Error("Failed to finalize ratchet file for %v: %v", hexHash, err)
+		if err := os.Remove(tmpPath); err != nil {
+			ts.logger.Error("os.Remove: %v", err)
+		}
 	}
 }
 
