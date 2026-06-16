@@ -2314,7 +2314,7 @@ func (r *Router) sendMessagePacketLocked(message *Message) error {
 		packetData = message.Packed[DestinationLength:]
 	}
 
-	packet := rns.NewPacket(message.Destination, packetData)
+	packet := rns.NewPacketWithTransport(r.transport, message.Destination, packetData)
 	if err := r.sendPacket(packet); err != nil {
 		return err
 	}
