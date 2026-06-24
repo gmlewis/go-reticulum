@@ -345,6 +345,17 @@ func (l *Link) Establish() error {
 	l.linkID = LinkIDFromLR(p)
 	l.hash = l.linkID
 	l.requestTime = time.Now()
+
+	// Set the establishment timeout based on the number of hops to the
+	// destination, matching Python's
+	//   establishment_timeout = first_hop_timeout + PER_HOP * max(1, hops)
+	// where first_hop_timeout defaults to PER_HOP when latency is unknown.
+	hops := 1
+	if l.transport != nil {
+		hops = max(1, l.transport.HopsTo(l.destination.Hash))
+	}
+	l.establishmentTimeout = establishmentTimeoutPerHop + establishmentTimeoutPerHop*time.Duration(hops)
+
 	l.startWatchdog()
 
 	// Register with Transport
