@@ -89,24 +89,24 @@ func TestParity_Base64ImportExport(t *testing.T) {
 		t.Fatalf("rnid -x -b failed: %v\n%v", err, string(pyOut))
 	}
 
-	goKeys := extractKeyLines(string(goOut), "Exported Identity :")
-	pyKeys := extractKeyLines(string(pyOut), "Exported Identity :")
-	if goKeys["Exported Identity :"] != pyKeys["Exported Identity :"] {
-		t.Fatalf("base64 export mismatch:\n  Go:     %v\n  Python: %v", goKeys["Exported Identity :"], pyKeys["Exported Identity :"])
+	goKeys := extractKeyLines(string(goOut), "Public Identity Keys  :")
+	pyKeys := extractKeyLines(string(pyOut), "Public Identity Keys  :")
+	if goKeys["Public Identity Keys  :"] != pyKeys["Public Identity Keys  :"] {
+		t.Fatalf("base64 export mismatch:\n  Go:     %v\n  Python: %v", goKeys["Public Identity Keys  :"], pyKeys["Public Identity Keys  :"])
 	}
 
-	goImportOut, err := exec.Command(gornidBin, "--config", tmpDir, "--import="+goKeys["Exported Identity :"], "-b", "-P").CombinedOutput()
+	goImportOut, err := exec.Command(gornidBin, "--config", tmpDir, "-m="+goKeys["Public Identity Keys  :"], "-b", "-p", "-P").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornid base64 import failed: %v\n%v", err, string(goImportOut))
 	}
-	pyImportOut, err := exec.Command(rnidBin, "--config", tmpDir, "--import="+pyKeys["Exported Identity :"], "-b", "-P").CombinedOutput()
+	pyImportOut, err := exec.Command(rnidBin, "--config", tmpDir, "-m="+pyKeys["Public Identity Keys  :"], "-b", "-p", "-P").CombinedOutput()
 	if err != nil {
 		t.Fatalf("rnid base64 import failed: %v\n%v", err, string(pyImportOut))
 	}
 
-	goImportKeys := extractKeyLines(string(goImportOut), "Public Key  :", "Private Key :")
-	pyImportKeys := extractKeyLines(string(pyImportOut), "Public Key  :", "Private Key :")
-	for _, label := range []string{"Public Key  :", "Private Key :"} {
+	goImportKeys := extractKeyLines(string(goImportOut), "Public Key    :", "Private Key   :")
+	pyImportKeys := extractKeyLines(string(pyImportOut), "Public Key    :", "Private Key   :")
+	for _, label := range []string{"Public Key    :", "Private Key   :"} {
 		if goImportKeys[label] != pyImportKeys[label] {
 			t.Fatalf("base64 import mismatch for %v:\n  Go:     %v\n  Python: %v", label, goImportKeys[label], pyImportKeys[label])
 		}
@@ -140,7 +140,7 @@ func TestParity_PrintIdentity(t *testing.T) {
 		t.Fatalf("rnid -p failed: %v\n%v", err, string(pyOut))
 	}
 
-	labels := []string{"Public Key  :", "Private Key :"}
+	labels := []string{"Public Key    :", "Private Key   :"}
 	goKeys := extractKeyLines(string(goOut), labels...)
 	pyKeys := extractKeyLines(string(pyOut), labels...)
 
@@ -175,7 +175,7 @@ func TestParity_Export(t *testing.T) {
 		t.Fatalf("rnid -x failed: %v\n%v", err, string(pyOut))
 	}
 
-	label := "Exported Identity :"
+	label := "Public Identity Keys  :"
 	goKeys := extractKeyLines(string(goOut), label)
 	pyKeys := extractKeyLines(string(pyOut), label)
 	if goKeys[label] != pyKeys[label] {
@@ -235,30 +235,30 @@ func TestParity_ImportHex(t *testing.T) {
 		t.Fatalf("gornid -g failed: %v\n%v", err, string(out))
 	}
 
-	// Export with Go to get hex.
-	goExpOut, err := exec.Command(gornidBin, "--config", tmpDir, "-i", idFile, "-x").CombinedOutput()
+	// Export private key with Go to get hex (use -X for private export).
+	goExpOut, err := exec.Command(gornidBin, "--config", tmpDir, "-i", idFile, "-X").CombinedOutput()
 	if err != nil {
-		t.Fatalf("gornid -x failed: %v\n%v", err, string(goExpOut))
+		t.Fatalf("gornid -X failed: %v\n%v", err, string(goExpOut))
 	}
-	label := "Exported Identity :"
+	label := "Private Identity Keys :"
 	hexStr := extractKeyLines(string(goExpOut), label)[label]
 	if hexStr == "" {
 		t.Fatalf("could not extract exported hex from: %v", string(goExpOut))
 	}
 
-	// Import with Go.
-	goOut, err := exec.Command(gornidBin, "--config", tmpDir, "-m", hexStr, "-P").CombinedOutput()
+	// Import private key with Go (uses -M). Add -p to print identity info.
+	goOut, err := exec.Command(gornidBin, "--config", tmpDir, "-M", hexStr, "-p", "-P").CombinedOutput()
 	if err != nil {
-		t.Fatalf("gornid -m failed: %v\n%v", err, string(goOut))
+		t.Fatalf("gornid -M failed: %v\n%v", err, string(goOut))
 	}
 
-	// Import with Python.
-	pyOut, err := exec.Command(rnidBin, "--config", tmpDir, "-m", hexStr, "-P").CombinedOutput()
+	// Import private key with Python (uses -M). Add -p to print identity info.
+	pyOut, err := exec.Command(rnidBin, "--config", tmpDir, "-M", hexStr, "-p", "-P").CombinedOutput()
 	if err != nil {
-		t.Fatalf("rnid -m failed: %v\n%v", err, string(pyOut))
+		t.Fatalf("rnid -M failed: %v\n%v", err, string(pyOut))
 	}
 
-	labels := []string{"Public Key  :", "Private Key :"}
+	labels := []string{"Public Key    :", "Private Key   :"}
 	goKeys := extractKeyLines(string(goOut), labels...)
 	pyKeys := extractKeyLines(string(pyOut), labels...)
 

@@ -62,7 +62,7 @@ if __name__ == "__main__":
         sys.exit(1)
 `
 
-var versionLineRE = regexp.MustCompile(`^[^[:space:]]+\s+[^[:space:]]+$`)
+var versionLineRE = regexp.MustCompile(`^[^[:space:]]+\s+[^[:space:]]+(\s+\([^)]+\))?$`)
 
 const (
 	listenerReadinessTimeout  = 15 * time.Second
@@ -129,10 +129,11 @@ func TestIntegrationScaffoldHelpers(t *testing.T) {
 func TestIntegrationVersionOutputFormatParity(t *testing.T) {
 	pythonBin := getRnshBinaryPath(t)
 	gornshBin := getGornshBinaryPath(t)
-	pythonOut, err := exec.Command(pythonBin, "--version").CombinedOutput()
-	if err != nil {
-		t.Fatalf("rnsh --version failed: %v\n%v", err, string(pythonOut))
-	}
+	pythonOut, _ := exec.Command(pythonBin, "--version").CombinedOutput()
+	// Python rnsh's main() returns exit code 1 even for successful --version
+	// because _rnsh_cli_main raises SystemExit(0) which main() catches
+	// without updating its return_code. The output itself is correct, so we
+	// only verify the output format here.
 	goOut, err := exec.Command(gornshBin, "--version").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornsh --version failed: %v\n%v", err, string(goOut))
@@ -161,10 +162,9 @@ func TestIntegrationListenPrintIdentityOutputFormatParity(t *testing.T) {
 	defer cleanup()
 	prepareGornshConfig(t, configDir)
 
-	pythonOut, err := exec.Command(pythonBin, "--config", configDir, "-l", "-p").CombinedOutput()
-	if err != nil {
-		t.Fatalf("rnsh -l -p failed: %v\n%v", err, string(pythonOut))
-	}
+	pythonOut, _ := exec.Command(pythonBin, "--config", configDir, "-l", "-p").CombinedOutput()
+	// Python rnsh's main() returns exit code 1 for print-identity paths due to
+	// a known bug (SystemExit is caught without updating return_code).
 	goOut, err := exec.Command(gornshBin, "--config", configDir, "-l", "-p").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornsh -l -p failed: %v\n%v", err, string(goOut))
@@ -198,10 +198,9 @@ func TestIntegrationPrintIdentityOutputFormatParity(t *testing.T) {
 	defer cleanup()
 	prepareGornshConfig(t, configDir)
 
-	pythonOut, err := exec.Command(pythonBin, "--config", configDir, "-p").CombinedOutput()
-	if err != nil {
-		t.Fatalf("rnsh -p failed: %v\n%v", err, string(pythonOut))
-	}
+	pythonOut, _ := exec.Command(pythonBin, "--config", configDir, "-p").CombinedOutput()
+	// Python rnsh's main() returns exit code 1 for print-identity paths due to
+	// a known bug (SystemExit is caught without updating return_code).
 	goOut, err := exec.Command(gornshBin, "--config", configDir, "-p").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornsh -p failed: %v\n%v", err, string(goOut))

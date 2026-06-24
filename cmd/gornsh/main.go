@@ -249,7 +249,7 @@ func (rt *runtimeT) printIdentity() error {
 	if opts.listen && opts.serviceName != "" {
 		_, _ = fmt.Printf("Using service name %q\n", opts.serviceName)
 	}
-	_, _ = fmt.Printf("Identity     : %v\n", id.HexHash)
+	_, _ = fmt.Printf("Identity     : %v\n", rns.PrettyHexFromString(id.HexHash))
 
 	if opts.listen {
 		destination, err := rns.NewDestination(ts, id, rns.DestinationIn, rns.DestinationSingle, appName)

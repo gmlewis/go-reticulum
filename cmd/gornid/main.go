@@ -46,9 +46,11 @@ type appT struct {
 	configDir     string
 	identityPath  string
 	generatePath  string
-	importStr     string
+	importPub     string
+	importPrv     string
 	logger        *rns.Logger
-	export        bool
+	exportPub     bool
+	exportPrv     bool
 	verbose       counter
 	quiet         counter
 	announce      string
@@ -68,6 +70,7 @@ type appT struct {
 	useBase32     bool
 	useStdin      bool
 	useStdout     bool
+	rawSign       bool
 	version       bool
 }
 
@@ -126,8 +129,8 @@ func (a *appT) run() int {
 		}
 	}
 
-	if a.importStr != "" {
-		return a.doImport(a.importStr, a.useBase64, a.useBase32, a.printPrivate, a.writeFile, a.force)
+	if a.importPub != "" || a.importPrv != "" {
+		return a.doImport(a.importPub, a.importPrv, a.useBase64, a.useBase32, a.printPrivate, a.writeFile, a.force)
 	}
 
 	if a.generatePath == "" && a.identityPath == "" {
@@ -170,8 +173,8 @@ func (a *appT) run() int {
 		return a.doPrintIdentity(id, a.useBase64, a.useBase32, a.printPrivate)
 	}
 
-	if a.export {
-		return a.doExport(id, a.useBase64, a.useBase32)
+	if a.exportPub || a.exportPrv {
+		return a.doExport(id, a.exportPub, a.exportPrv, a.useBase64, a.useBase32)
 	}
 
 	if a.hashAspects != "" {
@@ -217,8 +220,18 @@ func (rt *runtimeT) loadIdentity(ts rns.Transport, path string, request bool, ti
 	return rt.app.loadIdentity(ts, path, request, timeout)
 }
 
-func (a *appT) doImport(data string, b64, b32, prv bool, writePath string, force bool) int {
+func (a *appT) doImport(importPub, importPrv string, b64, b32, prv bool, writePath string, force bool) int {
 	logger := a.logger
+	isPrv := importPrv != ""
+	data := importPub
+	if isPrv {
+		data = importPrv
+	}
+	if data == "" {
+		fmt.Printf("No identity data specified for import\n")
+		return 41
+	}
+
 	var idBytes []byte
 	var err error
 	if b64 {
@@ -234,14 +247,29 @@ func (a *appT) doImport(data string, b64, b32, prv bool, writePath string, force
 		return 41
 	}
 
-	id, err := rns.FromBytes(idBytes, a.logger)
-	if err != nil {
-		fmt.Printf("Could not create Reticulum identity from specified data: %v\n", err)
-		return 42
+	var id *rns.Identity
+	if isPrv {
+		id, err = rns.FromBytes(idBytes, a.logger)
+		if err != nil {
+			fmt.Printf("Could not create Reticulum identity from specified data: %v\n", err)
+			return 42
+		}
+	} else {
+		id, err = rns.NewIdentity(false, a.logger)
+		if err != nil {
+			fmt.Printf("Could not create Reticulum identity from specified data: %v\n", err)
+			return 42
+		}
+		if err := id.LoadPublicKey(idBytes); err != nil {
+			fmt.Printf("Could not create Reticulum identity from specified data: %v\n", err)
+			return 42
+		}
 	}
 
 	logger.Notice("Identity imported")
-	a.doPrintIdentity(id, b64, b32, prv)
+	if a.printIdentity {
+		a.doPrintIdentity(id, b64, b32, prv)
+	}
 
 	if writePath != "" {
 		wp := expandUser(writePath)
@@ -345,6 +373,7 @@ func (a *appT) loadIdentity(ts rns.Transport, path string, request bool, timeout
 
 func (a *appT) doPrintIdentity(id *rns.Identity, b64, b32, prv bool) int {
 	logger := a.logger
+	logger.Notice("Identity Hash : %v", rns.PrettyHexFromString(id.HexHash))
 	pub := id.GetPublicKey()
 	var pubStr string
 	if b64 {
@@ -354,7 +383,7 @@ func (a *appT) doPrintIdentity(id *rns.Identity, b64, b32, prv bool) int {
 	} else {
 		pubStr = hex.EncodeToString(pub)
 	}
-	logger.Notice("Public Key  : %v", pubStr)
+	logger.Notice("Public Key    : %v", pubStr)
 
 	privKey := id.GetPrivateKey()
 	if privKey != nil {
@@ -367,30 +396,48 @@ func (a *appT) doPrintIdentity(id *rns.Identity, b64, b32, prv bool) int {
 			} else {
 				privStr = hex.EncodeToString(privKey)
 			}
-			logger.Notice("Private Key : %v", privStr)
+			logger.Notice("Private Key   : %v", privStr)
 		} else {
-			logger.Notice("Private Key : Hidden")
+			logger.Notice("Private Key   : Hidden")
 		}
 	}
 	return 0
 }
 
-func (a *appT) doExport(id *rns.Identity, b64, b32 bool) int {
+func (a *appT) doExport(id *rns.Identity, exportPub, exportPrv, b64, b32 bool) int {
 	logger := a.logger
-	priv := id.GetPrivateKey()
-	if priv == nil {
-		logger.Notice("Identity doesn't hold a private key, cannot export")
-		return 50
+	if exportPub {
+		pub := id.GetPublicKey()
+		if pub == nil {
+			logger.Notice("Identity doesn't hold a public key, cannot export")
+			return 50
+		}
+		var pubStr string
+		if b64 {
+			pubStr = base64.URLEncoding.EncodeToString(pub)
+		} else if b32 {
+			pubStr = base32.StdEncoding.EncodeToString(pub)
+		} else {
+			pubStr = hex.EncodeToString(pub)
+		}
+		logger.Notice("Public Identity Keys  : %v", pubStr)
 	}
-	var privStr string
-	if b64 {
-		privStr = base64.URLEncoding.EncodeToString(priv)
-	} else if b32 {
-		privStr = base32.StdEncoding.EncodeToString(priv)
-	} else {
-		privStr = hex.EncodeToString(priv)
+	if exportPrv {
+		priv := id.GetPrivateKey()
+		if priv == nil {
+			logger.Notice("Identity doesn't hold a private key, cannot export")
+			return 50
+		}
+		var privStr string
+		if b64 {
+			privStr = base64.URLEncoding.EncodeToString(priv)
+		} else if b32 {
+			privStr = base32.StdEncoding.EncodeToString(priv)
+		} else {
+			privStr = hex.EncodeToString(priv)
+		}
+		logger.Notice("Private Identity Keys : %v", privStr)
 	}
-	logger.Notice("Exported Identity : %v", privStr)
 	return 0
 }
 
@@ -576,22 +623,34 @@ func (a *appT) doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile
 		data, err := os.ReadFile(readPath)
 		if err != nil {
 			if !stdout {
-				logger.Error("An error ocurred while encrypting data.")
+				logger.Error("An error ocurred while signing data.")
 				logger.Error("The contained exception was: %v", err)
 			}
 			return 19
 		}
-		sig, err := id.Sign(data)
-		if err != nil {
-			if !stdout {
-				logger.Error("An error ocurred while encrypting data.")
-				logger.Error("The contained exception was: %v", err)
+		var sig []byte
+		if a.rawSign {
+			sig, err = id.Sign(data)
+			if err != nil {
+				if !stdout {
+					logger.Error("An error ocurred while signing data.")
+					logger.Error("The contained exception was: %v", err)
+				}
+				return 19
 			}
-			return 19
+		} else {
+			sig, err = createRSG(id, data)
+			if err != nil {
+				if !stdout {
+					logger.Error("An error ocurred while signing data.")
+					logger.Error("The contained exception was: %v", err)
+				}
+				return 19
+			}
 		}
 		if _, err := dataOutput.Write(sig); err != nil {
 			if !stdout {
-				logger.Error("An error ocurred while encrypting data.")
+				logger.Error("An error ocurred while signing data.")
 				logger.Error("The contained exception was: %v", err)
 			}
 			return 19
@@ -623,7 +682,15 @@ func (a *appT) doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile
 			}
 			return 23
 		}
-		if !id.Verify(sigData, inputData) {
+		valid := false
+		if rsgIsLegacyFormat(sigData) {
+			valid = validateLegacyRSG(sigData, inputData, id)
+		} else {
+			signingID, vErr := validateRSG(sigData, inputData, id.Hash)
+			valid = vErr == nil
+			_ = signingID
+		}
+		if !valid {
 			if !stdout {
 				logger.Error("Signature %v for file %v is invalid", valFile, readPath)
 			}

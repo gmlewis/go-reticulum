@@ -123,15 +123,15 @@ func TestImportExportRoundTrip(t *testing.T) {
 		t.Fatalf("generate failed: %v\n%v", err, out)
 	}
 
-	// Export identity
-	out, err = runGornid(t, "--config", tmpDir, "-i", idFile, "-x")
+	// Export identity (private, with -X to match Python label)
+	out, err = runGornid(t, "--config", tmpDir, "-i", idFile, "-X")
 	if err != nil {
 		t.Fatalf("export failed: %v\n%v", err, out)
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	var exportedHex string
 	for _, line := range lines {
-		if strings.Contains(line, "Exported Identity") {
+		if strings.Contains(line, "Private Identity Keys") {
 			parts := strings.SplitN(line, ": ", 2)
 			if len(parts) == 2 {
 				exportedHex = strings.TrimSpace(parts[1])
@@ -142,8 +142,9 @@ func TestImportExportRoundTrip(t *testing.T) {
 		t.Fatalf("could not find exported identity in output: %v", out)
 	}
 
-	// Import identity (does not need --config, exits before NewReticulum)
-	out, err = runGornid(t, "-m", exportedHex, "-P")
+	// Import private identity (does not need --config, exits before NewReticulum).
+	// Add -p to print identity info (matching Python behavior).
+	out, err = runGornid(t, "-M", exportedHex, "-p", "-P")
 	if err != nil {
 		t.Fatalf("import failed: %v\n%v", err, out)
 	}

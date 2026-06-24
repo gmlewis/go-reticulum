@@ -53,10 +53,14 @@ func (a *appT) initFlags(fs *flag.FlagSet) {
 	fs.StringVar(&a.identityPath, "identity", "", "hexadecimal Reticulum identity or destination hash, or path to Identity file")
 	fs.StringVar(&a.generatePath, "g", "", "generate a new Identity")
 	fs.StringVar(&a.generatePath, "generate", "", "generate a new Identity")
-	fs.StringVar(&a.importStr, "m", "", "import Reticulum identity in hex, base32 or base64 format")
-	fs.StringVar(&a.importStr, "import", "", "import Reticulum identity in hex, base32 or base64 format")
-	fs.BoolVar(&a.export, "x", false, "export identity to hex, base32 or base64 format")
-	fs.BoolVar(&a.export, "export", false, "export identity to hex, base32 or base64 format")
+	fs.StringVar(&a.importPub, "m", "", "import public Reticulum identity in hex, base32 or base64 format, or from file")
+	fs.StringVar(&a.importPub, "import-pub", "", "import public Reticulum identity in hex, base32 or base64 format, or from file")
+	fs.StringVar(&a.importPrv, "M", "", "import Reticulum identity in hex, base32 or base64 format, or from file")
+	fs.StringVar(&a.importPrv, "import-prv", "", "import Reticulum identity in hex, base32 or base64 format, or from file")
+	fs.BoolVar(&a.exportPub, "x", false, "export public identity to hex, base32 or base64 format")
+	fs.BoolVar(&a.exportPub, "export-pub", false, "export public identity to hex, base32 or base64 format")
+	fs.BoolVar(&a.exportPrv, "X", false, "export private identity to hex, base32 or base64 format, or to file")
+	fs.BoolVar(&a.exportPrv, "export-prv", false, "export private identity to hex, base32 or base64 format, or to file")
 	fs.Var(&a.verbose, "v", "increase verbosity")
 	fs.Var(&a.verbose, "verbose", "increase verbosity")
 	fs.Var(&a.quiet, "q", "decrease verbosity")
@@ -94,13 +98,14 @@ func (a *appT) initFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&a.useStdin, "stdin", false, "read input from STDIN")
 	fs.BoolVar(&a.useStdout, "O", false, "write output to STDOUT")
 	fs.BoolVar(&a.useStdout, "stdout", false, "write output to STDOUT")
+	fs.BoolVar(&a.rawSign, "raw", false, "sign raw input data instead of hashing first")
 	fs.BoolVar(&a.version, "version", false, "show program's version number and exit")
 }
 
 const usageText = `
-usage: gornid [-h] [--config path] [-i identity] [-g file] [-m identity_data] [-x] [-v] [-q] [-a aspects]
-              [-H aspects] [-e file] [-d file] [-s path] [-V path] [-r file] [-w file] [-f] [-R] [-t seconds] [-p]
-              [-P] [-b] [-B] [--version]
+usage: gornid [-h] [--config path] [-i identity] [-g file] [-m identity_data] [-M identity_data]
+              [-x] [-X] [-v] [-q] [-a aspects] [-H aspects] [-e file] [-d file] [-s path] [-V path]
+              [-r file] [-w file] [-f] [-R] [-t seconds] [-p] [-P] [-b] [-B] [--raw] [--version]
 
 Go Reticulum Identity & Encryption Utility
 
@@ -110,9 +115,12 @@ options:
   -i, --identity identity
                         hexadecimal Reticulum identity or destination hash, or path to Identity file
   -g, --generate file   generate a new Identity
-  -m, --import identity_data
-                        import Reticulum identity in hex, base32 or base64 format
-  -x, --export          export identity to hex, base32 or base64 format
+  -m, --import-pub identity_data
+                        import public Reticulum identity in hex, base32 or base64 format, or from file
+  -M, --import-prv identity_data
+                        import Reticulum identity in hex, base32 or base64 format, or from file
+  -x, --export-pub      export public identity to hex, base32 or base64 format
+  -X, --export-prv      export private identity to hex, base32 or base64 format, or to file
   -v, --verbose         increase verbosity
   -q, --quiet           decrease verbosity
   -a, --announce aspects
@@ -131,5 +139,6 @@ options:
   -P, --print-private   allow displaying private keys
   -b, --base64          Use base64-encoded input and output
   -B, --base32          Use base32-encoded input and output
+  --raw                 sign raw input data instead of hashing first
   --version             show program's version number and exit
 `

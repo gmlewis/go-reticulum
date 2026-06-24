@@ -678,8 +678,10 @@ func (l *Link) receive(packet *Packet) {
 		l.mu.Lock()
 		cb := l.callbacks.Packet
 		l.mu.Unlock()
-		l.logger.Debug("Link %x: received DATA packet %x, generating PROOF", l.linkID, packet.PacketHash)
-		l.ProvePacket(packet)
+		if packet.PacketType != PacketProof {
+			l.logger.Debug("Link %x: received DATA packet %x, generating PROOF", l.linkID, packet.PacketHash)
+			l.ProvePacket(packet)
+		}
 		if cb != nil {
 			cb(l, packet)
 		}
