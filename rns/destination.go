@@ -560,9 +560,9 @@ func (d *Destination) Verify(signature, data []byte) bool {
 
 func (d *Destination) receive(packet *Packet) {
 	if packet.PacketType == PacketLinkRequest {
-		d.logger.Info("Destination %v received link request packet", d.name)
+		d.logger.Notice("Destination %v received link request packet (hash=%x)", d.name, d.Hash)
 		if _, err := ValidateRequest(d.logger, d, packet.Data, packet); err != nil {
-			d.logger.Debug("Failed to validate link request for %v: %v", d.name, err)
+			d.logger.Notice("Failed to validate link request for %v: %v", d.name, err)
 		}
 		return
 	}

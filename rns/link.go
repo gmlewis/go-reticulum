@@ -326,7 +326,7 @@ func (l *Link) Establish() error {
 		return errors.New("only the initiator can start establishment")
 	}
 
-	l.logger.Verbose("Establishing link to %v", l.destination.name)
+	l.logger.Notice("Establishing link to %v (destination hash=%x)", l.destination.name, l.destination.Hash)
 
 	// requestData = self.pub_bytes+self.sig_pub_bytes+signalling_bytes
 	sigBytes := l.signallingBytes()
@@ -363,6 +363,7 @@ func (l *Link) Establish() error {
 		l.transport.RegisterLink(l)
 	}
 
+	l.logger.Notice("Sending link request to %x, timeout=%v, hops=%v", l.destination.Hash, l.establishmentTimeout, hops)
 	return l.send(p)
 }
 
@@ -421,14 +422,14 @@ func ValidateRequest(logger *Logger, destination *Destination, data []byte, pack
 	l.lastInbound = l.requestTime
 	l.startWatchdog()
 
-	l.logger.Verbose("Incoming link request %x accepted", l.linkID)
+	l.logger.Notice("Incoming link request %x accepted, proof key ready", l.linkID)
 
 	// Send proof
 	if err := l.Prove(); err != nil {
-		l.logger.Info("Failed to send proof for link request %x: %v", l.linkID, err)
+		l.logger.Notice("Failed to send proof for link request %x: %v", l.linkID, err)
 		return nil, err
 	}
-	l.logger.Info("Link request %x: proof sent, link registered and awaiting RTT", l.linkID)
+	l.logger.Notice("Link request %x: proof sent, link registered and awaiting RTT", l.linkID)
 
 	return l, nil
 }
@@ -477,13 +478,15 @@ func (l *Link) receive(packet *Packet) {
 
 	l.logger.Verbose("Link %x receive: packet context=%v", l.linkID, packet.Context)
 	if packet.Context == ContextLrproof {
+		l.logger.Notice("Link %x: received link proof packet", l.linkID)
 		if err := l.ValidateProof(packet); err != nil {
-			l.logger.Debug("Failed to validate link proof: %v", err)
+			l.logger.Notice("Failed to validate link proof for %x: %v", l.linkID, err)
 		}
 		return
 	}
 
 	if packet.Context == ContextLrrtt {
+		l.logger.Notice("Link %x: received RTT packet", l.linkID)
 		if !l.initiator {
 			l.HandleRTT(packet)
 		}
@@ -710,6 +713,9 @@ func (l *Link) send(p *Packet) error {
 	l.mu.Unlock()
 	l.logger.Extreme("Link.send context=%v packetType=%v rawLen=%v attachedInterface=%v\n", p.Context, p.PacketType, len(p.Raw), iface != nil)
 	l.logger.Verbose("Link.send: packet Context=%v, Data len=%v, attachedInterface=%v", p.Context, len(p.Data), iface != nil)
+	if p.PacketType == PacketLinkRequest || p.PacketType == PacketProof {
+		l.logger.Notice("Link.send: sending packet type=%v context=%v len=%v via interface=%v", p.PacketType, p.Context, len(p.Data), iface != nil)
+	}
 	if iface != nil {
 		if !p.Packed {
 			if err := p.Pack(); err != nil {
@@ -790,7 +796,7 @@ func (l *Link) ValidateProof(packet *Packet) error {
 	callback := l.callbacks.LinkEstablished
 	l.mu.Unlock()
 
-	l.logger.Info("Link %x is now ACTIVE (ValidateProof), attachedInterface=%v, RTT=%v", l.linkID, l.attachedInterface != nil, time.Duration(l.rtt*float64(time.Second)))
+	l.logger.Notice("Link %x is now ACTIVE (ValidateProof), attachedInterface=%v, RTT=%v", l.linkID, l.attachedInterface != nil, time.Duration(l.rtt*float64(time.Second)))
 
 	if l.transport != nil {
 		l.transport.ActivateLink(l)
@@ -851,7 +857,7 @@ func (l *Link) HandleRTT(packet *Packet) {
 		l.updateKeepaliveLocked()
 		callback := l.callbacks.LinkEstablished
 		l.mu.Unlock()
-		l.logger.Info("Link %x is now ACTIVE (HandleRTT), RTT=%v", l.linkID, time.Duration(l.rtt*float64(time.Second)))
+		l.logger.Notice("Link %x is now ACTIVE (HandleRTT), RTT=%v", l.linkID, time.Duration(l.rtt*float64(time.Second)))
 		if l.transport != nil {
 			l.transport.ActivateLink(l)
 		}

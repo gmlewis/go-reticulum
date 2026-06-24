@@ -2278,7 +2278,11 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 	// Duplicate detection
 	ts.mu.Lock()
 	if ts.seenOrRememberPacketHashLocked(packet.PacketHash, time.Now()) {
-		ts.logger.Verbose("Inbound: dropping duplicate packet %x", packet.PacketHash)
+		if packet.PacketType == PacketLinkRequest {
+			ts.logger.Notice("Inbound: dropping DUPLICATE link request packet %x (type=%v)", packet.PacketHash, packet.PacketType)
+		} else {
+			ts.logger.Verbose("Inbound: dropping duplicate packet %x", packet.PacketHash)
+		}
 		ts.mu.Unlock()
 		return
 	}
@@ -2315,7 +2319,11 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 
 	if localDest != nil {
 		// Delivery to local destination
-		ts.logger.Debug("Inbound: delivering packet %x to local destination %v", packet.PacketHash, localDest)
+		if packet.PacketType == PacketLinkRequest {
+			ts.logger.Notice("Inbound: delivering LINK REQUEST packet %x to local destination %x (name=%v)", packet.PacketHash, packet.DestinationHash, localDest.name)
+		} else {
+			ts.logger.Debug("Inbound: delivering packet %x to local destination %v", packet.PacketHash, localDest)
+		}
 		packet.Destination = localDest
 		localDest.receive(packet)
 		return
@@ -2329,7 +2337,7 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 		return
 	}
 
-	ts.logger.Debug("Inbound: no local destination or link found for packet %x (dest=%x)", packet.PacketHash, packet.DestinationHash)
+	ts.logger.Debug("Inbound: no local destination or link found for packet %x (dest=%x, type=%v)", packet.PacketHash, packet.DestinationHash, packet.PacketType)
 
 	// Transport handling
 	if packet.PacketType != PacketAnnounce {
