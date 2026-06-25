@@ -31,6 +31,12 @@ type TCPClientInterface struct {
 	targetPort     int
 	reconnectDelay time.Duration
 
+	// spawned is true for interfaces created by a TCPServerInterface
+	// from an accepted inbound connection. Spawned interfaces must not
+	// attempt to reconnect when the connection drops, since they have
+	// no target host/port to reconnect to.
+	spawned bool
+
 	kissFraming    bool
 	inboundHandler InboundHandler
 
@@ -197,7 +203,10 @@ func (tci *TCPClientInterface) readLoop() {
 	tci.mu.Unlock()
 	atomic.StoreInt32(&tci.running, 0)
 
-	if !tci.IsDetached() {
+	// Only reconnect for outbound client interfaces that have a target
+	// host/port. Spawned interfaces (created by TCPServerInterface from
+	// an accepted connection) have no target to reconnect to.
+	if !tci.IsDetached() && !tci.spawned {
 		go tci.reconnectLoop()
 	}
 }
@@ -348,6 +357,7 @@ func (tsi *TCPServerInterface) handleConnection(conn net.Conn) {
 		BaseInterface:  bi,
 		conn:           conn,
 		inboundHandler: tsi.inboundHandler,
+		spawned:        true,
 	}
 	atomic.StoreInt32(&tci.running, 1)
 
