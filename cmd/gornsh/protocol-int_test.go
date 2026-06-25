@@ -9,7 +9,6 @@
 package main
 
 import (
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -53,7 +52,7 @@ print('ok')
 	}
 
 	cmd := exec.Command(pythonPath, scriptPath, payloadPath)
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getRnshPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getRnshPythonPath(t))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("python parity check failed: %v\n%v", err, string(output))
@@ -132,7 +131,7 @@ print('ok')
 	}
 
 	cmd := exec.Command(pythonPath, scriptPath, payloadPath)
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getRnshPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getRnshPythonPath(t))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("python parity check failed: %v\n%v", err, string(output))
@@ -218,24 +217,25 @@ print('ok')
 	}
 
 	cmd := exec.Command(pythonPath, scriptPath, payloadPath)
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getRnshPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getRnshPythonPath(t))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("python parity check failed: %v\n%v", err, string(output))
 	}
 }
 
-func getRnshPythonPath() string {
+func getRnshPythonPath(t *testing.T) string {
+	t.Helper()
 	rnshRoot := os.Getenv("ORIGINAL_RNSH_REPO_DIR")
 	reticulumRoot := os.Getenv("ORIGINAL_RETICULUM_REPO_DIR")
 	if rnshRoot != "" && reticulumRoot != "" {
 		return rnshRoot + string(os.PathListSeparator) + reticulumRoot
 	}
 	if rnshRoot == "" {
-		log.Fatalf("missing required environment variable: ORIGINAL_RNSH_REPO_DIR")
+		t.Fatal("missing required environment variable: ORIGINAL_RNSH_REPO_DIR")
 	}
 	if reticulumRoot == "" {
-		log.Fatalf("missing required environment variable: ORIGINAL_RETICULUM_REPO_DIR")
+		t.Fatal("missing required environment variable: ORIGINAL_RETICULUM_REPO_DIR")
 	}
 	return "" // unreachable
 }

@@ -48,7 +48,7 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 
 			payloadSize := MDU + 768
 			pyCmd := exec.Command("python3", scriptPath, pyConfigDir, strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort), tc.autoMode, strconv.Itoa(payloadSize))
-			pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+			pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 			pyStdout, err := pyCmd.StdoutPipe()
 			mustTest(t, err)
 			pyCmd.Stderr = pyCmd.Stdout

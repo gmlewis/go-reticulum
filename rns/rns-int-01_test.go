@@ -51,10 +51,11 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func getPythonPath() string {
+func getPythonPath(t *testing.T) string {
+	t.Helper()
 	if path := os.Getenv("ORIGINAL_RETICULUM_REPO_DIR"); path != "" {
 		return path
 	}
-	log.Fatalf("missing required environment variable: ORIGINAL_RETICULUM_REPO_DIR")
+	t.Fatal("missing required environment variable: ORIGINAL_RETICULUM_REPO_DIR")
 	return "" // unreachable
 }

@@ -11,7 +11,6 @@ package msgpack
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"math"
 	"os"
 	"os/exec"
@@ -22,11 +21,12 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-func getPythonPath() string {
+func getPythonPath(t *testing.T) string {
+	t.Helper()
 	if path := os.Getenv("ORIGINAL_RETICULUM_REPO_DIR"); path != "" {
 		return path
 	}
-	log.Fatalf("missing required environment variable: ORIGINAL_RETICULUM_REPO_DIR")
+	t.Fatal("missing required environment variable: ORIGINAL_RETICULUM_REPO_DIR")
 	return "" // unreachable
 }
 
@@ -135,7 +135,7 @@ func TestMessagePackParity(t *testing.T) {
 
 	// Verify with Python
 	cmd := exec.Command("python3", scriptPath, packedPath)
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Python verification failed: %v\nOutput: %v", err, string(out))
@@ -203,7 +203,7 @@ if __name__ == "__main__":
 
 	// Generate with Python
 	cmd := exec.Command("python3", scriptPath, packedPath)
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Python generation failed: %v\nOutput: %v", err, string(out))

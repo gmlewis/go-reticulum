@@ -442,7 +442,7 @@ func TestIntegratedResponseResourceCompressionPolicyPythonToGo(t *testing.T) {
 			pyConfigDir := filepath.Join(tmpDir, "py_requester")
 
 			pyCmd := exec.Command("python3", scriptPath, fmt.Sprintf("%x", dest.Hash), fmt.Sprintf("%x", id.GetPublicKey()), pyConfigDir, strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort))
-			pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+			pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 			pyStdout, err := pyCmd.StdoutPipe()
 			mustTest(t, err)
 			pyCmd.Stderr = pyCmd.Stdout

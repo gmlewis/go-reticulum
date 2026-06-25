@@ -126,7 +126,7 @@ if __name__ == "__main__":
 func runPythonIFAC(t *testing.T, scriptPath, mode string, payload []byte, size int, netname, netkey string) []byte {
 	t.Helper()
 	cmd := exec.Command("python3", scriptPath, mode, fmt.Sprintf("%x", payload), fmt.Sprintf("%v", size), netname, netkey)
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("python IFAC %v failed: %v\nOutput: %v", mode, err, string(out))

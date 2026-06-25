@@ -121,8 +121,8 @@ func TestMain(m *testing.M) {
 }
 
 func TestIntegrationScaffoldHelpers(t *testing.T) {
-	if got := getRnshPythonPath(); got == "" {
-		t.Fatal("getRnshPythonPath() returned empty path")
+	if got := getRnshPythonPath(t); got == "" {
+		t.Fatal("getRnshPythonPath(t) returned empty path")
 	}
 }
 
@@ -479,7 +479,7 @@ func runRnshCommand(t *testing.T, configDir string, timeout time.Duration, args 
 	fullArgs := append([]string{"-m", "rnsh.rnsh", "--config", configDir}, args...)
 	cmd := exec.CommandContext(ctx, "python3", fullArgs...)
 	cmd.Stdin = strings.NewReader("")
-	cmd.Env = gornshIntegrationEnv("")
+	cmd.Env = gornshIntegrationEnv(t, "")
 
 	t.Logf("Running rnsh command: python3 %v", fullArgs)
 	out, err := cmd.CombinedOutput()
@@ -987,7 +987,7 @@ func startGornshListenerWithArgs(t *testing.T, configDir string, extraArgs ...st
 	args := append([]string{"--config", configDir, "-l", "-v"}, extraArgs...)
 	cmd := exec.Command(getGornshBinaryPath(t), args...)
 	cmd.Stdin = strings.NewReader("")
-	cmd.Env = gornshIntegrationEnv("")
+	cmd.Env = gornshIntegrationEnv(t, "")
 	reader, writer, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("os.Pipe() error: %v", err)
@@ -1119,7 +1119,7 @@ func waitForPathInSharedInstance(t *testing.T, configDir, hash string, timeout t
 	// It will exit with 0 if it finds a path.
 	for time.Now().Before(deadline) {
 		cmd := exec.Command(gornpathBinaryPath, "--config", configDir, "-w", "1", hash)
-		cmd.Env = gornshIntegrationEnv("")
+		cmd.Env = gornshIntegrationEnv(t, "")
 		out, err := cmd.CombinedOutput()
 		if err == nil {
 			t.Logf("Found path to %v: %s", hash, string(out))
@@ -1205,7 +1205,7 @@ func runGornshCommand(t *testing.T, configDir string, timeout time.Duration, arg
 
 	cmd := exec.CommandContext(ctx, getGornshBinaryPath(t), append([]string{"--config", configDir}, args...)...)
 	cmd.Stdin = strings.NewReader("")
-	cmd.Env = gornshIntegrationEnv("")
+	cmd.Env = gornshIntegrationEnv(t, "")
 
 	t.Logf("Running gornsh command: %v", append([]string{"--config", configDir}, args...))
 	out, err := cmd.CombinedOutput()
@@ -1235,7 +1235,7 @@ func getGornshBinaryPath(t *testing.T) string {
 	return gornshBinaryPath
 }
 
-func gornshIntegrationEnv(pythonPathOverride string) []string {
+func gornshIntegrationEnv(t *testing.T, pythonPathOverride string) []string {
 	filtered := make([]string, 0, len(os.Environ()))
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
@@ -1252,7 +1252,7 @@ func gornshIntegrationEnv(pythonPathOverride string) []string {
 	if pythonPathOverride != "" {
 		filtered = append(filtered, "PYTHONPATH="+pythonPathOverride)
 	} else {
-		pythonPath := getRnshPythonPath()
+		pythonPath := getRnshPythonPath(t)
 		if pythonPath != "" {
 			filtered = append(filtered, "PYTHONPATH="+pythonPath)
 		}
@@ -1343,7 +1343,7 @@ func startPythonListener(t *testing.T, configDir string, extraArgs ...string) *p
 	}
 	t.Cleanup(func() { _ = os.Remove(wrapperPath) })
 
-	env := gornshIntegrationEnv("")
+	env := gornshIntegrationEnv(t, "")
 
 	args := append([]string{wrapperPath, "-l", "--no-auth"}, extraArgs...)
 	args = append(args, "-c", configDir)

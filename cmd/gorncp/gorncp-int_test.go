@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -116,6 +117,7 @@ func runGorncpBackground(t *testing.T, configDir string, args ...string) (*exec.
 	t.Logf("Running background command: go %s", strings.Join(fullArgs, " "))
 	cmd := exec.Command("go", fullArgs...)
 	cmd.Dir = "."
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	buf := &SafeBuffer{}
 	cmd.Stdout = buf
 	cmd.Stderr = buf
@@ -124,6 +126,15 @@ func runGorncpBackground(t *testing.T, configDir string, args ...string) (*exec.
 	}
 	t.Logf("Background command started, PID: %d", cmd.Process.Pid)
 	return cmd, buf
+}
+
+func killProcessGroup(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
+	time.Sleep(500 * time.Millisecond)
+	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 }
 
 func writeMinimalConfig(t *testing.T, configDir string) {
@@ -327,11 +338,7 @@ share_instance = No
 	go func() {
 		defer wg.Done()
 		lCmd, buf := runGorncpBackground(t, serverConfigDir, "-l", "-n", "-s", saveDir, "-i", serverIdentity, "-b", "2", "-v")
-		defer func() {
-			_ = lCmd.Process.Signal(os.Interrupt)
-			time.Sleep(500 * time.Millisecond)
-			_ = lCmd.Process.Kill()
-		}()
+		defer killProcessGroup(lCmd)
 
 		timeout := time.After(20 * time.Second)
 		var destHash string
@@ -522,11 +529,7 @@ share_instance = No
 	go func() {
 		defer wg.Done()
 		lCmd, buf := runGorncpBackground(t, serverConfigDir, "-l", "-n", "-F", "-i", serverIdentity, "-b", "2", "-v")
-		defer func() {
-			_ = lCmd.Process.Signal(os.Interrupt)
-			time.Sleep(500 * time.Millisecond)
-			_ = lCmd.Process.Kill()
-		}()
+		defer killProcessGroup(lCmd)
 
 		timeout := time.After(20 * time.Second)
 		var destHash string
@@ -758,6 +761,7 @@ enable_transport = Yes
 
 	cmd := exec.Command(binaryPath, "-config", clientConfigDir, "-i", clientIdentityPath, "-q", "-f", listenerDest.HexHash, "testfile.txt")
 	cmd.Dir = "."
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = append(os.Environ(), "HOME="+tmpDir)
 	buf := &SafeBuffer{}
 	cmd.Stdout = buf
@@ -765,11 +769,7 @@ enable_transport = Yes
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start fetch timeout command: %v", err)
 	}
-	defer func() {
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
-	}()
+	defer killProcessGroup(cmd)
 
 	done := make(chan error, 1)
 	go func() {
@@ -780,7 +780,7 @@ enable_transport = Yes
 	select {
 	case waitErr = <-done:
 	case <-time.After(30 * time.Second):
-		_ = cmd.Process.Kill()
+		killProcessGroup(cmd)
 		waitErr = <-done
 	}
 
@@ -893,9 +893,7 @@ share_instance = No
 		defer wg.Done()
 		lCmd, buf := runGorncpBackground(t, serverConfigDir, "-l", "-n", "-i", serverIdentity, "-b", "2", "-v")
 		defer func() {
-			_ = lCmd.Process.Signal(os.Interrupt)
-			time.Sleep(500 * time.Millisecond)
-			_ = lCmd.Process.Kill()
+			killProcessGroup(lCmd)
 			t.Logf("=== LISTENER OUTPUT (complete) ===\n%s", buf.String())
 		}()
 

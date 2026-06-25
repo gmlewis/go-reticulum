@@ -25,7 +25,7 @@ func runPythonBufferTransform(t *testing.T, script string, args ...string) strin
 	t.Helper()
 
 	cmd := exec.Command("python3", append([]string{"-c", script}, args...)...)
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("python buffer transform failed: %v\noutput: %v", err, string(out))

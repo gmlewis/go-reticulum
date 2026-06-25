@@ -846,7 +846,7 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 
 	// Start Python receiver
 	pyCmd := exec.Command("python3", scriptPath, pyConfigDir, strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort))
-	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	pyStdout, err := pyCmd.StdoutPipe()
 	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout // Combine stderr and stdout
@@ -994,7 +994,7 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 	pyConfigDir := filepath.Join(tmpDir, "py_receiver")
 
 	pyCmd := exec.Command("python3", scriptPath, pyConfigDir, strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort))
-	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	pyStdout, err := pyCmd.StdoutPipe()
 	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout
@@ -1178,7 +1178,7 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 	// Start Python initiator
 	// PYTHONPATH=$ORIGINAL_RETICULUM_REPO_DIR python3 integrated_initiator.py <dest_hash> <pub_key>
 	pyCmd := exec.Command("python3", scriptPath, fmt.Sprintf("%x", dest.Hash), fmt.Sprintf("%x", id.GetPublicKey()), pyConfigDir, strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort))
-	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	pyStdout, err := pyCmd.StdoutPipe()
 	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout
@@ -1268,7 +1268,7 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 
 	payloadSize := MDU + 640
 	pyCmd := exec.Command("python3", scriptPath, fmt.Sprintf("%x", dest.Hash), fmt.Sprintf("%x", id.GetPublicKey()), pyConfigDir, strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort), strconv.Itoa(payloadSize))
-	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	pyStdout, err := pyCmd.StdoutPipe()
 	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout
@@ -1316,7 +1316,7 @@ func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 	pyConfigDir := filepath.Join(tmpDir, "py_receiver")
 
 	pyCmd := exec.Command("python3", scriptPath, pyConfigDir, strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort))
-	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	pyStdout, err := pyCmd.StdoutPipe()
 	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout
@@ -1878,7 +1878,7 @@ enable_transport = False
 	pyConfigDir := filepath.Join(tmpDir, "py_requester")
 
 	pyCmd := exec.Command("python3", scriptPath, fmt.Sprintf("%x", remoteDest.Hash), pyConfigDir, strconv.Itoa(pyListenPort), strconv.Itoa(relayIngressListenPort))
-	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	pyStdout, err := pyCmd.StdoutPipe()
 	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout
@@ -1988,7 +1988,7 @@ func TestIntegratedRelayedPathResponsePropagationPythonRelayUDP(t *testing.T) {
 	pyConfigDir := filepath.Join(tmpDir, "py_relay")
 
 	pyCmd := exec.Command("python3", scriptPath, pyConfigDir, strconv.Itoa(pyIngressListenPort), strconv.Itoa(requesterPort), strconv.Itoa(pyEgressListenPort), strconv.Itoa(responderPort))
-	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	pyStdout, err := pyCmd.StdoutPipe()
 	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout
@@ -2163,7 +2163,7 @@ func TestIntegratedAnnouncePropagationPythonRelayUDP(t *testing.T) {
 	pyConfigDir := filepath.Join(tmpDir, "py_relay")
 
 	pyCmd := exec.Command("python3", scriptPath, pyConfigDir, strconv.Itoa(pyIngressListenPort), strconv.Itoa(sinkPort), strconv.Itoa(pyEgressListenPort), strconv.Itoa(sinkPort))
-	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	pyStdout, err := pyCmd.StdoutPipe()
 	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout
@@ -2210,7 +2210,7 @@ func TestIntegratedAnnouncePropagationPythonRelayUDP(t *testing.T) {
 	emitterConfigDir := filepath.Join(tmpDir, "py_emitter")
 
 	emitterCmd := exec.Command("python3", emitterScriptPath, emitterConfigDir, strconv.Itoa(requesterPort), strconv.Itoa(pyIngressListenPort))
-	emitterCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	emitterCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	emitterStdout, err := emitterCmd.StdoutPipe()
 	mustTest(t, err)
 	emitterCmd.Stderr = emitterCmd.Stdout
@@ -2360,7 +2360,7 @@ func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 	learnedPath := filepath.Join(pyConfigDir, "learned")
 
 	pyCmd := exec.Command("python3", scriptPath, fmt.Sprintf("%x", dest.Hash), pyConfigDir, strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort))
-	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	pyStdout, err := pyCmd.StdoutPipe()
 	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout
@@ -2434,7 +2434,7 @@ func TestIntegratedRelayedPathResponseGoRequesterToPythonTargetUDP(t *testing.T)
 
 	tag := bytes.Repeat([]byte{0xC7}, TruncatedHashLength/8)
 	pyCmd := exec.Command("python3", scriptPath, pyConfigDir, strconv.Itoa(pyListenPort), strconv.Itoa(relayEgressListenPort), fmt.Sprintf("%x", tag))
-	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	pyStdout, err := pyCmd.StdoutPipe()
 	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout
@@ -2602,7 +2602,7 @@ func TestIntegratedPythonRelayPathRequestEmissionUDP(t *testing.T) {
 		fmt.Sprintf("%x", targetDest.Hash),
 		fmt.Sprintf("%x", tag),
 	)
-	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	pyStdout, err := pyCmd.StdoutPipe()
 	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout
@@ -2719,7 +2719,7 @@ func TestIntegratedPythonRelayInboundPathRequestForwardingUDP(t *testing.T) {
 		strconv.Itoa(pyRelayEgressListenPort),
 		strconv.Itoa(sinkPort),
 	)
-	relayCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	relayCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	relayStdout, err := relayCmd.StdoutPipe()
 	mustTest(t, err)
 	relayCmd.Stderr = relayCmd.Stdout
@@ -2780,7 +2780,7 @@ relayReady:
 		fmt.Sprintf("%x", targetDest.Hash),
 		fmt.Sprintf("%x", tag),
 	)
-	requesterCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	requesterCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	requesterStdout, err := requesterCmd.StdoutPipe()
 	mustTest(t, err)
 	requesterCmd.Stderr = requesterCmd.Stdout

@@ -32,7 +32,7 @@ func runPythonRatchetEncrypt(t *testing.T, initScriptPath, pyStorage string, des
 	}
 
 	cmd := exec.Command("python3", initScriptPath, runStorage, fmt.Sprintf("%x", destHash), fmt.Sprintf("%x", pubKey), fmt.Sprintf("%x", msg), strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 
 	announceErr := make(chan error, 1)
 	announceStop := make(chan struct{})
@@ -365,7 +365,7 @@ func runPythonDirectEncrypt(t *testing.T, scriptPath, mode string, args ...strin
 	cmdArgs := []string{scriptPath, mode}
 	cmdArgs = append(cmdArgs, args...)
 	cmd := exec.Command("python3", cmdArgs...)
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("python direct encrypt failed: %v\nOutput: %v", err, string(out))
@@ -391,7 +391,7 @@ func runPythonInteropCmd(t *testing.T, scriptPath, mode string, args ...string) 
 	cmdArgs := []string{scriptPath, mode}
 	cmdArgs = append(cmdArgs, args...)
 	cmd := exec.Command("python3", cmdArgs...)
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("python interop command failed: %v\nOutput: %v", err, string(out))
@@ -420,7 +420,7 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 
 	// Start Python receiver to get its announce with ratchet
 	pyCmd := exec.Command("python3", scriptPath, "receiver", pyStorage, pyRatchets, pyIdPath, strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort))
-	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	pyStdout, err := pyCmd.StdoutPipe()
 	mustTest(t, err)
 	pyCmd.Stderr = pyCmd.Stdout
@@ -519,7 +519,7 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 
 	// Verify Python can decrypt using stored ratchet
 	verifyCmd := exec.Command("python3", scriptPath, "decrypt", pyStorage, pyRatchets, pyIdPath, fmt.Sprintf("%x", encrypted))
-	verifyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	verifyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := verifyCmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Python decryption failed: %v\nOutput: %v", err, string(out))
@@ -590,7 +590,7 @@ func TestRatchetPythonToGoParity(t *testing.T) {
 	}
 
 	pyCmd := exec.Command("python3", initScriptPath, pyStorage, fmt.Sprintf("%x", dest.Hash), fmt.Sprintf("%x", id.GetPublicKey()), fmt.Sprintf("%x", msg), strconv.Itoa(pyListenPort), strconv.Itoa(goListenPort))
-	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	pyCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := pyCmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Python initiator failed: %v\nOutput: %v", err, string(out))

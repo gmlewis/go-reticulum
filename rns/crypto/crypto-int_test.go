@@ -10,7 +10,6 @@ package crypto
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,11 +19,12 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-func getPythonPath() string {
+func getPythonPath(t *testing.T) string {
+	t.Helper()
 	if path := os.Getenv("ORIGINAL_RETICULUM_REPO_DIR"); path != "" {
 		return path
 	}
-	log.Fatalf("missing required environment variable: ORIGINAL_RETICULUM_REPO_DIR")
+	t.Fatal("missing required environment variable: ORIGINAL_RETICULUM_REPO_DIR")
 	return "" // unreachable
 }
 
@@ -224,7 +224,7 @@ func TestHMACParity(t *testing.T) {
 
 	// Verify with Python
 	cmd := exec.Command("python3", scriptPath, "hmac", fmt.Sprintf("%x", key), fmt.Sprintf("%x", data), fmt.Sprintf("%x", digest))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Python verification failed: %v\nOutput: %v", err, string(out))
@@ -252,7 +252,7 @@ func TestEd25519Parity(t *testing.T) {
 
 	// Verify with Python
 	cmd := exec.Command("python3", scriptPath, "ed25519", fmt.Sprintf("%x", message), fmt.Sprintf("%x", signature), fmt.Sprintf("%x", pub.PublicBytes()))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Python verification failed: %v\nOutput: %v", err, string(out))
@@ -284,7 +284,7 @@ func TestX25519Parity(t *testing.T) {
 
 	// Verify with Python
 	cmd := exec.Command("python3", scriptPath, "x25519", fmt.Sprintf("%x", prv.PrivateBytes()), fmt.Sprintf("%x", peerPub.PublicBytes()), fmt.Sprintf("%x", shared))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Python verification failed: %v\nOutput: %v", err, string(out))
@@ -313,7 +313,7 @@ func TestHKDFParity(t *testing.T) {
 
 	// Verify with Python
 	cmd := exec.Command("python3", scriptPath, "hkdf", fmt.Sprintf("%x", deriveFrom), fmt.Sprintf("%x", salt), fmt.Sprintf("%v", length), fmt.Sprintf("%x", derived))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Python verification failed: %v\nOutput: %v", err, string(out))
@@ -342,7 +342,7 @@ func TestTokenParity(t *testing.T) {
 
 	// Verify with Python
 	cmd := exec.Command("python3", scriptPath, "token", fmt.Sprintf("%x", key), fmt.Sprintf("%x", ciphertext), fmt.Sprintf("%x", plaintext))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Python verification failed: %v\nOutput: %v", err, string(out))
@@ -367,7 +367,7 @@ func TestSHA256Parity(t *testing.T) {
 
 	// Verify with Python
 	cmd := exec.Command("python3", scriptPath, "sha256", fmt.Sprintf("%x", data), fmt.Sprintf("%x", digest))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Python verification failed: %v\nOutput: %v", err, string(out))
@@ -392,7 +392,7 @@ func TestSHA512Parity(t *testing.T) {
 
 	// Verify with Python
 	cmd := exec.Command("python3", scriptPath, "sha512", fmt.Sprintf("%x", data), fmt.Sprintf("%x", digest))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Python verification failed: %v\nOutput: %v", err, string(out))
@@ -418,7 +418,7 @@ func TestPKCS7Parity(t *testing.T) {
 
 	// Verify padding with Python
 	cmd := exec.Command("python3", scriptPath, "pkcs7_pad", fmt.Sprintf("%x", data), fmt.Sprintf("%v", blockSize), fmt.Sprintf("%x", padded))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Python verification failed (pad): %v\nOutput: %v", err, string(out))
@@ -433,7 +433,7 @@ func TestPKCS7Parity(t *testing.T) {
 	mustTest(t, err)
 
 	cmd = exec.Command("python3", scriptPath, "pkcs7_unpad", fmt.Sprintf("%x", padded), fmt.Sprintf("%x", unpadded))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err = cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Python verification failed (unpad): %v\nOutput: %v", err, string(out))
@@ -462,7 +462,7 @@ func TestAES128Parity(t *testing.T) {
 
 	// Verify encryption with Python
 	cmd := exec.Command("python3", scriptPath, "aes128_encrypt", fmt.Sprintf("%x", key), fmt.Sprintf("%x", iv), fmt.Sprintf("%x", plaintext), fmt.Sprintf("%x", ciphertext))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Python verification failed (encrypt): %v\nOutput: %v", err, string(out))
@@ -477,7 +477,7 @@ func TestAES128Parity(t *testing.T) {
 	mustTest(t, err)
 
 	cmd = exec.Command("python3", scriptPath, "aes128_decrypt", fmt.Sprintf("%x", key), fmt.Sprintf("%x", iv), fmt.Sprintf("%x", ciphertext), fmt.Sprintf("%x", decrypted))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err = cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Python verification failed (decrypt): %v\nOutput: %v", err, string(out))
@@ -506,7 +506,7 @@ func TestAES256Parity(t *testing.T) {
 
 	// Verify encryption with Python
 	cmd := exec.Command("python3", scriptPath, "aes256_encrypt", fmt.Sprintf("%x", key), fmt.Sprintf("%x", iv), fmt.Sprintf("%x", plaintext), fmt.Sprintf("%x", ciphertext))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Python verification failed (encrypt): %v\nOutput: %v", err, string(out))
@@ -521,7 +521,7 @@ func TestAES256Parity(t *testing.T) {
 	mustTest(t, err)
 
 	cmd = exec.Command("python3", scriptPath, "aes256_decrypt", fmt.Sprintf("%x", key), fmt.Sprintf("%x", iv), fmt.Sprintf("%x", ciphertext), fmt.Sprintf("%x", decrypted))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err = cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Python verification failed (decrypt): %v\nOutput: %v", err, string(out))

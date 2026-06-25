@@ -248,7 +248,7 @@ func TestAnnouncePacketParity(t *testing.T) {
 	// Verify with Python
 	pyConfigDir := filepath.Join(tmpDir, "py_config")
 	cmd := exec.Command("python3", scriptPath, pyConfigDir, packetPath)
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Python verification failed: %v\nOutput: %v", err, string(out))
@@ -327,7 +327,7 @@ func TestLinkProofPacketParity(t *testing.T) {
 	// Verify with Python
 	pyConfigDir := filepath.Join(tmpDir, "py_config")
 	cmd := exec.Command("python3", scriptPath, pyConfigDir, packetPath, fmt.Sprintf("%x", l.linkID), fmt.Sprintf("%x", dest.identity.GetPublicKey()))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Python verification failed: %v\nOutput: %v", err, string(out))
@@ -371,7 +371,7 @@ func TestLinkRequestPacketParity(t *testing.T) {
 	// Verify with Python
 	pyConfigDir := filepath.Join(tmpDir, "py_config")
 	cmd := exec.Command("python3", scriptPath, pyConfigDir, packetPath)
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Python verification failed: %v\nOutput: %v", err, string(out))

@@ -11,7 +11,6 @@ package interfaces
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -39,7 +38,7 @@ print(discovery_token.hex())
 
 func TestAutoInterfaceDiscoveryPacketParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	pythonPath := getPythonPath()
+	pythonPath := getPythonPath(t)
 	tmpDir := testutils.TempDir(t, "rns-auto-parity-*")
 
 	scriptPath := filepath.Join(tmpDir, "discovery_token.py")
@@ -82,11 +81,12 @@ func TestAutoInterfaceDiscoveryPacketParity(t *testing.T) {
 	}
 }
 
-func getPythonPath() string {
+func getPythonPath(t *testing.T) string {
+	t.Helper()
 	if path := os.Getenv("ORIGINAL_RETICULUM_REPO_DIR"); path != "" {
 		return path
 	}
-	log.Fatalf("missing required environment variable: ORIGINAL_RETICULUM_REPO_DIR")
+	t.Fatal("missing required environment variable: ORIGINAL_RETICULUM_REPO_DIR")
 	return ""
 }
 
@@ -130,7 +130,7 @@ except KeyboardInterrupt:
 
 func TestUDPInterfaceParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	pythonPath := getPythonPath()
+	pythonPath := getPythonPath(t)
 	tmpDir := testutils.TempDir(t, "rns-udp-parity-*")
 
 	scriptPath := filepath.Join(tmpDir, "udp_echo.py")
@@ -282,7 +282,7 @@ except KeyboardInterrupt:
 
 func TestTCPInterfaceParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	pythonPath := getPythonPath()
+	pythonPath := getPythonPath(t)
 	tmpDir := testutils.TempDir(t, "rns-tcp-parity-*")
 
 	scriptPath := filepath.Join(tmpDir, "tcp_echo.py")
@@ -344,7 +344,7 @@ func TestTCPInterfaceParity(t *testing.T) {
 
 func TestTCPInterfaceParityKISS(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	pythonPath := getPythonPath()
+	pythonPath := getPythonPath(t)
 	tmpDir := testutils.TempDir(t, "rns-tcp-kiss-parity-*")
 
 	const pythonTCPKISSEchoScript = `
@@ -515,7 +515,7 @@ if __name__ == "__main__":
 
 func TestLocalInterfaceParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	pythonPath := getPythonPath()
+	pythonPath := getPythonPath(t)
 	tmpDir := testutils.TempDir(t, "rns-local-parity-*")
 
 	scriptPath := filepath.Join(tmpDir, "local_echo.py")
@@ -659,7 +659,7 @@ func TestSerialInterfaceParity(t *testing.T) {
 		t.Skip("skipping integration test: socat not installed")
 	}
 	requirePythonModule(t, "serial")
-	pythonPath := getPythonPath()
+	pythonPath := getPythonPath(t)
 	tmpDir := testutils.TempDir(t, "rns-serial-parity-")
 
 	scriptPath := filepath.Join(tmpDir, "serial_echo.py")

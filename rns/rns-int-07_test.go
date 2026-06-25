@@ -130,7 +130,7 @@ func TestIdentityParity(t *testing.T) {
 
 	// Verify with Python
 	cmd := exec.Command("python3", scriptPath, idPath)
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Python verification failed: %v\nOutput: %v", err, string(out))
@@ -170,7 +170,7 @@ func TestIdentityPythonToGoParity(t *testing.T) {
 
 	// Generate identity with Python
 	cmd := exec.Command("python3", scriptPath, idPath)
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath(t))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Python generation failed: %v\nOutput: %v", err, string(out))
