@@ -500,6 +500,13 @@ func (l *Link) receive(packet *Packet) {
 		packet.Context != ContextLrproof
 
 	if shouldDecrypt {
+		l.mu.Lock()
+		status := l.status
+		l.mu.Unlock()
+		if status == LinkClosed {
+			l.logger.Debug("Skipping decrypt on closed link %x", l.linkID)
+			return
+		}
 		plaintext, err := l.Decrypt(packet.Data)
 		if err != nil {
 			l.logger.Debug("Failed to decrypt packet for link %x: %v", l.linkID, err)
@@ -691,7 +698,12 @@ func (l *Link) receive(packet *Packet) {
 	default:
 		l.mu.Lock()
 		cb := l.callbacks.Packet
+		status := l.status
 		l.mu.Unlock()
+		if status == LinkClosed || status == LinkPending {
+			l.logger.Debug("Link %x: dropping packet on %v link", l.linkID, status)
+			return
+		}
 		if packet.PacketType != PacketProof {
 			l.logger.Debug("Link %x: received DATA packet %x, generating PROOF", l.linkID, packet.PacketHash)
 			l.ProvePacket(packet)

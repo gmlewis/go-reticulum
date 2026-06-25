@@ -230,6 +230,8 @@ func (tci *TCPClientInterface) Send(data []byte) error {
 	n, err := conn.Write(frame)
 	if err != nil {
 		log.Printf("[TCP] %s: Send write error: %v", tci.name, err)
+		// Mark interface as not running so callers stop trying to send.
+		atomic.StoreInt32(&tci.running, 0)
 		return err
 	}
 	// log.Printf("[TCP] %s: Send wrote %d bytes", tci.name, n)
