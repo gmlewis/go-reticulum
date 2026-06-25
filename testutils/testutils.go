@@ -34,6 +34,11 @@ type tempDirTB interface {
 	Fatalf(format string, args ...any)
 }
 
+type cleanupTB interface {
+	tempDirTB
+	Cleanup(func())
+}
+
 func tempBaseDir() string {
 	if runtime.GOOS == "darwin" {
 		return "/tmp"
@@ -71,6 +76,17 @@ func tempDir(t tempDirTB, prefix string) (string, func()) {
 		if err := removeAllWithRetry(dir); err != nil {
 			t.Fatalf("os.RemoveAll: %v", err)
 		}
+	}
+
+	// When the testing object supports t.Cleanup (i.e. *testing.T or
+	// *testing.B), register the cleanup there so it runs AFTER all other
+	// t.Cleanup functions registered later (e.g. router.Close). This
+	// prevents the directory from being removed while resources that
+	// wrote into it are still active. The returned func is a no-op in
+	// that case; callers can safely `defer` it without double-removing.
+	if ct, ok := t.(cleanupTB); ok {
+		ct.Cleanup(cleanup)
+		return dir, func() {}
 	}
 
 	return dir, cleanup
