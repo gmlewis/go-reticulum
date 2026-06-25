@@ -47,8 +47,7 @@ func benchLoggerDevNull(b *testing.B, level int, compact bool) *Logger {
 
 func benchLoggerTempFile(b *testing.B, level int, compact bool) (*Logger, string) {
 	b.Helper()
-	tmpDir, cleanup := testutils.TempDirBench(b, "logger-bench-")
-	b.Cleanup(cleanup)
+	tmpDir := testutils.TempDirBench(b, "logger-bench-")
 
 	logPath := filepath.Join(tmpDir, "bench.log")
 	logger := NewLogger()

@@ -167,8 +167,7 @@ func captureStdout(f func()) string {
 func TestVersionParity(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	configDir := filepath.Join(tmpDir, "config")
 	writeMinimalConfig(t, configDir)
 
@@ -186,8 +185,7 @@ func TestVersionParity(t *testing.T) {
 func TestIdentityDisplayParity(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	idPath := filepath.Join(tmpDir, "identity")
 	configDir := filepath.Join(tmpDir, "config")
 	writeMinimalConfig(t, configDir)
@@ -265,8 +263,7 @@ func TestHelpParity(t *testing.T) {
 func TestUnauthenticatedTransferParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	serverConfigDir := filepath.Join(tmpDir, "server_config")
 	clientConfigDir := filepath.Join(tmpDir, "client_config")
@@ -419,8 +416,7 @@ func TestListenModeIdentityCreation(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	// Create a temp directory for config
-	tmpDir, cleanup := testutils.TempDir(t, "gorncp-test-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "gorncp-test-")
 	identityDir := filepath.Join(tmpDir, "identities")
 	identityPath := filepath.Join(identityDir, AppName)
 
@@ -466,8 +462,7 @@ func TestFetchFileNotFoundOnRemote(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	serverConfigDir := filepath.Join(tmpDir, "server_config")
 	clientConfigDir := filepath.Join(tmpDir, "client_config")
@@ -580,8 +575,7 @@ func TestFetchPathLookupTimeout(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	configDir := filepath.Join(tmpDir, "config")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
@@ -627,8 +621,7 @@ func TestFetchLinkEstablishmentTimeout(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	configDir := filepath.Join(tmpDir, "config")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
@@ -684,8 +677,7 @@ func TestFetchRequestTimeout(t *testing.T) {
 
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	serverConfigDir := filepath.Join(tmpDir, "server_config")
 	clientConfigDir := filepath.Join(tmpDir, "client_config")
@@ -840,8 +832,7 @@ func TestFetchNotAllowedByRemote(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	serverConfigDir := filepath.Join(tmpDir, "server_config")
 	clientConfigDir := filepath.Join(tmpDir, "client_config")
@@ -972,8 +963,7 @@ func TestFetchRemoteErrorWhenLinkIsMissing(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "gorncp-test-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "gorncp-test-")
 
 	testFile := filepath.Join(tmpDir, "test.txt")
 	if err := os.WriteFile(testFile, []byte("Test file for fetch"), 0o644); err != nil {
@@ -1040,8 +1030,7 @@ for suffix in suffixes:
         results[key] = size_str(v, suffix=suffix)
 print(json.dumps(results))
 `
-	tmpDir, cleanup := testutils.TempDir(t, "size-str-parity-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "size-str-parity-")
 
 	scriptPath := filepath.Join(tmpDir, "size_str.py")
 	if err := os.WriteFile(scriptPath, []byte(pyScript), 0o644); err != nil {

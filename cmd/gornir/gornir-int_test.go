@@ -21,18 +21,17 @@ import (
 
 const tempDirPrefix = "gornir-test-"
 
-func buildGornir(t *testing.T) (string, func()) {
+func buildGornir(t *testing.T) string {
 	t.Helper()
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	bin := filepath.Join(tmpDir, "gornir")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Dir = "."
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		cleanup()
 		t.Fatalf("failed to build gornir: %v\n%v", err, string(out))
 	}
-	return bin, cleanup
+	return bin
 }
 
 func findRnir(t *testing.T) string {
@@ -47,8 +46,7 @@ func findRnir(t *testing.T) string {
 func TestIntegration_VersionOutput(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin, cleanup := buildGornir(t)
-	defer cleanup()
+	bin := buildGornir(t)
 	out, err := exec.Command(bin, "--version").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornir --version failed: %v\n%v", err, string(out))
@@ -63,8 +61,7 @@ func TestIntegration_VersionOutput(t *testing.T) {
 func TestIntegration_ExampleConfigOutput(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin, cleanup := buildGornir(t)
-	defer cleanup()
+	bin := buildGornir(t)
 	out, err := exec.Command(bin, "--exampleconfig").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornir --exampleconfig failed: %v\n%v", err, string(out))
@@ -86,10 +83,8 @@ func TestIntegration_ExampleConfigOutput(t *testing.T) {
 func TestIntegration_ExitCodeZero(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin, cleanup := buildGornir(t)
-	defer cleanup()
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	bin := buildGornir(t)
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	cmd := exec.Command(bin, "--config", tmpDir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -100,8 +95,7 @@ func TestIntegration_ExitCodeZero(t *testing.T) {
 func TestIntegration_HelpOutput(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin, cleanup := buildGornir(t)
-	defer cleanup()
+	bin := buildGornir(t)
 	out, _ := exec.Command(bin, "--help").CombinedOutput()
 	output := string(out)
 	for _, want := range []string{
@@ -122,8 +116,7 @@ func TestParity_ExampleConfig(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	rnirBin := findRnir(t)
-	gornirBin, cleanup := buildGornir(t)
-	defer cleanup()
+	gornirBin := buildGornir(t)
 
 	pyOut, err := exec.Command(rnirBin, "--exampleconfig").CombinedOutput()
 	if err != nil {
@@ -150,8 +143,7 @@ func TestParity_HelpFlags(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	rnirBin := findRnir(t)
-	gornirBin, cleanup := buildGornir(t)
-	defer cleanup()
+	gornirBin := buildGornir(t)
 
 	pyOut, _ := exec.Command(rnirBin, "--help").CombinedOutput()
 	goOut, _ := exec.Command(gornirBin, "--help").CombinedOutput()
@@ -172,10 +164,8 @@ func TestParity_HelpFlags(t *testing.T) {
 func TestIntegration_SIGINTCleanExit(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin, cleanup := buildGornir(t)
-	defer cleanup()
-	tmpDir, cleanupDir := testutils.TempDir(t, tempDirPrefix)
-	defer cleanupDir()
+	bin := buildGornir(t)
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	cmd := exec.Command(bin, "--config", tmpDir, "-v", "-v", "-v")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
@@ -195,8 +185,7 @@ func TestIntegration_SIGINTCleanExit(t *testing.T) {
 func TestIntegration_VerboseStacking(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin, cleanup := buildGornir(t)
-	defer cleanup()
+	bin := buildGornir(t)
 	out, err := exec.Command(bin, "-v", "-v", "-v").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornir -v -v -v failed: %v\n%v", err, string(out))

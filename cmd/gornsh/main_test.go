@@ -350,8 +350,7 @@ func TestTTYRestorerNoOp(t *testing.T) {
 }
 
 func TestDoListenHandlesSIGINT(t *testing.T) {
-	configDir, cleanup := testutils.TempDir(t, "gornsh-do-listen-sigint-")
-	t.Cleanup(cleanup)
+	configDir := testutils.TempDir(t, "gornsh-do-listen-sigint-")
 	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte("[reticulum]\nshare_instance = No\n"), 0o600); err != nil {
 		t.Fatalf("write config error: %v", err)
 	}
@@ -417,8 +416,7 @@ func TestDoListenHandlesSIGINT(t *testing.T) {
 }
 
 func TestPrintIdentityUsesPrettyHexDestination(t *testing.T) {
-	configDir, cleanup := testutils.TempDir(t, "gornsh-print-identity-")
-	t.Cleanup(cleanup)
+	configDir := testutils.TempDir(t, "gornsh-print-identity-")
 	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte("[reticulum]\nshare_instance = No\n"), 0o600); err != nil {
 		t.Fatalf("write config error: %v", err)
 	}

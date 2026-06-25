@@ -65,8 +65,7 @@ func TestChooseConfigDir(t *testing.T) {
 
 func TestCreateDefaultConfigMatchesPythonShape(t *testing.T) {
 	t.Parallel()
-	tmp, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmp := testutils.TempDir(t, tempDirPrefix)
 	configPath := filepath.Join(tmp, "config")
 
 	r := &Reticulum{}
@@ -145,8 +144,7 @@ func TestParseListProperty(t *testing.T) {
 func TestNewReticulumCreatesPythonStartupLayout(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -188,8 +186,7 @@ loglevel = 4
 func TestReticulumOptionParitySliceNetworkIdentityAndBooleans(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	networkIdentityPath := filepath.Join(configDir, "storage", "identities", "network-id")
 	config := `[reticulum]
 share_instance = No
@@ -239,8 +236,7 @@ loglevel = 4
 func TestParseUseImplicitProof(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 
 	config := `[reticulum]
 share_instance = No
@@ -269,8 +265,7 @@ loglevel = 4
 }
 
 func TestParsePanicOnInterfaceError(t *testing.T) {
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	port := reserveTCPPort(t)
 
 	config := `[reticulum]
@@ -314,8 +309,7 @@ loglevel = 4
 func TestSerialInterfaceMissingPortDoesNotRegister(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -344,8 +338,7 @@ loglevel = 4
 func TestKISSInterfaceMissingPortDoesNotRegister(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -377,8 +370,7 @@ func TestKISSInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
 		t.Skip("unsupported-platform behavior test")
 	}
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -409,8 +401,7 @@ loglevel = 4
 func TestAX25KISSInterfaceMissingPortDoesNotRegister(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -441,8 +432,7 @@ loglevel = 4
 func TestAX25KISSInterfaceMissingCallsignDoesNotRegister(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -475,8 +465,7 @@ func TestAX25KISSInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
 		t.Skip("unsupported-platform behavior test")
 	}
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -508,8 +497,7 @@ loglevel = 4
 func TestPipeInterfaceMissingCommandDoesNotRegister(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -538,8 +526,7 @@ loglevel = 4
 func TestPipeInterfaceBadCommandDoesNotRegister(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -569,8 +556,7 @@ loglevel = 4
 func TestBackboneInterfaceMissingPortDoesNotRegister(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -600,8 +586,7 @@ loglevel = 4
 func TestBackboneClientInterfaceMissingTargetDoesNotRegister(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -630,8 +615,7 @@ loglevel = 4
 func TestI2PInterfaceMissingConfigDoesNotRegister(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -660,8 +644,7 @@ loglevel = 4
 func TestI2PInterfaceConnectableMissingPortDoesNotRegister(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -691,8 +674,7 @@ loglevel = 4
 func TestI2PInterfacePeerConfigRegisters(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -727,8 +709,7 @@ func TestI2PInterfaceConnectableRegisters(t *testing.T) {
 	t.Parallel()
 
 	port := reserveTCPPort(t)
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := fmt.Sprintf(`[reticulum]
 share_instance = No
 
@@ -764,8 +745,7 @@ loglevel = 4
 func TestRNodeInterfaceMissingPortDoesNotRegister(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -799,8 +779,7 @@ loglevel = 4
 func TestRNodeInterfaceMissingRequiredFieldsDoesNotRegister(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -837,8 +816,7 @@ func TestRNodeInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
 		t.Skip("unsupported-platform behavior test")
 	}
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -873,8 +851,7 @@ loglevel = 4
 func TestWeaveInterfaceMissingPortDoesNotRegister(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -906,8 +883,7 @@ func TestWeaveInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
 		t.Skip("unsupported-platform behavior test")
 	}
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -937,8 +913,7 @@ loglevel = 4
 func TestRNodeMultiInterfaceNoSubinterfacesDoesNotRegister(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -968,8 +943,7 @@ loglevel = 4
 func TestRNodeMultiInterfaceMultipleEnabledSubsDoesNotRegister(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -1018,8 +992,7 @@ func TestRNodeMultiInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
 		t.Skip("unsupported-platform behavior test")
 	}
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -1060,8 +1033,7 @@ func TestSerialInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
 		t.Skip("unsupported-platform behavior test")
 	}
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 
@@ -1092,8 +1064,7 @@ loglevel = 4
 func TestReticulumOptionParityRemoteManagementAndProbes(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	hash1 := "00112233445566778899aabbccddeeff"
 	hash2 := "ffeeddccbbaa99887766554433221100"
 	config := `[reticulum]
@@ -1147,8 +1118,7 @@ loglevel = 4
 func TestReticulumOptionParityRemoteManagementAllowedInvalidLength(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 remote_management_allowed = [abcd]
@@ -1172,8 +1142,7 @@ loglevel = 4
 func TestReticulumOptionParityRemoteManagementAllowedInvalidHex(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 remote_management_allowed = [00112233445566778899aabbccddeezz]
@@ -1197,8 +1166,7 @@ loglevel = 4
 func TestReticulumOptionParityForceBitratePanicAndDiscover(t *testing.T) {
 	sharedPort := reserveTCPPort(t)
 	controlPort := reserveTCPPort(t)
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	forcedBitrate := 24680
 
 	config := `[reticulum]
@@ -1262,8 +1230,7 @@ loglevel = 4
 func TestReticulumOptionParityDiscoveryAndBlackholeSettings(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	bh1 := "11223344556677889900aabbccddeeff"
 	bh2 := "ffeeddccbbaa00998877665544332211"
 	is1 := "0102030405060708090a0b0c0d0e0f10"
@@ -1441,8 +1408,7 @@ func TestParseDiscoveryConfigSupportsKISSAndChannel(t *testing.T) {
 func TestReticulumInterfaceDiscoveryConfig(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	port := reserveTCPPort(t)
 	config := `[reticulum]
 share_instance = No
@@ -1519,8 +1485,7 @@ discovery_modulation = lora
 func TestReticulumBootstrapOnlyInterfaceConfig(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	port := reserveTCPPort(t)
 	config := `[reticulum]
 share_instance = No
@@ -1562,8 +1527,7 @@ bootstrap_only = Yes
 func TestReticulumOptionParityDiscoveryValueNonPositiveClears(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 required_discovery_value = 0
@@ -1589,8 +1553,7 @@ loglevel = 4
 func TestReticulumOptionParityBlackholeSourcesInvalidLength(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 blackhole_sources = [abcd]
@@ -1614,8 +1577,7 @@ loglevel = 4
 func TestReticulumOptionParityBlackholeSourcesInvalidHex(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 blackhole_sources = [00112233445566778899aabbccddeezz]
@@ -1639,8 +1601,7 @@ loglevel = 4
 func TestReticulumOptionParityInterfaceDiscoverySourcesInvalidLength(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 interface_discovery_sources = [abcd]
@@ -1664,8 +1625,7 @@ loglevel = 4
 func TestReticulumOptionParityInterfaceDiscoverySourcesInvalidHex(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 interface_discovery_sources = [00112233445566778899aabbccddeezz]

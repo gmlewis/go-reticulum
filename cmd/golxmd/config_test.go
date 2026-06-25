@@ -17,8 +17,7 @@ import (
 
 func TestResolveConfigDir(t *testing.T) {
 	t.Run("explicit config dir", func(t *testing.T) {
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		home := filepath.Join(tmpDir, "home")
 		explicit := filepath.Join(tmpDir, "explicit")
 		got := resolveConfigDirCustom(explicit, home, "/etc/lxmd")
@@ -28,8 +27,7 @@ func TestResolveConfigDir(t *testing.T) {
 	})
 
 	t.Run("etc config dir exists", func(t *testing.T) {
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		home := filepath.Join(tmpDir, "home")
 		etc := filepath.Join(tmpDir, "etc")
 		mustTest(t, os.MkdirAll(etc, 0o755))
@@ -42,8 +40,7 @@ func TestResolveConfigDir(t *testing.T) {
 	})
 
 	t.Run("user config dir exists", func(t *testing.T) {
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		home := filepath.Join(tmpDir, "home")
 		userConfig := filepath.Join(home, ".config", "lxmd")
 		mustTest(t, os.MkdirAll(userConfig, 0o755))
@@ -56,8 +53,7 @@ func TestResolveConfigDir(t *testing.T) {
 	})
 
 	t.Run("fallback to dot lxmd", func(t *testing.T) {
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		home := filepath.Join(tmpDir, "home")
 		dotLxmd := filepath.Join(home, ".lxmd")
 		got := resolveConfigDirCustom("", home, "/nonexistent/etc")
@@ -194,8 +190,7 @@ func TestApplyConfig(t *testing.T) {
 }
 
 func TestLoadHashList(t *testing.T) {
-	td, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	td := testutils.TempDir(t, tempDirPrefix)
 	path := filepath.Join(td, "hashes")
 
 	valid1 := "0123456789abcdef0123456789abcdef"
@@ -216,8 +211,7 @@ func TestLoadHashList(t *testing.T) {
 }
 
 func TestEnsureConfig(t *testing.T) {
-	td, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	td := testutils.TempDir(t, tempDirPrefix)
 	configDir := filepath.Join(td, "lxmd")
 	configPath := filepath.Join(configDir, "config")
 

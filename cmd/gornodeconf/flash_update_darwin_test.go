@@ -54,8 +54,7 @@ func TestDarwinFlashSupportContract(t *testing.T) {
 func tempDarwinFlashHome(t *testing.T) string {
 	t.Helper()
 
-	dir, cleanup := testutils.TempDir(t, "gornodeconf-flash-darwin-*")
-	t.Cleanup(cleanup)
+	dir := testutils.TempDir(t, "gornodeconf-flash-darwin-*")
 	return dir
 }
 

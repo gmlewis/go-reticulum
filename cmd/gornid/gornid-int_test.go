@@ -23,18 +23,17 @@ func minimalConfig(dir string) string {
 	return fmt.Sprintf("[reticulum]\nshare_instance = No\ninstance_name = %v\n", filepath.Base(dir))
 }
 
-func buildGornid(t *testing.T) (string, func()) {
+func buildGornid(t *testing.T) string {
 	t.Helper()
-	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
+	tmpDir := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	bin := filepath.Join(tmpDir, "gornid")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Dir = "."
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		cleanup()
 		t.Fatalf("failed to build gornid: %v\n%v", err, string(out))
 	}
-	return bin, cleanup
+	return bin
 }
 
 // extractKeyLines extracts lines containing well-known label prefixes
@@ -69,10 +68,8 @@ func TestParity_Base64ImportExport(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	rnidBin := findRnid(t)
-	gornidBin, cleanup1 := buildGornid(t)
-	defer cleanup1()
-	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
-	defer cleanup()
+	gornidBin := buildGornid(t)
+	tmpDir := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	idFile := filepath.Join(tmpDir, "test.id")
 
 	if out, err := exec.Command(gornidBin, "--config", tmpDir, "-g", idFile).CombinedOutput(); err != nil {
@@ -117,10 +114,8 @@ func TestParity_PrintIdentity(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	rnidBin := findRnid(t)
-	gornidBin, cleanup1 := buildGornid(t)
-	defer cleanup1()
-	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
-	defer cleanup()
+	gornidBin := buildGornid(t)
+	tmpDir := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	idFile := filepath.Join(tmpDir, "test.id")
 
 	// Generate identity with Go.
@@ -155,10 +150,8 @@ func TestParity_Export(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	rnidBin := findRnid(t)
-	gornidBin, cleanup1 := buildGornid(t)
-	defer cleanup1()
-	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
-	defer cleanup()
+	gornidBin := buildGornid(t)
+	tmpDir := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	idFile := filepath.Join(tmpDir, "test.id")
 
 	if out, err := exec.Command(gornidBin, "--config", tmpDir, "-g", idFile).CombinedOutput(); err != nil {
@@ -187,10 +180,8 @@ func TestParity_Hash(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	rnidBin := findRnid(t)
-	gornidBin, cleanup1 := buildGornid(t)
-	defer cleanup1()
-	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
-	defer cleanup()
+	gornidBin := buildGornid(t)
+	tmpDir := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	idFile := filepath.Join(tmpDir, "test.id")
 
 	if out, err := exec.Command(gornidBin, "--config", tmpDir, "-g", idFile).CombinedOutput(); err != nil {
@@ -225,10 +216,8 @@ func TestParity_ImportHex(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	rnidBin := findRnid(t)
-	gornidBin, cleanup1 := buildGornid(t)
-	defer cleanup1()
-	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
-	defer cleanup()
+	gornidBin := buildGornid(t)
+	tmpDir := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	idFile := filepath.Join(tmpDir, "test.id")
 
 	if out, err := exec.Command(gornidBin, "--config", tmpDir, "-g", idFile).CombinedOutput(); err != nil {
@@ -273,10 +262,8 @@ func TestParity_SignGoValidatePython(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	rnidBin := findRnid(t)
-	gornidBin, cleanup1 := buildGornid(t)
-	defer cleanup1()
-	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
-	defer cleanup()
+	gornidBin := buildGornid(t)
+	tmpDir := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	idFile := filepath.Join(tmpDir, "test.id")
 	dataFile := filepath.Join(tmpDir, "data.txt")
 
@@ -307,10 +294,8 @@ func TestParity_SignPythonValidateGo(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	rnidBin := findRnid(t)
-	gornidBin, cleanup1 := buildGornid(t)
-	defer cleanup1()
-	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
-	defer cleanup()
+	gornidBin := buildGornid(t)
+	tmpDir := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	idFile := filepath.Join(tmpDir, "test.id")
 	dataFile := filepath.Join(tmpDir, "data.txt")
 	sigFile := filepath.Join(tmpDir, "data.txt.rsg")
@@ -341,10 +326,8 @@ func TestParity_EncryptGoDecryptPython(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	rnidBin := findRnid(t)
-	gornidBin, cleanup1 := buildGornid(t)
-	defer cleanup1()
-	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
-	defer cleanup()
+	gornidBin := buildGornid(t)
+	tmpDir := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	idFile := filepath.Join(tmpDir, "test.id")
 	plainFile := filepath.Join(tmpDir, "plain.txt")
 	encFile := filepath.Join(tmpDir, "plain.txt.rfe")
@@ -380,10 +363,8 @@ func TestParity_EncryptPythonDecryptGo(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	rnidBin := findRnid(t)
-	gornidBin, cleanup1 := buildGornid(t)
-	defer cleanup1()
-	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
-	defer cleanup()
+	gornidBin := buildGornid(t)
+	tmpDir := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	idFile := filepath.Join(tmpDir, "test.id")
 	plainFile := filepath.Join(tmpDir, "plain.txt")
 	encFile := filepath.Join(tmpDir, "plain.txt.rfe")

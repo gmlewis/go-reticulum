@@ -76,8 +76,7 @@ if __name__ == "__main__":
 
 func TestMessagePackParity(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-msgpack-parity-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-msgpack-parity-*")
 
 	scriptPath := filepath.Join(tmpDir, "check_msgpack_parity.py")
 	if err := os.WriteFile(scriptPath, []byte(checkMsgpackParityPy), 0o644); err != nil {
@@ -170,8 +169,7 @@ func TestMessagePackParity(t *testing.T) {
 
 func TestMessagePackPythonToGoParity(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-msgpack-parity-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-msgpack-parity-*")
 
 	const generateMsgpackParityPyExtended = `import RNS.vendor.umsgpack as umsgpack
 import sys

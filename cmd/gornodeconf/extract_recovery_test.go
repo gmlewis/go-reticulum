@@ -102,8 +102,7 @@ func TestRecoveryEsptoolNoStubCommandArgs(t *testing.T) {
 func TestEnsureRecoveryEsptoolAtWritesExecutableSourceOfTruthFile(t *testing.T) {
 	t.Parallel()
 
-	dir, cleanup := testutils.TempDir(t, "gornodeconf-recovery-helper-*")
-	t.Cleanup(cleanup)
+	dir := testutils.TempDir(t, "gornodeconf-recovery-helper-*")
 	path := filepath.Join(dir, "recovery_esptool.py")
 	if err := ensureRecoveryEsptoolAt(path); err != nil {
 		t.Fatalf("ensureRecoveryEsptoolAt returned error: %v", err)
@@ -129,8 +128,7 @@ func TestEnsureRecoveryEsptoolAtWritesExecutableSourceOfTruthFile(t *testing.T) 
 func TestEnsureRecoveryEsptoolAtRewritesStaleFile(t *testing.T) {
 	t.Parallel()
 
-	dir, cleanup := testutils.TempDir(t, "gornodeconf-recovery-helper-*")
-	t.Cleanup(cleanup)
+	dir := testutils.TempDir(t, "gornodeconf-recovery-helper-*")
 	path := filepath.Join(dir, "recovery_esptool.py")
 	if err := os.WriteFile(path, []byte("stale"), 0o644); err != nil {
 		t.Fatalf("WriteFile(%q): %v", path, err)

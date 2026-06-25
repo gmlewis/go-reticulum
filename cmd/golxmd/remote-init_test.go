@@ -56,8 +56,7 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("config dir doesn't exist", func(t *testing.T) {
 		lastExitCode = 0
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		nonExistent := filepath.Join(tmpDir, "nonexistent")
 		rnsDir := filepath.Join(tmpDir, "rns")
 		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
@@ -78,8 +77,7 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("identity file doesn't exist", func(t *testing.T) {
 		lastExitCode = 0
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		if err := os.MkdirAll(tmpDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
 		}
@@ -102,8 +100,7 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("identity file from argument doesn't exist", func(t *testing.T) {
 		lastExitCode = 0
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		nonExistentIdentity := filepath.Join(tmpDir, "nonexistent_identity")
 		rnsDir := filepath.Join(tmpDir, "rns")
 		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
@@ -124,8 +121,7 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("load valid identity", func(t *testing.T) {
 		lastExitCode = 0
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		identityPath := filepath.Join(tmpDir, "identity")
 
 		// Create a valid identity
@@ -159,8 +155,7 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("load valid identity from path argument", func(t *testing.T) {
 		lastExitCode = 0
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		identityPath := filepath.Join(tmpDir, "identity_arg")
 
 		// Create a valid identity
@@ -194,8 +189,7 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("load valid identity from tilde-expanded path argument", func(t *testing.T) {
 		lastExitCode = 0
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		t.Setenv("HOME", tmpDir)
 
 		identityPath := filepath.Join(tmpDir, "identity_tilde")
@@ -230,8 +224,7 @@ func TestRemoteInit(t *testing.T) {
 
 	t.Run("test log level and reticulum init", func(t *testing.T) {
 		lastExitCode = 0
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
@@ -278,8 +271,7 @@ loglevel = 1
 
 	t.Run("config-file loglevel applied in remoteInit", func(t *testing.T) {
 		lastExitCode = 0
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
@@ -313,8 +305,7 @@ loglevel = 1
 	})
 
 	t.Run("testGetTargetIdentityLocal", func(t *testing.T) {
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
@@ -379,8 +370,7 @@ loglevel = 1
 			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		rnsDir := filepath.Join(tmpDir, "rns")
 		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
@@ -425,8 +415,7 @@ loglevel = 1
 			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		rnsDir := filepath.Join(tmpDir, "rns")
 		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
@@ -465,8 +454,7 @@ loglevel = 1
 		c.ts.Remember(nil, id.Hash, id.GetPublicKey(), nil)
 
 		// Create a mock RNS config
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		rnsConfigDir := filepath.Join(tmpDir, "rns")
 		if err := os.MkdirAll(rnsConfigDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
@@ -522,8 +510,7 @@ loglevel = 1
 			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		rnsDir := filepath.Join(tmpDir, "rns")
 		if err := os.MkdirAll(rnsDir, 0o755); err != nil {
 			t.Fatalf("MkdirAll: %v", err)
@@ -561,8 +548,7 @@ loglevel = 1
 			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
@@ -594,8 +580,7 @@ loglevel = 1
 			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
@@ -626,8 +611,7 @@ loglevel = 1
 			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
@@ -658,8 +642,7 @@ loglevel = 1
 			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
@@ -690,8 +673,7 @@ loglevel = 1
 			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
@@ -722,8 +704,7 @@ loglevel = 1
 			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
@@ -754,8 +735,7 @@ loglevel = 1
 			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
@@ -786,8 +766,7 @@ loglevel = 1
 			ts:     rns.NewTransportSystem(nil),
 			exitFn: exitFn,
 		}
-		tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-		defer cleanup()
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
 		identityPath := filepath.Join(tmpDir, "identity")
 		id, err := rns.NewIdentity(true, nil)
 		if err != nil {
@@ -816,8 +795,7 @@ loglevel = 1
 func TestRemoteInitLogsThroughClientLogger(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	rnsDir := filepath.Join(tmpDir, "rns")
 	if err := os.MkdirAll(rnsDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)

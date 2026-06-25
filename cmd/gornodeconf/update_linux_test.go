@@ -96,7 +96,6 @@ func TestRunFirmwareUpdateUsesExtractedFirmware(t *testing.T) {
 func tempUpdateHome(t *testing.T) string {
 	t.Helper()
 
-	dir, cleanup := testutils.TempDir(t, "gornodeconf-update-*")
-	t.Cleanup(cleanup)
+	dir := testutils.TempDir(t, "gornodeconf-update-*")
 	return dir
 }

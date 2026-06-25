@@ -24,8 +24,8 @@ import (
 func setupTwoRouterPipeNetwork(t *testing.T) (routerA, routerB *Router, destA, destB *rns.Destination, tsA, tsB *rns.TransportSystem, cleanup func()) {
 	t.Helper()
 
-	dirA, cleanupDirA := testutils.TempDir(t, "lxmf-int-a")
-	dirB, cleanupDirB := testutils.TempDir(t, "lxmf-int-b")
+	dirA := testutils.TempDir(t, "lxmf-int-a")
+	dirB := testutils.TempDir(t, "lxmf-int-b")
 
 	tsA = rns.NewTransportSystem(nil)
 	if err := tsA.Start(dirA + "/rns"); err != nil {
@@ -72,8 +72,6 @@ func setupTwoRouterPipeNetwork(t *testing.T) (routerA, routerB *Router, destA, d
 		tsB.Stop()
 		_ = pipeA.Detach()
 		_ = pipeB.Detach()
-		cleanupDirA()
-		cleanupDirB()
 	}
 
 	return

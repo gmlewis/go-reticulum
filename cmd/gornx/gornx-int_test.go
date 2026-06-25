@@ -117,8 +117,7 @@ func TestIntegrationNoArgs(t *testing.T) {
 func TestIntegrationAllowedHashValidation(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	gornxBin := getGornxBinaryPath(t)
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	prepareGornxConfig(t, configDir)
 
 	// 1. Invalid length
@@ -145,8 +144,7 @@ func TestIntegrationAllowedHashValidation(t *testing.T) {
 func TestIntegrationPrintIdentity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	gornxBin := getGornxBinaryPath(t)
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	prepareGornxConfig(t, configDir)
 
 	out, err := exec.Command(gornxBin, "--config", configDir, "-p").CombinedOutput()
@@ -165,8 +163,7 @@ func TestIntegrationPrintIdentity(t *testing.T) {
 func TestIntegrationEmptyAllowListWarning(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	gornxBin := getGornxBinaryPath(t)
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	prepareGornxConfig(t, configDir)
 
 	// Should show warning because auth is enabled but no identities configured
@@ -198,10 +195,8 @@ func TestIntegrationEmptyAllowListWarning(t *testing.T) {
 func TestIntegrationEcho(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	gornxBin := getGornxBinaryPath(t)
-	lConfigDir, cleanup1 := testutils.TempDir(t, "gornx-echo-l-")
-	defer cleanup1()
-	iConfigDir, cleanup2 := testutils.TempDir(t, "gornx-echo-i-")
-	defer cleanup2()
+	lConfigDir := testutils.TempDir(t, "gornx-echo-l-")
+	iConfigDir := testutils.TempDir(t, "gornx-echo-i-")
 
 	lPort := testutils.ReserveUDPPort(t)
 	iPort := testutils.ReserveUDPPort(t)
@@ -252,10 +247,8 @@ func TestIntegrationEcho(t *testing.T) {
 func TestIntegrationDetailedOutput(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	gornxBin := getGornxBinaryPath(t)
-	lConfigDir, cleanup1 := testutils.TempDir(t, "gornx-detailed-l-")
-	defer cleanup1()
-	iConfigDir, cleanup2 := testutils.TempDir(t, "gornx-detailed-i-")
-	defer cleanup2()
+	lConfigDir := testutils.TempDir(t, "gornx-detailed-l-")
+	iConfigDir := testutils.TempDir(t, "gornx-detailed-i-")
 
 	lPort := testutils.ReserveUDPPort(t)
 	iPort := testutils.ReserveUDPPort(t)
@@ -313,10 +306,8 @@ func TestIntegrationDetailedOutput(t *testing.T) {
 func TestIntegrationTruncatedOutputNotice(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	gornxBin := getGornxBinaryPath(t)
-	lConfigDir, cleanup1 := testutils.TempDir(t, "gornx-trunc-l-")
-	defer cleanup1()
-	iConfigDir, cleanup2 := testutils.TempDir(t, "gornx-trunc-i-")
-	defer cleanup2()
+	lConfigDir := testutils.TempDir(t, "gornx-trunc-l-")
+	iConfigDir := testutils.TempDir(t, "gornx-trunc-i-")
 
 	lPort := testutils.ReserveUDPPort(t)
 	iPort := testutils.ReserveUDPPort(t)
@@ -374,10 +365,8 @@ func TestIntegrationTruncatedOutputNotice(t *testing.T) {
 func TestIntegrationRemoteExecuteFalseExitCode(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	gornxBin := getGornxBinaryPath(t)
-	lConfigDir, cleanup1 := testutils.TempDir(t, "gornx-execfalse-l-")
-	defer cleanup1()
-	iConfigDir, cleanup2 := testutils.TempDir(t, "gornx-execfalse-i-")
-	defer cleanup2()
+	lConfigDir := testutils.TempDir(t, "gornx-execfalse-l-")
+	iConfigDir := testutils.TempDir(t, "gornx-execfalse-i-")
 
 	lPort := testutils.ReserveUDPPort(t)
 	iPort := testutils.ReserveUDPPort(t)
@@ -432,10 +421,8 @@ func TestIntegrationRemoteExecuteFalseExitCode(t *testing.T) {
 func TestIntegrationInteractiveLoop(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	gornxBin := getGornxBinaryPath(t)
-	lConfigDir, cleanup1 := testutils.TempDir(t, "gornx-inter-l-")
-	defer cleanup1()
-	iConfigDir, cleanup2 := testutils.TempDir(t, "gornx-inter-i-")
-	defer cleanup2()
+	lConfigDir := testutils.TempDir(t, "gornx-inter-l-")
+	iConfigDir := testutils.TempDir(t, "gornx-inter-i-")
 
 	lPort := testutils.ReserveUDPPort(t)
 	iPort := testutils.ReserveUDPPort(t)
@@ -547,8 +534,7 @@ func TestIntegrationInteractiveLoop(t *testing.T) {
 func TestIntegrationInitiatorTimeout(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	gornxBin := getGornxBinaryPath(t)
-	configDir, cleanup := testutils.TempDir(t, "gornx-timeout-")
-	defer cleanup()
+	configDir := testutils.TempDir(t, "gornx-timeout-")
 	prepareGornxConfig(t, configDir)
 
 	// Try to connect to a non-existent destination with a short timeout
@@ -573,10 +559,8 @@ func TestIntegrationInitiatorTimeout(t *testing.T) {
 func TestIntegrationResultDownloadTimeout(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	gornxBin := getGornxBinaryPath(t)
-	lConfigDir, cleanup1 := testutils.TempDir(t, "gornx-resulttimeout-l-")
-	defer cleanup1()
-	iConfigDir, cleanup2 := testutils.TempDir(t, "gornx-resulttimeout-i-")
-	defer cleanup2()
+	lConfigDir := testutils.TempDir(t, "gornx-resulttimeout-l-")
+	iConfigDir := testutils.TempDir(t, "gornx-resulttimeout-i-")
 
 	lPort := testutils.ReserveUDPPort(t)
 	iPort := testutils.ReserveUDPPort(t)
@@ -631,8 +615,7 @@ func TestIntegrationResultDownloadTimeout(t *testing.T) {
 
 func TestIntegrationDestOnly(t *testing.T) {
 	gornxBin := getGornxBinaryPath(t)
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	prepareGornxConfig(t, configDir)
 
 	out, err := exec.Command(gornxBin, "--config", configDir, "abcdef").CombinedOutput()

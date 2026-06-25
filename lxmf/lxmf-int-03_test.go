@@ -1124,8 +1124,7 @@ func TestIntegrationPropagationOfferPythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1162,8 +1161,7 @@ func TestIntegrationPropagationOfferInvalidKeyPythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "generate_invalid_offer_request.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfGenerateInvalidOfferRequestPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -1201,8 +1199,7 @@ func TestIntegrationPropagationOfferThrottledPythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 	now := time.Unix(1700000000, 0)
@@ -1231,8 +1228,7 @@ func TestIntegrationPropagationOfferThrottleExpiredPythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1265,8 +1261,7 @@ func TestIntegrationPropagationOfferStaticOnlyPythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 	router.fromStaticOnly = true
@@ -1292,8 +1287,7 @@ func TestIntegrationPropagationOfferStaticAllowedPythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 	router.fromStaticOnly = true
@@ -1321,8 +1315,7 @@ func TestIntegrationPropagationOfferAllKnownPythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1349,8 +1342,7 @@ func TestIntegrationPropagationOfferAllMissingPythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
@@ -1375,8 +1367,7 @@ func TestIntegrationPropagationMessageGetGoToPython(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "run_message_get.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfRunMessageGetPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -1450,8 +1441,7 @@ func TestIntegrationPropagationMessageGetRetryGoToPython(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "run_message_get_retry.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfRunMessageGetRetryPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -1521,8 +1511,7 @@ func TestIntegrationPropagationMessageGetDuplicateAccountingPythonToGo(t *testin
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "run_message_get_duplicate_accounting.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfRunMessageGetDuplicateAccountingPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -1648,8 +1637,7 @@ func TestIntegrationPropagationMessageGetTrueLimitPythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "run_message_get_true_limit.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfRunMessageGetTrueLimitPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -1781,8 +1769,7 @@ func TestIntegrationPropagationMessageGetNegativeLimitPythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "run_message_get_negative_limit.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfRunMessageGetNegativeLimitPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -1887,8 +1874,7 @@ func TestIntegrationPropagationMessageGetFalseLimitPythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "run_message_get_false_limit.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfRunMessageGetFalseLimitPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -1993,8 +1979,7 @@ func TestIntegrationPropagationMessageGetPositiveIntLimitPythonToGo(t *testing.T
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "run_message_get_positive_int_limit.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfRunMessageGetPositiveIntLimitPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -2099,8 +2084,7 @@ func TestIntegrationPropagationMessageGetHugeIntegerLimitPythonToGo(t *testing.T
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "run_message_get_huge_integer_limit.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfRunMessageGetHugeIntegerLimitPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -2247,8 +2231,7 @@ func TestIntegrationPropagationMessageGetStringBytesLimitPythonToGo(t *testing.T
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "run_message_get_string_bytes_limit.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfRunMessageGetStringBytesLimitPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -2406,8 +2389,7 @@ func TestIntegrationPropagationMessageGetPurgeRetryGoToPython(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "run_message_get_purge_retry.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfRunMessageGetPurgeRetryPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -2498,8 +2480,7 @@ func TestIntegrationPropagationMessageGetAccessGoToPython(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "run_message_get_access.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfRunMessageGetAccessPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -2548,8 +2529,7 @@ func TestIntegrationPropagationMessageGetRetryPythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "generate_retry_requests.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfGenerateRetryRequestsPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -2617,8 +2597,7 @@ func TestIntegrationPropagationMessageGetAccessPythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "generate_control_allowed_hashes.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfGenerateControlAllowedHashesPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -2674,8 +2653,7 @@ func TestIntegrationPropagationControlRecoveryGoToPython(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "run_control_recovery.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfRunControlRecoveryPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -2725,8 +2703,7 @@ func TestIntegrationPropagationControlPeerErrorsGoToPython(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "run_control_peer_errors.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfRunControlPeerErrorsPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -2791,8 +2768,7 @@ func TestIntegrationPropagationControlRecoveryPythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "generate_control_peer_hash.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfGenerateControlPeerHashPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -2848,8 +2824,7 @@ func TestIntegrationPropagationControlPeerSyncBackoffPythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "generate_control_peer_hash.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfGenerateControlPeerHashPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -2898,8 +2873,7 @@ func TestIntegrationPropagationControlPeerPrunePythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "generate_two_control_peer_hashes.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfGenerateTwoControlPeerHashesPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -2951,8 +2925,7 @@ func TestIntegrationPropagationControlStatsGoToPython(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "run_control_stats.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfRunControlStatsPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -3008,8 +2981,7 @@ func TestIntegrationPropagationControlStatsPythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "generate_control_allowed_hashes.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfGenerateControlAllowedHashesPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -3057,8 +3029,7 @@ func TestIntegrationPropagationOfferInvalidKeyGoToPython(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "run_offer_invalid_key.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfRunOfferInvalidKeyPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -3091,8 +3062,7 @@ func TestIntegrationPropagationOfferThrottledGoToPython(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "run_offer_throttled.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfRunOfferThrottledPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -3125,8 +3095,7 @@ func TestIntegrationPropagationOfferThrottleExpiredGoToPython(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "run_offer_throttle_expired.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfRunOfferThrottleExpiredPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -3159,8 +3128,7 @@ func TestIntegrationPropagationOfferStaticOnlyGoToPython(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "run_offer_static_only.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfRunOfferStaticOnlyPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -3193,8 +3161,7 @@ func TestIntegrationPropagationOfferStaticAllowedGoToPython(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "run_offer_static_allowed.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfRunOfferStaticAllowedPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -3227,8 +3194,7 @@ func TestIntegrationPropagationOfferAllKnownGoToPython(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "run_offer_all_known.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfRunOfferAllKnownPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -3261,8 +3227,7 @@ func TestIntegrationPropagationOfferAllMissingGoToPython(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "run_offer_all_missing.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfRunOfferAllMissingPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -3295,8 +3260,7 @@ func TestIntegrationPeeringKeyValidationGoToPython(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "validate_peering_key.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfValidatePeeringKeyPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)
@@ -3347,8 +3311,7 @@ func TestIntegrationPeeringKeyValidationPythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	lxmfPath, reticulumPath := requirePythonInteropPaths(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	scriptPath := filepath.Join(tmpDir, "generate_peering_key.py")
 	if err := os.WriteFile(scriptPath, []byte(lxmfGeneratePeeringKeyPy), 0o644); err != nil {
 		t.Fatalf("write python script: %v", err)

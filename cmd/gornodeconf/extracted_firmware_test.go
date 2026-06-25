@@ -77,7 +77,6 @@ func TestExtractedFirmwareStateReadReleaseInfoUsesStateFiles(t *testing.T) {
 func tempExtractedFirmwareDir(t *testing.T) string {
 	t.Helper()
 
-	dir, cleanup := testutils.TempDir(t, "gornodeconf-extracted-*")
-	t.Cleanup(cleanup)
+	dir := testutils.TempDir(t, "gornodeconf-extracted-*")
 	return dir
 }

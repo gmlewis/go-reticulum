@@ -11,6 +11,9 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-func skipShortIntegration(t *testing.T) {
-	testutils.SkipShortIntegration(t)
+func tempTrustKeyHome(t *testing.T) string {
+	t.Helper()
+
+	dir := testutils.TempDir(t, "gornodeconf-trustkey-*")
+	return dir
 }

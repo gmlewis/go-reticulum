@@ -69,7 +69,6 @@ func TestRunEEPROMBackupWritesExpectedMessage(t *testing.T) {
 func tempEEPROMBackupHome(t *testing.T) string {
 	t.Helper()
 
-	dir, cleanup := testutils.TempDir(t, "gornodeconf-eeprom-backup-*")
-	t.Cleanup(cleanup)
+	dir := testutils.TempDir(t, "gornodeconf-eeprom-backup-*")
 	return dir
 }

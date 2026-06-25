@@ -136,8 +136,7 @@ func TestMainUnknownFlagExitCode2(t *testing.T) {
 
 func TestMainInteractiveModeREPL(t *testing.T) {
 	t.Parallel()
-	configDir, cleanup := testutils.TempDir(t, "gornsd-main-interactive-")
-	defer cleanup()
+	configDir := testutils.TempDir(t, "gornsd-main-interactive-")
 	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte("[reticulum]\nshare_instance = No\n\n[interfaces]\n"), 0o600); err != nil {
 		t.Fatalf("write config error: %v", err)
 	}

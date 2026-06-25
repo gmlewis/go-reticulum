@@ -88,8 +88,7 @@ func TestResolveLivePortUsesDiscoveredPort(t *testing.T) {
 func tempSerialDiscoveryDir(t *testing.T) string {
 	t.Helper()
 
-	dir, cleanup := testutils.TempDir(t, "gornodeconf-discovery-*")
-	t.Cleanup(cleanup)
+	dir := testutils.TempDir(t, "gornodeconf-discovery-*")
 	return dir
 }
 

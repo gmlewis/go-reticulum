@@ -191,8 +191,7 @@ func TestWriteToDirectory(t *testing.T) {
 
 	msg := mustTestNewMessage(t, dest, src, "hello", "greet", nil)
 
-	dir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	dir := testutils.TempDir(t, tempDirPrefix)
 	path, err := msg.WriteToDirectory(dir)
 	if err != nil {
 		t.Fatalf("WriteToDirectory error = %v", err)
@@ -247,8 +246,7 @@ func TestUnpackMessageFromFileRestoresContainerState(t *testing.T) {
 	}
 	message.DetermineTransportEncryption()
 
-	dir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	dir := testutils.TempDir(t, tempDirPrefix)
 	path, err := message.WriteToDirectory(dir)
 	if err != nil {
 		t.Fatalf("WriteToDirectory: %v", err)

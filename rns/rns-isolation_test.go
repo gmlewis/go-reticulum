@@ -17,8 +17,7 @@ func TestStackIsolation(t *testing.T) {
 	t.Parallel()
 
 	// Stack A
-	cfgA, cleanupA := testutils.TempDir(t, tempDirPrefix)
-	defer cleanupA()
+	cfgA := testutils.TempDir(t, tempDirPrefix)
 	writeConfig(t, cfgA, "[reticulum]\nshare_instance = No\n")
 	tsA := NewTransportSystem(nil)
 	r1, err := NewReticulum(tsA, cfgA)
@@ -28,8 +27,7 @@ func TestStackIsolation(t *testing.T) {
 	defer closeReticulum(t, r1)
 
 	// Stack B
-	cfgB, cleanupB := testutils.TempDir(t, tempDirPrefix)
-	defer cleanupB()
+	cfgB := testutils.TempDir(t, tempDirPrefix)
 	writeConfig(t, cfgB, "[reticulum]\nshare_instance = No\n")
 	tsB := NewTransportSystem(nil)
 	r2, err := NewReticulum(tsB, cfgB)

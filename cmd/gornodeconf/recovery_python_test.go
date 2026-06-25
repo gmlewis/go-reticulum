@@ -43,8 +43,7 @@ func TestDefaultResolveRecoveryPythonRejectsBrokenOverride(t *testing.T) {
 }
 
 func TestDefaultResolveRecoveryPythonFindsVirtualenvPython(t *testing.T) {
-	dir, cleanup := testutils.TempDir(t, "gornodeconf-recovery-python-*")
-	t.Cleanup(cleanup)
+	dir := testutils.TempDir(t, "gornodeconf-recovery-python-*")
 	venvBin := filepath.Join(dir, "bin")
 	if err := os.MkdirAll(venvBin, 0o755); err != nil {
 		t.Fatalf("MkdirAll(%q): %v", venvBin, err)
@@ -66,8 +65,7 @@ func TestDefaultResolveRecoveryPythonFindsVirtualenvPython(t *testing.T) {
 }
 
 func TestDefaultResolveRecoveryPythonFindsPipxPyserial(t *testing.T) {
-	dir, cleanup := testutils.TempDir(t, "gornodeconf-recovery-python-*")
-	t.Cleanup(cleanup)
+	dir := testutils.TempDir(t, "gornodeconf-recovery-python-*")
 
 	venvBase := filepath.Join(dir, "venvs")
 	python := filepath.Join(venvBase, "pyserial", "bin", "python")
@@ -147,8 +145,7 @@ func TestPrepareRecoveryEsptoolCommandLeavesDirectCommandUntouched(t *testing.T)
 func fakeRecoveryPython(t *testing.T, exitCode int) string {
 	t.Helper()
 
-	dir, cleanup := testutils.TempDir(t, "gornodeconf-fake-python-*")
-	t.Cleanup(cleanup)
+	dir := testutils.TempDir(t, "gornodeconf-fake-python-*")
 	path := filepath.Join(dir, "python3")
 	writeFakeRecoveryPython(t, path, exitCode)
 	return path

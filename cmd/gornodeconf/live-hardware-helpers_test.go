@@ -79,7 +79,6 @@ func liveHardwareTempPath(t *testing.T, prefix, name string) string {
 func liveHardwareTempDir(t *testing.T, prefix string) string {
 	t.Helper()
 
-	dir, cleanup := testutils.TempDir(t, prefix)
-	t.Cleanup(cleanup)
+	dir := testutils.TempDir(t, prefix)
 	return dir
 }

@@ -403,8 +403,7 @@ func TestIntegratedResponseResourceCompressionPolicyPythonToGo(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-policy-py2go-*")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "go-reticulum-policy-py2go-*")
 
 			pyListenPort, goListenPort := allocateUDPPortPair(t)
 

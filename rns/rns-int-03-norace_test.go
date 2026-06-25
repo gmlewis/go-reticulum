@@ -36,8 +36,7 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-policy-go2py-*")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "go-reticulum-policy-go2py-*")
 
 			pyListenPort, goListenPort := allocateUDPPortPair(t)
 

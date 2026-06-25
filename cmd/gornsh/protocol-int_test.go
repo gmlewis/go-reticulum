@@ -26,8 +26,7 @@ func TestProtocolPayloadParityWithPython(t *testing.T) {
 		t.Skip("python3 not found")
 	}
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	payloadPath := filepath.Join(tmpDir, "payload.msgpack")
 
 	executePayload, err := msgpack.Pack([]any{[]any{"/bin/sh", "-lc", "echo hi"}, true, false, true, nil, "xterm", 24, 80, nil, nil})
@@ -68,8 +67,7 @@ func TestErrorExitOrderingPayloadParityWithPython(t *testing.T) {
 		t.Skip("python3 not found")
 	}
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	payloadPath := filepath.Join(tmpDir, "ordered.msgpack")
 
 	warnPayload, err := (&errorMessage{Message: "temporary issue", Fatal: false, Data: nil}).pack()
@@ -148,8 +146,7 @@ func TestRetryMetadataAndExitPayloadParityWithPython(t *testing.T) {
 		t.Skip("python3 not found")
 	}
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	payloadPath := filepath.Join(tmpDir, "retry_ordered.msgpack")
 
 	retryPayload, err := (&errorMessage{

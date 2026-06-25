@@ -834,8 +834,7 @@ if __name__ == "__main__":
 func TestIntegratedHandshakeGoToPython(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-integrated-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-integrated-*")
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -984,8 +983,7 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-large-request-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-large-request-*")
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -1124,8 +1122,7 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 func TestIntegratedHandshakePythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-integrated-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-integrated-*")
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -1227,8 +1224,7 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-large-py-to-go-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-large-py-to-go-*")
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -1309,8 +1305,7 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-integrated-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-integrated-*")
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -1413,8 +1408,7 @@ func TestIntegratedPathInvalidationRediscoveryGoToPython(t *testing.T) {
 func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-*")
 
 	goListenPort, requesterPort := allocateUDPPortPair(t)
 
@@ -1496,8 +1490,7 @@ func TestIntegratedPathResponsePacketMetadataUDP(t *testing.T) {
 func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-*")
 
 	goListenPort, sinkPort := allocateUDPPortPair(t)
 
@@ -1593,8 +1586,7 @@ func TestIntegratedMultiHopHeader2ForwardingUDP(t *testing.T) {
 func TestIntegratedPathResponseAnnounceNotRebroadcastUDP(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-pathresp-norebroadcast-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-pathresp-norebroadcast-*")
 
 	ingressListenPort := allocateUDPPort(t)
 	ingressForwardPort := allocateUDPPort(t)
@@ -1677,8 +1669,7 @@ enable_transport = False
 func TestIntegratedRelayedPathResponsePropagationUDP(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-pathresp-relay-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-pathresp-relay-*")
 
 	relayIngressListenPort := allocateUDPPort(t)
 	relayEgressListenPort := allocateUDPPort(t)
@@ -1830,8 +1821,7 @@ enable_transport = False
 func TestIntegratedRelayedPathResponsePropagationPythonRequesterUDP(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-pathresp-python-requester-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-pathresp-python-requester-*")
 
 	pyListenPort := allocateUDPPort(t)
 	relayIngressListenPort := allocateUDPPort(t)
@@ -1984,8 +1974,7 @@ enable_transport = False
 func TestIntegratedRelayedPathResponsePropagationPythonRelayUDP(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-pathresp-python-relay-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-pathresp-python-relay-")
 
 	pyIngressListenPort := allocateUDPPort(t)
 	requesterPort := allocateUDPPort(t)
@@ -2160,8 +2149,7 @@ func TestIntegratedRelayedPathResponsePropagationPythonRelayUDP(t *testing.T) {
 func TestIntegratedAnnouncePropagationPythonRelayUDP(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-announce-python-relay-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-announce-python-relay-")
 
 	pyIngressListenPort := allocateUDPPort(t)
 	requesterPort := allocateUDPPort(t)
@@ -2321,8 +2309,7 @@ func TestIntegratedAnnouncePropagationPythonRelayUDP(t *testing.T) {
 func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-path-invalidate-py-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-path-invalidate-py-")
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -2432,8 +2419,7 @@ func TestIntegratedPathInvalidationRediscoveryPythonToGo(t *testing.T) {
 func TestIntegratedRelayedPathResponseGoRequesterToPythonTargetUDP(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-pathresp-go-relay-python-target-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-pathresp-go-relay-python-target-")
 
 	pyListenPort := allocateUDPPort(t)
 	relayEgressListenPort := allocateUDPPort(t)
@@ -2589,8 +2575,7 @@ enable_transport = False
 func TestIntegratedPythonRelayPathRequestEmissionUDP(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-python-relay-pr-emitter-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-python-relay-pr-emitter-")
 
 	pyIngressListenPort := allocateUDPPort(t)
 	requesterPort := allocateUDPPort(t)
@@ -2709,8 +2694,7 @@ waitPacket:
 func TestIntegratedPythonRelayInboundPathRequestForwardingUDP(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-python-relay-inbound-forward-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-python-relay-inbound-forward-")
 
 	pyRelayIngressListenPort := allocateUDPPort(t)
 	pyRequesterListenPort := allocateUDPPort(t)

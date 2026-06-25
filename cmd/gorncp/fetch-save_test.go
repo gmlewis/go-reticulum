@@ -3,6 +3,8 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
+//go:build integration
+
 package main
 
 import (
@@ -21,14 +23,10 @@ func TestFetchModeSavesReceivedFiles(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
 	// Create temp directories
-	listenerDir, cleanup1 := testutils.TempDir(t, "gorncp-test-")
-	defer cleanup1()
-	fetcherDir, cleanup2 := testutils.TempDir(t, "gorncp-test-")
-	defer cleanup2()
-	saveDir, cleanup3 := testutils.TempDir(t, "gorncp-test-")
-	defer cleanup3()
-	testFileDir, cleanup4 := testutils.TempDir(t, "gorncp-test-")
-	defer cleanup4()
+	listenerDir := testutils.TempDir(t, "gorncp-test-")
+	fetcherDir := testutils.TempDir(t, "gorncp-test-")
+	saveDir := testutils.TempDir(t, "gorncp-test-")
+	testFileDir := testutils.TempDir(t, "gorncp-test-")
 
 	// Create test file on listener side
 	testContent := []byte("Hello from listener!")

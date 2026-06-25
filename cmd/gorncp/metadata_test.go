@@ -19,8 +19,7 @@ const tempDirPrefix = "gorncp-test-"
 func TestResourceMetadataInOptions(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	// Create a test file
 	testFile := filepath.Join(tmpDir, "test.txt")

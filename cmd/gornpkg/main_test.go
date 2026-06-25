@@ -17,8 +17,7 @@ import (
 const tempDirPrefix = "gornpkg-test-"
 
 func TestInitReticulumUsesVerbosityMinusQuietness(t *testing.T) {
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	logger := rns.NewLogger()
 	var originalLevel = logger.GetLogLevel()
@@ -64,8 +63,7 @@ func TestInitReticulumUsesVerbosityMinusQuietness(t *testing.T) {
 }
 
 func TestInitReticulumForwardsConfigDirAndClosesReticulum(t *testing.T) {
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	if err := os.WriteFile(filepath.Join(tmpDir, "config"), []byte("[reticulum]\nshare_instance = No\n"), 0o600); err != nil {
 		t.Fatalf("write config error: %v", err)
 	}

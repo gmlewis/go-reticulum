@@ -19,25 +19,23 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-func buildGolxmd(t *testing.T) (string, func()) {
+func buildGolxmd(t *testing.T) string {
 	t.Helper()
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	bin := filepath.Join(tmpDir, "golxmd")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Dir = "."
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		cleanup()
 		t.Fatalf("failed to build golxmd: %v\n%v", err, string(out))
 	}
-	return bin, cleanup
+	return bin
 }
 
 func TestGolxmd_Version(t *testing.T) {
 	t.Parallel()
 	skipShortIntegration(t)
-	golxmdBin, cleanup := buildGolxmd(t)
-	defer cleanup()
+	golxmdBin := buildGolxmd(t)
 
 	out, err := exec.Command(golxmdBin, "--version").CombinedOutput()
 	if err != nil {
@@ -53,8 +51,7 @@ func TestGolxmd_Version(t *testing.T) {
 func TestGolxmd_ExampleConfig(t *testing.T) {
 	t.Parallel()
 	skipShortIntegration(t)
-	golxmdBin, cleanup := buildGolxmd(t)
-	defer cleanup()
+	golxmdBin := buildGolxmd(t)
 
 	out, err := exec.Command(golxmdBin, "--exampleconfig").CombinedOutput()
 	if err != nil {
@@ -82,8 +79,7 @@ func TestGolxmd_ExampleConfig(t *testing.T) {
 func TestGolxmd_Help(t *testing.T) {
 	t.Parallel()
 	skipShortIntegration(t)
-	golxmdBin, cleanup := buildGolxmd(t)
-	defer cleanup()
+	golxmdBin := buildGolxmd(t)
 
 	out, err := exec.Command(golxmdBin, "-h").CombinedOutput()
 	if err != nil {
@@ -114,8 +110,7 @@ func TestGolxmd_Help(t *testing.T) {
 func TestGolxmd_LongFormParserAliases(t *testing.T) {
 	t.Parallel()
 	skipShortIntegration(t)
-	golxmdBin, cleanup := buildGolxmd(t)
-	defer cleanup()
+	golxmdBin := buildGolxmd(t)
 
 	out, err := exec.Command(golxmdBin, "--verbose", "--quiet", "--exampleconfig").CombinedOutput()
 	if err != nil {
@@ -131,10 +126,8 @@ func TestGolxmd_LongFormParserAliases(t *testing.T) {
 func TestGolxmd_Status_WithNoRemote(t *testing.T) {
 	t.Parallel()
 	skipShortIntegration(t)
-	golxmdBin, cleanup := buildGolxmd(t)
-	defer cleanup()
-	tmpDir, tmpCleanup := testutils.TempDir(t, tempDirPrefix)
-	defer tmpCleanup()
+	golxmdBin := buildGolxmd(t)
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	// Create a minimal config
 	configDir := filepath.Join(tmpDir, "config")
@@ -174,10 +167,8 @@ func TestGolxmd_Status_WithNoRemote(t *testing.T) {
 func TestGolxmd_Break_WithInvalidHash(t *testing.T) {
 	t.Parallel()
 	skipShortIntegration(t)
-	golxmdBin, cleanup := buildGolxmd(t)
-	defer cleanup()
-	tmpDir, tmpCleanup := testutils.TempDir(t, tempDirPrefix)
-	defer tmpCleanup()
+	golxmdBin := buildGolxmd(t)
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	// Create a minimal config
 	configDir := filepath.Join(tmpDir, "config")
@@ -211,10 +202,8 @@ func TestGolxmd_Break_WithInvalidHash(t *testing.T) {
 func TestGolxmd_Sync_WithInvalidHash(t *testing.T) {
 	t.Parallel()
 	skipShortIntegration(t)
-	golxmdBin, cleanup := buildGolxmd(t)
-	defer cleanup()
-	tmpDir, tmpCleanup := testutils.TempDir(t, tempDirPrefix)
-	defer tmpCleanup()
+	golxmdBin := buildGolxmd(t)
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	// Create a minimal config
 	configDir := filepath.Join(tmpDir, "config")
@@ -248,10 +237,8 @@ func TestGolxmd_Sync_WithInvalidHash(t *testing.T) {
 func TestGolxmd_Status_OutputFormat(t *testing.T) {
 	t.Parallel()
 	skipShortIntegration(t)
-	golxmdBin, cleanup := buildGolxmd(t)
-	defer cleanup()
-	tmpDir, tmpCleanup := testutils.TempDir(t, tempDirPrefix)
-	defer tmpCleanup()
+	golxmdBin := buildGolxmd(t)
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	// Create a minimal config
 	configDir := filepath.Join(tmpDir, "config")
@@ -293,10 +280,8 @@ func TestGolxmd_Status_OutputFormat(t *testing.T) {
 func TestGolxmd_Status_WithShowStatusFlag(t *testing.T) {
 	t.Parallel()
 	skipShortIntegration(t)
-	golxmdBin, cleanup := buildGolxmd(t)
-	defer cleanup()
-	tmpDir, tmpCleanup := testutils.TempDir(t, tempDirPrefix)
-	defer tmpCleanup()
+	golxmdBin := buildGolxmd(t)
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	// Create a minimal config
 	configDir := filepath.Join(tmpDir, "config")
@@ -340,10 +325,8 @@ func TestGolxmd_Status_WithShowStatusFlag(t *testing.T) {
 func TestGolxmd_Peers_OutputFormat(t *testing.T) {
 	t.Parallel()
 	skipShortIntegration(t)
-	golxmdBin, cleanup := buildGolxmd(t)
-	defer cleanup()
-	tmpDir, tmpCleanup := testutils.TempDir(t, tempDirPrefix)
-	defer tmpCleanup()
+	golxmdBin := buildGolxmd(t)
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	// Create a minimal config
 	configDir := filepath.Join(tmpDir, "config")
@@ -397,10 +380,8 @@ func TestGolxmd_Peers_OutputFormat(t *testing.T) {
 func TestGolxmd_Break_Timeout(t *testing.T) {
 	t.Parallel()
 	skipShortIntegration(t)
-	golxmdBin, cleanup := buildGolxmd(t)
-	defer cleanup()
-	tmpDir, tmpCleanup := testutils.TempDir(t, tempDirPrefix)
-	defer tmpCleanup()
+	golxmdBin := buildGolxmd(t)
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	// Create a minimal config
 	configDir := filepath.Join(tmpDir, "config")

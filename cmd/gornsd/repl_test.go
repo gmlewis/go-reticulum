@@ -60,8 +60,7 @@ func TestReplCmdVersion(t *testing.T) {
 }
 
 func TestReplCmdStatus(t *testing.T) {
-	configDir, cleanup := testutils.TempDir(t, "gornsd-repl-status-")
-	defer cleanup()
+	configDir := testutils.TempDir(t, "gornsd-repl-status-")
 	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte("[reticulum]\nshare_instance = No\n\n[interfaces]\n"), 0o600); err != nil {
 		t.Fatalf("write config error: %v", err)
 	}
@@ -91,8 +90,7 @@ func TestReplCmdStatus(t *testing.T) {
 	})
 
 	t.Run("shared and connected instances", func(t *testing.T) {
-		sharedConfigDir, sharedCleanup := testutils.TempDir(t, "gornsd-repl-shared-")
-		defer sharedCleanup()
+		sharedConfigDir := testutils.TempDir(t, "gornsd-repl-shared-")
 		sharedPort := reserveTCPPort(t)
 		rpcPort := reserveTCPPort(t)
 		config := fmt.Sprintf(`[reticulum]

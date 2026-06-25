@@ -95,7 +95,6 @@ func TestLoadCachedFirmwareReleaseInfoMissingFirmwareFile(t *testing.T) {
 func tempCachedFirmwareDir(t *testing.T) string {
 	t.Helper()
 
-	dir, cleanup := testutils.TempDir(t, "gornodeconf-cached-firmware-*")
-	t.Cleanup(cleanup)
+	dir := testutils.TempDir(t, "gornodeconf-cached-firmware-*")
 	return dir
 }

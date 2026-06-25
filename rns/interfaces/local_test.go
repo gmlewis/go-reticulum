@@ -39,8 +39,7 @@ func TestLocalUnixServerClientLifecycleAndRestart(t *testing.T) {
 		received <- data
 	}
 
-	tmp, cleanup := testutils.TempDir(t, "go-ret-local-*")
-	defer cleanup()
+	tmp := testutils.TempDir(t, "go-ret-local-*")
 
 	socketPath := filepath.Join(tmp, "local.sock")
 
@@ -124,8 +123,7 @@ func TestLocalServerRemovesStaleSocketPath(t *testing.T) {
 		t.Skip("unix sockets not supported on windows")
 	}
 
-	tmp, cleanup := testutils.TempDir(t, "go-ret-local-stale-*")
-	defer cleanup()
+	tmp := testutils.TempDir(t, "go-ret-local-stale-*")
 
 	socketPath := filepath.Join(tmp, "stale.sock")
 
@@ -149,8 +147,7 @@ func TestLocalServerRejectsTakeoverWhenSocketActive(t *testing.T) {
 		t.Skip("unix sockets not supported on windows")
 	}
 
-	tmp, cleanup := testutils.TempDir(t, "go-ret-local-active-*")
-	defer cleanup()
+	tmp := testutils.TempDir(t, "go-ret-local-active-*")
 
 	socketPath := filepath.Join(tmp, "active.sock")
 

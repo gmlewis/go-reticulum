@@ -34,11 +34,6 @@ type tempDirTB interface {
 	Fatalf(format string, args ...any)
 }
 
-type cleanupTB interface {
-	tempDirTB
-	Cleanup(func())
-}
-
 func tempBaseDir() string {
 	if runtime.GOOS == "darwin" {
 		return "/tmp"
@@ -46,25 +41,10 @@ func tempBaseDir() string {
 	return ""
 }
 
-// TempDir creates a temporary directory for a test and returns a cleanup
-// function that removes it.
-func TempDir(t *testing.T, prefix string) (string, func()) {
-	return tempDir(t, prefix)
-}
-
-// TempDirBench creates a temporary directory for a benchmark and returns a cleanup
-// function that removes it.
-func TempDirBench(b *testing.B, prefix string) (string, func()) {
-	return tempDir(b, prefix)
-}
-
-// TempDirMain creates a temporary directory for a TestMain suite and returns a cleanup
-// function that removes it.
-func TempDirMain(prefix string) (string, func()) {
-	return tempDir(testMainTB{}, prefix)
-}
-
-func tempDir(t tempDirTB, prefix string) (string, func()) {
+// TempDir creates a temporary directory for a test. Cleanup is registered
+// via t.Cleanup so it runs after other cleanup functions (e.g. router.Close)
+// that may have been registered later during the test.
+func TempDir(t *testing.T, prefix string) string {
 	t.Helper()
 
 	dir, err := os.MkdirTemp(tempBaseDir(), prefix)
@@ -72,21 +52,47 @@ func tempDir(t tempDirTB, prefix string) (string, func()) {
 		t.Fatalf("TempDir error: %v", err)
 	}
 
-	cleanup := func() {
+	t.Cleanup(func() {
 		if err := removeAllWithRetry(dir); err != nil {
 			t.Fatalf("os.RemoveAll: %v", err)
 		}
+	})
+
+	return dir
+}
+
+// TempDirBench creates a temporary directory for a benchmark. Cleanup is
+// registered via b.Cleanup so it runs after other cleanup functions.
+func TempDirBench(b *testing.B, prefix string) string {
+	b.Helper()
+
+	dir, err := os.MkdirTemp(tempBaseDir(), prefix)
+	if err != nil {
+		b.Fatalf("TempDir error: %v", err)
 	}
 
-	// When the testing object supports t.Cleanup (i.e. *testing.T or
-	// *testing.B), register the cleanup there so it runs AFTER all other
-	// t.Cleanup functions registered later (e.g. router.Close). This
-	// prevents the directory from being removed while resources that
-	// wrote into it are still active. The returned func is a no-op in
-	// that case; callers can safely `defer` it without double-removing.
-	if ct, ok := t.(cleanupTB); ok {
-		ct.Cleanup(cleanup)
-		return dir, func() {}
+	b.Cleanup(func() {
+		if err := removeAllWithRetry(dir); err != nil {
+			b.Fatalf("os.RemoveAll: %v", err)
+		}
+	})
+
+	return dir
+}
+
+// TempDirMain creates a temporary directory for a TestMain suite and returns
+// a cleanup function that removes it. Unlike TempDir, this does not use
+// t.Cleanup since TestMain has no testing.T.
+func TempDirMain(prefix string) (string, func()) {
+	dir, err := os.MkdirTemp(tempBaseDir(), prefix)
+	if err != nil {
+		log.Fatalf("TempDir error: %v", err)
+	}
+
+	cleanup := func() {
+		if err := removeAllWithRetry(dir); err != nil {
+			log.Fatalf("os.RemoveAll: %v", err)
+		}
 	}
 
 	return dir, cleanup
@@ -114,18 +120,17 @@ func isRetriableRemoveAllError(err error) bool {
 	return errors.Is(err, syscall.ENOTEMPTY) || errors.Is(err, syscall.EBUSY)
 }
 
-// TempDirWithConfig creates a temporary directory containing a config file and
-// returns a cleanup function that removes it.
-func TempDirWithConfig(t *testing.T, prefix string, config func(dir string) string) (string, func()) {
+// TempDirWithConfig creates a temporary directory containing a config file.
+// Cleanup is registered via t.Cleanup.
+func TempDirWithConfig(t *testing.T, prefix string, config func(dir string) string) string {
 	t.Helper()
 
-	dir, cleanup := TempDir(t, prefix)
+	dir := TempDir(t, prefix)
 	if err := os.WriteFile(filepath.Join(dir, "config"), []byte(config(dir)), 0o600); err != nil {
-		cleanup()
 		t.Fatalf("TempDirWithConfig error: %v", err)
 	}
 
-	return dir, cleanup
+	return dir
 }
 
 // SkipShortIntegration skips integration-heavy tests when testing.Short is set.

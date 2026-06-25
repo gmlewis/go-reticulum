@@ -38,8 +38,7 @@ func TestNewLoggerDefaultsAndMutation(t *testing.T) {
 		t.Fatal("GetLogCallback() = non-nil, want nil")
 	}
 
-	tmpDir, cleanup := testutils.TempDir(t, "logger-test-defaults-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "logger-test-defaults-")
 	logPath := filepath.Join(tmpDir, "logfile")
 
 	logger.SetAlwaysOverride(true)
@@ -94,8 +93,7 @@ func TestNewLoggerWritesToCallbackAndFile(t *testing.T) {
 		t.Fatalf("callback output = %q, want message containing %q", got, "callback message")
 	}
 
-	tmpDir, cleanup := testutils.TempDir(t, "logger-test-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "logger-test-")
 
 	logPath := filepath.Join(tmpDir, "logfile")
 	logger.SetLogFilePath(logPath)

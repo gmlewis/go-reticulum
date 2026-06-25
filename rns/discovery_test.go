@@ -61,8 +61,7 @@ func startSocatLinkedPTYPair(t *testing.T) (string, string) {
 		t.Skip("socat not installed")
 	}
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-pty-")
-	t.Cleanup(cleanup)
+	tmpDir := testutils.TempDir(t, "rns-discovery-pty-")
 
 	left := filepath.Join(tmpDir, "pty0")
 	right := filepath.Join(tmpDir, "pty1")
@@ -119,8 +118,7 @@ func (i *bootstrapConstructorTestInterface) Detach() error {
 func runBootstrapReenableConstructorTest(t *testing.T, config, wantType string) {
 	t.Helper()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
@@ -239,8 +237,7 @@ func (i *panicTargetHostTestInterface) TargetPort() int    { return 0 }
 
 func TestListDiscoveredInterfaces(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -313,8 +310,7 @@ func normalizeDiscoveryFixtureTimes(t *testing.T, data []byte) []byte {
 
 func TestListDiscoveredInterfaces_StatusThresholds(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-status-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-status-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -396,8 +392,7 @@ func TestListDiscoveredInterfaces_StatusThresholds(t *testing.T) {
 func TestListDiscoveredInterfaces_SourceAndReachableFiltering(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-filter-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-filter-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -475,8 +470,7 @@ func TestListDiscoveredInterfaces_SourceAndReachableFiltering(t *testing.T) {
 func TestListDiscoveredInterfaces_CorruptNonMapFileLogsAndRemains(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-corrupt-list-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-corrupt-list-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -535,8 +529,7 @@ func TestListDiscoveredInterfaces_CorruptNonMapFileLogsAndRemains(t *testing.T) 
 func TestListDiscoveredInterfaces_CorruptDirectoryLogsAndRemains(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-corrupt-dir-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-corrupt-dir-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -595,8 +588,7 @@ func TestListDiscoveredInterfaces_CorruptDirectoryLogsAndRemains(t *testing.T) {
 func TestListDiscoveredInterfaces_MissingLastHeardLogsAndRemains(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-missing-last-heard-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-missing-last-heard-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -657,8 +649,7 @@ func TestListDiscoveredInterfaces_MissingLastHeardLogsAndRemains(t *testing.T) {
 func TestListDiscoveredInterfaces_BinaryMapKeysLogPythonKeyErrorAndRemain(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-bytes-map-keys-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-map-keys-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -718,8 +709,7 @@ func TestListDiscoveredInterfaces_BinaryMapKeysLogPythonKeyErrorAndRemain(t *tes
 func TestListDiscoveredInterfaces_TrailingGarbageLoadsLikePython(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-trailing-garbage-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-trailing-garbage-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -766,8 +756,7 @@ func TestListDiscoveredInterfaces_InvalidMsgpackLogsPythonErrorsAndRemains(t *te
 		{name: "truncated map", raw: truncatedMap[:len(truncatedMap)-1], wantLog: "error while loading discovered interface data: "},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-invalid-msgpack-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-invalid-msgpack-")
 			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 			if err := os.MkdirAll(storagePath, 0o755); err != nil {
 				t.Fatalf("failed to create storage path: %v", err)
@@ -813,8 +802,7 @@ func TestListDiscoveredInterfaces_InvalidMsgpackLogsPythonErrorsAndRemains(t *te
 func TestListDiscoveredInterfaces_BoolLastHeardExpiresAndRemoves(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-bool-last-heard-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-bool-last-heard-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -872,8 +860,7 @@ func TestListDiscoveredInterfaces_BoolLastHeardExpiresAndRemoves(t *testing.T) {
 func TestListDiscoveredInterfaces_BoolValueSortsLikePython(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-bool-value-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-bool-value-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -925,8 +912,7 @@ func TestListDiscoveredInterfaces_BoolValueSortsLikePython(t *testing.T) {
 func TestListDiscoveredInterfaces_FloatValueSortsLikePython(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-float-value-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-float-value-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -973,8 +959,7 @@ func TestListDiscoveredInterfaces_FloatValueSortsLikePython(t *testing.T) {
 func TestListDiscoveredInterfaces_BytesValueSortsLikePython(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-bytes-value-sort-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-value-sort-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -1021,8 +1006,7 @@ func TestListDiscoveredInterfaces_BytesValueSortsLikePython(t *testing.T) {
 func TestListDiscoveredInterfaces_ListValueSortsLikePython(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-list-value-sort-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-list-value-sort-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -1069,8 +1053,7 @@ func TestListDiscoveredInterfaces_ListValueSortsLikePython(t *testing.T) {
 func TestListDiscoveredInterfaces_StringValueSingleEntryDoesNotFail(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-string-value-single-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-string-value-single-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -1118,8 +1101,7 @@ func TestListDiscoveredInterfaces_StringValueSingleEntryDoesNotFail(t *testing.T
 func TestListDiscoveredInterfaces_StringValueSortsLikePython(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-string-value-sort-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-string-value-sort-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -1166,8 +1148,7 @@ func TestListDiscoveredInterfaces_StringValueSortsLikePython(t *testing.T) {
 func TestListDiscoveredInterfaces_MixedStringAndIntegerValueReturnsError(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-mixed-value-sort-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-mixed-value-sort-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -1204,8 +1185,7 @@ func TestListDiscoveredInterfaces_MixedStringAndIntegerValueReturnsError(t *test
 func TestListDiscoveredInterfaces_MixedBytesAndStringValueReturnsPythonError(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-mixed-bytes-string-sort-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-mixed-bytes-string-sort-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -1245,8 +1225,7 @@ func TestListDiscoveredInterfaces_MixedBytesAndStringValueReturnsPythonError(t *
 func TestListDiscoveredInterfaces_DictValuePairReturnsPythonError(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-dict-value-sort-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-dict-value-sort-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -1338,8 +1317,7 @@ func TestListDiscoveredInterfaces_MoreMixedValueErrorsMatchPython(t *testing.T) 
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-more-mixed-value-sort-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-more-mixed-value-sort-")
 			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 			if err := os.MkdirAll(storagePath, 0o755); err != nil {
 				t.Fatalf("failed to create storage path: %v", err)
@@ -1370,8 +1348,7 @@ func TestListDiscoveredInterfaces_MoreMixedValueErrorsMatchPython(t *testing.T) 
 func TestListDiscoveredInterfaces_NilValueSortsByLastHeard(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-nil-value-sort-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-nil-value-sort-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -1418,8 +1395,7 @@ func TestListDiscoveredInterfaces_NilValueSortsByLastHeard(t *testing.T) {
 func TestListDiscoveredInterfaces_BoolDiscoveredUsesPythonNumericSemantics(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-bool-discovered-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-bool-discovered-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -1453,8 +1429,7 @@ func TestListDiscoveredInterfaces_BoolDiscoveredUsesPythonNumericSemantics(t *te
 func TestListDiscoveredInterfaces_BoolPortUsesPythonNumericSemantics(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-bool-port-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-bool-port-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -1493,8 +1468,7 @@ func TestListDiscoveredInterfaces_BoolPortUsesPythonNumericSemantics(t *testing.
 func TestListDiscoveredInterfaces_NonIntegralFloatPortDoesNotDeduplicateAgainstIntegerHost(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-float-port-dedupe-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-float-port-dedupe-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -1534,8 +1508,7 @@ func TestListDiscoveredInterfaces_NonIntegralFloatPortDoesNotDeduplicateAgainstI
 func TestListDiscoveredInterfaces_EmptyReachableOnLogsAndRemains(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-empty-reachable-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-empty-reachable-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -1599,8 +1572,7 @@ func TestListDiscoveredInterfaces_EmptyReachableOnLogsAndRemains(t *testing.T) {
 func TestListDiscoveredInterfaces_BytesReachableOnLogsAndRemains(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-bytes-reachable-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-reachable-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -1679,8 +1651,7 @@ func TestListDiscoveredInterfaces_MoreInvalidReachableOnLogsPythonErrorsAndRemai
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-invalid-reachable-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-invalid-reachable-")
 			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 			if err := os.MkdirAll(storagePath, 0o755); err != nil {
 				t.Fatalf("failed to create storage path: %v", err)
@@ -1746,8 +1717,7 @@ func TestListDiscoveredInterfaces_MoreInvalidReachableOnLogsPythonErrorsAndRemai
 func TestListDiscoveredInterfaces_IntegerReachableOnRemainsAvailable(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-int-reachable-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-int-reachable-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -1788,8 +1758,7 @@ func TestListDiscoveredInterfaces_IntegerReachableOnRemainsAvailable(t *testing.
 func TestListDiscoveredInterfaces_BoolReachableOnRemainsAvailable(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-bool-reachable-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-bool-reachable-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -1830,8 +1799,7 @@ func TestListDiscoveredInterfaces_BoolReachableOnRemainsAvailable(t *testing.T) 
 func TestListDiscoveredInterfaces_InvalidNetworkIDTypeLogsAndRemains(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-network-id-type-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-network-id-type-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -1899,8 +1867,7 @@ func TestListDiscoveredInterfaces_InvalidNetworkIDTypeLogsAndRemains(t *testing.
 func TestListDiscoveredInterfaces_BytesNetworkIDLogsPythonTypeErrorAndRemains(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-network-id-bytes-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-network-id-bytes-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -1981,8 +1948,7 @@ func TestListDiscoveredInterfaces_InvalidNetworkIDHexLogsPythonValueErrorsAndRem
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-network-id-hex-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-network-id-hex-")
 			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 			if err := os.MkdirAll(storagePath, 0o755); err != nil {
 				t.Fatalf("failed to create storage path: %v", err)
@@ -2052,8 +2018,7 @@ func TestListDiscoveredInterfaces_InvalidNetworkIDHexLogsPythonValueErrorsAndRem
 func TestListDiscoveredInterfaces_OnlyTransportMissingTransportLogsAndRemains(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-missing-transport-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-missing-transport-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -2116,8 +2081,7 @@ func TestListDiscoveredInterfaces_OnlyTransportMissingTransportLogsAndRemains(t 
 func TestListDiscoveredInterfaces_OnlyAvailableMissingTransportLogsAndRemains(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-only-available-transport-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-only-available-transport-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -2183,8 +2147,7 @@ func TestListDiscoveredInterfaces_OnlyAvailableIgnoresFalseyTransportValues(t *t
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-only-available-falsey-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-only-available-falsey-")
 			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 			if err := os.MkdirAll(storagePath, 0o755); err != nil {
 				t.Fatalf("failed to create storage path: %v", err)
@@ -2235,8 +2198,7 @@ func TestListDiscoveredInterfaces_OnlyAvailableIgnoresFalseyTransportValues(t *t
 func TestListDiscoveredInterfaces_OnlyAvailableAllowsNilTransport(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-only-available-nil-transport-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-only-available-nil-transport-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -2291,8 +2253,7 @@ func TestListDiscoveredInterfaces_OnlyAvailableAllowsNilTransport(t *testing.T) 
 func TestListDiscoveredInterfaces_OnlyTransportNilTransportSkipsWithoutLog(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-only-transport-nil-transport-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-only-transport-nil-transport-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -2341,8 +2302,7 @@ func TestListDiscoveredInterfaces_OnlyTransportNilTransportSkipsWithoutLog(t *te
 func TestListDiscoveredInterfaces_OnlyTransportIncludesTruthyStringTransport(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-string-transport-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-string-transport-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -2379,8 +2339,7 @@ func TestListDiscoveredInterfaces_OnlyTransportIncludesTruthyStringTransport(t *
 func TestListDiscoveredInterfaces_OnlyTransportUsesContainerTruthiness(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-container-transport-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-container-transport-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -2428,8 +2387,7 @@ func TestListDiscoveredInterfaces_OnlyTransportUsesContainerTruthiness(t *testin
 func TestListDiscoveredInterfaces_MissingValueReturnsErrorAndRemains(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-missing-value-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-missing-value-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -2465,8 +2423,7 @@ func TestListDiscoveredInterfaces_MissingValueReturnsErrorAndRemains(t *testing.
 func TestListDiscoveredInterfaces_PresentNilNameDisplaysAsPythonNone(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-none-name-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-none-name-")
 
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -2499,8 +2456,7 @@ func TestListDiscoveredInterfaces_PresentNilNameDisplaysAsPythonNone(t *testing.
 func TestListDiscoveredInterfaces_MissingNameAndTypeDisplayAsEmptyStrings(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-missing-name-type-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-missing-name-type-")
 
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -2535,8 +2491,7 @@ func TestListDiscoveredInterfaces_MissingNameAndTypeDisplayAsEmptyStrings(t *tes
 func TestListDiscoveredInterfaces_NilTypeAndConfigEntryDisplayAsPythonNone(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-none-type-config-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-none-type-config-")
 
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -2574,8 +2529,7 @@ func TestListDiscoveredInterfaces_NilTypeAndConfigEntryDisplayAsPythonNone(t *te
 func TestListDiscoveredInterfaces_BytesNameAndTypeDisplayAsPythonBytes(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-bytes-name-type-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-name-type-")
 
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -2612,8 +2566,7 @@ func TestListDiscoveredInterfaces_BytesNameAndTypeDisplayAsPythonBytes(t *testin
 func TestListDiscoveredInterfaces_ListTransportIDDisplaysAsPythonList(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-list-transport-id-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-list-transport-id-")
 
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -2648,8 +2601,7 @@ func TestListDiscoveredInterfaces_ListTransportIDDisplaysAsPythonList(t *testing
 func TestListDiscoveredInterfaces_CompositeNameAndTypeDisplayAsPythonRepr(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-composite-name-type-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-composite-name-type-")
 
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -2686,8 +2638,7 @@ func TestListDiscoveredInterfaces_CompositeNameAndTypeDisplayAsPythonRepr(t *tes
 func TestListDiscoveredInterfaces_BytesTransportIDDisplaysAsPythonBytes(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-bytes-transport-id-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-transport-id-")
 
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -2722,8 +2673,7 @@ func TestListDiscoveredInterfaces_BytesTransportIDDisplaysAsPythonBytes(t *testi
 func TestListDiscoveredInterfaces_BytesConfigEntryDisplaysAsPythonBytes(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-bytes-config-entry-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-config-entry-")
 
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -2758,8 +2708,7 @@ func TestListDiscoveredInterfaces_BytesConfigEntryDisplaysAsPythonBytes(t *testi
 func TestListDiscoveredInterfaces_BytesNetworkIDDisplaysAsPythonBytes(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-bytes-network-id-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-network-id-")
 
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -2794,8 +2743,7 @@ func TestListDiscoveredInterfaces_BytesNetworkIDDisplaysAsPythonBytes(t *testing
 func TestListDiscoveredInterfaces_BytesIFACFieldsDisplayAsPythonBytes(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-bytes-ifac-fields-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-ifac-fields-")
 
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -2834,8 +2782,7 @@ func TestListDiscoveredInterfaces_BytesIFACFieldsDisplayAsPythonBytes(t *testing
 func TestListDiscoveredInterfaces_BytesModulationDisplaysAsPythonBytes(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-bytes-modulation-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-modulation-")
 
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -2897,8 +2844,7 @@ func TestIsHostnameMatchesPython(t *testing.T) {
 func TestListDiscoveredInterfaces_SortsLikePython(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-sort-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-sort-")
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
 		t.Fatalf("failed to create storage path: %v", err)
@@ -2974,8 +2920,7 @@ func TestListDiscoveredInterfaces_SortsLikePython(t *testing.T) {
 func TestPersistDiscoveredInterface_NewEntry(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-new-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-persist-new-")
 
 	r := &Reticulum{configDir: tmpDir}
 	discovery := NewInterfaceDiscovery(r)
@@ -3019,8 +2964,7 @@ func TestPersistDiscoveredInterface_NewEntry(t *testing.T) {
 func TestPersistDiscoveredInterface_NewEntryAllowsZeroReceived(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-zero-received-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-persist-zero-received-")
 
 	r := &Reticulum{configDir: tmpDir}
 	discovery := NewInterfaceDiscovery(r)
@@ -3063,8 +3007,7 @@ func TestPersistDiscoveredInterface_NewEntryAllowsZeroReceived(t *testing.T) {
 func TestPersistDiscoveredInterface_ExistingEntryPreservesDiscoveryTime(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-existing-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-persist-existing-")
 
 	r := &Reticulum{configDir: tmpDir}
 	discovery := NewInterfaceDiscovery(r)
@@ -3122,8 +3065,7 @@ func TestPersistDiscoveredInterface_ExistingEntryPreservesDiscoveryTime(t *testi
 func TestPersistDiscoveredInterface_ExistingEntryAllowsZeroReceived(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-existing-zero-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-persist-existing-zero-")
 
 	r := &Reticulum{configDir: tmpDir}
 	discovery := NewInterfaceDiscovery(r)
@@ -3179,8 +3121,7 @@ func TestPersistDiscoveredInterface_ExistingEntryAllowsZeroReceived(t *testing.T
 func TestPersistDiscoveredInterface_NewEntryMissingReceivedLeavesEmptyFile(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-missing-received-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-persist-missing-received-")
 
 	r := &Reticulum{configDir: tmpDir}
 	discovery := NewInterfaceDiscovery(r)
@@ -3219,8 +3160,7 @@ func TestPersistDiscoveredInterface_NewEntryMissingReceivedLeavesEmptyFile(t *te
 func TestPersistDiscoveredInterface_NewEntryAllowsNilReceived(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-nil-received-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-persist-nil-received-")
 
 	r := &Reticulum{configDir: tmpDir}
 	discovery := NewInterfaceDiscovery(r)
@@ -3263,8 +3203,7 @@ func TestPersistDiscoveredInterface_NewEntryAllowsNilReceived(t *testing.T) {
 func TestPersistDiscoveredInterface_NewEntryAllowsStringReceived(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-string-received-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-persist-string-received-")
 
 	r := &Reticulum{configDir: tmpDir}
 	discovery := NewInterfaceDiscovery(r)
@@ -3316,8 +3255,7 @@ func TestPersistDiscoveredInterface_NewEntryAllowsBoolReceived(t *testing.T) {
 		{name: "false", got: false, want: "False"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-bool-received-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-persist-bool-received-")
 
 			r := &Reticulum{configDir: tmpDir}
 			discovery := NewInterfaceDiscovery(r)
@@ -3372,8 +3310,7 @@ func TestPersistDiscoveredInterface_NewEntryAllowsCompositeReceived(t *testing.T
 		{name: "dict", got: map[string]any{"a": 1}, want: "{'a': 1}"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-composite-received-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-persist-composite-received-")
 
 			r := &Reticulum{configDir: tmpDir}
 			discovery := NewInterfaceDiscovery(r)
@@ -3418,8 +3355,7 @@ func TestPersistDiscoveredInterface_NewEntryAllowsCompositeReceived(t *testing.T
 func TestPersistDiscoveredInterface_NewEntryAllowsIntegerDiscoveryHash(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-int-hash-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-persist-int-hash-")
 
 	r := &Reticulum{configDir: tmpDir}
 	discovery := NewInterfaceDiscovery(r)
@@ -3462,8 +3398,7 @@ func TestPersistDiscoveredInterface_NewEntryAllowsIntegerDiscoveryHash(t *testin
 func TestPersistDiscoveredInterface_NewEntryAllowsBoolDiscoveryHash(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-bool-hash-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-persist-bool-hash-")
 
 	r := &Reticulum{configDir: tmpDir}
 	discovery := NewInterfaceDiscovery(r)
@@ -3516,8 +3451,7 @@ func TestPersistDiscoveredInterface_ExistingEntryMissingReceivedMutatesDiscovere
 		{name: "nil cached discovered uses incoming", seedDiscovered: nil, incomingDiscovery: 7.0, wantDiscovered: 7.0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-truncate-received-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-persist-truncate-received-")
 
 			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 			if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -3572,8 +3506,7 @@ func TestPersistDiscoveredInterface_ExistingEntryMissingReceivedMutatesDiscovere
 func TestPersistDiscoveredInterface_ExistingEntryAllowsNilReceived(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-existing-nil-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-persist-existing-nil-")
 
 	r := &Reticulum{configDir: tmpDir}
 	discovery := NewInterfaceDiscovery(r)
@@ -3629,8 +3562,7 @@ func TestPersistDiscoveredInterface_ExistingEntryAllowsNilReceived(t *testing.T)
 func TestPersistDiscoveredInterface_ExistingEntryAllowsStringReceived(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-existing-string-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-persist-existing-string-")
 
 	r := &Reticulum{configDir: tmpDir}
 	discovery := NewInterfaceDiscovery(r)
@@ -3695,8 +3627,7 @@ func TestPersistDiscoveredInterface_ExistingEntryAllowsBoolReceived(t *testing.T
 		{name: "false", got: false, want: "False"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-existing-bool-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-persist-existing-bool-")
 
 			r := &Reticulum{configDir: tmpDir}
 			discovery := NewInterfaceDiscovery(r)
@@ -3764,8 +3695,7 @@ func TestPersistDiscoveredInterface_ExistingEntryAllowsCompositeReceived(t *test
 		{name: "dict", got: map[string]any{"a": 1}, want: "{'a': 1}"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-existing-composite-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-persist-existing-composite-")
 
 			r := &Reticulum{configDir: tmpDir}
 			discovery := NewInterfaceDiscovery(r)
@@ -3823,8 +3753,7 @@ func TestPersistDiscoveredInterface_ExistingEntryAllowsCompositeReceived(t *test
 func TestPersistDiscoveredInterface_ExistingEntryAllowsIntegerDiscoveryHash(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-existing-int-hash-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-persist-existing-int-hash-")
 
 	r := &Reticulum{configDir: tmpDir}
 	discovery := NewInterfaceDiscovery(r)
@@ -3880,8 +3809,7 @@ func TestPersistDiscoveredInterface_ExistingEntryAllowsIntegerDiscoveryHash(t *t
 func TestPersistDiscoveredInterface_ExistingEntryBoolTrueHeardCountBecomesTwo(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-bool-heard-count-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-persist-bool-heard-count-")
 
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -3927,8 +3855,7 @@ func TestPersistDiscoveredInterface_ExistingEntryBoolTrueHeardCountBecomesTwo(t 
 func TestPersistDiscoveredInterface_ExistingEntryBoolFalseHeardCountBecomesOne(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-bool-false-heard-count-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-persist-bool-false-heard-count-")
 
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -3974,8 +3901,7 @@ func TestPersistDiscoveredInterface_ExistingEntryBoolFalseHeardCountBecomesOne(t
 func TestPersistDiscoveredInterface_ExistingEntryFloatHeardCountPreservesFraction(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-float-heard-count-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-persist-float-heard-count-")
 
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -4022,8 +3948,7 @@ func TestPersistDiscoveredInterface_ExistingEntryFloatHeardCountPreservesFractio
 func TestPersistDiscoveredInterface_ExistingEntryNilDiscoveredUsesIncomingDiscovered(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-nil-discovered-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-persist-nil-discovered-")
 
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -4086,8 +4011,7 @@ func TestPersistDiscoveredInterface_ExistingEntryNilDiscoveredUsesIncomingDiscov
 func TestPersistDiscoveredInterface_ExistingEntryStringHeardCountTruncatesFile(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-string-heard-count-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-persist-string-heard-count-")
 
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -4137,8 +4061,7 @@ func TestPersistDiscoveredInterface_ExistingEntryStringHeardCountTruncatesFile(t
 func TestPersistDiscoveredInterface_CorruptExistingEntryMissingHeardCountFailsClosed(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-persist-corrupt-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-persist-corrupt-")
 
 	r := &Reticulum{configDir: tmpDir}
 	discovery := NewInterfaceDiscovery(r)
@@ -4209,8 +4132,7 @@ func TestPersistDiscoveredInterface_CorruptExistingEntryMissingHeardCountFailsCl
 func TestInterfaceDiscoveryReceiveAndPersist(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-receive-")
 
 	ts := NewTransportSystem(nil)
 	destinationHash := []byte("discovery-destination")
@@ -4297,8 +4219,7 @@ func TestInterfaceDiscoveryReceiveAndPersist(t *testing.T) {
 func TestInterfaceDiscoveryReceiveAndPersistRejectsInsufficientStampValue(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-invalid-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-receive-invalid-")
 
 	ts := NewTransportSystem(nil)
 	r := &Reticulum{
@@ -4340,8 +4261,7 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsInsufficientStampValue(t *tes
 func TestInterfaceDiscoveryReceiveAndPersistEncryptedWithTransportNetworkIdentity(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-encrypted-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-receive-encrypted-")
 
 	logger := NewLogger()
 	ts := NewTransportSystem(logger)
@@ -4399,8 +4319,7 @@ func TestInterfaceDiscoveryReceiveAndPersistEncryptedWithTransportNetworkIdentit
 func TestInterfaceAnnounceHandlerRecoversCallbackPanic(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-handler-panic-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-handler-panic-")
 
 	ts := NewTransportSystem(NewLogger())
 	destinationHash := []byte("discovery-destination")
@@ -4537,8 +4456,7 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsMissingRequiredFields(t *test
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-missing-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-receive-missing-")
 
 			ts := NewTransportSystem(nil)
 			destinationHash := []byte("discovery-destination")
@@ -4628,8 +4546,7 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsMissingGeolocationFields(t *t
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-missing-geo-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-receive-missing-geo-")
 
 			ts := NewTransportSystem(nil)
 			destinationHash := []byte("discovery-destination")
@@ -4758,8 +4675,7 @@ func TestInterfaceDiscoveryReceiveAndPersistAdditionalTypes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-extra-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-receive-extra-")
 
 			ts := NewTransportSystem(nil)
 			destinationHash := []byte("discovery-destination")
@@ -4825,8 +4741,7 @@ func TestInterfaceDiscoveryReceiveAndPersistAdditionalTypes(t *testing.T) {
 func TestInterfaceDiscoveryReceiveAndPersistPlainTCPClientOmitsConfigEntry(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-tcp-client-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-receive-tcp-client-")
 
 	ts := NewTransportSystem(nil)
 	destinationHash := []byte("discovery-destination")
@@ -4914,8 +4829,7 @@ func TestDiscoveryConfigEntryKeepsEmptyTransportIdentityForBackbone(t *testing.T
 func TestInterfaceDiscoveryReceiveAndPersistPreservesRawTransportValue(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-transport-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-receive-transport-")
 
 	ts := NewTransportSystem(nil)
 	destinationHash := []byte("discovery-destination")
@@ -4972,8 +4886,7 @@ func TestInterfaceDiscoveryReceiveAndPersistPreservesRawTransportValue(t *testin
 func TestInterfaceDiscoveryReceiveAndPersistPreservesEmptyIFACFields(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-ifac-empty-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-receive-ifac-empty-")
 
 	ts := NewTransportSystem(nil)
 	destinationHash := []byte("discovery-destination")
@@ -5038,8 +4951,7 @@ func TestInterfaceDiscoveryReceiveAndPersistPreservesEmptyIFACFields(t *testing.
 func TestInterfaceDiscoveryReceiveAndPersistPreservesRawPortValue(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-port-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-receive-port-")
 
 	ts := NewTransportSystem(nil)
 	destinationHash := []byte("discovery-destination")
@@ -5099,8 +5011,7 @@ func TestInterfaceDiscoveryReceiveAndPersistPreservesRawPortValue(t *testing.T) 
 func TestInterfaceDiscoveryReceiveAndPersistFormatsIterablePortLikePython(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-iterable-port-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-receive-iterable-port-")
 
 	ts := NewTransportSystem(nil)
 	destinationHash := []byte("discovery-destination")
@@ -5160,8 +5071,7 @@ func TestInterfaceDiscoveryReceiveAndPersistFormatsIterablePortLikePython(t *tes
 func TestInterfaceDiscoveryReceiveAndPersistFormatsMapPortLikePython(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-map-port-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-receive-map-port-")
 
 	ts := NewTransportSystem(nil)
 	destinationHash := []byte("discovery-destination")
@@ -5221,8 +5131,7 @@ func TestInterfaceDiscoveryReceiveAndPersistFormatsMapPortLikePython(t *testing.
 func TestInterfaceDiscoveryReceiveAndPersistFormatsWholeFloatPortLikePython(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-float-port-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-receive-float-port-")
 
 	ts := NewTransportSystem(nil)
 	destinationHash := []byte("discovery-destination")
@@ -5282,8 +5191,7 @@ func TestInterfaceDiscoveryReceiveAndPersistFormatsWholeFloatPortLikePython(t *t
 func TestInterfaceDiscoveryReceiveAndPersistAcceptsIntegerReachableOn(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-reachable-int-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-receive-reachable-int-")
 
 	ts := NewTransportSystem(nil)
 	destinationHash := []byte("discovery-destination")
@@ -5346,8 +5254,7 @@ func TestInterfaceDiscoveryReceiveAndPersistAcceptsIntegerReachableOn(t *testing
 func TestInterfaceDiscoveryReceiveAndPersistAcceptsIntegerTransportID(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-transport-id-int-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-receive-transport-id-int-")
 
 	ts := NewTransportSystem(nil)
 	destinationHash := []byte("discovery-destination")
@@ -5407,8 +5314,7 @@ func TestInterfaceDiscoveryReceiveAndPersistAcceptsIntegerTransportID(t *testing
 func TestInterfaceDiscoveryReceiveAndPersistAcceptsIterableTransportID(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-iterable-transport-id-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-receive-iterable-transport-id-")
 
 	ts := NewTransportSystem(nil)
 	destinationHash := []byte("discovery-destination")
@@ -5468,8 +5374,7 @@ func TestInterfaceDiscoveryReceiveAndPersistAcceptsIterableTransportID(t *testin
 func TestInterfaceDiscoveryReceiveAndPersistRejectsBytesName(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-bytes-name-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-receive-bytes-name-")
 
 	ts := NewTransportSystem(nil)
 	destinationHash := []byte("discovery-destination")
@@ -5515,8 +5420,7 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsBytesName(t *testing.T) {
 func TestInterfaceDiscoveryReceiveAndPersistRejectsNilAnnouncedIdentity(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-nil-identity-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-receive-nil-identity-")
 
 	ts := NewTransportSystem(nil)
 	destinationHash := []byte("discovery-destination")
@@ -5561,8 +5465,7 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsNilAnnouncedIdentity(t *testi
 func TestInterfaceDiscoveryReceiveAndPersistIgnoresFieldsFromOtherInterfaceTypes(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-receive-extra-fields-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-receive-extra-fields-")
 
 	ts := NewTransportSystem(nil)
 	destinationHash := []byte("discovery-destination")
@@ -5661,8 +5564,7 @@ func mustDiscoveryAnnounceAppDataRaw(t *testing.T, payload map[any]any, targetCo
 func TestInterfaceDiscoveryStartReconnectsCachedBackbone(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-reconnect-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-reconnect-")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -5791,8 +5693,7 @@ func TestInterfaceDiscoveryStartReconnectsCachedBackbone(t *testing.T) {
 func TestInterfaceDiscoveryConnectDiscoveredMissingConfigEntrySkipsAutoconnect(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-connect-missing-config-entry-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-connect-missing-config-entry-")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -5862,8 +5763,7 @@ func TestInterfaceDiscoveryConnectDiscoveredMissingConfigEntrySkipsAutoconnect(t
 func TestInterfaceDiscoveryConnectDiscoveredBytesTypeSkipsAutoconnectLikePython(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-connect-bytes-type-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-connect-bytes-type-")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -5946,8 +5846,7 @@ func TestInterfaceDiscoveryConnectDiscoveredBytesTypeSkipsAutoconnectLikePython(
 func TestInterfaceDiscoveryConnectDiscoveredSkipsWhenAutoconnectDisabled(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-disabled-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-disabled-")
 
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -5991,8 +5890,7 @@ func TestInterfaceDiscoveryConnectDiscoveredSkipsWhenAutoconnectDisabled(t *test
 func TestInterfaceDiscoveryConnectDiscoveredLogsPythonReconnectError(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-connect-load-error-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-connect-load-error-")
 
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -6044,8 +5942,7 @@ func TestInterfaceDiscoveryConnectDiscoveredLogsPythonReconnectError(t *testing.
 func TestInterfaceDiscoveryConnectDiscoveredStopsAtAutoconnectLimitInDiscoveryOrder(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-connect-limit-order-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-connect-limit-order-")
 
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -6110,8 +6007,7 @@ func TestInterfaceDiscoveryConnectDiscoveredStopsAtAutoconnectLimitInDiscoveryOr
 func TestInterfaceDiscoveryConnectDiscoveredMarksInitialRunWhenAlreadyAtLimit(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-connect-already-full-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-connect-already-full-")
 
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -7436,8 +7332,7 @@ func TestInterfaceDiscoveryInterfaceExistsDirectPortComparisonMatchesPythonEqual
 func TestInterfaceDiscoveryConnectDiscoveredPassesRawEndpointValuesToConstructorSeam(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-connect-raw-constructor-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-connect-raw-constructor-")
 
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -7510,8 +7405,7 @@ func TestInterfaceDiscoveryConnectDiscoveredPassesRawEndpointValuesToConstructor
 func TestInterfaceDiscoveryConnectDiscoveredNilPortLogsPythonTypeError(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-connect-nil-port-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-connect-nil-port-")
 
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
 	if err := os.MkdirAll(storagePath, 0o755); err != nil {
@@ -7569,8 +7463,7 @@ func TestInterfaceDiscoveryConnectDiscoveredNilPortLogsPythonTypeError(t *testin
 func TestInterfaceDiscoveryStartCallbackBytesReachableOnLogsPythonTypeErrorAndSkipsAutoconnect(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-callback-bytes-reachable-on-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-callback-bytes-reachable-on-")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -7651,8 +7544,7 @@ func TestInterfaceDiscoveryStartCallbackBytesReachableOnLogsPythonTypeErrorAndSk
 func TestInterfaceDiscoveryStartAutoconnectsReceivedBackboneAnnounce(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-autoconnect-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-live-autoconnect-")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -7743,8 +7635,7 @@ func TestInterfaceDiscoveryStartAutoconnectsReceivedBackboneAnnounce(t *testing.
 func TestInterfaceDiscoveryStartDoesNotAutoconnectReceivedTCPServerAnnounce(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-no-autoconnect-tcp-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-live-no-autoconnect-tcp-")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -7822,8 +7713,7 @@ func TestInterfaceDiscoveryStartDoesNotAutoconnectReceivedTCPServerAnnounce(t *t
 func TestInterfaceDiscoveryStartInvokesDiscoveryCallbackAfterAutoconnect(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-callback-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-live-callback-")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -7928,8 +7818,7 @@ func TestInterfaceDiscoveryStartInvokesDiscoveryCallbackAfterAutoconnect(t *test
 func TestInterfaceDiscoveryStartInvokesDiscoveryCallbackWhenDuplicateAutoconnectSkipped(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-callback-duplicate-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-live-callback-duplicate-")
 
 	logger := NewLogger()
 	ts := NewTransportSystem(logger)
@@ -8016,8 +7905,7 @@ func TestInterfaceDiscoveryStartInvokesDiscoveryCallbackWhenDuplicateAutoconnect
 func TestInterfaceDiscoveryStartCallbackReceivesPersistedMetadata(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-callback-meta-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-live-callback-meta-")
 
 	logger := NewLogger()
 	ts := NewTransportSystem(logger)
@@ -8121,8 +8009,7 @@ func TestInterfaceDiscoveryStartCallbackReceivesRediscoveryMetadataForNilAndStri
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-rediscovery-received-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-live-rediscovery-received-")
 
 			listener, err := net.Listen("tcp", "127.0.0.1:0")
 			if err != nil {
@@ -8264,8 +8151,7 @@ func TestInterfaceDiscoveryStartCallbackReceivesRediscoveryMetadataForBoolReceiv
 		{name: "false", got: false, want: "False"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-rediscovery-bool-received-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-live-rediscovery-bool-received-")
 
 			logger := NewLogger()
 			ts := NewTransportSystem(logger)
@@ -8361,8 +8247,7 @@ func TestInterfaceDiscoveryStartCallbackReceivesRediscoveryMetadataForCompositeR
 		{name: "dict", got: map[string]any{"a": 1}, want: "{'a': 1}"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-rediscovery-composite-received-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-live-rediscovery-composite-received-")
 
 			logger := NewLogger()
 			ts := NewTransportSystem(logger)
@@ -8448,8 +8333,7 @@ func TestInterfaceDiscoveryStartCallbackReceivesRediscoveryMetadataForCompositeR
 func TestInterfaceDiscoveryStartCallbackReceivesRediscoveryMetadataForNilHeardCount(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-rediscovery-heard-count-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-live-rediscovery-heard-count-")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -8597,8 +8481,7 @@ func TestInterfaceDiscoveryStartCallbackReceivesRediscoveryMetadataForLiveDiscov
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-rediscovery-discovered-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-live-rediscovery-discovered-")
 
 			listener, err := net.Listen("tcp", "127.0.0.1:0")
 			if err != nil {
@@ -8765,8 +8648,7 @@ func TestInterfaceDiscoveryStartCallbackReceivesRediscoveryMetadataForNilCachedD
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-nil-cached-discovered-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-live-nil-cached-discovered-")
 
 			listener, err := net.Listen("tcp", "127.0.0.1:0")
 			if err != nil {
@@ -8921,8 +8803,7 @@ func TestInterfaceDiscoveryStartCallbackPreservesExoticCachedDiscoveredValues(t 
 		{name: "dict", discovered: map[string]any{"x": 1}, wantRepr: "{'x': 1}"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-exotic-cached-discovered-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-live-exotic-cached-discovered-")
 
 			logger := NewLogger()
 			ts := NewTransportSystem(logger)
@@ -9021,8 +8902,7 @@ func TestInterfaceDiscoveryStartCallbackPreservesFalsishRediscoveryValues(t *tes
 		{name: "float zero heard count", seedDiscovered: 0.0, seedHeardCount: 0.0, wantDiscovered: "0.0", wantHeardCount: "1.0"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-falsish-rediscovery-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-live-falsish-rediscovery-")
 
 			logger := NewLogger()
 			ts := NewTransportSystem(logger)
@@ -9109,8 +8989,7 @@ func TestInterfaceDiscoveryStartCallbackPreservesFalsishRediscoveryValues(t *tes
 func TestInterfaceDiscoveryStartLogsDiscoveredInterfaceLikePython(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-log-python-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-log-python-")
 
 	logger := NewLogger()
 	logger.SetLogLevel(LogDebug)
@@ -9159,8 +9038,7 @@ func TestInterfaceDiscoveryStartLogsDiscoveredInterfaceLikePython(t *testing.T) 
 func TestInterfaceDiscoveryStartLogsPluralHopsLikePython(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-log-python-plural-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-log-python-plural-")
 
 	logger := NewLogger()
 	logger.SetLogLevel(LogDebug)
@@ -9238,8 +9116,7 @@ func TestInterfaceDiscoveryStartLogsNonIntegerHopsLikePython(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-log-python-noninteger-hops-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-log-python-noninteger-hops-")
 
 			logger := NewLogger()
 			logger.SetLogLevel(LogDebug)
@@ -9286,8 +9163,7 @@ func TestInterfaceDiscoveryStartLogsNonIntegerHopsLikePython(t *testing.T) {
 func TestInterfaceDiscoveryStartCallbackMissingValueFailsBeforePersist(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-start-missing-value-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-start-missing-value-")
 
 	logger := NewLogger()
 	logger.SetLogDest(LogCallback)
@@ -9346,8 +9222,7 @@ func TestInterfaceDiscoveryStartCallbackMissingValueFailsBeforePersist(t *testin
 func TestInterfaceDiscoveryStartCallbackStringDiscoveryHashFailsBeforePersist(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-start-string-hash-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-start-string-hash-")
 
 	logger := NewLogger()
 	logger.SetLogDest(LogCallback)
@@ -9407,8 +9282,7 @@ func TestInterfaceDiscoveryStartCallbackStringDiscoveryHashFailsBeforePersist(t 
 func TestInterfaceDiscoveryStartCallbackFloatDiscoveryHashLogsPythonError(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-start-float-hash-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-start-float-hash-")
 
 	logger := NewLogger()
 	logger.SetLogDest(LogCallback)
@@ -9472,8 +9346,7 @@ func TestInterfaceDiscoveryStartCallbackFloatDiscoveryHashLogsPythonError(t *tes
 func TestInterfaceDiscoveryStartCallbackNilDiscoveryHashLogsPythonError(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-start-nil-hash-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-start-nil-hash-")
 
 	logger := NewLogger()
 	logger.SetLogDest(LogCallback)
@@ -9531,8 +9404,7 @@ func TestInterfaceDiscoveryStartCallbackNilDiscoveryHashLogsPythonError(t *testi
 func TestInterfaceDiscoveryStartCallbackMissingHopsLogsPythonError(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-start-missing-hops-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-start-missing-hops-")
 
 	logger := NewLogger()
 	logger.SetLogDest(LogCallback)
@@ -9592,8 +9464,7 @@ func TestInterfaceDiscoveryStartCallbackMissingHopsLogsPythonError(t *testing.T)
 func TestInterfaceDiscoveryStartCallbackNilInfoLogsPythonError(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-start-nil-info-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-start-nil-info-")
 
 	logger := NewLogger()
 	logger.SetLogDest(LogCallback)
@@ -9644,8 +9515,7 @@ func TestInterfaceDiscoveryStartCallbackNilInfoLogsPythonError(t *testing.T) {
 func TestInterfaceDiscoveryStartCallbackBoolDiscoveryHashPersists(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-start-bool-hash-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-start-bool-hash-")
 
 	logger := NewLogger()
 	ts := NewTransportSystem(logger)
@@ -9694,8 +9564,7 @@ func TestInterfaceDiscoveryStartCallbackBoolDiscoveryHashPersists(t *testing.T) 
 func TestInterfaceDiscoveryStartCallbackIterableDiscoveryHashPersists(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-start-iterable-hash-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-start-iterable-hash-")
 
 	logger := NewLogger()
 	ts := NewTransportSystem(logger)
@@ -9744,8 +9613,7 @@ func TestInterfaceDiscoveryStartCallbackIterableDiscoveryHashPersists(t *testing
 func TestInterfaceDiscoveryStartCallbackIterableMapDiscoveryHashPersists(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-start-iterable-map-hash-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-start-iterable-map-hash-")
 
 	logger := NewLogger()
 	ts := NewTransportSystem(logger)
@@ -9838,8 +9706,7 @@ func TestInterfaceDiscoveryStartCallbackIterableDiscoveryHashLogsPythonFormatErr
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-start-iterable-hash-errors-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-start-iterable-hash-errors-")
 
 			logger := NewLogger()
 			logger.SetLogDest(LogCallback)
@@ -9905,8 +9772,7 @@ func TestInterfaceDiscoveryStartCallbackIterableDiscoveryHashLogsPythonFormatErr
 func TestInterfaceDiscoveryStartRecoversDiscoveryCallbackPanic(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-callback-panic-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-live-callback-panic-")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -9992,8 +9858,7 @@ func TestInterfaceDiscoveryStartRecoversDiscoveryCallbackPanic(t *testing.T) {
 func TestInterfaceDiscoveryStartLogsPythonCallbackErrorMessage(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-callback-log-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-live-callback-log-")
 
 	logger := NewLogger()
 	logger.SetLogDest(LogCallback)
@@ -10052,8 +9917,7 @@ func TestInterfaceDiscoveryStartLogsPythonCallbackErrorMessage(t *testing.T) {
 func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsBytesNameLikePython(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-callback-bytes-name-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-callback-bytes-name-")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -10122,8 +9986,7 @@ func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsBytesNameLikePython(t 
 func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsListNameLikePython(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-callback-list-name-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-callback-list-name-")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -10192,8 +10055,7 @@ func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsListNameLikePython(t *
 func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsNilNameLikePython(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-callback-nil-name-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-callback-nil-name-")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -10262,8 +10124,7 @@ func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsNilNameLikePython(t *t
 func TestInterfaceDiscoveryStartCallbackBytesTypeSkipsAutoconnectLikePython(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-callback-bytes-type-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-callback-bytes-type-")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -10361,8 +10222,7 @@ func TestInterfaceDiscoveryStartCallbackBytesTypeSkipsAutoconnectLikePython(t *t
 func TestInterfaceDiscoveryStartCallbackBytesNetworkIDUsesPythonBytesAutoconnectSource(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-callback-bytes-network-id-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-callback-bytes-network-id-")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -10438,8 +10298,7 @@ func TestInterfaceDiscoveryStartCallbackBytesNetworkIDUsesPythonBytesAutoconnect
 func TestInterfaceDiscoveryStartCallbackBytesIFACUsesPythonBytesStrings(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-callback-bytes-ifac-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-callback-bytes-ifac-")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -10517,8 +10376,7 @@ func TestInterfaceDiscoveryStartCallbackBytesIFACUsesPythonBytesStrings(t *testi
 func TestInterfaceDiscoveryStartCallbackMissingConfigEntrySkipsAutoconnectButStillCallsCallback(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-callback-missing-config-entry-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-callback-missing-config-entry-")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -10666,8 +10524,7 @@ func TestInterfaceDiscoveryStartLogsPythonAutoconnectKeyErrorsAndStillCallsCallb
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-autoconnect-keyerror-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-live-autoconnect-keyerror-")
 
 			logger := NewLogger()
 			logger.SetLogDest(LogCallback)
@@ -10741,8 +10598,7 @@ func TestInterfaceDiscoveryStartLogsPythonAutoconnectKeyErrorsAndStillCallsCallb
 func TestInterfaceDiscoveryStartLogsPythonPersistTypeErrorForListCache(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-persist-list-cache-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-list-cache-")
 
 	logger := NewLogger()
 	logger.SetLogDest(LogCallback)
@@ -10814,8 +10670,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistTypeErrorForListCache(t *testin
 func TestInterfaceDiscoveryStartLogsPythonPersistTypeErrorForStringCache(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-persist-string-cache-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-string-cache-")
 
 	logger := NewLogger()
 	logger.SetLogDest(LogCallback)
@@ -10887,8 +10742,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistTypeErrorForStringCache(t *test
 func TestInterfaceDiscoveryStartLogsPythonPersistExtraDataForInvalidMsgpackCache(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-persist-invalid-msgpack-cache-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-invalid-msgpack-cache-")
 
 	logger := NewLogger()
 	logger.SetLogDest(LogCallback)
@@ -10960,8 +10814,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistExtraDataForInvalidMsgpackCache
 func TestInterfaceDiscoveryStartLogsPythonPersistFormatErrorForInvalidTypeCodeCache(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-persist-invalid-type-code-cache-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-invalid-type-code-cache-")
 
 	logger := NewLogger()
 	logger.SetLogDest(LogCallback)
@@ -11033,8 +10886,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistFormatErrorForInvalidTypeCodeCa
 func TestInterfaceDiscoveryStartLogsPythonPersistValueErrorForIncompleteMsgpackCache(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-persist-incomplete-msgpack-cache-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-incomplete-msgpack-cache-")
 
 	logger := NewLogger()
 	logger.SetLogDest(LogCallback)
@@ -11106,8 +10958,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistValueErrorForIncompleteMsgpackC
 func TestInterfaceDiscoveryStartLogsPythonPersistValueErrorForIntKeyCache(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-persist-int-key-cache-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-int-key-cache-")
 
 	logger := NewLogger()
 	logger.SetLogDest(LogCallback)
@@ -11179,8 +11030,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistValueErrorForIntKeyCache(t *tes
 func TestInterfaceDiscoveryStartLogsPythonPersistKeyErrorForBinaryKeyCache(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-persist-binary-key-cache-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-binary-key-cache-")
 
 	logger := NewLogger()
 	logger.SetLogDest(LogCallback)
@@ -11319,8 +11169,7 @@ func TestInterfaceDiscoveryAutoconnectLogsPythonDuplicateDebugMessage(t *testing
 func TestInterfaceDiscoveryStartSkipsAutoconnectWhenPersistFails(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-autoconnect-fail-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-live-autoconnect-fail-")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -11393,8 +11242,7 @@ func TestInterfaceDiscoveryStartSkipsAutoconnectWhenPersistFails(t *testing.T) {
 func TestInterfaceDiscoveryStartLogsPythonPersistFailureMessage(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-persist-log-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-log-")
 
 	logger := NewLogger()
 	logger.SetLogDest(LogCallback)
@@ -11459,8 +11307,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistFailureMessage(t *testing.T) {
 func TestInterfaceDiscoveryStartLogsPythonPersistKeyErrorForNilCachedDiscovered(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-persist-keyerror-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-keyerror-")
 
 	logger := NewLogger()
 	logger.SetLogDest(LogCallback)
@@ -11545,8 +11392,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistKeyErrorForNilCachedDiscovered(
 func TestInterfaceDiscoveryStartLogsPythonPersistTypeErrorForStringHeardCount(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-persist-typeerror-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-typeerror-")
 
 	logger := NewLogger()
 	logger.SetLogDest(LogCallback)
@@ -11630,8 +11476,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistTypeErrorForStringHeardCount(t 
 func TestInterfaceDiscoveryStartLogsPythonPersistTypeErrorForBytesHeardCount(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-persist-bytes-heard-count-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-bytes-heard-count-")
 
 	logger := NewLogger()
 	logger.SetLogDest(LogCallback)
@@ -11734,8 +11579,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistTypeErrorForCompositeHeardCount
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, tc.root)
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, tc.root)
 
 			logger := NewLogger()
 			logger.SetLogDest(LogCallback)
@@ -11843,8 +11687,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistKeyErrorForMissingReceived(t *t
 		{name: "existing entry with nil cached discovered", seedExisting: true, seedDiscovered: nil, incomingDiscovery: 7.0, wantDiscovered: 7.0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-live-persist-missing-received-")
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-missing-received-")
 
 			logger := NewLogger()
 			logger.SetLogDest(LogCallback)
@@ -12210,8 +12053,7 @@ func TestInterfaceDiscoveryMonitorRecoversTeardownPanic(t *testing.T) {
 func TestInterfaceDiscoveryMonitorDoesNotAutoconnectBeforeInitialPass(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-monitor-before-initial-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-monitor-before-initial-")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -12279,8 +12121,7 @@ func TestInterfaceDiscoveryMonitorDoesNotAutoconnectBeforeInitialPass(t *testing
 func TestInterfaceDiscoveryMonitorAutoconnectsAvailableCandidate(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-monitor-autoconnect-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-monitor-autoconnect-")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -12366,8 +12207,7 @@ func TestInterfaceDiscoveryMonitorAutoconnectsAvailableCandidate(t *testing.T) {
 func TestInterfaceDiscoveryMonitorDoesNotAutoconnectWhenFreeSlotsEqualReservedSlots(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-monitor-reserved-slots-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-monitor-reserved-slots-")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -12442,8 +12282,7 @@ func TestInterfaceDiscoveryMonitorDoesNotAutoconnectWhenFreeSlotsEqualReservedSl
 func TestInterfaceDiscoveryMonitorAutoconnectUsesShuffledCandidateOrder(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-monitor-shuffle-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-monitor-shuffle-")
 
 	listenerA, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -12566,8 +12405,7 @@ func TestInterfaceDiscoveryMonitorAutoconnectUsesShuffledCandidateOrder(t *testi
 func TestInterfaceDiscoveryMonitorDoesNotFallbackPastSelectedExistingCandidate(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-monitor-selected-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-monitor-selected-")
 
 	existingPort := reserveTCPPort(t)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -12859,8 +12697,7 @@ func TestInterfaceDiscoveryMonitorReenablesBootstrapInterfacesWhenAutoconnectsGo
 }
 
 func TestInterfaceDiscoveryMonitorReenablesConfiguredTCPBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	port := reserveTCPPort(t)
 	config := `[reticulum]
 share_instance = No
@@ -12915,8 +12752,7 @@ bootstrap_only = Yes
 }
 
 func TestInterfaceDiscoveryMonitorReenablesConfiguredTCPClientBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	port := reserveTCPPort(t)
 	config := `[reticulum]
 share_instance = No
@@ -12971,8 +12807,7 @@ bootstrap_only = Yes
 }
 
 func TestInterfaceDiscoveryMonitorReenablesConfiguredUDPBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	listenPort := reserveUDPPort(t)
 	forwardPort := reserveUDPPort(t)
 	config := `[reticulum]
@@ -13030,8 +12865,7 @@ bootstrap_only = Yes
 }
 
 func TestInterfaceDiscoveryMonitorReenablesConfiguredPipeBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 autoconnect_discovered_interfaces = 1
@@ -13085,8 +12919,7 @@ bootstrap_only = Yes
 }
 
 func TestInterfaceDiscoveryMonitorReenablesConfiguredAutoBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 autoconnect_discovered_interfaces = 1
@@ -13139,8 +12972,7 @@ bootstrap_only = Yes
 }
 
 func TestInterfaceDiscoveryMonitorReenablesConfiguredSerialBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	serialPort, _ := startSocatLinkedPTYPair(t)
 	config := `[reticulum]
 share_instance = No
@@ -13195,8 +13027,7 @@ bootstrap_only = Yes
 }
 
 func TestInterfaceDiscoveryMonitorReenablesConfiguredI2PPeerBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
 share_instance = No
 autoconnect_discovered_interfaces = 1
@@ -13255,8 +13086,7 @@ bootstrap_only = Yes
 }
 
 func TestInterfaceDiscoveryMonitorReenablesConfiguredI2PBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	port := reserveTCPPort(t)
 	config := `[reticulum]
 share_instance = No
@@ -13312,8 +13142,7 @@ bootstrap_only = Yes
 }
 
 func TestInterfaceDiscoveryMonitorReenablesConfiguredBackboneClientBootstrapInterfacesWhenAutoconnectsGone(t *testing.T) {
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	port := reserveTCPPort(t)
 	config := `[reticulum]
 share_instance = No
@@ -14583,8 +14412,7 @@ func TestInterfaceAnnouncerLogsAbortForExecutableReachableOnNonZeroExit(t *testi
 		t.Skip("reachable_on executable parity path is not used on Windows")
 	}
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-announce-exec-fail-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-announce-exec-fail-")
 
 	reachableScript := filepath.Join(tmpDir, "reachable-on.sh")
 	if err := os.WriteFile(reachableScript, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
@@ -14658,8 +14486,7 @@ func TestInterfaceAnnouncerLogsAbortForExecutableReachableOnInvalidOutput(t *tes
 		t.Skip("reachable_on executable parity path is not used on Windows")
 	}
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-announce-exec-invalid-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-announce-exec-invalid-")
 
 	reachableScript := filepath.Join(tmpDir, "reachable-on.sh")
 	if err := os.WriteFile(reachableScript, []byte("#!/bin/sh\necho 'bad host !'\n"), 0o755); err != nil {
@@ -14977,8 +14804,7 @@ func TestInterfaceAnnouncerParity(t *testing.T) {
 		t.Skip("reachable_on executable parity path is not used on Windows")
 	}
 
-	tmpDir, cleanup := testutils.TempDir(t, "rns-discovery-announce-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-discovery-announce-")
 
 	reachableScript := filepath.Join(tmpDir, "reachable-on.sh")
 	if err := os.WriteFile(reachableScript, []byte("#!/bin/sh\necho script.example.net\n"), 0o755); err != nil {

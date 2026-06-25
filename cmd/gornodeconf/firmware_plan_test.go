@@ -81,7 +81,6 @@ func TestResolveFirmwareDownloadPlanUsesExtractedFirmware(t *testing.T) {
 func tempFirmwarePlanHome(t *testing.T) string {
 	t.Helper()
 
-	dir, cleanup := testutils.TempDir(t, "gornodeconf-firmware-plan-*")
-	t.Cleanup(cleanup)
+	dir := testutils.TempDir(t, "gornodeconf-firmware-plan-*")
 	return dir
 }

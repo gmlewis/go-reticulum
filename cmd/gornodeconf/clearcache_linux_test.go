@@ -59,7 +59,6 @@ func TestClearCacheFailsWhenUpdateDirectoryIsMissing(t *testing.T) {
 func tempClearCacheHome(t *testing.T) string {
 	t.Helper()
 
-	dir, cleanup := testutils.TempDir(t, "gornodeconf-clearcache-*")
-	t.Cleanup(cleanup)
+	dir := testutils.TempDir(t, "gornodeconf-clearcache-*")
 	return dir
 }

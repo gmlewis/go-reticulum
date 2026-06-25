@@ -42,8 +42,7 @@ func TestVersionOutput(t *testing.T) {
 
 func TestNoIdentityError(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
-	defer cleanup()
+	tmpDir := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 
 	// Build the binary first (go run doesn't preserve exit codes reliably)
 	binPath := filepath.Join(tmpDir, "gornid")
@@ -72,8 +71,7 @@ func TestNoIdentityError(t *testing.T) {
 
 func TestGenerateRoundTrip(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
-	defer cleanup()
+	tmpDir := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	idFile := filepath.Join(tmpDir, "test.id")
 
 	out, err := runGornid(t, "--config", tmpDir, "-g", idFile)
@@ -113,8 +111,7 @@ func TestLoadIdentityFallsBackToIdentityHash(t *testing.T) {
 
 func TestImportExportRoundTrip(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
-	defer cleanup()
+	tmpDir := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	idFile := filepath.Join(tmpDir, "test.id")
 
 	// Generate identity
@@ -155,8 +152,7 @@ func TestImportExportRoundTrip(t *testing.T) {
 
 func TestEncryptDecryptRoundTrip(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
-	defer cleanup()
+	tmpDir := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	idFile := filepath.Join(tmpDir, "test.id")
 	plainFile := filepath.Join(tmpDir, "plain.txt")
 	encFile := filepath.Join(tmpDir, "plain.txt.rfe")
@@ -193,8 +189,7 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 
 func TestSignValidateRoundTrip(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
-	defer cleanup()
+	tmpDir := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	idFile := filepath.Join(tmpDir, "test.id")
 	dataFile := filepath.Join(tmpDir, "data.txt")
 
@@ -227,8 +222,7 @@ func TestSignValidateRoundTrip(t *testing.T) {
 
 func TestValidateBadSignature(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
-	defer cleanup()
+	tmpDir := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
 	idFile := filepath.Join(tmpDir, "test.id")
 	dataFile := filepath.Join(tmpDir, "data.txt")
 	sigFile := filepath.Join(tmpDir, "bad.rsg")

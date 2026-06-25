@@ -158,8 +158,7 @@ func TestIntegrationVersionOutputFormatParity(t *testing.T) {
 func TestIntegrationListenPrintIdentityOutputFormatParity(t *testing.T) {
 	pythonBin := getRnshBinaryPath(t)
 	gornshBin := getGornshBinaryPath(t)
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	prepareGornshConfig(t, configDir)
 
 	pythonOut, _ := exec.Command(pythonBin, "--config", configDir, "-l", "-p").CombinedOutput()
@@ -194,8 +193,7 @@ func TestIntegrationListenPrintIdentityOutputFormatParity(t *testing.T) {
 func TestIntegrationPrintIdentityOutputFormatParity(t *testing.T) {
 	pythonBin := getRnshBinaryPath(t)
 	gornshBin := getGornshBinaryPath(t)
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	prepareGornshConfig(t, configDir)
 
 	pythonOut, _ := exec.Command(pythonBin, "--config", configDir, "-p").CombinedOutput()
@@ -234,16 +232,14 @@ func TestIntegrationGoListenerGoInitiatorEcho(t *testing.T) {
 	commandArgs := []string{"--timeout", "30"}
 
 	if runtime.GOOS == "darwin" {
-		listenerConfigDir, directInitiatorConfigDir, cleanup := prepareGornshDirectUDPConfigPair(t, "gornsh-go-go-")
-		defer cleanup()
+		listenerConfigDir, directInitiatorConfigDir := prepareGornshDirectUDPConfigPair(t, "gornsh-go-go-")
 		configDir = listenerConfigDir
 		initiatorConfigDir = directInitiatorConfigDir
 		listenerArgs = append(listenerArgs, "--announce", "1")
 		commandTimeout = 15 * time.Second
 		commandArgs = []string{"--timeout", "8"}
 	} else {
-		sharedConfigDir, cleanup := testutils.TempDir(t, "gornsh-go-go-")
-		defer cleanup()
+		sharedConfigDir := testutils.TempDir(t, "gornsh-go-go-")
 		configDir = sharedConfigDir
 		initiatorConfigDir = sharedConfigDir
 
@@ -280,8 +276,7 @@ func TestIntegrationGoListenerGoInitiatorEcho(t *testing.T) {
 
 func TestIntegrationPythonListenerGoInitiatorEcho(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	listenerConfigDir, initiatorConfigDir, cleanup := prepareGornshDirectUDPConfigPair(t, "gornsh-py-go-")
-	defer cleanup()
+	listenerConfigDir, initiatorConfigDir := prepareGornshDirectUDPConfigPair(t, "gornsh-py-go-")
 
 	pythonListener := startPythonListener(t, listenerConfigDir, "-b", "1")
 	readyHash := pythonListener.hash()
@@ -301,8 +296,7 @@ func TestIntegrationPythonListenerGoInitiatorEcho(t *testing.T) {
 
 func TestIntegrationGoListenerPythonInitiatorEcho(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	listenerConfigDir, initiatorConfigDir, cleanup := prepareGornshDirectUDPConfigPair(t, "gornsh-go-py-")
-	defer cleanup()
+	listenerConfigDir, initiatorConfigDir := prepareGornshDirectUDPConfigPair(t, "gornsh-go-py-")
 
 	listener := startGornshListenerWithArgs(t, listenerConfigDir, "--no-auth", "--announce", "1")
 	readyHash := listener.hash()
@@ -328,8 +322,7 @@ func TestIntegrationPythonListenerGoInitiatorEchoWithoutGornpathPolling(t *testi
 		gornpathBinaryPath = oldPath
 	})
 
-	listenerConfigDir, initiatorConfigDir, cleanup := prepareGornshDirectUDPConfigPair(t, "gornsh-py-go-nopath-")
-	defer cleanup()
+	listenerConfigDir, initiatorConfigDir := prepareGornshDirectUDPConfigPair(t, "gornsh-py-go-nopath-")
 
 	pythonListener := startPythonListener(t, listenerConfigDir, "-b", "1")
 	readyHash := pythonListener.hash()
@@ -353,8 +346,7 @@ func TestIntegrationPythonListenerGoInitiatorEchoRepeatedHandshakes(t *testing.T
 	for iteration := 0; iteration < 3; iteration++ {
 		iteration := iteration
 		t.Run(fmt.Sprintf("iteration-%d", iteration), func(t *testing.T) {
-			listenerConfigDir, initiatorConfigDir, cleanup := prepareGornshDirectUDPConfigPair(t, fmt.Sprintf("gornsh-py-go-repeat-%d-", iteration))
-			defer cleanup()
+			listenerConfigDir, initiatorConfigDir := prepareGornshDirectUDPConfigPair(t, fmt.Sprintf("gornsh-py-go-repeat-%d-", iteration))
 
 			pythonListener := startPythonListener(t, listenerConfigDir, "-b", "1")
 			readyHash := pythonListener.hash()
@@ -382,8 +374,7 @@ func TestIntegrationGoListenerPythonInitiatorEchoWithoutGornpathPolling(t *testi
 		gornpathBinaryPath = oldPath
 	})
 
-	listenerConfigDir, initiatorConfigDir, cleanup := prepareGornshDirectUDPConfigPair(t, "gornsh-go-py-nopath-")
-	defer cleanup()
+	listenerConfigDir, initiatorConfigDir := prepareGornshDirectUDPConfigPair(t, "gornsh-go-py-nopath-")
 
 	listener := startGornshListenerWithArgs(t, listenerConfigDir, "--no-auth", "--announce", "1")
 	readyHash := listener.hash()
@@ -407,8 +398,7 @@ func TestIntegrationGoListenerPythonInitiatorEchoRepeatedHandshakes(t *testing.T
 	for iteration := 0; iteration < 3; iteration++ {
 		iteration := iteration
 		t.Run(fmt.Sprintf("iteration-%d", iteration), func(t *testing.T) {
-			listenerConfigDir, initiatorConfigDir, cleanup := prepareGornshDirectUDPConfigPair(t, fmt.Sprintf("gornsh-go-py-repeat-%d-", iteration))
-			defer cleanup()
+			listenerConfigDir, initiatorConfigDir := prepareGornshDirectUDPConfigPair(t, fmt.Sprintf("gornsh-go-py-repeat-%d-", iteration))
 
 			listener := startGornshListenerWithArgs(t, listenerConfigDir, "--no-auth", "--announce", "1")
 			readyHash := listener.hash()
@@ -431,8 +421,7 @@ func TestIntegrationGoListenerPythonInitiatorEchoRepeatedHandshakes(t *testing.T
 func TestIntegrationReadyListenerServesUnderModerateLocalLoad(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	listenerConfigDir, initiatorConfigDir, cleanup := prepareGornshDirectUDPConfigPair(t, "gornsh-load-")
-	defer cleanup()
+	listenerConfigDir, initiatorConfigDir := prepareGornshDirectUDPConfigPair(t, "gornsh-load-")
 
 	listener := startGornshListenerWithArgs(t, listenerConfigDir, "--no-auth", "--announce", "1")
 	readyHash := listener.hash()
@@ -513,22 +502,18 @@ func firstLineWithPrefix(output, prefix string) string {
 	return ""
 }
 
-func prepareGornshDirectUDPConfigPair(t *testing.T, prefix string) (string, string, func()) {
+func prepareGornshDirectUDPConfigPair(t *testing.T, prefix string) (string, string) {
 	t.Helper()
 
-	listenerConfigDir, cleanupListener := testutils.TempDir(t, prefix+"listener-")
-	initiatorConfigDir, cleanupInitiator := testutils.TempDir(t, prefix+"initiator-")
-	cleanup := func() {
-		cleanupInitiator()
-		cleanupListener()
-	}
+	listenerConfigDir := testutils.TempDir(t, prefix+"listener-")
+	initiatorConfigDir := testutils.TempDir(t, prefix+"initiator-")
 
 	listenerPort := testutils.ReserveUDPPort(t)
 	initiatorPort := testutils.ReserveUDPPort(t)
 	prepareGornshDirectUDPConfig(t, listenerConfigDir, "gornsh-listener-"+filepath.Base(listenerConfigDir), listenerPort, initiatorPort)
 	prepareGornshDirectUDPConfig(t, initiatorConfigDir, "gornsh-initiator-"+filepath.Base(initiatorConfigDir), initiatorPort, listenerPort)
 
-	return listenerConfigDir, initiatorConfigDir, cleanup
+	return listenerConfigDir, initiatorConfigDir
 }
 
 func prepareGornshDirectUDPConfig(t *testing.T, configDir, instanceName string, listenPort, forwardPort int) {
@@ -760,8 +745,7 @@ func TestWaitForPathReadinessTimesOutPromptly(t *testing.T) {
 
 func TestIntegrationAllowedIdentityEnforcement(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	configDir, cleanup := testutils.TempDir(t, "gornsh-go-allowed-")
-	defer cleanup()
+	configDir := testutils.TempDir(t, "gornsh-go-allowed-")
 
 	instanceName := "gornsh-go-allowed-" + filepath.Base(configDir)
 	prepareGornshConfigWithInstance(t, configDir, instanceName, 0, 0)
@@ -804,8 +788,7 @@ func TestIntegrationAllowedIdentityEnforcement(t *testing.T) {
 
 func TestIntegrationMirrorFlag(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	configDir, cleanup := testutils.TempDir(t, "gornsh-mirror-")
-	defer cleanup()
+	configDir := testutils.TempDir(t, "gornsh-mirror-")
 
 	instanceName := "gornsh-mirror-" + filepath.Base(configDir)
 	prepareGornshConfigWithInstance(t, configDir, instanceName, 0, 0)
@@ -879,8 +862,7 @@ func TestIntegrationNoAuthOpenListener(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
 	t.Run("no-auth allows unknown identities", func(t *testing.T) {
-		configDir, cleanup := testutils.TempDir(t, "gornsh-noauth-allow-")
-		defer cleanup()
+		configDir := testutils.TempDir(t, "gornsh-noauth-allow-")
 
 		instanceName := "gornsh-noauth-allow-" + filepath.Base(configDir)
 		prepareGornshConfigWithInstance(t, configDir, instanceName, 0, 0)
@@ -900,8 +882,7 @@ func TestIntegrationNoAuthOpenListener(t *testing.T) {
 	})
 
 	t.Run("default (auth enabled) denies unknown identities", func(t *testing.T) {
-		configDir, cleanup := testutils.TempDir(t, "gornsh-noauth-deny-")
-		defer cleanup()
+		configDir := testutils.TempDir(t, "gornsh-noauth-deny-")
 
 		instanceName := "gornsh-noauth-deny-" + filepath.Base(configDir)
 		prepareGornshConfigWithInstance(t, configDir, instanceName, 0, 0)
@@ -932,8 +913,7 @@ func TestIntegrationNoAuthOpenListener(t *testing.T) {
 
 func TestIntegrationNetworkPartitionRecovery(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	configDir, cleanup := testutils.TempDir(t, "gornsh-recovery-")
-	defer cleanup()
+	configDir := testutils.TempDir(t, "gornsh-recovery-")
 
 	instanceName := "gornsh-recovery-" + filepath.Base(configDir)
 	prepareGornshConfigWithInstance(t, configDir, instanceName, 0, 0)

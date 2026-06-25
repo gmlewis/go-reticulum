@@ -19,8 +19,7 @@ import (
 
 func TestTransport(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	ts := NewTransportSystem(nil)
 	if err := ts.Start(tmpDir); err != nil {
@@ -931,8 +930,7 @@ func TestCullStaleTransportTables(t *testing.T) {
 
 func TestPathTablePersistenceRoundTrip(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	iface := &capturingInterface{name: "persist-iface"}
 	ts := NewTransportSystem(nil)
@@ -994,8 +992,7 @@ func TestPathTablePersistenceRoundTrip(t *testing.T) {
 func TestRememberSkipsPersistenceWhenTransportStopped(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	ts := NewTransportSystem(nil)
 	if err := ts.Start(tmpDir); err != nil {
@@ -1013,8 +1010,7 @@ func TestRememberSkipsPersistenceWhenTransportStopped(t *testing.T) {
 func TestSaveKnownDestinationsPersistsWithoutStart(t *testing.T) {
 	t.Parallel()
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	ts := NewTransportSystem(nil)
 	ts.Remember([]byte("packet-hash"), []byte("dest-hash"), []byte("public-key"), nil)
@@ -1444,8 +1440,7 @@ func TestTunnelSystem(t *testing.T) {
 	t.Parallel()
 
 	ts := NewTransportSystem(nil)
-	tmpDir, cleanup := testutils.TempDir(t, "rns-test-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-test-")
 
 	// Create a tunnel.
 	ts.mu.Lock()
@@ -1531,8 +1526,7 @@ func TestDataPersistence(t *testing.T) {
 	t.Parallel()
 
 	ts := NewTransportSystem(nil)
-	tmpDir, cleanup := testutils.TempDir(t, "rns-test-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-test-")
 
 	// Persist a packet-hash list.
 	ts.mu.Lock()
@@ -1604,8 +1598,7 @@ func TestRemoteManagement(t *testing.T) {
 	t.Parallel()
 
 	ts := NewTransportSystem(nil)
-	tmpDir, cleanup := testutils.TempDir(t, "rns-test-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-test-")
 	writeConfig(t, tmpDir, "[reticulum]\nshare_instance = No\n")
 	r, err := NewReticulumWithLogger(ts, tmpDir, nil)
 	if err != nil {

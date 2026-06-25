@@ -73,8 +73,7 @@ func TestMalformedDestinationHashExitCode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-			defer cleanup()
+			tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 			configDir := filepath.Join(tmpDir, "config")
 			if err := os.MkdirAll(configDir, 0o755); err != nil {
@@ -117,8 +116,7 @@ func TestMissingSendFileExitCode(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	configDir := filepath.Join(tmpDir, "config")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
@@ -156,8 +154,7 @@ func TestMainExitCodeHelper(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
 	// Test that os.Exit is called with correct codes
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	// This test verifies the exit code behavior
 	cmd := exec.Command("go", "run", ".", "-a", "invalid")
@@ -177,8 +174,7 @@ func TestCorruptIdentityFileExitCode(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	configDir := filepath.Join(tmpDir, "config")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)
@@ -220,8 +216,7 @@ func TestOutputDirectoryNotFoundExitCode(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	configDir := filepath.Join(tmpDir, "config")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)
@@ -265,8 +260,7 @@ func TestOutputDirectoryNotWritableExitCode(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	configDir := filepath.Join(tmpDir, "config")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)

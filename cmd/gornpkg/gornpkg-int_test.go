@@ -40,18 +40,17 @@ func (b *safeBuffer) String() string {
 	return b.buf.String()
 }
 
-func buildGornpkg(t *testing.T) (string, func()) {
+func buildGornpkg(t *testing.T) string {
 	t.Helper()
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	bin := filepath.Join(tmpDir, "gornpkg")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Dir = "."
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		cleanup()
 		t.Fatalf("failed to build gornpkg: %v\n%v", err, string(out))
 	}
-	return bin, cleanup
+	return bin
 }
 
 func findRnpkg(t *testing.T) string {
@@ -102,8 +101,7 @@ func normalizeProgramName(output string) string {
 func TestIntegration_VersionOutput(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin, cleanup := buildGornpkg(t)
-	defer cleanup()
+	bin := buildGornpkg(t)
 	out, err := exec.Command(bin, "--version").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornpkg --version failed: %v\n%v", err, string(out))
@@ -118,8 +116,7 @@ func TestIntegration_VersionOutput(t *testing.T) {
 func TestIntegration_ExampleConfigOutput(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin, cleanup := buildGornpkg(t)
-	defer cleanup()
+	bin := buildGornpkg(t)
 	out, err := exec.Command(bin, "--exampleconfig").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornpkg --exampleconfig failed: %v\n%v", err, string(out))
@@ -134,10 +131,8 @@ func TestIntegration_ExampleConfigOutput(t *testing.T) {
 func TestIntegration_ExitCodeZero(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin, cleanup := buildGornpkg(t)
-	defer cleanup()
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	bin := buildGornpkg(t)
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	// Use a unique instance name to avoid RPC socket collisions on Linux.
 	config := "[reticulum]\ninstance_name = " + filepath.Base(tmpDir) + "\n"
@@ -155,10 +150,8 @@ func TestIntegration_ExitCodeZero(t *testing.T) {
 func TestIntegration_SIGINTCleanExit(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin, cleanup := buildGornpkg(t)
-	defer cleanup()
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	bin := buildGornpkg(t)
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	// Use a unique instance name to avoid RPC socket collisions on Linux.
 	config := "[reticulum]\ninstance_name = " + filepath.Base(tmpDir) + "\n"
@@ -199,8 +192,7 @@ func TestIntegration_SIGINTCleanExit(t *testing.T) {
 func TestIntegration_HelpOutput(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin, cleanup := buildGornpkg(t)
-	defer cleanup()
+	bin := buildGornpkg(t)
 	out, _ := exec.Command(bin, "--help").CombinedOutput()
 	output := string(out)
 	for _, want := range []string{
@@ -221,8 +213,7 @@ func TestParity_ExampleConfig(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	rnpkgBin := findRnpkg(t)
-	gornpkgBin, cleanup := buildGornpkg(t)
-	defer cleanup()
+	gornpkgBin := buildGornpkg(t)
 
 	pyOut, err := exec.Command(rnpkgBin, "--exampleconfig").CombinedOutput()
 	if err != nil {
@@ -244,8 +235,7 @@ func TestEquivalence_ExampleConfigOutput(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	rnpkgBin := findRnpkg(t)
-	gornpkgBin, cleanup := buildGornpkg(t)
-	defer cleanup()
+	gornpkgBin := buildGornpkg(t)
 
 	pyOut, pyExit := runPkgCommand(t, rnpkgBin, "--exampleconfig")
 	goOut, goExit := runPkgCommand(t, gornpkgBin, "--exampleconfig")
@@ -262,11 +252,9 @@ func TestParity_VerbosityStackingOutput(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	rnpkgBin := findRnpkg(t)
-	gornpkgBin, cleanup := buildGornpkg(t)
-	defer cleanup()
+	gornpkgBin := buildGornpkg(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	// Use a unique instance name to avoid RPC socket collisions on Linux.
 	config := "[reticulum]\ninstance_name = " + filepath.Base(tmpDir) + "\n"
@@ -290,11 +278,9 @@ func TestParity_QuietnessStackingOutput(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	rnpkgBin := findRnpkg(t)
-	gornpkgBin, cleanup := buildGornpkg(t)
-	defer cleanup()
+	gornpkgBin := buildGornpkg(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	// Use a unique instance name to avoid RPC socket collisions on Linux.
 	config := "[reticulum]\ninstance_name = " + filepath.Base(tmpDir) + "\n"
@@ -318,8 +304,7 @@ func TestParity_HelpFlags(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	rnpkgBin := findRnpkg(t)
-	gornpkgBin, cleanup := buildGornpkg(t)
-	defer cleanup()
+	gornpkgBin := buildGornpkg(t)
 
 	pyOut, _ := exec.Command(rnpkgBin, "--help").CombinedOutput()
 	goOut, _ := exec.Command(gornpkgBin, "--help").CombinedOutput()
@@ -341,8 +326,7 @@ func TestEquivalence_HelpUsageText(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	rnpkgBin := findRnpkg(t)
-	gornpkgBin, cleanup := buildGornpkg(t)
-	defer cleanup()
+	gornpkgBin := buildGornpkg(t)
 
 	pyOut, pyExit := runPkgCommand(t, rnpkgBin, "--help")
 	goOut, goExit := runPkgCommand(t, gornpkgBin, "--help")
@@ -362,11 +346,9 @@ func TestEquivalence_StartupExitCode(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	rnpkgBin := findRnpkg(t)
-	gornpkgBin, cleanup := buildGornpkg(t)
-	defer cleanup()
+	gornpkgBin := buildGornpkg(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	// Use a unique instance name to avoid RPC socket collisions on Linux.
 	config := "[reticulum]\ninstance_name = " + filepath.Base(tmpDir) + "\n"

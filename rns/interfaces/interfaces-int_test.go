@@ -40,8 +40,7 @@ print(discovery_token.hex())
 func TestAutoInterfaceDiscoveryPacketParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	pythonPath := getPythonPath()
-	tmpDir, cleanup := testutils.TempDir(t, "rns-auto-parity-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-auto-parity-*")
 
 	scriptPath := filepath.Join(tmpDir, "discovery_token.py")
 	if err := os.WriteFile(scriptPath, []byte(pythonDiscoveryTokenScript), 0o644); err != nil {
@@ -132,8 +131,7 @@ except KeyboardInterrupt:
 func TestUDPInterfaceParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	pythonPath := getPythonPath()
-	tmpDir, cleanup := testutils.TempDir(t, "rns-udp-parity-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-udp-parity-*")
 
 	scriptPath := filepath.Join(tmpDir, "udp_echo.py")
 	if err := os.WriteFile(scriptPath, []byte(pythonUDPEchoScript), 0o644); err != nil {
@@ -285,8 +283,7 @@ except KeyboardInterrupt:
 func TestTCPInterfaceParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	pythonPath := getPythonPath()
-	tmpDir, cleanup := testutils.TempDir(t, "rns-tcp-parity-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-tcp-parity-*")
 
 	scriptPath := filepath.Join(tmpDir, "tcp_echo.py")
 	if err := os.WriteFile(scriptPath, []byte(pythonTCPEchoScript), 0o644); err != nil {
@@ -348,8 +345,7 @@ func TestTCPInterfaceParity(t *testing.T) {
 func TestTCPInterfaceParityKISS(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	pythonPath := getPythonPath()
-	tmpDir, cleanup := testutils.TempDir(t, "rns-tcp-kiss-parity-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-tcp-kiss-parity-*")
 
 	const pythonTCPKISSEchoScript = `
 import RNS.Interfaces.TCPInterface as TCPInterface
@@ -520,8 +516,7 @@ if __name__ == "__main__":
 func TestLocalInterfaceParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	pythonPath := getPythonPath()
-	tmpDir, cleanup := testutils.TempDir(t, "rns-local-parity-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-local-parity-*")
 
 	scriptPath := filepath.Join(tmpDir, "local_echo.py")
 	if err := os.WriteFile(scriptPath, []byte(pythonLocalEchoScript), 0o644); err != nil {
@@ -665,8 +660,7 @@ func TestSerialInterfaceParity(t *testing.T) {
 	}
 	requirePythonModule(t, "serial")
 	pythonPath := getPythonPath()
-	tmpDir, cleanup := testutils.TempDir(t, "rns-serial-parity-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-serial-parity-")
 
 	scriptPath := filepath.Join(tmpDir, "serial_echo.py")
 	if err := os.WriteFile(scriptPath, []byte(pythonSerialEchoScript), 0o644); err != nil {
@@ -825,8 +819,7 @@ while True:
 
 func TestPipeInterfaceParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	tmpDir, cleanup := testutils.TempDir(t, "rns-pipe-parity-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-pipe-parity-*")
 
 	scriptPath := filepath.Join(tmpDir, "pipe_echo.py")
 	if err := os.WriteFile(scriptPath, []byte(pythonPipeEchoScript), 0o644); err != nil {

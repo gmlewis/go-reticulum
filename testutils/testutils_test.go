@@ -21,8 +21,7 @@ const tempDirPrefix = "testutils-tempdir-"
 func TestTempDirCreatesAndCleansUpDirectory(t *testing.T) {
 	t.Parallel()
 
-	dir, cleanup := TempDir(t, tempDirPrefix)
-	_ = cleanup
+	dir := TempDir(t, tempDirPrefix)
 
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -34,25 +33,13 @@ func TestTempDirCreatesAndCleansUpDirectory(t *testing.T) {
 	if !strings.Contains(filepath.Base(dir), tempDirPrefix) {
 		t.Fatalf("TempDir directory name %q does not contain prefix", filepath.Base(dir))
 	}
-
-	// Verify the returned cleanup is a no-op since real cleanup is via t.Cleanup.
-	// Write a marker file, call cleanup, verify marker still exists.
-	marker := filepath.Join(dir, "marker")
-	if err := os.WriteFile(marker, []byte("x"), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	cleanup()
-	if _, err := os.Stat(marker); err != nil {
-		t.Fatalf("returned cleanup should be a no-op but marker was removed")
-	}
 }
 
 func TestTempDirWithConfigCreatesConfigFile(t *testing.T) {
 	t.Parallel()
 
 	config := "[reticulum]\ninstance_name = test\n"
-	dir, cleanup := TempDirWithConfig(t, tempDirPrefix, func(string) string { return config })
-	_ = cleanup
+	dir := TempDirWithConfig(t, tempDirPrefix, func(string) string { return config })
 
 	configPath := filepath.Join(dir, "config")
 	data, err := os.ReadFile(configPath)
@@ -61,12 +48,6 @@ func TestTempDirWithConfigCreatesConfigFile(t *testing.T) {
 	}
 	if got := string(data); got != config {
 		t.Fatalf("TempDirWithConfig config = %q, want %q", got, config)
-	}
-
-	// Verify the returned cleanup is a no-op since real cleanup is via t.Cleanup.
-	cleanup()
-	if _, err := os.Stat(configPath); err != nil {
-		t.Fatalf("returned cleanup should be a no-op but config was removed")
 	}
 }
 

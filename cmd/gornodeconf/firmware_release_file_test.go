@@ -43,7 +43,6 @@ func TestReadFirmwareReleaseInfoFileMissing(t *testing.T) {
 func tempFirmwareReleaseFileDir(t *testing.T) string {
 	t.Helper()
 
-	dir, cleanup := testutils.TempDir(t, "gornodeconf-release-file-*")
-	t.Cleanup(cleanup)
+	dir := testutils.TempDir(t, "gornodeconf-release-file-*")
 	return dir
 }

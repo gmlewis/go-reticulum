@@ -47,8 +47,7 @@ func TestNewRuntime(t *testing.T) {
 
 func TestPrepareIdentity(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := testutils.TempDir(t, "gornx-id-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "gornx-id-")
 
 	rt := newRuntime(&appT{configDir: tmpDir})
 
@@ -71,8 +70,7 @@ func TestPrepareIdentity(t *testing.T) {
 
 func TestResolveAllowedIdentitiesPath(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := testutils.TempDir(t, "gornx-allowed-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "gornx-allowed-")
 
 	// 1. Test ~/.rnx/allowed_identities
 	rnxDir := filepath.Join(tmpDir, ".rnx")

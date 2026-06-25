@@ -64,8 +64,7 @@ func TestGornprobeKeyboardInterrupt(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
 	binPath := buildGornprobeBinary(t)
-	configDir, cleanup := testutils.TempDir(t, "gornprobe-int-")
-	defer cleanup()
+	configDir := testutils.TempDir(t, "gornprobe-int-")
 	configText := `[reticulum]
 share_instance = No
 instance_control_port = 0
@@ -158,8 +157,7 @@ func TestGornprobeScenarioParity(t *testing.T) {
 
 func buildGornprobeBinary(t *testing.T) string {
 	t.Helper()
-	binDir, cleanup := testutils.TempDir(t, "gornprobe-int-bin-")
-	t.Cleanup(cleanup)
+	binDir := testutils.TempDir(t, "gornprobe-int-bin-")
 	binPath := filepath.Join(binDir, "gornprobe")
 	cmd := osexec.Command("go", "build", "-o", binPath, ".")
 	cmd.Dir = "."
@@ -318,8 +316,7 @@ for v in values:
     results[str(v)] = str(float(v))
 print(json.dumps(results))
 `
-	tmpDir, cleanup := testutils.TempDir(t, "pyfloat-parity-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "pyfloat-parity-")
 
 	scriptPath := filepath.Join(tmpDir, "pyfloat.py")
 	if err := os.WriteFile(scriptPath, []byte(pyScript), 0o644); err != nil {

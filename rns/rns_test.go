@@ -93,8 +93,7 @@ func writeConfig(t *testing.T, dir, content string) {
 func TestNewReticulumEnablesBlackholeUpdaterWhenSourcesConfigured(t *testing.T) {
 	t.Parallel()
 
-	configDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	configDir := testutils.TempDir(t, tempDirPrefix)
 	writeConfig(t, configDir, `[reticulum]
 share_instance = No
 blackhole_sources = [00112233445566778899aabbccddeeff]
@@ -136,10 +135,8 @@ loglevel = 4
 [interfaces]
 `
 
-	cfg1, cleanup1 := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup1()
-	cfg2, cleanup2 := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup2()
+	cfg1 := testutils.TempDir(t, tempDirPrefix)
+	cfg2 := testutils.TempDir(t, tempDirPrefix)
 	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name(), port, controlPort))
 	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name(), port, controlPort))
 
@@ -166,8 +163,7 @@ func TestNewReticulumShareInstanceNoStandalone(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
 
-	cfg, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	cfg := testutils.TempDir(t, tempDirPrefix)
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
 share_instance = No
 instance_control_port = %v
@@ -197,8 +193,7 @@ func TestNewReticulumSharedInstanceUnixServerThenClientSameConfigDir(t *testing.
 	ts1 := NewTransportSystem(nil)
 	ts2 := NewTransportSystem(nil)
 
-	cfg, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	cfg := testutils.TempDir(t, tempDirPrefix)
 	// Use a shorter name for the socket to avoid path length limits on macOS
 	instanceName := "rns-test"
 
@@ -257,8 +252,7 @@ func TestReticulumBackgroundJobs(t *testing.T) {
 	t.Parallel()
 
 	ts := NewTransportSystem(nil)
-	tmpDir, cleanup := testutils.TempDir(t, "rns-test-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "rns-test-")
 
 	r, err := NewReticulumWithLogger(ts, tmpDir, nil)
 	if err != nil {
@@ -310,8 +304,7 @@ func TestInterfaceManagement(t *testing.T) {
 	t.Parallel()
 
 	ts := NewTransportSystem(nil)
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	writeConfig(t, tmpDir, "[reticulum]\nshare_instance = No\n")
 	r, err := NewReticulumWithLogger(ts, tmpDir, nil)
 	if err != nil {

@@ -28,11 +28,10 @@ func mustMsgpackPack(v any) []byte {
 
 func TestProgramSetupDiscovery(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornstatus-discovery-", func(dir string) string {
+	tmpDir := testutils.TempDirWithConfig(t, "gornstatus-discovery-", func(dir string) string {
 		instanceName := filepath.Base(dir)
 		return "[reticulum]\nenable_transport = False\nshare_instance = Yes\ninstance_name = " + instanceName + "\n\n[logging]\nloglevel = 2\n"
 	})
-	defer cleanup()
 
 	// Setup mock discovery data
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
@@ -88,11 +87,10 @@ func TestProgramSetupDiscovery(t *testing.T) {
 
 func TestProgramSetupExitsCleanly(t *testing.T) {
 	t.Parallel()
-	tmpDir, cleanup := testutils.TempDirWithConfig(t, "gornstatus-test-", func(dir string) string {
+	tmpDir := testutils.TempDirWithConfig(t, "gornstatus-test-", func(dir string) string {
 		instanceName := filepath.Base(dir)
 		return "[reticulum]\nenable_transport = False\nshare_instance = Yes\ninstance_name = " + instanceName + "\n\n[logging]\nloglevel = 2\n"
 	})
-	defer cleanup()
 	var buf bytes.Buffer
 	logger := rns.NewLogger()
 	ts := rns.NewTransportSystem(logger)

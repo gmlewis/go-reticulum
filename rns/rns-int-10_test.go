@@ -402,8 +402,7 @@ func runPythonInteropCmd(t *testing.T, scriptPath, mode string, args ...string) 
 func TestRatchetGoToPythonParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-ratchet-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-ratchet-*")
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -534,8 +533,7 @@ func TestRatchetGoToPythonParity(t *testing.T) {
 func TestRatchetPythonToGoParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-ratchet-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-ratchet-*")
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -627,8 +625,7 @@ func TestRatchetPythonToGoParity(t *testing.T) {
 func TestRatchetRotationParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-ratchet-rotation-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-ratchet-rotation-*")
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -723,8 +720,7 @@ func TestRatchetRotationParity(t *testing.T) {
 func TestRatchetRetentionWindowParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-ratchet-retention-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-ratchet-retention-*")
 
 	pyListenPort, goListenPort := allocateUDPPortPair(t)
 
@@ -818,8 +814,7 @@ func TestRatchetRetentionWindowParity(t *testing.T) {
 func TestRatchetEnforceParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-ratchet-enforce-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-ratchet-enforce-*")
 
 	ts := NewTransportSystem(nil)
 	id := mustTestNewIdentity(t, true)
@@ -867,8 +862,7 @@ func TestRatchetEnforceParity(t *testing.T) {
 func TestRatchetFileInteropParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-ratchet-file-interop-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-ratchet-file-interop-*")
 
 	ts := NewTransportSystem(nil)
 

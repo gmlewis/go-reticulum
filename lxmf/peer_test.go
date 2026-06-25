@@ -21,8 +21,7 @@ func TestPeerRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	ts := rns.NewTransportSystem(nil)
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	peerHash := bytes.Repeat([]byte{0x11}, rns.TruncatedHashLength/8)
@@ -130,8 +129,7 @@ func TestPeerFromBytesDefaults(t *testing.T) {
 	t.Parallel()
 
 	ts := rns.NewTransportSystem(nil)
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	peerHash := bytes.Repeat([]byte{0x22}, rns.TruncatedHashLength/8)
@@ -190,8 +188,7 @@ func TestPeerQueueProcessingAndPeeringKey(t *testing.T) {
 	t.Parallel()
 
 	ts := rns.NewTransportSystem(nil)
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
 	peerHash := bytes.Repeat([]byte{0x33}, rns.TruncatedHashLength/8)
@@ -250,8 +247,7 @@ func TestPeerSyncPreconditions(t *testing.T) {
 	destHash := make([]byte, 16)
 	ts := rns.NewTransportSystem(nil)
 	id, _ := rns.NewIdentity(false, nil)
-	dir, cleanup := testutils.TempDir(t, "lxmf-peer-sync-")
-	defer cleanup()
+	dir := testutils.TempDir(t, "lxmf-peer-sync-")
 	router, err := NewRouter(ts, id, dir)
 	if err != nil {
 		t.Fatal(err)
@@ -356,8 +352,7 @@ func TestPeerSyncIdentityRecall(t *testing.T) {
 	destHash[0] = 0xBB
 	ts := rns.NewTransportSystem(nil)
 	id, _ := rns.NewIdentity(false, nil)
-	dir, cleanup := testutils.TempDir(t, "lxmf-peer-idrecall-")
-	defer cleanup()
+	dir := testutils.TempDir(t, "lxmf-peer-idrecall-")
 	router, err := NewRouter(ts, id, dir)
 	if err != nil {
 		t.Fatal(err)
@@ -501,8 +496,7 @@ func TestPeerSyncPathRequest(t *testing.T) {
 	destHash[0] = 0xAA
 	ts := rns.NewTransportSystem(nil)
 	id, _ := rns.NewIdentity(false, nil)
-	dir, cleanup := testutils.TempDir(t, "lxmf-peer-pathreq-")
-	defer cleanup()
+	dir := testutils.TempDir(t, "lxmf-peer-pathreq-")
 	router, err := NewRouter(ts, id, dir)
 	if err != nil {
 		t.Fatal(err)
@@ -600,8 +594,7 @@ func TestPeerSyncOfferRequest(t *testing.T) {
 
 	ts := rns.NewTransportSystem(nil)
 	id, _ := rns.NewIdentity(false, nil)
-	dir, cleanup := testutils.TempDir(t, "lxmf-peer-offer-")
-	defer cleanup()
+	dir := testutils.TempDir(t, "lxmf-peer-offer-")
 	router, err := NewRouter(ts, id, dir)
 	if err != nil {
 		t.Fatal(err)
@@ -697,8 +690,7 @@ func TestPeerSyncNoUnhandled(t *testing.T) {
 
 	ts := rns.NewTransportSystem(nil)
 	id, _ := rns.NewIdentity(false, nil)
-	dir, cleanup := testutils.TempDir(t, "lxmf-peer-nounh-")
-	defer cleanup()
+	dir := testutils.TempDir(t, "lxmf-peer-nounh-")
 	router, err := NewRouter(ts, id, dir)
 	if err != nil {
 		t.Fatal(err)

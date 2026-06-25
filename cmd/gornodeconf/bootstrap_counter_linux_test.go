@@ -18,8 +18,7 @@ import (
 func TestNextBootstrapSerialNumberDefaultsToOne(t *testing.T) {
 	t.Parallel()
 
-	dir, cleanup := testutils.TempDir(t, "gornodeconf-bootstrap-counter-*")
-	t.Cleanup(cleanup)
+	dir := testutils.TempDir(t, "gornodeconf-bootstrap-counter-*")
 
 	got, err := nextBootstrapSerialNumber(dir)
 	if err != nil {
@@ -40,8 +39,7 @@ func TestNextBootstrapSerialNumberDefaultsToOne(t *testing.T) {
 func TestNextBootstrapSerialNumberIncrementsExistingValue(t *testing.T) {
 	t.Parallel()
 
-	dir, cleanup := testutils.TempDir(t, "gornodeconf-bootstrap-counter-*")
-	t.Cleanup(cleanup)
+	dir := testutils.TempDir(t, "gornodeconf-bootstrap-counter-*")
 	counterPath := filepath.Join(dir, "firmware", "serial.counter")
 	if err := os.MkdirAll(filepath.Dir(counterPath), 0o755); err != nil {
 		t.Fatalf("mkdir firmware dir: %v", err)

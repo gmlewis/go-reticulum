@@ -79,8 +79,7 @@ func TestRPCAuthAndGetEndpoints(t *testing.T) {
 	rpcPort := reserveTCPPort(t)
 	rpcKeyHex := "00112233445566778899aabbccddeeff"
 
-	cfg, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	cfg := testutils.TempDir(t, tempDirPrefix)
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
 instance_name = %v
 share_instance = Yes
@@ -136,8 +135,7 @@ func TestRPCRejectsInvalidAuth(t *testing.T) {
 	sharedPort := reserveTCPPort(t)
 	rpcPort := reserveTCPPort(t)
 
-	cfg, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	cfg := testutils.TempDir(t, tempDirPrefix)
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
 instance_name = %v
 share_instance = Yes
@@ -177,8 +175,7 @@ func TestRPCAcceptsByteAuthKey(t *testing.T) {
 	rpcPort := reserveTCPPort(t)
 	rpcKeyHex := "00112233445566778899aabbccddeeff"
 
-	cfg, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	cfg := testutils.TempDir(t, tempDirPrefix)
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
 instance_name = %v
 share_instance = Yes
@@ -229,10 +226,8 @@ loglevel = 4
 [interfaces]
 `
 
-	cfg1, cleanup1 := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup1()
-	cfg2, cleanup2 := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup2()
+	cfg1 := testutils.TempDir(t, tempDirPrefix)
+	cfg2 := testutils.TempDir(t, tempDirPrefix)
 	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name()+"-1", sharedPort, rpcPort, rpcKeyHex))
 	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name()+"-2", sharedPort, rpcPort, rpcKeyHex))
 
@@ -268,8 +263,7 @@ func TestRPCExpandedGetDropAndBlackholeSurface(t *testing.T) {
 	rpcPort := reserveTCPPort(t)
 	rpcKeyHex := "00112233445566778899aabbccddeeff"
 
-	cfg, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	cfg := testutils.TempDir(t, tempDirPrefix)
 	writeConfig(t, cfg, fmt.Sprintf(`[reticulum]
 instance_name = %v
 share_instance = Yes
@@ -351,10 +345,8 @@ loglevel = 4
 [interfaces]
 `
 
-	cfg1, cleanup1 := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup1()
-	cfg2, cleanup2 := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup2()
+	cfg1 := testutils.TempDir(t, tempDirPrefix)
+	cfg2 := testutils.TempDir(t, tempDirPrefix)
 	writeConfig(t, cfg1, fmt.Sprintf(configTemplate, t.Name()+"-1", sharedPort, rpcPort, rpcKeyHex))
 	writeConfig(t, cfg2, fmt.Sprintf(configTemplate, t.Name()+"-2", sharedPort, rpcPort, rpcKeyHex))
 
@@ -860,10 +852,8 @@ func TestConnectedInstanceManagementCallsRecoverAfterRPCServerRestart(t *testing
 			rpcPort := reserveTCPPort(t)
 			rpcKeyHex := "00112233445566778899aabbccddeeff"
 
-			cfg1, cleanup1 := testutils.TempDir(t, tempDirPrefix)
-			defer cleanup1()
-			cfg2, cleanup2 := testutils.TempDir(t, tempDirPrefix)
-			defer cleanup2()
+			cfg1 := testutils.TempDir(t, tempDirPrefix)
+			cfg2 := testutils.TempDir(t, tempDirPrefix)
 			if tc.sameConfigDir {
 				cfg2 = cfg1
 			}

@@ -15,7 +15,6 @@ import (
 func tempSerialPort(t *testing.T) string {
 	t.Helper()
 
-	dir, cleanup := testutils.TempDir(t, "gornodeconf-port-*")
-	t.Cleanup(cleanup)
+	dir := testutils.TempDir(t, "gornodeconf-port-*")
 	return filepath.Join(dir, "port")
 }

@@ -83,8 +83,7 @@ func countMessageContains(messages []string, want string) int {
 
 func TestProgramSetupAppliesVerbosityAndLogsNotice(t *testing.T) {
 	t.Parallel()
-	configDir, cleanup := testutils.TempDir(t, "gornsd-program-setup-")
-	defer cleanup()
+	configDir := testutils.TempDir(t, "gornsd-program-setup-")
 	writeGornsdConfig(t, configDir, "No", 4)
 
 	logger := rns.NewLogger()
@@ -124,8 +123,7 @@ func TestProgramSetupAppliesVerbosityAndLogsNotice(t *testing.T) {
 
 func TestProgramSetupServiceUsesFileLogging(t *testing.T) {
 	t.Parallel()
-	configDir, cleanup := testutils.TempDir(t, "gornsd-program-service-")
-	defer cleanup()
+	configDir := testutils.TempDir(t, "gornsd-program-service-")
 	writeGornsdConfig(t, configDir, "No", 4)
 
 	logger := rns.NewLogger()
@@ -157,8 +155,7 @@ func TestProgramSetupServiceUsesFileLogging(t *testing.T) {
 
 func TestProgramSetupServiceKeepsConfigLogLevel(t *testing.T) {
 	t.Parallel()
-	configDir, cleanup := testutils.TempDir(t, "gornsd-program-service-level-")
-	defer cleanup()
+	configDir := testutils.TempDir(t, "gornsd-program-service-level-")
 	writeGornsdConfig(t, configDir, "No", 4)
 
 	logger := rns.NewLogger()
@@ -186,8 +183,7 @@ func TestProgramSetupServiceKeepsConfigLogLevel(t *testing.T) {
 
 func TestProgramSetupConnectedSharedInstanceLogsWarning(t *testing.T) {
 	t.Parallel()
-	configDir, cleanup := testutils.TempDir(t, "gornsd-program-shared-")
-	defer cleanup()
+	configDir := testutils.TempDir(t, "gornsd-program-shared-")
 	sharedPort := reserveTCPPort(t)
 	rpcPort := reserveTCPPort(t)
 	config := fmt.Sprintf(`[reticulum]
@@ -249,8 +245,7 @@ loglevel = 4
 
 func TestProgramSetupAppliesVerbosityBeforeStartupLogging(t *testing.T) {
 	t.Parallel()
-	configDir, cleanup := testutils.TempDir(t, "gornsd-program-verbosity-")
-	defer cleanup()
+	configDir := testutils.TempDir(t, "gornsd-program-verbosity-")
 	writeGornsdConfig(t, configDir, "No", 4)
 
 	logger := rns.NewLogger()

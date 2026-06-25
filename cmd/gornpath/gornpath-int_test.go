@@ -23,25 +23,23 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-func buildGornpath(t *testing.T) (string, func()) {
+func buildGornpath(t *testing.T) string {
 	t.Helper()
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	bin := filepath.Join(tmpDir, "gornpath")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Dir = "."
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		cleanup()
 		t.Fatalf("failed to build gornpath: %v\n%v", err, string(out))
 	}
-	return bin, cleanup
+	return bin
 }
 
 func TestIntegration_NoArgsPrintsUsageAndExitsZero(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin, cleanup := buildGornpath(t)
-	defer cleanup()
+	bin := buildGornpath(t)
 	out, err := exec.Command(bin).CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornpath with no args failed: %v\n%v", err, string(out))
@@ -54,8 +52,7 @@ func TestIntegration_NoArgsPrintsUsageAndExitsZero(t *testing.T) {
 func TestIntegration_VersionPrintsProgramVersion(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin, cleanup := buildGornpath(t)
-	defer cleanup()
+	bin := buildGornpath(t)
 	out, err := exec.Command(bin, "--version").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornpath --version failed: %v\n%v", err, string(out))
@@ -68,8 +65,7 @@ func TestIntegration_VersionPrintsProgramVersion(t *testing.T) {
 func TestIntegration_InvalidFlagExitsTwoAndPrintsUsage(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin, cleanup := buildGornpath(t)
-	defer cleanup()
+	bin := buildGornpath(t)
 	out, err := exec.Command(bin, "--does-not-exist").CombinedOutput()
 	if err == nil {
 		t.Fatal("expected parse failure, got success")
@@ -318,8 +314,7 @@ for offset in values:
 print(json.dumps(results))
 `, nowPy, nowPy)
 
-	tmpDir, cleanup := testutils.TempDir(t, "pretty-date-parity-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "pretty-date-parity-")
 
 	scriptPath := filepath.Join(tmpDir, "pd.py")
 	if err := os.WriteFile(scriptPath, []byte(pyScript), 0o644); err != nil {

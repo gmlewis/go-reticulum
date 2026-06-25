@@ -86,25 +86,23 @@ for _ in range(15):
     time.sleep(2)
 `
 
-func buildGornstatus(t *testing.T) (string, func()) {
+func buildGornstatus(t *testing.T) string {
 	t.Helper()
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	bin := filepath.Join(tmpDir, "gornstatus")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Dir = "."
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		cleanup()
 		t.Fatalf("failed to build gornstatus: %v\n%v", err, string(out))
 	}
-	return bin, cleanup
+	return bin
 }
 
 func TestIntegration_VersionOutput(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin, cleanupBin := buildGornstatus(t)
-	defer cleanupBin()
+	bin := buildGornstatus(t)
 	out, err := exec.Command(bin, "--version").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornstatus --version failed: %v\n%v", err, string(out))
@@ -119,8 +117,7 @@ func TestIntegration_VersionOutput(t *testing.T) {
 func TestIntegration_HelpOutput(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin, cleanupBin := buildGornstatus(t)
-	defer cleanupBin()
+	bin := buildGornstatus(t)
 	out, err := exec.Command(bin, "--help").CombinedOutput()
 	_ = err
 	output := string(out)
@@ -153,11 +150,10 @@ func TestIntegration_HelpOutput(t *testing.T) {
 func TestIntegration_ExitCodeZero(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin, cleanupBin := buildGornstatus(t)
-	defer cleanupBin()
+	bin := buildGornstatus(t)
 	listenPort := testutils.ReserveUDPPort(t)
 	forwardPort := testutils.ReserveUDPPort(t)
-	tmpDir, cleanup := testutils.TempDirWithConfig(t, tempDirPrefix, func(dir string) string {
+	tmpDir := testutils.TempDirWithConfig(t, tempDirPrefix, func(dir string) string {
 		instanceName := filepath.Base(dir)
 		return strings.Join([]string{
 			"[reticulum]",
@@ -178,7 +174,6 @@ func TestIntegration_ExitCodeZero(t *testing.T) {
 			"    forward_port = " + fmt.Sprintf("%v", forwardPort),
 		}, "\n")
 	})
-	defer cleanup()
 	cmd := exec.Command(bin, "--config", tmpDir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -189,13 +184,11 @@ func TestIntegration_ExitCodeZero(t *testing.T) {
 func TestIntegration_SIGINTCleanExit(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin, cleanupBin := buildGornstatus(t)
-	defer cleanupBin()
-	tmpDir, cleanup := testutils.TempDirWithConfig(t, tempDirPrefix, func(dir string) string {
+	bin := buildGornstatus(t)
+	tmpDir := testutils.TempDirWithConfig(t, tempDirPrefix, func(dir string) string {
 		instanceName := filepath.Base(dir)
 		return "[reticulum]\nenable_transport = False\nshare_instance = Yes\ninstance_name = " + instanceName + "\n\n[logging]\nloglevel = 2\n"
 	})
-	defer cleanup()
 	cmd := exec.Command(bin, "--config", tmpDir, "-m", "-I", "10")
 	setProcessGroup(cmd)
 	if err := cmd.Start(); err != nil {
@@ -215,13 +208,11 @@ func TestIntegration_SIGINTCleanExit(t *testing.T) {
 func TestIntegration_MonitorModeSIGINT(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin, cleanupBin := buildGornstatus(t)
-	defer cleanupBin()
-	tmpDir, cleanup := testutils.TempDirWithConfig(t, tempDirPrefix, func(dir string) string {
+	bin := buildGornstatus(t)
+	tmpDir := testutils.TempDirWithConfig(t, tempDirPrefix, func(dir string) string {
 		instanceName := filepath.Base(dir)
 		return "[reticulum]\nenable_transport = False\nshare_instance = Yes\ninstance_name = " + instanceName + "\n\n[logging]\nloglevel = 2\n"
 	})
-	defer cleanup()
 	cmd := exec.Command(bin, "--config", tmpDir, "-m", "-I", "0.1")
 	setProcessGroup(cmd)
 	if err := cmd.Start(); err != nil {
@@ -241,8 +232,7 @@ func TestIntegration_MonitorModeSIGINT(t *testing.T) {
 func TestIntegration_VerboseStacking(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin, cleanupBin := buildGornstatus(t)
-	defer cleanupBin()
+	bin := buildGornstatus(t)
 	out, err := exec.Command(bin, "-v", "-v", "--version").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornstatus -v -v --version failed: %v\n%v", err, string(out))
@@ -256,12 +246,10 @@ func TestIntegration_VerboseStacking(t *testing.T) {
 
 func TestIntegration_RemoteStatus(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	bin, cleanupBin := buildGornstatus(t)
-	defer cleanupBin()
+	bin := buildGornstatus(t)
 
 	// 1. Setup Python Node (Server)
-	pyConfigDir, cleanupPy := testutils.TempDir(t, "gornstatus-py-server-")
-	defer cleanupPy()
+	pyConfigDir := testutils.TempDir(t, "gornstatus-py-server-")
 	pyInstanceName := "gornstatus-py-server-" + filepath.Base(pyConfigDir)
 
 	mgmtIDPath := filepath.Join(pyConfigDir, "management.id")
@@ -362,8 +350,7 @@ func TestIntegration_RemoteStatus(t *testing.T) {
 	t.Logf("Python management hash: %v", managementHash)
 
 	// 2. Setup Go Node (Initiator)
-	goConfigDir, cleanupGo := testutils.TempDir(t, "gornstatus-go-client-")
-	defer cleanupGo()
+	goConfigDir := testutils.TempDir(t, "gornstatus-go-client-")
 	goInstanceName := "gornstatus-go-client-" + filepath.Base(goConfigDir)
 
 	goConfig := strings.Join([]string{
@@ -411,11 +398,9 @@ func TestIntegration_RemoteStatus(t *testing.T) {
 func TestIntegration_Discovered(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin, cleanupBin := buildGornstatus(t)
-	defer cleanupBin()
+	bin := buildGornstatus(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "gornstatus-int-disc-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "gornstatus-int-disc-")
 
 	// Setup mock discovery data in shared storage
 	storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
@@ -479,8 +464,7 @@ for v in values:
 print(json.dumps(results))
 `, pyDir)
 
-	tmpDir, cleanup := testutils.TempDir(t, "speed-str-parity-")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "speed-str-parity-")
 	scriptPath := filepath.Join(tmpDir, "speed_str.py")
 	if err := os.WriteFile(scriptPath, []byte(pyScript), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)

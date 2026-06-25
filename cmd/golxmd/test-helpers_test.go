@@ -3,6 +3,8 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
+//go:build integration
+
 package main
 
 import (
@@ -11,10 +13,6 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-func tempTrustKeyHome(t *testing.T) string {
-	t.Helper()
-
-	dir, cleanup := testutils.TempDir(t, "gornodeconf-trustkey-*")
-	t.Cleanup(cleanup)
-	return dir
+func skipShortIntegration(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 }

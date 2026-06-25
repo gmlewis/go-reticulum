@@ -114,8 +114,7 @@ finally:
 func TestIdentityParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-parity-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-parity-*")
 
 	scriptPath := filepath.Join(tmpDir, "check_identity_parity.py")
 	if err := os.WriteFile(scriptPath, []byte(checkIdentityParityPy), 0o644); err != nil {
@@ -160,8 +159,7 @@ func TestIdentityParity(t *testing.T) {
 func TestIdentityPythonToGoParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-parity-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-parity-*")
 
 	scriptPath := filepath.Join(tmpDir, "generate_identity_parity.py")
 	if err := os.WriteFile(scriptPath, []byte(generateIdentityParityPy), 0o644); err != nil {
@@ -207,8 +205,7 @@ func TestIdentityPythonToGoParity(t *testing.T) {
 func TestImplicitProofParityWithPython(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
-	tmpDir, cleanup := testutils.TempDir(t, "go-reticulum-implicit-proof-*")
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, "go-reticulum-implicit-proof-*")
 
 	id := mustTestNewIdentity(t, true)
 	idPath := filepath.Join(tmpDir, "id")

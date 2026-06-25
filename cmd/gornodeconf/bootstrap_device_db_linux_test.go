@@ -18,8 +18,7 @@ import (
 func TestWriteDeviceIdentityBackupWritesSerialNamedFile(t *testing.T) {
 	t.Parallel()
 
-	dir, cleanup := testutils.TempDir(t, "gornodeconf-device-db-*")
-	t.Cleanup(cleanup)
+	dir := testutils.TempDir(t, "gornodeconf-device-db-*")
 
 	path, err := writeDeviceIdentityBackup(dir, 0x01020304, []byte{0xaa, 0xbb, 0xcc})
 	if err != nil {

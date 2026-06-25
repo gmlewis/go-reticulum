@@ -312,8 +312,7 @@ func TestRunFirmwareExtractUsesResolvedRecoveryPython(t *testing.T) {
 func tempExtractFirmwareHome(t *testing.T) string {
 	t.Helper()
 
-	dir, cleanup := testutils.TempDir(t, "gornodeconf-extract-firmware-*")
-	t.Cleanup(cleanup)
+	dir := testutils.TempDir(t, "gornodeconf-extract-firmware-*")
 	return dir
 }
 

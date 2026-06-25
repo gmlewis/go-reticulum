@@ -59,8 +59,7 @@ func repoRoot(t *testing.T) string {
 
 func buildGornsdBinary(t *testing.T) string {
 	t.Helper()
-	buildDir, cleanup := testutils.TempDir(t, "gornsd-int-bin-")
-	t.Cleanup(cleanup)
+	buildDir := testutils.TempDir(t, "gornsd-int-bin-")
 
 	binaryPath := filepath.Join(buildDir, "gornsd")
 	cmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/gornsd")
@@ -323,8 +322,7 @@ func TestGornsdUnknownFlagExitCode2(t *testing.T) {
 func TestGornsdStartupAndSIGTERM(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	configDir, cleanup := testutils.TempDir(t, "gornsd-int-startup-")
-	t.Cleanup(cleanup)
+	configDir := testutils.TempDir(t, "gornsd-int-startup-")
 	writeGornsdConfig(t, configDir, "No", 4)
 
 	binaryPath := buildGornsdBinary(t)
@@ -344,8 +342,7 @@ func TestGornsdStartupAndSIGTERM(t *testing.T) {
 func TestGornsdSIGINTBlankLine(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	configDir, cleanup := testutils.TempDir(t, "gornsd-int-sigint-")
-	t.Cleanup(cleanup)
+	configDir := testutils.TempDir(t, "gornsd-int-sigint-")
 	writeGornsdConfig(t, configDir, "No", 4)
 
 	binaryPath := buildGornsdBinary(t)
@@ -364,8 +361,7 @@ func TestGornsdSIGINTBlankLine(t *testing.T) {
 
 func TestGornsdServiceModeLogsToFile(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	configDir, cleanup := testutils.TempDir(t, "gornsd-int-service-")
-	t.Cleanup(cleanup)
+	configDir := testutils.TempDir(t, "gornsd-int-service-")
 	writeGornsdConfig(t, configDir, "No", 4)
 
 	binaryPath := buildGornsdBinary(t)
@@ -384,8 +380,7 @@ func TestGornsdServiceModeLogsToFile(t *testing.T) {
 
 func TestGornsdVerbosityIncreases(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	configDir, cleanup := testutils.TempDir(t, "gornsd-int-verbose-")
-	t.Cleanup(cleanup)
+	configDir := testutils.TempDir(t, "gornsd-int-verbose-")
 	listenPort := testutils.ReserveUDPPort(t)
 	forwardPort := testutils.ReserveUDPPort(t)
 	writeGornsdUDPConfig(t, configDir, "No", 4, listenPort, forwardPort)
@@ -406,8 +401,7 @@ func TestGornsdVerbosityIncreases(t *testing.T) {
 
 func TestGornsdQuietDecreases(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	configDir, cleanup := testutils.TempDir(t, "gornsd-int-quiet-")
-	t.Cleanup(cleanup)
+	configDir := testutils.TempDir(t, "gornsd-int-quiet-")
 	listenPort := testutils.ReserveUDPPort(t)
 	forwardPort := testutils.ReserveUDPPort(t)
 	writeGornsdUDPConfig(t, configDir, "No", 4, listenPort, forwardPort)
@@ -433,7 +427,7 @@ func TestGornsdSharedInstanceWarning(t *testing.T) {
 
 	const maxAttempts = 5
 	for attempt := 1; ; attempt++ {
-		configDir, cleanup := testutils.TempDir(t, "gornsd-int-shared-")
+		configDir := testutils.TempDir(t, "gornsd-int-shared-")
 		sharedPort := reserveTCPPortForIntegration(t)
 		rpcPort := reserveTCPPortForIntegration(t)
 		config := fmt.Sprintf(`[reticulum]
@@ -449,7 +443,6 @@ loglevel = 4
 [interfaces]
 `, sharedPort, rpcPort)
 		if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
-			cleanup()
 			t.Fatalf("write config error: %v", err)
 		}
 
@@ -459,7 +452,6 @@ loglevel = 4
 		sharedTS := rns.NewTransportSystem(sharedLogger)
 		shared, err := rns.NewReticulumWithLogger(sharedTS, configDir, sharedLogger)
 		if err != nil {
-			cleanup()
 			if strings.Contains(err.Error(), "address already in use") && attempt < maxAttempts {
 				t.Logf("port collision on attempt %v, retrying with new ports", attempt)
 				continue
@@ -489,9 +481,8 @@ loglevel = 4
 
 func TestGornsdInteractiveModeREPL(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	configDir, cleanup := testutils.TempDir(t, "gornsd-int-repl-")
+	configDir := testutils.TempDir(t, "gornsd-int-repl-")
 
-	t.Cleanup(cleanup)
 	writeGornsdConfig(t, configDir, "No", 4)
 
 	binaryPath := buildGornsdBinary(t)

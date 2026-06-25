@@ -48,8 +48,7 @@ func TestJobs_RecoverFromPanic(t *testing.T) {
 }
 
 func TestTick(t *testing.T) {
-	tmpDir, cleanup := testutils.TempDir(t, tempDirPrefix)
-	defer cleanup()
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	identity, err := rns.NewIdentity(true, nil)
 	mustTest(t, err)
 
