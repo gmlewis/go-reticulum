@@ -683,8 +683,22 @@ func (r *Reticulum) initInterfaces() error {
 			continue
 		}
 
-		enabled, ok := sub.GetProperty("enabled")
-		if ok && (strings.ToLower(enabled) == "no" || strings.ToLower(enabled) == "false") {
+		// Match Python RNS/Reticulum.py:835 — an interface is created only when
+		// interface_enabled == True OR enabled == True. The default (neither key
+		// present, or set to false) is disabled (skip). This previously diverged:
+		// Go read only "enabled" and defaulted to enabled when it was absent or
+		// when "interface_enabled" was used, so Python-idiomatic configs that
+		// disabled via interface_enabled = false were silently left enabled here.
+		ifaceEnabled := false
+		if v, ok := sub.GetProperty("interface_enabled"); ok {
+			ifaceEnabled = parseBoolLike(v)
+		}
+		if !ifaceEnabled {
+			if v, ok := sub.GetProperty("enabled"); ok {
+				ifaceEnabled = parseBoolLike(v)
+			}
+		}
+		if !ifaceEnabled {
 			continue
 		}
 

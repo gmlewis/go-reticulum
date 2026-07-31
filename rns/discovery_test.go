@@ -12709,6 +12709,7 @@ loglevel = 4
 [interfaces]
 [[Bootstrap TCP]]
 type = TCPServerInterface
+interface_enabled = Yes
 listen_ip = 127.0.0.1
 listen_port = ` + strconv.Itoa(port) + `
 bootstrap_only = Yes
@@ -12764,6 +12765,7 @@ loglevel = 4
 [interfaces]
 [[Bootstrap TCP Client]]
 type = TCPClientInterface
+interface_enabled = Yes
 target_host = 127.0.0.1
 target_port = ` + strconv.Itoa(port) + `
 bootstrap_only = Yes
@@ -12820,6 +12822,7 @@ loglevel = 4
 [interfaces]
 [[Bootstrap UDP]]
 type = UDPInterface
+interface_enabled = Yes
 listen_ip = 127.0.0.1
 listen_port = ` + strconv.Itoa(listenPort) + `
 forward_ip = 127.0.0.1
@@ -12876,6 +12879,7 @@ loglevel = 4
 [interfaces]
 [[Bootstrap Pipe]]
 type = PipeInterface
+interface_enabled = Yes
 command = cat
 respawn_delay = 1
 bootstrap_only = Yes
@@ -12930,6 +12934,7 @@ loglevel = 4
 [interfaces]
 [[Bootstrap Auto]]
 type = AutoInterface
+interface_enabled = Yes
 devices = bootstrap-test-device-that-does-not-exist
 bootstrap_only = Yes
 `
@@ -12984,6 +12989,7 @@ loglevel = 4
 [interfaces]
 [[Bootstrap Serial]]
 type = SerialInterface
+interface_enabled = Yes
 port = ` + serialPort + `
 speed = 115200
 bootstrap_only = Yes
@@ -13038,6 +13044,7 @@ loglevel = 4
 [interfaces]
 [[Bootstrap I2P Peer]]
 type = I2PInterface
+interface_enabled = Yes
 peers = 127.0.0.1:9
 bootstrap_only = Yes
 `
@@ -13098,6 +13105,7 @@ loglevel = 4
 [interfaces]
 [[Bootstrap I2P]]
 type = I2PInterface
+interface_enabled = Yes
 connectable = Yes
 bind_ip = 127.0.0.1
 bind_port = ` + strconv.Itoa(port) + `
@@ -13154,6 +13162,7 @@ loglevel = 4
 [interfaces]
 [[Bootstrap Backbone Client]]
 type = BackboneClientInterface
+interface_enabled = Yes
 target_host = 127.0.0.1
 target_port = ` + strconv.Itoa(port) + `
 bootstrap_only = Yes
@@ -13216,6 +13225,7 @@ loglevel = 4
 [interfaces]
 [[Bootstrap KISS]]
 type = KISSInterface
+interface_enabled = Yes
 port = /dev/ttyKISS0
 speed = 9600
 bootstrap_only = Yes
@@ -13248,6 +13258,7 @@ loglevel = 4
 [interfaces]
 [[Bootstrap RNode]]
 type = RNodeInterface
+interface_enabled = Yes
 port = /dev/ttyRNode0
 frequency = 433050000
 bandwidth = 125000
@@ -13284,6 +13295,7 @@ loglevel = 4
 [interfaces]
 [[Bootstrap RNode Multi]]
 type = RNodeMultiInterface
+interface_enabled = Yes
 port = /dev/ttyRNodeMulti0
 bootstrap_only = Yes
 
@@ -13323,6 +13335,7 @@ loglevel = 4
 [interfaces]
 [[Bootstrap AX25]]
 type = AX25KISSInterface
+interface_enabled = Yes
 port = /dev/ttyAX250
 callsign = N0CALL
 ssid = 0
@@ -13356,6 +13369,7 @@ loglevel = 4
 [interfaces]
 [[Bootstrap Weave]]
 type = WeaveInterface
+interface_enabled = Yes
 port = /dev/ttyWeave0
 bootstrap_only = Yes
 `

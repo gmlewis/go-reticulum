@@ -1419,6 +1419,7 @@ loglevel = 4
 [interfaces]
 [[Discovery TCP]]
 type = TCPServerInterface
+interface_enabled = Yes
 listen_ip = 127.0.0.1
 listen_port = ` + strconv.Itoa(port) + `
 interface_mode = ptp
@@ -1497,6 +1498,7 @@ loglevel = 4
 [interfaces]
 [[Bootstrap Backbone]]
 type = BackboneInterface
+interface_enabled = Yes
 listen_ip = 127.0.0.1
 listen_port = ` + strconv.Itoa(port) + `
 bootstrap_only = Yes
