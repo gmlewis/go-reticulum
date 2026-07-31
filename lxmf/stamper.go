@@ -20,6 +20,16 @@ import (
 
 // StampWorkblock generates the deterministic workblock used as the foundation for anti-spam hashcash calculations.
 func StampWorkblock(material []byte, expandRounds int) ([]byte, error) {
+	return StampWorkblockWithContext(context.Background(), material, expandRounds)
+}
+
+// StampWorkblockWithContext is the cancellation-aware variant of
+// StampWorkblock. The workblock expansion is performed in rounds, and the
+// provided context is checked before each round so that a canceled context
+// aborts expansion promptly rather than running all expandRounds to
+// completion. When the context is canceled, StampWorkblockWithContext
+// returns ctx.Err() and a nil workblock.
+func StampWorkblockWithContext(ctx context.Context, material []byte, expandRounds int) ([]byte, error) {
 	if len(material) == 0 {
 		return nil, fmt.Errorf("stamp workblock material is required")
 	}
@@ -29,6 +39,9 @@ func StampWorkblock(material []byte, expandRounds int) ([]byte, error) {
 
 	workblock := make([]byte, 0, expandRounds*256)
 	for n := 0; n < expandRounds; n++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		nPacked, err := msgpack.Pack(int64(n))
 		if err != nil {
 			return nil, fmt.Errorf("pack round value %v: %w", n, err)
@@ -102,7 +115,7 @@ func GenerateStampWithContext(ctx context.Context, material []byte, targetCost i
 		return nil, 0, 0, fmt.Errorf("invalid target cost %v", targetCost)
 	}
 
-	workblock, err := StampWorkblock(material, expandRounds)
+	workblock, err := StampWorkblockWithContext(ctx, material, expandRounds)
 	if err != nil {
 		return nil, 0, 0, err
 	}
