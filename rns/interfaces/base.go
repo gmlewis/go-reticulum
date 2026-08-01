@@ -149,11 +149,14 @@ func (bi *BaseInterface) SetDetached(detached bool) {
 
 // BytesReceived returns the atomically managed counter of payload bytes
 // ingested by this interface. It is used for telemetry and throughput modeling.
-func (bi *BaseInterface) BytesReceived() uint64 { return bi.rxBytes }
+// The counter is written atomically from interface receive goroutines, so the
+// read here is atomic too (the traffic counter loop reads it concurrently with
+// ingress).
+func (bi *BaseInterface) BytesReceived() uint64 { return atomic.LoadUint64(&bi.rxBytes) }
 
 // BytesSent returns the atomic metric recording bytes dispatched by this
 // interface. It provides observability into the interface's workload.
-func (bi *BaseInterface) BytesSent() uint64 { return bi.txBytes }
+func (bi *BaseInterface) BytesSent() uint64 { return atomic.LoadUint64(&bi.txBytes) }
 
 // CurrentRxSpeed returns the most recent receive speed (bits/sec) computed by
 // the transport traffic loop (Python interface.current_rx_speed). It is 0

@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -222,6 +221,12 @@ type TransportSystem struct {
 	// blackholeDestination holds that destination once created.
 	publishBlackhole     bool
 	blackholeDestination *Destination
+
+	// tunnelSynthesizeDestination is the inbound PLAIN destination
+	// rnstransport.tunnel.synthesize that receives tunnel establishment
+	// packets (Python Transport.py:215-216). Its packet callback is
+	// tunnelSynthesizeHandler.
+	tunnelSynthesizeDestination *Destination
 
 	knownDestinations map[string][]any
 	knownRatchets     map[string][]byte
@@ -598,6 +603,14 @@ func (ts *TransportSystem) Start(storagePath string) error {
 		ts.RegisterDestination(pathRequestDst)
 	}
 
+	// Register the inbound tunnel-synthesis control destination (Python
+	// Transport.py:215-217): a PLAIN IN destination
+	// rnstransport.tunnel.synthesize whose packet callback validates and
+	// establishes tunnels from remote transports.
+	if err := ts.registerTunnelSynthesizeDestination(); err != nil {
+		return err
+	}
+
 	// Register the blackhole list publishing destination (Python
 	// Transport.py:227-233), gated on publish_blackhole_enabled. The
 	// destination is a SINGLE IN destination on the transport identity,
@@ -652,6 +665,33 @@ func (ts *TransportSystem) SetPublishBlackhole(enabled bool) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	ts.publishBlackhole = enabled
+}
+
+// registerTunnelSynthesizeDestination creates the inbound PLAIN destination
+// rnstransport.tunnel.synthesize and wires tunnelSynthesizeHandler as its
+// packet callback (Python Transport.py:215-217). Unlike the blackhole
+// destination it is always registered — every transport accepts inbound
+// tunnel establishment.
+func (ts *TransportSystem) registerTunnelSynthesizeDestination() error {
+	dst, err := NewDestination(ts, nil, DestinationIn, DestinationPlain, "rnstransport", "tunnel", "synthesize")
+	if err != nil {
+		return err
+	}
+	dst.SetPacketCallback(ts.tunnelSynthesizeHandler)
+	ts.mu.Lock()
+	ts.tunnelSynthesizeDestination = dst
+	already := false
+	for _, d := range ts.destinations {
+		if bytes.Equal(d.Hash, dst.Hash) {
+			already = true
+			break
+		}
+	}
+	ts.mu.Unlock()
+	if !already {
+		ts.RegisterDestination(dst)
+	}
+	return nil
 }
 
 // Stop halts the transport system, shutting down all network interfaces and closing active connections.
@@ -3377,13 +3417,20 @@ func (ts *TransportSystem) cleanAnnounceCache() {
 	}
 }
 
+// DestinationTimeout is how long a destination or tunnel table entry is
+// retained after last use (Python Transport.DESTINATION_TIMEOUT,
+// Transport.py:89). One week.
+const DestinationTimeout = 7 * 24 * time.Hour
+
 // Tunnel represents a synthesized Reticulum tunnel that exposes a
 // virtual interface to a remote network over an existing link. It is
-// the Go port of the Python Transport.tunnels[隧道id] entry.
+// the Go port of the Python Transport.tunnels[tunnel_id] entry
+// [tunnel_id, interface, paths, expires].
 type Tunnel struct {
-	ID        int
+	ID        []byte
 	Interface interfaces.Interface
 	Paths     map[string]*PathEntry
+	Expires   time.Time
 }
 
 // tunnelTableFile returns the path of the on-disk tunnel table.
@@ -3392,8 +3439,11 @@ func tunnelTableFile(storagePath string) string {
 }
 
 // SynthesizeTunnel registers a new synthesized tunnel with the given
-// ID. It is the Go port of Python's Transport.synthesize_tunnel().
-func (ts *TransportSystem) SynthesizeTunnel(id int, iface interfaces.Interface) error {
+// tunnel_id (Python Transport.synthesize_tunnel, Transport.py:2120-2138).
+// It only creates the entry; the signature-validated inbound path uses
+// HandleTunnel instead. If a tunnel with tunnel_id already exists it is a
+// no-op.
+func (ts *TransportSystem) SynthesizeTunnel(tunnelID []byte, iface interfaces.Interface) error {
 	if ts == nil {
 		return errors.New("nil transport")
 	}
@@ -3402,23 +3452,26 @@ func (ts *TransportSystem) SynthesizeTunnel(id int, iface interfaces.Interface) 
 	if ts.tunnels == nil {
 		ts.tunnels = map[string]*Tunnel{}
 	}
-	key := strconv.Itoa(id)
+	key := string(tunnelID)
 	if _, exists := ts.tunnels[key]; exists {
 		return nil
 	}
-	ts.tunnels[key] = &Tunnel{ID: id, Interface: iface, Paths: map[string]*PathEntry{}}
+	ts.tunnels[key] = &Tunnel{ID: copyBytes(tunnelID), Interface: iface, Paths: map[string]*PathEntry{}}
 	return nil
 }
 
-// VoidTunnelInterface removes a synthesized tunnel from the table. It
-// is the Go port of Python's Transport.void_tunnel_interface().
-func (ts *TransportSystem) VoidTunnelInterface(id int) {
+// VoidTunnelInterface clears the interface of a synthesized tunnel,
+// leaving the entry (and its paths) in place (Python
+// Transport.void_tunnel_interface, Transport.py:2165-2168).
+func (ts *TransportSystem) VoidTunnelInterface(tunnelID []byte) {
 	if ts == nil {
 		return
 	}
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
-	delete(ts.tunnels, strconv.Itoa(id))
+	if entry, ok := ts.tunnels[string(tunnelID)]; ok {
+		entry.Interface = nil
+	}
 }
 
 // SaveTunnelTable writes the in-memory tunnel table to disk. It is
@@ -3444,19 +3497,83 @@ func (ts *TransportSystem) SaveTunnelTable(storagePath string) error {
 	return os.WriteFile(path, []byte("{}"), 0o644)
 }
 
-// HandleTunnel registers an interface as a synthesized tunnel handler.
-// It is the Go port of Python's Transport.handle_tunnel().
-func (ts *TransportSystem) HandleTunnel(id int, iface interfaces.Interface) error {
+// HandleTunnel registers an interface as a synthesized tunnel endpoint
+// (Python Transport.handle_tunnel, Transport.py:2171-2178). For a new
+// tunnel_id it creates the entry [tunnel_id, interface, paths{}, expires];
+// for an existing one it restores the interface and expiry. Unlike the old
+// int-based stub, it does NOT re-register the interface in
+// Transport.interfaces — Python's handle_tunnel never does that; the
+// receiving interface is already registered.
+func (ts *TransportSystem) HandleTunnel(tunnelID []byte, iface interfaces.Interface) error {
 	if iface == nil {
 		return errors.New("nil interface")
 	}
-	if err := ts.SynthesizeTunnel(id, iface); err != nil {
-		return err
-	}
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
-	ts.interfaces = append(ts.interfaces, iface)
+	if ts.tunnels == nil {
+		ts.tunnels = map[string]*Tunnel{}
+	}
+	key := string(tunnelID)
+	expires := time.Now().Add(DestinationTimeout)
+	if entry, ok := ts.tunnels[key]; ok {
+		entry.Interface = iface
+		entry.Expires = expires
+		return nil
+	}
+	ts.tunnels[key] = &Tunnel{
+		ID:        copyBytes(tunnelID),
+		Interface: iface,
+		Paths:     map[string]*PathEntry{},
+		Expires:   expires,
+	}
 	return nil
+}
+
+// tunnelSynthesizeHandler is the packet callback for the inbound tunnel
+// synthesis destination (Python Transport.tunnel_synthesize_handler,
+// Transport.py:2141-2158). It expects a 176-byte payload laid out as
+// public_key(64) + interface_hash(32) + random_hash(16) + signature(64),
+// derives tunnel_id = FullHash(public_key+interface_hash), validates the
+// signature over (public_key+interface_hash+random_hash) with the embedded
+// public key, and on success dispatches to HandleTunnel on the packet's
+// receiving interface. Any parse/validation failure is logged and dropped.
+func (ts *TransportSystem) tunnelSynthesizeHandler(data []byte, packet *Packet) {
+	keySize := IdentityKeySize / 8     // 64
+	hashLen := len(FullHash(nil))      // 32 (FullHashLength/8)
+	randLen := TruncatedHashLength / 8 // 16
+	sigLen := 64                       // Ed25519 signature length
+	expectedLength := keySize + hashLen + randLen + sigLen
+	if len(data) != expectedLength {
+		return
+	}
+	logger := ts.GetLogger()
+
+	publicKey := data[:keySize]
+	interfaceHash := data[keySize : keySize+hashLen]
+	tunnelIDData := append(append([]byte{}, publicKey...), interfaceHash...)
+	tunnelID := FullHash(tunnelIDData)
+	randomHash := data[keySize+hashLen : keySize+hashLen+randLen]
+	signature := data[keySize+hashLen+randLen : expectedLength]
+	signedData := append(append([]byte{}, tunnelIDData...), randomHash...)
+
+	remote, err := NewIdentity(false, logger)
+	if err != nil {
+		return
+	}
+	if err := remote.LoadPublicKey(publicKey); err != nil {
+		return
+	}
+	if !remote.Verify(signature, signedData) {
+		return
+	}
+	if packet == nil {
+		return
+	}
+	if err := ts.HandleTunnel(tunnelID, packet.ReceivingInterface); err != nil {
+		if logger != nil {
+			logger.Debug("Error handling tunnel establishment: %v", err)
+		}
+	}
 }
 
 // MarkPathUnresponsive marks the path to the given destination hash

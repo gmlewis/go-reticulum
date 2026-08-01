@@ -7,6 +7,7 @@ package interfaces
 
 import (
 	"sync"
+	"sync/atomic"
 )
 
 // PipeInterface establishes a direct in-memory conduit between two endpoints,
@@ -62,7 +63,7 @@ func (p *PipeInterface) Send(data []byte) error {
 		return nil
 	}
 
-	p.txBytes += uint64(len(data))
+	atomic.AddUint64(&p.txBytes, uint64(len(data)))
 	// Use a copy to avoid data races if the buffer is reused
 	buf := make([]byte, len(data))
 	copy(buf, data)

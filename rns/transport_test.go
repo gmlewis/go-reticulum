@@ -1427,31 +1427,34 @@ func TestTunnelSystem(t *testing.T) {
 		ts.tunnels = map[string]*Tunnel{}
 	}
 	td := &Tunnel{
-		ID:        1,
+		ID:        []byte{1},
 		Interface: nil, // synthesized interface not created in this test
 		Paths:     map[string]*PathEntry{},
 	}
-	ts.tunnels["1"] = td
+	ts.tunnels[string([]byte{1})] = td
 	ts.mu.Unlock()
 
 	// Verify lookup.
 	ts.mu.Lock()
-	got, ok := ts.tunnels["1"]
+	got, ok := ts.tunnels[string([]byte{1})]
 	ts.mu.Unlock()
 	if !ok {
 		t.Fatal("tunnel not found after registration")
 	}
-	if got.ID != 1 {
-		t.Fatalf("tunnel ID = %d, want 1", got.ID)
+	if !bytes.Equal(got.ID, []byte{1}) {
+		t.Fatalf("tunnel ID = %x, want 01", got.ID)
 	}
 
-	// Void the tunnel.
-	ts.VoidTunnelInterface(1)
+	// Void the tunnel: the entry stays but its interface is cleared.
+	ts.VoidTunnelInterface([]byte{1})
 	ts.mu.Lock()
-	_, stillThere := ts.tunnels["1"]
+	entry, stillThere := ts.tunnels[string([]byte{1})]
 	ts.mu.Unlock()
-	if stillThere {
-		t.Fatal("tunnel still present after VoidTunnelInterface")
+	if !stillThere {
+		t.Fatal("tunnel entry removed by VoidTunnelInterface; should only clear interface")
+	}
+	if entry.Interface != nil {
+		t.Fatal("tunnel interface not cleared by VoidTunnelInterface")
 	}
 
 	// SaveTunnelTable to disk should not throw.
