@@ -179,6 +179,11 @@ type Router struct {
 	// can be reused for inbound messages from that destination. Mirrors
 	// Python's LXMRouter.backchannel_links.
 	backchannelLinks map[string]*rns.Link
+	// activePropagationLinks is the set of inbound propagation links
+	// established by peers syncing from this node. Mirrors Python's
+	// LXMRouter.active_propagation_links; CleanLinks sweeps it for
+	// inactivity beyond PLinkMaxInactivity.
+	activePropagationLinks []*rns.Link
 
 	mu       sync.Mutex
 	isClosed bool
@@ -413,6 +418,9 @@ func (r *Router) configurePropagationIngressLink(link *rns.Link) {
 	if link == nil {
 		return
 	}
+	r.mu.Lock()
+	r.activePropagationLinks = append(r.activePropagationLinks, link)
+	r.mu.Unlock()
 	link.SetPacketCallback(r.propagationPacket)
 	if err := link.SetResourceStrategy(rns.AcceptApp); err != nil {
 		return
@@ -2773,8 +2781,13 @@ func (r *Router) InformationStorageLimit() float64 {
 	return r.informationStorageLimit
 }
 
-// InformationStorageSize returns the current information storage size in megabytes.
-// It mirrors Python's information_storage_size (currently a stub that returns 0).
+// InformationStorageSize returns the current information storage size in
+// megabytes. It mirrors Python's LXMRouter.information_storage_size
+// (LXMRouter.py:739-740), which is itself an upstream stub (`def
+// information_storage_size(self): pass`, returning None) that performs no
+// computation regardless of how many messages are stored. The Go port pins
+// the same no-op semantics by returning 0.0 unconditionally; when Python
+// implements the real computation, port it here and update the pinning test.
 func (r *Router) InformationStorageSize() float64 {
 	return 0
 }
@@ -5036,11 +5049,67 @@ func (r *Router) stopJobLoop() {
 	}
 }
 
-// CleanLinks cleans up any links that have been inactive beyond the
-// allowed window. The full Python parity behavior is implemented in a
-// later task; this stub is sufficient to keep the jobloop test passing.
+// CleanLinks tears down direct-delivery and inbound propagation links that
+// have been inactive beyond the allowed windows. It is the Go port of Python's
+// LXMRouter.clean_links (LXMRouter.py:913-954):
+//
+//   - Direct-delivery links (directLinks) whose no_data_for exceeds
+//     LinkMaxInactivity are torn down, removed from directLinks, and have
+//     their validatedPeerLinks entry (keyed by link_id) cleared.
+//   - Inbound propagation links (activePropagationLinks) whose no_data_for
+//     exceeds PLinkMaxInactivity are torn down and removed from the slice;
+//     this sweep is wrapped in a recover to match Python's try/except.
+//
+// The outbound propagation link is handled reactively via the LinkClosed
+// callback installed in configureOutboundPropagationLink (functionally
+// equivalent to Python's periodic outbound check in clean_links, but more
+// responsive), so CleanLinks does not re-sweep it here.
 func (r *Router) CleanLinks() {
-	// TODO: implement full clean_links parity.
+	// Direct-delivery links.
+	r.mu.Lock()
+	toTeardown := make([]*rns.Link, 0)
+	closedHashes := make([]string, 0)
+	for hashKey, link := range r.directLinks {
+		if link == nil {
+			continue
+		}
+		if link.NoDataFor() > LinkMaxInactivity {
+			toTeardown = append(toTeardown, link)
+			closedHashes = append(closedHashes, hashKey)
+		}
+	}
+	for _, hashKey := range closedHashes {
+		delete(r.directLinks, hashKey)
+	}
+	for _, link := range toTeardown {
+		delete(r.validatedPeerLinks, string(link.GetHash()))
+	}
+	r.mu.Unlock()
+	for _, link := range toTeardown {
+		r.teardownLink(link)
+	}
+
+	// Inbound propagation links. Mirrors Python's try/except-protected block.
+	func() {
+		defer func() { _ = recover() }()
+		inactive := func() (inactive []*rns.Link) {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			kept := make([]*rns.Link, 0, len(r.activePropagationLinks))
+			for _, link := range r.activePropagationLinks {
+				if link != nil && link.NoDataFor() > PLinkMaxInactivity {
+					inactive = append(inactive, link)
+					continue
+				}
+				kept = append(kept, link)
+			}
+			r.activePropagationLinks = kept
+			return inactive
+		}()
+		for _, link := range inactive {
+			r.teardownLink(link)
+		}
+	}()
 }
 
 // RotationHeadroomPct matches Python's LXMRouter.ROTATION_HEADROOM_PCT.

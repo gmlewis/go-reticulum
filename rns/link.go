@@ -133,9 +133,25 @@ type Link struct {
 	mtu int
 	mdu int
 
+	// establishmentCost accumulates the on-wire byte cost of the link
+	// establishment handshake (link request + proof packets, both
+	// directions). It is the Go port of Python Link.establishment_cost,
+	// used to derive establishmentRate = establishmentCost/rtt.
+	establishmentCost float64
+	// establishmentRate is establishmentCost/rtt once the link is active,
+	// or zero (meaning "unset") while the link is still establishing. It
+	// is the Go port of Python Link.establishment_rate.
+	establishmentRate float64
+	// expectedRate is the most recently measured in-flight data rate of
+	// a completed resource transfer, in bytes/second (Python stores
+	// size*8/transfer_time and get_expected_rate returns it raw). Zero
+	// means "no transfer has completed yet" (Python None).
+	expectedRate float64
+
 	lastInbound   time.Time
 	lastOutbound  time.Time
 	lastKeepalive time.Time
+	lastData      time.Time
 	activatedAt   time.Time
 	requestTime   time.Time
 	lastProof     time.Time
@@ -233,6 +249,9 @@ func (l *Link) GetHash() []byte {
 func (l *Link) hadOutbound() {
 	l.mu.Lock()
 	l.lastOutbound = time.Now()
+	// Non-keepalive outbound traffic also advances last_data, mirroring
+	// Python Link.had_outbound(is_keepalive=False).
+	l.lastData = l.lastOutbound
 	l.mu.Unlock()
 }
 
@@ -420,6 +439,9 @@ func ValidateRequest(logger *Logger, destination *Destination, data []byte, pack
 	}
 	l.requestTime = time.Now()
 	l.lastInbound = l.requestTime
+	// Receiving the link request contributes its on-wire size to the
+	// establishment cost (Python Link.py line 208).
+	l.establishmentCost += float64(len(packet.Raw))
 	l.startWatchdog()
 
 	l.logger.Notice("Incoming link request %x accepted, proof key ready", l.linkID)
@@ -474,6 +496,12 @@ func (l *Link) Prove() error {
 func (l *Link) receive(packet *Packet) {
 	l.mu.Lock()
 	l.lastInbound = time.Now()
+	// Payload data (non-keepalive) advances last_data, mirroring Python
+	// Link.receive: `if packet.context != RNS.Packet.KEEPALIVE:
+	// self.last_data = self.last_inbound`.
+	if packet.Context != ContextKeepalive {
+		l.lastData = l.lastInbound
+	}
 	l.mu.Unlock()
 
 	l.logger.Verbose("Link %x receive: packet context=%v", l.linkID, packet.Context)
@@ -734,6 +762,7 @@ func (l *Link) send(p *Packet) error {
 				return err
 			}
 		}
+		l.accumulateEstablishmentCost(p)
 		// Send directly through the attached interface for link-specific packets
 		if err := iface.Send(p.Raw); err != nil {
 			l.logger.Error("Link.send: failed to send via attached interface: %v", err)
@@ -748,10 +777,29 @@ func (l *Link) send(p *Packet) error {
 		l.logger.Verbose("Link.send: packet sent via attached interface, err=<nil>")
 		return nil
 	}
+	if !p.Packed {
+		if err := p.Pack(); err != nil {
+			return err
+		}
+	}
+	l.accumulateEstablishmentCost(p)
 	err := p.Send()
 	l.logger.Extreme("Link.send sent context=%v packetType=%v rawLen=%v via transport err=%v\n", p.Context, p.PacketType, len(p.Raw), err)
 	l.logger.Verbose("Link.send: packet sent via transport, err=%v", err)
 	return err
+}
+
+// accumulateEstablishmentCost adds the on-wire size of a link-request or
+// link-proof packet to the link's establishment_cost, mirroring Python's
+// `self.establishment_cost += len(packet.raw)` for the handshake packets
+// (Link.py lines 319 and 379).
+func (l *Link) accumulateEstablishmentCost(p *Packet) {
+	if p == nil || (p.PacketType != PacketLinkRequest && p.PacketType != PacketProof) {
+		return
+	}
+	l.mu.Lock()
+	l.establishmentCost += float64(len(p.Raw))
+	l.mu.Unlock()
 }
 
 // ValidateProof evaluates an incoming link proof packet and formally transitions the link into an active state upon success.
@@ -804,6 +852,13 @@ func (l *Link) ValidateProof(packet *Packet) error {
 	l.status = LinkActive
 	l.activatedAt = time.Now()
 	l.rtt = time.Since(l.requestTime).Seconds()
+	// Receiving the proof contributes its on-wire size to the
+	// establishment cost (Python Link.py line 416), and once the RTT is
+	// known the establishment rate is cost/rtt (Python line 436).
+	l.establishmentCost += float64(len(packet.Raw))
+	if l.rtt > 0 && l.establishmentCost > 0 {
+		l.establishmentRate = l.establishmentCost / l.rtt
+	}
 	l.updateKeepaliveLocked()
 	callback := l.callbacks.LinkEstablished
 	l.mu.Unlock()
@@ -866,6 +921,11 @@ func (l *Link) HandleRTT(packet *Packet) {
 		l.rtt = math.Max(measuredRTT, receivedRTT)
 		l.status = LinkActive
 		l.activatedAt = time.Now()
+		// Once the RTT is known the establishment rate is cost/rtt,
+		// mirroring Python Link.rtt_packet (Link.py line 545).
+		if l.rtt > 0 && l.establishmentCost > 0 {
+			l.establishmentRate = l.establishmentCost / l.rtt
+		}
 		l.updateKeepaliveLocked()
 		callback := l.callbacks.LinkEstablished
 		l.mu.Unlock()
@@ -1628,21 +1688,30 @@ func (l *Link) NoOutboundFor() time.Duration {
 	return l.nowTime().Sub(last)
 }
 
-// NoDataFor returns the minimum of NoInboundFor and NoOutboundFor.
-// It is the Go port of Python's Link.no_data_for().
+// NoDataFor returns the time in seconds since payload data (excluding
+// keepalive packets) traversed the link. It is the Go port of Python's
+// Link.no_data_for(), which is `time.time() - self.last_data`. last_data
+// is advanced only by non-keepalive inbound and outbound packets.
 func (l *Link) NoDataFor() time.Duration {
+	if l == nil {
+		return 0
+	}
+	l.mu.Lock()
+	last := l.lastData
+	l.mu.Unlock()
+	return l.nowTime().Sub(last)
+}
+
+// InactiveFor returns the time in seconds since any activity (including
+// keepalive packets) on the link. It is the Go port of Python's
+// Link.inactive_for(), which is min(no_inbound_for, no_outbound_for).
+func (l *Link) InactiveFor() time.Duration {
 	in := l.NoInboundFor()
 	out := l.NoOutboundFor()
 	if in < out {
 		return in
 	}
 	return out
-}
-
-// InactiveFor returns the minimum of NoInboundFor and NoOutboundFor.
-// It is the Go port of Python's Link.inactive_for().
-func (l *Link) InactiveFor() time.Duration {
-	return l.NoDataFor()
 }
 
 // nowTime returns the current time, honoring the optional test

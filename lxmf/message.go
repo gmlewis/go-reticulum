@@ -53,8 +53,15 @@ type Message struct {
 	// DeferStamp mirrors Python's default behavior of postponing stamp
 	// generation until the router decides it must happen immediately.
 	DeferStamp bool
-	// DeferPropagationStamp mirrors Python's propagation-node stamp deferral
-	// flag, even though propagated deferred stamping is not yet fully wired.
+	// DeferPropagationStamp mirrors Python's LXMessage.defer_propagation_stamp
+	// (LXMessage.py:164): propagation-node stamp generation is deferred until
+	// the router processes the outbound queue. The Go port wires this in
+	// Router.ProcessDeferredStamps (router.go), which mirrors Python's
+	// LXMRouter.process_deferred_stamps (LXMRouter.py:2406-2498): when a
+	// propagated message still lacks PropagationStamp, the router computes the
+	// outbound propagation target cost, generates the stamp, clears this flag,
+	// repacks, and queues the message for delivery. The wiring is golden-tested
+	// by TestDeferredPropagationStamps and TestDeferPropagationStamp.
 	DeferPropagationStamp bool
 
 	// Payload stores the unpacked LXMF payload elements used for packing or

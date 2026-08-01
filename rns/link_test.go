@@ -468,11 +468,14 @@ func TestLinkInactivity(t *testing.T) {
 		t.Fatalf("NewLink: %v", err)
 	}
 
-	// Use a synthetic clock to control lastInbound / lastOutbound.
+	// Use a synthetic clock to control lastInbound / lastOutbound / lastData.
 	now := time.Unix(1700000000, 0)
 	link.now = func() time.Time { return now }
 	link.lastInbound = now.Add(-30 * time.Second)
 	link.lastOutbound = now.Add(-15 * time.Second)
+	// lastData is advanced only by payload (non-keepalive) traffic; set it
+	// independently to mirror Python's last_data (Link.py:252,675).
+	link.lastData = now.Add(-45 * time.Second)
 
 	if got := link.NoInboundFor(); got != 30*time.Second {
 		t.Fatalf("NoInboundFor = %v, want 30s", got)
@@ -480,11 +483,15 @@ func TestLinkInactivity(t *testing.T) {
 	if got := link.NoOutboundFor(); got != 15*time.Second {
 		t.Fatalf("NoOutboundFor = %v, want 15s", got)
 	}
-	if got := link.NoDataFor(); got != 15*time.Second {
-		t.Fatalf("NoDataFor = %v, want 15s (min of in/out)", got)
+	// NoDataFor = now - last_data (Python Link.no_data_for, Link.py:675),
+	// NOT the min of in/out.
+	if got := link.NoDataFor(); got != 45*time.Second {
+		t.Fatalf("NoDataFor = %v, want 45s (now - last_data)", got)
 	}
+	// InactiveFor = min(NoInboundFor, NoOutboundFor) (Python
+	// Link.inactive_for, Link.py:677).
 	if got := link.InactiveFor(); got != 15*time.Second {
-		t.Fatalf("InactiveFor = %v, want 15s", got)
+		t.Fatalf("InactiveFor = %v, want 15s (min of in/out)", got)
 	}
 }
 

@@ -5,7 +5,11 @@
 
 package lxmf
 
-import "github.com/gmlewis/go-reticulum/rns"
+import (
+	"time"
+
+	"github.com/gmlewis/go-reticulum/rns"
+)
 
 const (
 	// AppName defines the core application name for LXMF routing and addressing.
@@ -212,6 +216,16 @@ const (
 
 // PeerMaxUnreachable matches Python's LXMPeer.MAX_UNREACHABLE.
 const PeerMaxUnreachable = 14 * 24 * 60 * 60
+
+// LinkMaxInactivity is the maximum allowed inactivity (no payload data) on a
+// direct-delivery link before Router.CleanLinks tears it down. It matches
+// Python's LXMRouter.LINK_MAX_INACTIVITY = 10*60 seconds.
+const LinkMaxInactivity = 10 * 60 * time.Second
+
+// PLinkMaxInactivity is the maximum allowed inactivity on an inbound
+// propagation link before Router.CleanLinks tears it down. It matches Python's
+// LXMRouter.P_LINK_MAX_INACTIVITY = 3*60 seconds.
+const PLinkMaxInactivity = 3 * 60 * time.Second
 
 // URISchema is the LXMF paper-message URI schema prefix. Matches Python's
 // LXMessage.URI_SCHEMA of "lxmf".

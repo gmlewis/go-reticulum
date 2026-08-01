@@ -278,6 +278,9 @@ func Accept(packet *Packet, callback func(*Resource), startedCallback func(*Reso
 		windowMin:        2,
 		hasMetadata:      adv.HasMetadata,
 	}
+	// Mirror Python Resource.accept (Resource.py line 196):
+	// started_transferring = last_activity = time.time().
+	r.startedTransferring = r.lastActivity
 
 	r.parts = make([]*ResourcePart, r.totalParts)
 	r.hashmap = make([][]byte, r.totalParts)
@@ -336,7 +339,8 @@ type Resource struct {
 	windowMax int
 	windowMin int
 
-	lastActivity time.Time
+	lastActivity        time.Time
+	startedTransferring time.Time
 
 	callback         func(*Resource)
 	progressCallback func(*Resource)
@@ -710,9 +714,27 @@ func (r *Resource) ValidateProof(proofData []byte) {
 	}
 
 	r.status = ResourceStatusComplete
+	r.recordExpectedRate()
 	if r.callback != nil {
 		go r.callback(r)
 	}
+}
+
+// recordExpectedRate mirrors Python Link.resource_concluded (Link.py
+// line 1290): expected_rate = (resource.size*8) / max(concluded_at -
+// started_transferring, 0.0001). It is invoked when an outgoing resource
+// transfer is proven complete.
+func (r *Resource) recordExpectedRate() {
+	if r == nil || r.link == nil || r.size <= 0 || r.startedTransferring.IsZero() {
+		return
+	}
+	elapsed := time.Since(r.startedTransferring).Seconds()
+	if elapsed < 0.0001 {
+		elapsed = 0.0001
+	}
+	r.link.mu.Lock()
+	r.link.expectedRate = float64(r.size*8) / elapsed
+	r.link.mu.Unlock()
 }
 
 // ReceivePart incorporates a newly arrived data part into the resource, triggering assembly if all parts have been accumulated.
@@ -847,6 +869,7 @@ func (r *Resource) Assemble() {
 
 	r.data = copyBytes(payload)
 	r.status = ResourceStatusComplete
+	r.recordExpectedRate()
 	if err := r.prove(); err != nil {
 		r.link.logger.Debug("Failed to send resource proof for %x: %v", r.hash, err)
 	} else {
@@ -913,6 +936,10 @@ func (r *Resource) Advertise() error {
 
 	r.link.mu.Lock()
 	r.link.outgoingResources = append(r.link.outgoingResources, r)
+	// Mirror Python Resource.advertise (Resource.py line 529):
+	// started_transferring = last_activity = time.time().
+	r.lastActivity = time.Now()
+	r.startedTransferring = r.lastActivity
 	r.link.mu.Unlock()
 
 	return p.Send()
@@ -1018,9 +1045,37 @@ func (r *Resource) IsResponse() bool {
 	return r.requestID != nil && r.isResponse
 }
 
-// WatchdogJob is a placeholder for the resource watchdog that runs
-// periodically in the link's maintenance loop. It is the Go port of
-// Python's Resource.watchdog_job().
+// WatchdogJob is currently a no-op placeholder. It is the Go port of Python's
+// Resource.watchdog_job (Resource.py:560-562), which spawns the private
+// __watchdog_job loop (Resource.py:564-671). That loop implements
+// resource-transfer loss recovery across four states:
+//
+//   - ADVERTISED: resend the resource advertisement if no part requests arrive
+//     within timeout+PROCESSING_GRACE, cancelling once retries are exhausted.
+//   - TRANSFERRING (receiver): re-request missing parts (request_next) on
+//     part timeout, reducing the send window, cancelling when retries run out.
+//   - TRANSFERRING (sender): cancel if no part requests arrive within
+//     rtt*timeout_factor*max_retries + sender_grace_time.
+//   - AWAITING_PROOF: re-query the network cache for the expected proof, then
+//     cancel on timeout.
+//
+// The Go port instead relies on the per-part sliding window in ReceivePart /
+// RequestNext (resource.go): every received part triggers RequestNext for the
+// next batch of missing parts, which completes lossless transfers but does NOT
+// recover from lost parts or resend stalled advertisements. Porting the
+// watchdog faithfully requires adding the supporting state Python tracks
+// (retries_left, max_retries, part_timeout_factor, adv_sent, outstanding_parts,
+// waiting_for_hmu, req_resp_rtt_rate, sdu, eifr/update_eifr, sender_grace_time,
+// watchdog_job_id) and wiring it across Advertise/Request/RequestNext/
+// ReceivePart, plus the RESOURCE.* timing constants — a dedicated, carefully
+// golden-tested effort.
+//
+// This is therefore an intentionally-deferred parity gap (per the TODO Phase C
+// definition-of-done option "documented as intentionally-deferred with a
+// passing test that pins the current behavior"), not a self-assessed parity
+// claim. TestResourceWatchdogJobIsNoOp pins the current no-op; when the
+// watchdog is ported, replace it with golden tests of the timeout/cancel/retry
+// state transitions captured from Python.
 func (r *Resource) WatchdogJob() {
 	if r == nil {
 		return
