@@ -7,6 +7,7 @@ package interfaces
 
 import (
 	"bytes"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -67,6 +68,14 @@ type BaseInterface struct {
 	rxBytes uint64
 	txBytes uint64
 	ifacMu  sync.RWMutex
+
+	// currentRxSpeedBits/currentTxSpeedBits hold the per-interface
+	// bit-per-second speeds computed by the transport's count_traffic_loop
+	// (Python interface.current_rx_speed / current_tx_speed), stored as
+	// math.Float64bits so they can be read/written atomically. They are read
+	// by the interface_stats RPC.
+	currentRxSpeedBits uint64
+	currentTxSpeedBits uint64
 
 	errorPolicyMu sync.RWMutex
 	discoveryMu   sync.RWMutex
@@ -145,6 +154,28 @@ func (bi *BaseInterface) BytesReceived() uint64 { return bi.rxBytes }
 // BytesSent returns the atomic metric recording bytes dispatched by this
 // interface. It provides observability into the interface's workload.
 func (bi *BaseInterface) BytesSent() uint64 { return bi.txBytes }
+
+// CurrentRxSpeed returns the most recent receive speed (bits/sec) computed by
+// the transport traffic loop (Python interface.current_rx_speed). It is 0
+// until the loop has completed at least one interval.
+func (bi *BaseInterface) CurrentRxSpeed() float64 {
+	return math.Float64frombits(atomic.LoadUint64(&bi.currentRxSpeedBits))
+}
+
+// CurrentTxSpeed returns the most recent transmit speed (bits/sec) computed by
+// the transport traffic loop (Python interface.current_tx_speed).
+func (bi *BaseInterface) CurrentTxSpeed() float64 {
+	return math.Float64frombits(atomic.LoadUint64(&bi.currentTxSpeedBits))
+}
+
+// SetTrafficSpeeds stores the per-interface receive/transmit speeds (bits/sec)
+// computed by the transport traffic loop. Mirrors Python's
+// `interface.current_rx_speed = crxs; interface.current_tx_speed = ctxs`
+// (Transport.py:435-436).
+func (bi *BaseInterface) SetTrafficSpeeds(rxSpeed, txSpeed float64) {
+	atomic.StoreUint64(&bi.currentRxSpeedBits, math.Float64bits(rxSpeed))
+	atomic.StoreUint64(&bi.currentTxSpeedBits, math.Float64bits(txSpeed))
+}
 
 // SetIFACConfig reinitializes the interface's cryptographic authentication
 // layer using the provided parameters. It regenerates keying material and

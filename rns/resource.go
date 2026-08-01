@@ -78,6 +78,49 @@ const (
 	ResourceAdvOverhead = 134
 )
 
+// Resource watchdog timing/state constants. These mirror the class-level
+// constants on Python's RNS.Resource (Resource.py:97-137) and drive the
+// transfer-loss-recovery state machine in WatchdogJob / watchdogStep. Golden
+// values captured from a live `import RNS` run (rns 1.3.5); see
+// TestResourceConstants.
+const (
+	// ResourceProcessingGrace is the extra grace added to the advertisement
+	// timeout before the ADVERTISED-state watchdog resends (seconds).
+	ResourceProcessingGrace = 1.0
+	// ResourceRetryGraceTime is the base grace added to receiver part-timeout
+	// computations (seconds).
+	ResourceRetryGraceTime = 0.25
+	// ResourcePerRetryDelay is the per-retry delay added to the receiver
+	// part-timeout, accumulating with retries_used (seconds).
+	ResourcePerRetryDelay = 0.5
+	// ResourceWatchdogMaxSleep caps a single watchdog sleep (seconds).
+	ResourceWatchdogMaxSleep = 1.0
+	// ResourceProofTimeoutFactor scales rtt when waiting for the final
+	// resource proof in the AWAITING_PROOF state (proof packets are small).
+	ResourceProofTimeoutFactor = 3.0
+	// ResourcePartTimeoutFactor scales the expected time-of-flight remaining
+	// when waiting for outstanding parts (receiver, before RTT is measured).
+	ResourcePartTimeoutFactor = 4.0
+	// ResourcePartTimeoutFactorAfterRtt replaces PartTimeoutFactor once the
+	// request/response RTT rate has been measured.
+	ResourcePartTimeoutFactorAfterRtt = 2.0
+	// ResourceSenderGraceTime is the grace added to sender-side timeouts
+	// (seconds).
+	ResourceSenderGraceTime = 10.0
+	// ResourceHmuWaitFactor scales the expected hashmap-update wait when the
+	// receiver is waiting for an HMU or has no outstanding parts.
+	ResourceHmuWaitFactor = 3.5
+	// ResourceMaxRetries is the maximum number of receiver part-request
+	// retries before cancelling a transfer.
+	ResourceMaxRetries = 16
+	// ResourceMaxAdvRetries is the maximum number of advertisement resends
+	// before cancelling an ADVERTISED resource.
+	ResourceMaxAdvRetries = 4
+	// ResourceWindowFlexibility is the minimum allowed spread between
+	// windowMax and window; the watchdog never lets the gap shrink below this.
+	ResourceWindowFlexibility = 4
+)
+
 // ResourceAdvertisement represents the payload of a resource advertisement packet, carrying metadata needed to initiate a transfer.
 type ResourceAdvertisement struct {
 	T int64  `msgpack:"t"` // Transfer size
@@ -256,31 +299,54 @@ func Accept(packet *Packet, callback func(*Resource), startedCallback func(*Reso
 	}
 
 	r := &Resource{
-		link:             l,
-		initiator:        false,
-		status:           ResourceStatusTransferring,
-		size:             adv.T,
-		uncompressedSize: adv.D,
-		totalSize:        adv.D,
-		hash:             adv.H,
-		randomHash:       adv.R,
-		originalHash:     adv.O,
-		totalParts:       adv.N,
-		callback:         callback,
-		progressCallback: progressCallback,
-		requestID:        copyBytes(adv.Q),
-		isResponse:       adv.IsResponse,
-		encrypted:        adv.Encrypted,
-		compressed:       adv.Compressed,
-		lastActivity:     time.Now(),
-		window:           4,
-		windowMax:        10,
-		windowMin:        2,
-		hasMetadata:      adv.HasMetadata,
+		link:              l,
+		initiator:         false,
+		status:            ResourceStatusTransferring,
+		size:              adv.T,
+		uncompressedSize:  adv.D,
+		totalSize:         adv.D,
+		hash:              adv.H,
+		randomHash:        adv.R,
+		originalHash:      adv.O,
+		totalParts:        adv.N,
+		callback:          callback,
+		progressCallback:  progressCallback,
+		requestID:         copyBytes(adv.Q),
+		isResponse:        adv.IsResponse,
+		encrypted:         adv.Encrypted,
+		compressed:        adv.Compressed,
+		lastActivity:      time.Now(),
+		window:            4,
+		windowMax:         10,
+		windowMin:         2,
+		windowFlexibility: ResourceWindowFlexibility,
+		hasMetadata:       adv.HasMetadata,
+
+		// Watchdog / loss-recovery state (Python Resource.accept
+		// Resource.py:172-197 + __init__ Resource.py:341-365).
+		maxRetries:          ResourceMaxRetries,
+		maxAdvRetries:       ResourceMaxAdvRetries,
+		retriesLeft:         ResourceMaxRetries,
+		timeoutFactor:       l.trafficTimeoutFactor,
+		timeout:             l.rtt * l.trafficTimeoutFactor,
+		partTimeoutFactor:   ResourcePartTimeoutFactor,
+		senderGraceTime:     ResourceSenderGraceTime,
+		outstandingParts:    0,
+		waitingForHmu:       false,
+		advertisementPacket: packet,
 	}
 	// Mirror Python Resource.accept (Resource.py line 196):
 	// started_transferring = last_activity = time.time().
 	r.startedTransferring = r.lastActivity
+
+	// Derive sdu as in Resource.__init__ (Resource.py:337-340).
+	if l.mtu != 0 {
+		r.sdu = l.mtu - HeaderMaxSize - IFACMinSize
+	} else if l.mdu > 0 {
+		r.sdu = l.mdu
+	} else {
+		r.sdu = MDU
+	}
 
 	r.parts = make([]*ResourcePart, r.totalParts)
 	r.hashmap = make([][]byte, r.totalParts)
@@ -311,6 +377,11 @@ func Accept(packet *Packet, callback func(*Resource), startedCallback func(*Reso
 		}
 	}()
 
+	// Mirror Python Resource.accept (Resource.py:234): launch the watchdog
+	// job so receiver-side loss recovery (part-request retry, window
+	// shrink, cancel on timeout) runs for the lifetime of the transfer.
+	r.WatchdogJob()
+
 	return r, nil
 }
 
@@ -335,12 +406,38 @@ type Resource struct {
 	totalParts    int
 	receivedCount int
 
-	window    int
-	windowMax int
-	windowMin int
+	window            int
+	windowMax         int
+	windowMin         int
+	windowFlexibility int
 
 	lastActivity        time.Time
 	startedTransferring time.Time
+	advSent             time.Time
+	lastPartSent        time.Time
+
+	// Watchdog / loss-recovery state. Mirrors Python Resource.__init__
+	// (Resource.py:335-365) and accept (Resource.py:167-239). rtt/eifr/
+	// previousEifr use pointers so nil faithfully models Python None.
+	maxRetries          int
+	maxAdvRetries       int
+	retriesLeft         int
+	timeoutFactor       float64
+	timeout             float64
+	partTimeoutFactor   float64
+	senderGraceTime     float64
+	sdu                 int
+	outstandingParts    int
+	waitingForHmu       bool
+	reqRespRttRate      float64
+	reqDataRttRate      float64
+	rtt                 *float64
+	eifr                *float64
+	previousEifr        *float64
+	watchdogJobID       int
+	advertisementPacket *Packet
+	watchdogOnce        sync.Once
+	watchdogStop        chan struct{}
 
 	callback         func(*Resource)
 	progressCallback func(*Resource)
@@ -384,14 +481,25 @@ func newResourceWithOptions(data []byte, link *Link, opts ResourceOptions, randR
 	}
 
 	r := &Resource{
-		link:             link,
-		initiator:        true,
-		uncompressedData: data,
-		status:           ResourceStatusQueued,
-		window:           4,
-		windowMax:        10,
-		windowMin:        2,
-		metadata:         opts.Metadata,
+		link:              link,
+		initiator:         true,
+		uncompressedData:  data,
+		status:            ResourceStatusQueued,
+		window:            4,
+		windowMax:         10,
+		windowMin:         2,
+		windowFlexibility: ResourceWindowFlexibility,
+		metadata:          opts.Metadata,
+
+		// Watchdog / loss-recovery state (Python Resource.__init__
+		// Resource.py:341-365).
+		maxRetries:        ResourceMaxRetries,
+		maxAdvRetries:     ResourceMaxAdvRetries,
+		retriesLeft:       ResourceMaxRetries,
+		timeoutFactor:     link.trafficTimeoutFactor,
+		timeout:           link.rtt * link.trafficTimeoutFactor,
+		partTimeoutFactor: ResourcePartTimeoutFactor,
+		senderGraceTime:   ResourceSenderGraceTime,
 	}
 
 	normOpts := opts.normalized()
@@ -457,11 +565,16 @@ func newResourceWithOptions(data []byte, link *Link, opts ResourceOptions, randR
 	r.encrypted = true
 	r.size = int64(len(r.data))
 
-	// Segment data into parts
+	// Segment data into parts. Python Resource.__init__ (Resource.py:
+	// 337-340) derives sdu from the link mtu when set, else from mdu/SDU.
 	sdu := link.mdu
+	if link.mtu != 0 {
+		sdu = link.mtu - HeaderMaxSize - IFACMinSize
+	}
 	if sdu <= 0 {
 		sdu = MDU
 	}
+	r.sdu = sdu
 
 	r.totalParts = int(math.Ceil(float64(r.size) / float64(sdu)))
 	r.parts = make([]*ResourcePart, r.totalParts)
@@ -549,8 +662,20 @@ func (r *Resource) TotalSize() int64 {
 // Cancel prematurely terminates the resource transfer and updates its status to failed.
 func (r *Resource) Cancel() {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.status = ResourceStatusFailed
+	r.cancelLocked()
+	r.mu.Unlock()
+	// Promptly tear down the background watchdog loop rather than waiting
+	// for its next step to notice the terminal status.
+	r.stopWatchdog()
+}
+
+// cancelLocked is the lock-held core of Cancel. It mirrors Python
+// Resource.cancel (Resource.py:1086-1087): a resource below COMPLETE is
+// marked FAILED; already-complete/corrupt resources are left as-is.
+func (r *Resource) cancelLocked() {
+	if r.status < ResourceStatusComplete {
+		r.status = ResourceStatusFailed
+	}
 }
 
 // Metadata returns the metadata associated with this resource.
@@ -586,7 +711,15 @@ func (r *Resource) SetProgressCallback(cb func(*Resource)) {
 func (r *Resource) RequestNext() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.requestNextLockedAt(time.Now())
+}
 
+// requestNextLockedAt is RequestNext's core assuming r.mu is already held,
+// so the watchdog (which holds r.mu) can re-request parts without
+// re-locking. now replaces time.time() so the watchdog's injected clock
+// stays deterministic (Python request_next sets last_activity = time.time(),
+// Resource.py:485).
+func (r *Resource) requestNextLockedAt(now time.Time) error {
 	if r.status == ResourceStatusFailed {
 		return fmt.Errorf("resource transfer failed")
 	}
@@ -627,7 +760,7 @@ func (r *Resource) RequestNext() error {
 		return err
 	}
 
-	r.lastActivity = time.Now()
+	r.lastActivity = now
 	return nil
 }
 
@@ -720,7 +853,39 @@ func (r *Resource) ValidateProof(proofData []byte) {
 	}
 }
 
-// recordExpectedRate mirrors Python Link.resource_concluded (Link.py
+// updateEifr computes the Expected In-Flight Rate (eifr) and pushes it onto
+// the link's expected_rate. It is the Go port of Python
+// Resource.update_eifr (Resource.py:543-558). The precedence is:
+//   - req_data_rtt_rate*8 when a measured data-RTT rate exists,
+//   - else previous_eifr when a prior transfer's eifr is known,
+//   - else link.establishment_cost*8 / rtt as a first-transfer estimate.
+//
+// rtt is the resource's own measured rtt if set, falling back to link.rtt.
+func (r *Resource) updateEifr() {
+	rtt := 0.0
+	if r.rtt != nil {
+		rtt = *r.rtt
+	} else if r.link != nil {
+		rtt = r.link.rtt
+	}
+
+	var eifr float64
+	switch {
+	case r.reqDataRttRate != 0:
+		eifr = r.reqDataRttRate * 8
+	case r.previousEifr != nil:
+		eifr = *r.previousEifr
+	case r.link != nil:
+		eifr = r.link.establishmentCost * 8 / rtt
+	}
+	r.eifr = &eifr
+	if r.link != nil {
+		r.link.mu.Lock()
+		r.link.expectedRate = eifr
+		r.link.mu.Unlock()
+	}
+}
+
 // line 1290): expected_rate = (resource.size*8) / max(concluded_at -
 // started_transferring, 0.0001). It is invoked when an outgoing resource
 // transfer is proven complete.
@@ -900,8 +1065,11 @@ func (r *Resource) prove() error {
 	return p.Send()
 }
 
-// Advertise broadcasts a resource advertisement over the link to notify the remote peer of an impending transfer.
-func (r *Resource) Advertise() error {
+// buildAdvertisementPacket constructs (without sending) the resource
+// advertisement packet, mirroring the ResourceAdvertisement(self).pack()
+// construction Python uses both in __advertise_job and in the ADVERTISED
+// watchdog resend (Resource.py:521, 584).
+func (r *Resource) buildAdvertisementPacket() (*Packet, error) {
 	hashmapRaw := make([]byte, 0, len(r.hashmap)*ResourceMapHashLen)
 	for _, mh := range r.hashmap {
 		hashmapRaw = append(hashmapRaw, mh...)
@@ -927,22 +1095,44 @@ func (r *Resource) Advertise() error {
 
 	data, err := adv.Pack()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	p := NewPacket(r.link, data)
 	p.PacketType = PacketData
 	p.Context = ContextResourceAdv
+	return p, nil
+}
+
+// Advertise broadcasts a resource advertisement over the link to notify the remote peer of an impending transfer.
+func (r *Resource) Advertise() error {
+	p, err := r.buildAdvertisementPacket()
+	if err != nil {
+		return err
+	}
 
 	r.link.mu.Lock()
 	r.link.outgoingResources = append(r.link.outgoingResources, r)
-	// Mirror Python Resource.advertise (Resource.py line 529):
-	// started_transferring = last_activity = time.time().
-	r.lastActivity = time.Now()
-	r.startedTransferring = r.lastActivity
+	// Mirror Python Resource.__advertise_job (Resource.py:527-534):
+	// last_activity = started_transferring = adv_sent = time.time();
+	// status = ADVERTISED; retries_left = max_adv_retries.
+	now := time.Now()
+	r.lastActivity = now
+	r.startedTransferring = now
+	r.advSent = now
+	r.status = ResourceStatusAdvertised
+	r.retriesLeft = r.maxAdvRetries
+	r.advertisementPacket = p
 	r.link.mu.Unlock()
 
-	return p.Send()
+	if err := p.Send(); err != nil {
+		return err
+	}
+
+	// Mirror Python Resource.__advertise_job (Resource.py:541): start the
+	// transfer-loss-recovery watchdog once the advertisement is on the wire.
+	r.WatchdogJob()
+	return nil
 }
 
 // GetDataSize returns the size in bytes of the resource's data
@@ -1045,39 +1235,259 @@ func (r *Resource) IsResponse() bool {
 	return r.requestID != nil && r.isResponse
 }
 
-// WatchdogJob is currently a no-op placeholder. It is the Go port of Python's
-// Resource.watchdog_job (Resource.py:560-562), which spawns the private
-// __watchdog_job loop (Resource.py:564-671). That loop implements
-// resource-transfer loss recovery across four states:
+// currentRtt returns the resource's own measured rtt if set, falling back to
+// the link's rtt (Python Resource.update_eifr / __watchdog_job use the same
+// `self.rtt or self.link.rtt` resolution).
+func (r *Resource) currentRtt() float64 {
+	if r.rtt != nil {
+		return *r.rtt
+	}
+	if r.link != nil {
+		return r.link.rtt
+	}
+	return 0
+}
+
+// watchdogStep performs one iteration of the Python __watchdog_job loop
+// (Resource.py:564-671) at instant now, returning the sleep duration (in
+// seconds) the loop should wait before the next step and whether the loop
+// should continue. It does not sleep. now replaces time.time() so golden
+// tests can advance a virtual clock. It is the single-step analogue of the
+// Go Link watchdog step.
 //
-//   - ADVERTISED: resend the resource advertisement if no part requests arrive
-//     within timeout+PROCESSING_GRACE, cancelling once retries are exhausted.
-//   - TRANSFERRING (receiver): re-request missing parts (request_next) on
-//     part timeout, reducing the send window, cancelling when retries run out.
-//   - TRANSFERRING (sender): cancel if no part requests arrive within
-//     rtt*timeout_factor*max_retries + sender_grace_time.
-//   - AWAITING_PROOF: re-query the network cache for the expected proof, then
-//     cancel on timeout.
+// The four states mirror Python exactly:
 //
-// The Go port instead relies on the per-part sliding window in ReceivePart /
-// RequestNext (resource.go): every received part triggers RequestNext for the
-// next batch of missing parts, which completes lossless transfers but does NOT
-// recover from lost parts or resend stalled advertisements. Porting the
-// watchdog faithfully requires adding the supporting state Python tracks
-// (retries_left, max_retries, part_timeout_factor, adv_sent, outstanding_parts,
-// waiting_for_hmu, req_resp_rtt_rate, sdu, eifr/update_eifr, sender_grace_time,
-// watchdog_job_id) and wiring it across Advertise/Request/RequestNext/
-// ReceivePart, plus the RESOURCE.* timing constants — a dedicated, carefully
-// golden-tested effort.
-//
-// This is therefore an intentionally-deferred parity gap (per the TODO Phase C
-// definition-of-done option "documented as intentionally-deferred with a
-// passing test that pins the current behavior"), not a self-assessed parity
-// claim. TestResourceWatchdogJobIsNoOp pins the current no-op; when the
-// watchdog is ported, replace it with golden tests of the timeout/cancel/retry
-// state transitions captured from Python.
+//   - ADVERTISED: on adv_sent+timeout+PROCESSING_GRACE expiry, resend the
+//     advertisement (decrementing retries_left from max_adv_retries) or cancel
+//     when exhausted.
+//   - TRANSFERRING (receiver): on part-timeout expiry, shrink the window and
+//     re-request missing parts (request_next), or cancel when retries run out.
+//   - TRANSFERRING (sender): on rtt*timeout_factor*max_retries +
+//     sender_grace_time + max_extra_wait expiry, cancel.
+//   - AWAITING_PROOF: on last_part_sent+rtt*PROOF_TIMEOUT_FACTOR+
+//     sender_grace_time expiry, re-query the network cache for the expected
+//     proof (cache_request) or cancel when exhausted.
+func (r *Resource) watchdogStep(now time.Time) (sleep float64, cont bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.status >= ResourceStatusAssembling {
+		return 0, false
+	}
+
+	var sleepTime float64
+	set := false
+
+	switch r.status {
+	case ResourceStatusAdvertised:
+		set = true
+		deadline := r.advSent.Add(time.Duration((r.timeout + ResourceProcessingGrace) * float64(time.Second)))
+		sleepTime = deadline.Sub(now).Seconds()
+		if sleepTime < 0 {
+			if r.retriesLeft <= 0 {
+				r.cancelLocked()
+				sleepTime = 0.001
+			} else {
+				r.retriesLeft--
+				p, err := r.buildAdvertisementPacket()
+				if err != nil {
+					r.cancelLocked()
+					sleepTime = 0.001
+				} else {
+					r.advertisementPacket = p
+					if err := p.Send(); err != nil {
+						r.cancelLocked()
+						sleepTime = 0.001
+					} else {
+						r.lastActivity = now
+						r.advSent = now
+						sleepTime = 0.001
+					}
+				}
+			}
+		}
+
+	case ResourceStatusTransferring:
+		if !r.initiator {
+			// Receiver branch (Resource.py:594-629).
+			set = true
+			retriesUsed := r.maxRetries - r.retriesLeft
+			extraWait := float64(retriesUsed) * ResourcePerRetryDelay
+			r.updateEifr()
+			eifr := 0.0
+			if r.eifr != nil {
+				eifr = *r.eifr
+			}
+			var expectedHmuWaitRemaining, expectedTofRemaining float64
+			if eifr != 0 {
+				if r.waitingForHmu || r.outstandingParts == 0 {
+					expectedHmuWaitRemaining = (float64(r.sdu) * 8 * ResourceHmuWaitFactor) / eifr
+				}
+				expectedTofRemaining = (float64(r.outstandingParts) * float64(r.sdu) * 8) / eifr
+			}
+			if r.reqRespRttRate != 0 {
+				deadline := r.lastActivity.Add(time.Duration((r.partTimeoutFactor*expectedTofRemaining + expectedHmuWaitRemaining + ResourceRetryGraceTime + extraWait) * float64(time.Second)))
+				sleepTime = deadline.Sub(now).Seconds()
+			} else {
+				term := 0.0
+				if eifr != 0 {
+					term = r.partTimeoutFactor * ((3 * float64(r.sdu)) / eifr)
+				}
+				deadline := r.lastActivity.Add(time.Duration((term + ResourceRetryGraceTime + extraWait) * float64(time.Second)))
+				sleepTime = deadline.Sub(now).Seconds()
+			}
+			if sleepTime < 0 {
+				if r.retriesLeft > 0 {
+					if r.window > r.windowMin {
+						r.window--
+						if r.windowMax > r.windowMin {
+							r.windowMax--
+							if (r.windowMax - r.window) > (r.windowFlexibility - 1) {
+								r.windowMax--
+							}
+						}
+					}
+					sleepTime = 0.001
+					r.retriesLeft--
+					r.waitingForHmu = false
+					_ = r.requestNextLockedAt(now)
+				} else {
+					r.cancelLocked()
+					sleepTime = 0.001
+				}
+			}
+		} else {
+			// Sender branch (Resource.py:630-637).
+			set = true
+			maxExtraWait := 0.0
+			for i := 0; i < r.maxRetries; i++ {
+				maxExtraWait += float64(i+1) * ResourcePerRetryDelay
+			}
+			rtt := r.currentRtt()
+			maxWait := rtt*r.timeoutFactor*float64(r.maxRetries) + r.senderGraceTime + maxExtraWait
+			deadline := r.lastActivity.Add(time.Duration(maxWait * float64(time.Second)))
+			sleepTime = deadline.Sub(now).Seconds()
+			if sleepTime < 0 {
+				r.cancelLocked()
+				sleepTime = 0.001
+			}
+		}
+
+	case ResourceStatusAwaitingProof:
+		// Resource.py:639-658.
+		set = true
+		r.timeoutFactor = ResourceProofTimeoutFactor
+		rtt := r.currentRtt()
+		deadline := r.lastPartSent.Add(time.Duration((rtt*r.timeoutFactor + r.senderGraceTime) * float64(time.Second)))
+		sleepTime = deadline.Sub(now).Seconds()
+		if sleepTime < 0 {
+			if r.retriesLeft <= 0 {
+				r.cancelLocked()
+				sleepTime = 0.001
+			} else {
+				r.retriesLeft--
+				expectedData := append(append([]byte(nil), r.hash...), r.expectedProof...)
+				expectedProofPacket := NewPacket(r.link, expectedData)
+				expectedProofPacket.PacketType = PacketProof
+				expectedProofPacket.Context = ContextResourcePrf
+				if err := expectedProofPacket.Pack(); err == nil {
+					if r.link != nil && r.link.transport != nil {
+						r.link.transport.CacheRequest(expectedProofPacket.PacketHash, r.link)
+					}
+				}
+				r.lastPartSent = now
+				sleepTime = 0.001
+			}
+		}
+
+	case ResourceStatusRejected:
+		set = true
+		sleepTime = 0.001
+	}
+
+	if !set {
+		// Python: no branch matched -> sleep_time stays None -> cancel.
+		r.cancelLocked()
+		return 0, false
+	}
+	if sleepTime < 0 {
+		// Python post-chain guard: "Timing error, cancelling resource transfer."
+		r.cancelLocked()
+		return 0.001, false
+	}
+	if sleepTime > ResourceWatchdogMaxSleep {
+		sleepTime = ResourceWatchdogMaxSleep
+	}
+	return sleepTime, r.status < ResourceStatusAssembling
+}
+
+// WatchdogJob is the Go port of Python's Resource.watchdog_job
+// (Resource.py:560-562): it spawns (once per resource) the watchdog loop
+// that drives watchdogStep until the resource reaches a terminal state
+// (status >= ASSEMBLING). The single-step state machine is golden-tested by
+// TestWatchdogAdvertised / WatchdogTransferringReceiver /
+// WatchdogTransferringSender / WatchdogAwaitingProof; the wired loop is
+// exercised end-to-end by the lossy-link recovery test.
 func (r *Resource) WatchdogJob() {
 	if r == nil {
 		return
+	}
+	r.watchdogOnce.Do(func() {
+		r.mu.Lock()
+		r.watchdogJobID++
+		r.watchdogStop = make(chan struct{})
+		stop := r.watchdogStop
+		r.mu.Unlock()
+		go r.watchdogLoop(stop)
+	})
+}
+
+// watchdogLoop is the background __watchdog_job loop (Resource.py:564-671).
+// It repeatedly runs one watchdogStep at the current instant, sleeps for the
+// returned duration (capped at WatchdogMaxSleep), and stops when the step
+// reports the resource is no longer active (status >= ASSEMBLING) or when the
+// resource is torn down via stopWatchdog. The now instant uses wall time;
+// golden tests drive watchdogStep directly with an injected clock.
+func (r *Resource) watchdogLoop(stop chan struct{}) {
+	for {
+		sleep, cont := r.watchdogStep(time.Now())
+		if !cont {
+			return
+		}
+		if sleep <= 0 {
+			sleep = 0.001
+		}
+		if sleep > ResourceWatchdogMaxSleep {
+			sleep = ResourceWatchdogMaxSleep
+		}
+		dur := time.Duration(sleep * float64(time.Second))
+		if dur <= 0 {
+			dur = time.Millisecond
+		}
+		timer := time.NewTimer(dur)
+		select {
+		case <-timer.C:
+		case <-stop:
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return
+		}
+	}
+}
+
+// stopWatchdog signals the background watchdog loop (if started) to exit,
+// mirroring the effect of Python's job-id invalidation when a resource is
+// torn down.
+func (r *Resource) stopWatchdog() {
+	r.mu.Lock()
+	stop := r.watchdogStop
+	r.mu.Unlock()
+	if stop != nil {
+		select {
+		case <-stop:
+		default:
+			close(stop)
+		}
 	}
 }

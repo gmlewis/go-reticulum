@@ -264,6 +264,14 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger) (*Re
 	if err := r.initNetworkIdentity(); err != nil {
 		return nil, err
 	}
+	// publish_blackhole must be set before Start so the
+	// rnstransport.info.blackhole destination is registered during startup
+	// (Python Transport.py:227-233).
+	if r.publishBlackhole {
+		if setter, ok := r.transport.(interface{ SetPublishBlackhole(bool) }); ok {
+			setter.SetPublishBlackhole(true)
+		}
+	}
 	storagePath := filepath.Join(configDir, "storage")
 	if err := r.transport.Start(storagePath); err != nil {
 		return nil, err
@@ -301,6 +309,9 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger) (*Re
 			r.transport.DiscoverInterfaces()
 		}
 		if len(r.blackholeSources) > 0 && r.transport != nil {
+			if setter, ok := r.transport.(interface{ SetBlackholeSources([][]byte) }); ok {
+				setter.SetBlackholeSources(r.blackholeSources)
+			}
 			r.transport.EnableBlackholeUpdater()
 		}
 		if hasDiscoverableInterfaces(r.transport) {

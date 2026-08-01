@@ -350,17 +350,15 @@ func decodeHashArg(v any) ([]byte, bool) {
 
 func (r *Reticulum) getInterfaceStats() map[string]any {
 	interfacesOut := make([]any, 0)
-	var totalRX uint64
-	var totalTX uint64
 
 	ts := r.transport
 	if ts == nil {
 		return map[string]any{
 			"interfaces":       interfacesOut,
-			"rxb":              totalRX,
-			"txb":              totalTX,
-			"rxs":              0,
-			"txs":              0,
+			"rxb":              uint64(0),
+			"txb":              uint64(0),
+			"rxs":              float64(0),
+			"txs":              float64(0),
 			"network_id":       nil,
 			"transport_id":     nil,
 			"transport_uptime": nil,
@@ -373,8 +371,17 @@ func (r *Reticulum) getInterfaceStats() map[string]any {
 	for _, iface := range ifaces {
 		rx := iface.BytesReceived()
 		tx := iface.BytesSent()
-		totalRX += rx
-		totalTX += tx
+		// Per-interface current speeds (bits/sec) from the traffic loop
+		// (Python reticulum.py:1191-1205: ifstats["rxs"] =
+		// interface.current_rx_speed, else 0). Interfaces without the
+		// accessor (no current_rx_speed attribute) report 0, matching Python.
+		var rxs, txs float64
+		if sg, ok := iface.(interface{ CurrentRxSpeed() float64 }); ok {
+			rxs = sg.CurrentRxSpeed()
+		}
+		if sg, ok := iface.(interface{ CurrentTxSpeed() float64 }); ok {
+			txs = sg.CurrentTxSpeed()
+		}
 		var ifacSize any
 		var ifacNetname any
 		if cfgGetter, ok := iface.(interface{ IFACConfig() interfaces.IFACConfig }); ok {
@@ -403,8 +410,8 @@ func (r *Reticulum) getInterfaceStats() map[string]any {
 			"type":                        iface.Type(),
 			"rxb":                         rx,
 			"txb":                         tx,
-			"rxs":                         0,
-			"txs":                         0,
+			"rxs":                         rxs,
+			"txs":                         txs,
 			"status":                      iface.Status(),
 			"mode":                        iface.Mode(),
 			"bitrate":                     iface.Bitrate(),
@@ -438,10 +445,10 @@ func (r *Reticulum) getInterfaceStats() map[string]any {
 
 	return map[string]any{
 		"interfaces":       interfacesOut,
-		"rxb":              totalRX,
-		"txb":              totalTX,
-		"rxs":              0,
-		"txs":              0,
+		"rxb":              ts.TrafficRxb(),
+		"txb":              ts.TrafficTxb(),
+		"rxs":              ts.SpeedRx(),
+		"txs":              ts.SpeedTx(),
 		"network_id":       networkID,
 		"transport_id":     transportID,
 		"transport_uptime": transportUptime,

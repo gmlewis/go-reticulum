@@ -1101,84 +1101,63 @@ func TestDiscoverInterfacesRunsHookAsync(t *testing.T) {
 	close(release)
 }
 
-func TestEnableBlackholeUpdaterRunsHook(t *testing.T) {
+func TestEnableBlackholeUpdaterStartsUpdater(t *testing.T) {
 	t.Parallel()
 
 	ts := NewTransportSystem(nil)
-	called := make(chan struct{}, 1)
-	ts.SetEnableBlackholeUpdaterHook(func() {
-		called <- struct{}{}
-	})
+	defer ts.StopBlackholeUpdater()
 
 	ts.EnableBlackholeUpdater()
 
 	if got := ts.EnableBlackholeUpdaterCallCount(); got != 1 {
 		t.Fatalf("EnableBlackholeUpdaterCallCount() = %v, want 1", got)
 	}
-	select {
-	case <-called:
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for blackhole updater hook call")
+	if ts.BlackholeUpdater() == nil {
+		t.Fatal("BlackholeUpdater() = nil, want a started updater")
 	}
 }
 
-func TestEnableBlackholeUpdaterOnlyRunsHookOnce(t *testing.T) {
+func TestEnableBlackholeUpdaterIdempotent(t *testing.T) {
 	t.Parallel()
 
 	ts := NewTransportSystem(nil)
-	called := make(chan struct{}, 2)
-	ts.SetEnableBlackholeUpdaterHook(func() {
-		called <- struct{}{}
-	})
+	defer ts.StopBlackholeUpdater()
 
 	ts.EnableBlackholeUpdater()
 	ts.EnableBlackholeUpdater()
 
 	if got := ts.EnableBlackholeUpdaterCallCount(); got != 1 {
-		t.Fatalf("EnableBlackholeUpdaterCallCount() = %v, want 1", got)
+		t.Fatalf("EnableBlackholeUpdaterCallCount() = %v, want 1 (idempotent)", got)
 	}
-	select {
-	case <-called:
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for blackhole updater hook call")
-	}
-	select {
-	case <-called:
-		t.Fatal("blackhole updater hook ran more than once")
-	case <-time.After(100 * time.Millisecond):
+	if ts.BlackholeUpdater() == nil {
+		t.Fatal("BlackholeUpdater() = nil, want a started updater")
 	}
 }
 
-func TestEnableBlackholeUpdaterRunsHookAsync(t *testing.T) {
+func TestEnableBlackholeUpdaterReturnsAsync(t *testing.T) {
 	t.Parallel()
 
 	ts := NewTransportSystem(nil)
-	started := make(chan struct{})
-	release := make(chan struct{})
+	defer ts.StopBlackholeUpdater()
+
+	// EnableBlackholeUpdater must return promptly: it only constructs the
+	// updater and spawns its loop (which waits INITIAL_WAIT before the first
+	// pass). It must not block on the (network-bound) fetch.
 	done := make(chan struct{})
-	ts.SetEnableBlackholeUpdaterHook(func() {
-		close(started)
-		<-release
-	})
-
 	go func() {
 		ts.EnableBlackholeUpdater()
 		close(done)
 	}()
 
 	select {
-	case <-started:
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for blackhole updater hook to start")
-	}
-
-	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("expected EnableBlackholeUpdater to return before hook completed")
+		t.Fatal("EnableBlackholeUpdater did not return asynchronously")
 	}
 
-	close(release)
+	if ts.BlackholeUpdater() == nil {
+		t.Fatal("BlackholeUpdater() = nil after EnableBlackholeUpdater returned")
+	}
 }
 
 type dummyInterface struct {

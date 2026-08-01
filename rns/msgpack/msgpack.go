@@ -65,6 +65,18 @@ const (
 	// negFixIntMax = 0xff
 )
 
+// Marshaler is implemented by types that can encode themselves directly to
+// MessagePack. Pack writes the bytes returned by MarshalMsgpack verbatim
+// into the stream, without further reflection. This is the escape hatch for
+// encodings Pack cannot produce via reflection — most notably maps whose
+// keys are binary blobs (msgpack bin format): Go maps cannot hold unhashable
+// []byte keys, so a map with binary keys must be hand-packed and returned
+// through this interface (e.g. the blackhole list RPC response, which Python
+// umsgpack serialises with bytes keys).
+type Marshaler interface {
+	MarshalMsgpack() ([]byte, error)
+}
+
 // Pack serializes v into MessagePack format.
 func Pack(v any) ([]byte, error) {
 	var buf bytes.Buffer
@@ -76,6 +88,20 @@ func pack(w io.Writer, v reflect.Value) error {
 	if !v.IsValid() {
 		_, err := w.Write([]byte{nilVal})
 		return err
+	}
+
+	// A value that knows how to encode itself takes precedence over the
+	// reflection-based switch below. CanInterface guards against
+	// unexported fields, where v.Interface() would panic.
+	if v.CanInterface() {
+		if m, ok := v.Interface().(Marshaler); ok {
+			b, err := m.MarshalMsgpack()
+			if err != nil {
+				return err
+			}
+			_, err = w.Write(b)
+			return err
+		}
 	}
 
 	switch v.Kind() {

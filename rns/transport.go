@@ -8,11 +8,13 @@ package rns
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,6 +33,12 @@ type Transport interface {
 	// BlackholeIdentity blocks traffic from the given identity until it is
 	// explicitly cleared or expires.
 	BlackholeIdentity(identityHash []byte, until *int64, reason string) bool
+	// CacheRequest asks the transport to re-request a packet by hash from the
+	// network cache (Python RNS.Transport.cache_request). The Go port has no
+	// network packet cache, so the default implementation is a best-effort
+	// no-op; the call site (resource AWAITING_PROOF watchdog) is still issued
+	// faithfully.
+	CacheRequest(packetHash []byte, link *Link)
 	// EnableBlackholeUpdater starts any configured remote blackhole update flow.
 	EnableBlackholeUpdater()
 	// EnableBlackholeUpdaterCallCount reports how many times the updater has been enabled.
@@ -111,6 +119,18 @@ type Transport interface {
 	StartedAt() time.Time
 	// Stop stops the transport and its background processing.
 	Stop()
+	// TrafficRxb returns the cumulative received-byte delta total driven by the
+	// traffic counter loop (Python Transport.traffic_rxb).
+	TrafficRxb() uint64
+	// TrafficTxb returns the cumulative transmitted-byte delta total
+	// (Python Transport.traffic_txb).
+	TrafficTxb() uint64
+	// SpeedRx returns the current aggregate receive speed in bits/sec
+	// (Python Transport.speed_rx).
+	SpeedRx() float64
+	// SpeedTx returns the current aggregate transmit speed in bits/sec
+	// (Python Transport.speed_tx).
+	SpeedTx() float64
 	// UnblackholeIdentity removes a previously blackholed identity.
 	UnblackholeIdentity(identityHash []byte) bool
 
@@ -182,8 +202,26 @@ type TransportSystem struct {
 	discoverCalls        int
 	blackholeUpdaterOn   bool
 	discoveryOn          bool
-	enableBlackholeHook  func()
 	discoverHook         func()
+
+	// blackholeUpdater is the running BlackholeUpdater (Python
+	// Transport.blackhole_updater), started by EnableBlackholeUpdater when
+	// blackhole_sources are configured.
+	blackholeUpdater *BlackholeUpdater
+
+	// blackholePath is the on-disk directory holding per-source blackhole
+	// lists (Python RNS.Reticulum.blackholepath). blackholeSources is the
+	// configured set of remote source identity hashes whose lists are
+	// accepted by reloadBlackholeAt (Python RNS.Reticulum.blackhole_sources).
+	blackholePath    string
+	blackholeSources [][]byte
+
+	// publishBlackhole mirrors RNS.Reticulum.publish_blackhole_enabled: when
+	// true, Start registers the rnstransport.info.blackhole request
+	// destination serving the /list RPC (Python Transport.py:229-232).
+	// blackholeDestination holds that destination once created.
+	publishBlackhole     bool
+	blackholeDestination *Destination
 
 	knownDestinations map[string][]any
 	knownRatchets     map[string][]byte
@@ -196,6 +234,19 @@ type TransportSystem struct {
 	linkMTUDiscovery bool
 	useImplicitProof bool
 	mu               sync.Mutex
+
+	// Traffic counters driven by count_traffic_loop (Python
+	// Transport.count_traffic_loop, Transport.py:419-451). trafficCounters
+	// holds the per-interface last sample ({ts, rxb, txb}); trafficRxb/txb
+	// are the cumulative byte deltas since startup (Transport.traffic_rxb /
+	// traffic_txb); speedRx/tx are the current aggregate bit-per-second
+	// speeds (Transport.speed_rx / speed_tx). trafficMu guards all of them.
+	trafficCounters map[interfaces.Interface]*trafficCounter
+	trafficRxb      uint64
+	trafficTxb      uint64
+	speedRx         float64
+	speedTx         float64
+	trafficMu       sync.Mutex
 }
 
 // AnnounceEntry represents a stored network announce within the transport system.
@@ -491,6 +542,14 @@ func (ts *TransportSystem) Start(storagePath string) error {
 		}
 	}
 
+	// Ensure the blackhole list directory exists (Python
+	// RNS.Reticulum.__init__ creates configdir/storage/blackhole).
+	ts.blackholePath = filepath.Join(ts.storagePath, "blackhole")
+	if err := os.MkdirAll(ts.blackholePath, 0o700); err != nil {
+		ts.mu.Unlock()
+		return err
+	}
+
 	// Load or create transport identity
 	identityPath := filepath.Join(ts.storagePath, "transport_identity")
 	if _, err := os.Stat(identityPath); err == nil {
@@ -539,10 +598,60 @@ func (ts *TransportSystem) Start(storagePath string) error {
 		ts.RegisterDestination(pathRequestDst)
 	}
 
+	// Register the blackhole list publishing destination (Python
+	// Transport.py:227-233), gated on publish_blackhole_enabled. The
+	// destination is a SINGLE IN destination on the transport identity,
+	// serving the /list request handler that returns the current
+	// blackholed_identities map.
+	if ts.publishBlackhole && ts.identity != nil {
+		if err := ts.registerBlackholeDestination(); err != nil {
+			return err
+		}
+	}
+
 	// Start maintenance loop
 	go ts.maintenance()
 
+	// Start the traffic counter loop (Python Transport.start launches
+	// Transport.count_traffic_loop as a daemon thread, Transport.py:252).
+	go ts.countTrafficLoop(ts.stopCh)
+
 	return nil
+}
+
+// registerBlackholeDestination creates the rnstransport.info.blackhole
+// request destination and registers the /list handler on it, mirroring
+// Python Transport.py:229-230.
+func (ts *TransportSystem) registerBlackholeDestination() error {
+	dst, err := NewDestination(ts, ts.identity, DestinationIn, DestinationSingle, "rnstransport", "info", "blackhole")
+	if err != nil {
+		return err
+	}
+	dst.RegisterRequestHandler("/list", ts.blackholeListHandler, AllowAll, nil, false)
+	ts.mu.Lock()
+	ts.blackholeDestination = dst
+	already := false
+	for _, d := range ts.destinations {
+		if bytes.Equal(d.Hash, dst.Hash) {
+			already = true
+			break
+		}
+	}
+	ts.mu.Unlock()
+	if !already {
+		ts.RegisterDestination(dst)
+	}
+	return nil
+}
+
+// SetPublishBlackhole enables or disables blackhole list publishing
+// (Python RNS.Reticulum.publish_blackhole_enabled). It must be called
+// before Start for the publishing destination to be registered during
+// startup.
+func (ts *TransportSystem) SetPublishBlackhole(enabled bool) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.publishBlackhole = enabled
 }
 
 // Stop halts the transport system, shutting down all network interfaces and closing active connections.
@@ -555,7 +664,12 @@ func (ts *TransportSystem) Stop() {
 	stopCh := ts.stopCh
 	doneCh := ts.doneCh
 	ts.running = false
+	updater := ts.blackholeUpdater
 	ts.mu.Unlock()
+
+	if updater != nil {
+		updater.Stop()
+	}
 
 	if stopCh != nil {
 		close(stopCh)
@@ -623,7 +737,10 @@ func (ts *TransportSystem) DiscoverInterfaces() {
 	}
 }
 
-// EnableBlackholeUpdater starts the configured blackhole updater flow.
+// EnableBlackholeUpdater starts the configured blackhole updater flow
+// (Python Transport.enable_blackhole_updater, Transport.py:413-417): it
+// constructs a BlackholeUpdater bound to the configured blackhole_sources
+// and the real /list fetch, and starts its loop. It is idempotent.
 func (ts *TransportSystem) EnableBlackholeUpdater() {
 	ts.mu.Lock()
 	if ts.blackholeUpdaterOn {
@@ -632,11 +749,17 @@ func (ts *TransportSystem) EnableBlackholeUpdater() {
 	}
 	ts.blackholeUpdaterOn = true
 	ts.enableBlackholeCalls++
-	hook := ts.enableBlackholeHook
 	ts.mu.Unlock()
-	if hook != nil {
-		go hook()
-	}
+
+	updater := NewBlackholeUpdater(ts, func() [][]byte {
+		ts.mu.Lock()
+		defer ts.mu.Unlock()
+		return append([][]byte(nil), ts.blackholeSources...)
+	}, ts.blackholeFetch)
+	ts.mu.Lock()
+	ts.blackholeUpdater = updater
+	ts.mu.Unlock()
+	updater.Start()
 }
 
 // EnableBlackholeUpdaterCallCount reports how many updater-enable calls have run.
@@ -644,6 +767,24 @@ func (ts *TransportSystem) EnableBlackholeUpdaterCallCount() int {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	return ts.enableBlackholeCalls
+}
+
+// BlackholeUpdater returns the running BlackholeUpdater, or nil if
+// EnableBlackholeUpdater has not been called.
+func (ts *TransportSystem) BlackholeUpdater() *BlackholeUpdater {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.blackholeUpdater
+}
+
+// StopBlackholeUpdater stops the running BlackholeUpdater if one was started.
+func (ts *TransportSystem) StopBlackholeUpdater() {
+	ts.mu.Lock()
+	updater := ts.blackholeUpdater
+	ts.mu.Unlock()
+	if updater != nil {
+		updater.Stop()
+	}
 }
 
 // DiscoverInterfacesCallCount returns the number of times the discovery interface process has been called.
@@ -659,14 +800,6 @@ func (ts *TransportSystem) SetDiscoverInterfacesHook(hook func()) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	ts.discoverHook = hook
-}
-
-// SetEnableBlackholeUpdaterHook registers the callback that should run when
-// EnableBlackholeUpdater is invoked.
-func (ts *TransportSystem) SetEnableBlackholeUpdaterHook(hook func()) {
-	ts.mu.Lock()
-	defer ts.mu.Unlock()
-	ts.enableBlackholeHook = hook
 }
 
 // HopsTo returns the number of hops to the given destination hash,
@@ -1814,6 +1947,17 @@ func (ts *TransportSystem) GetPacketRSSI(packetHash []byte) (float64, bool) {
 	return v, ok
 }
 
+// CacheRequest asks the network to re-send a packet by hash (Python
+// RNS.Transport.cache_request, Transport.py). The Go port does not implement
+// the network-wide packet cache, so this is a faithful best-effort no-op that
+// records nothing; the resource AWAITING_PROOF watchdog still issues it so
+// the call site and retry behaviour match Python.
+func (ts *TransportSystem) CacheRequest(packetHash []byte, link *Link) {
+	// No network packet cache in the Go port; intentionally a no-op.
+	_ = packetHash
+	_ = link
+}
+
 // GetPacketSNR returns Signal-to-Noise Ratio (SNR) metadata for a packet hash
 // when available.
 func (ts *TransportSystem) GetPacketSNR(packetHash []byte) (float64, bool) {
@@ -1901,7 +2045,13 @@ func (ts *TransportSystem) Remember(packetHash, destHash, publicKey, appData []b
 func (ts *TransportSystem) Recall(targetHash []byte) *Identity {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
+	return ts.recallLocked(targetHash)
+}
 
+// recallLocked is the lock-held core of Recall. It is also used by
+// removeBlackholedPathsLocked, which already holds ts.mu, to recall each
+// path-table destination's identity without re-locking.
+func (ts *TransportSystem) recallLocked(targetHash []byte) *Identity {
 	// Check destination hashes
 	if data, ok := ts.knownDestinations[string(targetHash)]; ok {
 		pubKey := data[2].([]byte)
@@ -2201,6 +2351,391 @@ func (ts *TransportSystem) identityHash() []byte {
 		return nil
 	}
 	return ts.identity.Hash
+}
+
+// blackholeListHandler is the /list request handler for the
+// rnstransport.info.blackhole destination (Python
+// Transport.blackhole_list_handler, Transport.py:3243-3250). It returns the
+// current blackholed_identities map serialised as a msgpack map with binary
+// identity-hash keys — the exact form Python's umsgpack produces and the
+// Discovery.BlackholeUpdater consumes. The return value implements
+// msgpack.Marshaler so the link response path writes the hand-packed bytes
+// verbatim (Go maps cannot hold []byte keys, so reflection packing cannot
+// produce the bin-keyed map Python emits).
+func (ts *TransportSystem) blackholeListHandler(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.ensureStateLocked()
+
+	entries := make(blackholeListMsgpack, 0, len(ts.blackholedIdentities))
+	for identityHash, entry := range ts.blackholedIdentities {
+		entries = append(entries, blackholeListEntry{
+			identityHash: copyBytes([]byte(identityHash)),
+			source:       copyBytes(entry.Source),
+			until:        entry.Until,
+			reason:       entry.Reason,
+		})
+	}
+	return entries
+}
+
+// blackholeListMsgpack is a blackhole list that msgpack-encodes itself with
+// binary identity-hash keys via packBlackholeList, satisfying
+// msgpack.Marshaler.
+type blackholeListMsgpack []blackholeListEntry
+
+// MarshalMsgpack encodes the blackhole list as a msgpack map with binary
+// keys, matching Python umsgpack.packb(Transport.blackholed_identities).
+func (b blackholeListMsgpack) MarshalMsgpack() ([]byte, error) {
+	return packBlackholeList([]blackholeListEntry(b))
+}
+
+// SetBlackholeSources configures the set of remote source identity hashes
+// whose blackhole lists reloadBlackholeAt accepts (Python
+// RNS.Reticulum.__blackhole_sources, set from the "blackhole_sources"
+// config option).
+func (ts *TransportSystem) SetBlackholeSources(sources [][]byte) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.blackholeSources = append(ts.blackholeSources[:0:0], sources...)
+}
+
+// blackholeSourceEnabled reports whether sourceHash is a configured
+// blackhole source (Python RNS.Reticulum.blackhole_sources() membership).
+func (ts *TransportSystem) blackholeSourceEnabled(sourceHash []byte) bool {
+	for _, s := range ts.blackholeSources {
+		if bytes.Equal(s, sourceHash) {
+			return true
+		}
+	}
+	return false
+}
+
+// ReloadBlackhole reloads the in-memory blackhole set from the on-disk
+// blackholepath, mirroring Python Transport.reload_blackhole
+// (Transport.py:3183-3220), using the current wall clock for the until
+// expiry check.
+func (ts *TransportSystem) ReloadBlackhole() {
+	ts.reloadBlackholeAt(time.Now())
+}
+
+// reloadBlackholeAt is the lock-holding core of ReloadBlackhole. now
+// replaces time.time() so golden tests can drive the until expiry check
+// deterministically (Python Transport.py:3184). It reads every file in
+// blackholepath, derives the source identity hash from the filename
+// ("local" -> own identity, else hex-decoded), skips disabled sources,
+// msgpack-unpacks the per-source dict, and merges non-local entries into
+// the in-memory set, then drops paths associated with blackholed
+// identities.
+func (ts *TransportSystem) reloadBlackholeAt(now time.Time) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.ensureStateLocked()
+
+	ownHash := ts.identityHash()
+	hexLen := (TruncatedHashLength / 8) * 2
+
+	entries, err := os.ReadDir(ts.blackholePath)
+	if err != nil {
+		// No blackhole directory yet: nothing to reload.
+		return
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		filename := entry.Name()
+
+		var sourceIdentityHash []byte
+		if filename == "local" {
+			sourceIdentityHash = copyBytes(ownHash)
+		} else {
+			if len(filename) != hexLen {
+				ts.logger.Error("Identity hash length for blackhole source %s is invalid", filename)
+				continue
+			}
+			srcHash, err := hex.DecodeString(filename)
+			if err != nil {
+				ts.logger.Error("Could not decode blackhole source filename %s: %v", filename, err)
+				continue
+			}
+			sourceIdentityHash = srcHash
+			if !ts.blackholeSourceEnabled(sourceIdentityHash) {
+				ts.logger.Verbose("Skipping disabled blackhole source %x", sourceIdentityHash)
+				continue
+			}
+		}
+
+		sourcepath := filepath.Join(ts.blackholePath, filename)
+		packed, err := os.ReadFile(sourcepath)
+		if err != nil {
+			ts.logger.Error("Could not read blackhole source file %s: %v", filename, err)
+			continue
+		}
+		obj, err := msgpack.Unpack(packed)
+		if err != nil {
+			ts.logger.Error("Could not unpack blackhole source file %s: %v", filename, err)
+			continue
+		}
+		sourceList, ok := obj.(map[any]any)
+		if !ok {
+			ts.logger.Error("Unexpected blackhole source payload type %T in %s", obj, filename)
+			continue
+		}
+
+		for k, v := range sourceList {
+			identityHash := blackholeMapKey(k)
+			if identityHash == nil || len(identityHash) != TruncatedHashLength/8 {
+				continue
+			}
+			// Python: do not overwrite entries sourced from our own
+			// identity (Transport.py:3203-3204).
+			if existing, exists := ts.blackholedIdentities[string(identityHash)]; exists {
+				if ownHash != nil && bytes.Equal(existing.Source, ownHash) {
+					continue
+				}
+			}
+			se, _ := v.(map[any]any)
+			until := blackholeUntil(se)
+			reason := blackholeReason(se)
+			if until != nil && !now.Before(*until) {
+				// Expired: skip (Python Transport.py:3212).
+				continue
+			}
+			ts.blackholedIdentities[string(identityHash)] = BlackholeIdentityEntry{
+				IdentityHash: copyBytes(identityHash),
+				Source:       copyBytes(sourceIdentityHash),
+				Until:        until,
+				Reason:       reason,
+			}
+		}
+	}
+
+	ts.removeBlackholedPathsLocked()
+}
+
+// RemoveBlackholedPaths walks the path table and drops every destination
+// whose associated identity is blackholed, mirroring Python
+// Transport.remove_blackholed_paths (Transport.py:3222-3241).
+func (ts *TransportSystem) RemoveBlackholedPaths() {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.ensureStateLocked()
+	ts.removeBlackholedPathsLocked()
+}
+
+// removeBlackholedPathsLocked is the lock-held core of
+// RemoveBlackholedPaths. It recalls each path-table destination's
+// identity and deletes the entry when that identity is blackholed.
+func (ts *TransportSystem) removeBlackholedPathsLocked() {
+	drop := make([]string, 0)
+	for destinationHash := range ts.pathTable {
+		// Recall must not re-lock ts.mu; use the lock-free recall helper.
+		associated := ts.recallLocked([]byte(destinationHash))
+		if associated != nil && len(associated.Hash) != 0 {
+			if _, blackholed := ts.blackholedIdentities[string(associated.Hash)]; blackholed {
+				drop = append(drop, destinationHash)
+			}
+		}
+	}
+	for _, destinationHash := range drop {
+		delete(ts.pathTable, destinationHash)
+	}
+	if len(drop) > 0 {
+		ms := ""
+		if len(drop) > 1 {
+			ms = "s"
+		}
+		ts.logger.Info("Removed %d destination%s associated with blackholed identities from path table", len(drop), ms)
+	}
+}
+
+// PersistBlackhole atomically writes the locally-sourced portion of the
+// in-memory blackhole set to blackholepath/local, mirroring Python
+// Transport.persist_blackhole (Transport.py:3252-3275). Only entries
+// whose source is the local transport identity are written; each entry is
+// serialised as {source: own, until, reason} under a binary (msgpack bin)
+// identity-hash key, matching the on-disk format Python's umsgpack
+// produces.
+func (ts *TransportSystem) PersistBlackhole() {
+	ts.mu.Lock()
+	ownHash := ts.identityHash()
+	entries := make([]blackholeListEntry, 0, len(ts.blackholedIdentities))
+	for identityHash, entry := range ts.blackholedIdentities {
+		if ownHash != nil && bytes.Equal(entry.Source, ownHash) {
+			entries = append(entries, blackholeListEntry{
+				identityHash: copyBytes([]byte(identityHash)),
+				source:       copyBytes(ownHash),
+				until:        entry.Until,
+				reason:       entry.Reason,
+			})
+		}
+	}
+	localPath := filepath.Join(ts.blackholePath, "local")
+	ts.mu.Unlock()
+
+	packed, err := packBlackholeList(entries)
+	if err != nil {
+		ts.logger.Error("Error while packing blackhole list: %v", err)
+		return
+	}
+	tmpPath := localPath + ".tmp"
+	if err := os.WriteFile(tmpPath, packed, 0o600); err != nil {
+		ts.logger.Error("Error while writing blackhole list: %v", err)
+		return
+	}
+	// os.Rename atomically replaces an existing destination on POSIX, so no
+	// prior Remove is needed (Python opens the path with "wb", truncating in
+	// place; the rename is an atomic equivalent).
+	if err := os.Rename(tmpPath, localPath); err != nil {
+		ts.logger.Error("Error while persisting blackhole list: %v", err)
+	}
+}
+
+// packBlackholeList serialises a blackhole list as a msgpack map whose
+// keys are binary identity hashes (msgpack bin format, as Python's
+// umsgpack writes) and whose values are {source, until, reason} sub-maps.
+// Keys are sorted for deterministic output. The sub-map is packed with
+// msgpack.Pack so its str keys ("source"/"until"/"reason") and bin
+// "source" value match Python's encoding.
+func packBlackholeList(entries []blackholeListEntry) ([]byte, error) {
+	sort.Slice(entries, func(i, j int) bool {
+		return bytes.Compare(entries[i].identityHash, entries[j].identityHash) < 0
+	})
+
+	var buf bytes.Buffer
+	n := len(entries)
+	switch {
+	case n <= 0x0f:
+		buf.WriteByte(byte(0x80 | n))
+	case n <= 0xffff:
+		buf.WriteByte(0xde)
+		buf.WriteByte(byte(n >> 8))
+		buf.WriteByte(byte(n))
+	default:
+		buf.WriteByte(0xdf)
+		buf.WriteByte(byte(n >> 24))
+		buf.WriteByte(byte(n >> 16))
+		buf.WriteByte(byte(n >> 8))
+		buf.WriteByte(byte(n))
+	}
+
+	for _, e := range entries {
+		if err := writeMsgpackBin(&buf, e.identityHash); err != nil {
+			return nil, err
+		}
+		sub := map[any]any{
+			"source": copyBytes(e.source),
+			"until":  blackholeUntilValue(e.until),
+			"reason": e.reason,
+		}
+		packed, err := msgpack.Pack(sub)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(packed)
+	}
+	return buf.Bytes(), nil
+}
+
+// blackholeListEntry is a single serialised blackhole entry.
+type blackholeListEntry struct {
+	identityHash []byte
+	source       []byte
+	until        *time.Time
+	reason       string
+}
+
+// writeMsgpackBin writes a msgpack bin container holding data to w.
+func writeMsgpackBin(w *bytes.Buffer, data []byte) error {
+	n := len(data)
+	switch {
+	case n <= 0xff:
+		w.WriteByte(0xc4)
+		w.WriteByte(byte(n))
+	case n <= 0xffff:
+		w.WriteByte(0xc5)
+		w.WriteByte(byte(n >> 8))
+		w.WriteByte(byte(n))
+	default:
+		w.WriteByte(0xc6)
+		w.WriteByte(byte(n >> 24))
+		w.WriteByte(byte(n >> 16))
+		w.WriteByte(byte(n >> 8))
+		w.WriteByte(byte(n))
+	}
+	_, err := w.Write(data)
+	return err
+}
+
+// blackholeMapKey extracts the identity-hash bytes from a msgpack-unpacked
+// map key. Default msgpack.Unpack converts bin keys to string (the raw
+// bytes); str keys are returned as-is. Either way the byte content is the
+// identity hash.
+func blackholeMapKey(k any) []byte {
+	switch v := k.(type) {
+	case string:
+		return []byte(v)
+	case []byte:
+		return v
+	}
+	// The msgpack unpacker decodes bin-format map keys as an unexported
+	// string-kind type (binaryMapKey); handle any string-kind value via
+	// reflection so bin-keyed maps round-trip regardless of the concrete
+	// key type.
+	if rv := reflect.ValueOf(k); rv.IsValid() && rv.Kind() == reflect.String {
+		return []byte(rv.String())
+	}
+	return nil
+}
+
+// blackholeUntil extracts the "until" field from a blackhole sub-entry.
+// Python stores a float epoch (or None); Go materialises it as *time.Time.
+func blackholeUntil(se map[any]any) *time.Time {
+	v, ok := se["until"]
+	if !ok || v == nil {
+		return nil
+	}
+	switch u := v.(type) {
+	case float64:
+		t := time.Unix(int64(u), int64((u-float64(int64(u)))*1e9))
+		return &t
+	case int64:
+		t := time.Unix(u, 0)
+		return &t
+	case uint64:
+		t := time.Unix(int64(u), 0)
+		return &t
+	case int:
+		t := time.Unix(int64(u), 0)
+		return &t
+	}
+	return nil
+}
+
+// blackholeUntilValue converts a *time.Time back to the float epoch value
+// Python persists (seconds with fractional component), or nil for no
+// expiry. Unix()+Nanosecond() is used instead of UnixNano() so far-future
+// expiries (e.g. 9.9e9) do not overflow int64.
+func blackholeUntilValue(until *time.Time) any {
+	if until == nil {
+		return nil
+	}
+	return float64(until.Unix()) + float64(until.Nanosecond())/1e9
+}
+
+// blackholeReason extracts the "reason" string from a blackhole sub-entry.
+func blackholeReason(se map[any]any) string {
+	if v, ok := se["reason"]; ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+		if b, ok := v.([]byte); ok {
+			return string(b)
+		}
+	}
+	return ""
 }
 
 // HasPath returns true if a path to the destination is known.
