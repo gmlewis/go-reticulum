@@ -3261,6 +3261,18 @@ func (r *Router) SaveNodeStats() error {
 
 // SaveAvailableTickets persists inbound/outbound delivery ticket state using the
 // Python available_tickets dictionary shape.
+// CleanAvailableTickets reaps expired outbound and expired-beyond-grace inbound
+// tickets from the ticket store. It is the Go port of Python's
+// LXMRouter.clean_available_tickets (LXMRouter.py:1247-1269), using the current
+// router clock and DefaultTicketGraceSeconds as the inbound grace margin.
+func (r *Router) CleanAvailableTickets() {
+	if r.ticketStore == nil {
+		return
+	}
+	nowSeconds := float64(r.now().UnixNano()) / 1e9
+	r.ticketStore.CleanAvailableTickets(nowSeconds, DefaultTicketGraceSeconds)
+}
+
 func (r *Router) SaveAvailableTickets() error {
 	if r.ticketStore == nil {
 		return nil
@@ -3301,8 +3313,10 @@ func (r *Router) SaveAvailableTickets() error {
 	return os.WriteFile(r.availableTicketsPath(), packed, 0o644)
 }
 
-// LoadAvailableTickets restores available ticket state and drops expired
-// outbound and stale inbound entries.
+// LoadAvailableTickets restores available ticket state from storage and then
+// reaps expired outbound and expired-beyond-grace inbound entries via
+// CleanAvailableTickets, mirroring Python's load-then-clean flow
+// (LXMRouter.py:283: self.clean_available_tickets()).
 func (r *Router) LoadAvailableTickets() error {
 	data, err := os.ReadFile(r.availableTicketsPath())
 	if err != nil {
@@ -3325,7 +3339,6 @@ func (r *Router) LoadAvailableTickets() error {
 		return fmt.Errorf("invalid available_tickets payload type %T", unpacked)
 	}
 
-	nowSeconds := float64(r.now().UnixNano()) / 1e9
 	store := NewTicketStore()
 
 	if lastDeliveries, ok := anyToMap(root["last_deliveries"]); ok {
@@ -3353,7 +3366,7 @@ func (r *Router) LoadAvailableTickets() error {
 				continue
 			}
 			expires, err := anyToFloat64(items[0])
-			if err != nil || expires <= nowSeconds {
+			if err != nil {
 				continue
 			}
 			ticket := anyToBytes(items[1])
@@ -3387,7 +3400,7 @@ func (r *Router) LoadAvailableTickets() error {
 					continue
 				}
 				expires, err := anyToFloat64(items[0])
-				if err != nil || nowSeconds > expires+DefaultTicketGraceSeconds {
+				if err != nil {
 					continue
 				}
 				destinationKey := string(destinationHash)
@@ -3403,6 +3416,9 @@ func (r *Router) LoadAvailableTickets() error {
 	}
 
 	r.ticketStore = store
+	// Reap expired entries, mirroring Python's clean_available_tickets() call
+	// right after load (LXMRouter.py:283).
+	r.CleanAvailableTickets()
 	return nil
 }
 

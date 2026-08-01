@@ -5790,8 +5790,17 @@ func TestAvailableTicketsRestartCleansAndRewritesExpiredEntries(t *testing.T) {
 	if !ok {
 		t.Fatalf("inbound payload type=%T want map", payload["inbound"])
 	}
-	if len(inbound) != 0 {
-		t.Fatalf("inbound payload=%v want empty map", inbound)
+	// Python's clean_available_tickets reaps expired inbound tickets but
+	// leaves the per-destination entry in place (it only pops the ticket,
+	// never the destination), so the persisted inbound map retains the
+	// destination key with an empty ticket sub-map. See LXMRouter.py:1268.
+	if len(inbound) != 1 {
+		t.Fatalf("inbound payload=%v want one retained destination entry", inbound)
+	}
+	for _, tickets := range inbound {
+		if ticketMap, ok := anyToMap(tickets); !ok || len(ticketMap) != 0 {
+			t.Fatalf("inbound destination tickets=%v want empty ticket map", tickets)
+		}
 	}
 	lastDeliveries, ok := anyToMap(payload["last_deliveries"])
 	if !ok {

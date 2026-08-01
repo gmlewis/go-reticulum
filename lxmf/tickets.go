@@ -95,6 +95,37 @@ func (s *TicketStore) RememberOutboundTicket(destinationHash []byte, entry Ticke
 	s.outbound[string(destinationHash)] = TicketEntry{Expires: entry.Expires, Ticket: cloneBytes(entry.Ticket)}
 }
 
+// CleanAvailableTickets reaps expired tickets, mirroring Python's
+// LXMRouter.clean_available_tickets (LXMRouter.py:1247-1269). nowSeconds is the
+// current time as fractional Unix seconds (the caller supplies it so the clock
+// is controllable in tests). The reaping uses a STRICT comparison, matching
+// Python's `time.time() > entry[0]`:
+//
+//   - outbound: a ticket is reaped when nowSeconds > Expires (so a ticket
+//     whose Expires equals nowSeconds is KEPT).
+//   - inbound:  a ticket is reaped when nowSeconds > Expires + grace (so a
+//     ticket at the exact grace boundary is KEPT).
+//
+// Inbound destination entries are left in place even when all their tickets are
+// reaped, matching Python (which only pops the ticket, never the destination).
+func (s *TicketStore) CleanAvailableTickets(nowSeconds float64, grace float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for dest, entry := range s.outbound {
+		if nowSeconds > entry.Expires {
+			delete(s.outbound, dest)
+		}
+	}
+	for _, tickets := range s.inbound {
+		for ticket, entry := range tickets {
+			if nowSeconds > entry.Expires+grace {
+				delete(tickets, ticket)
+			}
+		}
+	}
+}
+
 // OutboundTicket retrieves a cached outbound delivery ticket for the specified destination, provided the ticket has not yet eclipsed its absolute expiration time.
 func (s *TicketStore) OutboundTicket(destinationHash []byte, now time.Time) []byte {
 	s.mu.RLock()
