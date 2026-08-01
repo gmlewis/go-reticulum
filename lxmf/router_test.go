@@ -1696,6 +1696,8 @@ func TestControlStatsGetRequest(t *testing.T) {
 
 	remoteIdentity := mustTestNewIdentity(t, true)
 
+	router.propagationEnabled = true
+	router.propagationNodeStart = time.Now().Add(-10 * time.Second)
 	router.clientPropagationMessagesReceived = 11
 	router.clientPropagationMessagesServed = 7
 	router.unpeeredPropagationIncoming = 3
@@ -1709,10 +1711,14 @@ func TestControlStatsGetRequest(t *testing.T) {
 		t.Fatalf("unexpected response type %T", responseAny)
 	}
 
-	if got := response["client_propagation_messages_received"]; got != 11 {
+	clients, ok := response["clients"].(map[string]any)
+	if !ok {
+		t.Fatalf("clients missing or wrong type: %T", response["clients"])
+	}
+	if got := clients["client_propagation_messages_received"]; got != 11 {
 		t.Fatalf("client_propagation_messages_received=%v want=11", got)
 	}
-	if got := response["client_propagation_messages_served"]; got != 7 {
+	if got := clients["client_propagation_messages_served"]; got != 7 {
 		t.Fatalf("client_propagation_messages_served=%v want=7", got)
 	}
 	if got := response["unpeered_propagation_incoming"]; got != 3 {
@@ -1721,8 +1727,11 @@ func TestControlStatsGetRequest(t *testing.T) {
 	if got := response["unpeered_propagation_rx_bytes"]; got != 512 {
 		t.Fatalf("unpeered_propagation_rx_bytes=%v want=512", got)
 	}
-	if got := response["peer_count"]; got != 2 {
-		t.Fatalf("peer_count=%v want=2", got)
+	if got := response["total_peers"]; got != 2 {
+		t.Fatalf("total_peers=%v want=2", got)
+	}
+	if got := response["uptime"]; got == nil {
+		t.Fatalf("uptime missing")
 	}
 }
 

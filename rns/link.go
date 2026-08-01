@@ -1350,7 +1350,10 @@ func (o *LinkChannelOutlet) TimedOut() {
 
 // Teardown actively closes the link, destroying related channels, and notifying any observers that data transmission has halted.
 func (l *Link) Teardown() {
-	if l.status != LinkPending && l.status != LinkClosed {
+	l.mu.Lock()
+	status := l.status
+	l.mu.Unlock()
+	if status != LinkPending && status != LinkClosed {
 		l.sendTeardownPacket()
 	}
 	if l.initiator {

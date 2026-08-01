@@ -137,6 +137,7 @@ type Router struct {
 	informationStorageLimit           float64
 	prioritisedList                   map[string]struct{}
 	propagationEnabled                bool
+	propagationNodeStart              time.Time
 	outboundPropagationNode           []byte
 	outboundPropagationLink           *rns.Link
 	outboundPropagationLinkMessage    *Message
@@ -184,6 +185,13 @@ type Router struct {
 	// LXMRouter.active_propagation_links; CleanLinks sweeps it for
 	// inactivity beyond PLinkMaxInactivity.
 	activePropagationLinks []*rns.Link
+	// deliveryLinks is the set of inbound links established to the router's
+	// delivery destination(s). It mirrors Python's
+	// delivery_destination.links (maintained per-destination by RNS in
+	// Python); since this router currently supports a single delivery
+	// identity, a flat slice suffices. configureDeliveryLink appends to it
+	// when a delivery link establishes; Close tears them down.
+	deliveryLinks []*rns.Link
 
 	mu       sync.Mutex
 	isClosed bool
@@ -866,15 +874,218 @@ func (r *Router) statsGetRequest(_ string, _ []byte, _ []byte, _ []byte, remoteI
 		return errCode
 	}
 
-	response := map[string]any{
-		"client_propagation_messages_received": r.clientPropagationMessagesReceived,
-		"client_propagation_messages_served":   r.clientPropagationMessagesServed,
-		"unpeered_propagation_incoming":        r.unpeeredPropagationIncoming,
-		"unpeered_propagation_rx_bytes":        r.unpeeredPropagationRXBytes,
-		"peer_count":                           len(r.peers),
+	return r.compileStatsLocked()
+}
+
+// compileStatsLocked assembles the full propagation-node statistics dict
+// (Python LXMRouter.compile_stats, LXMRouter.py:750-817). It must be called
+// with r.mu held. It returns nil when propagation is not enabled, matching
+// Python's `if not self.propagation_node: return None`.
+//
+// The per-peer "peers" sub-map is keyed by binary peer-id (destination hash)
+// in Python umsgpack. Go maps cannot hold []byte keys, so it is emitted via
+// peerStatsMsgpack (a msgpack.Marshaler) which hand-packs the bin-keyed map —
+// the same technique the blackhole /list handler uses for bin-keyed maps.
+func (r *Router) compileStatsLocked() any {
+	if !r.propagationEnabled {
+		return nil
 	}
 
-	return response
+	peerStats := make(peerStatsMsgpack, 0, len(r.peers))
+	for _, peer := range r.peers {
+		peerStats = append(peerStats, peerStatsEntry{
+			peerID: cloneBytes(peer.destinationHash),
+			stats:  r.peerStatsMapLocked(peer),
+		})
+	}
+
+	destinationHash := []byte{}
+	if r.propagationDestination != nil {
+		destinationHash = cloneBytes(r.propagationDestination.Hash)
+	}
+
+	uptime := 0.0
+	if !r.propagationNodeStart.IsZero() {
+		uptime = r.now().Sub(r.propagationNodeStart).Seconds()
+	}
+
+	return map[string]any{
+		"identity_hash":                 cloneBytes(r.identity.Hash),
+		"destination_hash":              destinationHash,
+		"uptime":                        uptime,
+		"delivery_limit":                uint64(r.deliveryPerTransferLimit),
+		"propagation_limit":             uint64(r.propagationPerTransferLimit),
+		"sync_limit":                    uint64(r.propagationPerSyncLimit),
+		"target_stamp_cost":             r.propagationCost,
+		"stamp_cost_flexibility":        r.propagationCostFlexibility,
+		"peering_cost":                  r.peeringCost,
+		"max_peering_cost":              r.maxPeeringCost,
+		"autopeer_maxdepth":             r.autopeerMaxdepth,
+		"from_static_only":              r.fromStaticOnly,
+		"messagestore":                  map[string]any{"count": len(r.propagationEntries), "bytes": uint64(r.messageStorageSizeLocked()), "limit": messageStorageLimitValue(r.messageStorageLimit)},
+		"clients":                       map[string]any{"client_propagation_messages_received": r.clientPropagationMessagesReceived, "client_propagation_messages_served": r.clientPropagationMessagesServed},
+		"unpeered_propagation_incoming": r.unpeeredPropagationIncoming,
+		"unpeered_propagation_rx_bytes": r.unpeeredPropagationRXBytes,
+		"static_peers":                  len(r.staticPeers),
+		"discovered_peers":              len(r.peers) - len(r.staticPeers),
+		"total_peers":                   len(r.peers),
+		"max_peers":                     r.maxPeers,
+		"peers":                         peerStats,
+	}
+}
+
+// messageStorageLimitValue emits the message-storage limit as Python
+// LXMRouter.compile_stats does: None when no limit is configured (the
+// default, which Go models as 0), otherwise the integer byte count
+// (Python's set_message_storage_limit stores int(limit_bytes)).
+func messageStorageLimitValue(limit float64) any {
+	if limit <= 0 {
+		return nil
+	}
+	return uint64(limit)
+}
+
+// peerStatsMapLocked builds the per-peer statistics dict for one peer
+// (Python LXMRouter.compile_stats peer_stats entry, LXMRouter.py:756-784).
+// It must be called with r.mu held; the unhandled-message count is computed
+// inline (Peer.UnhandledMessageCount re-locks r.mu and would deadlock).
+func (r *Router) peerStatsMapLocked(peer *Peer) map[any]any {
+	peerType := "discovered"
+	if _, isStatic := r.staticPeers[string(peer.destinationHash)]; isStatic {
+		peerType = "static"
+	}
+
+	return map[any]any{
+		"type":                   peerType,
+		"state":                  peer.state,
+		"alive":                  peer.alive,
+		"name":                   peer.Name(),
+		"last_heard":             int64(peer.lastHeard),
+		"next_sync_attempt":      peer.nextSyncAttempt,
+		"last_sync_attempt":      peer.lastSyncAttempt,
+		"sync_backoff":           peer.syncBackoff,
+		"peering_timebase":       peer.peeringTimebase,
+		"ler":                    int64(peer.linkEstablishmentRate),
+		"str":                    int64(peer.syncTransferRate),
+		"transfer_limit":         optionalFloat64Ptr(peer.propagationTransferLimit),
+		"sync_limit":             optionalIntPtr(peer.propagationSyncLimit),
+		"target_stamp_cost":      optionalIntPtr(peer.propagationStampCost),
+		"stamp_cost_flexibility": optionalIntPtr(peer.propagationStampCostFlexibility),
+		"peering_cost":           optionalIntPtr(peer.peeringCost),
+		"peering_key":            optionalIntPtr(peer.PeeringKeyValue()),
+		"network_distance":       r.hopsTo(peer.destinationHash),
+		"rx_bytes":               peer.rxBytes,
+		"tx_bytes":               peer.txBytes,
+		"acceptance_rate":        peer.AcceptanceRate(),
+		"messages":               map[any]any{"offered": peer.offered, "outgoing": peer.outgoing, "incoming": peer.incoming, "unhandled": r.peerUnhandledCountLocked(peer)},
+	}
+}
+
+// peerUnhandledCountLocked returns the count of propagation entries the peer
+// has not yet handled, computed without re-locking r.mu (Peer.UnhandledMessages
+// locks r.mu and would deadlock when compileStatsLocked already holds it).
+func (r *Router) peerUnhandledCountLocked(peer *Peer) int {
+	if peer == nil {
+		return 0
+	}
+	if peer.umCountsSynced {
+		return peer.umCount
+	}
+	count := 0
+	for _, entry := range r.propagationEntries {
+		if entry == nil || !containsByteSlice(entry.unhandledBy, peer.destinationHash) {
+			continue
+		}
+		count++
+	}
+	return count
+}
+
+// optionalIntPtr emits a nil value for a nil pointer and the dereferenced
+// int otherwise, matching Python's None-or-int fields in peer_stats.
+func optionalIntPtr(v *int) any {
+	if v == nil {
+		return nil
+	}
+	return *v
+}
+
+// optionalFloat64Ptr emits a nil value for a nil pointer and the dereferenced
+// float64 otherwise, matching Python's None-or-float fields in peer_stats.
+func optionalFloat64Ptr(v *float64) any {
+	if v == nil {
+		return nil
+	}
+	return *v
+}
+
+// peerStatsEntry pairs a binary peer-id with its stats dict for hand-packing.
+type peerStatsEntry struct {
+	peerID []byte
+	stats  map[any]any
+}
+
+// peerStatsMsgpack is a peers map that msgpack-encodes itself with binary
+// peer-id keys, satisfying msgpack.Marshaler (Go maps cannot hold []byte
+// keys, so reflection packing cannot produce the bin-keyed map Python emits).
+type peerStatsMsgpack []peerStatsEntry
+
+// MarshalMsgpack encodes the peers map as a msgpack map with binary keys,
+// matching Python umsgpack.packb(LXMRouter.compile_stats "peers").
+func (p peerStatsMsgpack) MarshalMsgpack() ([]byte, error) {
+	entries := []peerStatsEntry(p)
+	sort.Slice(entries, func(i, j int) bool { return bytes.Compare(entries[i].peerID, entries[j].peerID) < 0 })
+
+	var buf bytes.Buffer
+	n := len(entries)
+	switch {
+	case n <= 0x0f:
+		buf.WriteByte(byte(0x80 | n))
+	case n <= 0xffff:
+		buf.WriteByte(0xde)
+		buf.WriteByte(byte(n >> 8))
+		buf.WriteByte(byte(n))
+	default:
+		buf.WriteByte(0xdf)
+		buf.WriteByte(byte(n >> 24))
+		buf.WriteByte(byte(n >> 16))
+		buf.WriteByte(byte(n >> 8))
+		buf.WriteByte(byte(n))
+	}
+	for _, e := range entries {
+		if err := writeMsgpackBin(&buf, e.peerID); err != nil {
+			return nil, err
+		}
+		packed, err := msgpack.Pack(e.stats)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(packed)
+	}
+	return buf.Bytes(), nil
+}
+
+// writeMsgpackBin writes a msgpack bin container holding data to w, matching
+// the bin8/16/32 encoding Python umsgpack produces for bytes values.
+func writeMsgpackBin(w *bytes.Buffer, data []byte) error {
+	n := len(data)
+	switch {
+	case n <= 0xff:
+		w.WriteByte(0xc4)
+		w.WriteByte(byte(n))
+	case n <= 0xffff:
+		w.WriteByte(0xc5)
+		w.WriteByte(byte(n >> 8))
+		w.WriteByte(byte(n))
+	default:
+		w.WriteByte(0xc6)
+		w.WriteByte(byte(n >> 24))
+		w.WriteByte(byte(n >> 16))
+		w.WriteByte(byte(n >> 8))
+		w.WriteByte(byte(n))
+	}
+	_, err := w.Write(data)
+	return err
 }
 
 func (r *Router) peerSyncRequest(_ string, data []byte, _ []byte, linkID []byte, remoteIdentity *rns.Identity, _ time.Time) any {
@@ -1853,6 +2064,9 @@ func (r *Router) configureDeliveryLink(link *rns.Link) {
 	if link == nil {
 		return
 	}
+	r.mu.Lock()
+	r.deliveryLinks = append(r.deliveryLinks, link)
+	r.mu.Unlock()
 	link.SetPacketCallback(r.deliveryPacket)
 	if err := link.SetResourceStrategy(rns.AcceptAll); err != nil {
 		return
@@ -2829,6 +3043,7 @@ func (r *Router) EnablePropagation() {
 	}
 	r.mu.Lock()
 	r.propagationEnabled = true
+	r.propagationNodeStart = r.now()
 	r.mu.Unlock()
 	r.activateStaticPeers()
 	if err := r.LoadNodeStats(); err != nil {
@@ -3720,6 +3935,15 @@ func (r *Router) LoadNodeStats() error {
 }
 
 // Close flushes in-memory propagation state to disk.
+//
+// It ports Python's LXMRouter.exit_handler (LXMRouter.py:1311-1359): it first
+// tears down the delivery destinations (clearing their packet and
+// link-established callbacks and tearing down their active links), then tears
+// down the propagation destination (clearing its callbacks, deregistering the
+// offer/message_get request handlers, and tearing down activePropagationLinks)
+// and the propagation control destination (deregistering the stats/sync/unpeer
+// request handlers), then flushes queues and persists tickets, transient-ID
+// caches, outbound stamp costs, peers, and node stats.
 func (r *Router) Close() error {
 	r.mu.Lock()
 	if r.isClosed {
@@ -3730,6 +3954,7 @@ func (r *Router) Close() error {
 	r.mu.Unlock()
 
 	r.stopJobLoop()
+	r.teardownDestinations()
 	r.FlushQueues()
 
 	var closeErr error
@@ -3749,6 +3974,75 @@ func (r *Router) Close() error {
 		closeErr = errors.Join(closeErr, err)
 	}
 	return closeErr
+}
+
+// teardownDestinations ports the teardown half of Python's
+// LXMRouter.exit_handler (LXMRouter.py:1317-1343). It clears delivery and
+// propagation destination callbacks, deregisters propagation request handlers,
+// and tears down every active delivery and propagation link. Errors tearing
+// down individual links are swallowed (matching Python's try/except around each
+// link.teardown()) so one bad link never prevents the rest of the shutdown.
+func (r *Router) teardownDestinations() {
+	r.mu.Lock()
+	deliveryDestinations := make([]*rns.Destination, 0, len(r.deliveryDestinations))
+	for _, dest := range r.deliveryDestinations {
+		deliveryDestinations = append(deliveryDestinations, dest)
+	}
+	deliveryLinks := append([]*rns.Link(nil), r.deliveryLinks...)
+	propagationDest := r.propagationDestination
+	controlDest := r.controlDestination
+	propLinks := append([]*rns.Link(nil), r.activePropagationLinks...)
+	r.mu.Unlock()
+
+	// Tear down delivery destinations: clear callbacks and tear down active
+	// links (Python: delivery_destination.set_packet_callback(None),
+	// set_link_established_callback(None), link.teardown() for ACTIVE links).
+	for _, dest := range deliveryDestinations {
+		dest.SetPacketCallback(nil)
+		dest.SetLinkEstablishedCallback(nil)
+	}
+	for _, link := range deliveryLinks {
+		teardownActiveLink(link)
+	}
+
+	// Tear down the propagation destination: clear callbacks, deregister the
+	// offer/message_get handlers, and tear down activePropagationLinks
+	// (Python: propagation_destination.set_link_established_callback(None),
+	// set_packet_callback(None), deregister_request_handler(...), link
+	// teardown for ACTIVE links).
+	if propagationDest != nil {
+		propagationDest.SetLinkEstablishedCallback(nil)
+		propagationDest.SetPacketCallback(nil)
+		propagationDest.DeregisterRequestHandler(offerRequestPath)
+		propagationDest.DeregisterRequestHandler(messageGetPath)
+		propagationDest.DeregisterRequestHandler(statsGetPath)
+		propagationDest.DeregisterRequestHandler(peerSyncPath)
+		propagationDest.DeregisterRequestHandler(peerUnpeerPath)
+	}
+	// The stats/sync/unpeer handlers live on the control destination in Go
+	// (mirroring Python's control_destination); deregister them there too so
+	// no control RPC remains served after shutdown.
+	if controlDest != nil {
+		controlDest.DeregisterRequestHandler(statsGetPath)
+		controlDest.DeregisterRequestHandler(peerSyncPath)
+		controlDest.DeregisterRequestHandler(peerUnpeerPath)
+	}
+	for _, link := range propLinks {
+		teardownActiveLink(link)
+	}
+}
+
+// teardownActiveLink tears down link if it is currently active, swallowing
+// panics from a torn-down or stale link, matching Python's
+// `if link.status == RNS.Link.ACTIVE: link.teardown()` guarded by try/except.
+func teardownActiveLink(link *rns.Link) {
+	if link == nil {
+		return
+	}
+	defer func() { _ = recover() }()
+	if link.GetStatus() == rns.LinkActive {
+		link.Teardown()
+	}
 }
 
 func (r *Router) writePropagationMessageFile(transientID []byte, receivedAt time.Time, stampValue int, destinationHash []byte, payload, stampData []byte) (string, int, error) {

@@ -3006,6 +3006,8 @@ func TestIntegrationPropagationControlStatsPythonToGo(t *testing.T) {
 
 	ts := rns.NewTransportSystem(nil)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	router.propagationEnabled = true
+	router.propagationNodeStart = time.Now()
 
 	if got := router.statsGetRequest("", nil, nil, nil, nil, time.Now()); got != peerErrorNoIdentity {
 		t.Fatalf("stats no identity=%v want=%v", got, peerErrorNoIdentity)

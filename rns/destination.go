@@ -397,6 +397,23 @@ func (d *Destination) SetLinkEstablishedCallback(callback func(*Link)) {
 	d.callbacks.LinkEstablished = callback
 }
 
+// PacketCallback returns the currently registered raw-packet callback, or nil
+// if none is set. It is the read accessor paired with SetPacketCallback.
+func (d *Destination) PacketCallback() func([]byte, *Packet) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.callbacks.Packet
+}
+
+// LinkEstablishedCallback returns the currently registered link-established
+// callback, or nil if none is set. It is the read accessor paired with
+// SetLinkEstablishedCallback.
+func (d *Destination) LinkEstablishedCallback() func(*Link) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.callbacks.LinkEstablished
+}
+
 // RegisterRequestHandler assigns a specific generator function to a path, applying generic allow-list logic.
 func (d *Destination) RegisterRequestHandler(path string, responseGenerator func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any, allow int, allowedList [][]byte, autoCompress bool) {
 	autoCompressLimit := 0
