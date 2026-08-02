@@ -4168,6 +4168,14 @@ func (r *Router) messageStorageSize() float64 {
 	return r.messageStorageSizeLocked()
 }
 
+// MessageStorageSize returns the current message-store size in bytes,
+// mirroring Python LXMF.LXMRouter.message_storage_size(). It reports 0 when
+// propagation is disabled. This is the public accessor NomadNet's NodeInfo
+// "LXMF Storage" stat reads.
+func (r *Router) MessageStorageSize() float64 {
+	return r.messageStorageSize()
+}
+
 func (r *Router) messageStorageSizeLocked() float64 {
 	if !r.propagationEnabled {
 		return 0
