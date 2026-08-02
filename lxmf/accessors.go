@@ -176,3 +176,57 @@ func (p *Peer) NextSyncAttempt() float64 {
 	defer p.mu.Unlock()
 	return p.nextSyncAttempt
 }
+
+// PropagationTransferLimit returns the per-sync transfer cap the peer
+// advertised, in thousands of bytes, or nil when the peer set none. It mirrors
+// Python LXMPeer.propagation_transfer_limit (LXMPeer.py), which nomadnet formats
+// as RNS.prettysize(peer.propagation_transfer_limit*1000) or "No"
+// (Network.py:1907-1908).
+func (p *Peer) PropagationTransferLimit() *float64 {
+	if p == nil {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return cloneOptionalFloat64(p.propagationTransferLimit)
+}
+
+// PropagationSyncLimit returns the per-sync message-count cap the peer
+// advertised, or nil when the peer set none. It mirrors Python
+// LXMPeer.propagation_sync_limit, which nomadnet formats as
+// RNS.prettysize(peer.propagation_sync_limit*1000) or "Unknown"
+// (Network.py:1909-1910).
+func (p *Peer) PropagationSyncLimit() *int {
+	if p == nil {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return cloneOptionalInt(p.propagationSyncLimit)
+}
+
+// PropagationStampCost returns the stamp cost this peer requires for propagated
+// messages, or nil when none is set. It mirrors Python
+// LXMPeer.propagation_stamp_cost, which nomadnet prints verbatim or as
+// "Unknown" (Network.py:1911-1912).
+func (p *Peer) PropagationStampCost() *int {
+	if p == nil {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return cloneOptionalInt(p.propagationStampCost)
+}
+
+// PropagationStampCostFlexibility returns the stamp-cost flexibility the peer
+// advertised, or nil when none is set. It mirrors Python
+// LXMPeer.propagation_stamp_cost_flexibility, which nomadnet prints as
+// " (flex N)" or "" (Network.py:1913-1914).
+func (p *Peer) PropagationStampCostFlexibility() *int {
+	if p == nil {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return cloneOptionalInt(p.propagationStampCostFlexibility)
+}
