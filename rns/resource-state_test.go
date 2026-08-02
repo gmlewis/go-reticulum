@@ -234,8 +234,19 @@ func TestResourceStateReceiver(t *testing.T) {
 	if r.rtt != nil {
 		t.Fatalf("rtt = %v, want nil", r.rtt)
 	}
-	if r.eifr != nil {
-		t.Fatalf("eifr = %v, want nil", r.eifr)
+	// Accept launches the watchdog, whose first tick calls updateEifr
+	// (mirroring Python Resource.__watchdog_job, Resource.py:599) and
+	// sets eifr to the establishment-based estimate establishment_cost*8
+	// / rtt. testReceiverResource stops the watchdog only after this
+	// first tick has completed (stopWatchdog blocks for goroutine exit),
+	// so eifr is the computed rate (2048.0 for ec=256, rtt=1.0) rather
+	// than the construction default (Python None). The rate itself is
+	// golden-tested by the updateEifr cases below.
+	if r.eifr == nil {
+		t.Fatalf("eifr = nil, want the establishment-based rate from the first watchdog tick")
+	}
+	if wantEifr := float64(256) * 8 / 1.0; *r.eifr != wantEifr {
+		t.Fatalf("eifr = %v, want %v (establishmentCost*8/rtt)", *r.eifr, wantEifr)
 	}
 	if r.previousEifr != nil {
 		t.Fatalf("previousEifr = %v, want nil", r.previousEifr)

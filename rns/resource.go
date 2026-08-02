@@ -438,6 +438,7 @@ type Resource struct {
 	advertisementPacket *Packet
 	watchdogOnce        sync.Once
 	watchdogStop        chan struct{}
+	watchdogDone        chan struct{}
 
 	callback         func(*Resource)
 	progressCallback func(*Resource)
@@ -1436,9 +1437,11 @@ func (r *Resource) WatchdogJob() {
 		r.mu.Lock()
 		r.watchdogJobID++
 		r.watchdogStop = make(chan struct{})
+		r.watchdogDone = make(chan struct{})
 		stop := r.watchdogStop
+		done := r.watchdogDone
 		r.mu.Unlock()
-		go r.watchdogLoop(stop)
+		go r.watchdogLoop(stop, done)
 	})
 }
 
@@ -1448,7 +1451,8 @@ func (r *Resource) WatchdogJob() {
 // reports the resource is no longer active (status >= ASSEMBLING) or when the
 // resource is torn down via stopWatchdog. The now instant uses wall time;
 // golden tests drive watchdogStep directly with an injected clock.
-func (r *Resource) watchdogLoop(stop chan struct{}) {
+func (r *Resource) watchdogLoop(stop, done chan struct{}) {
+	defer close(done)
 	for {
 		sleep, cont := r.watchdogStep(time.Now())
 		if !cont {
@@ -1476,12 +1480,15 @@ func (r *Resource) watchdogLoop(stop chan struct{}) {
 	}
 }
 
-// stopWatchdog signals the background watchdog loop (if started) to exit,
-// mirroring the effect of Python's job-id invalidation when a resource is
-// torn down.
+// stopWatchdog signals the background watchdog loop (if started) to exit and
+// blocks until it has done so, mirroring the effect of Python's job-id
+// invalidation when a resource is torn down. Waiting for the goroutine to
+// exit prevents callers from racing the watchdog's in-flight field writes
+// (e.g. eifr) when reading resource state after teardown.
 func (r *Resource) stopWatchdog() {
 	r.mu.Lock()
 	stop := r.watchdogStop
+	done := r.watchdogDone
 	r.mu.Unlock()
 	if stop != nil {
 		select {
@@ -1489,5 +1496,8 @@ func (r *Resource) stopWatchdog() {
 		default:
 			close(stop)
 		}
+	}
+	if done != nil {
+		<-done
 	}
 }
