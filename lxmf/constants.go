@@ -72,6 +72,11 @@ const (
 	StateSent = 0x04
 	// StateDelivered confirms that the destination has successfully received the message.
 	StateDelivered = 0x08
+	// StatePaper indicates that the message has been successfully generated as a
+	// paper message (e.g. a QR code). It mirrors Python's
+	// `__mark_paper_generated` setting `self.state = LXMessage.PAPER` (0x05),
+	// which reuses the PAPER method constant as a state value.
+	StatePaper = 0x05
 	// StateRejected indicates that the destination or a relay rejected the message.
 	StateRejected = 0xFD
 	// StateCancelled indicates that the message delivery was aborted locally.
