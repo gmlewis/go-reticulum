@@ -10815,15 +10815,34 @@ func setRouterLinkField(t *testing.T, link *rns.Link, name string, value any) {
 	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Set(reflect.ValueOf(value))
 }
 
+// lockResourceMu locks the resource's internal mutex and returns an unlock
+// function. The resource fields mutated by the setResource* helpers below
+// (status, sentParts, totalParts, ...) are read under this mutex by the
+// background watchdog goroutine started by Resource.WatchdogJob (see
+// Resource.watchdogStep). Reflect-based writes must hold the same mutex to
+// avoid racing with the watchdog; the mutex is unexported, so we reach it via
+// the same unsafe-pointer reflect technique used elsewhere in this file.
+func lockResourceMu(t *testing.T, resource *rns.Resource) func() {
+	t.Helper()
+	muField := reflect.ValueOf(resource).Elem().FieldByName("mu")
+	mu := (*sync.Mutex)(unsafe.Pointer(muField.UnsafeAddr()))
+	mu.Lock()
+	return mu.Unlock
+}
+
 func setResourceIntField(t *testing.T, resource *rns.Resource, name string, value int) {
 	t.Helper()
 	field := reflect.ValueOf(resource).Elem().FieldByName(name)
+	unlock := lockResourceMu(t, resource)
+	defer unlock()
 	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().SetInt(int64(value))
 }
 
 func setResourceField(t *testing.T, resource *rns.Resource, name string, value any) {
 	t.Helper()
 	field := reflect.ValueOf(resource).Elem().FieldByName(name)
+	unlock := lockResourceMu(t, resource)
+	defer unlock()
 	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Set(reflect.ValueOf(value))
 }
 
