@@ -5634,13 +5634,12 @@ func (r *Router) SyncPeers() {
 // LXMRouter.ingest_lxm_uri. It decodes an "lxmf://..." paper-message URI
 // and processes the embedded message as if it had been received over
 // the propagation network.
-func (r *Router) IngestLXMURI(uri string) (bool, error) {
-	if r == nil {
-		return false, errors.New("nil router")
-	}
+// decodeLXMURI decodes an lxm:// URI into its raw LXMF bytes, mirroring the
+// base64 urlsafe decoding performed by Python LXMF.LXMRouter.ingest_lxm_uri.
+func decodeLXMURI(uri string) ([]byte, error) {
 	prefix := URISchema + "://"
 	if len(uri) < len(prefix) || !strings.EqualFold(uri[:len(prefix)], prefix) {
-		return false, errors.New("invalid LXM URI: missing schema")
+		return nil, errors.New("invalid LXM URI: missing schema")
 	}
 	encoded := uri[len(prefix):]
 	encoded = strings.ReplaceAll(encoded, "/", "")
@@ -5654,10 +5653,21 @@ func (r *Router) IngestLXMURI(uri string) (bool, error) {
 		}
 		lxmfData, err = base64.URLEncoding.DecodeString(encoded)
 		if err != nil {
-			return false, fmt.Errorf("decode LXM URI: %w", err)
+			return nil, fmt.Errorf("decode LXM URI: %w", err)
 		}
 	}
-	return r.ingestPropagationMessageAllowDuplicate(lxmfData, nil, nil, 0, false), nil
+	return lxmfData, nil
+}
+
+func (r *Router) IngestLXMURI(uri string) (bool, error) {
+	if r == nil {
+		return false, errors.New("nil router")
+	}
+	lxmfData, err := decodeLXMURI(uri)
+	if err != nil {
+		return false, err
+	}
+	return r.ingestURIOutcome(lxmfData, false).Accepted(), nil
 }
 
 // IngestLXMURIAllowDuplicate is like IngestLXMURI but accepts the
@@ -5667,25 +5677,91 @@ func (r *Router) IngestLXMURIAllowDuplicate(uri string, allowDuplicate bool) (bo
 	if r == nil {
 		return false, errors.New("nil router")
 	}
-	prefix := URISchema + "://"
-	if len(uri) < len(prefix) || !strings.EqualFold(uri[:len(prefix)], prefix) {
-		return false, errors.New("invalid LXM URI: missing schema")
-	}
-	encoded := uri[len(prefix):]
-	encoded = strings.ReplaceAll(encoded, "/", "")
-	encoded = strings.ReplaceAll(encoded, "=", "")
-	lxmfData, err := base64.RawURLEncoding.DecodeString(encoded)
+	lxmfData, err := decodeLXMURI(uri)
 	if err != nil {
-		pad := len(encoded) % 4
-		if pad > 0 {
-			encoded += strings.Repeat("=", 4-pad)
-		}
-		lxmfData, err = base64.URLEncoding.DecodeString(encoded)
-		if err != nil {
-			return false, fmt.Errorf("decode LXM URI: %w", err)
+		return false, err
+	}
+	return r.ingestURIOutcome(lxmfData, allowDuplicate).Accepted(), nil
+}
+
+// IngestLXMURIOutcome ingests an lxm:// URI and returns the granular outcome,
+// mirroring the Python LXMF Router.ingest_lxm_uri signal-string return values.
+// Unlike IngestLXMURI (which only reports a boolean), this distinguishes local
+// delivery, duplicate, propagation storage, and discard, and — unlike the
+// shared propagation-message ingest path — actually delivers messages
+// addressed to a local delivery destination (mirroring Python's
+// lxmf_propagation local-delivery branch, which IngestLXMURI historically did
+// not perform).
+func (r *Router) IngestLXMURIOutcome(uri string) (IngestOutcome, error) {
+	if r == nil {
+		return IngestOutcomeNone, errors.New("nil router")
+	}
+	lxmfData, err := decodeLXMURI(uri)
+	if err != nil {
+		return IngestOutcomeNone, err
+	}
+	return r.ingestURIOutcome(lxmfData, false), nil
+}
+
+// ingestURIOutcome is the URI-specific ingest path. It mirrors Python's
+// lxmf_propagation (LXMRouter.py:2315) as invoked by ingest_lxm_uri with
+// is_paper_message=True: it deduplicates by transient ID, delivers messages
+// addressed to a local delivery destination (decrypt + handleInboundMessage),
+// and otherwise stores the message to the propagation queue when this node
+// hosts a propagation node, or discards it. It reports the granular outcome.
+func (r *Router) ingestURIOutcome(lxmfData []byte, allowDuplicate bool) IngestOutcome {
+	if len(lxmfData) < DestinationLength {
+		return IngestOutcomeNone
+	}
+	transientID := rns.FullHash(lxmfData)
+	destinationHash := append([]byte{}, lxmfData[:DestinationLength]...)
+
+	r.mu.Lock()
+	if !allowDuplicate {
+		if _, ok := r.propagationEntries[string(transientID)]; ok || r.hasProcessedTransientIDLocked(transientID) {
+			r.mu.Unlock()
+			return IngestOutcomeDuplicate
 		}
 	}
-	return r.ingestPropagationMessageAllowDuplicate(lxmfData, nil, nil, 0, allowDuplicate), nil
+	r.locallyProcessedIDs[string(append([]byte{}, transientID...))] = r.now()
+	deliveryDest, isLocalDelivery := r.deliveryDestinations[string(destinationHash)]
+	propagationEnabled := r.propagationEnabled
+	r.mu.Unlock()
+
+	if isLocalDelivery {
+		// The URI/paper payload is encrypted to the delivery destination
+		// (lxmf_data = destHash + Encrypt(sourceHash+signature+payload)).
+		// Decrypt with the delivery destination, then unpack the
+		// reconstructed full LXMF bytes, mirroring Python's lxmf_propagation
+		// local-delivery branch (LXMRouter.py:2332-2341).
+		if deliveryDest == nil {
+			return IngestOutcomeDiscarded
+		}
+		decrypted, err := deliveryDest.Decrypt(lxmfData[DestinationLength:])
+		if err != nil || decrypted == nil {
+			return IngestOutcomeDiscarded
+		}
+		full := make([]byte, 0, DestinationLength+len(decrypted))
+		full = append(full, lxmfData[:DestinationLength]...)
+		full = append(full, decrypted...)
+		message, err := UnpackMessageFromBytes(r.transport, full, MethodPropagated)
+		if err != nil || message == nil {
+			return IngestOutcomeDiscarded
+		}
+		r.handleInboundMessage(message)
+		r.mu.Lock()
+		r.locallyDeliveredIDs[string(append([]byte{}, transientID...))] = r.now()
+		r.mu.Unlock()
+		return IngestOutcomeLocalDelivery
+	}
+	if !propagationEnabled {
+		return IngestOutcomeDiscarded
+	}
+	storedID := r.storePropagationMessageStamped(destinationHash, lxmfData, nil, 0, nil)
+	if len(storedID) > 0 {
+		return IngestOutcomePropagated
+	}
+	return IngestOutcomeDiscarded
 }
 
 // DirectLink returns the active direct-delivery link for the given

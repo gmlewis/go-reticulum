@@ -15,11 +15,11 @@ if [[ -z "${ERRCHECK_BIN}" ]]; then
 	ERRCHECK_BIN="$(go env GOPATH)/bin/errcheck"
 fi
 
-GOIMPORTS_BIN="$(command -v goimports || true)"
-if [[ -z "${GOIMPORTS_BIN}" ]]; then
-	go install golang.org/x/tools/cmd/goimports@latest
-	GOIMPORTS_BIN="$(go env GOPATH)/bin/goimports"
-fi
+# GOIMPORTS_BIN="$(command -v goimports || true)"
+# if [[ -z "${GOIMPORTS_BIN}" ]]; then
+# 	go install golang.org/x/tools/cmd/goimports@latest
+# 	GOIMPORTS_BIN="$(go env GOPATH)/bin/goimports"
+# fi
 
 STATICCHECK_BIN="$(command -v staticcheck || true)"
 if [[ -z "${STATICCHECK_BIN}" ]]; then
@@ -161,7 +161,8 @@ fi
 
 cd "${REPO_ROOT}"
 
-"${GOIMPORTS_BIN}" -w .
+# "${GOIMPORTS_BIN}" -w .
+gofmt -s -w .
 
 # Parse args to handle script flags before forwarding to go test.
 LIVE_RNODE_ENABLED=false

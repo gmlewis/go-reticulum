@@ -176,6 +176,41 @@ const (
 	PRFailed = 0xfe
 )
 
+// IngestOutcome describes the granular result of ingesting an LXM URI (or a
+// propagation message via the URI path), mirroring the Python LXMF Router
+// signal-string return values of ingest_lxm_uri / lxmf_propagation:
+// signal_local_delivery, signal_duplicate, the generic True, and False.
+type IngestOutcome int
+
+const (
+	// IngestOutcomeNone means no valid LXM could be ingested (decode failure or
+	// the data was too short). Corresponds to Python's False return.
+	IngestOutcomeNone IngestOutcome = iota
+	// IngestOutcomeDuplicate means the message's transient ID was already
+	// processed. Corresponds to Python's signal_duplicate.
+	IngestOutcomeDuplicate
+	// IngestOutcomeLocalDelivery means the message was addressed to a local
+	// delivery destination, decrypted successfully, and delivered. Corresponds
+	// to Python's signal_local_delivery.
+	IngestOutcomeLocalDelivery
+	// IngestOutcomePropagated means the message was not addressed locally but
+	// was stored to the propagation node distribution queue. Corresponds to
+	// Python's generic True when hosting a propagation node.
+	IngestOutcomePropagated
+	// IngestOutcomeDiscarded means the message was not addressed locally and
+	// this node is not hosting a propagation node (or storage failed), so the
+	// message was discarded. Corresponds to Python's generic True when not
+	// hosting a propagation node.
+	IngestOutcomeDiscarded
+)
+
+// Accepted reports whether the outcome represents a message that was
+// successfully received (locally delivered or stored for propagation), i.e. the
+// truthy non-duplicate Python return values.
+func (o IngestOutcome) Accepted() bool {
+	return o == IngestOutcomeLocalDelivery || o == IngestOutcomePropagated
+}
+
 const (
 	// WorkblockExpandRounds defines the default number of expansion rounds for anti-spam workblocks.
 	WorkblockExpandRounds = 3000
@@ -233,8 +268,8 @@ const LinkMaxInactivity = 10 * 60 * time.Second
 const PLinkMaxInactivity = 3 * 60 * time.Second
 
 // URISchema is the LXMF paper-message URI schema prefix. Matches Python's
-// LXMessage.URI_SCHEMA of "lxmf".
-const URISchema = "lxmf"
+// LXMessage.URI_SCHEMA of "lxm".
+const URISchema = "lxm"
 
 // QRErrorCorrection is the QR error-correction level used when generating
 // paper-message QR codes. Matches Python's LXMessage.QR_ERROR_CORRECTION.
