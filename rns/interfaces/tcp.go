@@ -120,7 +120,7 @@ func (tci *TCPClientInterface) readLoop() {
 	for atomic.LoadInt32(&tci.running) == 1 {
 		n, err := tci.conn.Read(buf)
 		if err != nil {
-			log.Printf("[TCP] %s: readLoop Read error: %v", tci.name, err)
+			log.Printf("[TCP] %v: readLoop Read error: %v", tci.name, err)
 			if atomic.LoadInt32(&tci.running) == 1 && !tci.IsDetached() {
 				tci.panicOnInterfaceErrorf("tcp interface %v read failed: %v", tci.name, err)
 			}
@@ -128,7 +128,7 @@ func (tci *TCPClientInterface) readLoop() {
 		}
 
 		if n > 0 {
-			// log.Printf("[TCP] %s: read %d bytes", tci.name, n)
+			// log.Printf("[TCP] %v: read %v bytes", tci.name, n)
 			if tci.kissFraming {
 				frameBuffer = append(frameBuffer, buf[:n]...)
 				for {
@@ -176,16 +176,16 @@ func (tci *TCPClientInterface) readLoop() {
 					end += start + 1
 
 					frame := frameBuffer[start+1 : end]
-					// log.Printf("[TCP] %s: HDLC frame len=%d", tci.name, len(frame))
+					// log.Printf("[TCP] %v: HDLC frame len=%v", tci.name, len(frame))
 					unescaped := HDLCUnescape(frame)
-					// log.Printf("[TCP] %s: HDLC unescaped len=%d", tci.name, len(unescaped))
+					// log.Printf("[TCP] %v: HDLC unescaped len=%v", tci.name, len(unescaped))
 					if len(unescaped) > 0 {
 						atomic.AddUint64(&tci.rxBytes, uint64(len(unescaped)))
 						if tci.inboundHandler != nil {
-							// log.Printf("[TCP] %s: calling inboundHandler with len=%d", tci.name, len(unescaped))
+							// log.Printf("[TCP] %v: calling inboundHandler with len=%v", tci.name, len(unescaped))
 							tci.inboundHandler(unescaped, tci)
 							// } else {
-							// log.Printf("[TCP] %s: inboundHandler is nil!", tci.name)
+							// log.Printf("[TCP] %v: inboundHandler is nil!", tci.name)
 						}
 					}
 					frameBuffer = frameBuffer[end:]
@@ -197,17 +197,18 @@ func (tci *TCPClientInterface) readLoop() {
 	tci.mu.Lock()
 	if tci.conn != nil {
 		if err := tci.conn.Close(); err != nil {
-			fmt.Printf("tcp client interface %v close failed: %v\n", tci.name, err)
+			log.Printf("[TCP] %v: readLoop close failed: %v", tci.name, err)
 		}
 	}
 	tci.mu.Unlock()
-	atomic.StoreInt32(&tci.running, 0)
 
 	// Only reconnect for outbound client interfaces that have a target
 	// host/port. Spawned interfaces (created by TCPServerInterface from
 	// an accepted connection) have no target to reconnect to.
-	if !tci.IsDetached() && !tci.spawned {
-		go tci.reconnectLoop()
+	if atomic.CompareAndSwapInt32(&tci.running, 1, 0) {
+		if !tci.IsDetached() && !tci.spawned {
+			go tci.reconnectLoop()
+		}
 	}
 }
 
@@ -235,15 +236,17 @@ func (tci *TCPClientInterface) Send(data []byte) error {
 		return fmt.Errorf("no connection for interface %v", tci.name)
 	}
 
-	// log.Printf("[TCP] %s: Send writing %d bytes (frame len=%d)", tci.name, len(data), len(frame))
+	// log.Printf("[TCP] %v: Send writing %v bytes (frame len=%v)", tci.name, len(data), len(frame))
 	n, err := conn.Write(frame)
 	if err != nil {
-		log.Printf("[TCP] %s: Send write error: %v", tci.name, err)
-		// Mark interface as not running so callers stop trying to send.
-		atomic.StoreInt32(&tci.running, 0)
+		log.Printf("[TCP] %v: Send write error: %v", tci.name, err)
+		if atomic.CompareAndSwapInt32(&tci.running, 1, 0) {
+			if !tci.IsDetached() && !tci.spawned {
+				go tci.reconnectLoop()
+			}
+		}
 		return err
 	}
-	// log.Printf("[TCP] %s: Send wrote %d bytes", tci.name, n)
 
 	atomic.AddUint64(&tci.txBytes, uint64(n))
 	return nil
@@ -343,7 +346,7 @@ func (tsi *TCPServerInterface) acceptLoop() {
 
 func (tsi *TCPServerInterface) handleConnection(conn net.Conn) {
 	name := fmt.Sprintf("Client %v on %v", conn.RemoteAddr().String(), tsi.name)
-	// log.Printf("[TCP] Server %s: accepted connection from %s, creating spawned interface", tsi.name, conn.RemoteAddr())
+	// log.Printf("[TCP] Server %v: accepted connection from %v, creating spawned interface", tsi.name, conn.RemoteAddr())
 	// Disable Nagle's algorithm to ensure small packets are sent immediately
 	if tcpConn, ok := conn.(*net.TCPConn); ok {
 		if err := tcpConn.SetNoDelay(true); err != nil {
@@ -367,13 +370,13 @@ func (tsi *TCPServerInterface) handleConnection(conn net.Conn) {
 
 	// Start readLoop FIRST so interface can receive data
 	go tci.readLoop()
-	// log.Printf("[TCP] Server %s: started readLoop for %s", tsi.name, tci.name)
+	// log.Printf("[TCP] Server %v: started readLoop for %v", tsi.name, tci.name)
 
 	// Then register with transport (which will trigger re-announce)
-	// log.Printf("[TCP] Server %s: spawned interface %s, calling connectHandler", tsi.name, tci.name)
+	// log.Printf("[TCP] Server %v: spawned interface %v, calling connectHandler", tsi.name, tci.name)
 	if tsi.connectHandler != nil {
 		tsi.connectHandler(tci)
-		// log.Printf("[TCP] Server %s: connectHandler completed for %s", tsi.name, tci.name)
+		// log.Printf("[TCP] Server %v: connectHandler completed for %v", tsi.name, tci.name)
 	}
 }
 
