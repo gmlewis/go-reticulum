@@ -17,6 +17,7 @@ import (
 	"io"
 	"math"
 	"reflect"
+	"sort"
 	"strings"
 )
 
@@ -80,11 +81,25 @@ type Marshaler interface {
 // Pack serializes v into MessagePack format.
 func Pack(v any) ([]byte, error) {
 	var buf bytes.Buffer
-	err := pack(&buf, reflect.ValueOf(v))
+	err := pack(&buf, reflect.ValueOf(v), false)
 	return buf.Bytes(), err
 }
 
-func pack(w io.Writer, v reflect.Value) error {
+// PackSorted serializes v like Pack but emits map keys in a canonical,
+// sorted order — recursively, so nested maps are sorted too. It produces a
+// deterministic encoding suitable for stable hashing: encoding the same value
+// always yields identical bytes regardless of Go's randomized map iteration
+// order. The on-wire format remains valid msgpack (maps are unordered), but
+// the byte order differs from Pack when maps have more than one key, so it
+// should only be used for digest computation, not for wire payloads that must
+// match an insertion-ordered reference.
+func PackSorted(v any) ([]byte, error) {
+	var buf bytes.Buffer
+	err := pack(&buf, reflect.ValueOf(v), true)
+	return buf.Bytes(), err
+}
+
+func pack(w io.Writer, v reflect.Value, sorted bool) error {
 	if !v.IsValid() {
 		_, err := w.Write([]byte{nilVal})
 		return err
@@ -110,7 +125,7 @@ func pack(w io.Writer, v reflect.Value) error {
 			_, err := w.Write([]byte{nilVal})
 			return err
 		}
-		return pack(w, v.Elem())
+		return pack(w, v.Elem(), sorted)
 	case reflect.Bool:
 		if v.Bool() {
 			_, err := w.Write([]byte{trueVal})
@@ -141,11 +156,11 @@ func pack(w io.Writer, v reflect.Value) error {
 		if v.Type().Elem().Kind() == reflect.Uint8 {
 			return packBin(w, v.Bytes())
 		}
-		return packArray(w, v)
+		return packArray(w, v, sorted)
 	case reflect.Array:
-		return packArray(w, v)
+		return packArray(w, v, sorted)
 	case reflect.Map:
-		return packMap(w, v)
+		return packMap(w, v, sorted)
 	default:
 		return fmt.Errorf("unsupported type: %v", v.Kind())
 	}
@@ -276,7 +291,7 @@ func packBin(w io.Writer, b []byte) error {
 	return err
 }
 
-func packArray(w io.Writer, v reflect.Value) error {
+func packArray(w io.Writer, v reflect.Value, sorted bool) error {
 	l := v.Len()
 	if l < 16 {
 		_, err := w.Write([]byte{fixArrayMin | byte(l)})
@@ -303,14 +318,14 @@ func packArray(w io.Writer, v reflect.Value) error {
 		}
 	}
 	for i := 0; i < l; i++ {
-		if err := pack(w, v.Index(i)); err != nil {
+		if err := pack(w, v.Index(i), sorted); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func packMap(w io.Writer, v reflect.Value) error {
+func packMap(w io.Writer, v reflect.Value, sorted bool) error {
 	l := v.Len()
 	if l < 16 {
 		_, err := w.Write([]byte{fixMapMin | byte(l)})
@@ -337,15 +352,44 @@ func packMap(w io.Writer, v reflect.Value) error {
 		}
 	}
 	keys := v.MapKeys()
+	if sorted {
+		keys = sortMapKeys(keys)
+	}
 	for _, k := range keys {
-		if err := pack(w, k); err != nil {
+		if err := pack(w, k, sorted); err != nil {
 			return err
 		}
-		if err := pack(w, v.MapIndex(k)); err != nil {
+		if err := pack(w, v.MapIndex(k), sorted); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// sortMapKeys returns a copy of keys ordered by their canonical msgpack
+// encoding, so PackSorted emits map entries in a deterministic order. Keys are
+// compared by their packed bytes (which already defines msgpack's canonical
+// order for the supported types); ties, which only arise for equal-valued keys
+// of different types, are broken by the kind for stability.
+func sortMapKeys(keys []reflect.Value) []reflect.Value {
+	type entry struct {
+		enc []byte
+		key reflect.Value
+	}
+	entries := make([]entry, len(keys))
+	for i, k := range keys {
+		var buf bytes.Buffer
+		_ = pack(&buf, k, true) // sorted encoding of the key itself (no nested maps)
+		entries[i] = entry{enc: buf.Bytes(), key: k}
+	}
+	sort.SliceStable(entries, func(i, j int) bool {
+		return bytes.Compare(entries[i].enc, entries[j].enc) < 0
+	})
+	out := make([]reflect.Value, len(entries))
+	for i, e := range entries {
+		out[i] = e.key
+	}
+	return out
 }
 
 // Unpack deserializes MessagePack data into native Go values.

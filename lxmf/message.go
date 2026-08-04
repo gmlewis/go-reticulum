@@ -363,7 +363,14 @@ func (m *Message) Pack() error {
 
 	basePayload := []any{m.Timestamp, m.Title, m.Content, ensureFields(m.Fields)}
 
-	packedPayload, err := msgpack.Pack(basePayload)
+	// The message hash must be deterministic so a message packed on one host
+	// and unpacked on another yields the same identity hash (used as the
+	// on-disk filename and the attachment-directory key). Go's randomized map
+	// iteration order would otherwise make the fields-map encoding — and thus
+	// the hash — differ across pack/unpack. Pack the hashed part with sorted
+	// map keys for a canonical encoding. The wire payload below still uses
+	// the non-sorted Pack so the transmitted bytes keep the original order.
+	packedPayload, err := msgpack.PackSorted(basePayload)
 	if err != nil {
 		return fmt.Errorf("pack lxmf payload: %w", err)
 	}
@@ -475,7 +482,7 @@ func UnpackMessageFromBytes(ts rns.Transport, data []byte, originalMethod int) (
 	}
 
 	stamp, payloadWithoutStamp := extractStamp(unpackedPayload)
-	repackedPayload, err := msgpack.Pack(payloadWithoutStamp)
+	repackedPayload, err := msgpack.PackSorted(payloadWithoutStamp)
 	if err != nil {
 		return nil, fmt.Errorf("repack lxmf payload for hash validation: %w", err)
 	}
