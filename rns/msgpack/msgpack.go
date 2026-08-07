@@ -392,6 +392,56 @@ func sortMapKeys(keys []reflect.Value) []reflect.Value {
 	return out
 }
 
+// MarshalMsgpack encodes the ordered map as a MessagePack map whose entries
+// appear in slice order. This preserves insertion order — unlike Pack on a Go
+// map, which iterates keys in randomized order — and is the encode counterpart
+// to the OrderedMap returned by the order-preserving Unpack variants. It
+// mirrors Python umsgpack, which serialises a dict in its iteration (insertion)
+// order, so an OrderedMap built to match a Python dict's key order packs to
+// byte-identical msgpack. Pack dispatches to this method via the Marshaler
+// interface, so OrderedMap values nested inside larger structures are also
+// encoded in order.
+func (m OrderedMap) MarshalMsgpack() ([]byte, error) {
+	var buf bytes.Buffer
+	if err := m.marshalMsgpackTo(&buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (m OrderedMap) marshalMsgpackTo(w io.Writer) error {
+	l := len(m)
+	switch {
+	case l < 16:
+		if _, err := w.Write([]byte{fixMapMin | byte(l)}); err != nil {
+			return err
+		}
+	case l < 65536:
+		if _, err := w.Write([]byte{map16}); err != nil {
+			return err
+		}
+		if err := binary.Write(w, binary.BigEndian, uint16(l)); err != nil {
+			return err
+		}
+	default:
+		if _, err := w.Write([]byte{map32}); err != nil {
+			return err
+		}
+		if err := binary.Write(w, binary.BigEndian, uint32(l)); err != nil {
+			return err
+		}
+	}
+	for _, e := range m {
+		if err := pack(w, reflect.ValueOf(e.Key), false); err != nil {
+			return err
+		}
+		if err := pack(w, reflect.ValueOf(e.Value), false); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Unpack deserializes MessagePack data into native Go values.
 // The result is returned as any; callers should use type assertions.
 func Unpack(data []byte) (any, error) {
@@ -487,6 +537,33 @@ type OrderedMapEntry struct {
 
 // OrderedMap preserves MessagePack map entry order during decoding.
 type OrderedMap []OrderedMapEntry
+
+// Get returns the value for the first entry whose key equals key, mirroring a
+// map lookup on the ordered entries. Keys are compared with reflect.DeepEqual
+// so it works for string, integer, and binary map keys alike. The boolean
+// result is false when no entry has the key.
+func (m OrderedMap) Get(key any) (any, bool) {
+	for _, e := range m {
+		if reflect.DeepEqual(e.Key, key) {
+			return e.Value, true
+		}
+	}
+	return nil, false
+}
+
+// Set assigns value to the first entry whose key equals key, updating it in
+// place to preserve its insertion position (matching Python dict semantics,
+// where re-assigning an existing key keeps its place). When no entry has the
+// key, the entry is appended. The map is returned for chaining.
+func (m OrderedMap) Set(key, value any) OrderedMap {
+	for i, e := range m {
+		if reflect.DeepEqual(e.Key, key) {
+			m[i].Value = value
+			return m
+		}
+	}
+	return append(m, OrderedMapEntry{Key: key, Value: value})
+}
 
 func unpack(r *bytes.Reader) (any, error) {
 	return unpackWithOptions(r, unpackOptions{})

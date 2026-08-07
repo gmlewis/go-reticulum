@@ -1,4 +1,8 @@
-# Go Reticulum Network Stack <a href="https://github.com/gmlewis/go-reticulum/actions/workflows/build.yml"><img align="right" src="https://github.com/gmlewis/go-reticulum/actions/workflows/build.yml/badge.svg"/></a>
+# Go Reticulum Network Stack (RNS) <a href="https://github.com/gmlewis/go-reticulum/actions/workflows/build.yml"><img align="right" src="https://github.com/gmlewis/go-reticulum/actions/workflows/build.yml/badge.svg"/></a>
+
+![gonomadnet mascot
+The Go gopher was designed by Renee French.
+The design is licensed under the Creative Commons 4.0 Attribution license.](assets/gonomadnet-mascot.png)
 
 This is an experimental port of the [Reticulum Network Stack](https://github.com/markqvist/Reticulum) from Python to Go.
 It is based upon the following Python original works:

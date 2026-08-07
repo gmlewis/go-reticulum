@@ -285,6 +285,19 @@ func isUnsignedInt(v any) bool {
 	return k >= reflect.Uint && k <= reflect.Uint64
 }
 
+// toInt64 normalizes any signed or unsigned Go integer to int64 for value
+// comparison after a msgpack round-trip, which may widen the type (e.g. uint
+// -> uint64).
+func toInt64(v any) (int64, bool) {
+	if isSignedInt(v) {
+		return reflect.ValueOf(v).Int(), true
+	}
+	if isUnsignedInt(v) {
+		return int64(reflect.ValueOf(v).Uint()), true
+	}
+	return 0, false
+}
+
 func TestUnpackMalformed(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -327,6 +340,146 @@ func TestPackUnsupported(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestOrderedMapMarshalInsertionOrder pins MarshalMsgpack: an OrderedMap packs
+// as a msgpack map whose entries appear in slice (insertion) order, byte-for-byte
+// matching Python umsgpack's serialization of an equivalently-ordered dict — the
+// Go map path iterates keys in random order, so this is the only way to get
+// stable, Python-parity bytes for a multi-key map.
+func TestOrderedMapMarshalInsertionOrder(t *testing.T) {
+	t.Parallel()
+	m := OrderedMap{
+		{Key: "display_name", Value: "Test Peer"},
+		{Key: "announce_interval", Value: uint(720)},
+		{Key: "last_announce", Value: 1700000123.456},
+		{Key: "node_last_announce", Value: []byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}},
+		{Key: "propagation_node", Value: []byte{0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x99, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00}},
+		{Key: "last_lxmf_sync", Value: uint(1700000200)},
+		{Key: "node_connects", Value: uint(42)},
+		{Key: "served_page_requests", Value: uint(100)},
+		{Key: "served_file_requests", Value: uint(7)},
+	}
+	// Expected bytes (Python umsgpack golden): fixmap 9, fixstr keys in
+	// insertion order, uint16 (cd) for 720, float64 (cb) for last_announce,
+	// bin8 (c4) for the two byte slices, uint32 (ce) for 1700000200, and
+	// positive fixints for 42/100/7.
+	want := []byte{
+		0x89,
+		0xac, 'd', 'i', 's', 'p', 'l', 'a', 'y', '_', 'n', 'a', 'm', 'e',
+		0xa9, 'T', 'e', 's', 't', ' ', 'P', 'e', 'e', 'r',
+		0xb1, 'a', 'n', 'n', 'o', 'u', 'n', 'c', 'e', '_', 'i', 'n', 't', 'e', 'r', 'v', 'a', 'l',
+		0xcd, 0x02, 0xd0,
+		0xad, 'l', 'a', 's', 't', '_', 'a', 'n', 'n', 'o', 'u', 'n', 'c', 'e',
+		0xcb, 0x41, 0xd9, 0x54, 0xfc, 0x5e, 0xdd, 0x2f, 0x1b,
+		0xb2, 'n', 'o', 'd', 'e', '_', 'l', 'a', 's', 't', '_', 'a', 'n', 'n', 'o', 'u', 'n', 'c', 'e',
+		0xc4, 0x10, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+		0xb0, 'p', 'r', 'o', 'p', 'a', 'g', 'a', 't', 'i', 'o', 'n', '_', 'n', 'o', 'd', 'e',
+		0xc4, 0x10, 0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x99, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00,
+		0xae, 'l', 'a', 's', 't', '_', 'l', 'x', 'm', 'f', '_', 's', 'y', 'n', 'c',
+		0xce, 0x65, 0x53, 0xf1, 0xc8,
+		0xad, 'n', 'o', 'd', 'e', '_', 'c', 'o', 'n', 'n', 'e', 'c', 't', 's',
+		0x2a,
+		0xb4, 's', 'e', 'r', 'v', 'e', 'd', '_', 'p', 'a', 'g', 'e', '_', 'r', 'e', 'q', 'u', 'e', 's', 't', 's',
+		0x64,
+		0xb4, 's', 'e', 'r', 'v', 'e', 'd', '_', 'f', 'i', 'l', 'e', '_', 'r', 'e', 'q', 'u', 'e', 's', 't', 's',
+		0x07,
+	}
+
+	got, err := Pack(m)
+	if err != nil {
+		t.Fatalf("Pack(OrderedMap) error = %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("Pack(OrderedMap) bytes diverge from Python umsgpack golden:\n got %x\n want %x", got, want)
+	}
+
+	// Round-trip through an order-preserving unpack: same keys, same order,
+	// same values.
+	rt, err := UnpackPreserveBinMapKeyOrder(got)
+	if err != nil {
+		t.Fatalf("UnpackPreserveBinMapKeyOrder error = %v", err)
+	}
+	om, ok := rt.(OrderedMap)
+	if !ok {
+		t.Fatalf("unpacked type = %T, want OrderedMap", rt)
+	}
+	if len(om) != len(m) {
+		t.Fatalf("round-trip len = %v, want %v", len(om), len(m))
+	}
+	for i, e := range m {
+		got := om[i]
+		if got.Key != e.Key {
+			t.Errorf("entry %v key = %v, want %v (insertion order not preserved)", i, got.Key, e.Key)
+		}
+		if gb, ok := e.Value.([]byte); ok {
+			if !bytes.Equal(got.Value.([]byte), gb) {
+				t.Errorf("entry %v (%v) bytes mismatch", i, e.Key)
+			}
+		} else if fv, ok := e.Value.(float64); ok {
+			if got.Value.(float64) != fv {
+				t.Errorf("entry %v (%v) value = %v, want %v", i, e.Key, got.Value, e.Value)
+			}
+		} else {
+			// Integers: umsgpack round-trips unsigned Go ints as uint64 and
+			// small positives as int64; compare by int64 value.
+			gotI, _ := toInt64(got.Value)
+			wantI, _ := toInt64(e.Value)
+			if gotI != wantI {
+				t.Errorf("entry %v (%v) value = %v, want %v", i, e.Key, got.Value, e.Value)
+			}
+		}
+	}
+}
+
+func TestOrderedMapGetSet(t *testing.T) {
+	t.Parallel()
+	m := OrderedMap{
+		{Key: "a", Value: uint(1)},
+		{Key: "b", Value: "two"},
+		{Key: 3, Value: uint(4)},
+	}
+
+	// Get finds existing keys (string and non-string).
+	if v, ok := m.Get("a"); !ok || toInt64Must(v) != 1 {
+		t.Fatalf(`Get("a") = %v,%v, want 1,true`, v, ok)
+	}
+	if v, ok := m.Get("b"); !ok || v != "two" {
+		t.Fatalf(`Get("b") = %v,%v, want "two",true`, v, ok)
+	}
+	if v, ok := m.Get(3); !ok || toInt64Must(v) != 4 {
+		t.Fatalf(`Get(3) = %v,%v, want 4,true`, v, ok)
+	}
+	if _, ok := m.Get("missing"); ok {
+		t.Fatalf(`Get("missing") = true, want false`)
+	}
+
+	// Set on an existing key updates the value in place, preserving position
+	// (Python dict semantics: re-assigning a key keeps its place).
+	m = m.Set("b", "TWO")
+	if v, _ := m.Get("b"); v != "TWO" {
+		t.Fatalf(`Set("b") value = %v, want "TWO"`, v)
+	}
+	if m[1].Key != "b" || m[1].Value != "TWO" {
+		t.Fatalf("Set updated entry in wrong position: %+v", m[1])
+	}
+	if len(m) != 3 {
+		t.Fatalf("Set existing changed length to %v, want 3", len(m))
+	}
+
+	// Set on a new key appends.
+	m = m.Set("c", uint(5))
+	if v, _ := m.Get("c"); toInt64Must(v) != 5 {
+		t.Fatalf(`Set("c") value = %v, want 5`, v)
+	}
+	if len(m) != 4 || m[3].Key != "c" {
+		t.Fatalf("Set new did not append: len=%v last=%+v", len(m), m[3])
+	}
+}
+
+func toInt64Must(v any) int64 {
+	i, _ := toInt64(v)
+	return i
 }
 
 func TestMapWithByteSliceKey(t *testing.T) {
