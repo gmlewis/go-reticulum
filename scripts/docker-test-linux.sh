@@ -13,22 +13,25 @@
 # verification, use a FreeBSD VM (Lima, UTM, or QEMU) — out of scope here.
 #
 # Usage:
-#   scripts/docker-test-linux.sh                       # default command below
-#   scripts/docker-test-linux.sh go test ./...          # custom go command
+#   scripts/docker-test-linux.sh                       # default: whole-repo go test ./...
+#   scripts/docker-test-linux.sh go test ./cmd/gornodeconf/
 #   scripts/docker-test-linux.sh go vet ./cmd/gornodeconf/
 #
 # Env:
-#   GO_DOCKER_IMAGE  base Go image (default matches go.mod's `go 1.26.0`).
+#   GO_DOCKER_IMAGE  base Go image. Default is the debian-based golang image
+#                    (bash + glibc, closer to a real Linux dev box than the
+#                    busybox alpine image) and matches go.mod's `go 1.26.0`.
 #
 set -euo pipefail
 
-IMG=${GO_DOCKER_IMAGE:-golang:1.26.4-alpine}
+IMG=${GO_DOCKER_IMAGE:-golang:1.26.4-bookworm}
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 GOMODCACHE=$(go env GOMODCACHE)
 
-# Default: test the package most affected by cross-platform changes, then
-# build the whole module as a Linux gate. Override by passing a go command.
-CMD=${*:-"go test ./cmd/gornodeconf/ && go build ./..."}
+# Default: run the whole repo's Linux test suite. This exercises every
+# package's *_linux_test.go (e.g. cmd/gornodeconf, rns, lxmf) — the coverage
+# that cross-compiling alone cannot provide. Override by passing a go command.
+CMD=${*:-"go test ./..."}
 
 echo ">> Linux Docker test"
 echo ">> image: $IMG"
@@ -47,6 +50,12 @@ echo ">> cmd:   $CMD"
 # which does not happen when the process is root (root bypasses DAC). Running
 # as the host UID:GID also means files written into the mounted repo keep the
 # host owner, so the checkout is not left root-owned.
+#
+# SHELL=/bin/bash: the host UID has no /etc/passwd entry in the container, so
+# gornsh's loginShell() falls back to $SHELL. The default debian image ships
+# bash; setting SHELL=/bin/bash matches a typical Linux dev login and lets the
+# bash-assuming gornsh session test pass. (If you switch to the alpine image,
+# which lacks bash, that test will fail — alpine is not the default.)
 exec docker run --rm \
   --user "$(id -u):$(id -g)" \
   -v "$REPO":/work \
@@ -57,4 +66,5 @@ exec docker run --rm \
   -e GOFLAGS=-mod=readonly \
   -e GOTOOLCHAIN=local \
   -e CGO_ENABLED=0 \
+  -e SHELL=/bin/bash \
   "$IMG" sh -c "$CMD"
