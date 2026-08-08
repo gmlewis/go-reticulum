@@ -3,7 +3,7 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-//go:build darwin
+//go:build linux || darwin || freebsd
 
 package main
 
@@ -12,6 +12,10 @@ import (
 	"syscall"
 )
 
+// serialBaudConstant maps a baud rate to the platform's termios speed
+// constant. The syscall.B* constants are present on linux, darwin, and
+// freebsd (not windows), so this table is shared across the three; the
+// per-OS serial_*.go files feed the result into their own termios layout.
 func serialBaudConstant(speed int) (uint32, error) {
 	switch speed {
 	case 1200:

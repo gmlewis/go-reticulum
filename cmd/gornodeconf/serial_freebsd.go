@@ -3,7 +3,7 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-//go:build linux
+//go:build freebsd
 
 package main
 
@@ -28,11 +28,14 @@ func defaultOpenSerial(settings serialSettings) (serialPort, error) {
 	return file, nil
 }
 
-const cbaud = 0x100f
-
+// configureTermios sets the serial port to raw mode at the requested baud,
+// data bits, parity, and stop bits. FreeBSD's termios is BSD-derived like
+// darwin (TIOCGETA/TIOCSETA, Ispeed/Ospeed speed fields, no cbaud Cflag
+// masking) but its syscall.Termios fields are uint32, so the baud constant
+// (already uint32) needs no cast.
 func configureTermios(fd uintptr, speed, databits int, parity string, stopbits int) error {
 	termios := &syscall.Termios{}
-	if _, _, errno := syscall.Syscall6(syscall.SYS_IOCTL, fd, uintptr(syscall.TCGETS), uintptr(unsafe.Pointer(termios)), 0, 0, 0); errno != 0 {
+	if _, _, errno := syscall.Syscall6(syscall.SYS_IOCTL, fd, uintptr(syscall.TIOCGETA), uintptr(unsafe.Pointer(termios)), 0, 0, 0); errno != 0 {
 		return errno
 	}
 
@@ -71,15 +74,13 @@ func configureTermios(fd uintptr, speed, databits int, parity string, stopbits i
 	if err != nil {
 		return err
 	}
-	termios.Cflag &^= cbaud
-	termios.Cflag |= baud
 	termios.Ispeed = baud
 	termios.Ospeed = baud
 
 	termios.Cc[syscall.VMIN] = 0
 	termios.Cc[syscall.VTIME] = 1
 
-	if _, _, errno := syscall.Syscall6(syscall.SYS_IOCTL, fd, uintptr(syscall.TCSETS), uintptr(unsafe.Pointer(termios)), 0, 0, 0); errno != 0 {
+	if _, _, errno := syscall.Syscall6(syscall.SYS_IOCTL, fd, uintptr(syscall.TIOCSETA), uintptr(unsafe.Pointer(termios)), 0, 0, 0); errno != 0 {
 		return errno
 	}
 

@@ -7,44 +7,58 @@
 
 package main
 
-/*
-#include <termios.h>
-#include <unistd.h>
-*/
-import "C"
-
-import "fmt"
+import (
+	"fmt"
+	"syscall"
+	"unsafe"
+)
 
 func newTTYRestorer(fd int) (*ttyRestorer, error) {
 	if fd < 0 {
 		return &ttyRestorer{}, nil
 	}
 
-	var saved C.struct_termios
-	if _, err := C.tcgetattr(C.int(fd), &saved); err != nil {
+	var saved syscall.Termios
+	if _, err := ioctlGetTermios(fd, &saved); err != nil {
 		return &ttyRestorer{}, nil
 	}
 
-	restorer := &ttyRestorer{active: true}
+	restorer := &ttyRestorer{}
+	restorer.active = true
 	restorer.rawFn = func() error {
 		raw := saved
-		raw.c_iflag &^= C.tcflag_t(C.BRKINT | C.ICRNL | C.INPCK | C.ISTRIP | C.IXON)
-		raw.c_oflag &^= C.tcflag_t(C.OPOST)
-		raw.c_lflag &^= C.tcflag_t(C.ECHO | C.ICANON | C.IEXTEN | C.ISIG)
-		raw.c_cflag |= C.tcflag_t(C.CS8)
-		raw.c_cc[C.VMIN] = C.cc_t(1)
-		raw.c_cc[C.VTIME] = C.cc_t(0)
-		if _, err := C.tcsetattr(C.int(fd), C.TCSAFLUSH, &raw); err != nil {
+		raw.Iflag &^= syscall.BRKINT | syscall.ICRNL | syscall.INPCK | syscall.ISTRIP | syscall.IXON
+		raw.Oflag &^= syscall.OPOST
+		raw.Lflag &^= syscall.ECHO | syscall.ICANON | syscall.IEXTEN | syscall.ISIG
+		raw.Cflag |= syscall.CS8
+		raw.Cc[syscall.VMIN] = 1
+		raw.Cc[syscall.VTIME] = 0
+		if err := ioctlSetTermios(fd, &raw); err != nil {
 			return fmt.Errorf("could not enable raw mode: %w", err)
 		}
 		return nil
 	}
 	restorer.restoreFn = func() error {
-		if _, err := C.tcsetattr(C.int(fd), C.TCSAFLUSH, &saved); err != nil {
+		if err := ioctlSetTermios(fd, &saved); err != nil {
 			return fmt.Errorf("could not restore terminal mode: %w", err)
 		}
 		return nil
 	}
-
 	return restorer, nil
+}
+
+func ioctlGetTermios(fd int, termios *syscall.Termios) (syscall.Errno, error) {
+	_, _, errno := syscall.Syscall6(syscall.SYS_IOCTL, uintptr(fd), uintptr(syscall.TIOCGETA), uintptr(unsafe.Pointer(termios)), 0, 0, 0)
+	if errno != 0 {
+		return errno, errno
+	}
+	return 0, nil
+}
+
+func ioctlSetTermios(fd int, termios *syscall.Termios) error {
+	_, _, errno := syscall.Syscall6(syscall.SYS_IOCTL, uintptr(fd), uintptr(syscall.TIOCSETAF), uintptr(unsafe.Pointer(termios)), 0, 0, 0)
+	if errno != 0 {
+		return errno
+	}
+	return nil
 }

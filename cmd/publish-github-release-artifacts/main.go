@@ -64,8 +64,8 @@ var majorTargets = []target{
 	{"darwin", "arm64"},
 	// {"windows", "amd64"},
 	// {"windows", "arm64"},
-	// {"freebsd", "amd64"},
-	// {"freebsd", "arm64"},
+	{"freebsd", "amd64"},
+	{"freebsd", "arm64"},
 }
 
 // binaryNames are the published artifacts' base names.

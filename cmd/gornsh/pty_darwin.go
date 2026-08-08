@@ -7,46 +7,64 @@
 
 package main
 
-/*
-#include <stdlib.h>
-#include <unistd.h>
-#include <util.h>
-#include <termios.h>
-*/
-import "C"
-
 import (
 	"fmt"
 	"os"
 	"os/exec"
 	"syscall"
+	"unsafe"
 )
 
 func openPTY() (*ptyPair, error) {
-	var masterFD, slaveFD C.int
-	if C.openpty(&masterFD, &slaveFD, nil, nil, nil) != 0 {
-		return nil, fmt.Errorf("openpty failed")
-	}
-
-	masterName := C.ttyname(slaveFD)
-	if masterName == nil {
-		C.close(masterFD)
-		C.close(slaveFD)
-		return nil, fmt.Errorf("ttyname failed")
+	masterFD, err := syscall.Open("/dev/ptmx", syscall.O_RDWR|syscall.O_NOCTTY|syscall.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
 	}
 
 	master := os.NewFile(uintptr(masterFD), "/dev/ptmx")
-	slave := os.NewFile(uintptr(slaveFD), C.GoString(masterName))
-
 	if master == nil {
-		C.close(masterFD)
-		C.close(slaveFD)
+		_ = syscall.Close(masterFD)
 		return nil, fmt.Errorf("could not create PTY master file")
 	}
 
+	// TIOCPTYGRANT adjusts the slave pty's ownership/permissions so the
+	// current user may open it; under macOS SIP the slave is otherwise not
+	// accessible. The ioctl takes no argument (IOC_VOID).
+	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(masterFD), uintptr(syscall.TIOCPTYGRANT), 0); errno != 0 {
+		_ = master.Close()
+		return nil, errno
+	}
+
+	// TIOCPTYUNLK (unlockpt) unlocks the pty so the slave can be opened; the
+	// kernel returns EAGAIN on the slave open without it. IOC_VOID, no arg.
+	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(masterFD), uintptr(syscall.TIOCPTYUNLK), 0); errno != 0 {
+		_ = master.Close()
+		return nil, errno
+	}
+
+	// TIOCPTYGNAME fills a 128-byte buffer with the slave device path as a
+	// NUL-terminated C string (e.g. "/dev/ttys004").
+	var nameBuf [128]byte
+	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(masterFD), uintptr(syscall.TIOCPTYGNAME), uintptr(unsafe.Pointer(&nameBuf[0]))); errno != 0 {
+		_ = master.Close()
+		return nil, errno
+	}
+	n := 0
+	for n < len(nameBuf) && nameBuf[n] != 0 {
+		n++
+	}
+	slavePath := string(nameBuf[:n])
+
+	slaveFD, err := syscall.Open(slavePath, syscall.O_RDWR|syscall.O_NOCTTY|syscall.O_CLOEXEC, 0)
+	if err != nil {
+		_ = master.Close()
+		return nil, err
+	}
+
+	slave := os.NewFile(uintptr(slaveFD), slavePath)
 	if slave == nil {
-		C.close(masterFD)
-		C.close(slaveFD)
+		_ = syscall.Close(slaveFD)
+		_ = master.Close()
 		return nil, fmt.Errorf("could not create PTY slave file")
 	}
 
@@ -62,25 +80,7 @@ func setPTYTermios(fd int, raw any) error {
 	if err != nil || termios == nil {
 		return err
 	}
-	return setTermios(fd, termios)
-}
-
-func setTermios(fd int, termios *syscall.Termios) error {
-	var ctermios C.struct_termios
-	ctermios.c_iflag = C.tcflag_t(termios.Iflag)
-	ctermios.c_oflag = C.tcflag_t(termios.Oflag)
-	ctermios.c_cflag = C.tcflag_t(termios.Cflag)
-	ctermios.c_lflag = C.tcflag_t(termios.Lflag)
-	ctermios.c_ispeed = C.speed_t(termios.Ispeed)
-	ctermios.c_ospeed = C.speed_t(termios.Ospeed)
-	for i, v := range termios.Cc {
-		ctermios.c_cc[i] = C.cc_t(v)
-	}
-
-	if _, err := C.tcsetattr(C.int(fd), C.TCSAFLUSH, &ctermios); err != nil {
-		return err
-	}
-	return nil
+	return ioctlSetTermios(fd, termios)
 }
 
 func termiosFromPTYTCFlags(raw any) (*syscall.Termios, error) {
