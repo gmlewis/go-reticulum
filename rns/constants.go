@@ -8,6 +8,7 @@ package rns
 import (
 	"fmt"
 	"math"
+	"strings"
 )
 
 const (
@@ -145,22 +146,22 @@ func PrettyTime(seconds float64, verbose bool, compact bool) string {
 		return "0s"
 	}
 
-	result := ""
+	var result strings.Builder
 	for i, c := range components {
 		if i > 0 {
 			if i == len(components)-1 {
-				result += " and "
+				result.WriteString(" and ")
 			} else {
-				result += ", "
+				result.WriteString(", ")
 			}
 		}
-		result += c
+		result.WriteString(c)
 	}
 
 	if neg {
-		return "-" + result
+		return "-" + result.String()
 	}
-	return result
+	return result.String()
 }
 
 // PrettyFrequency formats a frequency value (in Hz as a float where

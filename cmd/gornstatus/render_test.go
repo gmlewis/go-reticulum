@@ -14,9 +14,6 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-func float64Ptr(v float64) *float64 { return &v }
-func strPtr(v string) *string       { return &v }
-
 func TestRenderInterfaceBasic(t *testing.T) {
 	t.Parallel()
 	ifstat := rns.InterfaceStat{
@@ -93,8 +90,8 @@ func TestRenderInterfaceNoiseFloor(t *testing.T) {
 		Name:         "RNodeInterface[LoRa 915]",
 		Status:       true,
 		Mode:         modeFull,
-		NoiseFloor:   float64Ptr(-119.0),
-		Interference: float64Ptr(-95.0),
+		NoiseFloor:   new(-119.0),
+		Interference: new(-95.0),
 	}
 	var buf bytes.Buffer
 	renderInterface(&buf, ifstat, false)
@@ -114,8 +111,8 @@ func TestRenderInterfaceNoiseFloorNoInterference(t *testing.T) {
 		Name:         "RNodeInterface[LoRa 915]",
 		Status:       true,
 		Mode:         modeFull,
-		NoiseFloor:   float64Ptr(-119.0),
-		Interference: float64Ptr(0),
+		NoiseFloor:   new(-119.0),
+		Interference: new(float64(0)),
 	}
 	var buf bytes.Buffer
 	renderInterface(&buf, ifstat, false)
@@ -132,9 +129,9 @@ func TestRenderInterfaceCPU(t *testing.T) {
 		Name:    "RNodeInterface[LoRa 915]",
 		Status:  true,
 		Mode:    modeFull,
-		CPULoad: float64Ptr(45.2),
-		CPUTemp: float64Ptr(62.5),
-		MemLoad: float64Ptr(38.1),
+		CPULoad: new(45.2),
+		CPUTemp: new(62.5),
+		MemLoad: new(38.1),
 	}
 	var buf bytes.Buffer
 	renderInterface(&buf, ifstat, false)
@@ -176,10 +173,10 @@ func TestRenderInterfaceAirtime(t *testing.T) {
 		Name:            "RNodeInterface[LoRa 915]",
 		Status:          true,
 		Mode:            modeFull,
-		AirtimeShort:    float64Ptr(1.5),
-		AirtimeLong:     float64Ptr(0.8),
-		ChannelLoadShrt: float64Ptr(2.3),
-		ChannelLoadLong: float64Ptr(1.1),
+		AirtimeShort:    new(1.5),
+		AirtimeLong:     new(0.8),
+		ChannelLoadShrt: new(2.3),
+		ChannelLoadLong: new(1.1),
 	}
 	var buf bytes.Buffer
 	renderInterface(&buf, ifstat, false)
@@ -201,11 +198,11 @@ func TestRenderInterfaceSwitchEndpoint(t *testing.T) {
 		Name:        "RNodeInterface[LoRa 915]",
 		Status:      true,
 		Mode:        modeFull,
-		SwitchID:    strPtr("abc123"),
-		EndpointID:  strPtr("def456"),
-		ViaSwitchID: strPtr("ghi789"),
-		Peers:       intPtr(5),
-		TunnelState: strPtr("Connected"),
+		SwitchID:    new("abc123"),
+		EndpointID:  new("def456"),
+		ViaSwitchID: new("ghi789"),
+		Peers:       new(5),
+		TunnelState: new("Connected"),
 	}
 	var buf bytes.Buffer
 	renderInterface(&buf, ifstat, false)
@@ -248,7 +245,7 @@ func TestRenderInterfaceI2PB32(t *testing.T) {
 		Name:   "I2PInterface[test]",
 		Status: true,
 		Mode:   modeFull,
-		I2PB32: strPtr("abc123.b32.i2p"),
+		I2PB32: new("abc123.b32.i2p"),
 	}
 	var buf bytes.Buffer
 	renderInterface(&buf, ifstat, false)
@@ -265,10 +262,10 @@ func TestRenderInterfaceAnnounceStats(t *testing.T) {
 		Name:            "RNodeInterface[LoRa 915]",
 		Status:          true,
 		Mode:            modeFull,
-		AnnounceQueue:   intPtr(3),
-		HeldAnnounces:   intPtr(1),
-		InAnnounceFreq:  float64Ptr(0.5),
-		OutAnnounceFreq: float64Ptr(1.2),
+		AnnounceQueue:   new(3),
+		HeldAnnounces:   new(1),
+		InAnnounceFreq:  new(0.5),
+		OutAnnounceFreq: new(1.2),
 	}
 	var buf bytes.Buffer
 	renderInterface(&buf, ifstat, true)
@@ -291,10 +288,10 @@ func TestRenderInterfaceAnnounceStatsNotShownWithoutFlag(t *testing.T) {
 		Name:            "RNodeInterface[LoRa 915]",
 		Status:          true,
 		Mode:            modeFull,
-		AnnounceQueue:   intPtr(3),
-		HeldAnnounces:   intPtr(1),
-		InAnnounceFreq:  float64Ptr(0.5),
-		OutAnnounceFreq: float64Ptr(1.2),
+		AnnounceQueue:   new(3),
+		HeldAnnounces:   new(1),
+		InAnnounceFreq:  new(0.5),
+		OutAnnounceFreq: new(1.2),
 	}
 	var buf bytes.Buffer
 	renderInterface(&buf, ifstat, false)
@@ -358,10 +355,10 @@ func TestLinkStatsString(t *testing.T) {
 	}{
 		{"nil", nil, false, ""},
 		{"nil with transport", nil, true, ""},
-		{"1 entry no transport", intPtr(1), false, " 1 entry in link table"},
-		{"1 entry with transport", intPtr(1), true, ", 1 entry in link table"},
-		{"5 entries no transport", intPtr(5), false, " 5 entries in link table"},
-		{"5 entries with transport", intPtr(5), true, ", 5 entries in link table"},
+		{"1 entry no transport", new(1), false, " 1 entry in link table"},
+		{"1 entry with transport", new(1), true, ", 1 entry in link table"},
+		{"5 entries no transport", new(5), false, " 5 entries in link table"},
+		{"5 entries with transport", new(5), true, ", 5 entries in link table"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -456,8 +453,8 @@ func TestRenderDiscoveredInterfaces(t *testing.T) {
 			Status:    "available",
 			LastHeard: now - 30,
 			Value:     100,
-			Latitude:  float64Ptr(34.0522),
-			Longitude: float64Ptr(-118.2437),
+			Latitude:  new(34.0522),
+			Longitude: new(-118.2437),
 		},
 		{
 			Name:      "Stale RNode",
@@ -497,13 +494,13 @@ func TestRenderDiscoveredInterfaceDetails(t *testing.T) {
 			Hops:        1,
 			Discovered:  now - 3600,
 			LastHeard:   now - 600,
-			Latitude:    float64Ptr(1.2345),
-			Longitude:   float64Ptr(6.7890),
-			Height:      float64Ptr(150),
-			Frequency:   intPtr(915000000),
-			Bandwidth:   intPtr(125000),
-			SF:          intPtr(7),
-			CR:          intPtr(5),
+			Latitude:    new(1.2345),
+			Longitude:   new(6.7890),
+			Height:      new(float64(150)),
+			Frequency:   new(915000000),
+			Bandwidth:   new(125000),
+			SF:          new(7),
+			CR:          new(5),
 			Value:       500,
 			ConfigEntry: "[[Detailed Interface]]\n  type = RNodeInterface\n  port = /dev/ttyUSB0",
 		},

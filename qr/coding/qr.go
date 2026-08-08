@@ -89,10 +89,7 @@ func (b *Bits) Append(p []byte) {
 
 func (b *Bits) Write(v uint, nbit int) {
 	for nbit > 0 {
-		n := nbit
-		if n > 8 {
-			n = 8
-		}
+		n := min(nbit, 8)
 		if b.nbit%8 == 0 {
 			b.b = append(b.b, 0)
 		} else {
@@ -162,7 +159,7 @@ func (s Alpha) String() string {
 
 func (s Alpha) Check() error {
 	for _, c := range s {
-		if strings.IndexRune(alphabet, c) < 0 {
+		if !strings.ContainsRune(alphabet, c) {
 			return fmt.Errorf("non-alphanumeric string %#q", string(s))
 		}
 	}
@@ -584,8 +581,8 @@ func vplan(v Version) (*Plan, error) {
 	pat := vtab[v].pattern
 	if pat != 0 {
 		v := pat
-		for x := 0; x < 6; x++ {
-			for y := 0; y < 3; y++ {
+		for x := range 6 {
+			for y := range 3 {
 				p := PVersion.Pixel()
 				if v&1 != 0 {
 					p |= Black
@@ -618,7 +615,7 @@ func fplan(l Level, m Mask, p *Plan) error {
 	fb |= rem
 	invert := uint32(0x5412)
 	siz := len(p.Pixel)
-	for i := uint(0); i < 15; i++ {
+	for i := range uint(15) {
 		pix := Format.Pixel() + OffsetPixel(i)
 		if (fb>>i)&1 == 1 {
 			pix |= Black
@@ -677,7 +674,7 @@ func lplan(v Version, l Level, p *Plan) error {
 	// Split into blocks.
 	dataList := make([][]Pixel, nblock)
 	checkList := make([][]Pixel, nblock)
-	for i := 0; i < nblock; i++ {
+	for i := range nblock {
 		// The last few blocks have an extra data byte (8 pixels).
 		nd := nde
 		if i >= nblock-extra {
@@ -702,7 +699,7 @@ func lplan(v Version, l Level, p *Plan) error {
 			}
 		}
 	}
-	for i := 0; i < ne; i++ {
+	for i := range ne {
 		for _, b := range checkList {
 			if i*8 < len(b) {
 				copy(dst, b[i*8:(i+1)*8])
@@ -737,7 +734,7 @@ func lplan(v Version, l Level, p *Plan) error {
 		if x == 7 { // vertical timing strip
 			x--
 		}
-		for y := 0; y < siz; y++ {
+		for y := range siz {
 			if p.Pixel[y][x-1].Role() == 0 {
 				p.Pixel[y][x-1], src = src[0], src[1:]
 			}
@@ -767,8 +764,8 @@ func mplan(m Mask, p *Plan) error {
 func posBox(m [][]Pixel, x, y int) {
 	pos := Position.Pixel()
 	// box
-	for dy := 0; dy < 7; dy++ {
-		for dx := 0; dx < 7; dx++ {
+	for dy := range 7 {
+		for dx := range 7 {
 			p := pos
 			if dx == 0 || dx == 6 || dy == 0 || dy == 6 || 2 <= dx && dx <= 4 && 2 <= dy && dy <= 4 {
 				p |= Black
@@ -803,8 +800,8 @@ func posBox(m [][]Pixel, x, y int) {
 func alignBox(m [][]Pixel, x, y int) {
 	// box
 	align := Alignment.Pixel()
-	for dy := 0; dy < 5; dy++ {
-		for dx := 0; dx < 5; dx++ {
+	for dy := range 5 {
+		for dx := range 5 {
 			p := align
 			if dx == 0 || dx == 4 || dy == 0 || dy == 4 || dx == 2 && dy == 2 {
 				p |= Black

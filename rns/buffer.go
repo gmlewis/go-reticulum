@@ -182,10 +182,7 @@ func (cw *ChannelWriter) Write(p []byte) (n int, err error) {
 	sent := 0
 	for sent < total {
 		remaining := p[sent:]
-		candidateLen := len(remaining)
-		if candidateLen > bufferMaxChunkLen {
-			candidateLen = bufferMaxChunkLen
-		}
+		candidateLen := min(len(remaining), bufferMaxChunkLen)
 
 		chunk := remaining[:candidateLen]
 		processedLen := candidateLen

@@ -151,7 +151,6 @@ func TestCompressAdaptiveStreamData(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			gotBytes, gotComp, err := compressAdaptiveStreamData(tc.input, tc.maxSize)
@@ -551,7 +550,6 @@ func TestProcessInitiatorTTYInputChunk(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			state := &initiatorTTYInputState{}

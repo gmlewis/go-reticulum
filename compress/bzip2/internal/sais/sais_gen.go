@@ -3,14 +3,14 @@
 // license that can be found in the LICENSE.md file.
 
 //go:build ignore
-// +build ignore
 
 package main
 
 import (
 	"bytes"
 	"go/format"
-	"io/ioutil"
+	"io/fs"
+
 	"log"
 	"os"
 	"text/template"
@@ -34,7 +34,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("format.Source error: %v", err)
 	}
-	if err := ioutil.WriteFile(path, out, 0644); err != nil {
+	if err := os.WriteFile(path, out, 0644); err != nil {
 		log.Fatalf("ioutil.WriteFile error: %v", err)
 	}
 }

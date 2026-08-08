@@ -97,11 +97,11 @@ func TestCompileStatsGolden(t *testing.T) {
 		incoming:                        3,
 		rxBytes:                         1024,
 		txBytes:                         2048,
-		propagationTransferLimit:        pFloat64(9),
-		propagationSyncLimit:            pInt(11),
-		propagationStampCost:            pInt(12),
-		propagationStampCostFlexibility: pInt(3),
-		peeringCost:                     pInt(8),
+		propagationTransferLimit:        new(float64(9)),
+		propagationSyncLimit:            new(11),
+		propagationStampCost:            new(12),
+		propagationStampCostFlexibility: new(3),
+		peeringCost:                     new(8),
 	}
 	peer.peeringKey = []any{[]byte{0x01, 0x02}, 42}
 	peer.umCountsSynced = true
@@ -338,12 +338,6 @@ func TestCompileStatsDisabledReturnsNil(t *testing.T) {
 		t.Fatalf("compileStats with propagation disabled = %v, want nil", got)
 	}
 }
-
-// pInt returns a pointer to v.
-func pInt(v int) *int { return &v }
-
-// pFloat64 returns a pointer to v.
-func pFloat64(v float64) *float64 { return &v }
 
 // mapKeysString returns the string keys of a map[string]any.
 func mapKeysString(m map[string]any) []string {

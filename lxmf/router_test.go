@@ -1062,7 +1062,7 @@ func TestProcessOutboundSendFailureEventuallyFails(t *testing.T) {
 		t.Fatalf("HandleOutbound: %v", err)
 	}
 
-	for i := 0; i < maxDeliveryAttempts+1; i++ {
+	for range maxDeliveryAttempts + 1 {
 		now = now.Add(deliveryRetryWait + time.Second)
 		router.ProcessOutbound()
 	}
@@ -1538,7 +1538,7 @@ func TestProcessOutboundResourceSendFailureEventuallyFails(t *testing.T) {
 		t.Fatalf("HandleOutbound: %v", err)
 	}
 
-	for i := 0; i < maxDeliveryAttempts+1; i++ {
+	for range maxDeliveryAttempts + 1 {
 		now = now.Add(deliveryRetryWait + time.Second)
 		router.ProcessOutbound()
 	}
@@ -2148,7 +2148,7 @@ func TestPropagationPacketRejectsInvalidClientTransferAfterAcceptingValidEntries
 		t.Fatalf("StampWorkblock(invalid): %v", err)
 	}
 	var invalidStamp []byte
-	for candidate := 0; candidate < 256; candidate++ {
+	for candidate := range 256 {
 		stamp := bytes.Repeat([]byte{byte(candidate)}, StampSize)
 		if !StampValid(stamp, router.propagationCost, workblock) {
 			invalidStamp = stamp
@@ -2379,7 +2379,7 @@ func TestPropagationResourceConcludedRejectsInvalidClientStamp(t *testing.T) {
 		t.Fatalf("StampWorkblock(): %v", err)
 	}
 	var invalidStamp []byte
-	for candidate := 0; candidate < 256; candidate++ {
+	for candidate := range 256 {
 		stamp := bytes.Repeat([]byte{byte(candidate)}, StampSize)
 		if !StampValid(stamp, router.propagationCost, workblock) {
 			invalidStamp = stamp
@@ -2769,7 +2769,7 @@ func TestPropagationResourceConcludedThrottlesInvalidIdentifiedTransfer(t *testi
 		t.Fatalf("StampWorkblock(): %v", err)
 	}
 	var invalidStamp []byte
-	for candidate := 0; candidate < 256; candidate++ {
+	for candidate := range 256 {
 		stamp := bytes.Repeat([]byte{byte(candidate)}, StampSize)
 		if !StampValid(stamp, router.propagationCost, workblock) {
 			invalidStamp = stamp
@@ -3291,7 +3291,7 @@ func TestMessageGetRequestListPreservesInsertionOrderForEqualSizes(t *testing.T)
 	}
 
 	want := [][]byte{firstID, secondID, thirdID}
-	for i := 0; i < 64; i++ {
+	for i := range 64 {
 		response := router.messageGetRequest("", request, nil, nil, remoteIdentity, time.Now())
 		available, ok := response.([]any)
 		if !ok {
@@ -3327,7 +3327,7 @@ func TestMessageGetRequestListPreservesInsertionOrderWhenEqualSizesShareTimestam
 	remoteDestinationHash := rns.CalculateHash(remoteIdentity, AppName, "delivery")
 
 	var firstID, secondID []byte
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		firstPayload := append(append([]byte{}, remoteDestinationHash...), bytes.Repeat([]byte{byte(i)}, 8)...)
 		secondPayload := append(append([]byte{}, remoteDestinationHash...), bytes.Repeat([]byte{byte(i + 1)}, 8)...)
 		candidateFirst := rns.FullHash(firstPayload)
@@ -6956,7 +6956,6 @@ func TestPropagationAnnounceHandlerRejectsInvalidAnnounceShape(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -10388,7 +10387,7 @@ func TestProcessOutboundTryPropagationOnFailFallback(t *testing.T) {
 	}
 
 	// Exhaust all direct delivery attempts.
-	for i := 0; i < maxDeliveryAttempts+1; i++ {
+	for range maxDeliveryAttempts + 1 {
 		now = now.Add(deliveryRetryWait + time.Second)
 		router.ProcessOutbound()
 	}
@@ -10886,7 +10885,7 @@ func TestProcessOutboundFailedCallbackInvoked(t *testing.T) {
 		t.Fatalf("HandleOutbound: %v", err)
 	}
 
-	for i := 0; i < maxDeliveryAttempts+1; i++ {
+	for range maxDeliveryAttempts + 1 {
 		now = now.Add(deliveryRetryWait + time.Second)
 		router.ProcessOutbound()
 	}
@@ -11456,7 +11455,7 @@ func TestRotatePeers(t *testing.T) {
 	// Populate the peer table beyond the headroom: max=4, headroom=10% = 0,
 	// floored to 1, so 4 - (4-1) = 1 required drop.
 	hashes := make([][]byte, 0, 6)
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		hash := rns.FullHash([]byte{byte(i), byte(i + 1)})[:16]
 		hashes = append(hashes, hash)
 		p := NewPeer(router, hash)
@@ -11517,9 +11516,9 @@ func TestSyncPeers(t *testing.T) {
 	good.umCountsSynced = true
 	good.nextSyncAttempt = 0
 	good.lastSyncAttempt = 0
-	good.propagationStampCost = ptrInt(8)
-	good.propagationStampCostFlexibility = ptrInt(1)
-	good.peeringCost = ptrInt(18)
+	good.propagationStampCost = new(8)
+	good.propagationStampCostFlexibility = new(1)
+	good.peeringCost = new(18)
 	good.peeringKey = []any{[]byte("key"), 18}
 	good.hasPathFn = func([]byte) bool { return true }
 	testID, _ := rns.NewIdentity(false, nil)
@@ -11547,8 +11546,6 @@ func TestSyncPeers(t *testing.T) {
 	}
 }
 
-func ptrInt(v int) *int { return &v }
-
 func TestPeerLinkLifecycle(t *testing.T) {
 	t.Parallel()
 
@@ -11562,9 +11559,9 @@ func TestPeerLinkLifecycle(t *testing.T) {
 	peer := NewPeer(router, hash)
 	peer.state = PeerStateLinkEstablishing
 	peer.linkBackoffStep = 30 * time.Second
-	peer.propagationStampCost = ptrInt(1)
-	peer.propagationStampCostFlexibility = ptrInt(0)
-	peer.peeringCost = ptrInt(18)
+	peer.propagationStampCost = new(1)
+	peer.propagationStampCostFlexibility = new(0)
+	peer.peeringCost = new(18)
 	peer.peeringKey = []any{[]byte("key"), 18}
 	peer.hasPathFn = func([]byte) bool { return true }
 	lifecycleID, _ := rns.NewIdentity(false, nil)

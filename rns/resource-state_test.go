@@ -267,8 +267,6 @@ func TestResourceStateReceiver(t *testing.T) {
 	}
 }
 
-func float64Ptr(v float64) *float64 { return &v }
-
 // TestUpdateEifr asserts Resource.updateEifr (Python Resource.update_eifr,
 // Resource.py:543-558) computes eifr and pushes it onto link.expected_rate
 // for every input combination. Golden values were captured from a live
@@ -298,7 +296,7 @@ func TestUpdateEifr(t *testing.T) {
 		},
 		{
 			name:           "rtt_0.5_rdrr_200",
-			rtt:            float64Ptr(0.5),
+			rtt:            new(0.5),
 			linkRTT:        0.5,
 			establishment:  9999,
 			reqDataRttRate: 200,
@@ -311,7 +309,7 @@ func TestUpdateEifr(t *testing.T) {
 			linkRTT:        0.5,
 			establishment:  9999,
 			reqDataRttRate: 0,
-			previousEifr:   float64Ptr(5000),
+			previousEifr:   new(float64(5000)),
 			wantEifr:       5000.0,
 		},
 		{
@@ -328,11 +326,11 @@ func TestUpdateEifr(t *testing.T) {
 			// set, so previous_eifr wins (rtt only matters in the
 			// establishment_cost fallback branch).
 			name:           "rtt_2.0_rdrr_0_prev_3333",
-			rtt:            float64Ptr(2.0),
+			rtt:            new(2.0),
 			linkRTT:        9.9,
 			establishment:  9999,
 			reqDataRttRate: 0,
-			previousEifr:   float64Ptr(3333),
+			previousEifr:   new(float64(3333)),
 			wantEifr:       3333.0,
 		},
 	}

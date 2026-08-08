@@ -269,9 +269,9 @@ func TestPeerSyncPreconditions(t *testing.T) {
 		{
 			name:            "sync_time_not_reached",
 			nextSyncAttempt: peerTime(time.Unix(2000, 0)),
-			stampCost:       intPtr(1),
-			stampCostFlex:   intPtr(2),
-			peeringCost:     intPtr(3),
+			stampCost:       new(1),
+			stampCostFlex:   new(2),
+			peeringCost:     new(3),
 			peeringKey:      []any{[]byte("key"), 3},
 			wantPostpone:    "due to previous failures",
 		},
@@ -284,18 +284,18 @@ func TestPeerSyncPreconditions(t *testing.T) {
 		{
 			name:            "peering_key_not_ready",
 			nextSyncAttempt: 0,
-			stampCost:       intPtr(1),
-			stampCostFlex:   intPtr(2),
-			peeringCost:     intPtr(3),
+			stampCost:       new(1),
+			stampCostFlex:   new(2),
+			peeringCost:     new(3),
 			peeringKey:      nil,
 			wantPostpone:    "peering key has not been generated",
 		},
 		{
 			name:            "all_preconditions_met",
 			nextSyncAttempt: 0,
-			stampCost:       intPtr(1),
-			stampCostFlex:   intPtr(2),
-			peeringCost:     intPtr(3),
+			stampCost:       new(1),
+			stampCostFlex:   new(2),
+			peeringCost:     new(3),
 			peeringKey:      []any{[]byte("key"), 3},
 			wantSyncHook:    true,
 		},
@@ -365,9 +365,9 @@ func TestPeerSyncIdentityRecall(t *testing.T) {
 		peer := NewPeer(router, destHash)
 		peer.now = func() time.Time { return fixedNow }
 		peer.nextSyncAttempt = 0
-		peer.propagationStampCost = intPtr(1)
-		peer.propagationStampCostFlexibility = intPtr(2)
-		peer.peeringCost = intPtr(3)
+		peer.propagationStampCost = new(1)
+		peer.propagationStampCostFlexibility = new(2)
+		peer.peeringCost = new(3)
 		peer.peeringKey = []any{[]byte("key"), 3}
 		peer.generatePeeringKeyFn = func() {}
 		peer.hasPathFn = func([]byte) bool { return true }
@@ -509,9 +509,9 @@ func TestPeerSyncPathRequest(t *testing.T) {
 		peer := NewPeer(router, destHash)
 		peer.now = func() time.Time { return fixedNow }
 		peer.nextSyncAttempt = 0
-		peer.propagationStampCost = intPtr(1)
-		peer.propagationStampCostFlexibility = intPtr(2)
-		peer.peeringCost = intPtr(3)
+		peer.propagationStampCost = new(1)
+		peer.propagationStampCostFlexibility = new(2)
+		peer.peeringCost = new(3)
 		peer.peeringKey = []any{[]byte("key"), 3}
 		peer.generatePeeringKeyFn = func() {}
 		peer.pathRequestSleep = func() {}
@@ -609,9 +609,9 @@ func TestPeerSyncOfferRequest(t *testing.T) {
 		peer := NewPeer(router, destHash)
 		peer.now = func() time.Time { return fixedNow }
 		peer.nextSyncAttempt = 0
-		peer.propagationStampCost = intPtr(1)
-		peer.propagationStampCostFlexibility = intPtr(2)
-		peer.peeringCost = intPtr(3)
+		peer.propagationStampCost = new(1)
+		peer.propagationStampCostFlexibility = new(2)
+		peer.peeringCost = new(3)
 		peer.peeringKey = []any{[]byte("key"), 3}
 		peer.generatePeeringKeyFn = func() {}
 		peer.hasPathFn = func([]byte) bool { return true }
@@ -705,9 +705,9 @@ func TestPeerSyncNoUnhandled(t *testing.T) {
 		peer := NewPeer(router, destHash)
 		peer.now = func() time.Time { return fixedNow }
 		peer.nextSyncAttempt = 0
-		peer.propagationStampCost = intPtr(1)
-		peer.propagationStampCostFlexibility = intPtr(2)
-		peer.peeringCost = intPtr(3)
+		peer.propagationStampCost = new(1)
+		peer.propagationStampCostFlexibility = new(2)
+		peer.peeringCost = new(3)
 		peer.peeringKey = []any{[]byte("key"), 3}
 		peer.generatePeeringKeyFn = func() {}
 		peer.hasPathFn = func([]byte) bool { return true }
@@ -749,5 +749,3 @@ func TestPeerSyncNoUnhandled(t *testing.T) {
 		}
 	})
 }
-
-func intPtr(v int) *int { return &v }

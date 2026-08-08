@@ -9,6 +9,8 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -342,8 +344,8 @@ func (p *Peer) ProcessQueues() {
 	handledMessages := p.HandledMessages()
 	unhandledMessages := p.UnhandledMessages()
 
-	for i := len(handledQueue) - 1; i >= 0; i-- {
-		transientID := handledQueue[i]
+	for _, transientID := range slices.Backward(handledQueue) {
+
 		if !containsByteSlice(handledMessages, transientID) {
 			p.addHandledMessage(transientID)
 		}
@@ -352,8 +354,8 @@ func (p *Peer) ProcessQueues() {
 		}
 	}
 
-	for i := len(unhandledQueue) - 1; i >= 0; i-- {
-		transientID := unhandledQueue[i]
+	for _, transientID := range slices.Backward(unhandledQueue) {
+
 		if !containsByteSlice(handledMessages, transientID) && !containsByteSlice(unhandledMessages, transientID) {
 			p.addUnhandledMessage(transientID)
 		}
@@ -522,21 +524,6 @@ func (p *Peer) addUnhandledMessage(transientID []byte) {
 	p.umCount++
 }
 
-func (p *Peer) removeHandledMessage(transientID []byte) {
-	if p == nil || p.router == nil {
-		return
-	}
-	p.router.mu.Lock()
-	defer p.router.mu.Unlock()
-
-	entry, exists := p.router.propagationEntries[string(transientID)]
-	if !exists {
-		return
-	}
-	entry.handledBy = removeByteSlice(entry.handledBy, p.destinationHash)
-	p.hmCountsSynced = false
-}
-
 func (p *Peer) removeUnhandledMessage(transientID []byte) {
 	if p == nil || p.router == nil {
 		return
@@ -672,9 +659,7 @@ func cloneMetadata(in map[any]any) map[any]any {
 		return nil
 	}
 	out := make(map[any]any, len(in))
-	for key, value := range in {
-		out[key] = value
-	}
+	maps.Copy(out, in)
 	return out
 }
 

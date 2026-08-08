@@ -81,13 +81,7 @@ func (rt *runtimeT) configureLogger(verbose, quiet int) {
 	rt.logger = rns.NewLogger()
 	// rnsh follows the Python baseline of LogInfo here, which differs from
 	// the other cmd/* tools in this repository that start from LogNotice.
-	level := rns.LogInfo + verbose - quiet
-	if level < rns.LogCritical {
-		level = rns.LogCritical
-	}
-	if level > rns.LogDebug {
-		level = rns.LogDebug
-	}
+	level := min(max(rns.LogInfo+verbose-quiet, rns.LogCritical), rns.LogDebug)
 	rt.logger.SetLogLevel(level)
 }
 

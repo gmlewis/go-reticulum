@@ -85,7 +85,6 @@ func TestRequestResponseAutoCompressPolicyInlineAndResource(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			tsInitiator := newTestTransportSystem(t)
 			tsReceiver := newTestTransportSystem(t)

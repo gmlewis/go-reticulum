@@ -200,7 +200,7 @@ func testTransferringReceiver(t *testing.T, lastActivity time.Time) (*Resource, 
 	}
 	r.hashmap = make([][]byte, 8)
 	r.parts = make([]*ResourcePart, 8)
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		mh := []byte{0x10, 0x20, 0x30, byte(i)}
 		r.parts[i] = &ResourcePart{Index: i, MapHash: mh}
 		r.hashmap[i] = mh
@@ -310,7 +310,7 @@ func TestWatchdogTransferringSender(t *testing.T) {
 		retriesLeft:     16,
 		timeoutFactor:   6.0,
 		senderGraceTime: 10.0,
-		rtt:             float64Ptr(1.0),
+		rtt:             new(1.0),
 		lastActivity:    base,
 	}
 
@@ -362,7 +362,7 @@ func testAwaitingProofResource(t *testing.T, lastPartSent time.Time) (*Resource,
 		retriesLeft:     16,
 		senderGraceTime: 10.0,
 		timeoutFactor:   6.0,
-		rtt:             float64Ptr(1.0),
+		rtt:             new(1.0),
 		lastPartSent:    lastPartSent,
 	}
 	return r, ct

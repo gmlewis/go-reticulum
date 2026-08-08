@@ -448,7 +448,6 @@ func TestConnectedInstanceProxyMethodsPropagateRPCErrors(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if err := tc.call(); err == nil {
@@ -844,7 +843,6 @@ func TestConnectedInstanceManagementCallsRecoverAfterRPCServerRestart(t *testing
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 

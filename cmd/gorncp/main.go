@@ -108,10 +108,6 @@ func (a *appT) getLogger() *rns.Logger {
 	return a.logger
 }
 
-// eraseStr is the terminal escape sequence to clear the current line and return to column 0.
-// Matches Python's erase_str = "\33[2K\r"
-const eraseStr = "\033[2K\r"
-
 // spinnerSymbols are the Unicode Braille characters used for progress animation.
 // Matches Python's syms = "⢄⢂⢁⡁⡈⡐⡠"
 var spinnerSymbols = []string{"⢄", "⢂", "⢁", "⡁", "⡈", "⡐", "⡠"}

@@ -50,7 +50,6 @@ func TestParseProbeDestinationHash(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got, err := parseProbeDestinationHash(tc.input)
@@ -87,7 +86,6 @@ func TestProbeTimeoutSeconds(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := probeTimeoutSeconds(tc.timeout, tc.firstHop); got != tc.want {

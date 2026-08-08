@@ -47,7 +47,7 @@ func (r *Rand) Bytes(n int) []byte {
 
 func (r *Rand) Perm(n int) []int {
 	m := make([]int, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		j := r.Intn(i + 1)
 		m[i] = m[j]
 		m[j] = i

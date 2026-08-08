@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -1361,10 +1362,7 @@ func (ts *TransportSystem) queueOrSendAnnounceLocked(now time.Time, iface interf
 		raw:             append([]byte(nil), raw...),
 	})
 	if !queuedAnnounces {
-		delay := state.allowedAt.Sub(now)
-		if delay < 0 {
-			delay = 0
-		}
+		delay := max(state.allowedAt.Sub(now), 0)
 		ts.scheduleAnnounceQueueTimerLocked(iface, state, delay)
 	}
 	return nil
@@ -1516,12 +1514,7 @@ func (ts *TransportSystem) cullPathRequests(now time.Time) {
 
 func (ts *TransportSystem) hasPendingPathRequesterLocked(destinationHash string, iface interfaces.Interface) bool {
 	requesters := ts.pendingPathRequests[destinationHash]
-	for _, existing := range requesters {
-		if existing == iface {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(requesters, iface)
 }
 
 func (ts *TransportSystem) forwardPathRequest(packet *Packet, source interfaces.Interface) {

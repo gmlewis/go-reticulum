@@ -898,7 +898,7 @@ func (r *Reticulum) callRPC(req any) (any, error) {
 	}
 
 	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
+	for range 3 {
 		resp, err := r.callRPCOnce(req)
 		if err == nil {
 			return resp, nil

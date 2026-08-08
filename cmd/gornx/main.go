@@ -276,8 +276,8 @@ func (rt *runtimeT) doListen(ts rns.Transport) {
 
 	if allowedFilePath != "" {
 		if data, err := os.ReadFile(allowedFilePath); err == nil {
-			allowedByFile := strings.Split(strings.ReplaceAll(string(data), "\r", ""), "\n")
-			for _, allowedID := range allowedByFile {
+			allowedByFile := strings.SplitSeq(strings.ReplaceAll(string(data), "\r", ""), "\n")
+			for allowedID := range allowedByFile {
 				destLen := (rns.TruncatedHashLength / 8) * 2
 				if len(allowedID) == destLen {
 					if destinationHash, err := rns.HexToBytes(allowedID); err == nil {
@@ -603,7 +603,7 @@ func (rt *runtimeT) doExecute(ts rns.Transport, destHashHex string, command stri
 	}
 }
 
-func (rt *runtimeT) handleResponse(requestID []byte, response any) {
+func (rt *runtimeT) handleResponse(_ []byte, response any) {
 	app := rt.app
 
 	result, ok := response.([]any)

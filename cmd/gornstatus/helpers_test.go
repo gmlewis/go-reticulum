@@ -13,8 +13,6 @@ import (
 
 const tempDirPrefix = "gornstatus-test-"
 
-func intPtr(v int) *int { return &v }
-
 func TestModeString(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -50,13 +48,13 @@ func TestClientsString(t *testing.T) {
 		want    string
 	}{
 		{"nil clients", "RNodeInterface[LoRa]", nil, ""},
-		{"normal 5 clients", "RNodeInterface[LoRa]", intPtr(5), "Clients   : 5"},
-		{"normal 0 clients", "RNodeInterface[LoRa]", intPtr(0), "Clients   : 0"},
-		{"shared 1 program", "Shared Instance[37428]", intPtr(2), "Serving   : 1 program"},
-		{"shared 0 programs", "Shared Instance[37428]", intPtr(1), "Serving   : 0 programs"},
-		{"shared 3 programs", "Shared Instance[37428]", intPtr(4), "Serving   : 3 programs"},
-		{"i2p 1 endpoint", "I2PInterface[test]", intPtr(1), "Peers     : 1 connected I2P endpoint"},
-		{"i2p 3 endpoints", "I2PInterface[test]", intPtr(3), "Peers     : 3 connected I2P endpoints"},
+		{"normal 5 clients", "RNodeInterface[LoRa]", new(5), "Clients   : 5"},
+		{"normal 0 clients", "RNodeInterface[LoRa]", new(0), "Clients   : 0"},
+		{"shared 1 program", "Shared Instance[37428]", new(2), "Serving   : 1 program"},
+		{"shared 0 programs", "Shared Instance[37428]", new(1), "Serving   : 0 programs"},
+		{"shared 3 programs", "Shared Instance[37428]", new(4), "Serving   : 3 programs"},
+		{"i2p 1 endpoint", "I2PInterface[test]", new(1), "Peers     : 1 connected I2P endpoint"},
+		{"i2p 3 endpoints", "I2PInterface[test]", new(3), "Peers     : 3 connected I2P endpoints"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -115,9 +113,9 @@ func TestSortInterfaces(t *testing.T) {
 func TestSortInterfacesAnnounces(t *testing.T) {
 	t.Parallel()
 	ifaces := []rns.InterfaceStat{
-		{Name: "A", InAnnounceFreq: float64Ptr(1.0), OutAnnounceFreq: float64Ptr(2.0), HeldAnnounces: intPtr(5)},
-		{Name: "B", InAnnounceFreq: float64Ptr(5.0), OutAnnounceFreq: float64Ptr(5.0), HeldAnnounces: intPtr(1)},
-		{Name: "C", InAnnounceFreq: float64Ptr(3.0), OutAnnounceFreq: float64Ptr(1.0), HeldAnnounces: intPtr(3)},
+		{Name: "A", InAnnounceFreq: new(1.0), OutAnnounceFreq: new(2.0), HeldAnnounces: new(5)},
+		{Name: "B", InAnnounceFreq: new(5.0), OutAnnounceFreq: new(5.0), HeldAnnounces: new(1)},
+		{Name: "C", InAnnounceFreq: new(3.0), OutAnnounceFreq: new(1.0), HeldAnnounces: new(3)},
 	}
 
 	tests := []struct {

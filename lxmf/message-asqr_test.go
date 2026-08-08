@@ -122,8 +122,8 @@ func TestAsQRGolden(t *testing.T) {
 	}
 
 	// Quiet zone must be all white (border around the matrix).
-	for y := 0; y < wantPixSide; y++ {
-		for x := 0; x < wantPixSide; x++ {
+	for y := range wantPixSide {
+		for x := range wantPixSide {
 			inMatrixX := x >= qrBorder*qrBoxSize && x < (qrBorder+refCode.Size)*qrBoxSize
 			inMatrixY := y >= qrBorder*qrBoxSize && y < (qrBorder+refCode.Size)*qrBoxSize
 			if inMatrixX && inMatrixY {

@@ -583,10 +583,7 @@ func newResourceWithOptions(data []byte, link *Link, opts ResourceOptions, randR
 
 	for i := 0; i < r.totalParts; i++ {
 		start := i * sdu
-		end := (i + 1) * sdu
-		if end > int(r.size) {
-			end = int(r.size)
-		}
+		end := min((i+1)*sdu, int(r.size))
 
 		partData := r.data[start:end]
 		r.parts[i] = &ResourcePart{

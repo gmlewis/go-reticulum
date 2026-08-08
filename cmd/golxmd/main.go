@@ -96,10 +96,6 @@ func newRuntime(app *appT) *runtimeT {
 	}
 }
 
-func (a *appT) run() {
-	newRuntime(a).run()
-}
-
 func (r *runtimeT) run() {
 	if r == nil {
 		return

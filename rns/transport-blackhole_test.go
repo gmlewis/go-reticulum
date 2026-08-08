@@ -335,7 +335,7 @@ func TestBlackholeListHandler(t *testing.T) {
 	ts.identity = &Identity{Hash: own}
 	ts.blackholedIdentities = map[string]BlackholeIdentityEntry{
 		string(ih1): {IdentityHash: ih1, Source: own, Reason: "local-ih1", Until: nil},
-		string(ih2): {IdentityHash: ih2, Source: src, Reason: "remote-ih2", Until: ptrTime(time.Unix(9_900_000_000, 0))},
+		string(ih2): {IdentityHash: ih2, Source: src, Reason: "remote-ih2", Until: new(time.Unix(9_900_000_000, 0))},
 		string(ih3): {IdentityHash: ih3, Source: own, Reason: "local-ih3", Until: nil},
 	}
 
@@ -382,5 +382,3 @@ func TestBlackholeListHandler(t *testing.T) {
 		t.Fatalf("response has %d entries, want 3", len(gotMap))
 	}
 }
-
-func ptrTime(t time.Time) *time.Time { return &t }

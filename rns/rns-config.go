@@ -303,10 +303,7 @@ func parseDiscoveryConfig(sub *ConfigSection, ifaceType string, mode int) (inter
 
 	if v, ok := sub.GetProperty("announce_interval"); ok {
 		if minutes, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && minutes > 0 {
-			cfg.AnnounceInterval = time.Duration(minutes) * time.Minute
-			if cfg.AnnounceInterval < 5*time.Minute {
-				cfg.AnnounceInterval = 5 * time.Minute
-			}
+			cfg.AnnounceInterval = max(time.Duration(minutes)*time.Minute, 5*time.Minute)
 		}
 	}
 	if cfg.AnnounceInterval == 0 {

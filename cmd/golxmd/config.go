@@ -196,28 +196,18 @@ func (c *clientT) applyConfig(cfg map[string]map[string]string) (*activeConfig, 
 		}
 
 		if val, ok := section["propagation_stamp_cost_target"]; ok {
-			ac.PropagationStampCostTarget = c.parseInt(val)
-			if ac.PropagationStampCostTarget < 13 { // LXMF.LXMRouter.PROPAGATION_COST_MIN
-				ac.PropagationStampCostTarget = 13
-			}
+			ac.PropagationStampCostTarget = max(c.parseInt(val),
+				// LXMF.LXMRouter.PROPAGATION_COST_MIN
+				13)
 		}
 		if val, ok := section["propagation_stamp_cost_flexibility"]; ok {
-			ac.PropagationStampCostFlexibility = c.parseInt(val)
-			if ac.PropagationStampCostFlexibility < 0 {
-				ac.PropagationStampCostFlexibility = 0
-			}
+			ac.PropagationStampCostFlexibility = max(c.parseInt(val), 0)
 		}
 		if val, ok := section["peering_cost"]; ok {
-			ac.PeeringCost = c.parseInt(val)
-			if ac.PeeringCost < 0 {
-				ac.PeeringCost = 0
-			}
+			ac.PeeringCost = max(c.parseInt(val), 0)
 		}
 		if val, ok := section["remote_peering_cost_max"]; ok {
-			ac.RemotePeeringCostMax = c.parseInt(val)
-			if ac.RemotePeeringCostMax < 0 {
-				ac.RemotePeeringCostMax = 0
-			}
+			ac.RemotePeeringCostMax = max(c.parseInt(val), 0)
 		}
 		if val, ok := section["prioritise_destinations"]; ok {
 			ac.PrioritisedLXMFDestinations = parseList(val)
@@ -352,9 +342,9 @@ func parseINI(data string) map[string]map[string]string {
 		}
 
 		// Key-Value: key = value
-		if idx := strings.Index(line, "="); idx != -1 {
-			key := strings.TrimSpace(line[:idx])
-			value := strings.TrimSpace(line[idx+1:])
+		if before, after, ok := strings.Cut(line, "="); ok {
+			key := strings.TrimSpace(before)
+			value := strings.TrimSpace(after)
 			if currentSection != "" {
 				res[currentSection][key] = value
 			}

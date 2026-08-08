@@ -221,10 +221,6 @@ func (s *initiatorChannelSession) outputStreamEOFsCompleteLocked() bool {
 	return true
 }
 
-func runInitiatorChannelSession(link *rns.Link, opts options) (int, error) {
-	return runInitiatorChannelSessionWithLogger(nil, link, opts)
-}
-
 func runInitiatorChannelSessionWithLogger(logger *rns.Logger, link *rns.Link, opts options) (int, error) {
 	channel := link.GetChannel()
 	registerProtocolMessageTypes(channel)

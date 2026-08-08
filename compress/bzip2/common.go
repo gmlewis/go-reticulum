@@ -98,10 +98,7 @@ type crc struct {
 func (c *crc) update(buf []byte) {
 	cval := internal.ReverseUint32(c.val)
 	for len(buf) > 0 {
-		n := len(buf)
-		if n > len(c.buf) {
-			n = len(c.buf)
-		}
+		n := min(len(buf), len(c.buf))
 		for i, b := range buf[:n] {
 			c.buf[i] = internal.ReverseLUT[b]
 		}

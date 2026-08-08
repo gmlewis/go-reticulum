@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -36,13 +37,7 @@ func TestTransport(t *testing.T) {
 		"app")
 
 	ts.mu.Lock()
-	found := false
-	for _, d := range ts.destinations {
-		if d == dest {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(ts.destinations, dest)
 	ts.mu.Unlock()
 
 	if !found {
@@ -1284,7 +1279,7 @@ func mustTestAnnouncePacketWithEmission(t *testing.T, _ *TransportSystem, id *Id
 
 	nameHash := FullHash([]byte(dest.appName))[:NameHashLength/8]
 	randomBlob := make([]byte, 10)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		randomBlob[9-i] = byte(emission & 0xff)
 		emission >>= 8
 	}

@@ -484,14 +484,17 @@ func (d *Destination) GetTransport() Transport {
 
 // ExpandName builds the deterministic string representation of a destination by concatenating the app name, aspects, and identity hash.
 func ExpandName(identity *Identity, appName string, aspects ...string) string {
-	name := appName
+	var name strings.Builder
+	name.WriteString(appName)
 	for _, aspect := range aspects {
-		name += "." + aspect
+		name.WriteString(".")
+		name.WriteString(aspect)
 	}
 	if identity != nil {
-		name += "." + identity.HexHash
+		name.WriteString(".")
+		name.WriteString(identity.HexHash)
 	}
-	return name
+	return name.String()
 }
 
 // CalculateHash deterministically computes the truncated cryptographic hash identifying this unique destination address.
@@ -599,10 +602,11 @@ func (d *Destination) receive(packet *Packet) {
 		d.mu.Unlock()
 
 		d.logger.Debug("Destination %v: received DATA packet %x, strategy=%v", d.name, packet.PacketHash, strategy)
-		if strategy == ProveAll {
+		switch strategy {
+		case ProveAll:
 			d.logger.Debug("Destination %v: generating PROOF for packet %x (strategy ProveAll)", d.name, packet.PacketHash)
 			packet.Prove(nil)
-		} else if strategy == ProveApp {
+		case ProveApp:
 			if proofRequested != nil && proofRequested(packet) {
 				d.logger.Debug("Destination %v: generating PROOF for packet %x (strategy ProveApp)", d.name, packet.PacketHash)
 				packet.Prove(nil)

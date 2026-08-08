@@ -745,30 +745,27 @@ func TestWaitForPathReadinessTimesOutPromptly(t *testing.T) {
 
 func TestIntegrationAllowedIdentityEnforcement(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	configDir := testutils.TempDir(t, "gornsh-go-allowed-")
-
-	instanceName := "gornsh-go-allowed-" + filepath.Base(configDir)
-	prepareGornshConfigWithInstance(t, configDir, instanceName, 0, 0)
+	listenerConfigDir, initiatorConfigDir := prepareGornshDirectUDPConfigPair(t, "gornsh-go-allowed-")
 
 	// Create identities
-	initiatorID := mustCreateIdentity(t, configDir, "initiator.id")
-	allowedID := mustCreateIdentity(t, configDir, "allowed.id")
+	initiatorID := mustCreateIdentity(t, initiatorConfigDir, "initiator.id")
+	allowedID := mustCreateIdentity(t, initiatorConfigDir, "allowed.id")
 
 	t.Logf("Initiator ID: %v", initiatorID.HexHash)
 	t.Logf("Allowed ID:   %v", allowedID.HexHash)
 
 	// Start listener allowed ONLY allowedID
-	listener := startGornshListenerWithArgs(t, configDir, "-a", allowedID.HexHash)
+	listener := startGornshListenerWithArgs(t, listenerConfigDir, "-a", allowedID.HexHash, "--announce", "1")
 	readyHash := listener.hash()
 	if readyHash == "" {
 		t.Fatal("listener hash is empty")
 	}
 
-	// Wait for the shared instance transport to propagate.
-	waitForPathInSharedInstance(t, configDir, readyHash, sharedInstancePathTimeout)
+	// Wait for the direct UDP transport to propagate the listener's path.
+	waitForPathWithoutGornpath(t, initiatorConfigDir, readyHash, sharedInstancePathTimeout)
 
 	// Try to connect with initiatorID (which is NOT allowed)
-	output, exitCode := runGornshCommand(t, configDir, 30*time.Second, "-i", filepath.Join(configDir, "initiator.id"), "--timeout", "10", "-T", readyHash, "echo", "hello")
+	output, exitCode := runGornshCommand(t, initiatorConfigDir, 30*time.Second, "-i", filepath.Join(initiatorConfigDir, "initiator.id"), "--timeout", "10", "-T", readyHash, "echo", "hello")
 
 	if exitCode == 0 && strings.Contains(output, "hello") {
 		t.Fatalf("initiator (unauthorized) succeeded but should have been rejected\noutput:\n%v", output)
@@ -776,7 +773,7 @@ func TestIntegrationAllowedIdentityEnforcement(t *testing.T) {
 	t.Logf("Initiator correctly failed with code %v and output: %q", exitCode, output)
 
 	// PART 2: Success case
-	output, exitCode = runGornshCommand(t, configDir, 30*time.Second, "-i", filepath.Join(configDir, "allowed.id"), "--timeout", "10", "-T", readyHash, "echo", "hello")
+	output, exitCode = runGornshCommand(t, initiatorConfigDir, 30*time.Second, "-i", filepath.Join(initiatorConfigDir, "allowed.id"), "--timeout", "10", "-T", readyHash, "echo", "hello")
 	if exitCode != 0 {
 		t.Fatalf("initiator (authorized) failed with code %v\noutput:\n%v\nlistener output:\n%v", exitCode, output, listener.output())
 	}
@@ -788,19 +785,16 @@ func TestIntegrationAllowedIdentityEnforcement(t *testing.T) {
 
 func TestIntegrationMirrorFlag(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	configDir := testutils.TempDir(t, "gornsh-mirror-")
+	listenerConfigDir, initiatorConfigDir := prepareGornshDirectUDPConfigPair(t, "gornsh-mirror-")
 
-	instanceName := "gornsh-mirror-" + filepath.Base(configDir)
-	prepareGornshConfigWithInstance(t, configDir, instanceName, 0, 0)
-
-	listener := startGornshListener(t, configDir)
+	listener := startGornshListenerWithArgs(t, listenerConfigDir, "--no-auth", "--announce", "1")
 	readyHash := listener.hash()
 	if readyHash == "" {
 		t.Fatal("listener hash is empty")
 	}
 
-	// Wait for the shared instance transport to propagate.
-	waitForPathInSharedInstance(t, configDir, readyHash, sharedInstancePathTimeout)
+	// Wait for the direct UDP transport to propagate the listener's path.
+	waitForPathWithoutGornpath(t, initiatorConfigDir, readyHash, sharedInstancePathTimeout)
 
 	tests := []struct {
 		name       string
@@ -847,7 +841,7 @@ func TestIntegrationMirrorFlag(t *testing.T) {
 			args = append(args, readyHash)
 			args = append(args, strings.Fields(tc.command)...)
 
-			output, exitCode := runGornshCommand(t, configDir, 30*time.Second, args...)
+			output, exitCode := runGornshCommand(t, initiatorConfigDir, 30*time.Second, args...)
 			if exitCode != tc.wantExit {
 				t.Errorf("exitCode = %v, want %v", exitCode, tc.wantExit)
 			}
@@ -862,40 +856,34 @@ func TestIntegrationNoAuthOpenListener(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
 	t.Run("no-auth allows unknown identities", func(t *testing.T) {
-		configDir := testutils.TempDir(t, "gornsh-noauth-allow-")
-
-		instanceName := "gornsh-noauth-allow-" + filepath.Base(configDir)
-		prepareGornshConfigWithInstance(t, configDir, instanceName, 0, 0)
+		listenerConfigDir, initiatorConfigDir := prepareGornshDirectUDPConfigPair(t, "gornsh-noauth-allow-")
 
 		// Start listener with --no-auth (default in startGornshListener)
-		listener := startGornshListener(t, configDir)
+		listener := startGornshListenerWithArgs(t, listenerConfigDir, "--no-auth", "--announce", "1")
 		readyHash := listener.hash()
 
-		// Wait for the shared instance transport to propagate.
-		waitForPathInSharedInstance(t, configDir, readyHash, sharedInstancePathTimeout)
+		// Wait for the direct UDP transport to propagate the listener's path.
+		waitForPathWithoutGornpath(t, initiatorConfigDir, readyHash, sharedInstancePathTimeout)
 
 		// Initiator with a random identity should succeed
-		output, exitCode := runGornshCommand(t, configDir, 30*time.Second, "--timeout", "10", "-T", readyHash, "echo", "hello")
+		output, exitCode := runGornshCommand(t, initiatorConfigDir, 30*time.Second, "--timeout", "10", "-T", readyHash, "echo", "hello")
 		if exitCode != 0 || !strings.Contains(output, "hello") {
 			t.Errorf("expected success with --no-auth, got exit %v, output: %q", exitCode, output)
 		}
 	})
 
 	t.Run("default (auth enabled) denies unknown identities", func(t *testing.T) {
-		configDir := testutils.TempDir(t, "gornsh-noauth-deny-")
-
-		instanceName := "gornsh-noauth-deny-" + filepath.Base(configDir)
-		prepareGornshConfigWithInstance(t, configDir, instanceName, 0, 0)
+		listenerConfigDir, initiatorConfigDir := prepareGornshDirectUDPConfigPair(t, "gornsh-noauth-deny-")
 
 		// Start listener WITHOUT --no-auth
-		listener := startGornshListenerWithArgs(t, configDir) // empty args = default behavior (auth enabled)
+		listener := startGornshListenerWithArgs(t, listenerConfigDir, "--announce", "1") // no --no-auth = default behavior (auth enabled)
 		readyHash := listener.hash()
 
-		// Wait for the listener's path to propagate through the shared instance.
-		waitForPathInSharedInstance(t, configDir, readyHash, sharedInstancePathTimeout)
+		// Wait for the listener's path to propagate over the direct UDP link.
+		waitForPathWithoutGornpath(t, initiatorConfigDir, readyHash, sharedInstancePathTimeout)
 
 		// Initiator with any identity should fail
-		output, exitCode := runGornshCommand(t, configDir, 30*time.Second, "--timeout", "10", "-T", readyHash, "echo", "hello")
+		output, exitCode := runGornshCommand(t, initiatorConfigDir, 30*time.Second, "--timeout", "10", "-T", readyHash, "echo", "hello")
 		if exitCode == 0 && strings.Contains(output, "hello") {
 			t.Errorf("expected failure without --no-auth and no allowlist, but succeeded")
 		}
@@ -913,19 +901,16 @@ func TestIntegrationNoAuthOpenListener(t *testing.T) {
 
 func TestIntegrationNetworkPartitionRecovery(t *testing.T) {
 	testutils.SkipShortIntegration(t)
-	configDir := testutils.TempDir(t, "gornsh-recovery-")
+	listenerConfigDir, initiatorConfigDir := prepareGornshDirectUDPConfigPair(t, "gornsh-recovery-")
 
-	instanceName := "gornsh-recovery-" + filepath.Base(configDir)
-	prepareGornshConfigWithInstance(t, configDir, instanceName, 0, 0)
-
-	listener := startGornshListener(t, configDir)
+	listener := startGornshListenerWithArgs(t, listenerConfigDir, "--no-auth", "--announce", "1")
 	readyHash := listener.hash()
 
-	// Wait for the shared instance transport to propagate.
-	waitForPathInSharedInstance(t, configDir, readyHash, sharedInstancePathTimeout)
+	// Wait for the direct UDP transport to propagate the listener's path.
+	waitForPathWithoutGornpath(t, initiatorConfigDir, readyHash, sharedInstancePathTimeout)
 
 	// 1. Verify initial success
-	output, exitCode := runGornshCommand(t, configDir, 30*time.Second, "--timeout", "10", "-T", readyHash, "echo", "step1")
+	output, exitCode := runGornshCommand(t, initiatorConfigDir, 30*time.Second, "--timeout", "10", "-T", readyHash, "echo", "step1")
 	if exitCode != 0 || !strings.Contains(output, "step1") {
 		t.Fatalf("Step 1 failed: exit %v, output: %q", exitCode, output)
 	}
@@ -937,7 +922,7 @@ func TestIntegrationNetworkPartitionRecovery(t *testing.T) {
 	}
 
 	// Initiator should fail
-	output, exitCode = runGornshCommand(t, configDir, 15*time.Second, "--timeout", "5", "-T", readyHash, "echo", "step2")
+	output, exitCode = runGornshCommand(t, initiatorConfigDir, 15*time.Second, "--timeout", "5", "-T", readyHash, "echo", "step2")
 	if exitCode == 0 && strings.Contains(output, "step2") {
 		t.Errorf("Step 2 should have failed but succeeded")
 	}
@@ -950,10 +935,10 @@ func TestIntegrationNetworkPartitionRecovery(t *testing.T) {
 	}
 
 	// Wait for the listener to recover from SIGSTOP
-	waitForPathInSharedInstance(t, configDir, readyHash, sharedInstancePathTimeout)
+	waitForPathWithoutGornpath(t, initiatorConfigDir, readyHash, sharedInstancePathTimeout)
 
 	// Initiator should succeed again
-	output, exitCode = runGornshCommand(t, configDir, 30*time.Second, "--timeout", "10", "-T", readyHash, "echo", "step3")
+	output, exitCode = runGornshCommand(t, initiatorConfigDir, 30*time.Second, "--timeout", "10", "-T", readyHash, "echo", "step3")
 	if exitCode != 0 || !strings.Contains(output, "step3") {
 		t.Fatalf("Step 3 failed after recovery: exit %v, output: %q\nlistener output:\n%v", exitCode, output, listener.output())
 	}

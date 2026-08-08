@@ -7,8 +7,6 @@
 
 package main
 
-import "fmt"
-
 func bootstrapEEPROM(writer eepromDownloaderWriter, product, model byte, hwRev byte, serialno, timestamp uint32, signature []byte) error {
 	infoBytes := [][]byte{
 		{0x00, product},
@@ -61,11 +59,4 @@ func bootstrapEEPROM(writer eepromDownloaderWriter, product, model byte, hwRev b
 	}
 
 	return nil
-}
-
-func formatBootstrapEEPROMError(err error) error {
-	if err == nil {
-		return nil
-	}
-	return fmt.Errorf("%w", err)
 }

@@ -63,10 +63,7 @@ func renderBlackholedIdentities(rows []any, now time.Time, filter string, localI
 	for _, entry := range entries {
 		untilStr := "indefinitely"
 		if entry.Until > 0 {
-			remaining := time.Unix(entry.Until, 0).Sub(now)
-			if remaining < 0 {
-				remaining = 0
-			}
+			remaining := max(time.Unix(entry.Until, 0).Sub(now), 0)
 			untilStr = "for " + rns.PrettyTime(remaining.Seconds(), false, true)
 		}
 
@@ -85,7 +82,7 @@ func renderBlackholedIdentities(rows []any, now time.Time, filter string, localI
 			continue
 		}
 
-		builder.WriteString(fmt.Sprintf("%s blackholed %s%s%s\n", rns.PrettyHex(entry.IdentityHash), untilStr, reasonStr, byStr))
+		fmt.Fprintf(&builder, "%s blackholed %s%s%s\n", rns.PrettyHex(entry.IdentityHash), untilStr, reasonStr, byStr)
 		displayed++
 	}
 

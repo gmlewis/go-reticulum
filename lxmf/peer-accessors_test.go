@@ -232,9 +232,9 @@ func TestPeerSyncExported(t *testing.T) {
 	// unhandled message advertised.
 	peer.now = func() time.Time { return time.Unix(1000, 0) }
 	peer.nextSyncAttempt = 0
-	peer.propagationStampCost = intPtr(1)
-	peer.propagationStampCostFlexibility = intPtr(2)
-	peer.peeringCost = intPtr(3)
+	peer.propagationStampCost = new(1)
+	peer.propagationStampCostFlexibility = new(2)
+	peer.peeringCost = new(3)
 	peer.peeringKey = []any{[]byte("k"), 3} // value 3 >= cost 3
 	peer.hasPathFn = func([]byte) bool { return true }
 	peer.requestPathFn = func([]byte) error { return nil }

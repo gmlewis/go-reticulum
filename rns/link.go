@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sync"
 	"time"
 
@@ -263,21 +264,9 @@ func (l *Link) hadKeepaliveOutbound() {
 	l.mu.Unlock()
 }
 
-func (l *Link) updateKeepalive() {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.updateKeepaliveLocked()
-}
-
 func (l *Link) updateKeepaliveLocked() {
 	keepaliveSeconds := l.rtt * (float64(LinkKeepaliveMax) / float64(time.Second)) / LinkKeepaliveMaxRTT
-	keepalive := time.Duration(keepaliveSeconds * float64(time.Second))
-	if keepalive < LinkKeepaliveMin {
-		keepalive = LinkKeepaliveMin
-	}
-	if keepalive > LinkKeepaliveMax {
-		keepalive = LinkKeepaliveMax
-	}
+	keepalive := min(max(time.Duration(keepaliveSeconds*float64(time.Second)), LinkKeepaliveMin), LinkKeepaliveMax)
 	l.keepalive = keepalive
 	l.staleTime = time.Duration(LinkStaleFactor) * keepalive
 }
@@ -1819,12 +1808,7 @@ func (l *Link) HasIncomingResource(r *Resource) bool {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	for _, existing := range l.incomingResources {
-		if existing == r {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(l.incomingResources, r)
 }
 
 // CancelOutgoingResource removes the resource from the link's

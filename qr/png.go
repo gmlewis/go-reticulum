@@ -120,14 +120,14 @@ func (b *bitWriter) writeCode(c *Code) {
 	}
 
 	row := make([]byte, 1+n)
-	for y := 0; y < siz; y++ {
+	for y := range siz {
 		row[0] = ftNone
 		j := 1
 		var z uint8
 		nz := 0
 		for x := -4; x < siz+4; x++ {
 			// Raw data.
-			for i := 0; i < scale; i++ {
+			for range scale {
 				z <<= 1
 				if !c.Black(x, y) {
 					z |= 1
@@ -188,7 +188,7 @@ func (b *bitWriter) writeBits(bit uint32, nbit uint, rev bool) {
 	// reverse, for huffman codes
 	if rev {
 		br := uint32(0)
-		for i := uint(0); i < nbit; i++ {
+		for i := range nbit {
 			br |= ((bit >> i) & 1) << (nbit - 1 - i)
 		}
 		bit = br
@@ -332,20 +332,6 @@ func (b *bitWriter) repeat1(n, d int) {
 	}
 }
 
-func (b *bitWriter) run(v byte, n int) {
-	if n == 0 {
-		return
-	}
-	b.byte(v)
-	if n-1 < 3 {
-		for i := 0; i < n-1; i++ {
-			b.byte(v)
-		}
-	} else {
-		b.repeat(n-1, 1)
-	}
-}
-
 type adigest struct {
 	a, b uint32
 }
@@ -386,7 +372,7 @@ func afinish(a, b uint32) uint32 {
 }
 
 func (d *adigest) WriteN(p []byte, n int) {
-	for i := 0; i < n; i++ {
+	for range n {
 		for _, pi := range p {
 			d.a, d.b = aupdate(d.a, d.b, pi, 1)
 		}

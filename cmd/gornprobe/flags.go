@@ -49,8 +49,8 @@ func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
 			app.args = append(app.args, arg)
 			continue
 		}
-		if strings.HasPrefix(arg, "--") {
-			name := strings.TrimPrefix(arg, "--")
+		if after, ok := strings.CutPrefix(arg, "--"); ok {
+			name := after
 			switch name {
 			case "config":
 				value, next, err := consumeValue(args, i)

@@ -467,11 +467,7 @@ func (r *Reticulum) applyConfig() error {
 		}
 		if v, ok := reticulumSection.GetProperty("required_discovery_value"); ok {
 			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
-				if n > 0 {
-					r.requiredDiscoveryV = n
-				} else {
-					r.requiredDiscoveryV = 0
-				}
+				r.requiredDiscoveryV = max(n, 0)
 			}
 		}
 		if v, ok := reticulumSection.GetProperty("publish_blackhole"); ok {
@@ -1414,10 +1410,10 @@ func (r *Reticulum) initInterfaces() error {
 				continue
 			}
 
-			discoveryConfig.Frequency = intPtr(frequency)
-			discoveryConfig.Bandwidth = intPtr(bandwidth)
-			discoveryConfig.SpreadingFactor = intPtr(spreadingFactor)
-			discoveryConfig.CodingRate = intPtr(codingRate)
+			discoveryConfig.Frequency = new(frequency)
+			discoveryConfig.Bandwidth = new(bandwidth)
+			discoveryConfig.SpreadingFactor = new(spreadingFactor)
+			discoveryConfig.CodingRate = new(codingRate)
 			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			if bootstrapOnly {
@@ -1902,10 +1898,6 @@ func (r *Reticulum) initInterfaces() error {
 		}
 	}
 	return nil
-}
-
-func intPtr(v int) *int {
-	return &v
 }
 
 // HaltInterface detaches the given interface, stopping it from

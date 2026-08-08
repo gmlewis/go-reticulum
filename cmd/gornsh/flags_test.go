@@ -38,7 +38,6 @@ func TestParseFlagsAnnounceEvery(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			opts, err := parseFlags(tc.args, io.Discard)
@@ -73,7 +72,6 @@ func TestParseFlagsInvalidNumericValues(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			_, err := parseFlags(tc.args, io.Discard)
@@ -117,7 +115,6 @@ func TestParseFlagsCommandSeparator(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			opts, err := parseFlags(tc.args, io.Discard)

@@ -78,7 +78,7 @@ func (r *replT) cmdInterfaces() string {
 		if index > 0 {
 			builder.WriteByte('\n')
 		}
-		builder.WriteString(fmt.Sprintf("%v (%v) status=%v", iface.Name(), iface.Type(), iface.Status()))
+		fmt.Fprintf(&builder, "%v (%v) status=%v", iface.Name(), iface.Type(), iface.Status())
 	}
 	return builder.String()
 }

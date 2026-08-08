@@ -151,7 +151,7 @@ func TestPackUnpackExtended(t *testing.T) {
 		{"map16 16", makeMap(16)},
 
 		// Pointers
-		{"int pointer", pointerToInt(42)},
+		{"int pointer", new(42)},
 	}
 
 	for _, tt := range tests {
@@ -171,7 +171,7 @@ func TestPackUnpackExtended(t *testing.T) {
 			expected := tt.val
 			if expected != nil {
 				rv := reflect.ValueOf(expected)
-				if rv.Kind() == reflect.Ptr {
+				if rv.Kind() == reflect.Pointer {
 					expected = rv.Elem().Interface()
 				}
 				// Normalize integers for comparison
@@ -194,7 +194,7 @@ func TestPackUnpackExtended(t *testing.T) {
 					if rv.Type().Elem().Kind() == reflect.Interface {
 						l := rv.Len()
 						na := make([]any, l)
-						for i := 0; i < l; i++ {
+						for i := range l {
 							v := rv.Index(i).Interface()
 							if isSignedInt(v) {
 								na[i] = reflect.ValueOf(v).Int()
@@ -265,14 +265,10 @@ func makeArray(n int) []any {
 
 func makeMap(n int) map[any]any {
 	m := make(map[any]any, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		m[int64(i)] = int64(i * 2)
 	}
 	return m
-}
-
-func pointerToInt(i int) *int {
-	return &i
 }
 
 func isSignedInt(v any) bool {

@@ -217,9 +217,9 @@ func TestBlackholeUpdaterStartStop(t *testing.T) {
 	ts.identity = &Identity{Hash: own}
 	ts.blackholePath = t.TempDir()
 
-	var calls int32
+	var calls atomic.Int32
 	fetch := func(sourceIdentityHash []byte) ([]blackholeListEntry, error) {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		return []blackholeListEntry{{identityHash: ih2, source: srcA, until: nil, reason: "srcA-ih2"}}, nil
 	}
 
@@ -233,12 +233,12 @@ func TestBlackholeUpdaterStartStop(t *testing.T) {
 	// Wait for at least one fetch to occur.
 	deadline := time.After(2 * time.Second)
 	for {
-		if atomic.LoadInt32(&calls) > 0 {
+		if calls.Load() > 0 {
 			break
 		}
 		select {
 		case <-deadline:
-			t.Fatalf("updater loop never fetched; calls=%d", atomic.LoadInt32(&calls))
+			t.Fatalf("updater loop never fetched; calls=%d", calls.Load())
 		default:
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -247,9 +247,9 @@ func TestBlackholeUpdaterStartStop(t *testing.T) {
 
 	// After Stop, the loop must not fetch again. Give it a moment and
 	// confirm the count is stable.
-	callsAtStop := atomic.LoadInt32(&calls)
+	callsAtStop := calls.Load()
 	time.Sleep(80 * time.Millisecond)
-	if got := atomic.LoadInt32(&calls); got != callsAtStop {
+	if got := calls.Load(); got != callsAtStop {
 		t.Fatalf("updater fetched after Stop: calls went %d -> %d", callsAtStop, got)
 	}
 }

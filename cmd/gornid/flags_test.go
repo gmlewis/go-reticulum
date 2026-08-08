@@ -15,7 +15,7 @@ import (
 func TestCounter(t *testing.T) {
 	t.Parallel()
 	var c counter
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if err := c.Set("true"); err != nil {
 			t.Fatalf("Set failed: %v", err)
 		}

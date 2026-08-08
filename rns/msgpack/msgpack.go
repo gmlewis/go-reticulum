@@ -120,7 +120,7 @@ func pack(w io.Writer, v reflect.Value, sorted bool) error {
 	}
 
 	switch v.Kind() {
-	case reflect.Ptr, reflect.Interface:
+	case reflect.Pointer, reflect.Interface:
 		if v.IsNil() {
 			_, err := w.Write([]byte{nilVal})
 			return err
@@ -317,7 +317,7 @@ func packArray(w io.Writer, v reflect.Value, sorted bool) error {
 			return err
 		}
 	}
-	for i := 0; i < l; i++ {
+	for i := range l {
 		if err := pack(w, v.Index(i), sorted); err != nil {
 			return err
 		}
@@ -787,13 +787,9 @@ func unpackExt(r *bytes.Reader, l int) (Ext, error) {
 	return Ext{Type: int8(typeByte), Data: data}, nil
 }
 
-func unpackArray(r *bytes.Reader, l int) ([]any, error) {
-	return unpackArrayWithOptions(r, l, unpackOptions{})
-}
-
 func unpackArrayWithOptions(r *bytes.Reader, l int, opts unpackOptions) ([]any, error) {
 	a := make([]any, l)
-	for i := 0; i < l; i++ {
+	for i := range l {
 		v, err := unpackWithOptions(r, opts)
 		if err != nil {
 			return nil, err
@@ -803,13 +799,9 @@ func unpackArrayWithOptions(r *bytes.Reader, l int, opts unpackOptions) ([]any, 
 	return a, nil
 }
 
-func unpackMap(r *bytes.Reader, l int) (map[any]any, error) {
-	return unpackMapWithOptions(r, l, unpackOptions{})
-}
-
 func unpackMapWithOptions(r *bytes.Reader, l int, opts unpackOptions) (map[any]any, error) {
 	m := make(map[any]any, l)
-	for i := 0; i < l; i++ {
+	for range l {
 		k, err := unpackWithOptions(r, opts)
 		if err != nil {
 			return nil, err
@@ -839,7 +831,7 @@ func unpackMapWithOptions(r *bytes.Reader, l int, opts unpackOptions) (map[any]a
 
 func unpackOrderedMapWithOptions(r *bytes.Reader, l int, opts unpackOptions) (OrderedMap, error) {
 	m := make(OrderedMap, 0, l)
-	for i := 0; i < l; i++ {
+	for range l {
 		k, err := unpackWithOptions(r, opts)
 		if err != nil {
 			return nil, err

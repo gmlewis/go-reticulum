@@ -42,7 +42,7 @@ func TestChannelMediumRTTAdaptiveWindowGrowth(t *testing.T) {
 	outlet := &maintenanceMockOutlet{mdu: 512, rtt: 0.5}
 	channel := NewChannel(outlet)
 
-	for i := 0; i < ChannelFastRateRounds; i++ {
+	for range ChannelFastRateRounds {
 		env, err := channel.Send(&StreamDataMessage{StreamID: 1, Data: []byte("x")})
 		if err != nil {
 			t.Fatalf("send failed: %v", err)
@@ -63,7 +63,7 @@ func TestChannelFastRTTAdaptiveWindowGrowth(t *testing.T) {
 	outlet := &maintenanceMockOutlet{mdu: 512, rtt: 0.1}
 	channel := NewChannel(outlet)
 
-	for i := 0; i < ChannelFastRateRounds; i++ {
+	for range ChannelFastRateRounds {
 		env, err := channel.Send(&StreamDataMessage{StreamID: 1, Data: []byte("x")})
 		if err != nil {
 			t.Fatalf("send failed: %v", err)

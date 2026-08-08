@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"os"
 	"os/exec"
@@ -1649,7 +1650,6 @@ func TestListDiscoveredInterfaces_MoreInvalidReachableOnLogsPythonErrorsAndRemai
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			tmpDir := testutils.TempDir(t, "rns-discovery-invalid-reachable-")
 			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
@@ -1946,7 +1946,6 @@ func TestListDiscoveredInterfaces_InvalidNetworkIDHexLogsPythonValueErrorsAndRem
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			tmpDir := testutils.TempDir(t, "rns-discovery-network-id-hex-")
 			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
@@ -2145,7 +2144,6 @@ func TestListDiscoveredInterfaces_OnlyAvailableIgnoresFalseyTransportValues(t *t
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			tmpDir := testutils.TempDir(t, "rns-discovery-only-available-falsey-")
 			storagePath := filepath.Join(tmpDir, "discovery", "interfaces")
@@ -2830,7 +2828,6 @@ func TestIsHostnameMatchesPython(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -4452,7 +4449,6 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsMissingRequiredFields(t *test
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -4542,7 +4538,6 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsMissingGeolocationFields(t *t
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -4671,7 +4666,6 @@ func TestInterfaceDiscoveryReceiveAndPersistAdditionalTypes(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -5530,9 +5524,7 @@ func mustDiscoveryAnnounceAppData(t *testing.T, payload map[any]any, targetCost 
 	t.Helper()
 
 	payloadWithDefaults := make(map[any]any, len(payload)+3)
-	for k, v := range payload {
-		payloadWithDefaults[k] = v
-	}
+	maps.Copy(payloadWithDefaults, payload)
 	for _, field := range []int{discoveryFieldLatitude, discoveryFieldLongitude, discoveryFieldHeight} {
 		if _, ok := payloadWithDefaults[field]; !ok {
 			payloadWithDefaults[field] = nil
@@ -6102,7 +6094,7 @@ func TestInterfaceDiscoveryAutoconnectRecoversInterfaceExistsPanic(t *testing.T)
 		Name:        "Candidate",
 		Type:        "BackboneInterface",
 		ReachableOn: "127.0.0.1",
-		Port:        intPtr(4242),
+		Port:        new(4242),
 	}); err != nil {
 		t.Fatalf("autoconnect() error = %v, want nil after panic recovery", err)
 	}
@@ -13432,22 +13424,6 @@ func (ts *announceCaptureTransport) Outbound(packet *Packet) error {
 	return nil
 }
 
-func mustAnnouncePacketInfo(t *testing.T, packet *Packet) map[any]any {
-	t.Helper()
-	if packet == nil {
-		t.Fatal("packet = nil")
-	}
-	unpacked, err := msgpack.Unpack(packet.Data[1 : len(packet.Data)-discoveryStampSize])
-	if err != nil {
-		t.Fatalf("msgpack.Unpack() error = %v", err)
-	}
-	info := asAnyMap(unpacked)
-	if info == nil {
-		t.Fatalf("unexpected announce payload type %T", unpacked)
-	}
-	return info
-}
-
 func TestInterfaceAnnouncerPayload(t *testing.T) {
 	t.Parallel()
 
@@ -13811,9 +13787,9 @@ func TestInterfaceAnnouncerPayloadKeepsEmptyModulationField(t *testing.T) {
 				AnnounceInterval:  time.Hour,
 				Name:              "Weave Empty Mod",
 				ReachableOn:       "weave.example.net",
-				Frequency:         intPtr(2450000000),
-				Bandwidth:         intPtr(2000000),
-				Channel:           intPtr(11),
+				Frequency:         new(2450000000),
+				Bandwidth:         new(2000000),
+				Channel:           new(11),
 				Modulation:        "",
 			},
 		},
@@ -13826,15 +13802,14 @@ func TestInterfaceAnnouncerPayloadKeepsEmptyModulationField(t *testing.T) {
 				AnnounceInterval:  time.Hour,
 				Name:              "KISS Empty Mod",
 				ReachableOn:       "kiss.example.net",
-				Frequency:         intPtr(145500000),
-				Bandwidth:         intPtr(25000),
+				Frequency:         new(145500000),
+				Bandwidth:         new(25000),
 				Modulation:        "",
 			},
 		},
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -13894,9 +13869,9 @@ func TestInterfaceAnnouncerPayloadWeaveKeepsUnsanitizedModulation(t *testing.T) 
 		AnnounceInterval:  time.Hour,
 		Name:              "Weave Raw Mod",
 		ReachableOn:       "weave.example.net",
-		Frequency:         intPtr(2450000000),
-		Bandwidth:         intPtr(2000000),
-		Channel:           intPtr(11),
+		Frequency:         new(2450000000),
+		Bandwidth:         new(2000000),
+		Channel:           new(11),
 		Modulation:        " gmsk \n",
 	})
 
@@ -14940,10 +14915,10 @@ func TestInterfaceAnnouncerPayloadRadioInterfaces(t *testing.T) {
 				AnnounceInterval:  time.Hour,
 				Name:              "RNode",
 				ReachableOn:       "radio.example.net",
-				Frequency:         intPtr(868100000),
-				Bandwidth:         intPtr(125000),
-				SpreadingFactor:   intPtr(7),
-				CodingRate:        intPtr(5),
+				Frequency:         new(868100000),
+				Bandwidth:         new(125000),
+				SpreadingFactor:   new(7),
+				CodingRate:        new(5),
 			},
 			wantInterfaceType:   "RNodeInterface",
 			wantReachableOn:     false,
@@ -14961,9 +14936,9 @@ func TestInterfaceAnnouncerPayloadRadioInterfaces(t *testing.T) {
 				AnnounceInterval:  time.Hour,
 				Name:              "Weave",
 				ReachableOn:       "weave.example.net",
-				Frequency:         intPtr(2450000000),
-				Bandwidth:         intPtr(2000000),
-				Channel:           intPtr(11),
+				Frequency:         new(2450000000),
+				Bandwidth:         new(2000000),
+				Channel:           new(11),
 				Modulation:        "gmsk",
 			},
 			wantInterfaceType: "WeaveInterface",
@@ -14982,8 +14957,8 @@ func TestInterfaceAnnouncerPayloadRadioInterfaces(t *testing.T) {
 				AnnounceInterval:  time.Hour,
 				Name:              "KISS",
 				ReachableOn:       "kiss.example.net",
-				Frequency:         intPtr(145500000),
-				Bandwidth:         intPtr(25000),
+				Frequency:         new(145500000),
+				Bandwidth:         new(25000),
 				Modulation:        " afsk \n",
 			},
 			wantInterfaceType: "KISSInterface",
@@ -15002,8 +14977,8 @@ func TestInterfaceAnnouncerPayloadRadioInterfaces(t *testing.T) {
 				AnnounceInterval:  time.Hour,
 				Name:              "TCP KISS",
 				ReachableOn:       "tcp-kiss.example.net",
-				Frequency:         intPtr(433920000),
-				Bandwidth:         intPtr(12500),
+				Frequency:         new(433920000),
+				Bandwidth:         new(12500),
 				Modulation:        "LoRa",
 			},
 			wantInterfaceType: "KISSInterface",
@@ -15015,7 +14990,6 @@ func TestInterfaceAnnouncerPayloadRadioInterfaces(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 

@@ -89,10 +89,7 @@ func TestMainExampleConfigEndsWithDoubleNewline(t *testing.T) {
 		t.Fatalf("stderr = %q, want empty", stderr)
 	}
 	if !strings.HasSuffix(stdout, "\n\n") {
-		start := len(stdout) - 8
-		if start < 0 {
-			start = 0
-		}
+		start := max(len(stdout)-8, 0)
 		t.Fatalf("stdout does not end with double newline: %q", stdout[start:])
 	}
 }

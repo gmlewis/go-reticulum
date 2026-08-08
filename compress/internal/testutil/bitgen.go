@@ -366,7 +366,7 @@ func (b *bitBuffer) Write(buf []byte) (int, error) {
 }
 
 func (b *bitBuffer) WriteBits64(v uint64, n uint) {
-	for i := uint(0); i < n; i++ {
+	for i := range n {
 		if b.m == 0x00 {
 			b.m = 0x01
 			b.b = append(b.b, 0x00)

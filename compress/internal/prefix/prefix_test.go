@@ -57,13 +57,13 @@ var (
 	)
 
 	testCodes = func() (codes PrefixCodes) {
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			codes = append(codes, PrefixCode{Sym: uint32(len(codes)), Cnt: 0})
 		}
-		for i := 0; i < 25; i++ {
+		for range 25 {
 			codes = append(codes, PrefixCode{Sym: uint32(len(codes)), Cnt: 10})
 		}
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			codes = append(codes, PrefixCode{Sym: uint32(len(codes)), Cnt: 1000})
 		}
 		codes.SortByCount()
@@ -649,7 +649,7 @@ func TestPrefix(t *testing.T) {
 		// Max RLE codes from Brotli.
 		codes: func() (codes PrefixCodes) {
 			codes = PrefixCodes{{Sym: 0, Val: 0, Len: 1}}
-			for i := uint32(0); i < 16; i++ {
+			for i := range uint32(16) {
 				code := PrefixCode{Sym: i + 1, Val: i<<1 | 1, Len: 5}
 				codes = append(codes, code)
 			}
@@ -680,7 +680,7 @@ func TestPrefix(t *testing.T) {
 		codes: func() (codes PrefixCodes) {
 			codes = PrefixCodes{{Sym: 1, Val: 0, Len: 1}}
 			c := codes[len(codes)-1]
-			for i := uint32(0); i < 8; i++ {
+			for i := range uint32(8) {
 				for j := uint32(0); j < 1<<i; j++ {
 					c.Sym = c.Sym + 1
 					c.Val = j<<4 | i<<1 | 1
@@ -693,7 +693,7 @@ func TestPrefix(t *testing.T) {
 	}, {
 		// Fixed literal codes from DEFLATE.
 		codes: func() (codes PrefixCodes) {
-			for i := 0; i < 144; i++ {
+			for i := range 144 {
 				codes = append(codes, PrefixCode{Sym: uint32(i), Len: 8})
 			}
 			for i := 144; i < 256; i++ {
@@ -713,7 +713,7 @@ func TestPrefix(t *testing.T) {
 	}, {
 		// Fixed distance codes from DEFLATE.
 		codes: func() (codes PrefixCodes) {
-			for i := 0; i < 32; i++ {
+			for i := range 32 {
 				codes = append(codes, PrefixCode{Sym: uint32(i), Len: 5})
 			}
 			if err := GeneratePrefixes(codes); err != nil {

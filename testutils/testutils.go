@@ -29,11 +29,6 @@ func (t testMainTB) Fatalf(format string, args ...any) {
 	log.Fatalf(format, args...)
 }
 
-type tempDirTB interface {
-	Helper()
-	Fatalf(format string, args ...any)
-}
-
 func tempBaseDir() string {
 	if runtime.GOOS == "darwin" {
 		return "/tmp"
@@ -102,7 +97,7 @@ func removeAllWithRetry(path string) error {
 	const maxAttempts = 10
 	const retryDelay = 10 * time.Millisecond
 
-	for attempt := 0; attempt < maxAttempts; attempt++ {
+	for range maxAttempts {
 		err := os.RemoveAll(path)
 		if err == nil || os.IsNotExist(err) {
 			return nil

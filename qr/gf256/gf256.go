@@ -25,7 +25,7 @@ func NewField(poly, α int) *Field {
 
 	var f Field
 	x := 1
-	for i := 0; i < 255; i++ {
+	for i := range 255 {
 		if x == 1 && i != 0 {
 			panic("gf256: invalid generator " + strconv.Itoa(α) +
 				" for polynomial " + strconv.Itoa(poly))
@@ -36,7 +36,7 @@ func NewField(poly, α int) *Field {
 		x = mul(x, α, poly)
 	}
 	f.log[0] = 255
-	for i := 0; i < 255; i++ {
+	for i := range 255 {
 		if f.log[f.exp[i]] != byte(i) {
 			panic("bad log")
 		}
@@ -159,11 +159,11 @@ func (f *Field) gen(e int) (gen, lgen []byte) {
 	p := make([]byte, e+1)
 	p[e] = 1
 
-	for i := 0; i < e; i++ {
+	for i := range e {
 		// p *= (x + Exp(i))
 		// p[j] = p[j]*Exp(i) + p[j+1].
 		c := f.Exp(i)
-		for j := 0; j < e; j++ {
+		for j := range e {
 			p[j] = f.Mul(p[j], c) ^ p[j+1]
 		}
 		p[e] = f.Mul(p[e], c)
@@ -223,7 +223,7 @@ func (rs *RSEncoder) ECC(data []byte, check []byte) {
 	// lv, not v, where lv = log[v].
 	f := rs.f
 	lgen := rs.lgen[1:]
-	for i := 0; i < len(data); i++ {
+	for i := range data {
 		c := p[i]
 		if c == 0 {
 			continue

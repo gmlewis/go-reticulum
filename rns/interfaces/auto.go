@@ -149,7 +149,7 @@ type AutoInterface struct {
 	writeMu sync.Mutex
 	mu      sync.Mutex
 
-	running int32
+	running atomic.Int32
 	online  int32
 	final   int32
 }
@@ -294,7 +294,7 @@ func (ai *AutoInterface) start() error {
 		started++
 	}
 
-	atomic.StoreInt32(&ai.running, 1)
+	ai.running.Store(1)
 	if started > 0 {
 		atomic.StoreInt32(&ai.online, 1)
 	}
@@ -306,7 +306,7 @@ func (ai *AutoInterface) start() error {
 
 func (ai *AutoInterface) finalInitBarrier() {
 	time.Sleep(time.Duration(float64(ai.announceInterval) * 1.2))
-	if atomic.LoadInt32(&ai.running) == 1 {
+	if ai.running.Load() == 1 {
 		atomic.StoreInt32(&ai.final, 1)
 	}
 }
@@ -407,10 +407,10 @@ func (ai *AutoInterface) startInterfaceSockets(iface net.Interface, linkLocal ne
 
 func (ai *AutoInterface) discoveryLoop(ifname string, conn *net.UDPConn) {
 	buf := make([]byte, 2048)
-	for atomic.LoadInt32(&ai.running) == 1 {
+	for ai.running.Load() == 1 {
 		n, src, err := conn.ReadFromUDP(buf)
 		if err != nil {
-			if atomic.LoadInt32(&ai.running) == 1 {
+			if ai.running.Load() == 1 {
 				ai.panicOnInterfaceErrorf("auto interface %v discovery read failed: %v", ifname, err)
 				continue
 			}
@@ -438,7 +438,7 @@ func (ai *AutoInterface) announceLoop(ifname string) {
 	ticker := time.NewTicker(ai.announceInterval)
 	defer ticker.Stop()
 	ai.peerAnnounce(ifname)
-	for atomic.LoadInt32(&ai.running) == 1 {
+	for ai.running.Load() == 1 {
 		<-ticker.C
 		ai.peerAnnounce(ifname)
 	}
@@ -499,10 +499,10 @@ func (ai *AutoInterface) reverseAnnounce(ifname, peerAddr string) {
 
 func (ai *AutoInterface) dataLoop(conn *net.UDPConn) {
 	buf := make([]byte, 65535)
-	for atomic.LoadInt32(&ai.running) == 1 {
+	for ai.running.Load() == 1 {
 		n, src, err := conn.ReadFromUDP(buf)
 		if err != nil {
-			if atomic.LoadInt32(&ai.running) == 1 {
+			if ai.running.Load() == 1 {
 				ai.panicOnInterfaceErrorf("auto interface data read failed: %v", err)
 				continue
 			}
@@ -569,7 +569,7 @@ func (ai *AutoInterface) refreshPeer(addr string) {
 }
 
 func (ai *AutoInterface) processIncoming(data []byte, addr string) {
-	if atomic.LoadInt32(&ai.running) != 1 || atomic.LoadInt32(&ai.online) != 1 {
+	if ai.running.Load() != 1 || atomic.LoadInt32(&ai.online) != 1 {
 		return
 	}
 
@@ -607,7 +607,7 @@ func (ai *AutoInterface) peerJobs() {
 	ticker := time.NewTicker(ai.peerJobInterval)
 	defer ticker.Stop()
 
-	for atomic.LoadInt32(&ai.running) == 1 {
+	for ai.running.Load() == 1 {
 		<-ticker.C
 		now := time.Now()
 
@@ -692,7 +692,7 @@ func (ai *AutoInterface) removePeer(addr string) {
 }
 
 func (ai *AutoInterface) sendToPeer(peer *AutoInterfacePeer, data []byte) error {
-	if atomic.LoadInt32(&ai.running) != 1 {
+	if ai.running.Load() != 1 {
 		return fmt.Errorf("interface %v is not running", ai.name)
 	}
 
@@ -730,7 +730,7 @@ func (ai *AutoInterface) Type() string { return "AutoInterface" }
 // Status reports whether discovery is running and at least one viable adopted
 // interface is currently considered online.
 func (ai *AutoInterface) Status() bool {
-	return atomic.LoadInt32(&ai.running) == 1 && atomic.LoadInt32(&ai.online) == 1
+	return ai.running.Load() == 1 && atomic.LoadInt32(&ai.online) == 1
 }
 
 // IsOut reports whether the parent AutoInterface sends frames directly.
@@ -745,7 +745,7 @@ func (ai *AutoInterface) Send(_ []byte) error { return nil }
 func (ai *AutoInterface) Detach() error {
 	var detachErr error
 
-	atomic.StoreInt32(&ai.running, 0)
+	ai.running.Store(0)
 	atomic.StoreInt32(&ai.online, 0)
 	atomic.StoreInt32(&ai.final, 0)
 	ai.SetDetached(true)
@@ -821,7 +821,7 @@ func (p *AutoInterfacePeer) Type() string { return "AutoInterfacePeer" }
 // Status reports whether the peer is still online and its parent
 // AutoInterface is still running.
 func (p *AutoInterfacePeer) Status() bool {
-	return p.online.Load() && atomic.LoadInt32(&p.owner.running) == 1 && atomic.LoadInt32(&p.owner.online) == 1
+	return p.online.Load() && p.owner.running.Load() == 1 && atomic.LoadInt32(&p.owner.online) == 1
 }
 
 // IsOut reports whether the peer is directly marked as outbound-capable.

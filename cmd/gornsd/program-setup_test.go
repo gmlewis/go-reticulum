@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -61,7 +62,7 @@ func waitForMessageContains(t *testing.T, messages *[]string, want string) {
 	t.Helper()
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(deadline) {
-		for i := len(*messages) - 1; i >= 0; i-- {
+		for i := range slices.Backward(*messages) {
 			if strings.Contains((*messages)[i], want) {
 				return
 			}

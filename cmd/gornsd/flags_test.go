@@ -100,7 +100,6 @@ func TestUsageTextNormalizedParity(t *testing.T) {
 	}
 	got := normalizeHelpText(usageText)
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			if test.name == "full help text" {

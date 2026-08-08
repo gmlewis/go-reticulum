@@ -42,8 +42,7 @@ func TestKISSFrameUint32(t *testing.T) {
 	if len(parsed) != 4 {
 		t.Fatalf("expected 4 data bytes, got %d", len(parsed))
 	}
-	var got uint32
-	got = uint32(parsed[0])<<24 | uint32(parsed[1])<<16 | uint32(parsed[2])<<8 | uint32(parsed[3])
+	got := uint32(parsed[0])<<24 | uint32(parsed[1])<<16 | uint32(parsed[2])<<8 | uint32(parsed[3])
 	if got != 433050000 {
 		t.Fatalf("expected frequency 433050000, got %d", got)
 	}
@@ -131,8 +130,7 @@ func TestKISSFrameEscapesUint32(t *testing.T) {
 		}
 	}
 	unescaped := KISSUnescape(frame[2 : len(frame)-1])
-	var got uint32
-	got = uint32(unescaped[0])<<24 | uint32(unescaped[1])<<16 | uint32(unescaped[2])<<8 | uint32(unescaped[3])
+	got := uint32(unescaped[0])<<24 | uint32(unescaped[1])<<16 | uint32(unescaped[2])<<8 | uint32(unescaped[3])
 	if got != value {
 		t.Fatalf("roundtrip expected 0x%08X, got 0x%08X", value, got)
 	}

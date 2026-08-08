@@ -386,8 +386,7 @@ func (m *Message) Pack() error {
 	if !m.DeferStamp {
 		stamp, err := m.GetStamp()
 		if err != nil {
-			var pyErr pythonStampCostTypeError
-			if errors.As(err, &pyErr) {
+			if _, ok := errors.AsType[pythonStampCostTypeError](err); ok {
 				return err
 			}
 			return fmt.Errorf("generate lxmf stamp: %w", err)
@@ -941,19 +940,17 @@ func (m *Message) ValidateStamp(targetCost int, tickets [][]byte) bool {
 	if m == nil {
 		return false
 	}
-	if tickets != nil {
-		for _, ticket := range tickets {
-			if len(ticket) == 0 || len(m.MessageID) == 0 {
-				continue
-			}
-			material := make([]byte, 0, len(ticket)+len(m.MessageID))
-			material = append(material, ticket...)
-			material = append(material, m.MessageID...)
-			if bytes.Equal(m.Stamp, rns.TruncatedHash(material)) {
-				value := TicketCostValue
-				m.StampValue = cloneOptionalInt(&value)
-				return true
-			}
+	for _, ticket := range tickets {
+		if len(ticket) == 0 || len(m.MessageID) == 0 {
+			continue
+		}
+		material := make([]byte, 0, len(ticket)+len(m.MessageID))
+		material = append(material, ticket...)
+		material = append(material, m.MessageID...)
+		if bytes.Equal(m.Stamp, rns.TruncatedHash(material)) {
+			value := TicketCostValue
+			m.StampValue = cloneOptionalInt(&value)
+			return true
 		}
 	}
 	if len(m.Stamp) == 0 {
@@ -1073,7 +1070,7 @@ func (m *Message) AsQR() (image.Image, error) {
 			}
 			x0 := (qrBorder + x) * qrBoxSize
 			y0 := (qrBorder + y) * qrBoxSize
-			for dy := 0; dy < qrBoxSize; dy++ {
+			for dy := range qrBoxSize {
 				rowStart := (y0 + dy) * img.Stride
 				row := img.Pix[rowStart+x0 : rowStart+x0+qrBoxSize]
 				for dx := range row {

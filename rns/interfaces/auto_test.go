@@ -79,7 +79,7 @@ func TestAutoProcessIncomingSuppressesDuplicateAcrossPeersWithinTTL(t *testing.T
 		recentFrames:      map[[32]byte]time.Time{},
 		multiIfDequeTTL:   30 * time.Millisecond,
 	}
-	atomic.StoreInt32(&ai.running, 1)
+	ai.running.Store(1)
 	atomic.StoreInt32(&ai.online, 1)
 
 	ai.spawnedInterfaces["fe80::1"] = &AutoInterfacePeer{BaseInterface: NewBaseInterface("p1", ModeFull, AutoBitrateGuess), owner: ai, addr: "fe80::1", interfaceName: "if0"}
@@ -121,7 +121,7 @@ func TestAutoUpdateInterfaceHealthTracksCarrierLossAndRecovery(t *testing.T) {
 		initialEchoes:        map[string]time.Time{"en0": now.Add(-3 * time.Second)},
 		timedOutIfaces:       map[string]bool{},
 	}
-	atomic.StoreInt32(&ai.running, 1)
+	ai.running.Store(1)
 
 	ai.mu.Lock()
 	ai.updateInterfaceHealthLocked(now)
@@ -157,7 +157,7 @@ func TestAutoUpdateInterfaceHealthDoesNotTimeoutBeforeInitialEcho(t *testing.T) 
 		initialEchoes:        map[string]time.Time{},
 		timedOutIfaces:       map[string]bool{},
 	}
-	atomic.StoreInt32(&ai.running, 1)
+	ai.running.Store(1)
 
 	ai.mu.Lock()
 	ai.updateInterfaceHealthLocked(now)
@@ -339,7 +339,7 @@ func TestAutoInterfaceDeduplication(t *testing.T) {
 			got <- string(data)
 		},
 	}
-	atomic.StoreInt32(&ai.running, 1)
+	ai.running.Store(1)
 	atomic.StoreInt32(&ai.online, 1)
 
 	peerIP := "fe80::1"
@@ -418,7 +418,7 @@ func TestAutoInterfaceTiming(t *testing.T) {
 		initialEchoes:          map[string]time.Time{"eth0": time.Now()},
 		timedOutIfaces:         map[string]bool{},
 	}
-	atomic.StoreInt32(&ai.running, 1)
+	ai.running.Store(1)
 	atomic.StoreInt32(&ai.online, 1)
 
 	peerIP := "fe80::dead:beef"

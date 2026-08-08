@@ -139,7 +139,7 @@ func GenerateStampWithContext(ctx context.Context, material []byte, targetCost i
 				copy(stampCopy, candidate)
 				return stampCopy, val, rounds, nil
 			}
-			for j := 0; j < len(candidate); j++ {
+			for j := range candidate {
 				candidate[j]++
 				if candidate[j] != 0 {
 					break
@@ -165,7 +165,7 @@ func GenerateStampWithContext(ctx context.Context, material []byte, targetCost i
 			copy(stampCopy, candidate)
 			return stampCopy, val, rounds, nil
 		}
-		for j := 0; j < len(candidate); j++ {
+		for j := range candidate {
 			candidate[j]++
 			if candidate[j] != 0 {
 				break
@@ -236,7 +236,7 @@ func GenerateStampParallel(material []byte, targetCost int, expandRounds int, wo
 						results <- result{stampCopy, localRounds}
 						return
 					}
-					for j := 0; j < len(candidate); j++ {
+					for j := range candidate {
 						candidate[j]++
 						if candidate[j] != 0 {
 							break
@@ -267,7 +267,7 @@ func GenerateStampParallel(material []byte, targetCost int, expandRounds int, wo
 					results <- result{stampCopy, localRounds}
 					return
 				}
-				for j := 0; j < len(candidate); j++ {
+				for j := range candidate {
 					candidate[j]++
 					if candidate[j] != 0 {
 						break

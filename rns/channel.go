@@ -129,7 +129,7 @@ type Channel struct {
 	txRing           []*Envelope
 	rxRing           []*Envelope
 	messageHandlers  []messageHandlerEntry
-	nextHandlerID    uint64
+	nextHandlerID    atomic.Uint64
 	nextSequence     uint16
 	nextRXSequence   uint16
 	messageFactories map[uint16]func() Message
@@ -286,7 +286,7 @@ func (c *Channel) AddMessageHandler(handler func(Message) bool) {
 }
 
 func (c *Channel) addMessageHandler(handler func(Message) bool) uint64 {
-	handlerID := atomic.AddUint64(&c.nextHandlerID, 1)
+	handlerID := c.nextHandlerID.Add(1)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.messageHandlers = append(c.messageHandlers, messageHandlerEntry{

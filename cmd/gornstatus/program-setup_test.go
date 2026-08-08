@@ -151,8 +151,6 @@ func TestProgramSetupNoSharedInstanceNoExit(t *testing.T) {
 	}
 }
 
-func boolPtr(b bool) *bool { return &b }
-
 func TestShouldDisplayInterface(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -211,18 +209,18 @@ func TestShouldDisplayInterface(t *testing.T) {
 		},
 		{
 			name:   "I2PInterface non-connectable hidden",
-			ifstat: rns.InterfaceStat{Name: "I2PInterface[test]", I2PConnectable: boolPtr(false)},
+			ifstat: rns.InterfaceStat{Name: "I2PInterface[test]", I2PConnectable: new(false)},
 			want:   false,
 		},
 		{
 			name:    "I2PInterface non-connectable hidden even with dispAll",
-			ifstat:  rns.InterfaceStat{Name: "I2PInterface[test]", I2PConnectable: boolPtr(false)},
+			ifstat:  rns.InterfaceStat{Name: "I2PInterface[test]", I2PConnectable: new(false)},
 			dispAll: true,
 			want:    false,
 		},
 		{
 			name:   "I2PInterface connectable shown",
-			ifstat: rns.InterfaceStat{Name: "I2PInterface[test]", I2PConnectable: boolPtr(true)},
+			ifstat: rns.InterfaceStat{Name: "I2PInterface[test]", I2PConnectable: new(true)},
 			want:   true,
 		},
 		{

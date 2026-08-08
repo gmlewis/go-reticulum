@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"math/big"
 	"math/bits"
@@ -20,6 +21,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,7 +39,6 @@ const (
 	discoveryDefaultStampValue    = 14
 	discoveryWorkblockRounds      = 20
 	discoveryStampSize            = 32
-	discoveryFlagSigned           = 0b00000001
 	discoveryFlagEncrypted        = 0b00000010
 	discoveryFieldName            = 0xFF
 	discoveryFieldTransportID     = 0xFE
@@ -277,8 +278,7 @@ func (ia *InterfaceAnnouncer) resolveReachableOn(raw string) (string, error) {
 				fromExecutable = true
 				output, err := exec.Command(execPath).Output()
 				if err != nil {
-					var exitErr *exec.ExitError
-					if errors.As(err, &exitErr) {
+					if _, ok := errors.AsType[*exec.ExitError](err); ok {
 						return "", &discoveryReachableOnExecError{raw: raw, err: errors.New("Non-zero exit code from subprocess")}
 					}
 					return "", &discoveryReachableOnExecError{raw: raw, err: err}
@@ -402,14 +402,12 @@ func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interfac
 
 	reachableOn, err := ia.resolveReachableOn(cfg.ReachableOn)
 	if err != nil {
-		var execErr *discoveryReachableOnExecError
-		if errors.As(err, &execErr) {
+		if execErr, ok := errors.AsType[*discoveryReachableOnExecError](err); ok {
 			ia.logger.Error("Error while getting reachable_on from executable at %v: %v", execErr.raw, execErr.err)
 			ia.logger.Error("Aborting discovery announce")
 			return nil, nil
 		}
-		var invalidErr *discoveryReachableOnInvalidError
-		if errors.As(err, &invalidErr) {
+		if invalidErr, ok := errors.AsType[*discoveryReachableOnInvalidError](err); ok {
 			ia.logger.Error(
 				"The configured reachable_on parameter %q for %v is not a valid IP address or hostname",
 				invalidErr.value,
@@ -1591,7 +1589,7 @@ func isDiscoverySequenceKind(kind reflect.Kind) bool {
 
 func compareDiscoverySequences(left, right reflect.Value) (int, error) {
 	minLen := min(left.Len(), right.Len())
-	for i := 0; i < minLen; i++ {
+	for i := range minLen {
 		cmp, err := compareDiscoverySortValues(left.Index(i).Interface(), right.Index(i).Interface())
 		if err != nil {
 			return 0, err
@@ -1759,9 +1757,7 @@ func discoveryHashFilename(v any) (string, error) {
 
 func cloneStringAnyMap(m map[string]any) map[string]any {
 	out := make(map[string]any, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
+	maps.Copy(out, m)
 	return out
 }
 
@@ -1786,18 +1782,6 @@ func discoveryScalarString(v any) (string, bool) {
 		return strconv.FormatInt(rv.Int(), 10), true
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		return strconv.FormatUint(rv.Uint(), 10), true
-	default:
-		return "", false
-	}
-}
-
-func discoveryNumericHexString(v any) (string, bool) {
-	rv := reflect.ValueOf(v)
-	switch rv.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return fmt.Sprintf("%02x", rv.Int()), true
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return fmt.Sprintf("%02x", rv.Uint()), true
 	default:
 		return "", false
 	}
@@ -2292,11 +2276,9 @@ func (id *InterfaceDiscovery) monitorInterface(iface interfaces.Interface) {
 	}
 
 	id.monitorMu.Lock()
-	for _, existing := range id.monitoredInterfaces {
-		if existing == iface {
-			id.monitorMu.Unlock()
-			return
-		}
+	if slices.Contains(id.monitoredInterfaces, iface) {
+		id.monitorMu.Unlock()
+		return
 	}
 	id.monitoredInterfaces = append(id.monitoredInterfaces, iface)
 	if id.monitorInterval <= 0 || id.monitoringAutoconnects {
@@ -2473,12 +2455,7 @@ func (id *InterfaceDiscovery) bootstrapInterfaceCount() int {
 }
 
 func containsInterface(interfacesList []interfaces.Interface, target interfaces.Interface) bool {
-	for _, iface := range interfacesList {
-		if iface == target {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(interfacesList, target)
 }
 
 func (id *InterfaceDiscovery) teardownInterface(iface interfaces.Interface) {
@@ -2846,7 +2823,7 @@ func pythonDiscoveryBytesString(v []byte) string {
 		case c >= 0x20 && c <= 0x7e:
 			b.WriteByte(c)
 		default:
-			b.WriteString(fmt.Sprintf("\\x%02x", c))
+			fmt.Fprintf(&b, "\\x%02x", c)
 		}
 	}
 	b.WriteByte('\'')

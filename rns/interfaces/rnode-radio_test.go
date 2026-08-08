@@ -20,8 +20,7 @@ func TestRNodeSetFrequency(t *testing.T) {
 		t.Fatalf("command byte must be CMD_FREQUENCY (0x01), got 0x%02X", frame[1])
 	}
 	data := KISSUnescape(frame[2 : len(frame)-1])
-	var got uint32
-	got = uint32(data[0])<<24 | uint32(data[1])<<16 | uint32(data[2])<<8 | uint32(data[3])
+	got := uint32(data[0])<<24 | uint32(data[1])<<16 | uint32(data[2])<<8 | uint32(data[3])
 	if got != 433050000 {
 		t.Fatalf("expected frequency 433050000, got %d", got)
 	}
@@ -48,8 +47,7 @@ func TestRNodeSetBandwidth(t *testing.T) {
 	t.Parallel()
 	frame := RNodeSetBandwidth(125000)
 	data := KISSUnescape(frame[2 : len(frame)-1])
-	var got uint32
-	got = uint32(data[0])<<24 | uint32(data[1])<<16 | uint32(data[2])<<8 | uint32(data[3])
+	got := uint32(data[0])<<24 | uint32(data[1])<<16 | uint32(data[2])<<8 | uint32(data[3])
 	if got != 125000 {
 		t.Fatalf("expected bandwidth 125000, got %d", got)
 	}

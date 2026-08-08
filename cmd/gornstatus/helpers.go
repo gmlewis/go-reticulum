@@ -52,10 +52,7 @@ func clientsString(name string, clients *int) string {
 	}
 	c := *clients
 	if strings.HasPrefix(name, "Shared Instance[") {
-		cnum := c - 1
-		if cnum < 0 {
-			cnum = 0
-		}
+		cnum := max(c-1, 0)
 		spec := " programs"
 		if cnum == 1 {
 			spec = " program"

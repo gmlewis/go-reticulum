@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -487,10 +488,7 @@ func (r *Router) propagationPacket(data []byte, packet *rns.Packet) {
 		return
 	}
 
-	minAcceptedCost := r.propagationCost - r.propagationCostFlexibility
-	if minAcceptedCost < 0 {
-		minAcceptedCost = 0
-	}
+	minAcceptedCost := max(r.propagationCost-r.propagationCostFlexibility, 0)
 
 	validated := validatePropagationMessages(messages, minAcceptedCost)
 	for _, entry := range validated {
@@ -556,10 +554,7 @@ func (r *Router) propagationResourceConcluded(link *rns.Link, resource *rns.Reso
 		return
 	}
 
-	minAcceptedCost := r.propagationCost - r.propagationCostFlexibility
-	if minAcceptedCost < 0 {
-		minAcceptedCost = 0
-	}
+	minAcceptedCost := max(r.propagationCost-r.propagationCostFlexibility, 0)
 
 	validated := validatePropagationMessages(messages, minAcceptedCost)
 	for _, entry := range validated {
@@ -1666,28 +1661,6 @@ func anySliceToByteSlices(value any) [][]byte {
 	return result
 }
 
-func requestListContainsUnhashableEntries(value any) bool {
-	items, ok := value.([]any)
-	if !ok {
-		return false
-	}
-	for _, item := range items {
-		switch item.(type) {
-		case []byte, string, nil, bool, float32, float64, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-			continue
-		}
-		rv := reflect.ValueOf(item)
-		if !rv.IsValid() {
-			continue
-		}
-		switch rv.Kind() {
-		case reflect.Map, reflect.Slice, reflect.Array:
-			return true
-		}
-	}
-	return false
-}
-
 func anyToBytes(value any) []byte {
 	switch v := value.(type) {
 	case []byte:
@@ -2564,7 +2537,8 @@ func (r *Router) sendMessagePacketLocked(message *Message) error {
 func (r *Router) sendMessageLocked(message *Message) error {
 	representation := RepresentationPacket
 	packetLength := len(message.Packed)
-	if message.Method == MethodPropagated {
+	switch message.Method {
+	case MethodPropagated:
 		if len(message.PropagationPacked) == 0 {
 			if err := message.packPropagated(); err != nil {
 				return err
@@ -2574,7 +2548,7 @@ func (r *Router) sendMessageLocked(message *Message) error {
 		if message.Representation != RepresentationUnknown {
 			representation = message.Representation
 		}
-	} else if message.Method == MethodOpportunistic || message.Method == MethodDirect {
+	case MethodOpportunistic, MethodDirect:
 		packetLength -= DestinationLength
 	}
 	if representation == RepresentationPacket && packetLength > rns.MDU {
@@ -2905,10 +2879,7 @@ func NewRouterFromConfig(ts rns.Transport, cfg RouterConfig) (*Router, error) {
 		router.maxPeers = *cfg.MaxPeers
 	}
 
-	cost := cfg.PropagationCost
-	if cost < PropagationCostMin {
-		cost = PropagationCostMin
-	}
+	cost := max(cfg.PropagationCost, PropagationCostMin)
 	router.peeringCost = cost
 	router.propagationCost = cost
 	router.propagationCostFlexibility = cfg.PropagationCostFlexibility
@@ -3231,9 +3202,7 @@ func (r *Router) LoadPeers() error {
 	}
 
 	r.mu.Lock()
-	for destinationHash, peer := range loaded {
-		r.peers[destinationHash] = peer
-	}
+	maps.Copy(r.peers, loaded)
 	r.mu.Unlock()
 	return nil
 }
@@ -4754,11 +4723,8 @@ func (r *Router) getOutboundPropagationStampCost() (int, bool) {
 	_ = r.requestPath(r.outboundPropagationNode)
 
 	const waitStep = 500 * time.Millisecond
-	waitSteps := int(pathRequestWait / waitStep)
-	if waitSteps < 1 {
-		waitSteps = 1
-	}
-	for i := 0; i < waitSteps; i++ {
+	waitSteps := max(int(pathRequestWait/waitStep), 1)
+	for range waitSteps {
 		if cost, ok := r.cachedOutboundPropagationStampCost(); ok {
 			return cost, true
 		}
@@ -5110,10 +5076,7 @@ func messageGetResponseEntries(response any) ([]any, bool) {
 		}
 		return entries, true
 	case []any:
-		entries := make([]any, 0, len(values))
-		for _, value := range values {
-			entries = append(entries, value)
-		}
+		entries := append(make([]any, 0, len(values)), values...)
 		return entries, true
 	default:
 		rv := reflect.ValueOf(response)
@@ -5305,15 +5268,6 @@ func (r *Router) jobs() {
 	}
 }
 
-// exitHandlerRunning reports whether the router has been closed. It exists
-// so the periodic job loop can match Python's `self.exit_handler_running`
-// short-circuit behavior without taking a lock on every tick.
-func (r *Router) exitHandlerRunning() bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.jobloopDone == nil
-}
-
 // startJobLoop launches the periodic jobloop goroutine if it has not
 // already been started. It is safe to call multiple times.
 func (r *Router) startJobLoop() {
@@ -5449,10 +5403,7 @@ func (r *Router) RotatePeers() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	rotationHeadroom := int(math.Floor(float64(r.maxPeers) * (RotationHeadroomPct / 100.0)))
-	if rotationHeadroom < 1 {
-		rotationHeadroom = 1
-	}
+	rotationHeadroom := max(int(math.Floor(float64(r.maxPeers)*(RotationHeadroomPct/100.0))), 1)
 	requiredDrops := len(r.peers) - (r.maxPeers - rotationHeadroom)
 	if requiredDrops <= 0 || len(r.peers)-requiredDrops <= 1 {
 		return
@@ -5484,9 +5435,7 @@ func (r *Router) RotatePeers() {
 	}
 	if len(pool) == 0 {
 		pool = make(map[string]*Peer, len(r.peers))
-		for id, peer := range r.peers {
-			pool[id] = peer
-		}
+		maps.Copy(pool, r.peers)
 	}
 
 	waiting := []*Peer{}
@@ -5520,10 +5469,7 @@ func (r *Router) RotatePeers() {
 		return
 	}
 
-	dropCount := requiredDrops
-	if dropCount > len(dropPool) {
-		dropCount = len(dropPool)
-	}
+	dropCount := min(requiredDrops, len(dropPool))
 
 	type peerWithAR struct {
 		peer *Peer
@@ -5596,10 +5542,7 @@ func (r *Router) SyncPeers() {
 		sort.SliceStable(waitingPeers, func(i, j int) bool {
 			return waitingPeers[i].syncTransferRate > waitingPeers[j].syncTransferRate
 		})
-		limit := FastestNRandomPool
-		if limit > len(waitingPeers) {
-			limit = len(waitingPeers)
-		}
+		limit := min(FastestNRandomPool, len(waitingPeers))
 		peerPool = append(peerPool, waitingPeers[:limit]...)
 
 		var unknown []*Peer
@@ -5609,10 +5552,7 @@ func (r *Router) SyncPeers() {
 			}
 		}
 		if len(unknown) > 0 {
-			extraLimit := len(unknown)
-			if extraLimit > len(peerPool) {
-				extraLimit = len(peerPool)
-			}
+			extraLimit := min(len(unknown), len(peerPool))
 			peerPool = append(peerPool, unknown[:extraLimit]...)
 		}
 	} else if len(unresponsivePeers) > 0 {

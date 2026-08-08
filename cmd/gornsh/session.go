@@ -258,7 +258,7 @@ func loginShellFromPasswd() string {
 		return ""
 	}
 
-	for _, line := range strings.Split(string(passwdData), "\n") {
+	for line := range strings.SplitSeq(string(passwdData), "\n") {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}

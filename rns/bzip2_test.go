@@ -18,7 +18,6 @@ func TestBzip2RoundTripByLevel(t *testing.T) {
 	input := bytes.Repeat([]byte("reticulum-bzip2-parity-"), 64)
 
 	for _, level := range []int{1, 3, 6, 9} {
-		level := level
 		t.Run("level", func(t *testing.T) {
 			t.Parallel()
 

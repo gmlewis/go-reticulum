@@ -8,8 +8,6 @@ package main
 import (
 	"fmt"
 	"io"
-
-	"github.com/gmlewis/go-reticulum/rns"
 )
 
 type announceDropper interface {
@@ -22,8 +20,4 @@ func doDropAnnounces(out io.Writer, ts announceDropper) error {
 	}
 	ts.DropAnnounceQueues()
 	return nil
-}
-
-func _dropAnnouncesToTransportSystem(ts *rns.TransportSystem) int {
-	return ts.DropAnnounceQueues()
 }

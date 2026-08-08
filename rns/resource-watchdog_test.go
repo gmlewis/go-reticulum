@@ -138,7 +138,7 @@ func TestWatchdogLossyLinkRecovery(t *testing.T) {
 	// measured-RTT deadline formula.
 	receiver.reqDataRttRate = 1000
 	receiver.reqRespRttRate = 500
-	receiver.rtt = float64Ptr(1.0)
+	receiver.rtt = new(1.0)
 	receiver.partTimeoutFactor = 4
 
 	base := time.Unix(5_000_000, 0)
@@ -224,10 +224,7 @@ func TestWatchdogLossyLinkRecovery(t *testing.T) {
 	if req == nil {
 		t.Fatal("after deadline: no re-request packet recorded")
 	}
-	wantReq := 3
-	if missing < wantReq {
-		wantReq = missing
-	}
+	wantReq := min(missing, 3)
 	for i := 2; i < 2+wantReq; i++ {
 		if !bytes.Contains(req.Data, receiver.hashmap[i]) {
 			t.Fatalf("re-request packet missing part %d map hash", i)

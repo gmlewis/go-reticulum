@@ -115,7 +115,6 @@ func TestParseAllowedIdentityHash(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got, ok := parseAllowedIdentityHash(tc.input)
@@ -171,7 +170,6 @@ func TestParseCommandResponse(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			exitCode, stdout, stderr, err := parseCommandResponse(tc.response)
@@ -223,7 +221,6 @@ func TestConfigureLogger(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			rt := &runtimeT{}
@@ -498,12 +495,11 @@ func TestStartAnnouncements(t *testing.T) {
 		withTicker bool
 	}{
 		{name: "unset", announce: nil, wantCalls: 1},
-		{name: "startup only", announce: intPtr(0), wantCalls: 1},
-		{name: "periodic", announce: intPtr(30), wantCalls: 2, withTicker: true},
+		{name: "startup only", announce: new(0), wantCalls: 1},
+		{name: "periodic", announce: new(30), wantCalls: 2, withTicker: true},
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			a := &recordingAnnouncer{}
 			rt := &runtimeT{logger: rns.NewLogger()}
@@ -542,8 +538,4 @@ func TestStartAnnouncements(t *testing.T) {
 			}
 		})
 	}
-}
-
-func intPtr(v int) *int {
-	return &v
 }

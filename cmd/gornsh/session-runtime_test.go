@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -132,14 +133,12 @@ func TestSerializingSenderSerializesConcurrentCalls(t *testing.T) {
 	sender := newSerializingSender(inner)
 
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 8 {
+		wg.Go(func() {
 			if _, err := sender.Send(&noopMessage{}); err != nil {
 				t.Errorf("Send() error: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -304,7 +303,6 @@ func TestShouldUsePTYExecution(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := shouldUsePTYExecution(tc.execute); got != tc.want {
@@ -687,7 +685,6 @@ func TestNormalizeCommandStartError(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := normalizeCommandStartError(tc.err)
@@ -723,12 +720,7 @@ func countKey(env []string, key string) int {
 }
 
 func hasExact(env []string, want string) bool {
-	for _, entry := range env {
-		if entry == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(env, want)
 }
 
 type stringReader struct {

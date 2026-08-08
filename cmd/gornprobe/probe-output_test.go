@@ -77,7 +77,6 @@ func TestProbeRTTString(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := formatProbeRTTString(tc.in); got != tc.want {
@@ -113,7 +112,6 @@ func TestProbeLossSummary(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			gotText, gotExit := formatProbeLossSummary(tc.sent, tc.received)

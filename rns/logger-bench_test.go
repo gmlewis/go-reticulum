@@ -36,7 +36,7 @@ const benchLongMsg = "this is a significantly longer log message that exercises 
 // Helpers
 // ---------------------------------------------------------------------------
 
-func benchLoggerDevNull(b *testing.B, level int, compact bool) *Logger {
+func benchLoggerDevNull(_ *testing.B, level int, compact bool) *Logger {
 	logger := NewLogger()
 	logger.SetLogLevel(level)
 	logger.SetCompactLogFmt(compact)
@@ -64,64 +64,64 @@ func benchLoggerTempFile(b *testing.B, level int, compact bool) (*Logger, string
 
 func BenchmarkLoggerDevNullCritical(b *testing.B) {
 	logger := benchLoggerDevNull(b, LogCritical, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogCritical, false)
 	}
 }
 
 func BenchmarkLoggerDevNullError(b *testing.B) {
 	logger := benchLoggerDevNull(b, LogError, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogError, false)
 	}
 }
 
 func BenchmarkLoggerDevNullWarning(b *testing.B) {
 	logger := benchLoggerDevNull(b, LogWarning, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogWarning, false)
 	}
 }
 
 func BenchmarkLoggerDevNullNotice(b *testing.B) {
 	logger := benchLoggerDevNull(b, LogNotice, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogNotice, false)
 	}
 }
 
 func BenchmarkLoggerDevNullInfo(b *testing.B) {
 	logger := benchLoggerDevNull(b, LogInfo, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogInfo, false)
 	}
 }
 
 func BenchmarkLoggerDevNullVerbose(b *testing.B) {
 	logger := benchLoggerDevNull(b, LogVerbose, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogVerbose, false)
 	}
 }
 
 func BenchmarkLoggerDevNullDebug(b *testing.B) {
 	logger := benchLoggerDevNull(b, LogDebug, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogDebug, false)
 	}
 }
 
 func BenchmarkLoggerDevNullExtreme(b *testing.B) {
 	logger := benchLoggerDevNull(b, LogExtreme, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogExtreme, false)
 	}
 }
@@ -132,8 +132,8 @@ func BenchmarkLoggerDevNullExtreme(b *testing.B) {
 
 func BenchmarkLoggerDevNullCompactNotice(b *testing.B) {
 	logger := benchLoggerDevNull(b, LogNotice, true)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogNotice, false)
 	}
 }
@@ -144,8 +144,8 @@ func BenchmarkLoggerDevNullCompactNotice(b *testing.B) {
 
 func BenchmarkLoggerDevNullPreciseTimestamp(b *testing.B) {
 	logger := benchLoggerDevNull(b, LogNotice, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogNotice, true)
 	}
 }
@@ -156,64 +156,64 @@ func BenchmarkLoggerDevNullPreciseTimestamp(b *testing.B) {
 
 func BenchmarkLoggerFileCritical(b *testing.B) {
 	logger, _ := benchLoggerTempFile(b, LogCritical, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogCritical, false)
 	}
 }
 
 func BenchmarkLoggerFileError(b *testing.B) {
 	logger, _ := benchLoggerTempFile(b, LogError, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogError, false)
 	}
 }
 
 func BenchmarkLoggerFileWarning(b *testing.B) {
 	logger, _ := benchLoggerTempFile(b, LogWarning, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogWarning, false)
 	}
 }
 
 func BenchmarkLoggerFileNotice(b *testing.B) {
 	logger, _ := benchLoggerTempFile(b, LogNotice, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogNotice, false)
 	}
 }
 
 func BenchmarkLoggerFileInfo(b *testing.B) {
 	logger, _ := benchLoggerTempFile(b, LogInfo, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogInfo, false)
 	}
 }
 
 func BenchmarkLoggerFileVerbose(b *testing.B) {
 	logger, _ := benchLoggerTempFile(b, LogVerbose, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogVerbose, false)
 	}
 }
 
 func BenchmarkLoggerFileDebug(b *testing.B) {
 	logger, _ := benchLoggerTempFile(b, LogDebug, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogDebug, false)
 	}
 }
 
 func BenchmarkLoggerFileExtreme(b *testing.B) {
 	logger, _ := benchLoggerTempFile(b, LogExtreme, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogExtreme, false)
 	}
 }
@@ -224,8 +224,8 @@ func BenchmarkLoggerFileExtreme(b *testing.B) {
 
 func BenchmarkLoggerFileCompactNotice(b *testing.B) {
 	logger, _ := benchLoggerTempFile(b, LogNotice, true)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogNotice, false)
 	}
 }
@@ -236,8 +236,8 @@ func BenchmarkLoggerFileCompactNotice(b *testing.B) {
 
 func BenchmarkLoggerFilePreciseTimestamp(b *testing.B) {
 	logger, _ := benchLoggerTempFile(b, LogNotice, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogNotice, true)
 	}
 }
@@ -248,16 +248,16 @@ func BenchmarkLoggerFilePreciseTimestamp(b *testing.B) {
 
 func BenchmarkLoggerDevNullShortMsg(b *testing.B) {
 	logger := benchLoggerDevNull(b, LogNotice, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogNotice, false)
 	}
 }
 
 func BenchmarkLoggerDevNullLongMsg(b *testing.B) {
 	logger := benchLoggerDevNull(b, LogNotice, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchLongMsg, LogNotice, false)
 	}
 }
@@ -268,16 +268,16 @@ func BenchmarkLoggerDevNullLongMsg(b *testing.B) {
 
 func BenchmarkLoggerFileShortMsg(b *testing.B) {
 	logger, _ := benchLoggerTempFile(b, LogNotice, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogNotice, false)
 	}
 }
 
 func BenchmarkLoggerFileLongMsg(b *testing.B) {
 	logger, _ := benchLoggerTempFile(b, LogNotice, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchLongMsg, LogNotice, false)
 	}
 }
@@ -289,8 +289,8 @@ func BenchmarkLoggerFileLongMsg(b *testing.B) {
 func BenchmarkLoggerFilteredNone(b *testing.B) {
 	logger := NewLogger()
 	logger.SetLogLevel(LogNone)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogNotice, false)
 	}
 }
@@ -298,8 +298,8 @@ func BenchmarkLoggerFilteredNone(b *testing.B) {
 func BenchmarkLoggerFilteredBelowThreshold(b *testing.B) {
 	logger := NewLogger()
 	logger.SetLogLevel(LogCritical)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogDebug, false)
 	}
 }
@@ -313,8 +313,8 @@ func BenchmarkLoggerCallback(b *testing.B) {
 	logger.SetLogLevel(LogExtreme)
 	logger.SetLogDest(LogCallback)
 	logger.SetLogCallback(func(string) {})
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogNotice, false)
 	}
 }
@@ -354,8 +354,8 @@ func BenchmarkLoggerFileParallel(b *testing.B) {
 func BenchmarkLoggerSetLogLevel(b *testing.B) {
 	logger := NewLogger()
 	levels := []int{LogCritical, LogError, LogWarning, LogNotice, LogInfo, LogVerbose, LogDebug, LogExtreme}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for i := 0; b.Loop(); i++ {
 		logger.SetLogLevel(levels[i%len(levels)])
 	}
 }
@@ -363,16 +363,16 @@ func BenchmarkLoggerSetLogLevel(b *testing.B) {
 func BenchmarkLoggerSetLogDest(b *testing.B) {
 	logger := NewLogger()
 	dests := []int{LogStdout, LogDestFile, LogCallback}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for i := 0; b.Loop(); i++ {
 		logger.SetLogDest(dests[i%len(dests)])
 	}
 }
 
 func BenchmarkLoggerSetCompactLogFmt(b *testing.B) {
 	logger := NewLogger()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for i := 0; b.Loop(); i++ {
 		logger.SetCompactLogFmt(i%2 == 0)
 	}
 }
@@ -385,8 +385,8 @@ func BenchmarkLoggerSetCompactLogFmt(b *testing.B) {
 
 func BenchmarkLoggerFileWithStatCheck(b *testing.B) {
 	logger, _ := benchLoggerTempFile(b, LogNotice, false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		logger.log(benchMsg, LogNotice, false)
 	}
 }

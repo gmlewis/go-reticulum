@@ -155,8 +155,8 @@ Location     : %v
 		_, _ = fmt.Fprintf(w, "Stamp Value  : %v\n", i.Value)
 
 		_, _ = fmt.Fprintln(w, "\nConfiguration Entry:")
-		configLines := strings.Split(strings.TrimSpace(i.ConfigEntry), "\n")
-		for _, line := range configLines {
+		configLines := strings.SplitSeq(strings.TrimSpace(i.ConfigEntry), "\n")
+		for line := range configLines {
 			_, _ = fmt.Fprintf(w, "  %v\n", line)
 		}
 	}
