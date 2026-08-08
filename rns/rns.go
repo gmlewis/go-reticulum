@@ -199,6 +199,26 @@ func NewReticulum(ts Transport, configDir string) (*Reticulum, error) {
 	return NewReticulumWithLogger(ts, configDir, logger)
 }
 
+// ConfigDir returns the resolved Reticulum configuration directory in use
+// (after NewReticulumWithLogger applied its configdir resolution). Mirrors
+// Python's RNS.Reticulum.configdir. Returns "" for a nil receiver.
+func (r *Reticulum) ConfigDir() string {
+	if r == nil {
+		return ""
+	}
+	return r.configDir
+}
+
+// ConfigPath returns the path to the Reticulum config file in use. Mirrors
+// Python's RNS.Reticulum.configpath. Returns "" for a nil receiver or before
+// the config dir is resolved.
+func (r *Reticulum) ConfigPath() string {
+	if r == nil || r.configDir == "" {
+		return ""
+	}
+	return filepath.Join(r.configDir, "config")
+}
+
 // NewReticulumWithLogger initializes a new Reticulum stack with a specific transport system and logger.
 func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger) (*Reticulum, error) {
 	if logger == nil {
