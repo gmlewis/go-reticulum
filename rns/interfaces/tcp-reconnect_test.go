@@ -8,6 +8,7 @@ package interfaces
 import (
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"sync/atomic"
 	"testing"
@@ -77,7 +78,7 @@ func TestTCPClientReconnectFiresOnConnect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	// Drain and hold accepted connections open so the client readLoop does
 	// not get a spurious EOF (and trigger another reconnect) during the
 	// assertion window.
@@ -88,8 +89,12 @@ func TestTCPClientReconnectFiresOnConnect(t *testing.T) {
 				return
 			}
 			go func(c net.Conn) {
-				io.Copy(io.Discard, c)
-				c.Close()
+				if _, err := io.Copy(io.Discard, c); err != nil {
+					log.Printf("io.Copy: %v", err)
+				}
+				if err := c.Close(); err != nil {
+					log.Printf("c.Close: %v", err)
+				}
 			}(c)
 		}
 	}()

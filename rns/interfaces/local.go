@@ -327,6 +327,23 @@ func newLocalClientInterfaceFromConn(name string, conn net.Conn, handler Inbound
 	return lci
 }
 
+// SpawnedClientInterfaces returns a snapshot of the per-connection client
+// interfaces currently spawned by this server. It is the Go equivalent of
+// iterating Python's Transport.local_client_interfaces for a shared
+// Reticulum instance: the transport uses it to forward announces to
+// co-located clients (Python Transport.py:1790-1833) without injecting them
+// into the network rebroadcast fan-out. The snapshot is taken under the
+// server mutex so the caller may iterate it without holding the lock.
+func (lsi *LocalServerInterface) SpawnedClientInterfaces() []Interface {
+	lsi.mu.Lock()
+	defer lsi.mu.Unlock()
+	out := make([]Interface, len(lsi.spawnedInterfaces))
+	for i, sc := range lsi.spawnedInterfaces {
+		out[i] = sc
+	}
+	return out
+}
+
 func (lsi *LocalServerInterface) handleConnection(conn net.Conn) {
 	name := fmt.Sprintf("Local Client %v", conn.RemoteAddr().String())
 	lci := newLocalClientInterfaceFromConn(name, conn, lsi.inboundHandler)

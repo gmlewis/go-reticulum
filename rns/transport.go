@@ -253,7 +253,18 @@ type TransportSystem struct {
 	enabled          bool
 	linkMTUDiscovery bool
 	useImplicitProof bool
-	mu               sync.Mutex
+
+	// connectedToSharedInstance mirrors RNS.Reticulum.is_connected_to_shared_instance:
+	// true when this transport owns no network interfaces and instead routes
+	// everything through a co-located shared Reticulum instance over a
+	// LocalClientInterface. When true, the transport must NOT load or persist
+	// the path table (the shared instance owns it) — Python skips both at
+	// Transport.py:259 (load) and gates persistence likewise. It also must NOT
+	// add packets to the on-disk hashlist (Transport.py:1183) or run the
+	// packet filter (Transport.py:1190).
+	connectedToSharedInstance bool
+
+	mu sync.Mutex
 
 	// outboundWG tracks outbound sends dispatched on their own goroutines by
 	// the fan-out paths (processAnnounceTable, forwardPathRequest,
@@ -604,7 +615,15 @@ func (ts *TransportSystem) Start(storagePath string) error {
 			ts.logger.Error("Could not save transport identity: %v", err)
 		}
 	}
-	ts.loadPathTableLocked()
+	// The path table is loaded separately via LoadPathTable() so that the
+	// caller (NewReticulum) can gate it on the instance role: a process
+	// connected to a shared Reticulum instance must NOT load the shared
+	// instance's destination_table (Python Transport.py:259), since those
+	// entries reference interfaces the client does not own (Interface=nil),
+	// which would break outbound transport forwarding. Start() therefore
+	// leaves the path table empty; NewReticulum loads it after it has
+	// determined whether this process is a shared instance, a client of
+	// one, or standalone.
 	ts.mu.Unlock()
 
 	// Setup control destinations
@@ -1068,7 +1087,12 @@ func (ts *TransportSystem) pathTableSnapshotLocked() []any {
 
 func (ts *TransportSystem) persistPathTable() {
 	ts.mu.Lock()
-	if ts.storagePath == "" {
+	if ts.storagePath == "" || ts.connectedToSharedInstance {
+		// A client of a shared Reticulum instance must not persist its path
+		// table: it shares the storage path with the shared instance, so
+		// writing would clobber the shared instance's destination_table with
+		// the client's (forwarded-announce-only) view. Python never persists
+		// for a connected-to-shared instance.
 		ts.mu.Unlock()
 		return
 	}
@@ -1114,6 +1138,38 @@ func (ts *TransportSystem) resolvePathInterfacesLocked() {
 			entry.Interface = iface
 		}
 	}
+}
+
+// LoadPathTable loads the persisted destination_table from storage into the
+// in-memory path table. It is the public, lock-acquiring entry point for the
+// private loadPathTableLocked; NewReticulum calls it after Start(), gated on
+// the instance role, so that a client of a shared Reticulum instance does not
+// load the shared instance's path table (Python Transport.py:259).
+func (ts *TransportSystem) LoadPathTable() {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.loadPathTableLocked()
+}
+
+// SetConnectedToSharedInstance records whether this transport is a client of
+// a co-located shared Reticulum instance (Python
+// Reticulum.is_connected_to_shared_instance). When true the transport must not
+// load or persist the path table (the shared instance owns it) and must not
+// queue announce rebroadcasts (the shared instance is the only egress; a
+// client rebroadcasting announces back to it would echo them around the
+// network). NewReticulum sets this from startLocalInterface's outcome.
+func (ts *TransportSystem) SetConnectedToSharedInstance(connected bool) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.connectedToSharedInstance = connected
+}
+
+// ConnectedToSharedInstance reports whether this transport is a client of a
+// co-located shared Reticulum instance.
+func (ts *TransportSystem) ConnectedToSharedInstance() bool {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.connectedToSharedInstance
 }
 
 func (ts *TransportSystem) loadPathTableLocked() {
@@ -3147,6 +3203,68 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 				ts.logger.Debug("Inbound: no path found in ts.pathTable for %x", packet.DestinationHash)
 				ts.mu.Unlock()
 			}
+
+			// Link transport handling. Directs packets according to entries
+			// in the link tables (Python Transport.py:1512-1549). This
+			// forwards data packets (including the link-handshake RTT and
+			// keepalives) addressed to a link ID along the link's recorded
+			// interfaces, independent of any transport_id. It is what lets a
+			// client behind a shared instance exchange link traffic with a
+			// remote node: the client has no path to the peer's link ID, so
+			// it broadcasts link packets as Header1 on its local interface;
+			// the shared instance receives them and this block forwards them
+			// on the opposite link interface. Without it the shared instance
+			// drops every post-handshake link packet, so the remote side never
+			// activates (the RTT never arrives) and the link is unusable even
+			// though the initiator side reached ACTIVE on the proof.
+			if packet.PacketType != PacketAnnounce && packet.PacketType != PacketLinkRequest && packet.Context != ContextLrproof {
+				ts.mu.Lock()
+				linkEntry, ok := ts.linkTable[string(packet.DestinationHash)]
+				if !ok {
+					ts.mu.Unlock()
+				} else {
+					var outboundIface interfaces.Interface
+					if linkEntry.OutboundInterface == linkEntry.ReceivedInterface {
+						// Receiving and outbound interface are the same, so
+						// direction doesn't matter; just confirm the taken
+						// hop count matches one of the expected values.
+						if packet.Hops == linkEntry.RemainingHops || packet.Hops == linkEntry.Hops {
+							outboundIface = linkEntry.OutboundInterface
+						}
+					} else {
+						// Interfaces differ: transmit on the opposite
+						// interface from the one the packet arrived on.
+						if iface == linkEntry.OutboundInterface {
+							if packet.Hops == linkEntry.RemainingHops {
+								outboundIface = linkEntry.ReceivedInterface
+							}
+						} else if iface == linkEntry.ReceivedInterface {
+							if packet.Hops == linkEntry.Hops {
+								outboundIface = linkEntry.OutboundInterface
+							}
+						}
+					}
+					if outboundIface != nil {
+						// The packet hash was already entered into the
+						// duplicate filter at the top of Inbound, so we do
+						// not need to re-add it here (Python's
+						// add_packet_hash at Transport.py:1543).
+						newRaw := make([]byte, len(packet.Raw))
+						copy(newRaw, packet.Raw)
+						if len(newRaw) > 1 {
+							newRaw[1] = byte(packet.Hops)
+						}
+						linkEntry.Timestamp = time.Now()
+						ts.mu.Unlock()
+						ts.logger.Debug("Inbound: forwarding link-transport packet %x for link %x on %s", packet.PacketHash, packet.DestinationHash, outboundIface.Name())
+						if err := outboundIface.Send(newRaw); err != nil {
+							ts.logger.Error("Failed to forward link-transport packet: %v", err)
+						}
+						return
+					}
+					ts.mu.Unlock()
+				}
+			}
 		}
 	}
 
@@ -3293,6 +3411,62 @@ func nextHopFromAnnounce(packet *Packet) ([]byte, error) {
 	return nil, errors.New("announce has no next-hop material")
 }
 
+// forwardAnnounceToLocalClients retransmits an accepted announce to every
+// co-located client of this shared Reticulum instance, mirroring Python
+// Transport.py:1790-1833. The shared instance owns the network interfaces;
+// its clients (ping-nomadnet-node, lxmd, rncp, ...) own only a
+// LocalClientInterface to the shared instance and would otherwise never learn
+// any path. Each announce is rewritten as a Header2 transport packet with
+// transport_id = ts.identity.Hash and the announce's current hop count, so the
+// receiving client records a path entry whose NextHop is the shared instance
+// and whose Interface is its local link — enabling it to inject its own
+// packets into transport via the shared instance (Outbound Header2 branch).
+// The interface the announce was received on is excluded so a client's own
+// announce is not echoed back to it. Sends are dispatched on their own
+// goroutines so a stalled co-located client cannot block the readLoop that
+// received the announce.
+func (ts *TransportSystem) forwardAnnounceToLocalClients(packet *Packet, receivedOn interfaces.Interface) {
+	if ts.identity == nil || len(ts.identity.Hash) == 0 {
+		return
+	}
+
+	// Build the Header2 forward frame once; it is identical for every client.
+	// Layout: [flags][hops][transport_id][destination_hash][context][data].
+	newFlags := byte((Header2 << 6) | (packet.ContextFlag << 5) | (TransportForward << 4) | (packet.DestinationType << 2) | packet.PacketType)
+	raw := make([]byte, 0, 2+len(ts.identity.Hash)+len(packet.DestinationHash)+1+len(packet.Data))
+	raw = append(raw, newFlags, byte(packet.Hops))
+	raw = append(raw, ts.identity.Hash...)
+	raw = append(raw, packet.DestinationHash...)
+	raw = append(raw, byte(packet.Context))
+	raw = append(raw, packet.Data...)
+
+	// Snapshot the LocalServerInterfaces registered with this transport. We
+	// release the transport lock before sending: a stalled co-located client
+	// must not block the readLoop that received the announce.
+	ts.mu.Lock()
+	servers := make([]*interfaces.LocalServerInterface, 0, 2)
+	for _, iface := range ts.interfaces {
+		if lsi, ok := iface.(*interfaces.LocalServerInterface); ok {
+			servers = append(servers, lsi)
+		}
+	}
+	ts.mu.Unlock()
+
+	for _, lsi := range servers {
+		for _, sc := range lsi.SpawnedClientInterfaces() {
+			if sc == receivedOn {
+				continue
+			}
+			frame := append([]byte(nil), raw...)
+			ts.outboundWG.Add(1)
+			go func(iface interfaces.Interface, f []byte) {
+				defer ts.outboundWG.Done()
+				ts.dispatchForwardSend(iface, f, "local announce forward")
+			}(sc, frame)
+		}
+	}
+}
+
 func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Interface) {
 	// Announces carry the most variable untrusted structure on the network
 	// (public keys, signatures, ratchet keys, app data). A single malformed
@@ -3312,6 +3486,11 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 	destHash := string(packet.DestinationHash)
 
 	var handlers []*AnnounceHandler
+	// shouldForwardToLocalClients is set when this announce was accepted into
+	// the path table (new or equal-or-shorter path). Only then does the shared
+	// instance retransmit it to co-located clients (Python Transport.py:1790,
+	// inside the should_add block).
+	shouldForwardToLocalClients := false
 	func() {
 		ts.mu.Lock()
 		defer ts.mu.Unlock()
@@ -3361,6 +3540,7 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 						entry.RandomBlobs = entry.RandomBlobs[len(entry.RandomBlobs)-maxRandomBlobs:]
 					}
 				}
+				shouldForwardToLocalClients = true
 			}
 		} else {
 			nextHop, err := nextHopFromAnnounce(packet)
@@ -3383,10 +3563,18 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 				Expires:       time.Now().Add(24 * 7 * time.Hour), // 1 week default
 			}
 			ts.logger.Info("Learned path to %x via %v, %v hops", packet.DestinationHash, iface.Name(), packet.Hops)
+			shouldForwardToLocalClients = true
 		}
 
-		// Propagation logic (re-broadcasting announces)
-		if packet.Hops < ReticulumHopsMax && packet.Context != ContextPathResponse {
+		// Propagation logic (re-broadcasting announces). A client of a shared
+		// Reticulum instance never queues rebroadcasts: its only egress is the
+		// shared instance, so rebroadcasting would echo announces back to it
+		// (and from there back onto the network with inflated hop counts).
+		// Python equivalently gates this on transport_enabled or
+		// from_local_client, both false for a connected-to-shared client
+		// (Transport.py:1741, with __transport_enabled forced False at
+		// Reticulum.py:417).
+		if !ts.connectedToSharedInstance && packet.Hops < ReticulumHopsMax && packet.Context != ContextPathResponse {
 			raw := make([]byte, len(packet.Raw))
 			copy(raw, packet.Raw)
 			hops := packet.Hops + 1
@@ -3412,6 +3600,14 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 			copy(handlers, ts.announceHandlers)
 		}
 	}()
+
+	// Forward the accepted announce to co-located clients of this shared
+	// instance. Clients own no network interfaces, so without this forwarding
+	// they would never learn any path and could not inject their own packets
+	// (link requests, messages) into transport via the shared instance.
+	if shouldForwardToLocalClients {
+		ts.forwardAnnounceToLocalClients(packet, iface)
+	}
 
 	// Call announce handlers
 	if len(handlers) > 0 {

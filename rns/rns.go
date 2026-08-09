@@ -298,6 +298,25 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger) (*Re
 	}
 
 	r.startLocalInterface()
+
+	// Record the instance role on the transport and load the path table only
+	// for instances that own network interfaces (shared or standalone). A
+	// client of a shared Reticulum instance must NOT load the shared
+	// instance's destination_table: those entries reference interfaces the
+	// client does not own (Interface=nil), which would break outbound
+	// transport forwarding. The client instead learns paths from announces
+	// the shared instance forwards to it (Transport.py:1790-1833). Python
+	// skips the load at Transport.py:259 and forces __transport_enabled=False
+	// at Reticulum.py:417 for the connected-to-shared case.
+	if setter, ok := r.transport.(interface{ SetConnectedToSharedInstance(bool) }); ok {
+		setter.SetConnectedToSharedInstance(r.isConnectedToSharedInstance)
+	}
+	if !r.isConnectedToSharedInstance {
+		if loader, ok := r.transport.(interface{ LoadPathTable() }); ok {
+			loader.LoadPathTable()
+		}
+	}
+
 	if err := r.startRPCListener(); err != nil {
 		if cerr := r.Close(); cerr != nil {
 			r.logger.Warning("Could not close Reticulum properly after initialization failure: %v", cerr)

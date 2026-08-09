@@ -128,7 +128,7 @@ type TCPClientInterface struct {
 	// interface is registered; nil for spawned (server-accepted) interfaces,
 	// which are announced by the server's connectHandler at accept time.
 	onConnectMu sync.Mutex
-	onConnect    func()
+	onConnect   func()
 }
 
 // NewTCPClientInterface initiates a resilient TCP connection to a remote peer.
