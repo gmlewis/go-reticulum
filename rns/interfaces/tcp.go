@@ -18,6 +18,18 @@ import (
 const (
 	TCPBitrateGuess = 10 * 1000 * 1000
 	TCPHWMTU        = 262144
+
+	// tcpWriteTimeout bounds a single outbound frame write. Without it, a
+	// half-open TCP peer (one that died without sending a FIN) makes
+	// conn.Write block until the OS TCP retransmit timeout — minutes to
+	// forever on some platforms — which wedges any goroutine that calls
+	// Send synchronously (the transport maintenance loop and each
+	// readLoop). A RNS frame is at most a few KB; a write that cannot
+	// complete in this window means the peer is gone, so we fail the
+	// connection and reconnect instead of blocking forever. Individual
+	// interfaces may override this via TCPClientInterface.writeTimeout
+	// (e.g. for slow or high-latency links).
+	tcpWriteTimeout = 10 * time.Second
 )
 
 // TCPClientInterface drives a persistent outbound TCP session used to tunnel
@@ -42,6 +54,28 @@ type TCPClientInterface struct {
 
 	running int32
 	mu      sync.Mutex
+
+	// writeMu serializes outbound writes so each SetWriteDeadline applies
+	// to exactly one Write. mu guards conn/lifecycle; writeMu guards the
+	// deadline+Write pair. They are never held simultaneously in a way
+	// that could deadlock: Send takes writeMu only after releasing mu,
+	// and no other path holds writeMu while waiting on mu.
+	writeMu sync.Mutex
+
+	// writeTimeout bounds each outbound frame write for this interface; it
+	// defaults to tcpWriteTimeout and may be overridden per interface (e.g.
+	// for slow or high-latency links). A zero value falls back to
+	// tcpWriteTimeout in Send.
+	writeTimeout time.Duration
+
+	// onDown, if set, is invoked once when this interface transitions from
+	// up to down (its connection fails), so the transport can eagerly
+	// invalidate paths routed through it. This replaces the old flood-prone
+	// lazy invalidation where every rebroadcast/forward attempt to a down
+	// interface ran a full pathTable scan. Set by the transport when the
+	// interface is registered.
+	onDownMu sync.Mutex
+	onDown   func()
 }
 
 // NewTCPClientInterface initiates a resilient TCP connection to a remote peer.
@@ -57,6 +91,7 @@ func NewTCPClientInterface(name, host string, port int, kiss bool, handler Inbou
 		kissFraming:    kiss,
 		inboundHandler: handler,
 		reconnectDelay: 5 * time.Second,
+		writeTimeout:   tcpWriteTimeout,
 	}
 
 	if err := tci.connect(); err != nil {
@@ -114,11 +149,21 @@ func (tci *TCPClientInterface) reconnectLoop() {
 
 func (tci *TCPClientInterface) readLoop() {
 	log.Printf("Go TCPClientInterface %v readLoop starting", tci.name)
+
+	// Capture the connection this readLoop owns. A concurrent reconnect may
+	// later replace tci.conn with a fresh net.Conn and start its own
+	// readLoop; this one must only read and tear down the connection it was
+	// started with, never the newer one. failConn enforces that by
+	// comparing the captured conn against the current tci.conn.
+	tci.mu.Lock()
+	conn := tci.conn
+	tci.mu.Unlock()
+
 	buf := make([]byte, 4096)
 	frameBuffer := make([]byte, 0, TCPHWMTU)
 
 	for atomic.LoadInt32(&tci.running) == 1 {
-		n, err := tci.conn.Read(buf)
+		n, err := conn.Read(buf)
 		if err != nil {
 			log.Printf("[TCP] %v: readLoop Read error: %v", tci.name, err)
 			if atomic.LoadInt32(&tci.running) == 1 && !tci.IsDetached() {
@@ -194,22 +239,14 @@ func (tci *TCPClientInterface) readLoop() {
 		}
 	}
 
-	tci.mu.Lock()
-	if tci.conn != nil {
-		if err := tci.conn.Close(); err != nil {
-			log.Printf("[TCP] %v: readLoop close failed: %v", tci.name, err)
-		}
-	}
-	tci.mu.Unlock()
-
-	// Only reconnect for outbound client interfaces that have a target
-	// host/port. Spawned interfaces (created by TCPServerInterface from
-	// an accepted connection) have no target to reconnect to.
-	if atomic.CompareAndSwapInt32(&tci.running, 1, 0) {
-		if !tci.IsDetached() && !tci.spawned {
-			go tci.reconnectLoop()
-		}
-	}
+	// Tear down the connection this readLoop owns. failConn is race-free:
+	// if a Send already failed and a reconnect installed a newer
+	// connection, this is a no-op for the down transition (it only closes
+	// the stale captured conn). Only reconnect for outbound client
+	// interfaces that have a target host/port; spawned interfaces (created
+	// by TCPServerInterface from an accepted connection) have no target to
+	// reconnect to.
+	tci.failConn(conn)
 }
 
 // Send frames and writes data to the remote TCP peer using the interface's
@@ -236,20 +273,85 @@ func (tci *TCPClientInterface) Send(data []byte) error {
 		return fmt.Errorf("no connection for interface %v", tci.name)
 	}
 
-	// log.Printf("[TCP] %v: Send writing %v bytes (frame len=%v)", tci.name, len(data), len(frame))
+	// Serialize the deadline+Write pair so each SetWriteDeadline governs
+	// exactly one Write, and a blocked writer cannot be preempted by
+	// another goroutine resetting the deadline mid-write. The deadline is
+	// never cleared (to zero): every write is bounded, so a half-open
+	// peer fails fast instead of blocking the transport maintenance loop
+	// and readLoop forwarding paths for the OS retransmit timeout.
+	writeTimeout := tci.writeTimeout
+	if writeTimeout <= 0 {
+		writeTimeout = tcpWriteTimeout
+	}
+	tci.writeMu.Lock()
+	if err := conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+		tci.writeMu.Unlock()
+		tci.failConn(conn)
+		return err
+	}
 	n, err := conn.Write(frame)
+	tci.writeMu.Unlock()
+
 	if err != nil {
 		log.Printf("[TCP] %v: Send write error: %v", tci.name, err)
-		if atomic.CompareAndSwapInt32(&tci.running, 1, 0) {
-			if !tci.IsDetached() && !tci.spawned {
-				go tci.reconnectLoop()
-			}
-		}
+		tci.failConn(conn)
 		return err
 	}
 
 	atomic.AddUint64(&tci.txBytes, uint64(n))
 	return nil
+}
+
+// failConn tears down the given connection and, if it is still the current
+// connection, marks the interface down and (for outbound client interfaces)
+// schedules a reconnect. The captured conn is passed in so a stale readLoop
+// or Send goroutine operating on an old connection cannot close or take down a
+// newer connection installed by a concurrent reconnect: only the connection
+// that is still current triggers the down transition.
+func (tci *TCPClientInterface) failConn(conn net.Conn) {
+	tci.mu.Lock()
+	current := tci.conn
+	if current == conn {
+		tci.conn = nil
+	}
+	tci.mu.Unlock()
+
+	if conn != nil {
+		if err := conn.Close(); err != nil {
+			log.Printf("[TCP] %v: failConn close failed: %v", tci.name, err)
+		}
+	}
+
+	// A newer connection has already been installed by a reconnect; this
+	// failure is stale and must not disturb the live connection.
+	if current != conn {
+		return
+	}
+
+	if atomic.CompareAndSwapInt32(&tci.running, 1, 0) {
+		// Notify the transport once on the up->down transition so it can
+		// eagerly invalidate paths routed through this interface. This
+		// replaces the old behavior where path invalidation happened
+		// lazily (and noisily) on every failed rebroadcast/forward Send.
+		tci.onDownMu.Lock()
+		hook := tci.onDown
+		tci.onDownMu.Unlock()
+		if hook != nil {
+			hook()
+		}
+		if !tci.IsDetached() && !tci.spawned {
+			go tci.reconnectLoop()
+		}
+	}
+}
+
+// SetOnDown registers a callback invoked once when this interface's
+// connection fails and it transitions from up to down. The transport uses it
+// to eagerly invalidate paths routed through the interface.
+func (tci *TCPClientInterface) SetOnDown(f func()) {
+	tci.onDownMu.Lock()
+	tci.onDown = f
+	tci.onDownMu.Unlock()
 }
 
 // Status reports whether the TCP client is currently connected and running.
@@ -360,6 +462,7 @@ func (tsi *TCPServerInterface) handleConnection(conn net.Conn) {
 		BaseInterface:  bi,
 		conn:           conn,
 		inboundHandler: tsi.inboundHandler,
+		writeTimeout:   tcpWriteTimeout,
 		spawned:        true,
 	}
 	atomic.StoreInt32(&tci.running, 1)

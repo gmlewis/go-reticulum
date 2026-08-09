@@ -223,7 +223,16 @@ func ValidateAnnounce(ts Transport, packet *Packet) bool {
 	randomHash = packet.Data[keySize+nameHashLen : keySize+nameHashLen+10]
 
 	offset := keySize + nameHashLen + 10
-	logger.Debug("ValidateAnnounce: Raw[:120]=%x", packet.Raw[:120])
+	// Bound the Raw preview: the Debug argument is evaluated even when
+	// debug logging is disabled, and a malformed/truncated announce can
+	// have a Raw shorter than the preview length, which would panic the
+	// node. A guarded prefix keeps the debug output useful without
+	// risking a slice-bounds crash on untrusted input.
+	rawPreview := packet.Raw
+	if len(rawPreview) > 120 {
+		rawPreview = rawPreview[:120]
+	}
+	logger.Debug("ValidateAnnounce: Raw[:120]=%x", rawPreview)
 	logger.Debug("ValidateAnnounce: Data size=%v, offset=%v, context_flag=%v", len(packet.Data), offset, packet.ContextFlag)
 	if packet.ContextFlag == FlagSet {
 		ratchet = packet.Data[offset : offset+ratchetSize]

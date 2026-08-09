@@ -1446,9 +1446,18 @@ func (ts *TransportSystem) sendRebroadcast(iface interfaces.Interface, raw []byt
 			raw = rebuilt
 		}
 	}
+	// Capture whether the interface was up before Send. A down interface
+	// fast-fails Send with "is not running"; that is expected and must not
+	// spam the log or trigger a full pathTable scan on every rebroadcast,
+	// which the announce-queue timer would otherwise do every few
+	// milliseconds for high-bitrate TCP interfaces. Only a real failure on
+	// an interface that was up warrants logging and path invalidation.
+	wasUp := iface.Status()
 	if err := iface.Send(raw); err != nil {
-		ts.logger.Error("Failed to re-broadcast announce on %v: %v", iface.Name(), err)
-		ts.InvalidatePathsViaInterface(iface)
+		if wasUp {
+			ts.logger.Error("Failed to re-broadcast announce on %v: %v", iface.Name(), err)
+			ts.InvalidatePathsViaInterface(iface)
+		}
 	}
 }
 
@@ -1474,6 +1483,17 @@ func (ts *TransportSystem) processAnnounceTable(now time.Time) {
 
 		for _, outIface := range ts.interfaces {
 			if outIface == entry.SourceInterface {
+				continue
+			}
+			// Don't enqueue rebroadcasts for down interfaces. Send would
+			// fast-fail "is not running", but the announce-queue timer fires
+			// every few milliseconds for high-bitrate TCP interfaces, so
+			// enqueueing anyway would churn ts.mu, log, and run a full
+			// pathTable scan on every tick. Skipping here stops the
+			// down-interface storm at its source; paths via a down interface
+			// are invalidated when it transitions down (via failConn/Send
+			// error), not lazily here.
+			if !outIface.Status() {
 				continue
 			}
 			raw := ts.queueOrSendAnnounceLocked(now, outIface, destinationHash, entry.PacketRaw, entry.Hops)
@@ -1561,6 +1581,9 @@ func (ts *TransportSystem) forwardPathRequest(packet *Packet, source interfaces.
 		if outIface == source {
 			continue
 		}
+		if !outIface.Status() {
+			continue
+		}
 		if state := ts.announceQueues[outIface]; state != nil {
 			if len(state.queue) > 0 || now.Before(state.allowedAt) {
 				continue
@@ -1583,9 +1606,12 @@ func (ts *TransportSystem) forwardPathRequest(packet *Packet, source interfaces.
 			raw = processed
 		}
 
+		wasUp := job.iface.Status()
 		if err := job.iface.Send(raw); err != nil {
-			ts.logger.Error("Failed forwarding path request on %v: %v", job.iface.Name(), err)
-			ts.InvalidatePathsViaInterface(job.iface)
+			if wasUp {
+				ts.logger.Error("Failed forwarding path request on %v: %v", job.iface.Name(), err)
+				ts.InvalidatePathsViaInterface(job.iface)
+			}
 		}
 	}
 }
@@ -1612,6 +1638,9 @@ func (ts *TransportSystem) forwardPathResponseToRequesters(packet *Packet, sourc
 	jobs := make([]sendJob, 0, len(requesters))
 	for _, requesterIface := range requesters {
 		if requesterIface == nil || requesterIface == source {
+			continue
+		}
+		if !requesterIface.Status() {
 			continue
 		}
 		raw := make([]byte, len(packet.Raw))
@@ -1641,9 +1670,12 @@ func (ts *TransportSystem) forwardPathResponseToRequesters(packet *Packet, sourc
 			raw = processed
 		}
 
+		wasUp := job.iface.Status()
 		if err := job.iface.Send(raw); err != nil {
-			ts.logger.Error("Failed forwarding path response on %v: %v", job.iface.Name(), err)
-			ts.InvalidatePathsViaInterface(job.iface)
+			if wasUp {
+				ts.logger.Error("Failed forwarding path response on %v: %v", job.iface.Name(), err)
+				ts.InvalidatePathsViaInterface(job.iface)
+			}
 			continue
 		}
 		forwarded = true
@@ -1853,6 +1885,15 @@ func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 	ts.mu.Unlock()
 	ts.logger.Debug("[Transport] RegisterInterface: %s, interfaces before: %d, destinations: %d", iface.Name(), interfacesBefore, destinationsBefore)
 	ts.logger.Debug("[Transport] RegisterInterface: %s, interfaces after: %d, will announce %d destinations", iface.Name(), interfacesAfter, len(destinationsToAnnounce))
+
+	// For TCP client interfaces, eagerly invalidate paths routed through
+	// the interface when its connection fails, so pathfinding re-routes
+	// without waiting for stale paths to expire. The hook fires once per
+	// up->down transition (inside failConn) instead of on every failed
+	// rebroadcast/forward Send as the old lazy path did.
+	if tci, ok := iface.(*interfaces.TCPClientInterface); ok {
+		tci.SetOnDown(func() { ts.InvalidatePathsViaInterface(tci) })
+	}
 
 	// Start inbound processor for this interface
 	if reader, ok := iface.(interface {
@@ -3144,6 +3185,16 @@ func nextHopFromAnnounce(packet *Packet) ([]byte, error) {
 }
 
 func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Interface) {
+	// Announces carry the most variable untrusted structure on the network
+	// (public keys, signatures, ratchet keys, app data). A single malformed
+	// or truncated announce must never crash the node: recover, log, and
+	// drop the packet so the readLoop keeps serving its interface instead of
+	// taking the whole process down with it.
+	defer func() {
+		if r := recover(); r != nil {
+			ts.logger.Error("Recovered from malformed announce on %v (dest=%x): %v", iface.Name(), packet.DestinationHash, r)
+		}
+	}()
 	if !ValidateAnnounce(ts, packet) {
 		ts.logger.Debug("Received invalid announce for %x, dropping", packet.DestinationHash)
 		return
