@@ -485,14 +485,27 @@ func (tsi *TCPServerInterface) handleConnection(conn net.Conn) {
 
 // Send forwards the payload to each active spawned client connection.
 func (tsi *TCPServerInterface) Send(data []byte) error {
+	// Snapshot the live spawned clients under the lock, then send to each
+	// WITHOUT holding tsi.mu. Holding the lock across the sends serialized
+	// the clients (one stalled peer blocked every other) and also blocked
+	// acceptLoop's handleConnection, which needs the same lock to register
+	// a new client. data is read-only here: each TCPClientInterface.Send
+	// builds its own framed copy, so it is safe to share across goroutines.
 	tsi.mu.Lock()
-	defer tsi.mu.Unlock()
+	clients := make([]*TCPClientInterface, 0, len(tsi.spawnedInterfaces))
 	for _, ci := range tsi.spawnedInterfaces {
 		if ci != nil && ci.Status() {
-			if err := ci.Send(data); err != nil {
-				fmt.Printf("Failed to send to spawned client %v: %v\n", ci.name, err)
-			}
+			clients = append(clients, ci)
 		}
+	}
+	tsi.mu.Unlock()
+
+	for _, ci := range clients {
+		go func(ci *TCPClientInterface) {
+			if err := ci.Send(data); err != nil {
+				log.Printf("Failed to send to spawned client %v: %v", ci.name, err)
+			}
+		}(ci)
 	}
 	return nil
 }

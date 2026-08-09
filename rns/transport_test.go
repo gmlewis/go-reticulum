@@ -239,6 +239,7 @@ func TestAnnounceRebroadcastProcessing(t *testing.T) {
 	}
 
 	ts.processAnnounceTable(time.Now().Add(10 * time.Second))
+	ts.WaitOutboundSends()
 
 	if outbound.sendCount != 1 {
 		t.Fatalf("expected one rebroadcast on outbound interface, got %v", outbound.sendCount)
@@ -259,6 +260,52 @@ func TestAnnounceRebroadcastProcessing(t *testing.T) {
 	}
 	if !bytes.Equal(rebroadcast.TransportID, ts.identity.Hash) {
 		t.Fatalf("expected rebroadcast transport ID to match transport identity")
+	}
+}
+
+// TestProcessAnnounceTableStalledPeerDoesNotBlock is the regression test for
+// the 0.8.0 unbrowsable-nodes bug: the outbound fan-out (processAnnounceTable,
+// forwardPathRequest, forwardPathResponseToRequesters) used to send to every
+// interface sequentially on the single maintenance goroutine, so one
+// half-open TCP peer whose conn.Write stalled wedged the whole transport —
+// link handshakes on every other interface timed out. The fan-out now
+// dispatches each send on its own goroutine, so a stalled peer blocks only
+// itself.
+func TestProcessAnnounceTableStalledPeerDoesNotBlock(t *testing.T) {
+	t.Parallel()
+	ts := NewTransportSystem(nil)
+	ts.identity = mustTestNewIdentity(t, true)
+
+	source := &capturingInterface{name: "source"}
+	stalled := &blockingInterface{capturingInterface: capturingInterface{name: "stalled"}, blockFor: 2 * time.Second}
+	fast := &capturingInterface{name: "fast"}
+	ts.interfaces = append(ts.interfaces, source, stalled, fast)
+
+	id := mustTestNewIdentity(t, true)
+	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "stall-test")
+	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 1)
+	p.Hops = 1
+	ts.handleAnnounce(p, source)
+
+	// processAnnounceTable fans the rebroadcast out on goroutines. The
+	// stalled peer's 2s Send runs in the background, so processAnnounceTable
+	// itself must return far sooner — otherwise a single half-open peer
+	// wedges maintenance and every link handshake behind it.
+	start := time.Now()
+	ts.processAnnounceTable(time.Now().Add(10 * time.Second))
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("processAnnounceTable blocked %v on a stalled peer; fan-out must be concurrent", d)
+	}
+
+	// The fast interface still gets its rebroadcast despite the stalled peer.
+	// WaitOutboundSends drains the dispatched goroutines, including the
+	// stalled peer's (which completes after its 2s block).
+	ts.WaitOutboundSends()
+	if fast.sendCount != 1 {
+		t.Fatalf("expected fast interface to receive rebroadcast despite stalled peer, got %v", fast.sendCount)
+	}
+	if stalled.sendCount != 1 {
+		t.Fatalf("expected stalled interface to eventually receive rebroadcast, got %v", stalled.sendCount)
 	}
 }
 
@@ -285,6 +332,7 @@ func TestAnnounceQueueQueuesAndDrainsOnCappedInterface(t *testing.T) {
 
 	ts.handleAnnounce(packet, source)
 	ts.processAnnounceTable(now.Add(10 * time.Second))
+	ts.WaitOutboundSends()
 
 	if outbound.sendCount != 0 {
 		t.Fatalf("expected announce to be queued during active cap, got %v sends", outbound.sendCount)
@@ -329,9 +377,11 @@ func TestAnnounceQueueDeduplicatesNewerDestination(t *testing.T) {
 
 	ts.handleAnnounce(first, source)
 	ts.processAnnounceTable(now.Add(10 * time.Second))
+	ts.WaitOutboundSends()
 
 	ts.handleAnnounce(second, source)
 	ts.processAnnounceTable(now.Add(20 * time.Second))
+	ts.WaitOutboundSends()
 
 	ts.mu.Lock()
 	state := ts.announceQueues[outbound]
@@ -391,6 +441,7 @@ func TestAnnounceQueueBlocksForwardedPathRequests(t *testing.T) {
 	}
 
 	ts.forwardPathRequest(packet, source)
+	ts.WaitOutboundSends()
 	if outbound.sendCount != 0 {
 		t.Fatalf("expected queued announces to block forwarded path request, got %v sends", outbound.sendCount)
 	}
@@ -447,6 +498,7 @@ func TestPathResponseAnnounceNotRebroadcast(t *testing.T) {
 	}
 
 	ts.processAnnounceTable(time.Now().Add(10 * time.Second))
+	ts.WaitOutboundSends()
 	if outbound.sendCount != 0 {
 		t.Fatalf("expected no rebroadcast transmissions for path-response announce, got %v", outbound.sendCount)
 	}
@@ -1200,6 +1252,23 @@ func (c *capturingInterface) Send(data []byte) error {
 	c.lastSent = make([]byte, len(data))
 	copy(c.lastSent, data)
 	return nil
+}
+
+// blockingInterface is a capturingInterface whose Send blocks for a fixed
+// duration, simulating a half-open TCP peer whose conn.Write stalls until the
+// per-interface write deadline fires. It verifies the outbound fan-out is
+// concurrent: a stalled peer must block only its own goroutine, never the
+// maintenance loop or a readLoop that dispatched the send (the 0.8.0
+// regression where one stalled peer wedged link handshakes on every other
+// interface).
+type blockingInterface struct {
+	capturingInterface
+	blockFor time.Duration
+}
+
+func (b *blockingInterface) Send(data []byte) error {
+	time.Sleep(b.blockFor)
+	return b.capturingInterface.Send(data)
 }
 
 type failingInterface struct {

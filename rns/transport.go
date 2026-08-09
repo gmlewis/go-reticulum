@@ -241,6 +241,15 @@ type TransportSystem struct {
 	useImplicitProof bool
 	mu               sync.Mutex
 
+	// outboundWG tracks outbound sends dispatched on their own goroutines by
+	// the fan-out paths (processAnnounceTable, forwardPathRequest,
+	// forwardPathResponseToRequesters) so a single stalled peer cannot block
+	// the transport maintenance loop or an interface readLoop. The
+	// maintenance loop never waits on it — that would re-introduce exactly
+	// the stall it exists to prevent. It is only drained by tests (via
+	// WaitOutboundSends) that need deterministic delivery before asserting.
+	outboundWG sync.WaitGroup
+
 	// Traffic counters driven by count_traffic_loop (Python
 	// Transport.count_traffic_loop, Transport.py:419-451). trafficCounters
 	// holds the per-interface last sample ({ts, rxb, txb}); trafficRxb/txb
@@ -1461,6 +1470,47 @@ func (ts *TransportSystem) sendRebroadcast(iface interfaces.Interface, raw []byt
 	}
 }
 
+// dispatchForwardSend sends one forwarded/rebroadcast frame to a single
+// outbound interface, applying IFAC egress and invalidating paths on a real
+// failure. It is meant to run in its own goroutine so a stalled peer — one
+// whose conn.Write blocks until the per-interface write deadline fires —
+// cannot block the caller.
+//
+// Both the transport maintenance loop and each interface readLoop fan out
+// across multiple outbound interfaces. Doing those sends sequentially meant
+// a single half-open TCP peer stalled every other outbound write (and, on a
+// readLoop, every subsequent inbound packet) for the whole write-deadline
+// window. Go gives us a goroutine per send for free; a stalled peer should
+// only ever stall its own goroutine, never the loop that dispatched it.
+func (ts *TransportSystem) dispatchForwardSend(iface interfaces.Interface, raw []byte, what string) {
+	if ifac, ok := iface.(ifacOutboundHook); ok {
+		processed, err := ifac.ApplyIFACOutbound(raw)
+		if err != nil {
+			ts.logger.Error("Failed IFAC egress for %v on %v: %v", what, iface.Name(), err)
+			return
+		}
+		raw = processed
+	}
+
+	wasUp := iface.Status()
+	if err := iface.Send(raw); err != nil {
+		if wasUp {
+			ts.logger.Error("Failed %v on %v: %v", what, iface.Name(), err)
+			ts.InvalidatePathsViaInterface(iface)
+		}
+	}
+}
+
+// WaitOutboundSends blocks until every outbound send dispatched on its own
+// goroutine by processAnnounceTable/forwardPathRequest/
+// forwardPathResponseToRequesters has completed. It is intended for tests
+// that assert on the side effects of those fan-out paths, which dispatch
+// non-blocking so a stalled peer cannot wedge the transport. Production
+// code never calls this — waiting would re-introduce the stall.
+func (ts *TransportSystem) WaitOutboundSends() {
+	ts.outboundWG.Wait()
+}
+
 func (ts *TransportSystem) processAnnounceTable(now time.Time) {
 	type sendJob struct {
 		iface interfaces.Interface
@@ -1510,8 +1560,13 @@ func (ts *TransportSystem) processAnnounceTable(now time.Time) {
 	}
 	ts.mu.Unlock()
 
+	// Dispatch each rebroadcast on its own goroutine. sendRebroadcast does a
+	// synchronous conn.Write bounded by the interface's write deadline; if it
+	// ran inline, a single half-open peer would block the maintenance loop
+	// (and every other outbound rebroadcast behind it) for the whole deadline
+	// window. A goroutine per send isolates the stall to the stalled peer.
 	for _, job := range jobs {
-		ts.sendRebroadcast(job.iface, job.raw)
+		ts.outboundWG.Go(func() { ts.sendRebroadcast(job.iface, job.raw) })
 	}
 }
 
@@ -1595,24 +1650,14 @@ func (ts *TransportSystem) forwardPathRequest(packet *Packet, source interfaces.
 	}
 	ts.mu.Unlock()
 
+	// Forward the path request to every other interface concurrently. This
+	// runs on the readLoop of the interface that received the request; an
+	// inline sequential send to a stalled peer would block that readLoop for
+	// the write-deadline window and stall every subsequent inbound packet —
+	// including any link handshake in flight. A goroutine per send keeps the
+	// readLoop reading.
 	for _, job := range jobs {
-		raw := job.raw
-		if ifac, ok := job.iface.(ifacOutboundHook); ok {
-			processed, err := ifac.ApplyIFACOutbound(raw)
-			if err != nil {
-				ts.logger.Error("Failed IFAC egress for forwarded path request on %v: %v", job.iface.Name(), err)
-				continue
-			}
-			raw = processed
-		}
-
-		wasUp := job.iface.Status()
-		if err := job.iface.Send(raw); err != nil {
-			if wasUp {
-				ts.logger.Error("Failed forwarding path request on %v: %v", job.iface.Name(), err)
-				ts.InvalidatePathsViaInterface(job.iface)
-			}
-		}
+		ts.outboundWG.Go(func() { ts.dispatchForwardSend(job.iface, job.raw, "forwarding path request") })
 	}
 }
 
@@ -1658,30 +1703,15 @@ func (ts *TransportSystem) forwardPathResponseToRequesters(packet *Packet, sourc
 		return false
 	}
 
-	forwarded := false
+	// Dispatch each response send on its own goroutine (see forwardPathRequest
+	// for why a readLoop must not block on a stalled outbound peer). The
+	// caller ignores the return, so we report whether we dispatched to at
+	// least one requester rather than waiting on the writes.
 	for _, job := range jobs {
-		raw := job.raw
-		if ifac, ok := job.iface.(ifacOutboundHook); ok {
-			processed, err := ifac.ApplyIFACOutbound(raw)
-			if err != nil {
-				ts.logger.Error("Failed IFAC egress for forwarded path response on %v: %v", job.iface.Name(), err)
-				continue
-			}
-			raw = processed
-		}
-
-		wasUp := job.iface.Status()
-		if err := job.iface.Send(raw); err != nil {
-			if wasUp {
-				ts.logger.Error("Failed forwarding path response on %v: %v", job.iface.Name(), err)
-				ts.InvalidatePathsViaInterface(job.iface)
-			}
-			continue
-		}
-		forwarded = true
+		ts.outboundWG.Go(func() { ts.dispatchForwardSend(job.iface, job.raw, "forwarding path response") })
 	}
 
-	return forwarded
+	return len(jobs) > 0
 }
 
 func (ts *TransportSystem) cullExpiredPaths(now time.Time) {
