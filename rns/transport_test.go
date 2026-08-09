@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -1696,5 +1697,114 @@ func TestAwaitPath(t *testing.T) {
 	_ = got
 	if elapsed > 50*time.Millisecond {
 		t.Fatalf("AwaitPath on unknown dest took too long: %v", elapsed)
+	}
+}
+
+// TestClaimDownNotifyOncePerDown verifies the down-notify latch lets exactly
+// one concurrent caller claim a down transition for an interface, suppresses
+// further claims until the interface is observed up again, and re-arms after
+// that clear.
+func TestClaimDownNotifyOncePerDown(t *testing.T) {
+	t.Parallel()
+	ts := NewTransportSystem(nil)
+	iface := &capturingInterface{name: "x"}
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	wins := 0
+	for range 100 {
+		wg.Go(func() {
+			if ts.claimDownNotify(iface) {
+				mu.Lock()
+				wins++
+				mu.Unlock()
+			}
+		})
+	}
+	wg.Wait()
+	if wins != 1 {
+		t.Fatalf("expected exactly 1 winning claim among 100 concurrent, got %d", wins)
+	}
+	if ts.claimDownNotify(iface) {
+		t.Fatalf("expected second claim to be suppressed by latch")
+	}
+	// After the latch is cleared (interface observed up again), a claim wins.
+	ts.mu.Lock()
+	delete(ts.downNotified, iface)
+	ts.mu.Unlock()
+	if !ts.claimDownNotify(iface) {
+		t.Fatalf("expected claim to win after latch clear")
+	}
+}
+
+// TestDispatchForwardSendFloodInvalidatesOncePerDown reproduces the Quortal
+// flood: a half-open interface whose Send fails on a burst of ~50 concurrent
+// queued sends (the drain after a write-deadline timeout). Without the latch
+// each failing send ran a full InvalidatePathsViaInterface scan; with it, the
+// path is invalidated exactly once per down transition and a second burst
+// while the interface is still down suppresses, matching Python RNS which
+// tears down once instead of invalidating per failed send.
+func TestDispatchForwardSendFloodInvalidatesOncePerDown(t *testing.T) {
+	t.Parallel()
+	ts := NewTransportSystem(nil)
+	ts.identity = mustTestNewIdentity(t, true)
+
+	dead := &failingInterface{name: "dead-quortal"}
+	ts.interfaces = append(ts.interfaces, dead)
+
+	destHash := []byte("deadpath-destination")
+	burst := func(n int) {
+		var wg sync.WaitGroup
+		for range n {
+			wg.Go(func() {
+				ts.dispatchForwardSend(dead, []byte{0xC0, 0x02, 0x01}, "forwarding path request")
+			})
+		}
+		wg.Wait()
+	}
+
+	// Install a path that routes via the dead interface.
+	ts.mu.Lock()
+	ts.pathTable[string(destHash)] = &PathEntry{Interface: dead, Hops: 2, Timestamp: time.Now()}
+	ts.mu.Unlock()
+
+	// First burst: interface is up, Send fails. Exactly one goroutine claims
+	// the latch and invalidates the path; the other 49 suppress.
+	burst(50)
+	ts.mu.Lock()
+	_, pathOK := ts.pathTable[string(destHash)]
+	_, latched := ts.downNotified[dead]
+	ts.mu.Unlock()
+	if pathOK {
+		t.Fatalf("expected path via dead interface to be invalidated after first burst")
+	}
+	if !latched {
+		t.Fatalf("expected down-notify latch to be set after first burst")
+	}
+
+	// Re-add the path. A second burst must NOT re-invalidate while the latch
+	// is set (the interface has not been observed up again).
+	ts.mu.Lock()
+	ts.pathTable[string(destHash)] = &PathEntry{Interface: dead, Hops: 2, Timestamp: time.Now()}
+	ts.mu.Unlock()
+	burst(50)
+	ts.mu.Lock()
+	_, stillThere := ts.pathTable[string(destHash)]
+	ts.mu.Unlock()
+	if !stillThere {
+		t.Fatalf("second burst re-invalidated the path; latch should suppress until interface is back up")
+	}
+
+	// Simulate the interface coming back up (processAnnounceTable clears the
+	// latch for up interfaces). A third burst can invalidate again.
+	ts.mu.Lock()
+	delete(ts.downNotified, dead)
+	ts.mu.Unlock()
+	burst(50)
+	ts.mu.Lock()
+	_, goneAgain := ts.pathTable[string(destHash)]
+	ts.mu.Unlock()
+	if goneAgain {
+		t.Fatalf("third burst after latch clear should invalidate the path again")
 	}
 }

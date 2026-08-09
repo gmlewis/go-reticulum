@@ -30,7 +30,46 @@ const (
 	// interfaces may override this via TCPClientInterface.writeTimeout
 	// (e.g. for slow or high-latency links).
 	tcpWriteTimeout = 10 * time.Second
+
+	// tcpKeepAliveIdle/Interval/Count configure OS-level keep-alive probes on
+	// TCP connections so a half-open peer (one that died without sending a
+	// FIN) is detected within a bounded window and reported to readLoop's
+	// conn.Read, instead of lingering as a live-but-dead interface that
+	// reports Status()==true and black-holes directed packets until an
+	// outbound write happens to time out. Idle is the quiet time before the
+	// first probe; Interval is the gap between probes; Count is the number of
+	// unanswered probes before the OS drops the connection. The detection
+	// window is approximately Idle + Interval*Count. This is an idle backstop
+	// — for connections carrying traffic, the per-write deadline
+	// (tcpWriteTimeout) detects a half-open peer faster on the next outbound
+	// send. Values are deliberately lenient to avoid killing healthy
+	// connections through transient latency or packet loss.
+	tcpKeepAliveIdle     = 60 * time.Second
+	tcpKeepAliveInterval = 15 * time.Second
+	tcpKeepAliveCount    = 4
 )
+
+// applyTCPConnOpts sets shared TCP socket options on a freshly established or
+// accepted connection: TCP_NODELAY so small RNS frames are sent immediately,
+// and keep-alive probes so a half-open peer is reaped by the OS in a bounded
+// window (see tcpKeepAlive*).
+func applyTCPConnOpts(conn net.Conn) {
+	tcpConn, ok := conn.(*net.TCPConn)
+	if !ok {
+		return
+	}
+	if err := tcpConn.SetNoDelay(true); err != nil {
+		log.Printf("[TCP] Failed to set TCP_NODELAY: %v", err)
+	}
+	if err := tcpConn.SetKeepAliveConfig(net.KeepAliveConfig{
+		Enable:   true,
+		Idle:     tcpKeepAliveIdle,
+		Interval: tcpKeepAliveInterval,
+		Count:    tcpKeepAliveCount,
+	}); err != nil {
+		log.Printf("[TCP] Failed to set keep-alive: %v", err)
+	}
+}
 
 // TCPClientInterface drives a persistent outbound TCP session used to tunnel
 // Reticulum frames. It manages reconnection logic and supports both raw HDLC
@@ -124,12 +163,7 @@ func (tci *TCPClientInterface) connect() error {
 		return err
 	}
 	log.Printf("Go TCPClientInterface %v connected", tci.name)
-	// Disable Nagle's algorithm to ensure small packets are sent immediately
-	if tcpConn, ok := conn.(*net.TCPConn); ok {
-		if err := tcpConn.SetNoDelay(true); err != nil {
-			log.Printf("[TCP] Failed to set TCP_NODELAY: %v", err)
-		}
-	}
+	applyTCPConnOpts(conn)
 	tci.mu.Lock()
 	tci.conn = conn
 	tci.mu.Unlock()
@@ -449,12 +483,7 @@ func (tsi *TCPServerInterface) acceptLoop() {
 func (tsi *TCPServerInterface) handleConnection(conn net.Conn) {
 	name := fmt.Sprintf("Client %v on %v", conn.RemoteAddr().String(), tsi.name)
 	// log.Printf("[TCP] Server %v: accepted connection from %v, creating spawned interface", tsi.name, conn.RemoteAddr())
-	// Disable Nagle's algorithm to ensure small packets are sent immediately
-	if tcpConn, ok := conn.(*net.TCPConn); ok {
-		if err := tcpConn.SetNoDelay(true); err != nil {
-			log.Printf("[TCP] Failed to set TCP_NODELAY: %v", err)
-		}
-	}
+	applyTCPConnOpts(conn)
 	// Create a TCPClientInterface from the connected socket
 	bi := NewBaseInterface(name, ModeFull, TCPBitrateGuess)
 	bi.copyPanicOnInterfaceErrorFrom(tsi.BaseInterface)

@@ -193,6 +193,20 @@ type TransportSystem struct {
 	pendingPathRequests   map[string][]interfaces.Interface
 	pendingPathRequestAt  map[string]time.Time
 
+	// downNotified is the once-per-down-transition latch for the outbound
+	// fan-out paths (sendRebroadcast, dispatchForwardSend). When an
+	// interface's Send fails while it was up, the first caller claims the
+	// latch and performs the log + InvalidatePathsViaInterface; the dozens
+	// of concurrent queued sends that fail on the same now-dead connection
+	// suppress, so a half-open peer whose write deadline fires cannot
+	// trigger a burst of full pathTable scans and error lines under ts.mu
+	// (which starves inbound link-handshake processing). onDown (registered
+	// for TCP interfaces in RegisterInterface) already invalidates once on
+	// the down transition; this latch keeps the fan-out paths from redo it
+	// per queued send. The latch is cleared by processAnnounceTable once the
+	// interface is observed up again, and by RegisterInterface.
+	downNotified map[interfaces.Interface]struct{}
+
 	packetRSSICache map[string]float64
 	packetSNRCache  map[string]float64
 	packetQCache    map[string]float64
@@ -405,6 +419,7 @@ func NewTransportSystem(logger *Logger) *TransportSystem {
 		pathRequests:         make(map[string]time.Time),
 		pendingPathRequests:  make(map[string][]interfaces.Interface),
 		pendingPathRequestAt: make(map[string]time.Time),
+		downNotified:         make(map[interfaces.Interface]struct{}),
 		packetRSSICache:      make(map[string]float64),
 		packetSNRCache:       make(map[string]float64),
 		packetQCache:         make(map[string]float64),
@@ -1222,6 +1237,28 @@ func (ts *TransportSystem) InvalidatePath(destHash []byte) bool {
 	return ok1 || ok2
 }
 
+// claimDownNotify reports whether the caller is the first to observe the given
+// interface failing while it was up. It is the once-per-down-transition latch
+// for the outbound fan-out paths (sendRebroadcast, dispatchForwardSend): the
+// first failing send claims the latch and performs the log + path invalidation,
+// while the concurrent queued sends that fail on the same now-dead connection
+// suppress. Without this, a half-open TCP peer whose write deadline fires
+// drains a burst of dozens of queued sends onto the closed socket, each running
+// a full InvalidatePathsViaInterface scan under ts.mu — starving inbound
+// link-handshake processing and timing out otherwise-healthy links. The latch
+// is cleared by processAnnounceTable once the interface is back up, and by
+// RegisterInterface.
+func (ts *TransportSystem) claimDownNotify(iface interfaces.Interface) bool {
+	ts.mu.Lock()
+	if _, ok := ts.downNotified[iface]; ok {
+		ts.mu.Unlock()
+		return false
+	}
+	ts.downNotified[iface] = struct{}{}
+	ts.mu.Unlock()
+	return true
+}
+
 // InvalidatePathsViaInterface removes all known paths that route via an interface.
 func (ts *TransportSystem) InvalidatePathsViaInterface(iface interfaces.Interface) int {
 	ts.mu.Lock()
@@ -1463,7 +1500,7 @@ func (ts *TransportSystem) sendRebroadcast(iface interfaces.Interface, raw []byt
 	// an interface that was up warrants logging and path invalidation.
 	wasUp := iface.Status()
 	if err := iface.Send(raw); err != nil {
-		if wasUp {
+		if wasUp && ts.claimDownNotify(iface) {
 			ts.logger.Error("Failed to re-broadcast announce on %v: %v", iface.Name(), err)
 			ts.InvalidatePathsViaInterface(iface)
 		}
@@ -1494,7 +1531,7 @@ func (ts *TransportSystem) dispatchForwardSend(iface interfaces.Interface, raw [
 
 	wasUp := iface.Status()
 	if err := iface.Send(raw); err != nil {
-		if wasUp {
+		if wasUp && ts.claimDownNotify(iface) {
 			ts.logger.Error("Failed %v on %v: %v", what, iface.Name(), err)
 			ts.InvalidatePathsViaInterface(iface)
 		}
@@ -1521,6 +1558,16 @@ func (ts *TransportSystem) processAnnounceTable(now time.Time) {
 
 	ts.mu.Lock()
 	ts.ensureStateLocked()
+	// Clear the down-notification latch for any interface that is back up,
+	// so a future down transition can log + invalidate again. TCP client
+	// interfaces reconnect without re-registering, so this observed-up sweep
+	// (which already holds ts.mu and iterates interfaces below) is the up
+	// signal for the latch.
+	for _, ifc := range ts.interfaces {
+		if ifc.Status() {
+			delete(ts.downNotified, ifc)
+		}
+	}
 	for destinationHash, entry := range ts.announceTable {
 		if now.Before(entry.NextRebroadcastAt) {
 			continue
@@ -1908,6 +1955,9 @@ func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 	destinationsBefore := len(ts.destinations)
 	ts.interfaces = append(ts.interfaces, iface)
 	ts.resolvePathInterfacesLocked()
+	// A freshly registered interface is up; clear any stale down-notify
+	// latch so a future down transition can log + invalidate.
+	delete(ts.downNotified, iface)
 
 	destinationsToAnnounce := make([]*Destination, len(ts.destinations))
 	copy(destinationsToAnnounce, ts.destinations)
