@@ -1971,8 +1971,17 @@ func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 	// without waiting for stale paths to expire. The hook fires once per
 	// up->down transition (inside failConn) instead of on every failed
 	// rebroadcast/forward Send as the old lazy path did.
+	//
+	// Also wire an onConnect hook that re-announces the local destinations
+	// each time the client (re)connects. A TCP client is registered (and
+	// announced) even when its initial connect is refused, so that first
+	// announce is sent to a dead socket and lost; without re-announcing on
+	// reconnect the peer never learns this node's destinations until the
+	// periodic announce interval (minutes) fires. The hook is a no-op for
+	// spawned (server-accepted) clients, which never run reconnectLoop.
 	if tci, ok := iface.(*interfaces.TCPClientInterface); ok {
 		tci.SetOnDown(func() { ts.InvalidatePathsViaInterface(tci) })
+		tci.SetOnConnect(func() { ts.announceDestinationsOnInterface(tci, nil) })
 	}
 
 	// Start inbound processor for this interface
@@ -1990,7 +1999,27 @@ func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 		}()
 	}
 
-	for _, d := range destinationsToAnnounce {
+	ts.announceDestinationsOnInterface(iface, destinationsToAnnounce)
+}
+
+// announceDestinationsOnInterface re-announces the local single destinations
+// over the given interface. It is called by RegisterInterface when an interface
+// is freshly registered, and by a TCP client interface's onConnect hook after
+// it (re)connects — so a TCP client that registered while disconnected does not
+// silently lose its announce to the peer until the periodic interval. When
+// alreadyAnnounced is non-nil it is used as the destination set (the snapshot
+// taken under the transport lock in RegisterInterface); otherwise the current
+// destinations are snapshotted here, so a reconnect re-announces any
+// destinations added since the interface was first registered.
+func (ts *TransportSystem) announceDestinationsOnInterface(iface interfaces.Interface, alreadyAnnounced []*Destination) {
+	destinations := alreadyAnnounced
+	if destinations == nil {
+		ts.mu.Lock()
+		destinations = make([]*Destination, len(ts.destinations))
+		copy(destinations, ts.destinations)
+		ts.mu.Unlock()
+	}
+	for _, d := range destinations {
 		if d.direction == DestinationIn && d.Type == DestinationSingle {
 			ts.logger.Debug("[Transport] Re-announcing destination %x on new interface %v", d.Hash, iface.Name())
 			if err := d.Announce(nil); err != nil {

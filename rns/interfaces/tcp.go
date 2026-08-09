@@ -115,6 +115,20 @@ type TCPClientInterface struct {
 	// interface is registered.
 	onDownMu sync.Mutex
 	onDown   func()
+
+	// onConnect, if set, is invoked each time this outbound client interface
+	// (re)establishes its connection — after a successful connect() in
+	// reconnectLoop. The transport uses it to re-announce the local
+	// destinations over the interface. This matters because a TCP client is
+	// registered with the transport (and RegisterInterface announces its
+	// destinations) even when the initial connect is refused; that announce
+	// is sent to a dead socket and lost. Without re-announcing on reconnect,
+	// the peer never learns this node's destinations until the periodic
+	// announce interval (minutes) fires. Set by the transport when the
+	// interface is registered; nil for spawned (server-accepted) interfaces,
+	// which are announced by the server's connectHandler at accept time.
+	onConnectMu sync.Mutex
+	onConnect    func()
 }
 
 // NewTCPClientInterface initiates a resilient TCP connection to a remote peer.
@@ -176,6 +190,21 @@ func (tci *TCPClientInterface) reconnectLoop() {
 		time.Sleep(tci.reconnectDelay)
 		if err := tci.connect(); err == nil {
 			go tci.readLoop()
+			// The interface just came back up. Re-announce the local
+			// destinations so the peer learns about this node now,
+			// instead of waiting for the periodic announce interval.
+			// RegisterInterface's own announce ran against a dead
+			// socket when this interface registered while disconnected,
+			// so without this the first successful connect after a
+			// refused/lost connection would leave this node unannounced
+			// to the peer for minutes. The hook is nil (a no-op) for
+			// spawned interfaces and before registration completes.
+			tci.onConnectMu.Lock()
+			hook := tci.onConnect
+			tci.onConnectMu.Unlock()
+			if hook != nil {
+				hook()
+			}
 			return
 		}
 	}
@@ -386,6 +415,16 @@ func (tci *TCPClientInterface) SetOnDown(f func()) {
 	tci.onDownMu.Lock()
 	tci.onDown = f
 	tci.onDownMu.Unlock()
+}
+
+// SetOnConnect registers a callback invoked each time this outbound client
+// interface (re)establishes its connection. The transport uses it to
+// re-announce the local destinations so a client that registered while
+// disconnected does not stay unannounced to the peer after it reconnects.
+func (tci *TCPClientInterface) SetOnConnect(f func()) {
+	tci.onConnectMu.Lock()
+	tci.onConnect = f
+	tci.onConnectMu.Unlock()
 }
 
 // Status reports whether the TCP client is currently connected and running.
