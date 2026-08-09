@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns/crypto"
+	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
 type errReader struct{}
@@ -230,4 +231,42 @@ func TestResourceAccessors(t *testing.T) {
 	_ = res.GetParts()
 	_ = res.GetSegments()
 	_ = res.GetTransferSize()
+}
+
+// TestUnpackResourceAdvertisementRejectsMalformed is a regression test for two
+// panic classes in UnpackResourceAdvertisement:
+//   - a str-typed (rather than bin-typed) value for the h/r/o/q/m fields
+//     panicked on a bare v.([]byte) type assertion;
+//   - a negative or oversized part count (n) panicked makeslice / OOM-threw
+//     when a caller fed adv.N into make([]*ResourcePart, n).
+//
+// All such malformed advertisements must now be rejected with an error.
+func TestUnpackResourceAdvertisementRejectsMalformed(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		m    map[string]any
+	}{
+		{"h is str not bytes", map[string]any{"h": "deadbeef"}},
+		{"r is str not bytes", map[string]any{"r": "x"}},
+		{"m is str not bytes", map[string]any{"m": "y"}},
+		{"q is str not bytes", map[string]any{"q": "z"}},
+		{"o is str not bytes", map[string]any{"o": "w"}},
+		{"negative part count", map[string]any{"n": int64(-1)}},
+		{"part count exceeds backstop", map[string]any{"n": int64(ResourceMaxParts + 1)}},
+		{"part count exceeds total size", map[string]any{"t": int64(10), "n": int64(100)}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			data, err := msgpack.Pack(tc.m)
+			if err != nil {
+				t.Fatalf("Pack: %v", err)
+			}
+			_, err = UnpackResourceAdvertisement(data)
+			if err == nil {
+				t.Error("expected error for malformed advertisement, got nil")
+			}
+		})
+	}
 }

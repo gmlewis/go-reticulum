@@ -32,24 +32,23 @@
 package sais
 
 func getCounts_int(T []int, C []int, n, k int) {
-	var i int
-	for i = 0; i < k; i++ {
+	for i := range k {
 		C[i] = 0
 	}
-	for i = 0; i < n; i++ {
+	for i := range n {
 		C[T[i]]++
 	}
 }
 
 func getBuckets_int(C, B []int, k int, end bool) {
-	var i, sum int
+	var sum int
 	if end {
-		for i = 0; i < k; i++ {
+		for i := range k {
 			sum += C[i]
 			B[i] = sum
 		}
 	} else {
-		for i = 0; i < k; i++ {
+		for i := range k {
 			sum += C[i]
 			B[i] = sum - C[i]
 		}
@@ -345,7 +344,7 @@ func postProcLMS2_int(SA []int, n, m int) int {
 		}
 	} else {
 		// Unset flags.
-		for i = 0; i < m; i++ {
+		for i := range m {
 			if j = SA[i]; n <= j {
 				j -= n
 				SA[i] = j

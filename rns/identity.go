@@ -200,9 +200,18 @@ func ValidateAnnounce(ts Transport, packet *Packet) bool {
 
 	keySize := IdentityKeySize / 8
 	nameHashLen := NameHashLength / 8
-	sigLen := 64 // Ed25519 signature length
+	sigLen := 64      // Ed25519 signature length
+	ratchetSize := 32 // X25519 public key size, present when ContextFlag is set
 
-	if len(packet.Data) < keySize+nameHashLen+10+sigLen {
+	// Minimum required data length depends on whether a ratchet key is
+	// present. The signature follows the ratchet (if any), so a packet that
+	// passes the base check but is too short to hold a ratchet+signature
+	// must be rejected rather than sliced out of range.
+	minLen := keySize + nameHashLen + 10 + sigLen
+	if packet.ContextFlag == FlagSet {
+		minLen += ratchetSize
+	}
+	if len(packet.Data) < minLen {
 		return false
 	}
 
@@ -217,9 +226,8 @@ func ValidateAnnounce(ts Transport, packet *Packet) bool {
 	logger.Debug("ValidateAnnounce: Raw[:120]=%x", packet.Raw[:120])
 	logger.Debug("ValidateAnnounce: Data size=%v, offset=%v, context_flag=%v", len(packet.Data), offset, packet.ContextFlag)
 	if packet.ContextFlag == FlagSet {
-		ratchetsize := 32 // X25519 public key size
-		ratchet = packet.Data[offset : offset+ratchetsize]
-		offset += ratchetsize
+		ratchet = packet.Data[offset : offset+ratchetSize]
+		offset += ratchetSize
 	}
 
 	signature = packet.Data[offset : offset+sigLen]

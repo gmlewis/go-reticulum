@@ -248,7 +248,7 @@ func (c *clientT) getStatus(remote string, configDirArg string, rnsConfigDir str
 	}
 
 	// Python: mutil = round((s["messagestore"]["bytes"]/s["messagestore"]["limit"])*100, 2)
-	ms := s["messagestore"].(map[string]any)
+	ms := anyToMapStringAny(s["messagestore"])
 	msBytes := anyToFloat64(ms["bytes"])
 	msLimit := anyToFloat64(ms["limit"])
 	msUtilStr := "0%"
@@ -258,7 +258,7 @@ func (c *clientT) getStatus(remote string, configDirArg string, rnsConfigDir str
 	}
 
 	whoStr := "all nodes"
-	if s["from_static_only"].(bool) {
+	if anyToBool(s["from_static_only"]) {
 		whoStr = "static peers only"
 	}
 
@@ -269,23 +269,26 @@ func (c *clientT) getStatus(remote string, configDirArg string, rnsConfigDir str
 	peeredRxBytes := 0.0
 	peeredTxBytes := 0.0
 
-	peers := s["peers"].(map[string]any)
+	peers := anyToMapStringAny(s["peers"])
 	for _, peerVal := range peers {
-		p := peerVal.(map[string]any)
-		pm := p["messages"].(map[string]any)
+		p, ok := peerVal.(map[string]any)
+		if !ok {
+			continue
+		}
+		pm := anyToMapStringAny(p["messages"])
 		peeredIncoming += anyToFloat64(pm["incoming"])
 		peeredOutgoing += anyToFloat64(pm["outgoing"])
 		peeredRxBytes += anyToFloat64(p["rx_bytes"])
 		peeredTxBytes += anyToFloat64(p["tx_bytes"])
 
-		if p["alive"].(bool) {
+		if anyToBool(p["alive"]) {
 			availablePeers++
 		} else {
 			unreachablePeers++
 		}
 	}
 
-	clients := s["clients"].(map[string]any)
+	clients := anyToMapStringAny(s["clients"])
 	cprr := anyToFloat64(clients["client_propagation_messages_received"])
 	cprs := anyToFloat64(clients["client_propagation_messages_served"])
 	upi := anyToFloat64(s["unpeered_propagation_incoming"])
@@ -298,7 +301,7 @@ func (c *clientT) getStatus(remote string, configDirArg string, rnsConfigDir str
 		df = peeredOutgoing / totalIncoming
 	}
 
-	dhs := fmt.Sprintf("<%x>", s["destination_hash"].([]byte))
+	dhs := fmt.Sprintf("<%x>", anyToBytes(s["destination_hash"]))
 	uts := rns.PrettyTime(anyToFloat64(s["uptime"]), false, false)
 	fmt.Printf("\nLXMF Propagation Node running on %v, uptime is %v\n", dhs, uts)
 
@@ -345,7 +348,10 @@ func (c *clientT) getStatus(remote string, configDirArg string, rnsConfigDir str
 
 		for peerID, peerVal := range peers {
 			ind := "  "
-			p := peerVal.(map[string]any)
+			p, ok := peerVal.(map[string]any)
+			if !ok {
+				continue
+			}
 			t := "Unknown peer    "
 			if s, ok := p["type"].(string); ok {
 				switch s {
@@ -357,7 +363,7 @@ func (c *clientT) getStatus(remote string, configDirArg string, rnsConfigDir str
 			}
 
 			a := "Unreachable"
-			if p["alive"].(bool) {
+			if anyToBool(p["alive"]) {
 				a = "Available"
 			}
 
@@ -382,7 +388,7 @@ func (c *clientT) getStatus(remote string, configDirArg string, rnsConfigDir str
 				hs = fmt.Sprintf("%v hops away", hops)
 			}
 
-			pm := p["messages"].(map[string]any)
+			pm := anyToMapStringAny(p["messages"])
 			pk := p["peering_key"]
 			psc := p["target_stamp_cost"]
 			psf := p["stamp_cost_flexibility"]
@@ -421,7 +427,7 @@ func (c *clientT) getStatus(remote string, configDirArg string, rnsConfigDir str
 
 			nn := ""
 			if p["name"] != nil {
-				nn = p["name"].(string)
+				nn = anyToString(p["name"])
 				nn = strings.TrimSpace(nn)
 				nn = strings.ReplaceAll(nn, "\n", "")
 				nn = strings.ReplaceAll(nn, "\r", "")
@@ -830,6 +836,43 @@ func anyToFloat64(v any) float64 {
 	default:
 		return 0
 	}
+}
+
+// anyToBool returns the bool value of v, or false if v is not a bool. Used to
+// safely read fields from an untrusted remote status response without a bare
+// type assertion that would panic on a missing or mistyped field.
+func anyToBool(v any) bool {
+	if b, ok := v.(bool); ok {
+		return b
+	}
+	return false
+}
+
+// anyToString returns the string value of v, or "" if v is not a string.
+func anyToString(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+// anyToBytes returns the []byte value of v, or nil if v is not a byte slice.
+func anyToBytes(v any) []byte {
+	if b, ok := v.([]byte); ok {
+		return b
+	}
+	return nil
+}
+
+// anyToMapStringAny returns the map[string]any value of v, or nil if v is not
+// such a map. Reading from the returned nil map yields zero values, so callers
+// that only read fields can use it directly; callers that iterate should guard
+// against nil (an empty/nil map iterates zero times).
+func anyToMapStringAny(v any) map[string]any {
+	if m, ok := v.(map[string]any); ok {
+		return m
+	}
+	return nil
 }
 
 // formatRound2 formats a float rounded to 2 decimal places, matching

@@ -383,6 +383,11 @@ func TestDoListenHandlesSIGINT(t *testing.T) {
 				readyCh <- struct{}{}
 			}
 		}
+		if err := scanner.Err(); err != nil {
+			output.WriteString("scanner error: ")
+			output.WriteString(err.Error())
+			output.WriteByte('\n')
+		}
 		outputCh <- output.String()
 	}()
 
@@ -392,8 +397,12 @@ func TestDoListenHandlesSIGINT(t *testing.T) {
 		t.Fatal("timed out waiting for readiness line")
 	}
 
-	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
-		t.Fatalf("syscall.Kill() error: %v", err)
+	proc, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatalf("os.FindProcess() error: %v", err)
+	}
+	if err := proc.Signal(syscall.SIGINT); err != nil {
+		t.Fatalf("proc.Signal() error: %v", err)
 	}
 
 	select {

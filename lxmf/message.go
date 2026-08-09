@@ -762,6 +762,10 @@ func (m *Message) packPropagated() error {
 		return errors.New("packed lxmf message too short for propagated payload")
 	}
 
+	if m.Destination == nil {
+		return errors.New("cannot pack propagated payload without destination")
+	}
+
 	if len(m.propagationEncryptedData) == 0 {
 		encryptedData, err := m.Destination.Encrypt(m.Packed[DestinationLength:])
 		if err != nil {

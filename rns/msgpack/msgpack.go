@@ -761,6 +761,13 @@ func unpackStr(r *bytes.Reader, l int) (string, error) {
 	if l == 0 {
 		return "", nil
 	}
+	// A declared string cannot contain more bytes than remain in the
+	// reader. Bounding l here prevents a malicious str32 length (up to 4 GiB)
+	// from driving a make([]byte, l) that throws a fatal out-of-memory panic
+	// before any content is read.
+	if l > r.Len() {
+		return "", io.ErrUnexpectedEOF
+	}
 	b := make([]byte, l)
 	_, err := io.ReadFull(r, b)
 	return string(b), err
@@ -769,6 +776,11 @@ func unpackStr(r *bytes.Reader, l int) (string, error) {
 func unpackBin(r *bytes.Reader, l int) ([]byte, error) {
 	if l == 0 {
 		return []byte{}, nil
+	}
+	// Same OOM guard as unpackStr: a bin32/str16-derived length must not
+	// exceed the remaining bytes, or make([]byte, l) can fatal-throw.
+	if l > r.Len() {
+		return nil, io.ErrUnexpectedEOF
 	}
 	b := make([]byte, l)
 	_, err := io.ReadFull(r, b)
@@ -788,6 +800,13 @@ func unpackExt(r *bytes.Reader, l int) (Ext, error) {
 }
 
 func unpackArrayWithOptions(r *bytes.Reader, l int, opts unpackOptions) ([]any, error) {
+	// Each array element consumes at least one byte, so a declared element
+	// count cannot exceed the remaining reader bytes. Without this guard a
+	// hostile array32 length (up to 2^32-1) drives make([]any, l) (~64 GiB),
+	// which fatal-throws "runtime: out of memory" before any element is read.
+	if l > r.Len() {
+		return nil, io.ErrUnexpectedEOF
+	}
 	a := make([]any, l)
 	for i := range l {
 		v, err := unpackWithOptions(r, opts)
@@ -800,6 +819,13 @@ func unpackArrayWithOptions(r *bytes.Reader, l int, opts unpackOptions) ([]any, 
 }
 
 func unpackMapWithOptions(r *bytes.Reader, l int, opts unpackOptions) (map[any]any, error) {
+	// Each map entry consumes at least two bytes (a key and a value), so a
+	// declared entry count cannot exceed half the remaining reader bytes.
+	// Using r.Len()/2 (rather than 2*l) avoids int overflow on 32-bit builds
+	// when l is a hostile map32 length up to 2^32-1.
+	if l > r.Len()/2 {
+		return nil, io.ErrUnexpectedEOF
+	}
 	m := make(map[any]any, l)
 	for range l {
 		k, err := unpackWithOptions(r, opts)
@@ -830,6 +856,12 @@ func unpackMapWithOptions(r *bytes.Reader, l int, opts unpackOptions) (map[any]a
 }
 
 func unpackOrderedMapWithOptions(r *bytes.Reader, l int, opts unpackOptions) (OrderedMap, error) {
+	// Same entry-count bound as unpackMapWithOptions: each entry needs at
+	// least two bytes, so cap l against half the remaining bytes to prevent a
+	// hostile map32 length from OOM-throwing in make(OrderedMap, 0, l).
+	if l > r.Len()/2 {
+		return nil, io.ErrUnexpectedEOF
+	}
 	m := make(OrderedMap, 0, l)
 	for range l {
 		k, err := unpackWithOptions(r, opts)

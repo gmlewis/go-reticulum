@@ -3,6 +3,8 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
+//go:build linux || darwin || freebsd
+
 package main
 
 import (
@@ -81,7 +83,6 @@ func TestLiveHardwareRestorePlan(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -148,7 +149,6 @@ func TestLiveWriteGateRequirements(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 

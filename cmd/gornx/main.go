@@ -798,6 +798,9 @@ func (rt *runtimeT) doInteractive(ts rns.Transport, destHashHex string) {
 		}
 		fmt.Print(prompt)
 	}
+	if err := scanner.Err(); err != nil {
+		fmt.Printf("stdin read error: %v\n", err)
+	}
 }
 
 func (rt *runtimeT) handleResponseInteractive(response any) {

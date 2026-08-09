@@ -114,7 +114,11 @@ func (s *eepromDownloaderState) downloadCfgSector() error {
 }
 
 func (s *eepromDownloaderState) parseEEPROM() error {
-	if len(s.eeprom) == 0 {
+	// Fixed offsets up to 0xa7 are read below (0x9b at the provisioned check,
+	// 0xa7 for the configured flag). A short-but-non-empty frame would pass a
+	// len==0 guard and then panic indexing those offsets. Require enough
+	// bytes to cover the highest fixed offset used.
+	if len(s.eeprom) < 0xa8 {
 		return errors.New("Invalid EEPROM data, could not parse device EEPROM.")
 	}
 	if s.eeprom[0x9b] != 0x73 {

@@ -201,9 +201,15 @@ func (d *Destination) buildAnnouncePacket(appData []byte) (*Packet, error) {
 			return nil, err
 		}
 		d.mu.Lock()
-		ratchet = d.ratchets[0].PublicKey().PublicBytes()
-		if d.transport != nil {
-			d.transport.SetRatchet(d.Hash, ratchet)
+		// RotateRatchets can leave d.ratchets empty when retainedRatchets is
+		// configured to 0, which would index out of range here. Guard the
+		// access; an empty ratchet set simply means this announce carries no
+		// ratchet key.
+		if len(d.ratchets) > 0 {
+			ratchet = d.ratchets[0].PublicKey().PublicBytes()
+			if d.transport != nil {
+				d.transport.SetRatchet(d.Hash, ratchet)
+			}
 		}
 	}
 	d.mu.Unlock()
@@ -281,8 +287,14 @@ func (d *Destination) reloadRatchets(path string) error {
 		return errors.New("invalid ratchet file format")
 	}
 
-	signature := m["signature"].([]byte)
-	packedRatchets := m["ratchets"].([]byte)
+	signature, ok := m["signature"].([]byte)
+	if !ok {
+		return errors.New("invalid ratchet file: missing or non-byte signature")
+	}
+	packedRatchets, ok := m["ratchets"].([]byte)
+	if !ok {
+		return errors.New("invalid ratchet file: missing or non-byte ratchets field")
+	}
 
 	if !d.identity.Verify(signature, packedRatchets) {
 		return errors.New("invalid ratchet file signature")

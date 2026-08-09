@@ -5,7 +5,7 @@
 /*
 Package qr encodes QR codes.
 */
-package qr // import "github.com/gmlewis/go-reticulum/qr"
+package qr
 
 import (
 	"errors"

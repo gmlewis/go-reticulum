@@ -156,6 +156,9 @@ func (r *replT) Run(ctx context.Context) {
 				return
 			}
 		}
+		if err := scanner.Err(); err != nil {
+			_, _ = fmt.Fprintf(r.out, "input read error: %v\n", err)
+		}
 	}()
 
 	for {

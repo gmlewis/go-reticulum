@@ -172,6 +172,62 @@ func TestIdentityProveExplicit(t *testing.T) {
 	}
 }
 
+// TestValidateAnnounceShortDataWithRacket is a regression test for a panic
+// where the minimum-length guard in ValidateAnnounce did not account for the
+// 32-byte ratchet key present when ContextFlag is set. A packet whose Data
+// was long enough to pass the base check (>=148 bytes) but too short to hold
+// the ratchet+signature (>=180 bytes) sliced out of range at the signature
+// read and crashed the inbound path. Such malformed packets must be rejected
+// gracefully (return false) rather than panicking.
+func TestValidateAnnounceShortDataWithRatchet(t *testing.T) {
+	t.Parallel()
+
+	logger := NewLogger()
+	logger.SetLogLevel(LogNone) // suppress debug spam
+	ts := NewTransportSystem(logger)
+
+	const (
+		keySize     = IdentityKeySize / 8 // 64
+		nameHashLen = NameHashLength / 8  // 10
+		sigLen      = 64
+		ratchetSize = 32
+	)
+	baseMin := keySize + nameHashLen + 10 + sigLen                  // 148
+	ratchetMin := keySize + nameHashLen + 10 + ratchetSize + sigLen // 180
+
+	cases := []struct {
+		name        string
+		contextFlag int
+		dataLen     int
+	}{
+		{"ratchet set, between base and ratchet min (crash scenario)", FlagSet, ratchetMin - 2}, // 178
+		{"ratchet set, exactly ratchet min", FlagSet, ratchetMin},                               // 180
+		{"ratchet set, just below base min", FlagSet, baseMin - 1},                              // 147
+		{"ratchet unset, exactly base min", 0, baseMin},                                         // 148
+		{"ratchet unset, one below base min", 0, baseMin - 1},                                   // 147
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			packet := &Packet{
+				PacketType:  PacketAnnounce,
+				ContextFlag: tc.contextFlag,
+				Data:        bytes.Repeat([]byte{0xAB}, tc.dataLen),
+				Raw:         bytes.Repeat([]byte{0xCD}, 200), // >=120 for debug line
+			}
+
+			// The contract: never panic, always return false for these
+			// structurally-invalid/garbage payloads.
+			got := ValidateAnnounce(ts, packet)
+			if got {
+				t.Fatalf("expected ValidateAnnounce to reject garbage payload, got true")
+			}
+		})
+	}
+}
+
 func TestIdentityProveImplicit(t *testing.T) {
 	t.Parallel()
 

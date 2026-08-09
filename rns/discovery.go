@@ -762,7 +762,7 @@ func (e discoveryEndpoint) reachableOnForMatch(fallbackReachableOn string) strin
 
 func (e discoveryEndpoint) matchesTargetPort(targetPort int, fallbackPort *int) bool {
 	if !e.hasSpecifiedPort {
-		return fallbackPort == nil || (fallbackPort != nil && targetPort == *fallbackPort)
+		return fallbackPort == nil || targetPort == *fallbackPort
 	}
 	return e.comparablePort != nil && targetPort == *e.comparablePort
 }

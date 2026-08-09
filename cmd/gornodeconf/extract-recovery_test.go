@@ -67,7 +67,6 @@ func TestRecoveryEsptoolCommandArgs(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			if got := recoveryEsptoolCommandArgs("/tmp/recovery_esptool.py", "ttyUSB0", "921600", test.offset, test.size, test.outputFile); !reflect.DeepEqual(got, test.want) {

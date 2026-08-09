@@ -317,6 +317,38 @@ func TestUnpackMalformed(t *testing.T) {
 	}
 }
 
+// TestUnpackOversizedLengthsNoPanic is a regression test for the fatal
+// out-of-memory throw that occurred when a wire-supplied array32/map32/str32/
+// bin32 length was used to drive a make() before any content was read. A
+// crafted 5-byte payload (format byte + huge uint32 length, no body) must be
+// rejected with an error rather than fatal-throwing "runtime: out of memory".
+func TestUnpackOversizedLengthsNoPanic(t *testing.T) {
+	t.Parallel()
+	huge := []byte{0xff, 0xff, 0xff, 0xff} // 2^32-1 as big-endian uint32
+	tests := []struct {
+		name string
+		data []byte
+	}{
+		{"array32 huge length no body", append([]byte{array32}, huge...)},
+		{"str32 huge length no body", append([]byte{str32}, huge...)},
+		{"bin32 huge length no body", append([]byte{bin32}, huge...)},
+		{"map32 huge length no body", append([]byte{map32}, huge...)},
+		// A length that fits in int but exceeds the tiny remaining body must
+		// also error rather than panic (and must not allocate based on it).
+		{"array32 length exceeds body", []byte{array32, 0x00, 0x00, 0x10, 0x00, 0x01}}, // claims 4096 elems, 1 byte body
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			// The contract: return an error, do not panic (and do not OOM-throw).
+			_, err := Unpack(tt.data)
+			if err == nil {
+				t.Error("Unpack() expected error for oversized length, got nil")
+			}
+		})
+	}
+}
+
 func TestPackUnsupported(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

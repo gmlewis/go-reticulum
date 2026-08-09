@@ -590,7 +590,12 @@ func (l *Link) receive(packet *Packet) {
 			l.logger.Error("Failed to unpack request: %v", err)
 			return
 		}
-		go l.handleRequest(requestID, unpackedRequest.([]any))
+		reqList, ok := unpackedRequest.([]any)
+		if !ok {
+			l.logger.Error("Received malformed request packet (payload is not an array), ignoring")
+			return
+		}
+		go l.handleRequest(requestID, reqList)
 
 	case ContextResponse:
 		l.logger.Verbose("Received ContextResponse packet, data len=%v", len(packet.Data))
@@ -599,8 +604,16 @@ func (l *Link) receive(packet *Packet) {
 			l.logger.Error("Failed to unpack response: %v", err)
 			return
 		}
-		resList := unpackedResponse.([]any)
-		requestID := resList[0].([]byte)
+		resList, ok := unpackedResponse.([]any)
+		if !ok || len(resList) < 2 {
+			l.logger.Error("Received malformed response packet (not an array or too few elements), ignoring")
+			return
+		}
+		requestID, ok := resList[0].([]byte)
+		if !ok {
+			l.logger.Error("Received malformed response packet (request id is not bytes), ignoring")
+			return
+		}
 		responseData := resList[1]
 		l.logger.Verbose("Calling handleResponse for requestID=%x, responseData=%v (type: %T)", requestID, responseData, responseData)
 		l.handleResponse(requestID, responseData, nil)
@@ -1488,7 +1501,12 @@ func (l *Link) handleRequest(requestID []byte, unpackedRequest []any) {
 		return
 	}
 
-	requestedAt := time.Unix(0, int64(unpackedRequest[0].(float64)*1e9))
+	ts, ok0 := unpackedRequest[0].(float64)
+	if !ok0 {
+		l.logger.Debug("Received malformed request packet (bad timestamp), ignoring")
+		return
+	}
+	requestedAt := time.Unix(0, int64(ts*1e9))
 	pathHash, ok1 := unpackedRequest[1].([]byte)
 	requestData, ok2 := unpackedRequest[2].([]byte)
 	if !ok1 {

@@ -25,6 +25,14 @@ const (
 	ResourceRandomHashSize = 4
 	// ResourceAutoCompressMaxSize sets the upper limit on data size before auto-compression is skipped.
 	ResourceAutoCompressMaxSize = 64 * 1024 * 1024
+	// ResourceMaxParts is a defensive backstop on the number of parts a single
+	// resource advertisement may declare. It prevents a hostile or buggy peer
+	// from driving make([]*ResourcePart, n) into a makeslice panic (negative n)
+	// or an unrecoverable out-of-memory throw (absurd n) before any part is
+	// received. Legitimate transfers are gated by the size/consistency check
+	// (part count cannot exceed total size in bytes, since each part carries at
+	// least one byte), so this cap is only a last-resort bound.
+	ResourceMaxParts = 10_000_000
 )
 
 // ResourceOptions configures optional behavior for new resource transmissions, such as compression and metadata.
@@ -213,6 +221,22 @@ func UnpackResourceAdvertisement(data []byte) (*ResourceAdvertisement, error) {
 		return m[key]
 	}
 
+	// getBytes extracts a byte-slice field, returning an error if the field is
+	// present but not a msgpack bin. A malicious or buggy peer can send a
+	// str-typed value for h/r/o/q/m, which would otherwise panic on a bare
+	// v.([]byte) type assertion.
+	getBytes := func(key string) ([]byte, error) {
+		v := getVal(key)
+		if v == nil {
+			return nil, nil
+		}
+		b, ok := v.([]byte)
+		if !ok {
+			return nil, fmt.Errorf("invalid resource advertisement: field %q is not bytes", key)
+		}
+		return b, nil
+	}
+
 	if v := getVal("t"); v != nil {
 		if n, ok := toInt64(v); ok {
 			adv.T = n
@@ -228,14 +252,14 @@ func UnpackResourceAdvertisement(data []byte) (*ResourceAdvertisement, error) {
 			adv.N = int(n)
 		}
 	}
-	if v := getVal("h"); v != nil {
-		adv.H = v.([]byte)
+	if adv.H, err = getBytes("h"); err != nil {
+		return nil, err
 	}
-	if v := getVal("r"); v != nil {
-		adv.R = v.([]byte)
+	if adv.R, err = getBytes("r"); err != nil {
+		return nil, err
 	}
-	if v := getVal("o"); v != nil {
-		adv.O = v.([]byte)
+	if adv.O, err = getBytes("o"); err != nil {
+		return nil, err
 	}
 	if v := getVal("i"); v != nil {
 		if n, ok := toInt64(v); ok {
@@ -247,16 +271,16 @@ func UnpackResourceAdvertisement(data []byte) (*ResourceAdvertisement, error) {
 			adv.L = int(n)
 		}
 	}
-	if v := getVal("q"); v != nil {
-		adv.Q = v.([]byte)
+	if adv.Q, err = getBytes("q"); err != nil {
+		return nil, err
 	}
 	if v := getVal("f"); v != nil {
 		if n, ok := toInt64(v); ok {
 			adv.F = byte(n)
 		}
 	}
-	if v := getVal("m"); v != nil {
-		adv.M = v.([]byte)
+	if adv.M, err = getBytes("m"); err != nil {
+		return nil, err
 	}
 
 	adv.Encrypted = (adv.F & 0x01) != 0
@@ -265,6 +289,19 @@ func UnpackResourceAdvertisement(data []byte) (*ResourceAdvertisement, error) {
 	adv.IsRequest = (adv.F & 0x08) != 0
 	adv.IsResponse = (adv.F & 0x10) != 0
 	adv.HasMetadata = (adv.F & 0x20) != 0
+
+	// Validate the part count before any caller feeds adv.N into make(). A
+	// negative count panics makeslice; an absurd count fatal-throws OOM; and a
+	// count exceeding the declared total size is structurally impossible
+	// (each part carries at least one byte), indicating a malformed/hostile
+	// advertisement. Reject here so Accept, Reject, and every other caller are
+	// covered uniformly.
+	if adv.N < 0 || uint64(adv.N) > ResourceMaxParts {
+		return nil, fmt.Errorf("invalid resource advertisement: part count %d out of range", adv.N)
+	}
+	if adv.T > 0 && int64(adv.N) > adv.T {
+		return nil, fmt.Errorf("invalid resource advertisement: part count %d exceeds total size %d", adv.N, adv.T)
+	}
 
 	return adv, nil
 }

@@ -29,9 +29,6 @@ func TestToken(t *testing.T) {
 			}
 
 			token := mustTestNewToken(t, key)
-			if err != nil {
-				t.Fatalf("failed to create token: %v", err)
-			}
 
 			data := []byte("hello reticulum token")
 			encrypted, err := token.Encrypt(data)

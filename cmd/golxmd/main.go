@@ -348,11 +348,9 @@ func (c *clientT) tick(router *lxmf.Router, lxmfDestination *rns.Destination) {
 		}
 	}
 
-	if router != nil {
-		router.ProcessOutbound()
-	}
+	router.ProcessOutbound()
 
-	if c.tickCount%maintenanceInterval == 0 && router != nil {
+	if c.tickCount%maintenanceInterval == 0 {
 		pruned := router.PruneStalePeers()
 		if pruned > 0 {
 			c.logger.Info("golxmd pruned %v stale peers", pruned)

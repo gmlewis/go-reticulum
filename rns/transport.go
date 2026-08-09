@@ -2303,7 +2303,15 @@ func (ts *TransportSystem) LoadKnownDestinations(storagePath string) {
 	if m, ok := unpacked.(map[any]any); ok {
 		ts.mu.Lock()
 		for k, v := range m {
-			ts.knownDestinations[k.(string)] = v.([]any)
+			ks, okKey := k.(string)
+			if !okKey {
+				continue
+			}
+			vs, okVal := v.([]any)
+			if !okVal {
+				continue
+			}
+			ts.knownDestinations[ks] = vs
 		}
 		ts.mu.Unlock()
 		ts.logger.Verbose("Loaded %v known destination from storage", len(ts.knownDestinations))
@@ -2823,6 +2831,10 @@ func (ts *TransportSystem) RequestPath(destHash []byte) error {
 
 // Inbound processes a raw packet received from an interface.
 func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
+	if len(raw) == 0 {
+		ts.logger.Debug("Go Transport.Inbound received empty frame from %v, dropping", iface.Name())
+		return
+	}
 	ts.logger.Debug("Go Transport.Inbound received %v bytes from %v, type=%v\n", len(raw), iface.Name(), raw[0]>>4)
 	if ifac, ok := iface.(ifacInboundHook); ok {
 		processed, accepted := ifac.ApplyIFACInbound(raw)
@@ -2919,6 +2931,16 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 			if packet.TransportID != nil && ts.identity != nil && bytes.Equal(packet.TransportID, ts.identity.Hash) {
 				ts.mu.Lock()
 				if entry, ok := ts.pathTable[destHash]; ok {
+					// A path-table entry loaded from disk may carry only an
+					// interface name if that interface is no longer
+					// registered, leaving Interface nil. We cannot forward
+					// without an outbound interface, so drop the packet
+					// instead of dereferencing a nil Interface below.
+					if entry.Interface == nil {
+						ts.mu.Unlock()
+						ts.logger.Debug("Inbound: path entry for %x has no resolved interface, dropping", packet.DestinationHash)
+						return
+					}
 					// Forwarding logic
 					remainingHops := entry.Hops
 					var newRaw []byte

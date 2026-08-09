@@ -17,7 +17,7 @@ func TestStatsTrackingCircularBuffer(t *testing.T) {
 	entries := make([]statsEntry, 0)
 
 	// Add 35 entries (more than statsMax)
-	for i := 0; i < 35; i++ {
+	for i := range 35 {
 		now := time.Now()
 		got := float64(i * 1000)
 		phyGot := float64(i * 1200)

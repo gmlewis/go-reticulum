@@ -156,20 +156,20 @@ func TestIntegrationVersionOutputFormatParity(t *testing.T) {
 }
 
 func TestIntegrationListenPrintIdentityOutputFormatParity(t *testing.T) {
-	pythonBin := getRnshBinaryPath(t)
 	gornshBin := getGornshBinaryPath(t)
 	configDir := testutils.TempDir(t, tempDirPrefix)
 	prepareGornshConfig(t, configDir)
 
-	pythonOut, _ := exec.Command(pythonBin, "--config", configDir, "-l", "-p").CombinedOutput()
-	// Python rnsh's main() returns exit code 1 for print-identity paths due to
-	// a known bug (SystemExit is caught without updating return_code).
+	// Run the original (acehoss) rnsh through the wrapper so it shares gornsh's
+	// CLI semantics and identity storage path (see runRnshViaWrapper). The
+	// wrapper's exit code is ignored: rnsh's print-identity path raises SystemExit.
+	pythonOut := runRnshViaWrapper(t, "--config", configDir, "-l", "-p")
 	goOut, err := exec.Command(gornshBin, "--config", configDir, "-l", "-p").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornsh -l -p failed: %v\n%v", err, string(goOut))
 	}
 
-	pythonText := string(pythonOut)
+	pythonText := pythonOut
 	goText := string(goOut)
 	for _, output := range []struct {
 		name string
@@ -191,20 +191,20 @@ func TestIntegrationListenPrintIdentityOutputFormatParity(t *testing.T) {
 }
 
 func TestIntegrationPrintIdentityOutputFormatParity(t *testing.T) {
-	pythonBin := getRnshBinaryPath(t)
 	gornshBin := getGornshBinaryPath(t)
 	configDir := testutils.TempDir(t, tempDirPrefix)
 	prepareGornshConfig(t, configDir)
 
-	pythonOut, _ := exec.Command(pythonBin, "--config", configDir, "-p").CombinedOutput()
-	// Python rnsh's main() returns exit code 1 for print-identity paths due to
-	// a known bug (SystemExit is caught without updating return_code).
+	// Run the original (acehoss) rnsh through the wrapper so it shares gornsh's
+	// CLI semantics and identity storage path (see runRnshViaWrapper). The
+	// wrapper's exit code is ignored: rnsh's print-identity path raises SystemExit.
+	pythonOut := runRnshViaWrapper(t, "--config", configDir, "-p")
 	goOut, err := exec.Command(gornshBin, "--config", configDir, "-p").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornsh -p failed: %v\n%v", err, string(goOut))
 	}
 
-	pythonLine := firstLineWithPrefix(string(pythonOut), "Identity     : ")
+	pythonLine := firstLineWithPrefix(pythonOut, "Identity     : ")
 	goLine := firstLineWithPrefix(string(goOut), "Identity     : ")
 	if pythonLine == "" {
 		t.Fatalf("rnsh -p output missing identity line:\n%v", string(pythonOut))
@@ -1306,6 +1306,31 @@ func getRnshBinaryPath(t *testing.T) string {
 		t.Skip("rnsh not found in PATH, skipping Python/Go integration tests")
 	}
 	return path
+}
+
+// runRnshViaWrapper executes the original (acehoss) rnsh via the
+// pythonListenerWrapper, using the same PYTHONPATH-based import path as the
+// listener tests. This is necessary because the `rnsh` binary shipped with
+// recent RNS releases (>=1.4) diverged its CLI: `--config` now selects rnsh's
+// own config directory (with the identity stored at <configdir>/identity) and a
+// separate `--rnsconfig` selects the Reticulum config directory. gornsh, like the
+// original rnsh, treats `--config` as the Reticulum config directory and stores
+// the identity at <configdir>/storage/identities/<app>. Running the original rnsh
+// through the wrapper keeps both implementations on the same CLI semantics and
+// the same identity storage path, so the printed identity hashes are comparable.
+// The wrapper's exit code is ignored: rnsh's print-identity path raises
+// SystemExit, which the wrapper does not treat as an error.
+func runRnshViaWrapper(t *testing.T, args ...string) string {
+	t.Helper()
+	wrapperDir := t.TempDir()
+	wrapperPath := filepath.Join(wrapperDir, "rnsh_wrapper.py")
+	if err := os.WriteFile(wrapperPath, []byte(pythonListenerWrapper), 0o755); err != nil {
+		t.Fatalf("failed to write rnsh wrapper script: %v", err)
+	}
+	cmd := exec.Command("python3", append([]string{wrapperPath}, args...)...)
+	cmd.Env = gornshIntegrationEnv(t, "")
+	out, _ := cmd.CombinedOutput()
+	return string(out)
 }
 
 type pythonListenerProcess struct {

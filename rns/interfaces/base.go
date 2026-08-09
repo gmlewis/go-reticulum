@@ -7,6 +7,7 @@ package interfaces
 
 import (
 	"bytes"
+	"fmt"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -24,6 +25,14 @@ type IFACConfig struct {
 	NetKey  string
 	Size    int
 }
+
+// IFACMaxSize is the largest IFAC field an interface may emit or accept. The
+// IFAC is a truncation of an Ed25519 signature, which is always 64 bytes, so an
+// IFAC size larger than 64 can never be satisfied and would underflow the
+// signature slice (sig[len(sig)-ifacSize:]) and panic. Clamping here and in
+// SetIFACConfig prevents a misconfigured ifac_size from crashing the first
+// inbound/outbound frame.
+const IFACMaxSize = 64
 
 // DiscoveryConfig captures the per-interface metadata and policy used by
 // Reticulum's on-network interface discovery mechanism.
@@ -197,6 +206,9 @@ func (bi *BaseInterface) SetIFACConfig(cfg IFACConfig) {
 
 	if bi.ifacConfig.Size < 1 {
 		bi.ifacConfig.Size = 16
+	}
+	if bi.ifacConfig.Size > IFACMaxSize {
+		bi.ifacConfig.Size = IFACMaxSize
 	}
 
 	origin := make([]byte, 0, 64)
@@ -380,6 +392,12 @@ func (bi *BaseInterface) ApplyIFACInbound(data []byte) ([]byte, bool) {
 	newRaw = append(newRaw, unmasked[2+ifacSize:]...)
 
 	sig := ifacSigner.Sign(newRaw)
+	// Defense-in-depth: SetIFACConfig clamps Size to IFACMaxSize, but a
+	// misconfigured or directly-constructed config could still set ifacSize
+	// larger than the signature. Guard before slicing to avoid underflow.
+	if ifacSize > len(sig) {
+		return nil, false
+	}
 	expectedIFAC := sig[len(sig)-ifacSize:]
 	if !bytes.Equal(ifac, expectedIFAC) {
 		return nil, false
@@ -407,6 +425,12 @@ func (bi *BaseInterface) ApplyIFACOutbound(data []byte) ([]byte, error) {
 
 	ifacSize := ifacConfig.Size
 	sig := ifacSigner.Sign(data)
+	// Defense-in-depth: SetIFACConfig clamps Size to IFACMaxSize, but a
+	// misconfigured or directly-constructed config could still set ifacSize
+	// larger than the 64-byte Ed25519 signature and underflow the slice.
+	if ifacSize > len(sig) {
+		return nil, fmt.Errorf("ifac size %d exceeds signature length %d", ifacSize, len(sig))
+	}
 	ifac := make([]byte, ifacSize)
 	copy(ifac, sig[len(sig)-ifacSize:])
 

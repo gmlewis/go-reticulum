@@ -190,7 +190,6 @@ func TestShouldRetryRecoveryEsptoolNoStub(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := shouldRetryRecoveryEsptoolNoStub([]byte(tc.output)); got != tc.want {
