@@ -180,6 +180,16 @@ type TransportSystem struct {
 	packetHashesPrev map[string]time.Time
 	tunnels          map[string]*Tunnel
 
+	// knownDestDirty is set by Remember when a destination is added/updated.
+	// The maintenance loop flushes it to disk at most every
+	// pathTablePersistInterval (and Stop does a final flush), coalescing a
+	// burst of announces into a single serialize+write instead of one per
+	// announce. Under an announce storm the per-announce SaveKnownDestinations
+	// previously repacked+rewrote the entire known_destinations file for every
+	// announce — the dominant allocation churn source on a long-running node
+	// (64% of 30s allocation once the table grew). Guarded by ts.mu.
+	knownDestDirty bool
+
 	// remoteStatusHandlerFn and remotePathHandlerFn are the registered
 	// remote-management request handlers. They are populated by Reticulum
 	// during NewReticulumWithLogger if remote management is enabled.
@@ -762,6 +772,10 @@ func (ts *TransportSystem) Stop() {
 		<-doneCh
 	}
 
+	// Final flush of any destinations learned since the last periodic save, so
+	// the debounce in Remember doesn't lose up to one interval on shutdown.
+	ts.flushKnownDestinationsIfDirty()
+
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	for _, state := range ts.announceQueues {
@@ -1032,6 +1046,7 @@ func (ts *TransportSystem) maintenance() {
 			ts.cullStaleTransportTables(now)
 		case <-pathPersistTicker.C:
 			ts.persistPathTable()
+			ts.flushKnownDestinationsIfDirty()
 		case <-ratchetTicker.C:
 			ts.CleanRatchets()
 		}
@@ -2270,13 +2285,14 @@ func (ts *TransportSystem) Remember(packetHash, destHash, publicKey, appData []b
 		publicKey,
 		appData,
 	}
-	path := ts.storagePath
-	running := ts.running
-	ts.mu.Unlock()
-
-	if path != "" && running {
-		ts.SaveKnownDestinations(path)
+	// Don't serialize+write per announce: mark the table dirty and let the
+	// maintenance loop's periodic flush coalesce a burst of announces into one
+	// save. See flushKnownDestinationsIfDirty. Stop performs a final flush so
+	// nothing is lost on graceful shutdown.
+	if ts.storagePath != "" && ts.running {
+		ts.knownDestDirty = true
 	}
+	ts.mu.Unlock()
 }
 
 // Recall searches for a known identity matching the given target hash.
@@ -2552,6 +2568,27 @@ func (ts *TransportSystem) SaveKnownDestinations(storagePath string) {
 		return
 	}
 	ts.logger.Debug("Saved %v known destinations to storage", count)
+}
+
+// flushKnownDestinationsIfDirty writes the known-destinations table to disk if
+// Remember has marked it dirty since the last flush, then clears the flag. It
+// coalesces many announces into a single serialize+write. Called periodically
+// from the maintenance loop and once from Stop. Safe to call when not running
+// (used by Stop's final flush); SaveKnownDestinations itself is a no-op on an
+// empty storagePath.
+func (ts *TransportSystem) flushKnownDestinationsIfDirty() {
+	ts.mu.Lock()
+	if !ts.knownDestDirty {
+		ts.mu.Unlock()
+		return
+	}
+	ts.knownDestDirty = false
+	path := ts.storagePath
+	ts.mu.Unlock()
+	if path == "" {
+		return
+	}
+	ts.SaveKnownDestinations(path)
 }
 
 // UnblackholeIdentity removes an identity hash from the local blackhole registry.
