@@ -642,7 +642,11 @@ func (ts *TransportSystem) Start(storagePath string) error {
 		return err
 	}
 	ts.pathRequestHash = copyBytes(pathRequestDst.Hash)
-	pathRequestDst.SetPacketCallback(ts.handlePathRequest)
+	// handlePathRequest returns a bool for the direct Inbound caller (to gate
+	// onward relaying); the packet-callback signature has no return, so wrap
+	// it. Inbound short-circuits path requests before callback delivery, so
+	// this wrapper is only a compile-time type adapter in practice.
+	pathRequestDst.SetPacketCallback(func(data []byte, p *Packet) { ts.handlePathRequest(data, p) })
 
 	ts.mu.Lock()
 	found := false
@@ -1887,13 +1891,31 @@ func (ts *TransportSystem) seenOrRememberPacketHashLocked(packetHash []byte, now
 	return false
 }
 
-func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) {
+// handlePathRequest processes a path request received for the
+// rnstransport.path.request destination. It returns true when the request was
+// answered (or intentionally consumed) by this node, in which case the caller
+// must NOT relay the request onward — matching Python Reticulum's elif chain
+// in Transport.path_request (local answer, cached-path answer, then forward).
+// It returns false when the request is unknown here and should be relayed.
+func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) bool {
 	if len(data) < TruncatedHashLength/8 {
-		return
+		return false
 	}
 
 	targetHash := data[:TruncatedHashLength/8]
 	ts.logger.Debug("Path request for %x", targetHash)
+
+	// The requestor's transport-instance ID (when present) follows the
+	// requested destination hash. It is used for loop prevention when
+	// answering from a cached path: if the requestor IS the next hop toward
+	// the destination, replying would echo the announce back along the path
+	// it already traveled. Mirrors Python's
+	// "if requestor_transport_id != None and next_hop == requestor_transport_id".
+	hashLen := TruncatedHashLength / 8
+	var requestorTransportID []byte
+	if len(data) > hashLen {
+		requestorTransportID = data[hashLen:min(len(data), 2*hashLen)]
+	}
 
 	ts.mu.Lock()
 	var localDest *Destination
@@ -1902,6 +1924,22 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) {
 			localDest = d
 			break
 		}
+	}
+	// If the destination is not local to this node, look for a cached/known
+	// path. A transport node that already knows a path answers the request
+	// from cache instead of relaying it onward, so the requestor gets the
+	// path from the nearest node that has it (and does not have to wait for
+	// the remote node's own announce interval). This is the branch Python
+	// Reticulum implements as
+	//   "elif (transport_enabled or is_from_local_client) and
+	//    (destination_hash in Transport.path_table)"
+	// go-reticulum previously only answered for local destinations and
+	// otherwise relied on a full round-trip to the remote node, which times
+	// out for sparsely-announcing destinations (e.g. a nomadnet node
+	// announcing every 60 minutes requested by a freshly-started client).
+	var cachedPath *PathEntry
+	if localDest == nil && !ts.connectedToSharedInstance {
+		cachedPath = ts.pathTable[string(targetHash)]
 	}
 	ts.mu.Unlock()
 
@@ -1921,7 +1959,7 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) {
 		announcePacket, err := localDest.buildAnnouncePacket(tag)
 		if err != nil {
 			ts.logger.Error("Failed to build path response announce: %v", err)
-			return
+			return true
 		}
 
 		announcePacket.Context = ContextPathResponse
@@ -1933,7 +1971,7 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) {
 
 		if err := announcePacket.Pack(); err != nil {
 			ts.logger.Error("Failed to pack path response announce: %v", err)
-			return
+			return true
 		}
 
 		if packet != nil && packet.ReceivingInterface != nil {
@@ -1942,22 +1980,83 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) {
 				processed, err := ifac.ApplyIFACOutbound(raw)
 				if err != nil {
 					ts.logger.Error("Failed IFAC egress for path response on %v: %v", packet.ReceivingInterface.Name(), err)
-					return
+					return true
 				}
 				raw = processed
 			}
 
 			if err := packet.ReceivingInterface.Send(raw); err != nil {
 				ts.logger.Error("Failed to send path response announce on %v: %v", packet.ReceivingInterface.Name(), err)
-				return
+				return true
 			}
-			return
+			return true
 		}
 
 		if err := ts.Outbound(announcePacket); err != nil {
 			ts.logger.Error("Failed broadcasting fallback path response announce: %v", err)
 		}
+		return true
 	}
+
+	// Answer from a cached path: the destination is remote but this node
+	// knows a path to it. Replay the cached announce as a path response back
+	// on the interface the request arrived on; intermediate nodes forward it
+	// toward the requestor via the pending-path-request machinery.
+	if cachedPath != nil && len(cachedPath.Packet) > 0 && ts.identity != nil &&
+		packet != nil && packet.ReceivingInterface != nil {
+
+		// Loop prevention: the next hop toward the destination is the
+		// requestor itself. Replying would send the announce back along the
+		// path it arrived on. Consume the request without flooding onward.
+		if requestorTransportID != nil && len(cachedPath.NextHop) == hashLen &&
+			bytes.Equal(cachedPath.NextHop, requestorTransportID) {
+			ts.logger.Debug("Not answering path request for %x from cache: requestor is next hop", targetHash)
+			return true
+		}
+
+		// Recover the announce payload (Data) and header flags
+		// (ContextFlag/ratchet presence, DestinationType) from the cached
+		// raw announce. The announce signature covers only
+		// destination_hash+pubkey+name_hash+random_hash+ratchet+app_data,
+		// NOT the header, so rebuilding the header with this node as the
+		// next hop and a PathResponse context preserves signature validity.
+		cached := &Packet{Raw: append([]byte(nil), cachedPath.Packet...)}
+		if err := cached.Unpack(); err != nil {
+			ts.logger.Debug("Cached path-response replay: unpack failed for %x: %v", targetHash, err)
+			return true
+		}
+		if !bytes.Equal(cached.DestinationHash, targetHash) {
+			ts.logger.Debug("Cached path-response: dest hash mismatch for %x, skipping", targetHash)
+			return true
+		}
+
+		flags := byte((Header2 << 6) | (cached.ContextFlag << 5) |
+			(TransportForward << 4) | (cached.DestinationType << 2) | PacketAnnounce)
+		raw := make([]byte, 0, 2+2*hashLen+1+len(cached.Data))
+		raw = append(raw, flags)
+		raw = append(raw, byte(cachedPath.Hops+1)) // +1 hop to reach the requestor
+		raw = append(raw, ts.identity.Hash...)     // TransportID = this node (next hop)
+		raw = append(raw, targetHash...)           // DestinationHash
+		raw = append(raw, byte(ContextPathResponse))
+		raw = append(raw, cached.Data...) // announce payload + signature (unchanged)
+
+		ts.logger.Debug("Answering path request for %x from cached path (%v hops)", targetHash, cachedPath.Hops)
+
+		if ifac, ok := packet.ReceivingInterface.(ifacOutboundHook); ok {
+			processed, err := ifac.ApplyIFACOutbound(raw)
+			if err != nil {
+				ts.logger.Error("Failed IFAC egress for cached path response on %v: %v", packet.ReceivingInterface.Name(), err)
+				return true
+			}
+			raw = processed
+		}
+		if err := packet.ReceivingInterface.Send(raw); err != nil {
+			ts.logger.Error("Failed to send cached path response announce on %v: %v", packet.ReceivingInterface.Name(), err)
+		}
+		return true
+	}
+
+	return false
 }
 
 // RegisterDestination adds a destination to the transport system.
@@ -3124,7 +3223,12 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 	destHash := string(packet.DestinationHash)
 
 	if packet.PacketType == PacketData && len(ts.pathRequestHash) > 0 && bytes.Equal(packet.DestinationHash, ts.pathRequestHash) {
-		ts.handlePathRequest(packet.Data, packet)
+		// If this node answered the request (local destination or cached
+		// path), do not relay it onward — matching Python's elif chain. Only
+		// relay when the destination is unknown here.
+		if ts.handlePathRequest(packet.Data, packet) {
+			return
+		}
 		ts.forwardPathRequest(packet, iface)
 		return
 	}
@@ -3571,6 +3675,12 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 				entry.Interface = iface
 				entry.InterfaceName = iface.Name()
 				entry.Expires = time.Now().Add(24 * 7 * time.Hour)
+				// Cache the raw announce so a later path request for this
+				// destination can be answered from the known path (see
+				// handlePathRequest's cached-path branch) instead of relaying
+				// the request all the way to the remote node. Mirrors Python
+				// Reticulum caching the announce packet at IDX_PT_PACKET.
+				entry.Packet = copyBytes(packet.Raw)
 				if randomBlob != nil && !containsBlob(entry.RandomBlobs, randomBlob) {
 					entry.RandomBlobs = append(entry.RandomBlobs, randomBlob)
 					if len(entry.RandomBlobs) > maxRandomBlobs {
@@ -3598,6 +3708,7 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 				Interface:     iface,
 				InterfaceName: iface.Name(),
 				Expires:       time.Now().Add(24 * 7 * time.Hour), // 1 week default
+				Packet:        copyBytes(packet.Raw),
 			}
 			ts.logger.Info("Learned path to %x via %v, %v hops", packet.DestinationHash, iface.Name(), packet.Hops)
 			shouldForwardToLocalClients = true

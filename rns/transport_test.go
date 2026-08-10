@@ -191,6 +191,154 @@ func TestHandlePathRequestEmitsTargetedPathResponse(t *testing.T) {
 	}
 }
 
+// TestHandlePathRequestAnswersFromCachedPath verifies the cached-path branch
+// of handlePathRequest: when a transport node already knows a path to a
+// REMOTE destination (not local to it), it answers a path request by replaying
+// the cached announce as a path response, instead of relaying the request
+// onward and relying on a round-trip to the remote node. This mirrors Python
+// Reticulum's "elif (transport_enabled or is_from_local_client) and
+// (destination_hash in path_table)" branch and is what makes
+// sparsely-announcing destinations (e.g. a nomadnet node announcing every 60
+// minutes) reachable by a freshly-started client within the request timeout.
+func TestHandlePathRequestAnswersFromCachedPath(t *testing.T) {
+	t.Parallel()
+	ts := NewTransportSystem(nil)
+	ts.identity = mustTestNewIdentity(t, true) // this node is transport-enabled
+	ts.connectedToSharedInstance = false
+
+	recvIface := &capturingInterface{name: "recv"}
+	otherIface := &capturingInterface{name: "other"}
+	ts.interfaces = append(ts.interfaces, recvIface, otherIface)
+
+	// A "remote" destination that lives on another node. Created with a nil
+	// transport so it is NOT registered as local to ts; handlePathRequest must
+	// therefore not find it local and must answer from the cached path.
+	remoteID := mustTestNewIdentity(t, true)
+	remoteDest, err := NewDestination(nil, remoteID, DestinationIn, DestinationSingle, "cacheremote")
+	if err != nil {
+		t.Fatalf("remote dest: %v", err)
+	}
+
+	// ts learns a path to remoteDest by receiving its announce on otherIface.
+	announce := mustTestAnnouncePacketWithEmission(t, nil, remoteID, remoteDest, 1)
+	announce.Hops = 2
+	if len(announce.Raw) > 1 {
+		announce.Raw[1] = 2
+	}
+	ts.handleAnnounce(announce, otherIface)
+
+	entry, ok := ts.pathTable[string(remoteDest.Hash)]
+	if !ok {
+		t.Fatalf("expected ts to have cached a path to the remote dest")
+	}
+	if len(entry.Packet) == 0 {
+		t.Fatalf("expected cached path entry to store the raw announce for replay")
+	}
+
+	// A freshly-started client requests the path to remoteDest. The request
+	// arrives on recvIface; the requestor's transport ID is its own identity
+	// (not the next hop toward the destination), so loop prevention must not
+	// suppress the answer.
+	reqID := mustTestNewIdentity(t, true)
+	tag := bytes.Repeat([]byte{0xCD}, TruncatedHashLength/8)
+	requestData := make([]byte, 0, len(remoteDest.Hash)+len(reqID.Hash)+len(tag))
+	requestData = append(requestData, remoteDest.Hash...)
+	requestData = append(requestData, reqID.Hash...)
+	requestData = append(requestData, tag...)
+
+	handled := ts.handlePathRequest(requestData, &Packet{ReceivingInterface: recvIface})
+	if !handled {
+		t.Fatalf("expected handlePathRequest to answer from cached path, but it returned false")
+	}
+	if recvIface.sendCount != 1 {
+		t.Fatalf("expected one cached path response on recv interface, got %v", recvIface.sendCount)
+	}
+	if otherIface.sendCount != 0 {
+		t.Fatalf("expected no response on non-requesting interface, got %v", otherIface.sendCount)
+	}
+
+	response := NewPacketFromRaw(recvIface.lastSent)
+	if err := response.Unpack(); err != nil {
+		t.Fatalf("failed unpacking cached path response: %v", err)
+	}
+	if response.PacketType != PacketAnnounce {
+		t.Fatalf("expected announce packet type, got %v", response.PacketType)
+	}
+	if response.Context != ContextPathResponse {
+		t.Fatalf("expected ContextPathResponse, got %v", response.Context)
+	}
+	if response.HeaderType != Header2 {
+		t.Fatalf("expected Header2 cached path response, got %v", response.HeaderType)
+	}
+	if !bytes.Equal(response.TransportID, ts.identity.Hash) {
+		t.Fatalf("expected cached path response transport ID to be this node's identity")
+	}
+	if !bytes.Equal(response.DestinationHash, remoteDest.Hash) {
+		t.Fatalf("expected cached path response destination hash to match remote dest")
+	}
+	if int(response.Hops) != entry.Hops+1 {
+		t.Fatalf("expected hops = cached+1 = %v, got %v", entry.Hops+1, response.Hops)
+	}
+
+	// The replayed announce must still carry a valid remote-identity
+	// signature: the header was rebuilt (new next hop, PathResponse context,
+	// adjusted hops) but the signed payload is unchanged, so ValidateAnnounce
+	// must still pass.
+	if !ValidateAnnounce(ts, response) {
+		t.Fatalf("replayed cached path response failed announce validation (signature broken)")
+	}
+}
+
+// TestHandlePathRequestCachedPathLoopPrevention verifies that when the path
+// request's requestor IS the next hop toward the cached destination, the node
+// consumes the request without answering (answering would echo the announce
+// back along the path it already traveled).
+func TestHandlePathRequestCachedPathLoopPrevention(t *testing.T) {
+	t.Parallel()
+	ts := NewTransportSystem(nil)
+	ts.identity = mustTestNewIdentity(t, true)
+	ts.connectedToSharedInstance = false
+
+	recvIface := &capturingInterface{name: "recv"}
+	ts.interfaces = append(ts.interfaces, recvIface)
+
+	remoteID := mustTestNewIdentity(t, true)
+	remoteDest, err := NewDestination(nil, remoteID, DestinationIn, DestinationSingle, "cacheloop")
+	if err != nil {
+		t.Fatalf("remote dest: %v", err)
+	}
+	announce := mustTestAnnouncePacketWithEmission(t, nil, remoteID, remoteDest, 1)
+	announce.Hops = 2
+	if len(announce.Raw) > 1 {
+		announce.Raw[1] = 2
+	}
+	ts.handleAnnounce(announce, recvIface)
+
+	entry := ts.pathTable[string(remoteDest.Hash)]
+	if entry == nil {
+		t.Fatalf("expected cached path")
+	}
+
+	// Build a request whose requestor transport ID equals the cached next
+	// hop. The announce was Header1 (no transport id), so nextHop fell back
+	// to the destination hash; use that as the requestor ID to trigger loop
+	// prevention.
+	nextHop := entry.NextHop
+	tag := bytes.Repeat([]byte{0xEE}, TruncatedHashLength/8)
+	requestData := make([]byte, 0, len(remoteDest.Hash)+len(nextHop)+len(tag))
+	requestData = append(requestData, remoteDest.Hash...)
+	requestData = append(requestData, nextHop...)
+	requestData = append(requestData, tag...)
+
+	handled := ts.handlePathRequest(requestData, &Packet{ReceivingInterface: recvIface})
+	if !handled {
+		t.Fatalf("expected loop-prevention to consume the request (return true), got false")
+	}
+	if recvIface.sendCount != 0 {
+		t.Fatalf("expected no path response when requestor is next hop, got %v sends", recvIface.sendCount)
+	}
+}
+
 func TestAnnounceRebroadcastProcessing(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
