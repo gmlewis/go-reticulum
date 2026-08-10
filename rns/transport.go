@@ -3658,6 +3658,24 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 	pathEntry, hasPath := ts.pathTable[string(packet.DestinationHash)]
 	ts.mu.Unlock()
 
+	// Link packets (resource advertise/part/request/proof, etc.) are built with
+	// NewPacket(link, ...) and sent via p.Send() rather than Link.send, so they
+	// reach Outbound without AttachedInterface set. For a link directly attached
+	// to a single interface — most importantly a shared-instance local client,
+	// whose socket lives on a spawned LocalClientInterface that is NOT in
+	// ts.interfaces — the broadcast fallback below would hit the
+	// LocalServerInterface listener whose Send is a no-op, silently dropping the
+	// packet. Resolve the attached interface from the local link so branch 1
+	// routes it directly, mirroring Python where Link.send stamps
+	// packet.attached_interface before Transport.outbound runs. Multi-hop links
+	// have no attached interface (nil) and fall through to the path/broadcast
+	// branches unchanged.
+	if attachedIface == nil && packet.DestinationType == DestinationLink {
+		if link := ts.FindLink(packet.DestinationHash); link != nil {
+			attachedIface = link.AttachedInterface()
+		}
+	}
+
 	if attachedIface != nil {
 		raw := packet.Raw
 		if ifac, ok := attachedIface.(ifacOutboundHook); ok {

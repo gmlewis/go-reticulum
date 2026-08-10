@@ -276,6 +276,19 @@ func (l *Link) GetType() int {
 	return DestinationLink
 }
 
+// AttachedInterface returns the interface this link is directly attached to,
+// if any. A link established over a single interface (e.g. a shared-instance
+// local client, or a direct pipe/TCP peer) records that interface as its
+// attached interface when the link request is received, and all link packets
+// routed through it are delivered directly. A link established over a
+// multi-hop transport path has no single attached interface (returns nil) and
+// its packets route via the transport path table instead.
+func (l *Link) AttachedInterface() interfaces.Interface {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.attachedInterface
+}
+
 // GetTransport returns the transport system associated with this link.
 func (l *Link) GetTransport() Transport {
 	return l.transport
