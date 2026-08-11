@@ -165,13 +165,13 @@ func TestAnnounceFreqDequeCap(t *testing.T) {
 	t.Parallel()
 	base := time.Unix(1_000_000, 0)
 	bi := NewBaseInterface("cap", ModeFull, 62500)
-	for i := 0; i < IAFreqSamples+10; i++ {
+	for i := range IAFreqSamples + 10 {
 		bi.receivedAnnounceAt(base.Add(time.Duration(i)*time.Millisecond), false)
 	}
 	if len(bi.iaFreqDeque) != IAFreqSamples {
 		t.Errorf("iaFreqDeque len = %d, want capped at %d", len(bi.iaFreqDeque), IAFreqSamples)
 	}
-	for i := 0; i < OAFreqSamples+10; i++ {
+	for i := range OAFreqSamples + 10 {
 		bi.sentAnnounceAt(base.Add(time.Duration(i)*time.Millisecond), false)
 	}
 	if len(bi.oaFreqDeque) != OAFreqSamples {

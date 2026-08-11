@@ -220,8 +220,8 @@ func TestLocalClientSleepPauseAndKeepalive(t *testing.T) {
 	t.Run("outbound drops after the pause window", func(t *testing.T) {
 		t.Parallel()
 		clientConn, readEnd := net.Pipe()
-		defer clientConn.Close()
-		defer readEnd.Close()
+		defer func() { _ = clientConn.Close() }()
+		defer func() { _ = readEnd.Close() }()
 		frames := drainPipe(readEnd)
 
 		lci := newTestLocalClientWithConn(t, clientConn)
@@ -256,8 +256,8 @@ func TestLocalClientSleepPauseAndKeepalive(t *testing.T) {
 	t.Run("pause disabled never drops", func(t *testing.T) {
 		t.Parallel()
 		clientConn, readEnd := net.Pipe()
-		defer clientConn.Close()
-		defer readEnd.Close()
+		defer func() { _ = clientConn.Close() }()
+		defer func() { _ = readEnd.Close() }()
 		frames := drainPipe(readEnd)
 
 		lci := newTestLocalClientWithConn(t, clientConn)
@@ -282,8 +282,8 @@ func TestLocalClientSleepPauseAndKeepalive(t *testing.T) {
 	t.Run("refresh on receive extends the window", func(t *testing.T) {
 		t.Parallel()
 		clientConn, readEnd := net.Pipe()
-		defer clientConn.Close()
-		defer readEnd.Close()
+		defer func() { _ = clientConn.Close() }()
+		defer func() { _ = readEnd.Close() }()
 		frames := drainPipe(readEnd)
 
 		lci := newTestLocalClientWithConn(t, clientConn)
@@ -322,8 +322,8 @@ func TestLocalClientSleepPauseAndKeepalive(t *testing.T) {
 	t.Run("sendKeepalive writes a two-flag frame", func(t *testing.T) {
 		t.Parallel()
 		clientConn, readEnd := net.Pipe()
-		defer clientConn.Close()
-		defer readEnd.Close()
+		defer func() { _ = clientConn.Close() }()
+		defer func() { _ = readEnd.Close() }()
 		frames := drainPipe(readEnd)
 
 		lci := newTestLocalClientWithConn(t, clientConn)

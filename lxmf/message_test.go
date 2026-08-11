@@ -11,6 +11,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unsafe"
@@ -585,7 +586,7 @@ func TestMessageLinkGuards(t *testing.T) {
 func setLinkStatus(t *testing.T, link *rns.Link, status int) {
 	t.Helper()
 	field := reflect.ValueOf(link).Elem().FieldByName("status")
-	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().SetInt(int64(status))
+	(*atomic.Int32)(unsafe.Pointer(field.UnsafeAddr())).Store(int32(status))
 }
 
 func activateLink(t *testing.T, link *rns.Link) {

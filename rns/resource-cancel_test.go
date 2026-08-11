@@ -7,6 +7,7 @@ package rns
 
 import (
 	"bytes"
+	"slices"
 	"testing"
 	"time"
 )
@@ -26,12 +27,7 @@ func sentContexts(ct *captureTransport) []int {
 // containsContext reports whether the capture transport recorded a packet with
 // the given Context.
 func containsContext(ct *captureTransport, want int) bool {
-	for _, c := range sentContexts(ct) {
-		if c == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(sentContexts(ct), want)
 }
 
 // TestResourceCancelInitiatorSendsICL asserts Phase 9 Task 3: cancelling an

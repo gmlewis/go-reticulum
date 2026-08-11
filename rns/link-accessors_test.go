@@ -51,14 +51,14 @@ func establishLoopbackLink(t *testing.T) (initiator *Link, receiverDest *Destina
 	select {
 	case l := <-establishedReceiver:
 		t.Cleanup(l.Teardown)
-		if l.status != LinkActive {
-			t.Fatalf("receiver link not active: %v", l.status)
+		if l.status.Load() != LinkActive {
+			t.Fatalf("receiver link not active: %v", l.status.Load())
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for receiver link establishment")
 	}
-	if initiator.status != LinkActive {
-		t.Fatalf("initiator link not active: %v", initiator.status)
+	if initiator.status.Load() != LinkActive {
+		t.Fatalf("initiator link not active: %v", initiator.status.Load())
 	}
 	return initiator, receiverDest
 }

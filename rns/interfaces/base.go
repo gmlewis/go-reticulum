@@ -90,6 +90,18 @@ type BaseInterface struct {
 	discoveryMu   sync.RWMutex
 	autoMu        sync.RWMutex
 
+	// ingressMu guards the ingress/egress-control configuration and the
+	// announce/PR burst state machine, frequency deques, and held-announce
+	// map. These fields are read by spawned-peer accept loops
+	// (copyIngressEgressFrom) and by the transport's announce/PR handling
+	// (ShouldIngressLimit, HoldAnnounce, ReceivedAnnounce, …) which run
+	// outside the transport mutex (see transport.go runInterfaceJobs /
+	// shouldHoldAnnounce comments), and written by RPC/test setters — so a
+	// per-interface mutex is required. It is a leaf lock: no code holds it
+	// while acquiring another mutex, so there is no lock-ordering hazard
+	// with the transport mutex or the AutoInterface/BackboneInterface locks.
+	ingressMu sync.RWMutex
+
 	panicOnError       atomic.Bool
 	ifacConfig         IFACConfig
 	ifacKey            []byte
@@ -103,7 +115,10 @@ type BaseInterface struct {
 	// Phase 1 contract fields (RNS v1.3.7/1.4.1). Defaults mirror
 	// Interface.__init__: gravity=0, recursive_prs=false,
 	// announces_from_internal=true, announces_to_internal=nil.
-	gravity               int
+	// gravity is accessed atomically because it is set at runtime (e.g. via
+	// RPC or SetGravity) and concurrently read by spawned-peer accept loops
+	// (TCPInterface.handleConnection, AutoInterface.addPeer).
+	gravity               atomic.Int32
 	recursivePrs          bool
 	announcesFromInternal bool
 	announcesToInternal   *bool
@@ -248,10 +263,10 @@ func (bi *BaseInterface) SetBitrate(bitrate int) { bi.bitrate = bitrate }
 // Gravity returns the interface gravity used for weighted path selection
 // (RNS v1.4.1). Higher gravity interfaces win same-timebase path ties. The
 // default is 0 (Interface.DEFAULT_GRAVITY).
-func (bi *BaseInterface) Gravity() int { return bi.gravity }
+func (bi *BaseInterface) Gravity() int { return int(bi.gravity.Load()) }
 
 // SetGravity sets the interface gravity used for weighted path selection.
-func (bi *BaseInterface) SetGravity(g int) { bi.gravity = g }
+func (bi *BaseInterface) SetGravity(g int) { bi.gravity.Store(int32(g)) }
 
 // RecursivePrs reports whether recursive path requests egress on this
 // interface regardless of its mode (RNS v1.3.7). Defaults to false.
@@ -264,49 +279,185 @@ func (bi *BaseInterface) SetRecursivePrs(v bool) { bi.recursivePrs = v }
 // Each defaults to the Interface class constant of the same name; spawned
 // peers inherit the parent's configured values via copyIngressEgressFrom.
 
-func (bi *BaseInterface) IngressControl() bool               { return bi.ingressControl }
-func (bi *BaseInterface) SetIngressControl(v bool)           { bi.ingressControl = v }
-func (bi *BaseInterface) ICMaxHeldAnnounces() int            { return bi.icMaxHeldAnnounces }
-func (bi *BaseInterface) SetICMaxHeldAnnounces(v int)        { bi.icMaxHeldAnnounces = v }
-func (bi *BaseInterface) ICBurstHold() float64               { return bi.icBurstHold }
-func (bi *BaseInterface) SetICBurstHold(v float64)           { bi.icBurstHold = v }
-func (bi *BaseInterface) ICBurstFreqNew() float64            { return bi.icBurstFreqNew }
-func (bi *BaseInterface) SetICBurstFreqNew(v float64)        { bi.icBurstFreqNew = v }
-func (bi *BaseInterface) ICBurstFreq() float64               { return bi.icBurstFreq }
-func (bi *BaseInterface) SetICBurstFreq(v float64)           { bi.icBurstFreq = v }
-func (bi *BaseInterface) ICPrBurstFreqNew() float64          { return bi.icPrBurstFreqNew }
-func (bi *BaseInterface) SetICPrBurstFreqNew(v float64)      { bi.icPrBurstFreqNew = v }
-func (bi *BaseInterface) ICPrBurstFreq() float64             { return bi.icPrBurstFreq }
-func (bi *BaseInterface) SetICPrBurstFreq(v float64)         { bi.icPrBurstFreq = v }
-func (bi *BaseInterface) ICNewTime() float64                 { return bi.icNewTime }
-func (bi *BaseInterface) SetICNewTime(v float64)             { bi.icNewTime = v }
-func (bi *BaseInterface) ICBurstPenalty() float64            { return bi.icBurstPenalty }
-func (bi *BaseInterface) SetICBurstPenalty(v float64)        { bi.icBurstPenalty = v }
-func (bi *BaseInterface) ICHeldReleaseInterval() float64     { return bi.icHeldReleaseInterval }
-func (bi *BaseInterface) SetICHeldReleaseInterval(v float64) { bi.icHeldReleaseInterval = v }
-func (bi *BaseInterface) ECPrFreq() float64                  { return bi.ecPrFreq }
-func (bi *BaseInterface) SetECPrFreq(v float64)              { bi.ecPrFreq = v }
-func (bi *BaseInterface) EgressControl() bool                { return bi.egressControl }
-func (bi *BaseInterface) SetEgressControl(v bool)            { bi.egressControl = v }
+func (bi *BaseInterface) IngressControl() bool {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.ingressControl
+}
+func (bi *BaseInterface) SetIngressControl(v bool) {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
+	bi.ingressControl = v
+}
+func (bi *BaseInterface) ICMaxHeldAnnounces() int {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.icMaxHeldAnnounces
+}
+func (bi *BaseInterface) SetICMaxHeldAnnounces(v int) {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
+	bi.icMaxHeldAnnounces = v
+}
+func (bi *BaseInterface) ICBurstHold() float64 {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.icBurstHold
+}
+func (bi *BaseInterface) SetICBurstHold(v float64) {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
+	bi.icBurstHold = v
+}
+func (bi *BaseInterface) ICBurstFreqNew() float64 {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.icBurstFreqNew
+}
+func (bi *BaseInterface) SetICBurstFreqNew(v float64) {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
+	bi.icBurstFreqNew = v
+}
+func (bi *BaseInterface) ICBurstFreq() float64 {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.icBurstFreq
+}
+func (bi *BaseInterface) SetICBurstFreq(v float64) {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
+	bi.icBurstFreq = v
+}
+func (bi *BaseInterface) ICPrBurstFreqNew() float64 {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.icPrBurstFreqNew
+}
+func (bi *BaseInterface) SetICPrBurstFreqNew(v float64) {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
+	bi.icPrBurstFreqNew = v
+}
+func (bi *BaseInterface) ICPrBurstFreq() float64 {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.icPrBurstFreq
+}
+func (bi *BaseInterface) SetICPrBurstFreq(v float64) {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
+	bi.icPrBurstFreq = v
+}
+func (bi *BaseInterface) ICNewTime() float64 {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.icNewTime
+}
+func (bi *BaseInterface) SetICNewTime(v float64) {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
+	bi.icNewTime = v
+}
+func (bi *BaseInterface) ICBurstPenalty() float64 {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.icBurstPenalty
+}
+func (bi *BaseInterface) SetICBurstPenalty(v float64) {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
+	bi.icBurstPenalty = v
+}
+func (bi *BaseInterface) ICHeldReleaseInterval() float64 {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.icHeldReleaseInterval
+}
+func (bi *BaseInterface) SetICHeldReleaseInterval(v float64) {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
+	bi.icHeldReleaseInterval = v
+}
+func (bi *BaseInterface) ECPrFreq() float64 {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.ecPrFreq
+}
+func (bi *BaseInterface) SetECPrFreq(v float64) {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
+	bi.ecPrFreq = v
+}
+func (bi *BaseInterface) EgressControl() bool {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.egressControl
+}
+func (bi *BaseInterface) SetEgressControl(v bool) {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
+	bi.egressControl = v
+}
 
 // Ingress-control burst-state accessors (Interface.py:121-124). These expose
 // the per-interface announce/PR burst flags and activation timestamps used by
 // ifstats (Reticulum.py:1461-1464) and the Backbone aggregate getters. The
 // activated timestamps are zero until the corresponding burst activates.
-func (bi *BaseInterface) ICBurstActive() bool           { return bi.icBurstActive }
-func (bi *BaseInterface) ICBurstActivated() time.Time   { return bi.icBurstActivated }
-func (bi *BaseInterface) ICPrBurstActive() bool         { return bi.icPrBurstActive }
-func (bi *BaseInterface) ICPrBurstActivated() time.Time { return bi.icPrBurstActivated }
+func (bi *BaseInterface) ICBurstActive() bool {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.icBurstActive
+}
+func (bi *BaseInterface) ICBurstActivated() time.Time {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.icBurstActivated
+}
+func (bi *BaseInterface) ICPrBurstActive() bool {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.icPrBurstActive
+}
+func (bi *BaseInterface) ICPrBurstActivated() time.Time {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.icPrBurstActivated
+}
 
 // Announce-rate-control accessors (Interface.py:90-92,118-120;
 // Reticulum.py:819-857,938-940). A nil pointer mirrors Python's None (no rate
 // limit). Defaults are applied by the Reticulum config layer, not here.
-func (bi *BaseInterface) AnnounceRateTarget() *int      { return bi.announceRateTarget }
-func (bi *BaseInterface) SetAnnounceRateTarget(v *int)  { bi.announceRateTarget = v }
-func (bi *BaseInterface) AnnounceRateGrace() *int       { return bi.announceRateGrace }
-func (bi *BaseInterface) SetAnnounceRateGrace(v *int)   { bi.announceRateGrace = v }
-func (bi *BaseInterface) AnnounceRatePenalty() *int     { return bi.announceRatePenalty }
-func (bi *BaseInterface) SetAnnounceRatePenalty(v *int) { bi.announceRatePenalty = v }
+func (bi *BaseInterface) AnnounceRateTarget() *int {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.announceRateTarget
+}
+func (bi *BaseInterface) SetAnnounceRateTarget(v *int) {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
+	bi.announceRateTarget = v
+}
+func (bi *BaseInterface) AnnounceRateGrace() *int {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.announceRateGrace
+}
+func (bi *BaseInterface) SetAnnounceRateGrace(v *int) {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
+	bi.announceRateGrace = v
+}
+func (bi *BaseInterface) AnnounceRatePenalty() *int {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
+	return bi.announceRatePenalty
+}
+func (bi *BaseInterface) SetAnnounceRatePenalty(v *int) {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
+	bi.announceRatePenalty = v
+}
 
 // copyIngressEgressFrom copies the full ingress/egress-control
 // configuration from parent into bi, mirroring the per-field spawn blocks
@@ -318,24 +469,48 @@ func (bi *BaseInterface) copyIngressEgressFrom(parent *BaseInterface) {
 	if bi == nil || parent == nil {
 		return
 	}
-	bi.ingressControl = parent.ingressControl
-	bi.icMaxHeldAnnounces = parent.icMaxHeldAnnounces
-	bi.icBurstHold = parent.icBurstHold
-	bi.icBurstFreqNew = parent.icBurstFreqNew
-	bi.icBurstFreq = parent.icBurstFreq
-	bi.icNewTime = parent.icNewTime
-	bi.icBurstPenalty = parent.icBurstPenalty
-	bi.icHeldReleaseInterval = parent.icHeldReleaseInterval
-	bi.egressControl = parent.egressControl
-	bi.ecPrFreq = parent.ecPrFreq
-	bi.icPrBurstFreqNew = parent.icPrBurstFreqNew
-	bi.icPrBurstFreq = parent.icPrBurstFreq
+	// Snapshot the parent's config under its lock, then write the copy into
+	// bi under bi's lock. The two critical sections are separate (no nested
+	// locking) so there is no lock-ordering hazard, and each side is
+	// synchronized with concurrent setters on the respective interface.
+	parent.ingressMu.RLock()
+	ingressControl := parent.ingressControl
+	icMaxHeldAnnounces := parent.icMaxHeldAnnounces
+	icBurstHold := parent.icBurstHold
+	icBurstFreqNew := parent.icBurstFreqNew
+	icBurstFreq := parent.icBurstFreq
+	icNewTime := parent.icNewTime
+	icBurstPenalty := parent.icBurstPenalty
+	icHeldReleaseInterval := parent.icHeldReleaseInterval
+	egressControl := parent.egressControl
+	ecPrFreq := parent.ecPrFreq
+	icPrBurstFreqNew := parent.icPrBurstFreqNew
+	icPrBurstFreq := parent.icPrBurstFreq
+	announceRateTarget := parent.announceRateTarget
+	announceRateGrace := parent.announceRateGrace
+	announceRatePenalty := parent.announceRatePenalty
+	parent.ingressMu.RUnlock()
+
+	bi.ingressMu.Lock()
+	bi.ingressControl = ingressControl
+	bi.icMaxHeldAnnounces = icMaxHeldAnnounces
+	bi.icBurstHold = icBurstHold
+	bi.icBurstFreqNew = icBurstFreqNew
+	bi.icBurstFreq = icBurstFreq
+	bi.icNewTime = icNewTime
+	bi.icBurstPenalty = icBurstPenalty
+	bi.icHeldReleaseInterval = icHeldReleaseInterval
+	bi.egressControl = egressControl
+	bi.ecPrFreq = ecPrFreq
+	bi.icPrBurstFreqNew = icPrBurstFreqNew
+	bi.icPrBurstFreq = icPrBurstFreq
 
 	// Announce-rate-control inheritance (AutoInterface.py:579-581,
 	// BackboneInterface.py:481-483, TCPInterface.py spawn block).
-	bi.announceRateTarget = parent.announceRateTarget
-	bi.announceRateGrace = parent.announceRateGrace
-	bi.announceRatePenalty = parent.announceRatePenalty
+	bi.announceRateTarget = announceRateTarget
+	bi.announceRateGrace = announceRateGrace
+	bi.announceRatePenalty = announceRatePenalty
+	bi.ingressMu.Unlock()
 }
 
 // appendFreqSample appends now to a maxlen-capped frequency deque, dropping
@@ -360,7 +535,9 @@ func (bi *BaseInterface) ReceivedAnnounce() {
 // the sample also propagates to the parent interface (Python passes
 // from_spawned=True to the parent so it does not re-propagate).
 func (bi *BaseInterface) receivedAnnounceAt(now time.Time, fromSpawned bool) {
+	bi.ingressMu.Lock()
 	bi.iaFreqDeque = appendFreqSample(bi.iaFreqDeque, now, IAFreqSamples)
+	bi.ingressMu.Unlock()
 	if !fromSpawned && bi.parentInterface != nil {
 		bi.parentInterface.receivedAnnounceAt(now, true)
 	}
@@ -376,7 +553,9 @@ func (bi *BaseInterface) SentAnnounce() {
 // sentAnnounceAt is the lock-free core of SentAnnounce taking an explicit
 // now for deterministic frequency tests.
 func (bi *BaseInterface) sentAnnounceAt(now time.Time, fromSpawned bool) {
+	bi.ingressMu.Lock()
 	bi.oaFreqDeque = appendFreqSample(bi.oaFreqDeque, now, OAFreqSamples)
+	bi.ingressMu.Unlock()
 	if !fromSpawned && bi.parentInterface != nil {
 		bi.parentInterface.sentAnnounceAt(now, true)
 	}
@@ -400,6 +579,14 @@ func (bi *BaseInterface) IncomingAnnounceFrequency() float64 {
 // The returned hz uses the pre-pop n and the pre-pop span; the popleft is a
 // side effect that ages the deque for the next call.
 func (bi *BaseInterface) incomingAnnounceFrequencyAt(now time.Time) float64 {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
+	return bi.incomingAnnounceFrequencyAtLocked(now)
+}
+
+// incomingAnnounceFrequencyAtLocked is the ingressMu-held core of
+// incomingAnnounceFrequencyAt. The caller must hold bi.ingressMu.
+func (bi *BaseInterface) incomingAnnounceFrequencyAtLocked(now time.Time) float64 {
 	n := len(bi.iaFreqDeque)
 	if !(n > ICDequeMinSample) {
 		return 0
@@ -426,6 +613,14 @@ func (bi *BaseInterface) OutgoingAnnounceFrequency() float64 {
 // difference from the incoming formula is the minimum gate, which is
 // `len > 1` (needs 2+ samples) rather than IC_DEQUE_MIN_SAMPLE (3+).
 func (bi *BaseInterface) outgoingAnnounceFrequencyAt(now time.Time) float64 {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
+	return bi.outgoingAnnounceFrequencyAtLocked(now)
+}
+
+// outgoingAnnounceFrequencyAtLocked is the ingressMu-held core of
+// outgoingAnnounceFrequencyAt. The caller must hold bi.ingressMu.
+func (bi *BaseInterface) outgoingAnnounceFrequencyAtLocked(now time.Time) float64 {
 	n := len(bi.oaFreqDeque)
 	if !(n > 1) {
 		return 0
@@ -459,7 +654,9 @@ func (bi *BaseInterface) ReceivedPathRequest() {
 // sample also propagates to the parent interface (Python passes from_spawned=True
 // to the parent so it does not re-propagate).
 func (bi *BaseInterface) receivedPathRequestAt(now time.Time, fromSpawned bool) {
+	bi.ingressMu.Lock()
 	bi.ipFreqDeque = appendFreqSample(bi.ipFreqDeque, now, IPFreqSamples)
+	bi.ingressMu.Unlock()
 	if !fromSpawned && bi.parentInterface != nil {
 		bi.parentInterface.receivedPathRequestAt(now, true)
 	}
@@ -475,7 +672,9 @@ func (bi *BaseInterface) SentPathRequest() {
 // sentPathRequestAt is the lock-free core of SentPathRequest taking an explicit
 // now for deterministic frequency tests.
 func (bi *BaseInterface) sentPathRequestAt(now time.Time, fromSpawned bool) {
+	bi.ingressMu.Lock()
 	bi.opFreqDeque = appendFreqSample(bi.opFreqDeque, now, OPFreqSamples)
+	bi.ingressMu.Unlock()
 	if !fromSpawned && bi.parentInterface != nil {
 		bi.parentInterface.sentPathRequestAt(now, true)
 	}
@@ -492,6 +691,14 @@ func (bi *BaseInterface) IncomingPrFrequency() float64 {
 // formula but with the PR_FREQ_DECAY (1/PR_MINFREQ_HZ = 10s) decay window and
 // the ip_freq_deque.
 func (bi *BaseInterface) incomingPrFrequencyAt(now time.Time) float64 {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
+	return bi.incomingPrFrequencyAtLocked(now)
+}
+
+// incomingPrFrequencyAtLocked is the ingressMu-held core of
+// incomingPrFrequencyAt. The caller must hold bi.ingressMu.
+func (bi *BaseInterface) incomingPrFrequencyAtLocked(now time.Time) float64 {
 	n := len(bi.ipFreqDeque)
 	if !(n > ICDequeMinSample) {
 		return 0
@@ -517,6 +724,14 @@ func (bi *BaseInterface) OutgoingPrFrequency() float64 {
 // mirrors Interface.py:310-319: same shape as the outgoing-announce formula
 // (len > 1 gate, PR_FREQ_DECAY decay window) but with the op_freq_deque.
 func (bi *BaseInterface) outgoingPrFrequencyAt(now time.Time) float64 {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
+	return bi.outgoingPrFrequencyAtLocked(now)
+}
+
+// outgoingPrFrequencyAtLocked is the ingressMu-held core of
+// outgoingPrFrequencyAt. The caller must hold bi.ingressMu.
+func (bi *BaseInterface) outgoingPrFrequencyAtLocked(now time.Time) float64 {
 	n := len(bi.opFreqDeque)
 	if !(n > 1) {
 		return 0
@@ -558,6 +773,8 @@ func (bi *BaseInterface) ShouldIngressLimit() bool {
 //	        return True
 //	    else: return False
 func (bi *BaseInterface) shouldIngressLimitAt(now time.Time) bool {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
 	if !bi.ingressControl {
 		return false
 	}
@@ -565,7 +782,7 @@ func (bi *BaseInterface) shouldIngressLimitAt(now time.Time) bool {
 	if bi.ageAt(now) >= bi.icNewTime {
 		freqThreshold = bi.icBurstFreq
 	}
-	iaFreq := bi.incomingAnnounceFrequencyAt(now)
+	iaFreq := bi.incomingAnnounceFrequencyAtLocked(now)
 	if bi.icBurstActive {
 		if iaFreq < freqThreshold && now.After(bi.icBurstActivated.Add(time.Duration(bi.icBurstHold)*time.Second)) {
 			if len(bi.iaFreqDeque) >= ICDequeMinSample {
@@ -611,6 +828,8 @@ func (bi *BaseInterface) ShouldIngressLimitPr() bool {
 // Unlike the announce burst, activation sets no held-release penalty — the PR
 // burst only suppresses recursive path-request forwarding while active.
 func (bi *BaseInterface) shouldIngressLimitPrAt(now time.Time) bool {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
 	if !bi.ingressControl {
 		return false
 	}
@@ -618,7 +837,7 @@ func (bi *BaseInterface) shouldIngressLimitPrAt(now time.Time) bool {
 	if bi.ageAt(now) >= bi.icNewTime {
 		freqThreshold = bi.icPrBurstFreq
 	}
-	ipFreq := bi.incomingPrFrequencyAt(now)
+	ipFreq := bi.incomingPrFrequencyAtLocked(now)
 	if bi.icPrBurstActive {
 		if ipFreq < freqThreshold && now.After(bi.icPrBurstActivated.Add(time.Duration(bi.icBurstHold)*time.Second)) {
 			bi.icPrBurstActive = false
@@ -650,10 +869,12 @@ func (bi *BaseInterface) ShouldEgressLimitPr() bool {
 //	    if len(op_freq_deque) >= IC_BURST_MIN_SAMPLES(6): return True
 //	return False
 func (bi *BaseInterface) shouldEgressLimitPrAt(now time.Time) bool {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
 	if !bi.egressControl {
 		return false
 	}
-	opFreq := bi.outgoingPrFrequencyAt(now)
+	opFreq := bi.outgoingPrFrequencyAtLocked(now)
 	if opFreq > bi.ecPrFreq {
 		if len(bi.opFreqDeque) >= ICBurstMinSamples {
 			return true
@@ -672,6 +893,8 @@ func (bi *BaseInterface) HoldAnnounce(raw []byte, recv Interface, hops int, dest
 	if hops >= PathfinderM-1 {
 		return
 	}
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
 	if bi.heldAnnounces == nil {
 		bi.heldAnnounces = make(map[string]heldAnnounce)
 	}
@@ -687,6 +910,8 @@ func (bi *BaseInterface) HoldAnnounce(raw []byte, recv Interface, hops int, dest
 // HeldAnnounces returns the number of announces currently held by ingress
 // limiting on this interface (Python len(self.held_announces)).
 func (bi *BaseInterface) HeldAnnounces() int {
+	bi.ingressMu.RLock()
+	defer bi.ingressMu.RUnlock()
 	return len(bi.heldAnnounces)
 }
 
@@ -705,6 +930,8 @@ func (bi *BaseInterface) ProcessHeldAnnounces() (raw []byte, recv Interface, ok 
 // announce frequency has fallen below the burst threshold. On release it
 // advances ic_held_release by ic_held_release_interval.
 func (bi *BaseInterface) processHeldAnnouncesAt(now time.Time) (raw []byte, recv Interface, ok bool) {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
 	if len(bi.heldAnnounces) == 0 || !now.After(bi.icHeldRelease) {
 		return nil, nil, false
 	}
@@ -712,7 +939,7 @@ func (bi *BaseInterface) processHeldAnnouncesAt(now time.Time) (raw []byte, recv
 	if bi.ageAt(now) >= bi.icNewTime {
 		freqThreshold = bi.icBurstFreq
 	}
-	if bi.incomingAnnounceFrequencyAt(now) >= freqThreshold {
+	if bi.incomingAnnounceFrequencyAtLocked(now) >= freqThreshold {
 		return nil, nil, false
 	}
 

@@ -528,7 +528,7 @@ func NewResourceWithOptions(data []byte, link *Link, opts ResourceOptions) (*Res
 }
 
 func newResourceWithOptions(data []byte, link *Link, opts ResourceOptions, randRead func([]byte) (int, error)) (*Resource, error) {
-	if link.status != LinkActive {
+	if link.status.Load() != LinkActive {
 		return nil, fmt.Errorf("link is not active")
 	}
 	if randRead == nil {

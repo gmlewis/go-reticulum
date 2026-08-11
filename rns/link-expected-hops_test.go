@@ -202,16 +202,16 @@ func TestLinkProofRebalancedAndAcceptedOverLoopback(t *testing.T) {
 		t.Fatal("timeout waiting for receiver link establishment")
 	}
 
-	if initiator.status != LinkActive {
-		t.Fatalf("initiator link not active: %v", initiator.status)
+	if initiator.status.Load() != LinkActive {
+		t.Fatalf("initiator link not active: %v", initiator.status.Load())
 	}
 	// The proof arrived over the direct pipe with hops=1, so the re-balance
 	// adopted hops=1 (PathfinderM -> 1).
 	if got := initiator.ExpectedHops(); got != 1 {
 		t.Errorf("initiator ExpectedHops() after re-balance = %v, want 1 (proof hop count)", got)
 	}
-	if receiver.status != LinkActive {
-		t.Fatalf("receiver link not active: %v", receiver.status)
+	if receiver.status.Load() != LinkActive {
+		t.Fatalf("receiver link not active: %v", receiver.status.Load())
 	}
 	// Destination side sets expected_hops = packet.hops at activation
 	// (Link.py:525, rtt_packet). The RTT packet arrived with hops=1.

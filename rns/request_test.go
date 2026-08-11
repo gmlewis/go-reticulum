@@ -311,9 +311,9 @@ func TestLinkResponseMetadata(t *testing.T) {
 	rr := &RequestReceipt{RequestID: requestID, Status: RequestDelivered}
 	link := &Link{
 		logger:          NewLogger(),
-		status:          LinkActive,
 		pendingRequests: []*RequestReceipt{rr},
 	}
+	link.status.Store(LinkActive)
 
 	link.handleResponse(requestID, []byte("inline"), metadata, 0, 0, false, false)
 
@@ -343,9 +343,9 @@ func TestResourceResponseMetadata(t *testing.T) {
 	rr := &RequestReceipt{RequestID: requestID, Status: RequestDelivered}
 	link := &Link{
 		logger:          NewLogger(),
-		status:          LinkActive,
 		pendingRequests: []*RequestReceipt{rr},
 	}
+	link.status.Store(LinkActive)
 	resource := &Resource{
 		link:     link,
 		status:   ResourceStatusComplete,
@@ -408,9 +408,9 @@ func TestLinkResponseResourceConcludedPreservesBinaryMapKeys(t *testing.T) {
 	rr := &RequestReceipt{RequestID: requestID, Status: RequestDelivered}
 	link := &Link{
 		logger:          NewLogger(),
-		status:          LinkActive,
 		pendingRequests: []*RequestReceipt{rr},
 	}
+	link.status.Store(LinkActive)
 	resource := &Resource{
 		link:   link,
 		status: ResourceStatusComplete,
@@ -454,9 +454,9 @@ func TestResponseResourceFailedFailsPendingReceipt(t *testing.T) {
 	rr := &RequestReceipt{RequestID: requestID, Status: RequestReceiving}
 	link := &Link{
 		logger:          NewLogger(),
-		status:          LinkActive,
 		pendingRequests: []*RequestReceipt{rr},
 	}
+	link.status.Store(LinkActive)
 	rr.Link = link
 
 	failed := make(chan *RequestReceipt, 1)

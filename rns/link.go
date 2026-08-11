@@ -13,6 +13,7 @@ import (
 	"math"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns/crypto"
@@ -110,8 +111,11 @@ type Link struct {
 	logger      *Logger
 	destination *Destination
 	initiator   bool
-	status      int
-	mode        int
+	// status is accessed atomically because it is read by background
+	// goroutines (receive/handleRequest/handleResponse/watchdog) concurrently
+	// with Teardown and state transitions that write it under l.mu.
+	status atomic.Int32
+	mode   int
 
 	prv         *crypto.X25519PrivateKey
 	pubBytes    []byte
@@ -220,9 +224,15 @@ func (l *Link) signallingBytes() []byte {
 
 // GetStatus returns the current status of the link.
 func (l *Link) GetStatus() int {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.status
+	return int(l.status.Load())
+}
+
+// String returns a stable, race-free identifier for the link. It exists so
+// that formatting a *Link with %v does not reflectively read every struct
+// field (including the sync.Mutex state), which would race with Lock/Unlock
+// under the race detector. Mirrors Destination.String.
+func (l *Link) String() string {
+	return fmt.Sprintf("<Link:%x>", l.linkID)
 }
 
 // ExpectedHops returns the hop count the link expects its peer's link-proof
@@ -371,7 +381,6 @@ func NewLink(ts Transport, destination *Destination) (*Link, error) {
 		logger:                 ts.GetLogger(),
 		destination:            destination,
 		initiator:              true,
-		status:                 LinkPending,
 		mode:                   LinkModeAES256CBC,
 		mtu:                    MTU,
 		transport:              ts,
@@ -381,6 +390,7 @@ func NewLink(ts Transport, destination *Destination) (*Link, error) {
 		staleTime:              LinkStaleFactor * LinkKeepaliveDefault,
 		watchdogStop:           make(chan struct{}),
 	}
+	l.status.Store(LinkPending)
 	l.UpdateMDU()
 
 	var err error
@@ -604,9 +614,7 @@ func (l *Link) receive(packet *Packet) {
 		packet.Context != ContextLrproof
 
 	if shouldDecrypt {
-		l.mu.Lock()
-		status := l.status
-		l.mu.Unlock()
+		status := l.status.Load()
 		if status == LinkClosed {
 			l.logger.Debug("Skipping decrypt on closed link %x", l.linkID)
 			return
@@ -884,8 +892,8 @@ func (l *Link) receive(packet *Packet) {
 	default:
 		l.mu.Lock()
 		cb := l.callbacks.Packet
-		status := l.status
 		l.mu.Unlock()
+		status := l.status.Load()
 		if status == LinkClosed || status == LinkPending {
 			l.logger.Debug("Link %x: dropping packet on %v link", l.linkID, status)
 			return
@@ -904,7 +912,7 @@ func (l *Link) send(p *Packet) error {
 	l.mu.Lock()
 	l.lastOutbound = time.Now()
 	iface := l.attachedInterface
-	if l.status == LinkClosed {
+	if l.status.Load() == LinkClosed {
 		l.mu.Unlock()
 		return fmt.Errorf("link %x is closed", l.linkID)
 	}
@@ -998,9 +1006,9 @@ func (l *Link) verifyProofSignature(packet *Packet) bool {
 
 // ValidateProof evaluates an incoming link proof packet and formally transitions the link into an active state upon success.
 func (l *Link) ValidateProof(packet *Packet) error {
-	l.logger.Info("ValidateProof: link %x, status=%v", l.linkID, l.status)
+	l.logger.Info("ValidateProof: link %x, status=%v", l.linkID, l.status.Load())
 	l.mu.Lock()
-	if l.status != LinkPending {
+	if l.status.Load() != LinkPending {
 		l.mu.Unlock()
 		return errors.New("link is not in pending state")
 	}
@@ -1031,7 +1039,7 @@ func (l *Link) ValidateProof(packet *Packet) error {
 	}
 
 	l.attachedInterface = packet.ReceivingInterface
-	l.status = LinkActive
+	l.status.Store(LinkActive)
 	l.activatedAt = time.Now()
 	l.rtt = time.Since(l.requestTime).Seconds()
 	// Receiving the proof contributes its on-wire size to the
@@ -1073,9 +1081,9 @@ func (l *Link) ValidateProof(packet *Packet) error {
 
 // HandleRTT processes an incoming Round Trip Time packet to finalize activation for non-initiator link instances.
 func (l *Link) HandleRTT(packet *Packet) {
-	l.logger.Info("Handling RTT for link %x, current status=%v", l.linkID, l.status)
+	l.logger.Info("Handling RTT for link %x, current status=%v", l.linkID, l.status.Load())
 	l.mu.Lock()
-	if l.status == LinkHandshake || l.status == LinkPending {
+	if l.status.Load() == LinkHandshake || l.status.Load() == LinkPending {
 		measuredRTT := time.Since(l.requestTime).Seconds()
 		l.mu.Unlock()
 
@@ -1101,7 +1109,7 @@ func (l *Link) HandleRTT(packet *Packet) {
 
 		l.mu.Lock()
 		l.rtt = math.Max(measuredRTT, receivedRTT)
-		l.status = LinkActive
+		l.status.Store(LinkActive)
 		l.activatedAt = time.Now()
 		// expected_hops = packet.hops (Link.py:525, rtt_packet): the
 		// destination side records the RTT packet's hop count as the
@@ -1139,7 +1147,7 @@ func (l *Link) watchdogJob() {
 		sleep := l.watchdogStep(time.Now())
 
 		l.mu.Lock()
-		closed := l.status == LinkClosed
+		closed := l.status.Load() == LinkClosed
 		l.mu.Unlock()
 		if closed {
 			return
@@ -1165,7 +1173,7 @@ func (l *Link) watchdogStep(now time.Time) time.Duration {
 	var callback func(*Link)
 
 	l.mu.Lock()
-	switch l.status {
+	switch l.status.Load() {
 	case LinkClosed:
 		l.mu.Unlock()
 		return 0
@@ -1174,7 +1182,7 @@ func (l *Link) watchdogStep(now time.Time) time.Duration {
 		nextCheck := l.requestTime.Add(l.establishmentTimeout)
 		sleep := nextCheck.Sub(now)
 		if !now.Before(nextCheck) {
-			l.status = LinkClosed
+			l.status.Store(LinkClosed)
 			l.teardownReason = TeardownTimeout
 			if l.channel != nil {
 				l.channel.Shutdown()
@@ -1207,7 +1215,7 @@ func (l *Link) watchdogStep(now time.Time) time.Duration {
 			}
 
 			if !now.Before(lastInbound.Add(l.staleTime)) {
-				l.status = LinkStale
+				l.status.Store(LinkStale)
 				sleep := time.Duration(l.rtt*l.keepaliveTimeoutFactor*float64(time.Second)) + LinkStaleGrace
 				l.mu.Unlock()
 				if sendKeepalive {
@@ -1238,7 +1246,7 @@ func (l *Link) watchdogStep(now time.Time) time.Duration {
 		return sleep
 
 	case LinkStale:
-		l.status = LinkClosed
+		l.status.Store(LinkClosed)
 		l.teardownReason = TeardownTimeout
 		if l.channel != nil {
 			l.channel.Shutdown()
@@ -1273,8 +1281,8 @@ func (l *Link) Handshake() error {
 }
 
 func (l *Link) handshake() error {
-	if l.status != LinkPending && l.status != LinkHandshake {
-		return fmt.Errorf("invalid link state for handshake: %v", l.status)
+	if l.status.Load() != LinkPending && l.status.Load() != LinkHandshake {
+		return fmt.Errorf("invalid link state for handshake: %v", l.status.Load())
 	}
 
 	if l.peerPub == nil {
@@ -1302,7 +1310,7 @@ func (l *Link) handshake() error {
 		return err
 	}
 
-	l.status = LinkHandshake
+	l.status.Store(LinkHandshake)
 	return nil
 }
 
@@ -1340,7 +1348,7 @@ func (l *Link) Decrypt(ciphertext []byte) ([]byte, error) {
 
 // Identify explicitly reveals and cryptographically proves the initiator's long-term identity to the remote peer over this active link.
 func (l *Link) Identify(identity *Identity) error {
-	if !l.initiator || l.status != LinkActive {
+	if !l.initiator || l.status.Load() != LinkActive {
 		return errors.New("invalid state for identification")
 	}
 	if identity == nil {
@@ -1526,7 +1534,7 @@ func (o *LinkChannelOutlet) RTT() float64 {
 
 // IsUsable safely reports whether the physical link remains in an active state capable of sustaining channel traffic.
 func (o *LinkChannelOutlet) IsUsable() bool {
-	return o.link.status == LinkActive
+	return o.link.status.Load() == LinkActive
 }
 
 // TimedOut is called by the channel when it has exceeded its maximum retry count.
@@ -1536,9 +1544,7 @@ func (o *LinkChannelOutlet) TimedOut() {
 
 // Teardown actively closes the link, destroying related channels, and notifying any observers that data transmission has halted.
 func (l *Link) Teardown() {
-	l.mu.Lock()
-	status := l.status
-	l.mu.Unlock()
+	status := l.status.Load()
 	if status != LinkPending && status != LinkClosed {
 		l.sendTeardownPacket()
 	}
@@ -1551,12 +1557,12 @@ func (l *Link) Teardown() {
 
 func (l *Link) teardown(reason int) {
 	l.mu.Lock()
-	if l.status == LinkClosed {
+	if l.status.Load() == LinkClosed {
 		l.mu.Unlock()
 		return
 	}
 
-	l.status = LinkClosed
+	l.status.Store(LinkClosed)
 	l.teardownReason = reason
 	if l.channel != nil {
 		l.channel.Shutdown()
@@ -1696,7 +1702,7 @@ func (l *Link) Request(path string, data any, responseCallback, failedCallback, 
 }
 
 func (l *Link) handleRequest(requestID []byte, unpackedRequest []any) {
-	if l.status != LinkActive {
+	if l.status.Load() != LinkActive {
 		return
 	}
 
@@ -1819,9 +1825,9 @@ func (l *Link) handleResponse(requestID []byte, responseData any, metadata any, 
 	l.logger.Verbose("handleResponse called: requestID=%x, responseData=%v (type: %T)", requestID, responseData, responseData)
 	l.mu.Lock()
 
-	if l.status != LinkActive {
+	if l.status.Load() != LinkActive {
 		l.mu.Unlock()
-		l.logger.Verbose("handleResponse: link not active, status=%v", l.status)
+		l.logger.Verbose("handleResponse: link not active, status=%v", l.status.Load())
 		return
 	}
 

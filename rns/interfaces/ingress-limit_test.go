@@ -18,7 +18,7 @@ func freqSamples(now time.Time, n int, span float64) []time.Time {
 	}
 	out := make([]time.Time, n)
 	step := span / float64(n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		// oldest first; last sample is ~now.
 		out[i] = now.Add(-time.Duration((span - float64(i)*step) * float64(time.Second)))
 	}
@@ -149,7 +149,7 @@ func TestHoldAnnounce(t *testing.T) {
 		t.Parallel()
 		bi := NewBaseInterface("hold", ModeFull, 62500)
 		bi.SetICMaxHeldAnnounces(3)
-		for i := 0; i < 4; i++ {
+		for i := range 4 {
 			bi.HoldAnnounce([]byte{byte(i)}, nil, i, []byte{0, 0, 0, byte(i)})
 		}
 		if got := bi.HeldAnnounces(); got != 3 {

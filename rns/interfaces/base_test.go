@@ -279,14 +279,14 @@ func TestInterfaceGetHashMemoized(t *testing.T) {
 	pipe := NewPipeInterface("pipe-hash-test", nil)
 	t.Cleanup(func() { _ = pipe.Detach() })
 
-	want := sha256.Sum256([]byte(fmt.Sprintf("%v[%v]", pipe.Type(), pipe.Name())))
+	want := sha256.Sum256(fmt.Appendf(nil, "%v[%v]", pipe.Type(), pipe.Name()))
 
 	// compute counts how many times the underlying hash computation runs. It
 	// must run exactly once across both calls; the second call must hit the cache.
 	var computes int
 	compute := func() []byte {
 		computes++
-		return rnscrypto.SHA256([]byte(fmt.Sprintf("%v[%v]", pipe.Type(), pipe.Name())))
+		return rnscrypto.SHA256(fmt.Appendf(nil, "%v[%v]", pipe.Type(), pipe.Name()))
 	}
 
 	h1 := pipe.MemoizedHash(compute)

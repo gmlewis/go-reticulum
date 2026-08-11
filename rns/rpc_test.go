@@ -873,7 +873,7 @@ func TestRPCInterfaceStatsPopulatesFreqAndBurstFields(t *testing.T) {
 	// Drive real announce/PR events with time spacing so each frequency deque
 	// accumulates enough samples (>IC_DEQUE_MIN_SAMPLE for incoming, >1 for
 	// outgoing) over a non-zero span, yielding non-zero Hz.
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		iface.ReceivedAnnounce()
 		iface.SentAnnounce()
 		iface.ReceivedPathRequest()

@@ -1283,10 +1283,10 @@ func interfaceHash(iface interfaces.Interface) []byte {
 	}
 	if mh, ok := iface.(interface{ MemoizedHash(func() []byte) []byte }); ok {
 		return mh.MemoizedHash(func() []byte {
-			return FullHash([]byte(fmt.Sprintf("%v[%v]", iface.Type(), iface.Name())))
+			return FullHash(fmt.Appendf(nil, "%v[%v]", iface.Type(), iface.Name()))
 		})
 	}
-	return FullHash([]byte(fmt.Sprintf("%v[%v]", iface.Type(), iface.Name())))
+	return FullHash(fmt.Appendf(nil, "%v[%v]", iface.Type(), iface.Name()))
 }
 
 // findInterfaceByHash is the Go port of Python Transport.find_interface_from_hash.
@@ -2276,7 +2276,7 @@ func (ts *TransportSystem) forwardPathRequest(packet *Packet, source interfaces.
 	// from a local client are forwarded unconditionally (Python's
 	// is_from_local_client branch is not ingress-gated), so the carve-out
 	// preserves that behavior.
-	if source != nil && !ts.isLocalClientInterface(source) && source.ShouldIngressLimitPr() {
+	if !ts.isLocalClientInterface(source) && source.ShouldIngressLimitPr() {
 		ts.logger.Debug("Not forwarding recursive path request for %x due to active PR ingress limiting on %v", targetHash, source.Name())
 		return
 	}
@@ -2295,15 +2295,13 @@ func (ts *TransportSystem) forwardPathRequest(packet *Packet, source interfaces.
 	// no mode restriction, preserving the existing forward-to-all behavior for
 	// local-client and discover-mode sources.
 	var searchModeFilter []int
-	if source != nil {
-		switch {
-		case source.RecursivePrs():
-			// should_search_for_unknown = true; search_mode_filter stays nil.
-		case interfaces.ModeIn(source.Mode(), interfaces.DiscoverPathsFor):
-			// should_search_for_unknown = true; search_mode_filter stays nil.
-		case source.Mode() == interfaces.ModeBoundary:
-			searchModeFilter = interfaces.BoundarySearchModes
-		}
+	switch {
+	case source.RecursivePrs():
+		// should_search_for_unknown = true; search_mode_filter stays nil.
+	case interfaces.ModeIn(source.Mode(), interfaces.DiscoverPathsFor):
+		// should_search_for_unknown = true; search_mode_filter stays nil.
+	case source.Mode() == interfaces.ModeBoundary:
+		searchModeFilter = interfaces.BoundarySearchModes
 	}
 
 	ts.mu.Lock()

@@ -74,7 +74,7 @@ func TestLinkHandleRTTDecryptsAndUpdatesKeepalive(t *testing.T) {
 		t.Fatalf("receiver handshake failed: %v", err)
 	}
 
-	receiver.status = LinkHandshake
+	receiver.status.Store(LinkHandshake)
 	receiver.requestTime = time.Now().Add(-150 * time.Millisecond)
 
 	rttData, err := msgpack.Pack(2.0)
@@ -88,8 +88,8 @@ func TestLinkHandleRTTDecryptsAndUpdatesKeepalive(t *testing.T) {
 
 	receiver.HandleRTT(&Packet{Data: encrypted})
 
-	if receiver.status != LinkActive {
-		t.Fatalf("receiver status=%v want=%v", receiver.status, LinkActive)
+	if receiver.status.Load() != LinkActive {
+		t.Fatalf("receiver status=%v want=%v", receiver.status.Load(), LinkActive)
 	}
 	if receiver.rtt < 2.0 {
 		t.Fatalf("receiver RTT=%v want >= 2.0", receiver.rtt)
@@ -106,16 +106,16 @@ func TestLinkWatchdogPendingTimeout(t *testing.T) {
 	t.Parallel()
 
 	link := &Link{
-		status:               LinkPending,
 		requestTime:          time.Now().Add(-2 * time.Second),
 		establishmentTimeout: time.Second,
 		watchdogStop:         make(chan struct{}),
 	}
+	link.status.Store(LinkPending)
 
 	sleep := link.watchdogStep(time.Now())
 
-	if link.status != LinkClosed {
-		t.Fatalf("link status=%v want=%v", link.status, LinkClosed)
+	if link.status.Load() != LinkClosed {
+		t.Fatalf("link status=%v want=%v", link.status.Load(), LinkClosed)
 	}
 	if link.teardownReason != TeardownTimeout {
 		t.Fatalf("link teardownReason=%v want=%v", link.teardownReason, TeardownTimeout)
@@ -135,7 +135,7 @@ func TestLinkWatchdogActiveMarksStaleAndSendsKeepalive(t *testing.T) {
 	iface := &capturingInterface{name: "capture"}
 
 	link.initiator = true
-	link.status = LinkActive
+	link.status.Store(LinkActive)
 	link.linkID = []byte("watchdog_link_id")
 	link.hash = link.linkID
 	link.attachedInterface = iface
@@ -145,8 +145,8 @@ func TestLinkWatchdogActiveMarksStaleAndSendsKeepalive(t *testing.T) {
 
 	sleep := link.watchdogStep(time.Now())
 
-	if link.status != LinkStale {
-		t.Fatalf("link status=%v want=%v", link.status, LinkStale)
+	if link.status.Load() != LinkStale {
+		t.Fatalf("link status=%v want=%v", link.status.Load(), LinkStale)
 	}
 	if iface.sendCount != 1 {
 		t.Fatalf("keepalive sendCount=%v want=1", iface.sendCount)
@@ -160,14 +160,14 @@ func TestLinkWatchdogStaleClosesWithTimeout(t *testing.T) {
 	t.Parallel()
 
 	link := &Link{
-		status:       LinkStale,
 		watchdogStop: make(chan struct{}),
 	}
+	link.status.Store(LinkStale)
 
 	sleep := link.watchdogStep(time.Now())
 
-	if link.status != LinkClosed {
-		t.Fatalf("link status=%v want=%v", link.status, LinkClosed)
+	if link.status.Load() != LinkClosed {
+		t.Fatalf("link status=%v want=%v", link.status.Load(), LinkClosed)
 	}
 	if link.teardownReason != TeardownTimeout {
 		t.Fatalf("link teardownReason=%v want=%v", link.teardownReason, TeardownTimeout)
@@ -273,14 +273,14 @@ func TestLinkHandshakeFull(t *testing.T) {
 	select {
 	case l := <-establishedReceiver:
 		t.Cleanup(l.Teardown)
-		if l.status != LinkActive {
+		if l.status.Load() != LinkActive {
 			t.Errorf("Receiver link not active")
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Timeout waiting for receiver link establishment")
 	}
 
-	if link.status != LinkActive {
+	if link.status.Load() != LinkActive {
 		t.Errorf("Initiator link not active")
 	}
 }
@@ -293,7 +293,7 @@ func TestLinkIdentification(t *testing.T) {
 
 	link := mustTestNewLink(t, ts, receiverDest)
 	link.linkID = []byte("link_id")
-	link.status = LinkActive // Simulate established link
+	link.status.Store(LinkActive) // Simulate established link
 
 	// Initiator reveals identity to receiver over link
 	initiatorID := mustTestNewIdentity(t, true)
@@ -670,7 +670,7 @@ func TestLinkIdentifyBlackholedTearsDownLink(t *testing.T) {
 		t.Fatal("timeout: link neither torn down nor identified")
 	}
 
-	if receiverLink.status != LinkClosed {
-		t.Fatalf("receiver link status = %v, want LinkClosed", receiverLink.status)
+	if receiverLink.status.Load() != LinkClosed {
+		t.Fatalf("receiver link status = %v, want LinkClosed", receiverLink.status.Load())
 	}
 }

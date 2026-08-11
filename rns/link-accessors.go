@@ -28,7 +28,7 @@ func (l *Link) GetMTU() *int {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.status != LinkActive {
+	if l.status.Load() != LinkActive {
 		return nil
 	}
 	mtu := l.mtu
@@ -44,7 +44,7 @@ func (l *Link) GetMDU() *int {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.status != LinkActive {
+	if l.status.Load() != LinkActive {
 		return nil
 	}
 	mdu := l.mdu

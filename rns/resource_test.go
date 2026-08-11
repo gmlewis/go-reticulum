@@ -38,10 +38,10 @@ func TestNewResourceFailsOnRandomHashGenerationError(t *testing.T) {
 	}
 
 	link := &Link{
-		status: LinkActive,
-		token:  token,
-		mdu:    MDU,
+		token: token,
+		mdu:   MDU,
 	}
+	link.status.Store(LinkActive)
 
 	_, err = newResourceWithOptions([]byte("payload"), link, ResourceOptions{}, errReader{}.Read)
 	if err == nil {
@@ -64,11 +64,12 @@ func testActiveResourceLink(t *testing.T) *Link {
 		t.Fatalf("NewToken error: %v", err)
 	}
 
-	return &Link{
-		status: LinkActive,
-		token:  token,
-		mdu:    MDU,
+	link := &Link{
+		token: token,
+		mdu:   MDU,
 	}
+	link.status.Store(LinkActive)
+	return link
 }
 
 func TestNewResourceWithOptionsCompressesWhenSmaller(t *testing.T) {
@@ -150,8 +151,8 @@ func TestResourceAssembleBz2BombGuard(t *testing.T) {
 	if r.status != ResourceStatusCorrupt {
 		t.Fatalf("resource status = %v, want ResourceStatusCorrupt", r.status)
 	}
-	if link.status != LinkClosed {
-		t.Fatalf("link status = %v, want LinkClosed (bomb-guard tears down the link)", link.status)
+	if link.status.Load() != LinkClosed {
+		t.Fatalf("link status = %v, want LinkClosed (bomb-guard tears down the link)", link.status.Load())
 	}
 	for _, existing := range link.incomingResources {
 		if existing == r {

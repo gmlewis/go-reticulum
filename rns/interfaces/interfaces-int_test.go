@@ -36,6 +36,34 @@ discovery_token = hashlib.sha256(group_id + link_local_address.encode("utf-8")).
 print(discovery_token.hex())
 `
 
+// pythonMockReticulumSetup stubs RNS.Reticulum.get_instance() for the
+// parity echo scripts. Upstream Interface.__init__ now resolves the
+// ingress/egress-control defaults via RNS.Reticulum.get_instance()._default_*(),
+// which requires a running RNS.Reticulum instance. Constructing a real one
+// would spawn transport/shared-instance threads and sockets that interfere
+// with these byte-level echo tests, so we install a lightweight mock whose
+// _default_* methods return the Interface class constants — exactly what an
+// unconfigured real Reticulum instance returns (self.__<field> or
+// Interface.<CONSTANT>, with the private fields falsy). get_instance() is only
+// called from Interface.__init__ (verified upstream), so the mock only needs
+// these methods. Each echo script embeds this after its RNS imports.
+const pythonMockReticulumSetup = `
+class _MockReticulum:
+    _I = RNS.Interfaces.Interface.Interface
+    def _default_ic_max_held_announces(self): return self._I.MAX_HELD_ANNOUNCES
+    def _default_ic_burst_hold(self): return self._I.IC_BURST_HOLD
+    def _default_ic_burst_freq_new(self): return self._I.IC_BURST_FREQ_NEW
+    def _default_ic_burst_freq(self): return self._I.IC_BURST_FREQ
+    def _default_ic_pr_burst_freq_new(self): return self._I.IC_PR_BURST_FREQ_NEW
+    def _default_ic_pr_burst_freq(self): return self._I.IC_PR_BURST_FREQ
+    def _default_ec_pr_freq(self): return self._I.EC_PR_FREQ
+    def _default_egress_control(self): return self._I.EGRESS_CONTROL
+    def _default_ic_new_time(self): return self._I.IC_NEW_TIME
+    def _default_ic_burst_penalty(self): return self._I.IC_BURST_PENALTY
+    def _default_ic_held_release_interval(self): return self._I.IC_HELD_RELEASE_INTERVAL
+RNS.Reticulum.get_instance = staticmethod(lambda: _MockReticulum())
+`
+
 func TestAutoInterfaceDiscoveryPacketParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 	pythonPath := getPythonPath(t)
@@ -103,7 +131,8 @@ import RNS.Interfaces.UDPInterface as UDPInterface
 import time
 import sys
 import os
-
+import RNS
+` + pythonMockReticulumSetup + `
 class Owner:
     def inbound(self, data, interface):
         # Echo back
@@ -255,7 +284,7 @@ RNS.LOG_INFO = 2
 RNS.LOG_WARNING = 3
 RNS.LOG_ERROR = 4
 RNS.LOG_VERBOSE = 5
-
+` + pythonMockReticulumSetup + `
 config = {
     "name": "test_tcp",
     "listen_ip": "127.0.0.1",
@@ -368,7 +397,7 @@ RNS.LOG_INFO = 2
 RNS.LOG_WARNING = 3
 RNS.LOG_ERROR = 4
 RNS.LOG_VERBOSE = 5
-
+` + pythonMockReticulumSetup + `
 # We need to mock ConfigObj to return kiss_framing=True
 class MockConfig:
     def __getitem__(self, key):
@@ -632,7 +661,7 @@ class Owner:
 RNS.log = lambda msg, level=None: None
 RNS.Reticulum.MTU = 500
 RNS.Reticulum.HEADER_MINSIZE = 2
-
+` + pythonMockReticulumSetup + `
 config = {
     "name": "test_serial",
     "port": sys.argv[1],

@@ -78,7 +78,7 @@ func (b *BackboneInterface) icBurstActiveAt(now time.Time) bool {
 		b.lastICBurstCheck = now
 		b.lastICBurstState = false
 		for _, peer := range b.snapshotSpawned() {
-			if peer.icBurstActive {
+			if peer.ICBurstActive() {
 				b.lastICBurstState = true
 				break
 			}
@@ -108,9 +108,9 @@ func (b *BackboneInterface) icBurstActivatedAt(now time.Time) time.Time {
 		b.lastICBurstActivatedCheck = now
 		b.lastICBurstActivated = time.Time{}
 		for _, peer := range b.snapshotSpawned() {
-			if peer.icBurstActive {
-				if b.lastICBurstActivated.IsZero() || peer.icBurstActivated.Before(b.lastICBurstActivated) {
-					b.lastICBurstActivated = peer.icBurstActivated
+			if peer.ICBurstActive() {
+				if b.lastICBurstActivated.IsZero() || peer.ICBurstActivated().Before(b.lastICBurstActivated) {
+					b.lastICBurstActivated = peer.ICBurstActivated()
 				}
 			}
 		}
@@ -136,7 +136,7 @@ func (b *BackboneInterface) icPrBurstActiveAt(now time.Time) bool {
 		b.lastICPrBurstCheck = now
 		b.lastICPrBurstState = false
 		for _, peer := range b.snapshotSpawned() {
-			if peer.icPrBurstActive {
+			if peer.ICPrBurstActive() {
 				b.lastICPrBurstState = true
 				break
 			}
@@ -163,9 +163,9 @@ func (b *BackboneInterface) icPrBurstActivatedAt(now time.Time) time.Time {
 		b.lastICPrBurstActivatedCheck = now
 		b.lastICPrBurstActivated = time.Time{}
 		for _, peer := range b.snapshotSpawned() {
-			if peer.icPrBurstActive {
-				if b.lastICPrBurstActivated.IsZero() || peer.icPrBurstActivated.Before(b.lastICPrBurstActivated) {
-					b.lastICPrBurstActivated = peer.icPrBurstActivated
+			if peer.ICPrBurstActive() {
+				if b.lastICPrBurstActivated.IsZero() || peer.ICPrBurstActivated().Before(b.lastICPrBurstActivated) {
+					b.lastICPrBurstActivated = peer.ICPrBurstActivated()
 				}
 			}
 		}

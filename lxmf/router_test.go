@@ -10811,6 +10811,12 @@ func invokeRouterLinkPacketCallback(t *testing.T, link *rns.Link, data []byte) {
 func setRouterLinkField(t *testing.T, link *rns.Link, name string, value any) {
 	t.Helper()
 	field := reflect.ValueOf(link).Elem().FieldByName(name)
+	if name == "status" {
+		// status is an atomic.Int32; assign through its Store method rather
+		// than a reflective struct copy (which would panic on the noCopy field).
+		(*atomic.Int32)(unsafe.Pointer(field.UnsafeAddr())).Store(int32(value.(int)))
+		return
+	}
 	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Set(reflect.ValueOf(value))
 }
 

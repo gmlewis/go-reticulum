@@ -2392,7 +2392,7 @@ func TestShouldHoldAnnounceGate(t *testing.T) {
 	t.Run("flooding holds all but pending-PR dest", func(t *testing.T) {
 		t.Parallel()
 		ts, iface := mkTS(t)
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			id, dest := mkRemote(t, "flood")
 			ts.handleAnnounce(mkAnnounce(t, id, dest, 1, iface), iface)
 		}
