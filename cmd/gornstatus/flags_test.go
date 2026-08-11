@@ -108,3 +108,54 @@ func TestParseFlagsHelp(t *testing.T) {
 		}
 	}
 }
+
+func TestParseFlagsPrStatsAndBurst(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"short -P", []string{"-P"}},
+		{"long --pr-stats", []string{"--pr-stats"}},
+		{"short -B", []string{"-B"}},
+		{"long --burst", []string{"--burst"}},
+		{"combined", []string{"-P", "-B", "-A"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			app, _, err := parseFlags(tc.args, io.Discard)
+			if err != nil {
+				t.Fatalf("Parse failed: %v", err)
+			}
+			wantPr := false
+			wantBurst := false
+			for _, a := range tc.args {
+				if a == "-P" || a == "--pr-stats" {
+					wantPr = true
+				}
+				if a == "-B" || a == "--burst" {
+					wantBurst = true
+				}
+			}
+			if app.prStats != wantPr {
+				t.Errorf("prStats = %v, want %v", app.prStats, wantPr)
+			}
+			if app.burstFilter != wantBurst {
+				t.Errorf("burstFilter = %v, want %v", app.burstFilter, wantBurst)
+			}
+		})
+	}
+}
+
+func TestParseFlagsSortHelpListsPrxPtx(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	_, _, _ = parseFlags([]string{"--help"}, &buf)
+	got := buf.String()
+	for _, want := range []string{"prx", "ptx", "-P, --pr-stats", "-B, --burst"} {
+		if !bytes.Contains(buf.Bytes(), []byte(want)) {
+			t.Errorf("help output missing %q: %v", want, got)
+		}
+	}
+}

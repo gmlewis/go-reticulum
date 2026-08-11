@@ -64,6 +64,29 @@ func (pathRequestInterface) Gravity() int                { return 0 }
 func (pathRequestInterface) RecursivePrs() bool          { return false }
 func (pathRequestInterface) AnnouncesFromInternal() bool { return true }
 func (pathRequestInterface) AnnouncesToInternal() *bool  { return nil }
+func (pathRequestInterface) ReceivedAnnounce()           {}
+func (pathRequestInterface) ShouldIngressLimit() bool    { return false }
+func (pathRequestInterface) HoldAnnounce([]byte, interfaces.Interface, int, []byte) {
+}
+func (pathRequestInterface) ProcessHeldAnnounces() ([]byte, interfaces.Interface, bool) {
+	return nil, nil, false
+}
+func (pathRequestInterface) HeldAnnounces() int                 { return 0 }
+func (pathRequestInterface) ReceivedPathRequest()               {}
+func (pathRequestInterface) SentPathRequest()                   {}
+func (pathRequestInterface) IncomingPrFrequency() float64       { return 0 }
+func (pathRequestInterface) OutgoingPrFrequency() float64       { return 0 }
+func (pathRequestInterface) ShouldIngressLimitPr() bool         { return false }
+func (pathRequestInterface) ShouldEgressLimitPr() bool          { return false }
+func (pathRequestInterface) AnnounceRateTarget() *int           { return nil }
+func (pathRequestInterface) AnnounceRateGrace() *int            { return nil }
+func (pathRequestInterface) AnnounceRatePenalty() *int          { return nil }
+func (pathRequestInterface) IncomingAnnounceFrequency() float64 { return 0 }
+func (pathRequestInterface) OutgoingAnnounceFrequency() float64 { return 0 }
+func (pathRequestInterface) ICBurstActive() bool                { return false }
+func (pathRequestInterface) ICBurstActivated() time.Time        { return time.Time{} }
+func (pathRequestInterface) ICPrBurstActive() bool              { return false }
+func (pathRequestInterface) ICPrBurstActivated() time.Time      { return time.Time{} }
 
 func TestDoRequestPrintsSpinnerAndSuccessMessage(t *testing.T) {
 	t.Parallel()

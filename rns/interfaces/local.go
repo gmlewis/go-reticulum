@@ -20,6 +20,13 @@ import (
 
 const (
 	LocalBitrate = 1000 * 1000 * 1000
+
+	// ClientSleepPauseTimeout is the Android client-sleep pause window after
+	// which outbound traffic to a (presumed asleep) local shared-instance
+	// client is dropped (LocalInterface.py:65
+	// CLIENT_SLEEP_PAUSE_TIMEOUT = 12). Each inbound frame refreshes the
+	// window (LocalInterface.py:295).
+	ClientSleepPauseTimeout = 12 * time.Second
 )
 
 func isAbstractUnixAddr(path string) bool {
@@ -36,6 +43,14 @@ type LocalClientInterface struct {
 	path           string
 	port           int
 	reconnectDelay time.Duration
+
+	// Android client-sleep state (LocalInterface.py:91-106,154). On Android a
+	// spawned local client pauses outbound traffic when no inbound frame has
+	// refreshed the pause window within ClientSleepPauseTimeout. phyKeepalive
+	// marks initiator clients that should emit keepalive frames.
+	pauseOnClientSleep bool
+	pauseTimeout       time.Time
+	phyKeepalive       bool
 
 	identityHash   []byte
 	inboundHandler InboundHandler
@@ -83,6 +98,14 @@ func (lci *LocalClientInterface) connect() error {
 	lci.conn = conn
 	lci.mu.Unlock()
 	atomic.StoreInt32(&lci.running, 1)
+
+	// On Android the initiator local client enables PHY keepalive
+	// (LocalInterface.py:154).
+	if runtime.GOOS == "android" {
+		lci.mu.Lock()
+		lci.phyKeepalive = true
+		lci.mu.Unlock()
+	}
 	return nil
 }
 
@@ -116,6 +139,9 @@ func (lci *LocalClientInterface) readLoop() {
 		}
 
 		if n > 0 {
+			// An inbound frame refreshes the Android client-sleep pause window
+			// (LocalInterface.py:295).
+			lci.refreshPauseTimeoutAt(time.Now())
 			frameBuffer = append(frameBuffer, buf[:n]...)
 			for {
 				start := bytes.IndexByte(frameBuffer, HDLCFlag)
@@ -160,12 +186,61 @@ func (lci *LocalClientInterface) readLoop() {
 // Send HDLC-frames the payload and writes it to the connected local shared
 // instance transport.
 func (lci *LocalClientInterface) Send(data []byte) error {
+	return lci.sendAt(data, time.Now())
+}
+
+// sendAt is the time-injectable core of Send. It applies the Android
+// client-sleep pause gate (LocalInterface.py:221-222 process_outgoing): when
+// pause_on_client_sleep is set and now is past the pause window, the outbound
+// packet is dropped silently (nil error, no transmission).
+func (lci *LocalClientInterface) sendAt(data []byte, now time.Time) error {
 	if atomic.LoadInt32(&lci.running) != 1 {
 		return fmt.Errorf("interface %v is not running", lci.name)
 	}
 
+	lci.mu.Lock()
+	if lci.pauseOnClientSleep && now.After(lci.pauseTimeout) {
+		lci.mu.Unlock()
+		// TX paused for LocalInterface client, dropping outbound packet.
+		return nil
+	}
+	conn := lci.conn
+	lci.mu.Unlock()
+
+	if conn == nil {
+		return fmt.Errorf("no connection for interface %v", lci.name)
+	}
+
 	frame := append([]byte{HDLCFlag}, HDLCEscape(data)...)
 	frame = append(frame, HDLCFlag)
+
+	n, err := conn.Write(frame)
+	if err != nil {
+		return err
+	}
+
+	atomic.AddUint64(&lci.txBytes, uint64(n))
+	return nil
+}
+
+// refreshPauseTimeoutAt extends the Android client-sleep pause window to
+// now+ClientSleepPauseTimeout, mirroring the refresh performed at the end of
+// LocalInterface.py:295 receive() on every inbound frame.
+func (lci *LocalClientInterface) refreshPauseTimeoutAt(now time.Time) {
+	lci.mu.Lock()
+	defer lci.mu.Unlock()
+	if lci.pauseOnClientSleep {
+		lci.pauseTimeout = now.Add(ClientSleepPauseTimeout)
+	}
+}
+
+// sendKeepalive emits a two-HDLC-flag keepalive frame on the local shared
+// instance transport (LocalInterface.py:195-203 send_keepalive). The non-epoll
+// path emits HDLC.FLAG + HDLC.FLAG.
+func (lci *LocalClientInterface) sendKeepalive() error {
+	if atomic.LoadInt32(&lci.running) != 1 {
+		return fmt.Errorf("interface %v is not running", lci.name)
+	}
 
 	lci.mu.Lock()
 	conn := lci.conn
@@ -175,6 +250,7 @@ func (lci *LocalClientInterface) Send(data []byte) error {
 		return fmt.Errorf("no connection for interface %v", lci.name)
 	}
 
+	frame := []byte{HDLCFlag, HDLCFlag}
 	n, err := conn.Write(frame)
 	if err != nil {
 		return err
@@ -324,6 +400,16 @@ func newLocalClientInterfaceFromConn(name string, conn net.Conn, handler Inbound
 		inboundHandler: handler,
 	}
 	atomic.StoreInt32(&lci.running, 1)
+
+	// On Android a spawned (server-accepted) local client pauses outbound
+	// traffic when the inbound pause window expires
+	// (LocalInterface.py:104-106).
+	if runtime.GOOS == "android" {
+		lci.mu.Lock()
+		lci.pauseOnClientSleep = true
+		lci.pauseTimeout = time.Now().Add(ClientSleepPauseTimeout)
+		lci.mu.Unlock()
+	}
 	return lci
 }
 

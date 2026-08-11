@@ -210,6 +210,133 @@ func (r *RNodeMultiInterface) AnnouncesToInternal() *bool {
 	return r.children[0].AnnouncesToInternal()
 }
 
+// Ingress/egress-control delegation to the first child (v1.1.5). RNodeMulti
+// has no BaseInterface of its own; it mirrors the first-child convention used
+// by the other contract accessors.
+func (r *RNodeMultiInterface) ReceivedAnnounce() {
+	if len(r.children) != 0 {
+		r.children[0].ReceivedAnnounce()
+	}
+}
+func (r *RNodeMultiInterface) ShouldIngressLimit() bool {
+	if len(r.children) == 0 {
+		return false
+	}
+	return r.children[0].ShouldIngressLimit()
+}
+func (r *RNodeMultiInterface) HoldAnnounce(raw []byte, recv Interface, hops int, destHash []byte) {
+	if len(r.children) != 0 {
+		r.children[0].HoldAnnounce(raw, recv, hops, destHash)
+	}
+}
+func (r *RNodeMultiInterface) ProcessHeldAnnounces() ([]byte, Interface, bool) {
+	if len(r.children) == 0 {
+		return nil, nil, false
+	}
+	return r.children[0].ProcessHeldAnnounces()
+}
+func (r *RNodeMultiInterface) HeldAnnounces() int {
+	if len(r.children) == 0 {
+		return 0
+	}
+	return r.children[0].HeldAnnounces()
+}
+func (r *RNodeMultiInterface) ReceivedPathRequest() {
+	if len(r.children) != 0 {
+		r.children[0].ReceivedPathRequest()
+	}
+}
+func (r *RNodeMultiInterface) SentPathRequest() {
+	if len(r.children) != 0 {
+		r.children[0].SentPathRequest()
+	}
+}
+func (r *RNodeMultiInterface) IncomingPrFrequency() float64 {
+	if len(r.children) == 0 {
+		return 0
+	}
+	return r.children[0].IncomingPrFrequency()
+}
+func (r *RNodeMultiInterface) OutgoingPrFrequency() float64 {
+	if len(r.children) == 0 {
+		return 0
+	}
+	return r.children[0].OutgoingPrFrequency()
+}
+func (r *RNodeMultiInterface) ShouldIngressLimitPr() bool {
+	if len(r.children) == 0 {
+		return false
+	}
+	return r.children[0].ShouldIngressLimitPr()
+}
+func (r *RNodeMultiInterface) ShouldEgressLimitPr() bool {
+	if len(r.children) == 0 {
+		return false
+	}
+	return r.children[0].ShouldEgressLimitPr()
+}
+
+// Announce-frequency + ingress-control burst-state delegation
+// (Interface.py:121-124,277-297). ifstats reads these via the concrete
+// interface (Reticulum.py:1453-1464). When there are no spawned children the
+// Python-faithful idle defaults are returned.
+func (r *RNodeMultiInterface) IncomingAnnounceFrequency() float64 {
+	if len(r.children) == 0 {
+		return 0
+	}
+	return r.children[0].IncomingAnnounceFrequency()
+}
+func (r *RNodeMultiInterface) OutgoingAnnounceFrequency() float64 {
+	if len(r.children) == 0 {
+		return 0
+	}
+	return r.children[0].OutgoingAnnounceFrequency()
+}
+func (r *RNodeMultiInterface) ICBurstActive() bool {
+	if len(r.children) == 0 {
+		return false
+	}
+	return r.children[0].ICBurstActive()
+}
+func (r *RNodeMultiInterface) ICBurstActivated() time.Time {
+	if len(r.children) == 0 {
+		return time.Time{}
+	}
+	return r.children[0].ICBurstActivated()
+}
+func (r *RNodeMultiInterface) ICPrBurstActive() bool {
+	if len(r.children) == 0 {
+		return false
+	}
+	return r.children[0].ICPrBurstActive()
+}
+func (r *RNodeMultiInterface) ICPrBurstActivated() time.Time {
+	if len(r.children) == 0 {
+		return time.Time{}
+	}
+	return r.children[0].ICPrBurstActivated()
+}
+
+// Announce-rate-control delegation (Interface.py:90-92,118-120).
+func (r *RNodeMultiInterface) AnnounceRateTarget() *int {
+	if len(r.children) == 0 {
+		return nil
+	}
+	return r.children[0].AnnounceRateTarget()
+}
+func (r *RNodeMultiInterface) AnnounceRateGrace() *int {
+	if len(r.children) == 0 {
+		return nil
+	}
+	return r.children[0].AnnounceRateGrace()
+}
+func (r *RNodeMultiInterface) AnnounceRatePenalty() *int {
+	if len(r.children) == 0 {
+		return nil
+	}
+	return r.children[0].AnnounceRatePenalty()
+}
+
 // DefaultIFACSize returns RNodeMulti's DEFAULT_IFAC_SIZE (8), matching its RNode
 // children (RNS/Interfaces/RNodeMultiInterface.py:53).
 const RNodeMultiDefaultIFACSize = 8

@@ -438,6 +438,11 @@ const (
 	reverseEntryTimeout      = 8 * time.Minute
 	linkEntryTimeout         = 8 * time.Minute
 
+	// interfaceJobsInterval matches Python Transport.interface_jobs_interval
+	// (Transport.py:194): the cadence at which per-interface ingress-control
+	// state machines are advanced and held announces are released.
+	interfaceJobsInterval = 5 * time.Second
+
 	// establishmentTimeoutPerHop matches Python's
 	// Link.ESTABLISHMENT_TIMEOUT_PER_HOP = Reticulum.DEFAULT_PER_HOP_TIMEOUT = 6 seconds.
 	establishmentTimeoutPerHop = 6 * time.Second
@@ -1063,9 +1068,11 @@ func (ts *TransportSystem) maintenance() {
 	ratchetTicker := time.NewTicker(24 * time.Hour)
 	announceTicker := time.NewTicker(announceCheckInterval)
 	pathPersistTicker := time.NewTicker(pathTablePersistInterval)
+	interfaceJobsTicker := time.NewTicker(interfaceJobsInterval)
 	defer ratchetTicker.Stop()
 	defer announceTicker.Stop()
 	defer pathPersistTicker.Stop()
+	defer interfaceJobsTicker.Stop()
 
 	// Initial clean
 	ts.CleanRatchets()
@@ -1083,8 +1090,35 @@ func (ts *TransportSystem) maintenance() {
 		case <-pathPersistTicker.C:
 			ts.persistPathTable()
 			ts.flushKnownDestinationsIfDirty()
+		case <-interfaceJobsTicker.C:
+			ts.runInterfaceJobs()
 		case <-ratchetTicker.C:
 			ts.CleanRatchets()
+		}
+	}
+}
+
+// runInterfaceJobs advances the per-interface ingress-control state machines
+// and releases held announces, mirroring Python's interface-jobs block
+// (Transport.py:951-959). Every interface_jobs_interval it:
+//   - calls ShouldIngressLimit to refresh each interface's burst state, and
+//   - calls ProcessHeldAnnounces to release the fewest-hops held announce once
+//     the burst has subsided, re-injecting it into Inbound on its original
+//     receiving interface.
+//
+// The should_ingress_limit_pr and phy_keepalive/send_keepalive halves of the
+// Python loop belong to later Phase 5 tasks (PR limiting and LocalInterface
+// sleep) and are intentionally omitted here.
+func (ts *TransportSystem) runInterfaceJobs() {
+	for _, iface := range ts.GetInterfaces() {
+		iface.ShouldIngressLimit()
+		iface.ShouldIngressLimitPr()
+		raw, recv, ok := iface.ProcessHeldAnnounces()
+		if ok {
+			// Re-inject on a goroutine to match Python's daemon-thread release
+			// (Interface.py:254) and to avoid blocking the maintenance loop
+			// behind a full Inbound pass.
+			go ts.Inbound(raw, recv)
 		}
 	}
 }
@@ -1967,6 +2001,21 @@ func (ts *TransportSystem) forwardPathRequest(packet *Packet, source interfaces.
 	targetHash := copyBytes(packet.Data[:TruncatedHashLength/8])
 	targetKey := string(targetHash)
 
+	// PR ingress-limit gate (Python Transport.py:3005 + 3107-3110):
+	// `should_ingress_limit = attached_interface.should_ingress_limit_pr()`
+	// is computed on the receiving interface and aborts recursive
+	// path-request discovery (the should_search_for_unknown branch) when
+	// active. forwardPathRequest is the Go equivalent of that recursive
+	// forward — it only runs when handlePathRequest could not answer the
+	// request locally or from a cached path. Path requests originating
+	// from a local client are forwarded unconditionally (Python's
+	// is_from_local_client branch is not ingress-gated), so the carve-out
+	// preserves that behavior.
+	if source != nil && !ts.isLocalClientInterface(source) && source.ShouldIngressLimitPr() {
+		ts.logger.Debug("Not forwarding recursive path request for %x due to active PR ingress limiting on %v", targetHash, source.Name())
+		return
+	}
+
 	ts.mu.Lock()
 	ts.ensureStateLocked()
 	if !ts.hasPendingPathRequesterLocked(targetKey, source) {
@@ -2007,6 +2056,13 @@ func (ts *TransportSystem) forwardPathRequest(packet *Packet, source interfaces.
 			if len(state.queue) > 0 || now.Before(state.allowedAt) {
 				continue
 			}
+		}
+		// PR egress-limit gate (Python Transport.py:3131): skip interfaces
+		// whose outgoing path-request frequency is above ec_pr_freq and has
+		// accumulated enough samples to confidently report a burst.
+		if outIface.ShouldEgressLimitPr() {
+			ts.logger.Extreme("Not forwarding recursive path request on %v due to active PR egress limiting", outIface.Name())
+			continue
 		}
 		raw := make([]byte, len(relayReq.Raw))
 		copy(raw, relayReq.Raw)
@@ -3453,6 +3509,10 @@ func (ts *TransportSystem) RequestPath(destHash []byte) error {
 
 	p := NewPacket(pathRequestDst, data)
 	p.TransportType = TransportBroadcast
+	// Transport.py:2896: packet.is_outbound_pr = True before send, so the
+	// egress loop records an outgoing path request on each transmitting
+	// interface (Transport.py:1354).
+	p.IsOutboundPR = true
 	return ts.Outbound(p)
 }
 
@@ -3508,6 +3568,16 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 	destHash := string(packet.DestinationHash)
 
 	if packet.PacketType == PacketData && len(ts.pathRequestHash) > 0 && bytes.Equal(packet.DestinationHash, ts.pathRequestHash) {
+		// Record the incoming path request on the receiving interface's PR
+		// frequency deque (Python Transport.py:2983:
+		// `if packet.receiving_interface: packet.receiving_interface.received_path_request()`).
+		// Python gates this on a tag being present in the request data
+		// (tag_bytes != None, i.e. len(data) > TRUNCATED_HASHLENGTH//8);
+		// go-reticulum path requests always carry a tag, so the same gate
+		// applies.
+		if iface != nil && len(packet.Data) > TruncatedHashLength/8 {
+			iface.ReceivedPathRequest()
+		}
 		// If this node answered the request (local destination or cached
 		// path), do not relay it onward — matching Python's elif chain. Only
 		// relay when the destination is unknown here.
@@ -3909,7 +3979,25 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 		return
 	}
 
+	// Record the incoming announce on the receiving interface's frequency
+	// deque (Python Transport.py:1751: `elif interface != None:
+	// interface.received_announce()`).
+	if iface != nil {
+		iface.ReceivedAnnounce()
+	}
+
 	destHash := string(packet.DestinationHash)
+
+	// Ingress-limit gate for unknown destinations (Python Transport.py
+	// :1752-1765). Already-known destinations have re-announces controlled by
+	// normal announce rate limiting, so the gate only applies when the
+	// destination is not in the path table. A pending path request for the
+	// destination bypasses the gate so path-finding is never starved by
+	// ingress limiting. The discovery_path_requests half of the bypass
+	// (Transport.py:1759) is pending the Phase 11 discovery port.
+	if held := ts.shouldHoldAnnounce(packet, iface, destHash); held {
+		return
+	}
 
 	var handlers []*AnnounceHandler
 	// shouldForwardToLocalClients is set when this announce was accepted into
@@ -4113,7 +4201,65 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 	}
 }
 
+// shouldHoldAnnounce is the ingress-limit gate for inbound announces
+// (Python Transport.py:1752-1765). It returns true when the announce must be
+// dropped from further processing because the receiving interface is holding it
+// pending release by the interface-jobs loop.
+//
+// The gate applies only to announces for destinations that are not yet in the
+// path table: already-known destinations have re-announces controlled by normal
+// announce rate limiting. A destination with a pending path request bypasses
+// the gate so path-finding is never starved by ingress limiting. The
+// discovery_path_requests half of the bypass (Transport.py:1759) is pending the
+// Phase 11 discovery port — no such map exists in the Go port yet.
+//
+// The path-table and pending-path-request lookups run under ts.mu; the
+// ShouldIngressLimit/HoldAnnounce calls on the interface run outside the lock
+// because they acquire the interface's own mutex and never touch ts.mu (so
+// there is no lock-ordering hazard with handleAnnounce's outer critical
+// section, which is already released by the time this is called).
+func (ts *TransportSystem) shouldHoldAnnounce(packet *Packet, iface interfaces.Interface, destHash string) bool {
+	if iface == nil {
+		return false
+	}
+	known, pending := func() (bool, bool) {
+		ts.mu.Lock()
+		defer ts.mu.Unlock()
+		ts.ensureStateLocked()
+		_, known := ts.pathTable[destHash]
+		_, pending := ts.pendingPathRequests[destHash]
+		return known, pending
+	}()
+	if known || pending {
+		return false
+	}
+	if !iface.ShouldIngressLimit() {
+		return false
+	}
+	// Store a defensive copy of the raw frame: the held announce is re-injected
+	// into Inbound later by the interface-jobs loop, and packet.Raw is the
+	// already-IFAC-stripped frame (matching Python's packet.raw, which is set
+	// from the post-IFAC bytes in Transport.inbound). Re-injection via Inbound
+	// faithfully re-runs the IFAC step, mirroring Python's
+	// RNS.Transport.inbound(packet.raw, receiving_interface).
+	rawCopy := append([]byte(nil), packet.Raw...)
+	iface.HoldAnnounce(rawCopy, iface, packet.Hops, packet.DestinationHash)
+	ts.logger.Debug("Holding announce for %x on %v due to ingress limiting", packet.DestinationHash, iface.Name())
+	return true
+}
+
 // Outbound sends a packet over the network.
+// recordOutboundPR records an outgoing path request on iface when the packet
+// is a PLAIN outbound path request, mirroring Python Transport.py:1354
+// (`if packet.destination.type == RNS.Destination.PLAIN and packet.is_outbound_pr:
+// interface.sent_path_request()`). Called after each successful transmit in
+// Outbound's branches.
+func (ts *TransportSystem) recordOutboundPR(packet *Packet, iface interfaces.Interface) {
+	if packet.DestinationType == DestinationPlain && packet.IsOutboundPR && iface != nil {
+		iface.SentPathRequest()
+	}
+}
+
 func (ts *TransportSystem) Outbound(packet *Packet) error {
 	if !packet.Packed {
 		if err := packet.Pack(); err != nil {
@@ -4156,6 +4302,7 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 		if err := attachedIface.Send(raw); err != nil {
 			ts.logger.Error("Could not transmit on %v: %v", attachedIface.Name(), err)
 		}
+		ts.recordOutboundPR(packet, attachedIface)
 
 		ts.mu.Lock()
 		packet.Sent = true
@@ -4198,6 +4345,7 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 			ts.logger.Error("Could not transmit on %v: %v", pathEntry.Interface.Name(), err)
 			ts.InvalidatePath(packet.DestinationHash)
 		}
+		ts.recordOutboundPR(packet, pathEntry.Interface)
 
 		ts.mu.Lock()
 		packet.Sent = true
@@ -4231,6 +4379,7 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 			ts.logger.Error("Could not transmit on %v: %v", iface.Name(), err)
 			ts.InvalidatePathsViaInterface(iface)
 		}
+		ts.recordOutboundPR(packet, iface)
 	}
 
 	ts.mu.Lock()

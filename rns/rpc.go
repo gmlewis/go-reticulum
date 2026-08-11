@@ -348,6 +348,39 @@ func decodeHashArg(v any) ([]byte, bool) {
 	}
 }
 
+// burstActivatedEpoch converts an ingress-control burst activation timestamp
+// to the float epoch-seconds value Python emits in ifstats
+// (Reticulum.py:1462,1464 `interface.ic_burst_activated`, set to time.time()).
+// The zero time maps to Python's initial 0.
+func burstActivatedEpoch(t time.Time) float64 {
+	if t.IsZero() {
+		return 0
+	}
+	return float64(t.UnixNano()) / 1e9
+}
+
+// announceRateValue converts an announce-rate *int to the value Python emits in
+// ifstats (Reticulum.py:1456-1458): the int when configured, or nil mirroring
+// Python's None when no rate limit is set.
+func announceRateValue(p *int) any {
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+
+// boolPtrValue converts a *bool override to the value Python emits in ifstats
+// (Reticulum.py:1490 `announces_to_internal`): the bool when set, or nil
+// mirroring Python's None (Interface.py:114) when no override is configured.
+// Returning an untyped nil (rather than a typed *bool nil) keeps map[string]any
+// nil-comparisons faithful.
+func boolPtrValue(p *bool) any {
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+
 func (r *Reticulum) getInterfaceStats() map[string]any {
 	interfacesOut := make([]any, 0)
 
@@ -403,6 +436,11 @@ func (r *Reticulum) getInterfaceStats() map[string]any {
 		}); ok {
 			announceQueue = queueGetter.announceQueueLength(iface)
 		}
+
+		// Ingress/egress-control ifstats (Reticulum.py:1453-1466). The
+		// announce/PR-frequency and burst-state accessors are part of the
+		// Interface contract; the burst activation timestamps convert to the
+		// float epoch-seconds value Python emits (0 while idle).
 		interfacesOut = append(interfacesOut, map[string]any{
 			"name":                        iface.Name(),
 			"short_name":                  iface.Name(),
@@ -417,9 +455,19 @@ func (r *Reticulum) getInterfaceStats() map[string]any {
 			"gravity":                     iface.Gravity(),
 			"bitrate":                     iface.Bitrate(),
 			"clients":                     nil,
-			"incoming_announce_frequency": 0.0,
-			"outgoing_announce_frequency": 0.0,
-			"held_announces":              0,
+			"incoming_announce_frequency": iface.IncomingAnnounceFrequency(),
+			"outgoing_announce_frequency": iface.OutgoingAnnounceFrequency(),
+			"incoming_pr_frequency":       iface.IncomingPrFrequency(),
+			"outgoing_pr_frequency":       iface.OutgoingPrFrequency(),
+			"announce_rate_target":        announceRateValue(iface.AnnounceRateTarget()),
+			"announce_rate_penalty":       announceRateValue(iface.AnnounceRatePenalty()),
+			"announce_rate_grace":         announceRateValue(iface.AnnounceRateGrace()),
+			"held_announces":              iface.HeldAnnounces(),
+			"burst_active":                iface.ICBurstActive(),
+			"burst_activated":             burstActivatedEpoch(iface.ICBurstActivated()),
+			"pr_burst_active":             iface.ICPrBurstActive(),
+			"pr_burst_activated":          burstActivatedEpoch(iface.ICPrBurstActivated()),
+			"announces_to_internal":       boolPtrValue(iface.AnnouncesToInternal()),
 			"announce_queue":              announceQueue,
 			"peers":                       nil,
 			"ifac_signature":              nil,
@@ -653,6 +701,18 @@ type InterfaceStat struct {
 	HeldAnnounces   *int
 	InAnnounceFreq  *float64
 	OutAnnounceFreq *float64
+
+	// Phase 5 ingress/egress-control ifstats fields (Reticulum.py:1453-1466).
+	InPrFreq            *float64
+	OutPrFreq           *float64
+	AnnounceRateTarget  *int
+	AnnounceRatePenalty *int
+	AnnounceRateGrace   *int
+	BurstActive         bool
+	BurstActivated      float64
+	PrBurstActive       bool
+	PrBurstActivated    float64
+	AnnouncesToInternal *bool
 }
 
 // InterfaceStatsSnapshot represents a snapshot of statistics for all
@@ -1057,6 +1117,17 @@ func DecodeInterfaceStats(raw any) *InterfaceStatsSnapshot {
 			HeldAnnounces:   lookupOptInt(im, "held_announces"),
 			InAnnounceFreq:  lookupOptFloat64(im, "incoming_announce_frequency"),
 			OutAnnounceFreq: lookupOptFloat64(im, "outgoing_announce_frequency"),
+
+			InPrFreq:            lookupOptFloat64(im, "incoming_pr_frequency"),
+			OutPrFreq:           lookupOptFloat64(im, "outgoing_pr_frequency"),
+			AnnounceRateTarget:  lookupOptInt(im, "announce_rate_target"),
+			AnnounceRatePenalty: lookupOptInt(im, "announce_rate_penalty"),
+			AnnounceRateGrace:   lookupOptInt(im, "announce_rate_grace"),
+			BurstActive:         asBool(lookupAnyValue(im, "burst_active")),
+			BurstActivated:      asFloat64(lookupAnyValue(im, "burst_activated")),
+			PrBurstActive:       asBool(lookupAnyValue(im, "pr_burst_active")),
+			PrBurstActivated:    asFloat64(lookupAnyValue(im, "pr_burst_activated")),
+			AnnouncesToInternal: lookupOptBool(im, "announces_to_internal"),
 		}
 		out.Interfaces = append(out.Interfaces, entry)
 	}

@@ -66,7 +66,11 @@ const (
 var (
 	autoAllIgnoreIfs     = map[string]struct{}{"lo0": {}}
 	autoDarwinIgnoreIfs  = map[string]struct{}{"awdl0": {}, "llw0": {}, "lo0": {}, "en5": {}}
-	autoAndroidIgnoreIfs = map[string]struct{}{"dummy0": {}, "lo": {}, "tun0": {}}
+	autoAndroidIgnoreIfs = map[string]struct{}{
+		"dummy0": {}, "lo": {}, "tun0": {},
+		"rmnet0": {}, "rmnet1": {}, "rmnet2": {}, "rmnet3": {},
+		"rmnet4": {}, "rmnet5": {}, "rmnet6": {}, "rmnet7": {},
+	}
 )
 
 // AutoInterfaceConfig defines the comprehensive suite of initialization parameters required to bootstrap an AutoInterface.
@@ -313,6 +317,15 @@ func (ai *AutoInterface) finalInitBarrier() {
 }
 
 func (ai *AutoInterface) shouldUseInterface(name string) bool {
+	return ai.shouldUseInterfaceOn(name, runtime.GOOS)
+}
+
+// shouldUseInterfaceOn is the platform-injectable core of shouldUseInterface.
+// It mirrors AutoInterface.py:217-237: an interface is skipped when it is in
+// the host-platform ignore set (darwin/android) unless explicitly allowed, in
+// the global ignore set, or in the user-configured ignored_interfaces; when an
+// allowed_interfaces list is configured, only listed interfaces are used.
+func (ai *AutoInterface) shouldUseInterfaceOn(name, goos string) bool {
 	if _, ok := ai.ignoredInterfaces[name]; ok {
 		return false
 	}
@@ -320,7 +333,7 @@ func (ai *AutoInterface) shouldUseInterface(name string) bool {
 		return false
 	}
 
-	switch runtime.GOOS {
+	switch goos {
 	case "darwin":
 		if _, ok := autoDarwinIgnoreIfs[name]; ok {
 			if _, allowed := ai.allowedInterfaces[name]; !allowed {
@@ -556,6 +569,13 @@ func (ai *AutoInterface) addPeer(addr, ifname string) {
 	// selection (RNS/Interfaces/AutoInterface.py:583, v1.4.1:
 	// `spawned_interface.gravity = self.gravity`).
 	peer.SetGravity(ai.Gravity())
+	// Inherit the parent AutoInterface's ingress/egress-control
+	// configuration (RNS/Interfaces/AutoInterface.py:542-554, v1.1.5).
+	peer.copyIngressEgressFrom(ai.BaseInterface)
+	// Record the parent AutoInterface so frequency/byte-counter events on
+	// this spawned peer propagate up to the aggregating parent
+	// (AutoInterface.py:556: spawned_interface.parent_interface = self).
+	peer.parentInterface = ai.BaseInterface
 
 	if old, exists := ai.spawnedInterfaces[addr]; exists {
 		if err := old.Detach(); err != nil {

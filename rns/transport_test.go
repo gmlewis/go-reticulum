@@ -193,6 +193,103 @@ func TestRequestPathThrottleAndTag(t *testing.T) {
 	}
 }
 
+// TestOutboundPRRecordsSentPathRequest verifies that transmitting an outbound
+// path request records an outgoing PR on each transmitting interface
+// (Transport.py:1354: when packet.destination.type == PLAIN and
+// packet.is_outbound_pr, interface.sent_path_request()). RequestPath stamps
+// IsOutboundPR on the packet (Transport.py:2896), so each interface that
+// broadcasts the PR advances its outbound-PR counter.
+func TestOutboundPRRecordsSentPathRequest(t *testing.T) {
+	t.Parallel()
+
+	t.Run("RequestPath advances outbound PR counter", func(t *testing.T) {
+		t.Parallel()
+		ts := NewTransportSystem(nil)
+		capIface := &capturingInterface{name: "cap"}
+		ts.interfaces = append(ts.interfaces, capIface)
+
+		destHash := bytes.Repeat([]byte{0xAB}, TruncatedHashLength/8)
+		if err := ts.RequestPath(destHash); err != nil {
+			t.Fatalf("RequestPath failed: %v", err)
+		}
+		if capIface.sendCount != 1 {
+			t.Fatalf("expected 1 transmission, got %v", capIface.sendCount)
+		}
+		if capIface.sentPRCount != 1 {
+			t.Fatalf("expected sentPRCount 1 after RequestPath, got %v", capIface.sentPRCount)
+		}
+	})
+
+	t.Run("PLAIN packet with IsOutboundPR advances counter", func(t *testing.T) {
+		t.Parallel()
+		ts := NewTransportSystem(nil)
+		capIface := &capturingInterface{name: "cap"}
+		ts.interfaces = append(ts.interfaces, capIface)
+
+		dest := mustTestNewDestination(t, ts, nil, DestinationOut, DestinationPlain, "pr-test")
+		p := NewPacketWithTransport(ts, dest, []byte("hello"))
+		p.IsOutboundPR = true
+		if err := p.Pack(); err != nil {
+			t.Fatalf("pack failed: %v", err)
+		}
+		if err := ts.Outbound(p); err != nil {
+			t.Fatalf("outbound failed: %v", err)
+		}
+		if capIface.sentPRCount != 1 {
+			t.Fatalf("expected sentPRCount 1 for PLAIN IsOutboundPR packet, got %v", capIface.sentPRCount)
+		}
+	})
+
+	t.Run("PLAIN packet without IsOutboundPR does not advance counter", func(t *testing.T) {
+		t.Parallel()
+		ts := NewTransportSystem(nil)
+		capIface := &capturingInterface{name: "cap"}
+		ts.interfaces = append(ts.interfaces, capIface)
+
+		dest := mustTestNewDestination(t, ts, nil, DestinationOut, DestinationPlain, "plain-test")
+		p := NewPacketWithTransport(ts, dest, []byte("hello"))
+		// IsOutboundPR left false (zero value)
+		if err := p.Pack(); err != nil {
+			t.Fatalf("pack failed: %v", err)
+		}
+		if err := ts.Outbound(p); err != nil {
+			t.Fatalf("outbound failed: %v", err)
+		}
+		if capIface.sendCount != 1 {
+			t.Fatalf("expected 1 transmission, got %v", capIface.sendCount)
+		}
+		if capIface.sentPRCount != 0 {
+			t.Fatalf("expected sentPRCount 0 for non-PR PLAIN packet, got %v", capIface.sentPRCount)
+		}
+	})
+
+	t.Run("non-PLAIN packet with IsOutboundPR does not advance counter", func(t *testing.T) {
+		t.Parallel()
+		ts := NewTransportSystem(nil)
+		capIface := &capturingInterface{name: "cap"}
+		ts.interfaces = append(ts.interfaces, capIface)
+
+		remoteID := mustTestNewIdentity(t, true)
+		// DestinationSingle (not PLAIN) so the IsOutboundPR gate must not fire.
+		dest := mustTestNewDestination(t, ts, remoteID, DestinationOut, DestinationSingle, "single-test")
+		ts.pathTable[string(dest.Hash)] = &PathEntry{Interface: capIface, Hops: 1, Expires: time.Now().Add(time.Hour)}
+		p := NewPacketWithTransport(ts, dest, []byte("hello"))
+		p.IsOutboundPR = true
+		if err := p.Pack(); err != nil {
+			t.Fatalf("pack failed: %v", err)
+		}
+		if err := ts.Outbound(p); err != nil {
+			t.Fatalf("outbound failed: %v", err)
+		}
+		if capIface.sendCount != 1 {
+			t.Fatalf("expected 1 transmission, got %v", capIface.sendCount)
+		}
+		if capIface.sentPRCount != 0 {
+			t.Fatalf("expected sentPRCount 0 for non-PLAIN IsOutboundPR packet, got %v", capIface.sentPRCount)
+		}
+	})
+}
+
 func TestHandlePathRequestEmitsTargetedPathResponse(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
@@ -1437,13 +1534,37 @@ func (d *dummyInterface) Gravity() int                { return 0 }
 func (d *dummyInterface) RecursivePrs() bool          { return false }
 func (d *dummyInterface) AnnouncesFromInternal() bool { return true }
 func (d *dummyInterface) AnnouncesToInternal() *bool  { return nil }
+func (d *dummyInterface) ReceivedAnnounce()           {}
+func (d *dummyInterface) ShouldIngressLimit() bool    { return false }
+func (d *dummyInterface) HoldAnnounce([]byte, interfaces.Interface, int, []byte) {
+}
+func (d *dummyInterface) ProcessHeldAnnounces() ([]byte, interfaces.Interface, bool) {
+	return nil, nil, false
+}
+func (d *dummyInterface) HeldAnnounces() int                 { return 0 }
+func (d *dummyInterface) ReceivedPathRequest()               {}
+func (d *dummyInterface) SentPathRequest()                   {}
+func (d *dummyInterface) IncomingPrFrequency() float64       { return 0 }
+func (d *dummyInterface) OutgoingPrFrequency() float64       { return 0 }
+func (d *dummyInterface) ShouldIngressLimitPr() bool         { return false }
+func (d *dummyInterface) ShouldEgressLimitPr() bool          { return false }
+func (d *dummyInterface) AnnounceRateTarget() *int           { return nil }
+func (d *dummyInterface) AnnounceRateGrace() *int            { return nil }
+func (d *dummyInterface) AnnounceRatePenalty() *int          { return nil }
+func (d *dummyInterface) IncomingAnnounceFrequency() float64 { return 0 }
+func (d *dummyInterface) OutgoingAnnounceFrequency() float64 { return 0 }
+func (d *dummyInterface) ICBurstActive() bool                { return false }
+func (d *dummyInterface) ICBurstActivated() time.Time        { return time.Time{} }
+func (d *dummyInterface) ICPrBurstActive() bool              { return false }
+func (d *dummyInterface) ICPrBurstActivated() time.Time      { return time.Time{} }
 
 type capturingInterface struct {
-	name      string
-	sendCount int
-	lastSent  []byte
-	bitrate   int
-	gravity   int
+	name        string
+	sendCount   int
+	lastSent    []byte
+	bitrate     int
+	gravity     int
+	sentPRCount int
 }
 
 func (c *capturingInterface) Name() string { return c.name }
@@ -1466,6 +1587,29 @@ func (c *capturingInterface) Gravity() int                { return c.gravity }
 func (c *capturingInterface) RecursivePrs() bool          { return false }
 func (c *capturingInterface) AnnouncesFromInternal() bool { return true }
 func (c *capturingInterface) AnnouncesToInternal() *bool  { return nil }
+func (c *capturingInterface) ReceivedAnnounce()           {}
+func (c *capturingInterface) ShouldIngressLimit() bool    { return false }
+func (c *capturingInterface) HoldAnnounce([]byte, interfaces.Interface, int, []byte) {
+}
+func (c *capturingInterface) ProcessHeldAnnounces() ([]byte, interfaces.Interface, bool) {
+	return nil, nil, false
+}
+func (c *capturingInterface) HeldAnnounces() int                 { return 0 }
+func (c *capturingInterface) ReceivedPathRequest()               {}
+func (c *capturingInterface) SentPathRequest()                   { c.sentPRCount++ }
+func (c *capturingInterface) IncomingPrFrequency() float64       { return 0 }
+func (c *capturingInterface) OutgoingPrFrequency() float64       { return 0 }
+func (c *capturingInterface) ShouldIngressLimitPr() bool         { return false }
+func (c *capturingInterface) ShouldEgressLimitPr() bool          { return false }
+func (c *capturingInterface) AnnounceRateTarget() *int           { return nil }
+func (c *capturingInterface) AnnounceRateGrace() *int            { return nil }
+func (c *capturingInterface) AnnounceRatePenalty() *int          { return nil }
+func (c *capturingInterface) IncomingAnnounceFrequency() float64 { return 0 }
+func (c *capturingInterface) OutgoingAnnounceFrequency() float64 { return 0 }
+func (c *capturingInterface) ICBurstActive() bool                { return false }
+func (c *capturingInterface) ICBurstActivated() time.Time        { return time.Time{} }
+func (c *capturingInterface) ICPrBurstActive() bool              { return false }
+func (c *capturingInterface) ICPrBurstActivated() time.Time      { return time.Time{} }
 func (c *capturingInterface) Send(data []byte) error {
 	c.sendCount++
 	c.lastSent = make([]byte, len(data))
@@ -1509,6 +1653,29 @@ func (f *failingInterface) Gravity() int                { return 0 }
 func (f *failingInterface) RecursivePrs() bool          { return false }
 func (f *failingInterface) AnnouncesFromInternal() bool { return true }
 func (f *failingInterface) AnnouncesToInternal() *bool  { return nil }
+func (f *failingInterface) ReceivedAnnounce()           {}
+func (f *failingInterface) ShouldIngressLimit() bool    { return false }
+func (f *failingInterface) HoldAnnounce([]byte, interfaces.Interface, int, []byte) {
+}
+func (f *failingInterface) ProcessHeldAnnounces() ([]byte, interfaces.Interface, bool) {
+	return nil, nil, false
+}
+func (f *failingInterface) HeldAnnounces() int                 { return 0 }
+func (f *failingInterface) ReceivedPathRequest()               {}
+func (f *failingInterface) SentPathRequest()                   {}
+func (f *failingInterface) IncomingPrFrequency() float64       { return 0 }
+func (f *failingInterface) OutgoingPrFrequency() float64       { return 0 }
+func (f *failingInterface) ShouldIngressLimitPr() bool         { return false }
+func (f *failingInterface) ShouldEgressLimitPr() bool          { return false }
+func (f *failingInterface) AnnounceRateTarget() *int           { return nil }
+func (f *failingInterface) AnnounceRateGrace() *int            { return nil }
+func (f *failingInterface) AnnounceRatePenalty() *int          { return nil }
+func (f *failingInterface) IncomingAnnounceFrequency() float64 { return 0 }
+func (f *failingInterface) OutgoingAnnounceFrequency() float64 { return 0 }
+func (f *failingInterface) ICBurstActive() bool                { return false }
+func (f *failingInterface) ICBurstActivated() time.Time        { return time.Time{} }
+func (f *failingInterface) ICPrBurstActive() bool              { return false }
+func (f *failingInterface) ICPrBurstActivated() time.Time      { return time.Time{} }
 func (f *failingInterface) Send(data []byte) error {
 	return os.ErrClosed
 }
@@ -1533,6 +1700,29 @@ func (i *ifacDropInterface) Gravity() int                { return 0 }
 func (i *ifacDropInterface) RecursivePrs() bool          { return false }
 func (i *ifacDropInterface) AnnouncesFromInternal() bool { return true }
 func (i *ifacDropInterface) AnnouncesToInternal() *bool  { return nil }
+func (i *ifacDropInterface) ReceivedAnnounce()           {}
+func (i *ifacDropInterface) ShouldIngressLimit() bool    { return false }
+func (i *ifacDropInterface) HoldAnnounce([]byte, interfaces.Interface, int, []byte) {
+}
+func (i *ifacDropInterface) ProcessHeldAnnounces() ([]byte, interfaces.Interface, bool) {
+	return nil, nil, false
+}
+func (i *ifacDropInterface) HeldAnnounces() int                 { return 0 }
+func (i *ifacDropInterface) ReceivedPathRequest()               {}
+func (i *ifacDropInterface) SentPathRequest()                   {}
+func (i *ifacDropInterface) IncomingPrFrequency() float64       { return 0 }
+func (i *ifacDropInterface) OutgoingPrFrequency() float64       { return 0 }
+func (i *ifacDropInterface) ShouldIngressLimitPr() bool         { return false }
+func (i *ifacDropInterface) ShouldEgressLimitPr() bool          { return false }
+func (i *ifacDropInterface) AnnounceRateTarget() *int           { return nil }
+func (i *ifacDropInterface) AnnounceRateGrace() *int            { return nil }
+func (i *ifacDropInterface) AnnounceRatePenalty() *int          { return nil }
+func (i *ifacDropInterface) IncomingAnnounceFrequency() float64 { return 0 }
+func (i *ifacDropInterface) OutgoingAnnounceFrequency() float64 { return 0 }
+func (i *ifacDropInterface) ICBurstActive() bool                { return false }
+func (i *ifacDropInterface) ICBurstActivated() time.Time        { return time.Time{} }
+func (i *ifacDropInterface) ICPrBurstActive() bool              { return false }
+func (i *ifacDropInterface) ICPrBurstActivated() time.Time      { return time.Time{} }
 func (i *ifacDropInterface) Send(data []byte) error {
 	return nil
 }
@@ -1562,6 +1752,29 @@ func (i *ifacTransformInterface) Gravity() int                { return 0 }
 func (i *ifacTransformInterface) RecursivePrs() bool          { return false }
 func (i *ifacTransformInterface) AnnouncesFromInternal() bool { return true }
 func (i *ifacTransformInterface) AnnouncesToInternal() *bool  { return nil }
+func (i *ifacTransformInterface) ReceivedAnnounce()           {}
+func (i *ifacTransformInterface) ShouldIngressLimit() bool    { return false }
+func (i *ifacTransformInterface) HoldAnnounce([]byte, interfaces.Interface, int, []byte) {
+}
+func (i *ifacTransformInterface) ProcessHeldAnnounces() ([]byte, interfaces.Interface, bool) {
+	return nil, nil, false
+}
+func (i *ifacTransformInterface) HeldAnnounces() int                 { return 0 }
+func (i *ifacTransformInterface) ReceivedPathRequest()               {}
+func (i *ifacTransformInterface) SentPathRequest()                   {}
+func (i *ifacTransformInterface) IncomingPrFrequency() float64       { return 0 }
+func (i *ifacTransformInterface) OutgoingPrFrequency() float64       { return 0 }
+func (i *ifacTransformInterface) ShouldIngressLimitPr() bool         { return false }
+func (i *ifacTransformInterface) ShouldEgressLimitPr() bool          { return false }
+func (i *ifacTransformInterface) AnnounceRateTarget() *int           { return nil }
+func (i *ifacTransformInterface) AnnounceRateGrace() *int            { return nil }
+func (i *ifacTransformInterface) AnnounceRatePenalty() *int          { return nil }
+func (i *ifacTransformInterface) IncomingAnnounceFrequency() float64 { return 0 }
+func (i *ifacTransformInterface) OutgoingAnnounceFrequency() float64 { return 0 }
+func (i *ifacTransformInterface) ICBurstActive() bool                { return false }
+func (i *ifacTransformInterface) ICBurstActivated() time.Time        { return time.Time{} }
+func (i *ifacTransformInterface) ICPrBurstActive() bool              { return false }
+func (i *ifacTransformInterface) ICPrBurstActivated() time.Time      { return time.Time{} }
 func (i *ifacTransformInterface) Send(data []byte) error {
 	i.lastSent = append([]byte(nil), data...)
 	return nil
@@ -2037,4 +2250,163 @@ func TestDispatchForwardSendFloodInvalidatesOncePerDown(t *testing.T) {
 	if goneAgain {
 		t.Fatalf("third burst after latch clear should invalidate the path again")
 	}
+}
+
+// ingressLimitingInterface is a capturingInterface whose ingress-limit state
+// machine is controllable from tests: ShouldIngressLimit returns a configured
+// flag, and HoldAnnounce/HeldAnnounces/ProcessHeldAnnounces record and replay
+// held announces so the Transport.Inbound announce gate can be exercised
+// end-to-end without a real BaseInterface burst state machine.
+type ingressLimitingInterface struct {
+	capturingInterface
+	ingressLimit bool
+	held         []heldRecord
+}
+
+type heldRecord struct {
+	raw      []byte
+	recv     interfaces.Interface
+	hops     int
+	destHash []byte
+}
+
+func (i *ingressLimitingInterface) ShouldIngressLimit() bool { return i.ingressLimit }
+func (i *ingressLimitingInterface) HoldAnnounce(raw []byte, recv interfaces.Interface, hops int, destHash []byte) {
+	i.held = append(i.held, heldRecord{raw: raw, recv: recv, hops: hops, destHash: append([]byte(nil), destHash...)})
+}
+func (i *ingressLimitingInterface) HeldAnnounces() int { return len(i.held) }
+func (i *ingressLimitingInterface) ProcessHeldAnnounces() ([]byte, interfaces.Interface, bool) {
+	if len(i.held) == 0 {
+		return nil, nil, false
+	}
+	h := i.held[0]
+	i.held = i.held[1:]
+	return h.raw, h.recv, true
+}
+
+// TestShouldHoldAnnounceGate verifies the inbound-announce ingress-limit gate
+// (Python Transport.py:1752-1765): announces for unknown destinations are held
+// on ingress-limiting interfaces, but a destination with a pending path request
+// bypasses the gate so path-finding is never starved, and already-known
+// destinations are never gated.
+func TestShouldHoldAnnounceGate(t *testing.T) {
+	t.Parallel()
+
+	mkTS := func(t *testing.T) (*TransportSystem, *ingressLimitingInterface) {
+		ts := NewTransportSystem(nil)
+		ts.identity = mustTestNewIdentity(t, true)
+		iface := &ingressLimitingInterface{capturingInterface: capturingInterface{name: "ingress"}, ingressLimit: true}
+		ts.interfaces = append(ts.interfaces, iface)
+		return ts, iface
+	}
+
+	mkAnnounce := func(t *testing.T, id *Identity, dest *Destination, hops int, iface interfaces.Interface) *Packet {
+		t.Helper()
+		p := mustTestAnnouncePacketWithEmission(t, nil, id, dest, 5)
+		p.Hops = hops
+		if len(p.Raw) > 1 {
+			p.Raw[1] = byte(hops)
+		}
+		p.ReceivingInterface = iface
+		return p
+	}
+
+	mkRemote := func(t *testing.T, app string) (*Identity, *Destination) {
+		t.Helper()
+		id := mustTestNewIdentity(t, true)
+		dest, err := NewDestination(nil, id, DestinationIn, DestinationSingle, app)
+		if err != nil {
+			t.Fatalf("remote dest: %v", err)
+		}
+		return id, dest
+	}
+
+	inTable := func(ts *TransportSystem, destHash []byte) bool {
+		ts.mu.Lock()
+		defer ts.mu.Unlock()
+		_, ok := ts.pathTable[string(destHash)]
+		return ok
+	}
+
+	t.Run("unknown destination held when ingress limited", func(t *testing.T) {
+		t.Parallel()
+		ts, iface := mkTS(t)
+		id, dest := mkRemote(t, "gate")
+		ts.handleAnnounce(mkAnnounce(t, id, dest, 1, iface), iface)
+		if iface.HeldAnnounces() != 1 {
+			t.Fatalf("HeldAnnounces = %d, want 1 (unknown dest held)", iface.HeldAnnounces())
+		}
+		if inTable(ts, dest.Hash) {
+			t.Fatal("held announce must not enter the path table")
+		}
+	})
+
+	t.Run("pending path request bypasses gate", func(t *testing.T) {
+		t.Parallel()
+		ts, iface := mkTS(t)
+		id, dest := mkRemote(t, "prbypass")
+		ts.mu.Lock()
+		ts.ensureStateLocked()
+		ts.pendingPathRequests[string(dest.Hash)] = []interfaces.Interface{iface}
+		ts.mu.Unlock()
+		ts.handleAnnounce(mkAnnounce(t, id, dest, 1, iface), iface)
+		if iface.HeldAnnounces() != 0 {
+			t.Fatalf("HeldAnnounces = %d, want 0 (pending PR bypasses gate)", iface.HeldAnnounces())
+		}
+		if !inTable(ts, dest.Hash) {
+			t.Fatal("announce with pending PR must be processed into the path table")
+		}
+	})
+
+	t.Run("known destination not held", func(t *testing.T) {
+		t.Parallel()
+		ts, iface := mkTS(t)
+		id, dest := mkRemote(t, "known")
+		ts.mu.Lock()
+		ts.ensureStateLocked()
+		ts.pathTable[string(dest.Hash)] = &PathEntry{Interface: iface, Hops: 1, Expires: time.Now().Add(time.Hour)}
+		ts.mu.Unlock()
+		ts.handleAnnounce(mkAnnounce(t, id, dest, 1, iface), iface)
+		if iface.HeldAnnounces() != 0 {
+			t.Fatalf("HeldAnnounces = %d, want 0 (known dest not gated)", iface.HeldAnnounces())
+		}
+	})
+
+	t.Run("not ingress limited not held", func(t *testing.T) {
+		t.Parallel()
+		ts, iface := mkTS(t)
+		iface.ingressLimit = false
+		id, dest := mkRemote(t, "nolimit")
+		ts.handleAnnounce(mkAnnounce(t, id, dest, 1, iface), iface)
+		if iface.HeldAnnounces() != 0 {
+			t.Fatalf("HeldAnnounces = %d, want 0 (ingress limit off)", iface.HeldAnnounces())
+		}
+		if !inTable(ts, dest.Hash) {
+			t.Fatal("announce with ingress limit off must be processed into the path table")
+		}
+	})
+
+	// Flooding announces for several distinct unknown destinations holds all of
+	// them, but an announce for a destination with a pending path request is
+	// still processed (not held) under the same flood.
+	t.Run("flooding holds all but pending-PR dest", func(t *testing.T) {
+		t.Parallel()
+		ts, iface := mkTS(t)
+		for i := 0; i < 5; i++ {
+			id, dest := mkRemote(t, "flood")
+			ts.handleAnnounce(mkAnnounce(t, id, dest, 1, iface), iface)
+		}
+		prID, prDest := mkRemote(t, "prflood")
+		ts.mu.Lock()
+		ts.ensureStateLocked()
+		ts.pendingPathRequests[string(prDest.Hash)] = []interfaces.Interface{iface}
+		ts.mu.Unlock()
+		ts.handleAnnounce(mkAnnounce(t, prID, prDest, 1, iface), iface)
+		if iface.HeldAnnounces() != 5 {
+			t.Fatalf("HeldAnnounces = %d, want 5 (flooded unknowns held; PR dest not held)", iface.HeldAnnounces())
+		}
+		if !inTable(ts, prDest.Hash) {
+			t.Fatal("pending-PR announce must be processed into the path table even under flooding")
+		}
+	})
 }

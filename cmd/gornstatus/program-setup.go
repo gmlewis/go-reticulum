@@ -35,6 +35,8 @@ type programSetupParams struct {
 	nameFilter         string
 	jsonOutput         bool
 	announceStats      bool
+	prStats            bool
+	burstFilter        bool
 	linkStats          bool
 	sorting            string
 	sortReverse        bool
@@ -359,9 +361,9 @@ func programSetup(p programSetupParams) int {
 	}
 
 	for _, ifstat := range ifaces {
-		if shouldDisplayInterface(ifstat, p.dispAll, p.nameFilter) {
+		if shouldDisplayInterface(ifstat, p.dispAll, p.nameFilter, p.burstFilter) {
 			_, _ = fmt.Fprintln(w)
-			renderInterface(w, ifstat, p.announceStats)
+			renderInterface(w, ifstat, p.announceStats, p.prStats)
 		}
 	}
 
@@ -382,9 +384,10 @@ func programSetup(p programSetupParams) int {
 }
 
 // shouldDisplayInterface returns true if the given interface should be
-// displayed based on the dispAll flag and nameFilter. This mirrors the
-// Python filtering logic in program_setup().
-func shouldDisplayInterface(ifstat rns.InterfaceStat, dispAll bool, nameFilter string) bool {
+// displayed based on the dispAll flag, nameFilter, and burstFilter. This
+// mirrors the Python filtering logic in program_setup()
+// (RNS/Utilities/rnstatus.py:399-416).
+func shouldDisplayInterface(ifstat rns.InterfaceStat, dispAll bool, nameFilter string, burstFilter bool) bool {
 	name := ifstat.Name
 
 	isHidden :=
@@ -407,10 +410,16 @@ func shouldDisplayInterface(ifstat rns.InterfaceStat, dispAll bool, nameFilter s
 		return false
 	}
 
-	if nameFilter != "" &&
-		!strings.Contains(strings.ToLower(name), strings.ToLower(nameFilter)) {
-		return false
+	// name_filter / burst_filter selection (Python rnstatus.py:406-413).
+	if nameFilter == "" && !burstFilter {
+		return true
 	}
-
-	return true
+	if !burstFilter {
+		return strings.Contains(strings.ToLower(name), strings.ToLower(nameFilter))
+	}
+	// burstFilter set: show only interfaces with an active announce or PR
+	// burst, or those whose name matches the name filter.
+	burstAct := ifstat.BurstActive || ifstat.PrBurstActive
+	nfilt := nameFilter != "" && strings.Contains(strings.ToLower(name), strings.ToLower(nameFilter))
+	return burstAct || nfilt
 }

@@ -29,6 +29,8 @@ type appT struct {
 	showVersion        bool
 	showAll            bool
 	announceStats      bool
+	prStats            bool
+	burstFilter        bool
 	linkStats          bool
 	trafficTotals      bool
 	sortKey            string
@@ -57,12 +59,16 @@ func (a *appT) initFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&a.showAll, "all", false, "show all interfaces")
 	fs.BoolVar(&a.announceStats, "A", false, "show announce stats")
 	fs.BoolVar(&a.announceStats, "announce-stats", false, "show announce stats")
+	fs.BoolVar(&a.prStats, "P", false, "show path request stats")
+	fs.BoolVar(&a.prStats, "pr-stats", false, "show path request stats")
+	fs.BoolVar(&a.burstFilter, "B", false, "only show interfaces with active bursts")
+	fs.BoolVar(&a.burstFilter, "burst", false, "only show interfaces with active bursts")
 	fs.BoolVar(&a.linkStats, "l", false, "show link stats")
 	fs.BoolVar(&a.linkStats, "link-stats", false, "show link stats")
 	fs.BoolVar(&a.trafficTotals, "t", false, "display traffic totals")
 	fs.BoolVar(&a.trafficTotals, "totals", false, "display traffic totals")
-	fs.StringVar(&a.sortKey, "s", "", "sort interfaces by [rate, traffic, rx, tx, rxs, txs, announces, arx, atx, held, gravity]")
-	fs.StringVar(&a.sortKey, "sort", "", "sort interfaces by [rate, traffic, rx, tx, rxs, txs, announces, arx, atx, held, gravity]")
+	fs.StringVar(&a.sortKey, "s", "", "sort interfaces by [rate, traffic, rx, tx, rxs, txs, announces, arx, atx, prx, ptx, held, gravity]")
+	fs.StringVar(&a.sortKey, "sort", "", "sort interfaces by [rate, traffic, rx, tx, rxs, txs, announces, arx, atx, prx, ptx, held, gravity]")
 	fs.BoolVar(&a.sortReverse, "r", false, "reverse sorting")
 	fs.BoolVar(&a.sortReverse, "reverse", false, "reverse sorting")
 	fs.BoolVar(&a.jsonOutput, "j", false, "output in JSON format")
@@ -97,7 +103,7 @@ func parseFlags(args []string, usage io.Writer) (*appT, []string, error) {
 }
 
 const usageText = `
-usage: gornstatus [-h] [--config CONFIG] [--version] [-a] [-A] [-l] [-t]
+usage: gornstatus [-h] [--config CONFIG] [--version] [-a] [-A] [-P] [-B] [-l] [-t]
                   [-s SORT] [-r] [-j] [-R hash] [-i path] [-w seconds]
                   [-d] [-D] [-m] [-I seconds] [-v]
                   [filter]
@@ -113,10 +119,12 @@ options:
   --version             show program's version number and exit
   -a, --all             show all interfaces
   -A, --announce-stats  show announce stats
+  -P, --pr-stats        show path request stats
+  -B, --burst           only show interfaces with active bursts
   -l, --link-stats      show link stats
   -t, --totals          display traffic totals
   -s SORT, --sort SORT  sort interfaces by [rate, traffic, rx, tx, rxs, txs,
-                        announces, arx, atx, held, gravity]
+                        announces, arx, atx, prx, ptx, held, gravity]
   -r, --reverse         reverse sorting
   -j, --json            output in JSON format
   -R hash               transport identity hash of remote instance to get

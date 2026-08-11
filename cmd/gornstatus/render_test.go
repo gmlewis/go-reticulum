@@ -25,7 +25,7 @@ func TestRenderInterfaceBasic(t *testing.T) {
 		TXB:     8000,
 	}
 	var buf bytes.Buffer
-	renderInterface(&buf, ifstat, false)
+	renderInterface(&buf, ifstat, false, false)
 	got := buf.String()
 
 	for _, want := range []string{
@@ -50,7 +50,7 @@ func TestRenderInterfaceDown(t *testing.T) {
 		Mode:   modeFull,
 	}
 	var buf bytes.Buffer
-	renderInterface(&buf, ifstat, false)
+	renderInterface(&buf, ifstat, false, false)
 	got := buf.String()
 
 	if !strings.Contains(got, "    Status    : Down\n") {
@@ -73,7 +73,7 @@ func TestRenderInterfaceSharedInstance(t *testing.T) {
 		TXB:     500000,
 	}
 	var buf bytes.Buffer
-	renderInterface(&buf, ifstat, false)
+	renderInterface(&buf, ifstat, false, false)
 	got := buf.String()
 
 	if !strings.Contains(got, "    Serving   : 2 programs\n") {
@@ -94,7 +94,7 @@ func TestRenderInterfaceNoiseFloor(t *testing.T) {
 		Interference: new(-95.0),
 	}
 	var buf bytes.Buffer
-	renderInterface(&buf, ifstat, false)
+	renderInterface(&buf, ifstat, false, false)
 	got := buf.String()
 
 	if !strings.Contains(got, "    Noise Fl. : -119 dBm") {
@@ -115,7 +115,7 @@ func TestRenderInterfaceNoiseFloorNoInterference(t *testing.T) {
 		Interference: new(float64(0)),
 	}
 	var buf bytes.Buffer
-	renderInterface(&buf, ifstat, false)
+	renderInterface(&buf, ifstat, false, false)
 	got := buf.String()
 
 	if !strings.Contains(got, "    Noise Fl. : -119 dBm, no interference") {
@@ -134,7 +134,7 @@ func TestRenderInterfaceCPU(t *testing.T) {
 		MemLoad: new(38.1),
 	}
 	var buf bytes.Buffer
-	renderInterface(&buf, ifstat, false)
+	renderInterface(&buf, ifstat, false, false)
 	got := buf.String()
 
 	for _, want := range []string{
@@ -159,7 +159,7 @@ func TestRenderInterfaceBattery(t *testing.T) {
 		BatteryState:   "charging",
 	}
 	var buf bytes.Buffer
-	renderInterface(&buf, ifstat, false)
+	renderInterface(&buf, ifstat, false, false)
 	got := buf.String()
 
 	if !strings.Contains(got, "    Battery   : 85% (charging)\n") {
@@ -179,7 +179,7 @@ func TestRenderInterfaceAirtime(t *testing.T) {
 		ChannelLoadLong: new(1.1),
 	}
 	var buf bytes.Buffer
-	renderInterface(&buf, ifstat, false)
+	renderInterface(&buf, ifstat, false, false)
 	got := buf.String()
 
 	for _, want := range []string{
@@ -205,7 +205,7 @@ func TestRenderInterfaceSwitchEndpoint(t *testing.T) {
 		TunnelState: new("Connected"),
 	}
 	var buf bytes.Buffer
-	renderInterface(&buf, ifstat, false)
+	renderInterface(&buf, ifstat, false, false)
 	got := buf.String()
 
 	for _, want := range []string{
@@ -231,7 +231,7 @@ func TestRenderInterfaceIFAC(t *testing.T) {
 		IFACSize:      2,
 	}
 	var buf bytes.Buffer
-	renderInterface(&buf, ifstat, false)
+	renderInterface(&buf, ifstat, false, false)
 	got := buf.String()
 
 	if !strings.Contains(got, "    Access    : 16-bit IFAC by <…060708090a>\n") {
@@ -248,7 +248,7 @@ func TestRenderInterfaceI2PB32(t *testing.T) {
 		I2PB32: new("abc123.b32.i2p"),
 	}
 	var buf bytes.Buffer
-	renderInterface(&buf, ifstat, false)
+	renderInterface(&buf, ifstat, false, false)
 	got := buf.String()
 
 	if !strings.Contains(got, "    I2P B32   : abc123.b32.i2p\n") {
@@ -268,7 +268,7 @@ func TestRenderInterfaceAnnounceStats(t *testing.T) {
 		OutAnnounceFreq: new(1.2),
 	}
 	var buf bytes.Buffer
-	renderInterface(&buf, ifstat, true)
+	renderInterface(&buf, ifstat, true, false)
 	got := buf.String()
 
 	for _, want := range []string{
@@ -294,7 +294,7 @@ func TestRenderInterfaceAnnounceStatsNotShownWithoutFlag(t *testing.T) {
 		OutAnnounceFreq: new(1.2),
 	}
 	var buf bytes.Buffer
-	renderInterface(&buf, ifstat, false)
+	renderInterface(&buf, ifstat, false, false)
 	got := buf.String()
 
 	for _, notWant := range []string{
@@ -311,13 +311,16 @@ func TestRenderInterfaceAnnounceStatsNotShownWithoutFlag(t *testing.T) {
 func TestRenderTrafficWithSpeed(t *testing.T) {
 	t.Parallel()
 	ifstat := rns.InterfaceStat{
-		RXB: 1500000,
-		TXB: 800000,
-		RXS: 1200,
-		TXS: 600,
+		Name:   "RNodeInterface[LoRa 915]",
+		Status: true,
+		Mode:   modeFull,
+		RXB:    1500000,
+		TXB:    800000,
+		RXS:    1200,
+		TXS:    600,
 	}
 	var buf bytes.Buffer
-	renderTraffic(&buf, ifstat)
+	renderInterface(&buf, ifstat, false, false)
 	got := buf.String()
 
 	if !strings.Contains(got, "    Traffic   : ↑") {
@@ -337,11 +340,106 @@ func TestRenderInterfaceAutoconnect(t *testing.T) {
 		AutoconnectSource: "ble_scanner",
 	}
 	var buf bytes.Buffer
-	renderInterface(&buf, ifstat, false)
+	renderInterface(&buf, ifstat, false, false)
 	got := buf.String()
 
 	if !strings.Contains(got, "    Source    : Auto-connect via <ble_scanner>\n") {
 		t.Errorf("expected autoconnect source, got:\n%v", got)
+	}
+}
+
+// renderBlock renders ifstat and returns the trailing Announces / Path
+// Rqs. / Traffic block, stripping the per-interface header so it can be
+// compared byte-for-byte against the Python rnstatus.py golden output.
+func renderBlock(ifstat rns.InterfaceStat, astats bool, pstats bool) string {
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, astats, pstats)
+	s := buf.String()
+	markers := []string{"    Path Rqs. : ", "    Announces : ", "    Traffic   : "}
+	best := len(s)
+	for _, m := range markers {
+		if i := strings.Index(s, m); i >= 0 && i < best {
+			best = i
+		}
+	}
+	return s[best:]
+}
+
+// TestRenderInterfacePythonParity asserts the Announces / Path Rqs. /
+// Traffic block matches the Python rnstatus.py (v1.4.2) output
+// byte-for-byte for a matrix of (astats, pstats) and field combinations.
+// Golden strings were captured via /tmp/parity_rnstatus.py running the
+// exact rnstatus.py:557-636 display block against synthetic ifstat dicts.
+func TestRenderInterfacePythonParity(t *testing.T) {
+	t.Parallel()
+	clients2 := 2
+	peers4 := 4
+	cases := []struct {
+		name   string
+		ifstat rns.InterfaceStat
+		astats bool
+		pstats bool
+		golden string
+	}{
+		{
+			"astats+pstats no bursts",
+			rns.InterfaceStat{Name: "RNodeInterface[LoRa 915]", Status: true, Mode: modeFull,
+				InAnnounceFreq: new(0.5), OutAnnounceFreq: new(1.2),
+				InPrFreq: new(0.5), OutPrFreq: new(2.0)},
+			true, true,
+			"    Path Rqs. : ↑2.0 Hz     \n                ↓0.5 Hz     \n" +
+				"    Announces : 1.2 Hz↑     \n                0.5 Hz↓    \n" +
+				"    Traffic   : ↑0 B        0 bps\n                ↓0 B        0 bps\n",
+		},
+		{
+			"pstats only suffix-arrow",
+			rns.InterfaceStat{Name: "RNodeInterface[LoRa 915]", Status: true, Mode: modeFull,
+				InPrFreq: new(0.5), OutPrFreq: new(2.0)},
+			false, true,
+			"    Path Rqs. : 2.0 Hz↑     \n                0.5 Hz↓     \n" +
+				"    Traffic   : ↑0 B        0 bps\n                ↓0 B        0 bps\n",
+		},
+		{
+			"per-client /c rate",
+			rns.InterfaceStat{Name: "RNodeInterface[LoRa 915]", Status: true, Mode: modeFull,
+				Clients: &clients2, InAnnounceFreq: new(1.0), OutAnnounceFreq: new(4.0)},
+			true, false,
+			"    Announces : 4.0 Hz↑     2.0 Hz/c\n                1.0 Hz↓    \n" +
+				"    Traffic   : ↑0 B        0 bps\n                ↓0 B        0 bps\n",
+		},
+		{
+			"per-peer /p rate (AutoInterface)",
+			rns.InterfaceStat{Name: "AutoInterface[test]", Status: true, Mode: modeAccessPoint,
+				Peers: &peers4, InAnnounceFreq: new(1.0), OutAnnounceFreq: new(4.0)},
+			true, false,
+			"    Announces : 4.0 Hz↑     1.0 Hz/p\n                1.0 Hz↓    \n" +
+				"    Traffic   : ↑0 B        0 bps\n                ↓0 B        0 bps\n",
+		},
+		{
+			"announce-rate target/penalty/grace",
+			rns.InterfaceStat{Name: "RNodeInterface[LoRa 915]", Status: true, Mode: modeFull,
+				InAnnounceFreq: new(0.5), OutAnnounceFreq: new(1.2),
+				AnnounceRateTarget: new(30), AnnounceRatePenalty: new(10), AnnounceRateGrace: new(5)},
+			true, false,
+			"    Announces : 1.2 Hz↑     \n                0.5 Hz↓    (t:30s/p:10s/g:5)\n" +
+				"    Traffic   : ↑0 B        0 bps\n                ↓0 B        0 bps\n",
+		},
+		{
+			"traffic with speed",
+			rns.InterfaceStat{Name: "RNodeInterface[LoRa 915]", Status: true, Mode: modeFull,
+				RXB: 1500000, TXB: 800000, RXS: 9600, TXS: 4800},
+			false, false,
+			"    Traffic   : ↑800.00 KB  4.80 Kbps\n                ↓1.50 MB    9.60 Kbps\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := renderBlock(tc.ifstat, tc.astats, tc.pstats)
+			if got != tc.golden {
+				t.Errorf("parity mismatch for %q\n got: %q\nwant: %q", tc.name, got, tc.golden)
+			}
+		})
 	}
 }
 
@@ -542,7 +640,7 @@ func TestRenderInterfaceNetwork(t *testing.T) {
 		IFACNetname: "mynetwork",
 	}
 	var buf bytes.Buffer
-	renderInterface(&buf, ifstat, false)
+	renderInterface(&buf, ifstat, false, false)
 	got := buf.String()
 
 	if !strings.Contains(got, "    Network   : mynetwork\n") {
@@ -564,7 +662,7 @@ func TestRenderInterfaceGravity(t *testing.T) {
 		Gravity: 7,
 	}
 	var buf bytes.Buffer
-	renderInterface(&buf, ifstat, false)
+	renderInterface(&buf, ifstat, false, false)
 	got := buf.String()
 	if !strings.Contains(got, "    Status    : Up, gravity 7\n") {
 		t.Errorf("expected status line with gravity annotation, got:\n%v", got)
@@ -573,7 +671,7 @@ func TestRenderInterfaceGravity(t *testing.T) {
 	// Zero gravity is falsy in Python and must not annotate the status line.
 	var buf2 bytes.Buffer
 	ifstat.Gravity = 0
-	renderInterface(&buf2, ifstat, false)
+	renderInterface(&buf2, ifstat, false, false)
 	if !strings.Contains(buf2.String(), "    Status    : Up\n") {
 		t.Errorf("expected plain Up status for zero gravity, got:\n%v", buf2.String())
 	}
@@ -585,8 +683,216 @@ func TestRenderInterfaceGravity(t *testing.T) {
 	var buf3 bytes.Buffer
 	ifstat.Gravity = 3
 	ifstat.Status = false
-	renderInterface(&buf3, ifstat, false)
+	renderInterface(&buf3, ifstat, false, false)
 	if !strings.Contains(buf3.String(), "    Status    : Down, gravity 3\n") {
 		t.Errorf("expected Down status with gravity annotation, got:\n%v", buf3.String())
+	}
+}
+
+// TestRenderInterfacePrStats verifies the -P/--pr-stats Path Rqs. block
+// (Python rnstatus.py:628-632) when announce stats are NOT also enabled:
+// the arrow is suffixed onto the frequency ("X.X Hz↑"/"X.X Hz↓").
+func TestRenderInterfacePrStats(t *testing.T) {
+	t.Parallel()
+	ifstat := rns.InterfaceStat{
+		Name:      "RNodeInterface[LoRa 915]",
+		Status:    true,
+		Mode:      modeFull,
+		InPrFreq:  new(0.5),
+		OutPrFreq: new(2.0),
+	}
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, false, true)
+	got := buf.String()
+
+	if !strings.Contains(got, "    Path Rqs. : 2.0 Hz↑") {
+		t.Errorf("expected Path Rqs. outgoing line, got:\n%v", got)
+	}
+	if !strings.Contains(got, "                0.5 Hz↓") {
+		t.Errorf("expected Path Rqs. incoming line, got:\n%v", got)
+	}
+	if strings.Contains(got, "Announces") {
+		t.Errorf("Announces block must not render without astats, got:\n%v", got)
+	}
+}
+
+// TestRenderInterfacePrStatsWithAnnounce verifies that with both -A and
+// -P the arrows are prefixed ("↑X.X Hz") and both blocks render
+// (Python rnstatus.py:618-626).
+func TestRenderInterfacePrStatsWithAnnounce(t *testing.T) {
+	t.Parallel()
+	ifstat := rns.InterfaceStat{
+		Name:            "RNodeInterface[LoRa 915]",
+		Status:          true,
+		Mode:            modeFull,
+		InAnnounceFreq:  new(0.5),
+		OutAnnounceFreq: new(1.2),
+		InPrFreq:        new(0.5),
+		OutPrFreq:       new(2.0),
+	}
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, true, true)
+	got := buf.String()
+
+	if !strings.Contains(got, "    Path Rqs. : ↑2.0 Hz") {
+		t.Errorf("expected Path Rqs. prefixed-arrow outgoing line, got:\n%v", got)
+	}
+	if !strings.Contains(got, "                ↓0.5 Hz") {
+		t.Errorf("expected Path Rqs. prefixed-arrow incoming line, got:\n%v", got)
+	}
+	if !strings.Contains(got, "    Announces : 1.2 Hz↑") {
+		t.Errorf("expected Announces outgoing line, got:\n%v", got)
+	}
+}
+
+// TestRenderInterfaceBurstStatus verifies the burst-for annotations
+// (Python rnstatus.py:567-574,630,635).
+func TestRenderInterfaceBurstStatus(t *testing.T) {
+	t.Parallel()
+	now := float64(time.Now().UnixNano()) / 1e9
+	ifstat := rns.InterfaceStat{
+		Name:             "RNodeInterface[LoRa 915]",
+		Status:           true,
+		Mode:             modeFull,
+		InAnnounceFreq:   new(0.5),
+		OutAnnounceFreq:  new(1.2),
+		InPrFreq:         new(0.5),
+		OutPrFreq:        new(2.0),
+		BurstActive:      true,
+		BurstActivated:   now - 60,
+		PrBurstActive:    true,
+		PrBurstActivated: now - 60,
+	}
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, true, true)
+	got := buf.String()
+
+	if !strings.Contains(got, " burst for ") {
+		t.Errorf("expected announce burst-for annotation, got:\n%v", got)
+	}
+	// The PR burst annotation has no leading space and follows the Path
+	// Rqs. incoming line.
+	if !strings.Contains(got, "burst for ") {
+		t.Errorf("expected pr burst-for annotation, got:\n%v", got)
+	}
+
+	// No bursts → no burst annotations.
+	var buf2 bytes.Buffer
+	ifstat.BurstActive = false
+	ifstat.PrBurstActive = false
+	renderInterface(&buf2, ifstat, true, true)
+	got2 := buf2.String()
+	if strings.Contains(got2, "burst for ") {
+		t.Errorf("expected no burst annotation when idle, got:\n%v", got2)
+	}
+}
+
+// TestRenderInterfaceInternalModeIndicator verifies the " (a>i)" mode
+// annotation (Python rnstatus.py:432) and the MODE_INTERNAL label.
+func TestRenderInterfaceInternalModeIndicator(t *testing.T) {
+	t.Parallel()
+	a2i := true
+	ifstat := rns.InterfaceStat{
+		Name:                "RNodeInterface[LoRa 915]",
+		Status:              true,
+		Mode:                modeAccessPoint,
+		AnnouncesToInternal: &a2i,
+	}
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, false, false)
+	got := buf.String()
+	if !strings.Contains(got, "    Mode      : Access Point (a>i)\n") {
+		t.Errorf("expected (a>i) annotation, got:\n%v", got)
+	}
+
+	// MODE_INTERNAL label.
+	var buf2 bytes.Buffer
+	ifstat.Mode = modeInternal
+	ifstat.AnnouncesToInternal = nil
+	renderInterface(&buf2, ifstat, false, false)
+	if !strings.Contains(buf2.String(), "    Mode      : Internal\n") {
+		t.Errorf("expected Internal mode, got:\n%v", buf2.String())
+	}
+
+	// Internal + (a>i).
+	var buf3 bytes.Buffer
+	ifstat.AnnouncesToInternal = &a2i
+	renderInterface(&buf3, ifstat, false, false)
+	if !strings.Contains(buf3.String(), "    Mode      : Internal (a>i)\n") {
+		t.Errorf("expected Internal (a>i), got:\n%v", buf3.String())
+	}
+}
+
+// TestRenderInterfaceAnnounceRateTarget verifies the
+// announce-rate target/penalty/grace annotation
+// (Python rnstatus.py:557-565).
+func TestRenderInterfaceAnnounceRateTarget(t *testing.T) {
+	t.Parallel()
+	ifstat := rns.InterfaceStat{
+		Name:                "RNodeInterface[LoRa 915]",
+		Status:              true,
+		Mode:                modeFull,
+		InAnnounceFreq:      new(0.5),
+		OutAnnounceFreq:     new(1.2),
+		AnnounceRateTarget:  new(30),
+		AnnounceRatePenalty: new(10),
+		AnnounceRateGrace:   new(5),
+	}
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, true, false)
+	got := buf.String()
+	if !strings.Contains(got, "(t:30s/p:10s/g:5)") {
+		t.Errorf("expected announce-rate annotation (t:30s/p:10s/g:5), got:\n%v", got)
+	}
+
+	// Only target present (penalty absent → no /p, /g).
+	var buf2 bytes.Buffer
+	ifstat.AnnounceRatePenalty = nil
+	ifstat.AnnounceRateGrace = nil
+	renderInterface(&buf2, ifstat, true, false)
+	if !strings.Contains(buf2.String(), "(t:30s)") {
+		t.Errorf("expected (t:30s) annotation, got:\n%v", buf2.String())
+	}
+	if strings.Contains(buf2.String(), "/p:") {
+		t.Errorf("did not expect /p annotation without penalty, got:\n%v", buf2.String())
+	}
+}
+
+// TestRenderInterfacePerClientRate verifies the per-client ("/c") and
+// per-peer ("/p") announce rate annotation
+// (Python rnstatus.py:583-590, AutoInterface per-peer rate).
+func TestRenderInterfacePerClientRate(t *testing.T) {
+	t.Parallel()
+	clients := 2
+	ifstat := rns.InterfaceStat{
+		Name:            "RNodeInterface[LoRa 915]",
+		Status:          true,
+		Mode:            modeFull,
+		Clients:         &clients,
+		InAnnounceFreq:  new(1.0),
+		OutAnnounceFreq: new(4.0),
+	}
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, true, false)
+	got := buf.String()
+	if !strings.Contains(got, "2.0 Hz/c") {
+		t.Errorf("expected per-client rate 2.0 Hz/c, got:\n%v", got)
+	}
+
+	// AutoInterface: no clients, peers present → per-peer rate with "/p".
+	peers := 4
+	auto := rns.InterfaceStat{
+		Name:            "AutoInterface[test]",
+		Status:          true,
+		Mode:            modeAccessPoint,
+		Peers:           &peers,
+		InAnnounceFreq:  new(1.0),
+		OutAnnounceFreq: new(4.0),
+	}
+	var buf2 bytes.Buffer
+	renderInterface(&buf2, auto, true, false)
+	got2 := buf2.String()
+	if !strings.Contains(got2, "1.0 Hz/p") {
+		t.Errorf("expected per-peer rate 1.0 Hz/p, got:\n%v", got2)
 	}
 }

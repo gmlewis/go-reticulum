@@ -1677,6 +1677,267 @@ interface_mode = gateway
 	}
 }
 
+// TestReticulumAnnounceRateDefaults verifies the announce-rate-control config
+// flow (RNS/Reticulum.py:642-653,819-857,938-940,1145-1152; Interface.py:90-92):
+// the [reticulum] default_ar_target/penalty/grace keys are parsed, and when
+// transport is enabled an interface that omits the per-interface keys inherits
+// those defaults (resolving a 0/ unset default_ar_target to the Interface
+// class constant DEFAULT_AR_TARGET=3600).
+func TestReticulumAnnounceRateDefaults(t *testing.T) {
+	t.Parallel()
+
+	configDir := testutils.TempDir(t, tempDirPrefix)
+	port := reserveTCPPort(t)
+	config := `[reticulum]
+share_instance = No
+enable_transport = Yes
+default_ar_target = 7200
+default_ar_penalty = 30
+default_ar_grace = 8
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[AR Defaults TCP]]
+type = TCPServerInterface
+interface_enabled = Yes
+listen_ip = 127.0.0.1
+listen_port = ` + strconv.Itoa(port) + `
+interface_mode = gateway
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	ifaces := ts.GetInterfaces()
+	if len(ifaces) != 1 {
+		t.Fatalf("expected 1 interface, got %v", len(ifaces))
+	}
+	iface := ifaces[0]
+	if got := iface.AnnounceRateTarget(); got == nil || *got != 7200 {
+		t.Fatalf("AnnounceRateTarget() = %v, want &7200 (inherit default_ar_target)", ptrVal(got))
+	}
+	if got := iface.AnnounceRatePenalty(); got == nil || *got != 30 {
+		t.Fatalf("AnnounceRatePenalty() = %v, want &30 (inherit default_ar_penalty)", ptrVal(got))
+	}
+	if got := iface.AnnounceRateGrace(); got == nil || *got != 8 {
+		t.Fatalf("AnnounceRateGrace() = %v, want &8 (inherit default_ar_grace)", ptrVal(got))
+	}
+}
+
+// TestReticulumAnnounceRateZeroTargetResolvesClassDefault asserts that
+// default_ar_target = 0 maps to None (Reticulum.py:644) and so resolves to the
+// Interface.DEFAULT_AR_TARGET class constant (3600) when transport is enabled.
+func TestReticulumAnnounceRateZeroTargetResolvesClassDefault(t *testing.T) {
+	t.Parallel()
+
+	configDir := testutils.TempDir(t, tempDirPrefix)
+	port := reserveTCPPort(t)
+	config := `[reticulum]
+share_instance = No
+enable_transport = Yes
+default_ar_target = 0
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[AR Zero TCP]]
+type = TCPServerInterface
+interface_enabled = Yes
+listen_ip = 127.0.0.1
+listen_port = ` + strconv.Itoa(port) + `
+interface_mode = gateway
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	ifaces := ts.GetInterfaces()
+	if len(ifaces) != 1 {
+		t.Fatalf("expected 1 interface, got %v", len(ifaces))
+	}
+	iface := ifaces[0]
+	if got := iface.AnnounceRateTarget(); got == nil || *got != 3600 {
+		t.Fatalf("AnnounceRateTarget() = %v, want &3600 (DEFAULT_AR_TARGET class constant)", ptrVal(got))
+	}
+}
+
+// TestReticulumAnnounceRatePerInterfaceOverride asserts the per-interface
+// announce_rate_target/penalty/grace keys override the instance-wide defaults
+// (Reticulum.py:819-829,938-940), and that setting only announce_rate_target
+// fills grace and penalty with 0 (Reticulum.py:831-832).
+func TestReticulumAnnounceRatePerInterfaceOverride(t *testing.T) {
+	t.Parallel()
+
+	configDir := testutils.TempDir(t, tempDirPrefix)
+	port := reserveTCPPort(t)
+	config := `[reticulum]
+share_instance = No
+enable_transport = Yes
+default_ar_target = 7200
+default_ar_penalty = 30
+default_ar_grace = 8
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[AR Override TCP]]
+type = TCPServerInterface
+interface_enabled = Yes
+listen_ip = 127.0.0.1
+listen_port = ` + strconv.Itoa(port) + `
+interface_mode = gateway
+announce_rate_target = 1800
+announce_rate_penalty = 12
+announce_rate_grace = 3
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	ifaces := ts.GetInterfaces()
+	if len(ifaces) != 1 {
+		t.Fatalf("expected 1 interface, got %v", len(ifaces))
+	}
+	iface := ifaces[0]
+	if got := iface.AnnounceRateTarget(); got == nil || *got != 1800 {
+		t.Fatalf("AnnounceRateTarget() = %v, want &1800 (per-interface override)", ptrVal(got))
+	}
+	if got := iface.AnnounceRatePenalty(); got == nil || *got != 12 {
+		t.Fatalf("AnnounceRatePenalty() = %v, want &12 (per-interface override)", ptrVal(got))
+	}
+	if got := iface.AnnounceRateGrace(); got == nil || *got != 3 {
+		t.Fatalf("AnnounceRateGrace() = %v, want &3 (per-interface override)", ptrVal(got))
+	}
+}
+
+// TestReticulumAnnounceRateTargetOnlyFillsGracePenaltyZero asserts that when
+// only announce_rate_target is set on an interface, grace and penalty default
+// to 0 rather than the instance-wide defaults (Reticulum.py:831-832).
+func TestReticulumAnnounceRateTargetOnlyFillsGracePenaltyZero(t *testing.T) {
+	t.Parallel()
+
+	configDir := testutils.TempDir(t, tempDirPrefix)
+	port := reserveTCPPort(t)
+	config := `[reticulum]
+share_instance = No
+enable_transport = Yes
+default_ar_target = 7200
+default_ar_penalty = 30
+default_ar_grace = 8
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[AR Target Only TCP]]
+type = TCPServerInterface
+interface_enabled = Yes
+listen_ip = 127.0.0.1
+listen_port = ` + strconv.Itoa(port) + `
+interface_mode = gateway
+announce_rate_target = 1800
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	ifaces := ts.GetInterfaces()
+	if len(ifaces) != 1 {
+		t.Fatalf("expected 1 interface, got %v", len(ifaces))
+	}
+	iface := ifaces[0]
+	if got := iface.AnnounceRateTarget(); got == nil || *got != 1800 {
+		t.Fatalf("AnnounceRateTarget() = %v, want &1800", ptrVal(got))
+	}
+	if got := iface.AnnounceRateGrace(); got == nil || *got != 0 {
+		t.Fatalf("AnnounceRateGrace() = %v, want &0 (filled because target set)", ptrVal(got))
+	}
+	if got := iface.AnnounceRatePenalty(); got == nil || *got != 0 {
+		t.Fatalf("AnnounceRatePenalty() = %v, want &0 (filled because target set)", ptrVal(got))
+	}
+}
+
+// TestReticulumAnnounceRateNoDefaultWhenTransportDisabled asserts that the
+// announce-rate defaults are NOT applied when transport is disabled
+// (Reticulum.py:855-857 only fills None values when transport_enabled()). The
+// interface's announce-rate pointers remain nil.
+func TestReticulumAnnounceRateNoDefaultWhenTransportDisabled(t *testing.T) {
+	t.Parallel()
+
+	configDir := testutils.TempDir(t, tempDirPrefix)
+	port := reserveTCPPort(t)
+	config := `[reticulum]
+share_instance = No
+enable_transport = No
+default_ar_target = 7200
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[AR No Transport TCP]]
+type = TCPServerInterface
+interface_enabled = Yes
+listen_ip = 127.0.0.1
+listen_port = ` + strconv.Itoa(port) + `
+interface_mode = gateway
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	ifaces := ts.GetInterfaces()
+	if len(ifaces) != 1 {
+		t.Fatalf("expected 1 interface, got %v", len(ifaces))
+	}
+	iface := ifaces[0]
+	if got := iface.AnnounceRateTarget(); got != nil {
+		t.Fatalf("AnnounceRateTarget() = %v, want nil (no default fill with transport disabled)", ptrVal(got))
+	}
+	if got := iface.AnnounceRateGrace(); got != nil {
+		t.Fatalf("AnnounceRateGrace() = %v, want nil", ptrVal(got))
+	}
+	if got := iface.AnnounceRatePenalty(); got != nil {
+		t.Fatalf("AnnounceRatePenalty() = %v, want nil", ptrVal(got))
+	}
+}
+
+func ptrVal(p *int) string {
+	if p == nil {
+		return "nil"
+	}
+	return strconv.Itoa(*p)
+}
+
 func TestReticulumBootstrapOnlyInterfaceConfig(t *testing.T) {
 	t.Parallel()
 

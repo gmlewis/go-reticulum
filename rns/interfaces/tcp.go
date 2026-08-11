@@ -565,6 +565,15 @@ func (tsi *TCPServerInterface) handleConnection(conn net.Conn) {
 	// `spawned_interface.gravity = self.gravity`). The same spawn path backs
 	// I2P and Backbone servers (they reuse newTCPServerInterface).
 	bi.SetGravity(tsi.Gravity())
+	// Inherit the parent server's ingress/egress-control configuration
+	// (RNS/Interfaces/TCPInterface.py:595-608, v1.1.5). The same spawn
+	// path backs I2P and Backbone servers (they reuse
+	// newTCPServerInterface).
+	bi.copyIngressEgressFrom(tsi.BaseInterface)
+	// Record the parent server so frequency/byte-counter events on this
+	// spawned peer propagate up to the aggregating parent
+	// (TCPInterface.py:611: spawned_interface.parent_interface = self).
+	bi.parentInterface = tsi.BaseInterface
 	tci := &TCPClientInterface{
 		BaseInterface:  bi,
 		conn:           conn,

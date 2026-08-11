@@ -522,3 +522,49 @@ func TestAutoInterfaceInterfaceSelection(t *testing.T) {
 		})
 	}
 }
+
+// TestAutoInterfaceAndroidRmnetIgnore verifies that the rmnet0..rmnet7 Android
+// system interfaces (AutoInterface.py:68 ANDROID_IGNORE_IFS) are skipped on
+// Android unless explicitly allowed. The platform-injectable shouldUseInterfaceOn
+// exercises the android branch regardless of the host running the test.
+func TestAutoInterfaceAndroidRmnetIgnore(t *testing.T) {
+	t.Parallel()
+
+	for i := 0; i <= 7; i++ {
+		name := fmt.Sprintf("rmnet%d", i)
+		ai := &AutoInterface{
+			allowedInterfaces: map[string]struct{}{},
+			ignoredInterfaces: map[string]struct{}{},
+		}
+		if got := ai.shouldUseInterfaceOn(name, "android"); got {
+			t.Errorf("shouldUseInterfaceOn(%q, android) = true, want false (ANDROID_IGNORE_IFS)", name)
+		}
+	}
+
+	// A normal wireless interface is usable on Android.
+	ai := &AutoInterface{
+		allowedInterfaces: map[string]struct{}{},
+		ignoredInterfaces: map[string]struct{}{},
+	}
+	if got := ai.shouldUseInterfaceOn("wlan0", "android"); !got {
+		t.Errorf("shouldUseInterfaceOn(%q, android) = false, want true", "wlan0")
+	}
+
+	// rmnet is Android-specific: on darwin/linux it is not in the ignore set.
+	if got := ai.shouldUseInterfaceOn("rmnet3", "linux"); !got {
+		t.Errorf("shouldUseInterfaceOn(%q, linux) = false, want true (rmnet is android-only)", "rmnet3")
+	}
+	if got := ai.shouldUseInterfaceOn("rmnet3", "darwin"); !got {
+		t.Errorf("shouldUseInterfaceOn(%q, darwin) = false, want true (rmnet is android-only)", "rmnet3")
+	}
+
+	// An explicitly-allowed rmnet interface overrides the Android ignore
+	// (AutoInterface.py:221 `not ifname in self.allowed_interfaces`).
+	aiAllowed := &AutoInterface{
+		allowedInterfaces: map[string]struct{}{"rmnet3": {}},
+		ignoredInterfaces: map[string]struct{}{},
+	}
+	if got := aiAllowed.shouldUseInterfaceOn("rmnet3", "android"); !got {
+		t.Errorf("shouldUseInterfaceOn(%q, android) with allowed override = false, want true", "rmnet3")
+	}
+}

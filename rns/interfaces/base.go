@@ -108,6 +108,77 @@ type BaseInterface struct {
 	announcesFromInternal bool
 	announcesToInternal   *bool
 
+	// Ingress/egress-control configuration (RNS/Interfaces/Interface.py
+	// :118-136, v1.1.5). Defaults mirror Interface.__init__ via the
+	// Reticulum _default_* getters, which resolve to the Interface class
+	// constants defined above. Spawned peers inherit these from their
+	// parent server interface at accept/spawn time.
+	ingressControl        bool
+	icMaxHeldAnnounces    int
+	icBurstHold           float64
+	icBurstFreqNew        float64
+	icBurstFreq           float64
+	icPrBurstFreqNew      float64
+	icPrBurstFreq         float64
+	icNewTime             float64
+	icBurstPenalty        float64
+	icHeldReleaseInterval float64
+	ecPrFreq              float64
+	egressControl         bool
+
+	// Announce-rate-control config (Interface.py:90-92, 118-120;
+	// Reticulum.py:819-857,938-940). A nil pointer mirrors Python's None,
+	// meaning "no rate limit configured". When transport is enabled the
+	// Reticulum config layer fills nil values from the instance-wide
+	// default_ar_target/penalty/grace (which themselves resolve to the
+	// DEFAULT_AR_* class constants). Spawned peers inherit these from their
+	// parent server interface at spawn time (AutoInterface.py:579-581,
+	// BackboneInterface.py:481-483).
+	announceRateTarget  *int
+	announceRateGrace   *int
+	announceRatePenalty *int
+
+	// parentInterface is the server interface that spawned this peer
+	// (Python spawned_interface.parent_interface = self). It is set on
+	// spawned peers so frequency/byte-counter events propagate up to the
+	// aggregating parent (Interface.py:257-275). nil on root interfaces.
+	parentInterface *BaseInterface
+
+	// iaFreqDeque / oaFreqDeque are the incoming/outgoing announce
+	// frequency sample deques (Python ia_freq_deque / oa_freq_deque,
+	// Interface.py:139-140, maxlen IA_FREQ_SAMPLES/OA_FREQ_SAMPLES).
+	// Populated by ReceivedAnnounce / SentAnnounce and read by the
+	// incoming/outgoing announce-frequency formulas.
+	iaFreqDeque []time.Time
+	oaFreqDeque []time.Time
+
+	// ipFreqDeque / opFreqDeque are the incoming/outgoing path-request
+	// frequency sample deques (Python ip_freq_deque / op_freq_deque,
+	// Interface.py:139-140, maxlen IP_FREQ_SAMPLES/OP_FREQ_SAMPLES).
+	// Populated by ReceivedPathRequest / SentPathRequest and read by the
+	// incoming/outgoing PR-frequency formulas and the PR burst state machine.
+	ipFreqDeque []time.Time
+	opFreqDeque []time.Time
+
+	// Ingress-limit burst + held-announce state (Interface.py:121-137, 224-255).
+	// icBurstActive is the announce-burst flag set by ShouldIngressLimit;
+	// icBurstActivated is when it activated; icHeldRelease is the earliest
+	// time the next held announce may be released (now + icBurstPenalty on
+	// activation, then now + icHeldReleaseInterval after each release).
+	// heldAnnounces maps destination hash -> held announce awaiting release.
+	icBurstActive    bool
+	icBurstActivated time.Time
+	icHeldRelease    time.Time
+	heldAnnounces    map[string]heldAnnounce
+
+	// PR-burst state (Interface.py:121-122, 174-190). icPrBurstActive is the
+	// path-request ingress-burst flag set by ShouldIngressLimitPr;
+	// icPrBurstActivated is when it activated. Unlike the announce burst, the
+	// PR burst has no held-release penalty — it only gates recursive path
+	// request forwarding.
+	icPrBurstActive    bool
+	icPrBurstActivated time.Time
+
 	// defaultIFACSize is this interface type's DEFAULT_IFAC_SIZE class
 	// attribute (RNS/Interfaces/*.py). Set by each concrete constructor, it
 	// drives SetIFACConfig's size default and the discovery autoconnect path
@@ -134,6 +205,20 @@ func NewBaseInterface(name string, mode int, bitrate int) *BaseInterface {
 		bitrate:               bitrate,
 		created:               time.Now(),
 		announcesFromInternal: true,
+
+		// Ingress/egress-control defaults (Interface.py:118-136).
+		ingressControl:        true,
+		icMaxHeldAnnounces:    MaxHeldAnnounces,
+		icBurstHold:           ICBurstHold,
+		icBurstFreqNew:        ICBurstFreqNew,
+		icBurstFreq:           ICBurstFreq,
+		icPrBurstFreqNew:      ICPrBurstFreqNew,
+		icPrBurstFreq:         ICPrBurstFreq,
+		icNewTime:             ICNewTime,
+		icBurstPenalty:        ICBurstPenalty,
+		icHeldReleaseInterval: ICHeldReleaseInterval,
+		ecPrFreq:              ECPrFreq,
+		egressControl:         EgressControlDefault,
 	}
 }
 
@@ -174,6 +259,482 @@ func (bi *BaseInterface) RecursivePrs() bool { return bi.recursivePrs }
 
 // SetRecursivePrs sets the recursive-path-request policy.
 func (bi *BaseInterface) SetRecursivePrs(v bool) { bi.recursivePrs = v }
+
+// Ingress/egress-control accessors (RNS/Interfaces/Interface.py:118-136).
+// Each defaults to the Interface class constant of the same name; spawned
+// peers inherit the parent's configured values via copyIngressEgressFrom.
+
+func (bi *BaseInterface) IngressControl() bool               { return bi.ingressControl }
+func (bi *BaseInterface) SetIngressControl(v bool)           { bi.ingressControl = v }
+func (bi *BaseInterface) ICMaxHeldAnnounces() int            { return bi.icMaxHeldAnnounces }
+func (bi *BaseInterface) SetICMaxHeldAnnounces(v int)        { bi.icMaxHeldAnnounces = v }
+func (bi *BaseInterface) ICBurstHold() float64               { return bi.icBurstHold }
+func (bi *BaseInterface) SetICBurstHold(v float64)           { bi.icBurstHold = v }
+func (bi *BaseInterface) ICBurstFreqNew() float64            { return bi.icBurstFreqNew }
+func (bi *BaseInterface) SetICBurstFreqNew(v float64)        { bi.icBurstFreqNew = v }
+func (bi *BaseInterface) ICBurstFreq() float64               { return bi.icBurstFreq }
+func (bi *BaseInterface) SetICBurstFreq(v float64)           { bi.icBurstFreq = v }
+func (bi *BaseInterface) ICPrBurstFreqNew() float64          { return bi.icPrBurstFreqNew }
+func (bi *BaseInterface) SetICPrBurstFreqNew(v float64)      { bi.icPrBurstFreqNew = v }
+func (bi *BaseInterface) ICPrBurstFreq() float64             { return bi.icPrBurstFreq }
+func (bi *BaseInterface) SetICPrBurstFreq(v float64)         { bi.icPrBurstFreq = v }
+func (bi *BaseInterface) ICNewTime() float64                 { return bi.icNewTime }
+func (bi *BaseInterface) SetICNewTime(v float64)             { bi.icNewTime = v }
+func (bi *BaseInterface) ICBurstPenalty() float64            { return bi.icBurstPenalty }
+func (bi *BaseInterface) SetICBurstPenalty(v float64)        { bi.icBurstPenalty = v }
+func (bi *BaseInterface) ICHeldReleaseInterval() float64     { return bi.icHeldReleaseInterval }
+func (bi *BaseInterface) SetICHeldReleaseInterval(v float64) { bi.icHeldReleaseInterval = v }
+func (bi *BaseInterface) ECPrFreq() float64                  { return bi.ecPrFreq }
+func (bi *BaseInterface) SetECPrFreq(v float64)              { bi.ecPrFreq = v }
+func (bi *BaseInterface) EgressControl() bool                { return bi.egressControl }
+func (bi *BaseInterface) SetEgressControl(v bool)            { bi.egressControl = v }
+
+// Ingress-control burst-state accessors (Interface.py:121-124). These expose
+// the per-interface announce/PR burst flags and activation timestamps used by
+// ifstats (Reticulum.py:1461-1464) and the Backbone aggregate getters. The
+// activated timestamps are zero until the corresponding burst activates.
+func (bi *BaseInterface) ICBurstActive() bool           { return bi.icBurstActive }
+func (bi *BaseInterface) ICBurstActivated() time.Time   { return bi.icBurstActivated }
+func (bi *BaseInterface) ICPrBurstActive() bool         { return bi.icPrBurstActive }
+func (bi *BaseInterface) ICPrBurstActivated() time.Time { return bi.icPrBurstActivated }
+
+// Announce-rate-control accessors (Interface.py:90-92,118-120;
+// Reticulum.py:819-857,938-940). A nil pointer mirrors Python's None (no rate
+// limit). Defaults are applied by the Reticulum config layer, not here.
+func (bi *BaseInterface) AnnounceRateTarget() *int      { return bi.announceRateTarget }
+func (bi *BaseInterface) SetAnnounceRateTarget(v *int)  { bi.announceRateTarget = v }
+func (bi *BaseInterface) AnnounceRateGrace() *int       { return bi.announceRateGrace }
+func (bi *BaseInterface) SetAnnounceRateGrace(v *int)   { bi.announceRateGrace = v }
+func (bi *BaseInterface) AnnounceRatePenalty() *int     { return bi.announceRatePenalty }
+func (bi *BaseInterface) SetAnnounceRatePenalty(v *int) { bi.announceRatePenalty = v }
+
+// copyIngressEgressFrom copies the full ingress/egress-control
+// configuration from parent into bi, mirroring the per-field spawn blocks
+// in TCPInterface.py:595-608, AutoInterface.py:542-554,
+// I2PInterface.py:828-840, and BackboneInterface.py:446-458 (v1.1.5).
+// It is called from each server interface's accept/spawn path so spawned
+// peers inherit their parent's ingress/egress policy.
+func (bi *BaseInterface) copyIngressEgressFrom(parent *BaseInterface) {
+	if bi == nil || parent == nil {
+		return
+	}
+	bi.ingressControl = parent.ingressControl
+	bi.icMaxHeldAnnounces = parent.icMaxHeldAnnounces
+	bi.icBurstHold = parent.icBurstHold
+	bi.icBurstFreqNew = parent.icBurstFreqNew
+	bi.icBurstFreq = parent.icBurstFreq
+	bi.icNewTime = parent.icNewTime
+	bi.icBurstPenalty = parent.icBurstPenalty
+	bi.icHeldReleaseInterval = parent.icHeldReleaseInterval
+	bi.egressControl = parent.egressControl
+	bi.ecPrFreq = parent.ecPrFreq
+	bi.icPrBurstFreqNew = parent.icPrBurstFreqNew
+	bi.icPrBurstFreq = parent.icPrBurstFreq
+
+	// Announce-rate-control inheritance (AutoInterface.py:579-581,
+	// BackboneInterface.py:481-483, TCPInterface.py spawn block).
+	bi.announceRateTarget = parent.announceRateTarget
+	bi.announceRateGrace = parent.announceRateGrace
+	bi.announceRatePenalty = parent.announceRatePenalty
+}
+
+// appendFreqSample appends now to a maxlen-capped frequency deque, dropping
+// the oldest entry when it exceeds max (Python collections.deque(maxlen=N)).
+func appendFreqSample(deque []time.Time, now time.Time, max int) []time.Time {
+	deque = append(deque, now)
+	if len(deque) > max {
+		deque = deque[len(deque)-max:]
+	}
+	return deque
+}
+
+// ReceivedAnnounce records an incoming announce on this interface at the
+// current instant and propagates it to the parent server interface
+// (Interface.py:257-260).
+func (bi *BaseInterface) ReceivedAnnounce() {
+	bi.receivedAnnounceAt(time.Now(), false)
+}
+
+// receivedAnnounceAt is the lock-free core of ReceivedAnnounce taking an
+// explicit now for deterministic frequency tests. When fromSpawned is false
+// the sample also propagates to the parent interface (Python passes
+// from_spawned=True to the parent so it does not re-propagate).
+func (bi *BaseInterface) receivedAnnounceAt(now time.Time, fromSpawned bool) {
+	bi.iaFreqDeque = appendFreqSample(bi.iaFreqDeque, now, IAFreqSamples)
+	if !fromSpawned && bi.parentInterface != nil {
+		bi.parentInterface.receivedAnnounceAt(now, true)
+	}
+}
+
+// SentAnnounce records an outgoing announce on this interface at the current
+// instant and propagates it to the parent server interface
+// (Interface.py:262-265).
+func (bi *BaseInterface) SentAnnounce() {
+	bi.sentAnnounceAt(time.Now(), false)
+}
+
+// sentAnnounceAt is the lock-free core of SentAnnounce taking an explicit
+// now for deterministic frequency tests.
+func (bi *BaseInterface) sentAnnounceAt(now time.Time, fromSpawned bool) {
+	bi.oaFreqDeque = appendFreqSample(bi.oaFreqDeque, now, OAFreqSamples)
+	if !fromSpawned && bi.parentInterface != nil {
+		bi.parentInterface.sentAnnounceAt(now, true)
+	}
+}
+
+// IncomingAnnounceFrequency returns the current incoming-announce rate in Hz
+// (Interface.py:277-286). It is the public time.Now()-driven entry point.
+func (bi *BaseInterface) IncomingAnnounceFrequency() float64 {
+	return bi.incomingAnnounceFrequencyAt(time.Now())
+}
+
+// incomingAnnounceFrequencyAt is the deterministic core of
+// IncomingAnnounceFrequency. It mirrors Interface.py:277-286 exactly:
+//
+//	n = len(deque); if not n > IC_DEQUE_MIN_SAMPLE(2): return 0
+//	oldest = deque[0]; span = now - oldest
+//	if span > AR_FREQ_DECAY(10): popleft
+//	if span <= 0: return 0
+//	hz = n / span
+//
+// The returned hz uses the pre-pop n and the pre-pop span; the popleft is a
+// side effect that ages the deque for the next call.
+func (bi *BaseInterface) incomingAnnounceFrequencyAt(now time.Time) float64 {
+	n := len(bi.iaFreqDeque)
+	if !(n > ICDequeMinSample) {
+		return 0
+	}
+	oldest := bi.iaFreqDeque[0]
+	span := now.Sub(oldest).Seconds()
+	if span > ARFreqDecay {
+		bi.iaFreqDeque = bi.iaFreqDeque[1:]
+	}
+	if span <= 0 {
+		return 0
+	}
+	return float64(n) / span
+}
+
+// OutgoingAnnounceFrequency returns the current outgoing-announce rate in Hz
+// (Interface.py:288-297). It is the public time.Now()-driven entry point.
+func (bi *BaseInterface) OutgoingAnnounceFrequency() float64 {
+	return bi.outgoingAnnounceFrequencyAt(time.Now())
+}
+
+// outgoingAnnounceFrequencyAt is the deterministic core of
+// OutgoingAnnounceFrequency. It mirrors Interface.py:288-297: the only
+// difference from the incoming formula is the minimum gate, which is
+// `len > 1` (needs 2+ samples) rather than IC_DEQUE_MIN_SAMPLE (3+).
+func (bi *BaseInterface) outgoingAnnounceFrequencyAt(now time.Time) float64 {
+	n := len(bi.oaFreqDeque)
+	if !(n > 1) {
+		return 0
+	}
+	oldest := bi.oaFreqDeque[0]
+	span := now.Sub(oldest).Seconds()
+	if span > ARFreqDecay {
+		bi.oaFreqDeque = bi.oaFreqDeque[1:]
+	}
+	if span <= 0 {
+		return 0
+	}
+	return float64(n) / span
+}
+
+// ageAt returns the interface's age in seconds at the given instant, mirroring
+// Python Interface.age() = time.time() - self.created (Interface.py:221-222).
+func (bi *BaseInterface) ageAt(now time.Time) float64 {
+	return now.Sub(bi.created).Seconds()
+}
+
+// ReceivedPathRequest records an incoming path request on this interface at the
+// current instant and propagates it to the parent server interface
+// (Interface.py:267-270).
+func (bi *BaseInterface) ReceivedPathRequest() {
+	bi.receivedPathRequestAt(time.Now(), false)
+}
+
+// receivedPathRequestAt is the lock-free core of ReceivedPathRequest taking an
+// explicit now for deterministic frequency tests. When fromSpawned is false the
+// sample also propagates to the parent interface (Python passes from_spawned=True
+// to the parent so it does not re-propagate).
+func (bi *BaseInterface) receivedPathRequestAt(now time.Time, fromSpawned bool) {
+	bi.ipFreqDeque = appendFreqSample(bi.ipFreqDeque, now, IPFreqSamples)
+	if !fromSpawned && bi.parentInterface != nil {
+		bi.parentInterface.receivedPathRequestAt(now, true)
+	}
+}
+
+// SentPathRequest records an outgoing path request on this interface at the
+// current instant and propagates it to the parent server interface
+// (Interface.py:272-275).
+func (bi *BaseInterface) SentPathRequest() {
+	bi.sentPathRequestAt(time.Now(), false)
+}
+
+// sentPathRequestAt is the lock-free core of SentPathRequest taking an explicit
+// now for deterministic frequency tests.
+func (bi *BaseInterface) sentPathRequestAt(now time.Time, fromSpawned bool) {
+	bi.opFreqDeque = appendFreqSample(bi.opFreqDeque, now, OPFreqSamples)
+	if !fromSpawned && bi.parentInterface != nil {
+		bi.parentInterface.sentPathRequestAt(now, true)
+	}
+}
+
+// IncomingPrFrequency returns the current incoming path-request rate in Hz
+// (Interface.py:299-308). It is the public time.Now()-driven entry point.
+func (bi *BaseInterface) IncomingPrFrequency() float64 {
+	return bi.incomingPrFrequencyAt(time.Now())
+}
+
+// incomingPrFrequencyAt is the deterministic core of IncomingPrFrequency. It
+// mirrors Interface.py:299-308 exactly: same shape as the incoming-announce
+// formula but with the PR_FREQ_DECAY (1/PR_MINFREQ_HZ = 10s) decay window and
+// the ip_freq_deque.
+func (bi *BaseInterface) incomingPrFrequencyAt(now time.Time) float64 {
+	n := len(bi.ipFreqDeque)
+	if !(n > ICDequeMinSample) {
+		return 0
+	}
+	oldest := bi.ipFreqDeque[0]
+	span := now.Sub(oldest).Seconds()
+	if span > PRFreqDecay {
+		bi.ipFreqDeque = bi.ipFreqDeque[1:]
+	}
+	if span <= 0 {
+		return 0
+	}
+	return float64(n) / span
+}
+
+// OutgoingPrFrequency returns the current outgoing path-request rate in Hz
+// (Interface.py:310-319). It is the public time.Now()-driven entry point.
+func (bi *BaseInterface) OutgoingPrFrequency() float64 {
+	return bi.outgoingPrFrequencyAt(time.Now())
+}
+
+// outgoingPrFrequencyAt is the deterministic core of OutgoingPrFrequency. It
+// mirrors Interface.py:310-319: same shape as the outgoing-announce formula
+// (len > 1 gate, PR_FREQ_DECAY decay window) but with the op_freq_deque.
+func (bi *BaseInterface) outgoingPrFrequencyAt(now time.Time) float64 {
+	n := len(bi.opFreqDeque)
+	if !(n > 1) {
+		return 0
+	}
+	oldest := bi.opFreqDeque[0]
+	span := now.Sub(oldest).Seconds()
+	if span > PRFreqDecay {
+		bi.opFreqDeque = bi.opFreqDeque[1:]
+	}
+	if span <= 0 {
+		return 0
+	}
+	return float64(n) / span
+}
+
+// ShouldIngressLimit reports whether an inbound announce on this interface
+// should be held rather than processed, activating and deactivating the
+// announce-burst state machine as a side effect. It is the public
+// time.Now()-driven entry point for Interface.should_ingress_limit
+// (Interface.py:152-172).
+func (bi *BaseInterface) ShouldIngressLimit() bool {
+	return bi.shouldIngressLimitAt(time.Now())
+}
+
+// shouldIngressLimitAt is the deterministic core of ShouldIngressLimit. It
+// mirrors Interface.py:152-172 exactly:
+//
+//	if not ingress_control: return False
+//	freq_threshold = ic_burst_freq_new if age < ic_new_time else ic_burst_freq
+//	ia_freq = incoming_announce_frequency()
+//	if ic_burst_active:
+//	    if ia_freq < freq_threshold and now > activated+ic_burst_hold:
+//	        if len(ia_freq_deque) >= IC_DEQUE_MIN_SAMPLE(2): ic_burst_active = False
+//	    return True
+//	else:
+//	    if ia_freq > freq_threshold:
+//	        ic_burst_active = True; ic_burst_activated = now
+//	        ic_held_release = now + ic_burst_penalty
+//	        return True
+//	    else: return False
+func (bi *BaseInterface) shouldIngressLimitAt(now time.Time) bool {
+	if !bi.ingressControl {
+		return false
+	}
+	freqThreshold := bi.icBurstFreqNew
+	if bi.ageAt(now) >= bi.icNewTime {
+		freqThreshold = bi.icBurstFreq
+	}
+	iaFreq := bi.incomingAnnounceFrequencyAt(now)
+	if bi.icBurstActive {
+		if iaFreq < freqThreshold && now.After(bi.icBurstActivated.Add(time.Duration(bi.icBurstHold)*time.Second)) {
+			if len(bi.iaFreqDeque) >= ICDequeMinSample {
+				bi.icBurstActive = false
+			}
+		}
+		return true
+	}
+	if iaFreq > freqThreshold {
+		bi.icBurstActive = true
+		bi.icBurstActivated = now
+		bi.icHeldRelease = now.Add(time.Duration(bi.icBurstPenalty) * time.Second)
+		return true
+	}
+	return false
+}
+
+// ShouldIngressLimitPr reports whether inbound path requests on this interface
+// should be gated (recursive path-request forwarding suppressed), activating and
+// deactivating the PR-burst state machine as a side effect. It is the public
+// time.Now()-driven entry point for Interface.should_ingress_limit_pr
+// (Interface.py:174-190).
+func (bi *BaseInterface) ShouldIngressLimitPr() bool {
+	return bi.shouldIngressLimitPrAt(time.Now())
+}
+
+// shouldIngressLimitPrAt is the deterministic core of ShouldIngressLimitPr. It
+// mirrors Interface.py:174-190 exactly:
+//
+//	if not ingress_control: return False
+//	freq_threshold = ic_pr_burst_freq_new if age < ic_new_time else ic_pr_burst_freq
+//	ip_freq = incoming_pr_frequency()
+//	if ic_pr_burst_active:
+//	    if ip_freq < freq_threshold and now > activated+ic_burst_hold:
+//	        ic_pr_burst_active = False
+//	    return True
+//	else:
+//	    if ip_freq > freq_threshold:
+//	        ic_pr_burst_active = True; ic_pr_burst_activated = now
+//	        return True
+//	    else: return False
+//
+// Unlike the announce burst, activation sets no held-release penalty — the PR
+// burst only suppresses recursive path-request forwarding while active.
+func (bi *BaseInterface) shouldIngressLimitPrAt(now time.Time) bool {
+	if !bi.ingressControl {
+		return false
+	}
+	freqThreshold := bi.icPrBurstFreqNew
+	if bi.ageAt(now) >= bi.icNewTime {
+		freqThreshold = bi.icPrBurstFreq
+	}
+	ipFreq := bi.incomingPrFrequencyAt(now)
+	if bi.icPrBurstActive {
+		if ipFreq < freqThreshold && now.After(bi.icPrBurstActivated.Add(time.Duration(bi.icBurstHold)*time.Second)) {
+			bi.icPrBurstActive = false
+		}
+		return true
+	}
+	if ipFreq > freqThreshold {
+		bi.icPrBurstActive = true
+		bi.icPrBurstActivated = now
+		return true
+	}
+	return false
+}
+
+// ShouldEgressLimitPr reports whether outbound path requests on this interface
+// should be gated due to egress limiting. It is the public time.Now()-driven
+// entry point for Interface.should_egress_limit_pr (Interface.py:192-200).
+func (bi *BaseInterface) ShouldEgressLimitPr() bool {
+	return bi.shouldEgressLimitPrAt(time.Now())
+}
+
+// shouldEgressLimitPrAt is the deterministic core of ShouldEgressLimitPr. It
+// mirrors Interface.py:192-200 exactly:
+//
+//	if not egress_control: return False
+//	freq_threshold = ec_pr_freq
+//	op_freq = outgoing_pr_frequency()
+//	if op_freq > freq_threshold:
+//	    if len(op_freq_deque) >= IC_BURST_MIN_SAMPLES(6): return True
+//	return False
+func (bi *BaseInterface) shouldEgressLimitPrAt(now time.Time) bool {
+	if !bi.egressControl {
+		return false
+	}
+	opFreq := bi.outgoingPrFrequencyAt(now)
+	if opFreq > bi.ecPrFreq {
+		if len(bi.opFreqDeque) >= ICBurstMinSamples {
+			return true
+		}
+	}
+	return false
+}
+
+// HoldAnnounce stashes an inbound announce so it can be released later once
+// the ingress burst subsides (Interface.py:224-230). An announce at or beyond
+// PATHFINDER_M-1 hops is dropped outright (v1.4.0): it has already traveled too
+// far to be worth re-broadcasting once released. An announce for an already-held
+// destination replaces the held copy; a new destination is held only while under
+// ic_max_held_announces.
+func (bi *BaseInterface) HoldAnnounce(raw []byte, recv Interface, hops int, destHash []byte) {
+	if hops >= PathfinderM-1 {
+		return
+	}
+	if bi.heldAnnounces == nil {
+		bi.heldAnnounces = make(map[string]heldAnnounce)
+	}
+	key := string(destHash)
+	entry := heldAnnounce{raw: raw, recv: recv, hops: hops, destHash: append([]byte(nil), destHash...)}
+	if _, exists := bi.heldAnnounces[key]; exists {
+		bi.heldAnnounces[key] = entry
+	} else if len(bi.heldAnnounces) < bi.icMaxHeldAnnounces {
+		bi.heldAnnounces[key] = entry
+	}
+}
+
+// HeldAnnounces returns the number of announces currently held by ingress
+// limiting on this interface (Python len(self.held_announces)).
+func (bi *BaseInterface) HeldAnnounces() int {
+	return len(bi.heldAnnounces)
+}
+
+// ProcessHeldAnnounces releases a single held announce — the fewest-hops one
+// — once the burst has subsided, returning it for the caller to re-inject
+// into Transport.Inbound. It is the public time.Now()-driven entry point for
+// Interface.process_held_announces (Interface.py:232-255). ok is false when
+// nothing was released.
+func (bi *BaseInterface) ProcessHeldAnnounces() (raw []byte, recv Interface, ok bool) {
+	return bi.processHeldAnnouncesAt(time.Now())
+}
+
+// processHeldAnnouncesAt is the deterministic core of ProcessHeldAnnounces.
+// It mirrors Interface.py:232-255: release the min-hops held announce when
+// there are held announces, now is past ic_held_release, and the incoming
+// announce frequency has fallen below the burst threshold. On release it
+// advances ic_held_release by ic_held_release_interval.
+func (bi *BaseInterface) processHeldAnnouncesAt(now time.Time) (raw []byte, recv Interface, ok bool) {
+	if len(bi.heldAnnounces) == 0 || !now.After(bi.icHeldRelease) {
+		return nil, nil, false
+	}
+	freqThreshold := bi.icBurstFreqNew
+	if bi.ageAt(now) >= bi.icNewTime {
+		freqThreshold = bi.icBurstFreq
+	}
+	if bi.incomingAnnounceFrequencyAt(now) >= freqThreshold {
+		return nil, nil, false
+	}
+
+	minHops := PathfinderM
+	var selectedKey string
+	var selected heldAnnounce
+	found := false
+	for key, ha := range bi.heldAnnounces {
+		if !found || ha.hops < minHops {
+			minHops = ha.hops
+			selectedKey = key
+			selected = ha
+			found = true
+		}
+	}
+	if !found {
+		return nil, nil, false
+	}
+	bi.icHeldRelease = now.Add(time.Duration(bi.icHeldReleaseInterval) * time.Second)
+	delete(bi.heldAnnounces, selectedKey)
+	return selected.raw, selected.recv, true
+}
 
 // AnnouncesFromInternal reports whether announces whose next-hop interface is
 // MODE_INTERNAL are accepted (RNS v1.3.7). Defaults to true, matching
@@ -557,10 +1118,61 @@ var ifacSalt = []byte{
 	0x41, 0x6d, 0x9f, 0x90, 0x7e, 0x55, 0xcf, 0xf8,
 }
 
-// Ingress-control constants matching Python's Interface class.
+// Ingress/egress-control constants matching Python's Interface class
+// (RNS/Interfaces/Interface.py:60-92, v1.1.5→1.4.0).
 const (
+	// Announce/PR frequency sample deque lengths.
+	IAFreqSamples = 48
+	OAFreqSamples = 48
+	IPFreqSamples = 48
+	OPFreqSamples = 48
+
+	// Minimum frequency (Hz) before a frequency deque decays: once the span
+	// exceeds 1/MINFREQ the oldest sample is popped. AR_FREQ_DECAY and
+	// PR_FREQ_DECAY both equal 10 (Interface.py:65-68).
+	ARMinfreqHz = 0.1
+	PRMinfreqHz = 0.1
+	ARFreqDecay = 1 / ARMinfreqHz
+	PRFreqDecay = 1 / PRMinfreqHz
+
 	// MaxHeldAnnounces matches Python's MAX_HELD_ANNOUNCES.
 	MaxHeldAnnounces = 256
-	// ICBurstHold matches Python's IC_BURST_HOLD.
-	ICBurstHold = 30
+
+	// Control parameters (Interface.py:76-87).
+	ICNewTime             = 2 * 60 * 60
+	ICBurstFreqNew        = 3.0
+	ICBurstFreq           = 10.0
+	ICPrBurstFreqNew      = 3.0
+	ICPrBurstFreq         = 8.0
+	ICBurstHold           = 15.0
+	ICBurstPenalty        = 15.0
+	ICHeldReleaseInterval = 5.0
+	ICDequeMinSample      = 2
+	ICBurstMinSamples     = 6
+	ECPrFreq              = 5.0
+	EgressControlDefault  = false
+
+	// Default announce rate targets (Interface.py:90-92). These are the
+	// class-constant fallbacks for the Reticulum [reticulum]
+	// default_ar_target/penalty/grace keys when those keys are unset or zero
+	// (Reticulum.py:1145-1152 resolves None → these constants).
+	DefaultARTarget  = 3600
+	DefaultARPenalty = 0
+	DefaultARGrace   = 5
+
+	// PathfinderM mirrors rns.PathfinderM / Transport.PATHFINDER_M (128):
+	// the maximum number of hops in path finding. It is used as the initial
+	// minimum when selecting the fewest-hops held announce to release.
+	PathfinderM = 128
 )
+
+// heldAnnounce captures an inbound announce temporarily held by ingress
+// limiting, together with the receiving interface and hop count needed to
+// re-inject it into Transport.Inbound once the burst subsides. Mirrors the
+// Python held_announces entries (full announce packets, Interface.py:137/224).
+type heldAnnounce struct {
+	raw      []byte
+	recv     Interface
+	hops     int
+	destHash []byte
+}

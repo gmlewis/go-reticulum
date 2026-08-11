@@ -12,9 +12,16 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
+
+// rlen returns the number of Unicode code points in s, matching Python's
+// len() for the arrow-bearing traffic/announce columns. Go's builtin len
+// counts bytes, which would mis-align strings containing the 3-byte ↓/↑
+// arrows; rnstatus.py pads by character count.
+func rlen(s string) int { return utf8.RuneCountInString(s) }
 
 // renderDiscoveredInterfaces writes a table of discovered interfaces to w,
 // matching the Python rnstatus.py format exactly.
@@ -188,8 +195,10 @@ func formatInt(n int) string {
 }
 
 // renderInterface writes the per-interface output block to w,
-// matching the Python rnstatus.py format exactly.
-func renderInterface(w io.Writer, ifstat rns.InterfaceStat, astats bool) {
+// matching the Python rnstatus.py format exactly. astats enables the
+// Announces stats block (-A/--announce-stats); pstats enables the Path
+// Rqs. stats block (-P/--pr-stats).
+func renderInterface(w io.Writer, ifstat rns.InterfaceStat, astats bool, pstats bool) {
 	name := ifstat.Name
 
 	ss := "Up"
@@ -203,6 +212,11 @@ func renderInterface(w io.Writer, ifstat rns.InterfaceStat, astats bool) {
 		ss += ", gravity " + strconv.Itoa(ifstat.Gravity)
 	}
 	ms := modeString(ifstat.Mode)
+	// Internal-mode indicator: Python rnstatus.py:432 appends " (a>i)" to
+	// the mode string when announces_to_internal is truthy.
+	if ifstat.AnnouncesToInternal != nil && *ifstat.AnnouncesToInternal {
+		ms += " (a>i)"
+	}
 	cs := clientsString(name, ifstat.Clients)
 
 	_, _ = fmt.Fprintf(w, " %v\n", name)
@@ -357,16 +371,143 @@ func renderInterface(w io.Writer, ifstat rns.InterfaceStat, astats bool) {
 		_, _ = fmt.Fprintf(w, "    Held      : %v announce%v\n", aqn, plural)
 	}
 
-	if astats && ifstat.InAnnounceFreq != nil {
-		outFreq := float64(0)
-		if ifstat.OutAnnounceFreq != nil {
-			outFreq = *ifstat.OutAnnounceFreq
+	// Announce-rate target/penalty/grace annotation (Python
+	// rnstatus.py:557-565). art is truthy when the target is non-zero;
+	// arp != None means the penalty is present (may be 0); arg is truthy
+	// when grace is non-zero.
+	artStr := ""
+	if astats {
+		art := optInt(ifstat.AnnounceRateTarget)
+		arp := optInt(ifstat.AnnounceRatePenalty)
+		arg := optInt(ifstat.AnnounceRateGrace)
+		artOK := ifstat.AnnounceRateTarget != nil && art != 0
+		arpOK := ifstat.AnnounceRatePenalty != nil
+		argOK := ifstat.AnnounceRateGrace != nil && arg != 0
+		switch {
+		case artOK && arpOK && argOK:
+			artStr = fmt.Sprintf("(t:%v/p:%v/g:%v)",
+				rns.PrettyTime(float64(art), false, false),
+				rns.PrettyTime(float64(arp), false, false), arg)
+		case artOK && arpOK:
+			artStr = fmt.Sprintf("(t:%v/p:%v)",
+				rns.PrettyTime(float64(art), false, false),
+				rns.PrettyTime(float64(arp), false, false))
+		case artOK:
+			artStr = fmt.Sprintf("(t:%v)", rns.PrettyTime(float64(art), false, false))
 		}
-		_, _ = fmt.Fprintf(w, "    Announces : %v↑\n", rns.PrettyFrequency(outFreq))
-		_, _ = fmt.Fprintf(w, "                %v↓\n", rns.PrettyFrequency(*ifstat.InAnnounceFreq))
 	}
 
-	renderTraffic(w, ifstat)
+	// Burst-status annotations (Python rnstatus.py:567-574). burst_str
+	// carries a leading space and follows the Announces in-freq line;
+	// pburst_str has no leading space and follows the Path Rqs. in-freq
+	// line.
+	now := float64(time.Now().UnixNano()) / 1e9
+	burstStr := ""
+	if ifstat.BurstActive {
+		burstStr = " burst for " + rns.PrettyTime(now-ifstat.BurstActivated, false, false)
+	}
+	pburstStr := ""
+	if ifstat.PrBurstActive {
+		pburstStr = "burst for " + rns.PrettyTime(now-ifstat.PrBurstActivated, false, false)
+	}
+
+	rxbStr := "↓" + rns.PrettySize(float64(ifstat.RXB), "B")
+	txbStr := "↑" + rns.PrettySize(float64(ifstat.TXB), "B")
+
+	// Announce stats block (Python rnstatus.py:576-590). `clients` is
+	// shared with the PR block below: the peers fallback reassigns it so
+	// AutoInterface (which has Peers but no Clients) reports a per-peer
+	// rate with the "/p" specifier.
+	clients := ifstat.Clients
+	var oaf, iaf, pcStr string
+	asr := false
+	if astats && ifstat.InAnnounceFreq != nil {
+		asr = true
+		oan := optFloat(ifstat.OutAnnounceFreq)
+		ian := *ifstat.InAnnounceFreq
+		if strings.HasPrefix(name, "Shared Instance[") && clients != nil && *clients > 0 {
+			oan -= oan / float64(*clients) // Sub rnstatus own part.
+		}
+		oaf = prettyFrequencyLPF(oan, 1)
+		iaf = prettyFrequencyLPF(ian, 1)
+		cspec := "c"
+		if clients == nil && ifstat.Peers != nil && *ifstat.Peers != 0 {
+			clients = ifstat.Peers
+			cspec = "p"
+		}
+		if clients != nil && *clients > 0 {
+			pcStr = prettyFrequencyLPF(optFloat(ifstat.OutAnnounceFreq)/float64(*clients), 1) + "/" + cspec
+		}
+	}
+
+	// Path-request stats block (Python rnstatus.py:592-604).
+	var opf, ipf, rpcStr string
+	psr := false
+	if pstats && ifstat.InPrFreq != nil {
+		psr = true
+		opn := optFloat(ifstat.OutPrFreq)
+		ipn := *ifstat.InPrFreq
+		if strings.HasPrefix(name, "Shared Instance[") && clients != nil && *clients > 0 {
+			opn -= opn / float64(*clients) // Sub rnstatus own part.
+		}
+		if astats {
+			opf = "↑" + prettyFrequencyLPF(opn, 1)
+			ipf = "↓" + prettyFrequencyLPF(ipn, 1)
+		} else {
+			opf = prettyFrequencyLPF(opn, 1) + "↑"
+			ipf = prettyFrequencyLPF(ipn, 1) + "↓"
+		}
+		cspec := "c"
+		if clients == nil && ifstat.Peers != nil && *ifstat.Peers != 0 {
+			clients = ifstat.Peers
+			cspec = "p"
+		}
+		if clients != nil && *clients > 0 {
+			rpcStr = prettyFrequencyLPF(optFloat(ifstat.OutPrFreq)/float64(*clients), 1) + "/" + cspec
+		}
+	}
+
+	// Column alignment across Announces, Path Rqs., and Traffic
+	// (Python rnstatus.py:606-624). The in/out announce columns are
+	// first equalized to a common width and given their trailing arrow,
+	// then every column is padded to a shared max width (min 10).
+	if !asr {
+		iaf = ""
+		oaf = ""
+	}
+	if !psr {
+		ipf = ""
+		opf = ""
+	}
+	amlen := max(rlen(iaf), rlen(oaf))
+	iaf += strings.Repeat(" ", amlen-rlen(iaf)) + "↓"
+	oaf += strings.Repeat(" ", amlen-rlen(oaf)) + "↑"
+	mlen := max(rlen(iaf), rlen(oaf), rlen(rxbStr), rlen(txbStr), rlen(ipf), rlen(opf), 10)
+	iaf += strings.Repeat(" ", mlen-rlen(iaf))
+	oaf += strings.Repeat(" ", mlen-rlen(oaf))
+	ipf += strings.Repeat(" ", mlen-rlen(ipf))
+	opf += strings.Repeat(" ", mlen-rlen(opf))
+	rxbStr += strings.Repeat(" ", mlen-rlen(rxbStr))
+	txbStr += strings.Repeat(" ", mlen-rlen(txbStr))
+
+	if psr {
+		_, _ = fmt.Fprintf(w, "    Path Rqs. : %v  %v\n", opf, rpcStr)
+		_, _ = fmt.Fprintf(w, "                %v  %v\n", ipf, pburstStr)
+	}
+	if asr {
+		_, _ = fmt.Fprintf(w, "    Announces : %v  %v\n", oaf, pcStr)
+		_, _ = fmt.Fprintf(w, "                %v %v%v\n", iaf, artStr, burstStr)
+	}
+
+	rxstat := rxbStr
+	txstat := txbStr
+	// Python rnstatus.py:638-641 appends the speed whenever the rxs/txs
+	// keys are present, and get_interface_stats always sets them
+	// (Reticulum.py:1434-1441), so the speed column is always emitted
+	// (e.g. "  0 bps" for an idle interface).
+	rxstat += "  " + rns.PrettySpeed(ifstat.RXS)
+	txstat += "  " + rns.PrettySpeed(ifstat.TXS)
+	_, _ = fmt.Fprintf(w, "    Traffic   : %v\n                %v\n", txstat, rxstat)
 }
 
 // linkStatsString returns the link stats string for the footer.
@@ -423,24 +564,7 @@ func renderTransportFooter(w io.Writer, stats *rns.InterfaceStatsSnapshot, lstr 
 	}
 }
 
-// renderTraffic writes the traffic line for a single interface.
-func renderTraffic(w io.Writer, ifstat rns.InterfaceStat) {
-	rxbStr := "↓" + rns.PrettySize(float64(ifstat.RXB), "B")
-	txbStr := "↑" + rns.PrettySize(float64(ifstat.TXB), "B")
-
-	diff := len(rxbStr) - len(txbStr)
-	if diff > 0 {
-		txbStr += strings.Repeat(" ", diff)
-	} else if diff < 0 {
-		rxbStr += strings.Repeat(" ", -diff)
-	}
-
-	rxstat := rxbStr
-	txstat := txbStr
-	if ifstat.RXS != 0 || ifstat.TXS != 0 {
-		rxstat += "  " + rns.PrettySpeed(ifstat.RXS)
-		txstat += "  " + rns.PrettySpeed(ifstat.TXS)
-	}
-
-	_, _ = fmt.Fprintf(w, "    Traffic   : %v\n                %v\n", txstat, rxstat)
-}
+// renderTraffic was previously a standalone helper; traffic rendering is
+// now inlined into renderInterface so the rx/tx columns share a common
+// alignment width with the Announces and Path Rqs. columns (matching
+// Python rnstatus.py:606-636).

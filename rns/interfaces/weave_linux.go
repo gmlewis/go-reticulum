@@ -104,6 +104,42 @@ func (w *WeaveInterface) AnnouncesFromInternal() bool { return w.inner.Announces
 // AnnouncesToInternal reports the wrapped interface's boundary→internal policy.
 func (w *WeaveInterface) AnnouncesToInternal() *bool { return w.inner.AnnouncesToInternal() }
 
+// Ingress/egress-control delegation to the wrapped interface (v1.1.5).
+func (w *WeaveInterface) ReceivedAnnounce()        { w.inner.ReceivedAnnounce() }
+func (w *WeaveInterface) ShouldIngressLimit() bool { return w.inner.ShouldIngressLimit() }
+func (w *WeaveInterface) HoldAnnounce(raw []byte, recv Interface, hops int, destHash []byte) {
+	w.inner.HoldAnnounce(raw, recv, hops, destHash)
+}
+func (w *WeaveInterface) ProcessHeldAnnounces() ([]byte, Interface, bool) {
+	return w.inner.ProcessHeldAnnounces()
+}
+func (w *WeaveInterface) HeldAnnounces() int           { return w.inner.HeldAnnounces() }
+func (w *WeaveInterface) ReceivedPathRequest()         { w.inner.ReceivedPathRequest() }
+func (w *WeaveInterface) SentPathRequest()             { w.inner.SentPathRequest() }
+func (w *WeaveInterface) IncomingPrFrequency() float64 { return w.inner.IncomingPrFrequency() }
+func (w *WeaveInterface) OutgoingPrFrequency() float64 { return w.inner.OutgoingPrFrequency() }
+func (w *WeaveInterface) ShouldIngressLimitPr() bool   { return w.inner.ShouldIngressLimitPr() }
+func (w *WeaveInterface) ShouldEgressLimitPr() bool    { return w.inner.ShouldEgressLimitPr() }
+
+// Announce-frequency + ingress-control burst-state delegation
+// (Interface.py:121-124,277-297). ifstats reads these via the concrete
+// interface (Reticulum.py:1453-1464).
+func (w *WeaveInterface) IncomingAnnounceFrequency() float64 {
+	return w.inner.IncomingAnnounceFrequency()
+}
+func (w *WeaveInterface) OutgoingAnnounceFrequency() float64 {
+	return w.inner.OutgoingAnnounceFrequency()
+}
+func (w *WeaveInterface) ICBurstActive() bool           { return w.inner.ICBurstActive() }
+func (w *WeaveInterface) ICBurstActivated() time.Time   { return w.inner.ICBurstActivated() }
+func (w *WeaveInterface) ICPrBurstActive() bool         { return w.inner.ICPrBurstActive() }
+func (w *WeaveInterface) ICPrBurstActivated() time.Time { return w.inner.ICPrBurstActivated() }
+
+// Announce-rate-control delegation (Interface.py:90-92,118-120).
+func (w *WeaveInterface) AnnounceRateTarget() *int  { return w.inner.AnnounceRateTarget() }
+func (w *WeaveInterface) AnnounceRateGrace() *int   { return w.inner.AnnounceRateGrace() }
+func (w *WeaveInterface) AnnounceRatePenalty() *int { return w.inner.AnnounceRatePenalty() }
+
 // DefaultIFACSize returns Weave's own DEFAULT_IFAC_SIZE (16), which overrides
 // the wrapped serial interface's 8 (RNS/Interfaces/WeaveInterface.py:820).
 func (w *WeaveInterface) DefaultIFACSize() int { return WeaveDefaultIFACSize }

@@ -90,4 +90,55 @@ type Interface interface {
 	// AnnouncesToInternal reports the boundary→internal allowance policy. A
 	// nil pointer means the interface does not override the default block.
 	AnnouncesToInternal() *bool
+
+	// Announce-rate-control config (Interface.py:90-92,118-120;
+	// Reticulum.py:819-857,938-940). A nil pointer means no rate limit is
+	// configured (Python None). When transport is enabled the Reticulum
+	// config layer fills nil values from the instance-wide
+	// default_ar_target/penalty/grace (resolving to the DEFAULT_AR_* class
+	// constants). Spawned peers inherit these from their parent interface.
+	AnnounceRateTarget() *int
+	AnnounceRateGrace() *int
+	AnnounceRatePenalty() *int
+
+	// Ingress/egress-control surface (RNS/Interfaces/Interface.py, v1.1.5).
+	// ReceivedAnnounce records an incoming announce for frequency tracking.
+	// ShouldIngressLimit reports whether an inbound announce should be held,
+	// driving the burst state machine as a side effect. HoldAnnounce stashes
+	// an announce for later release. ProcessHeldAnnounces releases one held
+	// announce (the fewest-hops) when the burst subsides, returning it for
+	// re-injection into Transport.Inbound. HeldAnnounces reports the count.
+	ReceivedAnnounce()
+	ShouldIngressLimit() bool
+	HoldAnnounce(raw []byte, recv Interface, hops int, destHash []byte)
+	ProcessHeldAnnounces() (raw []byte, recv Interface, ok bool)
+	HeldAnnounces() int
+
+	// Path-request ingress/egress-control surface (Interface.py:174-200,
+	// 267-275, 299-319, v1.1.5). ReceivedPathRequest / SentPathRequest record
+	// incoming / outgoing path requests for frequency tracking and propagate to
+	// the parent server interface. IncomingPrFrequency / OutgoingPrFrequency
+	// report the current path-request rates. ShouldIngressLimitPr drives the PR
+	// burst state machine and gates recursive path-request forwarding.
+	// ShouldEgressLimitPr gates outbound path requests under egress control.
+	ReceivedPathRequest()
+	SentPathRequest()
+	IncomingPrFrequency() float64
+	OutgoingPrFrequency() float64
+	ShouldIngressLimitPr() bool
+	ShouldEgressLimitPr() bool
+
+	// Announce-frequency + ingress-control burst-state surface
+	// (Interface.py:121-124,277-297). IncomingAnnounceFrequency /
+	// OutgoingAnnounceFrequency report the current announce rates in Hz.
+	// ICBurstActive / ICPrBurstActive report the announce/PR burst flags and
+	// ICBurstActivated / ICPrBurstActivated their activation timestamps (zero
+	// while idle), used by ifstats (Reticulum.py:1453-1464) and the Backbone
+	// aggregate getters.
+	IncomingAnnounceFrequency() float64
+	OutgoingAnnounceFrequency() float64
+	ICBurstActive() bool
+	ICBurstActivated() time.Time
+	ICPrBurstActive() bool
+	ICPrBurstActivated() time.Time
 }

@@ -27,6 +27,8 @@ func runMonitor(r *rns.Reticulum, nameFilter string, verbosity int, app *appT) {
 			nameFilter:         nameFilter,
 			jsonOutput:         app.jsonOutput,
 			announceStats:      app.announceStats,
+			prStats:            app.prStats,
+			burstFilter:        app.burstFilter,
 			linkStats:          app.linkStats,
 			sorting:            app.sortKey,
 			sortReverse:        app.sortReverse,

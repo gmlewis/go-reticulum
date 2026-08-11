@@ -841,6 +841,151 @@ func TestDecodeInterfaceStatsAllFields(t *testing.T) {
 	}
 }
 
+// rpcFreqInterface is a minimal interfaces.Interface backed by a real
+// *interfaces.BaseInterface so the announce/PR-frequency deques and the
+// ingress-control burst state behave exactly as in production. Only the
+// concrete-lifecycle methods (Type/Send/IsOut/Detach/Status) are stubbed.
+type rpcFreqInterface struct {
+	*interfaces.BaseInterface
+}
+
+func (f *rpcFreqInterface) Type() string      { return "FreqTest" }
+func (f *rpcFreqInterface) Send([]byte) error { return nil }
+func (f *rpcFreqInterface) IsOut() bool       { return true }
+func (f *rpcFreqInterface) Detach() error     { return nil }
+func (f *rpcFreqInterface) Status() bool      { return true }
+
+// TestRPCInterfaceStatsPopulatesFreqAndBurstFields verifies the per-interface
+// ifstats map (RNS/Reticulum.py:1453-1466) is populated from the real interface
+// fields rather than hardcoded zeros: incoming/outgoing announce + PR
+// frequencies reflect driven events, and announce_rate_*/held_announces/
+// burst_active/burst_activated/pr_burst_active/pr_burst_activated/
+// announces_to_internal are all present with Python-faithful types. It also
+// checks DecodeInterfaceStats surfaces the new fields on InterfaceStat.
+func TestRPCInterfaceStatsPopulatesFreqAndBurstFields(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	iface := &rpcFreqInterface{BaseInterface: interfaces.NewBaseInterface("freq-iface", interfaces.ModeFull, 1000)}
+	ts.RegisterInterface(iface)
+	r := &Reticulum{transport: ts}
+
+	// Drive real announce/PR events with time spacing so each frequency deque
+	// accumulates enough samples (>IC_DEQUE_MIN_SAMPLE for incoming, >1 for
+	// outgoing) over a non-zero span, yielding non-zero Hz.
+	for i := 0; i < 4; i++ {
+		iface.ReceivedAnnounce()
+		iface.SentAnnounce()
+		iface.ReceivedPathRequest()
+		iface.SentPathRequest()
+		time.Sleep(15 * time.Millisecond)
+	}
+
+	resp := r.handleRPCRequest(map[any]any{"get": "interface_stats"})
+	stats, ok := resp.(map[string]any)
+	if !ok {
+		t.Fatalf("expected stats map[string]any, got %#v", resp)
+	}
+	entries, ok := stats["interfaces"].([]any)
+	if !ok || len(entries) == 0 {
+		t.Fatalf("expected non-empty interfaces list, got %#v", stats["interfaces"])
+	}
+	entry, ok := entries[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected interface entry map[string]any, got %#v", entries[0])
+	}
+
+	// The full Python ifstats per-interface field set (Reticulum.py:1453-1466
+	// plus the unconditional name/hash/type/rxb/txb/... fields).
+	for _, key := range []string{
+		"name", "short_name", "hash", "type", "rxb", "txb", "rxs", "txs",
+		"status", "mode", "gravity", "bitrate", "clients",
+		"incoming_announce_frequency", "outgoing_announce_frequency",
+		"incoming_pr_frequency", "outgoing_pr_frequency",
+		"announce_rate_target", "announce_rate_penalty", "announce_rate_grace",
+		"held_announces", "burst_active", "burst_activated",
+		"pr_burst_active", "pr_burst_activated", "announces_to_internal",
+		"peers", "ifac_signature", "ifac_size", "ifac_netname",
+		"autoconnect_source", "announce_queue",
+	} {
+		if _, ok := entry[key]; !ok {
+			t.Fatalf("expected key %q in interface entry, got %#v", key, entry)
+		}
+	}
+
+	// Driven frequencies must be non-zero (wired from the real deques).
+	for _, key := range []string{
+		"incoming_announce_frequency", "outgoing_announce_frequency",
+		"incoming_pr_frequency", "outgoing_pr_frequency",
+	} {
+		f, ok := entry[key].(float64)
+		if !ok {
+			t.Fatalf("%q = %T, want float64", key, entry[key])
+		}
+		if f <= 0 {
+			t.Fatalf("%q = %v, want > 0 (events were driven)", key, f)
+		}
+	}
+
+	// held_announces is a real int from the interface (BaseInterface deque).
+	if h, ok := entry["held_announces"].(int); !ok {
+		t.Fatalf("held_announces = %T, want int", entry["held_announces"])
+	} else if h != 0 {
+		t.Fatalf("held_announces = %v, want 0 (no announces held)", h)
+	}
+
+	// Burst state: a freshly-created interface with no burst activity reports
+	// the Python idle defaults (burst_active=false, *_activated=0).
+	if b, ok := entry["burst_active"].(bool); !ok || b {
+		t.Fatalf("burst_active = %#v, want bool false", entry["burst_active"])
+	}
+	if b, ok := entry["pr_burst_active"].(bool); !ok || b {
+		t.Fatalf("pr_burst_active = %#v, want bool false", entry["pr_burst_active"])
+	}
+	if a, ok := entry["burst_activated"].(float64); !ok || a != 0 {
+		t.Fatalf("burst_activated = %#v, want float64 0", entry["burst_activated"])
+	}
+	if a, ok := entry["pr_burst_activated"].(float64); !ok || a != 0 {
+		t.Fatalf("pr_burst_activated = %#v, want float64 0", entry["pr_burst_activated"])
+	}
+
+	// announce_rate_* and announces_to_internal are nil for an unconfigured
+	// interface (Python None), matching AnnounceRateTarget() == nil.
+	for _, key := range []string{"announce_rate_target", "announce_rate_penalty", "announce_rate_grace", "announces_to_internal"} {
+		if entry[key] != nil {
+			t.Fatalf("%q = %#v, want nil (unconfigured)", key, entry[key])
+		}
+	}
+
+	// DecodeInterfaceStats surfaces the new fields on InterfaceStat.
+	snap := DecodeInterfaceStats(stats)
+	if len(snap.Interfaces) != 1 {
+		t.Fatalf("decoded %d interfaces, want 1", len(snap.Interfaces))
+	}
+	di := snap.Interfaces[0]
+	if di.InPrFreq == nil || *di.InPrFreq <= 0 {
+		t.Fatalf("decoded InPrFreq = %v, want > 0", di.InPrFreq)
+	}
+	if di.OutPrFreq == nil || *di.OutPrFreq <= 0 {
+		t.Fatalf("decoded OutPrFreq = %v, want > 0", di.OutPrFreq)
+	}
+	if di.BurstActive {
+		t.Fatalf("decoded BurstActive = true, want false")
+	}
+	if di.PrBurstActive {
+		t.Fatalf("decoded PrBurstActive = true, want false")
+	}
+	if di.BurstActivated != 0 {
+		t.Fatalf("decoded BurstActivated = %v, want 0", di.BurstActivated)
+	}
+	if di.PrBurstActivated != 0 {
+		t.Fatalf("decoded PrBurstActivated = %v, want 0", di.PrBurstActivated)
+	}
+	if di.AnnounceRateTarget != nil {
+		t.Fatalf("decoded AnnounceRateTarget = %v, want nil", di.AnnounceRateTarget)
+	}
+}
+
 func TestDecodeInterfaceStatsNilOptionals(t *testing.T) {
 	t.Parallel()
 	raw := map[string]any{

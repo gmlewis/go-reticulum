@@ -5,6 +5,11 @@
 
 package interfaces
 
+import (
+	"sync"
+	"time"
+)
+
 // BackboneDefaultIFACSize is the DEFAULT_IFAC_SIZE for Backbone server and
 // client interfaces (RNS/Interfaces/BackboneInterface.py:54,569).
 const BackboneDefaultIFACSize = 16
@@ -21,6 +26,19 @@ const BackboneHWMTU = 1048576
 // point links from downstream clients.
 type BackboneInterface struct {
 	*TCPServerInterface
+
+	// Aggregate burst-state cache (BackboneInterface.py:173-225). Each
+	// aggregate getter recomputes over the spawned peers at most once per
+	// 2s window; aggMu guards the cache fields.
+	aggMu                       sync.Mutex
+	lastICBurstCheck            time.Time
+	lastICBurstState            bool
+	lastICBurstActivatedCheck   time.Time
+	lastICBurstActivated        time.Time
+	lastICPrBurstCheck          time.Time
+	lastICPrBurstState          bool
+	lastICPrBurstActivatedCheck time.Time
+	lastICPrBurstActivated      time.Time
 }
 
 // NewBackboneInterface binds and initializes a TCP-based BackboneInterface on the
@@ -37,6 +55,143 @@ func NewBackboneInterface(name, bindIP string, bindPort int, handler InboundHand
 
 // Type returns the string "BackboneInterface" as the runtime type name.
 func (b *BackboneInterface) Type() string { return "BackboneInterface" }
+
+// BackboneInterface reduces the per-spawned-peer ingress-control burst state
+// into aggregate cached properties (BackboneInterface.py:173-225), so the
+// Backbone server reports a burst as active when ANY spawned client is in a
+// burst, and the activation time as the EARLIEST (min) activation among the
+// burst-active spawned clients. Each aggregate is cached for 2 seconds to
+// avoid scanning the spawned list on every read (the same TTL Python uses).
+
+const backboneAggregateCacheTTL = 2 * time.Second
+
+// icBurstActiveAt is the time-injectable core of ICBurstActive. It recomputes
+// the any-reduction over the spawned peers when the cache is older than 2s,
+// otherwise returns the cached state (BackboneInterface.py:174-180).
+func (b *BackboneInterface) icBurstActiveAt(now time.Time) bool {
+	if b == nil || b.TCPServerInterface == nil {
+		return false
+	}
+	b.aggMu.Lock()
+	defer b.aggMu.Unlock()
+	if now.After(b.lastICBurstCheck.Add(backboneAggregateCacheTTL)) {
+		b.lastICBurstCheck = now
+		b.lastICBurstState = false
+		for _, peer := range b.snapshotSpawned() {
+			if peer.icBurstActive {
+				b.lastICBurstState = true
+				break
+			}
+		}
+	}
+	return b.lastICBurstState
+}
+
+// ICBurstActive reports whether any spawned client is currently in an
+// announce-burst (BackboneInterface.py:174-180).
+func (b *BackboneInterface) ICBurstActive() bool {
+	return b.icBurstActiveAt(time.Now())
+}
+
+// icBurstActivatedAt is the time-injectable core of ICBurstActivated. It
+// recomputes the min activation time over the burst-active spawned peers when
+// the cache is older than 2s, otherwise returns the cached value
+// (BackboneInterface.py:186-194). With no burst-active peers the cached value
+// stays at the zero time (Python's 0).
+func (b *BackboneInterface) icBurstActivatedAt(now time.Time) time.Time {
+	if b == nil || b.TCPServerInterface == nil {
+		return time.Time{}
+	}
+	b.aggMu.Lock()
+	defer b.aggMu.Unlock()
+	if now.After(b.lastICBurstActivatedCheck.Add(backboneAggregateCacheTTL)) {
+		b.lastICBurstActivatedCheck = now
+		b.lastICBurstActivated = time.Time{}
+		for _, peer := range b.snapshotSpawned() {
+			if peer.icBurstActive {
+				if b.lastICBurstActivated.IsZero() || peer.icBurstActivated.Before(b.lastICBurstActivated) {
+					b.lastICBurstActivated = peer.icBurstActivated
+				}
+			}
+		}
+	}
+	return b.lastICBurstActivated
+}
+
+// ICBurstActivated reports the earliest activation time among the burst-active
+// spawned clients (BackboneInterface.py:186-194).
+func (b *BackboneInterface) ICBurstActivated() time.Time {
+	return b.icBurstActivatedAt(time.Now())
+}
+
+// icPrBurstActiveAt is the time-injectable core of ICPrBurstActive, the
+// path-request-burst any-reduction (BackboneInterface.py:202-208).
+func (b *BackboneInterface) icPrBurstActiveAt(now time.Time) bool {
+	if b == nil || b.TCPServerInterface == nil {
+		return false
+	}
+	b.aggMu.Lock()
+	defer b.aggMu.Unlock()
+	if now.After(b.lastICPrBurstCheck.Add(backboneAggregateCacheTTL)) {
+		b.lastICPrBurstCheck = now
+		b.lastICPrBurstState = false
+		for _, peer := range b.snapshotSpawned() {
+			if peer.icPrBurstActive {
+				b.lastICPrBurstState = true
+				break
+			}
+		}
+	}
+	return b.lastICPrBurstState
+}
+
+// ICPrBurstActive reports whether any spawned client is currently in a
+// path-request burst (BackboneInterface.py:202-208).
+func (b *BackboneInterface) ICPrBurstActive() bool {
+	return b.icPrBurstActiveAt(time.Now())
+}
+
+// icPrBurstActivatedAt is the time-injectable core of ICPrBurstActivated, the
+// path-request-burst min activation time (BackboneInterface.py:214-222).
+func (b *BackboneInterface) icPrBurstActivatedAt(now time.Time) time.Time {
+	if b == nil || b.TCPServerInterface == nil {
+		return time.Time{}
+	}
+	b.aggMu.Lock()
+	defer b.aggMu.Unlock()
+	if now.After(b.lastICPrBurstActivatedCheck.Add(backboneAggregateCacheTTL)) {
+		b.lastICPrBurstActivatedCheck = now
+		b.lastICPrBurstActivated = time.Time{}
+		for _, peer := range b.snapshotSpawned() {
+			if peer.icPrBurstActive {
+				if b.lastICPrBurstActivated.IsZero() || peer.icPrBurstActivated.Before(b.lastICPrBurstActivated) {
+					b.lastICPrBurstActivated = peer.icPrBurstActivated
+				}
+			}
+		}
+	}
+	return b.lastICPrBurstActivated
+}
+
+// ICPrBurstActivated reports the earliest activation time among the
+// path-request-burst-active spawned clients (BackboneInterface.py:214-222).
+func (b *BackboneInterface) ICPrBurstActivated() time.Time {
+	return b.icPrBurstActivatedAt(time.Now())
+}
+
+// snapshotSpawned returns a copy of the spawned-interfaces list under the
+// TCPServerInterface lock, so the aggregate reductions see a consistent view
+// even as peers connect/disconnect.
+func (b *BackboneInterface) snapshotSpawned() []*TCPClientInterface {
+	if b == nil || b.TCPServerInterface == nil {
+		return nil
+	}
+	b.TCPServerInterface.mu.Lock()
+	defer b.TCPServerInterface.mu.Unlock()
+	out := make([]*TCPClientInterface, len(b.spawnedInterfaces))
+	copy(out, b.spawnedInterfaces)
+	return out
+}
 
 // BackboneClientInterface represents an outbound TCP session that connects to
 // a remote BackboneInterface listener, providing reliable point-to-point

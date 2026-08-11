@@ -151,6 +151,42 @@ func (r *RNodeInterface) AnnouncesFromInternal() bool { return r.inner.Announces
 // AnnouncesToInternal reports the wrapped interface's boundary→internal policy.
 func (r *RNodeInterface) AnnouncesToInternal() *bool { return r.inner.AnnouncesToInternal() }
 
+// Ingress/egress-control delegation to the wrapped interface (v1.1.5).
+func (r *RNodeInterface) ReceivedAnnounce()        { r.inner.ReceivedAnnounce() }
+func (r *RNodeInterface) ShouldIngressLimit() bool { return r.inner.ShouldIngressLimit() }
+func (r *RNodeInterface) HoldAnnounce(raw []byte, recv Interface, hops int, destHash []byte) {
+	r.inner.HoldAnnounce(raw, recv, hops, destHash)
+}
+func (r *RNodeInterface) ProcessHeldAnnounces() ([]byte, Interface, bool) {
+	return r.inner.ProcessHeldAnnounces()
+}
+func (r *RNodeInterface) HeldAnnounces() int           { return r.inner.HeldAnnounces() }
+func (r *RNodeInterface) ReceivedPathRequest()         { r.inner.ReceivedPathRequest() }
+func (r *RNodeInterface) SentPathRequest()             { r.inner.SentPathRequest() }
+func (r *RNodeInterface) IncomingPrFrequency() float64 { return r.inner.IncomingPrFrequency() }
+func (r *RNodeInterface) OutgoingPrFrequency() float64 { return r.inner.OutgoingPrFrequency() }
+func (r *RNodeInterface) ShouldIngressLimitPr() bool   { return r.inner.ShouldIngressLimitPr() }
+func (r *RNodeInterface) ShouldEgressLimitPr() bool    { return r.inner.ShouldEgressLimitPr() }
+
+// Announce-frequency + ingress-control burst-state delegation
+// (Interface.py:121-124,277-297). ifstats reads these via the concrete
+// interface (Reticulum.py:1453-1464).
+func (r *RNodeInterface) IncomingAnnounceFrequency() float64 {
+	return r.inner.IncomingAnnounceFrequency()
+}
+func (r *RNodeInterface) OutgoingAnnounceFrequency() float64 {
+	return r.inner.OutgoingAnnounceFrequency()
+}
+func (r *RNodeInterface) ICBurstActive() bool           { return r.inner.ICBurstActive() }
+func (r *RNodeInterface) ICBurstActivated() time.Time   { return r.inner.ICBurstActivated() }
+func (r *RNodeInterface) ICPrBurstActive() bool         { return r.inner.ICPrBurstActive() }
+func (r *RNodeInterface) ICPrBurstActivated() time.Time { return r.inner.ICPrBurstActivated() }
+
+// Announce-rate-control delegation (Interface.py:90-92,118-120).
+func (r *RNodeInterface) AnnounceRateTarget() *int  { return r.inner.AnnounceRateTarget() }
+func (r *RNodeInterface) AnnounceRateGrace() *int   { return r.inner.AnnounceRateGrace() }
+func (r *RNodeInterface) AnnounceRatePenalty() *int { return r.inner.AnnounceRatePenalty() }
+
 // DefaultIFACSize returns the wrapped interface's DEFAULT_IFAC_SIZE. RNode's own
 // DEFAULT_IFAC_SIZE (8) matches the wrapped KISS interface's, so delegation is
 // exact (RNS/Interfaces/RNodeInterface.py:80).

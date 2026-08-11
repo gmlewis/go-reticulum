@@ -109,3 +109,26 @@ func (i pathTableTestInterface) Gravity() int                { return 0 }
 func (i pathTableTestInterface) RecursivePrs() bool          { return false }
 func (i pathTableTestInterface) AnnouncesFromInternal() bool { return true }
 func (i pathTableTestInterface) AnnouncesToInternal() *bool  { return nil }
+func (i pathTableTestInterface) ReceivedAnnounce()           {}
+func (i pathTableTestInterface) ShouldIngressLimit() bool    { return false }
+func (i pathTableTestInterface) HoldAnnounce([]byte, interfaces.Interface, int, []byte) {
+}
+func (i pathTableTestInterface) ProcessHeldAnnounces() ([]byte, interfaces.Interface, bool) {
+	return nil, nil, false
+}
+func (i pathTableTestInterface) HeldAnnounces() int                 { return 0 }
+func (i pathTableTestInterface) ReceivedPathRequest()               {}
+func (i pathTableTestInterface) SentPathRequest()                   {}
+func (i pathTableTestInterface) IncomingPrFrequency() float64       { return 0 }
+func (i pathTableTestInterface) OutgoingPrFrequency() float64       { return 0 }
+func (i pathTableTestInterface) ShouldIngressLimitPr() bool         { return false }
+func (i pathTableTestInterface) ShouldEgressLimitPr() bool          { return false }
+func (i pathTableTestInterface) AnnounceRateTarget() *int           { return nil }
+func (i pathTableTestInterface) AnnounceRateGrace() *int            { return nil }
+func (i pathTableTestInterface) AnnounceRatePenalty() *int          { return nil }
+func (i pathTableTestInterface) IncomingAnnounceFrequency() float64 { return 0 }
+func (i pathTableTestInterface) OutgoingAnnounceFrequency() float64 { return 0 }
+func (i pathTableTestInterface) ICBurstActive() bool                { return false }
+func (i pathTableTestInterface) ICBurstActivated() time.Time        { return time.Time{} }
+func (i pathTableTestInterface) ICPrBurstActive() bool              { return false }
+func (i pathTableTestInterface) ICPrBurstActivated() time.Time      { return time.Time{} }

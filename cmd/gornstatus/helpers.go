@@ -10,12 +10,14 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-// Interface mode constants matching Python's Interface.MODE_* values.
+// Interface mode constants matching Python's Interface.MODE_* values
+// (RNS/Interfaces/Interface.py:45-51).
 const (
 	modeFull         = 0x01
 	modePointToPoint = 0x02
@@ -23,6 +25,7 @@ const (
 	modeRoaming      = 0x04
 	modeBoundary     = 0x05
 	modeGateway      = 0x06
+	modeInternal     = 0x07
 )
 
 // modeString returns the human-readable mode name for a given mode
@@ -39,9 +42,46 @@ func modeString(mode int) string {
 		return "Boundary"
 	case modeGateway:
 		return "Gateway"
+	case modeInternal:
+		return "Internal"
 	default:
 		return "Full"
 	}
+}
+
+// prettyFrequencyLPF formats a frequency value using Python's
+// prettyfrequency(hz, d, lpf=True) "low-precision" mode
+// (RNS/__init__.py:210-225): the input is used directly (no *1e6
+// scaling), SI units start at "" (no µ/m prefixes), and the value is
+// rounded to d decimals. rnstatus uses d=1, lpf=True for the
+// Announces/Path Rqs. per-interface rate lines
+// (RNS/Utilities/rnstatus.py:584,598,602).
+func prettyFrequencyLPF(hz float64, d int) string {
+	if hz == 0 {
+		return "0 Hz"
+	}
+	num := hz
+	units := []string{"", "K", "M", "G", "T", "P", "E", "Z"}
+	lastUnit := "Y"
+	suffix := "Hz"
+	for _, unit := range units {
+		if math.Abs(num) < 1000.0 {
+			if d == 2 {
+				return fmt.Sprintf("%.2f %v%v", num, unit, suffix)
+			}
+			return formatRound(num, d) + " " + unit + suffix
+		}
+		num /= 1000.0
+	}
+	return fmt.Sprintf("%.2f%v%v", num, lastUnit, suffix)
+}
+
+// formatRound mirrors Python's str(round(num, d)) for d >= 1: a fixed
+// decimal representation rounded half-to-even (Go's strconv.FormatFloat
+// 'f' format uses IEEE-754 round-half-to-even, matching Python's
+// banker's rounding for the values rnstatus displays).
+func formatRound(num float64, d int) string {
+	return strconv.FormatFloat(num, 'f', d, 64)
 }
 
 // clientsString returns the formatted clients/serving/peers line
@@ -138,6 +178,14 @@ func sortInterfaces(ifaces []rns.InterfaceStat, key string, sortReverse bool) {
 	case "atx":
 		cmpFunc = func(a, b rns.InterfaceStat) int {
 			return cmp.Compare(optFloat(a.OutAnnounceFreq), optFloat(b.OutAnnounceFreq))
+		}
+	case "prx":
+		cmpFunc = func(a, b rns.InterfaceStat) int {
+			return cmp.Compare(optFloat(a.InPrFreq), optFloat(b.InPrFreq))
+		}
+	case "ptx":
+		cmpFunc = func(a, b rns.InterfaceStat) int {
+			return cmp.Compare(optFloat(a.OutPrFreq), optFloat(b.OutPrFreq))
 		}
 	case "held":
 		cmpFunc = func(a, b rns.InterfaceStat) int {

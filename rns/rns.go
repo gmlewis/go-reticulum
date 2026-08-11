@@ -100,9 +100,17 @@ type Reticulum struct {
 	blackholeUpdateInterval time.Duration
 	autoconnectDiscover     int
 	defaultGravity          int
-	bootstrapRestarters     []func() error
-	interfaceDiscovery      *InterfaceDiscovery
-	interfaceAnnouncer      *InterfaceAnnouncer
+	// defaultARTargetOverride/penaltyOverride/graceOverride mirror
+	// RNS.Reticulum.__default_ar_* (Reticulum.py:273-275,642-653,1145-1152).
+	// A nil pointer means "use the Interface DEFAULT_AR_* class constant"
+	// (Python None). target: 0 → nil; penalty/grace: any >= 0 value is
+	// stored, unset → nil.
+	defaultARTargetOverride  *int
+	defaultARPenaltyOverride *int
+	defaultARGraceOverride   *int
+	bootstrapRestarters      []func() error
+	interfaceDiscovery       *InterfaceDiscovery
+	interfaceAnnouncer       *InterfaceAnnouncer
 
 	mu                          sync.Mutex
 	shareInstance               bool
@@ -149,6 +157,31 @@ func (r *Reticulum) DefaultGravity() int {
 		return 0
 	}
 	return r.defaultGravity
+}
+
+// defaultARTarget / defaultARPenalty / defaultARGrace resolve the instance-wide
+// announce-rate defaults, mirroring Python's _default_ar_target/penalty/grace
+// (Reticulum.py:1145-1152): a nil override resolves to the Interface class
+// constant DEFAULT_AR_TARGET/PENALTY/GRACE (3600/0/5).
+func (r *Reticulum) defaultARTarget() int {
+	if r != nil && r.defaultARTargetOverride != nil {
+		return *r.defaultARTargetOverride
+	}
+	return interfaces.DefaultARTarget
+}
+
+func (r *Reticulum) defaultARPenalty() int {
+	if r != nil && r.defaultARPenaltyOverride != nil {
+		return *r.defaultARPenaltyOverride
+	}
+	return interfaces.DefaultARPenalty
+}
+
+func (r *Reticulum) defaultARGrace() int {
+	if r != nil && r.defaultARGraceOverride != nil {
+		return *r.defaultARGraceOverride
+	}
+	return interfaces.DefaultARGrace
 }
 
 func (r *Reticulum) registerBootstrapRestarter(restarter func() error) {
@@ -609,6 +642,31 @@ func (r *Reticulum) applyConfig() error {
 				r.defaultGravity = n
 			}
 		}
+		// Announce-rate-control instance-wide defaults (Reticulum.py:642-653).
+		// default_ar_target: 0 → None (use class constant), >0 → value.
+		// default_ar_penalty / default_ar_grace: any >= 0 value is stored.
+		if v, ok := reticulumSection.GetProperty("default_ar_target"); ok {
+			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+				if n == 0 {
+					r.defaultARTargetOverride = nil
+				} else if n > 0 {
+					nv := n
+					r.defaultARTargetOverride = &nv
+				}
+			}
+		}
+		if v, ok := reticulumSection.GetProperty("default_ar_penalty"); ok {
+			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n >= 0 {
+				nv := n
+				r.defaultARPenaltyOverride = &nv
+			}
+		}
+		if v, ok := reticulumSection.GetProperty("default_ar_grace"); ok {
+			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n >= 0 {
+				nv := n
+				r.defaultARGraceOverride = &nv
+			}
+		}
 	}
 
 	// Shared-instance config conflict checks (RNS/Reticulum.py:403-405,446 +
@@ -834,7 +892,11 @@ func (r *Reticulum) initInterfaces() error {
 		if v, ok := sub.GetProperty("bootstrap_only"); ok {
 			bootstrapOnly = parseBoolLike(v)
 		}
-		contractCfg := parseInterfaceContractConfig(sub, r.DefaultGravity())
+		contractCfg := parseInterfaceContractConfig(sub, r.DefaultGravity(), announceRateDefaults{
+			target:  r.defaultARTarget(),
+			penalty: r.defaultARPenalty(),
+			grace:   r.defaultARGrace(),
+		}, r.transport != nil && r.transport.Enabled())
 
 		switch ifaceType {
 		case "AutoInterface":

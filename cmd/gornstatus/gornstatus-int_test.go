@@ -127,6 +127,8 @@ func TestIntegration_HelpOutput(t *testing.T) {
 		"--version",
 		"-a, --all",
 		"-A, --announce-stats",
+		"-P, --pr-stats",
+		"-B, --burst",
 		"-l, --link-stats",
 		"-t, --totals",
 		"-s SORT, --sort SORT",
@@ -178,6 +180,51 @@ func TestIntegration_ExitCodeZero(t *testing.T) {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornstatus exited with error: %v\n%v", err, string(out))
+	}
+}
+
+// TestIntegration_PrStatsAndBurstFlags exercises the -P/--pr-stats and
+// -B/--burst flags (plus the prx sort key) against a live UDP interface
+// instance, asserting a clean exit and that the new flags do not crash
+// the renderer.
+func TestIntegration_PrStatsAndBurstFlags(t *testing.T) {
+	t.Parallel()
+	testutils.SkipShortIntegration(t)
+	bin := buildGornstatus(t)
+	listenPort := testutils.ReserveUDPPort(t)
+	forwardPort := testutils.ReserveUDPPort(t)
+	tmpDir := testutils.TempDirWithConfig(t, tempDirPrefix, func(dir string) string {
+		instanceName := filepath.Base(dir)
+		return strings.Join([]string{
+			"[reticulum]",
+			"enable_transport = Yes",
+			"share_instance = No",
+			"instance_name = " + instanceName,
+			"",
+			"[logging]",
+			"loglevel = 2",
+			"",
+			"[interfaces]",
+			"  [[Default Interface]]",
+			"    type = UDPInterface",
+			"    enabled = Yes",
+			"    listen_ip = 127.0.0.1",
+			"    listen_port = " + fmt.Sprintf("%v", listenPort),
+			"    forward_ip = 127.0.0.1",
+			"    forward_port = " + fmt.Sprintf("%v", forwardPort),
+		}, "\n")
+	})
+	for _, args := range [][]string{
+		{"--config", tmpDir, "-A", "-P"},
+		{"--config", tmpDir, "-P"},
+		{"--config", tmpDir, "-B"},
+		{"--config", tmpDir, "-A", "-P", "-B", "-s", "prx"},
+		{"--config", tmpDir, "-A", "-P", "-B", "-s", "ptx"},
+	} {
+		out, err := exec.Command(bin, args...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("gornstatus %v exited with error: %v\n%v", args, err, string(out))
+		}
 	}
 }
 

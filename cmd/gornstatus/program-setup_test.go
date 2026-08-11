@@ -154,11 +154,12 @@ func TestProgramSetupNoSharedInstanceNoExit(t *testing.T) {
 func TestShouldDisplayInterface(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name       string
-		ifstat     rns.InterfaceStat
-		dispAll    bool
-		nameFilter string
-		want       bool
+		name        string
+		ifstat      rns.InterfaceStat
+		dispAll     bool
+		nameFilter  string
+		burstFilter bool
+		want        bool
 	}{
 		{
 			name:   "normal interface shown",
@@ -245,14 +246,52 @@ func TestShouldDisplayInterface(t *testing.T) {
 			ifstat: rns.InterfaceStat{Name: "Shared Instance[37428]"},
 			want:   true,
 		},
+		{
+			name:        "burst filter hides idle interface",
+			ifstat:      rns.InterfaceStat{Name: "RNodeInterface[LoRa 915]"},
+			burstFilter: true,
+			want:        false,
+		},
+		{
+			name:        "burst filter shows announce-burst interface",
+			ifstat:      rns.InterfaceStat{Name: "RNodeInterface[LoRa 915]", BurstActive: true, BurstActivated: 100.0},
+			burstFilter: true,
+			want:        true,
+		},
+		{
+			name:        "burst filter shows pr-burst interface",
+			ifstat:      rns.InterfaceStat{Name: "AutoInterface[test]", PrBurstActive: true, PrBurstActivated: 100.0},
+			burstFilter: true,
+			want:        true,
+		},
+		{
+			name:        "burst filter with matching name shows interface",
+			ifstat:      rns.InterfaceStat{Name: "RNodeInterface[LoRa 915]"},
+			nameFilter:  "lora",
+			burstFilter: true,
+			want:        true,
+		},
+		{
+			name:        "burst filter with non-matching name hides idle interface",
+			ifstat:      rns.InterfaceStat{Name: "RNodeInterface[LoRa 915]"},
+			nameFilter:  "tcp",
+			burstFilter: true,
+			want:        false,
+		},
+		{
+			name:        "burst filter hides hidden interface even if bursting",
+			ifstat:      rns.InterfaceStat{Name: "LocalInterface[Admin]", BurstActive: true, BurstActivated: 100.0},
+			burstFilter: true,
+			want:        false,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := shouldDisplayInterface(tc.ifstat, tc.dispAll, tc.nameFilter)
+			got := shouldDisplayInterface(tc.ifstat, tc.dispAll, tc.nameFilter, tc.burstFilter)
 			if got != tc.want {
-				t.Errorf("shouldDisplayInterface(%q, %v, %q) = %v, want %v",
-					tc.ifstat.Name, tc.dispAll, tc.nameFilter, got, tc.want)
+				t.Errorf("shouldDisplayInterface(%q, %v, %q, %v) = %v, want %v",
+					tc.ifstat.Name, tc.dispAll, tc.nameFilter, tc.burstFilter, got, tc.want)
 			}
 		})
 	}

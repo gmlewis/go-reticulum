@@ -142,6 +142,12 @@ type Packet struct {
 	DestinationType int
 	Ciphertext      []byte
 
+	// IsOutboundPR marks a packet as an outbound path request so the egress
+	// path records an outgoing PR on each transmitting interface
+	// (Packet.py:164 defaults False; Transport.py:2896 sets True in
+	// request_path; Transport.py:1354 gates interface.sent_path_request()).
+	IsOutboundPR bool
+
 	ReceivingInterface interfaces.Interface
 	AttachedInterface  interfaces.Interface
 

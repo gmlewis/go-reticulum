@@ -177,6 +177,15 @@ type interfaceContractConfig struct {
 	recursivePrs          bool
 	announcesFromInternal bool
 	announcesToInternal   *bool
+
+	// announceRateTarget/grace/penalty mirror Python's announce_rate_*
+	// (Reticulum.py:819-857,938-940). A nil pointer means "no rate limit"
+	// (Python None); when transport is enabled the parser fills nil values
+	// from the instance-wide default_ar_* (which themselves resolve to the
+	// DEFAULT_AR_* class constants).
+	announceRateTarget  *int
+	announceRateGrace   *int
+	announceRatePenalty *int
 }
 
 // contractConfigSetter is implemented by interfaces that accept the Phase 1
@@ -186,37 +195,105 @@ type contractConfigSetter interface {
 	SetRecursivePrs(bool)
 	SetAnnouncesFromInternal(bool)
 	SetAnnouncesToInternal(*bool)
+	SetAnnounceRateTarget(*int)
+	SetAnnounceRateGrace(*int)
+	SetAnnounceRatePenalty(*int)
+}
+
+// announceRateDefaults carries the instance-wide announce-rate defaults
+// resolved by Reticulum._default_ar_target/penalty/grace (Reticulum.py:1145-
+// 1152): each is the override-or-class-constant concrete value used to fill
+// per-interface nil entries when transport is enabled.
+type announceRateDefaults struct {
+	target  int
+	penalty int
+	grace   int
 }
 
 // parseInterfaceContractConfig reads the per-interface gravity/recursive_prs/
 // announces_from_internal/announces_to_internal keys, mirroring
 // Reticulum.py:771-772,842-849. gravity inherits defaultGravity when unset;
 // announces_from_internal defaults true; announces_to_internal defaults nil.
-func parseInterfaceContractConfig(sub *ConfigSection, defaultGravity int) interfaceContractConfig {
+//
+// It also parses the per-interface announce_rate_target/grace/penalty keys
+// (Reticulum.py:819-857,938-940): target must be >0; grace/penalty >=0. When
+// announce_rate_target is set, grace and penalty default to 0 if unset
+// (Reticulum.py:831-832). When transport is enabled, any still-nil value is
+// filled from the instance-wide announceRateDefaults (Reticulum.py:855-857);
+// when transport is disabled, nil values remain nil (no rate limit).
+func parseInterfaceContractConfig(sub *ConfigSection, defaultGravity int, arDefaults announceRateDefaults, transportEnabled bool) interfaceContractConfig {
 	cfg := interfaceContractConfig{
 		gravity:               defaultGravity,
 		recursivePrs:          false,
 		announcesFromInternal: true,
 		announcesToInternal:   nil,
 	}
-	if sub == nil {
-		return cfg
-	}
-	if v, ok := sub.GetProperty("gravity"); ok {
-		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
-			cfg.gravity = n
+	if sub != nil {
+		if v, ok := sub.GetProperty("gravity"); ok {
+			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+				cfg.gravity = n
+			}
+		}
+		if v, ok := sub.GetProperty("recursive_prs"); ok {
+			cfg.recursivePrs = parseBoolLike(v)
+		}
+		if v, ok := sub.GetProperty("announces_from_internal"); ok {
+			cfg.announcesFromInternal = parseBoolLike(v)
+		}
+		if v, ok := sub.GetProperty("announces_to_internal"); ok {
+			b := parseBoolLike(v)
+			cfg.announcesToInternal = &b
+		}
+		// Per-interface announce-rate keys (Reticulum.py:819-829).
+		if v, ok := sub.GetProperty("announce_rate_target"); ok {
+			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n > 0 {
+				nv := n
+				cfg.announceRateTarget = &nv
+			}
+		}
+		if v, ok := sub.GetProperty("announce_rate_grace"); ok {
+			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n >= 0 {
+				nv := n
+				cfg.announceRateGrace = &nv
+			}
+		}
+		if v, ok := sub.GetProperty("announce_rate_penalty"); ok {
+			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n >= 0 {
+				nv := n
+				cfg.announceRatePenalty = &nv
+			}
 		}
 	}
-	if v, ok := sub.GetProperty("recursive_prs"); ok {
-		cfg.recursivePrs = parseBoolLike(v)
+
+	// target set ⇒ grace/penalty default to 0 (Reticulum.py:831-832).
+	if cfg.announceRateTarget != nil {
+		if cfg.announceRateGrace == nil {
+			zero := 0
+			cfg.announceRateGrace = &zero
+		}
+		if cfg.announceRatePenalty == nil {
+			zero := 0
+			cfg.announceRatePenalty = &zero
+		}
 	}
-	if v, ok := sub.GetProperty("announces_from_internal"); ok {
-		cfg.announcesFromInternal = parseBoolLike(v)
+
+	// When transport is enabled, fill any still-nil value from the
+	// instance-wide defaults (Reticulum.py:855-857).
+	if transportEnabled {
+		if cfg.announceRateTarget == nil {
+			nv := arDefaults.target
+			cfg.announceRateTarget = &nv
+		}
+		if cfg.announceRatePenalty == nil {
+			nv := arDefaults.penalty
+			cfg.announceRatePenalty = &nv
+		}
+		if cfg.announceRateGrace == nil {
+			nv := arDefaults.grace
+			cfg.announceRateGrace = &nv
+		}
 	}
-	if v, ok := sub.GetProperty("announces_to_internal"); ok {
-		b := parseBoolLike(v)
-		cfg.announcesToInternal = &b
-	}
+
 	return cfg
 }
 
@@ -241,6 +318,9 @@ func applyInterfaceContract(iface interfaces.Interface, contract interfaceContra
 	setter.SetRecursivePrs(contract.recursivePrs)
 	setter.SetAnnouncesFromInternal(contract.announcesFromInternal)
 	setter.SetAnnouncesToInternal(contract.announcesToInternal)
+	setter.SetAnnounceRateTarget(contract.announceRateTarget)
+	setter.SetAnnounceRateGrace(contract.announceRateGrace)
+	setter.SetAnnounceRatePenalty(contract.announceRatePenalty)
 }
 
 func applySpawnedInterfaceConfig(iface interfaces.Interface, mode int, ifac interfaces.IFACConfig, panicOnInterfaceError bool) {

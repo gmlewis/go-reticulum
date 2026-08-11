@@ -146,6 +146,67 @@ func TestSortInterfacesAnnounces(t *testing.T) {
 	}
 }
 
+func TestSortInterfacesPrFreq(t *testing.T) {
+	t.Parallel()
+	ifaces := []rns.InterfaceStat{
+		{Name: "A", InPrFreq: new(1.0), OutPrFreq: new(2.0)},
+		{Name: "B", InPrFreq: new(5.0), OutPrFreq: new(5.0)},
+		{Name: "C", InPrFreq: new(3.0), OutPrFreq: new(1.0)},
+	}
+
+	tests := []struct {
+		name      string
+		sortKey   string
+		asc       bool
+		wantOrder string
+	}{
+		{"prx desc", "prx", false, "BCA"},
+		{"ptx desc", "ptx", false, "BAC"},
+		{"prx asc", "prx", true, "ACB"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cp := make([]rns.InterfaceStat, len(ifaces))
+			copy(cp, ifaces)
+			sortInterfaces(cp, tc.sortKey, tc.asc)
+			var got string
+			for _, iface := range cp {
+				got += iface.Name
+			}
+			if got != tc.wantOrder {
+				t.Errorf("sortInterfaces(%q, %v) order = %q, want %q",
+					tc.sortKey, tc.asc, got, tc.wantOrder)
+			}
+		})
+	}
+}
+
+func TestPrettyFrequencyLPF(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		hz   float64
+		d    int
+		want string
+	}{
+		{0, 1, "0 Hz"},
+		{0.5, 1, "0.5 Hz"},
+		{1.2, 1, "1.2 Hz"},
+		{2.0, 1, "2.0 Hz"},
+		{1500, 1, "1.5 KHz"},
+		{0.5, 2, "0.50 Hz"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.want, func(t *testing.T) {
+			t.Parallel()
+			got := prettyFrequencyLPF(tc.hz, tc.d)
+			if got != tc.want {
+				t.Errorf("prettyFrequencyLPF(%v, %v) = %q, want %q", tc.hz, tc.d, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSortInterfacesGravity(t *testing.T) {
 	t.Parallel()
 	mkIfaces := func() []rns.InterfaceStat {
