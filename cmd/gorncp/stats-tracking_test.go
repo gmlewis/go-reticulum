@@ -37,7 +37,7 @@ func TestStatsTrackingCircularBuffer(t *testing.T) {
 
 	// After adding 35 entries, should have exactly 32
 	if len(entries) != statsMax {
-		t.Fatalf("Expected %d entries, got %d", statsMax, len(entries))
+		t.Fatalf("Expected %v entries, got %v", statsMax, len(entries))
 	}
 
 	// First entry should be the 4th one we added (index 3)

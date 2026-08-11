@@ -47,7 +47,7 @@ func TestTeardownSleepDurations(t *testing.T) {
 			tt.call(recorder)
 
 			if len(got) != 1 {
-				t.Fatalf("sleep calls = %d, want 1", len(got))
+				t.Fatalf("sleep calls = %v, want 1", len(got))
 			}
 			if got[0] != tt.wantWait {
 				t.Fatalf("sleep duration = %v, want %v", got[0], tt.wantWait)

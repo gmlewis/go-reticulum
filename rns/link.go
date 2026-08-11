@@ -1465,6 +1465,24 @@ func (l *Link) Request(path string, data any, responseCallback, failedCallback, 
 			return nil, err
 		}
 
+		// An inline request has been dispatched over the link; mark it
+		// delivered and arm the response timeout so a missing response fires
+		// failedCallback at `timeout` — mirroring the resource-request path
+		// (requestResourceConcluded) and Python Link.request. Without this the
+		// inline receipt never times out: failedCallback is never invoked and
+		// the receipt leaks into pendingRequests until the link is torn down.
+		rr.mu.Lock()
+		if rr.Status == RequestSent {
+			rr.Status = RequestDelivered
+			if rr.StartedAt.IsZero() {
+				rr.StartedAt = time.Now()
+			}
+			rr.mu.Unlock()
+			go rr.responseTimeoutJob(time.Now().Add(timeout))
+		} else {
+			rr.mu.Unlock()
+		}
+
 		return rr, nil
 	} else {
 		requestID := TruncatedHash(packedRequest)
@@ -1659,6 +1677,44 @@ func (l *Link) responseResourceConcluded(resource *Resource) {
 
 		responseData := resList[1]
 		l.handleResponse(requestID, responseData, resource.Metadata())
+		return
+	}
+
+	// The response resource failed (watchdog part-timeout, exhausted
+	// retries, or a bad completion proof) — the reply will never arrive via
+	// this resource. Fail the matching pending receipt so the caller's
+	// failedCallback fires and the receipt is dropped from pendingRequests.
+	// Without this branch a failed response resource is silently ignored:
+	// responseTimeoutJob disarmed itself when the first part arrived (status
+	// flipped to RequestReceiving), so nothing fires failedCallback and the
+	// receipt leaks until the caller's own backstop. This mirrors
+	// RequestReceipt.requestResourceConcluded's failure branch (the
+	// outgoing-request-as-resource path). requestTimedOut is
+	// terminal-guarded, so a race with the deadline still resolves to one
+	// callback.
+	l.failPendingResponseRequest(resource.requestID)
+}
+
+// failPendingResponseRequest resolves the pending request receipt that was
+// waiting on a response resource which has now failed. It looks the receipt up
+// by request ID under the link lock, then fails it outside the lock (keeping
+// lock order rr.mu-then-l.mu). No-op if the receipt already resolved — e.g.
+// the response-timeout fired first — or if the resource ID matches nothing.
+func (l *Link) failPendingResponseRequest(requestID []byte) {
+	if len(requestID) == 0 {
+		return
+	}
+	l.mu.Lock()
+	var found *RequestReceipt
+	for _, rr := range l.pendingRequests {
+		if bytes.Equal(rr.RequestID, requestID) {
+			found = rr
+			break
+		}
+	}
+	l.mu.Unlock()
+	if found != nil {
+		found.requestTimedOut()
 	}
 }
 

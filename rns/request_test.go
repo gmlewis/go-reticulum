@@ -282,7 +282,7 @@ func TestRequestReceiptStoresMetadata(t *testing.T) {
 	metadata := map[string][]byte{
 		"name": []byte("example.txt"),
 	}
-	rr := &RequestReceipt{}
+	rr := &RequestReceipt{Status: RequestDelivered}
 
 	rr.responseReceived([]byte("payload"), metadata)
 
@@ -308,7 +308,7 @@ func TestLinkResponseMetadata(t *testing.T) {
 	metadata := map[string][]byte{
 		"name": []byte("inline.txt"),
 	}
-	rr := &RequestReceipt{RequestID: requestID}
+	rr := &RequestReceipt{RequestID: requestID, Status: RequestDelivered}
 	link := &Link{
 		logger:          NewLogger(),
 		status:          LinkActive,
@@ -340,7 +340,7 @@ func TestResourceResponseMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to pack response: %v", err)
 	}
-	rr := &RequestReceipt{RequestID: requestID}
+	rr := &RequestReceipt{RequestID: requestID, Status: RequestDelivered}
 	link := &Link{
 		logger:          NewLogger(),
 		status:          LinkActive,
@@ -405,7 +405,7 @@ func TestLinkResponseResourceConcludedPreservesBinaryMapKeys(t *testing.T) {
 	t.Parallel()
 
 	requestID := []byte("req")
-	rr := &RequestReceipt{RequestID: requestID}
+	rr := &RequestReceipt{RequestID: requestID, Status: RequestDelivered}
 	link := &Link{
 		logger:          NewLogger(),
 		status:          LinkActive,
@@ -437,6 +437,101 @@ func TestLinkResponseResourceConcludedPreservesBinaryMapKeys(t *testing.T) {
 		if value != int64(1) {
 			t.Fatalf("response value = %#v, want int64(1)", value)
 		}
+	}
+}
+
+// TestResponseResourceFailedFailsPendingReceipt covers Gap B: when a response
+// resource concludes FAILED (watchdog part-timeout, exhausted retries, bad
+// proof), the pending request receipt must be moved to RequestFailed, dropped
+// from the link's pending list, and reported via failedCallback. Before the
+// fix responseResourceConcluded only handled ResourceStatusComplete, so a
+// failed response resource was silently ignored and the receipt leaked
+// (neither callback fired; the caller only resolved via its own backstop).
+func TestResponseResourceFailedFailsPendingReceipt(t *testing.T) {
+	t.Parallel()
+
+	requestID := []byte("failed-response-req")
+	rr := &RequestReceipt{RequestID: requestID, Status: RequestReceiving}
+	link := &Link{
+		logger:          NewLogger(),
+		status:          LinkActive,
+		pendingRequests: []*RequestReceipt{rr},
+	}
+	rr.Link = link
+
+	failed := make(chan *RequestReceipt, 1)
+	rr.failedCallback = func(got *RequestReceipt) { failed <- got }
+
+	resource := &Resource{
+		link:      link,
+		status:    ResourceStatusFailed,
+		requestID: requestID,
+	}
+
+	link.responseResourceConcluded(resource)
+
+	select {
+	case got := <-failed:
+		if got != rr {
+			t.Fatalf("failedCallback receipt = %p, want %p", got, rr)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("failedCallback never fired for failed response resource")
+	}
+
+	if got, want := rr.GetStatus(), RequestFailed; got != want {
+		t.Fatalf("status = %v, want %v", got, want)
+	}
+	if len(link.pendingRequests) != 0 {
+		t.Fatalf("pendingRequests len = %v, want 0 (receipt should be removed)", len(link.pendingRequests))
+	}
+}
+
+// TestResponseTimeoutJobFiresFromReceivingState covers Gap A: a response that
+// arrives as a resource flips the receipt to RequestReceiving as soon as the
+// first part lands. If the transfer then stalls, the response-timeout job must
+// still fire at the deadline and fail the receipt. Before the fix the job
+// bailed on any status != RequestDelivered, so it disarmed the instant the
+// transfer started and a stalled mid-assembly resource never timed out.
+func TestResponseTimeoutJobFiresFromReceivingState(t *testing.T) {
+	t.Parallel()
+
+	rr := &RequestReceipt{Status: RequestReceiving}
+	failed := make(chan *RequestReceipt, 1)
+	rr.failedCallback = func(got *RequestReceipt) { failed <- got }
+
+	// Deadline in the past: the first poll iteration should fire immediately.
+	go rr.responseTimeoutJob(time.Now().Add(-1 * time.Second))
+
+	select {
+	case <-failed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("responseTimeoutJob did not fire from RequestReceiving state")
+	}
+
+	if got, want := rr.GetStatus(), RequestFailed; got != want {
+		t.Fatalf("status = %v, want %v", got, want)
+	}
+}
+
+// TestResponseReceivedDoesNotReviveFailedReceipt covers the terminal guard
+// added to responseReceived: a receipt already failed (e.g. by the timeout
+// job) must not be revived to RequestReady or double-fire the success
+// callback when a late completion races in.
+func TestResponseReceivedDoesNotReviveFailedReceipt(t *testing.T) {
+	t.Parallel()
+
+	rr := &RequestReceipt{Status: RequestFailed}
+	calls := 0
+	rr.callback = func(*RequestReceipt) { calls++ }
+
+	rr.responseReceived([]byte("late"), nil)
+
+	if got, want := rr.GetStatus(), RequestFailed; got != want {
+		t.Fatalf("status = %v, want %v (failed receipt revived)", got, want)
+	}
+	if got, want := calls, 0; got != want {
+		t.Fatalf("success callback calls = %v, want %v (double-fire)", got, want)
 	}
 }
 

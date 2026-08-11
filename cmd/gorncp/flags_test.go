@@ -53,14 +53,14 @@ func TestVerboseCount(t *testing.T) {
 				t.Fatalf("parseFlags failed: %v", err)
 			}
 			if int(app.verbose) != tt.wantVerbose {
-				t.Errorf("verbose = %d, want %d", int(app.verbose), tt.wantVerbose)
+				t.Errorf("verbose = %v, want %v", int(app.verbose), tt.wantVerbose)
 			}
 			if int(app.quiet) != tt.wantQuiet {
-				t.Errorf("quiet = %d, want %d", int(app.quiet), tt.wantQuiet)
+				t.Errorf("quiet = %v, want %v", int(app.quiet), tt.wantQuiet)
 			}
 			gotLogLevel := int(app.verbose) - int(app.quiet)
 			if gotLogLevel != tt.wantLogLevel {
-				t.Errorf("effective log level = %d, want %d", gotLogLevel, tt.wantLogLevel)
+				t.Errorf("effective log level = %v, want %v", gotLogLevel, tt.wantLogLevel)
 			}
 		})
 	}
@@ -295,7 +295,7 @@ func TestAllowedFlag(t *testing.T) {
 			}
 			for i := range allowed {
 				if allowed[i] != tt.wantAllowed[i] {
-					t.Errorf("allowed[%d] = %v, want %v", i, allowed[i], tt.wantAllowed[i])
+					t.Errorf("allowed[%v] = %v, want %v", i, allowed[i], tt.wantAllowed[i])
 				}
 			}
 		})

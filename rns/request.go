@@ -83,6 +83,16 @@ func (rr *RequestReceipt) responseReceived(response, metadata any) {
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
 
+	// Terminal-guarded: if the receipt already failed — e.g. the response
+	// resource stalled mid-assembly and requestTimedOut fired at the
+	// deadline — do not revive it or double-fire the success callback. This
+	// is the success-side counterpart to requestTimedOut's guard, so a race
+	// between a last-instant completion and the deadline resolves to exactly
+	// one of the success/failure callbacks.
+	if rr.Status == RequestReady || rr.Status == RequestFailed {
+		return
+	}
+
 	rr.Response = response
 	rr.Metadata = metadata
 	rr.Status = RequestReady
@@ -120,14 +130,22 @@ func (rr *RequestReceipt) requestResourceConcluded(resource *Resource) {
 	}
 }
 
-// responseTimeoutJob polls until the response timeout expires, then fails the request.
+// responseTimeoutJob polls until the response timeout expires, then fails the
+// request. It keeps watching through RequestSent/RequestDelivered/
+// RequestReceiving: a response that arrives as a resource (common when the
+// reply exceeds the link MDU) flips the status to RequestReceiving as soon as
+// the first part lands, and a transfer that stalls mid-assembly must still
+// hit the deadline. Only the terminal states (RequestReady/RequestFailed)
+// cancel the watch. requestTimedOut is itself terminal-guarded, so a race
+// between the deadline and a last-millisecond completion resolves to exactly
+// one callback.
 func (rr *RequestReceipt) responseTimeoutJob(deadline time.Time) {
 	for {
 		rr.mu.Lock()
 		status := rr.Status
 		rr.mu.Unlock()
 
-		if status != RequestDelivered {
+		if status == RequestReady || status == RequestFailed {
 			return
 		}
 		if time.Now().After(deadline) {
@@ -138,10 +156,21 @@ func (rr *RequestReceipt) responseTimeoutJob(deadline time.Time) {
 	}
 }
 
-// requestTimedOut handles a request that has timed out waiting for a response.
+// requestTimedOut fails a request that did not receive a complete response.
+// It is the shared termination for both the response-timeout path
+// (responseTimeoutJob) and the response-resource-failure path
+// (Link.responseResourceConcluded's else branch): any receipt still in a
+// non-terminal state (RequestSent/RequestDelivered/RequestReceiving) is moved
+// to RequestFailed, dropped from the link's pending list, and reported via
+// failedCallback. It is terminal-guarded and therefore idempotent — if the
+// receipt already reached RequestReady or RequestFailed (e.g. the deadline
+// raced a last-instant completion, or the resource-failure raced the
+// timeout), this is a no-op, so exactly one of the success/failure callbacks
+// fires. Lock order is rr.mu then (released) l.mu, matching
+// removePendingRequest.
 func (rr *RequestReceipt) requestTimedOut() {
 	rr.mu.Lock()
-	if rr.Status != RequestDelivered {
+	if rr.Status == RequestReady || rr.Status == RequestFailed {
 		rr.mu.Unlock()
 		return
 	}
