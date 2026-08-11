@@ -79,7 +79,9 @@ const (
 	// ResourceStatusCorrupt indicates the assembled data failed hash verification.
 	ResourceStatusCorrupt = 0x08
 	// ResourceStatusRejected indicates the receiver actively declined the resource.
-	ResourceStatusRejected = 0x00
+	// It matches Python Resource.REJECTED (Resource.py:152); the value 0x09 sits
+	// above Corrupt (0x08) as a terminal state and is distinct from None (0x00).
+	ResourceStatusRejected = 0x09
 )
 
 const (
@@ -488,6 +490,14 @@ type Resource struct {
 	metadata         map[string][]byte
 	hasMetadata      bool
 
+	// nextSegment is the next segment in a multi-segment resource transfer,
+	// mirroring Python Resource.next_segment (Resource.py:255). It is prepared
+	// asynchronously during the current segment's transfer and advertised once
+	// the current segment completes. Cancel recurses into it (Resource.py:1087)
+	// and the progress callback cascades to it (Resource.py:1137). Nil for a
+	// single-segment resource.
+	nextSegment *Resource
+
 	// maxDecompressedSize caps the decompressed size of a compressed incoming
 	// resource (Python Resource.max_decompressed_size, Resource.py:360). It
 	// defaults to ResourceAutoCompressMaxSize (64 MiB) when unset, driving the
@@ -701,11 +711,88 @@ func (r *Resource) TotalSize() int64 {
 	return r.size
 }
 
-// Cancel prematurely terminates the resource transfer and updates its status to failed.
+// Cancel prematurely terminates the resource transfer. It is the Go port of
+// Python Resource.cancel (Resource.py:1084-1118). The pending next segment is
+// recursively cancelled first (Resource.py:1087-1088), then:
+//   - On CORRUPT status: cancel_incoming_resource + reject(advertisement) +
+//     link.teardown (Resource.py:1090-1093).
+//   - On any status below COMPLETE: the resource is marked FAILED and, when
+//     the link is active, the initiator sends a RESOURCE_ICL packet while the
+//     receiver sends a RESOURCE_RCL packet; the resource is removed from the
+//     link's outgoing (initiator) or incoming (receiver) list; the conclude
+//     callback (resource_concluded, i.e. recordExpectedRate) and the user
+//     callback fire (Resource.py:1095-1118).
+//
+// A resource already at or above COMPLETE is left untouched. The cancel-context
+// packet and the link-list removal happen outside r.mu (after the status flip),
+// matching Python's lock-free cancel and preserving the r.mu -> link.mu lock
+// ordering (cancel_outgoing/incoming and Teardown acquire link.mu).
 func (r *Resource) Cancel() {
 	r.mu.Lock()
-	r.cancelLocked()
+	next := r.nextSegment
 	r.mu.Unlock()
+	// Recurse into the pending next segment first, mirroring Python
+	// (Resource.py:1087-1088), so the cascade prevents any subsequent
+	// segment from being advertised.
+	if next != nil {
+		next.Cancel()
+	}
+
+	r.mu.Lock()
+	if r.status == ResourceStatusCorrupt {
+		// CORRUPT branch (Resource.py:1090-1093). cancelCorruptLocked
+		// assumes r.mu is held.
+		r.cancelCorruptLocked()
+		r.mu.Unlock()
+		r.stopWatchdog()
+		return
+	}
+	if r.status >= ResourceStatusComplete {
+		// Already complete: Python's cancel has no branch for
+		// COMPLETE-or-above, so leave the resource as-is.
+		r.mu.Unlock()
+		r.stopWatchdog()
+		return
+	}
+	// FAILED branch (Resource.py:1095-1118).
+	r.status = ResourceStatusFailed
+	initiator := r.initiator
+	link := r.link
+	hash := append([]byte(nil), r.hash...)
+	cb := r.callback
+	r.mu.Unlock()
+
+	// Send the cancel-context packet when the link is active. The
+	// initiator sends RESOURCE_ICL; the receiver sends RESOURCE_RCL.
+	if link != nil && link.GetStatus() == LinkActive {
+		cancelPacket := NewPacket(link, hash)
+		if initiator {
+			cancelPacket.Context = ContextResourceIcl
+		} else {
+			cancelPacket.Context = ContextResourceRcl
+		}
+		if err := cancelPacket.Send(); err != nil {
+			if link.logger != nil {
+				link.logger.Debug("Could not send resource cancel packet for %x: %v", hash, err)
+			}
+		}
+	}
+	// Remove the resource from the link's outgoing/incoming list
+	// (Python cancel_outgoing_resource / cancel_incoming_resource).
+	if link != nil {
+		if initiator {
+			link.CancelOutgoingResource(r)
+		} else {
+			link.CancelIncomingResource(r)
+		}
+	}
+	// Fire the conclude callback (Python link.resource_concluded, whose
+	// expected-rate update is recordExpectedRate; its list removal is
+	// already done above) and the user callback (Resource.py:1115-1118).
+	if cb != nil {
+		r.recordExpectedRate()
+		go cb(r)
+	}
 	// Promptly tear down the background watchdog loop rather than waiting
 	// for its next step to notice the terminal status.
 	r.stopWatchdog()
@@ -765,10 +852,23 @@ func (r *Resource) SetCallback(cb func(*Resource)) {
 }
 
 // SetProgressCallback registers a function to execute periodically as parts of the resource are successively delivered.
+// It is the Go port of Python Resource.progress_callback (Resource.py:1136-
+// 1138): the callback is stored on this resource and, when a next segment
+// exists, forwarded to it recursively — so a multi-segment transfer reports
+// progress from every segment via the single callback installed on the head.
+// (The prepare-time propagation — setting the callback on nextSegment as it is
+// created, Python Resource.py:785 — is handled by the same cascade once the
+// segment-splitting machinery wires nextSegment during preparation.)
 func (r *Resource) SetProgressCallback(cb func(*Resource)) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	r.progressCallback = cb
+	next := r.nextSegment
+	r.mu.Unlock()
+	// Cascade to the pending next segment so every segment in the chain
+	// reports progress through the one callback (Python Resource.py:1137).
+	if next != nil {
+		next.SetProgressCallback(cb)
+	}
 }
 
 // RequestNext triggers a network request for the next optimal batch of missing data parts on an incoming transfer.
