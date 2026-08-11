@@ -171,7 +171,7 @@ func getRemoteStatus(reticulum *rns.Reticulum, p programSetupParams) (*remoteSta
 			}
 		}, func(receipt *rns.RequestReceipt) {
 			errCh <- fmt.Errorf("the remote status request failed. Likely authentication failure")
-		}, nil, 0)
+		}, nil, 0, 0)
 		if err != nil {
 			errCh <- err
 		}

@@ -80,7 +80,7 @@ func TestStackIsolation(t *testing.T) {
 	responseReceived := make(chan []byte, 1)
 	_, err = linkA.Request("/test", []byte("ping"), func(rr *RequestReceipt) {
 		responseReceived <- rr.Response.([]byte)
-	}, nil, nil, 0)
+	}, nil, nil, 0, 0)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}

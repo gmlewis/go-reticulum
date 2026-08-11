@@ -23,7 +23,7 @@ type fakeRequestLink struct {
 	timeout time.Duration
 }
 
-func (f *fakeRequestLink) Request(path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), timeout time.Duration) (*rns.RequestReceipt, error) {
+func (f *fakeRequestLink) Request(path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), timeout time.Duration, maxResponseSize int64) (*rns.RequestReceipt, error) {
 	f.path = path
 	f.data = data
 	f.timeout = timeout

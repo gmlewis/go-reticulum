@@ -955,7 +955,7 @@ func TestIntegratedHandshakeGoToPython(t *testing.T) {
 	_, err = l.Request("test_path", []byte("request from go"), func(rr *RequestReceipt) {
 		fmt.Printf("Received response: %v\n", rr.Response)
 		responseChan <- string(rr.Response.([]byte))
-	}, nil, nil, 0)
+	}, nil, nil, 0, 0)
 
 	if err != nil {
 		t.Fatalf("Failed to send request: %v", err)
@@ -1097,7 +1097,7 @@ func TestIntegratedLargeRequestGoToPython(t *testing.T) {
 	responseChan := make(chan string, 1)
 	_, err = l.Request("test_path", largePayload, func(rr *RequestReceipt) {
 		responseChan <- string(rr.Response.([]byte))
-	}, nil, nil, 0)
+	}, nil, nil, 0, 0)
 	if err != nil {
 		t.Fatalf("failed to send large request: %v", err)
 	}

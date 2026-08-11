@@ -59,7 +59,7 @@ func TestRequestResponse(t *testing.T) {
 	responseReceived := make(chan string, 1)
 	_, err := link.Request("/test/path", []byte("hello"), func(rr *RequestReceipt) {
 		responseReceived <- rr.Response.(string)
-	}, nil, nil, 0)
+	}, nil, nil, 0, 0)
 
 	mustTest(t, err)
 
@@ -131,7 +131,7 @@ func TestRequestResponseAutoCompressPolicyInlineAndResource(t *testing.T) {
 					t.Fatalf("expected []byte response, got %T", rr.Response)
 				}
 				responseReceived <- respBytes
-			}, nil, nil, 0)
+			}, nil, nil, 0, 0)
 
 			mustTest(t, err)
 
@@ -202,7 +202,7 @@ func TestRequestResponseResourceProgressCallback(t *testing.T) {
 			default:
 			}
 		},
-		0,
+		0, 0,
 	)
 
 	mustTest(t, err)
@@ -315,7 +315,7 @@ func TestLinkResponseMetadata(t *testing.T) {
 		pendingRequests: []*RequestReceipt{rr},
 	}
 
-	link.handleResponse(requestID, []byte("inline"), metadata)
+	link.handleResponse(requestID, []byte("inline"), metadata, 0, false)
 
 	got, ok := rr.Metadata.(map[string][]byte)
 	if !ok {

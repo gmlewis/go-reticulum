@@ -435,7 +435,7 @@ func (rt *runtimeT) handleCommandRequest(path string, data []byte, requestID []b
 }
 
 type requestLink interface {
-	Request(path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), timeout time.Duration) (*rns.RequestReceipt, error)
+	Request(path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), timeout time.Duration, maxResponseSize int64) (*rns.RequestReceipt, error)
 }
 
 func (rt *runtimeT) packExecuteRequestPayload(command string) ([]byte, error) {
@@ -471,7 +471,7 @@ func (rt *runtimeT) requestExecuteWithProgress(link requestLink, command string,
 		return nil, err
 	}
 
-	return link.Request("command", packedPayload, responseCallback, failedCallback, progressCallback, time.Duration(rt.app.timeout*float64(time.Second)))
+	return link.Request("command", packedPayload, responseCallback, failedCallback, progressCallback, time.Duration(rt.app.timeout*float64(time.Second)), 0)
 }
 
 func (rt *runtimeT) successExitCode(returnValue any) int {
@@ -789,7 +789,7 @@ func (rt *runtimeT) doInteractive(ts rns.Transport, destHashHex string) {
 			}, func(receipt *rns.RequestReceipt) {
 				fmt.Println("Request failed")
 				done <- true
-			}, nil, time.Duration(app.timeout*float64(time.Second)))
+			}, nil, time.Duration(app.timeout*float64(time.Second)), 0)
 			if err != nil {
 				fmt.Printf("Could not send request: %v\n", err)
 			} else {

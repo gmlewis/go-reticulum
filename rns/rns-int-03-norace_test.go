@@ -149,7 +149,7 @@ func TestIntegratedResponseResourceCompressionPolicyGoToPython(t *testing.T) {
 			responseReady := make(chan []byte, 1)
 			if _, err := link.Request("test_path", []byte("req"), func(rr *RequestReceipt) {
 				responseReady <- rr.Response.([]byte)
-			}, nil, nil, 0); err != nil {
+			}, nil, nil, 0, 0); err != nil {
 				t.Fatalf("request failed: %v", err)
 			}
 

@@ -92,6 +92,14 @@ type Destination struct {
 	transport          Transport
 	requestHandlers    map[string]*RequestHandler
 
+	// maxRequestSize is the maximum accepted request size in bytes for
+	// registered request handlers, mirroring Python
+	// Destination.max_request_size (Destination.py:158). Zero means
+	// "unlimited" (Python None); a positive value caps both inline
+	// (ContextRequest) request payloads and request-carrying resource
+	// advertisements (Link.py:992, 1031-1032).
+	maxRequestSize int64
+
 	ratchets          []*crypto.X25519PrivateKey
 	ratchetsPath      string
 	ratchetInterval   time.Duration
@@ -636,6 +644,38 @@ func (d *Destination) SetProofStrategy(strategy int) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.proofStrategy = strategy
+}
+
+// MaxRequestSize returns the maximum accepted request size in bytes for
+// registered request handlers, or zero meaning "unlimited" (Python
+// Destination.max_request_size, None when unset).
+func (d *Destination) MaxRequestSize() int64 {
+	if d == nil {
+		return 0
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.maxRequestSize
+}
+
+// SetMaxRequestSize sets the maximum accepted request size in bytes for
+// registered request handlers, mirroring Python
+// Destination.set_max_request_size (Destination.py:369-379). Zero means
+// "unlimited"; a negative value is rejected with an error (Python raises
+// ValueError "Maximum request size cannot be negative"). The size caps both
+// inline (ContextRequest) request payloads and request-carrying resource
+// advertisements (Link.py:992, 1031-1032).
+func (d *Destination) SetMaxRequestSize(maxRequestSize int64) error {
+	if d == nil {
+		return errors.New("nil destination")
+	}
+	if maxRequestSize < 0 {
+		return errors.New("maximum request size cannot be negative")
+	}
+	d.mu.Lock()
+	d.maxRequestSize = maxRequestSize
+	d.mu.Unlock()
+	return nil
 }
 
 // AcceptsLinks reports whether the destination will accept incoming

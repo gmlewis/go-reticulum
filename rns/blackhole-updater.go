@@ -104,7 +104,7 @@ func (ts *TransportSystem) blackholeFetch(sourceIdentityHash []byte) ([]blackhol
 		case responseCh <- nil:
 		default:
 		}
-	}, nil, BlackholeSourceTimeout); err != nil {
+	}, nil, BlackholeSourceTimeout, 0); err != nil {
 		link.Teardown()
 		return nil, fmt.Errorf("requesting /list: %v", err)
 	}

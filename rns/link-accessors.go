@@ -181,6 +181,7 @@ func (l *Link) Ping() (float64, error) {
 		func(rr *RequestReceipt) { done <- rr.GetStatus() },
 		nil,
 		timeout,
+		0,
 	)
 	if err != nil {
 		return 0, err

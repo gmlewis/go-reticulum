@@ -50,7 +50,7 @@ func (c *remoteLinkClient) Request(path string, data any, timeout float64) (any,
 	if c == nil || c.link == nil {
 		return nil, errors.New("remote link is unavailable")
 	}
-	receipt, err := c.link.Request(path, data, nil, nil, nil, time.Duration(timeout*float64(time.Second)))
+	receipt, err := c.link.Request(path, data, nil, nil, nil, time.Duration(timeout*float64(time.Second)), 0)
 	if err != nil {
 		return nil, err
 	}

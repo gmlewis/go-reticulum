@@ -207,7 +207,7 @@ func TestFetchModeSavesReceivedFiles(t *testing.T) {
 		if rr.Response != true {
 			t.Logf("Request response = %T %v", rr.Response, rr.Response)
 		}
-	}, nil, nil, 0)
+	}, nil, nil, 0, 0)
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}

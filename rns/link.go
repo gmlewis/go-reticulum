@@ -631,6 +631,18 @@ func (l *Link) receive(packet *Packet) {
 		}
 
 		if adv.IsRequest {
+			// Enforce the destination's max request size on request-carrying
+			// resource advertisements (Link.py:1031-1037): when the
+			// advertised data size (ResourceAdvertisement.read_size == adv.D)
+			// exceeds the limit, reject the transfer rather than accepting it.
+			if max := l.destination.MaxRequestSize(); max > 0 && adv.D > max {
+				if err := Reject(packet); err != nil {
+					l.logger.Debug("Failed to reject oversized request resource advertisement: %v", err)
+				} else {
+					l.logger.Debug("Rejected request resource with excessive size %v on %v", adv.D, l)
+				}
+				return
+			}
 			if _, err := Accept(packet, l.requestResourceConcluded, l.callbacks.ResourceStarted, nil); err != nil {
 				l.logger.Debug("Failed to accept request resource advertisement: %v", err)
 			}
@@ -638,15 +650,34 @@ func (l *Link) receive(packet *Packet) {
 		}
 
 		if adv.IsResponse {
+			var pendingRR *RequestReceipt
 			var progressCB func(*Resource)
 			l.mu.Lock()
 			for _, rr := range l.pendingRequests {
 				if bytes.Equal(rr.RequestID, adv.Q) {
+					pendingRR = rr
 					progressCB = rr.responseResourceProgress
 					break
 				}
 			}
 			l.mu.Unlock()
+
+			// Enforce the per-receipt max response size on the advertised
+			// (uncompressed) response size (Link.py:1038-1056): when the
+			// advertisement's read size (adv.D) exceeds the limit, reject the
+			// transfer and fail the receipt rather than accepting. l.mu is
+			// released before ResponseRejected (which re-enters
+			// removePendingRequest under l.mu) to avoid a self-deadlock.
+			if pendingRR != nil && pendingRR.MaxResponseSize() > 0 && adv.D > pendingRR.MaxResponseSize() {
+				if err := Reject(packet); err != nil {
+					l.logger.Debug("Failed to reject oversized response resource advertisement: %v", err)
+				} else {
+					l.logger.Debug("Rejected response with excessive size %v on %v", adv.D, l)
+				}
+				pendingRR.ResponseRejected()
+				return
+			}
+
 			if _, err := Accept(packet, l.responseResourceConcluded, l.callbacks.ResourceStarted, progressCB); err != nil {
 				l.logger.Debug("Failed to accept response resource advertisement: %v", err)
 			}
@@ -672,6 +703,13 @@ func (l *Link) receive(packet *Packet) {
 
 	case ContextRequest:
 		requestID := packet.GetTruncatedHash()
+		// Enforce the destination's max request size on the decrypted
+		// (packed) request payload (Link.py:992-997): when it exceeds the
+		// limit, drop the request before unpacking and dispatching it.
+		if max := l.destination.MaxRequestSize(); max > 0 && int64(len(packet.Data)) > max {
+			l.logger.Debug("Ignored request with excessive size %v on %v", len(packet.Data), l.destination)
+			return
+		}
 		unpackedRequest, err := unpackRequestResponseData(packet.Data)
 		if err != nil {
 			l.logger.Error("Failed to unpack request: %v", err)
@@ -702,8 +740,13 @@ func (l *Link) receive(packet *Packet) {
 			return
 		}
 		responseData := resList[1]
+		// Compute the on-wire response size the same way Python does
+		// (Link.py:1009): transfer_size = len(umsgpack.packb(response_data))-2,
+		// where the -2 strips the msgpack array wrapper overhead. Clamp at 0
+		// so a degenerate encoding never yields a negative size.
+		responseSize := packedResponseSize(responseData)
 		l.logger.Verbose("Calling handleResponse for requestID=%x, responseData=%v (type: %T)", requestID, responseData, responseData)
-		l.handleResponse(requestID, responseData, nil)
+		l.handleResponse(requestID, responseData, nil, responseSize, true)
 
 	case ContextResourceReq:
 		offset := 1
@@ -1533,7 +1576,7 @@ func (l *Link) sendTeardownPacket() {
 }
 
 // Request fires a generalized structured request packet asynchronously, expecting a correlated logical response from the remote peer.
-func (l *Link) Request(path string, data any, responseCallback, failedCallback, progressCallback func(*RequestReceipt), timeout time.Duration) (*RequestReceipt, error) {
+func (l *Link) Request(path string, data any, responseCallback, failedCallback, progressCallback func(*RequestReceipt), timeout time.Duration, maxResponseSize int64) (*RequestReceipt, error) {
 	requestPathHash := TruncatedHash([]byte(path))
 	// unpacked_request  = [time.time(), request_path_hash, data]
 	unpackedRequest := []any{float64(time.Now().UnixNano()) / 1e9, requestPathHash, data}
@@ -1563,6 +1606,7 @@ func (l *Link) Request(path string, data any, responseCallback, failedCallback, 
 			Status:           RequestSent,
 			SentAt:           time.Now(),
 			Timeout:          timeout,
+			maxResponseSize:  maxResponseSize,
 			callback:         responseCallback,
 			failedCallback:   failedCallback,
 			progressCallback: progressCallback,
@@ -1616,6 +1660,7 @@ func (l *Link) Request(path string, data any, responseCallback, failedCallback, 
 			Status:           RequestSent,
 			SentAt:           time.Now(),
 			Timeout:          timeout,
+			maxResponseSize:  maxResponseSize,
 			callback:         responseCallback,
 			failedCallback:   failedCallback,
 			progressCallback: progressCallback,
@@ -1733,25 +1778,63 @@ func (l *Link) handleRequest(requestID []byte, unpackedRequest []any) {
 	}
 }
 
-func (l *Link) handleResponse(requestID []byte, responseData any, metadata any) {
+// handleResponse is the Go port of Python Link.handle_response
+// (Link.py:857-883). It locates the pending request matching requestID,
+// optionally enforces the per-receipt max response size, then either completes
+// the receipt (responseReceived) or rejects it (ResponseRejected). The receipt
+// is always removed from pendingRequests once matched.
+//
+// Mirroring Python: size_ok is True when checkSize is false or the receipt has
+// no limit (maxResponseSize == 0, Python None); otherwise
+// response_size <= max_response_size. When updateSizes is true the receipt's
+// response size / transfer size accumulators are updated — that path belongs
+// to Task 3 (the response-data path); for now only the size gate is wired.
+//
+// Locking: the receipt is located and removed under l.mu, then l.mu is
+// released before invoking responseReceived/ResponseRejected. ResponseRejected
+// calls back into removePendingRequest (which locks l.mu), so calling it
+// under l.mu would deadlock; the up-front removal also makes that call a
+// no-op.
+func (l *Link) handleResponse(requestID []byte, responseData any, metadata any, responseSize int64, checkSize bool) {
 	l.logger.Verbose("handleResponse called: requestID=%x, responseData=%v (type: %T)", requestID, responseData, responseData)
 	l.mu.Lock()
-	defer l.mu.Unlock()
 
 	if l.status != LinkActive {
+		l.mu.Unlock()
 		l.logger.Verbose("handleResponse: link not active, status=%v", l.status)
 		return
 	}
 
+	var found *RequestReceipt
+	idx := -1
 	for i, rr := range l.pendingRequests {
 		if bytes.Equal(rr.RequestID, requestID) {
-			l.logger.Verbose("handleResponse: found pending request, calling responseReceived")
-			// Found it
-			rr.responseReceived(responseData, metadata)
-			// Remove from pending
-			l.pendingRequests = append(l.pendingRequests[:i], l.pendingRequests[i+1:]...)
+			found = rr
+			idx = i
 			break
 		}
+	}
+	if found == nil {
+		l.mu.Unlock()
+		l.logger.Verbose("handleResponse: no pending request for requestID=%x", requestID)
+		return
+	}
+	// Remove the receipt from the pending list now, under the lock. Python
+	// removes `remove` after the callback; we remove first so the success/
+	// failure callbacks never observe a stale pending entry, and so
+	// ResponseRejected's removePendingRequest is a no-op (avoiding a
+	// double-remove and, critically, a self-deadlock on l.mu).
+	l.pendingRequests = append(l.pendingRequests[:idx], l.pendingRequests[idx+1:]...)
+	maxResponseSize := found.MaxResponseSize()
+	l.mu.Unlock()
+
+	sizeOK := !checkSize || maxResponseSize == 0 || responseSize <= maxResponseSize
+	if sizeOK {
+		l.logger.Verbose("handleResponse: found pending request, calling responseReceived")
+		found.responseReceived(responseData, metadata)
+	} else {
+		l.logger.Debug("Rejected response with excessive size %v on %v", responseSize, l)
+		found.ResponseRejected()
 	}
 	l.logger.Verbose("handleResponse: done")
 }
@@ -1788,7 +1871,13 @@ func (l *Link) responseResourceConcluded(resource *Resource) {
 		}
 
 		responseData := resList[1]
-		l.handleResponse(requestID, responseData, resource.Metadata())
+		// The response-size gate already ran when the resource advertisement
+		// was accepted (ContextResourceAdv IsResponse branch), so the
+		// concluded resource is delivered without re-checking — Python passes
+		// resource.total_size/size with check_size=False here
+		// (Link.py:903,912). The transfer-size accumulation
+		// (update_sizes) is handled in Task 3.
+		l.handleResponse(requestID, responseData, resource.Metadata(), 0, false)
 		return
 	}
 
@@ -1851,6 +1940,20 @@ func (l *Link) requestResourceConcluded(resource *Resource) {
 
 func unpackRequestResponseData(data []byte) (any, error) {
 	return msgpack.UnpackPreserveBinMapKeys(data)
+}
+
+// packedResponseSize returns the on-wire size of an unpacked response value,
+// mirroring Python's `transfer_size = len(umsgpack.packb(response_data))-2`
+// (Link.py:1009). The -2 strips the msgpack array-wrapper overhead so the
+// size reflects the response payload's serialized footprint, matching what
+// Python compares against max_response_size. A packing failure or an
+// underflow from the -2 clamp yields 0 rather than a negative size.
+func packedResponseSize(responseData any) int64 {
+	packed, err := msgpack.Pack(responseData)
+	if err != nil || len(packed) < 2 {
+		return 0
+	}
+	return int64(len(packed) - 2)
 }
 
 // NoInboundFor returns how long it has been since the link last

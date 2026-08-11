@@ -189,7 +189,7 @@ func (c *clientT) queryStatus(id *rns.Identity, remoteIdentityArg *rns.Identity,
 		return nil, err
 	}
 
-	requestReceipt, err := link.Request(StatsGetPath, nil, nil, nil, nil, 0)
+	requestReceipt, err := link.Request(StatsGetPath, nil, nil, nil, nil, 0, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -512,7 +512,7 @@ func (c *clientT) requestUnpeerInternal(id *rns.Identity, targetHash []byte, rem
 		return nil, err
 	}
 
-	requestReceipt, err := link.Request(UnpeerRequestPath, targetHash, nil, nil, nil, 0)
+	requestReceipt, err := link.Request(UnpeerRequestPath, targetHash, nil, nil, nil, 0, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -578,7 +578,7 @@ func (c *clientT) requestSyncInternal(id *rns.Identity, targetHash []byte, remot
 		return nil, err
 	}
 
-	requestReceipt, err := link.Request(SyncRequestPath, targetHash, nil, nil, nil, 0)
+	requestReceipt, err := link.Request(SyncRequestPath, targetHash, nil, nil, nil, 0, 0)
 	if err != nil {
 		return nil, err
 	}

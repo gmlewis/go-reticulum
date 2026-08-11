@@ -46,6 +46,13 @@ type RequestReceipt struct {
 	StartedAt   time.Time
 	ConcludedAt time.Time
 	Timeout     time.Duration
+	// maxResponseSize is the maximum accepted response size in bytes,
+	// mirroring Python RequestReceipt.max_response_size (Link.py:1348). Zero
+	// means "unlimited" (Python None); a positive value caps both inline
+	// (ContextResponse) responses and response-carrying resource
+	// advertisements (Link.py:862-876, 1041-1046), rejecting the receipt via
+	// ResponseRejected when exceeded.
+	maxResponseSize int64
 
 	callback         func(*RequestReceipt)
 	failedCallback   func(*RequestReceipt)
@@ -66,6 +73,52 @@ func (rr *RequestReceipt) GetStatus() int {
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
 	return rr.Status
+}
+
+// MaxResponseSize returns the maximum accepted response size in bytes, or zero
+// meaning "unlimited" (Python RequestReceipt.max_response_size, None when
+// unset).
+func (rr *RequestReceipt) MaxResponseSize() int64 {
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
+	return rr.maxResponseSize
+}
+
+// SetMaxResponseSize sets the maximum accepted response size in bytes. Zero
+// means "unlimited". It is the transport-facing setter used by Link.Request to
+// thread the caller-supplied limit onto the receipt.
+func (rr *RequestReceipt) SetMaxResponseSize(max int64) {
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
+	rr.maxResponseSize = max
+}
+
+// ResponseRejected marks the request receipt as failed because an oversized
+// response was received, and fires the failed callback. It is the Go port of
+// Python RequestReceipt.response_rejected (Link.py:1402-1410), invoked from
+// the inline response path (handleResponse) and the response-resource
+// advertisement path when the response size exceeds maxResponseSize. It is
+// terminal-guarded and idempotent — a receipt already Failed/Ready is left
+// untouched — and removing the receipt from the link's pending list is a
+// no-op when the caller (handleResponse) already removed it.
+func (rr *RequestReceipt) ResponseRejected() {
+	rr.mu.Lock()
+	if rr.Status == RequestFailed || rr.Status == RequestReady {
+		rr.mu.Unlock()
+		return
+	}
+	rr.Status = RequestFailed
+	rr.ConcludedAt = time.Now()
+	cb := rr.failedCallback
+	rr.mu.Unlock()
+
+	if rr.Link != nil {
+		rr.Link.removePendingRequest(rr)
+	}
+
+	if cb != nil {
+		cb(rr)
+	}
 }
 
 // GetProgress returns response-transfer progress as a value from 0.0 to 1.0.

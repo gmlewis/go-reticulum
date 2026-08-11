@@ -310,7 +310,7 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 			return link.Establish()
 		},
 		requestLink: func(link *rns.Link, path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), timeout time.Duration) (*rns.RequestReceipt, error) {
-			return link.Request(path, data, responseCallback, failedCallback, progressCallback, timeout)
+			return link.Request(path, data, responseCallback, failedCallback, progressCallback, timeout, 0)
 		},
 		requestProgress: func(receipt *rns.RequestReceipt) float64 {
 			return receipt.GetProgress()
