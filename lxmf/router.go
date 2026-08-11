@@ -3242,6 +3242,21 @@ func (r *Router) CleanAvailableTickets() {
 	r.ticketStore.CleanAvailableTickets(nowSeconds, DefaultTicketGraceSeconds)
 }
 
+// orderedBinMap builds an OrderedMap whose keys are the raw bytes of each
+// string key in m, so msgpack.Pack emits bin (0xc4) map keys matching Python
+// umsgpack, which keys these on-disk maps by bytes (destination_hash,
+// transient_id, ticket). Go maps cannot key on []byte (non-comparable), so the
+// in-memory representation stays map[string]any and only the on-disk
+// serialization uses bin keys. The read path (anyToBytes/anyToMap/Unpack)
+// already accepts both str and bin keys, so no read-side change is needed.
+func orderedBinMap(m map[string]any) msgpack.OrderedMap {
+	om := make(msgpack.OrderedMap, 0, len(m))
+	for k, v := range m {
+		om = append(om, msgpack.OrderedMapEntry{Key: []byte(k), Value: v})
+	}
+	return om
+}
+
 func (r *Router) SaveAvailableTickets() error {
 	if r.ticketStore == nil {
 		return nil
@@ -3262,14 +3277,16 @@ func (r *Router) SaveAvailableTickets() error {
 		for ticket, entry := range ticketEntries {
 			destinationTickets[ticket] = []any{entry.Expires}
 		}
-		inbound[destinationHash] = destinationTickets
+		// Inner map keyed by ticket bytes → bin keys.
+		inbound[destinationHash] = orderedBinMap(destinationTickets)
 	}
 	r.ticketStore.mu.RUnlock()
 
+	// Top-level keys stay str (matching Python); destHash/ticket levels use bin.
 	payload := map[string]any{
-		"outbound":        outbound,
-		"inbound":         inbound,
-		"last_deliveries": lastDeliveries,
+		"outbound":        orderedBinMap(outbound),
+		"inbound":         orderedBinMap(inbound),
+		"last_deliveries": orderedBinMap(lastDeliveries),
 	}
 
 	if err := os.MkdirAll(r.storagePath, 0o755); err != nil {
@@ -3424,7 +3441,8 @@ func (r *Router) saveLocalTransientIDCaches(saveDelivered, saveProcessed bool) e
 		return err
 	}
 	if len(delivered) > 0 {
-		packed, err := msgpack.Pack(delivered)
+		// transient_id keys → bin (matches Python); Go map stays string keyed.
+		packed, err := msgpack.Pack(orderedBinMap(delivered))
 		if err != nil {
 			return err
 		}
@@ -3433,7 +3451,7 @@ func (r *Router) saveLocalTransientIDCaches(saveDelivered, saveProcessed bool) e
 		}
 	}
 	if len(processed) > 0 {
-		packed, err := msgpack.Pack(processed)
+		packed, err := msgpack.Pack(orderedBinMap(processed))
 		if err != nil {
 			return err
 		}
@@ -3812,7 +3830,8 @@ func (r *Router) SaveOutboundStampCosts() error {
 	if err := os.MkdirAll(r.storagePath, 0o755); err != nil {
 		return err
 	}
-	packed, err := msgpack.Pack(payload)
+	// destination_hash keys → bin (matches Python); Go map stays string keyed.
+	packed, err := msgpack.Pack(orderedBinMap(payload))
 	if err != nil {
 		return err
 	}

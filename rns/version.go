@@ -6,4 +6,4 @@
 package rns
 
 // VERSION is the current version of the Go port of the Reticulum Network Stack.
-const VERSION = "0.31.0"
+const VERSION = "0.32.0"

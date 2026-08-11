@@ -340,14 +340,28 @@ type BlackholeIdentityEntry struct {
 
 // PathEntry represents an entry in the path table.
 type PathEntry struct {
-	Timestamp       time.Time
-	NextHop         []byte
-	Hops            int
-	Expires         time.Time
-	RandomBlobs     [][]byte // Random blobs for announce replay protection
-	Interface       interfaces.Interface
-	InterfaceName   string
-	Packet          []byte
+	Timestamp     time.Time
+	NextHop       []byte
+	Hops          int
+	Expires       time.Time
+	RandomBlobs   [][]byte // Random blobs for announce replay protection
+	Interface     interfaces.Interface
+	InterfaceName string
+	Packet        []byte
+	// IfaceHash is the on-disk identity of the receiving interface
+	// (SHA-256 of "{Type}[{Name}]", matching Python interface.get_hash()).
+	// It is the persisted key resolvePathInterfacesLocked uses to reattach
+	// the live Interface after interfaces register on startup, since Go loads
+	// the path table before creating network interfaces (rns.go loads at :316,
+	// initInterfaces at :331). Python stores the same value at
+	// destination_table field [6].
+	IfaceHash []byte
+	// PacketHash is the 32-byte SHA-256 hash of the cached announce packet
+	// (FullHash of the announce's hashable part, matching Python
+	// announce_packet.packet_hash). It is the cache/announces/<hex> filename
+	// key Python's get_cached_packet uses to recover the raw announce, and is
+	// stored at destination_table field [7] instead of the raw packet bytes.
+	PacketHash      []byte
 	Unresponsive    bool // Whether the path has been marked unresponsive.
 	ResponsiveState int  // 0=unknown, 1=responsive, 2=unresponsive.
 }
@@ -1077,31 +1091,204 @@ func anyToInt64(value any) (int64, bool) {
 	}
 }
 
-func (ts *TransportSystem) pathTableSnapshotLocked() []any {
-	ts.ensureStateLocked()
-	entries := make([]any, 0, len(ts.pathTable))
-	for destHash, entry := range ts.pathTable {
-		ifaceName := entry.InterfaceName
-		if entry.Interface != nil {
-			ifaceName = entry.Interface.Name()
+// anyToFloatSeconds decodes a destination_table timestamp/expires field that
+// Python writes as a float (time.time() seconds). It also accepts an integer
+// (whole seconds) defensively. Returns false for anything else.
+func anyToFloatSeconds(value any) (float64, bool) {
+	switch v := value.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	default:
+		rv := reflect.ValueOf(value)
+		switch rv.Kind() {
+		case reflect.Float32, reflect.Float64:
+			return rv.Float(), true
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			return float64(rv.Int()), true
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			return float64(rv.Uint()), true
 		}
-		// Convert RandomBlobs to []any for msgpack compatibility.
+		return 0, false
+	}
+}
+
+// floatToTime converts a float-seconds timestamp (Python time.time() style)
+// into a time.Time without losing the sub-second part to float->int64 overflow.
+func floatToTime(sec float64) time.Time {
+	if sec <= 0 {
+		return time.Time{}
+	}
+	s := int64(sec)
+	ns := int64((sec - float64(s)) * 1e9)
+	return time.Unix(s, ns)
+}
+
+// interfaceHash returns Python's interface.get_hash(): the SHA-256 of the
+// interface's string identity "{Type}[{Name}]" (e.g. "AutoInterface[myauto]").
+// It is the value Python stores at destination_table field [6] and resolves
+// via find_interface_from_hash. Returns nil for a nil interface.
+func interfaceHash(iface interfaces.Interface) []byte {
+	if iface == nil {
+		return nil
+	}
+	return FullHash([]byte(fmt.Sprintf("%v[%v]", iface.Type(), iface.Name())))
+}
+
+// findInterfaceByHash is the Go port of Python Transport.find_interface_from_hash.
+func (ts *TransportSystem) findInterfaceByHash(hash []byte) interfaces.Interface {
+	if len(hash) == 0 {
+		return nil
+	}
+	for _, iface := range ts.interfaces {
+		if bytes.Equal(interfaceHash(iface), hash) {
+			return iface
+		}
+	}
+	return nil
+}
+
+// announceCacheDirFor returns the cache/announces directory that corresponds
+// to a given storage path: ~/.reticulum/storage -> ~/.reticulum/cache/announces
+// (the sibling cache dir Python's Transport.cache / get_cached_packet use).
+// Returns "" when storagePath is unset.
+func announceCacheDirFor(storagePath string) string {
+	if storagePath == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(storagePath), "cache", "announces")
+}
+
+// announceCacheDir returns the cache/announces dir for this transport's own
+// storage path.
+func (ts *TransportSystem) announceCacheDir() string {
+	return announceCacheDirFor(ts.storagePath)
+}
+
+// writeCachedAnnounce writes the raw announce + receiving-interface reference
+// to <cacheDir>/<hex(packetHash)> as msgpack [raw, interface_reference],
+// matching Python Transport.cache(packet, packet_type="announce"). Python's
+// get_cached_packet reads this back to reconstruct the announce referenced by
+// destination_table field [7]. cacheDir is computed by the caller so the
+// cache files land next to whichever storagePath the table is being written to.
+func writeCachedAnnounce(logger *Logger, cacheDir string, packetHash, raw []byte, iface interfaces.Interface) {
+	if cacheDir == "" || len(packetHash) == 0 || len(raw) == 0 {
+		return
+	}
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
+		logger.Error("Failed to create announce cache dir: %v", err)
+		return
+	}
+	ifaceRef := ""
+	if iface != nil {
+		ifaceRef = fmt.Sprintf("%v[%v]", iface.Type(), iface.Name())
+	}
+	packed, err := msgpack.Pack([]any{raw, ifaceRef})
+	if err != nil {
+		logger.Error("Failed to pack cached announce: %v", err)
+		return
+	}
+	path := filepath.Join(cacheDir, hex.EncodeToString(packetHash))
+	if err := os.WriteFile(path, packed, 0o600); err != nil {
+		logger.Error("Failed to write cached announce: %v", err)
+	}
+}
+
+// cacheAnnounce writes a cached announce next to this transport's own storage
+// path (used by the periodic persistPathTable, which always writes to
+// ts.storagePath).
+func (ts *TransportSystem) cacheAnnounce(packetHash, raw []byte, iface interfaces.Interface) {
+	writeCachedAnnounce(ts.logger, ts.announceCacheDir(), packetHash, raw, iface)
+}
+
+// loadCachedAnnounce reads cache/announces/<hex(packetHash)> and returns the
+// raw announce bytes plus the stored interface-reference string. ok is false
+// when the file is absent or malformed (mirroring Python get_cached_packet
+// returning None).
+func (ts *TransportSystem) loadCachedAnnounce(packetHash []byte) (raw []byte, ifaceRef string, ok bool) {
+	dir := ts.announceCacheDir()
+	if dir == "" || len(packetHash) == 0 {
+		return nil, "", false
+	}
+	data, err := os.ReadFile(filepath.Join(dir, hex.EncodeToString(packetHash)))
+	if err != nil {
+		return nil, "", false
+	}
+	unpacked, err := msgpack.Unpack(data)
+	if err != nil {
+		return nil, "", false
+	}
+	arr, good := unpacked.([]any)
+	if !good || len(arr) < 1 {
+		return nil, "", false
+	}
+	raw, _ = arr[0].([]byte)
+	if len(arr) >= 2 {
+		ifaceRef, _ = arr[1].(string)
+	}
+	return raw, ifaceRef, true
+}
+
+// pathCacheItem pairs a cached announce's hash with its raw bytes and
+// receiving interface, collected under the path-table lock and written to
+// cache/announces after the lock is released.
+type pathCacheItem struct {
+	hash  []byte
+	raw   []byte
+	iface interfaces.Interface
+}
+
+// pathTablePersistLocked builds the Python-compatible destination_table
+// snapshot AND the set of announce cache files that must accompany it. Both
+// persistPathTable and SavePathTable use it so the on-disk destination_table
+// and cache/announces stay consistent.
+//
+// The serialised entry layout matches Python Transport.py:3390 exactly:
+//
+//	[destHash, timestamp(float s), next_hop, hops, expires(float s),
+//	 random_blobs, interface_hash, packet_hash]
+//
+// Entries whose receiving interface is nil (no longer active) are skipped,
+// matching Python's "interface no longer active" skip at Transport.py:3374.
+// Entries without a cached announce packet / hash are skipped too, since
+// Python's loader would drop them (get_cached_packet returns None).
+func (ts *TransportSystem) pathTablePersistLocked() (snapshot []any, caches []pathCacheItem) {
+	ts.ensureStateLocked()
+	snapshot = make([]any, 0, len(ts.pathTable))
+	for destHash, entry := range ts.pathTable {
+		if entry.Interface == nil {
+			continue
+		}
+		ifaceHash := interfaceHash(entry.Interface)
+		if ifaceHash == nil {
+			continue
+		}
+		packetHash := entry.PacketHash
+		if len(packetHash) == 0 || len(entry.Packet) == 0 {
+			continue
+		}
 		blobs := make([]any, len(entry.RandomBlobs))
 		for i, b := range entry.RandomBlobs {
 			blobs[i] = b
 		}
-		entries = append(entries, []any{
+		snapshot = append(snapshot, []any{
 			[]byte(destHash),
+			float64(entry.Timestamp.UnixNano()) / 1e9,
 			entry.NextHop,
 			entry.Hops,
-			entry.Timestamp.UnixNano(),
-			entry.Expires.UnixNano(),
+			float64(entry.Expires.UnixNano()) / 1e9,
 			blobs,
-			ifaceName,
-			entry.Packet,
+			ifaceHash,
+			packetHash,
 		})
+		caches = append(caches, pathCacheItem{hash: packetHash, raw: entry.Packet, iface: entry.Interface})
 	}
-	return entries
+	return snapshot, caches
 }
 
 func (ts *TransportSystem) persistPathTable() {
@@ -1116,7 +1303,7 @@ func (ts *TransportSystem) persistPathTable() {
 		return
 	}
 	filePath := pathTableFile(ts.storagePath)
-	snapshot := ts.pathTableSnapshotLocked()
+	snapshot, caches := ts.pathTablePersistLocked()
 	ts.mu.Unlock()
 
 	packed, err := msgpack.Pack(snapshot)
@@ -1138,23 +1325,32 @@ func (ts *TransportSystem) persistPathTable() {
 		ts.logger.Error("Failed to persist path table atomically: %v", err)
 		return
 	}
+	// Write the announce cache files that accompany the destination_table so
+	// Python's get_cached_packet (and Go's own reload) can recover the raw
+	// announce referenced by each entry's packet_hash. See pathTablePersistLocked.
+	for _, c := range caches {
+		ts.cacheAnnounce(c.hash, c.raw, c.iface)
+	}
 }
 
 func (ts *TransportSystem) resolvePathInterfacesLocked() {
-	interfaceByName := map[string]interfaces.Interface{}
-	for _, iface := range ts.interfaces {
-		interfaceByName[iface.Name()] = iface
-	}
 	for _, entry := range ts.pathTable {
 		if entry.Interface != nil {
 			entry.InterfaceName = entry.Interface.Name()
+			entry.IfaceHash = interfaceHash(entry.Interface)
 			continue
 		}
-		if entry.InterfaceName == "" {
+		// Loaded entries carry IfaceHash (Python destination_table field [6])
+		// but no live Interface, because Go loads the path table before network
+		// interfaces are created (rns.go:316 vs :331). Reattach the live
+		// interface by hash — the Python find_interface_from_hash equivalent —
+		// each time an interface registers. This runs under RegisterInterface.
+		if len(entry.IfaceHash) == 0 {
 			continue
 		}
-		if iface, ok := interfaceByName[entry.InterfaceName]; ok {
+		if iface := ts.findInterfaceByHash(entry.IfaceHash); iface != nil {
 			entry.Interface = iface
+			entry.InterfaceName = iface.Name()
 		}
 	}
 }
@@ -1220,58 +1416,54 @@ func (ts *TransportSystem) loadPathTableLocked() {
 	ts.pathTable = make(map[string]*PathEntry, len(list))
 	for _, rawEntry := range list {
 		fields, ok := rawEntry.([]any)
-		if !ok || len(fields) < 7 {
+		// Python's destination_table layout is an 8-field array:
+		//   [destHash, timestamp, next_hop, hops, expires, blobs, iface_hash, packet_hash]
+		// (Transport.py:3390). No back-compat with the old Go 7/8-field layout —
+		// entries that do not match are skipped, matching Python dropping
+		// unresolvable entries. Paths are re-learned from announces.
+		if !ok || len(fields) < 8 {
 			continue
 		}
 
-		// Support both old format (7 fields) and new format (8 fields with RandomBlobs).
-		var (
-			destHash  []byte
-			nextHop   []byte
-			hops64    int64
-			ts64      int64
-			exp64     int64
-			blobs     [][]byte
-			ifaceName string
-			packetB   []byte
-		)
-
-		var ok1, ok2, ok3, ok4, ok5, ok6, ok7 bool
-		destHash, ok1 = fields[0].([]byte)
-		nextHop, ok2 = fields[1].([]byte)
-		hops64, ok3 = anyToInt64(fields[2])
-		ts64, ok4 = anyToInt64(fields[3])
-		exp64, ok5 = anyToInt64(fields[4])
-
-		if len(fields) >= 8 {
-			// New format: field 5 is random blobs, 6 is iface name, 7 is packet.
-			if rawBlobs, isSlice := fields[5].([]any); isSlice {
-				for _, rb := range rawBlobs {
-					if b, bOk := rb.([]byte); bOk {
-						blobs = append(blobs, copyBytes(b))
-					}
-				}
-			}
-			ifaceName, ok6 = fields[6].(string)
-			packetB, ok7 = fields[7].([]byte)
-		} else {
-			// Old format: field 5 is iface name, 6 is packet.
-			ifaceName, ok6 = fields[5].(string)
-			packetB, ok7 = fields[6].([]byte)
-		}
-
+		destHash, ok1 := fields[0].([]byte)
+		tsFloat, ok2 := anyToFloatSeconds(fields[1])
+		nextHop, ok3 := fields[2].([]byte)
+		hops64, ok4 := anyToInt64(fields[3])
+		expFloat, ok5 := anyToFloatSeconds(fields[4])
+		ifaceHash, ok6 := fields[6].([]byte)
+		packetHash, ok7 := fields[7].([]byte)
 		if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 || !ok7 {
 			continue
 		}
 
+		var blobs [][]byte
+		if rawBlobs, isSlice := fields[5].([]any); isSlice {
+			for _, rb := range rawBlobs {
+				if b, bOk := rb.([]byte); bOk {
+					blobs = append(blobs, copyBytes(b))
+				}
+			}
+		}
+
+		// Recover the raw announce from cache/announces/<hex(packetHash)>. If
+		// the cache file is missing the entry cannot support cached path
+		// responses, but the path itself is still usable for forwarding once
+		// the interface reattaches, so keep the entry with a nil Packet (Python
+		// drops it; Go keeps the path and re-learns the announce later).
+		var packetRaw []byte
+		if raw, _, cacheOK := ts.loadCachedAnnounce(packetHash); cacheOK {
+			packetRaw = copyBytes(raw)
+		}
+
 		entry := &PathEntry{
-			Timestamp:     time.Unix(0, ts64),
-			NextHop:       copyBytes(nextHop),
-			Hops:          int(hops64),
-			Expires:       time.Unix(0, exp64),
-			RandomBlobs:   blobs,
-			InterfaceName: ifaceName,
-			Packet:        copyBytes(packetB),
+			Timestamp:   floatToTime(tsFloat),
+			NextHop:     copyBytes(nextHop),
+			Hops:        int(hops64),
+			Expires:     floatToTime(expFloat),
+			RandomBlobs: blobs,
+			IfaceHash:   copyBytes(ifaceHash),
+			Packet:      packetRaw,
+			PacketHash:  copyBytes(packetHash),
 		}
 		ts.pathTable[string(destHash)] = entry
 	}
@@ -2648,7 +2840,17 @@ func (ts *TransportSystem) SaveKnownDestinations(storagePath string) {
 
 	path := filepath.Join(storagePath, "known_destinations")
 	ts.mu.Lock()
-	data, err := msgpack.Pack(ts.knownDestinations)
+	// Emit binary (msgpack bin 0xc4) map keys, matching Python RNS, which keys
+	// Identity.known_destinations by the raw destination_hash bytes. Packing the
+	// in-memory map[string][]any directly would emit str keys (fixstr 0xa0-0xbf)
+	// that Python's umsgpack tries to utf-8-decode and rejects with
+	// InvalidStringException. Go maps cannot key on []byte (non-comparable), so
+	// build an OrderedMap with []byte keys; Pack routes []byte through packBin.
+	ordered := make(msgpack.OrderedMap, 0, len(ts.knownDestinations))
+	for k, v := range ts.knownDestinations {
+		ordered = append(ordered, msgpack.OrderedMapEntry{Key: copyBytes([]byte(k)), Value: v})
+	}
+	data, err := msgpack.Pack(ordered)
 	count := len(ts.knownDestinations)
 	ts.mu.Unlock()
 
@@ -3674,6 +3876,7 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 				entry.NextHop = nextHop
 				entry.Interface = iface
 				entry.InterfaceName = iface.Name()
+				entry.IfaceHash = interfaceHash(iface)
 				entry.Expires = time.Now().Add(24 * 7 * time.Hour)
 				// Cache the raw announce so a later path request for this
 				// destination can be answered from the known path (see
@@ -3681,6 +3884,7 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 				// the request all the way to the remote node. Mirrors Python
 				// Reticulum caching the announce packet at IDX_PT_PACKET.
 				entry.Packet = copyBytes(packet.Raw)
+				entry.PacketHash = append([]byte(nil), packet.GetHash()...)
 				if randomBlob != nil && !containsBlob(entry.RandomBlobs, randomBlob) {
 					entry.RandomBlobs = append(entry.RandomBlobs, randomBlob)
 					if len(entry.RandomBlobs) > maxRandomBlobs {
@@ -3707,8 +3911,10 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 				RandomBlobs:   blobs,
 				Interface:     iface,
 				InterfaceName: iface.Name(),
+				IfaceHash:     interfaceHash(iface),
 				Expires:       time.Now().Add(24 * 7 * time.Hour), // 1 week default
 				Packet:        copyBytes(packet.Raw),
+				PacketHash:    append([]byte(nil), packet.GetHash()...),
 			}
 			ts.logger.Info("Learned path to %x via %v, %v hops", packet.DestinationHash, iface.Name(), packet.Hops)
 			shouldForwardToLocalClients = true
@@ -4228,7 +4434,7 @@ func (ts *TransportSystem) SavePathTable(storagePath string) error {
 		return nil
 	}
 	ts.mu.Lock()
-	snapshot := ts.pathTableSnapshotLocked()
+	snapshot, caches := ts.pathTablePersistLocked()
 	ts.mu.Unlock()
 
 	packed, err := msgpack.Pack(snapshot)
@@ -4238,7 +4444,17 @@ func (ts *TransportSystem) SavePathTable(storagePath string) error {
 	if err := os.MkdirAll(storagePath, 0o700); err != nil {
 		return fmt.Errorf("create storage dir: %w", err)
 	}
-	return os.WriteFile(filepath.Join(storagePath, "destination_table"), packed, 0o600)
+	if err := os.WriteFile(filepath.Join(storagePath, "destination_table"), packed, 0o600); err != nil {
+		return fmt.Errorf("write path table: %w", err)
+	}
+	// Write the announce cache files that accompany the destination_table,
+	// relative to this storagePath (which may differ from ts.storagePath when
+	// callers persist to a custom directory). See pathTablePersistLocked.
+	cacheDir := announceCacheDirFor(storagePath)
+	for _, c := range caches {
+		writeCachedAnnounce(ts.logger, cacheDir, c.hash, c.raw, c.iface)
+	}
+	return nil
 }
 
 // PersistData triggers a save of the path table and the packet-hash

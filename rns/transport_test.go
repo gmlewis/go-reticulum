@@ -1138,15 +1138,17 @@ func TestPathTablePersistenceRoundTrip(t *testing.T) {
 	timestamp := time.Now().Truncate(time.Second)
 	expires := timestamp.Add(time.Hour)
 	packet := []byte("persist-packet")
+	packetHash := bytes.Repeat([]byte{0x0c}, 32)
 
 	ts.pathTable[string(destHash)] = &PathEntry{
-		Timestamp:     timestamp,
-		NextHop:       nextHop,
-		Hops:          3,
-		Expires:       expires,
-		Interface:     iface,
-		InterfaceName: iface.Name(),
-		Packet:        packet,
+		Timestamp:  timestamp,
+		NextHop:    nextHop,
+		Hops:       3,
+		Expires:    expires,
+		Interface:  iface,
+		IfaceHash:  interfaceHash(iface),
+		Packet:     packet,
+		PacketHash: packetHash,
 	}
 
 	ts.persistPathTable()
@@ -1171,8 +1173,12 @@ func TestPathTablePersistenceRoundTrip(t *testing.T) {
 	if loaded.Interface != nil {
 		t.Fatalf("expected interface unresolved until registration")
 	}
-	if loaded.InterfaceName != "persist-iface" {
-		t.Fatalf("interface name mismatch after load: got %q", loaded.InterfaceName)
+	// The new Python-compatible layout persists the interface HASH (field [6]),
+	// not the interface name, so the loaded entry carries IfaceHash and an
+	// empty InterfaceName until the live interface is reattached by hash.
+	wantIfaceHash := interfaceHash(iface)
+	if !bytes.Equal(loaded.IfaceHash, wantIfaceHash) {
+		t.Fatalf("interface hash mismatch after load: got %x, want %x", loaded.IfaceHash, wantIfaceHash)
 	}
 	if !bytes.Equal(loaded.Packet, packet) {
 		t.Fatalf("packet payload mismatch after load")
