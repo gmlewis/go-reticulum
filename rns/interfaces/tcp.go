@@ -560,6 +560,11 @@ func (tsi *TCPServerInterface) handleConnection(conn net.Conn) {
 	bi := NewBaseInterface(name, ModeFull, TCPBitrateGuess)
 	bi.setDefaultIFACSize(TCPDefaultIFACSize)
 	bi.copyPanicOnInterfaceErrorFrom(tsi.BaseInterface)
+	// Inherit the parent server's gravity for weighted path selection
+	// (RNS/Interfaces/TCPInterface.py:639, v1.4.1:
+	// `spawned_interface.gravity = self.gravity`). The same spawn path backs
+	// I2P and Backbone servers (they reuse newTCPServerInterface).
+	bi.SetGravity(tsi.Gravity())
 	tci := &TCPClientInterface{
 		BaseInterface:  bi,
 		conn:           conn,

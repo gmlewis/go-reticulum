@@ -97,6 +97,61 @@ func TestHandleAnnounce(t *testing.T) {
 	}
 }
 
+// TestHandleAnnounceGravityWeightedPathReplacement verifies the v1.4.1
+// gravity-weighted path replacement (RNS/Transport.py:1821-1845): when an
+// announce arrives with hops <= the existing path entry and the SAME emission
+// timebase, the path is replaced only if the receiving interface's gravity is
+// strictly higher than the current entry's. A same-timebase announce on an
+// equal-or-lower-gravity interface must NOT replace the path.
+func TestHandleAnnounceGravityWeightedPathReplacement(t *testing.T) {
+	t.Parallel()
+	ts := NewTransportSystem(nil)
+	ts.identity = mustTestNewIdentity(t, true)
+
+	lowGrav := &capturingInterface{name: "low-gravity", gravity: 1}
+	highGrav := &capturingInterface{name: "high-gravity", gravity: 10}
+	ts.interfaces = append(ts.interfaces, lowGrav, highGrav)
+
+	remoteID := mustTestNewIdentity(t, true)
+	remoteDest, err := NewDestination(nil, remoteID, DestinationIn, DestinationSingle, "gravpath")
+	if err != nil {
+		t.Fatalf("remote dest: %v", err)
+	}
+
+	mkAnnounce := func() *Packet {
+		p := mustTestAnnouncePacketWithEmission(t, nil, remoteID, remoteDest, 5)
+		p.Hops = 2
+		if len(p.Raw) > 1 {
+			p.Raw[1] = 2
+		}
+		return p
+	}
+
+	// First announce on the low-gravity interface → path learned via it.
+	ts.handleAnnounce(mkAnnounce(), lowGrav)
+	entry, ok := ts.pathTable[string(remoteDest.Hash)]
+	if !ok {
+		t.Fatal("expected path after first announce")
+	}
+	if entry.Interface != lowGrav {
+		t.Fatalf("expected initial path via low-gravity iface, got %v", entry.InterfaceName)
+	}
+
+	// Same emission timebase, same hops, on a higher-gravity interface → replace.
+	ts.handleAnnounce(mkAnnounce(), highGrav)
+	entry = ts.pathTable[string(remoteDest.Hash)]
+	if entry.Interface != highGrav {
+		t.Fatalf("expected path replaced to high-gravity iface, got %v", entry.InterfaceName)
+	}
+
+	// Same emission timebase on an equal-or-lower-gravity interface → NO replace.
+	ts.handleAnnounce(mkAnnounce(), lowGrav)
+	entry = ts.pathTable[string(remoteDest.Hash)]
+	if entry.Interface != highGrav {
+		t.Fatalf("expected path to remain on high-gravity iface after lower-gravity same-timebase announce, got %v", entry.InterfaceName)
+	}
+}
+
 func TestRequestPathThrottleAndTag(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
@@ -1388,6 +1443,7 @@ type capturingInterface struct {
 	sendCount int
 	lastSent  []byte
 	bitrate   int
+	gravity   int
 }
 
 func (c *capturingInterface) Name() string { return c.name }
@@ -1406,7 +1462,7 @@ func (c *capturingInterface) BytesSent() uint64           { return 0 }
 func (c *capturingInterface) Detach() error               { return nil }
 func (c *capturingInterface) IsDetached() bool            { return false }
 func (c *capturingInterface) Age() time.Duration          { return 0 }
-func (c *capturingInterface) Gravity() int                { return 0 }
+func (c *capturingInterface) Gravity() int                { return c.gravity }
 func (c *capturingInterface) RecursivePrs() bool          { return false }
 func (c *capturingInterface) AnnouncesFromInternal() bool { return true }
 func (c *capturingInterface) AnnouncesToInternal() *bool  { return nil }

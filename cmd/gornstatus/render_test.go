@@ -549,3 +549,44 @@ func TestRenderInterfaceNetwork(t *testing.T) {
 		t.Errorf("expected network name, got:\n%v", got)
 	}
 }
+
+// TestRenderInterfaceGravity verifies that a nonzero interface gravity is
+// annotated on the Status line as ", gravity X" (Python rnstatus.py:423,
+// v1.4.1: `if "gravity" in ifstat and ifstat["gravity"]: ss += ", gravity
+// "+str(ifstat["gravity"])`). Zero gravity (Python falsy) must not annotate.
+func TestRenderInterfaceGravity(t *testing.T) {
+	t.Parallel()
+	ifstat := rns.InterfaceStat{
+		Name:    "RNodeInterface[LoRa 915]",
+		Status:  true,
+		Mode:    modeAccessPoint,
+		Bitrate: 1200,
+		Gravity: 7,
+	}
+	var buf bytes.Buffer
+	renderInterface(&buf, ifstat, false)
+	got := buf.String()
+	if !strings.Contains(got, "    Status    : Up, gravity 7\n") {
+		t.Errorf("expected status line with gravity annotation, got:\n%v", got)
+	}
+
+	// Zero gravity is falsy in Python and must not annotate the status line.
+	var buf2 bytes.Buffer
+	ifstat.Gravity = 0
+	renderInterface(&buf2, ifstat, false)
+	if !strings.Contains(buf2.String(), "    Status    : Up\n") {
+		t.Errorf("expected plain Up status for zero gravity, got:\n%v", buf2.String())
+	}
+	if strings.Contains(buf2.String(), "gravity") {
+		t.Errorf("zero gravity should not annotate status, got:\n%v", buf2.String())
+	}
+
+	// Down + gravity still annotates.
+	var buf3 bytes.Buffer
+	ifstat.Gravity = 3
+	ifstat.Status = false
+	renderInterface(&buf3, ifstat, false)
+	if !strings.Contains(buf3.String(), "    Status    : Down, gravity 3\n") {
+		t.Errorf("expected Down status with gravity annotation, got:\n%v", buf3.String())
+	}
+}

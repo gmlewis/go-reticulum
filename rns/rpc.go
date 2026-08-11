@@ -414,6 +414,7 @@ func (r *Reticulum) getInterfaceStats() map[string]any {
 			"txs":                         txs,
 			"status":                      iface.Status(),
 			"mode":                        iface.Mode(),
+			"gravity":                     iface.Gravity(),
 			"bitrate":                     iface.Bitrate(),
 			"clients":                     nil,
 			"incoming_announce_frequency": 0.0,
@@ -611,6 +612,7 @@ type InterfaceStat struct {
 	Type    string
 	Status  bool
 	Mode    int
+	Gravity int
 	Bitrate int
 	RXB     uint64
 	TXB     uint64
@@ -1014,6 +1016,7 @@ func DecodeInterfaceStats(raw any) *InterfaceStatsSnapshot {
 			Type:    asString(lookupAnyValue(im, "type")),
 			Status:  asBool(lookupAnyValue(im, "status")),
 			Mode:    asInt(lookupAnyValue(im, "mode")),
+			Gravity: asInt(lookupAnyValue(im, "gravity")),
 			Bitrate: asInt(lookupAnyValue(im, "bitrate")),
 			RXB:     asUint64(lookupAnyValue(im, "rxb")),
 			TXB:     asUint64(lookupAnyValue(im, "txb")),

@@ -146,6 +146,44 @@ func TestSortInterfacesAnnounces(t *testing.T) {
 	}
 }
 
+func TestSortInterfacesGravity(t *testing.T) {
+	t.Parallel()
+	mkIfaces := func() []rns.InterfaceStat {
+		return []rns.InterfaceStat{
+			{Name: "A", Gravity: 1},
+			{Name: "B", Gravity: 10},
+			{Name: "C", Gravity: 5},
+		}
+	}
+
+	tests := []struct {
+		name        string
+		sortKey     string
+		sortReverse bool
+		wantOrder   string
+	}{
+		{"gravity descending", "gravity", false, "BCA"},
+		{"g alias descending", "g", false, "BCA"},
+		{"gravity ascending", "gravity", true, "ACB"},
+		{"g alias ascending", "g", true, "ACB"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ifaces := mkIfaces()
+			sortInterfaces(ifaces, tc.sortKey, tc.sortReverse)
+			var got string
+			for _, iface := range ifaces {
+				got += iface.Name
+			}
+			if got != tc.wantOrder {
+				t.Errorf("sortInterfaces(%q, %v) order = %q, want %q",
+					tc.sortKey, tc.sortReverse, got, tc.wantOrder)
+			}
+		})
+	}
+}
+
 func TestSpeedStr(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

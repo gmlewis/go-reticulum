@@ -21,6 +21,7 @@ type jsonInterfaceStat struct {
 	Type               string   `json:"type"`
 	Status             bool     `json:"status"`
 	Mode               int      `json:"mode"`
+	Gravity            int      `json:"gravity"`
 	Bitrate            int      `json:"bitrate"`
 	RXB                uint64   `json:"rxb"`
 	TXB                uint64   `json:"txb"`
@@ -90,6 +91,7 @@ func toJSONSnapshot(s *rns.InterfaceStatsSnapshot) jsonStatsSnapshot {
 			Type:               iface.Type,
 			Status:             iface.Status,
 			Mode:               iface.Mode,
+			Gravity:            iface.Gravity,
 			Bitrate:            iface.Bitrate,
 			RXB:                iface.RXB,
 			TXB:                iface.TXB,

@@ -88,7 +88,7 @@ func TestHDLCFrameLenValidationDropsInvalidFrames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	// Let the server accept the connection and start the spawned readLoop.
 	time.Sleep(100 * time.Millisecond)
 

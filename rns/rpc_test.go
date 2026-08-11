@@ -564,7 +564,7 @@ func TestRPCInterfaceStatsSchemaIncludesCoreFields(t *testing.T) {
 	}
 
 	for _, key := range []string{
-		"name", "short_name", "hash", "type", "rxb", "txb", "rxs", "txs", "status", "mode", "bitrate",
+		"name", "short_name", "hash", "type", "rxb", "txb", "rxs", "txs", "status", "mode", "gravity", "bitrate",
 		"clients", "incoming_announce_frequency", "outgoing_announce_frequency", "held_announces", "announce_queue",
 		"peers", "ifac_signature", "ifac_size", "ifac_netname", "autoconnect_source",
 	} {
@@ -584,6 +584,59 @@ func (i *rpcStatsMetadataInterface) IFACConfig() interfaces.IFACConfig {
 
 func (i *rpcStatsMetadataInterface) AutoconnectSource() string {
 	return "feedface"
+}
+
+// rpcGravityInterface is a dummyInterface that reports a configurable gravity,
+// for verifying the ifstats "gravity" field (RNS/Reticulum.py:1489, v1.4.1).
+type rpcGravityInterface struct {
+	dummyInterface
+	gravity int
+}
+
+func (i *rpcGravityInterface) Gravity() int { return i.gravity }
+
+// TestRPCInterfaceStatsIncludesGravity verifies the per-interface ifstats map
+// carries a "gravity" entry matching the interface's Gravity() (Python
+// Reticulum.py:1489, v1.4.1), and that DecodeInterfaceStats surfaces it on
+// InterfaceStat.Gravity.
+func TestRPCInterfaceStatsIncludesGravity(t *testing.T) {
+	t.Parallel()
+
+	const wantGravity = 42
+	ts := NewTransportSystem(nil)
+	iface := &rpcGravityInterface{dummyInterface: dummyInterface{name: "gravity-iface"}, gravity: wantGravity}
+	ts.RegisterInterface(iface)
+
+	r := &Reticulum{transport: ts}
+	resp := r.handleRPCRequest(map[any]any{"get": "interface_stats"})
+	stats, ok := resp.(map[string]any)
+	if !ok {
+		t.Fatalf("expected stats map[string]any, got %#v", resp)
+	}
+	list, ok := stats["interfaces"].([]any)
+	if !ok || len(list) == 0 {
+		t.Fatalf("expected non-empty interfaces list, got %#v", stats["interfaces"])
+	}
+	entry, ok := list[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected interface entry map[string]any, got %#v", list[0])
+	}
+	g, ok := entry["gravity"]
+	if !ok {
+		t.Fatalf("expected key %q in interface entry, got %#v", "gravity", entry)
+	}
+	if got := asInt(g); got != wantGravity {
+		t.Fatalf("ifstats gravity = %v, want %v", got, wantGravity)
+	}
+
+	// Decode path: InterfaceStat.Gravity must be populated from the map.
+	snap := DecodeInterfaceStats(stats)
+	if len(snap.Interfaces) != 1 {
+		t.Fatalf("decoded snapshot has %d interfaces, want 1", len(snap.Interfaces))
+	}
+	if got := snap.Interfaces[0].Gravity; got != wantGravity {
+		t.Fatalf("InterfaceStat.Gravity = %d, want %d", got, wantGravity)
+	}
 }
 
 func TestRPCInterfaceStatsIncludesIFACAndAutoconnectMetadata(t *testing.T) {
@@ -671,7 +724,7 @@ func TestDecodeInterfaceStatsAllFields(t *testing.T) {
 		"interfaces": []any{
 			map[string]any{
 				"name": "TestIface", "type": "UDP", "status": true,
-				"mode": 1, "bitrate": 9600, "rxb": uint64(500), "txb": uint64(600),
+				"mode": 1, "gravity": 42, "bitrate": 9600, "rxb": uint64(500), "txb": uint64(600),
 				"rxs": 10.0, "txs": 20.0, "clients": clients,
 				"ifac_signature": []byte{1, 2, 3, 4, 5}, "ifac_size": 16,
 				"ifac_netname": "mynet", "autoconnect_source": "auto1",
@@ -725,6 +778,9 @@ func TestDecodeInterfaceStatsAllFields(t *testing.T) {
 	}
 	if iface.Mode != 1 {
 		t.Errorf("Mode = %v, want 1", iface.Mode)
+	}
+	if iface.Gravity != 42 {
+		t.Errorf("Gravity = %v, want 42", iface.Gravity)
 	}
 	if iface.RXS != 10.0 {
 		t.Errorf("RXS = %v, want 10.0", iface.RXS)

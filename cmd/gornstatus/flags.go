@@ -61,8 +61,8 @@ func (a *appT) initFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&a.linkStats, "link-stats", false, "show link stats")
 	fs.BoolVar(&a.trafficTotals, "t", false, "display traffic totals")
 	fs.BoolVar(&a.trafficTotals, "totals", false, "display traffic totals")
-	fs.StringVar(&a.sortKey, "s", "", "sort interfaces by [rate, traffic, rx, tx, rxs, txs, announces, arx, atx, held]")
-	fs.StringVar(&a.sortKey, "sort", "", "sort interfaces by [rate, traffic, rx, tx, rxs, txs, announces, arx, atx, held]")
+	fs.StringVar(&a.sortKey, "s", "", "sort interfaces by [rate, traffic, rx, tx, rxs, txs, announces, arx, atx, held, gravity]")
+	fs.StringVar(&a.sortKey, "sort", "", "sort interfaces by [rate, traffic, rx, tx, rxs, txs, announces, arx, atx, held, gravity]")
 	fs.BoolVar(&a.sortReverse, "r", false, "reverse sorting")
 	fs.BoolVar(&a.sortReverse, "reverse", false, "reverse sorting")
 	fs.BoolVar(&a.jsonOutput, "j", false, "output in JSON format")
@@ -116,7 +116,7 @@ options:
   -l, --link-stats      show link stats
   -t, --totals          display traffic totals
   -s SORT, --sort SORT  sort interfaces by [rate, traffic, rx, tx, rxs, txs,
-                        announces, arx, atx, held]
+                        announces, arx, atx, held, gravity]
   -r, --reverse         reverse sorting
   -j, --json            output in JSON format
   -R hash               transport identity hash of remote instance to get

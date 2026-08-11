@@ -8,17 +8,23 @@ This is an experimental port of the [Reticulum Network Stack](https://github.com
 It is based upon the following Python original works:
 
 * https://github.com/markqvist/lxmf
-  `commit 269ce43afc6552e934c212887c2450718311396a`
-  `Author: Mark Qvist <mark@unsigned.io>`
-  `Date:   Sat Jan 10 21:50:42 2026 +0100`
+  ```
+  commit 269ce43afc6552e934c212887c2450718311396a
+  Author: Mark Qvist <mark@unsigned.io>
+  Date:   Sat Jan 10 21:50:42 2026 +0100
+  ```
 * https://github.com/markqvist/Reticulum
-  `commit b48b96e61676504e0a4e527b33b9a0b4495c6872 (HEAD -> master, tag: 1.4.2)`
-  `Author: Mark Qvist <bc7291552be7a58f361522990465165c>`
-  `Date:   Sun Jul 26 17:59:12 2026 +0200`
+  ```
+  commit b48b96e61676504e0a4e527b33b9a0b4495c6872 (master, tag: 1.4.2)
+  Author: Mark Qvist <bc7291552be7a58f361522990465165c>
+  Date:   Sun Jul 26 17:59:12 2026 +0200
+  ```
 * https://github.com/acehoss/rnsh
-  `commit 50f042008e9dafa7ae906ef9870b4b17b8a2aa45`
-  `Author: acehoss <5148966+acehoss@users.noreply.github.com>`
-  `Date:   Mon Jan 12 09:17:07 2026 -0500`
+  ```
+  commit 50f042008e9dafa7ae906ef9870b4b17b8a2aa45
+  Author: acehoss <5148966+acehoss@users.noreply.github.com>
+  Date:   Mon Jan 12 09:17:07 2026 -0500
+  ```
 
 ## Go Port Security & Dependency Policy
 - **Vendored Compression Snapshot**: A local in-repo snapshot (with source commit

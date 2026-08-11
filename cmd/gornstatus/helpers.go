@@ -143,6 +143,10 @@ func sortInterfaces(ifaces []rns.InterfaceStat, key string, sortReverse bool) {
 		cmpFunc = func(a, b rns.InterfaceStat) int {
 			return cmp.Compare(optInt(a.HeldAnnounces), optInt(b.HeldAnnounces))
 		}
+	case "gravity", "g":
+		cmpFunc = func(a, b rns.InterfaceStat) int {
+			return cmp.Compare(a.Gravity, b.Gravity)
+		}
 	default:
 		return
 	}

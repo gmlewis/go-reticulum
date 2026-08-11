@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -194,6 +195,12 @@ func renderInterface(w io.Writer, ifstat rns.InterfaceStat, astats bool) {
 	ss := "Up"
 	if !ifstat.Status {
 		ss = "Down"
+	}
+	// Annotate gravity on the status line when nonzero (Python rnstatus.py
+	// :423, v1.4.1: `if "gravity" in ifstat and ifstat["gravity"]: ss += ",
+	// gravity "+str(ifstat["gravity"])`; 0 is falsy and not rendered).
+	if ifstat.Gravity != 0 {
+		ss += ", gravity " + strconv.Itoa(ifstat.Gravity)
 	}
 	ms := modeString(ifstat.Mode)
 	cs := clientsString(name, ifstat.Clients)

@@ -552,6 +552,10 @@ func (ai *AutoInterface) addPeer(addr, ifname string) {
 	peer.copyPanicOnInterfaceErrorFrom(ai.BaseInterface)
 	peer.online.Store(true)
 	peer.SetIFACConfig(ai.IFACConfig())
+	// Inherit the parent AutoInterface's gravity for weighted path
+	// selection (RNS/Interfaces/AutoInterface.py:583, v1.4.1:
+	// `spawned_interface.gravity = self.gravity`).
+	peer.SetGravity(ai.Gravity())
 
 	if old, exists := ai.spawnedInterfaces[addr]; exists {
 		if err := old.Detach(); err != nil {

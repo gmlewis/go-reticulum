@@ -1637,6 +1637,28 @@ func announceEmissionFromPacket(packet *Packet) uint64 {
 	return emitted
 }
 
+// timebaseFromRandomBlobs returns the maximum announce-emission timebase
+// across the given replay-protection random blobs. Each blob's timebase is
+// its big-endian uint40 at bytes [5:10], the same field
+// announceEmissionFromPacket reads. Mirrors Python
+// Transport.timebase_from_random_blobs (RNS/Transport.py:3276-3281, v1.4.1).
+func timebaseFromRandomBlobs(blobs [][]byte) uint64 {
+	var timebase uint64
+	for _, b := range blobs {
+		if len(b) < 10 {
+			continue
+		}
+		var emitted uint64
+		for _, x := range b[5:10] {
+			emitted = (emitted << 8) | uint64(x)
+		}
+		if emitted > timebase {
+			timebase = emitted
+		}
+	}
+	return timebase
+}
+
 func announceEmissionFromRaw(raw []byte) uint64 {
 	packet := NewPacketFromRaw(raw)
 	if err := packet.Unpack(); err != nil {
@@ -3925,34 +3947,66 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 
 		// Check if we already have a path
 		if entry, ok := ts.pathTable[destHash]; ok {
-			// If new path is shorter or equal, update
+			// If new path is shorter or equal, decide whether to replace the
+			// existing entry. Mirrors RNS/Transport.py:1821-1845 (v1.4.1):
+			// a previously-unseen announce with a newer emission timebase
+			// always replaces (after marking the path unknown); an announce
+			// with the *same* timebase only replaces when it arrived on a
+			// higher-gravity interface than the current path entry.
 			if packet.Hops <= entry.Hops {
-				nextHop, err := nextHopFromAnnounce(packet)
-				if err != nil {
-					ts.logger.Debug("Announce next-hop extraction failed for %x: %v", packet.DestinationHash, err)
-					return
-				}
-				entry.Timestamp = time.Now()
-				entry.Hops = packet.Hops
-				entry.NextHop = nextHop
-				entry.Interface = iface
-				entry.InterfaceName = iface.Name()
-				entry.IfaceHash = interfaceHash(iface)
-				entry.Expires = time.Now().Add(24 * 7 * time.Hour)
-				// Cache the raw announce so a later path request for this
-				// destination can be answered from the known path (see
-				// handlePathRequest's cached-path branch) instead of relaying
-				// the request all the way to the remote node. Mirrors Python
-				// Reticulum caching the announce packet at IDX_PT_PACKET.
-				entry.Packet = copyBytes(packet.Raw)
-				entry.PacketHash = append([]byte(nil), packet.GetHash()...)
-				if randomBlob != nil && !containsBlob(entry.RandomBlobs, randomBlob) {
-					entry.RandomBlobs = append(entry.RandomBlobs, randomBlob)
-					if len(entry.RandomBlobs) > maxRandomBlobs {
-						entry.RandomBlobs = entry.RandomBlobs[len(entry.RandomBlobs)-maxRandomBlobs:]
+				announceEmitted := announceEmissionFromPacket(packet)
+				pathTimebase := timebaseFromRandomBlobs(entry.RandomBlobs)
+				newBlob := randomBlob != nil && !containsBlob(entry.RandomBlobs, randomBlob)
+
+				shouldReplace := false
+				if newBlob && announceEmitted > pathTimebase {
+					// A previously-unseen announce with a newer emission
+					// timestamp. Mark the path unknown and replace it.
+					ts.markPathUnknownStateLocked(destHash)
+					shouldReplace = true
+				} else if announceEmitted == pathTimebase {
+					// Same timebase: only replace if the new announce arrived
+					// on a higher-gravity interface. A path loaded from disk
+					// has no interface (Python: current_gravity == None), in
+					// which case we never replace here.
+					if entry.Interface != nil {
+						currentGravity := entry.Interface.Gravity()
+						announceGravity := iface.Gravity()
+						if announceGravity > currentGravity {
+							ts.logger.Pathing("Replacing path table entry for %x with new announce due to higher gravity (%v->%v)", packet.DestinationHash, currentGravity, announceGravity)
+							shouldReplace = true
+						}
 					}
 				}
-				shouldForwardToLocalClients = true
+
+				if shouldReplace {
+					nextHop, err := nextHopFromAnnounce(packet)
+					if err != nil {
+						ts.logger.Debug("Announce next-hop extraction failed for %x: %v", packet.DestinationHash, err)
+						return
+					}
+					entry.Timestamp = time.Now()
+					entry.Hops = packet.Hops
+					entry.NextHop = nextHop
+					entry.Interface = iface
+					entry.InterfaceName = iface.Name()
+					entry.IfaceHash = interfaceHash(iface)
+					entry.Expires = time.Now().Add(24 * 7 * time.Hour)
+					// Cache the raw announce so a later path request for this
+					// destination can be answered from the known path (see
+					// handlePathRequest's cached-path branch) instead of relaying
+					// the request all the way to the remote node. Mirrors Python
+					// Reticulum caching the announce packet at IDX_PT_PACKET.
+					entry.Packet = copyBytes(packet.Raw)
+					entry.PacketHash = append([]byte(nil), packet.GetHash()...)
+					if randomBlob != nil && !containsBlob(entry.RandomBlobs, randomBlob) {
+						entry.RandomBlobs = append(entry.RandomBlobs, randomBlob)
+						if len(entry.RandomBlobs) > maxRandomBlobs {
+							entry.RandomBlobs = entry.RandomBlobs[len(entry.RandomBlobs)-maxRandomBlobs:]
+						}
+					}
+					shouldForwardToLocalClients = true
+				}
 			}
 		} else {
 			nextHop, err := nextHopFromAnnounce(packet)
@@ -4423,7 +4477,13 @@ func (ts *TransportSystem) MarkPathUnknownState(destinationHash []byte) {
 	}
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
-	entry, ok := ts.pathTable[string(destinationHash)]
+	ts.markPathUnknownStateLocked(string(destinationHash))
+}
+
+// markPathUnknownStateLocked is the lock-free inner core of
+// MarkPathUnknownState, for callers already holding ts.mu.
+func (ts *TransportSystem) markPathUnknownStateLocked(destHash string) {
+	entry, ok := ts.pathTable[destHash]
 	if !ok {
 		return
 	}
