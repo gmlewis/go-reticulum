@@ -678,8 +678,21 @@ func (l *Link) receive(packet *Packet) {
 				return
 			}
 
-			if _, err := Accept(packet, l.responseResourceConcluded, l.callbacks.ResourceStarted, progressCB); err != nil {
+			acceptedResource, err := Accept(packet, l.responseResourceConcluded, l.callbacks.ResourceStarted, progressCB)
+			if err != nil {
 				l.logger.Debug("Failed to accept response resource advertisement: %v", err)
+				return
+			}
+			// Record the response/transfer sizes at accept time
+			// (Link.py:1049-1054): response_size = read_size (adv.D, the
+			// uncompressed data size), set only if still unset; and
+			// response_transfer_size += read_transfer_size (adv.T, the
+			// on-wire transfer size). This is the resource-path counterpart
+			// to handleResponse's update_sizes accumulation — the conclude
+			// path does not re-accumulate, so this single accept-time
+			// recording is exactly once per response resource.
+			if pendingRR != nil && acceptedResource != nil {
+				pendingRR.recordResponseResourceSize(adv.D, adv.T)
 			}
 			return
 		}
@@ -746,7 +759,10 @@ func (l *Link) receive(packet *Packet) {
 		// so a degenerate encoding never yields a negative size.
 		responseSize := packedResponseSize(responseData)
 		l.logger.Verbose("Calling handleResponse for requestID=%x, responseData=%v (type: %T)", requestID, responseData, responseData)
-		l.handleResponse(requestID, responseData, nil, responseSize, true)
+		// Python (Link.py:1009-1010) passes transfer_size for both
+		// response_size and response_transfer_size, with update_sizes=True
+		// and check_size=True on the inline response-data path.
+		l.handleResponse(requestID, responseData, nil, responseSize, responseSize, true, true)
 
 	case ContextResourceReq:
 		offset := 1
@@ -1780,22 +1796,26 @@ func (l *Link) handleRequest(requestID []byte, unpackedRequest []any) {
 
 // handleResponse is the Go port of Python Link.handle_response
 // (Link.py:857-883). It locates the pending request matching requestID,
-// optionally enforces the per-receipt max response size, then either completes
-// the receipt (responseReceived) or rejects it (ResponseRejected). The receipt
-// is always removed from pendingRequests once matched.
+// optionally records the response/transfer sizes, optionally enforces the
+// per-receipt max response size, then either completes the receipt
+// (responseReceived) or rejects it (ResponseRejected). The receipt is always
+// removed from pendingRequests once matched.
 //
 // Mirroring Python: size_ok is True when checkSize is false or the receipt has
 // no limit (maxResponseSize == 0, Python None); otherwise
 // response_size <= max_response_size. When updateSizes is true the receipt's
-// response size / transfer size accumulators are updated — that path belongs
-// to Task 3 (the response-data path); for now only the size gate is wired.
+// response size is set and transfer size accumulated (Link.py:867-870); this
+// is the response-data (inline ContextResponse) path. The resource-conclude
+// path passes updateSizes=false so it does not accumulate — the resource
+// path's sizes are recorded at advertisement-accept time instead
+// (recordResponseResourceSize).
 //
 // Locking: the receipt is located and removed under l.mu, then l.mu is
 // released before invoking responseReceived/ResponseRejected. ResponseRejected
 // calls back into removePendingRequest (which locks l.mu), so calling it
 // under l.mu would deadlock; the up-front removal also makes that call a
 // no-op.
-func (l *Link) handleResponse(requestID []byte, responseData any, metadata any, responseSize int64, checkSize bool) {
+func (l *Link) handleResponse(requestID []byte, responseData any, metadata any, responseSize, responseTransferSize int64, checkSize, updateSizes bool) {
 	l.logger.Verbose("handleResponse called: requestID=%x, responseData=%v (type: %T)", requestID, responseData, responseData)
 	l.mu.Lock()
 
@@ -1827,6 +1847,14 @@ func (l *Link) handleResponse(requestID []byte, responseData any, metadata any, 
 	l.pendingRequests = append(l.pendingRequests[:idx], l.pendingRequests[idx+1:]...)
 	maxResponseSize := found.MaxResponseSize()
 	l.mu.Unlock()
+
+	// Record sizes before the size gate, mirroring Python (Link.py:867-870):
+	// the response-data path accumulates regardless of whether the response
+	// is accepted, so an oversized inline response still records its size
+	// before being rejected.
+	if updateSizes {
+		found.recordResponseSize(responseSize, responseTransferSize)
+	}
 
 	sizeOK := !checkSize || maxResponseSize == 0 || responseSize <= maxResponseSize
 	if sizeOK {
@@ -1875,9 +1903,12 @@ func (l *Link) responseResourceConcluded(resource *Resource) {
 		// was accepted (ContextResourceAdv IsResponse branch), so the
 		// concluded resource is delivered without re-checking — Python passes
 		// resource.total_size/size with check_size=False here
-		// (Link.py:903,912). The transfer-size accumulation
-		// (update_sizes) is handled in Task 3.
-		l.handleResponse(requestID, responseData, resource.Metadata(), 0, false)
+		// (Link.py:903,912). The response/transfer sizes were already
+		// recorded at advertisement-accept time (recordResponseResourceSize),
+		// so the conclude path passes updateSizes=False to avoid
+		// double-accumulation — mirroring Python's update_sizes=False default
+		// for response_resource_concluded.
+		l.handleResponse(requestID, responseData, resource.Metadata(), 0, 0, false, false)
 		return
 	}
 

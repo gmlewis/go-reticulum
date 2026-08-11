@@ -54,6 +54,27 @@ type RequestReceipt struct {
 	// ResponseRejected when exceeded.
 	maxResponseSize int64
 
+	// responseSize is the uncompressed size of the received response,
+	// mirroring Python RequestReceipt.response_size (Link.py:1341). It is
+	// nil-unset (responseSizeSet false, Python None) until recorded. For an
+	// inline (ContextResponse) response it is set in handleResponse with
+	// updateSizes=true (Link.py:868); for a response resource it is set at
+	// advertisement-accept time (Link.py:1050-1051), only if still unset.
+	responseSize    int64
+	responseSizeSet bool
+
+	// responseTransferSize is the on-wire (possibly compressed) transfer size
+	// accumulated for the received response, mirroring Python
+	// RequestReceipt.response_transfer_size (Link.py:1340). It is nil-unset
+	// (responseTransferSizeSet false, Python None) until the first
+	// accumulation, after which it accumulates. Accumulation is gated to the
+	// response-data path (handleResponse with updateSizes=true, Link.py:869-
+	// 870) and the response-resource advertisement-accept path (Link.py:1052-
+	// 1053); the resource-conclude path does not accumulate
+	// (updateSizes=false).
+	responseTransferSize    int64
+	responseTransferSizeSet bool
+
 	callback         func(*RequestReceipt)
 	failedCallback   func(*RequestReceipt)
 	progressCallback func(*RequestReceipt)
@@ -91,6 +112,80 @@ func (rr *RequestReceipt) SetMaxResponseSize(max int64) {
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
 	rr.maxResponseSize = max
+}
+
+// ResponseSize returns the uncompressed size of the received response, or nil
+// when no response size has been recorded yet (Python
+// RequestReceipt.response_size, None before any response data arrives). It is
+// the Go port of Python's response_size attribute (Link.py:1341,867-868):
+// set by the inline response path (handleResponse updateSizes=true) and by
+// the response-resource advertisement-accept path (Link.py:1050-1051).
+func (rr *RequestReceipt) ResponseSize() *int64 {
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
+	if !rr.responseSizeSet {
+		return nil
+	}
+	v := rr.responseSize
+	return &v
+}
+
+// ResponseTransferSize returns the accumulated on-wire transfer size of the
+// received response, or nil when no transfer size has been recorded yet
+// (Python RequestReceipt.response_transfer_size, None until the first
+// accumulation). It is the Go port of Python's response_transfer_size attribute
+// (Link.py:1340,869-870): accumulated by the inline response path
+// (handleResponse updateSizes=true) and the response-resource
+// advertisement-accept path (Link.py:1052-1053).
+func (rr *RequestReceipt) ResponseTransferSize() *int64 {
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
+	if !rr.responseTransferSizeSet {
+		return nil
+	}
+	v := rr.responseTransferSize
+	return &v
+}
+
+// recordResponseSize records the response size and accumulates the transfer
+// size for the response-data (inline ContextResponse) path. It is the Go port
+// of Python handle_response's update_sizes block (Link.py:867-870):
+// response_size is set (overwriting any prior value, matching the inline
+// path's unconditional assignment), and response_transfer_size is accumulated
+// (initialised from unset to 0 on first use, matching Python's
+// `if None: 0` guard). The caller is handleResponse with updateSizes=true.
+func (rr *RequestReceipt) recordResponseSize(responseSize, responseTransferSize int64) {
+	rr.mu.Lock()
+	rr.responseSize = responseSize
+	rr.responseSizeSet = true
+	if !rr.responseTransferSizeSet {
+		rr.responseTransferSize = 0
+		rr.responseTransferSizeSet = true
+	}
+	rr.responseTransferSize += responseTransferSize
+	rr.mu.Unlock()
+}
+
+// recordResponseResourceSize records the response size from a response-resource
+// advertisement at accept time (Link.py:1050-1054). response_size is set only
+// if still unset (idempotent across re-advertisements, matching Python's
+// `if response_size == None` guard), and response_transfer_size accumulates
+// the advertised transfer size. This is the resource-path counterpart to
+// recordResponseSize: it runs directly in the advertisement-accept branch,
+// not through handleResponse (which uses updateSizes=false for the resource
+// conclude path).
+func (rr *RequestReceipt) recordResponseResourceSize(readSize, readTransferSize int64) {
+	rr.mu.Lock()
+	if !rr.responseSizeSet {
+		rr.responseSize = readSize
+		rr.responseSizeSet = true
+	}
+	if !rr.responseTransferSizeSet {
+		rr.responseTransferSize = 0
+		rr.responseTransferSizeSet = true
+	}
+	rr.responseTransferSize += readTransferSize
+	rr.mu.Unlock()
 }
 
 // ResponseRejected marks the request receipt as failed because an oversized

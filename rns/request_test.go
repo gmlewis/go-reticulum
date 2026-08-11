@@ -315,7 +315,7 @@ func TestLinkResponseMetadata(t *testing.T) {
 		pendingRequests: []*RequestReceipt{rr},
 	}
 
-	link.handleResponse(requestID, []byte("inline"), metadata, 0, false)
+	link.handleResponse(requestID, []byte("inline"), metadata, 0, 0, false, false)
 
 	got, ok := rr.Metadata.(map[string][]byte)
 	if !ok {
