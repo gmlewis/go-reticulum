@@ -311,6 +311,16 @@ func (p *Packet) Unpack() error {
 	p.Flags = p.Raw[0]
 	p.Hops = int(p.Raw[1])
 
+	// Hop-count validation (RNS/Packet.py:245-248, v1.3.8): a packet whose
+	// hop count has reached PathfinderM (128) has exhausted its forwarding
+	// budget and must be dropped rather than parsed and dispatched. The
+	// transport read loop treats an Unpack error as a reason to log and
+	// continue, so rejecting here prevents forwarding of an over-hopped or
+	// hop-count-attacked packet.
+	if p.Hops >= PathfinderM {
+		return fmt.Errorf("invalid hop count %d", p.Hops)
+	}
+
 	p.HeaderType = int((p.Flags & 0b01000000) >> 6)
 	p.ContextFlag = int((p.Flags & 0b00100000) >> 5)
 	p.TransportType = int((p.Flags & 0b00010000) >> 4)

@@ -29,6 +29,10 @@ const (
 	SerialFrameTimeout    = 100 * time.Millisecond
 	serialReconnectDelay  = 5 * time.Second
 
+	// SerialDefaultIFACSize is the DEFAULT_IFAC_SIZE for serial interfaces
+	// (RNS/Interfaces/SerialInterface.py:45).
+	SerialDefaultIFACSize = 8
+
 	// cbaud is not always defined in syscall for all Linux platforms.
 	cbaud = 0x100f
 )
@@ -80,6 +84,7 @@ func NewSerialInterface(name, port string, speed, databits, stopbits int, parity
 		stopbits:       stopbits,
 		inboundHandler: handler,
 	}
+	si.setDefaultIFACSize(SerialDefaultIFACSize)
 
 	if err := si.openAndConfigure(); err != nil {
 		return nil, err

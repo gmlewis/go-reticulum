@@ -48,18 +48,22 @@ func (c *pathRequestClock) Sleep(d time.Duration) { c.now = c.now.Add(d) }
 
 type pathRequestInterface struct{}
 
-func (pathRequestInterface) Name() string          { return "eth0" }
-func (pathRequestInterface) Type() string          { return "test" }
-func (pathRequestInterface) Status() bool          { return true }
-func (pathRequestInterface) IsOut() bool           { return false }
-func (pathRequestInterface) Mode() int             { return interfaces.ModeFull }
-func (pathRequestInterface) Bitrate() int          { return 0 }
-func (pathRequestInterface) Send([]byte) error     { return nil }
-func (pathRequestInterface) BytesReceived() uint64 { return 0 }
-func (pathRequestInterface) BytesSent() uint64     { return 0 }
-func (pathRequestInterface) Detach() error         { return nil }
-func (pathRequestInterface) IsDetached() bool      { return false }
-func (pathRequestInterface) Age() time.Duration    { return 0 }
+func (pathRequestInterface) Name() string                { return "eth0" }
+func (pathRequestInterface) Type() string                { return "test" }
+func (pathRequestInterface) Status() bool                { return true }
+func (pathRequestInterface) IsOut() bool                 { return false }
+func (pathRequestInterface) Mode() int                   { return interfaces.ModeFull }
+func (pathRequestInterface) Bitrate() int                { return 0 }
+func (pathRequestInterface) Send([]byte) error           { return nil }
+func (pathRequestInterface) BytesReceived() uint64       { return 0 }
+func (pathRequestInterface) BytesSent() uint64           { return 0 }
+func (pathRequestInterface) Detach() error               { return nil }
+func (pathRequestInterface) IsDetached() bool            { return false }
+func (pathRequestInterface) Age() time.Duration          { return 0 }
+func (pathRequestInterface) Gravity() int                { return 0 }
+func (pathRequestInterface) RecursivePrs() bool          { return false }
+func (pathRequestInterface) AnnouncesFromInternal() bool { return true }
+func (pathRequestInterface) AnnouncesToInternal() *bool  { return nil }
 
 func TestDoRequestPrintsSpinnerAndSuccessMessage(t *testing.T) {
 	t.Parallel()

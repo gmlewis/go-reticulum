@@ -12,9 +12,9 @@ It is based upon the following Python original works:
   `Author: Mark Qvist <mark@unsigned.io>`
   `Date:   Sat Jan 10 21:50:42 2026 +0100`
 * https://github.com/markqvist/Reticulum
-  `commit 1b50b7f446e096cc9f893f5f45d24ea266889b4d`
-  `Author: Mark Qvist <mark@unsigned.io>`
-  `Date:   Thu Mar 12 00:56:18 2026 +0100`
+  `commit b48b96e61676504e0a4e527b33b9a0b4495c6872 (HEAD -> master, tag: 1.4.2)`
+  `Author: Mark Qvist <bc7291552be7a58f361522990465165c>`
+  `Date:   Sun Jul 26 17:59:12 2026 +0200`
 * https://github.com/acehoss/rnsh
   `commit 50f042008e9dafa7ae906ef9870b4b17b8a2aa45`
   `Author: acehoss <5148966+acehoss@users.noreply.github.com>`

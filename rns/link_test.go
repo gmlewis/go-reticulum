@@ -591,3 +591,86 @@ func TestLinkResourceManagement(t *testing.T) {
 		t.Fatal("ReadyForNewResource should be true when no outgoing resources are present")
 	}
 }
+
+// TestLinkIdentifyBlackholedTearsDownLink verifies the blackholed-identity
+// guard in the ContextLinkIdentify branch (RNS/Link.py:974-976, v1.3.2): when
+// the initiator's identity verifies but is on the receiver's local blackhole
+// list, the receiver tears down the link and does NOT fire RemoteIdentified.
+func TestLinkIdentifyBlackholedTearsDownLink(t *testing.T) {
+	t.Parallel()
+
+	tsInitiator := newTestTransportSystem(t)
+	tsReceiver := newTestTransportSystem(t)
+
+	pipeInitiator, pipeReceiver, cleanup := newTestPipes(t, tsInitiator, tsReceiver)
+	defer cleanup()
+	tsInitiator.RegisterInterface(pipeInitiator)
+	tsReceiver.RegisterInterface(pipeReceiver)
+
+	receiverDest := mustTestNewDestination(t, tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
+	establishedReceiver := make(chan *Link, 1)
+	receiverDest.callbacks.LinkEstablished = func(l *Link) {
+		establishedReceiver <- l
+	}
+
+	link := mustTestNewLink(t, tsInitiator, receiverDest)
+	t.Cleanup(link.Teardown)
+
+	establishedInitiator := make(chan struct{}, 1)
+	link.callbacks.LinkEstablished = func(l *Link) {
+		establishedInitiator <- struct{}{}
+	}
+
+	if err := link.Establish(); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case <-establishedInitiator:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for initiator link establishment")
+	}
+
+	var receiverLink *Link
+	select {
+	case receiverLink = <-establishedReceiver:
+		t.Cleanup(receiverLink.Teardown)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for receiver link establishment")
+	}
+
+	identified := make(chan *Identity, 1)
+	receiverLink.callbacks.RemoteIdentified = func(_ *Link, id *Identity) {
+		identified <- id
+	}
+	closedCh := make(chan struct{}, 1)
+	receiverLink.SetLinkClosedCallback(func(_ *Link) {
+		select {
+		case closedCh <- struct{}{}:
+		default:
+		}
+	})
+
+	// Blackhole the initiator's identity on the receiver BEFORE identify.
+	if !tsReceiver.BlackholeIdentity(tsInitiator.identity.Hash, nil, "test blackhole") {
+		t.Fatal("BlackholeIdentity returned false")
+	}
+
+	if err := link.Identify(tsInitiator.identity); err != nil {
+		t.Fatalf("Identify() error: %v", err)
+	}
+
+	// The receiver must tear down the link, NOT fire RemoteIdentified.
+	select {
+	case <-closedCh:
+		// expected: link torn down
+	case id := <-identified:
+		t.Fatalf("RemoteIdentified fired for blackholed identity %x", id.Hash)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout: link neither torn down nor identified")
+	}
+
+	if receiverLink.status != LinkClosed {
+		t.Fatalf("receiver link status = %v, want LinkClosed", receiverLink.status)
+	}
+}

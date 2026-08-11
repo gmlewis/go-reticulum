@@ -26,7 +26,21 @@ const (
 	ModeBoundary = 0x05
 	// ModeGateway acts as an egress or ingress gateway, actively brokering traffic into external, potentially non-Reticulum networks.
 	ModeGateway = 0x06
+	// ModeInternal marks an interface as internal to the local node; transport
+	// nodes discover paths for it (added at RNS v1.3.7) and it may host
+	// discoverable services without being reconfigured into another mode.
+	ModeInternal = 0x07
 )
+
+// DiscoverPathsFor lists the interface modes for which a transport node
+// actively discovers paths. It mirrors RNS 1.4.2's
+// Interface.DISCOVER_PATHS_FOR, which gained MODE_INTERNAL at v1.3.7.
+var DiscoverPathsFor = []int{
+	ModeAccessPoint,
+	ModeGateway,
+	ModeRoaming,
+	ModeInternal,
+}
 
 // Interface strictly defines the operational contract that all Reticulum physical and virtual transport mechanisms must fulfill.
 // It enforces uniform lifecycle management, capability introspection, and asynchronous payload delivery, allowing the routing core to remain entirely hardware-agnostic.
@@ -61,4 +75,19 @@ type Interface interface {
 	IsDetached() bool
 	// Age returns how long the interface has existed.
 	Age() time.Duration
+
+	// Phase 1 contract accessors (RNS v1.3.7/1.4.1). These expose per-interface
+	// routing policy that the transport consults when handling announces and
+	// path requests.
+	// Gravity reports the interface gravity used for weighted path selection.
+	Gravity() int
+	// RecursivePrs reports whether recursive path requests egress on this
+	// interface regardless of its mode.
+	RecursivePrs() bool
+	// AnnouncesFromInternal reports whether announces whose next-hop interface
+	// is MODE_INTERNAL are accepted. Defaults to true.
+	AnnouncesFromInternal() bool
+	// AnnouncesToInternal reports the boundary→internal allowance policy. A
+	// nil pointer means the interface does not override the default block.
+	AnnouncesToInternal() *bool
 }

@@ -219,6 +219,26 @@ func (u *BlackholeUpdater) SetClock(now func() time.Time) {
 	}
 }
 
+// SetUpdateInterval sets the minimum interval between fetches of any single
+// blackhole source (Python RNS.Reticulum.__blackhole_update_interval,
+// Reticulum.py:601-604 / Discovery.py:824). runJobPass reads the live value
+// each pass, so a change takes effect on the next job tick.
+func (u *BlackholeUpdater) SetUpdateInterval(d time.Duration) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if d > 0 {
+		u.updateInterval = d
+	}
+}
+
+// UpdateInterval returns the currently configured blackhole source fetch
+// interval (Python RNS.Reticulum.blackhole_update_interval()).
+func (u *BlackholeUpdater) UpdateInterval() time.Duration {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.updateInterval
+}
+
 // Start launches the updater loop (Python BlackholeUpdater.start,
 // Discovery.py:642-651). It is idempotent: a second call while running is a
 // no-op.
@@ -302,8 +322,9 @@ func (u *BlackholeUpdater) runJobPass(now time.Time) int {
 		// realistic clock, so the first pass fetches every source.
 		u.mu.Lock()
 		lastUpdate := u.lastUpdates[string(src)]
+		updateInterval := u.updateInterval
 		u.mu.Unlock()
-		if !now.After(lastUpdate.Add(u.updateInterval)) {
+		if !now.After(lastUpdate.Add(updateInterval)) {
 			continue
 		}
 

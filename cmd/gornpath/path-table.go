@@ -93,15 +93,19 @@ type pathTableTestInterface struct {
 	name string
 }
 
-func (i pathTableTestInterface) Name() string          { return i.name }
-func (i pathTableTestInterface) Type() string          { return "test" }
-func (i pathTableTestInterface) Status() bool          { return true }
-func (i pathTableTestInterface) IsOut() bool           { return false }
-func (i pathTableTestInterface) Mode() int             { return interfaces.ModeFull }
-func (i pathTableTestInterface) Bitrate() int          { return 0 }
-func (i pathTableTestInterface) Send([]byte) error     { return nil }
-func (i pathTableTestInterface) BytesReceived() uint64 { return 0 }
-func (i pathTableTestInterface) BytesSent() uint64     { return 0 }
-func (i pathTableTestInterface) Detach() error         { return nil }
-func (i pathTableTestInterface) IsDetached() bool      { return false }
-func (i pathTableTestInterface) Age() time.Duration    { return 0 }
+func (i pathTableTestInterface) Name() string                { return i.name }
+func (i pathTableTestInterface) Type() string                { return "test" }
+func (i pathTableTestInterface) Status() bool                { return true }
+func (i pathTableTestInterface) IsOut() bool                 { return false }
+func (i pathTableTestInterface) Mode() int                   { return interfaces.ModeFull }
+func (i pathTableTestInterface) Bitrate() int                { return 0 }
+func (i pathTableTestInterface) Send([]byte) error           { return nil }
+func (i pathTableTestInterface) BytesReceived() uint64       { return 0 }
+func (i pathTableTestInterface) BytesSent() uint64           { return 0 }
+func (i pathTableTestInterface) Detach() error               { return nil }
+func (i pathTableTestInterface) IsDetached() bool            { return false }
+func (i pathTableTestInterface) Age() time.Duration          { return 0 }
+func (i pathTableTestInterface) Gravity() int                { return 0 }
+func (i pathTableTestInterface) RecursivePrs() bool          { return false }
+func (i pathTableTestInterface) AnnouncesFromInternal() bool { return true }
+func (i pathTableTestInterface) AnnouncesToInternal() *bool  { return nil }

@@ -253,3 +253,52 @@ func TestBlackholeUpdaterStartStop(t *testing.T) {
 		t.Fatalf("updater fetched after Stop: calls went %d -> %d", callsAtStop, got)
 	}
 }
+
+// TestBlackholeUpdaterSetUpdateInterval verifies SetUpdateInterval is honored
+// by runJobPass: with a 2-minute interval (the [reticulum]
+// blackhole_update_interval clamp floor, RNS/Reticulum.py:601-604), a source
+// fetched at t0 is not refetched at t0+90s but is refetched at t0+121s.
+func TestBlackholeUpdaterSetUpdateInterval(t *testing.T) {
+	t.Parallel()
+
+	src := mustHexDecode(t, "11111111111111111111111111111111")
+	ih := mustHexDecode(t, "cafebabecafebabecafebabecafebabe")
+	own := mustHexDecode(t, "aabbccddeeff00112233445566778899")
+
+	ts := NewTransportSystem(testSilentLogger())
+	ts.identity = &Identity{Hash: own}
+	ts.blackholePath = t.TempDir()
+
+	var calls atomic.Int32
+	fetch := func([]byte) ([]blackholeListEntry, error) {
+		calls.Add(1)
+		return []blackholeListEntry{{identityHash: ih, source: src, until: nil, reason: "x"}}, nil
+	}
+	updater := NewBlackholeUpdater(ts, func() [][]byte { return [][]byte{src} }, fetch)
+	updater.SetUpdateInterval(2 * time.Minute)
+	if got := updater.UpdateInterval(); got != 2*time.Minute {
+		t.Fatalf("UpdateInterval() = %v, want 2m", got)
+	}
+
+	t0 := time.Unix(1_800_000_000, 0)
+	if got := updater.runJobPass(t0); got != 1 {
+		t.Fatalf("first pass added %d, want 1", got)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("after first pass calls = %d, want 1", got)
+	}
+	// 90s later: within the 2-minute interval → no refetch.
+	if got := updater.runJobPass(t0.Add(90 * time.Second)); got != 0 {
+		t.Fatalf("within-interval pass added %d, want 0", got)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("within-interval refetched: calls = %d, want 1", got)
+	}
+	// 121s later: past the 2-minute interval → refetch (entries unchanged → 0 added).
+	if got := updater.runJobPass(t0.Add(121 * time.Second)); got != 0 {
+		t.Fatalf("past-interval pass added %d, want 0 (entries already present)", got)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("past-interval did not refetch: calls = %d, want 2", got)
+	}
+}

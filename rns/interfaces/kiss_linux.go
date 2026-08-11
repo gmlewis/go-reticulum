@@ -25,6 +25,10 @@ const (
 	KISSDefaultStopBits = 1
 	KISSDefaultParity   = "N"
 	kissReconnectDelay  = 5 * time.Second
+
+	// KISSDefaultIFACSize is the DEFAULT_IFAC_SIZE for KISS interfaces
+	// (RNS/Interfaces/KISSInterface.py:63).
+	KISSDefaultIFACSize = 8
 )
 
 type kissInterface struct {
@@ -72,6 +76,7 @@ func NewKISSInterface(name, port string, speed, databits, stopbits int, parity s
 		stopbits:       stopbits,
 		inboundHandler: handler,
 	}
+	ki.setDefaultIFACSize(KISSDefaultIFACSize)
 
 	if err := ki.openAndConfigure(); err != nil {
 		return nil, err

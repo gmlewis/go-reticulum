@@ -6,9 +6,14 @@
 package interfaces
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
+
+	rnscrypto "github.com/gmlewis/go-reticulum/rns/crypto"
 )
 
 func TestBaseInterfaceIFACRoundTrip(t *testing.T) {
@@ -154,5 +159,152 @@ func TestBaseInterfaceAutoconnectRoundTrip(t *testing.T) {
 	gotHash[1] = 0
 	if again := bi.AutoconnectHash(); again[1] != 0xbb {
 		t.Fatalf("AutoconnectHash() returned aliasing slice: %x", again)
+	}
+}
+
+// TestInterfaceContractDefaults asserts the Phase 1 interface-contract
+// accessors return the RNS 1.4.2 defaults (Interface.__init__: gravity=0,
+// recursive_prs=False, announces_from_internal=True, announces_to_internal=None)
+// and that overridden values round-trip through the setters.
+func TestInterfaceContractDefaults(t *testing.T) {
+	t.Parallel()
+
+	bi := NewBaseInterface("contract", ModeFull, 1000)
+
+	if got := bi.Gravity(); got != 0 {
+		t.Fatalf("default Gravity() = %v, want 0", got)
+	}
+	if got := bi.RecursivePrs(); got {
+		t.Fatalf("default RecursivePrs() = %v, want false", got)
+	}
+	if got := bi.AnnouncesFromInternal(); !got {
+		t.Fatalf("default AnnouncesFromInternal() = %v, want true", got)
+	}
+	if got := bi.AnnouncesToInternal(); got != nil {
+		t.Fatalf("default AnnouncesToInternal() = %v, want nil", got)
+	}
+}
+
+func TestInterfaceContractOverride(t *testing.T) {
+	t.Parallel()
+
+	bi := NewBaseInterface("contract-override", ModeBoundary, 1000)
+	bi.SetGravity(7)
+	bi.SetRecursivePrs(true)
+	bi.SetAnnouncesFromInternal(false)
+	allow := true
+	bi.SetAnnouncesToInternal(&allow)
+
+	if got := bi.Gravity(); got != 7 {
+		t.Fatalf("Gravity() = %v, want 7", got)
+	}
+	if got := bi.RecursivePrs(); !got {
+		t.Fatalf("RecursivePrs() = %v, want true", got)
+	}
+	if got := bi.AnnouncesFromInternal(); got {
+		t.Fatalf("AnnouncesFromInternal() = %v, want false", got)
+	}
+	got := bi.AnnouncesToInternal()
+	if got == nil || *got != true {
+		t.Fatalf("AnnouncesToInternal() = %v, want &true", got)
+	}
+
+	// Setting back to nil must clear the pointer.
+	bi.SetAnnouncesToInternal(nil)
+	if got := bi.AnnouncesToInternal(); got != nil {
+		t.Fatalf("AnnouncesToInternal() after nil set = %v, want nil", got)
+	}
+}
+
+// TestDefaultIFACSizePerType asserts concrete interface types expose their
+// RNS 1.4.2 class-level DEFAULT_IFAC_SIZE (Backbone/TCP/UDP/Auto/I2P/Weave=16,
+// KISS/AX25KISS/RNode/RNodeMulti/Serial/Pipe=8) via DefaultIFACSize(), instead
+// of a single hardcoded 16. Golden values captured from
+// RNS/Interfaces/*.py DEFAULT_IFAC_SIZE class attributes.
+func TestDefaultIFACSizePerType(t *testing.T) {
+	t.Parallel()
+
+	backbone := NewDormantBackboneClientInterface("backbone-default", nil)
+	t.Cleanup(func() { _ = backbone.Detach() })
+	bbDefault, ok := backbone.(interface{ DefaultIFACSize() int })
+	if !ok {
+		t.Fatalf("BackboneClientInterface does not expose DefaultIFACSize()")
+	}
+	if got := bbDefault.DefaultIFACSize(); got != 16 {
+		t.Fatalf("BackboneClientInterface DefaultIFACSize() = %v, want 16", got)
+	}
+
+	pipe := NewPipeInterface("pipe-default", nil)
+	t.Cleanup(func() { _ = pipe.Detach() })
+	if got := pipe.DefaultIFACSize(); got != 8 {
+		t.Fatalf("PipeInterface DefaultIFACSize() = %v, want 8", got)
+	}
+}
+
+// TestSetIFACConfigUsesTypeDefault verifies SetIFACConfig defaults an unset
+// IFAC size (Size < 1) to the interface type's DefaultIFACSize() rather than a
+// hardcoded 16. A Pipe interface (DEFAULT_IFAC_SIZE=8) must get size 8.
+func TestSetIFACSizeUsesTypeDefault(t *testing.T) {
+	t.Parallel()
+
+	pipe := NewPipeInterface("pipe-ifac-default", nil)
+	t.Cleanup(func() { _ = pipe.Detach() })
+	pipe.SetIFACConfig(IFACConfig{Enabled: true, NetName: "mesh"})
+	if got := pipe.IFACConfig(); got.Size != 8 {
+		t.Fatalf("Pipe IFACConfig.Size = %v, want 8 (type default)", got)
+	}
+
+	backbone := NewDormantBackboneClientInterface("backbone-ifac-default", nil)
+	t.Cleanup(func() { _ = backbone.Detach() })
+	if setter, ok := backbone.(interface{ SetIFACConfig(IFACConfig) }); ok {
+		setter.SetIFACConfig(IFACConfig{Enabled: true, NetName: "mesh"})
+	}
+	bbCfg, ok := backbone.(interface{ IFACConfig() IFACConfig })
+	if !ok {
+		t.Fatalf("BackboneClientInterface does not expose IFACConfig()")
+	}
+	if got := bbCfg.IFACConfig(); got.Size != 16 {
+		t.Fatalf("Backbone IFACConfig.Size = %v, want 16 (type default)", got)
+	}
+}
+
+// TestInterfaceGetHashMemoized verifies MemoizedHash memoizes the interface
+// identity hash (Python Interface.get_hash, RNS/Interfaces/Interface.py:144-146):
+// the SHA-256 of "{Type}[{Name}]" is computed once and cached, not recomputed on
+// every call. The golden value is the SHA-256 of "PipeInterface[<name>]"
+// matching Python's RNS.Identity.full_hash(str(self)).
+func TestInterfaceGetHashMemoized(t *testing.T) {
+	t.Parallel()
+
+	pipe := NewPipeInterface("pipe-hash-test", nil)
+	t.Cleanup(func() { _ = pipe.Detach() })
+
+	want := sha256.Sum256([]byte(fmt.Sprintf("%v[%v]", pipe.Type(), pipe.Name())))
+
+	// compute counts how many times the underlying hash computation runs. It
+	// must run exactly once across both calls; the second call must hit the cache.
+	var computes int
+	compute := func() []byte {
+		computes++
+		return rnscrypto.SHA256([]byte(fmt.Sprintf("%v[%v]", pipe.Type(), pipe.Name())))
+	}
+
+	h1 := pipe.MemoizedHash(compute)
+	if len(h1) != len(want) {
+		t.Fatalf("MemoizedHash len = %v, want %v", len(h1), len(want))
+	}
+	if !bytes.Equal(h1, want[:]) {
+		t.Fatalf("MemoizedHash = %x, want %x", h1, want)
+	}
+
+	h2 := pipe.MemoizedHash(compute)
+	if computes != 1 {
+		t.Fatalf("hash computation ran %v times, want 1 (memoized)", computes)
+	}
+	if !bytes.Equal(h2, want[:]) {
+		t.Fatalf("second MemoizedHash = %x, want %x", h2, want)
+	}
+	if reflect.ValueOf(h1).Pointer() != reflect.ValueOf(h2).Pointer() {
+		t.Fatalf("memoized hash returned a different backing array on second call")
 	}
 }

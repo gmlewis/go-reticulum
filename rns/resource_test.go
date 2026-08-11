@@ -108,6 +108,58 @@ func TestNewResourceWithOptionsRespectsCompressionLimit(t *testing.T) {
 	}
 }
 
+// TestResourceAssembleBz2BombGuard verifies the decompression-bomb guard in
+// Resource.Assemble (Python Resource.assemble, Resource.py:690-696): a
+// compressed incoming resource whose decompressed size exceeds
+// maxDecompressedSize is rejected — status set to CORRUPT, the resource
+// removed from the link's incoming set, and the link torn down — without
+// decompressing the full bomb (no OOM). The 64 KiB bomb decompresses past the
+// 1 KiB cap; a normal hash-mismatch CORRUPT does NOT tear the link down, so
+// LinkClosed proves the bomb-guard branch ran.
+func TestResourceAssembleBz2BombGuard(t *testing.T) {
+	t.Parallel()
+
+	link := testActiveResourceLink(t)
+	link.logger = testSilentLogger()
+	// linkID stays empty so Link.sendTeardownPacket is a no-op; teardown still
+	// flips status to LinkClosed.
+
+	// Build a bz2 bomb: small compressed form, 64 KiB decompressed.
+	bomb := bytes.Repeat([]byte("B"), 64*1024)
+	compressedBomb, err := CompressBzip2(bomb, 9)
+	if err != nil {
+		t.Fatalf("CompressBzip2: %v", err)
+	}
+
+	randomHash := make([]byte, ResourceRandomHashSize)
+	r := &Resource{
+		link:                link,
+		compressed:          true,
+		randomHash:          randomHash,
+		hash:                bytes.Repeat([]byte{0xAB}, 32),
+		parts:               []*ResourcePart{{ReceivedData: append(append([]byte(nil), randomHash...), compressedBomb...)}},
+		maxDecompressedSize: 1024, // 1 KiB cap — bomb decompresses to 64 KiB
+		// Deliberately invalid advertisement so Reject returns early without
+		// needing a transport; the bomb-guard still runs the full CORRUPT path.
+		advertisementPacket: &Packet{Data: []byte("not-an-advertisement")},
+	}
+	link.incomingResources = append(link.incomingResources, r)
+
+	r.Assemble()
+
+	if r.status != ResourceStatusCorrupt {
+		t.Fatalf("resource status = %v, want ResourceStatusCorrupt", r.status)
+	}
+	if link.status != LinkClosed {
+		t.Fatalf("link status = %v, want LinkClosed (bomb-guard tears down the link)", link.status)
+	}
+	for _, existing := range link.incomingResources {
+		if existing == r {
+			t.Fatal("bomb resource was not removed from link.incomingResources")
+		}
+	}
+}
+
 func TestResourceStatusAndDataAccessors(t *testing.T) {
 	t.Parallel()
 	r := &Resource{

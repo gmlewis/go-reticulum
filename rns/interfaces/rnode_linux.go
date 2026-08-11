@@ -10,6 +10,7 @@ package interfaces
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -38,6 +39,9 @@ const (
 // such as frequency, bandwidth, spreading factor, and coding rate.
 type RNodeInterface struct {
 	inner Interface
+
+	hash     []byte
+	hashOnce sync.Once
 }
 
 // NewRNodeInterface validates hardware bounds and initializes a physical RNode radio
@@ -134,6 +138,41 @@ func (r *RNodeInterface) IsDetached() bool { return r.inner.IsDetached() }
 
 // Age returns how long the wrapped interface has existed.
 func (r *RNodeInterface) Age() time.Duration { return r.inner.Age() }
+
+// Gravity reports the wrapped interface's gravity (RNS v1.4.1).
+func (r *RNodeInterface) Gravity() int { return r.inner.Gravity() }
+
+// RecursivePrs reports the wrapped interface's recursive-PR policy.
+func (r *RNodeInterface) RecursivePrs() bool { return r.inner.RecursivePrs() }
+
+// AnnouncesFromInternal reports the wrapped interface's internal-announce policy.
+func (r *RNodeInterface) AnnouncesFromInternal() bool { return r.inner.AnnouncesFromInternal() }
+
+// AnnouncesToInternal reports the wrapped interface's boundary→internal policy.
+func (r *RNodeInterface) AnnouncesToInternal() *bool { return r.inner.AnnouncesToInternal() }
+
+// DefaultIFACSize returns the wrapped interface's DEFAULT_IFAC_SIZE. RNode's own
+// DEFAULT_IFAC_SIZE (8) matches the wrapped KISS interface's, so delegation is
+// exact (RNS/Interfaces/RNodeInterface.py:80).
+func (r *RNodeInterface) DefaultIFACSize() int {
+	if d, ok := r.inner.(interface{ DefaultIFACSize() int }); ok {
+		return d.DefaultIFACSize()
+	}
+	return 8
+}
+
+// MemoizedHash returns the memoized identity hash, computing it via compute on
+// the first call and caching the result. Mirrors Python Interface.get_hash
+// (RNS/Interfaces/Interface.py:144-146) so the wrapper's own string identity
+// ("RNodeInterface[<name>]") is hashed at most once.
+func (r *RNodeInterface) MemoizedHash(compute func() []byte) []byte {
+	r.hashOnce.Do(func() {
+		if r.hash == nil && compute != nil {
+			r.hash = compute()
+		}
+	})
+	return r.hash
+}
 
 // SetBitrate propagates a bitrate override to the wrapped interface when it
 // supports that operation.

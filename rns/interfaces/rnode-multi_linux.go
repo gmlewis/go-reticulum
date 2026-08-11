@@ -9,6 +9,7 @@ package interfaces
 
 import (
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -20,6 +21,9 @@ type RNodeMultiInterface struct {
 	children []Interface
 	created  time.Time
 	nextSend uint32
+
+	hash     []byte
+	hashOnce sync.Once
 }
 
 // NewRNodeMultiInterface instantiates and validates multiple RNode hardware
@@ -170,6 +174,59 @@ func (r *RNodeMultiInterface) Age() time.Duration {
 		return 0
 	}
 	return r.children[0].Age()
+}
+
+// Gravity reports the first child's gravity (RNS v1.4.1). RNodeMulti has no
+// BaseInterface of its own; contract accessors mirror the Mode() first-child
+// convention.
+func (r *RNodeMultiInterface) Gravity() int {
+	if len(r.children) == 0 {
+		return 0
+	}
+	return r.children[0].Gravity()
+}
+
+// RecursivePrs reports the first child's recursive-PR policy.
+func (r *RNodeMultiInterface) RecursivePrs() bool {
+	if len(r.children) == 0 {
+		return false
+	}
+	return r.children[0].RecursivePrs()
+}
+
+// AnnouncesFromInternal reports the first child's internal-announce policy.
+func (r *RNodeMultiInterface) AnnouncesFromInternal() bool {
+	if len(r.children) == 0 {
+		return true
+	}
+	return r.children[0].AnnouncesFromInternal()
+}
+
+// AnnouncesToInternal reports the first child's boundary→internal policy.
+func (r *RNodeMultiInterface) AnnouncesToInternal() *bool {
+	if len(r.children) == 0 {
+		return nil
+	}
+	return r.children[0].AnnouncesToInternal()
+}
+
+// DefaultIFACSize returns RNodeMulti's DEFAULT_IFAC_SIZE (8), matching its RNode
+// children (RNS/Interfaces/RNodeMultiInterface.py:53).
+const RNodeMultiDefaultIFACSize = 8
+
+func (r *RNodeMultiInterface) DefaultIFACSize() int { return RNodeMultiDefaultIFACSize }
+
+// MemoizedHash returns the memoized identity hash, computing it via compute on
+// the first call and caching the result. Mirrors Python Interface.get_hash
+// (RNS/Interfaces/Interface.py:144-146) so the aggregate's own string identity
+// ("RNodeMultiInterface[<name>]") is hashed at most once.
+func (r *RNodeMultiInterface) MemoizedHash(compute func() []byte) []byte {
+	r.hashOnce.Do(func() {
+		if r.hash == nil && compute != nil {
+			r.hash = compute()
+		}
+	})
+	return r.hash
 }
 
 // SetBitrate propagates a bitrate override to all child interfaces that

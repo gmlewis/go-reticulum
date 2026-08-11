@@ -169,12 +169,78 @@ func applyInterfaceErrorPolicy(iface interfaces.Interface, enabled bool) {
 	setter.SetPanicOnInterfaceErrorEnabled(enabled)
 }
 
-func applyInterfaceConfig(iface interfaces.Interface, mode int, ifac interfaces.IFACConfig, discovery interfaces.DiscoveryConfig, bootstrapOnly bool, panicOnInterfaceError bool) {
+// interfaceContractConfig captures the Phase 1 per-interface routing-policy
+// keys (RNS v1.3.7/1.4.1). gravity defaults to the instance-wide
+// default_gravity; the remaining fields mirror Interface.__init__.
+type interfaceContractConfig struct {
+	gravity               int
+	recursivePrs          bool
+	announcesFromInternal bool
+	announcesToInternal   *bool
+}
+
+// contractConfigSetter is implemented by interfaces that accept the Phase 1
+// contract policy fields (BaseInterface and concrete types embedding it).
+type contractConfigSetter interface {
+	SetGravity(int)
+	SetRecursivePrs(bool)
+	SetAnnouncesFromInternal(bool)
+	SetAnnouncesToInternal(*bool)
+}
+
+// parseInterfaceContractConfig reads the per-interface gravity/recursive_prs/
+// announces_from_internal/announces_to_internal keys, mirroring
+// Reticulum.py:771-772,842-849. gravity inherits defaultGravity when unset;
+// announces_from_internal defaults true; announces_to_internal defaults nil.
+func parseInterfaceContractConfig(sub *ConfigSection, defaultGravity int) interfaceContractConfig {
+	cfg := interfaceContractConfig{
+		gravity:               defaultGravity,
+		recursivePrs:          false,
+		announcesFromInternal: true,
+		announcesToInternal:   nil,
+	}
+	if sub == nil {
+		return cfg
+	}
+	if v, ok := sub.GetProperty("gravity"); ok {
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			cfg.gravity = n
+		}
+	}
+	if v, ok := sub.GetProperty("recursive_prs"); ok {
+		cfg.recursivePrs = parseBoolLike(v)
+	}
+	if v, ok := sub.GetProperty("announces_from_internal"); ok {
+		cfg.announcesFromInternal = parseBoolLike(v)
+	}
+	if v, ok := sub.GetProperty("announces_to_internal"); ok {
+		b := parseBoolLike(v)
+		cfg.announcesToInternal = &b
+	}
+	return cfg
+}
+
+func applyInterfaceConfig(iface interfaces.Interface, mode int, ifac interfaces.IFACConfig, discovery interfaces.DiscoveryConfig, contract interfaceContractConfig, bootstrapOnly bool, panicOnInterfaceError bool) {
 	applyInterfaceMode(iface, mode)
 	applyIFACConfig(iface, ifac)
 	applyDiscoveryConfig(iface, discovery)
+	applyInterfaceContract(iface, contract)
 	applyBootstrapOnly(iface, bootstrapOnly)
 	applyInterfaceErrorPolicy(iface, panicOnInterfaceError)
+}
+
+// applyInterfaceContract applies the Phase 1 per-interface routing-policy
+// fields when the interface accepts them. Spawned peers do not go through this
+// path; they inherit the parent's policy at spawn time (Phases 4/5).
+func applyInterfaceContract(iface interfaces.Interface, contract interfaceContractConfig) {
+	setter, ok := iface.(contractConfigSetter)
+	if !ok {
+		return
+	}
+	setter.SetGravity(contract.gravity)
+	setter.SetRecursivePrs(contract.recursivePrs)
+	setter.SetAnnouncesFromInternal(contract.announcesFromInternal)
+	setter.SetAnnouncesToInternal(contract.announcesToInternal)
 }
 
 func applySpawnedInterfaceConfig(iface interfaces.Interface, mode int, ifac interfaces.IFACConfig, panicOnInterfaceError bool) {
@@ -272,6 +338,8 @@ func parseInterfaceModeValue(v string) (int, bool) {
 		return interfaces.ModeBoundary, true
 	case "gateway", "gw":
 		return interfaces.ModeGateway, true
+	case "internal":
+		return interfaces.ModeInternal, true
 	default:
 		return 0, false
 	}

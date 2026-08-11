@@ -1303,6 +1303,18 @@ func TestParseInterfaceMode(t *testing.T) {
 			props:     map[string]string{"mode": "client"},
 			want:      interfaces.ModeFull,
 		},
+		{
+			name:      "internal mode via mode key",
+			ifaceType: "UDPInterface",
+			props:     map[string]string{"mode": "internal"},
+			want:      interfaces.ModeInternal,
+		},
+		{
+			name:      "internal mode via interface_mode key",
+			ifaceType: "BackboneInterface",
+			props:     map[string]string{"interface_mode": "internal"},
+			want:      interfaces.ModeInternal,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1313,6 +1325,26 @@ func TestParseInterfaceMode(t *testing.T) {
 				t.Fatalf("parseInterfaceMode(%v) = %v, want %v", tt.ifaceType, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestDiscoverPathsForMatchesPython asserts the discover-paths mode set mirrors
+// RNS 1.4.2's Interface.DISCOVER_PATHS_FOR, which gained MODE_INTERNAL at v1.3.7.
+func TestDiscoverPathsForMatchesPython(t *testing.T) {
+	t.Parallel()
+	want := []int{
+		interfaces.ModeAccessPoint,
+		interfaces.ModeGateway,
+		interfaces.ModeRoaming,
+		interfaces.ModeInternal,
+	}
+	if got := interfaces.DiscoverPathsFor; len(got) != len(want) {
+		t.Fatalf("DiscoverPathsFor length = %v, want %v", len(got), len(want))
+	}
+	for i, m := range want {
+		if got := interfaces.DiscoverPathsFor[i]; got != m {
+			t.Fatalf("DiscoverPathsFor[%v] = %v, want %v", i, got, m)
+		}
 	}
 }
 
@@ -1480,6 +1512,168 @@ discovery_modulation = lora
 	}
 	if cfg.Frequency == nil || *cfg.Frequency != 123456789 || cfg.Bandwidth == nil || *cfg.Bandwidth != 250000 {
 		t.Fatalf("unexpected discovery radio config: %+v", cfg)
+	}
+}
+
+// TestReticulumDefaultGravityAndInterfaceContractConfig verifies the Phase 1
+// per-interface keys (gravity, recursive_prs, announces_from_internal,
+// announces_to_internal) and the instance-wide default_gravity flow from a
+// config file into the Reticulum and the registered interface, mirroring
+// Reticulum.py:771-772,842-849,935-937 and _default_gravity().
+func TestReticulumDefaultGravityAndInterfaceContractConfig(t *testing.T) {
+	t.Parallel()
+
+	configDir := testutils.TempDir(t, tempDirPrefix)
+	port := reserveTCPPort(t)
+	config := `[reticulum]
+share_instance = No
+default_gravity = 5
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[Contract TCP]]
+type = TCPServerInterface
+interface_enabled = Yes
+listen_ip = 127.0.0.1
+listen_port = ` + strconv.Itoa(port) + `
+interface_mode = gateway
+gravity = 9
+recursive_prs = true
+announces_from_internal = false
+announces_to_internal = true
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	if got := r.DefaultGravity(); got != 5 {
+		t.Fatalf("DefaultGravity() = %v, want 5", got)
+	}
+
+	ifaces := ts.GetInterfaces()
+	if len(ifaces) != 1 {
+		t.Fatalf("expected 1 interface, got %v", len(ifaces))
+	}
+	iface := ifaces[0]
+
+	if got := iface.Gravity(); got != 9 {
+		t.Fatalf("Gravity() = %v, want 9", got)
+	}
+	if got := iface.RecursivePrs(); !got {
+		t.Fatalf("RecursivePrs() = %v, want true", got)
+	}
+	if got := iface.AnnouncesFromInternal(); got {
+		t.Fatalf("AnnouncesFromInternal() = %v, want false", got)
+	}
+	if got := iface.AnnouncesToInternal(); got == nil || !*got {
+		t.Fatalf("AnnouncesToInternal() = %v, want &true", got)
+	}
+}
+
+// TestReticulumInterfaceContractDefaults asserts that when an interface omits
+// the Phase 1 contract keys, gravity inherits the instance-wide default_gravity
+// and the remaining fields take their Python defaults (recursive_prs=false,
+// announces_from_internal=true, announces_to_internal=nil).
+func TestReticulumInterfaceContractDefaults(t *testing.T) {
+	t.Parallel()
+
+	configDir := testutils.TempDir(t, tempDirPrefix)
+	port := reserveTCPPort(t)
+	config := `[reticulum]
+share_instance = No
+default_gravity = 7
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[Default Contract TCP]]
+type = TCPServerInterface
+interface_enabled = Yes
+listen_ip = 127.0.0.1
+listen_port = ` + strconv.Itoa(port) + `
+interface_mode = gateway
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	if got := r.DefaultGravity(); got != 7 {
+		t.Fatalf("DefaultGravity() = %v, want 7", got)
+	}
+
+	ifaces := ts.GetInterfaces()
+	if len(ifaces) != 1 {
+		t.Fatalf("expected 1 interface, got %v", len(ifaces))
+	}
+	iface := ifaces[0]
+
+	if got := iface.Gravity(); got != 7 {
+		t.Fatalf("Gravity() = %v, want 7 (inherited default_gravity)", got)
+	}
+	if got := iface.RecursivePrs(); got {
+		t.Fatalf("RecursivePrs() = %v, want false", got)
+	}
+	if got := iface.AnnouncesFromInternal(); !got {
+		t.Fatalf("AnnouncesFromInternal() = %v, want true", got)
+	}
+	if got := iface.AnnouncesToInternal(); got != nil {
+		t.Fatalf("AnnouncesToInternal() = %v, want nil", got)
+	}
+}
+
+// TestReticulumDefaultGravityUnsetZero asserts that without a default_gravity
+// key the getter returns 0 (Interface.DEFAULT_GRAVITY), matching Python's
+// `_default_gravity()` which resolves None to DEFAULT_GRAVITY.
+func TestReticulumDefaultGravityUnsetZero(t *testing.T) {
+	t.Parallel()
+
+	configDir := testutils.TempDir(t, tempDirPrefix)
+	port := reserveTCPPort(t)
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[Unset Gravity TCP]]
+type = TCPServerInterface
+interface_enabled = Yes
+listen_ip = 127.0.0.1
+listen_port = ` + strconv.Itoa(port) + `
+interface_mode = gateway
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	if got := r.DefaultGravity(); got != 0 {
+		t.Fatalf("DefaultGravity() = %v, want 0", got)
+	}
+	ifaces := ts.GetInterfaces()
+	if len(ifaces) != 1 {
+		t.Fatalf("expected 1 interface, got %v", len(ifaces))
+	}
+	if got := ifaces[0].Gravity(); got != 0 {
+		t.Fatalf("Gravity() = %v, want 0", got)
 	}
 }
 

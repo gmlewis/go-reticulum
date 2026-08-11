@@ -7,6 +7,7 @@ package rns
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 
 	vendoredbzip2 "github.com/gmlewis/go-reticulum/compress/bzip2"
@@ -72,5 +73,53 @@ func TestBzip2DecompressInvalidPayload(t *testing.T) {
 
 	if _, err := DecompressBzip2([]byte("not-a-valid-bzip2-payload")); err == nil {
 		t.Fatal("DecompressBzip2 expected error for invalid payload")
+	}
+}
+
+// TestDecompressBzip2WithLimitRejectsBomb verifies the decompression-bomb guard
+// (Python Resource.assemble, Resource.py:690-696): a compressed payload that
+// decompresses past maxLen is rejected with ErrDecompressedTooLarge without
+// allocating the full decompressed size (no OOM). A 1 MiB repetitive payload
+// compresses small but decompresses well past a 64 KiB cap.
+func TestDecompressBzip2WithLimitRejectsBomb(t *testing.T) {
+	t.Parallel()
+
+	bomb := bytes.Repeat([]byte("A"), 1024*1024)
+	compressed, err := CompressBzip2(bomb, 9)
+	if err != nil {
+		t.Fatalf("CompressBzip2 error: %v", err)
+	}
+	// Sanity: the compressed form is far smaller than the decompressed bomb.
+	if len(compressed) >= len(bomb) {
+		t.Fatalf("compressed %v >= decompressed %v; payload is not actually compressible", len(compressed), len(bomb))
+	}
+
+	const maxLen = 64 * 1024
+	out, err := DecompressBzip2WithLimit(compressed, maxLen)
+	if !errors.Is(err, ErrDecompressedTooLarge) {
+		t.Fatalf("DecompressBzip2WithLimit err = %v, want ErrDecompressedTooLarge", err)
+	}
+	if out != nil {
+		t.Fatalf("DecompressBzip2WithLimit returned non-nil output on bomb rejection: len=%v", len(out))
+	}
+}
+
+// TestDecompressBzip2WithLimitAllowsUnderLimit verifies a payload that
+// decompresses within maxLen round-trips exactly through the limited helper.
+func TestDecompressBzip2WithLimitAllowsUnderLimit(t *testing.T) {
+	t.Parallel()
+
+	want := bytes.Repeat([]byte("reticulum-limit-parity-"), 64) // ~1.3 KiB
+	compressed, err := CompressBzip2(want, 9)
+	if err != nil {
+		t.Fatalf("CompressBzip2 error: %v", err)
+	}
+
+	out, err := DecompressBzip2WithLimit(compressed, len(want))
+	if err != nil {
+		t.Fatalf("DecompressBzip2WithLimit error: %v", err)
+	}
+	if !bytes.Equal(out, want) {
+		t.Fatalf("under-limit round-trip mismatch: got %v bytes, want %v", len(out), len(want))
 	}
 }

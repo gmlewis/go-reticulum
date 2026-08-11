@@ -99,6 +99,29 @@ type BaseInterface struct {
 	bootstrapOnly      bool
 	autoconnectHash    []byte
 	autoconnectSrc     string
+
+	// Phase 1 contract fields (RNS v1.3.7/1.4.1). Defaults mirror
+	// Interface.__init__: gravity=0, recursive_prs=false,
+	// announces_from_internal=true, announces_to_internal=nil.
+	gravity               int
+	recursivePrs          bool
+	announcesFromInternal bool
+	announcesToInternal   *bool
+
+	// defaultIFACSize is this interface type's DEFAULT_IFAC_SIZE class
+	// attribute (RNS/Interfaces/*.py). Set by each concrete constructor, it
+	// drives SetIFACConfig's size default and the discovery autoconnect path
+	// so the IFAC size matches the interface type instead of a hardcoded 16.
+	defaultIFACSize int
+
+	// hash is the memoized identity hash (Python Interface.get_hash,
+	// RNS/Interfaces/Interface.py:144-146): the SHA-256 of "{Type}[{Name}]".
+	// hashOnce guarantees the computation runs at most once per instance. The
+	// computation itself is supplied by the caller (see MemoizedHash) so the
+	// concrete Type()/Name() virtual dispatch is used, matching Python's
+	// full_hash(str(self)) where str dispatches to the subclass __str__.
+	hash     []byte
+	hashOnce sync.Once
 }
 
 // NewBaseInterface allocates and initializes a BaseInterface with the given
@@ -106,10 +129,11 @@ type BaseInterface struct {
 // baseline state required by specialized interfaces.
 func NewBaseInterface(name string, mode int, bitrate int) *BaseInterface {
 	return &BaseInterface{
-		name:    name,
-		mode:    mode,
-		bitrate: bitrate,
-		created: time.Now(),
+		name:                  name,
+		mode:                  mode,
+		bitrate:               bitrate,
+		created:               time.Now(),
+		announcesFromInternal: true,
 	}
 }
 
@@ -135,6 +159,74 @@ func (bi *BaseInterface) Bitrate() int { return bi.bitrate }
 // changing hardware constraints. Updating this value influences routing cost
 // calculations downstream.
 func (bi *BaseInterface) SetBitrate(bitrate int) { bi.bitrate = bitrate }
+
+// Gravity returns the interface gravity used for weighted path selection
+// (RNS v1.4.1). Higher gravity interfaces win same-timebase path ties. The
+// default is 0 (Interface.DEFAULT_GRAVITY).
+func (bi *BaseInterface) Gravity() int { return bi.gravity }
+
+// SetGravity sets the interface gravity used for weighted path selection.
+func (bi *BaseInterface) SetGravity(g int) { bi.gravity = g }
+
+// RecursivePrs reports whether recursive path requests egress on this
+// interface regardless of its mode (RNS v1.3.7). Defaults to false.
+func (bi *BaseInterface) RecursivePrs() bool { return bi.recursivePrs }
+
+// SetRecursivePrs sets the recursive-path-request policy.
+func (bi *BaseInterface) SetRecursivePrs(v bool) { bi.recursivePrs = v }
+
+// AnnouncesFromInternal reports whether announces whose next-hop interface is
+// MODE_INTERNAL are accepted (RNS v1.3.7). Defaults to true, matching
+// Interface.__init__.
+func (bi *BaseInterface) AnnouncesFromInternal() bool { return bi.announcesFromInternal }
+
+// SetAnnouncesFromInternal sets the internal-announce acceptance policy.
+func (bi *BaseInterface) SetAnnouncesFromInternal(v bool) { bi.announcesFromInternal = v }
+
+// AnnouncesToInternal reports the boundary→internal announce allowance
+// (RNS v1.4.1). A nil pointer means the interface does not override the
+// default block (Python default None).
+func (bi *BaseInterface) AnnouncesToInternal() *bool { return bi.announcesToInternal }
+
+// SetAnnouncesToInternal sets the boundary→internal allowance; pass nil to
+// restore the default (no override).
+func (bi *BaseInterface) SetAnnouncesToInternal(v *bool) { bi.announcesToInternal = v }
+
+// DefaultIFACSize returns the interface type's DEFAULT_IFAC_SIZE (RNS
+// v1.1.6 class attribute). Concrete constructors set it so IFAC size
+// defaulting matches the interface type rather than a hardcoded value. Returns
+// the historical default 16 when a constructor did not set it.
+func (bi *BaseInterface) DefaultIFACSize() int {
+	if bi == nil {
+		return 16
+	}
+	if bi.defaultIFACSize > 0 {
+		return bi.defaultIFACSize
+	}
+	return 16
+}
+
+// setDefaultIFACSize records the concrete interface type's DEFAULT_IFAC_SIZE.
+// It is called from each concrete constructor to mirror the Python class
+// attribute.
+func (bi *BaseInterface) setDefaultIFACSize(n int) { bi.defaultIFACSize = n }
+
+// MemoizedHash returns the interface identity hash, computing it via compute on
+// the first call and returning the cached value thereafter. It is the Go port of
+// Python Interface.get_hash (RNS/Interfaces/Interface.py:144-146), where the
+// SHA-256 of str(self) is computed once and stored on the instance. The compute
+// closure is supplied by the caller (e.g. the transport's interfaceHash helper)
+// so the concrete Type()/Name() virtual dispatch supplies the string identity,
+// matching Python's full_hash(str(self)); the sync.Once guarantees the closure
+// runs at most once across concurrent callers.
+func (bi *BaseInterface) MemoizedHash(compute func() []byte) []byte {
+	bi.hashOnce.Do(func() {
+		if bi.hash == nil && compute != nil {
+			bi.hash = compute()
+		}
+	})
+	return bi.hash
+}
 
 // Age returns the duration since the interface was created and added to the
 // network. It is used to identify and prune stale or malfunctioning
@@ -205,7 +297,7 @@ func (bi *BaseInterface) SetIFACConfig(cfg IFACConfig) {
 	}
 
 	if bi.ifacConfig.Size < 1 {
-		bi.ifacConfig.Size = 16
+		bi.ifacConfig.Size = bi.DefaultIFACSize()
 	}
 	if bi.ifacConfig.Size > IFACMaxSize {
 		bi.ifacConfig.Size = IFACMaxSize

@@ -698,11 +698,21 @@ func (l *Link) receive(packet *Packet) {
 				if err == nil {
 					if err := id.LoadPublicKey(publicKey); err == nil {
 						if id.Verify(signature, signedData) {
-							l.mu.Lock()
-							l.remoteIdentity = id
-							l.mu.Unlock()
-							if l.callbacks.RemoteIdentified != nil {
-								l.callbacks.RemoteIdentified(l, id)
+							// Blackholed-identity guard (RNS/Link.py:974-976,
+							// v1.3.2): if the verified identity is on the local
+							// blackhole list, terminate the incoming link and
+							// skip the remote-identified callback rather than
+							// accepting the identity.
+							if l.transport != nil && l.transport.IsBlackholed(id.Hash) {
+								l.logger.Debug("Terminating incoming link from blackholed identity %x", id.Hash)
+								l.Teardown()
+							} else {
+								l.mu.Lock()
+								l.remoteIdentity = id
+								l.mu.Unlock()
+								if l.callbacks.RemoteIdentified != nil {
+									l.callbacks.RemoteIdentified(l, id)
+								}
 							}
 						}
 					}

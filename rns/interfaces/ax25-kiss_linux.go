@@ -33,6 +33,10 @@ const (
 	AX25KISSHeaderSize         = 16
 	ax25KISSReconnectDelay     = 5 * time.Second
 	ax25KISSFlowControlTimeout = 5 * time.Second
+
+	// AX25KISSDefaultIFACSize is the DEFAULT_IFAC_SIZE for AX.25 KISS interfaces
+	// (RNS/Interfaces/AX25KISSInterface.py:62).
+	AX25KISSDefaultIFACSize = 8
 )
 
 type ax25KISSInterface struct {
@@ -133,6 +137,7 @@ func NewAX25KISSInterface(name, port string, speed, databits, stopbits int, pari
 
 		flowControl: flowControl,
 	}
+	ai.setDefaultIFACSize(AX25KISSDefaultIFACSize)
 
 	if err := ai.openAndConfigure(); err != nil {
 		return nil, err

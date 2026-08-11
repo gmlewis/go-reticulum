@@ -87,10 +87,22 @@ type Reticulum struct {
 	publishBlackhole    bool
 	blackholeSources    [][]byte
 	interfaceSources    [][]byte
-	autoconnectDiscover int
-	bootstrapRestarters []func() error
-	interfaceDiscovery  *InterfaceDiscovery
-	interfaceAnnouncer  *InterfaceAnnouncer
+	// requireShared mirrors the Python require_shared_instance constructor
+	// arg (RNS/Reticulum.py:215,313, v1.3.4). When true the instance must
+	// connect to an existing shared instance; it must not also be configured
+	// to be the shared instance itself.
+	requireShared bool
+	// blackholeUpdateInterval is the configured minimum interval between
+	// fetches of any single blackhole source (Python
+	// RNS.Reticulum.__blackhole_update_interval, Reticulum.py:269,601-604).
+	// Defaults to BlackholeUpdateInterval (1h); propagated to the
+	// TransportSystem before EnableBlackholeUpdater runs.
+	blackholeUpdateInterval time.Duration
+	autoconnectDiscover     int
+	defaultGravity          int
+	bootstrapRestarters     []func() error
+	interfaceDiscovery      *InterfaceDiscovery
+	interfaceAnnouncer      *InterfaceAnnouncer
 
 	mu                          sync.Mutex
 	shareInstance               bool
@@ -127,6 +139,16 @@ func (r *Reticulum) maxAutoconnectedInterfaces() int {
 		return 0
 	}
 	return r.autoconnectDiscover
+}
+
+// DefaultGravity returns the instance-wide default interface gravity
+// (RNS v1.4.1, [reticulum] default_gravity). When unset it resolves to
+// Interface.DEFAULT_GRAVITY (0), matching Python's _default_gravity().
+func (r *Reticulum) DefaultGravity() int {
+	if r == nil {
+		return 0
+	}
+	return r.defaultGravity
 }
 
 func (r *Reticulum) registerBootstrapRestarter(restarter func() error) {
@@ -231,29 +253,39 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger) (*Re
 	configDir = resolvedConfigDir
 
 	r := &Reticulum{
-		configDir:            configDir,
-		transport:            ts,
-		logger:               logger,
-		shareInstance:        true,
-		sharedInstanceType:   "",
-		linkMTUDiscovery:     true,
-		useImplicitProof:     true,
-		allowProbes:          false,
-		remoteMgmtEnabled:    false,
-		remoteMgmtAllowed:    nil,
-		forceSharedBitrate:   0,
-		panicOnIfaceError:    false,
-		discoverInterfaces:   false,
-		requiredDiscoveryV:   0,
-		publishBlackhole:     false,
-		blackholeSources:     nil,
-		interfaceSources:     nil,
-		autoconnectDiscover:  0,
-		localInterfacePort:   37428,
-		localControlPort:     37429,
-		localSocketPath:      "",
-		isSharedInstance:     false,
-		isStandaloneInstance: false,
+		configDir:               configDir,
+		transport:               ts,
+		logger:                  logger,
+		shareInstance:           true,
+		sharedInstanceType:      "",
+		linkMTUDiscovery:        true,
+		useImplicitProof:        true,
+		allowProbes:             false,
+		remoteMgmtEnabled:       false,
+		remoteMgmtAllowed:       nil,
+		forceSharedBitrate:      0,
+		panicOnIfaceError:       false,
+		discoverInterfaces:      false,
+		requiredDiscoveryV:      0,
+		publishBlackhole:        false,
+		blackholeSources:        nil,
+		interfaceSources:        nil,
+		blackholeUpdateInterval: BlackholeUpdateInterval,
+		autoconnectDiscover:     0,
+		localInterfacePort:      37428,
+		localControlPort:        37429,
+		localSocketPath:         "",
+		isSharedInstance:        false,
+		isStandaloneInstance:    false,
+	}
+
+	// File-logging path resolution (Python RNS.Reticulum.__init__,
+	// Reticulum.py:239-240, v1.2.0): when the caller has selected the file
+	// log destination, honor a pre-set logfile path; otherwise derive it from
+	// the config dir as <configdir>/logfile. Mirrors
+	// `RNS.logfile = RNS.logfile or Reticulum.configdir+"/logfile"`.
+	if r.logger.GetLogDest() == LogDestFile && r.logger.GetLogFilePath() == "" {
+		r.logger.SetLogFilePath(filepath.Join(configDir, "logfile"))
 	}
 
 	if err := ensureStartupLayout(configDir); err != nil {
@@ -351,6 +383,9 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger) (*Re
 			if setter, ok := r.transport.(interface{ SetBlackholeSources([][]byte) }); ok {
 				setter.SetBlackholeSources(r.blackholeSources)
 			}
+			if setter, ok := r.transport.(interface{ SetBlackholeUpdateInterval(time.Duration) }); ok {
+				setter.SetBlackholeUpdateInterval(r.blackholeUpdateInterval)
+			}
 			r.transport.EnableBlackholeUpdater()
 		}
 		if hasDiscoverableInterfaces(r.transport) {
@@ -393,11 +428,20 @@ func (r *Reticulum) applyConfig() error {
 				r.logger.SetLogLevel(lvl)
 			}
 		}
+		// logtimestamps gates the "[<timestamp>] " log prefix
+		// (RNS/__init__.py:86,133 / RNS/Reticulum.py:463-465, v1.3.2).
+		// Defaults to true; the config value only overrides when present.
+		if v, ok := logSection.GetProperty("logtimestamps"); ok {
+			r.logger.SetLogTimestamps(parseBoolLike(v))
+		}
 	}
 
 	if reticulumSection, ok := r.config.GetSection("reticulum"); ok {
 		if v, ok := reticulumSection.GetProperty("share_instance"); ok {
 			r.shareInstance = parseBoolLike(v)
+		}
+		if v, ok := reticulumSection.GetProperty("require_shared_instance"); ok {
+			r.requireShared = parseBoolLike(v)
 		}
 		if v, ok := reticulumSection.GetProperty("instance_name"); ok {
 			r.localSocketPath = strings.TrimSpace(v)
@@ -516,6 +560,21 @@ func (r *Reticulum) applyConfig() error {
 				}
 			}
 		}
+		// blackhole_update_interval is the minimum interval between fetches of
+		// any single blackhole source, in minutes (Python
+		// RNS/Reticulum.py:601-604, v1.3.2): parsed as a float, clamped to ≥2,
+		// stored as v*60 seconds. Defaults to BlackholeUpdateInterval (1h) when
+		// absent.
+		if v, ok := reticulumSection.GetProperty("blackhole_update_interval"); ok {
+			minutes, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+			if err != nil {
+				return fmt.Errorf("invalid blackhole_update_interval value %q: %v", v, err)
+			}
+			if minutes < 2 {
+				minutes = 2
+			}
+			r.blackholeUpdateInterval = time.Duration(minutes*60) * time.Second
+		}
 		if v, ok := reticulumSection.GetProperty("interface_discovery_sources"); ok {
 			for _, hexHash := range parseListProperty(v) {
 				hexHash = strings.TrimSpace(hexHash)
@@ -545,6 +604,26 @@ func (r *Reticulum) applyConfig() error {
 				r.autoconnectDiscover = n
 			}
 		}
+		if v, ok := reticulumSection.GetProperty("default_gravity"); ok {
+			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+				r.defaultGravity = n
+			}
+		}
+	}
+
+	// Shared-instance config conflict checks (RNS/Reticulum.py:403-405,446 +
+	// the shared_instance_type ∈ {tcp,unix} guard at Reticulum.py:480-484,
+	// v1.3.4). An instance cannot both be the shared instance and require
+	// one; and shared_instance_type must resolve to a known transport so the
+	// use_af_unix decision is well-defined.
+	if r.shareInstance && r.requireShared {
+		return fmt.Errorf("shared-instance config conflict: share_instance and require_shared_instance are both enabled (an instance cannot both be and require a shared instance)")
+	}
+	switch r.sharedInstanceType {
+	case "", "tcp", "unix":
+		// valid / unset
+	default:
+		return fmt.Errorf("shared_instance_type %q is invalid; must be \"tcp\" or \"unix\"", r.sharedInstanceType)
 	}
 
 	r.transport.SetLinkMTUDiscovery(r.linkMTUDiscovery)
@@ -755,6 +834,7 @@ func (r *Reticulum) initInterfaces() error {
 		if v, ok := sub.GetProperty("bootstrap_only"); ok {
 			bootstrapOnly = parseBoolLike(v)
 		}
+		contractCfg := parseInterfaceContractConfig(sub, r.DefaultGravity())
 
 		switch ifaceType {
 		case "AutoInterface":
@@ -801,7 +881,7 @@ func (r *Reticulum) initInterfaces() error {
 				r.logger.Error("Failed to initialize Auto interface %v: %v", sub.Name, err)
 				continue
 			}
-			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
+			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, contractCfg, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			if bootstrapOnly {
 				name := sub.Name
@@ -809,6 +889,7 @@ func (r *Reticulum) initInterfaces() error {
 				selectedModeCopy := selectedMode
 				ifacConfigCopy := ifacConfig
 				discoveryConfigCopy := discoveryConfig
+				contractCfgCopy := contractCfg
 				r.registerBootstrapRestarter(func() error {
 					handler := func(data []byte, iface interfaces.Interface) {
 						r.transport.Inbound(data, iface)
@@ -819,7 +900,7 @@ func (r *Reticulum) initInterfaces() error {
 					if err != nil {
 						return err
 					}
-					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, contractCfgCopy, true, r.panicOnIfaceError)
 					r.transport.RegisterInterface(iface)
 					return nil
 				})
@@ -855,7 +936,7 @@ func (r *Reticulum) initInterfaces() error {
 				r.logger.Error("Failed to initialize UDP interface %v: %v", sub.Name, err)
 				continue
 			}
-			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
+			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, contractCfg, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			if bootstrapOnly {
 				name := sub.Name
@@ -866,6 +947,7 @@ func (r *Reticulum) initInterfaces() error {
 				selectedModeCopy := selectedMode
 				ifacConfigCopy := ifacConfig
 				discoveryConfigCopy := discoveryConfig
+				contractCfgCopy := contractCfg
 				r.registerBootstrapRestarter(func() error {
 					handler := func(data []byte, iface interfaces.Interface) {
 						r.transport.Inbound(data, iface)
@@ -875,7 +957,7 @@ func (r *Reticulum) initInterfaces() error {
 					if err != nil {
 						return err
 					}
-					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, contractCfgCopy, true, r.panicOnIfaceError)
 					r.transport.RegisterInterface(iface)
 					return nil
 				})
@@ -901,7 +983,7 @@ func (r *Reticulum) initInterfaces() error {
 					r.logger.Error("Failed to initialize TCP client interface %v: %v", sub.Name, err)
 					continue
 				}
-				applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
+				applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, contractCfg, bootstrapOnly, r.panicOnIfaceError)
 				r.transport.RegisterInterface(iface)
 				if bootstrapOnly {
 					name := sub.Name
@@ -910,6 +992,7 @@ func (r *Reticulum) initInterfaces() error {
 					selectedModeCopy := selectedMode
 					ifacConfigCopy := ifacConfig
 					discoveryConfigCopy := discoveryConfig
+					contractCfgCopy := contractCfg
 					r.registerBootstrapRestarter(func() error {
 						handler := func(data []byte, iface interfaces.Interface) {
 							r.transport.Inbound(data, iface)
@@ -919,7 +1002,7 @@ func (r *Reticulum) initInterfaces() error {
 						if err != nil {
 							return err
 						}
-						applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+						applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, contractCfgCopy, true, r.panicOnIfaceError)
 						r.transport.RegisterInterface(iface)
 						return nil
 					})
@@ -951,7 +1034,7 @@ func (r *Reticulum) initInterfaces() error {
 					r.logger.Error("Failed to initialize TCP server interface %v: %v", sub.Name, err)
 					continue
 				}
-				applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
+				applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, contractCfg, bootstrapOnly, r.panicOnIfaceError)
 				r.transport.RegisterInterface(iface)
 				if bootstrapOnly {
 					name := sub.Name
@@ -960,6 +1043,7 @@ func (r *Reticulum) initInterfaces() error {
 					selectedModeCopy := selectedMode
 					ifacConfigCopy := ifacConfig
 					discoveryConfigCopy := discoveryConfig
+					contractCfgCopy := contractCfg
 					r.registerBootstrapRestarter(func() error {
 						handler := func(data []byte, iface interfaces.Interface) {
 							r.transport.Inbound(data, iface)
@@ -973,7 +1057,7 @@ func (r *Reticulum) initInterfaces() error {
 						if err != nil {
 							return err
 						}
-						applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+						applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, contractCfgCopy, true, r.panicOnIfaceError)
 						r.transport.RegisterInterface(iface)
 						return nil
 					})
@@ -1026,7 +1110,7 @@ func (r *Reticulum) initInterfaces() error {
 					if err != nil {
 						r.logger.Error("Failed to initialize I2P interface %v: %v", sub.Name, err)
 					} else {
-						applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
+						applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, contractCfg, bootstrapOnly, r.panicOnIfaceError)
 						r.transport.RegisterInterface(iface)
 						registeredAny = true
 						r.logger.Info("Started I2P interface %v on %v:%v", sub.Name, listenIP, listenPort)
@@ -1071,7 +1155,7 @@ func (r *Reticulum) initInterfaces() error {
 					continue
 				}
 
-				applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
+				applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, contractCfg, bootstrapOnly, r.panicOnIfaceError)
 				r.transport.RegisterInterface(iface)
 				registeredAny = true
 				r.logger.Info("Started I2P peer interface %v", peerName)
@@ -1086,6 +1170,7 @@ func (r *Reticulum) initInterfaces() error {
 				selectedModeCopy := selectedMode
 				ifacConfigCopy := ifacConfig
 				discoveryConfigCopy := discoveryConfig
+				contractCfgCopy := contractCfg
 				r.registerBootstrapRestarter(func() error {
 					handler := func(data []byte, iface interfaces.Interface) {
 						r.transport.Inbound(data, iface)
@@ -1102,7 +1187,7 @@ func (r *Reticulum) initInterfaces() error {
 						if err != nil {
 							return err
 						}
-						applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+						applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, contractCfgCopy, true, r.panicOnIfaceError)
 						r.transport.RegisterInterface(iface)
 						registeredAny = true
 					}
@@ -1129,7 +1214,7 @@ func (r *Reticulum) initInterfaces() error {
 							return err
 						}
 
-						applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+						applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, contractCfgCopy, true, r.panicOnIfaceError)
 						r.transport.RegisterInterface(iface)
 						registeredAny = true
 					}
@@ -1181,7 +1266,7 @@ func (r *Reticulum) initInterfaces() error {
 				r.logger.Error("Failed to initialize Backbone interface %v: %v", sub.Name, err)
 				continue
 			}
-			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
+			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, contractCfg, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			if bootstrapOnly {
 				name := sub.Name
@@ -1190,6 +1275,7 @@ func (r *Reticulum) initInterfaces() error {
 				selectedModeCopy := selectedMode
 				ifacConfigCopy := ifacConfig
 				discoveryConfigCopy := discoveryConfig
+				contractCfgCopy := contractCfg
 				r.registerBootstrapRestarter(func() error {
 					handler := func(data []byte, iface interfaces.Interface) {
 						r.transport.Inbound(data, iface)
@@ -1202,7 +1288,7 @@ func (r *Reticulum) initInterfaces() error {
 					if err != nil {
 						return err
 					}
-					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, contractCfgCopy, true, r.panicOnIfaceError)
 					r.transport.RegisterInterface(iface)
 					return nil
 				})
@@ -1236,7 +1322,7 @@ func (r *Reticulum) initInterfaces() error {
 				r.logger.Error("Failed to initialize Backbone client interface %v: %v", sub.Name, err)
 				continue
 			}
-			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
+			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, contractCfg, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			if bootstrapOnly {
 				name := sub.Name
@@ -1245,6 +1331,7 @@ func (r *Reticulum) initInterfaces() error {
 				selectedModeCopy := selectedMode
 				ifacConfigCopy := ifacConfig
 				discoveryConfigCopy := discoveryConfig
+				contractCfgCopy := contractCfg
 				r.registerBootstrapRestarter(func() error {
 					handler := func(data []byte, iface interfaces.Interface) {
 						r.transport.Inbound(data, iface)
@@ -1254,7 +1341,7 @@ func (r *Reticulum) initInterfaces() error {
 					if err != nil {
 						return err
 					}
-					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, contractCfgCopy, true, r.panicOnIfaceError)
 					r.transport.RegisterInterface(iface)
 					return nil
 				})
@@ -1305,7 +1392,7 @@ func (r *Reticulum) initInterfaces() error {
 				r.logger.Error("Failed to initialize KISS interface %v: %v", sub.Name, err)
 				continue
 			}
-			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
+			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, contractCfg, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			if bootstrapOnly {
 				name := sub.Name
@@ -1317,6 +1404,7 @@ func (r *Reticulum) initInterfaces() error {
 				selectedModeCopy := selectedMode
 				ifacConfigCopy := ifacConfig
 				discoveryConfigCopy := discoveryConfig
+				contractCfgCopy := contractCfg
 				r.registerBootstrapRestarter(func() error {
 					handler := func(data []byte, iface interfaces.Interface) {
 						r.transport.Inbound(data, iface)
@@ -1326,7 +1414,7 @@ func (r *Reticulum) initInterfaces() error {
 					if err != nil {
 						return err
 					}
-					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, contractCfgCopy, true, r.panicOnIfaceError)
 					r.transport.RegisterInterface(iface)
 					return nil
 				})
@@ -1433,7 +1521,7 @@ func (r *Reticulum) initInterfaces() error {
 			discoveryConfig.Bandwidth = new(bandwidth)
 			discoveryConfig.SpreadingFactor = new(spreadingFactor)
 			discoveryConfig.CodingRate = new(codingRate)
-			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
+			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, contractCfg, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			if bootstrapOnly {
 				name := sub.Name
@@ -1453,6 +1541,7 @@ func (r *Reticulum) initInterfaces() error {
 				selectedModeCopy := selectedMode
 				ifacConfigCopy := ifacConfig
 				discoveryConfigCopy := discoveryConfig
+				contractCfgCopy := contractCfg
 				r.registerBootstrapRestarter(func() error {
 					handler := func(data []byte, iface interfaces.Interface) {
 						r.transport.Inbound(data, iface)
@@ -1462,7 +1551,7 @@ func (r *Reticulum) initInterfaces() error {
 					if err != nil {
 						return err
 					}
-					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, contractCfgCopy, true, r.panicOnIfaceError)
 					r.transport.RegisterInterface(iface)
 					return nil
 				})
@@ -1590,7 +1679,7 @@ func (r *Reticulum) initInterfaces() error {
 				continue
 			}
 
-			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
+			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, contractCfg, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			if bootstrapOnly {
 				name := sub.Name
@@ -1605,6 +1694,7 @@ func (r *Reticulum) initInterfaces() error {
 				selectedModeCopy := selectedMode
 				ifacConfigCopy := ifacConfig
 				discoveryConfigCopy := discoveryConfig
+				contractCfgCopy := contractCfg
 				r.registerBootstrapRestarter(func() error {
 					handler := func(data []byte, iface interfaces.Interface) {
 						r.transport.Inbound(data, iface)
@@ -1614,7 +1704,7 @@ func (r *Reticulum) initInterfaces() error {
 					if err != nil {
 						return err
 					}
-					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, contractCfgCopy, true, r.panicOnIfaceError)
 					r.transport.RegisterInterface(iface)
 					return nil
 				})
@@ -1711,7 +1801,7 @@ func (r *Reticulum) initInterfaces() error {
 				r.logger.Error("Failed to initialize AX.25 KISS interface %v: %v", sub.Name, err)
 				continue
 			}
-			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
+			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, contractCfg, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			if bootstrapOnly {
 				name := sub.Name
@@ -1730,6 +1820,7 @@ func (r *Reticulum) initInterfaces() error {
 				selectedModeCopy := selectedMode
 				ifacConfigCopy := ifacConfig
 				discoveryConfigCopy := discoveryConfig
+				contractCfgCopy := contractCfg
 				r.registerBootstrapRestarter(func() error {
 					handler := func(data []byte, iface interfaces.Interface) {
 						r.transport.Inbound(data, iface)
@@ -1739,7 +1830,7 @@ func (r *Reticulum) initInterfaces() error {
 					if err != nil {
 						return err
 					}
-					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, contractCfgCopy, true, r.panicOnIfaceError)
 					r.transport.RegisterInterface(iface)
 					return nil
 				})
@@ -1769,7 +1860,7 @@ func (r *Reticulum) initInterfaces() error {
 				r.logger.Error("Failed to initialize Pipe interface %v: %v", sub.Name, err)
 				continue
 			}
-			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
+			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, contractCfg, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			if bootstrapOnly {
 				name := sub.Name
@@ -1778,6 +1869,7 @@ func (r *Reticulum) initInterfaces() error {
 				selectedModeCopy := selectedMode
 				ifacConfigCopy := ifacConfig
 				discoveryConfigCopy := discoveryConfig
+				contractCfgCopy := contractCfg
 				r.registerBootstrapRestarter(func() error {
 					handler := func(data []byte, iface interfaces.Interface) {
 						r.transport.Inbound(data, iface)
@@ -1787,7 +1879,7 @@ func (r *Reticulum) initInterfaces() error {
 					if err != nil {
 						return err
 					}
-					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, contractCfgCopy, true, r.panicOnIfaceError)
 					r.transport.RegisterInterface(iface)
 					return nil
 				})
@@ -1818,7 +1910,7 @@ func (r *Reticulum) initInterfaces() error {
 				continue
 			}
 
-			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
+			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, contractCfg, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			if bootstrapOnly {
 				name := sub.Name
@@ -1827,6 +1919,7 @@ func (r *Reticulum) initInterfaces() error {
 				selectedModeCopy := selectedMode
 				ifacConfigCopy := ifacConfig
 				discoveryConfigCopy := discoveryConfig
+				contractCfgCopy := contractCfg
 				r.registerBootstrapRestarter(func() error {
 					handler := func(data []byte, iface interfaces.Interface) {
 						r.transport.Inbound(data, iface)
@@ -1836,7 +1929,7 @@ func (r *Reticulum) initInterfaces() error {
 					if err != nil {
 						return err
 					}
-					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, contractCfgCopy, true, r.panicOnIfaceError)
 					r.transport.RegisterInterface(iface)
 					return nil
 				})
@@ -1887,7 +1980,7 @@ func (r *Reticulum) initInterfaces() error {
 				r.logger.Error("Failed to initialize Serial interface %v: %v", sub.Name, err)
 				continue
 			}
-			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, bootstrapOnly, r.panicOnIfaceError)
+			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, contractCfg, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			if bootstrapOnly {
 				name := sub.Name
@@ -1899,6 +1992,7 @@ func (r *Reticulum) initInterfaces() error {
 				selectedModeCopy := selectedMode
 				ifacConfigCopy := ifacConfig
 				discoveryConfigCopy := discoveryConfig
+				contractCfgCopy := contractCfg
 				r.registerBootstrapRestarter(func() error {
 					handler := func(data []byte, iface interfaces.Interface) {
 						r.transport.Inbound(data, iface)
@@ -1908,7 +2002,7 @@ func (r *Reticulum) initInterfaces() error {
 					if err != nil {
 						return err
 					}
-					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, true, r.panicOnIfaceError)
+					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, contractCfgCopy, true, r.panicOnIfaceError)
 					r.transport.RegisterInterface(iface)
 					return nil
 				})

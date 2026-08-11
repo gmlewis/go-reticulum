@@ -58,6 +58,7 @@ func NewPipeSubprocessInterface(name, command string, respawnDelay time.Duration
 		respawnDelay:   respawnDelay,
 		inboundHandler: handler,
 	}
+	pi.setDefaultIFACSize(PipeDefaultIFACSize)
 
 	if err := pi.spawnProcess(); err != nil {
 		return nil, err

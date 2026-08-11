@@ -167,6 +167,32 @@ func TestStreamDataMessageUnpackDecompressesCompressedPayload(t *testing.T) {
 	}
 }
 
+// TestStreamDataMessageUnpackRejectsOversizedDecompression verifies the
+// decompression-bomb guard in StreamDataMessage.Unpack (Python
+// StreamDataMessage.unpack, Buffer.py:94-97): a compressed chunk that
+// decompresses past RawChannelWriter.MAX_CHUNK_LEN (16 KiB) is rejected with
+// an error rather than decompressed unbounded.
+func TestStreamDataMessageUnpackRejectsOversizedDecompression(t *testing.T) {
+	t.Parallel()
+
+	// 32 KiB decompresses past the 16 KiB cap.
+	bomb := bytes.Repeat([]byte("C"), 32*1024)
+	compressed, err := CompressBzip2(bomb, 9)
+	if err != nil {
+		t.Fatalf("CompressBzip2 error: %v", err)
+	}
+
+	encoded, err := (&StreamDataMessage{StreamID: 1, Data: compressed, Compressed: true}).Pack()
+	if err != nil {
+		t.Fatalf("pack error: %v", err)
+	}
+
+	var decoded StreamDataMessage
+	if err := decoded.Unpack(encoded); err == nil {
+		t.Fatal("Unpack expected error for decompression exceeding MAX_CHUNK_LEN, got nil")
+	}
+}
+
 func TestChannelWriterCompressesWhenSmaller(t *testing.T) {
 	t.Parallel()
 	var sawCompressed bool

@@ -28,6 +28,10 @@ const (
 	SerialHWMTU           = 564
 	SerialFrameTimeout    = 100 * time.Millisecond
 	serialReconnectDelay  = 5 * time.Second
+
+	// SerialDefaultIFACSize is the DEFAULT_IFAC_SIZE for serial interfaces
+	// (RNS/Interfaces/SerialInterface.py:45).
+	SerialDefaultIFACSize = 8
 )
 
 type serialInterface struct {
@@ -77,6 +81,7 @@ func NewSerialInterface(name, port string, speed, databits, stopbits int, parity
 		stopbits:       stopbits,
 		inboundHandler: handler,
 	}
+	si.setDefaultIFACSize(SerialDefaultIFACSize)
 
 	if err := si.openAndConfigure(); err != nil {
 		return nil, err

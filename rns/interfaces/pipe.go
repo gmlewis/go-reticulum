@@ -10,6 +10,10 @@ import (
 	"sync/atomic"
 )
 
+// PipeDefaultIFACSize is the DEFAULT_IFAC_SIZE for pipe interfaces
+// (RNS/Interfaces/PipeInterface.py:39).
+const PipeDefaultIFACSize = 8
+
 // PipeInterface establishes a direct in-memory conduit between two endpoints,
 // optimized for localized testing and simulation. It bypasses the physical
 // network stack and enables rapid point-to-point payload delivery using Go
@@ -32,6 +36,7 @@ func NewPipeInterface(name string, onReceive func([]byte, Interface)) *PipeInter
 		OnReceive:     onReceive,
 		queue:         make(chan []byte, 1000),
 	}
+	p.setDefaultIFACSize(PipeDefaultIFACSize)
 	go p.processQueue()
 	return p
 }

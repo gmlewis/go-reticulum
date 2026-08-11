@@ -107,3 +107,83 @@ func TestNewLoggerWritesToCallbackAndFile(t *testing.T) {
 		t.Fatalf("logfile output = %q, want message containing %q", string(data), "file message")
 	}
 }
+
+// TestLogPathingLevelAndLabel verifies the v1.3.9/1.4.1 log-level additions
+// (RNS/__init__.py:73-74,106-107): LogPathing=7 sits between LogDebug and the
+// bumped LogExtreme=8, with the "[Pathing] " label.
+func TestLogPathingLevelAndLabel(t *testing.T) {
+	t.Parallel()
+	if LogPathing != 7 {
+		t.Fatalf("LogPathing = %d, want 7", LogPathing)
+	}
+	if LogExtreme != 8 {
+		t.Fatalf("LogExtreme = %d, want 8", LogExtreme)
+	}
+	if got := LogLevelName(LogPathing); got != "[Pathing] " {
+		t.Fatalf("LogLevelName(LogPathing) = %q, want %q", got, "[Pathing] ")
+	}
+	if got := LogLevelName(LogExtreme); got != "[Extra]   " {
+		t.Fatalf("LogLevelName(LogExtreme) = %q, want %q", got, "[Extra]   ")
+	}
+}
+
+// TestSetLogLevelClampsToLogExtreme verifies the loglevel clamp ceiling was
+// bumped from 7 to LogExtreme (8) alongside the new LogPathing level
+// (RNS/Reticulum.py:306, v1.4.1).
+func TestSetLogLevelClampsToLogExtreme(t *testing.T) {
+	t.Parallel()
+	logger := NewLogger()
+	logger.SetPendingDelta(100) // push the effective level past the ceiling
+	logger.SetLogLevel(LogNotice)
+	if got := logger.GetLogLevel(); got != LogExtreme {
+		t.Fatalf("clamped loglevel = %d, want %d (LogExtreme)", got, LogExtreme)
+	}
+
+	low := NewLogger()
+	low.SetPendingDelta(-100) // push below the floor
+	low.SetLogLevel(LogNotice)
+	if got := low.GetLogLevel(); got != LogCritical {
+		t.Fatalf("clamped loglevel = %d, want %d (LogCritical)", got, LogCritical)
+	}
+}
+
+// TestLogTimestampsGatesPrefix verifies the logtimestamps config
+// (RNS/__init__.py:86,133 / RNS/Reticulum.py:463-465, v1.3.2): the timestamp
+// prefix is present by default and omitted when SetLogTimestamps(false).
+func TestLogTimestampsGatesPrefix(t *testing.T) {
+	t.Parallel()
+
+	// Default: timestamps enabled → output is "[<timestamp>] [Notice]  msg".
+	withTS := NewLogger()
+	withTS.SetLogLevel(LogExtreme)
+	var cbTS bytes.Buffer
+	withTS.SetLogDest(LogCallback)
+	withTS.SetLogCallback(func(msg string) { cbTS.WriteString(msg) })
+	withTS.Notice("with-timestamp")
+	outTS := cbTS.String()
+	if !strings.Contains(outTS, "] [Notice]") {
+		t.Fatalf("timestamps enabled: output %q should contain a timestamp before the level label", outTS)
+	}
+	if !strings.Contains(outTS, "with-timestamp") {
+		t.Fatalf("output missing message: %q", outTS)
+	}
+
+	// Disabled: output omits the timestamp prefix → "[Notice]  msg".
+	withoutTS := NewLogger()
+	withoutTS.SetLogLevel(LogExtreme)
+	withoutTS.SetLogTimestamps(false)
+	var cbNoTS bytes.Buffer
+	withoutTS.SetLogDest(LogCallback)
+	withoutTS.SetLogCallback(func(msg string) { cbNoTS.WriteString(msg) })
+	withoutTS.Notice("no-timestamp")
+	outNoTS := cbNoTS.String()
+	if !strings.HasPrefix(outNoTS, "[Notice]") {
+		t.Fatalf("timestamps disabled: output %q should start with the level label, not a timestamp", outNoTS)
+	}
+	if strings.Contains(outNoTS, "] [Notice]") {
+		t.Fatalf("timestamps disabled: output %q unexpectedly contains a timestamp prefix", outNoTS)
+	}
+	if !strings.Contains(outNoTS, "no-timestamp") {
+		t.Fatalf("output missing message: %q", outNoTS)
+	}
+}

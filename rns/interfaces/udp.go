@@ -15,6 +15,10 @@ import (
 
 const (
 	UDPBitrateGuess = 10 * 1000 * 1000
+
+	// UDPDefaultIFACSize is the DEFAULT_IFAC_SIZE for UDP interfaces
+	// (RNS/Interfaces/UDPInterface.py:42).
+	UDPDefaultIFACSize = 16
 )
 
 // UDPInterface implements a high-throughput, connectionless transport interface leveraging standard User Datagram Protocol semantics.
@@ -36,6 +40,7 @@ type UDPInterface struct {
 // It rapidly boots the asynchronous listening loop, readying the interface to ingest and broadcast connectionless frames.
 func NewUDPInterface(name, listenIP string, listenPort int, forwardIP string, forwardPort int, handler InboundHandler) (*UDPInterface, error) {
 	bi := NewBaseInterface(name, ModeFull, UDPBitrateGuess)
+	bi.setDefaultIFACSize(UDPDefaultIFACSize)
 
 	lAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%v:%v", listenIP, listenPort))
 	if err != nil {

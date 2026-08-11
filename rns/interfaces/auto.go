@@ -158,6 +158,7 @@ type AutoInterface struct {
 // It parses the provided configuration, allocates necessary UDP sockets across allowable hardware interfaces, and spawns the core asynchronous multiplexing loops.
 func NewAutoInterface(name string, cfg AutoInterfaceConfig, handler InboundHandler, onPeer func(Interface)) (*AutoInterface, error) {
 	bi := NewBaseInterface(name, ModeFull, AutoBitrateGuess)
+	bi.setDefaultIFACSize(AutoDefaultIFACSize)
 	ai := &AutoInterface{
 		BaseInterface: bi,
 
@@ -539,7 +540,11 @@ func (ai *AutoInterface) addPeer(addr, ifname string) {
 
 	ai.peers[addr] = &autoPeerState{interfaceName: ifname, lastHeard: now, lastOutbound: now}
 	peer := &AutoInterfacePeer{
-		BaseInterface: NewBaseInterface(fmt.Sprintf("AutoPeer[%v/%v]", ifname, addr), ai.Mode(), ai.Bitrate()),
+		BaseInterface: func() *BaseInterface {
+			pbi := NewBaseInterface(fmt.Sprintf("AutoPeer[%v/%v]", ifname, addr), ai.Mode(), ai.Bitrate())
+			pbi.setDefaultIFACSize(AutoDefaultIFACSize)
+			return pbi
+		}(),
 		owner:         ai,
 		addr:          addr,
 		interfaceName: ifname,

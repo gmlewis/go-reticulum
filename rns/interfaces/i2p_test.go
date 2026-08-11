@@ -43,7 +43,10 @@ func TestI2PInterfaceRoundTrip(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	msg := []byte("hello i2p")
+	// Payload must exceed HDLCHeaderMinSize (19): the readLoop's check_frame_len
+	// gate (v1.4.0 parity) drops sub-header frames, so a real-length payload is
+	// required for a round-trip delivery test.
+	msg := []byte("hello i2p roundtrip test!!")
 	if err := peerIface.Send(msg); err != nil {
 		t.Fatal(err)
 	}

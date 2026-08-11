@@ -8,6 +8,7 @@ package rns
 import (
 	"bytes"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"math"
 	"reflect"
@@ -487,6 +488,12 @@ type Resource struct {
 	metadata         map[string][]byte
 	hasMetadata      bool
 
+	// maxDecompressedSize caps the decompressed size of a compressed incoming
+	// resource (Python Resource.max_decompressed_size, Resource.py:360). It
+	// defaults to ResourceAutoCompressMaxSize (64 MiB) when unset, driving the
+	// decompression-bomb guard in Assemble.
+	maxDecompressedSize int
+
 	mu sync.Mutex
 }
 
@@ -710,6 +717,28 @@ func (r *Resource) Cancel() {
 func (r *Resource) cancelLocked() {
 	if r.status < ResourceStatusComplete {
 		r.status = ResourceStatusFailed
+	}
+}
+
+// cancelCorruptLocked runs the CORRUPT branch of Python Resource.cancel
+// (Resource.py:1090-1093): cancel_incoming_resource + reject(advertisement) +
+// link.teardown. It assumes r.mu is already held (the caller — currently
+// Assemble's decompression-bomb guard — holds it) and that r.status has
+// already been set to ResourceStatusCorrupt. The full Cancel rewrite
+// (ICL/RCL packets, FAILED branch) is a separate Phase 9 task.
+func (r *Resource) cancelCorruptLocked() {
+	if r.link != nil {
+		r.link.CancelIncomingResource(r)
+	}
+	if r.advertisementPacket != nil {
+		if err := Reject(r.advertisementPacket); err != nil {
+			if r.link != nil && r.link.logger != nil {
+				r.link.logger.Debug("Failed to send resource reject for %x: %v", r.hash, err)
+			}
+		}
+	}
+	if r.link != nil {
+		r.link.Teardown()
 	}
 }
 
@@ -1052,8 +1081,24 @@ func (r *Resource) Assemble() {
 	}
 
 	if r.compressed {
-		decompressed, err := DecompressBzip2(payload)
+		maxLen := r.maxDecompressedSize
+		if maxLen <= 0 {
+			maxLen = ResourceAutoCompressMaxSize
+		}
+		decompressed, err := DecompressBzip2WithLimit(payload, maxLen)
 		if err != nil {
+			if errors.Is(err, ErrDecompressedTooLarge) {
+				// Decompression-bomb guard (Python Resource.assemble,
+				// Resource.py:690-696): the decompressed payload exceeded the
+				// cap. Mark CORRUPT and run the CORRUPT branch of cancel —
+				// cancel_incoming_resource + reject + link.teardown.
+				if r.link != nil && r.link.logger != nil {
+					r.link.logger.Error("Decompressed resource exceeded maximum decompressed size. The resource was rejected.")
+				}
+				r.status = ResourceStatusCorrupt
+				r.cancelCorruptLocked()
+				return
+			}
 			r.link.logger.Debug("Failed to decompress assembled resource %x: %v", r.hash, err)
 			r.status = ResourceStatusFailed
 			return

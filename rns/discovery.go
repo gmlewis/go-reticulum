@@ -2179,7 +2179,11 @@ func (id *InterfaceDiscovery) autoconnect(info DiscoveredInterface) (err error) 
 				Enabled: true,
 				NetName: info.IFACNetname,
 				NetKey:  info.IFACNetkey,
-				Size:    16,
+				// Size left unset (0); SetIFACConfig fills it from each
+				// interface type's DEFAULT_IFAC_SIZE, matching Python's
+				// _add_interface default (RNS/Reticulum.py:1110) rather than
+				// a hardcoded 16.
+				Size: 0,
 			})
 		}
 	}

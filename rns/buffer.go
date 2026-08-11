@@ -75,8 +75,15 @@ func (m *StreamDataMessage) Unpack(data []byte) error {
 	m.StreamID = headerVal & 0x3fff
 	m.Data = data[2:]
 	if m.Compressed {
-		decompressed, err := DecompressBzip2(m.Data)
+		// Decompression-bomb guard (Python StreamDataMessage.unpack,
+		// Buffer.py:94-97): cap the decompressed chunk at
+		// RawChannelWriter.MAX_CHUNK_LEN (bufferMaxChunkLen, 16 KiB) and reject
+		// when the stream decompresses past it.
+		decompressed, err := DecompressBzip2WithLimit(m.Data, bufferMaxChunkLen)
 		if err != nil {
+			if errors.Is(err, ErrDecompressedTooLarge) {
+				return errors.New("Decompressed buffer chunk exceeds maximum legitimate size")
+			}
 			return fmt.Errorf("failed to decompress stream data: %w", err)
 		}
 		m.Data = decompressed

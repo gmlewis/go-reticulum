@@ -19,6 +19,10 @@ const (
 	TCPBitrateGuess = 10 * 1000 * 1000
 	TCPHWMTU        = 262144
 
+	// TCPDefaultIFACSize is the DEFAULT_IFAC_SIZE for TCP client and server
+	// interfaces (RNS/Interfaces/TCPInterface.py:77,467).
+	TCPDefaultIFACSize = 16
+
 	// tcpWriteTimeout bounds a single outbound frame write. Without it, a
 	// half-open TCP peer (one that died without sending a FIN) makes
 	// conn.Write block until the OS TCP retransmit timeout — minutes to
@@ -91,6 +95,14 @@ type TCPClientInterface struct {
 	kissFraming    bool
 	inboundHandler InboundHandler
 
+	// hwmtu is this interface's hardware MTU ceiling for inbound HDLC frame
+	// validation (RNS/Interfaces/{TCP,Backbone}Interface.py HW_MTU). TCP
+	// interfaces use TCPHWMTU (262144); Backbone interfaces use
+	// BackboneHWMTU (1048576). It is set in the struct literal before
+	// readLoop starts, so the read goroutine observes it without
+	// synchronization.
+	hwmtu int
+
 	running int32
 	mu      sync.Mutex
 
@@ -135,8 +147,18 @@ type TCPClientInterface struct {
 // It establishes the link, configures framing mode, and starts read/write
 // goroutines.
 func NewTCPClientInterface(name, host string, port int, kiss bool, handler InboundHandler) (*TCPClientInterface, error) {
+	return newTCPClientInterface(name, host, port, kiss, handler, TCPHWMTU)
+}
+
+// newTCPClientInterface is the shared constructor used by both TCP
+// (TCPHWMTU) and Backbone (BackboneHWMTU) client interfaces so the inbound
+// HDLC frame-length gate uses the correct hardware MTU for the interface
+// type. hwmtu is recorded before readLoop starts, so the read goroutine
+// observes it without synchronization.
+func newTCPClientInterface(name, host string, port int, kiss bool, handler InboundHandler, hwmtu int) (*TCPClientInterface, error) {
 	log.Printf("NewTCPClientInterface %v target=%v:%v", name, host, port)
 	bi := NewBaseInterface(name, ModeFull, TCPBitrateGuess)
+	bi.setDefaultIFACSize(TCPDefaultIFACSize)
 	tci := &TCPClientInterface{
 		BaseInterface:  bi,
 		targetHost:     host,
@@ -145,6 +167,7 @@ func NewTCPClientInterface(name, host string, port int, kiss bool, handler Inbou
 		inboundHandler: handler,
 		reconnectDelay: 5 * time.Second,
 		writeTimeout:   tcpWriteTimeout,
+		hwmtu:          hwmtu,
 	}
 
 	if err := tci.connect(); err != nil {
@@ -270,33 +293,27 @@ func (tci *TCPClientInterface) readLoop() {
 			} else {
 				// HDLC framing
 				frameBuffer = append(frameBuffer, buf[:n]...)
-				for {
-					start := bytes.IndexByte(frameBuffer, HDLCFlag)
-					if start == -1 {
-						frameBuffer = frameBuffer[:0]
-						break
+				// Reassemble complete frames (hdlcReassemble) including the
+				// v1.4.0 frame_buffer overflow guard, then validate and
+				// dispatch each one (CheckFrameLen, RNS/Interfaces/{TCP,Backbone}Interface.py).
+				var reassembled [][]byte
+				frameBuffer, reassembled = hdlcReassemble(frameBuffer, tci.hwmtu)
+				ifacSize := tci.IFACConfig().Size
+				for _, unescaped := range reassembled {
+					// Frame-length validation (check_frame_len, v1.4.0): drop
+					// frames at or below HEADER_MINSIZE or above
+					// HW_MTU+ifac_size before inbound dispatch. Python's
+					// process_incoming (and thus rxb accounting) only runs for
+					// frames that pass this gate, so rxBytes is incremented
+					// only on the accept branch.
+					if !CheckFrameLen(len(unescaped), tci.hwmtu, ifacSize) {
+						InvalidFrame(tci.name, len(unescaped), tci.hwmtu, ifacSize)
+						continue
 					}
-					end := bytes.IndexByte(frameBuffer[start+1:], HDLCFlag)
-					if end == -1 {
-						frameBuffer = frameBuffer[start:]
-						break
+					atomic.AddUint64(&tci.rxBytes, uint64(len(unescaped)))
+					if tci.inboundHandler != nil {
+						tci.inboundHandler(unescaped, tci)
 					}
-					end += start + 1
-
-					frame := frameBuffer[start+1 : end]
-					// log.Printf("[TCP] %v: HDLC frame len=%v", tci.name, len(frame))
-					unescaped := HDLCUnescape(frame)
-					// log.Printf("[TCP] %v: HDLC unescaped len=%v", tci.name, len(unescaped))
-					if len(unescaped) > 0 {
-						atomic.AddUint64(&tci.rxBytes, uint64(len(unescaped)))
-						if tci.inboundHandler != nil {
-							// log.Printf("[TCP] %v: calling inboundHandler with len=%v", tci.name, len(unescaped))
-							tci.inboundHandler(unescaped, tci)
-							// } else {
-							// log.Printf("[TCP] %v: inboundHandler is nil!", tci.name)
-						}
-					}
-					frameBuffer = frameBuffer[end:]
 				}
 			}
 		}
@@ -468,6 +485,12 @@ type TCPServerInterface struct {
 	inboundHandler    InboundHandler
 	connectHandler    ConnectHandler
 
+	// hwmtu is the hardware MTU ceiling passed to each spawned client
+	// interface for inbound HDLC frame-length validation. TCP servers use
+	// TCPHWMTU; Backbone servers use BackboneHWMTU. It is read in
+	// handleConnection when constructing spawned clients.
+	hwmtu int
+
 	running int32
 	mu      sync.Mutex
 }
@@ -476,7 +499,16 @@ type TCPServerInterface struct {
 // socket for incoming TCP peers. It then enters a non-blocking accept loop and
 // delegates connection handling to spawned client interfaces.
 func NewTCPServerInterface(name, bindIP string, bindPort int, handler InboundHandler, onConnect ConnectHandler) (*TCPServerInterface, error) {
+	return newTCPServerInterface(name, bindIP, bindPort, handler, onConnect, TCPHWMTU)
+}
+
+// newTCPServerInterface is the shared constructor used by both TCP
+// (TCPHWMTU) and Backbone (BackboneHWMTU) server interfaces so spawned
+// clients inherit the correct hardware MTU for inbound HDLC frame-length
+// validation.
+func newTCPServerInterface(name, bindIP string, bindPort int, handler InboundHandler, onConnect ConnectHandler, hwmtu int) (*TCPServerInterface, error) {
 	bi := NewBaseInterface(name, ModeFull, TCPBitrateGuess)
+	bi.setDefaultIFACSize(TCPDefaultIFACSize)
 
 	addr := fmt.Sprintf("%v:%v", bindIP, bindPort)
 	l, err := net.Listen("tcp", addr)
@@ -491,6 +523,7 @@ func NewTCPServerInterface(name, bindIP string, bindPort int, handler InboundHan
 		bindPort:       bindPort,
 		inboundHandler: handler,
 		connectHandler: onConnect,
+		hwmtu:          hwmtu,
 	}
 
 	atomic.StoreInt32(&tsi.running, 1)
@@ -525,12 +558,14 @@ func (tsi *TCPServerInterface) handleConnection(conn net.Conn) {
 	applyTCPConnOpts(conn)
 	// Create a TCPClientInterface from the connected socket
 	bi := NewBaseInterface(name, ModeFull, TCPBitrateGuess)
+	bi.setDefaultIFACSize(TCPDefaultIFACSize)
 	bi.copyPanicOnInterfaceErrorFrom(tsi.BaseInterface)
 	tci := &TCPClientInterface{
 		BaseInterface:  bi,
 		conn:           conn,
 		inboundHandler: tsi.inboundHandler,
 		writeTimeout:   tcpWriteTimeout,
+		hwmtu:          tsi.hwmtu,
 		spawned:        true,
 	}
 	atomic.StoreInt32(&tci.running, 1)

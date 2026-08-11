@@ -38,7 +38,10 @@ func TestTCPInterface(t *testing.T) {
 	// Wait for connection to be accepted
 	time.Sleep(100 * time.Millisecond)
 
-	msg := []byte("hello tcp")
+	// Payload must exceed HDLCHeaderMinSize (19): the readLoop's check_frame_len
+	// gate (v1.4.0 parity) drops sub-header frames, so a real-length payload is
+	// required for a round-trip delivery test.
+	msg := []byte("hello tcp roundtrip test!!")
 	if err := client.Send(msg); err != nil {
 		t.Fatal(err)
 	}

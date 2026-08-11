@@ -1366,18 +1366,22 @@ type dummyInterface struct {
 	name string
 }
 
-func (d *dummyInterface) Name() string           { return d.name }
-func (d *dummyInterface) Type() string           { return "dummy" }
-func (d *dummyInterface) IsOut() bool            { return true }
-func (d *dummyInterface) Status() bool           { return true }
-func (d *dummyInterface) Mode() int              { return 1 }
-func (d *dummyInterface) Bitrate() int           { return 1000 }
-func (d *dummyInterface) Send(data []byte) error { return nil }
-func (d *dummyInterface) BytesReceived() uint64  { return 0 }
-func (d *dummyInterface) BytesSent() uint64      { return 0 }
-func (d *dummyInterface) Detach() error          { return nil }
-func (d *dummyInterface) IsDetached() bool       { return false }
-func (d *dummyInterface) Age() time.Duration     { return 0 }
+func (d *dummyInterface) Name() string                { return d.name }
+func (d *dummyInterface) Type() string                { return "dummy" }
+func (d *dummyInterface) IsOut() bool                 { return true }
+func (d *dummyInterface) Status() bool                { return true }
+func (d *dummyInterface) Mode() int                   { return 1 }
+func (d *dummyInterface) Bitrate() int                { return 1000 }
+func (d *dummyInterface) Send(data []byte) error      { return nil }
+func (d *dummyInterface) BytesReceived() uint64       { return 0 }
+func (d *dummyInterface) BytesSent() uint64           { return 0 }
+func (d *dummyInterface) Detach() error               { return nil }
+func (d *dummyInterface) IsDetached() bool            { return false }
+func (d *dummyInterface) Age() time.Duration          { return 0 }
+func (d *dummyInterface) Gravity() int                { return 0 }
+func (d *dummyInterface) RecursivePrs() bool          { return false }
+func (d *dummyInterface) AnnouncesFromInternal() bool { return true }
+func (d *dummyInterface) AnnouncesToInternal() *bool  { return nil }
 
 type capturingInterface struct {
 	name      string
@@ -1397,11 +1401,15 @@ func (c *capturingInterface) Bitrate() int {
 	}
 	return 1000
 }
-func (c *capturingInterface) BytesReceived() uint64 { return 0 }
-func (c *capturingInterface) BytesSent() uint64     { return 0 }
-func (c *capturingInterface) Detach() error         { return nil }
-func (c *capturingInterface) IsDetached() bool      { return false }
-func (c *capturingInterface) Age() time.Duration    { return 0 }
+func (c *capturingInterface) BytesReceived() uint64       { return 0 }
+func (c *capturingInterface) BytesSent() uint64           { return 0 }
+func (c *capturingInterface) Detach() error               { return nil }
+func (c *capturingInterface) IsDetached() bool            { return false }
+func (c *capturingInterface) Age() time.Duration          { return 0 }
+func (c *capturingInterface) Gravity() int                { return 0 }
+func (c *capturingInterface) RecursivePrs() bool          { return false }
+func (c *capturingInterface) AnnouncesFromInternal() bool { return true }
+func (c *capturingInterface) AnnouncesToInternal() *bool  { return nil }
 func (c *capturingInterface) Send(data []byte) error {
 	c.sendCount++
 	c.lastSent = make([]byte, len(data))
@@ -1430,17 +1438,21 @@ type failingInterface struct {
 	name string
 }
 
-func (f *failingInterface) Name() string          { return f.name }
-func (f *failingInterface) Type() string          { return "failing" }
-func (f *failingInterface) IsOut() bool           { return true }
-func (f *failingInterface) Status() bool          { return true }
-func (f *failingInterface) Mode() int             { return 1 }
-func (f *failingInterface) Bitrate() int          { return 1000 }
-func (f *failingInterface) BytesReceived() uint64 { return 0 }
-func (f *failingInterface) BytesSent() uint64     { return 0 }
-func (f *failingInterface) Detach() error         { return nil }
-func (f *failingInterface) IsDetached() bool      { return false }
-func (f *failingInterface) Age() time.Duration    { return 0 }
+func (f *failingInterface) Name() string                { return f.name }
+func (f *failingInterface) Type() string                { return "failing" }
+func (f *failingInterface) IsOut() bool                 { return true }
+func (f *failingInterface) Status() bool                { return true }
+func (f *failingInterface) Mode() int                   { return 1 }
+func (f *failingInterface) Bitrate() int                { return 1000 }
+func (f *failingInterface) BytesReceived() uint64       { return 0 }
+func (f *failingInterface) BytesSent() uint64           { return 0 }
+func (f *failingInterface) Detach() error               { return nil }
+func (f *failingInterface) IsDetached() bool            { return false }
+func (f *failingInterface) Age() time.Duration          { return 0 }
+func (f *failingInterface) Gravity() int                { return 0 }
+func (f *failingInterface) RecursivePrs() bool          { return false }
+func (f *failingInterface) AnnouncesFromInternal() bool { return true }
+func (f *failingInterface) AnnouncesToInternal() *bool  { return nil }
 func (f *failingInterface) Send(data []byte) error {
 	return os.ErrClosed
 }
@@ -1450,17 +1462,21 @@ type ifacDropInterface struct {
 	inboundCalled bool
 }
 
-func (i *ifacDropInterface) Name() string          { return i.name }
-func (i *ifacDropInterface) Type() string          { return "ifac-drop" }
-func (i *ifacDropInterface) IsOut() bool           { return true }
-func (i *ifacDropInterface) Status() bool          { return true }
-func (i *ifacDropInterface) Mode() int             { return 1 }
-func (i *ifacDropInterface) Bitrate() int          { return 1000 }
-func (i *ifacDropInterface) BytesReceived() uint64 { return 0 }
-func (i *ifacDropInterface) BytesSent() uint64     { return 0 }
-func (i *ifacDropInterface) Detach() error         { return nil }
-func (i *ifacDropInterface) IsDetached() bool      { return false }
-func (i *ifacDropInterface) Age() time.Duration    { return 0 }
+func (i *ifacDropInterface) Name() string                { return i.name }
+func (i *ifacDropInterface) Type() string                { return "ifac-drop" }
+func (i *ifacDropInterface) IsOut() bool                 { return true }
+func (i *ifacDropInterface) Status() bool                { return true }
+func (i *ifacDropInterface) Mode() int                   { return 1 }
+func (i *ifacDropInterface) Bitrate() int                { return 1000 }
+func (i *ifacDropInterface) BytesReceived() uint64       { return 0 }
+func (i *ifacDropInterface) BytesSent() uint64           { return 0 }
+func (i *ifacDropInterface) Detach() error               { return nil }
+func (i *ifacDropInterface) IsDetached() bool            { return false }
+func (i *ifacDropInterface) Age() time.Duration          { return 0 }
+func (i *ifacDropInterface) Gravity() int                { return 0 }
+func (i *ifacDropInterface) RecursivePrs() bool          { return false }
+func (i *ifacDropInterface) AnnouncesFromInternal() bool { return true }
+func (i *ifacDropInterface) AnnouncesToInternal() *bool  { return nil }
 func (i *ifacDropInterface) Send(data []byte) error {
 	return nil
 }
@@ -1475,17 +1491,21 @@ type ifacTransformInterface struct {
 	lastSent       []byte
 }
 
-func (i *ifacTransformInterface) Name() string          { return i.name }
-func (i *ifacTransformInterface) Type() string          { return "ifac-transform" }
-func (i *ifacTransformInterface) IsOut() bool           { return true }
-func (i *ifacTransformInterface) Status() bool          { return true }
-func (i *ifacTransformInterface) Mode() int             { return 1 }
-func (i *ifacTransformInterface) Bitrate() int          { return 1000 }
-func (i *ifacTransformInterface) BytesReceived() uint64 { return 0 }
-func (i *ifacTransformInterface) BytesSent() uint64     { return 0 }
-func (i *ifacTransformInterface) Detach() error         { return nil }
-func (i *ifacTransformInterface) IsDetached() bool      { return false }
-func (i *ifacTransformInterface) Age() time.Duration    { return 0 }
+func (i *ifacTransformInterface) Name() string                { return i.name }
+func (i *ifacTransformInterface) Type() string                { return "ifac-transform" }
+func (i *ifacTransformInterface) IsOut() bool                 { return true }
+func (i *ifacTransformInterface) Status() bool                { return true }
+func (i *ifacTransformInterface) Mode() int                   { return 1 }
+func (i *ifacTransformInterface) Bitrate() int                { return 1000 }
+func (i *ifacTransformInterface) BytesReceived() uint64       { return 0 }
+func (i *ifacTransformInterface) BytesSent() uint64           { return 0 }
+func (i *ifacTransformInterface) Detach() error               { return nil }
+func (i *ifacTransformInterface) IsDetached() bool            { return false }
+func (i *ifacTransformInterface) Age() time.Duration          { return 0 }
+func (i *ifacTransformInterface) Gravity() int                { return 0 }
+func (i *ifacTransformInterface) RecursivePrs() bool          { return false }
+func (i *ifacTransformInterface) AnnouncesFromInternal() bool { return true }
+func (i *ifacTransformInterface) AnnouncesToInternal() *bool  { return nil }
 func (i *ifacTransformInterface) Send(data []byte) error {
 	i.lastSent = append([]byte(nil), data...)
 	return nil

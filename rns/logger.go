@@ -33,6 +33,9 @@ type Logger struct {
 	filePath string
 	compact  bool
 	override bool
+	// timestamps gates the "[<timestamp>] " log prefix (RNS.logtimestamps,
+	// RNS/__init__.py:86). Defaults to true; when false the prefix is omitted.
+	timestamps bool
 
 	// lock ensures that logging output does not corrupt itself
 	lock sync.Mutex
@@ -41,8 +44,9 @@ type Logger struct {
 // NewLogger creates a logger with the default notice level and stdout output.
 func NewLogger() *Logger {
 	return &Logger{
-		level: LogNotice,
-		dest:  LogStdout,
+		level:      LogNotice,
+		dest:       LogStdout,
+		timestamps: true,
 	}
 }
 
@@ -92,6 +96,28 @@ func (s *Logger) GetCompactLogFmt() bool {
 	return s.compact
 }
 
+// SetLogTimestamps toggles the "[<timestamp>] " log prefix
+// (RNS.logtimestamps, RNS/__init__.py:86 / RNS/Reticulum.py:463-465, v1.3.2).
+// Defaults to true; set false to omit the prefix.
+func (s *Logger) SetLogTimestamps(enabled bool) {
+	if s == nil {
+		return // for tests
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.timestamps = enabled
+}
+
+// GetLogTimestamps reports whether the timestamp prefix is emitted.
+func (s *Logger) GetLogTimestamps() bool {
+	if s == nil {
+		return true // for tests — default matches NewLogger
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.timestamps
+}
+
 // SetLogLevel sets the minimum severity level that will be emitted.
 func (s *Logger) SetLogLevel(level int) {
 	if s == nil {
@@ -101,11 +127,11 @@ func (s *Logger) SetLogLevel(level int) {
 	defer s.mu.Unlock()
 	if s.pendingDelta != 0 {
 		level += s.pendingDelta
-		if level < 0 {
-			level = 0
+		if level < LogCritical {
+			level = LogCritical
 		}
-		if level > 7 {
-			level = 7
+		if level > LogExtreme {
+			level = LogExtreme
 		}
 		s.pendingDelta = 0
 	}
@@ -210,18 +236,36 @@ func (s *Logger) log(msg string, level int, preciseTimestamp bool) {
 		var logString string
 		now := time.Now()
 
+		// Timestamp prefix is gated by the logtimestamps setting
+		// (RNS.logtimestamps, RNS/__init__.py:86,133, v1.3.2).
 		timeStr := ""
-		if preciseTimestamp {
-			timeStr = now.Format(LogTimeFmtP)
-		} else {
-			timeStr = now.Format(LogTimeFmt)
+		if s.GetLogTimestamps() {
+			if preciseTimestamp {
+				timeStr = now.Format(LogTimeFmtP)
+			} else {
+				timeStr = now.Format(LogTimeFmt)
+			}
 		}
 
 		if s.GetCompactLogFmt() {
-			logString = fmt.Sprintf("[%v] %v", timeStr, msg)
+			if timeStr != "" {
+				logString = fmt.Sprintf("[%v] %v", timeStr, msg)
+			} else {
+				logString = msg
+			}
 		} else {
-			logString = fmt.Sprintf("[%v] %v %v", timeStr, LogLevelName(level), msg)
+			if timeStr != "" {
+				logString = fmt.Sprintf("[%v] %v %v", timeStr, LogLevelName(level), msg)
+			} else {
+				logString = fmt.Sprintf("%v %v", LogLevelName(level), msg)
+			}
 		}
+
+		// critTS is always populated for the internal critical-error fallback
+		// diagnostics below (file write/close/rotate failures), independent of
+		// the user's logtimestamps setting, so those emergency messages stay
+		// diagnosable even when timestamp prefixes are disabled.
+		critTS := now.Format(LogTimeFmt)
 
 		s.lock.Lock()
 		defer s.lock.Unlock()
@@ -244,22 +288,22 @@ func (s *Logger) log(msg string, level int, preciseTimestamp bool) {
 			f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 			if err != nil {
 				s.SetAlwaysOverride(true)
-				fmt.Fprintf(os.Stderr, "[%v] [Critical] Exception occurred while writing log message to log file: %v\n", timeStr, err)
-				fmt.Fprintf(os.Stderr, "[%v] [Critical] Dumping future log events to console!\n", timeStr)
+				fmt.Fprintf(os.Stderr, "[%v] [Critical] Exception occurred while writing log message to log file: %v\n", critTS, err)
+				fmt.Fprintf(os.Stderr, "[%v] [Critical] Dumping future log events to console!\n", critTS)
 				fmt.Fprintln(os.Stderr, logString)
 				return
 			}
 			defer func() {
 				if closeErr := f.Close(); closeErr != nil {
 					s.SetAlwaysOverride(true)
-					fmt.Fprintf(os.Stderr, "[%v] [Critical] Exception occurred while closing log file: %v\n", timeStr, closeErr)
+					fmt.Fprintf(os.Stderr, "[%v] [Critical] Exception occurred while closing log file: %v\n", critTS, closeErr)
 				}
 			}()
 
 			if _, err := f.WriteString(logString + "\n"); err != nil {
 				s.SetAlwaysOverride(true)
-				fmt.Fprintf(os.Stderr, "[%v] [Critical] Exception occurred while writing log message to log file: %v\n", timeStr, err)
-				fmt.Fprintf(os.Stderr, "[%v] [Critical] Dumping future log events to console!\n", timeStr)
+				fmt.Fprintf(os.Stderr, "[%v] [Critical] Exception occurred while writing log message to log file: %v\n", critTS, err)
+				fmt.Fprintf(os.Stderr, "[%v] [Critical] Dumping future log events to console!\n", critTS)
 				fmt.Fprintln(os.Stderr, logString)
 				return
 			}
@@ -270,12 +314,12 @@ func (s *Logger) log(msg string, level int, preciseTimestamp bool) {
 				if _, err := os.Stat(prevFile); err == nil {
 					if rmErr := os.Remove(prevFile); rmErr != nil {
 						s.SetAlwaysOverride(true)
-						fmt.Fprintf(os.Stderr, "[%v] [Critical] Exception occurred while rotating log file: %v\n", timeStr, rmErr)
+						fmt.Fprintf(os.Stderr, "[%v] [Critical] Exception occurred while rotating log file: %v\n", critTS, rmErr)
 					}
 				}
 				if renameErr := os.Rename(filePath, prevFile); renameErr != nil {
 					s.SetAlwaysOverride(true)
-					fmt.Fprintf(os.Stderr, "[%v] [Critical] Exception occurred while rotating log file: %v\n", timeStr, renameErr)
+					fmt.Fprintf(os.Stderr, "[%v] [Critical] Exception occurred while rotating log file: %v\n", critTS, renameErr)
 				}
 			}
 		} else if dest == LogCallback {
@@ -328,6 +372,12 @@ func (s *Logger) Debug(format string, args ...any) {
 	s.log(msg, LogDebug, false)
 }
 
+// Pathing logs a path-finding/routing detail message (RNS LOG_PATHING, v1.3.9).
+func (s *Logger) Pathing(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	s.log(msg, LogPathing, false)
+}
+
 // Extreme logs an extreme message.
 func (s *Logger) Extreme(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
@@ -365,8 +415,11 @@ const (
 	LogVerbose = 5
 	// LogDebug designates low-level system details for in-depth troubleshooting.
 	LogDebug = 6
+	// LogPathing designates path-finding/routing detail logging
+	// (RNS/__init__.py LOG_PATHING, v1.3.9).
+	LogPathing = 7
 	// LogExtreme designates an exhaustive level of logging, outputting almost all internal events.
-	LogExtreme = 7
+	LogExtreme = 8
 )
 
 // LogLevelName maps an integer logging level back to its human-readable console tag representation.
@@ -386,6 +439,8 @@ func LogLevelName(level int) string {
 		return "[Verbose] "
 	case LogDebug:
 		return "[Debug]   "
+	case LogPathing:
+		return "[Pathing] "
 	case LogExtreme:
 		return "[Extra]   "
 	default:

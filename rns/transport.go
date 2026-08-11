@@ -84,6 +84,11 @@ type Transport interface {
 	InvalidatePath(destHash []byte) bool
 	// InvalidatePathsViaNextHop removes all paths that depend on nextHop.
 	InvalidatePathsViaNextHop(nextHop []byte) int
+	// IsBlackholed reports whether the given identity hash is currently on the
+	// local blackhole list (RNS.Reticulum.is_blackholed). The link identify
+	// path uses it to terminate incoming links from blocked identities
+	// (RNS/Link.py:974-976, v1.3.2).
+	IsBlackholed(identityHash []byte) bool
 	// LinkMTUDiscovery reports whether link MTU discovery is enabled.
 	LinkMTUDiscovery() bool
 	// UseImplicitProof reports whether identity proofs omit the packet hash and
@@ -239,6 +244,14 @@ type TransportSystem struct {
 	// accepted by reloadBlackholeAt (Python RNS.Reticulum.blackhole_sources).
 	blackholePath    string
 	blackholeSources [][]byte
+
+	// blackholeUpdateInterval is the configured minimum interval between
+	// fetches of any single blackhole source (Python
+	// RNS.Reticulum.__blackhole_update_interval, Reticulum.py:269,601-604).
+	// Defaults to BlackholeUpdateInterval (1h); set from the
+	// [reticulum] blackhole_update_interval config key (float minutes, clamped
+	// to ≥2) before EnableBlackholeUpdater runs.
+	blackholeUpdateInterval time.Duration
 
 	// publishBlackhole mirrors RNS.Reticulum.publish_blackhole_enabled: when
 	// true, Start registers the rnstransport.info.blackhole request
@@ -437,30 +450,31 @@ const (
 // NewTransportSystem constructs an independent TransportSystem.
 func NewTransportSystem(logger *Logger) *TransportSystem {
 	return &TransportSystem{
-		logger:               logger,
-		interfaces:           make([]interfaces.Interface, 0),
-		destinations:         make([]*Destination, 0),
-		pendingLinks:         make([]*Link, 0),
-		activeLinks:          make([]*Link, 0),
-		pathTable:            make(map[string]*PathEntry),
-		reverseTable:         make(map[string]*ReverseEntry),
-		linkTable:            make(map[string]*LinkEntry),
-		packetHashes:         make(map[string]time.Time),
-		packetHashesPrev:     make(map[string]time.Time),
-		packetHashRotateAt:   packetHashRotateDefault,
-		announceTable:        make(map[string]*AnnounceEntry),
-		announceRateTable:    make(map[string]*AnnounceRateEntry),
-		announceQueues:       make(map[interfaces.Interface]*announceQueueState),
-		pathRequests:         make(map[string]time.Time),
-		pendingPathRequests:  make(map[string][]interfaces.Interface),
-		pendingPathRequestAt: make(map[string]time.Time),
-		downNotified:         make(map[interfaces.Interface]struct{}),
-		packetRSSICache:      make(map[string]float64),
-		packetSNRCache:       make(map[string]float64),
-		packetQCache:         make(map[string]float64),
-		blackholedIdentities: make(map[string]BlackholeIdentityEntry),
-		knownDestinations:    make(map[string][]any),
-		knownRatchets:        make(map[string][]byte),
+		logger:                  logger,
+		interfaces:              make([]interfaces.Interface, 0),
+		destinations:            make([]*Destination, 0),
+		pendingLinks:            make([]*Link, 0),
+		activeLinks:             make([]*Link, 0),
+		pathTable:               make(map[string]*PathEntry),
+		reverseTable:            make(map[string]*ReverseEntry),
+		linkTable:               make(map[string]*LinkEntry),
+		packetHashes:            make(map[string]time.Time),
+		packetHashesPrev:        make(map[string]time.Time),
+		packetHashRotateAt:      packetHashRotateDefault,
+		announceTable:           make(map[string]*AnnounceEntry),
+		announceRateTable:       make(map[string]*AnnounceRateEntry),
+		announceQueues:          make(map[interfaces.Interface]*announceQueueState),
+		pathRequests:            make(map[string]time.Time),
+		pendingPathRequests:     make(map[string][]interfaces.Interface),
+		pendingPathRequestAt:    make(map[string]time.Time),
+		downNotified:            make(map[interfaces.Interface]struct{}),
+		packetRSSICache:         make(map[string]float64),
+		packetSNRCache:          make(map[string]float64),
+		packetQCache:            make(map[string]float64),
+		blackholedIdentities:    make(map[string]BlackholeIdentityEntry),
+		knownDestinations:       make(map[string][]any),
+		knownRatchets:           make(map[string][]byte),
+		blackholeUpdateInterval: BlackholeUpdateInterval,
 	}
 }
 
@@ -872,6 +886,10 @@ func (ts *TransportSystem) EnableBlackholeUpdater() {
 		defer ts.mu.Unlock()
 		return append([][]byte(nil), ts.blackholeSources...)
 	}, ts.blackholeFetch)
+	// Propagate the configured update interval (Python
+	// RNS.Reticulum.blackhole_update_interval(), Reticulum.py:601-604) so the
+	// loop honors [reticulum] blackhole_update_interval instead of the default.
+	updater.SetUpdateInterval(ts.BlackholeUpdateInterval())
 	ts.mu.Lock()
 	ts.blackholeUpdater = updater
 	ts.mu.Unlock()
@@ -1133,9 +1151,19 @@ func floatToTime(sec float64) time.Time {
 // interface's string identity "{Type}[{Name}]" (e.g. "AutoInterface[myauto]").
 // It is the value Python stores at destination_table field [6] and resolves
 // via find_interface_from_hash. Returns nil for a nil interface.
+//
+// When the interface exposes MemoizedHash (all BaseInterface-embedding types),
+// the hash is computed once and cached on the instance — matching Python's
+// Interface.get_hash memoization (RNS/Interfaces/Interface.py:144-146) instead
+// of recomputing the SHA-256 on every call.
 func interfaceHash(iface interfaces.Interface) []byte {
 	if iface == nil {
 		return nil
+	}
+	if mh, ok := iface.(interface{ MemoizedHash(func() []byte) []byte }); ok {
+		return mh.MemoizedHash(func() []byte {
+			return FullHash([]byte(fmt.Sprintf("%v[%v]", iface.Type(), iface.Name())))
+		})
 	}
 	return FullHash([]byte(fmt.Sprintf("%v[%v]", iface.Type(), iface.Name())))
 }
@@ -2908,6 +2936,21 @@ func (ts *TransportSystem) UnblackholeIdentity(identityHash []byte) bool {
 	return true
 }
 
+// IsBlackholed reports whether identityHash is currently on the local
+// blackhole list (RNS.Reticulum.is_blackholed). The link identify path calls
+// it to terminate incoming links from blocked identities
+// (RNS/Link.py:974-976, v1.3.2).
+func (ts *TransportSystem) IsBlackholed(identityHash []byte) bool {
+	if len(identityHash) == 0 {
+		return false
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.ensureStateLocked()
+	_, ok := ts.blackholedIdentities[string(identityHash)]
+	return ok
+}
+
 // GetBlackholedIdentities returns the current local blackhole registry snapshot.
 func (ts *TransportSystem) GetBlackholedIdentities() []map[string]any {
 	ts.mu.Lock()
@@ -2983,6 +3026,24 @@ func (ts *TransportSystem) SetBlackholeSources(sources [][]byte) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	ts.blackholeSources = append(ts.blackholeSources[:0:0], sources...)
+}
+
+// SetBlackholeUpdateInterval sets the minimum interval between fetches of any
+// single blackhole source (Python RNS.Reticulum.__blackhole_update_interval,
+// Reticulum.py:601-604). It must be called before EnableBlackholeUpdater so
+// the constructed updater picks up the configured interval.
+func (ts *TransportSystem) SetBlackholeUpdateInterval(d time.Duration) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.blackholeUpdateInterval = d
+}
+
+// BlackholeUpdateInterval returns the configured blackhole source fetch
+// interval (Python RNS.Reticulum.blackhole_update_interval(), Reticulum.py:1826-1827).
+func (ts *TransportSystem) BlackholeUpdateInterval() time.Duration {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.blackholeUpdateInterval
 }
 
 // blackholeSourceEnabled reports whether sourceHash is a configured
