@@ -233,6 +233,51 @@ loglevel = 4
 	}
 }
 
+// TestReticulumParsesStaticTransportIdentity verifies the
+// static_transport_identity config option (RNS v1.3.7) flows through to the
+// transport and, combined with enable_transport=No, keeps the persistent
+// transport identity instead of generating an ephemeral one (Python
+// Transport.py:235-237).
+func TestReticulumParsesStaticTransportIdentity(t *testing.T) {
+	t.Parallel()
+
+	// With static_transport_identity = Yes and enable_transport = No, the
+	// operative identity must equal the persistent identity (no ephemeral).
+	dir1 := testutils.TempDir(t, tempDirPrefix)
+	cfg1 := "[reticulum]\nenable_transport = No\nstatic_transport_identity = Yes\n\n[logging]\nloglevel = 2\n\n[interfaces]\n"
+	if err := os.WriteFile(filepath.Join(dir1, "config"), []byte(cfg1), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	ts1 := NewTransportSystem(nil)
+	r1 := mustTestNewReticulum(t, ts1, dir1)
+	defer closeReticulum(t, r1)
+	tsys1 := r1.Transport().(*TransportSystem)
+	if tsys1.PersistentIdentity() == nil {
+		t.Fatal("static case: persistent identity not initialized")
+	}
+	if !bytes.Equal(tsys1.Identity().Hash, tsys1.PersistentIdentity().Hash) {
+		t.Errorf("static_transport_identity should keep persistent identity; got %x want %x", tsys1.Identity().Hash, tsys1.PersistentIdentity().Hash)
+	}
+
+	// Without static_transport_identity and enable_transport = No, the
+	// operative identity must be an ephemeral distinct from persistent.
+	dir2 := testutils.TempDir(t, tempDirPrefix)
+	cfg2 := "[reticulum]\nenable_transport = No\n\n[logging]\nloglevel = 2\n\n[interfaces]\n"
+	if err := os.WriteFile(filepath.Join(dir2, "config"), []byte(cfg2), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	ts2 := NewTransportSystem(nil)
+	r2 := mustTestNewReticulum(t, ts2, dir2)
+	defer closeReticulum(t, r2)
+	tsys2 := r2.Transport().(*TransportSystem)
+	if tsys2.PersistentIdentity() == nil {
+		t.Fatal("ephemeral case: persistent identity not initialized")
+	}
+	if bytes.Equal(tsys2.Identity().Hash, tsys2.PersistentIdentity().Hash) {
+		t.Errorf("non-transport without static_transport_identity should use ephemeral identity; both = %x", tsys2.Identity().Hash)
+	}
+}
+
 func TestParseUseImplicitProof(t *testing.T) {
 	t.Parallel()
 
@@ -1402,6 +1447,41 @@ func TestParseDiscoveryConfigPromotesRNodeToAccessPoint(t *testing.T) {
 	}
 	if cfg.AnnounceInterval != 6*time.Hour {
 		t.Fatalf("default announce interval = %v, want %v", cfg.AnnounceInterval, 6*time.Hour)
+	}
+}
+
+// TestParseDiscoveryConfigPreservesInternalMode asserts Phase 6 Task 7: when
+// discovery is enabled on an interface whose configured mode is MODE_INTERNAL,
+// the mode is preserved rather than auto-reconfigured to gateway/access_point.
+// This mirrors RNS/Reticulum.py (v1.3.9), whose discovery auto-mode allowed set
+// is [MODE_GATEWAY, MODE_ACCESS_POINT, MODE_INTERNAL] — a mode already in that
+// set is left untouched when discoverable=true.
+func TestParseDiscoveryConfigPreservesInternalMode(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name     string
+		iface    string
+		mode     int
+		wantMode int
+	}{
+		{"internal preserved (TCP)", "TCPServerInterface", interfaces.ModeInternal, interfaces.ModeInternal},
+		{"internal preserved (RNode)", "RNodeInterface", interfaces.ModeInternal, interfaces.ModeInternal},
+		{"gateway preserved", "TCPServerInterface", interfaces.ModeGateway, interfaces.ModeGateway},
+		{"access_point preserved", "TCPServerInterface", interfaces.ModeAccessPoint, interfaces.ModeAccessPoint},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg, mode := parseDiscoveryConfig(&ConfigSection{Properties: map[string]string{
+				"discoverable": "yes",
+			}}, tc.iface, tc.mode)
+			if !cfg.Discoverable {
+				t.Fatalf("expected discoverable config")
+			}
+			if mode != tc.wantMode {
+				t.Fatalf("discovery mode = %v, want %v (should be preserved)", mode, tc.wantMode)
+			}
+		})
 	}
 }
 

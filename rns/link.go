@@ -134,6 +134,18 @@ type Link struct {
 	mtu int
 	mdu int
 
+	// expectedHops is the hop count the link expects its peer's link-proof
+	// (LRPROOF) and RTT packets to carry. It is the Go port of Python
+	// Link.expected_hops: set to Transport.hops_to(destination) at link
+	// request time on the initiator side (Link.py:281) and to packet.hops
+	// on the destination side at activation (Link.py:525, rtt_packet). A
+	// pending link only accepts a proof whose hop count matches this value
+	// (after an optional path re-balance — see Transport LRPROOF handling).
+	// Zero means "unset" (Python uses None); hops_to returns PathfinderM
+	// when the path is unknown, so an initiator with no known path starts
+	// at PathfinderM (128) and re-balances down to the proof's hop count.
+	expectedHops int
+
 	// establishmentCost accumulates the on-wire byte cost of the link
 	// establishment handshake (link request + proof packets, both
 	// directions). It is the Go port of Python Link.establishment_cost,
@@ -203,6 +215,24 @@ func (l *Link) GetStatus() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.status
+}
+
+// ExpectedHops returns the hop count the link expects its peer's link-proof
+// and RTT packets to carry (Python Link.expected_hops). It is the value the
+// Transport LRPROOF handler gates proof delivery on.
+func (l *Link) ExpectedHops() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.expectedHops
+}
+
+// SetExpectedHops records the expected hop count for the link. It exists to
+// let the Transport path re-balance adopt a proof's hop count (Python
+// Transport.py:2301 `link.expected_hops = packet.hops`) and to support tests.
+func (l *Link) SetExpectedHops(hops int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.expectedHops = hops
 }
 
 // TeardownReason returns the reason code recorded when the link was torn down.
@@ -333,6 +363,13 @@ func NewLink(ts Transport, destination *Destination) (*Link, error) {
 		// Initiator side
 		l.initiator = true
 		l.establishmentTimeout = establishmentTimeoutPerHop
+		// expected_hops = RNS.Transport.hops_to(self.destination.hash)
+		// (Link.py:281). hops_to returns PathfinderM when the path is
+		// unknown; the value is re-balanced down to the proof's hop count
+		// once the LRPROOF arrives (see Transport LRPROOF handling).
+		if ts != nil {
+			l.expectedHops = ts.HopsTo(destination.Hash)
+		}
 	} else {
 		// Receiver side
 		l.initiator = false
@@ -827,6 +864,42 @@ func (l *Link) accumulateEstablishmentCost(p *Packet) {
 	l.mu.Unlock()
 }
 
+// verifyProofSignatureLocked reconstructs the signed data for a link request
+// proof (LRPROOF) from the packet and verifies it against the link's
+// destination identity, WITHOUT performing the Diffie-Hellman handshake. It
+// mirrors the signature check Python performs in two places: Link.validate_proof
+// (Link.py:411-422) and Transport's path re-balance at the link terminus
+// (Transport.py:2283-2296). The re-balance uses this lighter check to authorize
+// adopting a new hop count before the full handshake runs in validate_proof.
+// The caller must hold l.mu.
+func (l *Link) verifyProofSignatureLocked(packet *Packet) bool {
+	if l.destination == nil || l.destination.identity == nil || len(packet.Data) < 64+32 {
+		return false
+	}
+	signature := packet.Data[:64]
+	peerPubBytes := packet.Data[64:96]
+	var sigBytes []byte
+	if len(packet.Data) == 64+32+LinkMTUSize {
+		sigBytes = packet.Data[96 : 96+LinkMTUSize]
+	}
+	peerSigPubBytes := l.destination.identity.GetPublicKey()[32:64]
+	signedData := make([]byte, 0, len(l.linkID)+len(peerPubBytes)+len(peerSigPubBytes)+len(sigBytes))
+	signedData = append(signedData, l.linkID...)
+	signedData = append(signedData, peerPubBytes...)
+	signedData = append(signedData, peerSigPubBytes...)
+	signedData = append(signedData, sigBytes...)
+	return l.destination.identity.Verify(signature, signedData)
+}
+
+// verifyProofSignature is the transport-facing, lock-acquiring wrapper around
+// verifyProofSignatureLocked used by the path re-balance in the Transport
+// LRPROOF handler.
+func (l *Link) verifyProofSignature(packet *Packet) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.verifyProofSignatureLocked(packet)
+}
+
 // ValidateProof evaluates an incoming link proof packet and formally transitions the link into an active state upon success.
 func (l *Link) ValidateProof(packet *Packet) error {
 	l.logger.Info("ValidateProof: link %x, status=%v", l.linkID, l.status)
@@ -842,13 +915,7 @@ func (l *Link) ValidateProof(packet *Packet) error {
 		return errors.New("invalid proof data length")
 	}
 
-	signature := packet.Data[:64]
 	peerPubBytes := packet.Data[64:96]
-	var sigBytes []byte
-	if len(packet.Data) == 64+32+LinkMTUSize {
-		sigBytes = packet.Data[96 : 96+LinkMTUSize]
-	}
-
 	// Receiver sig pub is in destination identity
 	peerSigPubBytes := l.destination.identity.GetPublicKey()[32:64]
 
@@ -862,13 +929,7 @@ func (l *Link) ValidateProof(packet *Packet) error {
 		return err
 	}
 
-	signedData := make([]byte, 0, len(l.linkID)+len(l.peerPubBytes)+len(l.peerSigPubBytes)+len(sigBytes))
-	signedData = append(signedData, l.linkID...)
-	signedData = append(signedData, l.peerPubBytes...)
-	signedData = append(signedData, l.peerSigPubBytes...)
-	signedData = append(signedData, sigBytes...)
-
-	if !l.destination.identity.Verify(signature, signedData) {
+	if !l.verifyProofSignatureLocked(packet) {
 		l.mu.Unlock()
 		return errors.New("invalid link proof signature")
 	}
@@ -946,6 +1007,10 @@ func (l *Link) HandleRTT(packet *Packet) {
 		l.rtt = math.Max(measuredRTT, receivedRTT)
 		l.status = LinkActive
 		l.activatedAt = time.Now()
+		// expected_hops = packet.hops (Link.py:525, rtt_packet): the
+		// destination side records the RTT packet's hop count as the
+		// expected hops once the link is active.
+		l.expectedHops = packet.Hops
 		// Once the RTT is known the establishment rate is cost/rtt,
 		// mirroring Python Link.rtt_packet (Link.py line 545).
 		if l.rtt > 0 && l.establishmentCost > 0 {

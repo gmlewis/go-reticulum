@@ -185,6 +185,15 @@ type TransportSystem struct {
 	packetHashesPrev map[string]time.Time
 	tunnels          map[string]*Tunnel
 
+	// allowLinkPathRebalance mirrors RNS/Transport.py:90
+	// `ALLOW_LINK_PATH_REBALANCE = True`. When true, a pending link that
+	// receives a link-proof (LRPROOF) whose hop count differs from the
+	// link's expectedHops attempts a path re-balance: the proof signature
+	// is re-validated and, if it verifies, the link adopts the proof's hop
+	// count (Transport.py:2276-2311). It is per-instance so tests can
+	// toggle it without racing on a process-wide global.
+	allowLinkPathRebalance bool
+
 	// knownDestDirty is set by Remember when a destination is added/updated.
 	// The maintenance loop flushes it to disk at most every
 	// pathTablePersistInterval (and Stop does a final flush), coalescing a
@@ -276,6 +285,18 @@ type TransportSystem struct {
 	enabled          bool
 	linkMTUDiscovery bool
 	useImplicitProof bool
+	// staticTransportIdentity mirrors RNS.Reticulum.static_transport_identity:
+	// when true, a non-transport instance keeps its persistent transport
+	// identity instead of generating an ephemeral one (Python
+	// Transport.py:235-237).
+	staticTransportIdentity bool
+	// persistentIdentity is the saved/loaded transport identity (Python
+	// Transport._identity). It is always persisted to disk so it is stable
+	// across restarts. ts.identity is the operative identity for
+	// transport-level operations: equal to persistentIdentity when transport
+	// is enabled (or static_transport_identity is set), or a fresh ephemeral
+	// identity when transport is disabled (Python Transport.py:234-237).
+	persistentIdentity *Identity
 
 	// connectedToSharedInstance mirrors RNS.Reticulum.is_connected_to_shared_instance:
 	// true when this transport owns no network interfaces and instead routes
@@ -480,7 +501,26 @@ func NewTransportSystem(logger *Logger) *TransportSystem {
 		knownDestinations:       make(map[string][]any),
 		knownRatchets:           make(map[string][]byte),
 		blackholeUpdateInterval: BlackholeUpdateInterval,
+		allowLinkPathRebalance:  true,
 	}
+}
+
+// SetAllowLinkPathRebalance toggles per-instance path re-balancing for link
+// proofs, mirroring Python's Transport.ALLOW_LINK_PATH_REBALANCE class
+// attribute (RNS/Transport.py:90). It is per-instance so tests and the
+// config layer can toggle it without racing on a process-wide global.
+func (ts *TransportSystem) SetAllowLinkPathRebalance(v bool) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.allowLinkPathRebalance = v
+}
+
+// AllowLinkPathRebalance reports whether path re-balancing is enabled for this
+// transport instance.
+func (ts *TransportSystem) AllowLinkPathRebalance() bool {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.allowLinkPathRebalance
 }
 
 // GetLogger returns the logger associated with this transport system.
@@ -577,6 +617,25 @@ func (ts *TransportSystem) Enabled() bool {
 	return ts.enabled
 }
 
+// SetStaticTransportIdentity mirrors RNS.Reticulum.static_transport_identity:
+// when true, a non-transport instance keeps its persistent transport identity
+// instead of generating an ephemeral one. Must be set before Start so the
+// identity-init branch in Start sees it (Python applies the flag during
+// __apply_config, before Transport.start).
+func (ts *TransportSystem) SetStaticTransportIdentity(v bool) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.staticTransportIdentity = v
+}
+
+// PersistentIdentity returns the saved/loaded transport identity (Python
+// Transport._identity), or nil if Start has not yet initialized it.
+func (ts *TransportSystem) PersistentIdentity() *Identity {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.persistentIdentity
+}
+
 // LinkMTUDiscovery returns whether link MTU discovery is enabled.
 func (ts *TransportSystem) LinkMTUDiscovery() bool {
 	ts.mu.Lock()
@@ -634,28 +693,56 @@ func (ts *TransportSystem) Start(storagePath string) error {
 		return err
 	}
 
-	// Load or create transport identity
+	// Load or create the persistent transport identity (Python
+	// Transport.py:222-230). The persistent identity is always saved to disk
+	// so it is stable across restarts and available if transport is later
+	// enabled. ts.persistentIdentity mirrors Python Transport._identity.
 	identityPath := filepath.Join(ts.storagePath, "transport_identity")
+	var persistent *Identity
 	if _, err := os.Stat(identityPath); err == nil {
 		id, err := FromFile(identityPath, ts.logger)
 		if err != nil {
 			ts.logger.Error("Could not load transport identity: %v", err)
 		} else {
-			ts.identity = id
+			persistent = id
 			ts.logger.Verbose("Loaded Transport Identity from storage")
 		}
 	}
-
-	if ts.identity == nil {
+	if persistent == nil {
 		ts.logger.Verbose("No valid Transport Identity in storage, creating...")
 		id, err := NewIdentity(true, ts.logger)
 		if err != nil {
 			ts.mu.Unlock()
 			return err
 		}
-		ts.identity = id
-		if err := ts.identity.ToFile(identityPath); err != nil {
+		persistent = id
+		if err := persistent.ToFile(identityPath); err != nil {
 			ts.logger.Error("Could not save transport identity: %v", err)
+		}
+	}
+	ts.persistentIdentity = persistent
+
+	// Python Transport.py:234-237: a non-transport instance (without
+	// static_transport_identity) uses a fresh ephemeral identity for all
+	// transport-level operations (rebroadcast transport_id, blackhole/probe
+	// destinations, path-request signing) so it never advertises a persistent
+	// transport identity it does not actually operate. Transport-enabled
+	// instances use the persistent identity directly. When a network identity
+	// was already installed by SetNetworkIdentity (which sets ts.identity
+	// before Start runs), it remains the operative identity for backward
+	// compatibility — the ephemeral override only applies to the transport
+	// identity, not the configured network identity.
+	if ts.identity == nil {
+		if ts.enabled || ts.staticTransportIdentity {
+			ts.identity = persistent
+		} else {
+			id, err := NewIdentity(true, ts.logger)
+			if err != nil {
+				ts.mu.Unlock()
+				return err
+			}
+			ts.identity = id
+			ts.logger.Verbose("Initialized ephemeral transport identity %x", ts.identity.Hash)
 		}
 	}
 	// The path table is loaded separately via LoadPathTable() so that the
@@ -1899,13 +1986,137 @@ func (ts *TransportSystem) WaitOutboundSends() {
 	ts.outboundWG.Wait()
 }
 
-func (ts *TransportSystem) processAnnounceTable(now time.Time) {
-	type sendJob struct {
-		iface interfaces.Interface
-		raw   []byte
-	}
+// announceTransmitDecision classifies how an announce rebroadcast should be
+// handled on a candidate outbound interface. It mirrors the elif chain at
+// RNS/Transport.py:1207-1290 (v1.4.1) that gates `should_transmit` for ANNOUNCE
+// packets broadcast on all outgoing interfaces.
+type announceTransmitDecision int
 
-	jobs := make([]sendJob, 0)
+const (
+	// announceBlock drops the rebroadcast on this interface entirely
+	// (Python: should_transmit = False).
+	announceBlock announceTransmitDecision = iota
+	// announceDirect transmits immediately without announce-cap rate
+	// limiting (Python: should_transmit stays True outside the else branch,
+	// or packet.hops == 0 in the else branch).
+	announceDirect
+	// announceCapped transmits subject to the announce-cap rate limiter
+	// (Python: the else branch with packet.hops > 0).
+	announceCapped
+)
+
+// shouldTransmitAnnounce evaluates the announce-broadcast filter
+// (RNS/Transport.py:1207-1290) for one candidate outbound interface.
+// outIface is the interface being considered for transmission; fromIface is
+// the next-hop interface the announce was received on (the path's interface,
+// Python `Transport.next_hop_interface`); localDestination reports whether
+// the announce's destination hash is a locally-registered IN destination
+// (Python `Transport.destinations_map`); receivedHops is the announce's hop
+// count as received (Python `packet.hops`, before the rebroadcast increment).
+//
+// The elif ordering is significant: the first matching branch wins, matching
+// Python's elif chain exactly. Notably the MODE_ACCESS_POINT branch (B3) and
+// the roaming/boundary branches (B5/B6) have no local-destination guard — a
+// local destination is still subject to AP blocking and the roaming/boundary
+// next-hop filters — while the MODE_INTERNAL outbound branch (B4) is guarded
+// by `!localDestination`, so a local destination's announce onto an internal
+// interface falls through to the else (announce-cap) branch.
+func (ts *TransportSystem) shouldTransmitAnnounce(outIface, fromIface interfaces.Interface, localDestination bool, receivedHops int) announceTransmitDecision {
+	switch {
+	// B1: no next-hop interface exists for the destination.
+	case !localDestination && fromIface == nil:
+		return announceBlock
+	// B2: announces_from_internal block — an internal-mode next-hop interface
+	// is blocked when the outbound interface opts out of internal announces
+	// (Task: announces_from_internal).
+	case !localDestination && fromIface != nil && !outIface.AnnouncesFromInternal() && fromIface.Mode() == interfaces.ModeInternal:
+		return announceBlock
+	// B3: access-point interfaces never rebroadcast announces.
+	case outIface.Mode() == interfaces.ModeAccessPoint:
+		return announceBlock
+	// B4: outbound interface is internal. Guarded by !localDestination: a
+	// local destination's announce onto an internal interface falls through
+	// to the else (announce-cap) branch.
+	case !localDestination && outIface.Mode() == interfaces.ModeInternal:
+		// fromIface is non-nil here: B1 already returned for !local && nil.
+		if fromIface == nil {
+			return announceBlock
+		}
+		// B4b: announces_to_internal allowance overrides the boundary block
+		// (Task: announces_to_internal boundary→internal allowance).
+		if ati := outIface.AnnouncesToInternal(); ati != nil && *ati {
+			return announceDirect
+		}
+		// B4c: boundary-mode next-hop interface onto an internal outbound
+		// is blocked (Task: MODE_INTERNAL announce-broadcast filter).
+		if fromIface.Mode() == interfaces.ModeBoundary {
+			return announceBlock
+		}
+		// B4d: any other next-hop mode (full/p2p/gateway/roaming/internal) is
+		// allowed onto the internal outbound, without announce-cap.
+		return announceDirect
+	// B5: outbound interface is roaming. No local-destination guard.
+	case outIface.Mode() == interfaces.ModeRoaming:
+		if localDestination {
+			// B5a: a local destination's announce is allowed onto roaming
+			// (Task: local-destination rebroadcast allowance).
+			return announceDirect
+		}
+		if fromIface == nil {
+			return announceBlock
+		}
+		switch fromIface.Mode() {
+		case interfaces.ModeRoaming:
+			// B5c: roaming→roaming blocked.
+			return announceBlock
+		case interfaces.ModeBoundary:
+			// B5d: boundary→roaming blocked.
+			return announceBlock
+		default:
+			// B5e: internal/full/gateway/p2p next-hop allowed onto roaming.
+			return announceDirect
+		}
+	// B6: outbound interface is boundary. No local-destination guard.
+	case outIface.Mode() == interfaces.ModeBoundary:
+		if localDestination {
+			// B6a: a local destination's announce is allowed onto boundary.
+			return announceDirect
+		}
+		if fromIface == nil {
+			return announceBlock
+		}
+		if fromIface.Mode() == interfaces.ModeRoaming {
+			// B6c: roaming→boundary blocked.
+			return announceBlock
+		}
+		// B6d: boundary/internal/full/gateway/p2p next-hop allowed onto
+		// boundary (boundary→boundary is allowed here).
+		return announceDirect
+	// B7: full/point-to-point/gateway outbound — announce-cap applies, but
+	// only for forwarded announces (receivedHops > 0). A locally-originated
+	// announce (receivedHops == 0) is sent immediately.
+	default:
+		if receivedHops > 0 {
+			return announceCapped
+		}
+		return announceDirect
+	}
+}
+
+// isLocalDestinationLocked reports whether destHash is a locally-registered
+// IN destination (Python `Transport.destinations_map[destination_hash]`).
+// Callers must hold ts.mu.
+func (ts *TransportSystem) isLocalDestinationLocked(destHash []byte) bool {
+	for _, d := range ts.destinations {
+		if bytes.Equal(d.Hash, destHash) {
+			return true
+		}
+	}
+	return false
+}
+
+func (ts *TransportSystem) processAnnounceTable(now time.Time) {
+	jobs := make([]outgoingAnnounceJob, 0)
 
 	ts.mu.Lock()
 	ts.ensureStateLocked()
@@ -1929,6 +2140,18 @@ func (ts *TransportSystem) processAnnounceTable(now time.Time) {
 			continue
 		}
 
+		// The announce's destination hash as bytes, for the local-destination
+		// lookup (Python destinations_map). The map key is the string-cast
+		// hash, so []byte(destinationHash) is the original destination hash.
+		destHashBytes := []byte(destinationHash)
+		localDest := ts.isLocalDestinationLocked(destHashBytes)
+		// receivedHops is the announce's hop count as received (Python
+		// packet.hops); entry.Hops is the incremented rebroadcast hop count
+		// (packet.Hops + 1, set in handleAnnounce), so receivedHops is one
+		// less. The announce-cap branch (B7) only rate-limits forwarded
+		// announces (receivedHops > 0); a locally-originated announce
+		// (receivedHops == 0) is sent immediately.
+		receivedHops := entry.Hops - 1
 		for _, outIface := range ts.interfaces {
 			if outIface == entry.SourceInterface {
 				continue
@@ -1944,9 +2167,25 @@ func (ts *TransportSystem) processAnnounceTable(now time.Time) {
 			if !outIface.Status() {
 				continue
 			}
-			raw := ts.queueOrSendAnnounceLocked(now, outIface, destinationHash, entry.PacketRaw, entry.Hops)
-			if len(raw) > 0 {
-				jobs = append(jobs, sendJob{iface: outIface, raw: raw})
+			// Python broadcasts only on `if interface.OUT:` interfaces.
+			if !outIface.IsOut() {
+				continue
+			}
+			switch ts.shouldTransmitAnnounce(outIface, entry.SourceInterface, localDest, receivedHops) {
+			case announceBlock:
+				continue
+			case announceDirect:
+				// Allowed without announce-cap (AP/internal/roaming/boundary
+				// pass branches, or a locally-originated announce on a
+				// full/p2p/gateway interface). Send immediately.
+				jobs = append(jobs, outgoingAnnounceJob{iface: outIface, raw: copyBytes(entry.PacketRaw), hops: entry.Hops})
+			case announceCapped:
+				// Full/p2p/gateway outbound for a forwarded announce: apply the
+				// announce-cap rate limiter (Python else branch).
+				raw := ts.queueOrSendAnnounceLocked(now, outIface, destinationHash, entry.PacketRaw, entry.Hops)
+				if len(raw) > 0 {
+					jobs = append(jobs, outgoingAnnounceJob{iface: outIface, raw: raw, hops: entry.Hops})
+				}
 			}
 		}
 
@@ -1958,13 +2197,39 @@ func (ts *TransportSystem) processAnnounceTable(now time.Time) {
 	}
 	ts.mu.Unlock()
 
-	// Dispatch each rebroadcast on its own goroutine. sendRebroadcast does a
-	// synchronous conn.Write bounded by the interface's write deadline; if it
-	// ran inline, a single half-open peer would block the maintenance loop
-	// (and every other outbound rebroadcast behind it) for the whole deadline
-	// window. A goroutine per send isolates the stall to the stalled peer.
+	// Dispatch the sorted batch on a single background goroutine.
+	// handleOutgoingAnnounces sorts the batch by hops ascending before sending
+	// (RNS/Transport.py:1065-1066: `for packet in sorted(outgoing, key=lambda
+	// p: p.hops): packet.send()`). Running it in its own goroutine keeps the
+	// maintenance loop responsive while preserving Python's sequential, sorted
+	// send order; a stalled peer can only delay the rest of this batch, bounded
+	// by each interface's write deadline, never the maintenance loop itself.
+	ts.outboundWG.Go(func() { ts.handleOutgoingAnnounces(jobs) })
+}
+
+// outgoingAnnounceJob is a single queued announce rebroadcast bound for an
+// outbound interface. hops is the rebroadcast hop count (entry.Hops, i.e.
+// packet.Hops+1) used to sort the outgoing batch by ascending hop count.
+type outgoingAnnounceJob struct {
+	iface interfaces.Interface
+	raw   []byte
+	hops  int
+}
+
+// handleOutgoingAnnounces dispatches a batch of outgoing announce rebroadcasts
+// in ascending hop order, mirroring RNS/Transport.py:1065-1066. Sorting by hops
+// sends closer/fresher paths first so peers learn the best route sooner. The
+// sends run sequentially within the caller's goroutine (the maintenance loop
+// dispatches the whole batch on one background goroutine), matching Python's
+// sequential sorted send.
+func (ts *TransportSystem) handleOutgoingAnnounces(jobs []outgoingAnnounceJob) {
+	// Sort the batch by ascending hop count before sending, mirroring
+	// RNS/Transport.py:1065-1066. Python's sorted() is stable, so same-hop
+	// announces keep their enqueue (map-iteration) order; sort.SliceStable
+	// preserves that contract.
+	sort.SliceStable(jobs, func(i, j int) bool { return jobs[i].hops < jobs[j].hops })
 	for _, job := range jobs {
-		ts.outboundWG.Go(func() { ts.sendRebroadcast(job.iface, job.raw) })
+		ts.sendRebroadcast(job.iface, job.raw)
 	}
 }
 
@@ -2016,6 +2281,31 @@ func (ts *TransportSystem) forwardPathRequest(packet *Packet, source interfaces.
 		return
 	}
 
+	// Compute the recursive-search decision and the optional boundary
+	// search_mode_filter from the attached (receiving) interface, mirroring
+	// RNS/Transport.py:3006-3011. The elif chain is order-sensitive:
+	//   - recursive_prs enables recursive search regardless of mode and
+	//     leaves the filter unset (Task 6, Transport.py:3007-3008);
+	//   - a mode in DISCOVER_PATHS_FOR enables recursive search with no
+	//     filter (Transport.py:3008);
+	//   - a boundary-mode attached interface enables recursive search and
+	//     restricts egress to BOUNDARY_SEARCH_MODES = [boundary, gateway]
+	//     (Task 5, Transport.py:3009-3011).
+	// The filter is applied in the forward loop below; an unset filter means
+	// no mode restriction, preserving the existing forward-to-all behavior for
+	// local-client and discover-mode sources.
+	var searchModeFilter []int
+	if source != nil {
+		switch {
+		case source.RecursivePrs():
+			// should_search_for_unknown = true; search_mode_filter stays nil.
+		case interfaces.ModeIn(source.Mode(), interfaces.DiscoverPathsFor):
+			// should_search_for_unknown = true; search_mode_filter stays nil.
+		case source.Mode() == interfaces.ModeBoundary:
+			searchModeFilter = interfaces.BoundarySearchModes
+		}
+	}
+
 	ts.mu.Lock()
 	ts.ensureStateLocked()
 	if !ts.hasPendingPathRequesterLocked(targetKey, source) {
@@ -2047,6 +2337,14 @@ func (ts *TransportSystem) forwardPathRequest(packet *Packet, source interfaces.
 	now := time.Now()
 	for _, outIface := range ts.interfaces {
 		if outIface == source {
+			continue
+		}
+		// search_mode_filter (Python Transport.py:3124-3127): when the
+		// attached interface is boundary-mode, recursive path requests only
+		// egress on interfaces whose mode is in BOUNDARY_SEARCH_MODES. A nil
+		// filter (recursive_prs, discover-mode, or local-client source) skips
+		// this restriction.
+		if len(searchModeFilter) > 0 && !interfaces.ModeIn(outIface.Mode(), searchModeFilter) {
 			continue
 		}
 		if !outIface.Status() {
@@ -2414,6 +2712,162 @@ func (ts *TransportSystem) FindLink(linkID []byte) *Link {
 		}
 	}
 	return nil
+}
+
+// deliverLinkProof applies the expected-hops gate and optional path re-balance
+// to an LRPROOF destined for the given local link, then delivers it for final
+// validation when the hop count matches (after any re-balance). It mirrors the
+// Python Transport LRPROOF handler's local pending-link case
+// (Transport.py:2272-2312):
+//
+//	if packet.hops != link.expected_hops and link.status == PENDING and ALLOW_LINK_PATH_REBALANCE:
+//	    # re-validate signature; on success adopt packet.hops + rewrite path table hops
+//	if packet.hops == link.expected_hops:
+//	    pending_link = link  # delivered to validate_proof
+//
+// In the common direct-hop case the initiator records expectedHops =
+// hops_to(destination) which is PathfinderM when the path is unknown, so the
+// first proof always mismatches and re-balances down to the proof's hop count.
+// A proof whose hops mismatch and whose signature does not verify (or when
+// re-balance is disabled) is rejected — the link is not delivered the proof.
+func (ts *TransportSystem) deliverLinkProof(l *Link, packet *Packet) {
+	if l.GetStatus() != LinkPending {
+		ts.logger.Debug("Inbound: ignoring LRPROOF %x for link %x: not pending (status=%v)", packet.PacketHash, l.linkID, l.GetStatus())
+		return
+	}
+	expected := l.ExpectedHops()
+	if packet.Hops != expected {
+		// Hop mismatch: attempt a path re-balance by re-validating the
+		// proof signature (Transport.py:2283-2307). A valid signature
+		// authorizes adopting the proof's hop count.
+		if ts.AllowLinkPathRebalance() && l.verifyProofSignature(packet) {
+			l.SetExpectedHops(packet.Hops)
+			if l.destination != nil {
+				ts.mu.Lock()
+				if entry, ok := ts.pathTable[string(l.destination.Hash)]; ok {
+					entry.Hops = packet.Hops
+					ts.logger.Debug("Inbound: re-balanced path table hops for %x to %v", l.destination.Hash, packet.Hops)
+				}
+				ts.mu.Unlock()
+			}
+			ts.logger.Debug("Inbound: re-balanced link %x expected hops %v -> %v", packet.DestinationHash, expected, packet.Hops)
+		} else {
+			ts.logger.Debug("Inbound: rejecting link proof %x for link %x: hop mismatch (%v != expected %v)", packet.PacketHash, packet.DestinationHash, packet.Hops, expected)
+			return
+		}
+	}
+	// After a successful re-balance expectedHops == packet.Hops, so this
+	// delivers the proof to the link for full validation (Transport.py:2310).
+	if packet.Hops != l.ExpectedHops() {
+		return
+	}
+	packet.Destination = l
+	l.receive(packet)
+}
+
+// validateRelayLinkProofLocked validates an LRPROOF signature on behalf of a
+// relay that is forwarding the proof for a remote link, using the identity
+// recalled from the link's destination hash. It mirrors the signature check
+// Python performs in both the relay re-balance (Transport.py:2225-2232) and
+// the relay forward (Transport.py:2251-2258):
+//
+//	peer_identity = RNS.Identity.recall(link_entry[IDX_LT_DSTHASH])
+//	signed_data = packet.destination_hash + peer_pub_bytes + peer_sig_pub_bytes + signalling_bytes
+//	peer_identity.validate(signature, signed_data)
+//
+// The caller must hold ts.mu (for recallLocked).
+func (ts *TransportSystem) validateRelayLinkProofLocked(packet *Packet, destHash []byte) bool {
+	if len(packet.Data) < 64+32 {
+		return false
+	}
+	peerIdentity := ts.recallLocked(destHash)
+	if peerIdentity == nil {
+		return false
+	}
+	signature := packet.Data[:64]
+	peerPubBytes := packet.Data[64:96]
+	var sigBytes []byte
+	if len(packet.Data) == 64+32+LinkMTUSize {
+		sigBytes = packet.Data[96 : 96+LinkMTUSize]
+	}
+	peerSigPubBytes := peerIdentity.GetPublicKey()[32:64]
+	signedData := make([]byte, 0, len(packet.DestinationHash)+len(peerPubBytes)+len(peerSigPubBytes)+len(sigBytes))
+	signedData = append(signedData, packet.DestinationHash...)
+	signedData = append(signedData, peerPubBytes...)
+	signedData = append(signedData, peerSigPubBytes...)
+	signedData = append(signedData, sigBytes...)
+	return peerIdentity.Verify(signature, signedData)
+}
+
+// relayLinkProof handles an LRPROOF that this node is transporting for a
+// remote link (a link_table entry exists for the proof's link ID). It applies
+// the hop-mismatch path re-balance and signature-validated forward from
+// RNS/Transport.py:2207-2265:
+//
+//	if packet.hops != link_entry[IDX_LT_REM_HOPS] and ALLOW_LINK_PATH_REBALANCE:
+//	    if receiving_interface == link_entry[IDX_LT_NH_IF] and signature valid and not validated:
+//	        link_entry[IDX_LT_REM_HOPS] = packet.hops; path_table[dst][IDX_PT_HOPS] = packet.hops
+//	if packet.hops == link_entry[IDX_LT_REM_HOPS] and receiving_interface == link_entry[IDX_LT_NH_IF]:
+//	    if signature valid: mark validated; transmit on link_entry[IDX_LT_RCVD_IF]
+//
+// It returns true when the proof was handled as a relayed proof (whether
+// forwarded or dropped for a hop mismatch / bad signature), and false when no
+// link_table entry exists so the caller can fall through to local-link delivery.
+func (ts *TransportSystem) relayLinkProof(packet *Packet, iface interfaces.Interface) bool {
+	ts.mu.Lock()
+	entry, ok := ts.linkTable[string(packet.DestinationHash)]
+	if !ok || entry == nil {
+		ts.mu.Unlock()
+		return false
+	}
+	// The proof must arrive on the outbound interface (the interface the
+	// link request was forwarded out on, toward the receiver), matching
+	// Python's `packet.receiving_interface == link_entry[IDX_LT_NH_IF]`.
+	if iface != entry.OutboundInterface {
+		ts.mu.Unlock()
+		ts.logger.Debug("Inbound: link proof %x received on wrong interface, not transporting", packet.PacketHash)
+		return true
+	}
+	// Re-balance: a hop mismatch vs the link-table entry means the proof
+	// found a different-length path than the request. Re-validate the
+	// signature and adopt the proof's hop count (Transport.py:2211-2236).
+	if packet.Hops != entry.RemainingHops && ts.allowLinkPathRebalance && !entry.Validated {
+		if ts.validateRelayLinkProofLocked(packet, entry.DestinationHash) {
+			ts.logger.Debug("Inbound: re-balancing link %x remaining hops %v -> %v", packet.DestinationHash, entry.RemainingHops, packet.Hops)
+			entry.RemainingHops = packet.Hops
+			if pathEntry, ok := ts.pathTable[string(entry.DestinationHash)]; ok && pathEntry != nil {
+				pathEntry.Hops = packet.Hops
+				ts.logger.Debug("Inbound: re-balanced path table hops for %x to %v", entry.DestinationHash, packet.Hops)
+			}
+		} else {
+			ts.mu.Unlock()
+			ts.logger.Debug("Inbound: aborting link proof re-balance for %x: invalid signature", packet.DestinationHash)
+			return true
+		}
+	}
+	// Forward: only transport the proof when the hop count now matches the
+	// link-table entry (Transport.py:2238-2265) and the signature validates.
+	if packet.Hops != entry.RemainingHops {
+		ts.mu.Unlock()
+		ts.logger.Debug("Inbound: link proof %x hop mismatch (%v/%v), not transporting", packet.PacketHash, packet.Hops, entry.RemainingHops)
+		return true
+	}
+	if !ts.validateRelayLinkProofLocked(packet, entry.DestinationHash) {
+		ts.mu.Unlock()
+		ts.logger.Debug("Inbound: invalid link proof signature for %x, dropping", packet.DestinationHash)
+		return true
+	}
+	newRaw := make([]byte, len(packet.Raw))
+	copy(newRaw, packet.Raw)
+	newRaw[1] = byte(packet.Hops)
+	entry.Validated = true
+	rcvdIface := entry.ReceivedInterface
+	ts.mu.Unlock()
+	ts.logger.Debug("Inbound: forwarding validated link proof %x", packet.PacketHash)
+	if err := rcvdIface.Send(newRaw); err != nil {
+		ts.logger.Error("Failed to forward link proof: %v", err)
+	}
+	return true
 }
 
 // RegisterInterface adds a network interface to the transport system.
@@ -3545,13 +3999,25 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 	// Duplicate detection
 	ts.mu.Lock()
 	if ts.seenOrRememberPacketHashLocked(packet.PacketHash, time.Now()) {
-		if packet.PacketType == PacketLinkRequest {
-			ts.logger.Notice("Inbound: dropping DUPLICATE link request packet %x (type=%v)", packet.PacketHash, packet.PacketType)
+		// Python's Transport.packet_filter (Transport.py:1417-1426) exempts
+		// SINGLE-destination ANNOUNCE packets from the hashlist drop: a
+		// duplicate announce is still passed to the announce handler, whose
+		// own random-blob replay protection (Transport.py:1821-1845) decides
+		// whether to accept or replace the path. This lets a single announce
+		// for an unknown destination be accepted across interfaces within a
+		// short window (e.g. a higher-gravity copy replacing the entry)
+		// instead of being dropped just because an earlier copy was seen.
+		if packet.PacketType == PacketAnnounce && packet.DestinationType == DestinationSingle {
+			ts.logger.Verbose("Inbound: accepting duplicate SINGLE announce %x (announce-handler replay protection applies)", packet.PacketHash)
 		} else {
-			ts.logger.Verbose("Inbound: dropping duplicate packet %x", packet.PacketHash)
+			if packet.PacketType == PacketLinkRequest {
+				ts.logger.Notice("Inbound: dropping DUPLICATE link request packet %x (type=%v)", packet.PacketHash, packet.PacketType)
+			} else {
+				ts.logger.Verbose("Inbound: dropping duplicate packet %x", packet.PacketHash)
+			}
+			ts.mu.Unlock()
+			return
 		}
-		ts.mu.Unlock()
-		return
 	}
 	if packet.RSSI != nil {
 		ts.packetRSSICache[string(packet.PacketHash)] = *packet.RSSI
@@ -3613,6 +4079,14 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 
 	// Check if it's for a local link
 	if link := ts.FindLink(packet.DestinationHash); link != nil {
+		// A link request proof (LRPROOF) is gated by the expected-hops
+		// check and may trigger a path re-balance before delivery
+		// (RNS/Transport.py:2272-2312). All other link packets (data,
+		// keepalive, RTT) are delivered directly to the link.
+		if packet.Context == ContextLrproof && packet.PacketType == PacketProof {
+			ts.deliverLinkProof(link, packet)
+			return
+		}
 		ts.logger.Info("Inbound: delivering packet %x (type=%v, context=%v) to local link %x", packet.PacketHash, packet.PacketType, packet.Context, link.linkID)
 		packet.Destination = link
 		link.receive(packet)
@@ -3768,32 +4242,16 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 	if packet.PacketType == PacketProof {
 		ts.logger.Debug("Inbound: processing PROOF packet %x for dest %x", packet.PacketHash, packet.DestinationHash)
 		if packet.Context == ContextLrproof {
-			ts.mu.Lock()
-			// This is a link request proof, check if it needs to be transported
-			if entry, ok := ts.linkTable[string(packet.DestinationHash)]; ok {
-				if packet.Hops == entry.RemainingHops && iface == entry.OutboundInterface {
-					// Validate and forward link request proof
-					// In a real implementation we should validate the signature here
-					// but for now we'll just forward it as Python does.
-					newRaw := make([]byte, len(packet.Raw))
-					copy(newRaw, packet.Raw)
-					newRaw[1] = byte(packet.Hops)
-					entry.Validated = true
-					ts.mu.Unlock()
-					if err := entry.ReceivedInterface.Send(newRaw); err != nil {
-						ts.logger.Error("Failed to forward link proof: %v", err)
-					}
-					return
-				}
+			// This is a link request proof. If we are transporting it for a
+			// remote link (a link_table entry exists), re-balance and forward
+			// it (RNS/Transport.py:2207-2265). Otherwise deliver it to a local
+			// pending link via the expected-hops gate (deliverLinkProof).
+			if ts.relayLinkProof(packet, iface) {
+				return
 			}
-			ts.mu.Unlock()
-
-			// Check if we can deliver it to a local pending link
 			if l := ts.FindLink(packet.DestinationHash); l != nil {
-				if l.GetStatus() == LinkPending {
-					l.receive(packet)
-					return
-				}
+				ts.deliverLinkProof(l, packet)
+				return
 			}
 		} else {
 			// Normal proof
@@ -4119,6 +4577,15 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 				Packet:        copyBytes(packet.Raw),
 				PacketHash:    append([]byte(nil), packet.GetHash()...),
 			}
+			// Mark the freshly-inserted path's responsiveness state as
+			// "unknown", mirroring RNS/Transport.py:2053 where
+			// Transport.mark_path_unknown_state runs immediately after the new
+			// path_table entry is written. The Go PathEntry zero value already
+			// encodes the unknown state (ResponsiveState == 0), so this is a
+			// parity call that also defends against any future constructor
+			// that seeds a non-default state; markPathUnknownStateLocked is a
+			// no-op when the entry is absent (Python Transport.py:2826).
+			ts.markPathUnknownStateLocked(destHash)
 			ts.logger.Info("Learned path to %x via %v, %v hops", packet.DestinationHash, iface.Name(), packet.Hops)
 			shouldForwardToLocalClients = true
 		}

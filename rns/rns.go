@@ -523,6 +523,11 @@ func (r *Reticulum) applyConfig() error {
 				r.transport.SetEnabled(enabled)
 			}
 		}
+		if v, ok := reticulumSection.GetProperty("static_transport_identity"); ok {
+			if setter, ok := r.transport.(interface{ SetStaticTransportIdentity(bool) }); ok {
+				setter.SetStaticTransportIdentity(parseBoolLike(v))
+			}
+		}
 		if v, ok := reticulumSection.GetProperty("respond_to_probes"); ok {
 			r.allowProbes = parseBoolLike(v)
 		}

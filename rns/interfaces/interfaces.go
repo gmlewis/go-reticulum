@@ -9,6 +9,7 @@
 package interfaces
 
 import (
+	"slices"
 	"time"
 )
 
@@ -40,6 +41,21 @@ var DiscoverPathsFor = []int{
 	ModeGateway,
 	ModeRoaming,
 	ModeInternal,
+}
+
+// BoundarySearchModes lists the interface modes a boundary-mode attached
+// interface will recursively forward path requests onto. It mirrors RNS 1.4.2's
+// Interface.BOUNDARY_SEARCH_MODES = [MODE_BOUNDARY, MODE_GATEWAY], set as
+// search_mode_filter in Transport.path_request (Transport.py:3009-3011) and
+// consulted in the recursive forward loop (Transport.py:3124-3127).
+var BoundarySearchModes = []int{
+	ModeBoundary,
+	ModeGateway,
+}
+
+// ModeIn reports whether mode is present in modes.
+func ModeIn(mode int, modes []int) bool {
+	return slices.Contains(modes, mode)
 }
 
 // Interface strictly defines the operational contract that all Reticulum physical and virtual transport mechanisms must fulfill.

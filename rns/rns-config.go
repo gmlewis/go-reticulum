@@ -497,7 +497,12 @@ func parseDiscoveryConfig(sub *ConfigSection, ifaceType string, mode int) (inter
 		cfg.Modulation = strings.TrimSpace(v)
 	}
 
-	if mode != interfaces.ModeGateway && mode != interfaces.ModeAccessPoint {
+	// RNS/Reticulum.py (v1.3.9): when discovery is enabled, an interface
+	// already in [MODE_GATEWAY, MODE_ACCESS_POINT, MODE_INTERNAL] keeps its
+	// mode; any other mode is auto-reconfigured to access_point (RNode) or
+	// gateway (everything else). MODE_INTERNAL joined the allowed set at
+	// v1.3.9, so a discoverable internal-mode interface is preserved.
+	if mode != interfaces.ModeGateway && mode != interfaces.ModeAccessPoint && mode != interfaces.ModeInternal {
 		if ifaceType == "RNodeInterface" || ifaceType == "RNodeMultiInterface" {
 			mode = interfaces.ModeAccessPoint
 		} else {
