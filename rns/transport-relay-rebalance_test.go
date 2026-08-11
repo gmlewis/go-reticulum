@@ -279,7 +279,7 @@ func TestRelayLinkProofForwardsOnMatchingHops(t *testing.T) {
 		t.Errorf("forward interface sendCount = %v, want 1 (proof forwarded)", fwdIface.sendCount)
 	}
 	// The forwarded raw carries the proof's hop count in the hop byte.
-	if fwdIface.lastSent == nil || len(fwdIface.lastSent) < 2 || fwdIface.lastSent[1] != 1 {
+	if len(fwdIface.lastSent) < 2 || fwdIface.lastSent[1] != 1 {
 		t.Errorf("forwarded raw hop byte = %v, want 1", fwdIface.lastSent)
 	}
 }

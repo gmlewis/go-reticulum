@@ -146,6 +146,14 @@ type Link struct {
 	// at PathfinderM (128) and re-balances down to the proof's hop count.
 	expectedHops int
 
+	// rebalancedAt records the wall-clock time of the first successful path
+	// re-balance at the link terminus. It is the Go port of Python
+	// Link.rebalanced (Link.py:268 `self.rebalanced = None`), set under the
+	// `if not link.rebalanced:` guard in Transport's LRPROOF handler
+	// (Transport.py:2298-2300) so only the earliest re-balance is timestamped.
+	// The zero value means "no re-balance has occurred" (Python None).
+	rebalancedAt time.Time
+
 	// establishmentCost accumulates the on-wire byte cost of the link
 	// establishment handshake (link request + proof packets, both
 	// directions). It is the Go port of Python Link.establishment_cost,
@@ -233,6 +241,35 @@ func (l *Link) SetExpectedHops(hops int) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.expectedHops = hops
+}
+
+// RebalancedAt returns the wall-clock time of the first successful path
+// re-balance, or the zero time if no re-balance has occurred (Python
+// Link.rebalanced, None until the first re-balance). The caller can test for
+// "has rebalanced" with !RebalancedAt().IsZero().
+func (l *Link) RebalancedAt() time.Time {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.rebalancedAt
+}
+
+// markRebalancedLocked records the re-balance timestamp the first time only,
+// mirroring Python's `if not link.rebalanced: link.rebalanced = time.time()`
+// guard (Transport.py:2298-2300). The caller must hold l.mu.
+func (l *Link) markRebalancedLocked(now time.Time) {
+	if l.rebalancedAt.IsZero() {
+		l.rebalancedAt = now
+	}
+}
+
+// MarkRebalanced is the transport-facing, lock-acquiring wrapper around
+// markRebalancedLocked; it records the first re-balance timestamp for this
+// link. It is called from the Transport LRPROOF handler once a proof signature
+// has authorized adopting a new hop count.
+func (l *Link) MarkRebalanced(now time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.markRebalancedLocked(now)
 }
 
 // TeardownReason returns the reason code recorded when the link was torn down.

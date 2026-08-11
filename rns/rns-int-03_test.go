@@ -208,23 +208,15 @@ if __name__ == "__main__":
 func setupGoOnlyIntegrationLinkPair(t *testing.T) (*Link, *Link) {
 	t.Helper()
 
-	tsInitiator := &TransportSystem{
-		pathTable:    make(map[string]*PathEntry),
-		packetHashes: make(map[string]time.Time),
-		destinations: make([]*Destination, 0),
-		pendingLinks: make([]*Link, 0),
-		activeLinks:  make([]*Link, 0),
-	}
+	// Use the canonical constructor so the transport system picks up the
+	// default configuration (notably allowLinkPathRebalance=true and all
+	// interior maps initialized) rather than a hand-rolled struct literal
+	// whose zero-value flags would diverge from production defaults.
+	tsInitiator := NewTransportSystem(nil)
 	idInitiator := mustTestNewIdentity(t, true)
 	tsInitiator.identity = idInitiator
 
-	tsReceiver := &TransportSystem{
-		pathTable:    make(map[string]*PathEntry),
-		packetHashes: make(map[string]time.Time),
-		destinations: make([]*Destination, 0),
-		pendingLinks: make([]*Link, 0),
-		activeLinks:  make([]*Link, 0),
-	}
+	tsReceiver := NewTransportSystem(nil)
 	idReceiver := mustTestNewIdentity(t, true)
 	tsReceiver.identity = idReceiver
 

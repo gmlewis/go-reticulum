@@ -2742,6 +2742,10 @@ func (ts *TransportSystem) deliverLinkProof(l *Link, packet *Packet) {
 		// authorizes adopting the proof's hop count.
 		if ts.AllowLinkPathRebalance() && l.verifyProofSignature(packet) {
 			l.SetExpectedHops(packet.Hops)
+			// Record the re-balance timestamp the first time only, mirroring
+			// Python's `if not link.rebalanced: link.rebalanced = time.time()`
+			// guard (Transport.py:2298-2300).
+			l.MarkRebalanced(time.Now())
 			if l.destination != nil {
 				ts.mu.Lock()
 				if entry, ok := ts.pathTable[string(l.destination.Hash)]; ok {
