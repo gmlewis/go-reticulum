@@ -117,16 +117,16 @@ func pubkeyWireFormat(id *rns.Identity) []byte {
 func (a *cliArgs) sign(stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	keyfile := a.keyfile
 	if keyfile == "" || !fileExists(keyfile) {
-		fmt.Fprintf(stderr, "Identity file not found: %s\n", keyfile)
+		_, _ = fmt.Fprintf(stderr, "Identity file not found: %s\n", keyfile)
 		return 1
 	}
 	identity, err := rns.FromFile(keyfile, nil)
 	if err != nil || identity == nil {
-		fmt.Fprintln(stderr, "Error: Could not load identity or identity has no private key")
+		_, _ = fmt.Fprintln(stderr, "Error: Could not load identity or identity has no private key")
 		return 1
 	}
 	if identity.GetPrivateKey() == nil {
-		fmt.Fprintln(stderr, "Error: Could not load identity or identity has no private key")
+		_, _ = fmt.Fprintln(stderr, "Error: Could not load identity or identity has no private key")
 		return 1
 	}
 
@@ -135,7 +135,7 @@ func (a *cliArgs) sign(stdin io.Reader, stdout io.Writer, stderr io.Writer) int 
 	if a.file != "" && fileExists(a.file) {
 		data, err := os.ReadFile(a.file)
 		if err != nil {
-			fmt.Fprintf(stderr, "Error reading file: %v\n", err)
+			_, _ = fmt.Fprintf(stderr, "Error reading file: %v\n", err)
 			return 1
 		}
 		message = data
@@ -143,7 +143,7 @@ func (a *cliArgs) sign(stdin io.Reader, stdout io.Writer, stderr io.Writer) int 
 	} else {
 		data, err := io.ReadAll(stdin)
 		if err != nil {
-			fmt.Fprintf(stderr, "Error reading stdin: %v\n", err)
+			_, _ = fmt.Fprintf(stderr, "Error reading stdin: %v\n", err)
 			return 1
 		}
 		message = data
@@ -151,7 +151,7 @@ func (a *cliArgs) sign(stdin io.Reader, stdout io.Writer, stderr io.Writer) int 
 
 	rsgBlob, err := rsg.Create(identity, message)
 	if err != nil {
-		fmt.Fprintf(stderr, "Error creating signature: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Error creating signature: %v\n", err)
 		return 1
 	}
 
@@ -167,11 +167,11 @@ func (a *cliArgs) sign(stdin io.Reader, stdout io.Writer, stderr io.Writer) int 
 
 	if sigFile != "" {
 		if err := os.WriteFile(sigFile, []byte(armored), 0o644); err != nil {
-			fmt.Fprintf(stderr, "Error writing signature file: %v\n", err)
+			_, _ = fmt.Fprintf(stderr, "Error writing signature file: %v\n", err)
 			return 1
 		}
 	} else {
-		fmt.Fprint(stdout, armored)
+		_, _ = fmt.Fprint(stdout, armored)
 	}
 	return 0
 }
@@ -182,39 +182,39 @@ func (a *cliArgs) sign(stdin io.Reader, stdout io.Writer, stderr io.Writer) int 
 func (a *cliArgs) findPrincipals(stdout io.Writer, stderr io.Writer) int {
 	sigfile := a.sigfile
 	if sigfile == "" || !fileExists(sigfile) {
-		fmt.Fprintln(stderr, "Error: Signature file not found")
+		_, _ = fmt.Fprintln(stderr, "Error: Signature file not found")
 		return 1
 	}
 	armored, err := os.ReadFile(sigfile)
 	if err != nil {
-		fmt.Fprintf(stderr, "Error reading signature file: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Error reading signature file: %v\n", err)
 		return 1
 	}
 	parsed, err := parseArmoredSig(armored)
 	if err != nil {
-		fmt.Fprintf(stderr, "Error parsing SSH signature: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Error parsing SSH signature: %v\n", err)
 		return 1
 	}
 	if !bytes.Equal(parsed.Namespace, []byte(namespaceGit)) {
-		fmt.Fprintf(stderr, "Error: Namespace mismatch: %s\n", parsed.Namespace)
+		_, _ = fmt.Fprintf(stderr, "Error: Namespace mismatch: %s\n", parsed.Namespace)
 		return 1
 	}
 	extracted, err := rsg.ExtractSignedData(parsed.SignatureData)
 	if err != nil {
-		fmt.Fprintf(stderr, "Could not determine signer identity: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Could not determine signer identity: %v\n", err)
 		return 1
 	}
 	meta, _ := extracted["meta"].(map[any]any)
 	if meta == nil {
-		fmt.Fprintln(stderr, "Could not determine signer identity: missing meta")
+		_, _ = fmt.Fprintln(stderr, "Could not determine signer identity: missing meta")
 		return 1
 	}
 	signer, _ := meta["signer"].([]byte)
 	if signer == nil {
-		fmt.Fprintln(stderr, "Could not determine signer identity: missing signer")
+		_, _ = fmt.Fprintln(stderr, "Could not determine signer identity: missing signer")
 		return 1
 	}
-	fmt.Fprintf(stdout, "%x\n", signer)
+	_, _ = fmt.Fprintf(stdout, "%x\n", signer)
 	return 0
 }
 
@@ -252,26 +252,26 @@ func (a *cliArgs) checkNoValidate(stderr io.Writer) int {
 func (a *cliArgs) verify(stdin io.Reader, stdout, stderr io.Writer) int {
 	sigfile := a.sigfile
 	if sigfile == "" || !fileExists(sigfile) {
-		fmt.Fprintln(stderr, "Error: Signature file not found")
+		_, _ = fmt.Fprintln(stderr, "Error: Signature file not found")
 		return 1
 	}
 	message, err := io.ReadAll(stdin)
 	if err != nil {
-		fmt.Fprintf(stderr, "Error reading stdin: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Error reading stdin: %v\n", err)
 		return 1
 	}
 	armored, err := os.ReadFile(sigfile)
 	if err != nil {
-		fmt.Fprintf(stderr, "Error parsing signature: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Error parsing signature: %v\n", err)
 		return 1
 	}
 	parsed, err := parseArmoredSig(armored)
 	if err != nil {
-		fmt.Fprintf(stderr, "Error parsing signature: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Error parsing signature: %v\n", err)
 		return 1
 	}
 	if !bytes.Equal(parsed.Namespace, []byte(namespaceGit)) {
-		fmt.Fprintln(stderr, "Invalid commit signature namespace")
+		_, _ = fmt.Fprintln(stderr, "Invalid commit signature namespace")
 		return 1
 	}
 
@@ -282,7 +282,7 @@ func (a *cliArgs) verify(stdin io.Reader, stdout, stderr io.Writer) int {
 
 	signingID, vErr := rsg.Validate(parsed.SignatureData, message, nil)
 	if vErr != nil {
-		fmt.Fprintln(stderr, "Invalid signature")
+		_, _ = fmt.Fprintln(stderr, "Invalid signature")
 		return 1
 	}
 
@@ -292,14 +292,14 @@ func (a *cliArgs) verify(stdin io.Reader, stdout, stderr io.Writer) int {
 
 	signerHash := signingID.HexHash
 	if author != signerHash {
-		fmt.Fprintf(stdout, "Commit not signed by author <%s>\n", author)
+		_, _ = fmt.Fprintf(stdout, "Commit not signed by author <%s>\n", author)
 		return 1
 	}
 	if a.principal != "" && a.principal != signerHash {
-		fmt.Fprintln(stderr, "Principal mismatch")
+		_, _ = fmt.Fprintln(stderr, "Principal mismatch")
 		return 1
 	}
-	fmt.Fprintf(stdout, "Good \"git\" signature for commit, signed with Reticulum Identity key <%s>\n", signerHash)
+	_, _ = fmt.Fprintf(stdout, "Good \"git\" signature for commit, signed with Reticulum Identity key <%s>\n", signerHash)
 	return 0
 }
 

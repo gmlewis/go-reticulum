@@ -63,12 +63,12 @@ func runWithOutput(args []string, stdout, stderr io.Writer) int {
 		if err == errHelp {
 			return 0
 		}
-		fmt.Fprintf(stderr, "%s\n", err)
+		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		return 1
 	}
 
 	if opts.version {
-		fmt.Fprintf(stdout, "gorngit %s\n", rns.VERSION)
+		_, _ = fmt.Fprintf(stdout, "gorngit %s\n", rns.VERSION)
 		return 0
 	}
 
@@ -90,7 +90,7 @@ func runWithOutput(args []string, stdout, stderr io.Writer) int {
 	case subPerms:
 		return runPerms(opts, stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "unknown subcommand %q\n", opts.subcommand)
+		_, _ = fmt.Fprintf(stderr, "unknown subcommand %q\n", opts.subcommand)
 		return 1
 	}
 }
@@ -99,7 +99,7 @@ func runWithOutput(args []string, stdout, stderr io.Writer) int {
 // mirroring program_setup for the node subcommand (server.py).
 func runNode(opts options, stdout, stderr io.Writer) int {
 	if !ensureGit() {
-		fmt.Fprintf(stderr, "The \"git\" command is not available. Aborting server startup.\n")
+		_, _ = fmt.Fprintf(stderr, "The \"git\" command is not available. Aborting server startup.\n")
 		return 255
 	}
 
@@ -114,7 +114,7 @@ func runNode(opts options, stdout, stderr io.Writer) int {
 
 	node, err := newReticulumGitNode(opts.configDir, logger)
 	if err != nil {
-		fmt.Fprintf(stderr, "Could not initialize git node: %s\n", err)
+		_, _ = fmt.Fprintf(stderr, "Could not initialize git node: %s\n", err)
 		return 255
 	}
 
@@ -122,16 +122,16 @@ func runNode(opts options, stdout, stderr io.Writer) int {
 		clientIdentityPath := opts.configDir + "/client_identity"
 		clientIdentity, err := loadOrCreateIdentity(clientIdentityPath, logger)
 		if err != nil {
-			fmt.Fprintf(stderr, "Could not load client identity: %s\n", err)
+			_, _ = fmt.Fprintf(stderr, "Could not load client identity: %s\n", err)
 			return 255
 		}
 		destHash := rns.CalculateHash(node.identity, appName, repoAspect)
-		fmt.Fprintf(stdout, "Git Peer Identity         : %s\n", rns.PrettyHex(clientIdentity.Hash))
-		fmt.Fprintf(stdout, "Repository Node Identity  : %s\n", rns.PrettyHex(node.identity.Hash))
-		fmt.Fprintf(stdout, "Repositories Destination  : %s\n", rns.PrettyHex(destHash))
+		_, _ = fmt.Fprintf(stdout, "Git Peer Identity         : %s\n", rns.PrettyHex(clientIdentity.Hash))
+		_, _ = fmt.Fprintf(stdout, "Repository Node Identity  : %s\n", rns.PrettyHex(node.identity.Hash))
+		_, _ = fmt.Fprintf(stdout, "Repositories Destination  : %s\n", rns.PrettyHex(destHash))
 		if node.config.serveNomadnet {
 			nomadHash := rns.CalculateHash(node.identity, pageAppName, "node")
-			fmt.Fprintf(stdout, "Nomad Network Destination : %s\n", rns.PrettyHex(nomadHash))
+			_, _ = fmt.Fprintf(stdout, "Nomad Network Destination : %s\n", rns.PrettyHex(nomadHash))
 		}
 		return 0
 	}
@@ -139,7 +139,7 @@ func runNode(opts options, stdout, stderr io.Writer) int {
 	ts := rns.NewTransportSystem(logger)
 	ret, err := rns.NewReticulumWithLogger(ts, opts.rnsConfigDir, logger)
 	if err != nil {
-		fmt.Fprintf(stderr, "Could not initialize Reticulum: %s\n", err)
+		_, _ = fmt.Fprintf(stderr, "Could not initialize Reticulum: %s\n", err)
 		return 255
 	}
 	defer func() {
@@ -149,7 +149,7 @@ func runNode(opts options, stdout, stderr io.Writer) int {
 	}()
 
 	if err := node.serve(ts, logger); err != nil {
-		fmt.Fprintf(stderr, "Server error: %s\n", err)
+		_, _ = fmt.Fprintf(stderr, "Server error: %s\n", err)
 		return 255
 	}
 	return 0
@@ -160,18 +160,18 @@ func runNode(opts options, stdout, stderr io.Writer) int {
 // (server.py).
 func runCreate(opts options, stdout, stderr io.Writer) int {
 	if !ensureGit() {
-		fmt.Fprintf(stderr, "The \"git\" command is not available.\n")
+		_, _ = fmt.Fprintf(stderr, "The \"git\" command is not available.\n")
 		return 255
 	}
 
 	if opts.repository == "" {
-		fmt.Fprintf(stderr, "No repository URL specified\n")
+		_, _ = fmt.Fprintf(stderr, "No repository URL specified\n")
 		return 1
 	}
 
 	configDir, err := loadClientConfigDir(opts.configDir)
 	if err != nil {
-		fmt.Fprintf(stderr, "%s\n", err)
+		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		return 1
 	}
 
@@ -181,7 +181,7 @@ func runCreate(opts options, stdout, stderr io.Writer) int {
 	ts := rns.NewTransportSystem(logger)
 	ret, err := rns.NewReticulumWithLogger(ts, opts.rnsConfigDir, logger)
 	if err != nil {
-		fmt.Fprintf(stderr, "Could not initialize Reticulum: %s\n", err)
+		_, _ = fmt.Fprintf(stderr, "Could not initialize Reticulum: %s\n", err)
 		return 1
 	}
 	defer func() {
@@ -192,18 +192,18 @@ func runCreate(opts options, stdout, stderr io.Writer) int {
 
 	client, err := newReticulumGitClient(ts, configDir, opts.identityPath, opts.repository, logger)
 	if err != nil {
-		fmt.Fprintf(stderr, "%s\n", err)
+		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		return 1
 	}
 
 	if err := client.connect(logger); err != nil {
-		fmt.Fprintf(stderr, "%s\n", err)
+		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		return 1
 	}
 	defer client.teardown()
 
 	if err := client.create(); err != nil {
-		fmt.Fprintf(stderr, "%s\n", err)
+		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		return 1
 	}
 	return 0
@@ -214,15 +214,15 @@ func runCreate(opts options, stdout, stderr io.Writer) int {
 // subcommand (server.py).
 func runFork(opts options, stdout, stderr io.Writer) int {
 	if !ensureGit() {
-		fmt.Fprintf(stderr, "The \"git\" command is not available.\n")
+		_, _ = fmt.Fprintf(stderr, "The \"git\" command is not available.\n")
 		return 255
 	}
 	if opts.source == "" {
-		fmt.Fprintf(stderr, "No source specified\n")
+		_, _ = fmt.Fprintf(stderr, "No source specified\n")
 		return 1
 	}
 	if opts.target == "" {
-		fmt.Fprintf(stderr, "No target specified\n")
+		_, _ = fmt.Fprintf(stderr, "No target specified\n")
 		return 1
 	}
 
@@ -238,7 +238,7 @@ func runFork(opts options, stdout, stderr io.Writer) int {
 	defer client.teardown()
 
 	if err := client.fork(opts.source); err != nil {
-		fmt.Fprintf(stderr, "%s\n", err)
+		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		return 1
 	}
 	return 0
@@ -249,15 +249,15 @@ func runFork(opts options, stdout, stderr io.Writer) int {
 // mirror subcommand (server.py).
 func runMirror(opts options, stdout, stderr io.Writer) int {
 	if !ensureGit() {
-		fmt.Fprintf(stderr, "The \"git\" command is not available.\n")
+		_, _ = fmt.Fprintf(stderr, "The \"git\" command is not available.\n")
 		return 255
 	}
 	if opts.source == "" {
-		fmt.Fprintf(stderr, "No source specified\n")
+		_, _ = fmt.Fprintf(stderr, "No source specified\n")
 		return 1
 	}
 	if opts.target == "" {
-		fmt.Fprintf(stderr, "No target specified\n")
+		_, _ = fmt.Fprintf(stderr, "No target specified\n")
 		return 1
 	}
 
@@ -273,7 +273,7 @@ func runMirror(opts options, stdout, stderr io.Writer) int {
 	defer client.teardown()
 
 	if err := client.mirror(opts.source); err != nil {
-		fmt.Fprintf(stderr, "%s\n", err)
+		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		return 1
 	}
 	return 0
@@ -284,11 +284,11 @@ func runMirror(opts options, stdout, stderr io.Writer) int {
 // for the sync subcommand (server.py).
 func runSync(opts options, stdout, stderr io.Writer) int {
 	if !ensureGit() {
-		fmt.Fprintf(stderr, "The \"git\" command is not available.\n")
+		_, _ = fmt.Fprintf(stderr, "The \"git\" command is not available.\n")
 		return 255
 	}
 	if opts.repository == "" {
-		fmt.Fprintf(stderr, "No repository URL specified\n")
+		_, _ = fmt.Fprintf(stderr, "No repository URL specified\n")
 		return 1
 	}
 
@@ -304,7 +304,7 @@ func runSync(opts options, stdout, stderr io.Writer) int {
 	defer client.teardown()
 
 	if err := client.sync(); err != nil {
-		fmt.Fprintf(stderr, "%s\n", err)
+		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		return 1
 	}
 	return 0
@@ -319,7 +319,7 @@ func runSync(opts options, stdout, stderr io.Writer) int {
 func prepareGitClient(opts options, remoteURL string, stderr io.Writer) (*reticulumGitClient, *rns.Reticulum, *rns.Logger, bool) {
 	configDir, err := loadClientConfigDir(opts.configDir)
 	if err != nil {
-		fmt.Fprintf(stderr, "%s\n", err)
+		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		return nil, nil, nil, false
 	}
 
@@ -329,19 +329,19 @@ func prepareGitClient(opts options, remoteURL string, stderr io.Writer) (*reticu
 	ts := rns.NewTransportSystem(logger)
 	ret, err := rns.NewReticulumWithLogger(ts, opts.rnsConfigDir, logger)
 	if err != nil {
-		fmt.Fprintf(stderr, "Could not initialize Reticulum: %s\n", err)
+		_, _ = fmt.Fprintf(stderr, "Could not initialize Reticulum: %s\n", err)
 		return nil, nil, nil, false
 	}
 
 	client, err := newReticulumGitClient(ts, configDir, opts.identityPath, remoteURL, logger)
 	if err != nil {
-		fmt.Fprintf(stderr, "%s\n", err)
+		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		_ = ret.Close()
 		return nil, nil, nil, false
 	}
 
 	if err := client.connect(logger); err != nil {
-		fmt.Fprintf(stderr, "%s\n", err)
+		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		_ = ret.Close()
 		return nil, nil, nil, false
 	}

@@ -364,7 +364,7 @@ func (c *reticulumGitClient) workEdit(docID int, title, scope string) error {
 func (c *reticulumGitClient) workDelete(docID int, scope string) error {
 	fmt.Printf("Are you sure you want to delete %s work document #%d? [y/N]: ", scope, docID)
 	var confirm string
-	fmt.Scanln(&confirm)
+	_, _ = fmt.Scanln(&confirm)
 	if strings.ToLower(strings.TrimSpace(confirm)) != "y" {
 		fmt.Println("Deletion cancelled")
 		return nil

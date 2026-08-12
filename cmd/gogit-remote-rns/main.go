@@ -47,12 +47,12 @@ func run(args []string) int {
 // in and writing protocol responses to out and diagnostics to errw.
 func runWithOutput(args []string, in io.Reader, out, errw io.Writer) int {
 	if len(args) < 2 {
-		fmt.Fprintf(errw, "Usage: git-remote-rns <remote-name> <url>\n")
+		_, _ = fmt.Fprintf(errw, "Usage: git-remote-rns <remote-name> <url>\n")
 		return 1
 	}
 	url := args[1]
 	if !isRnsURL(url) {
-		fmt.Fprintf(errw, "Invalid URL scheme. Must be rns://\n")
+		_, _ = fmt.Fprintf(errw, "Invalid URL scheme. Must be rns://\n")
 		return 1
 	}
 
@@ -60,7 +60,7 @@ func runWithOutput(args []string, in io.Reader, out, errw io.Writer) int {
 	if configDir == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			fmt.Fprintf(errw, "Could not determine home dir: %s\n", err)
+			_, _ = fmt.Fprintf(errw, "Could not determine home dir: %s\n", err)
 			return 1
 		}
 		configDir = filepath.Join(home, ".rngit")
@@ -81,7 +81,7 @@ func runWithOutput(args []string, in io.Reader, out, errw io.Writer) int {
 	ts := rns.NewTransportSystem(logger)
 	ret, err := rns.NewReticulumWithLogger(ts, rnsConfigDir, logger)
 	if err != nil {
-		fmt.Fprintf(errw, "Failed to initialize Reticulum: %s\n", err)
+		_, _ = fmt.Fprintf(errw, "Failed to initialize Reticulum: %s\n", err)
 		return 255
 	}
 	defer func() {
@@ -92,12 +92,12 @@ func runWithOutput(args []string, in io.Reader, out, errw io.Writer) int {
 
 	client, err := newRnsClient(ts, configDir, url, logger)
 	if err != nil {
-		fmt.Fprintf(errw, "%s\n", err)
+		_, _ = fmt.Fprintf(errw, "%s\n", err)
 		return 255
 	}
 
 	if err := client.connect(logger); err != nil {
-		fmt.Fprintf(errw, "git-remote-rns failed: %s\n", err)
+		_, _ = fmt.Fprintf(errw, "git-remote-rns failed: %s\n", err)
 		client.teardown()
 		return 255
 	}
@@ -110,7 +110,7 @@ func runWithOutput(args []string, in io.Reader, out, errw io.Writer) int {
 		backend: client,
 	}
 	if err := helper.run(); err != nil {
-		fmt.Fprintf(errw, "git-remote-rns failed: %s\n", err)
+		_, _ = fmt.Fprintf(errw, "git-remote-rns failed: %s\n", err)
 		return 255
 	}
 	return 0

@@ -589,9 +589,8 @@ func (n *reticulumGitNode) releaseCreateFinalize(releasesPath string, data map[a
 		return append([]byte{resRemoteFail}, []byte("Remote error")...)
 	}
 
-	if err := writeLatestTag(releasesPath, tag); err != nil {
-		// Best-effort, mirroring Python's try/except.
-	}
+	// Best-effort, mirroring Python's try/except.
+	_ = writeLatestTag(releasesPath, tag)
 	return []byte{resOK}
 }
 

@@ -311,7 +311,7 @@ func (c *SAMClient) getSAMConn() (net.Conn, error) {
 		return nil, err
 	}
 	if err := c.hello(conn); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 	return conn, nil
@@ -334,22 +334,22 @@ func (c *SAMClient) CreateSession(sessionID, destination string, opts map[string
 		dest = SAMTransientDest
 	}
 	if _, err := conn.Write(samSessionCreateBytes("STREAM", sessionID, dest, samOptionsString(opts))); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, nil, err
 	}
 	br := bufio.NewReader(conn)
 	reply, err := readSAMReply(br)
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, nil, err
 	}
 	if !reply.OK() {
-		conn.Close()
+		_ = conn.Close()
 		return nil, nil, &SAMResultError{Result: reply.Opts["RESULT"], Cmd: reply.Cmd, Action: reply.Action}
 	}
 	created, err := NewI2PDestinationFromB64(reply.Opts["DESTINATION"])
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, nil, fmt.Errorf("SAM: decode session DESTINATION: %w", err)
 	}
 	return created, conn, nil
@@ -386,17 +386,17 @@ func (c *SAMClient) StreamConnect(sessionID, destinationB64 string) (*SAMStream,
 		return nil, err
 	}
 	if _, err := conn.Write(samStreamConnectBytes(sessionID, destinationB64, "false")); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 	br := bufio.NewReader(conn)
 	reply, err := readSAMReply(br)
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 	if !reply.OK() {
-		conn.Close()
+		_ = conn.Close()
 		return nil, &SAMResultError{Result: reply.Opts["RESULT"], Cmd: reply.Cmd, Action: reply.Action}
 	}
 	return &SAMStream{br: br, conn: conn}, nil
@@ -435,7 +435,7 @@ func (c *SAMClient) OpenStreamAccept(sessionID string) (*SAMAcceptPending, error
 		return nil, err
 	}
 	if _, err := conn.Write(samStreamAcceptBytes(sessionID, "false")); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 	return &SAMAcceptPending{br: bufio.NewReader(conn), conn: conn}, nil

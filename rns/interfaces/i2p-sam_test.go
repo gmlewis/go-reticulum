@@ -187,44 +187,44 @@ func (m *mockSAM) handle(conn net.Conn) {
 			m.mu.Lock()
 			m.hellos++
 			m.mu.Unlock()
-			io.WriteString(conn, "HELLO REPLY RESULT=OK VERSION=3.1\n")
+			_, _ = io.WriteString(conn, "HELLO REPLY RESULT=OK VERSION=3.1\n")
 		case strings.HasPrefix(line, "SESSION CREATE"):
 			m.mu.Lock()
 			m.sessions++
 			res := m.sessionErr
 			m.mu.Unlock()
 			if res != "" {
-				io.WriteString(conn, "SESSION STATUS RESULT="+res+"\n")
+				_, _ = io.WriteString(conn, "SESSION STATUS RESULT="+res+"\n")
 				return
 			}
-			io.WriteString(conn, "SESSION STATUS RESULT=OK DESTINATION="+m.destB64+"\n")
+			_, _ = io.WriteString(conn, "SESSION STATUS RESULT=OK DESTINATION="+m.destB64+"\n")
 		case strings.HasPrefix(line, "STREAM CONNECT"):
 			m.mu.Lock()
 			m.connects++
 			res := m.connectErr
 			m.mu.Unlock()
 			if res != "" {
-				io.WriteString(conn, "STREAM STATUS RESULT="+res+"\n")
+				_, _ = io.WriteString(conn, "STREAM STATUS RESULT="+res+"\n")
 				return
 			}
-			io.WriteString(conn, "STREAM STATUS RESULT=OK\n")
+			_, _ = io.WriteString(conn, "STREAM STATUS RESULT=OK\n")
 		case strings.HasPrefix(line, "STREAM ACCEPT"):
 			m.mu.Lock()
 			m.accepts++
 			m.mu.Unlock()
-			io.WriteString(conn, "STREAM STATUS RESULT=OK\n")
+			_, _ = io.WriteString(conn, "STREAM STATUS RESULT=OK\n")
 		case strings.HasPrefix(line, "NAMING LOOKUP"):
 			m.mu.Lock()
 			m.lookups++
 			m.mu.Unlock()
-			io.WriteString(conn, "NAMING REPLY RESULT=OK VALUE="+m.destB64+"\n")
+			_, _ = io.WriteString(conn, "NAMING REPLY RESULT=OK VALUE="+m.destB64+"\n")
 		case strings.HasPrefix(line, "DEST GENERATE"):
 			m.mu.Lock()
 			m.destgens++
 			m.mu.Unlock()
-			io.WriteString(conn, "DEST REPLY RESULT=OK PRIV="+m.destB64+"\n")
+			_, _ = io.WriteString(conn, "DEST REPLY RESULT=OK PRIV="+m.destB64+"\n")
 		default:
-			io.WriteString(conn, "HELLO REPLY RESULT=I2P_ERROR\n")
+			_, _ = io.WriteString(conn, "HELLO REPLY RESULT=I2P_ERROR\n")
 			return
 		}
 	}
@@ -277,7 +277,7 @@ func TestSAMClientCreateSessionError(t *testing.T) {
 
 	_, conn, err := c.CreateSession("sess1", "", nil)
 	if conn != nil {
-		conn.Close()
+		_ = conn.Close()
 	}
 	if err == nil {
 		t.Fatal("CreateSession succeeded, want error")
@@ -320,7 +320,7 @@ func TestSAMClientStreamConnectError(t *testing.T) {
 
 	conn, err := c.StreamConnect("sess1", "DESTB64")
 	if conn != nil {
-		conn.Close()
+		_ = conn.Close()
 	}
 	if err == nil {
 		t.Fatal("StreamConnect succeeded, want error")
@@ -402,8 +402,8 @@ func TestSAMClientHelloFailure(t *testing.T) {
 		}
 		defer func() { _ = conn.Close() }()
 		br := bufio.NewReader(conn)
-		br.ReadString('\n') // consume HELLO
-		io.WriteString(conn, "HELLO REPLY RESULT=I2P_ERROR\n")
+		_, _ = br.ReadString('\n') // consume HELLO
+		_, _ = io.WriteString(conn, "HELLO REPLY RESULT=I2P_ERROR\n")
 	}()
 	c := newSAMClient()
 	c.Address = l.Addr().String()

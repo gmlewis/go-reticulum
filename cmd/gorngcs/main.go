@@ -32,7 +32,7 @@ func main() {
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	a, err := parseArgs(args)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
+		_, _ = fmt.Fprintln(stderr, err)
 		return 1
 	}
 	switch a.op {
@@ -45,7 +45,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	case "verify":
 		return a.verify(stdin, stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "Error: Unknown operation: %s\n", a.op)
+		_, _ = fmt.Fprintf(stderr, "Error: Unknown operation: %s\n", a.op)
 		return 1
 	}
 }

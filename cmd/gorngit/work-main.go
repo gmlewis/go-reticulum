@@ -16,15 +16,15 @@ import (
 // update (→comment), complete, activate, perms.
 func runWork(opts options, stdout, stderr io.Writer) int {
 	if !ensureGit() {
-		fmt.Fprintf(stderr, "The \"git\" command is not available.\n")
+		_, _ = fmt.Fprintf(stderr, "The \"git\" command is not available.\n")
 		return 255
 	}
 	if opts.operation == "" {
-		fmt.Fprintf(stderr, "No operation specified\n")
+		_, _ = fmt.Fprintf(stderr, "No operation specified\n")
 		return 1
 	}
 	if opts.repository == "" {
-		fmt.Fprintf(stderr, "No remote specified\n")
+		_, _ = fmt.Fprintf(stderr, "No remote specified\n")
 		return 1
 	}
 
@@ -35,7 +35,7 @@ func runWork(opts options, stdout, stderr io.Writer) int {
 		})
 	case "view":
 		if opts.docID == 0 {
-			fmt.Fprintf(stderr, "No document ID specified\n")
+			_, _ = fmt.Fprintf(stderr, "No document ID specified\n")
 			return 1
 		}
 		return runWorkConnected(opts, stderr, func(c *reticulumGitClient) error {
@@ -43,7 +43,7 @@ func runWork(opts options, stdout, stderr io.Writer) int {
 		})
 	case "create":
 		if opts.title == "" {
-			fmt.Fprintf(stderr, "No title specified\n")
+			_, _ = fmt.Fprintf(stderr, "No title specified\n")
 			return 1
 		}
 		return runWorkConnected(opts, stderr, func(c *reticulumGitClient) error {
@@ -51,7 +51,7 @@ func runWork(opts options, stdout, stderr io.Writer) int {
 		})
 	case "propose":
 		if opts.title == "" {
-			fmt.Fprintf(stderr, "No title specified\n")
+			_, _ = fmt.Fprintf(stderr, "No title specified\n")
 			return 1
 		}
 		return runWorkConnected(opts, stderr, func(c *reticulumGitClient) error {
@@ -59,7 +59,7 @@ func runWork(opts options, stdout, stderr io.Writer) int {
 		})
 	case "edit":
 		if opts.docID == 0 {
-			fmt.Fprintf(stderr, "No document ID specified\n")
+			_, _ = fmt.Fprintf(stderr, "No document ID specified\n")
 			return 1
 		}
 		return runWorkConnected(opts, stderr, func(c *reticulumGitClient) error {
@@ -67,7 +67,7 @@ func runWork(opts options, stdout, stderr io.Writer) int {
 		})
 	case "delete":
 		if opts.docID == 0 {
-			fmt.Fprintf(stderr, "No document ID specified\n")
+			_, _ = fmt.Fprintf(stderr, "No document ID specified\n")
 			return 1
 		}
 		return runWorkConnected(opts, stderr, func(c *reticulumGitClient) error {
@@ -75,7 +75,7 @@ func runWork(opts options, stdout, stderr io.Writer) int {
 		})
 	case "update":
 		if opts.docID == 0 {
-			fmt.Fprintf(stderr, "No document ID specified\n")
+			_, _ = fmt.Fprintf(stderr, "No document ID specified\n")
 			return 1
 		}
 		return runWorkConnected(opts, stderr, func(c *reticulumGitClient) error {
@@ -83,7 +83,7 @@ func runWork(opts options, stdout, stderr io.Writer) int {
 		})
 	case "complete":
 		if opts.docID == 0 {
-			fmt.Fprintf(stderr, "No document ID specified\n")
+			_, _ = fmt.Fprintf(stderr, "No document ID specified\n")
 			return 1
 		}
 		return runWorkConnected(opts, stderr, func(c *reticulumGitClient) error {
@@ -91,7 +91,7 @@ func runWork(opts options, stdout, stderr io.Writer) int {
 		})
 	case "activate":
 		if opts.docID == 0 {
-			fmt.Fprintf(stderr, "No document ID specified\n")
+			_, _ = fmt.Fprintf(stderr, "No document ID specified\n")
 			return 1
 		}
 		return runWorkConnected(opts, stderr, func(c *reticulumGitClient) error {
@@ -99,14 +99,14 @@ func runWork(opts options, stdout, stderr io.Writer) int {
 		})
 	case "perms":
 		if opts.docID == 0 {
-			fmt.Fprintf(stderr, "No document ID specified\n")
+			_, _ = fmt.Fprintf(stderr, "No document ID specified\n")
 			return 1
 		}
 		return runWorkConnected(opts, stderr, func(c *reticulumGitClient) error {
 			return c.workPermissions(opts.docID)
 		})
 	default:
-		fmt.Fprintf(stderr, "Unknown work operation %q\n", opts.operation)
+		_, _ = fmt.Fprintf(stderr, "Unknown work operation %q\n", opts.operation)
 		return 1
 	}
 }
@@ -126,7 +126,7 @@ func runWorkConnected(opts options, stderr io.Writer, fn func(*reticulumGitClien
 	}()
 	defer client.teardown()
 	if err := fn(client); err != nil {
-		fmt.Fprintf(stderr, "%s\n", err)
+		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		return 1
 	}
 	return 0

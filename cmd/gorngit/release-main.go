@@ -23,11 +23,11 @@ import (
 // hash of the required signer identity. This mirrors that quirk.
 func runRelease(opts options, stdout, stderr io.Writer) int {
 	if !ensureGit() {
-		fmt.Fprintf(stderr, "The \"git\" command is not available.\n")
+		_, _ = fmt.Fprintf(stderr, "The \"git\" command is not available.\n")
 		return 255
 	}
 	if opts.operation == "" {
-		fmt.Fprintf(stderr, "No operation specified\n")
+		_, _ = fmt.Fprintf(stderr, "No operation specified\n")
 		return 1
 	}
 
@@ -42,7 +42,7 @@ func runRelease(opts options, stdout, stderr io.Writer) int {
 		needsRemote = false
 	}
 	if needsRemote && opts.repository == "" {
-		fmt.Fprintf(stderr, "No remote specified\n")
+		_, _ = fmt.Fprintf(stderr, "No remote specified\n")
 		return 1
 	}
 
@@ -53,7 +53,7 @@ func runRelease(opts options, stdout, stderr io.Writer) int {
 		})
 	case "view":
 		if opts.target == "" {
-			fmt.Fprintf(stderr, "No target specified\n")
+			_, _ = fmt.Fprintf(stderr, "No target specified\n")
 			return 1
 		}
 		return runReleaseConnected(opts, stderr, func(c *reticulumGitClient) error {
@@ -70,7 +70,7 @@ func runRelease(opts options, stdout, stderr io.Writer) int {
 		return runReleaseCreate(opts, stderr)
 	case "delete":
 		if opts.target == "" {
-			fmt.Fprintf(stderr, "No target specified\n")
+			_, _ = fmt.Fprintf(stderr, "No target specified\n")
 			return 1
 		}
 		return runReleaseConnected(opts, stderr, func(c *reticulumGitClient) error {
@@ -78,14 +78,14 @@ func runRelease(opts options, stdout, stderr io.Writer) int {
 		})
 	case "latest":
 		if opts.target == "" {
-			fmt.Fprintf(stderr, "No target specified\n")
+			_, _ = fmt.Fprintf(stderr, "No target specified\n")
 			return 1
 		}
 		return runReleaseConnected(opts, stderr, func(c *reticulumGitClient) error {
 			return c.latestRelease(opts.target)
 		})
 	default:
-		fmt.Fprintf(stderr, "Unknown release operation %q\n", opts.operation)
+		_, _ = fmt.Fprintf(stderr, "Unknown release operation %q\n", opts.operation)
 		return 1
 	}
 }
@@ -128,7 +128,7 @@ func runReleaseConnected(opts options, stderr io.Writer, fn func(*reticulumGitCl
 		if err == errOfflineOK {
 			return 0
 		}
-		fmt.Fprintf(stderr, "%s\n", err)
+		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		return 1
 	}
 	return 0
@@ -139,7 +139,7 @@ func runReleaseConnected(opts options, stderr io.Writer, fn func(*reticulumGitCl
 // of the required signer.
 func runReleaseOffline(opts options, stderr io.Writer) int {
 	if opts.repository == "" {
-		fmt.Fprintf(stderr, "No remote specified\n")
+		_, _ = fmt.Fprintf(stderr, "No remote specified\n")
 		return 1
 	}
 	client, ret, logger, ok := prepareGitClientOffline(opts, stderr)
@@ -155,7 +155,7 @@ func runReleaseOffline(opts options, stderr io.Writer) int {
 		if err == errOfflineOK {
 			return 0
 		}
-		fmt.Fprintf(stderr, "%s\n", err)
+		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		return 1
 	}
 	return 0
@@ -166,11 +166,11 @@ func runReleaseOffline(opts options, stderr io.Writer) int {
 // identity file; the client identity is the fallback signer.
 func runReleaseCreate(opts options, stderr io.Writer) int {
 	if opts.target == "" {
-		fmt.Fprintf(stderr, "No target specified\n")
+		_, _ = fmt.Fprintf(stderr, "No target specified\n")
 		return 1
 	}
 	if opts.repository == "" {
-		fmt.Fprintf(stderr, "No remote specified\n")
+		_, _ = fmt.Fprintf(stderr, "No remote specified\n")
 		return 1
 	}
 
@@ -190,7 +190,7 @@ func runReleaseCreate(opts options, stderr io.Writer) int {
 			signer = client.identity
 		}
 		if err := client.createRelease(opts.target, signer, opts.name, true); err != nil {
-			fmt.Fprintf(stderr, "%s\n", err)
+			_, _ = fmt.Fprintf(stderr, "%s\n", err)
 			return 1
 		}
 		return 0
@@ -211,7 +211,7 @@ func runReleaseCreate(opts options, stderr io.Writer) int {
 func prepareGitClientOffline(opts options, stderr io.Writer) (*reticulumGitClient, *rns.Reticulum, *rns.Logger, bool) {
 	configDir, err := loadClientConfigDir(opts.configDir)
 	if err != nil {
-		fmt.Fprintf(stderr, "%s\n", err)
+		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		return nil, nil, nil, false
 	}
 	logger := rns.NewLogger()
@@ -219,12 +219,12 @@ func prepareGitClientOffline(opts options, stderr io.Writer) (*reticulumGitClien
 	ts := rns.NewTransportSystem(logger)
 	ret, err := rns.NewReticulumWithLogger(ts, opts.rnsConfigDir, logger)
 	if err != nil {
-		fmt.Fprintf(stderr, "Could not initialize Reticulum: %s\n", err)
+		_, _ = fmt.Fprintf(stderr, "Could not initialize Reticulum: %s\n", err)
 		return nil, nil, nil, false
 	}
 	client, err := newReticulumGitClient(ts, configDir, opts.identityPath, opts.repository, logger)
 	if err != nil {
-		fmt.Fprintf(stderr, "%s\n", err)
+		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		_ = ret.Close()
 		return nil, nil, nil, false
 	}

@@ -1238,7 +1238,7 @@ func (n *reticulumGitNode) handleRemoteClone(path string, data []byte, requestID
 	if err != nil {
 		return append([]byte{resRemoteFail}, []byte("Remote error")...)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	repoTempPath := filepath.Join(tmpDir, repositoryName)
 	if err := os.Mkdir(repoTempPath, 0o755); err != nil {
 		return append([]byte{resRemoteFail}, []byte("Remote error")...)
@@ -1263,9 +1263,8 @@ func (n *reticulumGitNode) handleRemoteClone(path string, data []byte, requestID
 	// Best-effort HEAD update; failures only log and do not abort the clone,
 	// mirroring _handle_remote_clone's try/except around
 	// __update_head_to_source_default (server.py).
-	if err := updateHeadToSourceDefault(repoTempPath, sourceURL); err != nil {
-		// Continue; HEAD defaults to the existing symref.
-	}
+	_ = updateHeadToSourceDefault(repoTempPath, sourceURL)
+	// Continue; HEAD defaults to the existing symref.
 
 	typeCmd := exec.Command("git", "config", "repository.rngit.type", repoType)
 	typeCmd.Dir = repoTempPath

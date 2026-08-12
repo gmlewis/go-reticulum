@@ -72,7 +72,7 @@ func (b *mockSAMBridge) serve() {
 
 func (b *mockSAMBridge) handle(conn net.Conn) {
 	defer b.wg.Done()
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	br := bufio.NewReader(conn)
 	for {
 		line, err := br.ReadString('\n')
@@ -81,15 +81,15 @@ func (b *mockSAMBridge) handle(conn net.Conn) {
 		}
 		switch {
 		case strings.HasPrefix(line, "HELLO"):
-			io.WriteString(conn, "HELLO REPLY RESULT=OK\n")
+			_, _ = io.WriteString(conn, "HELLO REPLY RESULT=OK\n")
 		case strings.HasPrefix(line, "SESSION CREATE"):
-			io.WriteString(conn, "SESSION STATUS RESULT=OK DESTINATION="+b.destB64+"\n")
+			_, _ = io.WriteString(conn, "SESSION STATUS RESULT=OK DESTINATION="+b.destB64+"\n")
 			// The session control conn stays open for the tunnel's lifetime;
 			// return without closing so the tunnel keeps it. The deferred
 			// close will close it when the tunnel closes the session.
 			return
 		case strings.HasPrefix(line, "STREAM CONNECT"):
-			io.WriteString(conn, "STREAM STATUS RESULT=OK\n")
+			_, _ = io.WriteString(conn, "STREAM STATUS RESULT=OK\n")
 			if b.connectHandler != nil {
 				b.connectHandler(conn)
 			}
@@ -103,13 +103,13 @@ func (b *mockSAMBridge) handle(conn net.Conn) {
 				// close idempotent (no field write after setup → no race
 				// with the test reading acceptReceived).
 				b.acceptCloseOnce.Do(func() { close(b.acceptReceived) })
-				io.Copy(io.Discard, conn)
+				_, _ = io.Copy(io.Discard, conn)
 				return
 			}
-			io.WriteString(conn, "STREAM STATUS RESULT=OK\n")
+			_, _ = io.WriteString(conn, "STREAM STATUS RESULT=OK\n")
 			// Write the remote-destination line the ServerTunnel reads before
 			// any data (tunnel.py:144-147).
-			io.WriteString(conn, b.destB64+"\n")
+			_, _ = io.WriteString(conn, b.destB64+"\n")
 			if b.acceptHandler != nil {
 				b.acceptHandler(conn)
 			}
@@ -141,7 +141,7 @@ func TestClientTunnelProxiesData(t *testing.T) {
 	bridge := newMockSAMBridge(t)
 	bridge.connectHandler = func(c net.Conn) {
 		// Remote peer echoes.
-		io.Copy(c, c)
+		_, _ = io.Copy(c, c)
 	}
 	defer bridge.close()
 
@@ -153,20 +153,20 @@ func TestClientTunnelProxiesData(t *testing.T) {
 	if err := ct.Run(); err != nil {
 		t.Fatalf("ClientTunnel.Run: %v", err)
 	}
-	defer ct.Close()
+	defer func() { _ = ct.Close() }()
 
 	conn, err := net.Dial("tcp", ct.LocalAddress)
 	if err != nil {
 		t.Fatalf("dial local tunnel: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	want := "hello-i2p-client-tunnel"
 	if _, err := conn.Write([]byte(want)); err != nil {
 		t.Fatal(err)
 	}
 	buf := make([]byte, 64)
-	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	n, err := conn.Read(buf)
 	if err != nil {
 		t.Fatalf("read echo: %v", err)
@@ -188,14 +188,14 @@ func TestServerTunnelProxiesData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer svcLn.Close()
+	defer func() { _ = svcLn.Close() }()
 	go func() {
 		for {
 			c, err := svcLn.Accept()
 			if err != nil {
 				return
 			}
-			go func(c net.Conn) { io.Copy(c, c); _ = c.Close() }(c)
+			go func(c net.Conn) { _, _ = io.Copy(c, c); _ = c.Close() }(c)
 		}
 	}()
 
@@ -214,7 +214,7 @@ func TestServerTunnelProxiesData(t *testing.T) {
 				got <- "write err"
 				return
 			}
-			c.SetReadDeadline(time.Now().Add(3 * time.Second))
+			_ = c.SetReadDeadline(time.Now().Add(3 * time.Second))
 			buf := make([]byte, 64)
 			n, err := c.Read(buf)
 			if err != nil {
@@ -225,7 +225,7 @@ func TestServerTunnelProxiesData(t *testing.T) {
 		}
 		// Hold the conn open until Close closes it so the proxy goroutine
 		// exits cleanly via Close's closeActiveConns.
-		io.Copy(io.Discard, c)
+		_, _ = io.Copy(io.Discard, c)
 	}
 	defer bridge.close()
 
@@ -236,7 +236,7 @@ func TestServerTunnelProxiesData(t *testing.T) {
 	if err := st.Run(); err != nil {
 		t.Fatalf("ServerTunnel.Run: %v", err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 
 	select {
 	case echoed := <-got:
@@ -262,7 +262,7 @@ func TestClientTunnelCloseDrainsProxies(t *testing.T) {
 	bridge.connectHandler = func(c net.Conn) {
 		close(peerStarted)
 		// Hold the peer open so the proxy stays active until Close closes it.
-		io.Copy(io.Discard, c)
+		_, _ = io.Copy(io.Discard, c)
 		close(peerDone)
 	}
 	defer bridge.close()
@@ -280,7 +280,7 @@ func TestClientTunnelCloseDrainsProxies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	<-peerStarted
 
 	// While the proxy is live the tunnel retains the proxy conns (the
@@ -306,7 +306,7 @@ func TestClientTunnelCloseDrainsProxies(t *testing.T) {
 	// Close must drain the proxies and return.
 	done := make(chan struct{})
 	go func() {
-		ct.Close()
+		_ = ct.Close()
 		close(done)
 	}()
 	select {
@@ -354,7 +354,7 @@ func TestServerTunnelCloseCancelsAccept(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		st.Close()
+		_ = st.Close()
 		close(done)
 	}()
 	select {
@@ -419,7 +419,7 @@ func TestTunnelSetupLogsUnrecognizedSAMError(t *testing.T) {
 	// Point the SAM client at a dead port so dialing the API fails with a
 	// non-*SAMResultError (a network error).
 	dead := newDeadListener(t)
-	defer dead.Close()
+	defer func() { _ = dead.Close() }()
 
 	var buf bytes.Buffer
 	cl := log.New(&buf, "", 0)

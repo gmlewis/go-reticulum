@@ -623,7 +623,7 @@ func (c *reticulumGitClient) deleteRelease(target string) error {
 	}
 	fmt.Printf("Are you sure you want to delete release %s? [y/N]: ", target)
 	var confirm string
-	fmt.Scanln(&confirm)
+	_, _ = fmt.Scanln(&confirm)
 	if strings.ToLower(strings.TrimSpace(confirm)) != "y" {
 		fmt.Println("Deletion cancelled")
 		return nil
@@ -660,7 +660,7 @@ func (c *reticulumGitClient) latestRelease(target string) error {
 	}
 	fmt.Printf("Are you sure you want to set %s as the latest release? [y/N]: ", target)
 	var confirm string
-	fmt.Scanln(&confirm)
+	_, _ = fmt.Scanln(&confirm)
 	if strings.ToLower(strings.TrimSpace(confirm)) != "y" {
 		fmt.Println("Update cancelled")
 		return nil

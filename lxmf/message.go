@@ -1004,7 +1004,7 @@ func (m *Message) WriteToDirectory(dirPath string) (string, error) {
 		return "", fmt.Errorf("create tmp file %v: %w", tmpPath, err)
 	}
 	if _, werr := f.Write(container); werr != nil {
-		f.Close()
+		_ = f.Close()
 		removeTmpFile(tmpPath)
 		return "", fmt.Errorf("write lxmf message to %v: %w", tmpPath, werr)
 	}
@@ -1051,7 +1051,7 @@ func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
 		return fmt.Errorf("create tmp file %v: %w", tmpPath, err)
 	}
 	if _, werr := f.Write(data); werr != nil {
-		f.Close()
+		_ = f.Close()
 		removeTmpFile(tmpPath)
 		return fmt.Errorf("write state file %v: %w", tmpPath, werr)
 	}

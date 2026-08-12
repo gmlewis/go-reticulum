@@ -670,7 +670,7 @@ func TestWorkRoundTripHandler(t *testing.T) {
 	resp = n.handleWork(pathWork, mkData("comment", map[any]any{
 		"doc_id": docID, "scope": "active", "content": commentBody, "format": "markdown",
 	}), nil, nil, id, zeroTime)
-	code, m = unpackWorkResponse(t, resp.([]byte))
+	code, _ = unpackWorkResponse(t, resp.([]byte))
 	if code != resOK {
 		t.Fatalf("comment code=%x", code)
 	}

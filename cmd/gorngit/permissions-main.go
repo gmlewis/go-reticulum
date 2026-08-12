@@ -21,7 +21,7 @@ import (
 func runPerms(opts options, stdout, stderr io.Writer) int {
 	remote := strings.TrimRight(opts.remote, "/")
 	if remote == "" {
-		fmt.Fprintf(stderr, "No remote specified\n")
+		_, _ = fmt.Fprintf(stderr, "No remote specified\n")
 		return 1
 	}
 	components := len(strings.Split(remote, "/"))
@@ -35,7 +35,7 @@ func runPerms(opts options, stdout, stderr io.Writer) int {
 			return c.groupPermissions()
 		})
 	default:
-		fmt.Fprintf(stderr, "Invalid URL\n")
+		_, _ = fmt.Fprintf(stderr, "Invalid URL\n")
 		return 1
 	}
 }
@@ -48,7 +48,7 @@ func runPerms(opts options, stdout, stderr io.Writer) int {
 func runPermsConnected(opts options, remoteURL string, stderr io.Writer, groupClient bool, fn func(*reticulumGitClient) error) int {
 	configDir, err := loadClientConfigDir(opts.configDir)
 	if err != nil {
-		fmt.Fprintf(stderr, "%s\n", err)
+		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		return 1
 	}
 
@@ -58,7 +58,7 @@ func runPermsConnected(opts options, remoteURL string, stderr io.Writer, groupCl
 	ts := rns.NewTransportSystem(logger)
 	ret, err := rns.NewReticulumWithLogger(ts, opts.rnsConfigDir, logger)
 	if err != nil {
-		fmt.Fprintf(stderr, "Could not initialize Reticulum: %s\n", err)
+		_, _ = fmt.Fprintf(stderr, "Could not initialize Reticulum: %s\n", err)
 		return 1
 	}
 
@@ -69,13 +69,13 @@ func runPermsConnected(opts options, remoteURL string, stderr io.Writer, groupCl
 		client, err = newReticulumGitClient(ts, configDir, opts.identityPath, remoteURL, logger)
 	}
 	if err != nil {
-		fmt.Fprintf(stderr, "%s\n", err)
+		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		_ = ret.Close()
 		return 1
 	}
 
 	if err := client.connect(logger); err != nil {
-		fmt.Fprintf(stderr, "%s\n", err)
+		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		_ = ret.Close()
 		return 1
 	}
@@ -86,7 +86,7 @@ func runPermsConnected(opts options, remoteURL string, stderr io.Writer, groupCl
 	}()
 	defer client.teardown()
 	if err := fn(client); err != nil {
-		fmt.Fprintf(stderr, "%s\n", err)
+		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		return 1
 	}
 	return 0
