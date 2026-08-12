@@ -395,3 +395,148 @@ func TestParity_EncryptPythonDecryptGo(t *testing.T) {
 		t.Errorf("Go decrypted = %q, want %q", string(got), original)
 	}
 }
+
+// TestParity_SignMessageRoundTrip verifies that gornid -S creates an
+// embedded .rsm that both gornid and rnid validate, and vice versa.
+func TestParity_SignMessageRoundTrip(t *testing.T) {
+	t.Parallel()
+	testutils.SkipShortIntegration(t)
+	rnidBin := findRnid(t)
+	gornidBin := buildGornid(t)
+	tmpDir := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
+	idFile := filepath.Join(tmpDir, "test.id")
+
+	if out, err := exec.Command(gornidBin, "--config", tmpDir, "-g", idFile).CombinedOutput(); err != nil {
+		t.Fatalf("gornid -g failed: %v\n%v", err, string(out))
+	}
+
+	// gornid signs a message.
+	goOut := filepath.Join(tmpDir, "go_out")
+	if out, err := exec.Command(gornidBin, "--config", tmpDir, "-i", idFile, "-S", "hello world", "-w", goOut).CombinedOutput(); err != nil {
+		t.Fatalf("gornid -S failed: %v\n%v", err, string(out))
+	}
+	goRSM := goOut + ".rsm"
+	if _, err := os.Stat(goRSM); err != nil {
+		t.Fatalf("gornid did not create %v: %v", goRSM, err)
+	}
+
+	// gornid validates its own .rsm.
+	goValOut, err := exec.Command(gornidBin, "--config", tmpDir, "-i", idFile, "-V", goRSM).CombinedOutput()
+	if err != nil {
+		t.Fatalf("gornid -V (own rsm) failed: %v\n%v", err, string(goValOut))
+	}
+	if !strings.Contains(string(goValOut), "Signature is valid") {
+		t.Errorf("gornid validate own rsm missing 'Signature is valid': %v", string(goValOut))
+	}
+
+	// rnid signs a message with the same identity.
+	pyOut := filepath.Join(tmpDir, "py_out")
+	if out, err := exec.Command(rnidBin, "--config", tmpDir, "-i", idFile, "-S", "hello world", "-w", pyOut).CombinedOutput(); err != nil {
+		t.Fatalf("rnid -S failed: %v\n%v", err, string(out))
+	}
+	pyRSM := pyOut + ".rsm"
+	if _, err := os.Stat(pyRSM); err != nil {
+		t.Fatalf("rnid did not create %v: %v", pyRSM, err)
+	}
+
+	// rnid validates its own .rsm.
+	pyValOut, err := exec.Command(rnidBin, "--config", tmpDir, "-i", idFile, "-V", pyRSM).CombinedOutput()
+	if err != nil {
+		t.Fatalf("rnid -V (own rsm) failed: %v\n%v", err, string(pyValOut))
+	}
+	if !strings.Contains(string(pyValOut), "Signature is valid") {
+		t.Errorf("rnid validate own rsm missing 'Signature is valid': %v", string(pyValOut))
+	}
+
+	// Cross-validation: gornid validates rnid's .rsm.
+	goCrossOut, err := exec.Command(gornidBin, "--config", tmpDir, "-i", idFile, "-V", pyRSM).CombinedOutput()
+	if err != nil {
+		t.Fatalf("gornid -V (rnid rsm) failed: %v\n%v", err, string(goCrossOut))
+	}
+	if !strings.Contains(string(goCrossOut), "Signature is valid") {
+		t.Errorf("gornid cross-validate rnid rsm missing 'Signature is valid': %v", string(goCrossOut))
+	}
+
+	// Cross-validation: rnid validates gornid's .rsm.
+	pyCrossOut, err := exec.Command(rnidBin, "--config", tmpDir, "-i", idFile, "-V", goRSM).CombinedOutput()
+	if err != nil {
+		t.Fatalf("rnid -V (gornid rsm) failed: %v\n%v", err, string(pyCrossOut))
+	}
+	if !strings.Contains(string(pyCrossOut), "Signature is valid") {
+		t.Errorf("rnid cross-validate gornid rsm missing 'Signature is valid': %v", string(pyCrossOut))
+	}
+}
+
+// TestParity_MultiFileSign verifies that gornid -s f1 f2 (multi-value)
+// produces f1.rsg and f2.rsg that both validate, and the same for rnid.
+func TestParity_MultiFileSign(t *testing.T) {
+	t.Parallel()
+	testutils.SkipShortIntegration(t)
+	rnidBin := findRnid(t)
+	gornidBin := buildGornid(t)
+	tmpDir := testutils.TempDirWithConfig(t, "gornid-test-", minimalConfig)
+	idFile := filepath.Join(tmpDir, "test.id")
+
+	if out, err := exec.Command(gornidBin, "--config", tmpDir, "-g", idFile).CombinedOutput(); err != nil {
+		t.Fatalf("gornid -g failed: %v\n%v", err, string(out))
+	}
+
+	f1 := filepath.Join(tmpDir, "f1.txt")
+	f2 := filepath.Join(tmpDir, "f2.txt")
+	if err := os.WriteFile(f1, []byte("first file content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f2, []byte("second file content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// gornid multi-file sign.
+	if out, err := exec.Command(gornidBin, "--config", tmpDir, "-i", idFile, "-s", f1, f2).CombinedOutput(); err != nil {
+		t.Fatalf("gornid -s f1 f2 failed: %v\n%v", err, string(out))
+	}
+	for _, f := range []string{f1, f2} {
+		rsg := f + ".rsg"
+		if _, err := os.Stat(rsg); err != nil {
+			t.Fatalf("gornid did not create %v: %v", rsg, err)
+		}
+		valOut, err := exec.Command(gornidBin, "--config", tmpDir, "-i", idFile, "-V", rsg, "-r", f).CombinedOutput()
+		if err != nil {
+			t.Fatalf("gornid -V %v failed: %v\n%v", rsg, err, string(valOut))
+		}
+		if !strings.Contains(string(valOut), "is valid") {
+			t.Errorf("gornid validate %v missing 'is valid': %v", rsg, string(valOut))
+		}
+	}
+
+	// Remove gornid signatures so rnid can re-sign without overwrite errors.
+	_ = os.Remove(f1 + ".rsg")
+	_ = os.Remove(f2 + ".rsg")
+
+	// rnid multi-file sign.
+	if out, err := exec.Command(rnidBin, "--config", tmpDir, "-i", idFile, "-s", f1, f2).CombinedOutput(); err != nil {
+		t.Fatalf("rnid -s f1 f2 failed: %v\n%v", err, string(out))
+	}
+	for _, f := range []string{f1, f2} {
+		rsg := f + ".rsg"
+		if _, err := os.Stat(rsg); err != nil {
+			t.Fatalf("rnid did not create %v: %v", rsg, err)
+		}
+		valOut, err := exec.Command(rnidBin, "--config", tmpDir, "-i", idFile, "-V", rsg, "-r", f).CombinedOutput()
+		if err != nil {
+			t.Fatalf("rnid -V %v failed: %v\n%v", rsg, err, string(valOut))
+		}
+		if !strings.Contains(string(valOut), "is valid") {
+			t.Errorf("rnid validate %v missing 'is valid': %v", rsg, string(valOut))
+		}
+	}
+
+	// Cross-validation: gornid validates rnid-signed f1.rsg.
+	_ = os.Remove(f2 + ".rsg") // cleanup not needed but tidy
+	goCrossOut, err := exec.Command(gornidBin, "--config", tmpDir, "-i", idFile, "-V", f1+".rsg", "-r", f1).CombinedOutput()
+	if err != nil {
+		t.Fatalf("gornid cross-validate rnid f1.rsg failed: %v\n%v", err, string(goCrossOut))
+	}
+	if !strings.Contains(string(goCrossOut), "is valid") {
+		t.Errorf("gornid cross-validate rnid f1.rsg missing 'is valid': %v", string(goCrossOut))
+	}
+}

@@ -151,7 +151,13 @@ type Router struct {
 	propagationTransferLastDuplicates int
 	propagationTransferMaxMessages    int
 	propagationTransferProgress       float64
-	retainSyncedOnNode                bool
+	// propagationTransferSize holds the uncompressed response size of the
+	// ongoing propagation-node sync, populated from the request receipt's
+	// response_size by the message-get progress callback. A nil pointer
+	// mirrors Python's None (no size known yet). It mirrors Python's
+	// LXMRouter.propagation_transfer_size (LXMRouter.py:163, v1.1.0).
+	propagationTransferSize *int64
+	retainSyncedOnNode      bool
 
 	propagationCost            int
 	propagationCostFlexibility int
@@ -2366,7 +2372,7 @@ func (r *Router) CancelAllInbound() int {
 }
 
 // pluralSuffix returns "s" when n != 1 and "" otherwise, matching Python's
-// "{'s' if n != 1 else ''}" pluralisation used in resource-tracking logs.
+// "{'s' if n != 1 else ”}" pluralisation used in resource-tracking logs.
 func pluralSuffix(n int) string {
 	if n == 1 {
 		return ""
@@ -4901,6 +4907,21 @@ func (r *Router) PropagationTransferProgress() float64 {
 	return r.propagationTransferProgress
 }
 
+// PropagationTransferSize exposes the uncompressed response size, in bytes, of
+// an in-progress propagation-node sync, or nil when no size is known yet. It is
+// the Go port of Python's LXMRouter.propagation_transfer_size (None until the
+// message-get progress callback observes a non-zero response_size,
+// LXMRouter.py:163,1646-1649, v1.1.0).
+func (r *Router) PropagationTransferSize() *int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.propagationTransferSize == nil {
+		return nil
+	}
+	v := *r.propagationTransferSize
+	return &v
+}
+
 // RequestMessagesFromPropagationNode orchestrates the complex sequence of
 // establishing a link and downloading queued messages from the designated
 // outbound propagation node.
@@ -4911,6 +4932,7 @@ func (r *Router) RequestMessagesFromPropagationNode(limit *int) {
 func (r *Router) requestMessagesFromPropagationNodeWithIdentity(identity *rns.Identity, limit *int) {
 	r.mu.Lock()
 	r.propagationTransferProgress = 0.0
+	r.propagationTransferSize = nil
 	maxMessages := 0
 	if limit != nil {
 		maxMessages = *limit
@@ -5597,6 +5619,14 @@ func (r *Router) messageGetProgress(receipt *rns.RequestReceipt) {
 	r.mu.Lock()
 	r.propagationTransferState = PRReceiving
 	r.propagationTransferProgress = r.requestProgress(receipt)
+	// Mirror Python's `if request_receipt.response_size:
+	// self.propagation_transfer_size = request_receipt.response_size`
+	// (LXMRouter.py:1649, v1.1.0): only record a truthy (non-nil, non-zero)
+	// response size, so a None/0 leaves the prior value untouched.
+	if size := receipt.ResponseSize(); size != nil && *size != 0 {
+		v := *size
+		r.propagationTransferSize = &v
+	}
 	r.mu.Unlock()
 }
 
@@ -5622,6 +5652,7 @@ func (r *Router) acknowledgeSyncCompletion(resetState bool, failureState *int) {
 		}
 	}
 	r.propagationTransferProgress = 0.0
+	r.propagationTransferSize = nil
 	r.wantsDownloadOnPathAvailableFrom = nil
 	r.wantsDownloadOnPathAvailableTo = nil
 	r.wantsDownloadOnPathAvailableAt = time.Time{}

@@ -68,6 +68,7 @@ type activeConfig struct {
 	PeerAnnounceInterval               *int
 	DeliveryTransferMaxAcceptedSize    float64
 	OnInbound                          string
+	PeerStampCost                      *int
 	EnablePropagationNode              bool
 	NodeName                           string
 	AuthRequired                       bool
@@ -87,6 +88,9 @@ type activeConfig struct {
 	StaticPeers                        [][]byte
 	MaxPeers                           *int
 	FromStaticOnly                     bool
+	SequentialPNStampValidation        *bool
+	StaticPeersBypassSequential        bool
+	MaxInboundSyncs                    *int
 	LogLevel                           int
 	IgnoredLXMFDestinations            [][]byte
 	AllowedIdentities                  [][]byte
@@ -99,6 +103,7 @@ func (c *clientT) applyConfig(cfg map[string]map[string]string) (*activeConfig, 
 		PeerAnnounceInterval:               nil,
 		DeliveryTransferMaxAcceptedSize:    1000,
 		OnInbound:                          "",
+		PeerStampCost:                      intPtr(12),
 		EnablePropagationNode:              false,
 		NodeName:                           "",
 		AuthRequired:                       false,
@@ -118,6 +123,7 @@ func (c *clientT) applyConfig(cfg map[string]map[string]string) (*activeConfig, 
 		StaticPeers:                        [][]byte{},
 		MaxPeers:                           nil,
 		FromStaticOnly:                     false,
+		StaticPeersBypassSequential:        true,
 		LogLevel:                           -1,
 		IgnoredLXMFDestinations:            [][]byte{},
 		AllowedIdentities:                  [][]byte{},
@@ -143,6 +149,9 @@ func (c *clientT) applyConfig(cfg map[string]map[string]string) (*activeConfig, 
 		}
 		if val, ok := section["on_inbound"]; ok {
 			ac.OnInbound = val
+		}
+		if val, ok := section["stamp_cost"]; ok {
+			ac.PeerStampCost = intPtr(max(1, c.parseInt(val)))
 		}
 	}
 
@@ -230,6 +239,16 @@ func (c *clientT) applyConfig(cfg map[string]map[string]string) (*activeConfig, 
 		if val, ok := section["from_static_only"]; ok {
 			ac.FromStaticOnly = parseBool(val)
 		}
+		if val, ok := section["sequential_pn_stamp_validation"]; ok {
+			b := parseBool(val)
+			ac.SequentialPNStampValidation = &b
+		}
+		if val, ok := section["static_peers_bypass_sequential"]; ok {
+			ac.StaticPeersBypassSequential = parseBool(val)
+		}
+		if val, ok := section["max_inbound_syncs"]; ok {
+			ac.MaxInboundSyncs = intPtr(max(1, c.parseInt(val)))
+		}
 	}
 
 	// [logging]
@@ -245,6 +264,12 @@ func (c *clientT) applyConfig(cfg map[string]map[string]string) (*activeConfig, 
 func parseBool(s string) bool {
 	s = strings.ToLower(s)
 	return s == "yes" || s == "true" || s == "on" || s == "1"
+}
+
+// intPtr returns a pointer to v, used to build non-nil *int config defaults
+// and parsed values (e.g. PeerStampCost, which Python always sets).
+func intPtr(v int) *int {
+	return &v
 }
 
 func (c *clientT) parseInt(s string) int {

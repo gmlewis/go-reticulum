@@ -24,6 +24,35 @@ func (c *counter) Set(string) error {
 }
 func (c *counter) IsBoolFlag() bool { return true }
 
+// stringListFlag implements flag.Value for a multi-value flag that
+// accumulates repeated uses (e.g. -s a -s b) and, after Parse, also
+// collects leftover positional args (e.g. -s a b c), matching Python's
+// argparse nargs="*" behaviour for the sign/encrypt/decrypt/validate flags.
+type stringListFlag struct {
+	vals []string
+	set  bool
+}
+
+func (s *stringListFlag) String() string {
+	if s == nil {
+		return ""
+	}
+	out := ""
+	for i, v := range s.vals {
+		if i > 0 {
+			out += ","
+		}
+		out += v
+	}
+	return out
+}
+
+func (s *stringListFlag) Set(v string) error {
+	s.vals = append(s.vals, v)
+	s.set = true
+	return nil
+}
+
 func (a *appT) usage(w io.Writer) {
 	utils.WriteText(w, usageText)
 }
@@ -42,7 +71,47 @@ func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
 		}
 		return nil, err
 	}
+	app.absorbPositionals(fs)
 	return app, nil
+}
+
+// absorbPositionals appends leftover positional args (fs.Args()) to the
+// single multi-value list flag that was set, matching Python's nargs="*"
+// consumption of trailing positionals. At most one such list is expected
+// per invocation (validate_args enforces a single op). The first element
+// of each set list is mirrored into its scalar field so doFileOps keeps
+// working.
+func (a *appT) absorbPositionals(fs *flag.FlagSet) {
+	lists := []*stringListFlag{&a.signList, &a.encryptList, &a.decryptList, &a.validateList}
+	scalars := []*string{&a.signFile, &a.encryptFile, &a.decryptFile, &a.validateFile}
+
+	// Append leftover positionals to the single set list, if any.
+	rest := fs.Args()
+	if len(rest) > 0 {
+		var setIdx int = -1
+		for i, l := range lists {
+			if l.set {
+				if setIdx != -1 {
+					// Multiple list ops set: do not absorb positionals; the
+					// dispatcher rejects multi-op invocations anyway.
+					setIdx = -2
+					break
+				}
+				setIdx = i
+			}
+		}
+		if setIdx >= 0 {
+			lists[setIdx].vals = append(lists[setIdx].vals, rest...)
+		}
+	}
+
+	// Mirror the first element of each set list into its scalar field so
+	// existing doFileOps single-file dispatch keeps working.
+	for i, l := range lists {
+		if l.set && len(l.vals) > 0 {
+			*scalars[i] = l.vals[0]
+		}
+	}
 }
 
 func newApp() *appT { return &appT{timeout: 15.0} }
@@ -69,14 +138,20 @@ func (a *appT) initFlags(fs *flag.FlagSet) {
 	fs.StringVar(&a.announce, "announce", "", "announce a destination based on this Identity")
 	fs.StringVar(&a.hashAspects, "H", "", "show destination hashes for other aspects for this Identity")
 	fs.StringVar(&a.hashAspects, "hash", "", "show destination hashes for other aspects for this Identity")
-	fs.StringVar(&a.encryptFile, "e", "", "encrypt file")
-	fs.StringVar(&a.encryptFile, "encrypt", "", "encrypt file")
-	fs.StringVar(&a.decryptFile, "d", "", "decrypt file")
-	fs.StringVar(&a.decryptFile, "decrypt", "", "decrypt file")
-	fs.StringVar(&a.signFile, "s", "", "sign file")
-	fs.StringVar(&a.signFile, "sign", "", "sign file")
-	fs.StringVar(&a.validateFile, "V", "", "validate signature")
-	fs.StringVar(&a.validateFile, "validate", "", "validate signature")
+	fs.Var(&a.encryptList, "e", "encrypt file (repeatable, accepts multiple paths)")
+	fs.Var(&a.encryptList, "encrypt", "encrypt file (repeatable, accepts multiple paths)")
+	fs.Var(&a.decryptList, "d", "decrypt file (repeatable, accepts multiple paths)")
+	fs.Var(&a.decryptList, "decrypt", "decrypt file (repeatable, accepts multiple paths)")
+	fs.Var(&a.signList, "s", "sign file (repeatable, accepts multiple paths)")
+	fs.Var(&a.signList, "sign", "sign file (repeatable, accepts multiple paths)")
+	fs.Var(&a.validateList, "V", "validate signature (repeatable, accepts multiple paths)")
+	fs.Var(&a.validateList, "validate", "validate signature (repeatable, accepts multiple paths)")
+	fs.StringVar(&a.signMessage, "S", "", "create embedded signed message (RSM)")
+	fs.StringVar(&a.signMessage, "sign-message", "", "create embedded signed message (RSM)")
+	fs.StringVar(&a.embedMeta, "E", "", "embed metadata structure from file")
+	fs.StringVar(&a.embedMeta, "embed-meta", "", "embed metadata structure from file")
+	fs.StringVar(&a.metaSpec, "meta-spec", "", "validate metadata for embedding with spec from file")
+	fs.BoolVar(&a.meta, "meta", false, "Display RSM metadata if available")
 	fs.StringVar(&a.readFile, "r", "", "input file path")
 	fs.StringVar(&a.readFile, "read", "", "input file path")
 	fs.StringVar(&a.writeFile, "w", "", "output file path")
@@ -94,6 +169,12 @@ func (a *appT) initFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&a.useBase64, "base64", false, "Use base64-encoded input and output")
 	fs.BoolVar(&a.useBase32, "B", false, "Use base32-encoded input and output")
 	fs.BoolVar(&a.useBase32, "base32", false, "Use base32-encoded input and output")
+	fs.BoolVar(&a.useBase256, "U", false, "Use base256-encoded input and output")
+	fs.BoolVar(&a.useBase256, "base256", false, "Use base256-encoded input and output")
+	fs.BoolVar(&a.useHex, "F", false, "Use hex-encoded input and output")
+	fs.BoolVar(&a.useHex, "hex", false, "Use hex-encoded input and output")
+	fs.BoolVar(&a.noCache, "N", false, "never use cached or network-sourced information")
+	fs.BoolVar(&a.noCache, "no-cache", false, "never use cached or network-sourced information")
 	fs.BoolVar(&a.useStdin, "I", false, "read input from STDIN")
 	fs.BoolVar(&a.useStdin, "stdin", false, "read input from STDIN")
 	fs.BoolVar(&a.useStdout, "O", false, "write output to STDOUT")
@@ -105,7 +186,8 @@ func (a *appT) initFlags(fs *flag.FlagSet) {
 const usageText = `
 usage: gornid [-h] [--config path] [-i identity] [-g file] [-m identity_data] [-M identity_data]
               [-x] [-X] [-v] [-q] [-a aspects] [-H aspects] [-e file] [-d file] [-s path] [-V path]
-              [-r file] [-w file] [-f] [-R] [-t seconds] [-p] [-P] [-b] [-B] [--raw] [--version]
+              [-S text] [-E path] [--meta-spec path] [--meta] [-r file] [-w file] [-f] [-R] [-N]
+              [-t seconds] [-p] [-P] [-b] [-B] [-U] [-F] [--raw] [--version]
 
 Go Reticulum Identity & Encryption Utility
 
@@ -126,19 +208,27 @@ options:
   -a, --announce aspects
                         announce a destination based on this Identity
   -H, --hash aspects    show destination hashes for other aspects for this Identity
-  -e, --encrypt file    encrypt file
-  -d, --decrypt file    decrypt file
-  -s, --sign path       sign file
-  -V, --validate path   validate signature
+  -e, --encrypt file    encrypt file (repeatable, accepts multiple paths)
+  -d, --decrypt file    decrypt file (repeatable, accepts multiple paths)
+  -s, --sign path       sign file (repeatable, accepts multiple paths)
+  -V, --validate path   validate signature (repeatable, accepts multiple paths)
+  -S, --sign-message text
+                        create embedded signed message (RSM)
+  -E, --embed-meta path embed metadata structure from file
+  --meta-spec path      validate metadata for embedding with spec from file
+  --meta                Display RSM metadata if available
   -r, --read file       input file path
   -w, --write file      output file path
   -f, --force           write output even if it overwrites existing files
   -R, --request         request unknown Identities from the network
+  -N, --no-cache        never use cached or network-sourced information
   -t seconds            identity request timeout before giving up
   -p, --print-identity  print identity info and exit
   -P, --print-private   allow displaying private keys
   -b, --base64          Use base64-encoded input and output
   -B, --base32          Use base32-encoded input and output
+  -U, --base256         Use base256-encoded input and output
+  -F, --hex             Use hex-encoded input and output
   --raw                 sign raw input data instead of hashing first
   --version             show program's version number and exit
 `

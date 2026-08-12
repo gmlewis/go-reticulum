@@ -427,12 +427,9 @@ func (c *clientT) getStatus(remote string, configDirArg string, rnsConfigDir str
 
 			nn := ""
 			if p["name"] != nil {
-				nn = anyToString(p["name"])
-				nn = strings.TrimSpace(nn)
-				nn = strings.ReplaceAll(nn, "\n", "")
-				nn = strings.ReplaceAll(nn, "\r", "")
-				if len(nn) > 45 {
-					nn = nn[:45] + "..."
+				nn = sanitizeName(anyToString(p["name"]))
+				if len([]rune(nn)) > 45 {
+					nn = string([]rune(nn)[:45]) + "..."
 				}
 			}
 

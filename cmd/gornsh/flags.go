@@ -18,6 +18,7 @@ var errHelp = errors.New("help requested")
 
 type options struct {
 	configDir     string
+	rnshConfigDir string
 	identityPath  string
 	serviceName   string
 	printIdentity bool
@@ -97,7 +98,8 @@ func parseFlags(args []string, usageOutput io.Writer) (options, error) {
 	}
 
 	configShort := fs.String("c", "", "alternate Reticulum config directory")
-	configLong := fs.String("config", "", "alternate Reticulum config directory")
+	rnsConfigLong := fs.String("rnsconfig", "", "alternate Reticulum config directory")
+	rnshConfigLong := fs.String("config", "", "alternate rnsh config directory")
 	identityShort := fs.String("i", "", "specific identity file to use")
 	identityLong := fs.String("identity", "", "specific identity file to use")
 	serviceShort := fs.String("s", "", "service name for identity file when listening")
@@ -138,7 +140,8 @@ func parseFlags(args []string, usageOutput io.Writer) (options, error) {
 		return options{}, err
 	}
 
-	opts.configDir = firstNonEmpty(*configShort, *configLong)
+	opts.configDir = firstNonEmpty(*configShort, *rnsConfigLong)
+	opts.rnshConfigDir = *rnshConfigLong
 	opts.identityPath = firstNonEmpty(*identityShort, *identityLong)
 	opts.serviceName = firstNonEmpty(*serviceShort, *serviceLong)
 	opts.printIdentity = *printIdentityShort || *printIdentityLong
@@ -211,7 +214,8 @@ Usage:
 		gornsh --version
 
 Options:
-		-c DIR --config DIR          Alternate Reticulum config directory to use
+		-c DIR --rnsconfig DIR       Alternate Reticulum config directory to use
+		--config DIR                 Alternate rnsh config directory to use (default ~/.config/rnsh or ~/.rnsh)
 		-i FILE --identity FILE      Specific identity file to use
 		-s NAME --service NAME       Service name for identity file if not default
 		-p --print-identity          Print identity information and exit

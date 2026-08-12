@@ -494,6 +494,26 @@ func (p *Peer) AcceptanceRate() float64 {
 	return float64(p.outgoing) / float64(p.offered)
 }
 
+// MinAcceptedStampCost returns the minimum accepted proof-of-work stamp cost
+// for offers prepared for this peer: max(0, propagationStampCost -
+// propagationStampCostFlexibility). It is the Go port of Python's
+// `min_accepted_cost = max(0, self.propagation_stamp_cost-
+// self.propagation_stamp_cost_flexibility)` (LXMPeer.py:331, v1.1.0), computed
+// in the Peer.Sync offer-preparation branch (PeerStateLinkReady). The max(0,
+// ...) lower bound stops a flexibility exceeding the advertised cost from
+// yielding a negative minimum; the validation path applies the same bound on
+// the router side (router.go max(propagationCost-propagationCostFlexibility,
+// 0)). The ok result is false when the peer's stamp cost or flexibility is not
+// yet known (either pointer nil); Python's sync gate (stamp_costs_known)
+// guarantees both are set before offer preparation runs, so a false result
+// means the caller should postpone rather than prepare an offer.
+func (p *Peer) MinAcceptedStampCost() (cost int, ok bool) {
+	if p == nil || p.propagationStampCost == nil || p.propagationStampCostFlexibility == nil {
+		return 0, false
+	}
+	return max(*p.propagationStampCost-*p.propagationStampCostFlexibility, 0), true
+}
+
 func (p *Peer) addHandledMessage(transientID []byte) {
 	if p == nil || p.router == nil {
 		return

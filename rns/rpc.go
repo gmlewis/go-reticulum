@@ -511,6 +511,20 @@ func (r *Reticulum) getInterfaceStats() map[string]any {
 			announceQueue = queueGetter.announceQueueLength(iface)
 		}
 
+		// Fast-flap blocked-IP ifstats (Reticulum.py:1463-1467): the
+		// blocked_ips count and blocked_ip_list are only populated when the
+		// interface exposes them, mirroring Python's hasattr guard.
+		// BackboneInterface is the only concrete type that does.
+		var blockedIPs any
+		var blockedIPList any
+		if blocker, ok := iface.(interface {
+			BlockedIPCount() int
+			BlockedIPList() []string
+		}); ok {
+			blockedIPs = blocker.BlockedIPCount()
+			blockedIPList = blocker.BlockedIPList()
+		}
+
 		// Ingress/egress-control ifstats (Reticulum.py:1453-1466). The
 		// announce/PR-frequency and burst-state accessors are part of the
 		// Interface contract; the burst activation timestamps convert to the
@@ -548,6 +562,8 @@ func (r *Reticulum) getInterfaceStats() map[string]any {
 			"ifac_size":                   ifacSize,
 			"ifac_netname":                ifacNetname,
 			"autoconnect_source":          autoconnectSource,
+			"blocked_ips":                 blockedIPs,
+			"blocked_ip_list":             blockedIPList,
 		})
 	}
 
@@ -825,6 +841,12 @@ type InterfaceStat struct {
 	HeldAnnounces   *int
 	InAnnounceFreq  *float64
 	OutAnnounceFreq *float64
+
+	// BlockedIPs/BlockedIPList carry the fast-flap blocked-IP count and list
+	// for BackboneInterface (Reticulum.py:1463-1467). nil when the interface
+	// does not expose fast-flap blocking.
+	BlockedIPs    *int
+	BlockedIPList []string
 
 	// Phase 5 ingress/egress-control ifstats fields (Reticulum.py:1453-1466).
 	InPrFreq            *float64
@@ -1337,6 +1359,8 @@ func DecodeInterfaceStats(raw any) *InterfaceStatsSnapshot {
 			PrBurstActive:       asBool(lookupAnyValue(im, "pr_burst_active")),
 			PrBurstActivated:    asFloat64(lookupAnyValue(im, "pr_burst_activated")),
 			AnnouncesToInternal: lookupOptBool(im, "announces_to_internal"),
+			BlockedIPs:          lookupOptInt(im, "blocked_ips"),
+			BlockedIPList:       lookupOptStringSlice(im, "blocked_ip_list"),
 		}
 		out.Interfaces = append(out.Interfaces, entry)
 	}

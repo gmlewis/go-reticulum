@@ -59,15 +59,26 @@ type appT struct {
 	decryptFile   string
 	signFile      string
 	validateFile  string
+	signList      stringListFlag
+	encryptList   stringListFlag
+	decryptList   stringListFlag
+	validateList  stringListFlag
+	signMessage   string
+	embedMeta     string
+	metaSpec      string
+	meta          bool
 	readFile      string
 	writeFile     string
 	force         bool
 	requestID     bool
+	noCache       bool
 	timeout       float64
 	printIdentity bool
 	printPrivate  bool
 	useBase64     bool
 	useBase32     bool
+	useBase256    bool
+	useHex        bool
 	useStdin      bool
 	useStdout     bool
 	rawSign       bool
@@ -160,7 +171,7 @@ func (a *appT) run() int {
 		return a.doGenerate(a.generatePath, a.force)
 	}
 
-	id, exitCode := a.loadIdentity(ret.Transport(), a.identityPath, a.requestID, a.timeout)
+	id, exitCode := a.loadIdentity(ret.Transport(), a.identityPath, a.requestID, a.noCache, a.timeout)
 	if id == nil {
 		if exitCode != 0 {
 			return exitCode
@@ -183,6 +194,14 @@ func (a *appT) run() int {
 
 	if a.announce != "" {
 		return a.doAnnounce(ts, id, a.announce)
+	}
+
+	if a.signMessage != "" {
+		return a.doSignMessage(id, a.signMessage, a.readFile, a.writeFile, a.force, a.useStdout, a.embedMeta)
+	}
+
+	if a.signFile != "" && len(a.signList.vals) > 1 {
+		return a.doMultiFileSign(id, a.signList.vals, a.force, a.useStdout)
 	}
 
 	if a.encryptFile != "" || a.decryptFile != "" || a.signFile != "" || a.validateFile != "" {
@@ -212,12 +231,12 @@ func (rt *runtimeT) run() int {
 	return rt.app.run()
 }
 
-func (rt *runtimeT) loadIdentity(ts rns.Transport, path string, request bool, timeout float64) (*rns.Identity, int) {
+func (rt *runtimeT) loadIdentity(ts rns.Transport, path string, request, noCache bool, timeout float64) (*rns.Identity, int) {
 	if rt == nil || rt.app == nil {
 		return nil, 1
 	}
 	rt.app.logger = rt.logger
-	return rt.app.loadIdentity(ts, path, request, timeout)
+	return rt.app.loadIdentity(ts, path, request, noCache, timeout)
 }
 
 func (a *appT) doImport(importPub, importPrv string, b64, b32, prv bool, writePath string, force bool) int {
@@ -307,7 +326,7 @@ func (a *appT) doGenerate(path string, force bool) int {
 	return 0
 }
 
-func (a *appT) loadIdentity(ts rns.Transport, path string, request bool, timeout float64) (*rns.Identity, int) {
+func (a *appT) loadIdentity(ts rns.Transport, path string, request, noCache bool, timeout float64) (*rns.Identity, int) {
 	logger := a.logger
 	if path == "" {
 		return nil, 0
@@ -322,6 +341,12 @@ func (a *appT) loadIdentity(ts rns.Transport, path string, request bool, timeout
 		if err != nil {
 			logger.Error("Invalid hexadecimal hash provided")
 			return nil, 7
+		}
+
+		if noCache {
+			// -N/--no-cache: skip the local recall and any network request,
+			// matching Python's get_operating_identity no_cache branch.
+			return nil, 0
 		}
 
 		id := ts.Recall(hash)
@@ -534,13 +559,16 @@ func (a *appT) doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile
 			logger.Error("Signature file %v not found", valFile)
 			return 10
 		}
-		if readPath == "" {
-			logger.Error("Signature verification requested, but no input data specified")
-			return 11
-		}
-		if _, err := os.Stat(readPath); err != nil {
-			logger.Error("Input file %v not found", readPath)
-			return 11
+		// .rsm files embed the message; no separate input file is needed.
+		if !strings.HasSuffix(strings.ToLower(valFile), ".rsm") {
+			if readPath == "" {
+				logger.Error("Signature verification requested, but no input data specified")
+				return 11
+			}
+			if _, err := os.Stat(readPath); err != nil {
+				logger.Error("Input file %v not found", readPath)
+				return 11
+			}
 		}
 	}
 
@@ -662,7 +690,7 @@ func (a *appT) doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile
 	}
 
 	if valFile != "" {
-		if dataInput == nil {
+		if dataInput == nil && !strings.HasSuffix(strings.ToLower(valFile), ".rsm") {
 			if !stdout {
 				logger.Error("Signature verification requested, but no input data specified")
 			}
@@ -674,6 +702,38 @@ func (a *appT) doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile
 			logger.Error("The contained exception was: %v", err)
 			return 21
 		}
+
+		// .rsm files embed the message; extract it and validate against
+		// the embedded copy (matching Python's validate_message flow).
+		if strings.HasSuffix(strings.ToLower(valFile), ".rsm") {
+			extracted, xErr := extractSignedRSGData(sigData)
+			if xErr != nil {
+				if !stdout {
+					logger.Error("An error ocurred while validating signature.")
+					logger.Error("The contained exception was: %v", xErr)
+				}
+				return 22
+			}
+			embeddedMsg, ok := extracted["message"].([]byte)
+			if !ok {
+				if !stdout {
+					logger.Error("No embedded message in %v", valFile)
+				}
+				return 22
+			}
+			signingID, vErr := validateRSG(sigData, embeddedMsg, id.Hash)
+			if vErr != nil {
+				if !stdout {
+					logger.Error("Signature %v is invalid", valFile)
+				}
+				return 22
+			}
+			if !stdout {
+				logger.Notice("Signature is valid, the message was signed by %v", rns.PrettyHexFromString(signingID.HexHash))
+			}
+			return 0
+		}
+
 		inputData, err := os.ReadFile(readPath)
 		if err != nil {
 			if !stdout {
@@ -795,6 +855,117 @@ func (a *appT) doFileOps(id *rns.Identity, readPath, writePath, encFile, decFile
 			logger.Notice("File %v decrypted with %v to %v", readPath, idStr, writePath)
 		}
 		return 0
+	}
+	return 0
+}
+
+// msgExt is the file extension for embedded signed messages (RSMs).
+const msgExt = ".rsm"
+
+// doSignMessage creates an embedded signed message (RSM) from the
+// command-line message text (or from readFile if -r is given), signs it
+// with id, and writes the binary blob to writePath + ".rsm" (or stdout).
+// This matches Python's sign_message.
+func (a *appT) doSignMessage(id *rns.Identity, message, readPath, writePath string, force, stdout bool, embedMeta string) int {
+	logger := a.logger
+	if id.GetPrivateKey() == nil {
+		logger.Error("Cannot sign, the identity does not hold a private key")
+		return 14
+	}
+
+	msg := []byte(message)
+	if readPath != "" {
+		data, err := os.ReadFile(readPath)
+		if err != nil {
+			logger.Error("Could not read message file: %v", err)
+			return 12
+		}
+		msg = data
+	}
+
+	rsm, err := createRSGWithOptions(id, msg, rsgOptions{embed: true})
+	if err != nil {
+		logger.Error("Could not sign message: %v", err)
+		return 19
+	}
+
+	if stdout {
+		if _, err := os.Stdout.Write(rsm); err != nil {
+			logger.Error("Could not write output: %v", err)
+			return 19
+		}
+		return 0
+	}
+
+	if writePath == "" {
+		logger.Error("No write path specified")
+		return 11
+	}
+	outPath := writePath
+	if !strings.HasSuffix(strings.ToLower(outPath), msgExt) {
+		outPath += msgExt
+	}
+	if !force {
+		if _, err := os.Stat(outPath); err == nil {
+			logger.Error("The signature file %v already exists, not overwriting", outPath)
+			return 15
+		}
+	}
+	if err := os.WriteFile(outPath, rsm, 0o644); err != nil {
+		logger.Error("Could not write message: %v", err)
+		return 19
+	}
+	logger.Notice("Message signed with %v saved to %v", rns.PrettyHexFromString(id.HexHash), outPath)
+	return 0
+}
+
+// doMultiFileSign signs each file in paths with id, writing <path>.rsg for
+// each. This matches Python's recursive sign flow for nargs="*" input.
+func (a *appT) doMultiFileSign(id *rns.Identity, paths []string, force, stdout bool) int {
+	logger := a.logger
+	if id.GetPrivateKey() == nil {
+		logger.Error("Specified Identity does not hold a private key. Cannot sign.")
+		return 14
+	}
+	for _, p := range paths {
+		if _, err := os.Stat(p); err != nil {
+			logger.Error("The file %v does not exist", p)
+			return 12
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			logger.Error("An error ocurred while signing data: %v", err)
+			return 19
+		}
+		var sig []byte
+		if a.rawSign {
+			sig, err = id.Sign(data)
+		} else {
+			sig, err = createRSG(id, data)
+		}
+		if err != nil {
+			logger.Error("An error ocurred while signing data: %v", err)
+			return 19
+		}
+		if stdout {
+			if _, err := os.Stdout.Write(sig); err != nil {
+				logger.Error("Could not write output: %v", err)
+				return 19
+			}
+			continue
+		}
+		outPath := p + ".rsg"
+		if !force {
+			if _, err := os.Stat(outPath); err == nil {
+				logger.Error("The signature file %v already exists, not overwriting", outPath)
+				return 15
+			}
+		}
+		if err := os.WriteFile(outPath, sig, 0o644); err != nil {
+			logger.Error("An error ocurred while signing data: %v", err)
+			return 19
+		}
+		logger.Notice("Signed file %v with %v", p, rns.PrettyHexFromString(id.HexHash))
 	}
 	return 0
 }

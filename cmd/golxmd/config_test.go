@@ -294,3 +294,124 @@ key3 = value3
 		}
 	}
 }
+
+func TestApplyConfigStampCost(t *testing.T) {
+	c := &clientT{}
+	t.Run("defaults to 12", func(t *testing.T) {
+		cfg := make(map[string]map[string]string)
+		got, err := c.applyConfig(cfg)
+		mustTest(t, err)
+		if got.PeerStampCost == nil {
+			t.Fatalf("PeerStampCost: got nil, want non-nil (default 12)")
+		}
+		if *got.PeerStampCost != 12 {
+			t.Errorf("PeerStampCost: got %v, want 12", *got.PeerStampCost)
+		}
+	})
+	t.Run("explicit value", func(t *testing.T) {
+		cfg := map[string]map[string]string{"lxmf": {"stamp_cost": "5"}}
+		got, err := c.applyConfig(cfg)
+		mustTest(t, err)
+		if got.PeerStampCost == nil || *got.PeerStampCost != 5 {
+			t.Errorf("PeerStampCost: got %v, want 5", got.PeerStampCost)
+		}
+	})
+	t.Run("clamps to 1", func(t *testing.T) {
+		cfg := map[string]map[string]string{"lxmf": {"stamp_cost": "0"}}
+		got, err := c.applyConfig(cfg)
+		mustTest(t, err)
+		if got.PeerStampCost == nil || *got.PeerStampCost != 1 {
+			t.Errorf("PeerStampCost: got %v, want 1 (max(1,0))", got.PeerStampCost)
+		}
+	})
+}
+
+func TestApplyConfigSequentialPNStampValidation(t *testing.T) {
+	c := &clientT{}
+	t.Run("defaults to nil", func(t *testing.T) {
+		cfg := make(map[string]map[string]string)
+		got, err := c.applyConfig(cfg)
+		mustTest(t, err)
+		if got.SequentialPNStampValidation != nil {
+			t.Errorf("SequentialPNStampValidation: got %v, want nil", got.SequentialPNStampValidation)
+		}
+	})
+	t.Run("explicit no", func(t *testing.T) {
+		cfg := map[string]map[string]string{"propagation": {"sequential_pn_stamp_validation": "no"}}
+		got, err := c.applyConfig(cfg)
+		mustTest(t, err)
+		if got.SequentialPNStampValidation == nil {
+			t.Fatalf("SequentialPNStampValidation: got nil, want false")
+		}
+		if *got.SequentialPNStampValidation != false {
+			t.Errorf("SequentialPNStampValidation: got %v, want false", *got.SequentialPNStampValidation)
+		}
+	})
+	t.Run("explicit yes", func(t *testing.T) {
+		cfg := map[string]map[string]string{"propagation": {"sequential_pn_stamp_validation": "yes"}}
+		got, err := c.applyConfig(cfg)
+		mustTest(t, err)
+		if got.SequentialPNStampValidation == nil {
+			t.Fatalf("SequentialPNStampValidation: got nil, want true")
+		}
+		if *got.SequentialPNStampValidation != true {
+			t.Errorf("SequentialPNStampValidation: got %v, want true", *got.SequentialPNStampValidation)
+		}
+	})
+}
+
+func TestApplyConfigStaticPeersBypassSequential(t *testing.T) {
+	c := &clientT{}
+	t.Run("defaults to true", func(t *testing.T) {
+		cfg := make(map[string]map[string]string)
+		got, err := c.applyConfig(cfg)
+		mustTest(t, err)
+		if got.StaticPeersBypassSequential != true {
+			t.Errorf("StaticPeersBypassSequential: got %v, want true", got.StaticPeersBypassSequential)
+		}
+	})
+	t.Run("explicit no", func(t *testing.T) {
+		cfg := map[string]map[string]string{"propagation": {"static_peers_bypass_sequential": "no"}}
+		got, err := c.applyConfig(cfg)
+		mustTest(t, err)
+		if got.StaticPeersBypassSequential != false {
+			t.Errorf("StaticPeersBypassSequential: got %v, want false", got.StaticPeersBypassSequential)
+		}
+	})
+	t.Run("explicit yes", func(t *testing.T) {
+		cfg := map[string]map[string]string{"propagation": {"static_peers_bypass_sequential": "yes"}}
+		got, err := c.applyConfig(cfg)
+		mustTest(t, err)
+		if got.StaticPeersBypassSequential != true {
+			t.Errorf("StaticPeersBypassSequential: got %v, want true", got.StaticPeersBypassSequential)
+		}
+	})
+}
+
+func TestApplyConfigMaxInboundSyncs(t *testing.T) {
+	c := &clientT{}
+	t.Run("defaults to nil", func(t *testing.T) {
+		cfg := make(map[string]map[string]string)
+		got, err := c.applyConfig(cfg)
+		mustTest(t, err)
+		if got.MaxInboundSyncs != nil {
+			t.Errorf("MaxInboundSyncs: got %v, want nil", got.MaxInboundSyncs)
+		}
+	})
+	t.Run("explicit value", func(t *testing.T) {
+		cfg := map[string]map[string]string{"propagation": {"max_inbound_syncs": "7"}}
+		got, err := c.applyConfig(cfg)
+		mustTest(t, err)
+		if got.MaxInboundSyncs == nil || *got.MaxInboundSyncs != 7 {
+			t.Errorf("MaxInboundSyncs: got %v, want 7", got.MaxInboundSyncs)
+		}
+	})
+	t.Run("clamps to 1", func(t *testing.T) {
+		cfg := map[string]map[string]string{"propagation": {"max_inbound_syncs": "0"}}
+		got, err := c.applyConfig(cfg)
+		mustTest(t, err)
+		if got.MaxInboundSyncs == nil || *got.MaxInboundSyncs != 1 {
+			t.Errorf("MaxInboundSyncs: got %v, want 1 (max(1,0))", got.MaxInboundSyncs)
+		}
+	})
+}

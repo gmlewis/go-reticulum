@@ -18,11 +18,6 @@ const (
 	WeaveDefaultDataBits = 8
 	WeaveDefaultStopBits = 1
 	WeaveDefaultParity   = "N"
-
-	// WeaveDefaultIFACSize is Weave's own DEFAULT_IFAC_SIZE (16), overriding
-	// the wrapped serial interface's 8
-	// (RNS/Interfaces/WeaveInterface.py:820,881-884).
-	WeaveDefaultIFACSize = 16
 )
 
 // WeaveInterface implements a specialized, ultra-low latency serial abstraction for

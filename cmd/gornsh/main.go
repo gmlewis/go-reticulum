@@ -257,25 +257,68 @@ func (rt *runtimeT) printIdentity() error {
 }
 
 func resolveIdentityPath(opts options) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("could not determine home directory: %w", err)
+	}
+	return resolveIdentityPathCustom(opts, home)
+}
+
+// resolveIdentityPathCustom computes the identity file path for opts using the
+// supplied home directory (so it is unit-testable without touching the real
+// ~/.rnsh). It mirrors Python's prepare_identity (RNS/Utilities/rnsh/rnsh.py:
+// 59-62): the identity lives at <rnsh-config-dir>/identity for the initiator
+// and <rnsh-config-dir>/identity.<service> for the listener. An explicit
+// -i/--identity path always wins.
+func resolveIdentityPathCustom(opts options, home string) (string, error) {
 	if opts.identityPath != "" {
 		return opts.identityPath, nil
 	}
 
-	configDir := opts.configDir
-	if configDir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("could not determine home directory: %w", err)
-		}
-		configDir = filepath.Join(home, ".reticulum")
-	}
-
-	identityName := appName
+	rnshDir := resolveRnshConfigDir(opts.rnshConfigDir, home)
+	identityName := "identity"
 	if opts.listen && opts.serviceName != "" {
 		identityName = identityName + "." + opts.serviceName
 	}
 
-	return filepath.Join(configDir, "storage", "identities", identityName), nil
+	return filepath.Join(rnshDir, identityName), nil
+}
+
+// resolveRnshConfigDir mirrors Python's ensure_config_directory (RNS/Utilities/
+// rnsh/rnsh.py:89-108): an explicit --config dir wins; otherwise ~/.config/rnsh
+// is used when it exists, then ~/.rnsh when it exists, and finally ~/.rnsh is
+// the created fallback.
+func resolveRnshConfigDir(rnshConfigDir, home string) string {
+	if rnshConfigDir != "" {
+		return expandTilde(rnshConfigDir, home)
+	}
+	xdg := filepath.Join(home, ".config", "rnsh")
+	if isDir(xdg) {
+		return xdg
+	}
+	dotRnsh := filepath.Join(home, ".rnsh")
+	if isDir(dotRnsh) {
+		return dotRnsh
+	}
+	return dotRnsh
+}
+
+// expandTilde replaces a leading ~ (or ~/) with home, matching Python's
+// os.path.expanduser for the config-directory path.
+func expandTilde(path, home string) string {
+	if path == "~" {
+		return home
+	}
+	if len(path) > 1 && path[0] == '~' && (path[1] == '/' || path[1] == filepath.Separator) {
+		return filepath.Join(home, path[2:])
+	}
+	return path
+}
+
+// isDir reports whether path exists and is a directory.
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 func (rt *runtimeT) doListen() error {

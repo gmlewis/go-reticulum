@@ -56,6 +56,27 @@ type jsonInterfaceStat struct {
 	HeldAnnounces      *int     `json:"held_announces,omitempty"`
 	InAnnounceFreq     *float64 `json:"incoming_announce_frequency,omitempty"`
 	OutAnnounceFreq    *float64 `json:"outgoing_announce_frequency,omitempty"`
+	// Phase 5 / Phase 22 task 2 parity fields. Python's ifstats dict always
+	// emits these (RNS/Reticulum.py:1478-1489); the value fields (pr frequency,
+	// burst flags/activation) are emitted unconditionally so the `rnstatus -j`
+	// key set matches Python, while the pointer-nullable announce-rate and
+	// announces_to_internal use omitempty (Python emits them as null when the
+	// interface leaves them unset, but the Go stat already resolves them to
+	// their defaults earlier in the pipeline, so a nil here means "not
+	// applicable to this interface type" and is omitted, matching the Go
+	// InterfaceStat's nil-vs-default distinction).
+	InPrFreq            *float64 `json:"incoming_pr_frequency,omitempty"`
+	OutPrFreq           *float64 `json:"outgoing_pr_frequency,omitempty"`
+	AnnounceRateTarget  *int     `json:"announce_rate_target,omitempty"`
+	AnnounceRatePenalty *int     `json:"announce_rate_penalty,omitempty"`
+	AnnounceRateGrace   *int     `json:"announce_rate_grace,omitempty"`
+	BurstActive         bool     `json:"burst_active"`
+	BurstActivated      float64  `json:"burst_activated"`
+	PrBurstActive       bool     `json:"pr_burst_active"`
+	PrBurstActivated    float64  `json:"pr_burst_activated"`
+	AnnouncesToInternal *bool    `json:"announces_to_internal,omitempty"`
+	BlockedIPs          *int     `json:"blocked_ips,omitempty"`
+	BlockedIPList       []string `json:"blocked_ip_list,omitempty"`
 }
 
 // jsonStatsSnapshot is a JSON-serializable version of InterfaceStatsSnapshot.
@@ -87,45 +108,57 @@ func toJSONSnapshot(s *rns.InterfaceStatsSnapshot) jsonStatsSnapshot {
 	out.Interfaces = make([]jsonInterfaceStat, len(s.Interfaces))
 	for i, iface := range s.Interfaces {
 		out.Interfaces[i] = jsonInterfaceStat{
-			Name:               iface.Name,
-			Type:               iface.Type,
-			Status:             iface.Status,
-			Mode:               iface.Mode,
-			Gravity:            iface.Gravity,
-			Bitrate:            iface.Bitrate,
-			RXB:                iface.RXB,
-			TXB:                iface.TXB,
-			RXS:                iface.RXS,
-			TXS:                iface.TXS,
-			Clients:            iface.Clients,
-			IFACSignature:      bytesToHex(iface.IFACSignature),
-			IFACSize:           iface.IFACSize,
-			IFACNetname:        iface.IFACNetname,
-			AutoconnectSource:  iface.AutoconnectSource,
-			NoiseFloor:         iface.NoiseFloor,
-			Interference:       iface.Interference,
-			InterferenceLastTS: iface.InterferenceLastTS,
-			InterferenceLastDB: iface.InterferenceLastDB,
-			CPULoad:            iface.CPULoad,
-			CPUTemp:            iface.CPUTemp,
-			MemLoad:            iface.MemLoad,
-			BatteryPercent:     iface.BatteryPercent,
-			BatteryState:       iface.BatteryState,
-			AirtimeShort:       iface.AirtimeShort,
-			AirtimeLong:        iface.AirtimeLong,
-			ChannelLoadShort:   iface.ChannelLoadShrt,
-			ChannelLoadLong:    iface.ChannelLoadLong,
-			SwitchID:           iface.SwitchID,
-			EndpointID:         iface.EndpointID,
-			ViaSwitchID:        iface.ViaSwitchID,
-			Peers:              iface.Peers,
-			TunnelState:        iface.TunnelState,
-			I2PB32:             iface.I2PB32,
-			I2PConnectable:     iface.I2PConnectable,
-			AnnounceQueue:      iface.AnnounceQueue,
-			HeldAnnounces:      iface.HeldAnnounces,
-			InAnnounceFreq:     iface.InAnnounceFreq,
-			OutAnnounceFreq:    iface.OutAnnounceFreq,
+			Name:                iface.Name,
+			Type:                iface.Type,
+			Status:              iface.Status,
+			Mode:                iface.Mode,
+			Gravity:             iface.Gravity,
+			Bitrate:             iface.Bitrate,
+			RXB:                 iface.RXB,
+			TXB:                 iface.TXB,
+			RXS:                 iface.RXS,
+			TXS:                 iface.TXS,
+			Clients:             iface.Clients,
+			IFACSignature:       bytesToHex(iface.IFACSignature),
+			IFACSize:            iface.IFACSize,
+			IFACNetname:         iface.IFACNetname,
+			AutoconnectSource:   iface.AutoconnectSource,
+			NoiseFloor:          iface.NoiseFloor,
+			Interference:        iface.Interference,
+			InterferenceLastTS:  iface.InterferenceLastTS,
+			InterferenceLastDB:  iface.InterferenceLastDB,
+			CPULoad:             iface.CPULoad,
+			CPUTemp:             iface.CPUTemp,
+			MemLoad:             iface.MemLoad,
+			BatteryPercent:      iface.BatteryPercent,
+			BatteryState:        iface.BatteryState,
+			AirtimeShort:        iface.AirtimeShort,
+			AirtimeLong:         iface.AirtimeLong,
+			ChannelLoadShort:    iface.ChannelLoadShrt,
+			ChannelLoadLong:     iface.ChannelLoadLong,
+			SwitchID:            iface.SwitchID,
+			EndpointID:          iface.EndpointID,
+			ViaSwitchID:         iface.ViaSwitchID,
+			Peers:               iface.Peers,
+			TunnelState:         iface.TunnelState,
+			I2PB32:              iface.I2PB32,
+			I2PConnectable:      iface.I2PConnectable,
+			AnnounceQueue:       iface.AnnounceQueue,
+			HeldAnnounces:       iface.HeldAnnounces,
+			InAnnounceFreq:      iface.InAnnounceFreq,
+			OutAnnounceFreq:     iface.OutAnnounceFreq,
+			InPrFreq:            iface.InPrFreq,
+			OutPrFreq:           iface.OutPrFreq,
+			AnnounceRateTarget:  iface.AnnounceRateTarget,
+			AnnounceRatePenalty: iface.AnnounceRatePenalty,
+			AnnounceRateGrace:   iface.AnnounceRateGrace,
+			BurstActive:         iface.BurstActive,
+			BurstActivated:      iface.BurstActivated,
+			PrBurstActive:       iface.PrBurstActive,
+			PrBurstActivated:    iface.PrBurstActivated,
+			AnnouncesToInternal: iface.AnnouncesToInternal,
+			BlockedIPs:          iface.BlockedIPs,
+			BlockedIPList:       iface.BlockedIPList,
 		}
 	}
 	return out

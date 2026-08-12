@@ -207,6 +207,29 @@ func lookupOptBytes(m map[any]any, key string) []byte {
 	return asBytes(v)
 }
 
+// lookupOptStringSlice returns the string slice stored under key, accepting
+// either a []string (local path) or a []any of strings (RPC/msgpack path).
+// It returns nil when the key is absent or nil, mirroring Python's absent
+// blocked_ip_list for non-Backbone interfaces.
+func lookupOptStringSlice(m map[any]any, key string) []string {
+	v, ok := lookupAny(m, key)
+	if !ok || v == nil {
+		return nil
+	}
+	switch t := v.(type) {
+	case []string:
+		return t
+	case []any:
+		out := make([]string, 0, len(t))
+		for _, item := range t {
+			out = append(out, asString(item))
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
 func asUint64(v any) uint64 {
 	switch t := v.(type) {
 	case uint64:

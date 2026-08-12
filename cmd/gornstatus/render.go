@@ -218,6 +218,13 @@ func renderInterface(w io.Writer, ifstat rns.InterfaceStat, astats bool, pstats 
 		ms += " (a>i)"
 	}
 	cs := clientsString(name, ifstat.Clients)
+	// Fast-flap blocked-IP line (rnstatus.py:457-459): appended to the
+	// clients string when blocked_ips > 0. Only BackboneInterface populates
+	// blocked_ips, which renders as "Clients   : N", matching the Python
+	// branch that emits this line.
+	if ifstat.BlockedIPs != nil && *ifstat.BlockedIPs > 0 {
+		cs += "\n    Blocked   : " + strconv.Itoa(*ifstat.BlockedIPs) + " IPs"
+	}
 
 	_, _ = fmt.Fprintf(w, " %v\n", name)
 

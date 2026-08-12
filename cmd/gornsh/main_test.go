@@ -352,7 +352,7 @@ func TestDoListenHandlesSIGINT(t *testing.T) {
 		t.Fatalf("write config error: %v", err)
 	}
 
-	rt := newRuntime(options{configDir: configDir, listen: true, noAuth: true})
+	rt := newRuntime(options{configDir: configDir, rnshConfigDir: testutils.TempDir(t, "gornsh-rnsh-sigint-"), listen: true, noAuth: true})
 
 	oldStdout := os.Stdout
 	r, w, err := os.Pipe()
@@ -427,7 +427,7 @@ func TestPrintIdentityUsesPrettyHexDestination(t *testing.T) {
 		t.Fatalf("write config error: %v", err)
 	}
 
-	rt := newRuntime(options{configDir: configDir, listen: true})
+	rt := newRuntime(options{configDir: configDir, rnshConfigDir: testutils.TempDir(t, "gornsh-rnsh-pid-"), listen: true})
 
 	oldStdout := os.Stdout
 	r, w, err := os.Pipe()

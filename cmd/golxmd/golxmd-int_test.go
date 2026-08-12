@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gmlewis/go-reticulum/lxmf"
+	"github.com/gmlewis/go-reticulum/rns"
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
@@ -418,5 +420,126 @@ func TestGolxmd_Break_Timeout(t *testing.T) {
 	// Should have timeout message
 	if !strings.Contains(output, "timed out") {
 		t.Errorf("expected timeout message, got: %v", output)
+	}
+}
+
+// TestGolxmd_PropagationNodeHonorsNewConfigKeys verifies that a propagation
+// node configured with the four new v1.1.0 config keys (stamp_cost,
+// sequential_pn_stamp_validation, static_peers_bypass_sequential,
+// max_inbound_syncs) honors them: the config parses to the expected
+// activeConfig values, NewRouterFromConfig accepts the propagation settings
+// without error, the delivery identity's inbound stamp cost reflects the
+// configured stamp_cost, and the propagation destination registers
+// cleanly.
+func TestGolxmd_PropagationNodeHonorsNewConfigKeys(t *testing.T) {
+	skipShortIntegration(t)
+
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
+	configDir := filepath.Join(tmpDir, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("create config dir: %v", err)
+	}
+
+	configData := `[propagation]
+enable_node = yes
+node_name = Test Propagation Node
+sequential_pn_stamp_validation = no
+static_peers_bypass_sequential = no
+max_inbound_syncs = 5
+
+[lxmf]
+display_name = Test Peer
+stamp_cost = 8
+`
+	configPath := filepath.Join(configDir, "config")
+	if err := os.WriteFile(configPath, []byte(configData), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	logger := rns.NewLogger()
+	ts := rns.NewTransportSystem(logger)
+	c := &clientT{ts: ts, now: time.Now, logger: logger}
+
+	ac, err := c.loadConfig(configDir)
+	if err != nil {
+		t.Fatalf("loadConfig failed: %v", err)
+	}
+
+	// Verify the four new keys parsed to the expected activeConfig values.
+	if ac.PeerStampCost == nil || *ac.PeerStampCost != 8 {
+		t.Fatalf("PeerStampCost = %v, want 8", ac.PeerStampCost)
+	}
+	if ac.SequentialPNStampValidation == nil || *ac.SequentialPNStampValidation != false {
+		t.Fatalf("SequentialPNStampValidation = %v, want false", ac.SequentialPNStampValidation)
+	}
+	if ac.StaticPeersBypassSequential != false {
+		t.Fatalf("StaticPeersBypassSequential = %v, want false", ac.StaticPeersBypassSequential)
+	}
+	if ac.MaxInboundSyncs == nil || *ac.MaxInboundSyncs != 5 {
+		t.Fatalf("MaxInboundSyncs = %v, want 5", ac.MaxInboundSyncs)
+	}
+
+	identity, err := rns.NewIdentity(true, logger)
+	if err != nil {
+		t.Fatalf("create identity: %v", err)
+	}
+
+	storagePath := filepath.Join(configDir, "storage")
+	if err := os.MkdirAll(filepath.Join(storagePath, "messages"), 0o755); err != nil {
+		t.Fatalf("create storage: %v", err)
+	}
+
+	// Create the router with the configured propagation settings. This
+	// verifies the three new propagation keys are accepted by
+	// NewRouterFromConfig without error. The inversion of
+	// static_peers_bypass_sequential (False here) yields
+	// StaticSequential=true.
+	router, err := lxmf.NewRouterFromConfig(ts, lxmf.RouterConfig{
+		Identity:                   identity,
+		StoragePath:                storagePath,
+		Autopeer:                   ac.Autopeer,
+		PropagationLimit:           ac.PropagationTransferMaxAcceptedSize,
+		SyncLimit:                  ac.PropagationSyncMaxAcceptedSize,
+		DeliveryLimit:              ac.DeliveryTransferMaxAcceptedSize,
+		PropagationCost:            ac.PropagationStampCostTarget,
+		PropagationCostFlexibility: ac.PropagationStampCostFlexibility,
+		PeeringCost:                ac.PeeringCost,
+		MaxPeeringCost:             ac.RemotePeeringCostMax,
+		Name:                       ac.NodeName,
+		SequentialValidation:       ac.SequentialPNStampValidation,
+		StaticSequential:           !ac.StaticPeersBypassSequential,
+		MaxInboundSyncs:            ac.MaxInboundSyncs,
+	})
+	if err != nil {
+		t.Fatalf("NewRouterFromConfig failed: %v", err)
+	}
+	defer func() {
+		if err := router.Close(); err != nil {
+			t.Logf("router close: %v", err)
+		}
+	}()
+
+	// Register the delivery identity with the configured inbound stamp cost
+	// and verify it is reflected via InboundStampCost.
+	dest, err := router.RegisterDeliveryIdentity(identity, ac.DisplayName, ac.PeerStampCost)
+	if err != nil {
+		t.Fatalf("RegisterDeliveryIdentity failed: %v", err)
+	}
+
+	gotCost, ok := router.InboundStampCost(dest.Hash)
+	if !ok {
+		t.Fatalf("InboundStampCost: no stamp cost set for delivery destination %x", dest.Hash)
+	}
+	if gotCost != 8 {
+		t.Errorf("InboundStampCost = %v, want 8", gotCost)
+	}
+
+	// Enable propagation and register the propagation destination to verify
+	// the node starts cleanly with the new sequential/max_inbound_syncs
+	// settings applied.
+	router.SetMessageStorageLimit(ac.MessageStorageLimit)
+	router.EnablePropagation()
+	if _, err := router.RegisterPropagationDestination(); err != nil {
+		t.Fatalf("RegisterPropagationDestination failed: %v", err)
 	}
 }

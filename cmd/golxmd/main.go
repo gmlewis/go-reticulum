@@ -194,6 +194,9 @@ func (r *runtimeT) run() {
 		PeeringCost:                c.ac.PeeringCost,
 		MaxPeeringCost:             c.ac.RemotePeeringCostMax,
 		Name:                       c.ac.NodeName,
+		SequentialValidation:       c.ac.SequentialPNStampValidation,
+		StaticSequential:           !c.ac.StaticPeersBypassSequential,
+		MaxInboundSyncs:            c.ac.MaxInboundSyncs,
 	})
 	if err != nil {
 		log.Fatalf("create LXMF router: %v", err)
@@ -205,7 +208,7 @@ func (r *runtimeT) run() {
 		router.IgnoreDestination(h)
 	}
 
-	lxmfDestination, err := router.RegisterDeliveryIdentity(identity, c.ac.DisplayName, nil)
+	lxmfDestination, err := router.RegisterDeliveryIdentity(identity, c.ac.DisplayName, c.ac.PeerStampCost)
 	if err != nil {
 		log.Fatalf("register delivery destination: %v", err)
 	}

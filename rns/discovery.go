@@ -2645,18 +2645,33 @@ func (id *InterfaceDiscovery) autoconnect(info DiscoveredInterface) (err error) 
 		}
 	}
 	// Apply autoconnect mode/gravity/announce-rate defaults, mirroring
-	// Python's _add_autoconnect_interface block (RNS/Discovery.py:742-752).
-	// With no autoconnect_interface_mode / _gravity / _announces_to_internal
-	// config overrides (Go has none), the effective values are:
-	//   mode = AC_TRANSPORT_MODE (MODE_GATEWAY) when transport enabled else None
+	// Python's _add_autoconnect_interface block (RNS/Discovery.py:742-752). The
+	// effective values consult the [reticulum] autoconnect_interface_* overrides
+	// (RNS/Reticulum.py:619-640,1853-1863) before falling back to the built-ins:
+	//   mode = autoconnect_interface_mode() if set, else AC_TRANSPORT_MODE
+	//         (MODE_GATEWAY) when transport enabled, else None (mode unset)
 	//   ar_target/penalty/grace = _default_ar_*() when transport enabled else None
-	//   gravity = AC_GRAVITY (0) regardless of transport
-	//   announces_to_internal = True only if autoconnect_announces_to_internal()
+	//   gravity = autoconnect_interface_gravity() if set, else AC_GRAVITY (0)
+	//   announces_to_internal = True if autoconnect_announces_to_internal() else None
 	transportEnabled := id.owner != nil && id.owner.transport != nil && id.owner.transport.Enabled()
-	if transportEnabled {
+	// mode: override if set; else AC_TRANSPORT_MODE (MODE_GATEWAY) when
+	// transport enabled; else leave unset (Python None). modeSet tracks whether
+	// any mode was determined so a transport-disabled, no-override run does
+	// not overwrite the interface's default mode.
+	mode := interfaces.ModeGateway // AC_TRANSPORT_MODE
+	modeSet := false
+	if m := id.owner.AutoconnectInterfaceMode(); m != nil {
+		mode = *m
+		modeSet = true
+	} else if transportEnabled {
+		modeSet = true
+	}
+	if modeSet {
 		if setter, ok := iface.(interface{ SetMode(int) }); ok {
-			setter.SetMode(interfaces.ModeGateway)
+			setter.SetMode(mode)
 		}
+	}
+	if transportEnabled {
 		target := id.owner.defaultARTarget()
 		grace := id.owner.defaultARGrace()
 		penalty := id.owner.defaultARPenalty()
@@ -2670,8 +2685,23 @@ func (id *InterfaceDiscovery) autoconnect(info DiscoveredInterface) (err error) 
 			setter.SetAnnounceRatePenalty(&penalty)
 		}
 	}
+	// gravity: override if set, else AC_GRAVITY (0). Python's `or` falls back to
+	// AC_GRAVITY for both None and 0, so a nil override and a 0 override both
+	// yield 0 here.
+	gravity := 0 // AC_GRAVITY
+	if g := id.owner.AutoconnectInterfaceGravity(); g != nil {
+		gravity = *g
+	}
 	if setter, ok := iface.(interface{ SetGravity(int) }); ok {
-		setter.SetGravity(0)
+		setter.SetGravity(gravity)
+	}
+	// announces_to_internal: True if the override is truthy, else nil (Python
+	// `True if autoconnect_announces_to_internal() else None`).
+	if a := id.owner.AutoconnectAnnouncesToInternal(); a != nil && *a {
+		t := true
+		if setter, ok := iface.(interface{ SetAnnouncesToInternal(*bool) }); ok {
+			setter.SetAnnouncesToInternal(&t)
+		}
 	}
 
 	if id.registerAutoconnect != nil {

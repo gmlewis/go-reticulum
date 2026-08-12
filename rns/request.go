@@ -147,6 +147,18 @@ func (rr *RequestReceipt) ResponseTransferSize() *int64 {
 	return &v
 }
 
+// SetResponseSizeForTest records the uncompressed response size on the receipt
+// as if the inline response path had recorded it, so callers that read
+// ResponseSize (such as the LXMF message-get progress callback) can exercise
+// the populated path without a live link. It is a test seam; production code
+// uses recordResponseSize / recordResponseResourceSize instead.
+func (rr *RequestReceipt) SetResponseSizeForTest(size int64) {
+	rr.mu.Lock()
+	rr.responseSize = size
+	rr.responseSizeSet = true
+	rr.mu.Unlock()
+}
+
 // recordResponseSize records the response size and accumulates the transfer
 // size for the response-data (inline ContextResponse) path. It is the Go port
 // of Python handle_response's update_sizes block (Link.py:867-870):

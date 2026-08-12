@@ -100,6 +100,18 @@ type Reticulum struct {
 	blackholeUpdateInterval time.Duration
 	autoconnectDiscover     int
 	defaultGravity          int
+	// autoconnectInterfaceMode / autoconnectInterfaceGravity /
+	// autoconnectAnnouncesToInternal mirror Python's
+	// RNS.Reticulum.__autoconnect_interface_mode / __autoconnect_interface_gravity
+	// / __autoconnect_announces_to_internal (Reticulum.py:264-266,619-640,
+	// 1853-1862). They are nil (Python None) until the [reticulum] config sets
+	// them; the discovery autoconnect block consults them to override the
+	// built-in AC_TRANSPORT_MODE / AC_GRAVITY / None defaults
+	// (Discovery.py:742-745). A nil pointer means "unset, use the built-in
+	// default"; a non-nil pointer carries the configured override.
+	autoconnectInterfaceMode       *int
+	autoconnectInterfaceGravity    *int
+	autoconnectAnnouncesToInternal *bool
 	// defaultARTargetOverride/penaltyOverride/graceOverride mirror
 	// RNS.Reticulum.__default_ar_* (Reticulum.py:273-275,642-653,1145-1152).
 	// A nil pointer means "use the Interface DEFAULT_AR_* class constant"
@@ -162,6 +174,44 @@ func (r *Reticulum) DefaultGravity() int {
 		return 0
 	}
 	return r.defaultGravity
+}
+
+// AutoconnectInterfaceMode returns the configured [reticulum]
+// autoconnect_interface_mode override (Python
+// RNS.Reticulum.autoconnect_interface_mode, Reticulum.py:1853-1855), or nil
+// (Python None) when the key is absent or unrecognized. The discovery
+// autoconnect block uses it in place of the built-in AC_TRANSPORT_MODE when set
+// (Discovery.py:742-743).
+func (r *Reticulum) AutoconnectInterfaceMode() *int {
+	if r == nil {
+		return nil
+	}
+	return r.autoconnectInterfaceMode
+}
+
+// AutoconnectInterfaceGravity returns the configured [reticulum]
+// autoconnect_interface_gravity override (Python
+// RNS.Reticulum.autoconnect_interface_gravity, Reticulum.py:1857-1859), or nil
+// (Python None) when the key is absent. The discovery autoconnect block uses
+// it in place of the built-in AC_GRAVITY when set (Discovery.py:745).
+func (r *Reticulum) AutoconnectInterfaceGravity() *int {
+	if r == nil {
+		return nil
+	}
+	return r.autoconnectInterfaceGravity
+}
+
+// AutoconnectAnnouncesToInternal returns the configured [reticulum]
+// autoconnect_announces_to_internal override (Python
+// RNS.Reticulum.autoconnect_announces_to_internal, Reticulum.py:1861-1863), or
+// nil (Python None) when the key is absent or falsy. The discovery autoconnect
+// block sets the spawned interface's announces_to_internal to True only when
+// this is truthy (Discovery.py:744).
+func (r *Reticulum) AutoconnectAnnouncesToInternal() *bool {
+	if r == nil {
+		return nil
+	}
+	return r.autoconnectAnnouncesToInternal
 }
 
 // defaultARTarget / defaultARPenalty / defaultARGrace resolve the instance-wide
@@ -670,6 +720,28 @@ func (r *Reticulum) applyConfig() error {
 		if v, ok := reticulumSection.GetProperty("default_gravity"); ok {
 			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
 				r.defaultGravity = n
+			}
+		}
+		// autoconnect_interface_mode / _gravity / _announces_to_internal
+		// (RNS/Reticulum.py:619-640, v1.3.2). The mode string uses Python's
+		// full interface-mode table; an unrecognized string leaves the
+		// override nil (Python sets v=None on no match, so the static accessor
+		// stays None). gravity is any int. announces_to_internal is stored
+		// only when truthy (Python "if v > 0"), so a falsy value leaves it nil.
+		if v, ok := reticulumSection.GetProperty("autoconnect_interface_mode"); ok {
+			if mode, ok := parseInterfaceModeValue(v); ok {
+				r.autoconnectInterfaceMode = &mode
+			}
+		}
+		if v, ok := reticulumSection.GetProperty("autoconnect_interface_gravity"); ok {
+			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+				r.autoconnectInterfaceGravity = &n
+			}
+		}
+		if v, ok := reticulumSection.GetProperty("autoconnect_announces_to_internal"); ok {
+			if parseBoolLike(v) {
+				b := true
+				r.autoconnectAnnouncesToInternal = &b
 			}
 		}
 		// Announce-rate-control instance-wide defaults (Reticulum.py:642-653).
@@ -1358,6 +1430,10 @@ func (r *Reticulum) initInterfaces() error {
 				r.logger.Error("Failed to initialize Backbone interface %v: %v", sub.Name, err)
 				continue
 			}
+			flapBlock, flapThreshold, flapGrace, flapExpiry := parseBackboneFastFlapConfig(sub)
+			if bb, ok := iface.(*interfaces.BackboneInterface); ok {
+				bb.ConfigureFastFlapping(flapBlock, flapThreshold, flapGrace, flapExpiry)
+			}
 			applyInterfaceConfig(iface, selectedMode, ifacConfig, discoveryConfig, contractCfg, bootstrapOnly, r.panicOnIfaceError)
 			r.transport.RegisterInterface(iface)
 			if bootstrapOnly {
@@ -1368,6 +1444,10 @@ func (r *Reticulum) initInterfaces() error {
 				ifacConfigCopy := ifacConfig
 				discoveryConfigCopy := discoveryConfig
 				contractCfgCopy := contractCfg
+				flapBlockCopy := flapBlock
+				flapThresholdCopy := flapThreshold
+				flapGraceCopy := flapGrace
+				flapExpiryCopy := flapExpiry
 				r.registerBootstrapRestarter(func() error {
 					handler := func(data []byte, iface interfaces.Interface) {
 						r.transport.Inbound(data, iface)
@@ -1379,6 +1459,9 @@ func (r *Reticulum) initInterfaces() error {
 					iface, err := interfaces.NewBackboneInterface(name, listenIPCopy, listenPortCopy, handler, onConnect)
 					if err != nil {
 						return err
+					}
+					if bb, ok := iface.(*interfaces.BackboneInterface); ok {
+						bb.ConfigureFastFlapping(flapBlockCopy, flapThresholdCopy, flapGraceCopy, flapExpiryCopy)
 					}
 					applyInterfaceConfig(iface, selectedModeCopy, ifacConfigCopy, discoveryConfigCopy, contractCfgCopy, true, r.panicOnIfaceError)
 					r.transport.RegisterInterface(iface)

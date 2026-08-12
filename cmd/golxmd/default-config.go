@@ -135,6 +135,33 @@ autopeer_maxdepth = 6
 
 # from_static_only = True
 
+# By default, stamp validation jobs for PN
+# sync batches will run sequentially. If
+# a peer offers messages while another batch
+# is already processing, it will receive a
+# throttle response to indicate that it can
+# retry later. If you have a fast system, you
+# can disable this to accept and validate
+# everything as soon as it is offered.
+
+# sequential_pn_stamp_validation = yes
+
+# You can configure whether static peers are
+# allowed have their PN syncs processed as
+# soon as they are offered, regardless of
+# whether another batch is already validating.
+
+# static_peers_bypass_sequential = yes
+
+# You can configure how many concurrent inbound
+# propagation sync transfers will be accepted.
+# Once this number is reached, nodes offering
+# messages will receive a throttle response to
+# indicate that they can retry later. On a slow
+# system, it's a good idea to change this to 1.
+
+# max_inbound_syncs = 3
+
 # By default, any destination is allowed to
 # connect and download messages, but you can
 # optionally restrict this. If you enable
@@ -163,6 +190,11 @@ announce_at_start = no
 # default.
 
 # announce_interval = 360
+
+# You can configure the required stamp cost for
+# incoming messages.
+
+# stamp_cost = 12
 
 # The maximum accepted unpacked size for
 # messages received directly from other peers,

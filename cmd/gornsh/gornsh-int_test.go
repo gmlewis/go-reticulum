@@ -163,8 +163,16 @@ func TestIntegrationListenPrintIdentityOutputFormatParity(t *testing.T) {
 	// Run the original (acehoss) rnsh through the wrapper so it shares gornsh's
 	// CLI semantics and identity storage path (see runRnshViaWrapper). The
 	// wrapper's exit code is ignored: rnsh's print-identity path raises SystemExit.
+	// The wrapper runs v0.1.7 acehoss rnsh, where --config selects the RNS
+	// config directory and the identity lives at <configdir>/storage/identities/
+	// rnsh.<service>. gornsh follows v1.4.2 semantics: --rnsconfig selects the
+	// RNS config directory and --config selects the rnsh config directory (with
+	// the identity at <rnshconfigdir>/identity.<service>). This test only checks
+	// output FORMAT, not hash equality, so the two sides may use different
+	// identity storage paths. gornsh's rnsh config is pointed at the same temp
+	// configDir so no identity is written under the real ~/.rnsh.
 	pythonOut := runRnshViaWrapper(t, "--config", configDir, "-l", "-p")
-	goOut, err := exec.Command(gornshBin, "--config", configDir, "-l", "-p").CombinedOutput()
+	goOut, err := exec.Command(gornshBin, "--rnsconfig", configDir, "--config", configDir, "-l", "-p").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornsh -l -p failed: %v\n%v", err, string(goOut))
 	}
@@ -195,11 +203,19 @@ func TestIntegrationPrintIdentityOutputFormatParity(t *testing.T) {
 	configDir := testutils.TempDir(t, tempDirPrefix)
 	prepareGornshConfig(t, configDir)
 
-	// Run the original (acehoss) rnsh through the wrapper so it shares gornsh's
-	// CLI semantics and identity storage path (see runRnshViaWrapper). The
-	// wrapper's exit code is ignored: rnsh's print-identity path raises SystemExit.
-	pythonOut := runRnshViaWrapper(t, "--config", configDir, "-p")
-	goOut, err := exec.Command(gornshBin, "--config", configDir, "-p").CombinedOutput()
+	// Both sides must load the SAME identity so the printed hashes are
+	// comparable. The wrapper runs v0.1.7 acehoss rnsh (--config = RNS config,
+	// identity at <configdir>/storage/identities/rnsh); gornsh follows v1.4.2
+	// (--rnsconfig = RNS config, --config = rnsh config). Rather than rely on
+	// coincident default storage paths, pre-create one identity and pass it
+	// explicitly with -i to both. The wrapper runs first and would create it,
+	// but pre-creating makes the test order-independent. The wrapper's exit
+	// code is ignored: rnsh's print-identity path raises SystemExit.
+	sharedIDPath := filepath.Join(configDir, "shared.id")
+	mustCreateIdentity(t, configDir, "shared.id")
+
+	pythonOut := runRnshViaWrapper(t, "--config", configDir, "-i", sharedIDPath, "-p")
+	goOut, err := exec.Command(gornshBin, "--rnsconfig", configDir, "-i", sharedIDPath, "-p").CombinedOutput()
 	if err != nil {
 		t.Fatalf("gornsh -p failed: %v\n%v", err, string(goOut))
 	}
@@ -969,7 +985,11 @@ func mustCreateIdentity(t *testing.T, configDir string, filename string) *rns.Id
 func startGornshListenerWithArgs(t *testing.T, configDir string, extraArgs ...string) *gornshListenerProcess {
 	t.Helper()
 
-	args := append([]string{"--config", configDir, "-l", "-v"}, extraArgs...)
+	// gornsh v1.4.2 semantics: --rnsconfig selects the RNS config directory and
+	// --config selects the rnsh config directory (identity storage). Pointing
+	// both at the same temp configDir keeps the identity inside the temp dir and
+	// avoids writing under the real ~/.rnsh.
+	args := append([]string{"--rnsconfig", configDir, "--config", configDir, "-l", "-v"}, extraArgs...)
 	cmd := exec.Command(getGornshBinaryPath(t), args...)
 	cmd.Stdin = strings.NewReader("")
 	cmd.Env = gornshIntegrationEnv(t, "")
@@ -1188,11 +1208,15 @@ func runGornshCommand(t *testing.T, configDir string, timeout time.Duration, arg
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, getGornshBinaryPath(t), append([]string{"--config", configDir}, args...)...)
+	// gornsh v1.4.2 semantics: --rnsconfig = RNS config, --config = rnsh config
+	// (identity storage). Both point at the temp configDir so no identity leaks
+	// under the real ~/.rnsh.
+	fullArgs := append([]string{"--rnsconfig", configDir, "--config", configDir}, args...)
+	cmd := exec.CommandContext(ctx, getGornshBinaryPath(t), fullArgs...)
 	cmd.Stdin = strings.NewReader("")
 	cmd.Env = gornshIntegrationEnv(t, "")
 
-	t.Logf("Running gornsh command: %v", append([]string{"--config", configDir}, args...))
+	t.Logf("Running gornsh command: %v", fullArgs)
 	out, err := cmd.CombinedOutput()
 	t.Logf("Command finished. Output: %q, Error: %v", string(out), err)
 	if err == nil {
@@ -1308,18 +1332,19 @@ func getRnshBinaryPath(t *testing.T) string {
 	return path
 }
 
-// runRnshViaWrapper executes the original (acehoss) rnsh via the
+// runRnshViaWrapper executes the original (acehoss) rnsh v0.1.7 via the
 // pythonListenerWrapper, using the same PYTHONPATH-based import path as the
-// listener tests. This is necessary because the `rnsh` binary shipped with
-// recent RNS releases (>=1.4) diverged its CLI: `--config` now selects rnsh's
-// own config directory (with the identity stored at <configdir>/identity) and a
-// separate `--rnsconfig` selects the Reticulum config directory. gornsh, like the
-// original rnsh, treats `--config` as the Reticulum config directory and stores
-// the identity at <configdir>/storage/identities/<app>. Running the original rnsh
-// through the wrapper keeps both implementations on the same CLI semantics and
-// the same identity storage path, so the printed identity hashes are comparable.
-// The wrapper's exit code is ignored: rnsh's print-identity path raises
-// SystemExit, which the wrapper does not treat as an error.
+// listener tests. v0.1.7 rnsh treats --config/-c as the Reticulum config
+// directory and stores its identity at <configdir>/storage/identities/rnsh.
+// gornsh instead follows the newer v1.4.2 rnsh CLI: --rnsconfig selects the
+// Reticulum config directory and --config selects the rnsh config directory
+// (identity at <rnshconfigdir>/identity[.<service>]). The parity tests
+// therefore point gornsh's --rnsconfig at the same RNS configDir the wrapper
+// receives via --config, and either rely on output-format comparison only
+// (listener test) or pass an explicit -i to both sides so the same identity
+// file is loaded (print-identity hash test). The wrapper's exit code is
+// ignored: rnsh's print-identity path raises SystemExit, which the wrapper
+// does not treat as an error.
 func runRnshViaWrapper(t *testing.T, args ...string) string {
 	t.Helper()
 	wrapperDir := t.TempDir()

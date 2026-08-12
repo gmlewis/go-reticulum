@@ -1757,6 +1757,161 @@ interface_mode = gateway
 	}
 }
 
+// TestReticulumAutoconnectInterfaceSettings covers Phase 22 task 1: the three
+// [reticulum] autoconnect_interface_* config keys are parsed and exposed via
+// accessors, mirroring Python RNS.Reticulum.__autoconnect_interface_mode /
+// __autoconnect_interface_gravity / __autoconnect_announces_to_internal and
+// their static accessors (Reticulum.py:264-266,619-640,1853-1862). The mode
+// string uses Python's full interface-mode table ("gw" -> MODE_GATEWAY);
+// gravity is an int; announces_to_internal is a bool that is only stored when
+// truthy. Golden captured from RNS 1.4.2.
+func TestReticulumAutoconnectInterfaceSettings(t *testing.T) {
+	t.Parallel()
+
+	configDir := testutils.TempDir(t, tempDirPrefix)
+	port := reserveTCPPort(t)
+	config := `[reticulum]
+share_instance = No
+autoconnect_interface_mode = gw
+autoconnect_interface_gravity = 5
+autoconnect_announces_to_internal = yes
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[Autoconnect TCP]]
+type = TCPServerInterface
+interface_enabled = Yes
+listen_ip = 127.0.0.1
+listen_port = ` + strconv.Itoa(port) + `
+interface_mode = gateway
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	if got := r.AutoconnectInterfaceMode(); got == nil || *got != interfaces.ModeGateway {
+		t.Fatalf("AutoconnectInterfaceMode() = %v, want &ModeGateway", got)
+	}
+	if got := r.AutoconnectInterfaceGravity(); got == nil || *got != 5 {
+		t.Fatalf("AutoconnectInterfaceGravity() = %v, want &5", got)
+	}
+	if got := r.AutoconnectAnnouncesToInternal(); got == nil || !*got {
+		t.Fatalf("AutoconnectAnnouncesToInternal() = %v, want &true", got)
+	}
+}
+
+// TestReticulumAutoconnectInterfaceSettingsUnset covers Phase 22 task 1: when
+// the [reticulum] autoconnect_interface_* keys are absent, the accessors
+// return nil (Python None), so the discovery autoconnect block falls back to
+// its built-in defaults (AC_TRANSPORT_MODE / AC_GRAVITY / None). This pins the
+// Python __autoconnect_* = None defaults (Reticulum.py:264-266).
+func TestReticulumAutoconnectInterfaceSettingsUnset(t *testing.T) {
+	t.Parallel()
+
+	configDir := testutils.TempDir(t, tempDirPrefix)
+	port := reserveTCPPort(t)
+	config := `[reticulum]
+share_instance = No
+
+[logging]
+loglevel = 4
+
+[interfaces]
+[[Unset Autoconnect TCP]]
+type = TCPServerInterface
+interface_enabled = Yes
+listen_ip = 127.0.0.1
+listen_port = ` + strconv.Itoa(port) + `
+interface_mode = gateway
+`
+
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+		t.Fatalf("WriteFile(config) error = %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	r := mustTestNewReticulum(t, ts, configDir)
+	defer closeReticulum(t, r)
+
+	if got := r.AutoconnectInterfaceMode(); got != nil {
+		t.Errorf("AutoconnectInterfaceMode() = %v, want nil (unset)", got)
+	}
+	if got := r.AutoconnectInterfaceGravity(); got != nil {
+		t.Errorf("AutoconnectInterfaceGravity() = %v, want nil (unset)", got)
+	}
+	if got := r.AutoconnectAnnouncesToInternal(); got != nil {
+		t.Errorf("AutoconnectAnnouncesToInternal() = %v, want nil (unset)", got)
+	}
+}
+
+// TestReticulumAutoconnectInterfaceModeTable covers Phase 22 task 1: the
+// autoconnect_interface_mode string maps through the full Python interface-mode
+// table (Reticulum.py:619-632), and an unrecognized mode string leaves the
+// accessor nil (Python sets v=None on no match, so __autoconnect_interface_mode
+// stays None). Golden captured from RNS 1.4.2.
+func TestReticulumAutoconnectInterfaceModeTable(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		mode string
+		want int
+	}{
+		{"full", interfaces.ModeFull},
+		{"access_point", interfaces.ModeAccessPoint},
+		{"accesspoint", interfaces.ModeAccessPoint},
+		{"ap", interfaces.ModeAccessPoint},
+		{"pointtopoint", interfaces.ModePointToPoint},
+		{"ptp", interfaces.ModePointToPoint},
+		{"roaming", interfaces.ModeRoaming},
+		{"boundary", interfaces.ModeBoundary},
+		{"gateway", interfaces.ModeGateway},
+		{"gw", interfaces.ModeGateway},
+		{"internal", interfaces.ModeInternal},
+	}
+	for _, tc := range cases {
+		t.Run(tc.mode, func(t *testing.T) {
+			t.Parallel()
+			configDir := testutils.TempDir(t, tempDirPrefix)
+			port := reserveTCPPort(t)
+			config := "[reticulum]\nshare_instance = No\nautoconnect_interface_mode = " + tc.mode + "\n\n[logging]\nloglevel = 4\n\n[interfaces]\n[[I]]\ntype = TCPServerInterface\ninterface_enabled = Yes\nlisten_ip = 127.0.0.1\nlisten_port = " + strconv.Itoa(port) + "\ninterface_mode = gateway\n"
+			if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
+			ts := NewTransportSystem(nil)
+			r := mustTestNewReticulum(t, ts, configDir)
+			defer closeReticulum(t, r)
+			got := r.AutoconnectInterfaceMode()
+			if got == nil || *got != tc.want {
+				t.Fatalf("AutoconnectInterfaceMode(%q) = %v, want &%d", tc.mode, got, tc.want)
+			}
+		})
+	}
+
+	// An unrecognized mode leaves the accessor nil (Python v stays None).
+	t.Run("unrecognized", func(t *testing.T) {
+		t.Parallel()
+		configDir := testutils.TempDir(t, tempDirPrefix)
+		port := reserveTCPPort(t)
+		config := "[reticulum]\nshare_instance = No\nautoconnect_interface_mode = bogus_mode\n\n[logging]\nloglevel = 4\n\n[interfaces]\n[[I]]\ntype = TCPServerInterface\ninterface_enabled = Yes\nlisten_ip = 127.0.0.1\nlisten_port = " + strconv.Itoa(port) + "\ninterface_mode = gateway\n"
+		if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o600); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+		ts := NewTransportSystem(nil)
+		r := mustTestNewReticulum(t, ts, configDir)
+		defer closeReticulum(t, r)
+		if got := r.AutoconnectInterfaceMode(); got != nil {
+			t.Fatalf("AutoconnectInterfaceMode(bogus) = %v, want nil", got)
+		}
+	})
+}
+
 // TestReticulumAnnounceRateDefaults verifies the announce-rate-control config
 // flow (RNS/Reticulum.py:642-653,819-857,938-940,1145-1152; Interface.py:90-92):
 // the [reticulum] default_ar_target/penalty/grace keys are parsed, and when
@@ -2243,5 +2398,48 @@ func TestParseIFACConfigDisabledByDefault(t *testing.T) {
 	cfg := parseIFACConfig(sub)
 	if cfg.Enabled {
 		t.Fatalf("expected empty IFAC config to be disabled")
+	}
+}
+
+// TestParseBackboneFastFlapConfigDefaults covers Phase 18 task 1: an empty
+// config section yields Python's BLOCK_FAST_FLAPPING defaults
+// (BackboneInterface.py:57-60,126-129, v1.3.9): block true, threshold 20s,
+// grace 5, expiry 12*60*60s.
+func TestParseBackboneFastFlapConfigDefaults(t *testing.T) {
+	t.Parallel()
+	block, threshold, grace, expiry := parseBackboneFastFlapConfig(&ConfigSection{Properties: map[string]string{}})
+	if !block || threshold != 20.0 || grace != 5 || expiry != 12*60*60.0 {
+		t.Fatalf("defaults=(%v,%v,%v,%v) want (true,20,5,43200)", block, threshold, grace, expiry)
+	}
+	// nil section also yields defaults.
+	block, threshold, grace, expiry = parseBackboneFastFlapConfig(nil)
+	if !block || threshold != 20.0 || grace != 5 || expiry != 12*60*60.0 {
+		t.Fatalf("nil-section defaults=(%v,%v,%v,%v) want (true,20,5,43200)", block, threshold, grace, expiry)
+	}
+}
+
+// TestParseBackboneFastFlapConfigOverrides covers Phase 18 task 1: the four
+// config keys override the defaults, with fast_flapping_block_time taken in
+// minutes and converted to seconds (BackboneInterface.py:126-129, v1.3.9).
+func TestParseBackboneFastFlapConfigOverrides(t *testing.T) {
+	t.Parallel()
+	sub := &ConfigSection{Properties: map[string]string{
+		"block_fast_flapping":      "false",
+		"fast_flapping_threshold":  "45.5",
+		"fast_flapping_grace":      "8",
+		"fast_flapping_block_time": "30",
+	}}
+	block, threshold, grace, expiry := parseBackboneFastFlapConfig(sub)
+	if block {
+		t.Fatal("block_fast_flapping=false but got block=true")
+	}
+	if threshold != 45.5 {
+		t.Fatalf("threshold=%v want 45.5", threshold)
+	}
+	if grace != 8 {
+		t.Fatalf("grace=%v want 8", grace)
+	}
+	if expiry != 30*60 {
+		t.Fatalf("expiry=%v want 1800 (30 minutes -> seconds)", expiry)
 	}
 }

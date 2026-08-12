@@ -14,11 +14,11 @@ import (
 
 func TestParseFlags(t *testing.T) {
 	t.Parallel()
-	opts, err := parseFlags([]string{"--config", "/tmp/config", "--identity", "/tmp/id", "--service", "svc", "--print-identity", "--listen", "--verbose", "-v", "--quiet", "--no-id", "--no-tty", "--mirror", "--timeout", "30", "--announce", "5", "--no-auth", "--remote-command-as-args", "--no-remote-command", "--allowed", "abc", "dest", "echo", "hi"}, io.Discard)
+	opts, err := parseFlags([]string{"--rnsconfig", "/tmp/config", "--config", "/tmp/rnsh", "--identity", "/tmp/id", "--service", "svc", "--print-identity", "--listen", "--verbose", "-v", "--quiet", "--no-id", "--no-tty", "--mirror", "--timeout", "30", "--announce", "5", "--no-auth", "--remote-command-as-args", "--no-remote-command", "--allowed", "abc", "dest", "echo", "hi"}, io.Discard)
 	if err != nil {
 		t.Fatalf("parseFlags failed: %v", err)
 	}
-	if opts.configDir != "/tmp/config" || opts.identityPath != "/tmp/id" || opts.serviceName != "svc" || !opts.printIdentity || !opts.listen || opts.verbose != 2 || opts.quiet != 1 || !opts.noID || !opts.noTTY || !opts.mirror || opts.timeoutSec != 30 || opts.announceEvery == nil || *opts.announceEvery != 5 || !opts.noAuth || !opts.remoteAsArgs || !opts.noRemoteCmd || len(opts.allowHashes) != 1 || opts.allowHashes[0] != "abc" || opts.destination != "" || len(opts.commandLine) != 3 {
+	if opts.configDir != "/tmp/config" || opts.rnshConfigDir != "/tmp/rnsh" || opts.identityPath != "/tmp/id" || opts.serviceName != "svc" || !opts.printIdentity || !opts.listen || opts.verbose != 2 || opts.quiet != 1 || !opts.noID || !opts.noTTY || !opts.mirror || opts.timeoutSec != 30 || opts.announceEvery == nil || *opts.announceEvery != 5 || !opts.noAuth || !opts.remoteAsArgs || !opts.noRemoteCmd || len(opts.allowHashes) != 1 || opts.allowHashes[0] != "abc" || opts.destination != "" || len(opts.commandLine) != 3 {
 		t.Fatalf("unexpected opts: %+v", opts)
 	}
 }
@@ -150,7 +150,8 @@ func TestParseFlagsHelp(t *testing.T) {
 		t.Fatalf("parseFlags error = %v, want %v", err, errHelp)
 	}
 	wantSubstrings := []string{
-		"-c DIR --config DIR",
+		"-c DIR --rnsconfig DIR",
+		"--config DIR",
 		"-i FILE --identity FILE",
 		"-s NAME --service NAME",
 		"-p --print-identity",

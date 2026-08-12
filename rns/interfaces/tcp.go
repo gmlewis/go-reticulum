@@ -92,6 +92,19 @@ type TCPClientInterface struct {
 	// no target host/port to reconnect to.
 	spawned bool
 
+	// spawnedAt is the time the server spawned this client interface, set in
+	// handleConnection. It backs the fast-flap connected-time check on
+	// teardown (BackboneInterface.py:487,827-829, v1.3.9).
+	spawnedAt time.Time
+	// remoteIP is the remote address of a spawned client, extracted in
+	// handleConnection so the fast-flap teardown hook can attribute the flap
+	// (BackboneInterface.py:834, v1.3.9).
+	remoteIP string
+	// onSpawnedDown, when copied from the parent server in handleConnection,
+	// is fired by failConn on the up->down transition to record a fast flap
+	// for this remote IP (BackboneInterface.py:833-842, v1.3.9).
+	onSpawnedDown func(remoteIP string, spawnedAt time.Time)
+
 	kissFraming    bool
 	inboundHandler InboundHandler
 
@@ -419,6 +432,14 @@ func (tci *TCPClientInterface) failConn(conn net.Conn) {
 		if hook != nil {
 			hook()
 		}
+		// Fast-flap accounting (BackboneInterface only): a spawned client
+		// that just tore down records a flap for its remote IP when the
+		// connection was shorter than the parent's fast-flap threshold
+		// (BackboneInterface.py:827-843, v1.3.9). Plain TCP servers leave
+		// onSpawnedDown nil.
+		if tci.spawned && tci.onSpawnedDown != nil {
+			tci.onSpawnedDown(tci.remoteIP, tci.spawnedAt)
+		}
 		if !tci.IsDetached() && !tci.spawned {
 			go tci.reconnectLoop()
 		}
@@ -484,6 +505,17 @@ type TCPServerInterface struct {
 	spawnedInterfaces []*TCPClientInterface
 	inboundHandler    InboundHandler
 	connectHandler    ConnectHandler
+
+	// incomingGate, when non-nil, is consulted by handleConnection before
+	// spawning a client; returning false rejects the connection (close and
+	// do not spawn). BackboneInterface sets it to its fast-flap block check
+	// (BackboneInterface.py:397,420-435, v1.3.9).
+	incomingGate func(remoteIP string) bool
+	// onSpawnedDown, when non-nil, is fired by a spawned client's failConn on
+	// the up->down transition, carrying the remote IP and the spawn time so the
+	// parent can record a fast flap. BackboneInterface sets it to recordFlap
+	// (BackboneInterface.py:827-843, v1.3.9).
+	onSpawnedDown func(remoteIP string, spawnedAt time.Time)
 
 	// hwmtu is the hardware MTU ceiling passed to each spawned client
 	// interface for inbound HDLC frame-length validation. TCP servers use
@@ -555,6 +587,23 @@ func (tsi *TCPServerInterface) acceptLoop() {
 func (tsi *TCPServerInterface) handleConnection(conn net.Conn) {
 	name := fmt.Sprintf("Client %v on %v", conn.RemoteAddr().String(), tsi.name)
 	// log.Printf("[TCP] Server %v: accepted connection from %v, creating spawned interface", tsi.name, conn.RemoteAddr())
+	// Fast-flap gate (BackboneInterface only): reject the connection before
+	// spawning if the remote IP is currently blocked (BackboneInterface.py:397,
+	// 420-435, v1.3.9). Plain TCP servers leave incomingGate nil. The hooks are
+	// guarded by tsi.mu so the accept loop reads them safely even if the parent
+	// (e.g. BackboneInterface) installs them after newTCPServerInterface
+	// started this loop.
+	remoteIP, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
+	tsi.mu.Lock()
+	gate := tsi.incomingGate
+	onDown := tsi.onSpawnedDown
+	tsi.mu.Unlock()
+	if gate != nil && !gate(remoteIP) {
+		if err := conn.Close(); err != nil {
+			log.Printf("[TCP] %v: rejected-conn close failed: %v", tsi.name, err)
+		}
+		return
+	}
 	applyTCPConnOpts(conn)
 	// Create a TCPClientInterface from the connected socket
 	bi := NewBaseInterface(name, ModeFull, TCPBitrateGuess)
@@ -581,6 +630,9 @@ func (tsi *TCPServerInterface) handleConnection(conn net.Conn) {
 		writeTimeout:   tcpWriteTimeout,
 		hwmtu:          tsi.hwmtu,
 		spawned:        true,
+		spawnedAt:      time.Now(),
+		remoteIP:       remoteIP,
+		onSpawnedDown:  onDown,
 	}
 	atomic.StoreInt32(&tci.running, 1)
 

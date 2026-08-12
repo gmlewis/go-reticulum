@@ -383,6 +383,40 @@ func parseOptionalInt(v string) *int {
 	return &n
 }
 
+// parseBackboneFastFlapConfig reads the fast-flap blocking keys from a
+// Backbone interface config section, applying Python's defaults when a key is
+// absent (BackboneInterface.py:126-129, v1.3.9). fast_flapping_block_time is
+// in minutes (Python multiplies by 60); the returned expiry is in seconds.
+func parseBackboneFastFlapConfig(sub *ConfigSection) (block bool, threshold float64, grace int, expirySeconds float64) {
+	block = interfaces.BackboneBlockFastFlapping
+	threshold = interfaces.BackboneFastFlapThreshold
+	grace = interfaces.BackboneFastFlapGrace
+	expirySeconds = interfaces.BackboneFastFlapExpiry
+	if sub == nil {
+		return
+	}
+	if v, ok := sub.GetProperty("block_fast_flapping"); ok {
+		block = parseBoolLike(v)
+	}
+	if v, ok := sub.GetProperty("fast_flapping_threshold"); ok {
+		if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
+			threshold = f
+		}
+	}
+	if v, ok := sub.GetProperty("fast_flapping_grace"); ok {
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			grace = n
+		}
+	}
+	if v, ok := sub.GetProperty("fast_flapping_block_time"); ok {
+		if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
+			// Python: fast_flapping_block_time is in minutes -> seconds.
+			expirySeconds = f * 60
+		}
+	}
+	return
+}
+
 func parseInterfaceMode(sub *ConfigSection, ifaceType string) int {
 	if sub == nil {
 		return interfaces.ModeFull

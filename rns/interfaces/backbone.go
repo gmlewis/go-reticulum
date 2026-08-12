@@ -6,6 +6,7 @@
 package interfaces
 
 import (
+	"log"
 	"sync"
 	"time"
 )
@@ -20,6 +21,30 @@ const BackboneDefaultIFACSize = 16
 // interface (TCPHWMTU = 262144); the inbound HDLC frame-length gate uses this
 // value so Backbone does not reject frames Python would accept.
 const BackboneHWMTU = 1048576
+
+// Fast-flap blocking defaults (RNS/Interfaces/BackboneInterface.py:57-60,
+// v1.3.9). A spawned BackboneClientInterface whose connected time is below
+// FastFlapThreshold seconds counts as a fast flap; once an IP exceeds
+// FastFlapGrace flaps within the FastFlapExpiry window it is blocked.
+const (
+	// BackboneBlockFastFlapping is the Python BLOCK_FAST_FLAPPING default.
+	BackboneBlockFastFlapping = true
+	// BackboneFastFlapThreshold mirrors FAST_FLAP_THRESHOLD (seconds).
+	BackboneFastFlapThreshold = 20.0
+	// BackboneFastFlapGrace mirrors FAST_FLAP_GRACE (flap count).
+	BackboneFastFlapGrace = 5
+	// BackboneFastFlapExpiry mirrors FAST_FLAP_EXPIRY (seconds).
+	BackboneFastFlapExpiry = 12 * 60 * 60.0
+)
+
+// fastFlapEntry records the flap history for one remote IP, mirroring Python's
+// fast_flapping[remote_id] = [started_flapping, last_flap, flaps]
+// (RNS/Interfaces/BackboneInterface.py:836-842, v1.3.9).
+type fastFlapEntry struct {
+	startedFlapping time.Time
+	lastFlap        time.Time
+	flaps           int
+}
 
 // BackboneInterface provides a robust, highly available TCP listener used as a
 // core routing nexus. It encapsulates TCP server logic and accepts point-to-
@@ -39,6 +64,20 @@ type BackboneInterface struct {
 	lastICPrBurstState          bool
 	lastICPrBurstActivatedCheck time.Time
 	lastICPrBurstActivated      time.Time
+
+	// Fast-flap blocking state (BackboneInterface.py:57-62,126-145,820-843).
+	// The registry is per-instance for test isolation under -race; Python uses
+	// a class-level dict shared across all BackboneInterface instances, which
+	// is observationally identical for the single-interface case.
+	blockFastFlapping bool
+	fastFlapThreshold float64 // seconds
+	fastFlapGrace     int
+	fastFlapExpiry    float64 // seconds
+	fastFlappingMu    sync.Mutex
+	fastFlapping      map[string]*fastFlapEntry
+	// nowFn is the clock used by recordFlap / isBlocked / blockedCount so the
+	// fast-flap logic is time-injectable for tests. It defaults to time.Now.
+	nowFn func() time.Time
 }
 
 // NewBackboneInterface binds and initializes a TCP-based BackboneInterface on the
@@ -50,11 +89,209 @@ func NewBackboneInterface(name, bindIP string, bindPort int, handler InboundHand
 	if err != nil {
 		return nil, err
 	}
-	return &BackboneInterface{TCPServerInterface: inner}, nil
+	b := &BackboneInterface{TCPServerInterface: inner}
+	b.ConfigureFastFlapping(BackboneBlockFastFlapping, BackboneFastFlapThreshold, BackboneFastFlapGrace, BackboneFastFlapExpiry)
+	b.setNowFn(time.Now)
+	// Wire the incoming-connection gate (reject blocked IPs before spawning)
+	// and the spawned-teardown hook (record a flap on fast disconnect), so the
+	// fast-flap mechanism rides the generic TCPServerInterface accept/teardown
+	// paths (BackboneInterface.py:397,420-435,820-843). The hooks are guarded by
+	// the server mutex so the accept loop (already started by
+	// newTCPServerInterface) reads them safely.
+	inner.mu.Lock()
+	inner.incomingGate = func(remoteIP string) bool { return !b.isBlocked(remoteIP) }
+	inner.onSpawnedDown = func(remoteIP string, spawnedAt time.Time) { b.recordFlap(remoteIP, spawnedAt) }
+	inner.mu.Unlock()
+	return b, nil
 }
 
 // Type returns the string "BackboneInterface" as the runtime type name.
 func (b *BackboneInterface) Type() string { return "BackboneInterface" }
+
+// ConfigureFastFlapping sets the fast-flap blocking parameters and lazily
+// initialises the per-instance registry. It mirrors Python's config parsing of
+// block_fast_flapping / fast_flapping_threshold / fast_flapping_grace /
+// fast_flapping_block_time (BackboneInterface.py:126-145, v1.3.9). The
+// threshold and expiry are in seconds; the registry is left untouched so a
+// reconfiguration does not clear existing flap history. The config fields are
+// guarded by fastFlappingMu so a reconfigure racing with the accept-loop's
+// gate check is safe.
+func (b *BackboneInterface) ConfigureFastFlapping(block bool, threshold float64, grace int, expiry float64) {
+	if b == nil {
+		return
+	}
+	b.fastFlappingMu.Lock()
+	defer b.fastFlappingMu.Unlock()
+	b.blockFastFlapping = block
+	b.fastFlapThreshold = threshold
+	b.fastFlapGrace = grace
+	b.fastFlapExpiry = expiry
+	if b.fastFlapping == nil {
+		b.fastFlapping = map[string]*fastFlapEntry{}
+	}
+}
+
+// setNowFn installs the clock used by the fast-flap methods, under the same
+// mutex that guards the config it reads alongside, so a test clock swap races
+// safely with the accept loop.
+func (b *BackboneInterface) setNowFn(now func() time.Time) {
+	if b == nil {
+		return
+	}
+	b.fastFlappingMu.Lock()
+	b.nowFn = now
+	b.fastFlappingMu.Unlock()
+}
+
+// recordFlap records a fast flap for remoteIP when the spawned client that
+// connected at spawnedAt tore down within the fast-flap threshold. It mirrors
+// Python's BackboneClientInterface.teardown fast-flap branch
+// (BackboneInterface.py:826-853, v1.3.9/1.4.0): only connected_time < threshold
+// counts; a missing record for the remote IP is created fresh
+// ([now, now, 0]) rather than treated as an error; the flap is logged via the
+// standard logger (debug), and once the count exceeds the grace a warning is
+// logged. The whole update is wrapped in a recover guard mirroring Python's
+// try/except so an unexpected error is logged, never a panic/trace path.
+func (b *BackboneInterface) recordFlap(remoteIP string, spawnedAt time.Time) {
+	if b == nil || remoteIP == "" {
+		return
+	}
+	// Mirror Python's try/except (BackboneInterface.py:831-853): an unexpected
+	// error in the statistics update is logged via the standard logger, not a
+	// panic/trace path.
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Error while updating fast-flapping interface statistics: %v", r)
+		}
+	}()
+	b.fastFlappingMu.Lock()
+	defer b.fastFlappingMu.Unlock()
+	if !b.blockFastFlapping {
+		return
+	}
+	now := b.now()
+	connectedTime := now.Sub(spawnedAt)
+	if connectedTime.Seconds() >= b.fastFlapThreshold {
+		return
+	}
+	// None-check: a remote IP with no prior flap record gets a fresh entry
+	// [now, now, 0] (BackboneInterface.py:836-837).
+	entry, ok := b.fastFlapping[remoteIP]
+	if !ok {
+		entry = &fastFlapEntry{startedFlapping: now, lastFlap: now}
+	}
+	entry.lastFlap = now
+	entry.flaps++
+	b.fastFlapping[remoteIP] = entry
+	// Log the flap (BackboneInterface.py:851). Python gates this behind
+	// LOG_DEBUG; the Go port has no leveled logger in this package, so it is
+	// emitted unconditionally via the standard logger.
+	log.Printf("BackboneInterface %s is fast flapping, connection time was %s, %d fast flaps",
+		b.Name(), connectedTime.Round(time.Second), entry.flaps)
+	if entry.flaps > b.fastFlapGrace {
+		// Grace exceeded: warn that further connections are ignored
+		// (BackboneInterface.py:852).
+		log.Printf("Ignoring further connections from %s due to fast-flapping", remoteIP)
+	}
+}
+
+// isBlocked reports whether remoteIP should be rejected on an incoming
+// connection, mirroring Python's incoming_connection gate
+// (BackboneInterface.py:420-435, v1.3.9): an IP is blocked when its flap count
+// exceeds the grace within the expiry window. A stale entry (last flap older
+// than expiry) is purged and no longer blocks.
+func (b *BackboneInterface) isBlocked(remoteIP string) bool {
+	if b == nil || remoteIP == "" {
+		return false
+	}
+	b.fastFlappingMu.Lock()
+	defer b.fastFlappingMu.Unlock()
+	if !b.blockFastFlapping {
+		return false
+	}
+	entry := b.fastFlapping[remoteIP]
+	if entry == nil {
+		return false
+	}
+	if b.now().Sub(entry.lastFlap).Seconds() > b.fastFlapExpiry {
+		delete(b.fastFlapping, remoteIP)
+		return false
+	}
+	return entry.flaps > b.fastFlapGrace
+}
+
+// BlockedIPCount returns the number of IPs currently blocked (flaps > grace and
+// not expired), purging stale entries first. It mirrors Python's
+// blocked_ip_count property (BackboneInterface.py:537-560, v1.3.9): when
+// blocking is disabled it returns 0; otherwise it scans the registry under the
+// fast-flap lock, deletes entries whose last flap is older than the expiry
+// window, and counts the remaining entries whose flap count exceeds the grace.
+// The current time is read via the installed clock (nowFn) so the property is
+// time-injectable for tests.
+func (b *BackboneInterface) BlockedIPCount() int {
+	if b == nil {
+		return 0
+	}
+	b.fastFlappingMu.Lock()
+	defer b.fastFlappingMu.Unlock()
+	if !b.blockFastFlapping {
+		return 0
+	}
+	now := b.now()
+	count := 0
+	for ip, entry := range b.fastFlapping {
+		if now.Sub(entry.lastFlap).Seconds() > b.fastFlapExpiry {
+			delete(b.fastFlapping, ip)
+			continue
+		}
+		if entry.flaps > b.fastFlapGrace {
+			count++
+		}
+	}
+	return count
+}
+
+// incomingGate returns the connection-accept gate bound to this interface,
+// returning true to accept a remote IP and false to reject a blocked one. The
+// TCPServerInterface accept path consults it before spawning a client
+// (BackboneInterface.py:397,420-435, v1.3.9).
+func (b *BackboneInterface) incomingGate() func(string) bool {
+	if b == nil {
+		return nil
+	}
+	return func(remoteIP string) bool { return !b.isBlocked(remoteIP) }
+}
+
+// BlockedIPList returns the registry keys (every IP that has flapped and not
+// been purged), mirroring Python's blocked_ip_list property
+// (BackboneInterface.py:532-534, v1.4.0): when blocking is disabled it returns
+// an empty slice; otherwise it returns the raw registry keys without purging,
+// so the list contains every IP that has ever flapped within the expiry window,
+// not just those currently over the grace threshold.
+func (b *BackboneInterface) BlockedIPList() []string {
+	if b == nil {
+		return nil
+	}
+	b.fastFlappingMu.Lock()
+	defer b.fastFlappingMu.Unlock()
+	if !b.blockFastFlapping {
+		return nil
+	}
+	out := make([]string, 0, len(b.fastFlapping))
+	for ip := range b.fastFlapping {
+		out = append(out, ip)
+	}
+	return out
+}
+
+// now returns the current time via the installed clock. Callers must hold
+// fastFlappingMu, since nowFn is guarded by it.
+func (b *BackboneInterface) now() time.Time {
+	if b.nowFn != nil {
+		return b.nowFn()
+	}
+	return time.Now()
+}
 
 // BackboneInterface reduces the per-spawned-peer ingress-control burst state
 // into aggregate cached properties (BackboneInterface.py:173-225), so the
