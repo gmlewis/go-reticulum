@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -103,6 +104,14 @@ type reticulumGitNode struct {
 	ready             bool
 	shouldRun         bool
 	announceInterval  time.Duration
+	nodeName          string
+	configDir         string
+	stats             map[any]any
+	statsMu           sync.Mutex
+	statsEnabled      bool
+	statsIgnored      map[string]bool
+	statsPath         string
+	pageServer        *pageNode
 }
 
 // newReticulumGitNode loads the node config and identity from configDir and
@@ -127,9 +136,16 @@ func newReticulumGitNode(configDir string, logger *rns.Logger) (*reticulumGitNod
 		blockedIdentities: make(map[string]bool),
 		identityAliases:   make(map[string]string),
 		announceInterval:  cfg.announceInterval,
+		nodeName:          cfg.nodeName,
+		configDir:         configDir,
+		stats:             map[any]any{"pages": map[any]any{"front": map[any]any{}}, "groups": map[any]any{}},
+		statsEnabled:      cfg.recordStats,
+		statsIgnored:      make(map[string]bool),
+		statsPath:         filepath.Join(configDir, "stats"),
 	}
 
 	node.loadAliasesAndBlocked(cfg)
+	node.loadStatsIgnored(cfg)
 
 	for groupName, groupPath := range cfg.groups {
 		if _, err := os.Stat(groupPath); err != nil {
@@ -343,6 +359,15 @@ func (n *reticulumGitNode) serve(ts rns.Transport, logger *rns.Logger) error {
 	n.announce(logger)
 	n.shouldRun = true
 
+	// Optionally start the nomadnet-compatible page node (server.py:2063),
+	// a separate "nomadnetwork.node" destination that serves repository
+	// browsing pages over the micron page protocol.
+	if n.config.serveNomadnet {
+		if err := n.startPageServer(ts, logger); err != nil {
+			return err
+		}
+	}
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigCh)
@@ -367,7 +392,43 @@ func (n *reticulumGitNode) serve(ts rns.Transport, logger *rns.Logger) error {
 
 	<-sigCh
 	n.shouldRun = false
+	if n.pageServer != nil {
+		n.pageServer.shouldRun.Store(false)
+	}
 	logger.Info("Shutting down")
+	return nil
+}
+
+// startPageServer creates the "nomadnetwork.node" destination, builds the
+// pageNode, registers its request handlers, announces, and starts its jobs
+// loop, mirroring NomadNetworkNode.__init__ + start (pages.py:168-176,
+// server.py:2063). It is called from serve when [pages] serve_nomadnet is
+// enabled.
+func (n *reticulumGitNode) startPageServer(ts rns.Transport, logger *rns.Logger) error {
+	pageDest, err := rns.NewDestination(ts, n.identity, rns.DestinationIn, rns.DestinationSingle, pageAppName, "node")
+	if err != nil {
+		return fmt.Errorf("could not create nomadnet destination: %w", err)
+	}
+	pn, err := newPageNode(n)
+	if err != nil {
+		return fmt.Errorf("could not create page node: %w", err)
+	}
+	pn.destination = pageDest
+	pageDest.SetLinkEstablishedCallback(func(link *rns.Link) {
+		logger.Debug("Peer connected to nomadnet destination")
+		link.SetLinkClosedCallback(func(l *rns.Link) {
+			logger.Debug("Peer disconnected from nomadnet destination")
+		})
+	})
+	pageDest.SetDefaultAppData(pn.getAnnounceAppData())
+	pn.registerRequestHandlers()
+	n.pageServer = pn
+
+	logger.Notice("Git Nomad Network Node listening on %v", rns.PrettyHex(pageDest.Hash))
+
+	pn.announce()
+	pn.shouldRun.Store(true)
+	go pn.jobs()
 	return nil
 }
 
@@ -763,7 +824,7 @@ func (n *reticulumGitNode) handleFetch(path string, data []byte, requestID []byt
 	if err != nil {
 		return append([]byte{resRemoteFail}, []byte("Remote error")...)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	bundlePath := filepath.Join(tmpDir, "fetch.bundle")
 
 	args := buildBundleCreateArgs(bundlePath, refs, excluded)
@@ -856,7 +917,7 @@ func (n *reticulumGitNode) handlePush(path string, data []byte, requestID []byte
 	if err != nil {
 		return append([]byte{resRemoteFail}, []byte("Remote error")...)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	bundlePath := filepath.Join(tmpDir, "push.bundle")
 	if err := os.WriteFile(bundlePath, bundleData, 0o644); err != nil {
 		return append([]byte{resRemoteFail}, []byte("Remote error")...)

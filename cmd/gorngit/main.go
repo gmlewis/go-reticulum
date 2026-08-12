@@ -129,6 +129,10 @@ func runNode(opts options, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "Git Peer Identity         : %s\n", rns.PrettyHex(clientIdentity.Hash))
 		fmt.Fprintf(stdout, "Repository Node Identity  : %s\n", rns.PrettyHex(node.identity.Hash))
 		fmt.Fprintf(stdout, "Repositories Destination  : %s\n", rns.PrettyHex(destHash))
+		if node.config.serveNomadnet {
+			nomadHash := rns.CalculateHash(node.identity, pageAppName, "node")
+			fmt.Fprintf(stdout, "Nomad Network Destination : %s\n", rns.PrettyHex(nomadHash))
+		}
 		return 0
 	}
 

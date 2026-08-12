@@ -200,7 +200,7 @@ func TestBackboneFastFlapIntegration(t *testing.T) {
 		// socket before the handshake completed; that still proves the block.
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	// If the dial succeeded, the server must have closed the connection right
 	// away (reject path). A read should return EOF quickly.
 	if n, err := conn.Read(make([]byte, 32)); err == nil && n > 0 {

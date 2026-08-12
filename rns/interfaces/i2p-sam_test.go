@@ -174,7 +174,7 @@ func (m *mockSAM) serve() {
 
 func (m *mockSAM) handle(conn net.Conn) {
 	defer m.wg.Done()
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	br := bufio.NewReader(conn)
 	for {
 		line, err := br.ReadString('\n')
@@ -250,7 +250,7 @@ func TestSAMClientCreateSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if dest == nil || dest.Base64 != m.destB64 {
 		t.Fatalf("dest = %v, want base64 %q", dest, m.destB64)
 	}
@@ -300,7 +300,7 @@ func TestSAMClientStreamConnect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StreamConnect: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	m.mu.Lock()
 	connects := m.connects
 	m.mu.Unlock()
@@ -343,7 +343,7 @@ func TestSAMClientStreamAccept(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StreamAccept: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	m.mu.Lock()
 	accepts := m.accepts
 	m.mu.Unlock()
@@ -394,13 +394,13 @@ func TestSAMClientHelloFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	go func() {
 		conn, err := l.Accept()
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		br := bufio.NewReader(conn)
 		br.ReadString('\n') // consume HELLO
 		io.WriteString(conn, "HELLO REPLY RESULT=I2P_ERROR\n")

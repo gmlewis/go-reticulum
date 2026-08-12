@@ -466,7 +466,7 @@ func (c *SAMClient) DestLookup(name string) (*I2PDestination, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if _, err := conn.Write(samNamingLookupBytes(name)); err != nil {
 		return nil, err
 	}
@@ -492,7 +492,7 @@ func (c *SAMClient) NewDestination(sigType int) (*I2PDestination, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if _, err := conn.Write(samDestGenerateBytes(sigType)); err != nil {
 		return nil, err
 	}

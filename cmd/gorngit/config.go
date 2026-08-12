@@ -38,6 +38,24 @@ type nodeConfig struct {
 	// from the [rngit] blocked_identities setting, resolved via aliases
 	// before use.
 	blockedIdentities []string
+	// nodeName is the human-readable node name shown on the page front
+	// page, from [rngit] node_name (server.py:2203). Defaults to
+	// "Anonymous Git Node".
+	nodeName string
+	// recordStats enables the stats subsystem, from [rngit] record_stats
+	// (server.py:2206).
+	recordStats bool
+	// statsIgnored is the list of identity hashes (hex or alias) from
+	// [rngit] stats_ignore_identities (server.py:2208), resolved via
+	// aliases before use.
+	statsIgnored []string
+	// serveNomadnet enables the nomadnet-compatible page node, from
+	// [pages] serve_nomadnet (server.py:2238). Defaults to false.
+	serveNomadnet bool
+	// unicodeIcons disables Nerd Font icons in favor of simpler unicode
+	// glyphs, from [pages] unicode_icons (pages.py:165). Defaults to
+	// false (Nerd Fonts on).
+	unicodeIcons bool
 }
 
 // defaultNodeConfig returns the baseline config used when no config file
@@ -49,6 +67,7 @@ func defaultNodeConfig() *nodeConfig {
 		groups:           make(map[string]string),
 		access:           make(map[string][]string),
 		aliases:          make(map[string]string),
+		nodeName:         "Anonymous Git Node",
 	}
 }
 
@@ -102,6 +121,17 @@ func parseNodeConfig(text string) (*nodeConfig, error) {
 					cfg.announceInterval = time.Duration(minutes) * time.Minute
 				}
 			}
+			if key == "node_name" {
+				cfg.nodeName = strings.TrimSpace(value)
+			}
+			if key == "record_stats" {
+				if b, err := strconv.ParseBool(strings.TrimSpace(value)); err == nil {
+					cfg.recordStats = b
+				}
+			}
+			if key == "stats_ignore_identities" {
+				cfg.statsIgnored = append(cfg.statsIgnored, parseCommaList(value)...)
+			}
 			if key == "blocked_identities" {
 				cfg.blockedIdentities = append(cfg.blockedIdentities, parseCommaList(value)...)
 			}
@@ -111,6 +141,17 @@ func parseNodeConfig(text string) (*nodeConfig, error) {
 			cfg.aliases[key] = strings.TrimSpace(value)
 		case "access":
 			cfg.access[key] = parseCommaList(value)
+		case "pages":
+			if key == "serve_nomadnet" {
+				if b, ok := parseConfigBool(value); ok {
+					cfg.serveNomadnet = b
+				}
+			}
+			if key == "unicode_icons" {
+				if b, ok := parseConfigBool(value); ok {
+					cfg.unicodeIcons = b
+				}
+			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -131,6 +172,19 @@ func parseCommaList(value string) []string {
 		}
 	}
 	return out
+}
+
+// parseConfigBool interprets a config boolean value the way ConfigObj's
+// as_bool does (server.py): true/yes/on/1 -> true, false/no/off/0 -> false,
+// case-insensitively. It returns ok=false for unrecognized values.
+func parseConfigBool(value string) (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true", "yes", "on", "1":
+		return true, true
+	case "false", "no", "off", "0":
+		return false, true
+	}
+	return false, false
 }
 
 // splitConfigLine splits a "key = value" config line.
@@ -193,6 +247,17 @@ announce_interval = 360
 # permission lines applied on top of the group .allowed file.
 # public = r:all, w:9710b86ba12c42d1d8f30f74fe509286
 # internal = rw:9710b86ba12c42d1d8f30f74fe509286
+
+[pages]
+# You can run a nomadnet-compatible page node to serve repository
+# information. Access permissions follow those configured per group
+# and repository. The page server supports automatic markdown-to-micron
+# conversion and optional syntax highlighting.
+# serve_nomadnet = no
+
+# Disable Nerd Font icons and use simpler (but more compatible) unicode
+# icons instead.
+# unicode_icons = yes
 
 [logging]
 # Valid log levels are 0 through 7 (4 is the default).

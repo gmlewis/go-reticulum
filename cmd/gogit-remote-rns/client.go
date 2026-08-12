@@ -533,7 +533,7 @@ func unbundleBytes(bundleData []byte, progress func(string)) error {
 	if err != nil {
 		return fmt.Errorf("could not create temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	bundlePath := filepath.Join(tmpDir, "fetch.bundle")
 	if err := os.WriteFile(bundlePath, bundleData, 0o644); err != nil {
