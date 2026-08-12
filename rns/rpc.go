@@ -42,6 +42,7 @@ func (r *Reticulum) startRPCListener() error {
 	}
 	r.mu.Lock()
 	r.rpcListener = listener
+	r.rpcDone = make(chan struct{})
 	r.mu.Unlock()
 
 	go r.rpcLoop()
@@ -76,6 +77,18 @@ func (r *Reticulum) makeRPCListener() (net.Listener, error) {
 }
 
 func (r *Reticulum) rpcLoop() {
+	defer close(r.rpcDone)
+	// Recover from an unexpected panic so a malformed connection or internal
+	// error tears down the listener loop gracefully (logged) instead of
+	// crashing the process — the Go analog of Python wrapping the shared-
+	// instance RPC loop in _should_run + exception handling.
+	defer func() {
+		if rec := recover(); rec != nil {
+			if r.logger != nil {
+				r.logger.Error("RPC listener loop recovered from panic: %v", rec)
+			}
+		}
+	}()
 	for {
 		r.mu.Lock()
 		listener := r.rpcListener
@@ -85,6 +98,8 @@ func (r *Reticulum) rpcLoop() {
 		}
 		conn, err := listener.Accept()
 		if err != nil {
+			// Listener closed during shutdown (Close sets rpcListener nil and
+			// closes the listener). Exit cleanly.
 			return
 		}
 		go r.handleRPCConn(conn)
@@ -92,6 +107,13 @@ func (r *Reticulum) rpcLoop() {
 }
 
 func (r *Reticulum) handleRPCConn(conn net.Conn) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			if r.logger != nil {
+				r.logger.Error("Recovered from panic handling RPC connection: %v", rec)
+			}
+		}
+	}()
 	defer func() {
 		if err := conn.Close(); err != nil {
 			r.logger.Debug("Failed closing RPC connection: %v", err)
@@ -195,7 +217,20 @@ func writeRPCFrame(conn net.Conn, v any) error {
 	return err
 }
 
-func (r *Reticulum) handleRPCRequest(req any) any {
+func (r *Reticulum) handleRPCRequest(req any) (resp any) {
+	// Recover from a panic while handling a local-client RPC call so a
+	// malformed or pathological request tears down only this call (logged,
+	// returned as an error response) instead of crashing the process — the
+	// Go analog of Python wrapping the shared-instance RPC loop body in
+	// try/except (RNS/Reticulum.py:1240-1296, v1.2.7).
+	defer func() {
+		if rec := recover(); rec != nil {
+			if r.logger != nil {
+				r.logger.Error("An error occurred while handling RPC call from local client: %v", rec)
+			}
+			resp = map[string]any{"error": fmt.Sprintf("internal error: %v", rec)}
+		}
+	}()
 	m, ok := req.(map[any]any)
 	if !ok {
 		return map[string]any{"error": "invalid request"}
@@ -225,6 +260,11 @@ func (r *Reticulum) handleRPCRequest(req any) any {
 			return r.getRateTable()
 		case "blackholed_identities":
 			return r.getBlackholedIdentities()
+		case "is_blackholed":
+			if identityHash, ok := decodeHashArg(m["identity_hash"]); ok {
+				return r.isBlackholed(identityHash)
+			}
+			return false
 		case "first_hop_timeout":
 			if dest, ok := decodeHashArg(m["destination_hash"]); ok {
 				return r.getFirstHopTimeout(dest)
@@ -294,6 +334,40 @@ func (r *Reticulum) handleRPCRequest(req any) any {
 			return false
 		}
 		return r.unblackholeIdentity(identityHash)
+	}
+
+	// destination_data: mark a known destination used / retained / unretained
+	// on the shared instance (Python Reticulum.py:1281-1286).
+	if rawOp, ok := m["destination_data"]; ok {
+		destinationHash, ok := decodeHashArg(m["destination_hash"])
+		if !ok {
+			return false
+		}
+		switch asString(rawOp) {
+		case "used":
+			return r.usedDestinationData(destinationHash)
+		case "retain":
+			return r.retainDestinationData(destinationHash)
+		case "unretain":
+			return r.unretainDestinationData(destinationHash)
+		default:
+			return false
+		}
+	}
+
+	// identity_data: retain every known destination owned by an identity on the
+	// shared instance (Python Reticulum.py:1288-1291).
+	if rawOp, ok := m["identity_data"]; ok {
+		identityHash, ok := decodeHashArg(m["identity_hash"])
+		if !ok {
+			return false
+		}
+		switch asString(rawOp) {
+		case "retain":
+			return r.retainIdentity(identityHash)
+		default:
+			return false
+		}
 	}
 
 	return map[string]any{"error": "unsupported rpc request"}
@@ -654,6 +728,56 @@ func (r *Reticulum) unblackholeIdentity(identityHash []byte) bool {
 	return r.transport.UnblackholeIdentity(identityHash)
 }
 
+// isBlackholed is the local (shared-instance-side) blackhole membership check,
+// mirroring the `else` branch of Python Reticulum.is_blackholed
+// (RNS/Reticulum.py:1717: `return identity_hash in RNS.Transport.blackholed_identities`).
+func (r *Reticulum) isBlackholed(identityHash []byte) bool {
+	if r.transport == nil {
+		return false
+	}
+	return r.transport.IsBlackholed(identityHash)
+}
+
+// usedDestinationData is the local (shared-instance-side) use-marking for a
+// known destination (Python RNS.Identity._used_destination_data, the `else`
+// branch of Reticulum._used_destination_data, RNS/Reticulum.py:1312).
+func (r *Reticulum) usedDestinationData(destinationHash []byte) bool {
+	if r.transport == nil {
+		return false
+	}
+	return r.transport.UsedDestinationData(destinationHash)
+}
+
+// retainDestinationData is the local (shared-instance-side) retain flag set for
+// a known destination (Python RNS.Identity._retain_destination_data, the
+// `else` branch of Reticulum._retain_destination_data, RNS/Reticulum.py:1326).
+func (r *Reticulum) retainDestinationData(destinationHash []byte) bool {
+	if r.transport == nil {
+		return false
+	}
+	return r.transport.RetainDestinationData(destinationHash)
+}
+
+// unretainDestinationData is the local (shared-instance-side) unretain for a
+// known destination (Python RNS.Identity._unretain_destination_data, the
+// `else` branch of Reticulum._unretain_destination_data, RNS/Reticulum.py:1340).
+func (r *Reticulum) unretainDestinationData(destinationHash []byte) bool {
+	if r.transport == nil {
+		return false
+	}
+	return r.transport.UnretainDestinationData(destinationHash)
+}
+
+// retainIdentity is the local (shared-instance-side) retain for every known
+// destination owned by an identity (Python RNS.Identity._retain_identity, the
+// `else` branch of Reticulum._retain_identity, RNS/Reticulum.py:1357).
+func (r *Reticulum) retainIdentity(identityHash []byte) bool {
+	if r.transport == nil {
+		return false
+	}
+	return r.transport.RetainIdentity(identityHash)
+}
+
 // InterfaceStat represents the statistics and status of a single network interface.
 type InterfaceStat struct {
 	Name    string
@@ -787,6 +911,91 @@ func (r *Reticulum) BlackholedIdentities() ([]any, error) {
 		return []any{}, nil
 	}
 	return r.getBlackholedIdentities(), nil
+}
+
+// IsBlackholed reports whether the given identity hash is on the local
+// blackhole list, preventing it from interacting with the network. When this
+// instance is connected to a shared instance the query is routed to the shared
+// instance via RPC (Python Reticulum.is_blackholed,
+// RNS/Reticulum.py:1705-1717). identityHash must be TruncatedHashLength/8
+// bytes; a wrong-length hash returns false.
+func (r *Reticulum) IsBlackholed(identityHash []byte) (bool, error) {
+	if len(identityHash) != TruncatedHashLength/8 {
+		return false, nil
+	}
+	if r.isConnectedToSharedInstance {
+		resp, err := r.callRPC(map[string]any{"get": "is_blackholed", "identity_hash": identityHash})
+		if err != nil {
+			return false, err
+		}
+		return asBool(resp), nil
+	}
+	return r.isBlackholed(identityHash), nil
+}
+
+// UsedDestinationData marks a known destination in-use, recording the current
+// time as its use-timestamp so CleanKnownDestinations does not drop it as
+// stale. When this instance is connected to a shared instance the call is
+// routed to the shared instance via RPC (Python
+// Reticulum._used_destination_data, RNS/Reticulum.py:1300-1312).
+func (r *Reticulum) UsedDestinationData(destinationHash []byte) (bool, error) {
+	if r.isConnectedToSharedInstance {
+		resp, err := r.callRPC(map[string]any{"destination_data": "used", "destination_hash": destinationHash})
+		if err != nil {
+			return false, err
+		}
+		return asBool(resp), nil
+	}
+	return r.usedDestinationData(destinationHash), nil
+}
+
+// RetainDestinationData pins a known destination so CleanKnownDestinations
+// never drops it. When this instance is connected to a shared instance the
+// call is routed to the shared instance via RPC (Python
+// Reticulum._retain_destination_data, RNS/Reticulum.py:1314-1326).
+func (r *Reticulum) RetainDestinationData(destinationHash []byte) (bool, error) {
+	if r.isConnectedToSharedInstance {
+		resp, err := r.callRPC(map[string]any{"destination_data": "retain", "destination_hash": destinationHash})
+		if err != nil {
+			return false, err
+		}
+		return asBool(resp), nil
+	}
+	return r.retainDestinationData(destinationHash), nil
+}
+
+// UnretainDestinationData clears the retain flag on a known destination,
+// re-enabling normal stale-cleaning. When this instance is connected to a
+// shared instance the call is routed to the shared instance via RPC (Python
+// Reticulum._unretain_destination_data, RNS/Reticulum.py:1328-1340).
+func (r *Reticulum) UnretainDestinationData(destinationHash []byte) (bool, error) {
+	if r.isConnectedToSharedInstance {
+		resp, err := r.callRPC(map[string]any{"destination_data": "unretain", "destination_hash": destinationHash})
+		if err != nil {
+			return false, err
+		}
+		return asBool(resp), nil
+	}
+	return r.unretainDestinationData(destinationHash), nil
+}
+
+// RetainIdentity pins every known destination owned by identityHash.
+// identityHash must be TruncatedHashLength/8 bytes; a wrong-length hash returns
+// false. When this instance is connected to a shared instance the call is
+// routed to the shared instance via RPC (Python Reticulum._retain_identity,
+// RNS/Reticulum.py:1342-1357).
+func (r *Reticulum) RetainIdentity(identityHash []byte) (bool, error) {
+	if len(identityHash) != TruncatedHashLength/8 {
+		return false, nil
+	}
+	if r.isConnectedToSharedInstance {
+		resp, err := r.callRPC(map[string]any{"identity_data": "retain", "identity_hash": identityHash})
+		if err != nil {
+			return false, err
+		}
+		return asBool(resp), nil
+	}
+	return r.retainIdentity(identityHash), nil
 }
 
 // NextHop determines the next hop interface hash for a given destination hash.

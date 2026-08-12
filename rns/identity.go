@@ -436,6 +436,18 @@ func (id *Identity) ToFile(path string) error {
 	return os.WriteFile(path, data, 0600)
 }
 
+// PubToFile writes ONLY the public key material for the identity to path,
+// making it safe to share: the file cannot be used to decrypt or sign as the
+// identity. It matches Python Identity.pub_to_file (RNS/Identity.py:671-683),
+// which writes get_public_key() and returns True on success.
+func (id *Identity) PubToFile(path string) error {
+	data := id.GetPublicKey()
+	if data == nil {
+		return errors.New("identity does not hold a public key")
+	}
+	return os.WriteFile(path, data, 0o600)
+}
+
 // Prove generates and sends a cryptographic proof for the given packet.
 func (id *Identity) Prove(packet *Packet, destination PacketDestination) {
 	if id.sigPrv == nil {

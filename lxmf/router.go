@@ -164,10 +164,15 @@ type Router struct {
 	unpeeredPropagationIncoming       int
 	unpeeredPropagationRXBytes        int
 
-	processingCount                    uint64
-	processingInterval                 time.Duration
-	jobloopStop                        chan struct{}
-	jobloopDone                        chan struct{}
+	processingCount    uint64
+	processingInterval time.Duration
+	jobloopStop        chan struct{}
+	jobloopDone        chan struct{}
+	// inboundWG tracks in-flight delivery goroutines dispatched by
+	// deliveryPacket, mirroring Python LXMRouter.delivery_packet's daemon
+	// thread (LXMRouter.py:1949-1950, v1.1.0). Close and
+	// WaitForInboundDeliveries drain it so callbacks never outlive the router.
+	inboundWG                          sync.WaitGroup
 	jobsHook                           func()
 	processDeferredStampsFn            func() // optional override; nil falls back to ProcessDeferredStamps
 	activeStampCancels                 map[string]context.CancelFunc
@@ -1894,6 +1899,18 @@ func (r *Router) HandleOutbound(message *Message) error {
 		return errors.New("lxmf message source is nil")
 	}
 
+	// Mirrors Python LXMRouter.handle_outbound (LXMRouter.py:1748-1750): a
+	// propagated message with no outbound propagation node configured is
+	// failed and rejected before queueing. failMessageLocked marks the
+	// message FAILED and fires the failed callback, matching Python's
+	// fail_message; the error mirrors Python's raised IOError.
+	if message.DesiredMethod == MethodPropagated && r.outboundPropagationNode == nil {
+		r.mu.Lock()
+		r.failMessageLocked(message)
+		r.mu.Unlock()
+		return errors.New("attempt to send propagated message with no outbound propagation node configured")
+	}
+
 	message.State = StateOutbound
 
 	sendMethod := message.DesiredMethod
@@ -1938,6 +1955,9 @@ func (r *Router) HandleOutbound(message *Message) error {
 		}
 	}
 	message.DetermineTransportEncryption()
+	if err := message.DetermineCompressionSupport(r.transport.RecallAppData(message.DestinationHash)); err != nil {
+		return err
+	}
 
 	queueDeferred := message.DeferStamp || (message.DesiredMethod == MethodPropagated && message.DeferPropagationStamp)
 	r.mu.Lock()
@@ -2076,7 +2096,16 @@ func (r *Router) ProcessOutbound() {
 			}
 			remaining = append(remaining, message)
 			continue
-		case StateDelivered, StateFailed:
+		case StateDelivered:
+			// Mirrors Python LXMRouter.process_outbound (LXMRouter.py:2689-
+			// 2692): after removing a delivered message from the outbound
+			// queue, pin the destination's known-path entry so its announce
+			// data is retained and not dropped by CleanKnownDestinations.
+			if r.transport != nil {
+				r.transport.RetainDestinationData(message.DestinationHash)
+			}
+			continue
+		case StateFailed:
 			continue
 		case StateCancelled, StateRejected:
 			if r.outboundPropagationLinkMessage == message {
@@ -2797,11 +2826,26 @@ func (r *Router) deliveryPacket(data []byte, packet *rns.Packet) {
 		lxmfData = append(lxmfData, data...)
 	}
 
-	message, err := UnpackMessageFromBytes(r.transport, lxmfData, method)
-	if err != nil {
+	// Mirror Python LXMRouter.delivery_packet (LXMRouter.py:1949-1950,
+	// v1.1.0): dispatch the inbound delivery job in a goroutine so the
+	// packet callback is not blocked. The WaitGroup is incremented under
+	// r.mu so Close's drain cannot race with a dispatch in progress.
+	r.mu.Lock()
+	if r.isClosed {
+		r.mu.Unlock()
 		return
 	}
-	r.handleInboundMessage(message)
+	r.inboundWG.Add(1)
+	r.mu.Unlock()
+
+	go func() {
+		defer r.inboundWG.Done()
+		message, err := UnpackMessageFromBytes(r.transport, lxmfData, method)
+		if err != nil {
+			return
+		}
+		r.handleInboundMessage(message)
+	}()
 }
 
 // RouterConfig provides the full set of constructor parameters matching the Python LXMRouter's arguments, granting fine-grained control over routing limits and policies.
@@ -3725,6 +3769,15 @@ func (r *Router) handleInboundMessage(message *Message) {
 		return
 	}
 
+	// Mirror Python LXMRouter.lxmf_delivery (LXMRouter.py:1841-1843, v1.0.0+):
+	// drop an inbound LXM whose recalled source identity is on the local
+	// blackhole list before any delivery state is mutated or the callback
+	// fires. SourceBlackholed is set during unpack via Transport.IsBlackholed.
+	if message.SourceBlackholed {
+		log.Printf("Dropping LXM from blackholed identity %x", message.SourceHash)
+		return
+	}
+
 	r.mu.Lock()
 	if r.hasDeliveredTransientIDLocked(message.Hash) {
 		r.mu.Unlock()
@@ -3956,6 +4009,11 @@ func (r *Router) Close() error {
 	}
 	r.isClosed = true
 	r.mu.Unlock()
+
+	// Wait for in-flight delivery goroutines to finish before tearing down
+	// state; once isClosed is true no new dispatches start, so this drains
+	// the remaining set deterministically.
+	r.WaitForInboundDeliveries()
 
 	r.stopJobLoop()
 	r.teardownDestinations()
@@ -4387,7 +4445,12 @@ func (r *Router) getAnnounceAppDataLocked(destinationHash []byte) []byte {
 		stampCostField = cost
 	}
 
-	peerData := []any{displayNameField, stampCostField}
+	// Pack [display_name, stamp_cost, supported_functionality] where
+	// supported_functionality = [SF_COMPRESSION], mirroring Python
+	// LXMRouter.get_announce_app_data (LXMF/LXMRouter.py, v1.1.0). The
+	// functionality list is the v1.0.0+ third element that signals
+	// auto-compression support to peers.
+	peerData := []any{displayNameField, stampCostField, []any{SFCompression}}
 	packed, err := msgpack.Pack(peerData)
 	if err != nil {
 		log.Printf("Could not pack announce app data: %v", err)
@@ -5338,6 +5401,14 @@ func (r *Router) stopJobLoop() {
 	if done != nil {
 		<-done
 	}
+}
+
+// WaitForInboundDeliveries blocks until every delivery goroutine dispatched by
+// deliveryPacket has finished. It gives callers a deterministic drain point
+// for the asynchronous dispatch introduced to mirror Python
+// LXMRouter.delivery_packet (LXMRouter.py:1949-1950, v1.1.0).
+func (r *Router) WaitForInboundDeliveries() {
+	r.inboundWG.Wait()
 }
 
 // CleanLinks tears down direct-delivery and inbound propagation links that

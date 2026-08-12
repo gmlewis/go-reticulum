@@ -484,6 +484,9 @@ func parseDiscoveryConfig(sub *ConfigSection, ifaceType string, mode int) (inter
 	if v, ok := sub.GetProperty("height"); ok {
 		cfg.Height = parseOptionalFloat64(v)
 	}
+	if v, ok := sub.GetProperty("location_cmd"); ok {
+		cfg.LocationCmd = strings.TrimSpace(v)
+	}
 	if v, ok := sub.GetProperty("discovery_frequency"); ok {
 		cfg.Frequency = parseOptionalInt(v)
 	}

@@ -112,14 +112,19 @@ type Reticulum struct {
 	interfaceDiscovery       *InterfaceDiscovery
 	interfaceAnnouncer       *InterfaceAnnouncer
 
-	mu                          sync.Mutex
-	shareInstance               bool
-	sharedInstanceType          string
-	localInterfacePort          int
-	localControlPort            int
-	localSocketPath             string
-	rpcKey                      []byte
-	rpcListener                 net.Listener
+	mu                 sync.Mutex
+	shareInstance      bool
+	sharedInstanceType string
+	localInterfacePort int
+	localControlPort   int
+	localSocketPath    string
+	rpcKey             []byte
+	rpcListener        net.Listener
+	// rpcDone is closed by rpcLoop when it has exited, so Reticulum.Close can
+	// join the listener goroutine instead of leaving it to race the accept
+	// error. It mirrors Python's _should_run loop control for the shared-
+	// instance RPC listener (Transport.py:213,3524).
+	rpcDone                     chan struct{}
 	isSharedInstance            bool
 	isStandaloneInstance        bool
 	isConnectedToSharedInstance bool
@@ -222,7 +227,6 @@ func (r *Reticulum) Logger() *Logger {
 // detaching the shared-instance interface and closing the RPC listener if active.
 func (r *Reticulum) Close() error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	var closeErr error
 	if r.interfaceDiscovery != nil {
 		r.interfaceDiscovery.Stop()
@@ -239,11 +243,26 @@ func (r *Reticulum) Close() error {
 		}
 		r.sharedInstanceInterface = nil
 	}
+	rpcDone := r.rpcDone
 	if r.rpcListener != nil {
 		if err := r.rpcListener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
 			closeErr = errors.Join(closeErr, err)
 		}
 		r.rpcListener = nil
+	}
+	r.mu.Unlock()
+
+	// Join the RPC listener loop outside r.mu so rpcLoop's periodic r.mu
+	// acquisition cannot deadlock shutdown. A short grace period bounds the
+	// wait so a stuck loop never blocks Close indefinitely.
+	if rpcDone != nil {
+		select {
+		case <-rpcDone:
+		case <-time.After(2 * time.Second):
+			if r.logger != nil {
+				r.logger.Error("RPC listener loop did not exit within 2s shutdown grace period")
+			}
+		}
 	}
 	return closeErr
 }
@@ -379,6 +398,12 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger) (*Re
 	if !r.isConnectedToSharedInstance {
 		if loader, ok := r.transport.(interface{ LoadPathTable() }); ok {
 			loader.LoadPathTable()
+		}
+		// Load the packet hashlist (Python Transport.py:242-254), gated on
+		// transport enabled inside the method. A client of a shared instance
+		// skips it for the same reason it skips the path-table load.
+		if loader, ok := r.transport.(interface{ LoadPacketHashlist(string) }); ok {
+			loader.LoadPacketHashlist(storagePath)
 		}
 	}
 

@@ -2016,18 +2016,26 @@ func TestDataPersistence(t *testing.T) {
 	t.Parallel()
 
 	ts := NewTransportSystem(nil)
+	ts.SetEnabled(true)
 	tmpDir := testutils.TempDir(t, "rns-test-")
 
-	// Persist a packet-hash list.
+	// Persist a packet-hash list using real HashLength/8-byte hashes.
+	hashA := make([]byte, HashLength/8)
+	hashB := make([]byte, HashLength/8)
+	hashA[0], hashB[0] = 0xAA, 0xBB
 	ts.mu.Lock()
 	ts.packetHashes = map[string]time.Time{
-		"hash-1": time.Now(),
-		"hash-2": time.Now(),
+		string(hashA): time.Now(),
+		string(hashB): time.Now(),
 	}
 	ts.mu.Unlock()
 
 	if err := ts.SavePacketHashlist(tmpDir); err != nil {
 		t.Fatalf("SavePacketHashlist: %v", err)
+	}
+	rawPath := filepath.Join(tmpDir, "packet_hashlist.raw")
+	if _, err := os.Stat(rawPath); err != nil {
+		t.Fatalf("expected %v to exist: %v", rawPath, err)
 	}
 
 	// Persist the path table.
@@ -2041,19 +2049,19 @@ func TestDataPersistence(t *testing.T) {
 		t.Fatalf("SavePathTable: %v", err)
 	}
 
-	// Read back the packet-hash list.
+	// Load the packet-hash list back into a fresh transport.
 	ts2 := NewTransportSystem(nil)
-	ts2.LoadKnownDestinations(tmpDir)
-	ts2.mu.Lock()
-	_, ok := ts2.packetHashes["hash-1"]
-	ts2.mu.Unlock()
-	// (The current implementation may not load the packet hash list, but
-	// the call must not error and the data file should exist.)
-	path := filepath.Join(tmpDir, "packet_hashlist")
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("expected %v to exist: %v", path, err)
+	ts2.SetEnabled(true)
+	if err := ts2.LoadPacketHashlist(tmpDir); err != nil {
+		t.Fatalf("LoadPacketHashlist: %v", err)
 	}
-	_ = ok
+	ts2.mu.Lock()
+	_, okA := ts2.packetHashes[string(hashA)]
+	_, okB := ts2.packetHashes[string(hashB)]
+	ts2.mu.Unlock()
+	if !okA || !okB {
+		t.Fatalf("expected both packet hashes to round-trip, got okA=%v okB=%v", okA, okB)
+	}
 }
 
 func TestDeregisterDestination(t *testing.T) {

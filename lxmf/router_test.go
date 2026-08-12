@@ -5097,6 +5097,10 @@ func TestDeliveryPacketOpportunisticAndDirect(t *testing.T) {
 	}
 	router.deliveryPacket(message.Packed, directPacket)
 
+	// deliveryPacket dispatches the delivery job asynchronously; drain the
+	// in-flight goroutines before inspecting the recorded messages.
+	router.WaitForInboundDeliveries()
+
 	mu.Lock()
 	defer mu.Unlock()
 	if len(received) != 1 {
@@ -5105,8 +5109,13 @@ func TestDeliveryPacketOpportunisticAndDirect(t *testing.T) {
 	if received[0].ContentString() != "content" {
 		t.Fatalf("unexpected content value: %q", received[0].ContentString())
 	}
-	if received[0].Method != MethodOpportunistic {
-		t.Fatalf("first method=%v want=%v", received[0].Method, MethodOpportunistic)
+	// Both packets carry the same message (identical hash), so duplicate
+	// suppression delivers exactly one. With asynchronous dispatch the
+	// winning goroutine — and therefore the recorded method (Opportunistic
+	// vs Direct) — is non-deterministic, matching Python's own per-thread
+	// ordering in lxmf_delivery. Accept either valid delivery method.
+	if received[0].Method != MethodOpportunistic && received[0].Method != MethodDirect {
+		t.Fatalf("first method=%v want %v or %v", received[0].Method, MethodOpportunistic, MethodDirect)
 	}
 }
 
@@ -5839,6 +5848,9 @@ func TestDeliveryPacketSuppressesDuplicateLocalDelivery(t *testing.T) {
 	router.deliveryPacket(message.Packed, packet)
 	router.deliveryPacket(message.Packed, packet)
 
+	// deliveryPacket dispatches asynchronously; drain before asserting.
+	router.WaitForInboundDeliveries()
+
 	if deliveries != 1 {
 		t.Fatalf("deliveries = %v, want 1", deliveries)
 	}
@@ -5873,6 +5885,10 @@ func TestDeliveryPacketRemembersOutboundTicket(t *testing.T) {
 	}
 	packet := &rns.Packet{DestinationType: rns.DestinationLink}
 	router.deliveryPacket(inboundMessage.Packed, packet)
+
+	// deliveryPacket dispatches asynchronously; drain before inspecting the
+	// ticket store, which is updated inside the dispatched goroutine.
+	router.WaitForInboundDeliveries()
 
 	if got := router.ticketStore.OutboundTicket(sourceDest.Hash, now); !bytes.Equal(got, outboundTicket) {
 		t.Fatalf("outbound ticket=%x want=%x", got, outboundTicket)
@@ -9786,7 +9802,9 @@ func TestProcessOutboundPropagatedNoNodeFails(t *testing.T) {
 	msg.DesiredMethod = MethodPropagated
 	msg.DeferPropagationStamp = false
 
-	// No outbound propagation node set — should fail immediately.
+	// No outbound propagation node set — HandleOutbound rejects the
+	// propagated message immediately, mirroring Python LXMRouter.handle_outbound
+	// (LXMRouter.py:1748-1750) which calls fail_message and raises IOError.
 	failedCalled := false
 	msg.FailedCallback = func(_ *Message) { failedCalled = true }
 
@@ -9794,8 +9812,12 @@ func TestProcessOutboundPropagatedNoNodeFails(t *testing.T) {
 	router.requestPath = func(_ []byte) error { return nil }
 	router.sendPacket = func(_ *rns.Packet) error { return nil }
 
-	if err := router.HandleOutbound(msg); err != nil {
-		t.Fatalf("HandleOutbound: %v", err)
+	err := router.HandleOutbound(msg)
+	if err == nil {
+		t.Fatal("HandleOutbound returned nil error for propagated message with no PN configured")
+	}
+	if !strings.Contains(err.Error(), "propagation node") {
+		t.Fatalf("HandleOutbound error=%q, want substring %q", err.Error(), "propagation node")
 	}
 
 	if msg.State != StateFailed {
@@ -10924,7 +10946,8 @@ func TestSetDisplayNameAndAnnounceAppData(t *testing.T) {
 		t.Fatal("expected non-nil app data")
 	}
 
-	// Unpack and verify: Python packs [display_name_bytes, stamp_cost].
+	// Unpack and verify: Python packs [display_name_bytes, stamp_cost,
+	// [SF_COMPRESSION]] (v1.1.0).
 	unpacked, err := msgpack.Unpack(appData)
 	if err != nil {
 		t.Fatalf("unpack app data: %v", err)
@@ -10933,8 +10956,8 @@ func TestSetDisplayNameAndAnnounceAppData(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected []any, got %T", unpacked)
 	}
-	if len(peerData) != 2 {
-		t.Fatalf("peer data length=%v want=2", len(peerData))
+	if len(peerData) != 3 {
+		t.Fatalf("peer data length=%v want=3", len(peerData))
 	}
 
 	nameBytes, ok := peerData[0].([]byte)
@@ -10956,6 +10979,15 @@ func TestSetDisplayNameAndAnnounceAppData(t *testing.T) {
 	}
 	if stampCostVal != 8 {
 		t.Fatalf("stamp cost=%v want=8", stampCostVal)
+	}
+
+	// The third element is the supported-functionality list [SF_COMPRESSION].
+	fnList, ok := peerData[2].([]any)
+	if !ok {
+		t.Fatalf("peer_data[2] type=%T want=[]any", peerData[2])
+	}
+	if !functionalityCodeEquals(fnList[0], SFCompression) {
+		t.Fatalf("functionality code=%v want SFCompression(%v)", fnList[0], SFCompression)
 	}
 }
 
@@ -11004,8 +11036,8 @@ func TestSetDisplayNameNoStampCost(t *testing.T) {
 		t.Fatalf("unpack: %v", err)
 	}
 	peerData := unpacked.([]any)
-	if len(peerData) != 2 {
-		t.Fatalf("len=%v want=2", len(peerData))
+	if len(peerData) != 3 {
+		t.Fatalf("len=%v want=3", len(peerData))
 	}
 
 	if string(peerData[0].([]byte)) != "Bob" {
@@ -11014,6 +11046,14 @@ func TestSetDisplayNameNoStampCost(t *testing.T) {
 	// stamp_cost should be nil when zero
 	if peerData[1] != nil {
 		t.Fatalf("stamp cost=%v want=nil", peerData[1])
+	}
+	// The third element is the supported-functionality list [SF_COMPRESSION].
+	fnList, ok := peerData[2].([]any)
+	if !ok {
+		t.Fatalf("peer_data[2] type=%T want=[]any", peerData[2])
+	}
+	if !functionalityCodeEquals(fnList[0], SFCompression) {
+		t.Fatalf("functionality code=%v want SFCompression(%v)", fnList[0], SFCompression)
 	}
 }
 
@@ -11084,8 +11124,8 @@ func TestAnnounceIncludesAppData(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected []any, got %T", unpacked)
 	}
-	if len(peerData) != 2 {
-		t.Fatalf("peer data length=%v want=2", len(peerData))
+	if len(peerData) != 3 {
+		t.Fatalf("peer data length=%v want=3", len(peerData))
 	}
 	nameBytes, ok := peerData[0].([]byte)
 	if !ok {
@@ -11093,6 +11133,14 @@ func TestAnnounceIncludesAppData(t *testing.T) {
 	}
 	if string(nameBytes) != "TestNode" {
 		t.Fatalf("display name=%q want=%q", string(nameBytes), "TestNode")
+	}
+	// The third element is the supported-functionality list [SF_COMPRESSION].
+	fnList, ok := peerData[2].([]any)
+	if !ok {
+		t.Fatalf("peer_data[2] type=%T want=[]any", peerData[2])
+	}
+	if !functionalityCodeEquals(fnList[0], SFCompression) {
+		t.Fatalf("functionality code=%v want SFCompression(%v)", fnList[0], SFCompression)
 	}
 }
 

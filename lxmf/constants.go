@@ -17,6 +17,12 @@ const (
 	// PNMetaName matches Python's LXMF.PN_META_NAME metadata key.
 	PNMetaName = 0x01
 
+	// SFCompression is the supported-functionality code signalling that a peer
+	// accepts auto-compressed LXMF message resources. It appears in the
+	// announce app-data peer_data[2] functionality list (Python
+	// LXMF.SF_COMPRESSION, lxmf/LXMF.py:108, v0.9.5).
+	SFCompression = 0x00
+
 	// FieldEmbeddedLXMS indicates an embedded LXMS field type in an LXMF message.
 	FieldEmbeddedLXMS = 0x01
 	// FieldTelemetry represents a telemetry data field in the message payload.
@@ -47,6 +53,43 @@ const (
 	FieldRNRRefs = 0x0E
 	// FieldRenderer specifies custom rendering instructions for the message.
 	FieldRenderer = 0x0F
+
+	// FieldReplyTo references the full LXMessage hash of the message this one
+	// replies to. Matches Python LXMF.FIELD_REPLY_TO (lxmf/LXMF.py:23, v1.0.0).
+	FieldReplyTo = 0x30
+	// FieldReplyQuote carries quoted content from the replied-to message in
+	// UTF-8. Matches Python LXMF.FIELD_REPLY_QUOTE (lxmf/LXMF.py:24, v1.0.0).
+	FieldReplyQuote = 0x31
+	// FieldReaction carries a reaction dict (see ReactionTo / ReactionContent).
+	// Matches Python LXMF.FIELD_REACTION (lxmf/LXMF.py:25, v1.0.0).
+	FieldReaction = 0x40
+	// FieldComment marks the message as a comment on another message. The
+	// actual comment text is carried as the normal LXM content so clients that
+	// do not support comments display it as a plain message. Matches Python
+	// LXMF.FIELD_COMMENT (lxmf/LXMF.py:26, v1.0.0).
+	FieldComment = 0x41
+	// FieldContinuation marks the message as continuing an earlier message. The
+	// continuation text is carried as the normal LXM content so clients that do
+	// not support continuations display it as a plain message. Matches Python
+	// LXMF.FIELD_CONTINUATION (lxmf/LXMF.py:27, v1.0.0).
+	FieldContinuation = 0x42
+
+	// ReactionTo is the dict key, within a FieldReaction value, holding the
+	// full LXMessage hash of the message the reaction targets. Matches Python
+	// LXMF.REACTION_TO (lxmf/LXMF.py:109, v1.0.0).
+	ReactionTo = 0x00
+	// ReactionContent is the dict key, within a FieldReaction value, holding
+	// the reaction content in UTF-8 (typically a single emoji). Matches Python
+	// LXMF.REACTION_CONTENT (lxmf/LXMF.py:110, v1.0.0).
+	ReactionContent = 0x01
+	// CommentFor is the dict key, within a FieldComment value, holding the full
+	// LXMessage hash of the message being commented on. Matches Python
+	// LXMF.COMMENT_FOR (lxmf/LXMF.py:118, v1.0.0).
+	CommentFor = 0x00
+	// ContinuationOf is the dict key, within a FieldContinuation value, holding
+	// the full LXMessage hash of the message this one continues. Matches Python
+	// LXMF.CONTINUATION_OF (lxmf/LXMF.py:126, v1.0.0).
+	ContinuationOf = 0x00
 
 	// FieldCustomType allows for user-defined custom field types.
 	FieldCustomType = 0xFB

@@ -457,10 +457,13 @@ func TestIntegration_Discovered(t *testing.T) {
 
 	now := float64(time.Now().UnixNano()) / 1e9
 	mockData := map[string]any{
-		"name":       "Discovery Test Interface",
-		"type":       "UDPInterface",
-		"last_heard": now - 30,
-		"value":      999,
+		"name":         "Discovery Test Interface",
+		"type":         "TCPServerInterface",
+		"last_heard":   now - 30,
+		"transport":    true,
+		"value":        999,
+		"transport_id": "0102030405060708090a0b0c0d0e0f10",
+		"network_id":   "0a0b0c0d0e0f10111213141516171819",
 	}
 	data, err := msgpack.Pack(mockData)
 	if err != nil {
@@ -482,8 +485,8 @@ func TestIntegration_Discovered(t *testing.T) {
 	if !strings.Contains(got, "Discovery Test Interface") {
 		t.Errorf("output missing Discovery Test Interface\ngot:\n%v", got)
 	}
-	if !strings.Contains(got, "UDP") {
-		t.Errorf("output missing UDP type\ngot:\n%v", got)
+	if !strings.Contains(got, "TCPServer") {
+		t.Errorf("output missing TCPServer type\ngot:\n%v", got)
 	}
 }
 

@@ -48,12 +48,17 @@ type DiscoveryConfig struct {
 	Latitude          *float64
 	Longitude         *float64
 	Height            *float64
-	Frequency         *int
-	Bandwidth         *int
-	SpreadingFactor   *int
-	CodingRate        *int
-	Channel           *int
-	Modulation        string
+	// LocationCmd, when non-empty, is a path to an executable run at announce
+	// time whose stdout is parsed as "lat,lon,hgt" to override the static
+	// Latitude/Longitude/Height fields (RNS/Reticulum.py:887,
+	// RNS/Discovery.py:103-123). Only evaluated on non-Windows platforms.
+	LocationCmd     string
+	Frequency       *int
+	Bandwidth       *int
+	SpreadingFactor *int
+	CodingRate      *int
+	Channel         *int
+	Modulation      string
 }
 
 // InboundHandler rigorously defines the callback signature invoked universally across all interface types whenever a valid payload frame is successfully reassembled.
@@ -913,6 +918,16 @@ func (bi *BaseInterface) HeldAnnounces() int {
 	bi.ingressMu.RLock()
 	defer bi.ingressMu.RUnlock()
 	return len(bi.heldAnnounces)
+}
+
+// ClearHeldAnnounces empties the interface's held-announce deque. It is the
+// per-interface analog of clearing Python's global Transport.held_announces
+// dict, used by TransportSystem.voidQueuesLocked on transport stop
+// (Transport.py:3517-3521).
+func (bi *BaseInterface) ClearHeldAnnounces() {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
+	bi.heldAnnounces = make(map[string]heldAnnounce)
 }
 
 // ProcessHeldAnnounces releases a single held announce — the fewest-hops one

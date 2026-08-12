@@ -267,8 +267,8 @@ func TestListDiscoveredInterfaces(t *testing.T) {
 	if di.Name != "Test Interface" {
 		t.Errorf("expected name %q, got %q", "Test Interface", di.Name)
 	}
-	if di.Type != "UDPInterface" {
-		t.Errorf("expected type %q, got %q", "UDPInterface", di.Type)
+	if di.Type != "TCPServerInterface" {
+		t.Errorf("expected type %q, got %q", "TCPServerInterface", di.Type)
 	}
 	if di.Hops != 1 {
 		t.Errorf("expected 1 hop, got %v", di.Hops)
@@ -306,7 +306,38 @@ func normalizeDiscoveryFixtureTimes(t *testing.T, data []byte) []byte {
 	now := float64(time.Now().UnixNano()) / 1e9
 	m["discovered"] = now - 7200
 	m["last_heard"] = now - 3600
+	// The embedded fixture carries type=UDPInterface, which is not in
+	// DISCOVERABLE_TYPES (RNS/Discovery.py:431) and would be removed on
+	// load (line 488). Override it with a discoverable type so this
+	// fixture still exercises field parsing/name/geo/value assertions
+	// on the kept entry.
+	m["type"] = "TCPServerInterface"
 	return mustMsgpackPack(m)
+}
+
+// discoverySurvivorFixtureMap returns a discovery cache map that survives the
+// Task 12 load removal chain (RNS/Discovery.py:483-490): it carries a
+// present, truthy, hex transport_id and network_id and a discoverable type,
+// plus the last_heard/value/name/transport fields the display/sort tests
+// exercise. overrides replace or extend the base fields, so a test focused on
+// a specific field (e.g. modulation, reachable_on, port) passes just that
+// field and still gets a loadable entry. Tests that configure interfaceSources
+// must override network_id to a hex string whose bytes are in the sources set.
+func discoverySurvivorFixtureMap(overrides map[string]any) map[string]any {
+	now := float64(time.Now().UnixNano()) / 1e9
+	m := map[string]any{
+		"name":         "Valid",
+		"type":         "TCPServerInterface",
+		"last_heard":   now - 60,
+		"transport":    true,
+		"value":        1,
+		"transport_id": "0102030405060708090a0b0c0d0e0f10",
+		"network_id":   "0a0b0c0d0e0f10111213141516171819",
+	}
+	for k, v := range overrides {
+		m[k] = v
+	}
+	return m
 }
 
 func TestListDiscoveredInterfaces_StatusThresholds(t *testing.T) {
@@ -320,29 +351,29 @@ func TestListDiscoveredInterfaces_StatusThresholds(t *testing.T) {
 	now := float64(time.Now().UnixNano()) / 1e9
 
 	// Available: heard 1 hour ago
-	availableData := map[string]any{
+	availableData := discoverySurvivorFixtureMap(map[string]any{
 		"name":       "Available",
 		"last_heard": now - 3600,
 		"value":      100,
-	}
+	})
 	// Unknown: heard 2 days ago
-	unknownData := map[string]any{
+	unknownData := discoverySurvivorFixtureMap(map[string]any{
 		"name":       "Unknown",
 		"last_heard": now - (ThresholdUnknown + 3600),
 		"value":      200,
-	}
+	})
 	// Stale: heard 4 days ago
-	staleData := map[string]any{
+	staleData := discoverySurvivorFixtureMap(map[string]any{
 		"name":       "Stale",
 		"last_heard": now - (ThresholdStale + 3600),
 		"value":      300,
-	}
+	})
 	// Expired: heard 8 days ago (should be removed)
-	expiredData := map[string]any{
+	expiredData := discoverySurvivorFixtureMap(map[string]any{
 		"name":       "Expired",
 		"last_heard": now - (ThresholdRemove + 3600),
 		"value":      400,
-	}
+	})
 
 	writeData := func(name string, m map[string]any) {
 		path := filepath.Join(storagePath, name+".data")
@@ -413,13 +444,13 @@ func TestListDiscoveredInterfaces_SourceAndReachableFiltering(t *testing.T) {
 		}
 	}
 
-	writeData("matching", map[string]any{
+	writeData("matching", discoverySurvivorFixtureMap(map[string]any{
 		"name":         "Matching",
 		"last_heard":   now - 3600,
 		"value":        100,
 		"network_id":   sourceHex,
 		"reachable_on": "discovery.example.net",
-	})
+	}))
 	writeData("missing-network-id", map[string]any{
 		"name":       "MissingNetworkID",
 		"last_heard": now - 3600,
@@ -429,11 +460,11 @@ func TestListDiscoveredInterfaces_SourceAndReachableFiltering(t *testing.T) {
 		"last_heard": now - 3600,
 		"network_id": "ffeeddccbbaa00998877665544332211",
 	})
-	writeData("invalid-network-id-hex", map[string]any{
+	writeData("invalid-network-id-hex", discoverySurvivorFixtureMap(map[string]any{
 		"name":       "InvalidNetworkIDHex",
 		"last_heard": now - 3600,
 		"network_id": "not-hex",
-	})
+	}))
 	writeData("invalid-reachable", map[string]any{
 		"name":         "InvalidReachable",
 		"last_heard":   now - 3600,
@@ -478,11 +509,11 @@ func TestListDiscoveredInterfaces_CorruptNonMapFileLogsAndRemains(t *testing.T) 
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":       "Valid",
 		"last_heard": now - 60,
 		"value":      1,
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write valid discovery file: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(storagePath, "corrupt.data"), mustMsgpackPack("not a map"), 0o644); err != nil {
@@ -537,11 +568,11 @@ func TestListDiscoveredInterfaces_CorruptDirectoryLogsAndRemains(t *testing.T) {
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":       "Valid",
 		"last_heard": now - 60,
 		"value":      1,
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write valid discovery file: %v", err)
 	}
 	if err := os.Mkdir(filepath.Join(storagePath, "corrupt-dir"), 0o755); err != nil {
@@ -596,11 +627,11 @@ func TestListDiscoveredInterfaces_MissingLastHeardLogsAndRemains(t *testing.T) {
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":       "Valid",
 		"last_heard": now - 60,
 		"value":      1,
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write valid discovery file: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(storagePath, "missing-last-heard.data"), mustMsgpackPack(map[string]any{
@@ -717,13 +748,13 @@ func TestListDiscoveredInterfaces_TrailingGarbageLoadsLikePython(t *testing.T) {
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	raw := mustMsgpackPack(map[string]any{
+	raw := mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":       "TrailingGarbage",
 		"last_heard": now - 60,
 		"transport":  true,
 		"type":       "BackboneInterface",
 		"value":      1,
-	})
+	}))
 	if err := os.WriteFile(filepath.Join(storagePath, "trailing.data"), append(raw, []byte("junk")...), 0o644); err != nil {
 		t.Fatalf("failed to write trailing-garbage discovery file: %v", err)
 	}
@@ -810,11 +841,11 @@ func TestListDiscoveredInterfaces_BoolLastHeardExpiresAndRemoves(t *testing.T) {
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":       "Valid",
 		"last_heard": now - 60,
 		"value":      1,
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write valid discovery file: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(storagePath, "bool-last-heard.data"), mustMsgpackPack(map[string]any{
@@ -878,11 +909,11 @@ func TestListDiscoveredInterfaces_BoolValueSortsLikePython(t *testing.T) {
 		{filename: "five.data", name: "FiveValue", value: 5},
 	}
 	for _, tc := range entries {
-		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(map[string]any{
+		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 			"name":       tc.name,
 			"last_heard": now - 60,
 			"value":      tc.value,
-		}), 0o644); err != nil {
+		})), 0o644); err != nil {
 			t.Fatalf("failed to write discovery file %q: %v", tc.filename, err)
 		}
 	}
@@ -930,11 +961,11 @@ func TestListDiscoveredInterfaces_FloatValueSortsLikePython(t *testing.T) {
 		{filename: "lower-float.data", name: "LowerFloatValue", lastHeard: now - 60, value: 7.1},
 	}
 	for _, tc := range entries {
-		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(map[string]any{
+		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 			"name":       tc.name,
 			"last_heard": tc.lastHeard,
 			"value":      tc.value,
-		}), 0o644); err != nil {
+		})), 0o644); err != nil {
 			t.Fatalf("failed to write discovery file %q: %v", tc.filename, err)
 		}
 	}
@@ -977,11 +1008,11 @@ func TestListDiscoveredInterfaces_BytesValueSortsLikePython(t *testing.T) {
 		{filename: "bytes-a.data", name: "BytesA", lastHeard: now - 60, value: []byte("a")},
 	}
 	for _, tc := range entries {
-		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(map[string]any{
+		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 			"name":       tc.name,
 			"last_heard": tc.lastHeard,
 			"value":      tc.value,
-		}), 0o644); err != nil {
+		})), 0o644); err != nil {
 			t.Fatalf("failed to write discovery file %q: %v", tc.filename, err)
 		}
 	}
@@ -1024,11 +1055,11 @@ func TestListDiscoveredInterfaces_ListValueSortsLikePython(t *testing.T) {
 		{filename: "list-11.data", name: "List11", lastHeard: now - 60, value: []any{1, 1}},
 	}
 	for _, tc := range entries {
-		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(map[string]any{
+		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 			"name":       tc.name,
 			"last_heard": tc.lastHeard,
 			"value":      tc.value,
-		}), 0o644); err != nil {
+		})), 0o644); err != nil {
 			t.Fatalf("failed to write discovery file %q: %v", tc.filename, err)
 		}
 	}
@@ -1061,11 +1092,11 @@ func TestListDiscoveredInterfaces_StringValueSingleEntryDoesNotFail(t *testing.T
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "string-value.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "string-value.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":       "StringValue",
 		"last_heard": now - 60,
 		"value":      "7",
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write string value discovery file: %v", err)
 	}
 
@@ -1119,11 +1150,11 @@ func TestListDiscoveredInterfaces_StringValueSortsLikePython(t *testing.T) {
 		{filename: "string-three.data", name: "StringThree", lastHeard: now - 60, value: "3"},
 	}
 	for _, tc := range entries {
-		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(map[string]any{
+		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 			"name":       tc.name,
 			"last_heard": tc.lastHeard,
 			"value":      tc.value,
-		}), 0o644); err != nil {
+		})), 0o644); err != nil {
 			t.Fatalf("failed to write discovery file %q: %v", tc.filename, err)
 		}
 	}
@@ -1166,11 +1197,11 @@ func TestListDiscoveredInterfaces_MixedStringAndIntegerValueReturnsError(t *test
 		{filename: "int-three.data", name: "IntThree", lastHeard: now - 60, value: 3},
 	}
 	for _, tc := range entries {
-		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(map[string]any{
+		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 			"name":       tc.name,
 			"last_heard": tc.lastHeard,
 			"value":      tc.value,
-		}), 0o644); err != nil {
+		})), 0o644); err != nil {
 			t.Fatalf("failed to write discovery file %q: %v", tc.filename, err)
 		}
 	}
@@ -1203,11 +1234,11 @@ func TestListDiscoveredInterfaces_MixedBytesAndStringValueReturnsPythonError(t *
 		{filename: "string-a.data", name: "StringA", lastHeard: now - 60, value: "a"},
 	}
 	for _, tc := range entries {
-		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(map[string]any{
+		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 			"name":       tc.name,
 			"last_heard": tc.lastHeard,
 			"value":      tc.value,
-		}), 0o644); err != nil {
+		})), 0o644); err != nil {
 			t.Fatalf("failed to write discovery file %q: %v", tc.filename, err)
 		}
 	}
@@ -1243,11 +1274,11 @@ func TestListDiscoveredInterfaces_DictValuePairReturnsPythonError(t *testing.T) 
 		{filename: "dict-b.data", name: "DictB", lastHeard: now - 60, value: map[string]any{"b": 1}},
 	}
 	for _, tc := range entries {
-		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(map[string]any{
+		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 			"name":       tc.name,
 			"last_heard": tc.lastHeard,
 			"value":      tc.value,
-		}), 0o644); err != nil {
+		})), 0o644); err != nil {
 			t.Fatalf("failed to write discovery file %q: %v", tc.filename, err)
 		}
 	}
@@ -1325,11 +1356,11 @@ func TestListDiscoveredInterfaces_MoreMixedValueErrorsMatchPython(t *testing.T) 
 			}
 
 			for i, file := range tc.files {
-				if err := os.WriteFile(filepath.Join(storagePath, file.filename), mustMsgpackPack(map[string]any{
+				if err := os.WriteFile(filepath.Join(storagePath, file.filename), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 					"name":       file.filename,
 					"last_heard": now - float64(i+1),
 					"value":      file.value,
-				}), 0o644); err != nil {
+				})), 0o644); err != nil {
 					t.Fatalf("failed to write discovery file %q: %v", file.filename, err)
 				}
 			}
@@ -1366,11 +1397,11 @@ func TestListDiscoveredInterfaces_NilValueSortsByLastHeard(t *testing.T) {
 		{filename: "none-newer.data", name: "NoneNewer", lastHeard: now - 60, value: nil},
 	}
 	for _, tc := range entries {
-		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(map[string]any{
+		if err := os.WriteFile(filepath.Join(storagePath, tc.filename), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 			"name":       tc.name,
 			"last_heard": tc.lastHeard,
 			"value":      tc.value,
-		}), 0o644); err != nil {
+		})), 0o644); err != nil {
 			t.Fatalf("failed to write discovery file %q: %v", tc.filename, err)
 		}
 	}
@@ -1403,12 +1434,12 @@ func TestListDiscoveredInterfaces_BoolDiscoveredUsesPythonNumericSemantics(t *te
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "bool-discovered.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "bool-discovered.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":       "BoolDiscovered",
 		"last_heard": now - 60,
 		"discovered": true,
 		"value":      5,
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write bool discovered discovery file: %v", err)
 	}
 
@@ -1437,14 +1468,14 @@ func TestListDiscoveredInterfaces_BoolPortUsesPythonNumericSemantics(t *testing.
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "bool-port.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "bool-port.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":         "BoolPort",
 		"last_heard":   now - 60,
 		"discovered":   now - 60,
 		"reachable_on": "127.0.0.1",
 		"value":        5,
 		"port":         true,
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write bool port discovery file: %v", err)
 	}
 
@@ -1476,14 +1507,14 @@ func TestListDiscoveredInterfaces_NonIntegralFloatPortDoesNotDeduplicateAgainstI
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "float-port.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "float-port.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":         "FloatPort",
 		"last_heard":   now - 60,
 		"discovered":   now - 60,
 		"reachable_on": "127.0.0.1",
 		"value":        5,
 		"port":         1.5,
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write float port discovery file: %v", err)
 	}
 
@@ -1516,19 +1547,19 @@ func TestListDiscoveredInterfaces_EmptyReachableOnLogsAndRemains(t *testing.T) {
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":       "Valid",
 		"last_heard": now - 60,
 		"value":      1,
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write valid discovery file: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(storagePath, "empty-reachable.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "empty-reachable.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":         "EmptyReachable",
 		"last_heard":   now - 60,
 		"value":        2,
 		"reachable_on": "",
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write empty reachable discovery file: %v", err)
 	}
 
@@ -1580,19 +1611,19 @@ func TestListDiscoveredInterfaces_BytesReachableOnLogsAndRemains(t *testing.T) {
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":       "Valid",
 		"last_heard": now - 60,
 		"value":      1,
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write valid discovery file: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(storagePath, "bytes-reachable.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "bytes-reachable.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":         "BytesReachable",
 		"last_heard":   now - 60,
 		"value":        2,
 		"reachable_on": []byte("127.0.0.1"),
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write bytes reachable discovery file: %v", err)
 	}
 
@@ -1658,19 +1689,19 @@ func TestListDiscoveredInterfaces_MoreInvalidReachableOnLogsPythonErrorsAndRemai
 			}
 
 			now := float64(time.Now().UnixNano()) / 1e9
-			if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(map[string]any{
+			if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 				"name":       "Valid",
 				"last_heard": now - 60,
 				"value":      1,
-			}), 0o644); err != nil {
+			})), 0o644); err != nil {
 				t.Fatalf("failed to write valid discovery file: %v", err)
 			}
-			if err := os.WriteFile(filepath.Join(storagePath, tc.file), mustMsgpackPack(map[string]any{
+			if err := os.WriteFile(filepath.Join(storagePath, tc.file), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 				"name":         "InvalidReachable",
 				"last_heard":   now - 60,
 				"value":        2,
 				"reachable_on": tc.value,
-			}), 0o644); err != nil {
+			})), 0o644); err != nil {
 				t.Fatalf("failed to write invalid reachable discovery file: %v", err)
 			}
 
@@ -1724,13 +1755,13 @@ func TestListDiscoveredInterfaces_IntegerReachableOnRemainsAvailable(t *testing.
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "int-reachable.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "int-reachable.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":         "IntegerReachable",
 		"last_heard":   now - 60,
 		"value":        1,
 		"transport":    true,
 		"reachable_on": int64(3232235777),
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write integer reachable discovery file: %v", err)
 	}
 
@@ -1765,13 +1796,13 @@ func TestListDiscoveredInterfaces_BoolReachableOnRemainsAvailable(t *testing.T) 
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "bool-reachable.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "bool-reachable.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":         "BoolReachable",
 		"last_heard":   now - 60,
 		"value":        1,
 		"transport":    true,
 		"reachable_on": true,
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write bool reachable discovery file: %v", err)
 	}
 
@@ -1806,22 +1837,22 @@ func TestListDiscoveredInterfaces_InvalidNetworkIDTypeLogsAndRemains(t *testing.
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":       "Valid",
 		"last_heard": now - 60,
 		"value":      1,
 		"transport":  true,
 		"network_id": "aabb",
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write valid discovery file: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(storagePath, "invalid-network-id-type.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "invalid-network-id-type.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":       "InvalidNetworkIDType",
 		"last_heard": now - 60,
 		"value":      2,
 		"transport":  true,
 		"network_id": 123,
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write invalid network_id type discovery file: %v", err)
 	}
 
@@ -1874,22 +1905,22 @@ func TestListDiscoveredInterfaces_BytesNetworkIDLogsPythonTypeErrorAndRemains(t 
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":       "Valid",
 		"last_heard": now - 60,
 		"value":      1,
 		"transport":  true,
 		"network_id": "aabb",
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write valid discovery file: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(storagePath, "bytes-network-id.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "bytes-network-id.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":       "BytesNetworkID",
 		"last_heard": now - 60,
 		"value":      2,
 		"transport":  true,
 		"network_id": []byte("aabb"),
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write bytes network_id discovery file: %v", err)
 	}
 
@@ -1954,22 +1985,22 @@ func TestListDiscoveredInterfaces_InvalidNetworkIDHexLogsPythonValueErrorsAndRem
 			}
 
 			now := float64(time.Now().UnixNano()) / 1e9
-			if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(map[string]any{
+			if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 				"name":       "Valid",
 				"last_heard": now - 60,
 				"value":      1,
 				"transport":  true,
 				"network_id": "aabb",
-			}), 0o644); err != nil {
+			})), 0o644); err != nil {
 				t.Fatalf("failed to write valid discovery file: %v", err)
 			}
-			if err := os.WriteFile(filepath.Join(storagePath, tc.file), mustMsgpackPack(map[string]any{
+			if err := os.WriteFile(filepath.Join(storagePath, tc.file), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 				"name":       "InvalidNetworkIDHex",
 				"last_heard": now - 60,
 				"value":      2,
 				"transport":  true,
 				"network_id": tc.networkID,
-			}), 0o644); err != nil {
+			})), 0o644); err != nil {
 				t.Fatalf("failed to write invalid network_id discovery file: %v", err)
 			}
 
@@ -2024,17 +2055,20 @@ func TestListDiscoveredInterfaces_OnlyTransportMissingTransportLogsAndRemains(t 
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":       "Valid",
 		"last_heard": now - 60,
 		"transport":  true,
 		"value":      1,
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write valid discovery file: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(storagePath, "missing-transport.data"), mustMsgpackPack(map[string]any{
-		"name":       "MissingTransport",
-		"last_heard": now - 60,
+		"name":         "MissingTransport",
+		"last_heard":   now - 60,
+		"transport_id": "0102030405060708090a0b0c0d0e0f10",
+		"network_id":   "0a0b0c0d0e0f10111213141516171819",
+		"type":         "TCPServerInterface",
 	}), 0o644); err != nil {
 		t.Fatalf("failed to write corrupt discovery file: %v", err)
 	}
@@ -2088,9 +2122,12 @@ func TestListDiscoveredInterfaces_OnlyAvailableMissingTransportLogsAndRemains(t 
 
 	now := float64(time.Now().UnixNano()) / 1e9
 	if err := os.WriteFile(filepath.Join(storagePath, "missing-transport.data"), mustMsgpackPack(map[string]any{
-		"name":       "MissingTransport",
-		"last_heard": now - 60,
-		"value":      42,
+		"name":         "MissingTransport",
+		"last_heard":   now - 60,
+		"value":        42,
+		"transport_id": "0102030405060708090a0b0c0d0e0f10",
+		"network_id":   "0a0b0c0d0e0f10111213141516171819",
+		"type":         "TCPServerInterface",
 	}), 0o644); err != nil {
 		t.Fatalf("failed to write discovery file: %v", err)
 	}
@@ -2152,12 +2189,12 @@ func TestListDiscoveredInterfaces_OnlyAvailableIgnoresFalseyTransportValues(t *t
 			}
 
 			now := float64(time.Now().UnixNano()) / 1e9
-			if err := os.WriteFile(filepath.Join(storagePath, "falsey-transport.data"), mustMsgpackPack(map[string]any{
+			if err := os.WriteFile(filepath.Join(storagePath, "falsey-transport.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 				"name":       "FalseyTransport",
 				"last_heard": now - 60,
 				"value":      42,
 				"transport":  tc.transport,
-			}), 0o644); err != nil {
+			})), 0o644); err != nil {
 				t.Fatalf("failed to write discovery file: %v", err)
 			}
 
@@ -2203,12 +2240,12 @@ func TestListDiscoveredInterfaces_OnlyAvailableAllowsNilTransport(t *testing.T) 
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "nil-transport.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "nil-transport.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":       "NilTransport",
 		"last_heard": now - 60,
 		"transport":  nil,
 		"value":      42,
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write discovery file: %v", err)
 	}
 
@@ -2258,12 +2295,12 @@ func TestListDiscoveredInterfaces_OnlyTransportNilTransportSkipsWithoutLog(t *te
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "nil-transport.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "nil-transport.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":       "NilTransport",
 		"last_heard": now - 60,
 		"transport":  nil,
 		"value":      42,
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write discovery file: %v", err)
 	}
 
@@ -2307,12 +2344,12 @@ func TestListDiscoveredInterfaces_OnlyTransportIncludesTruthyStringTransport(t *
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "string-transport.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "string-transport.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":       "TruthyStringTransport",
 		"last_heard": now - 60,
 		"transport":  "yes",
 		"value":      1,
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write string transport discovery file: %v", err)
 	}
 
@@ -2346,12 +2383,12 @@ func TestListDiscoveredInterfaces_OnlyTransportUsesContainerTruthiness(t *testin
 	now := float64(time.Now().UnixNano()) / 1e9
 	write := func(name string, transport any) {
 		t.Helper()
-		if err := os.WriteFile(filepath.Join(storagePath, name+".data"), mustMsgpackPack(map[string]any{
+		if err := os.WriteFile(filepath.Join(storagePath, name+".data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 			"name":       name,
 			"last_heard": now - 60,
 			"transport":  transport,
 			"value":      1,
-		}), 0o644); err != nil {
+		})), 0o644); err != nil {
 			t.Fatalf("failed to write %s discovery file: %v", name, err)
 		}
 	}
@@ -2392,18 +2429,21 @@ func TestListDiscoveredInterfaces_MissingValueReturnsErrorAndRemains(t *testing.
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "valid.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":       "Valid",
 		"last_heard": now - 60,
 		"transport":  true,
 		"value":      1,
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write valid discovery file: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(storagePath, "missing-value.data"), mustMsgpackPack(map[string]any{
-		"name":       "MissingValue",
-		"last_heard": now - 60,
-		"transport":  true,
+		"name":         "MissingValue",
+		"last_heard":   now - 60,
+		"transport":    true,
+		"transport_id": "0102030405060708090a0b0c0d0e0f10",
+		"network_id":   "0a0b0c0d0e0f10111213141516171819",
+		"type":         "TCPServerInterface",
 	}), 0o644); err != nil {
 		t.Fatalf("failed to write corrupt discovery file: %v", err)
 	}
@@ -2429,12 +2469,12 @@ func TestListDiscoveredInterfaces_PresentNilNameDisplaysAsPythonNone(t *testing.
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "none-name.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "none-name.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":       nil,
 		"last_heard": now - 60,
 		"transport":  true,
 		"value":      1,
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write discovery file: %v", err)
 	}
 
@@ -2463,9 +2503,12 @@ func TestListDiscoveredInterfaces_MissingNameAndTypeDisplayAsEmptyStrings(t *tes
 
 	now := float64(time.Now().UnixNano()) / 1e9
 	if err := os.WriteFile(filepath.Join(storagePath, "missing-name-type.data"), mustMsgpackPack(map[string]any{
-		"last_heard": now - 60,
-		"transport":  true,
-		"value":      1,
+		"last_heard":   now - 60,
+		"transport":    true,
+		"value":        1,
+		"transport_id": "0102030405060708090a0b0c0d0e0f10",
+		"network_id":   "0a0b0c0d0e0f10111213141516171819",
+		"type":         "TCPServerInterface",
 	}), 0o644); err != nil {
 		t.Fatalf("failed to write discovery file: %v", err)
 	}
@@ -2481,8 +2524,13 @@ func TestListDiscoveredInterfaces_MissingNameAndTypeDisplayAsEmptyStrings(t *tes
 	if got := discovered[0].Name; got != "" {
 		t.Fatalf("Name = %q, want empty string", got)
 	}
-	if got := discovered[0].Type; got != "" {
-		t.Fatalf("Type = %q, want empty string", got)
+	// The parity removal chain (RNS/Discovery.py:488) now requires a
+	// discoverable type; discoverySurvivorFixtureMap supplies
+	// TCPServerInterface, so the missing-type-empty-string display is no
+	// longer reachable. The missing-name-empty-string assertion above
+	// preserves the still-valid half of this test's intent.
+	if got := discovered[0].Type; got != "TCPServerInterface" {
+		t.Fatalf("Type = %q, want %q", got, "TCPServerInterface")
 	}
 }
 
@@ -2497,14 +2545,13 @@ func TestListDiscoveredInterfaces_NilTypeAndConfigEntryDisplayAsPythonNone(t *te
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "none-type-config.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "none-type-config.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":         "Example",
-		"type":         nil,
 		"config_entry": nil,
 		"last_heard":   now - 60,
 		"transport":    true,
 		"value":        1,
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write discovery file: %v", err)
 	}
 
@@ -2516,8 +2563,11 @@ func TestListDiscoveredInterfaces_NilTypeAndConfigEntryDisplayAsPythonNone(t *te
 	if got, want := len(discovered), 1; got != want {
 		t.Fatalf("len(discovered) = %v, want %v", got, want)
 	}
-	if got := discovered[0].Type; got != "None" {
-		t.Fatalf("Type = %q, want %q", got, "None")
+	// A nil type now causes removal (RNS/Discovery.py:488); the survivor
+	// fixture carries TCPServerInterface so the entry loads and the
+	// nil-config-entry "None" display below remains under test.
+	if got := discovered[0].Type; got != "TCPServerInterface" {
+		t.Fatalf("Type = %q, want %q", got, "TCPServerInterface")
 	}
 	if got := discovered[0].ConfigEntry; got != "None" {
 		t.Fatalf("ConfigEntry = %q, want %q", got, "None")
@@ -2535,13 +2585,12 @@ func TestListDiscoveredInterfaces_BytesNameAndTypeDisplayAsPythonBytes(t *testin
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "bytes-name-type.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "bytes-name-type.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":       []byte("xyz"),
-		"type":       []byte("tcp"),
 		"last_heard": now - 60,
 		"transport":  true,
 		"value":      1,
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write discovery file: %v", err)
 	}
 
@@ -2556,8 +2605,11 @@ func TestListDiscoveredInterfaces_BytesNameAndTypeDisplayAsPythonBytes(t *testin
 	if got := discovered[0].Name; got != "b'xyz'" {
 		t.Fatalf("Name = %q, want %q", got, "b'xyz'")
 	}
-	if got := discovered[0].Type; got != "b'tcp'" {
-		t.Fatalf("Type = %q, want %q", got, "b'tcp'")
+	// A non-discoverable bytes type now causes removal
+	// (RNS/Discovery.py:488); the survivor fixture carries
+	// TCPServerInterface so the bytes-name display above remains under test.
+	if got := discovered[0].Type; got != "TCPServerInterface" {
+		t.Fatalf("Type = %q, want %q", got, "TCPServerInterface")
 	}
 }
 
@@ -2588,11 +2640,15 @@ func TestListDiscoveredInterfaces_ListTransportIDDisplaysAsPythonList(t *testing
 	if err != nil {
 		t.Fatalf("ListDiscoveredInterfaces() error = %v", err)
 	}
-	if got, want := len(discovered), 1; got != want {
+	// The non-string transport_id cannot be loaded under parity: Python's
+	// bytes.fromhex requires a string, and this entry also lacks network_id,
+	// so the missing-id removal (RNS/Discovery.py:485) drops it before the
+	// fromhex check ever runs.
+	if got, want := len(discovered), 0; got != want {
 		t.Fatalf("len(discovered) = %v, want %v", got, want)
 	}
-	if got := discovered[0].TransportID; got != "[1, 2]" {
-		t.Fatalf("TransportID = %q, want %q", got, "[1, 2]")
+	if _, err := os.Stat(filepath.Join(storagePath, "list-transport-id.data")); !os.IsNotExist(err) {
+		t.Fatalf("expected list-transport-id discovery file to be removed, stat err=%v", err)
 	}
 }
 
@@ -2607,13 +2663,12 @@ func TestListDiscoveredInterfaces_CompositeNameAndTypeDisplayAsPythonRepr(t *tes
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "composite-name-type.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "composite-name-type.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":       []any{1},
-		"type":       map[any]any{"a": 1},
 		"last_heard": now - 60,
 		"transport":  true,
 		"value":      1,
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write discovery file: %v", err)
 	}
 
@@ -2628,8 +2683,12 @@ func TestListDiscoveredInterfaces_CompositeNameAndTypeDisplayAsPythonRepr(t *tes
 	if got := discovered[0].Name; got != "[1]" {
 		t.Fatalf("Name = %q, want %q", got, "[1]")
 	}
-	if got := discovered[0].Type; got != "{'a': 1}" {
-		t.Fatalf("Type = %q, want %q", got, "{'a': 1}")
+	// A non-discoverable map type now causes removal
+	// (RNS/Discovery.py:488); the survivor fixture carries
+	// TCPServerInterface so the composite-name display above remains under
+	// test.
+	if got := discovered[0].Type; got != "TCPServerInterface" {
+		t.Fatalf("Type = %q, want %q", got, "TCPServerInterface")
 	}
 }
 
@@ -2660,11 +2719,15 @@ func TestListDiscoveredInterfaces_BytesTransportIDDisplaysAsPythonBytes(t *testi
 	if err != nil {
 		t.Fatalf("ListDiscoveredInterfaces() error = %v", err)
 	}
-	if got, want := len(discovered), 1; got != want {
+	// The non-string transport_id cannot be loaded under parity: Python's
+	// bytes.fromhex requires a string, and this entry also lacks network_id,
+	// so the missing-id removal (RNS/Discovery.py:485) drops it before the
+	// fromhex check ever runs.
+	if got, want := len(discovered), 0; got != want {
 		t.Fatalf("len(discovered) = %v, want %v", got, want)
 	}
-	if got := discovered[0].TransportID; got != "b'deadbeef'" {
-		t.Fatalf("TransportID = %q, want %q", got, "b'deadbeef'")
+	if _, err := os.Stat(filepath.Join(storagePath, "bytes-transport-id.data")); !os.IsNotExist(err) {
+		t.Fatalf("expected bytes-transport-id discovery file to be removed, stat err=%v", err)
 	}
 }
 
@@ -2679,14 +2742,14 @@ func TestListDiscoveredInterfaces_BytesConfigEntryDisplaysAsPythonBytes(t *testi
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "bytes-config-entry.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "bytes-config-entry.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":         "Bytes Config Entry",
 		"type":         "TCPServerInterface",
 		"last_heard":   now - 60,
 		"transport":    true,
 		"value":        1,
 		"config_entry": []byte("[[Bytes]]"),
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write discovery file: %v", err)
 	}
 
@@ -2730,11 +2793,15 @@ func TestListDiscoveredInterfaces_BytesNetworkIDDisplaysAsPythonBytes(t *testing
 	if err != nil {
 		t.Fatalf("ListDiscoveredInterfaces() error = %v", err)
 	}
-	if got, want := len(discovered), 1; got != want {
+	// The non-string network_id cannot be loaded under parity: Python's
+	// bytes.fromhex requires a string, and this entry also lacks
+	// transport_id, so the missing-id removal (RNS/Discovery.py:484) drops
+	// it before the fromhex check ever runs.
+	if got, want := len(discovered), 0; got != want {
 		t.Fatalf("len(discovered) = %v, want %v", got, want)
 	}
-	if got := discovered[0].NetworkID; got != "b'01020304'" {
-		t.Fatalf("NetworkID = %q, want %q", got, "b'01020304'")
+	if _, err := os.Stat(filepath.Join(storagePath, "bytes-network-id.data")); !os.IsNotExist(err) {
+		t.Fatalf("expected bytes-network-id discovery file to be removed, stat err=%v", err)
 	}
 }
 
@@ -2749,7 +2816,7 @@ func TestListDiscoveredInterfaces_BytesIFACFieldsDisplayAsPythonBytes(t *testing
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "bytes-ifac-fields.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "bytes-ifac-fields.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":         "Bytes IFAC",
 		"type":         "TCPServerInterface",
 		"last_heard":   now - 60,
@@ -2757,7 +2824,7 @@ func TestListDiscoveredInterfaces_BytesIFACFieldsDisplayAsPythonBytes(t *testing
 		"value":        1,
 		"ifac_netname": []byte("mesh"),
 		"ifac_netkey":  []byte("secret"),
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write discovery file: %v", err)
 	}
 
@@ -2788,14 +2855,14 @@ func TestListDiscoveredInterfaces_BytesModulationDisplaysAsPythonBytes(t *testin
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "bytes-modulation.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "bytes-modulation.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":       "Bytes Modulation",
 		"type":       "KISSInterface",
 		"last_heard": now - 60,
 		"transport":  true,
 		"value":      1,
 		"modulation": []byte("lora"),
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write discovery file: %v", err)
 	}
 
@@ -2855,31 +2922,31 @@ func TestListDiscoveredInterfaces_SortsLikePython(t *testing.T) {
 		}
 	}
 
-	writeData("stale-high-value", map[string]any{
+	writeData("stale-high-value", discoverySurvivorFixtureMap(map[string]any{
 		"name":       "StaleHighValue",
 		"last_heard": now - (ThresholdStale + 3600),
 		"value":      5000,
-	})
-	writeData("available-lower-value", map[string]any{
+	}))
+	writeData("available-lower-value", discoverySurvivorFixtureMap(map[string]any{
 		"name":       "AvailableLowerValue",
 		"last_heard": now - 3600,
 		"value":      1000,
-	})
-	writeData("available-higher-value", map[string]any{
+	}))
+	writeData("available-higher-value", discoverySurvivorFixtureMap(map[string]any{
 		"name":       "AvailableHigherValue",
 		"last_heard": now - 1800,
 		"value":      2000,
-	})
-	writeData("available-same-value-older", map[string]any{
+	}))
+	writeData("available-same-value-older", discoverySurvivorFixtureMap(map[string]any{
 		"name":       "AvailableSameValueOlder",
 		"last_heard": now - 2400,
 		"value":      2000,
-	})
-	writeData("unknown-high-value", map[string]any{
+	}))
+	writeData("unknown-high-value", discoverySurvivorFixtureMap(map[string]any{
 		"name":       "UnknownHighValue",
 		"last_heard": now - (ThresholdUnknown + 3600),
 		"value":      8000,
-	})
+	}))
 
 	r := &Reticulum{configDir: tmpDir}
 	discovery := NewInterfaceDiscovery(r)
@@ -4143,7 +4210,7 @@ func TestInterfaceDiscoveryReceiveAndPersist(t *testing.T) {
 	discovery := NewInterfaceDiscovery(r)
 
 	sourceIdentity := mustTestNewIdentity(t, true)
-	transportID := []byte{0xde, 0xad, 0xbe, 0xef}
+	transportID := discoveryTestTransportID
 	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
 		discoveryFieldInterfaceType: "TCPServerInterface",
 		discoveryFieldTransport:     true,
@@ -4183,8 +4250,8 @@ func TestInterfaceDiscoveryReceiveAndPersist(t *testing.T) {
 	if got.Hops != 2 {
 		t.Fatalf("Hops = %v, want 2", got.Hops)
 	}
-	if got.TransportID != "deadbeef" {
-		t.Fatalf("TransportID = %q, want %q", got.TransportID, "deadbeef")
+	if got.TransportID != discoveryTestTransportIDHex {
+		t.Fatalf("TransportID = %q, want %q", got.TransportID, discoveryTestTransportIDHex)
 	}
 	if got.NetworkID != sourceIdentity.HexHash {
 		t.Fatalf("NetworkID = %q, want %q", got.NetworkID, sourceIdentity.HexHash)
@@ -4207,7 +4274,7 @@ func TestInterfaceDiscoveryReceiveAndPersist(t *testing.T) {
 	}
 	wantConfigEntry := "[[Discovered TCP]]\n  type = " + connectionType +
 		"\n  enabled = yes\n  " + remoteKey + " = discovery.example.net\n  target_port = 4242" +
-		"\n  transport_identity = deadbeef\n  network_name = mesh\n  passphrase = secret"
+		"\n  transport_identity = " + discoveryTestTransportIDHex + "\n  network_name = mesh\n  passphrase = secret"
 	if got.ConfigEntry != wantConfigEntry {
 		t.Fatalf("ConfigEntry = %q, want %q", got.ConfigEntry, wantConfigEntry)
 	}
@@ -4235,7 +4302,7 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsInsufficientStampValue(t *tes
 	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
 		discoveryFieldInterfaceType: "TCPServerInterface",
 		discoveryFieldTransport:     true,
-		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldTransportID:   discoveryTestTransportID,
 		discoveryFieldName:          "Broken",
 		discoveryFieldReachableOn:   "discovery.example.net",
 		discoveryFieldPort:          4242,
@@ -4279,7 +4346,7 @@ func TestInterfaceDiscoveryReceiveAndPersistEncryptedWithTransportNetworkIdentit
 	plain := mustDiscoveryAnnounceAppData(t, map[any]any{
 		discoveryFieldInterfaceType: "TCPServerInterface",
 		discoveryFieldTransport:     true,
-		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldTransportID:   discoveryTestTransportID,
 		discoveryFieldName:          "Encrypted TCP",
 		discoveryFieldReachableOn:   "discovery.example.net",
 		discoveryFieldPort:          4242,
@@ -4336,7 +4403,7 @@ func TestInterfaceAnnounceHandlerRecoversCallbackPanic(t *testing.T) {
 	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
 		discoveryFieldInterfaceType: "TCPServerInterface",
 		discoveryFieldTransport:     true,
-		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldTransportID:   discoveryTestTransportID,
 		discoveryFieldName:          "Callback Boom",
 		discoveryFieldReachableOn:   "discovery.example.net",
 		discoveryFieldPort:          4242,
@@ -4363,7 +4430,7 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsMissingRequiredFields(t *test
 			name: "missing-transport",
 			payload: map[any]any{
 				discoveryFieldInterfaceType: "TCPServerInterface",
-				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldTransportID:   discoveryTestTransportID,
 				discoveryFieldName:          "Broken TCP",
 				discoveryFieldReachableOn:   "discovery.example.net",
 				discoveryFieldPort:          4242,
@@ -4374,7 +4441,7 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsMissingRequiredFields(t *test
 			payload: map[any]any{
 				discoveryFieldInterfaceType: "TCPServerInterface",
 				discoveryFieldTransport:     true,
-				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldTransportID:   discoveryTestTransportID,
 				discoveryFieldReachableOn:   "discovery.example.net",
 				discoveryFieldPort:          4242,
 			},
@@ -4384,7 +4451,7 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsMissingRequiredFields(t *test
 			payload: map[any]any{
 				discoveryFieldInterfaceType: "TCPServerInterface",
 				discoveryFieldTransport:     true,
-				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldTransportID:   discoveryTestTransportID,
 				discoveryFieldName:          "Broken TCP",
 				discoveryFieldReachableOn:   "discovery.example.net",
 			},
@@ -4394,7 +4461,7 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsMissingRequiredFields(t *test
 			payload: map[any]any{
 				discoveryFieldInterfaceType: "TCPServerInterface",
 				discoveryFieldTransport:     true,
-				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldTransportID:   discoveryTestTransportID,
 				discoveryFieldName:          "Broken TCP",
 				discoveryFieldPort:          4242,
 			},
@@ -4404,7 +4471,7 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsMissingRequiredFields(t *test
 			payload: map[any]any{
 				discoveryFieldInterfaceType: "I2PInterface",
 				discoveryFieldTransport:     true,
-				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldTransportID:   discoveryTestTransportID,
 				discoveryFieldName:          "Broken I2P",
 			},
 		},
@@ -4413,7 +4480,7 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsMissingRequiredFields(t *test
 			payload: map[any]any{
 				discoveryFieldInterfaceType:   "RNodeInterface",
 				discoveryFieldTransport:       true,
-				discoveryFieldTransportID:     []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldTransportID:     discoveryTestTransportID,
 				discoveryFieldName:            "Broken RNode",
 				discoveryFieldReachableOn:     "rnode.example.net",
 				discoveryFieldBandwidth:       125000,
@@ -4426,7 +4493,7 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsMissingRequiredFields(t *test
 			payload: map[any]any{
 				discoveryFieldInterfaceType: "WeaveInterface",
 				discoveryFieldTransport:     true,
-				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldTransportID:   discoveryTestTransportID,
 				discoveryFieldName:          "Broken Weave",
 				discoveryFieldReachableOn:   "weave.example.net",
 				discoveryFieldFrequency:     915000000,
@@ -4439,7 +4506,7 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsMissingRequiredFields(t *test
 			payload: map[any]any{
 				discoveryFieldInterfaceType: "KISSInterface",
 				discoveryFieldTransport:     true,
-				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldTransportID:   discoveryTestTransportID,
 				discoveryFieldName:          "Broken KISS",
 				discoveryFieldReachableOn:   "kiss.example.net",
 				discoveryFieldFrequency:     433920000,
@@ -4501,7 +4568,7 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsMissingGeolocationFields(t *t
 			payload: map[any]any{
 				discoveryFieldInterfaceType: "TCPServerInterface",
 				discoveryFieldTransport:     true,
-				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldTransportID:   discoveryTestTransportID,
 				discoveryFieldName:          "Broken TCP",
 				discoveryFieldReachableOn:   "discovery.example.net",
 				discoveryFieldPort:          4242,
@@ -4514,7 +4581,7 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsMissingGeolocationFields(t *t
 			payload: map[any]any{
 				discoveryFieldInterfaceType: "TCPServerInterface",
 				discoveryFieldTransport:     true,
-				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldTransportID:   discoveryTestTransportID,
 				discoveryFieldName:          "Broken TCP",
 				discoveryFieldReachableOn:   "discovery.example.net",
 				discoveryFieldPort:          4242,
@@ -4527,7 +4594,7 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsMissingGeolocationFields(t *t
 			payload: map[any]any{
 				discoveryFieldInterfaceType: "TCPServerInterface",
 				discoveryFieldTransport:     true,
-				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldTransportID:   discoveryTestTransportID,
 				discoveryFieldName:          "Broken TCP",
 				discoveryFieldReachableOn:   "discovery.example.net",
 				discoveryFieldPort:          4242,
@@ -4598,20 +4665,20 @@ func TestInterfaceDiscoveryReceiveAndPersistAdditionalTypes(t *testing.T) {
 			payload: map[any]any{
 				discoveryFieldInterfaceType: "I2PInterface",
 				discoveryFieldTransport:     true,
-				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldTransportID:   discoveryTestTransportID,
 				discoveryFieldName:          "Discovered I2P",
 				discoveryFieldReachableOn:   "exampleabcdefghijklmnopqrstuvwxyz.b32.i2p",
 			},
 			wantType:        "I2PInterface",
 			wantReachableOn: "exampleabcdefghijklmnopqrstuvwxyz.b32.i2p",
-			wantConfigEntry: "[[Discovered I2P]]\n  type = I2PInterface\n  enabled = yes\n  peers = exampleabcdefghijklmnopqrstuvwxyz.b32.i2p\n  transport_identity = deadbeef",
+			wantConfigEntry: "[[Discovered I2P]]\n  type = I2PInterface\n  enabled = yes\n  peers = exampleabcdefghijklmnopqrstuvwxyz.b32.i2p\n  transport_identity = deadbeefdeadbeefdeadbeefdeadbeef",
 		},
 		{
 			name: "rnode",
 			payload: map[any]any{
 				discoveryFieldInterfaceType:   "RNodeInterface",
 				discoveryFieldTransport:       true,
-				discoveryFieldTransportID:     []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldTransportID:     discoveryTestTransportID,
 				discoveryFieldName:            "Discovered RNode",
 				discoveryFieldReachableOn:     "rnode.example.net",
 				discoveryFieldFrequency:       915000000,
@@ -4631,7 +4698,7 @@ func TestInterfaceDiscoveryReceiveAndPersistAdditionalTypes(t *testing.T) {
 			payload: map[any]any{
 				discoveryFieldInterfaceType: "WeaveInterface",
 				discoveryFieldTransport:     true,
-				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldTransportID:   discoveryTestTransportID,
 				discoveryFieldName:          "Discovered Weave",
 				discoveryFieldReachableOn:   "weave.example.net",
 				discoveryFieldFrequency:     915000000,
@@ -4650,7 +4717,7 @@ func TestInterfaceDiscoveryReceiveAndPersistAdditionalTypes(t *testing.T) {
 			payload: map[any]any{
 				discoveryFieldInterfaceType: "KISSInterface",
 				discoveryFieldTransport:     true,
-				discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+				discoveryFieldTransportID:   discoveryTestTransportID,
 				discoveryFieldName:          "Discovered KISS",
 				discoveryFieldReachableOn:   "kiss.example.net",
 				discoveryFieldFrequency:     433920000,
@@ -4661,7 +4728,7 @@ func TestInterfaceDiscoveryReceiveAndPersistAdditionalTypes(t *testing.T) {
 			wantFrequency:   433920000,
 			wantBandwidth:   12500,
 			wantModulation:  "afsk",
-			wantConfigEntry: "[[Discovered KISS]]\n  type = KISSInterface\n  enabled = yes\n  port = \n  # Frequency: 433920000\n  # Bandwidth: 12500\n  # Modulation: afsk\n  transport_identity = deadbeef",
+			wantConfigEntry: "[[Discovered KISS]]\n  type = KISSInterface\n  enabled = yes\n  port = \n  # Frequency: 433920000\n  # Bandwidth: 12500\n  # Modulation: afsk\n  transport_identity = deadbeefdeadbeefdeadbeefdeadbeef",
 		},
 	}
 
@@ -4760,7 +4827,7 @@ func TestInterfaceDiscoveryReceiveAndPersistPlainTCPClientOmitsConfigEntry(t *te
 	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
 		discoveryFieldInterfaceType: "TCPClientInterface",
 		discoveryFieldTransport:     true,
-		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldTransportID:   discoveryTestTransportID,
 		discoveryFieldName:          "Discovered TCP Client",
 		discoveryFieldReachableOn:   "tcp-client.example.net",
 	}, 2)
@@ -4774,7 +4841,7 @@ func TestInterfaceDiscoveryReceiveAndPersistPlainTCPClientOmitsConfigEntry(t *te
 		t.Fatalf("callback unexpectedly included reachable_on %#v", got)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte("deadbeefDiscovered TCP Client")))+".data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Discovered TCP Client")))+".data"))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -4820,7 +4887,7 @@ func TestDiscoveryConfigEntryKeepsEmptyTransportIdentityForBackbone(t *testing.T
 	}
 }
 
-func TestInterfaceDiscoveryReceiveAndPersistPreservesRawTransportValue(t *testing.T) {
+func TestInterfaceDiscoveryReceiveAndPersistRejectsNonBoolTransport(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-receive-transport-")
@@ -4836,19 +4903,21 @@ func TestInterfaceDiscoveryReceiveAndPersistPreservesRawTransportValue(t *testin
 	}
 	discovery := NewInterfaceDiscovery(r)
 
-	var callbackInfo map[string]any
+	callbackCalled := false
 	handler := NewInterfaceAnnounceHandler(r, 2, func(info map[string]any) {
-		callbackInfo = cloneStringAnyMap(info)
+		callbackCalled = true
 		if err := discovery.persistDiscoveredInterface(info); err != nil {
 			t.Fatalf("persist callback failed: %v", err)
 		}
 	})
 
 	sourceIdentity := mustTestNewIdentity(t, true)
+	// RNS/Discovery.py:305: transport must be exactly a bool; a string value
+	// is rejected and the announce is dropped (no callback, no persistence).
 	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
 		discoveryFieldInterfaceType: "TCPServerInterface",
 		discoveryFieldTransport:     "yes",
-		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldTransportID:   discoveryTestTransportID,
 		discoveryFieldName:          "String Transport",
 		discoveryFieldReachableOn:   "discovery.example.net",
 		discoveryFieldPort:          4242,
@@ -4856,24 +4925,11 @@ func TestInterfaceDiscoveryReceiveAndPersistPreservesRawTransportValue(t *testin
 
 	handler.receivedAnnounce(destinationHash, sourceIdentity, appData)
 
-	if got := callbackInfo["transport"]; got != "yes" {
-		t.Fatalf("callback transport = %#v, want %q", got, "yes")
+	if callbackCalled {
+		t.Fatal("expected non-bool transport announce to be rejected (callback fired)")
 	}
-
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte("deadbeefString Transport")))+".data"))
-	if err != nil {
-		t.Fatalf("failed to read persisted discovery file: %v", err)
-	}
-	unpacked, err := msgpack.Unpack(data)
-	if err != nil {
-		t.Fatalf("failed to unpack persisted discovery file: %v", err)
-	}
-	m := asAnyMap(unpacked)
-	if m == nil {
-		t.Fatalf("unexpected persisted discovery type %T", unpacked)
-	}
-	if got := lookupAnyValue(m, "transport"); got != "yes" {
-		t.Fatalf("persisted transport = %#v, want %q", got, "yes")
+	if _, err := os.Stat(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"String Transport")))+".data")); err == nil {
+		t.Fatal("expected no persisted file for rejected non-bool transport announce")
 	}
 }
 
@@ -4905,7 +4961,7 @@ func TestInterfaceDiscoveryReceiveAndPersistPreservesEmptyIFACFields(t *testing.
 	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
 		discoveryFieldInterfaceType: "TCPServerInterface",
 		discoveryFieldTransport:     true,
-		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldTransportID:   discoveryTestTransportID,
 		discoveryFieldName:          "Empty IFAC",
 		discoveryFieldReachableOn:   "discovery.example.net",
 		discoveryFieldPort:          4242,
@@ -4922,7 +4978,7 @@ func TestInterfaceDiscoveryReceiveAndPersistPreservesEmptyIFACFields(t *testing.
 		t.Fatalf("callback ifac_netkey = %#v, present=%v, want empty string present", got, ok)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte("deadbeefEmpty IFAC")))+".data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Empty IFAC")))+".data"))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -4970,7 +5026,7 @@ func TestInterfaceDiscoveryReceiveAndPersistPreservesRawPortValue(t *testing.T) 
 	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
 		discoveryFieldInterfaceType: "TCPServerInterface",
 		discoveryFieldTransport:     true,
-		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldTransportID:   discoveryTestTransportID,
 		discoveryFieldName:          "Bool Port",
 		discoveryFieldReachableOn:   "discovery.example.net",
 		discoveryFieldPort:          true,
@@ -4985,7 +5041,7 @@ func TestInterfaceDiscoveryReceiveAndPersistPreservesRawPortValue(t *testing.T) 
 		t.Fatalf("config_entry = %q, want Python-shaped bool port", asString(got))
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte("deadbeefBool Port")))+".data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Bool Port")))+".data"))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -5030,7 +5086,7 @@ func TestInterfaceDiscoveryReceiveAndPersistFormatsIterablePortLikePython(t *tes
 	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
 		discoveryFieldInterfaceType: "TCPServerInterface",
 		discoveryFieldTransport:     true,
-		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldTransportID:   discoveryTestTransportID,
 		discoveryFieldName:          "Iterable Port",
 		discoveryFieldReachableOn:   "discovery.example.net",
 		discoveryFieldPort:          []any{1, 2},
@@ -5045,7 +5101,7 @@ func TestInterfaceDiscoveryReceiveAndPersistFormatsIterablePortLikePython(t *tes
 		t.Fatalf("config_entry = %q, want Python-shaped iterable port", asString(got))
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte("deadbeefIterable Port")))+".data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Iterable Port")))+".data"))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -5090,7 +5146,7 @@ func TestInterfaceDiscoveryReceiveAndPersistFormatsMapPortLikePython(t *testing.
 	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
 		discoveryFieldInterfaceType: "TCPServerInterface",
 		discoveryFieldTransport:     true,
-		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldTransportID:   discoveryTestTransportID,
 		discoveryFieldName:          "Map Port",
 		discoveryFieldReachableOn:   "discovery.example.net",
 		discoveryFieldPort:          map[any]any{"a": 1},
@@ -5105,7 +5161,7 @@ func TestInterfaceDiscoveryReceiveAndPersistFormatsMapPortLikePython(t *testing.
 		t.Fatalf("config_entry = %q, want Python-shaped map port", asString(got))
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte("deadbeefMap Port")))+".data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Map Port")))+".data"))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -5150,7 +5206,7 @@ func TestInterfaceDiscoveryReceiveAndPersistFormatsWholeFloatPortLikePython(t *t
 	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
 		discoveryFieldInterfaceType: "TCPServerInterface",
 		discoveryFieldTransport:     true,
-		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldTransportID:   discoveryTestTransportID,
 		discoveryFieldName:          "Float Port",
 		discoveryFieldReachableOn:   "discovery.example.net",
 		discoveryFieldPort:          1.0,
@@ -5165,7 +5221,7 @@ func TestInterfaceDiscoveryReceiveAndPersistFormatsWholeFloatPortLikePython(t *t
 		t.Fatalf("config_entry = %q, want Python-shaped whole float port", asString(got))
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte("deadbeefFloat Port")))+".data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Float Port")))+".data"))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -5210,7 +5266,7 @@ func TestInterfaceDiscoveryReceiveAndPersistAcceptsIntegerReachableOn(t *testing
 	appData := mustDiscoveryAnnounceAppDataRaw(t, map[any]any{
 		discoveryFieldInterfaceType: "TCPServerInterface",
 		discoveryFieldTransport:     true,
-		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldTransportID:   discoveryTestTransportID,
 		discoveryFieldName:          "Integer Reachable",
 		discoveryFieldReachableOn:   1,
 		discoveryFieldPort:          4242,
@@ -5228,7 +5284,7 @@ func TestInterfaceDiscoveryReceiveAndPersistAcceptsIntegerReachableOn(t *testing
 		t.Fatalf("config_entry = %q, want integer reachable_on", asString(got))
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte("deadbeefInteger Reachable")))+".data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Integer Reachable")))+".data"))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -5245,7 +5301,7 @@ func TestInterfaceDiscoveryReceiveAndPersistAcceptsIntegerReachableOn(t *testing
 	}
 }
 
-func TestInterfaceDiscoveryReceiveAndPersistAcceptsIntegerTransportID(t *testing.T) {
+func TestInterfaceDiscoveryReceiveAndPersistRejectsIntegerTransportID(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-receive-transport-id-int-")
@@ -5261,15 +5317,18 @@ func TestInterfaceDiscoveryReceiveAndPersistAcceptsIntegerTransportID(t *testing
 	}
 	discovery := NewInterfaceDiscovery(r)
 
-	var callbackInfo map[string]any
+	callbackCalled := false
 	handler := NewInterfaceAnnounceHandler(r, 2, func(info map[string]any) {
-		callbackInfo = cloneStringAnyMap(info)
+		callbackCalled = true
 		if err := discovery.persistDiscoveredInterface(info); err != nil {
 			t.Fatalf("persist callback failed: %v", err)
 		}
 	})
 
 	sourceIdentity := mustTestNewIdentity(t, true)
+	// RNS/Discovery.py:309: transport_id must be a byte string of
+	// TRUNCATED_HASHLENGTH/8 bytes; an integer has no len() in Python and
+	// raises, aborting the announce (no callback, no persistence).
 	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
 		discoveryFieldInterfaceType: "TCPServerInterface",
 		discoveryFieldTransport:     true,
@@ -5281,31 +5340,12 @@ func TestInterfaceDiscoveryReceiveAndPersistAcceptsIntegerTransportID(t *testing
 
 	handler.receivedAnnounce(destinationHash, sourceIdentity, appData)
 
-	if got := callbackInfo["transport_id"]; got != "7b" {
-		t.Fatalf("callback transport_id = %#v, want %q", got, "7b")
-	}
-	if got := callbackInfo["config_entry"]; !strings.Contains(asString(got), "transport_identity = 7b") {
-		t.Fatalf("config_entry = %q, want integer transport_id hex", asString(got))
-	}
-
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte("7bInteger Transport ID")))+".data"))
-	if err != nil {
-		t.Fatalf("failed to read persisted discovery file: %v", err)
-	}
-	unpacked, err := msgpack.Unpack(data)
-	if err != nil {
-		t.Fatalf("failed to unpack persisted discovery file: %v", err)
-	}
-	m := asAnyMap(unpacked)
-	if m == nil {
-		t.Fatalf("unexpected persisted discovery type %T", unpacked)
-	}
-	if got := lookupAnyValue(m, "transport_id"); got != "7b" {
-		t.Fatalf("persisted transport_id = %#v, want %q", got, "7b")
+	if callbackCalled {
+		t.Fatal("expected integer transport_id announce to be rejected (callback fired)")
 	}
 }
 
-func TestInterfaceDiscoveryReceiveAndPersistAcceptsIterableTransportID(t *testing.T) {
+func TestInterfaceDiscoveryReceiveAndPersistRejectsIterableTransportID(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-receive-iterable-transport-id-")
@@ -5321,15 +5361,17 @@ func TestInterfaceDiscoveryReceiveAndPersistAcceptsIterableTransportID(t *testin
 	}
 	discovery := NewInterfaceDiscovery(r)
 
-	var callbackInfo map[string]any
+	callbackCalled := false
 	handler := NewInterfaceAnnounceHandler(r, 2, func(info map[string]any) {
-		callbackInfo = cloneStringAnyMap(info)
+		callbackCalled = true
 		if err := discovery.persistDiscoveredInterface(info); err != nil {
 			t.Fatalf("persist callback failed: %v", err)
 		}
 	})
 
 	sourceIdentity := mustTestNewIdentity(t, true)
+	// RNS/Discovery.py:309: transport_id must be a byte string; a list (even
+	// of the right byte values) is not bytes and is rejected.
 	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
 		discoveryFieldInterfaceType: "TCPServerInterface",
 		discoveryFieldTransport:     true,
@@ -5341,27 +5383,8 @@ func TestInterfaceDiscoveryReceiveAndPersistAcceptsIterableTransportID(t *testin
 
 	handler.receivedAnnounce(destinationHash, sourceIdentity, appData)
 
-	if callbackInfo == nil {
-		t.Fatal("expected iterable transport_id discovery announce to invoke callback")
-	}
-	if got := callbackInfo["transport_id"]; got != "deadbeef" {
-		t.Fatalf("callback transport_id = %#v, want %q", got, "deadbeef")
-	}
-
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte("deadbeefIterable Transport ID")))+".data"))
-	if err != nil {
-		t.Fatalf("failed to read persisted discovery file: %v", err)
-	}
-	unpacked, err := msgpack.Unpack(data)
-	if err != nil {
-		t.Fatalf("failed to unpack persisted discovery file: %v", err)
-	}
-	m := asAnyMap(unpacked)
-	if m == nil {
-		t.Fatalf("unexpected persisted discovery type %T", unpacked)
-	}
-	if got := lookupAnyValue(m, "transport_id"); got != "deadbeef" {
-		t.Fatalf("persisted transport_id = %#v, want %q", got, "deadbeef")
+	if callbackCalled {
+		t.Fatal("expected iterable transport_id announce to be rejected (callback fired)")
 	}
 }
 
@@ -5390,7 +5413,7 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsBytesName(t *testing.T) {
 	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
 		discoveryFieldInterfaceType: "TCPServerInterface",
 		discoveryFieldTransport:     true,
-		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldTransportID:   discoveryTestTransportID,
 		discoveryFieldName:          []byte("bytes-name"),
 		discoveryFieldReachableOn:   "discovery.example.net",
 		discoveryFieldPort:          4242,
@@ -5435,7 +5458,7 @@ func TestInterfaceDiscoveryReceiveAndPersistRejectsNilAnnouncedIdentity(t *testi
 	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
 		discoveryFieldInterfaceType: "TCPServerInterface",
 		discoveryFieldTransport:     true,
-		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldTransportID:   discoveryTestTransportID,
 		discoveryFieldName:          "Nil Identity",
 		discoveryFieldReachableOn:   "discovery.example.net",
 		discoveryFieldPort:          4242,
@@ -5484,7 +5507,7 @@ func TestInterfaceDiscoveryReceiveAndPersistIgnoresFieldsFromOtherInterfaceTypes
 	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
 		discoveryFieldInterfaceType: "TCPServerInterface",
 		discoveryFieldTransport:     true,
-		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldTransportID:   discoveryTestTransportID,
 		discoveryFieldName:          "Extra Fields TCP",
 		discoveryFieldReachableOn:   "discovery.example.net",
 		discoveryFieldPort:          4242,
@@ -5501,7 +5524,7 @@ func TestInterfaceDiscoveryReceiveAndPersistIgnoresFieldsFromOtherInterfaceTypes
 		}
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte("deadbeefExtra Fields TCP")))+".data"))
+	data, err := os.ReadFile(filepath.Join(tmpDir, "discovery", "interfaces", hex.EncodeToString(FullHash([]byte(discoveryTestTransportIDHex+"Extra Fields TCP")))+".data"))
 	if err != nil {
 		t.Fatalf("failed to read persisted discovery file: %v", err)
 	}
@@ -5583,7 +5606,7 @@ func TestInterfaceDiscoveryStartReconnectsCachedBackbone(t *testing.T) {
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "cached-backbone.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "cached-backbone.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":         "Cached Backbone",
 		"type":         "BackboneInterface",
 		"transport":    true,
@@ -5596,7 +5619,7 @@ func TestInterfaceDiscoveryStartReconnectsCachedBackbone(t *testing.T) {
 		"network_id":   "01020304",
 		"ifac_netname": "mesh",
 		"ifac_netkey":  "secret",
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write cached discovery file: %v", err)
 	}
 
@@ -5711,7 +5734,7 @@ func TestInterfaceDiscoveryConnectDiscoveredMissingConfigEntrySkipsAutoconnect(t
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "cached-backbone.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "cached-backbone.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":         "Cached Backbone",
 		"type":         "BackboneInterface",
 		"transport":    true,
@@ -5721,7 +5744,7 @@ func TestInterfaceDiscoveryConnectDiscoveredMissingConfigEntrySkipsAutoconnect(t
 		"reachable_on": "127.0.0.1",
 		"port":         port,
 		"network_id":   "01020304",
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write cached discovery file: %v", err)
 	}
 
@@ -5781,7 +5804,7 @@ func TestInterfaceDiscoveryConnectDiscoveredBytesTypeSkipsAutoconnectLikePython(
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "cached-backbone-bytes-type.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "cached-backbone-bytes-type.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":         "Cached Bytes Type",
 		"type":         []byte("BackboneInterface"),
 		"transport":    true,
@@ -5792,7 +5815,7 @@ func TestInterfaceDiscoveryConnectDiscoveredBytesTypeSkipsAutoconnectLikePython(
 		"reachable_on": "127.0.0.1",
 		"port":         port,
 		"network_id":   "01020304",
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write cached discovery file: %v", err)
 	}
 
@@ -5890,10 +5913,12 @@ func TestInterfaceDiscoveryConnectDiscoveredLogsPythonReconnectError(t *testing.
 	}
 	now := float64(time.Now().UnixNano()) / 1e9
 	if err := os.WriteFile(filepath.Join(storagePath, "missing-value.data"), mustMsgpackPack(map[string]any{
-		"name":       "MissingValue",
-		"type":       "BackboneInterface",
-		"transport":  true,
-		"last_heard": now - 60,
+		"name":         "MissingValue",
+		"type":         "BackboneInterface",
+		"transport":    true,
+		"last_heard":   now - 60,
+		"transport_id": "0102030405060708090a0b0c0d0e0f10",
+		"network_id":   "0a0b0c0d0e0f10111213141516171819",
 	}), 0o644); err != nil {
 		t.Fatalf("failed to write cached discovery file: %v", err)
 	}
@@ -5951,7 +5976,7 @@ func TestInterfaceDiscoveryConnectDiscoveredStopsAtAutoconnectLimitInDiscoveryOr
 		{file: "first.data", name: "First", value: 30, port: 4101},
 		{file: "second.data", name: "Second", value: 20, port: 4102},
 	} {
-		if err := os.WriteFile(filepath.Join(storagePath, tc.file), mustMsgpackPack(map[string]any{
+		if err := os.WriteFile(filepath.Join(storagePath, tc.file), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 			"name":         tc.name,
 			"type":         "BackboneInterface",
 			"transport":    true,
@@ -5962,7 +5987,7 @@ func TestInterfaceDiscoveryConnectDiscoveredStopsAtAutoconnectLimitInDiscoveryOr
 			"reachable_on": "127.0.0.1",
 			"port":         tc.port,
 			"network_id":   "01020304",
-		}), 0o644); err != nil {
+		})), 0o644); err != nil {
 			t.Fatalf("failed to write cached discovery file %q: %v", tc.file, err)
 		}
 	}
@@ -7331,7 +7356,7 @@ func TestInterfaceDiscoveryConnectDiscoveredPassesRawEndpointValuesToConstructor
 		t.Fatalf("failed to create storage path: %v", err)
 	}
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "cached-backbone.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "cached-backbone.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":         "Cached Raw Backbone",
 		"type":         "BackboneInterface",
 		"transport":    true,
@@ -7342,7 +7367,7 @@ func TestInterfaceDiscoveryConnectDiscoveredPassesRawEndpointValuesToConstructor
 		"reachable_on": "127.0.0.1",
 		"port":         nil,
 		"network_id":   "01020304",
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write cached discovery file: %v", err)
 	}
 
@@ -7404,7 +7429,7 @@ func TestInterfaceDiscoveryConnectDiscoveredNilPortLogsPythonTypeError(t *testin
 		t.Fatalf("failed to create storage path: %v", err)
 	}
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "cached-backbone.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "cached-backbone.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":         "Cached Nil Port Backbone",
 		"type":         "BackboneInterface",
 		"transport":    true,
@@ -7414,7 +7439,7 @@ func TestInterfaceDiscoveryConnectDiscoveredNilPortLogsPythonTypeError(t *testin
 		"config_entry": "[[cached-nil-port]]",
 		"reachable_on": "127.0.0.1",
 		"port":         nil,
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write cached discovery file: %v", err)
 	}
 
@@ -7578,7 +7603,7 @@ func TestInterfaceDiscoveryStartAutoconnectsReceivedBackboneAnnounce(t *testing.
 	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
 		discoveryFieldInterfaceType: "BackboneInterface",
 		discoveryFieldTransport:     true,
-		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldTransportID:   discoveryTestTransportID,
 		discoveryFieldName:          "Live Backbone",
 		discoveryFieldReachableOn:   "127.0.0.1",
 		discoveryFieldPort:          port,
@@ -7669,7 +7694,7 @@ func TestInterfaceDiscoveryStartDoesNotAutoconnectReceivedTCPServerAnnounce(t *t
 	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
 		discoveryFieldInterfaceType: "TCPServerInterface",
 		discoveryFieldTransport:     true,
-		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldTransportID:   discoveryTestTransportID,
 		discoveryFieldName:          "Live TCP Server",
 		discoveryFieldReachableOn:   "127.0.0.1",
 		discoveryFieldPort:          port,
@@ -7764,7 +7789,7 @@ func TestInterfaceDiscoveryStartInvokesDiscoveryCallbackAfterAutoconnect(t *test
 	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
 		discoveryFieldInterfaceType: "BackboneInterface",
 		discoveryFieldTransport:     true,
-		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldTransportID:   discoveryTestTransportID,
 		discoveryFieldName:          "Callback Backbone",
 		discoveryFieldReachableOn:   "127.0.0.1",
 		discoveryFieldPort:          port,
@@ -7862,6 +7887,7 @@ func TestInterfaceDiscoveryStartInvokesDiscoveryCallbackWhenDuplicateAutoconnect
 		"reachable_on":   "127.0.0.1",
 		"port":           4242,
 		"network_id":     "01020304",
+		"transport_id":   "0102030405060708090a0b0c0d0e0f10",
 	})
 
 	var result callbackResult
@@ -7935,7 +7961,7 @@ func TestInterfaceDiscoveryStartCallbackReceivesPersistedMetadata(t *testing.T) 
 	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
 		discoveryFieldInterfaceType: "TCPServerInterface",
 		discoveryFieldTransport:     true,
-		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldTransportID:   discoveryTestTransportID,
 		discoveryFieldName:          "Callback TCP Server",
 		discoveryFieldReachableOn:   "127.0.0.1",
 		discoveryFieldPort:          4242,
@@ -9809,7 +9835,7 @@ func TestInterfaceDiscoveryStartRecoversDiscoveryCallbackPanic(t *testing.T) {
 	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
 		discoveryFieldInterfaceType: "BackboneInterface",
 		discoveryFieldTransport:     true,
-		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldTransportID:   discoveryTestTransportID,
 		discoveryFieldName:          "Callback Panic Backbone",
 		discoveryFieldReachableOn:   "127.0.0.1",
 		discoveryFieldPort:          port,
@@ -10418,6 +10444,7 @@ func TestInterfaceDiscoveryStartCallbackMissingConfigEntrySkipsAutoconnectButSti
 		"reachable_on":   "127.0.0.1",
 		"port":           port,
 		"network_id":     "01020304",
+		"transport_id":   "0102030405060708090a0b0c0d0e0f10",
 	})
 
 	select {
@@ -11211,7 +11238,7 @@ func TestInterfaceDiscoveryStartSkipsAutoconnectWhenPersistFails(t *testing.T) {
 	appData := mustDiscoveryAnnounceAppData(t, map[any]any{
 		discoveryFieldInterfaceType: "BackboneInterface",
 		discoveryFieldTransport:     true,
-		discoveryFieldTransportID:   []byte{0xde, 0xad, 0xbe, 0xef},
+		discoveryFieldTransportID:   discoveryTestTransportID,
 		discoveryFieldName:          "Broken Backbone",
 		discoveryFieldReachableOn:   "127.0.0.1",
 		discoveryFieldPort:          port,
@@ -12140,7 +12167,7 @@ func TestInterfaceDiscoveryMonitorAutoconnectsAvailableCandidate(t *testing.T) {
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
 	now := float64(time.Now().UnixNano()) / 1e9
-	if err := os.WriteFile(filepath.Join(storagePath, "monitor-candidate.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "monitor-candidate.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":         "Monitor Candidate",
 		"type":         "BackboneInterface",
 		"transport":    true,
@@ -12151,7 +12178,7 @@ func TestInterfaceDiscoveryMonitorAutoconnectsAvailableCandidate(t *testing.T) {
 		"reachable_on": "127.0.0.1",
 		"port":         port,
 		"network_id":   "0a0b0c0d",
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write cached discovery file: %v", err)
 	}
 
@@ -12317,7 +12344,7 @@ func TestInterfaceDiscoveryMonitorAutoconnectUsesShuffledCandidateOrder(t *testi
 	now := float64(time.Now().UnixNano()) / 1e9
 	portA := listenerA.Addr().(*net.TCPAddr).Port
 	portB := listenerB.Addr().(*net.TCPAddr).Port
-	if err := os.WriteFile(filepath.Join(storagePath, "candidate-a.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "candidate-a.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":         "Candidate A",
 		"type":         "BackboneInterface",
 		"transport":    true,
@@ -12328,10 +12355,10 @@ func TestInterfaceDiscoveryMonitorAutoconnectUsesShuffledCandidateOrder(t *testi
 		"reachable_on": "127.0.0.1",
 		"port":         portA,
 		"network_id":   "aaaaaaaa",
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write candidate A: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(storagePath, "candidate-b.data"), mustMsgpackPack(map[string]any{
+	if err := os.WriteFile(filepath.Join(storagePath, "candidate-b.data"), mustMsgpackPack(discoverySurvivorFixtureMap(map[string]any{
 		"name":         "Candidate B",
 		"type":         "BackboneInterface",
 		"transport":    true,
@@ -12342,7 +12369,7 @@ func TestInterfaceDiscoveryMonitorAutoconnectUsesShuffledCandidateOrder(t *testi
 		"reachable_on": "127.0.0.1",
 		"port":         portB,
 		"network_id":   "bbbbbbbb",
-	}), 0o644); err != nil {
+	})), 0o644); err != nil {
 		t.Fatalf("failed to write candidate B: %v", err)
 	}
 
@@ -14021,6 +14048,10 @@ func TestInterfaceAnnouncerPayloadI2PConnectableUsesB32(t *testing.T) {
 func TestInterfaceAnnouncerPayloadPlainTCPClient(t *testing.T) {
 	t.Parallel()
 
+	// RNS/Discovery.py:139-141: a TCPClientInterface that is not KISS-framed
+	// aborts the discovery announce, even when reachable_on is configured.
+	// The previous non-parity behavior announced it as TCPClientInterface;
+	// Python returns None.
 	logger := NewLogger()
 	ts := newAnnounceCaptureTransport(logger)
 	transportIdentity := mustTestNewIdentity(t, true)
@@ -14048,46 +14079,10 @@ func TestInterfaceAnnouncerPayloadPlainTCPClient(t *testing.T) {
 
 	appData, err := announcer.getInterfaceAnnounceData(iface)
 	if err != nil {
-		t.Fatalf("getInterfaceAnnounceData() error = %v", err)
+		t.Fatalf("getInterfaceAnnounceData() error = %v, want nil", err)
 	}
-	if len(appData) <= 1+discoveryStampSize {
-		t.Fatalf("getInterfaceAnnounceData() returned %v bytes, want > %v", len(appData), 1+discoveryStampSize)
-	}
-	if got := appData[0]; got != 0 {
-		t.Fatalf("flags = %08b, want 00000000", got)
-	}
-
-	payload := appData[1:]
-	packed := payload[:len(payload)-discoveryStampSize]
-	stamp := payload[len(payload)-discoveryStampSize:]
-	workblock, err := discoveryStampWorkblock(FullHash(packed), discoveryWorkblockRounds)
-	if err != nil {
-		t.Fatalf("discoveryStampWorkblock() error = %v", err)
-	}
-	if !discoveryStampValid(stamp, 6, workblock) {
-		t.Fatal("expected generated stamp to satisfy configured stamp cost")
-	}
-
-	unpacked, err := msgpack.Unpack(packed)
-	if err != nil {
-		t.Fatalf("msgpack.Unpack() error = %v", err)
-	}
-	info := asAnyMap(unpacked)
-	if info == nil {
-		t.Fatalf("unexpected announce payload type %T", unpacked)
-	}
-
-	if got := asString(lookupDiscoveryValue(info, discoveryFieldInterfaceType)); got != "TCPClientInterface" {
-		t.Fatalf("interface type = %q, want %q", got, "TCPClientInterface")
-	}
-	if got := asString(lookupDiscoveryValue(info, discoveryFieldName)); got != "Discovery TCP Client" {
-		t.Fatalf("name = %q, want %q", got, "Discovery TCP Client")
-	}
-	if got := lookupDiscoveryValue(info, discoveryFieldReachableOn); got != nil {
-		t.Fatalf("reachable_on = %v, want nil", got)
-	}
-	if got := lookupDiscoveryValue(info, discoveryFieldPort); got != nil {
-		t.Fatalf("port = %v, want nil", got)
+	if appData != nil {
+		t.Fatalf("getInterfaceAnnounceData() returned %v bytes, want nil (non-KISS TCPClient aborts)", len(appData))
 	}
 }
 

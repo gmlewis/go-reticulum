@@ -7,6 +7,8 @@ package lxmf
 
 import (
 	"fmt"
+	"reflect"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
@@ -38,7 +40,11 @@ func DisplayNameFromAppData(appData []byte) (string, error) {
 			if !utf8.Valid(dn) {
 				return "", nil
 			}
-			return string(dn), nil
+			// Mirrors Python's display_name_from_app_data (LXMF.py:165,
+			// v0.9.7+): the v0.5.0+ list-format name is NUL-stripped and
+			// whitespace-trimmed after decoding. The original raw-string
+			// format below is intentionally returned verbatim.
+			return strings.TrimSpace(strings.ReplaceAll(string(dn), "\x00", "")), nil
 		default:
 			return "", nil
 		}
@@ -93,4 +99,75 @@ func StampCostFromAppData(appData []byte) (int, bool, error) {
 		return 0, false, fmt.Errorf("unpack lxmf stamp cost from app data: %w", err)
 	}
 	return stampCost, ok, nil
+}
+
+// CompressionSupportFromAppData reports whether an LXMF peer's announce app-data
+// signals support for auto-compressed message resources, mirroring Python
+// LXMF.compression_support_from_app_data (lxmf/LXMF.py:154-166, v0.9.5).
+//
+// It returns (supported, present, err):
+//   - present is false (and supported false) when appData is nil/empty, the
+//     Python None outcome.
+//   - supported is true when the peer uses the original raw-string announce
+//     format, the v0.5.0+ list format with no functionality list
+//     (peer_data shorter than 3 elements), or a non-list third element — all
+//     default to "compression supported".
+//   - supported is true when peer_data[2] is a list containing SFCompression,
+//     false when that list omits it.
+//
+// A malformed MessagePack payload yields a non-nil error, mirroring the
+// umsgpack exception that propagates from the Python helper.
+func CompressionSupportFromAppData(appData []byte) (bool, bool, error) {
+	if len(appData) == 0 {
+		return false, false, nil
+	}
+
+	// v0.5.0+ format: msgpack fixarray (0x90-0x9f) or array16 (0xdc)
+	if (appData[0] >= 0x90 && appData[0] <= 0x9f) || appData[0] == 0xdc {
+		result, err := msgpack.Unpack(appData)
+		if err != nil {
+			return false, false, fmt.Errorf("unpack lxmf compression support from app data: %w", err)
+		}
+		peerData, ok := result.([]any)
+		if !ok || len(peerData) < 3 {
+			// No functionality list present: compression is supported by
+			// default (Python `if len(peer_data) < 3: return True`).
+			return true, true, nil
+		}
+		fnList, ok := peerData[2].([]any)
+		if !ok {
+			// Third element is not a functionality list: default supported.
+			return true, true, nil
+		}
+		for _, fn := range fnList {
+			if functionalityCodeEquals(fn, SFCompression) {
+				return true, true, nil
+			}
+		}
+		return false, true, nil
+	}
+
+	// Original format: raw UTF-8 string. Compression is supported.
+	return true, true, nil
+}
+
+// functionalityCodeEquals reports whether a msgpack-unpacked functionality
+// code equals target. Functionality codes are small positive fixints that
+// unpack as int64 (and occasionally other numeric kinds), so a numeric
+// comparison avoids type-mismatch false negatives.
+func functionalityCodeEquals(code any, target int) bool {
+	if code == nil {
+		return false
+	}
+	rv := reflect.ValueOf(code)
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return int(rv.Int()) == target
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return int(rv.Uint()) == target
+	case reflect.Float32, reflect.Float64:
+		return int(rv.Float()) == target
+	default:
+		return false
+	}
 }

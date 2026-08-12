@@ -48,6 +48,11 @@ type ChannelOutlet interface {
 	// TimedOut notifies the outlet that channel delivery has exceeded its retry
 	// budget.
 	TimedOut()
+	// GetPacketID returns the identity used to match a sent packet against
+	// envelopes in the txRing, or nil if the packet has no on-wire identity
+	// (a "ghost" envelope whose packet was never packed/sent). Mirrors
+	// Python LinkChannelOutlet.get_packet_id (Channel.py:600-603).
+	GetPacketID(p *Packet) []byte
 }
 
 // MessageState defines an enumeration representing the various lifecycle stages of a message in transit.
@@ -72,6 +77,12 @@ type Envelope struct {
 	Packet   *Packet
 	Sequence uint16
 	Tries    int
+	// tracked reports whether the envelope is currently in a channel ring
+	// (txRing or rxRing), mirroring Python Envelope.tracked (Channel.py:148).
+	// emplaceEnvelope sets it true; removal (packetDelivered) and Shutdown
+	// (clearRings) set it false so stale references can detect that the
+	// envelope is no longer owned by a ring.
+	tracked bool
 }
 
 // Pack serializes the Envelope and its contained Message into a strict binary format suitable for network transmission.
@@ -120,9 +131,15 @@ func (env *Envelope) Unpack(factories map[uint16]func() Message) error {
 
 // Channel provides a robust, reliable, and sequenced delivery mechanism for discrete messages over a Link.
 type Channel struct {
-	logger           Logger
-	outlet           ChannelOutlet
-	mu               sync.RWMutex
+	logger Logger
+	outlet ChannelOutlet
+	mu     sync.RWMutex
+	// sendLock serializes concurrent Send calls so the reserve-sequence /
+	// transmit / commit sequence is atomic with respect to other senders,
+	// mirroring Python Channel._send_lock (Channel.py:225,502). It is
+	// distinct from mu so receipt/timeout callbacks (which take mu) do not
+	// stall while an outlet send is in flight.
+	sendLock         sync.Mutex
 	stopCh           chan struct{}
 	stopOnce         sync.Once
 	startOnce        sync.Once
@@ -263,11 +280,19 @@ func (c *Channel) Shutdown() {
 }
 
 func (c *Channel) clearRings() {
+	// Mark every envelope untracked before clearing the rings (Python
+	// Channel.py:313-320), so any stale reference can detect it is no longer
+	// owned by a ring. Clearing the packet callbacks first prevents a late
+	// receipt from re-entering the channel after shutdown.
 	for _, env := range c.txRing {
 		if env.Packet != nil && env.Packet.Receipt != nil {
 			env.Packet.Receipt.SetTimeoutCallback(nil)
 			env.Packet.Receipt.SetDeliveryCallback(nil)
 		}
+		env.tracked = false
+	}
+	for _, env := range c.rxRing {
+		env.tracked = false
 	}
 	c.txRing = nil
 	c.rxRing = nil
@@ -309,38 +334,58 @@ func (c *Channel) removeMessageHandlerByID(handlerID uint64) {
 }
 
 // Send serializes the provided Message, wraps it in an Envelope, and securely transmits it over the underlying outlet.
+//
+// It mirrors Python Channel.send (Channel.py:495-525): the sendLock
+// serializes senders; under mu it reserves the next sequence, packs the
+// envelope, enforces the MDU, and commits the sequence; the outlet send
+// runs outside mu so receipt/timeout callbacks are not stalled; on a
+// failed or empty outlet send the reserved sequence is rolled back and
+// the envelope is never emplaced in the txRing; only a successful,
+// receipt-bearing send is committed to the ring.
 func (c *Channel) Send(msg Message) (*Envelope, error) {
+	c.sendLock.Lock()
+	defer c.sendLock.Unlock()
+
 	c.mu.Lock()
 	if !c.isReadyToSend() {
 		c.mu.Unlock()
 		return nil, errors.New("channel not ready to send")
 	}
 
+	reservedSequence := c.nextSequence
 	env := &Envelope{
 		TS:       time.Now(),
 		Message:  msg,
-		Sequence: c.nextSequence,
+		Sequence: reservedSequence,
 	}
-	c.nextSequence++
-
-	if !c.emplaceEnvelope(env, &c.txRing) {
-		c.mu.Unlock()
-		return nil, errors.New("failed to place envelope in tx ring")
-	}
-	c.mu.Unlock()
-
 	raw, err := env.Pack()
 	if err != nil {
+		c.mu.Unlock()
 		return nil, err
 	}
-	c.logger.Extreme("Channel.Send msgType=%v seq=%v rawLen=%v\n", msg.GetMsgType(), env.Sequence, len(raw))
 	if len(raw) > c.outlet.MDU() {
+		// A too-big message does not consume a sequence number (Python
+		// Channel.py:509-510 raises before committing _next_sequence).
+		c.mu.Unlock()
 		return nil, fmt.Errorf("message too big: %v > %v", len(raw), c.outlet.MDU())
 	}
+	// Reserve and commit the sequence number (Python Channel.py:511).
+	c.nextSequence = reservedSequence + 1
+	c.mu.Unlock()
 
+	c.logger.Extreme("Channel.Send msgType=%v seq=%v rawLen=%v\n", msg.GetMsgType(), env.Sequence, len(raw))
 	p, err := c.outlet.Send(raw)
-	if err != nil {
-		return nil, err
+	if err != nil || p == nil {
+		// The outlet did not transmit a trackable packet: roll back the
+		// reserved sequence so it is not consumed and leave the txRing
+		// empty (Python Channel.py:515-516).
+		c.mu.Lock()
+		c.nextSequence = reservedSequence
+		c.mu.Unlock()
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New("channel outlet did not transmit packet")
 	}
 
 	c.mu.Lock()
@@ -366,15 +411,15 @@ func (c *Channel) Send(msg Message) (*Envelope, error) {
 		p.Receipt.SetDeliveryCallback(c.packetDelivered)
 		p.Receipt.SetTimeoutCallback(c.packetTimeout)
 		p.Receipt.SetTimeout(c.getPacketTimeoutSeconds(env.Tries))
-		c.updatePacketTimeouts()
-	} else {
-		// Local delivery, no receipt. Remove from ring immediately.
-		for i, ringEnv := range c.txRing {
-			if ringEnv == env {
-				c.txRing = append(c.txRing[:i], c.txRing[i+1:]...)
-				break
-			}
+		// Emplace only after a successful, receipt-bearing send (Python
+		// Channel.py:520). A receipt-less send is a local delivery and is
+		// not tracked in the ring.
+		if !c.emplaceEnvelope(env, &c.txRing) {
+			c.nextSequence = reservedSequence
+			c.mu.Unlock()
+			return nil, errors.New("failed to place envelope in tx ring")
 		}
+		c.updatePacketTimeouts()
 	}
 	c.mu.Unlock()
 
@@ -386,9 +431,12 @@ func (c *Channel) packetDelivered(pr *PacketReceipt) {
 	defer c.mu.Unlock()
 
 	for i, env := range c.txRing {
-		if env.Packet != nil && bytes.Equal(env.Packet.PacketHash, pr.Hash) {
+		// Match on the outlet's packet id, filtering ghost envelopes
+		// whose packet has no on-wire identity (Python Channel.py:418-420).
+		if id := c.outlet.GetPacketID(env.Packet); id != nil && bytes.Equal(id, pr.Hash) {
 			// Remove from ring
 			c.txRing = append(c.txRing[:i], c.txRing[i+1:]...)
+			env.tracked = false
 
 			// Increase window
 			if c.window < c.windowMax {
@@ -422,10 +470,24 @@ func (c *Channel) packetDelivered(pr *PacketReceipt) {
 }
 
 func (c *Channel) packetTimeout(pr *PacketReceipt) {
+	// Early-return if the packet was already delivered (Python Channel.py:461):
+	// a delivery that raced the timeout must not trigger a resend or a
+	// teardown. TriggerTimeout sets Status=Failed before invoking this
+	// callback, so the sticky Proved flag (set by TriggerDelivery and never
+	// cleared) is the durable delivered signal.
+	pr.mu.Lock()
+	proved := pr.Proved
+	pr.mu.Unlock()
+	if proved {
+		return
+	}
+
 	c.mu.Lock()
 	envIdx := -1
 	for i, env := range c.txRing {
-		if env.Packet != nil && bytes.Equal(env.Packet.PacketHash, pr.Hash) {
+		// Match on the outlet's packet id, filtering ghost envelopes
+		// whose packet has no on-wire identity (Python Channel.py:466).
+		if id := c.outlet.GetPacketID(env.Packet); id != nil && bytes.Equal(id, pr.Hash) {
 			envIdx = i
 			break
 		}
@@ -465,7 +527,7 @@ func (c *Channel) packetTimeout(pr *PacketReceipt) {
 		return
 	}
 
-	// Resend
+	// Resend outside the lock (Python Channel.py:521).
 	resentPacket, err := c.outlet.Resend(packet)
 	if err != nil {
 		c.logger.Error("Failed to resend packet: %v", err)
@@ -473,15 +535,28 @@ func (c *Channel) packetTimeout(pr *PacketReceipt) {
 	}
 
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if resentPacket != nil {
 		env.Packet = resentPacket
 	}
+	alreadyDelivered := false
 	if env.Packet != nil && env.Packet.Receipt != nil {
 		env.Packet.Receipt.SetDeliveryCallback(c.packetDelivered)
 		env.Packet.Receipt.SetTimeoutCallback(c.packetTimeout)
 		env.Packet.Receipt.SetTimeout(c.getPacketTimeoutSeconds(env.Tries))
+		// Re-read Proved under the receipt lock; a delivery that landed
+		// during the resend is the post-resend delivered case.
+		env.Packet.Receipt.mu.Lock()
+		alreadyDelivered = env.Packet.Receipt.Proved
+		env.Packet.Receipt.mu.Unlock()
+	}
+	c.mu.Unlock()
+
+	// Post-resend delivered check (Python Channel.py:523-524): if the
+	// packet was delivered while the resend was in flight, run the
+	// delivered path so the envelope leaves the ring and the window grows
+	// instead of lingering as a pending resend.
+	if alreadyDelivered {
+		c.packetDelivered(env.Packet.Receipt)
 	}
 }
 
@@ -583,10 +658,12 @@ func (c *Channel) emplaceEnvelope(env *Envelope, ring *[]*Envelope) bool {
 			newRing[i] = env
 			copy(newRing[i+1:], (*ring)[i:])
 			*ring = newRing
+			env.tracked = true
 			return true
 		}
 	}
 	*ring = append(*ring, env)
+	env.tracked = true
 	return true
 }
 

@@ -36,7 +36,7 @@ import (
 const (
 	discoveryAppName              = "rnstransport"
 	discoveryAnnouncerJobInterval = 60 * time.Second
-	discoveryDefaultStampValue    = 14
+	discoveryDefaultStampValue    = 16
 	discoveryWorkblockRounds      = 20
 	discoveryStampSize            = 32
 	discoveryFlagEncrypted        = 0b00000010
@@ -58,6 +58,36 @@ const (
 	discoveryFieldModulation      = 0x0D
 	discoveryFieldChannel         = 0x0E
 )
+
+// discoveryAnnounceTypes mirrors InterfaceAnnouncer.DISCOVERABLE_INTERFACE_TYPES
+// (RNS/Discovery.py:38-39): the interface types accepted in a received
+// discovery announce. This is the receive-side filter applied in
+// decodeDiscoveryInfo (RNS/Discovery.py:310-312). It is a superset of
+// discoveryDiscoverableTypes — TCPClientInterface is permitted on receive
+// (it advertises as KISSInterface when KISS-framed, but a raw TCPClient
+// announce is still decoded) but excluded from the load/autoconnect filter.
+var discoveryAnnounceTypes = map[string]bool{
+	"BackboneInterface":  true,
+	"TCPServerInterface": true,
+	"TCPClientInterface": true,
+	"RNodeInterface":     true,
+	"WeaveInterface":     true,
+	"I2PInterface":       true,
+	"KISSInterface":      true,
+}
+
+// discoveryDiscoverableTypes mirrors InterfaceDiscovery.DISCOVERABLE_TYPES
+// (RNS/Discovery.py:431): the interface types permitted in the persisted
+// discovery store and autoconnect path (RNS/Discovery.py:488,528). It
+// excludes TCPClientInterface.
+var discoveryDiscoverableTypes = map[string]bool{
+	"BackboneInterface":  true,
+	"TCPServerInterface": true,
+	"I2PInterface":       true,
+	"RNodeInterface":     true,
+	"WeaveInterface":     true,
+	"KISSInterface":      true,
+}
 
 // InterfaceAnnouncer manages the periodic broadcast of local interface availability to dynamically discoverable peers on the network.
 type InterfaceAnnouncer struct {
@@ -245,6 +275,47 @@ func sanitizeDiscoveryString(v string) string {
 	return strings.TrimSpace(v)
 }
 
+// isDiscoverySanMapChar reports whether c is in Python's san_map
+// (RNS/Discovery.py:862-865): the ASCII alphanumeric characters 0-9, A-Z, a-z.
+func isDiscoverySanMapChar(c byte) bool {
+	return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+}
+
+// sanitizeDiscoveryName mirrors InterfaceAnnounceHandler.sanitize_name
+// (RNS/Discovery.py:238-244): drop non-ASCII bytes (encode ascii/ignore),
+// strip, collapse repeated runs of spaces (5→1, 3→1, 2→1), trim leading
+// non-alphanumeric chars, and trim trailing non-alphanumeric chars except ')'.
+// An empty input yields an empty result (Python returns None). It is applied
+// to discovery names on both the receive path (decodeDiscoveryInfo) and the
+// load path (ListDiscoveredInterfaces).
+func sanitizeDiscoveryName(name string) string {
+	if name == "" {
+		return ""
+	}
+	// encode("ascii", "ignore"): keep only bytes < 128.
+	ascii := make([]byte, 0, len(name))
+	for i := 0; i < len(name); i++ {
+		if name[i] < 128 {
+			ascii = append(ascii, name[i])
+		}
+	}
+	s := strings.TrimSpace(string(ascii))
+	s = strings.ReplaceAll(s, "     ", " ")
+	s = strings.ReplaceAll(s, "   ", " ")
+	s = strings.ReplaceAll(s, "  ", " ")
+	for len(s) > 0 && !isDiscoverySanMapChar(s[0]) {
+		s = s[1:]
+	}
+	for len(s) > 0 {
+		c := s[len(s)-1]
+		if isDiscoverySanMapChar(c) || c == ')' {
+			break
+		}
+		s = s[:len(s)-1]
+	}
+	return s
+}
+
 type discoveryReachableOnExecError struct {
 	raw string
 	err error
@@ -298,6 +369,79 @@ func (ia *InterfaceAnnouncer) resolveReachableOn(raw string) (string, error) {
 		return "", &discoveryReachableOnInvalidError{value: reachableOn}
 	}
 	return reachableOn, nil
+}
+
+// resolveLocation evaluates cfg.LocationCmd at announce time, mirroring
+// RNS/Discovery.py:103-123. When LocationCmd is empty (or, on Windows, not
+// evaluated at all) the statically-configured Latitude/Longitude/Height values
+// are returned unchanged with ok=true. When LocationCmd points at an
+// executable file, it is run and its stdout is parsed as "lat,lon,hgt"; the
+// parsed coordinates are returned (ok=true), overriding the static config.
+// Any failure to run the executable or parse/validate its output returns
+// ok=false, signalling the caller to abort the announce (Python returns None).
+func (ia *InterfaceAnnouncer) resolveLocation(cfg interfaces.DiscoveryConfig) (lat, lon, hgt *float64, ok bool) {
+	lat, lon, hgt = cfg.Latitude, cfg.Longitude, cfg.Height
+	if cfg.LocationCmd == "" {
+		return lat, lon, hgt, true
+	}
+	if runtime.GOOS == "windows" {
+		return lat, lon, hgt, true
+	}
+
+	abort := func(format string, args ...any) (*float64, *float64, *float64, bool) {
+		ia.logger.Error("Error while evaluating discovery location from executable at %v: %v",
+			cfg.LocationCmd, fmt.Sprintf(format, args...))
+		ia.logger.Error("Aborting discovery announce")
+		return nil, nil, nil, false
+	}
+
+	execPath, err := expandUserPath(sanitizeDiscoveryString(cfg.LocationCmd))
+	if err != nil {
+		return abort("expand path: %v", err)
+	}
+	info, statErr := os.Stat(execPath)
+	if statErr != nil || info.IsDir() || info.Mode()&0o111 == 0 {
+		// Not an executable file; fall back to static config values.
+		return lat, lon, hgt, true
+	}
+	output, err := exec.Command(execPath).Output()
+	if err != nil {
+		if _, ok := errors.AsType[*exec.ExitError](err); ok {
+			return abort("Non-zero exit code from subprocess")
+		}
+		return abort("run executable: %v", err)
+	}
+
+	sanitized := sanitizeDiscoveryString(string(output))
+	components := strings.Split(strings.ReplaceAll(sanitized, " ", ""), ",")
+	if len(components) != 3 {
+		return abort("Invalid location component count: %d", len(components))
+	}
+	dlat, err := strconv.ParseFloat(components[0], 64)
+	if err != nil {
+		return abort("Invalid latitude: %v", components[0])
+	}
+	dlon, err := strconv.ParseFloat(components[1], 64)
+	if err != nil {
+		return abort("Invalid longitude: %v", components[1])
+	}
+	dhgt, err := strconv.ParseFloat(components[2], 64)
+	if err != nil {
+		return abort("Invalid height: %v", components[2])
+	}
+	if dlat < -90 || dlat > 90 {
+		return abort("Invalid latitude: %v", dlat)
+	}
+	// NOTE: RNS/Discovery.py:119 reads `dlat > 180` (not dlon) — a latent
+	// upstream bug. We replicate it verbatim for parity; the upper-bound
+	// longitude check is effectively gated on latitude instead.
+	if dlon < -180 || dlat > 180 {
+		return abort("Invalid longitude: %v", dlon)
+	}
+	if dhgt < -4000 || dhgt > 1e6 {
+		return abort("Invalid height: %v", dhgt)
+	}
+	return &dlat, &dlon, &dhgt, true
 }
 
 func discoveryInterfaceType(iface interfaces.Interface) string {
@@ -380,6 +524,15 @@ func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interfac
 
 	name := sanitizeDiscoveryString(cfg.Name)
 
+	// Evaluate location_cmd at announce time (RNS/Discovery.py:103-123):
+	// when set and the platform is not Windows, run the executable and parse
+	// "lat,lon,hgt" from stdout, overriding any statically-configured values.
+	// On any failure the whole announce is aborted (return nil, nil).
+	lat, lon, hgt, locOK := ia.resolveLocation(cfg)
+	if !locOK {
+		return nil, nil
+	}
+
 	info := map[any]any{
 		discoveryFieldInterfaceType: advertisedType,
 		discoveryFieldTransport:     ia.owner.transport.Enabled(),
@@ -390,33 +543,53 @@ func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interfac
 		discoveryFieldHeight:        nil,
 	}
 
-	if cfg.Latitude != nil {
-		info[discoveryFieldLatitude] = *cfg.Latitude
+	if lat != nil {
+		info[discoveryFieldLatitude] = *lat
 	}
-	if cfg.Longitude != nil {
-		info[discoveryFieldLongitude] = *cfg.Longitude
+	if lon != nil {
+		info[discoveryFieldLongitude] = *lon
 	}
-	if cfg.Height != nil {
-		info[discoveryFieldHeight] = *cfg.Height
+	if hgt != nil {
+		info[discoveryFieldHeight] = *hgt
 	}
 
-	reachableOn, err := ia.resolveReachableOn(cfg.ReachableOn)
-	if err != nil {
-		if execErr, ok := errors.AsType[*discoveryReachableOnExecError](err); ok {
-			ia.logger.Error("Error while getting reachable_on from executable at %v: %v", execErr.raw, execErr.err)
-			ia.logger.Error("Aborting discovery announce")
-			return nil, nil
+	// RNS/Discovery.py:139-141: a TCPClientInterface that is not KISS-framed
+	// has no valid discovery configuration; abort the announce before any
+	// type-specific field population. (A KISS-framed TCPClientInterface
+	// advertises as KISSInterface and continues below.)
+	if interfaceType == "TCPClientInterface" && !isKISSFramedInterface(iface) {
+		ia.logger.Error(
+			"Invalid interface discovery configuration for %v, aborting discovery announce",
+			monitoredInterfaceLabel(iface),
+		)
+		return nil, nil
+	}
+
+	// RNS/Discovery.py:145-178: reachable_on is resolved and validated only
+	// for Backbone, TCPServer, and I2P interfaces (I2P uses it as a b32
+	// fallback). RNode, Weave, and KISS do not configure reachable_on.
+	var reachableOn string
+	switch advertisedType {
+	case "BackboneInterface", "TCPServerInterface", "I2PInterface":
+		resolved, err := ia.resolveReachableOn(cfg.ReachableOn)
+		if err != nil {
+			if execErr, ok := errors.AsType[*discoveryReachableOnExecError](err); ok {
+				ia.logger.Error("Error while getting reachable_on from executable at %v: %v", execErr.raw, execErr.err)
+				ia.logger.Error("Aborting discovery announce")
+				return nil, nil
+			}
+			if invalidErr, ok := errors.AsType[*discoveryReachableOnInvalidError](err); ok {
+				ia.logger.Error(
+					"The configured reachable_on parameter %q for %v is not a valid IP address or hostname",
+					invalidErr.value,
+					monitoredInterfaceLabel(iface),
+				)
+				ia.logger.Error("Aborting discovery announce")
+				return nil, nil
+			}
+			return nil, err
 		}
-		if invalidErr, ok := errors.AsType[*discoveryReachableOnInvalidError](err); ok {
-			ia.logger.Error(
-				"The configured reachable_on parameter %q for %v is not a valid IP address or hostname",
-				invalidErr.value,
-				monitoredInterfaceLabel(iface),
-			)
-			ia.logger.Error("Aborting discovery announce")
-			return nil, nil
-		}
-		return nil, err
+		reachableOn = resolved
 	}
 
 	switch advertisedType {
@@ -509,11 +682,48 @@ func (ia *InterfaceAnnouncer) getInterfaceAnnounceData(iface interfaces.Interfac
 	return appData, nil
 }
 
+// discoveryValidCacheEntry caches the decoded/validated result for a
+// previously seen discovery announce so a repeat need not be decrypted or
+// re-validated (Python Discovery.valid_cache entries, Discovery.py:289).
+type discoveryValidCacheEntry struct {
+	valid  bool
+	value  int
+	packed []byte
+	stamp  []byte
+}
+
 // InterfaceAnnounceHandler validates and decodes interface discovery announces.
 type InterfaceAnnounceHandler struct {
 	owner         *Reticulum
 	requiredValue int
 	callback      func(map[string]any)
+
+	// validCache maps the full hash of a discovery announce payload to its
+	// validated result, so a repeat announce is served from cache instead of
+	// being decrypted and re-validated (Python Discovery.valid_cache,
+	// Discovery.py:232,264-266). validCacheOrder tracks insertion order for
+	// FIFO eviction at validCacheMax entries (Discovery.py:290).
+	validCache      map[string]*discoveryValidCacheEntry
+	validCacheOrder []string
+	validCacheMax   int
+	// validCacheHits counts cache hits (test-instrumented observable).
+	validCacheHits int
+
+	// invalidCache records announce payloads whose stamp was insufficient so
+	// a repeat is dropped without re-validating (Python Discovery.invalid_cache
+	// deque maxlen=2048, Discovery.py:234,260,294). invalidCacheOrder tracks
+	// insertion order for FIFO eviction at invalidCacheMax entries.
+	invalidCache      map[string]struct{}
+	invalidCacheOrder []string
+	invalidCacheMax   int
+	// invalidCacheHits counts invalid-cache hits (test-instrumented).
+	invalidCacheHits int
+
+	// validationLock serializes the expensive stamp validation so only one
+	// announce is validated at a time; concurrent announces are dropped
+	// rather than queued (Python Discovery.validation_lock, Discovery.py:235,
+	//278-282).
+	validationLock sync.Mutex
 }
 
 // NewInterfaceAnnounceHandler creates a discovery announce handler with Python's
@@ -523,9 +733,13 @@ func NewInterfaceAnnounceHandler(owner *Reticulum, requiredValue int, callback f
 		requiredValue = discoveryDefaultStampValue
 	}
 	return &InterfaceAnnounceHandler{
-		owner:         owner,
-		requiredValue: requiredValue,
-		callback:      callback,
+		owner:           owner,
+		requiredValue:   requiredValue,
+		callback:        callback,
+		validCache:      make(map[string]*discoveryValidCacheEntry),
+		validCacheMax:   2048,
+		invalidCache:    make(map[string]struct{}),
+		invalidCacheMax: 2048,
 	}
 }
 
@@ -553,38 +767,83 @@ func (h *InterfaceAnnounceHandler) receivedAnnounce(destinationHash []byte, anno
 
 	flags := appData[0]
 	payload := appData[1:]
-	if flags&discoveryFlagEncrypted != 0 {
-		var networkIdentity *Identity
-		if h.owner != nil {
-			networkIdentity = h.owner.networkIdentity
-			if networkIdentity == nil && h.owner.transport != nil {
-				if getter, ok := h.owner.transport.(interface{ NetworkIdentity() *Identity }); ok {
-					networkIdentity = getter.NetworkIdentity()
-				}
-			}
-		}
-		if networkIdentity == nil {
-			return
-		}
-		decrypted, err := networkIdentity.Decrypt(payload, nil, false)
-		if err != nil || len(decrypted) == 0 {
-			return
-		}
-		payload = decrypted
-	}
-	if len(payload) <= discoveryStampSize {
+	// fullhash keys the caches and is computed on the (still-encrypted)
+	// payload before decryption, matching Python Discovery.py:258.
+	fullhash := string(FullHash(payload))
+
+	// Drop a payload already known to have an insufficient stamp (Python
+	// Discovery.py:260-262).
+	if h.invalidCacheHas(fullhash) {
+		h.invalidCacheHits++
 		return
 	}
 
-	stamp := payload[len(payload)-discoveryStampSize:]
-	packed := payload[:len(payload)-discoveryStampSize]
-	infohash := FullHash(packed)
-	workblock, err := discoveryStampWorkblock(infohash, discoveryWorkblockRounds)
-	if err != nil {
-		return
+	var (
+		stamp  []byte
+		packed []byte
+		value  int
+		valid  bool
+	)
+	if entry, ok := h.validCache[fullhash]; ok {
+		// Cache hit: reuse the previously validated result without
+		// decrypting or re-validating (Python Discovery.py:264-272).
+		h.validCacheHits++
+		stamp = entry.stamp
+		packed = entry.packed
+		value = entry.value
+		valid = entry.valid
+	} else {
+		if flags&discoveryFlagEncrypted != 0 {
+			var networkIdentity *Identity
+			if h.owner != nil {
+				networkIdentity = h.owner.networkIdentity
+				if networkIdentity == nil && h.owner.transport != nil {
+					if getter, ok := h.owner.transport.(interface{ NetworkIdentity() *Identity }); ok {
+						networkIdentity = getter.NetworkIdentity()
+					}
+				}
+			}
+			if networkIdentity == nil {
+				return
+			}
+			decrypted, err := networkIdentity.Decrypt(payload, nil, false)
+			if err != nil || len(decrypted) == 0 {
+				return
+			}
+			payload = decrypted
+		}
+		if len(payload) <= discoveryStampSize {
+			return
+		}
+
+		// Drop if validation is already in progress elsewhere; do not
+		// queue concurrent expensive validations (Python Discovery.py:278-282).
+		if !h.validationLock.TryLock() {
+			return
+		}
+		stamp = payload[len(payload)-discoveryStampSize:]
+		packed = payload[:len(payload)-discoveryStampSize]
+		infohash := FullHash(packed)
+		workblock, err := discoveryStampWorkblock(infohash, discoveryWorkblockRounds)
+		if err != nil {
+			h.validationLock.Unlock()
+			return
+		}
+		value = discoveryStampValue(workblock, stamp)
+		valid = discoveryStampValid(stamp, h.requiredValue, workblock) && value >= h.requiredValue
+		h.validCachePut(fullhash, &discoveryValidCacheEntry{
+			valid:  valid,
+			value:  value,
+			packed: packed,
+			stamp:  stamp,
+		})
+		h.validationLock.Unlock()
 	}
-	value := discoveryStampValue(workblock, stamp)
-	if !discoveryStampValid(stamp, h.requiredValue, workblock) || value < h.requiredValue {
+
+	if !valid {
+		// Record the insufficient stamp so a repeat is dropped (Python
+		// Discovery.py:293-294).
+		h.invalidCacheAppend(fullhash)
 		return
 	}
 
@@ -594,6 +853,42 @@ func (h *InterfaceAnnounceHandler) receivedAnnounce(destinationHash []byte, anno
 	}
 
 	h.invokeCallback(info)
+}
+
+// invalidCacheHas reports whether fullhash is in the invalid cache.
+func (h *InterfaceAnnounceHandler) invalidCacheHas(fullhash string) bool {
+	_, ok := h.invalidCache[fullhash]
+	return ok
+}
+
+// invalidCacheAppend adds fullhash to the invalid cache, evicting the
+// oldest entry when the cache exceeds invalidCacheMax (Python's deque
+// maxlen=2048, Discovery.py:234).
+func (h *InterfaceAnnounceHandler) invalidCacheAppend(fullhash string) {
+	if _, exists := h.invalidCache[fullhash]; exists {
+		return
+	}
+	h.invalidCache[fullhash] = struct{}{}
+	h.invalidCacheOrder = append(h.invalidCacheOrder, fullhash)
+	if len(h.invalidCacheOrder) > h.invalidCacheMax {
+		drop := h.invalidCacheOrder[0]
+		h.invalidCacheOrder = h.invalidCacheOrder[1:]
+		delete(h.invalidCache, drop)
+	}
+}
+
+// validCachePut stores entry under fullhash, evicting the oldest entry when
+// the cache exceeds validCacheMax (Python Discovery.py:289-290).
+func (h *InterfaceAnnounceHandler) validCachePut(fullhash string, entry *discoveryValidCacheEntry) {
+	if _, exists := h.validCache[fullhash]; !exists {
+		h.validCacheOrder = append(h.validCacheOrder, fullhash)
+	}
+	h.validCache[fullhash] = entry
+	if len(h.validCacheOrder) > h.validCacheMax {
+		drop := h.validCacheOrder[0]
+		h.validCacheOrder = h.validCacheOrder[1:]
+		delete(h.validCache, drop)
+	}
 }
 
 func (h *InterfaceAnnounceHandler) invokeCallback(info map[string]any) {
@@ -886,6 +1181,22 @@ type InterfaceDiscovery struct {
 	callbackMu        sync.RWMutex
 	discoveryCallback func(map[string]any)
 
+	// discoveryLock serializes the per-file read in ListDiscoveredInterfaces
+	// and the stat+read+write in persistDiscoveredInterface, mirroring
+	// Python's InterfaceDiscovery.discovery_lock
+	// (RNS/Discovery.py:440,472-474,533-562).
+	discoveryLock sync.Mutex
+
+	// blackholedCache / blackholedUpdated mirror Python's __blackholed and
+	// blackholed_updated (RNS/Discovery.py:438-439,460-465): a cached set of
+	// blackholed identity-hash bytes refreshed from GetBlackholedIdentities at
+	// most once per blackholedCacheTTL seconds, so ListDiscoveredInterfaces
+	// does not re-fetch the full blackhole registry on every call.
+	blackholedCache    map[string]bool
+	blackholedUpdated  float64
+	blackholedCacheMu  sync.Mutex
+	blackholedCacheTTL float64
+
 	monitorMu              sync.Mutex
 	monitoredInterfaces    []interfaces.Interface
 	autoconnectDownSince   map[interfaces.Interface]time.Time
@@ -894,6 +1205,7 @@ type InterfaceDiscovery struct {
 	monitorInterval        time.Duration
 	detachThreshold        time.Duration
 	monitorStopCh          chan struct{}
+	monitorDone            chan struct{}
 	shuffleCandidates      func([]DiscoveredInterface)
 	backboneFactory        discoveryBackboneFactory
 	registerAutoconnect    func(interfaces.Interface)
@@ -909,7 +1221,37 @@ func NewInterfaceDiscovery(owner *Reticulum) *InterfaceDiscovery {
 		detachThreshold:      12 * time.Second,
 		shuffleCandidates:    shuffleDiscoveredInterfaces,
 		backboneFactory:      defaultDiscoveryBackboneClientInterface,
+		blackholedCacheTTL:   60,
 	}
+}
+
+// blackholedIdentities returns the cached set of blackholed identity-hash
+// bytes, refreshing it from GetBlackholedIdentities when the cache is empty
+// or older than the TTL (60s), mirroring Python's __blackholed_identities
+// (RNS/Discovery.py:460-465). The returned set is keyed by the string form
+// of each identity hash for fast membership checks. A nil transport yields an
+// empty (but non-nil) set.
+func (id *InterfaceDiscovery) blackholedIdentities() map[string]bool {
+	id.blackholedCacheMu.Lock()
+	defer id.blackholedCacheMu.Unlock()
+	now := float64(time.Now().UnixNano()) / 1e9
+	ttl := id.blackholedCacheTTL
+	if ttl == 0 {
+		ttl = 60
+	}
+	if id.blackholedCache != nil && now-id.blackholedUpdated <= ttl {
+		return id.blackholedCache
+	}
+	id.blackholedCache = make(map[string]bool)
+	if id.owner != nil && id.owner.transport != nil {
+		for _, entry := range id.owner.transport.GetBlackholedIdentities() {
+			if hash, ok := entry["identity_hash"].([]byte); ok && len(hash) > 0 {
+				id.blackholedCache[string(hash)] = true
+			}
+		}
+	}
+	id.blackholedUpdated = now
+	return id.blackholedCache
 }
 
 // SetDiscoveryCallback registers the external callback invoked after a
@@ -1044,12 +1386,21 @@ func (id *InterfaceDiscovery) Stop() {
 	}
 
 	id.monitorMu.Lock()
-	defer id.monitorMu.Unlock()
 	if id.monitorStopCh != nil {
 		close(id.monitorStopCh)
 		id.monitorStopCh = nil
 	}
 	id.monitoringAutoconnects = false
+	done := id.monitorDone
+	id.monitorDone = nil
+	id.monitorMu.Unlock()
+
+	// Join the monitor goroutine outside monitorMu so Stop returns only once
+	// the loop has actually exited (leak check). monitorLoop closes done on its
+	// way out after observing the stop channel.
+	if done != nil {
+		<-done
+	}
 }
 
 func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) error {
@@ -1071,6 +1422,11 @@ func (id *InterfaceDiscovery) persistDiscoveredInterface(info map[string]any) er
 	persisted := cloneStringAnyMap(info)
 	receivedValue, receivedPresent := info["received"]
 	receivedAt, receivedOK := discoveryReceivedTimestamp(receivedValue)
+
+	// RNS/Discovery.py:533-562: hold discovery_lock across the stat+read+write
+	// so concurrent persists and loads cannot interleave.
+	id.discoveryLock.Lock()
+	defer id.discoveryLock.Unlock()
 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		if !receivedPresent {
@@ -1272,17 +1628,25 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 
 	now := float64(time.Now().UnixNano()) / 1e9
 	discoverySources := id.owner.interfaceSources
+	// RNS/Discovery.py:472: fetch the (cached) blackholed-identity set once
+	// before iterating, so the registry is not re-read per entry.
+	blackholed := id.blackholedIdentities()
 	var discovered []discoveredRecord
 
 	for _, entry := range entries {
 		path := filepath.Join(storagePath, entry)
+		// RNS/Discovery.py:472-474: hold discovery_lock around the file
+		// read and unpack so a concurrent persist cannot tear the read.
+		id.discoveryLock.Lock()
 		data, err := os.ReadFile(path)
 		if err != nil {
+			id.discoveryLock.Unlock()
 			id.logDiscoveryFileLoadError(path, err)
 			continue
 		}
 
 		unpacked, err := msgpack.UnpackPreserveBinMapKeys(data)
+		id.discoveryLock.Unlock()
 		if err != nil {
 			id.logDiscoveryFileLoadError(path, err)
 			continue
@@ -1309,26 +1673,86 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 		}
 		heardDelta := now - heardAt
 
+		// Removal chain mirroring Python's single if/elif ladder
+		// (RNS/Discovery.py:483-492). Each branch only runs once the
+		// preceding checks pass; a fromhex failure on a non-string /
+		// non-hex id is caught by Python's outer except (log + continue,
+		// file remains), so those continue rather than remove.
 		shouldRemove := false
 		if heardDelta > ThresholdRemove {
 			shouldRemove = true
-		} else if len(discoverySources) > 0 {
-			networkIDValue, ok := lookupAny(m, "network_id")
-			if !ok || networkIDValue == nil {
+		} else {
+			transportIDValue, hasTransportID := lookupAny(m, "transport_id")
+			if !hasTransportID || !discoveryTruthyBool(transportIDValue) {
+				// RNS/Discovery.py:484: missing or falsy transport_id.
 				shouldRemove = true
 			} else {
-				networkIDHex, ok := networkIDValue.(string)
-				if !ok {
-					id.logDiscoveryFileLoadError(path, fmt.Errorf("fromhex() argument must be str, not %v", pythonDiscoverySortTypeName(networkIDValue)))
-					continue
-				}
-				networkID, err := pythonDiscoveryFromHexString(networkIDHex)
-				if err != nil {
-					id.logDiscoveryFileLoadError(path, err)
-					continue
-				}
-				if !hasDiscoverySource(discoverySources, networkID) {
+				networkIDValue, hasNetworkID := lookupAny(m, "network_id")
+				if !hasNetworkID || !discoveryTruthyBool(networkIDValue) {
+					// RNS/Discovery.py:485: missing or falsy network_id.
 					shouldRemove = true
+				} else {
+					// RNS/Discovery.py:486-487: discovery_sources
+					// membership. Python's line 486 is redundant with 485
+					// (network_id already confirmed present); only the
+					// fromhex+membership check on 487 is operative, and
+					// only when sources are configured.
+					if len(discoverySources) > 0 {
+						networkIDHex, ok := networkIDValue.(string)
+						if !ok {
+							id.logDiscoveryFileLoadError(path, fmt.Errorf("fromhex() argument must be str, not %v", pythonDiscoverySortTypeName(networkIDValue)))
+							continue
+						}
+						networkID, err := pythonDiscoveryFromHexString(networkIDHex)
+						if err != nil {
+							id.logDiscoveryFileLoadError(path, err)
+							continue
+						}
+						if !hasDiscoverySource(discoverySources, networkID) {
+							shouldRemove = true
+						}
+					}
+					if !shouldRemove {
+						// RNS/Discovery.py:488: type must be present and in
+						// DISCOVERABLE_TYPES (the 6-type load/autoconnect
+						// filter, which excludes TCPClientInterface).
+						loadTypeValue, hasLoadType := lookupAny(m, "type")
+						if !hasLoadType || loadTypeValue == nil || !discoveryDiscoverableTypes[asString(loadTypeValue)] {
+							shouldRemove = true
+						}
+					}
+					if !shouldRemove {
+						// RNS/Discovery.py:489-490: blackholed network_id
+						// or transport_id. Python decodes both via
+						// bytes.fromhex; a non-hex/non-string value throws
+						// and is caught by the outer except (continue).
+						networkIDHex, ok := networkIDValue.(string)
+						if !ok {
+							id.logDiscoveryFileLoadError(path, fmt.Errorf("fromhex() argument must be str, not %v", pythonDiscoverySortTypeName(networkIDValue)))
+							continue
+						}
+						networkIDBytes, err := pythonDiscoveryFromHexString(networkIDHex)
+						if err != nil {
+							id.logDiscoveryFileLoadError(path, err)
+							continue
+						}
+						transportIDHex, ok := transportIDValue.(string)
+						if !ok {
+							id.logDiscoveryFileLoadError(path, fmt.Errorf("fromhex() argument must be str, not %v", pythonDiscoverySortTypeName(transportIDValue)))
+							continue
+						}
+						transportIDBytes, err := pythonDiscoveryFromHexString(transportIDHex)
+						if err != nil {
+							id.logDiscoveryFileLoadError(path, err)
+							continue
+						}
+						// RNS/Discovery.py:489-490: membership check against
+						// the cached blackholed set (fetched once before the
+						// loop), not a per-entry registry lookup.
+						if blackholed[string(networkIDBytes)] || blackholed[string(transportIDBytes)] {
+							shouldRemove = true
+						}
+					}
 				}
 			}
 		}
@@ -1395,7 +1819,7 @@ func (id *InterfaceDiscovery) ListDiscoveredInterfaces(onlyAvailable, onlyTransp
 		transportIDValue, hasTransportID := lookupAny(m, "transport_id")
 
 		di := DiscoveredInterface{
-			Name:        discoveryDisplayString(nameValue, hasName),
+			Name:        discoveryLoadName(nameValue, hasName),
 			Type:        discoveryDisplayString(typeValue, hasType),
 			Status:      status,
 			StatusCode:  statusCode,
@@ -1634,6 +2058,21 @@ func isReachableOnValue(v string) bool {
 		return true
 	}
 	return isHostname(v)
+}
+
+// isYggIPv6 reports whether addressString is an IPv6 address inside the
+// Yggdrasil 200::/7 network (RNS/Discovery.py:850-852). Non-IPv6 addresses,
+// IPv4 addresses, and unparseable strings return false.
+func isYggIPv6(addressString string) bool {
+	ip := net.ParseIP(addressString)
+	if ip == nil {
+		return false
+	}
+	_, yggNet, err := net.ParseCIDR("200::/7")
+	if err != nil {
+		return false
+	}
+	return yggNet.Contains(ip)
 }
 
 func discoveryTruthyBool(v any) bool {
@@ -2057,6 +2496,19 @@ func discoveryDisplayString(v any, present bool) string {
 	return pythonDiscoveryValueString(v)
 }
 
+// discoveryLoadName returns the display name for a persisted discovery entry,
+// applying sanitize_name to string names (RNS/Discovery.py:481). Non-string
+// names fall back to the generic display rendering.
+func discoveryLoadName(nameValue any, present bool) string {
+	if !present {
+		return ""
+	}
+	if s, ok := nameValue.(string); ok {
+		return sanitizeDiscoveryName(s)
+	}
+	return pythonDiscoveryValueString(nameValue)
+}
+
 func (id *InterfaceDiscovery) connectDiscovered() {
 	if id == nil || id.owner == nil || !id.owner.shouldAutoconnectDiscoveredInterfaces() {
 		return
@@ -2140,6 +2592,11 @@ func (id *InterfaceDiscovery) autoconnect(info DiscoveredInterface) (err error) 
 		id.owner.logger.Error("Error while auto-connecting discovered interface: 'reachable_on'")
 		return nil
 	}
+	// RNS/Discovery.py:720-722: a Yggdrasil (200::/7) reachable_on is not
+	// auto-connected (yggdrasil availability is not detected on this system).
+	if isYggIPv6(info.ReachableOn) {
+		return nil
+	}
 	if !info.endpoint.hasSpecifiedPort {
 		id.owner.logger.Error("Error while auto-connecting discovered interface: 'port'")
 		return nil
@@ -2187,6 +2644,36 @@ func (id *InterfaceDiscovery) autoconnect(info DiscoveredInterface) (err error) 
 			})
 		}
 	}
+	// Apply autoconnect mode/gravity/announce-rate defaults, mirroring
+	// Python's _add_autoconnect_interface block (RNS/Discovery.py:742-752).
+	// With no autoconnect_interface_mode / _gravity / _announces_to_internal
+	// config overrides (Go has none), the effective values are:
+	//   mode = AC_TRANSPORT_MODE (MODE_GATEWAY) when transport enabled else None
+	//   ar_target/penalty/grace = _default_ar_*() when transport enabled else None
+	//   gravity = AC_GRAVITY (0) regardless of transport
+	//   announces_to_internal = True only if autoconnect_announces_to_internal()
+	transportEnabled := id.owner != nil && id.owner.transport != nil && id.owner.transport.Enabled()
+	if transportEnabled {
+		if setter, ok := iface.(interface{ SetMode(int) }); ok {
+			setter.SetMode(interfaces.ModeGateway)
+		}
+		target := id.owner.defaultARTarget()
+		grace := id.owner.defaultARGrace()
+		penalty := id.owner.defaultARPenalty()
+		if setter, ok := iface.(interface{ SetAnnounceRateTarget(*int) }); ok {
+			setter.SetAnnounceRateTarget(&target)
+		}
+		if setter, ok := iface.(interface{ SetAnnounceRateGrace(*int) }); ok {
+			setter.SetAnnounceRateGrace(&grace)
+		}
+		if setter, ok := iface.(interface{ SetAnnounceRatePenalty(*int) }); ok {
+			setter.SetAnnounceRatePenalty(&penalty)
+		}
+	}
+	if setter, ok := iface.(interface{ SetGravity(int) }); ok {
+		setter.SetGravity(0)
+	}
+
 	if id.registerAutoconnect != nil {
 		id.registerAutoconnect(iface)
 	} else {
@@ -2292,14 +2779,17 @@ func (id *InterfaceDiscovery) monitorInterface(iface interfaces.Interface) {
 
 	id.monitoringAutoconnects = true
 	stopCh := make(chan struct{})
+	done := make(chan struct{})
 	id.monitorStopCh = stopCh
+	id.monitorDone = done
 	interval := id.monitorInterval
 	id.monitorMu.Unlock()
 
-	go id.monitorLoop(stopCh, interval)
+	go id.monitorLoop(stopCh, done, interval)
 }
 
-func (id *InterfaceDiscovery) monitorLoop(stopCh <-chan struct{}, interval time.Duration) {
+func (id *InterfaceDiscovery) monitorLoop(stopCh <-chan struct{}, done chan struct{}, interval time.Duration) {
+	defer close(done)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -2502,6 +2992,11 @@ func (h *InterfaceAnnounceHandler) decodeDiscoveryInfo(destinationHash []byte, a
 	if interfaceType == "" {
 		return nil, fmt.Errorf("missing interface type")
 	}
+	// RNS/Discovery.py:310-312: reject announces whose interface_type is not
+	// in DISCOVERABLE_INTERFACE_TYPES.
+	if !discoveryAnnounceTypes[interfaceType] {
+		return nil, fmt.Errorf("invalid interface type in announce data: %s", interfaceType)
+	}
 	requiredValue := func(field byte, name string) (any, error) {
 		v, ok := lookupDiscovery(m, int(field))
 		if !ok || v == nil {
@@ -2513,13 +3008,22 @@ func (h *InterfaceAnnounceHandler) decodeDiscoveryInfo(destinationHash []byte, a
 	if !ok {
 		return nil, fmt.Errorf("missing transport ID")
 	}
-	transportID, ok := discoveryHexValue(transportIDValue)
-	if !ok {
-		return nil, fmt.Errorf("missing transport ID")
+	// RNS/Discovery.py:309: transport_id must be a byte string of exactly
+	// TRUNCATED_HASHLENGTH/8 bytes. A non-bytes value (int/list) or a
+	// wrong-length byte string is rejected (Python raises and the surrounding
+	// except drops the announce).
+	transportIDBytes, ok := transportIDValue.([]byte)
+	if !ok || len(transportIDBytes) != TruncatedHashLength/8 {
+		return nil, fmt.Errorf("invalid data in transport_id field of announce")
 	}
+	transportID := hex.EncodeToString(transportIDBytes)
 	transportValue, err := requiredValue(discoveryFieldTransport, "transport")
 	if err != nil {
 		return nil, err
+	}
+	// RNS/Discovery.py:305: transport must be exactly a bool.
+	if _, isBool := transportValue.(bool); !isBool {
+		return nil, fmt.Errorf("invalid data in transport field of announce")
 	}
 	nameValue, err := requiredValue(discoveryFieldName, "name")
 	if err != nil {
@@ -2556,6 +3060,11 @@ func (h *InterfaceAnnounceHandler) decodeDiscoveryInfo(destinationHash []byte, a
 		if !ok {
 			return nil, fmt.Errorf("missing %v", field.name)
 		}
+		// RNS/Discovery.py:306-308: latitude/longitude/height must be nil or
+		// a float (not int, not bool, not bytes).
+		if v != nil && !isMsgpackFloat(v) {
+			return nil, fmt.Errorf("invalid data in %v field of announce", field.name)
+		}
 		info[field.name] = v
 	}
 
@@ -2564,11 +3073,12 @@ func (h *InterfaceAnnounceHandler) decodeDiscoveryInfo(destinationHash []byte, a
 			return nil, fmt.Errorf("invalid reachable_on value")
 		}
 	}
+	// RNS/Discovery.py:330-331: ifac_netname/ifac_netkey are coerced to str.
 	if ifacNetname, ok := lookupDiscovery(m, discoveryFieldIFACNetname); ok {
-		info["ifac_netname"] = ifacNetname
+		info["ifac_netname"] = discoveryCoerceString(ifacNetname)
 	}
 	if ifacNetkey, ok := lookupDiscovery(m, discoveryFieldIFACNetkey); ok {
-		info["ifac_netkey"] = ifacNetkey
+		info["ifac_netkey"] = discoveryCoerceString(ifacNetkey)
 	}
 
 	requiredReachableOn := func() (any, error) {
@@ -2707,6 +3217,28 @@ func discoveryConfigEntry(info map[string]any) string {
 	default:
 		return ""
 	}
+}
+
+// isMsgpackFloat reports whether v is a msgpack float (Python float). It
+// rejects int, bool, bytes and nil — mirroring Python's
+// `type(x) in [type(None), float]` check (RNS/Discovery.py:306-308).
+func isMsgpackFloat(v any) bool {
+	rv := reflect.ValueOf(v)
+	if !rv.IsValid() {
+		return false
+	}
+	switch rv.Kind() {
+	case reflect.Float32, reflect.Float64:
+		return true
+	default:
+		return false
+	}
+}
+
+// discoveryCoerceString replicates Python str() applied to a msgpack value,
+// used to coerce ifac_netname/ifac_netkey (RNS/Discovery.py:330-331).
+func discoveryCoerceString(v any) string {
+	return pythonDiscoveryValueString(v)
 }
 
 func pythonDiscoveryValueString(v any) string {
@@ -2918,10 +3450,13 @@ func discoveryHexScalarString(v any) (string, bool) {
 
 func discoveryAnnounceNameValue(v any, interfaceType string) (string, error) {
 	if s, ok := v.(string); ok {
-		if s == "" {
+		// RNS/Discovery.py:303: the received name is sanitized via
+		// sanitize_name; an empty result falls back to the default.
+		sanitized := sanitizeDiscoveryName(s)
+		if sanitized == "" {
 			return fmt.Sprintf("Discovered %v", interfaceType), nil
 		}
-		return s, nil
+		return sanitized, nil
 	}
 	if b, ok := v.([]byte); ok {
 		if len(b) == 0 {

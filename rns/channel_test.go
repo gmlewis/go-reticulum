@@ -37,6 +37,16 @@ func (o *maintenanceMockOutlet) RTT() float64   { return o.rtt }
 func (o *maintenanceMockOutlet) IsUsable() bool { return true }
 func (o *maintenanceMockOutlet) TimedOut()      {}
 
+// GetPacketID returns the mock packet's hash. The mock packets carry no Raw
+// (they are test doubles that never go on the wire), so the real outlet's
+// Raw!=nil guard does not apply here; the hash is the match identity.
+func (o *maintenanceMockOutlet) GetPacketID(p *Packet) []byte {
+	if p == nil {
+		return nil
+	}
+	return p.PacketHash
+}
+
 func TestChannelMediumRTTAdaptiveWindowGrowth(t *testing.T) {
 	t.Parallel()
 	outlet := &maintenanceMockOutlet{mdu: 512, rtt: 0.5}

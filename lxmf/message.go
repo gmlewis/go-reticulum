@@ -8,13 +8,19 @@ package lxmf
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"image"
 	"io"
+	"log"
 	"os"
+	"path/filepath"
 	"reflect"
+	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/qr"
@@ -65,6 +71,12 @@ type Message struct {
 	// repacks, and queues the message for delivery. The wiring is golden-tested
 	// by TestDeferredPropagationStamps and TestDeferPropagationStamp.
 	DeferPropagationStamp bool
+	// AutoCompress controls whether a DIRECT-delivery resource is
+	// auto-compressed before transmission. It defaults to true and is
+	// reconciled with the destination's recalled announce app-data by
+	// DetermineCompressionSupport, mirroring Python's
+	// LXMessage.auto_compress (LXMF/LXMessage.py:146, 510-513, v1.1.0).
+	AutoCompress bool
 
 	// Payload stores the unpacked LXMF payload elements used for packing or
 	// validating the message.
@@ -150,6 +162,13 @@ type Message struct {
 	// UnverifiedReason describes why signature validation could not succeed.
 	UnverifiedReason int
 
+	// SourceBlackholed reports whether the recalled source identity is on the
+	// local blackhole list. It is set during unpack from
+	// Transport.IsBlackholed, mirroring Python's
+	// LXMessage.source_blackholed (LXMF/LXMessage.py:172, 804, v1.0.0+).
+	// Routers drop inbound messages whose source is blackholed.
+	SourceBlackholed bool
+
 	// TryPropagationOnFail requests propagated delivery after direct delivery
 	// fails.
 	TryPropagationOnFail bool
@@ -170,6 +189,12 @@ type Message struct {
 	deliveryDestination      rns.PacketDestination
 	propagationEncryptedData []byte
 	rawStampCost             any
+
+	// persistMu serializes persistence of this message to disk, mirroring
+	// Python's LXMessage.__persist_lock (LXMessage.py:188, v0.9.9). It guards
+	// WriteToDirectory (and the PackedContainer snapshot it captures) so
+	// concurrent writes never interleave or leave a partial file.
+	persistMu sync.Mutex
 }
 
 type pythonStampCostTypeError struct {
@@ -203,6 +228,7 @@ func NewMessage(destination, source *rns.Destination, content, title string, fie
 		Representation:        RepresentationUnknown,
 		DeferStamp:            true,
 		DeferPropagationStamp: true,
+		AutoCompress:          true,
 	}
 
 	return m, nil
@@ -550,6 +576,15 @@ func UnpackMessageFromBytes(ts rns.Transport, data []byte, originalMethod int) (
 		m.UnverifiedReason = ReasonSourceUnknown
 	}
 
+	// Mirror Python LXMessage.unpack_from_bytes (LXMessage.py:803-805,
+	// v1.0.0+): when the source identity was recalled, query the local
+	// blackhole list by identity hash so the router can drop the message.
+	// An unrecalled source leaves the flag false, matching Python's
+	// source_identity-is-None guard.
+	if sourceIdentity := ts.Recall(sourceHash); sourceIdentity != nil {
+		m.SourceBlackholed = ts.IsBlackholed(sourceIdentity.Hash)
+	}
+
 	return m, nil
 }
 
@@ -740,8 +775,20 @@ func recalledDeliveryDestination(ts rns.Transport, destHash []byte) *rns.Destina
 }
 
 // PackedContainer returns the msgpack-encoded container dict for this message,
-// matching Python's LXMessage.packed_container() method.
+// matching Python's LXMessage.packed_container() method. The snapshot is taken
+// under the per-Message persist mutex so it is consistent with any concurrent
+// persist and with callers that mutate message state under the same lock
+// (Python __persist_lock, LXMessage.py:188, v1.0.0).
 func (m *Message) PackedContainer() ([]byte, error) {
+	m.persistMu.Lock()
+	defer m.persistMu.Unlock()
+	return m.packedContainerLocked()
+}
+
+// packedContainerLocked builds the msgpack container dict assuming the
+// caller holds persistMu. WriteToDirectory uses it to avoid re-entering the
+// lock it already holds.
+func (m *Message) packedContainerLocked() ([]byte, error) {
 	if len(m.Packed) == 0 {
 		if err := m.Pack(); err != nil {
 			return nil, err
@@ -828,6 +875,26 @@ func (m *Message) DetermineTransportEncryption() {
 	}
 }
 
+// DetermineCompressionSupport reconciles m.AutoCompress with the destination's
+// recalled announce app-data, mirroring Python's
+// LXMessage.determine_compression_support (LXMF/LXMessage.py:510-513, v1.1.0).
+// When appData is empty (no recalled announce) compression defaults to
+// supported; otherwise it follows the peer's supported-functionality list via
+// CompressionSupportFromAppData. A malformed payload yields an error rather
+// than a silent default.
+func (m *Message) DetermineCompressionSupport(appData []byte) error {
+	if len(appData) == 0 {
+		m.AutoCompress = true
+		return nil
+	}
+	supported, _, err := CompressionSupportFromAppData(appData)
+	if err != nil {
+		return fmt.Errorf("determine lxmf compression support: %w", err)
+	}
+	m.AutoCompress = supported
+	return nil
+}
+
 func (m *Message) setDeliveryDestination(destination rns.PacketDestination) {
 	m.deliveryDestination = destination
 }
@@ -882,7 +949,11 @@ func (m *Message) asResource() (*rns.Resource, error) {
 
 	switch m.Method {
 	case MethodDirect:
-		return rns.NewResource(m.Packed, link)
+		// DIRECT-delivery resources carry auto_compress from the peer's
+		// announced supported-functionality list, mirroring Python's
+		// LXMessage.__as_resource (LXMF/LXMessage.py:654, v1.1.0). The
+		// PROPAGATED branch below intentionally omits it, matching Python.
+		return rns.NewResourceWithOptions(m.Packed, link, rns.ResourceOptions{AutoCompress: m.AutoCompress})
 	case MethodPropagated:
 		if len(m.PropagationPacked) == 0 {
 			if err := m.packPropagated(); err != nil {
@@ -898,17 +969,67 @@ func (m *Message) asResource() (*rns.Resource, error) {
 // WriteToDirectory writes the message to the given directory as a msgpack
 // container file named by the message hash hex. This mirrors Python's
 // LXMessage.write_to_directory() method.
+// WriteToDirectory atomically persists the message's packed container to
+// dirPath under a per-message persist mutex, mirroring Python's
+// LXMessage.write_to_directory (LXMessage.py:674-694, v0.9.9). It writes to a
+// unique ".tmp.<pid>.<rand>" path, flushes and fsyncs, then renames the file
+// into place so a concurrent reader never observes a partial container. On
+// any error the temporary file is removed.
 func (m *Message) WriteToDirectory(dirPath string) (string, error) {
-	container, err := m.PackedContainer()
+	m.persistMu.Lock()
+	defer m.persistMu.Unlock()
+
+	// Snapshot the container under the persist lock so it is consistent with
+	// any concurrent mutation that also holds the lock (Python takes the
+	// whole write under __persist_lock, LXMessage.py:679). This also packs
+	// if needed, populating m.Hash for the file name.
+	container, err := m.packedContainerLocked()
 	if err != nil {
 		return "", fmt.Errorf("pack container: %w", err)
 	}
+
 	fileName := fmt.Sprintf("%x", m.Hash)
-	filePath := dirPath + "/" + fileName
-	if err := os.WriteFile(filePath, container, 0o600); err != nil {
-		return "", fmt.Errorf("write lxmf message to %v: %w", filePath, err)
+	filePath := filepath.Join(dirPath, fileName)
+
+	// Unique tmp path matching Python's
+	// file_path+".tmp."+pid+"."+hex(urandom(8)) (LXMessage.py:677).
+	var randBuf [8]byte
+	if _, rerr := rand.Read(randBuf[:]); rerr != nil {
+		return "", fmt.Errorf("generate tmp suffix: %w", rerr)
+	}
+	tmpPath := filePath + ".tmp." + strconv.Itoa(os.Getpid()) + "." + hex.EncodeToString(randBuf[:])
+
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return "", fmt.Errorf("create tmp file %v: %w", tmpPath, err)
+	}
+	if _, werr := f.Write(container); werr != nil {
+		f.Close()
+		removeTmpFile(tmpPath)
+		return "", fmt.Errorf("write lxmf message to %v: %w", tmpPath, werr)
+	}
+	// Mirror Python: fsync failures are logged but do not abort the replace
+	// (LXMessage.py:684-685).
+	if serr := f.Sync(); serr != nil {
+		log.Printf("Error while waiting for persist fsync for %x: %v", m.Hash, serr)
+	}
+	if cerr := f.Close(); cerr != nil {
+		removeTmpFile(tmpPath)
+		return "", fmt.Errorf("close tmp file %v: %w", tmpPath, cerr)
+	}
+	if rerr := os.Rename(tmpPath, filePath); rerr != nil {
+		removeTmpFile(tmpPath)
+		return "", fmt.Errorf("rename tmp file into place: %w", rerr)
 	}
 	return filePath, nil
+}
+
+// removeTmpFile removes a leftover temporary file, swallowing errors that
+// Python also swallows (LXMessage.py:691-693), logging only unexpected ones.
+func removeTmpFile(tmpPath string) {
+	if err := os.Remove(tmpPath); err != nil && !os.IsNotExist(err) {
+		log.Printf("Error while cleaning temporary file %v: %v", tmpPath, err)
+	}
 }
 
 func cloneBytes(in []byte) []byte {

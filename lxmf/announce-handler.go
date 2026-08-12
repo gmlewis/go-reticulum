@@ -103,12 +103,53 @@ func (r *Router) handlePropagationAnnounceWithContext(destinationHash []byte, _ 
 		}
 	}()
 
-	if !r.propagationEnabled || len(appData) == 0 {
+	if len(appData) == 0 {
 		return
 	}
 
 	announceData, ok := decodePropagationAnnounceData(appData, logger)
 	if !ok {
+		return
+	}
+
+	// Mirror Python LXMFPropagationAnnounceHandler.received_announce
+	// (Handlers.py:44-52, v0.9.8+): when the configured outbound propagation
+	// node announces valid data, reset the delivery attempt time on pending
+	// propagated messages and trigger processOutbound in a goroutine that
+	// waits for any active outbound processing to finish. This block is
+	// intentionally not guarded by propagationEnabled — Python places it
+	// outside the propagation_node guard — so a router that is not itself a
+	// propagation node still dispatches pending propagated messages to its
+	// outbound PN when it (re)announces.
+	if r.outboundPropagationNode != nil && equalHashes(destinationHash, r.outboundPropagationNode) {
+		nowSeconds := float64(r.now().UnixNano()) / 1e9
+		shouldProcess := false
+		r.mu.Lock()
+		for _, message := range r.pendingOutbound {
+			if message == nil {
+				continue
+			}
+			if message.Method == MethodPropagated {
+				message.NextDeliveryAttempt = nowSeconds
+				shouldProcess = true
+			}
+		}
+		r.mu.Unlock()
+		if shouldProcess {
+			go func() {
+				sleep := r.outboundTriggerSleep
+				if sleep == nil {
+					sleep = time.Sleep
+				}
+				for r.outboundProcessingActive.Load() {
+					sleep(100 * time.Millisecond)
+				}
+				r.processOutbound()
+			}()
+		}
+	}
+
+	if !r.propagationEnabled {
 		return
 	}
 

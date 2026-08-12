@@ -188,6 +188,18 @@ type Link struct {
 	snr           float64
 	q             float64
 
+	// tx, rx, txbytes and rxbytes are the link traffic counters, the Go
+	// port of Python Link.py's self.tx / self.rx / self.txbytes /
+	// self.rxbytes (Link.py:250-253). tx/rx count packets; txbytes/rxbytes
+	// count bytes, where txbytes is the ciphertext length (Python
+	// Packet.send: self.destination.txbytes += len(self.ciphertext) for a
+	// LINK destination) and rxbytes is the on-wire data length (Python
+	// Link.receive: self.rxbytes += len(packet.data)).
+	tx      uint64
+	rx      uint64
+	txbytes uint64
+	rxbytes uint64
+
 	callbacks LinkCallbacks
 	mu        sync.Mutex
 
@@ -588,6 +600,16 @@ func (l *Link) receive(packet *Packet) {
 	if packet.Context != ContextKeepalive {
 		l.lastData = l.lastInbound
 	}
+	// Count the inbound packet, mirroring Python Link.receive (Link.py:937-938):
+	// self.rx += 1; self.rxbytes += len(packet.data). Python guards the
+	// increment with `not self.status == Link.CLOSED and not (self.initiator
+	// and packet.context == KEEPALIVE and packet.data == bytes([0xFF]))`, so
+	// the initiator's own keepalive echo is not counted toward rx.
+	if l.status.Load() != LinkClosed &&
+		!(l.initiator && packet.Context == ContextKeepalive && len(packet.Data) > 0 && packet.Data[0] == 0xFF) {
+		l.rx++
+		l.rxbytes += uint64(len(packet.Data))
+	}
 	l.mu.Unlock()
 
 	l.logger.Verbose("Link %x receive: packet context=%v", l.linkID, packet.Context)
@@ -863,12 +885,23 @@ func (l *Link) receive(packet *Packet) {
 
 	case ContextKeepalive:
 		if !l.initiator && len(packet.Data) > 0 && packet.Data[0] == 0xFF {
-			keepalivePacket := NewPacketWithTransport(l.transport, l, []byte{0xFE})
-			keepalivePacket.Context = ContextKeepalive
-			if err := l.send(keepalivePacket); err != nil {
-				l.logger.Debug("Failed sending keepalive response: %v", err)
-			} else {
-				l.hadKeepaliveOutbound()
+			// v1.4.0: only echo a 0xFE keepalive when nothing has been sent
+			// for a full keepalive interval (RNS/Link.py:1124-1127:
+			// `if time.time() >= self.last_outbound + self.keepalive`).
+			// Recent outbound traffic already serves as the keepalive echo,
+			// so a redundant 0xFE would just waste bandwidth.
+			l.mu.Lock()
+			lastOutbound := l.lastOutbound
+			keepalive := l.keepalive
+			l.mu.Unlock()
+			if !l.nowTime().Before(lastOutbound.Add(keepalive)) {
+				keepalivePacket := NewPacketWithTransport(l.transport, l, []byte{0xFE})
+				keepalivePacket.Context = ContextKeepalive
+				if err := l.send(keepalivePacket); err != nil {
+					l.logger.Debug("Failed sending keepalive response: %v", err)
+				} else {
+					l.hadKeepaliveOutbound()
+				}
 			}
 		}
 
@@ -929,6 +962,14 @@ func (l *Link) send(p *Packet) error {
 			}
 		}
 		l.accumulateEstablishmentCost(p)
+		// Count the outbound packet on the link, mirroring Python
+		// Packet.send's LINK-destination branch (Packet.py:294-295):
+		// self.destination.tx += 1;
+		// self.destination.txbytes += len(self.ciphertext). This
+		// attached-interface path bypasses Packet.Send, so the counter
+		// is bumped here; the transport path below goes through
+		// Packet.Send which records it itself.
+		l.recordOutbound(len(p.Ciphertext))
 		// Send directly through the attached interface for link-specific packets
 		if err := iface.Send(p.Raw); err != nil {
 			l.logger.Error("Link.send: failed to send via attached interface: %v", err)
@@ -1208,7 +1249,13 @@ func (l *Link) watchdogStep(now time.Time) time.Duration {
 			lastInbound = l.lastProof
 		}
 
-		if !now.Before(lastInbound.Add(l.keepalive)) {
+		// v1.4.0: the keepalive/stale check also fires on outbound inactivity
+		// (RNS/Link.py:749: `now >= last_inbound + keepalive or now >=
+		// last_outbound + keepalive`). This makes a silent initiator that is
+		// still receiving destination traffic send keepalives so the remote
+		// side does not time it out, instead of only reacting to inbound
+		// silence. The stale check below remains gated on last_inbound.
+		if !now.Before(lastInbound.Add(l.keepalive)) || !now.Before(l.lastOutbound.Add(l.keepalive)) {
 			sendKeepalive := l.initiator && !now.Before(l.lastKeepalive.Add(l.keepalive))
 			if sendKeepalive {
 				l.lastKeepalive = now
@@ -1525,6 +1572,19 @@ func (o *LinkChannelOutlet) Resend(p *Packet) (*Packet, error) {
 // MDU forwards the calculated Maximum Data Unit safely available to the channel from the underlying link limitations.
 func (o *LinkChannelOutlet) MDU() int {
 	return o.link.mdu
+}
+
+// GetPacketID returns the packet hash used to match a sent packet against
+// envelopes in the channel txRing, or nil when the packet has no on-wire
+// identity — a "ghost" envelope whose packet was never packed/sent (empty
+// Raw). Mirrors Python LinkChannelOutlet.get_packet_id (Channel.py:600-603),
+// guarding with `raw is not None` so a ghost envelope is never matched by a
+// delivery or timeout callback.
+func (o *LinkChannelOutlet) GetPacketID(p *Packet) []byte {
+	if p == nil || len(p.Raw) == 0 {
+		return nil
+	}
+	return p.PacketHash
 }
 
 // RTT exposes the current measured Round Trip Time from the underlying link strictly to aid the channel's retry metrics.

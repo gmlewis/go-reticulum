@@ -288,6 +288,18 @@ func (p *Packet) Send() error {
 			return err
 		}
 	}
+	// Count the outbound packet on a link destination, mirroring Python
+	// Packet.send's LINK-destination branch (Packet.py:294-295):
+	// self.destination.tx += 1;
+	// self.destination.txbytes += len(self.ciphertext). This covers
+	// externally-generated link packets (resource advertise/part/proof
+	// via NewPacket(link, ...).Send()) and Link.send's transport path,
+	// which routes through Packet.Send rather than the attached-interface
+	// shortcut. Link.send's attached-interface path bumps the counter
+	// itself, so each packet is counted exactly once.
+	if link, ok := p.Destination.(*Link); ok {
+		link.recordOutbound(len(p.Ciphertext))
+	}
 	if p.CreateReceipt && p.Receipt == nil {
 		p.Receipt = &PacketReceipt{
 			Hash:          append([]byte(nil), p.PacketHash...),

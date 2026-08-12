@@ -111,7 +111,8 @@ func (ts *TransportSystem) countTrafficPass(now time.Time) (rxb, txb uint64, rxs
 // countTrafficLoop is the production traffic-counter loop (Python
 // Transport.count_traffic_loop, Transport.py:419-451): once per second it runs
 // countTrafficPass with the wall clock. It exits when stopCh is closed.
-func (ts *TransportSystem) countTrafficLoop(stopCh <-chan struct{}) {
+func (ts *TransportSystem) countTrafficLoop(stopCh <-chan struct{}, done chan struct{}) {
+	defer close(done)
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 	for {

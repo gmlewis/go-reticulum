@@ -29,6 +29,14 @@ func (o *mockOutlet) RTT() float64                      { return o.rtt }
 func (o *mockOutlet) IsUsable() bool                    { return true }
 func (o *mockOutlet) TimedOut()                         {}
 
+// GetPacketID returns the mock packet's hash; the mock packets carry no Raw.
+func (o *mockOutlet) GetPacketID(p *Packet) []byte {
+	if p == nil {
+		return nil
+	}
+	return p.PacketHash
+}
+
 func TestBuffer(t *testing.T) {
 	t.Parallel()
 	outlet := &mockOutlet{mdu: 500, rtt: 0.1}

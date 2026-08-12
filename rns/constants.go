@@ -26,6 +26,10 @@ const (
 	NameHashLength = 80
 	// TruncatedHashLength establishes the fixed length in bits for truncated identifiers.
 	TruncatedHashLength = 128
+	// HashLength establishes the full hash length in bits, mirroring
+	// RNS.Identity.HASHLENGTH (RNS/Identity.py:80). A full packet hash is
+	// HashLength/8 bytes (SHA-256).
+	HashLength = 256
 	// HeaderMinSize specifies the absolute minimum number of bytes required for a packet header.
 	HeaderMinSize = 2 + 1 + (TruncatedHashLength/8)*1
 	// HeaderMaxSize specifies the maximum possible size in bytes for a packet header.

@@ -41,10 +41,13 @@ func TestProgramSetupDiscovery(t *testing.T) {
 
 	now := float64(time.Now().UnixNano()) / 1e9
 	mockData := map[string]any{
-		"name":       "Mock Interface",
-		"type":       "UDPInterface",
-		"last_heard": now - 30,
-		"value":      123,
+		"name":         "Mock Interface",
+		"type":         "TCPServerInterface",
+		"last_heard":   now - 30,
+		"transport":    true,
+		"value":        123,
+		"transport_id": "0102030405060708090a0b0c0d0e0f10",
+		"network_id":   "0a0b0c0d0e0f10111213141516171819",
 	}
 	data := mustMsgpackPack(mockData)
 	if err := os.WriteFile(filepath.Join(storagePath, "mock.data"), data, 0o644); err != nil {

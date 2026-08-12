@@ -61,7 +61,7 @@ func (ts *TransportSystem) blackholeFetch(sourceIdentityHash []byte) ([]blackhol
 		return nil, fmt.Errorf("no path available for blackhole source %x", sourceIdentityHash)
 	}
 
-	remoteIdentity := ts.Recall(destHash)
+	remoteIdentity := ts.recallNoUse(destHash)
 	if remoteIdentity == nil {
 		return nil, fmt.Errorf("could not recall identity for blackhole source %x", sourceIdentityHash)
 	}

@@ -144,6 +144,9 @@ type Transport interface {
 	Remember(packetHash, destHash, publicKey, appData []byte)
 	// Recall retrieves a previously remembered identity by hash.
 	Recall(targetHash []byte) *Identity
+	// RecallAppData returns the cached app_data for a known destination, or
+	// nil if the destination is unknown (Python Identity.recall_app_data).
+	RecallAppData(targetHash []byte) []byte
 	// GetRatchet returns the ratchet public key recorded for destHash.
 	GetRatchet(destHash []byte) []byte
 	// SetRatchet stores a ratchet public key for destHash.
@@ -153,6 +156,19 @@ type Transport interface {
 	LoadKnownDestinations(storagePath string)
 	// SaveKnownDestinations persists recalled destination data.
 	SaveKnownDestinations(storagePath string)
+
+	// UsedDestinationData marks a known destination in-use (Python
+	// RNS.Identity._used_destination_data).
+	UsedDestinationData(destHash []byte) bool
+	// RetainDestinationData pins a known destination so CleanKnownDestinations
+	// never drops it (Python RNS.Identity._retain_destination_data).
+	RetainDestinationData(destHash []byte) bool
+	// UnretainDestinationData clears the retain flag on a known destination
+	// (Python RNS.Identity._unretain_destination_data).
+	UnretainDestinationData(destHash []byte) bool
+	// RetainIdentity pins every known destination owned by identityHash
+	// (Python RNS.Identity._retain_identity).
+	RetainIdentity(identityHash []byte) bool
 
 	// GetLogger returns the logger associated with the transport.
 	GetLogger() *Logger
@@ -165,14 +181,28 @@ type TransportSystem struct {
 	networkID   *Identity
 	storagePath string
 	running     bool
-	startedAt   time.Time
-	stopCh      chan struct{}
-	doneCh      chan struct{}
+	// ready is set true at the END of Start (after the maintenance and
+	// traffic-counter goroutines are launched), mirroring Python
+	// Transport.ready (Transport.py:427). Inbound waits on it during the
+	// startup window so packets that arrive before Start finishes are not
+	// lost (Transport.py:1430-1437). Guarded by ts.mu.
+	ready             bool
+	readyWaitTimeout  time.Duration
+	readyPollInterval time.Duration
+	startedAt         time.Time
+	stopCh            chan struct{}
+	doneCh            chan struct{}
 
 	pathRequestHash []byte
 
 	interfaces   []interfaces.Interface
 	destinations []*Destination
+	// destinationsMap is the hash-keyed index over destinations (Python
+	// Transport.destinations_map, Transport.py:104,1216-1218,2478-2496). It
+	// lets inbound announce/link-request/data handling resolve a local
+	// destination by hash in O(1) instead of scanning the destinations list.
+	// Guarded by ts.mu alongside destinations.
+	destinationsMap map[string]*Destination
 
 	pendingLinks []*Link
 	activeLinks  []*Link
@@ -278,6 +308,18 @@ type TransportSystem struct {
 	knownDestinations map[string][]any
 	knownRatchets     map[string][]byte
 
+	// saveMu serializes known-destinations persistence so only one
+	// temp-file+rename sequence runs at a time, mirroring Python's
+	// saving_known_destinations flag (RNS/Identity.py:186-205). Unlike ts.mu
+	// (which only guards the in-memory map snapshot), saveMu spans the pack,
+	// temp-file write, and atomic rename so concurrent SaveKnownDestinations
+	// calls cannot stomp each other's temp files or race the rename.
+	saveMu sync.Mutex
+	// saveSeq makes each temp-file name unique across back-to-back saves
+	// (Python uses time.time(); a monotonic counter is robust against
+	// coarse-clock collisions on rapid successive flushes).
+	saveSeq uint64
+
 	announceHandlers []*AnnounceHandler
 
 	receipts []*PacketReceipt
@@ -309,6 +351,29 @@ type TransportSystem struct {
 	connectedToSharedInstance bool
 
 	mu sync.Mutex
+
+	// persistMu guards PersistData so a second persist invoked while one is
+	// already in flight is skipped rather than queued or re-entered. It is the
+	// Go analog of Python's module-level persist_lock with its
+	// "if persist_lock.locked(): return" guard (Transport.py:152,3509-3510),
+	// implemented with TryLock so the skip is non-blocking and non-reentrant.
+	persistMu sync.Mutex
+
+	// trafficDone is closed by countTrafficLoop when it exits, so Stop can join
+	// the traffic goroutine and confirm it did not leak (Python _should_run loop
+	// control, Transport.py:213,517).
+	trafficDone chan struct{}
+
+	// cacheCleanMu is the non-reentrant guard for the announce-cache cleaning
+	// job (Python Transport.cache_clean_lock, Transport.py:151,2600-2615). It is
+	// acquired with TryLock so a clean already in flight causes the next
+	// scheduler tick to postpone instead of queueing a second sweep.
+	cacheCleanMu sync.Mutex
+	// cacheLastCleaned records when a cache clean was last dispatched, and
+	// cacheCleanSleep is the per-entry yield (Python time.sleep(0.001) at
+	// Transport.py:2636). cacheCleanSleep is injectable for deterministic tests.
+	cacheLastCleaned time.Time
+	cacheCleanSleep  func(time.Duration)
 
 	// outboundWG tracks outbound sends dispatched on their own goroutines by
 	// the fan-out paths (processAnnounceTable, forwardPathRequest,
@@ -464,6 +529,13 @@ const (
 	// state machines are advanced and held announces are released.
 	interfaceJobsInterval = 5 * time.Second
 
+	// cacheCleanInterval matches Python Transport.cache_clean_interval
+	// (Transport.py:188): the announce-cache cleaning job is dispatched at most
+	// once every 5 minutes. cacheCleanYieldSleep is the per-entry yield
+	// (Transport.py:2636 time.sleep(0.001)) so a large sweep stays low priority.
+	cacheCleanInterval   = 5 * time.Minute
+	cacheCleanYieldSleep = time.Millisecond
+
 	// establishmentTimeoutPerHop matches Python's
 	// Link.ESTABLISHMENT_TIMEOUT_PER_HOP = Reticulum.DEFAULT_PER_HOP_TIMEOUT = 6 seconds.
 	establishmentTimeoutPerHop = 6 * time.Second
@@ -479,6 +551,7 @@ func NewTransportSystem(logger *Logger) *TransportSystem {
 		logger:                  logger,
 		interfaces:              make([]interfaces.Interface, 0),
 		destinations:            make([]*Destination, 0),
+		destinationsMap:         make(map[string]*Destination),
 		pendingLinks:            make([]*Link, 0),
 		activeLinks:             make([]*Link, 0),
 		pathTable:               make(map[string]*PathEntry),
@@ -502,6 +575,8 @@ func NewTransportSystem(logger *Logger) *TransportSystem {
 		knownRatchets:           make(map[string][]byte),
 		blackholeUpdateInterval: BlackholeUpdateInterval,
 		allowLinkPathRebalance:  true,
+		readyWaitTimeout:        60 * time.Second,
+		readyPollInterval:       250 * time.Millisecond,
 	}
 }
 
@@ -564,6 +639,9 @@ func (ts *TransportSystem) ensureStateLocked() {
 	}
 	if ts.pathTable == nil {
 		ts.pathTable = make(map[string]*PathEntry)
+	}
+	if ts.destinationsMap == nil {
+		ts.destinationsMap = make(map[string]*Destination)
 	}
 	if ts.reverseTable == nil {
 		ts.reverseTable = make(map[string]*ReverseEntry)
@@ -674,8 +752,19 @@ func (ts *TransportSystem) Start(storagePath string) error {
 	}
 	ts.stopCh = make(chan struct{})
 	ts.doneCh = make(chan struct{})
+	ts.trafficDone = make(chan struct{})
 	ts.running = true
+	// Reset the ready flag for a re-Start so Inbound waits through this
+	// startup window again; it is set true at the end of Start.
+	ts.ready = false
 	ts.startedAt = time.Now()
+	// Defer the first announce-cache clean by 60s past startup, matching
+	// Python Transport.start (Transport.py:293 sets cache_last_cleaned to
+	// time.time()+60) so a freshly started transport does not immediately sweep.
+	ts.cacheLastCleaned = ts.startedAt.Add(60 * time.Second)
+	if ts.cacheCleanSleep == nil {
+		ts.cacheCleanSleep = time.Sleep
+	}
 
 	ts.storagePath = storagePath
 	if _, err := os.Stat(ts.storagePath); os.IsNotExist(err) {
@@ -769,13 +858,7 @@ func (ts *TransportSystem) Start(storagePath string) error {
 	pathRequestDst.SetPacketCallback(func(data []byte, p *Packet) { ts.handlePathRequest(data, p) })
 
 	ts.mu.Lock()
-	found := false
-	for _, d := range ts.destinations {
-		if bytes.Equal(d.Hash, pathRequestDst.Hash) {
-			found = true
-			break
-		}
-	}
+	_, found := ts.destinationsMap[string(pathRequestDst.Hash)]
 	ts.mu.Unlock()
 	if !found {
 		ts.RegisterDestination(pathRequestDst)
@@ -804,8 +887,15 @@ func (ts *TransportSystem) Start(storagePath string) error {
 	go ts.maintenance()
 
 	// Start the traffic counter loop (Python Transport.start launches
-	// Transport.count_traffic_loop as a daemon thread, Transport.py:252).
-	go ts.countTrafficLoop(ts.stopCh)
+	// Transport.count_traffic_loop as a daemon thread, Transport.py:252). It
+	// closes trafficDone on exit so Stop can join it (leak check).
+	go ts.countTrafficLoop(ts.stopCh, ts.trafficDone)
+
+	// Mark the transport ready for inbound processing (Python
+	// Transport.py:427 sets Transport.ready = True at the end of start).
+	ts.mu.Lock()
+	ts.ready = true
+	ts.mu.Unlock()
 
 	return nil
 }
@@ -821,13 +911,7 @@ func (ts *TransportSystem) registerBlackholeDestination() error {
 	dst.RegisterRequestHandler("/list", ts.blackholeListHandler, AllowAll, nil, false)
 	ts.mu.Lock()
 	ts.blackholeDestination = dst
-	already := false
-	for _, d := range ts.destinations {
-		if bytes.Equal(d.Hash, dst.Hash) {
-			already = true
-			break
-		}
-	}
+	_, already := ts.destinationsMap[string(dst.Hash)]
 	ts.mu.Unlock()
 	if !already {
 		ts.RegisterDestination(dst)
@@ -858,13 +942,7 @@ func (ts *TransportSystem) registerTunnelSynthesizeDestination() error {
 	dst.SetPacketCallback(ts.tunnelSynthesizeHandler)
 	ts.mu.Lock()
 	ts.tunnelSynthesizeDestination = dst
-	already := false
-	for _, d := range ts.destinations {
-		if bytes.Equal(d.Hash, dst.Hash) {
-			already = true
-			break
-		}
-	}
+	_, already := ts.destinationsMap[string(dst.Hash)]
 	ts.mu.Unlock()
 	if !already {
 		ts.RegisterDestination(dst)
@@ -881,8 +959,14 @@ func (ts *TransportSystem) Stop() {
 	}
 	stopCh := ts.stopCh
 	doneCh := ts.doneCh
+	trafficDone := ts.trafficDone
 	ts.running = false
+	ts.ready = false
 	updater := ts.blackholeUpdater
+	// Snapshot the link lists so the teardown below can run without holding
+	// ts.mu (Teardown sends a packet, which re-enters the transport).
+	active := append([]*Link(nil), ts.activeLinks...)
+	pending := append([]*Link(nil), ts.pendingLinks...)
 	ts.mu.Unlock()
 
 	if updater != nil {
@@ -895,10 +979,42 @@ func (ts *TransportSystem) Stop() {
 	if doneCh != nil {
 		<-doneCh
 	}
+	// Join the traffic-counter loop so Stop returns only once every background
+	// goroutine has exited (leak check). countTrafficLoop closes trafficDone on
+	// its way out after observing stopCh.
+	if trafficDone != nil {
+		<-trafficDone
+	}
 
 	// Final flush of any destinations learned since the last periodic save, so
 	// the debounce in Remember doesn't lose up to one interval on shutdown.
 	ts.flushKnownDestinationsIfDirty()
+
+	// Tear down active and pending links before detaching interfaces,
+	// mirroring Python Transport.detach_interfaces (Transport.py:3172-3184):
+	// iterate active_links then pending_links calling link.teardown(), count
+	// the closed links, and sleep 150ms when any were closed so the teardown
+	// packets leave the local transport before the interfaces go away. The
+	// snapshot was taken under ts.mu above; Teardown itself takes the per-link
+	// lock and re-enters the transport to send, so it must run unlocked.
+	closedLinks := 0
+	for _, l := range active {
+		if l == nil {
+			continue
+		}
+		l.Teardown()
+		closedLinks++
+	}
+	for _, l := range pending {
+		if l == nil {
+			continue
+		}
+		l.Teardown()
+		closedLinks++
+	}
+	if closedLinks > 0 {
+		time.Sleep(150 * time.Millisecond)
+	}
 
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
@@ -910,9 +1026,29 @@ func (ts *TransportSystem) Stop() {
 			ts.logger.Error("Error detaching interface %v during transport stop: %v", iface.Name(), err)
 		}
 	}
+	// Drop the in-memory queues so a stopped transport holds no pending
+	// announces, receipts, or reverse-table entries (Python
+	// Transport.void_queues, Transport.py:3517-3521, called from exit_handler).
+	ts.voidQueuesLocked()
 	ts.interfaces = nil
 	ts.pendingLinks = nil
 	ts.activeLinks = nil
+}
+
+// voidQueuesLocked clears the in-memory transport queues: outstanding packet
+// receipts, the reverse table, and each interface's held-announce deque. It is
+// the Go port of Python's Transport.void_queues (Transport.py:3517-3521) and
+// must be called under ts.mu. Python's held_announces is a single global dict;
+// Go distributes held announces across interfaces, so each interface's deque is
+// cleared in turn.
+func (ts *TransportSystem) voidQueuesLocked() {
+	ts.receipts = nil
+	ts.reverseTable = make(map[string]*ReverseEntry)
+	for _, iface := range ts.interfaces {
+		if clearer, ok := iface.(interface{ ClearHeldAnnounces() }); ok {
+			clearer.ClearHeldAnnounces()
+		}
+	}
 }
 
 // SetNetworkIdentity sets the primary identity used by the transport system for network-level operations.
@@ -1091,7 +1227,22 @@ func (ts *TransportSystem) isForLocalClientLink(p *Packet) bool {
 	return false
 }
 
-// CleanRatchets removes expired forward-secrecy ratchets from the local cache and storage.
+// RatchetExpiry is how long a received forward-secrecy ratchet is retained
+// before CleanRatchets discards it (Python Identity.RATCHET_EXPIRY,
+// RNS/Identity.py:69). Thirty days.
+const RatchetExpiry = 30 * 24 * time.Hour
+
+// CleanRatchets removes forward-secrecy ratchet files from storage that are
+// expired, corrupted, or whose destination is no longer known, mirroring
+// Python Identity._clean_ratchets (RNS/Identity.py:446-496). For each ratchet
+// file in <storagePath>/ratchets it removes the file when ANY of these hold:
+//   - expired: now > received + RatchetExpiry,
+//   - corrupted: the file fails to unpack or lacks a numeric "received",
+//   - unknown: the hex filename decodes to a destination hash that is NOT a
+//     key in knownDestinations (RNS/Identity.py:470-471,474-475).
+//
+// When a file is removed, the in-memory knownRatchets cache is reset so a
+// stale cached entry is not served after its file is gone.
 func (ts *TransportSystem) CleanRatchets() {
 	ts.mu.Lock()
 	path := ts.storagePath
@@ -1111,7 +1262,7 @@ func (ts *TransportSystem) CleanRatchets() {
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
-	expiry := 30 * 24 * 3600.0
+	expiry := RatchetExpiry.Seconds()
 
 	for _, entry := range entries {
 		if entry.IsDir() {
@@ -1121,33 +1272,164 @@ func (ts *TransportSystem) CleanRatchets() {
 			continue
 		}
 
-		p := filepath.Join(ratchetDir, entry.Name())
+		name := entry.Name()
+		p := filepath.Join(ratchetDir, name)
+
+		// A ratchet is "unknown" when its filename (the destination hash in
+		// lowercase hex) decodes to a hash that is not a key in
+		// knownDestinations. This is independent of whether the file unpacks,
+		// so a corrupted ratchet for an unknown destination is still removed.
+		unknown := false
+		if destHash, decErr := hex.DecodeString(name); decErr == nil {
+			ts.mu.Lock()
+			_, known := ts.knownDestinations[string(destHash)]
+			ts.mu.Unlock()
+			if !known {
+				unknown = true
+			}
+		}
+
 		data, err := os.ReadFile(p)
 		if err != nil {
 			continue
 		}
 
+		expired := false
+		corrupted := false
 		unpacked, err := msgpack.Unpack(data)
 		if err != nil {
-			continue
+			ts.logger.Error("Corrupted ratchet data while reading %s, removing file", p)
+			corrupted = true
+		} else if m, ok := unpacked.(map[any]any); ok {
+			if received, ok := numericValue(m["received"]); ok {
+				if now > received+expiry {
+					expired = true
+				}
+			} else {
+				corrupted = true
+			}
+		} else {
+			corrupted = true
 		}
 
-		if m, ok := unpacked.(map[any]any); ok {
-			received := m["received"].(float64)
-			if now > received+expiry {
-				if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-					ts.logger.Error("Failed to remove expired ratchet file %v: %v", entry.Name(), err)
-				}
-				// Also remove from memory if present
-				ts.mu.Lock()
-				// The key in memory is the raw bytes, but we only have the hex name here.
-				// For simplicity, we could clear the whole memory cache or iterate.
-				// Since it's a small cache, we'll just clear it and let it reload on demand.
-				ts.knownRatchets = make(map[string][]byte)
-				ts.mu.Unlock()
+		if expired || corrupted || unknown {
+			if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+				ts.logger.Error("Failed to remove ratchet file %v: %v", name, err)
 			}
+			// Reset the in-memory ratchet cache so a stale cached entry is not
+			// served after its file is removed. The cache is small and lazily
+			// repopulated by GetRatchet on demand.
+			ts.mu.Lock()
+			ts.knownRatchets = make(map[string][]byte)
+			ts.mu.Unlock()
 		}
 	}
+}
+
+// numericValue returns the float64 form of any msgpack numeric kind (int*,
+// uint*, float*) used for the known-destinations timestamp and use-timestamp
+// elements, which Python stores as an int (0, -1) or a float (time.time()) and
+// msgpack unpacks into the corresponding Go numeric type. The second result is
+// false when v is not a numeric kind.
+func numericValue(v any) (float64, bool) {
+	switch n := v.(type) {
+	case int:
+		return float64(n), true
+	case int8:
+		return float64(n), true
+	case int16:
+		return float64(n), true
+	case int32:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case uint:
+		return float64(n), true
+	case uint8:
+		return float64(n), true
+	case uint16:
+		return float64(n), true
+	case uint32:
+		return float64(n), true
+	case uint64:
+		return float64(n), true
+	case float32:
+		return float64(n), true
+	case float64:
+		return n, true
+	}
+	return 0, false
+}
+
+// CleanKnownDestinations drops stale, pathless known destinations from the
+// in-memory table and removes their on-disk ratchet files, then persists the
+// trimmed table. It mirrors Python Identity.clean_known_destinations
+// (RNS/Identity.py:285-340).
+//
+// An entry is stale when ALL of the following hold:
+//   - it is NOT retained (use-timestamp != -1), and
+//   - it has no current path (Transport.has_path is false), and
+//   - either it was never used (use-timestamp == 0) AND its last announce is
+//     older than UnusedDestinationLinger, or it was used but its last use is
+//     older than DestinationTimeout*1.25.
+//
+// Retained entries (use-timestamp == -1) and entries with a current path are
+// always kept. Stale entries are removed from knownDestinations and their
+// ratchet file (ratchets/<hexhash>) is unlinked best-effort, like Python's
+// os.unlink in the stale-cleanup loop (RNS/Identity.py:333-340).
+func (ts *TransportSystem) CleanKnownDestinations() {
+	now := time.Now()
+	nowSec := float64(now.UnixNano()) / 1e9
+	lingerSec := UnusedDestinationLinger.Seconds()
+	timeoutSec := DestinationTimeout.Seconds() * 1.25
+
+	ts.mu.Lock()
+	storagePath := ts.storagePath
+	total := len(ts.knownDestinations)
+	stale := make([]string, 0)
+	for dh, entry := range ts.knownDestinations {
+		if len(entry) < 5 {
+			continue
+		}
+		_, hasPath := ts.pathTable[dh]
+		lastAnnounce, _ := numericValue(entry[0])
+		useTS, _ := numericValue(entry[4])
+		isRetained := useTS == -1
+		wasUsed := useTS > 0
+		if isRetained || hasPath {
+			continue
+		}
+		unusedFor := nowSec - useTS
+		if !wasUsed && (nowSec-lastAnnounce) > lingerSec {
+			stale = append(stale, dh)
+		} else if unusedFor > timeoutSec {
+			stale = append(stale, dh)
+		}
+	}
+	removed := 0
+	for _, dh := range stale {
+		if _, ok := ts.knownDestinations[dh]; ok {
+			delete(ts.knownDestinations, dh)
+			removed++
+		}
+	}
+	if removed > 0 && storagePath != "" {
+		ts.knownDestDirty = true
+	}
+	ts.mu.Unlock()
+
+	if removed > 0 && storagePath != "" {
+		ratchetDir := filepath.Join(storagePath, "ratchets")
+		for _, dh := range stale {
+			hexHash := fmt.Sprintf("%x", []byte(dh))
+			ratchetPath := filepath.Join(ratchetDir, hexHash)
+			if err := os.Remove(ratchetPath); err != nil && !os.IsNotExist(err) {
+				ts.logger.Warning("Could not clean stale ratchets for %x: %v", []byte(dh), err)
+			}
+		}
+		ts.SaveKnownDestinations(storagePath)
+	}
+	ts.logger.Pathing("Cleaned known destinations: total %v, removed %v", total, removed)
 }
 
 func (ts *TransportSystem) maintenance() {
@@ -1156,10 +1438,14 @@ func (ts *TransportSystem) maintenance() {
 	announceTicker := time.NewTicker(announceCheckInterval)
 	pathPersistTicker := time.NewTicker(pathTablePersistInterval)
 	interfaceJobsTicker := time.NewTicker(interfaceJobsInterval)
+	cacheCleanTicker := time.NewTicker(cacheCleanInterval)
+	knownDestCleanTicker := time.NewTicker(KnownDestinationsInterval)
 	defer ratchetTicker.Stop()
 	defer announceTicker.Stop()
 	defer pathPersistTicker.Stop()
 	defer interfaceJobsTicker.Stop()
+	defer cacheCleanTicker.Stop()
+	defer knownDestCleanTicker.Stop()
 
 	// Initial clean
 	ts.CleanRatchets()
@@ -1174,6 +1460,7 @@ func (ts *TransportSystem) maintenance() {
 			ts.cullPathRequests(now)
 			ts.cullExpiredPaths(now)
 			ts.cullStaleTransportTables(now)
+			ts.cullTunnels(now)
 		case <-pathPersistTicker.C:
 			ts.persistPathTable()
 			ts.flushKnownDestinationsIfDirty()
@@ -1181,6 +1468,29 @@ func (ts *TransportSystem) maintenance() {
 			ts.runInterfaceJobs()
 		case <-ratchetTicker.C:
 			ts.CleanRatchets()
+		case <-cacheCleanTicker.C:
+			// Dispatch the cache clean on its own goroutine, matching Python
+			// Transport.jobs (Transport.py:964-968) which spawns a daemon thread.
+			// cleanCache's non-blocking lock postpones overlapping sweeps.
+			go ts.cleanCache()
+			// Reconcile the destinations hash index with the destinations list
+			// (Python Transport.clean_destinations_map, Transport.py:2478-2496).
+			ts.CleanDestinationsMap()
+		case <-knownDestCleanTicker.C:
+			// Periodically drop stale/pathless known destinations and their
+			// ratchet files (Python Transport.jobs scheduling
+			// Identity.clean_known_destinations, Transport.py:971-976). Run on
+			// a goroutine so a large table sweep does not block the loop, and
+			// recover so a faulty entry cannot kill the sweep (Python wraps the
+			// job in try/except).
+			go func() {
+				defer func() {
+					if rec := recover(); rec != nil {
+						ts.logger.Error("Error while running scheduled known destinations cleaning: %v", rec)
+					}
+				}()
+				ts.CleanKnownDestinations()
+			}()
 		}
 	}
 }
@@ -1392,8 +1702,8 @@ type pathCacheItem struct {
 	iface interfaces.Interface
 }
 
-// pathTablePersistLocked builds the Python-compatible destination_table
-// snapshot AND the set of announce cache files that must accompany it. Both
+// pathTableSnapshot builds the Python-compatible destination_table snapshot
+// AND the set of announce cache files that must accompany it. Both
 // persistPathTable and SavePathTable use it so the on-disk destination_table
 // and cache/announces stay consistent.
 //
@@ -1406,36 +1716,76 @@ type pathCacheItem struct {
 // matching Python's "interface no longer active" skip at Transport.py:3374.
 // Entries without a cached announce packet / hash are skipped too, since
 // Python's loader would drop them (get_cached_packet returns None).
-func (ts *TransportSystem) pathTablePersistLocked() (snapshot []any, caches []pathCacheItem) {
+//
+// Unlike a single held-lock iteration, the destination hashes are snapshotted
+// under the lock and then each entry is re-checked against the LIVE pathTable
+// under a fresh short lock before serializing. This mirrors Python's
+// "if not destination_hash in path_table: skip" intent at Transport.py:3370
+// (a no-op there only because of local-variable shadowing): an entry removed
+// concurrently mid-save is skipped instead of serializing stale data or
+// panicking on a nil lookup. The interface hash is computed OUTSIDE the lock
+// so a slow interface (or a test that synchronizes on Name) cannot block
+// other writers.
+func (ts *TransportSystem) pathTableSnapshot() (snapshot []any, caches []pathCacheItem) {
+	ts.mu.Lock()
 	ts.ensureStateLocked()
-	snapshot = make([]any, 0, len(ts.pathTable))
-	for destHash, entry := range ts.pathTable {
-		if entry.Interface == nil {
+	hashes := make([]string, 0, len(ts.pathTable))
+	for h := range ts.pathTable {
+		hashes = append(hashes, h)
+	}
+	ts.mu.Unlock()
+
+	snapshot = make([]any, 0, len(hashes))
+	for _, destHash := range hashes {
+		ts.mu.Lock()
+		entry, ok := ts.pathTable[destHash]
+		if !ok {
+			// Disappeared between the key snapshot and serialization: skip
+			// it rather than serializing a stale/nil entry.
+			ts.mu.Unlock()
 			continue
 		}
-		ifaceHash := interfaceHash(entry.Interface)
-		if ifaceHash == nil {
+		if entry.Interface == nil {
+			ts.mu.Unlock()
 			continue
 		}
 		packetHash := entry.PacketHash
 		if len(packetHash) == 0 || len(entry.Packet) == 0 {
+			ts.mu.Unlock()
 			continue
 		}
+		// Capture every field we serialize under the lock so a concurrent
+		// mutation of the entry after Unlock cannot tear the packed output.
+		timestamp := entry.Timestamp
+		nextHop := append([]byte(nil), entry.NextHop...)
+		hops := entry.Hops
+		expires := entry.Expires
 		blobs := make([]any, len(entry.RandomBlobs))
 		for i, b := range entry.RandomBlobs {
 			blobs[i] = b
 		}
+		packetCopy := append([]byte(nil), entry.Packet...)
+		packetHashCopy := append([]byte(nil), packetHash...)
+		iface := entry.Interface
+		ts.mu.Unlock()
+
+		// interfaceHash may call the interface's Name()/Type(); compute it
+		// outside the lock so it cannot block other table writers.
+		ifaceHash := interfaceHash(iface)
+		if ifaceHash == nil {
+			continue
+		}
 		snapshot = append(snapshot, []any{
 			[]byte(destHash),
-			float64(entry.Timestamp.UnixNano()) / 1e9,
-			entry.NextHop,
-			entry.Hops,
-			float64(entry.Expires.UnixNano()) / 1e9,
+			float64(timestamp.UnixNano()) / 1e9,
+			nextHop,
+			hops,
+			float64(expires.UnixNano()) / 1e9,
 			blobs,
 			ifaceHash,
-			packetHash,
+			packetHashCopy,
 		})
-		caches = append(caches, pathCacheItem{hash: packetHash, raw: entry.Packet, iface: entry.Interface})
+		caches = append(caches, pathCacheItem{hash: packetHashCopy, raw: packetCopy, iface: iface})
 	}
 	return snapshot, caches
 }
@@ -1452,8 +1802,9 @@ func (ts *TransportSystem) persistPathTable() {
 		return
 	}
 	filePath := pathTableFile(ts.storagePath)
-	snapshot, caches := ts.pathTablePersistLocked()
 	ts.mu.Unlock()
+
+	snapshot, caches := ts.pathTableSnapshot()
 
 	packed, err := msgpack.Pack(snapshot)
 	if err != nil {
@@ -1476,7 +1827,7 @@ func (ts *TransportSystem) persistPathTable() {
 	}
 	// Write the announce cache files that accompany the destination_table so
 	// Python's get_cached_packet (and Go's own reload) can recover the raw
-	// announce referenced by each entry's packet_hash. See pathTablePersistLocked.
+	// announce referenced by each entry's packet_hash. See pathTableSnapshot.
 	for _, c := range caches {
 		ts.cacheAnnounce(c.hash, c.raw, c.iface)
 	}
@@ -2107,12 +2458,16 @@ func (ts *TransportSystem) shouldTransmitAnnounce(outIface, fromIface interfaces
 // IN destination (Python `Transport.destinations_map[destination_hash]`).
 // Callers must hold ts.mu.
 func (ts *TransportSystem) isLocalDestinationLocked(destHash []byte) bool {
-	for _, d := range ts.destinations {
-		if bytes.Equal(d.Hash, destHash) {
-			return true
-		}
-	}
-	return false
+	_, ok := ts.destinationsMap[string(destHash)]
+	return ok
+}
+
+// localDestinationLocked returns the locally-registered IN destination for
+// destHash, or nil if none matches. It is the O(1) hash lookup replacing the
+// linear scan over destinations (Python Transport.destinations_map). Callers
+// must hold ts.mu.
+func (ts *TransportSystem) localDestinationLocked(destHash []byte) *Destination {
+	return ts.destinationsMap[string(destHash)]
 }
 
 func (ts *TransportSystem) processAnnounceTable(now time.Time) {
@@ -2136,6 +2491,19 @@ func (ts *TransportSystem) processAnnounceTable(now time.Time) {
 		}
 
 		if entry.Retries >= localRebroadcastsMax || entry.Retries > pathfinderRetries {
+			delete(ts.announceTable, destinationHash)
+			continue
+		}
+
+		// nil-guard while waiting for rebroadcast (Python Transport.py:611-615,
+		// v1.2.5): if the destination's identity can no longer be recalled —
+		// the known-destination was cleaned between the announce being queued
+		// and this rebroadcast tick — complete the announce entry instead of
+		// proceeding to rebuild/send with a nil identity. A locally-registered
+		// destination still recalls via destinationsMap, so originator
+		// announces are not affected.
+		if ts.recallLocked([]byte(destinationHash), true) == nil {
+			ts.logger.Pathing("Completed announce processing for %x, the path was cleaned while waiting for announce rebroadcast", []byte(destinationHash))
 			delete(ts.announceTable, destinationHash)
 			continue
 		}
@@ -2512,13 +2880,7 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) bool {
 	}
 
 	ts.mu.Lock()
-	var localDest *Destination
-	for _, d := range ts.destinations {
-		if bytes.Equal(d.Hash, targetHash) {
-			localDest = d
-			break
-		}
-	}
+	localDest := ts.localDestinationLocked(targetHash)
 	// If the destination is not local to this node, look for a cached/known
 	// path. A transport node that already knows a path answers the request
 	// from cache instead of relaying it onward, so the requestor gets the
@@ -2534,6 +2896,16 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) bool {
 	var cachedPath *PathEntry
 	if localDest == nil && !ts.connectedToSharedInstance {
 		cachedPath = ts.pathTable[string(targetHash)]
+		// When the requested destination's known path lives on a local-client
+		// interface, register it as in-use: a co-located client owns the
+		// destination and just had its path requested. Mirrors Python
+		// Transport.py:3018-3026 (`destination_exists_on_local_client` →
+		// `_used_destination_data`), which runs before the local-destination
+		// and cached-path answer branches. The lock is held here, so the
+		// lock-held core is safe.
+		if cachedPath != nil && ts.isLocalClientInterface(cachedPath.Interface) {
+			ts.usedDestinationDataLocked(targetHash)
+		}
 	}
 	ts.mu.Unlock()
 
@@ -2636,6 +3008,16 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) bool {
 
 		ts.logger.Debug("Answering path request for %x from cached path (%v hops)", targetHash, cachedPath.Hops)
 
+		// Answering a path request from a known/cached path is an active use
+		// of the destination: mark it in-use, mirroring Python
+		// Transport.py:3097 (`if not is_connected_to_shared_instance:
+		// _used_destination_data` after the announce_table insertion in the
+		// known-path answer branch). cachedPath is only populated when not
+		// connected to a shared instance (see the lookup above), so the
+		// shared-instance guard is implicitly satisfied. The lock is not
+		// held here, so use the self-locking public method.
+		ts.UsedDestinationData(targetHash)
+
 		if ifac, ok := packet.ReceivingInterface.(ifacOutboundHook); ok {
 			processed, err := ifac.ApplyIFACOutbound(raw)
 			if err != nil {
@@ -2658,13 +3040,12 @@ func (ts *TransportSystem) RegisterDestination(d *Destination) {
 	if d.direction == DestinationIn {
 		ts.mu.Lock()
 		defer ts.mu.Unlock()
-		for _, existing := range ts.destinations {
-			if bytes.Equal(d.Hash, existing.Hash) {
-				ts.logger.Error("Attempt to register an already registered destination %x", d.Hash)
-				return
-			}
+		if _, exists := ts.destinationsMap[string(d.Hash)]; exists {
+			ts.logger.Error("Attempt to register an already registered destination %x", d.Hash)
+			return
 		}
 		ts.destinations = append(ts.destinations, d)
+		ts.destinationsMap[string(d.Hash)] = d
 	}
 }
 
@@ -2782,7 +3163,7 @@ func (ts *TransportSystem) validateRelayLinkProofLocked(packet *Packet, destHash
 	if len(packet.Data) < 64+32 {
 		return false
 	}
-	peerIdentity := ts.recallLocked(destHash)
+	peerIdentity := ts.recallLocked(destHash, true)
 	if peerIdentity == nil {
 		return false
 	}
@@ -2863,6 +3244,15 @@ func (ts *TransportSystem) relayLinkProof(packet *Packet, iface interfaces.Inter
 	copy(newRaw, packet.Raw)
 	newRaw[1] = byte(packet.Hops)
 	entry.Validated = true
+	// A validated link-request proof is an active use of the proof's
+	// destination: mark it in-use, mirroring Python Transport.py:2263
+	// (`if not Transport.owner.is_connected_to_shared_instance:
+	// RNS.Identity._used_destination_data(link_entry[IDX_LT_DSTHASH])` after
+	// `Transport.transmit` of the validated proof). The lock is held here,
+	// so the lock-held core is safe.
+	if !ts.connectedToSharedInstance {
+		ts.usedDestinationDataLocked(entry.DestinationHash)
+	}
 	rcvdIface := entry.ReceivedInterface
 	ts.mu.Unlock()
 	ts.logger.Debug("Inbound: forwarding validated link proof %x", packet.PacketHash)
@@ -2872,9 +3262,20 @@ func (ts *TransportSystem) relayLinkProof(packet *Packet, iface interfaces.Inter
 	return true
 }
 
-// RegisterInterface adds a network interface to the transport system.
+// RegisterInterface adds a network interface to the transport system. It is
+// the canonical add path (Python Transport.add_interface, Transport.py:438-441):
+// a repeated registration of the same interface is a no-op so the interface
+// appears at most once in the transport's interface list.
 func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 	ts.mu.Lock()
+	for _, existing := range ts.interfaces {
+		if existing == iface {
+			// Already registered: skip, matching Python's
+			// "if not interface in Transport.interfaces: append".
+			ts.mu.Unlock()
+			return
+		}
+	}
 	interfacesBefore := len(ts.interfaces)
 	destinationsBefore := len(ts.destinations)
 	ts.interfaces = append(ts.interfaces, iface)
@@ -3130,13 +3531,26 @@ func (ts *TransportSystem) BlackholeIdentity(identityHash []byte, until *int64, 
 }
 
 // Remember caches a newly discovered identity and its associated routing context in local ephemeral or persistent storage.
+//
+// The entry layout is the 5-element list [timestamp, packet_hash, public_key,
+// app_data, use_timestamp] (Python Identity.known_destinations,
+// RNS/Identity.py:107, v1.3.0). The 5th use_timestamp element is 0 when the
+// destination has never been used, -1 when retained, or the Unix time of last
+// use. A re-Remember of an existing destination updates elements 0-3 but
+// preserves the 5th so a fresh announce does not reset the use/retain state
+// (Python Identity.remember, RNS/Identity.py:108-113).
 func (ts *TransportSystem) Remember(packetHash, destHash, publicKey, appData []byte) {
 	ts.mu.Lock()
+	var useTimestamp any = int64(0)
+	if existing, ok := ts.knownDestinations[string(destHash)]; ok && len(existing) > 4 {
+		useTimestamp = existing[4]
+	}
 	ts.knownDestinations[string(destHash)] = []any{
 		float64(time.Now().UnixNano()) / 1e9,
 		packetHash,
 		publicKey,
 		appData,
+		useTimestamp,
 	}
 	// Don't serialize+write per announce: mark the table dirty and let the
 	// maintenance loop's periodic flush coalesce a burst of announces into one
@@ -3153,13 +3567,150 @@ func (ts *TransportSystem) Remember(packetHash, destHash, publicKey, appData []b
 func (ts *TransportSystem) Recall(targetHash []byte) *Identity {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
-	return ts.recallLocked(targetHash)
+	// The app-facing Recall marks the destination used (Python default
+	// _no_use=False, RNS/Identity.py:135,145,170).
+	return ts.recallLocked(targetHash, false)
+}
+
+// recallNoUse is the transport-internal recall: it recalls a known
+// destination's identity WITHOUT marking it used, for callers that do not
+// represent actual application use (path-table scans, announce rebroadcasts,
+// link-proof validation, announce-handler dispatch). It mirrors Python
+// Identity.recall(..., _no_use=True) (RNS/Identity.py:116-160, Phase 13 task 7).
+func (ts *TransportSystem) recallNoUse(targetHash []byte) *Identity {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.recallLocked(targetHash, true)
+}
+
+// RecallAppData returns the cached app_data (element 3) for a known
+// destination, or nil if the destination is unknown (Python
+// Identity.recall_app_data, RNS/Identity.py:162-175). It does not mutate the
+// use-timestamp element; the use-marking side effect of Python's
+// recall_app_data is threaded separately via the noUse flag (Phase 13 task 7).
+func (ts *TransportSystem) RecallAppData(targetHash []byte) []byte {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	data, ok := ts.knownDestinations[string(targetHash)]
+	if !ok || len(data) < 4 {
+		return nil
+	}
+	appData, _ := data[3].([]byte)
+	return appData
+}
+
+// RetainDestinationData marks the known destination destHash as retained by
+// setting its use-timestamp (element 4) to -1, so CleanKnownDestinations never
+// drops it. It returns true when destHash is known and was retained, false
+// otherwise (Python Identity._retain_destination_data, RNS/Identity.py:252-258).
+func (ts *TransportSystem) RetainDestinationData(destHash []byte) bool {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	data, ok := ts.knownDestinations[string(destHash)]
+	if !ok || len(data) < 5 {
+		return false
+	}
+	data[4] = int64(-1)
+	if ts.storagePath != "" && ts.running {
+		ts.knownDestDirty = true
+	}
+	return true
+}
+
+// UnretainDestinationData clears the retained flag by setting the use-timestamp
+// (element 4) to the current time, marking the destination as recently used.
+// It returns true when destHash is known and was unretained, false otherwise
+// (Python Identity._unretain_destination_data, RNS/Identity.py:261-267).
+func (ts *TransportSystem) UnretainDestinationData(destHash []byte) bool {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	data, ok := ts.knownDestinations[string(destHash)]
+	if !ok || len(data) < 5 {
+		return false
+	}
+	data[4] = float64(time.Now().UnixNano()) / 1e9
+	if ts.storagePath != "" && ts.running {
+		ts.knownDestDirty = true
+	}
+	return true
+}
+
+// UsedDestinationData marks the known destination destHash as in use by
+// setting its use-timestamp (element 4) to the current time, but ONLY when it
+// is not currently retained (element 4 is not < 0). A retained destination is
+// left untouched. Returns true when the use-timestamp was updated, false
+// otherwise (Python Identity._used_destination_data, RNS/Identity.py:242-250).
+func (ts *TransportSystem) UsedDestinationData(destHash []byte) bool {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	return ts.usedDestinationDataLocked(destHash)
+}
+
+// usedDestinationDataLocked is the lock-held core of UsedDestinationData,
+// also called by recallLocked(!noUse) to mark a destination used on a
+// successful app-facing recall (Python Identity.recall's
+// `_used_destination_data` side effect, RNS/Identity.py:135,145,170). The
+// caller must hold ts.mu.
+func (ts *TransportSystem) usedDestinationDataLocked(destHash []byte) bool {
+	data, ok := ts.knownDestinations[string(destHash)]
+	if !ok || len(data) < 5 {
+		return false
+	}
+	useTS, _ := numericValue(data[4])
+	if useTS < 0 {
+		// Retained destinations are not touched by use-marking.
+		return false
+	}
+	data[4] = float64(time.Now().UnixNano()) / 1e9
+	if ts.storagePath != "" && ts.running {
+		ts.knownDestDirty = true
+	}
+	return true
+}
+
+// RetainIdentity retains every known destination whose public key hashes
+// (truncated) to identityHash, so the destinations owned by that identity are
+// never dropped by CleanKnownDestinations. It returns true when at least one
+// destination was retained, false otherwise (Python Identity._retain_identity,
+// RNS/Identity.py:270-283).
+func (ts *TransportSystem) RetainIdentity(identityHash []byte) bool {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	retained := false
+	for _, data := range ts.knownDestinations {
+		if len(data) < 5 {
+			continue
+		}
+		pubKey, ok := data[2].([]byte)
+		if !ok {
+			continue
+		}
+		if !bytes.Equal(TruncatedHash(pubKey), identityHash) {
+			continue
+		}
+		data[4] = int64(-1)
+		retained = true
+	}
+	if retained && ts.storagePath != "" && ts.running {
+		ts.knownDestDirty = true
+	}
+	return retained
 }
 
 // recallLocked is the lock-held core of Recall. It is also used by
 // removeBlackholedPathsLocked, which already holds ts.mu, to recall each
 // path-table destination's identity without re-locking.
-func (ts *TransportSystem) recallLocked(targetHash []byte) *Identity {
+//
+// When noUse is false (the app-facing default), a successful recall of a known
+// destination marks it used by stamping the current time into its use-
+// timestamp element (Python Identity.recall's `_used_destination_data` side
+// effect, RNS/Identity.py:135,145,170). Transport-internal callers pass
+// noUse=true so path-table scans, announce rebroadcasts, link-proof
+// validation, and announce-handler dispatch do not inflate a destination's
+// last-used time (Python Identity.recall(..., _no_use=True), Phase 13 task 7).
+// The registered-local-destination branch never marks used, matching Python
+// (RNS/Identity.py:152-158).
+func (ts *TransportSystem) recallLocked(targetHash []byte, noUse bool) *Identity {
 	// Check destination hashes
 	if data, ok := ts.knownDestinations[string(targetHash)]; ok {
 		pubKey := data[2].([]byte)
@@ -3175,11 +3726,14 @@ func (ts *TransportSystem) recallLocked(targetHash []byte) *Identity {
 		if data[3] != nil {
 			id.AppData = data[3].([]byte)
 		}
+		if !noUse {
+			ts.usedDestinationDataLocked(targetHash)
+		}
 		return id
 	}
 
 	// Check identity hashes
-	for _, data := range ts.knownDestinations {
+	for destHash, data := range ts.knownDestinations {
 		pubKey := data[2].([]byte)
 		if bytes.Equal(targetHash, TruncatedHash(pubKey)) {
 			id, err := NewIdentity(false, ts.logger)
@@ -3194,24 +3748,26 @@ func (ts *TransportSystem) recallLocked(targetHash []byte) *Identity {
 			if data[3] != nil {
 				id.AppData = data[3].([]byte)
 			}
+			if !noUse {
+				ts.usedDestinationDataLocked([]byte(destHash))
+			}
 			return id
 		}
 	}
 
-	// Also check registered destinations in transport
-	for _, d := range ts.destinations {
-		if bytes.Equal(targetHash, d.Hash) {
-			id, err := NewIdentity(false, ts.logger)
-			if err != nil {
-				ts.logger.Error("Failed to create identity during transport recall: %v", err)
-				return nil
-			}
-			if err := id.LoadPublicKey(d.identity.GetPublicKey()); err != nil {
-				ts.logger.Error("Failed to load transport destination public key: %v", err)
-				return nil
-			}
-			return id
+	// Also check registered destinations in transport (O(1) hash lookup,
+	// Python Transport.destinations_map).
+	if d := ts.localDestinationLocked(targetHash); d != nil {
+		id, err := NewIdentity(false, ts.logger)
+		if err != nil {
+			ts.logger.Error("Failed to create identity during transport recall: %v", err)
+			return nil
 		}
+		if err := id.LoadPublicKey(d.identity.GetPublicKey()); err != nil {
+			ts.logger.Error("Failed to load transport destination public key: %v", err)
+			return nil
+		}
+		return id
 	}
 
 	return nil
@@ -3386,6 +3942,14 @@ func (ts *TransportSystem) LoadKnownDestinations(storagePath string) {
 			if !okVal {
 				continue
 			}
+			// Migrate pre-v1.3.0 4-element entries to the 5-element layout
+			// by appending a use-timestamp of 0 (never used), matching
+			// Python Identity.load_known_destinations (RNS/Identity.py:226-228).
+			// int64(0) packs as the positive fixint 0x00, the same byte
+			// Python's literal 0 produces.
+			if len(vs) < 5 {
+				vs = append(vs, int64(0))
+			}
 			ts.knownDestinations[ks] = vs
 		}
 		ts.mu.Unlock()
@@ -3394,7 +3958,12 @@ func (ts *TransportSystem) LoadKnownDestinations(storagePath string) {
 }
 
 // SaveKnownDestinations serializes and safely flushes the currently cached
-// known network identities to persistent storage.
+// known network identities to persistent storage. It writes to a temp file
+// and atomically renames it into place (Python os.replace,
+// RNS/Identity.py:197-208), so a crash or write error can never leave the
+// canonical known_destinations file partially written — the previous complete
+// file remains intact until the rename succeeds. Concurrent saves are
+// serialized by saveMu (Python saving_known_destinations flag).
 func (ts *TransportSystem) SaveKnownDestinations(storagePath string) {
 	if storagePath == "" {
 		return
@@ -3402,6 +3971,9 @@ func (ts *TransportSystem) SaveKnownDestinations(storagePath string) {
 
 	path := filepath.Join(storagePath, "known_destinations")
 	ts.mu.Lock()
+	// Snapshot a copy of the map before packing so a concurrent Remember does
+	// not mutate the slice we serialize — Python's
+	// Identity.known_destinations.copy() (RNS/Identity.py:197).
 	// Emit binary (msgpack bin 0xc4) map keys, matching Python RNS, which keys
 	// Identity.known_destinations by the raw destination_hash bytes. Packing the
 	// in-memory map[string][]any directly would emit str keys (fixstr 0xa0-0xbf)
@@ -3412,7 +3984,6 @@ func (ts *TransportSystem) SaveKnownDestinations(storagePath string) {
 	for k, v := range ts.knownDestinations {
 		ordered = append(ordered, msgpack.OrderedMapEntry{Key: copyBytes([]byte(k)), Value: v})
 	}
-	data, err := msgpack.Pack(ordered)
 	count := len(ts.knownDestinations)
 	ts.mu.Unlock()
 
@@ -3421,16 +3992,108 @@ func (ts *TransportSystem) SaveKnownDestinations(storagePath string) {
 		return
 	}
 
+	// Serialize the pack + temp write + rename so concurrent saves cannot
+	// collide on the same temp file or race the rename (Python
+	// saving_known_destinations, RNS/Identity.py:191-205).
+	ts.saveMu.Lock()
+	defer ts.saveMu.Unlock()
+	ts.saveSeq++
+	tempPath := fmt.Sprintf("%s.tmp.%d", path, ts.saveSeq)
+
+	// Pack outside ts.mu but inside saveMu. A pack error leaves no temp file to
+	// clean up; log and abort without touching the canonical file.
+	data, err := msgpack.Pack(ordered)
 	if err != nil {
 		ts.logger.Error("Failed to pack known destinations: %v", err)
 		return
 	}
 
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		ts.logger.Error("Failed to save known destinations: %v", err)
+	// Write the temp file, then atomically rename it into place. On any write
+	// or rename error, unlink the temp file (best-effort, like Python's
+	// try/except around os.unlink, RNS/Identity.py:204-206) and abort without
+	// modifying the canonical file.
+	if err := os.WriteFile(tempPath, data, 0o600); err != nil {
+		ts.logger.Error("Error while serializing and writing known destinations: %v", err)
+		removeBestEffort(tempPath, ts.logger)
+		return
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		ts.logger.Error("Error while renaming known destinations temp file: %v", err)
+		removeBestEffort(tempPath, ts.logger)
 		return
 	}
 	ts.logger.Debug("Saved %v known destinations to storage", count)
+}
+
+// removeBestEffort deletes path, logging (not returning) any error, mirroring
+// Python's `try: os.unlink(temp_file) except Exception as e: RNS.log(...)`
+// (RNS/Identity.py:204-206) used to clean up a temp file after a failed save.
+func removeBestEffort(path string, logger *Logger) {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		logger.Warning("Could not clean up temporary file %s: %v", path, err)
+	}
+}
+
+// SaveKnownDestinationsWithRecombine first merges any known-destinations
+// entries currently on disk that are NOT in the in-memory table, then
+// atomically persists the merged table via SaveKnownDestinations. This is the
+// historical recombine=True behavior of Python Identity.save_known_destinations
+// (RNS/Identity.py, pre-b408699e "Periodically clean known destinations"):
+// load the disk file, and for each disk entry whose hash is missing from
+// memory, copy it in. The merge is "memory wins" — a disk entry already
+// present in knownDestinations is never overwritten. The current Python port
+// deprecates and ignores the recombine argument; this method preserves the
+// merge semantics for callers that want a disk-backed save.
+func (ts *TransportSystem) SaveKnownDestinationsWithRecombine(storagePath string) {
+	if storagePath == "" {
+		return
+	}
+	path := filepath.Join(storagePath, "known_destinations")
+	if _, err := os.Stat(path); err != nil {
+		// No existing disk file to recombine from; a plain save suffices.
+		ts.SaveKnownDestinations(storagePath)
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		ts.logger.Warning("Skipped recombining known destinations from disk, since an error occurred: %v", err)
+		ts.SaveKnownDestinations(storagePath)
+		return
+	}
+	unpacked, err := Unpack(data)
+	if err != nil {
+		ts.logger.Warning("Skipped recombining known destinations from disk, since an error occurred: %v", err)
+		ts.SaveKnownDestinations(storagePath)
+		return
+	}
+	diskMap, ok := unpacked.(map[any]any)
+	if !ok {
+		ts.SaveKnownDestinations(storagePath)
+		return
+	}
+	ts.mu.Lock()
+	for k, v := range diskMap {
+		ks, okKey := k.(string)
+		if !okKey {
+			continue
+		}
+		if _, exists := ts.knownDestinations[ks]; exists {
+			// Memory wins; do not overwrite an in-memory entry with the disk copy.
+			continue
+		}
+		vs, okVal := v.([]any)
+		if !okVal {
+			continue
+		}
+		// Migrate pre-v1.3.0 4-element disk entries to 5 elements on merge,
+		// matching load_known_destinations (RNS/Identity.py:226-228).
+		if len(vs) < 5 {
+			vs = append(vs, int64(0))
+		}
+		ts.knownDestinations[ks] = vs
+	}
+	ts.mu.Unlock()
+	ts.SaveKnownDestinations(storagePath)
 }
 
 // flushKnownDestinationsIfDirty writes the known-destinations table to disk if
@@ -3712,7 +4375,7 @@ func (ts *TransportSystem) removeBlackholedPathsLocked() {
 	drop := make([]string, 0)
 	for destinationHash := range ts.pathTable {
 		// Recall must not re-lock ts.mu; use the lock-free recall helper.
-		associated := ts.recallLocked([]byte(destinationHash))
+		associated := ts.recallLocked([]byte(destinationHash), true)
 		if associated != nil && len(associated.Hash) != 0 {
 			if _, blackholed := ts.blackholedIdentities[string(associated.Hash)]; blackholed {
 				drop = append(drop, destinationHash)
@@ -3974,6 +4637,35 @@ func (ts *TransportSystem) RequestPath(destHash []byte) error {
 
 // Inbound processes a raw packet received from an interface.
 func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
+	// READY_WAIT: if Start is in progress but has not yet completed, wait for
+	// the transport to become ready before processing the packet (Python
+	// Transport.py:1430-1437). The wait only applies during the startup
+	// window — a transport that was never Started (running=false, as in the
+	// loopback test harness) is processed immediately. Poll every
+	// readyPollInterval up to readyWaitTimeout (60s); on timeout log a
+	// warning and drop the packet.
+	ts.mu.Lock()
+	running := ts.running
+	ready := ts.ready
+	ts.mu.Unlock()
+	if running && !ready {
+		waitStart := time.Now()
+		for {
+			time.Sleep(ts.readyPollInterval)
+			ts.mu.Lock()
+			ready = ts.ready
+			running = ts.running
+			ts.mu.Unlock()
+			if ready || !running {
+				break
+			}
+			if time.Since(waitStart) >= ts.readyWaitTimeout {
+				ts.logger.Warning("Inbound packet timed out waiting for transport startup, dropping")
+				return
+			}
+		}
+	}
+
 	if len(raw) == 0 {
 		ts.logger.Debug("Go Transport.Inbound received empty frame from %v, dropping", iface.Name())
 		return
@@ -4056,15 +4748,10 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 		return
 	}
 
-	// Check if it's for us or a local destination
+	// Check if it's for us or a local destination (O(1) hash lookup,
+	// Python Transport.destinations_map).
 	ts.mu.Lock()
-	var localDest *Destination
-	for _, d := range ts.destinations {
-		if string(d.Hash) == destHash {
-			localDest = d
-			break
-		}
-	}
+	localDest := ts.localDestinationLocked([]byte(destHash))
 	ts.mu.Unlock()
 
 	if localDest != nil {
@@ -4592,6 +5279,20 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 			shouldForwardToLocalClients = true
 		}
 
+		// When this announce installed or refreshed a path for a destination
+		// this node has an outstanding path request for, mark the destination
+		// in-use, mirroring Python Transport.py:2056-2057
+		// (`if packet.destination_hash in Transport.path_requests:
+		// RNS.Reticulum.get_instance()._used_destination_data(...)`). The
+		// check runs after the path install and is gated on an actual install
+		// (shouldForwardToLocalClients is set only in the install/replace
+		// branches). The lock is held here, so the lock-held core is safe.
+		if shouldForwardToLocalClients {
+			if _, hasPR := ts.pathRequests[destHash]; hasPR {
+				ts.usedDestinationDataLocked([]byte(destHash))
+			}
+		}
+
 		// Propagation logic (re-broadcasting announces). A client of a shared
 		// Reticulum instance never queues rebroadcasts: its only egress is the
 		// shared instance, so rebroadcasting would echo announces back to it
@@ -4637,7 +5338,7 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 
 	// Call announce handlers
 	if len(handlers) > 0 {
-		announceIdentity := ts.Recall(packet.DestinationHash)
+		announceIdentity := ts.recallNoUse(packet.DestinationHash)
 		if announceIdentity != nil {
 			for _, handler := range handlers {
 				executeCallback := false
@@ -4868,28 +5569,79 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 	return nil
 }
 
-// CleanCache performs a single sweep over the packet-hash cache,
-// removing entries that are older than the cache timeout. It is a
-// no-op when the transport is connected to a shared instance, matching
-// Python's Transport.clean_cache().
+// CleanCache performs a single sweep over the packet-hash cache, removing
+// entries that are older than the cache timeout. It is a no-op when the
+// transport is connected to a shared instance, matching Python's
+// Transport.clean_cache(). The sweep is guarded by a non-reentrant lock so
+// overlapping calls postpone instead of running concurrently.
 func (ts *TransportSystem) CleanCache() {
-	ts.cleanAnnounceCache()
+	ts.cleanCache()
 }
 
-// cleanAnnounceCache removes packet-hash cache entries that are not
-// referenced by any active path or tunnel. It mirrors Python's
-// Transport.clean_announce_cache().
+// cleanCache is the Go port of Python's Transport.clean_cache
+// (Transport.py:2598-2615). A client of a shared instance never cleans. The
+// cache_clean_lock is acquired non-blocking (TryLock): if a sweep is already
+// in flight the call postpones until the next scheduler interval instead of
+// queueing a second concurrent sweep.
+func (ts *TransportSystem) cleanCache() {
+	ts.mu.Lock()
+	connected := ts.connectedToSharedInstance
+	ts.mu.Unlock()
+	if connected {
+		return
+	}
+	if !ts.cacheCleanMu.TryLock() {
+		if ts.logger != nil {
+			ts.logger.Debug("Cache clean job still running, postponing until next scheduler interval")
+		}
+		return
+	}
+	defer ts.cacheCleanMu.Unlock()
+	ts.cleanAnnounceCache()
+	ts.mu.Lock()
+	ts.cacheLastCleaned = time.Now()
+	ts.mu.Unlock()
+}
+
+// cleanAnnounceCache removes packet-hash cache entries older than the cache
+// timeout (30 minutes). It mirrors Python's Transport.clean_announce_cache
+// (Transport.py:2617-2636): the expired keys are snapshotted under a short
+// lock, then each is re-checked and deleted under a per-entry lock while
+// yielding between entries so a large sweep stays low priority and never
+// blocks the transport's main critical section.
 func (ts *TransportSystem) cleanAnnounceCache() {
 	ts.mu.Lock()
-	defer ts.mu.Unlock()
 	if ts.packetHashes == nil {
+		ts.mu.Unlock()
 		return
 	}
 	now := time.Now()
+	type cachedEntry struct {
+		key string
+		t   time.Time
+	}
+	expired := make([]cachedEntry, 0, len(ts.packetHashes))
 	for k, t := range ts.packetHashes {
 		if now.Sub(t) > 30*time.Minute {
-			delete(ts.packetHashes, k)
+			expired = append(expired, cachedEntry{key: k, t: t})
 		}
+	}
+	ts.mu.Unlock()
+
+	sleep := ts.cacheCleanSleep
+	if sleep == nil {
+		sleep = time.Sleep
+	}
+	for _, e := range expired {
+		ts.mu.Lock()
+		// Re-check under the lock: another goroutine may have refreshed the
+		// entry's timestamp since the snapshot.
+		if t, ok := ts.packetHashes[e.key]; ok && now.Sub(t) > 30*time.Minute {
+			delete(ts.packetHashes, e.key)
+		}
+		ts.mu.Unlock()
+		// Low-priority yield between entries (Python Transport.py:2636).
+		sleep(cacheCleanYieldSleep)
 	}
 }
 
@@ -4897,6 +5649,27 @@ func (ts *TransportSystem) cleanAnnounceCache() {
 // retained after last use (Python Transport.DESTINATION_TIMEOUT,
 // Transport.py:89). One week.
 const DestinationTimeout = 7 * 24 * time.Hour
+
+// UnusedDestinationLinger is how long a pathless, never-used known
+// destination lingers after its last announce before
+// CleanKnownDestinations drops it (Python Transport.UNUSED_DESTINATION_LINGER,
+// Transport.py:93). Six minutes.
+const UnusedDestinationLinger = 6 * time.Minute
+
+// KnownDestinationsInterval is the maintenance-loop period between
+// CleanKnownDestinations sweeps (Python Transport.known_destinations_interval,
+// Transport.py:190). Five minutes.
+const KnownDestinationsInterval = 5 * time.Minute
+
+// TunnelTimeout is how long a synthesized tunnel table entry is retained
+// after it was last established/reconfirmed (Python Transport.TUNNEL_TIMEOUT,
+// Transport.py:94). Eight hours.
+const TunnelTimeout = 8 * time.Hour
+
+// TunnelPathTimeout is how long an individual tunnel-path entry is retained
+// after its last announce before the cull drops it (Python
+// Transport.TUNNEL_PATH_TIMEOUT, Transport.py:95). Eight hours.
+const TunnelPathTimeout = 8 * time.Hour
 
 // Tunnel represents a synthesized Reticulum tunnel that exposes a
 // virtual interface to a remote network over an existing link. It is
@@ -4914,26 +5687,78 @@ func tunnelTableFile(storagePath string) string {
 	return filepath.Join(storagePath, "tunnels")
 }
 
-// SynthesizeTunnel registers a new synthesized tunnel with the given
-// tunnel_id (Python Transport.synthesize_tunnel, Transport.py:2120-2138).
-// It only creates the entry; the signature-validated inbound path uses
-// HandleTunnel instead. If a tunnel with tunnel_id already exists it is a
-// no-op.
-func (ts *TransportSystem) SynthesizeTunnel(tunnelID []byte, iface interfaces.Interface) error {
+// SynthesizeTunnel builds and sends a tunnel-establishment packet on the
+// given interface, requesting a remote transport to synthesize a tunnel back
+// (Python Transport.synthesize_tunnel, Transport.py:2366-2418). The whole
+// body is wrapped in error handling: any failure (missing transport identity,
+// sign error, packet error) is logged and the transport keeps running, and a
+// deferred recover guards against a panic so a malformed interface cannot
+// crash the maintenance path (Python except clause at Transport.py:2417).
+func (ts *TransportSystem) SynthesizeTunnel(iface interfaces.Interface) {
 	if ts == nil {
-		return errors.New("nil transport")
+		return
 	}
-	ts.mu.Lock()
-	defer ts.mu.Unlock()
-	if ts.tunnels == nil {
-		ts.tunnels = map[string]*Tunnel{}
+	logger := ts.GetLogger()
+	defer func() {
+		if rec := recover(); rec != nil {
+			if logger != nil {
+				// Use %T, not iface.Name(): the panic may originate in
+				// Name() itself, and calling it again here would re-panic
+				// out of the recover handler.
+				logger.Error("Could not synthesize tunnel for %T: %v", iface, rec)
+			}
+		}
+	}()
+	if iface == nil {
+		return
 	}
-	key := string(tunnelID)
-	if _, exists := ts.tunnels[key]; exists {
-		return nil
+	if ts.identity == nil {
+		if logger != nil {
+			logger.Error("Could not synthesize tunnel for %v: no transport identity", iface.Name())
+		}
+		return
 	}
-	ts.tunnels[key] = &Tunnel{ID: copyBytes(tunnelID), Interface: iface, Paths: map[string]*PathEntry{}}
-	return nil
+	interfaceHash := interfaceHash(iface)
+	publicKey := ts.identity.GetPublicKey()
+	randomHash, err := RandomHash()
+	if err != nil {
+		if logger != nil {
+			logger.Error("Could not synthesize tunnel for %v: %v", iface.Name(), err)
+		}
+		return
+	}
+	tunnelIDData := append(append([]byte{}, publicKey...), interfaceHash...)
+	signedData := append(append([]byte{}, tunnelIDData...), randomHash...)
+	signature, err := ts.identity.Sign(signedData)
+	if err != nil {
+		if logger != nil {
+			logger.Error("Could not synthesize tunnel for %v: %v", iface.Name(), err)
+		}
+		return
+	}
+	data := append(append([]byte{}, signedData...), signature...)
+
+	dst, err := NewDestination(ts, nil, DestinationOut, DestinationPlain, "rnstransport", "tunnel", "synthesize")
+	if err != nil {
+		if logger != nil {
+			logger.Error("Could not synthesize tunnel for %v: %v", iface.Name(), err)
+		}
+		return
+	}
+	packet := NewPacket(dst, data)
+	packet.TransportType = TransportBroadcast
+	packet.AttachedInterface = iface
+	if err := packet.Pack(); err != nil {
+		if logger != nil {
+			logger.Error("Could not synthesize tunnel for %v: %v", iface.Name(), err)
+		}
+		return
+	}
+	if err := ts.Outbound(packet); err != nil {
+		if logger != nil {
+			logger.Error("Could not synthesize tunnel for %v: %v", iface.Name(), err)
+		}
+	}
 }
 
 // VoidTunnelInterface clears the interface of a synthesized tunnel,
@@ -4984,13 +5809,21 @@ func (ts *TransportSystem) HandleTunnel(tunnelID []byte, iface interfaces.Interf
 	if iface == nil {
 		return errors.New("nil interface")
 	}
+	// Guard against a missing/empty tunnel ID so handle_tunnel does not
+	// create a malformed entry keyed on the empty string (Python
+	// Transport.handle_tunnel, Transport.py:2421-2422 keys on tunnel_id).
+	if len(tunnelID) == 0 {
+		return errors.New("empty tunnel ID")
+	}
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	if ts.tunnels == nil {
 		ts.tunnels = map[string]*Tunnel{}
 	}
 	key := string(tunnelID)
-	expires := time.Now().Add(DestinationTimeout)
+	// Python Transport.py:2422 sets expires = time.time() + TUNNEL_TIMEOUT
+	// (8h), not the week-long DESTINATION_TIMEOUT.
+	expires := time.Now().Add(TunnelTimeout)
 	if entry, ok := ts.tunnels[key]; ok {
 		entry.Interface = iface
 		entry.Expires = expires
@@ -5003,6 +5836,77 @@ func (ts *TransportSystem) HandleTunnel(tunnelID []byte, iface interfaces.Interf
 		Expires:   expires,
 	}
 	return nil
+}
+
+// interfaceRegisteredLocked reports whether iface is currently registered in
+// ts.interfaces. Caller must hold ts.mu.
+func (ts *TransportSystem) interfaceRegisteredLocked(iface interfaces.Interface) bool {
+	for _, existing := range ts.interfaces {
+		if existing == iface {
+			return true
+		}
+	}
+	return false
+}
+
+// cullTunnels is the tunnel-table cull job run from the maintenance loop
+// (Python Transport.jobs "Cull the tunnel table", Transport.py:824-877). It
+// removes tunnels with an excessive or expired TUNNEL_TIMEOUT, nulls the
+// interface of a tunnel whose interface is no longer registered, and drops
+// individual tunnel paths that are either past TUNNEL_PATH_TIMEOUT or
+// superseded by an active path-table entry with a more recent announce
+// timebase (Transport.py:851-867).
+func (ts *TransportSystem) cullTunnels(now time.Time) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if len(ts.tunnels) == 0 {
+		return
+	}
+	ts.ensureStateLocked()
+	var staleTunnels []string
+	for id, tunnel := range ts.tunnels {
+		// Excessive expiry (Transport.py:833-834) or past expiry
+		// (Transport.py:837-838): drop the whole tunnel.
+		if tunnel.Expires.After(now.Add(2 * TunnelTimeout)) {
+			staleTunnels = append(staleTunnels, id)
+			continue
+		}
+		if now.After(tunnel.Expires) {
+			staleTunnels = append(staleTunnels, id)
+			continue
+		}
+		// Null the interface of a tunnel whose interface dropped off
+		// (Transport.py:842-844).
+		if tunnel.Interface != nil && !ts.interfaceRegisteredLocked(tunnel.Interface) {
+			tunnel.Interface = nil
+		}
+		var stalePaths []string
+		for destHash, tp := range tunnel.Paths {
+			// TUNNEL_PATH_TIMEOUT expiry (Transport.py:851-852).
+			if now.Sub(tp.Timestamp) > TunnelPathTimeout {
+				stalePaths = append(stalePaths, destHash)
+				continue
+			}
+			// Drop when the active path-table entry for the same
+			// destination has a more recent announce timebase
+			// (Transport.py:860-867). Guard against a missing active
+			// path: no active path means nothing supersedes the tunnel
+			// path, so it is retained.
+			if active, ok := ts.pathTable[destHash]; ok {
+				currentTimebase := timebaseFromRandomBlobs(active.RandomBlobs)
+				tunnelTimebase := timebaseFromRandomBlobs(tp.RandomBlobs)
+				if currentTimebase > tunnelTimebase {
+					stalePaths = append(stalePaths, destHash)
+				}
+			}
+		}
+		for _, dh := range stalePaths {
+			delete(tunnel.Paths, dh)
+		}
+	}
+	for _, id := range staleTunnels {
+		delete(ts.tunnels, id)
+	}
 }
 
 // tunnelSynthesizeHandler is the packet callback for the inbound tunnel
@@ -5136,31 +6040,152 @@ func (ts *TransportSystem) ExpirePath(destinationHash []byte) {
 	delete(ts.pathTable, string(destinationHash))
 }
 
+// Packet-hashlist storage file names and yield thresholds, mirroring
+// Python's Transport.save_packet_hashlist (RNS/Transport.py:3292-3329) and
+// the load path (RNS/Transport.py:242-254).
+const (
+	packetHashRawName      = "packet_hashlist.raw"
+	packetHashLegacyName   = "packet_hashlist"
+	hashlistYieldThreshold = 10 * time.Millisecond
+	hashlistYieldSleep     = time.Millisecond
+)
+
 // SavePacketHashlist serializes the in-memory packet-hash set to
-// storagePath/packet_hashlist. It is the Go port of Python's
-// Transport.save_packet_hashlist().
+// storagePath/packet_hashlist.raw as raw concatenated HashLength/8-byte
+// hashes, mirroring Python's Transport.save_packet_hashlist
+// (RNS/Transport.py:3292-3329). It is gated on transport enabled (Python
+// lines 3294,3310); a disabled transport returns nil without writing.
 func (ts *TransportSystem) SavePacketHashlist(storagePath string) error {
+	return ts.savePacketHashlist(storagePath, false)
+}
+
+// savePacketHashlist is the background-aware implementation. When background
+// is true it periodically yields (Python lines 3318-3322) so a low-priority
+// background persist does not starve inbound processing.
+func (ts *TransportSystem) savePacketHashlist(storagePath string, background bool) error {
 	if ts == nil {
 		return errors.New("nil transport")
 	}
 	if storagePath == "" {
 		return nil
 	}
+	if !ts.Enabled() {
+		return nil
+	}
+	hashLen := HashLength / 8
+
 	ts.mu.Lock()
-	hashes := make([][]byte, 0, len(ts.packetHashes))
+	keys := make([]string, 0, len(ts.packetHashes))
 	for k := range ts.packetHashes {
-		hashes = append(hashes, []byte(k))
+		if len(k) == hashLen {
+			keys = append(keys, k)
+		}
 	}
 	ts.mu.Unlock()
 
-	packed, err := msgpack.Pack(hashes)
-	if err != nil {
-		return fmt.Errorf("pack packet hash list: %w", err)
+	var buf bytes.Buffer
+	buf.Grow(len(keys) * hashLen)
+	roundStartedAt := time.Now()
+	for _, k := range keys {
+		buf.WriteString(k)
+		if background && time.Since(roundStartedAt) > hashlistYieldThreshold {
+			roundStartedAt = time.Now()
+			time.Sleep(hashlistYieldSleep)
+		}
 	}
+
 	if err := os.MkdirAll(storagePath, 0o700); err != nil {
 		return fmt.Errorf("create storage dir: %w", err)
 	}
-	return os.WriteFile(filepath.Join(storagePath, "packet_hashlist"), packed, 0o600)
+	return os.WriteFile(filepath.Join(storagePath, packetHashRawName), buf.Bytes(), 0o600)
+}
+
+// LoadPacketHashlist reads the packet-hash set from
+// storagePath/packet_hashlist.raw (raw concatenated HashLength/8-byte
+// hashes), falling back to the legacy msgpack packet_hashlist file for
+// migration when the .raw file is absent. It mirrors Python's load path
+// (RNS/Transport.py:242-254), gated on transport enabled. A parse failure
+// logs and returns nil (Python catches the exception and continues).
+func (ts *TransportSystem) LoadPacketHashlist(storagePath string) error {
+	if ts == nil {
+		return errors.New("nil transport")
+	}
+	if storagePath == "" {
+		return nil
+	}
+	if !ts.Enabled() {
+		return nil
+	}
+	hashLen := HashLength / 8
+
+	rawPath := filepath.Join(storagePath, packetHashRawName)
+	data, err := os.ReadFile(rawPath)
+	if err == nil {
+		return ts.loadPacketHashlistRaw(data, hashLen)
+	}
+	if !os.IsNotExist(err) {
+		if ts.logger != nil {
+			ts.logger.Error("Could not load packet hashlist from storage, the contained exception was: %v", err)
+		}
+		return nil
+	}
+
+	// Fall back to the legacy msgpack packet_hashlist file for migration
+	// from pre-v1.4.0 storage (the old format was a msgpack array of
+	// hash byte strings).
+	legacyPath := filepath.Join(storagePath, packetHashLegacyName)
+	legacy, err := os.ReadFile(legacyPath)
+	if err != nil {
+		if !os.IsNotExist(err) && ts.logger != nil {
+			ts.logger.Error("Could not load legacy packet hashlist from storage, the contained exception was: %v", err)
+		}
+		return nil
+	}
+	return ts.loadPacketHashlistLegacy(legacy, hashLen)
+}
+
+// loadPacketHashlistRaw populates packetHashes from a raw concatenated
+// hash file (Python RNS/Transport.py:246-252). Each HashLength/8-byte chunk
+// is a packet hash; a short trailing remainder is ignored (Python stops when
+// a read returns fewer than hashlen bytes).
+func (ts *TransportSystem) loadPacketHashlistRaw(data []byte, hashLen int) error {
+	now := time.Now()
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.ensureStateLocked()
+	for i := 0; i+hashLen <= len(data); i += hashLen {
+		ts.packetHashes[string(data[i:i+hashLen])] = now
+	}
+	return nil
+}
+
+// loadPacketHashlistLegacy migrates a pre-v1.4.0 msgpack packet_hashlist
+// file (an array of hash byte strings) into packetHashes.
+func (ts *TransportSystem) loadPacketHashlistLegacy(data []byte, hashLen int) error {
+	unpacked, err := msgpack.Unpack(data)
+	if err != nil {
+		if ts.logger != nil {
+			ts.logger.Error("Could not load packet hashlist from storage, the contained exception was: %v", err)
+		}
+		return nil
+	}
+	arr, ok := unpacked.([]any)
+	if !ok {
+		if ts.logger != nil {
+			ts.logger.Error("Could not load packet hashlist from storage, the contained exception was: unexpected type %T", unpacked)
+		}
+		return nil
+	}
+	now := time.Now()
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.ensureStateLocked()
+	for _, item := range arr {
+		if h, ok := item.([]byte); ok && len(h) == hashLen {
+			ts.packetHashes[string(h)] = now
+		}
+	}
+	return nil
 }
 
 // SavePathTable writes the current path table to storagePath. It is
@@ -5172,9 +6197,7 @@ func (ts *TransportSystem) SavePathTable(storagePath string) error {
 	if storagePath == "" {
 		return nil
 	}
-	ts.mu.Lock()
-	snapshot, caches := ts.pathTablePersistLocked()
-	ts.mu.Unlock()
+	snapshot, caches := ts.pathTableSnapshot()
 
 	packed, err := msgpack.Pack(snapshot)
 	if err != nil {
@@ -5188,7 +6211,7 @@ func (ts *TransportSystem) SavePathTable(storagePath string) error {
 	}
 	// Write the announce cache files that accompany the destination_table,
 	// relative to this storagePath (which may differ from ts.storagePath when
-	// callers persist to a custom directory). See pathTablePersistLocked.
+	// callers persist to a custom directory). See pathTableSnapshot.
 	cacheDir := announceCacheDirFor(storagePath)
 	for _, c := range caches {
 		writeCachedAnnounce(ts.logger, cacheDir, c.hash, c.raw, c.iface)
@@ -5206,6 +6229,12 @@ func (ts *TransportSystem) PersistData() error {
 	if ts.storagePath == "" {
 		return nil
 	}
+	// Non-reentrant guard: skip if a persist is already in flight (Python
+	// Transport.py:3509-3510 "if persist_lock.locked(): return").
+	if !ts.persistMu.TryLock() {
+		return nil
+	}
+	defer ts.persistMu.Unlock()
 	if err := ts.SavePathTable(ts.storagePath); err != nil {
 		return err
 	}
@@ -5224,7 +6253,35 @@ func (ts *TransportSystem) DeregisterDestination(d *Destination) {
 	for i, existing := range ts.destinations {
 		if existing == d {
 			ts.destinations = append(ts.destinations[:i], ts.destinations[i+1:]...)
+			delete(ts.destinationsMap, string(d.Hash))
 			return
+		}
+	}
+}
+
+// CleanDestinationsMap reconciles the destinationsMap index with the
+// destinations list: it re-adds any registered destination whose hash is
+// missing from the map, and drops any map entry whose destination is no
+// longer registered. It is the Go port of Python's
+// Transport.clean_destinations_map (Transport.py:2478-2496), run as a
+// periodic reconcile job so the hash index can never drift out of sync with
+// the list even if a register/deregister path bypassed the map update.
+func (ts *TransportSystem) CleanDestinationsMap() {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.ensureStateLocked()
+	for _, d := range ts.destinations {
+		if _, ok := ts.destinationsMap[string(d.Hash)]; !ok {
+			ts.destinationsMap[string(d.Hash)] = d
+		}
+	}
+	registered := make(map[string]bool, len(ts.destinations))
+	for _, d := range ts.destinations {
+		registered[string(d.Hash)] = true
+	}
+	for hash := range ts.destinationsMap {
+		if !registered[hash] {
+			delete(ts.destinationsMap, hash)
 		}
 	}
 }
