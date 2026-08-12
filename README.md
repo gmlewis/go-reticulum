@@ -9,9 +9,9 @@ It is based upon the following Python original works:
 
 * https://github.com/markqvist/lxmf
   ```
-  commit 269ce43afc6552e934c212887c2450718311396a
-  Author: Mark Qvist <mark@unsigned.io>
-  Date:   Sat Jan 10 21:50:42 2026 +0100
+  commit 795fdaa2b0777c13033787d933d1afc94a2377cb (master, tag: 1.1.0)
+  Author: Mark Qvist <bc7291552be7a58f361522990465165c>
+  Date:   Mon Jul 20 18:49:54 2026 +0200
   ```
 * https://github.com/markqvist/Reticulum
   ```
