@@ -508,22 +508,6 @@ func TestReleaseLatestNotFound(t *testing.T) {
 	}
 }
 
-// TestResolvePermissionAlwaysTrue verifies the deferred permissions stub
-// grants every permission to every identified remote.
-func TestResolvePermissionAlwaysTrue(t *testing.T) {
-	t.Parallel()
-	n := newTestNode(t)
-	id, err := rns.NewIdentity(true, nil)
-	if err != nil {
-		t.Fatalf("NewIdentity: %v", err)
-	}
-	for _, perm := range []byte{permRead, permWrite, permRelease, permAdmin} {
-		if !n.resolvePermission(id, "g", "r", perm) {
-			t.Errorf("perm %x: expected true", perm)
-		}
-	}
-}
-
 // TestHandleReleaseDispatch verifies the top-level dispatch: missing
 // remote, bad data, unknown operation, and the list path.
 func TestHandleReleaseDispatch(t *testing.T) {
@@ -533,10 +517,11 @@ func TestHandleReleaseDispatch(t *testing.T) {
 	seedBareRepoWithTag(t, repoPath, "v1.0.0")
 	n.groups = map[string]*groupInfo{
 		"main": {
-			name: "main",
-			path: base,
+			name:  "main",
+			path:  base,
+			perms: openPermissionLists(),
 			repositories: map[string]*repositoryInfo{
-				"repo.git": {name: "repo.git", group: "main", path: repoPath},
+				"repo.git": {name: "repo.git", group: "main", path: repoPath, perms: openPermissionLists()},
 			},
 		},
 	}

@@ -36,3 +36,22 @@ func firstByte(b []byte) byte {
 	}
 	return b[0]
 }
+
+// openPermissionLists returns a permissionLists that grants every
+// permission to every identity (TGT_ALL in each of the eight lists). It
+// lets unit/integration tests that seed bare repos directly (with no
+// .allowed file) pass the real resolvePermission / resolveDocPermission
+// checks, mirroring a group .allowed of "r:all, w:all, ...".
+func openPermissionLists() permissionLists {
+	all := [][]byte{permTargetAllBytes}
+	return permissionLists{
+		read:     all,
+		write:    all,
+		create:   all,
+		stats:    all,
+		release:  all,
+		interact: all,
+		propose:  all,
+		admin:    all,
+	}
+}

@@ -112,9 +112,44 @@ func prepareGorngitDirectUDPConfig(t *testing.T, configDir, instanceName string,
 	}
 }
 
+// openAllowedContent is the group .allowed content that grants every
+// permission to every identity, so integration-test clients (which seed
+// bare repos directly with no per-repo .allowed) are granted access at
+// the group level via the TGT_ALL fallback.
+const openAllowedContent = "r:all\nw:all\nrw:all\nc:all\ns:all\nrel:all\ni:all\np:all\nadm:all\n"
+
 // prepareGorngitNodeConfig writes a gorngit node config in configDir that
-// serves the repository group "main" from repoRoot.
+// serves the repository group "main" from repoRoot, and writes an open
+// group .allowed file (<repoRoot>.allowed) granting all permissions to all
+// identities so the real permission resolver admits every identified test
+// client.
 func prepareGorngitNodeConfig(t *testing.T, configDir, repoRoot string) {
+	t.Helper()
+
+	configText := strings.Join([]string{
+		"[rngit]",
+		"announce_interval = 1",
+		"",
+		"[repositories]",
+		"main = " + repoRoot,
+		"",
+		"[logging]",
+		"loglevel = 4",
+		"",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(configText), 0o600); err != nil {
+		t.Fatalf("failed to write gorngit node config: %v", err)
+	}
+	if err := os.WriteFile(repoRoot+".allowed", []byte(openAllowedContent), 0o644); err != nil {
+		t.Fatalf("failed to write group .allowed: %v", err)
+	}
+}
+
+// prepareGorngitNodeConfigRestricted writes a gorngit node config like
+// prepareGorngitNodeConfig but WITHOUT a group .allowed file, so the real
+// permission resolver denies all access (empty perm lists). Used by the
+// permission-denial test.
+func prepareGorngitNodeConfigRestricted(t *testing.T, configDir, repoRoot string) {
 	t.Helper()
 
 	configText := strings.Join([]string{
@@ -1374,4 +1409,59 @@ func TestIntegrationReleaseRoundTrip(t *testing.T) {
 	// Verify the release dir is gone by listing again.
 	resp, _, err = client.sendRequest(pathRelease, packed, requestTimeout)
 	_ = resp
+}
+
+// TestIntegrationListDeniedOnRestrictedNode verifies that when the node has
+// no group .allowed (so the real permission resolver grants nothing), a
+// list request returns resNotFound over the wire (existence is hidden
+// because the client lacks READ).
+func TestIntegrationListDeniedOnRestrictedNode(t *testing.T) {
+	if gorngitBinaryPath == "" {
+		t.Skip("gorngit binary not built")
+	}
+
+	listenerRNSConfig, initiatorRNSConfig := prepareGorngitDirectUDPConfigPair(t, "gorngit-deny-")
+
+	nodeConfigDir := testutils.TempDir(t, "gorngit-deny-nodecfg-")
+	repoRoot := testutils.TempDir(t, "gorngit-deny-repos-")
+	repoName := "testrepo.git"
+	seedBareRepo(t, filepath.Join(repoRoot, repoName))
+	prepareGorngitNodeConfigRestricted(t, nodeConfigDir, repoRoot)
+
+	_, nodeCleanup := startGorngitNode(t, listenerRNSConfig, nodeConfigDir)
+	defer nodeCleanup()
+
+	destHash := waitForGorngitAnnounce(t, initiatorRNSConfig, nodeConfigDir)
+
+	logger := rns.NewLogger()
+	logger.SetLogLevel(rns.LogCritical)
+	ts := rns.NewTransportSystem(logger)
+	ret, err := rns.NewReticulumWithLogger(ts, initiatorRNSConfig, logger)
+	if err != nil {
+		t.Fatalf("could not initialize client Reticulum: %v", err)
+	}
+	defer func() {
+		if err := ret.Close(); err != nil {
+			t.Fatalf("failed to close client Reticulum: %v", err)
+		}
+	}()
+
+	clientConfigDir := testutils.TempDir(t, "gorngit-deny-clientcfg-")
+	remoteURL := fmt.Sprintf("rns://%s/main/%s", fmt.Sprintf("%x", destHash), repoName)
+	client, err := newReticulumGitClient(ts, clientConfigDir, "", remoteURL, logger)
+	if err != nil {
+		t.Fatalf("could not create client: %v", err)
+	}
+	if err := client.connect(logger); err != nil {
+		t.Fatalf("could not connect: %v", err)
+	}
+	defer client.teardown()
+
+	_, err = client.list(false)
+	if err == nil {
+		t.Fatal("list succeeded on restricted node, want refusal")
+	}
+	if !strings.Contains(err.Error(), "Not found") {
+		t.Errorf("list error=%q, want it to contain %q", err.Error(), "Not found")
+	}
 }

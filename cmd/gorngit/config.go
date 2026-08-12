@@ -3,10 +3,11 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// config.go implements a minimal gorngit node configuration loader,
-// mirroring the [rngit] and [repositories] sections of the default rngit
-// config (RNS/Utilities/rngit/server.py __default_rngit_config__). Full
-// permissions/aliases/stats/pages config is deferred to follow-up tasks.
+// config.go implements the gorngit node configuration loader, mirroring
+// the [rngit], [repositories], [aliases], and [access] sections of the
+// default rngit config (RNS/Utilities/rngit/server.py
+// __default_rngit_config__ + __apply_config). Stats and pages config is
+// deferred to follow-up tasks.
 
 package main
 
@@ -26,6 +27,17 @@ import (
 type nodeConfig struct {
 	announceInterval time.Duration
 	groups           map[string]string
+	// access maps a group name to the comma-separated permission lines
+	// from the [access] config section, applied on top of the group
+	// .allowed file in updateGroupPermissions.
+	access map[string][]string
+	// aliases maps an alias name to a 32-char identity hash hex string,
+	// from the [aliases] config section.
+	aliases map[string]string
+	// blockedIdentities is the list of identity hashes (hex or alias)
+	// from the [rngit] blocked_identities setting, resolved via aliases
+	// before use.
+	blockedIdentities []string
 }
 
 // defaultNodeConfig returns the baseline config used when no config file
@@ -35,6 +47,8 @@ func defaultNodeConfig() *nodeConfig {
 	return &nodeConfig{
 		announceInterval: 360 * time.Minute,
 		groups:           make(map[string]string),
+		access:           make(map[string][]string),
+		aliases:          make(map[string]string),
 	}
 }
 
@@ -88,14 +102,35 @@ func parseNodeConfig(text string) (*nodeConfig, error) {
 					cfg.announceInterval = time.Duration(minutes) * time.Minute
 				}
 			}
+			if key == "blocked_identities" {
+				cfg.blockedIdentities = append(cfg.blockedIdentities, parseCommaList(value)...)
+			}
 		case "repositories":
 			cfg.groups[key] = expandPath(value)
+		case "aliases":
+			cfg.aliases[key] = strings.TrimSpace(value)
+		case "access":
+			cfg.access[key] = parseCommaList(value)
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("could not parse config: %w", err)
 	}
 	return cfg, nil
+}
+
+// parseCommaList splits a comma-separated config value into trimmed,
+// non-empty entries, mirroring ConfigObj's as_list (server.py). Empty
+// fields are dropped.
+func parseCommaList(value string) []string {
+	var out []string
+	for _, field := range strings.Split(value, ",") {
+		field = strings.TrimSpace(field)
+		if field != "" {
+			out = append(out, field)
+		}
+	}
+	return out
 }
 
 // splitConfigLine splits a "key = value" config line.
@@ -139,10 +174,25 @@ func writeDefaultNodeConfig(configPath string) error {
 # Automatic announce interval in minutes (6 hours by default).
 announce_interval = 360
 
+# You can block specific identities from any interaction with this node.
+# blocked_identities = d31aeea49873006f13b3415520666a4e
+
 [repositories]
 # Define repository groups as group_name = /path/to/bare/repos
 # internal = /path/to/directory/with/git/repositories
 # public = /another/path/to/directory/with/git/repositories
+
+[aliases]
+# Define aliases for identity hashes as alias = IDENTITY_HASH (32 hex
+# chars). These are used by the permissions system and identity
+# resolution.
+# alice = d09285e660cfe27cee6d9a0beb58b7e0
+
+[access]
+# Apply permissions for all repositories within a group, comma-separated
+# permission lines applied on top of the group .allowed file.
+# public = r:all, w:9710b86ba12c42d1d8f30f74fe509286
+# internal = rw:9710b86ba12c42d1d8f30f74fe509286
 
 [logging]
 # Valid log levels are 0 through 7 (4 is the default).

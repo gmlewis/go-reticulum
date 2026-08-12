@@ -39,8 +39,9 @@ func newWorkTestNode(t *testing.T) (*reticulumGitNode, *rns.Identity, string, st
 		name:         "main",
 		path:         repoRoot,
 		repositories: map[string]*repositoryInfo{},
+		perms:        openPermissionLists(),
 	}
-	group.repositories[repoName] = &repositoryInfo{name: repoName, group: "main", path: repoPath}
+	group.repositories[repoName] = &repositoryInfo{name: repoName, group: "main", path: repoPath, perms: openPermissionLists()}
 	node := &reticulumGitNode{
 		identity: id,
 		groups:   map[string]*groupInfo{"main": group},
@@ -59,10 +60,16 @@ func signContent(t *testing.T, id *rns.Identity, content string) []byte {
 	return sig
 }
 
+// testRepoLogical is the logical "group/repo" path used as IDX_REPOSITORY
+// in work unit-test request maps, mirroring the real wire protocol (which
+// sends "group/repo", not a filesystem path). The test node registers the
+// repo under group "main" with name "workrepo.git".
+const testRepoLogical = "main/workrepo.git"
+
 // workCreateRequest builds a create/propose request map.
-func workCreateRequest(repoPath, operation, title, content string, sig []byte) map[any]any {
+func workCreateRequest(operation, title, content string, sig []byte) map[any]any {
 	return map[any]any{
-		int64(idxRepository): repoPath,
+		int64(idxRepository): testRepoLogical,
 		"operation":          operation,
 		"title":              title,
 		"content":            content,
@@ -99,7 +106,7 @@ func unpackWorkResponse(t *testing.T, resp []byte) (byte, map[any]any) {
 func callCreate(t *testing.T, n *reticulumGitNode, id *rns.Identity, repoPath, operation, title, content string) int {
 	t.Helper()
 	sig := signContent(t, id, content)
-	data := workCreateRequest(repoPath, operation, title, content, sig)
+	data := workCreateRequest(operation, title, content, sig)
 	var resp []byte
 	if operation == "create" {
 		resp = n.workCreate(repoPath+".work", data, id)
@@ -125,7 +132,7 @@ func TestWorkCreateListAndView(t *testing.T) {
 
 	// list
 	listData := map[any]any{
-		int64(idxRepository): repoPath,
+		int64(idxRepository): testRepoLogical,
 		"operation":          "list",
 		"scope":              "active",
 	}
@@ -151,7 +158,7 @@ func TestWorkCreateListAndView(t *testing.T) {
 
 	// view
 	viewData := map[any]any{
-		int64(idxRepository): repoPath,
+		int64(idxRepository): testRepoLogical,
 		"operation":          "view",
 		"doc_id":             int64(docID),
 		"scope":              "all",
@@ -221,7 +228,7 @@ func TestWorkCommentAddsComment(t *testing.T) {
 	docID := callCreate(t, n, id, repoPath, "create", "Doc", "body")
 
 	commentData := map[any]any{
-		int64(idxRepository): repoPath,
+		int64(idxRepository): testRepoLogical,
 		"operation":          "comment",
 		"doc_id":             int64(docID),
 		"scope":              "active",
@@ -245,7 +252,7 @@ func TestWorkCommentAddsComment(t *testing.T) {
 
 	// view should list the comment.
 	viewData := map[any]any{
-		int64(idxRepository): repoPath,
+		int64(idxRepository): testRepoLogical,
 		"operation":          "view",
 		"doc_id":             int64(docID),
 		"scope":              "all",
@@ -275,7 +282,7 @@ func TestWorkEditAuthorOnly(t *testing.T) {
 	}
 	newContent := "edited body"
 	editData := map[any]any{
-		int64(idxRepository): repoPath,
+		int64(idxRepository): testRepoLogical,
 		"operation":          "edit",
 		"doc_id":             int64(docID),
 		"scope":              "active",
@@ -297,7 +304,7 @@ func TestWorkEditAuthorOnly(t *testing.T) {
 
 	// View reflects the edited content.
 	viewData := map[any]any{
-		int64(idxRepository): repoPath,
+		int64(idxRepository): testRepoLogical,
 		"operation":          "view",
 		"doc_id":             int64(docID),
 		"scope":              "all",
@@ -317,7 +324,7 @@ func TestWorkCompleteActivateRoundTrip(t *testing.T) {
 	docID := callCreate(t, n, id, repoPath, "create", "Doc", "body")
 
 	completeData := map[any]any{
-		int64(idxRepository): repoPath,
+		int64(idxRepository): testRepoLogical,
 		"operation":          "complete",
 		"doc_id":             int64(docID),
 	}
@@ -337,7 +344,7 @@ func TestWorkCompleteActivateRoundTrip(t *testing.T) {
 	}
 
 	activateData := map[any]any{
-		int64(idxRepository): repoPath,
+		int64(idxRepository): testRepoLogical,
 		"operation":          "activate",
 		"doc_id":             int64(docID),
 	}
@@ -362,7 +369,7 @@ func TestWorkDeleteRemovesDoc(t *testing.T) {
 	docID := callCreate(t, n, id, repoPath, "propose", "Doc", "body")
 
 	deleteData := map[any]any{
-		int64(idxRepository): repoPath,
+		int64(idxRepository): testRepoLogical,
 		"operation":          "delete",
 		"doc_id":             int64(docID),
 		"scope":              "proposed",
@@ -385,9 +392,9 @@ func TestWorkDeleteRemovesDoc(t *testing.T) {
 // rejected with resInvalidReq.
 func TestWorkCreateRejectsBadSignature(t *testing.T) {
 	t.Parallel()
-	n, id, repoPath, workPath := newWorkTestNode(t)
+	n, id, _, workPath := newWorkTestNode(t)
 	badSig := make([]byte, signatureLength)
-	data := workCreateRequest(repoPath, "create", "Doc", "body", badSig)
+	data := workCreateRequest("create", "Doc", "body", badSig)
 	resp := n.workCreate(workPath, data, id)
 	if len(resp) == 0 || resp[0] != resInvalidReq {
 		t.Fatalf("bad signature code=%x, want resInvalidReq", firstByte(resp))
@@ -397,13 +404,13 @@ func TestWorkCreateRejectsBadSignature(t *testing.T) {
 // TestWorkCreateEnforcesDocLimit verifies that oversize content is rejected.
 func TestWorkCreateEnforcesDocLimit(t *testing.T) {
 	t.Parallel()
-	n, id, repoPath, workPath := newWorkTestNode(t)
+	n, id, _, workPath := newWorkTestNode(t)
 	content := make([]byte, workDocLimit+10)
 	for i := range content {
 		content[i] = 'x'
 	}
 	sig := signContent(t, id, string(content))
-	data := workCreateRequest(repoPath, "create", "Doc", string(content), sig)
+	data := workCreateRequest("create", "Doc", string(content), sig)
 	resp := n.workCreate(workPath, data, id)
 	if len(resp) == 0 || resp[0] != resInvalidReq {
 		t.Fatalf("oversize code=%x, want resInvalidReq", firstByte(resp))
@@ -425,7 +432,7 @@ func TestWorkListSortedByCreatedDesc(t *testing.T) {
 	_ = id3
 
 	listData := map[any]any{
-		int64(idxRepository): repoPath,
+		int64(idxRepository): testRepoLogical,
 		"operation":          "list",
 		"scope":              "active",
 	}
@@ -558,7 +565,7 @@ func TestWorkSetPermissionsValidates(t *testing.T) {
 
 	// Invalid line rejected.
 	badData := map[any]any{
-		int64(idxRepository): repoPath,
+		int64(idxRepository): testRepoLogical,
 		"operation":          "perms",
 		"doc_id":             int64(docID),
 		"step":               "set",
@@ -575,7 +582,7 @@ func TestWorkSetPermissionsValidates(t *testing.T) {
 
 	// Valid lines accepted and written.
 	goodData := map[any]any{
-		int64(idxRepository): repoPath,
+		int64(idxRepository): testRepoLogical,
 		"operation":          "perms",
 		"doc_id":             int64(docID),
 		"step":               "set",
@@ -603,7 +610,7 @@ func TestWorkGetPermissionsReturnsContent(t *testing.T) {
 
 	// The propose step wrote an .allowed file; get should return it.
 	getData := map[any]any{
-		int64(idxRepository): repoPath,
+		int64(idxRepository): testRepoLogical,
 		"operation":          "perms",
 		"doc_id":             int64(docID),
 		"step":               "get",
@@ -709,7 +716,7 @@ func TestViewLocatesAcrossScopes(t *testing.T) {
 	// Move to completed via complete, then view with scope="active" still
 	// finds it (scope arg is discarded by view).
 	completeData := map[any]any{
-		int64(idxRepository): repoPath,
+		int64(idxRepository): testRepoLogical,
 		"operation":          "complete",
 		"doc_id":             int64(docID),
 	}
@@ -717,7 +724,7 @@ func TestViewLocatesAcrossScopes(t *testing.T) {
 		t.Fatalf("complete code=%x", firstByte(resp))
 	}
 	viewData := map[any]any{
-		int64(idxRepository): repoPath,
+		int64(idxRepository): testRepoLogical,
 		"operation":          "view",
 		"doc_id":             int64(docID),
 		"scope":              "active",

@@ -701,7 +701,3 @@ func validateAllowedContent(n *reticulumGitNode, content string) error {
 	}
 	return nil
 }
-
-// permissionsTemplate is the editor template for the perms client,
-// matching PERMISSIONS_TEMPLATE (server.py).
-const permissionsTemplate = "# No permissions are currently defined for this entity. Add them below, and save and exit when you are done."

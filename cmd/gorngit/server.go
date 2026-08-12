@@ -94,15 +94,15 @@ type groupInfo struct {
 // identities blocked by [rngit] blocked_identities. identityAliases maps
 // alias names to hex identity hashes from [aliases].
 type reticulumGitNode struct {
-	config           *nodeConfig
-	identity         *rns.Identity
-	destination      *rns.Destination
-	groups           map[string]*groupInfo
+	config            *nodeConfig
+	identity          *rns.Identity
+	destination       *rns.Destination
+	groups            map[string]*groupInfo
 	blockedIdentities map[string]bool
-	identityAliases  map[string]string
-	ready            bool
-	shouldRun        bool
-	announceInterval time.Duration
+	identityAliases   map[string]string
+	ready             bool
+	shouldRun         bool
+	announceInterval  time.Duration
 }
 
 // newReticulumGitNode loads the node config and identity from configDir and
@@ -1277,9 +1277,14 @@ func (n *reticulumGitNode) handleSync(path string, data []byte, requestID, linkI
 		return append([]byte{resInvalidReq}, []byte("Invalid request")...)
 	}
 
-	// Permission checks (read_access / write_access) are a follow-up task;
-	// ALLOW_ALL for now. Under ALLOW_ALL both are true, so the
-	// not-read/not-write branches in handle_sync (server.py) are unreachable.
+	readAccess := n.resolvePermission(remoteIdentity, groupName, repositoryName, permRead)
+	writeAccess := n.resolvePermission(remoteIdentity, groupName, repositoryName, permWrite)
+	if !writeAccess {
+		if readAccess {
+			return append([]byte{resDisallowed}, []byte("Not allowed")...)
+		}
+		return append([]byte{resNotFound}, []byte("Not found")...)
+	}
 
 	repo, ok := n.lookupRepository(groupName, repositoryName)
 	if !ok {
@@ -1329,9 +1334,14 @@ func (n *reticulumGitNode) handleDelete(path string, data []byte, requestID, lin
 		return append([]byte{resInvalidReq}, []byte("Invalid request")...)
 	}
 
-	// Permission checks (read_access / write_access) are a follow-up task;
-	// ALLOW_ALL for now. Under ALLOW_ALL write_access is true, so the
-	// not-write branch in handle_delete (server.py) is unreachable.
+	readAccess := n.resolvePermission(remoteIdentity, groupName, repositoryName, permRead)
+	writeAccess := n.resolvePermission(remoteIdentity, groupName, repositoryName, permWrite)
+	if !writeAccess {
+		if readAccess {
+			return append([]byte{resDisallowed}, []byte("Not allowed")...)
+		}
+		return append([]byte{resNotFound}, []byte("Not found")...)
+	}
 
 	repo, ok := n.lookupRepository(groupName, repositoryName)
 	if !ok {

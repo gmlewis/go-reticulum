@@ -85,7 +85,7 @@ func (n *reticulumGitNode) handleWork(path string, data []byte, requestID, linkI
 	docID, docIDOK := resolveDocID(m)
 	if operation == "read" || operation == "view" || operation == "comment" || operation == "edit" || operation == "delete" || operation == "perms" {
 		if docIDOK {
-			docRead := n.resolveDocPermission(remoteIdentity, "", docID, permRead)
+			docRead := n.resolveDocPermission(remoteIdentity, groupName, repositoryName, docID, permRead)
 			if docRead || adminAccess {
 				readAccess = true
 			} else {
@@ -97,12 +97,12 @@ func (n *reticulumGitNode) handleWork(path string, data []byte, requestID, linkI
 		}
 	}
 	if operation == "comment" && docIDOK {
-		docInteract := n.resolveDocPermission(remoteIdentity, "", docID, permInteract)
+		docInteract := n.resolveDocPermission(remoteIdentity, groupName, repositoryName, docID, permInteract)
 		interactAccess = interactAccess || docInteract
 	}
 	if operation == "edit" && docIDOK {
-		docInteract := n.resolveDocPermission(remoteIdentity, "", docID, permInteract)
-		docWrite := n.resolveDocPermission(remoteIdentity, "", docID, permWrite)
+		docInteract := n.resolveDocPermission(remoteIdentity, groupName, repositoryName, docID, permInteract)
+		docWrite := n.resolveDocPermission(remoteIdentity, groupName, repositoryName, docID, permWrite)
 		interactAccess = interactAccess || docInteract
 		writeAccess = writeAccess || docWrite
 	}
@@ -327,7 +327,7 @@ func (n *reticulumGitNode) workList(workPath string, data map[any]any, remoteIde
 			if err != nil {
 				continue
 			}
-			if !n.resolveDocPermission(remoteIdentity, workPath, docID, permRead) {
+			if !n.resolveDocPermission(remoteIdentity, groupName, repositoryName, docID, permRead) {
 				continue
 			}
 			docDir := filepath.Join(folderPath, entry.Name())
@@ -352,8 +352,6 @@ func (n *reticulumGitNode) workList(workPath string, data map[any]any, remoteIde
 			})
 		}
 	}
-	_ = groupName
-	_ = repositoryName
 	for _, key := range workScopes {
 		docs, _ := result[key].([]any)
 		sort.SliceStable(docs, func(i, j int) bool {
@@ -665,12 +663,10 @@ func (n *reticulumGitNode) workDelete(workPath string, data map[any]any, remoteI
 	meta, _ := mapVal(doc, "meta").(map[any]any)
 	author, _ := meta["author"].([]byte)
 	isAuthor := bytes.Equal(author, remoteIdentity.Hash)
-	adminAccess := n.resolveDocPermission(remoteIdentity, workPath, docID, permAdmin)
+	adminAccess := n.resolveDocPermission(remoteIdentity, groupName, repositoryName, docID, permAdmin)
 	if !isAuthor && !adminAccess {
 		return append([]byte{resDisallowed}, []byte("No access, not author")...)
 	}
-	_ = groupName
-	_ = repositoryName
 
 	allowedPath := filepath.Join(workPath, fmt.Sprintf("%d.allowed", docID))
 	if err := os.Remove(allowedPath); err != nil && !os.IsNotExist(err) {
@@ -874,7 +870,7 @@ func (n *reticulumGitNode) workGetPermissions(workPath string, data map[any]any,
 	interactAccess := n.resolvePermission(remoteIdentity, groupName, repositoryName, permInteract)
 	writeAccess := n.resolvePermission(remoteIdentity, groupName, repositoryName, permWrite)
 	manageAccess := interactAccess && writeAccess
-	adminAccess := n.resolveDocPermission(remoteIdentity, workPath, docID, permAdmin)
+	adminAccess := n.resolveDocPermission(remoteIdentity, groupName, repositoryName, docID, permAdmin)
 	if !((isAuthor && manageAccess) || adminAccess) {
 		return append([]byte{resDisallowed}, []byte("Not allowed")...)
 	}
@@ -915,7 +911,7 @@ func (n *reticulumGitNode) workSetPermissions(workPath string, data map[any]any,
 	interactAccess := n.resolvePermission(remoteIdentity, groupName, repositoryName, permInteract)
 	writeAccess := n.resolvePermission(remoteIdentity, groupName, repositoryName, permWrite)
 	manageAccess := interactAccess && writeAccess
-	adminAccess := n.resolveDocPermission(remoteIdentity, workPath, docID, permAdmin)
+	adminAccess := n.resolveDocPermission(remoteIdentity, groupName, repositoryName, docID, permAdmin)
 	if !((isAuthor && manageAccess) || adminAccess) {
 		return append([]byte{resDisallowed}, []byte("Not allowed")...)
 	}

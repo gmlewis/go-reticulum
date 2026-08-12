@@ -24,9 +24,9 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
-// Permission constants (server.py PERM_*). The full permissions subsystem
-// is wired in a later task; resolvePermission currently grants every
-// permission to match the rns.AllowAll registration.
+// Permission constants (server.py PERM_*). The resolvePermission /
+// resolveGroupPermission / resolveDocPermission implementations live in
+// permissions.go; these constants are shared across all handlers.
 const (
 	permRead       byte = 0x01
 	permWrite      byte = 0x02
@@ -40,24 +40,6 @@ const (
 	permTargetNone byte = 0x01
 	permTargetAll  byte = 0x02
 )
-
-// resolvePermission reports whether remoteIdentity holds perm on
-// group/repo. The full permissions subsystem (.allowed files, identity
-// aliases, blocked identities) is wired in a later task; until then every
-// identified remote is granted every permission to match the
-// rns.AllowAll registration used by the other handlers.
-func (n *reticulumGitNode) resolvePermission(remoteIdentity *rns.Identity, groupName, repoName string, perm byte) bool {
-	return true
-}
-
-// resolveDocPermission reports whether remoteIdentity holds perm on the
-// work document docID under workPath. The full per-document permissions
-// subsystem (.allowed files, identity aliases) is wired in a later task;
-// until then every identified remote is granted every permission to match
-// the rns.AllowAll registration used by the other handlers.
-func (n *reticulumGitNode) resolveDocPermission(remoteIdentity *rns.Identity, workPath string, docID int, perm byte) bool {
-	return true
-}
 
 // handleRelease is the /mgmt/release request handler, mirroring
 // handle_release (server.py). It dispatches to the list/view/fetch/

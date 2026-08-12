@@ -88,8 +88,7 @@ func runWithOutput(args []string, stdout, stderr io.Writer) int {
 	case subWork:
 		return runWork(opts, stdout, stderr)
 	case subPerms:
-		fmt.Fprintf(stderr, "%s: not yet implemented\n", opts.subcommand)
-		return 1
+		return runPerms(opts, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown subcommand %q\n", opts.subcommand)
 		return 1
