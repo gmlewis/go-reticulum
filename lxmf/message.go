@@ -1032,6 +1032,40 @@ func removeTmpFile(tmpPath string) {
 	}
 }
 
+// atomicWriteFile writes data to path via a unique temporary file followed by
+// os.Rename, so a concurrent reader never observes a truncated or partial
+// file: the destination is either the previous contents or the new contents
+// in full. It does not fsync, mirroring Python's LXMRouter save methods, which
+// build temp_path = write_path+".tmp."+str(time.time()) and os.replace it
+// without fsync (LXMRouter.py:1231,1411, v1.1.0) — unlike
+// LXMessage.write_to_directory, which fsyncs before the replace. mode is the
+// file mode to create the temporary file with.
+func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
+	var randBuf [8]byte
+	if _, rerr := rand.Read(randBuf[:]); rerr != nil {
+		return fmt.Errorf("generate tmp suffix: %w", rerr)
+	}
+	tmpPath := path + ".tmp." + strconv.Itoa(os.Getpid()) + "." + hex.EncodeToString(randBuf[:])
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	if err != nil {
+		return fmt.Errorf("create tmp file %v: %w", tmpPath, err)
+	}
+	if _, werr := f.Write(data); werr != nil {
+		f.Close()
+		removeTmpFile(tmpPath)
+		return fmt.Errorf("write state file %v: %w", tmpPath, werr)
+	}
+	if cerr := f.Close(); cerr != nil {
+		removeTmpFile(tmpPath)
+		return fmt.Errorf("close tmp file %v: %w", tmpPath, cerr)
+	}
+	if rerr := os.Rename(tmpPath, path); rerr != nil {
+		removeTmpFile(tmpPath)
+		return fmt.Errorf("rename tmp file into place: %w", rerr)
+	}
+	return nil
+}
+
 func cloneBytes(in []byte) []byte {
 	if in == nil {
 		return nil

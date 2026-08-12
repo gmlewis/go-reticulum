@@ -287,6 +287,9 @@ const (
 	JOB_STAMPS_INTERVAL = 1
 	// JOB_LINKS_INTERVAL ticks between link cleanup invocations.
 	JOB_LINKS_INTERVAL = 1
+	// JOB_RESOURCE_INTERVAL ticks between inbound delivery-resource tracking
+	// cleanups; matches Python's LXMRouter.JOB_RESOURCE_INTERVAL (v1.1.0).
+	JOB_RESOURCE_INTERVAL = 2
 	// JOB_TRANSIENT_INTERVAL ticks between transient ID cache cleanups.
 	JOB_TRANSIENT_INTERVAL = 60
 	// JOB_STORE_INTERVAL ticks between propagation message store cleanups.

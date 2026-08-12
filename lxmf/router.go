@@ -191,6 +191,48 @@ type Router struct {
 	// LXMRouter.active_propagation_links; CleanLinks sweeps it for
 	// inactivity beyond PLinkMaxInactivity.
 	activePropagationLinks []*rns.Link
+	// acceptedOfferLinks maps an inbound sync link ID to its current offer
+	// state (OfferAccepted/OfferTransferring/OfferValidating), mirroring
+	// Python's accepted_offer_links (LXMRouter.py:169, v1.1.0). It drives the
+	// sequential-validation throttle (propagationResourcesTransferring) and
+	// the offer-state lifecycle advanced in propagationResourceAdvertised and
+	// propagationResourceConcluded.
+	acceptedOfferLinks map[string]int
+	// acceptedOfferLinksMu guards acceptedOfferLinks, mirroring Python's
+	// accepted_offer_links_lock (LXMRouter.py:182, v1.1.0). It is kept separate
+	// from r.mu so the resource callbacks that update offer state do not
+	// serialise against (or deadlock with) the offer-request path.
+	acceptedOfferLinksMu sync.Mutex
+	// validatingPnStampsFrom maps a remote propagation hash to the time its
+	// PN-stamp validation batch started, mirroring Python's
+	// validating_pn_stamps_from (LXMRouter.py:193, v1.1.0). A non-empty map
+	// throttles incoming sync offers while a batch is in progress.
+	validatingPnStampsFrom map[string]time.Time
+	// sequentialValidationMu guards validatingPnStampsFrom, mirroring Python's
+	// sequential_validation_lock (LXMRouter.py:183, v1.1.0).
+	sequentialValidationMu sync.Mutex
+	// validatePropagationMessagesFn optionally overrides PN-stamp validation;
+	// nil falls back to the package validatePropagationMessages. It mirrors the
+	// processOutbound override seam and lets tests observe the mid-validation
+	// offer state without slowing real validation.
+	validatePropagationMessagesFn func([][]byte, int) []validatedPropagationMessage
+	// incomingDeliveryResources tracks inbound LXMF delivery resources by
+	// their resource hash, mirroring Python's incoming_delivery_resources
+	// (LXMRouter.py:194, v1.1.0). deliveryResourceTransferBegan records them
+	// and CleanResourceTracking reaps terminal ones.
+	incomingDeliveryResources map[string]*rns.Resource
+	// incomingDeliveryResourcesMu guards incomingDeliveryResources, mirroring
+	// Python's incoming_delivery_resource_lock (LXMRouter.py:184, v1.1.0).
+	incomingDeliveryResourcesMu sync.Mutex
+	// propagationSequentialValidation defers incoming sync offers while a
+	// PN-stamp validation batch runs (LXMRouter.py:143, v1.1.0).
+	propagationSequentialValidation bool
+	// propagationStaticPeerSequential, when true, extends sequential validation
+	// to static peers (LXMRouter.py:144, v1.1.0).
+	propagationStaticPeerSequential bool
+	// propagationMaxInboundSyncs caps concurrently-transferring inbound sync
+	// resources; zero disables the cap (LXMRouter.py:145,2281, v1.1.0).
+	propagationMaxInboundSyncs int
 	// deliveryLinks is the set of inbound links established to the router's
 	// delivery destination(s). It mirrors Python's
 	// delivery_destination.links (maintained per-destination by RNS in
@@ -241,6 +283,27 @@ const (
 	// DefaultDeliveryLimit is the default maximum direct-delivery resource size
 	// in kilobytes.
 	DefaultDeliveryLimit float64 = 1000
+
+	// DefaultSequentialValidation matches Python's SEQUENTIAL_VALIDATION
+	// (LXMRouter.py:56, v1.1.0): incoming sync offers are deferred while a
+	// PN-stamp validation batch is in progress.
+	DefaultSequentialValidation = true
+	// DefaultStaticSequential matches Python's STATIC_SEQUENTIAL
+	// (LXMRouter.py:57, v1.1.0): static peers are exempt from sequential
+	// validation by default.
+	DefaultStaticSequential = false
+	// DefaultMaxInboundSyncs matches Python's MAX_INBOUND_SYNCS
+	// (LXMRouter.py:58, v1.1.0): the default cap on concurrently-transferring
+	// inbound sync resources.
+	DefaultMaxInboundSyncs = 3
+
+	// Offer-state accounting values for inbound sync links, mirroring Python's
+	// LXMRouter.OFFER_* (LXMRouter.py:82-85, v1.1.0). acceptedOfferLinks maps a
+	// link ID to the current state of its sync offer.
+	OfferUnknown      = 0x00
+	OfferAccepted     = 0x01
+	OfferTransferring = 0x02
+	OfferValidating   = 0x03
 
 	statsGetPath      = "/pn/get/stats"
 	peerSyncPath      = "/pn/peer/sync"
@@ -343,17 +406,23 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 		controlAllowed:      map[string]struct{}{},
 		peers:               map[string]*Peer{},
 
-		propagationPerTransferLimit: DefaultPropagationLimit,
-		propagationPerSyncLimit:     DefaultSyncLimit,
-		deliveryPerTransferLimit:    DefaultDeliveryLimit,
-		maxPeers:                    DefaultMaxPeers,
-		autopeer:                    DefaultAutopeer,
-		autopeerMaxdepth:            DefaultAutopeerMaxDepth,
-		maxPeeringCost:              DefaultMaxPeeringCost,
-		ignoredList:                 map[string]struct{}{},
-		prioritisedList:             map[string]struct{}{},
-		directLinks:                 map[string]*rns.Link{},
-		backchannelLinks:            map[string]*rns.Link{},
+		propagationPerTransferLimit:     DefaultPropagationLimit,
+		propagationPerSyncLimit:         DefaultSyncLimit,
+		deliveryPerTransferLimit:        DefaultDeliveryLimit,
+		maxPeers:                        DefaultMaxPeers,
+		autopeer:                        DefaultAutopeer,
+		autopeerMaxdepth:                DefaultAutopeerMaxDepth,
+		maxPeeringCost:                  DefaultMaxPeeringCost,
+		ignoredList:                     map[string]struct{}{},
+		prioritisedList:                 map[string]struct{}{},
+		directLinks:                     map[string]*rns.Link{},
+		backchannelLinks:                map[string]*rns.Link{},
+		acceptedOfferLinks:              map[string]int{},
+		validatingPnStampsFrom:          map[string]time.Time{},
+		incomingDeliveryResources:       map[string]*rns.Resource{},
+		propagationSequentialValidation: DefaultSequentialValidation,
+		propagationStaticPeerSequential: DefaultStaticSequential,
+		propagationMaxInboundSyncs:      DefaultMaxInboundSyncs,
 	}
 	router.startRequestMessagesPathJob = func() {
 		go router.requestMessagesPathJob()
@@ -472,6 +541,19 @@ func (r *Router) propagationResourceAdvertised(link *rns.Link, adv *rns.Resource
 	if limit > 0 && float64(adv.D) > limit*1000 {
 		return false
 	}
+
+	// If this link's offer was already accepted (by a partial-accept offer
+	// request), advance its state to TRANSFERRING to account for the in-flight
+	// resource (LXMRouter.py:2226-2232, v1.1.0). Links with no recorded offer
+	// are left untracked.
+	if link != nil {
+		linkID := link.GetHash()
+		r.acceptedOfferLinksMu.Lock()
+		if _, ok := r.acceptedOfferLinks[string(linkID)]; ok {
+			r.acceptedOfferLinks[string(linkID)] = OfferTransferring
+		}
+		r.acceptedOfferLinksMu.Unlock()
+	}
 	return true
 }
 
@@ -524,7 +606,18 @@ func (r *Router) propagationPacket(data []byte, packet *rns.Packet) {
 func (r *Router) propagationResourceBegan(_ *rns.Link, _ *rns.Resource) {}
 
 func (r *Router) propagationResourceConcluded(link *rns.Link, resource *rns.Resource) {
-	if link == nil || resource == nil || resource.Status() != rns.ResourceStatusComplete {
+	if link == nil {
+		return
+	}
+	// Match Python's tail cleanup (LXMRouter.py:2463-2467, v1.1.0): any
+	// accepted-offer accounting for this link is dropped when the resource
+	// concludes, whether or not it completed. The complete path also pops this
+	// entry in its own finally block below; the deferred pop is a harmless
+	// no-op there and the sole cleanup on every early-return path.
+	linkID := append([]byte{}, link.GetHash()...)
+	defer r.popAcceptedOfferLink(linkID)
+
+	if resource == nil || resource.Status() != rns.ResourceStatusComplete {
 		return
 	}
 
@@ -550,7 +643,7 @@ func (r *Router) propagationResourceConcluded(link *rns.Link, resource *rns.Reso
 		r.maybeAutopeerIdentifiedPropagationSender(remotePropagationHash)
 		r.mu.Lock()
 		peer = r.peers[string(remotePropagationHash)]
-		peeringKeyValid = r.validatedPeerLinks[string(link.GetHash())]
+		peeringKeyValid = r.validatedPeerLinks[string(linkID)]
 		r.mu.Unlock()
 	}
 
@@ -559,9 +652,34 @@ func (r *Router) propagationResourceConcluded(link *rns.Link, resource *rns.Reso
 		return
 	}
 
-	minAcceptedCost := max(r.propagationCost-r.propagationCostFlexibility, 0)
+	// Transition the offer to VALIDATING and record the validation batch before
+	// validating stamps, so concurrent offer requests are throttled while this
+	// batch runs (LXMRouter.py:2390-2398, v1.1.0).
+	if len(remotePropagationHash) > 0 {
+		r.acceptedOfferLinksMu.Lock()
+		if _, ok := r.acceptedOfferLinks[string(linkID)]; ok {
+			r.acceptedOfferLinks[string(linkID)] = OfferValidating
+		}
+		r.acceptedOfferLinksMu.Unlock()
+		r.sequentialValidationMu.Lock()
+		r.validatingPnStampsFrom[string(remotePropagationHash)] = r.now()
+		r.sequentialValidationMu.Unlock()
+	}
 
-	validated := validatePropagationMessages(messages, minAcceptedCost)
+	minAcceptedCost := max(r.propagationCost-r.propagationCostFlexibility, 0)
+	validated := r.validatePnStamps(messages, minAcceptedCost)
+
+	// Clean up the validation-batch entry and the offer accounting now that
+	// validation has run, mirroring Python's finally block
+	// (LXMRouter.py:2413-2424, v1.1.0). The ingestion loop runs after cleanup,
+	// as in Python.
+	if len(remotePropagationHash) > 0 {
+		r.sequentialValidationMu.Lock()
+		delete(r.validatingPnStampsFrom, string(remotePropagationHash))
+		r.sequentialValidationMu.Unlock()
+	}
+	r.popAcceptedOfferLink(linkID)
+
 	for _, entry := range validated {
 		r.mu.Lock()
 		switch {
@@ -589,6 +707,44 @@ func (r *Router) propagationResourceConcluded(link *rns.Link, resource *rns.Reso
 		}
 		link.Teardown()
 	}
+}
+
+// popAcceptedOfferLink removes any accepted-offer accounting for the given
+// link ID, mirroring the accepted_offer_links pop in Python's
+// propagation_resource_concluded (LXMRouter.py:2420-2424,2463-2467, v1.1.0).
+// Removing an absent entry is a no-op.
+func (r *Router) popAcceptedOfferLink(linkID []byte) {
+	r.acceptedOfferLinksMu.Lock()
+	delete(r.acceptedOfferLinks, string(linkID))
+	r.acceptedOfferLinksMu.Unlock()
+}
+
+// validatePnStamps validates propagation-message stamps, routing through the
+// optional validatePropagationMessagesFn override when set (nil falls back to
+// the package validatePropagationMessages). This mirrors the processOutbound
+// seam, letting tests observe the mid-validation offer state.
+func (r *Router) validatePnStamps(messages [][]byte, minAcceptedCost int) []validatedPropagationMessage {
+	if r.validatePropagationMessagesFn != nil {
+		return r.validatePropagationMessagesFn(messages, minAcceptedCost)
+	}
+	return validatePropagationMessages(messages, minAcceptedCost)
+}
+
+// PropagationResourcesTransferring reports the number of inbound sync links
+// whose offer state is strictly greater than OFFER_ACCEPTED (i.e. currently
+// TRANSFERRING or VALIDATING), mirroring Python's
+// propagation_resources_transferring property (LXMRouter.py:2197-2204, v1.1.0).
+// offerRequest uses it to throttle offers once the inbound-sync cap is reached.
+func (r *Router) PropagationResourcesTransferring() int {
+	r.acceptedOfferLinksMu.Lock()
+	defer r.acceptedOfferLinksMu.Unlock()
+	count := 0
+	for _, state := range r.acceptedOfferLinks {
+		if state > OfferAccepted {
+			count++
+		}
+	}
+	return count
 }
 
 func (r *Router) maybeAutopeerIdentifiedPropagationSender(remotePropagationHash []byte) {
@@ -1156,6 +1312,30 @@ func (r *Router) offerRequest(_ string, data []byte, _ []byte, linkID []byte, re
 	}
 
 	remotePropagationHash := rns.CalculateHash(remoteIdentity, AppName, "propagation")
+
+	// Static peers bypass sequential validation unless static-peer sequential
+	// mode is enabled (LXMRouter.py:2273, v1.1.0).
+	bypassSequential := false
+	if !r.propagationStaticPeerSequential {
+		_, bypassSequential = r.staticPeers[string(remotePropagationHash)]
+	}
+	// Defer incoming offers while a PN-stamp validation batch is in progress
+	// (LXMRouter.py:2274-2278, v1.1.0).
+	if !bypassSequential && r.propagationSequentialValidation {
+		r.sequentialValidationMu.Lock()
+		validating := len(r.validatingPnStampsFrom) > 0
+		r.sequentialValidationMu.Unlock()
+		if validating {
+			return peerErrorThrottled
+		}
+	}
+	// Defer incoming offers once the inbound-sync cap is reached
+	// (LXMRouter.py:2280-2283, v1.1.0). A cap of zero disables this check.
+	if !bypassSequential && r.propagationMaxInboundSyncs > 0 &&
+		r.PropagationResourcesTransferring() >= r.propagationMaxInboundSyncs {
+		return peerErrorThrottled
+	}
+
 	if until, throttled := r.throttledPeers[string(remotePropagationHash)]; throttled {
 		if r.now().Before(until) {
 			return peerErrorThrottled
@@ -1211,7 +1391,15 @@ func (r *Router) offerRequest(_ string, data []byte, _ []byte, linkID []byte, re
 		return true
 	}
 
-	_ = linkID
+	// Partial accept: record the offer state so the subsequent resource
+	// transfer can advance it through TRANSFERRING/VALIDATING
+	// (LXMRouter.py:2326-2329, v1.1.0).
+	if len(linkID) > 0 {
+		log.Printf("Accepted %d of %d offered messages from %x", len(wantedIDs), len(transientIDs), remotePropagationHash)
+		r.acceptedOfferLinksMu.Lock()
+		r.acceptedOfferLinks[string(append([]byte{}, linkID...))] = OfferAccepted
+		r.acceptedOfferLinksMu.Unlock()
+	}
 	return wantedIDs
 }
 
@@ -2064,9 +2252,126 @@ func (r *Router) configureDeliveryLink(link *rns.Link) {
 	if err := link.SetResourceStrategy(rns.AcceptAll); err != nil {
 		return
 	}
+	link.SetResourceStartedCallback(func(resource *rns.Resource) {
+		r.deliveryResourceTransferBegan(resource)
+	})
 	link.SetResourceConcludedCallback(func(resource *rns.Resource) {
 		r.handleInboundResource(resource)
 	})
+}
+
+// deliveryResourceTransferBegan records an incoming LXMF delivery resource by
+// its hash as soon as its transfer starts, mirroring Python's
+// delivery_resource_transfer_began (LXMRouter.py:1968-1971, v1.1.0). The entry
+// is later reaped by CleanResourceTracking once the resource reaches a
+// terminal state.
+func (r *Router) deliveryResourceTransferBegan(resource *rns.Resource) {
+	if resource == nil {
+		return
+	}
+	r.incomingDeliveryResourcesMu.Lock()
+	r.incomingDeliveryResources[string(resource.Hash())] = resource
+	r.incomingDeliveryResourcesMu.Unlock()
+}
+
+// CleanResourceTracking removes incoming delivery resources that have reached a
+// terminal state (status >= COMPLETE), leaving active transfers tracked. It is
+// the Go port of Python's clean_resource_tracking (LXMRouter.py:935-949,
+// v1.1.0) and runs on the JOB_RESOURCE_INTERVAL cadence from the job loop.
+func (r *Router) CleanResourceTracking() {
+	r.incomingDeliveryResourcesMu.Lock()
+	stale := make([]string, 0)
+	for hash, resource := range r.incomingDeliveryResources {
+		if resource == nil || resource.Status() >= rns.ResourceStatusComplete {
+			stale = append(stale, hash)
+		}
+	}
+	for _, hash := range stale {
+		delete(r.incomingDeliveryResources, hash)
+	}
+	r.incomingDeliveryResourcesMu.Unlock()
+	if len(stale) > 0 {
+		log.Printf("Cleaned %d resource%s from inbound tracking", len(stale), pluralSuffix(len(stale)))
+	}
+}
+
+// InboundCount reports the number of incoming delivery resources whose transfer
+// is still in progress (status < COMPLETE), mirroring Python's inbound_count
+// (LXMRouter.py:1671-1677, v1.1.0).
+func (r *Router) InboundCount() int {
+	r.incomingDeliveryResourcesMu.Lock()
+	defer r.incomingDeliveryResourcesMu.Unlock()
+	count := 0
+	for _, resource := range r.incomingDeliveryResources {
+		if resource != nil && resource.Status() < rns.ResourceStatusComplete {
+			count++
+		}
+	}
+	return count
+}
+
+// InboundResources returns the incoming delivery resources whose transfer is
+// still in progress (status < COMPLETE), mirroring Python's inbound_resources
+// (LXMRouter.py:1679-1687, v1.1.0).
+func (r *Router) InboundResources() []*rns.Resource {
+	r.incomingDeliveryResourcesMu.Lock()
+	defer r.incomingDeliveryResourcesMu.Unlock()
+	active := make([]*rns.Resource, 0)
+	for _, resource := range r.incomingDeliveryResources {
+		if resource != nil && resource.Status() < rns.ResourceStatusComplete {
+			active = append(active, resource)
+		}
+	}
+	return active
+}
+
+// CancelInbound cancels the incoming delivery resource identified by
+// resourceHash if its transfer is still in progress, returning whether a
+// cancellation was performed. Cancelling an unknown or already-concluded
+// resource returns false, mirroring Python's cancel_inbound
+// (LXMRouter.py:1689-1706, v1.1.0).
+func (r *Router) CancelInbound(resourceHash []byte) bool {
+	r.incomingDeliveryResourcesMu.Lock()
+	resource := r.incomingDeliveryResources[string(resourceHash)]
+	r.incomingDeliveryResourcesMu.Unlock()
+	if resource == nil {
+		log.Printf("Resource %x not found, cannot cancel", resourceHash)
+		return false
+	}
+	if resource.Status() >= rns.ResourceStatusComplete {
+		log.Printf("Incoming delivery resource %x already concluded, cannot cancel", resourceHash)
+		return false
+	}
+	resource.Cancel()
+	log.Printf("Cancelled incoming delivery resource %x", resourceHash)
+	return true
+}
+
+// CancelAllInbound cancels every in-progress incoming delivery resource and
+// returns the count cancelled, mirroring Python's cancel_all_inbound
+// (LXMRouter.py:1708-1717, v1.1.0).
+func (r *Router) CancelAllInbound() int {
+	r.incomingDeliveryResourcesMu.Lock()
+	active := make([]*rns.Resource, 0)
+	for _, resource := range r.incomingDeliveryResources {
+		if resource != nil && resource.Status() < rns.ResourceStatusComplete {
+			active = append(active, resource)
+		}
+	}
+	r.incomingDeliveryResourcesMu.Unlock()
+	for _, resource := range active {
+		resource.Cancel()
+	}
+	return len(active)
+}
+
+// pluralSuffix returns "s" when n != 1 and "" otherwise, matching Python's
+// "{'s' if n != 1 else ''}" pluralisation used in resource-tracking logs.
+func pluralSuffix(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 // ProcessOutbound iterates over the pending outbound queue and actively attempts to transmit messages via the Reticulum network.
@@ -2886,6 +3191,18 @@ type RouterConfig struct {
 	PeeringCost int
 	// MaxPeeringCost limits the maximum remote peering cost this router accepts.
 	MaxPeeringCost int
+	// SequentialValidation, when non-nil, configures whether incoming sync
+	// offers are deferred while a PN-stamp validation batch is in progress
+	// (Python propagation_sequential_validation, LXMRouter.py:143, v1.1.0).
+	// Nil keeps the default (true).
+	SequentialValidation *bool
+	// StaticSequential extends sequential validation to static peers when true
+	// (Python propagation_static_peer_sequential, LXMRouter.py:144, v1.1.0).
+	StaticSequential bool
+	// MaxInboundSyncs caps the number of concurrently-transferring inbound sync
+	// resources; nil keeps the default (3). Zero disables the cap (Python
+	// propagation_max_inbound_syncs, LXMRouter.py:145,2281, v1.1.0).
+	MaxInboundSyncs *int
 	// Name assigns an optional friendly name used in announce data and operator
 	// tooling.
 	Name string
@@ -2932,6 +3249,13 @@ func NewRouterFromConfig(ts rns.Transport, cfg RouterConfig) (*Router, error) {
 	}
 	router.name = cfg.Name
 	router.fromStaticOnly = cfg.FromStaticOnly
+	if cfg.SequentialValidation != nil {
+		router.propagationSequentialValidation = *cfg.SequentialValidation
+	}
+	router.propagationStaticPeerSequential = cfg.StaticSequential
+	if cfg.MaxInboundSyncs != nil {
+		router.propagationMaxInboundSyncs = *cfg.MaxInboundSyncs
+	}
 
 	if len(cfg.StaticPeers) > 0 {
 		if err := router.SetStaticPeers(cfg.StaticPeers); err != nil {
@@ -3208,7 +3532,7 @@ func (r *Router) SavePeers() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(r.peersPath(), packed, 0o644)
+	return atomicWriteFile(r.peersPath(), packed, 0o644)
 }
 
 // LoadPeers restores persisted propagation peer synchronisation state.
@@ -3269,7 +3593,7 @@ func (r *Router) SaveNodeStats() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(r.nodeStatsPath(), packed, 0o644)
+	return atomicWriteFile(r.nodeStatsPath(), packed, 0o644)
 }
 
 // SaveAvailableTickets persists inbound/outbound delivery ticket state using the
@@ -3340,7 +3664,7 @@ func (r *Router) SaveAvailableTickets() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(r.availableTicketsPath(), packed, 0o644)
+	return atomicWriteFile(r.availableTicketsPath(), packed, 0o644)
 }
 
 // LoadAvailableTickets restores available ticket state from storage and then
@@ -3490,7 +3814,7 @@ func (r *Router) saveLocalTransientIDCaches(saveDelivered, saveProcessed bool) e
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(r.localDeliveriesPath(), packed, 0o644); err != nil {
+		if err := atomicWriteFile(r.localDeliveriesPath(), packed, 0o644); err != nil {
 			return err
 		}
 	}
@@ -3499,7 +3823,7 @@ func (r *Router) saveLocalTransientIDCaches(saveDelivered, saveProcessed bool) e
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(r.locallyProcessedPath(), packed, 0o644); err != nil {
+		if err := atomicWriteFile(r.locallyProcessedPath(), packed, 0o644); err != nil {
 			return err
 		}
 	}
@@ -3888,7 +4212,7 @@ func (r *Router) SaveOutboundStampCosts() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(r.outboundStampCostsPath(), packed, 0o644)
+	return atomicWriteFile(r.outboundStampCostsPath(), packed, 0o644)
 }
 
 // LoadOutboundStampCosts restores cached outbound delivery stamp costs from
@@ -5326,6 +5650,9 @@ func (r *Router) jobs() {
 	}
 	if count%JOB_LINKS_INTERVAL == 0 {
 		r.CleanLinks()
+	}
+	if count%JOB_RESOURCE_INTERVAL == 0 {
+		r.CleanResourceTracking()
 	}
 	if count%JOB_TRANSIENT_INTERVAL == 0 {
 		r.cleanTransientIDCachesLocked()
