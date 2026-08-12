@@ -55,7 +55,6 @@ func TestSanitizeName(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := sanitizeName(tc.input)
@@ -73,7 +72,7 @@ func TestSanitizeNameTruncationContract(t *testing.T) {
 	// Here we verify the raw sanitizeName output preserves rune count so the
 	// truncation contract at the call site is byte-free.
 	long := ""
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		long += "x"
 	}
 	got := sanitizeName(long)

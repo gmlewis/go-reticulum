@@ -102,9 +102,7 @@ func TestWriteToDirectoryConcurrentReaderNeverSeesPartial(t *testing.T) {
 	}
 
 	// Reader: every read must yield a complete, valid msgpack container.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for time.Now().Before(deadline) {
 			data, err := os.ReadFile(finalPath)
 			if err != nil {
@@ -116,19 +114,17 @@ func TestWriteToDirectoryConcurrentReaderNeverSeesPartial(t *testing.T) {
 				return
 			}
 		}
-	}()
+	})
 
 	// Writer: repeatedly overwrite via WriteToDirectory.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for time.Now().Before(deadline) {
 			if _, err := msg.WriteToDirectory(dir); err != nil {
 				reportErr("WriteToDirectory: " + err.Error())
 				return
 			}
 		}
-	}()
+	})
 
 	wg.Wait()
 	select {
@@ -150,14 +146,12 @@ func TestWriteToDirectoryConcurrentCallsDontCorrupt(t *testing.T) {
 
 	const n = 32
 	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range n {
+		wg.Go(func() {
 			if _, err := msg.WriteToDirectory(dir); err != nil {
 				t.Errorf("WriteToDirectory: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

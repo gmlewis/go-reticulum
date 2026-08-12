@@ -452,9 +452,7 @@ func newDeadListener(t *testing.T) *deadListener {
 		t.Fatal(err)
 	}
 	d := &deadListener{ln: l}
-	d.wg.Add(1)
-	go func() {
-		defer d.wg.Done()
+	d.wg.Go(func() {
 		for {
 			c, err := l.Accept()
 			if err != nil {
@@ -462,7 +460,7 @@ func newDeadListener(t *testing.T) *deadListener {
 			}
 			_ = c.Close()
 		}
-	}()
+	})
 	return d
 }
 

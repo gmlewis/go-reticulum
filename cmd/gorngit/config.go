@@ -165,7 +165,7 @@ func parseNodeConfig(text string) (*nodeConfig, error) {
 // fields are dropped.
 func parseCommaList(value string) []string {
 	var out []string
-	for _, field := range strings.Split(value, ",") {
+	for field := range strings.SplitSeq(value, ",") {
 		field = strings.TrimSpace(field)
 		if field != "" {
 			out = append(out, field)
@@ -189,11 +189,11 @@ func parseConfigBool(value string) (bool, bool) {
 
 // splitConfigLine splits a "key = value" config line.
 func splitConfigLine(line string) (string, string, bool) {
-	idx := strings.Index(line, "=")
-	if idx < 0 {
+	before, after, ok := strings.Cut(line, "=")
+	if !ok {
 		return "", "", false
 	}
-	return strings.TrimSpace(line[:idx]), strings.TrimSpace(line[idx+1:]), true
+	return strings.TrimSpace(before), strings.TrimSpace(after), true
 }
 
 // expandPath expands a leading ~ in a path, mirroring os.path.expanduser.

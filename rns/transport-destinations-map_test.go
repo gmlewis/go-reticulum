@@ -22,7 +22,7 @@ func TestDestinationsMapHashLookup(t *testing.T) {
 
 	const n = 5
 	dests := make([]*Destination, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		dests[i] = mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "app", fmt.Sprintf("d%d", i))
 	}
 

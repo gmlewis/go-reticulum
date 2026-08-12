@@ -923,7 +923,7 @@ func (n *reticulumGitNode) workSetPermissions(workPath string, data map[any]any,
 		}
 		perm, target := parsePermission(stripped)
 		if perm == 0 || target == nil {
-			return append([]byte{resInvalidReq}, []byte(fmt.Sprintf("Invalid permission %q on line %d", stripped, lineNum+1))...)
+			return fmt.Appendf([]byte{resInvalidReq}, "Invalid permission %q on line %d", stripped, lineNum+1)
 		}
 	}
 

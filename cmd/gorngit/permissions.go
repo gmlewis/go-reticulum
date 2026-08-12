@@ -182,7 +182,7 @@ func (n *reticulumGitNode) parsePermissionLine(permissionString string) (byte, [
 // target to both read and write lists. Entries are deduplicated per list.
 func (n *reticulumGitNode) permissionsFromAllowedInput(allowedInput string) permissionLists {
 	var perms permissionLists
-	for _, entry := range strings.Split(allowedInput, "\n") {
+	for entry := range strings.SplitSeq(allowedInput, "\n") {
 		stripped := strings.TrimSpace(entry)
 		if stripped == "" || strings.HasPrefix(stripped, "#") {
 			continue

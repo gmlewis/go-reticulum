@@ -103,7 +103,7 @@ func (c *clientT) applyConfig(cfg map[string]map[string]string) (*activeConfig, 
 		PeerAnnounceInterval:               nil,
 		DeliveryTransferMaxAcceptedSize:    1000,
 		OnInbound:                          "",
-		PeerStampCost:                      intPtr(12),
+		PeerStampCost:                      new(12),
 		EnablePropagationNode:              false,
 		NodeName:                           "",
 		AuthRequired:                       false,
@@ -151,7 +151,7 @@ func (c *clientT) applyConfig(cfg map[string]map[string]string) (*activeConfig, 
 			ac.OnInbound = val
 		}
 		if val, ok := section["stamp_cost"]; ok {
-			ac.PeerStampCost = intPtr(max(1, c.parseInt(val)))
+			ac.PeerStampCost = new(max(1, c.parseInt(val)))
 		}
 	}
 
@@ -247,7 +247,7 @@ func (c *clientT) applyConfig(cfg map[string]map[string]string) (*activeConfig, 
 			ac.StaticPeersBypassSequential = parseBool(val)
 		}
 		if val, ok := section["max_inbound_syncs"]; ok {
-			ac.MaxInboundSyncs = intPtr(max(1, c.parseInt(val)))
+			ac.MaxInboundSyncs = new(max(1, c.parseInt(val)))
 		}
 	}
 
@@ -268,8 +268,10 @@ func parseBool(s string) bool {
 
 // intPtr returns a pointer to v, used to build non-nil *int config defaults
 // and parsed values (e.g. PeerStampCost, which Python always sets).
+//
+//go:fix inline
 func intPtr(v int) *int {
-	return &v
+	return new(v)
 }
 
 func (c *clientT) parseInt(s string) int {

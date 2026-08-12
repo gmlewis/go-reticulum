@@ -54,7 +54,7 @@ func sanRef(ref string) string {
 	if strings.Contains(ref, `\`) {
 		return ""
 	}
-	for _, comp := range strings.Split(ref, "/") {
+	for comp := range strings.SplitSeq(ref, "/") {
 		if strings.HasSuffix(comp, ".lock") {
 			return ""
 		}

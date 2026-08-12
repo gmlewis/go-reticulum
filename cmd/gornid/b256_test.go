@@ -24,7 +24,7 @@ func TestB256RepGolden(t *testing.T) {
 	}
 	// range(16) -> "abcdefghijklmnop"
 	var rb []byte
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		rb = append(rb, byte(i))
 	}
 	cases = append(cases, struct {
@@ -43,7 +43,7 @@ func TestB256RepGolden(t *testing.T) {
 func TestB256RoundTrip(t *testing.T) {
 	t.Parallel()
 	var all []byte
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		all = append(all, byte(i))
 	}
 	encoded := B256Rep(all)

@@ -34,9 +34,7 @@ func TestPackedContainerGuardedByPersistLock(t *testing.T) {
 
 	// Snapshot/persist goroutine: calls the exported PackedContainer (which
 	// must take the persist lock) and WriteToDirectory.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for time.Now().Before(deadline) && !failed.Load() {
 			data, err := msg.PackedContainer()
 			if err != nil {
@@ -55,20 +53,18 @@ func TestPackedContainerGuardedByPersistLock(t *testing.T) {
 				return
 			}
 		}
-	}()
+	})
 
 	// Mutator goroutine: mutates a field PackedContainer reads, under the
 	// persist lock, simulating a caller that synchronizes mutation with
 	// persistence.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for i := 0; time.Now().Before(deadline) && !failed.Load(); i++ {
 			msg.persistMu.Lock()
 			msg.State = i
 			msg.persistMu.Unlock()
 		}
-	}()
+	})
 
 	wg.Wait()
 }

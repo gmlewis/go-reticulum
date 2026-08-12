@@ -88,7 +88,7 @@ func TestEditReleaseNotesStrip(t *testing.T) {
 	t.Parallel()
 	content := "# Enter release notes for v1.0.0.\n# comment\nReal notes\nMore notes\n"
 	var lines []string
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "#") {
 			continue
 		}

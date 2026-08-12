@@ -271,7 +271,7 @@ func (c *rnsClient) list(forPush bool) (string, error) {
 // (client.py). The "@<ref> HEAD" symref line is ignored.
 func (c *rnsClient) cacheRemoteRefs(refListText string) {
 	c.remoteRefs = make(map[string]string)
-	for _, line := range strings.Split(refListText, "\n") {
+	for line := range strings.SplitSeq(refListText, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -305,10 +305,7 @@ func (c *rnsClient) fetch(refs []fetchRef) error {
 	haveSHAs := c.localHaves()
 	batchStart := 0
 	for batchStart < len(refs) {
-		batchEnd := batchStart + refBatchSize
-		if batchEnd > len(refs) {
-			batchEnd = len(refs)
-		}
+		batchEnd := min(batchStart+refBatchSize, len(refs))
 		batch := refs[batchStart:batchEnd]
 		batchStart = batchEnd
 

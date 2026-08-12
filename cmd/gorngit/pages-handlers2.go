@@ -237,17 +237,11 @@ func (p *pageNode) serveRepoPage(path string, data []byte, requestID, linkID []b
 				sourceLink = ""
 			}
 		}
-		synced := time.Now().Unix() - p.owner.lastUpstreamSync(repo.path)
-		if synced < 0 {
-			synced = 0
-		}
-		syncTime := strings.Split(rns.PrettyTime(float64(synced), false, true), " ")[0]
+		synced := max(time.Now().Unix()-p.owner.lastUpstreamSync(repo.path), 0)
+		syncTime, _, _ := strings.Cut(rns.PrettyTime(float64(synced), false, true), " ")
 		syncStr := " `*" + clrDimH + "synced " + syncTime + " ago`f`*\n"
 		sourceDesc := sourceType + "ed from"
-		indentLen := len("Node / "+groupName+" / "+repoName) - len(sourceDesc)
-		if indentLen < 0 {
-			indentLen = 0
-		}
+		indentLen := max(len("Node / "+groupName+" / "+repoName)-len(sourceDesc), 0)
 		if sourceLink != "" {
 			sourceURL = sourceLink
 		}
@@ -1358,8 +1352,9 @@ func renderCombinedChart(views, fetches, pushes, downloads []int, labels []strin
 		upperMin := (float64(row) - 0.5) / float64(height)
 		upperMax := float64(row) / float64(height)
 
-		line := "│"
-		for i := 0; i < numPoints; i++ {
+		var line strings.Builder
+		line.WriteString("│")
+		for i := range numPoints {
 			total := 0
 			for _, d := range catData {
 				if i < len(d) {
@@ -1367,7 +1362,7 @@ func renderCombinedChart(views, fetches, pushes, downloads []int, labels []strin
 				}
 			}
 			if total == 0 {
-				line += " "
+				line.WriteString(" ")
 				continue
 			}
 			cumsum := 0
@@ -1384,21 +1379,21 @@ func renderCombinedChart(views, fetches, pushes, downloads []int, labels []strin
 			lowerCat := pixelToCat(catRanges, categories, lowerMin, lowerMax)
 			switch {
 			case upperCat == "" && lowerCat == "":
-				line += " "
+				line.WriteString(" ")
 			case upperCat == lowerCat && upperCat != "":
 				col := catColors[upperCat]
-				line += fmt.Sprintf("`FT%s`BT%s█`f`b", col, col)
+				line.WriteString(fmt.Sprintf("`FT%s`BT%s█`f`b", col, col))
 			case upperCat != "" && lowerCat != "":
-				line += fmt.Sprintf("`FT%s`BT%s▀`f`b", catColors[upperCat], catColors[lowerCat])
+				line.WriteString(fmt.Sprintf("`FT%s`BT%s▀`f`b", catColors[upperCat], catColors[lowerCat]))
 			case upperCat != "":
 				col := catColors[upperCat]
-				line += fmt.Sprintf("`FT%s▀`f", col)
+				line.WriteString(fmt.Sprintf("`FT%s▀`f", col))
 			default:
 				col := catColors[lowerCat]
-				line += fmt.Sprintf("`FT%s▄`f", col)
+				line.WriteString(fmt.Sprintf("`FT%s▄`f", col))
 			}
 		}
-		lines = append(lines, line+"\n")
+		lines = append(lines, line.String()+"\n")
 	}
 
 	bottom := "└" + strings.Repeat("─", numPoints) + "┘"
@@ -1412,10 +1407,7 @@ func renderCombinedChart(views, fetches, pushes, downloads []int, labels []strin
 		if len([]rune(last)) > 12 {
 			last = string([]rune(last)[:12])
 		}
-		midSpace := len(bottom) - len(first) - len(last)
-		if midSpace < 0 {
-			midSpace = 0
-		}
+		midSpace := max(len(bottom)-len(first)-len(last), 0)
 		lines = append(lines, clrDim+first+strings.Repeat(" ", midSpace)+last+"`f\n")
 	}
 	return strings.Join(lines, "")
@@ -1442,7 +1434,7 @@ func gradientColorStr(color, toward string, f float64) string {
 	pr := hexToRGB(primary)
 	sr := hexToRGB(secondary)
 	var b strings.Builder
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		c := float64(pr[i]) + (float64(sr[i])-float64(pr[i]))*f
 		if c < 0 {
 			c = 0
@@ -1460,7 +1452,7 @@ func gradientColorStr(color, toward string, f float64) string {
 func expandHexColor(c string) string {
 	if len(c) == 3 {
 		var b strings.Builder
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			b.WriteByte(c[i])
 			b.WriteByte(c[i])
 		}
@@ -1476,7 +1468,7 @@ func expandHexColor(c string) string {
 // (pages.py:2554, 2615).
 func hexToRGB(h string) [3]int {
 	var out [3]int
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if 2*i+2 <= len(h) {
 			v, _ := strconv.ParseInt(h[2*i:2*i+2], 16, 32)
 			out[i] = int(v)

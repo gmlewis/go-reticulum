@@ -47,7 +47,7 @@ func TestBlockedIPListEmptyWhenBlockingDisabled(t *testing.T) {
 	b := newFastFlapBackbone(false, 600, 3, 12*60*60, now)
 
 	spawnedAt := time.Unix(9_999, 0)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		b.recordFlap("192.0.2.5", spawnedAt)
 	}
 	if got := b.BlockedIPList(); len(got) != 0 {
@@ -69,13 +69,13 @@ func TestBlockedIPCountCountsOnlyOverGrace(t *testing.T) {
 	// IP A: 2 flaps (< grace 3) — not blocked, not counted.
 	// IP B: 4 flaps (> grace 3) — blocked, counted.
 	// IP C: 5 flaps (> grace 3) — blocked, counted.
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		b.recordFlap("192.0.2.10", spawnedAt)
 	}
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		b.recordFlap("192.0.2.11", spawnedAt)
 	}
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		b.recordFlap("192.0.2.12", spawnedAt)
 	}
 
@@ -94,7 +94,7 @@ func TestBlockedIPCountPurgesExpired(t *testing.T) {
 	b := newFastFlapBackbone(true, 600, 3, 100, now)
 
 	spawnedAt := time.Unix(0, 0)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		b.recordFlap("192.0.2.20", spawnedAt) // blocked at t=0
 	}
 	if got := b.BlockedIPCount(); got != 1 {
@@ -116,7 +116,7 @@ func TestBlockedIPCountZeroWhenBlockingDisabled(t *testing.T) {
 	b := newFastFlapBackbone(false, 600, 3, 12*60*60, now)
 
 	spawnedAt := time.Unix(9_999, 0)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		b.recordFlap("192.0.2.30", spawnedAt)
 	}
 	if got := b.BlockedIPCount(); got != 0 {

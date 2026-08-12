@@ -619,7 +619,7 @@ func editWorkContent(title, content string, isComment bool) (string, error) {
 // whitespace and returned empty when nothing remains.
 func stripWorkTemplateLines(edited string) string {
 	var lines []string
-	for _, line := range strings.Split(edited, "\n") {
+	for line := range strings.SplitSeq(edited, "\n") {
 		stripped := strings.TrimSpace(line)
 		if strings.HasPrefix(stripped, commentTemplate) || strings.HasPrefix(stripped, createDocTemplate) {
 			continue

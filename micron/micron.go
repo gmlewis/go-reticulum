@@ -279,10 +279,7 @@ func (st *blockState) flushQuote() {
 	}
 	para := strings.Join(st.quoteBuffer, " ")
 	formatted := st.c.formatInline(para)
-	effective := st.c.MaxWidth - 3
-	if effective < 1 {
-		effective = 1
-	}
+	effective := max(st.c.MaxWidth-3, 1)
 	for _, wl := range st.c.wrapText(formatted, effective) {
 		st.result = append(st.result, " │ "+wl)
 	}
@@ -450,10 +447,7 @@ func (c *Converter) italicSub(m string) string {
 func (c *Converter) formatHeader(m []string) string {
 	hashes := m[1]
 	content := m[2]
-	level := len(hashes)
-	if level > 6 {
-		level = 6
-	}
+	level := min(len(hashes), 6)
 	prefix := strings.Repeat(">", level)
 	return prefix + c.formatInline(content)
 }

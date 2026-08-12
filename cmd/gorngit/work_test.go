@@ -6,6 +6,7 @@
 package main
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -636,9 +637,7 @@ func TestWorkRoundTripHandler(t *testing.T) {
 
 	mkData := func(op string, extra map[any]any) []byte {
 		m := map[any]any{int64(idxRepository): repoPathForm, "operation": op}
-		for k, v := range extra {
-			m[k] = v
-		}
+		maps.Copy(m, extra)
 		packed, err := msgpack.Pack(m)
 		if err != nil {
 			t.Fatalf("pack: %v", err)

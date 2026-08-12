@@ -154,7 +154,7 @@ func (p *pageNode) getRepositoryRefs(repoPath string) (heads, tags []refInfo) {
 	if !ok {
 		return
 	}
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(out), "\n") {
 		if line = strings.TrimSpace(line); line == "" {
 			continue
 		}
@@ -208,7 +208,7 @@ func (p *pageNode) getTreeEntries(repoPath, ref, path string) []treeEntry {
 		return []treeEntry{}
 	}
 	entries := []treeEntry{}
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
@@ -273,7 +273,7 @@ func (p *pageNode) getBlobInfo(repoPath, ref, path string) *blobInfo {
 	isSymlink := false
 	var symlinkTarget string
 	if lsOK {
-		for _, line := range strings.Split(strings.TrimSpace(lsOut), "\n") {
+		for line := range strings.SplitSeq(strings.TrimSpace(lsOut), "\n") {
 			if strings.HasPrefix(line, "120000") && strings.Contains(line, "\t"+filename) {
 				isSymlink = true
 				break
@@ -289,10 +289,7 @@ func (p *pageNode) getBlobInfo(repoPath, ref, path string) *blobInfo {
 	isBinary := false
 	if !isSymlink {
 		if sample, ok := gitRunBytes(repoPath, "show", ref+":"+filePath); ok {
-			limit := 8192
-			if len(sample) < limit {
-				limit = len(sample)
-			}
+			limit := min(len(sample), 8192)
 			if bytes.IndexByte(sample[:limit], 0) >= 0 {
 				isBinary = true
 			}
@@ -338,7 +335,7 @@ func (p *pageNode) getRefsInfo(repoPath, defaultBranch string) (heads, tags []re
 	if !ok {
 		return
 	}
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(out), "\n") {
 		if line = strings.TrimSpace(line); line == "" {
 			continue
 		}
@@ -414,7 +411,7 @@ func (p *pageNode) getCommits(repoPath, ref, filePath string, skip, limit int) [
 		return nil
 	}
 	commits := []commitListEntry{}
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
@@ -461,7 +458,7 @@ func (p *pageNode) getCommitInfo(repoPath, hash string, showDiff bool) *commitIn
 
 	statsOut, statsOK := gitRun(repoPath, "diff-tree", "--numstat", "-r", hash)
 	if statsOK {
-		for _, line := range strings.Split(strings.TrimSpace(statsOut), "\n") {
+		for line := range strings.SplitSeq(strings.TrimSpace(statsOut), "\n") {
 			if strings.TrimSpace(line) == "" {
 				continue
 			}

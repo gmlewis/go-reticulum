@@ -404,10 +404,7 @@ func (n *reticulumGitNode) repositoryStatsAt(remote *rns.Identity, group, repo s
 		}
 		if earliestTS, err := time.ParseInLocation("2006-01-02", earliest, now.Location()); err == nil {
 			spanSeconds := now.Sub(earliestTS).Seconds()
-			actualDays = int(spanSeconds/float64(daySeconds)) + 1
-			if actualDays < 1 {
-				actualDays = 1
-			}
+			actualDays = max(int(spanSeconds/float64(daySeconds))+1, 1)
 		}
 	}
 	if actualDays > lookbackDays {

@@ -138,10 +138,7 @@ func armorSSHSig(sigBlob []byte) string {
 	b64 := base64.StdEncoding.EncodeToString(sigBlob)
 	var lines []string
 	for i := 0; i < len(b64); i += armorLineLen {
-		end := i + armorLineLen
-		if end > len(b64) {
-			end = len(b64)
-		}
+		end := min(i+armorLineLen, len(b64))
 		lines = append(lines, b64[i:end])
 	}
 	var sb strings.Builder
@@ -160,7 +157,7 @@ func armorSSHSig(sigBlob []byte) string {
 func unarmorSSHSig(armored string) ([]byte, error) {
 	var b64 strings.Builder
 	inSig := false
-	for _, line := range strings.Split(armored, "\n") {
+	for line := range strings.SplitSeq(armored, "\n") {
 		if strings.Contains(line, "BEGIN SSH SIGNATURE") {
 			inSig = true
 			continue

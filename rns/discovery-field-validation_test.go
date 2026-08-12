@@ -6,6 +6,7 @@
 package rns
 
 import (
+	"maps"
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/testutils"
@@ -26,9 +27,7 @@ func validValidationAnnounceAppData(t *testing.T, overrides map[any]any) []byte 
 		discoveryFieldLongitude:     nil,
 		discoveryFieldHeight:        nil,
 	}
-	for k, v := range overrides {
-		payload[k] = v
-	}
+	maps.Copy(payload, overrides)
 	return mustDiscoveryAnnounceAppData(t, payload, 2)
 }
 

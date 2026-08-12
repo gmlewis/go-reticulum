@@ -86,10 +86,7 @@ func (c *Converter) formatTableImpl(rows []string, align string, formatInline bo
 			if excess <= 0 {
 				break
 			}
-			reduction := excess
-			if p[1]-TableMinColWidth < reduction {
-				reduction = p[1] - TableMinColWidth
-			}
+			reduction := min(p[1]-TableMinColWidth, excess)
 			colWidths[p[0]] -= reduction
 			excess -= reduction
 		}
@@ -113,41 +110,50 @@ func (c *Converter) formatTableImpl(rows []string, align string, formatInline bo
 	result = append(result, escapeLiterals(border))
 
 	// Header row
-	headerLine := TableV
+	var headerLine strings.Builder
+	headerLine.WriteString(TableV)
 	for i, cell := range headerCells {
 		formatted := cell
 		if formatInline {
 			formatted = c.formatInline(cell)
 		}
 		padded := c.padCell(formatted, colWidths[i], "left")
-		headerLine += " " + padded + " " + TableV
+		headerLine.WriteString(" ")
+		headerLine.WriteString(padded)
+		headerLine.WriteString(" ")
+		headerLine.WriteString(TableV)
 	}
-	result = append(result, escapeLiterals(headerLine))
+	result = append(result, escapeLiterals(headerLine.String()))
 
 	// Separator row
-	sepLine := TableML
+	var sepLine strings.Builder
+	sepLine.WriteString(TableML)
 	for i, w := range colWidths {
-		sepLine += strings.Repeat(TableH, w+2)
+		sepLine.WriteString(strings.Repeat(TableH, w+2))
 		if i < numCols-1 {
-			sepLine += TableMM
+			sepLine.WriteString(TableMM)
 		} else {
-			sepLine += TableMR
+			sepLine.WriteString(TableMR)
 		}
 	}
-	result = append(result, escapeLiterals(sepLine))
+	result = append(result, escapeLiterals(sepLine.String()))
 
 	// Data rows
 	for _, row := range dataRows {
-		rowLine := TableV
+		var rowLine strings.Builder
+		rowLine.WriteString(TableV)
 		for i, cell := range row {
 			formatted := cell
 			if formatInline {
 				formatted = c.formatInline(cell)
 			}
 			padded := c.padCell(formatted, colWidths[i], alignments[i])
-			rowLine += " " + padded + " " + TableV
+			rowLine.WriteString(" ")
+			rowLine.WriteString(padded)
+			rowLine.WriteString(" ")
+			rowLine.WriteString(TableV)
 		}
-		result = append(result, rowLine)
+		result = append(result, rowLine.String())
 	}
 
 	// Bottom border
@@ -173,12 +179,8 @@ func (c *Converter) formatTableImpl(rows []string, align string, formatInline bo
 // backslash-escaped pipes are preserved.
 func parseTableRow(line string) []string {
 	line = strings.TrimSpace(line)
-	if strings.HasPrefix(line, "|") {
-		line = line[1:]
-	}
-	if strings.HasSuffix(line, "|") {
-		line = line[:len(line)-1]
-	}
+	line = strings.TrimPrefix(line, "|")
+	line = strings.TrimSuffix(line, "|")
 	var cells []string
 	current := ""
 	escaped := false

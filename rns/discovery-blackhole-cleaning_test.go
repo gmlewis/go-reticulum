@@ -6,6 +6,7 @@
 package rns
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -64,9 +65,7 @@ func writeDiscoveryLoadFile(t *testing.T, storagePath, name string, fields map[s
 		"transport":  true,
 		"value":      1,
 	}
-	for k, v := range fields {
-		m[k] = v
-	}
+	maps.Copy(m, fields)
 	if err := os.WriteFile(filepath.Join(storagePath, name+".data"), mustMsgpackPack(m), 0o644); err != nil {
 		t.Fatalf("failed to write discovery file: %v", err)
 	}

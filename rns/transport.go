@@ -3268,13 +3268,11 @@ func (ts *TransportSystem) relayLinkProof(packet *Packet, iface interfaces.Inter
 // appears at most once in the transport's interface list.
 func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 	ts.mu.Lock()
-	for _, existing := range ts.interfaces {
-		if existing == iface {
-			// Already registered: skip, matching Python's
-			// "if not interface in Transport.interfaces: append".
-			ts.mu.Unlock()
-			return
-		}
+	if slices.Contains(ts.interfaces, iface) {
+		// Already registered: skip, matching Python's
+		// "if not interface in Transport.interfaces: append".
+		ts.mu.Unlock()
+		return
 	}
 	interfacesBefore := len(ts.interfaces)
 	destinationsBefore := len(ts.destinations)
@@ -5841,12 +5839,7 @@ func (ts *TransportSystem) HandleTunnel(tunnelID []byte, iface interfaces.Interf
 // interfaceRegisteredLocked reports whether iface is currently registered in
 // ts.interfaces. Caller must hold ts.mu.
 func (ts *TransportSystem) interfaceRegisteredLocked(iface interfaces.Interface) bool {
-	for _, existing := range ts.interfaces {
-		if existing == iface {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ts.interfaces, iface)
 }
 
 // cullTunnels is the tunnel-table cull job run from the maintenance loop

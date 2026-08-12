@@ -417,7 +417,7 @@ func TestStatsIgnoredRemote(t *testing.T) {
 	}
 	// viewSucceeded on an ignored identity records nothing.
 	pre := snapshotCounts(n)
-	n.viewSucceeded(strPtr("g"), strPtr("r.git"), id)
+	n.viewSucceeded(new("g"), new("r.git"), id)
 	if !countsUnchanged(pre, snapshotCounts(n)) {
 		t.Error("viewSucceeded recorded despite ignored remote")
 	}
@@ -430,9 +430,9 @@ func TestViewSucceededLevels(t *testing.T) {
 	// Front page view.
 	n.viewSucceeded(nil, nil, id)
 	// Group view.
-	n.viewSucceeded(strPtr("g"), nil, id)
+	n.viewSucceeded(new("g"), nil, id)
 	// Repo view.
-	n.viewSucceeded(strPtr("g"), strPtr("r.git"), id)
+	n.viewSucceeded(new("g"), new("r.git"), id)
 
 	n.statsMu.Lock()
 	front := n.stats["pages"].(map[any]any)["front"].(map[any]any)
@@ -459,7 +459,9 @@ func statsHashHex(id *rns.Identity) string {
 }
 
 // strPtr returns a pointer to s (convenience for viewSucceeded's *string args).
-func strPtr(s string) *string { return &s }
+//
+//go:fix inline
+func strPtr(s string) *string { return new(s) }
 
 // snapshotCounts returns a deep-enough copy of the stats counters to detect
 // whether a recorder mutated anything.

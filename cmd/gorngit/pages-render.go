@@ -511,7 +511,8 @@ func renderChartFullBlock(data []int, labels []string, color string, height int)
 		sb.WriteString("\n")
 	}
 	bottom := "└" + strings.Repeat(strings.Repeat("─", barWidth), numPoints) + "┘"
-	sb.WriteString(bottom + "\n")
+	sb.WriteString(bottom)
+	sb.WriteString("\n")
 	return sb.String()
 }
 

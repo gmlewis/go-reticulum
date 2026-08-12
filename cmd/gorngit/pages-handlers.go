@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -220,10 +221,7 @@ func (p *pageNode) serveTreePage(path string, data []byte, requestID, linkID []b
 	}
 	treePath := vstr(vars, "path")
 	treePath, _ = url.QueryUnescape(treePath)
-	pageNum := vint(vars, "page", 0)
-	if pageNum < 0 {
-		pageNum = 0
-	}
+	pageNum := max(vint(vars, "page", 0), 0)
 
 	repo := p.getAccessibleRepository(remoteIdentity, groupName, repoName)
 	if repo == nil {
@@ -579,10 +577,7 @@ func (p *pageNode) serveCommitsPage(path string, data []byte, requestID, linkID 
 	}
 	filePath := vstr(vars, "path")
 	filePath, _ = url.QueryUnescape(filePath)
-	pageNum := vint(vars, "page", 0)
-	if pageNum < 0 {
-		pageNum = 0
-	}
+	pageNum := max(vint(vars, "page", 0), 0)
 
 	repo := p.getAccessibleRepository(remoteIdentity, groupName, repoName)
 	if repo == nil {
@@ -891,8 +886,8 @@ func (p *pageNode) serveRefsPage(path string, data []byte, requestID, linkID []b
 	if showTags && len(tags) > 0 {
 		contentParts = append(contentParts, mHeading(fmt.Sprintf("Tags (%d)", len(tags)), 2))
 		contentParts = append(contentParts, "\n")
-		for i := len(tags) - 1; i >= 0; i-- {
-			refInfo := tags[i]
+		for _, refInfo := range slices.Backward(tags) {
+
 			tagName := refInfo.name
 			shortHash := refInfo.shortHash
 			isAnnotated := refInfo.isAnnotated

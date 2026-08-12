@@ -76,7 +76,7 @@ func ParseSAMMessage(line string) *SAMMessage {
 	m.Cmd = parts[0]
 	m.Action = parts[1]
 	if len(parts) == 3 {
-		for _, tok := range strings.Split(parts[2], " ") {
+		for tok := range strings.SplitSeq(parts[2], " ") {
 			if tok == "" {
 				continue
 			}
@@ -106,33 +106,33 @@ func (m *SAMMessage) String() string { return m.raw }
 // including the trailing newline.
 
 func samHelloBytes(minVer, maxVer string) []byte {
-	return []byte(fmt.Sprintf("HELLO VERSION MIN=%s MAX=%s\n", minVer, maxVer))
+	return fmt.Appendf(nil, "HELLO VERSION MIN=%s MAX=%s\n", minVer, maxVer)
 }
 
 func samSessionCreateBytes(style, sessionID, destination, options string) []byte {
-	return []byte(fmt.Sprintf("SESSION CREATE STYLE=%s ID=%s DESTINATION=%s %s\n",
-		style, sessionID, destination, options))
+	return fmt.Appendf(nil, "SESSION CREATE STYLE=%s ID=%s DESTINATION=%s %s\n",
+		style, sessionID, destination, options)
 }
 
 func samStreamConnectBytes(sessionID, destination, silent string) []byte {
-	return []byte(fmt.Sprintf("STREAM CONNECT ID=%s DESTINATION=%s SILENT=%s\n",
-		sessionID, destination, silent))
+	return fmt.Appendf(nil, "STREAM CONNECT ID=%s DESTINATION=%s SILENT=%s\n",
+		sessionID, destination, silent)
 }
 
 func samStreamAcceptBytes(sessionID, silent string) []byte {
-	return []byte(fmt.Sprintf("STREAM ACCEPT ID=%s SILENT=%s\n", sessionID, silent))
+	return fmt.Appendf(nil, "STREAM ACCEPT ID=%s SILENT=%s\n", sessionID, silent)
 }
 
 func samStreamForwardBytes(sessionID string, port int, options string) []byte {
-	return []byte(fmt.Sprintf("STREAM FORWARD ID=%s PORT=%d %s\n", sessionID, port, options))
+	return fmt.Appendf(nil, "STREAM FORWARD ID=%s PORT=%d %s\n", sessionID, port, options)
 }
 
 func samNamingLookupBytes(name string) []byte {
-	return []byte(fmt.Sprintf("NAMING LOOKUP NAME=%s\n", name))
+	return fmt.Appendf(nil, "NAMING LOOKUP NAME=%s\n", name)
 }
 
 func samDestGenerateBytes(signatureType int) []byte {
-	return []byte(fmt.Sprintf("DEST GENERATE SIGNATURE_TYPE=%d\n", signatureType))
+	return fmt.Appendf(nil, "DEST GENERATE SIGNATURE_TYPE=%d\n", signatureType)
 }
 
 // samOptionsString renders an i2cp options map to the "k=v k=v" form Python

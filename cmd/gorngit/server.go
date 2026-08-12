@@ -626,7 +626,7 @@ func readHeadSymref(repoPath string) string {
 func formatRefList(eachRefOutput, headRef string) []byte {
 	seen := make(map[string]bool)
 	var lines []string
-	for _, line := range strings.Split(eachRefOutput, "\n") {
+	for line := range strings.SplitSeq(eachRefOutput, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
 			continue
@@ -1528,7 +1528,7 @@ func updateHeadToSourceDefault(repoPath, sourceURL string) error {
 // tab-separated value is "HEAD" and returns the referenced branch
 // (e.g. "refs/heads/main"). Returns the empty string when no such line exists.
 func parseLsRemoteSymref(output string) string {
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		if !strings.HasPrefix(line, "ref: refs/heads/") {
 			continue
 		}

@@ -182,7 +182,7 @@ func (n *reticulumGitNode) releasesListData(releasesPath string) ([]map[any]any,
 				break
 			}
 			var sb strings.Builder
-			for _, line := range strings.Split(string(content), "\n") {
+			for line := range strings.SplitSeq(string(content), "\n") {
 				if strings.HasPrefix(line, "#") || strings.HasPrefix(line, ">") {
 					continue
 				}
@@ -465,7 +465,7 @@ func (n *reticulumGitNode) releaseCreateInit(releasesPath, repositoryPath string
 	check.Stdout = nil
 	check.Stderr = nil
 	if check.Run() != nil {
-		return append([]byte{resInvalidReq}, []byte(fmt.Sprintf("Tag '%s' does not exist in repository", tag))...)
+		return fmt.Appendf([]byte{resInvalidReq}, "Tag '%s' does not exist in repository", tag)
 	}
 
 	if err := os.MkdirAll(releasesPath, 0o755); err != nil {
@@ -666,17 +666,17 @@ func readReleaseMETA(path string) (map[string]string, error) {
 		return nil, err
 	}
 	meta := map[string]string{}
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		idx := strings.Index(line, "=")
-		if idx < 0 {
+		before, after, ok := strings.Cut(line, "=")
+		if !ok {
 			continue
 		}
-		key := strings.TrimSpace(line[:idx])
-		val := strings.TrimSpace(line[idx+1:])
+		key := strings.TrimSpace(before)
+		val := strings.TrimSpace(after)
 		meta[key] = val
 	}
 	return meta, nil

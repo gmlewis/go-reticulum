@@ -184,9 +184,15 @@ func (h *Highlighter) formatTokens(tokens []token) string {
 				escaped = escaped[:len(escaped)-1]
 			}
 			if len(escaped) > 0 {
-				b.WriteString(ilb + "`FT" + color + escaped + "`f" + tlb)
+				b.WriteString(ilb)
+				b.WriteString("`FT")
+				b.WriteString(color)
+				b.WriteString(escaped)
+				b.WriteString("`f")
+				b.WriteString(tlb)
 			} else {
-				b.WriteString(ilb + tlb)
+				b.WriteString(ilb)
+				b.WriteString(tlb)
 			}
 		} else {
 			escaped := escapeValue(t.value)

@@ -334,9 +334,7 @@ func discoverySurvivorFixtureMap(overrides map[string]any) map[string]any {
 		"transport_id": "0102030405060708090a0b0c0d0e0f10",
 		"network_id":   "0a0b0c0d0e0f10111213141516171819",
 	}
-	for k, v := range overrides {
-		m[k] = v
-	}
+	maps.Copy(m, overrides)
 	return m
 }
 

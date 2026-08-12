@@ -127,8 +127,18 @@ func prepareDirectUDPConfig(t *testing.T, configDir, instanceName string, listen
 	}
 }
 
+// openAllowedContent is the group .allowed content that grants every
+// permission to all identities, mirroring openAllowedContent in the gorngit
+// integration suite. The clone needs READ and the push needs WRITE, so the
+// group .allowed must grant them or the permission-enforcing handlers return
+// RES_NOT_FOUND / RES_DISALLOWED.
+const openAllowedContent = "r:all\nw:all\nrw:all\nc:all\ns:all\nrel:all\ni:all\np:all\nadm:all\n"
+
 // prepareNodeConfig writes a gorngit node config in configDir that serves the
-// repository group "main" from repoRoot.
+// repository group "main" from repoRoot, and writes a group .allowed file
+// (<repoRoot>.allowed) granting all permissions to all identities so the
+// permission-enforcing list/fetch/push handlers accept the unauthenticated
+// client.
 func prepareNodeConfig(t *testing.T, configDir, repoRoot string) {
 	t.Helper()
 
@@ -145,6 +155,9 @@ func prepareNodeConfig(t *testing.T, configDir, repoRoot string) {
 	}, "\n")
 	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(configText), 0o600); err != nil {
 		t.Fatalf("failed to write gorngit node config: %s", err)
+	}
+	if err := os.WriteFile(repoRoot+".allowed", []byte(openAllowedContent), 0o644); err != nil {
+		t.Fatalf("failed to write group .allowed: %v", err)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"flag"
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/gmlewis/go-reticulum/utils"
 )
@@ -37,14 +38,14 @@ func (s *stringListFlag) String() string {
 	if s == nil {
 		return ""
 	}
-	out := ""
+	var out strings.Builder
 	for i, v := range s.vals {
 		if i > 0 {
-			out += ","
+			out.WriteString(",")
 		}
-		out += v
+		out.WriteString(v)
 	}
-	return out
+	return out.String()
 }
 
 func (s *stringListFlag) Set(v string) error {

@@ -88,7 +88,7 @@ func TestFastFlapDisabledNoBlocking(t *testing.T) {
 
 	const ip = "192.0.2.10"
 	spawnedAt := time.Unix(9_999, 0)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		b.recordFlap(ip, spawnedAt)
 	}
 	if b.isBlocked(ip) {
@@ -111,7 +111,7 @@ func TestFastFlapExpiryPurgesStaleEntry(t *testing.T) {
 
 	const ip = "198.51.100.5"
 	spawnedAt := time.Unix(0, 0)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		b.recordFlap(ip, spawnedAt) // all flaps at t=0
 	}
 	if !b.isBlocked(ip) {
@@ -139,7 +139,7 @@ func TestFastFlapIncomingGateRejectsBlockedIP(t *testing.T) {
 
 	const ip = "203.0.113.4"
 	spawnedAt := time.Unix(9_999, 0)
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		b.recordFlap(ip, spawnedAt)
 	}
 	gate := b.incomingGate()
@@ -180,7 +180,7 @@ func TestBackboneFastFlapIntegration(t *testing.T) {
 	// Drive rapid connect/disconnect from 127.0.0.1. Each short connection
 	// records one flap when the server's readLoop observes the EOF. Wait for
 	// each flap to land so the count is deterministic.
-	for i := 0; i < flapsToBlock; i++ {
+	for i := range flapsToBlock {
 		conn, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 		if err != nil {
 			t.Fatalf("dial %d failed: %v", i, err)

@@ -331,7 +331,7 @@ func extractCommitCommitter(message []byte) string {
 // tag. It matches commitsigs.py:extract_commit_tagger.
 func extractCommitTagger(message []byte) (tagger string, isTag bool) {
 	const taggerTarget = "tagger "
-	for _, line := range bytes.Split(message, []byte("\n")) {
+	for line := range bytes.SplitSeq(message, []byte("\n")) {
 		if len(line) == 0 {
 			break
 		}
@@ -355,7 +355,7 @@ func extractCommitTagger(message []byte) (tagger string, isTag bool) {
 // the first < and >. It mirrors the shared logic of extract_commit_author
 // and extract_commit_committer.
 func extractAngleField(message []byte, target []byte) string {
-	for _, line := range bytes.Split(message, []byte("\n")) {
+	for line := range bytes.SplitSeq(message, []byte("\n")) {
 		if len(line) == 0 {
 			break
 		}

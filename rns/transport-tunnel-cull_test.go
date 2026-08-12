@@ -16,7 +16,7 @@ import (
 // given value, so timebaseFromRandomBlobs returns exactly tb.
 func randomBlobWithTimebase(tb uint64) []byte {
 	b := make([]byte, 10)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		b[9-i] = byte(tb >> (8 * i))
 	}
 	return b

@@ -541,7 +541,7 @@ func (c *reticulumGitClient) createRelease(target string, signer *rns.Identity, 
 	respBytes, ok := resp.([]byte)
 	if !ok || len(respBytes) == 0 || respBytes[0] != resOK {
 		msg := "Unknown error"
-		if respBytes != nil && len(respBytes) > 1 {
+		if len(respBytes) > 1 {
 			msg = string(respBytes[1:])
 		}
 		return fmt.Errorf("Server error during init: %s", msg)
@@ -579,7 +579,7 @@ func (c *reticulumGitClient) createRelease(target string, signer *rns.Identity, 
 		respBytes, ok := resp.([]byte)
 		if !ok || len(respBytes) == 0 || respBytes[0] != resOK {
 			msg := "Unknown error"
-			if respBytes != nil && len(respBytes) > 1 {
+			if len(respBytes) > 1 {
 				msg = string(respBytes[1:])
 			}
 			fmt.Printf("  Failed to send %s: %s\n", artifact, msg)
@@ -736,7 +736,7 @@ func editReleaseNotes(tag string) (string, error) {
 		return "", fmt.Errorf("could not read notes: %w", err)
 	}
 	var lines []string
-	for _, line := range strings.Split(string(content), "\n") {
+	for line := range strings.SplitSeq(string(content), "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "#") {
 			continue
 		}

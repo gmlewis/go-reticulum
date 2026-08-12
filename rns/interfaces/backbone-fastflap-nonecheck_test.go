@@ -127,7 +127,7 @@ func TestRecordFlapGraceWarningNoCrash(t *testing.T) {
 	const ip = "192.0.2.58"
 	spawnedAt := time.Unix(9_999, 0)
 	// grace 2: the 3rd flap pushes flaps > grace and logs the warning.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		b.recordFlap(ip, spawnedAt)
 	}
 	if !b.isBlocked(ip) {
