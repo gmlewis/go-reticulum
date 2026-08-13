@@ -417,7 +417,7 @@ func (ai *ax25KISSInterface) processQueue() {
 func (ai *ax25KISSInterface) encodeAX25(payload []byte) []byte {
 	addr := make([]byte, 0, AX25KISSHeaderSize)
 
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		if i < len(ai.dstCall) {
 			addr = append(addr, ai.dstCall[i]<<1)
 		} else {
@@ -426,7 +426,7 @@ func (ai *ax25KISSInterface) encodeAX25(payload []byte) []byte {
 	}
 	addr = append(addr, byte(0x60|(ai.dstSSID<<1)))
 
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		if i < len(ai.srcCall) {
 			addr = append(addr, ai.srcCall[i]<<1)
 		} else {
