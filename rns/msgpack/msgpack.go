@@ -109,7 +109,7 @@ func pack(w io.Writer, v reflect.Value, sorted bool) error {
 	// reflection-based switch below. CanInterface guards against
 	// unexported fields, where v.Interface() would panic.
 	if v.CanInterface() {
-		if m, ok := v.Interface().(Marshaler); ok {
+		if m, ok := reflect.TypeAssert[Marshaler](v); ok {
 			b, err := m.MarshalMsgpack()
 			if err != nil {
 				return err
