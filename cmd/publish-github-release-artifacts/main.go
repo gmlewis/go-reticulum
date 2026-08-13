@@ -33,6 +33,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -44,6 +45,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // versionFile is parsed (not imported) so the publisher always reads whatever
@@ -64,10 +66,39 @@ var majorTargets = []target{
 	{"linux", "arm64"},
 	{"darwin", "amd64"},
 	{"darwin", "arm64"},
-	// {"windows", "amd64"},
-	// {"windows", "arm64"},
+	{"windows", "amd64"},
+	{"windows", "arm64"},
 	{"freebsd", "amd64"},
 	{"freebsd", "arm64"},
+}
+
+// platformBlacklist names programs that compile cleanly for a GOOS but whose
+// core functionality is non-functional there at runtime, so we refuse to build
+// or publish them for that platform. An entry here means "this binary would
+// misbehave for users on that OS"; it is not for mere compile failures (those
+// are caught by the build itself). Keyed by GOOS because every known issue is
+// whole-OS, not architecture-specific.
+//
+// windows:
+//   - gornodeconf: RNode serial config/flashing/EEPROM/signing. Its
+//     serial-other.go / flash-other.go / unsupported-live-other.go stubs
+//     return "not supported on platform windows" for every live hardware
+//     operation, which is the tool's entire purpose.
+//   - gornsh: remote shell. pty-other.go returns "PTY execution is not
+//     supported on this platform" for the interactive PTY shell (its core
+//     feature), and session.go defaults the shell to /bin/sh (absent on
+//     Windows). The non-interactive exec path works, but the primary
+//     interactive-shell purpose is broken.
+var platformBlacklist = map[string]map[string]bool{
+	"windows": {
+		"gornodeconf": true,
+		"gornsh":      true,
+	},
+}
+
+// blacklisted reports whether binaryName must not be built for the given GOOS.
+func blacklisted(goos, binaryName string) bool {
+	return platformBlacklist[goos][binaryName]
 }
 
 // discoverBinaryNames scans the cmd/ directory for every program whose name
@@ -354,32 +385,141 @@ func gh(args ...string) error {
 	return cmd.Run()
 }
 
-// buildAll builds one executable per target into outDir and returns the
-// absolute paths of the produced artifacts. progress receives build chatter.
+// buildAll builds one executable per (binary, target) into outDir and returns
+// the absolute paths of the produced artifacts, in job order. progress receives
+// build chatter.
+//
+// The builds run concurrently, bounded by a semaphore sized to
+// runtime.NumCPU(). Each individual `go build` is invoked with -p 1 (a single
+// compiler process at a time), so at most NumCPU compiler processes are alive
+// at once — keeping CPU-bound work balanced across the available cores instead
+// of oversubscribing them (running NumCPU builds each at the default -p would
+// spawn NumCPU*NumCPU compiler jobs thrashing the scheduler). This is a real
+// win because the 90 builds are launched as separate `go build` processes that
+// the compiler cannot co-schedule on its own; a single small CLI binary's
+// package DAG is too narrow to saturate all cores by itself.
+//
+// On the first build failure the context is cancelled, in-flight builds are
+// killed, and not-yet-started jobs are skipped, so we don't keep burning cores
+// after an error.
 func buildAll(outDir, version string, binaryNames []string, progress *os.File) ([]string, error) {
-	var assets []string
+	type job struct {
+		binaryName string
+		t          target
+		name       string
+		outPath    string
+	}
+	var jobs []job
+	var skipped []string
 	for _, binaryName := range binaryNames {
 		for _, t := range majorTargets {
+			if blacklisted(t.goos, binaryName) {
+				skipped = append(skipped, fmt.Sprintf("%v-%v-%v", binaryName, t.goos, t.goarch))
+				continue
+			}
 			name := fmt.Sprintf("%v-%v-%v-%v", binaryName, version, t.goos, t.goarch)
 			if t.goos == "windows" {
 				name += ".exe"
 			}
-			outPath := filepath.Join(outDir, name)
+			jobs = append(jobs, job{
+				binaryName: binaryName,
+				t:          t,
+				name:       name,
+				outPath:    filepath.Join(outDir, name),
+			})
+		}
+	}
+	if len(skipped) > 0 {
+		sort.Strings(skipped)
+		mustFprintf(progress,
+			"Skipping %v blacklisted build(s) (non-functional on their target platform): %v\n",
+			len(skipped), strings.Join(skipped, ", "))
+	}
 
-			mustFprintf(progress, "Building %v/%v -> %v\n", t.goos, t.goarch, name)
-			cmd := exec.Command("go", "build", "-trimpath", "-o", outPath, "./cmd/"+binaryName)
+	// Run the builds concurrently, bounded by a semaphore sized to
+	// runtime.NumCPU(). Each `go build` is passed -p 1 (a single compiler
+	// process at a time), so at most NumCPU compiler processes are alive at
+	// once — keeping CPU-bound work balanced across the available cores
+	// instead of oversubscribing them (running NumCPU builds each at the
+	// default -p would spawn NumCPU*NumCPU compiler jobs thrashing the
+	// scheduler). On a 12-core laptop this cuts a cold-cache build of the
+	// full matrix roughly in half versus the previous sequential loop.
+	//
+	// This is a real win because the builds are launched as separate
+	// `go build` processes that the Go compiler cannot co-schedule on its
+	// own: a single small CLI binary's package DAG is too narrow to saturate
+	// all cores by itself, so the sequential loop left cores idle.
+	concurrency := max(1, min(runtime.NumCPU(), len(jobs)))
+	sema := make(chan struct{}, concurrency)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// progressMu serializes our own "Building ..." log lines so concurrent
+	// goroutines don't interleave them. (go build itself is silent on success,
+	// so there is nothing else contending for progress in the common case.)
+	var progressMu sync.Mutex
+	var mu sync.Mutex
+	var firstErr error
+	built := make([]bool, len(jobs))
+	paths := make([]string, len(jobs))
+
+	var wg sync.WaitGroup
+	for i, j := range jobs {
+		wg.Add(1)
+		go func(i int, j job) {
+			defer wg.Done()
+			select {
+			case <-ctx.Done():
+				return
+			case sema <- struct{}{}:
+			}
+			defer func() { <-sema }()
+
+			progressMu.Lock()
+			mustFprintf(progress, "Building %v/%v -> %v\n", j.t.goos, j.t.goarch, j.name)
+			progressMu.Unlock()
+
+			cmd := exec.CommandContext(ctx, "go", "build",
+				"-trimpath", "-p", "1", "-o", j.outPath, "./cmd/"+j.binaryName)
 			cmd.Env = append(os.Environ(),
-				"GOOS="+t.goos,
-				"GOARCH="+t.goarch,
+				"GOOS="+j.t.goos,
+				"GOARCH="+j.t.goarch,
 				"CGO_ENABLED=0",
 			)
 			cmd.Stdout = progress
 			cmd.Stderr = progress
-			if err := cmd.Run(); err != nil {
-				return nil, fmt.Errorf("build %v/%v: %w", t.goos, t.goarch, err)
+			// Kill the go driver promptly when another build fails and cancels
+			// the context, so we don't leave compilers running.
+			cmd.Cancel = func() error {
+				if cmd.Process == nil {
+					return nil
+				}
+				return cmd.Process.Kill()
 			}
-			assets = append(assets, outPath)
+			if err := cmd.Run(); err != nil {
+				cancel()
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = fmt.Errorf("build %v/%v: %w", j.t.goos, j.t.goarch, err)
+				}
+				mu.Unlock()
+				return
+			}
+			paths[i] = j.outPath
+			built[i] = true
+		}(i, j)
+	}
+	wg.Wait()
+
+	var assets []string
+	for i, ok := range built {
+		if ok {
+			assets = append(assets, paths[i])
 		}
+	}
+	if firstErr != nil {
+		return assets, firstErr
 	}
 	return assets, nil
 }

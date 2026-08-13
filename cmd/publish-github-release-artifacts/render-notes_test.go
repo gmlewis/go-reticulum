@@ -21,6 +21,35 @@ import (
 	"testing"
 )
 
+// TestPlatformBlacklist guards the set of programs we refuse to ship on
+// platforms where they compile but misbehave at runtime. If you intentionally
+// add or remove an entry, update this test alongside platformBlacklist.
+func TestPlatformBlacklist(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		goos, binary string
+		want         bool
+	}{
+		// Non-functional on Windows: gornodeconf (serial/flash/EEPROM all
+		// return "not supported") and gornsh (PTY unsupported, /bin/sh shell).
+		{"windows", "gornodeconf", true},
+		{"windows", "gornsh", true},
+		// Same programs ship fine on Unix where the platform code exists.
+		{"linux", "gornodeconf", false},
+		{"linux", "gornsh", false},
+		{"darwin", "gornsh", false},
+		// Unrelated programs are never blacklisted.
+		{"windows", "gornsd", false},
+		{"windows", "golxmd", false},
+	}
+	for _, c := range cases {
+		if got := blacklisted(c.goos, c.binary); got != c.want {
+			t.Errorf("blacklisted(%q, %q) = %v, want %v", c.goos, c.binary, got, c.want)
+		}
+	}
+}
+
 // TestRenderReleaseNotes renders the release notes for a handful of fake,
 // deliberately-unsorted artifacts and logs them so you can eyeball the sorted
 // table and the post-download setup section. Run with:

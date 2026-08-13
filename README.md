@@ -39,32 +39,36 @@ It is based upon the following Python original works:
 ## Go Port Support Matrix
 
 The checked-in Go tree is currently verified on **Linux** and **macOS
-(Darwin)**. When the upstream Python README later in this file makes broader
-claims, this support matrix is the one that applies to the Go port.
+(Darwin)**; standalone release executables are additionally published for
+**Windows** and **FreeBSD** (the GitHub Releases page shows exactly which
+executables are provided per platform). When the upstream Python README later
+in this file makes broader claims, this support matrix is the one that applies
+to the Go port.
 
-| Surface | Linux | macOS (Darwin) | Windows / other |
-| --- | --- | --- | --- |
-| Core `rns`, `lxmf`, and CLI unit/integration suites from this repo | **Supported** and verified | **Supported** and verified | **Unsupported** in the checked-in certification matrix |
-| Live serial `gornodeconf` workflows | **Supported** | **Supported** | **Unsupported** |
-| `gornodeconf` firmware `--extract`, `--flash`, and `--update` recovery flows | **Supported** | **Supported** | **Unsupported** |
-| Live RNode destructive tests | Opt-in only | Opt-in only | Unsupported |
-| External Python interface plugins | Unsupported | Unsupported | Unsupported |
+| Surface | Linux | macOS (Darwin) | FreeBSD | Windows |
+| --- | --- | --- | --- | --- |
+| Core `rns`, `lxmf`, and CLI unit/integration suites from this repo | **Supported** and verified | **Supported** and verified | Not in the certified test matrix | Not in the certified test matrix |
+| Live serial `gornodeconf` workflows | **Supported** | **Supported** | **Supported** | **Unsupported** |
+| `gornodeconf` firmware `--extract`, `--flash`, and `--update` recovery flows | **Supported** | **Supported** | **Supported** | **Unsupported** |
+| Live RNode destructive tests | Opt-in only | Opt-in only | Unsupported | Unsupported |
+| External Python interface plugins | Unsupported | Unsupported | Unsupported | Unsupported |
 
 Additional notes:
 
 - The Go codebase includes checked-in support for I2P, Weave, KISS, RNode, TCP,
   UDP, pipe, and serial-facing interface paths, but the actively verified Go
   platform matrix today is Linux and macOS.
-- Windows and other non-Linux/non-Darwin platforms intentionally return explicit
-  `not supported on platform %v` errors for serial and live-hardware `gornodeconf`
-  flows.
+- `gornodeconf` live serial and firmware workflows are supported on Linux,
+  macOS, and FreeBSD. Windows intentionally returns explicit `not supported on
+  platform %v` errors for those flows, so no `gornodeconf` Windows executable is
+  published.
 - The `cmd/gornodeconf` README below the command directory is the detailed
   support contract for live RNode and recovery workflows.
 
-## Manual RNode Workflow on Linux or macOS
+## Manual RNode Workflow on Linux, macOS, or FreeBSD
 
 The Go utilities in this repository are designed to talk to a live RNode over a
-serial port on Linux or macOS. The commands below exercise the common manual
+serial port on Linux, macOS, or FreeBSD. The commands below exercise the common manual
 workflow in the same order you would normally use on a fresh or
 already-provisioned device. You may need to install `python3-serial` or
 `pyserial` for full functionality.
