@@ -222,18 +222,25 @@ func run(force, dryRun bool) error {
 		return nil
 	}
 
-	if exists && force {
-		mustFprintf(progress, "--force: deleting existing release %v and its assets\n", tag)
-		// --cleanup-tag also deletes the git tag ref so that the create
-		// below re-creates it on the latest commit instead of reusing the
-		// stale tag still pointing at the old one.
-		if err := gh("release", "delete", tag, "--yes", "--cleanup-tag"); err != nil {
-			return fmt.Errorf("delete existing release: %w", err)
+	if force {
+		// With --force we replace anything already published for this version
+		// and then re-tag the latest commit. Each step tolerates there being
+		// nothing to replace, so an unnecessary --force (no release, no tag)
+		// does not fail — it just prints a note and falls through to publish.
+		if exists {
+			mustFprintf(progress, "--force: deleting existing release %v and its assets\n", tag)
+			// Delete the release without --cleanup-tag: that flag makes gh also
+			// delete the git tag ref, but it hard-fails (HTTP 422 "Reference
+			// does not exist") when the tag is absent even though the release
+			// exists. We handle the tag separately below, where absence is fine.
+			if err := gh("release", "delete", tag, "--yes"); err != nil {
+				return fmt.Errorf("delete existing release: %w", err)
+			}
 		}
-	} else if force {
-		// A tag may exist without a release (e.g. someone pushed the tag
-		// manually, or a prior release was deleted without --cleanup-tag).
-		// Drop the ref so the create re-tags the latest commit.
+		// Whether or not a release existed, a git tag may be present (left over
+		// from a manual push, or a prior release deleted without --cleanup-tag).
+		// Drop it so the create below re-tags the latest commit; tolerate
+		// absence.
 		hasTag, err := tagExists(tag)
 		if err != nil {
 			return err
@@ -243,6 +250,11 @@ func run(force, dryRun bool) error {
 			if err := deleteTagRef(tag); err != nil {
 				return fmt.Errorf("delete existing tag: %w", err)
 			}
+		}
+		if !exists && !hasTag {
+			mustFprintf(progress,
+				"--force: no existing release or tag %v found; --force was unnecessary, continuing to publish\n",
+				tag)
 		}
 	}
 
