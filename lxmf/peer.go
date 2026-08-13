@@ -1288,17 +1288,86 @@ func (p *Peer) startSyncTransfer(wantedIDs [][]byte) {
 	p.mu.Unlock()
 }
 
-// ResourceConcluded is the Go port of Python's
-// LXMPeer.resource_concluded. It finalizes the sync transfer and
-// schedules re-sync for persistent peers.
-func (p *Peer) ResourceConcluded(_ *rns.Resource) {
+// ResourceConcluded is the Go port of Python's LXMPeer.resource_concluded
+// (LXMPeer.py:492-533). On a completed transfer it marks the transferred
+// messages handled + removed, tears down the link, returns the peer to Idle,
+// updates sync statistics, and re-enters Sync for persistent peers that still
+// have unhandled messages. On a failed transfer it tears down and idles
+// without touching the message store.
+func (p *Peer) ResourceConcluded(resource *rns.Resource) {
 	if p == nil {
 		return
 	}
+	defer func() {
+		_ = recover()
+	}()
+	if resource == nil {
+		return
+	}
+
+	if resource.Status() != rns.ResourceStatusComplete {
+		// Transfer failed or was cancelled: tear down and idle without
+		// altering the message store (LXMPeer.py:524-533).
+		if logger := p.peerLogger(); logger != nil {
+			logger.Verbose("Resource transfer for LXMF peer sync to %x failed", p.destinationHash)
+		}
+		p.mu.Lock()
+		link := p.link
+		p.link = nil
+		p.state = PeerStateIdle
+		p.currentlyTransferringMessages = nil
+		p.currentSyncTransferStarted = 0
+		p.mu.Unlock()
+		if link != nil {
+			link.Teardown()
+		}
+		return
+	}
+
+	transferring := func() [][]byte {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return p.currentlyTransferringMessages
+	}()
+
+	// Mark every transferred message handled + removed (LXMPeer.py:503-506).
+	for _, tid := range transferring {
+		p.addHandledMessage(tid)
+		p.removeUnhandledMessage(tid)
+	}
+
+	now := p.nowFn()()
 	p.mu.Lock()
-	p.state = PeerStateIdle
+	link := p.link
 	p.link = nil
+	p.state = PeerStateIdle
+	if p.currentSyncTransferStarted != 0 {
+		elapsed := peerTime(now) - p.currentSyncTransferStarted
+		if elapsed > 0 {
+			p.syncTransferRate = float64(resource.GetTransferSize()*8) / elapsed
+		}
+	}
+	p.alive = true
+	p.lastHeard = peerTime(now)
+	p.offered += len(p.lastOffer)
+	p.outgoing += len(transferring)
+	p.txBytes += resource.GetDataSize()
+	p.currentlyTransferringMessages = nil
+	p.currentSyncTransferStarted = 0
 	p.mu.Unlock()
+	if link != nil {
+		link.Teardown()
+	}
+
+	if logger := p.peerLogger(); logger != nil {
+		logger.Verbose("Syncing %v messages to peer %x completed", len(transferring), p.destinationHash)
+	}
+
+	// Persistent peers re-sync immediately when unhandled messages remain
+	// (LXMPeer.py:531-533).
+	if p.syncStrategy == PeerStrategyPersistent && p.UnhandledMessageCount() > 0 {
+		p.Sync()
+	}
 }
 
 // Name returns the peer's display name extracted from its metadata

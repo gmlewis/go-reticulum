@@ -1534,3 +1534,255 @@ func TestPeerOfferResponseWantedList(t *testing.T) {
 		t.Errorf("currentSyncTransferStarted = %v, want %v", peer.currentSyncTransferStarted, peerTime(fixedNow))
 	}
 }
+
+// TestPeerResourceConcluded exercises Peer.ResourceConcluded, the Go port of
+// Python's LXMPeer.resource_concluded (LXMPeer.py:492-533). On a completed
+// transfer the offered messages are marked handled + removed, the link is
+// torn down, the peer returns to Idle, sync statistics are updated, and a
+// persistent peer with remaining unhandled messages re-enters Sync. On a
+// failed transfer the link is torn down and the peer idles without altering
+// the message store or statistics.
+func TestPeerResourceConcluded(t *testing.T) {
+	t.Parallel()
+
+	// complete: a successful transfer finalizes the message store, tears
+	// down the link, idles, updates stats, and clears transfer state.
+	t.Run("complete", func(t *testing.T) {
+		t.Parallel()
+
+		ts := rns.NewTransportSystem(nil)
+		router := mustTestNewRouter(t, ts, nil, testutils.TempDir(t, "lxmf-peer-rc-complete-"))
+
+		fixedNow := time.Unix(2_000_000, 0)
+		router.now = func() time.Time { return fixedNow }
+
+		destHash := make([]byte, 16)
+		destHash[0] = 0xD2
+		peer := NewPeer(router, destHash)
+		// Non-persistent so the reschedule branch is not taken (no
+		// remaining unhandled messages here regardless).
+		peer.syncStrategy = PeerStrategyLazy
+		peer.now = func() time.Time { return fixedNow }
+
+		tid1 := []byte("tid-complete-1")
+		router.propagationEntries[string(tid1)] = &propagationEntry{
+			payload:     []byte{0xaa, 0xbb, 0xcc, 0xdd},
+			receivedAt:  fixedNow,
+			unhandledBy: [][]byte{destHash},
+		}
+		peer.lastOffer = [][]byte{tid1}
+		peer.currentlyTransferringMessages = [][]byte{tid1}
+		// Started 5 peer-seconds ago so the transfer rate is computable.
+		peer.currentSyncTransferStarted = peerTime(fixedNow) - 5.0
+		peer.state = PeerStateResourceTransferring
+		link := &rns.Link{}
+		peer.link = link
+
+		resource := &rns.Resource{}
+		setResourceIntField(t, resource, "status", rns.ResourceStatusComplete)
+		setResourceField(t, resource, "data", []byte{0xaa, 0xbb, 0xcc, 0xdd})
+
+		peer.ResourceConcluded(resource)
+
+		// The offered message is marked handled + removed.
+		entry := router.propagationEntries[string(tid1)]
+		if !containsByteSlice(entry.handledBy, destHash) {
+			t.Error("transferred message not marked handled")
+		}
+		if containsByteSlice(entry.unhandledBy, destHash) {
+			t.Error("transferred message still in unhandledBy, want removed")
+		}
+
+		// The link is torn down and cleared.
+		if peer.link != nil {
+			t.Errorf("peer.link = %v, want nil", peer.link)
+		}
+		if got := link.GetStatus(); got != rns.LinkClosed {
+			t.Errorf("link status = %d, want %d (LinkClosed)", got, rns.LinkClosed)
+		}
+
+		// State is Idle and transfer state is cleared.
+		if peer.state != PeerStateIdle {
+			t.Errorf("peer state = %d, want %d (PeerStateIdle)", peer.state, PeerStateIdle)
+		}
+		if peer.currentlyTransferringMessages != nil {
+			t.Errorf("currentlyTransferringMessages = %v, want nil", peer.currentlyTransferringMessages)
+		}
+		if peer.currentSyncTransferStarted != 0 {
+			t.Errorf("currentSyncTransferStarted = %v, want 0", peer.currentSyncTransferStarted)
+		}
+
+		// Statistics: offered += len(lastOffer), outgoing += 1,
+		// txBytes += data size, alive, lastHeard.
+		if peer.offered != 1 {
+			t.Errorf("offered = %d, want 1", peer.offered)
+		}
+		if peer.outgoing != 1 {
+			t.Errorf("outgoing = %d, want 1", peer.outgoing)
+		}
+		if peer.txBytes != 4 {
+			t.Errorf("txBytes = %d, want 4", peer.txBytes)
+		}
+		if !peer.alive {
+			t.Error("alive = false, want true")
+		}
+		if peer.lastHeard != peerTime(fixedNow) {
+			t.Errorf("lastHeard = %v, want %v", peer.lastHeard, peerTime(fixedNow))
+		}
+
+		// Transfer rate: (transferSize)*8 / elapsed. transferSize =
+		// data(4) + metadata(0) + 16 = 20; elapsed = 5; 20*8/5 = 32.
+		if peer.syncTransferRate != 32.0 {
+			t.Errorf("syncTransferRate = %v, want 32.0", peer.syncTransferRate)
+		}
+	})
+
+	// reschedule: a persistent peer with remaining unhandled messages
+	// re-enters Sync after a completed transfer.
+	t.Run("reschedule", func(t *testing.T) {
+		t.Parallel()
+
+		ts := rns.NewTransportSystem(nil)
+		router := mustTestNewRouter(t, ts, nil, testutils.TempDir(t, "lxmf-peer-rc-reschedule-"))
+
+		fixedNow := time.Unix(2_000_000, 0)
+		router.now = func() time.Time { return fixedNow }
+
+		destHash := make([]byte, 16)
+		destHash[0] = 0xD3
+		peer := NewPeer(router, destHash)
+		peer.syncStrategy = PeerStrategyPersistent
+		peer.now = func() time.Time { return fixedNow }
+
+		// Stamp costs + peering key known so Sync's preconditions pass.
+		zero := 0
+		peer.propagationStampCost = &zero
+		peer.propagationStampCostFlexibility = &zero
+		peer.peeringCost = &zero
+		peer.peeringKey = []any{[]byte("peering-key"), 0}
+
+		// Bypass network path/identity/destination gates.
+		peer.hasPathFn = func([]byte) bool { return true }
+		peer.identity = mustTestNewIdentity(t, true)
+		peer.destination = mustTestNewDestination(
+			t, ts, peer.identity, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
+
+		tid1 := []byte("tid-reschedule-1")
+		tid2 := []byte("tid-reschedule-2")
+		router.propagationEntries[string(tid1)] = &propagationEntry{
+			payload:     []byte{0x01},
+			receivedAt:  fixedNow,
+			unhandledBy: [][]byte{destHash},
+		}
+		router.propagationEntries[string(tid2)] = &propagationEntry{
+			payload:     []byte{0x02},
+			receivedAt:  fixedNow,
+			unhandledBy: [][]byte{destHash},
+		}
+		peer.lastOffer = [][]byte{tid1}
+		peer.currentlyTransferringMessages = [][]byte{tid1}
+		peer.state = PeerStateResourceTransferring
+		peer.link = &rns.Link{}
+
+		// syncHook fires once Sync has passed its precondition gates and
+		// confirmed unhandled messages remain — proving re-entry.
+		reentered := false
+		peer.syncHook = func() { reentered = true }
+
+		resource := &rns.Resource{}
+		setResourceIntField(t, resource, "status", rns.ResourceStatusComplete)
+		setResourceField(t, resource, "data", []byte{0x01})
+
+		peer.ResourceConcluded(resource)
+
+		if !reentered {
+			t.Error("Sync was not re-entered after completing transfer for a persistent peer with remaining unhandled messages")
+		}
+		// tid1 (transferred) is handled + removed; tid2 remains unhandled.
+		entry1 := router.propagationEntries[string(tid1)]
+		if !containsByteSlice(entry1.handledBy, destHash) {
+			t.Error("transferred tid1 not marked handled")
+		}
+		entry2 := router.propagationEntries[string(tid2)]
+		if !containsByteSlice(entry2.unhandledBy, destHash) {
+			t.Error("tid2 lost unhandledBy, want it retained for the next sync")
+		}
+		if peer.state != PeerStateIdle {
+			t.Errorf("peer state = %d, want %d (PeerStateIdle) after re-sync postpone", peer.state, PeerStateIdle)
+		}
+	})
+
+	// failed: a non-complete transfer tears down + idles without touching
+	// the message store or statistics.
+	t.Run("failed", func(t *testing.T) {
+		t.Parallel()
+
+		ts := rns.NewTransportSystem(nil)
+		router := mustTestNewRouter(t, ts, nil, testutils.TempDir(t, "lxmf-peer-rc-failed-"))
+
+		fixedNow := time.Unix(2_000_000, 0)
+		router.now = func() time.Time { return fixedNow }
+
+		destHash := make([]byte, 16)
+		destHash[0] = 0xD4
+		peer := NewPeer(router, destHash)
+		peer.syncStrategy = PeerStrategyLazy
+		peer.now = func() time.Time { return fixedNow }
+
+		tid1 := []byte("tid-failed-1")
+		router.propagationEntries[string(tid1)] = &propagationEntry{
+			payload:     []byte{0xaa, 0xbb, 0xcc, 0xdd},
+			receivedAt:  fixedNow,
+			unhandledBy: [][]byte{destHash},
+		}
+		peer.lastOffer = [][]byte{tid1}
+		peer.currentlyTransferringMessages = [][]byte{tid1}
+		peer.currentSyncTransferStarted = peerTime(fixedNow) - 5.0
+		peer.state = PeerStateResourceTransferring
+		link := &rns.Link{}
+		peer.link = link
+
+		resource := &rns.Resource{}
+		setResourceIntField(t, resource, "status", rns.ResourceStatusFailed)
+		setResourceField(t, resource, "data", []byte{0xaa, 0xbb, 0xcc, 0xdd})
+
+		peer.ResourceConcluded(resource)
+
+		// Message store untouched: still unhandled, not handled.
+		entry := router.propagationEntries[string(tid1)]
+		if containsByteSlice(entry.handledBy, destHash) {
+			t.Error("failed transfer marked message handled, want message store untouched")
+		}
+		if !containsByteSlice(entry.unhandledBy, destHash) {
+			t.Error("failed transfer removed unhandledBy, want it retained")
+		}
+
+		// Link torn down, peer idle, transfer state cleared.
+		if peer.link != nil {
+			t.Errorf("peer.link = %v, want nil", peer.link)
+		}
+		if got := link.GetStatus(); got != rns.LinkClosed {
+			t.Errorf("link status = %d, want %d (LinkClosed)", got, rns.LinkClosed)
+		}
+		if peer.state != PeerStateIdle {
+			t.Errorf("peer state = %d, want %d (PeerStateIdle)", peer.state, PeerStateIdle)
+		}
+		if peer.currentlyTransferringMessages != nil {
+			t.Errorf("currentlyTransferringMessages = %v, want nil", peer.currentlyTransferringMessages)
+		}
+		if peer.currentSyncTransferStarted != 0 {
+			t.Errorf("currentSyncTransferStarted = %v, want 0", peer.currentSyncTransferStarted)
+		}
+
+		// Statistics untouched.
+		if peer.offered != 0 {
+			t.Errorf("offered = %d, want 0 (no stat update on failure)", peer.offered)
+		}
+		if peer.outgoing != 0 {
+			t.Errorf("outgoing = %d, want 0 (no stat update on failure)", peer.outgoing)
+		}
+		if peer.txBytes != 0 {
+			t.Errorf("txBytes = %d, want 0 (no stat update on failure)", peer.txBytes)
+		}
+	})
+}
