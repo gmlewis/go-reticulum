@@ -70,20 +70,62 @@ var majorTargets = []target{
 	{"freebsd", "arm64"},
 }
 
-// binaryNames are the published artifacts' base names.
-var binaryNames = []string{
-	"golxmd",
-	"gorncp",
-	"gornid",
-	"gornir",
-	"gornodeconf",
-	"gornpath",
-	"gornpkg",
-	"gornprobe",
-	"gornsd",
-	"gornsh",
-	"gornstatus",
-	"gornx",
+// discoverBinaryNames scans the cmd/ directory for every program whose name
+// starts with "go" and returns them sorted, instead of relying on a hard-coded
+// list. A directory qualifies when it starts with "go" and contains at least
+// one .go file declaring package main, so non-program directories (and this
+// publisher's own directory) are skipped.
+func discoverBinaryNames() ([]string, error) {
+	entries, err := os.ReadDir("cmd")
+	if err != nil {
+		return nil, fmt.Errorf("read cmd/ directory: %w", err)
+	}
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasPrefix(name, "go") {
+			continue
+		}
+		isMain, err := dirIsMainPackage(filepath.Join("cmd", name))
+		if err != nil {
+			return nil, fmt.Errorf("inspect cmd/%v: %w", name, err)
+		}
+		if isMain {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return nil, fmt.Errorf("no programs starting with \"go\" found under cmd/")
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// dirIsMainPackage reports whether the directory at dir contains at least one
+// .go file declaring "package main". Build-constraint-ignored files are not a
+// concern here: every shipped program has an unconditional package declaration.
+func dirIsMainPackage(dir string) (bool, error) {
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return false, err
+	}
+	mainRe := regexp.MustCompile(`(?m)^package main\b`)
+	for _, f := range files {
+		if f.IsDir() || !strings.HasSuffix(f.Name(), ".go") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, f.Name()))
+		if err != nil {
+			return false, err
+		}
+		if mainRe.Match(data) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func main() {
@@ -138,6 +180,13 @@ func run(force, dryRun bool) error {
 	}
 	mustFprintf(progress, "Repository: %v\n", repo)
 
+	binaryNames, err := discoverBinaryNames()
+	if err != nil {
+		return err
+	}
+	mustFprintf(progress, "Publishing %v program(s): %v\n",
+		len(binaryNames), strings.Join(binaryNames, ", "))
+
 	exists := false
 	if !dryRun {
 		exists, err = releaseExists(tag)
@@ -161,7 +210,7 @@ func run(force, dryRun bool) error {
 	}
 	defer func() { _ = os.RemoveAll(outDir) }()
 
-	assets, err := buildAll(outDir, version, progress)
+	assets, err := buildAll(outDir, version, binaryNames, progress)
 	if err != nil {
 		return err
 	}
@@ -295,7 +344,7 @@ func gh(args ...string) error {
 
 // buildAll builds one executable per target into outDir and returns the
 // absolute paths of the produced artifacts. progress receives build chatter.
-func buildAll(outDir, version string, progress *os.File) ([]string, error) {
+func buildAll(outDir, version string, binaryNames []string, progress *os.File) ([]string, error) {
 	var assets []string
 	for _, binaryName := range binaryNames {
 		for _, t := range majorTargets {
