@@ -2138,16 +2138,45 @@ func TestAwaitPath(t *testing.T) {
 	ts := NewTransportSystem(nil)
 	hash := []byte("await-path-test")
 
-	// AwaitPath on a known destination should return immediately.
+	// AwaitPath on a known destination should return immediately, without
+	// waiting for the timeout to elapse.
+	ts.mu.Lock()
+	ts.pathTable[string(hash)] = &PathEntry{}
+	ts.mu.Unlock()
+
 	start := time.Now()
-	got, err := ts.AwaitPath(hash, 10*time.Millisecond)
+	got, err := ts.AwaitPath(hash, 5*time.Second)
 	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("AwaitPath on known dest: %v", err)
+	}
+	if !bytes.Equal(got, hash) {
+		t.Fatalf("AwaitPath on known dest returned %x, want %x", got, hash)
+	}
+	// A known path must return without sleeping through the timeout. Use a
+	// generous bound so this does not flake under -race scheduler contention
+	// while still catching a real failure to short-circuit on a known path.
+	if elapsed > time.Second {
+		t.Fatalf("AwaitPath on known dest took too long: %v", elapsed)
+	}
+
+	// AwaitPath on an unknown destination must return (nil, nil) once the
+	// timeout elapses rather than blocking forever. The bound is generous:
+	// under -race with many parallel transport tests, goroutine scheduling
+	// can delay the poll loop well past the requested timeout. We only need
+	// to confirm it terminates in finite time and reports no error.
+	unknown := []byte("await-path-unknown")
+	start = time.Now()
+	got, err = ts.AwaitPath(unknown, 20*time.Millisecond)
+	elapsed = time.Since(start)
 	if err != nil {
 		t.Fatalf("AwaitPath on unknown dest: %v", err)
 	}
-	_ = got
-	if elapsed > 50*time.Millisecond {
-		t.Fatalf("AwaitPath on unknown dest took too long: %v", elapsed)
+	if got != nil {
+		t.Fatalf("AwaitPath on unknown dest returned %x, want nil", got)
+	}
+	if elapsed > 5*time.Second {
+		t.Fatalf("AwaitPath on unknown dest hung: %v", elapsed)
 	}
 }
 

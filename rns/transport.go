@@ -6325,6 +6325,12 @@ func (ts *TransportSystem) AwaitPath(destinationHash []byte, timeout time.Durati
 		return nil, errors.New("nil transport")
 	}
 	deadline := time.Now().Add(timeout)
+	// awaitPathPollInterval bounds how long a single iteration can sleep
+	// before re-checking the path table. It is intentionally short so the
+	// caller is not woken long after a path becomes known; the sleep is
+	// further capped to the remaining time so the deadline is respected
+	// rather than overshot by a full interval.
+	const awaitPathPollInterval = 5 * time.Millisecond
 	for {
 		ts.mu.Lock()
 		_, ok := ts.pathTable[string(destinationHash)]
@@ -6332,9 +6338,13 @@ func (ts *TransportSystem) AwaitPath(destinationHash []byte, timeout time.Durati
 		if ok {
 			return destinationHash, nil
 		}
-		if time.Now().After(deadline) {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
 			return nil, nil
 		}
-		time.Sleep(10 * time.Millisecond)
+		if remaining > awaitPathPollInterval {
+			remaining = awaitPathPollInterval
+		}
+		time.Sleep(remaining)
 	}
 }
