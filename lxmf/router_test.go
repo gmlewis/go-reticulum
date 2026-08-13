@@ -6323,9 +6323,12 @@ func TestDeliveryAnnounceHandlerLogsMalformedStampCostAndStillRetriesPendingOutb
 	logger := rns.NewLogger()
 	logger.SetLogLevel(rns.LogExtreme)
 	logger.SetLogDest(rns.LogCallback)
-	logs := make(chan string, 8)
+	var logMu sync.Mutex
+	var got []string
 	logger.SetLogCallback(func(msg string) {
-		logs <- msg
+		logMu.Lock()
+		got = append(got, msg)
+		logMu.Unlock()
 	})
 
 	ts := rns.NewTransportSystem(logger)
@@ -6355,14 +6358,25 @@ func TestDeliveryAnnounceHandlerLogsMalformedStampCostAndStillRetriesPendingOutb
 	nowSeconds := float64(time.Now().UnixNano()) / 1e9
 	router.handleDeliveryAnnounce(dest.Hash, nil, []byte{0x91, 0xc1})
 
-	select {
-	case msg := <-logs:
-		want := "An error occurred while trying to decode announced stamp cost. The contained exception was: encountered reserved code: 0xc1"
-		if !bytes.Contains([]byte(msg), []byte(want)) {
-			t.Fatalf("log = %q, want substring %q", msg, want)
+	logMu.Lock()
+	logs := append([]string(nil), got...)
+	logMu.Unlock()
+
+	// Python (Handlers.py, 0.9.4..1.1.0) downgraded the undecodable-stamp-cost
+	// path from LOG_ERROR to LOG_DEBUG with new wording. Assert a DEBUG record
+	// containing the new text is emitted and no ERROR record is.
+	wantSub := "Could not decode stamp cost from announce data"
+	foundDebug := false
+	for _, msg := range logs {
+		if strings.Contains(msg, rns.LogLevelName(rns.LogDebug)) && strings.Contains(msg, wantSub) {
+			foundDebug = true
 		}
-	case <-time.After(time.Second):
-		t.Fatal("expected malformed stamp-cost log")
+		if strings.Contains(msg, rns.LogLevelName(rns.LogError)) {
+			t.Fatalf("unexpected ERROR log for malformed stamp cost: %q", msg)
+		}
+	}
+	if !foundDebug {
+		t.Fatalf("expected DEBUG log containing %q, got %v", wantSub, logs)
 	}
 
 	if stampCost, ok := router.OutboundStampCost(dest.Hash); !ok || stampCost != 8 {

@@ -5776,9 +5776,15 @@ func (r *Router) WaitForInboundDeliveries() {
 //   - Direct-delivery links (directLinks) whose no_data_for exceeds
 //     LinkMaxInactivity are torn down, removed from directLinks, and have
 //     their validatedPeerLinks entry (keyed by link_id) cleared.
+//
 //   - Inbound propagation links (activePropagationLinks) whose no_data_for
 //     exceeds PLinkMaxInactivity are torn down and removed from the slice;
 //     this sweep is wrapped in a recover to match Python's try/except.
+//
+//   - Orphaned acceptedOfferLinks entries whose link is no longer in
+//     activePropagationLinks are reaped, so a propagation link dying
+//     mid-transfer without the concluded/failure callback stops counting
+//     against propagation_max_inbound_syncs (LXMRouter.py:977-986, v1.1.0).
 //
 // The outbound propagation link is handled reactively via the LinkClosed
 // callback installed in configureOutboundPropagationLink (functionally
@@ -5829,6 +5835,36 @@ func (r *Router) CleanLinks() {
 		for _, link := range inactive {
 			r.teardownLink(link)
 		}
+
+		// Sweep orphaned accepted-offer link accounting: any entry whose link
+		// is no longer in activePropagationLinks is reaped so it stops counting
+		// against propagation_max_inbound_syncs. Mirrors Python's
+		// accepted_offer_links cleanup (LXMRouter.py:977-986, v1.1.0 d909619).
+		activeIDs := func() map[string]bool {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			m := make(map[string]bool, len(r.activePropagationLinks))
+			for _, link := range r.activePropagationLinks {
+				if link != nil {
+					m[string(link.GetHash())] = true
+				}
+			}
+			return m
+		}()
+		var logger *rns.Logger
+		if r.transport != nil {
+			logger = r.transport.GetLogger()
+		}
+		r.acceptedOfferLinksMu.Lock()
+		for linkID := range r.acceptedOfferLinks {
+			if !activeIDs[linkID] {
+				if logger != nil {
+					logger.Debug("Cleaning inbound sync link accounting for link %x since link is no longer active", []byte(linkID))
+				}
+				delete(r.acceptedOfferLinks, linkID)
+			}
+		}
+		r.acceptedOfferLinksMu.Unlock()
 	}()
 }
 

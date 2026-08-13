@@ -581,7 +581,7 @@ func UnpackMessageFromBytes(ts rns.Transport, data []byte, originalMethod int) (
 	// blackhole list by identity hash so the router can drop the message.
 	// An unrecalled source leaves the flag false, matching Python's
 	// source_identity-is-None guard.
-	if sourceIdentity := ts.Recall(sourceHash); sourceIdentity != nil {
+	if sourceIdentity := ts.RecallNoUse(sourceHash); sourceIdentity != nil {
 		m.SourceBlackholed = ts.IsBlackholed(sourceIdentity.Hash)
 	}
 
@@ -761,7 +761,7 @@ func isTimestampType(v any) bool {
 }
 
 func recalledDeliveryDestination(ts rns.Transport, destHash []byte) *rns.Destination {
-	identity := ts.Recall(destHash)
+	identity := ts.RecallNoUse(destHash)
 	if identity == nil {
 		return nil
 	}

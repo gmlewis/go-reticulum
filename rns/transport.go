@@ -144,6 +144,13 @@ type Transport interface {
 	Remember(packetHash, destHash, publicKey, appData []byte)
 	// Recall retrieves a previously remembered identity by hash.
 	Recall(targetHash []byte) *Identity
+	// RecallNoUse recalls a previously remembered identity by hash WITHOUT
+	// marking the destination used (Python Identity.recall(..., _no_use=True),
+	// RNS/Identity.py:116-160). Callers that do not represent actual
+	// application use (message unpacking, path-table scans, announce
+	// rebroadcasts) use this to avoid inflating a destination's last-used
+	// time, which drives known-destination retention/cleanup.
+	RecallNoUse(targetHash []byte) *Identity
 	// RecallAppData returns the cached app_data for a known destination, or
 	// nil if the destination is unknown (Python Identity.recall_app_data).
 	RecallAppData(targetHash []byte) []byte
@@ -3570,12 +3577,12 @@ func (ts *TransportSystem) Recall(targetHash []byte) *Identity {
 	return ts.recallLocked(targetHash, false)
 }
 
-// recallNoUse is the transport-internal recall: it recalls a known
-// destination's identity WITHOUT marking it used, for callers that do not
-// represent actual application use (path-table scans, announce rebroadcasts,
-// link-proof validation, announce-handler dispatch). It mirrors Python
-// Identity.recall(..., _no_use=True) (RNS/Identity.py:116-160, Phase 13 task 7).
-func (ts *TransportSystem) recallNoUse(targetHash []byte) *Identity {
+// RecallNoUse recalls a known destination's identity WITHOUT marking it used,
+// for callers that do not represent actual application use (message unpacking,
+// path-table scans, announce rebroadcasts, link-proof validation, announce-
+// handler dispatch). It mirrors Python Identity.recall(..., _no_use=True)
+// (RNS/Identity.py:116-160, Phase 13 task 7).
+func (ts *TransportSystem) RecallNoUse(targetHash []byte) *Identity {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	return ts.recallLocked(targetHash, true)
@@ -3642,6 +3649,23 @@ func (ts *TransportSystem) UsedDestinationData(destHash []byte) bool {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	return ts.usedDestinationDataLocked(destHash)
+}
+
+// KnownDestinationUseTimestamp returns the use-timestamp (element 4) of the
+// known-destination entry for destHash, or ok=false if destHash is unknown.
+// It is a read-only accessor for the last-used time that drives
+// CleanKnownDestinations retention (Python Identity.known_destinations element
+// 4, RNS/Identity.py:310-316). A value of 0 means never used; a negative value
+// means the destination is retained and never expires.
+func (ts *TransportSystem) KnownDestinationUseTimestamp(destHash []byte) (float64, bool) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	data, ok := ts.knownDestinations[string(destHash)]
+	if !ok || len(data) < 5 {
+		return 0, false
+	}
+	useTS, _ := numericValue(data[4])
+	return useTS, true
 }
 
 // usedDestinationDataLocked is the lock-held core of UsedDestinationData,
@@ -5336,7 +5360,7 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 
 	// Call announce handlers
 	if len(handlers) > 0 {
-		announceIdentity := ts.recallNoUse(packet.DestinationHash)
+		announceIdentity := ts.RecallNoUse(packet.DestinationHash)
 		if announceIdentity != nil {
 			for _, handler := range handlers {
 				executeCallback := false

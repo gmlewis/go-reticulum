@@ -36,7 +36,7 @@ func (r *Router) handleDeliveryAnnounce(destinationHash []byte, _ *rns.Identity,
 		if r.transport != nil {
 			logger = r.transport.GetLogger()
 		}
-		logger.Error("An error occurred while trying to decode announced stamp cost. The contained exception was: %v", err)
+		logger.Debug("Could not decode stamp cost from announce data. The contained exception was: %v", err)
 	} else if ok {
 		r.updateStampCost(destinationHash, stampCost)
 	} else if clear {

@@ -219,3 +219,55 @@ func TestCleanLinksPropagationSweep(t *testing.T) {
 		t.Fatal("active propagation link was torn down, want it retained")
 	}
 }
+
+// TestCleanLinksSweepsStaleAcceptedOfferLinks covers the 1.1.0 delta
+// (LXMRouter.py d909619): CleanLinks walks activePropagationLinks, collects
+// their link_ids, and deletes any acceptedOfferLinks entry whose link is no
+// longer active, so a propagation link dying mid-transfer without the
+// concluded/failure callback stops counting against propagation_max_inbound
+// _syncs. An orphaned entry (link not in activePropagationLinks) is reaped;
+// an entry whose link is still active survives.
+func TestCleanLinksSweepsStaleAcceptedOfferLinks(t *testing.T) {
+	t.Parallel()
+
+	routerTs := rns.NewTransportSystem(nil)
+	router := mustTestNewRouter(t, routerTs, nil, testutils.TempDir(t, tempDirPrefix))
+
+	active, _ := establishTestLinkForCleanLinks(t)
+	stale, _ := establishTestLinkForCleanLinks(t)
+
+	activeID := append([]byte(nil), active.GetHash()...)
+	staleID := append([]byte(nil), stale.GetHash()...)
+
+	// Only the active link is registered as an inbound propagation link.
+	router.mu.Lock()
+	router.activePropagationLinks = append(router.activePropagationLinks, active)
+	router.mu.Unlock()
+
+	// Seed accepted-offer accounting for both links: the active link is
+	// mid-transfer (TRANSFERRING); the stale link's accounting is orphaned
+	// because its link is not in activePropagationLinks.
+	router.acceptedOfferLinksMu.Lock()
+	router.acceptedOfferLinks[string(activeID)] = OfferTransferring
+	router.acceptedOfferLinks[string(staleID)] = OfferValidating
+	router.acceptedOfferLinksMu.Unlock()
+
+	// Confirm the active link is recent enough to survive the propagation sweep.
+	if got := active.NoDataFor(); got >= PLinkMaxInactivity {
+		t.Fatalf("active NoDataFor = %v, want < %v", got, PLinkMaxInactivity)
+	}
+
+	router.CleanLinks()
+
+	router.acceptedOfferLinksMu.Lock()
+	_, activePresent := router.acceptedOfferLinks[string(activeID)]
+	_, stalePresent := router.acceptedOfferLinks[string(staleID)]
+	router.acceptedOfferLinksMu.Unlock()
+
+	if stalePresent {
+		t.Fatal("orphaned acceptedOfferLinks entry for a link no longer in activePropagationLinks was not reaped by CleanLinks")
+	}
+	if !activePresent {
+		t.Fatal("acceptedOfferLinks entry for an active propagation link was reaped by CleanLinks, want it retained")
+	}
+}

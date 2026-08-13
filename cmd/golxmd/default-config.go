@@ -202,7 +202,7 @@ announce_at_start = no
 # this will be rejected before the transfer
 # begins.
 
-delivery_transfer_max_accepted_size = 1000
+delivery_transfer_max_accepted_size = 1
 
 # You can configure an external program to be run
 # every time a message is received. The program

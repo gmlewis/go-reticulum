@@ -55,6 +55,16 @@ const (
 	PeerOfferRequestPath = "/offer"
 )
 
+// pendingOfferEntry is one entry prepared for a sync offer: the transient ID,
+// its weight, and its transfer size. It mirrors Python's unhandled_entry
+// [transient_id, weight, size] built in the LXMPeer.sync LINK_READY branch
+// (LXMPeer.py:351-356). The slice is rebuilt on each sync and is not persisted.
+type pendingOfferEntry struct {
+	transientID []byte
+	weight      float64
+	size        int
+}
+
 // Peer models a propagation peer and its persisted sync state.
 type Peer struct {
 	router          *Router
@@ -82,16 +92,31 @@ type Peer struct {
 	propagationStampCost            *int
 	propagationStampCostFlexibility *int
 	currentlyTransferringMessages   [][]byte
-	handledMessagesQueue            [][]byte
-	unhandledMessagesQueue          [][]byte
-	hmCount                         int
-	umCount                         int
-	hmCountsSynced                  bool
-	umCountsSynced                  bool
+	// currentSyncTransferStarted records the peer-time at which the current
+	// outbound sync resource transfer started (Python's
+	// current_sync_transfer_started, LXMPeer.py:464). Zero means no transfer is
+	// in flight; ResourceConcluded uses it to compute the transfer rate.
+	currentSyncTransferStarted float64
+	handledMessagesQueue       [][]byte
+	unhandledMessagesQueue     [][]byte
+	hmCount                    int
+	umCount                    int
+	hmCountsSynced             bool
+	umCountsSynced             bool
 
 	link      *rns.Link
 	state     int
 	lastOffer [][]byte
+	// pendingOfferEntries holds the unhandled entries collected during the
+	// most recent LINK_READY offer-preparation pass (Python's
+	// unhandled_entries, LXMPeer.py:344-356). Subsequent sync steps filter
+	// and trim it into the final offer list.
+	pendingOfferEntries []pendingOfferEntry
+	// pendingOfferIDs holds the transient IDs that survive the
+	// transfer/sync size-limit filtering of pendingOfferEntries (Python's
+	// unhandled_ids, LXMPeer.py:367-381). It is the candidate offer list
+	// before the empty-check (24.B.4) and offer send (24.B.5).
+	pendingOfferIDs [][]byte
 
 	// syncHook is an optional test hook that fires when sync() would have
 	// been called. It allows tests to exercise peer-selection logic in
@@ -142,6 +167,13 @@ type Peer struct {
 	// establishment step during sync. When nil, a real rns.Link is
 	// created from p.destination.
 	establishLinkFn func()
+
+	// requestLinkFn is an optional test override for the outbound offer
+	// request (Python's self.link.request, LXMPeer.py:389). When nil, Sync
+	// uses the router's requestLink seam. It receives the link, path, offer
+	// data, and callbacks so tests can capture the offer bytes (and avoid a
+	// live link) without exercising the network.
+	requestLinkFn func(link *rns.Link, path string, data any, responseCallback, failedCallback, progressCallback func(*rns.RequestReceipt), timeout time.Duration) (*rns.RequestReceipt, error)
 
 	// pathRequestSleep is an injectable sleep function for the path
 	// request grace period. When nil, defaults to sleeping for
@@ -514,6 +546,26 @@ func (p *Peer) MinAcceptedStampCost() (cost int, ok bool) {
 	return max(*p.propagationStampCost-*p.propagationStampCostFlexibility, 0), true
 }
 
+// peerLogger returns the router transport's logger if available, or nil. It
+// centralises the nil-safe lookup used by Sync/OfferResponse logging paths.
+func (p *Peer) peerLogger() *rns.Logger {
+	if p == nil || p.router == nil || p.router.transport == nil {
+		return nil
+	}
+	return p.router.transport.GetLogger()
+}
+
+// identifyLink identifies the link to the remote peer using the router's
+// identity, respecting the identifyLinkHook test seam. It mirrors Python's
+// self.link.identify(self.router.identity) (LXMPeer.py:408, 819).
+func (p *Peer) identifyLink(link *rns.Link) {
+	if p.identifyLinkHook != nil {
+		_ = p.identifyLinkHook(link, p.router.identity)
+	} else if link != nil && p.router != nil && p.router.identity != nil {
+		_ = link.Identify(p.router.identity)
+	}
+}
+
 func (p *Peer) addHandledMessage(transientID []byte) {
 	if p == nil || p.router == nil {
 		return
@@ -765,11 +817,7 @@ func (p *Peer) LinkEstablished(link *rns.Link) {
 		return
 	}
 	p.mu.Lock()
-	if p.identifyLinkHook != nil {
-		_ = p.identifyLinkHook(link, p.router.identity)
-	} else if link != nil && p.router != nil && p.router.identity != nil {
-		_ = link.Identify(p.router.identity)
-	}
+	p.identifyLink(link)
 	p.state = PeerStateLinkReady
 	p.nextSyncAttempt = 0
 	p.mu.Unlock()
@@ -804,13 +852,50 @@ func (p *Peer) RequestFailed(_ *rns.RequestReceipt) {
 	}
 }
 
+// collectPendingOfferEntries mirrors the first pass of Python's LXMPeer.sync
+// LINK_READY branch (LXMPeer.py:344-366): for each unhandled transient ID, if
+// it still exists in the propagation store it is collected as a
+// [transient_id, weight, size] entry unless its stamp value is below the peer's
+// minimum accepted cost (the 1.1.0 low-stamp-value drop, LXMPeer.py:347-348,
+// 4a93697), in which case it is reported as low-value; IDs absent from the
+// store are reported as purged. The caller drops purged and low-value IDs via
+// removeUnhandledMessage. Weight and size come from the router's
+// get_weight/get_size equivalents (LXMRouter.py:1052-1067); the stamp-value
+// floor is MinAcceptedStampCost (max(0, cost - flexibility)).
+func (p *Peer) collectPendingOfferEntries(unhandledMessages [][]byte) (entries []pendingOfferEntry, purgedIDs [][]byte, lowValueIDs [][]byte) {
+	if p == nil || p.router == nil {
+		return nil, nil, nil
+	}
+	minAcceptedCost, _ := p.MinAcceptedStampCost()
+	p.router.mu.Lock()
+	defer p.router.mu.Unlock()
+
+	entries = make([]pendingOfferEntry, 0, len(unhandledMessages))
+	for _, transientID := range unhandledMessages {
+		entry, exists := p.router.propagationEntries[string(transientID)]
+		if !exists {
+			purgedIDs = append(purgedIDs, cloneBytes(transientID))
+			continue
+		}
+		if entry.stampValue < minAcceptedCost {
+			lowValueIDs = append(lowValueIDs, cloneBytes(transientID))
+			continue
+		}
+		entries = append(entries, pendingOfferEntry{
+			transientID: cloneBytes(transientID),
+			weight:      p.router.getWeightLocked(string(transientID)),
+			size:        entry.size,
+		})
+	}
+	return entries, purgedIDs, lowValueIDs
+}
+
 // Sync initiates a propagation-node sync with this peer. It is the Go
-// port of Python's LXMPeer.sync(). The full sync protocol (path
-// request, link establishment, offer construction, offer response
-// handling, resource transfer, and resource conclusion callbacks) is
-// implemented in later tasks; for now, the call records the sync
-// attempt timestamp, fires the optional syncHook for tests, and is a
-// no-op otherwise.
+// port of Python's LXMPeer.sync(). The IDLE branch establishes a sync link;
+// the LINK_READY branch begins offer preparation (collecting unhandled
+// entries and dropping purged ones so far). The remaining offer-preparation
+// steps (low-stamp-value drop, size limits, offer send) and the offer-
+// response / resource-transfer callbacks are implemented in later tasks.
 func (p *Peer) Sync() {
 	if p == nil {
 		return
@@ -922,6 +1007,86 @@ func (p *Peer) Sync() {
 			p.link, _ = rns.NewLink(p.router.transport, p.destination)
 		}
 		p.state = PeerStateLinkEstablishing
+	} else if p.state == PeerStateLinkReady {
+		// Mirror Python's LXMPeer.sync LINK_READY branch (LXMPeer.py:337-389).
+		now := p.nowFn()()
+		p.alive = true
+		p.lastHeard = peerTime(now)
+		p.syncBackoff = 0
+
+		entries, purgedIDs, lowValueIDs := p.collectPendingOfferEntries(unhandledMessages)
+		for _, transientID := range purgedIDs {
+			p.removeUnhandledMessage(transientID)
+		}
+		for _, transientID := range lowValueIDs {
+			p.removeUnhandledMessage(transientID)
+		}
+		p.pendingOfferEntries = entries
+
+		// Apply transfer/sync size limits (Python LXMPeer.py:367-381). Sort
+		// by weight ascending, then walk the entries: a single message whose
+		// transfer size exceeds propagation_transfer_limit*1000 is dropped and
+		// marked handled; once the cumulative size reaches
+		// propagation_sync_limit*1000 no further IDs are added. Nil limits are
+		// treated as unset (Python checks `!= None`).
+		slices.SortStableFunc(entries, func(a, b pendingOfferEntry) int {
+			switch {
+			case a.weight < b.weight:
+				return -1
+			case a.weight > b.weight:
+				return 1
+			default:
+				return 0
+			}
+		})
+		const perMessageOverhead = 16
+		cumulativeSize := 24
+		unhandledIDs := make([][]byte, 0, len(entries))
+		for _, e := range entries {
+			lxmTransferSize := e.size + perMessageOverhead
+			nextSize := cumulativeSize + lxmTransferSize
+			if p.propagationTransferLimit != nil && float64(lxmTransferSize) > *p.propagationTransferLimit*1000 {
+				p.removeUnhandledMessage(e.transientID)
+				p.addHandledMessage(e.transientID)
+				continue
+			}
+			if p.propagationSyncLimit != nil && nextSize >= *p.propagationSyncLimit*1000 {
+				continue
+			}
+			cumulativeSize += lxmTransferSize
+			unhandledIDs = append(unhandledIDs, e.transientID)
+		}
+		p.pendingOfferIDs = unhandledIDs
+
+		// Post-filter early return (1.1.0 delta, 982c9fc, LXMPeer.py:383-385):
+		// if every unhandled message was filtered out, sync is complete for
+		// now — no offer is sent, lastOffer stays unset, and the state
+		// remains PeerStateLinkReady.
+		if len(unhandledIDs) == 0 {
+			if logger := p.peerLogger(); logger != nil {
+				logger.Debug("Sync requested for %x, but no unhandled messages exist after offer preparation. Sync complete.", p.destinationHash)
+			}
+			return
+		}
+
+		// Send the offer request (LXMPeer.py:386-389). The offer is
+		// [peering_key[0], unhandled_ids]; lastOffer records the offered IDs
+		// for OfferResponse to reconcile; state advances to RequestSent.
+		offer := []any{p.peeringKey[0], unhandledIDs}
+		p.lastOffer = unhandledIDs
+		if logger := p.peerLogger(); logger != nil {
+			logger.Verbose("Offering %v messages to peer %x", len(unhandledIDs), p.destinationHash)
+		}
+		requestLink := p.router.requestLink
+		if p.requestLinkFn != nil {
+			requestLink = p.requestLinkFn
+		}
+		if _, err := requestLink(p.link, PeerOfferRequestPath, offer, p.OfferResponse, p.RequestFailed, nil, 0); err != nil {
+			if logger := p.peerLogger(); logger != nil {
+				logger.Error("Sending sync offer request to peer %x failed: %v", p.destinationHash, err)
+			}
+		}
+		p.state = PeerStateRequestSent
 	}
 }
 
@@ -950,7 +1115,49 @@ func (p *Peer) OfferResponse(receipt *rns.RequestReceipt) {
 	p.state = PeerStateResponseReceived
 	response := receipt.Response
 	offer := p.lastOffer
+	link := p.link
 	p.mu.Unlock()
+
+	// Error-code responses are dispatched before the wants-nothing /
+	// wants-everything / wanted-list branches (LXMPeer.py:405-422).
+	if code, ok := responseErrorCode(response); ok {
+		switch code {
+		case peerErrorNoIdentity:
+			// The remote peer did not receive our identification: re-identify
+			// the link, drop back to LINK_READY, and re-enter Sync to rebuild
+			// and resend the offer (1.1.0 delta, 548be10).
+			if link != nil {
+				if logger := p.peerLogger(); logger != nil {
+					logger.Verbose("Remote peer indicated that no identification was received, retrying...")
+				}
+				p.identifyLink(link)
+				p.mu.Lock()
+				p.state = PeerStateLinkReady
+				p.mu.Unlock()
+				p.Sync()
+			}
+			return
+		case peerErrorNoAccess:
+			// The remote peer denied access: break the peering. The peer is
+			// removed from the router's peer set; sync state is left as-is
+			// (LXMPeer.py:413-416).
+			if logger := p.peerLogger(); logger != nil {
+				logger.Verbose("Remote indicated that access was denied, breaking peering")
+			}
+			p.router.Unpeer(p.destinationHash)
+			return
+		case peerErrorThrottled:
+			// The remote peer is throttling us: postpone the next sync attempt
+			// by PN_STAMP_THROTTLE (LXMPeer.py:418-421).
+			if logger := p.peerLogger(); logger != nil {
+				logger.Verbose("Remote indicated that we're throttled, postponing sync for %v", pnStampThrottle)
+			}
+			p.mu.Lock()
+			p.nextSyncAttempt = peerTime(p.nowFn()()) + float64(pnStampThrottle)/float64(time.Second)
+			p.mu.Unlock()
+			return
+		}
+	}
 
 	switch response {
 	case false:
@@ -960,22 +1167,39 @@ func (p *Peer) OfferResponse(receipt *rns.RequestReceipt) {
 			p.removeUnhandledMessage(tid)
 		}
 	case true:
-		// Peer wants all advertised messages. The full resource transfer
-		// path is implemented in a later task; for now, record that the
-		// transfer completed with no data sent.
-		p.mu.Lock()
-		p.offered += len(offer)
-		p.link = nil
-		p.state = PeerStateIdle
-		p.mu.Unlock()
+		// Peer wants all advertised messages: pack every offered
+		// message's stored LXM data into a single Resource and start the
+		// transfer (LXMPeer.py:430-435, 452-465). The resource data is
+		// msgpack [time, [lxm_data, ...]], matching what the inbound
+		// propagationResourceConcluded handler decodes.
+		p.startSyncTransfer(offer)
 		return
 	default:
-		// Treat any other non-list response as "wants nothing" so the
-		// sync completes cleanly for the common case.
-		for _, tid := range offer {
-			p.addHandledMessage(tid)
-			p.removeUnhandledMessage(tid)
+		// A list response means the peer wants a subset of the advertised
+		// messages (LXMPeer.py:476-484). Any offered-but-not-wanted ID is
+		// marked handled + removed; the wanted IDs drive a sync transfer.
+		wantedIDs, isList := transientIDsFromResponse(response)
+		if !isList {
+			// Not a recognised list: treat as wants-nothing so the sync
+			// completes cleanly for unrecognised scalar responses.
+			for _, tid := range offer {
+				p.addHandledMessage(tid)
+				p.removeUnhandledMessage(tid)
+			}
+			break
 		}
+		wantedSet := make(map[string]bool, len(wantedIDs))
+		for _, tid := range wantedIDs {
+			wantedSet[string(tid)] = true
+		}
+		for _, tid := range offer {
+			if !wantedSet[string(tid)] {
+				p.addHandledMessage(tid)
+				p.removeUnhandledMessage(tid)
+			}
+		}
+		p.startSyncTransfer(wantedIDs)
+		return
 	}
 
 	p.mu.Lock()
@@ -985,6 +1209,82 @@ func (p *Peer) OfferResponse(receipt *rns.RequestReceipt) {
 	}
 	p.link = nil
 	p.state = PeerStateIdle
+	p.mu.Unlock()
+}
+
+// startSyncTransfer packs the stored LXM data for the wanted transient IDs
+// into a single Resource, starts the outbound transfer, and records the
+// transferring IDs. It mirrors the common transfer block of Python's
+// offer_response (LXMPeer.py:452-465): the resource data is msgpack
+// [time, [lxm_data, ...]], matching what the inbound
+// propagationResourceConcluded handler decodes. If no wanted message data is
+// available the sync completes without a resource (Python's else branch,
+// LXMPeer.py:467-474). On a packing or resource-creation error it tears down
+// the link and returns the peer to Idle.
+func (p *Peer) startSyncTransfer(wantedIDs [][]byte) {
+	now := p.nowFn()()
+	lxmList := make([][]byte, 0, len(wantedIDs))
+	p.router.mu.Lock()
+	for _, tid := range wantedIDs {
+		if entry, ok := p.router.propagationEntries[string(tid)]; ok && len(entry.payload) > 0 {
+			lxmList = append(lxmList, append([]byte{}, entry.payload...))
+		}
+	}
+	p.router.mu.Unlock()
+
+	if len(lxmList) == 0 {
+		// No transferable message data: complete the sync without a
+		// resource, mirroring Python's else branch.
+		p.mu.Lock()
+		p.offered += len(p.lastOffer)
+		if p.link != nil {
+			p.link.Teardown()
+		}
+		p.link = nil
+		p.state = PeerStateIdle
+		p.mu.Unlock()
+		return
+	}
+
+	data, err := msgpack.Pack([]any{peerTime(now), lxmList})
+	if err != nil {
+		if logger := p.peerLogger(); logger != nil {
+			logger.Error("Packing sync transfer resource for peer %x failed: %v", p.destinationHash, err)
+		}
+		p.mu.Lock()
+		if p.link != nil {
+			p.link.Teardown()
+		}
+		p.link = nil
+		p.state = PeerStateIdle
+		p.mu.Unlock()
+		return
+	}
+
+	p.mu.Lock()
+	link := p.link
+	p.mu.Unlock()
+
+	resource, err := p.router.newResource(data, link)
+	if err != nil {
+		if logger := p.peerLogger(); logger != nil {
+			logger.Error("Sending sync transfer resource to peer %x failed: %v", p.destinationHash, err)
+		}
+		p.mu.Lock()
+		if p.link != nil {
+			p.link.Teardown()
+		}
+		p.link = nil
+		p.state = PeerStateIdle
+		p.mu.Unlock()
+		return
+	}
+	resource.SetCallback(p.ResourceConcluded)
+
+	p.mu.Lock()
+	p.currentlyTransferringMessages = wantedIDs
+	p.currentSyncTransferStarted = peerTime(now)
+	p.state = PeerStateResourceTransferring
 	p.mu.Unlock()
 }
 

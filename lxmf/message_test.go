@@ -85,6 +85,63 @@ func TestMessagePackUnpackRoundTrip(t *testing.T) {
 	}
 }
 
+// TestUnpackMessageDoesNotMarkSourceOrDestinationUsed covers the 1.1.0 delta
+// (LXMessage.py 41b7573): unpack_from_bytes recalls the source and destination
+// identities with _no_use=True so merely unpacking an inbound message does not
+// bump either identity's last-used time (which drives known-destination
+// retention/cleanup). After unpack, the use-timestamps of the source and
+// destination known-destination entries must be unchanged.
+func TestUnpackMessageDoesNotMarkSourceOrDestinationUsed(t *testing.T) {
+	t.Parallel()
+	destinationID, err := rns.NewIdentity(true, nil)
+	if err != nil {
+		t.Fatalf("NewIdentity(destination): %v", err)
+	}
+	sourceID, err := rns.NewIdentity(true, nil)
+	if err != nil {
+		t.Fatalf("NewIdentity(source): %v", err)
+	}
+
+	ts := rns.NewTransportSystem(nil)
+	destination, err := rns.NewDestination(ts, destinationID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	if err != nil {
+		t.Fatalf("NewDestination(destination): %v", err)
+	}
+	source, err := rns.NewDestination(ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	if err != nil {
+		t.Fatalf("NewDestination(source): %v", err)
+	}
+
+	ts.Remember(nil, destination.Hash, destinationID.GetPublicKey(), nil)
+	ts.Remember(nil, source.Hash, sourceID.GetPublicKey(), nil)
+
+	m := mustTestNewMessage(t, destination, source, "content", "title", map[any]any{})
+	if err := m.Pack(); err != nil {
+		t.Fatalf("Pack: %v", err)
+	}
+
+	// Remember sets the use-timestamp (element 4) to 0 (never used). Capture it
+	// before unpack so the assertion is robust against an already-stamped entry.
+	destUseBefore, destOK := ts.KnownDestinationUseTimestamp(destination.Hash)
+	srcUseBefore, srcOK := ts.KnownDestinationUseTimestamp(source.Hash)
+	if !destOK || !srcOK {
+		t.Fatalf("known-destination entries missing: dest=%v src=%v", destOK, srcOK)
+	}
+
+	if _, err := UnpackMessageFromBytes(ts, m.Packed, MethodDirect); err != nil {
+		t.Fatalf("UnpackMessageFromBytes: %v", err)
+	}
+
+	destUseAfter, _ := ts.KnownDestinationUseTimestamp(destination.Hash)
+	srcUseAfter, _ := ts.KnownDestinationUseTimestamp(source.Hash)
+	if destUseAfter != destUseBefore {
+		t.Fatalf("unpack marked destination used: before=%v after=%v, want unchanged", destUseBefore, destUseAfter)
+	}
+	if srcUseAfter != srcUseBefore {
+		t.Fatalf("unpack marked source used: before=%v after=%v, want unchanged", srcUseBefore, srcUseAfter)
+	}
+}
+
 func TestMessagePackIncludesStampAndUnpacksIt(t *testing.T) {
 	t.Parallel()
 	destinationID, err := rns.NewIdentity(true, nil)

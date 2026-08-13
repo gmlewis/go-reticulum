@@ -59,7 +59,7 @@ func TestAnnounceRebroadcastDoesNotMarkDestinationUsed(t *testing.T) {
 }
 
 // TestRecallNoUseDoesNotMarkUsed covers Phase 13 task 7: the transport-internal
-// recallNoUse helper recalls a known destination's identity without updating
+// RecallNoUse helper recalls a known destination's identity without updating
 // its use timestamp, while the public Recall DOES mark it used (Python
 // Identity.recall _no_use flag, RNS/Identity.py:116-160).
 func TestRecallNoUseDoesNotMarkUsed(t *testing.T) {
@@ -68,15 +68,15 @@ func TestRecallNoUseDoesNotMarkUsed(t *testing.T) {
 	destHash := []byte("recall-nouse-dh!!!!!!!!")
 	ts.Remember([]byte("pkt"), destHash, mustTestNewIdentity(t, true).GetPublicKey(), []byte("app"))
 
-	// recallNoUse must not touch the use timestamp.
-	if id := ts.recallNoUse(destHash); id == nil {
-		t.Fatal("recallNoUse returned nil for a known destination")
+	// RecallNoUse must not touch the use timestamp.
+	if id := ts.RecallNoUse(destHash); id == nil {
+		t.Fatal("RecallNoUse returned nil for a known destination")
 	}
 	ts.mu.Lock()
 	useTS, _ := numericValue(ts.knownDestinations[string(destHash)][4])
 	ts.mu.Unlock()
 	if useTS != 0 {
-		t.Fatalf("recallNoUse set use timestamp = %v, want 0 (noUse must not mark used)", useTS)
+		t.Fatalf("RecallNoUse set use timestamp = %v, want 0 (noUse must not mark used)", useTS)
 	}
 
 	// The public Recall must mark it used (element 4 becomes a positive
