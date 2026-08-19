@@ -7,9 +7,12 @@ package interfaces
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"log"
 	"net"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -100,6 +103,11 @@ type TCPClientInterface struct {
 	// handleConnection so the fast-flap teardown hook can attribute the flap
 	// (BackboneInterface.py:834, v1.3.9).
 	remoteIP string
+	// remotePort is the remote TCP port of a spawned client (the peer's
+	// ephemeral port), captured in handleConnection. It backs HashString so a
+	// server-spawned client's interface hash matches Python's
+	// TCPInterface.__str__ (which uses handler.client_address[1]).
+	remotePort int
 	// onSpawnedDown, when copied from the parent server in handleConnection,
 	// is fired by failConn on the up->down transition to record a fast flap
 	// for this remote IP (BackboneInterface.py:833-842, v1.3.9).
@@ -264,8 +272,14 @@ func (tci *TCPClientInterface) readLoop() {
 	for atomic.LoadInt32(&tci.running) == 1 {
 		n, err := conn.Read(buf)
 		if err != nil {
-			log.Printf("[TCP] %v: readLoop Read error: %v", tci.name, err)
+			// An intentional teardown (Detach/shutdown sets running=0 and
+			// closes conn) surfaces here as a benign "use of closed network
+			// connection"; exit silently so a CLI like gornpath can keep its
+			// final output line (e.g. "Path found, ...") as the last line.
+			// Only log (and escalate) an UNEXPECTED read failure while the
+			// interface believes it is still up.
 			if atomic.LoadInt32(&tci.running) == 1 && !tci.IsDetached() {
+				log.Printf("[TCP] %v: readLoop Read error: %v", tci.name, err)
 				tci.panicOnInterfaceErrorf("tcp interface %v read failed: %v", tci.name, err)
 			}
 			break
@@ -410,7 +424,7 @@ func (tci *TCPClientInterface) failConn(conn net.Conn) {
 	tci.mu.Unlock()
 
 	if conn != nil {
-		if err := conn.Close(); err != nil {
+		if err := conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
 			log.Printf("[TCP] %v: failConn close failed: %v", tci.name, err)
 		}
 	}
@@ -473,6 +487,29 @@ func (tci *TCPClientInterface) Status() bool {
 // Type identifies this interface as a TCP transport.
 func (tci *TCPClientInterface) Type() string {
 	return "TCPInterface"
+}
+
+// HashString reproduces Python TCPClientInterface.__str__
+// (RNS/Interfaces/TCPInterface.py:445-452), which Interface.get_hash hashes:
+//
+//	"TCPInterface["+name+"/"+ip_str(target_ip)+":"+str(target_port)+"]"
+//
+// where ip_str brackets the host in [] when it contains ":" (IPv6 literal). A
+// configured (outbound) client uses its target_host/target_port; a
+// server-spawned client uses the peer's remote IP/port
+// (TCPInterface.py:596-597: target_ip/target_port = handler.client_address).
+// Matching this byte-for-byte is required so a destination_table written by
+// Python (which stores this hash in field [6]) can have its receiving
+// interface resolved by Go's findInterfaceByHash — otherwise the entry's
+// Interface stays nil and the path is unusable.
+func (tci *TCPClientInterface) HashString() string {
+	host := tci.targetHost
+	port := tci.targetPort
+	if tci.spawned {
+		host = tci.remoteIP
+		port = tci.remotePort
+	}
+	return "TCPInterface[" + tci.Name() + "/" + tcpHostPort(host, port) + "]"
 }
 
 // IsOut reports whether this interface can originate outbound traffic.
@@ -593,7 +630,8 @@ func (tsi *TCPServerInterface) handleConnection(conn net.Conn) {
 	// guarded by tsi.mu so the accept loop reads them safely even if the parent
 	// (e.g. BackboneInterface) installs them after newTCPServerInterface
 	// started this loop.
-	remoteIP, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
+	remoteIP, portStr, _ := net.SplitHostPort(conn.RemoteAddr().String())
+	remotePort, _ := strconv.Atoi(portStr)
 	tsi.mu.Lock()
 	gate := tsi.incomingGate
 	onDown := tsi.onSpawnedDown
@@ -632,6 +670,7 @@ func (tsi *TCPServerInterface) handleConnection(conn net.Conn) {
 		spawned:        true,
 		spawnedAt:      time.Now(),
 		remoteIP:       remoteIP,
+		remotePort:     remotePort,
 		onSpawnedDown:  onDown,
 	}
 	atomic.StoreInt32(&tci.running, 1)
@@ -687,6 +726,24 @@ func (tsi *TCPServerInterface) Status() bool {
 // Type identifies this interface as a TCP transport.
 func (tsi *TCPServerInterface) Type() string {
 	return "TCPInterface"
+}
+
+// HashString reproduces Python TCPServerInterface.__str__
+// (RNS/Interfaces/TCPInterface.py:669-676), which Interface.get_hash hashes:
+//
+//	"TCPServerInterface["+name+"/"+ip_str(bind_ip)+":"+str(bind_port)+"]"
+func (tsi *TCPServerInterface) HashString() string {
+	return "TCPServerInterface[" + tsi.Name() + "/" + tcpHostPort(tsi.bindIP, tsi.bindPort) + "]"
+}
+
+// tcpHostPort formats a host:port pair the way Python's TCP interface __str__
+// methods do: the host is bracketed in [] when it contains ":" (an IPv6
+// literal), so it round-trips through an IPv6 URI-style address.
+func tcpHostPort(host string, port int) string {
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	return fmt.Sprintf("%s:%d", host, port)
 }
 
 // IsOut reports whether the server can originate traffic through its spawned

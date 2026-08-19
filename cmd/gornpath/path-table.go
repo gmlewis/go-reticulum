@@ -38,8 +38,10 @@ func filterAndSortPathTable(paths []rns.PathInfo, maxHops int, destinationFilter
 	sort.SliceStable(filtered, func(i, j int) bool {
 		left := filtered[i]
 		right := filtered[j]
-		if left.Interface.Name() != right.Interface.Name() {
-			return left.Interface.Name() < right.Interface.Name()
+		ln := rns.InterfaceString(left.Interface)
+		rn := rns.InterfaceString(right.Interface)
+		if ln != rn {
+			return ln < rn
 		}
 		if left.Hops != right.Hops {
 			return left.Hops < right.Hops
@@ -52,11 +54,15 @@ func filterAndSortPathTable(paths []rns.PathInfo, maxHops int, destinationFilter
 func renderPathTableText(paths []rns.PathInfo) string {
 	var builder strings.Builder
 	for _, path := range paths {
+		// Match Python rnpath -t (Utilities/rnpath.py:287-289):
+		//   "<hash> is N hop[m_str] away via <hex> on <iface> expires <ts>"
+		// m_str is " " for 1 hop, "s" otherwise (note: the table view uses a
+		// space for the singular, unlike the request view which uses "").
 		plural := "s"
 		if path.Hops == 1 {
 			plural = " "
 		}
-		builder.WriteString(fmt.Sprintf("%x is %v hop%v away via %x on %v expires %v\n", path.Hash, path.Hops, plural, path.NextHop, path.Interface.Name(), path.Expires.Format("2006-01-02 15:04:05")))
+		builder.WriteString(fmt.Sprintf("<%x> is %v hop%v away via <%x> on %v expires %v\n", path.Hash, path.Hops, plural, path.NextHop, rns.InterfaceString(path.Interface), path.Expires.Format("2006-01-02 15:04:05")))
 	}
 	return builder.String()
 }
@@ -79,7 +85,7 @@ func renderPathTableJSON(paths []rns.PathInfo) (string, error) {
 			Via:       fmt.Sprintf("%x", path.NextHop),
 			Hops:      path.Hops,
 			Expires:   float64(path.Expires.UnixNano()) / 1e9,
-			Interface: path.Interface.Name(),
+			Interface: rns.InterfaceString(path.Interface),
 		})
 	}
 	data, err := json.Marshal(entries)

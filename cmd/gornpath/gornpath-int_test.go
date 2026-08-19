@@ -195,7 +195,7 @@ func TestIntegrationDoRequest(t *testing.T) {
 	if err := doRequestAt(&out, fake, []byte{0xaa, 0xbb}, 1.0, func() time.Time { return time.Unix(0, 0) }, func(time.Duration) {}); err != nil {
 		t.Fatalf("doRequestAt returned error: %v", err)
 	}
-	want := "Path to aabb requested  \rPath found, destination aabb is 2 hops away via ccdd on eth0\n"
+	want := "Path to aabb requested  \rPath found, destination <aabb> is 2 hops away via <ccdd> on test[eth0]\n"
 	if out.String() != want {
 		t.Fatalf("doRequestAt mismatch:\nwant:\n%sgot:\n%s", want, out.String())
 	}

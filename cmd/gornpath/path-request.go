@@ -50,11 +50,16 @@ func doRequestAt(out io.Writer, ts pathRequester, destHash []byte, timeout float
 		if entry == nil {
 			return fmt.Errorf("Error: Invalid path data returned")
 		}
-		plural := "s"
+		// Match Python rnpath exactly (Utilities/rnpath.py:470-474):
+		//   "Path found, destination <hex> is N hop[s] away via <hex> on <iface>"
+		// prettyhexrep wraps each hash in "<...>"; the plural is "" for 1
+		// hop, "s" otherwise; the interface is str(next_hop_interface) — the
+		// full __str__ (e.g. "TCPInterface[name/host:port]"), not just Name.
+		ms := "s"
 		if entry.Hops == 1 {
-			plural = " "
+			ms = ""
 		}
-		if _, err := fmt.Fprintf(out, "\rPath found, destination %x is %v hop%v away via %x on %v\n", destHash, entry.Hops, plural, entry.NextHop, entry.Interface.Name()); err != nil {
+		if _, err := fmt.Fprintf(out, "\rPath found, destination <%x> is %v hop%v away via <%x> on %v\n", destHash, entry.Hops, ms, entry.NextHop, rns.InterfaceString(entry.Interface)); err != nil {
 			return err
 		}
 		return nil

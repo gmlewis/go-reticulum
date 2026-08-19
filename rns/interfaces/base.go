@@ -206,10 +206,13 @@ type BaseInterface struct {
 	defaultIFACSize int
 
 	// hash is the memoized identity hash (Python Interface.get_hash,
-	// RNS/Interfaces/Interface.py:144-146): the SHA-256 of "{Type}[{Name}]".
-	// hashOnce guarantees the computation runs at most once per instance. The
-	// computation itself is supplied by the caller (see MemoizedHash) so the
-	// concrete Type()/Name() virtual dispatch is used, matching Python's
+	// RNS/Interfaces/Interface.py:144-146): the SHA-256 of the interface's
+	// Python __str__ (Interface.__str__ and its overrides). For most types
+	// that is "{Type}[{Name}]", but TCP/UDP/Local/Backbone append "/ip:port";
+	// see interfaceHashString in transport.go. hashOnce guarantees the
+	// computation runs at most once per instance. The computation itself is
+	// supplied by the caller (see MemoizedHash) so the concrete HashString
+	// (or Type/Name default) virtual dispatch is used, matching Python's
 	// full_hash(str(self)) where str dispatches to the subclass __str__.
 	hash     []byte
 	hashOnce sync.Once

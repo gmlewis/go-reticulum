@@ -101,7 +101,7 @@ func TestDoRequestPrintsSpinnerAndSuccessMessage(t *testing.T) {
 	if !strings.Contains(got, "Path to aabb requested") {
 		t.Fatalf("missing request message: %q", got)
 	}
-	if !strings.Contains(got, "Path found, destination aabb is 2 hops away via ccdd on eth0") {
+	if !strings.Contains(got, "Path found, destination <aabb> is 2 hops away via <ccdd> on test[eth0]") {
 		t.Fatalf("missing success message: %q", got)
 	}
 	if fake.requested != 1 {

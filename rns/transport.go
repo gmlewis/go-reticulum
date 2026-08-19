@@ -1594,16 +1594,47 @@ func floatToTime(sec float64) time.Time {
 // the hash is computed once and cached on the instance — matching Python's
 // Interface.get_hash memoization (RNS/Interfaces/Interface.py:144-146) instead
 // of recomputing the SHA-256 on every call.
+// interfaceHashString returns the exact string Python's Interface.get_hash
+// hashes (`RNS.Identity.full_hash(str(self))`). Most interface types implement
+// `__str__` as `f"{Type}[{name}]"`, which equals `Type()[Name()]` — the default
+// below. Interface types whose Python `__str__` embeds extra fields (TCP, UDP,
+// Local, Backbone all append `/ip:port`) implement the optional HashString
+// method to reproduce Python's string byte-for-byte. Without this, a
+// destination_table written by Python (storing Python interface hashes in
+// field [6]) could never have its interfaces resolved by Go —
+// findInterfaceByHash would compare a Go `Type[Name]` hash to a Python
+// `Type[Name/host:port]` hash and never match, leaving PathEntry.Interface nil.
+// InterfaceString returns the Python __str__ equivalent of an interface —
+// the exact string Python's Interface.get_hash hashes and that rnpath's
+// "on <interface>" / get_next_hop_if_name (str(next_hop_interface)) print.
+// Callers that render paths for parity with Python RNS tools should use this
+// rather than Name() (which omits the Type prefix and, for TCP/UDP/Local/
+// Backbone, the /host:port suffix). A nil interface returns "None", matching
+// Python str(None).
+func InterfaceString(iface interfaces.Interface) string {
+	if iface == nil {
+		return "None"
+	}
+	return interfaceHashString(iface)
+}
+
+func interfaceHashString(iface interfaces.Interface) string {
+	if hs, ok := iface.(interface{ HashString() string }); ok {
+		return hs.HashString()
+	}
+	return fmt.Sprintf("%v[%v]", iface.Type(), iface.Name())
+}
+
 func interfaceHash(iface interfaces.Interface) []byte {
 	if iface == nil {
 		return nil
 	}
 	if mh, ok := iface.(interface{ MemoizedHash(func() []byte) []byte }); ok {
 		return mh.MemoizedHash(func() []byte {
-			return FullHash(fmt.Appendf(nil, "%v[%v]", iface.Type(), iface.Name()))
+			return FullHash([]byte(interfaceHashString(iface)))
 		})
 	}
-	return FullHash(fmt.Appendf(nil, "%v[%v]", iface.Type(), iface.Name()))
+	return FullHash([]byte(interfaceHashString(iface)))
 }
 
 // findInterfaceByHash is the Go port of Python Transport.find_interface_from_hash.
