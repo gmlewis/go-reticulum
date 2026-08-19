@@ -342,3 +342,97 @@ func TestLocalClientSleepPauseAndKeepalive(t *testing.T) {
 		}
 	})
 }
+
+// TestLocalSpawnedClientTearsDownOnDisconnect is the regression test for the
+// CPU hot-loop: a spawned (server-accepted) local client that disconnects must
+// be torn down and forgotten by the server, never reconnected. Mirrors
+// LocalInterface.py:313-314 (spawned -> teardown(nowarning=True)) and 345-361
+// (remove from local_client_interfaces, parent.clients -= 1). The previous Go
+// code unconditionally ran reconnectLoop for spawned clients with a zero
+// backoff, busy-dialing 127.0.0.1:0 forever at ~100% CPU.
+func TestLocalSpawnedClientTearsDownOnDisconnect(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix sockets not supported on windows")
+	}
+
+	handler := func(data []byte, iface Interface) {}
+	tmp := testutils.TempDir(t, "go-ret-local-spawn-*")
+	socketPath := filepath.Join(tmp, "local.sock")
+
+	server := mustTestNewLocalServerInterface(t, "local-server-spawn", socketPath, 0, handler)
+	defer func() { _ = server.Detach() }()
+
+	// Simulate another co-located Reticulum client connecting to the shared
+	// instance. The server accepts it and spawns a LocalClientInterface.
+	rawClient, err := net.Dial("unix", socketPath)
+	if err != nil {
+		t.Fatalf("dial shared instance: %v", err)
+	}
+	defer func() { _ = rawClient.Close() }()
+
+	// Wait for the server to accept and register the spawned client.
+	var spawned *LocalClientInterface
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		server.mu.Lock()
+		if len(server.spawnedInterfaces) > 0 {
+			spawned = server.spawnedInterfaces[0]
+		}
+		clients := server.clients
+		server.mu.Unlock()
+		if spawned != nil {
+			if clients != 1 {
+				t.Fatalf("server.clients = %d, want 1 after accept", clients)
+			}
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if spawned == nil {
+		t.Fatalf("server never accepted the spawned client")
+	}
+	if spawned.isConnectedToSharedInstance {
+		t.Fatalf("spawned client flagged as initiator; must be a spawned (non-initiator) client")
+	}
+
+	// Disconnect the remote client. The spawned interface's read loop must
+	// tear down (not reconnect) and remove itself from the server's list.
+	if err := rawClient.Close(); err != nil && !allowClosedNetworkErr(err) {
+		t.Fatalf("close raw client: %v", err)
+	}
+
+	// The server must forget the spawned client (Python removes it from
+	// local_client_interfaces). The old buggy code left it registered forever
+	// while reconnectLoop busy-dialled, so this would time out and fail.
+	deadline = time.Now().Add(2 * time.Second)
+	forgotten := false
+	for time.Now().Before(deadline) {
+		if len(server.SpawnedClientInterfaces()) == 0 {
+			forgotten = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !forgotten {
+		t.Fatalf("spawned client was not removed from server.spawnedInterfaces after disconnect (busy reconnect loop?)")
+	}
+
+	if atomic.LoadInt32(&spawned.running) != 0 {
+		t.Fatalf("spawned client still running after teardown: running=%d", atomic.LoadInt32(&spawned.running))
+	}
+	server.mu.Lock()
+	clients := server.clients
+	server.mu.Unlock()
+	if clients != 0 {
+		t.Fatalf("server.clients = %d after teardown, want 0", clients)
+	}
+}
+
+// TestLocalClientReconnectWaitMatchesPython locks the initiator reconnect
+// backoff to Reticulum's RECONNECT_WAIT = 8 (LocalInterface.py:63). The Go port
+// previously used a 5s per-instance value.
+func TestLocalClientReconnectWaitMatchesPython(t *testing.T) {
+	if LocalClientReconnectWait != 8*time.Second {
+		t.Fatalf("LocalClientReconnectWait = %v, want 8s (LocalInterface.py:63 RECONNECT_WAIT)", LocalClientReconnectWait)
+	}
+}

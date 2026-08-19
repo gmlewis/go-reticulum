@@ -62,6 +62,11 @@ type I2PTunnel struct {
 	// pendingAccept is the in-flight STREAM ACCEPT the ServerTunnel is blocked
 	// on; Close cancels it so the accept loop exits deterministically.
 	pendingAccept *SAMAcceptPending
+	// onAcceptOpened, when non-nil, is invoked after a ServerTunnel has sent
+	// STREAM ACCEPT and before the pending is tracked. It lets deterministic
+	// tests park the accept loop in the Close-vs-track window using channel
+	// synchronization (no time.Sleep); production leaves it nil.
+	onAcceptOpened func()
 	// bgWG tracks all background proxy goroutines so Close drains them.
 	bgWG sync.WaitGroup
 	// activeConns retains the live proxy conns so they are not reaped while
@@ -228,12 +233,23 @@ func (t *I2PTunnel) Close() error {
 	return nil
 }
 
-// trackPending/untrackPending retain the in-flight STREAM ACCEPT so Close can
-// cancel it (ServerTunnel).
-func (t *I2PTunnel) trackPending(p *SAMAcceptPending) {
+// trackPendingIfLive records the in-flight STREAM ACCEPT for cancellation by
+// Close, but only if the tunnel is still running. It returns true when the
+// pending was tracked (tunnel live); false when the tunnel was already stopped,
+// in which case the pending is NOT tracked and the caller must Cancel it and
+// exit. Performing the track-and-check atomically under one lock closes the
+// window where Close ran between OpenStreamAccept returning and the pending
+// being tracked: Close saw pendingAccept=nil and could not cancel it, so the
+// accept loop blocked in pending.Wait forever and Close's bgWG.Wait hung
+// (mirroring asyncio task cancellation in tunnel.server_loop).
+func (t *I2PTunnel) trackPendingIfLive(p *SAMAcceptPending) bool {
 	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.stopped {
+		return false
+	}
 	t.pendingAccept = p
-	t.mu.Unlock()
+	return true
 }
 func (t *I2PTunnel) untrackPending() {
 	t.mu.Lock()
@@ -350,7 +366,17 @@ func (t *ServerTunnel) acceptLoop() {
 			log.Printf("I2P ServerTunnel %s: open accept failed: %v", t.sessionID(), err)
 			continue
 		}
-		t.trackPending(pending)
+		if t.onAcceptOpened != nil {
+			t.onAcceptOpened()
+		}
+		// Track the in-flight accept for cancellation by Close. If Close ran
+		// while OpenStreamAccept was in flight (after it sent STREAM ACCEPT but
+		// before tracking), the tunnel is already stopped: cancel the
+		// freshly-opened pending ourselves and exit so Close's bgWG.Wait returns.
+		if !t.trackPendingIfLive(pending) {
+			pending.Cancel()
+			return
+		}
 		stream, err := pending.Wait()
 		t.untrackPending()
 		if err != nil {

@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -362,6 +363,64 @@ func TestServerTunnelCloseCancelsAccept(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("ServerTunnel.Close did not return (accept not cancelled)")
 	}
+}
+
+// TestServerTunnelCloseTrackPendingRace deterministically exercises the
+// Close-vs-trackPendingIfLive race that intermittently hung the suite under
+// load: Close runs while the accept loop has already sent STREAM ACCEPT and
+// returned from OpenStreamAccept, but has not yet tracked the pending. In that
+// window pendingAccept is nil, so Close cannot cancel it. The fixed accept loop
+// re-checks stopped after tracking and self-cancels; the old code blocked in
+// pending.Wait forever and Close's bgWG.Wait hung.
+//
+// The race is forced with channel/goroutine synchronization (no time.Sleep): a
+// test-only hook parks the accept loop in the window, then spins on isStopped
+// (yielding via runtime.Gosched, never time.Sleep) until Close has set stopped
+// — guaranteeing Close already saw pendingAccept == nil — before proceeding to
+// trackPendingIfLive, which must observe stopped and self-cancel.
+func TestServerTunnelCloseTrackPendingRace(t *testing.T) {
+	t.Parallel()
+	bridge := newMockSAMBridge(t)
+	bridge.holdAccept = true
+	bridge.acceptReceived = make(chan struct{})
+	defer bridge.close()
+
+	st := NewServerTunnel("127.0.0.1:1") // local service need not exist
+	st.SAM = newSAMClient()
+	st.SAM.Address = bridge.addr()
+	st.Destination = NewI2PDestinationFromData([]byte("race-dest"))
+
+	// Park the accept loop after OpenStreamAccept returns and before it tracks
+	// the pending — the exact window where Close previously saw pendingAccept
+	// nil and could not cancel. The hook proceeds only once Close has set
+	// stopped, so the subsequent trackPendingIfLive observes stopped.
+	reachedHook := make(chan struct{})
+	st.onAcceptOpened = func() {
+		close(reachedHook)
+		for !st.isStopped() {
+			runtime.Gosched()
+		}
+	}
+	if err := st.Run(); err != nil {
+		t.Fatalf("ServerTunnel.Run: %v", err)
+	}
+
+	// Wait until the accept loop is parked in the window (STREAM ACCEPT sent,
+	// pending not yet tracked).
+	<-bridge.acceptReceived
+	<-reachedHook
+
+	// Close runs with pendingAccept still nil (the loop has not tracked it).
+	// It must still return: the accept loop, once the hook observes stopped,
+	// self-cancels via trackPendingIfLive and exits so bgWG.Wait completes.
+	// Pure channel sync — if Close leaks, <-closeDone blocks until the test
+	// deadline fails it.
+	closeDone := make(chan struct{})
+	go func() {
+		_ = st.Close()
+		close(closeDone)
+	}()
+	<-closeDone
 }
 
 // TestTunnelSetupLogsUnrecognizedSAMResult covers Phase 19 task 3: when the SAM

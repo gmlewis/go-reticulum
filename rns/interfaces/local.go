@@ -21,6 +21,11 @@ import (
 const (
 	LocalBitrate = 1000 * 1000 * 1000
 
+	// LocalClientReconnectWait is the backoff between reconnection attempts for
+	// an initiator local client interface that lost its connection to the
+	// shared instance (LocalInterface.py:63 RECONNECT_WAIT = 8).
+	LocalClientReconnectWait = 8 * time.Second
+
 	// ClientSleepPauseTimeout is the Android client-sleep pause window after
 	// which outbound traffic to a (presumed asleep) local shared-instance
 	// client is dropped (LocalInterface.py:65
@@ -39,10 +44,22 @@ func isAbstractUnixAddr(path string) bool {
 type LocalClientInterface struct {
 	*BaseInterface
 
-	conn           net.Conn
-	path           string
-	port           int
-	reconnectDelay time.Duration
+	conn net.Conn
+	path string
+	port int
+
+	// isConnectedToSharedInstance distinguishes the initiator local client (a
+	// client process that dials the shared instance) from a spawned local
+	// client (a connection the shared instance accepted from a client). Only
+	// the initiator reconnects on disconnect; spawned clients tear down and are
+	// forgotten by the server (LocalInterface.py:102,151,306-314).
+	isConnectedToSharedInstance bool
+
+	// parent is the LocalServerInterface that spawned this client interface.
+	// It is set only for spawned clients so they can remove themselves from the
+	// server's spawned list and decrement its client count on teardown
+	// (LocalInterface.py:473 parent_interface = self).
+	parent *LocalServerInterface
 
 	// Android client-sleep state (LocalInterface.py:91-106,154). On Android a
 	// spawned local client pauses outbound traffic when no inbound frame has
@@ -64,11 +81,11 @@ type LocalClientInterface struct {
 func NewLocalClientInterface(name string, path string, port int, handler InboundHandler) (*LocalClientInterface, error) {
 	bi := NewBaseInterface(name, ModeFull, LocalBitrate)
 	lci := &LocalClientInterface{
-		BaseInterface:  bi,
-		path:           path,
-		port:           port,
-		inboundHandler: handler,
-		reconnectDelay: 5 * time.Second,
+		BaseInterface:               bi,
+		path:                        path,
+		port:                        port,
+		inboundHandler:              handler,
+		isConnectedToSharedInstance: true,
 	}
 
 	if err := lci.connect(); err != nil {
@@ -109,9 +126,18 @@ func (lci *LocalClientInterface) connect() error {
 	return nil
 }
 
+// reconnectLoop is the initiator-only reconnection backoff loop. A spawned
+// (server-accepted) local client must never reconnect — the server does not
+// dial back to clients — so the read loop routes spawned disconnects to
+// teardown instead. This guard mirrors LocalInterface.py:160-192 reconnect(),
+// which raises IOError on a non-initiator interface; here we log and return.
 func (lci *LocalClientInterface) reconnectLoop() {
+	if !lci.isConnectedToSharedInstance {
+		fmt.Printf("local interface %v: attempt to reconnect on a non-initiator local interface; this should not happen\n", lci.name)
+		return
+	}
 	for atomic.LoadInt32(&lci.running) == 0 && !lci.IsDetached() {
-		time.Sleep(lci.reconnectDelay)
+		time.Sleep(LocalClientReconnectWait)
 		if err := lci.connect(); err == nil {
 			go lci.readLoop()
 			return
@@ -179,8 +205,41 @@ func (lci *LocalClientInterface) readLoop() {
 	atomic.StoreInt32(&lci.running, 0)
 
 	if !lci.IsDetached() {
-		go lci.reconnectLoop()
+		if lci.isConnectedToSharedInstance {
+			// Initiator local client: the connection to the shared instance
+			// was lost, so reconnect with backoff (LocalInterface.py:306-312).
+			go lci.reconnectLoop()
+		} else {
+			// Spawned (server-accepted) local client: the remote client
+			// disconnected. Tear it down and remove it from the server's
+			// spawned list; never reconnect (LocalInterface.py:313-314).
+			lci.teardown()
+		}
 	}
+}
+
+// teardown removes a spawned (server-accepted) local client from its parent
+// server's spawned-client list and decrements the server's client count. It
+// mirrors LocalInterface.py:345-361 teardown(nowarning=True) for spawned
+// clients: no reconnect, no panic, no process exit — the read loop simply exits
+// and the server forgets this client. The underlying connection has already
+// been closed by the read loop before this is called.
+func (lci *LocalClientInterface) teardown() {
+	parent := lci.parent
+	if parent == nil {
+		return
+	}
+	parent.mu.Lock()
+	for i, sc := range parent.spawnedInterfaces {
+		if sc == lci {
+			parent.spawnedInterfaces = append(parent.spawnedInterfaces[:i], parent.spawnedInterfaces[i+1:]...)
+			break
+		}
+	}
+	if parent.clients > 0 {
+		parent.clients--
+	}
+	parent.mu.Unlock()
 }
 
 // Send HDLC-frames the payload and writes it to the connected local shared
@@ -323,6 +382,11 @@ type LocalServerInterface struct {
 	spawnedInterfaces []*LocalClientInterface
 	inboundHandler    InboundHandler
 
+	// clients is the count of currently-spawned local client interfaces
+	// (LocalInterface.py:384 self.clients), incremented in incoming_connection
+	// and decremented when a spawned client tears down.
+	clients int
+
 	running int32
 	mu      sync.Mutex
 }
@@ -395,9 +459,10 @@ func (lsi *LocalServerInterface) acceptLoop() {
 
 func newLocalClientInterfaceFromConn(name string, conn net.Conn, handler InboundHandler) *LocalClientInterface {
 	lci := &LocalClientInterface{
-		BaseInterface:  NewBaseInterface(name, ModeFull, LocalBitrate),
-		conn:           conn,
-		inboundHandler: handler,
+		BaseInterface:               NewBaseInterface(name, ModeFull, LocalBitrate),
+		conn:                        conn,
+		inboundHandler:              handler,
+		isConnectedToSharedInstance: false, // LocalInterface.py:102
 	}
 	atomic.StoreInt32(&lci.running, 1)
 
@@ -433,10 +498,12 @@ func (lsi *LocalServerInterface) SpawnedClientInterfaces() []Interface {
 func (lsi *LocalServerInterface) handleConnection(conn net.Conn) {
 	name := fmt.Sprintf("Local Client %v", conn.RemoteAddr().String())
 	lci := newLocalClientInterfaceFromConn(name, conn, lsi.inboundHandler)
+	lci.parent = lsi
 	lci.copyPanicOnInterfaceErrorFrom(lsi.BaseInterface)
 
 	lsi.mu.Lock()
 	lsi.spawnedInterfaces = append(lsi.spawnedInterfaces, lci)
+	lsi.clients++
 	lsi.mu.Unlock()
 
 	go lci.readLoop()
