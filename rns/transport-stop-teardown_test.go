@@ -12,7 +12,7 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestStopTearsDownLinksBeforeDetach covers Phase 10 task 2: Transport.Stop
+// TestStopTearsDownLinksBeforeDetach verifies that Transport.Stop
 // must tear down every active and pending link (sending a teardown packet)
 // BEFORE detaching interfaces, and provide a 150ms flush window so the
 // teardown packets leave the local transport. It is the Go port of Python

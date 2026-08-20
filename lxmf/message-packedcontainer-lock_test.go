@@ -15,8 +15,8 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestPackedContainerGuardedByPersistLock covers Phase 16 task 2: PackedContainer
-// and WriteToDirectory both take the per-Message persist mutex, so a goroutine
+// TestPackedContainerGuardedByPersistLock verifies that PackedContainer and
+// WriteToDirectory both take the per-Message persist mutex, so a goroutine
 // that mutates message state under the same lock cannot race with a concurrent
 // container snapshot or persist. This mirrors Python's __persist_lock guarding
 // packed_container + write_to_directory (LXMessage.py:188, 660-693, v1.0.0).

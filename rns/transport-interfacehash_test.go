@@ -7,7 +7,11 @@ package rns
 
 import (
 	"bytes"
+	"os/exec"
+	"strings"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 // hashStringIface wraps capturingInterface to add an optional HashString
@@ -45,10 +49,47 @@ func TestInterfaceHashPrefersHashString(t *testing.T) {
 	}
 
 	// The known Python-stored hash for the user's retibooks path (proven).
-	const wantHex = "e7e198b4aa347e50c20d1f51520d64e03ebb141b965f168d57e73be2d3b73ef5"
+	// Verified LIVE against Python's RNS.Identity.full_hash(str(self)) rather
+	// than asserted as a bare literal — this is the dispatch that lets Go
+	// resolve interfaces in a Python-written destination_table.
+	testutils.SkipIfNoPythonRNS(t)
+	wantHex := pythonFullHashHex(t, iface.hashStr)
 	if h := bytesToHex(got); h != wantHex {
-		t.Fatalf("interfaceHash = %s, want %s", h, wantHex)
+		t.Fatalf("interfaceHash = %s, want Python full_hash(%q) = %s", h, iface.hashStr, wantHex)
 	}
+}
+
+// pythonFullHashHex execs `python3 -c "import RNS; print(RNS.Identity.full_hash(<s>).hex())"`
+// and returns the hex digest, so interface-hash parity is proven against the real Python
+// implementation rather than a hand-typed constant.
+func pythonFullHashHex(t *testing.T, s string) string {
+	t.Helper()
+	out, err := exec.Command("python3", "-c",
+		`import RNS; print(RNS.Identity.full_hash(`+goBytesLiteral(s)+`).hex())`,
+	).Output()
+	if err != nil {
+		t.Fatalf("python3 full_hash(%q): %v", s, err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// goBytesLiteral renders a Go string as a Python b"..." literal that safely
+// represents the same bytes (no escaping beyond what b-strings require).
+func goBytesLiteral(s string) string {
+	var b strings.Builder
+	b.WriteString(`b"`)
+	for _, r := range s {
+		switch r {
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			b.WriteString(`\\`)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteString(`"`)
+	return b.String()
 }
 
 // TestInterfaceHashDefaultTypeNam verifies an interface WITHOUT HashString

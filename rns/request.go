@@ -267,7 +267,15 @@ func (rr *RequestReceipt) requestResourceConcluded(resource *Resource) {
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
 
-	if resource.status == ResourceStatusComplete {
+	// Read the resource status through its accessor. The resource's status
+	// field is guarded by the resource's own mutex (r.mu), not rr.mu, so a
+	// direct field read here races with Resource.Request writing status to
+	// ResourceStatusAwaitingProof (resource.go:994) when the receiver demands
+	// missing parts at the same moment the delivery proof arrives and fires
+	// this callback. Status() takes r.mu, which is safe because this callback
+	// is always spawned via `go r.callback(r)` (resource.go:1013/1023/1031),
+	// never invoked while r.mu is held.
+	if resource.Status() == ResourceStatusComplete {
 		rr.logger.Debug("Request %v successfully sent as resource.", rr.RequestID)
 		if rr.StartedAt.IsZero() {
 			rr.StartedAt = time.Now()

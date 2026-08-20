@@ -162,7 +162,7 @@ func TestBaseInterfaceAutoconnectRoundTrip(t *testing.T) {
 	}
 }
 
-// TestInterfaceContractDefaults asserts the Phase 1 interface-contract
+// TestInterfaceContractDefaults asserts the interface-contract
 // accessors return the RNS 1.4.2 defaults (Interface.__init__: gravity=0,
 // recursive_prs=False, announces_from_internal=True, announces_to_internal=None)
 // and that overridden values round-trip through the setters.

@@ -3,6 +3,18 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
+// The tests in this file are Go behavioral unit tests. They assert real Go
+// behavior — stamp-cost handling, propagation sync state tables,
+// message-container aliasing — against hardcoded expected strings. The
+// expected values were derived from the LXMF reference behavior; they are NOT
+// captured from a live `python3` run, and these tests do not exec python3.
+// Any inline comment that mentions "Python" is reference-behavior
+// documentation (explaining why a given expected value is what it is), not a
+// claim of live cross-implementation parity. The test names use the *PerSpec,
+// *MatchesSpec, and *LegacyStyle suffixes (rather than *LikePython /
+// *MatchesPython / *PythonStyle) to reflect that the expected values come from
+// the spec rather than a live Python run.
+
 package lxmf
 
 import (
@@ -301,7 +313,7 @@ func TestHandleOutboundAutoconfiguresZeroOutboundStampCostWithZeroValueStamp(t *
 	}
 }
 
-func TestHandleOutboundFloatAnnounceStampCostOverridesCachedIntegerAndFailsLikePython(t *testing.T) {
+func TestHandleOutboundFloatAnnounceStampCostOverridesCachedIntegerAndFailsPerSpec(t *testing.T) {
 	t.Parallel()
 
 	ts := rns.NewTransportSystem(nil)
@@ -336,7 +348,7 @@ func TestHandleOutboundFloatAnnounceStampCostOverridesCachedIntegerAndFailsLikeP
 	}
 }
 
-func TestHandleOutboundBytesAnnounceStampCostOverridesCachedIntegerAndFailsLikePython(t *testing.T) {
+func TestHandleOutboundBytesAnnounceStampCostOverridesCachedIntegerAndFailsPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -391,7 +403,7 @@ func TestHandleOutboundBytesAnnounceStampCostOverridesCachedIntegerAndFailsLikeP
 	}
 }
 
-func TestHandleOutboundNonNumericAnnounceStampCostFailsLikePython(t *testing.T) {
+func TestHandleOutboundNonNumericAnnounceStampCostFailsPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -4771,7 +4783,7 @@ func TestMessageGetRequestTypedStringSlicesReturnEmptyList(t *testing.T) {
 	}
 }
 
-func TestMessageGetRequestTypedBytesContainersMatchPython(t *testing.T) {
+func TestMessageGetRequestTypedBytesContainersMatchesSpec(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -5346,7 +5358,7 @@ func TestWritePropagationMessageFileOmitsZeroStampSuffixForStampedZeroValue(t *t
 	}
 }
 
-func TestPropagationStoreIgnoresPythonStyleZeroStampFilenameOnRestart(t *testing.T) {
+func TestPropagationStoreIgnoresLegacyStyleZeroStampFilenameOnRestart(t *testing.T) {
 	t.Parallel()
 
 	ts := rns.NewTransportSystem(nil)
@@ -7614,7 +7626,7 @@ func TestPropagationSyncMessageListResponseEmptyCompletes(t *testing.T) {
 	}
 }
 
-func TestPropagationSyncMessageListResponseSliceAliasesBehaveLikePythonLists(t *testing.T) {
+func TestPropagationSyncMessageListResponseSliceAliasesBehavePerSpecLists(t *testing.T) {
 	t.Parallel()
 
 	type anyListAlias []any
@@ -8302,7 +8314,7 @@ func TestPropagationSyncMessageGetResponseEmptyTypedStringSequencesComplete(t *t
 	}
 }
 
-func TestPropagationSyncMessageGetResponseBytesAliasScalarMatchesPython(t *testing.T) {
+func TestPropagationSyncMessageGetResponseBytesAliasScalarMatchesSpec(t *testing.T) {
 	t.Parallel()
 
 	type bytesAlias []byte
@@ -8941,7 +8953,7 @@ func TestPropagationSyncMessageGetResponseTypedBytesArrayCompletes(t *testing.T)
 	}
 }
 
-func TestPropagationSyncMessageGetResponseFixedByteArrayScalarMatchesPython(t *testing.T) {
+func TestPropagationSyncMessageGetResponseFixedByteArrayScalarMatchesSpec(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -9144,7 +9156,7 @@ func TestPropagationSyncMessageGetResponsePreservedBinaryMapKeyCompletes(t *test
 	}
 }
 
-func TestPropagationSyncMessageGetResponseMapAliasesMatchPython(t *testing.T) {
+func TestPropagationSyncMessageGetResponseMapAliasesMatchesSpec(t *testing.T) {
 	t.Parallel()
 
 	type bytesKey [2]byte
@@ -9389,7 +9401,7 @@ func TestPropagationSyncClosedLinkAfterNoPathPreservesFailureState(t *testing.T)
 	}
 }
 
-func TestPropagationSyncClosedLinkStateTableMatchesPython(t *testing.T) {
+func TestPropagationSyncClosedLinkStateTableMatchesSpec(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -9566,7 +9578,7 @@ func TestPropagationSyncAcknowledgeCompletionPreservesLaterFailureStateParameter
 	}
 }
 
-func TestPropagationSyncAcknowledgeCompletionStateTableMatchesPython(t *testing.T) {
+func TestPropagationSyncAcknowledgeCompletionStateTableMatchesSpec(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -9625,7 +9637,7 @@ func TestPropagationSyncAcknowledgeCompletionStateTableMatchesPython(t *testing.
 	}
 }
 
-func TestPropagationSyncAcknowledgeCompletionFailureStateTableMatchesPython(t *testing.T) {
+func TestPropagationSyncAcknowledgeCompletionFailureStateTableMatchesSpec(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -11158,7 +11170,7 @@ func TestAnnounceIncludesAppData(t *testing.T) {
 	}
 }
 
-func TestPropagationNodeAppDataMatchesPythonShape(t *testing.T) {
+func TestPropagationNodeAppDataMatchesSpecShape(t *testing.T) {
 	t.Parallel()
 
 	ts := rns.NewTransportSystem(nil)

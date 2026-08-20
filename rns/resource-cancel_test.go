@@ -30,7 +30,7 @@ func containsContext(ct *captureTransport, want int) bool {
 	return slices.Contains(sentContexts(ct), want)
 }
 
-// TestResourceCancelInitiatorSendsICL asserts Phase 9 Task 3: cancelling an
+// TestResourceCancelInitiatorSendsICL asserts that cancelling an
 // outgoing (initiator) resource below COMPLETE sends a RESOURCE_ICL packet
 // when the link is active, removes the resource from the link's outgoing
 // list, marks it FAILED, and fires the callback (Python Resource.cancel,
@@ -73,7 +73,7 @@ func TestResourceCancelInitiatorSendsICL(t *testing.T) {
 	}
 }
 
-// TestResourceCancelReceiverSendsRCL asserts Phase 9 Task 3: cancelling an
+// TestResourceCancelReceiverSendsRCL asserts that cancelling an
 // incoming (receiver) resource below COMPLETE sends a RESOURCE_RCL packet
 // when the link is active, removes the resource from the link's incoming
 // list, marks it FAILED, and fires the callback (Python Resource.cancel,
@@ -121,7 +121,7 @@ func TestResourceCancelReceiverSendsRCL(t *testing.T) {
 	}
 }
 
-// TestResourceCancelCorruptTearsDownLink asserts Phase 9 Task 3's CORRUPT
+// TestResourceCancelCorruptTearsDownLink asserts the CORRUPT
 // branch (Python Resource.cancel, Resource.py:1090-1093): cancelling a
 // resource already marked CORRUPT runs cancel_incoming_resource +
 // reject(advertisement) + link.teardown. The link ends up LinkClosed and the

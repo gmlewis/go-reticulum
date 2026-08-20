@@ -73,8 +73,6 @@ func TestRenderPathTableJSONUsesPythonFieldNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("renderPathTable returned error: %v", err)
 	}
-	want := `[{"hash":"aabb","timestamp":123,"via":"ccdd","hops":2,"expires":456,"interface":"test[eth0]"}]`
-	if got != want {
-		t.Fatalf("path table JSON mismatch:\n got: %q\nwant: %q", got, want)
-	}
+	wantPaths, _ := pythonPathRateJSON(t)
+	assertJSONParity(t, got, wantPaths)
 }

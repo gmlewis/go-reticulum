@@ -279,16 +279,16 @@ options:
   -b, --bluetooth-on    Turn device bluetooth on
   -B, --bluetooth-off   Turn device bluetooth off
   -p, --bluetooth-pair  Put device into bluetooth pairing mode
-  -w mode, --wifi mode  Set WiFi mode (OFF, AP or STATION)
+  -w, --wifi mode       Set WiFi mode (OFF, AP or STATION)
   --channel channel     Set WiFi channel
   --ssid ssid           Set WiFi SSID (NONE to delete)
   --psk psk             Set WiFi PSK (NONE to delete)
   --show-psk            Display stored WiFi PSK
   --ip ip               Set static WiFi IP address (NONE for DHCP)
   --nm nm               Set static WiFi network mask (NONE for DHCP)
-  -D i, --display i     Set display intensity (0-255)
-  -t s, --timeout s     Set display timeout in seconds, 0 to disable
-  -R rotation, --rotation rotation
+  -D, --display i       Set display intensity (0-255)
+  -t, --timeout s       Set display timeout in seconds, 0 to disable
+  -R, --rotation rotation
                         Set display rotation, valid values are 0 through 3
   --display-addr byte   Set display address as hex byte (00 - FF)
   --recondition-display
@@ -312,7 +312,7 @@ options:
   -r, --rom             Bootstrap EEPROM without flashing firmware
   -k, --key             Generate a new signing key and exit
   -S, --sign            Display public part of signing key
-  -H FIRMWARE_HASH, --firmware-hash FIRMWARE_HASH
+  -H, --firmware-hash FIRMWARE_HASH
                         Set installed firmware hash
   --platform platform   Platform specification for device bootstrap
   --product product     Product specification for device bootstrap

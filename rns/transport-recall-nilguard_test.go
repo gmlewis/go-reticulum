@@ -26,7 +26,7 @@ func rememberDestinationForTest(t *testing.T, ts *TransportSystem, destHash, pub
 	ts.mu.Unlock()
 }
 
-// TestProcessAnnounceTableRecallNilGuardCompletesEntry covers Phase 12 task 10:
+// TestProcessAnnounceTableRecallNilGuardCompletesEntry verifies that
 // when the identity for a queued announce can no longer be recalled because the
 // known-destination was removed mid-retransmit ("the path was cleaned while
 // waiting for announce rebroadcast"), processAnnounceTable completes the
@@ -68,7 +68,7 @@ func TestProcessAnnounceTableRecallNilGuardCompletesEntry(t *testing.T) {
 	}
 }
 
-// TestProcessAnnounceTableRecallableEntryIsRebroadcast covers Phase 12 task 10:
+// TestProcessAnnounceTableRecallableEntryIsRebroadcast verifies that
 // when the identity IS recallable, processAnnounceTable does NOT complete the
 // entry early — it increments retries and keeps rebroadcasting. This confirms
 // the nil-guard only triggers on a nil recall, not on every entry.
@@ -104,7 +104,7 @@ func TestProcessAnnounceTableRecallableEntryIsRebroadcast(t *testing.T) {
 	}
 }
 
-// TestRecallLockedReturnsNilForUnknownDestination covers Phase 12 task 10:
+// TestRecallLockedReturnsNilForUnknownDestination verifies that
 // recallLocked returns nil for a destination that is neither a known
 // destination nor a locally-registered destination, which is the condition the
 // nil-guard checks.

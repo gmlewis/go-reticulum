@@ -58,7 +58,7 @@ func (o *timeoutReentrancyOutlet) GetPacketID(p *Packet) []byte {
 	return p.PacketHash
 }
 
-// TestChannelPacketTimeoutEarlyReturnOnDelivered covers Phase 10 task 6: when
+// TestChannelPacketTimeoutEarlyReturnOnDelivered verifies that when
 // a packet is delivered concurrently with its timeout, packetTimeout must
 // early-return (Python Channel.py:461) instead of resending or tearing the
 // channel down. The packet's receipt is marked delivered and tries is pinned
@@ -96,7 +96,7 @@ func TestChannelPacketTimeoutEarlyReturnOnDelivered(t *testing.T) {
 	}
 }
 
-// TestChannelPacketTimeoutPostResendDeliveredCheck covers Phase 10 task 6's
+// TestChannelPacketTimeoutPostResendDeliveredCheck covers the
 // post-resend delivered check (Python Channel.py:523-524): if the packet is
 // delivered while the resend is in flight, packetTimeout must run the
 // delivered path so the envelope leaves the txRing and the window grows,

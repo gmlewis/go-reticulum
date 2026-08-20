@@ -13,8 +13,8 @@ import (
 )
 
 // discoveryBlackholeHash2 is a second 16-byte identity hash, blackholed AFTER
-// the first ListDiscoveredInterfaces call in the Task 13 cache test, to prove
-// the cached set is consulted rather than re-fetched every call.
+// the first ListDiscoveredInterfaces call, to prove the cached set is consulted
+// rather than re-fetched every call.
 var discoveryBlackholeHash2 = []byte{
 	0xca, 0xfe, 0xba, 0xbe, 0xca, 0xfe, 0xba, 0xbe,
 	0xca, 0xfe, 0xba, 0xbe, 0xca, 0xfe, 0xba, 0xbe,
@@ -23,8 +23,8 @@ var discoveryBlackholeHash2 = []byte{
 // discoveryBlackholeHex2 is the hex-encoded form of discoveryBlackholeHash2.
 const discoveryBlackholeHex2 = "cafebabecafebabecafebabecafebabe"
 
-// TestDiscoveryBlackholedCacheConsultedAndRefreshedAfterTTL covers Phase 11
-// task 13: ListDiscoveredInterfaces consults a cached blackholed-identity set
+// TestDiscoveryBlackholedCacheConsultedAndRefreshedAfterTTL verifies that
+// ListDiscoveredInterfaces consults a cached blackholed-identity set
 // (RNS/Discovery.py:460-465, __blackholed / blackholed_updated) that is
 // refreshed from GetBlackholedIdentities at most once per 60 seconds.
 //

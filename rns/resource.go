@@ -573,19 +573,11 @@ func newResourceWithOptions(data []byte, link *Link, opts ResourceOptions, randR
 		}
 	}
 
-	r.randomHash = make([]byte, ResourceRandomHashSize)
-	if _, err := randRead(r.randomHash); err != nil {
-		return nil, fmt.Errorf("failed to generate random hash for resource: %w", err)
-	}
-
-	hashMaterial := make([]byte, 0, len(data)+len(r.randomHash))
-	hashMaterial = append(hashMaterial, data...)
-	hashMaterial = append(hashMaterial, r.randomHash...)
-	r.hash = FullHash(hashMaterial)
-	r.expectedProof = FullHash(append(copyBytes(data), r.hash...))
-	r.originalHash = r.hash
-
-	// Handle metadata: pack and prepend to payload
+	// Handle metadata: pack and prepend to payload. Python Resource.__init__
+	// (Resource.py:330) packs data = self.metadata + resource_data BEFORE
+	// hashing and compression, so the metadata prefix is part of the hashed
+	// and (when compressed) compressed stream. Build it first so the hash
+	// below can cover it.
 	var metadataBytes []byte
 	if len(opts.Metadata) > 0 {
 		packedMetadata, err := msgpack.Pack(opts.Metadata)
@@ -604,6 +596,29 @@ func newResourceWithOptions(data []byte, link *Link, opts ResourceOptions, randR
 		copy(metadataBytes[3:], packedMetadata)
 		r.totalSize = int64(len(metadataBytes)) + int64(len(payload))
 	}
+
+	r.randomHash = make([]byte, ResourceRandomHashSize)
+	if _, err := randRead(r.randomHash); err != nil {
+		return nil, fmt.Errorf("failed to generate random hash for resource: %w", err)
+	}
+
+	// The resource hash and expected proof are computed over the FULL
+	// uncompressed data — the metadata prefix followed by the file payload —
+	// matching Python (Resource.py:437 self.hash = full_hash(data +
+	// self.random_hash), :439 expected_proof = full_hash(data + self.hash),
+	// where data = self.metadata + resource_data from :330). Hashing only the
+	// file payload (excluding metadata) diverges from Python: a Python
+	// receiver hashes the full data and would mark the resource CORRUPT, and
+	// a Python sender would reject this side's conclude proof.
+	fullUncompressed := make([]byte, 0, len(metadataBytes)+len(data))
+	fullUncompressed = append(fullUncompressed, metadataBytes...)
+	fullUncompressed = append(fullUncompressed, data...)
+	hashMaterial := make([]byte, 0, len(fullUncompressed)+len(r.randomHash))
+	hashMaterial = append(hashMaterial, fullUncompressed...)
+	hashMaterial = append(hashMaterial, r.randomHash...)
+	r.hash = FullHash(hashMaterial)
+	r.expectedProof = FullHash(append(copyBytes(fullUncompressed), r.hash...))
+	r.originalHash = r.hash
 
 	resourcePlaintext := make([]byte, 0, len(r.randomHash)+len(metadataBytes)+len(payload))
 	resourcePlaintext = append(resourcePlaintext, r.randomHash...)
@@ -812,7 +827,7 @@ func (r *Resource) cancelLocked() {
 // link.teardown. It assumes r.mu is already held (the caller — currently
 // Assemble's decompression-bomb guard — holds it) and that r.status has
 // already been set to ResourceStatusCorrupt. The full Cancel rewrite
-// (ICL/RCL packets, FAILED branch) is a separate Phase 9 task.
+// (ICL/RCL packets, FAILED branch) is handled separately.
 func (r *Resource) cancelCorruptLocked() {
 	if r.link != nil {
 		r.link.CancelIncomingResource(r)
@@ -1153,39 +1168,25 @@ func (r *Resource) Assemble() {
 		return
 	}
 
-	rawPayload := assembled[ResourceRandomHashSize:]
-	payload := rawPayload
+	// Strip the random-hash prefix that the sender prepended to the stream
+	// (Python Resource.assemble, Resource.py:685-686). What remains is the
+	// full uncompressed data — the metadata prefix (if any) followed by the
+	// application payload.
+	fullData := assembled[ResourceRandomHashSize:]
 
-	// Extract metadata if present (metadata is prepended to the data)
-	if r.hasMetadata && len(rawPayload) >= 3 {
-		metadataSize := int(rawPayload[0])<<16 | int(rawPayload[1])<<8 | int(rawPayload[2])
-		if len(rawPayload) >= 3+metadataSize {
-			packedMetadata := rawPayload[3 : 3+metadataSize]
-			unpacked, err := msgpack.Unpack(packedMetadata)
-			if err != nil {
-				r.link.logger.Debug("Failed to unpack metadata: %v", err)
-			} else {
-				if m, ok := unpacked.(map[any]any); ok {
-					r.metadata = make(map[string][]byte)
-					for k, v := range m {
-						if ks, ok := k.(string); ok {
-							if vb, ok := v.([]byte); ok {
-								r.metadata[ks] = vb
-							}
-						}
-					}
-				}
-			}
-			payload = rawPayload[3+metadataSize:]
-		}
-	}
-
+	// Decompress the FULL data before any metadata extraction. The metadata
+	// prefix is part of the compressed stream on the sender side (Resource.py
+	// :330 packs data = self.metadata + resource_data, then compresses that
+	// whole at :388), so Python decompresses first and only extracts metadata
+	// afterward (Resource.py:688-691 then :700-710). Extracting metadata from
+	// the still-compressed bytes — as Go previously did — corrupts both the
+	// decompression input and the metadata.
 	if r.compressed {
 		maxLen := r.maxDecompressedSize
 		if maxLen <= 0 {
 			maxLen = ResourceAutoCompressMaxSize
 		}
-		decompressed, err := DecompressBzip2WithLimit(payload, maxLen)
+		decompressed, err := DecompressBzip2WithLimit(fullData, maxLen)
 		if err != nil {
 			if errors.Is(err, ErrDecompressedTooLarge) {
 				// Decompression-bomb guard (Python Resource.assemble,
@@ -1203,16 +1204,60 @@ func (r *Resource) Assemble() {
 			r.status = ResourceStatusFailed
 			return
 		}
-		payload = decompressed
+		fullData = decompressed
 	}
-	calculatedHash := FullHash(append(copyBytes(payload), r.randomHash...))
+
+	// Verify the hash over the FULL data (metadata prefix + payload), matching
+	// Python Resource.assemble (Resource.py:698): calculated_hash is computed
+	// over self.data — the full uncompressed data, BEFORE metadata extraction
+	// — concatenated with random_hash. Hashing only the metadata-stripped
+	// payload (as Go previously did) diverges whenever the sender attached
+	// metadata, which every rncp transfer does (the "name" field), causing the
+	// receiver to mark the resource CORRUPT and never deliver the file.
+	calculatedHash := FullHash(append(copyBytes(fullData), r.randomHash...))
 	if !bytes.Equal(calculatedHash, r.hash) {
 		r.link.logger.Debug("Assembled resource %x failed payload hash validation", r.hash)
 		r.status = ResourceStatusCorrupt
 		return
 	}
 
-	r.data = copyBytes(payload)
+	// Extract metadata if present (metadata is prepended to the data). Python
+	// extracts it only after the hash check succeeds (Resource.py:700-710).
+	payload := fullData
+	if r.hasMetadata && len(fullData) >= 3 {
+		metadataSize := int(fullData[0])<<16 | int(fullData[1])<<8 | int(fullData[2])
+		if len(fullData) >= 3+metadataSize {
+			packedMetadata := fullData[3 : 3+metadataSize]
+			unpacked, err := msgpack.Unpack(packedMetadata)
+			if err != nil {
+				r.link.logger.Debug("Failed to unpack metadata: %v", err)
+			} else {
+				if m, ok := unpacked.(map[any]any); ok {
+					r.metadata = make(map[string][]byte)
+					for k, v := range m {
+						if ks, ok := k.(string); ok {
+							if vb, ok := v.([]byte); ok {
+								r.metadata[ks] = vb
+							}
+						}
+					}
+				}
+			}
+			payload = fullData[3+metadataSize:]
+		}
+	}
+
+	// The resource proof must be computed over the FULL data (metadata prefix
+	// + payload). Python's receiver prove() hashes self.data, which at prove
+	// time still holds the full uncompressed data: assemble() extracts
+	// metadata into a local variable (Resource.py:708 reassigns `data`, not
+	// `self.data`), and prove() runs before that local is used. Hashing the
+	// metadata-stripped payload instead produces a proof the sender's
+	// validate_proof (Resource.py:790) rejects, so the sender never reaches
+	// COMPLETE and reports the transfer as failed even though the file
+	// arrived. Temporarily set r.data to the full data for the proof, then
+	// restore the metadata-stripped payload for the application callback.
+	r.data = copyBytes(fullData)
 	r.status = ResourceStatusComplete
 	r.recordExpectedRate()
 	if err := r.prove(); err != nil {
@@ -1220,6 +1265,7 @@ func (r *Resource) Assemble() {
 	} else {
 		r.link.logger.Debug("Sent resource proof for %x", r.hash)
 	}
+	r.data = copyBytes(payload)
 	if r.callback != nil {
 		go r.callback(r)
 	}

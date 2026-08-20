@@ -138,8 +138,8 @@ options:
   -C, --no-compress     disable automatic compression
   -F, --allow-fetch     allow authenticated clients to fetch files
   -f, --fetch           fetch file from remote listener instead of sending
-  -j path, --jail path  restrict fetch requests to specified path
-  -s path, --save path  save received files in specified path
+  -j, --jail path       restrict fetch requests to specified path
+  -s, --save path       save received files in specified path
   -O, --overwrite       Allow overwriting received files, instead of adding postfix
   -b seconds            announce interval, 0 to only announce at startup
   -a allowed_hash       allow this identity (or add in ~/.rncp/allowed_identities)

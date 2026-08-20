@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// TestLinkWatchdogOutboundTriggerSendsKeepalive covers Phase 10 task 3: the
+// TestLinkWatchdogOutboundTriggerSendsKeepalive covers the
 // v1.4.0 link-watchdog fix that adds the outbound-inactivity trigger. Python
 // Link.py:749 fires the keepalive/stale check when
 // `now >= last_inbound + keepalive OR now >= last_outbound + keepalive`.
@@ -104,7 +104,7 @@ func TestLinkWatchdogOutboundTriggerDoesNotStaleOnFreshInbound(t *testing.T) {
 	}
 }
 
-// TestLinkKeepaliveResponseGuard covers Phase 10 task 3: the v1.4.0 keepalive
+// TestLinkKeepaliveResponseGuard covers the v1.4.0 keepalive
 // response guard. Python Link.py:1124-1127 only echoes a 0xFE keepalive when
 // `time.time() >= self.last_outbound + self.keepalive` — recent outbound
 // traffic already serves as the keepalive echo, so a redundant 0xFE would

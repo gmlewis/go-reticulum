@@ -4762,8 +4762,7 @@ func (r *Router) GetAnnounceAppData(destinationHash []byte) []byte {
 }
 
 func (r *Router) getAnnounceAppDataLocked(destinationHash []byte) []byte {
-	hashKey := string(destinationHash)
-	name, hasName := r.displayNames[hashKey]
+	name, hasName := r.displayNames[string(destinationHash)]
 	if !hasName {
 		return nil
 	}
@@ -4771,7 +4770,7 @@ func (r *Router) getAnnounceAppDataLocked(destinationHash []byte) []byte {
 	var displayNameField any = []byte(name)
 
 	var stampCostField any
-	if cost, ok := r.inboundStampCosts[hashKey]; ok && cost > 0 && cost < 255 {
+	if cost, ok := r.inboundStampCosts[string(destinationHash)]; ok && cost > 0 && cost < 255 {
 		stampCostField = cost
 	}
 

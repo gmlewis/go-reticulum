@@ -32,7 +32,7 @@ func packRatchetFile(ratchetPub []byte, receivedSec float64) ([]byte, error) {
 	})
 }
 
-// TestCleanRatchetsRemovesRatchetForUnknownDestination covers Phase 13 task 5:
+// TestCleanRatchetsRemovesRatchetForUnknownDestination verifies that
 // CleanRatchets removes a ratchet file whose destination hash is NOT a key in
 // knownDestinations (Python Identity._clean_ratchets "unknown" branch,
 // RNS/Identity.py:470-471,474-475).
@@ -60,7 +60,7 @@ func TestCleanRatchetsRemovesRatchetForUnknownDestination(t *testing.T) {
 	}
 }
 
-// TestCleanRatchetsKeepsRatchetForKnownDestination covers Phase 13 task 5: a
+// TestCleanRatchetsKeepsRatchetForKnownDestination verifies that a
 // fresh, non-expired ratchet file for a destination that IS in
 // knownDestinations is kept by CleanRatchets (neither expired, corrupted, nor
 // unknown).
@@ -88,7 +88,7 @@ func TestCleanRatchetsKeepsRatchetForKnownDestination(t *testing.T) {
 	}
 }
 
-// TestCleanRatchetsRemovesExpiredRatchet covers Phase 13 task 5: an expired
+// TestCleanRatchetsRemovesExpiredRatchet verifies that an expired
 // ratchet file (received + RATCHET_EXPIRY in the past) is removed even for a
 // known destination (Python Identity._clean_ratchets "expired" branch,
 // RNS/Identity.py:462-463).

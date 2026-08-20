@@ -13,36 +13,49 @@ import (
 )
 
 // TestResourceConstants asserts every Resource timing/state constant the
-// watchdog depends on equals the value captured from Python's
-// RNS/Resource.py:97-137 (live `python3.14 -c "import RNS; ..."` run, rns
-// 1.3.5). These are the golden values the watchdog state machine in
-// Phase E.3-E.6 is computed against, so a drift here would silently change
-// every retry/timeout.
+// watchdog depends on equals the live value captured from Python's
+// RNS/Resource.py:99-137 via `import RNS`. These are the golden values the
+// watchdog state machine is computed against, so a drift
+// here would silently change every retry/timeout.
 func TestResourceConstants(t *testing.T) {
 	t.Parallel()
 
+	// name -> Python constant name; got is the Go constant (typed).
 	tests := []struct {
 		name string
+		py   string
 		got  any
-		want any
 	}{
-		{"ProcessingGrace", ResourceProcessingGrace, float64(1.0)},
-		{"RetryGraceTime", ResourceRetryGraceTime, float64(0.25)},
-		{"PerRetryDelay", ResourcePerRetryDelay, float64(0.5)},
-		{"WatchdogMaxSleep", ResourceWatchdogMaxSleep, float64(1.0)},
-		{"ProofTimeoutFactor", ResourceProofTimeoutFactor, float64(3.0)},
-		{"PartTimeoutFactor", ResourcePartTimeoutFactor, float64(4.0)},
-		{"PartTimeoutFactorAfterRtt", ResourcePartTimeoutFactorAfterRtt, float64(2.0)},
-		{"SenderGraceTime", ResourceSenderGraceTime, float64(10.0)},
-		{"HmuWaitFactor", ResourceHmuWaitFactor, float64(3.5)},
-		{"MaxRetries", ResourceMaxRetries, int(16)},
-		{"MaxAdvRetries", ResourceMaxAdvRetries, int(4)},
-		{"WindowFlexibility", ResourceWindowFlexibility, int(4)},
+		{"ProcessingGrace", "PROCESSING_GRACE", ResourceProcessingGrace},
+		{"RetryGraceTime", "RETRY_GRACE_TIME", ResourceRetryGraceTime},
+		{"PerRetryDelay", "PER_RETRY_DELAY", ResourcePerRetryDelay},
+		{"WatchdogMaxSleep", "WATCHDOG_MAX_SLEEP", ResourceWatchdogMaxSleep},
+		{"ProofTimeoutFactor", "PROOF_TIMEOUT_FACTOR", ResourceProofTimeoutFactor},
+		{"PartTimeoutFactor", "PART_TIMEOUT_FACTOR", ResourcePartTimeoutFactor},
+		{"PartTimeoutFactorAfterRtt", "PART_TIMEOUT_FACTOR_AFTER_RTT", ResourcePartTimeoutFactorAfterRtt},
+		{"SenderGraceTime", "SENDER_GRACE_TIME", ResourceSenderGraceTime},
+		{"HmuWaitFactor", "HMU_WAIT_FACTOR", ResourceHmuWaitFactor},
+		{"MaxRetries", "MAX_RETRIES", ResourceMaxRetries},
+		{"MaxAdvRetries", "MAX_ADV_RETRIES", ResourceMaxAdvRetries},
+		{"WindowFlexibility", "WINDOW_FLEXIBILITY", ResourceWindowFlexibility},
 	}
 
+	live := pythonResourceConstants(t)
+
 	for _, tc := range tests {
-		if !reflect.DeepEqual(tc.got, tc.want) {
-			t.Fatalf("Resource constant %s = %v (%T), want %v (%T)", tc.name, tc.got, tc.got, tc.want, tc.want)
+		// Coerce the live Python value to the Go constant's type so the
+		// comparison is type-faithful (float64 constants vs int constants).
+		var want any
+		switch tc.got.(type) {
+		case float64:
+			want = live[tc.py]
+		case int:
+			want = int(live[tc.py])
+		default:
+			t.Fatalf("Resource constant %s has unexpected Go type %T", tc.name, tc.got)
+		}
+		if !reflect.DeepEqual(tc.got, want) {
+			t.Fatalf("Resource constant %s = %v (%T), want live Python %v (%T)", tc.name, tc.got, tc.got, want, want)
 		}
 	}
 }
@@ -268,11 +281,10 @@ func TestResourceStateReceiver(t *testing.T) {
 }
 
 // TestUpdateEifr asserts Resource.updateEifr (Python Resource.update_eifr,
-// Resource.py:543-558) computes eifr and pushes it onto link.expected_rate
-// for every input combination. Golden values were captured from a live
-// `import RNS` run by constructing a Resource via __new__ and setting the
-// same rtt / req_data_rtt_rate / previous_eifr / link.rtt /
-// link.establishment_cost attributes, then calling update_eifr().
+// Resource.py:552-562) computes eifr and pushes it onto link.expected_rate
+// for every input combination. The expected eifr for each case is captured
+// live by running the real Python Resource.update_eifr (via a bare
+// __new__-constructed Resource with a fake link) over the same inputs.
 func TestUpdateEifr(t *testing.T) {
 	t.Parallel()
 
@@ -283,7 +295,6 @@ func TestUpdateEifr(t *testing.T) {
 		establishment  float64
 		reqDataRttRate float64
 		previousEifr   *float64
-		wantEifr       float64
 	}{
 		{
 			name:           "rtt_unset_link_rtt_0.5_ec_1000_no_prev",
@@ -292,7 +303,6 @@ func TestUpdateEifr(t *testing.T) {
 			establishment:  1000,
 			reqDataRttRate: 0,
 			previousEifr:   nil,
-			wantEifr:       16000.0,
 		},
 		{
 			name:           "rtt_0.5_rdrr_200",
@@ -301,7 +311,6 @@ func TestUpdateEifr(t *testing.T) {
 			establishment:  9999,
 			reqDataRttRate: 200,
 			previousEifr:   nil,
-			wantEifr:       1600.0,
 		},
 		{
 			name:           "rtt_unset_prev_5000",
@@ -310,7 +319,6 @@ func TestUpdateEifr(t *testing.T) {
 			establishment:  9999,
 			reqDataRttRate: 0,
 			previousEifr:   new(float64(5000)),
-			wantEifr:       5000.0,
 		},
 		{
 			name:           "rtt_unset_link_rtt_1.0_ec_256",
@@ -319,7 +327,6 @@ func TestUpdateEifr(t *testing.T) {
 			establishment:  256,
 			reqDataRttRate: 0,
 			previousEifr:   nil,
-			wantEifr:       2048.0,
 		},
 		{
 			// rtt is set, but req_data_rtt_rate==0 and previous_eifr is
@@ -331,11 +338,22 @@ func TestUpdateEifr(t *testing.T) {
 			establishment:  9999,
 			reqDataRttRate: 0,
 			previousEifr:   new(float64(3333)),
-			wantEifr:       3333.0,
 		},
 	}
 
-	for _, tc := range cases {
+	pyCases := make([]pyEifrCase, len(cases))
+	for i, tc := range cases {
+		pyCases[i] = pyEifrCase{
+			Rtt:            tc.rtt,
+			LinkRtt:        tc.linkRTT,
+			Establishment:  tc.establishment,
+			ReqDataRttRate: tc.reqDataRttRate,
+			PreviousEifr:   tc.previousEifr,
+		}
+	}
+	wantEifr := pythonUpdateEifr(t, pyCases)
+
+	for i, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			link := testActiveResourceLink(t)
 			link.rtt = tc.linkRTT
@@ -349,13 +367,13 @@ func TestUpdateEifr(t *testing.T) {
 			r.updateEifr()
 
 			if r.eifr == nil {
-				t.Fatalf("eifr = nil, want %v", tc.wantEifr)
+				t.Fatalf("eifr = nil, want %v", wantEifr[i])
 			}
-			if *r.eifr != tc.wantEifr {
-				t.Fatalf("eifr = %v, want %v", *r.eifr, tc.wantEifr)
+			if *r.eifr != wantEifr[i] {
+				t.Fatalf("eifr = %v, want live Python %v", *r.eifr, wantEifr[i])
 			}
-			if link.expectedRate != tc.wantEifr {
-				t.Fatalf("link.expectedRate = %v, want %v", link.expectedRate, tc.wantEifr)
+			if link.expectedRate != wantEifr[i] {
+				t.Fatalf("link.expectedRate = %v, want live Python %v", link.expectedRate, wantEifr[i])
 			}
 		})
 	}

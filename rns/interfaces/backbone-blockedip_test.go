@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// TestBlockedIPListReturnsAllFlappedIPs covers Phase 18 task 2: the exported
+// TestBlockedIPListReturnsAllFlappedIPs verifies the exported
 // BlockedIPList property mirrors Python's blocked_ip_list
 // (BackboneInterface.py:532-534, v1.4.0), returning every registry key without
 // purging and without filtering by the grace threshold.
@@ -37,7 +37,7 @@ func TestBlockedIPListReturnsAllFlappedIPs(t *testing.T) {
 	}
 }
 
-// TestBlockedIPListEmptyWhenBlockingDisabled covers Phase 18 task 2: when
+// TestBlockedIPListEmptyWhenBlockingDisabled verifies that when
 // block_fast_flapping is false, BlockedIPList returns nil/empty, mirroring
 // Python's `if not self.block_fast_flapping: return []`
 // (BackboneInterface.py:533-534).
@@ -55,7 +55,7 @@ func TestBlockedIPListEmptyWhenBlockingDisabled(t *testing.T) {
 	}
 }
 
-// TestBlockedIPCountCountsOnlyOverGrace covers Phase 18 task 2: the exported
+// TestBlockedIPCountCountsOnlyOverGrace verifies the exported
 // BlockedIPCount property mirrors Python's blocked_ip_count
 // (BackboneInterface.py:537-560, v1.3.9), counting only IPs whose flap count
 // exceeds the grace threshold (flaps > grace), while unblocked flapped IPs do
@@ -84,7 +84,7 @@ func TestBlockedIPCountCountsOnlyOverGrace(t *testing.T) {
 	}
 }
 
-// TestBlockedIPCountPurgesExpired covers Phase 18 task 2: BlockedIPCount purges
+// TestBlockedIPCountPurgesExpired verifies that BlockedIPCount purges
 // entries whose last flap is older than the expiry window before counting, so
 // an expired blocked IP no longer contributes (BackboneInterface.py:548-557).
 func TestBlockedIPCountPurgesExpired(t *testing.T) {
@@ -107,7 +107,7 @@ func TestBlockedIPCountPurgesExpired(t *testing.T) {
 	}
 }
 
-// TestBlockedIPCountZeroWhenBlockingDisabled covers Phase 18 task 2: when
+// TestBlockedIPCountZeroWhenBlockingDisabled verifies that when
 // block_fast_flapping is false, BlockedIPCount returns 0 regardless of flap
 // history (BackboneInterface.py:538).
 func TestBlockedIPCountZeroWhenBlockingDisabled(t *testing.T) {

@@ -133,7 +133,7 @@ func reservePort(t *testing.T) int {
 	return addr.Port
 }
 
-// TestClientTunnelProxiesData covers Phase 19 task 1: a ClientTunnel listens
+// TestClientTunnelProxiesData verifies that a ClientTunnel listens
 // on a local address, and a local client connecting there is proxied over a
 // SAM stream to the remote destination (tunnel.ClientTunnel.run/handle_client).
 // The bridge acts as the remote peer, echoing data back through the tunnel.
@@ -177,7 +177,7 @@ func TestClientTunnelProxiesData(t *testing.T) {
 	}
 }
 
-// TestServerTunnelProxiesData covers Phase 19 task 1: a ServerTunnel accepts an
+// TestServerTunnelProxiesData verifies that a ServerTunnel accepts an
 // inbound I2P stream, reads the remote-destination line, dials the local
 // service, and proxies bidirectionally (tunnel.ServerTunnel.run/handle_client).
 // The bridge acts as the incoming peer; a local echo server is the exposed
@@ -249,7 +249,7 @@ func TestServerTunnelProxiesData(t *testing.T) {
 	}
 }
 
-// TestClientTunnelCloseDrainsProxies covers Phase 19 task 2: an active proxy
+// TestClientTunnelCloseDrainsProxies verifies that an active proxy
 // goroutine is tracked (activeConns non-empty while the tunnel is live) and
 // Close drains it so no proxy is fire-and-forget (tunnel.py:96-102
 // background_tasks set). peerDone proves Close actually closes the retained
@@ -301,7 +301,7 @@ func TestClientTunnelCloseDrainsProxies(t *testing.T) {
 	active := len(ct.activeConns)
 	ct.mu.Unlock()
 	if active == 0 {
-		t.Fatal("activeConns empty during live proxy; want retained refs (task 2)")
+		t.Fatal("activeConns empty during live proxy; want retained refs")
 	}
 
 	// Close must drain the proxies and return.
@@ -320,11 +320,11 @@ func TestClientTunnelCloseDrainsProxies(t *testing.T) {
 	select {
 	case <-peerDone:
 	case <-time.After(3 * time.Second):
-		t.Fatal("proxy goroutine did not exit after Close; conns not retained/closed (task 2)")
+		t.Fatal("proxy goroutine did not exit after Close; conns not retained/closed")
 	}
 }
 
-// TestServerTunnelCloseCancelsAccept covers Phase 19 task 2: Close cancels the
+// TestServerTunnelCloseCancelsAccept verifies that Close cancels the
 // in-flight STREAM ACCEPT so the accept loop exits deterministically. The bridge
 // holds the ACCEPT conn open without replying (holdAccept) and signals when the
 // ACCEPT command arrives, so the tunnel is guaranteed to be blocked in
@@ -423,7 +423,7 @@ func TestServerTunnelCloseTrackPendingRace(t *testing.T) {
 	<-closeDone
 }
 
-// TestTunnelSetupLogsUnrecognizedSAMResult covers Phase 19 task 3: when the SAM
+// TestTunnelSetupLogsUnrecognizedSAMResult verifies that when the SAM
 // API returns a RESULT not in the known SAM_EXCEPTIONS table, Python's aiosam
 // raises a KeyError (dict lookup miss) which is not a known i2plib exception, so
 // both ClientTunnel and ServerTunnel setup log the catch-all
@@ -469,7 +469,7 @@ func TestTunnelSetupLogsUnrecognizedSAMResult(t *testing.T) {
 	check(t, st.Run, &sbuf)
 }
 
-// TestTunnelSetupLogsUnrecognizedSAMError covers Phase 19 task 3: a non-SAM-
+// TestTunnelSetupLogsUnrecognizedSAMError verifies that a non-SAM-
 // protocol error during setup (e.g. the SAM API is unreachable) is not a known
 // i2plib exception, so the else catch-all logs "Unspecified I2P daemon error"
 // with the underlying error text.

@@ -19,12 +19,13 @@ import (
 func TestHelpOutputMatchesPythonSnapshot(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	out, err := runGornodeconf("--help")
+	got, err := runGornodeconf("--help")
 	if err != nil {
-		t.Fatalf("gornodeconf --help failed: %v\n%v", err, out)
+		t.Fatalf("gornodeconf --help failed: %v\n%v", err, got)
 	}
-	if strings.TrimSpace(out) != strings.TrimSpace(usageText) {
-		t.Fatalf("help output mismatch:\n--- got ---\n%v\n--- want ---\n%v", out, usageText)
+	want := runRnodeconfHelp(t)
+	if normalizeGornodeconfHelp(got) != normalizeGornodeconfHelp(want) {
+		t.Fatalf("help output mismatch vs live Python:\n--- got ---\n%v\n--- want ---\n%v", got, want)
 	}
 }
 

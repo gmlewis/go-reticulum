@@ -45,7 +45,7 @@ func TestDoTableUsesRenderer(t *testing.T) {
 	if err := doTable(&out, pathTableProviderFunc(func() []rns.PathInfo { return paths }), 0, false); err != nil {
 		t.Fatalf("doTable returned error: %v", err)
 	}
-	if got, want := out.String(), "01 is 1 hop  away via 11 on eth0 expires 2026-04-05 14:30:46\n"; got != want {
+	if got, want := out.String(), "<01> is 1 hop  away via <11> on test[eth0] expires 2026-04-05 14:30:46\n"; got != want {
 		t.Fatalf("table output mismatch: got %q want %q", got, want)
 	}
 }
@@ -74,7 +74,7 @@ func TestDoTableJSONUsesRenderer(t *testing.T) {
 	if err := doTable(&out, pathTableProviderFunc(func() []rns.PathInfo { return paths }), 0, true); err != nil {
 		t.Fatalf("doTable returned error: %v", err)
 	}
-	if got, want := out.String(), "[{\"hash\":\"aabb\",\"timestamp\":123,\"via\":\"ccdd\",\"hops\":2,\"expires\":456,\"interface\":\"eth0\"}]"; got != want {
+	if got, want := out.String(), "[{\"hash\":\"aabb\",\"timestamp\":123,\"via\":\"ccdd\",\"hops\":2,\"expires\":456,\"interface\":\"test[eth0]\"}]"; got != want {
 		t.Fatalf("table JSON mismatch: got %q want %q", got, want)
 	}
 }

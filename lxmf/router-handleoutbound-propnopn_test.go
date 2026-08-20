@@ -14,8 +14,8 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestHandleOutboundPropagatedWithoutPropagationNodeErrors covers Phase 14
-// task 7: HandleOutbound rejects a propagated message when no outbound
+// TestHandleOutboundPropagatedWithoutPropagationNodeErrors verifies that
+// HandleOutbound rejects a propagated message when no outbound
 // propagation node is configured, mirroring Python LXMRouter.handle_outbound
 // (LXMRouter.py:1748-1750, v0.9.7+) which calls fail_message and raises
 // IOError. The message is marked FAILED and is not queued.
@@ -59,8 +59,8 @@ func TestHandleOutboundPropagatedWithoutPropagationNodeErrors(t *testing.T) {
 	}
 }
 
-// TestHandleOutboundPropagatedWithPropagationNodeSucceeds covers Phase 14 task 7
-// positive control: when a propagation node IS configured, HandleOutbound
+// TestHandleOutboundPropagatedWithPropagationNodeSucceeds is the positive
+// control: when a propagation node IS configured, HandleOutbound
 // accepts a propagated message (no error) and queues it for deferred stamp
 // generation.
 func TestHandleOutboundPropagatedWithPropagationNodeSucceeds(t *testing.T) {

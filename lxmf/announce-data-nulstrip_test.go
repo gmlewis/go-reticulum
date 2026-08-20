@@ -9,8 +9,8 @@ import (
 	"testing"
 )
 
-// TestDisplayNameFromAppDataStripsNULAndWhitespace covers Phase 14 task 5:
-// the v0.5.0+ list-format display name is NUL-stripped and whitespace-trimmed
+// TestDisplayNameFromAppDataStripsNULAndWhitespace verifies that the
+// v0.5.0+ list-format display name is NUL-stripped and whitespace-trimmed
 // after UTF-8 decoding, mirroring Python's
 // display_name_from_app_data (lxmf/LXMF.py:165, v0.9.7+). The original
 // raw-string format is returned verbatim — Python's `else` branch does not

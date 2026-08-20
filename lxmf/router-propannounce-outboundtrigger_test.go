@@ -34,9 +34,9 @@ func validPropagationAppData(t *testing.T) []byte {
 	return appData
 }
 
-// TestPropagationAnnounceHandlerTriggersOutboundOnOutboundPNAnnounce covers
-// Phase 15 task 3: when the configured outbound propagation node announces
-// valid data, the propagation announce handler resets NextDeliveryAttempt on
+// TestPropagationAnnounceHandlerTriggersOutboundOnOutboundPNAnnounce verifies
+// that when the configured outbound propagation node announces valid data, the
+// propagation announce handler resets NextDeliveryAttempt on
 // pending propagated messages and triggers ProcessOutbound, mirroring Python
 // LXMFPropagationAnnounceHandler.received_announce (Handlers.py:44-52,
 // v0.9.8+). The trigger is independent of propagationEnabled (Python does not
@@ -99,10 +99,10 @@ func TestPropagationAnnounceHandlerTriggersOutboundOnOutboundPNAnnounce(t *testi
 	}
 }
 
-// TestPropagationAnnounceHandlerIgnoresNonOutboundPNAnnounce covers Phase 15
-// task 3 negative control: an announce whose destination hash does not match
-// the configured outbound propagation node does not reset NextDeliveryAttempt
-// or trigger ProcessOutbound.
+// TestPropagationAnnounceHandlerIgnoresNonOutboundPNAnnounce is the negative
+// control: an announce whose destination hash does not match the configured
+// outbound propagation node does not reset NextDeliveryAttempt or trigger
+// ProcessOutbound.
 func TestPropagationAnnounceHandlerIgnoresNonOutboundPNAnnounce(t *testing.T) {
 	t.Parallel()
 

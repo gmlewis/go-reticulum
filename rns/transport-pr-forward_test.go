@@ -55,7 +55,7 @@ func prForwardPacket(t *testing.T) *Packet {
 	return &Packet{Data: target, PacketType: PacketData}
 }
 
-// TestForwardPathRequestBoundarySearchModeFilter asserts Phase 6 Task 5: a
+// TestForwardPathRequestBoundarySearchModeFilter asserts that a
 // path request received on a boundary-mode attached interface (recursive_prs
 // disabled) must only egress recursively on boundary/gateway interfaces that
 // are online. This mirrors RNS/Transport.py:3009-3011, which sets
@@ -95,7 +95,7 @@ func TestForwardPathRequestBoundarySearchModeFilter(t *testing.T) {
 	}
 }
 
-// TestForwardPathRequestRecursivePrsOverridesMode asserts Phase 6 Task 6:
+// TestForwardPathRequestRecursivePrsOverridesMode asserts that
 // when the attached interface has recursive_prs enabled, recursive path
 // requests egress on all online interfaces regardless of the attached
 // interface's mode. Per RNS/Transport.py:3007-3008 the recursive_prs branch
@@ -128,7 +128,7 @@ func TestForwardPathRequestRecursivePrsOverridesMode(t *testing.T) {
 }
 
 // TestForwardPathRequestRecursivePrsFullModeSource covers the "regardless of
-// mode" wording of Task 6 directly: a Full-mode attached interface (Full is
+// mode" wording directly: a Full-mode attached interface (Full is
 // not in DISCOVER_PATHS_FOR and not boundary) with recursive_prs=true still
 // emits recursive path requests on all online interfaces.
 func TestForwardPathRequestRecursivePrsFullModeSource(t *testing.T) {

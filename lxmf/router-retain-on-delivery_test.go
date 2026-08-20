@@ -75,8 +75,8 @@ func knownDestEntry4IsRetained(t *testing.T, ts *rns.TransportSystem, destHash [
 	return e4.Int() == -1
 }
 
-// TestProcessOutboundRetainsDestinationAfterDelivery covers Phase 14 task 6:
-// when ProcessOutbound removes a DELIVERED message from the pending-outbound
+// TestProcessOutboundRetainsDestinationAfterDelivery verifies that when
+// ProcessOutbound removes a DELIVERED message from the pending-outbound
 // queue, it pins the destination's known-path entry via the retain-destination
 // hook, mirroring Python LXMRouter.process_outbound (LXMRouter.py:2689-2692,
 // v1.1.0) calling RNS.Reticulum._retain_destination_data.
@@ -124,8 +124,8 @@ func TestProcessOutboundRetainsDestinationAfterDelivery(t *testing.T) {
 	}
 }
 
-// TestProcessOutboundDoesNotRetainForFailedMessage covers Phase 14 task 6
-// negative control: a FAILED message is removed from the outbound queue but
+// TestProcessOutboundDoesNotRetainForFailedMessage is the negative control:
+// a FAILED message is removed from the outbound queue but
 // the retain hook is NOT invoked (Python only retains on DELIVERED).
 func TestProcessOutboundDoesNotRetainForFailedMessage(t *testing.T) {
 	t.Parallel()

@@ -16,7 +16,7 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestCleanAvailableTicketsGolden is the Phase K golden test. It seeds the
+// TestCleanAvailableTicketsGolden is a golden test. It seeds the
 // ticket store with a mix of fresh / expired / exact-boundary outbound and
 // inbound tickets and asserts Router.CleanAvailableTickets reaps exactly the
 // set Python's LXMRouter.clean_available_tickets (LXMRouter.py:1247-1269)

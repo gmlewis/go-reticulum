@@ -16,23 +16,28 @@ func TestKISSEscapeMatchesPython(t *testing.T) {
 	tests := []struct {
 		name string
 		raw  []byte
-		want []byte
 	}{
-		{name: "empty", raw: []byte{}, want: []byte{}},
-		{name: "plain-text", raw: []byte("hello"), want: []byte("hello")},
-		{name: "fend-only", raw: []byte{0xc0}, want: []byte{0xdb, 0xdc}},
-		{name: "fesc-only", raw: []byte{0xdb}, want: []byte{0xdb, 0xdd}},
-		{name: "fend-then-fesc", raw: []byte{0xc0, 0xdb}, want: []byte{0xdb, 0xdc, 0xdb, 0xdd}},
-		{name: "fesc-then-fend", raw: []byte{0xdb, 0xc0}, want: []byte{0xdb, 0xdd, 0xdb, 0xdc}},
-		{name: "alternating", raw: []byte{0xc0, 0xdb, 0xc0, 0xdb}, want: []byte{0xdb, 0xdc, 0xdb, 0xdd, 0xdb, 0xdc, 0xdb, 0xdd}},
+		{name: "empty", raw: []byte{}},
+		{name: "plain-text", raw: []byte("hello")},
+		{name: "fend-only", raw: []byte{0xc0}},
+		{name: "fesc-only", raw: []byte{0xdb}},
+		{name: "fend-then-fesc", raw: []byte{0xc0, 0xdb}},
+		{name: "fesc-then-fend", raw: []byte{0xdb, 0xc0}},
+		{name: "alternating", raw: []byte{0xc0, 0xdb, 0xc0, 0xdb}},
 	}
 
-	for _, tt := range tests {
+	raws := make([][]byte, len(tests))
+	for i, tt := range tests {
+		raws[i] = tt.raw
+	}
+	wants := pythonKissEscape(t, raws)
+
+	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := kissEscape(tt.raw)
-			if !bytes.Equal(got, tt.want) {
-				t.Fatalf("escaped output mismatch:\n got: %x\nwant: %x", got, tt.want)
+			if !bytes.Equal(got, wants[i]) {
+				t.Fatalf("escaped output mismatch vs live Python:\n got: %x\nwant: %x", got, wants[i])
 			}
 		})
 	}

@@ -16,7 +16,7 @@
 // populates the interface-type list, and the spawn/despawn driver. It has no
 // build tag so it is unit-testable cross-platform with a mock serial command
 // stream; the linux-only RNodeMultiInterface wires it into its real serial
-// read loop. This mirrors the Phase 20 Weave split (weave-wdcl.go / weave-peer.go).
+// read loop. This mirrors the Weave split (weave-wdcl.go / weave-peer.go).
 
 package interfaces
 
@@ -216,7 +216,7 @@ func (s *RNodeMultiSubSpawn) Detach() error {
 // RNodeMultiInterface.py:552-555). Each spawned subinterface's parentInterface
 // points at it so the subinterface's received_path_request / sent_path_request
 // events (Interface.py:267-275) propagate up to the parent's aggregated PR
-// deque — Phase 21 task 3. The linux RNodeMultiInterface reads its aggregated
+// deque. The linux RNodeMultiInterface reads its aggregated
 // incoming/outgoing PR frequency from this aggregator.
 type RNodeMultiSpawnState struct {
 	subinterfaces []*RNodeMultiSubSpawn
@@ -244,7 +244,7 @@ func (s *RNodeMultiSpawnState) PrAggregator() *BaseInterface { return s.prAggreg
 // IncomingPrCount returns the number of incoming path-request samples the
 // parent aggregator has recorded from spawned subinterfaces
 // (len(ip_freq_deque)). It is the test surface for "the parent's PR counter
-// advances" — Phase 21 task 3.
+// advances".
 func (s *RNodeMultiSpawnState) IncomingPrCount() int {
 	s.prAggregator.ingressMu.Lock()
 	defer s.prAggregator.ingressMu.Unlock()
@@ -293,7 +293,7 @@ func (s *RNodeMultiSpawnState) SubinterfaceAt(vport int) *RNodeMultiSubSpawn {
 // vport is not in interfaceTypes raises a ValueError in Python ("Virtual port
 // ... does not exist"); here it is returned as an error and no partial spawns
 // from that config are committed. Already-spawned vports are skipped (dedup is
-// the caller's / transport's job — see Phase 21 task 2).
+// the caller's / transport's job).
 //
 // parent is the owning RNodeMultiInterface (kept as Interface so this file has
 // no build constraint); the subinterface reports to it for Status. cfgs is the
@@ -312,7 +312,7 @@ func SpawnRNodeSubinterfaces(state *RNodeMultiSpawnState, parent Interface, cfgs
 		}
 		if state.subinterfaces[vport] != nil {
 			// Already spawned at this vport; skip (dedup is the transport's
-			// canonical register — Phase 21 task 2).
+			// canonical register).
 			continue
 		}
 		name := cfg.Name
@@ -325,7 +325,7 @@ func SpawnRNodeSubinterfaces(state *RNodeMultiSpawnState, parent Interface, cfgs
 		// to the parent's aggregated PR deque (Python spawned
 		// interface.parent_interface = self + Interface.py:267-275; the
 		// RNodeMulti parent only records from_spawned=True samples,
-		// RNodeMultiInterface.py:552-555). Phase 21 task 3.
+		// RNodeMultiInterface.py:552-555).
 		bi.parentInterface = state.prAggregator
 		sub := &RNodeMultiSubSpawn{
 			BaseInterface:   bi,
@@ -430,8 +430,8 @@ func (r *RNodeMultiRegistry) Count() int {
 
 // SpawnRNodeSubinterfacesRegistered spawns subinterfaces and routes each
 // addInterface through the canonical registry's Add (dedup), so the dynamic
-// spawn goes through the transport's canonical register with dedup — Phase 21
-// task 2. It is the wiring the linux RNodeMultiInterface uses in place of a
+// spawn goes through the transport's canonical register with dedup.
+// It is the wiring the linux RNodeMultiInterface uses in place of a
 // bare addInterface callback; a re-spawn of an already-spawned vport is a no-op
 // at both the spawner's slot level (same object retained) and the registry's
 // identity-dedup level.
@@ -441,7 +441,7 @@ func SpawnRNodeSubinterfacesRegistered(state *RNodeMultiSpawnState, parent Inter
 
 // DespawnRNodeSubinterfacesRegistered despawns all subinterfaces and routes each
 // removeInterface through the canonical registry's Remove, clearing the
-// registry of every spawned subinterface (Phase 21 task 2).
+// registry of every spawned subinterface.
 func DespawnRNodeSubinterfacesRegistered(state *RNodeMultiSpawnState, registry *RNodeMultiRegistry) {
 	DespawnRNodeSubinterfaces(state, registry.Remove)
 }

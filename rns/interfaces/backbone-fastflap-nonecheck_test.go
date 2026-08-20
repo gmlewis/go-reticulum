@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// TestRecordFlapNoPriorRecordNoCrash covers Phase 18 task 3: invoking the
+// TestRecordFlapNoPriorRecordNoCrash verifies that invoking the
 // fast-flap teardown path (recordFlap) for a remote IP with no prior flap
 // record must not crash and must create a fresh entry, mirroring Python's
 // none-check that creates `[now, now, 0]` for a missing record
@@ -43,7 +43,7 @@ func TestRecordFlapNoPriorRecordNoCrash(t *testing.T) {
 	}
 }
 
-// TestRecordFlapViaOnSpawnedDownNoPriorRecord covers Phase 18 task 3: the actual
+// TestRecordFlapViaOnSpawnedDownNoPriorRecord verifies that the actual
 // teardown path fires the TCPServerInterface onSpawnedDown hook (which
 // BackboneInterface wires to recordFlap). Driving it for a remote IP with no
 // prior flap record must not crash and must record the flap
@@ -85,7 +85,7 @@ func TestRecordFlapViaOnSpawnedDownNoPriorRecord(t *testing.T) {
 	}
 }
 
-// TestRecordFlapEmptyRemoteIPNoOp covers Phase 18 task 3: a teardown with an
+// TestRecordFlapEmptyRemoteIPNoOp verifies that a teardown with an
 // empty remote IP (defensive guard) is a no-op that does not crash
 // (BackboneInterface.py:833 would skip on an empty target_ip).
 func TestRecordFlapEmptyRemoteIPNoOp(t *testing.T) {
@@ -104,7 +104,7 @@ func TestRecordFlapEmptyRemoteIPNoOp(t *testing.T) {
 	}
 }
 
-// TestRecordFlapNilBackboneNoCrash covers Phase 18 task 3: a nil receiver is a
+// TestRecordFlapNilBackboneNoCrash verifies that a nil receiver is a
 // defensive no-op (the guard at the top of recordFlap), so the teardown path
 // never crashes on an uninitialised BackboneInterface.
 func TestRecordFlapNilBackboneNoCrash(t *testing.T) {
@@ -114,7 +114,7 @@ func TestRecordFlapNilBackboneNoCrash(t *testing.T) {
 	b.recordFlap("192.0.2.57", time.Unix(9_999, 0))
 }
 
-// TestRecordFlapGraceWarningNoCrash covers Phase 18 task 3: crossing the grace
+// TestRecordFlapGraceWarningNoCrash verifies that crossing the grace
 // threshold emits the "Ignoring further connections" warning via the standard
 // logger and does not crash (BackboneInterface.py:852, v1.4.0). The behavioral
 // observable is that the IP becomes blocked (isBlocked true) without any

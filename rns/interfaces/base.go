@@ -117,7 +117,7 @@ type BaseInterface struct {
 	autoconnectHash    []byte
 	autoconnectSrc     string
 
-	// Phase 1 contract fields (RNS v1.3.7/1.4.1). Defaults mirror
+	// Contract fields (RNS v1.3.7/1.4.1). Defaults mirror
 	// Interface.__init__: gravity=0, recursive_prs=false,
 	// announces_from_internal=true, announces_to_internal=nil.
 	// gravity is accessed atomically because it is set at runtime (e.g. via

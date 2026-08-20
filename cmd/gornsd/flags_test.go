@@ -8,25 +8,38 @@ package main
 import (
 	"bytes"
 	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-const pythonHelpText = `usage: rnsd.py [-h] [--config CONFIG] [-v] [-q] [-s] [-i] [--exampleconfig]
-							 [--version]
-
-Reticulum Network Stack Daemon
-
-options:
-	-h, --help         show this help message and exit
-	--config CONFIG    path to alternative Reticulum config directory
-	-v, --verbose
-	-q, --quiet
-	-s, --service      rnsd is running as a service and should log to file
-	-i, --interactive  drop into interactive shell after initialisation
-	--exampleconfig    print verbose configuration example to stdout and exit
-	--version          show program's version number and exit
-`
+// runRnsdHelpLive execs `python3 RNS/Utilities/rnsd.py --help` against the
+// original-reticulum-repo and returns its help text, captured live so the
+// usage-text parity test diffs against the real Python output rather than a
+// hand-typed constant. Gated on python3 + RNS availability by the caller.
+func runRnsdHelpLive(t *testing.T) string {
+	t.Helper()
+	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "original-reticulum-repo"))
+	if err != nil {
+		t.Fatalf("failed to resolve original repo root: %v", err)
+	}
+	scriptPath := filepath.Join(repoRoot, "RNS", "Utilities", "rnsd.py")
+	if _, err := os.Stat(scriptPath); err != nil {
+		t.Skipf("rnsd.py not found at %s: %v", scriptPath, err)
+	}
+	cmd := exec.Command("python3", scriptPath, "--help")
+	cmd.Dir = repoRoot
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+repoRoot)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("rnsd --help failed: %v\n%s", err, out)
+	}
+	return string(out)
+}
 
 func normalizeHelpText(text string) string {
 	text = strings.ReplaceAll(text, "gornsd", "rnsd")
@@ -88,11 +101,13 @@ func TestParseFlagsHelp(t *testing.T) {
 
 func TestUsageTextNormalizedParity(t *testing.T) {
 	t.Parallel()
+	testutils.SkipIfNoPythonRNS(t)
+	pyHelp := runRnsdHelpLive(t)
 	tests := []struct {
 		name string
 		want string
 	}{
-		{name: "full help text", want: pythonHelpText},
+		{name: "full help text", want: pyHelp},
 		{name: "service description", want: "-s, --service rnsd is running as a service and should log to file"},
 		{name: "interactive description", want: "-i, --interactive drop into interactive shell after initialisation"},
 		{name: "exampleconfig description", want: "--exampleconfig print verbose configuration example to stdout and exit"},

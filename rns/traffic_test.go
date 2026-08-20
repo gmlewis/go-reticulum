@@ -155,7 +155,7 @@ func TestCountTrafficPassSkipsParentedInterfaces(t *testing.T) {
 }
 
 // TestInterfaceStatsSpeeds wires the traffic loop's output into the
-// interface_stats RPC (Phase G.2): after driving countTrafficPass, the RPC's
+// interface_stats RPC: after driving countTrafficPass, the RPC's
 // per-interface rxs/txs reflect current_rx_speed/current_tx_speed and the
 // aggregate rxb/txb/rxs/txs reflect traffic_rxb/traffic_txb/speed_rx/speed_tx
 // (matching Python reticulum.py:1191-1252), with no hardcoded 0s.

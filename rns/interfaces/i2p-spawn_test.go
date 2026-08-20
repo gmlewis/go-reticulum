@@ -13,12 +13,12 @@ import (
 	"time"
 )
 
-// TestI2PServerSpawnedInheritsGravityAndBurst covers Phase 19 task 4: an I2P
+// TestI2PServerSpawnedInheritsGravityAndBurst verifies that an I2P
 // server interface (I2PInterface, which reuses the TCP server's
 // handleConnection spawn path) copies its gravity + the full
 // ingress/egress-control burst configuration to each spawned peer at accept
 // time (RNS/Interfaces/I2PInterface.py:828-840, 862: spawned_interface.gravity
-// = self.gravity, v1.4.1). Phases 4/5 wired the propagation into the shared
+// = self.gravity, v1.4.1). The propagation is wired into the shared
 // spawn path; this test pins it for the I2P interface specifically so a future
 // I2P-specific spawn path cannot silently drop the inheritance.
 func TestI2PServerSpawnedInheritsGravityAndBurst(t *testing.T) {

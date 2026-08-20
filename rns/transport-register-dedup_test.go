@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// TestRegisterInterfaceDedupsDuplicateRegistration covers Phase 12 task 6:
+// TestRegisterInterfaceDedupsDuplicateRegistration verifies that
 // RegisterInterface is the canonical add path and skips a repeated
 // registration of the same interface, matching Python's
 // Transport.add_interface "if not interface in Transport.interfaces: append"
@@ -28,7 +28,7 @@ func TestRegisterInterfaceDedupsDuplicateRegistration(t *testing.T) {
 	}
 }
 
-// TestRegisterInterfaceKeepsDistinctInterfaces covers Phase 12 task 6: the
+// TestRegisterInterfaceKeepsDistinctInterfaces verifies that the
 // dedup is by interface identity, so two distinct interfaces both register.
 func TestRegisterInterfaceKeepsDistinctInterfaces(t *testing.T) {
 	t.Parallel()
@@ -44,7 +44,7 @@ func TestRegisterInterfaceKeepsDistinctInterfaces(t *testing.T) {
 	}
 }
 
-// TestRemoveInterfaceIsIdempotent covers Phase 12 task 6: RemoveInterface is
+// TestRemoveInterfaceIsIdempotent verifies that RemoveInterface is
 // the canonical remove path and is a no-op when the interface is not present
 // (Python Transport.remove_interface, Transport.py:444-447).
 func TestRemoveInterfaceIsIdempotent(t *testing.T) {

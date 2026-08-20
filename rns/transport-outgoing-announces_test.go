@@ -26,7 +26,7 @@ func (r *recordingAnnounceIface) Send(data []byte) error {
 	return nil
 }
 
-// TestHandleOutgoingAnnouncesSortedByHops asserts Phase 6 Task 9:
+// TestHandleOutgoingAnnouncesSortedByHops asserts that
 // handleOutgoingAnnounces dispatches a batch of outgoing announces in
 // ascending hop order, mirroring RNS/Transport.py:1065-1066
 // (`for packet in sorted(outgoing, key=lambda p: p.hops): packet.send()`).

@@ -169,7 +169,7 @@ func applyInterfaceErrorPolicy(iface interfaces.Interface, enabled bool) {
 	setter.SetPanicOnInterfaceErrorEnabled(enabled)
 }
 
-// interfaceContractConfig captures the Phase 1 per-interface routing-policy
+// interfaceContractConfig captures the per-interface routing-policy
 // keys (RNS v1.3.7/1.4.1). gravity defaults to the instance-wide
 // default_gravity; the remaining fields mirror Interface.__init__.
 type interfaceContractConfig struct {
@@ -188,7 +188,7 @@ type interfaceContractConfig struct {
 	announceRatePenalty *int
 }
 
-// contractConfigSetter is implemented by interfaces that accept the Phase 1
+// contractConfigSetter is implemented by interfaces that accept the
 // contract policy fields (BaseInterface and concrete types embedding it).
 type contractConfigSetter interface {
 	SetGravity(int)
@@ -306,9 +306,9 @@ func applyInterfaceConfig(iface interfaces.Interface, mode int, ifac interfaces.
 	applyInterfaceErrorPolicy(iface, panicOnInterfaceError)
 }
 
-// applyInterfaceContract applies the Phase 1 per-interface routing-policy
+// applyInterfaceContract applies the per-interface routing-policy
 // fields when the interface accepts them. Spawned peers do not go through this
-// path; they inherit the parent's policy at spawn time (Phases 4/5).
+// path; they inherit the parent's policy at spawn time.
 func applyInterfaceContract(iface interfaces.Interface, contract interfaceContractConfig) {
 	setter, ok := iface.(contractConfigSetter)
 	if !ok {

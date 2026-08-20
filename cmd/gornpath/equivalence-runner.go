@@ -7,6 +7,12 @@
 
 package main
 
+// equivalenceFixture labels one CLI scenario for the behavioral comparison
+// harness (a free-form name only).
+type equivalenceFixture struct {
+	name string
+}
+
 // equivalenceStep captures one side-by-side command pair.
 type equivalenceStep struct {
 	name  string

@@ -1911,8 +1911,14 @@ func (l *Link) handleResponse(requestID []byte, responseData any, metadata any, 
 	// ResponseRejected's removePendingRequest is a no-op (avoiding a
 	// double-remove and, critically, a self-deadlock on l.mu).
 	l.pendingRequests = append(l.pendingRequests[:idx], l.pendingRequests[idx+1:]...)
-	maxResponseSize := found.MaxResponseSize()
 	l.mu.Unlock()
+	// Read the size limit outside l.mu. MaxResponseSize takes rr.mu, and
+	// requestResourceConcluded takes rr.mu then l.mu (via
+	// removePendingRequest); calling MaxResponseSize while holding l.mu
+	// would invert that order (l.mu -> rr.mu) and deadlock the two paths.
+	// found stays valid after unlock: it is a heap pointer retained by this
+	// frame, and the pending-list removal above already ran under the lock.
+	maxResponseSize := found.MaxResponseSize()
 
 	// Record sizes before the size gate, mirroring Python (Link.py:867-870):
 	// the response-data path accumulates regardless of whether the response

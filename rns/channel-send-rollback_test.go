@@ -55,7 +55,7 @@ func (o *sendFailingOutlet) GetPacketID(p *Packet) []byte {
 	return p.PacketHash
 }
 
-// TestChannelSendRollsBackSequenceOnOutletError covers Phase 10 task 5:
+// TestChannelSendRollsBackSequenceOnOutletError verifies that
 // when the outlet send fails, Channel.Send must roll back the reserved
 // sequence number (Python Channel.py:515-516) so it is not consumed, and the
 // envelope must not be emplaced in the txRing.
@@ -78,7 +78,7 @@ func TestChannelSendRollsBackSequenceOnOutletError(t *testing.T) {
 }
 
 // TestChannelSendRollsBackSequenceOnNilPacket covers the second rollback
-// condition in Phase 10 task 5: when the outlet returns a nil packet with no
+// condition: when the outlet returns a nil packet with no
 // error, Send treats it as "did not transmit" and rolls back the sequence.
 func TestChannelSendRollsBackSequenceOnNilPacket(t *testing.T) {
 	t.Parallel()
@@ -130,8 +130,8 @@ func TestChannelSendReusesSequenceAfterRollback(t *testing.T) {
 	}
 }
 
-// TestChannelSendLockSerializesConcurrentSends confirms the sendLock added in
-// Phase 10 task 5 serializes concurrent Send calls: each successful send
+// TestChannelSendLockSerializesConcurrentSends confirms the sendLock
+// serializes concurrent Send calls: each successful send
 // gets a distinct, densely-packed sequence number with no gaps or duplicates,
 // even under concurrent senders. Without the lock the reserve/commit window
 // could race and produce duplicate or out-of-order sequences.

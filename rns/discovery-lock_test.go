@@ -14,11 +14,11 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestDiscoveryLoadHoldsDiscoveryLock covers Phase 11 task 8: the load path
-// (ListDiscoveredInterfaces) serializes its per-file read under discoveryLock,
-// mirroring Python's `with self.discovery_lock:` around the open+unpackb
-// (RNS/Discovery.py:472-474). While the lock is externally held, a load
-// goroutine must block until the lock is released.
+// TestDiscoveryLoadHoldsDiscoveryLock verifies that the load path
+// (ListDiscoveredInterfaces) serializes its per-file read under
+// discoveryLock, mirroring Python's `with self.discovery_lock:` around the
+// open+unpackb (RNS/Discovery.py:472-474). While the lock is externally held,
+// a load goroutine must block until the lock is released.
 func TestDiscoveryLoadHoldsDiscoveryLock(t *testing.T) {
 	t.Parallel()
 	tmpDir := testutils.TempDir(t, "rns-discovery-lock-load-")
@@ -63,8 +63,8 @@ func TestDiscoveryLoadHoldsDiscoveryLock(t *testing.T) {
 	}
 }
 
-// TestDiscoveryPersistHoldsDiscoveryLock covers Phase 11 task 8: the persist
-// path (persistDiscoveredInterface) serializes its stat+read+write under
+// TestDiscoveryPersistHoldsDiscoveryLock verifies that the persist path
+// (persistDiscoveredInterface) serializes its stat+read+write under
 // discoveryLock, mirroring Python's `with self.discovery_lock:` block in
 // interface_discovered (RNS/Discovery.py:533-562). While the lock is
 // externally held, a persist goroutine must block until the lock is released.

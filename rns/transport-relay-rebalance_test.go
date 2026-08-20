@@ -78,7 +78,7 @@ func setRelayPathHops(t *testing.T, ts *TransportSystem, destHash []byte, hops i
 	}
 }
 
-// TestRelayLinkProofRebalanceOnShorterPath asserts Phase 7 Task 2: when a relay
+// TestRelayLinkProofRebalanceOnShorterPath asserts that when a relay
 // is transporting an LRPROOF for a remote link and the proof's hop count is
 // smaller than the link-table entry's RemainingHops (a shorter path became
 // available after the link request was forwarded), the relay re-validates the
@@ -141,7 +141,7 @@ func TestRelayLinkProofRebalanceOnShorterPath(t *testing.T) {
 	}
 }
 
-// TestRelayLinkProofRebalanceAbortsOnInvalidSignature asserts Phase 7 Task 2:
+// TestRelayLinkProofRebalanceAbortsOnInvalidSignature asserts that
 // when the proof's hop count mismatches the link-table entry but the signature
 // does not validate, the relay aborts the re-balance — the link-table and
 // path-table hop counts are left unchanged and the proof is not forwarded
@@ -192,7 +192,7 @@ func TestRelayLinkProofRebalanceAbortsOnInvalidSignature(t *testing.T) {
 	}
 }
 
-// TestRelayLinkProofNoRebalanceWhenDisabled asserts Phase 7 Task 2: with
+// TestRelayLinkProofNoRebalanceWhenDisabled asserts that with
 // ALLOW_LINK_PATH_REBALANCE disabled, a hop-mismatch proof is not re-balanced
 // and is not transported (the hop-count match gate fails), even when the
 // signature would validate. Mirrors RNS/Transport.py:2211 which gates the
@@ -237,7 +237,7 @@ func TestRelayLinkProofNoRebalanceWhenDisabled(t *testing.T) {
 	}
 }
 
-// TestRelayLinkProofForwardsOnMatchingHops asserts Phase 7 Task 2: when the
+// TestRelayLinkProofForwardsOnMatchingHops asserts that when the
 // proof's hop count already matches the link-table entry's RemainingHops
 // (steady-state, no path change), the relay validates the signature and
 // forwards the proof without altering either hop count.

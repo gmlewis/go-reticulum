@@ -10,7 +10,7 @@
 // (artifact, download, workdoc). It also implements the thanks counters,
 // the upstream-sync lookup, the chart renderers used by the stats page, and
 // the destination lifecycle helpers (registerRequestHandlers, announce,
-// jobs, getAnnounceAppData) that the serve() wiring (Task 5) calls once the
+// jobs, getAnnounceAppData) that the serve() wiring calls once the
 // page destination exists.
 
 package main
@@ -1265,7 +1265,7 @@ func (p *pageNode) jobs() {
 // registerRequestHandlers mirrors register_request_handlers
 // (pages.py:235-251): it binds all 16 page/file paths to their handlers on
 // the page destination with ALLOW_ALL. It is a no-op until the destination
-// is wired up by the serve() setup (Task 5).
+// is wired up by the serve() setup.
 func (p *pageNode) registerRequestHandlers() {
 	if p.destination == nil {
 		return

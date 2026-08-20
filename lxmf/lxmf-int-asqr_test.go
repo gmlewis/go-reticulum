@@ -60,7 +60,7 @@ if __name__ == "__main__":
 // the Go-generated URI at runtime and feed the exact same string to Python.
 // Both encoders use byte mode for base64url data at ECL L, so the QR version
 // (and thus module count) is determined solely by the URI length and must
-// match. This is the cross-process parity gate for Phase L.2.
+// match. This is the cross-process parity gate.
 func TestIntegrationAsQRPythonMatrixParity(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)

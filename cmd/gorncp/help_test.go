@@ -96,13 +96,13 @@ func TestHelpOutput(t *testing.T) {
 		{
 			name: "jail option",
 			check: func(output string) bool {
-				return strings.Contains(output, "-j path, --jail path")
+				return strings.Contains(output, "-j, --jail path")
 			},
 		},
 		{
 			name: "save option",
 			check: func(output string) bool {
-				return strings.Contains(output, "-s path, --save path")
+				return strings.Contains(output, "-s, --save path")
 			},
 		},
 		{

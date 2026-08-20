@@ -62,7 +62,7 @@ func completesWithin(fn func(), deadline time.Duration) bool {
 	}
 }
 
-// TestTransportLoopsExitOnStop covers Phase 12 task 4: the transport job loop
+// TestTransportLoopsExitOnStop verifies that the transport job loop
 // (maintenance), the traffic-counter loop, and the shared-instance RPC
 // listener loop all check the running/stop signal and exit when the
 // Reticulum is closed — no goroutine leak (Python _should_run loop control,
@@ -116,7 +116,7 @@ func TestTransportLoopsExitOnStop(t *testing.T) {
 	}
 }
 
-// TestDiscoveryMonitorLoopExitsOnStop covers Phase 12 task 4: the interface
+// TestDiscoveryMonitorLoopExitsOnStop verifies that the interface
 // discovery monitor goroutine checks its stop signal and exits when
 // InterfaceDiscovery.Stop is called. Stop joins the monitor goroutine
 // (monitorDone), so a leak hangs the join and trips the deadline.

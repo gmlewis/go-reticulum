@@ -31,8 +31,9 @@ func TestCaptureRnodeEEPROMReadsPythonFrame(t *testing.T) {
 	if len(serial.writes) != 1 {
 		t.Fatalf("expected one ROM read write, got %v", len(serial.writes))
 	}
-	if !bytes.Equal(serial.writes[0], []byte{kissFend, rnodeKISSCommandROMRead, 0x00, kissFend}) {
-		t.Fatalf("ROM read command mismatch: %x", serial.writes[0])
+	wantFrame := pythonRomReadFrame(t)
+	if !bytes.Equal(serial.writes[0], wantFrame) {
+		t.Fatalf("ROM read command mismatch vs live Python:\n got: %x\nwant: %x", serial.writes[0], wantFrame)
 	}
 }
 

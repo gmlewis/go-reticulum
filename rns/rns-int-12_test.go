@@ -105,7 +105,7 @@ if __name__ == "__main__":
 `
 
 // TestIntegratedTunnelSynthesizePythonToGo verifies the inbound tunnel
-// synthesis wire path (Phase H): a Python transport synthesizes a tunnel into
+// synthesis wire path: a Python transport synthesizes a tunnel into
 // a Go node over UDP RNS; the Go side's tunnel_synthesize_destination receives
 // the establishment packet, validates the signature, derives the tunnel_id,
 // and creates a tunnel entry whose ID matches what the Python synthesizer

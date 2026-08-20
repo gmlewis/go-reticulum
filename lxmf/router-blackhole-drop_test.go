@@ -12,8 +12,8 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestUnpackSetsSourceBlackholed covers Phase 15 task 1: unpacking an LXM
-// records whether the recalled source identity is on the local blackhole
+// TestUnpackSetsSourceBlackholed verifies that unpacking an LXM records
+// whether the recalled source identity is on the local blackhole
 // list, mirroring Python LXMessage.unpack_from_bytes (LXMessage.py:804,
 // v1.0.0+) which sets message.source_blackholed via
 // RNS.Reticulum.get_instance().is_blackholed(source_identity). When the
@@ -68,8 +68,8 @@ func TestUnpackSetsSourceBlackholed(t *testing.T) {
 	})
 }
 
-// TestHandleInboundMessageDropsBlackholedSource covers Phase 15 task 1: a
-// message whose source identity is blackholed is dropped at the top of
+// TestHandleInboundMessageDropsBlackholedSource verifies that a message whose
+// source identity is blackholed is dropped at the top of
 // handleInboundMessage before the delivery callback fires, mirroring Python
 // LXMRouter.lxmf_delivery (LXMRouter.py:1841-1843, v1.0.0+) which logs and
 // returns False. A non-blackholed source still delivers normally.

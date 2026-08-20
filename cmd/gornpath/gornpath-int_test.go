@@ -106,7 +106,7 @@ func TestIntegrationRenderPathTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("renderPathTable returned error: %v", err)
 	}
-	want := "01 is 1 hop  away via 11 on eth0 expires 2026-04-05 15:07:36\n02 is 2 hops away via 22 on eth1 expires 2026-04-05 15:08:36\n"
+	want := "<01> is 1 hop  away via <11> on test[eth0] expires 2026-04-05 15:07:36\n<02> is 2 hops away via <22> on test[eth1] expires 2026-04-05 15:08:36\n"
 	if got != want {
 		t.Fatalf("renderPathTable mismatch:\nwant:\n%sgot:\n%s", want, got)
 	}

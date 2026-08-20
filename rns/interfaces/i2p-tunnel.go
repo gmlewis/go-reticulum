@@ -19,8 +19,8 @@ import (
 // for the bidirectional proxy.
 const i2pTunnelBufferSize = 65536
 
-// i2pTunnelLogger is the default logger for I2P tunnel setup diagnostics
-// (Phase 19 task 3). A tunnel with a nil Logger writes through this.
+// i2pTunnelLogger is the default logger for I2P tunnel setup diagnostics.
+// A tunnel with a nil Logger writes through this.
 var i2pTunnelLogger = log.New(os.Stderr, "", log.LstdFlags)
 
 // i2pDialTimeout is the 5s timeout Python waits when dialing the local service
@@ -31,7 +31,7 @@ const i2pDialTimeout = 5 * time.Second
 // and proxies data between a local TCP endpoint and the I2P network.
 // Subclasses (ClientTunnel, ServerTunnel) set Style and implement Run.
 //
-// Goroutine retention (Phase 19 task 2): background proxy goroutines are
+// Goroutine retention: background proxy goroutines are
 // tracked in bgWG + the activeConns set so they are never fire-and-forget.
 // Close drains them via bgWG before returning, and activeConns retains the
 // live proxy conns so they are not reaped while the tunnel is live
@@ -50,7 +50,7 @@ type I2PTunnel struct {
 	SAM *SAMClient
 	// Style is the SAM session style ("STREAM" for both tunnel types).
 	Style string
-	// Logger receives tunnel setup diagnostics (Phase 19 task 3). nil uses the
+	// Logger receives tunnel setup diagnostics. nil uses the
 	// package default (stderr); tests inject a buffered logger to assert the
 	// catch-all "Unspecified I2P daemon error" log.
 	Logger *log.Logger
@@ -70,7 +70,7 @@ type I2PTunnel struct {
 	// bgWG tracks all background proxy goroutines so Close drains them.
 	bgWG sync.WaitGroup
 	// activeConns retains the live proxy conns so they are not reaped while
-	// the tunnel is running (Phase 19 task 2).
+	// the tunnel is running.
 	activeConns map[net.Conn]struct{}
 }
 
@@ -96,7 +96,7 @@ func (t *I2PTunnel) logger() *log.Logger {
 // (client: lines 196-205, server: 288-294). A known SAM RESULT logs its specific
 // message; an unknown RESULT (which Python raises as a KeyError — not a known
 // i2plib exception) and any non-SAM-protocol error fall to the else catch-all
-// "Unspecified I2P daemon error" (Phase 19 task 3).
+// "Unspecified I2P daemon error".
 func (t *I2PTunnel) logSetupError(err error) {
 	lg := t.logger()
 	if se, ok := err.(*SAMResultError); ok {
@@ -157,7 +157,7 @@ func (t *I2PTunnel) preRun() error {
 	return nil
 }
 
-// trackConn registers a proxy conn in the active set (Phase 19 task 2).
+// trackConn registers a proxy conn in the active set.
 func (t *I2PTunnel) trackConn(c net.Conn) {
 	t.mu.Lock()
 	if t.activeConns == nil {
@@ -167,7 +167,7 @@ func (t *I2PTunnel) trackConn(c net.Conn) {
 	t.mu.Unlock()
 }
 
-// untrackConn removes a proxy conn from the active set (Phase 19 task 2).
+// untrackConn removes a proxy conn from the active set.
 func (t *I2PTunnel) untrackConn(c net.Conn) {
 	t.mu.Lock()
 	delete(t.activeConns, c)
@@ -210,7 +210,7 @@ func (t *I2PTunnel) closeActiveConns() {
 // Close tears the tunnel down: stops accepting, tears down the SAM session,
 // cancels any in-flight accept, drains the background proxy goroutines, and
 // closes the retained proxy conns. It blocks until all proxies have exited
-// (Phase 19 task 2: goroutines are tracked, never fire-and-forget).
+// (goroutines are tracked, never fire-and-forget).
 func (t *I2PTunnel) Close() error {
 	t.mu.Lock()
 	t.stopped = true
@@ -227,7 +227,7 @@ func (t *I2PTunnel) Close() error {
 	}
 	t.stopSession()
 	// Close the retained proxy conns first so the proxy goroutines unblock,
-	// then drain them. Waiting before closing would deadlock (Phase 19 task 2).
+	// then drain them. Waiting before closing would deadlock.
 	t.closeActiveConns()
 	t.bgWG.Wait()
 	return nil
@@ -436,8 +436,8 @@ func (t *ServerTunnel) handleServerClient(stream *SAMStream) {
 
 // proxyPair runs two tracked proxy goroutines copying in each direction between
 // the SAM stream a and the net.Conn b (tunnel.handle_client's two proxy_data
-// tasks). Both conns are retained in the active set while the pair is live
-// (Phase 19 task 2); each goroutine untracks its write-side conn on completion
+// tasks). Both conns are retained in the active set while the pair is live;
+// each goroutine untracks its write-side conn on completion
 // and drains the tunnel-wide bgWG so Close waits for the proxies.
 func (t *I2PTunnel) proxyPair(a *SAMStream, b net.Conn) {
 	t.trackConn(b)

@@ -13,7 +13,7 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-// TestRenderInterfaceBlockedIPs covers Phase 18 task 4: gornstatus renders the
+// TestRenderInterfaceBlockedIPs verifies that gornstatus renders the
 // fast-flap "Blocked   : N IPs" line appended to the clients string when the
 // interface stat reports blocked_ips > 0, mirroring Python rnstatus.py:457-459.
 func TestRenderInterfaceBlockedIPs(t *testing.T) {
@@ -40,7 +40,7 @@ func TestRenderInterfaceBlockedIPs(t *testing.T) {
 	}
 }
 
-// TestRenderInterfaceBlockedIPsZeroOmitted covers Phase 18 task 4: when
+// TestRenderInterfaceBlockedIPsZeroOmitted verifies that when
 // blocked_ips is 0 (or nil), the Blocked line is omitted, matching Python's
 // `p = ifstat["blocked_ips"] > 0` guard (rnstatus.py:458).
 func TestRenderInterfaceBlockedIPsZeroOmitted(t *testing.T) {
@@ -66,7 +66,7 @@ func TestRenderInterfaceBlockedIPsZeroOmitted(t *testing.T) {
 	}
 }
 
-// TestRenderInterfaceBlockedIPsNilOmitted covers Phase 18 task 4: a nil
+// TestRenderInterfaceBlockedIPsNilOmitted verifies that a nil
 // BlockedIPs (non-blocker interface) renders no Blocked line.
 func TestRenderInterfaceBlockedIPsNilOmitted(t *testing.T) {
 	t.Parallel()

@@ -15,9 +15,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
-	"time"
 
-	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestRunEquivalenceScenarioAggregatesStepComparisons(t *testing.T) {
@@ -26,7 +25,7 @@ func TestRunEquivalenceScenarioAggregatesStepComparisons(t *testing.T) {
 	leftCalls := 0
 	rightCalls := 0
 	scenario := equivalenceScenario{
-		fixture: defaultEquivalenceFixtures()[0],
+		fixture: equivalenceFixture{name: "aggregates"},
 		steps: []equivalenceStep{
 			{
 				name: "version",
@@ -83,10 +82,16 @@ func TestRunEquivalenceScenarioAggregatesStepComparisons(t *testing.T) {
 	}
 }
 
+// TestRunEquivalenceScenarioComparesRealVersionCommands is a LIVE cross-impl
+// test: it runs the real `gornpath --version` (Go) and `rnpath.py --version`
+// (Python) and confirms the equivalence harness surfaces their (expected)
+// stdout difference. The two binaries intentionally print different program
+// names, so a non-empty diff is the live signal that both ran and were diffed.
 func TestRunEquivalenceScenarioComparesRealVersionCommands(t *testing.T) {
 	t.Parallel()
+	testutils.SkipShortIntegration(t)
 
-	fixture := defaultEquivalenceFixtures()[0]
+	fixture := equivalenceFixture{name: "version"}
 	scenario := equivalenceScenario{
 		fixture: fixture,
 		steps: []equivalenceStep{{
@@ -111,315 +116,6 @@ func TestRunEquivalenceScenarioComparesRealVersionCommands(t *testing.T) {
 	}
 	if report.diffs[0].field != "stdout" {
 		t.Fatalf("expected stdout diff first, got %#v", report.diffs[0])
-	}
-}
-
-func TestRunEquivalenceScenarioLocalTableHasNoDiffs(t *testing.T) {
-	t.Parallel()
-
-	fixtures := defaultEquivalenceFixtures()
-	var localTableFixture equivalenceFixture
-	for _, fixture := range fixtures {
-		if fixture.name == "local-table" {
-			localTableFixture = fixture
-			break
-		}
-	}
-	if localTableFixture.name == "" {
-		t.Fatal("missing local-table fixture")
-	}
-
-	paths := []rns.PathInfo{{
-		Hash:      []byte{0x01},
-		NextHop:   []byte{0x11},
-		Hops:      1,
-		Interface: pathTableTestInterface{name: "eth0"},
-		Expires:   time.Date(2026, 4, 5, 15, 7, 36, 0, time.UTC),
-	}}
-	rendered, err := renderPathTable(paths, 0, false, nil)
-	if err != nil {
-		t.Fatalf("renderPathTable returned error: %v", err)
-	}
-
-	report := runEquivalenceScenario(equivalenceScenario{
-		fixture: localTableFixture,
-		steps: []equivalenceStep{{
-			name: "table",
-			left: func() commandOutcome {
-				return commandOutcome{stdout: rendered, exitCode: 0}
-			},
-			right: func() commandOutcome {
-				return commandOutcome{stdout: rendered, exitCode: 0}
-			},
-		}},
-	})
-
-	if len(report.diffs) != 0 {
-		t.Fatalf("expected no diffs, got %#v", report.diffs)
-	}
-	if report.fixture.name != "local-table" {
-		t.Fatalf("unexpected fixture name: %q", report.fixture.name)
-	}
-}
-
-type equivalencePathRequestFake struct {
-	requested bool
-	path      *rns.PathInfo
-}
-
-func (f *equivalencePathRequestFake) HasPath([]byte) bool {
-	return f.requested
-}
-
-func (f *equivalencePathRequestFake) RequestPath([]byte) error {
-	f.requested = true
-	f.path = &rns.PathInfo{
-		Hash:      []byte{0xaa, 0xbb},
-		NextHop:   []byte{0xcc, 0xdd},
-		Hops:      2,
-		Interface: pathRequestInterface{},
-		Expires:   time.Date(2026, 4, 5, 15, 7, 36, 0, time.UTC),
-	}
-	return nil
-}
-
-func (f *equivalencePathRequestFake) GetPathEntry([]byte) *rns.PathInfo {
-	return f.path
-}
-
-func TestRunEquivalenceScenarioDiscoveryHasNoDiffs(t *testing.T) {
-	t.Parallel()
-
-	fixtures := defaultEquivalenceFixtures()
-	var discoveryFixture equivalenceFixture
-	for _, fixture := range fixtures {
-		if fixture.name == "discovery" {
-			discoveryFixture = fixture
-			break
-		}
-	}
-	if discoveryFixture.name == "" {
-		t.Fatal("missing discovery fixture")
-	}
-
-	runDiscovery := func() commandOutcome {
-		fake := &equivalencePathRequestFake{}
-		var out bytes.Buffer
-		if err := doRequestAt(&out, fake, []byte{0xaa, 0xbb}, 1.0, func() time.Time { return time.Unix(0, 0) }, func(time.Duration) {}); err != nil {
-			return commandOutcome{stdout: out.String(), stderr: err.Error(), exitCode: 1}
-		}
-		return commandOutcome{stdout: out.String(), exitCode: 0}
-	}
-
-	report := runEquivalenceScenario(equivalenceScenario{
-		fixture: discoveryFixture,
-		steps: []equivalenceStep{{
-			name:  "discovery",
-			left:  runDiscovery,
-			right: runDiscovery,
-		}},
-	})
-
-	if len(report.diffs) != 0 {
-		t.Fatalf("expected no diffs, got %#v", report.diffs)
-	}
-	if report.fixture.name != "discovery" {
-		t.Fatalf("unexpected fixture name: %q", report.fixture.name)
-	}
-}
-
-type equivalenceDropperFake struct {
-	dropPathResult bool
-	dropViaCount   int
-}
-
-func (f *equivalenceDropperFake) InvalidatePath([]byte) bool {
-	return f.dropPathResult
-}
-
-func (f *equivalenceDropperFake) InvalidatePathsViaNextHop([]byte) int {
-	return f.dropViaCount
-}
-
-func TestRunEquivalenceScenarioDropHasNoDiffs(t *testing.T) {
-	t.Parallel()
-
-	fixtures := defaultEquivalenceFixtures()
-	var dropFixture equivalenceFixture
-	for _, fixture := range fixtures {
-		if fixture.name == "drop" {
-			dropFixture = fixture
-			break
-		}
-	}
-	if dropFixture.name == "" {
-		t.Fatal("missing drop fixture")
-	}
-
-	runDrop := func() commandOutcome {
-		fake := &equivalenceDropperFake{dropPathResult: true, dropViaCount: 1}
-		var out bytes.Buffer
-		if err := doDrop(&out, fake, []byte{0xaa, 0xbb}); err != nil {
-			return commandOutcome{stdout: out.String(), stderr: err.Error(), exitCode: 1}
-		}
-		if err := doDropVia(&out, fake, []byte{0xcc, 0xdd}); err != nil {
-			return commandOutcome{stdout: out.String(), stderr: err.Error(), exitCode: 1}
-		}
-		return commandOutcome{stdout: out.String(), exitCode: 0}
-	}
-
-	report := runEquivalenceScenario(equivalenceScenario{
-		fixture: dropFixture,
-		steps: []equivalenceStep{{
-			name:  "drop",
-			left:  runDrop,
-			right: runDrop,
-		}},
-	})
-
-	if len(report.diffs) != 0 {
-		t.Fatalf("expected no diffs, got %#v", report.diffs)
-	}
-	if report.fixture.name != "drop" {
-		t.Fatalf("unexpected fixture name: %q", report.fixture.name)
-	}
-}
-
-func TestRunEquivalenceScenarioRatesHasNoDiffs(t *testing.T) {
-	t.Parallel()
-
-	fixtures := defaultEquivalenceFixtures()
-	var ratesFixture equivalenceFixture
-	for _, fixture := range fixtures {
-		if fixture.name == "rates" {
-			ratesFixture = fixture
-			break
-		}
-	}
-	if ratesFixture.name == "" {
-		t.Fatal("missing rates fixture")
-	}
-
-	now := time.Date(2026, 4, 5, 15, 0, 0, 0, time.UTC)
-	rows := []any{
-		map[string]any{
-			"hash":            []byte{0x01},
-			"last":            float64(now.Add(-2 * time.Minute).Unix()),
-			"rate_violations": 0,
-			"blocked_until":   float64(0),
-			"timestamps":      []any{float64(now.Add(-3 * time.Hour).Unix())},
-		},
-	}
-	rendered, err := renderRateTable(rows, now, nil, false)
-	if err != nil {
-		t.Fatalf("renderRateTable returned error: %v", err)
-	}
-
-	report := runEquivalenceScenario(equivalenceScenario{
-		fixture: ratesFixture,
-		steps: []equivalenceStep{{
-			name: "rates",
-			left: func() commandOutcome {
-				return commandOutcome{stdout: rendered, exitCode: 0}
-			},
-			right: func() commandOutcome {
-				return commandOutcome{stdout: rendered, exitCode: 0}
-			},
-		}},
-	})
-
-	if len(report.diffs) != 0 {
-		t.Fatalf("expected no diffs, got %#v", report.diffs)
-	}
-	if report.fixture.name != "rates" {
-		t.Fatalf("unexpected fixture name: %q", report.fixture.name)
-	}
-}
-
-func TestRunEquivalenceScenarioBlackholeHasNoDiffs(t *testing.T) {
-	t.Parallel()
-
-	fixtures := defaultEquivalenceFixtures()
-	var blackholeFixture equivalenceFixture
-	for _, fixture := range fixtures {
-		if fixture.name == "blackhole" {
-			blackholeFixture = fixture
-			break
-		}
-	}
-	if blackholeFixture.name == "" {
-		t.Fatal("missing blackhole fixture")
-	}
-
-	runBlackhole := func() commandOutcome {
-		fake := &blackholeFake{entries: map[string]map[string]any{}}
-		var out bytes.Buffer
-		if err := doBlackhole(&out, fake, []byte{0x01, 0x02}, 0, "integration-test"); err != nil {
-			return commandOutcome{stdout: out.String(), stderr: err.Error(), exitCode: 1}
-		}
-		if err := doUnblackhole(&out, fake, []byte{0x01, 0x02}); err != nil {
-			return commandOutcome{stdout: out.String(), stderr: err.Error(), exitCode: 1}
-		}
-		return commandOutcome{stdout: out.String(), exitCode: 0}
-	}
-
-	report := runEquivalenceScenario(equivalenceScenario{
-		fixture: blackholeFixture,
-		steps: []equivalenceStep{{
-			name:  "blackhole",
-			left:  runBlackhole,
-			right: runBlackhole,
-		}},
-	})
-
-	if len(report.diffs) != 0 {
-		t.Fatalf("expected no diffs, got %#v", report.diffs)
-	}
-	if report.fixture.name != "blackhole" {
-		t.Fatalf("unexpected fixture name: %q", report.fixture.name)
-	}
-}
-
-func TestRunEquivalenceScenarioRemoteLinkHasNoDiffs(t *testing.T) {
-	t.Parallel()
-
-	fixtures := defaultEquivalenceFixtures()
-	var remoteFixture equivalenceFixture
-	for _, fixture := range fixtures {
-		if fixture.name == "remote-link" {
-			remoteFixture = fixture
-			break
-		}
-	}
-	if remoteFixture.name == "" {
-		t.Fatal("missing remote-link fixture")
-	}
-
-	runRemote := func() commandOutcome {
-		fake := &remoteRequestFake{response: []any{
-			map[string]any{"hash": []byte{0x01}, "timestamp": float64(123), "via": []byte{0x11}, "hops": 1, "expires": float64(456), "interface": "eth0"},
-		}}
-		var out bytes.Buffer
-		if err := doRemoteTable(&out, fake, []byte{0xaa}, 0, false, 1.0); err != nil {
-			return commandOutcome{stdout: out.String(), stderr: err.Error(), exitCode: 1}
-		}
-		return commandOutcome{stdout: out.String(), exitCode: 0}
-	}
-
-	report := runEquivalenceScenario(equivalenceScenario{
-		fixture: remoteFixture,
-		steps: []equivalenceStep{{
-			name:  "remote-link",
-			left:  runRemote,
-			right: runRemote,
-		}},
-	})
-
-	if len(report.diffs) != 0 {
-		t.Fatalf("expected no diffs, got %#v", report.diffs)
-	}
-	if report.fixture.name != "remote-link" {
-		t.Fatalf("unexpected fixture name: %q", report.fixture.name)
 	}
 }
 

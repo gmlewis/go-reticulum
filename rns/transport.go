@@ -1511,8 +1511,8 @@ func (ts *TransportSystem) maintenance() {
 //     receiving interface.
 //
 // The should_ingress_limit_pr and phy_keepalive/send_keepalive halves of the
-// Python loop belong to later Phase 5 tasks (PR limiting and LocalInterface
-// sleep) and are intentionally omitted here.
+// Python loop (PR limiting and LocalInterface sleep) are intentionally
+// omitted here.
 func (ts *TransportSystem) runInterfaceJobs() {
 	for _, iface := range ts.GetInterfaces() {
 		iface.ShouldIngressLimit()
@@ -2691,12 +2691,12 @@ func (ts *TransportSystem) forwardPathRequest(packet *Packet, source interfaces.
 	// search_mode_filter from the attached (receiving) interface, mirroring
 	// RNS/Transport.py:3006-3011. The elif chain is order-sensitive:
 	//   - recursive_prs enables recursive search regardless of mode and
-	//     leaves the filter unset (Task 6, Transport.py:3007-3008);
+	//     leaves the filter unset (Transport.py:3007-3008);
 	//   - a mode in DISCOVER_PATHS_FOR enables recursive search with no
 	//     filter (Transport.py:3008);
 	//   - a boundary-mode attached interface enables recursive search and
 	//     restricts egress to BOUNDARY_SEARCH_MODES = [boundary, gateway]
-	//     (Task 5, Transport.py:3009-3011).
+	//     (Transport.py:3009-3011).
 	// The filter is applied in the forward loop below; an unset filter means
 	// no mode restriction, preserving the existing forward-to-all behavior for
 	// local-client and discover-mode sources.
@@ -3612,7 +3612,7 @@ func (ts *TransportSystem) Recall(targetHash []byte) *Identity {
 // for callers that do not represent actual application use (message unpacking,
 // path-table scans, announce rebroadcasts, link-proof validation, announce-
 // handler dispatch). It mirrors Python Identity.recall(..., _no_use=True)
-// (RNS/Identity.py:116-160, Phase 13 task 7).
+// (RNS/Identity.py:116-160).
 func (ts *TransportSystem) RecallNoUse(targetHash []byte) *Identity {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
@@ -3623,7 +3623,7 @@ func (ts *TransportSystem) RecallNoUse(targetHash []byte) *Identity {
 // destination, or nil if the destination is unknown (Python
 // Identity.recall_app_data, RNS/Identity.py:162-175). It does not mutate the
 // use-timestamp element; the use-marking side effect of Python's
-// recall_app_data is threaded separately via the noUse flag (Phase 13 task 7).
+// recall_app_data is threaded separately via the noUse flag.
 func (ts *TransportSystem) RecallAppData(targetHash []byte) []byte {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
@@ -3760,7 +3760,7 @@ func (ts *TransportSystem) RetainIdentity(identityHash []byte) bool {
 // effect, RNS/Identity.py:135,145,170). Transport-internal callers pass
 // noUse=true so path-table scans, announce rebroadcasts, link-proof
 // validation, and announce-handler dispatch do not inflate a destination's
-// last-used time (Python Identity.recall(..., _no_use=True), Phase 13 task 7).
+// last-used time (Python Identity.recall(..., _no_use=True)).
 // The registered-local-destination branch never marks used, matching Python
 // (RNS/Identity.py:152-158).
 func (ts *TransportSystem) recallLocked(targetHash []byte, noUse bool) *Identity {
@@ -5194,7 +5194,7 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 	// destination is not in the path table. A pending path request for the
 	// destination bypasses the gate so path-finding is never starved by
 	// ingress limiting. The discovery_path_requests half of the bypass
-	// (Transport.py:1759) is pending the Phase 11 discovery port.
+	// (Transport.py:1759) is pending the discovery port.
 	if held := ts.shouldHoldAnnounce(packet, iface, destHash); held {
 		return
 	}
@@ -5434,7 +5434,7 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 // announce rate limiting. A destination with a pending path request bypasses
 // the gate so path-finding is never starved by ingress limiting. The
 // discovery_path_requests half of the bypass (Transport.py:1759) is pending the
-// Phase 11 discovery port — no such map exists in the Go port yet.
+// discovery port — no such map exists in the Go port yet.
 //
 // The path-table and pending-path-request lookups run under ts.mu; the
 // ShouldIngressLimit/HoldAnnounce calls on the interface run outside the lock

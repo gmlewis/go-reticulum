@@ -12,7 +12,7 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-// TestDetermineCompressionSupportFromAppData covers Phase 14 task 3:
+// TestDetermineCompressionSupportFromAppData verifies that
 // DetermineCompressionSupport reconciles m.AutoCompress with the destination's
 // recalled announce app-data, mirroring Python's
 // LXMessage.determine_compression_support (LXMF/LXMessage.py:510-513, v1.1.0):
@@ -58,7 +58,7 @@ func TestDetermineCompressionSupportFromAppData(t *testing.T) {
 	}
 }
 
-// TestDetermineCompressionSupportMalformed covers Phase 14 task 3: a malformed
+// TestDetermineCompressionSupportMalformed verifies that a malformed
 // v0.5.0+-prefixed app-data payload yields a non-nil error rather than a
 // silent default, mirroring the umsgpack exception that propagates from
 // Python's compression_support_from_app_data.
@@ -71,8 +71,8 @@ func TestDetermineCompressionSupportMalformed(t *testing.T) {
 	}
 }
 
-// TestNewMessageDefaultsAutoCompressTrue covers Phase 14 task 3: a freshly
-// constructed outbound message defaults AutoCompress to true, matching
+// TestNewMessageDefaultsAutoCompressTrue verifies that a freshly constructed
+// outbound message defaults AutoCompress to true, matching
 // Python's LXMessage.__init__ (LXMF/LXMessage.py:146, v1.1.0).
 func TestNewMessageDefaultsAutoCompressTrue(t *testing.T) {
 	t.Parallel()
@@ -91,8 +91,8 @@ func TestNewMessageDefaultsAutoCompressTrue(t *testing.T) {
 	}
 }
 
-// TestAsResourceDirectPassesAutoCompress covers Phase 14 task 3: the
-// DIRECT-delivery resource path passes m.AutoCompress into the resource
+// TestAsResourceDirectPassesAutoCompress verifies that the DIRECT-delivery
+// resource path passes m.AutoCompress into the resource
 // options, mirroring Python's LXMessage.__as_resource
 // (LXMF/LXMessage.py:654, v1.1.0). A highly compressible packed payload is
 // compressed when AutoCompress is true and left uncompressed when false.
@@ -148,7 +148,7 @@ func TestAsResourceDirectPassesAutoCompress(t *testing.T) {
 	}
 }
 
-// TestAsResourceDirectAutoCompressFromAppData covers Phase 14 task 3 end-to-end:
+// TestAsResourceDirectAutoCompressFromAppData verifies end-to-end that
 // DetermineCompressionSupport driven by recalled app-data flows through to the
 // DIRECT resource's compression flag. A functionality list omitting
 // SF_COMPRESSION disables compression even for a compressible payload.
@@ -217,8 +217,8 @@ func TestAsResourceDirectAutoCompressFromAppData(t *testing.T) {
 	}
 }
 
-// TestAsResourcePropagatedOmitsAutoCompress covers Phase 14 task 3: the
-// PROPAGATED resource path does not pass auto_compress, matching Python's
+// TestAsResourcePropagatedOmitsAutoCompress verifies that the PROPAGATED
+// resource path does not pass auto_compress, matching Python's
 // LXMessage.__as_resource (LXMF/LXMessage.py:660, v1.1.0) which only sets it on
 // the DIRECT branch. Even with AutoCompress true, a propagated resource stays
 // uncompressed.

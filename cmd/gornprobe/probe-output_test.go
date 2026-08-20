@@ -6,9 +6,15 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestProbeMTUOverflowMessage(t *testing.T) {
@@ -107,8 +113,8 @@ func TestProbeLossSummary(t *testing.T) {
 		wantText string
 		wantExit int
 	}{
-		{name: "no loss", sent: 4, received: 4, wantText: "Sent 4, received 4, packet loss 0.00%", wantExit: 0},
-		{name: "partial loss", sent: 10, received: 7, wantText: "Sent 10, received 7, packet loss 30.00%", wantExit: 2},
+		{name: "no loss", sent: 4, received: 4, wantText: "Sent 4, received 4, packet loss 0.0%", wantExit: 0},
+		{name: "partial loss", sent: 10, received: 7, wantText: "Sent 10, received 7, packet loss 30.0%", wantExit: 2},
 	}
 
 	for _, tc := range tests {
@@ -122,5 +128,52 @@ func TestProbeLossSummary(t *testing.T) {
 				t.Fatalf("formatProbeLossSummary exit = %v, want %v", gotExit, tc.wantExit)
 			}
 		})
+	}
+}
+
+// TestProbeLossSummaryPythonParity is a LIVE cross-impl test: it execs python3 to
+// compute rnprobe.py's exact loss-summary line (`f"Sent {s}, received {r}, packet
+// loss {round((1-(r/s))*100,2)}%"`, rnprobe.py:206) for a range of (sent, received)
+// pairs and diffs them against Go's formatProbeLossSummary. Python's str(round(x,2))
+// drops trailing zeros ("100.0%", "0.0%", "50.0%", "25.0%", "10.0%") whereas a naive
+// %.2f would emit "100.00%" etc. — this test catches that divergence.
+func TestProbeLossSummaryPythonParity(t *testing.T) {
+	t.Parallel()
+	testutils.SkipIfNoPythonRNS(t)
+
+	pairs := [][2]int{{1, 0}, {1, 1}, {2, 1}, {3, 1}, {4, 3}, {10, 9}, {4, 4}, {10, 7}, {3, 2}, {7, 3}, {100, 97}}
+
+	pyScript := `
+import sys, json
+pairs = json.loads(sys.argv[1])
+out = {}
+for s, r in pairs:
+    loss = round((1-(r/s))*100, 2)
+    out["%d,%d" % (s, r)] = "Sent %d, received %d, packet loss %s%%" % (s, r, loss)
+print(json.dumps(out))
+`
+	dir := t.TempDir()
+	scriptPath := filepath.Join(dir, "lossparity.py")
+	if err := os.WriteFile(scriptPath, []byte(pyScript), 0o644); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	pairsJSON, _ := json.Marshal(pairs)
+	out, err := exec.Command("python3", scriptPath, string(pairsJSON)).Output()
+	if err != nil {
+		t.Fatalf("python3 loss script failed: %v\n%s", err, out)
+	}
+	var pyWant map[string]string
+	if err := json.Unmarshal(out, &pyWant); err != nil {
+		t.Fatalf("json unmarshal: %v\nraw: %s", err, out)
+	}
+
+	for _, p := range pairs {
+		key := fmt.Sprintf("%d,%d", p[0], p[1])
+		gotText, _ := formatProbeLossSummary(p[0], p[1])
+		want := pyWant[key]
+		if gotText != want {
+			t.Errorf("formatProbeLossSummary(%d,%d) = %q, want Python %q", p[0], p[1], gotText, want)
+		}
 	}
 }

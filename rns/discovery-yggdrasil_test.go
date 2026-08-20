@@ -11,10 +11,10 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
 )
 
-// TestIsYggIPv6 covers Phase 11 task 10: isYggIPv6 mirrors Python's
-// is_ygg_ipv6 (RNS/Discovery.py:850-852) — an address is Yggdrasil when it
-// parses as an IPv6 address inside the 200::/7 network. Non-IPv6 addresses,
-// IPv4 addresses, and unparseable strings return false.
+// TestIsYggIPv6 verifies that isYggIPv6 mirrors Python's is_ygg_ipv6
+// (RNS/Discovery.py:850-852) — an address is Yggdrasil when it parses as an
+// IPv6 address inside the 200::/7 network. Non-IPv6 addresses, IPv4
+// addresses, and unparseable strings return false.
 func TestIsYggIPv6(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -46,10 +46,10 @@ func TestIsYggIPv6(t *testing.T) {
 	}
 }
 
-// TestInterfaceDiscoveryAutoconnectYggdrasilReachableOnSkips covers Phase 11
-// task 10: when a discovered Backbone interface's reachable_on is a Yggdrasil
-// IPv6 address (200::/7), the autoconnect path returns early and no interface
-// is created (RNS/Discovery.py:720-722).
+// TestInterfaceDiscoveryAutoconnectYggdrasilReachableOnSkips verifies that
+// when a discovered Backbone interface's reachable_on is a Yggdrasil IPv6
+// address (200::/7), the autoconnect path returns early and no interface is
+// created (RNS/Discovery.py:720-722).
 func TestInterfaceDiscoveryAutoconnectYggdrasilReachableOnSkips(t *testing.T) {
 	t.Parallel()
 

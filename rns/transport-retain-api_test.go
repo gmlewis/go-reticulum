@@ -14,7 +14,7 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestRetainDestinationDataSetsRetainedFlag covers Phase 13 task 6:
+// TestRetainDestinationDataSetsRetainedFlag verifies that
 // RetainDestinationData sets the known-destinations use-timestamp (element 4)
 // to -1 (retained) for a known destination and returns true; an unknown
 // destination returns false (Python Identity._retain_destination_data,
@@ -43,7 +43,7 @@ func TestRetainDestinationDataSetsRetainedFlag(t *testing.T) {
 	}
 }
 
-// TestUnretainDestinationDataSetsUseTimestamp covers Phase 13 task 6:
+// TestUnretainDestinationDataSetsUseTimestamp verifies that
 // UnretainDestinationData sets the use-timestamp to the current time (a
 // positive Unix timestamp) for a known destination, clearing the retained
 // flag (Python Identity._unretain_destination_data, RNS/Identity.py:261-267).
@@ -70,7 +70,7 @@ func TestUnretainDestinationDataSetsUseTimestamp(t *testing.T) {
 	}
 }
 
-// TestUsedDestinationDataUpdatesUseTimestamp covers Phase 13 task 6:
+// TestUsedDestinationDataUpdatesUseTimestamp verifies that
 // UsedDestinationData sets the use-timestamp to now for a known, non-retained
 // destination, but leaves a retained destination (element 4 == -1) untouched
 // (Python Identity._used_destination_data, RNS/Identity.py:242-250 — the
@@ -109,7 +109,7 @@ func TestUsedDestinationDataUpdatesUseTimestamp(t *testing.T) {
 	}
 }
 
-// TestRetainIdentityRetainsMatchingDestinations covers Phase 13 task 6:
+// TestRetainIdentityRetainsMatchingDestinations verifies that
 // RetainIdentity retains every known destination whose public key hashes
 // (truncated) to the given identity hash, and returns true when at least one
 // was retained (Python Identity._retain_identity, RNS/Identity.py:270-283).
@@ -150,7 +150,7 @@ func TestRetainIdentityRetainsMatchingDestinations(t *testing.T) {
 	}
 }
 
-// TestRetainAndCleanCycle covers Phase 13 task 6: a retained, never-used,
+// TestRetainAndCleanCycle verifies that a retained, never-used,
 // pathless destination survives CleanKnownDestinations, but once unretained it
 // is dropped by the next clean — demonstrating the retain + clean lifecycle.
 func TestRetainAndCleanCycle(t *testing.T) {
@@ -191,7 +191,7 @@ func TestRetainAndCleanCycle(t *testing.T) {
 	}
 }
 
-// TestIdentityPubToFileWritesOnlyPublicKey covers Phase 13 task 6: PubToFile
+// TestIdentityPubToFileWritesOnlyPublicKey verifies that PubToFile
 // writes ONLY the public key to the file (not the private key), matching
 // Python Identity.pub_to_file (RNS/Identity.py:671-683).
 func TestIdentityPubToFileWritesOnlyPublicKey(t *testing.T) {

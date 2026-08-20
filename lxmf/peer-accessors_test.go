@@ -26,7 +26,7 @@ func addTestPeer(t *testing.T, router *Router, destHash []byte) *Peer {
 	return peer
 }
 
-// TestPeersAndPeerByHash covers Phase A.1: Router.Peers() returns a
+// TestPeersAndPeerByHash verifies that Router.Peers() returns a
 // snapshot of every registered peer, and Router.PeerByHash() performs
 // the Python self.peers[destination_hash] lookup (Network.py:1815).
 func TestPeersAndPeerByHash(t *testing.T) {
@@ -78,7 +78,7 @@ func TestPeersAndPeerByHash(t *testing.T) {
 	}
 }
 
-// TestUnpeer covers Phase A.2: Router.Unpeer removes a peer, mirroring
+// TestUnpeer verifies that Router.Unpeer removes a peer, mirroring
 // Python LXMRouter.unpeer(destination_hash, timestamp=None)
 // (LXMRouter.py:1942). A peer whose peering_timebase is in the future
 // must survive (timestamp < peering_timebase), matching Python.
@@ -140,7 +140,7 @@ func TestUnpeerTimestampGuard(t *testing.T) {
 	}
 }
 
-// TestPeerAccessors covers Phase A.3: every Peer read-only accessor
+// TestPeerAccessors verifies that every Peer read-only accessor
 // returns the value Python LXMPeer exposes for the same field state.
 // Expected values are captured from lxmf/LXMPeer.py:141-231.
 func TestPeerAccessors(t *testing.T) {
@@ -212,7 +212,7 @@ func TestPeerAccessors(t *testing.T) {
 	}
 }
 
-// TestPeerSyncExported covers Phase A.4: Peer.Sync() is exported and
+// TestPeerSyncExported verifies that Peer.Sync() is exported and
 // callable by a consumer. A peer with a syncHook and met preconditions
 // fires the hook (mirrors nomadnet calling peer.sync() in a thread,
 // Network.py:1828).

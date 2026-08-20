@@ -84,12 +84,16 @@ func formatProbeReceptionStats(rssi, snr, q *float64) string {
 
 func formatProbeLossSummary(sent, received int) (string, int) {
 	if sent == 0 {
-		return "Sent 0, received 0, packet loss 0.00%", 0
+		return "Sent 0, received 0, packet loss 0.0%", 0
 	}
 	loss := (1.0 - float64(received)/float64(sent)) * 100.0
 	exitCode := 0
 	if loss > 0 {
 		exitCode = 2
 	}
-	return fmt.Sprintf("Sent %v, received %v, packet loss %.2f%%", sent, received, loss), exitCode
+	// Python rnprobe.py:206 formats loss as f"{round(loss,2)}%", and str(round(x,2))
+	// drops trailing zeros (100.0%, 0.0%, 50.0%, 25.0%) — NOT a fixed 2-decimal field.
+	// Round to 2 decimals then render with formatProbePythonFloat to match exactly.
+	rounded := math.Round(loss*100) / 100
+	return fmt.Sprintf("Sent %v, received %v, packet loss %v%%", sent, received, formatProbePythonFloat(rounded)), exitCode
 }

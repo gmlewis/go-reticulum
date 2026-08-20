@@ -12,7 +12,7 @@ import (
 )
 
 // establishMaxRequestLinkPair stands up a loopback link pair (initiator <->
-// receiver) for the Phase 8 Task 1 max-request-size tests and returns the
+// receiver) for the max-request-size tests and returns the
 // active initiator link, the active receiver link, and the receiver
 // destination whose request handlers and max-request size are under test.
 func establishMaxRequestLinkPair(t *testing.T) (initiator, receiver *Link, receiverDest *Destination) {
@@ -51,7 +51,7 @@ func establishMaxRequestLinkPair(t *testing.T) (initiator, receiver *Link, recei
 	return initiator, receiver, receiverDest
 }
 
-// TestDestinationSetMaxRequestSizeValidation asserts Phase 8 Task 1: the
+// TestDestinationSetMaxRequestSizeValidation asserts that the
 // setter mirrors Python Destination.set_max_request_size (Destination.py:369-
 // 379) — zero is accepted (meaning unlimited) and a negative value is rejected
 // (Python raises ValueError "Maximum request size cannot be negative").
@@ -80,8 +80,8 @@ func TestDestinationSetMaxRequestSizeValidation(t *testing.T) {
 	}
 }
 
-// TestDestinationMaxRequestSize_InlineRequestAcceptedUnderLimit asserts Phase
-// 8 Task 1: an inline (ContextRequest) request whose decrypted packed size is
+// TestDestinationMaxRequestSize_InlineRequestAcceptedUnderLimit asserts that
+// an inline (ContextRequest) request whose decrypted packed size is
 // within the destination's max-request size is delivered to the registered
 // request handler (Link.py:992-997).
 func TestDestinationMaxRequestSize_InlineRequestAcceptedUnderLimit(t *testing.T) {
@@ -116,8 +116,8 @@ func TestDestinationMaxRequestSize_InlineRequestAcceptedUnderLimit(t *testing.T)
 	}
 }
 
-// TestDestinationMaxRequestSize_InlineRequestDroppedOverLimit asserts Phase 8
-// Task 1: an inline (ContextRequest) request whose decrypted packed size
+// TestDestinationMaxRequestSize_InlineRequestDroppedOverLimit asserts that
+// an inline (ContextRequest) request whose decrypted packed size
 // exceeds the destination's max-request size is dropped before the handler is
 // dispatched (Link.py:992-997 "Ignored request with excessive size").
 func TestDestinationMaxRequestSize_InlineRequestDroppedOverLimit(t *testing.T) {
@@ -154,8 +154,8 @@ func TestDestinationMaxRequestSize_InlineRequestDroppedOverLimit(t *testing.T) {
 	}
 }
 
-// TestDestinationMaxRequestSize_ResourceRequestRejectedOverLimit asserts Phase
-// 8 Task 1: a request whose packed size exceeds the link MDU is sent as a
+// TestDestinationMaxRequestSize_ResourceRequestRejectedOverLimit asserts that
+// a request whose packed size exceeds the link MDU is sent as a
 // resource (ResourceAdvertisement with is_request=true); when the advertised
 // data size (read_size == adv.D) exceeds the destination's max-request size,
 // the receiver rejects the resource (Link.py:1031-1037) rather than accepting

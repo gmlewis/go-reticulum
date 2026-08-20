@@ -45,9 +45,9 @@ func validationHandler(t *testing.T, requiredValue int) (*InterfaceAnnounceHandl
 	return h, &called
 }
 
-// TestDiscoveryRejectsNonBoolTransport covers Phase 11 task 5: the transport
-// field must be exactly a bool (RNS/Discovery.py:305). An int transport is
-// rejected — the callback must not fire.
+// TestDiscoveryRejectsNonBoolTransport verifies that the transport field
+// must be exactly a bool (RNS/Discovery.py:305). An int transport is rejected
+// — the callback must not fire.
 func TestDiscoveryRejectsNonBoolTransport(t *testing.T) {
 	t.Parallel()
 	h, called := validationHandler(t, 2)
@@ -61,8 +61,8 @@ func TestDiscoveryRejectsNonBoolTransport(t *testing.T) {
 	}
 }
 
-// TestDiscoveryRejectsIntLatitude covers Phase 11 task 5: latitude must be
-// nil or float, not int (RNS/Discovery.py:306).
+// TestDiscoveryRejectsIntLatitude verifies that latitude must be nil or
+// float, not int (RNS/Discovery.py:306).
 func TestDiscoveryRejectsIntLatitude(t *testing.T) {
 	t.Parallel()
 	h, called := validationHandler(t, 2)
@@ -76,8 +76,8 @@ func TestDiscoveryRejectsIntLatitude(t *testing.T) {
 	}
 }
 
-// TestDiscoveryRejectsBoolLongitude covers Phase 11 task 5: longitude must be
-// nil or float, not bool (RNS/Discovery.py:307).
+// TestDiscoveryRejectsBoolLongitude verifies that longitude must be nil or
+// float, not bool (RNS/Discovery.py:307).
 func TestDiscoveryRejectsBoolLongitude(t *testing.T) {
 	t.Parallel()
 	h, called := validationHandler(t, 2)
@@ -91,8 +91,8 @@ func TestDiscoveryRejectsBoolLongitude(t *testing.T) {
 	}
 }
 
-// TestDiscoveryRejectsShortTransportID covers Phase 11 task 5: transport_id
-// must be exactly TRUNCATED_HASHLENGTH/8 (16) bytes (RNS/Discovery.py:309).
+// TestDiscoveryRejectsShortTransportID verifies that transport_id must be
+// exactly TRUNCATED_HASHLENGTH/8 (16) bytes (RNS/Discovery.py:309).
 func TestDiscoveryRejectsShortTransportID(t *testing.T) {
 	t.Parallel()
 	h, called := validationHandler(t, 2)
@@ -106,9 +106,9 @@ func TestDiscoveryRejectsShortTransportID(t *testing.T) {
 	}
 }
 
-// TestDiscoveryRejectsIntTransportID covers Phase 11 task 5: transport_id
-// must be a byte string; an int has no len() in Python and raises, aborting
-// the announce (RNS/Discovery.py:309).
+// TestDiscoveryRejectsIntTransportID verifies that transport_id must be a
+// byte string; an int has no len() in Python and raises, aborting the
+// announce (RNS/Discovery.py:309).
 func TestDiscoveryRejectsIntTransportID(t *testing.T) {
 	t.Parallel()
 	h, called := validationHandler(t, 2)
@@ -122,9 +122,8 @@ func TestDiscoveryRejectsIntTransportID(t *testing.T) {
 	}
 }
 
-// TestDiscoveryRejectsUnknownInterfaceType covers Phase 11 task 5: an
-// interface_type not in DISCOVERABLE_INTERFACE_TYPES is rejected
-// (RNS/Discovery.py:310-312).
+// TestDiscoveryRejectsUnknownInterfaceType verifies that an interface_type
+// not in DISCOVERABLE_INTERFACE_TYPES is rejected (RNS/Discovery.py:310-312).
 func TestDiscoveryRejectsUnknownInterfaceType(t *testing.T) {
 	t.Parallel()
 	h, called := validationHandler(t, 2)
@@ -138,9 +137,9 @@ func TestDiscoveryRejectsUnknownInterfaceType(t *testing.T) {
 	}
 }
 
-// TestDiscoveryCoercesIFACNetnameToString covers Phase 11 task 5:
-// ifac_netname is coerced via str() (RNS/Discovery.py:330). A bytes value
-// arrives as the Python bytes repr "b'mesh'".
+// TestDiscoveryCoercesIFACNetnameToString verifies that ifac_netname is
+// coerced via str() (RNS/Discovery.py:330). A bytes value arrives as the
+// Python bytes repr "b'mesh'".
 func TestDiscoveryCoercesIFACNetnameToString(t *testing.T) {
 	t.Parallel()
 	tmpDir := testutils.TempDir(t, "rns-discovery-ifac-coerce-")
@@ -163,9 +162,9 @@ func TestDiscoveryCoercesIFACNetnameToString(t *testing.T) {
 	}
 }
 
-// TestDiscoveryAcceptsFloatLatitude covers Phase 11 task 5: a float latitude
-// is accepted (the callback fires), confirming the nil-or-float check does
-// not over-reject valid floats.
+// TestDiscoveryAcceptsFloatLatitude verifies that a float latitude is
+// accepted (the callback fires), confirming the nil-or-float check does not
+// over-reject valid floats.
 func TestDiscoveryAcceptsFloatLatitude(t *testing.T) {
 	t.Parallel()
 	h, called := validationHandler(t, 2)

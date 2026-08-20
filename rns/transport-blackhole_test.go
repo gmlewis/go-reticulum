@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 // The following fixture bytes were captured from a live Python 1.3.5
@@ -290,6 +291,39 @@ func assertBlackholeSubEntry(t *testing.T, m map[any]any, identityHash, source [
 // Discovery.BlackholeUpdater consumes.
 const blackholeListHandlerGoldenHex = "83c410deadbeefdeadbeefdeadbeefdeadbeef83a6736f75726365c410aabbccddeeff00112233445566778899a5756e74696cc0a6726561736f6ea96c6f63616c2d696831c410cafebabecafebabecafebabecafebabe83a6736f75726365c410112233445566778899aabbccddeeff00a5756e74696ccb420270b018000000a6726561736f6eaa72656d6f74652d696832c410feedfacefeedfacefeedfacefeedface83a6736f75726365c410aabbccddeeff00112233445566778899a5756e74696cc0a6726561736f6ea96c6f63616c2d696833"
 
+// pythonBlackholeListPacked builds the same three-entry
+// Transport.blackholed_identities dict TestBlackholeListHandler uses and packs
+// it with Python's RNS.vendor.umsgpack.packb — the exact packer Python's
+// blackhole_list_handler response path serves (Transport.py:3637-3644). The
+// returned bytes are the live Python wire payload for the fixture set, so the
+// hardcoded blackholeListHandlerGoldenHex constant can be validated against it
+// and the Go handler's output compared structurally. Gated on SkipIfNoPythonRNS.
+func pythonBlackholeListPacked(t *testing.T) []byte {
+	t.Helper()
+	testutils.SkipIfNoPythonRNS(t)
+	script := `
+import sys
+import RNS.vendor.umsgpack as umsgpack
+own = bytes.fromhex('aabbccddeeff00112233445566778899')
+src = bytes.fromhex('112233445566778899aabbccddeeff00')
+ih1 = bytes.fromhex('deadbeefdeadbeefdeadbeefdeadbeef')
+ih2 = bytes.fromhex('cafebabecafebabecafebabecafebabe')
+ih3 = bytes.fromhex('feedfacefeedfacefeedfacefeedface')
+d = {
+  ih1: {"source": own, "until": None, "reason": "local-ih1"},
+  ih2: {"source": src, "until": 9900000000.0, "reason": "remote-ih2"},
+  ih3: {"source": own, "until": None, "reason": "local-ih3"},
+}
+sys.stdout.write(umsgpack.packb(d).hex())
+`
+	out := testutils.RunPython(t, script)
+	b, err := hex.DecodeString(out)
+	if err != nil {
+		t.Fatalf("decode python blackhole-list hex %q: %v", out, err)
+	}
+	return b
+}
+
 // assertBlackholeMapsEqual asserts two msgpack-unpacked blackhole dicts
 // (map[any]any keyed by binary identity hashes) carry the same entries
 // with equal source/until/reason, independent of map iteration order.
@@ -362,10 +396,17 @@ func TestBlackholeListHandler(t *testing.T) {
 		t.Fatalf("response payload type %T, want map", respArr[1])
 	}
 
-	// Decode the Python golden and assert structural equality.
-	wantMap, err := msgpack.Unpack(mustHexDecode(t, blackholeListHandlerGoldenHex))
+	// Decode the live Python payload and assert structural equality. (Map
+	// key order is not asserted: Go sorts entries by identity hash while
+	// Python preserves insertion order, so the bytes differ but the decoded
+	// maps must match — hence the structural comparison.)
+	livePacked := pythonBlackholeListPacked(t)
+	if hex.EncodeToString(livePacked) != blackholeListHandlerGoldenHex {
+		t.Fatalf("live Python blackhole-list bytes != golden hex constant\n got: %x\nwant: %s", livePacked, blackholeListHandlerGoldenHex)
+	}
+	wantMap, err := msgpack.Unpack(livePacked)
 	if err != nil {
-		t.Fatalf("unpacking golden hex: %v", err)
+		t.Fatalf("unpacking live python payload: %v", err)
 	}
 	wantM, ok := wantMap.(map[any]any)
 	if !ok {

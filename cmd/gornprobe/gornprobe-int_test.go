@@ -112,6 +112,12 @@ loglevel = 4
 	}
 }
 
+// TestGornprobeScenarioParity verifies the rendered output of the probe scenario
+// formatters (timeout / success / packet-loss) end-to-end via the synthetic
+// in-process clock/receipt renderers. The sent/reply/RTT lines are Go-internal
+// renderer checks; the loss-summary line is live cross-impl verified against
+// Python rnprobe.py by TestProbeLossSummaryPythonParity (Python str(round(x,2))
+// drops trailing zeros: "100.0%", "0.0%", "50.0%").
 func TestGornprobeScenarioParity(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
@@ -125,7 +131,7 @@ func TestGornprobeScenarioParity(t *testing.T) {
 			name: "timeout",
 			got:  renderProbeTimeoutScenario,
 			want: probeCommandOutcome{
-				stdout:   "Sent probe 1 (16 bytes) to <aabb>\nProbe timed out\nSent 1, received 0, packet loss 100.00%\n",
+				stdout:   "Sent probe 1 (16 bytes) to <aabb>\nProbe timed out\nSent 1, received 0, packet loss 100.0%\n",
 				exitCode: 2,
 			},
 		},
@@ -133,7 +139,7 @@ func TestGornprobeScenarioParity(t *testing.T) {
 			name: "success",
 			got:  renderProbeSuccessScenario,
 			want: probeCommandOutcome{
-				stdout:   "Sent probe 1 (16 bytes) to <aabb>\nValid reply from <aabb>\nRound-trip time is 100.0 milliseconds over 2 hops\nSent 1, received 1, packet loss 0.00%\n",
+				stdout:   "Sent probe 1 (16 bytes) to <aabb>\nValid reply from <aabb>\nRound-trip time is 100.0 milliseconds over 2 hops\nSent 1, received 1, packet loss 0.0%\n",
 				exitCode: 0,
 			},
 		},
@@ -141,7 +147,7 @@ func TestGornprobeScenarioParity(t *testing.T) {
 			name: "packet loss",
 			got:  renderProbePacketLossScenario,
 			want: probeCommandOutcome{
-				stdout:   "Sent probe 1 (16 bytes) to <aabb>\nValid reply from <aabb>\nRound-trip time is 100.0 milliseconds over 2 hops\nSent probe 2 (16 bytes) to <aabb>\nProbe timed out\nSent 2, received 1, packet loss 50.00%\n",
+				stdout:   "Sent probe 1 (16 bytes) to <aabb>\nValid reply from <aabb>\nRound-trip time is 100.0 milliseconds over 2 hops\nSent probe 2 (16 bytes) to <aabb>\nProbe timed out\nSent 2, received 1, packet loss 50.0%\n",
 				exitCode: 2,
 			},
 		},

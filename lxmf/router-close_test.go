@@ -14,7 +14,7 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestRouterCloseTeardownGolden is the Phase J golden test: it constructs a
+// TestRouterCloseTeardownGolden is a golden test: it constructs a
 // router with a live delivery destination (plus an established inbound delivery
 // link), a propagation destination and a propagation control destination (each
 // with their request handlers and link/packet callbacks registered), and an

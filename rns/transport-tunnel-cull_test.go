@@ -22,7 +22,7 @@ func randomBlobWithTimebase(tb uint64) []byte {
 	return b
 }
 
-// TestCullTunnelsDropsPathSupersededByNewerActivePath covers Phase 12 task 8:
+// TestCullTunnelsDropsPathSupersededByNewerActivePath verifies that
 // the tunnel-path cull drops a tunnel path when the active path table entry
 // for the same destination has a more recent announce timebase (Python
 // Transport.py:860-867: current_path_timebase > tunnel_announce_timebase).
@@ -62,7 +62,7 @@ func TestCullTunnelsDropsPathSupersededByNewerActivePath(t *testing.T) {
 	}
 }
 
-// TestCullTunnelsKeepsPathWhenActivePathIsOlder covers Phase 12 task 8: when
+// TestCullTunnelsKeepsPathWhenActivePathIsOlder verifies that when
 // the active path table entry has an OLDER announce timebase than the tunnel
 // path, the tunnel path is retained (the comparison is strict greater-than).
 func TestCullTunnelsKeepsPathWhenActivePathIsOlder(t *testing.T) {
@@ -101,7 +101,7 @@ func TestCullTunnelsKeepsPathWhenActivePathIsOlder(t *testing.T) {
 	}
 }
 
-// TestCullTunnelsDropsPathPastPathTimeout covers Phase 12 task 8: a tunnel
+// TestCullTunnelsDropsPathPastPathTimeout verifies that a tunnel
 // path whose timestamp is older than TUNNEL_PATH_TIMEOUT is dropped even with
 // no competing active path (Python Transport.py:851-852).
 func TestCullTunnelsDropsPathPastPathTimeout(t *testing.T) {
@@ -135,7 +135,7 @@ func TestCullTunnelsDropsPathPastPathTimeout(t *testing.T) {
 	}
 }
 
-// TestCullTunnelsKeepsPathWithNoActivePath covers Phase 12 task 8: a tunnel
+// TestCullTunnelsKeepsPathWithNoActivePath verifies that a tunnel
 // path whose destination has no active path table entry is retained (the
 // "guard against missing tunnel IDs" / missing active-path branch).
 func TestCullTunnelsKeepsPathWithNoActivePath(t *testing.T) {
@@ -169,7 +169,7 @@ func TestCullTunnelsKeepsPathWithNoActivePath(t *testing.T) {
 	}
 }
 
-// TestCullTunnelsRemovesExpiredTunnel covers Phase 12 task 8: a tunnel past
+// TestCullTunnelsRemovesExpiredTunnel verifies that a tunnel past
 // its TUNNEL_TIMEOUT expiry is removed entirely (Python Transport.py:837-838).
 func TestCullTunnelsRemovesExpiredTunnel(t *testing.T) {
 	t.Parallel()
@@ -193,7 +193,7 @@ func TestCullTunnelsRemovesExpiredTunnel(t *testing.T) {
 	}
 }
 
-// TestHandleTunnelUsesTunnelTimeoutExpiry covers Phase 12 task 8: HandleTunnel
+// TestHandleTunnelUsesTunnelTimeoutExpiry verifies that HandleTunnel
 // sets the tunnel expiry to now + TUNNEL_TIMEOUT (8h), not the week-long
 // DESTINATION_TIMEOUT (Python Transport.py:2422).
 func TestHandleTunnelUsesTunnelTimeoutExpiry(t *testing.T) {
@@ -219,7 +219,7 @@ func TestHandleTunnelUsesTunnelTimeoutExpiry(t *testing.T) {
 	}
 }
 
-// TestHandleTunnelGuardsAgainstMissingTunnelID covers Phase 12 task 8:
+// TestHandleTunnelGuardsAgainstMissingTunnelID verifies that
 // HandleTunnel rejects a nil/empty tunnel ID instead of creating a malformed
 // entry keyed on the empty string.
 func TestHandleTunnelGuardsAgainstMissingTunnelID(t *testing.T) {

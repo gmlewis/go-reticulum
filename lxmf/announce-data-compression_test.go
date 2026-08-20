@@ -20,7 +20,7 @@ func mustHexDecode(t *testing.T, s string) []byte {
 	return b
 }
 
-// TestSFCompressionConstant covers Phase 14 task 1: the SFCompression
+// TestSFCompressionConstant verifies that the SFCompression
 // supported-functionality code matches Python LXMF.SF_COMPRESSION = 0x00
 // (lxmf/LXMF.py:108, v0.9.5).
 func TestSFCompressionConstant(t *testing.T) {
@@ -30,8 +30,8 @@ func TestSFCompressionConstant(t *testing.T) {
 	}
 }
 
-// TestCompressionSupportFromAppData covers Phase 14 task 1: the helper unpacks
-// the announce peer_data[2] supported-functionality list and reports whether
+// TestCompressionSupportFromAppData verifies that the helper unpacks the
+// announce peer_data[2] supported-functionality list and reports whether
 // SF_COMPRESSION is signalled, matching Python
 // LXMF.compression_support_from_app_data (lxmf/LXMF.py:154-166, v0.9.5) on
 // golden msgpack payloads captured from CPython+umsgpack. The (supported,
@@ -76,7 +76,7 @@ func TestCompressionSupportFromAppData(t *testing.T) {
 	}
 }
 
-// TestCompressionSupportFromAppDataMalformed covers Phase 14 task 1: a
+// TestCompressionSupportFromAppDataMalformed verifies that a
 // v0.5.0+-prefixed payload that fails to unpack returns a non-nil error
 // (mirroring the msgpack.unpackb exception path in
 // compression_support_from_app_data).

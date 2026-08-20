@@ -15,7 +15,7 @@ import (
 // and produces a well-formed QR code: Encode returns a Code with a positive
 // size, a non-empty bitmap, the three 7x7 finder patterns present at the
 // corners, a renderable image.Image, and non-empty PNG bytes. This is the
-// Phase L.1 acceptance gate for the vendored encoder.
+// Acceptance gate for the vendored encoder.
 func TestEncodeSmoke(t *testing.T) {
 	code, err := Encode("hello", L)
 	if err != nil {

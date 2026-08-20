@@ -40,7 +40,7 @@ func (o *ghostFilterOutlet) GetPacketID(p *Packet) []byte {
 	return p.PacketHash
 }
 
-// TestChannelGhostEnvelopeNotMatchedByDelivered covers Phase 10 task 7: a
+// TestChannelGhostEnvelopeNotMatchedByDelivered verifies that a
 // ghost envelope (a packet with a hash but no on-wire Raw, e.g. one whose
 // outlet send produced no packet) must not be matched by the txRing delivery
 // loop, because GetPacketID returns nil for it (Python Channel.py:418-420,
@@ -88,8 +88,8 @@ func TestChannelGhostEnvelopeNotMatchedByDelivered(t *testing.T) {
 	}
 }
 
-// TestChannelGhostEnvelopeNotMatchedByTimeout covers Phase 10 task 7 for the
-// timeout path: a ghost envelope must not be matched by the txRing timeout
+// TestChannelGhostEnvelopeNotMatchedByTimeout verifies the timeout path:
+// a ghost envelope must not be matched by the txRing timeout
 // loop (Python Channel.py:466), so a timeout for its hash is a no-op — no
 // resend, no teardown, no tries increment.
 func TestChannelGhostEnvelopeNotMatchedByTimeout(t *testing.T) {
@@ -127,7 +127,7 @@ func TestChannelGhostEnvelopeNotMatchedByTimeout(t *testing.T) {
 }
 
 // TestLinkChannelOutletGetPacketIDNilGuard directly asserts the
-// LinkChannelOutlet.GetPacketID raw!=nil guard added in Phase 10 task 7.
+// LinkChannelOutlet.GetPacketID raw!=nil guard.
 func TestLinkChannelOutletGetPacketIDNilGuard(t *testing.T) {
 	t.Parallel()
 

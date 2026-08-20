@@ -24,8 +24,8 @@ func (p *panicOnHashInterface) Name() string {
 	panic("synthesis forced panic")
 }
 
-// TestSynthesizeTunnelLogsMissingIdentityAndKeepsRunning covers Phase 12 task
-// 9: when the transport has no identity (enable_transport is False), the
+// TestSynthesizeTunnelLogsMissingIdentityAndKeepsRunning verifies that
+// when the transport has no identity (enable_transport is False), the
 // synthesis body fails early, logs the error, and returns without panicking
 // so the transport stays usable (Python Transport.synthesize_tunnel except
 // clause, Transport.py:2417).
@@ -48,7 +48,7 @@ func TestSynthesizeTunnelLogsMissingIdentityAndKeepsRunning(t *testing.T) {
 	}
 }
 
-// TestSynthesizeTunnelRecoversFromPanicAndKeepsRunning covers Phase 12 task 9:
+// TestSynthesizeTunnelRecoversFromPanicAndKeepsRunning verifies that
 // a panic inside the synthesis body is caught by the deferred recover, logged,
 // and does not propagate, so the transport keeps running (Python's broad
 // except Exception clause guards the whole body).
@@ -75,7 +75,7 @@ func TestSynthesizeTunnelRecoversFromPanicAndKeepsRunning(t *testing.T) {
 	}
 }
 
-// TestSynthesizeTunnelWithIdentitySendsPacket covers Phase 12 task 9: with a
+// TestSynthesizeTunnelWithIdentitySendsPacket verifies that with a
 // transport identity present, the synthesis body builds the establishment
 // payload and dispatches it via Outbound on the attached interface. A
 // capturing interface confirms a packet was actually sent (Python

@@ -29,7 +29,7 @@ func readyWaitDest(t *testing.T, ts *TransportSystem, aspect string, payload str
 	return dest, p.Raw, &got
 }
 
-// TestInboundWaitsForReadyDuringStart covers Phase 10 task 4: Inbound must hold
+// TestInboundWaitsForReadyDuringStart verifies that Inbound must hold
 // a packet that arrives while Start is in progress (running=true, ready=false)
 // and only process it once Start completes and the ready flag is set, matching
 // Python Transport.inbound's READY_WAIT loop (Transport.py:1430-1437). The
@@ -83,7 +83,7 @@ func TestInboundWaitsForReadyDuringStart(t *testing.T) {
 	ts.mu.Unlock()
 }
 
-// TestInboundDropsOnReadyTimeout covers Phase 10 task 4's drop path: if the
+// TestInboundDropsOnReadyTimeout verifies the drop path: if the
 // transport never becomes ready within readyWaitTimeout, Inbound logs a
 // warning and drops the packet instead of blocking forever (Python
 // Transport.py:1435-1437).

@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// TestDestinationsMapHashLookup covers Phase 12 task 7: registering N
+// TestDestinationsMapHashLookup verifies that registering N
 // destinations populates a hash-keyed destinationsMap, and
 // localDestinationLocked resolves a destination by its hash in O(1) instead
 // of scanning the destinations list (Python Transport.destinations_map,
@@ -44,7 +44,7 @@ func TestDestinationsMapHashLookup(t *testing.T) {
 	ts.mu.Unlock()
 }
 
-// TestCleanDestinationsMapReconciles covers Phase 12 task 7: the reconcile
+// TestCleanDestinationsMapReconciles verifies that the reconcile
 // job re-adds a registered destination missing from the map and drops a stale
 // map entry whose destination is no longer registered (Python
 // Transport.clean_destinations_map, Transport.py:2478-2496).
@@ -76,7 +76,7 @@ func TestCleanDestinationsMapReconciles(t *testing.T) {
 	ts.mu.Unlock()
 }
 
-// TestDeregisterDestinationRemovesFromMap covers Phase 12 task 7: deregister
+// TestDeregisterDestinationRemovesFromMap verifies that deregister
 // removes the destination from both the list and the hash map.
 func TestDeregisterDestinationRemovesFromMap(t *testing.T) {
 	t.Parallel()

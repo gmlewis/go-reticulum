@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-// TestRequestReceiptResponseSizeRecordedExactlyOnceInline asserts Phase 8 Task
-// 3: receiving an inline (ContextResponse) response records the response size
+// TestRequestReceiptResponseSizeRecordedExactlyOnceInline asserts that
+// receiving an inline (ContextResponse) response records the response size
 // and transfer size exactly once on the receipt (Link.py:867-870,
 // 1009-1010). The inline response path calls handleResponse with
 // update_sizes=True, which sets response_size and accumulates
@@ -86,8 +86,8 @@ func TestRequestReceiptResponseSizeUnsetBeforeResponse(t *testing.T) {
 	}
 }
 
-// TestRequestReceiptResponseSizeRecordedExactlyOnceResource asserts Phase 8
-// Task 3 for the response-resource path: the response size and transfer size
+// TestRequestReceiptResponseSizeRecordedExactlyOnceResource asserts the
+// response-resource path: the response size and transfer size
 // are recorded exactly once, at advertisement-accept time (Link.py:1049-1054),
 // and the conclude path (update_sizes=False) does not re-accumulate them. A
 // 500-byte response packs to ~538 bytes > mdu~431, so it is sent as a

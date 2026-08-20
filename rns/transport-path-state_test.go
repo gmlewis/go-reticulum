@@ -11,7 +11,7 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
 )
 
-// TestNewPathEntryMarkedUnknownState asserts Phase 6 Task 8: announcing a
+// TestNewPathEntryMarkedUnknownState asserts that announcing a
 // previously-unknown destination inserts a fresh pathTable entry whose path
 // state is "unknown" (ResponsiveState == 0, Unresponsive == false), mirroring
 // RNS/Transport.py:2052-2053 where Transport.mark_path_unknown_state is
@@ -48,7 +48,7 @@ func TestNewPathEntryMarkedUnknownState(t *testing.T) {
 	}
 }
 
-// TestMarkPathStateNoOpWhenAbsent asserts Phase 6 Task 8: MarkPathUnresponsive
+// TestMarkPathStateNoOpWhenAbsent asserts that MarkPathUnresponsive
 // and MarkPathUnknownState are no-ops when the destination has no pathTable
 // entry — they neither create an entry nor panic, mirroring Python's
 // `if destination_hash in Transport.path_table` guard (Transport.py:2810,

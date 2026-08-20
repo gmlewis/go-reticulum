@@ -49,7 +49,7 @@ func newDestinationDataInstances(t *testing.T, ts *TransportSystem) (r1, r2 *Ret
 	return r1, r2
 }
 
-// TestDestinationDataRetainLocal covers Phase 13 task 10 local path:
+// TestDestinationDataRetainLocal covers the local path:
 // RetainDestinationData on a non-connected instance sets the known
 // destination's retain flag (element 4 == -1) directly on the transport
 // (Python Reticulum._retain_destination_data, RNS/Reticulum.py:1314-1326).
@@ -80,7 +80,7 @@ func TestDestinationDataRetainLocal(t *testing.T) {
 	}
 }
 
-// TestDestinationDataOperationsViaRPC covers Phase 13 task 10 RPC path: a
+// TestDestinationDataOperationsViaRPC covers the RPC path: a
 // connected client routes destination_data used/retain/unretain to the shared
 // instance, mutating the shared transport's known-destination entry
 // (Python Reticulum.py:1281-1286, 1300-1340).
@@ -119,7 +119,7 @@ func TestDestinationDataOperationsViaRPC(t *testing.T) {
 	}
 }
 
-// TestIdentityDataRetainViaRPC covers Phase 13 task 10 RPC path: a connected
+// TestIdentityDataRetainViaRPC covers the RPC path: a connected
 // client routes identity_data retain to the shared instance, pinning every
 // known destination owned by that identity (Python Reticulum.py:1288-1291,
 // 1342-1357).
@@ -144,7 +144,7 @@ func TestIdentityDataRetainViaRPC(t *testing.T) {
 	}
 }
 
-// TestRPCDestinationDataAndIdentityDataEndpoints covers Phase 13 task 10 raw
+// TestRPCDestinationDataAndIdentityDataEndpoints covers the raw
 // RPC frames: the shared instance handles {"destination_data": ...} and
 // {"identity_data": "retain", ...} frames, returning the boolean result
 // (Python Reticulum.py:1281-1291).

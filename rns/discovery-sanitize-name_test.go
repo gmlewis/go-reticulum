@@ -14,7 +14,7 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestSanitizeDiscoveryName covers Phase 11 task 6: sanitize_name mirrors
+// TestSanitizeDiscoveryName verifies that sanitize_name mirrors
 // RNS/Discovery.py:238-244 — drop non-ASCII, strip, collapse repeated runs of
 // spaces (5→1, 3→1, 2→1), trim leading non-alphanumeric chars, trim trailing
 // non-alphanumeric chars except ')'. An empty input yields an empty result
@@ -42,7 +42,7 @@ func TestSanitizeDiscoveryName(t *testing.T) {
 	}
 }
 
-// TestDiscoveryReceiveAppliesSanitizeName covers Phase 11 task 6: a received
+// TestDiscoveryReceiveAppliesSanitizeName verifies that a received
 // announce's name is sanitized via sanitize_name on the receive path
 // (RNS/Discovery.py:303). A name with leading junk and repeated spaces is
 // sanitized before being persisted.
@@ -68,8 +68,8 @@ func TestDiscoveryReceiveAppliesSanitizeName(t *testing.T) {
 	}
 }
 
-// TestDiscoveryLoadAppliesSanitizeName covers Phase 11 task 6: a persisted
-// discovery file's name is sanitized via sanitize_name on the load path
+// TestDiscoveryLoadAppliesSanitizeName verifies that a persisted discovery
+// file's name is sanitized via sanitize_name on the load path
 // (RNS/Discovery.py:481). A hand-written .data file with an unsanitized name
 // is sanitized when listed.
 func TestDiscoveryLoadAppliesSanitizeName(t *testing.T) {

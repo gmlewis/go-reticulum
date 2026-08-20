@@ -13,7 +13,7 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
-// TestInterfaceAnnouncerTCPClientWithoutKISSAborts covers Phase 11 task 9: a
+// TestInterfaceAnnouncerTCPClientWithoutKISSAborts verifies that a
 // TCPClientInterface that is not KISS-framed aborts the discovery announce
 // (RNS/Discovery.py:139-141 — "Invalid interface discovery configuration ...
 // aborting discovery announce", return None). getInterfaceAnnounceData must
@@ -53,7 +53,7 @@ func TestInterfaceAnnouncerTCPClientWithoutKISSAborts(t *testing.T) {
 	}
 }
 
-// TestInterfaceAnnouncerTCPClientWithKISSAnnounces covers Phase 11 task 9: a
+// TestInterfaceAnnouncerTCPClientWithKISSAnnounces verifies that a
 // KISS-framed TCPClientInterface does NOT abort — it advertises as
 // KISSInterface (RNS/Discovery.py:186-187 rewrites INTERFACE_TYPE to
 // KISSInterface). getInterfaceAnnounceData returns a real announce whose

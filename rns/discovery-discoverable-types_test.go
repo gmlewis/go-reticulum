@@ -14,7 +14,7 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestDiscoveryLoadRemovesBogusType covers Phase 11 task 7: the load path
+// TestDiscoveryLoadRemovesBogusType verifies that the load path
 // (ListDiscoveredInterfaces) removes persisted entries whose type is not in
 // DISCOVERABLE_TYPES (RNS/Discovery.py:488). A hand-written .data file with a
 // bogus type is removed during a load cycle.
@@ -53,9 +53,8 @@ func TestDiscoveryLoadRemovesBogusType(t *testing.T) {
 	}
 }
 
-// TestDiscoveryLoadRemovesMissingType covers Phase 11 task 7: a persisted
-// entry with no type field at all is removed (RNS/Discovery.py:488,
-// `not "type" in info`).
+// TestDiscoveryLoadRemovesMissingType verifies that a persisted entry with no
+// type field at all is removed (RNS/Discovery.py:488, `not "type" in info`).
 func TestDiscoveryLoadRemovesMissingType(t *testing.T) {
 	t.Parallel()
 	tmpDir := testutils.TempDir(t, "rns-discovery-missing-type-")
@@ -90,8 +89,8 @@ func TestDiscoveryLoadRemovesMissingType(t *testing.T) {
 	}
 }
 
-// TestDiscoveryLoadKeepsValidType covers Phase 11 task 7: entries with a type
-// in DISCOVERABLE_TYPES are kept (the filter does not over-remove).
+// TestDiscoveryLoadKeepsValidType verifies that entries with a type in
+// DISCOVERABLE_TYPES are kept (the filter does not over-remove).
 func TestDiscoveryLoadKeepsValidType(t *testing.T) {
 	t.Parallel()
 	tmpDir := testutils.TempDir(t, "rns-discovery-valid-type-")
@@ -123,8 +122,8 @@ func TestDiscoveryLoadKeepsValidType(t *testing.T) {
 	}
 }
 
-// TestDiscoveryLoadRejectsTCPClientType covers Phase 11 task 7: the load path
-// uses DISCOVERABLE_TYPES (6 types, no TCPClientInterface), so a persisted
+// TestDiscoveryLoadRejectsTCPClientType verifies that the load path uses
+// DISCOVERABLE_TYPES (6 types, no TCPClientInterface), so a persisted
 // TCPClientInterface entry is removed even though TCPClientInterface IS
 // accepted on the receive path (DISCOVERABLE_INTERFACE_TYPES, 7 types).
 func TestDiscoveryLoadRejectsTCPClientType(t *testing.T) {

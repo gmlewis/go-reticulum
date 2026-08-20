@@ -39,7 +39,7 @@ func assertNoTempFiles(t *testing.T, storagePath string) {
 	}
 }
 
-// TestSaveKnownDestinationsIsAtomicTempRename covers Phase 13 task 2: the
+// TestSaveKnownDestinationsIsAtomicTempRename verifies that the
 // known-destinations table is written to a temp file and atomically renamed
 // into place (Python os.replace, RNS/Identity.py:199-200), so the final
 // known_destinations file round-trips and no temp file is left behind.
@@ -83,8 +83,8 @@ func TestSaveKnownDestinationsIsAtomicTempRename(t *testing.T) {
 	}
 }
 
-// TestSaveKnownDestinationsPreservesExistingFileOnWriteError covers Phase 13
-// task 2: when the temp-file write fails, the existing known_destinations file
+// TestSaveKnownDestinationsPreservesExistingFileOnWriteError verifies that
+// when the temp-file write fails, the existing known_destinations file
 // is left intact (the atomic save never touches the canonical path until the
 // rename) and the temp file is cleaned up (Python os.unlink on error,
 // RNS/Identity.py:204-206).

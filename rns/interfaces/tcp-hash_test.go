@@ -88,9 +88,9 @@ func TestSpawnedTCPClientHashUsesPeerAddress(t *testing.T) {
 	t.Parallel()
 	tci := &TCPClientInterface{
 		BaseInterface: NewBaseInterface("Test TCP Server", ModeFull, TCPBitrateGuess),
-		spawned:        true,
-		remoteIP:       "198.51.100.7",
-		remotePort:     51234,
+		spawned:       true,
+		remoteIP:      "198.51.100.7",
+		remotePort:    51234,
 	}
 	const wantStr = "TCPInterface[Test TCP Server/198.51.100.7:51234]"
 	if got := tci.HashString(); got != wantStr {
@@ -105,7 +105,7 @@ func TestIPv6TargetHashBrackets(t *testing.T) {
 	tci := &TCPClientInterface{
 		BaseInterface: NewBaseInterface("v6peer", ModeFull, TCPBitrateGuess),
 		targetHost:    "2001:db8::1",
-		targetPort:     4242,
+		targetPort:    4242,
 	}
 	const wantStr = "TCPInterface[v6peer/[2001:db8::1]:4242]"
 	if got := tci.HashString(); got != wantStr {

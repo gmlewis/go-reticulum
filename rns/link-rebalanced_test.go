@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// TestLinkRebalancedAtSetOnSuccessfulRebalance asserts Phase 7 Task 3: when a
+// TestLinkRebalancedAtSetOnSuccessfulRebalance asserts that when a
 // pending link's LRPROOF arrives with a hop count that mismatches expectedHops
 // and the proof signature validates, the link records the re-balance timestamp
 // (Python Transport.py:2298-2300 `if not link.rebalanced: link.rebalanced =
@@ -66,7 +66,7 @@ func TestLinkRebalancedAtSetOnSuccessfulRebalance(t *testing.T) {
 	}
 }
 
-// TestLinkRebalancedAtRecordedOnce asserts Phase 7 Task 3: the re-balance
+// TestLinkRebalancedAtRecordedOnce asserts that the re-balance
 // timestamp is recorded only on the FIRST successful re-balance. Python
 // guards the assignment with `if not link.rebalanced:` (Transport.py:2298),
 // so a subsequent re-balance (e.g. one whose full validate_proof fails and
@@ -97,7 +97,7 @@ func TestLinkRebalancedAtRecordedOnce(t *testing.T) {
 	}
 }
 
-// TestLinkRebalancedAtUnsetWhenRebalanceDisabled asserts Phase 7 Task 3: with
+// TestLinkRebalancedAtUnsetWhenRebalanceDisabled asserts that with
 // ALLOW_LINK_PATH_REBALANCE disabled, a hop-mismatch proof is rejected and the
 // re-balance timestamp is never recorded (the gate never reaches the
 // signature-validated adoption).

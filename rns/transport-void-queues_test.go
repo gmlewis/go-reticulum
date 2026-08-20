@@ -14,7 +14,7 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestStopVoidsQueues covers Phase 12 task 3: Stop calls voidQueuesLocked so
+// TestStopVoidsQueues verifies that Stop calls voidQueuesLocked so
 // the in-memory transport queues — outstanding receipts, the reverse table,
 // and each interface's held-announce deque — are empty after the transport
 // stops (Python Transport.void_queues / exit_handler, Transport.py:3517-3525).
@@ -63,7 +63,7 @@ func TestStopVoidsQueues(t *testing.T) {
 	}
 }
 
-// TestPersistDataNonReentrantSkipsConcurrentCall covers Phase 12 task 3:
+// TestPersistDataNonReentrantSkipsConcurrentCall verifies that
 // PersistData is guarded by a non-reentrant lock, so a call made while a
 // persist is already in flight is skipped (Python Transport.py:3509-3510
 // "if persist_lock.locked(): return") rather than queueing or re-entering.

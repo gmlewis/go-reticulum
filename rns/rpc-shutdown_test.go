@@ -13,7 +13,7 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestRPCHandlerRequestRecoversFromPanic covers Phase 12 task 11: the RPC
+// TestRPCHandlerRequestRecoversFromPanic verifies that the RPC
 // request handler recovers from a panic while handling a local-client call,
 // logs it, and returns an error response instead of propagating the panic —
 // the Go analog of Python wrapping the shared-instance RPC loop body in
@@ -40,7 +40,7 @@ func TestRPCHandlerRequestRecoversFromPanic(t *testing.T) {
 	}
 }
 
-// TestRPCListenerExitsOnClose covers Phase 12 task 11: stopping the shared
+// TestRPCListenerExitsOnClose verifies that stopping the shared
 // instance (Close) signals the RPC listener loop to exit, and Close joins the
 // loop's done channel so the listener has demonstrably stopped — the Go analog
 // of Python's `while RNS.Transport._should_run:` loop guard

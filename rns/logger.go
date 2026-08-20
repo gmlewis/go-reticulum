@@ -283,28 +283,28 @@ func (s *Logger) log(msg string, level int, preciseTimestamp bool) {
 			// so a TUI app running in raw mode + the alternate screen never has
 			// its terminal scrollback flooded (which balloons emulator memory).
 			// A launcher that redirects stderr to a file still captures these.
-			fmt.Fprintln(os.Stderr, logString)
+			log.Print(logString)
 		} else if dest == LogDestFile && filePath != "" {
 			f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 			if err != nil {
 				s.SetAlwaysOverride(true)
-				fmt.Fprintf(os.Stderr, "[%v] [Critical] Exception occurred while writing log message to log file: %v\n", critTS, err)
-				fmt.Fprintf(os.Stderr, "[%v] [Critical] Dumping future log events to console!\n", critTS)
-				fmt.Fprintln(os.Stderr, logString)
+				log.Printf("[%v] [Critical] Exception occurred while writing log message to log file: %v\n", critTS, err)
+				log.Printf("[%v] [Critical] Dumping future log events to console!\n", critTS)
+				log.Print(logString)
 				return
 			}
 			defer func() {
 				if closeErr := f.Close(); closeErr != nil {
 					s.SetAlwaysOverride(true)
-					fmt.Fprintf(os.Stderr, "[%v] [Critical] Exception occurred while closing log file: %v\n", critTS, closeErr)
+					log.Printf("[%v] [Critical] Exception occurred while closing log file: %v\n", critTS, closeErr)
 				}
 			}()
 
 			if _, err := f.WriteString(logString + "\n"); err != nil {
 				s.SetAlwaysOverride(true)
-				fmt.Fprintf(os.Stderr, "[%v] [Critical] Exception occurred while writing log message to log file: %v\n", critTS, err)
-				fmt.Fprintf(os.Stderr, "[%v] [Critical] Dumping future log events to console!\n", critTS)
-				fmt.Fprintln(os.Stderr, logString)
+				log.Printf("[%v] [Critical] Exception occurred while writing log message to log file: %v\n", critTS, err)
+				log.Printf("[%v] [Critical] Dumping future log events to console!\n", critTS)
+				log.Print(logString)
 				return
 			}
 
@@ -314,12 +314,12 @@ func (s *Logger) log(msg string, level int, preciseTimestamp bool) {
 				if _, err := os.Stat(prevFile); err == nil {
 					if rmErr := os.Remove(prevFile); rmErr != nil {
 						s.SetAlwaysOverride(true)
-						fmt.Fprintf(os.Stderr, "[%v] [Critical] Exception occurred while rotating log file: %v\n", critTS, rmErr)
+						log.Printf("[%v] [Critical] Exception occurred while rotating log file: %v\n", critTS, rmErr)
 					}
 				}
 				if renameErr := os.Rename(filePath, prevFile); renameErr != nil {
 					s.SetAlwaysOverride(true)
-					fmt.Fprintf(os.Stderr, "[%v] [Critical] Exception occurred while rotating log file: %v\n", critTS, renameErr)
+					log.Printf("[%v] [Critical] Exception occurred while rotating log file: %v\n", critTS, renameErr)
 				}
 			}
 		} else if dest == LogCallback {

@@ -101,9 +101,10 @@ func (l *Link) GetEstablishmentRate() *float64 {
 // GetExpectedRate returns the most recently measured in-flight data rate of
 // an established link in bits per second, or nil when no resource transfer has
 // completed. It is the Go port of Python's Link.get_expected_rate()
-// (Link.py:627). Python stores expected_rate = (resource.size*8)/transfer_time
-// (Link.py:1290) and get_expected_rate returns it raw; we surface it in bits
-// per second to match establishment_rate's units.
+// (Link.py:594-599). Python stores expected_rate = (resource.size*8)/transfer_time
+// (Link.py:1258/1261) — already in bits per second — and get_expected_rate
+// returns it RAW (no extra *8), unlike get_establishment_rate whose field is
+// in bytes/sec and therefore multiplied by 8.
 func (l *Link) GetExpectedRate() *float64 {
 	if l == nil {
 		return nil
@@ -113,7 +114,7 @@ func (l *Link) GetExpectedRate() *float64 {
 	if l.expectedRate <= 0 {
 		return nil
 	}
-	rate := l.expectedRate * 8
+	rate := l.expectedRate
 	return &rate
 }
 

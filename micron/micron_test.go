@@ -22,10 +22,11 @@ import (
 func TestConvertMarkdownToMicronGolden(t *testing.T) {
 	for _, tc := range goldenConvert {
 		t.Run(tc.name, func(t *testing.T) {
+			want := pythonConvert(t, tc.input)
 			got := ConvertMarkdownToMicron(tc.input)
-			if got != tc.want {
-				t.Fatalf("ConvertMarkdownToMicron mismatch:\ninput:  %q\nwant:   %q\ngot:    %q",
-					tc.input, tc.want, got)
+			if got != want {
+				t.Fatalf("ConvertMarkdownToMicron mismatch with live Python:\ninput:  %q\nwant:   %q\ngot:    %q",
+					tc.input, want, got)
 			}
 		})
 	}
@@ -37,10 +38,11 @@ func TestConverterFormatBlock(t *testing.T) {
 	c := NewConverter()
 	for _, tc := range goldenConvert {
 		t.Run(tc.name, func(t *testing.T) {
+			want := pythonConvert(t, tc.input)
 			got := c.FormatBlock(tc.input)
-			if got != tc.want {
-				t.Fatalf("FormatBlock mismatch:\ninput:  %q\nwant:   %q\ngot:    %q",
-					tc.input, tc.want, got)
+			if got != want {
+				t.Fatalf("FormatBlock mismatch with live Python:\ninput:  %q\nwant:   %q\ngot:    %q",
+					tc.input, want, got)
 			}
 		})
 	}

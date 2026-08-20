@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// TestChannelShutdownMarksEnvelopesUntracked covers Phase 10 task 8:
+// TestChannelShutdownMarksEnvelopesUntracked verifies that
 // Shutdown must clear the `tracked` flag on every envelope in both rings
 // before clearing the rings (Python Channel._clear_rings, Channel.py:313-320),
 // so a stale reference to an envelope can detect it is no longer owned by a
@@ -57,7 +57,7 @@ func TestChannelShutdownMarksEnvelopesUntracked(t *testing.T) {
 	}
 }
 
-// TestChannelShutdownNoUseAfterShutdown covers Phase 10 task 8's safety
+// TestChannelShutdownNoUseAfterShutdown covers the safety
 // guarantee: after Shutdown clears the rings and disarms the receipt
 // callbacks, a late delivery or timeout callback (simulated by calling the
 // channel methods directly with the stale receipt) must be a no-op — no

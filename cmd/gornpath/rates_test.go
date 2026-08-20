@@ -65,10 +65,8 @@ func TestRenderRateTableJSONUsesPythonFieldNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("renderRateTable returned error: %v", err)
 	}
-	want := `[{"hash":"aabb","last":123,"rate_violations":3,"blocked_until":456,"timestamps":[111,222]}]`
-	if got != want {
-		t.Fatalf("rate table JSON mismatch:\n got: %q\nwant: %q", got, want)
-	}
+	_, wantRates := pythonPathRateJSON(t)
+	assertJSONParity(t, got, wantRates)
 }
 
 func TestDoRatesPrintsNoInformationAvailable(t *testing.T) {

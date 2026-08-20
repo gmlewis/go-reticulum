@@ -15,7 +15,7 @@ import (
 	"testing"
 )
 
-// TestSAMRequestBuildersGolden covers Phase 19 task 1: the SAM request message
+// TestSAMRequestBuildersGolden verifies that the SAM request message
 // builders produce the exact wire bytes Python emits (sam.py:48-76), so a Go
 // SAM client is wire-compatible with a Python-trained SAM API.
 func TestSAMRequestBuildersGolden(t *testing.T) {
@@ -41,7 +41,7 @@ func TestSAMRequestBuildersGolden(t *testing.T) {
 	}
 }
 
-// TestParseSAMMessage covers Phase 19 task 1: ParseSAMMessage splits a SAM reply
+// TestParseSAMMessage verifies that ParseSAMMessage splits a SAM reply
 // into cmd/action/opts and OK() detects RESULT=OK (sam.py:25-45).
 func TestParseSAMMessage(t *testing.T) {
 	t.Parallel()
@@ -64,7 +64,7 @@ func TestParseSAMMessage(t *testing.T) {
 	}
 }
 
-// TestSAMErrorForResult covers Phase 19 task 1: RESULT strings map to the
+// TestSAMErrorForResult verifies that RESULT strings map to the
 // Python SAM_EXCEPTIONS sentinel errors (exceptions.py:33-41).
 func TestSAMErrorForResult(t *testing.T) {
 	t.Parallel()
@@ -91,7 +91,7 @@ func TestSAMErrorForResult(t *testing.T) {
 	}
 }
 
-// TestI2PDestinationBase32 covers Phase 19 task 1: the I2P destination base32
+// TestI2PDestinationBase32 verifies that the I2P destination base32
 // hash is the lowercase 52-char base32 SHA-256 of the binary destination
 // (sam.Destination.base32).
 func TestI2PDestinationBase32(t *testing.T) {
@@ -237,7 +237,7 @@ func newMockSAMClient(m *mockSAM) *SAMClient {
 	return c
 }
 
-// TestSAMClientCreateSession covers Phase 19 task 1: CreateSession performs the
+// TestSAMClientCreateSession verifies that CreateSession performs the
 // HELLO handshake then SESSION CREATE, returns the created destination, and
 // leaves the session control conn open (aiosam.create_session).
 func TestSAMClientCreateSession(t *testing.T) {
@@ -266,7 +266,7 @@ func TestSAMClientCreateSession(t *testing.T) {
 	}
 }
 
-// TestSAMClientCreateSessionError covers Phase 19 task 1: a non-OK SESSION
+// TestSAMClientCreateSessionError verifies that a non-OK SESSION
 // STATUS reply surfaces a *SAMResultError carrying the RESULT.
 func TestSAMClientCreateSessionError(t *testing.T) {
 	t.Parallel()
@@ -288,7 +288,7 @@ func TestSAMClientCreateSessionError(t *testing.T) {
 	}
 }
 
-// TestSAMClientStreamConnect covers Phase 19 task 1: StreamConnect performs
+// TestSAMClientStreamConnect verifies that StreamConnect performs
 // HELLO + STREAM CONNECT and returns the stream conn on OK.
 func TestSAMClientStreamConnect(t *testing.T) {
 	t.Parallel()
@@ -309,7 +309,7 @@ func TestSAMClientStreamConnect(t *testing.T) {
 	}
 }
 
-// TestSAMClientStreamConnectError covers Phase 19 task 1: a non-OK STREAM
+// TestSAMClientStreamConnectError verifies that a non-OK STREAM
 // STATUS reply surfaces a *SAMResultError.
 func TestSAMClientStreamConnectError(t *testing.T) {
 	t.Parallel()
@@ -331,7 +331,7 @@ func TestSAMClientStreamConnectError(t *testing.T) {
 	}
 }
 
-// TestSAMClientStreamAccept covers Phase 19 task 1: StreamAccept performs HELLO
+// TestSAMClientStreamAccept verifies that StreamAccept performs HELLO
 // + STREAM ACCEPT and returns the stream conn on OK.
 func TestSAMClientStreamAccept(t *testing.T) {
 	t.Parallel()
@@ -352,7 +352,7 @@ func TestSAMClientStreamAccept(t *testing.T) {
 	}
 }
 
-// TestSAMClientDestLookup covers Phase 19 task 1: DestLookup resolves a name
+// TestSAMClientDestLookup verifies that DestLookup resolves a name
 // via NAMING LOOKUP and returns the destination (aiosam.dest_lookup).
 func TestSAMClientDestLookup(t *testing.T) {
 	t.Parallel()
@@ -369,7 +369,7 @@ func TestSAMClientDestLookup(t *testing.T) {
 	}
 }
 
-// TestSAMClientNewDestination covers Phase 19 task 1: NewDestination asks the
+// TestSAMClientNewDestination verifies that NewDestination asks the
 // SAM API to generate a fresh destination (aiosam.new_destination).
 func TestSAMClientNewDestination(t *testing.T) {
 	t.Parallel()
@@ -386,7 +386,7 @@ func TestSAMClientNewDestination(t *testing.T) {
 	}
 }
 
-// TestSAMClientHelloFailure covers Phase 19 task 1: a non-OK HELLO reply fails
+// TestSAMClientHelloFailure verifies that a non-OK HELLO reply fails
 // the handshake so getSAMConn returns an error.
 func TestSAMClientHelloFailure(t *testing.T) {
 	t.Parallel()
@@ -412,7 +412,7 @@ func TestSAMClientHelloFailure(t *testing.T) {
 	}
 }
 
-// TestSAMDefaultAddress covers Phase 19 task 1: the default SAM address is
+// TestSAMDefaultAddress verifies that the default SAM address is
 // 127.0.0.1:7656 (sam.DEFAULT_ADDRESS).
 func TestSAMDefaultAddress(t *testing.T) {
 	t.Parallel()

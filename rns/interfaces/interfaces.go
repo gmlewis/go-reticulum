@@ -92,7 +92,7 @@ type Interface interface {
 	// Age returns how long the interface has existed.
 	Age() time.Duration
 
-	// Phase 1 contract accessors (RNS v1.3.7/1.4.1). These expose per-interface
+	// Contract accessors (RNS v1.3.7/1.4.1). These expose per-interface
 	// routing policy that the transport consults when handling announces and
 	// path requests.
 	// Gravity reports the interface gravity used for weighted path selection.

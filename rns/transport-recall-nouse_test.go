@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// TestAnnounceRebroadcastDoesNotMarkDestinationUsed covers Phase 13 task 7:
+// TestAnnounceRebroadcastDoesNotMarkDestinationUsed verifies that
 // the recall performed during an announce rebroadcast uses the transport-
 // internal noUse path, so it does NOT update the known-destination use
 // timestamp (Python Identity.recall(..., _no_use=True) in the announce
@@ -58,7 +58,7 @@ func TestAnnounceRebroadcastDoesNotMarkDestinationUsed(t *testing.T) {
 	}
 }
 
-// TestRecallNoUseDoesNotMarkUsed covers Phase 13 task 7: the transport-internal
+// TestRecallNoUseDoesNotMarkUsed verifies that the transport-internal
 // RecallNoUse helper recalls a known destination's identity without updating
 // its use timestamp, while the public Recall DOES mark it used (Python
 // Identity.recall _no_use flag, RNS/Identity.py:116-160).

@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// TestRNodeInterfaceTypeStrGolden covers Phase 21 task 1: the radio-chip type
+// TestRNodeInterfaceTypeStrGolden verifies that the radio-chip type
 // code -> chip-family mapping matches Python's KISS.interface_type_to_str
 // (RNodeMultiInterface.py:118-128) exactly, including the "SX127X" fallback for
 // unknown codes. Golden captured from RNS 1.4.2.
@@ -37,7 +37,7 @@ func TestRNodeInterfaceTypeStrGolden(t *testing.T) {
 	}
 }
 
-// TestRNodeMultiDetectCommandGolden covers Phase 21 task 1: the detect command
+// TestRNodeMultiDetectCommandGolden verifies that the detect command
 // RNodeMultiInterface sends at startup is the exact 16-byte KISS frame sequence
 // probing detect + firmware + platform + MCU + interfaces. Golden hex captured
 // from RNS 1.4.2: c00873c05000c04800c04900c07100c0.
@@ -64,7 +64,7 @@ func hexBytes(b []byte) string {
 	return string(out)
 }
 
-// TestRNodeMultiInterfacesParserGolden covers Phase 21 task 1: feeding a mock
+// TestRNodeMultiInterfacesParserGolden verifies that feeding a mock
 // serial detect response through rnodeMultiSerialParser populates the
 // interface-type list with one entry per virtual port and sets the detected
 // flag. The mock response carries a CMD_DETECT frame (DETECT_RESP) plus a
@@ -97,7 +97,7 @@ func TestRNodeMultiInterfacesParserGolden(t *testing.T) {
 	}
 }
 
-// TestRNodeMultiParserDetectClear covers Phase 21 task 1: a CMD_DETECT frame
+// TestRNodeMultiParserDetectClear verifies that a CMD_DETECT frame
 // whose data byte is not DETECT_RESP clears the detected flag
 // (RNodeMultiInterface.py:828-831, else branch sets detected=False).
 func TestRNodeMultiParserDetectClear(t *testing.T) {
@@ -117,7 +117,7 @@ func TestRNodeMultiParserDetectClear(t *testing.T) {
 	}
 }
 
-// TestRNodeMultiSpawnAndDespawn covers Phase 21 task 1: given the device's
+// TestRNodeMultiSpawnAndDespawn verifies that given the device's
 // reported interface types and a set of enabled subinterface configs, the
 // spawner creates one subinterface per config at its vport (registered via
 // addInterface, clients incremented), a config whose vport is not reported
@@ -182,7 +182,7 @@ func TestRNodeMultiSpawnAndDespawn(t *testing.T) {
 	}
 }
 
-// TestRNodeMultiSpawnMissingVport covers Phase 21 task 1: a config whose vport
+// TestRNodeMultiSpawnMissingVport verifies that a config whose vport
 // is beyond the device's reported interface-type list returns the Python-
 // faithful "Virtual port ... does not exist" error
 // (RNodeMultiInterface.py:380-382). Golden message captured from RNS 1.4.2.
@@ -206,7 +206,7 @@ func TestRNodeMultiSpawnMissingVport(t *testing.T) {
 	}
 }
 
-// TestRNodeMultiSpawnDedupSkip covers Phase 21 task 1 (and previews task 2): a
+// TestRNodeMultiSpawnDedupSkip verifies that a
 // second spawn for a vport that already holds a subinterface is a no-op for
 // that slot (Python's add_peer-style dedup is the transport's job; the spawner
 // itself never overwrites a live slot). The clients counter is not incremented
@@ -240,7 +240,7 @@ func TestRNodeMultiSpawnDedupSkip(t *testing.T) {
 	}
 }
 
-// TestRNodeMultiDetectCommandRoundTrip covers Phase 21 task 1: the detect
+// TestRNodeMultiDetectCommandRoundTrip verifies that the detect
 // command is itself a valid KISS byte sequence that the parser can consume
 // (the device echoes/answers it); feeding it back through the parser sets the
 // in-frame state correctly and the CMD_INTERFACES probe segment parses to zero
@@ -265,7 +265,7 @@ func TestRNodeMultiDetectCommandRoundTrip(t *testing.T) {
 	}
 }
 
-// TestRNodeMultiRegistryDedupGolden covers Phase 21 task 2: the canonical
+// TestRNodeMultiRegistryDedupGolden verifies that the canonical
 // registry routes the dynamic spawn/despawn through the transport's
 // register/remove with the exact dedup semantics of Python's
 // Transport.add_interface / Transport.remove_interface (Transport.py:438-451):
@@ -340,13 +340,13 @@ func TestRNodeMultiRegistryDedupGolden(t *testing.T) {
 	}
 }
 
-// TestRNodeMultiSpawnViaRegistryDedupOnRespawn covers Phase 21 task 2: when the
+// TestRNodeMultiSpawnViaRegistryDedupOnRespawn verifies that when the
 // dynamic spawn/despawn is routed through the canonical registry, a re-spawn
 // of the same vport set does not duplicate entries in the registry. The
 // spawner's slot-level skip keeps the SAME subinterface object across
 // re-spawns (subinterfaces[vport] != nil -> skip), so the registry's identity
 // dedup sees the already-registered interface and leaves it at one entry. This
-// is the Phase 21 task 2 parity test: "dedup on re-spawn".
+// is the parity test: "dedup on re-spawn".
 func TestRNodeMultiSpawnViaRegistryDedupOnRespawn(t *testing.T) {
 	t.Parallel()
 	state := NewRNodeMultiSpawnState()
@@ -405,7 +405,7 @@ func TestRNodeMultiSpawnViaRegistryDedupOnRespawn(t *testing.T) {
 	}
 }
 
-// TestRNodeMultiPrAggregation covers Phase 21 task 3: a spawned subinterface's
+// TestRNodeMultiPrAggregation verifies that a spawned subinterface's
 // received_path_request / sent_path_request events (Interface.py:267-275)
 // propagate up to the parent RNodeMultiInterface's aggregated PR frequency
 // tracking (RNodeMultiInterface.py:552-555, ip_freq_deque / op_freq_deque
@@ -469,7 +469,7 @@ func TestRNodeMultiPrAggregation(t *testing.T) {
 	}
 }
 
-// TestRNodeMultiPrAggregatorFrequency covers Phase 21 task 3: the parent's
+// TestRNodeMultiPrAggregatorFrequency verifies that the parent's
 // aggregated PR frequency (Python incoming_pr_frequency / outgoing_pr_frequency
 // over the aggregated deque, Interface.py:299-319) is computed from the
 // spawned-peer samples the aggregator collected. With enough samples within

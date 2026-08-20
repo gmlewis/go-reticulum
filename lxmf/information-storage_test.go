@@ -12,7 +12,7 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestInformationStorageSizeIsPythonStubZero pins Phase C.2: Python's
+// TestInformationStorageSizeIsPythonStubZero pins the behavior that Python's
 // LXMRouter.information_storage_size (LXMRouter.py:739-740) is an upstream
 // stub — `def information_storage_size(self): pass` — that returns None and
 // performs no computation regardless of how many messages occupy the

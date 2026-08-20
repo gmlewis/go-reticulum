@@ -63,17 +63,32 @@ func establishLoopbackLink(t *testing.T) (initiator *Link, receiverDest *Destina
 	return initiator, receiverDest
 }
 
-// TestLinkCapabilityAccessors covers Phase B.1: GetMTU/GetMDU/GetMode against
-// an established link, with golden values captured from a matching Python
-// link (rns/Link.py get_mtu/get_mdu/get_mode; RNS.Reticulum.MTU=500, computed
-// MDU=431, default MODE_AES256_CBC=1). MTU/MDU return nil when not active.
+// TestLinkCapabilityAccessors verifies GetMTU/GetMDU/GetMode against
+// an established link. The MTU/MDU/mode constants are captured live from
+// Python (RNS.Reticulum.MTU, RNS.Link.MDU via Link.py:73, RNS.Link.MODE_AES256_CBC)
+// and the Go constants are asserted to equal them, so the established-link
+// accessors return the Python-faithful values. MTU/MDU return nil when not
+// active.
 func TestLinkCapabilityAccessors(t *testing.T) {
 	t.Parallel()
 
+	// The Go constants must equal the live Python values.
+	pyMTU, pyMDU, pyMode, pyActive := pythonLinkConstants(t)
+	if MTU != pyMTU {
+		t.Fatalf("Go MTU = %d, want live Python %d", MTU, pyMTU)
+	}
+	if MDU != pyMDU {
+		t.Fatalf("Go MDU = %d, want live Python %d", MDU, pyMDU)
+	}
+	if LinkModeAES256CBC != pyMode {
+		t.Fatalf("Go LinkModeAES256CBC = %d, want live Python %d", LinkModeAES256CBC, pyMode)
+	}
+	if LinkActive != pyActive {
+		t.Fatalf("Go LinkActive = %d, want live Python %d", LinkActive, pyActive)
+	}
+
 	initiator, _ := establishLoopbackLink(t)
 
-	// Golden values captured from Python (RNS.Reticulum.MTU=500,
-	// MDU = floor((500-1-19-48)/16)*16 - 1 = 431, MODE_AES256_CBC=1).
 	if got := initiator.GetMTU(); got == nil || *got != MTU {
 		t.Fatalf("GetMTU() = %v, want %v", got, MTU)
 	}
@@ -98,7 +113,7 @@ func TestLinkCapabilityAccessors(t *testing.T) {
 	}
 }
 
-// TestLinkAgeAccessor covers Phase B.2: GetAge returns nil before activation
+// TestLinkAgeAccessor verifies that GetAge returns nil before activation
 // (Python get_age returns None when activated_at is unset) and a non-negative
 // seconds-since-activation afterwards.
 func TestLinkAgeAccessor(t *testing.T) {
@@ -122,37 +137,65 @@ func TestLinkAgeAccessor(t *testing.T) {
 	}
 }
 
-// TestLinkRateAccessors covers Phase B.3: GetEstablishmentRate returns
+// TestLinkRateAccessors verifies that GetEstablishmentRate returns
 // establishment_rate*8 (bps) or nil, and GetExpectedRate returns the measured
-// rate*8 (bps) or nil. The formulae are captured from Python Link.py:600-636
-// (get_establishment_rate = establishment_rate*8) and Link.py:1290
-// (expected_rate = (size*8)/transfer_time).
+// expected_rate raw (bps) or nil. The accessor outputs are captured live from
+// Python's Link.get_establishment_rate / get_expected_rate (Link.py:573-612)
+// over the same injected field values, so this is a true cross-impl parity
+// check rather than a hardcoded golden.
+//
+// establishment_rate is stored as bytes/sec (establishment_cost/rtt) and
+// get_establishment_rate returns it *8 (bps). expected_rate is stored as
+// bits/sec ((resource.size*8)/transfer_time, Link.py:1258/1261) and
+// get_expected_rate returns it RAW (Link.py:598) — no extra *8.
 func TestLinkRateAccessors(t *testing.T) {
 	t.Parallel()
 
-	// establishmentRate = establishmentCost/rtt = 1000 bytes / 0.5 s = 2000 B/s.
-	// get_establishment_rate returns establishment_rate*8 = 16000 bps.
-	link := &Link{establishmentRate: 1000.0 / 0.5}
-	if got := link.GetEstablishmentRate(); got == nil || *got != 16000 {
-		t.Fatalf("GetEstablishmentRate() = %v, want 16000", got)
-	}
+	const ec, rtt = 1000.0, 0.5
+	estRate := ec / rtt     // establishment_rate field (bytes/sec)
+	expRate := ec * 8 / rtt // expected_rate field (bps, = size*8/transfer)
 
-	// Before measurement -> nil (Python None).
+	rates := pythonLinkRates(t, []pyRateCase{
+		{EstablishmentRate: &estRate}, // establishment set, expected unset
+		{},                            // both unset
+		{ExpectedRate: &expRate},      // expected set, establishment unset
+	})
+
+	// establishment_rate set -> get_establishment_rate = establishment_rate*8.
+	link := &Link{establishmentRate: estRate}
+	rateCheck(t, "GetEstablishmentRate", link.GetEstablishmentRate(), rates[0].EstablishmentRate)
+	// expected_rate unset on this link -> nil.
+	rateCheck(t, "GetExpectedRate (only establishment set)", link.GetExpectedRate(), rates[0].ExpectedRate)
+
+	// Both unset -> nil (Python None).
 	zero := &Link{}
-	if got := zero.GetEstablishmentRate(); got != nil {
-		t.Fatalf("GetEstablishmentRate() unset = %v, want nil", *got)
-	}
-	if got := zero.GetExpectedRate(); got != nil {
-		t.Fatalf("GetExpectedRate() unset = %v, want nil", *got)
-	}
+	rateCheck(t, "GetEstablishmentRate unset", zero.GetEstablishmentRate(), rates[1].EstablishmentRate)
+	rateCheck(t, "GetExpectedRate unset", zero.GetExpectedRate(), rates[1].ExpectedRate)
 
-	// expectedRate stored as bytes/sec (size*8/transfer_seconds); accessor
-	// returns it in bps, i.e. *8. A 1000-byte resource over 0.5 s stores
-	// 1000*8/0.5 = 16000 B/s, accessor returns 128000 bps.
-	link2 := &Link{expectedRate: 1000.0 * 8 / 0.5}
-	if got := link2.GetExpectedRate(); got == nil || *got != 128000 {
-		t.Fatalf("GetExpectedRate() = %v, want 128000", got)
+	// expected_rate set -> get_expected_rate returns it raw (Link.py:598).
+	link2 := &Link{expectedRate: expRate}
+	rateCheck(t, "GetExpectedRate", link2.GetExpectedRate(), rates[2].ExpectedRate)
+	// establishment_rate unset on this link -> nil.
+	rateCheck(t, "GetEstablishmentRate (only expected set)", link2.GetEstablishmentRate(), rates[2].EstablishmentRate)
+}
+
+// rateCheck compares a Go accessor's *float64 result against the live Python
+// capture and fails with a readable, dereferenced message on mismatch (both
+// nil, or both non-nil and exactly equal). The rate computations are
+// integer-exact for the test inputs, so no tolerance is needed.
+func rateCheck(t *testing.T, label string, got, want *float64) {
+	t.Helper()
+	if (got == nil) != (want == nil) || (got != nil && *got != *want) {
+		t.Fatalf("%s = %v, want live Python %v", label, floatPtrVal(got), floatPtrVal(want))
 	}
+}
+
+// floatPtrVal renders a *float64 for an assertion message (nil -> "<nil>").
+func floatPtrVal(p *float64) any {
+	if p == nil {
+		return nil
+	}
+	return *p
 }
 
 // TestLinkEstablishmentRateWiredEndToEnd confirms the establishment-rate wiring
@@ -168,7 +211,7 @@ func TestLinkEstablishmentRateWiredEndToEnd(t *testing.T) {
 	}
 }
 
-// TestLinkSaltContextAccessors covers Phase B.4: GetSalt returns the link_id
+// TestLinkSaltContextAccessors verifies that GetSalt returns the link_id
 // (Python get_salt returns self.link_id) and GetContext returns nil (Python
 // get_context always returns None).
 func TestLinkSaltContextAccessors(t *testing.T) {
@@ -188,7 +231,7 @@ func TestLinkSaltContextAccessors(t *testing.T) {
 	}
 }
 
-// TestLinkPHYStatsToggle pins Phase B.5: TrackPHYStats toggles whether
+// TestLinkPHYStatsToggle pins the behavior that TrackPHYStats toggles whether
 // GetRSSI/GetSNR/GetQ return the tracked values (Python track_phy_stats /
 // get_rssi / get_snr / get_q). With tracking disabled (the default) all three
 // return nil; once enabled they return the recorded physical-layer values.
@@ -242,7 +285,7 @@ func TestLinkPHYStatsToggle(t *testing.T) {
 	}
 }
 
-// TestLinkPing covers Phase B.6: Ping sends an RTT probe over an established
+// TestLinkPing verifies that Ping sends an RTT probe over an established
 // link and returns a non-negative round-trip time. The probe is a normal RNS
 // request to LinkPingPath; the remote end must register a handler for it.
 func TestLinkPing(t *testing.T) {

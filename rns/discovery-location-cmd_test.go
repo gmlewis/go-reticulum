@@ -33,8 +33,8 @@ func writeLocationScript(t *testing.T, contents string) string {
 	return path
 }
 
-// TestParseDiscoveryConfigLocationCmd covers Phase 11 task 4's config side:
-// the `location_cmd` key is parsed into DiscoveryConfig.LocationCmd when
+// TestParseDiscoveryConfigLocationCmd verifies the config side: the
+// `location_cmd` key is parsed into DiscoveryConfig.LocationCmd when
 // discovery is enabled (RNS/Reticulum.py:887).
 func TestParseDiscoveryConfigLocationCmd(t *testing.T) {
 	t.Parallel()
@@ -50,11 +50,11 @@ func TestParseDiscoveryConfigLocationCmd(t *testing.T) {
 	}
 }
 
-// TestInterfaceAnnouncerLocationCmd covers Phase 11 task 4: when
-// DiscoveryConfig.LocationCmd points at an executable, the announcer runs it
-// at announce time, parses "lat,lon,hgt" from stdout, and injects the parsed
-// coordinates into the announce info map — overriding any static config
-// (RNS/Discovery.py:103-123).
+// TestInterfaceAnnouncerLocationCmd verifies that when
+// DiscoveryConfig.LocationCmd points at an executable, the announcer runs
+// it at announce time, parses "lat,lon,hgt" from stdout, and injects the
+// parsed coordinates into the announce info map — overriding any static
+// config (RNS/Discovery.py:103-123).
 func TestInterfaceAnnouncerLocationCmd(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {
@@ -122,8 +122,8 @@ func TestInterfaceAnnouncerLocationCmd(t *testing.T) {
 	}
 }
 
-// TestInterfaceAnnouncerLocationCmdOverridesStatic covers Phase 11 task 4:
-// the executable output overrides any statically-configured latitude/longitude/
+// TestInterfaceAnnouncerLocationCmdOverridesStatic verifies that the
+// executable output overrides any statically-configured latitude/longitude/
 // height (Python sets interface.discovery_latitude from the script, ignoring
 // the config value when location_cmd is present).
 func TestInterfaceAnnouncerLocationCmdOverridesStatic(t *testing.T) {
@@ -197,8 +197,8 @@ func TestInterfaceAnnouncerLocationCmdOverridesStatic(t *testing.T) {
 	}
 }
 
-// TestInterfaceAnnouncerLocationCmdAbortOnBadComponentCount covers Phase 11
-// task 4: a location_cmd whose output does not split into exactly three
+// TestInterfaceAnnouncerLocationCmdAbortOnBadComponentCount verifies that a
+// location_cmd whose output does not split into exactly three
 // comma-separated components aborts the announce — getInterfaceAnnounceData
 // returns (nil, nil) just as Python returns None (RNS/Discovery.py:114).
 func TestInterfaceAnnouncerLocationCmdAbortOnBadComponentCount(t *testing.T) {
@@ -245,9 +245,8 @@ func TestInterfaceAnnouncerLocationCmdAbortOnBadComponentCount(t *testing.T) {
 	}
 }
 
-// TestInterfaceAnnouncerLocationCmdAbortOnOutOfRangeLatitude covers Phase 11
-// task 4: a latitude outside [-90, 90] aborts the announce
-// (RNS/Discovery.py:118).
+// TestInterfaceAnnouncerLocationCmdAbortOnOutOfRangeLatitude verifies that a
+// latitude outside [-90, 90] aborts the announce (RNS/Discovery.py:118).
 func TestInterfaceAnnouncerLocationCmdAbortOnOutOfRangeLatitude(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "windows" {

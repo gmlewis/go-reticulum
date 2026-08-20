@@ -15,7 +15,7 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestDeferPropagationStamp covers Phase C.4: a propagated outbound message
+// TestDeferPropagationStamp verifies that a propagated outbound message
 // starts with DeferPropagationStamp set (stamp generation postponed), and
 // Router.ProcessDeferredStamps generates the propagation stamp, clears the
 // deferral flag, and appends the stamp to the propagation payload — mirroring

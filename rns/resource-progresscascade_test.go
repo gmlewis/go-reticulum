@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// TestResourceProgressCallbackCascadesToNextSegment asserts Phase 9 Task 2:
+// TestResourceProgressCallbackCascadesToNextSegment asserts that
 // SetProgressCallback forwards the callback to nextSegment when one exists,
 // so a multi-segment transfer reports progress from every segment (Python
 // Resource.progress_callback, Resource.py:1136-1138). Setting the callback on

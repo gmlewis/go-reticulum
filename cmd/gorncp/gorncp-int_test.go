@@ -79,6 +79,31 @@ func runPython(t *testing.T, configDir string, args ...string) string {
 	return string(out)
 }
 
+// runPythonExit is like runPython but returns the exit code instead of failing
+// the test on a non-zero exit, so callers can diagnose cross-impl transfers
+// where the data may round-trip even though the peer reports a failure status.
+func runPythonExit(t *testing.T, configDir string, args ...string) (string, int) {
+	t.Helper()
+	repoDir := os.Getenv("ORIGINAL_RETICULUM_REPO_DIR")
+	if repoDir == "" {
+		t.Fatal("missing required environment variable ORIGINAL_RETICULUM_REPO_DIR")
+	}
+	scriptPath := filepath.Join(repoDir, "RNS", "Utilities", "rncp.py")
+	fullArgs := append([]string{"-u", scriptPath, "--config", configDir}, args...)
+	cmd := exec.Command("python3", fullArgs...)
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+repoDir)
+	out, err := cmd.CombinedOutput()
+	exit := 0
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			exit = ee.ExitCode()
+		} else {
+			t.Fatalf("runPythonExit failed to start: %v\nOutput: %s", err, string(out))
+		}
+	}
+	return string(out), exit
+}
+
 func runPythonBackground(t *testing.T, configDir string, args ...string) (*exec.Cmd, *SafeBuffer) {
 	t.Helper()
 	repoDir := os.Getenv("ORIGINAL_RETICULUM_REPO_DIR")
@@ -240,39 +265,51 @@ func TestIdentityDisplayParity(t *testing.T) {
 	}
 }
 
+// runRncpHelp execs `python3 RNS/Utilities/rncp.py --help` against the
+// original-reticulum-repo (PYTHONPATH pointed there) and returns stdout,
+// captured live. Gated on ORIGINAL_RETICULUM_REPO_DIR + python3 RNS
+// availability.
+func runRncpHelp(t *testing.T) string {
+	t.Helper()
+	repoDir := os.Getenv("ORIGINAL_RETICULUM_REPO_DIR")
+	if repoDir == "" {
+		t.Fatal("missing required environment variable ORIGINAL_RETICULUM_REPO_DIR")
+	}
+	testutils.SkipIfNoPythonRNS(t)
+	cmd := exec.Command("python3", "-u", filepath.Join(repoDir, "RNS", "Utilities", "rncp.py"), "--help")
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+repoDir)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("rncp --help failed: %v\nOutput: %s", err, string(out))
+	}
+	return string(out)
+}
+
+// normalizeGorncpHelp collapses whitespace and rewrites the intentional
+// program-name ("gorncp" vs "rncp.py") and description ("Go Reticulum ..." vs
+// "Reticulum ...") differences so the remaining text can be diffed against the
+// live Python rncp --help output. Whitespace folding makes the comparison
+// independent of argparse's terminal-width line wrapping.
+func normalizeGorncpHelp(text string) string {
+	text = strings.ReplaceAll(text, "gorncp", "rncp.py")
+	text = strings.ReplaceAll(text, "Go Reticulum File Transfer Utility", "Reticulum File Transfer Utility")
+	return strings.Join(strings.Fields(text), " ")
+}
+
 func TestHelpParity(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	_ = runPython(t, "/tmp/nonexistent-py", "--help")
-	goOut := usageText
 
-	if !strings.Contains(goOut, "usage: gorncp") {
-		t.Errorf("Go help output missing usage line: %q", goOut)
-	}
-
-	flags := []string{
-		"--config", "-v", "-q", "-S", "-l", "-C", "-F", "-f", "-j",
-		"-s", "-O", "-b", "-a", "-n", "-p", "-i", "-w", "-P", "--version",
-	}
-
-	for _, flag := range flags {
-		if !strings.Contains(goOut, flag) {
-			t.Errorf("Go help output missing flag %q", flag)
-		}
-	}
-
-	if !strings.Contains(goOut, "file") || !strings.Contains(goOut, "destination") {
-		t.Errorf("Go help output missing positional arguments")
-	}
-
-	descToMatch := "disable transfer progress output"
-	if !strings.Contains(goOut, descToMatch) {
-		t.Errorf("Go help output missing description: %q", descToMatch)
+	want := normalizeGorncpHelp(runRncpHelp(t))
+	got := normalizeGorncpHelp(usageText)
+	if got != want {
+		t.Fatalf("gorncp --help differs from live Python rncp --help:\n--- got (Go, normalized) ---\n%s\n--- want (Python, normalized) ---\n%s", got, want)
 	}
 }
 
 func TestUnauthenticatedTransferParity(t *testing.T) {
 	testutils.SkipShortIntegration(t)
+	testutils.SkipIfNoPythonRNS(t)
 
 	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
@@ -377,16 +414,29 @@ share_instance = No
 	time.Sleep(5 * time.Second)
 
 	testFile := filepath.Join(tmpDir, "test.txt")
-	testData := "Hello from Go sender!"
+	testData := "Hello from a Python rncp sender!"
 	if err := os.WriteFile(testFile, []byte(testData), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	sOut := runGorncp(t, clientConfigDir, "-i", clientIdentity, "-w", "30", destHash, testFile, "-v")
-	t.Logf("Sender output:\n%s", sOut)
+	// Cross-implementation: a live Python `rncp` sender pushes the file to
+	// the Go listener. Python rncp takes positionals in [file] [destination]
+	// order (rncp.py:797-798 — file is argv[0], destination is argv[1]),
+	// so pass testFile before destHash.
+	sOut, sExit := runPythonExit(t, clientConfigDir, "-i", clientIdentity, "-w", "30", testFile, destHash, "-v")
+	t.Logf("Python sender output (exit=%d):\n%s", sExit, sOut)
 
+	// The sender must reach COMPLETE — i.e. exit 0 with "Transfer complete".
+	// A non-zero exit (e.g. "The transfer failed") means the Go listener did
+	// not return the resource conclude proof the sender's validate_proof
+	// expects (Resource.py:787-792), so the sender never learns the transfer
+	// succeeded. This guards the receiver-side hash/proof fixes against
+	// regressions: the file may still arrive while the sender reports failure.
+	if sExit != 0 {
+		t.Errorf("Python sender exited %d, want 0 (transfer did not conclude cleanly from the sender's view)", sExit)
+	}
 	if !strings.Contains(sOut, "Transfer complete") {
-		t.Errorf("Sender did not indicate transfer complete")
+		t.Errorf("Python sender output missing \"Transfer complete\":\n%s", sOut)
 	}
 
 	receivedFile := filepath.Join(saveDir, "test.txt")

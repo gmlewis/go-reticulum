@@ -45,8 +45,8 @@ func assertNotThrottled(t *testing.T, result any) {
 	}
 }
 
-// TestOfferRequestThrottlesWhenValidationBatchInProgress covers Phase 17 task 2:
-// when sequential validation is enabled and a PN-stamp validation batch is in
+// TestOfferRequestThrottlesWhenValidationBatchInProgress verifies that when
+// sequential validation is enabled and a PN-stamp validation batch is in
 // progress (validatingPnStampsFrom non-empty), offerRequest returns
 // peerErrorThrottled (LXMRouter.py:2274-2278, v1.1.0).
 func TestOfferRequestThrottlesWhenValidationBatchInProgress(t *testing.T) {
@@ -63,8 +63,8 @@ func TestOfferRequestThrottlesWhenValidationBatchInProgress(t *testing.T) {
 	assertThrottled(t, result)
 }
 
-// TestOfferRequestThrottlesAtInboundSyncCap covers Phase 17 task 2: when the
-// number of transferring inbound sync resources reaches propagationMaxInboundSyncs,
+// TestOfferRequestThrottlesAtInboundSyncCap verifies that when the number of
+// transferring inbound sync resources reaches propagationMaxInboundSyncs,
 // offerRequest returns peerErrorThrottled (LXMRouter.py:2280-2283, v1.1.0).
 func TestOfferRequestThrottlesAtInboundSyncCap(t *testing.T) {
 	t.Parallel()
@@ -82,8 +82,8 @@ func TestOfferRequestThrottlesAtInboundSyncCap(t *testing.T) {
 	assertThrottled(t, result)
 }
 
-// TestOfferRequestThrottleDoesNotFireBelowCap covers Phase 17 task 2: with
-// fewer than propagationMaxInboundSyncs transferring resources and no
+// TestOfferRequestThrottleDoesNotFireBelowCap verifies that with fewer than
+// propagationMaxInboundSyncs transferring resources and no
 // validation batch, the throttle does not fire (the request advances to the
 // later invalid-data check, proving it was not throttled).
 func TestOfferRequestThrottleDoesNotFireBelowCap(t *testing.T) {
@@ -101,8 +101,8 @@ func TestOfferRequestThrottleDoesNotFireBelowCap(t *testing.T) {
 	assertNotThrottled(t, result)
 }
 
-// TestOfferRequestStaticPeerBypassesThrottle covers Phase 17 task 2: a static
-// peer bypasses the sequential-validation and inbound-sync-cap throttles when
+// TestOfferRequestStaticPeerBypassesThrottle verifies that a static peer
+// bypasses the sequential-validation and inbound-sync-cap throttles when
 // propagationStaticPeerSequential is false (its default), so a validation
 // batch in progress does not throttle the offer (LXMRouter.py:2273, v1.1.0).
 func TestOfferRequestStaticPeerBypassesThrottle(t *testing.T) {
@@ -128,8 +128,8 @@ func TestOfferRequestStaticPeerBypassesThrottle(t *testing.T) {
 	assertNotThrottled(t, result)
 }
 
-// TestOfferRequestStaticPeerSequentialDisablesBypass covers Phase 17 task 2:
-// when propagationStaticPeerSequential is true, static peers do not bypass the
+// TestOfferRequestStaticPeerSequentialDisablesBypass verifies that when
+// propagationStaticPeerSequential is true, static peers do not bypass the
 // throttle and are still throttled while a validation batch runs
 // (LXMRouter.py:2273, v1.1.0).
 func TestOfferRequestStaticPeerSequentialDisablesBypass(t *testing.T) {
@@ -151,9 +151,9 @@ func TestOfferRequestStaticPeerSequentialDisablesBypass(t *testing.T) {
 	assertThrottled(t, result)
 }
 
-// TestOfferRequestPartialAcceptRecordsOfferAccepted covers Phase 17 task 2:
-// when an offer is partially accepted (some but not all transient IDs are
-// wanted), offerRequest records acceptedOfferLinks[linkID] = OFFER_ACCEPTED
+// TestOfferRequestPartialAcceptRecordsOfferAccepted verifies that when an
+// offer is partially accepted (some but not all transient IDs are wanted),
+// offerRequest records acceptedOfferLinks[linkID] = OFFER_ACCEPTED
 // so the subsequent resource transfer can advance the offer state, mirroring
 // Python (LXMRouter.py:2326-2329, v1.1.0).
 func TestOfferRequestPartialAcceptRecordsOfferAccepted(t *testing.T) {
@@ -209,8 +209,8 @@ func TestOfferRequestPartialAcceptRecordsOfferAccepted(t *testing.T) {
 	}
 }
 
-// TestOfferRequestFullAcceptDoesNotRecordOfferLink covers Phase 17 task 2: a
-// full accept (all transient IDs wanted) returns true without recording an
+// TestOfferRequestFullAcceptDoesNotRecordOfferLink verifies that a full
+// accept (all transient IDs wanted) returns true without recording an
 // accepted-offer link, since no partial accounting is needed — matching
 // Python, which only records accepted_offer_links on a partial accept
 // (LXMRouter.py:2322-2325, v1.1.0).

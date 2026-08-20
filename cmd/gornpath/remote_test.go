@@ -44,7 +44,7 @@ func TestDoRemoteTableUsesRemoteRequestPayload(t *testing.T) {
 		t.Fatalf("remote payload mismatch: got %s want %s", got, want)
 	}
 	wantExpires := time.Unix(456, 0).Format("2006-01-02 15:04:05")
-	if got, want := out.String(), "01 is 1 hop  away via 11 on eth0 expires "+wantExpires+"\n"; got != want {
+	if got, want := out.String(), "<01> is 1 hop  away via <11> on eth0 expires "+wantExpires+"\n"; got != want {
 		t.Fatalf("remote table output mismatch: got %q want %q", got, want)
 	}
 }

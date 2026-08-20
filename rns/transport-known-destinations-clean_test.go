@@ -47,8 +47,8 @@ func addPath(t *testing.T, ts *TransportSystem, destHash []byte) {
 	ts.mu.Unlock()
 }
 
-// TestCleanKnownDestinationsDropsStaleNeverUsedNoPath covers Phase 13 task 4:
-// a never-used (use-timestamp 0), pathless known destination is dropped by
+// TestCleanKnownDestinationsDropsStaleNeverUsedNoPath verifies that a
+// never-used (use-timestamp 0), pathless known destination is dropped by
 // CleanKnownDestinations (Python Identity.clean_known_destinations,
 // RNS/Identity.py:321-325 — unused_for exceeds DESTINATION_TIMEOUT*1.25 for a
 // never-used entry since unused_for = now - 0).
@@ -73,7 +73,7 @@ func TestCleanKnownDestinationsDropsStaleNeverUsedNoPath(t *testing.T) {
 	}
 }
 
-// TestCleanKnownDestinationsKeepsEntryWithPath covers Phase 13 task 4: a
+// TestCleanKnownDestinationsKeepsEntryWithPath verifies that a
 // known destination with a current path is kept even when never used.
 func TestCleanKnownDestinationsKeepsEntryWithPath(t *testing.T) {
 	t.Parallel()
@@ -97,7 +97,7 @@ func TestCleanKnownDestinationsKeepsEntryWithPath(t *testing.T) {
 	}
 }
 
-// TestCleanKnownDestinationsKeepsRetainedEntry covers Phase 13 task 4: a
+// TestCleanKnownDestinationsKeepsRetainedEntry verifies that a
 // retained destination (use-timestamp -1) is kept even when pathless.
 func TestCleanKnownDestinationsKeepsRetainedEntry(t *testing.T) {
 	t.Parallel()
@@ -120,8 +120,8 @@ func TestCleanKnownDestinationsKeepsRetainedEntry(t *testing.T) {
 	}
 }
 
-// TestCleanKnownDestinationsDropsUsedEntryPastTimeout covers Phase 13 task 4:
-// a used destination whose last use is older than DestinationTimeout*1.25 and
+// TestCleanKnownDestinationsDropsUsedEntryPastTimeout verifies that a
+// used destination whose last use is older than DestinationTimeout*1.25 and
 // has no path is dropped.
 func TestCleanKnownDestinationsDropsUsedEntryPastTimeout(t *testing.T) {
 	t.Parallel()
@@ -146,7 +146,7 @@ func TestCleanKnownDestinationsDropsUsedEntryPastTimeout(t *testing.T) {
 	}
 }
 
-// TestCleanKnownDestinationsKeepsRecentlyUsedEntry covers Phase 13 task 4: a
+// TestCleanKnownDestinationsKeepsRecentlyUsedEntry verifies that a
 // used destination whose last use is within DestinationTimeout*1.25 is kept
 // even when pathless.
 func TestCleanKnownDestinationsKeepsRecentlyUsedEntry(t *testing.T) {
@@ -172,7 +172,7 @@ func TestCleanKnownDestinationsKeepsRecentlyUsedEntry(t *testing.T) {
 	}
 }
 
-// TestCleanKnownDestinationsRemovesRatchetFile covers Phase 13 task 4: when a
+// TestCleanKnownDestinationsRemovesRatchetFile verifies that when a
 // stale entry is dropped, its on-disk ratchet file (ratchets/<hexhash>) is
 // unlinked best-effort (Python RNS/Identity.py:333-340).
 func TestCleanKnownDestinationsRemovesRatchetFile(t *testing.T) {

@@ -22,7 +22,7 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestIntegrationCompileStatsShapePythonToGo is the Phase I.2 parity gate:
+// TestIntegrationCompileStatsShapePythonToGo is the parity gate:
 // it captures a real Python LXMRouter.compile_stats response and a Go
 // Router.compileStatsLocked response, both unpacked by the same Go msgpack
 // unpacker, and asserts the Go response is shape-compatible with Python's —

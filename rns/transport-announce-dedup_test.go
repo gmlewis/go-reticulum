@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-// TestInboundAcceptsDuplicateAnnounceAcrossInterfaces asserts Phase 6 Task 10:
-// a SINGLE-destination announce is not dropped by the inbound packet-hash
+// TestInboundAcceptsDuplicateAnnounceAcrossInterfaces asserts that a
+// SINGLE-destination announce is not dropped by the inbound packet-hash
 // duplicate filter just because an earlier copy was seen. Python's
 // Transport.packet_filter (Transport.py:1417-1426) exempts SINGLE-type ANNOUNCE
 // packets from the hashlist drop so the announce handler's own random-blob

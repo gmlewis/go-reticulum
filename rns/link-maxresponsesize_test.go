@@ -12,7 +12,7 @@ import (
 )
 
 // establishMaxResponseLinkPair stands up a loopback link pair (initiator <->
-// receiver) for the Phase 8 Task 2 max-response-size tests. The receiver
+// receiver) for the max-response-size tests. The receiver
 // destination registers a request handler at "/p" that echoes a configurable
 // response payload, so the initiator can observe how an oversized response is
 // rejected versus an in-limit one. It returns the active initiator link, the
@@ -84,8 +84,8 @@ func sendMaxResponseRequest(t *testing.T, initiator *Link, maxResponseSize int64
 	return response, failed
 }
 
-// TestLinkMaxResponseSize_InlineResponseRejectedOverLimit asserts Phase 8 Task
-// 2: when a response arrives inline (ContextResponse) whose serialized size
+// TestLinkMaxResponseSize_InlineResponseRejectedOverLimit asserts that
+// when a response arrives inline (ContextResponse) whose serialized size
 // exceeds the receipt's max response size, the receipt is rejected and the
 // failed callback fires (Link.py:862-876, 1009-1010). A 100-byte response
 // stays inline (packed response ~137 bytes < mdu~431) and serializes to a
@@ -139,8 +139,8 @@ func TestLinkMaxResponseSize_InlineResponseAcceptedUnderLimit(t *testing.T) {
 	}
 }
 
-// TestLinkMaxResponseSize_ResourceResponseRejectedOverLimit asserts Phase 8
-// Task 2: when a response is large enough to be sent as a resource, the
+// TestLinkMaxResponseSize_ResourceResponseRejectedOverLimit asserts that
+// when a response is large enough to be sent as a resource, the
 // response-resource advertisement's read size (adv.D) is checked against the
 // receipt's max response size at advertisement time; when it exceeds the limit
 // the transfer is rejected and the failed callback fires

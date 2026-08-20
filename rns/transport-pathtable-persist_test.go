@@ -54,7 +54,7 @@ func (i *blockingPathIface) Detach() error {
 	return nil
 }
 
-// TestPathTableSnapshotSkipsEntryRemovedMidPersist covers Phase 12 task 2:
+// TestPathTableSnapshotSkipsEntryRemovedMidPersist verifies that
 // pathTableSnapshot re-checks each entry against the live pathTable under the
 // lock before serializing, so an entry removed concurrently mid-save is
 // skipped (Python Transport.py:3370 "no longer in table" intent) instead of
@@ -142,7 +142,7 @@ func TestPathTableSnapshotSkipsEntryRemovedMidPersist(t *testing.T) {
 	}
 }
 
-// TestPathTableSnapshotNoConcurrentRemovalIsConsistent covers Phase 12 task 2:
+// TestPathTableSnapshotNoConcurrentRemovalIsConsistent verifies that
 // with no concurrent mutation, pathTableSnapshot serializes every eligible
 // entry — the recheck never skips — so the destination_table stays complete.
 func TestPathTableSnapshotNoConcurrentRemovalIsConsistent(t *testing.T) {

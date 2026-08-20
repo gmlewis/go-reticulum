@@ -11,10 +11,10 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
 )
 
-// TestInterfaceDiscoveryAutoconnectTransportEnabledSetsGatewayMode covers
-// Phase 11 task 11: when transport is enabled, an autoconnected discovered
-// interface is set to MODE_GATEWAY (AC_TRANSPORT_MODE) and gets the instance
-// announce-rate defaults + AC_GRAVITY gravity (RNS/Discovery.py:742-752).
+// TestInterfaceDiscoveryAutoconnectTransportEnabledSetsGatewayMode verifies
+// that when transport is enabled, an autoconnected discovered interface is set
+// to MODE_GATEWAY (AC_TRANSPORT_MODE) and gets the instance announce-rate
+// defaults + AC_GRAVITY gravity (RNS/Discovery.py:742-752).
 func TestInterfaceDiscoveryAutoconnectTransportEnabledSetsGatewayMode(t *testing.T) {
 	t.Parallel()
 
@@ -68,10 +68,10 @@ func TestInterfaceDiscoveryAutoconnectTransportEnabledSetsGatewayMode(t *testing
 	}
 }
 
-// TestInterfaceDiscoveryAutoconnectTransportDisabledLeavesModeUnset covers
-// Phase 11 task 11: when transport is NOT enabled, the autoconnected
-// interface mode is left unchanged (Python passes mode=None) and no
-// announce-rate defaults are applied (RNS/Discovery.py:744,748-750).
+// TestInterfaceDiscoveryAutoconnectTransportDisabledLeavesModeUnset verifies
+// that when transport is NOT enabled, the autoconnected interface mode is left
+// unchanged (Python passes mode=None) and no announce-rate defaults are
+// applied (RNS/Discovery.py:744,748-750).
 func TestInterfaceDiscoveryAutoconnectTransportDisabledLeavesModeUnset(t *testing.T) {
 	t.Parallel()
 

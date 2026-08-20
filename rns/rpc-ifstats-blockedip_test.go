@@ -29,7 +29,7 @@ func (b *rpcBlockedIPInterface) Status() bool            { return true }
 func (b *rpcBlockedIPInterface) BlockedIPCount() int     { return b.blockedCount }
 func (b *rpcBlockedIPInterface) BlockedIPList() []string { return b.blockedList }
 
-// TestRPCInterfaceStatsIncludesBlockedIPs covers Phase 18 task 4: the
+// TestRPCInterfaceStatsIncludesBlockedIPs verifies that the
 // per-interface ifstats map carries blocked_ips (int) and blocked_ip_list
 // ([]string) for an interface that exposes fast-flap blocking
 // (RNS/Reticulum.py:1463-1467, v1.4.0), and DecodeInterfaceStats surfaces them
@@ -90,7 +90,7 @@ func TestRPCInterfaceStatsIncludesBlockedIPs(t *testing.T) {
 	}
 }
 
-// TestRPCInterfaceStatsBlockedIPsAbsentForNonBlocker covers Phase 18 task 4: an
+// TestRPCInterfaceStatsBlockedIPsAbsentForNonBlocker verifies that an
 // interface that does NOT expose BlockedIPCount/BlockedIPList yields a nil
 // blocked_ips/blocked_ip_list (mirroring Python's hasattr absence), so
 // non-Backbone interfaces never report blocked IPs.

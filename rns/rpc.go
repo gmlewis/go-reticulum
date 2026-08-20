@@ -848,7 +848,7 @@ type InterfaceStat struct {
 	BlockedIPs    *int
 	BlockedIPList []string
 
-	// Phase 5 ingress/egress-control ifstats fields (Reticulum.py:1453-1466).
+	// Ingress/egress-control ifstats fields (Reticulum.py:1453-1466).
 	InPrFreq            *float64
 	OutPrFreq           *float64
 	AnnounceRateTarget  *int

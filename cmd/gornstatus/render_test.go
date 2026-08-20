@@ -368,8 +368,9 @@ func renderBlock(ifstat rns.InterfaceStat, astats bool, pstats bool) string {
 // TestRenderInterfacePythonParity asserts the Announces / Path Rqs. /
 // Traffic block matches the Python rnstatus.py (v1.4.2) output
 // byte-for-byte for a matrix of (astats, pstats) and field combinations.
-// Golden strings were captured via /tmp/parity_rnstatus.py running the
-// exact rnstatus.py:557-636 display block against synthetic ifstat dicts.
+// The expected output for every case is captured live from the installed
+// RNS by running the verbatim rnstatus.py:564-644 display block (via
+// pythonRenderBlocks); there are no embedded golden strings.
 func TestRenderInterfacePythonParity(t *testing.T) {
 	t.Parallel()
 	clients2 := 2
@@ -379,7 +380,6 @@ func TestRenderInterfacePythonParity(t *testing.T) {
 		ifstat rns.InterfaceStat
 		astats bool
 		pstats bool
-		golden string
 	}{
 		{
 			"astats+pstats no bursts",
@@ -387,33 +387,24 @@ func TestRenderInterfacePythonParity(t *testing.T) {
 				InAnnounceFreq: new(0.5), OutAnnounceFreq: new(1.2),
 				InPrFreq: new(0.5), OutPrFreq: new(2.0)},
 			true, true,
-			"    Path Rqs. : ↑2.0 Hz     \n                ↓0.5 Hz     \n" +
-				"    Announces : 1.2 Hz↑     \n                0.5 Hz↓    \n" +
-				"    Traffic   : ↑0 B        0 bps\n                ↓0 B        0 bps\n",
 		},
 		{
 			"pstats only suffix-arrow",
 			rns.InterfaceStat{Name: "RNodeInterface[LoRa 915]", Status: true, Mode: modeFull,
 				InPrFreq: new(0.5), OutPrFreq: new(2.0)},
 			false, true,
-			"    Path Rqs. : 2.0 Hz↑     \n                0.5 Hz↓     \n" +
-				"    Traffic   : ↑0 B        0 bps\n                ↓0 B        0 bps\n",
 		},
 		{
 			"per-client /c rate",
 			rns.InterfaceStat{Name: "RNodeInterface[LoRa 915]", Status: true, Mode: modeFull,
 				Clients: &clients2, InAnnounceFreq: new(1.0), OutAnnounceFreq: new(4.0)},
 			true, false,
-			"    Announces : 4.0 Hz↑     2.0 Hz/c\n                1.0 Hz↓    \n" +
-				"    Traffic   : ↑0 B        0 bps\n                ↓0 B        0 bps\n",
 		},
 		{
 			"per-peer /p rate (AutoInterface)",
 			rns.InterfaceStat{Name: "AutoInterface[test]", Status: true, Mode: modeAccessPoint,
 				Peers: &peers4, InAnnounceFreq: new(1.0), OutAnnounceFreq: new(4.0)},
 			true, false,
-			"    Announces : 4.0 Hz↑     1.0 Hz/p\n                1.0 Hz↓    \n" +
-				"    Traffic   : ↑0 B        0 bps\n                ↓0 B        0 bps\n",
 		},
 		{
 			"announce-rate target/penalty/grace",
@@ -421,23 +412,44 @@ func TestRenderInterfacePythonParity(t *testing.T) {
 				InAnnounceFreq: new(0.5), OutAnnounceFreq: new(1.2),
 				AnnounceRateTarget: new(30), AnnounceRatePenalty: new(10), AnnounceRateGrace: new(5)},
 			true, false,
-			"    Announces : 1.2 Hz↑     \n                0.5 Hz↓    (t:30s/p:10s/g:5)\n" +
-				"    Traffic   : ↑0 B        0 bps\n                ↓0 B        0 bps\n",
 		},
 		{
 			"traffic with speed",
 			rns.InterfaceStat{Name: "RNodeInterface[LoRa 915]", Status: true, Mode: modeFull,
 				RXB: 1500000, TXB: 800000, RXS: 9600, TXS: 4800},
 			false, false,
-			"    Traffic   : ↑800.00 KB  4.80 Kbps\n                ↓1.50 MB    9.60 Kbps\n",
 		},
 	}
-	for _, tc := range cases {
+	pyCases := make([]pyRenderBlockCase, len(cases))
+	for i, tc := range cases {
+		pyCases[i] = pyRenderBlockCase{
+			Name:    tc.ifstat.Name,
+			Mode:    tc.ifstat.Mode,
+			Status:  tc.ifstat.Status,
+			Clients: tc.ifstat.Clients,
+			Peers:   tc.ifstat.Peers,
+			InAnn:   tc.ifstat.InAnnounceFreq,
+			OutAnn:  tc.ifstat.OutAnnounceFreq,
+			InPr:    tc.ifstat.InPrFreq,
+			OutPr:   tc.ifstat.OutPrFreq,
+			Art:     tc.ifstat.AnnounceRateTarget,
+			Arp:     tc.ifstat.AnnounceRatePenalty,
+			Arg:     tc.ifstat.AnnounceRateGrace,
+			RXB:     float64(tc.ifstat.RXB),
+			TXB:     float64(tc.ifstat.TXB),
+			RXS:     tc.ifstat.RXS,
+			TXS:     tc.ifstat.TXS,
+			Astats:  tc.astats,
+			Pstats:  tc.pstats,
+		}
+	}
+	wants := pythonRenderBlocks(t, pyCases)
+	for i, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := renderBlock(tc.ifstat, tc.astats, tc.pstats)
-			if got != tc.golden {
-				t.Errorf("parity mismatch for %q\n got: %q\nwant: %q", tc.name, got, tc.golden)
+			if got != wants[i] {
+				t.Errorf("parity mismatch for %q vs live Python:\n got: %q\nwant: %q", tc.name, got, wants[i])
 			}
 		})
 	}

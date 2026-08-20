@@ -12,7 +12,7 @@
 // belongs to the linux-only connection-layer port and is not wired here. The
 // spawn + field-inheritance — the parity-relevant behavior — is pure and
 // platform-independent, so it lives here (no build tag) and is unit-tested
-// cross-platform, matching the Phase 20 tasks 1-3 split.
+// cross-platform.
 
 package interfaces
 

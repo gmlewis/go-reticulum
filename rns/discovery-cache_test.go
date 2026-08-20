@@ -35,11 +35,11 @@ func discoveryHandlerFixture(t *testing.T, requiredValue, stampCost int) (*Inter
 	return h, appData, mustTestNewIdentity(t, true)
 }
 
-// TestDiscoveryValidCacheServesSecondHit covers Phase 11 task 1: feeding the
-// same discovery announce twice must serve the second hit from validCache
-// (Python Discovery.valid_cache, Discovery.py:264-272) — the callback still
-// fires, but no re-validation occurs, observable as a single validCache
-// entry and one cache hit.
+// TestDiscoveryValidCacheServesSecondHit verifies that feeding the same
+// discovery announce twice must serve the second hit from validCache (Python
+// Discovery.valid_cache, Discovery.py:264-272) — the callback still fires,
+// but no re-validation occurs, observable as a single validCache entry and
+// one cache hit.
 func TestDiscoveryValidCacheServesSecondHit(t *testing.T) {
 	t.Parallel()
 	h, appData, sourceIdentity := discoveryHandlerFixture(t, 2, 2)
@@ -63,8 +63,8 @@ func TestDiscoveryValidCacheServesSecondHit(t *testing.T) {
 	}
 }
 
-// TestDiscoveryInvalidCacheDropsRepeat covers Phase 11 task 1: an announce
-// with an insufficient stamp value is appended to invalidCache (Python
+// TestDiscoveryInvalidCacheDropsRepeat verifies that an announce with an
+// insufficient stamp value is appended to invalidCache (Python
 // Discovery.py:293-294), and a second identical announce is dropped from the
 // invalid cache without invoking the callback or re-validating.
 func TestDiscoveryInvalidCacheDropsRepeat(t *testing.T) {
@@ -91,9 +91,9 @@ func TestDiscoveryInvalidCacheDropsRepeat(t *testing.T) {
 	}
 }
 
-// TestDiscoveryValidCacheEvictsAtMax covers Phase 11 task 1's FIFO eviction
-// (Python Discovery.py:290): the valid cache holds at most validCacheMax
-// entries, evicting the oldest first.
+// TestDiscoveryValidCacheEvictsAtMax verifies FIFO eviction (Python
+// Discovery.py:290): the valid cache holds at most validCacheMax entries,
+// evicting the oldest first.
 func TestDiscoveryValidCacheEvictsAtMax(t *testing.T) {
 	t.Parallel()
 	h, _, sourceIdentity := discoveryHandlerFixture(t, 2, 2)

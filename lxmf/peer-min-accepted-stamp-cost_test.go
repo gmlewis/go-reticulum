@@ -7,8 +7,8 @@ package lxmf
 
 import "testing"
 
-// TestMinAcceptedStampCostAppliesMaxLowerBound covers Phase 17 task 5: the
-// minimum accepted proof-of-work stamp cost for offers to a peer is
+// TestMinAcceptedStampCostAppliesMaxLowerBound verifies that the minimum
+// accepted proof-of-work stamp cost for offers to a peer is
 // max(0, propagation_stamp_cost - propagation_stamp_cost_flexibility),
 // mirroring Python's
 // `min_accepted_cost = max(0, self.propagation_stamp_cost-
@@ -54,8 +54,8 @@ func TestMinAcceptedStampCostAppliesMaxLowerBound(t *testing.T) {
 	}
 }
 
-// TestMinAcceptedStampCostNilPeerDefensive covers Phase 17 task 5: a nil peer
-// reports ok=false (cost 0) rather than panicking, so the future offer-prep
+// TestMinAcceptedStampCostNilPeerDefensive verifies that a nil peer reports
+// ok=false (cost 0) rather than panicking, so the future offer-prep
 // branch can call it defensively.
 func TestMinAcceptedStampCostNilPeerDefensive(t *testing.T) {
 	t.Parallel()

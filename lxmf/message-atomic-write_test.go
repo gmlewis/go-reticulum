@@ -34,8 +34,8 @@ func newAtomicWriteMessage(t *testing.T) *Message {
 	return msg
 }
 
-// TestWriteToDirectoryLeavesNoTmpRemnant covers Phase 16 task 1: after a
-// successful WriteToDirectory the destination contains the final file and no
+// TestWriteToDirectoryLeavesNoTmpRemnant verifies that after a successful
+// WriteToDirectory the destination contains the final file and no
 // leftover ".tmp.*" temporary file, mirroring Python's tmp+rename+cleanup in
 // LXMessage.write_to_directory (LXMessage.py:677-693, v0.9.9).
 func TestWriteToDirectoryLeavesNoTmpRemnant(t *testing.T) {
@@ -73,7 +73,7 @@ func TestWriteToDirectoryLeavesNoTmpRemnant(t *testing.T) {
 	}
 }
 
-// TestWriteToDirectoryConcurrentReaderNeverSeesPartial covers Phase 16 task 1:
+// TestWriteToDirectoryConcurrentReaderNeverSeesPartial verifies that
 // WriteToDirectory must replace the destination file atomically (tmp file +
 // rename), so a concurrent reader never observes a truncated or partial
 // container. A direct os.WriteFile truncates then writes, exposing a window
@@ -134,7 +134,7 @@ func TestWriteToDirectoryConcurrentReaderNeverSeesPartial(t *testing.T) {
 	}
 }
 
-// TestWriteToDirectoryConcurrentCallsDontCorrupt covers Phase 16 task 1: many
+// TestWriteToDirectoryConcurrentCallsDontCorrupt verifies that many
 // concurrent WriteToDirectory calls on the same message serialize under the
 // per-message persist mutex and leave exactly one valid final file with no
 // tmp remnants, mirroring Python's __persist_lock (LXMessage.py:188, 679).

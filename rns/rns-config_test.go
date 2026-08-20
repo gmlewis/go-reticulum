@@ -1450,7 +1450,7 @@ func TestParseDiscoveryConfigPromotesRNodeToAccessPoint(t *testing.T) {
 	}
 }
 
-// TestParseDiscoveryConfigPreservesInternalMode asserts Phase 6 Task 7: when
+// TestParseDiscoveryConfigPreservesInternalMode asserts that when
 // discovery is enabled on an interface whose configured mode is MODE_INTERNAL,
 // the mode is preserved rather than auto-reconfigured to gateway/access_point.
 // This mirrors RNS/Reticulum.py (v1.3.9), whose discovery auto-mode allowed set
@@ -1595,7 +1595,7 @@ discovery_modulation = lora
 	}
 }
 
-// TestReticulumDefaultGravityAndInterfaceContractConfig verifies the Phase 1
+// TestReticulumDefaultGravityAndInterfaceContractConfig verifies the
 // per-interface keys (gravity, recursive_prs, announces_from_internal,
 // announces_to_internal) and the instance-wide default_gravity flow from a
 // config file into the Reticulum and the registered interface, mirroring
@@ -1658,7 +1658,7 @@ announces_to_internal = true
 }
 
 // TestReticulumInterfaceContractDefaults asserts that when an interface omits
-// the Phase 1 contract keys, gravity inherits the instance-wide default_gravity
+// the contract keys, gravity inherits the instance-wide default_gravity
 // and the remaining fields take their Python defaults (recursive_prs=false,
 // announces_from_internal=true, announces_to_internal=nil).
 func TestReticulumInterfaceContractDefaults(t *testing.T) {
@@ -1757,7 +1757,7 @@ interface_mode = gateway
 	}
 }
 
-// TestReticulumAutoconnectInterfaceSettings covers Phase 22 task 1: the three
+// TestReticulumAutoconnectInterfaceSettings verifies that the three
 // [reticulum] autoconnect_interface_* config keys are parsed and exposed via
 // accessors, mirroring Python RNS.Reticulum.__autoconnect_interface_mode /
 // __autoconnect_interface_gravity / __autoconnect_announces_to_internal and
@@ -1807,7 +1807,7 @@ interface_mode = gateway
 	}
 }
 
-// TestReticulumAutoconnectInterfaceSettingsUnset covers Phase 22 task 1: when
+// TestReticulumAutoconnectInterfaceSettingsUnset verifies that when
 // the [reticulum] autoconnect_interface_* keys are absent, the accessors
 // return nil (Python None), so the discovery autoconnect block falls back to
 // its built-in defaults (AC_TRANSPORT_MODE / AC_GRAVITY / None). This pins the
@@ -1851,7 +1851,7 @@ interface_mode = gateway
 	}
 }
 
-// TestReticulumAutoconnectInterfaceModeTable covers Phase 22 task 1: the
+// TestReticulumAutoconnectInterfaceModeTable verifies that the
 // autoconnect_interface_mode string maps through the full Python interface-mode
 // table (Reticulum.py:619-632), and an unrecognized mode string leaves the
 // accessor nil (Python sets v=None on no match, so __autoconnect_interface_mode
@@ -2401,7 +2401,7 @@ func TestParseIFACConfigDisabledByDefault(t *testing.T) {
 	}
 }
 
-// TestParseBackboneFastFlapConfigDefaults covers Phase 18 task 1: an empty
+// TestParseBackboneFastFlapConfigDefaults verifies that an empty
 // config section yields Python's BLOCK_FAST_FLAPPING defaults
 // (BackboneInterface.py:57-60,126-129, v1.3.9): block true, threshold 20s,
 // grace 5, expiry 12*60*60s.
@@ -2418,7 +2418,7 @@ func TestParseBackboneFastFlapConfigDefaults(t *testing.T) {
 	}
 }
 
-// TestParseBackboneFastFlapConfigOverrides covers Phase 18 task 1: the four
+// TestParseBackboneFastFlapConfigOverrides verifies that the four
 // config keys override the defaults, with fast_flapping_block_time taken in
 // minutes and converted to seconds (BackboneInterface.py:126-129, v1.3.9).
 func TestParseBackboneFastFlapConfigOverrides(t *testing.T) {

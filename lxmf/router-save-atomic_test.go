@@ -48,7 +48,7 @@ func assertAtomicRename(t *testing.T, save func() error, path string) {
 	}
 }
 
-// TestSaveOutboundStampCostsWritesAtomicallyByRename covers Phase 16 task 3:
+// TestSaveOutboundStampCostsWritesAtomicallyByRename verifies that
 // SaveOutboundStampCosts replaces its state file via tmp-file + rename, so the
 // file's inode changes on each save (an in-place os.WriteFile would keep the
 // same inode), mirroring Python's temp_path + os.replace (LXMRouter.py:1411-
@@ -70,8 +70,8 @@ func TestSaveOutboundStampCostsWritesAtomicallyByRename(t *testing.T) {
 	assertAtomicRename(t, router.SaveOutboundStampCosts, router.outboundStampCostsPath())
 }
 
-// TestSaveNodeStatsWritesAtomicallyByRename covers Phase 16 task 3 for
-// SaveNodeStats: the node-stats file is replaced via rename, not overwritten.
+// TestSaveNodeStatsWritesAtomicallyByRename verifies that SaveNodeStats
+// replaces its state file via rename, not overwritten.
 func TestSaveNodeStatsWritesAtomicallyByRename(t *testing.T) {
 	t.Parallel()
 
@@ -84,8 +84,8 @@ func TestSaveNodeStatsWritesAtomicallyByRename(t *testing.T) {
 	assertAtomicRename(t, router.SaveNodeStats, router.nodeStatsPath())
 }
 
-// TestSaveAvailableTicketsWritesAtomicallyByRename covers Phase 16 task 3 for
-// SaveAvailableTickets.
+// TestSaveAvailableTicketsWritesAtomicallyByRename verifies that
+// SaveAvailableTickets replaces its state file via rename.
 func TestSaveAvailableTicketsWritesAtomicallyByRename(t *testing.T) {
 	t.Parallel()
 
@@ -95,9 +95,9 @@ func TestSaveAvailableTicketsWritesAtomicallyByRename(t *testing.T) {
 	assertAtomicRename(t, router.SaveAvailableTickets, router.availableTicketsPath())
 }
 
-// TestSaveLocalTransientIDCachesWritesAtomicallyByRename covers Phase 16 task 3
-// for SaveLocalTransientIDCaches: both the locally-delivered and
-// locally-processed caches are replaced via rename.
+// TestSaveLocalTransientIDCachesWritesAtomicallyByRename verifies that
+// SaveLocalTransientIDCaches replaces both the locally-delivered and
+// locally-processed caches via rename.
 func TestSaveLocalTransientIDCachesWritesAtomicallyByRename(t *testing.T) {
 	t.Parallel()
 
@@ -112,7 +112,8 @@ func TestSaveLocalTransientIDCachesWritesAtomicallyByRename(t *testing.T) {
 	assertAtomicRename(t, router.SaveLocalTransientIDCaches, router.locallyProcessedPath())
 }
 
-// TestSavePeersWritesAtomicallyByRename covers Phase 16 task 3 for SavePeers.
+// TestSavePeersWritesAtomicallyByRename verifies that SavePeers replaces its
+// state file via rename.
 func TestSavePeersWritesAtomicallyByRename(t *testing.T) {
 	t.Parallel()
 
@@ -123,8 +124,8 @@ func TestSavePeersWritesAtomicallyByRename(t *testing.T) {
 	assertAtomicRename(t, router.SavePeers, router.peersPath())
 }
 
-// TestSaveMethodsLeaveNoTmpRemnant covers Phase 16 task 3: each router state
-// Save* writes atomically and leaves no ".tmp.*" remnant in the storage
+// TestSaveMethodsLeaveNoTmpRemnant verifies that each router state Save*
+// writes atomically and leaves no ".tmp.*" remnant in the storage
 // directory, mirroring Python's tmp+rename+cleanup for every persisted state
 // file (LXMRouter.py:1231-1414, v1.1.0).
 func TestSaveMethodsLeaveNoTmpRemnant(t *testing.T) {

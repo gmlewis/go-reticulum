@@ -23,9 +23,9 @@ func newTrackedResource(t *testing.T, hash []byte, status int) *rns.Resource {
 	return resource
 }
 
-// TestDeliveryResourceTransferBeganTracksResource covers Phase 17 task 3:
-// the delivery_resource_transfer_began callback records the incoming resource
-// by its hash, so InboundCount and InboundResources report it while it is
+// TestDeliveryResourceTransferBeganTracksResource verifies that the
+// delivery_resource_transfer_began callback records the incoming resource by
+// its hash, so InboundCount and InboundResources report it while it is
 // still active (LXMRouter.py:1968-1971,1671-1687, v1.1.0).
 func TestDeliveryResourceTransferBeganTracksResource(t *testing.T) {
 	t.Parallel()
@@ -49,8 +49,8 @@ func TestDeliveryResourceTransferBeganTracksResource(t *testing.T) {
 	}
 }
 
-// TestInboundCountExcludesTerminalResources covers Phase 17 task 3:
-// InboundCount and InboundResources count only resources whose status is below
+// TestInboundCountExcludesTerminalResources verifies that InboundCount and
+// InboundResources count only resources whose status is below
 // COMPLETE, mirroring Python's inbound_count/inbound_resources
 // (LXMRouter.py:1671-1687, v1.1.0).
 func TestInboundCountExcludesTerminalResources(t *testing.T) {
@@ -71,8 +71,8 @@ func TestInboundCountExcludesTerminalResources(t *testing.T) {
 	}
 }
 
-// TestCancelInboundCancelsActiveResource covers Phase 17 task 3: CancelInbound
-// cancels an active (non-terminal) incoming delivery resource and returns true;
+// TestCancelInboundCancelsActiveResource verifies that CancelInbound cancels
+// an active (non-terminal) incoming delivery resource and returns true;
 // cancelling an unknown or already-concluded resource returns false
 // (LXMRouter.py:1689-1706, v1.1.0).
 func TestCancelInboundCancelsActiveResource(t *testing.T) {
@@ -99,8 +99,8 @@ func TestCancelInboundCancelsActiveResource(t *testing.T) {
 	}
 }
 
-// TestCancelAllInboundCancelsOnlyActive covers Phase 17 task 3: CancelAllInbound
-// cancels every active incoming delivery resource and returns the count
+// TestCancelAllInboundCancelsOnlyActive verifies that CancelAllInbound cancels
+// every active incoming delivery resource and returns the count
 // cancelled, leaving terminal resources untouched
 // (LNMRouter.py:1708-1717, v1.1.0).
 func TestCancelAllInboundCancelsOnlyActive(t *testing.T) {
@@ -121,8 +121,8 @@ func TestCancelAllInboundCancelsOnlyActive(t *testing.T) {
 	}
 }
 
-// TestCleanResourceTrackingReapsTerminal covers Phase 17 task 3:
-// CleanResourceTracking removes resources whose status has reached COMPLETE or
+// TestCleanResourceTrackingReapsTerminal verifies that CleanResourceTracking
+// removes resources whose status has reached COMPLETE or
 // above, while leaving active resources tracked, mirroring Python's
 // clean_resource_tracking (LXMRouter.py:935-949, v1.1.0).
 func TestCleanResourceTrackingReapsTerminal(t *testing.T) {
@@ -157,8 +157,8 @@ func TestCleanResourceTrackingReapsTerminal(t *testing.T) {
 	}
 }
 
-// TestJobLoopRunsCleanResourceTracking covers Phase 17 task 3: the job loop
-// invokes CleanResourceTracking on the JOB_RESOURCE_INTERVAL cadence (every
+// TestJobLoopRunsCleanResourceTracking verifies that the job loop invokes
+// CleanResourceTracking on the JOB_RESOURCE_INTERVAL cadence (every
 // 2 ticks, matching Python LXMRouter.JOB_RESOURCE_INTERVAL, v1.1.0). A
 // terminal resource tracked via deliveryResourceTransferBegan is reaped once
 // the loop advances to a clean tick, and not before.

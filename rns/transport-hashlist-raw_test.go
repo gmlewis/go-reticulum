@@ -15,7 +15,7 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestSavePacketHashlistRawFormat covers Phase 12 task 1: SavePacketHashlist
+// TestSavePacketHashlistRawFormat verifies that SavePacketHashlist
 // writes packet_hashlist.raw as exactly n*HashLength/8 raw concatenated
 // bytes (RNS/Transport.py:3315-3324), and the set round-trips through
 // LoadPacketHashlist.
@@ -88,7 +88,7 @@ func TestSavePacketHashlistRawFormat(t *testing.T) {
 	}
 }
 
-// TestLoadPacketHashlistLegacyMigration covers Phase 12 task 1: when
+// TestLoadPacketHashlistLegacyMigration verifies that when
 // packet_hashlist.raw is absent, LoadPacketHashlist falls back to the legacy
 // msgpack packet_hashlist file (an array of hash byte strings) and migrates
 // the entries into packetHashes.
@@ -127,7 +127,7 @@ func TestLoadPacketHashlistLegacyMigration(t *testing.T) {
 	ts.mu.Unlock()
 }
 
-// TestLoadPacketHashlistRawTakesPrecedenceOverLegacy covers Phase 12 task 1:
+// TestLoadPacketHashlistRawTakesPrecedenceOverLegacy verifies that
 // when both packet_hashlist.raw and the legacy packet_hashlist file exist,
 // the .raw file is loaded and the legacy file is ignored.
 func TestLoadPacketHashlistRawTakesPrecedenceOverLegacy(t *testing.T) {
@@ -168,7 +168,7 @@ func TestLoadPacketHashlistRawTakesPrecedenceOverLegacy(t *testing.T) {
 	}
 }
 
-// TestSavePacketHashlistDisabledNoWrite covers Phase 12 task 1: a disabled
+// TestSavePacketHashlistDisabledNoWrite verifies that a disabled
 // transport writes no file (RNS/Transport.py:3294,3310).
 func TestSavePacketHashlistDisabledNoWrite(t *testing.T) {
 	t.Parallel()
@@ -189,7 +189,7 @@ func TestSavePacketHashlistDisabledNoWrite(t *testing.T) {
 	}
 }
 
-// TestLoadPacketHashlistDisabledNoLoad covers Phase 12 task 1: a disabled
+// TestLoadPacketHashlistDisabledNoLoad verifies that a disabled
 // transport loads nothing (RNS/Transport.py:243).
 func TestLoadPacketHashlistDisabledNoLoad(t *testing.T) {
 	t.Parallel()

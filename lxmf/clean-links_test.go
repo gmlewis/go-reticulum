@@ -93,7 +93,7 @@ func establishTestLinkForCleanLinks(t *testing.T) (link *rns.Link, destHash []by
 	return link, destHash
 }
 
-// TestCleanLinksDirectLinksRemovesStale covers Phase C.1: a direct-delivery
+// TestCleanLinksDirectLinksRemovesStale verifies that a direct-delivery
 // link whose no_data_for exceeds LXMRouter.LINK_MAX_INACTIVITY (10 min) is
 // torn down and removed from directLinks, and its validated_peer_links entry
 // (keyed by link_id) is cleared. Mirrors Python LXMRouter.clean_links
@@ -141,7 +141,7 @@ func TestCleanLinksDirectLinksRemovesStale(t *testing.T) {
 	}
 }
 
-// TestCleanLinksDirectLinksSurvivesWhenActive covers Phase C.1: an active
+// TestCleanLinksDirectLinksSurvivesWhenActive verifies that an active
 // direct-delivery link with recent data is NOT removed by CleanLinks. This
 // pins the survivor set matching Python (inactive_time > threshold, strict).
 func TestCleanLinksDirectLinksSurvivesWhenActive(t *testing.T) {
@@ -173,7 +173,7 @@ func TestCleanLinksDirectLinksSurvivesWhenActive(t *testing.T) {
 	}
 }
 
-// TestCleanLinksPropagationSweep covers Phase C.1: inbound propagation links
+// TestCleanLinksPropagationSweep verifies that inbound propagation links
 // in activePropagationLinks whose no_data_for exceeds
 // LXMRouter.P_LINK_MAX_INACTIVITY (3 min) are torn down and removed, while
 // active ones survive. Mirrors Python LXMRouter.clean_links

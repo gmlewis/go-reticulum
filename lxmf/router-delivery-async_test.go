@@ -13,8 +13,8 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestDeliveryPacketDispatchesDeliveryInGoroutine covers Phase 15 task 2:
-// deliveryPacket dispatches the inbound delivery job (unpack +
+// TestDeliveryPacketDispatchesDeliveryInGoroutine verifies that deliveryPacket
+// dispatches the inbound delivery job (unpack +
 // handleInboundMessage) in a goroutine so the packet callback is not
 // blocked, mirroring Python LXMRouter.delivery_packet (LXMRouter.py:1949-
 // 1950, v1.1.0) which starts a daemon thread running lxmf_delivery. The
@@ -73,7 +73,7 @@ func TestDeliveryPacketDispatchesDeliveryInGoroutine(t *testing.T) {
 	router.WaitForInboundDeliveries()
 }
 
-// TestWaitForInboundDeliveriesDrainsPendingCallbacks covers Phase 15 task 2:
+// TestWaitForInboundDeliveriesDrainsPendingCallbacks verifies that
 // WaitForInboundDeliveries blocks until every delivery goroutine dispatched by
 // deliveryPacket has finished, giving callers a deterministic drain point.
 func TestWaitForInboundDeliveriesDrainsPendingCallbacks(t *testing.T) {

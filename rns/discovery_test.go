@@ -3,6 +3,16 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
+// The tests in this file are Go BEHAVIORAL unit tests.
+// They assert real Go behavior — sort order, error/log messages, display
+// formatting — against hardcoded expected strings. The expected values were
+// derived from the RNS reference behavior; they are NOT captured from a live
+// `python3` run, and these tests do not exec python3. Any inline comment that
+// mentions "Python" is reference-behavior documentation (explaining why a given
+// expected value is what it is), not a claim of live cross-implementation
+// parity. The test names have been demoted (e.g. *LikePython -> *PerSpec,
+// *MatchesPython -> *MatchesSpec, *LogsPython* -> *Logs*) to reflect this.
+
 package rns
 
 import (
@@ -316,7 +326,7 @@ func normalizeDiscoveryFixtureTimes(t *testing.T, data []byte) []byte {
 }
 
 // discoverySurvivorFixtureMap returns a discovery cache map that survives the
-// Task 12 load removal chain (RNS/Discovery.py:483-490): it carries a
+// load removal chain (RNS/Discovery.py:483-490): it carries a
 // present, truthy, hex transport_id and network_id and a discoverable type,
 // plus the last_heard/value/name/transport fields the display/sort tests
 // exercise. overrides replace or extend the base fields, so a test focused on
@@ -676,7 +686,7 @@ func TestListDiscoveredInterfaces_MissingLastHeardLogsAndRemains(t *testing.T) {
 	}
 }
 
-func TestListDiscoveredInterfaces_BinaryMapKeysLogPythonKeyErrorAndRemain(t *testing.T) {
+func TestListDiscoveredInterfaces_BinaryMapKeysLogKeyErrorAndRemain(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-map-keys-")
@@ -736,7 +746,7 @@ func TestListDiscoveredInterfaces_BinaryMapKeysLogPythonKeyErrorAndRemain(t *tes
 	}
 }
 
-func TestListDiscoveredInterfaces_TrailingGarbageLoadsLikePython(t *testing.T) {
+func TestListDiscoveredInterfaces_TrailingGarbageLoadsPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-trailing-garbage-")
@@ -772,7 +782,7 @@ func TestListDiscoveredInterfaces_TrailingGarbageLoadsLikePython(t *testing.T) {
 	}
 }
 
-func TestListDiscoveredInterfaces_InvalidMsgpackLogsPythonErrorsAndRemains(t *testing.T) {
+func TestListDiscoveredInterfaces_InvalidMsgpackLogsErrorsAndRemains(t *testing.T) {
 	t.Parallel()
 
 	truncatedMap := mustMsgpackPack(map[string]any{"last_heard": 1})
@@ -887,7 +897,7 @@ func TestListDiscoveredInterfaces_BoolLastHeardExpiresAndRemoves(t *testing.T) {
 	}
 }
 
-func TestListDiscoveredInterfaces_BoolValueSortsLikePython(t *testing.T) {
+func TestListDiscoveredInterfaces_BoolValueSortsPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bool-value-")
@@ -939,7 +949,7 @@ func TestListDiscoveredInterfaces_BoolValueSortsLikePython(t *testing.T) {
 	}
 }
 
-func TestListDiscoveredInterfaces_FloatValueSortsLikePython(t *testing.T) {
+func TestListDiscoveredInterfaces_FloatValueSortsPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-float-value-")
@@ -986,7 +996,7 @@ func TestListDiscoveredInterfaces_FloatValueSortsLikePython(t *testing.T) {
 	}
 }
 
-func TestListDiscoveredInterfaces_BytesValueSortsLikePython(t *testing.T) {
+func TestListDiscoveredInterfaces_BytesValueSortsPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-value-sort-")
@@ -1033,7 +1043,7 @@ func TestListDiscoveredInterfaces_BytesValueSortsLikePython(t *testing.T) {
 	}
 }
 
-func TestListDiscoveredInterfaces_ListValueSortsLikePython(t *testing.T) {
+func TestListDiscoveredInterfaces_ListValueSortsPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-list-value-sort-")
@@ -1128,7 +1138,7 @@ func TestListDiscoveredInterfaces_StringValueSingleEntryDoesNotFail(t *testing.T
 	}
 }
 
-func TestListDiscoveredInterfaces_StringValueSortsLikePython(t *testing.T) {
+func TestListDiscoveredInterfaces_StringValueSortsPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-string-value-sort-")
@@ -1212,7 +1222,7 @@ func TestListDiscoveredInterfaces_MixedStringAndIntegerValueReturnsError(t *test
 	}
 }
 
-func TestListDiscoveredInterfaces_MixedBytesAndStringValueReturnsPythonError(t *testing.T) {
+func TestListDiscoveredInterfaces_MixedBytesAndStringValueReturnsError(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-mixed-bytes-string-sort-")
@@ -1252,7 +1262,7 @@ func TestListDiscoveredInterfaces_MixedBytesAndStringValueReturnsPythonError(t *
 	}
 }
 
-func TestListDiscoveredInterfaces_DictValuePairReturnsPythonError(t *testing.T) {
+func TestListDiscoveredInterfaces_DictValuePairReturnsError(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-dict-value-sort-")
@@ -1291,7 +1301,7 @@ func TestListDiscoveredInterfaces_DictValuePairReturnsPythonError(t *testing.T) 
 	}
 }
 
-func TestListDiscoveredInterfaces_MoreMixedValueErrorsMatchPython(t *testing.T) {
+func TestListDiscoveredInterfaces_MoreMixedValueErrorsMatchesSpec(t *testing.T) {
 	t.Parallel()
 
 	now := float64(time.Now().UnixNano()) / 1e9
@@ -1422,7 +1432,7 @@ func TestListDiscoveredInterfaces_NilValueSortsByLastHeard(t *testing.T) {
 	}
 }
 
-func TestListDiscoveredInterfaces_BoolDiscoveredUsesPythonNumericSemantics(t *testing.T) {
+func TestListDiscoveredInterfaces_BoolDiscoveredUsesNumericSemantics(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bool-discovered-")
@@ -1456,7 +1466,7 @@ func TestListDiscoveredInterfaces_BoolDiscoveredUsesPythonNumericSemantics(t *te
 	}
 }
 
-func TestListDiscoveredInterfaces_BoolPortUsesPythonNumericSemantics(t *testing.T) {
+func TestListDiscoveredInterfaces_BoolPortUsesNumericSemantics(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bool-port-")
@@ -1663,7 +1673,7 @@ func TestListDiscoveredInterfaces_BytesReachableOnLogsAndRemains(t *testing.T) {
 	}
 }
 
-func TestListDiscoveredInterfaces_MoreInvalidReachableOnLogsPythonErrorsAndRemains(t *testing.T) {
+func TestListDiscoveredInterfaces_MoreInvalidReachableOnLogsErrorsAndRemains(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
@@ -1893,7 +1903,7 @@ func TestListDiscoveredInterfaces_InvalidNetworkIDTypeLogsAndRemains(t *testing.
 	}
 }
 
-func TestListDiscoveredInterfaces_BytesNetworkIDLogsPythonTypeErrorAndRemains(t *testing.T) {
+func TestListDiscoveredInterfaces_BytesNetworkIDLogsTypeErrorAndRemains(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-network-id-bytes-")
@@ -1961,7 +1971,7 @@ func TestListDiscoveredInterfaces_BytesNetworkIDLogsPythonTypeErrorAndRemains(t 
 	}
 }
 
-func TestListDiscoveredInterfaces_InvalidNetworkIDHexLogsPythonValueErrorsAndRemains(t *testing.T) {
+func TestListDiscoveredInterfaces_InvalidNetworkIDHexLogsValueErrorsAndRemains(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
@@ -2456,7 +2466,7 @@ func TestListDiscoveredInterfaces_MissingValueReturnsErrorAndRemains(t *testing.
 	}
 }
 
-func TestListDiscoveredInterfaces_PresentNilNameDisplaysAsPythonNone(t *testing.T) {
+func TestListDiscoveredInterfaces_PresentNilNameDisplaysAsNone(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-none-name-")
@@ -2532,7 +2542,7 @@ func TestListDiscoveredInterfaces_MissingNameAndTypeDisplayAsEmptyStrings(t *tes
 	}
 }
 
-func TestListDiscoveredInterfaces_NilTypeAndConfigEntryDisplayAsPythonNone(t *testing.T) {
+func TestListDiscoveredInterfaces_NilTypeAndConfigEntryDisplayAsNone(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-none-type-config-")
@@ -2572,7 +2582,7 @@ func TestListDiscoveredInterfaces_NilTypeAndConfigEntryDisplayAsPythonNone(t *te
 	}
 }
 
-func TestListDiscoveredInterfaces_BytesNameAndTypeDisplayAsPythonBytes(t *testing.T) {
+func TestListDiscoveredInterfaces_BytesNameAndTypeDisplayAsBytes(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-name-type-")
@@ -2611,7 +2621,7 @@ func TestListDiscoveredInterfaces_BytesNameAndTypeDisplayAsPythonBytes(t *testin
 	}
 }
 
-func TestListDiscoveredInterfaces_ListTransportIDDisplaysAsPythonList(t *testing.T) {
+func TestListDiscoveredInterfaces_ListTransportIDDisplaysAsList(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-list-transport-id-")
@@ -2650,7 +2660,7 @@ func TestListDiscoveredInterfaces_ListTransportIDDisplaysAsPythonList(t *testing
 	}
 }
 
-func TestListDiscoveredInterfaces_CompositeNameAndTypeDisplayAsPythonRepr(t *testing.T) {
+func TestListDiscoveredInterfaces_CompositeNameAndTypeDisplayAsRepr(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-composite-name-type-")
@@ -2690,7 +2700,7 @@ func TestListDiscoveredInterfaces_CompositeNameAndTypeDisplayAsPythonRepr(t *tes
 	}
 }
 
-func TestListDiscoveredInterfaces_BytesTransportIDDisplaysAsPythonBytes(t *testing.T) {
+func TestListDiscoveredInterfaces_BytesTransportIDDisplaysAsBytes(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-transport-id-")
@@ -2729,7 +2739,7 @@ func TestListDiscoveredInterfaces_BytesTransportIDDisplaysAsPythonBytes(t *testi
 	}
 }
 
-func TestListDiscoveredInterfaces_BytesConfigEntryDisplaysAsPythonBytes(t *testing.T) {
+func TestListDiscoveredInterfaces_BytesConfigEntryDisplaysAsBytes(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-config-entry-")
@@ -2764,7 +2774,7 @@ func TestListDiscoveredInterfaces_BytesConfigEntryDisplaysAsPythonBytes(t *testi
 	}
 }
 
-func TestListDiscoveredInterfaces_BytesNetworkIDDisplaysAsPythonBytes(t *testing.T) {
+func TestListDiscoveredInterfaces_BytesNetworkIDDisplaysAsBytes(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-network-id-")
@@ -2803,7 +2813,7 @@ func TestListDiscoveredInterfaces_BytesNetworkIDDisplaysAsPythonBytes(t *testing
 	}
 }
 
-func TestListDiscoveredInterfaces_BytesIFACFieldsDisplayAsPythonBytes(t *testing.T) {
+func TestListDiscoveredInterfaces_BytesIFACFieldsDisplayAsBytes(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-ifac-fields-")
@@ -2842,7 +2852,7 @@ func TestListDiscoveredInterfaces_BytesIFACFieldsDisplayAsPythonBytes(t *testing
 	}
 }
 
-func TestListDiscoveredInterfaces_BytesModulationDisplaysAsPythonBytes(t *testing.T) {
+func TestListDiscoveredInterfaces_BytesModulationDisplaysAsBytes(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-bytes-modulation-")
@@ -2877,7 +2887,7 @@ func TestListDiscoveredInterfaces_BytesModulationDisplaysAsPythonBytes(t *testin
 	}
 }
 
-func TestIsHostnameMatchesPython(t *testing.T) {
+func TestIsHostnameMatchesSpec(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -2903,7 +2913,7 @@ func TestIsHostnameMatchesPython(t *testing.T) {
 	}
 }
 
-func TestListDiscoveredInterfaces_SortsLikePython(t *testing.T) {
+func TestListDiscoveredInterfaces_SortsPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-sort-")
@@ -5056,7 +5066,7 @@ func TestInterfaceDiscoveryReceiveAndPersistPreservesRawPortValue(t *testing.T) 
 	}
 }
 
-func TestInterfaceDiscoveryReceiveAndPersistFormatsIterablePortLikePython(t *testing.T) {
+func TestInterfaceDiscoveryReceiveAndPersistFormatsIterablePortPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-receive-iterable-port-")
@@ -5116,7 +5126,7 @@ func TestInterfaceDiscoveryReceiveAndPersistFormatsIterablePortLikePython(t *tes
 	}
 }
 
-func TestInterfaceDiscoveryReceiveAndPersistFormatsMapPortLikePython(t *testing.T) {
+func TestInterfaceDiscoveryReceiveAndPersistFormatsMapPortPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-receive-map-port-")
@@ -5176,7 +5186,7 @@ func TestInterfaceDiscoveryReceiveAndPersistFormatsMapPortLikePython(t *testing.
 	}
 }
 
-func TestInterfaceDiscoveryReceiveAndPersistFormatsWholeFloatPortLikePython(t *testing.T) {
+func TestInterfaceDiscoveryReceiveAndPersistFormatsWholeFloatPortPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-receive-float-port-")
@@ -5773,7 +5783,7 @@ func TestInterfaceDiscoveryConnectDiscoveredMissingConfigEntrySkipsAutoconnect(t
 	}
 }
 
-func TestInterfaceDiscoveryConnectDiscoveredBytesTypeSkipsAutoconnectLikePython(t *testing.T) {
+func TestInterfaceDiscoveryConnectDiscoveredBytesTypeSkipsAutoconnectPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-connect-bytes-type-")
@@ -5900,7 +5910,7 @@ func TestInterfaceDiscoveryConnectDiscoveredSkipsWhenAutoconnectDisabled(t *test
 	}
 }
 
-func TestInterfaceDiscoveryConnectDiscoveredLogsPythonReconnectError(t *testing.T) {
+func TestInterfaceDiscoveryConnectDiscoveredLogsReconnectError(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-connect-load-error-")
@@ -6190,7 +6200,7 @@ func TestInterfaceDiscoveryAutoconnectPassesRawEndpointValuesToConstructorSeam(t
 	}
 }
 
-func TestInterfaceDiscoveryAutoconnectPythonPortCoercion(t *testing.T) {
+func TestInterfaceDiscoveryAutoconnectPortCoercion(t *testing.T) {
 	cases := []struct {
 		name     string
 		port     any
@@ -6250,7 +6260,7 @@ func TestInterfaceDiscoveryAutoconnectPythonPortCoercion(t *testing.T) {
 	}
 }
 
-func TestInterfaceDiscoveryAutoconnectNilPortLogsPythonTypeError(t *testing.T) {
+func TestInterfaceDiscoveryAutoconnectNilPortLogsTypeError(t *testing.T) {
 	t.Parallel()
 
 	logger := NewLogger()
@@ -6345,7 +6355,7 @@ func TestInterfaceDiscoveryAutoconnectTCPServerLogsNoticeButDoesNotConnect(t *te
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryAutoconnectMissingNetworkIDLogsPythonKeyError(t *testing.T) {
+func TestInterfaceDiscoveryAutoconnectMissingNetworkIDLogsKeyError(t *testing.T) {
 	t.Parallel()
 
 	logger := NewLogger()
@@ -6399,7 +6409,7 @@ func TestInterfaceDiscoveryAutoconnectMissingNetworkIDLogsPythonKeyError(t *test
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryAutoconnectMissingTypeLogsPythonKeyError(t *testing.T) {
+func TestInterfaceDiscoveryAutoconnectMissingTypeLogsKeyError(t *testing.T) {
 	t.Parallel()
 
 	logger := NewLogger()
@@ -6446,7 +6456,7 @@ func TestInterfaceDiscoveryAutoconnectMissingTypeLogsPythonKeyError(t *testing.T
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryAutoconnectMissingNameLogsPythonKeyError(t *testing.T) {
+func TestInterfaceDiscoveryAutoconnectMissingNameLogsKeyError(t *testing.T) {
 	t.Parallel()
 
 	logger := NewLogger()
@@ -6500,7 +6510,7 @@ func TestInterfaceDiscoveryAutoconnectMissingNameLogsPythonKeyError(t *testing.T
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryAutoconnectListPortLogsPythonTypeError(t *testing.T) {
+func TestInterfaceDiscoveryAutoconnectListPortLogsTypeError(t *testing.T) {
 	t.Parallel()
 
 	logger := NewLogger()
@@ -6546,7 +6556,7 @@ func TestInterfaceDiscoveryAutoconnectListPortLogsPythonTypeError(t *testing.T) 
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryAutoconnectBytesReachableOnLogsPythonTypeError(t *testing.T) {
+func TestInterfaceDiscoveryAutoconnectBytesReachableOnLogsTypeError(t *testing.T) {
 	t.Parallel()
 
 	logger := NewLogger()
@@ -6592,7 +6602,7 @@ func TestInterfaceDiscoveryAutoconnectBytesReachableOnLogsPythonTypeError(t *tes
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryAutoconnectCompositeReachableOnUsesPythonDisplayHost(t *testing.T) {
+func TestInterfaceDiscoveryAutoconnectCompositeReachableOnUsesDisplayHost(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -6664,7 +6674,7 @@ func TestInterfaceDiscoveryAutoconnectCompositeReachableOnUsesPythonDisplayHost(
 	}
 }
 
-func TestInterfaceDiscoveryAutoconnectScalarReachableOnLogsPythonTypeError(t *testing.T) {
+func TestInterfaceDiscoveryAutoconnectScalarReachableOnLogsTypeError(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -7010,7 +7020,7 @@ func TestInterfaceDiscoveryInterfaceExistsMatchesI2PB32(t *testing.T) {
 	}
 }
 
-func TestInterfaceDiscoveryInterfaceExistsMatchesPythonBoolPortAutoconnectHash(t *testing.T) {
+func TestInterfaceDiscoveryInterfaceExistsMatchesSpecBoolPortAutoconnectHash(t *testing.T) {
 	t.Parallel()
 
 	logger := NewLogger()
@@ -7227,7 +7237,7 @@ func TestInterfaceDiscoveryInterfaceExistsNonIntegralFloatPortDoesNotMatchExisti
 	}
 }
 
-func TestInterfaceDiscoveryInterfaceExistsMatchesPythonAutoconnectHashForRawEndpointValues(t *testing.T) {
+func TestInterfaceDiscoveryInterfaceExistsMatchesSpecAutoconnectHashForRawEndpointValues(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -7301,7 +7311,7 @@ func TestInterfaceDiscoveryInterfaceExistsMatchesPythonAutoconnectHashForRawEndp
 	}
 }
 
-func TestInterfaceDiscoveryInterfaceExistsDirectPortComparisonMatchesPythonEquality(t *testing.T) {
+func TestInterfaceDiscoveryInterfaceExistsDirectPortComparisonMatchesSpecEquality(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -7417,7 +7427,7 @@ func TestInterfaceDiscoveryConnectDiscoveredPassesRawEndpointValuesToConstructor
 	}
 }
 
-func TestInterfaceDiscoveryConnectDiscoveredNilPortLogsPythonTypeError(t *testing.T) {
+func TestInterfaceDiscoveryConnectDiscoveredNilPortLogsTypeError(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-connect-nil-port-")
@@ -7475,7 +7485,7 @@ func TestInterfaceDiscoveryConnectDiscoveredNilPortLogsPythonTypeError(t *testin
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryStartCallbackBytesReachableOnLogsPythonTypeErrorAndSkipsAutoconnect(t *testing.T) {
+func TestInterfaceDiscoveryStartCallbackBytesReachableOnLogsTypeErrorAndSkipsAutoconnect(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-callback-bytes-reachable-on-")
@@ -9002,7 +9012,7 @@ func TestInterfaceDiscoveryStartCallbackPreservesFalsishRediscoveryValues(t *tes
 	}
 }
 
-func TestInterfaceDiscoveryStartLogsDiscoveredInterfaceLikePython(t *testing.T) {
+func TestInterfaceDiscoveryStartLogsDiscoveredInterfacePerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-log-python-")
@@ -9051,7 +9061,7 @@ func TestInterfaceDiscoveryStartLogsDiscoveredInterfaceLikePython(t *testing.T) 
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryStartLogsPluralHopsLikePython(t *testing.T) {
+func TestInterfaceDiscoveryStartLogsPluralHopsPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-log-python-plural-")
@@ -9100,7 +9110,7 @@ func TestInterfaceDiscoveryStartLogsPluralHopsLikePython(t *testing.T) {
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryStartLogsNonIntegerHopsLikePython(t *testing.T) {
+func TestInterfaceDiscoveryStartLogsNonIntegerHopsPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -9295,7 +9305,7 @@ func TestInterfaceDiscoveryStartCallbackStringDiscoveryHashFailsBeforePersist(t 
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryStartCallbackFloatDiscoveryHashLogsPythonError(t *testing.T) {
+func TestInterfaceDiscoveryStartCallbackFloatDiscoveryHashLogsError(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-start-float-hash-")
@@ -9359,7 +9369,7 @@ func TestInterfaceDiscoveryStartCallbackFloatDiscoveryHashLogsPythonError(t *tes
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryStartCallbackNilDiscoveryHashLogsPythonError(t *testing.T) {
+func TestInterfaceDiscoveryStartCallbackNilDiscoveryHashLogsError(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-start-nil-hash-")
@@ -9417,7 +9427,7 @@ func TestInterfaceDiscoveryStartCallbackNilDiscoveryHashLogsPythonError(t *testi
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryStartCallbackMissingHopsLogsPythonError(t *testing.T) {
+func TestInterfaceDiscoveryStartCallbackMissingHopsLogsError(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-start-missing-hops-")
@@ -9477,7 +9487,7 @@ func TestInterfaceDiscoveryStartCallbackMissingHopsLogsPythonError(t *testing.T)
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryStartCallbackNilInfoLogsPythonError(t *testing.T) {
+func TestInterfaceDiscoveryStartCallbackNilInfoLogsError(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-start-nil-info-")
@@ -9675,7 +9685,7 @@ func TestInterfaceDiscoveryStartCallbackIterableMapDiscoveryHashPersists(t *test
 	}
 }
 
-func TestInterfaceDiscoveryStartCallbackIterableDiscoveryHashLogsPythonFormatErrors(t *testing.T) {
+func TestInterfaceDiscoveryStartCallbackIterableDiscoveryHashLogsFormatErrors(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -9871,7 +9881,7 @@ func TestInterfaceDiscoveryStartRecoversDiscoveryCallbackPanic(t *testing.T) {
 	}
 }
 
-func TestInterfaceDiscoveryStartLogsPythonCallbackErrorMessage(t *testing.T) {
+func TestInterfaceDiscoveryStartLogsCallbackErrorMessage(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-live-callback-log-")
@@ -9930,7 +9940,7 @@ func TestInterfaceDiscoveryStartLogsPythonCallbackErrorMessage(t *testing.T) {
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsBytesNameLikePython(t *testing.T) {
+func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsBytesNamePerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-callback-bytes-name-")
@@ -9999,7 +10009,7 @@ func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsBytesNameLikePython(t 
 	}
 }
 
-func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsListNameLikePython(t *testing.T) {
+func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsListNamePerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-callback-list-name-")
@@ -10068,7 +10078,7 @@ func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsListNameLikePython(t *
 	}
 }
 
-func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsNilNameLikePython(t *testing.T) {
+func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsNilNamePerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-callback-nil-name-")
@@ -10137,7 +10147,7 @@ func TestInterfaceDiscoveryStartCallbackAutoconnectFormatsNilNameLikePython(t *t
 	}
 }
 
-func TestInterfaceDiscoveryStartCallbackBytesTypeSkipsAutoconnectLikePython(t *testing.T) {
+func TestInterfaceDiscoveryStartCallbackBytesTypeSkipsAutoconnectPerSpec(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-callback-bytes-type-")
@@ -10235,7 +10245,7 @@ func TestInterfaceDiscoveryStartCallbackBytesTypeSkipsAutoconnectLikePython(t *t
 	}
 }
 
-func TestInterfaceDiscoveryStartCallbackBytesNetworkIDUsesPythonBytesAutoconnectSource(t *testing.T) {
+func TestInterfaceDiscoveryStartCallbackBytesNetworkIDUsesBytesAutoconnectSource(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-callback-bytes-network-id-")
@@ -10311,7 +10321,7 @@ func TestInterfaceDiscoveryStartCallbackBytesNetworkIDUsesPythonBytesAutoconnect
 	}
 }
 
-func TestInterfaceDiscoveryStartCallbackBytesIFACUsesPythonBytesStrings(t *testing.T) {
+func TestInterfaceDiscoveryStartCallbackBytesIFACUsesBytesStrings(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-callback-bytes-ifac-")
@@ -10486,7 +10496,7 @@ func TestInterfaceDiscoveryStartCallbackMissingConfigEntrySkipsAutoconnectButSti
 	}
 }
 
-func TestInterfaceDiscoveryStartLogsPythonAutoconnectKeyErrorsAndStillCallsCallback(t *testing.T) {
+func TestInterfaceDiscoveryStartLogsAutoconnectKeyErrorsAndStillCallsCallback(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
@@ -10612,7 +10622,7 @@ func TestInterfaceDiscoveryStartLogsPythonAutoconnectKeyErrorsAndStillCallsCallb
 	}
 }
 
-func TestInterfaceDiscoveryStartLogsPythonPersistTypeErrorForListCache(t *testing.T) {
+func TestInterfaceDiscoveryStartLogsPersistTypeErrorForListCache(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-list-cache-")
@@ -10684,7 +10694,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistTypeErrorForListCache(t *testin
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryStartLogsPythonPersistTypeErrorForStringCache(t *testing.T) {
+func TestInterfaceDiscoveryStartLogsPersistTypeErrorForStringCache(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-string-cache-")
@@ -10756,7 +10766,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistTypeErrorForStringCache(t *test
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryStartLogsPythonPersistExtraDataForInvalidMsgpackCache(t *testing.T) {
+func TestInterfaceDiscoveryStartLogsPersistExtraDataForInvalidMsgpackCache(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-invalid-msgpack-cache-")
@@ -10828,7 +10838,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistExtraDataForInvalidMsgpackCache
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryStartLogsPythonPersistFormatErrorForInvalidTypeCodeCache(t *testing.T) {
+func TestInterfaceDiscoveryStartLogsPersistFormatErrorForInvalidTypeCodeCache(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-invalid-type-code-cache-")
@@ -10900,7 +10910,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistFormatErrorForInvalidTypeCodeCa
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryStartLogsPythonPersistValueErrorForIncompleteMsgpackCache(t *testing.T) {
+func TestInterfaceDiscoveryStartLogsPersistValueErrorForIncompleteMsgpackCache(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-incomplete-msgpack-cache-")
@@ -10972,7 +10982,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistValueErrorForIncompleteMsgpackC
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryStartLogsPythonPersistValueErrorForIntKeyCache(t *testing.T) {
+func TestInterfaceDiscoveryStartLogsPersistValueErrorForIntKeyCache(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-int-key-cache-")
@@ -11044,7 +11054,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistValueErrorForIntKeyCache(t *tes
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryStartLogsPythonPersistKeyErrorForBinaryKeyCache(t *testing.T) {
+func TestInterfaceDiscoveryStartLogsPersistKeyErrorForBinaryKeyCache(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-binary-key-cache-")
@@ -11119,7 +11129,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistKeyErrorForBinaryKeyCache(t *te
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryAutoconnectLogsPythonDuplicateDebugMessage(t *testing.T) {
+func TestInterfaceDiscoveryAutoconnectLogsDuplicateDebugMessage(t *testing.T) {
 	t.Parallel()
 
 	logger := NewLogger()
@@ -11256,7 +11266,7 @@ func TestInterfaceDiscoveryStartSkipsAutoconnectWhenPersistFails(t *testing.T) {
 	}
 }
 
-func TestInterfaceDiscoveryStartLogsPythonPersistFailureMessage(t *testing.T) {
+func TestInterfaceDiscoveryStartLogsPersistFailureMessage(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-log-")
@@ -11321,7 +11331,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistFailureMessage(t *testing.T) {
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryStartLogsPythonPersistKeyErrorForNilCachedDiscovered(t *testing.T) {
+func TestInterfaceDiscoveryStartLogsPersistKeyErrorForNilCachedDiscovered(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-keyerror-")
@@ -11406,7 +11416,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistKeyErrorForNilCachedDiscovered(
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryStartLogsPythonPersistTypeErrorForStringHeardCount(t *testing.T) {
+func TestInterfaceDiscoveryStartLogsPersistTypeErrorForStringHeardCount(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-typeerror-")
@@ -11490,7 +11500,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistTypeErrorForStringHeardCount(t 
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryStartLogsPythonPersistTypeErrorForBytesHeardCount(t *testing.T) {
+func TestInterfaceDiscoveryStartLogsPersistTypeErrorForBytesHeardCount(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := testutils.TempDir(t, "rns-discovery-live-persist-bytes-heard-count-")
@@ -11574,7 +11584,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistTypeErrorForBytesHeardCount(t *
 	t.Fatalf("expected log containing %q, got %v", want, logs)
 }
 
-func TestInterfaceDiscoveryStartLogsPythonPersistTypeErrorForCompositeHeardCount(t *testing.T) {
+func TestInterfaceDiscoveryStartLogsPersistTypeErrorForCompositeHeardCount(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -11689,7 +11699,7 @@ func TestInterfaceDiscoveryStartLogsPythonPersistTypeErrorForCompositeHeardCount
 	}
 }
 
-func TestInterfaceDiscoveryStartLogsPythonPersistKeyErrorForMissingReceived(t *testing.T) {
+func TestInterfaceDiscoveryStartLogsPersistKeyErrorForMissingReceived(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {

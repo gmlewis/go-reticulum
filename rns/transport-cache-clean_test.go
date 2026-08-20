@@ -13,7 +13,7 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestCleanCacheNonBlockingLockPostponesOverlap covers Phase 12 task 5:
+// TestCleanCacheNonBlockingLockPostponesOverlap verifies that
 // cleanCache acquires its guard with a non-blocking lock, so a second
 // invocation while a sweep is already in flight postpones (returns
 // immediately) instead of running concurrently (Python Transport.py:2600-2615
@@ -64,7 +64,7 @@ func TestCleanCacheNonBlockingLockPostponesOverlap(t *testing.T) {
 	}
 }
 
-// TestCleanCacheActuallyRemovesExpiredEntries covers Phase 12 task 5: the
+// TestCleanCacheActuallyRemovesExpiredEntries verifies that the
 // background sweep deletes entries older than the 30-minute cache timeout
 // while preserving fresh ones, and the per-entry yield does not skip any.
 func TestCleanCacheActuallyRemovesExpiredEntries(t *testing.T) {
@@ -96,7 +96,7 @@ func TestCleanCacheActuallyRemovesExpiredEntries(t *testing.T) {
 	}
 }
 
-// TestCleanCacheSkipsConnectedToSharedInstance covers Phase 12 task 5: a
+// TestCleanCacheSkipsConnectedToSharedInstance verifies that a
 // client of a shared instance never cleans the announce cache (Python
 // Transport.py:2599).
 func TestCleanCacheSkipsConnectedToSharedInstance(t *testing.T) {

@@ -1102,6 +1102,19 @@ func TestPeerSyncLinkReadyEarlyReturnsWhenNoUnhandledRemain(t *testing.T) {
 	}
 }
 
+// pythonPackHex packs a Python expression with RNS's vendored umsgpack and
+// returns the hex of the resulting bytes, captured live from the installed
+// RNS. The expression must be a Python literal (use a Go raw string literal
+// so \xNN escapes reach Python unescaped). Cross-impl tests use this instead
+// of a committed golden hex to prove Go/Python wire parity of offer/transfer
+// structures.
+func pythonPackHex(t *testing.T, expr string) string {
+	t.Helper()
+	testutils.SkipIfNoPythonRNS(t)
+	script := "from RNS.vendor import umsgpack as mp\nprint(mp.packb(" + expr + ").hex())\n"
+	return strings.TrimSpace(testutils.RunPython(t, script))
+}
+
 // TestPeerSyncLinkReadySendsOfferRequest covers 24.B.5 (the keystone): the
 // Peer.Sync LINK_READY branch builds the offer msgpack [peering_key[0],
 // unhandled_ids], records it in lastOffer, sends it over the link via
@@ -1171,9 +1184,10 @@ func TestPeerSyncLinkReadySendsOfferRequest(t *testing.T) {
 		t.Error("offer request failed callback was nil, want p.RequestFailed")
 	}
 
-	// The captured offer data must pack to the golden bytes from Python
-	// umsgpack: [peering_key[0], [tid-A, tid-B, tid-C]].
-	wantHex := "92c410000102030405060708090a0b0c0d0e0f93c4057469642d41c4057469642d42c4057469642d43"
+	// The captured offer data must pack to the bytes Python's umsgpack
+	// produces for the same structure [peering_key[0], [tid-A, tid-B, tid-C]],
+	// captured live from the installed RNS.
+	wantHex := pythonPackHex(t, `[b'\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f', [b'tid-A', b'tid-B', b'tid-C']]`)
 	packed, err := msgpack.Pack(gotData)
 	if err != nil {
 		t.Fatalf("msgpack.Pack(offer) failed: %v", err)
@@ -1440,8 +1454,8 @@ func TestPeerOfferResponseWantsEverything(t *testing.T) {
 
 	peer.OfferResponse(receipt)
 
-	// Golden from Python umsgpack: [2000000.0, [b"\xaa\xbb\xcc\xdd", b"\xee\xff\x00\x11"]].
-	wantHex := "92cb413e84800000000092c404aabbccddc404eeff0011"
+	// Captured live from Python umsgpack for [2000000.0, [payload1, payload2]].
+	wantHex := pythonPackHex(t, `[2000000.0, [b'\xaa\xbb\xcc\xdd', b'\xee\xff\x00\x11']]`)
 	if gotHex := hex.EncodeToString(capturedData); gotHex != wantHex {
 		t.Errorf("resource data = %s, want %s", gotHex, wantHex)
 	}
@@ -1519,8 +1533,8 @@ func TestPeerOfferResponseWantedList(t *testing.T) {
 		t.Error("tid2 (wanted) lost unhandledBy, want it retained for the transfer")
 	}
 
-	// Golden from Python umsgpack: [2000000.0, [b"\xee\xff\x00\x11"]].
-	wantHex := "92cb413e84800000000091c404eeff0011"
+	// Captured live from Python umsgpack for [2000000.0, [payload2]].
+	wantHex := pythonPackHex(t, `[2000000.0, [b'\xee\xff\x00\x11']]`)
 	if gotHex := hex.EncodeToString(capturedData); gotHex != wantHex {
 		t.Errorf("resource data = %s, want %s", gotHex, wantHex)
 	}

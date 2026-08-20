@@ -31,7 +31,7 @@ func newFastFlapBackbone(block bool, threshold float64, grace int, expiry float6
 	return b
 }
 
-// TestFastFlapRecordAndBlock covers Phase 18 task 1: a BackboneClientInterface
+// TestFastFlapRecordAndBlock verifies that a BackboneClientInterface
 // that disconnects before fast_flap_threshold records a flap for its remote IP,
 // and after more than fast_flap_grace flaps the IP is blocked on the next
 // incoming_connection (BackboneInterface.py:420-435,820-843, v1.3.9).
@@ -60,7 +60,7 @@ func TestFastFlapRecordAndBlock(t *testing.T) {
 	}
 }
 
-// TestFastFlapIgnoresLongConnections covers Phase 18 task 1: a disconnect after
+// TestFastFlapIgnoresLongConnections verifies that a disconnect after
 // the threshold does NOT record a flap (BackboneInterface.py:828-829).
 func TestFastFlapIgnoresLongConnections(t *testing.T) {
 	t.Parallel()
@@ -78,7 +78,7 @@ func TestFastFlapIgnoresLongConnections(t *testing.T) {
 	}
 }
 
-// TestFastFlapDisabledNoBlocking covers Phase 18 task 1: when block_fast_flapping
+// TestFastFlapDisabledNoBlocking verifies that when block_fast_flapping
 // is false, no flaps are recorded and no IP is ever blocked
 // (BackboneInterface.py:126,424,527).
 func TestFastFlapDisabledNoBlocking(t *testing.T) {
@@ -99,7 +99,7 @@ func TestFastFlapDisabledNoBlocking(t *testing.T) {
 	}
 }
 
-// TestFastFlapExpiryPurgesStaleEntry covers Phase 18 task 1: an IP whose last
+// TestFastFlapExpiryPurgesStaleEntry verifies that an IP whose last
 // flap is older than fast_flap_expiry is purged and no longer counted as
 // blocked (BackboneInterface.py:539-546).
 func TestFastFlapExpiryPurgesStaleEntry(t *testing.T) {
@@ -128,7 +128,7 @@ func TestFastFlapExpiryPurgesStaleEntry(t *testing.T) {
 	}
 }
 
-// TestFastFlapIncomingGateRejectsBlockedIP covers Phase 18 task 1: the
+// TestFastFlapIncomingGateRejectsBlockedIP verifies that the
 // TCPServerInterface incoming gate (set by BackboneInterface) rejects a
 // connection from a blocked IP by returning false, mirroring Python's
 // incoming_connection returning False (BackboneInterface.py:420-435,397).
@@ -155,7 +155,7 @@ func TestFastFlapIncomingGateRejectsBlockedIP(t *testing.T) {
 	}
 }
 
-// TestBackboneFastFlapIntegration covers Phase 18 task 1: driving rapid
+// TestBackboneFastFlapIntegration verifies that driving rapid
 // connect/disconnect from one loopback IP exceeds the flap grace and the
 // BackboneInterface subsequently rejects further incoming connections from
 // that IP, and the blocklist contains exactly that IP (the golden value

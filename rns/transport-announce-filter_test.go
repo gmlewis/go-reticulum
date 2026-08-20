@@ -101,10 +101,10 @@ func TestShouldTransmitAnnounceParity(t *testing.T) {
 		{"B3 AP block even local", interfaces.ModeAccessPoint, interfaces.ModeFull, true, true, nil, 1, announceBlock},
 
 		// B4: outbound internal (guarded by !local).
-		// B4c: boundary next-hop onto internal outbound → block (Task 1).
+		// B4c: boundary next-hop onto internal outbound → block.
 		{"B4c boundary->internal block", interfaces.ModeInternal, interfaces.ModeBoundary, false, true, nil, 1, announceBlock},
 		{"B4c boundary->internal ati=false", interfaces.ModeInternal, interfaces.ModeBoundary, false, true, boolPtr(false), 1, announceBlock},
-		// B4b: announces_to_internal=true overrides the boundary block (Task 3).
+		// B4b: announces_to_internal=true overrides the boundary block.
 		{"B4b ati-allow boundary->internal", interfaces.ModeInternal, interfaces.ModeBoundary, false, true, boolPtr(true), 1, announceDirect},
 		// B4d: other next-hop modes onto internal outbound → direct (no cap).
 		{"B4d internal<-full direct", interfaces.ModeInternal, interfaces.ModeFull, false, true, nil, 1, announceDirect},
@@ -197,7 +197,7 @@ func atiStr(a *bool) string {
 // processAnnounceTable honors the filter end-to-end. An announce received on a
 // boundary next-hop interface must be rebroadcast on a Full outbound interface
 // (else branch, announce-cap emits immediately on the first tick) and BLOCKED
-// on an internal outbound interface (Task 1: boundary→internal block, B4c).
+// on an internal outbound interface (boundary→internal block, B4c).
 func TestProcessAnnounceTableModeFilter(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
@@ -234,7 +234,7 @@ func TestProcessAnnounceTableModeFilter(t *testing.T) {
 	}
 }
 
-// TestProcessAnnounceTableAnnouncesFromInternalBlock asserts the Task 2 slice
+// TestProcessAnnounceTableAnnouncesFromInternalBlock asserts the slice
 // end-to-end: an announce received on an internal next-hop interface is
 // blocked from rebroadcast on an outbound interface with
 // announces_from_internal=false, but allowed on one with it true.
@@ -276,7 +276,7 @@ func TestProcessAnnounceTableAnnouncesFromInternalBlock(t *testing.T) {
 	}
 }
 
-// TestProcessAnnounceTableAnnouncesToInternalAllow asserts the Task 3 slice
+// TestProcessAnnounceTableAnnouncesToInternalAllow asserts the slice
 // end-to-end: an announce from a boundary next-hop onto an internal outbound is
 // blocked by default (B4c) but allowed when the internal outbound has
 // announces_to_internal=true (B4b).

@@ -34,7 +34,7 @@ func weaveSpawnTestConfig() WeavePeerSpawnConfig {
 	}
 }
 
-// TestWeavePeerSpawnCopiesFields covers Phase 20 task 4: SpawnWeavePeer copies
+// TestWeavePeerSpawnCopiesFields verifies that SpawnWeavePeer copies
 // the full Weave add_peer field set — gravity, mode, bitrate, HW_MTU, OUT/IN,
 // IFAC config, ingress_control, all eight ic_* tuning fields, and the
 // announce-rate config — onto the spawned peer (WeaveInterface.py:924-963).
@@ -109,7 +109,7 @@ func TestWeavePeerSpawnCopiesFields(t *testing.T) {
 	}
 }
 
-// TestWeavePeerSpawnIFACCopied covers Phase 20 task 4: the IFAC config
+// TestWeavePeerSpawnIFACCopied verifies that the IFAC config
 // (ifac_size/ifac_netname/ifac_netkey) is copied onto the spawned peer and the
 // key material is re-derived by SetIFACConfig, matching Python's add_peer IFAC
 // block (WeaveInterface.py:940-958). Two peers spawned with the same IFAC
@@ -136,7 +136,7 @@ func TestWeavePeerSpawnIFACCopied(t *testing.T) {
 	}
 }
 
-// TestWeavePeerSpawnOmitsEgressAndPR covers Phase 20 task 4: the Weave add_peer
+// TestWeavePeerSpawnOmitsEgressAndPR verifies that the Weave add_peer
 // spawn deliberately does NOT propagate egress_control, ec_pr_freq, or the
 // ic_pr_* PR-burst fields (WeaveInterface.py:924-963 omits them, unlike
 // copyIngressEgressFrom used by Auto/TCP/Backbone/I2P). The spawned peer keeps
@@ -161,7 +161,7 @@ func TestWeavePeerSpawnOmitsEgressAndPR(t *testing.T) {
 	}
 }
 
-// TestWeavePeerTypeStatusDetach covers Phase 20 task 4: the spawned peer
+// TestWeavePeerTypeStatusDetach verifies that the spawned peer
 // reports Type "WeaveInterfacePeer", is online right after spawn (Status true
 // with a nil owner), IsOut reflects the copied OUT flag, and Detach takes it
 // offline + detached (WeaveInterface.py:1009,1027-1029,1062-1065).

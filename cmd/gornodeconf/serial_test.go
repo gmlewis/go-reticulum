@@ -82,19 +82,10 @@ func TestRnodeOpenSerialUsesPythonSettings(t *testing.T) {
 		t.Fatalf("rnodeOpenSerial returned nil serial port")
 	}
 
-	want := serialSettings{
-		Port:     port,
-		BaudRate: rnodeBaudRate,
-		ByteSize: 8,
-		Parity:   "N",
-		StopBits: 1,
-		XonXoff:  false,
-		RTSCTS:   false,
-		Timeout:  0,
-		DSRDTR:   false,
-	}
+	want := pythonRnodeSerialSettings(t)
+	want.Port = port
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("serial settings mismatch:\n got: %#v\nwant: %#v", got, want)
+		t.Fatalf("serial settings mismatch vs live Python:\n got: %#v\nwant: %#v", got, want)
 	}
 	if got.InterByteTimeout != nil {
 		t.Fatalf("inter-byte timeout should be nil, got %v", got.InterByteTimeout)

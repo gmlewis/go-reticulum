@@ -15,8 +15,8 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestRouterConfigSequentialValidationDefaults covers Phase 17 task 1:
-// NewRouterFromConfig with an unspecified sequential-validation config keeps
+// TestRouterConfigSequentialValidationDefaults verifies that NewRouterFromConfig
+// with an unspecified sequential-validation config keeps
 // the Python defaults — sequential validation enabled, static peers exempt,
 // and a max-inbound-syncs cap of 3 (LXMRouter.py:56-58,143-145, v1.1.0).
 func TestRouterConfigSequentialValidationDefaults(t *testing.T) {
@@ -38,8 +38,8 @@ func TestRouterConfigSequentialValidationDefaults(t *testing.T) {
 	}
 }
 
-// TestRouterConfigSequentialValidationOverrides covers Phase 17 task 1:
-// explicit sequential-validation config values propagate onto the router,
+// TestRouterConfigSequentialValidationOverrides verifies that explicit
+// sequential-validation config values propagate onto the router,
 // including MaxInboundSyncs=0 which disables the inbound-sync cap
 // (LXMRouter.py:2281, v1.1.0).
 func TestRouterConfigSequentialValidationOverrides(t *testing.T) {
@@ -75,8 +75,8 @@ func TestRouterConfigSequentialValidationOverrides(t *testing.T) {
 	}
 }
 
-// TestPropagationResourcesTransferringCountsAboveAccepted covers Phase 17
-// task 1: PropagationResourcesTransferring counts only accepted-offer links
+// TestPropagationResourcesTransferringCountsAboveAccepted verifies that
+// PropagationResourcesTransferring counts only accepted-offer links
 // whose state is strictly greater than OFFER_ACCEPTED (i.e. TRANSFERRING and
 // VALIDATING), mirroring Python's propagation_resources_transferring property
 // (LXMRouter.py:2197-2204, v1.1.0).
@@ -98,9 +98,9 @@ func TestPropagationResourcesTransferringCountsAboveAccepted(t *testing.T) {
 	}
 }
 
-// TestPropagationResourceAdvertisedTransitionsAcceptedToTransferring covers
-// Phase 17 task 1: when an offer has already been recorded as OFFER_ACCEPTED
-// (by a partial-accept offer request), propagationResourceAdvertised advances
+// TestPropagationResourceAdvertisedTransitionsAcceptedToTransferring verifies
+// that when an offer has already been recorded as OFFER_ACCEPTED (by a
+// partial-accept offer request), propagationResourceAdvertised advances
 // it to OFFER_TRANSFERRING; a link with no recorded offer stays untracked
 // (LXMRouter.py:2226-2232, v1.1.0).
 func TestPropagationResourceAdvertisedTransitionsAcceptedToTransferring(t *testing.T) {
@@ -154,8 +154,8 @@ func TestPropagationResourceAdvertisedTransitionsAcceptedToTransferring(t *testi
 	}
 }
 
-// TestPropagationResourceConcludedRecordsValidatingAndCleansUp covers Phase 17
-// task 1: during propagationResourceConcluded the offer state advances to
+// TestPropagationResourceConcludedRecordsValidatingAndCleansUp verifies that
+// during propagationResourceConcluded the offer state advances to
 // OFFER_VALIDATING and the remote hash is recorded in validatingPnStampsFrom
 // for the duration of stamp validation, then both the validation-batch entry
 // and the accepted-offer link are cleaned up regardless of validation

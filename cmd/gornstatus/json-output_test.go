@@ -104,7 +104,7 @@ func TestBytesToHex(t *testing.T) {
 	}
 }
 
-// TestRenderJSONPrBurstAnnounceFields covers Phase 22 task 2: the JSON output
+// TestRenderJSONPrBurstAnnounceFields verifies that the JSON output
 // (`rnstatus -j`) includes the path-request, burst, announce-rate, and
 // announces-to-internal fields that Python's ifstats dict always emits
 // (RNS/Reticulum.py:1478-1489). The Go InterfaceStat already carries these
@@ -169,7 +169,7 @@ func TestRenderJSONPrBurstAnnounceFields(t *testing.T) {
 		"announces_to_internal",
 	} {
 		if _, ok := iface[key]; !ok {
-			t.Errorf("interface JSON missing key %q (Phase 22 task 2 parity field)", key)
+			t.Errorf("interface JSON missing key %q (parity field)", key)
 		}
 	}
 

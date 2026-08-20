@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// TestResourceCancelCascadesToNextSegment asserts Phase 9 Task 1: cancelling a
+// TestResourceCancelCascadesToNextSegment asserts that cancelling a
 // multi-segment outgoing resource recursively cancels its pending next segment
 // before tearing down the current segment (Python Resource.cancel,
 // Resource.py:1087-1088: `if self.next_segment: self.next_segment.cancel()`).

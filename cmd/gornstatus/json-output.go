@@ -56,7 +56,7 @@ type jsonInterfaceStat struct {
 	HeldAnnounces      *int     `json:"held_announces,omitempty"`
 	InAnnounceFreq     *float64 `json:"incoming_announce_frequency,omitempty"`
 	OutAnnounceFreq    *float64 `json:"outgoing_announce_frequency,omitempty"`
-	// Phase 5 / Phase 22 task 2 parity fields. Python's ifstats dict always
+	// Parity fields. Python's ifstats dict always
 	// emits these (RNS/Reticulum.py:1478-1489); the value fields (pr frequency,
 	// burst flags/activation) are emitted unconditionally so the `rnstatus -j`
 	// key set matches Python, while the pointer-nullable announce-rate and

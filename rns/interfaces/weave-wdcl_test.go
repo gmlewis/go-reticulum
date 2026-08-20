@@ -12,8 +12,7 @@ import (
 // buildWeaveLogFD builds a WDCL_T_LOG payload (the fd slice Python's
 // incoming_frame indexes) for a deterministic event: fd[0]=skip, fd[1..4]=
 // timestamp ms (big-endian), fd[5]=level, fd[6..7]=event (big-endian),
-// fd[8:]=data. This mirrors the Python frame layout captured as golden in
-// Phase 20 task 1.
+// fd[8:]=data. This mirrors the Python frame layout captured as golden.
 func buildWeaveLogFD(tsMS uint32, level byte, event uint16, data []byte) []byte {
 	fd := make([]byte, 0, 8+len(data))
 	fd = append(fd, 0x00) // skip byte (fd[0])
@@ -24,7 +23,7 @@ func buildWeaveLogFD(tsMS uint32, level byte, event uint16, data []byte) []byte 
 	return fd
 }
 
-// TestWeaveEventTableGolden covers Phase 20 task 1: the WDCL event-type
+// TestWeaveEventTableGolden verifies that the WDCL event-type
 // constants and the descriptions table match the Python Evt table exactly,
 // including ET_BOARD_INIT = 0x0003 and its description "Board hardware
 // initialization" (WeaveInterface.py:338-451). Each entry is the golden value
@@ -69,7 +68,7 @@ func TestWeaveEventTableGolden(t *testing.T) {
 	}
 }
 
-// TestWeaveLogEventDecodeGolden covers Phase 20 task 1: DecodeWeaveLogEvent
+// TestWeaveLogEventDecodeGolden verifies that DecodeWeaveLogEvent
 // parses a WDCL_T_LOG payload into the exact (timestamp, level, event, data)
 // Python extracts (WeaveInterface.py:725-728). The golden fields were captured
 // from RNS 1.4.2 with ts=1000ms, level=INFO, event=ET_BOARD_INIT, data=[0x01].
@@ -94,7 +93,7 @@ func TestWeaveLogEventDecodeGolden(t *testing.T) {
 	}
 }
 
-// TestWeaveRenderBoardInitGolden covers Phase 20 task 1: a captured 0x0003
+// TestWeaveRenderBoardInitGolden verifies that a captured 0x0003
 // (ET_BOARD_INIT) frame renders to the exact string Python's log_handle
 // produces (WeaveInterface.py:759-804). The golden strings are the RNS 1.4.2
 // output captured via a throwaway Python script, with the per-interface
@@ -132,7 +131,7 @@ func TestWeaveRenderBoardInitGolden(t *testing.T) {
 	}
 }
 
-// TestWeaveRenderUnknownAndMsgGolden covers Phase 20 task 1: an event code not
+// TestWeaveRenderUnknownAndMsgGolden verifies that an event code not
 // in the descriptions table renders as "0x{hexrep}" with the data hex-string,
 // and ET_MSG renders as a bare message with no description bracket. Golden
 // values captured from RNS 1.4.2.
@@ -161,7 +160,7 @@ func TestWeaveRenderUnknownAndMsgGolden(t *testing.T) {
 	}
 }
 
-// TestWeavePrettytimeGolden covers Phase 20 task 1: weavePrettytime matches
+// TestWeavePrettytimeGolden verifies that weavePrettytime matches
 // RNS.prettytime (non-verbose) for the values the decoder exercises. Golden
 // strings captured from RNS 1.4.2.
 func TestWeavePrettytimeGolden(t *testing.T) {
@@ -190,7 +189,7 @@ func TestWeavePrettytimeGolden(t *testing.T) {
 	}
 }
 
-// TestWeaveHexrepGolden covers Phase 20 task 1: weaveHexrep matches RNS.hexrep
+// TestWeaveHexrepGolden verifies that weaveHexrep matches RNS.hexrep
 // (lowercase, colon-separated when delimiting). Golden values captured from
 // RNS 1.4.2.
 func TestWeaveHexrepGolden(t *testing.T) {
@@ -210,7 +209,7 @@ func TestWeaveHexrepGolden(t *testing.T) {
 	}
 }
 
-// TestWeaveStatMemoryDecodeGolden covers Phase 20 task 2: DecodeWeaveStatMemory
+// TestWeaveStatMemoryDecodeGolden verifies that DecodeWeaveStatMemory
 // parses an 8-byte ET_STAT_MEMORY frame into free/total/used/used_pct exactly
 // as Python's log_handle ET_STAT_MEMORY branch
 // (WeaveInterface.py:759-764: int.from_bytes(data[:4],"big"),
@@ -256,7 +255,7 @@ func TestWeaveStatMemoryDecodeGolden(t *testing.T) {
 	}
 }
 
-// TestWeaveStatDispatchGolden covers Phase 20 task 3: HandleWeaveStatEvent
+// TestWeaveStatDispatchGolden verifies that HandleWeaveStatEvent
 // applies the ET_STAT_CPU / ET_STAT_TASK_CPU / ET_STAT_MEMORY side-effects to a
 // WeaveDeviceStat exactly as Python's log_handle stat branch does
 // (WeaveInterface.py:755-764). Golden (cpu_load, active_tasks, memory counters,
@@ -342,7 +341,7 @@ func TestWeaveStatDispatchGolden(t *testing.T) {
 	}
 }
 
-// TestWeaveStatCapGolden covers Phase 20 task 3: the cpu/memory sample
+// TestWeaveStatCapGolden verifies that the cpu/memory sample
 // histories are capped at WeaveStatLenMax=120, reproducing
 // collections.deque(maxlen=120) (WeaveInterface.py:590-591, 636-642). Feeding
 // 126 cpu frames leaves 120 samples with the 6 oldest dropped: the golden's
@@ -376,7 +375,7 @@ func TestWeaveStatCapGolden(t *testing.T) {
 	}
 }
 
-// TestWeaveGetActiveTasksGolden covers Phase 20 task 3: GetActiveTasks filters
+// TestWeaveGetActiveTasksGolden verifies that GetActiveTasks filters
 // and remaps the raw active_tasks table the way WeaveDevice.get_active_tasks
 // does (WeaveInterface.py:664-675). "IDLE"-prefixed ids are dropped; remaining
 // ids are remapped through weaveTaskDescriptions ("core" -> "System: Core");
@@ -421,7 +420,7 @@ func TestWeaveGetActiveTasksGolden(t *testing.T) {
 	}
 }
 
-// TestWeaveStatUpdateCallbackGolden covers Phase 20 task 3: the OnStatsUpdate
+// TestWeaveStatUpdateCallbackGolden verifies that the OnStatsUpdate
 // receiver notification fires under the Python guard condition
 // `len(memory_stats) > 1` (WeaveInterface.py:638, 642) — for BOTH cpu and
 // memory captures. So the first memory capture does NOT fire (history len 1),
@@ -461,7 +460,7 @@ func TestWeaveStatUpdateCallbackGolden(t *testing.T) {
 	}
 }
 
-// TestWeaveStatMemoryShortFrame covers Phase 20 task 2: a frame shorter than
+// TestWeaveStatMemoryShortFrame verifies that a frame shorter than
 // the 8-byte memory stat is rejected rather than panicking on a slice bounds.
 func TestWeaveStatMemoryShortFrame(t *testing.T) {
 	t.Parallel()

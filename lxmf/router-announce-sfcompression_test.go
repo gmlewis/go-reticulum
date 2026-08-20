@@ -13,7 +13,7 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestGetAnnounceAppDataIncludesSFCompression covers Phase 14 task 2: the
+// TestGetAnnounceAppDataIncludesSFCompression verifies that the
 // delivery-announce app-data payload appends [SF_COMPRESSION] as the third
 // peer_data element, matching Python LXMRouter.get_announce_app_data
 // (LXMF/LXMRouter.py, v1.1.0) which packs

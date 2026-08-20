@@ -16,7 +16,7 @@ import (
 )
 
 // discoveryBlackholeHash is a 16-byte identity hash used as a blackholed
-// transport_id / network_id in the Task 12 load-removal tests.
+// transport_id / network_id in the load-removal tests.
 var discoveryBlackholeHash = []byte{
 	0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef,
 	0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef,
@@ -36,9 +36,9 @@ const discoveryValidTransportIDHex = "0102030405060708090a0b0c0d0e0f10"
 const discoveryValidNetworkIDHex = "0a0b0c0d0e0f10111213141516171819"
 
 // newDiscoveryLoadRemovalTestReticulum builds a Reticulum whose transport
-// registry has discoveryBlackholeHash blackholed, for Task 12 load-removal
-// tests. The discovery sources set is empty so the network_id membership
-// check (RNS/Discovery.py:487) is skipped.
+// registry has discoveryBlackholeHash blackholed, for load-removal tests. The
+// discovery sources set is empty so the network_id membership check
+// (RNS/Discovery.py:487) is skipped.
 func newDiscoveryLoadRemovalTestReticulum(t *testing.T) (*Reticulum, *TransportSystem, string) {
 	t.Helper()
 	tmpDir := testutils.TempDir(t, "rns-discovery-blackhole-")
@@ -71,8 +71,8 @@ func writeDiscoveryLoadFile(t *testing.T, storagePath, name string, fields map[s
 	}
 }
 
-// TestDiscoveryLoadRemovesBlackholedTransportID covers Phase 11 task 12: an
-// entry whose transport_id is a blackholed identity hash is removed on load
+// TestDiscoveryLoadRemovesBlackholedTransportID verifies that an entry whose
+// transport_id is a blackholed identity hash is removed on load
 // (RNS/Discovery.py:490).
 func TestDiscoveryLoadRemovesBlackholedTransportID(t *testing.T) {
 	t.Parallel()
@@ -94,8 +94,8 @@ func TestDiscoveryLoadRemovesBlackholedTransportID(t *testing.T) {
 	}
 }
 
-// TestDiscoveryLoadRemovesBlackholedNetworkID covers Phase 11 task 12: an
-// entry whose network_id is a blackholed identity hash is removed on load
+// TestDiscoveryLoadRemovesBlackholedNetworkID verifies that an entry whose
+// network_id is a blackholed identity hash is removed on load
 // (RNS/Discovery.py:489).
 func TestDiscoveryLoadRemovesBlackholedNetworkID(t *testing.T) {
 	t.Parallel()
@@ -117,9 +117,8 @@ func TestDiscoveryLoadRemovesBlackholedNetworkID(t *testing.T) {
 	}
 }
 
-// TestDiscoveryLoadRemovesMissingTransportID covers Phase 11 task 12: an
-// entry missing transport_id entirely is removed on load
-// (RNS/Discovery.py:484).
+// TestDiscoveryLoadRemovesMissingTransportID verifies that an entry missing
+// transport_id entirely is removed on load (RNS/Discovery.py:484).
 func TestDiscoveryLoadRemovesMissingTransportID(t *testing.T) {
 	t.Parallel()
 	r, _, storagePath := newDiscoveryLoadRemovalTestReticulum(t)
@@ -139,8 +138,8 @@ func TestDiscoveryLoadRemovesMissingTransportID(t *testing.T) {
 	}
 }
 
-// TestDiscoveryLoadRemovesMissingNetworkID covers Phase 11 task 12: an entry
-// missing network_id entirely is removed on load (RNS/Discovery.py:485).
+// TestDiscoveryLoadRemovesMissingNetworkID verifies that an entry missing
+// network_id entirely is removed on load (RNS/Discovery.py:485).
 func TestDiscoveryLoadRemovesMissingNetworkID(t *testing.T) {
 	t.Parallel()
 	r, _, storagePath := newDiscoveryLoadRemovalTestReticulum(t)
@@ -160,9 +159,9 @@ func TestDiscoveryLoadRemovesMissingNetworkID(t *testing.T) {
 	}
 }
 
-// TestDiscoveryLoadKeepsValidNonBlackholedEntry covers Phase 11 task 12: an
-// entry with present, non-blackholed transport_id and network_id survives
-// the load removal chain and is returned.
+// TestDiscoveryLoadKeepsValidNonBlackholedEntry verifies that an entry with
+// present, non-blackholed transport_id and network_id survives the load
+// removal chain and is returned.
 func TestDiscoveryLoadKeepsValidNonBlackholedEntry(t *testing.T) {
 	t.Parallel()
 	r, _, storagePath := newDiscoveryLoadRemovalTestReticulum(t)

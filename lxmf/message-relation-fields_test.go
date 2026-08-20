@@ -17,8 +17,8 @@ import (
 // golden payloads below (msgpack bin8 of length 0x20).
 var reactionHash = bytes.Repeat([]byte{0x11}, 32)
 
-// TestRelationFieldConstants covers Phase 14 task 4: the reply/reaction/
-// comment/continuation field constants and their sub-key constants match
+// TestRelationFieldConstants verifies that the reply/reaction/comment/
+// continuation field constants and their sub-key constants match
 // Python LXMF (lxmf/LXMF.py:23-27, 109-126, v1.0.0).
 func TestRelationFieldConstants(t *testing.T) {
 	t.Parallel()
@@ -44,8 +44,8 @@ func TestRelationFieldConstants(t *testing.T) {
 	}
 }
 
-// TestRelationFieldsPackGolden covers Phase 14 task 4: each new relation field,
-// packed as a lone-entry fields map with msgpack.PackSorted, matches the golden
+// TestRelationFieldsPackGolden verifies that each new relation field, packed
+// as a lone-entry fields map with msgpack.PackSorted, matches the golden
 // bytes captured from CPython+umsgpack (lxmf/LXMF.py:23-27, v1.0.0). PackSorted
 // orders keys by their canonical msgpack encoding, which for these small
 // fixint keys is ascending numeric order — the same order umsgpack emits when
@@ -96,8 +96,8 @@ func TestRelationFieldsPackGolden(t *testing.T) {
 	}
 }
 
-// TestRelationFieldsCombinedPackGolden covers Phase 14 task 4: a fields map
-// carrying all five relation fields packs (with PackSorted) to the golden
+// TestRelationFieldsCombinedPackGolden verifies that a fields map carrying
+// all five relation fields packs (with PackSorted) to the golden
 // combined bytes captured from CPython+umsgpack.
 func TestRelationFieldsCombinedPackGolden(t *testing.T) {
 	t.Parallel()
@@ -118,8 +118,8 @@ func TestRelationFieldsCombinedPackGolden(t *testing.T) {
 	}
 }
 
-// TestRelationFieldsRoundTrip covers Phase 14 task 4: a message carrying all
-// five relation fields packs and unpacks with the fields intact, including the
+// TestRelationFieldsRoundTrip verifies that a message carrying all five
+// relation fields packs and unpacks with the fields intact, including the
 // nested reaction/comment/continuation dicts. Non-supporting clients receive
 // the normal LXM content unchanged (the comment/continuation text lives in the
 // content), so the round-trip preserves both content and fields.
@@ -196,7 +196,7 @@ func TestRelationFieldsRoundTrip(t *testing.T) {
 	}
 }
 
-// TestRelationFieldsContentFallback covers Phase 14 task 4: the comment and
+// TestRelationFieldsContentFallback verifies that the comment and
 // continuation text is carried as the normal LXM content, so a client that
 // ignores the relation fields still receives the full text. Packing a comment
 // message and unpacking it yields the content verbatim even when only the

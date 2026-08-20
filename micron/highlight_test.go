@@ -18,13 +18,14 @@ func TestHighlightPlainFallback(t *testing.T) {
 	h := NewHighlighter()
 	for _, tc := range goldenPlain {
 		t.Run(tc.name, func(t *testing.T) {
+			want := pythonHighlightPlain(t, tc.content, "", "")
 			got, err := h.Highlight(tc.content, "", "")
 			if err != nil {
 				t.Fatalf("Highlight error: %v", err)
 			}
-			if got != tc.want {
-				t.Fatalf("Highlight plain fallback mismatch:\ncontent: %q\nwant:   %q\ngot:    %q",
-					tc.content, tc.want, got)
+			if got != want {
+				t.Fatalf("Highlight plain fallback mismatch with live Python (Pygments off):\ncontent: %q\nwant:   %q\ngot:    %q",
+					tc.content, want, got)
 			}
 		})
 	}
@@ -35,10 +36,11 @@ func TestHighlightPlainFallback(t *testing.T) {
 func TestHighlightCodePlainFallback(t *testing.T) {
 	for _, tc := range goldenPlain {
 		t.Run(tc.name, func(t *testing.T) {
+			want := pythonHighlightPlain(t, tc.content, "", "")
 			got := HighlightCode(tc.content, "", "")
-			if got != tc.want {
-				t.Fatalf("HighlightCode mismatch:\ncontent: %q\nwant:   %q\ngot:    %q",
-					tc.content, tc.want, got)
+			if got != want {
+				t.Fatalf("HighlightCode mismatch with live Python (Pygments off):\ncontent: %q\nwant:   %q\ngot:    %q",
+					tc.content, want, got)
 			}
 		})
 	}
@@ -59,38 +61,44 @@ func TestHighlightEmptyContent(t *testing.T) {
 }
 
 // TestHighlightColoredColors asserts that the hand-written tokenisers emit
-// the same micron colour codes that Pygments emits for each token kind in
-// the reference fixtures. Equality is structural (the expected `FT{color}`
-// sequence must be present in the Go output), not byte-for-byte, because
+// every micron colour code that a live Pygments run emits for each fixture.
+// The expected colour set is captured fresh from Python highlight_code (gated
+// on Pygments availability); equality is structural (each `FT{color}` from the
+// Pygments reference must appear in the Go output), not byte-for-byte, because
 // hand tokenisation does not replicate Pygments' exact token boundaries.
 func TestHighlightColoredColors(t *testing.T) {
+	skipIfNoPygments(t)
 	h := NewHighlighter()
 	type expect struct {
 		language string
 		content  string
-		colors   []string // each must appear as `FT{color}` in the output
 	}
 	cases := []expect{
-		{"python", "# a comment\n", []string{"`FT8b949e"}},
-		{"python", "x = \"hello\"\n", []string{"`FTa5d6ff", "`FTff7b72", "`FTe6edf3"}},
-		{"python", "def foo(x):\n    return x\n", []string{"`FTff7b72", "`FTd2a8ff", "`FTb4b4b4", "`FTe6edf3"}},
-		{"python", "if True:\n    pass\n", []string{"`FTff7b72"}},
-		{"go", "func foo(x int) int {\n    return x\n}\n", []string{"`FTff7b72", "`FTffa657", "`FTb4b4b4", "`FTe6edf3"}},
-		{"go", "s := \"hello\"\n", []string{"`FTa5d6ff", "`FTff7b72", "`FTe6edf3"}},
-		{"bash", "# comment\n", []string{"`FT8b949e"}},
-		{"bash", "export FOO=bar\n", []string{"`FTffa657", "`FTff7b72", "`FTe6edf3"}},
-		{"env", "echo hi\n", []string{"`FTffa657"}},
+		{"python", "# a comment\n"},
+		{"python", "x = \"hello\"\n"},
+		{"python", "def foo(x):\n    return x\n"},
+		{"python", "if True:\n    pass\n"},
+		{"go", "func foo(x int) int {\n    return x\n}\n"},
+		{"go", "s := \"hello\"\n"},
+		{"bash", "# comment\n"},
+		{"bash", "export FOO=bar\n"},
+		{"env", "echo hi\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.language+":"+firstLine(tc.content), func(t *testing.T) {
+			ref := pythonHighlightColored(t, tc.content, "", tc.language)
+			wantColors := extractColors(ref)
 			got, err := h.Highlight(tc.content, "", tc.language)
 			if err != nil {
 				t.Fatalf("Highlight error: %v", err)
 			}
-			for _, c := range tc.colors {
+			if len(wantColors) == 0 {
+				t.Fatalf("Pygments reference for %q produced no colours; expected a non-empty colour set", tc.content)
+			}
+			for c := range wantColors {
 				if !strings.Contains(got, c) {
-					t.Fatalf("Highlight(%q, lang=%q) = %q; missing color %q",
-						tc.content, tc.language, got, c)
+					t.Fatalf("Highlight(%q, lang=%q) = %q; missing live-Pygments color %q\nref: %q",
+						tc.content, tc.language, got, c, ref)
 				}
 			}
 		})
@@ -98,24 +106,26 @@ func TestHighlightColoredColors(t *testing.T) {
 }
 
 // TestHighlightColoredRefStructure compares the Go hand-tokenised output
-// against the Pygments reference fixtures. It asserts that every colour
+// against a live Pygments reference capture. It asserts that every colour
 // code appearing in the Pygments reference also appears in the Go output
 // (no missing colour kinds), while tolerating differences in token
 // boundaries and span grouping.
 func TestHighlightColoredRefStructure(t *testing.T) {
+	skipIfNoPygments(t)
 	h := NewHighlighter()
 	for _, tc := range goldenColoredRef {
 		t.Run(tc.name, func(t *testing.T) {
+			ref := pythonHighlightColored(t, tc.content, "", tc.language)
 			got, err := h.Highlight(tc.content, "", tc.language)
 			if err != nil {
 				t.Fatalf("Highlight error: %v", err)
 			}
-			refColors := extractColors(tc.ref)
+			refColors := extractColors(ref)
 			gotColors := extractColors(got)
 			for c := range refColors {
 				if !gotColors[c] {
-					t.Fatalf("Highlight(%q, lang=%q) = %q; missing reference color %q\nref: %q",
-						tc.content, tc.language, got, c, tc.ref)
+					t.Fatalf("Highlight(%q, lang=%q) = %q; missing live-Pygments color %q\nref: %q",
+						tc.content, tc.language, got, c, ref)
 				}
 			}
 		})

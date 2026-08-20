@@ -12,7 +12,7 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestPropagationTransferSizeSetFromProgressCallback covers Phase 17 task 4: the
+// TestPropagationTransferSizeSetFromProgressCallback verifies that the
 // message-get progress callback populates propagationTransferSize from the
 // request receipt's response_size, mirroring Python's message_get_progress
 // `if request_receipt.response_size: self.propagation_transfer_size =
@@ -41,8 +41,8 @@ func TestPropagationTransferSizeSetFromProgressCallback(t *testing.T) {
 	}
 }
 
-// TestPropagationTransferSizeIgnoresZeroResponseSize covers Phase 17 task 4: a
-// falsy response_size (None or zero) does not populate propagationTransferSize,
+// TestPropagationTransferSizeIgnoresZeroResponseSize verifies that a falsy
+// response_size (None or zero) does not populate propagationTransferSize,
 // matching Python's `if request_receipt.response_size:` truthy guard
 // (LXMRouter.py:1649, v1.1.0).
 func TestPropagationTransferSizeIgnoresZeroResponseSize(t *testing.T) {
@@ -67,7 +67,7 @@ func TestPropagationTransferSizeIgnoresZeroResponseSize(t *testing.T) {
 	}
 }
 
-// TestPropagationTransferSizeClearedOnAcknowledgeSync covers Phase 17 task 4:
+// TestPropagationTransferSizeClearedOnAcknowledgeSync verifies that
 // acknowledge_sync_completion resets propagationTransferSize to nil (None),
 // mirroring Python (LXMRouter.py:1656-1663, v1.1.0).
 func TestPropagationTransferSizeClearedOnAcknowledgeSync(t *testing.T) {
@@ -92,7 +92,7 @@ func TestPropagationTransferSizeClearedOnAcknowledgeSync(t *testing.T) {
 	}
 }
 
-// TestPropagationTransferSizeResetOnRequestMessages covers Phase 17 task 4:
+// TestPropagationTransferSizeResetOnRequestMessages verifies that
 // request_messages_from_propagation_node resets propagationTransferSize to nil
 // at the start of a new sync, mirroring Python (LXMRouter.py:506-507, v1.1.0).
 // The reset runs before the no-propagation-node early return, so it applies

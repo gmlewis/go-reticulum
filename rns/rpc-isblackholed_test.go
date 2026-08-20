@@ -13,7 +13,7 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// TestIsBlackholedLocal covers Phase 13 task 9: the public IsBlackholed API
+// TestIsBlackholedLocal verifies that the public IsBlackholed API
 // queries the local transport's blackhole registry when the instance is not
 // connected to a shared instance (Python Reticulum.is_blackholed,
 // RNS/Reticulum.py:1705-1717, the `else` branch).
@@ -69,7 +69,7 @@ loglevel = 4
 	}
 }
 
-// TestIsBlackholedViaRPC covers Phase 13 task 9: a client connected to a
+// TestIsBlackholedViaRPC verifies that a client connected to a
 // shared instance routes IsBlackholed to the shared instance via RPC
 // (Python Reticulum.is_blackholed, RNS/Reticulum.py:1711-1715).
 func TestIsBlackholedViaRPC(t *testing.T) {
@@ -131,7 +131,7 @@ loglevel = 4
 	}
 }
 
-// TestRPCIsBlackholedEndpoint covers Phase 13 task 9: the shared instance
+// TestRPCIsBlackholedEndpoint verifies that the shared instance
 // handles the raw {"get": "is_blackholed", "identity_hash": ...} RPC frame,
 // returning the boolean blackhole membership (Python Reticulum.py:1263).
 func TestRPCIsBlackholedEndpoint(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// TestExpectedHopsSetOnInitiatorFromHopsTo asserts Phase 7 Task 1: the
+// TestExpectedHopsSetOnInitiatorFromHopsTo asserts that the
 // initiator-side link records expectedHops from the transport's path-table hop
 // count at link-request time, mirroring RNS/Link.py:281
 //
@@ -41,7 +41,7 @@ func TestExpectedHopsSetOnInitiatorFromHopsTo(t *testing.T) {
 	}
 }
 
-// TestLinkProofMismatchedHopsRejected asserts Phase 7 Task 1: an LRPROOF
+// TestLinkProofMismatchedHopsRejected asserts that an LRPROOF
 // whose hop count differs from the link's expectedHops is rejected by the
 // Transport delivery gate when the path re-balance cannot authorize it.
 // A proof with a mismatched hop count and an invalid signature is dropped
@@ -89,8 +89,8 @@ func TestLinkProofMismatchedHopsRejected(t *testing.T) {
 	}
 }
 
-// TestLinkProofMismatchedHopsRejectedWhenRebalanceDisabled asserts Phase 7
-// Task 1: when ALLOW_LINK_PATH_REBALANCE is disabled, a proof whose hop count
+// TestLinkProofMismatchedHopsRejectedWhenRebalanceDisabled asserts that
+// when ALLOW_LINK_PATH_REBALANCE is disabled, a proof whose hop count
 // mismatches expectedHops is rejected even when its signature is valid — the
 // re-balance that would otherwise adopt the proof's hop count is skipped
 // (RNS/Transport.py:2276 gates the re-balance on
@@ -157,7 +157,7 @@ func TestLinkProofMismatchedHopsRejectedWhenRebalanceDisabled(t *testing.T) {
 	}
 }
 
-// TestLinkProofRebalancedAndAcceptedOverLoopback asserts Phase 7 Task 1: a
+// TestLinkProofRebalancedAndAcceptedOverLoopback asserts that a
 // valid LRPROOF whose hop count mismatches the initiator's expectedHops
 // (PathfinderM, unknown path) triggers a successful path re-balance — the
 // link adopts the proof's hop count and the proof is delivered to

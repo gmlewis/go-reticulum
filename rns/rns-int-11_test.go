@@ -138,7 +138,7 @@ if __name__ == "__main__":
 // rnstransport.info.blackhole destination, a Python client fetches /list
 // over a link, and the response Python receives decodes to the exact
 // blackholed_identities structure the Go node serves (captured golden from
-// Python umsgpack). This is the Phase F.4 wire-parity gate.
+// Python umsgpack). This is the wire-parity gate.
 func TestIntegratedBlackholeListPythonToGo(t *testing.T) {
 	testutils.SkipShortIntegration(t)
 
@@ -369,7 +369,7 @@ if __name__ == "__main__":
 `
 
 // TestIntegratedBlackholeEnablePythonToGo verifies the real BlackholeUpdater
-// fetch path end-to-end (Phase F.6): a Go node with a configured
+// fetch path end-to-end: a Go node with a configured
 // blackhole_source fetches the /list RPC from a Python publisher, merges the
 // result into its in-memory blackholed_identities, and persists the fetched
 // list to blackholepath/<hex(source)>. The resulting Go in-memory set must
