@@ -68,13 +68,22 @@ func TestRequestReceiptResponseSizeRecordedExactlyOnceInline(t *testing.T) {
 // state: before any response arrives, both ResponseSize and
 // ResponseTransferSize are unset (nil, Python None) — the size fields are
 // only populated by the response-data path.
+//
+// The request is sent to a path with no registered handler, so the receiver
+// never generates a response (Link.handleRequest returns without sending
+// when no handler matches). This keeps the receipt deterministically in the
+// pending/pre-response state: the size fields can only be set by the
+// response-data path (handleResponse -> recordResponseSize), which never runs.
+// Requesting "/p" against the echo handler would race the assertion against a
+// fast loopback response that records the sizes (observed as a flaky CI
+// failure where ResponseSize came back 100 instead of nil).
 func TestRequestReceiptResponseSizeUnsetBeforeResponse(t *testing.T) {
 	t.Parallel()
 	initiator, _, _ := establishMaxResponseLinkPair(t, bytes.Repeat([]byte{0x01}, 100))
 
-	// Issue a request but do not wait for the response; inspect the receipt
-	// immediately while it is still pending.
-	rr, err := initiator.Request("/p", bytes.Repeat([]byte{0x00}, 10), nil, nil, nil, 30*time.Second, 0)
+	// Issue a request to an unregistered path; inspect the receipt
+	// immediately while it is still pending and no response will arrive.
+	rr, err := initiator.Request("/no-such-handler", bytes.Repeat([]byte{0x00}, 10), nil, nil, nil, 30*time.Second, 0)
 	if err != nil {
 		t.Fatalf("Request: %v", err)
 	}

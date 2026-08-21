@@ -88,6 +88,25 @@ func TestSharedInstanceClientLinkOverSharedInstance(t *testing.T) {
 	tsS.RegisterInterface(server)
 	t.Cleanup(func() { _ = server.Detach() })
 
+	// The connect-readiness signal must come from the SERVER side, not the
+	// client: NewLocalClientInterface's connect() is synchronous, so the
+	// client's own Status() is already true before the shared instance's
+	// acceptLoop has accepted the connection, spawned the per-connection
+	// interface, and launched its read loop. Announcing before that point
+	// races forwardAnnounceToLocalClients (it would see zero spawned clients
+	// and the client would never learn the path) — the original flake.
+	// OnClientConnected fires only after the spawned interface is registered
+	// and its read loop has started, so waiting on it makes the subsequent
+	// announce deterministic. The channel is buffered so a connect that
+	// completes before the select runs is not lost.
+	clientConnected := make(chan interfaces.Interface, 1)
+	server.SetOnClientConnected(func(c interfaces.Interface) {
+		select {
+		case clientConnected <- c:
+		default:
+		}
+	})
+
 	client, err := interfaces.NewLocalClientInterface("Local shared instance", "", localPort, func(data []byte, iface interfaces.Interface) {
 		tsC.Inbound(data, iface)
 	})
@@ -97,13 +116,14 @@ func TestSharedInstanceClientLinkOverSharedInstance(t *testing.T) {
 	tsC.RegisterInterface(client)
 	t.Cleanup(func() { _ = client.Detach() })
 
-	// Wait for the client to connect to the shared instance's server.
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) && !client.Status() {
-		time.Sleep(20 * time.Millisecond)
-	}
-	if !client.Status() {
-		t.Fatalf("local client never connected to shared instance")
+	// Wait deterministically for the shared instance to have accepted this
+	// client (event-driven; no polling, no sleep). The deadline is a pure
+	// safety backstop for an unreachable server — it is never hit on the
+	// happy path, where the event fires within milliseconds of the dial.
+	select {
+	case <-clientConnected:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("shared instance never accepted the local client connection")
 	}
 
 	// --- Remote destination on R ---
@@ -111,20 +131,34 @@ func TestSharedInstanceClientLinkOverSharedInstance(t *testing.T) {
 	receiverEstablished := make(chan *Link, 1)
 	destR.SetLinkEstablishedCallback(func(l *Link) { receiverEstablished <- l })
 
+	// Drive the test off the announce itself rather than polling the path
+	// table: register an announce handler on the client that signals the
+	// instant it receives the forwarded announce for destR. The handler runs
+	// after the path entry is installed, so the entry is visible when the
+	// channel receives. The channel is buffered so an announce that arrives
+	// before the select runs is not lost.
+	pathLearned := make(chan struct{}, 1)
+	tsC.RegisterAnnounceHandler(&AnnounceHandler{
+		ReceivedAnnounce: func(destinationHash []byte, _ *Identity, _ []byte) {
+			if bytes.Equal(destinationHash, destR.Hash) {
+				select {
+				case pathLearned <- struct{}{}:
+				default:
+				}
+			}
+		},
+	})
+
 	// --- R announces; S learns the path and forwards the announce to C ---
 	if err := destR.Announce(nil); err != nil {
 		t.Fatalf("destR.Announce: %v", err)
 	}
 
-	// Wait for C to learn the path to R via the forwarded announce.
-	deadline = time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		if tsC.HasPath(destR.Hash) {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if !tsC.HasPath(destR.Hash) {
+	// Wait for C to receive the forwarded announce (event-driven; no
+	// polling, no sleep). The deadline is a safety backstop only.
+	select {
+	case <-pathLearned:
+	case <-time.After(15 * time.Second):
 		t.Fatalf("client never learned path to remote destination via forwarded announce")
 	}
 

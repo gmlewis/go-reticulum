@@ -398,6 +398,16 @@ type LocalServerInterface struct {
 	spawnedInterfaces []*LocalClientInterface
 	inboundHandler    InboundHandler
 
+	// onClientConnected, when set, is invoked once a co-located client has been
+	// fully accepted: the per-connection LocalClientInterface is registered in
+	// spawnedInterfaces and its read loop has been launched. It is an optional
+	// observability hook (no Python equivalent is exercised in production) that
+	// lets callers — and tests — wait deterministically for the server side to
+	// be ready to receive and forward traffic for a just-connected client,
+	// rather than polling the client's own (already-true) connection status,
+	// which becomes true before this server side has accepted the connection.
+	onClientConnected func(client Interface)
+
 	// clients is the count of currently-spawned local client interfaces
 	// (LocalInterface.py:384 self.clients), incremented in incoming_connection
 	// and decremented when a spawned client tears down.
@@ -523,6 +533,26 @@ func (lsi *LocalServerInterface) handleConnection(conn net.Conn) {
 	lsi.mu.Unlock()
 
 	go lci.readLoop()
+
+	// Notify after the spawned interface is registered AND its read loop is
+	// launched, so a waiter can rely on the server side being ready to read
+	// from this client and to forward announces to it.
+	lsi.mu.Lock()
+	cb := lsi.onClientConnected
+	lsi.mu.Unlock()
+	if cb != nil {
+		cb(lci)
+	}
+}
+
+// SetOnClientConnected installs a callback invoked once for each co-located
+// client this server accepts, after the per-connection interface is
+// registered and its read loop has started. It is intended as a deterministic
+// readiness signal for callers and tests; production leaves it unset.
+func (lsi *LocalServerInterface) SetOnClientConnected(fn func(client Interface)) {
+	lsi.mu.Lock()
+	lsi.onClientConnected = fn
+	lsi.mu.Unlock()
 }
 
 // Send is a no-op for the server wrapper because spawned client connections
