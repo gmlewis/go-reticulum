@@ -37,9 +37,17 @@ done
 
 # Known TEST temp-dir/file prefixes from go-reticulum and go-nomadnet suites.
 # Keep these in sync with testutils.TempDir(...) prefixes in both repos.
+#
+# NOTE: bare "gogit-" is intentionally NOT listed — the user's long-running
+# manual node lives at /tmp/gogit-manual and must never be touched. Only the
+# specific gogit-remote-rns test-suite prefixes are listed (none of them match
+# gogit-manual).
 prefixes=(
   gorngit- gornx- gornsh- gornstatus- gorncp- gornodeconf-
   gornid- gornir- gornpath- gornpkg- gornprobe- gornsd- gorns-
+  gogit-clone- gogit-remote-rns- gogit-seed- gogit-reclone-
+  golxmd-test-
+  rns-test-
   lxmf-int- nomadnet-rrc-int-test nomadnet-app-test nomadnet-config-test
   nomadnet-conversation-test nomadnet-directory-test nomadnet-dir-persist
   nomadnet-int- nomadnet-lxmf-xproc- nomadnet-node- nomadnet-peersettings-test
