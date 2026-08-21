@@ -324,6 +324,22 @@ func (lci *LocalClientInterface) Status() bool {
 	return atomic.LoadInt32(&lci.running) == 1
 }
 
+// ShouldIngressLimit mirrors Python's LocalClientInterface.should_ingress_limit
+// (LocalInterface.py:137-138), which unconditionally returns False. A local
+// shared-instance socket is the high-bandwidth, low-latency link that carries
+// every announce and path response between a co-located client and the shared
+// instance. Subjecting it to the announce ingress-limit burst state machine
+// holds path-response announces in a queue released one per ~5s after a 15s
+// burst penalty (and drops them outright when the queue is full), which surfaced
+// as ~20s path-resolution delays and intermittent "no transport path" drops for
+// shared-instance clients. Local interfaces never ingress-limit announces.
+// This override applies to both initiator clients and the spawned per-connection
+// interfaces the server creates from accepted clients (both are
+// LocalClientInterface), so it covers the shared-instance side as well.
+func (lci *LocalClientInterface) ShouldIngressLimit() bool {
+	return false
+}
+
 // Type identifies this interface as a local shared-instance transport.
 func (lci *LocalClientInterface) Type() string {
 	return "LocalInterface"

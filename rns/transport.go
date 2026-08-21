@@ -4654,11 +4654,13 @@ func (ts *TransportSystem) RequestPath(destHash []byte) error {
 	destinationHash := string(destHash)
 	ts.mu.Lock()
 	ts.ensureStateLocked()
-	if lastRequested, ok := ts.pathRequests[destinationHash]; ok && now.Sub(lastRequested) < pathRequestMinInterval {
-		ts.mu.Unlock()
-		ts.logger.Debug("Suppressing path request for %x due to minimum interval", destHash)
-		return nil
-	}
+	// Record the originated request timestamp, mirroring Python's
+	// Transport.path_requests[destination_hash] = time.time() (Transport.py:2811).
+	// Python's request_path has NO min-interval dedup — it always sends — and the
+	// timestamp is used only as an announce ingress-limit bypass gate
+	// (Transport.py:1701), not to drop requests. A dedup here silently swallowed
+	// legitimate retries (for example after a held or dropped first response),
+	// so it is omitted for parity.
 	ts.pathRequests[destinationHash] = now
 	ts.mu.Unlock()
 
@@ -5445,15 +5447,23 @@ func (ts *TransportSystem) shouldHoldAnnounce(packet *Packet, iface interfaces.I
 	if iface == nil {
 		return false
 	}
-	known, pending := func() (bool, bool) {
+	known, pending, originated := func() (bool, bool, bool) {
 		ts.mu.Lock()
 		defer ts.mu.Unlock()
 		ts.ensureStateLocked()
 		_, known := ts.pathTable[destHash]
 		_, pending := ts.pendingPathRequests[destHash]
-		return known, pending
+		_, originated := ts.pathRequests[destHash]
+		return known, pending, originated
 	}()
-	if known || pending {
+	// Mirrors Python Transport.py:1701-1706, which bypasses the ingress-limit
+	// hold for announces whose destination this node ORIGINATED a path request
+	// for (Transport.path_requests) OR is currently relaying one for
+	// (Transport.discovery_path_requests). Go previously bypassed only the
+	// relayed table (pendingPathRequests), so a path-response announce for a
+	// destination the node itself requested could still be held on an
+	// ingress-limiting interface.
+	if known || pending || originated {
 		return false
 	}
 	if !iface.ShouldIngressLimit() {

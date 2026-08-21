@@ -152,7 +152,13 @@ func TestHandleAnnounceGravityWeightedPathReplacement(t *testing.T) {
 	}
 }
 
-func TestRequestPathThrottleAndTag(t *testing.T) {
+// TestRequestPathAlwaysSendsAndTag verifies that RequestPath always transmits a
+// path request — Python's Transport.request_path has no min-interval dedup and
+// sends on every call (Transport.py:2771-2815) — and stamps a fresh random tag
+// on each request. A prior Go-only 20s dedup silently dropped legitimate retries
+// (for example after a held or dropped first response); it was removed for
+// Python parity, so a repeat request for the same destination transmits again.
+func TestRequestPathAlwaysSendsAndTag(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
 
@@ -164,14 +170,14 @@ func TestRequestPathThrottleAndTag(t *testing.T) {
 		t.Fatalf("first RequestPath failed: %v", err)
 	}
 	if capIface.sendCount != 1 {
-		t.Fatalf("expected exactly one request transmission, got %v", capIface.sendCount)
+		t.Fatalf("expected one request transmission, got %v", capIface.sendCount)
 	}
 
 	if err := ts.RequestPath(destHash); err != nil {
 		t.Fatalf("second RequestPath failed: %v", err)
 	}
-	if capIface.sendCount != 1 {
-		t.Fatalf("expected throttled second request not to transmit, got %v sends", capIface.sendCount)
+	if capIface.sendCount != 2 {
+		t.Fatalf("expected second request to transmit (no dedup, for parity), got %v sends", capIface.sendCount)
 	}
 
 	p := NewPacketFromRaw(capIface.lastSent)
@@ -2406,6 +2412,28 @@ func TestShouldHoldAnnounceGate(t *testing.T) {
 		ts.handleAnnounce(mkAnnounce(t, id, dest, 1, iface), iface)
 		if iface.HeldAnnounces() != 0 {
 			t.Fatalf("HeldAnnounces = %d, want 0 (known dest not gated)", iface.HeldAnnounces())
+		}
+	})
+
+	// An announce for a destination THIS node originated a path request for
+	// (Python Transport.path_requests / Go pathRequests) bypasses the gate,
+	// matching Python Transport.py:1701-1706. Go previously bypassed only the
+	// relayed table (pendingPathRequests), so a path-response announce answering
+	// the node's own request could be held on an ingress-limiting interface.
+	t.Run("originated path request bypasses gate", func(t *testing.T) {
+		t.Parallel()
+		ts, iface := mkTS(t)
+		id, dest := mkRemote(t, "origbypass")
+		ts.mu.Lock()
+		ts.ensureStateLocked()
+		ts.pathRequests[string(dest.Hash)] = time.Now()
+		ts.mu.Unlock()
+		ts.handleAnnounce(mkAnnounce(t, id, dest, 1, iface), iface)
+		if iface.HeldAnnounces() != 0 {
+			t.Fatalf("HeldAnnounces = %d, want 0 (originated PR bypasses gate)", iface.HeldAnnounces())
+		}
+		if !inTable(ts, dest.Hash) {
+			t.Fatal("announce for an originated-PR destination must be processed into the path table")
 		}
 	})
 
