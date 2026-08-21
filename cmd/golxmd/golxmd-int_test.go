@@ -406,15 +406,34 @@ func TestGolxmd_Break_Timeout(t *testing.T) {
 	// Create a valid destination hash (32 hex chars = 16 bytes)
 	validHash := "0123456789abcdef0123456789abcdef"
 
-	// Run with -b (break/unpeer) - should timeout since no remote running
+	// Run with -b (break/unpeer) - should timeout since no remote running.
+	//
+	// The --timeout 1 bounds the *operation* wait, but total wall-clock elapsed
+	// also includes RNS init (identity load, transport/interfaces setup,
+	// announce), which is machine/load dependent. When run under heavy
+	// parallel -race load the golxmd subprocess can be CPU-starved enough that
+	// RNS init alone exceeds the 1s operation timeout, in which case
+	// requestUnpeer exits immediately with "timed out" and elapsed equals the
+	// init time (observed ~6.7s). So elapsed is ~1s on a fast/idle machine but
+	// grows with load; it must NOT be asserted into a tight window. The real
+	// behavioral guarantees are: (a) it actually waited for the timeout rather
+	// than returning instantly, and (b) it did not hang. The "timed out"
+	// message is the primary assertion.
 	start := time.Now()
 	out, err := exec.Command(golxmdBin, "-b", validHash, "--config", configDir, "--rnsconfig", configDir, "--timeout", "1").CombinedOutput()
 	elapsed := time.Since(start)
 	output := string(out)
 
-	// Should timeout after ~1 second
-	if elapsed < 1*time.Second || elapsed > 5*time.Second {
-		t.Errorf("expected timeout around 1 second, took %v", elapsed)
+	// It must have waited for the timeout (operation timeout is 1s; even when
+	// init eats the whole budget, init itself takes >= 1s in that case, so
+	// elapsed is always at least ~1s).
+	if elapsed < 900*time.Millisecond {
+		t.Errorf("expected to wait for the timeout, elapsed %v", elapsed)
+	}
+	// It must not hang. 60s is far above any load-induced RNS-init time while
+	// still catching a real deadlock regression.
+	if elapsed > 60*time.Second {
+		t.Errorf("golxmd -b did not time out within 60s, elapsed %v", elapsed)
 	}
 
 	// Should have timeout message

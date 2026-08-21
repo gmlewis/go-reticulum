@@ -140,9 +140,15 @@ func prepareGorngitNodeConfig(t *testing.T, configDir, repoRoot string) {
 	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(configText), 0o600); err != nil {
 		t.Fatalf("failed to write gorngit node config: %v", err)
 	}
-	if err := os.WriteFile(repoRoot+".allowed", []byte(openAllowedContent), 0o644); err != nil {
+	// The group .allowed file lives as a SIBLING of repoRoot (the gorngit
+	// permission resolver looks up <repoRoot>.allowed), so it is outside the
+	// repoRoot TempDir and would not be removed by repoRoot's t.Cleanup.
+	// Register an explicit cleanup so it does not leak into /tmp on every run.
+	allowedPath := repoRoot + ".allowed"
+	if err := os.WriteFile(allowedPath, []byte(openAllowedContent), 0o644); err != nil {
 		t.Fatalf("failed to write group .allowed: %v", err)
 	}
+	t.Cleanup(func() { _ = os.Remove(allowedPath) })
 }
 
 // prepareGorngitNodeConfigRestricted writes a gorngit node config like
@@ -1055,6 +1061,62 @@ func TestIntegrationDeleteRepo(t *testing.T) {
 	t.Logf("refs/heads/main deleted successfully")
 }
 
+// sendRequestRetry wraps client.sendRequest with a bounded retry for
+// transient RNS request failures, for use only with IDEMPOTENT operations
+// (artifact upload — which overwrites the artifact file on the server — and
+// release fetch — which is a pure read). Re-sending an identical request
+// produces an identical server result, so a retry is always safe for these.
+//
+// Why this exists: RNS resource transfers over a fast localhost link (RTT
+// ~2ms) under heavy parallel -race test load can occasionally fail. The
+// resource watchdog's part-timeouts are RTT-proportional (the receiver's
+// first grace is ResourceRetryGraceTime = 0.25s), and under -race + 8-package
+// parallelism goroutine scheduling latency and UDP socket-buffer pressure can
+// blow past those timeouts and exhaust retries, cancelling the transfer. The
+// Python rngit client (client.py send_request) aborts on a single such
+// failure, so the production gorngit client mirrors that and does NOT retry
+// (preserving behavioural parity). This helper adds retry purely at the test
+// layer so the integration test is rock-solid under load without diverging
+// from the Python client's production behaviour.
+//
+// On a transient failure ("request failed or timed out" / "request timed
+// out") the link is still alive, so the retry reuses it. On a link-death
+// error ("could not send request" / "link not ready" / "link is closed" /
+// "link is not active") it tears down the stale link and re-establishes a
+// fresh one via connect before retrying.
+func sendRequestRetry(t *testing.T, client *reticulumGitClient, logger *rns.Logger, path string, data any, timeout time.Duration, maxRetries int) (any, error) {
+	t.Helper()
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		resp, _, err := client.sendRequest(path, data, timeout)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if attempt == maxRetries {
+			break
+		}
+		msg := err.Error()
+		linkDead := strings.Contains(msg, "could not send request") ||
+			strings.Contains(msg, "link not ready") ||
+			strings.Contains(msg, "link is closed") ||
+			strings.Contains(msg, "link is not active")
+		if linkDead {
+			t.Logf("sendRequest attempt %d/%d failed (%v); reconnecting link", attempt+1, maxRetries+1, err)
+			client.teardown()
+			client.linkReady = false
+			if rerr := client.connect(logger); rerr != nil {
+				t.Logf("reconnect failed: %v", rerr)
+				break
+			}
+			continue
+		}
+		t.Logf("sendRequest attempt %d/%d failed (%v); retrying on same link", attempt+1, maxRetries+1, err)
+		time.Sleep(200 * time.Millisecond)
+	}
+	return nil, fmt.Errorf("sendRequest failed after %d attempts: %w", maxRetries+1, lastErr)
+}
+
 // TestIntegrationReleaseRoundTrip verifies the full release lifecycle
 // over RNS: create (init+artifact+finalize), list, view, fetch the
 // manifest+artifact, validate the RSM signature + structure, and delete.
@@ -1208,7 +1270,13 @@ func TestIntegrationReleaseRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("pack artifact %s: %v", art.name, err)
 		}
-		resp, _, err := client.sendRequest(pathRelease, packed, fetchPushTimeout)
+		// Artifact upload is idempotent (the server overwrites the artifact
+		// file), so a transient RNS resource-transfer failure under heavy
+		// -race load can be safely retried. manifest.rsm is the largest
+		// artifact and exceeds the link MDU, so it is transferred as a
+		// streamed Resource — the path most exposed to watchdog/UDP-pressure
+		// flakes under load.
+		resp, err := sendRequestRetry(t, client, logger, pathRelease, packed, fetchPushTimeout, 4)
 		if err != nil {
 			t.Fatalf("artifact %s request: %v", art.name, err)
 		}
@@ -1328,7 +1396,10 @@ func TestIntegrationReleaseRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pack fetch manifest: %v", err)
 	}
-	resp, _, err = client.sendRequest(pathRelease, packed, fetchPushTimeout)
+	// Fetch is a read (idempotent), and the manifest.rsm response exceeds the
+	// link MDU so it returns as a streamed Resource — retry on transient
+	// resource-transfer failure under heavy -race load.
+	resp, err = sendRequestRetry(t, client, logger, pathRelease, packed, fetchPushTimeout, 4)
 	if err != nil {
 		t.Fatalf("fetch manifest request: %v", err)
 	}
@@ -1369,7 +1440,8 @@ func TestIntegrationReleaseRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pack fetch artifact: %v", err)
 	}
-	resp, _, err = client.sendRequest(pathRelease, packed, fetchPushTimeout)
+	// Fetch is a read (idempotent); retry on transient failure under load.
+	resp, err = sendRequestRetry(t, client, logger, pathRelease, packed, fetchPushTimeout, 4)
 	if err != nil {
 		t.Fatalf("fetch artifact request: %v", err)
 	}

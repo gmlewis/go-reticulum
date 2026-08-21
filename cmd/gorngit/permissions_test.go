@@ -36,6 +36,11 @@ func newPermTestNode(t *testing.T) (*reticulumGitNode, string, *rns.Identity, *r
 	if err := os.MkdirAll(repoPath, 0o755); err != nil {
 		t.Fatalf("mkdir repo: %v", err)
 	}
+	// The group .allowed file lives as a SIBLING of the group path (the
+	// permission resolver reads/writes <group.path>.allowed), so it is
+	// outside the TempDir and would leak in /tmp. Register an explicit
+	// cleanup, mirroring prepareGorngitNodeConfig in gorngit-int_test.go.
+	t.Cleanup(func() { _ = os.Remove(base + ".allowed") })
 	group := &groupInfo{
 		name:         "g",
 		path:         base,
