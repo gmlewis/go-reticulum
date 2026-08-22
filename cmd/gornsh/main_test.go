@@ -548,3 +548,43 @@ func TestStartAnnouncements(t *testing.T) {
 		})
 	}
 }
+
+// TestResolveRemoteIdentityReportsPathNotFound verifies the initiator's
+// remote-identity resolution reports "Path not found" — matching rnsh's
+// RemoteExecutionError("Path not found") in initiator.py:_initiate_link —
+// when the destination is unreachable, instead of the previous misleading
+// "could not resolve remote identity" message.
+func TestResolveRemoteIdentityReportsPathNotFound(t *testing.T) {
+	t.Parallel()
+	configDir := testutils.TempDir(t, "gornsh-resolve-id-")
+	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte("[reticulum]\nshare_instance = No\n"), 0o600); err != nil {
+		t.Fatalf("write config error: %v", err)
+	}
+	logger := rns.NewLogger()
+	logger.SetLogLevel(rns.LogCritical)
+	ts := rns.NewTransportSystem(logger)
+	ret, err := rns.NewReticulum(ts, configDir)
+	if err != nil {
+		t.Fatalf("NewReticulum error: %v", err)
+	}
+	defer func() {
+		if err := ret.Close(); err != nil {
+			t.Logf("ret.Close error: %v", err)
+		}
+	}()
+
+	bogus := make([]byte, rns.TruncatedHashLength/8)
+	start := time.Now()
+	_, err = resolveRemoteIdentity(ret.Transport(), bogus, 300*time.Millisecond)
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("expected error for unreachable destination, got nil")
+	}
+	if !strings.Contains(err.Error(), "Path not found") {
+		t.Fatalf("error = %q, want it to contain %q", err.Error(), "Path not found")
+	}
+	// The path wait is bounded by the supplied timeout, not the 15s default.
+	if elapsed > 1500*time.Millisecond {
+		t.Fatalf("resolveRemoteIdentity waited %v, expected roughly the 300ms timeout", elapsed)
+	}
+}

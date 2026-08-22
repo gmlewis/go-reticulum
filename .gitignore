@@ -3,8 +3,11 @@
 *.data
 *.md
 *.result
+*.txt
 .antigravitycli
 .vscode
+/.claude
+/.dsh
 /compress
 
 # Handy symlinks

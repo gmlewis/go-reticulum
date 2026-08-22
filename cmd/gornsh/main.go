@@ -559,16 +559,34 @@ func startInitiatorShutdownWatcher(sigCh <-chan os.Signal, teardown func()) (*in
 	return watcher, stop
 }
 
+// resolveRemoteIdentity ensures a path to destHash is known and then recalls
+// the identity that the destination's announce delivered. It mirrors rnsh's
+// initiator flow (RNS/Utilities/rnsh/initiator.py:_initiate_link): when no
+// path can be learned within timeout it reports "Path not found", matching
+// rnsh's RemoteExecutionError("Path not found"); when a path is known but the
+// identity is still absent it reports a remote-identity resolution failure.
 func resolveRemoteIdentity(ts rns.Transport, destHash []byte, timeout time.Duration) (*rns.Identity, error) {
+	if !ts.HasPath(destHash) {
+		if err := ts.RequestPath(destHash); err != nil {
+			return nil, fmt.Errorf("could not request path to %x: %w", destHash, err)
+		}
+		deadline := time.Now().Add(timeout)
+		for time.Now().Before(deadline) && !ts.HasPath(destHash) {
+			time.Sleep(100 * time.Millisecond)
+		}
+		if !ts.HasPath(destHash) {
+			return nil, errors.New("Path not found")
+		}
+	}
+
 	remoteIdentity := rns.RecallIdentity(ts, destHash)
 	if remoteIdentity != nil {
 		return remoteIdentity, nil
 	}
-
-	if err := ts.RequestPath(destHash); err != nil {
-		return nil, fmt.Errorf("could not request path to %x: %w", destHash, err)
-	}
-	deadline := time.Now().Add(timeout)
+	// A path is known but the identity has not yet landed in the store. The
+	// announce that established the path normally stores the identity with
+	// it; allow a brief grace window for any processing race.
+	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
 		remoteIdentity = rns.RecallIdentity(ts, destHash)
@@ -576,7 +594,6 @@ func resolveRemoteIdentity(ts rns.Transport, destHash []byte, timeout time.Durat
 			return remoteIdentity, nil
 		}
 	}
-
 	return nil, fmt.Errorf("could not resolve remote identity for destination %x", destHash)
 }
 
