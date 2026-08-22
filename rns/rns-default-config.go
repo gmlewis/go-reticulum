@@ -91,7 +91,7 @@ instance_name = default
 
 
 [logging]
-# Valid log levels are 0 through 7:
+# Valid log levels are 0 through 8:
 #   0: Log only critical information
 #   1: Log errors and lower log levels
 #   2: Log warnings and lower log levels
@@ -99,7 +99,8 @@ instance_name = default
 #   4: Log info and lower (this is the default)
 #   5: Verbose logging
 #   6: Debug logging
-#   7: Extreme logging
+#   7: Path logging
+#   8: Extreme logging
 
 loglevel = 4
 
@@ -123,4 +124,6 @@ loglevel = 4
   [[Default Interface]]
     type = AutoInterface
     enabled = Yes
+
+
 `

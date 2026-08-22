@@ -113,6 +113,39 @@ func TestCreateDefaultConfigMatchesPythonShape(t *testing.T) {
 	}
 }
 
+// TestDefaultConfigLoggingCommentMatchesPython pins the [logging] section's
+// log-level comment to match the Python Reticulum default config (Reticulum.py
+// __default_rns_config__: "0 through 8" with "7: Path logging" and
+// "8: Extreme logging"). The Go port previously shipped a stale "0 through 7"
+// comment, which was a parity gap surfaced by the gonomadnet embedded-editor
+// A/B (the editor renders the config file verbatim).
+func TestDefaultConfigLoggingCommentMatchesPython(t *testing.T) {
+	t.Parallel()
+	tmp := testutils.TempDir(t, tempDirPrefix)
+	configPath := filepath.Join(tmp, "config")
+	r := &Reticulum{}
+	if err := r.createDefaultConfig(configPath); err != nil {
+		t.Fatalf("createDefaultConfig() error = %v", err)
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	content := string(data)
+	for _, want := range []string{
+		"# Valid log levels are 0 through 8:",
+		"#   7: Path logging",
+		"#   8: Extreme logging",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("default config missing %q (Python Reticulum parity)", want)
+		}
+	}
+	if strings.Contains(content, "# Valid log levels are 0 through 7:") {
+		t.Error("default config still has the stale 0-through-7 logging comment")
+	}
+}
+
 func TestParseListProperty(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
