@@ -1023,6 +1023,18 @@ func (ts *TransportSystem) Stop() {
 		time.Sleep(150 * time.Millisecond)
 	}
 
+	// Final flush of the path table, packet-hash list, and tunnel table to
+	// storage before interfaces detach, mirroring Python's
+	// Transport.exit_handler → persist_data (Transport.py:3402-3407). This
+	// caches paths learned during this run so a subsequent process that
+	// reuses this storage directory loads them instead of rediscovering every
+	// path. PersistData gates itself on the shared-instance role; the write
+	// happens before Detach so SavePathTable's announce-cache files still see
+	// live interfaces. Errors are logged rather than aborting shutdown.
+	if err := ts.PersistData(); err != nil {
+		ts.logger.Error("Error persisting transport data during stop: %v", err)
+	}
+
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	for _, state := range ts.announceQueues {
@@ -6277,14 +6289,27 @@ func (ts *TransportSystem) SavePathTable(storagePath string) error {
 	return nil
 }
 
-// PersistData triggers a save of the path table and the packet-hash
-// list to the configured storage path. It is the Go port of Python's
-// Reticulum.__persist_data().
+// PersistData triggers a save of the path table, packet-hash list, and
+// tunnel table to the configured storage path. It is the Go port of
+// Python's Transport.persist_data() (Transport.py:3387-3393), invoked both
+// periodically from the job loop and once at shutdown from exit_handler.
 func (ts *TransportSystem) PersistData() error {
 	if ts == nil {
 		return errors.New("nil transport")
 	}
 	if ts.storagePath == "" {
+		return nil
+	}
+	// A client of a shared Reticulum instance must not persist these tables:
+	// it shares the storage path with the shared instance, so writing would
+	// clobber the shared instance's tables with the client's
+	// (forwarded-announce-only) view. Python gates each save_* helper on
+	// is_connected_to_shared_instance (Transport.py:3235/3198/3313); gating
+	// once here covers all three.
+	ts.mu.Lock()
+	connected := ts.connectedToSharedInstance
+	ts.mu.Unlock()
+	if connected {
 		return nil
 	}
 	// Non-reentrant guard: skip if a persist is already in flight (Python
@@ -6296,7 +6321,10 @@ func (ts *TransportSystem) PersistData() error {
 	if err := ts.SavePathTable(ts.storagePath); err != nil {
 		return err
 	}
-	return ts.SavePacketHashlist(ts.storagePath)
+	if err := ts.SavePacketHashlist(ts.storagePath); err != nil {
+		return err
+	}
+	return ts.SaveTunnelTable(ts.storagePath)
 }
 
 // DeregisterDestination removes a destination from the registered
