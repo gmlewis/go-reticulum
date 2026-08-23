@@ -154,7 +154,7 @@ func (c *clientT) queryStatus(id *rns.Identity, remoteIdentityArg *rns.Identity,
 	checkTimeout := func() error {
 		if time.Since(start) > timeoutArg {
 			if exitOnFail {
-				fmt.Println("Getting lxmd statistics timed out, exiting now")
+				fmt.Println("Getting golxmd statistics timed out, exiting now")
 				c.exit(200)
 				return nil
 			}
@@ -222,7 +222,7 @@ func (c *clientT) getStatus(remote string, configDirArg string, rnsConfigDir str
 
 	remainingTimeout := timeout - time.Since(startedAt)
 	if remainingTimeout <= 0 {
-		fmt.Println("Getting lxmd statistics timed out, exiting now")
+		fmt.Println("Getting golxmd statistics timed out, exiting now")
 		c.exit(200)
 		return
 	}
@@ -475,7 +475,7 @@ func (c *clientT) requestUnpeerInternal(id *rns.Identity, targetHash []byte, rem
 	checkTimeout := func() error {
 		if time.Since(start) > timeoutArg {
 			if exitOnFail {
-				fmt.Println("Requesting lxmd peering break timed out, exiting now")
+				fmt.Println("Requesting golxmd peering break timed out, exiting now")
 				c.exit(200)
 				return nil
 			}
@@ -541,7 +541,7 @@ func (c *clientT) requestSyncInternal(id *rns.Identity, targetHash []byte, remot
 	checkTimeout := func() error {
 		if time.Since(start) > timeoutArg {
 			if exitOnFail {
-				fmt.Println("Requesting lxmd peer sync timed out, exiting now")
+				fmt.Println("Requesting golxmd peer sync timed out, exiting now")
 				c.exit(200)
 				return nil
 			}
@@ -648,7 +648,7 @@ func (c *clientT) requestSync(target string, remote string, configDirArg string,
 
 	remainingTimeout := timeout - time.Since(startedAt)
 	if remainingTimeout <= 0 {
-		fmt.Println("Requesting lxmd sync timed out, exiting now")
+		fmt.Println("Requesting golxmd sync timed out, exiting now")
 		c.exit(200)
 		return
 	}
@@ -750,7 +750,7 @@ func (c *clientT) requestUnpeer(target string, remote string, configDirArg strin
 
 	remainingTimeout := timeout - time.Since(startedAt)
 	if remainingTimeout <= 0 {
-		fmt.Println("Requesting lxmd peering break timed out, exiting now")
+		fmt.Println("Requesting golxmd peering break timed out, exiting now")
 		c.exit(200)
 		return
 	}

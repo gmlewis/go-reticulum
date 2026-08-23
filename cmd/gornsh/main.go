@@ -79,9 +79,9 @@ func (t *realAnnouncementTicker) Stop()               { t.ticker.Stop() }
 
 func (rt *runtimeT) configureLogger(verbose, quiet int) {
 	rt.logger = rns.NewLogger()
-	// rnsh follows the Python baseline of LogInfo here, which differs from
-	// the other cmd/* tools in this repository that start from LogNotice.
-	level := min(max(rns.LogInfo+verbose-quiet, rns.LogCritical), rns.LogDebug)
+	// rnsh 1.5.0 defaults its RNS log level to LogNotice; gornsh matches that
+	// baseline, consistent with the other cmd/go* tools in this repository.
+	level := min(max(rns.LogNotice+verbose-quiet, rns.LogCritical), rns.LogDebug)
 	rt.logger.SetLogLevel(level)
 }
 
@@ -367,7 +367,7 @@ func (rt *runtimeT) doListen() error {
 	_, _ = fmt.Fprintln(rt.stdout, listeningDestinationLine(destination.Hash))
 
 	<-sigCh
-	logger.Info("Shutting down")
+	logger.Notice("Shutting down")
 	return nil
 }
 
@@ -419,11 +419,11 @@ func logServiceName(logger *rns.Logger, serviceName string) {
 }
 
 func listeningReadyLine() string {
-	return "rnsh listening..."
+	return "gornsh listening..."
 }
 
 func listeningDestinationLine(hash []byte) string {
-	return fmt.Sprintf("rnsh listening for commands on %v", rns.PrettyHex(hash))
+	return fmt.Sprintf("gornsh listening for commands on %v", rns.PrettyHex(hash))
 }
 
 func (rt *runtimeT) doInitiate() (int, error) {

@@ -213,11 +213,11 @@ func TestConfigureLogger(t *testing.T) {
 		quiet     int
 		wantLevel int
 	}{
-		{name: "default", wantLevel: rns.LogInfo},
-		{name: "verbose", verbose: 1, wantLevel: rns.LogVerbose},
-		{name: "more verbose", verbose: 2, wantLevel: rns.LogDebug},
-		{name: "quiet", quiet: 1, wantLevel: rns.LogNotice},
-		{name: "more quiet", quiet: 2, wantLevel: rns.LogWarning},
+		{name: "default", wantLevel: rns.LogNotice},
+		{name: "verbose", verbose: 1, wantLevel: rns.LogInfo},
+		{name: "more verbose", verbose: 2, wantLevel: rns.LogVerbose},
+		{name: "quiet", quiet: 1, wantLevel: rns.LogWarning},
+		{name: "more quiet", quiet: 2, wantLevel: rns.LogError},
 	}
 
 	for _, tc := range tests {
@@ -241,8 +241,8 @@ func TestNewRuntime(t *testing.T) {
 	if rt.logger == nil {
 		t.Fatal("newRuntime returned nil logger")
 	}
-	if got := rt.logger.GetLogLevel(); got != rns.LogVerbose {
-		t.Fatalf("log level=%v, want %v", got, rns.LogVerbose)
+	if got := rt.logger.GetLogLevel(); got != rns.LogInfo {
+		t.Fatalf("log level=%v, want %v", got, rns.LogInfo)
 	}
 }
 
@@ -295,16 +295,16 @@ func TestLogServiceName(t *testing.T) {
 func TestListeningReadyLine(t *testing.T) {
 	t.Parallel()
 
-	if got := listeningReadyLine(); got != "rnsh listening..." {
-		t.Fatalf("listeningReadyLine()=%q, want %q", got, "rnsh listening...")
+	if got := listeningReadyLine(); got != "gornsh listening..." {
+		t.Fatalf("listeningReadyLine()=%q, want %q", got, "gornsh listening...")
 	}
 }
 
 func TestListeningDestinationLine(t *testing.T) {
 	t.Parallel()
 
-	if got := listeningDestinationLine([]byte{0xde, 0xad, 0xbe, 0xef}); got != "rnsh listening for commands on <deadbeef>" {
-		t.Fatalf("listeningDestinationLine()=%q, want %q", got, "rnsh listening for commands on <deadbeef>")
+	if got := listeningDestinationLine([]byte{0xde, 0xad, 0xbe, 0xef}); got != "gornsh listening for commands on <deadbeef>" {
+		t.Fatalf("listeningDestinationLine()=%q, want %q", got, "gornsh listening for commands on <deadbeef>")
 	}
 }
 
@@ -379,7 +379,7 @@ func TestDoListenHandlesSIGINT(t *testing.T) {
 			line := scanner.Text()
 			output.WriteString(line)
 			output.WriteByte('\n')
-			if strings.Contains(line, "rnsh listening...") {
+			if strings.Contains(line, "gornsh listening...") {
 				readyCh <- struct{}{}
 			}
 		}

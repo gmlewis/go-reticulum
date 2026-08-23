@@ -61,8 +61,8 @@ func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
 	fs.Var(&countFlag{target: &app.verbose}, "verbose", "")
 	fs.Var(&countFlag{target: &app.quiet}, "q", "")
 	fs.Var(&countFlag{target: &app.quiet}, "quiet", "")
-	fs.BoolVar(&app.service, "s", false, "rnsd is running as a service and should log to file")
-	fs.BoolVar(&app.service, "service", false, "rnsd is running as a service and should log to file")
+	fs.BoolVar(&app.service, "s", false, "gornsd is running as a service and should log to file")
+	fs.BoolVar(&app.service, "service", false, "gornsd is running as a service and should log to file")
 	fs.BoolVar(&app.interactive, "i", false, "drop into interactive shell after initialisation")
 	fs.BoolVar(&app.interactive, "interactive", false, "drop into interactive shell after initialisation")
 	fs.BoolVar(&app.exampleConfig, "exampleconfig", false, "print verbose configuration example to stdout and exit")
@@ -93,7 +93,7 @@ options:
   --config CONFIG    path to alternative Reticulum config directory
   -v, --verbose
   -q, --quiet
-  -s, --service      rnsd is running as a service and should log to file
+  -s, --service      gornsd is running as a service and should log to file
   -i, --interactive  drop into interactive shell after initialisation
   --exampleconfig    print verbose configuration example to stdout and exit
   --version          show program's version number and exit

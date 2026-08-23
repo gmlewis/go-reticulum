@@ -58,7 +58,7 @@ func TestLoadCachedFirmwareReleaseInfoHashMismatch(t *testing.T) {
 	}
 
 	_, _, err := loadCachedFirmwareReleaseInfo(dir, firmwareName)
-	if err == nil || !strings.Contains(err.Error(), "Firmware hash ") || !strings.Contains(err.Error(), "Firmware corrupt. Try clearing the local firmware cache with: rnodeconf --clear-cache") {
+	if err == nil || !strings.Contains(err.Error(), "Firmware hash ") || !strings.Contains(err.Error(), "Firmware corrupt. Try clearing the local firmware cache with: gornodeconf --clear-cache") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

@@ -27,7 +27,7 @@ func TestVerifyFirmwareHashMismatch(t *testing.T) {
 	if got := err.Error(); len(got) == 0 || got[:len(want)] != want {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got := err.Error(); !containsString(got, "Firmware corrupt. Try clearing the local firmware cache with: rnodeconf --clear-cache") {
+	if got := err.Error(); !containsString(got, "Firmware corrupt. Try clearing the local firmware cache with: gornodeconf --clear-cache") {
 		t.Fatalf("missing cache-clear hint: %v", err)
 	}
 }

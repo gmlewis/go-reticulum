@@ -16,5 +16,5 @@ func verifyFirmwareHash(contents []byte, expectedHex string) error {
 	if hex.EncodeToString(fileHash[:]) == expectedHex {
 		return nil
 	}
-	return fmt.Errorf("Firmware hash %x but should be %v, possibly due to download corruption.\nFirmware corrupt. Try clearing the local firmware cache with: rnodeconf --clear-cache", fileHash, expectedHex)
+	return fmt.Errorf("Firmware hash %x but should be %v, possibly due to download corruption.\nFirmware corrupt. Try clearing the local firmware cache with: gornodeconf --clear-cache", fileHash, expectedHex)
 }

@@ -1071,7 +1071,17 @@ func startGornshListener(t *testing.T, configDir string) *gornshListenerProcess 
 	return startGornshListenerWithArgs(t, configDir, "--no-auth")
 }
 
-var listenerHashRE = regexp.MustCompile(`(?i)rnsh listening for commands on <([0-9a-fA-F]+)>`)
+// listenerHashRE matches the destination-hash line emitted by either a gornsh
+// listener ("gornsh listening for commands on <hash>") or a Python rnsh
+// listener ("rnsh listening for commands on <hash>"). gornsh refers to itself
+// by its "go" prefix; the Python original keeps "rnsh". Both are valid.
+var listenerHashRE = regexp.MustCompile(`(?i)(?:rnsh|gornsh) listening for commands on <([0-9a-fA-F]+)>`)
+
+// listenerReadyLineMatch reports whether line is a listener ready line from
+// either gornsh ("gornsh listening...") or Python rnsh ("rnsh listening...").
+func listenerReadyLineMatch(line string) bool {
+	return strings.Contains(line, "gornsh listening...") || strings.Contains(line, "rnsh listening...")
+}
 
 func parseListenerHash(line string) string {
 	matches := listenerHashRE.FindAllStringSubmatch(line, -1)
@@ -1558,7 +1568,7 @@ func (p *pythonListenerProcess) recordLine(line string) bool {
 func recordListenerLine(stdout *bytes.Buffer, value *string, bootstrapped *bool, hashLines *int, requiredHashLines int, line string) bool {
 	stdout.WriteString(line)
 	stdout.WriteByte('\n')
-	if !*bootstrapped && strings.Contains(line, listeningReadyLine()) {
+	if !*bootstrapped && listenerReadyLineMatch(line) {
 		*bootstrapped = true
 	}
 	if hash := parseListenerHash(line); hash != "" {

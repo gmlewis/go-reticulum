@@ -326,7 +326,7 @@ func (rt *runtimeT) doListen(ts rns.Transport) {
 
 	dest.RegisterRequestHandler("command", rt.handleCommandRequest, policy, allowedIdentityHashes, true)
 
-	logger.Info("rnx listening for commands on %v", rns.PrettyHexRep(dest.Hash))
+	logger.Notice("gornx listening for commands on %v", rns.PrettyHexRep(dest.Hash))
 
 	if !app.noAnnounce {
 		_ = dest.Announce(nil)
@@ -633,7 +633,7 @@ func (rt *runtimeT) handleResponse(_ []byte, response any) {
 			_ = os.Stdout.Sync()
 			_ = os.Stderr.Sync()
 
-			fmt.Println("\n--- End of remote output, rnx done ---")
+			fmt.Println("\n--- End of remote output, gornx done ---")
 			if started != 0 && concluded != 0 {
 				cmdDuration := concluded - started
 				fmt.Printf("Remote command execution took %.3f seconds\n", cmdDuration)
@@ -833,7 +833,7 @@ func (rt *runtimeT) handleResponseInteractive(response any) {
 			_ = os.Stdout.Sync()
 			_ = os.Stderr.Sync()
 
-			fmt.Println("\n--- End of remote output, rnx done ---")
+			fmt.Println("\n--- End of remote output, gornx done ---")
 			if started != 0 && concluded != 0 {
 				cmdDuration := concluded - started
 				fmt.Printf("Remote command execution took %.3f seconds\n", cmdDuration)

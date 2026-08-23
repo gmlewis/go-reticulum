@@ -1234,7 +1234,7 @@ func (n *reticulumGitNode) handleRemoteClone(path string, data []byte, requestID
 
 	// Build the clone inside the group directory so the final rename is a
 	// same-filesystem move (os.Rename does not cross devices).
-	tmpDir, err := os.MkdirTemp(group.path, ".rngit-clone-")
+	tmpDir, err := os.MkdirTemp(group.path, ".gorngit-clone-")
 	if err != nil {
 		return append([]byte{resRemoteFail}, []byte("Remote error")...)
 	}

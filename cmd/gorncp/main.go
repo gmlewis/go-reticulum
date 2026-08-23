@@ -75,7 +75,7 @@ func (a *appT) prepareIdentity(identityPath string) (*rns.Identity, error) {
 		var err error
 		id, err = rns.FromFile(identityPath, logger)
 		if err != nil {
-			return nil, fmt.Errorf("could not load identity for rncp. The identity file at %q may be corrupt or unreadable", identityPath)
+			return nil, fmt.Errorf("could not load identity for gorncp. The identity file at %q may be corrupt or unreadable", identityPath)
 		}
 	}
 

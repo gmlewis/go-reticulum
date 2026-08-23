@@ -106,7 +106,7 @@ func (a *appT) doListen(ts rns.Transport) {
 	if _, err := os.Stat(idPath); err == nil {
 		id, err = rns.FromFile(idPath, logger)
 		if err != nil {
-			logger.Error("Could not load identity for rncp. The identity file at \"%v\" may be corrupt or unreadable.", idPath)
+			logger.Error("Could not load identity for gorncp. The identity file at \"%v\" may be corrupt or unreadable.", idPath)
 			a.exitCh <- 2
 			return
 		}
@@ -230,7 +230,7 @@ func (a *appT) doListen(ts rns.Transport) {
 	if noAuth {
 		logger.Verbose("Accepting unauthenticated requests")
 	} else if len(allowedIdentityHashes) == 0 {
-		logger.Warning("No allowed identities configured, rncp will not accept any files!")
+		logger.Warning("No allowed identities configured, gorncp will not accept any files!")
 	}
 
 	if printIdentity {

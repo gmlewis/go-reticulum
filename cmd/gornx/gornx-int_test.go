@@ -218,7 +218,7 @@ func TestIntegrationEcho(t *testing.T) {
 	var readyHash string
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		line := firstLineWithPrefix(lBuf.String(), "rnx listening for commands on <")
+		line := firstLineWithPrefix(lBuf.String(), "gornx listening for commands on <")
 		if line != "" {
 			parts := strings.Split(line, "<")
 			if len(parts) > 1 {
@@ -270,7 +270,7 @@ func TestIntegrationDetailedOutput(t *testing.T) {
 	var readyHash string
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		line := firstLineWithPrefix(lBuf.String(), "rnx listening for commands on <")
+		line := firstLineWithPrefix(lBuf.String(), "gornx listening for commands on <")
 		if line != "" {
 			parts := strings.Split(line, "<")
 			if len(parts) > 1 {
@@ -292,7 +292,7 @@ func TestIntegrationDetailedOutput(t *testing.T) {
 	}
 
 	got := string(out)
-	if !strings.Contains(got, "--- End of remote output, rnx done ---") {
+	if !strings.Contains(got, "--- End of remote output, gornx done ---") {
 		t.Errorf("output missing summary header, got:\n%v", got)
 	}
 	if !strings.Contains(got, "Remote command execution took") {
@@ -327,7 +327,7 @@ func TestIntegrationTruncatedOutputNotice(t *testing.T) {
 	var readyHash string
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		line := firstLineWithPrefix(lBuf.String(), "rnx listening for commands on <")
+		line := firstLineWithPrefix(lBuf.String(), "gornx listening for commands on <")
 		if line != "" {
 			parts := strings.Split(line, "<")
 			if len(parts) > 1 {
@@ -386,7 +386,7 @@ func TestIntegrationRemoteExecuteFalseExitCode(t *testing.T) {
 	var readyHash string
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		line := firstLineWithPrefix(lBuf.String(), "rnx listening for commands on <")
+		line := firstLineWithPrefix(lBuf.String(), "gornx listening for commands on <")
 		if line != "" {
 			parts := strings.Split(line, "<")
 			if len(parts) > 1 {
@@ -444,7 +444,7 @@ func TestIntegrationInteractiveLoop(t *testing.T) {
 	var readyHash string
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		line := firstLineWithPrefix(lBuf.String(), "rnx listening for commands on <")
+		line := firstLineWithPrefix(lBuf.String(), "gornx listening for commands on <")
 		if line != "" {
 			parts := strings.Split(line, "<")
 			if len(parts) > 1 {
@@ -580,7 +580,7 @@ func TestIntegrationResultDownloadTimeout(t *testing.T) {
 	var readyHash string
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		line := firstLineWithPrefix(lBuf.String(), "rnx listening for commands on <")
+		line := firstLineWithPrefix(lBuf.String(), "gornx listening for commands on <")
 		if line != "" {
 			parts := strings.Split(line, "<")
 			if len(parts) > 1 {
