@@ -160,7 +160,10 @@ func (r *RNodeInterface) HoldAnnounce(raw []byte, recv Interface, hops int, dest
 func (r *RNodeInterface) ProcessHeldAnnounces() ([]byte, Interface, bool) {
 	return r.inner.ProcessHeldAnnounces()
 }
-func (r *RNodeInterface) HeldAnnounces() int           { return r.inner.HeldAnnounces() }
+func (r *RNodeInterface) HeldAnnounces() int { return r.inner.HeldAnnounces() }
+func (r *RNodeInterface) ReleaseHeldAnnounce(destHash []byte) ([]byte, Interface, bool) {
+	return r.inner.ReleaseHeldAnnounce(destHash)
+}
 func (r *RNodeInterface) ReceivedPathRequest()         { r.inner.ReceivedPathRequest() }
 func (r *RNodeInterface) SentPathRequest()             { r.inner.SentPathRequest() }
 func (r *RNodeInterface) IncomingPrFrequency() float64 { return r.inner.IncomingPrFrequency() }

@@ -108,7 +108,10 @@ func (w *WeaveInterface) HoldAnnounce(raw []byte, recv Interface, hops int, dest
 func (w *WeaveInterface) ProcessHeldAnnounces() ([]byte, Interface, bool) {
 	return w.inner.ProcessHeldAnnounces()
 }
-func (w *WeaveInterface) HeldAnnounces() int           { return w.inner.HeldAnnounces() }
+func (w *WeaveInterface) HeldAnnounces() int { return w.inner.HeldAnnounces() }
+func (w *WeaveInterface) ReleaseHeldAnnounce(destHash []byte) ([]byte, Interface, bool) {
+	return w.inner.ReleaseHeldAnnounce(destHash)
+}
 func (w *WeaveInterface) ReceivedPathRequest()         { w.inner.ReceivedPathRequest() }
 func (w *WeaveInterface) SentPathRequest()             { w.inner.SentPathRequest() }
 func (w *WeaveInterface) IncomingPrFrequency() float64 { return w.inner.IncomingPrFrequency() }

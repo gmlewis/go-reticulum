@@ -1550,7 +1550,10 @@ func (d *dummyInterface) HoldAnnounce([]byte, interfaces.Interface, int, []byte)
 func (d *dummyInterface) ProcessHeldAnnounces() ([]byte, interfaces.Interface, bool) {
 	return nil, nil, false
 }
-func (d *dummyInterface) HeldAnnounces() int                 { return 0 }
+func (d *dummyInterface) HeldAnnounces() int { return 0 }
+func (d *dummyInterface) ReleaseHeldAnnounce([]byte) ([]byte, interfaces.Interface, bool) {
+	return nil, nil, false
+}
 func (d *dummyInterface) ReceivedPathRequest()               {}
 func (d *dummyInterface) SentPathRequest()                   {}
 func (d *dummyInterface) IncomingPrFrequency() float64       { return 0 }
@@ -1603,7 +1606,10 @@ func (c *capturingInterface) HoldAnnounce([]byte, interfaces.Interface, int, []b
 func (c *capturingInterface) ProcessHeldAnnounces() ([]byte, interfaces.Interface, bool) {
 	return nil, nil, false
 }
-func (c *capturingInterface) HeldAnnounces() int                 { return 0 }
+func (c *capturingInterface) HeldAnnounces() int { return 0 }
+func (c *capturingInterface) ReleaseHeldAnnounce([]byte) ([]byte, interfaces.Interface, bool) {
+	return nil, nil, false
+}
 func (c *capturingInterface) ReceivedPathRequest()               {}
 func (c *capturingInterface) SentPathRequest()                   { c.sentPRCount++ }
 func (c *capturingInterface) IncomingPrFrequency() float64       { return 0 }
@@ -1669,7 +1675,10 @@ func (f *failingInterface) HoldAnnounce([]byte, interfaces.Interface, int, []byt
 func (f *failingInterface) ProcessHeldAnnounces() ([]byte, interfaces.Interface, bool) {
 	return nil, nil, false
 }
-func (f *failingInterface) HeldAnnounces() int                 { return 0 }
+func (f *failingInterface) HeldAnnounces() int { return 0 }
+func (f *failingInterface) ReleaseHeldAnnounce([]byte) ([]byte, interfaces.Interface, bool) {
+	return nil, nil, false
+}
 func (f *failingInterface) ReceivedPathRequest()               {}
 func (f *failingInterface) SentPathRequest()                   {}
 func (f *failingInterface) IncomingPrFrequency() float64       { return 0 }
@@ -1716,7 +1725,10 @@ func (i *ifacDropInterface) HoldAnnounce([]byte, interfaces.Interface, int, []by
 func (i *ifacDropInterface) ProcessHeldAnnounces() ([]byte, interfaces.Interface, bool) {
 	return nil, nil, false
 }
-func (i *ifacDropInterface) HeldAnnounces() int                 { return 0 }
+func (i *ifacDropInterface) HeldAnnounces() int { return 0 }
+func (i *ifacDropInterface) ReleaseHeldAnnounce([]byte) ([]byte, interfaces.Interface, bool) {
+	return nil, nil, false
+}
 func (i *ifacDropInterface) ReceivedPathRequest()               {}
 func (i *ifacDropInterface) SentPathRequest()                   {}
 func (i *ifacDropInterface) IncomingPrFrequency() float64       { return 0 }
@@ -1768,7 +1780,10 @@ func (i *ifacTransformInterface) HoldAnnounce([]byte, interfaces.Interface, int,
 func (i *ifacTransformInterface) ProcessHeldAnnounces() ([]byte, interfaces.Interface, bool) {
 	return nil, nil, false
 }
-func (i *ifacTransformInterface) HeldAnnounces() int                 { return 0 }
+func (i *ifacTransformInterface) HeldAnnounces() int { return 0 }
+func (i *ifacTransformInterface) ReleaseHeldAnnounce([]byte) ([]byte, interfaces.Interface, bool) {
+	return nil, nil, false
+}
 func (i *ifacTransformInterface) ReceivedPathRequest()               {}
 func (i *ifacTransformInterface) SentPathRequest()                   {}
 func (i *ifacTransformInterface) IncomingPrFrequency() float64       { return 0 }
@@ -2328,6 +2343,15 @@ func (i *ingressLimitingInterface) ProcessHeldAnnounces() ([]byte, interfaces.In
 	h := i.held[0]
 	i.held = i.held[1:]
 	return h.raw, h.recv, true
+}
+func (i *ingressLimitingInterface) ReleaseHeldAnnounce(destHash []byte) ([]byte, interfaces.Interface, bool) {
+	for idx, h := range i.held {
+		if bytes.Equal(h.destHash, destHash) {
+			i.held = append(i.held[:idx], i.held[idx+1:]...)
+			return h.raw, h.recv, true
+		}
+	}
+	return nil, nil, false
 }
 
 // TestShouldHoldAnnounceGate verifies the inbound-announce ingress-limit gate

@@ -2443,7 +2443,26 @@ func (r *Router) ProcessOutbound() {
 		activePropagationLink := sendMethod == MethodPropagated &&
 			r.outboundPropagationLink != nil &&
 			r.linkStatus(r.outboundPropagationLink) == rns.LinkActive
-		if message.NextDeliveryAttempt > 0 && nowSeconds < message.NextDeliveryAttempt && !activePropagationLink {
+		// Mirror Python LXMRouter.process_outbound: when a direct-delivery
+		// link to the destination is ACTIVE, the message is processed on
+		// every pass regardless of next_delivery_attempt (Python's DIRECT
+		// branch only uses next_delivery_attempt to throttle NEW link
+		// establishment, not to skip sending over an already-active link).
+		// Without this exception, a link's established callback firing
+		// ProcessOutbound while next_delivery_attempt is in the future would
+		// starve the message and a resource-sized direct message would never
+		// be advertised over the freshly established link.
+		activeDirectLink := false
+		if sendMethod == MethodDirect {
+			destinationHash := message.DestinationHash
+			if message.Destination != nil {
+				destinationHash = message.Destination.Hash
+			}
+			if dl := r.directLinks[string(destinationHash)]; dl != nil {
+				activeDirectLink = r.linkStatus(dl) == rns.LinkActive
+			}
+		}
+		if message.NextDeliveryAttempt > 0 && nowSeconds < message.NextDeliveryAttempt && !activePropagationLink && !activeDirectLink {
 			remaining = append(remaining, message)
 			continue
 		}
@@ -2584,6 +2603,94 @@ func (r *Router) ProcessOutbound() {
 				remaining = append(remaining, message)
 				continue
 			}
+
+			// Mirror Python LXMRouter.process_outbound: use an established
+			// direct-delivery Link if one exists, otherwise establish one.
+			// Sending over a Link provides reliable delivery with
+			// retransmission and proof over multi-hop paths; a raw
+			// destination packet is fire-and-forget and frequently lost.
+			destHashKey := string(destinationHash)
+			directLink := r.directLinks[destHashKey]
+			if directLink != nil {
+				switch r.linkStatus(directLink) {
+				case rns.LinkActive:
+					if message.State == StateSending {
+						// Already in-flight over this link; wait for result.
+						remaining = append(remaining, message)
+						continue
+					}
+					message.setDeliveryDestination(directLink)
+					// Mirror Python LXMessage.send for DIRECT: state goes
+					// to SENDING while the link packet is in-flight.
+					message.State = StateSending
+					if err := r.sendMessageLocked(message); err != nil {
+						if errors.Is(err, errResourceRepresentationNotSupported) {
+							r.failMessageLocked(message)
+							continue
+						}
+						if errors.Is(err, errResourceLinkPending) {
+							message.State = StateOutbound
+							if message.Progress < 0.03 {
+								message.Progress = 0.03
+							}
+							message.NextDeliveryAttempt = float64(r.now().Add(pathRequestWait).UnixNano()) / 1e9
+							remaining = append(remaining, message)
+							continue
+						}
+						message.DeliveryAttempts++
+						message.State = StateOutbound
+						message.NextDeliveryAttempt = float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
+						remaining = append(remaining, message)
+						continue
+					}
+					remaining = append(remaining, message)
+					continue
+				case rns.LinkClosed:
+					delete(r.directLinks, destHashKey)
+					message.setDeliveryDestination(nil)
+					_ = r.requestPath(destinationHash)
+					message.NextDeliveryAttempt = float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
+					remaining = append(remaining, message)
+					continue
+				default:
+					// Link pending; wait for establishment.
+					remaining = append(remaining, message)
+					continue
+				}
+			}
+
+			// No direct link exists; establish one (mirrors Python
+			// RNS.Link(destination) with process_outbound as the
+			// established callback).
+			message.DeliveryAttempts++
+			message.NextDeliveryAttempt = float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
+			if message.DeliveryAttempts < maxDeliveryAttempts {
+				link, err := r.newLink(r.transport, message.Destination)
+				if err != nil {
+					remaining = append(remaining, message)
+					continue
+				}
+				r.setLinkEstablishedCallback(link, func(_ *rns.Link) {
+					r.ProcessOutbound()
+				})
+				link.SetLinkClosedCallback(func(closed *rns.Link) {
+					r.mu.Lock()
+					if r.directLinks[destHashKey] == closed {
+						delete(r.directLinks, destHashKey)
+					}
+					r.mu.Unlock()
+					r.ProcessOutbound()
+				})
+				r.directLinks[destHashKey] = link
+				if err := r.establishLink(link); err != nil {
+					delete(r.directLinks, destHashKey)
+				}
+				if message.Progress < 0.03 {
+					message.Progress = 0.03
+				}
+			}
+			remaining = append(remaining, message)
+			continue
 		}
 
 		if err := r.sendMessageLocked(message); err != nil {
@@ -2833,6 +2940,63 @@ func (r *Router) sendMessagePacketLocked(message *Message) error {
 				}
 			})
 		}
+		return nil
+	}
+
+	// Direct delivery over an established Link (mirrors Python
+	// LXMessage.send for DIRECT/PACKET when delivery_destination is a
+	// Link). The Link provides reliable delivery with retransmission and
+	// proof of delivery over multi-hop paths, unlike a raw destination
+	// packet which is fire-and-forget.
+	if message.Method == MethodDirect && message.deliveryDestination != nil {
+		packet, err := message.asPacket()
+		if err != nil {
+			return err
+		}
+		message.PacketRepresentation = packet
+		if err := r.sendPacket(packet); err != nil {
+			return err
+		}
+		if packet.Receipt != nil {
+			message.State = StateSending
+			message.Progress = 0.50
+			packet.Receipt.SetDeliveryCallback(func(_ *rns.PacketReceipt) {
+				var deliveryCallback func(*Message)
+				r.mu.Lock()
+				message.State = StateDelivered
+				message.Progress = 1.0
+				r.markTicketDeliveryLocked(message)
+				deliveryCallback = message.DeliveryCallback
+				r.mu.Unlock()
+				if deliveryCallback != nil {
+					deliveryCallback(message)
+				}
+			})
+			packet.Receipt.SetTimeoutCallback(func(receipt *rns.PacketReceipt) {
+				var linkToTeardown *rns.Link
+				if receipt != nil {
+					if destinationLink, ok := receipt.Destination.(*rns.Link); ok {
+						linkToTeardown = destinationLink
+					}
+				}
+				shouldTeardown := false
+				r.mu.Lock()
+				if message.State != StateDelivered && message.State != StateCancelled {
+					shouldTeardown = true
+					message.State = StateOutbound
+					message.Progress = 0.0
+					message.NextDeliveryAttempt = float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
+				}
+				r.mu.Unlock()
+				if shouldTeardown && linkToTeardown != nil {
+					r.teardownLink(linkToTeardown)
+				}
+			})
+		}
+		// No receipt: the packet was accepted by the link layer
+		// but no delivery confirmation is available. The state
+		// stays StateSending (set by ProcessOutbound before the
+		// send), and the next ProcessOutbound pass will wait.
 		return nil
 	}
 
@@ -4880,6 +5044,9 @@ func (r *Router) GetOutboundPropagationNode() []byte {
 func (r *Router) DeliveryLinkAvailable(destHash []byte) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.directLinks[string(destHash)] != nil {
+		return r.linkStatus(r.directLinks[string(destHash)]) == rns.LinkActive
+	}
 	return r.resourceLinks[string(destHash)] != nil
 }
 

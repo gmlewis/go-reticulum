@@ -140,6 +140,8 @@ func TestHandleOutboundDeliveryMarksTicketDelivery(t *testing.T) {
 	ts.Remember(nil, sourceDest.Hash, sourceID.GetPublicKey(), nil)
 	ts.Remember(nil, sourceDest.Hash, sourceID.GetPublicKey(), nil)
 
+	mustTestSetupDirectLink(t, router, ts, destination)
+
 	now := time.Now().UTC().Truncate(time.Second)
 	router.now = func() time.Time { return now }
 	router.hasPath = func(_ []byte) bool { return true }
@@ -1064,6 +1066,8 @@ func TestProcessOutboundSendFailureEventuallyFails(t *testing.T) {
 
 	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 
+	mustTestSetupDirectLink(t, router, ts, destination)
+
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
 	router.hasPath = func(_ []byte) bool { return true }
@@ -1097,6 +1101,8 @@ func TestProcessOutboundSendSuccessSetsSent(t *testing.T) {
 
 	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 
+	mustTestSetupDirectLink(t, router, ts, destination)
+
 	router.hasPath = func(_ []byte) bool { return true }
 	router.requestPath = func(_ []byte) error { return nil }
 	router.sendPacket = func(_ *rns.Packet) error { return nil }
@@ -1105,8 +1111,8 @@ func TestProcessOutboundSendSuccessSetsSent(t *testing.T) {
 		t.Fatalf("HandleOutbound: %v", err)
 	}
 
-	if msg.State != StateSent {
-		t.Fatalf("state=%v want=%v", msg.State, StateSent)
+	if msg.State != StateSending {
+		t.Fatalf("state=%v want=%v", msg.State, StateSending)
 	}
 }
 
@@ -1122,6 +1128,8 @@ func TestProcessOutboundSentMessageNotResentUntilTimeout(t *testing.T) {
 	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
 	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+
+	mustTestSetupDirectLink(t, router, ts, destination)
 
 	router.hasPath = func(_ []byte) bool { return true }
 	router.requestPath = func(_ []byte) error { return nil }
@@ -1142,8 +1150,8 @@ func TestProcessOutboundSentMessageNotResentUntilTimeout(t *testing.T) {
 	if sendCount != 1 {
 		t.Fatalf("send count after ProcessOutbound=%v want=1", sendCount)
 	}
-	if msg.State != StateSent {
-		t.Fatalf("state=%v want=%v", msg.State, StateSent)
+	if msg.State != StateSending {
+		t.Fatalf("state=%v want=%v", msg.State, StateSending)
 	}
 }
 
@@ -1159,6 +1167,8 @@ func TestProcessOutboundTimeoutRequeuesForRetry(t *testing.T) {
 	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
 	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+
+	mustTestSetupDirectLink(t, router, ts, destination)
 
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
@@ -1195,8 +1205,8 @@ func TestProcessOutboundTimeoutRequeuesForRetry(t *testing.T) {
 	if sendCount != 2 {
 		t.Fatalf("send count after retry=%v want=2", sendCount)
 	}
-	if msg.State != StateSent {
-		t.Fatalf("state after retry=%v want=%v", msg.State, StateSent)
+	if msg.State != StateSending {
+		t.Fatalf("state after retry=%v want=%v", msg.State, StateSending)
 	}
 }
 
@@ -1212,6 +1222,8 @@ func TestProcessOutboundDeliveryCallbackSetsDeliveredAndPreventsTimeoutRequeue(t
 	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
 
 	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+
+	mustTestSetupDirectLink(t, router, ts, destination)
 
 	router.hasPath = func(_ []byte) bool { return true }
 	router.requestPath = func(_ []byte) error { return nil }
@@ -1260,6 +1272,8 @@ func TestProcessOutboundSelectsPacketRepresentation(t *testing.T) {
 
 	msg := mustTestNewMessage(t, destination, sourceDest, "short content", "title", nil)
 
+	mustTestSetupDirectLink(t, router, ts, destination)
+
 	router.hasPath = func(_ []byte) bool { return true }
 	router.requestPath = func(_ []byte) error { return nil }
 	packetCount := 0
@@ -1302,6 +1316,8 @@ func TestProcessOutboundSelectsResourceRepresentation(t *testing.T) {
 
 	msg := mustTestNewMessage(t, destination, sourceDest, string(content), "title", nil)
 
+	mustTestSetupDirectLink(t, router, ts, destination)
+
 	router.hasPath = func(_ []byte) bool { return true }
 	router.requestPath = func(_ []byte) error { return nil }
 	router.sendPacket = func(_ *rns.Packet) error {
@@ -1324,8 +1340,8 @@ func TestProcessOutboundSelectsResourceRepresentation(t *testing.T) {
 	if msg.Representation != RepresentationResource {
 		t.Fatalf("representation=%v want=%v", msg.Representation, RepresentationResource)
 	}
-	if msg.State != StateSent {
-		t.Fatalf("state=%v want=%v", msg.State, StateSent)
+	if msg.State != StateSending {
+		t.Fatalf("state=%v want=%v", msg.State, StateSending)
 	}
 }
 
@@ -1346,6 +1362,8 @@ func TestProcessOutboundResourceUnsupportedFails(t *testing.T) {
 	}
 
 	msg := mustTestNewMessage(t, destination, sourceDest, string(content), "title", nil)
+
+	mustTestSetupDirectLink(t, router, ts, destination)
 
 	router.hasPath = func(_ []byte) bool { return true }
 	router.requestPath = func(_ []byte) error { return nil }
@@ -1388,6 +1406,8 @@ func TestProcessOutboundResourceLinkPendingRetryNoAttemptIncrement(t *testing.T)
 		content[i] = 'C'
 	}
 	msg := mustTestNewMessage(t, destination, sourceDest, string(content), "title", nil)
+
+	mustTestSetupDirectLink(t, router, ts, destination)
 
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
@@ -1436,6 +1456,8 @@ func TestProcessOutboundResourceLinkPendingInitializesLinkProgress(t *testing.T)
 	}
 	msg := mustTestNewMessage(t, destination, sourceDest, string(content), "title", nil)
 
+	mustTestSetupDirectLink(t, router, ts, destination)
+
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
 	router.hasPath = func(_ []byte) bool { return true }
@@ -1470,6 +1492,8 @@ func TestProcessOutboundResourceActiveLinkInitializesTransferProgress(t *testing
 	}
 	msg := mustTestNewMessage(t, destination, sourceDest, string(content), "title", nil)
 	msg.Progress = 0.01
+
+	mustTestSetupDirectLink(t, router, ts, destination)
 
 	router.hasPath = func(_ []byte) bool { return true }
 	router.requestPath = func(_ []byte) error { return nil }
@@ -1540,6 +1564,8 @@ func TestProcessOutboundResourceSendFailureEventuallyFails(t *testing.T) {
 	}
 	msg := mustTestNewMessage(t, destination, sourceDest, string(content), "title", nil)
 
+	mustTestSetupDirectLink(t, router, ts, destination)
+
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
 	router.hasPath = func(_ []byte) bool { return true }
@@ -1577,6 +1603,8 @@ func TestProcessOutboundResourceSendRetriesThenSucceeds(t *testing.T) {
 	}
 	msg := mustTestNewMessage(t, destination, sourceDest, string(content), "title", nil)
 
+	mustTestSetupDirectLink(t, router, ts, destination)
+
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
 	router.hasPath = func(_ []byte) bool { return true }
@@ -1599,8 +1627,8 @@ func TestProcessOutboundResourceSendRetriesThenSucceeds(t *testing.T) {
 	now = now.Add(deliveryRetryWait + time.Second)
 	router.ProcessOutbound()
 
-	if msg.State != StateSent {
-		t.Fatalf("state=%v want=%v", msg.State, StateSent)
+	if msg.State != StateSending {
+		t.Fatalf("state=%v want=%v", msg.State, StateSending)
 	}
 	if msg.DeliveryAttempts != 2 {
 		t.Fatalf("delivery attempts=%v want=%v", msg.DeliveryAttempts, 2)
@@ -10385,6 +10413,8 @@ func TestProcessOutboundTryPropagationOnFailFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	directLink := mustTestSetupDirectLink(t, router, ts, destination)
+
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
 	router.hasPath = func(_ []byte) bool { return true }
@@ -10416,6 +10446,9 @@ func TestProcessOutboundTryPropagationOnFailFallback(t *testing.T) {
 	router.linkStatus = func(link *rns.Link) int {
 		if link == fakeLink {
 			return linkState
+		}
+		if link == directLink {
+			return rns.LinkActive
 		}
 		return link.GetStatus()
 	}
@@ -10928,6 +10961,8 @@ func TestProcessOutboundFailedCallbackInvoked(t *testing.T) {
 
 	failedCalled := false
 	msg.FailedCallback = func(_ *Message) { failedCalled = true }
+
+	mustTestSetupDirectLink(t, router, ts, destination)
 
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }

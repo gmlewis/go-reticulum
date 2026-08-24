@@ -71,7 +71,10 @@ func (pathRequestInterface) HoldAnnounce([]byte, interfaces.Interface, int, []by
 func (pathRequestInterface) ProcessHeldAnnounces() ([]byte, interfaces.Interface, bool) {
 	return nil, nil, false
 }
-func (pathRequestInterface) HeldAnnounces() int                 { return 0 }
+func (pathRequestInterface) HeldAnnounces() int { return 0 }
+func (pathRequestInterface) ReleaseHeldAnnounce([]byte) ([]byte, interfaces.Interface, bool) {
+	return nil, nil, false
+}
 func (pathRequestInterface) ReceivedPathRequest()               {}
 func (pathRequestInterface) SentPathRequest()                   {}
 func (pathRequestInterface) IncomingPrFrequency() float64       { return 0 }

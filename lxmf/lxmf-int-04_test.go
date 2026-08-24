@@ -123,6 +123,12 @@ func TestIntegrationResourceGoToPython(t *testing.T) {
 	router.requestPath = func(_ []byte) error { return nil }
 	router.now = func() time.Time { return time.Unix(1700000000, 0) }
 
+	// ProcessOutbound's MethodDirect path now delivers over an established
+	// direct link before invoking the resource send seam, mirroring Python's
+	// direct_links flow. Pre-populate an active direct link so the resource
+	// send path runs synchronously within HandleOutbound.
+	mustTestSetupDirectLink(t, router, ts, destinationDest)
+
 	var capturedPacked []byte
 	router.sendResource = func(msg *Message) error {
 		capturedPacked = append([]byte{}, msg.Packed...)

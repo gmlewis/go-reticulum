@@ -4665,15 +4665,22 @@ func (ts *TransportSystem) RequestPath(destHash []byte) error {
 	destinationHash := string(destHash)
 	ts.mu.Lock()
 	ts.ensureStateLocked()
-	// Record the originated request timestamp, mirroring Python's
-	// Transport.path_requests[destination_hash] = time.time() (Transport.py:2811).
-	// Python's request_path has NO min-interval dedup — it always sends — and the
-	// timestamp is used only as an announce ingress-limit bypass gate
-	// (Transport.py:1701), not to drop requests. A dedup here silently swallowed
-	// legitimate retries (for example after a held or dropped first response),
-	// so it is omitted for parity.
 	ts.pathRequests[destinationHash] = now
 	ts.mu.Unlock()
+
+	// Release any held announces for this destination on all interfaces.
+	// On busy networks the announce frequency never drops below the ingress-
+	// limit threshold, so held announces for unknown destinations are never
+	// released by processHeldAnnounces. When a path request is explicitly
+	// made (e.g. on-send), the held announce should be processed immediately
+	// so the path is learned from the announce rather than from the (potentially
+	// longer) path-request response. This mirrors the Python RNS behavior where
+	// Transport.path_requests bypasses the ingress-limit hold at arrival time.
+	for _, iface := range ts.GetInterfaces() {
+		if raw, recv, ok := iface.ReleaseHeldAnnounce(destHash); ok {
+			go ts.Inbound(raw, recv)
+		}
+	}
 
 	requestTag, err := RandomHash()
 	if err != nil {

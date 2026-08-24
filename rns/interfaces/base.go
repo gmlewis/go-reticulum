@@ -923,6 +923,26 @@ func (bi *BaseInterface) HeldAnnounces() int {
 	return len(bi.heldAnnounces)
 }
 
+// ReleaseHeldAnnounce removes and returns the held announce for the given
+// destination hash, bypassing the ingress-limit frequency gate. This is used
+// when an explicit path request is made for the destination (e.g. on-send),
+// so the held announce is processed immediately instead of waiting for the
+// announce frequency to drop below the burst threshold.
+func (bi *BaseInterface) ReleaseHeldAnnounce(destHash []byte) (raw []byte, recv Interface, ok bool) {
+	bi.ingressMu.Lock()
+	defer bi.ingressMu.Unlock()
+	if bi.heldAnnounces == nil {
+		return nil, nil, false
+	}
+	key := string(destHash)
+	entry, exists := bi.heldAnnounces[key]
+	if !exists {
+		return nil, nil, false
+	}
+	delete(bi.heldAnnounces, key)
+	return entry.raw, entry.recv, true
+}
+
 // ClearHeldAnnounces empties the interface's held-announce deque. It is the
 // per-interface analog of clearing Python's global Transport.held_announces
 // dict, used by TransportSystem.voidQueuesLocked on transport stop

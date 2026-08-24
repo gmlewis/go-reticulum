@@ -152,7 +152,6 @@ share_instance = No
     remote_identity.load_public_key(pub_key)
     destination = RNS.Destination(remote_identity, RNS.Destination.OUT, RNS.Destination.SINGLE, "integrated_test", "parity")
 
-    link = RNS.Link(destination)
     linked = [False]
     resource_compressed = [None]
     response_len = [None]
@@ -167,7 +166,11 @@ share_instance = No
         data = rr.response if hasattr(rr, "response") else rr
         response_len[0] = len(data)
 
-    link.set_link_established_callback(established)
+    # Register the established callback via the Link constructor so it is
+    # set before the link request is sent; over localhost the proof can
+    # return and activate the link (in the transport thread) before a
+    # separate set_link_established_callback call runs, dropping the callback.
+    link = RNS.Link(destination, established_callback=established)
     link.set_resource_started_callback(resource_started)
 
     timeout = time.time() + 30

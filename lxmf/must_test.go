@@ -65,3 +65,23 @@ func mustTestNewRouterFromConfig(t *testing.T, ts rns.Transport, cfg RouterConfi
 	t.Cleanup(func() { _ = router.Close() })
 	return router
 }
+
+// mustTestSetupDirectLink pre-populates router.directLinks with a fake active
+// link for the given destination hash and mocks the link-related function
+// seams so ProcessOutbound's MethodDirect path sends over the link without
+// trying to establish a real one. Returns the fake link so tests can assert
+// on it.
+func mustTestSetupDirectLink(t *testing.T, router *Router, ts rns.Transport, dest *rns.Destination) *rns.Link {
+	t.Helper()
+	link, err := rns.NewLink(ts, dest)
+	mustTest(t, err)
+	router.directLinks[string(dest.Hash)] = link
+	router.linkStatus = func(l *rns.Link) int {
+		if l == link {
+			return rns.LinkActive
+		}
+		return l.GetStatus()
+	}
+	router.teardownLink = func(*rns.Link) {}
+	return link
+}

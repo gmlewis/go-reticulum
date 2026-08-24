@@ -241,6 +241,12 @@ func (r *RNodeMultiInterface) HeldAnnounces() int {
 	}
 	return r.children[0].HeldAnnounces()
 }
+func (r *RNodeMultiInterface) ReleaseHeldAnnounce(destHash []byte) ([]byte, Interface, bool) {
+	if len(r.children) == 0 {
+		return nil, nil, false
+	}
+	return r.children[0].ReleaseHeldAnnounce(destHash)
+}
 func (r *RNodeMultiInterface) ReceivedPathRequest() {
 	if len(r.children) != 0 {
 		r.children[0].ReceivedPathRequest()

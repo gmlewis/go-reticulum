@@ -122,7 +122,10 @@ func (i pathTableTestInterface) HoldAnnounce([]byte, interfaces.Interface, int, 
 func (i pathTableTestInterface) ProcessHeldAnnounces() ([]byte, interfaces.Interface, bool) {
 	return nil, nil, false
 }
-func (i pathTableTestInterface) HeldAnnounces() int                 { return 0 }
+func (i pathTableTestInterface) HeldAnnounces() int { return 0 }
+func (i pathTableTestInterface) ReleaseHeldAnnounce([]byte) ([]byte, interfaces.Interface, bool) {
+	return nil, nil, false
+}
 func (i pathTableTestInterface) ReceivedPathRequest()               {}
 func (i pathTableTestInterface) SentPathRequest()                   {}
 func (i pathTableTestInterface) IncomingPrFrequency() float64       { return 0 }

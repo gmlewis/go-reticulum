@@ -129,6 +129,7 @@ type Interface interface {
 	HoldAnnounce(raw []byte, recv Interface, hops int, destHash []byte)
 	ProcessHeldAnnounces() (raw []byte, recv Interface, ok bool)
 	HeldAnnounces() int
+	ReleaseHeldAnnounce(destHash []byte) (raw []byte, recv Interface, ok bool)
 
 	// Path-request ingress/egress-control surface (Interface.py:174-200,
 	// 267-275, 299-319, v1.1.5). ReceivedPathRequest / SentPathRequest record

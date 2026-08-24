@@ -227,7 +227,6 @@ share_instance = No
 
 	print("Establishing link...")
 	sys.stdout.flush()
-	link = RNS.Link(destination)
 
 	link_established = [False]
 	def established(l):
@@ -235,7 +234,13 @@ share_instance = No
 		sys.stdout.flush()
 		link_established[0] = True
 
-	link.set_link_established_callback(established)
+	# Register the established callback via the Link constructor so it is
+	# set before the link request is sent. Over fast localhost transports
+	# the proof can return and activate the link (in the transport thread)
+	# before a separate set_link_established_callback call runs on the
+	# main thread, in which case validate_proof sees callbacks.link_established
+	# == None and silently drops the callback.
+	link = RNS.Link(destination, established_callback=established)
 
 	timeout = time.time() + 10
 	while not link_established[0] and time.time() < timeout:
@@ -331,7 +336,6 @@ share_instance = No
 		sys.stdout.flush()
 		sys.exit(1)
 
-	link = RNS.Link(destination)
 	link_established = [False]
 
 	def established(l):
@@ -339,7 +343,10 @@ share_instance = No
 		sys.stdout.flush()
 		link_established[0] = True
 
-	link.set_link_established_callback(established)
+	# Register via the constructor (see small initiator): over localhost the
+	# handshake can complete before a separate set_link_established_callback
+	# call runs, dropping the callback.
+	link = RNS.Link(destination, established_callback=established)
 
 	timeout = time.time() + 10
 	while not link_established[0] and time.time() < timeout:
