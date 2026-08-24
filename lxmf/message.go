@@ -393,9 +393,12 @@ func (m *Message) Pack() error {
 	// and unpacked on another yields the same identity hash (used as the
 	// on-disk filename and the attachment-directory key). Go's randomized map
 	// iteration order would otherwise make the fields-map encoding — and thus
-	// the hash — differ across pack/unpack. Pack the hashed part with sorted
-	// map keys for a canonical encoding. The wire payload below still uses
-	// the non-sorted Pack so the transmitted bytes keep the original order.
+	// the hash — differ across pack/unpack. Pack both the hashed part and the
+	// wire payload with sorted map keys for a canonical encoding. The unpack
+	// path uses UnpackPreserveBinMapKeyOrder + PackSorted, which preserves the
+	// wire byte order via OrderedMap.MarshalMsgpack, so a Python-packed message
+	// (insertion-order keys) verifies correctly while a Go-packed message
+	// (sorted keys) also verifies correctly.
 	packedPayload, err := msgpack.PackSorted(basePayload)
 	if err != nil {
 		return fmt.Errorf("pack lxmf payload: %w", err)
@@ -439,7 +442,7 @@ func (m *Message) Pack() error {
 	m.Signature = signature
 	m.SignatureValidated = true
 
-	packedPayload, err = msgpack.Pack(m.Payload)
+	packedPayload, err = msgpack.PackSorted(m.Payload)
 	if err != nil {
 		return fmt.Errorf("pack stamped lxmf payload: %w", err)
 	}
@@ -492,7 +495,7 @@ func UnpackMessageFromBytes(ts rns.Transport, data []byte, originalMethod int) (
 	signature := cloneBytes(data[2*DestinationLength : 2*DestinationLength+SignatureLength])
 	packedPayload := cloneBytes(data[2*DestinationLength+SignatureLength:])
 
-	unpackedPayloadAny, err := msgpack.Unpack(packedPayload)
+	unpackedPayloadAny, err := msgpack.UnpackPreserveBinMapKeyOrder(packedPayload)
 	if err != nil {
 		return nil, fmt.Errorf("unpack lxmf payload: %w", err)
 	}
@@ -690,11 +693,42 @@ func payloadBytes(v any, field string) ([]byte, error) {
 }
 
 func payloadMap(v any) (map[any]any, error) {
-	m, ok := v.(map[any]any)
-	if !ok {
-		return nil, fmt.Errorf("invalid lxmf fields type %T", v)
+	if m, ok := v.(map[any]any); ok {
+		return m, nil
 	}
-	return m, nil
+	if om, ok := v.(msgpack.OrderedMap); ok {
+		return orderedMapToMap(om), nil
+	}
+	return nil, fmt.Errorf("invalid lxmf fields type %T", v)
+}
+
+// orderedMapToMap recursively converts an OrderedMap (and any nested OrderedMap
+// values) to map[any]any, matching the map shape that Python umsgpack returns
+// for nested dicts. This keeps the Message.Fields API stable as map[any]any
+// while the hash computation uses the original wire order via OrderedMap's
+// MarshalMsgpack.
+func orderedMapToMap(om msgpack.OrderedMap) map[any]any {
+	m := make(map[any]any, len(om))
+	for _, e := range om {
+		m[e.Key] = normalizeUnpackedValue(e.Value)
+	}
+	return m
+}
+
+// normalizeUnpackedValue converts any nested OrderedMap to map[any]any and
+// recurses into slices. Other types pass through unchanged.
+func normalizeUnpackedValue(v any) any {
+	switch tv := v.(type) {
+	case msgpack.OrderedMap:
+		return orderedMapToMap(tv)
+	case []any:
+		for i, elem := range tv {
+			tv[i] = normalizeUnpackedValue(elem)
+		}
+		return tv
+	default:
+		return v
+	}
 }
 
 func containerInt(v any) (int, error) {
