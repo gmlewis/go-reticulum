@@ -434,8 +434,11 @@ func TestHandlePathRequestAnswersFromCachedPath(t *testing.T) {
 	if !bytes.Equal(response.DestinationHash, remoteDest.Hash) {
 		t.Fatalf("expected cached path response destination hash to match remote dest")
 	}
-	if int(response.Hops) != entry.Hops+1 {
-		t.Fatalf("expected hops = cached+1 = %v, got %v", entry.Hops+1, response.Hops)
+	// Python (Transport.py:3049): packet.hops = path_table[IDX_PT_HOPS],
+	// i.e. the cached path's hop count. The requestor increments it by 1
+	// in inbound, storing cached+1. The response itself carries cached_hops.
+	if int(response.Hops) != entry.Hops {
+		t.Fatalf("expected hops = cached = %v, got %v (Python: packet.hops = path_table[IDX_PT_HOPS])", entry.Hops, response.Hops)
 	}
 
 	// The replayed announce must still carry a valid remote-identity
