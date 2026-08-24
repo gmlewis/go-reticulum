@@ -2105,13 +2105,13 @@ func (r *Router) HandleOutbound(message *Message) error {
 		return errors.New("attempt to send propagated message with no outbound propagation node configured")
 	}
 
-	message.State = StateOutbound
+	message.SetState(StateOutbound)
 
 	sendMethod := message.DesiredMethod
 	if sendMethod == 0 {
 		sendMethod = MethodDirect
 	}
-	message.Method = sendMethod
+	message.SetMethod(sendMethod)
 
 	destinationHash := message.Destination.Hash
 	if message.StampCost == nil {
@@ -2179,13 +2179,13 @@ func (r *Router) GetOutboundProgress(lxmHash []byte) *float64 {
 
 	for _, message := range r.pendingOutbound {
 		if bytes.Equal(message.Hash, lxmHash) {
-			progress := message.Progress
+			progress := message.progress
 			return &progress
 		}
 	}
 	for _, message := range r.pendingDeferredStamps {
 		if bytes.Equal(message.Hash, lxmHash) {
-			progress := message.Progress
+			progress := message.progress
 			return &progress
 		}
 	}
@@ -2397,12 +2397,12 @@ func (r *Router) ProcessOutbound() {
 		if message == nil {
 			continue
 		}
-		switch message.State {
+		switch message.state {
 		case StateSent:
 			// Python removes propagated messages from the queue once SENT
 			// (process_outbound line 2542-2544). Direct/opportunistic messages
 			// stay in the queue awaiting delivery confirmation.
-			if message.Method == MethodPropagated {
+			if message.method == MethodPropagated {
 				continue
 			}
 			remaining = append(remaining, message)
@@ -2428,16 +2428,16 @@ func (r *Router) ProcessOutbound() {
 			continue
 		}
 
-		sendMethod := message.Method
+		sendMethod := message.method
 		if sendMethod == 0 {
 			sendMethod = message.DesiredMethod
 		}
 		if sendMethod == 0 {
 			sendMethod = MethodDirect
 		}
-		message.Method = sendMethod
-		if message.Progress < 0.01 {
-			message.Progress = 0.01
+		message.SetMethod(sendMethod)
+		if message.progress < 0.01 {
+			message.SetProgress(0.01)
 		}
 
 		activePropagationLink := sendMethod == MethodPropagated &&
@@ -2471,12 +2471,12 @@ func (r *Router) ProcessOutbound() {
 			// If TryPropagationOnFail is set and a propagation node is
 			// available, switch to propagated delivery instead of failing.
 			// Mirrors Python's fail_message → try_propagation_on_fail logic.
-			if message.TryPropagationOnFail && r.outboundPropagationNode != nil && message.Method != MethodPropagated {
+			if message.TryPropagationOnFail && r.outboundPropagationNode != nil && message.method != MethodPropagated {
 				log.Printf("Direct delivery failed for %x, falling back to propagated delivery", message.Destination.Hash)
-				message.Method = MethodPropagated
+				message.SetMethod(MethodPropagated)
 				message.DeliveryAttempts = 0
 				message.TryPropagationOnFail = false
-				message.State = StateOutbound
+				message.SetState(StateOutbound)
 				message.NextDeliveryAttempt = 0
 				remaining = append(remaining, message)
 				continue
@@ -2504,20 +2504,20 @@ func (r *Router) ProcessOutbound() {
 				r.configureOutboundPropagationLink(link)
 				switch r.linkStatus(link) {
 				case rns.LinkActive:
-					if message.State == StateSending {
+					if message.state == StateSending {
 						remaining = append(remaining, message)
 						continue
 					}
 					message.setDeliveryDestination(link)
 					if err := r.sendMessageLocked(message); err != nil {
 						message.DeliveryAttempts++
-						message.State = StateOutbound
+						message.SetState(StateOutbound)
 						message.NextDeliveryAttempt = float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
 						remaining = append(remaining, message)
 						continue
 					}
-					if message.State != StateSending {
-						message.State = StateSent
+					if message.state != StateSending {
+						message.SetState(StateSent)
 					}
 					remaining = append(remaining, message)
 					continue
@@ -2614,7 +2614,7 @@ func (r *Router) ProcessOutbound() {
 			if directLink != nil {
 				switch r.linkStatus(directLink) {
 				case rns.LinkActive:
-					if message.State == StateSending {
+					if message.state == StateSending {
 						// Already in-flight over this link; wait for result.
 						remaining = append(remaining, message)
 						continue
@@ -2622,23 +2622,23 @@ func (r *Router) ProcessOutbound() {
 					message.setDeliveryDestination(directLink)
 					// Mirror Python LXMessage.send for DIRECT: state goes
 					// to SENDING while the link packet is in-flight.
-					message.State = StateSending
+					message.SetState(StateSending)
 					if err := r.sendMessageLocked(message); err != nil {
 						if errors.Is(err, errResourceRepresentationNotSupported) {
 							r.failMessageLocked(message)
 							continue
 						}
 						if errors.Is(err, errResourceLinkPending) {
-							message.State = StateOutbound
-							if message.Progress < 0.03 {
-								message.Progress = 0.03
+							message.SetState(StateOutbound)
+							if message.progress < 0.03 {
+								message.SetProgress(0.03)
 							}
 							message.NextDeliveryAttempt = float64(r.now().Add(pathRequestWait).UnixNano()) / 1e9
 							remaining = append(remaining, message)
 							continue
 						}
 						message.DeliveryAttempts++
-						message.State = StateOutbound
+						message.SetState(StateOutbound)
 						message.NextDeliveryAttempt = float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
 						remaining = append(remaining, message)
 						continue
@@ -2685,8 +2685,8 @@ func (r *Router) ProcessOutbound() {
 				if err := r.establishLink(link); err != nil {
 					delete(r.directLinks, destHashKey)
 				}
-				if message.Progress < 0.03 {
-					message.Progress = 0.03
+				if message.progress < 0.03 {
+					message.SetProgress(0.03)
 				}
 			}
 			remaining = append(remaining, message)
@@ -2699,22 +2699,22 @@ func (r *Router) ProcessOutbound() {
 				continue
 			}
 			if errors.Is(err, errResourceLinkPending) {
-				message.State = StateOutbound
-				if message.Progress < 0.03 {
-					message.Progress = 0.03
+				message.SetState(StateOutbound)
+				if message.progress < 0.03 {
+					message.SetProgress(0.03)
 				}
 				message.NextDeliveryAttempt = float64(r.now().Add(pathRequestWait).UnixNano()) / 1e9
 				remaining = append(remaining, message)
 				continue
 			}
 			message.DeliveryAttempts++
-			message.State = StateOutbound
+			message.SetState(StateOutbound)
 			message.NextDeliveryAttempt = float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
 			remaining = append(remaining, message)
 			continue
 		}
 
-		message.State = StateSent
+		message.SetState(StateSent)
 		remaining = append(remaining, message)
 	}
 
@@ -2763,7 +2763,7 @@ func (r *Router) ProcessDeferredStamps() {
 		return
 	}
 
-	if selected.State == StateCancelled {
+	if selected.state == StateCancelled {
 		r.mu.Lock()
 		delete(r.pendingDeferredStamps, selectedMessageID)
 		selected.StampGenerationFailed = true
@@ -2788,7 +2788,7 @@ func (r *Router) ProcessDeferredStamps() {
 			r.mu.Lock()
 			delete(r.pendingDeferredStamps, selectedMessageID)
 			selected.StampGenerationFailed = true
-			if selected.State == StateCancelled {
+			if selected.state == StateCancelled {
 				failedCallback := selected.FailedCallback
 				r.mu.Unlock()
 				if failedCallback != nil {
@@ -2834,7 +2834,7 @@ func (r *Router) ProcessDeferredStamps() {
 			r.mu.Lock()
 			delete(r.pendingDeferredStamps, selectedMessageID)
 			selected.StampGenerationFailed = true
-			if selected.State == StateCancelled {
+			if selected.state == StateCancelled {
 				failedCallback := selected.FailedCallback
 				r.mu.Unlock()
 				if failedCallback != nil {
@@ -2872,9 +2872,9 @@ func (r *Router) ProcessDeferredStamps() {
 // failMessageLocked marks a message as failed and invokes its FailedCallback.
 // Mirrors Python LXMRouter.fail_message() lines 2389-2402.
 func (r *Router) failMessageLocked(message *Message) {
-	message.Progress = 0
-	if message.State != StateRejected {
-		message.State = StateFailed
+	message.SetProgress(0)
+	if message.state != StateRejected {
+		message.SetState(StateFailed)
 	}
 	if message.FailedCallback != nil {
 		message.FailedCallback(message)
@@ -2884,7 +2884,7 @@ func (r *Router) failMessageLocked(message *Message) {
 func (r *Router) sendMessagePacketLocked(message *Message) error {
 	message.Representation = RepresentationPacket
 
-	if message.Method == MethodPropagated && message.deliveryDestination != nil {
+	if message.method == MethodPropagated && message.deliveryDestination != nil {
 		r.outboundPropagationLinkMessage = message
 		packet, err := message.asPacket()
 		if err != nil {
@@ -2895,13 +2895,13 @@ func (r *Router) sendMessagePacketLocked(message *Message) error {
 			return err
 		}
 		if packet.Receipt != nil {
-			message.State = StateSending
-			message.Progress = 0.50
+			message.SetState(StateSending)
+			message.SetProgress(0.50)
 			packet.Receipt.SetDeliveryCallback(func(_ *rns.PacketReceipt) {
 				var deliveryCallback func(*Message)
 				r.mu.Lock()
-				message.State = StateSent
-				message.Progress = 1.0
+				message.SetState(StateSent)
+				message.SetProgress(1.0)
 				if r.outboundPropagationLinkMessage == message {
 					r.outboundPropagationLinkMessage = nil
 				}
@@ -2920,11 +2920,11 @@ func (r *Router) sendMessagePacketLocked(message *Message) error {
 				}
 				shouldTeardown := false
 				r.mu.Lock()
-				if message.State != StateCancelled {
+				if message.state != StateCancelled {
 					shouldTeardown = true
-					if message.State != StateSent {
-						message.State = StateOutbound
-						message.Progress = 0.0
+					if message.state != StateSent {
+						message.SetState(StateOutbound)
+						message.SetProgress(0.0)
 						message.NextDeliveryAttempt = float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
 					}
 				}
@@ -2948,7 +2948,7 @@ func (r *Router) sendMessagePacketLocked(message *Message) error {
 	// Link). The Link provides reliable delivery with retransmission and
 	// proof of delivery over multi-hop paths, unlike a raw destination
 	// packet which is fire-and-forget.
-	if message.Method == MethodDirect && message.deliveryDestination != nil {
+	if message.method == MethodDirect && message.deliveryDestination != nil {
 		packet, err := message.asPacket()
 		if err != nil {
 			return err
@@ -2958,13 +2958,13 @@ func (r *Router) sendMessagePacketLocked(message *Message) error {
 			return err
 		}
 		if packet.Receipt != nil {
-			message.State = StateSending
-			message.Progress = 0.50
+			message.SetState(StateSending)
+			message.SetProgress(0.50)
 			packet.Receipt.SetDeliveryCallback(func(_ *rns.PacketReceipt) {
 				var deliveryCallback func(*Message)
 				r.mu.Lock()
-				message.State = StateDelivered
-				message.Progress = 1.0
+				message.SetState(StateDelivered)
+				message.SetProgress(1.0)
 				r.markTicketDeliveryLocked(message)
 				deliveryCallback = message.DeliveryCallback
 				r.mu.Unlock()
@@ -2981,10 +2981,10 @@ func (r *Router) sendMessagePacketLocked(message *Message) error {
 				}
 				shouldTeardown := false
 				r.mu.Lock()
-				if message.State != StateDelivered && message.State != StateCancelled {
+				if message.state != StateDelivered && message.state != StateCancelled {
 					shouldTeardown = true
-					message.State = StateOutbound
-					message.Progress = 0.0
+					message.SetState(StateOutbound)
+					message.SetProgress(0.0)
 					message.NextDeliveryAttempt = float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
 				}
 				r.mu.Unlock()
@@ -3006,7 +3006,7 @@ func (r *Router) sendMessagePacketLocked(message *Message) error {
 	// destination hash.  The receiver will re-prepend it from the Reticulum
 	// packet header.  This applies to both Opportunistic and Direct methods
 	// when the delivery destination is not a Link.
-	if message.Method == MethodOpportunistic || message.Method == MethodDirect {
+	if message.method == MethodOpportunistic || message.method == MethodDirect {
 		if len(message.Packed) <= DestinationLength {
 			return errors.New("packed lxmf message too short for packet encoding")
 		}
@@ -3022,14 +3022,14 @@ func (r *Router) sendMessagePacketLocked(message *Message) error {
 		packet.Receipt.SetDeliveryCallback(func(_ *rns.PacketReceipt) {
 			r.mu.Lock()
 			defer r.mu.Unlock()
-			message.State = StateDelivered
+			message.SetState(StateDelivered)
 			r.markTicketDeliveryLocked(message)
 		})
 		packet.Receipt.SetTimeoutCallback(func(_ *rns.PacketReceipt) {
 			r.mu.Lock()
 			defer r.mu.Unlock()
-			if message.State != StateDelivered && message.State != StateCancelled {
-				message.State = StateOutbound
+			if message.state != StateDelivered && message.state != StateCancelled {
+				message.SetState(StateOutbound)
 				message.NextDeliveryAttempt = float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
 			}
 		})
@@ -3041,10 +3041,18 @@ func (r *Router) sendMessagePacketLocked(message *Message) error {
 func (r *Router) sendMessageLocked(message *Message) error {
 	representation := RepresentationPacket
 	packetLength := len(message.Packed)
-	switch message.Method {
+	switch message.method {
 	case MethodPropagated:
 		if len(message.PropagationPacked) == 0 {
-			if err := message.packPropagated(); err != nil {
+			// packPropagated mutates m.method (and propagation fields); take
+			// the persist mutex so the write is synchronized with a concurrent
+			// PackedContainer/WriteToDirectory snapshot. When packPropagated
+			// runs via packedContainerLocked->Pack the caller already holds
+			// persistMu; here it runs under only r.mu, so acquire it.
+			message.persistMu.Lock()
+			err := message.packPropagated()
+			message.persistMu.Unlock()
+			if err != nil {
 				return err
 			}
 		}
@@ -3061,9 +3069,9 @@ func (r *Router) sendMessageLocked(message *Message) error {
 
 	if representation == RepresentationResource {
 		message.Representation = RepresentationResource
-		if message.Method == MethodDirect {
-			if r.resourceLinks[string(message.Destination.Hash)] != nil && message.Progress < 0.05 {
-				message.Progress = 0.05
+		if message.method == MethodDirect {
+			if r.resourceLinks[string(message.Destination.Hash)] != nil && message.progress < 0.05 {
+				message.SetProgress(0.05)
 			}
 		}
 		return r.sendResource(message)
@@ -3083,13 +3091,13 @@ func (r *Router) CancelOutbound(messageID []byte, cancelState int) {
 
 	r.mu.Lock()
 	if deferred := r.pendingDeferredStamps[string(messageID)]; deferred != nil {
-		deferred.State = cancelState
+		deferred.SetState(cancelState)
 	}
 	for _, message := range r.pendingOutbound {
 		if !bytes.Equal(message.MessageID, messageID) {
 			continue
 		}
-		message.State = cancelState
+		message.SetState(cancelState)
 		if message.Representation == RepresentationResource && message.ResourceRepresentation != nil {
 			message.ResourceRepresentation.Cancel()
 		}
@@ -3133,19 +3141,19 @@ func (r *Router) unregisterStampCancel(messageID []byte) {
 func (r *Router) sendMessageResourceLocked(message *Message) error {
 	message.Representation = RepresentationResource
 
-	if message.Method == MethodPropagated && message.deliveryDestination != nil {
+	if message.method == MethodPropagated && message.deliveryDestination != nil {
 		r.outboundPropagationLinkMessage = message
 		resource, err := message.asResource()
 		if err != nil {
 			return err
 		}
 		message.ResourceRepresentation = resource
-		message.State = StateSending
-		message.Progress = 0.10
+		message.SetState(StateSending)
+		message.SetProgress(0.10)
 		resource.SetProgressCallback(func(resource *rns.Resource) {
 			r.mu.Lock()
 			defer r.mu.Unlock()
-			message.Progress = 0.10 + (resource.GetProgress() * 0.90)
+			message.SetProgress(0.10 + (resource.GetProgress() * 0.90))
 		})
 		resource.SetCallback(func(resource *rns.Resource) {
 			var deliveryCallback func(*Message)
@@ -3153,16 +3161,16 @@ func (r *Router) sendMessageResourceLocked(message *Message) error {
 			shouldTeardown := false
 			r.mu.Lock()
 			if resource != nil && resource.Status() == rns.ResourceStatusComplete {
-				message.State = StateSent
-				message.Progress = 1.0
+				message.SetState(StateSent)
+				message.SetProgress(1.0)
 				if r.outboundPropagationLinkMessage == message {
 					r.outboundPropagationLinkMessage = nil
 				}
 				deliveryCallback = message.DeliveryCallback
-			} else if message.State != StateCancelled {
+			} else if message.state != StateCancelled {
 				shouldTeardown = true
-				message.State = StateOutbound
-				message.Progress = 0.0
+				message.SetState(StateOutbound)
+				message.SetProgress(0.0)
 				message.NextDeliveryAttempt = float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
 				if destinationLink, ok := message.deliveryDestination.(*rns.Link); ok {
 					linkToTeardown = destinationLink
@@ -3199,12 +3207,12 @@ func (r *Router) sendMessageResourceLocked(message *Message) error {
 			r.mu.Lock()
 			defer r.mu.Unlock()
 			if resource != nil && resource.Status() == rns.ResourceStatusComplete {
-				message.State = StateDelivered
+				message.SetState(StateDelivered)
 				r.markTicketDeliveryLocked(message)
 				return
 			}
-			if message.State != StateDelivered && message.State != StateCancelled {
-				message.State = StateFailed
+			if message.state != StateDelivered && message.state != StateCancelled {
+				message.SetState(StateFailed)
 			}
 		})
 		if err := resource.Advertise(); err != nil {
@@ -5280,9 +5288,9 @@ func (r *Router) handleOutboundPropagationLinkClosed(link *rns.Link) {
 	state := r.propagationTransferState
 	retryAt := float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
 	for _, message := range r.pendingOutbound {
-		if message.Method == MethodPropagated && message.State == StateSending {
-			message.State = StateOutbound
-			message.Progress = 0.0
+		if message.method == MethodPropagated && message.state == StateSending {
+			message.SetState(StateOutbound)
+			message.SetProgress(0.0)
 			message.NextDeliveryAttempt = retryAt
 			message.setDeliveryDestination(nil)
 		}

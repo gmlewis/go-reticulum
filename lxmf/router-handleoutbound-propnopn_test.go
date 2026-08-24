@@ -46,8 +46,8 @@ func TestHandleOutboundPropagatedWithoutPropagationNodeErrors(t *testing.T) {
 	}
 
 	// Mirrors Python fail_message: the message is marked FAILED.
-	if msg.State != StateFailed {
-		t.Fatalf("message state=%v want=%v (StateFailed)", msg.State, StateFailed)
+	if msg.State() != StateFailed {
+		t.Fatalf("message state=%v want=%v (StateFailed)", msg.State(), StateFailed)
 	}
 
 	// The rejected message is not queued for outbound or deferred-stamp processing.

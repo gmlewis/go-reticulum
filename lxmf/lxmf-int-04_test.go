@@ -208,7 +208,7 @@ func TestIntegrationResourcePythonToGo(t *testing.T) {
 	if got := len(message.Content); got != contentLen {
 		t.Fatalf("content length=%v want=%v", got, contentLen)
 	}
-	if message.Method != MethodDirect {
-		t.Fatalf("method=%v want=%v", message.Method, MethodDirect)
+	if message.Method() != MethodDirect {
+		t.Fatalf("method=%v want=%v", message.Method(), MethodDirect)
 	}
 }

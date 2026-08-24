@@ -144,11 +144,11 @@ func TestAsQRGolden(t *testing.T) {
 	}
 
 	// mark_paper_generated: state=PAPER (0x05), progress=1.0, callback fired.
-	if got, want := m.State, StatePaper; got != want {
+	if got, want := m.State(), StatePaper; got != want {
 		t.Errorf("State=0x%02x want=0x%02x (StatePaper)", got, want)
 	}
-	if m.Progress != 1.0 {
-		t.Errorf("Progress=%v want=1.0", m.Progress)
+	if m.Progress() != 1.0 {
+		t.Errorf("Progress=%v want=1.0", m.Progress())
 	}
 	if !callbackFired {
 		t.Error("DeliveryCallback not invoked by mark_paper_generated")
@@ -166,8 +166,8 @@ func TestAsQRPacksIfNotPacked(t *testing.T) {
 	if _, err := m.AsQR(); err != nil {
 		t.Fatalf("AsQR with unpacked message: %v", err)
 	}
-	if m.State != StatePaper {
-		t.Errorf("State=0x%02x want=0x%02x", m.State, StatePaper)
+	if m.State() != StatePaper {
+		t.Errorf("State=0x%02x want=0x%02x", m.State(), StatePaper)
 	}
 }
 
@@ -249,11 +249,11 @@ func TestAsURIFinaliseMarksPaperGenerated(t *testing.T) {
 	if _, err := m.AsURI(true); err != nil {
 		t.Fatalf("AsURI(true): %v", err)
 	}
-	if got, want := m.State, StatePaper; got != want {
+	if got, want := m.State(), StatePaper; got != want {
 		t.Errorf("State=0x%02x want=0x%02x", got, want)
 	}
-	if m.Progress != 1.0 {
-		t.Errorf("Progress=%v want=1.0", m.Progress)
+	if m.Progress() != 1.0 {
+		t.Errorf("Progress=%v want=1.0", m.Progress())
 	}
 	if !m.TransportEncrypted {
 		t.Error("TransportEncrypted=false after AsURI(true) finalise")

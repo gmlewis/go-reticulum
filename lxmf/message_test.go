@@ -298,7 +298,7 @@ func TestUnpackMessageFromFileRestoresContainerState(t *testing.T) {
 	message := mustTestNewMessage(t, destination, source, "hello", "greet", nil)
 	message.DesiredMethod = MethodPropagated
 	message.DeferPropagationStamp = false
-	message.State = StateSent
+	message.SetState(StateSent)
 	if err := message.Pack(); err != nil {
 		t.Fatalf("Pack: %v", err)
 	}
@@ -325,11 +325,11 @@ func TestUnpackMessageFromFileRestoresContainerState(t *testing.T) {
 		t.Fatalf("UnpackMessageFromFile: %v", err)
 	}
 
-	if got.State != StateSent {
-		t.Fatalf("state=%v want=%v", got.State, StateSent)
+	if got.State() != StateSent {
+		t.Fatalf("state=%v want=%v", got.State(), StateSent)
 	}
-	if got.Method != MethodPropagated {
-		t.Fatalf("method=%v want=%v", got.Method, MethodPropagated)
+	if got.Method() != MethodPropagated {
+		t.Fatalf("method=%v want=%v", got.Method(), MethodPropagated)
 	}
 	if !got.TransportEncrypted {
 		t.Fatal("expected transport_encrypted to be restored from container")
@@ -364,7 +364,7 @@ func TestMessagePropagatedPackProducesPropagationWireFormat(t *testing.T) {
 	}
 	after := float64(time.Now().Add(time.Second).UnixNano()) / 1e9
 
-	if got, want := message.Method, MethodPropagated; got != want {
+	if got, want := message.Method(), MethodPropagated; got != want {
 		t.Fatalf("method=%v want=%v", got, want)
 	}
 	if got, want := message.Representation, RepresentationPacket; got != want {
@@ -458,7 +458,7 @@ func TestDetermineTransportEncryption(t *testing.T) {
 			t.Parallel()
 
 			message := mustTestNewMessage(t, tc.dest, source, "content", "title", nil)
-			message.Method = tc.method
+			message.SetMethod(tc.method)
 
 			message.DetermineTransportEncryption()
 
@@ -483,7 +483,7 @@ func TestPackedContainerUsesTransportState(t *testing.T) {
 
 	message := mustTestNewMessage(t, destination, source, "container-content", "container-title", nil)
 	message.DesiredMethod = MethodPropagated
-	message.State = StateSent
+	message.SetState(StateSent)
 	if err := message.Pack(); err != nil {
 		t.Fatalf("Pack: %v", err)
 	}

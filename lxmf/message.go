@@ -129,19 +129,24 @@ type Message struct {
 
 	deferredStampOrder uint64
 
-	// State tracks the current lifecycle state of the message.
-	State int
+	// state tracks the current lifecycle state of the message. It is mutated
+	// only through SetState (which takes persistMu) or by code that already
+	// holds persistMu; read via State. Unexported so downstream callers cannot
+	// bypass the lock with a direct field write.
+	state int
 
 	// DesiredMethod is the preferred delivery method requested by the sender.
 	DesiredMethod int
-	// Method is the delivery method actually used or observed.
-	Method int
+	// method is the delivery method actually used or observed. Guarded by
+	// persistMu like state; mutate via SetMethod, read via Method.
+	method int
 	// Representation records whether the message traveled as a packet or as a
 	// resource.
 	Representation int
-	// Progress tracks Python-style outbound transfer progress in the range
-	// 0.0-1.0.
-	Progress float64
+	// progress tracks Python-style outbound transfer progress in the range
+	// 0.0-1.0. Guarded by persistMu like state; mutate via SetProgress, read
+	// via Progress.
+	progress float64
 	// TransportEncrypted reports whether the outer transport layer encrypts the
 	// message in transit.
 	TransportEncrypted bool
@@ -222,9 +227,9 @@ func NewMessage(destination, source *rns.Destination, content, title string, fie
 		Title:                 []byte(title),
 		Content:               []byte(content),
 		Fields:                ensureFields(fields),
-		State:                 StateGenerating,
+		state:                 StateGenerating,
 		DesiredMethod:         MethodDirect,
-		Method:                RepresentationUnknown,
+		method:                RepresentationUnknown,
 		Representation:        RepresentationUnknown,
 		DeferStamp:            true,
 		DeferPropagationStamp: true,
@@ -457,7 +462,7 @@ func (m *Message) Pack() error {
 		if len(m.Packed) > EncryptedPacketMaxContent {
 			return fmt.Errorf("lxmf message desired opportunistic delivery method, but content of length %v exceeds single-packet content limit of %v", len(m.Packed), EncryptedPacketMaxContent)
 		}
-		m.Method = MethodOpportunistic
+		m.method = MethodOpportunistic
 		m.Representation = RepresentationPacket
 	}
 
@@ -476,7 +481,7 @@ func (m *Message) Pack() error {
 		m.PaperPacked = append(m.PaperPacked, m.DestinationHash...)
 		m.PaperPacked = append(m.PaperPacked, encryptedData...)
 		m.RatchetID = m.Destination.LatestRatchetID()
-		m.Method = MethodPaper
+		m.method = MethodPaper
 		m.Representation = RepresentationPaper
 	}
 
@@ -561,8 +566,8 @@ func UnpackMessageFromBytes(ts rns.Transport, data []byte, originalMethod int) (
 		Signature:       signature,
 		Packed:          cloneBytes(data),
 		Incoming:        true,
-		State:           originalMethod,
-		Method:          originalMethod,
+		state:           originalMethod,
+		method:          originalMethod,
 		DesiredMethod:   originalMethod,
 		Representation:  RepresentationUnknown,
 	}
@@ -629,7 +634,7 @@ func UnpackMessageFromFile(ts rns.Transport, lxmfFile io.Reader) (*Message, erro
 		if err != nil {
 			return nil, err
 		}
-		message.State = parsedState
+		message.state = parsedState
 	}
 	if transportEncrypted, ok := container["transport_encrypted"]; ok {
 		parsedTransportEncrypted, ok := transportEncrypted.(bool)
@@ -650,7 +655,7 @@ func UnpackMessageFromFile(ts rns.Transport, lxmfFile io.Reader) (*Message, erro
 		if err != nil {
 			return nil, err
 		}
-		message.Method = parsedMethod
+		message.method = parsedMethod
 	}
 
 	return message, nil
@@ -819,6 +824,63 @@ func (m *Message) PackedContainer() ([]byte, error) {
 	return m.packedContainerLocked()
 }
 
+// SetState updates m.state under the per-Message persist mutex so the write is
+// synchronized with concurrent PackedContainer/WriteToDirectory snapshots,
+// mirroring Python's __persist_lock guarding state mutation during persist
+// (LXMessage.py:188). Callers that already hold persistMu (e.g. inside Pack or
+// packPropagated when invoked from packedContainerLocked) may assign m.state
+// directly instead of calling this method, since persistMu is a non-reentrant
+// mutex and re-entering it would self-deadlock. The router holds its own mutex
+// (r.mu) across these calls, so the consistent lock order is r.mu -> persistMu;
+// PackedContainer/WriteToDirectory take only persistMu, so no lock cycle is
+// possible.
+func (m *Message) SetState(s int) {
+	m.persistMu.Lock()
+	m.state = s
+	m.persistMu.Unlock()
+}
+
+// State returns the current lifecycle state under the per-Message persist mutex
+// so the read is consistent with concurrent snapshots and cannot race a locked
+// SetState write. See SetState for the lock-ordering rationale.
+func (m *Message) State() int {
+	m.persistMu.Lock()
+	defer m.persistMu.Unlock()
+	return m.state
+}
+
+// SetMethod updates m.method under the per-Message persist mutex; see SetState.
+func (m *Message) SetMethod(method int) {
+	m.persistMu.Lock()
+	m.method = method
+	m.persistMu.Unlock()
+}
+
+// Method returns the delivery method under the per-Message persist mutex; see
+// State for the locking rationale.
+func (m *Message) Method() int {
+	m.persistMu.Lock()
+	defer m.persistMu.Unlock()
+	return m.method
+}
+
+// SetProgress updates m.progress under the per-Message persist mutex; see
+// SetState. The router calls this for every progress change so an external
+// Progress reader can never race a write.
+func (m *Message) SetProgress(p float64) {
+	m.persistMu.Lock()
+	m.progress = p
+	m.persistMu.Unlock()
+}
+
+// Progress returns the outbound transfer progress under the per-Message persist
+// mutex; see State for the locking rationale.
+func (m *Message) Progress() float64 {
+	m.persistMu.Lock()
+	defer m.persistMu.Unlock()
+	return m.progress
+}
+
 // packedContainerLocked builds the msgpack container dict assuming the
 // caller holds persistMu. WriteToDirectory uses it to avoid re-entering the
 // lock it already holds.
@@ -829,11 +891,11 @@ func (m *Message) packedContainerLocked() ([]byte, error) {
 		}
 	}
 	container := map[string]any{
-		"state":                m.State,
+		"state":                m.state,
 		"lxmf_bytes":           m.Packed,
 		"transport_encrypted":  m.TransportEncrypted,
 		"transport_encryption": m.TransportEncryption,
-		"method":               m.Method,
+		"method":               m.method,
 	}
 	return msgpack.Pack(container)
 }
@@ -874,7 +936,7 @@ func (m *Message) packPropagated() error {
 	}
 	m.PropagationPacked = propagationPacked
 
-	m.Method = MethodPropagated
+	m.method = MethodPropagated
 	if len(m.PropagationPacked) <= LinkPacketMaxContent {
 		m.Representation = RepresentationPacket
 	} else {
@@ -887,7 +949,7 @@ func (m *Message) packPropagated() error {
 // DetermineTransportEncryption mirrors Python's transport-encryption labeling
 // for the message's selected delivery method.
 func (m *Message) DetermineTransportEncryption() {
-	switch m.Method {
+	switch m.method {
 	case MethodOpportunistic, MethodPropagated, MethodPaper:
 		switch {
 		case m.Destination != nil && m.Destination.Type == rns.DestinationSingle:
@@ -943,7 +1005,7 @@ func (m *Message) asPacket() (*rns.Packet, error) {
 		return nil, errors.New("can't synthesize packet for lxmf message before delivery destination is known")
 	}
 
-	switch m.Method {
+	switch m.method {
 	case MethodOpportunistic:
 		if len(m.Packed) <= DestinationLength {
 			return nil, errors.New("packed lxmf message too short for packet encoding")
@@ -959,7 +1021,7 @@ func (m *Message) asPacket() (*rns.Packet, error) {
 		}
 		return rns.NewPacket(m.deliveryDestination, m.PropagationPacked), nil
 	default:
-		return nil, fmt.Errorf("unsupported lxmf packet method %v", m.Method)
+		return nil, fmt.Errorf("unsupported lxmf packet method %v", m.method)
 	}
 }
 
@@ -981,7 +1043,7 @@ func (m *Message) asResource() (*rns.Resource, error) {
 		return nil, errors.New("tried to synthesize resource for lxmf message on a link that was not active")
 	}
 
-	switch m.Method {
+	switch m.method {
 	case MethodDirect:
 		// DIRECT-delivery resources carry auto_compress from the peer's
 		// announced supported-functionality list, mirroring Python's
@@ -996,7 +1058,7 @@ func (m *Message) asResource() (*rns.Resource, error) {
 		}
 		return rns.NewResource(m.PropagationPacked, link)
 	default:
-		return nil, fmt.Errorf("unsupported lxmf resource method %v", m.Method)
+		return nil, fmt.Errorf("unsupported lxmf resource method %v", m.method)
 	}
 }
 
@@ -1176,7 +1238,7 @@ func (m *Message) AsURI(finalise bool) (string, error) {
 	if m.DesiredMethod != MethodPaper {
 		return "", errors.New("attempt to represent LXM with non-paper delivery method as URI")
 	}
-	if m.Method == MethodPaper && m.PaperPacked != nil {
+	if m.method == MethodPaper && m.PaperPacked != nil {
 		encoded := base64.RawURLEncoding.EncodeToString(m.PaperPacked)
 		uri := URISchema + "://" + encoded
 		if finalise {
@@ -1195,8 +1257,8 @@ func (m *Message) AsURI(finalise bool) (string, error) {
 // A panic in the callback is recovered so a misbehaving handler cannot abort
 // generation, matching Python's try/except around the callback invocation.
 func (m *Message) markPaperGenerated() {
-	m.State = StatePaper
-	m.Progress = 1.0
+	m.state = StatePaper
+	m.progress = 1.0
 	if m.DeliveryCallback != nil {
 		defer func() { _ = recover() }()
 		m.DeliveryCallback(m)

@@ -194,7 +194,7 @@ func TestIntegrationOpportunisticPythonToGo(t *testing.T) {
 	if got := message.ContentString(); got != "py-opportunistic-content" {
 		t.Fatalf("content=%v want=%v", got, "py-opportunistic-content")
 	}
-	if message.Method != MethodOpportunistic {
-		t.Fatalf("method=%v want=%v", message.Method, MethodOpportunistic)
+	if message.Method() != MethodOpportunistic {
+		t.Fatalf("method=%v want=%v", message.Method(), MethodOpportunistic)
 	}
 }

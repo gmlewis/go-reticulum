@@ -56,12 +56,12 @@ func TestPropagationAnnounceHandlerTriggersOutboundOnOutboundPNAnnounce(t *testi
 
 	propagated := &Message{
 		DestinationHash:     append([]byte{}, remoteHash...),
-		Method:              MethodPropagated,
+		method:              MethodPropagated,
 		NextDeliveryAttempt: 0,
 	}
 	direct := &Message{
 		DestinationHash:     append([]byte{}, remoteHash...),
-		Method:              MethodDirect,
+		method:              MethodDirect,
 		NextDeliveryAttempt: 0,
 	}
 	router.pendingOutbound = append(router.pendingOutbound, propagated, direct)
@@ -119,7 +119,7 @@ func TestPropagationAnnounceHandlerIgnoresNonOutboundPNAnnounce(t *testing.T) {
 
 	propagated := &Message{
 		DestinationHash:     append([]byte{}, remoteHash...),
-		Method:              MethodPropagated,
+		method:              MethodPropagated,
 		NextDeliveryAttempt: 0,
 	}
 	router.pendingOutbound = append(router.pendingOutbound, propagated)

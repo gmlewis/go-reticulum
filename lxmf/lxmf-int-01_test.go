@@ -192,7 +192,7 @@ func TestIntegrationDirectPythonToGo(t *testing.T) {
 	if got := message.ContentString(); got != "py-direct-content" {
 		t.Fatalf("content=%v want=%v", got, "py-direct-content")
 	}
-	if message.Method != MethodDirect {
-		t.Fatalf("method=%v want=%v", message.Method, MethodDirect)
+	if message.Method() != MethodDirect {
+		t.Fatalf("method=%v want=%v", message.Method(), MethodDirect)
 	}
 }

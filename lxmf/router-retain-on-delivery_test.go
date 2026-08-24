@@ -99,7 +99,7 @@ func TestProcessOutboundRetainsDestinationAfterDelivery(t *testing.T) {
 	if err := message.Pack(); err != nil {
 		t.Fatalf("Pack: %v", err)
 	}
-	message.State = StateDelivered
+	message.SetState(StateDelivered)
 	router.pendingOutbound = append(router.pendingOutbound, message)
 
 	router.ProcessOutbound()
@@ -144,7 +144,7 @@ func TestProcessOutboundDoesNotRetainForFailedMessage(t *testing.T) {
 	if err := message.Pack(); err != nil {
 		t.Fatalf("Pack: %v", err)
 	}
-	message.State = StateFailed
+	message.SetState(StateFailed)
 	router.pendingOutbound = append(router.pendingOutbound, message)
 
 	router.ProcessOutbound()

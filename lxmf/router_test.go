@@ -165,7 +165,7 @@ func TestHandleOutboundDeliveryMarksTicketDelivery(t *testing.T) {
 
 	sentPacket.Receipt.TriggerDelivery()
 
-	if got, want := msg.State, StateDelivered; got != want {
+	if got, want := msg.State(), StateDelivered; got != want {
 		t.Fatalf("message state=%v want=%v", got, want)
 	}
 	if got := router.ticketStore.lastDeliveries[string(destination.Hash)]; got != float64(now.UnixNano())/1e9 {
@@ -525,8 +525,8 @@ func TestDeferredStamps(t *testing.T) {
 	if got := len(router.pendingDeferredStamps); got != 1 {
 		t.Fatalf("pendingDeferredStamps length=%v want=1", got)
 	}
-	if msg.State != StateOutbound {
-		t.Fatalf("state=%v want=%v", msg.State, StateOutbound)
+	if msg.State() != StateOutbound {
+		t.Fatalf("state=%v want=%v", msg.State(), StateOutbound)
 	}
 	if len(msg.Stamp) != 0 {
 		t.Fatalf("stamp=%x want empty before deferred processing", msg.Stamp)
@@ -576,7 +576,7 @@ func TestDeferredStampsFailureResetsProgress(t *testing.T) {
 	stampCost := 257
 	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 	msg.StampCost = &stampCost
-	msg.Progress = 0.5
+	msg.SetProgress(0.5)
 
 	failedCalled := false
 	msg.FailedCallback = func(failed *Message) {
@@ -600,11 +600,11 @@ func TestDeferredStampsFailureResetsProgress(t *testing.T) {
 	if !failedCalled {
 		t.Fatal("expected FailedCallback to be invoked")
 	}
-	if msg.State != StateFailed {
-		t.Fatalf("state=%v want=%v", msg.State, StateFailed)
+	if msg.State() != StateFailed {
+		t.Fatalf("state=%v want=%v", msg.State(), StateFailed)
 	}
-	if msg.Progress != 0 {
-		t.Fatalf("progress=%v want=0", msg.Progress)
+	if msg.Progress() != 0 {
+		t.Fatalf("progress=%v want=0", msg.Progress())
 	}
 }
 
@@ -834,14 +834,14 @@ func TestDeferredOutboundProgress(t *testing.T) {
 	propagationCost := 11
 
 	pendingOutbound := mustTestNewMessage(t, destination, sourceDest, "queued", "title", nil)
-	pendingOutbound.Progress = 0.25
+	pendingOutbound.SetProgress(0.25)
 	pendingOutbound.StampCost = &stampCost
 	if err := pendingOutbound.Pack(); err != nil {
 		t.Fatalf("Pack pendingOutbound: %v", err)
 	}
 
 	deferred := mustTestNewMessage(t, destination, sourceDest, "deferred", "title", nil)
-	deferred.Progress = 0.75
+	deferred.SetProgress(0.75)
 	deferred.StampCost = &stampCost
 	deferred.PropagationTargetCost = &propagationCost
 	if err := deferred.Pack(); err != nil {
@@ -851,11 +851,11 @@ func TestDeferredOutboundProgress(t *testing.T) {
 	router.pendingOutbound = append(router.pendingOutbound, pendingOutbound)
 	router.pendingDeferredStamps[string(deferred.MessageID)] = deferred
 
-	if got := router.GetOutboundProgress(pendingOutbound.Hash); got == nil || *got != pendingOutbound.Progress {
-		t.Fatalf("GetOutboundProgress(pendingOutbound)=%v want=%v", got, pendingOutbound.Progress)
+	if got := router.GetOutboundProgress(pendingOutbound.Hash); got == nil || *got != pendingOutbound.Progress() {
+		t.Fatalf("GetOutboundProgress(pendingOutbound)=%v want=%v", got, pendingOutbound.Progress())
 	}
-	if got := router.GetOutboundProgress(deferred.Hash); got == nil || *got != deferred.Progress {
-		t.Fatalf("GetOutboundProgress(deferred)=%v want=%v", got, deferred.Progress)
+	if got := router.GetOutboundProgress(deferred.Hash); got == nil || *got != deferred.Progress() {
+		t.Fatalf("GetOutboundProgress(deferred)=%v want=%v", got, deferred.Progress())
 	}
 	if got := router.GetOutboundLXMStampCost(pendingOutbound.Hash); got == nil || *got != stampCost {
 		t.Fatalf("GetOutboundLXMStampCost(pendingOutbound)=%v want=%v", got, stampCost)
@@ -870,8 +870,8 @@ func TestDeferredOutboundProgress(t *testing.T) {
 	cancelled := false
 	deferred.FailedCallback = func(*Message) { cancelled = true }
 	router.CancelOutbound(deferred.MessageID, StateCancelled)
-	if deferred.State != StateCancelled {
-		t.Fatalf("deferred state after cancel=%v want=%v", deferred.State, StateCancelled)
+	if deferred.State() != StateCancelled {
+		t.Fatalf("deferred state after cancel=%v want=%v", deferred.State(), StateCancelled)
 	}
 
 	router.ProcessDeferredStamps()
@@ -917,8 +917,8 @@ func TestProcessOutboundDirectRequestsPathWhenUnavailable(t *testing.T) {
 	if requestCount != 1 {
 		t.Fatalf("request path count=%v want=1", requestCount)
 	}
-	if msg.State != StateOutbound {
-		t.Fatalf("state=%v want=%v", msg.State, StateOutbound)
+	if msg.State() != StateOutbound {
+		t.Fatalf("state=%v want=%v", msg.State(), StateOutbound)
 	}
 	if msg.DeliveryAttempts != 1 {
 		t.Fatalf("attempts=%v want=1", msg.DeliveryAttempts)
@@ -971,8 +971,8 @@ func TestProcessOutboundOpportunisticPathRecoversWithoutPathRequest(t *testing.T
 	if requestCount != 0 {
 		t.Fatalf("request path count=%v want=0", requestCount)
 	}
-	if msg.State != StateOutbound {
-		t.Fatalf("state=%v want=%v", msg.State, StateOutbound)
+	if msg.State() != StateOutbound {
+		t.Fatalf("state=%v want=%v", msg.State(), StateOutbound)
 	}
 	if msg.DeliveryAttempts != 1 {
 		t.Fatalf("attempts=%v want=1", msg.DeliveryAttempts)
@@ -988,8 +988,8 @@ func TestProcessOutboundOpportunisticPathRecoversWithoutPathRequest(t *testing.T
 	if requestCount != 0 {
 		t.Fatalf("request path count after path recovery=%v want=0", requestCount)
 	}
-	if msg.State != StateSent {
-		t.Fatalf("state after path recovery=%v want=%v", msg.State, StateSent)
+	if msg.State() != StateSent {
+		t.Fatalf("state after path recovery=%v want=%v", msg.State(), StateSent)
 	}
 }
 
@@ -1049,8 +1049,8 @@ func TestProcessOutboundOpportunisticEscalatesToPathRequestThenSends(t *testing.
 	if sendCount != 1 {
 		t.Fatalf("send count after path request recovery=%v want=1", sendCount)
 	}
-	if msg.State != StateSent {
-		t.Fatalf("state after path request recovery=%v want=%v", msg.State, StateSent)
+	if msg.State() != StateSent {
+		t.Fatalf("state after path request recovery=%v want=%v", msg.State(), StateSent)
 	}
 }
 
@@ -1083,8 +1083,8 @@ func TestProcessOutboundSendFailureEventuallyFails(t *testing.T) {
 		router.ProcessOutbound()
 	}
 
-	if msg.State != StateFailed {
-		t.Fatalf("state=%v want=%v", msg.State, StateFailed)
+	if msg.State() != StateFailed {
+		t.Fatalf("state=%v want=%v", msg.State(), StateFailed)
 	}
 }
 
@@ -1111,8 +1111,8 @@ func TestProcessOutboundSendSuccessSetsSent(t *testing.T) {
 		t.Fatalf("HandleOutbound: %v", err)
 	}
 
-	if msg.State != StateSending {
-		t.Fatalf("state=%v want=%v", msg.State, StateSending)
+	if msg.State() != StateSending {
+		t.Fatalf("state=%v want=%v", msg.State(), StateSending)
 	}
 }
 
@@ -1150,8 +1150,8 @@ func TestProcessOutboundSentMessageNotResentUntilTimeout(t *testing.T) {
 	if sendCount != 1 {
 		t.Fatalf("send count after ProcessOutbound=%v want=1", sendCount)
 	}
-	if msg.State != StateSending {
-		t.Fatalf("state=%v want=%v", msg.State, StateSending)
+	if msg.State() != StateSending {
+		t.Fatalf("state=%v want=%v", msg.State(), StateSending)
 	}
 }
 
@@ -1196,8 +1196,8 @@ func TestProcessOutboundTimeoutRequeuesForRetry(t *testing.T) {
 	}
 
 	lastPacket.Receipt.TriggerTimeout()
-	if msg.State != StateOutbound {
-		t.Fatalf("state after timeout=%v want=%v", msg.State, StateOutbound)
+	if msg.State() != StateOutbound {
+		t.Fatalf("state after timeout=%v want=%v", msg.State(), StateOutbound)
 	}
 
 	now = now.Add(deliveryRetryWait + time.Second)
@@ -1205,8 +1205,8 @@ func TestProcessOutboundTimeoutRequeuesForRetry(t *testing.T) {
 	if sendCount != 2 {
 		t.Fatalf("send count after retry=%v want=2", sendCount)
 	}
-	if msg.State != StateSending {
-		t.Fatalf("state after retry=%v want=%v", msg.State, StateSending)
+	if msg.State() != StateSending {
+		t.Fatalf("state after retry=%v want=%v", msg.State(), StateSending)
 	}
 }
 
@@ -1244,13 +1244,13 @@ func TestProcessOutboundDeliveryCallbackSetsDeliveredAndPreventsTimeoutRequeue(t
 	}
 
 	lastPacket.Receipt.TriggerDelivery()
-	if msg.State != StateDelivered {
-		t.Fatalf("state after delivery=%v want=%v", msg.State, StateDelivered)
+	if msg.State() != StateDelivered {
+		t.Fatalf("state after delivery=%v want=%v", msg.State(), StateDelivered)
 	}
 
 	lastPacket.Receipt.TriggerTimeout()
-	if msg.State != StateDelivered {
-		t.Fatalf("state after timeout post-delivery=%v want=%v", msg.State, StateDelivered)
+	if msg.State() != StateDelivered {
+		t.Fatalf("state after timeout post-delivery=%v want=%v", msg.State(), StateDelivered)
 	}
 
 	router.ProcessOutbound()
@@ -1340,8 +1340,8 @@ func TestProcessOutboundSelectsResourceRepresentation(t *testing.T) {
 	if msg.Representation != RepresentationResource {
 		t.Fatalf("representation=%v want=%v", msg.Representation, RepresentationResource)
 	}
-	if msg.State != StateSending {
-		t.Fatalf("state=%v want=%v", msg.State, StateSending)
+	if msg.State() != StateSending {
+		t.Fatalf("state=%v want=%v", msg.State(), StateSending)
 	}
 }
 
@@ -1382,8 +1382,8 @@ func TestProcessOutboundResourceUnsupportedFails(t *testing.T) {
 	if msg.Representation != RepresentationResource {
 		t.Fatalf("representation=%v want=%v", msg.Representation, RepresentationResource)
 	}
-	if msg.State != StateFailed {
-		t.Fatalf("state=%v want=%v", msg.State, StateFailed)
+	if msg.State() != StateFailed {
+		t.Fatalf("state=%v want=%v", msg.State(), StateFailed)
 	}
 	if len(router.pendingOutbound) != 0 {
 		t.Fatalf("pending outbound count=%v want=0", len(router.pendingOutbound))
@@ -1419,8 +1419,8 @@ func TestProcessOutboundResourceLinkPendingRetryNoAttemptIncrement(t *testing.T)
 		t.Fatalf("HandleOutbound: %v", err)
 	}
 
-	if msg.State != StateOutbound {
-		t.Fatalf("state=%v want=%v", msg.State, StateOutbound)
+	if msg.State() != StateOutbound {
+		t.Fatalf("state=%v want=%v", msg.State(), StateOutbound)
 	}
 	if msg.Representation != RepresentationResource {
 		t.Fatalf("representation=%v want=%v", msg.Representation, RepresentationResource)
@@ -1467,7 +1467,7 @@ func TestProcessOutboundResourceLinkPendingInitializesLinkProgress(t *testing.T)
 		t.Fatalf("HandleOutbound: %v", err)
 	}
 
-	if got, want := msg.Progress, 0.03; got != want {
+	if got, want := msg.Progress(), 0.03; got != want {
 		t.Fatalf("progress=%v want=%v", got, want)
 	}
 	if !router.resourceLinkPending[string(destination.Hash)] {
@@ -1491,7 +1491,7 @@ func TestProcessOutboundResourceActiveLinkInitializesTransferProgress(t *testing
 		content[i] = 'E'
 	}
 	msg := mustTestNewMessage(t, destination, sourceDest, string(content), "title", nil)
-	msg.Progress = 0.01
+	msg.SetProgress(0.01)
 
 	mustTestSetupDirectLink(t, router, ts, destination)
 
@@ -1501,7 +1501,7 @@ func TestProcessOutboundResourceActiveLinkInitializesTransferProgress(t *testing
 
 	var observedProgress float64
 	router.sendResource = func(message *Message) error {
-		observedProgress = message.Progress
+		observedProgress = message.Progress()
 		return nil
 	}
 
@@ -1512,7 +1512,7 @@ func TestProcessOutboundResourceActiveLinkInitializesTransferProgress(t *testing
 	if got, want := observedProgress, 0.05; got != want {
 		t.Fatalf("progress seen by sendResource=%v want=%v", got, want)
 	}
-	if got, want := msg.Progress, 0.05; got != want {
+	if got, want := msg.Progress(), 0.05; got != want {
 		t.Fatalf("message progress=%v want=%v", got, want)
 	}
 }
@@ -1581,8 +1581,8 @@ func TestProcessOutboundResourceSendFailureEventuallyFails(t *testing.T) {
 		router.ProcessOutbound()
 	}
 
-	if msg.State != StateFailed {
-		t.Fatalf("state=%v want=%v", msg.State, StateFailed)
+	if msg.State() != StateFailed {
+		t.Fatalf("state=%v want=%v", msg.State(), StateFailed)
 	}
 }
 
@@ -1627,8 +1627,8 @@ func TestProcessOutboundResourceSendRetriesThenSucceeds(t *testing.T) {
 	now = now.Add(deliveryRetryWait + time.Second)
 	router.ProcessOutbound()
 
-	if msg.State != StateSending {
-		t.Fatalf("state=%v want=%v", msg.State, StateSending)
+	if msg.State() != StateSending {
+		t.Fatalf("state=%v want=%v", msg.State(), StateSending)
 	}
 	if msg.DeliveryAttempts != 2 {
 		t.Fatalf("delivery attempts=%v want=%v", msg.DeliveryAttempts, 2)
@@ -1641,9 +1641,9 @@ func TestProcessOutboundDropsTerminalStatesFromQueue(t *testing.T) {
 	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	router := mustTestNewRouter(t, ts, nil, tmpDir)
 
-	msgDelivered := &Message{State: StateDelivered}
-	msgFailed := &Message{State: StateFailed}
-	msgCancelled := &Message{State: StateCancelled}
+	msgDelivered := &Message{state: StateDelivered}
+	msgFailed := &Message{state: StateFailed}
+	msgCancelled := &Message{state: StateCancelled}
 
 	router.pendingOutbound = []*Message{msgDelivered, msgFailed, msgCancelled}
 	router.ProcessOutbound()
@@ -1682,8 +1682,8 @@ func TestHandleInboundResourceDataDeliversMessage(t *testing.T) {
 	if received.ContentString() != "resource-content" {
 		t.Fatalf("content=%q want=%q", received.ContentString(), "resource-content")
 	}
-	if received.Method != MethodDirect {
-		t.Fatalf("method=%v want=%v", received.Method, MethodDirect)
+	if received.Method() != MethodDirect {
+		t.Fatalf("method=%v want=%v", received.Method(), MethodDirect)
 	}
 }
 
@@ -5154,8 +5154,8 @@ func TestDeliveryPacketOpportunisticAndDirect(t *testing.T) {
 	// winning goroutine — and therefore the recorded method (Opportunistic
 	// vs Direct) — is non-deterministic, matching Python's own per-thread
 	// ordering in lxmf_delivery. Accept either valid delivery method.
-	if received[0].Method != MethodOpportunistic && received[0].Method != MethodDirect {
-		t.Fatalf("first method=%v want %v or %v", received[0].Method, MethodOpportunistic, MethodDirect)
+	if received[0].Method() != MethodOpportunistic && received[0].Method() != MethodDirect {
+		t.Fatalf("first method=%v want %v or %v", received[0].Method(), MethodOpportunistic, MethodDirect)
 	}
 }
 
@@ -6278,7 +6278,7 @@ func TestDeliveryAnnounceHandlerUpdatesStampCostAndRetriesPendingOutbound(t *tes
 	message := &Message{
 		Destination:         dest,
 		DestinationHash:     append([]byte{}, dest.Hash...),
-		Method:              MethodDirect,
+		method:              MethodDirect,
 		NextDeliveryAttempt: float64(time.Now().Add(time.Hour).UnixNano()) / 1e9,
 	}
 	router.pendingOutbound = append(router.pendingOutbound, message)
@@ -6385,7 +6385,7 @@ func TestDeliveryAnnounceHandlerLogsMalformedStampCostAndStillRetriesPendingOutb
 	message := &Message{
 		Destination:         dest,
 		DestinationHash:     append([]byte{}, dest.Hash...),
-		Method:              MethodDirect,
+		method:              MethodDirect,
 		NextDeliveryAttempt: float64(time.Now().Add(time.Hour).UnixNano()) / 1e9,
 	}
 	router.pendingOutbound = append(router.pendingOutbound, message)
@@ -6449,7 +6449,7 @@ func TestDeliveryAnnounceHandlerMatchesPendingOutboundByDestinationHash(t *testi
 	message := &Message{
 		Destination:         nil,
 		DestinationHash:     append([]byte{}, dest.Hash...),
-		Method:              MethodOpportunistic,
+		method:              MethodOpportunistic,
 		NextDeliveryAttempt: float64(time.Now().Add(time.Hour).UnixNano()) / 1e9,
 	}
 	router.pendingOutbound = append(router.pendingOutbound, message)
@@ -6493,7 +6493,7 @@ func TestDeliveryAnnounceHandlerWaitsForActiveOutboundProcessingBeforeRetrying(t
 	message := &Message{
 		Destination:         dest,
 		DestinationHash:     append([]byte{}, dest.Hash...),
-		Method:              MethodDirect,
+		method:              MethodDirect,
 		NextDeliveryAttempt: float64(time.Now().Add(time.Hour).UnixNano()) / 1e9,
 	}
 	router.pendingOutbound = append(router.pendingOutbound, message)
@@ -9874,8 +9874,8 @@ func TestProcessOutboundPropagatedNoNodeFails(t *testing.T) {
 		t.Fatalf("HandleOutbound error=%q, want substring %q", err.Error(), "propagation node")
 	}
 
-	if msg.State != StateFailed {
-		t.Fatalf("state=%v want=%v", msg.State, StateFailed)
+	if msg.State() != StateFailed {
+		t.Fatalf("state=%v want=%v", msg.State(), StateFailed)
 	}
 	if !failedCalled {
 		t.Fatal("expected FailedCallback to be invoked")
@@ -9896,7 +9896,7 @@ func TestProcessOutboundPropagatedInitializesMinimumProgress(t *testing.T) {
 	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 	msg.DesiredMethod = MethodPropagated
 	msg.DeferPropagationStamp = false
-	msg.Progress = 0
+	msg.SetProgress(0)
 
 	propNodeID := mustTestNewIdentity(t, true)
 	propNodeDest := mustTestNewDestination(t, ts, propNodeID, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
@@ -9918,8 +9918,8 @@ func TestProcessOutboundPropagatedInitializesMinimumProgress(t *testing.T) {
 	if requestCount != 1 {
 		t.Fatalf("request count=%v want=1", requestCount)
 	}
-	if msg.Progress != 0.01 {
-		t.Fatalf("progress=%v want=0.01", msg.Progress)
+	if msg.Progress() != 0.01 {
+		t.Fatalf("progress=%v want=0.01", msg.Progress())
 	}
 }
 
@@ -10005,8 +10005,8 @@ func TestProcessOutboundPropagatedRequestsPathThenSends(t *testing.T) {
 	if requestCount != 1 {
 		t.Fatalf("request path count=%v want=1", requestCount)
 	}
-	if msg.State != StateOutbound {
-		t.Fatalf("state=%v want=%v", msg.State, StateOutbound)
+	if msg.State() != StateOutbound {
+		t.Fatalf("state=%v want=%v", msg.State(), StateOutbound)
 	}
 	if newLinkCount != 0 || establishCount != 0 || sendCount != 0 {
 		t.Fatalf("before path, newLink=%v establish=%v send=%v want 0/0/0", newLinkCount, establishCount, sendCount)
@@ -10037,8 +10037,8 @@ func TestProcessOutboundPropagatedRequestsPathThenSends(t *testing.T) {
 	if sendCount != 1 {
 		t.Fatalf("send count=%v want=1 after link establishment", sendCount)
 	}
-	if msg.State != StateSent {
-		t.Fatalf("state=%v want=%v", msg.State, StateSent)
+	if msg.State() != StateSent {
+		t.Fatalf("state=%v want=%v", msg.State(), StateSent)
 	}
 }
 
@@ -10090,8 +10090,8 @@ func TestProcessOutboundPropagatedActiveLinkUsesPropagationLink(t *testing.T) {
 	if sendCount != 1 {
 		t.Fatalf("send count=%v want=1", sendCount)
 	}
-	if msg.State != StateSent {
-		t.Fatalf("state=%v want=%v", msg.State, StateSent)
+	if msg.State() != StateSent {
+		t.Fatalf("state=%v want=%v", msg.State(), StateSent)
 	}
 }
 
@@ -10144,8 +10144,8 @@ func TestProcessOutboundPropagatedActiveLinkUsesPropagationLinkAtRetryLimit(t *t
 	if sendCount != 1 {
 		t.Fatalf("send count=%v want=1", sendCount)
 	}
-	if msg.State != StateSent {
-		t.Fatalf("state=%v want=%v", msg.State, StateSent)
+	if msg.State() != StateSent {
+		t.Fatalf("state=%v want=%v", msg.State(), StateSent)
 	}
 }
 
@@ -10190,8 +10190,8 @@ func TestProcessOutboundPropagatedPendingLinkWaits(t *testing.T) {
 	if sendCount != 0 {
 		t.Fatalf("send count=%v want=0", sendCount)
 	}
-	if msg.State != StateOutbound {
-		t.Fatalf("state=%v want=%v", msg.State, StateOutbound)
+	if msg.State() != StateOutbound {
+		t.Fatalf("state=%v want=%v", msg.State(), StateOutbound)
 	}
 	if len(router.pendingOutbound) != 1 {
 		t.Fatalf("pending outbound=%v want=1", len(router.pendingOutbound))
@@ -10337,8 +10337,8 @@ func TestProcessOutboundPropagatedFinalPathlessRetryDoesNotRequestPath(t *testin
 	if msg.NextDeliveryAttempt != wantNext {
 		t.Fatalf("next delivery attempt=%v want=%v", msg.NextDeliveryAttempt, wantNext)
 	}
-	if msg.State != StateOutbound {
-		t.Fatalf("state=%v want=%v", msg.State, StateOutbound)
+	if msg.State() != StateOutbound {
+		t.Fatalf("state=%v want=%v", msg.State(), StateOutbound)
 	}
 	if len(router.pendingOutbound) != 1 {
 		t.Fatalf("pending outbound=%v want=1", len(router.pendingOutbound))
@@ -10379,8 +10379,8 @@ func TestProcessOutboundPropagatedSentRemovesFromQueue(t *testing.T) {
 	if err := router.HandleOutbound(msg); err != nil {
 		t.Fatalf("HandleOutbound: %v", err)
 	}
-	if msg.State != StateSent {
-		t.Fatalf("state=%v want=%v", msg.State, StateSent)
+	if msg.State() != StateSent {
+		t.Fatalf("state=%v want=%v", msg.State(), StateSent)
 	}
 
 	// Python removes propagated messages from queue when SENT.
@@ -10474,10 +10474,10 @@ func TestProcessOutboundTryPropagationOnFailFallback(t *testing.T) {
 	}
 
 	// Instead of failing, it should have switched to propagated.
-	if msg.Method != MethodPropagated {
-		t.Fatalf("method=%v want=%v (propagated)", msg.Method, MethodPropagated)
+	if msg.Method() != MethodPropagated {
+		t.Fatalf("method=%v want=%v (propagated)", msg.Method(), MethodPropagated)
 	}
-	if msg.State == StateFailed {
+	if msg.State() == StateFailed {
 		t.Fatal("expected message NOT to be in failed state after fallback to propagation")
 	}
 
@@ -10495,8 +10495,8 @@ func TestProcessOutboundTryPropagationOnFailFallback(t *testing.T) {
 	linkState = rns.LinkActive
 	established(fakeLink)
 
-	if msg.State != StateSent {
-		t.Fatalf("state after propagation=%v want=%v", msg.State, StateSent)
+	if msg.State() != StateSent {
+		t.Fatalf("state after propagation=%v want=%v", msg.State(), StateSent)
 	}
 	if sendCount != 1 {
 		t.Fatalf("send count=%v want=1 after propagation fallback", sendCount)
@@ -10545,19 +10545,19 @@ func TestPropagationTransferDelivered(t *testing.T) {
 	if lastPacket == nil || lastPacket.Receipt == nil {
 		t.Fatal("expected propagated packet receipt")
 	}
-	if got, want := msg.State, StateSending; got != want {
+	if got, want := msg.State(), StateSending; got != want {
 		t.Fatalf("state after send=%v want=%v", got, want)
 	}
-	if got, want := msg.Progress, 0.50; got != want {
+	if got, want := msg.Progress(), 0.50; got != want {
 		t.Fatalf("progress after send=%v want=%v", got, want)
 	}
 
 	lastPacket.Receipt.TriggerDelivery()
 
-	if got, want := msg.State, StateSent; got != want {
+	if got, want := msg.State(), StateSent; got != want {
 		t.Fatalf("state after delivery=%v want=%v", got, want)
 	}
-	if got, want := msg.Progress, 1.0; got != want {
+	if got, want := msg.Progress(), 1.0; got != want {
 		t.Fatalf("progress after delivery=%v want=%v", got, want)
 	}
 	if !delivered {
@@ -10618,10 +10618,10 @@ func TestPropagationTransferTimeout(t *testing.T) {
 	}
 	lastPacket.Receipt.TriggerTimeout()
 
-	if got, want := msg.State, StateOutbound; got != want {
+	if got, want := msg.State(), StateOutbound; got != want {
 		t.Fatalf("state after timeout=%v want=%v", got, want)
 	}
-	if got, want := msg.Progress, 0.0; got != want {
+	if got, want := msg.Progress(), 0.0; got != want {
 		t.Fatalf("progress after timeout=%v want=%v", got, want)
 	}
 	if teardownCount != 1 {
@@ -10673,26 +10673,26 @@ func TestPropagationTransferProgress(t *testing.T) {
 	if msg.ResourceRepresentation == nil {
 		t.Fatal("expected propagated resource representation")
 	}
-	if got, want := msg.State, StateSending; got != want {
+	if got, want := msg.State(), StateSending; got != want {
 		t.Fatalf("state after resource start=%v want=%v", got, want)
 	}
-	if got, want := msg.Progress, 0.10; got != want {
+	if got, want := msg.Progress(), 0.10; got != want {
 		t.Fatalf("progress after resource start=%v want=%v", got, want)
 	}
 
 	setResourceIntField(t, msg.ResourceRepresentation, "sentParts", 5)
 	setResourceIntField(t, msg.ResourceRepresentation, "totalParts", 10)
 	invokeResourceProgressCallback(t, msg.ResourceRepresentation)
-	if got, want := msg.Progress, 0.55; got != want {
+	if got, want := msg.Progress(), 0.55; got != want {
 		t.Fatalf("progress after resource update=%v want=%v", got, want)
 	}
 
 	setResourceIntField(t, msg.ResourceRepresentation, "status", rns.ResourceStatusComplete)
 	invokeResourceCallback(t, msg.ResourceRepresentation)
-	if got, want := msg.State, StateSent; got != want {
+	if got, want := msg.State(), StateSent; got != want {
 		t.Fatalf("state after resource completion=%v want=%v", got, want)
 	}
-	if got, want := msg.Progress, 1.0; got != want {
+	if got, want := msg.Progress(), 1.0; got != want {
 		t.Fatalf("progress after resource completion=%v want=%v", got, want)
 	}
 }
@@ -10749,10 +10749,10 @@ func TestPropagationTransferResourceFailureTearsDownLink(t *testing.T) {
 	setResourceIntField(t, msg.ResourceRepresentation, "status", rns.ResourceStatusFailed)
 	invokeResourceCallback(t, msg.ResourceRepresentation)
 
-	if got, want := msg.State, StateOutbound; got != want {
+	if got, want := msg.State(), StateOutbound; got != want {
 		t.Fatalf("state after resource failure=%v want=%v", got, want)
 	}
-	if got, want := msg.Progress, 0.0; got != want {
+	if got, want := msg.Progress(), 0.0; got != want {
 		t.Fatalf("progress after resource failure=%v want=%v", got, want)
 	}
 	if teardownCount != 1 {
@@ -10781,9 +10781,9 @@ func TestPropagationTransferClosedLink(t *testing.T) {
 
 	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
 	msg.DesiredMethod = MethodPropagated
-	msg.Method = MethodPropagated
-	msg.State = StateSending
-	msg.Progress = 0.4
+	msg.SetMethod(MethodPropagated)
+	msg.SetState(StateSending)
+	msg.SetProgress(0.4)
 	now := time.Unix(1700000000, 0)
 	router.now = func() time.Time { return now }
 	router.pendingOutbound = []*Message{msg}
@@ -10791,10 +10791,10 @@ func TestPropagationTransferClosedLink(t *testing.T) {
 
 	router.handleOutboundPropagationLinkClosed(router.outboundPropagationLink)
 
-	if got, want := msg.State, StateOutbound; got != want {
+	if got, want := msg.State(), StateOutbound; got != want {
 		t.Fatalf("state after closed link=%v want=%v", got, want)
 	}
-	if got, want := msg.Progress, 0.0; got != want {
+	if got, want := msg.Progress(), 0.0; got != want {
 		t.Fatalf("progress after closed link=%v want=%v", got, want)
 	}
 	if msg.NextDeliveryAttempt <= 0 {
@@ -10840,7 +10840,7 @@ func TestPropagationTransferInvalidStampSignalRejectsMessage(t *testing.T) {
 	if err := router.HandleOutbound(msg); err != nil {
 		t.Fatalf("HandleOutbound: %v", err)
 	}
-	if got, want := msg.State, StateSending; got != want {
+	if got, want := msg.State(), StateSending; got != want {
 		t.Fatalf("state after send=%v want=%v", got, want)
 	}
 	if len(router.pendingOutbound) != 1 {
@@ -10853,7 +10853,7 @@ func TestPropagationTransferInvalidStampSignalRejectsMessage(t *testing.T) {
 	}
 	invokeRouterLinkPacketCallback(t, router.outboundPropagationLink, signalData)
 
-	if got, want := msg.State, StateRejected; got != want {
+	if got, want := msg.State(), StateRejected; got != want {
 		t.Fatalf("state after invalid stamp signal=%v want=%v", got, want)
 	}
 	if !failed {
@@ -10979,8 +10979,8 @@ func TestProcessOutboundFailedCallbackInvoked(t *testing.T) {
 		router.ProcessOutbound()
 	}
 
-	if msg.State != StateFailed {
-		t.Fatalf("state=%v want=%v", msg.State, StateFailed)
+	if msg.State() != StateFailed {
+		t.Fatalf("state=%v want=%v", msg.State(), StateFailed)
 	}
 	if !failedCalled {
 		t.Fatal("expected FailedCallback to be invoked when message fails")

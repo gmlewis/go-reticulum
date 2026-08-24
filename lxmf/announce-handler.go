@@ -58,7 +58,7 @@ func (r *Router) handleDeliveryAnnounce(destinationHash []byte, _ *rns.Identity,
 		if !equalHashes(messageDestinationHash, destinationHash) {
 			continue
 		}
-		if message.Method == MethodDirect || message.Method == MethodOpportunistic {
+		if message.method == MethodDirect || message.method == MethodOpportunistic {
 			message.NextDeliveryAttempt = nowSeconds
 			shouldProcess = true
 		}
@@ -129,7 +129,7 @@ func (r *Router) handlePropagationAnnounceWithContext(destinationHash []byte, _ 
 			if message == nil {
 				continue
 			}
-			if message.Method == MethodPropagated {
+			if message.method == MethodPropagated {
 				message.NextDeliveryAttempt = nowSeconds
 				shouldProcess = true
 			}

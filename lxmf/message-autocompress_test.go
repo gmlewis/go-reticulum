@@ -116,7 +116,7 @@ func TestAsResourceDirectPassesAutoCompress(t *testing.T) {
 
 	// AutoCompress true: the resource is compressed.
 	mCompress := mustTestNewMessage(t, destination, source, "x", "", nil)
-	mCompress.Method = MethodDirect
+	mCompress.SetMethod(MethodDirect)
 	mCompress.Packed = compressible
 	mCompress.AutoCompress = true
 	mCompress.setDeliveryDestination(link)
@@ -135,7 +135,7 @@ func TestAsResourceDirectPassesAutoCompress(t *testing.T) {
 	}
 	activateLink(t, link2)
 	mPlain := mustTestNewMessage(t, destination, source, "x", "", nil)
-	mPlain.Method = MethodDirect
+	mPlain.SetMethod(MethodDirect)
 	mPlain.Packed = compressible
 	mPlain.AutoCompress = false
 	mPlain.setDeliveryDestination(link2)
@@ -175,7 +175,7 @@ func TestAsResourceDirectAutoCompressFromAppData(t *testing.T) {
 	}
 	activateLink(t, link1)
 	m1 := mustTestNewMessage(t, destination, source, "x", "", nil)
-	m1.Method = MethodDirect
+	m1.SetMethod(MethodDirect)
 	m1.Packed = compressible
 	if err := m1.DetermineCompressionSupport(unsupportedAppData); err != nil {
 		t.Fatalf("DetermineCompressionSupport (unsupported): %v", err)
@@ -199,7 +199,7 @@ func TestAsResourceDirectAutoCompressFromAppData(t *testing.T) {
 	}
 	activateLink(t, link2)
 	m2 := mustTestNewMessage(t, destination, source, "x", "", nil)
-	m2.Method = MethodDirect
+	m2.SetMethod(MethodDirect)
 	m2.Packed = compressible
 	if err := m2.DetermineCompressionSupport(supportedAppData); err != nil {
 		t.Fatalf("DetermineCompressionSupport (supported): %v", err)
@@ -240,7 +240,7 @@ func TestAsResourcePropagatedOmitsAutoCompress(t *testing.T) {
 	activateLink(t, link)
 
 	m := mustTestNewMessage(t, destination, source, "x", "", nil)
-	m.Method = MethodPropagated
+	m.SetMethod(MethodPropagated)
 	m.PropagationPacked = compressible
 	m.AutoCompress = true
 	m.setDeliveryDestination(link)

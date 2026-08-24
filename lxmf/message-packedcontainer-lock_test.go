@@ -57,11 +57,13 @@ func TestPackedContainerGuardedByPersistLock(t *testing.T) {
 
 	// Mutator goroutine: mutates a field PackedContainer reads, under the
 	// persist lock, simulating a caller that synchronizes mutation with
-	// persistence.
+	// persistence. Writes the unexported field directly because it already
+	// holds persistMu — SetState would re-enter the non-reentrant lock and
+	// self-deadlock.
 	wg.Go(func() {
 		for i := 0; time.Now().Before(deadline) && !failed.Load(); i++ {
 			msg.persistMu.Lock()
-			msg.State = i
+			msg.state = i
 			msg.persistMu.Unlock()
 		}
 	})
