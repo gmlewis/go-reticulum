@@ -1479,8 +1479,9 @@ func TestIntegrationReleaseRoundTrip(t *testing.T) {
 	t.Logf("Release deleted")
 
 	// Verify the release dir is gone by listing again.
-	resp, _, err = client.sendRequest(pathRelease, packed, requestTimeout)
-	_ = resp
+	if _, _, err = client.sendRequest(pathRelease, packed, requestTimeout); err != nil {
+		t.Fatalf("pathRelease: %v", err)
+	}
 }
 
 // TestIntegrationListDeniedOnRestrictedNode verifies that when the node has

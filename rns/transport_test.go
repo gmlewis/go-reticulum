@@ -350,6 +350,125 @@ func TestHandlePathRequestEmitsTargetedPathResponse(t *testing.T) {
 	}
 }
 
+// TestHandlePathRequestTagDedup verifies the path-request tag dedup that
+// mirrors Python's Transport.path_request_handler (Transport.py:2984-2987): a
+// path request is only answered the first time its unique tag
+// (destination_hash + tag_bytes) is seen; an identical follow-up request is
+// silently consumed (handled, but not answered or relayed). A request with a
+// different tag is answered independently, and a tagless request (no bytes
+// beyond the destination hash) is dropped entirely ("Ignoring tagless path
+// request"), matching Python's else branch.
+func TestHandlePathRequestTagDedup(t *testing.T) {
+	t.Parallel()
+	ts := NewTransportSystem(nil)
+	ts.identity = mustTestNewIdentity(t, true)
+
+	recvIface := &capturingInterface{name: "recv"}
+	ts.interfaces = append(ts.interfaces, recvIface)
+
+	localID := mustTestNewIdentity(t, true)
+	localDest := mustTestNewDestination(t, ts, localID, DestinationIn, DestinationSingle, "pr-dedup", "target")
+
+	hashLen := TruncatedHashLength / 8
+	tagA := bytes.Repeat([]byte{0x11}, hashLen)
+	tagB := bytes.Repeat([]byte{0x22}, hashLen)
+	req := func(tag []byte) []byte {
+		d := make([]byte, 0, len(localDest.Hash)+len(tag))
+		d = append(d, localDest.Hash...)
+		d = append(d, tag...)
+		return d
+	}
+	pkt := &Packet{ReceivingInterface: recvIface}
+
+	// First request with tag A is answered on the receiving interface.
+	if !ts.handlePathRequest(req(tagA), pkt) {
+		t.Fatal("first request with tag A: want handled=true, got false")
+	}
+	if recvIface.sendCount != 1 {
+		t.Fatalf("after first tag A request: sendCount=%v, want 1", recvIface.sendCount)
+	}
+
+	// A duplicate request with the same unique tag is consumed, not answered.
+	if !ts.handlePathRequest(req(tagA), pkt) {
+		t.Fatal("duplicate tag A request: want handled=true (consumed), got false")
+	}
+	if recvIface.sendCount != 1 {
+		t.Fatalf("after duplicate tag A request: sendCount=%v, want 1 (deduped)", recvIface.sendCount)
+	}
+
+	// A request with a different tag is answered independently.
+	if !ts.handlePathRequest(req(tagB), pkt) {
+		t.Fatal("tag B request: want handled=true, got false")
+	}
+	if recvIface.sendCount != 2 {
+		t.Fatalf("after tag B request: sendCount=%v, want 2", recvIface.sendCount)
+	}
+
+	// A tagless request (destination hash only) is dropped, not answered and
+	// not relayed (handled=true means consumed, matching Python's "Ignoring
+	// tagless path request" branch).
+	tagless := append([]byte(nil), localDest.Hash...)
+	if !ts.handlePathRequest(tagless, pkt) {
+		t.Fatal("tagless request: want handled=true (dropped), got false")
+	}
+	if recvIface.sendCount != 2 {
+		t.Fatalf("after tagless request: sendCount=%v, want 2 (dropped)", recvIface.sendCount)
+	}
+}
+
+// TestCullDiscoveryPRTags verifies the path-request tag set is bounded to
+// maxPRTags entries and that eviction removes the oldest entries from both
+// the insertion-ordered slice and the membership set, mirroring Python's
+// Transport.py:674-676 cull. It drives the cull directly with a slice larger
+// than maxPRTags rather than emitting 32000+ real requests.
+func TestCullDiscoveryPRTags(t *testing.T) {
+	t.Parallel()
+	ts := NewTransportSystem(nil)
+	ts.ensureStateLocked()
+
+	// Seed maxPRTags + 50 unique tags; the cull must drop the 50 oldest.
+	total := maxPRTags + 50
+	ts.discoveryPRTags = make([]string, 0, total)
+	ts.discoveryPRTagsSet = make(map[string]struct{}, total)
+	for i := range total {
+		key := string([]byte{byte(i >> 8), byte(i)})
+		ts.discoveryPRTags = append(ts.discoveryPRTags, key)
+		ts.discoveryPRTagsSet[key] = struct{}{}
+	}
+
+	ts.discoveryPRTagsMu.Lock()
+	ts.cullDiscoveryPRTagsLocked()
+	ts.discoveryPRTagsMu.Unlock()
+
+	if len(ts.discoveryPRTags) != maxPRTags {
+		t.Fatalf("after cull: len=%v, want %v", len(ts.discoveryPRTags), maxPRTags)
+	}
+	if len(ts.discoveryPRTagsSet) != maxPRTags {
+		t.Fatalf("after cull: set size=%v, want %v", len(ts.discoveryPRTagsSet), maxPRTags)
+	}
+	// The oldest 50 entries (indices 0..49) must be evicted from the set.
+	for i := range 50 {
+		b := []byte{byte(i >> 8), byte(i)}
+		if _, ok := ts.discoveryPRTagsSet[string(b)]; ok {
+			t.Fatalf("evicted tag %v still present in set after cull", i)
+		}
+	}
+	// The most recent maxPRTags entries (indices 50..total-1) must remain.
+	for i := 50; i < total; i++ {
+		b := []byte{byte(i >> 8), byte(i)}
+		if _, ok := ts.discoveryPRTagsSet[string(b)]; !ok {
+			t.Fatalf("retained tag %v missing from set after cull", i)
+		}
+	}
+	// A no-op cull at or below the limit must not change anything.
+	ts.discoveryPRTagsMu.Lock()
+	ts.cullDiscoveryPRTagsLocked()
+	ts.discoveryPRTagsMu.Unlock()
+	if len(ts.discoveryPRTags) != maxPRTags || len(ts.discoveryPRTagsSet) != maxPRTags {
+		t.Fatalf("no-op cull changed sizes: slice=%v set=%v", len(ts.discoveryPRTags), len(ts.discoveryPRTagsSet))
+	}
+}
+
 // TestHandlePathRequestAnswersFromCachedPath verifies the cached-path branch
 // of handlePathRequest: when a transport node already knows a path to a
 // REMOTE destination (not local to it), it answers a path request by replaying

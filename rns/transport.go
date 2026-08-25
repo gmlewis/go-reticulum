@@ -254,6 +254,18 @@ type TransportSystem struct {
 	pendingPathRequests   map[string][]interfaces.Interface
 	pendingPathRequestAt  map[string]time.Time
 
+	// discoveryPRTags is the ordered list of unique path-request tags seen by
+	// this transport, for dedup of inbound path requests. It mirrors Python's
+	// Transport.discovery_pr_tags (Transport.py:127): a path request is only
+	// processed the first time its unique tag (destination_hash + tag_bytes)
+	// is observed; subsequent identical requests are silently consumed rather
+	// than answered or relayed (Transport.py:2984-2987). discoveryPRTagsSet is
+	// the O(1) membership index over the same keys; the slice preserves
+	// insertion order for the maxPRTags cull. discoveryPRTagsMu guards both.
+	discoveryPRTags    []string
+	discoveryPRTagsSet map[string]struct{}
+	discoveryPRTagsMu  sync.Mutex
+
 	// downNotified is the once-per-down-transition latch for the outbound
 	// fan-out paths (sendRebroadcast, dispatchForwardSend). When an
 	// interface's Send fails while it was up, the first caller claims the
@@ -526,17 +538,24 @@ const (
 )
 
 const (
-	pathfinderRetries        = 1
-	pathfinderGrace          = 5 * time.Second
-	pathfinderRandomWindow   = 500 * time.Millisecond
-	localRebroadcastsMax     = 2
-	announceCheckInterval    = 1 * time.Second
-	announceCapDefault       = 2
-	maxQueuedAnnounces       = 16384
-	queuedAnnounceLife       = 24 * time.Hour
-	pathRequestMinInterval   = 20 * time.Second
-	pathRequestCullAfter     = 2 * pathRequestMinInterval
-	pendingPathRequestTTL    = 20 * time.Second
+	pathfinderRetries      = 1
+	pathfinderGrace        = 5 * time.Second
+	pathfinderRandomWindow = 500 * time.Millisecond
+	localRebroadcastsMax   = 2
+	announceCheckInterval  = 1 * time.Second
+	announceCapDefault     = 2
+	maxQueuedAnnounces     = 16384
+	queuedAnnounceLife     = 24 * time.Hour
+	pathRequestMinInterval = 20 * time.Second
+	pathRequestCullAfter   = 2 * pathRequestMinInterval
+	pendingPathRequestTTL  = 20 * time.Second
+
+	// maxPRTags is the maximum number of unique path-request tags remembered
+	// for dedup, matching Python's Transport.max_pr_tags (Transport.py:128).
+	// Once the remembered set grows past this size the oldest entries are
+	// evicted (see cullDiscoveryPRTags), mirroring Python's cull in the jobs
+	// loop (Transport.py:674-676).
+	maxPRTags                = 32000
 	pathTablePersistInterval = 30 * time.Second
 	packetHashRotateDefault  = 50000
 	reverseEntryTimeout      = 8 * time.Minute
@@ -584,6 +603,7 @@ func NewTransportSystem(logger *Logger) *TransportSystem {
 		pathRequests:            make(map[string]time.Time),
 		pendingPathRequests:     make(map[string][]interfaces.Interface),
 		pendingPathRequestAt:    make(map[string]time.Time),
+		discoveryPRTagsSet:      make(map[string]struct{}),
 		downNotified:            make(map[interfaces.Interface]struct{}),
 		packetRSSICache:         make(map[string]float64),
 		packetSNRCache:          make(map[string]float64),
@@ -684,6 +704,9 @@ func (ts *TransportSystem) ensureStateLocked() {
 	}
 	if ts.pendingPathRequestAt == nil {
 		ts.pendingPathRequestAt = make(map[string]time.Time)
+	}
+	if ts.discoveryPRTagsSet == nil {
+		ts.discoveryPRTagsSet = make(map[string]struct{})
 	}
 	if ts.packetRSSICache == nil {
 		ts.packetRSSICache = make(map[string]float64)
@@ -1491,6 +1514,14 @@ func (ts *TransportSystem) maintenance() {
 			ts.cullExpiredPaths(now)
 			ts.cullStaleTransportTables(now)
 			ts.cullTunnels(now)
+			// Cull the path-request tag set if it has grown past maxPRTags,
+			// mirroring Python's jobs-loop cull (Transport.py:674-676). The
+			// insert-time cull in handlePathRequest normally keeps it bounded,
+			// but this mirrors Python's structure and bounds any growth path
+			// that bypasses insert-time culling.
+			ts.discoveryPRTagsMu.Lock()
+			ts.cullDiscoveryPRTagsLocked()
+			ts.discoveryPRTagsMu.Unlock()
 		case <-pathPersistTicker.C:
 			ts.persistPathTable()
 			ts.flushKnownDestinationsIfDirty()
@@ -2711,6 +2742,31 @@ func (ts *TransportSystem) hasPendingPathRequesterLocked(destinationHash string,
 	return slices.Contains(requesters, iface)
 }
 
+// cullDiscoveryPRTagsLocked trims the remembered path-request tag set to
+// maxPRTags entries once it has grown past the limit, mirroring Python's cull
+// in the jobs loop (Transport.py:674-676, `discovery_pr_tags = discovery_pr_tags
+// [len-max:len]`). The oldest entries (front of the insertion-ordered slice)
+// are evicted; the membership set is updated in lockstep. The caller must hold
+// discoveryPRTagsMu. It is invoked at insert time so the set is bounded
+// immediately rather than waiting for the next jobs tick (Python checks the
+// threshold every job_interval, 250ms); the dedup window is otherwise
+// identical.
+func (ts *TransportSystem) cullDiscoveryPRTagsLocked() {
+	if len(ts.discoveryPRTags) <= maxPRTags {
+		return
+	}
+	drop := len(ts.discoveryPRTags) - maxPRTags
+	for i := range drop {
+		delete(ts.discoveryPRTagsSet, ts.discoveryPRTags[i])
+	}
+	// Compact into a fresh backing slice so the evicted entries' strings are
+	// no longer referenced and the underlying array does not grow unbounded
+	// across repeated culls.
+	kept := make([]string, 0, maxPRTags)
+	kept = append(kept, ts.discoveryPRTags[drop:]...)
+	ts.discoveryPRTags = kept
+}
+
 func (ts *TransportSystem) forwardPathRequest(packet *Packet, source interfaces.Interface) {
 	if packet == nil || source == nil {
 		return
@@ -2967,6 +3023,50 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) bool {
 		requestorTransportID = data[hashLen:min(len(data), 2*hashLen)]
 	}
 
+	// Path-request tag dedup. Mirrors Python's Transport.path_request_handler
+	// (Transport.py:2954-3000): the tag is the bytes following the destination
+	// hash (and, when a requestor transport-instance ID is also present, the
+	// bytes after that). A request is only processed the first time its unique
+	// tag (destination_hash + tag_bytes) is observed; subsequent identical
+	// requests are silently consumed (not answered, not relayed), which is
+	// what prevents a single emitted path request from being answered by every
+	// transport node that sees it. Tagless requests (no bytes beyond the
+	// destination hash) are dropped entirely, matching Python's "Ignoring
+	// tagless path request" branch — a request without a tag carries nothing
+	// to dedup on and must not be answered or relayed.
+	//
+	// The receiving-interface PR counter (received_path_request in Python) is
+	// advanced by the Inbound caller for every tagged request, even duplicates,
+	// before this function runs; that matches Python calling
+	// received_path_request inside the `if tag_bytes != None` block (which the
+	// dedup check sits inside).
+	var tag []byte
+	if len(data) > 2*hashLen {
+		tag = data[2*hashLen:]
+	} else if len(data) > hashLen {
+		tag = data[hashLen:]
+	}
+	if len(tag) == 0 {
+		ts.logger.Debug("Ignoring tagless path request for %x", targetHash)
+		return true
+	}
+	if len(tag) > hashLen {
+		tag = tag[:hashLen]
+	}
+	uniqueTag := string(targetHash) + string(tag)
+	ts.discoveryPRTagsMu.Lock()
+	if _, seen := ts.discoveryPRTagsSet[uniqueTag]; seen {
+		ts.discoveryPRTagsMu.Unlock()
+		ts.logger.Debug("Ignoring duplicate path request for %x", targetHash)
+		return true
+	}
+	ts.discoveryPRTagsSet[uniqueTag] = struct{}{}
+	ts.discoveryPRTags = append(ts.discoveryPRTags, uniqueTag)
+	if len(ts.discoveryPRTags) > maxPRTags {
+		ts.cullDiscoveryPRTagsLocked()
+	}
+	ts.discoveryPRTagsMu.Unlock()
+
 	ts.mu.Lock()
 	localDest := ts.localDestinationLocked(targetHash)
 	// If the destination is not local to this node, look for a cached/known
@@ -2999,18 +3099,17 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) bool {
 
 	if localDest != nil {
 		ts.logger.Debug("Answering path request for %x, destination is local", targetHash)
-		// Extract tag if present
-		var tag []byte
-		if len(data) > (TruncatedHashLength/8)*2 {
-			tag = data[(TruncatedHashLength/8)*2:]
-		} else if len(data) > TruncatedHashLength/8 {
-			tag = data[TruncatedHashLength/8:]
-		}
-		if len(tag) > TruncatedHashLength/8 {
-			tag = tag[:TruncatedHashLength/8]
-		}
 
-		announcePacket, err := localDest.buildAnnouncePacket(tag)
+		// Build the path-response announce with nil app data so the
+		// defaultAppData fallback in buildAnnouncePacket includes the
+		// node name. The path-request dedup tag is a transport-level
+		// identifier, not application data, so it is not passed here; this
+		// mirrors Python's Destination.announce(path_response=True) which
+		// passes app_data=None and falls back to default_app_data. (Python
+		// also keys a path_responses cache by the tag, but that cache lookup
+		// is documented as unused in the Python source since Transport dedups
+		// at this layer; the Go port therefore does not maintain it.)
+		announcePacket, err := localDest.buildAnnouncePacket(nil)
 		if err != nil {
 			ts.logger.Error("Failed to build path response announce: %v", err)
 			return true
@@ -5444,8 +5543,13 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 		// handler) but the learned path pointed to a non-functional ephemeral
 		// next-hop. ts.enabled is read directly (the lock is already held
 		// here); isLocalClientInterface does not acquire ts.mu.
+		//
+		// Gate on shouldForwardToLocalClients (set only when shouldReplace
+		// or a new path was installed) so duplicate/older announces are not
+		// rebroadcast, mirroring Python Transport.py:1892-1967 where the
+		// announce_table insertion is inside the should_add block.
 		isFromLocalClient := ts.isLocalClientInterface(iface)
-		if (ts.enabled || isFromLocalClient) && packet.Context != ContextPathResponse {
+		if shouldForwardToLocalClients && (ts.enabled || isFromLocalClient) && packet.Context != ContextPathResponse {
 			raw := make([]byte, len(packet.Raw))
 			copy(raw, packet.Raw)
 			// Python (Transport.py:1927,632): announce_hops = packet.hops

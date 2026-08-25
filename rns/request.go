@@ -79,6 +79,16 @@ type RequestReceipt struct {
 	failedCallback   func(*RequestReceipt)
 	progressCallback func(*RequestReceipt)
 
+	// responseResource is the resource carrying the response data when
+	// the reply exceeds the link MDU and is sent as an RNS Resource rather
+	// than an inline packet. It is set by responseResourceProgress when the
+	// first part of the response resource arrives, so GetProgress can
+	// report the actual transfer progress instead of always returning 0
+	// (which happens when rr.Resource — the *request* resource — is nil
+	// for inline requests). Mirrors Python Link.py:1424
+	// (self.progress = resource.get_progress()).
+	responseResource *Resource
+
 	mu sync.Mutex
 }
 
@@ -232,6 +242,9 @@ func (rr *RequestReceipt) ResponseRejected() {
 func (rr *RequestReceipt) GetProgress() float64 {
 	rr.mu.Lock()
 	resource := rr.Resource
+	if resource == nil {
+		resource = rr.responseResource
+	}
 	rr.mu.Unlock()
 	if resource == nil {
 		return 0
@@ -367,6 +380,7 @@ func (rr *RequestReceipt) responseResourceProgress(resource *Resource) {
 		return
 	}
 	rr.Status = RequestReceiving
+	rr.responseResource = resource
 	var deliveryCB func(*PacketReceipt)
 	var packetReceipt *PacketReceipt
 	if rr.PacketReceipt != nil {

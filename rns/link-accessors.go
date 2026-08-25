@@ -200,3 +200,29 @@ func (l *Link) Ping() (float64, error) {
 		return 0, errors.New("ping: timed out waiting for response")
 	}
 }
+
+// RTT returns the measured round-trip time in seconds for an ACTIVE link,
+// or 0 when the link is not yet active or RTT has not been measured. Callers
+// use this to compute request/response timeouts that scale with the actual
+// link latency, mirroring Python Link.py's self.rtt field. The value is set
+// during link establishment (ValidateProof/HandleRTT) and may be refined by
+// later RTT measurement packets.
+func (l *Link) RTT() float64 {
+	if l == nil {
+		return 0
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.rtt
+}
+
+// TrafficTimeoutFactor returns the multiplier applied to RTT when computing
+// request/response timeouts (Python Link.TRAFFIC_TIMEOUT_FACTOR = 6). Callers
+// use this together with RTT to compute an RTT-adaptive deadline:
+// timeout = rtt * TrafficTimeoutFactor + grace.
+func (l *Link) TrafficTimeoutFactor() float64 {
+	if l == nil {
+		return 6.0
+	}
+	return l.trafficTimeoutFactor
+}

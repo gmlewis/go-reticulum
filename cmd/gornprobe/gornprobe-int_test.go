@@ -295,9 +295,10 @@ func renderProbePacketLossScenario() probeCommandOutcome {
 
 	out.WriteString(formatProbeSentLine(2, 16, []byte{0xaa, 0xbb}, ""))
 	secondReceipt := &rns.PacketReceipt{Status: rns.ReceiptSent}
-	if !waitForProbeReceiptAt(&out, secondReceipt, 0.1, clock.Now, clock.Sleep) {
-		// timeout output already written by the helper
-	}
+	_ = waitForProbeReceiptAt(&out, secondReceipt, 0.1, clock.Now, clock.Sleep)
+	// if !waitForProbeReceiptAt(&out, secondReceipt, 0.1, clock.Now, clock.Sleep) {
+	//   timeout output already written by the helper
+	// }
 	summary, exitCode := formatProbeLossSummary(2, 1)
 	out.WriteString(summary + "\n")
 	return probeCommandOutcome{stdout: normalizeProbeOutput(out.String()), exitCode: exitCode}

@@ -196,9 +196,35 @@ func (d *Destination) buildAnnouncePacket(appData []byte) (*Packet, error) {
 		return nil, errors.New("only IN destination types can be announced")
 	}
 
-	randomHash := make([]byte, 10)
-	if _, err := rand.Read(randomHash); err != nil {
+	// Fall back to defaultAppData when appData is nil, mirroring Python
+	// Destination.announce (Destination.py:275-279):
+	//   if app_data == None and self.default_app_data != None:
+	//       app_data = self.default_app_data
+	// This ensures re-announces (e.g. announceDestinationsOnInterface on
+	// TCP reconnect) include the node name rather than sending a nameless
+	// announce that appears in peers' announce streams with an empty name.
+	if appData == nil {
+		appData = d.defaultAppData
+	}
+
+	// random_hash = truncated_hash(random_bytes)[:5] + timestamp(5 bytes big-endian)
+	// Mirrors Python Destination.announce (Destination.py:283):
+	//   random_hash = RNS.Identity.get_random_hash()[0:5]+int(time.time()).to_bytes(5, "big")
+	// The timestamp portion (bytes 5-9) is extracted by transport nodes as
+	// the announce_emitted timebase (Transport.timebase_from_random_blob,
+	// Transport.py:3272-3273). Without it, every announce has a random
+	// timebase, and the path-table replacement logic (announce_emitted >
+	// path_timebase) fails ~50% of the time, causing transport nodes to
+	// silently drop subsequent announces instead of rebroadcasting them.
+	randPart := make([]byte, TruncatedHashLength/8)
+	if _, err := rand.Read(randPart); err != nil {
 		return nil, err
+	}
+	nowUnix := time.Now().Unix()
+	randomHash := make([]byte, 10)
+	copy(randomHash[:5], TruncatedHash(randPart)[:5])
+	for i := range 5 {
+		randomHash[5+i] = byte(nowUnix >> (uint(4-i) * 8))
 	}
 
 	var ratchet []byte

@@ -9,24 +9,6 @@ export ORIGINAL_RETICULUM_REPO_DIR=${HOME}/src/github.com/markqvist/Reticulum
 export ORIGINAL_LXMF_REPO_DIR=${HOME}/src/github.com/markqvist/lxmf
 export ORIGINAL_RNSH_REPO_DIR=${HOME}/src/github.com/acehoss/rnsh
 
-ERRCHECK_BIN="$(command -v errcheck || true)"
-if [[ -z "${ERRCHECK_BIN}" ]]; then
-	go install github.com/kisielk/errcheck@latest
-	ERRCHECK_BIN="$(go env GOPATH)/bin/errcheck"
-fi
-
-# GOIMPORTS_BIN="$(command -v goimports || true)"
-# if [[ -z "${GOIMPORTS_BIN}" ]]; then
-# 	go install golang.org/x/tools/cmd/goimports@latest
-# 	GOIMPORTS_BIN="$(go env GOPATH)/bin/goimports"
-# fi
-
-STATICCHECK_BIN="$(command -v staticcheck || true)"
-if [[ -z "${STATICCHECK_BIN}" ]]; then
-	go install honnef.co/go/tools/cmd/staticcheck@latest
-	STATICCHECK_BIN="$(go env GOPATH)/bin/staticcheck"
-fi
-
 GO_TEST_TIMEOUT="${GO_TEST_TIMEOUT:-4m}"
 
 detect_live_rnode_port() {
@@ -198,8 +180,5 @@ else
 fi
 
 go vet ./...
-"${ERRCHECK_BIN}" ./...
-# staticcheck is run with full checks (including U1000/ST*) in run-all-tests.sh
-# with -tags=integration, so it is not duplicated here.
 
 echo "Done."

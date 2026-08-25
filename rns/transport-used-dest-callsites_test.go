@@ -254,9 +254,16 @@ func TestPathRequestAnsweredFromCachedPathMarksUsed(t *testing.T) {
 	}
 	ts.mu.Unlock()
 
-	// data = destination_hash only (no requestor transport id), so loop
-	// prevention is skipped and the cached-path answer proceeds.
-	data := append([]byte(nil), dest.Hash...)
+	// A path request carries a destination hash followed by a tag (the bytes
+	// this transport dedups on). No requestor transport-instance ID is
+	// included, so loop prevention is skipped (the requestor-transport-ID
+	// slice falls back to the tag, which differs from NextHop) and the
+	// cached-path answer proceeds. A tag distinct from NextHop satisfies
+	// the dedup check on the first (only) request.
+	tag := bytes.Repeat([]byte{0xBB}, TruncatedHashLength/8)
+	data := make([]byte, 0, len(dest.Hash)+len(tag))
+	data = append(data, dest.Hash...)
+	data = append(data, tag...)
 	recvIface := &capturingInterface{name: "requestor"}
 	pkt := &Packet{Data: data, ReceivingInterface: recvIface}
 

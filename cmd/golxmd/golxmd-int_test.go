@@ -421,6 +421,15 @@ func TestGolxmd_Break_Timeout(t *testing.T) {
 	// message is the primary assertion.
 	start := time.Now()
 	out, err := exec.Command(golxmdBin, "-b", validHash, "--config", configDir, "--rnsconfig", configDir, "--timeout", "1").CombinedOutput()
+	// Exit code 200 is the expected "operation timed out" result for golxmd
+	// when no remote is reachable (see remote-init.go requestUnpeer). The
+	// whole point of this test is to observe that timeout, so exit 200 is a
+	// success, not a failure. Any other error is a real problem.
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 200 {
+			t.Fatalf("glxmd: %v\n%v", err, string(out))
+		}
+	}
 	elapsed := time.Since(start)
 	output := string(out)
 
