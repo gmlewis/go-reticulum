@@ -274,6 +274,10 @@ func renderInterface(w io.Writer, ifstat rns.InterfaceStat, astats bool, pstats 
 		} else {
 			_, _ = fmt.Fprintln(w, "    Noise Fl. : Unknown")
 		}
+	} else if ifstat.Type == "RNodeInterface" {
+		// Python's ifstats emits noise_floor=None for RNode (the key is present),
+		// so rnstatus renders "Unknown" until the radio reports CHTM telemetry.
+		_, _ = fmt.Fprintln(w, "    Noise Fl. : Unknown")
 	}
 
 	if ifstat.CPULoad != nil {
@@ -282,6 +286,10 @@ func renderInterface(w io.Writer, ifstat rns.InterfaceStat, astats bool, pstats 
 		} else {
 			_, _ = fmt.Fprintln(w, "    CPU load  : Unknown")
 		}
+	} else if ifstat.Type == "RNodeInterface" {
+		// RNode has no cpu_load attribute, so Python's ifstats omits the key and
+		// rnstatus renders "CPU load: Unknown".
+		_, _ = fmt.Fprintln(w, "    CPU load  : Unknown")
 	}
 
 	if ifstat.CPUTemp != nil {

@@ -455,6 +455,15 @@ func boolPtrValue(p *bool) any {
 	return *p
 }
 
+// float64PtrToAny unwraps a *float64 into an any (nil when unreported), matching
+// Python's ifstats which stores the numeric value or None.
+func float64PtrToAny(p *float64) any {
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+
 func (r *Reticulum) getInterfaceStats() map[string]any {
 	interfacesOut := make([]any, 0)
 
@@ -529,7 +538,7 @@ func (r *Reticulum) getInterfaceStats() map[string]any {
 		// announce/PR-frequency and burst-state accessors are part of the
 		// Interface contract; the burst activation timestamps convert to the
 		// float epoch-seconds value Python emits (0 while idle).
-		interfacesOut = append(interfacesOut, map[string]any{
+		entry := map[string]any{
 			"name":                        iface.Name(),
 			"short_name":                  iface.Name(),
 			"hash":                        []byte(iface.Name()),
@@ -564,7 +573,37 @@ func (r *Reticulum) getInterfaceStats() map[string]any {
 			"autoconnect_source":          autoconnectSource,
 			"blocked_ips":                 blockedIPs,
 			"blocked_ip_list":             blockedIPList,
-		})
+		}
+
+		// RNode radio telemetry ifstats (Reticulum.py:1399-1427): emitted only
+		// when the interface exposes the RNode radio-state accessors, mirroring
+		// Python's hasattr guards. airtime/channel_load default to 0.0; the
+		// pointer-typed fields stay nil ("Unknown") until the radio reports.
+		if rt, ok := iface.(interface {
+			RNodeNoiseFloorDBm() *float64
+			RNodeInterferenceDBm() *float64
+			RNodeCPUTempC() *float64
+			RNodeAirtimeShort() float64
+			RNodeAirtimeLong() float64
+			RNodeChannelLoadShort() float64
+			RNodeChannelLoadLong() float64
+			RNodeBatteryPercent() int
+			RNodeBatteryStateStr() string
+		}); ok {
+			entry["airtime_short"] = rt.RNodeAirtimeShort()
+			entry["airtime_long"] = rt.RNodeAirtimeLong()
+			entry["channel_load_short"] = rt.RNodeChannelLoadShort()
+			entry["channel_load_long"] = rt.RNodeChannelLoadLong()
+			entry["noise_floor"] = float64PtrToAny(rt.RNodeNoiseFloorDBm())
+			entry["interference"] = float64PtrToAny(rt.RNodeInterferenceDBm())
+			entry["cpu_temp"] = float64PtrToAny(rt.RNodeCPUTempC())
+			entry["battery_percent"] = rt.RNodeBatteryPercent()
+			if bs := rt.RNodeBatteryStateStr(); bs != "" {
+				entry["battery_state"] = bs
+			}
+		}
+
+		interfacesOut = append(interfacesOut, entry)
 	}
 
 	var networkID any
