@@ -366,7 +366,12 @@ func releaseExists(tag string) (bool, error) {
 // tagExists reports whether a git tag named tag exists on the remote.
 func tagExists(tag string) (bool, error) {
 	cmd := exec.Command("gh", "api", "--method", "GET",
-		"repos/:owner/:repo/git/refs/tags/"+tag, "--silent")
+		"repos/:owner/:repo/git/refs/tags/"+tag)
+	// Discard stdout (the JSON ref body) but keep stderr so the not-found
+	// message is visible for the check below. Do NOT use --silent: that flag
+	// suppresses stderr too, making it impossible to distinguish "tag not
+	// found" (404) from a real error (network, auth).
+	cmd.Stdout = io.Discard
 	if err := cmd.Run(); err != nil {
 		// gh exits non-zero with a "not found" / 404 message when the ref
 		// does not exist; treat that as "no such tag".
