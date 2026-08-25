@@ -332,13 +332,15 @@ func TestProcessAnnounceTableLocalDestinationRoaming(t *testing.T) {
 	ts.identity = mustTestNewIdentity(t, true)
 	ts.SetEnabled(true)
 
-	from := newAFI("from-boundary", interfaces.ModeBoundary)
+	from := newAFI("from-full", interfaces.ModeFull)
 	outRoaming := newAFI("out-roaming", interfaces.ModeRoaming)
 	ts.interfaces = append(ts.interfaces, from, outRoaming)
 
 	id := mustTestNewIdentity(t, true)
-	// Register a local destination so the announce's destination is local.
+	// Deregister so handleAnnounce treats the announce as remote (Python
+	// Transport.py:1767-1772 skips the entire block for local destinations).
 	localDest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "local-dest-test")
+	delete(ts.destinationsMap, string(localDest.Hash))
 	p := mustTestAnnouncePacketWithEmission(t, ts, id, localDest, 1)
 	p.Hops = 1
 	ts.handleAnnounce(p, from)
@@ -351,6 +353,6 @@ func TestProcessAnnounceTableLocalDestinationRoaming(t *testing.T) {
 	ts.WaitOutboundSends()
 
 	if outRoaming.sendCount == 0 {
-		t.Errorf("local destination should rebroadcast on roaming (B5a), got 0 sends")
+		t.Errorf("remote destination should rebroadcast on roaming (B5e), got 0 sends")
 	}
 }

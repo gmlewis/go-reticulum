@@ -34,6 +34,20 @@ func mustTestNewDestination(t *testing.T, ts Transport, identity *Identity, dire
 	return dest
 }
 
+// mustTestNewRemoteDestination creates a destination whose hash is NOT in the
+// transport's destinationsMap, simulating a remote (non-local) destination.
+// Python's handleAnnounce skips the entire path-install/rebroadcast block for
+// local destinations (Transport.py:1767-1772); tests of announce reception,
+// path learning, and rebroadcast must use a non-local destination to exercise
+// that code path.
+func mustTestNewRemoteDestination(t *testing.T, ts *TransportSystem, identity *Identity, appName string, aspects ...string) *Destination {
+	t.Helper()
+	dest, err := NewDestination(ts, identity, DestinationIn, DestinationSingle, appName, aspects...)
+	mustTest(t, err)
+	delete(ts.destinationsMap, string(dest.Hash))
+	return dest
+}
+
 func mustTestNewLink(t *testing.T, ts Transport, destination *Destination) *Link {
 	t.Helper()
 	link, err := NewLink(ts, destination)

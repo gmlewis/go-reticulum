@@ -54,6 +54,11 @@ func TestHandleAnnounce(t *testing.T) {
 	id := mustTestNewIdentity(t, true)
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle,
 		"testapp")
+	// Deregister so handleAnnounce treats it as a remote destination.
+	// Python (Transport.py:1767-1772) skips the entire path-install/rebroadcast
+	// block for local destinations; tests of announce reception must use a
+	// non-local destination to exercise that code path.
+	delete(ts.destinationsMap, string(dest.Hash))
 
 	// Create announce data
 	// nameHash is calculated from ExpandName(nil, appName, aspects...)
@@ -634,6 +639,7 @@ func TestAnnounceRebroadcastProcessing(t *testing.T) {
 	id := mustTestNewIdentity(t, true)
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle,
 		"testapp")
+	delete(ts.destinationsMap, string(dest.Hash))
 
 	nameHash := FullHash([]byte("testapp"))[:NameHashLength/8]
 	randomHash := make([]byte, 10)
@@ -675,8 +681,14 @@ func TestAnnounceRebroadcastProcessing(t *testing.T) {
 	if outbound.sendCount != 1 {
 		t.Fatalf("expected one rebroadcast on outbound interface, got %v", outbound.sendCount)
 	}
-	if source.sendCount != 0 {
-		t.Fatalf("expected no rebroadcast on source interface, got %v", source.sendCount)
+	// Python (Transport.py:1199-1340) rebroadcasts on ALL interfaces
+	// including the source — the source-interface skip was a Go bug.
+	// The source is a capturingInterface with ModeFull (default), so the
+	// announce-cap rate limiter applies. With the corrected announceCapDefault
+	// (0.02) and a fast in-memory interface, the wait may be sub-nanosecond
+	// (truncated to 0), so the rebroadcast goes out immediately.
+	if source.sendCount == 0 {
+		t.Fatalf("expected rebroadcast on source interface too (Python rebroadcasts on all interfaces), got 0")
 	}
 
 	rebroadcast := NewPacketFromRaw(outbound.lastSent)
@@ -715,6 +727,7 @@ func TestProcessAnnounceTableStalledPeerDoesNotBlock(t *testing.T) {
 
 	id := mustTestNewIdentity(t, true)
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "stall-test")
+	delete(ts.destinationsMap, string(dest.Hash))
 	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 1)
 	p.Hops = 1
 	ts.handleAnnounce(p, source)
@@ -754,6 +767,7 @@ func TestAnnounceQueueQueuesAndDrainsOnCappedInterface(t *testing.T) {
 
 	id := mustTestNewIdentity(t, true)
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "queued-announce")
+	delete(ts.destinationsMap, string(dest.Hash))
 	packet := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 1)
 	packet.Hops = 1
 
@@ -798,6 +812,7 @@ func TestAnnounceQueueDeduplicatesNewerDestination(t *testing.T) {
 
 	id := mustTestNewIdentity(t, true)
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "queued-dedup")
+	delete(ts.destinationsMap, string(dest.Hash))
 	first := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 1)
 	second := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 2)
 	first.Hops = 1
@@ -892,6 +907,7 @@ func TestPathResponseAnnounceNotRebroadcast(t *testing.T) {
 	id := mustTestNewIdentity(t, true)
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle,
 		"path-response-test")
+	delete(ts.destinationsMap, string(dest.Hash))
 
 	nameHash := FullHash([]byte("path-response-test"))[:NameHashLength/8]
 	randomHash := make([]byte, 10)
@@ -944,6 +960,7 @@ func TestAnnounceHandlerPathResponseDelivery(t *testing.T) {
 	ts := NewTransportSystem(nil)
 	id := mustTestNewIdentity(t, true)
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "testapp")
+	delete(ts.destinationsMap, string(dest.Hash))
 
 	nameHash := FullHash([]byte("testapp"))[:NameHashLength/8]
 	randomHash := make([]byte, 10)

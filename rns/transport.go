@@ -543,7 +543,7 @@ const (
 	pathfinderRandomWindow = 500 * time.Millisecond
 	localRebroadcastsMax   = 2
 	announceCheckInterval  = 1 * time.Second
-	announceCapDefault     = 2
+	announceCapDefault     = 0.02
 	maxQueuedAnnounces     = 16384
 	queuedAnnounceLife     = 24 * time.Hour
 	pathRequestMinInterval = 20 * time.Second
@@ -2640,9 +2640,12 @@ func (ts *TransportSystem) processAnnounceTable(now time.Time) {
 		// locally-originated announce (receivedHops == 0) is sent immediately.
 		receivedHops := entry.Hops
 		for _, outIface := range ts.interfaces {
-			if outIface == entry.SourceInterface {
-				continue
-			}
+			// Python (Transport.py:1199-1340) iterates ALL interfaces for
+			// announce rebroadcast, including the one the announce arrived
+			// on. The mode-based rules in shouldTransmitAnnounce handle
+			// filtering; the source interface is NOT unconditionally
+			// skipped. Rebroadcasting back on the same shared-medium
+			// interface (RNode radio) is how hidden peers learn paths.
 			// Don't enqueue rebroadcasts for down interfaces. Send would
 			// fast-fail "is not running", but the announce-queue timer fires
 			// every few milliseconds for high-bitrate TCP interfaces, so
@@ -4173,18 +4176,18 @@ func (ts *TransportSystem) SaveKnownDestinations(storagePath string) {
 
 	path := filepath.Join(storagePath, "known_destinations")
 	ts.mu.Lock()
-	// Snapshot a copy of the map before packing so a concurrent Remember does
-	// not mutate the slice we serialize — Python's
-	// Identity.known_destinations.copy() (RNS/Identity.py:197).
-	// Emit binary (msgpack bin 0xc4) map keys, matching Python RNS, which keys
-	// Identity.known_destinations by the raw destination_hash bytes. Packing the
-	// in-memory map[string][]any directly would emit str keys (fixstr 0xa0-0xbf)
-	// that Python's umsgpack tries to utf-8-decode and rejects with
-	// InvalidStringException. Go maps cannot key on []byte (non-comparable), so
-	// build an OrderedMap with []byte keys; Pack routes []byte through packBin.
+	// Snapshot a deep copy of the map before packing so a concurrent
+	// RetainDestinationData/Remember does not mutate the slice we serialize
+	// — Python's Identity.known_destinations.copy() (RNS/Identity.py:197).
+	// The previous code copied only the keys (copyBytes) but shared the
+	// value slices ([]any), so a concurrent RetainDestinationData writing
+	// data[4] under ts.mu raced with msgpack.Pack reading the same element
+	// outside the lock. Deep-copy each value slice to eliminate the race.
 	ordered := make(msgpack.OrderedMap, 0, len(ts.knownDestinations))
 	for k, v := range ts.knownDestinations {
-		ordered = append(ordered, msgpack.OrderedMapEntry{Key: copyBytes([]byte(k)), Value: v})
+		vc := make([]any, len(v))
+		copy(vc, v)
+		ordered = append(ordered, msgpack.OrderedMapEntry{Key: copyBytes([]byte(k)), Value: vc})
 	}
 	count := len(ts.knownDestinations)
 	ts.mu.Unlock()
@@ -5337,6 +5340,20 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 		return
 	}
 
+	// Local-destination guard (Python Transport.py:1767-1772): if this
+	// announce is for a destination local to this node, skip the entire
+	// path-table install + rebroadcast block. Without this, a node that
+	// receives a rebroadcast of its own announce (inevitable on shared
+	// mediums) installs a bogus path-to-self entry and re-queues its own
+	// announce for rebroadcast.
+	ts.mu.Lock()
+	localDest := ts.localDestinationLocked(packet.DestinationHash)
+	ts.mu.Unlock()
+	if localDest != nil {
+		ts.logger.Debug("Received announce for local destination %x, skipping path install", packet.DestinationHash)
+		return
+	}
+
 	// Record the incoming announce on the receiving interface's frequency
 	// deque (Python Transport.py:1751: `elif interface != None:
 	// interface.received_announce()`).
@@ -5569,14 +5586,20 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 					PacketRaw:         raw,
 					SourceInterface:   iface,
 					Hops:              hops,
-					NextRebroadcastAt: time.Now().Add(pathfinderGrace + ts.randomDuration(pathfinderRandomWindow)),
+					NextRebroadcastAt: time.Now().Add(ts.randomDuration(pathfinderRandomWindow)),
 					Retries:           0,
 				}
 			}
 		}
 
-		// Copy handlers to call them without the lock
-		if len(ts.announceHandlers) > 0 {
+		// Copy handlers to call them without the lock. Python
+		// (Transport.py:2071-2125) gates the announce-handler loop inside
+		// the `if should_add:` block, so handlers fire only when the path
+		// was actually added or updated. Mirroring that,
+		// shouldForwardToLocalClients is set only in the install/replace
+		// branches, so gating on it prevents redundant handler calls for
+		// duplicate/older announces that did not update the path table.
+		if shouldForwardToLocalClients && len(ts.announceHandlers) > 0 {
 			handlers = make([]*AnnounceHandler, len(ts.announceHandlers))
 			copy(handlers, ts.announceHandlers)
 		}
@@ -5756,6 +5779,19 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 	if hasPath && packet.PacketType != PacketAnnounce && packet.DestinationType != DestinationPlain && packet.DestinationType != DestinationGroup && pathEntry != nil && pathEntry.Interface != nil {
 		raw := packet.Raw
 		if pathEntry.Hops > 1 && len(pathEntry.NextHop) == TruncatedHashLength/8 {
+			newFlags := byte((Header2 << 6) | (packet.ContextFlag << 5) | (TransportForward << 4) | (packet.DestinationType << 2) | packet.PacketType)
+			newRaw := make([]byte, 0, len(packet.Raw)+TruncatedHashLength/8)
+			newRaw = append(newRaw, newFlags, packet.Raw[1])
+			newRaw = append(newRaw, pathEntry.NextHop...)
+			newRaw = append(newRaw, packet.Raw[2:]...)
+			raw = newRaw
+		} else if pathEntry.Hops == 1 && ts.connectedToSharedInstance && len(pathEntry.NextHop) == TruncatedHashLength/8 {
+			// When this transport is a client of a shared instance
+			// (Python Transport.owner.is_connected_to_shared_instance,
+			// Transport.py:1172-1183), a 1-hop destination still needs a
+			// transport header so the shared instance can forward the
+			// packet onto the network. Without it the shared instance
+			// receives a Header1 packet it cannot route and drops it.
 			newFlags := byte((Header2 << 6) | (packet.ContextFlag << 5) | (TransportForward << 4) | (packet.DestinationType << 2) | packet.PacketType)
 			newRaw := make([]byte, 0, len(packet.Raw)+TruncatedHashLength/8)
 			newRaw = append(newRaw, newFlags, packet.Raw[1])
