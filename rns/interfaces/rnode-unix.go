@@ -24,7 +24,6 @@ import (
 const (
 	rnodeHWMTU            = 508
 	rnodeSerialSpeed      = 115200
-	rnodeReconnectWait    = 5 * time.Second
 	rnodeReadIdleSleep    = 80 * time.Millisecond
 	rnodeReadTimeout      = 100 * time.Millisecond
 	rnodeDefaultIFAC      = 8
@@ -48,6 +47,10 @@ const (
 	rNodeCRMax          = 8
 	rNodeCallsignMaxLen = 32
 )
+
+// rnodeReconnectWait is the delay between reconnect attempts. It is a var (not
+// a const) so tests can shorten it to keep self-heal tests fast.
+var rnodeReconnectWait = 5 * time.Second
 
 // rnodeConn is the serial link an RNode controller reads from and writes KISS
 // frames to. *os.File satisfies it for a real USB RNode; tests inject a mock.
@@ -210,14 +213,34 @@ func NewRNodeInterface(name, port string, speed, databits, stopbits int, parity 
 	}
 	r.decoder = newRNodeDecoder(&r.radio, r.hwmtu)
 
+	// Bring up the radio. Python's RNodeInterface.__init__ does NOT raise on an
+	// open/configure failure: it logs and spawns a background reconnect thread so
+	// the interface self-heals once the port/radio becomes available (e.g. a
+	// USB re-plug, or another process releasing the port at startup). Mirror
+	// that: return the interface (offline) and reconnect in the background
+	// rather than failing construction. A configuration error (invalid bounds,
+	// ble://) is still returned immediately.
 	if err := r.openPort(); err != nil {
-		return nil, fmt.Errorf("could not open serial port for RNode interface %v: %v", r.Name(), err)
+		r.logf("could not open port: %v; will retry in background", err)
+		go r.reconnectPort()
+		return r, nil
 	}
 	if err := r.configureDevice(); err != nil {
-		_ = r.closeConn()
-		return nil, fmt.Errorf("RNode interface %v failed to configure: %v", r.Name(), err)
+		r.logf("could not configure device: %v; will retry in background", err)
+		r.stopReadLoopAndConn()
+		go r.reconnectPort()
+		return r, nil
 	}
 	return r, nil
+}
+
+// stopReadLoopAndConn stops the readLoop configureDevice may have started and
+// closes the serial connection, leaving the interface in a clean offline state
+// for a reconnect attempt.
+func (r *RNodeInterface) stopReadLoopAndConn() {
+	atomic.StoreInt32(&r.running, 0)
+	atomic.StoreInt32(&r.online, 0)
+	_ = r.closeConn()
 }
 
 // openPort opens and termios-configures the configured serial device.
@@ -235,7 +258,7 @@ func (r *RNodeInterface) openPort() error {
 		r.connMu.Unlock()
 		return nil
 	}
-	file, err := os.OpenFile(r.port, os.O_RDWR|syscall.O_NOCTTY, 0)
+	file, err := r.openSerialFile(r.port)
 	if err != nil {
 		return err
 	}
@@ -247,6 +270,22 @@ func (r *RNodeInterface) openPort() error {
 	r.conn = file
 	r.connMu.Unlock()
 	return nil
+}
+
+// openSerialFile opens the configured serial device via the shared
+// openSerialPort helper, which on darwin retries /dev/cu.* when /dev/tty.*
+// returns EBUSY (see openSerialPort). It logs the remap and remembers the
+// working port for reconnect.
+func (r *RNodeInterface) openSerialFile(port string) (*os.File, error) {
+	file, effPort, err := openSerialPort(port)
+	if err != nil {
+		return nil, err
+	}
+	if effPort != port {
+		r.logf("configured port %v was busy; using callout %v", port, effPort)
+		r.port = effPort
+	}
+	return file, nil
 }
 
 func (r *RNodeInterface) closeConn() error {
@@ -552,7 +591,9 @@ func (r *RNodeInterface) reconnectPort() {
 		}
 		if err := r.configureDevice(); err != nil {
 			r.logf("error while reconfiguring %v: %v", r.Name(), err)
-			_ = r.closeConn()
+			// configureDevice started a readLoop before failing; stop it and
+			// release the port so the next attempt opens cleanly.
+			r.stopReadLoopAndConn()
 		}
 	}
 	if atomic.LoadInt32(&r.online) == 1 {

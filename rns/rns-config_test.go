@@ -891,7 +891,7 @@ loglevel = 4
 func TestRNodeInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "linux" {
-		t.Skip("unsupported-platform behavior test")
+		t.Skip("unsupported-platform / unavailable-port behavior test")
 	}
 
 	configDir := testutils.TempDir(t, tempDirPrefix)
@@ -921,8 +921,20 @@ loglevel = 4
 	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
-	if got := len(r.Transport().GetInterfaces()); got != 0 {
-		t.Fatalf("registered interfaces = %v, want 0", got)
+	// On a supported platform (darwin) an unavailable port no longer fails
+	// construction: the interface is registered offline with a background
+	// reconnect (Python-faithful self-heal, RNodeInterface.__init__). On an
+	// unsupported platform the stub errors and nothing registers.
+	got := len(r.Transport().GetInterfaces())
+	if runtime.GOOS == "darwin" {
+		if got != 1 {
+			t.Fatalf("registered interfaces = %v, want 1 (offline self-heal on darwin)", got)
+		}
+		if r.Transport().GetInterfaces()[0].Status() {
+			t.Fatal("unavailable-port RNode should be registered offline, not online")
+		}
+	} else if got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0 (unsupported platform)", got)
 	}
 }
 
@@ -1020,6 +1032,9 @@ loglevel = 4
 
 func TestRNodeMultiInterfaceMultipleEnabledSubsDoesNotRegister(t *testing.T) {
 	t.Parallel()
+	if runtime.GOOS == "linux" {
+		t.Skip("unsupported-platform / unavailable-port behavior test")
+	}
 
 	configDir := testutils.TempDir(t, tempDirPrefix)
 	config := `[reticulum]
@@ -1059,15 +1074,23 @@ loglevel = 4
 	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
-	if got := len(r.Transport().GetInterfaces()); got != 0 {
-		t.Fatalf("registered interfaces = %v, want 0", got)
+	// On a supported platform the multi aggregates offline+reconnecting
+	// children (self-heal) and registers; on an unsupported platform the stub
+	// errors and nothing registers.
+	got := len(r.Transport().GetInterfaces())
+	if runtime.GOOS == "darwin" {
+		if got != 1 {
+			t.Fatalf("registered interfaces = %v, want 1 (offline multi on darwin)", got)
+		}
+	} else if got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0 (unsupported platform)", got)
 	}
 }
 
 func TestRNodeMultiInterfaceUnsupportedPlatformNotRegistered(t *testing.T) {
 	t.Parallel()
 	if runtime.GOOS == "linux" {
-		t.Skip("unsupported-platform behavior test")
+		t.Skip("unsupported-platform / unavailable-port behavior test")
 	}
 
 	configDir := testutils.TempDir(t, tempDirPrefix)
@@ -1100,8 +1123,13 @@ loglevel = 4
 	r := mustTestNewReticulum(t, ts, configDir)
 	defer closeReticulum(t, r)
 
-	if got := len(r.Transport().GetInterfaces()); got != 0 {
-		t.Fatalf("registered interfaces = %v, want 0", got)
+	got := len(r.Transport().GetInterfaces())
+	if runtime.GOOS == "darwin" {
+		if got != 1 {
+			t.Fatalf("registered interfaces = %v, want 1 (offline multi on darwin)", got)
+		}
+	} else if got != 0 {
+		t.Fatalf("registered interfaces = %v, want 0 (unsupported platform)", got)
 	}
 }
 

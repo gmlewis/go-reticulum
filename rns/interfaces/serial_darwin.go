@@ -141,10 +141,11 @@ func (si *serialInterface) Detach() error {
 }
 
 func (si *serialInterface) openAndConfigure() error {
-	file, err := os.OpenFile(si.port, os.O_RDWR|syscall.O_NOCTTY, 0)
+	file, effPort, err := openSerialPort(si.port)
 	if err != nil {
 		return err
 	}
+	si.port = effPort
 
 	if err := configureTermios(file.Fd(), si.speed, si.databits, si.parity, si.stopbits); err != nil {
 		_ = file.Close()

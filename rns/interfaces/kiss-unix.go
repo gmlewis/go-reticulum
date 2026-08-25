@@ -144,10 +144,11 @@ func (ki *kissInterface) Detach() error {
 }
 
 func (ki *kissInterface) openAndConfigure() error {
-	file, err := os.OpenFile(ki.port, os.O_RDWR|syscall.O_NOCTTY, 0)
+	file, effPort, err := openSerialPort(ki.port)
 	if err != nil {
 		return err
 	}
+	ki.port = effPort
 
 	if err := configureTermios(file.Fd(), ki.speed, ki.databits, ki.parity, ki.stopbits); err != nil {
 		_ = file.Close()

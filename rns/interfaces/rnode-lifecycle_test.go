@@ -392,3 +392,67 @@ func TestRNodeBLETransportRejected(t *testing.T) {
 		t.Fatal("ble:// should be rejected")
 	}
 }
+
+// TestRNodeStartupFailureSelfHeals verifies the Python-faithful construction
+// policy: when the transport is unavailable at startup, NewRNodeInterface does
+// NOT fail — it returns an offline interface with a background reconnect, which
+// brings it online once the transport appears. This is the self-heal that
+// prevents a permanent "Disconnected" after a transient startup port-busy or
+// not-yet-present device.
+//
+// It is non-parallel and temporarily shortens rnodeReconnectWait so it runs
+// fast; the saved value is restored before return so parallel reconnect-using
+// tests (run after non-parallel ones) see the production delay.
+func TestRNodeStartupFailureSelfHeals(t *testing.T) {
+	// Reserve a free TCP port, then release it so the first dial is refused.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+
+	prev := rnodeReconnectWait
+	rnodeReconnectWait = 150 * time.Millisecond
+	defer func() { rnodeReconnectWait = prev }()
+
+	iface, err := NewRNodeInterface("rnode-selfheal", fmt.Sprintf("tcp://127.0.0.1:%d", port),
+		115200, 8, 1, "N", 915000000, 125000, 17, 8, 5, false, 0, "", nil)
+	if err != nil {
+		t.Fatalf("constructor should not fail for an unavailable transport: %v", err)
+	}
+	r, ok := iface.(*RNodeInterface)
+	if !ok {
+		t.Fatalf("expected *RNodeInterface, got %T", iface)
+	}
+	if r.Status() {
+		t.Fatal("interface should be offline immediately after startup failure")
+	}
+
+	// Now bring the transport up; the background reconnect should connect.
+	ln2, err := net.Listen("tcp", "127.0.0.1:"+fmt.Sprint(port))
+	if err != nil {
+		_ = r.Detach()
+		t.Fatalf("re-listen: %v", err)
+	}
+	defer func() { _ = ln2.Close() }()
+	go func() {
+		conn, aerr := ln2.Accept()
+		if aerr != nil {
+			return
+		}
+		serveRNodeTCPConn(t, conn)
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && !r.Status() {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !r.Status() {
+		t.Fatal("interface did not self-heal to online after transport appeared")
+	}
+	if r.Bitrate() != 3125 {
+		t.Fatalf("on-air bitrate = %d, want 3125 after reconnect", r.Bitrate())
+	}
+	_ = r.Detach()
+}

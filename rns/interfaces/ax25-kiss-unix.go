@@ -234,10 +234,11 @@ func (ai *ax25KISSInterface) Detach() error {
 }
 
 func (ai *ax25KISSInterface) openAndConfigure() error {
-	file, err := os.OpenFile(ai.port, os.O_RDWR|syscall.O_NOCTTY, 0)
+	file, effPort, err := openSerialPort(ai.port)
 	if err != nil {
 		return err
 	}
+	ai.port = effPort
 
 	if err := configureTermios(file.Fd(), ai.speed, ai.databits, ai.parity, ai.stopbits); err != nil {
 		_ = file.Close()
