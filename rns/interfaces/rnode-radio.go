@@ -149,6 +149,67 @@ func RNodeSetRadioStateSelectInt(state byte, index byte) []byte {
 	return KISSFrameSelectInt(KISSCmdRadioState, index, []byte{state})
 }
 
+// RNodeDetect builds the multi-command detect frame the host sends to probe an
+// attached RNode: it requests CMD_DETECT (with DETECT_REQ), then CMD_FW_VERSION,
+// CMD_PLATFORM, and CMD_MCU. The device answers CMD_DETECT with DETECT_RESP to
+// signal presence and streams the requested telemetry back over the serial link.
+// Mirrors RNodeInterface.detect (RNS/Interfaces/RNodeInterface.py).
+func RNodeDetect() []byte {
+	return []byte{
+		KISSFend, KISSCmdDetect, KISSDetectReq, KISSFend,
+		KISSCmdFwVersion, 0x00, KISSFend,
+		KISSCmdPlatform, 0x00, KISSFend,
+		KISSCmdMcu, 0x00, KISSFend,
+	}
+}
+
+// RNodeLeave builds the CMD_LEAVE frame telling the device the host is
+// relinquishing control. Mirrors RNodeInterface.leave.
+func RNodeLeave() []byte {
+	return []byte{KISSFend, KISSCmdLeave, 0xFF, KISSFend}
+}
+
+// RNodeHardReset builds the CMD_RESET frame that forces a device reboot. The
+// 0xF8 payload is the reset payload byte expected by RNode firmware. Mirrors
+// RNodeInterface.hard_reset.
+func RNodeHardReset() []byte {
+	return []byte{KISSFend, KISSCmdReset, 0xF8, KISSFend}
+}
+
+// RNodeEnableExternalFramebuffer builds the CMD_FB_EXT frame that switches the
+// device display into external-framebuffer mode (host-driven rendering). Mirrors
+// RNodeInterface.enable_external_framebuffer.
+func RNodeEnableExternalFramebuffer() []byte {
+	return []byte{KISSFend, KISSCmdFBExt, 0x01, KISSFend}
+}
+
+// RNodeDisableExternalFramebuffer builds the CMD_FB_EXT frame that returns the
+// device display to internal rendering. Mirrors
+// RNodeInterface.disable_external_framebuffer.
+func RNodeDisableExternalFramebuffer() []byte {
+	return []byte{KISSFend, KISSCmdFBExt, 0x00, KISSFend}
+}
+
+// RNodeReadFramebuffer builds the CMD_FB_READ request that asks the device to
+// stream back its 512-byte framebuffer. Mirrors RNodeInterface.read_framebuffer.
+func RNodeReadFramebuffer() []byte {
+	return []byte{KISSFend, KISSCmdFBRead, 0x01, KISSFend}
+}
+
+// RNodeReadDisplay builds the CMD_DISP_READ request that asks the device to
+// stream back its 1024-byte display contents. Mirrors RNodeInterface.read_display.
+func RNodeReadDisplay() []byte {
+	return []byte{KISSFend, KISSCmdDispRead, 0x01, KISSFend}
+}
+
+// RNodeWriteFramebuffer builds the CMD_FB_WRITE frame writing one display line.
+// The line index is prepended to lineData and the combined payload is
+// KISS-escaped before framing. Mirrors RNodeInterface.write_framebuffer.
+func RNodeWriteFramebuffer(line byte, lineData []byte) []byte {
+	payload := append([]byte{line}, lineData...)
+	return KISSFrame(KISSCmdFBWrite, payload)
+}
+
 // RNodeValidateRadioState checks whether the reported radio state matches the
 // configured parameters within tolerance. Frequency tolerance is ±100 Hz.
 // All other parameters must match exactly. Returns an error describing the

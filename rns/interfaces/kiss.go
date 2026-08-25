@@ -34,6 +34,16 @@ const (
 	KISSCmdReady      = 0x0F
 	KISSCmdSelInt     = 0x1F
 
+	// KISS command bytes for device reset and framebuffer/display access
+	// (RNS/Interfaces/RNodeInterface.py, KISS class). The detection/firmware
+	// constants (KISSCmdFwVersion, KISSCmdPlatform, KISSCmdMcu, KISSDetectReq,
+	// KISSDetectResp) already live in rnode-multi-spawn.go.
+	KISSCmdReset    = 0x55
+	KISSCmdFBExt    = 0x41
+	KISSCmdFBRead   = 0x42
+	KISSCmdFBWrite  = 0x43
+	KISSCmdDispRead = 0x66
+
 	// Radio state constants.
 	RadioStateOff = 0x00
 	RadioStateOn  = 0x01

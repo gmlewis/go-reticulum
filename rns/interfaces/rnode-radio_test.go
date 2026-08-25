@@ -7,6 +7,7 @@ package interfaces
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 )
 
@@ -458,5 +459,37 @@ func TestRNodeSetBandwidthSelectInt(t *testing.T) {
 	frame := RNodeSetBandwidthSelectInt(250000, 5)
 	if frame[1] != KISSCmdSelInt || frame[2] != 5 {
 		t.Fatal("select prefix must select sub-interface index 5")
+	}
+}
+
+// TestRNodeDeviceCommandFrames asserts the device-control KISS command builders
+// (detect, leave, hard reset, framebuffer/display) produce byte-identical output
+// to the real Python RNodeInterface methods. Golden hex was captured live from
+// RNS.Interfaces.RNodeInterface against a recording fake serial (see
+// rnode-parity-int_test.go); it is inlined here so the standard suite covers
+// these builders without requiring a Python runtime.
+func TestRNodeDeviceCommandFrames(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		got  []byte
+		want string
+	}{
+		{"detect", RNodeDetect(), "c00873c05000c04800c04900c0"},
+		{"leave", RNodeLeave(), "c00affc0"},
+		{"hardReset", RNodeHardReset(), "c055f8c0"},
+		{"enableFB", RNodeEnableExternalFramebuffer(), "c04101c0"},
+		{"disableFB", RNodeDisableExternalFramebuffer(), "c04100c0"},
+		{"readFB", RNodeReadFramebuffer(), "c04201c0"},
+		{"readDisplay", RNodeReadDisplay(), "c06601c0"},
+		{"writeFB", RNodeWriteFramebuffer(3, []byte{0xC0, 0xDB, 0x01, 0x02}), "c04303dbdcdbdd0102c0"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := fmt.Sprintf("%x", tc.got); got != tc.want {
+				t.Fatalf("%s = %s, want %s", tc.name, got, tc.want)
+			}
+		})
 	}
 }

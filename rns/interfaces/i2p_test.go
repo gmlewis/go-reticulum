@@ -41,7 +41,7 @@ func TestI2PInterfaceRoundTrip(t *testing.T) {
 		t.Fatalf("peer type = %q, want I2PInterfacePeer", peerIface.Type())
 	}
 
-	time.Sleep(100 * time.Millisecond)
+	waitForIfaceRunning(t, peerIface, 2*time.Second)
 
 	// Payload must exceed HDLCHeaderMinSize (19): the readLoop's check_frame_len
 	// gate (v1.4.0 parity) drops sub-header frames, so a real-length payload is

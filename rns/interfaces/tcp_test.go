@@ -35,8 +35,10 @@ func TestTCPInterface(t *testing.T) {
 		}
 	}()
 
-	// Wait for connection to be accepted
-	time.Sleep(100 * time.Millisecond)
+	// Wait for the client to report running (connection established) before
+	// sending, polling rather than a fixed sleep so the test never fatals with
+	// "not running" under scheduler load.
+	waitForIfaceRunning(t, client, 2*time.Second)
 
 	// Payload must exceed HDLCHeaderMinSize (19): the readLoop's check_frame_len
 	// gate (v1.4.0 parity) drops sub-header frames, so a real-length payload is

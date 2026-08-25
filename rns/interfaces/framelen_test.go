@@ -103,14 +103,16 @@ func TestHDLCFrameLenValidationDropsInvalidFrames(t *testing.T) {
 	// Sub-header frame: payload (5 bytes) shorter than HDLCHeaderMinSize (19).
 	// Must be dropped before inboundHandler.
 	writeFrame(bytes.Repeat([]byte{0x11}, 5))
-	time.Sleep(100 * time.Millisecond)
 
 	// Over-length frame: unescaped length (TCPHWMTU+1) exceeds HW_MTU. Must be
 	// dropped before inboundHandler. 0x22 needs no HDLC escaping, so the
 	// unescaped length equals the payload length.
 	writeFrame(bytes.Repeat([]byte{0x22}, TCPHWMTU+1))
-	time.Sleep(250 * time.Millisecond)
 
+	// Neither invalid frame is ever delivered, so calls is invariantly 0 here
+	// (the valid frame has not been sent yet and invalid frames are dropped by
+	// the readLoop's check_frame_len gate). No fixed sleep is needed: the
+	// timing-sensitive assertion is the valid-frame delivery below, which polls.
 	mu.Lock()
 	if calls != 0 {
 		t.Fatalf("after invalid frames, inboundHandler calls = %d, want 0", calls)
@@ -120,15 +122,17 @@ func TestHDLCFrameLenValidationDropsInvalidFrames(t *testing.T) {
 	// Valid frame: length > HDLCHeaderMinSize and <= TCPHWMTU. Must be delivered.
 	valid := bytes.Repeat([]byte{0xAA}, 64)
 	writeFrame(valid)
-	time.Sleep(250 * time.Millisecond)
 
-	mu.Lock()
-	defer mu.Unlock()
-	if calls != 1 {
-		t.Fatalf("after valid frame, inboundHandler calls = %d, want 1", calls)
-	}
-	if !bytes.Equal(last, valid) {
-		t.Fatalf("received %v, want %v", last, valid)
+	if !waitUntil(2*time.Second, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return calls == 1 && bytes.Equal(last, valid)
+	}) {
+		mu.Lock()
+		c := calls
+		l := append([]byte(nil), last...)
+		mu.Unlock()
+		t.Fatalf("after valid frame, inboundHandler calls = %d, want 1 (last=%v)", c, l)
 	}
 }
 
