@@ -42,13 +42,19 @@ func defaultRunCommand(name string, args ...string) ([]byte, error) {
 }
 
 func (rt cliRuntime) rnodeOpenSerial(port string) (serialPort, error) {
+	return rt.rnodeOpenSerialAtBaud(port, rnodeBaudRate)
+}
+
+// rnodeOpenSerialAtBaud opens a serial port at the given baud rate, for the
+// multi-baud probe diagnostic.
+func (rt cliRuntime) rnodeOpenSerialAtBaud(port string, baud int) (serialPort, error) {
 	opener := rt.openSerial
 	if opener == nil {
 		opener = defaultOpenSerial
 	}
 	serial, err := opener(serialSettings{
 		Port:             port,
-		BaudRate:         rnodeBaudRate,
+		BaudRate:         baud,
 		ByteSize:         8,
 		Parity:           "N",
 		StopBits:         1,
@@ -63,7 +69,7 @@ func (rt cliRuntime) rnodeOpenSerial(port string) (serialPort, error) {
 		return nil, err
 	}
 	if rt.debug {
-		log.Printf("gornodeconf debug open %v", port)
+		log.Printf("gornodeconf debug open %v @ %v", port, baud)
 		return &debugSerial{name: port, serialPort: serial}, nil
 	}
 	return serial, nil

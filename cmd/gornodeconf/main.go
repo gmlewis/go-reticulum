@@ -75,6 +75,14 @@ func (rt cliRuntime) run(args []string) error {
 		return nil
 	}
 
+	if opts.scan {
+		return runScan(rt)
+	}
+
+	if opts.probe != "" {
+		return runProbe(rt, opts.probe)
+	}
+
 	if opts.fwVersion != "" {
 		if _, err := strconv.ParseFloat(opts.fwVersion, 64); err != nil {
 			fmt.Printf("Selected version %q does not appear to be a number.\n", opts.fwVersion)

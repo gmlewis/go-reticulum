@@ -28,6 +28,7 @@ func TestAnnounceRebroadcastHopCountParity(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
 	ts.identity = mustTestNewIdentity(t, true)
+	ts.SetEnabled(true)
 
 	iface := &capturingInterface{name: "rx", gravity: 0}
 
@@ -76,6 +77,7 @@ func TestAnnounceRebroadcastHopCountParityMultiHop(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
 	ts.identity = mustTestNewIdentity(t, true)
+	ts.SetEnabled(true)
 
 	iface := &capturingInterface{name: "rx2", gravity: 0}
 

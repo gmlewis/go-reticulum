@@ -664,10 +664,6 @@ func (r *RNodeInterface) logf(format string, args ...any) {
 	log.Printf("Go RNodeInterface %v: "+format, append([]any{r.Name()}, args...)...)
 }
 
-func (r *RNodeInterface) logOpenFailure(err error) {
-	log.Printf("Go RNodeInterface %v: could not open serial port: %v", r.Name(), err)
-}
-
 // Type identifies this interface as an RNode radio interface.
 func (r *RNodeInterface) Type() string { return "RNodeInterface" }
 

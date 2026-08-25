@@ -50,6 +50,7 @@ func TestHandleAnnounce(t *testing.T) {
 	t.Parallel()
 	// LogLevel = LogDebug
 	ts := NewTransportSystem(nil)
+	ts.SetEnabled(true)
 	id := mustTestNewIdentity(t, true)
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle,
 		"testapp")
@@ -505,6 +506,7 @@ func TestAnnounceRebroadcastProcessing(t *testing.T) {
 	ts := NewTransportSystem(nil)
 	tsID := mustTestNewIdentity(t, true)
 	ts.identity = tsID
+	ts.SetEnabled(true)
 
 	source := &capturingInterface{name: "source"}
 	outbound := &capturingInterface{name: "outbound"}
@@ -585,6 +587,7 @@ func TestProcessAnnounceTableStalledPeerDoesNotBlock(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
 	ts.identity = mustTestNewIdentity(t, true)
+	ts.SetEnabled(true)
 
 	source := &capturingInterface{name: "source"}
 	stalled := &blockingInterface{capturingInterface: capturingInterface{name: "stalled"}, blockFor: 2 * time.Second}
@@ -624,6 +627,7 @@ func TestAnnounceQueueQueuesAndDrainsOnCappedInterface(t *testing.T) {
 
 	ts := NewTransportSystem(nil)
 	ts.identity = mustTestNewIdentity(t, true)
+	ts.SetEnabled(true)
 
 	source := &capturingInterface{name: "source"}
 	outbound := &capturingInterface{name: "outbound", bitrate: 1000}
@@ -667,6 +671,7 @@ func TestAnnounceQueueDeduplicatesNewerDestination(t *testing.T) {
 
 	ts := NewTransportSystem(nil)
 	ts.identity = mustTestNewIdentity(t, true)
+	ts.SetEnabled(true)
 
 	source := &capturingInterface{name: "source"}
 	outbound := &capturingInterface{name: "outbound", bitrate: 1000}

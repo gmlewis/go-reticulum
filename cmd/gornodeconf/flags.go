@@ -68,6 +68,8 @@ type options struct {
 	getTargetFirmwareHash bool
 	getFirmwareHash       bool
 	debug                 bool
+	scan                  bool
+	probe                 string
 }
 
 func printHelp() {
@@ -171,6 +173,9 @@ func parseArgs(args []string) (options, string, error) {
 	fs.BoolVar(&opts.getTargetFirmwareHash, "K", false, "Get target firmware hash from device")
 	fs.BoolVar(&opts.getFirmwareHash, "get-firmware-hash", false, "Get calculated firmware hash from device")
 	fs.BoolVar(&opts.getFirmwareHash, "L", false, "Get calculated firmware hash from device")
+	fs.BoolVar(&opts.scan, "scan", false, "Scan all serial ports for RNode devices")
+	fs.BoolVar(&opts.scan, "s", false, "Scan all serial ports for RNode devices")
+	fs.StringVar(&opts.probe, "probe", "", "Probe a port at multiple baud rates for an RNode")
 
 	if err := fs.Parse(flags); err != nil {
 		if err == flag.ErrHelp {
@@ -318,4 +323,10 @@ options:
   --product product     Product specification for device bootstrap
   --model model         Model code for device bootstrap
   --hwrev revision      Hardware revision for device bootstrap
+
+Diagnostics:
+  -s, --scan            Scan all serial ports for RNode devices (which /dev is
+                        my radio on?)
+  --probe port          Probe a port at multiple baud rates for an RNode (is my
+                        radio responding, and at what baud?)
 `

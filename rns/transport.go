@@ -514,6 +514,17 @@ type ifacOutboundHook interface {
 // matching Python's Transport.PATHFINDER_M = 128.
 const PathfinderM = 128
 
+// Path expiration durations, matching Python Transport.py:71-73:
+//
+//	PATHFINDER_E      = 60*60*24*7  # one week (default)
+//	AP_PATH_TIME      = 60*60*24    # one day (Access Point interface)
+//	ROAMING_PATH_TIME = 60*60*6     # six hours (Roaming interface)
+const (
+	pathfinderE     = 7 * 24 * time.Hour
+	apPathTime      = 24 * time.Hour
+	roamingPathTime = 6 * time.Hour
+)
+
 const (
 	pathfinderRetries        = 1
 	pathfinderGrace          = 5 * time.Second
@@ -1647,6 +1658,34 @@ func interfaceHash(iface interfaces.Interface) []byte {
 		})
 	}
 	return FullHash([]byte(interfaceHashString(iface)))
+}
+
+// pathExpiryForInterface returns the path-table expiration duration for a
+// path learned from an announce received on iface, matching Python
+// Transport.py:1932-1939:
+//
+//	if   interface.mode == MODE_ACCESS_POINT: expires = now + AP_PATH_TIME
+//	elif interface.mode == MODE_ROAMING:      expires = now + ROAMING_PATH_TIME
+//	else:                                    expires = now + PATHFINDER_E
+//
+// The Go port previously used a fixed 1-week expiry for all interface modes,
+// which caused Access-Point and Roaming paths to persist far longer than
+// Python intended — up to 168× longer for Roaming paths. A stale path to a
+// mobile/ephemeral peer that has moved away would remain in the table long
+// after the peer was unreachable, causing "No path to destination known"
+// when the path existed but was unusable.
+func pathExpiryForInterface(iface interfaces.Interface) time.Duration {
+	if iface == nil {
+		return pathfinderE
+	}
+	switch iface.Mode() {
+	case interfaces.ModeAccessPoint:
+		return apPathTime
+	case interfaces.ModeRoaming:
+		return roamingPathTime
+	default:
+		return pathfinderE
+	}
 }
 
 // findInterfaceByHash is the Go port of Python Transport.find_interface_from_hash.
@@ -5321,7 +5360,7 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 				entry.Interface = iface
 				entry.InterfaceName = iface.Name()
 				entry.IfaceHash = interfaceHash(iface)
-				entry.Expires = time.Now().Add(24 * 7 * time.Hour)
+				entry.Expires = time.Now().Add(pathExpiryForInterface(iface))
 				// Cache the raw announce so a later path request for this
 				// destination can be answered from the known path (see
 				// handlePathRequest's cached-path branch) instead of relaying
@@ -5356,7 +5395,7 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 				Interface:     iface,
 				InterfaceName: iface.Name(),
 				IfaceHash:     interfaceHash(iface),
-				Expires:       time.Now().Add(24 * 7 * time.Hour), // 1 week default
+				Expires:       time.Now().Add(pathExpiryForInterface(iface)),
 				Packet:        copyBytes(packet.Raw),
 				PacketHash:    append([]byte(nil), packet.GetHash()...),
 			}
@@ -5387,15 +5426,26 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 			}
 		}
 
-		// Propagation logic (re-broadcasting announces). A client of a shared
-		// Reticulum instance never queues rebroadcasts: its only egress is the
-		// shared instance, so rebroadcasting would echo announces back to it
-		// (and from there back onto the network with inflated hop counts).
-		// Python equivalently gates this on transport_enabled or
-		// from_local_client, both false for a connected-to-shared client
-		// (Transport.py:1741, with __transport_enabled forced False at
-		// Reticulum.py:417).
-		if !ts.connectedToSharedInstance && packet.Hops < ReticulumHopsMax && packet.Context != ContextPathResponse {
+		// Propagation logic (re-broadcasting announces). Python gates the
+		// announce_table insertion on
+		//   (RNS.Reticulum.transport_enabled() or is_from_local_client)
+		//   and packet.context != RNS.Packet.PATH_RESPONSE
+		// (Transport.py:1948). A standalone node with enable_transport=False
+		// has transport_enabled=False and is_from_local_client=False, so it
+		// must NOT rebroadcast. The Go port previously gated on
+		// !connectedToSharedInstance instead, which caused standalone
+		// non-transport nodes to rebroadcast announces using an ephemeral
+		// transport identity. Other nodes receiving these rebroadcasts
+		// learned paths pointing to the ephemeral identity — paths that could
+		// never be used because the non-transport node does not forward
+		// transport-id-addressed packets (Inbound's transport-handling block
+		// is gated on ts.Enabled()). This was a root cause of "No path to
+		// destination known": the node knew the destination (from the announce
+		// handler) but the learned path pointed to a non-functional ephemeral
+		// next-hop. ts.enabled is read directly (the lock is already held
+		// here); isLocalClientInterface does not acquire ts.mu.
+		isFromLocalClient := ts.isLocalClientInterface(iface)
+		if (ts.enabled || isFromLocalClient) && packet.Context != ContextPathResponse {
 			raw := make([]byte, len(packet.Raw))
 			copy(raw, packet.Raw)
 			// Python (Transport.py:1927,632): announce_hops = packet.hops

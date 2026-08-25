@@ -19,6 +19,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/gmlewis/go-reticulum/rns"
@@ -55,6 +56,28 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		}
 		return 0
 	}
+
+	// Resolve the default config dir if not given (for the lock file path).
+	if app.configDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			if _, writeErr := fmt.Fprintln(stderr, err); writeErr != nil {
+				return 1
+			}
+			return 1
+		}
+		app.configDir = filepath.Join(home, ".reticulum")
+	}
+
+	// Singleton lock: prevent two gornsd instances on the same config dir.
+	releaseLock, err := enforceSingleInstance(app.configDir)
+	if err != nil {
+		if _, writeErr := fmt.Fprintln(stderr, err); writeErr != nil {
+			return 1
+		}
+		return 1
+	}
+	defer releaseLock()
 
 	logger := rns.NewLogger()
 	app.logger = logger

@@ -202,6 +202,7 @@ func TestProcessAnnounceTableModeFilter(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
 	ts.identity = mustTestNewIdentity(t, true)
+	ts.SetEnabled(true)
 
 	from := newAFI("from-boundary", interfaces.ModeBoundary)
 	outFull := newAFI("out-full", interfaces.ModeFull)
@@ -242,6 +243,7 @@ func TestProcessAnnounceTableAnnouncesFromInternalBlock(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
 	ts.identity = mustTestNewIdentity(t, true)
+	ts.SetEnabled(true)
 
 	from := newAFI("from-internal", interfaces.ModeInternal)
 	outBlock := newAFI("out-afi-false", interfaces.ModeFull)
@@ -284,6 +286,7 @@ func TestProcessAnnounceTableAnnouncesToInternalAllow(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
 	ts.identity = mustTestNewIdentity(t, true)
+	ts.SetEnabled(true)
 
 	from := newAFI("from-boundary", interfaces.ModeBoundary)
 	outInternalBlock := newAFI("out-internal-block", interfaces.ModeInternal)
@@ -327,6 +330,7 @@ func TestProcessAnnounceTableLocalDestinationRoaming(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(nil)
 	ts.identity = mustTestNewIdentity(t, true)
+	ts.SetEnabled(true)
 
 	from := newAFI("from-boundary", interfaces.ModeBoundary)
 	outRoaming := newAFI("out-roaming", interfaces.ModeRoaming)
