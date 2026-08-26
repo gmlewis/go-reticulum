@@ -3528,6 +3528,16 @@ func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 	// otherwise cause: at most one re-announce per 30s per transport.
 	if tci, ok := iface.(*interfaces.TCPClientInterface); ok {
 		tci.SetOnDown(func() { ts.InvalidatePathsViaInterface(tci) })
+		// Spawned (server-accepted) clients: remove the dead interface from
+		// this registry when its connection transitions down, matching
+		// Python's Transport.remove_interface during remote-client teardown
+		// (TCPInterface.py:450-453). Without this, hub servers retained dead
+		// client interfaces forever and every flood round retried Sends
+		// against them, logging "interface … is not running" and partially
+		// dropping rebroadcast fan-out to live peers.
+		if tci.IsSpawned() {
+			tci.SetOnRemove(func() { ts.RemoveInterface(tci) })
+		}
 		// Re-announce on (re)connect with a rate limit, and also fire
 		// immediately for the initial connect. newTCPClientInterface's
 		// initial connect() succeeds BEFORE RegisterInterface sets this

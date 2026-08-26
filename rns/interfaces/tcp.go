@@ -162,6 +162,20 @@ type TCPClientInterface struct {
 	// which are announced by the server's connectHandler at accept time.
 	onConnectMu sync.Mutex
 	onConnect   func()
+
+	// parentServer, when non-nil, is the TCPServerInterface that spawned this
+	// client (server-accepted connections only). failConn uses it to prune
+	// the dead spawned client from the parent's spawn list, mirroring
+	// Python's teardown which pops the remote client from its parent and
+	// calls Transport.remove_interface (TCPInterface.py:450-453).
+	parentServer *TCPServerInterface
+
+	// onRemove, if set, is invoked once when this interface transitions down
+	// (its connection fails or is torn down). The transport installs it for
+	// spawned clients so dead interfaces are removed from the transport
+	// registry exactly as Python's Transport.remove_interface does.
+	onRemoveMu sync.Mutex
+	onRemove   func()
 }
 
 // NewTCPClientInterface initiates a resilient TCP connection to a remote peer.
@@ -454,6 +468,18 @@ func (tci *TCPClientInterface) failConn(conn net.Conn) {
 		if tci.spawned && tci.onSpawnedDown != nil {
 			tci.onSpawnedDown(tci.remoteIP, tci.spawnedAt)
 		}
+		// Prune the dead spawned client from its parent server's spawn list
+		// so later announce fan-outs stop targeting the corpse (Python pops
+		// the remote client during teardown, TCPInterface.py:450-453).
+		if tci.parentServer != nil {
+			tci.parentServer.removeSpawned(tci)
+		}
+		tci.onRemoveMu.Lock()
+		removeHook := tci.onRemove
+		tci.onRemoveMu.Unlock()
+		if removeHook != nil {
+			removeHook()
+		}
 		if !tci.IsDetached() && !tci.spawned {
 			go tci.reconnectLoop()
 		}
@@ -478,6 +504,20 @@ func (tci *TCPClientInterface) SetOnConnect(f func()) {
 	tci.onConnect = f
 	tci.onConnectMu.Unlock()
 }
+
+// SetOnRemove registers a callback invoked once when this interface's
+// connection transitions down. The transport installs it for spawned clients
+// so a dead interface is removed from the transport registry, matching
+// Python's Transport.remove_interface call during remote-client teardown.
+func (tci *TCPClientInterface) SetOnRemove(f func()) {
+	tci.onRemoveMu.Lock()
+	tci.onRemove = f
+	tci.onRemoveMu.Unlock()
+}
+
+// IsSpawned reports whether this client interface was created by a server
+// accepting an inbound connection (rather than an outbound configured dial).
+func (tci *TCPClientInterface) IsSpawned() bool { return tci.spawned }
 
 // Status reports whether the TCP client is currently connected and running.
 func (tci *TCPClientInterface) Status() bool {
@@ -679,6 +719,11 @@ func (tsi *TCPServerInterface) handleConnection(conn net.Conn) {
 	tsi.spawnedInterfaces = append(tsi.spawnedInterfaces, tci)
 	tsi.mu.Unlock()
 
+	// Record the parent so failConn can prune this entry from the spawn list
+	// when the connection dies (Python pops the remote client from its parent
+	// and calls Transport.remove_interface on teardown).
+	tci.parentServer = tsi
+
 	// Start readLoop FIRST so interface can receive data
 	go tci.readLoop()
 	// log.Printf("[TCP] Server %v: started readLoop for %v", tsi.name, tci.name)
@@ -716,6 +761,24 @@ func (tsi *TCPServerInterface) Send(data []byte) error {
 		}(ci)
 	}
 	return nil
+}
+
+// removeSpawned drops a spawned client from the parent's spawn list. It is
+// called by failConn on the dead client's up->down transition so announce
+// fan-out stops targeting corpses, and is idempotent: Detach racing a
+// concurrent teardown, or an entry already removed, is a harmless no-op.
+func (tsi *TCPServerInterface) removeSpawned(ci *TCPClientInterface) {
+	if ci == nil {
+		return
+	}
+	tsi.mu.Lock()
+	defer tsi.mu.Unlock()
+	for i, existing := range tsi.spawnedInterfaces {
+		if existing == ci {
+			tsi.spawnedInterfaces = append(tsi.spawnedInterfaces[:i], tsi.spawnedInterfaces[i+1:]...)
+			return
+		}
+	}
 }
 
 // Status reports whether the TCP server listener is still running.
