@@ -725,7 +725,12 @@ func (r *Reticulum) getFirstHopTimeout(destinationHash []byte) int {
 		return defaultPerHopTimeout
 	}
 
-	latencySeconds := (1.0 / float64(entry.Interface.Bitrate())) * 8.0 * float64(MTU)
+	// Match Python's Transport.first_hop_timeout (Transport.py:2788-2790):
+	//   latency = next_hop_per_byte_latency(dest)  # 1.0 / interface.bitrate
+	//   first_hop_timeout = MTU * latency + DEFAULT_PER_HOP_TIMEOUT
+	// Python's next_hop_per_byte_latency returns 1/bitrate (seconds per bit),
+	// and MTU is in bytes, giving MTU/bitrate seconds.
+	latencySeconds := float64(MTU) / float64(entry.Interface.Bitrate())
 	return defaultPerHopTimeout + int(math.Ceil(latencySeconds))
 }
 

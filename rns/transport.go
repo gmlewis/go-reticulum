@@ -53,6 +53,9 @@ type Transport interface {
 	Enabled() bool
 	// FindLink returns the active link matching linkID, if any.
 	FindLink(linkID []byte) *Link
+	// FirstHopTimeout returns the establishment-timeout first-hop term for
+	// the path to destHash, including a bitrate-latency term for slow links.
+	FirstHopTimeout(destHash []byte) time.Duration
 	// GetBlackholedIdentities returns the current blackhole list in RPC-friendly
 	// form.
 	GetBlackholedIdentities() []map[string]any
@@ -3609,6 +3612,26 @@ func (ts *TransportSystem) GetPathEntry(destHash []byte) *PathInfo {
 		}
 	}
 	return nil
+}
+
+// FirstHopTimeout computes the establishment-timeout first-hop term for the
+// path to destinationHash, mirroring Python's Transport.first_hop_timeout
+// (Transport.py:2787-2791): DEFAULT_PER_HOP_TIMEOUT + MTU/bitrate when the
+// next-hop interface bitrate is known, falling back to DEFAULT_PER_HOP_TIMEOUT
+// (6s) when the path or interface is unknown or has no bitrate.
+//
+// Link.Establish and NewLink use this instead of the bare
+// establishmentTimeoutPerHop constant so that slow radio links (e.g. a 1200
+// baud RNode) get extra establishment margin proportional to the time it takes
+// to transmit one MTU-sized packet over the first hop — matching Python RNS
+// behavior that prevents "Link establishment timed out" on slow links.
+func (ts *TransportSystem) FirstHopTimeout(destinationHash []byte) time.Duration {
+	entry := ts.GetPathEntry(destinationHash)
+	if entry == nil || entry.Interface == nil || entry.Interface.Bitrate() <= 0 {
+		return establishmentTimeoutPerHop
+	}
+	latencySec := float64(MTU) / float64(entry.Interface.Bitrate())
+	return establishmentTimeoutPerHop + time.Duration(latencySec*float64(time.Second))
 }
 
 // GetRateTable returns a snapshot of observed announce-rate state.

@@ -421,7 +421,16 @@ func NewLink(ts Transport, destination *Destination) (*Link, error) {
 	if destination != nil {
 		// Initiator side
 		l.initiator = true
-		l.establishmentTimeout = establishmentTimeoutPerHop
+		// Set the initial establishment timeout to the first-hop timeout
+		// (Python Link.__init__ uses get_first_hop_timeout as the base,
+		// Link.py:282). Establish() recomputes the full timeout adding
+		// the per-hop term; this initial value covers the window between
+		// NewLink and Establish.
+		if ts != nil {
+			l.establishmentTimeout = ts.FirstHopTimeout(destination.Hash)
+		} else {
+			l.establishmentTimeout = establishmentTimeoutPerHop
+		}
 		// expected_hops = RNS.Transport.hops_to(self.destination.hash)
 		// (Link.py:281). hops_to returns PathfinderM when the path is
 		// unknown; the value is re-balanced down to the proof's hop count
@@ -466,12 +475,20 @@ func (l *Link) Establish() error {
 	// Set the establishment timeout based on the number of hops to the
 	// destination, matching Python's
 	//   establishment_timeout = first_hop_timeout + PER_HOP * max(1, hops)
-	// where first_hop_timeout defaults to PER_HOP when latency is unknown.
+	// where first_hop_timeout = DEFAULT_PER_HOP_TIMEOUT + MTU/bitrate when the
+	// next-hop interface bitrate is known (Transport.first_hop_timeout,
+	// Transport.py:2787-2791). Using the bare establishmentTimeoutPerHop
+	// constant here (as the Go port previously did) omits the bitrate-latency
+	// term, making the establishment timeout shorter than Python's on slow
+	// radio links — the root cause of "Link establishment timed out" on
+	// remote nodes where Python succeeds.
 	hops := 1
+	firstHop := establishmentTimeoutPerHop
 	if l.transport != nil {
 		hops = max(1, l.transport.HopsTo(l.destination.Hash))
+		firstHop = l.transport.FirstHopTimeout(l.destination.Hash)
 	}
-	l.establishmentTimeout = establishmentTimeoutPerHop + establishmentTimeoutPerHop*time.Duration(hops)
+	l.establishmentTimeout = firstHop + establishmentTimeoutPerHop*time.Duration(hops)
 
 	l.startWatchdog()
 
