@@ -589,7 +589,7 @@ func sendToUDPConn(t *testing.T, conn *net.UDPConn, payload []byte) {
 	if err != nil {
 		t.Fatalf("failed to open UDP sender: %v", err)
 	}
-	defer sender.Close()
+	defer func() { _ = sender.Close() }()
 	if _, err := sender.Write(payload); err != nil {
 		t.Fatalf("failed to send UDP payload: %v", err)
 	}
@@ -691,7 +691,7 @@ func TestAutoInterfaceDiscoveryLoopReturnsOnClosedSocket(t *testing.T) {
 	ai.running.Store(1)
 
 	conn := loopbackUDPConn(t)
-	conn.Close()
+	_ = conn.Close()
 
 	done := make(chan struct{})
 	go func() {
@@ -715,7 +715,7 @@ func TestAutoInterfaceDataLoopReturnsOnClosedSocket(t *testing.T) {
 	ai.running.Store(1)
 
 	conn := loopbackUDPConn(t)
-	conn.Close()
+	_ = conn.Close()
 
 	done := make(chan struct{})
 	go func() {
@@ -732,13 +732,15 @@ func TestAutoInterfaceDataLoopReturnsOnClosedSocket(t *testing.T) {
 func TestAutoInterfaceAnnounceLoopSurvivesUnsetRunningAndStopsOnDetach(t *testing.T) {
 	t.Parallel()
 	onPeerCalled := make(chan string, 1)
-	ai, err := NewAutoInterface("test-auto-announce", AutoInterfaceConfig{GroupID: "announce-group"}, nil,
+	ai, err := NewAutoInterface("test-auto-announce", AutoInterfaceConfig{
+		GroupID:          "announce-group",
+		AnnounceInterval: 5 * time.Millisecond,
+	}, nil,
 		func(peer Interface) { onPeerCalled <- peer.Name() })
 	if err != nil {
 		t.Fatalf("failed to create AutoInterface: %v", err)
 	}
 	defer func() { _ = ai.Detach() }()
-	ai.announceInterval = 5 * time.Millisecond
 
 	returned := make(chan struct{})
 	go func() {

@@ -203,6 +203,11 @@ type TransportSystem struct {
 	stopCh            chan struct{}
 	doneCh            chan struct{}
 
+	// lastReannounce rate-limits the onConnect re-announce hook so rapid
+	// connection flapping (every reconnectDelay) cannot mint an announce
+	// storm while still refreshing hub path tables after a restart.
+	lastReannounce time.Time
+
 	pathRequestHash []byte
 
 	interfaces   []interfaces.Interface
@@ -539,6 +544,12 @@ const (
 	apPathTime      = 24 * time.Hour
 	roamingPathTime = 6 * time.Hour
 )
+
+// minReannounceInterval rate-limits the onConnect re-announce so rapid
+// connection flapping (every reconnectDelay = 5s) cannot trigger more than
+// one announce per 30s, preventing the announce storm while still refreshing
+// hub path tables promptly after a restart.
+const minReannounceInterval = 30 * time.Second
 
 const (
 	pathfinderRetries      = 1
@@ -3507,21 +3518,38 @@ func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 	// up->down transition (inside failConn) instead of on every failed
 	// rebroadcast/forward Send as the old lazy path did.
 	//
-	// RNS does NOT re-announce local destinations on interface (re)connect
-	// or registration: Python's add_interface (Transport.py:438-441) only
-	// appends the interface, and TCPClientInterface.reconnect
-	// (TCPInterface.py:270-302) only restarts the read loop. A destination
-	// is announced once at registration (RegisterDestination, mirroring
-	// Transport.py:2499-2517) and thereafter only by the application's
-	// periodic announce interval. Re-announcing on every TCP reconnect
-	// (every reconnectDelay = 5s) or every interface registration mints a
-	// fresh random blob each call, bypassing the configured announce
-	// interval and flooding the network with announces every few seconds
-	// — a self-sustaining announce storm that saturates the shared
-	// transport and drops link-handshake packets ("Link establishment
-	// timed out"). The onConnect hook is therefore intentionally absent.
+	// Re-announce on (re)connect with a rate limit. After a restart the
+	// hub's path table still points at the old (dead) TCP connection, so
+	// link requests to this node are silently dropped until the next
+	// periodic announce (up to 6 hours for LXMF, 12 hours for node).
+	// Re-announcing once on connect refreshes the hub's path immediately.
+	// The rate limit (minReannounceInterval) prevents the announce storm
+	// that rapid connection flapping (every reconnectDelay = 5s) would
+	// otherwise cause: at most one re-announce per 30s per transport.
 	if tci, ok := iface.(*interfaces.TCPClientInterface); ok {
 		tci.SetOnDown(func() { ts.InvalidatePathsViaInterface(tci) })
+		// Re-announce on (re)connect with a rate limit, and also fire
+		// immediately for the initial connect. newTCPClientInterface's
+		// initial connect() succeeds BEFORE RegisterInterface sets this
+		// hook, so the onConnect callback would never fire for the
+		// first (successful) connection — leaving the hub with a stale
+		// path table entry from before the restart. Calling announceNow
+		// here ensures the hub gets a fresh announce regardless. The
+		// rate limit (minReannounceInterval) prevents the announce storm
+		// that rapid connection flapping would otherwise cause.
+		announceNow := func() {
+			ts.mu.Lock()
+			now := time.Now()
+			if now.Sub(ts.lastReannounce) < minReannounceInterval {
+				ts.mu.Unlock()
+				return
+			}
+			ts.lastReannounce = now
+			ts.mu.Unlock()
+			ts.announceDestinationsOnInterface(tci, nil)
+		}
+		tci.SetOnConnect(announceNow)
+		go announceNow()
 	}
 
 	// Start inbound processor for this interface
@@ -3537,6 +3565,30 @@ func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 				ts.Inbound(data, iface)
 			}
 		}()
+	}
+}
+
+// announceDestinationsOnInterface re-announces all local SINGLE destinations so
+// the hub the TCP client just (re)connected to learns a fresh path to this
+// node. Rate-limited by lastReannounce in the onConnect hook to prevent the
+// announce storm that unthrottled re-announcing on every reconnect would
+// cause. The iface parameter is used only for logging; Announce sends on all
+// interfaces (matching Python's announce path, which does not scope to one).
+func (ts *TransportSystem) announceDestinationsOnInterface(iface interfaces.Interface, alreadyAnnounced []*Destination) {
+	destinations := alreadyAnnounced
+	if destinations == nil {
+		ts.mu.Lock()
+		destinations = make([]*Destination, len(ts.destinations))
+		copy(destinations, ts.destinations)
+		ts.mu.Unlock()
+	}
+	for _, d := range destinations {
+		if d.direction == DestinationIn && d.Type == DestinationSingle {
+			ts.logger.Debug("[Transport] Re-announcing destination %x on new interface %v", d.Hash, iface.Name())
+			if err := d.Announce(nil); err != nil {
+				ts.logger.Debug("Failed to re-announce destination %x on new interface %v: %v", d.Hash, iface.Name(), err)
+			}
+		}
 	}
 }
 
@@ -5157,6 +5209,30 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 		}
 	}
 
+	// Broadcast forwarding: a packet with no TransportID (Header1 broadcast)
+	// that is not for a local destination/link and is not an announce or proof
+	// is forwarded on all network interfaces, matching Python
+	// Transport.inbound's broadcast path (Transport.py:1512-1549). This
+	// handles link requests from local clients (browsers, gornsh, link-test)
+	// that have no cached path: the shared instance forwards the request on
+	// all its network interfaces so the remote node can receive it. Without
+	// this, a PacketLinkRequest with no TransportID is silently dropped,
+	// causing fleet-wide "link establishment timed out" after restarts when
+	// the path table is empty.
+	if packet.TransportID == nil && packet.PacketType != PacketAnnounce && packet.PacketType != PacketProof {
+		ts.mu.Lock()
+		snapshot := append([]interfaces.Interface(nil), ts.interfaces...)
+		ts.mu.Unlock()
+		for _, outIface := range snapshot {
+			if outIface == iface {
+				continue
+			}
+			if err := outIface.Send(packet.Raw); err != nil {
+				ts.logger.Debug("Inbound: broadcast send failed on %s: %v", outIface.Name(), err)
+			}
+		}
+	}
+
 	// Proof handling
 	if packet.PacketType == PacketProof {
 		ts.logger.Debug("Inbound: processing PROOF packet %x for dest %x", packet.PacketHash, packet.DestinationHash)
@@ -5748,7 +5824,33 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 	attachedIface := packet.AttachedInterface
 	interfacesSnapshot := append([]interfaces.Interface(nil), ts.interfaces...)
 	pathEntry, hasPath := ts.pathTable[string(packet.DestinationHash)]
+	// Local delivery shortcut: when a unicast application destination (SINGLE
+	// or LINK) is registered on this transport, loop the packet back through
+	// Inbound instead of sending it out a network interface. Without this, a
+	// cached path-table entry pointing at the LocalServerInterface (whose Send
+	// is a no-op) silently drops the packet, so self-addressed probes and
+	// links always time out.
+	//
+	// This must NOT fire for PLAIN or GROUP destinations. Those are
+	// network-wide control/broadcast destinations (e.g. the rnstransport.path
+	// .request destination registered in Start) that exist on every node:
+	// looping a path request back to the local copy would prevent it from
+	// ever reaching the network, breaking path discovery entirely (every
+	// RequestPath silently self-delivers and the remote node never answers).
+	localDest := ts.localDestinationLocked(packet.DestinationHash)
 	ts.mu.Unlock()
+	if localDest != nil && packet.PacketType != PacketAnnounce &&
+		(packet.DestinationType == DestinationSingle || packet.DestinationType == DestinationLink) {
+		packet.Destination = localDest
+		packet.ReceivingInterface = attachedIface
+		localDest.receive(packet)
+		packet.Sent = true
+		packet.SentAt = float64(time.Now().UnixNano()) / 1e9
+		if packet.Receipt != nil {
+			packet.Receipt.MarkSent(packet.SentAt)
+		}
+		return nil
+	}
 
 	// Link packets (resource advertise/part/request/proof, etc.) are built with
 	// NewPacket(link, ...) and sent via p.Send() rather than Link.send, so they

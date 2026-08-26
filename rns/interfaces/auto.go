@@ -109,6 +109,12 @@ type AutoInterfaceConfig struct {
 	// ConfiguredBitrate overrides the default bitrate estimate reported by the
 	// interface when greater than zero.
 	ConfiguredBitrate int
+	// AnnounceInterval overrides the default multicast announce interval.
+	// When zero, AutoAnnounceInterval is used. This is read by goroutines
+	// spawned during construction (finalInitBarrier), so it must be set here
+	// rather than by mutating the field after NewAutoInterface returns —
+	// doing the latter races with the announce-loop barrier goroutine.
+	AnnounceInterval time.Duration
 }
 
 type autoPeerState struct {
@@ -239,6 +245,10 @@ func NewAutoInterface(name string, cfg AutoInterfaceConfig, handler InboundHandl
 
 	if cfg.ConfiguredBitrate > 0 {
 		ai.bitrate = cfg.ConfiguredBitrate
+	}
+
+	if cfg.AnnounceInterval > 0 {
+		ai.announceInterval = cfg.AnnounceInterval
 	}
 
 	if err := ai.start(); err != nil {

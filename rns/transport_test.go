@@ -1100,8 +1100,7 @@ func TestOutboundSendFailureInvalidatesPaths(t *testing.T) {
 	ts.pathTable["via-good"] = &PathEntry{Interface: good, Expires: time.Now().Add(time.Hour)}
 
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle,
-		"outbound-test")
+	dest := mustTestNewRemoteDestination(t, ts, id, "outbound-test")
 	p := NewPacket(dest, []byte("hello"))
 	if err := p.Pack(); err != nil {
 		t.Fatalf("pack failed: %v", err)
@@ -1150,8 +1149,7 @@ func TestOutboundIFACEgressTransform(t *testing.T) {
 	ts.interfaces = append(ts.interfaces, iface)
 
 	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle,
-		"ifac-out")
+	dest := mustTestNewRemoteDestination(t, ts, id, "ifac-out")
 	p := NewPacket(dest, []byte("payload"))
 	if err := p.Pack(); err != nil {
 		t.Fatalf("pack failed: %v", err)
