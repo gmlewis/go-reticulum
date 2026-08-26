@@ -28,6 +28,12 @@ const (
 	AutoDefaultDiscoveryPort = 29716
 	// AutoDefaultDataPort specifies the standard UDP port allocated for actual payload data transmission between peers.
 	AutoDefaultDataPort = 42671
+
+	// autoUDPReadErrorDelay floors the retry rate when a UDP reader socket
+	// fails persistently (dead NIC, removed address). ReadFromUDP on such a
+	// socket returns instantly, so an unbackoffed retry loop burns a full
+	// core per loop in kernel/errno churn with no log output.
+	autoUDPReadErrorDelay = 100 * time.Millisecond
 	// AutoDefaultGroupID dictates the default network partitioning ID to ensure discovery frames are constrained to intended participants.
 	AutoDefaultGroupID = "reticulum"
 
@@ -291,6 +297,14 @@ func (ai *AutoInterface) start() error {
 		return err
 	}
 
+	// Arm the lifecycle flag BEFORE spawning any per-interface goroutine.
+	// The reader and announce loops check the lifecycle state as their first
+	// action, and spawning them while it was still unset let them all
+	// self-destruct silently at birth depending on scheduler timing. The
+	// adopted UDP sockets then stayed open forever with nobody reading them,
+	// so the interface looked Up while deaf (0 bytes ever transferred).
+	ai.running.Store(1)
+
 	started := 0
 	for _, iface := range ifaces {
 		if !ai.shouldUseInterface(iface.Name) {
@@ -298,15 +312,19 @@ func (ai *AutoInterface) start() error {
 		}
 		linkLocal, ok := firstLinkLocalIPv6(iface)
 		if !ok {
+			log.Printf("auto interface %v skipping %v: no IPv6 link-local address", ai.Name(), iface.Name)
 			continue
 		}
 		if err := ai.startInterfaceSockets(iface, linkLocal); err != nil {
+			log.Printf("auto interface %v failed to start sockets on %v: %v", ai.Name(), iface.Name, err)
 			continue
 		}
 		started++
 	}
+	if started == 0 {
+		log.Printf("auto interface %v adopted no network interfaces; LAN peer discovery is disabled until restart", ai.Name())
+	}
 
-	ai.running.Store(1)
 	if started > 0 {
 		atomic.StoreInt32(&ai.online, 1)
 	}
@@ -428,14 +446,20 @@ func (ai *AutoInterface) startInterfaceSockets(iface net.Interface, linkLocal ne
 
 func (ai *AutoInterface) discoveryLoop(ifname string, conn *net.UDPConn) {
 	buf := make([]byte, 2048)
-	for ai.running.Load() == 1 {
+	for !ai.IsDetached() {
 		n, src, err := conn.ReadFromUDP(buf)
 		if err != nil {
-			if ai.running.Load() == 1 {
-				ai.panicOnInterfaceErrorf("auto interface %v discovery read failed: %v", ifname, err)
-				continue
+			// Detach closes the sockets; a closed-socket read is teardown.
+			if errors.Is(err, net.ErrClosed) || ai.IsDetached() {
+				return
 			}
-			return
+			// A dead NIC or removed address leaves the socket failing
+			// instantly forever. With panic_on_interface_error at its
+			// default (No) the old path logged nothing and slept nothing,
+			// pegging a core per loop in total silence; back off instead.
+			ai.panicOnInterfaceErrorf("auto interface %v discovery read failed: %v", ifname, err)
+			time.Sleep(autoUDPReadErrorDelay)
+			continue
 		}
 		if atomic.LoadInt32(&ai.final) != 1 {
 			continue
@@ -459,7 +483,7 @@ func (ai *AutoInterface) announceLoop(ifname string) {
 	ticker := time.NewTicker(ai.announceInterval)
 	defer ticker.Stop()
 	ai.peerAnnounce(ifname)
-	for ai.running.Load() == 1 {
+	for !ai.IsDetached() {
 		<-ticker.C
 		ai.peerAnnounce(ifname)
 	}
@@ -548,14 +572,18 @@ func (ai *AutoInterface) reverseAnnounce(ifname, peerAddr string) {
 
 func (ai *AutoInterface) dataLoop(conn *net.UDPConn) {
 	buf := make([]byte, 65535)
-	for ai.running.Load() == 1 {
+	for !ai.IsDetached() {
 		n, src, err := conn.ReadFromUDP(buf)
 		if err != nil {
-			if ai.running.Load() == 1 {
-				ai.panicOnInterfaceErrorf("auto interface data read failed: %v", err)
-				continue
+			// Detach closes the sockets; a closed-socket read is teardown.
+			if errors.Is(err, net.ErrClosed) || ai.IsDetached() {
+				return
 			}
-			return
+			// See the discoveryLoop comment: without this floor a dead
+			// socket turns the loop into a silent single-core hot spin.
+			ai.panicOnInterfaceErrorf("auto interface data read failed: %v", err)
+			time.Sleep(autoUDPReadErrorDelay)
+			continue
 		}
 		if src == nil || src.IP == nil {
 			continue
@@ -671,7 +699,7 @@ func (ai *AutoInterface) peerJobs() {
 	ticker := time.NewTicker(ai.peerJobInterval)
 	defer ticker.Stop()
 
-	for ai.running.Load() == 1 {
+	for !ai.IsDetached() {
 		<-ticker.C
 		now := time.Now()
 

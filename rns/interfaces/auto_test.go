@@ -568,3 +568,195 @@ func TestAutoInterfaceAndroidRmnetIgnore(t *testing.T) {
 		t.Errorf("shouldUseInterfaceOn(%q, android) with allowed override = false, want true", "rmnet3")
 	}
 }
+
+// loopbackUDPConn binds a throwaway udp6 socket on the IPv6 loopback address
+// for use as a reader-loop input in the tests below.
+func loopbackUDPConn(t *testing.T) *net.UDPConn {
+	t.Helper()
+	conn, err := net.ListenUDP("udp6", &net.UDPAddr{IP: net.IPv6loopback, Port: 0})
+	if err != nil {
+		t.Fatalf("failed to bind loopback UDP conn: %v", err)
+	}
+	return conn
+}
+
+// sendToUDPConn delivers one datagram to conn's own address from a second
+// socket, so a reader loop parked on conn has data waiting.
+func sendToUDPConn(t *testing.T, conn *net.UDPConn, payload []byte) {
+	t.Helper()
+	addr := &net.UDPAddr{IP: net.IPv6loopback, Port: conn.LocalAddr().(*net.UDPAddr).Port}
+	sender, err := net.DialUDP("udp6", nil, addr)
+	if err != nil {
+		t.Fatalf("failed to open UDP sender: %v", err)
+	}
+	defer sender.Close()
+	if _, err := sender.Write(payload); err != nil {
+		t.Fatalf("failed to send UDP payload: %v", err)
+	}
+}
+
+// The reader loops must run until Detach regardless of whether the running
+// flag happens to be set when they are spawned. start() historically spawned
+// them before storing running=1, so depending on scheduler timing they could
+// all self-destruct silently at birth, leaving adopted sockets open with
+// nobody reading them (observed live: AutoInterface Up with 0 bytes ever
+// transferred while peerJobs alone survived).
+
+func TestAutoInterfaceDiscoveryLoopProcessesPeerBeforeRunningSet(t *testing.T) {
+	t.Parallel()
+	onPeerCalled := make(chan string, 1)
+	ai, err := NewAutoInterface("test-auto-race", AutoInterfaceConfig{GroupID: "race-group"}, nil,
+		func(peer Interface) { onPeerCalled <- peer.Name() })
+	if err != nil {
+		t.Fatalf("failed to create AutoInterface: %v", err)
+	}
+	defer func() { _ = ai.Detach() }()
+	ai.SetFinal(true)
+	// ai.running deliberately left 0: this is the exact hazard window of
+	// start(), between goroutine spawn and the running store.
+
+	conn := loopbackUDPConn(t)
+	go ai.discoveryLoop("lo0", conn)
+
+	srcIP := "::1"
+	token := sha256.Sum256(append(append([]byte{}, ai.groupID...), []byte(srcIP)...))
+	sendToUDPConn(t, conn, token[:])
+
+	select {
+	case name := <-onPeerCalled:
+		if want := "AutoPeer[lo0/" + srcIP + "]"; name != want {
+			t.Errorf("onPeer called with %q, want %q", name, want)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("discoveryLoop processed no peer while running=%d: it exited at birth",
+			ai.running.Load())
+	}
+}
+
+func TestAutoInterfaceDataLoopDeliversInboundBeforeRunningSet(t *testing.T) {
+	t.Parallel()
+	received := make(chan []byte, 1)
+	handler := func(data []byte, iface Interface) { received <- data }
+	ai, err := NewAutoInterface("test-auto-race-data", AutoInterfaceConfig{GroupID: "race-group"}, handler, nil)
+	if err != nil {
+		t.Fatalf("failed to create AutoInterface: %v", err)
+	}
+	defer func() { _ = ai.Detach() }()
+
+	conn := loopbackUDPConn(t)
+	go ai.dataLoop(conn)
+
+	// Give a birth-defective loop ample time to self-destruct while the
+	// lifecycle flags are still unset, then arm the gates that
+	// processIncoming requires and deliver for real.
+	time.Sleep(100 * time.Millisecond)
+	ai.running.Store(1)
+	atomic.StoreInt32(&ai.online, 1)
+	peerIP := "::1"
+	ai.mu.Lock()
+	ai.spawnedInterfaces[peerIP] = &AutoInterfacePeer{
+		BaseInterface: NewBaseInterface("AutoPeer[lo0/::1]", ModeFull, AutoBitrateGuess),
+		owner:         ai,
+		addr:          peerIP,
+		interfaceName: "lo0",
+	}
+	ai.mu.Unlock()
+
+	payload := []byte("inbound after gates opened")
+	sendToUDPConn(t, conn, payload)
+
+	select {
+	case got := <-received:
+		if string(got) != string(payload) {
+			t.Errorf("dataLoop delivered %q, want %q", got, payload)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("dataLoop delivered nothing while running=%d: it exited at birth",
+			ai.running.Load())
+	}
+}
+
+// A closed socket makes ReadFromUDP fail instantly and forever. With
+// panic_on_interface_error at its default (No) the old error path logged
+// nothing, slept nothing, and looped — pegging a core in total silence.
+// The loop must return instead.
+
+func TestAutoInterfaceDiscoveryLoopReturnsOnClosedSocket(t *testing.T) {
+	t.Parallel()
+	ai, err := NewAutoInterface("test-auto-spin", AutoInterfaceConfig{GroupID: "spin-group"}, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to create AutoInterface: %v", err)
+	}
+	defer func() { _ = ai.Detach() }()
+	ai.running.Store(1)
+
+	conn := loopbackUDPConn(t)
+	conn.Close()
+
+	done := make(chan struct{})
+	go func() {
+		ai.discoveryLoop("lo0", conn)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("discoveryLoop is hot-spinning on a closed socket")
+	}
+}
+
+func TestAutoInterfaceDataLoopReturnsOnClosedSocket(t *testing.T) {
+	t.Parallel()
+	ai, err := NewAutoInterface("test-auto-spin-data", AutoInterfaceConfig{GroupID: "spin-group"}, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to create AutoInterface: %v", err)
+	}
+	defer func() { _ = ai.Detach() }()
+	ai.running.Store(1)
+
+	conn := loopbackUDPConn(t)
+	conn.Close()
+
+	done := make(chan struct{})
+	go func() {
+		ai.dataLoop(conn)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("dataLoop is hot-spinning on a closed socket")
+	}
+}
+
+func TestAutoInterfaceAnnounceLoopSurvivesUnsetRunningAndStopsOnDetach(t *testing.T) {
+	t.Parallel()
+	onPeerCalled := make(chan string, 1)
+	ai, err := NewAutoInterface("test-auto-announce", AutoInterfaceConfig{GroupID: "announce-group"}, nil,
+		func(peer Interface) { onPeerCalled <- peer.Name() })
+	if err != nil {
+		t.Fatalf("failed to create AutoInterface: %v", err)
+	}
+	defer func() { _ = ai.Detach() }()
+	ai.announceInterval = 5 * time.Millisecond
+
+	returned := make(chan struct{})
+	go func() {
+		ai.announceLoop("lo0")
+		close(returned)
+	}()
+	// The pre-fix entry condition exited instantly whenever running was
+	// still unset; the loop must stay alive here.
+	select {
+	case <-returned:
+		t.Fatal("announceLoop exited immediately while running was unset")
+	case <-time.After(250 * time.Millisecond):
+	}
+
+	_ = ai.Detach()
+	select {
+	case <-returned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("announceLoop did not stop after Detach")
+	}
+}
