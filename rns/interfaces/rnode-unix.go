@@ -314,6 +314,9 @@ func (r *RNodeInterface) configureDevice() error {
 	// Wait for the device to answer the detect handshake. Python sleeps 0.2s
 	// for serial and polls up to 5s for TCP/BLE; poll so detection completes as
 	// soon as the readLoop sees DETECT_RESP (and never longer than the timeout).
+	// The platform byte arrives as a separate frame after DETECT_RESP; the
+	// display-capability decision below depends on it, so wait for both rather
+	// than racing the readLoop between the two frames.
 	detectTimeout := r.detectWaitDelay
 	if r.useTCP {
 		detectTimeout = rnodeTCPDetectTimeout
@@ -322,8 +325,9 @@ func (r *RNodeInterface) configureDevice() error {
 	for time.Now().Before(deadline) {
 		r.radioMu.RLock()
 		det := r.radio.detected
+		plat := r.radio.platform
 		r.radioMu.RUnlock()
-		if det {
+		if det && plat != nil {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)

@@ -487,16 +487,50 @@ func TestResponseResourceFailedFailsPendingReceipt(t *testing.T) {
 	}
 }
 
-// TestResponseTimeoutJobFiresFromReceivingState covers Gap A: a response that
-// arrives as a resource flips the receipt to RequestReceiving as soon as the
-// first part lands. If the transfer then stalls, the response-timeout job must
-// still fire at the deadline and fail the receipt. Before the fix the job
-// bailed on any status != RequestDelivered, so it disarmed the instant the
-// transfer started and a stalled mid-assembly resource never timed out.
+// TestResponseTimeoutJobDisarmsOnReceivingState covers the fix for the root
+// cause of "Request timed out" on multi-hop paths: a response that arrives as
+// a resource flips the receipt to RequestReceiving as soon as the first part
+// lands. Python's __response_timeout_job (Link.py:1383-1389) runs ONLY while
+// status == DELIVERED and exits immediately when status changes to RECEIVING,
+// disarming the response timeout — the resource's own watchdog then handles
+// the rest of the transfer. The Go port previously kept ticking through
+// RequestReceiving and fired at the fixed deadline, killing in-progress
+// multi-hop resource transfers. This test verifies the corrected behavior:
+// the timeout does NOT fire from RequestReceiving state.
 func TestResponseTimeoutJobFiresFromReceivingState(t *testing.T) {
 	t.Parallel()
 
 	rr := &RequestReceipt{Status: RequestReceiving}
+	failed := make(chan *RequestReceipt, 1)
+	rr.failedCallback = func(got *RequestReceipt) { failed <- got }
+
+	// Deadline in the past: with the old (buggy) code the first poll
+	// iteration would fire immediately. With the fix, the loop exits
+	// immediately because status != RequestDelivered, so the failed
+	// callback must NOT fire.
+	go rr.responseTimeoutJob(time.Now().Add(-1 * time.Second))
+
+	select {
+	case <-failed:
+		t.Fatal("responseTimeoutJob fired from RequestReceiving state; it should disarm (exit without firing) when status is not RequestDelivered, matching Python's while self.status == DELIVERED loop")
+	case <-time.After(300 * time.Millisecond):
+		// Good: the timeout job exited without firing.
+	}
+
+	if got, want := rr.GetStatus(), RequestReceiving; got != want {
+		t.Fatalf("status = %v, want %v (should be unchanged — timeout must not fire from receiving state)", got, want)
+	}
+}
+
+// TestResponseTimeoutJobFiresFromDeliveredState verifies that the response
+// timeout DOES fire when the receipt is in RequestDelivered state and the
+// deadline has passed — i.e. the response never arrived. This is the correct
+// behavior matching Python's __response_timeout_job which runs while
+// status == DELIVERED and fires request_timed_out at the deadline.
+func TestResponseTimeoutJobFiresFromDeliveredState(t *testing.T) {
+	t.Parallel()
+
+	rr := &RequestReceipt{Status: RequestDelivered}
 	failed := make(chan *RequestReceipt, 1)
 	rr.failedCallback = func(got *RequestReceipt) { failed <- got }
 
@@ -505,11 +539,45 @@ func TestResponseTimeoutJobFiresFromReceivingState(t *testing.T) {
 
 	select {
 	case <-failed:
+		// Good: the timeout fired.
 	case <-time.After(2 * time.Second):
-		t.Fatal("responseTimeoutJob did not fire from RequestReceiving state")
+		t.Fatal("responseTimeoutJob did not fire from RequestDelivered state")
 	}
 
 	if got, want := rr.GetStatus(), RequestFailed; got != want {
+		t.Fatalf("status = %v, want %v", got, want)
+	}
+}
+
+// TestResponseTimeoutJobDisarmsOnStatusChange verifies the key fix: the
+// timeout job exits (disarms) when the status changes from RequestDelivered
+// to RequestReceiving mid-wait, matching Python's
+// while self.status == DELIVERED loop exit on status change.
+func TestResponseTimeoutJobDisarmsOnStatusChange(t *testing.T) {
+	t.Parallel()
+
+	rr := &RequestReceipt{Status: RequestDelivered}
+	failed := make(chan *RequestReceipt, 1)
+	rr.failedCallback = func(got *RequestReceipt) { failed <- got }
+
+	// Long deadline — the timeout should NOT fire before we change the status.
+	go rr.responseTimeoutJob(time.Now().Add(10 * time.Second))
+
+	// After a short wait, flip status to RequestReceiving (simulating the
+	// first part of a response resource arriving).
+	time.Sleep(200 * time.Millisecond)
+	rr.mu.Lock()
+	rr.Status = RequestReceiving
+	rr.mu.Unlock()
+
+	select {
+	case <-failed:
+		t.Fatal("responseTimeoutJob fired after status changed to RequestReceiving; it should have disarmed")
+	case <-time.After(500 * time.Millisecond):
+		// Good: the timeout job exited without firing.
+	}
+
+	if got, want := rr.GetStatus(), RequestReceiving; got != want {
 		t.Fatalf("status = %v, want %v", got, want)
 	}
 }

@@ -30,6 +30,13 @@ const (
 	AutoDefaultDataPort = 42671
 	// AutoDefaultGroupID dictates the default network partitioning ID to ensure discovery frames are constrained to intended participants.
 	AutoDefaultGroupID = "reticulum"
+
+	// ipv6MulticastIf is the socket option constant for IPV6_MULTICAST_IF
+	// (defined as 9 on both macOS/Darwin and Linux). It sets the outgoing
+	// network interface for IPv6 multicast packets. Defined here because
+	// syscall.IPV6_MULTICAST_IF is not available on all platforms in Go's
+	// standard library.
+	ipv6MulticastIf = 9
 	// AutoDefaultIFACSize specifies the standard byte length for the cryptographic IFAC authentication signature.
 	AutoDefaultIFACSize = 16
 
@@ -467,7 +474,16 @@ func (ai *AutoInterface) peerAnnounce(ifname string) {
 	}
 
 	token := sha256.Sum256(append(append([]byte{}, ai.groupID...), []byte(localIP.String())...))
-	addr := &net.UDPAddr{IP: ai.mcastDiscoveryAddr, Port: ai.discoveryPort, Zone: ifname}
+	// No Zone in the destination address: IPV6_MULTICAST_IF (set below)
+	// already specifies the outgoing interface. Including a Zone here
+	// causes "no route to host" on macOS. Python's peer_announce sends
+	// to the bare multicast address without a zone.
+	addr := &net.UDPAddr{IP: ai.mcastDiscoveryAddr, Port: ai.discoveryPort}
+
+	iface, err := net.InterfaceByName(ifname)
+	if err != nil {
+		return
+	}
 
 	conn, err := net.ListenUDP("udp6", nil)
 	if err != nil {
@@ -478,6 +494,25 @@ func (ai *AutoInterface) peerAnnounce(ifname string) {
 			log.Printf("auto interface %v discovery socket close failed: %v", ifname, closeErr)
 		}
 	}()
+
+	// Set IPV6_MULTICAST_IF to specify the outgoing interface for multicast
+	// packets, matching Python's AutoInterface.peer_announce (line 507).
+	// Without this, macOS returns "no route to host" because the OS does not
+	// know which interface to use for the multicast send.
+
+	if rawConn, err := conn.SyscallConn(); err == nil {
+		var sockErr error
+		if ctrlErr := rawConn.Control(func(fd uintptr) {
+			sockErr = setIPv6MulticastIf(fd, iface.Index)
+		}); ctrlErr != nil {
+			return
+		}
+		if sockErr != nil {
+			return
+		}
+
+	}
+
 	if _, err := conn.WriteToUDP(token[:], addr); err != nil {
 		return
 	}

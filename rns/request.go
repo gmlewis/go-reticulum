@@ -312,12 +312,15 @@ func (rr *RequestReceipt) requestResourceConcluded(resource *Resource) {
 }
 
 // responseTimeoutJob polls until the response timeout expires, then fails the
-// request. It keeps watching through RequestSent/RequestDelivered/
-// RequestReceiving: a response that arrives as a resource (common when the
-// reply exceeds the link MDU) flips the status to RequestReceiving as soon as
-// the first part lands, and a transfer that stalls mid-assembly must still
-// hit the deadline. Only the terminal states (RequestReady/RequestFailed)
-// cancel the watch. requestTimedOut is itself terminal-guarded, so a race
+// request. It mirrors Python's __response_timeout_job (Link.py:1383-1389),
+// which runs ONLY while status == DELIVERED. When the response starts arriving
+// as a resource (common when the reply exceeds the link MDU),
+// responseResourceProgress flips the status to RequestReceiving, and this loop
+// exits immediately — disarming the response timeout. The resource's own
+// watchdog then handles the rest of the transfer. Without this disarm, a
+// multi-hop resource transfer that takes longer than the fixed deadline (set
+// at request-send time) is killed mid-transfer, surfacing as "Request timed
+// out" on the furthest nodes. requestTimedOut is terminal-guarded, so a race
 // between the deadline and a last-millisecond completion resolves to exactly
 // one callback.
 func (rr *RequestReceipt) responseTimeoutJob(deadline time.Time) {
@@ -326,7 +329,7 @@ func (rr *RequestReceipt) responseTimeoutJob(deadline time.Time) {
 		status := rr.Status
 		rr.mu.Unlock()
 
-		if status == RequestReady || status == RequestFailed {
+		if status != RequestDelivered {
 			return
 		}
 		if time.Now().After(deadline) {
