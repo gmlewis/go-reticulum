@@ -175,8 +175,27 @@ func NewDestination(ts Transport, identity *Identity, direction, destType int, a
 }
 
 // Announce broadcasts a cryptographic proof of existence and routing information to the wider Reticulum network.
+// Announce sends a normal (non-path-response) announce for this destination
+// with the given app data (falling back to defaultAppData when nil), mirroring
+// Python's Destination.announce(). The packet carries the default context so
+// transport nodes propagate it and peers learn or refresh the path.
 func (d *Destination) Announce(appData []byte) error {
-	p, err := d.buildAnnouncePacket(appData)
+	p, err := d.buildAnnouncePacket(appData, false)
+	if err != nil {
+		return err
+	}
+	return p.Send()
+}
+
+// AnnouncePathResponse sends an announce marked with the PATH_RESPONSE context,
+// mirroring Python's Destination.announce(path_response=True). A path-response
+// announce is delivered to announce handlers that opt into
+// ReceivePathResponses but is NOT rebroadcast by transport nodes, so it
+// reaches the immediate peer (typically a shared Reticulum instance) once
+// without flooding the network. RegisterDestination uses it to announce a
+// freshly-registered destination exactly once to a shared instance.
+func (d *Destination) AnnouncePathResponse(appData []byte) error {
+	p, err := d.buildAnnouncePacket(appData, true)
 	if err != nil {
 		return err
 	}
@@ -185,10 +204,10 @@ func (d *Destination) Announce(appData []byte) error {
 
 // BuildAnnouncePacket generates the signed raw payload for an announce, useful for deferred transmission or testing.
 func (d *Destination) BuildAnnouncePacket(appData []byte) (*Packet, error) {
-	return d.buildAnnouncePacket(appData)
+	return d.buildAnnouncePacket(appData, false)
 }
 
-func (d *Destination) buildAnnouncePacket(appData []byte) (*Packet, error) {
+func (d *Destination) buildAnnouncePacket(appData []byte, pathResponse bool) (*Packet, error) {
 	if d.Type != DestinationSingle {
 		return nil, errors.New("only SINGLE destination types can be announced")
 	}
@@ -200,9 +219,11 @@ func (d *Destination) buildAnnouncePacket(appData []byte) (*Packet, error) {
 	// Destination.announce (Destination.py:275-279):
 	//   if app_data == None and self.default_app_data != None:
 	//       app_data = self.default_app_data
-	// This ensures re-announces (e.g. announceDestinationsOnInterface on
-	// TCP reconnect) include the node name rather than sending a nameless
-	// announce that appears in peers' announce streams with an empty name.
+	// This ensures re-announces (e.g. the periodic announce from the
+	// application job loop, or the one-time path-response announce from
+	// RegisterDestination) include the node name rather than sending a
+	// nameless announce that appears in peers' announce streams with an
+	// empty name.
 	if appData == nil {
 		appData = d.defaultAppData
 	}
@@ -279,6 +300,9 @@ func (d *Destination) buildAnnouncePacket(appData []byte) (*Packet, error) {
 
 	p := NewPacket(d, announceData)
 	p.PacketType = PacketAnnounce
+	if pathResponse {
+		p.Context = ContextPathResponse
+	}
 	if len(ratchet) > 0 {
 		p.ContextFlag = FlagSet
 	}

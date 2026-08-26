@@ -1649,7 +1649,7 @@ enable_transport = False
 	id := mustTestNewIdentity(t, true)
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "pathresp", "target")
 
-	announce, err := dest.buildAnnouncePacket(nil)
+	announce, err := dest.buildAnnouncePacket(nil, true)
 	if err != nil {
 		t.Fatalf("failed to build announce packet: %v", err)
 	}
@@ -1768,7 +1768,7 @@ enable_transport = False
 		t.Fatalf("forwarded path request target hash mismatch")
 	}
 
-	responsePacket, err := remoteDest.buildAnnouncePacket(tag)
+	responsePacket, err := remoteDest.buildAnnouncePacket(tag, true)
 	if err != nil {
 		t.Fatalf("failed building synthetic path response announce: %v", err)
 	}
@@ -1936,7 +1936,7 @@ enable_transport = False
 		tag = append([]byte(nil), forwardedReq.Data[len(remoteDest.Hash):]...)
 	}
 
-	responsePacket, err := remoteDest.buildAnnouncePacket(tag)
+	responsePacket, err := remoteDest.buildAnnouncePacket(tag, true)
 	if err != nil {
 		t.Fatalf("failed building synthetic path response announce: %v", err)
 	}
@@ -2098,7 +2098,7 @@ func TestIntegratedRelayedPathResponsePropagationPythonRelayUDP(t *testing.T) {
 		responseTag = append([]byte(nil), forwardedReq.Data[len(remoteDest.Hash):]...)
 	}
 
-	responsePacket, err := remoteDest.buildAnnouncePacket(responseTag)
+	responsePacket, err := remoteDest.buildAnnouncePacket(responseTag, true)
 	if err != nil {
 		t.Fatalf("failed building synthetic path response announce: %v", err)
 	}

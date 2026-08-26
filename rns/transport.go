@@ -3115,13 +3115,12 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) bool {
 		// also keys a path_responses cache by the tag, but that cache lookup
 		// is documented as unused in the Python source since Transport dedups
 		// at this layer; the Go port therefore does not maintain it.)
-		announcePacket, err := localDest.buildAnnouncePacket(nil)
+		announcePacket, err := localDest.buildAnnouncePacket(nil, true)
 		if err != nil {
 			ts.logger.Error("Failed to build path response announce: %v", err)
 			return true
 		}
 
-		announcePacket.Context = ContextPathResponse
 		announcePacket.HeaderType = Header2
 		announcePacket.TransportType = TransportForward
 		if ts.identity != nil {
@@ -3230,15 +3229,38 @@ func (ts *TransportSystem) handlePathRequest(data []byte, packet *Packet) bool {
 
 // RegisterDestination adds a destination to the transport system.
 func (ts *TransportSystem) RegisterDestination(d *Destination) {
-	if d.direction == DestinationIn {
-		ts.mu.Lock()
-		defer ts.mu.Unlock()
-		if _, exists := ts.destinationsMap[string(d.Hash)]; exists {
-			ts.logger.Error("Attempt to register an already registered destination %x", d.Hash)
-			return
-		}
-		ts.destinations = append(ts.destinations, d)
-		ts.destinationsMap[string(d.Hash)] = d
+	if d.direction != DestinationIn {
+		return
+	}
+	ts.mu.Lock()
+	if _, exists := ts.destinationsMap[string(d.Hash)]; exists {
+		ts.mu.Unlock()
+		ts.logger.Error("Attempt to register an already registered destination %x", d.Hash)
+		return
+	}
+	ts.destinations = append(ts.destinations, d)
+	ts.destinationsMap[string(d.Hash)] = d
+	connectedShared := ts.connectedToSharedInstance
+	ts.mu.Unlock()
+
+	// Mirror Python Transport.register_destination (Transport.py:2512-2517):
+	// when this transport is a client of a shared Reticulum instance, announce
+	// a freshly-registered SINGLE destination once as a path-response so the
+	// shared instance learns a path to it immediately, instead of waiting for
+	// the application's periodic announce interval. RNS does NOT re-announce
+	// on interface (re)connect or registration (see RegisterInterface), so
+	// this one-time announce is the only transport-level announce for a
+	// shared-instance client; a standalone node announces via the
+	// application's announce-at-start and periodic jobs instead. The 250 ms
+	// delay lets the local-client interface finish registering before the
+	// path-response is sent, matching Python's deferred job.
+	if connectedShared && d.Type == DestinationSingle {
+		go func(dest *Destination) {
+			time.Sleep(250 * time.Millisecond)
+			if err := dest.AnnouncePathResponse(nil); err != nil {
+				ts.logger.Debug("RegisterDestination path-response announce for %x failed: %v", dest.Hash, err)
+			}
+		}(d)
 	}
 }
 
@@ -3475,12 +3497,9 @@ func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 	// latch so a future down transition can log + invalidate.
 	delete(ts.downNotified, iface)
 
-	destinationsToAnnounce := make([]*Destination, len(ts.destinations))
-	copy(destinationsToAnnounce, ts.destinations)
 	interfacesAfter := len(ts.interfaces)
 	ts.mu.Unlock()
-	ts.logger.Debug("[Transport] RegisterInterface: %s, interfaces before: %d, destinations: %d", iface.Name(), interfacesBefore, destinationsBefore)
-	ts.logger.Debug("[Transport] RegisterInterface: %s, interfaces after: %d, will announce %d destinations", iface.Name(), interfacesAfter, len(destinationsToAnnounce))
+	ts.logger.Debug("[Transport] RegisterInterface: %s, interfaces before: %d, after: %d, destinations: %d", iface.Name(), interfacesBefore, interfacesAfter, destinationsBefore)
 
 	// For TCP client interfaces, eagerly invalidate paths routed through
 	// the interface when its connection fails, so pathfinding re-routes
@@ -3488,16 +3507,21 @@ func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 	// up->down transition (inside failConn) instead of on every failed
 	// rebroadcast/forward Send as the old lazy path did.
 	//
-	// Also wire an onConnect hook that re-announces the local destinations
-	// each time the client (re)connects. A TCP client is registered (and
-	// announced) even when its initial connect is refused, so that first
-	// announce is sent to a dead socket and lost; without re-announcing on
-	// reconnect the peer never learns this node's destinations until the
-	// periodic announce interval (minutes) fires. The hook is a no-op for
-	// spawned (server-accepted) clients, which never run reconnectLoop.
+	// RNS does NOT re-announce local destinations on interface (re)connect
+	// or registration: Python's add_interface (Transport.py:438-441) only
+	// appends the interface, and TCPClientInterface.reconnect
+	// (TCPInterface.py:270-302) only restarts the read loop. A destination
+	// is announced once at registration (RegisterDestination, mirroring
+	// Transport.py:2499-2517) and thereafter only by the application's
+	// periodic announce interval. Re-announcing on every TCP reconnect
+	// (every reconnectDelay = 5s) or every interface registration mints a
+	// fresh random blob each call, bypassing the configured announce
+	// interval and flooding the network with announces every few seconds
+	// — a self-sustaining announce storm that saturates the shared
+	// transport and drops link-handshake packets ("Link establishment
+	// timed out"). The onConnect hook is therefore intentionally absent.
 	if tci, ok := iface.(*interfaces.TCPClientInterface); ok {
 		tci.SetOnDown(func() { ts.InvalidatePathsViaInterface(tci) })
-		tci.SetOnConnect(func() { ts.announceDestinationsOnInterface(tci, nil) })
 	}
 
 	// Start inbound processor for this interface
@@ -3513,37 +3537,6 @@ func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 				ts.Inbound(data, iface)
 			}
 		}()
-	}
-
-	ts.announceDestinationsOnInterface(iface, destinationsToAnnounce)
-}
-
-// announceDestinationsOnInterface re-announces the local single destinations
-// over the given interface. It is called by RegisterInterface when an interface
-// is freshly registered, and by a TCP client interface's onConnect hook after
-// it (re)connects — so a TCP client that registered while disconnected does not
-// silently lose its announce to the peer until the periodic interval. When
-// alreadyAnnounced is non-nil it is used as the destination set (the snapshot
-// taken under the transport lock in RegisterInterface); otherwise the current
-// destinations are snapshotted here, so a reconnect re-announces any
-// destinations added since the interface was first registered.
-func (ts *TransportSystem) announceDestinationsOnInterface(iface interfaces.Interface, alreadyAnnounced []*Destination) {
-	destinations := alreadyAnnounced
-	if destinations == nil {
-		ts.mu.Lock()
-		destinations = make([]*Destination, len(ts.destinations))
-		copy(destinations, ts.destinations)
-		ts.mu.Unlock()
-	}
-	for _, d := range destinations {
-		if d.direction == DestinationIn && d.Type == DestinationSingle {
-			ts.logger.Debug("[Transport] Re-announcing destination %x on new interface %v", d.Hash, iface.Name())
-			if err := d.Announce(nil); err != nil {
-				ts.logger.Debug("Failed to re-announce destination %x on new interface %v: %v", d.Hash, iface.Name(), err)
-			} else {
-				ts.logger.Debug("[Transport] Re-announce of %x on %v completed", d.Hash, iface.Name())
-			}
-		}
 	}
 }
 
@@ -5407,6 +5400,12 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 		ts.mu.Lock()
 		defer ts.mu.Unlock()
 		ts.ensureStateLocked()
+		// Over-hop protection is enforced earlier, in Packet.Unpack
+		// (packet.go: a packet whose raw hop count has reached PathfinderM
+		// is rejected before dispatch), matching Python's PATHFINDER_M
+		// forwarding/should_add gate (Transport.py:1805-1807). Announces that
+		// reach here therefore carry post-increment hops <= PathfinderM and
+		// are eligible to install/replace a path.
 		if rate, ok := ts.announceRateTable[destHash]; ok {
 			rate.Last = time.Now()
 			rate.Timestamps = append(rate.Timestamps, rate.Last)

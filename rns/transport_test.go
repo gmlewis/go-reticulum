@@ -1713,6 +1713,7 @@ func (d *dummyInterface) ICPrBurstActivated() time.Time      { return time.Time{
 
 type capturingInterface struct {
 	name        string
+	mu          sync.Mutex
 	sendCount   int
 	lastSent    []byte
 	bitrate     int
@@ -1751,8 +1752,12 @@ func (c *capturingInterface) HeldAnnounces() int { return 0 }
 func (c *capturingInterface) ReleaseHeldAnnounce([]byte) ([]byte, interfaces.Interface, bool) {
 	return nil, nil, false
 }
-func (c *capturingInterface) ReceivedPathRequest()               {}
-func (c *capturingInterface) SentPathRequest()                   { c.sentPRCount++ }
+func (c *capturingInterface) ReceivedPathRequest() {}
+func (c *capturingInterface) SentPathRequest() {
+	c.mu.Lock()
+	c.sentPRCount++
+	c.mu.Unlock()
+}
 func (c *capturingInterface) IncomingPrFrequency() float64       { return 0 }
 func (c *capturingInterface) OutgoingPrFrequency() float64       { return 0 }
 func (c *capturingInterface) ShouldIngressLimitPr() bool         { return false }
@@ -1767,10 +1772,41 @@ func (c *capturingInterface) ICBurstActivated() time.Time        { return time.T
 func (c *capturingInterface) ICPrBurstActive() bool              { return false }
 func (c *capturingInterface) ICPrBurstActivated() time.Time      { return time.Time{} }
 func (c *capturingInterface) Send(data []byte) error {
+	c.mu.Lock()
 	c.sendCount++
 	c.lastSent = make([]byte, len(data))
 	copy(c.lastSent, data)
+	c.mu.Unlock()
 	return nil
+}
+
+// SendCount returns the number of Send calls observed. The counter is guarded
+// by the mutex because Send may run on a background goroutine (e.g. the
+// shared-instance path-response announce scheduled by RegisterDestination,
+// transport.go), while a test reads the counter; the accessor establishes a
+// happens-before edge that a bare field read would not.
+func (c *capturingInterface) SendCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.sendCount
+}
+
+// SentPRCount returns the number of SentPathRequest calls observed, guarded
+// the same way as SendCount.
+func (c *capturingInterface) SentPRCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.sentPRCount
+}
+
+// LastSent returns a copy of the most recent Send payload, guarded the same
+// way as SendCount.
+func (c *capturingInterface) LastSent() []byte {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]byte, len(c.lastSent))
+	copy(out, c.lastSent)
+	return out
 }
 
 // blockingInterface is a capturingInterface whose Send blocks for a fixed
