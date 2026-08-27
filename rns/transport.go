@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
@@ -211,6 +212,10 @@ type TransportSystem struct {
 	// first-connects of several interfaces (the normal boot storm) each still
 	// emit their own local-destination re-announce.
 	lastReannounceIfaces map[string]time.Time
+
+	// pathPersistInflight guards concurrent path-table persists (see
+	// maintenance loop); a skipped tick simply waits for the next one.
+	pathPersistInFlight atomic.Bool
 
 	// reannounceImpl is the seam used by tests to observe per-interface
 	// re-announces; nil means announceDestinationsOnInterface directly.
@@ -1566,8 +1571,26 @@ func (ts *TransportSystem) maintenance() {
 			ts.cullDiscoveryPRTagsLocked()
 			ts.discoveryPRTagsMu.Unlock()
 		case <-pathPersistTicker.C:
-			ts.persistPathTable()
-			ts.flushKnownDestinationsIfDirty()
+			// Run the persist off the maintenance goroutine with a
+			// single-flight latch: snapshotting + encoding + writing the
+			// whole path/destination table to disk can take hundreds of
+			// milliseconds to seconds on ARM flash storage (Jetson/Pi), and
+			// running it inline stalled every other maintenance ticker
+			// (announce re-broadcasts included) for the duration — visible
+			// in CPU profiles as constant maintenance load on fleet nodes
+			// under public-relay firehose traffic.
+			if ts.pathPersistInFlight.CompareAndSwap(false, true) {
+				go func() {
+					defer func() {
+						ts.pathPersistInFlight.Store(false)
+						if rec := recover(); rec != nil {
+							ts.logger.Error("Recovered while persisting path table: %v", rec)
+						}
+					}()
+					ts.persistPathTable()
+					ts.flushKnownDestinationsIfDirty()
+				}()
+			}
 		case <-interfaceJobsTicker.C:
 			ts.runInterfaceJobs()
 		case <-ratchetTicker.C:
