@@ -3023,6 +3023,27 @@ func (ts *TransportSystem) cullStaleTransportTables(now time.Time) {
 	}
 }
 
+// packetHashSeenLocked reports whether the hash was already remembered
+// without inserting it (used by the LRPROOF remember-exemption path).
+func (ts *TransportSystem) packetHashSeenLocked(packetHash []byte) bool {
+	ts.ensureStateLocked()
+	_, cur := ts.packetHashes[string(packetHash)]
+	_, prev := ts.packetHashesPrev[string(packetHash)]
+	return cur || prev
+}
+
+// ForgetPacketHash removes a remembered inbound-packet hash so a later copy
+// can be processed again. Invoked when an LRPROOF copy is rejected because of
+// interface/hop/signature gating, mirroring Python removing the hash from the
+// packet hashlist on wrong-interface proof arrival (Transport.py:2181-2189).
+func (ts *TransportSystem) ForgetPacketHash(packetHash []byte) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.ensureStateLocked()
+	delete(ts.packetHashes, string(packetHash))
+	delete(ts.packetHashesPrev, string(packetHash))
+}
+
 func (ts *TransportSystem) seenOrRememberPacketHashLocked(packetHash []byte, now time.Time) bool {
 	ts.ensureStateLocked()
 	hashKey := string(packetHash)
@@ -3464,6 +3485,7 @@ func (ts *TransportSystem) relayLinkProof(packet *Packet, iface interfaces.Inter
 	if iface != entry.OutboundInterface {
 		ts.mu.Unlock()
 		ts.logger.Debug("Inbound: link proof %x received on wrong interface, not transporting", packet.PacketHash)
+		ts.ForgetPacketHash(packet.PacketHash)
 		return true
 	}
 	// Re-balance: a hop mismatch vs the link-table entry means the proof
@@ -3480,6 +3502,8 @@ func (ts *TransportSystem) relayLinkProof(packet *Packet, iface interfaces.Inter
 		} else {
 			ts.mu.Unlock()
 			ts.logger.Debug("Inbound: aborting link proof re-balance for %x: invalid signature", packet.DestinationHash)
+			// mu already unlocked above; ForgetPacketHash takes it again.
+			ts.ForgetPacketHash(packet.PacketHash)
 			return true
 		}
 	}
@@ -3488,6 +3512,7 @@ func (ts *TransportSystem) relayLinkProof(packet *Packet, iface interfaces.Inter
 	if packet.Hops != entry.RemainingHops {
 		ts.mu.Unlock()
 		ts.logger.Debug("Inbound: link proof %x hop mismatch (%v/%v), not transporting", packet.PacketHash, packet.Hops, entry.RemainingHops)
+		ts.ForgetPacketHash(packet.PacketHash)
 		return true
 	}
 	if !ts.validateRelayLinkProofLocked(packet, entry.DestinationHash) {
@@ -5010,9 +5035,21 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 
 	packet.Hops++
 
-	// Duplicate detection
+	// Duplicate detection. Link-request proofs are exempt from remembering
+	// (Python Transport.py:1526-1545 sets remember_packet_hash=False for
+	// packet_type==PROOF && context==LRPROOF): their acceptance is gated
+	// per-link (expected hops / outbound interface / signature), and a
+	// first-seen copy rejected on one interface must never suppress the
+	// correct-path copy arriving via another interface of a multi-plane node.
+	isLrproof := packet.PacketType == PacketProof && packet.Context == ContextLrproof
 	ts.mu.Lock()
-	if ts.seenOrRememberPacketHashLocked(packet.PacketHash, time.Now()) {
+	var isDup bool
+	if isLrproof {
+		isDup = ts.packetHashSeenLocked(packet.PacketHash)
+	} else {
+		isDup = ts.seenOrRememberPacketHashLocked(packet.PacketHash, time.Now())
+	}
+	if isDup {
 		// Python's Transport.packet_filter (Transport.py:1417-1426) exempts
 		// SINGLE-destination ANNOUNCE packets from the hashlist drop: a
 		// duplicate announce is still passed to the announce handler, whose
