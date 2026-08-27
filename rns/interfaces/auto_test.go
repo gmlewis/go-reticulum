@@ -418,6 +418,10 @@ func TestAutoInterfaceTiming(t *testing.T) {
 		initialEchoes:          map[string]time.Time{"eth0": time.Now()},
 		timedOutIfaces:         map[string]bool{},
 	}
+	// peerJobs runs resyncAdoptedAddresses each tick; on runners where eth0
+	// exists with a real link-local address, the resync classifies eth0 as
+	// changed and calls this hook, so it must be non-nil.
+	ai.rebuildSockets = func(ifname string, ip net.IP) error { return nil }
 	ai.running.Store(1)
 	atomic.StoreInt32(&ai.online, 1)
 
