@@ -115,7 +115,9 @@ func TestPathRequestForLocalClientDestinationMarksUsed(t *testing.T) {
 	// cached-path-answer use-marking does NOT fire — only the local-client
 	// use-marking should.
 	nextHop := bytes.Repeat([]byte{0xEE}, TruncatedHashLength/8)
-	announce := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 1)
+	// Plausible emission timebase (near local time) so the cached announce
+	// looks like a real emission to the poison-heal plausibility gate.
+	announce := mustTestAnnouncePacketWithEmission(t, ts, id, dest, uint64(time.Now().Unix()))
 	ts.mu.Lock()
 	ts.pathTable[string(dest.Hash)] = &PathEntry{
 		Hops:       1,
@@ -172,7 +174,9 @@ func TestAnnounceMatchingPendingPathRequestMarksUsed(t *testing.T) {
 		t.Fatalf("precondition: entry[4] = %v, want 0 (never used)", before)
 	}
 
-	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 1)
+	// Plausible emission timebase (near local time) so the announce looks like
+	// a real emission to the poison-heal plausibility gate.
+	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, uint64(time.Now().Unix()))
 	p.Hops = 1
 	ts.handleAnnounce(p, &dummyInterface{name: "from-announce-pr"})
 
@@ -203,7 +207,9 @@ func TestAnnounceWithoutPendingPathRequestDoesNotMarkUsed(t *testing.T) {
 	ts.Remember([]byte("pkt-nopr"), dest.Hash, id.GetPublicKey(), nil)
 
 	// No pathRequests entry for this destination.
-	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 2)
+	// Plausible emission timebase (near local time) so the announce looks like
+	// a real emission to the poison-heal plausibility gate.
+	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, uint64(time.Now().Unix()))
 	p.Hops = 1
 	ts.handleAnnounce(p, &dummyInterface{name: "from-announce-nopr"})
 
@@ -242,7 +248,9 @@ func TestPathRequestAnsweredFromCachedPathMarksUsed(t *testing.T) {
 	// Install a cached path on a NON-local interface so the local-client
 	// use-marking does not fire; NextHop differs from any requestor transport id
 	// so the answer proceeds.
-	announce := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 1)
+	// Plausible emission timebase (see the comment in
+	// TestPathRequestForLocalClientDestinationMarksUsed).
+	announce := mustTestAnnouncePacketWithEmission(t, ts, id, dest, uint64(time.Now().Unix()))
 	ts.mu.Lock()
 	ts.pathTable[string(dest.Hash)] = &PathEntry{
 		Hops:       2,

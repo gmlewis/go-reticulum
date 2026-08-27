@@ -45,7 +45,7 @@ func TestAnnounceRebroadcastGateTransportDisabled(t *testing.T) {
 		t.Fatalf("NewDestination: %v", err)
 	}
 
-	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 42)
+	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, uint64(time.Now().Unix()))
 	p.Hops = 0
 	if err := p.Pack(); err != nil {
 		t.Fatalf("Pack: %v", err)
@@ -89,7 +89,7 @@ func TestAnnounceRebroadcastGateTransportEnabled(t *testing.T) {
 		t.Fatalf("NewDestination: %v", err)
 	}
 
-	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 42)
+	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, uint64(time.Now().Unix()))
 	p.Hops = 0
 	if err := p.Pack(); err != nil {
 		t.Fatalf("Pack: %v", err)
@@ -128,7 +128,7 @@ func TestAnnounceRebroadcastGatePathResponseNotRebroadcast(t *testing.T) {
 		t.Fatalf("NewDestination: %v", err)
 	}
 
-	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 42)
+	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, uint64(time.Now().Unix()))
 	p.Hops = 0
 	p.Context = ContextPathResponse
 	if err := p.Pack(); err != nil {
@@ -191,7 +191,7 @@ func TestAnnouncePathExpiryInterfaceMode(t *testing.T) {
 				t.Fatalf("NewDestination: %v", err)
 			}
 
-			p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 42)
+			p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, uint64(time.Now().Unix()))
 			p.Hops = 0
 			if err := p.Pack(); err != nil {
 				t.Fatalf("Pack: %v", err)

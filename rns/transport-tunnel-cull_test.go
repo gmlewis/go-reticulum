@@ -31,14 +31,19 @@ func TestCullTunnelsDropsPathSupersededByNewerActivePath(t *testing.T) {
 	ts := NewTransportSystem(nil)
 	now := time.Now()
 
+	// Plausible timebases (near local time, active newer than tunnel): the
+	// poison-heal plausibility gate skips blobs whose timebase is not a real
+	// unix timestamp, so small synthetic values would both collapse to 0 and
+	// never compare.
+	nowSec := uint64(now.Unix())
 	const destKey = "destination-A"
 	tunnelPath := &PathEntry{
 		Timestamp:   now,
-		RandomBlobs: [][]byte{randomBlobWithTimebase(100)},
+		RandomBlobs: [][]byte{randomBlobWithTimebase(nowSec - 200)},
 	}
 	activePath := &PathEntry{
 		Timestamp:   now,
-		RandomBlobs: [][]byte{randomBlobWithTimebase(200)},
+		RandomBlobs: [][]byte{randomBlobWithTimebase(nowSec - 100)},
 	}
 
 	ts.mu.Lock()
@@ -70,14 +75,18 @@ func TestCullTunnelsKeepsPathWhenActivePathIsOlder(t *testing.T) {
 	ts := NewTransportSystem(nil)
 	now := time.Now()
 
+	// Plausible timebases (near local time, tunnel newer than active) so the
+	// strict greater-than comparison is actually exercised — see the comment
+	// in TestCullTunnelsDropsPathSupersededByNewerActivePath.
+	nowSec := uint64(now.Unix())
 	const destKey = "destination-B"
 	tunnelPath := &PathEntry{
 		Timestamp:   now,
-		RandomBlobs: [][]byte{randomBlobWithTimebase(300)},
+		RandomBlobs: [][]byte{randomBlobWithTimebase(nowSec - 100)},
 	}
 	activePath := &PathEntry{
 		Timestamp:   now,
-		RandomBlobs: [][]byte{randomBlobWithTimebase(200)},
+		RandomBlobs: [][]byte{randomBlobWithTimebase(nowSec - 200)},
 	}
 
 	ts.mu.Lock()
@@ -112,7 +121,7 @@ func TestCullTunnelsDropsPathPastPathTimeout(t *testing.T) {
 	const destKey = "destination-C"
 	tunnelPath := &PathEntry{
 		Timestamp:   now.Add(-TunnelPathTimeout - time.Minute),
-		RandomBlobs: [][]byte{randomBlobWithTimebase(100)},
+		RandomBlobs: [][]byte{randomBlobWithTimebase(uint64(now.Unix()) - 100)},
 	}
 
 	ts.mu.Lock()
@@ -146,7 +155,7 @@ func TestCullTunnelsKeepsPathWithNoActivePath(t *testing.T) {
 	const destKey = "destination-D"
 	tunnelPath := &PathEntry{
 		Timestamp:   now,
-		RandomBlobs: [][]byte{randomBlobWithTimebase(100)},
+		RandomBlobs: [][]byte{randomBlobWithTimebase(uint64(now.Unix()) - 100)},
 	}
 
 	ts.mu.Lock()

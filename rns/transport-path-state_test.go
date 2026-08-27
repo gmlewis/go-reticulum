@@ -7,6 +7,7 @@ package rns
 
 import (
 	"testing"
+	"time"
 
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
 )
@@ -30,7 +31,9 @@ func TestNewPathEntryMarkedUnknownState(t *testing.T) {
 		t.Fatalf("NewDestination: %v", err)
 	}
 
-	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 1)
+	// Plausible emission timebase (near local time) so the announce looks like
+	// a real emission to the poison-heal plausibility gate.
+	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, uint64(time.Now().Unix()))
 	p.Hops = 1
 	ts.handleAnnounce(p, from)
 

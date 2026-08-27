@@ -124,8 +124,14 @@ func TestHandleAnnounceGravityWeightedPathReplacement(t *testing.T) {
 		t.Fatalf("remote dest: %v", err)
 	}
 
+	// A plausible emission timebase (near local time), held identical across
+	// all three announces: the poison-heal plausibility gate only stores blobs
+	// whose emission looks like a real unix timestamp, so the same-timebase
+	// gravity tie-break below needs a realistic value rather than a synthetic
+	// small one.
+	emission := uint64(time.Now().Unix())
 	mkAnnounce := func() *Packet {
-		p := mustTestAnnouncePacketWithEmission(t, nil, remoteID, remoteDest, 5)
+		p := mustTestAnnouncePacketWithEmission(t, nil, remoteID, remoteDest, emission)
 		p.Hops = 2
 		if len(p.Raw) > 1 {
 			p.Raw[1] = 2
@@ -503,7 +509,9 @@ func TestHandlePathRequestAnswersFromCachedPath(t *testing.T) {
 	}
 
 	// ts learns a path to remoteDest by receiving its announce on otherIface.
-	announce := mustTestAnnouncePacketWithEmission(t, nil, remoteID, remoteDest, 1)
+	// Plausible emission timebase (near local time) so the poison-heal
+	// plausibility gate stores the blob like it would for a real announce.
+	announce := mustTestAnnouncePacketWithEmission(t, nil, remoteID, remoteDest, uint64(time.Now().Unix()))
 	announce.Hops = 2
 	if len(announce.Raw) > 1 {
 		announce.Raw[1] = 2
@@ -593,7 +601,8 @@ func TestHandlePathRequestCachedPathLoopPrevention(t *testing.T) {
 	if err != nil {
 		t.Fatalf("remote dest: %v", err)
 	}
-	announce := mustTestAnnouncePacketWithEmission(t, nil, remoteID, remoteDest, 1)
+	// Plausible emission timebase (see TestHandlePathRequestAnswersFromCachedPath).
+	announce := mustTestAnnouncePacketWithEmission(t, nil, remoteID, remoteDest, uint64(time.Now().Unix()))
 	announce.Hops = 2
 	if len(announce.Raw) > 1 {
 		announce.Raw[1] = 2

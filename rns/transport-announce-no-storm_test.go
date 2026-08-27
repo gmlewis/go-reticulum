@@ -120,9 +120,13 @@ func TestOverHoppedAnnounceDoesNotInstallPath(t *testing.T) {
 		t.Fatalf("NewDestination: %v", err)
 	}
 
+	// Plausible emission timebase (near local time) so the announce looks like
+	// a real emission to the poison-heal plausibility gate.
+	emission := uint64(time.Now().Unix())
+
 	// Announce at the pathfinding limit: pre-increment Hops=PathfinderM (128)
 	// becomes 129 after Inbound's hops++ and must be dropped.
-	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 7)
+	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, emission)
 	p.Hops = PathfinderM
 	if err := p.Pack(); err != nil {
 		t.Fatalf("Pack: %v", err)
@@ -137,7 +141,7 @@ func TestOverHoppedAnnounceDoesNotInstallPath(t *testing.T) {
 	}
 
 	// Control: an announce under the limit installs a path.
-	p2 := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 8)
+	p2 := mustTestAnnouncePacketWithEmission(t, ts, id, dest, emission)
 	p2.Hops = 2
 	if err := p2.Pack(); err != nil {
 		t.Fatalf("Pack control: %v", err)

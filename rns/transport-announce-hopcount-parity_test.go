@@ -7,6 +7,7 @@ package rns
 
 import (
 	"testing"
+	"time"
 )
 
 // TestAnnounceRebroadcastHopCountParity verifies that the hop count baked
@@ -38,8 +39,10 @@ func TestAnnounceRebroadcastHopCountParity(t *testing.T) {
 		t.Fatalf("NewDestination: %v", err)
 	}
 
-	// Build a valid announce with a fixed emission timebase.
-	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 42)
+	// Build a valid announce with a plausible emission timebase (near local
+	// time) so the poison-heal plausibility gate stores its blob like it would
+	// for a real announce.
+	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, uint64(time.Now().Unix()))
 	p.Hops = 0 // wire hops = 0 (originating node)
 	if err := p.Pack(); err != nil {
 		t.Fatalf("Pack: %v", err)
@@ -87,7 +90,7 @@ func TestAnnounceRebroadcastHopCountParityMultiHop(t *testing.T) {
 		t.Fatalf("NewDestination: %v", err)
 	}
 
-	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 99)
+	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, uint64(time.Now().Unix()))
 	p.Hops = 1 // wire hops = 1 (one hop away from originator)
 	if err := p.Pack(); err != nil {
 		t.Fatalf("Pack: %v", err)
@@ -143,7 +146,7 @@ func TestCachedPathResponseHopCountParity(t *testing.T) {
 
 	// Inject an announce with wire hops=3 to install a path with hops=4
 	// (after inbound++). This is our "cached path."
-	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 77)
+	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, uint64(time.Now().Unix()))
 	p.Hops = 3
 	if err := p.Pack(); err != nil {
 		t.Fatalf("Pack: %v", err)

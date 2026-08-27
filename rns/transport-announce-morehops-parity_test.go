@@ -29,8 +29,14 @@ func TestAnnounceMoreHopsReplacesOnNewerEmission(t *testing.T) {
 		t.Fatalf("NewDestination: %v", err)
 	}
 
-	// First announce: emission=100, wire hops=1 → packet.Hops=2 after inbound++.
-	p1 := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 100)
+	// Plausible emission timebases (near local time): the poison-heal
+	// plausibility gate only stores blobs whose emission looks like a real
+	// unix timestamp, so the newer-emission comparison below needs realistic
+	// values rather than synthetic small ones.
+	base := uint64(time.Now().Unix())
+
+	// First announce: emission=base, wire hops=1 → packet.Hops=2 after inbound++.
+	p1 := mustTestAnnouncePacketWithEmission(t, ts, id, dest, base)
 	p1.Hops = 1
 	if err := p1.Pack(); err != nil {
 		t.Fatalf("Pack p1: %v", err)
@@ -48,10 +54,10 @@ func TestAnnounceMoreHopsReplacesOnNewerEmission(t *testing.T) {
 		t.Fatalf("first announce: hops = %v, want 2", entry.Hops)
 	}
 
-	// Second announce: emission=200 (newer), wire hops=3 → packet.Hops=4.
+	// Second announce: emission=base+1h (newer), wire hops=3 → packet.Hops=4.
 	// This has MORE hops but a NEWER emission. Python replaces; Go pre-fix
 	// silently dropped it.
-	p2 := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 200)
+	p2 := mustTestAnnouncePacketWithEmission(t, ts, id, dest, base+3600)
 	p2.Hops = 3
 	if err := p2.Pack(); err != nil {
 		t.Fatalf("Pack p2: %v", err)
@@ -87,8 +93,11 @@ func TestAnnounceMoreHopsReplacesOnExpiredPath(t *testing.T) {
 		t.Fatalf("NewDestination: %v", err)
 	}
 
-	// First announce: emission=100, wire hops=1 → hops=2.
-	p1 := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 100)
+	// Plausible emission timebases (see TestAnnounceMoreHopsReplacesOnNewerEmission).
+	base := uint64(time.Now().Unix())
+
+	// First announce: emission=base, wire hops=1 → hops=2.
+	p1 := mustTestAnnouncePacketWithEmission(t, ts, id, dest, base)
 	p1.Hops = 1
 	if err := p1.Pack(); err != nil {
 		t.Fatalf("Pack p1: %v", err)
@@ -105,8 +114,8 @@ func TestAnnounceMoreHopsReplacesOnExpiredPath(t *testing.T) {
 	entry.Expires = time.Now().Add(-time.Hour) // expired 1 hour ago
 	ts.mu.Unlock()
 
-	// Second announce: emission=200 (newer, new random blob), wire hops=3 → hops=4.
-	p2 := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 200)
+	// Second announce: emission=base+1h (newer, new random blob), wire hops=3 → hops=4.
+	p2 := mustTestAnnouncePacketWithEmission(t, ts, id, dest, base+3600)
 	p2.Hops = 3
 	if err := p2.Pack(); err != nil {
 		t.Fatalf("Pack p2: %v", err)
@@ -141,8 +150,16 @@ func TestAnnounceMoreHopsReplacesOnUnresponsivePath(t *testing.T) {
 		t.Fatalf("NewDestination: %v", err)
 	}
 
-	// First announce: emission=100, wire hops=1 → hops=2.
-	p1 := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 100)
+	// A plausible shared emission timebase (near local time): the poison-heal
+	// plausibility gate only stores blobs whose emission looks like a real
+	// unix timestamp. A shared realistic value pins the test to the
+	// same-timebase unresponsive branch — with a synthetic small emission the
+	// blob is never stored and the announce replaces via the wrong
+	// (more-recently-emitted) branch.
+	emission := uint64(time.Now().Unix())
+
+	// First announce: emission=emission, wire hops=1 → hops=2.
+	p1 := mustTestAnnouncePacketWithEmission(t, ts, id, dest, emission)
 	p1.Hops = 1
 	if err := p1.Pack(); err != nil {
 		t.Fatalf("Pack p1: %v", err)
@@ -152,10 +169,10 @@ func TestAnnounceMoreHopsReplacesOnUnresponsivePath(t *testing.T) {
 	// Mark the path as unresponsive.
 	ts.MarkPathUnresponsive(dest.Hash)
 
-	// Second announce: SAME emission=100 (same timebase), wire hops=3 → hops=4.
+	// Second announce: SAME emission (same timebase), wire hops=3 → hops=4.
 	// Same random blob (same emission → same blob), so newBlob is false.
 	// Python replaces because the path is unresponsive (Transport.py:1886-1890).
-	p2 := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 100)
+	p2 := mustTestAnnouncePacketWithEmission(t, ts, id, dest, emission)
 	p2.Hops = 3
 	if err := p2.Pack(); err != nil {
 		t.Fatalf("Pack p2: %v", err)
@@ -190,17 +207,23 @@ func TestAnnounceMoreHopsDroppedWhenNoConditionMet(t *testing.T) {
 		t.Fatalf("NewDestination: %v", err)
 	}
 
-	// First announce: emission=100, wire hops=1 → hops=2.
-	p1 := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 100)
+	// A plausible emission timebase (near local time): the poison-heal
+	// plausibility gate only stores blobs whose emission looks like a real
+	// unix timestamp, so the same-emission comparison below needs a realistic
+	// value rather than a synthetic small one.
+	emission := uint64(time.Now().Unix())
+
+	// First announce: emission=emission, wire hops=1 → hops=2.
+	p1 := mustTestAnnouncePacketWithEmission(t, ts, id, dest, emission)
 	p1.Hops = 1
 	if err := p1.Pack(); err != nil {
 		t.Fatalf("Pack p1: %v", err)
 	}
 	ts.Inbound(append([]byte(nil), p1.Raw...), iface)
 
-	// Second announce: SAME emission=100, wire hops=3 → hops=4.
+	// Second announce: SAME emission, wire hops=3 → hops=4.
 	// Path not expired, same emission, path responsive → should be dropped.
-	p2 := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 100)
+	p2 := mustTestAnnouncePacketWithEmission(t, ts, id, dest, emission)
 	p2.Hops = 3
 	if err := p2.Pack(); err != nil {
 		t.Fatalf("Pack p2: %v", err)

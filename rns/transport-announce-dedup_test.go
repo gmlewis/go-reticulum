@@ -37,8 +37,14 @@ func TestInboundAcceptsDuplicateAnnounceAcrossInterfaces(t *testing.T) {
 		t.Fatalf("NewDestination: %v", err)
 	}
 
-	// A single announce (fixed emission -> fixed packet hash + timebase).
-	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 7)
+	// A single announce with a plausible fixed emission (near local time) →
+	// fixed packet hash + timebase. The poison-heal plausibility gate only
+	// stores blobs whose emission looks like a real unix timestamp, so a
+	// realistic value is required for the same-timebase gravity replace below
+	// to run (a synthetic small emission would take the wrong
+	// more-recently-emitted branch instead).
+	emission := uint64(time.Now().Unix())
+	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, emission)
 	p.Hops = 2
 	if err := p.Pack(); err != nil {
 		t.Fatalf("Pack: %v", err)
