@@ -6,11 +6,13 @@
 package interfaces
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 const (
@@ -20,6 +22,9 @@ const (
 	// (RNS/Interfaces/UDPInterface.py:42).
 	UDPDefaultIFACSize = 16
 )
+
+// udpReadRetryDelay bounds reader retry pressure on transient UDP errors.
+const udpReadRetryDelay = 250 * time.Millisecond
 
 // UDPInterface implements a high-throughput, connectionless transport interface leveraging standard User Datagram Protocol semantics.
 // It is explicitly designed to handle best-effort broadcast, multicast, or direct point-to-point datagrams across IP networks.
@@ -83,10 +88,18 @@ func (ui *UDPInterface) listenLoop() {
 	for atomic.LoadInt32(&ui.running) == 1 {
 		n, _, err := ui.conn.ReadFromUDP(buf)
 		if err != nil {
-			if atomic.LoadInt32(&ui.running) == 1 && !ui.IsDetached() {
-				ui.panicOnInterfaceErrorf("udp interface %v read failed: %v", ui.name, err)
+			// Closed socket / teardown exits; transient read errors
+			// (ICMP-driven ECONNREFUSED after sendto on macOS et al.)
+			// must not terminate the reader forever with Status()==true
+			// — that blackholes the interface silently. Back off and
+			// keep reading instead of the previous permanent break.
+			if errors.Is(err, net.ErrClosed) || ui.IsDetached() ||
+				atomic.LoadInt32(&ui.running) != 1 {
+				break
 			}
-			break
+			ui.panicOnInterfaceErrorf("udp interface %v read failed: %v", ui.name, err)
+			time.Sleep(udpReadRetryDelay)
+			continue
 		}
 
 		data := make([]byte, n)

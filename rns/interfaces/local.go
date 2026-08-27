@@ -18,6 +18,9 @@ import (
 	"time"
 )
 
+// localAcceptRetryDelay bounds retry pressure for transient accept errors.
+const localAcceptRetryDelay = 250 * time.Millisecond
+
 const (
 	LocalBitrate = 1000 * 1000 * 1000
 
@@ -473,10 +476,13 @@ func (lsi *LocalServerInterface) acceptLoop() {
 		}
 		conn, err := listener.Accept()
 		if err != nil {
-			if atomic.LoadInt32(&lsi.running) == 1 && !lsi.IsDetached() {
-				lsi.panicOnInterfaceErrorf("local interface %v accept failed: %v", lsi.name, err)
+			if errors.Is(err, net.ErrClosed) || lsi.IsDetached() ||
+				atomic.LoadInt32(&lsi.running) != 1 {
+				break
 			}
-			break
+			lsi.panicOnInterfaceErrorf("local interface %v accept failed: %v", lsi.name, err)
+			time.Sleep(localAcceptRetryDelay)
+			continue
 		}
 
 		lsi.handleConnection(conn)

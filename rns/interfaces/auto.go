@@ -13,6 +13,7 @@ import (
 	"net"
 	"runtime"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -172,6 +173,11 @@ type AutoInterface struct {
 	writeMu sync.Mutex
 	mu      sync.Mutex
 
+	// rebuildSockets rebinds an interface's socket set to a (new) link-local
+	// address. Defaulted in NewAutoInterface to startInterfaceSockets;
+	// swappable in tests so resync logic runs without real fe80 bindings.
+	rebuildSockets func(ifname string, linkLocal net.IP) error
+
 	running atomic.Int32
 	online  int32
 	final   int32
@@ -211,6 +217,17 @@ func NewAutoInterface(name string, cfg AutoInterfaceConfig, handler InboundHandl
 		initialEchoes:     map[string]time.Time{},
 		timedOutIfaces:    map[string]bool{},
 		recentFrames:      map[[32]byte]time.Time{},
+	}
+
+	// Default socket rebinder: re-derive the hardware interface and bind a
+	// fresh socket set to the given link-local address (same path as initial
+	// adoption). Tests swap this hook to observe resync behavior.
+	ai.rebuildSockets = func(name string, linkLocal net.IP) error {
+		iface, err := net.InterfaceByName(name)
+		if err != nil {
+			return err
+		}
+		return ai.startInterfaceSockets(*iface, linkLocal)
 	}
 
 	ai.groupID = []byte(strings.TrimSpace(cfg.GroupID))
@@ -671,7 +688,15 @@ func (ai *AutoInterface) refreshPeer(addr string) {
 }
 
 func (ai *AutoInterface) processIncoming(data []byte, addr string) {
-	if ai.running.Load() != 1 || atomic.LoadInt32(&ai.online) != 1 {
+	// Gate on running only. Python never couples inbound data processing to
+	// echo freshness (AutoInterface.py:350 sets online once at final_init and
+	// :607 clears it only on detach; a missed echo just logs into
+	// timed_out_interfaces, :463-467). The previous ai.online gate here
+	// dropped every LAN datagram for the duration of an echo gap > 6.5 s
+	// (Wi-Fi power-save windows, AP multicast rate-limiting, interface roams)
+	// while sockets stayed open and TCP planes kept flowing, silently blacking
+	// out the node's entire AutoInterface data plane.
+	if ai.running.Load() != 1 {
 		return
 	}
 
@@ -737,12 +762,183 @@ func (ai *AutoInterface) peerJobs() {
 		ai.updateInterfaceHealthLocked(now)
 		ai.mu.Unlock()
 
+		// Re-adopt link-local addresses that the kernel changed underneath us
+		// (Wi-Fi roam, wlan restart, DHCPv6 refresh). Python rescans every job
+		// tick (AutoInterface.py:405-455); without this the discovery token
+		// kept hashing a stale address while packets sourced from the new one,
+		// so every peer silently dropped our beacons and the node stayed
+		// invisible on the LAN until restart.
+		ai.resyncAdoptedAddresses()
+
 		for _, addr := range timedOut {
 			ai.removePeer(addr)
 		}
 		for _, r := range reverse {
 			ai.reverseAnnounce(r.ifname, r.addr)
 		}
+	}
+}
+
+// ipPair records an adopted interface's previous and current link-local
+// address for a resync plan.
+type ipPair struct {
+	old net.IP
+	cur net.IP
+}
+
+// addrResyncPlan is the classification result of comparing the adopted
+// interface map against a fresh scan: addresses whose interface still exists
+// but changed value, interfaces that vanished entirely, and (reserved) new
+// interfaces to adopt. Additions are intentionally unused today: rescans only
+// refresh already-adopted interfaces, matching the narrow bug of stale
+// addresses; brand-new interfaces keep requiring a restart.
+type addrResyncPlan struct {
+	changed map[string]ipPair
+	removed []string
+	added   map[string]net.IP
+}
+
+// planAddressResync diffs the previously adopted addresses against a fresh
+// scan and classifies each difference.
+func planAddressResync(adopted, next map[string]net.IP) addrResyncPlan {
+	plan := addrResyncPlan{
+		changed: map[string]ipPair{},
+		added:   map[string]net.IP{},
+	}
+	for name, oldIP := range adopted {
+		curIP, ok := next[name]
+		switch {
+		case !ok:
+			plan.removed = append(plan.removed, name)
+		case !oldIP.Equal(curIP):
+			plan.changed[name] = ipPair{old: append(net.IP(nil), oldIP...), cur: append(net.IP(nil), curIP...)}
+		}
+	}
+	return plan
+}
+
+// closeAutoSocketSet closes one interface's three UDP sockets. A package-level
+// variable so tests can observe closures without real sockets.
+var closeAutoSocketSet = func(s *autoSocketSet, ifname string) {
+	if s == nil {
+		return
+	}
+	for _, conn := range []*net.UDPConn{s.multicast, s.unicast, s.data} {
+		if conn == nil {
+			continue
+		}
+		if err := conn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			log.Printf("auto interface %v socket close failed: %v", ifname, err)
+		}
+	}
+}
+
+// scanLinkLocals re-reads the first IPv6 link-local address for each given
+// interface name. Interfaces that cannot be resolved or expose no link-local
+// are omitted so they classify as removed (or unchanged-if-absent on transient
+// failures handled by the caller's retry next tick).
+func scanLinkLocals(names []string) map[string]net.IP {
+	next := make(map[string]net.IP, len(names))
+	for _, name := range names {
+		iface, err := net.InterfaceByName(name)
+		if err != nil {
+			continue
+		}
+		ip, ok := firstLinkLocalIPv6(*iface)
+		if !ok {
+			continue
+		}
+		next[name] = ip
+	}
+	return next
+}
+
+// resyncAdoptedAddresses scans current link-local addresses and applies any
+// changes. Called once per peerJobs tick with no locks held.
+func (ai *AutoInterface) resyncAdoptedAddresses() {
+	ai.mu.Lock()
+	snapshot := make(map[string]net.IP, len(ai.adoptedInterfaces))
+	for name, ip := range ai.adoptedInterfaces {
+		snapshot[name] = append(net.IP(nil), ip...)
+	}
+	ai.mu.Unlock()
+
+	next := scanLinkLocals(mustKeys(snapshot))
+	plan := planAddressResync(snapshot, next)
+	if len(plan.changed) == 0 && len(plan.removed) == 0 {
+		return
+	}
+	ai.applyAddressResync(plan)
+}
+
+func mustKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// applyAddressResync executes a resync plan: closes stale socket sets,
+// updates adoption bookkeeping under mu, rebuilds bindings through the
+// rebuildSockets hook, and culls peers belonging to removed interfaces.
+func (ai *AutoInterface) applyAddressResync(plan addrResyncPlan) {
+	now := time.Now()
+
+	for _, name := range plan.removed {
+		ai.mu.Lock()
+		var (
+			staleSocket *autoSocketSet
+			existed     bool
+		)
+		if staleSocket, existed = ai.sockets[name]; existed {
+			delete(ai.sockets, name)
+		}
+		if oldIP, ok := ai.adoptedInterfaces[name]; ok {
+			delete(ai.linkLocalSet, oldIP.String())
+			delete(ai.adoptedInterfaces, name)
+		}
+		delete(ai.multicastEchoes, name)
+		delete(ai.initialEchoes, name)
+		delete(ai.timedOutIfaces, name)
+		cullAddrs := make([]string, 0, 2)
+		for addr, peer := range ai.spawnedInterfaces {
+			if peer != nil && peer.interfaceName == name {
+				cullAddrs = append(cullAddrs, addr)
+			}
+		}
+		ai.mu.Unlock()
+		closeAutoSocketSet(staleSocket, name)
+		for _, addr := range cullAddrs {
+			ai.removePeer(addr)
+		}
+		log.Printf("auto interface %v: interface vanished, state culled", name)
+	}
+
+	for name, pair := range plan.changed {
+		ai.mu.Lock()
+		staleSocket := ai.sockets[name]
+		ai.replaceAdoptedInterfaceAddressLocked(name, pair.cur)
+		ai.multicastEchoes[name] = now
+		delete(ai.initialEchoes, name)
+		ai.timedOutIfaces[name] = false
+		ai.mu.Unlock()
+		closeAutoSocketSet(staleSocket, name)
+
+		if err := ai.rebuildSockets(name, pair.cur); err != nil {
+			log.Printf("auto interface %v: socket rebuild after address change failed: %v", name, err)
+			ai.mu.Lock()
+			delete(ai.sockets, name)
+			if oldIP, ok := ai.adoptedInterfaces[name]; ok {
+				delete(ai.linkLocalSet, oldIP.String())
+				delete(ai.adoptedInterfaces, name)
+			}
+			ai.mu.Unlock()
+			continue
+		}
+		log.Printf("auto interface %v: link-local changed %v -> %v, sockets rebuilt",
+			name, pair.old, pair.cur)
 	}
 }
 

@@ -569,6 +569,9 @@ func (tci *TCPClientInterface) Detach() error {
 	return nil
 }
 
+// acceptFunc is the signature of the TCPServerInterface accept-loop seam.
+type acceptFunc func() (net.Conn, error)
+
 // TCPServerInterface operates a concurrent TCP listener that accepts inbound
 // Reticulum peer connections. It spawns client interface instances as new peers
 // connect.
@@ -600,6 +603,12 @@ type TCPServerInterface struct {
 	// handleConnection when constructing spawned clients.
 	hwmtu int
 
+	// accept is the accept-loop seam. Defaulted to listener.Accept; tests
+	// swap it to inject transient failures deterministically. It is an
+	// atomic pointer because the loop goroutine starts inside the
+	// constructor, before a test can swap the seam.
+	accept atomic.Pointer[acceptFunc]
+
 	running int32
 	mu      sync.Mutex
 }
@@ -615,6 +624,9 @@ func NewTCPServerInterface(name, bindIP string, bindPort int, handler InboundHan
 // (TCPHWMTU) and Backbone (BackboneHWMTU) server interfaces so spawned
 // clients inherit the correct hardware MTU for inbound HDLC frame-length
 // validation.
+// tcpAcceptRetryDelay bounds retry pressure when Accept fails transiently.
+const tcpAcceptRetryDelay = 250 * time.Millisecond
+
 func newTCPServerInterface(name, bindIP string, bindPort int, handler InboundHandler, onConnect ConnectHandler, hwmtu int) (*TCPServerInterface, error) {
 	bi := NewBaseInterface(name, ModeFull, TCPBitrateGuess)
 	bi.setDefaultIFACSize(TCPDefaultIFACSize)
@@ -635,6 +647,8 @@ func newTCPServerInterface(name, bindIP string, bindPort int, handler InboundHan
 		hwmtu:          hwmtu,
 	}
 
+	defaultAccept := acceptFunc(tsi.listener.Accept)
+	tsi.accept.Store(&defaultAccept)
 	atomic.StoreInt32(&tsi.running, 1)
 	go tsi.acceptLoop()
 
@@ -649,12 +663,26 @@ func (tsi *TCPServerInterface) BindPort() int { return tsi.bindPort }
 
 func (tsi *TCPServerInterface) acceptLoop() {
 	for atomic.LoadInt32(&tsi.running) == 1 {
-		conn, err := tsi.listener.Accept()
+		acceptFn := tsi.accept.Load()
+		if acceptFn == nil {
+			return
+		}
+		conn, err := (*acceptFn)()
 		if err != nil {
-			if atomic.LoadInt32(&tsi.running) == 1 && !tsi.IsDetached() {
-				tsi.panicOnInterfaceErrorf("tcp interface %v accept failed: %v", tsi.name, err)
+			// A closed listener or intentional teardown is the exit path;
+			// anything else is transient (EMFILE/ENFILE fd exhaustion,
+			// ECONNABORTED backlog overflow on Linux) and must not kill
+			// the accept loop permanently: Python's socketserver keeps
+			// serving per-error, while this loop previously broke forever,
+			// leaving every NEW inbound connection hanging with running=1
+			// and "all interfaces up" — gradual fleet path rot.
+			if errors.Is(err, net.ErrClosed) || tsi.IsDetached() ||
+				atomic.LoadInt32(&tsi.running) != 1 {
+				return
 			}
-			break
+			tsi.panicOnInterfaceErrorf("tcp interface %v accept failed: %v", tsi.name, err)
+			time.Sleep(tcpAcceptRetryDelay)
+			continue
 		}
 
 		tsi.handleConnection(conn)
