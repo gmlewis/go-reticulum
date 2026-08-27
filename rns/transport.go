@@ -206,6 +206,16 @@ type TransportSystem struct {
 	// lastReannounce rate-limits the onConnect re-announce hook so rapid
 	// connection flapping (every reconnectDelay) cannot mint an announce
 	// storm while still refreshing hub path tables after a restart.
+	// lastReannounceIfaces rate-limits onConnect re-announces PER INTERFACE so
+	// one client's reconnect cannot spam its peer, while simultaneous
+	// first-connects of several interfaces (the normal boot storm) each still
+	// emit their own local-destination re-announce.
+	lastReannounceIfaces map[string]time.Time
+
+	// reannounceImpl is the seam used by tests to observe per-interface
+	// re-announces; nil means announceDestinationsOnInterface directly.
+	reannounceImpl func(iface interfaces.Interface)
+
 	lastReannounce time.Time
 
 	pathRequestHash []byte
@@ -550,6 +560,25 @@ const (
 // one announce per 30s, preventing the announce storm while still refreshing
 // hub path tables promptly after a restart.
 const minReannounceInterval = 30 * time.Second
+
+// reannounceDue reports whether an onConnect re-announce may proceed for the
+// interface identified by key, recording it when allowed. Rate limiting is per
+// interface: a single shared timestamp previously let the first connecting
+// client suppress every sibling's boot-time re-announce for
+// minReannounceInterval, silently dropping Local TCP Hub coverage until the
+// next periodic announce hours later.
+func (ts *TransportSystem) reannounceDue(key string, now time.Time) bool {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if ts.lastReannounceIfaces == nil {
+		ts.lastReannounceIfaces = map[string]time.Time{}
+	}
+	if last, ok := ts.lastReannounceIfaces[key]; ok && now.Sub(last) < minReannounceInterval {
+		return false
+	}
+	ts.lastReannounceIfaces[key] = now
+	return true
+}
 
 const (
 	pathfinderRetries      = 1
@@ -3548,14 +3577,13 @@ func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 		// rate limit (minReannounceInterval) prevents the announce storm
 		// that rapid connection flapping would otherwise cause.
 		announceNow := func() {
-			ts.mu.Lock()
-			now := time.Now()
-			if now.Sub(ts.lastReannounce) < minReannounceInterval {
-				ts.mu.Unlock()
+			if !ts.reannounceDue(tci.HashString(), time.Now()) {
 				return
 			}
-			ts.lastReannounce = now
-			ts.mu.Unlock()
+			if ts.reannounceImpl != nil {
+				ts.reannounceImpl(tci)
+				return
+			}
 			ts.announceDestinationsOnInterface(tci, nil)
 		}
 		tci.SetOnConnect(announceNow)

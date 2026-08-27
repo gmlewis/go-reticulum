@@ -212,6 +212,11 @@ func ValidateAnnounce(ts Transport, packet *Packet) bool {
 		minLen += ratchetSize
 	}
 	if len(packet.Data) < minLen {
+		// A truncated announce (frame loss on a flaky medium, an
+		// undersized hardware MTU on one hop) previously failed here
+		// without any trace, leaving operators to wonder why one peer
+		// never heard an announcement that every other node accepted.
+		logger.Debug("Announce validation failed: data too short (%v bytes, need >= %v)", len(packet.Data), minLen)
 		return false
 	}
 
@@ -257,9 +262,11 @@ func ValidateAnnounce(ts Transport, packet *Packet) bool {
 
 	id, err := NewIdentity(false, logger)
 	if err != nil {
+		logger.Debug("Announce validation failed: could not create identity for public-key check: %v", err)
 		return false
 	}
 	if err := id.LoadPublicKey(publicKey); err != nil {
+		logger.Debug("Announce validation failed: malformed announce public key %x: %v", publicKey, err)
 		return false
 	}
 
