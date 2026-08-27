@@ -2123,12 +2123,26 @@ func (ts *TransportSystem) loadPathTableLocked() {
 		}
 
 		var blobs [][]byte
+		droppedBlobs := 0
 		if rawBlobs, isSlice := fields[5].([]any); isSlice {
 			for _, rb := range rawBlobs {
 				if b, bOk := rb.([]byte); bOk {
+					// Self-heal poisoned persisted state: blobs whose
+					// embedded timebase is not a plausible unix timestamp
+					// were written by pre-fix binaries that misparsed
+					// truncated announces, and would block every future
+					// path replacement. Drop them here so the periodic
+					// persist writes the cleaned entry back to disk.
+					if len(b) >= 10 && !plausibleAnnounceTimebase(randomBlobTimebase(b), time.Now()) {
+						droppedBlobs++
+						continue
+					}
 					blobs = append(blobs, copyBytes(b))
 				}
 			}
+		}
+		if droppedBlobs > 0 {
+			ts.logger.Debug("Dropped %v poisoned random blob(s) for %x while loading path table", droppedBlobs, destHash)
 		}
 
 		// Recover the raw announce from cache/announces/<hex(packetHash)>. If
@@ -2299,16 +2313,22 @@ func announceEmissionFromPacket(packet *Packet) uint64 {
 // across the given replay-protection random blobs. Each blob's timebase is
 // its big-endian uint40 at bytes [5:10], the same field
 // announceEmissionFromPacket reads. Mirrors Python
-// Transport.timebase_from_random_blobs (RNS/Transport.py:3276-3281, v1.4.1).
+// Transport.timebase_from_random_blobs (RNS/Transport.py:3276-3281, v1.4.1),
+// with one Go-side hardening: blobs whose timebase is not a plausible unix
+// timestamp are skipped. Python never stores such blobs (it remembers only
+// post-validation announces), but pre-fix Go binaries persisted them, and a
+// single garbage timebase would otherwise block every future path
+// replacement for the destination — the self-healing neutralizes that poison
+// at the point of use.
 func timebaseFromRandomBlobs(blobs [][]byte) uint64 {
 	var timebase uint64
 	for _, b := range blobs {
 		if len(b) < 10 {
 			continue
 		}
-		var emitted uint64
-		for _, x := range b[5:10] {
-			emitted = (emitted << 8) | uint64(x)
+		emitted := randomBlobTimebase(b)
+		if !plausibleAnnounceTimebase(emitted, time.Now()) {
+			continue
 		}
 		if emitted > timebase {
 			timebase = emitted
@@ -5681,9 +5701,16 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 				entry.Packet = copyBytes(packet.Raw)
 				entry.PacketHash = append([]byte(nil), packet.GetHash()...)
 				if randomBlob != nil && !containsBlob(entry.RandomBlobs, randomBlob) {
-					entry.RandomBlobs = append(entry.RandomBlobs, randomBlob)
-					if len(entry.RandomBlobs) > maxRandomBlobs {
-						entry.RandomBlobs = entry.RandomBlobs[len(entry.RandomBlobs)-maxRandomBlobs:]
+					// Only store blobs with plausible emission timebases: an
+					// announce signed by a badly skewed clock still validates,
+					// but storing its blob would poison the timebase
+					// comparison and block future replacements after it
+					// expires from the plausible window.
+					if plausibleAnnounceTimebase(announceEmissionFromPacket(packet), time.Now()) {
+						entry.RandomBlobs = append(entry.RandomBlobs, randomBlob)
+						if len(entry.RandomBlobs) > maxRandomBlobs {
+							entry.RandomBlobs = entry.RandomBlobs[len(entry.RandomBlobs)-maxRandomBlobs:]
+						}
 					}
 				}
 				shouldForwardToLocalClients = true
@@ -5696,7 +5723,10 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 			}
 			// New path
 			var blobs [][]byte
-			if randomBlob != nil {
+			if randomBlob != nil && plausibleAnnounceTimebase(announceEmissionFromPacket(packet), time.Now()) {
+				// Same plausibility guard as the replace branch: a badly
+				// skewed emitter must not seed the new entry's replay state
+				// with a blob that would block later replacements.
 				blobs = [][]byte{randomBlob}
 			}
 			ts.pathTable[destHash] = &PathEntry{
