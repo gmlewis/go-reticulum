@@ -88,16 +88,24 @@ func (ui *UDPInterface) listenLoop() {
 	for atomic.LoadInt32(&ui.running) == 1 {
 		n, _, err := ui.conn.ReadFromUDP(buf)
 		if err != nil {
-			// Closed socket / teardown exits; transient read errors
+			// Intentional teardown (Detach sets running=0/detached before
+			// closing the socket) exits silently. Transient read errors
 			// (ICMP-driven ECONNREFUSED after sendto on macOS et al.)
 			// must not terminate the reader forever with Status()==true
 			// — that blackholes the interface silently. Back off and
 			// keep reading instead of the previous permanent break.
-			if errors.Is(err, net.ErrClosed) || ui.IsDetached() ||
-				atomic.LoadInt32(&ui.running) != 1 {
+			if ui.IsDetached() || atomic.LoadInt32(&ui.running) != 1 {
 				break
 			}
+			// The interface believes it is still up, yet the read failed:
+			// escalate through the error policy. A closed socket is
+			// unrecoverable (nothing to read from again); anything else is
+			// transient and retried below.
 			ui.panicOnInterfaceErrorf("udp interface %v read failed: %v", ui.name, err)
+			if errors.Is(err, net.ErrClosed) {
+				log.Printf("Go UDPInterface %v read socket closed while interface up", ui.name)
+				break
+			}
 			time.Sleep(udpReadRetryDelay)
 			continue
 		}

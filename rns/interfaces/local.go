@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"runtime"
@@ -476,11 +477,20 @@ func (lsi *LocalServerInterface) acceptLoop() {
 		}
 		conn, err := listener.Accept()
 		if err != nil {
-			if errors.Is(err, net.ErrClosed) || lsi.IsDetached() ||
-				atomic.LoadInt32(&lsi.running) != 1 {
+			// Intentional teardown (Detach sets running=0/detached before
+			// closing the listener) exits silently.
+			if lsi.IsDetached() || atomic.LoadInt32(&lsi.running) != 1 {
 				break
 			}
+			// The server believes it is still up, yet the accept failed:
+			// escalate through the error policy. A closed listener is
+			// unrecoverable (nothing to accept from again); anything else
+			// is transient and retried below.
 			lsi.panicOnInterfaceErrorf("local interface %v accept failed: %v", lsi.name, err)
+			if errors.Is(err, net.ErrClosed) {
+				log.Printf("Go LocalServerInterface %v: listener closed while interface up", lsi.name)
+				break
+			}
 			time.Sleep(localAcceptRetryDelay)
 			continue
 		}
