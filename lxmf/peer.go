@@ -8,7 +8,6 @@ package lxmf
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"maps"
 	"slices"
 	"sync"
@@ -943,7 +942,7 @@ func (p *Peer) Sync() {
 
 	if !hasPath(p.destinationHash) {
 		if err := requestPath(p.destinationHash); err != nil {
-			log.Printf("Peer.Sync: path request for %x failed: %v", p.destinationHash, err)
+			p.peerLogger().Error("Peer.Sync: path request for %x failed: %v", p.destinationHash, err)
 		}
 		if p.pathRequestSleep != nil {
 			p.pathRequestSleep()

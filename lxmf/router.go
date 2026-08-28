@@ -12,7 +12,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 	"maps"
 	"math"
 	"os"
@@ -439,22 +438,22 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 	router.startJobLoop()
 	router.registerAnnounceHandlers()
 	if err := router.LoadAvailableTickets(); err != nil {
-		log.Printf("Could not load available tickets from storage: %v", err)
+		router.logger().Error("Could not load available tickets from storage: %v", err)
 	}
 	if _, err := os.Stat(router.availableTicketsPath()); err == nil {
 		if err := router.SaveAvailableTickets(); err != nil {
-			log.Printf("Could not save available tickets to storage: %v", err)
+			router.logger().Error("Could not save available tickets to storage: %v", err)
 		}
 	}
 	if err := router.LoadLocalTransientIDCaches(); err != nil {
-		log.Printf("Could not load local transient ID caches from storage: %v", err)
+		router.logger().Error("Could not load local transient ID caches from storage: %v", err)
 	}
 	if err := router.LoadOutboundStampCosts(); err != nil {
-		log.Printf("Could not load outbound stamp costs from storage: %v", err)
+		router.logger().Error("Could not load outbound stamp costs from storage: %v", err)
 	}
 	if _, err := os.Stat(router.outboundStampCostsPath()); err == nil {
 		if err := router.SaveOutboundStampCosts(); err != nil {
-			log.Printf("Could not save outbound stamp costs to storage: %v", err)
+			router.logger().Error("Could not save outbound stamp costs to storage: %v", err)
 		}
 	}
 
@@ -601,7 +600,7 @@ func (r *Router) propagationPacket(data []byte, packet *rns.Packet) {
 	if err == nil {
 		rejectPacket := rns.NewPacket(packet.Destination, rejectData)
 		if err := rejectPacket.Send(); err != nil {
-			log.Printf("Could not send invalid propagation stamp signal: %v", err)
+			r.logger().Error("Could not send invalid propagation stamp signal: %v", err)
 		}
 	}
 	if link, ok := packet.Destination.(*rns.Link); ok {
@@ -801,7 +800,7 @@ func (r *Router) storePropagationMessageStamped(destinationHash []byte, payload 
 	}
 	if r.propagationEnabled {
 		if path, size, err := r.writePropagationMessageFile(transientID, receivedAt, stampValue, destinationHash, payload, stampData); err != nil {
-			log.Printf("Could not persist propagation message %x: %v", transientID, err)
+			r.logger().Error("Could not persist propagation message %x: %v", transientID, err)
 		} else {
 			entry.path = path
 			entry.size = size
@@ -1401,7 +1400,7 @@ func (r *Router) offerRequest(_ string, data []byte, _ []byte, linkID []byte, re
 	// transfer can advance it through TRANSFERRING/VALIDATING
 	// (LXMRouter.py:2326-2329, v1.1.0).
 	if len(linkID) > 0 {
-		log.Printf("Accepted %d of %d offered messages from %x", len(wantedIDs), len(transientIDs), remotePropagationHash)
+		r.logger().Debug("Accepted %d of %d offered messages from %x", len(wantedIDs), len(transientIDs), remotePropagationHash)
 		r.acceptedOfferLinksMu.Lock()
 		r.acceptedOfferLinks[string(append([]byte{}, linkID...))] = OfferAccepted
 		r.acceptedOfferLinksMu.Unlock()
@@ -1503,7 +1502,7 @@ func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, re
 			delete(r.propagationEntries, string(transientID))
 			if entry.path != "" {
 				if err := os.Remove(entry.path); err != nil && !errors.Is(err, os.ErrNotExist) {
-					log.Printf("Could not remove persisted propagation message %x: %v", transientID, err)
+					r.logger().Error("Could not remove persisted propagation message %x: %v", transientID, err)
 				}
 			}
 		}
@@ -2297,7 +2296,7 @@ func (r *Router) CleanResourceTracking() {
 	}
 	r.incomingDeliveryResourcesMu.Unlock()
 	if len(stale) > 0 {
-		log.Printf("Cleaned %d resource%s from inbound tracking", len(stale), pluralSuffix(len(stale)))
+		r.logger().Debug("Cleaned %d resource%s from inbound tracking", len(stale), pluralSuffix(len(stale)))
 	}
 }
 
@@ -2341,15 +2340,15 @@ func (r *Router) CancelInbound(resourceHash []byte) bool {
 	resource := r.incomingDeliveryResources[string(resourceHash)]
 	r.incomingDeliveryResourcesMu.Unlock()
 	if resource == nil {
-		log.Printf("Resource %x not found, cannot cancel", resourceHash)
+		r.logger().Warning("Resource %x not found, cannot cancel", resourceHash)
 		return false
 	}
 	if resource.Status() >= rns.ResourceStatusComplete {
-		log.Printf("Incoming delivery resource %x already concluded, cannot cancel", resourceHash)
+		r.logger().Warning("Incoming delivery resource %x already concluded, cannot cancel", resourceHash)
 		return false
 	}
 	resource.Cancel()
-	log.Printf("Cancelled incoming delivery resource %x", resourceHash)
+	r.logger().Notice("Cancelled incoming delivery resource %x", resourceHash)
 	return true
 }
 
@@ -2415,6 +2414,8 @@ func (r *Router) ProcessOutbound() {
 			if r.transport != nil {
 				r.transport.RetainDestinationData(message.DestinationHash)
 			}
+			// Python LXMRouter.process_outbound (LXMRouter.py:2687).
+			r.logger().Debug("Delivery has occurred for LXM %x, removing from outbound queue", message.Hash)
 			continue
 		case StateFailed:
 			continue
@@ -2472,7 +2473,7 @@ func (r *Router) ProcessOutbound() {
 			// available, switch to propagated delivery instead of failing.
 			// Mirrors Python's fail_message → try_propagation_on_fail logic.
 			if message.TryPropagationOnFail && r.outboundPropagationNode != nil && message.method != MethodPropagated {
-				log.Printf("Direct delivery failed for %x, falling back to propagated delivery", message.Destination.Hash)
+				r.logger().Debug("Direct delivery failed for %x, falling back to propagated delivery", message.Destination.Hash)
 				message.SetMethod(MethodPropagated)
 				message.DeliveryAttempts = 0
 				message.TryPropagationOnFail = false
@@ -2492,7 +2493,7 @@ func (r *Router) ProcessOutbound() {
 
 		if sendMethod == MethodPropagated {
 			if r.outboundPropagationNode == nil {
-				log.Printf("No outbound propagation node for propagated message to %x", destinationHash)
+				r.logger().Error("No outbound propagation node for propagated message to %x", destinationHash)
 				r.failMessageLocked(message)
 				continue
 			}
@@ -2546,21 +2547,21 @@ func (r *Router) ProcessOutbound() {
 
 				peerIdentity := r.transport.Recall(r.outboundPropagationNode)
 				if peerIdentity == nil {
-					log.Printf("Cannot recall identity for propagation node %x", r.outboundPropagationNode)
+					r.logger().Error("Cannot recall identity for propagation node %x", r.outboundPropagationNode)
 					r.failMessageLocked(message)
 					continue
 				}
 
 				dest, err := rns.NewDestination(r.transport, peerIdentity, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
 				if err != nil {
-					log.Printf("Cannot create destination for propagation node: %v", err)
+					r.logger().Error("Cannot create destination for propagation node: %v", err)
 					remaining = append(remaining, message)
 					continue
 				}
 
 				link, err := r.newLink(r.transport, dest)
 				if err != nil {
-					log.Printf("Cannot establish link to propagation node: %v", err)
+					r.logger().Error("Cannot establish link to propagation node: %v", err)
 					remaining = append(remaining, message)
 					continue
 				}
@@ -2574,7 +2575,7 @@ func (r *Router) ProcessOutbound() {
 					if r.outboundPropagationLink == link {
 						r.outboundPropagationLink = nil
 					}
-					log.Printf("Cannot establish link to propagation node: %v", err)
+					r.logger().Error("Cannot establish link to propagation node: %v", err)
 				}
 			}
 			remaining = append(remaining, message)
@@ -2872,6 +2873,8 @@ func (r *Router) ProcessDeferredStamps() {
 // failMessageLocked marks a message as failed and invokes its FailedCallback.
 // Mirrors Python LXMRouter.fail_message() lines 2389-2402.
 func (r *Router) failMessageLocked(message *Message) {
+	// Python LXMRouter.fail_message (LXMRouter.py:2565).
+	r.logger().Debug("LXM %x failed to send", message.Hash)
 	message.SetProgress(0)
 	if message.state != StateRejected {
 		message.SetState(StateFailed)
@@ -3547,7 +3550,7 @@ func (r *Router) EnablePropagation() {
 	}
 	if err := os.MkdirAll(r.propagationMessageStorePath(), 0o755); err != nil {
 		r.mu.Unlock()
-		log.Printf("Could not create LXMF propagation store: %v", err)
+		r.logger().Error("Could not create LXMF propagation store: %v", err)
 		return
 	}
 	r.reindexPropagationStoreLocked()
@@ -3555,7 +3558,7 @@ func (r *Router) EnablePropagation() {
 	r.mu.Unlock()
 
 	if err := r.LoadPeers(); err != nil {
-		log.Printf("Could not load propagation peers from storage: %v", err)
+		r.logger().Error("Could not load propagation peers from storage: %v", err)
 		return
 	}
 	r.mu.Lock()
@@ -3564,7 +3567,7 @@ func (r *Router) EnablePropagation() {
 	r.mu.Unlock()
 	r.activateStaticPeers()
 	if err := r.LoadNodeStats(); err != nil {
-		log.Printf("Could not load propagation node stats from storage: %v", err)
+		r.logger().Error("Could not load propagation node stats from storage: %v", err)
 	}
 }
 
@@ -4029,9 +4032,9 @@ func (r *Router) loadTransientIDCacheOrEmpty(path, label string) map[string]time
 		return cache
 	}
 	if errors.Is(err, errInvalidTransientIDCacheFormat) {
-		log.Printf("Invalid data format for loaded %s transient IDs, recreating...", label)
+		r.logger().Error("Invalid data format for loaded %s transient IDs, recreating...", label)
 	} else {
-		log.Printf("Could not load %s message ID cache from storage: %v", label, err)
+		r.logger().Error("Could not load %s message ID cache from storage: %v", label, err)
 	}
 	return map[string]time.Time{}
 }
@@ -4266,6 +4269,35 @@ func (r *Router) ingestPropagationMessageAllowDuplicate(lxmfData, stampData []by
 	return len(storedID) > 0
 }
 
+// logger returns the RNS logger for the transport, or nil. The Logger methods
+// are nil-receiver safe (they fall back to the standard logger), but a nil
+// transport interface cannot be called, so it is guarded here. Routing these
+// events through the RNS logger sends LXMF send/receive/deliver events to the
+// embedding app's logfile (Python LXMRouter logs the same events via RNS.log,
+// which lands in the app log), instead of the standard logger's stderr stream.
+func (r *Router) logger() *rns.Logger {
+	if r.transport == nil {
+		return nil
+	}
+	return r.transport.GetLogger()
+}
+
+// methodName renders an LXMF delivery method for log output.
+func methodName(method int) string {
+	switch method {
+	case MethodOpportunistic:
+		return "opportunistic"
+	case MethodDirect:
+		return "direct"
+	case MethodPropagated:
+		return "propagated"
+	case MethodPaper:
+		return "paper"
+	default:
+		return fmt.Sprintf("unknown(0x%02x)", method)
+	}
+}
+
 func (r *Router) handleInboundMessage(message *Message) {
 	if message == nil {
 		return
@@ -4276,13 +4308,15 @@ func (r *Router) handleInboundMessage(message *Message) {
 	// blackhole list before any delivery state is mutated or the callback
 	// fires. SourceBlackholed is set during unpack via Transport.IsBlackholed.
 	if message.SourceBlackholed {
-		log.Printf("Dropping LXM from blackholed identity %x", message.SourceHash)
+		r.logger().Debug("Dropping LXM from blackholed identity %x", message.SourceHash)
 		return
 	}
 
 	r.mu.Lock()
 	if r.hasDeliveredTransientIDLocked(message.Hash) {
 		r.mu.Unlock()
+		// Python LXMRouter.lxmf_delivery (LXMRouter.py:1918-1919).
+		r.logger().Debug("Router ignored already received message from %x", message.SourceHash)
 		return
 	}
 	r.locallyDeliveredIDs[string(append([]byte{}, message.Hash...))] = r.now()
@@ -4293,6 +4327,8 @@ func (r *Router) handleInboundMessage(message *Message) {
 	}
 	callback := r.deliveryCallback
 	r.mu.Unlock()
+
+	r.logger().Debug("Received LXM %x from %x for %x (method %v), delivering to app", message.Hash, message.SourceHash, message.DestinationHash, methodName(message.method))
 
 	if callback != nil {
 		callback(message)
@@ -4640,7 +4676,7 @@ func (r *Router) reindexPropagationStoreLocked() {
 	indexed := map[string]*propagationEntry{}
 	dir, err := os.Open(r.propagationMessageStorePath())
 	if err != nil {
-		log.Printf("Could not read LXMF propagation store: %v", err)
+		r.logger().Error("Could not read LXMF propagation store: %v", err)
 		r.propagationEntries = indexed
 		r.propagationEntrySeq = 0
 		return
@@ -4649,13 +4685,13 @@ func (r *Router) reindexPropagationStoreLocked() {
 	names, err := dir.Readdirnames(-1)
 	closeErr := dir.Close()
 	if err != nil {
-		log.Printf("Could not read LXMF propagation store: %v", err)
+		r.logger().Error("Could not read LXMF propagation store: %v", err)
 		r.propagationEntries = indexed
 		r.propagationEntrySeq = 0
 		return
 	}
 	if closeErr != nil {
-		log.Printf("Could not close LXMF propagation store: %v", closeErr)
+		r.logger().Error("Could not close LXMF propagation store: %v", closeErr)
 		r.propagationEntries = indexed
 		r.propagationEntrySeq = 0
 		return
@@ -4764,7 +4800,7 @@ func (r *Router) removePropagationEntryLocked(transientID string) {
 	delete(r.propagationEntries, transientID)
 	if entry.path != "" {
 		if err := os.Remove(entry.path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			log.Printf("Could not remove persisted propagation message %x: %v", transientID, err)
+			r.logger().Error("Could not remove persisted propagation message %x: %v", transientID, err)
 		}
 	}
 }
@@ -4954,7 +4990,7 @@ func (r *Router) getAnnounceAppDataLocked(destinationHash []byte) []byte {
 	peerData := []any{displayNameField, stampCostField, []any{SFCompression}}
 	packed, err := msgpack.Pack(peerData)
 	if err != nil {
-		log.Printf("Could not pack announce app data: %v", err)
+		r.logger().Error("Could not pack announce app data: %v", err)
 		return nil
 	}
 	return packed
@@ -5007,7 +5043,7 @@ func (r *Router) getPropagationNodeAppDataLocked() []byte {
 
 	packed, err := msgpack.Pack(announceData)
 	if err != nil {
-		log.Printf("Could not pack propagation node app data: %v", err)
+		r.logger().Error("Could not pack propagation node app data: %v", err)
 		return nil
 	}
 	return packed
@@ -5114,7 +5150,7 @@ func (r *Router) requestMessagesFromPropagationNodeWithIdentity(identity *rns.Id
 	r.propagationTransferMaxMessages = maxMessages
 	if r.outboundPropagationNode == nil {
 		r.mu.Unlock()
-		log.Printf("Cannot request LXMF propagation node sync, no default propagation node configured")
+		r.logger().Warning("Cannot request LXMF propagation node sync, no default propagation node configured")
 		return
 	}
 	outboundNode := append([]byte{}, r.outboundPropagationNode...)
@@ -5132,16 +5168,16 @@ func (r *Router) requestMessagesFromPropagationNodeWithIdentity(identity *rns.Id
 		r.wantsDownloadOnPathAvailableAt = time.Time{}
 		r.propagationTransferState = PRLinkEstablished
 		r.mu.Unlock()
-		log.Printf("Requesting message list from propagation node")
+		r.logger().Debug("Requesting message list from propagation node")
 		if err := r.identifyLink(activeLink, identity); err != nil {
-			log.Printf("Could not identify to propagation node: %v", err)
+			r.logger().Error("Could not identify to propagation node: %v", err)
 			r.mu.Lock()
 			r.propagationTransferState = PRFailed
 			r.mu.Unlock()
 			return
 		}
 		if _, err := r.requestLink(activeLink, messageGetPath, []any{nil, nil}, r.messageListResponse, r.messageGetFailed, nil, 0); err != nil {
-			log.Printf("Could not request message list from propagation node: %v", err)
+			r.logger().Error("Could not request message list from propagation node: %v", err)
 			r.mu.Lock()
 			r.propagationTransferState = PRFailed
 			r.mu.Unlock()
@@ -5153,7 +5189,7 @@ func (r *Router) requestMessagesFromPropagationNodeWithIdentity(identity *rns.Id
 		return
 	}
 	if activeLink != nil {
-		log.Printf("Waiting for propagation node link to become active")
+		r.logger().Extreme("Waiting for propagation node link to become active")
 		return
 	}
 
@@ -5164,11 +5200,11 @@ func (r *Router) requestMessagesFromPropagationNodeWithIdentity(identity *rns.Id
 		r.wantsDownloadOnPathAvailableAt = time.Time{}
 		r.propagationTransferState = PRLinkEstablishing
 		r.mu.Unlock()
-		log.Printf("Establishing link to %x for message download (limit=%v)", outboundNode, maxMessages)
+		r.logger().Debug("Establishing link to %x for message download (limit=%v)", outboundNode, maxMessages)
 
 		peerIdentity := r.transport.Recall(outboundNode)
 		if peerIdentity == nil {
-			log.Printf("Cannot recall identity for propagation node %x", outboundNode)
+			r.logger().Error("Cannot recall identity for propagation node %x", outboundNode)
 			r.mu.Lock()
 			r.propagationTransferState = PRFailed
 			r.mu.Unlock()
@@ -5177,7 +5213,7 @@ func (r *Router) requestMessagesFromPropagationNodeWithIdentity(identity *rns.Id
 
 		dest, err := rns.NewDestination(r.transport, peerIdentity, rns.DestinationOut, rns.DestinationSingle, AppName, "propagation")
 		if err != nil {
-			log.Printf("Cannot create destination for propagation node: %v", err)
+			r.logger().Error("Cannot create destination for propagation node: %v", err)
 			r.mu.Lock()
 			r.propagationTransferState = PRFailed
 			r.mu.Unlock()
@@ -5186,7 +5222,7 @@ func (r *Router) requestMessagesFromPropagationNodeWithIdentity(identity *rns.Id
 
 		link, err := r.newLink(r.transport, dest)
 		if err != nil {
-			log.Printf("Cannot establish link to propagation node: %v", err)
+			r.logger().Error("Cannot establish link to propagation node: %v", err)
 			r.mu.Lock()
 			r.propagationTransferState = PRLinkFailed
 			r.mu.Unlock()
@@ -5208,7 +5244,7 @@ func (r *Router) requestMessagesFromPropagationNodeWithIdentity(identity *rns.Id
 		r.outboundPropagationLink = link
 		r.mu.Unlock()
 		if err := r.establishLink(link); err != nil {
-			log.Printf("Cannot establish link to propagation node: %v", err)
+			r.logger().Error("Cannot establish link to propagation node: %v", err)
 			r.mu.Lock()
 			if r.outboundPropagationLink == link {
 				r.outboundPropagationLink = nil
@@ -5218,10 +5254,10 @@ func (r *Router) requestMessagesFromPropagationNodeWithIdentity(identity *rns.Id
 			return
 		}
 	} else {
-		log.Printf("No path known for message download from propagation node %x, requesting path...", outboundNode)
+		r.logger().Debug("No path known for message download from propagation node %x, requesting path...", outboundNode)
 		if r.requestPath != nil {
 			if err := r.requestPath(outboundNode); err != nil {
-				log.Printf("Path request failed: %v", err)
+				r.logger().Debug("Path request failed: %v", err)
 				r.mu.Lock()
 				r.propagationTransferState = PRNoPath
 				r.mu.Unlock()
@@ -5264,7 +5300,7 @@ func (r *Router) requestMessagesPathJob() {
 		r.pathWaitSleep(100 * time.Millisecond)
 	}
 
-	log.Printf("Propagation node path request timed out")
+	r.logger().Debug("Propagation node path request timed out")
 	failureState := PRNoPath
 	r.acknowledgeSyncCompletion(false, &failureState)
 }
@@ -5321,7 +5357,7 @@ func (r *Router) getOutboundPropagationStampCost() (int, bool) {
 		return 0, false
 	}
 
-	log.Printf("Could not retrieve cached propagation node config. Requesting path to propagation node to get target propagation cost...")
+	r.logger().Debug("Could not retrieve cached propagation node config. Requesting path to propagation node to get target propagation cost...")
 	_ = r.requestPath(r.outboundPropagationNode)
 
 	const waitStep = 500 * time.Millisecond
@@ -5337,7 +5373,7 @@ func (r *Router) getOutboundPropagationStampCost() (int, bool) {
 		return cost, true
 	}
 
-	log.Printf("Propagation node stamp cost still unavailable after path request")
+	r.logger().Error("Propagation node stamp cost still unavailable after path request")
 	return 0, false
 }
 
@@ -5363,7 +5399,7 @@ func (r *Router) messageListResponse(receipt *rns.RequestReceipt) {
 	if code, ok := responseErrorCode(receipt.Response); ok {
 		switch code {
 		case peerErrorNoIdentity:
-			log.Printf("Propagation node indicated missing identification on list request, tearing down link.")
+			r.logger().Debug("Propagation node indicated missing identification on list request, tearing down link.")
 			r.mu.Lock()
 			link := r.outboundPropagationLink
 			r.propagationTransferState = PRNoIdentityRcvd
@@ -5373,7 +5409,7 @@ func (r *Router) messageListResponse(receipt *rns.RequestReceipt) {
 			}
 			return
 		case peerErrorNoAccess:
-			log.Printf("Propagation node did not allow list request, tearing down link.")
+			r.logger().Debug("Propagation node did not allow list request, tearing down link.")
 			r.mu.Lock()
 			link := r.outboundPropagationLink
 			r.propagationTransferState = PRNoAccess
@@ -5421,14 +5457,14 @@ func (r *Router) messageListResponse(receipt *rns.RequestReceipt) {
 			}
 
 			if _, err := r.requestLink(receipt.Link, messageGetPath, []any{wants, haves, deliveryLimit}, r.messageGetResponse, r.messageGetFailed, r.messageGetProgress, 0); err != nil {
-				log.Printf("Could not request messages from propagation node: %v", err)
+				r.logger().Error("Could not request messages from propagation node: %v", err)
 				r.mu.Lock()
 				r.propagationTransferState = PRFailed
 				r.mu.Unlock()
 			}
 			return
 		}
-		log.Printf("Invalid message list data received from propagation node")
+		r.logger().Debug("Invalid message list data received from propagation node")
 		r.mu.Lock()
 		link := r.outboundPropagationLink
 		r.mu.Unlock()
@@ -5472,7 +5508,7 @@ func (r *Router) messageListResponse(receipt *rns.RequestReceipt) {
 	}
 
 	if _, err := r.requestLink(receipt.Link, messageGetPath, []any{wants, haves, deliveryLimit}, r.messageGetResponse, r.messageGetFailed, r.messageGetProgress, 0); err != nil {
-		log.Printf("Could not request messages from propagation node: %v", err)
+		r.logger().Error("Could not request messages from propagation node: %v", err)
 		r.mu.Lock()
 		r.propagationTransferState = PRFailed
 		r.mu.Unlock()
@@ -5550,7 +5586,7 @@ func (r *Router) CancelPropagationNodeRequests() {
 		r.teardownLink(link)
 	}
 	r.acknowledgeSyncCompletion(true, nil)
-	log.Printf("Cancelling propagation node requests")
+	r.logger().Debug("Cancelling propagation node requests")
 }
 
 func (r *Router) propagationTransferSignallingPacket(data []byte, _ *rns.Packet) {
@@ -5574,7 +5610,7 @@ func (r *Router) propagationTransferSignallingPacket(data []byte, _ *rns.Packet)
 		return
 	}
 
-	log.Printf("Message rejected by propagation node")
+	r.logger().Error("Message rejected by propagation node")
 	r.CancelOutbound(message.MessageID, StateRejected)
 }
 
@@ -5585,7 +5621,7 @@ func (r *Router) messageGetResponse(receipt *rns.RequestReceipt) {
 	if code, ok := responseErrorCode(receipt.Response); ok {
 		switch code {
 		case peerErrorNoIdentity:
-			log.Printf("Propagation node indicated missing identification on get request, tearing down link.")
+			r.logger().Debug("Propagation node indicated missing identification on get request, tearing down link.")
 			r.mu.Lock()
 			link := r.outboundPropagationLink
 			r.propagationTransferState = PRNoIdentityRcvd
@@ -5595,7 +5631,7 @@ func (r *Router) messageGetResponse(receipt *rns.RequestReceipt) {
 			}
 			return
 		case peerErrorNoAccess:
-			log.Printf("Propagation node did not allow get request, tearing down link.")
+			r.logger().Debug("Propagation node did not allow get request, tearing down link.")
 			r.mu.Lock()
 			link := r.outboundPropagationLink
 			r.propagationTransferState = PRNoAccess
@@ -5619,7 +5655,7 @@ func (r *Router) messageGetResponse(receipt *rns.RequestReceipt) {
 		r.propagationTransferLastResultSet = true
 		r.mu.Unlock()
 		if err := r.saveLocallyDeliveredTransientIDs(); err != nil {
-			log.Printf("Could not save locally delivered message ID cache: %v", err)
+			r.logger().Error("Could not save locally delivered message ID cache: %v", err)
 		}
 		return
 	}
@@ -5629,7 +5665,7 @@ func (r *Router) messageGetResponse(receipt *rns.RequestReceipt) {
 		if panicMessage, shouldPanic := invalidMessageGetResponsePanic(receipt.Response); shouldPanic {
 			panic(panicMessage)
 		}
-		log.Printf("Invalid message data received from propagation node")
+		r.logger().Debug("Invalid message data received from propagation node")
 		return
 	}
 
@@ -5653,7 +5689,7 @@ func (r *Router) messageGetResponse(receipt *rns.RequestReceipt) {
 	}
 	if len(haves) > 0 {
 		if _, err := r.requestLink(receipt.Link, messageGetPath, []any{nil, haves}, nil, r.messageGetFailed, nil, 0); err != nil {
-			log.Printf("Could not send propagation purge acknowledgement: %v", err)
+			r.logger().Error("Could not send propagation purge acknowledgement: %v", err)
 		}
 	}
 
@@ -5665,7 +5701,7 @@ func (r *Router) messageGetResponse(receipt *rns.RequestReceipt) {
 	r.propagationTransferLastResultSet = true
 	r.mu.Unlock()
 	if err := r.saveLocallyDeliveredTransientIDs(); err != nil {
-		log.Printf("Could not save locally delivered message ID cache: %v", err)
+		r.logger().Error("Could not save locally delivered message ID cache: %v", err)
 	}
 }
 
@@ -5805,7 +5841,7 @@ func (r *Router) messageGetProgress(receipt *rns.RequestReceipt) {
 }
 
 func (r *Router) messageGetFailed(_ *rns.RequestReceipt) {
-	log.Printf("Message list/get request failed")
+	r.logger().Debug("Message list/get request failed")
 	r.mu.Lock()
 	link := r.outboundPropagationLink
 	r.mu.Unlock()
