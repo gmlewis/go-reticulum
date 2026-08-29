@@ -34,6 +34,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
@@ -103,6 +104,12 @@ func runNode(opts options, stdout, stderr io.Writer) int {
 		return 255
 	}
 
+	configDir, err := resolveNodeConfigDir(opts.configDir)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "%s\n", err)
+		return 255
+	}
+
 	logger := rns.NewLogger()
 	if opts.quiet > 0 {
 		logger.SetLogLevel(rns.LogCritical)
@@ -112,14 +119,14 @@ func runNode(opts options, stdout, stderr io.Writer) int {
 		logger.SetLogLevel(rns.LogInfo)
 	}
 
-	node, err := newReticulumGitNode(opts.configDir, logger)
+	node, err := newReticulumGitNode(configDir, logger)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "Could not initialize git node: %s\n", err)
 		return 255
 	}
 
 	if opts.printIdentity {
-		clientIdentityPath := opts.configDir + "/client_identity"
+		clientIdentityPath := filepath.Join(configDir, "client_identity")
 		clientIdentity, err := loadOrCreateIdentity(clientIdentityPath, logger)
 		if err != nil {
 			_, _ = fmt.Fprintf(stderr, "Could not load client identity: %s\n", err)

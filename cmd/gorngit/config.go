@@ -58,6 +58,33 @@ type nodeConfig struct {
 	unicodeIcons bool
 }
 
+// resolveNodeConfigDir resolves the effective node config directory. When
+// configDir is empty it mirrors ReticulumGitNode.__init__ (server.py): /etc/rngit
+// if it exists and holds a config file; otherwise ~/.config/rngit when that
+// exists and holds a config file (in which case ~/.rngit/reticulum is used,
+// as upstream); otherwise ~/.rngit.
+func resolveNodeConfigDir(configDir string) (string, error) {
+	if configDir != "" {
+		return configDir, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("could not determine home dir: %w", err)
+	}
+	if info, err := os.Stat("/etc/rngit"); err == nil && info.IsDir() {
+		if _, err := os.Stat(filepath.Join("/etc/rngit", "config")); err == nil {
+			return "/etc/rngit", nil
+		}
+	}
+	configDirAlt := filepath.Join(home, ".config", "rngit")
+	if info, err := os.Stat(configDirAlt); err == nil && info.IsDir() {
+		if _, err := os.Stat(filepath.Join(configDirAlt, "config")); err == nil {
+			return filepath.Join(home, ".rngit", "reticulum"), nil
+		}
+	}
+	return filepath.Join(home, ".rngit"), nil
+}
+
 // defaultNodeConfig returns the baseline config used when no config file
 // exists, mirroring __default_rngit_config__ (server.py). The announce
 // interval defaults to 6 hours (360 minutes).
