@@ -455,7 +455,326 @@ application is a BOM and a `micron` page away.
 
 ---
 
-## 7. Summary
+## 7. Embedded gonomadnet: the whole Go stack as bare-metal firmware
+
+Everything above treats the accelerators as coprocessors riding along with
+hosts that already run an OS. This section takes the hypothetical to its
+logical end: the shuttle succeeds and a follow-on chip integrates the four
+crypto cores **on the same die as a RISC-V (or ESP32-class) CPU** with
+enough RAM to be a real node — no Linux, no Darwin, no OS at all. What
+would it take for *this* repo and gonomadnet to run as firmware on that
+chip?
+
+Both repos were surveyed (August 2026) for their OS-facing surface; every
+claim below cites a real file. Headline findings before the detail:
+
+- **Dependency debt: none in go-reticulum.** Its `go.mod` has *zero*
+  `require` lines and there is **no cgo anywhere** — the entire library
+  is stdlib + intra-repo packages. The only raw syscalls in the tree are
+  two termios `ioctl`s in the serial interface layer. This is the single
+  most important fact for an embedded port.
+- **The seams are narrow but real**: `rns.ParseConfig(io.Reader)` for
+  config, the `interfaces.Interface`/`BaseInterface` contract plus
+  `NewPipeInterface` for transports, the `Logger` callback seam, an
+  injectable RNG in `newResourceWithOptions`, and
+  `NewAppWithTransport`/daemon mode on the gonomadnet side.
+- **The sprawl is storage**: ~120 direct `os.*` call sites in
+  go-reticulum, ~200 in gonomadnet, no filesystem abstraction in either,
+  and four independent `tmp`+`rename` atomic-write schemes that assume
+  POSIX rename semantics.
+
+### 7.1 The Go-target question comes first, and it gates everything
+
+Stock Go has **no bare-metal target**: the runtime assumes an operating
+system (OS threads, mmap-based memory management, OS timers, netpoller).
+"A valid Go target" therefore means one of three things:
+
+| Path | Silicon class | How Go runs | RAM floor | Port fidelity |
+|---|---|---|---|---|
+| **Unikernel / Linux ABI** (pragmatic) | MMU application-class RISC-V core (CVA6/Rocket-class SoC, e.g. a StarFive/Milk-V-class part) | stock Go, `GOOS=linux riscv64`, on a Linux-syscall unikernel (Unikraft-class) or a tiny kernel carrying the syscall ABI | 32–64 MB | **100%** — literally the binaries that run on a Mac Mini today, including the full TUI |
+| **TinyGo** (MCU-class) | ESP32-C6 (RV32 @ 160 MHz, 512 KB SRAM), ESP32-P4 (dual RV32 @ 400 MHz, 768 KB SRAM + up to 32 MB PSRAM) | TinyGo runtime: its own scheduler (goroutines work), conservative non-moving GC, per-target `GOOS` (e.g. `//go:build esp32c3`) | 256 KB–8 MB | partial — see below |
+| **Custom Go runtime port** | any | port the GC/scheduler/syscall layer yourself | — | research project, not a plan |
+
+The concrete TinyGo risk list falls straight out of the import closure of
+the two repos:
+
+- `rns/msgpack` uses **`reflect`** — supported by TinyGo only partially,
+  and this is the one library-closure use that is load-bearing on every
+  packet. Much of it is `OrderedMap`-specific and could be rewritten as
+  static per-type paths, but that is a correctness-sensitive rewrite.
+- The non-`cmd` closure also reaches `math/big` (rns) and `image`
+  (via `qr`→PNG). Drop the PNG encoder on-device (QR *cells* still
+  render fine); audit the `math/big` use.
+- TinyGo's GC is conservative and non-moving. This matters because
+  `cmd/gonomadnet/memlimit.go` already measured the app: **live heap is
+  single-digit MB, with high allocation churn** in the draw path and the
+  per-announce persistence path. Single-digit MB live heap fits in PSRAM;
+  *high churn under a weak GC* is the actual risk, not the live set.
+- Concurrency shape is favorable: ~130 goroutine spawn sites across
+  go-reticulum's read/maintenance loops but a single bounded jobs loop in
+  gonomadnet and only ~15 raw `go func` sites in its tui+app code —
+  goroutine-light, not fan-out, which TinyGo can (carefully) carry.
+
+**Recommendation**: the unikernel build is the reference target (full
+parity, proven by the byte-diff harnesses in section 7.7), and TinyGo on
+a PSRAM-equipped P4-class part is the Leaf/relay-firmware target.
+
+### 7.2 Hardware endpoints in go-reticulum: the Interface layer is already the seam
+
+The radio/transport work is the *least* changed part of the stack, because
+the RNode pattern (section 6.4) already established it and the `Interface`
+plug point already exists:
+
+- `rns/interfaces/interfaces.go:63` defines one large `Interface`
+  contract; `rns/interfaces/base.go:75` `BaseInterface` implements the
+  bulk of it, so a new transport embeds it and overrides
+  `Send`/`Detach`/`Status`/`Type`. The repo convention for OS-specific
+  files (`-unix.go` implementation + `-other.go` "unsupported" stub)
+  means the tree already compiles on non-Linux/Darwin — an `embedded` /
+  TinyGo-per-target tag set (TinyGo sets per-target `GOOS` values like
+  `esp32c3`, so `//go:build esp32c3` works naturally) extends this
+  pattern; no new mechanism is needed.
+- **The framing codecs are pure**: `rns/interfaces/hdlc.go`, `kiss.go`,
+  `ax25-kiss-*`, and `rnode-radio.go` (all the `RNodeSetFrequency` /
+  `RNodeValidateRadioState` / bitrate builders) have zero OS imports.
+  `rnode-state.go` is a pure state machine. On the ASIC these run
+  unchanged.
+- **The on-die radio collapses the RNode protocol, it doesn't remove
+  it.** Today `RNodeInterface` exists because the LoRa modem is a
+  separate MCU spoken to over serial (`rnode-unix.go`, the only file
+  with the termios ioctls). On the ASIC the radio/modem block sits
+  behind the same SPI-or-MMIO register interface — same RNode framing,
+  same LoRa state machine, minus the serial transport. A
+  `rnode-embedded.go` (or `spi-lora.go`) implementing `Interface` on
+  on-die SPI is a few hundred lines over pure code that already exists.
+- **What gets dropped at compile time**: every TCP/UDP/UNIX/Auto/I2P/
+  pipe-subprocess interface is built on `net` (~22 symbols across the
+  family) or `os/exec` (`discovery.go` `LocationCmd`/`reachable_on`,
+  `pipe-subprocess.go`). Under the embedded tag set, build them out
+  (`//go:build !embedded` on those files) and ship **LoRa + KISS/HDLC +
+  SPI/UART** as the interface set. An lwIP-backed `UDPInterface`/
+  `TCPClientInterface` is the later tier for in-home WiFi — add it when
+  the Node-tier product needs it, not for bring-up.
+- Bring-up transport for firmware development is `NewPipeInterface`
+  (in-memory loopback) plus a UART byte-stream `Interface` — the same
+  shape as section 6.4's BLE-over-SPI bridge, which is really the same
+  feature with a different radio on the other end.
+
+One governance note: `Transport` (`rns/transport.go:126`) is itself an
+interface with `Start(storagePath string)`. A minimal in-memory transport
+implementing dispatch + no-op persistence would be the fastest route to a
+running (lossy, non-persistent) firmware node for interop testing, before
+the storage layer below is finished.
+
+### 7.3 Storage: the real work is not "an SSD", it is atomicity and wear
+
+The intuition "file operations need some other mechanism" is exactly
+right, and the survey sharpens it into a design rule: **a raw SD card
+(FAT32, backed by the card's own wear-leveling and real rename support)
+is the pragmatic storage answer, and choosing it dissolves roughly half
+the problem** — because both repos assume POSIX semantics, and FAT
+provides the ones they actually use. The alternative path (NOR flash +
+littlefs-style log-structured FS) is smaller/faster but has no rename,
+which forces a redesign of the atomic-write layer rather than a port.
+
+**go-reticulum inventory** (no choke point — this is the largest
+mechanical obstacle in either repo):
+
+- ~120 direct `os.*` file-I/O sites, concentrated in `rns/transport.go`
+  (~48), `lxmf/router.go` (~25), `rns/discovery.go` (~17), all composing
+  raw string paths via `path/filepath`.
+- The storage *root* is already injected — `Transport.Start(storagePath)`
+  receives it from `rns/rns.go` — so path redirection is free; the
+  *calls themselves* are not injectable.
+- Four independent atomic-write implementations (canonical reusable one
+  at `lxmf/message.go:1139` `atomicWriteFile`; duplicates in
+  `rns/transport.go:4244`, `rns/destination.go:387`,
+  `rns/blackhole-updater.go:392`), all `tmp`+`os.Rename`, with
+  `os.Getpid()`-derived tmp names.
+- Layout assumptions: `rns/rns-config.go` `ensureStartupLayout` creates
+  the 7-directory tree (`storage`, `storage/cache{,/announces}`,
+  `storage/resources`, `storage/identities`, `storage/blackhole`,
+  `interfaces`); LXMF keeps a one-file-per-message propagation store
+  (`lxmf/router.go` `writePropagationMessageFile` / reindex walk).
+- Seams that already exist and should be preserved/extended:
+  `rns.ParseConfig(io.Reader)` (`rns/config.go:51`) — config is fully
+  divertible to a flash blob or constant; `rns/logger.go`
+  `SetLogDest`/`SetLogCallback` — zero file I/O needed if a callback is
+  set; `newResourceWithOptions(..., randRead)` — the RNG seam that maps
+  to the hardware entropy peripheral; clock injections in
+  `backbone.go`/`blackhole-updater.go`/`lxmf/peer.go`.
+
+The work item that makes both this *and* every future target tractable:
+
+**Create an `rns/storagefs` (or repo-root `fsops`) package** with a small
+filesystem interface (Read/Write/List/Stat/Delete/Mkdir) and two
+backends:
+
+1. `osfs` — thin pass-through to `os.*`, byte-identical behavior, routed
+   behind golden tests (the existing Python-parity discipline applies:
+   every hosted build must produce byte-identical on-disk state). All
+   ~120 call sites migrate to it; this alone is a large but mechanical
+   diff whose behavior change is nil.
+2. An embedded backend — either FAT-over-SD (rename works; recommended)
+   or a journaling record store over raw flash, where atomicity comes
+   from checksummed append-with-replay (littlefs-style) instead of
+   rename, and the ~10–20 `os.Rename`/`os.CreateTemp` sites collapse
+   into backend-internal transactions.
+
+Also centralized there: path *layout*. The 7-directory RNS layout and
+gonomadnet's 9-directory layout (`nomadnet/storage/storage.go`) are
+hosted conventions; an embedded build can flatten them behind the
+interface without touching callers. The on-disk formats themselves are
+fine for flash: both repos' stores are msgpack (`rns/msgpack.OrderedMap`—
+already the BIN-key-corrected format), CBOR (`rrc`), and a hand-rolled
+INI parser that takes an `io.Reader`-shaped seam.
+
+**Flash-wear items regardless of backend** (all already identified in
+hosted profiling, conveniently):
+
+- `nomadnet/directory` persists eagerly on every `Remember` — batch it.
+- Per-announce known-destination re-saves (flagged in
+  `cmd/gonomadnet/memlimit.go` as an allocation-churn source too).
+- The LXMF propagation store's per-message file create/rename churn
+  wants a log-structured replacement on any flash backend.
+
+### 7.4 Crypto: the Offloader stops being optional
+
+Section 5 introduced an `Offloader` as a nicety for hosts. On the ASIC
+the four accelerators are *the only* crypto engine and the software path
+is the bring-up/fallback. Because `rns/crypto` has **no provider pattern
+today** — nine files, ~700 lines, free functions and thin struct wrappers
+over stdlib — the work item is to put the seams where the hardware is:
+
+- **Packet envelope**: `crypto.Token` (`token.go`) is the single choke
+  point for AES-CBC+HMAC — give it a pluggable backend (software default;
+  hardware token pipe). Note the repo's AES is **CBC, not GCM** — the
+  accelerator must match this (which section 2's token pipe already does).
+- **Signatures/ECDH**: `Ed25519`/`X25519` key types in `ed25519.go` /
+  `x25519.go` — add `Sign`/`Verify`/`Exchange` dispatch through the
+  Offloader, keyed off destination, so per-ratchet packet decrypts hit
+  the Montgomery ladder.
+- **Stamps**: `lxmf/stamper.go` already restores the SHA-256 midstate —
+  route the candidate loop through the Offloader's stamper job interface;
+  the `workblockMidstate` optimization maps 1:1 onto the section 2
+  pipeline.
+- **Entropy**: `crypto/rand` reads are spread wide; centralize behind the
+  `randRead` seam (`rns/resource.go:530` is the existing precedent) and
+  point it at the hardware RNG.
+- On-die, the section 2 job model is unchanged — the SPI driver becomes
+  an MMIO register driver, and the Go-generated vectors from section 4
+  double as the firmware's own acceptance tests. Software fallback stays
+  under a build tag (or a runtime capability flag) both for bring-up and
+  for cross-compiling the same firmware image for non-ASIC boards.
+
+### 7.5 gonomadnet on-device: what survives, what doesn't
+
+The structural news from the gonomadnet survey is unexpectedly good:
+
+- **The seam is already cut.** The app-core packages (`nomadnet/app`,
+  `nomadnet/browser`, `nomadnet/node`, `nomadnet/directory`,
+  `nomadnet/config`, `nomadnet/conversation`, `nomadnet/rrc`,
+  `nomadnet/micron`, …) import **zero tview/tcell**. `nomadnet/micron`
+  imports only `strings` in non-test code and ships two renderers — one
+  tview-destination, one plain-text — so the markup engine is already
+  display-agnostic. `cmd/serve-page` (node serving + micron + RNS, no
+  app, no config, no TUI) is a working proof of the headless path, and
+  `gonomadnet -d` daemon mode runs the real stack with no terminal at
+  all (it is force-selected whenever stdin isn't a TTY).
+- **One reverse edge to sever**: `nomadnet/app/channels-adapters.go`
+  (~60 lines, the only core→TUI import; it mirrors the SendDeps
+  injection pattern). Moving the `HubView` interface down into the core
+  fully separates the layers.
+- **A non-terminal display is a real path, not a rewrite.** tcell's
+  `Screen` is an interface (~15 methods) with
+  `tcell.NewSimulationScreen` as a working in-memory reference
+  implementation, and `tview.Application.SetScreen()` is a public,
+  pre-`Run()` injection hook — no tview changes needed. Better: the
+  tcell fork's per-cell dirty rendering (unchanged cells skipped in
+  `drawCell`) is precisely the behavior a slow e-ink or serial display
+  backend wants, and the tview fork's `fullRedraw` mode already avoids
+  full-screen clears. An e-ink/LCD `Screen` implementation is a
+  board-support-package task, small enough to live next to the drivers.
+- **What carries vs. what doesn't in `tui/`** (33.5k LOC, 119 files,
+  one flat package, all terminal-parity-specific): the *logic* carries —
+  `debouncer.go`, `glyphs.go`, `palette.go`, `borders.go`,
+  `formatters.go`, the micron-view renderer wiring. The urwid-port
+  widget set (`urwid-button/checkbox/columns`), mouse capture, clipboard
+  (`golang.design/x/clipboard` — the one heavyweight dependency chain:
+  purego/shiny/mobile/x11), PTY embedded terminal (`creack/pty`,
+  `tui/vterm.go`), and every `os/exec` launcher do not, and should be
+  compiled out under the embedded tags. Keep `rsc.io/qr` (pure encoder)
+  — QR identity exchange is arguably *more* useful on a display than on
+  a terminal.
+- **The honest scope decision**: a full TUI on a P4-class MCU is the
+  stretch goal; the *first* embedded UI should be the View-tier pattern
+  from section 6.2 — render micron pages (`view-mu` model: fetch →
+  `micron.Parse` → styled-chars/framebuffer draw) with a link cursor and
+  a reduced message view, driven by buttons/wheel. That needs `micron`
+  + `browser` + a framebuffer — not the 33.5k-line widget library.
+  The full `tui/` is the unikernel target's inheritance.
+- **Memory reality check** (drives silicon choice, not effort):
+  live heap is single-digit MB (`memlimit.go`), plus one bounded jobs
+  loop and per-interface read loops — comfortable in a 64 MB unikernel;
+  feasible in 8 MB PSRAM only if the draw-path churn is trimmed first
+  (the same churn fixes as the flash-wear list); not feasible in
+  512 KB-class parts. A relay/propagation Leaf (headless, no TUI) is the
+  natural first MCU target since its working set is dominated by the
+  transport tables, which section 7.3 already resizes for flash.
+
+### 7.5.1 The go-runtime sub-question for TinyGo
+
+If the MCU-class path is pursued, three library-closure facts become
+work items: (a) `rns/msgpack`'s reflect-driven pack/unpack → rewrite
+OrderedMap serialization as static per-type code (also a mild
+performance win everywhere); (b) drop `image`/PNG out of `qr`'s import
+closure on-device (already pure-Go separable); (c) `compress/bzip2` and
+the hand-rolled `rns/msgpack` are allocation-heavy — acceptable on
+PSRAM-class parts, and stamp workblocks already stream rather than
+accumulate. None of these affect the unikernel path.
+
+### 7.6 Checklist, repo by repo
+
+| # | Work item | Repo | Size | Notes |
+|---|---|---|---|---|
+| 1 | `fsops`/storage VFS package + `osfs` backend; migrate ~120 + ~200 `os.*` call sites behind golden tests | both | large, mechanical | the enabling refactor for *any* non-POSIX storage; behavior-neutral on hosted builds |
+| 2 | Embedded storage backend (FAT/SD first; journaling-flash second); collapse rename-based atomicity into backend | both | medium, subtle | new package only; call sites already migrated in #1 |
+| 3 | Crypto provider/`Offloader` seams: Token, Ed25519/X25519, stamper, RNG | go-reticulum | small | `rns/crypto` is 9 files; §5's interface design carries over |
+| 4 | Hardware `Interface` impls: on-die SPI LoRa + UART/KISS byte-stream (rnode-embedded); build-tag the `net`-family interfaces out | go-reticulum | medium | framing/protocol code already exists and is OS-free |
+| 5 | Build-tag scheme: extend the established `-unix`/`-other` pattern with TinyGo per-target tags (`esp32c3`, …) plus a repo-wide `embedded` tag; stub the 3 `os/exec` sites | go-reticulum | small | the tree already compiles with `-other.go` stubs on unsupported platforms |
+| 6 | msgpack reflect → static codecs (TinyGo gate); drop PNG from `qr` closure on-device | go-reticulum | medium | nil behavior change on hosted builds |
+| 7 | Time/RNG/logging seams: centralize `time.Now` for tick-driven maintenance loops, route entropy + log through injected providers | go-reticulum | medium | logger seam already exists (`SetLogDest`/`LogCallback`) |
+| 8 | Sever the one core→TUI edge (`app/channels-adapters.go`, 60 lines) | go-nomadnet | trivial | HubView interface moves down |
+| 9 | Flash-wear batching: directory eager-persist, per-announce re-saves, propagation store | go-nomadnet | medium | benefits hosted nodes too |
+| 10 | Display `tcell.Screen` backend (e-ink/LCD framebuffer) + input (buttons/serial), injected via `tview.SetScreen` | forks/ firmware | medium | SimulationScreen is the reference; tcell per-cell dirty checking is e-ink-friendly |
+| 11 | Firmware substrate / board-support repo: TinyGo target defs, linker scripts, startup, peripheral drivers (SPI radio, SD/FAT or flash FS, display, entropy, RTC) | new | medium | where the "hardware shims" physically live |
+| 12 | Reduced micron-first UI for MCU builds (fetch → parse → framebuffer) | go-nomadnet | medium | reuses `micron` + `browser` wholesale |
+
+### 7.7 A phased path that reuses this repo's parity discipline
+
+1. **Phase E1 — seams on hosted builds** (behavior-neutral): storage
+   VFS (#1), crypto/Offloader seams (#3), `os/exec` stubs. Golden tests
+   prove byte-identical on-disk state and wire bytes. This phase pays
+   for itself in testability alone.
+2. **Phase E2 — embedded node, headless**: boot the app-core +
+   `serve-page`-shaped path on a Linux-ABI RISC-V target (QEMU → real
+   board) under the unikernel path; reuse the exact loopback A/B
+   comparator (`tooling/parity-ab.sh`, `cmd/serve-page`) to diff a
+   firmware node against a desktop node — the /parity tooling was built
+   for exactly this class of "same bytes out of both" verification.
+3. **Phase E3 — MCU-class firmware**: TinyGo build, FAT/SD storage,
+   LoRa `Interface`, micron-first UI, software crypto — a complete
+   Leaf/relay node.
+4. **Phase E4 — on-die crypto**: flip the provider seams to the
+   accelerators; the section 4 Go-vector tooling now serves as the
+   firmware bring-up testbench.
+5. Every phase keeps the section 6.2 rule: any firmware build must parse
+   and interoperate, byte for byte, against both this Go stack and the
+   Python SOT — the port is only done when the parity harness says so.
+
+---
+
+## 8. Summary
 
 - Offload targets, in priority order: **stamp grinding** (dominant,
   safest), **X25519/Ed25519** (shared field arithmetic), **AES+HMAC
@@ -479,3 +798,11 @@ application is a BOM and a `micron` page away.
   in-home streaming and low-energy telemetry, and BLE reaches the Go
   port CGo-free as an external SPI/UART interface device (the RNode
   trick, applied to a second radio).
+- And if the accelerator ever lands on the same die as the CPU
+  (section 7), both repos are firmware-portable with no dependency debt
+  and no cgo: the enabling work is a storage VFS layer (the ~320 `os.*`
+  call sites are the largest obstacle), crypto provider seams (the
+  Offloader), build-tagged hardware `Interface` implementations, and a
+  display backend for the TUI — with the unikernel path (stock Go,
+  MMU-class RISC-V) as the full-parity reference and TinyGo as the
+  MCU-class target.
