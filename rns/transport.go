@@ -5254,8 +5254,13 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 							ProofTimeout:      now.Add(proofTimeout),
 						}
 					} else {
-						// Add reverse table entry for proofs/responses
-						ts.reverseTable[string(packet.PacketHash)] = &ReverseEntry{
+						// Add reverse table entry for proofs/responses. The key
+						// is the TRUNCATED packet hash: proofs are addressed to
+						// the proven packet's truncated hash, so inserting under
+						// the full hash makes every later proof lookup miss and
+						// the hub silently drops the proof instead of returning
+						// it along the reverse path.
+						ts.reverseTable[string(packet.GetTruncatedHash())] = &ReverseEntry{
 							ReceivedInterface: iface,
 							OutboundInterface: entry.Interface,
 							Timestamp:         time.Now(),
