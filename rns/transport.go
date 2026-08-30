@@ -5176,10 +5176,20 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 			ts.deliverLinkProof(link, packet)
 			return
 		}
-		ts.logger.Info("Inbound: delivering packet %x (type=%v, context=%v) to local link %x", packet.PacketHash, packet.PacketType, packet.Context, link.linkID)
-		packet.Destination = link
-		link.receive(packet)
-		return
+		// A proof of delivery for a packet sent over a link (non-LRPROOF
+		// PROOF targeted at the link id) is NOT decrypted link data: the
+		// initiator-side link validates the signature. It is matched against
+		// outstanding packet receipts further below (Python
+		// Transport.py:2332-2360), so it must NOT be handed to link.receive,
+		// whose token decryption would reject it. Resource proofs are the
+		// exception: Python routes RESOURCE_PRF to link.receive
+		// (Transport.py:2317-2319) so the resource machinery can validate it.
+		if !(packet.PacketType == PacketProof && packet.Context != ContextResourcePrf) {
+			ts.logger.Info("Inbound: delivering packet %x (type=%v, context=%v) to local link %x", packet.PacketHash, packet.PacketType, packet.Context, link.linkID)
+			packet.Destination = link
+			link.receive(packet)
+			return
+		}
 	}
 
 	ts.logger.Debug("Inbound: no local destination or link found for packet %x (dest=%x, type=%v)", packet.PacketHash, packet.DestinationHash, packet.PacketType)
@@ -6060,6 +6070,9 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 			}
 			raw = processed
 		}
+
+		ts.logger.Debug("Outbound packet %x to %x via %v (%d hops)",
+			packet.GetTruncatedHash(), packet.DestinationHash, pathEntry.Interface.Name(), pathEntry.Hops)
 
 		if err := pathEntry.Interface.Send(raw); err != nil {
 			ts.logger.Error("Could not transmit on %v: %v", pathEntry.Interface.Name(), err)

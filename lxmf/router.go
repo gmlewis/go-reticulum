@@ -85,6 +85,7 @@ type Router struct {
 	deliveryCallback func(*Message)
 
 	hasPath                     func([]byte) bool
+	dropPath                    func([]byte) bool
 	hopsTo                      func([]byte) int
 	requestPath                 func([]byte) error
 	sendPacket                  func(*rns.Packet) error
@@ -365,6 +366,7 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 		hasPath:               ts.HasPath,
 		hopsTo:                ts.HopsTo,
 		requestPath:           ts.RequestPath,
+		dropPath:              ts.InvalidatePath,
 		sendPacket: func(packet *rns.Packet) error {
 			return packet.Send()
 		},
@@ -2399,13 +2401,14 @@ func (r *Router) ProcessOutbound() {
 		switch message.state {
 		case StateSent:
 			// Python removes propagated messages from the queue once SENT
-			// (process_outbound line 2542-2544). Direct/opportunistic messages
-			// stay in the queue awaiting delivery confirmation.
+			// (process_outbound line 2542-2544), but keeps opportunistic and
+			// direct messages in the pending list so later passes re-send
+			// them (LXMRouter.py:2735-2761). Fall through for non-propagated
+			// messages so the retry cadence below applies; skipping them here
+			// would leave a lost opportunistic packet stuck at SENT forever.
 			if message.method == MethodPropagated {
 				continue
 			}
-			remaining = append(remaining, message)
-			continue
 		case StateDelivered:
 			// Mirrors Python LXMRouter.process_outbound (LXMRouter.py:2689-
 			// 2692): after removing a delivered message from the outbound
@@ -2583,7 +2586,11 @@ func (r *Router) ProcessOutbound() {
 		}
 
 		if sendMethod == MethodOpportunistic {
+			r.logger().Debug("Opportunistic pass for %x: state=%d attempts=%d hasPath=%v nextIn=%.1fs",
+				destinationHash, message.state, message.DeliveryAttempts, r.hasPath(destinationHash), message.NextDeliveryAttempt-nowSeconds)
 			if !r.hasPath(destinationHash) {
+				r.logger().Debug("Opportunistic %x: no path, attempts=%d (max pathless=%d)",
+					destinationHash, message.DeliveryAttempts, maxPathlessTries)
 				if message.DeliveryAttempts >= maxPathlessTries {
 					_ = r.requestPath(destinationHash)
 					message.NextDeliveryAttempt = float64(r.now().Add(pathRequestWait).UnixNano()) / 1e9
@@ -2594,6 +2601,35 @@ func (r *Router) ProcessOutbound() {
 				remaining = append(remaining, message)
 				continue
 			}
+
+			// Mirror Python LXMRouter.process_outbound (LXMRouter.py:2743-2752):
+			// after a transmission over an evidently failing route, retry by
+			// dropping the possibly stale path and requesting a rediscovery
+			// instead of blindly re-sending over the same route. Only messages
+			// that were actually SENT rediscover at this attempt count — a
+			// message whose path just recovered while it was still pathless
+			// must transmit immediately, not discard its only working route.
+			if message.state == StateSent && message.DeliveryAttempts == maxPathlessTries+1 {
+				if r.dropPath != nil {
+					r.dropPath(destinationHash)
+				}
+				_ = r.requestPath(destinationHash)
+				message.DeliveryAttempts++
+				message.NextDeliveryAttempt = float64(r.now().Add(pathRequestWait).UnixNano()) / 1e9
+				remaining = append(remaining, message)
+				continue
+			}
+
+			// Mirror Python (LXMRouter.py:2754-2758): re-send the raw
+			// opportunistic packet every DELIVERY_RETRY_WAIT until the
+			// delivery receipt confirms. Messages in StateSent remain in the
+			// pending queue, so this re-fires on later passes.
+			if message.NextDeliveryAttempt > 0 && nowSeconds < message.NextDeliveryAttempt {
+				remaining = append(remaining, message)
+				continue
+			}
+			message.DeliveryAttempts++
+			message.NextDeliveryAttempt = float64(r.now().Add(deliveryRetryWait).UnixNano()) / 1e9
 		}
 
 		if sendMethod == MethodDirect {
@@ -2695,6 +2731,7 @@ func (r *Router) ProcessOutbound() {
 		}
 
 		if err := r.sendMessageLocked(message); err != nil {
+			r.logger().Error("Sending LXM %x (dest %x) failed: %v", message.Hash, destinationHash, err)
 			if errors.Is(err, errResourceRepresentationNotSupported) {
 				r.failMessageLocked(message)
 				continue
@@ -3017,6 +3054,8 @@ func (r *Router) sendMessagePacketLocked(message *Message) error {
 	}
 
 	packet := rns.NewPacketWithTransport(r.transport, message.Destination, packetData)
+	r.logger().Debug("Transmitting raw %v packet to %x (payload %d bytes)",
+		message.method, message.Destination.Hash, len(packetData))
 	if err := r.sendPacket(packet); err != nil {
 		return err
 	}
@@ -3293,6 +3332,13 @@ func (r *Router) deliveryPacket(data []byte, packet *rns.Packet) {
 	if packet == nil {
 		return
 	}
+
+	// Mirror Python LXMRouter.delivery_packet's first line (LXMRouter.py:1927):
+	// always prove the received delivery packet so the sender's packet receipt
+	// reaches the Delivered state. The receipt callback is the only signal that
+	// marks an opportunistic or direct message delivered; without this proof
+	// senders never confirm delivery and keep re-transmitting the message.
+	packet.Prove(nil)
 
 	method := MethodDirect
 	lxmfData := make([]byte, 0, len(data)+DestinationLength)

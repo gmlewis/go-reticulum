@@ -1046,11 +1046,158 @@ func TestProcessOutboundOpportunisticEscalatesToPathRequestThenSends(t *testing.
 	hasPath = true
 	router.ProcessOutbound()
 
+	// The message was never sent, so the path-recovery pass must transmit
+	// immediately: dropping and rediscovering the freshly recovered route
+	// (LXMRouter.py:2743-2752 only rediscovers after a failed transmission)
+	// would discard the only working path and the message could never leave.
 	if sendCount != 1 {
 		t.Fatalf("send count after path request recovery=%v want=1", sendCount)
 	}
+	if requestCount != 1 {
+		t.Fatalf("request path count after path request recovery=%v want=1", requestCount)
+	}
+	if msg.DeliveryAttempts != 3 {
+		t.Fatalf("attempts after path request recovery=%v want=3", msg.DeliveryAttempts)
+	}
 	if msg.State() != StateSent {
 		t.Fatalf("state after path request recovery=%v want=%v", msg.State(), StateSent)
+	}
+}
+
+// TestProcessOutboundOpportunisticRediscoveryAfterLostSend pins the route
+// rediscovery pass: once a message was actually SENT over a path and the
+// receipt never confirmed, the retry pass drops the possibly stale path and
+// requests a fresh one (LXMRouter.py:2743-2752) instead of re-sending over
+// the same route, then resumes sending.
+func TestProcessOutboundOpportunisticRediscoveryAfterLostSend(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+	msg.DesiredMethod = MethodOpportunistic
+
+	now := time.Now().UTC().Truncate(time.Second)
+	router.now = func() time.Time { return now }
+	router.hasPath = func(_ []byte) bool { return true }
+	dropCount := 0
+	router.dropPath = func(_ []byte) bool { dropCount++; return true }
+	requestCount := 0
+	router.requestPath = func(_ []byte) error { requestCount++; return nil }
+
+	sendCount := 0
+	router.sendPacket = func(_ *rns.Packet) error {
+		sendCount++
+		return nil
+	}
+
+	// First send over the initial path.
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+	if sendCount != 1 || msg.State() != StateSent {
+		t.Fatalf("after first send count=%v state=%v want=1/%v", sendCount, msg.State(), StateSent)
+	}
+
+	// Pass 2: cadence re-send (attempts 1→2).
+	now = now.Add(deliveryRetryWait + time.Second)
+	router.ProcessOutbound()
+	if sendCount != 2 {
+		t.Fatalf("send count after first retry=%v want=2", sendCount)
+	}
+
+	// Pass 3 (attempts=2, message SENT): rediscovery pass — drop + re-request,
+	// no transmission this pass.
+	now = now.Add(deliveryRetryWait + time.Second)
+	router.ProcessOutbound()
+	if dropCount != 1 {
+		t.Fatalf("drop path count after rediscovery pass=%v want=1", dropCount)
+	}
+	if requestCount != 1 {
+		t.Fatalf("request path count after rediscovery pass=%v want=1", requestCount)
+	}
+	if sendCount != 2 {
+		t.Fatalf("send count after rediscovery pass=%v want=2 (no resend over a dropped path)", sendCount)
+	}
+
+	// Pass 4: after the rediscovery wait, sending resumes on the fresh route.
+	now = now.Add(pathRequestWait + time.Second)
+	router.ProcessOutbound()
+	if sendCount != 3 {
+		t.Fatalf("send count after rediscovery recovery=%v want=3", sendCount)
+	}
+}
+
+// TestProcessOutboundOpportunisticRetriesSentMessagesUntilFailed pins the
+// opportunistic retry cadence: an opportunistic message whose raw packet was
+// not confirmed stays in the pending queue at StateSent and is re-sent on
+// every pass past DELIVERY_RETRY_WAIT (LXMRouter.py:2754-2758) until
+// MAX_DELIVERY_ATTEMPTS is reached, at which point it is marked FAILED —
+// never left stuck at SENT forever.
+func TestProcessOutboundOpportunisticRetriesSentMessagesUntilFailed(t *testing.T) {
+	t.Parallel()
+	ts := rns.NewTransportSystem(nil)
+	tmpDir := testutils.TempDir(t, tempDirPrefix)
+	router := mustTestNewRouter(t, ts, nil, tmpDir)
+
+	sourceID := mustTestNewIdentity(t, true)
+	destID := mustTestNewIdentity(t, true)
+	sourceDest := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	destination := mustTestNewDestination(t, ts, destID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+
+	msg := mustTestNewMessage(t, destination, sourceDest, "content", "title", nil)
+	msg.DesiredMethod = MethodOpportunistic
+
+	now := time.Now().UTC().Truncate(time.Second)
+	router.now = func() time.Time { return now }
+	router.hasPath = func(_ []byte) bool { return true }
+	dropCount := 0
+	router.dropPath = func(_ []byte) bool { dropCount++; return true }
+
+	sendCount := 0
+	router.sendPacket = func(_ *rns.Packet) error {
+		sendCount++
+		return nil
+	}
+
+	if err := router.HandleOutbound(msg); err != nil {
+		t.Fatalf("HandleOutbound: %v", err)
+	}
+	if msg.State() != StateSent || sendCount != 1 {
+		t.Fatalf("after first send state=%v sendCount=%v want=%v/1", msg.State(), sendCount, StateSent)
+	}
+
+	// Pass 2 (attempts=1): cadence re-send.
+	now = now.Add(deliveryRetryWait + time.Second)
+	router.ProcessOutbound()
+	if sendCount != 2 {
+		t.Fatalf("send count after first retry=%v want=2", sendCount)
+	}
+	// Pass 3 (attempts=2): path rediscovery pass.
+	now = now.Add(deliveryRetryWait + time.Second)
+	router.ProcessOutbound()
+	if dropCount != 1 {
+		t.Fatalf("drop path count after rediscovery pass=%v want=1", dropCount)
+	}
+	// Passes 4-5: cadence re-sends until the attempt budget runs out.
+	for i := 3; i <= int(maxDeliveryAttempts)-1; i++ {
+		now = now.Add(deliveryRetryWait + time.Second)
+		router.ProcessOutbound()
+		if sendCount != i {
+			t.Fatalf("send count after retry %v=%v want=%v", i, sendCount, i)
+		}
+	}
+	// Pass 6: attempt budget exhausted → FAILED, never stuck at SENT.
+	now = now.Add(deliveryRetryWait + time.Second)
+	router.ProcessOutbound()
+	if msg.State() != StateFailed {
+		t.Fatalf("state after attempt budget exhausted=%v want=%v", msg.State(), StateFailed)
 	}
 }
 

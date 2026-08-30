@@ -466,9 +466,15 @@ type PacketReceipt struct {
 }
 
 const (
-	// ExplLength is the length of an explicit proof.
-	ExplLength = TruncatedHashLength/8 + 64
-	// ImplLength is the length of an implicit proof.
+	// ExplLength is the length of an explicit proof: a full 32-byte packet
+	// hash plus a 64-byte signature (RNS/Packet.py:398,
+	// PacketReceipt.EXPL_LENGTH = Identity.HASHLENGTH//8 +
+	// Identity.SIGLENGTH//8). Note that this is the FULL packet hash, not the
+	// truncated one: both Identity.Prove and Link.ProvePacket emit
+	// hash+signature explicit proofs of this length.
+	ExplLength = HashLength/8 + 64
+	// ImplLength is the length of an implicit proof: signature only
+	// (RNS/Packet.py:399).
 	ImplLength = 64
 )
 
@@ -480,57 +486,77 @@ func (pr *PacketReceipt) ValidateProofPacket(proofPacket *Packet) bool {
 	return pr.ValidateProof(proofPacket.Data, proofPacket)
 }
 
-// ValidateLinkProof validates a raw proof for a link.
+// ValidateLinkProof validates a raw proof for a link. Mirrors RNS
+// PacketReceipt.validate_link_proof (Packet.py:434-454), which unconditionally
+// treats link proofs as explicit (the hardcoded "if True" gate): the proof
+// payload is the proven packet's full hash followed by the link's signature.
 func (pr *PacketReceipt) ValidateLinkProof(proof []byte, link *Link, proofPacket *Packet) bool {
-	if len(proof) == ExplLength {
-		proofHash := proof[:TruncatedHashLength/8]
-		signature := proof[TruncatedHashLength/8 : TruncatedHashLength/8+64]
-		if bytes.Equal(proofHash, pr.TruncatedHash) {
-			if link.remoteIdentity != nil && link.remoteIdentity.Verify(signature, pr.Hash) {
-				pr.mu.Lock()
-				pr.Status = ReceiptDelivered
-				pr.Proved = true
-				now := time.Now()
-				pr.ConcludedAt = float64(now.UnixNano()) / 1e9
-				pr.ProofPacket = proofPacket
-				link.lastProof = now
-				cb := pr.deliveryCallback
-				pr.mu.Unlock()
-				if cb != nil {
-					cb(pr)
-				}
-				return true
+	proofHash := proof[:HashLength/8]
+	if len(proof) < ExplLength {
+		return false
+	}
+	signature := proof[HashLength/8 : HashLength/8+64]
+	if bytes.Equal(proofHash, pr.Hash) {
+		// The proof is signed by the link's EPHEMERAL peer signing key from
+		// link establishment (Python Link.validate verifies against
+		// self.peer_sig_pub, Link.py:1187-1191), not the destination's
+		// static identity.
+		if link.Verify(signature, pr.Hash) {
+			pr.mu.Lock()
+			pr.Status = ReceiptDelivered
+			pr.Proved = true
+			now := time.Now()
+			pr.ConcludedAt = float64(now.UnixNano()) / 1e9
+			pr.ProofPacket = proofPacket
+			link.lastProof = now
+			cb := pr.deliveryCallback
+			pr.mu.Unlock()
+			if cb != nil {
+				cb(pr)
 			}
+			return true
 		}
 	}
 	return false
 }
 
-// ValidateProof validates a raw proof for a destination.
+// ValidateProof validates a raw proof for a destination. Mirrors RNS
+// PacketReceipt.validate_proof (Packet.py:479-534): an explicit proof carries
+// the proven packet's full hash plus a signature over that hash, while an
+// implicit proof is a bare signature over the packet hash (the packet itself
+// binds the proof, since only the true receiver knows its packet became
+// proven).
 func (pr *PacketReceipt) ValidateProof(proof []byte, proofPacket *Packet) bool {
-	if len(proof) == ExplLength {
-		proofHash := proof[:TruncatedHashLength/8]
-		signature := proof[TruncatedHashLength/8 : TruncatedHashLength/8+64]
-		if bytes.Equal(proofHash, pr.TruncatedHash) {
-			// Get destination identity to verify
-			var id *Identity
-			if d, ok := pr.Destination.(*Destination); ok {
-				id = d.identity
-			}
-			if id != nil && id.Verify(signature, pr.Hash) {
-				pr.mu.Lock()
-				pr.Status = ReceiptDelivered
-				pr.Proved = true
-				pr.ConcludedAt = float64(time.Now().UnixNano()) / 1e9
-				pr.ProofPacket = proofPacket
-				cb := pr.deliveryCallback
-				pr.mu.Unlock()
-				if cb != nil {
-					cb(pr)
-				}
-				return true
-			}
+	var signature []byte
+	switch {
+	case len(proof) >= ExplLength:
+		proofHash := proof[:HashLength/8]
+		signature = proof[HashLength/8 : HashLength/8+64]
+		if !bytes.Equal(proofHash, pr.Hash) {
+			return false
 		}
+	case len(proof) == ImplLength:
+		signature = proof[:ImplLength]
+	default:
+		return false
+	}
+	// Get destination identity to verify
+	var id *Identity
+	if d, ok := pr.Destination.(*Destination); ok {
+		id = d.identity
+	}
+	if id != nil && id.Verify(signature, pr.Hash) {
+		pr.mu.Lock()
+		pr.Status = ReceiptDelivered
+		pr.Proved = true
+		pr.ConcludedAt = float64(time.Now().UnixNano()) / 1e9
+		pr.ProofPacket = proofPacket
+		cb := pr.deliveryCallback
+		pr.mu.Unlock()
+		if cb != nil {
+			cb(pr)
+		}
+		return true
 	}
 	return false
 }
