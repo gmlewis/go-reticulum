@@ -5069,6 +5069,7 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 	}
 
 	packet := NewPacketFromRaw(raw)
+	packet.transport = ts
 	packet.ReceivingInterface = iface
 	if err := packet.Unpack(); err != nil {
 		ts.logger.Extreme("Received malformed packet, dropping it: %v", err)

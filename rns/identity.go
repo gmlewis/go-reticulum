@@ -481,7 +481,16 @@ func (id *Identity) Prove(packet *Packet, destination PacketDestination) {
 		destination = packet.GenerateProofDestination()
 	}
 
-	proof := NewPacketWithTransport(packet.transport, destination, proofData)
+	// Inbound packets parsed from raw bytes may not carry a transport, so fall
+	// back to the receiving destination's transport before building the proof
+	// packet; otherwise proof.Send has both packet.transport and
+	// destination.GetTransport nil and fails with "unknown transport".
+	transport := packet.transport
+	if transport == nil && packet.Destination != nil {
+		transport = packet.Destination.GetTransport()
+	}
+
+	proof := NewPacketWithTransport(transport, destination, proofData)
 	proof.PacketType = PacketProof
 	proof.ReceivingInterface = packet.ReceivingInterface
 	proof.AttachedInterface = packet.ReceivingInterface
