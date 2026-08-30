@@ -108,6 +108,19 @@ func NewBackboneInterface(name, bindIP string, bindPort int, handler InboundHand
 // Type returns the string "BackboneInterface" as the runtime type name.
 func (b *BackboneInterface) Type() string { return "BackboneInterface" }
 
+// HashString reproduces Python BackboneInterface.__str__
+// (RNS/Interfaces/BackboneInterface.py:560-563), which Interface.get_hash
+// hashes:
+//
+//	"BackboneInterface["+name+"/"+ip_str(bind_ip)+":"+str(bind_port)+"]"
+//
+// where ip_str brackets an IPv6 literal. This shadows the embedded
+// TCPServerInterface.HashString ("TCPServerInterface[...]") so the hash
+// matches Python for a Python-written destination_table lookup.
+func (b *BackboneInterface) HashString() string {
+	return "BackboneInterface[" + b.Name() + "/" + tcpHostPort(b.bindIP, b.bindPort) + "]"
+}
+
 // ConfigureFastFlapping sets the fast-flap blocking parameters and lazily
 // initialises the per-instance registry. It mirrors Python's config parsing of
 // block_fast_flapping / fast_flapping_threshold / fast_flapping_grace /
@@ -464,3 +477,25 @@ func NewDormantBackboneClientInterface(name string, handler InboundHandler) Inte
 
 // Type returns the string "BackboneClientInterface" as the runtime type name.
 func (b *BackboneClientInterface) Type() string { return "BackboneClientInterface" }
+
+// HashString reproduces Python BackboneClientInterface.__str__
+// (RNS/Interfaces/BackboneInterface.py:869-873), which Interface.get_hash
+// hashes:
+//
+//	"BackboneInterface["+name+"/"+ip_str(target_ip)+":"+str(target_port)+"]"
+//
+// Note the prefix is "BackboneInterface", NOT "BackboneClientInterface" —
+// this shadows the embedded TCPClientInterface.HashString
+// ("TCPInterface[...]"), which would otherwise never match hashes in a
+// Python-written destination_table. A server-spawned client uses the peer's
+// remote address, like Python (BackboneInterface.py: spawned handler sets
+// target_ip/target_port from client_address).
+func (b *BackboneClientInterface) HashString() string {
+	host := b.targetHost
+	port := b.targetPort
+	if b.spawned {
+		host = b.remoteIP
+		port = b.remotePort
+	}
+	return "BackboneInterface[" + b.Name() + "/" + tcpHostPort(host, port) + "]"
+}

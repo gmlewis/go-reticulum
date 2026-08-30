@@ -35,6 +35,12 @@ type UDPInterface struct {
 	forwardAddr *net.UDPAddr
 	conn        *net.UDPConn
 
+	// listenIPStr is the raw listen IP string as passed to NewUDPInterface.
+	// Python's UDPInterface.__str__ interpolates str(self.bind_ip) — the raw
+	// config string — so HashString must keep it verbatim (a resolved
+	// net.IP's String() would silently rewrite e.g. "localhost").
+	listenIPStr string
+
 	inboundHandler InboundHandler
 
 	running int32
@@ -60,6 +66,7 @@ func NewUDPInterface(name, listenIP string, listenPort int, forwardIP string, fo
 	ui := &UDPInterface{
 		BaseInterface:  bi,
 		listenAddr:     lAddr,
+		listenIPStr:    listenIP,
 		forwardAddr:    fAddr,
 		inboundHandler: handler,
 	}
@@ -154,6 +161,26 @@ func (ui *UDPInterface) Status() bool {
 // Type identifies this interface as a UDP transport.
 func (ui *UDPInterface) Type() string {
 	return "UDPInterface"
+}
+
+// HashString reproduces Python UDPInterface.__str__
+// (RNS/Interfaces/UDPInterface.py:131-132), which Interface.get_hash hashes:
+//
+//	"UDPInterface["+name+"/"+str(bind_ip)+":"+str(bind_port)+"]"
+//
+// using the bound listen address (not the forward target). Python does not
+// bracket an IPv6 bind_ip, so neither do we. Matching this byte-for-byte is
+// required so a destination_table written by Python (which stores this hash
+// in field [6]) can have its receiving interface resolved by Go's
+// findInterfaceByHash — otherwise the entry's Interface stays nil and the
+// path is unusable.
+func (ui *UDPInterface) HashString() string {
+	listenIP := ui.listenIPStr
+	port := 0
+	if ui.listenAddr != nil {
+		port = ui.listenAddr.Port
+	}
+	return "UDPInterface[" + ui.Name() + "/" + listenIP + ":" + fmt.Sprintf("%d", port) + "]"
 }
 
 // IsOut reports whether this interface can originate outbound datagrams.

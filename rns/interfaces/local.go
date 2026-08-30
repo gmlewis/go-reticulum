@@ -349,6 +349,23 @@ func (lci *LocalClientInterface) Type() string {
 	return "LocalInterface"
 }
 
+// HashString reproduces Python LocalClientInterface.__str__
+// (RNS/Interfaces/LocalInterface.py:372-374), which Interface.get_hash hashes:
+//
+//	"LocalInterface["+socket_path.replace("\0", "")+"]"   (AF_UNIX)
+//	"LocalInterface["+str(target_port)+"]"                (TCP fallback)
+//
+// AF_UNIX socket paths are NUL-stripped exactly as Python does so hashes
+// agree between a Python-written destination_table and Go's
+// findInterfaceByHash. Server-spawned clients inherit the server's socket
+// path or the peer's port, matching LocalInterface.py:440-473.
+func (lci *LocalClientInterface) HashString() string {
+	if lci.path != "" {
+		return "LocalInterface[" + strings.ReplaceAll(lci.path, "\x00", "") + "]"
+	}
+	return "LocalInterface[" + fmt.Sprintf("%d", lci.port) + "]"
+}
+
 // IsOut reports whether the local client can originate outbound traffic.
 func (lci *LocalClientInterface) IsOut() bool {
 	return true
@@ -586,6 +603,19 @@ func (lsi *LocalServerInterface) Status() bool {
 // Type identifies this interface as a local shared-instance transport.
 func (lsi *LocalServerInterface) Type() string {
 	return "LocalInterface"
+}
+
+// HashString reproduces Python LocalInterfaceServer.__str__
+// (RNS/Interfaces/LocalInterface.py:495-497), which Interface.get_hash
+// hashes:
+//
+//	"Shared Instance["+socket_path.replace("\0", "")+"]"   (AF_UNIX)
+//	"Shared Instance["+str(bind_port)+"]"                  (TCP fallback)
+func (lsi *LocalServerInterface) HashString() string {
+	if lsi.path != "" {
+		return "Shared Instance[" + strings.ReplaceAll(lsi.path, "\x00", "") + "]"
+	}
+	return "Shared Instance[" + fmt.Sprintf("%d", lsi.port) + "]"
 }
 
 // IsOut reports whether the server can originate traffic through spawned
