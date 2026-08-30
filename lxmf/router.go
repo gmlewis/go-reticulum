@@ -2061,6 +2061,19 @@ func (r *Router) RegisterDeliveryIdentity(identity *rns.Identity, displayName st
 		return nil, fmt.Errorf("create delivery destination: %w", err)
 	}
 
+	// Enable ratchets on the delivery destination so announces advertise a
+	// rotating forward-secrecy key. Without this, senders that learned a
+	// (possibly stale) ratchet for this destination encrypt with it and the
+	// node cannot decrypt those packets, since it has no ratchet keys of its
+	// own to try.
+	ratchetDir := filepath.Join(r.storagePath, "ratchets")
+	if err := os.MkdirAll(ratchetDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create lxmf ratchet directory: %w", err)
+	}
+	if err := destination.EnableRatchets(filepath.Join(ratchetDir, hex.EncodeToString(destination.Hash)+".ratchets")); err != nil {
+		return nil, fmt.Errorf("enable ratchets on delivery destination: %w", err)
+	}
+
 	destination.SetPacketCallback(r.deliveryPacket)
 	destination.SetLinkEstablishedCallback(r.linkEstablished)
 	r.deliveryDestinations[string(destination.Hash)] = destination
