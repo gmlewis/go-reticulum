@@ -13,6 +13,15 @@ import (
 
 // X25519PrivateKey encapsulates a standard Elliptic Curve Diffie-Hellman (ECDH) private key on the Curve25519 architecture.
 // It is designed to safely handle cryptographic key exchanges, ensuring robust and performant asymmetric encryption within the network layer.
+//
+// ASIC suitability: X25519 key agreement runs on the hot path of every
+// link establishment and every LXMF packet decrypt (the ephemeral/pubkey
+// exchange in Identity.Encrypt/Decrypt, including one trial per stored
+// ratchet). The Montgomery ladder is a fixed sequence of field operations
+// over GF(2^255-19) with no data-dependent branches, making it a textbook
+// ASIC/FPGA target: a single 256-bit multiplier plus dual 256-bit register
+// files, ~256 ladder steps at maybe 20-40k gates, usable for both X25519
+// and (via birational map) Ed25519 signing hardware.
 type X25519PrivateKey struct {
 	priv *ecdh.PrivateKey
 }

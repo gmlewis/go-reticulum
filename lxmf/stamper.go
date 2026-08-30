@@ -64,6 +64,18 @@ func StampWorkblockWithContext(ctx context.Context, material []byte, expandRound
 }
 
 // StampValue computes the hashcash value of a stamp by measuring the number of leading zero bits in its hash.
+//
+// ASIC suitability: this function and GenerateStamp below are the single
+// most compute-bound section of the port on constrained devices. A stamp
+// attempt is a fixed, self-contained computation — SHA-256 over a constant
+// workblock plus a small varying suffix, with leading-zero-bit counting on
+// the result. There is no data-dependent control flow, no dynamic memory,
+// and candidates are independent (embarrassingly parallel). This is the
+// ideal profile for offloading to a fixed-function ASIC or an FPGA
+// accelerator: a pipelined SHA-256 core (one round per clock, ~64-stage
+// pipeline plus midstate restore for the workblock prefix) tested against a
+// leading-zero counter, initialized by a small soft core (e.g. PicoRV32)
+// that supplies the workblock and collects the winning stamp.
 func StampValue(workblock, stamp []byte) int {
 	material := make([]byte, 0, len(workblock)+len(stamp))
 	material = append(material, workblock...)

@@ -12,6 +12,17 @@ import (
 
 // Ed25519PrivateKey firmly encapsulates a standard Ed25519 private key.
 // It empowers node identities to securely sign payloads and assert non-repudiable presence within the Reticulum network topology.
+//
+// ASIC suitability: Ed25519 signing/verification underpins every announce,
+// path token, proof, and LXMF ratchet file in this implementation. The core
+// operation is fixed-base (sign) and variable-base (verify) scalar
+// multiplication over Curve25519 with SHA-512 — mathematically fixed,
+// data-independent, and memory-light (no heap allocations beyond the
+// signature). It offloads cleanly to an ASIC/FPGA as an Ed25519 verify
+// block (the same primitive class RNode-class hardware already includes),
+// driven over SPI by a small host MCU; sign can remain in software or share
+// the Montgomery/Edwards ladder hardware with X25519 (they share the same
+// curve arithmetic).
 type Ed25519PrivateKey struct {
 	priv ed25519.PrivateKey
 }
