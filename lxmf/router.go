@@ -571,9 +571,11 @@ func (r *Router) propagationPacket(data []byte, packet *rns.Packet) {
 
 	entries, err := decodeAnyList(data)
 	if err != nil || len(entries) != 2 {
+		r.logger().Debug("Dropping malformed propagation packet (decode: %v, entries: %v)", err, len(entries))
 		return
 	}
 	if _, err := anyToFloat64(entries[0]); err != nil {
+		r.logger().Debug("Dropping propagation packet with malformed stamp cost: %v", err)
 		return
 	}
 
@@ -630,9 +632,11 @@ func (r *Router) propagationResourceConcluded(link *rns.Link, resource *rns.Reso
 
 	entries, err := decodeAnyList(resource.Data())
 	if err != nil || len(entries) != 2 {
+		r.logger().Debug("Dropping malformed propagation resource (decode: %v, entries: %v)", err, len(entries))
 		return
 	}
 	if _, err := anyToFloat64(entries[0]); err != nil {
+		r.logger().Debug("Dropping propagation resource with malformed stamp cost: %v", err)
 		return
 	}
 
@@ -3336,6 +3340,7 @@ func (r *Router) handleInboundResourceData(data []byte) {
 	}
 	message, err := UnpackMessageFromBytes(r.transport, data, MethodDirect)
 	if err != nil {
+		r.logger().Debug("Dropping malformed inbound propagation resource: %v", err)
 		return
 	}
 	r.handleInboundMessage(message)

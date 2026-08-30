@@ -6502,12 +6502,15 @@ func (ts *TransportSystem) tunnelSynthesizeHandler(data []byte, packet *Packet) 
 
 	remote, err := NewIdentity(false, logger)
 	if err != nil {
+		logger.Debug("Tunnel synthesize failed to create identity: %v", err)
 		return
 	}
 	if err := remote.LoadPublicKey(publicKey); err != nil {
+		logger.Debug("Tunnel synthesize rejected malformed public key %x: %v", publicKey, err)
 		return
 	}
 	if !remote.Verify(signature, signedData) {
+		logger.Debug("Tunnel synthesize rejected invalid signature from %x", publicKey)
 		return
 	}
 	if packet == nil {
