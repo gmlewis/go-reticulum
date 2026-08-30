@@ -3374,6 +3374,8 @@ func (r *Router) deliveryPacket(data []byte, packet *rns.Packet) {
 		defer r.inboundWG.Done()
 		message, err := UnpackMessageFromBytes(r.transport, lxmfData, method)
 		if err != nil {
+			r.logger().Error("Inbound LXMF delivery packet %x (%d bytes, method=%d) could not be unpacked: %v",
+				packet.PacketHash, len(data), method, err)
 			return
 		}
 		r.handleInboundMessage(message)
