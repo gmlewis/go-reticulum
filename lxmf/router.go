@@ -4392,6 +4392,16 @@ func (r *Router) handleInboundMessage(message *Message) {
 	}
 
 	r.mu.Lock()
+	// Mirror Python LXMRouter.lxmf_delivery (LXMRouter.py:1902-1904): drop an
+	// inbound LXM whose source hash is on the router's ignored list before any
+	// delivery state is mutated or the callback fires. Unlike the blackhole
+	// check above, this also covers sources whose identity is not recalled,
+	// since the ignored list is keyed on the destination hash.
+	if _, ok := r.ignoredList[string(message.SourceHash)]; ok {
+		r.mu.Unlock()
+		r.logger().Debug("Router ignored message from %x", message.SourceHash)
+		return
+	}
 	if r.hasDeliveredTransientIDLocked(message.Hash) {
 		r.mu.Unlock()
 		// Python LXMRouter.lxmf_delivery (LXMRouter.py:1918-1919).

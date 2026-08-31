@@ -101,6 +101,14 @@ Notes:
 - **Job model**: one MMIO register file (start, data-in, data-out, done)
   per accelerator; interrupt-driven. Firmware DMA-spools workblocks for
   stamp grinding and small buffers for everything else.
+- **The "no host MCU at all" option is real** (see §7.1.1): the
+  PicoRV32-class job-queue core could instead be an *application-class*
+  RV64 core running bare-metal Go under the TamaGo framework — TamaGo is
+  stock Go on bare metal (`GOOS=tamago`), proven on extension-constrained
+  RV64 SoCs (kotama: soft-float rv64imfc in 6–16 MB), and NXP i.MX6-class
+  TamaGo drivers already exist for SPI, UART and SD. In that configuration
+  the accelerator's host *is* a Go program running go-reticulum directly —
+  the section 7 vision without any second MCU.
 
 ---
 
@@ -287,7 +295,10 @@ pile of boards:
    gonomadnet and the Go RNS stack as-is (it already runs on a Mac Mini,
    a laptop, and Linux SBCs). That gives the whole family a real,
    already-written UI, message store, and browser — no need to invent a
-   companion app.
+   companion app. And there is a third, OS-free tier now on the table:
+   RISC-V64 blocks can run the very same Go stack as *bare-metal firmware*
+   under the TamaGo framework — no kernel, no Linux, full stdlib — which
+   is surveyed as a strong possibility in §7.1.1 for the Node/relay role.
 
 ### 6.3 The bandwidth honesty clause (camera reality)
 
@@ -482,16 +493,24 @@ claim below cites a real file. Headline findings before the detail:
   go-reticulum, ~200 in gonomadnet, no filesystem abstraction in either,
   and four independent `tmp`+`rename` atomic-write schemes that assume
   POSIX rename semantics.
+- **A bare-metal Go target already exists: TamaGo.** The usbarmory
+  [TamaGo](https://github.com/usbarmory/tamago) framework (surveyed at
+  `~/src/github.com/usbarmory/tamago`, master `b5e0153`, 2026-08-25,
+  tracking go 1.27) compiles *stock Go* — stock compiler, stock GC, full
+  standard library — to a `GOOS=tamago` bare-metal target and already
+  boots on RISC-V64 SoCs. It lands exactly between the unikernel and
+  TinyGo paths below; see new §7.1.1.
 
 ### 7.1 The Go-target question comes first, and it gates everything
 
 Stock Go has **no bare-metal target**: the runtime assumes an operating
 system (OS threads, mmap-based memory management, OS timers, netpoller).
-"A valid Go target" therefore means one of three things:
+"A valid Go target" therefore means one of four things:
 
 | Path | Silicon class | How Go runs | RAM floor | Port fidelity |
 |---|---|---|---|---|
 | **Unikernel / Linux ABI** (pragmatic) | MMU application-class RISC-V core (CVA6/Rocket-class SoC, e.g. a StarFive/Milk-V-class part) | stock Go, `GOOS=linux riscv64`, on a Linux-syscall unikernel (Unikraft-class) or a tiny kernel carrying the syscall ABI | 32–64 MB | **100%** — literally the binaries that run on a Mac Mini today, including the full TUI |
+| **TamaGo** (bare metal, strong possibility) | SoC-class RISC-V64 (Nuclei UX600-class, SiFive FU540-class, i.MX6UL/8MP-class); **RV64 only — no ESP32/Xtensa** | [TamaGo](https://github.com/usbarmory/tamago) modified Go distribution: `GOOS=tamago` + `GOOSPKG` runtime overlay, one board-package import; stock compiler, stock concurrent GC, complete stdlib | 6–16 MB proven (kotama `tiny`/`GOSOFT=1`), tens of MB comfortable | **near-100%** — the real compiler, runtime, and stdlib; caveats: no async preemption, riscv64 IRQ support still maturing (see 7.1.1) |
 | **TinyGo** (MCU-class) | ESP32-C6 (RV32 @ 160 MHz, 512 KB SRAM), ESP32-P4 (dual RV32 @ 400 MHz, 768 KB SRAM + up to 32 MB PSRAM) | TinyGo runtime: its own scheduler (goroutines work), conservative non-moving GC, per-target `GOOS` (e.g. `//go:build esp32c3`) | 256 KB–8 MB | partial — see below |
 | **Custom Go runtime port** | any | port the GC/scheduler/syscall layer yourself | — | research project, not a plan |
 
@@ -516,8 +535,115 @@ the two repos:
   goroutine-light, not fan-out, which TinyGo can (carefully) carry.
 
 **Recommendation**: the unikernel build is the reference target (full
-parity, proven by the byte-diff harnesses in section 7.7), and TinyGo on
-a PSRAM-equipped P4-class part is the Leaf/relay-firmware target.
+parity, proven by the byte-diff harnesses in section 7.7), and **TamaGo
+is the strong bare-metal target** for SoC-class RISC-V64 — which extends
+all the way to running both repos directly on the section 5 ASIC's own
+die. TinyGo on a PSRAM-equipped P4-class part remains the ESP32
+Leaf/relay-firmware target, where TamaGo cannot go (see 7.1.1).
+
+### 7.1.1 TamaGo: bare-metal stock Go on RISC-V64 — the fit analysis
+
+[**TamaGo**](https://github.com/usbarmory/tamago) (usbarmory; local
+checkout `~/src/github.com/usbarmory/tamago`, master `b5e0153`,
+2026-08-25, module targeting go 1.27) is a framework for running
+*unencumbered* Go programs on bare metal: a minimally modified Go
+distribution adds `GOOS=tamago` through a `runtime/goos` overlay
+(selected by the `GOOSPKG` variable), plus Go packages for SoC and board
+support. This is the mirror image of TinyGo: instead of a new
+LLVM-based compiler with a re-implemented runtime and partial language
+support, TamaGo keeps **the actual Go compiler, the actual scheduler,
+the actual concurrent GC, and complete standard library support** (the
+standard distribution test suite runs in CI), and changes exactly three
+things: an import (the board package), several `GOOSPKG` environment
+variables, and a handful of `runtime/goos` hooks — `RamStart`/`RamSize`,
+`CPUinit`/`Hwinit0`, `InitRNG`/`GetRandomData`, `Nanotime`, `Printk`,
+and optionally an `InitTime`-style date source — the "Rosetta Stone"
+for embedding the Go runtime on bare silicon.
+
+Why this matters specifically for this repo, point by point against the
+TinyGo risk list above:
+
+- **`rns/msgpack`'s `reflect` compiles unchanged.** TamaGo's stock
+  compiler and full stdlib mean the load-bearing reflect paths simply
+  work. Checklist item #6 (the msgpack static-codec rewrite, flagged as
+  a correctness-sensitive rewrite) is a **TinyGo-only** gate; a TamaGo
+  build needs none of it. Same for `math/big` and `image`/PNG in the
+  `qr` closure — the QR identity path survives intact, PNG encoder
+  included.
+- **The GC objection dissolves.** TamaGo runs the stock Go concurrent
+  mark-sweep collector as-is. The section 7.1 finding that "high churn
+  under a weak GC is the actual risk, not the live set" is a TinyGo
+  objection; TamaGo's GC is *the* GC that already carried this app on
+  hosted builds.
+- **No cgo, ever — and this repo needs none.** TamaGo forbids cgo
+  outright, which go-reticulum and gonomadnet already satisfy
+  (§7's headline finding). The two termios ioctls in the serial layer
+  are the only syscalls in the tree, and on bare metal the SoC UART
+  driver replaces them wholesale (see below).
+- **Bare-metal semantics match bare-metal reality.** No OS, no signals,
+  no environment variables — which this stack barely notices: config
+  already flows through `rns.ParseConfig(io.Reader)` (§7.3's seam),
+  logging routes through the `SetLogCallback` seam, and entropy maps to
+  `InitRNG`/`GetRandomData` over the SoC RNG peripheral (the same RNG
+  seam §7.4 wants for hardware entropy). `rns` needs no users, no
+  signals, and no environment.
+
+Silicon actually supported in-tree (master @ `b5e0153`):
+
+| Arch | SoC (in-tree package) | Representative board | Drivers today |
+|---|---|---|---|
+| riscv64 | Fisilink FSL91030 (Nuclei UX600, rv64imafdc, sv39, 400 MHz) | Milk-V Vega, Nuclei QEMU `eval_soc` | CLINT timer, UART, GPIO, WDT, HW RNG, `nanotime` |
+| riscv64 | SiFive FU540 | QEMU `sifive_u` | kotama boots it in **6 MB** RAM |
+| riscv64 | AI Foundry Erbium / ET-SoC-1 (`GOSOFT=1` soft-float, rv64imfc) | `erbium_emu`, `sys_emu` board packages | soft-float branch — single-threaded, `tiny`-tagged |
+| arm/arm64 | NXP i.MX6UL (USB armory Mk II), i.MX8M Plus | production boards | **SPI (`ecspi`), ENET, USDHC/SD, USB, GPIO, I2C, CAAM/DCP crypto, RNGB**, plus VirtIO/KVM/UEFI amd64 boards, go-net NIC drivers |
+
+The decisive datapoint for this repo's plans is
+[kotama](https://github.com/usbarmory/kotama), the "tiny RISC-V target"
+demonstrator: a TamaGo unikernel with a Go shell, post-quantum KEM
+benchmarking and an in-memory filesystem running on **16 MB** (AI Foundry
+Erbium/ET-SoC-1) and **6 MB** (FU540/QEMU) with an experimental
+soft-float compiler branch, at ~1 MiB of text+data runtime overhead.
+That is the exact firmware envelope this document's section 7 hypothesized
+for the relay/propagation Leaf — demonstrated, not projected, by a
+production project ([ArmoredWitness](https://github.com/transparency-dev/armored-witness),
+GoKey, go-boot, armory-drive are all TamaGo-based and in the field).
+
+What TamaGo does *not* solve, honestly:
+
+- **No ESP32, ever, and no RV32.** TamaGo targets amd64/arm/arm64/
+  riscv64/loong64. The ESP32 family is Xtensa (no Go backend exists) or
+  RV32 (outside TamaGo), so the section 6.2 Leaf/Eye tiers remain
+  TinyGo's territory. TamaGo and TinyGo are complementary tiers, not
+  competitors: TamaGo = Node/relay/ASIC-die-class RV64 silicon;
+  TinyGo = sub-1 MB MCU Leaves.
+- **riscv64 interrupt support is the youngest leg** (the FAQ documents
+  amd64/arm/arm64): CLINT timer and `nanotime` — everything the RNS
+  maintenance and tick loops actually need — are established; broad IRQ
+  plumbing is still landing. Checklist item #7 (seam-centralized ticks)
+  covers the gap either way.
+- **Storage, radio, and display drivers are board work** in both plans:
+  TamaGo ships peripheral register drivers (SPI `ecspi`, USDHC/SD card,
+  USB, ENET on NXP; CLINT/UART on RISC-V) but no FAT/littlefs and no
+  LoRa modem — so the `fsops` backends (#2), the SPI/UART LoRa
+  `Interface` (#4), and the display backend (#10) are **shared work,
+  not duplicated** across the TamaGo and TinyGo tracks.
+- **RAM floor is real**: ~6 MB proven minimum, tens of MB comfortable —
+  it serves the Node/relay/View tiers and the on-die endgame in §7's
+  introduction, and rules nothing in for 10-cent CH32V003-class Leaves,
+  which §6.2 never asked to run the full stack anyway.
+
+**Verdict: TamaGo is a good fit and earns a "strong possibility" here** —
+it keeps both non-negotiables of this repo (stdlib-only, no cgo) *and*
+full Go semantics on bare metal, deletes the two riskiest MCU-path items
+(#6's msgpack rewrite, the GC-churn exposure), and is the natural
+firmware substrate for the §2/§5 endgame where the four crypto cores
+share a die with an RV64 CPU: TamaGo's `cpuinit`/`goos` overlay is
+exactly the work "port the Go runtime to our SoC" sounds like, already
+done — kotama on the AI Foundry erbium/et-SoC-1 emulated SoCs is that
+precise precedent. The concrete entry point is checklist item **#13**:
+a headless relay/propagation node built `GOOS=tamago` for the Nuclei
+QEMU + Milk-V Vega RV64 target, validated by the same §7.7 A/B parity
+harness as everything else.
 
 ### 7.2 Hardware endpoints in go-reticulum: the Interface layer is already the seam
 
@@ -724,14 +850,18 @@ The structural news from the gonomadnet survey is unexpectedly good:
 
 ### 7.5.1 The go-runtime sub-question for TinyGo
 
-If the MCU-class path is pursued, three library-closure facts become
-work items: (a) `rns/msgpack`'s reflect-driven pack/unpack → rewrite
-OrderedMap serialization as static per-type code (also a mild
+If the MCU-class (TinyGo) path is pursued, three library-closure facts
+become work items: (a) `rns/msgpack`'s reflect-driven pack/unpack →
+rewrite OrderedMap serialization as static per-type code (also a mild
 performance win everywhere); (b) drop `image`/PNG out of `qr`'s import
 closure on-device (already pure-Go separable); (c) `compress/bzip2` and
 the hand-rolled `rns/msgpack` are allocation-heavy — acceptable on
 PSRAM-class parts, and stamp workblocks already stream rather than
-accumulate. None of these affect the unikernel path.
+accumulate. None of these affect the unikernel path — and none of them
+affect the TamaGo path either (§7.1.1): with the stock compiler and full
+stdlib, `reflect`, `math/big`, and `image` all compile as-is, making
+TamaGo the parity-faithful firmware route if a bare-metal node is wanted
+before any of these work items are done.
 
 ### 7.6 Checklist, repo by repo
 
@@ -741,14 +871,15 @@ accumulate. None of these affect the unikernel path.
 | 2 | Embedded storage backend (FAT/SD first; journaling-flash second); collapse rename-based atomicity into backend | both | medium, subtle | new package only; call sites already migrated in #1 |
 | 3 | Crypto provider/`Offloader` seams: Token, Ed25519/X25519, stamper, RNG | go-reticulum | small | `rns/crypto` is 9 files; §5's interface design carries over |
 | 4 | Hardware `Interface` impls: on-die SPI LoRa + UART/KISS byte-stream (rnode-embedded); build-tag the `net`-family interfaces out | go-reticulum | medium | framing/protocol code already exists and is OS-free |
-| 5 | Build-tag scheme: extend the established `-unix`/`-other` pattern with TinyGo per-target tags (`esp32c3`, …) plus a repo-wide `embedded` tag; stub the 3 `os/exec` sites | go-reticulum | small | the tree already compiles with `-other.go` stubs on unsupported platforms |
-| 6 | msgpack reflect → static codecs (TinyGo gate); drop PNG from `qr` closure on-device | go-reticulum | medium | nil behavior change on hosted builds |
+| 5 | Build-tag scheme: extend the established `-unix`/`-other` pattern with TinyGo per-target tags (`esp32c3`, …) plus a repo-wide `embedded` tag (TamaGo needs nothing beyond its board-package import, so the same `embedded` tag set covers both tracks); stub the 3 `os/exec` sites | go-reticulum | small | the tree already compiles with `-other.go` stubs on unsupported platforms |
+| 6 | msgpack reflect → static codecs (**TinyGo-track only** — `reflect` stays stock on TamaGo/unikernel builds); drop PNG from `qr` closure on-device | go-reticulum | medium | nil behavior change on hosted builds |
 | 7 | Time/RNG/logging seams: centralize `time.Now` for tick-driven maintenance loops, route entropy + log through injected providers | go-reticulum | medium | logger seam already exists (`SetLogDest`/`LogCallback`) |
 | 8 | Sever the one core→TUI edge (`app/channels-adapters.go`, 60 lines) | go-nomadnet | trivial | HubView interface moves down |
 | 9 | Flash-wear batching: directory eager-persist, per-announce re-saves, propagation store | go-nomadnet | medium | benefits hosted nodes too |
 | 10 | Display `tcell.Screen` backend (e-ink/LCD framebuffer) + input (buttons/serial), injected via `tview.SetScreen` | forks/ firmware | medium | SimulationScreen is the reference; tcell per-cell dirty checking is e-ink-friendly |
-| 11 | Firmware substrate / board-support repo: TinyGo target defs, linker scripts, startup, peripheral drivers (SPI radio, SD/FAT or flash FS, display, entropy, RTC) | new | medium | where the "hardware shims" physically live |
+| 11 | Firmware substrate / board-support repo: TinyGo target defs **and TamaGo `soc/<vendor>/<SoC>` + `board/…` packages** (the `runtime/goos` overlay: `ramStart`/`ramSize`, `cpuinit`, `InitRNG`/`GetRandomData`, `Nanotime`, `Printk`), linker scripts, startup, peripheral drivers (SPI radio, SD/FAT or flash FS, display, entropy, RTC) | new | medium | where the "hardware shims" physically live; TamaGo's in-tree SoC packages (SPI/ecspi, USDHC, CLINT/UART, RNG) are the driver template |
 | 12 | Reduced micron-first UI for MCU builds (fetch → parse → framebuffer) | go-nomadnet | medium | reuses `micron` + `browser` wholesale |
+| 13 | TamaGo bring-up: headless RNS relay/propagation node, `GOOS=tamago` on RISC-V64 (Nuclei QEMU + Milk-V Vega first), LoRa-over-SPI `Interface` + storage through #1/#2 | both | medium | the §7.1.1 entry point; same §7.7 parity A/B gate as every other phase |
 
 ### 7.7 A phased path that reuses this repo's parity discipline
 
@@ -765,10 +896,18 @@ accumulate. None of these affect the unikernel path.
 3. **Phase E3 — MCU-class firmware**: TinyGo build, FAT/SD storage,
    LoRa `Interface`, micron-first UI, software crypto — a complete
    Leaf/relay node.
-4. **Phase E4 — on-die crypto**: flip the provider seams to the
+4. **Phase E3b — TamaGo bare-metal node** (new, §7.1.1): the same
+   headless relay/propagation node compiled `GOOS=tamago` against an
+   RV64 target — Nuclei QEMU emulator first, then a Milk-V Vega-class
+   board — stock-Go crypto, `fsops` storage on SD via the SoC's USDHC,
+   a TamaGo UART/SPI `Interface` for bring-up, software crypto. It
+   carries *zero* of the §7.5.1 TinyGo work items, so it is the
+   parity-faithful firmware node and the dress rehearsal for the §5
+   on-die endgame.
+5. **Phase E4 — on-die crypto**: flip the provider seams to the
    accelerators; the section 4 Go-vector tooling now serves as the
    firmware bring-up testbench.
-5. Every phase keeps the section 6.2 rule: any firmware build must parse
+6. Every phase keeps the section 6.2 rule: any firmware build must parse
    and interoperate, byte for byte, against both this Go stack and the
    Python SOT — the port is only done when the parity harness says so.
 
@@ -803,6 +942,12 @@ accumulate. None of these affect the unikernel path.
   and no cgo: the enabling work is a storage VFS layer (the ~320 `os.*`
   call sites are the largest obstacle), crypto provider seams (the
   Offloader), build-tagged hardware `Interface` implementations, and a
-  display backend for the TUI — with the unikernel path (stock Go,
-  MMU-class RISC-V) as the full-parity reference and TinyGo as the
-  MCU-class target.
+  display backend for the TUI. For the "no OS at all" tier three Go
+  targets exist, on a spectrum of fidelity: the unikernel path (stock Go,
+  MMU-class RISC-V) as the full-parity reference, **TamaGo** as the
+  bare-metal stock-Go target on RISC-V64 SoCs — near-full parity, proven
+  in the field (ArmoredWitness) and at 6–16 MB RAM (kotama), and the
+  natural firmware for an ASIC with an RV64 core sharing the die with
+  the crypto cores (§2, §7.1.1, checklist #13, phase E3b) — and TinyGo
+  for the sub-1 MB ESP32-class Leaf tier, where its msgpack/reflect and
+  GC work items remain.
