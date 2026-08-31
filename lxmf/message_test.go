@@ -85,6 +85,82 @@ func TestMessagePackUnpackRoundTrip(t *testing.T) {
 	}
 }
 
+// TestUnpackMessageFromBytesInboundState verifies that unpacking a message
+// received over the wire leaves it at the GENERATING state, matching Python
+// (unpack_from_bytes never touches state; the router never assigns state to
+// incoming messages) so consumers like nomadnet's message store never mistake
+// a received message for one stuck mid-outbound. The transport method must
+// still be preserved.
+func TestUnpackMessageFromBytesInboundState(t *testing.T) {
+	t.Parallel()
+	destinationID, err := rns.NewIdentity(true, nil)
+	if err != nil {
+		t.Fatalf("NewIdentity(destination): %v", err)
+	}
+	sourceID, err := rns.NewIdentity(true, nil)
+	if err != nil {
+		t.Fatalf("NewIdentity(source): %v", err)
+	}
+
+	ts := rns.NewTransportSystem(nil)
+	destination, err := rns.NewDestination(ts, destinationID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	if err != nil {
+		t.Fatalf("NewDestination(destination): %v", err)
+	}
+	source, err := rns.NewDestination(ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	if err != nil {
+		t.Fatalf("NewDestination(source): %v", err)
+	}
+
+	ts.Remember(nil, destination.Hash, destinationID.GetPublicKey(), nil)
+	ts.Remember(nil, source.Hash, sourceID.GetPublicKey(), nil)
+
+	m := mustTestNewMessage(t, destination, source, "hello-content", "hello-title", nil)
+	if err := m.Pack(); err != nil {
+		t.Fatalf("Pack: %v", err)
+	}
+
+	for _, method := range []int{MethodOpportunistic, MethodDirect, MethodPropagated} {
+		unpacked, err := UnpackMessageFromBytes(ts, m.Packed, method)
+		if err != nil {
+			t.Fatalf("UnpackMessageFromBytes(method=%v): %v", method, err)
+		}
+		if got := unpacked.State(); got != StateGenerating {
+			t.Fatalf("method=%v: inbound state=%v, want GENERATING", method, got)
+		}
+		if got := unpacked.Method(); got != method {
+			t.Fatalf("method=%v: unpacked method=%v", method, got)
+		}
+	}
+
+	// The container the router writes to the message store must carry the
+	// same GENERATING state, matching Python's incoming LXMessage.
+	unpacked, err := UnpackMessageFromBytes(ts, m.Packed, MethodDirect)
+	if err != nil {
+		t.Fatalf("UnpackMessageFromBytes: %v", err)
+	}
+	dir := testutils.TempDir(t, tempDirPrefix)
+	path, err := unpacked.WriteToDirectory(dir)
+	if err != nil {
+		t.Fatalf("WriteToDirectory: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read container: %v", err)
+	}
+	v, err := msgpack.Unpack(data)
+	if err != nil {
+		t.Fatalf("unpack container: %v", err)
+	}
+	container, ok := v.(map[any]any)
+	if !ok {
+		t.Fatalf("container type = %T, want map[any]any", v)
+	}
+	if got, ok := container["state"].(int64); !ok || got != int64(StateGenerating) {
+		t.Fatalf("container state=%v (%T), want %v", container["state"], container["state"], StateGenerating)
+	}
+}
+
 // TestUnpackMessageDoesNotMarkSourceOrDestinationUsed covers the 1.1.0 delta
 // (LXMessage.py 41b7573): unpack_from_bytes recalls the source and destination
 // identities with _no_use=True so merely unpacking an inbound message does not

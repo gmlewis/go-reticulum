@@ -566,10 +566,14 @@ func UnpackMessageFromBytes(ts rns.Transport, data []byte, originalMethod int) (
 		Signature:       signature,
 		Packed:          cloneBytes(data),
 		Incoming:        true,
-		state:           originalMethod,
-		method:          originalMethod,
-		DesiredMethod:   originalMethod,
-		Representation:  RepresentationUnknown,
+		// Incoming messages stay at the GENERATING state the constructor
+		// would give them: originalMethod only describes the transport,
+		// not delivery progress (the Python router never assigns state on
+		// inbound messages).
+		state:          StateGenerating,
+		method:         originalMethod,
+		DesiredMethod:  originalMethod,
+		Representation: RepresentationUnknown,
 	}
 
 	if source != nil {
