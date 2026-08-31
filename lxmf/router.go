@@ -3079,10 +3079,23 @@ func (r *Router) sendMessagePacketLocked(message *Message) error {
 
 	if packet.Receipt != nil {
 		packet.Receipt.SetDeliveryCallback(func(_ *rns.PacketReceipt) {
+			// Mirror Python LXMessage.__mark_delivered (LXMessage.py:561-570):
+			// mark the message delivered, then fire the external delivery
+			// callback (Python registers __mark_delivered as the receipt's
+			// delivery callback, and it in turn fires the caller-registered
+			// callback so nomadnet can re-ingest the message with the updated
+			// state). The callback is invoked without the router lock to match
+			// the link-based delivery path below.
+			var deliveryCallback func(*Message)
 			r.mu.Lock()
-			defer r.mu.Unlock()
 			message.SetState(StateDelivered)
+			message.SetProgress(1.0)
 			r.markTicketDeliveryLocked(message)
+			deliveryCallback = message.DeliveryCallback
+			r.mu.Unlock()
+			if deliveryCallback != nil {
+				deliveryCallback(message)
+			}
 		})
 		packet.Receipt.SetTimeoutCallback(func(_ *rns.PacketReceipt) {
 			r.mu.Lock()
