@@ -213,6 +213,12 @@ type TransportSystem struct {
 	// emit their own local-destination re-announce.
 	lastReannounceIfaces map[string]time.Time
 
+	// downAtIfaces records when each TCP client interface transitioned to
+	// down, so the onConnect re-announce hook only fires corrective
+	// re-announces after genuine outages (reconnectAnnounceMinDown) instead
+	// of for every brief blip.
+	downAtIfaces map[string]time.Time
+
 	// pathPersistInflight guards concurrent path-table persists (see
 	// maintenance loop); a skipped tick simply waits for the next one.
 	pathPersistInFlight atomic.Bool
@@ -560,29 +566,71 @@ const (
 	roamingPathTime = 6 * time.Hour
 )
 
-// minReannounceInterval rate-limits the onConnect re-announce so rapid
-// connection flapping (every reconnectDelay = 5s) cannot trigger more than
-// one announce per 30s, preventing the announce storm while still refreshing
-// hub path tables promptly after a restart.
-const minReannounceInterval = 30 * time.Second
+// reconnectAnnounceMinDown is the outage duration an interface must have
+// experienced before its recovery triggers a corrective re-announce. Brief
+// blips (WiFi/Tailscale hiccups, relay connection kicks) do not invalidate
+// path tables — entries expire by age, not by link state — and RNS recovers
+// stale paths on demand via flooded path requests, so a short reconnect
+// needs no fresh announce. Python never re-announces on reconnect at all
+// (Transport.py add_interface only registers the interface), so staying
+// silent for sub-threshold blips is the parity-preserving behavior that also
+// avoids the peer-policing exposure that high-rate announcers attract from
+// public transport operators.
+const reconnectAnnounceMinDown = 10 * time.Minute
+
+// reconnectAnnounceMinInterval caps corrective onConnect re-announces per
+// interface: even repeated genuine outages can produce at most one
+// re-announce per hour per interface, keeping worst-case emissions far below
+// any rate-based peer policing threshold.
+const reconnectAnnounceMinInterval = 60 * time.Minute
 
 // reannounceDue reports whether an onConnect re-announce may proceed for the
 // interface identified by key, recording it when allowed. Rate limiting is per
 // interface: a single shared timestamp previously let the first connecting
 // client suppress every sibling's boot-time re-announce for
-// minReannounceInterval, silently dropping Local TCP Hub coverage until the
-// next periodic announce hours later.
+// reconnectAnnounceMinInterval, silently dropping Local TCP Hub coverage
+// until the next periodic announce hours later.
 func (ts *TransportSystem) reannounceDue(key string, now time.Time) bool {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	if ts.lastReannounceIfaces == nil {
 		ts.lastReannounceIfaces = map[string]time.Time{}
 	}
-	if last, ok := ts.lastReannounceIfaces[key]; ok && now.Sub(last) < minReannounceInterval {
+	if last, ok := ts.lastReannounceIfaces[key]; ok && now.Sub(last) < reconnectAnnounceMinInterval {
 		return false
 	}
 	ts.lastReannounceIfaces[key] = now
 	return true
+}
+
+// stampIfaceDown records when an interface transitioned to down, for the
+// reconnect-announce outage gate (reconnectAnnounceAllowed).
+func (ts *TransportSystem) stampIfaceDown(key string, now time.Time) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if ts.downAtIfaces == nil {
+		ts.downAtIfaces = map[string]time.Time{}
+	}
+	ts.downAtIfaces[key] = now
+}
+
+// reconnectAnnounceAllowed reports whether iface's reconnect warrants a
+// corrective re-announce. Only genuine outages (the interface held no
+// connection for at least reconnectAnnounceMinDown) qualify: the very first
+// connect of an interface (no down record) always announces, so the v0.53
+// boot-race compensation for slow dials is preserved.
+func (ts *TransportSystem) reconnectAnnounceAllowed(iface interfaces.Interface, now time.Time) bool {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if ts.downAtIfaces == nil {
+		return true
+	}
+	key := interfaceHashString(iface)
+	downAt, ok := ts.downAtIfaces[key]
+	if !ok {
+		return true
+	}
+	return now.Sub(downAt) >= reconnectAnnounceMinDown
 }
 
 const (
@@ -3613,18 +3661,26 @@ func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 	// the interface when its connection fails, so pathfinding re-routes
 	// without waiting for stale paths to expire. The hook fires once per
 	// up->down transition (inside failConn) instead of on every failed
-	// rebroadcast/forward Send as the old lazy path did.
+	// rebroadcast/forward Send as the old lazy path did. The down timestamp
+	// feeds the reconnect-announce outage gate (reconnectAnnounceAllowed):
+	// only interfaces that stayed down at least reconnectAnnounceMinDown
+	// re-announce on recovery.
 	//
 	// Re-announce on (re)connect with a rate limit. After a restart the
 	// hub's path table still points at the old (dead) TCP connection, so
 	// link requests to this node are silently dropped until the next
 	// periodic announce (up to 6 hours for LXMF, 12 hours for node).
-	// Re-announcing once on connect refreshes the hub's path immediately.
-	// The rate limit (minReannounceInterval) prevents the announce storm
-	// that rapid connection flapping (every reconnectDelay = 5s) would
-	// otherwise cause: at most one re-announce per 30s per transport.
+	// Re-announcing once on connect refreshes the hub's path immediately,
+	// but ONLY after a genuine outage: path tables expire by age, not by
+	// link state, so brief blips (and the 5s reconnectLoop retry cadence)
+	// must not mint announces — public transport operators police
+	// high-rate announcers, and Python never re-announces on reconnect at
+	// all (Transport.py add_interface only registers the interface).
 	if tci, ok := iface.(*interfaces.TCPClientInterface); ok {
-		tci.SetOnDown(func() { ts.InvalidatePathsViaInterface(tci) })
+		tci.SetOnDown(func() {
+			ts.stampIfaceDown(tci.HashString(), time.Now())
+			ts.InvalidatePathsViaInterface(tci)
+		})
 		// Spawned (server-accepted) clients: remove the dead interface from
 		// this registry when its connection transitions down, matching
 		// Python's Transport.remove_interface during remote-client teardown
@@ -3642,9 +3698,14 @@ func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 		// first (successful) connection — leaving the hub with a stale
 		// path table entry from before the restart. Calling announceNow
 		// here ensures the hub gets a fresh announce regardless. The
-		// rate limit (minReannounceInterval) prevents the announce storm
-		// that rapid connection flapping would otherwise cause.
+		// rate limit (reconnectAnnounceMinInterval) prevents the announce
+		// storm that rapid connection flapping would otherwise cause.
 		announceNow := func() {
+			// Only corrective: genuine outages (down ≥ reconnectAnnounceMinDown)
+			// re-announce on recovery; brief blips stay silent (python parity).
+			if !ts.reconnectAnnounceAllowed(tci, time.Now()) {
+				return
+			}
 			if !ts.reannounceDue(tci.HashString(), time.Now()) {
 				return
 			}

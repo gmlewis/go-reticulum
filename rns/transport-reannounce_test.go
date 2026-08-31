@@ -72,7 +72,7 @@ func TestReannouncePerInterfaceNotGloballySuppressed(t *testing.T) {
 }
 
 // TestReannounceSameInterfaceRateLimited verifies one interface still cannot
-// spam re-announces faster than minReannounceInterval through its hook.
+// spam re-announces faster than reconnectAnnounceMinInterval through its hook.
 func TestReannounceSameInterfaceRateLimited(t *testing.T) {
 	t.Parallel()
 	ts := NewTransportSystem(testSilentLogger())
@@ -82,13 +82,53 @@ func TestReannounceSameInterfaceRateLimited(t *testing.T) {
 	if !ts.reannounceDue(keyA, now) {
 		t.Fatal("first re-announce for an interface must be allowed")
 	}
-	if ts.reannounceDue(keyA, now.Add(time.Second)) {
-		t.Fatal("second re-announce inside minReannounceInterval must be denied")
+	if ts.reannounceDue(keyA, now.Add(time.Minute)) {
+		t.Fatal("second re-announce inside reconnectAnnounceMinInterval must be denied")
 	}
-	if !ts.reannounceDue("TCPInterface[b/127.0.0.1:2]", now.Add(time.Second)) {
+	if !ts.reannounceDue("TCPInterface[b/127.0.0.1:2]", now.Add(time.Minute)) {
 		t.Fatal("a DIFFERENT interface must not inherit another interface's throttle")
 	}
-	if !ts.reannounceDue(keyA, now.Add(minReannounceInterval+time.Second)) {
-		t.Fatal("re-announce after minReannounceInterval must be allowed again")
+	if !ts.reannounceDue(keyA, now.Add(reconnectAnnounceMinInterval+time.Second)) {
+		t.Fatal("re-announce after reconnectAnnounceMinInterval must be allowed again")
+	}
+}
+
+// TestReconnectAnnounceRequiresGenuineOutage pins the announce-parity
+// behavior: an interface reconnecting after a BRIEF blip (down under
+// reconnectAnnounceMinDown) must stay silent — path tables expire by age,
+// not link state, python never re-announces on reconnect, and public
+// transport operators police high-rate announcers (the fleet measured a
+// flapping relay link driving node announces every ~4-5 min for 7 hours
+// straight). A GENUINE outage (down >= reconnectAnnounceMinDown) still
+// re-announces on recovery, and a first-time connect (no down record — the
+// slow-dial boot race) always announces.
+func TestReconnectAnnounceRequiresGenuineOutage(t *testing.T) {
+	t.Parallel()
+	ts := NewTransportSystem(testSilentLogger())
+
+	mkClient := func(name string) *interfaces.TCPClientInterface {
+		bi := interfaces.NewBaseInterface(name, interfaces.ModeFull, 1000)
+		return &interfaces.TCPClientInterface{BaseInterface: bi}
+	}
+	blip := mkClient("client-blip")
+	outage := mkClient("client-outage")
+
+	now := time.Now()
+	// Both interfaces went down at some earlier point.
+	ts.stampIfaceDown(blip.HashString(), now.Add(-4*time.Minute))
+	ts.stampIfaceDown(outage.HashString(), now.Add(-15*time.Minute))
+
+	if ts.reconnectAnnounceAllowed(blip, now) {
+		t.Fatal("reconnect after a 4-minute blip must NOT re-announce (announce-parity): python stays silent for sub-threshold blips")
+	}
+	if !ts.reconnectAnnounceAllowed(outage, now) {
+		t.Fatal("reconnect after a genuine outage must re-announce on recovery")
+	}
+
+	// A first-time connect with no down record (slow dial at boot) must
+	// announce — the v0.53 boot-race compensation is preserved.
+	first := mkClient("client-first")
+	if !ts.reconnectAnnounceAllowed(first, now) {
+		t.Fatal("first connect without any down record must re-announce (boot-race compensation)")
 	}
 }
