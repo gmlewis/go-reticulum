@@ -734,3 +734,64 @@ func activateLink(t *testing.T, link *rns.Link) {
 	field := reflect.ValueOf(link).Elem().FieldByName("token")
 	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Set(reflect.ValueOf(token))
 }
+
+// TestUnpackMessageFromFilePythonContainerNilEncryption pins the
+// Python-container tolerance: LXMessage.packed_container (LXMessage.py:660-
+// 671) always emits all five keys, and a message that never went through a
+// transport carries transport_encryption=None. Python's unpack_from_file
+// (LXMessage.py:825-841) assigns container values WITHOUT type checks, so the
+// decode succeeds; the former strict Go type check rejected the WHOLE
+// container there, and stored Python-written conversations fell back to
+// mtime-only metadata — rendering the no-source failed header in gonomadnet
+// (found by the differential explorer).
+func TestUnpackMessageFromFilePythonContainerNilEncryption(t *testing.T) {
+	t.Parallel()
+
+	destinationID := mustTestNewIdentity(t, true)
+	sourceID := mustTestNewIdentity(t, true)
+	ts := rns.NewTransportSystem(nil)
+	destination := mustTestNewDestination(t, ts, destinationID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	source := mustTestNewDestination(t, ts, sourceID, rns.DestinationOut, rns.DestinationSingle, AppName, "delivery")
+	// The source is deliberately NOT recalled: an unknown source must still
+	// decode, with the signature unverified and reason SOURCE_UNKNOWN.
+	message := mustTestNewMessage(t, destination, source, "hello", "greet", nil)
+	if err := message.Pack(); err != nil {
+		t.Fatalf("Pack: %v", err)
+	}
+
+	container := map[any]any{
+		"state":                int64(StateGenerating),
+		"lxmf_bytes":           message.Packed,
+		"transport_encrypted":  false,
+		"transport_encryption": nil,
+		"method":               int64(MethodOpportunistic),
+	}
+	data, err := msgpack.Pack(container)
+	if err != nil {
+		t.Fatalf("pack container: %v", err)
+	}
+
+	got, err := UnpackMessageFromFile(ts, bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("UnpackMessageFromFile: %v", err)
+	}
+
+	if !bytes.Equal(got.SourceHash, source.Hash) {
+		t.Fatalf("source_hash=%x want=%x", got.SourceHash, source.Hash)
+	}
+	if got.SignatureValidated {
+		t.Fatal("signature must stay unvalidated for an unrecalled source")
+	}
+	if got.UnverifiedReason != ReasonSourceUnknown {
+		t.Fatalf("unverified_reason=%v want=%v", got.UnverifiedReason, ReasonSourceUnknown)
+	}
+	if got.TransportEncrypted {
+		t.Fatal("transport_encrypted must stay false for a None container value")
+	}
+	if got.TransportEncryption != "" {
+		t.Fatalf("transport_encryption=%q want empty", got.TransportEncryption)
+	}
+	if !bytes.Equal(got.Content, []byte("hello")) {
+		t.Fatalf("content=%q want %q", got.Content, "hello")
+	}
+}

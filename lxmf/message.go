@@ -634,32 +634,53 @@ func UnpackMessageFromFile(ts rns.Transport, lxmfFile io.Reader) (*Message, erro
 	}
 
 	if state, ok := container["state"]; ok {
-		parsedState, err := containerInt(state)
-		if err != nil {
-			return nil, err
+		switch {
+		case state == nil:
+			// Python's unpack_from_file assigns container values without type
+			// checks (LXMessage.py:829-835); a None state leaves the parsed
+			// default in place.
+		default:
+			parsedState, err := containerInt(state)
+			if err != nil {
+				return nil, err
+			}
+			message.state = parsedState
 		}
-		message.state = parsedState
 	}
 	if transportEncrypted, ok := container["transport_encrypted"]; ok {
-		parsedTransportEncrypted, ok := transportEncrypted.(bool)
-		if !ok {
+		switch v := transportEncrypted.(type) {
+		case nil:
+			// None: leave the zero value.
+		case bool:
+			message.TransportEncrypted = v
+		default:
 			return nil, fmt.Errorf("invalid lxmf container transport_encrypted type %T", transportEncrypted)
 		}
-		message.TransportEncrypted = parsedTransportEncrypted
 	}
 	if transportEncryption, ok := container["transport_encryption"]; ok {
-		parsedTransportEncryption, ok := transportEncryption.(string)
-		if !ok {
+		switch v := transportEncryption.(type) {
+		case nil:
+			// None: Python-written containers carry transport_encryption=None
+			// for messages that never went through a transport; the zero
+			// value applies. A strict type check here rejected the WHOLE
+			// container and stored messages fell back to mtime-only metadata
+			// (the differential explorer's no-source/failed-header finding).
+		case string:
+			message.TransportEncryption = v
+		default:
 			return nil, fmt.Errorf("invalid lxmf container transport_encryption type %T", transportEncryption)
 		}
-		message.TransportEncryption = parsedTransportEncryption
 	}
 	if method, ok := container["method"]; ok {
-		parsedMethod, err := containerInt(method)
-		if err != nil {
-			return nil, err
+		if method == nil {
+			// None: leave the parsed default.
+		} else {
+			parsedMethod, err := containerInt(method)
+			if err != nil {
+				return nil, err
+			}
+			message.method = parsedMethod
 		}
-		message.method = parsedMethod
 	}
 
 	return message, nil
