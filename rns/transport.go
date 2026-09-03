@@ -5147,10 +5147,38 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 	// first-seen copy rejected on one interface must never suppress the
 	// correct-path copy arriving via another interface of a multi-plane node.
 	isLrproof := packet.PacketType == PacketProof && packet.Context == ContextLrproof
+	// Python's Transport.packet_filter (Transport.py:1388-1392) passes
+	// keepalive, resource, cache-request and channel contexts unconditionally
+	// — they are never duplicate-dropped — and Transport.inbound
+	// (Transport.py:1529-1531) never REMEMBERS packets whose destination is a
+	// link in the link table. The exemption is load-bearing for keepalives:
+	// the responder's 0xFE keepalive reply carries identical bytes every
+	// time, so its packet hash is constant, and deduping it drops every reply
+	// after the first. The initiator's last-inbound clock then stalls and its
+	// watchdog tears the idle link down after stale_time — the rrcd link
+	// churn (TODO item 22: links died after minutes of silence, logged from
+	// rrcd's __watchdog_job, because the 0xFE replies never reached the Go
+	// client).
+	contextExempt := packet.Context == ContextKeepalive ||
+		packet.Context == ContextResource ||
+		packet.Context == ContextResourceReq ||
+		packet.Context == ContextResourcePrf ||
+		packet.Context == ContextCacheRequest ||
+		packet.Context == ContextChannel
+	inLinkTable := false
+	if !contextExempt {
+		if _, ok := ts.linkTable[string(packet.DestinationHash)]; ok {
+			inLinkTable = true
+		}
+	}
 	ts.mu.Lock()
 	var isDup bool
 	if isLrproof {
 		isDup = ts.packetHashSeenLocked(packet.PacketHash)
+	} else if contextExempt || inLinkTable {
+		// Never remembered, never dropped: the packet filter returns True for
+		// these contexts, and link-table packets bypass the hashlist.
+		isDup = false
 	} else {
 		isDup = ts.seenOrRememberPacketHashLocked(packet.PacketHash, time.Now())
 	}
