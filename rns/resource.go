@@ -849,6 +849,20 @@ func (r *Resource) Metadata() map[string][]byte {
 	return r.metadata
 }
 
+// ConcludeSnapshot copies the fields the Link's resource-concluded callbacks
+// inspect (status, data, metadata) under the resource lock, returning the
+// metadata map itself: its entries are built inside Assemble while r.mu is
+// held and never mutated afterwards, so acquiring the lock gives the reader
+// a safe happens-before view. The snapshot is needed because a late
+// duplicate part runs ReceivePart concurrently with the callback goroutine
+// Assemble spawned; Python's GIL serializes those accesses, Go needs the
+// lock.
+func (r *Resource) ConcludeSnapshot() (status int, data []byte, metadata map[string][]byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.status, copyBytes(r.data), r.metadata
+}
+
 // SetRequestID sets the request ID for this resource response.
 func (r *Resource) SetRequestID(requestID []byte) {
 	r.requestID = copyBytes(requestID)

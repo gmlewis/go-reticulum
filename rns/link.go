@@ -1968,8 +1968,12 @@ func (l *Link) removePendingRequest(rr *RequestReceipt) {
 }
 
 func (l *Link) responseResourceConcluded(resource *Resource) {
-	if resource.status == ResourceStatusComplete {
-		unpackedResponse, err := unpackRequestResponseData(resource.data)
+	// Read the resource fields under its lock: a late duplicate part can
+	// flip the status via ReceivePart while this callback goroutine (spawned
+	// by Assemble) reads them.
+	status, data, metadata := resource.ConcludeSnapshot()
+	if status == ResourceStatusComplete {
+		unpackedResponse, err := unpackRequestResponseData(data)
 		if err != nil {
 			l.logger.Error("Failed to unpack response resource: %v", err)
 			return
@@ -1997,7 +2001,7 @@ func (l *Link) responseResourceConcluded(resource *Resource) {
 		// so the conclude path passes updateSizes=False to avoid
 		// double-accumulation — mirroring Python's update_sizes=False default
 		// for response_resource_concluded.
-		l.handleResponse(requestID, responseData, resource.Metadata(), 0, 0, false, false)
+		l.handleResponse(requestID, responseData, metadata, 0, 0, false, false)
 		return
 	}
 
@@ -2040,8 +2044,10 @@ func (l *Link) failPendingResponseRequest(requestID []byte) {
 }
 
 func (l *Link) requestResourceConcluded(resource *Resource) {
-	if resource.status == ResourceStatusComplete {
-		unpackedRequest, err := unpackRequestResponseData(resource.data)
+	// Same locked snapshot as responseResourceConcluded — see there.
+	status, data, _ := resource.ConcludeSnapshot()
+	if status == ResourceStatusComplete {
+		unpackedRequest, err := unpackRequestResponseData(data)
 		if err != nil {
 			l.logger.Error("Failed to unpack request resource: %v", err)
 			return
@@ -2053,7 +2059,7 @@ func (l *Link) requestResourceConcluded(resource *Resource) {
 			return
 		}
 
-		requestID := TruncatedHash(resource.data)
+		requestID := TruncatedHash(data)
 		go l.handleRequest(requestID, requestList)
 	}
 }
