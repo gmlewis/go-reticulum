@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"syscall"
@@ -374,6 +375,21 @@ func (h *HubService) rawConfigValue(key string) any {
 	return h.Config.rawConfigValue(key)
 }
 
+// panicDumpWorker runs fn as a hub worker goroutine. A panic in fn is dumped
+// through the configured log writer (so a panic lands in the configured log
+// file, not only the runtime's stderr dump) and then re-panicked, preserving
+// the default crash behavior: the process dies with the full runtime
+// stacktrace on stderr.
+func (h *HubService) panicDumpWorker(name string, fn func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			h.logf("PANIC in %v: %v\n%v", name, r, debug.Stack())
+			panic(r)
+		}
+	}()
+	fn()
+}
+
 // fmtLinkID renders a link id for logs, mirroring _fmt_link_id.
 func (h *HubService) fmtLinkID(link *rns.Link) string {
 	if link == nil {
@@ -492,7 +508,7 @@ func (h *HubService) Start() error {
 
 	if announcePeriod := configFloat(h.rawConfigValue("announce_period_s")); announcePeriod > 0 {
 		h.announceRunning = true
-		go h.AnnounceLoop()
+		go h.panicDumpWorker("announce-loop", h.AnnounceLoop)
 	}
 
 	h.logf("Hub running at dest_hash=%v", fmtHashPrefix(h.DestinationHash(), 0))
@@ -504,21 +520,21 @@ func (h *HubService) Start() error {
 
 	if pingInterval := configFloat(h.rawConfigValue("ping_interval_s")); pingInterval > 0 {
 		h.pingRunning = true
-		go h.PingLoop()
+		go h.panicDumpWorker("ping-loop", h.PingLoop)
 	}
 
 	pruneInterval := configFloat(h.rawConfigValue("room_registry_prune_interval_s"))
 	pruneAfter := configFloat(h.rawConfigValue("room_registry_prune_after_s"))
 	if pruneInterval > 0 && pruneAfter > 0 {
 		h.pruneRunning = true
-		go h.PruneLoop()
+		go h.panicDumpWorker("prune-loop", h.PruneLoop)
 	}
 
 	if h.Config.EnableResourceTransfer {
 		h.resourceCleanupRunning = true
-		go func() {
+		go h.panicDumpWorker("resource-cleanup", func() {
 			h.ResourceManager.StartResourceCleanupLoop(h.Shutdown, h.sleep)
-		}()
+		})
 	}
 
 	return nil
@@ -689,14 +705,17 @@ func (h *HubService) OnRemoteIdentified(link *rns.Link, identity *rns.Identity) 
 }
 
 // OnClose cleans up a closed link, mirroring _on_close: the resource and
-// session cleanup runs under the dispatch lock.
+// session cleanup runs under the dispatch lock. The log line carries the
+// RNS teardown reason so every link close is attributable (timeout, remote
+// teardown, initiator teardown, transport loss, or staleness).
 func (h *HubService) OnClose(link *rns.Link) {
+	teardownReason := rns.TeardownReasonName(link.TeardownReason())
 	h.dispatchMu.Lock()
 	h.ResourceManager.OnLinkClosed(link)
 	peer, nick, roomsCount := h.SessionManager.OnLinkClosed(link)
 	h.dispatchMu.Unlock()
-	h.logf("Link closed peer=%v nick=%v rooms=%v link_id=%v",
-		fmtHashPrefix(peer, 12), nickReprForLog(nick), roomsCount, h.fmtLinkID(link))
+	h.logf("Link closed peer=%v nick=%v rooms=%v link_id=%v reason=%v",
+		fmtHashPrefix(peer, 12), nickReprForLog(nick), roomsCount, h.fmtLinkID(link), teardownReason)
 }
 
 // nickReprForLog renders an optional nick the way Python repr does.
@@ -791,6 +810,9 @@ func (h *HubService) PingLoop() {
 			awaiting := h.SessionManager.AwaitingPong(link)
 			if timeout > 0 && awaiting != nil && (now-*awaiting) > timeout {
 				toTeardown = append(toTeardown, link)
+				h.logf("Ping timeout peer=%v link_id=%v awaiting_s=%v timeout_s=%v",
+					h.fmtHash(h.SessionManager.PeerOf(link)), h.fmtLinkID(link),
+					int(now-*awaiting), int(timeout))
 				continue
 			}
 			if awaiting == nil {
@@ -806,6 +828,9 @@ func (h *HubService) PingLoop() {
 		for _, link := range toPing {
 			ping := MakeEnvelope(int(TPing), idHash, WithBody(now))
 			h.StatsManager.Inc("pings_out", 1)
+			if h.logSetup.DebugEnabled() {
+				h.logf("Ping sent link_id=%v body=%v", h.fmtLinkID(link), now)
+			}
 			h.MessageHelper.Send(link, ping)
 		}
 	}
@@ -879,17 +904,17 @@ func (h *HubService) Stop() {
 func (h *HubService) ensureWorkerGoroutines() {
 	if !h.announceRunning && configFloat(h.rawConfigValue("announce_period_s")) > 0 {
 		h.announceRunning = true
-		go h.AnnounceLoop()
+		go h.panicDumpWorker("announce-loop", h.AnnounceLoop)
 	}
 	if !h.pingRunning && configFloat(h.rawConfigValue("ping_interval_s")) > 0 {
 		h.pingRunning = true
-		go h.PingLoop()
+		go h.panicDumpWorker("ping-loop", h.PingLoop)
 	}
 	pruneInterval := configFloat(h.rawConfigValue("room_registry_prune_interval_s"))
 	pruneAfter := configFloat(h.rawConfigValue("room_registry_prune_after_s"))
 	if !h.pruneRunning && pruneInterval > 0 && pruneAfter > 0 {
 		h.pruneRunning = true
-		go h.PruneLoop()
+		go h.panicDumpWorker("prune-loop", h.PruneLoop)
 	}
 }
 

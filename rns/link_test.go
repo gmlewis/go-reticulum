@@ -674,3 +674,44 @@ func TestLinkIdentifyBlackholedTearsDownLink(t *testing.T) {
 		t.Fatalf("receiver link status = %v, want LinkClosed", receiverLink.status.Load())
 	}
 }
+
+// TeardownReasonName maps every teardown reason code to a stable, readable
+// name for the hub's and the client's lifecycle logging.
+func TestTeardownReasonName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		reason int
+		want   string
+	}{
+		{TeardownTimeout, "timeout"},
+		{TeardownDestinationClosed, "destination-closed"},
+		{TeardownInitiatorClosed, "initiator-closed"},
+		{TeardownTransportClosed, "transport-closed"},
+		{TeardownStale, "stale"},
+		{42, "unknown"},
+	}
+	for _, tt := range tests {
+		if got := TeardownReasonName(tt.reason); got != tt.want {
+			t.Errorf("TeardownReasonName(%v) = %q, want %q", tt.reason, got, tt.want)
+		}
+	}
+}
+
+// The teardown reason is recorded and readable through the accessor: a local
+// Teardown marks the initiator-closed reason, mirroring Python's
+// Link.teardown (Link.py:670: initiator → INITIATOR_CLOSED).
+func TestTeardownReasonRecorded(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(testSilentLogger())
+	dest := mustTestNewDestination(t, ts, ts.identity, DestinationIn, DestinationSingle, "tr", "dest")
+	link := mustTestNewLink(t, ts, dest)
+	if link.TeardownReason() != 0 {
+		t.Errorf("fresh link teardown reason = %v, want the zero value", link.TeardownReason())
+	}
+	link.Teardown()
+	if got := TeardownReasonName(link.TeardownReason()); got != "initiator-closed" {
+		t.Errorf("reason after local Teardown = %q, want initiator-closed", got)
+	}
+}

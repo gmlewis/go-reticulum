@@ -73,6 +73,11 @@ func (r *Reticulum) makeRPCListener() (net.Listener, error) {
 	}
 
 	addr := fmt.Sprintf("127.0.0.1:%v", r.localControlPort)
+	if held := interfaces.PopPendingTCPListener(r.localControlPort); held != nil {
+		// The test suite reserved this port with a listener already bound;
+		// adopt it instead of rebinding (see pendingTCPListeners).
+		return held, nil
+	}
 	return net.Listen("tcp", addr)
 }
 

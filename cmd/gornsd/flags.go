@@ -23,6 +23,7 @@ type appT struct {
 	interactive   bool
 	exampleConfig bool
 	version       bool
+	pprofAddr     string
 }
 
 var errHelp = errors.New("help requested")
@@ -65,6 +66,7 @@ func parseFlags(args []string, usageOutput io.Writer) (*appT, error) {
 	fs.BoolVar(&app.service, "service", false, "gornsd is running as a service and should log to file")
 	fs.BoolVar(&app.interactive, "i", false, "drop into interactive shell after initialisation")
 	fs.BoolVar(&app.interactive, "interactive", false, "drop into interactive shell after initialisation")
+	fs.StringVar(&app.pprofAddr, "pprof-addr", "", "Debug pprof HTTP listen address (empty disables)")
 	fs.BoolVar(&app.exampleConfig, "exampleconfig", false, "print verbose configuration example to stdout and exit")
 	fs.BoolVar(&app.version, "version", false, "show program's version number and exit")
 	if err := fs.Parse(args); err != nil {

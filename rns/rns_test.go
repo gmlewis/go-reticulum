@@ -45,11 +45,19 @@ func reserveTCPPort(t *testing.T) int {
 		t.Fatalf("reserveTCPPort unexpected addr type: %T", l.Addr())
 	}
 	port := addr.Port
-	// Close immediately; NewReticulum will rebind to this port from the config.
-	// On Linux, SO_REUSEADDR (set by default in Go) allows rebinding after close.
-	if err := l.Close(); err != nil {
-		t.Fatalf("reserveTCPPort: unable to close port %v: %v", port, err)
-	}
+	// Hold the probe listener open and hand it to the code under test instead
+	// of closing it and hoping the port can be rebound later: between the
+	// close and the production bind inside NewReticulum, a parallel test's
+	// listener bind or outgoing dial can claim the just-closed ephemeral
+	// port, silently misclassifying the instance role (shared/standalone/
+	// connected) or failing a server bind. The bind sites adopt the held
+	// listener directly (see interfaces pendingTCPListeners); anything never
+	// adopted is closed here at test end. This cleanup runs last (LIFO —
+	// reserveTCPPort is called before the test's reticulum-cleanup defers are
+	// set up), so adopted listeners are already owned by their
+	// Reticulum.Close by then.
+	interfaces.HoldPendingTCPListener(port, l)
+	t.Cleanup(func() { interfaces.ReleasePendingTCPListener(port) })
 	return port
 }
 

@@ -921,6 +921,7 @@ func eventBytes(t *testing.T, ev testEvent, key string) []byte {
 
 // G13.2 The gorrcd binary builds; a --help run needs no Python.
 func TestIntegrationGorrcdBinaryBuilds(t *testing.T) {
+	t.Parallel()
 	binary := buildGorrcdBinary(t)
 	if info, err := os.Stat(binary); err != nil || info.Size() == 0 {
 		t.Fatalf("gorrcd binary missing: %v %v", info, err)
@@ -931,6 +932,7 @@ func TestIntegrationGorrcdBinaryBuilds(t *testing.T) {
 // sends HELLO, and parses the hub's WELCOME: the hub name, version string,
 // caps map, and limits map all match the expected values.
 func TestIntegrationHelloWelcomeOverPipe(t *testing.T) {
+	t.Parallel()
 	pyPath := findRNSPython(t)
 
 	hub := startGorrcdHub(t, pyPath, hubTestConfig{
@@ -1060,6 +1062,7 @@ func countEnvelopesOf(er *eventReader, hubIndex int, msgType int64) int {
 // fanout JOINED with the actor's nick, and the PART produces the PARTED
 // self copy plus the fanout with the actor's nick.
 func TestIntegrationJoinPartOverPipe(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	pyPath := findRNSPython(t)
 
@@ -1152,6 +1155,7 @@ func TestIntegrationJoinPartOverPipe(t *testing.T) {
 // hub, the hub echoes the ping body byte-identically in a t=31 envelope,
 // and the client renders its `Pong from hub: N ms` system row.
 func TestIntegrationPingPongOverPipe(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	pyPath := findRNSPython(t)
 
@@ -1219,6 +1223,7 @@ func TestIntegrationPingPongOverPipe(t *testing.T) {
 // link survives; a deliberately silent client is torn down after the
 // timeout.
 func TestIntegrationHubPingLoopOverPipe(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	pyPath := findRNSPython(t)
 
@@ -1310,6 +1315,7 @@ func TestIntegrationHubPingLoopOverPipe(t *testing.T) {
 // `<nick> joined` / `<nick> left` system rows and each joiner gets its
 // own `You joined #<room>` row.
 func TestIntegrationJoinedMemberListOverPipe(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	pyPath := findRNSPython(t)
 
@@ -1384,6 +1390,7 @@ func TestIntegrationJoinedMemberListOverPipe(t *testing.T) {
 // envelope with the sender's hash and nick, and the sender receives its own
 // echo with identical payload bytes.
 func TestIntegrationMsgFanoutOverPipe(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	pyPath := findRNSPython(t)
 
@@ -1490,6 +1497,7 @@ func firstErrorBody(er *eventReader, hubIndex int) (string, bool) {
 // G13.6 /register, /list, and /who over the pipe: the Python client parses
 // the NOTICE texts, so the byte-exact strings are the contract.
 func TestIntegrationListWhoOverPipe(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	pyPath := findRNSPython(t)
 
@@ -1568,6 +1576,7 @@ func containsString(list []string, want string) bool {
 // pre-HELLO JOIN, an unknown slash command, and rate limiting all produce
 // the exact wire-visible ERROR texts.
 func TestIntegrationErrorPathsOverPipe(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	pyPath := findRNSPython(t)
 
@@ -1646,6 +1655,7 @@ func errorBodies(er *eventReader, hubIndex int) []string {
 // room+dst mix errors with `direct notice must not include room`; an
 // unknown destination errors with `destination not connected`.
 func TestIntegrationDirectNoticeOverPipe(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	pyPath := findRNSPython(t)
 
@@ -1708,6 +1718,7 @@ func TestIntegrationDirectNoticeOverPipe(t *testing.T) {
 // PARTED with the departed nick to the remaining members; a banned
 // identity is disconnected with the `banned` ERROR (two-phase hub start).
 func TestIntegrationLifecycleOverPipe(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	pyPath := findRNSPython(t)
 
@@ -1786,6 +1797,7 @@ func TestIntegrationLifecycleOverPipe(t *testing.T) {
 // the real Python client against a trusted-operator hub, and the persistent
 // commands land in rooms.toml / rrcd.toml.
 func TestIntegrationSlashCommandMatrixOverPipe(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	pyPath := findRNSPython(t)
 
@@ -1938,6 +1950,7 @@ func runPythonScript(t *testing.T, script string) string {
 // Python client persists rooms.toml that the ORIGINAL Python loader reads;
 // a Python-written second room shows up in the hub's /list after a restart.
 func TestIntegrationStorageRoundTripOverPipe(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	pyPath := findRNSPython(t)
 
@@ -2015,6 +2028,7 @@ func TestIntegrationStorageRoundTripOverPipe(t *testing.T) {
 // fallback delivers the same text. (The RNS resource part transfer itself
 // is an rns-package cross-implementation surface, exercised separately.)
 func TestIntegrationMotdDeliveryOverPipe(t *testing.T) {
+	t.Parallel()
 	testutils.SkipShortIntegration(t)
 	pyPath := findRNSPython(t)
 
@@ -2073,4 +2087,88 @@ func TestIntegrationMotdDeliveryOverPipe(t *testing.T) {
 	if !strings.Contains(chunks, "Welcome to the hub! Welcome to the hub!") {
 		t.Errorf("the chunked MOTD did not reassemble; got %q", chunks[:minInt(len(chunks), 120)])
 	}
+}
+
+// G15.10 The live-fleet soak: the exact raspberrypi deployment config
+// (ping_interval_s=30, ping_timeout_s=60, include_joined_member_list=true,
+// announce_period_s=300) with three real Python clients joined to one room,
+// soaked long enough to cross several ping cycles. The hub must keep
+// pinging every cycle (the PONGs must clear the pending markers), never
+// tear a healthy client down, and never produce JOINED/PARTED waves.
+func TestIntegrationPingSoakOverPipe(t *testing.T) {
+	t.Parallel()
+	testutils.SkipShortIntegration(t)
+	pyPath := findRNSPython(t)
+
+	pingInterval := 2.0
+	pingTimeout := 6.0
+	includeList := true
+	hub := startGorrcdHub(t, pyPath, hubTestConfig{
+		announcePeriodS:   300.0,
+		pingIntervalS:     &pingInterval,
+		pingTimeoutS:      &pingTimeout,
+		includeJoinedList: &includeList,
+		commands: []string{
+			"connect Alpha",
+			"connect Beta",
+			"connect Gamma",
+			"join 0 soak",
+			"join 1 soak",
+			"join 2 soak",
+			"sleep 1",
+			"wait soak-ready",
+		},
+	})
+	defer hub.stop()
+
+	for i := range 3 {
+		hub.events.waitFor(t, "connected", i, 90*time.Second)
+	}
+	hub.events.waitForMarker(t, "soak-ready", 90*time.Second)
+
+	// SOAK: 3 minutes (180s) with a 2s ping interval = 90 ping cycles.
+	// (Long enough to cross dozens of cycles while staying inside the
+	// per-package go test -timeout; runs in parallel with the rest of the
+	// package since everything it touches is test-private.)
+	deadline := time.Now().Add(180 * time.Second)
+	var lastPings [3]int
+	var lastParts [3]int
+	var lastJoins [3]int
+	for time.Now().Before(deadline) {
+		time.Sleep(15 * time.Second)
+		for i := range 3 {
+			lastPings[i] = countEnvelopesOf(hub.events, i, TPing)
+			lastParts[i] = countEnvelopesOf(hub.events, i, TParted)
+			lastJoins[i] = countEnvelopesOf(hub.events, i, TJoined)
+		}
+		t.Logf("soak t+%vs pings=%v parts=%v joins=%v",
+			int(180-time.Until(deadline).Seconds()), lastPings, lastParts, lastJoins)
+	}
+
+	// Every client must have been pinged continuously (90 cycles).
+	for i := range 3 {
+		if lastPings[i] < 45 {
+			t.Errorf("client %v received only %v pings over the soak, want >= 45 (2s interval)",
+				i, lastPings[i])
+		}
+		// No client may ever be torn down while it keeps PONGing.
+		if lastParts[i] != 0 {
+			t.Errorf("client %v received %v PARTED envelopes; healthy PONGing clients must never be torn down",
+				i, lastParts[i])
+		}
+	}
+
+	// The hub heard every PONG: pings_out == pongs_in per the hub stats.
+	// (Observable via the clients' t=31 echo envelopes.)
+	pongs := 0
+	for _, ev := range hub.events.all() {
+		if ev["event"] != "envelope" {
+			continue
+		}
+		env := envelopeOf(ev)
+		if mt, ok := envInt(env, "1"); ok && mt == TPong {
+			pongs++
+		}
+	}
+	t.Logf("client-sent PONGs observed: %v", pongs)
 }

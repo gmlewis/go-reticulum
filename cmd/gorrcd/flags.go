@@ -44,6 +44,7 @@ type gorrcdOptions struct {
 	pingTimeout      *float64
 	logLevel         *string
 	logFile          *string
+	pprofAddr        string
 }
 
 // parseFlags parses the gorrcd argument list; the flag defaults are the
@@ -154,6 +155,7 @@ func parseFlags(args []string, usageOutput io.Writer) (*gorrcdOptions, error) {
 		opts.logFile = &v
 		return nil
 	})
+	fs.StringVar(&opts.pprofAddr, "pprof-addr", "", "Debug pprof HTTP listen address (empty disables)")
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {

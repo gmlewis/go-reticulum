@@ -28,10 +28,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -41,3 +41,51 @@ jobs:
 
       - name: Run non-integration Go tests
         run: go test ./... -race -count=1
+
+  integration:
+    name: Go Tests (full integration suite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: |
+            go.mod
+            **/go.sum
+
+      # The cross-implementation tests drive the real Python RNS/LXMF/nomadnet/
+      # rnsh stacks. Pinned to the local mirror HEADs so upstream drift cannot
+      # break the suite silently — bump these (git -C <repo> rev-parse HEAD)
+      # when the local clones move.
+      - name: Clone Python reference implementations
+        run: |
+          mkdir -p "$HOME/src/github.com/markqvist" "$HOME/src/github.com/acehoss"
+          git clone --quiet https://github.com/markqvist/Reticulum "$HOME/src/github.com/markqvist/Reticulum"
+          git -C "$HOME/src/github.com/markqvist/Reticulum" checkout --quiet b48b96e6
+          git clone --quiet https://github.com/markqvist/lxmf "$HOME/src/github.com/markqvist/lxmf"
+          git -C "$HOME/src/github.com/markqvist/lxmf" checkout --quiet 795fdaa
+          git clone --quiet https://github.com/acehoss/rnsh "$HOME/src/github.com/acehoss/rnsh"
+          git -C "$HOME/src/github.com/acehoss/rnsh" checkout --quiet 50f0420
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: python3 -m pip install --quiet rns lxmf nomadnet
+
+      - name: Run full integration suite
+        env:
+          GO_TEST_TIMEOUT: 8m
+        run: |
+          ./scripts/test-integration.sh
+          go test -tags=integration -count=1 ./lxmf -run TestParallelStampGeneration
+          go test -tags=integration -count=1 ./rns -run TestIntegratedResponseResourceCompressionPolicyGoToPython

@@ -462,6 +462,10 @@ func NewLocalServerInterface(name, path string, port int, handler InboundHandler
 			}
 		}
 		l, err = net.Listen("unix", path)
+	} else if held := PopPendingTCPListener(port); held != nil {
+		// The test suite reserved this port with a listener already bound;
+		// adopt it instead of rebinding (see pendingTCPListeners).
+		l = held
 	} else {
 		l, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%v", port))
 	}

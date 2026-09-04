@@ -3,6 +3,13 @@
 # run-all-tests.sh runs all unit tests and integration tests with timeouts.
 # Static cleanliness checks (errcheck, staticcheck, modernize, gopls check)
 # run FIRST so a lint failure fails fast before spending time on tests.
+#
+# Default mode (~90s): lint + the -short integration suite (skips the
+# cross-process / Python-interop / soak tests) — enough for ~99% confidence
+# before pushing. The FULL suite (cross-implementation, soak, and the two
+# no-race specials) runs in GitHub CI on every push; run it locally with:
+#
+#   ./run-all-tests.sh --full        (or RUN_ALL_TESTS_FULL=1)
 
 set -euo pipefail
 set -x
@@ -98,18 +105,26 @@ fi
 echo "staticcheck: clean (all checks, with integration tags)"
 
 # ---------------------------------------------------------------------------
-# Integration tests: short then full, with per-suite timeouts.
+# Integration tests: the -short suite always (fast); the full suite only in
+# full mode (--full or RUN_ALL_TESTS_FULL=1), matching what GitHub CI runs.
 # ---------------------------------------------------------------------------
+
+if [[ "${1:-}" == "--full" ]]; then
+	RUN_ALL_TESTS_FULL=1
+fi
 
 # test-all.sh is redundant when the short integration tests are running next, so skip it:
 # time run_with_timeout ./test-all.sh 2>&1 | tee test-failures.log
 
 time run_with_timeout ./scripts/test-integration.sh -short 2>&1 | tee short-test-failures.log
-time run_with_timeout ./scripts/test-integration.sh 2>&1 | tee full-test-failures.log
 
-# Run integration tests that are skipped under the race detector:
-time run_with_timeout go test -tags=integration -count=1 ./lxmf -run TestParallelStampGeneration 2>&1 | tee -a full-test-failures.log
-time run_with_timeout go test -tags=integration -count=1 ./rns -run TestIntegratedResponseResourceCompressionPolicyGoToPython 2>&1 | tee -a full-test-failures.log
+if [[ "${RUN_ALL_TESTS_FULL:-0}" == "1" ]]; then
+	time run_with_timeout ./scripts/test-integration.sh 2>&1 | tee full-test-failures.log
+
+	# Run integration tests that are skipped under the race detector:
+	time run_with_timeout go test -tags=integration -count=1 ./lxmf -run TestParallelStampGeneration 2>&1 | tee -a full-test-failures.log
+	time run_with_timeout go test -tags=integration -count=1 ./rns -run TestIntegratedResponseResourceCompressionPolicyGoToPython 2>&1 | tee -a full-test-failures.log
+fi
 
 echo "All tests completed."
 

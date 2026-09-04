@@ -301,6 +301,26 @@ func (l *Link) TeardownReason() int {
 	return l.teardownReason
 }
 
+// TeardownReasonName returns a human-readable name for a link teardown reason
+// code, for lifecycle logging that attributes every link close to its cause
+// (timeout, the remote destination, the local initiator, the transport, or
+// staleness).
+func TeardownReasonName(reason int) string {
+	switch reason {
+	case TeardownTimeout:
+		return "timeout"
+	case TeardownDestinationClosed:
+		return "destination-closed"
+	case TeardownInitiatorClosed:
+		return "initiator-closed"
+	case TeardownTransportClosed:
+		return "transport-closed"
+	case TeardownStale:
+		return "stale"
+	}
+	return "unknown"
+}
+
 // UpdateMDU proactively recalculates the Maximum Data Unit payload size based on the current MTU and header overhead.
 func (l *Link) UpdateMDU() {
 	l.mdu = l.mtu - HeaderMaxSize - IFACMinSize

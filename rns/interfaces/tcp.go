@@ -632,9 +632,17 @@ func newTCPServerInterface(name, bindIP string, bindPort int, handler InboundHan
 	bi.setDefaultIFACSize(TCPDefaultIFACSize)
 
 	addr := fmt.Sprintf("%v:%v", bindIP, bindPort)
-	l, err := net.Listen("tcp", addr)
-	if err != nil {
-		return nil, err
+	var l net.Listener
+	if held := PopPendingTCPListener(bindPort); held != nil {
+		// The test suite reserved this port with a listener already bound;
+		// adopt it instead of rebinding (see pendingTCPListeners).
+		l = held
+	} else {
+		var err error
+		l, err = net.Listen("tcp", addr)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	tsi := &TCPServerInterface{

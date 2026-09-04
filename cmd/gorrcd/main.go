@@ -40,6 +40,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 
 	"github.com/gmlewis/go-reticulum/rns"
@@ -48,6 +49,15 @@ import (
 
 func main() {
 	log.SetFlags(0)
+	// Persist main-goroutine panics through the configured log writer: the
+	// runtime's stderr dump scrolls away in a plain SSH session, while the
+	// [logging] file (when configured) persists it for forensics.
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("PANIC in main: %v\n%v", r, debug.Stack())
+			panic(r)
+		}
+	}()
 
 	opts, err := parseFlags(os.Args[1:], os.Stderr)
 	if err != nil {
@@ -84,6 +94,8 @@ func main() {
 	// live stack; the hub owns the logging state and shares the logger,
 	// mirroring Python's configure_logging before start.
 	rnsLogger := rns.NewLogger()
+
+	startPProf(opts.pprofAddr)
 
 	svc := rrcd.NewHubService(cfg)
 	svc.SetLogger(rnsLogger)

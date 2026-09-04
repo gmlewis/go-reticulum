@@ -23,7 +23,7 @@ export ORIGINAL_RETICULUM_REPO_DIR=${HOME}/src/github.com/markqvist/Reticulum
 export ORIGINAL_LXMF_REPO_DIR=${HOME}/src/github.com/markqvist/lxmf
 export ORIGINAL_RNSH_REPO_DIR=${HOME}/src/github.com/acehoss/rnsh
 
-GO_TEST_TIMEOUT="${GO_TEST_TIMEOUT:-4m}"
+GO_TEST_TIMEOUT="${GO_TEST_TIMEOUT:-5m}"
 
 detect_live_rnode_port() {
 	local -a search_groups=()
