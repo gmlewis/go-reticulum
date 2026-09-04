@@ -94,8 +94,11 @@ jobs:
         with:
           python-version: '3.14'
 
+      # cbor2 is required by the original Python rrcd (rrcd/codec.py), which
+      # the gorrcd first-run template capture and room-registry interop tests
+      # import directly from the cloned kc1awv/rrcd repo.
       - name: Install Python dependencies
-        run: python3 -m pip install --quiet rns==1.5.0 lxmf==1.1.1 nomadnet==1.2.8 pillow tomlkit qrcode
+        run: python3 -m pip install --quiet rns==1.5.0 lxmf==1.1.1 nomadnet==1.2.8 cbor2 pillow tomlkit qrcode
 
       - name: Run full integration suite
         env:

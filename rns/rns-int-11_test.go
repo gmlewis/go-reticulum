@@ -109,9 +109,13 @@ share_instance = No
 
 	link.request("/list", None, response_callback)
 
-	timeout = time.time() + 20
-	while response_received[0] is None and time.time() < timeout:
-		time.sleep(0.5)
+	# A single RESPONSE packet can be silently lost on localhost under
+	# parallel-test UDP load (RNS never retransmits it), so re-issue the
+	# request periodically rather than failing on the first silence.
+	deadline = time.time() + 90
+	while response_received[0] is None and time.time() < deadline:
+		time.sleep(5)
+		link.request("/list", None, response_callback)
 
 	if response_received[0] is None:
 		print("Timed out waiting for response")
@@ -267,7 +271,7 @@ publish_blackhole = True
 	var gotHex string
 	select {
 	case gotHex = <-responseHex:
-	case <-time.After(60 * time.Second):
+	case <-time.After(120 * time.Second):
 		t.Fatal("Timed out waiting for /list response from Python")
 	}
 

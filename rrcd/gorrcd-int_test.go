@@ -2102,8 +2102,14 @@ func TestIntegrationPingSoakOverPipe(t *testing.T) {
 	pingInterval := 2.0
 	pingTimeout := 6.0
 	includeList := true
+	// announce_period 5s (not a realistic 300s): the announce is the
+	// driver's "hub is ready" signal, and the announce-on-start packet can
+	// be lost when it races the driver's own RNS boot under CI load. With
+	// a 300s period there is no second chance and the driver sits in the
+	// 30s hash-timeout loop; a 5s period guarantees a retry well inside
+	// the driver's hash window without perturbing the ping soak.
 	hub := startGorrcdHub(t, pyPath, hubTestConfig{
-		announcePeriodS:   300.0,
+		announcePeriodS:   5.0,
 		pingIntervalS:     &pingInterval,
 		pingTimeoutS:      &pingTimeout,
 		includeJoinedList: &includeList,
