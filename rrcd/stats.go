@@ -74,6 +74,14 @@ func initialCounters() map[string]int {
 	}
 }
 
+// StartedWallTime returns the wall-clock start time, or nil before
+// set_start_time.
+func (s *StatsManager) StartedWallTime() *float64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.startedWallTime
+}
+
 // SetStartTime sets the start time for uptime calculations, mirroring
 // set_start_time.
 func (s *StatsManager) SetStartTime() {

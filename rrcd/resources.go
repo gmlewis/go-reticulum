@@ -10,11 +10,15 @@
 package rrcd
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gmlewis/go-reticulum/rns"
 	"github.com/gmlewis/go-reticulum/rrcd/cbor"
@@ -359,4 +363,302 @@ func (m *ResourceManager) MatchResourceExpectation(link *rns.Link, rid []byte, s
 		return exp
 	}
 	return nil
+}
+
+// FindResourceExpectation finds a matching expectation by size,
+// mirroring find_resource_expectation (the advertisement fallback match).
+func (m *ResourceManager) FindResourceExpectation(link *rns.Link, size int) *ResourceExpectation {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cleanupExpiredLocked(link, m.hooks.Now())
+
+	set := m.expectations[link]
+	if set == nil || set.len() == 0 {
+		return nil
+	}
+	for _, exp := range set.list() {
+		if exp.Size == size {
+			return exp
+		}
+	}
+	return nil
+}
+
+// AcceptAdvertisedResource is the accept vote for an advertised incoming
+// resource, mirroring _resource_advertised: the disabled/oversized/
+// session-less/expectation-less rejections each count resources_rejected,
+// and an accepted resource is registered as active with its expectation
+// id bound.
+func (m *ResourceManager) AcceptAdvertisedResource(link *rns.Link, size int) bool {
+	if !m.hooks.EnableResourceTransfer() {
+		m.logf("Rejecting resource (disabled) link_id=%v", m.hooks.FmtLinkID(link))
+		m.hooks.StatsInc("resources_rejected", 1)
+		return false
+	}
+	if size > m.hooks.MaxResourceBytes() {
+		m.logf("Rejecting resource (too large: %v > %v) link_id=%v",
+			size, m.hooks.MaxResourceBytes(), m.hooks.FmtLinkID(link))
+		m.hooks.StatsInc("resources_rejected", 1)
+		return false
+	}
+	if !m.hooks.HasSession(link) {
+		m.logf("Rejecting resource (no session) link_id=%v", m.hooks.FmtLinkID(link))
+		m.hooks.StatsInc("resources_rejected", 1)
+		return false
+	}
+	exp := m.FindResourceExpectation(link, size)
+	if exp == nil {
+		m.logf("Rejecting resource (no matching expectation) link_id=%v size=%v",
+			m.hooks.FmtLinkID(link), size)
+		m.hooks.StatsInc("resources_rejected", 1)
+		return false
+	}
+	m.logf("Accepting resource link_id=%v size=%v kind=%v", m.hooks.FmtLinkID(link), size, exp.Kind)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.pending[link] = string(exp.ID)
+	return true
+}
+
+// BindStartedResource binds a started incoming resource to the
+// expectation accepted at advertisement time, mirroring the
+// _resource_bindings assignment in the accept path (the Go link API only
+// exposes the *rns.Resource at start time).
+func (m *ResourceManager) BindStartedResource(link *rns.Link, res ResourceHandle) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	set := m.activeResources[link]
+	if set == nil {
+		set = map[ResourceHandle]bool{}
+		m.activeResources[link] = set
+	}
+	set[res] = true
+	if expID, ok := m.pending[link]; ok {
+		m.bindings[res] = expID
+		delete(m.pending, link)
+	}
+}
+
+// HasActiveResource reports whether a resource is tracked as active for
+// the link.
+func (m *ResourceManager) HasActiveResource(link *rns.Link, res ResourceHandle) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.activeResources[link][res]
+}
+
+// OnResourceConcluded handles a concluded incoming resource transfer,
+// mirroring _resource_concluded: unbinding, the status gate, the sha256
+// match, the pop + stats, and the dispatch.
+func (m *ResourceManager) OnResourceConcluded(link *rns.Link, res ResourceHandle) {
+	m.mu.Lock()
+	if set := m.activeResources[link]; set != nil {
+		delete(set, res)
+	}
+	boundRid := m.bindings[res]
+	delete(m.bindings, res)
+	m.mu.Unlock()
+
+	var boundRidBytes []byte
+	if boundRid != "" {
+		boundRidBytes = []byte(boundRid)
+	}
+
+	if res.Status() != rns.ResourceStatusComplete {
+		m.logf("Resource transfer failed link_id=%v status=%v", m.hooks.FmtLinkID(link), res.Status())
+		return
+	}
+	payload := res.Data()
+	size := len(payload)
+	actualHash := sha256Digest(payload)
+
+	exp := m.MatchResourceExpectation(link, boundRidBytes, size, actualHash)
+	if exp == nil {
+		m.logf("Received resource without expectation link_id=%v size=%v", m.hooks.FmtLinkID(link), size)
+		return
+	}
+	if len(exp.SHA256) > 0 && !sameBytes(actualHash, exp.SHA256) {
+		m.logf("Resource SHA256 mismatch link_id=%v expected=%v actual=%v",
+			m.hooks.FmtLinkID(link), hex.EncodeToString(exp.SHA256), hex.EncodeToString(actualHash))
+		return
+	}
+
+	m.PopResourceExpectation(link, exp.ID)
+	m.hooks.StatsInc("resources_received", 1)
+	m.hooks.StatsInc("resource_bytes_received", size)
+	m.logf("Resource received link_id=%v size=%v kind=%v", m.hooks.FmtLinkID(link), size, exp.Kind)
+
+	m.DispatchReceivedResource(link, exp, payload)
+}
+
+// DispatchReceivedResource dispatches a received resource payload to the
+// matching handler, mirroring _dispatch_received_resource.
+func (m *ResourceManager) DispatchReceivedResource(link *rns.Link, exp *ResourceExpectation, payload []byte) {
+	switch exp.Kind {
+	case ResKindNotice:
+		encoding := exp.Encoding
+		if encoding == "" {
+			encoding = "utf-8"
+		}
+		text, err := decodeText(payload, encoding)
+		if err != nil {
+			m.logf("Failed to decode notice resource link_id=%v encoding=%v: %v",
+				m.hooks.FmtLinkID(link), encoding, err)
+			return
+		}
+		m.logf("Received large NOTICE via resource link_id=%v room=%v chars=%v",
+			m.hooks.FmtLinkID(link), pythonQuote(roomDeref(exp.Room)), utf8.RuneCountInString(text))
+
+		if exp.Room != nil && m.hooks.IdentityHash() != nil {
+			peerHash := m.hooks.GetSessionPeer(link)
+			roomMembers := m.hooks.GetRoomMembers(*exp.Room)
+			if peerHash != nil && len(roomMembers) > 0 {
+				noticeEnv := MakeEnvelope(int(TNotice), peerHash, WithRoom(*exp.Room), WithBody(text))
+				noticePayload := encodeEnvelope(noticeEnv)
+				forwarded := 0
+				for other := range roomMembers {
+					if other == link {
+						continue
+					}
+					if err := m.hooks.SendPacket(other, noticePayload); err != nil {
+						m.logf("Failed to forward NOTICE resource link_id=%v: %v",
+							m.hooks.FmtLinkID(other), err)
+						continue
+					}
+					forwarded++
+				}
+				if forwarded > 0 {
+					m.hooks.StatsInc("notices_forwarded", 1)
+					m.logf("Forwarded NOTICE resource to %v members room=%v", forwarded, *exp.Room)
+				}
+			}
+		}
+	case ResKindMOTD:
+		encoding := exp.Encoding
+		if encoding == "" {
+			encoding = "utf-8"
+		}
+		text, err := decodeText(payload, encoding)
+		if err != nil {
+			m.logf("Failed to decode MOTD resource link_id=%v: %v", m.hooks.FmtLinkID(link), err)
+			return
+		}
+		m.logf("Received MOTD via resource link_id=%v chars=%v", m.hooks.FmtLinkID(link), utf8.RuneCountInString(text))
+	case ResKindBlob:
+		m.logf("Received BLOB via resource link_id=%v bytes=%v", m.hooks.FmtLinkID(link), len(payload))
+	default:
+		m.logf("Unknown resource kind link_id=%v kind=%v", m.hooks.FmtLinkID(link), exp.Kind)
+	}
+}
+
+// SendViaResource sends a large payload via an RNS Resource, mirroring
+// send_via_resource: the envelope goes out immediately, then the resource
+// is created and advertised through the SendResource hook.
+func (m *ResourceManager) SendViaResource(link *rns.Link, kind string, payload []byte, room *string, encoding string) bool {
+	if !m.hooks.EnableResourceTransfer() {
+		return false
+	}
+	size := len(payload)
+	if size > m.hooks.MaxResourceBytes() {
+		m.logf("Payload too large for resource transfer: %v > %v", size, m.hooks.MaxResourceBytes())
+		return false
+	}
+	rid := newResourceID()
+	sha := sha256Digest(payload)
+	if m.hooks.IdentityHash() == nil {
+		return false
+	}
+
+	body := cbor.NewMap()
+	body.Set(BResID, rid)
+	body.Set(BResKind, kind)
+	body.Set(BResSize, int64(size))
+	body.Set(BResSHA256, sha)
+	if encoding != "" {
+		body.Set(BResEncoding, encoding)
+	}
+	envelope := MakeEnvelope(int(TResource), m.hooks.IdentityHash(), WithRoomPtr(room), WithBody(body))
+	envelopePayload := encodeEnvelope(envelope)
+	if err := m.hooks.SendPacket(link, envelopePayload); err != nil {
+		m.logf("Failed to send resource envelope link_id=%v: %v", m.hooks.FmtLinkID(link), err)
+		return false
+	}
+	m.hooks.StatsInc("bytes_out", len(envelopePayload))
+	m.logf("Sent resource envelope link_id=%v rid=%v kind=%v size=%v",
+		m.hooks.FmtLinkID(link), hex.EncodeToString(rid), kind, size)
+
+	res, err := m.hooks.SendResource(payload, link)
+	if err != nil {
+		m.logf("Failed to create resource link_id=%v: %v", m.hooks.FmtLinkID(link), err)
+		return false
+	}
+	m.mu.Lock()
+	set := m.activeResources[link]
+	if set == nil {
+		set = map[ResourceHandle]bool{}
+		m.activeResources[link] = set
+	}
+	set[res] = true
+	m.mu.Unlock()
+
+	m.hooks.StatsInc("resources_sent", 1)
+	m.hooks.StatsInc("resource_bytes_sent", size)
+	m.logf("Sent resource link_id=%v rid=%v kind=%v size=%v",
+		m.hooks.FmtLinkID(link), hex.EncodeToString(rid), kind, size)
+	return true
+}
+
+// StartResourceCleanupLoop runs the resource-expectation cleanup loop at
+// the fixed 30-second interval until stop closes, mirroring
+// _resource_cleanup_loop. The sleep hook waits for one interval and
+// reports whether the loop should continue (false = the shutdown signal
+// fired during the wait).
+func (m *ResourceManager) StartResourceCleanupLoop(stop <-chan struct{}, sleep func(interval float64) bool) {
+	for {
+		if !sleep(30.0) {
+			return
+		}
+		select {
+		case <-stop:
+			return
+		default:
+		}
+		m.cleanupOnce()
+	}
+}
+
+// cleanupOnce runs one cleanup pass, logging a panic the way Python logs
+// the cleanup exception.
+func (m *ResourceManager) cleanupOnce() {
+	defer func() {
+		if r := recover(); r != nil {
+			m.logf("Resource cleanup failed: %v", r)
+		}
+	}()
+	m.CleanupAllExpiredExpectations()
+}
+
+// decodeText decodes payload with a Python str.decode-compatible codec:
+// utf-8, ascii (strict), and latin-1 are supported.
+func decodeText(payload []byte, encoding string) (string, error) {
+	switch strings.ToLower(encoding) {
+	case "utf-8", "utf8":
+		return string(payload), nil
+	case "ascii", "us-ascii":
+		for _, b := range payload {
+			if b > 0x7f {
+				return "", fmt.Errorf("'ascii' codec can't decode byte 0x%02x in position %v: ordinal not in range(128)", b, bytes.IndexByte(payload, b))
+			}
+		}
+		return string(payload), nil
+	case "latin-1", "iso-8859-1":
+		runes := make([]rune, len(payload))
+		for i, b := range payload {
+			runes[i] = rune(b)
+		}
+		return string(runes), nil
+	default:
+		return "", fmt.Errorf("unknown encoding: %v", encoding)
+	}
 }

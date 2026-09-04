@@ -6,6 +6,7 @@
 package rrcd
 
 import (
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
@@ -140,6 +141,45 @@ func ParseIdentityHash(text string) ([]byte, error) {
 		return nil, fmt.Errorf("identity hash too short: %v", pythonQuote(text))
 	}
 	return b, nil
+}
+
+// hexOf renders bytes as lowercase hex.
+func hexOf(b []byte) string { return hex.EncodeToString(b) }
+
+// sameBytes reports whether two byte slices have equal contents.
+func sameBytes(a, b []byte) bool {
+	return string(a) == string(b)
+}
+
+// strDeref dereferences an optional string, empty for nil.
+func strDeref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+// pythonLower lowercases s the way Python's str.lower does: U+0130
+// (LATIN CAPITAL LETTER I WITH DOT ABOVE) maps to "i" + U+0307, while Go's
+// unicode.ToLower maps it to plain "i".
+func pythonLower(s string) string {
+	if !strings.ContainsRune(s, 0x0130) {
+		return strings.ToLower(s)
+	}
+	var b strings.Builder
+	for _, r := range s {
+		if r == 0x0130 {
+			b.WriteString("i\u0307")
+			continue
+		}
+		b.WriteRune(unicode.ToLower(r))
+	}
+	return b.String()
+}
+
+// pythonTrim strips Python whitespace from both ends of s.
+func pythonTrim(s string) string {
+	return strings.TrimFunc(s, isUnicodeSpace)
 }
 
 // fromHexPython decodes s the way Python 3.13's bytes.fromhex does: ASCII

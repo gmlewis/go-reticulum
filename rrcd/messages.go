@@ -43,6 +43,9 @@ type MessageHelper struct {
 	hooks MessageHooks
 }
 
+// Hooks returns the message helper's hook set for rewiring in tests.
+func (m *MessageHelper) Hooks() *MessageHooks { return &m.hooks }
+
 // NewMessageHelper creates a message helper wired to the given hooks.
 func NewMessageHelper(hooks MessageHooks) *MessageHelper {
 	return &MessageHelper{hooks: hooks}

@@ -7,9 +7,12 @@ package rrcd
 
 import (
 	"bytes"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/rrcd/cbor"
 )
 
 const testResourceTTL = 30.0
@@ -411,5 +414,560 @@ func TestMatchResourceExpectationCleansExpired(t *testing.T) {
 	*now = 100.0 + testResourceTTL
 	if exp := m.MatchResourceExpectation(link, nil, 10, nil); exp != nil {
 		t.Errorf("expired match = %+v, want nil", exp)
+	}
+}
+
+// fakeResource is a ResourceHandle test double.
+type fakeResource struct {
+	status int
+	data   []byte
+}
+
+func (f *fakeResource) Status() int  { return f.status }
+func (f *fakeResource) Data() []byte { return f.data }
+
+// recorder captures the sends and stats of a resource-manager test.
+type resourceRecorder struct {
+	sent      []sentPacket
+	stats     map[string]int
+	accepted  []*rns.Link
+	acceptedK []string
+	logs      []string
+}
+
+// G10.4 OnResourceConcluded mirrors _resource_concluded: unbinding, the
+// status gate, the sha256 match (bound rid wins over size), the mismatch
+// keeping the expectation, the pop + stats, and the dispatch call.
+func TestOnResourceConcluded(t *testing.T) {
+	t.Parallel()
+
+	link := &rns.Link{}
+	memberA := &rns.Link{}
+	payload := []byte("hello resource")
+	sum := sha256Digest(payload)
+	rid := []byte{1, 2, 3, 4, 5, 6, 7, 8}
+
+	setup := func(t *testing.T) (*ResourceManager, *resourceRecorder, *float64) {
+		t.Helper()
+		rec := &resourceRecorder{stats: map[string]int{}}
+		m, now := newTestResourceManager(t, func(h *ResourceHooks) {
+			h.StatsInc = func(key string, delta int) { rec.stats[key] += delta }
+			h.SendPacket = func(l *rns.Link, p []byte) error {
+				rec.sent = append(rec.sent, sentPacket{link: l, payload: p})
+				return nil
+			}
+			h.GetSessionPeer = func(*rns.Link) []byte { return bytesOf(0xcc, 32) }
+			h.GetRoomMembers = func(string) map[*rns.Link]bool {
+				return map[*rns.Link]bool{link: true, memberA: true}
+			}
+		})
+		room := "general"
+		if !m.AddResourceExpectation(link, rid, ResKindNotice, len(payload), sum, "", &room) {
+			t.Fatal("AddResourceExpectation() = false, want true")
+		}
+		return m, rec, now
+	}
+
+	t.Run("complete matching transfer pops and dispatches", func(t *testing.T) {
+		t.Parallel()
+		m, rec, _ := setup(t)
+		res := &fakeResource{status: rns.ResourceStatusComplete, data: payload}
+		m.BindStartedResource(link, res)
+		m.OnResourceConcluded(link, res)
+
+		if rec.stats["resources_received"] != 1 || rec.stats["resource_bytes_received"] != len(payload) {
+			t.Errorf("stats = %+v, want resources_received=1 bytes=%v", rec.stats, len(payload))
+		}
+		if exp := m.GetResourceExpectationByRID(link, rid); exp != nil {
+			t.Errorf("expectation survived the conclusion: %+v", exp)
+		}
+		// The dispatch forwarded the NOTICE to the room members except
+		// the sender.
+		if len(rec.sent) != 1 {
+			t.Fatalf("dispatch sent = %+v, want one forwarded envelope", rec.sent)
+		}
+		if rec.sent[0].link != memberA {
+			t.Errorf("dispatch recipient = %v, want memberA", rec.sent[0].link)
+		}
+	})
+
+	t.Run("failed status leaves everything in place", func(t *testing.T) {
+		t.Parallel()
+		m, rec, _ := setup(t)
+		res := &fakeResource{status: rns.ResourceStatusFailed, data: payload}
+		m.BindStartedResource(link, res)
+		m.OnResourceConcluded(link, res)
+
+		if rec.stats["resources_received"] != 0 {
+			t.Errorf("stats = %+v, want no resources_received", rec.stats)
+		}
+		if exp := m.GetResourceExpectationByRID(link, rid); exp == nil {
+			t.Error("expectation was popped on a failed transfer")
+		}
+		if len(rec.sent) != 0 {
+			t.Errorf("failed transfer sent = %+v, want none", rec.sent)
+		}
+	})
+
+	t.Run("sha mismatch keeps the expectation", func(t *testing.T) {
+		t.Parallel()
+		m, rec, _ := setup(t)
+		res := &fakeResource{status: rns.ResourceStatusComplete, data: []byte("tampered!!")}
+		m.BindStartedResource(link, res)
+		m.OnResourceConcluded(link, res)
+
+		if rec.stats["resources_received"] != 0 {
+			t.Errorf("stats = %+v, want no resources_received", rec.stats)
+		}
+		if exp := m.GetResourceExpectationByRID(link, rid); exp == nil {
+			t.Error("sha mismatch removed the expectation")
+		}
+		if len(rec.sent) != 0 {
+			t.Errorf("mismatched transfer sent = %+v, want none", rec.sent)
+		}
+	})
+
+	t.Run("no matching expectation is a no-op", func(t *testing.T) {
+		t.Parallel()
+		m, rec, _ := setup(t)
+		res := &fakeResource{status: rns.ResourceStatusComplete, data: []byte("unbound data")}
+		m.BindStartedResource(link, res)
+		m.OnResourceConcluded(link, res)
+
+		if rec.stats["resources_received"] != 0 {
+			t.Errorf("stats = %+v, want no resources_received", rec.stats)
+		}
+		if len(rec.sent) != 0 {
+			t.Errorf("unbound transfer sent = %+v, want none", rec.sent)
+		}
+	})
+}
+
+// G10.5 DispatchReceivedResource mirrors _dispatch_received_resource: the
+// notice kind forwards to room members except the sender, the motd and
+// blob kinds log only, and unknown kinds warn.
+func TestDispatchReceivedResource(t *testing.T) {
+	t.Parallel()
+
+	link := &rns.Link{}
+	peer := bytesOf(0xcc, 32)
+	room := "general"
+	memberA := &rns.Link{}
+	memberB := &rns.Link{}
+
+	newDispatchEnv := func(t *testing.T) (*ResourceManager, *resourceRecorder) {
+		t.Helper()
+		rec := &resourceRecorder{stats: map[string]int{}}
+		m, _ := newTestResourceManager(t, func(h *ResourceHooks) {
+			h.StatsInc = func(key string, delta int) { rec.stats[key] += delta }
+			h.SendPacket = func(l *rns.Link, p []byte) error {
+				rec.sent = append(rec.sent, sentPacket{link: l, payload: p})
+				return nil
+			}
+			h.GetSessionPeer = func(*rns.Link) []byte { return peer }
+			h.GetRoomMembers = func(string) map[*rns.Link]bool {
+				return map[*rns.Link]bool{link: true, memberA: true, memberB: true}
+			}
+		})
+		return m, rec
+	}
+
+	t.Run("notice forwards to members except the sender", func(t *testing.T) {
+		t.Parallel()
+		m, rec := newDispatchEnv(t)
+		exp := &ResourceExpectation{ID: []byte{1}, Kind: ResKindNotice, Room: &room}
+		m.DispatchReceivedResource(link, exp, []byte("a large notice body"))
+
+		if len(rec.sent) != 2 {
+			t.Fatalf("notice dispatch sent = %+v, want two forwarded envelopes", rec.sent)
+		}
+		for _, p := range rec.sent {
+			if p.link == link {
+				t.Error("notice was forwarded back to the sender")
+			}
+			decoded, err := cbor.Decode(p.payload)
+			if err != nil {
+				t.Fatalf("forwarded payload does not decode: %v", err)
+			}
+			mm, ok := decoded.(*cbor.Map)
+			if !ok {
+				t.Fatal("forwarded payload is not a CBOR map")
+			}
+			if v, _ := mm.Get(KT); !int64Equal(v, int64(TNotice)) {
+				t.Errorf("forwarded type = %v, want NOTICE", v)
+			}
+			if src, _ := mm.Get(KSrc); !sameBytes(src.([]byte), peer) {
+				t.Errorf("forwarded src = %v, want the peer hash", src)
+			}
+			if r, _ := mm.Get(KRoom); r != room {
+				t.Errorf("forwarded room = %v, want %v", r, room)
+			}
+			if body, _ := mm.Get(KBody); body != "a large notice body" {
+				t.Errorf("forwarded body = %v, want the decoded text", body)
+			}
+		}
+		if rec.stats["notices_forwarded"] != 1 {
+			t.Errorf("notices_forwarded = %v, want 1", rec.stats["notices_forwarded"])
+		}
+	})
+
+	t.Run("motd and blob only log", func(t *testing.T) {
+		t.Parallel()
+		m, rec := newDispatchEnv(t)
+		m.DispatchReceivedResource(link, &ResourceExpectation{ID: []byte{1}, Kind: ResKindMOTD}, []byte("motd text"))
+		m.DispatchReceivedResource(link, &ResourceExpectation{ID: []byte{2}, Kind: ResKindBlob}, []byte{0, 1, 2})
+		m.DispatchReceivedResource(link, &ResourceExpectation{ID: []byte{3}, Kind: "weird"}, []byte("x"))
+		if len(rec.sent) != 0 {
+			t.Errorf("non-notice dispatch sent = %+v, want none", rec.sent)
+		}
+		if rec.stats["notices_forwarded"] != 0 {
+			t.Errorf("notices_forwarded = %v, want 0", rec.stats["notices_forwarded"])
+		}
+	})
+
+	t.Run("notice without a room or identity does not forward", func(t *testing.T) {
+		t.Parallel()
+		m, rec := newDispatchEnv(t)
+		m.DispatchReceivedResource(link, &ResourceExpectation{ID: []byte{1}, Kind: ResKindNotice}, []byte("no room"))
+		if len(rec.sent) != 0 {
+			t.Errorf("room-less dispatch sent = %+v, want none", rec.sent)
+		}
+	})
+}
+
+// G10.6 SendViaResource mirrors send_via_resource: the disabled and
+// oversized rejections, the immediate envelope send with the exact body
+// key order, the resource hand-off, the active-resource registration,
+// and the failure paths.
+func TestSendViaResource(t *testing.T) {
+	t.Parallel()
+
+	link := &rns.Link{}
+	payload := []byte("large payload contents")
+
+	newSendEnv := func(t *testing.T, mutate func(*ResourceHooks)) (*ResourceManager, *resourceRecorder, *fakeResource, *bool) {
+		t.Helper()
+		rec := &resourceRecorder{stats: map[string]int{}}
+		fake := &fakeResource{status: rns.ResourceStatusComplete}
+		sentResource := false
+		m, _ := newTestResourceManager(t, func(h *ResourceHooks) {
+			h.StatsInc = func(key string, delta int) { rec.stats[key] += delta }
+			h.SendPacket = func(l *rns.Link, p []byte) error {
+				rec.sent = append(rec.sent, sentPacket{link: l, payload: p})
+				return nil
+			}
+			h.SendResource = func(p []byte, l *rns.Link) (ResourceHandle, error) {
+				sentResource = true
+				return fake, nil
+			}
+			if mutate != nil {
+				mutate(h)
+			}
+		})
+		return m, rec, fake, &sentResource
+	}
+
+	t.Run("disabled returns false", func(t *testing.T) {
+		t.Parallel()
+		m, rec, _, sentResource := newSendEnv(t, func(h *ResourceHooks) {
+			h.EnableResourceTransfer = func() bool { return false }
+		})
+		if m.SendViaResource(link, ResKindNotice, payload, nil, "") {
+			t.Error("SendViaResource with transfer disabled = true, want false")
+		}
+		if len(rec.sent) != 0 || *sentResource {
+			t.Errorf("disabled send produced output: %v %v", rec.sent, *sentResource)
+		}
+	})
+
+	t.Run("oversized returns false", func(t *testing.T) {
+		t.Parallel()
+		m, rec, _, sentResource := newSendEnv(t, func(h *ResourceHooks) {
+			h.MaxResourceBytes = func() int { return 4 }
+		})
+		if m.SendViaResource(link, ResKindNotice, payload, nil, "") {
+			t.Error("oversized SendViaResource = true, want false")
+		}
+		if len(rec.sent) != 0 || *sentResource {
+			t.Errorf("oversized send produced output: %v %v", rec.sent, *sentResource)
+		}
+	})
+
+	t.Run("success sends the envelope then the resource", func(t *testing.T) {
+		t.Parallel()
+		room := "general"
+		m, rec, fake, sentResource := newSendEnv(t, nil)
+		if !m.SendViaResource(link, ResKindNotice, payload, &room, "utf-8") {
+			t.Fatal("SendViaResource = false, want true")
+		}
+		if len(rec.sent) != 1 {
+			t.Fatalf("send output = %+v, want one envelope", rec.sent)
+		}
+		decoded, err := cbor.Decode(rec.sent[0].payload)
+		if err != nil {
+			t.Fatalf("envelope does not decode: %v", err)
+		}
+		envMap, ok := decoded.(*cbor.Map)
+		if !ok {
+			t.Fatal("envelope is not a CBOR map")
+		}
+		// Envelope keys: 0,1,2,3,4 (base) then 5 (room), 6 (body).
+		if got := envMap.Pairs(); len(got) != 7 {
+			t.Fatalf("envelope has %v keys, want 7", len(got))
+		}
+		body, _ := envMap.Get(KBody)
+		bodyMap, ok := body.(*cbor.Map)
+		if !ok {
+			t.Fatalf("body = %T, want a CBOR map", body)
+		}
+		pairs := bodyMap.Pairs()
+		if len(pairs) != 5 {
+			t.Fatalf("body has %v keys, want 5 (id, kind, size, sha, encoding)", len(pairs))
+		}
+		wantKeys := []int64{BResID, BResKind, BResSize, BResSHA256, BResEncoding}
+		for i, pair := range pairs {
+			key, isInt := intValue(pair.Key)
+			if !isInt || key != wantKeys[i] {
+				t.Errorf("body key %v = %v, want %v", i, pair.Key, wantKeys[i])
+			}
+		}
+		rid, _ := bodyMap.Get(BResID)
+		ridBytes, isBytes := rid.([]byte)
+		if !isBytes || len(ridBytes) != 8 {
+			t.Errorf("rid = %#v, want 8 random bytes", rid)
+		}
+		kind, _ := bodyMap.Get(BResKind)
+		if kind != ResKindNotice {
+			t.Errorf("kind = %v, want %v", kind, ResKindNotice)
+		}
+		size, _ := bodyMap.Get(BResSize)
+		sizeInt, isInt := intValue(size)
+		if !isInt || sizeInt != int64(len(payload)) {
+			t.Errorf("size = %v, want %v", size, len(payload))
+		}
+		sha, _ := bodyMap.Get(BResSHA256)
+		if !sameBytes(sha.([]byte), sha256Digest(payload)) {
+			t.Errorf("sha = %v, want the payload digest", sha)
+		}
+		enc, _ := bodyMap.Get(BResEncoding)
+		if enc != "utf-8" {
+			t.Errorf("encoding = %v, want utf-8", enc)
+		}
+		if rec.stats["bytes_out"] != len(rec.sent[0].payload) {
+			t.Errorf("bytes_out = %v, want %v", rec.stats["bytes_out"], len(rec.sent[0].payload))
+		}
+		if !*sentResource {
+			t.Error("SendResource was not called")
+		}
+		if rec.stats["resources_sent"] != 1 || rec.stats["resource_bytes_sent"] != len(payload) {
+			t.Errorf("stats = %+v, want resources_sent=1 bytes=%v", rec.stats, len(payload))
+		}
+		if !m.HasActiveResource(link, fake) {
+			t.Error("the sent resource is not tracked as active")
+		}
+	})
+
+	t.Run("empty encoding is omitted", func(t *testing.T) {
+		t.Parallel()
+		m, rec, _, _ := newSendEnv(t, nil)
+		if !m.SendViaResource(link, ResKindNotice, payload, nil, "") {
+			t.Fatal("SendViaResource = false, want true")
+		}
+		decoded, err := cbor.Decode(rec.sent[0].payload)
+		if err != nil {
+			t.Fatalf("envelope does not decode: %v", err)
+		}
+		envMap := decoded.(*cbor.Map)
+		bodyMap, _ := envMap.Get(KBody)
+		body := bodyMap.(*cbor.Map)
+		if _, present := body.Get(BResEncoding); present {
+			t.Error("empty encoding was encoded into the body")
+		}
+	})
+
+	t.Run("envelope send failure returns false", func(t *testing.T) {
+		t.Parallel()
+		m, rec, _, sentResource := newSendEnv(t, func(h *ResourceHooks) {
+			h.SendPacket = func(*rns.Link, []byte) error { return errors.New("boom") }
+		})
+		if m.SendViaResource(link, ResKindNotice, payload, nil, "") {
+			t.Error("SendViaResource with a send failure = true, want false")
+		}
+		if *sentResource {
+			t.Error("SendResource ran after an envelope send failure")
+		}
+		if len(rec.sent) != 0 {
+			t.Errorf("failed send recorded output: %v", rec.sent)
+		}
+	})
+
+	t.Run("resource creation failure returns false", func(t *testing.T) {
+		t.Parallel()
+		m, rec, _, _ := newSendEnv(t, func(h *ResourceHooks) {
+			h.SendResource = func([]byte, *rns.Link) (ResourceHandle, error) {
+				return nil, errors.New("no resource")
+			}
+		})
+		if m.SendViaResource(link, ResKindNotice, payload, nil, "") {
+			t.Error("SendViaResource with a resource failure = true, want false")
+		}
+		if len(rec.sent) != 1 {
+			t.Errorf("failed resource send output = %+v, want the already-sent envelope", rec.sent)
+		}
+		if rec.stats["resources_sent"] != 0 {
+			t.Errorf("resources_sent = %v, want 0", rec.stats["resources_sent"])
+		}
+	})
+}
+
+// int64Equal reports whether v is the int value n.
+func int64Equal(v any, n int64) bool {
+	got, ok := intValue(v)
+	return ok && got == n
+}
+
+// AcceptAdvertisedResource mirrors _resource_advertised: the
+// disabled/oversized/session-less/expectation-less rejections each count
+// resources_rejected, and an accepted advertisement leaves the matched
+// expectation id pending for the started callback.
+func TestAcceptAdvertisedResource(t *testing.T) {
+	t.Parallel()
+
+	link := &rns.Link{}
+	setup := func(t *testing.T, mutate func(*ResourceHooks)) (*ResourceManager, *resourceRecorder) {
+		t.Helper()
+		rec := &resourceRecorder{stats: map[string]int{}}
+		m, _ := newTestResourceManager(t, func(h *ResourceHooks) {
+			h.StatsInc = func(key string, delta int) { rec.stats[key] += delta }
+			if mutate != nil {
+				mutate(h)
+			}
+		})
+		if !m.AddResourceExpectation(link, []byte{1, 2}, ResKindNotice, 10, nil, "", nil) {
+			t.Fatal("AddResourceExpectation() = false, want true")
+		}
+		return m, rec
+	}
+
+	t.Run("disabled rejects with the counter", func(t *testing.T) {
+		t.Parallel()
+		m, rec := setup(t, func(h *ResourceHooks) {
+			h.EnableResourceTransfer = func() bool { return false }
+		})
+		if m.AcceptAdvertisedResource(link, 10) {
+			t.Error("AcceptAdvertisedResource with transfer disabled = true, want false")
+		}
+		if rec.stats["resources_rejected"] != 1 {
+			t.Errorf("resources_rejected = %v, want 1", rec.stats["resources_rejected"])
+		}
+	})
+
+	t.Run("oversized rejects", func(t *testing.T) {
+		t.Parallel()
+		m, rec := setup(t, func(h *ResourceHooks) {
+			h.MaxResourceBytes = func() int { return 4 }
+		})
+		if m.AcceptAdvertisedResource(link, 10) {
+			t.Error("AcceptAdvertisedResource oversized = true, want false")
+		}
+		if rec.stats["resources_rejected"] != 1 {
+			t.Errorf("resources_rejected = %v, want 1", rec.stats["resources_rejected"])
+		}
+	})
+
+	t.Run("no session rejects", func(t *testing.T) {
+		t.Parallel()
+		m, rec := setup(t, func(h *ResourceHooks) {
+			h.HasSession = func(*rns.Link) bool { return false }
+		})
+		if m.AcceptAdvertisedResource(link, 10) {
+			t.Error("AcceptAdvertisedResource without a session = true, want false")
+		}
+		if rec.stats["resources_rejected"] != 1 {
+			t.Errorf("resources_rejected = %v, want 1", rec.stats["resources_rejected"])
+		}
+	})
+
+	t.Run("no matching size rejects", func(t *testing.T) {
+		t.Parallel()
+		m, rec := setup(t, nil)
+		if m.AcceptAdvertisedResource(link, 999) {
+			t.Error("AcceptAdvertisedResource without an expectation = true, want false")
+		}
+		if rec.stats["resources_rejected"] != 1 {
+			t.Errorf("resources_rejected = %v, want 1", rec.stats["resources_rejected"])
+		}
+	})
+
+	t.Run("matching size accepts and pends the expectation", func(t *testing.T) {
+		t.Parallel()
+		m, rec := setup(t, nil)
+		if !m.AcceptAdvertisedResource(link, 10) {
+			t.Fatal("AcceptAdvertisedResource = false, want true")
+		}
+		if rec.stats["resources_rejected"] != 0 {
+			t.Errorf("resources_rejected = %v, want 0", rec.stats["resources_rejected"])
+		}
+		res := &fakeResource{status: rns.ResourceStatusComplete, data: bytes.Repeat([]byte{0}, 10)}
+		m.BindStartedResource(link, res)
+		if !m.HasActiveResource(link, res) {
+			t.Error("the accepted resource was not registered as active")
+		}
+		m.OnResourceConcluded(link, res)
+		if exp := m.GetResourceExpectationByRID(link, []byte{1, 2}); exp != nil {
+			t.Errorf("expectation survived the concluded transfer: %+v", exp)
+		}
+	})
+}
+
+// G10.7 StartResourceCleanupLoop mirrors _resource_cleanup_loop: a fixed
+// 30-second interval, a cleanup pass each cycle, and the shutdown exit.
+// The simulated sleep hook advances the clock and reports whether the
+// loop should keep running.
+func TestResourceCleanupLoop(t *testing.T) {
+	t.Parallel()
+
+	link := &rns.Link{}
+	now := 100.0
+	m, _ := newTestResourceManager(t, func(h *ResourceHooks) {
+		h.Now = func() float64 { return now }
+	})
+	rid := []byte{9, 9}
+	if !m.AddResourceExpectation(link, rid, ResKindNotice, 5, nil, "", nil) {
+		t.Fatal("AddResourceExpectation() = false, want true")
+	}
+
+	stop := make(chan struct{})
+	cycles := 0
+	sleep := func(interval float64) bool {
+		cycles++
+		if cycles > 2 {
+			// The shutdown signal fired during the third sleep.
+			close(stop)
+			return false
+		}
+		if interval != 30.0 {
+			t.Errorf("sleep interval = %v, want 30", interval)
+		}
+		// Advance the clock past the expectation TTL (100 + 30).
+		now += 31.0
+		return true
+	}
+
+	done := make(chan struct{})
+	go func() {
+		m.StartResourceCleanupLoop(stop, sleep)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		close(stop)
+		t.Fatal("cleanup loop did not exit after the shutdown signal")
+	}
+
+	if exp := m.GetResourceExpectationByRID(link, rid); exp != nil {
+		t.Errorf("expectation survived the cleanup cycles: %+v", exp)
 	}
 }

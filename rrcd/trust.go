@@ -126,6 +126,35 @@ type TrustStats struct {
 	BannedCount  int
 }
 
+// TrustedHexSet returns the trusted identity hashes as lowercase hex.
+func (t *TrustManager) TrustedHexSet() []string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make([]string, 0, len(t.trusted))
+	for key := range t.trusted {
+		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// ReplaceIdentities swaps the live trusted and banned identity sets,
+// mirroring the reload's direct assignment of the parsed sets.
+func (t *TrustManager) ReplaceIdentities(trusted, banned [][]byte) {
+	newTrusted := map[string]bool{}
+	for _, hash := range trusted {
+		newTrusted[hexKey(hash)] = true
+	}
+	newBanned := map[string]bool{}
+	for _, hash := range banned {
+		newBanned[hexKey(hash)] = true
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.trusted = newTrusted
+	t.banned = newBanned
+}
+
 // GetStats returns statistics about trusted and banned identities.
 func (t *TrustManager) GetStats() TrustStats {
 	t.mu.Lock()

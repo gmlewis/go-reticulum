@@ -60,6 +60,9 @@ type RoomHooks struct {
 	RegistryPath func() string
 	// Notice emits a NOTICE to a link on persistence failures.
 	Notice func(link *rns.Link, room, text string)
+	// BroadcastNotice emits a room-mode NOTICE to a link, carrying the
+	// outgoing queue like the message helper.
+	BroadcastNotice func(outgoing *OutgoingList, link *rns.Link, room, text string)
 	// Now returns the current wall time as seconds (injectable in tests).
 	Now func() float64
 }
@@ -194,6 +197,17 @@ type RoomStats struct {
 	RoomsTotal  int
 	Memberships int
 	TopRooms    []RoomCount
+}
+
+// DiscardMember removes a link from a room without the empty-room
+// cleanup, mirroring the direct rooms[room].discard(link) calls in the
+// kick and ban force-removal paths (empty rooms linger in the map).
+func (m *RoomManager) DiscardMember(room string, link *rns.Link) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if members, ok := m.rooms[room]; ok {
+		delete(members, link)
+	}
 }
 
 // GetRoomStats returns room statistics for the hub stats.
@@ -365,6 +379,17 @@ func (m *RoomManager) GetRoomModeString(room string) string {
 	return "+" + flags.String()
 }
 
+// BroadcastRoomMode sends the current room mode to every member,
+// mirroring broadcast_room_mode.
+func (m *RoomManager) BroadcastRoomMode(room string, outgoing *OutgoingList) {
+	modeText := m.GetRoomModeString(room)
+	for other := range m.GetRoomMembers(room) {
+		if m.hooks.BroadcastNotice != nil {
+			m.hooks.BroadcastNotice(outgoing, other, room, fmt.Sprintf("mode for %v is now: %v", room, modeText))
+		}
+	}
+}
+
 // IsRoomModerated reports whether the room is moderated.
 func (m *RoomManager) IsRoomModerated(room string) bool {
 	m.mu.Lock()
@@ -498,6 +523,36 @@ func copyRoomState(st *RoomState) *RoomState {
 	return &out
 }
 
+// RegistrySnapshot returns a copy of the registry map for diffing.
+func (m *RoomManager) RegistrySnapshot() map[string]*RoomState {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make(map[string]*RoomState, len(m.roomRegistry))
+	for name, st := range m.roomRegistry {
+		out[name] = copyRoomState(st)
+	}
+	return out
+}
+
+// ReplaceRegistry swaps the live registry, appending the new rooms in
+// sorted-name order (Python's reload assigns the freshly loaded dict;
+// the Go map carries no order, so the sorted order is documented).
+func (m *RoomManager) ReplaceRegistry(registry map[string]*RoomState) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.roomRegistry = map[string]*RoomState{}
+	m.roomRegistryOrder = nil
+	names := make([]string, 0, len(registry))
+	for name := range registry {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		m.roomRegistry[name] = copyRoomState(registry[name])
+		m.roomRegistryOrder = append(m.roomRegistryOrder, name)
+	}
+}
+
 // RegistryLen returns the number of registered rooms.
 func (m *RoomManager) RegistryLen() int {
 	m.mu.Lock()
@@ -518,6 +573,41 @@ func (m *RoomManager) RegistryGet(room string) (*RoomState, bool) {
 	defer m.mu.Unlock()
 	st, ok := m.roomRegistry[room]
 	return st, ok
+}
+
+// RegisteredPublicRoom is one registered public room listing entry: the
+// room name and its topic (nil when unset).
+type RegisteredPublicRoom struct {
+	Name  string
+	Topic *string
+}
+
+// RegisteredPublicRooms collects the registered non-private rooms from the
+// live state, then registry-only rooms whose registry entry is not
+// private, mirroring the /list collection (the registry loop checks only
+// the private flag).
+func (m *RoomManager) RegisteredPublicRooms() []RegisteredPublicRoom {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []RegisteredPublicRoom
+	for _, name := range m.roomStateOrder {
+		st := m.roomState[name]
+		if st == nil || !st.Registered || st.Private {
+			continue
+		}
+		out = append(out, RegisteredPublicRoom{Name: name, Topic: st.Topic})
+	}
+	for _, name := range m.roomRegistryOrder {
+		if _, inState := m.roomState[name]; inState {
+			continue
+		}
+		reg := m.roomRegistry[name]
+		if reg == nil || reg.Private {
+			continue
+		}
+		out = append(out, RegisteredPublicRoom{Name: name, Topic: reg.Topic})
+	}
+	return out
 }
 
 // registrySetLocked stores a registry entry, appending to the insertion

@@ -122,6 +122,11 @@ func (m *SessionManager) OnLinkEstablished(link *rns.Link) {
 }
 
 func (m *SessionManager) onLinkEstablishedLocked(link *rns.Link) {
+	// Python's sessions dict preserves first-insertion order; re-HELLO
+	// on an existing link keeps its position.
+	if _, exists := m.sessions[link]; !exists {
+		m.sessionsOrder = append(m.sessionsOrder, link)
+	}
 	m.sessions[link] = &Session{
 		Rooms:    map[string]bool{},
 		PeerCaps: map[int64]any{},
@@ -266,7 +271,7 @@ func (m *SessionManager) updateNickIndexLocked(link *rns.Link, oldNick, newNick 
 
 // nickIndexKey normalizes a nick for the index (strip().lower()).
 func nickIndexKey(nick string) string {
-	return strings.ToLower(strings.TrimSpace(nick))
+	return pythonLower(pythonTrim(nick))
 }
 
 func (m *SessionManager) statsInc(key string, delta int) {
@@ -308,6 +313,63 @@ func (m *SessionManager) GetSession(link *rns.Link) *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.sessions[link]
+}
+
+// WelcomedSessions returns every welcomed session's link in registration
+// order.
+func (m *SessionManager) WelcomedSessions() []*rns.Link {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []*rns.Link
+	for _, link := range m.sessionsOrder {
+		if sess := m.sessions[link]; sess != nil && sess.Welcomed {
+			out = append(out, link)
+		}
+	}
+	return out
+}
+
+// AwaitingPong returns the link's pending PING monotonic reading, or nil.
+func (m *SessionManager) AwaitingPong(link *rns.Link) *float64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sess := m.sessions[link]; sess != nil {
+		return sess.AwaitingPong
+	}
+	return nil
+}
+
+// SetAwaitingPong records the pending PING monotonic reading.
+func (m *SessionManager) SetAwaitingPong(link *rns.Link, now float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sess := m.sessions[link]; sess != nil {
+		sess.AwaitingPong = &now
+	}
+}
+
+// FirstSessionLink returns the first registered session's link (the
+// prune loop's dummy-link guard), or nil with no sessions.
+func (m *SessionManager) FirstSessionLink() *rns.Link {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.sessionsOrder) == 0 {
+		return nil
+	}
+	return m.sessionsOrder[0]
+}
+
+// SessionOrderIndex returns the link's registration position, or -1 when
+// the link has no session.
+func (m *SessionManager) SessionOrderIndex(link *rns.Link) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, registered := range m.sessionsOrder {
+		if registered == link {
+			return i
+		}
+	}
+	return -1
 }
 
 // GetLinkByHash looks up a link by peer identity hash.

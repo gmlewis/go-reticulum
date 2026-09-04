@@ -12,7 +12,13 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+
+	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/rrcd"
+	"github.com/gmlewis/go-reticulum/rrcd/toml"
 )
 
 // defaultConfigTemplate is the first-run rrcd.toml template. The markers
@@ -212,4 +218,104 @@ func pythonReprString(s string) string {
 	}
 	sb.WriteString(quote)
 	return sb.String()
+}
+
+// ensurePrivateDir creates the directory (with parents) and tightens its
+// mode to 0o700 best-effort, mirroring ensure_private_dir.
+func ensurePrivateDir(path string) {
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		return
+	}
+	_ = os.Chmod(path, 0o700)
+}
+
+// writeDefaultConfig writes the first-run rrcd.toml with the interpolated
+// identity path, mirroring _write_default_config.
+func writeDefaultConfig(configPath, identityPath string) {
+	if dir := filepath.Dir(configPath); dir != "" {
+		ensurePrivateDir(dir)
+	}
+	if dir := filepath.Dir(identityPath); dir != "" {
+		ensurePrivateDir(dir)
+	}
+	roomRegistryPath := rrcd.DefaultRoomRegistryPath()
+	content := defaultConfigContent(identityPath, roomRegistryPath)
+	// The write never creates the parent quietly; os.WriteFile fails on
+	// a missing parent exactly like Python's open() would.
+	_ = os.WriteFile(configPath, []byte(content), 0o644)
+}
+
+// ensureFirstRunFiles creates any missing state files and reports whether
+// anything was created, mirroring _ensure_first_run_files.
+func ensureFirstRunFiles(configPath, identityPath, roomRegistryPath string, newIdentity func(string) error) bool {
+	createdAny := false
+
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		writeDefaultConfig(configPath, identityPath)
+		createdAny = true
+	}
+
+	if _, err := os.Stat(identityPath); os.IsNotExist(err) {
+		if dir := filepath.Dir(identityPath); dir != "" {
+			ensurePrivateDir(dir)
+		}
+		if newIdentity == nil {
+			newIdentity = writeNewIdentity
+		}
+		if err := newIdentity(identityPath); err == nil {
+			createdAny = true
+		}
+	}
+
+	if roomRegistryPath != "" {
+		if _, err := os.Stat(roomRegistryPath); os.IsNotExist(err) {
+			if dir := filepath.Dir(roomRegistryPath); dir != "" {
+				ensurePrivateDir(dir)
+			}
+			if err := os.WriteFile(roomRegistryPath, []byte(defaultRoomsContent()), 0o600); err == nil {
+				_ = os.Chmod(roomRegistryPath, 0o600)
+				createdAny = true
+			}
+		}
+	}
+
+	return createdAny
+}
+
+// writeNewIdentity creates a fresh RNS identity and stores its private key
+// at path with mode 0o600.
+func writeNewIdentity(path string) error {
+	identity, err := rns.NewIdentity(true, rns.NewLogger())
+	if err != nil {
+		return err
+	}
+	if err := identity.ToFile(path); err != nil {
+		return err
+	}
+	_ = os.Chmod(path, 0o600)
+	return nil
+}
+
+// firstRunMessage renders the stderr first-run notice with the go-prefix
+// self-reference.
+func firstRunMessage(configPath, identityPath, roomRegistryPath string) string {
+	return "Created default gorrcd files. Edit the configuration before starting:\n" +
+		"- Config:   " + configPath + "\n" +
+		"- Identity: " + identityPath + "\n" +
+		"- Rooms:    " + roomRegistryPath + "\n" +
+		"\nThen re-run gorrcd.\n"
+}
+
+// loadConfigTOMLFile reads and parses an rrcd.toml file into the nested
+// map ApplyConfigData consumes.
+func loadConfigTOMLFile(path string) (map[string]any, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := toml.Parse(string(data))
+	if err != nil {
+		return nil, err
+	}
+	return rrcd.ConfigDataFromDoc(doc), nil
 }

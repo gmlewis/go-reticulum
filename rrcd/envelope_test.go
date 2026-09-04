@@ -27,8 +27,6 @@ func bytesOf(start, n int) []byte {
 	return b
 }
 
-func hexOf(b []byte) string { return hex.EncodeToString(b) }
-
 func TestMakeEnvelopeGoldenNotice(t *testing.T) {
 	t.Parallel()
 	// Golden captured from Python make_envelope + cbor2.dumps.
