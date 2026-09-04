@@ -106,4 +106,8 @@ jobs:
         run: |
           ./scripts/test-integration.sh
           go test -tags=integration -count=1 ./lxmf -run TestParallelStampGeneration
+          # This opt-in run bypasses scripts/test-integration.sh (which
+          # exports the ORIGINAL_*_REPO_DIR vars the cross-implementation
+          # tests require), so export them here, matching the clone paths.
+          export ORIGINAL_RETICULUM_REPO_DIR="$HOME/src/github.com/markqvist/Reticulum"
           go test -tags=integration -count=1 ./rns -run TestIntegratedResponseResourceCompressionPolicyGoToPython
