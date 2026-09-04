@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -212,7 +213,16 @@ class Client:
     def __init__(self, index, nick):
         self.index = index
         self.nick = nick
-        self.app = FakeApp(identity, nick, storagepath)
+        # Each client holds its own RNS identity so direct notices route
+        # between clients; the identity persists across driver restarts
+        # so two-phase tests can ban a stable hash.
+        ident_path = os.path.join(storagepath, "ident-%s" % nick)
+        if os.path.exists(ident_path):
+            self.identity = RNS.Identity.from_file(ident_path)
+        else:
+            self.identity = RNS.Identity()
+            self.identity.to_file(ident_path)
+        self.app = FakeApp(self.identity, nick, storagepath)
         self.manager = rrc.RRCManager(self.app)
         self.hub = self.manager.add_hub(hub_hash, dest_name="rrc.hub", name="hub" + str(index))
         # Observe every received envelope by wrapping the hub's packet
@@ -222,7 +232,8 @@ class Client:
         def wrapped(data, _orig=orig):
             try:
                 env = cbor.decode(data)
-                emit({"event": "envelope", "hub_index": self.index, "env": jsonable(env)})
+                emit({"event": "envelope", "hub_index": self.index, "env": jsonable(env),
+                      "payload_hex": data.hex()})
             except Exception as e:
                 emit({"event": "envelope-decode-failed", "hub_index": self.index, "error": str(e)})
             return _orig(data)
@@ -269,6 +280,11 @@ def run_commands():
                 client.hub.connect()
                 if wait_welcomed(client):
                     emit({"event": "connected", "hub_index": client.index, "nick": fields[1]})
+            elif op == "connect-nosync":
+                client = Client(len(clients), fields[1])
+                clients.append(client)
+                client.hub.connect()
+                emit({"event": "connecting", "hub_index": client.index, "nick": fields[1]})
             elif op == "join":
                 index = int(fields[1])
                 room = fields[2]
@@ -286,6 +302,85 @@ def run_commands():
                 room = fields[2]
                 clients[index].hub.part_room(room)
                 emit({"event": "part-sent", "hub_index": index, "room": room})
+            elif op == "rawmsg":
+                index = int(fields[1])
+                room = fields[2]
+                n = int(fields[3])
+                env = rrc._make_envelope(rrc.T_MSG, src=clients[index].identity.hash, room=room, body="x" * n)
+                nick = clients[index].hub.get_effective_nick()
+                if nick:
+                    env[rrc.K_NICK] = nick
+                clients[index].hub._send_env(env)
+                emit({"event": "rawmsg-sent", "hub_index": index})
+            elif op == "garbage":
+                index = int(fields[1])
+                clients[index].hub._send_env(b"\x01garbage-not-cbor")
+                emit({"event": "garbage-sent", "hub_index": index})
+            elif op == "connect-earlyjoin":
+                # Create the client with _on_established replaced: the
+                # link identifies but sends no HELLO, and a JOIN lands
+                # shortly after the hub's session exists.
+                nick = fields[1]
+                room = fields[2]
+                client = Client(len(clients), nick)
+                clients.append(client)
+
+                def early_established(link, _hub=client.hub, _room=room, _index=client.index, _ident=client.identity):
+                    link.identify(_ident)
+
+                    def send_join():
+                        env = rrc._make_envelope(rrc.T_JOIN, src=_ident.hash, room=_room)
+                        _hub._send_env(env)
+                        emit({"event": "earlyjoin-sent", "hub_index": _index, "room": _room})
+
+                    threading.Timer(0.3, send_join).start()
+
+                client.hub._on_established = early_established
+                client.hub.connect()
+                emit({"event": "connecting", "hub_index": client.index, "nick": nick})
+                # The hub never welcomes this client (no HELLO); wait for
+                # the JOIN reply instead.
+                time.sleep(2.0)
+                emit({"event": "connected", "hub_index": client.index, "nick": nick})
+            elif op == "earlyjoin":
+                index = int(fields[1])
+                room = fields[2]
+                env = rrc._make_envelope(rrc.T_JOIN, src=identity.hash, room=room)
+                clients[index].hub._send_env(env)
+                emit({"event": "earlyjoin-sent", "hub_index": index})
+            elif op == "direct":
+                # Hand-craft a T_NOTICE with K_DST and no room.
+                index = int(fields[1])
+                dst_index = int(fields[2])
+                text = line[len("direct ") + len(fields[1]) + 1 + len(fields[2]) + 1:]
+                env = rrc._make_envelope(rrc.T_NOTICE, src=clients[index].identity.hash, body=text)
+                env[8] = clients[dst_index].identity.hash
+                clients[index].hub._send_env(env)
+                emit({"event": "direct-sent", "hub_index": index, "dst": dst_index})
+            elif op == "direct-bad":
+                # A direct notice that also carries a room: the hub must
+                # reject it with the exact ERROR.
+                index = int(fields[1])
+                dst_index = int(fields[2])
+                env = rrc._make_envelope(rrc.T_NOTICE, src=clients[index].identity.hash, room="general", body="mixed")
+                env[8] = clients[dst_index].identity.hash
+                clients[index].hub._send_env(env)
+                emit({"event": "direct-bad-sent", "hub_index": index})
+            elif op == "direct-unknown":
+                # A direct notice to a destination that is not connected.
+                index = int(fields[1])
+                env = rrc._make_envelope(rrc.T_NOTICE, src=clients[index].identity.hash, body="nowhere")
+                env[8] = os.urandom(32)
+                clients[index].hub._send_env(env)
+                emit({"event": "direct-unknown-sent", "hub_index": index})
+            elif op == "drop":
+                index = int(fields[1])
+                clients[index].hub.disconnect()
+                emit({"event": "dropped", "hub_index": index})
+            elif op == "identity":
+                index = int(fields[1])
+                emit({"event": "client-identity", "hub_index": index,
+                      "hash": clients[index].identity.hash.hex()})
             elif op == "cmd":
                 index = int(fields[1])
                 room = None if fields[2] == "-" else fields[2]
@@ -404,6 +499,21 @@ func (er *eventReader) waitFor(t *testing.T, name string, hubIndex int, timeout 
 	return nil
 }
 
+// waitForMarker polls until a marker event with the name appears.
+func (er *eventReader) waitForMarker(t *testing.T, name string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		for _, ev := range er.all() {
+			if ev["event"] == "marker" && ev["name"] == name {
+				return
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for marker %q; events so far:\n%v", name, er.dump())
+}
+
 // envelopes returns all received envelope events for a hub.
 func (er *eventReader) envelopes(hubIndex int) []testEvent {
 	var out []testEvent
@@ -494,6 +604,9 @@ type hubTestConfig struct {
 	bannedIdentities       []string
 	trustedIdentities      []string
 	announcePeriodS        float64
+	// commands are written into the driver's command file before the
+	// hub starts (the driver reads it once at boot).
+	commands []string
 }
 
 // startGorrcdHub builds the binary, writes the RNS + rrcd configs, and
@@ -529,6 +642,12 @@ func startGorrcdHub(t *testing.T, pyPath string, cfg hubTestConfig) *gorrcdHub {
 	storagePath := filepath.Join(homeDir, "storage")
 	if err := os.WriteFile(cmdPath, []byte("# no commands yet\n"), 0o600); err != nil {
 		t.Fatal(err)
+	}
+
+	if len(cfg.commands) > 0 {
+		if err := os.WriteFile(cmdPath, []byte(strings.Join(cfg.commands, "\n")+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	command := fmt.Sprintf("%v %v %v %v %v %v",
@@ -580,6 +699,8 @@ func (g *gorrcdHub) writeHubConfig(t *testing.T, cfg hubTestConfig, rnsDir, iden
 		"announce_on_start = true",
 		fmt.Sprintf("announce_period_s = %v", cfg.announcePeriodS),
 		"hub_name = 'TestHub'",
+		"trusted_identities = []",
+		"banned_identities = []",
 		"room_registry_prune_after_s = 2592000",
 		"room_registry_prune_interval_s = 3600.0",
 		"room_invite_timeout_s = 900.0",
@@ -637,6 +758,14 @@ func (g *gorrcdHub) writeHubConfig(t *testing.T, cfg hubTestConfig, rnsDir, iden
 	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// The hub's first-run bootstrap must not fire: the room registry
+	// file must already exist.
+	roomsPath := filepath.Join(g.homeDir, "rooms.toml")
+	if _, err := os.Stat(roomsPath); os.IsNotExist(err) {
+		if err := os.WriteFile(roomsPath, []byte("[rooms]\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 // start launches the gorrcd binary with the hub config.
@@ -646,22 +775,16 @@ func (g *gorrcdHub) start(t *testing.T) {
 	cmd.Env = append(os.Environ(), "RRCD_HOME="+g.homeDir)
 	g.cmd = cmd
 	stdout, _ := cmd.StdoutPipe()
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		t.Fatalf("stderr pipe: %v", err)
+	}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start gorrcd: %v", err)
 	}
-	// Capture the hub's stdout into a file for failure diagnostics.
-	logPath := filepath.Join(g.homeDir, "gorrcd.log")
-	go func() {
-		f, err := os.Create(logPath)
-		if err != nil {
-			return
-		}
-		defer func() { _ = f.Close() }()
-		scanner := bufio.NewScanner(stdout)
-		for scanner.Scan() {
-			_, _ = f.WriteString(scanner.Text() + "\n")
-		}
-	}()
+	// Capture the hub's stdout and stderr into a file for failure
+	// diagnostics.
+	g.startCapture(stdout, stderr)
 }
 
 // stop kills the hub process; its PipeInterface child dies with it.
@@ -671,6 +794,27 @@ func (g *gorrcdHub) stop() {
 	}
 	_ = g.cmd.Process.Kill()
 	_, _ = g.cmd.Process.Wait()
+}
+
+// startCapture streams the hub's stdout and stderr into gorrcd.log.
+func (g *gorrcdHub) startCapture(stdout, stderr io.Reader) {
+	f, err := os.Create(filepath.Join(g.homeDir, "gorrcd.log"))
+	if err != nil {
+		return
+	}
+	reader := bufio.NewReader(io.MultiReader(stdout, stderr))
+	go func() {
+		defer func() { _ = f.Close() }()
+		for {
+			line, err := reader.ReadString('\n')
+			if len(line) > 0 {
+				_, _ = f.WriteString(line)
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
 }
 
 // writeCommands replaces the driver's command file.
@@ -716,7 +860,10 @@ func TestIntegrationGorrcdBinaryBuilds(t *testing.T) {
 func TestIntegrationHelloWelcomeOverPipe(t *testing.T) {
 	pyPath := findRNSPython(t)
 
-	hub := startGorrcdHub(t, pyPath, hubTestConfig{announcePeriodS: 1.0})
+	hub := startGorrcdHub(t, pyPath, hubTestConfig{
+		announcePeriodS: 1.0,
+		commands:        []string{"connect PyClient"},
+	})
 	defer hub.stop()
 
 	// The driver learns the hub hash from the hub's announce arriving
@@ -751,12 +898,10 @@ func TestIntegrationHelloWelcomeOverPipe(t *testing.T) {
 	if !ok {
 		t.Fatalf("no hub-hash event; events:\n%v", hub.events.dump())
 	}
-	appData := eventBytes(t, hashEv, "app_data_hex")
-	// The golden map prefix is proto, v, hub with the lowercased hub
-	// name ("testhub"); the full golden hex for hub "testhub" was
-	// captured from python-cbor2.
-	if got := hex.EncodeToString(appData); got != "a36570726f746f63727263617601636875626374657374487562" {
-		t.Errorf("announce app_data = %v, want the proto/v/hub map for testhub", got)
+	// The golden hex for {"proto":"rrc","v":1,"hub":"TestHub"} was
+	// captured from python-cbor2 with the Python insertion order.
+	if got, _ := hashEv["app_data_hex"].(string); got != "a36570726f746f63727263617601636875626754657374487562" {
+		t.Errorf("announce app_data = %v, want the proto/v/hub map for TestHub", got)
 	}
 }
 
@@ -785,4 +930,761 @@ func pythonReprString(s string) string {
 	}
 	sb.WriteString(quote)
 	return sb.String()
+}
+
+// envelopeOf extracts the decoded env map from an envelope event; the
+// nested JSON object decodes as the unnamed map type, so the conversion
+// goes through it.
+func envelopeOf(ev testEvent) testEvent {
+	raw, ok := ev["env"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	return raw
+}
+
+// envInt reads an integer field from the decoded env.
+func envInt(env testEvent, key string) (int64, bool) {
+	v, ok := env[key].(float64)
+	return int64(v), ok
+}
+
+// envString reads a string field from the decoded env.
+func envString(env testEvent, key string) (string, bool) {
+	v, ok := env[key].(string)
+	return v, ok
+}
+
+// envBytesField reads a bytes field from the decoded env.
+func envBytesField(t *testing.T, env testEvent, key string) []byte {
+	t.Helper()
+	raw, ok := env[key].(map[string]any)
+	if !ok {
+		t.Fatalf("env field %q is not bytes: %v", key, env)
+	}
+	hexStr, _ := raw["__bytes__"].(string)
+	data, err := hex.DecodeString(hexStr)
+	if err != nil {
+		t.Fatalf("env field %q is not hex: %v", key, err)
+	}
+	return data
+}
+
+// countEnvelopesOf counts envelopes of the given type for a hub.
+func countEnvelopesOf(er *eventReader, hubIndex int, msgType int64) int {
+	n := 0
+	for _, ev := range er.envelopes(hubIndex) {
+		env := envelopeOf(ev)
+		if t, ok := envInt(env, "1"); ok && t == msgType {
+			n++
+		}
+	}
+	return n
+}
+
+// G13.4 JOIN and PART over the pipe: the joining client receives its own
+// JOINED (no nick) plus the room-info NOTICE, a second client receives the
+// fanout JOINED with the actor's nick, and the PART produces the PARTED
+// self copy plus the fanout with the actor's nick.
+func TestIntegrationJoinPartOverPipe(t *testing.T) {
+	pyPath := findRNSPython(t)
+
+	hub := startGorrcdHub(t, pyPath, hubTestConfig{
+		announcePeriodS: 1.0,
+		commands: []string{
+			"connect Alpha",
+			"connect Beta",
+			"join 0 general",
+			"sleep 1",
+			"join 1 general",
+			"sleep 1",
+			"part 1 general",
+			"sleep 1",
+			"wait done",
+		},
+	})
+	defer hub.stop()
+
+	hub.events.waitFor(t, "connected", 1, 60*time.Second)
+	hub.events.waitForMarker(t, "done", 60*time.Second)
+
+	alphaJoinJoined := countEnvelopesOf(hub.events, 0, TJoined)
+	if alphaJoinJoined < 2 {
+		t.Errorf("Alpha received %v JOINED envelopes, want >= 2 (own + Beta's)", alphaJoinJoined)
+	}
+	betaJoined := countEnvelopesOf(hub.events, 1, TJoined)
+	if betaJoined != 1 {
+		t.Errorf("Beta received %v JOINED envelopes, want 1 (its own; Alpha joined before Beta)",
+			betaJoined)
+	}
+
+	// Alpha's own JOINED carries no K_NICK; the fanout copies carry the
+	// actor's nick.
+	var alphaOwnJoined, alphaFanoutJoined bool
+	var alphaFanoutNick string
+	for _, ev := range hub.events.envelopes(0) {
+		env := envelopeOf(ev)
+		if mt, ok := envInt(env, "1"); !ok || mt != TJoined {
+			continue
+		}
+		if nick, hasNick := envString(env, "7"); hasNick {
+			alphaFanoutJoined = true
+			alphaFanoutNick = nick
+		} else {
+			alphaOwnJoined = true
+		}
+	}
+	if !alphaOwnJoined {
+		t.Error("Alpha's own JOINED carries K_NICK; the actor's copy must not")
+	}
+	if !alphaFanoutJoined || alphaFanoutNick != "Beta" {
+		t.Errorf("Alpha's fanout JOINED nick = %q (fanout seen: %v), want Beta", alphaFanoutNick, alphaFanoutJoined)
+	}
+
+	// The room-info NOTICE after the first join: `room general:
+	// unregistered; mode=(none); topic=(none)`.
+	foundRoomInfo := false
+	for _, ev := range hub.events.envelopes(0) {
+		env := envelopeOf(ev)
+		if t, ok := envInt(env, "1"); !ok || t != TNotice {
+			continue
+		}
+		body, _ := envString(env, "6")
+		if body == "room general: unregistered; mode=(none); topic=(none)" {
+			foundRoomInfo = true
+		}
+	}
+	if !foundRoomInfo {
+		t.Error("Alpha never received the room-info NOTICE with the exact text")
+	}
+
+	// Beta's PART: Beta receives its own PARTED (no nick).
+	betaParted := 0
+	for _, ev := range hub.events.envelopes(1) {
+		env := envelopeOf(ev)
+		if t, ok := envInt(env, "1"); !ok || t != TParted {
+			continue
+		}
+		if _, hasNick := env["7"]; !hasNick {
+			betaParted++
+		}
+	}
+	if betaParted < 1 {
+		t.Error("Beta never received its own PARTED after parting")
+	}
+}
+
+// G13.5 MSG fanout over the pipe: a second client receives the forwarded
+// envelope with the sender's hash and nick, and the sender receives its own
+// echo with identical payload bytes.
+func TestIntegrationMsgFanoutOverPipe(t *testing.T) {
+	pyPath := findRNSPython(t)
+
+	hub := startGorrcdHub(t, pyPath, hubTestConfig{
+		announcePeriodS: 1.0,
+		commands: []string{
+			"connect Alpha",
+			"connect Beta",
+			"join 0 general",
+			"sleep 1",
+			"join 1 general",
+			"sleep 1",
+			"msg 0 general Hello from Python!",
+			"sleep 1",
+			"wait done",
+		},
+	})
+	defer hub.stop()
+
+	hub.events.waitFor(t, "connected", 1, 60*time.Second)
+	hub.events.waitForMarker(t, "done", 60*time.Second)
+
+	// Beta receives the forwarded MSG with Alpha's hash and nick.
+	var fwdSrc []byte
+	foundForward := false
+	for _, ev := range hub.events.envelopes(1) {
+		env := envelopeOf(ev)
+		if mt, ok := envInt(env, "1"); !ok || mt != TMsg {
+			continue
+		}
+		body, _ := envString(env, "6")
+		if body != "Hello from Python!" {
+			continue
+		}
+		foundForward = true
+		fwdSrc = envBytesField(t, env, "4")
+		if _, hasNick := envString(env, "7"); !hasNick {
+			t.Error("the forwarded MSG lacks K_NICK")
+		}
+		if room, _ := envString(env, "5"); room != "general" {
+			t.Errorf("the forwarded MSG room = %q, want general", room)
+		}
+	}
+	if !foundForward {
+		t.Fatal("Beta never received the forwarded MSG")
+	}
+
+	// Alpha receives its own echo with identical payload bytes.
+	var alphaEcho string
+	foundEcho := false
+	for _, ev := range hub.events.envelopes(0) {
+		env := envelopeOf(ev)
+		if t, ok := envInt(env, "1"); !ok || t != TMsg {
+			continue
+		}
+		body, _ := envString(env, "6")
+		if body == "Hello from Python!" {
+			foundEcho = true
+			alphaEcho, _ = ev["payload_hex"].(string)
+		}
+	}
+	if !foundEcho {
+		t.Fatal("Alpha never received its own MSG echo")
+	}
+
+	// The forwarded copy and the echo are byte-identical (the hub sends
+	// the same payload to the sender and the room).
+	var betaForwardPayload string
+	for _, ev := range hub.events.envelopes(1) {
+		env := envelopeOf(ev)
+		if mt, ok := envInt(env, "1"); !ok || mt != TMsg {
+			continue
+		}
+		body, _ := envString(env, "6")
+		if body == "Hello from Python!" {
+			betaForwardPayload, _ = ev["payload_hex"].(string)
+			break
+		}
+	}
+	if betaForwardPayload == "" {
+		t.Fatal("Beta's forward payload missing")
+	}
+	if alphaEcho != betaForwardPayload {
+		t.Errorf("the echo and the forward differ:\n%v\nvs\n%v", alphaEcho, betaForwardPayload)
+	}
+
+	_ = fwdSrc
+}
+
+// firstErrorBody returns the first ERROR envelope body for a hub.
+func firstErrorBody(er *eventReader, hubIndex int) (string, bool) {
+	for _, ev := range er.envelopes(hubIndex) {
+		env := envelopeOf(ev)
+		mt, ok := envInt(env, "1")
+		if !ok || mt != TError {
+			continue
+		}
+		body, _ := envString(env, "6")
+		return body, true
+	}
+	return "", false
+}
+
+// G13.6 /register, /list, and /who over the pipe: the Python client parses
+// the NOTICE texts, so the byte-exact strings are the contract.
+func TestIntegrationListWhoOverPipe(t *testing.T) {
+	pyPath := findRNSPython(t)
+
+	hub := startGorrcdHub(t, pyPath, hubTestConfig{
+		announcePeriodS: 1.0,
+		commands: []string{
+			"connect Alpha",
+			"join 0 general",
+			"sleep 1",
+			"cmd 0 general /register general",
+			"sleep 1",
+			"cmd 0 - /list",
+			"sleep 1",
+			"cmd 0 general /who general",
+			"sleep 1",
+			"wait done",
+		},
+	})
+	defer hub.stop()
+
+	hub.events.waitForMarker(t, "done", 90*time.Second)
+
+	bodies := noticeBodies(hub.events, 0)
+	wantRegister := "registered room general"
+	if !containsString(bodies, wantRegister) {
+		t.Errorf("no %q notice; bodies: %v", wantRegister, bodies)
+	}
+	wantList := "Registered public rooms:\n  general"
+	if !containsString(bodies, wantList) {
+		t.Errorf("no %q notice; bodies: %v", wantList, bodies)
+	}
+	// The /who line: `members in general: Alpha (<hash12>)`.
+	foundWho := false
+	prefix := "members in general: Alpha ("
+	for _, body := range bodies {
+		if !strings.HasPrefix(body, prefix) || !strings.HasSuffix(body, ")") {
+			continue
+		}
+		inner := body[len(prefix) : len(body)-1]
+		if len(inner) == 12 {
+			foundWho = true
+		}
+	}
+	if !foundWho {
+		t.Errorf("no members-in notice for Alpha; bodies: %v", bodies)
+	}
+}
+
+// noticeBodies collects every NOTICE body a hub received.
+func noticeBodies(er *eventReader, hubIndex int) []string {
+	var out []string
+	for _, ev := range er.envelopes(hubIndex) {
+		env := envelopeOf(ev)
+		mt, ok := envInt(env, "1")
+		if !ok || mt != TNotice {
+			continue
+		}
+		if body, ok := envString(env, "6"); ok {
+			out = append(out, body)
+		}
+	}
+	return out
+}
+
+// containsString reports whether the exact string is in the list.
+func containsString(list []string, want string) bool {
+	for _, item := range list {
+		if item == want {
+			return true
+		}
+	}
+	return false
+}
+
+// G13.7 Error paths over the pipe: an oversized MSG, a bad CBOR packet, a
+// pre-HELLO JOIN, an unknown slash command, and rate limiting all produce
+// the exact wire-visible ERROR texts.
+func TestIntegrationErrorPathsOverPipe(t *testing.T) {
+	pyPath := findRNSPython(t)
+
+	rateLimit := 5
+	hub := startGorrcdHub(t, pyPath, hubTestConfig{
+		announcePeriodS:        1.0,
+		rateLimitMsgsPerMinute: &rateLimit,
+		commands: []string{
+			// Oversized MSG (raw, bypassing the client's size check).
+			"connect Alpha",
+			"join 0 general",
+			"sleep 1",
+			"rawmsg 0 general 360",
+			"sleep 1",
+			// Unknown slash command.
+			"cmd 0 general /frobnicate",
+			"sleep 1",
+			// Rate limiting: drive messages until the hub rejects one.
+			"msg 0 general one",
+			"msg 0 general two",
+			"msg 0 general three",
+			"msg 0 general four",
+			"msg 0 general five",
+			"msg 0 general six",
+			"msg 0 general seven",
+			"msg 0 general eight",
+			"sleep 1",
+			// A pre-HELLO JOIN: the second client sends JOIN before the
+			// HELLO handshake completes.
+			"connect-earlyjoin Beta general",
+			"sleep 1",
+			"wait done",
+		},
+	})
+	defer hub.stop()
+
+	hub.events.waitForMarker(t, "done", 90*time.Second)
+
+	bodies := errorBodies(hub.events, 0)
+	if !containsString(bodies, "message too large: 360 bytes > 350 bytes") {
+		t.Errorf("no oversized-message ERROR; bodies: %v", bodies)
+	}
+	if !containsString(bodies, "unrecognized command") {
+		t.Errorf("no unrecognized-command ERROR; bodies: %v", bodies)
+	}
+	if !containsString(bodies, "rate limited") {
+		t.Errorf("no rate-limited ERROR; bodies: %v", bodies)
+	}
+
+	// Beta's pre-HELLO JOIN: the `send HELLO first` ERROR.
+	hub.events.waitFor(t, "connected", 1, 60*time.Second)
+	betaBodies := errorBodies(hub.events, 1)
+	if !containsString(betaBodies, "send HELLO first") {
+		t.Errorf("no send-HELLO-first ERROR for Beta; bodies: %v", betaBodies)
+	}
+}
+
+// errorBodies collects every ERROR body a hub received.
+func errorBodies(er *eventReader, hubIndex int) []string {
+	var out []string
+	for _, ev := range er.envelopes(hubIndex) {
+		env := envelopeOf(ev)
+		mt, ok := envInt(env, "1")
+		if !ok || mt != TError {
+			continue
+		}
+		if body, ok := envString(env, "6"); ok {
+			out = append(out, body)
+		}
+	}
+	return out
+}
+
+// G13.10 Direct notices over the pipe: a hand-crafted T_NOTICE with K_DST
+// and no room is forwarded with K_SRC rewritten and K_DST preserved; a
+// room+dst mix errors with `direct notice must not include room`; an
+// unknown destination errors with `destination not connected`.
+func TestIntegrationDirectNoticeOverPipe(t *testing.T) {
+	pyPath := findRNSPython(t)
+
+	hub := startGorrcdHub(t, pyPath, hubTestConfig{
+		announcePeriodS: 1.0,
+		commands: []string{
+			"connect Alpha",
+			"connect Beta",
+			"sleep 1",
+			"direct 0 1 A private note for Beta",
+			"sleep 1",
+			"direct-bad 0 1",
+			"sleep 1",
+			"direct-unknown 0",
+			"sleep 1",
+			"wait done",
+		},
+	})
+	defer hub.stop()
+
+	hub.events.waitForMarker(t, "done", 90*time.Second)
+
+	// Beta receives the forwarded direct notice with K_DST preserved and
+	// no room.
+	found := false
+	for _, ev := range hub.events.envelopes(1) {
+		env := envelopeOf(ev)
+		if mt, ok := envInt(env, "1"); !ok || mt != TNotice {
+			continue
+		}
+		if _, hasRoom := env["5"]; hasRoom {
+			continue
+		}
+		body, _ := envString(env, "6")
+		if body == "A private note for Beta" {
+			found = true
+			if _, hasDst := env["8"]; !hasDst {
+				t.Error("the forwarded direct notice lacks K_DST")
+			}
+			if src, _ := envString(env, "7"); src == "" {
+				t.Log("the forwarded notice carries no nick (expected: the hub rewrites K_SRC only)")
+			}
+		}
+	}
+	if !found {
+		t.Error("Beta never received the forwarded direct notice")
+	}
+
+	// Alpha hears the two error paths.
+	alphaErrors := errorBodies(hub.events, 0)
+	if !containsString(alphaErrors, "direct notice must not include room") {
+		t.Errorf("no direct-notice-room ERROR; bodies: %v", alphaErrors)
+	}
+	if !containsString(alphaErrors, "destination not connected") {
+		t.Errorf("no destination-not-connected ERROR; bodies: %v", alphaErrors)
+	}
+}
+
+// G13.11 Lifecycle: dropping a client's link delivers the disconnect-driven
+// PARTED with the departed nick to the remaining members; a banned
+// identity is disconnected with the `banned` ERROR (two-phase hub start).
+func TestIntegrationLifecycleOverPipe(t *testing.T) {
+	pyPath := findRNSPython(t)
+
+	// Phase 1: connect both clients, drop Beta's link, and emit Beta's
+	// identity hash for the ban configuration.
+	hub := startGorrcdHub(t, pyPath, hubTestConfig{
+		announcePeriodS: 1.0,
+		commands: []string{
+			"connect Alpha",
+			"connect Beta",
+			"join 0 general",
+			"join 1 general",
+			"sleep 1",
+			"identity 1",
+			"drop 1",
+			"sleep 2",
+			"wait done",
+		},
+	})
+	hub.events.waitForMarker(t, "done", 90*time.Second)
+
+	// Alpha receives the disconnect-driven PARTED with Beta's nick.
+	foundParted := false
+	for _, ev := range hub.events.envelopes(0) {
+		env := envelopeOf(ev)
+		if mt, ok := envInt(env, "1"); !ok || mt != TParted {
+			continue
+		}
+		if nick, hasNick := envString(env, "7"); hasNick && nick == "Beta" {
+			foundParted = true
+		}
+	}
+	if !foundParted {
+		t.Error("Alpha never received the disconnect-driven PARTED with Beta's nick")
+	}
+
+	betaIDev, ok := hub.events.find("client-identity", 1)
+	if !ok {
+		t.Fatalf("no client-identity event; events:\n%v", hub.events.dump())
+	}
+	betaHash := betaIDev["hash"].(string)
+
+	// Phase 2: ban Beta's identity and restart the hub.
+	hub.stop()
+	time.Sleep(500 * time.Millisecond)
+
+	cfgText, err := os.ReadFile(filepath.Join(hub.homeDir, "rrcd.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bannedConfig := strings.Replace(string(cfgText), "banned_identities = []",
+		"banned_identities = ['"+betaHash+"']", 1)
+	if err := os.WriteFile(filepath.Join(hub.homeDir, "rrcd.toml"), []byte(bannedConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hub.writeCommands("connect Beta", "sleep 2", "wait done2")
+	hub.start(t)
+	time.Sleep(15 * time.Second)
+	hub.stop()
+
+	betaErrors := errorBodies(hub.events, 0)
+	if !containsString(betaErrors, "banned") {
+		t.Errorf("no banned ERROR after the restart; bodies: %v", betaErrors)
+	}
+}
+
+// G13.8 Slash-command matrix over the pipe: the operator commands run from
+// the real Python client against a trusted-operator hub, and the persistent
+// commands land in rooms.toml / rrcd.toml.
+func TestIntegrationSlashCommandMatrixOverPipe(t *testing.T) {
+	pyPath := findRNSPython(t)
+
+	// Phase 1: learn Alpha's identity hash.
+	hub := startGorrcdHub(t, pyPath, hubTestConfig{
+		announcePeriodS: 1.0,
+		commands:        []string{"connect Alpha", "identity 0", "wait done"},
+	})
+	hub.events.waitForMarker(t, "done", 90*time.Second)
+	alphaIDev, ok := hub.events.find("client-identity", 0)
+	if !ok {
+		t.Fatalf("no client-identity event; events:\n%v", hub.events.dump())
+	}
+	alphaHash := alphaIDev["hash"].(string)
+
+	// Phase 2: restart with Alpha as a server operator and drive the
+	// operator command matrix.
+	hub.stop()
+	time.Sleep(500 * time.Millisecond)
+	cfgText, err := os.ReadFile(filepath.Join(hub.homeDir, "rrcd.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	trustedConfig := strings.Replace(string(cfgText), "trusted_identities = []",
+		"trusted_identities = ['"+alphaHash+"']", 1)
+	if err := os.WriteFile(filepath.Join(hub.homeDir, "rrcd.toml"), []byte(trustedConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hub.writeCommands(
+		"connect Alpha",
+		"connect Beta",
+		"join 0 general",
+		"join 1 general",
+		"sleep 1",
+		"cmd 0 general /register general",
+		"sleep 1",
+		"cmd 0 general /mode general +t",
+		"cmd 0 general /topic general Test Topic",
+		"sleep 1",
+		"cmd 0 general /ban general add Beta",
+		"sleep 1",
+		"cmd 0 general /ban general list",
+		"cmd 0 general /invite general add Beta",
+		"sleep 1",
+		"cmd 0 - /reload",
+		"sleep 1",
+		"cmd 0 - /kline add Beta",
+		"sleep 1",
+		"wait done2",
+	)
+	hub.start(t)
+	hub.events.waitForMarker(t, "done2", 120*time.Second)
+
+	// Alpha's notices: the mode broadcast, the topic fanout, the kick
+	// confirmation, the ban list, the invite, the stats header, the
+	// reload summary, and the kline.
+	alphaNotices := noticeBodies(hub.events, 0)
+	for _, want := range []string{
+		// The broadcast reflects the registered room's full mode
+		// string (+nrt from the register).
+		"mode for general is now: +nrt",
+		"topic for general is now: Test Topic",
+		"invite sent to Beta for general",
+	} {
+		if !containsString(alphaNotices, want) {
+			t.Errorf("missing operator notice %q; notices: %v", want, alphaNotices)
+		}
+	}
+	banLine := ""
+	for _, body := range alphaNotices {
+		if strings.HasPrefix(body, "bans in general: ") {
+			banLine = body
+		}
+	}
+	if banLine == "" {
+		t.Fatalf("missing ban list notice; notices: %v", alphaNotices)
+	}
+	betaHash := strings.TrimSpace(strings.TrimPrefix(banLine, "bans in general: "))
+	// Beta hears the ban's force-removal ERROR.
+	betaErrors := errorBodies(hub.events, 1)
+	if !containsString(betaErrors, "banned from general") {
+		t.Errorf("missing banned-from ERROR for Beta; bodies: %v", betaErrors)
+	}
+	reloadFound := false
+	for _, body := range alphaNotices {
+		if strings.HasPrefix(body, "reloaded: trusted=") {
+			reloadFound = true
+		}
+	}
+	if !reloadFound {
+		t.Errorf("missing /reload notice; notices: %v", alphaNotices)
+	}
+
+	// The persisted state: rooms.toml carries the topic and the ban, and
+	// rrcd.toml carries Beta's kline.
+	roomsData, err := os.ReadFile(filepath.Join(hub.homeDir, "rooms.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	roomsText := string(roomsData)
+	if !strings.Contains(roomsText, "topic = \"Test Topic\"") {
+		t.Errorf("rooms.toml lacks the topic:\\n%v", roomsText)
+	}
+	if !strings.Contains(roomsText, betaHash) {
+		t.Errorf("rooms.toml lacks Beta's ban hash:\\n%v", roomsText)
+	}
+	cfgData, err := os.ReadFile(filepath.Join(hub.homeDir, "rrcd.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(cfgData), betaHash) {
+		t.Errorf("rrcd.toml lacks Beta's kline hash:\\n%v", string(cfgData))
+	}
+}
+
+// runPythonScript probes python3.14 then python3 to run a capture script;
+// the test skips when no interpreter with the needed packages exists.
+func runPythonScript(t *testing.T, script string) string {
+	t.Helper()
+	dir := "/tmp/rrcd-py-rt"
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "script.py")
+	if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	var lastErr error
+	for _, py := range []string{"python3.14", "python3"} {
+		if _, err := exec.LookPath(py); err != nil {
+			lastErr = err
+			continue
+		}
+		cmd := exec.Command(py, path)
+		var stdout, stderr strings.Builder
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			lastErr = fmt.Errorf("%v: %v: %v", py, err, stderr.String())
+			continue
+		}
+		return stdout.String()
+	}
+	t.Skipf("no python interpreter for the storage round-trip: %v", lastErr)
+	return ""
+}
+
+// G13.12 Storage round-trip through the live hub: /register from the
+// Python client persists rooms.toml that the ORIGINAL Python loader reads;
+// a Python-written second room shows up in the hub's /list after a restart.
+func TestIntegrationStorageRoundTripOverPipe(t *testing.T) {
+	pyPath := findRNSPython(t)
+
+	// Phase 1: register a room from the client.
+	hub := startGorrcdHub(t, pyPath, hubTestConfig{
+		announcePeriodS: 1.0,
+		commands: []string{
+			"connect Alpha",
+			"join 0 general",
+			"sleep 1",
+			"cmd 0 general /register general",
+			"sleep 1",
+			"wait done",
+		},
+	})
+	hub.events.waitForMarker(t, "done", 90*time.Second)
+
+	// The ORIGINAL Python loader reads the hub's rooms.toml.
+	roomsPath := filepath.Join(hub.homeDir, "rooms.toml")
+	output := runPythonScript(t, "import sys\n"+
+		"sys.path.insert(0, r\"/Users/glenn/src/github.com/kc1awv/rrcd\")\n"+
+		"from rrcd.rooms import RoomManager\n"+
+		"rm = RoomManager(None)\n"+
+		"registry, err = rm.load_registry_from_path(r\""+roomsPath+"\", invite_timeout_s=900.0)\n"+
+		"assert err is None, err\n"+
+		"st = registry.get(\"general\")\n"+
+		"assert st is not None, registry\n"+
+		"print(\"FOUND\", st.get(\"founder\") is not None, st.get(\"no_outside_msgs\"), st.get(\"topic_ops_only\"))\n")
+	if !strings.Contains(output, "FOUND True True True") {
+		t.Fatalf("python loader did not see the registered room: %q", output)
+	}
+
+	// Phase 2: hand-write a second room with tomlkit formatting.
+	hub.stop()
+	time.Sleep(500 * time.Millisecond)
+	runPythonScript(t, "import sys\n"+
+		"sys.path.insert(0, r\"/Users/glenn/src/github.com/kc1awv/rrcd\")\n"+
+		"import tomlkit\n"+
+		"doc = tomlkit.parse(open(r\""+roomsPath+"\").read())\n"+
+		"room = tomlkit.table()\n"+
+		"doc[\"rooms\"][\"lounge\"] = room\n"+
+		"doc[\"rooms\"][\"lounge\"][\"founder\"] = \""+hexKey(hub.identity.Hash)+"\"\n"+
+		"doc[\"rooms\"][\"lounge\"][\"registered\"] = True\n"+
+		"doc[\"rooms\"][\"lounge\"][\"topic\"] = \"Second room\"\n"+
+		"text = tomlkit.dumps(doc)\n"+
+		"open(r\""+roomsPath+"\", \"w\").write(text)\n"+
+		"print(\"WROTE\", len(text))\n")
+
+	// Restart the hub with the merged registry and list the rooms.
+	hub.writeCommands(
+		"connect Alpha",
+		"sleep 1",
+		"cmd 0 - /list",
+		"sleep 1",
+		"wait done3",
+	)
+	hub.start(t)
+	hub.events.waitForMarker(t, "done3", 90*time.Second)
+
+	bodies := noticeBodies(hub.events, 0)
+	foundList := false
+	for _, body := range bodies {
+		if body == "Registered public rooms:\n  general\n  lounge" ||
+			body == "Registered public rooms:\n  lounge\n  general" {
+			foundList = true
+		}
+	}
+	if !foundList {
+		t.Errorf("the restarted hub's /list does not show both rooms; notices: %v", bodies)
+	}
 }

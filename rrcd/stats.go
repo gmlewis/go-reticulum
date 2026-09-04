@@ -11,8 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gmlewis/go-reticulum/rns"
-
 	"github.com/gmlewis/go-reticulum/rrcd/toml"
 )
 
@@ -165,7 +163,7 @@ func (s *StatsManager) FormatStats(cfg StatsConfig, snap StatsSnapshot) string {
 	s.mu.Unlock()
 
 	lines := []string{
-		"rrcd " + rns.VERSION + " stats",
+		"rrcd " + HubVersion + " stats",
 		"uptime_s=" + fmtFloatDot1(uptimeS),
 		"clients_total=" + itoa(snap.SessionsTotal) +
 			" clients_identified=" + itoa(snap.SessionsIdentified) +

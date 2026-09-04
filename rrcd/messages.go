@@ -150,31 +150,29 @@ func (m *MessageHelper) QueueNoticeChunks(outgoing *OutgoingList, link *rns.Link
 }
 
 // QueueWelcome queues a WELCOME message for a newly connected peer,
-// mirroring queue_welcome.
+// mirroring queue_welcome. The caps map carries the Python insertion order
+// (1, 2, then 0) and the limits map the 0,1,2,3,4 order.
 func (m *MessageHelper) QueueWelcome(outgoing *OutgoingList, link *rns.Link, peerHash []byte) {
 	if m.hooks.IdentityHash() == nil {
 		return
 	}
-	limits := map[int64]int{
-		BLimitMaxNickBytes:       m.hooks.MaxNickBytes(),
-		BLimitMaxRoomNameBytes:   m.hooks.MaxRoomNameBytes(),
-		BLimitMaxMsgBodyBytes:    m.hooks.MaxMsgBodyBytes(),
-		BLimitMaxRoomsPerSession: m.hooks.MaxRoomsPerSession(),
-		BLimitRateMsgsPerMinute:  m.hooks.RateLimitMsgsPerMinute(),
-	}
-	caps := map[int64]bool{
-		CAPAction:       true,
-		CAPDirectNotice: true,
-	}
+	limits := cbor.NewMap()
+	limits.Set(BLimitMaxNickBytes, int64(m.hooks.MaxNickBytes()))
+	limits.Set(BLimitMaxRoomNameBytes, int64(m.hooks.MaxRoomNameBytes()))
+	limits.Set(BLimitMaxMsgBodyBytes, int64(m.hooks.MaxMsgBodyBytes()))
+	limits.Set(BLimitMaxRoomsPerSession, int64(m.hooks.MaxRoomsPerSession()))
+	limits.Set(BLimitRateMsgsPerMinute, int64(m.hooks.RateLimitMsgsPerMinute()))
+	caps := cbor.NewMap()
+	caps.Set(CAPAction, true)
+	caps.Set(CAPDirectNotice, true)
 	if m.hooks.EnableResourceTransfer() {
-		caps[CAPResourceEnvelope] = true
+		caps.Set(CAPResourceEnvelope, true)
 	}
-	body := map[int64]interface{}{
-		BWelcomeHub:    m.hooks.HubName(),
-		BWelcomeVer:    rns.VERSION,
-		BWelcomeCaps:   caps,
-		BWelcomeLimits: limits,
-	}
+	body := cbor.NewMap()
+	body.Set(BWelcomeHub, m.hooks.HubName())
+	body.Set(BWelcomeVer, HubVersion)
+	body.Set(BWelcomeCaps, caps)
+	body.Set(BWelcomeLimits, limits)
 	welcome := MakeEnvelope(int(TWelcome), m.hooks.IdentityHash(), WithBody(body))
 	welcomePayload := cbor.Encode(welcome)
 
