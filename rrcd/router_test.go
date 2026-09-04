@@ -142,3 +142,46 @@ func TestRouterExtractCaps(t *testing.T) {
 		}
 	}
 }
+
+// G16.7 Room and target normalization must use Python's str.lower()
+// semantics: İ (U+0130) becomes "i" plus a combining dot above and a
+// word-final capital sigma becomes ς, so the hub echoes room strings the
+// client can match. Golden: python3 -c
+// "print(repr('İstanbul'.lower()), repr('ΟΔΟΣ'.lower()))" and friends.
+func TestNormRoomUnicodeLowerParity(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"İstanbul", "i\u0307stanbul"},
+		{"İ", "i\u0307"},
+		{"ΟΔΟΣ", "οδος"},
+		{"ΣΟΦΙΑ", "σοφια"},
+		{"Σ Σ", "σ σ"},
+		{"ΚΑΛΗΜΕΡΑ ΣΑΣ", "καλημερα σας"},
+		{"ΜΙΑΣ", "μιας"},
+	}
+	for _, tt := range tests {
+		if got := pythonLower(tt.in); got != tt.want {
+			t.Errorf("pythonLower(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+
+	r := NewRouter(RouterHooks{MaxRoomNameBytes: func() int { return 64 }})
+	got, err := r.normRoom("  İstanbul  ")
+	if err != nil {
+		t.Fatalf("normRoom error: %v", err)
+	}
+	if got != "i\u0307stanbul" {
+		t.Errorf("normRoom(İstanbul) = %q, want %q", got, "i\u0307stanbul")
+	}
+	got, err = r.normRoom("ΟΔΟΣ")
+	if err != nil {
+		t.Fatalf("normRoom error: %v", err)
+	}
+	if got != "οδος" {
+		t.Errorf("normRoom(ΟΔΟΣ) = %q, want %q", got, "οδος")
+	}
+}

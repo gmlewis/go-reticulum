@@ -8,6 +8,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -184,6 +185,35 @@ func TestHelpParity(t *testing.T) {
 	}
 }
 
+// G16.22 The --version flag is a documented, accepted divergence from the
+// Python CLI: gorrcd answers with a version line and exit 0 where the
+// Python argparse rejects the flag, and the help text carries the two
+// extra --version lines that stripVersionFlag removes before the parity
+// comparison. The usage continuation indent matches argparse's render.
+func TestHelpVersionDivergence(t *testing.T) {
+	t.Parallel()
+
+	// The usage line carries [--version] and the options section the
+	// --version entry; both strip away for the parity comparison.
+	if !strings.Contains(usageText, " [--version]") {
+		t.Error("the usage line lost the --version flag")
+	}
+	stripped := stripVersionFlag(usageText)
+	if strings.Contains(stripped, "--version") {
+		t.Error("stripVersionFlag left --version lines behind")
+	}
+	if !strings.Contains(usageText, "  --version             show program's version number and exit") {
+		t.Error("the options section lost the --version entry")
+	}
+
+	// The continuation indent matches argparse's 12-space alignment.
+	for line := range strings.SplitSeq(usageText, "\n") {
+		if strings.HasPrefix(line, "            [") && !strings.HasPrefix(line, "            [") {
+			t.Error("usage continuation indent mismatch")
+		}
+	}
+}
+
 // stripVersionFlag removes the Go-only --version lines from the usage
 // text before the Python help comparison.
 func stripVersionFlag(text string) string {
@@ -351,5 +381,65 @@ func TestVersionFlag(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Errorf("--version wrote to stderr: %q", stderr.String())
+	}
+}
+
+// G16.19 The numeric flag parsers must reject argparse-invalid values:
+// Python's float()/int() raise for trailing garbage and hex input while
+// accepting underscores between digits.
+func TestParseFlagsArgparseInvalidValues(t *testing.T) {
+	t.Parallel()
+
+	// float(): "30abc" and "0x10" raise; "1_000.5" parses; inf parses.
+	for _, bad := range []string{"30abc", "0x10", "1__0", "_1", "1_", "abc"} {
+		if _, err := parsePythonFloat(bad); err == nil {
+			t.Errorf("parsePythonFloat(%q) accepted, want a ValueError", bad)
+		}
+	}
+	for _, good := range []struct {
+		in   string
+		want float64
+	}{
+		{"30", 30}, {" 30.5 ", 30.5}, {"1_000.5", 1000.5}, {"inf", math.Inf(1)},
+		{"-2.5", -2.5}, {"1e3", 1000},
+	} {
+		got, err := parsePythonFloat(good.in)
+		if err != nil {
+			t.Errorf("parsePythonFloat(%q) error: %v", good.in, err)
+			continue
+		}
+		if got != good.want {
+			t.Errorf("parsePythonFloat(%q) = %v, want %v", good.in, got, good.want)
+		}
+	}
+
+	// int(): "30abc" and "0x10" raise; "1_000" parses to 1000; "1.5" raises.
+	for _, bad := range []string{"30abc", "0x10", "1.5", "1__0", "_1", ""} {
+		if _, err := parsePythonInt(bad); err == nil {
+			t.Errorf("parsePythonInt(%q) accepted, want a ValueError", bad)
+		}
+	}
+	for _, good := range []struct {
+		in   string
+		want int
+	}{
+		{"1_000", 1000}, {"-25", -25}, {" 42 ", 42}, {"+7", 7},
+	} {
+		got, err := parsePythonInt(good.in)
+		if err != nil {
+			t.Errorf("parsePythonInt(%q) error: %v", good.in, err)
+			continue
+		}
+		if got != good.want {
+			t.Errorf("parsePythonInt(%q) = %v, want %v", good.in, got, good.want)
+		}
+	}
+
+	// The flag surface rejects the argparse-invalid values end to end.
+	if _, err := parseFlags([]string{"--announce-period", "30abc"}, nil); err == nil {
+		t.Error("--announce-period 30abc accepted, want exit-2 style error")
+	}
+	if _, err := parseFlags([]string{"--max-rooms", "1_000"}, nil); err != nil {
+		t.Errorf("--max-rooms 1_000 rejected: %v", err)
 	}
 }

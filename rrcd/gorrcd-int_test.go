@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -232,6 +233,13 @@ class Client:
         self.app = FakeApp(self.identity, nick, storagepath)
         self.manager = rrc.RRCManager(self.app)
         self.hub = self.manager.add_hub(hub_hash, dest_name="rrc.hub", name="hub" + str(index))
+        # Every rendered message (system rows, chat, notices) is emitted
+        # as an event so the Go tests can assert client-visible rows.
+        self.manager.set_message_callback(
+            lambda hub, msg, _index=index: emit({
+                "event": "message-row", "hub_index": _index,
+                "room": msg.room, "kind": msg.kind, "text": msg.text,
+                "nick": msg.nick}))
         # Observe every received envelope by wrapping the hub's packet
         # callback (late-bound at call time, so instance patching works).
         orig = self.hub._on_packet
@@ -309,6 +317,34 @@ def run_commands():
                 room = fields[2]
                 clients[index].hub.part_room(room)
                 emit({"event": "part-sent", "hub_index": index, "room": room})
+            elif op == "ping":
+                index = int(fields[1])
+                room = None if fields[2] == "-" else fields[2]
+                body = clients[index].hub.send_ping(room)
+                emit({"event": "ping-sent", "hub_index": index,
+                      "body_hex": body.hex(), "room": room})
+            elif op == "silence":
+                # Swallow the hub's PINGs so the client never PONGs.
+                index = int(fields[1])
+                client = clients[index]
+                orig = client.hub._on_packet
+
+                def silent_packet(data, _orig=orig):
+                    try:
+                        env = cbor.decode(data)
+                        if isinstance(env, dict) and env.get(rrc.K_T) == rrc.T_PING:
+                            return
+                    except Exception:
+                        pass
+                    _orig(data)
+
+                client.hub._on_packet = silent_packet
+                emit({"event": "silenced", "hub_index": index})
+            elif op == "status":
+                index = int(fields[1])
+                hub = clients[index].hub
+                emit({"event": "hub-status", "hub_index": index,
+                      "status": int(hub.status), "status_text": hub.status_text})
             elif op == "rawmsg":
                 index = int(fields[1])
                 room = fields[2]
@@ -615,6 +651,9 @@ type hubTestConfig struct {
 	bannedIdentities       []string
 	trustedIdentities      []string
 	announcePeriodS        float64
+	pingIntervalS          *float64
+	pingTimeoutS           *float64
+	includeJoinedList      *bool
 	// commands are written into the driver's command file before the
 	// hub starts (the driver reads it once at boot).
 	commands []string
@@ -699,6 +738,17 @@ func startGorrcdHub(t *testing.T, pyPath string, cfg hubTestConfig) *gorrcdHub {
 	return hub
 }
 
+// tomlFloatLiteral renders a float64 as a TOML float literal: the
+// shortest representation plus a ".0" suffix when it would otherwise
+// parse as an integer.
+func tomlFloatLiteral(v float64) string {
+	s := strconv.FormatFloat(v, 'g', -1, 64)
+	if !strings.ContainsAny(s, ".eE") {
+		s += ".0"
+	}
+	return s
+}
+
 // writeHubConfig writes the hub's rrcd.toml with the test's knobs.
 func (g *gorrcdHub) writeHubConfig(t *testing.T, cfg hubTestConfig, rnsDir, identityPath string) {
 	t.Helper()
@@ -744,6 +794,18 @@ func (g *gorrcdHub) writeHubConfig(t *testing.T, cfg hubTestConfig, rnsDir, iden
 	if cfg.enableResourceTransfer != nil {
 		config = strings.Replace(config, "enable_resource_transfer = true",
 			fmt.Sprintf("enable_resource_transfer = %v", *cfg.enableResourceTransfer), 1)
+	}
+	if cfg.pingIntervalS != nil {
+		config = strings.Replace(config, "ping_interval_s = 0.0",
+			"ping_interval_s = "+tomlFloatLiteral(*cfg.pingIntervalS), 1)
+	}
+	if cfg.pingTimeoutS != nil {
+		config = strings.Replace(config, "ping_timeout_s = 0.0",
+			"ping_timeout_s = "+tomlFloatLiteral(*cfg.pingTimeoutS), 1)
+	}
+	if cfg.includeJoinedList != nil {
+		config = strings.Replace(config, "include_joined_member_list = false",
+			fmt.Sprintf("include_joined_member_list = %v", *cfg.includeJoinedList), 1)
 	}
 	if cfg.greeting != nil {
 		config = strings.Replace(config, "hub_name = 'TestHub'",
@@ -1083,6 +1145,238 @@ func TestIntegrationJoinPartOverPipe(t *testing.T) {
 	}
 	if betaParted < 1 {
 		t.Error("Beta never received its own PARTED after parting")
+	}
+}
+
+// G15.7 PING/PONG over the pipe: the real client's send_ping reaches the
+// hub, the hub echoes the ping body byte-identically in a t=31 envelope,
+// and the client renders its `Pong from hub: N ms` system row.
+func TestIntegrationPingPongOverPipe(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+	pyPath := findRNSPython(t)
+
+	hub := startGorrcdHub(t, pyPath, hubTestConfig{
+		announcePeriodS: 1.0,
+		commands: []string{
+			"connect Alpha",
+			"join 0 general",
+			"sleep 1",
+			"ping 0 general",
+			"sleep 2",
+			"wait done",
+		},
+	})
+	defer hub.stop()
+
+	hub.events.waitFor(t, "connected", 0, 90*time.Second)
+	pingEv := hub.events.waitFor(t, "ping-sent", 0, 60*time.Second)
+	bodyHex, _ := pingEv["body_hex"].(string)
+	if bodyHex == "" {
+		t.Fatalf("ping-sent event carries no body_hex: %v", pingEv)
+	}
+	hub.events.waitForMarker(t, "done", 90*time.Second)
+
+	// The hub's PONG echoes the ping body byte-identically.
+	echoed := false
+	for _, ev := range hub.events.envelopes(0) {
+		env := envelopeOf(ev)
+		if mt, ok := envInt(env, "1"); !ok || mt != TPong {
+			continue
+		}
+		body := envBytesField(t, env, "6")
+		if hex.EncodeToString(body) == bodyHex {
+			echoed = true
+		}
+	}
+	if !echoed {
+		t.Errorf("Alpha never received a t=31 envelope echoing ping body %v; envelopes:\n%v",
+			bodyHex, hub.events.dump())
+	}
+
+	// The client rendered the Pong from hub system row.
+	pongRow := false
+	for _, ev := range hub.events.all() {
+		if ev["event"] != "message-row" {
+			continue
+		}
+		if idx, ok := ev["hub_index"].(float64); !ok || int(idx) != 0 {
+			continue
+		}
+		kind, _ := ev["kind"].(string)
+		text, _ := ev["text"].(string)
+		if kind == "system" && strings.HasPrefix(text, "Pong from hub: ") && strings.HasSuffix(text, " ms") {
+			pongRow = true
+		}
+	}
+	if !pongRow {
+		t.Errorf("the client never rendered the 'Pong from hub' system row; events:\n%v", hub.events.dump())
+	}
+}
+
+// G15.8 The hub-initiated PING loop over the pipe: with
+// ping_interval_s = 1.0 and ping_timeout_s = 5.0 every welcomed client
+// receives t=30 envelopes with a float body and the auto-PONGing client's
+// link survives; a deliberately silent client is torn down after the
+// timeout.
+func TestIntegrationHubPingLoopOverPipe(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+	pyPath := findRNSPython(t)
+
+	pingInterval := 1.0
+	pingTimeout := 5.0
+	hub := startGorrcdHub(t, pyPath, hubTestConfig{
+		announcePeriodS: 1.0,
+		pingIntervalS:   &pingInterval,
+		pingTimeoutS:    &pingTimeout,
+		commands: []string{
+			"connect Alpha",
+			"connect Beta",
+			"sleep 2",
+			"silence 1",
+			"sleep 9",
+			"status 0",
+			"status 1",
+			"wait done",
+		},
+	})
+	defer hub.stop()
+
+	hub.events.waitFor(t, "silenced", 1, 90*time.Second)
+	hub.events.waitForMarker(t, "done", 90*time.Second)
+
+	// Every t=30 envelope body is a Python float.
+	pingBodies := map[int]int{}
+	for _, ev := range hub.events.all() {
+		if ev["event"] != "envelope" {
+			continue
+		}
+		env := envelopeOf(ev)
+		mt, ok := envInt(env, "1")
+		if !ok || mt != TPing {
+			continue
+		}
+		idx, _ := ev["hub_index"].(float64)
+		if _, isFloat := env["6"].(float64); !isFloat {
+			t.Errorf("client %v received a t=30 envelope whose body is not a float: %v", int(idx), env["6"])
+			continue
+		}
+		pingBodies[int(idx)]++
+	}
+	if pingBodies[0] < 2 {
+		t.Errorf("Alpha received %v t=30 envelopes over ~11s at a 1.0s interval, want >= 2", pingBodies[0])
+	}
+	if pingBodies[1] < 1 {
+		t.Errorf("Beta received %v t=30 envelopes, want >= 1 (before the silencing)", pingBodies[1])
+	}
+
+	// The final hub-status events: Alpha still connected, Beta torn down.
+	finalStatus := func(hubIndex int) (float64, bool) {
+		var status float64
+		found := false
+		for _, ev := range hub.events.all() {
+			if ev["event"] != "hub-status" {
+				continue
+			}
+			if idx, ok := ev["hub_index"].(float64); !ok || int(idx) != hubIndex {
+				continue
+			}
+			s, ok := ev["status"].(float64)
+			if !ok {
+				continue
+			}
+			status = s
+			found = true
+		}
+		return status, found
+	}
+	alphaStatus, okAlpha := finalStatus(0)
+	if !okAlpha {
+		t.Fatal("no hub-status event for Alpha")
+	}
+	if alphaStatus != 2 {
+		t.Errorf("Alpha's final hub status = %v, want 2 (CONNECTED): the healthy link was torn down", alphaStatus)
+	}
+	betaStatus, okBeta := finalStatus(1)
+	if !okBeta {
+		t.Fatal("no hub-status event for Beta")
+	}
+	if betaStatus != 0 {
+		t.Errorf("Beta's final hub status = %v, want 0 (DISCONNECTED): the silent client was not torn down", betaStatus)
+	}
+}
+
+// G15.9 The include_joined_member_list = true hub config: fanout bodies
+// are one-element hash lists, so the real client renders the
+// `<nick> joined` / `<nick> left` system rows and each joiner gets its
+// own `You joined #<room>` row.
+func TestIntegrationJoinedMemberListOverPipe(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+	pyPath := findRNSPython(t)
+
+	includeList := true
+	hub := startGorrcdHub(t, pyPath, hubTestConfig{
+		announcePeriodS:   1.0,
+		includeJoinedList: &includeList,
+		commands: []string{
+			"connect Alpha",
+			"connect Beta",
+			"sleep 1",
+			"join 0 general",
+			"sleep 1",
+			"join 1 general",
+			"sleep 1",
+			"part 1 general",
+			"sleep 1",
+			"wait done",
+		},
+	})
+	defer hub.stop()
+
+	hub.events.waitFor(t, "connected", 1, 90*time.Second)
+	hub.events.waitForMarker(t, "done", 90*time.Second)
+
+	// Collect the system rows each client rendered.
+	rows := func(hubIndex int) []string {
+		var out []string
+		for _, ev := range hub.events.all() {
+			if ev["event"] != "message-row" {
+				continue
+			}
+			if idx, ok := ev["hub_index"].(float64); !ok || int(idx) != hubIndex {
+				continue
+			}
+			if kind, _ := ev["kind"].(string); kind != "system" {
+				continue
+			}
+			room, _ := ev["room"].(string)
+			text, _ := ev["text"].(string)
+			out = append(out, room+": "+text)
+		}
+		return out
+	}
+
+	has := func(rows []string, want string) bool {
+		for _, row := range rows {
+			if row == want {
+				return true
+			}
+		}
+		return false
+	}
+
+	alphaRows := rows(0)
+	betaRows := rows(1)
+	if !has(alphaRows, "general: You joined #general") {
+		t.Errorf("Alpha never rendered its own join row; rows: %v", alphaRows)
+	}
+	if !has(betaRows, "general: You joined #general") {
+		t.Errorf("Beta never rendered its own join row; rows: %v", betaRows)
+	}
+	if !has(alphaRows, "general: Beta joined") {
+		t.Errorf("Alpha never rendered the '<nick> joined' fanout row; rows: %v", alphaRows)
+	}
+	if !has(alphaRows, "general: Beta left") {
+		t.Errorf("Alpha never rendered the '<nick> left' fanout row; rows: %v", alphaRows)
 	}
 }
 

@@ -189,8 +189,10 @@ func defaultConfigContent(identityPath, roomRegistryPath string) string {
 }
 
 // pythonReprString renders a path the way Python's repr would quote it inside
-// the template (single quotes preferred, double quotes when the value itself
-// contains a single quote, backslash escapes for control characters).
+// the template: single quotes preferred, double quotes when the value
+// contains a single quote but no double quote, and when the value contains
+// both the single-quote delimiter stays while the embedded single quotes
+// escape with a backslash.
 func pythonReprString(s string) string {
 	quote := "'"
 	if strings.Contains(s, "'") && !strings.Contains(s, "\"") {
@@ -208,8 +210,20 @@ func pythonReprString(s string) string {
 			sb.WriteString("\\r")
 		case '\t':
 			sb.WriteString("\\t")
+		case '\'':
+			if quote == "'" {
+				sb.WriteString("\\'")
+			} else {
+				sb.WriteByte('\'')
+			}
+		case '"':
+			if quote == "\"" {
+				sb.WriteString("\\\"")
+			} else {
+				sb.WriteByte('"')
+			}
 		default:
-			if r < 0x20 {
+			if r < 0x20 || r == 0x7f {
 				sb.WriteString(fmt.Sprintf("\\x%02x", r))
 			} else {
 				sb.WriteRune(r)

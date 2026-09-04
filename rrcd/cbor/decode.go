@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"unicode/utf8"
 )
 
 // maxDecodeDepth bounds recursion so adversarial nesting fails instead of
@@ -100,14 +101,27 @@ func (d *decoder) value(depth int) (any, error) {
 		return d.arrayOf(info, depth)
 	case 5: // map
 		return d.mapOf(info, depth)
-	case 6: // tag: skip and return the tagged value
+	case 6: // tag: bignum tags decode as integers, the rest pass through
 		if info == 31 {
 			return nil, fmt.Errorf("cbor: indefinite tags are not supported")
 		}
-		if _, err := d.argOfDirect(info); err != nil {
+		tagNum, err := d.argOfDirect(info)
+		if err != nil {
 			return nil, err
 		}
-		return d.value(depth)
+		inner, err := d.value(depth)
+		if err != nil {
+			return nil, err
+		}
+		if (tagNum == 2 || tagNum == 3) && inner != nil {
+			if payload, ok := inner.([]byte); ok {
+				return BigUint{
+					Negative:  tagNum == 3,
+					Magnitude: payload,
+				}, nil
+			}
+		}
+		return inner, nil
 	case 7:
 		return d.simpleOf(info)
 	}
@@ -203,6 +217,13 @@ func (d *decoder) stringOf(major, info byte) (any, error) {
 	if major == 2 {
 		return append([]byte(nil), c...), nil
 	}
+	// Python's cbor2 rejects text strings that are not valid UTF-8
+	// (UnicodeDecodeError wrapped in CBORDecodeError, "error decoding
+	// text string"); accepting them would re-broadcast text the client
+	// decoders drop.
+	if !utf8.Valid(c) {
+		return nil, errors.New("cbor: error decoding text string")
+	}
 	return string(c), nil
 }
 
@@ -279,6 +300,13 @@ func (d *decoder) mapOf(info byte, depth int) (any, error) {
 	return m, nil
 }
 
+// simpleOf decodes the simple-value major type. Documented divergence:
+// Python's cbor2 yields its `undefined` sentinel for 0xf7 and a
+// CBORSimpleValue for assigned simple values (the two-byte form only for
+// values >= 32), while this decoder rejects every simple value other
+// than null, true, and false — RRC bodies are never simple values, so a
+// hostile envelope answers "bad message" instead of echoing the exotic
+// value.
 func (d *decoder) simpleOf(info byte) (any, error) {
 	switch {
 	case info == 20:

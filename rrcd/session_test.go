@@ -6,10 +6,12 @@
 package rrcd
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/rrcd/cbor"
 )
 
 // recordingSessionHooks builds hooks that record calls for assertions.
@@ -380,4 +382,114 @@ func TestSendWelcome(t *testing.T) {
 	// the session manager reads it via the QueueWelcome hook only, so the
 	// MOTD callback test asserts the callback plumbing directly.
 	_ = outgoing2
+}
+
+// G15.5 The teardown PARTED payload decodes as a proper RRC envelope:
+// type PARTED with the room, the one-element peer-hash body iff
+// include_joined_member_list, and the leaving session's nick.
+func TestOnLinkClosedPartedFanoutPayloadDecodes(t *testing.T) {
+	t.Parallel()
+
+	for _, includeList := range []bool{false, true} {
+		m, hooks := newTestSessionManager(t)
+		hooks.includeJoinedMemberList = includeList
+		leaving := &rns.Link{}
+		staying := &rns.Link{}
+		peerLeaving := bytesOf(170, 4)
+		peerStaying := bytesOf(200, 4)
+
+		m.OnLinkEstablished(leaving)
+		m.OnLinkEstablished(staying)
+		m.OnRemoteIdentified(leaving, peerLeaving)
+		m.OnRemoteIdentified(staying, peerStaying)
+		hooks.getRoomMembersResult["general"] = map[*rns.Link]bool{
+			leaving: true,
+			staying: true,
+		}
+		if sess := m.GetSession(leaving); sess != nil {
+			sess.Rooms["general"] = true
+			sess.Nick = new("leaver")
+		}
+		if sess := m.GetSession(staying); sess != nil {
+			sess.Rooms["general"] = true
+		}
+
+		m.OnLinkClosed(leaving)
+		if len(hooks.sendPacketCalls) != 1 {
+			t.Fatalf("includeList=%v: sendPacket calls = %v, want 1", includeList, len(hooks.sendPacketCalls))
+		}
+		payload := hooks.sendPacketCalls[0][1]
+		decoded, err := cbor.Decode(payload)
+		if err != nil {
+			t.Fatalf("includeList=%v: PARTED payload does not decode: %v", includeList, err)
+		}
+		env, ok := decoded.(*cbor.Map)
+		if !ok {
+			t.Fatalf("includeList=%v: PARTED payload is not a CBOR map", includeList)
+		}
+		tv, _ := env.Get(KT)
+		tval, _ := intValue(tv)
+		if tval != TParted {
+			t.Errorf("includeList=%v: PARTED type = %v, want %v", includeList, tval, TParted)
+		}
+		if room, _ := env.Get(KRoom); room != "general" {
+			t.Errorf("includeList=%v: PARTED room = %v, want general", includeList, room)
+		}
+		body, hasBody := env.Get(KBody)
+		if includeList {
+			if !hasBody {
+				t.Fatal("includeList=true: PARTED body missing")
+			}
+			list, isList := body.([]any)
+			if !isList || len(list) != 1 {
+				t.Fatalf("includeList=true: PARTED body = %v, want a 1-element list", body)
+			}
+			hash, isBytes := list[0].([]byte)
+			if !isList || !isBytes || string(hash) != string(peerLeaving) {
+				t.Errorf("includeList=true: PARTED body = %v, want [peer]", body)
+			}
+		} else if hasBody {
+			t.Errorf("includeList=false: PARTED body = %v, want no K_BODY", body)
+		}
+		nick, hasNick := env.Get(KNick)
+		if !hasNick || nick != "leaver" {
+			t.Errorf("includeList=%v: PARTED nick = %v (present=%v), want leaver", includeList, nick, hasNick)
+		}
+	}
+}
+
+// G16.15 A failed teardown PARTED send must not count bytes_out: Python
+// increments only after RNS.Packet.send() succeeds, so the hook reports
+// the real error instead of swallowing it.
+func TestOnLinkClosedPartedFanoutSendFailureNoBytesOut(t *testing.T) {
+	t.Parallel()
+	m, hooks := newTestSessionManager(t)
+	hooks.sendPacketErr = errors.New("send failed")
+	leaving := &rns.Link{}
+	staying := &rns.Link{}
+	peerLeaving := bytesOf(170, 4)
+	peerStaying := bytesOf(200, 4)
+
+	m.OnLinkEstablished(leaving)
+	m.OnLinkEstablished(staying)
+	m.OnRemoteIdentified(leaving, peerLeaving)
+	m.OnRemoteIdentified(staying, peerStaying)
+	hooks.getRoomMembersResult["general"] = map[*rns.Link]bool{
+		leaving: true,
+		staying: true,
+	}
+	if sess := m.GetSession(leaving); sess != nil {
+		sess.Rooms["general"] = true
+	}
+	if sess := m.GetSession(staying); sess != nil {
+		sess.Rooms["general"] = true
+	}
+
+	m.OnLinkClosed(leaving)
+	if len(hooks.sendPacketCalls) != 1 {
+		t.Fatalf("sendPacket calls = %v, want 1 (the send was attempted)", len(hooks.sendPacketCalls))
+	}
+	if got := hooks.statsIncCalls["bytes_out"]; got != 0 {
+		t.Errorf("bytes_out = %v, want 0 (the send failed)", got)
+	}
 }

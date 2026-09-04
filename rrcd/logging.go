@@ -13,33 +13,42 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-// LogSetup describes the configured logging behavior of the hub, mapped
-// from HubConfig's log_* fields the way Python's configure_logging does.
+// LogSetup is the hub's live logging configuration: the level filter,
+// format, and writer that Python keeps on its global root logger. The
+// owning HubService holds one instance and Apply re-renders it in place
+// across /reload swaps, so every emitter shares the same receiver and no
+// package-level mutable state is needed.
 //
 // Level mapping onto this repository's stack: the hub's own messages go
-// through Go's log package filtered at the parsed Python-style level
-// (Python DEBUG=10 … CRITICAL=50, NOTSET=0; see ParseLogLevel), and the RNS
+// through Emit filtered at the parsed Python-style level (Python
+// DEBUG=10 … CRITICAL=50, NOTSET=0; see ParseLogLevel), and the RNS
 // logger level comes from log_rns_level via the rns package constants
 // (WARNING → rns.LogWarning, INFO → rns.LogInfo, DEBUG → rns.LogDebug,
 // ERROR → rns.LogError, CRITICAL → rns.LogCritical, NOTSET → rns.LogNone).
 type LogSetup struct {
-	// Level is the parsed hub log level.
+	// Level is the applied hub log level filter.
 	Level slog.Level
-	// RNSLevel is the parsed RNS logger level.
+	// RNSLevel is the applied RNS logger level.
 	RNSLevel int
-	// Console enables the stderr handler.
+	// Console reports whether the stderr console handler is on.
 	Console bool
-	// File is the optional log file path (nil when disabled).
+	// File is the applied log file path (nil when disabled).
 	File *string
 	// Format is the effective format string; a blank configured format
 	// falls back to the no-threadName default.
 	Format string
-	// Writer receives the hub's own log output (stderr and/or the file).
-	Writer io.Writer
+
+	// mu guards the live fields: Emit holds it while reading and
+	// writing, and Apply swaps every field under it so records in
+	// flight on RNS goroutines never see a torn state.
+	mu     sync.Mutex
+	writer io.Writer
 }
 
 // DefaultLogFormat is the fallback format when the configured format is
@@ -170,31 +179,55 @@ func fmtValue(v any) string {
 	return fmt.Sprintf("%v", v)
 }
 
-// ConfigureLogging maps the log_* config fields onto the process the way
-// Python's configure_logging does: console output goes to stderr, the
-// optional log file opens in append mode with best-effort 0o600
-// permissions, and the format fallback drops threadName. Reconfiguration on
-// /reload replaces the previous writers.
-func ConfigureLogging(cfg HubConfig, rnsLogger *rns.Logger, overrideLevel, overrideFile *string) *LogSetup {
-	setup := &LogSetup{}
+// hubLogThreadName stands in for Python's %(threadName)s: Go goroutines
+// carry no names, so the field always renders as MainThread — a
+// documented mechanical divergence.
+const hubLogThreadName = "MainThread"
 
+// ConfigureLogging renders a fresh LogSetup from the config fields the
+// way Python's configure_logging does. The caller that owns the returned
+// instance re-runs Apply on it for reconfiguration; the HubService
+// creates its own through NewLogSetup.
+func ConfigureLogging(cfg HubConfig, rnsLogger *rns.Logger, overrideLevel, overrideFile *string) *LogSetup {
+	setup := NewLogSetup()
+	setup.Apply(cfg, rnsLogger, overrideLevel, overrideFile)
+	return setup
+}
+
+// NewLogSetup returns the default hub logging state: INFO level with the
+// fallback format and no writer, so records are dropped until the owner
+// applies a configuration.
+func NewLogSetup() *LogSetup {
+	return &LogSetup{
+		Level:  slog.LevelInfo,
+		Format: DefaultLogFormat,
+	}
+}
+
+// Apply re-renders the setup in place from the log_* config fields the
+// way Python's configure_logging re-runs: console output goes to stderr,
+// the optional log file opens in append mode with best-effort 0o600
+// permissions, the format fallback drops threadName, the parsed level
+// filters every later Emit, and the RNS logger level applies to the
+// passed logger. Every field swaps under the lock so records in flight
+// never see a torn state.
+func (s *LogSetup) Apply(cfg HubConfig, rnsLogger *rns.Logger, overrideLevel, overrideFile *string) {
 	levelValue := any(nil)
 	if overrideLevel != nil {
 		levelValue = *overrideLevel
 	}
-	setup.Level = ParseLogLevel(levelValue, slog.LevelInfo)
+	level := ParseLogLevel(levelValue, slog.LevelInfo)
 	if levelValue == nil {
-		setup.Level = ParseLogLevel(cfg.LogLevel, slog.LevelInfo)
+		level = ParseLogLevel(cfg.LogLevel, slog.LevelInfo)
 	}
-	setup.RNSLevel = ParseRNSLevel(cfg.LogRNSLevel, rns.LogWarning)
+	rnsLevel := ParseRNSLevel(cfg.LogRNSLevel, rns.LogWarning)
 
-	if cfg.LogConsole {
-		setup.Writer = os.Stderr
-	}
+	writer := s.consoleWriter(cfg)
 	filePath := overrideFile
 	if filePath == nil {
 		filePath = cleanOptionalPathPtr(cfg.LogFile)
 	}
+	var file *string
 	if filePath != nil {
 		p := ExpandPath(*filePath)
 		if dir := parentDir(p); dir != "" {
@@ -203,33 +236,129 @@ func ConfigureLogging(cfg HubConfig, rnsLogger *rns.Logger, overrideLevel, overr
 		f, err := os.OpenFile(p, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 		if err == nil {
 			_ = os.Chmod(p, 0o600)
-			if setup.Writer != nil {
-				setup.Writer = io.MultiWriter(os.Stderr, f)
+			if writer != nil {
+				writer = io.MultiWriter(os.Stderr, f)
 			} else {
-				setup.Writer = f
+				writer = f
 			}
-			setup.File = filePath
+			file = filePath
 		}
 	}
-	setup.Console = cfg.LogConsole
 
 	format := strings.TrimSpace(cfg.LogFormat)
 	if format == "" {
 		format = DefaultLogFormat
 	}
-	setup.Format = format
 
-	if setup.Writer != nil {
-		log.SetOutput(setup.Writer)
+	s.mu.Lock()
+	s.Level = level
+	s.RNSLevel = rnsLevel
+	s.Console = cfg.LogConsole
+	s.File = file
+	s.Format = format
+	s.writer = writer
+	s.mu.Unlock()
+
+	if writer != nil {
+		log.SetOutput(writer)
 	} else {
 		log.SetOutput(io.Discard)
 	}
 	log.SetFlags(0)
 
 	if rnsLogger != nil {
-		rnsLogger.SetLogLevel(setup.RNSLevel)
+		rnsLogger.SetLogLevel(rnsLevel)
 	}
-	return setup
+}
+
+// consoleWriter returns the stderr writer for the console setting.
+func (s *LogSetup) consoleWriter(cfg HubConfig) io.Writer {
+	if cfg.LogConsole {
+		return os.Stderr
+	}
+	return nil
+}
+
+// Emit filters one hub log record by level and writes it through the
+// configured format and writer, the way Python's root logging handlers
+// do. name mirrors the Python logger name (rrcd.hub, rrcd.router, ...).
+func (s *LogSetup) Emit(level slog.Level, name, format string, args ...any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if level < s.Level {
+		return
+	}
+	if s.writer == nil {
+		return
+	}
+	message := fmt.Sprintf(format, args...)
+	asctime := time.Now().Format("2006-01-02 15:04:05,000")
+	rendered := renderLogFormat(s.Format, asctime,
+		slogLevelName(level), name, hubLogThreadName, message)
+	if !strings.HasSuffix(rendered, "\n") {
+		rendered += "\n"
+	}
+	_, _ = io.WriteString(s.writer, rendered)
+}
+
+// DebugEnabled reports whether debug-level hub messages pass the filter,
+// mirroring Python's log.isEnabledFor(logging.DEBUG).
+func (s *LogSetup) DebugEnabled() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Level <= slog.LevelDebug
+}
+
+// Writer returns the current writer, or nil when output is discarded.
+func (s *LogSetup) Writer() io.Writer {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.writer
+}
+
+// EmitSendFailure logs one send failure in Python's two tiers:
+// OSError-class failures warn with the error text, everything else logs
+// at the debug tier without it.
+func (s *LogSetup) EmitSendFailure(err error, linkID string, size int) {
+	if sendErrorIsOSError(err) {
+		s.Emit(slog.LevelWarn, "rrcd.hub", "Send failed link_id=%v bytes=%v err=%v", linkID, size, err)
+		return
+	}
+	s.Emit(slog.LevelDebug, "rrcd.hub", "Send failed link_id=%v bytes=%v", linkID, size)
+}
+
+// slogLevelName renders a slog level as its Python logging name.
+func slogLevelName(level slog.Level) string {
+	switch {
+	case level <= slogLevelNotSet:
+		return "NOTSET"
+	case level <= slog.LevelDebug:
+		return "DEBUG"
+	case level <= slog.LevelInfo:
+		return "INFO"
+	case level <= slog.LevelWarn:
+		return "WARNING"
+	case level <= slog.LevelError:
+		return "ERROR"
+	default:
+		return "CRITICAL"
+	}
+}
+
+// renderLogFormat substitutes the Python logging format fields the rrcd
+// formats use: asctime, levelname, name, threadName, and message.
+func renderLogFormat(format, asctime, levelname, name, threadName, message string) string {
+	out := format
+	for _, field := range [...]struct{ key, val string }{
+		{"%(asctime)s", asctime},
+		{"%(levelname)s", levelname},
+		{"%(name)s", name},
+		{"%(threadName)s", threadName},
+		{"%(message)s", message},
+	} {
+		out = strings.ReplaceAll(out, field.key, field.val)
+	}
+	return out
 }
 
 // cleanOptionalPathPtr mirrors _clean_optional_path: whitespace-only paths

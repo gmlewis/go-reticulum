@@ -13,10 +13,12 @@ package rrcd
 import (
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
+	"net"
 	"os"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns"
@@ -42,9 +44,19 @@ type HubService struct {
 	TrustManager    *TrustManager
 	MessageHelper   *MessageHelper
 
+	// logSetup owns the hub's live logging configuration; the logf
+	// closure and the emit hooks read it through the hub, and /reload
+	// re-renders it in place.
+	logSetup *LogSetup
+
 	// StateLock guards the hub-level fields (identity, destination,
 	// config swaps) that Python protected with its RLock.
 	StateLock sync.Mutex
+	// dispatchMu serializes packet routing, the link lifecycle
+	// callbacks, and the ping-loop scan the way Python's single
+	// re-entrant _state_lock did: multi-step check-then-act sequences
+	// across links cannot interleave.
+	dispatchMu sync.Mutex
 	// Shutdown closes when Stop runs.
 	Shutdown chan struct{}
 	// ShutdownOnce guards the close.
@@ -91,8 +103,13 @@ func NewHubService(config HubConfig) *HubService {
 		Config:   config,
 		Shutdown: make(chan struct{}),
 	}
+	h.logSetup = NewLogSetup()
 	h.nowWall = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
-	h.nowMono = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
+	// nowMono is a real monotonic reading the way Python's
+	// time.monotonic() is: immune to wall-clock steps, used for the PING
+	// bodies, the ping-timeout bookkeeping, and the rate bucket.
+	monoStart := time.Now()
+	h.nowMono = func() float64 { return time.Since(monoStart).Seconds() }
 	h.sendPacket = h.sendPacketRNS
 	h.announce = h.announceRNS
 	h.sleep = func(d float64) bool {
@@ -113,7 +130,11 @@ func NewHubService(config HubConfig) *HubService {
 			return true
 		}
 	}
-	h.logf = func(format string, args ...any) { log.Printf(format, args...) }
+	// The hub's own messages go through the live level filter, format,
+	// and writer under the Python logger name rrcd.hub.
+	h.logf = func(format string, args ...any) {
+		h.logSetup.Emit(slog.LevelInfo, "rrcd.hub", format, args...)
+	}
 	h.startReticulum = h.startReticulumDefault
 
 	stats := NewStatsManager(func() float64 { return h.nowWall() }, func() float64 { return h.nowMono() })
@@ -154,7 +175,7 @@ func NewHubService(config HubConfig) *HubService {
 		IsBanned:               trust.IsBanned,
 		GetRoomMembers:         rooms.GetRoomMembers,
 		RemoveMember:           rooms.RemoveMember,
-		RateLimitMsgsPerMinute: func() int { return h.Config.RateLimitMsgsPerMinute },
+		RateLimitMsgsPerMinute: func() int { return configInt(h.rawConfigValue("rate_limit_msgs_per_minute")) },
 		IncludeJoinedMemberList: func() bool {
 			return h.Config.IncludeJoinedMemberList
 		},
@@ -172,7 +193,10 @@ func NewHubService(config HubConfig) *HubService {
 		SendTextSmart: func(link *rns.Link, msgType int64, text string, room *string, kind string) {
 			h.MessageHelper.SendTextSmart(link, msgType, text, room, kind)
 		},
-		SendPacket: h.safeSendPacket,
+		// The real send reports errors so the teardown PARTED fanout
+		// counts bytes_out only for successful sends, the way Python's
+		// try/except-pass around RNS.Packet.send() does.
+		SendPacket: h.sendPacket,
 		FmtLinkID:  h.fmtLinkID,
 		FmtHash:    h.fmtHash,
 		Logf:       h.logf,
@@ -188,16 +212,36 @@ func NewHubService(config HubConfig) *HubService {
 		SendViaResource: func(link *rns.Link, kind string, payload []byte, room *string, encoding string) bool {
 			return h.ResourceManager.SendViaResource(link, kind, payload, room, encoding)
 		},
-		HubName:                func() string { return h.Config.HubName },
-		Greeting:               func() string { return strDeref(h.Config.Greeting) },
-		MaxNickBytes:           func() int { return h.Config.MaxNickBytes },
-		MaxRoomNameBytes:       func() int { return h.Config.MaxRoomNameBytes },
-		MaxMsgBodyBytes:        func() int { return h.Config.MaxMsgBodyBytes },
-		MaxRoomsPerSession:     func() int { return h.Config.MaxRoomsPerSession },
-		RateLimitMsgsPerMinute: func() int { return h.Config.RateLimitMsgsPerMinute },
-		FmtLinkID:              h.fmtLinkID,
-		FmtHash:                h.fmtHash,
-		Logf:                   h.logf,
+		HubName:  func() string { return h.Config.HubName },
+		Greeting: func() string { return strDeref(h.Config.Greeting) },
+		MaxNickBytes: func() int {
+			// Python's normalize_nick catches the int() failure and
+			// falls back to its 32-byte default.
+			return configIntOr(h.rawConfigValue("max_nick_bytes"), defaultNickMaxBytes)
+		},
+		MaxRoomNameBytes: func() int { return configInt(h.rawConfigValue("max_room_name_bytes")) },
+		MaxMsgBodyBytes:  func() int { return configInt(h.rawConfigValue("max_msg_body_bytes")) },
+		MaxRoomsPerSession: func() int {
+			return configInt(h.rawConfigValue("max_rooms_per_session"))
+		},
+		RateLimitMsgsPerMinute: func() int {
+			return configInt(h.rawConfigValue("rate_limit_msgs_per_minute"))
+		},
+		SendFailureLog: func(err error, linkID string, size int) {
+			h.logSetup.EmitSendFailure(err, linkID, size)
+		},
+		WelcomeLimits: func() []any {
+			return []any{
+				h.rawConfigValue("max_nick_bytes"),
+				h.rawConfigValue("max_room_name_bytes"),
+				h.rawConfigValue("max_msg_body_bytes"),
+				h.rawConfigValue("max_rooms_per_session"),
+				h.rawConfigValue("rate_limit_msgs_per_minute"),
+			}
+		},
+		FmtLinkID: h.fmtLinkID,
+		FmtHash:   h.fmtHash,
+		Logf:      h.logf,
 	})
 	h.MessageHelper = messageHelper
 
@@ -206,18 +250,13 @@ func NewHubService(config HubConfig) *HubService {
 		FmtLinkID:                      h.fmtLinkID,
 		StatsInc:                       stats.Inc,
 		EnableResourceTransfer:         func() bool { return h.Config.EnableResourceTransfer },
-		MaxResourceBytes:               func() int { return h.Config.MaxResourceBytes },
-		MaxPendingResourceExpectations: func() int { return h.Config.MaxPendingResourceExpectations },
-		ResourceExpectationTTLs:        func() float64 { return h.Config.ResourceExpectationTTLs },
+		MaxResourceBytes:               func() int { return configInt(h.rawConfigValue("max_resource_bytes")) },
+		MaxPendingResourceExpectations: func() int { return configInt(h.rawConfigValue("max_pending_resource_expectations")) },
+		ResourceExpectationTTLs:        func() float64 { return configFloat(h.rawConfigValue("resource_expectation_ttl_s")) },
 		HasSession: func(link *rns.Link) bool {
 			return sessions.GetSession(link) != nil
 		},
-		GetSessionPeer: func(link *rns.Link) []byte {
-			if sess := sessions.GetSession(link); sess != nil {
-				return sess.Peer
-			}
-			return nil
-		},
+		GetSessionPeer: sessions.PeerOf,
 		GetRoomMembers: rooms.GetRoomMembers,
 		SendPacket:     h.safeSendPacket,
 		IdentityHash:   func() []byte { return h.IdentityHash() },
@@ -247,37 +286,47 @@ func NewHubService(config HubConfig) *HubService {
 			}
 			return *h.Config.RoomRegistryPath
 		},
-		RoomInviteTimeoutS: func() float64 { return h.Config.RoomInviteTimeoutS },
+		RoomInviteTimeoutS: func() float64 { return configFloat(h.rawConfigValue("room_invite_timeout_s")) },
 		Now:                func() float64 { return h.nowWall() },
 		Logf:               h.logf,
 	})
 	h.CommandHandler = chat
 
 	router := NewRouter(RouterHooks{
-		Sessions:                func() *SessionManager { return sessions },
-		RoomManager:             func() *RoomManager { return rooms },
-		TrustManager:            func() *TrustManager { return trust },
-		StatsInc:                stats.Inc,
-		IdentityHash:            func() []byte { return h.IdentityHash() },
-		MaxNickBytes:            func() int { return h.Config.MaxNickBytes },
-		MaxRoomNameBytes:        func() int { return h.Config.MaxRoomNameBytes },
-		MaxRoomsPerSession:      func() int { return h.Config.MaxRoomsPerSession },
-		MaxMsgBodyBytes:         func() int { return h.Config.MaxMsgBodyBytes },
+		Sessions:     func() *SessionManager { return sessions },
+		RoomManager:  func() *RoomManager { return rooms },
+		TrustManager: func() *TrustManager { return trust },
+		StatsInc:     stats.Inc,
+		IdentityHash: func() []byte { return h.IdentityHash() },
+		MaxNickBytes: func() int {
+			// Python's normalize_nick catches the int() failure and
+			// falls back to its 32-byte default.
+			return configIntOr(h.rawConfigValue("max_nick_bytes"), defaultNickMaxBytes)
+		},
+		MaxRoomNameBytes:        func() int { return configInt(h.rawConfigValue("max_room_name_bytes")) },
+		MaxRoomsPerSession:      func() int { return configInt(h.rawConfigValue("max_rooms_per_session")) },
+		MaxMsgBodyBytes:         func() int { return configInt(h.rawConfigValue("max_msg_body_bytes")) },
 		IncludeJoinedMemberList: func() bool { return h.Config.IncludeJoinedMemberList },
 		FmtHash:                 h.fmtHash,
 		FmtLinkID:               h.fmtLinkID,
-		DebugEnabled:            func() bool { return false },
-		Debugf:                  func(string, ...any) {},
-		Infof:                   h.logf,
-		SendPacket:              h.safeSendPacket,
-		PersistRoomState:        rooms.PersistRoomState,
-		QueuePayload:            messageHelper.QueuePayload,
-		QueueEnv:                messageHelper.QueueEnv,
-		EmitNotice:              messageHelper.EmitNotice,
-		EmitError:               messageHelper.EmitError,
-		AddResourceExpectation:  resources.AddResourceExpectation,
-		HandleOperatorCommand:   chat.HandleOperatorCommand,
-		SendWelcome:             sessions.SendWelcome,
+		DebugEnabled: func() bool {
+			return h.logSetup.DebugEnabled()
+		},
+		Debugf: func(format string, args ...any) {
+			h.logSetup.Emit(slog.LevelDebug, "rrcd.router", format, args...)
+		},
+		Infof: func(format string, args ...any) {
+			h.logSetup.Emit(slog.LevelInfo, "rrcd.router", format, args...)
+		},
+		SendPacket:             h.safeSendPacket,
+		PersistRoomState:       rooms.PersistRoomState,
+		QueuePayload:           messageHelper.QueuePayload,
+		QueueEnv:               messageHelper.QueueEnv,
+		EmitNotice:             messageHelper.EmitNotice,
+		EmitError:              messageHelper.EmitError,
+		AddResourceExpectation: resources.AddResourceExpectation,
+		HandleOperatorCommand:  chat.HandleOperatorCommand,
+		SendWelcome:            sessions.SendWelcome,
 	})
 	h.Router = router
 
@@ -287,6 +336,13 @@ func NewHubService(config HubConfig) *HubService {
 // SetLogger wires the RNS logger used for bring-up (called before Start).
 func (h *HubService) SetLogger(logger *rns.Logger) {
 	h.rnsLogger = logger
+}
+
+// ConfigureLogging renders the hub's live LogSetup from the current
+// config the way Python's configure_logging does, with the optional CLI
+// overrides. Call it before Start; /reload re-runs the Apply itself.
+func (h *HubService) ConfigureLogging(overrideLevel, overrideFile *string) {
+	h.logSetup.Apply(h.Config, h.rnsLogger, overrideLevel, overrideFile)
 }
 
 // IdentityHash returns the hub identity hash, or nil before Start.
@@ -311,6 +367,12 @@ func (h *HubService) DestinationHash() []byte {
 
 // StartedWallTime reports the stats start time, or nil before it was set.
 func (h *HubService) StartedWallTime() *float64 { return h.StatsManager.StartedWallTime() }
+
+// rawConfigValue returns the raw TOML value recorded for a config key, or
+// the typed field value when the key was never applied from TOML.
+func (h *HubService) rawConfigValue(key string) any {
+	return h.Config.rawConfigValue(key)
+}
 
 // fmtLinkID renders a link id for logs, mirroring _fmt_link_id.
 func (h *HubService) fmtLinkID(link *rns.Link) string {
@@ -428,22 +490,26 @@ func (h *HubService) Start() error {
 		h.AnnounceOnce()
 	}
 
-	if h.Config.AnnouncePeriodS > 0 {
+	if announcePeriod := configFloat(h.rawConfigValue("announce_period_s")); announcePeriod > 0 {
 		h.announceRunning = true
 		go h.AnnounceLoop()
 	}
 
 	h.logf("Hub running at dest_hash=%v", fmtHashPrefix(h.DestinationHash(), 0))
 	h.logf("Policy max_nick_bytes=%v max_rooms=%v max_room_name_bytes=%v rate_limit_msgs_per_minute=%v",
-		h.Config.MaxNickBytes, h.Config.MaxRoomsPerSession, h.Config.MaxRoomNameBytes,
-		h.Config.RateLimitMsgsPerMinute)
+		pythonScalarStr(h.rawConfigValue("max_nick_bytes")),
+		pythonScalarStr(h.rawConfigValue("max_rooms_per_session")),
+		pythonScalarStr(h.rawConfigValue("max_room_name_bytes")),
+		pythonScalarStr(h.rawConfigValue("rate_limit_msgs_per_minute")))
 
-	if h.Config.PingIntervalS > 0 {
+	if pingInterval := configFloat(h.rawConfigValue("ping_interval_s")); pingInterval > 0 {
 		h.pingRunning = true
 		go h.PingLoop()
 	}
 
-	if h.Config.RoomRegistryPruneIntervalS > 0 && h.Config.RoomRegistryPruneAfterS > 0 {
+	pruneInterval := configFloat(h.rawConfigValue("room_registry_prune_interval_s"))
+	pruneAfter := configFloat(h.rawConfigValue("room_registry_prune_after_s"))
+	if pruneInterval > 0 && pruneAfter > 0 {
 		h.pruneRunning = true
 		go h.PruneLoop()
 	}
@@ -549,7 +615,7 @@ func (h *HubService) AnnounceLoop() {
 			return
 		default:
 		}
-		period := h.Config.AnnouncePeriodS
+		period := configFloat(h.rawConfigValue("announce_period_s"))
 		if period <= 0 {
 			if !h.sleep(1.0) {
 				return
@@ -563,10 +629,13 @@ func (h *HubService) AnnounceLoop() {
 	}
 }
 
-// OnLink initializes a newly established link, mirroring _on_link.
+// OnLink initializes a newly established link, mirroring _on_link: the
+// session and resource state creation runs under the dispatch lock.
 func (h *HubService) OnLink(link *rns.Link) {
+	h.dispatchMu.Lock()
 	h.SessionManager.OnLinkEstablished(link)
 	h.ResourceManager.OnLinkEstablished(link)
+	h.dispatchMu.Unlock()
 
 	link.SetPacketCallback(func(data []byte, _ *rns.Packet) { h.OnPacket(link, data) })
 	link.SetLinkClosedCallback(func(closedLink *rns.Link) { h.OnClose(closedLink) })
@@ -598,14 +667,17 @@ func (h *HubService) configureResourceCallbacks(link *rns.Link) {
 
 // OnRemoteIdentified handles a remote identity being established,
 // mirroring _on_remote_identified: banned peers are disconnected with the
-// `banned` ERROR and a teardown.
+// `banned` ERROR and a teardown; the identification runs under the
+// dispatch lock and the teardown happens outside it.
 func (h *HubService) OnRemoteIdentified(link *rns.Link, identity *rns.Identity) {
 	var peerHash []byte
 	banned := false
 	if identity != nil {
 		peerHash = identity.Hash
 	}
+	h.dispatchMu.Lock()
 	banned, peerHash = h.SessionManager.OnRemoteIdentified(link, peerHash)
+	h.dispatchMu.Unlock()
 	if !banned {
 		return
 	}
@@ -616,10 +688,13 @@ func (h *HubService) OnRemoteIdentified(link *rns.Link, identity *rns.Identity) 
 	link.Teardown()
 }
 
-// OnClose cleans up a closed link, mirroring _on_close.
+// OnClose cleans up a closed link, mirroring _on_close: the resource and
+// session cleanup runs under the dispatch lock.
 func (h *HubService) OnClose(link *rns.Link) {
+	h.dispatchMu.Lock()
 	h.ResourceManager.OnLinkClosed(link)
 	peer, nick, roomsCount := h.SessionManager.OnLinkClosed(link)
+	h.dispatchMu.Unlock()
 	h.logf("Link closed peer=%v nick=%v rooms=%v link_id=%v",
 		fmtHashPrefix(peer, 12), nickReprForLog(nick), roomsCount, h.fmtLinkID(link))
 }
@@ -633,10 +708,13 @@ func nickReprForLog(nick *string) string {
 }
 
 // OnPacket routes one incoming packet and drains the outgoing queue,
-// mirroring _on_packet.
+// mirroring _on_packet: the routing runs under the dispatch lock, the
+// queued sends happen outside it.
 func (h *HubService) OnPacket(link *rns.Link, data []byte) {
 	outgoing := &OutgoingList{}
+	h.dispatchMu.Lock()
 	h.Router.RoutePacket(link, data, outgoing)
+	h.dispatchMu.Unlock()
 	h.drainOutgoing(outgoing)
 }
 
@@ -646,8 +724,7 @@ func (h *HubService) drainOutgoing(outgoing *OutgoingList) {
 	for _, item := range outgoing.Queue {
 		h.StatsManager.Inc("bytes_out", len(item.Payload))
 		if err := h.sendPacket(item.Link, item.Payload); err != nil {
-			h.logf("Send failed link_id=%v bytes=%v err=%v",
-				h.fmtLinkID(item.Link), len(item.Payload), err)
+			h.logSetup.EmitSendFailure(err, h.fmtLinkID(item.Link), len(item.Payload))
 		}
 	}
 	for _, callback := range outgoing.PostSendCallbacks {
@@ -690,8 +767,8 @@ func (h *HubService) PingLoop() {
 			return
 		default:
 		}
-		interval := h.Config.PingIntervalS
-		timeout := h.Config.PingTimeoutS
+		interval := configFloat(h.rawConfigValue("ping_interval_s"))
+		timeout := configFloat(h.rawConfigValue("ping_timeout_s"))
 		if interval <= 0 {
 			if !h.sleep(1.0) {
 				return
@@ -709,6 +786,7 @@ func (h *HubService) PingLoop() {
 		now := h.nowMono()
 		var toTeardown []*rns.Link
 		var toPing []*rns.Link
+		h.dispatchMu.Lock()
 		for _, link := range h.SessionManager.WelcomedSessions() {
 			awaiting := h.SessionManager.AwaitingPong(link)
 			if timeout > 0 && awaiting != nil && (now-*awaiting) > timeout {
@@ -720,6 +798,7 @@ func (h *HubService) PingLoop() {
 				toPing = append(toPing, link)
 			}
 		}
+		h.dispatchMu.Unlock()
 
 		for _, link := range toTeardown {
 			link.Teardown()
@@ -742,8 +821,8 @@ func (h *HubService) PruneLoop() {
 			return
 		default:
 		}
-		interval := h.Config.RoomRegistryPruneIntervalS
-		pruneAfter := h.Config.RoomRegistryPruneAfterS
+		interval := configFloat(h.rawConfigValue("room_registry_prune_interval_s"))
+		pruneAfter := configFloat(h.rawConfigValue("room_registry_prune_after_s"))
 		if interval <= 0 || pruneAfter <= 0 {
 			if !h.sleep(1.0) {
 				return
@@ -765,7 +844,8 @@ func (h *HubService) pruneOnce() {
 	if started := h.StatsManager.StartedWallTime(); started != nil {
 		startedWall = *started
 	}
-	roomsToPrune := h.RoomManager.PruneUnusedRegisteredRooms(h.Config.RoomRegistryPruneAfterS, startedWall)
+	roomsToPrune := h.RoomManager.PruneUnusedRegisteredRooms(
+		configFloat(h.rawConfigValue("room_registry_prune_after_s")), startedWall)
 
 	if dummyLink != nil {
 		for _, room := range roomsToPrune {
@@ -783,11 +863,11 @@ func (h *HubService) pruneOnce() {
 func (h *HubService) Stop() {
 	h.ShutdownOnce.Do(func() { close(h.Shutdown) })
 
-	h.StateLock.Lock()
+	h.dispatchMu.Lock()
 	links := h.SessionManager.ClearAll()
 	h.RoomManager.ClearAll()
 	h.ResourceManager.ClearAll()
-	h.StateLock.Unlock()
+	h.dispatchMu.Unlock()
 
 	for _, link := range links {
 		link.Teardown()
@@ -797,22 +877,25 @@ func (h *HubService) Stop() {
 // ensureWorkerGoroutines restarts any worker loop that is not running and
 // whose config knob enables it, mirroring _ensure_worker_threads.
 func (h *HubService) ensureWorkerGoroutines() {
-	if !h.announceRunning && h.Config.AnnouncePeriodS > 0 {
+	if !h.announceRunning && configFloat(h.rawConfigValue("announce_period_s")) > 0 {
 		h.announceRunning = true
 		go h.AnnounceLoop()
 	}
-	if !h.pingRunning && h.Config.PingIntervalS > 0 {
+	if !h.pingRunning && configFloat(h.rawConfigValue("ping_interval_s")) > 0 {
 		h.pingRunning = true
 		go h.PingLoop()
 	}
-	if !h.pruneRunning && h.Config.RoomRegistryPruneIntervalS > 0 && h.Config.RoomRegistryPruneAfterS > 0 {
+	pruneInterval := configFloat(h.rawConfigValue("room_registry_prune_interval_s"))
+	pruneAfter := configFloat(h.rawConfigValue("room_registry_prune_after_s"))
+	if !h.pruneRunning && pruneInterval > 0 && pruneAfter > 0 {
 		h.pruneRunning = true
 		go h.PruneLoop()
 	}
 }
 
 // NormRoom normalizes a room name the way _norm_room does: Python's
-// Unicode strip and lower, then the UTF-8 byte-length check.
+// Unicode strip and lower, then the UTF-8 byte-length check; the error
+// text embeds the raw configured limit the way Python's f-string does.
 func (h *HubService) NormRoom(room string) (string, error) {
 	nr := strings.TrimFunc(room, isUnicodeSpace)
 	nr = pythonLower(nr)
@@ -820,8 +903,10 @@ func (h *HubService) NormRoom(room string) (string, error) {
 		return "", errors.New("room name must not be empty")
 	}
 	roomBytes := len(nr)
-	if roomBytes > h.Config.MaxRoomNameBytes {
-		return "", fmt.Errorf("room name too long: %v bytes > %v bytes", roomBytes, h.Config.MaxRoomNameBytes)
+	limit := configInt(h.rawConfigValue("max_room_name_bytes"))
+	if roomBytes > limit {
+		return "", fmt.Errorf("room name too long: %v bytes > %v bytes",
+			roomBytes, pythonScalarStr(h.rawConfigValue("max_room_name_bytes")))
 	}
 	return nr, nil
 }
@@ -842,14 +927,14 @@ func (h *HubService) formatStats() string {
 		BannedCount:        trustStats.BannedCount,
 	}
 	cfg := StatsConfig{
-		RateLimitMsgsPerMinute: h.Config.RateLimitMsgsPerMinute,
-		MaxRoomsPerSession:     h.Config.MaxRoomsPerSession,
-		MaxRoomNameBytes:       h.Config.MaxRoomNameBytes,
-		MaxNickBytes:           h.Config.MaxNickBytes,
-		PingIntervalS:          h.Config.PingIntervalS,
-		PingTimeoutS:           h.Config.PingTimeoutS,
+		RateLimitMsgsPerMinute: configInt(h.rawConfigValue("rate_limit_msgs_per_minute")),
+		MaxRoomsPerSession:     configInt(h.rawConfigValue("max_rooms_per_session")),
+		MaxRoomNameBytes:       configInt(h.rawConfigValue("max_room_name_bytes")),
+		MaxNickBytes:           configInt(h.rawConfigValue("max_nick_bytes")),
+		PingIntervalS:          configFloat(h.rawConfigValue("ping_interval_s")),
+		PingTimeoutS:           configFloat(h.rawConfigValue("ping_timeout_s")),
 		AnnounceOnStart:        h.Config.AnnounceOnStart,
-		AnnouncePeriodS:        h.Config.AnnouncePeriodS,
+		AnnouncePeriodS:        configFloat(h.rawConfigValue("announce_period_s")),
 	}
 	return h.StatsManager.FormatStats(cfg, snap)
 }
@@ -926,6 +1011,11 @@ func (h *HubService) ReloadConfigAndRooms(link *rns.Link, room *string, outgoing
 	h.StateLock.Unlock()
 
 	h.ensureWorkerGoroutines()
+
+	// Python re-runs configure_logging after a reload so level, format,
+	// and writer changes apply immediately; the setup re-renders in
+	// place so the emitters keep the same receiver.
+	h.logSetup.Apply(h.Config, h.rnsLogger, nil, nil)
 
 	cfgChanges := DiffConfigSummary(oldCfg, newCfg)
 	roomChanges := DiffRegistrySummary(oldRegistry, newRegistry)
@@ -1043,4 +1133,25 @@ func tomlValueToAny(v toml.Value) any {
 		return m
 	}
 	return nil
+}
+
+// sendErrorIsOSError reports whether a send error corresponds to the
+// OSError class Python's RNS.Packet.send raises — the real I/O failures
+// (os/net/syscall errors) and the MTU and bookkeeping IOErrors from
+// pack/send — so the failure logs at the warning tier; anything else
+// logs at the debug tier the way Python's bare except does.
+func sendErrorIsOSError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pathErr *os.PathError
+	var opErr *net.OpError
+	var syscallErr syscall.Errno
+	if errors.As(err, &pathErr) || errors.As(err, &opErr) || errors.As(err, &syscallErr) {
+		return true
+	}
+	text := err.Error()
+	return strings.Contains(text, "exceeds MTU") ||
+		strings.Contains(text, "already sent") ||
+		strings.Contains(text, "not sent yet")
 }

@@ -41,6 +41,8 @@ func appendValue(b []byte, v any) []byte {
 		return appendMap(b, x)
 	case []any:
 		return appendArray(b, x)
+	case BigUint:
+		return encodeBigUint(b, x)
 	}
 	panic("cbor: unsupported value type")
 }

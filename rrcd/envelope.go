@@ -108,7 +108,9 @@ func MakeEnvelope(msgType int, src []byte, opts ...EnvelopeOpt) *cbor.Map {
 		m.Set(KTS, NowMS())
 	}
 	m.Set(KSrc, src)
-	if f.hasDst {
+	// Python's make_envelope includes K_DST whenever dst is not None; a
+	// nil Go slice stands in for None.
+	if f.hasDst && f.dst != nil {
 		m.Set(KDst, f.dst)
 	}
 	// Python's make_envelope includes K_ROOM whenever room is not None;
@@ -138,11 +140,14 @@ func ValidateEnvelope(env *cbor.Map) error {
 	}
 	for _, pair := range env.Pairs() {
 		switch pair.Key.(type) {
-		case int64, uint64, bool:
+		case int64, uint64, bool, cbor.BigUint:
 		default:
 			return fmt.Errorf("envelope keys must be integers")
 		}
 		if k, ok := pair.Key.(int64); ok && k < 0 {
+			return fmt.Errorf("envelope keys must be unsigned integers")
+		}
+		if bk, ok := pair.Key.(cbor.BigUint); ok && bk.Negative && !bk.IsZero() {
 			return fmt.Errorf("envelope keys must be unsigned integers")
 		}
 	}
@@ -176,6 +181,9 @@ func ValidateEnvelope(env *cbor.Map) error {
 	if n, _ := intValue(tsv); n < 0 {
 		return fmt.Errorf("timestamp must be unsigned")
 	}
+	if bt, isBig := tsv.(cbor.BigUint); isBig && bt.Negative && !bt.IsZero() {
+		return fmt.Errorf("timestamp must be unsigned")
+	}
 
 	src, _ := env.Get(KSrc)
 	if !isBytes(src) {
@@ -201,10 +209,10 @@ func ValidateEnvelope(env *cbor.Map) error {
 }
 
 // isIntLike reports whether the decoded value is an int in Python's sense
-// (bools are ints).
+// (bools are ints and CBOR bignums decode to unbounded ints).
 func isIntLike(v any) bool {
 	switch v.(type) {
-	case int64, uint64, bool:
+	case int64, uint64, bool, cbor.BigUint:
 		return true
 	}
 	return false
@@ -217,8 +225,8 @@ func isBytes(v any) bool {
 }
 
 // intValue converts an int-like decoded value to int64. Bools map to 1/0.
-// A uint64 beyond int64 range reports 0 (such values never occur in valid
-// RRC traffic).
+// A CBOR bignum maps to its value when it fits the int64 range; anything
+// wider reports 0 (such values never occur in valid RRC traffic).
 func intValue(v any) (int64, bool) {
 	switch n := v.(type) {
 	case bool:
@@ -231,6 +239,12 @@ func intValue(v any) (int64, bool) {
 	case uint64:
 		if n <= 1<<63-1 {
 			return int64(n), true
+		}
+	case cbor.BigUint:
+		if !n.Negative {
+			if u, ok := n.AsUint64(); ok && u <= 1<<63-1 {
+				return int64(u), true
+			}
 		}
 	}
 	return 0, false
@@ -245,6 +259,8 @@ func pythonRepr(v any) string {
 			return "True"
 		}
 		return "False"
+	case cbor.BigUint:
+		return n.String()
 	case int64:
 		return fmt.Sprintf("%v", n)
 	case uint64:

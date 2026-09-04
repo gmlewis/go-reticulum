@@ -7,6 +7,7 @@ package rrcd
 
 import (
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -705,4 +706,190 @@ func mustTestIdentified(t *testing.T, peer []byte) *rns.Identity {
 	ident := mustTestIdentity(t)
 	ident.Hash = peer
 	return ident
+}
+
+// startStandaloneHub is the G11.2 bring-up with a TOML-shaped config
+// already applied, for tests that exercise Start's config gates.
+func startStandaloneHub(t *testing.T, data map[string]any) *HubService {
+	t.Helper()
+
+	rnsDir := testutils.TempDir(t, "gorrcd-rns")
+	rnsConfig := "[reticulum]\nshare_instance = No\n"
+	if err := os.MkdirAll(rnsDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rnsDir, "config"), []byte(rnsConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	identity, err := rns.NewIdentity(true, testSilentRNSLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	identityPath := filepath.Join(rnsDir, "hub_identity")
+	if err := identity.ToFile(identityPath); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := DefaultHubConfig()
+	cfg.Configdir = &rnsDir
+	cfg.IdentityPath = &identityPath
+	cfg = ApplyConfigData(cfg, data)
+
+	hub := NewHubService(cfg)
+	hub.SetLogger(testSilentRNSLogger())
+	hub.logf = func(string, ...any) {}
+	if err := hub.Start(); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+	t.Cleanup(hub.Stop)
+	return hub
+}
+
+// G16.1 A TOML integer ping_interval_s must start the PING loop: Python's
+// truthy gate and float() accept the int, so the natural hand edit
+// `ping_interval_s = 30` pings while the old typed gate silently kept 0.0.
+func TestStartStartsPingLoopWithIntTOMLInterval(t *testing.T) {
+	t.Parallel()
+
+	hub := startStandaloneHub(t, map[string]any{"hub": map[string]any{
+		"ping_interval_s": int64(30),
+	}})
+	if !hub.pingRunning {
+		t.Error("the PING loop did not start with a TOML integer ping_interval_s")
+	}
+}
+
+// G16.1 A TOML integer announce_period_s must start the announce loop.
+func TestStartStartsAnnounceLoopWithIntTOMLPeriod(t *testing.T) {
+	t.Parallel()
+
+	hub := startStandaloneHub(t, map[string]any{"hub": map[string]any{
+		"announce_period_s": int64(300),
+	}})
+	if !hub.announceRunning {
+		t.Error("the announce loop did not start with a TOML integer announce_period_s")
+	}
+}
+
+// G16.6 The default nowMono is a real monotonic reading the way Python's
+// time.monotonic() is: a small offset from the process start, never an
+// epoch value, never stepping backwards — a wall-clock step cannot
+// spuriously tear down healthy links, burst the rate bucket, or put epoch
+// floats in the wire PING bodies.
+func TestPingLoopMonotonicClock(t *testing.T) {
+	t.Parallel()
+
+	hub := NewHubService(DefaultHubConfig())
+	first := hub.nowMono()
+	// Epoch seconds would be ~1.7e9; a monotonic offset starts near 0.
+	if first > 3600 {
+		t.Errorf("default nowMono = %v, want a small monotonic offset", first)
+	}
+	// Backwards/forwards wall-clock steps leave the monotonic source
+	// strictly non-decreasing.
+	for range 200 {
+		now := hub.nowMono()
+		if now < first {
+			t.Fatalf("nowMono stepped backwards: %v < %v", now, first)
+		}
+		first = now
+	}
+
+	// The wire PING body carries the monotonic reading, not the wall
+	// clock: with the wall clock at an epoch value and the monotonic
+	// clock injected at 100.0, the PING body is 100.0.
+	env := newRouterTestEnv(t, false)
+	hub2 := env.hub
+	hub2.Config.PingIntervalS = 0.01
+	wallNow := 1730000000.0
+	hub2.nowWall = func() float64 { return wallNow }
+	link := &rns.Link{}
+	peer := bytesOf(0xaa, 32)
+	env.identifyLink(t, link, peer)
+	env.helloFrom(link, peer, "client")
+
+	cycles := 0
+	hub2.sleep = func(float64) bool {
+		cycles++
+		return cycles <= 1
+	}
+	hub2.PingLoop()
+	sent := false
+	for _, s := range env.sends {
+		decoded, err := decodeEnvelope(s.payload)
+		if err != nil {
+			t.Fatalf("PING payload does not decode: %v", err)
+		}
+		tv, _ := decoded.Get(KT)
+		tval, _ := intValue(tv)
+		if tval != TPing {
+			continue
+		}
+		sent = true
+		body, _ := decoded.Get(KBody)
+		if body != float64(100.0) {
+			t.Errorf("PING body = %v, want the monotonic reading 100.0", body)
+		}
+	}
+	if !sent {
+		t.Error("the PING loop sent no PING")
+	}
+}
+
+// G16.18 Send failures log in Python's two tiers: OSError-class failures
+// (the MTU and bookkeeping IOErrors plus real I/O errors) warn with the
+// err field, while other errors log at the debug tier without it —
+// filtered out at the default INFO level.
+func TestDrainOutgoingSendFailureLogging(t *testing.T) {
+	// The logging state is process-global; this test runs serially.
+
+	dir := testutils.TempDir(t, "drain-log")
+	logPath := dir + "/hub.log"
+	file := logPath
+	cfg := DefaultHubConfig()
+	cfg.LogConsole = false
+	cfg.LogFile = &file
+
+	// The hub owns its LogSetup, so this test re-applies to it directly.
+	env := newHubTestEnv(t)
+	hub := env.hub
+	hub.logSetup.Apply(cfg, nil, nil, nil)
+	link := &rns.Link{}
+
+	// An OSError-class failure (the Python IOError from pack/send) warns.
+	hub.sendPacket = func(*rns.Link, []byte) error {
+		return errors.New("packet size 500 exceeds MTU 431")
+	}
+	outgoing := &OutgoingList{Queue: []OutgoingItem{{Link: link, Payload: []byte("hello")}}}
+	hub.drainOutgoing(outgoing)
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "Send failed link_id=") || !strings.Contains(string(data), "err=packet size 500 exceeds MTU 431") {
+		t.Errorf("the OSError-class failure did not warn: %q", string(data))
+	}
+
+	// A non-OSError failure logs at the debug tier: invisible at INFO,
+	// visible at DEBUG.
+	cfg.LogLevel = "INFO"
+	hub.logSetup.Apply(cfg, nil, nil, nil)
+	if err := os.WriteFile(logPath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hub.sendPacket = func(*rns.Link, []byte) error {
+		return errors.New("interface not available")
+	}
+	hub.drainOutgoing(&OutgoingList{Queue: []OutgoingItem{{Link: link, Payload: []byte("hello")}}})
+	data, _ = os.ReadFile(logPath)
+	if strings.Contains(string(data), "Send failed") {
+		t.Errorf("the non-OSError failure was not filtered at INFO: %q", string(data))
+	}
+	cfg.LogLevel = "DEBUG"
+	hub.logSetup.Apply(cfg, nil, nil, nil)
+	hub.drainOutgoing(&OutgoingList{Queue: []OutgoingItem{{Link: link, Payload: []byte("hello")}}})
+	data, _ = os.ReadFile(logPath)
+	if !strings.Contains(string(data), "Send failed") || strings.Contains(string(data), "err=interface") {
+		t.Errorf("the debug-tier failure line is wrong: %q", string(data))
+	}
 }

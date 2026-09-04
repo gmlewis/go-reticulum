@@ -223,10 +223,13 @@ func (t *TrustManager) persistBannedFile(cfgPath string) error {
 	existingList := []string{}
 	if v, ok := hub.Get("banned_identities"); ok && v.Kind == toml.KindArray {
 		for _, item := range v.Arr {
-			if item.Kind != toml.KindString {
+			if item.Kind == toml.KindArray || item.Kind == toml.KindInlineTable {
 				continue
 			}
-			s := strings.ToLower(strings.TrimSpace(item.Str))
+			// Python stringifies every non-None entry with str(x) before
+			// the lower/strip, so a hand-edited scalar like 123 survives
+			// the union-merge as "123".
+			s := strings.ToLower(strings.TrimSpace(pythonScalarStrOfTOML(item)))
 			s = strings.TrimPrefix(s, "0x")
 			if s != "" {
 				existingList = append(existingList, s)

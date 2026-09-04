@@ -13,6 +13,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 
 	"github.com/gmlewis/go-reticulum/rrcd"
 )
@@ -165,22 +167,81 @@ func parseFlags(args []string, usageOutput io.Writer) (*gorrcdOptions, error) {
 	return opts, nil
 }
 
-// parsePythonFloat parses a float the way argparse's float type does.
+// parsePythonFloat parses a float the way Python's float() does:
+// surrounding whitespace strips, the optional sign and digits may carry
+// single underscores between digits, and inf/infinity/nan parse — while
+// trailing garbage like "30abc", hex like "0x10", and illegal underscore
+// placements raise the argparse ValueError.
 func parsePythonFloat(v string) (float64, error) {
-	var f float64
-	if _, err := fmt.Sscanf(v, "%g", &f); err != nil {
+	s := strings.TrimSpace(v)
+	s, err := pythonLegalNumericUnderscores(s)
+	if err != nil {
+		return 0, fmt.Errorf("invalid float value: %q", v)
+	}
+	lower := strings.ToLower(s)
+	if strings.HasPrefix(lower, "0x") {
+		return 0, fmt.Errorf("invalid float value: %q", v)
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
 		return 0, fmt.Errorf("invalid float value: %q", v)
 	}
 	return f, nil
 }
 
-// parsePythonInt parses an int the way argparse's int type does.
+// parsePythonInt parses an int the way Python's int() does: surrounding
+// whitespace strips, an optional sign, base-10 digits with single
+// underscores between digits; anything else raises the argparse
+// ValueError.
 func parsePythonInt(v string) (int, error) {
-	var n int
-	if _, err := fmt.Sscanf(v, "%d", &n); err != nil {
+	s := strings.TrimSpace(v)
+	s, err := pythonLegalNumericUnderscores(s)
+	if err != nil {
 		return 0, fmt.Errorf("invalid int value: %q", v)
 	}
+	neg := false
+	if len(s) > 0 && (s[0] == '+' || s[0] == '-') {
+		neg = s[0] == '-'
+		s = s[1:]
+	}
+	if s == "" {
+		return 0, fmt.Errorf("invalid int value: %q", v)
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return 0, fmt.Errorf("invalid int value: %q", v)
+		}
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, fmt.Errorf("invalid int value: %q", v)
+	}
+	if neg {
+		n = -n
+	}
 	return n, nil
+}
+
+// pythonLegalNumericUnderscores removes the single underscores between
+// digits that Python's int()/float() accept; an underscore anywhere else
+// is a ValueError.
+func pythonLegalNumericUnderscores(s string) (string, error) {
+	if !strings.Contains(s, "_") {
+		return s, nil
+	}
+	isDigit := func(r byte) bool { return r >= '0' && r <= '9' }
+	var b strings.Builder
+	for i := range len(s) {
+		c := s[i]
+		if c != '_' {
+			b.WriteByte(c)
+			continue
+		}
+		if i == 0 || i == len(s)-1 || !isDigit(s[i-1]) || !isDigit(s[i+1]) {
+			return "", fmt.Errorf("illegal underscore")
+		}
+	}
+	return b.String(), nil
 }
 
 func printUsage(w io.Writer) {

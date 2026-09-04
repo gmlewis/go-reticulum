@@ -519,23 +519,18 @@ func (m *ResourceManager) DispatchReceivedResource(link *rns.Link, exp *Resource
 			peerHash := m.hooks.GetSessionPeer(link)
 			roomMembers := m.hooks.GetRoomMembers(*exp.Room)
 			if peerHash != nil && len(roomMembers) > 0 {
-				noticeEnv := MakeEnvelope(int(TNotice), peerHash, WithRoom(*exp.Room), WithBody(text))
-				noticePayload := encodeEnvelope(noticeEnv)
-				forwarded := 0
+				// Python's forward here is dead code: it calls
+				// other.packet(notice_payload) on listener-side links,
+				// whose .packet is None, so every attempt raises
+				// TypeError('NoneType' object is not callable), the
+				// warning logs per member, and nothing is ever sent or
+				// counted. Replicate that inert behavior.
 				for other := range roomMembers {
 					if other == link {
 						continue
 					}
-					if err := m.hooks.SendPacket(other, noticePayload); err != nil {
-						m.logf("Failed to forward NOTICE resource link_id=%v: %v",
-							m.hooks.FmtLinkID(other), err)
-						continue
-					}
-					forwarded++
-				}
-				if forwarded > 0 {
-					m.hooks.StatsInc("notices_forwarded", 1)
-					m.logf("Forwarded NOTICE resource to %v members room=%v", forwarded, *exp.Room)
+					m.logf("Failed to forward NOTICE resource link_id=%v: %v",
+						m.hooks.FmtLinkID(other), "'NoneType' object is not callable")
 				}
 			}
 		}

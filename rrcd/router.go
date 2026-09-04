@@ -92,27 +92,29 @@ func NewRouter(hooks RouterHooks) *Router {
 
 // RoutePacket is the main entry point for routing an incoming packet:
 // it decodes and validates the RRC envelope and dispatches it by message
-// type. It must be called with the hub state lock held.
+// type. The hub serializes routing, the link lifecycle callbacks, and the
+// ping-loop scan under one dispatch lock, mirroring Python's re-entrant
+// _state_lock.
 func (r *Router) RoutePacket(link *rns.Link, data []byte, outgoing *OutgoingList) {
-	sess := r.hooks.Sessions().GetSession(link)
-	if sess == nil {
+	sm := r.hooks.Sessions()
+	if sm.GetSession(link) == nil {
 		return
 	}
 
 	r.hooks.StatsInc("pkts_in", 1)
 	r.hooks.StatsInc("bytes_in", len(data))
 
-	peerHash := sess.Peer
+	peerHash := sm.PeerOf(link)
 	if peerHash == nil {
 		ri := link.GetRemoteIdentity()
 		if ri == nil {
 			return
 		}
 		peerHash = ri.Hash
-		sess.Peer = peerHash
+		sm.SetPeer(link, peerHash)
 	}
 
-	if !r.hooks.Sessions().RefillAndTake(link, 1.0) {
+	if !sm.RefillAndTake(link, 1.0) {
 		r.hooks.StatsInc("rate_limited", 1)
 		if r.hooks.DebugEnabled() {
 			r.hooks.Debugf("Rate limited peer=%v link_id=%v",
@@ -150,29 +152,29 @@ func (r *Router) RoutePacket(link *rns.Link, data []byte, outgoing *OutgoingList
 
 	switch {
 	case tIsInt && t == TPong:
-		r.handlePong(sess)
+		r.handlePong(link)
 	case tIsInt && t == TResource:
-		r.handleResourceEnvelope(link, sess, env, outgoing)
-	case !sess.Welcomed:
-		r.handlePreWelcome(link, sess, peerHash, env, outgoing)
+		r.handleResourceEnvelope(link, sm.GetSession(link), env, outgoing)
+	case !sm.IsWelcomed(link):
+		r.handlePreWelcome(link, sm.GetSession(link), peerHash, env, outgoing)
 	case tIsInt && t == THello:
-		r.handleReHello(link, sess, peerHash, env, outgoing)
+		r.handleReHello(link, sm.GetSession(link), peerHash, env, outgoing)
 	case tIsInt && t == TJoin:
-		r.handleJoin(link, sess, peerHash, env, outgoing)
+		r.handleJoin(link, sm.GetSession(link), peerHash, env, outgoing)
 	case tIsInt && t == TPart:
-		r.handlePart(link, sess, peerHash, env, outgoing)
+		r.handlePart(link, sm.GetSession(link), peerHash, env, outgoing)
 	case tIsInt && (t == TMsg || t == TNotice || t == TAction):
-		r.handleMessage(link, sess, peerHash, env, outgoing)
+		r.handleMessage(link, sm.GetSession(link), peerHash, env, outgoing)
 	case tIsInt && t == TPing:
 		r.handlePing(link, env, outgoing)
 	}
 }
 
 // handlePong mirrors _handle_pong: the pending-pong marker is cleared
-// and no reply is produced.
-func (r *Router) handlePong(sess *Session) {
+// under the session state lock and no reply is produced.
+func (r *Router) handlePong(link *rns.Link) {
 	r.hooks.StatsInc("pongs_in", 1)
-	sess.AwaitingPong = nil
+	r.hooks.Sessions().ClearAwaitingPong(link)
 }
 
 // handleResourceEnvelope mirrors _handle_resource_envelope: the
@@ -299,11 +301,11 @@ func (r *Router) handlePreWelcome(link *rns.Link, sess *Session, peerHash []byte
 		return
 	}
 
-	oldNick := sess.Nick
-	newNick := r.learnHelloIdentity(sess, env)
+	oldNick := r.hooks.Sessions().NickOf(link)
+	newNick := r.learnHelloIdentity(link, env)
 
 	r.hooks.Infof("HELLO peer=%v nick=%v link_id=%v",
-		r.hooks.FmtHash(peerHash), nickRepr(sess.Nick), r.hooks.FmtLinkID(link))
+		r.hooks.FmtHash(peerHash), nickRepr(r.hooks.Sessions().NickOf(link)), r.hooks.FmtLinkID(link))
 
 	r.hooks.SendWelcome(link, outgoing, peerHash, oldNick, newNick)
 }
@@ -318,24 +320,16 @@ func (r *Router) handleReHello(link *rns.Link, sess *Session, peerHash []byte, e
 		return
 	}
 
-	oldNick := sess.Nick
-	oldRooms := make([]string, 0, len(sess.Rooms))
-	for room := range sess.Rooms {
-		oldRooms = append(oldRooms, room)
-	}
-	sess.Welcomed = false
-	sess.Rooms = map[string]bool{}
-	sess.Nick = nil
-	sess.PeerCaps = map[int64]any{}
+	oldNick, oldRooms := r.hooks.Sessions().BeginReHello(link)
 
 	for _, room := range oldRooms {
 		r.hooks.RoomManager().RemoveMember(room, link)
 	}
 
-	newNick := r.learnHelloIdentity(sess, env)
+	newNick := r.learnHelloIdentity(link, env)
 
 	r.hooks.Infof("Re-HELLO peer=%v nick=%v link_id=%v",
-		r.hooks.FmtHash(peerHash), nickRepr(sess.Nick), r.hooks.FmtLinkID(link))
+		r.hooks.FmtHash(peerHash), nickRepr(r.hooks.Sessions().NickOf(link)), r.hooks.FmtLinkID(link))
 
 	r.hooks.SendWelcome(link, outgoing, peerHash, oldNick, newNick)
 }
@@ -346,22 +340,22 @@ func (r *Router) handleReHello(link *rns.Link, sess *Session, peerHash []byte, e
 // nick) is normalized into the session, and the capability map is
 // extracted into the session. It returns the newly adopted nick, or nil
 // when none was adopted.
-func (r *Router) learnHelloIdentity(sess *Session, env *cbor.Map) *string {
+func (r *Router) learnHelloIdentity(link *rns.Link, env *cbor.Map) *string {
 	var newNick *string
 	if nick, ok := EnvGetString(env, KNick); ok {
 		if n := NormalizeNick(nick, r.hooks.MaxNickBytes()); n != "" {
 			newNick = &n
-			sess.Nick = &n
+			r.hooks.Sessions().SetNick(link, &n)
 		}
 	}
 	if body, ok := EnvGetMap(env, KBody); ok {
-		sess.PeerCaps = r.extractCaps(body)
+		r.hooks.Sessions().SetPeerCaps(link, r.extractCaps(body))
 		if newNick == nil {
 			if legacy, ok := body.Get(BHelloNickLegacy); ok {
 				if legacyStr, isStr := legacy.(string); isStr {
 					if n := NormalizeNick(legacyStr, r.hooks.MaxNickBytes()); n != "" {
 						newNick = &n
-						sess.Nick = &n
+						r.hooks.Sessions().SetNick(link, &n)
 					}
 				}
 			}
@@ -393,7 +387,7 @@ func (r *Router) handleJoin(link *rns.Link, sess *Session, peerHash []byte, env 
 		return
 	}
 
-	if len(sess.Rooms) >= r.hooks.MaxRoomsPerSession() {
+	if r.hooks.Sessions().RoomsCountOf(link) >= r.hooks.MaxRoomsPerSession() {
 		if idHash != nil {
 			r.hooks.EmitError(outgoing, link, idHash, "too many rooms", nil)
 		}
@@ -450,11 +444,11 @@ func (r *Router) handleJoin(link *rns.Link, sess *Session, peerHash []byte, env 
 		rm.EnsureRoomState(nr, peerHash)
 	}
 
-	sess.Rooms[nr] = true
+	r.hooks.Sessions().AddSessionRoom(link, nr)
 	rm.AddMember(nr, link, nil)
 
 	r.hooks.Infof("JOIN peer=%v nick=%v room=%v link_id=%v",
-		r.hooks.FmtHash(peerHash), nickRepr(sess.Nick), nr, r.hooks.FmtLinkID(link))
+		r.hooks.FmtHash(peerHash), nickRepr(r.hooks.Sessions().NickOf(link)), nr, r.hooks.FmtLinkID(link))
 
 	rm.TouchRoom(nr)
 
@@ -470,7 +464,7 @@ func (r *Router) handleJoin(link *rns.Link, sess *Session, peerHash []byte, env 
 			notificationBody = []any{peerHash}
 		}
 		memberNotification := MakeEnvelope(int(TJoined), idHash,
-			WithRoom(nr), WithBody(notificationBody), WithNick(nickDeref(sess.Nick)))
+			WithRoom(nr), WithBody(notificationBody), WithNick(nickDeref(r.hooks.Sessions().NickOf(link))))
 		memberNotificationPayload := cbor.Encode(memberNotification)
 		for _, memberLink := range existingMembers {
 			r.hooks.QueuePayload(outgoing, memberLink, memberNotificationPayload)
@@ -544,7 +538,7 @@ func (r *Router) handlePart(link *rns.Link, sess *Session, peerHash []byte, env 
 		return
 	}
 
-	delete(sess.Rooms, nr)
+	r.hooks.Sessions().DiscardSessionRoom(link, nr)
 
 	var remainingMembers []*rns.Link
 	for memberLink := range rm.GetRoomMembers(nr) {
@@ -586,7 +580,7 @@ func (r *Router) handlePart(link *rns.Link, sess *Session, peerHash []byte, env 
 			notificationBody = []any{peerHash}
 		}
 		memberNotification := MakeEnvelope(int(TParted), idHash,
-			WithRoom(nr), WithBody(notificationBody), WithNick(nickDeref(sess.Nick)))
+			WithRoom(nr), WithBody(notificationBody), WithNick(nickDeref(r.hooks.Sessions().NickOf(link))))
 		memberNotificationPayload := cbor.Encode(memberNotification)
 		for _, memberLink := range remainingMembers {
 			r.hooks.QueuePayload(outgoing, memberLink, memberNotificationPayload)
@@ -603,7 +597,7 @@ func (r *Router) handlePart(link *rns.Link, sess *Session, peerHash []byte, env 
 	}
 
 	r.hooks.Infof("PART peer=%v nick=%v room=%v link_id=%v",
-		r.hooks.FmtHash(peerHash), nickRepr(sess.Nick), nr, r.hooks.FmtLinkID(link))
+		r.hooks.FmtHash(peerHash), nickRepr(r.hooks.Sessions().NickOf(link)), nr, r.hooks.FmtLinkID(link))
 }
 
 // handleMessage mirrors _handle_message: the slash-command interception
@@ -664,7 +658,7 @@ func (r *Router) handleMessage(link *rns.Link, sess *Session, peerHash []byte, e
 						fmt.Sprintf("message too large: %v bytes > %v bytes", bodyBytes, limit), nil)
 				}
 				r.hooks.Infof("Rejected oversized message peer=%v nick=%v body_bytes=%v limit=%v",
-					r.hooks.FmtHash(peerHash), nickRepr(sess.Nick), bodyBytes, limit)
+					r.hooks.FmtHash(peerHash), nickRepr(r.hooks.Sessions().NickOf(link)), bodyBytes, limit)
 				return
 			}
 		}
@@ -696,7 +690,7 @@ func (r *Router) handleMessage(link *rns.Link, sess *Session, peerHash []byte, e
 		}
 	}
 
-	if _, inRooms := sess.Rooms[nr]; !inRooms {
+	if !r.hooks.Sessions().InRoom(link, nr) {
 		var st *RoomState
 		if _, ok := rm.RegistryGet(nr); ok {
 			st = rm.EnsureRoomState(nr, nil)
@@ -745,7 +739,7 @@ func (r *Router) handleMessage(link *rns.Link, sess *Session, peerHash []byte, e
 
 	if r.hooks.DebugEnabled() {
 		r.hooks.Debugf("Forwarded t=%v peer=%v nick=%v room=%v recipients=%v body_type=%v",
-			pythonRepr(tAny), r.hooks.FmtHash(peerHash), nickRepr(sess.Nick), nr,
+			pythonRepr(tAny), r.hooks.FmtHash(peerHash), nickRepr(r.hooks.Sessions().NickOf(link)), nr,
 			len(members), pythonTypeName(body))
 	}
 
@@ -795,7 +789,7 @@ func (r *Router) handleDirectNotice(link *rns.Link, sess *Session, peerHash []by
 	if r.hooks.DebugEnabled() {
 		body, _ := env.Get(KBody)
 		r.hooks.Debugf("Forwarded direct NOTICE peer=%v nick=%v dst=%v body_type=%v",
-			r.hooks.FmtHash(peerHash), nickRepr(sess.Nick), hex.EncodeToString(dst), pythonTypeName(body))
+			r.hooks.FmtHash(peerHash), nickRepr(r.hooks.Sessions().NickOf(link)), hex.EncodeToString(dst), pythonTypeName(body))
 	}
 
 	r.hooks.StatsInc("notices_forwarded", 1)
@@ -820,14 +814,14 @@ func (r *Router) adoptNick(link *rns.Link, sess *Session, env *cbor.Map) {
 			env.Pop(KNick)
 			return
 		}
-		oldSessionNick := sess.Nick
+		oldSessionNick := r.hooks.Sessions().NickOf(link)
 		if oldSessionNick == nil || *oldSessionNick != n {
-			sess.Nick = &n
+			r.hooks.Sessions().SetNick(link, &n)
 			r.hooks.Sessions().UpdateNickIndex(link, oldSessionNick, &n)
 		}
 		env.Set(KNick, n)
-	} else if sess.Nick != nil {
-		if n := NormalizeNick(*sess.Nick, r.hooks.MaxNickBytes()); n != "" {
+	} else if oldNick := r.hooks.Sessions().NickOf(link); oldNick != nil {
+		if n := NormalizeNick(*oldNick, r.hooks.MaxNickBytes()); n != "" {
 			env.Set(KNick, n)
 		}
 	}
@@ -878,7 +872,7 @@ func (r *Router) extractCaps(body *cbor.Map) map[int64]any {
 // normRoom mirrors _norm_room: a Unicode-trimmed, lowercased room name
 // with a configured UTF-8 byte-length cap.
 func (r *Router) normRoom(room string) (string, error) {
-	nr := strings.ToLower(strings.TrimFunc(room, isUnicodeSpace))
+	nr := pythonLower(strings.TrimFunc(room, isUnicodeSpace))
 	if nr == "" {
 		return "", errors.New("room name must not be empty")
 	}

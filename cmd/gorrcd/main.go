@@ -80,10 +80,14 @@ func main() {
 		log.Fatalf("Failed to load config from %v: %v", configPath, err)
 	}
 
-	rrcd.ConfigureLogging(cfg, rns.NewLogger(), opts.logLevel, opts.logFile)
+	// One RNS logger instance carries the [logging] rns_level into the
+	// live stack; the hub owns the logging state and shares the logger,
+	// mirroring Python's configure_logging before start.
+	rnsLogger := rns.NewLogger()
 
 	svc := rrcd.NewHubService(cfg)
-	svc.SetLogger(rns.NewLogger())
+	svc.SetLogger(rnsLogger)
+	svc.ConfigureLogging(opts.logLevel, opts.logFile)
 	if err := svc.Start(); err != nil {
 		log.Fatal(err)
 	}
@@ -119,9 +123,11 @@ func buildConfig(opts *gorrcdOptions, configPath, identityPath, roomRegistryPath
 
 	if opts.noAnnounce {
 		cfg.AnnounceOnStart = false
+		cfg.OverrideRawConfigValue("announce_on_start", false)
 	}
 	if opts.announcePeriod != nil {
 		cfg.AnnouncePeriodS = *opts.announcePeriod
+		cfg.OverrideRawConfigValue("announce_period_s", *opts.announcePeriod)
 	}
 	if opts.hubName != nil {
 		cfg.HubName = *opts.hubName
@@ -131,27 +137,35 @@ func buildConfig(opts *gorrcdOptions, configPath, identityPath, roomRegistryPath
 	}
 	if opts.includeJoined {
 		cfg.IncludeJoinedMemberList = true
+		cfg.OverrideRawConfigValue("include_joined_member_list", true)
 	}
 	if opts.maxRooms != nil {
 		cfg.MaxRoomsPerSession = *opts.maxRooms
+		cfg.OverrideRawConfigValue("max_rooms_per_session", int64(*opts.maxRooms))
 	}
 	if opts.maxNickBytes != nil {
 		cfg.MaxNickBytes = *opts.maxNickBytes
+		cfg.OverrideRawConfigValue("max_nick_bytes", int64(*opts.maxNickBytes))
 	}
 	if opts.maxRoomNameBytes != nil {
 		cfg.MaxRoomNameBytes = *opts.maxRoomNameBytes
+		cfg.OverrideRawConfigValue("max_room_name_bytes", int64(*opts.maxRoomNameBytes))
 	}
 	if opts.rateLimit != nil {
 		cfg.RateLimitMsgsPerMinute = *opts.rateLimit
+		cfg.OverrideRawConfigValue("rate_limit_msgs_per_minute", int64(*opts.rateLimit))
 	}
 	if opts.maxMsgBodyBytes != nil {
 		cfg.MaxMsgBodyBytes = *opts.maxMsgBodyBytes
+		cfg.OverrideRawConfigValue("max_msg_body_bytes", int64(*opts.maxMsgBodyBytes))
 	}
 	if opts.pingInterval != nil {
 		cfg.PingIntervalS = *opts.pingInterval
+		cfg.OverrideRawConfigValue("ping_interval_s", *opts.pingInterval)
 	}
 	if opts.pingTimeout != nil {
 		cfg.PingTimeoutS = *opts.pingTimeout
+		cfg.OverrideRawConfigValue("ping_timeout_s", *opts.pingTimeout)
 	}
 	if opts.logLevel != nil {
 		cfg.LogLevel = *opts.logLevel

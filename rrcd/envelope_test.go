@@ -119,6 +119,11 @@ func TestMakeEnvelopeOmitsRoomAndDstByDefault(t *testing.T) {
 	if e.Has(KRoom) || e.Has(KDst) || e.Has(KNick) {
 		t.Fatal("optional keys present without opts")
 	}
+	// WithDst(nil) omits K_DST the way Python's dst=None does.
+	e = MakeEnvelope(int(TNotice), src32, WithID(mid8), WithTS(gTS), WithDst(nil))
+	if e.Has(KDst) {
+		t.Fatal("WithDst(nil) must omit K_DST")
+	}
 }
 
 func TestMakeEnvelopeRoomPointer(t *testing.T) {
@@ -321,4 +326,138 @@ func mustHex(t *testing.T, s string) []byte {
 		t.Fatalf("bad hex: %v", err)
 	}
 	return b
+}
+
+// G15.6 The PING wire golden: a PING envelope carries the monotonic float
+// body, in make_envelope's exact key order. Golden captured from Python
+// make_envelope(T_PING, ...) + rrcd.codec.encode.
+func TestGoldenPing(t *testing.T) {
+	t.Parallel()
+
+	e := MakeEnvelope(int(TPing), src32,
+		WithID(mid8), WithTS(gTS), WithBody(12345.678))
+	const want = "a6000101181e0248aabbccddee112233031b0000018bcfe56800045820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f06fb40c81cd6c8b43958"
+	if got := hexOf(cbor.Encode(e)); got != want {
+		t.Errorf("PING envelope:\n got %v\nwant %v", got, want)
+	}
+}
+
+// G15.6 The PONG echo goldens: every body kind re-encodes verbatim —
+// 8-byte bytes, the 0xfb float, the empty byte string (0x40), the empty
+// list (0x80) — while a None body omits K_BODY entirely (keys 0..4 only).
+func TestGoldenPongEcho(t *testing.T) {
+	t.Parallel()
+
+	base := "a6000101181f0248aabbccddee112233031b0000018bcfe56800045820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f06"
+	tests := []struct {
+		name string
+		body any
+		want string
+	}{
+		{name: "bytes body", body: []byte{0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x23, 0x45, 0x67},
+			want: base + "48deadbeef01234567"},
+		{name: "float body", body: 1.5,
+			want: base + "fb3ff8000000000000"},
+		{name: "empty bytes body", body: []byte{},
+			want: base + "40"},
+		{name: "empty list body", body: []any{},
+			want: base + "80"},
+	}
+	for _, tt := range tests {
+		e := MakeEnvelope(int(TPong), src32, WithID(mid8), WithTS(gTS), WithBody(tt.body))
+		if got := hexOf(cbor.Encode(e)); got != tt.want {
+			t.Errorf("%v PONG:\n got %v\nwant %v", tt.name, got, tt.want)
+		}
+	}
+
+	// A None body omits K_BODY: only keys 0,1,2,3,4 remain.
+	e := MakeEnvelope(int(TPong), src32, WithID(mid8), WithTS(gTS))
+	keys := []any{}
+	for _, p := range e.Pairs() {
+		keys = append(keys, p.Key)
+	}
+	wantKeys := []any{int64(0), int64(1), int64(2), int64(3), int64(4)}
+	if len(keys) != len(wantKeys) {
+		t.Fatalf("bodyless PONG keys = %v, want %v", keys, wantKeys)
+	}
+	for i := range wantKeys {
+		if keys[i] != wantKeys[i] {
+			t.Fatalf("bodyless PONG keys = %v, want %v", keys, wantKeys)
+		}
+	}
+	const want = "a5000101181f0248aabbccddee112233031b0000018bcfe56800045820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+	if got := hexOf(cbor.Encode(e)); got != want {
+		t.Errorf("bodyless PONG:\n got %v\nwant %v", got, want)
+	}
+}
+
+// G15.6 The PARTED fanout goldens: the fanout copy carries the room, the
+// one-element peer-hash list body, and the nick; the actor's own copy
+// carries the body but no nick. Goldens captured from Python
+// make_envelope(T_PARTED, ...) + rrcd.codec.encode.
+func TestGoldenPartedFanout(t *testing.T) {
+	t.Parallel()
+
+	e := MakeEnvelope(int(TParted), src32,
+		WithID(mid8), WithTS(gTS), WithRoom("general"),
+		WithBody([]any{src32}), WithNick("leaver"))
+	const wantFanout = "a80001010d0248aabbccddee112233031b0000018bcfe56800045820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f056767656e6572616c06815820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f07666c6561766572"
+	if got := hexOf(cbor.Encode(e)); got != wantFanout {
+		t.Errorf("PARTED fanout:\n got %v\nwant %v", got, wantFanout)
+	}
+
+	e = MakeEnvelope(int(TParted), src32,
+		WithID(mid8), WithTS(gTS), WithRoom("general"), WithBody([]any{src32}))
+	const wantSelf = "a70001010d0248aabbccddee112233031b0000018bcfe56800045820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f056767656e6572616c06815820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+	if got := hexOf(cbor.Encode(e)); got != wantSelf {
+		t.Errorf("PARTED self:\n got %v\nwant %v", got, wantSelf)
+	}
+}
+
+// G16.12 A K_V beyond the int64 range must not collapse to 0 in the
+// error text: Python embeds the raw big int, so a CBOR bignum version
+// fails with "unsupported version 18446744073709551616". Golden captured
+// from cbor2.dumps({0: 2**64, 1: 1, 2: b'\x00', 3: 0, 4: b'\x00'*32}).
+func TestValidateEnvelopeWideUintVersion(t *testing.T) {
+	t.Parallel()
+
+	// The golden CBOR bytes: tag-2 bignum version of 2**64.
+	const golden = "a500c249010000000000000000010102410003000458200000000000000000000000000000000000000000000000000000000000000000"
+	raw, err := hex.DecodeString(golden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := cbor.Decode(raw)
+	if err != nil {
+		t.Fatalf("the golden envelope does not decode: %v", err)
+	}
+	env, ok := decoded.(*cbor.Map)
+	if !ok {
+		t.Fatal("the golden envelope is not a CBOR map")
+	}
+	err = ValidateEnvelope(env)
+	if err == nil || err.Error() != "unsupported version 18446744073709551616" {
+		t.Fatalf("wide K_V error = %v, want unsupported version 18446744073709551616", err)
+	}
+
+	// The decoded value renders and re-encodes like Python's int.
+	v, _ := env.Get(KV)
+	big, isBig := v.(cbor.BigUint)
+	if !isBig {
+		t.Fatalf("wide K_V decoded as %T, want cbor.BigUint", v)
+	}
+	if big.String() != "18446744073709551616" {
+		t.Errorf("wide K_V renders as %v", big.String())
+	}
+	if got := hexOf(cbor.Encode(big)); got != "c249010000000000000000" {
+		t.Errorf("re-encoded bignum = %v, want c249010000000000000000", got)
+	}
+
+	// A bignum K_V that fits the int64 range passes validation like a
+	// plain int.
+	small := MakeEnvelope(int(THello), src32, WithID(mid8), WithTS(gTS))
+	small.Set(KV, cbor.BigUint{Magnitude: []byte{1}})
+	if err := ValidateEnvelope(small); err != nil {
+		t.Errorf("bignum version 1 rejected: %v", err)
+	}
 }

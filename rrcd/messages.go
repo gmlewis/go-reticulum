@@ -32,9 +32,19 @@ type MessageHooks struct {
 	MaxMsgBodyBytes        func() int
 	MaxRoomsPerSession     func() int
 	RateLimitMsgsPerMinute func() int
-	FmtLinkID              func(link *rns.Link) string
-	FmtHash                func(hash []byte) string
-	Logf                   func(format string, args ...any)
+	// WelcomeLimits returns the five raw WELCOME-limit values in the
+	// limits-map key order (max_nick_bytes, max_room_name_bytes,
+	// max_msg_body_bytes, max_rooms_per_session,
+	// rate_limit_msgs_per_minute). Python puts the config fields into the
+	// map uncoerced, so a float rides the wire as a CBOR float.
+	WelcomeLimits func() []any
+	// SendFailureLog emits the two-tier send-failure record for the
+	// immediate Send path (Python's OSError-warning/debug split); nil
+	// skips the log.
+	SendFailureLog func(err error, linkID string, size int)
+	FmtLinkID      func(link *rns.Link) string
+	FmtHash        func(hash []byte) string
+	Logf           func(format string, args ...any)
 }
 
 // MessageHelper provides message sending and queueing utilities for the RRC
@@ -76,7 +86,7 @@ func (m *MessageHelper) QueueEnv(outgoing *OutgoingList, link *rns.Link, env *cb
 }
 
 // splitLinesPython splits text the way Python's str.splitlines() does,
-// handling \n, \r\n, and the remaining Python break characters.
+// handling \n, \r\n, bare \r, and the remaining Python break characters.
 func splitLinesPython(text string) []string {
 	var lines []string
 	start := 0
@@ -88,6 +98,11 @@ func splitLinesPython(text string) []string {
 			lines = append(lines, line)
 			i += size
 			start = i
+			continue
+		}
+		if r == '\r' && i+1 < len(text) && text[i+1] == '\n' {
+			// The \n iteration below emits the line with the \r trimmed.
+			i += size
 			continue
 		}
 		if isPythonSplitline(r) {
@@ -108,7 +123,7 @@ func splitLinesPython(text string) []string {
 // not \n (handled separately for \r\n pairing).
 func isPythonSplitline(r rune) bool {
 	switch r {
-	case '\v', '\f', 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029:
+	case '\r', '\v', '\f', 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029:
 		return true
 	}
 	return false
@@ -151,17 +166,26 @@ func (m *MessageHelper) QueueNoticeChunks(outgoing *OutgoingList, link *rns.Link
 
 // QueueWelcome queues a WELCOME message for a newly connected peer,
 // mirroring queue_welcome. The caps map carries the Python insertion order
-// (1, 2, then 0) and the limits map the 0,1,2,3,4 order.
+// (1, 2, then 0) and the limits map the 0,1,2,3,4 order with the raw
+// config values (a float config value rides the wire as a CBOR float).
 func (m *MessageHelper) QueueWelcome(outgoing *OutgoingList, link *rns.Link, peerHash []byte) {
 	if m.hooks.IdentityHash() == nil {
 		return
 	}
 	limits := cbor.NewMap()
-	limits.Set(BLimitMaxNickBytes, int64(m.hooks.MaxNickBytes()))
-	limits.Set(BLimitMaxRoomNameBytes, int64(m.hooks.MaxRoomNameBytes()))
-	limits.Set(BLimitMaxMsgBodyBytes, int64(m.hooks.MaxMsgBodyBytes()))
-	limits.Set(BLimitMaxRoomsPerSession, int64(m.hooks.MaxRoomsPerSession()))
-	limits.Set(BLimitRateMsgsPerMinute, int64(m.hooks.RateLimitMsgsPerMinute()))
+	if raw := m.hooks.WelcomeLimits(); len(raw) == 5 {
+		limits.Set(BLimitMaxNickBytes, raw[0])
+		limits.Set(BLimitMaxRoomNameBytes, raw[1])
+		limits.Set(BLimitMaxMsgBodyBytes, raw[2])
+		limits.Set(BLimitMaxRoomsPerSession, raw[3])
+		limits.Set(BLimitRateMsgsPerMinute, raw[4])
+	} else {
+		limits.Set(BLimitMaxNickBytes, int64(m.hooks.MaxNickBytes()))
+		limits.Set(BLimitMaxRoomNameBytes, int64(m.hooks.MaxRoomNameBytes()))
+		limits.Set(BLimitMaxMsgBodyBytes, int64(m.hooks.MaxMsgBodyBytes()))
+		limits.Set(BLimitMaxRoomsPerSession, int64(m.hooks.MaxRoomsPerSession()))
+		limits.Set(BLimitRateMsgsPerMinute, int64(m.hooks.RateLimitMsgsPerMinute()))
+	}
 	caps := cbor.NewMap()
 	caps.Set(CAPAction, true)
 	caps.Set(CAPDirectNotice, true)
@@ -288,9 +312,10 @@ func (m *MessageHelper) Error(link *rns.Link, src []byte, text string, room *str
 func (m *MessageHelper) Send(link *rns.Link, env *cbor.Map) {
 	payload := cbor.Encode(env)
 	m.hooks.StatsInc("bytes_out", len(payload))
-	if err := m.hooks.SendPacket(link, payload); err != nil {
-		m.logf("Send failed link_id=%v bytes=%v err=%v",
-			m.hooks.FmtLinkID(link), len(payload), err)
+	if err := m.hooks.SendPacket(link, payload); err != nil && m.hooks.SendFailureLog != nil {
+		// Python logs OSError-class failures at warning and everything
+		// else at debug.
+		m.hooks.SendFailureLog(err, m.hooks.FmtLinkID(link), len(payload))
 	}
 }
 

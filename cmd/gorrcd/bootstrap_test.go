@@ -8,11 +8,13 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/gmlewis/go-reticulum/rrcd"
 	"github.com/gmlewis/go-reticulum/rrcd/toml"
 	"github.com/gmlewis/go-reticulum/testutils"
 )
@@ -139,5 +141,147 @@ func TestTemplatesRoundTripThroughTOML(t *testing.T) {
 	}
 	if got := roomsDoc.Dump(); got != defaultRoomsContent() {
 		t.Fatalf("rooms template round-trip mismatch:\n%q", got)
+	}
+}
+
+// G16.21 The first-run path quoting must escape embedded quotes the way
+// Python's repr does: a path containing both quote characters stays
+// single-quoted with the embedded single quotes escaped, so the
+// generated TOML parses. Golden: python3 -c "print(repr('/a\'b\"c'))".
+func TestPythonReprStringBothQuotes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{`/a'b"c`, `'/a\'b"c'`},
+		{"/plain/path", `'/plain/path'`},
+		{`/has"double`, `'/has"double'`},
+		{`/has'single`, `"/has'single"`},
+		{`/back\slash`, `'/back\\slash'`},
+		{"tab\there", `'tab\there'`},
+	}
+	for _, tt := range tests {
+		if got := pythonReprString(tt.in); got != tt.want {
+			t.Errorf("pythonReprString(%q) = %v, want %v", tt.in, got, tt.want)
+		}
+	}
+}
+
+// G16.24 The end-to-end first-run flow must create the FULL default
+// rrcd.toml (every field, every comment) through the real file-writing
+// path: the written file byte-equals the rendered template, the mode is
+// 0o644 with no extra chmod, the identity and rooms files land at 0o600,
+// the first-run message renders, and an existing rrcd.toml — even a
+// one-byte junk file — is left untouched (Python's skip-if-exists).
+func TestFirstRunCreatesFullDefaultConfig(t *testing.T) {
+	// t.Setenv forbids parallel execution.
+	home := testutils.TempDir(t, "gorrcd-firstrun-")
+	t.Setenv("RRCD_HOME", home)
+
+	configPath := rrcd.DefaultConfigPath()
+	identityPath := rrcd.DefaultIdentityPath()
+	roomRegistryPath := rrcd.DefaultRoomRegistryPath()
+
+	created := ensureFirstRunFiles(configPath, identityPath, roomRegistryPath, nil)
+	if !created {
+		t.Fatal("the first run created nothing")
+	}
+
+	// The written config byte-equals the rendered template with the
+	// RRCD_HOME-derived paths.
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("config read: %v", err)
+	}
+	if got, want := string(data), defaultConfigContent(identityPath, roomRegistryPath); got != want {
+		t.Errorf("the written rrcd.toml does not match the template:\n got %v bytes\nwant %v bytes",
+			len(got), len(want))
+	}
+
+	// Every [hub] and [logging] key appears with its comment block.
+	for _, key := range []string{
+		"configdir", "identity_path", "room_registry_path", "announce_on_start",
+		"announce_period_s", "hub_name", "greeting", "trusted_identities",
+		"banned_identities", "room_registry_prune_after_s",
+		"room_registry_prune_interval_s", "room_invite_timeout_s",
+		"include_joined_member_list", "max_nick_bytes", "max_room_name_bytes",
+		"max_msg_body_bytes", "max_rooms_per_session", "rate_limit_msgs_per_minute",
+		"ping_interval_s", "ping_timeout_s", "enable_resource_transfer",
+		"max_resource_bytes", "max_pending_resource_expectations",
+		"resource_expectation_ttl_s",
+	} {
+		if !strings.Contains(string(data), key+" =") {
+			t.Errorf("the first-run config is missing the %v key", key)
+		}
+	}
+	for _, key := range []string{"level", "rns_level", "console", "file", "format", "datefmt"} {
+		if !strings.Contains(string(data), key+" =") {
+			t.Errorf("the first-run config is missing the [logging] %v key", key)
+		}
+	}
+	for _, comment := range []string{"# This file was created on first run.", "# Hub-initiated liveness checks (0 disables).", "# Large payload transfer via RNS.Resource"} {
+		if !strings.Contains(string(data), comment) {
+			t.Errorf("the first-run config lost its comment block: %q", comment)
+		}
+	}
+
+	// The template is the full ~3.6 KB default.
+	if len(data) < 3500 {
+		t.Errorf("the written config is %v bytes, want the full ~3.6 KB template", len(data))
+	}
+
+	// Modes: the config at 0o644 with no extra chmod, identity and rooms
+	// at 0o600.
+	info, err := os.Stat(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o644 {
+		t.Errorf("config mode = %v, want 0644", info.Mode().Perm())
+	}
+	identInfo, err := os.Stat(identityPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identInfo.Mode().Perm() != 0o600 {
+		t.Errorf("identity mode = %v, want 0600", identInfo.Mode().Perm())
+	}
+	roomsInfo, err := os.Stat(roomRegistryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if roomsInfo.Mode().Perm() != 0o600 {
+		t.Errorf("rooms mode = %v, want 0600", roomsInfo.Mode().Perm())
+	}
+
+	// The first-run message mirrors Python's stderr notice with the
+	// go-prefix self-reference.
+	message := firstRunMessage(configPath, identityPath, roomRegistryPath)
+	if !strings.HasPrefix(message, "Created default gorrcd files.") ||
+		!strings.Contains(message, "- Config:   "+configPath) {
+		t.Errorf("first-run message = %q", message)
+	}
+
+	// The skip-if-exists quirk: a pre-existing rrcd.toml — even one byte
+	// of junk — is left untouched and the config is never rewritten.
+	home2 := testutils.TempDir(t, "gorrcd-firstrun2-")
+	t.Setenv("RRCD_HOME", home2)
+	configPath2 := rrcd.DefaultConfigPath()
+	if err := os.WriteFile(configPath2, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Python still creates the missing identity and rooms files, so
+	// created_any can stay true; the pinned parity is that the config
+	// itself is never rewritten.
+	_ = ensureFirstRunFiles(rrcd.DefaultConfigPath(), rrcd.DefaultIdentityPath(),
+		rrcd.DefaultRoomRegistryPath(), nil)
+	data2, err := os.ReadFile(configPath2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data2) != "x" {
+		t.Errorf("the existing config was touched: %q", string(data2))
 	}
 }

@@ -2267,3 +2267,154 @@ func TestHandleOperatorCommandInvite(t *testing.T) {
 		t.Errorf("invites after del = %+v, want none", st.Invited)
 	}
 }
+
+// G16.4 `/mode ±o/±v` with a short target hash must not panic: Python's
+// `target_hash.hex()[:12]` truncates safely and ParseIdentityHash accepts
+// 4+ byte hashes, so `/mode #room +o aabbccdd` fans out the truncated
+// notice while the old Go slice killed the daemon.
+func TestHandleOperatorCommandModeShortHashFanout(t *testing.T) {
+	t.Parallel()
+
+	chat, env := newTestCommandHandler(t)
+	link := &rns.Link{}
+	peer := bytesOf(0xaa, 32)
+	cmdRoom := "lounge"
+
+	// The issuer creates the room and is therefore the room op.
+	env.rm.AddMember("lounge", link, peer)
+
+	shortHash := []byte{0xaa, 0xbb, 0xcc, 0xdd}
+
+	// +o with a 4-byte hash: the fanout body truncates to the available
+	// hex and the op is recorded.
+	env.sentPackets = nil
+	if got := chat.HandleOperatorCommand(link, peer, &cmdRoom, "/mode lounge +o aabbccdd", nil); !got {
+		t.Error("/mode should be recognized")
+	}
+	sent := decodeSent(t, env)
+	if len(sent) != 1 {
+		t.Fatalf("+o short-hash output = %+v, want one broadcast envelope", sent)
+	}
+	if sent[0].msgType != TNotice || sent[0].room == nil || *sent[0].room != "lounge" {
+		t.Fatalf("+o short-hash envelope = %+v, want lounge-room NOTICE", sent[0])
+	}
+	if body, _ := sent[0].body.(string); body != "mode for lounge is now: +o aabbccdd" {
+		t.Errorf("+o short-hash body = %q", body)
+	}
+	if st := env.rm.RoomStateGet("lounge"); st == nil || !st.Ops["aabbccdd"] {
+		t.Errorf("short-hash op not recorded: %+v", st)
+	}
+
+	// +v with the same short hash.
+	env.sentPackets = nil
+	if got := chat.HandleOperatorCommand(link, peer, &cmdRoom, "/mode lounge +v aabbccdd", nil); !got {
+		t.Error("/mode should be recognized")
+	}
+	sent = decodeSent(t, env)
+	if len(sent) != 1 {
+		t.Fatalf("+v short-hash output = %+v, want one broadcast envelope", sent)
+	}
+	if body, _ := sent[0].body.(string); body != "mode for lounge is now: +v aabbccdd" {
+		t.Errorf("+v short-hash body = %q", body)
+	}
+	if st := env.rm.RoomStateGet("lounge"); st == nil || !st.Voiced[hexKey(shortHash)] {
+		t.Errorf("short-hash voice not recorded: %+v", st)
+	}
+}
+
+// G16.10 A repeated /invite add for the same target must overwrite the
+// stored invite the way Python's invited dict does: one entry with the
+// fresh expiry, not a duplicate that keeps keyless access alive after
+// the invite is consumed.
+func TestInviteAddOverwritesSameTarget(t *testing.T) {
+	t.Parallel()
+
+	chat, env := newTestCommandHandler(t)
+	link := &rns.Link{}
+	peer := bytesOf(0xaa, 32)
+	rm := env.rm
+	sm := env.sm
+	cmdRoom := "lounge"
+
+	rm.AddMember("lounge", link, peer)
+	peerCarol := bytesOf(0xcc, 32)
+	linkCarol := &rns.Link{}
+	identSession(rm, sm, linkCarol, peerCarol, "carol", "lounge")
+
+	if got := chat.HandleOperatorCommand(link, peer, &cmdRoom, "/mode lounge +k sekrit", nil); !got {
+		t.Error("/mode +k should be recognized")
+	}
+	env.sentPackets = nil
+	env.inviteTimeout = 60.0
+	if got := chat.HandleOperatorCommand(link, peer, &cmdRoom, "/invite lounge add carol", nil); !got {
+		t.Error("/invite should be recognized")
+	}
+
+	// Advance the clock and add again: the expiry replaces, no duplicate.
+	env.nowSec += 100.0
+	env.sentPackets = nil
+	if got := chat.HandleOperatorCommand(link, peer, &cmdRoom, "/invite lounge add carol", nil); !got {
+		t.Error("/invite should be recognized")
+	}
+
+	st := rm.RoomStateGet("lounge")
+	if len(st.Invited) != 1 {
+		t.Fatalf("stored invites = %+v, want exactly one entry", st.Invited)
+	}
+	if !sameBytes(st.Invited[0].Hash, peerCarol) {
+		t.Errorf("invite hash = %v, want carol", hexKey(st.Invited[0].Hash))
+	}
+	if st.Invited[0].Expires != 1730000160.0 {
+		t.Errorf("invite expiry = %v, want the refreshed now+60", st.Invited[0].Expires)
+	}
+
+	// The invite list renders the single remaining invite.
+	env.sentPackets = nil
+	if got := chat.HandleOperatorCommand(link, peer, &cmdRoom, "/invite lounge list", nil); !got {
+		t.Error("/invite should be recognized")
+	}
+	sent := decodeSent(t, env)
+	if len(sent) != 1 {
+		t.Fatalf("invite list output = %+v, want one NOTICE", sent)
+	}
+	if body, _ := sent[0].body.(string); !strings.Contains(body, hexKey(peerCarol)) || strings.Contains(body, ",") {
+		t.Errorf("invite list body = %q, want the single carol-hash invite", body)
+	}
+}
+
+// G16.11 The slash-command tokenizer must split on the \x1c-\x1f file
+// separators the way Python's str.split() does, so `/who\x1clounge`
+// dispatches /who for lounge instead of an unrecognized command word.
+func TestHandleOperatorCommandControlCharSplit(t *testing.T) {
+	t.Parallel()
+
+	// Golden: python3 -c "print('/who\x1clounge'[1:].split())" ->
+	// ['who', 'lounge'].
+	if got := splitFieldsPython("who\x1clounge"); !equalStrings(got, []string{"who", "lounge"}) {
+		t.Fatalf("splitFieldsPython = %q, want [who lounge]", got)
+	}
+
+	chat, env := newTestCommandHandler(t)
+	link := &rns.Link{}
+	peer := bytesOf(0xaa, 32)
+	rm, sm := env.rm, env.sm
+
+	rm.AddMember("lounge", link, peer)
+	peerCarol := bytesOf(0xcc, 32)
+	linkCarol := &rns.Link{}
+	identSession(rm, sm, linkCarol, peerCarol, "carol", "lounge")
+
+	// The file separator inside the command line splits like Python.
+	env.sentPackets = nil
+	whoRoom := "lounge"
+	if got := chat.HandleOperatorCommand(link, peer, &whoRoom, "/who\x1clounge", nil); !got {
+		t.Fatal("/who\\x1clounge was not recognized as the /who command")
+	}
+	sent := decodeSent(t, env)
+	if len(sent) == 0 {
+		t.Fatal("the /who dispatch produced no output")
+	}
+	if body, _ := sent[0].body.(string); !strings.Contains(body, "members in lounge") {
+		t.Errorf("who output = %q, want a members-in-lounge notice", body)
+	}
+}

@@ -8,6 +8,7 @@ package rrcd
 import (
 	"bytes"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -480,13 +481,13 @@ func TestOnResourceConcluded(t *testing.T) {
 		if exp := m.GetResourceExpectationByRID(link, rid); exp != nil {
 			t.Errorf("expectation survived the conclusion: %+v", exp)
 		}
-		// The dispatch forwarded the NOTICE to the room members except
-		// the sender.
-		if len(rec.sent) != 1 {
-			t.Fatalf("dispatch sent = %+v, want one forwarded envelope", rec.sent)
+		// The NOTICE dispatch is inert the way Python's dead-code forward
+		// is: nothing is delivered and the counter never moves.
+		if len(rec.sent) != 0 {
+			t.Fatalf("dispatch sent = %+v, want none (the forward is inert)", rec.sent)
 		}
-		if rec.sent[0].link != memberA {
-			t.Errorf("dispatch recipient = %v, want memberA", rec.sent[0].link)
+		if rec.stats["notices_forwarded"] != 0 {
+			t.Errorf("notices_forwarded = %v, want 0", rec.stats["notices_forwarded"])
 		}
 	})
 
@@ -571,42 +572,20 @@ func TestDispatchReceivedResource(t *testing.T) {
 		return m, rec
 	}
 
-	t.Run("notice forwards to members except the sender", func(t *testing.T) {
+	t.Run("notice forward is inert like Python's dead code", func(t *testing.T) {
 		t.Parallel()
 		m, rec := newDispatchEnv(t)
 		exp := &ResourceExpectation{ID: []byte{1}, Kind: ResKindNotice, Room: &room}
 		m.DispatchReceivedResource(link, exp, []byte("a large notice body"))
 
-		if len(rec.sent) != 2 {
-			t.Fatalf("notice dispatch sent = %+v, want two forwarded envelopes", rec.sent)
+		// Python's forward is dead code: every other.packet() attempt on
+		// a listener-side link raises TypeError('NoneType' object is not
+		// callable), so nothing is sent and the counter never moves.
+		if len(rec.sent) != 0 {
+			t.Fatalf("notice dispatch sent = %+v, want none (Python's forward is inert)", rec.sent)
 		}
-		for _, p := range rec.sent {
-			if p.link == link {
-				t.Error("notice was forwarded back to the sender")
-			}
-			decoded, err := cbor.Decode(p.payload)
-			if err != nil {
-				t.Fatalf("forwarded payload does not decode: %v", err)
-			}
-			mm, ok := decoded.(*cbor.Map)
-			if !ok {
-				t.Fatal("forwarded payload is not a CBOR map")
-			}
-			if v, _ := mm.Get(KT); !int64Equal(v, int64(TNotice)) {
-				t.Errorf("forwarded type = %v, want NOTICE", v)
-			}
-			if src, _ := mm.Get(KSrc); !sameBytes(src.([]byte), peer) {
-				t.Errorf("forwarded src = %v, want the peer hash", src)
-			}
-			if r, _ := mm.Get(KRoom); r != room {
-				t.Errorf("forwarded room = %v, want %v", r, room)
-			}
-			if body, _ := mm.Get(KBody); body != "a large notice body" {
-				t.Errorf("forwarded body = %v, want the decoded text", body)
-			}
-		}
-		if rec.stats["notices_forwarded"] != 1 {
-			t.Errorf("notices_forwarded = %v, want 1", rec.stats["notices_forwarded"])
+		if rec.stats["notices_forwarded"] != 0 {
+			t.Errorf("notices_forwarded = %v, want 0", rec.stats["notices_forwarded"])
 		}
 	})
 
@@ -968,5 +947,54 @@ func TestResourceCleanupLoop(t *testing.T) {
 
 	if exp := m.GetResourceExpectationByRID(link, rid); exp != nil {
 		t.Errorf("expectation survived the cleanup cycles: %+v", exp)
+	}
+}
+
+// G16.8 DispatchReceivedResource's NOTICE forward is inert the way
+// Python's is: the forward call on a listener-side link always fails
+// with TypeError('NoneType' object is not callable), so nothing is
+// delivered, the notices_forwarded counter never increments, and the
+// failure warning logs once per member.
+func TestDispatchReceivedResourceNoticeForwardIsInert(t *testing.T) {
+	t.Parallel()
+
+	link := &rns.Link{}
+	peer := bytesOf(0xcc, 32)
+	room := "general"
+	memberA := &rns.Link{}
+	memberB := &rns.Link{}
+	failures := 0
+
+	rec := &resourceRecorder{stats: map[string]int{}}
+	var m *ResourceManager
+	m, _ = newTestResourceManager(t, func(h *ResourceHooks) {
+		h.StatsInc = func(key string, delta int) { rec.stats[key] += delta }
+		h.SendPacket = func(l *rns.Link, p []byte) error {
+			rec.sent = append(rec.sent, sentPacket{link: l, payload: p})
+			return nil
+		}
+		h.GetSessionPeer = func(*rns.Link) []byte { return peer }
+		h.GetRoomMembers = func(string) map[*rns.Link]bool {
+			return map[*rns.Link]bool{link: true, memberA: true, memberB: true}
+		}
+		h.Logf = func(format string, _ ...any) {
+			if strings.Contains(format, "Failed to forward NOTICE") {
+				failures++
+			}
+		}
+	})
+
+	exp := &ResourceExpectation{ID: []byte{1}, Kind: ResKindNotice, Room: &room}
+	m.DispatchReceivedResource(link, exp, []byte("a large notice body"))
+
+	if len(rec.sent) != 0 {
+		t.Errorf("sent = %+v, want nothing delivered", rec.sent)
+	}
+	if rec.stats["notices_forwarded"] != 0 {
+		t.Errorf("notices_forwarded = %v, want 0", rec.stats["notices_forwarded"])
+	}
+	// The failure warning logs once per non-sender member.
+	if failures != 2 {
+		t.Errorf("failure warnings = %v, want 2 (one per member)", failures)
 	}
 }

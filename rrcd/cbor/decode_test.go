@@ -8,6 +8,7 @@ package cbor
 import (
 	"encoding/hex"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -279,5 +280,45 @@ func TestDecodeDeepNestingErrors(t *testing.T) {
 	nested = append(nested, 0x01, 0xff)
 	if _, err := Decode(nested); err == nil {
 		t.Fatal("deeply nested decode succeeded, want depth error")
+	}
+}
+
+// G16.13 Text strings must be valid UTF-8 the way cbor2 requires:
+// invalid text is a decode error, so a hostile envelope answers "bad
+// message" instead of re-broadcasting text the client decoders drop.
+func TestDecodeStrictUTF8Text(t *testing.T) {
+	t.Parallel()
+
+	// 0x62 "text" with an invalid UTF-8 continuation byte.
+	_, err := Decode([]byte{0x62, 0xc3, 0x28})
+	if err == nil || err.Error() != "cbor: error decoding text string" {
+		t.Fatalf("invalid-UTF-8 text error = %v, want cbor: error decoding text string", err)
+	}
+	// Valid UTF-8 with non-ASCII still decodes: 0x62 "c3 a9" is "é".
+	v, err := Decode([]byte{0x62, 0xc3, 0xa9})
+	if err != nil {
+		t.Fatalf("valid UTF-8 text rejected: %v", err)
+	}
+	if v != "é" {
+		t.Errorf("valid UTF-8 text = %q, want é", v)
+	}
+}
+
+// G16.13 Documented divergence: cbor2 yields its `undefined` sentinel
+// for 0xf7 and CBORSimpleValue for assigned simple values, while this
+// decoder rejects them — RRC bodies are never simple values.
+func TestDecodeSimpleValueDivergence(t *testing.T) {
+	t.Parallel()
+
+	for _, data := range [][]byte{
+		{0xf7},       // simple 23: cbor2 yields undefined
+		{0xf8, 16},   // two-byte simple 16: cbor2 rejects
+		{0xf8, 0x20}, // two-byte simple 32: cbor2 yields CBORSimpleValue(32)
+		{0xf0, 0x10}, // one-byte form of simple 16
+	} {
+		_, err := Decode(data)
+		if err == nil || !strings.HasPrefix(err.Error(), "cbor: unassigned simple value") {
+			t.Errorf("simple value %x error = %v, want an unassigned-simple rejection", data, err)
+		}
 	}
 }

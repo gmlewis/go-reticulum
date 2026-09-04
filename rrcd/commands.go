@@ -76,11 +76,11 @@ func (c *CommandHandler) HandleOperatorCommand(link *rns.Link, peerHash []byte, 
 	if !strings.HasPrefix(cmdline, "/") {
 		return false
 	}
-	parts := strings.Fields(cmdline[1:])
+	parts := splitFieldsPython(cmdline[1:])
 	if len(parts) == 0 {
 		return false
 	}
-	switch strings.ToLower(parts[0]) {
+	switch pythonLower(parts[0]) {
 	case "reload":
 		c.handleReload(link, peerHash, outgoing)
 		return true
@@ -144,7 +144,7 @@ func (c *CommandHandler) handleInvite(link *rns.Link, peerHash []byte, parts []s
 		c.emitCommandError(outgoing, link, "not authorized", &r)
 		return
 	}
-	op := strings.ToLower(strings.TrimFunc(parts[2], isUnicodeSpace))
+	op := pythonLower(strings.TrimFunc(parts[2], isUnicodeSpace))
 	st := rm.EnsureRoomState(r, nil)
 	pruned := rm.PruneExpiredInvites(r)
 	invites := func() []Invite {
@@ -218,7 +218,20 @@ func (c *CommandHandler) handleInvite(link *rns.Link, peerHash []byte, parts []s
 				ttl = 900.0
 			}
 			exp := c.hooks.Now() + ttl
-			st.Invited = append(st.Invited, Invite{Hash: targetHash, Expires: exp})
+			// Python's invited dict overwrites the entry for the same
+			// target, so a repeated /invite add replaces the expiry
+			// instead of leaving duplicate invites behind.
+			replaced := false
+			for i := range st.Invited {
+				if sameBytes(st.Invited[i].Hash, targetHash) {
+					st.Invited[i].Expires = exp
+					replaced = true
+					break
+				}
+			}
+			if !replaced {
+				st.Invited = append(st.Invited, Invite{Hash: targetHash, Expires: exp})
+			}
 			rm.TouchRoom(r)
 			rm.PersistRoomState(link, r)
 			c.hooks.MessageHelper().EmitNotice(outgoing, link, room,
@@ -259,7 +272,7 @@ func (c *CommandHandler) handleBan(link *rns.Link, peerHash []byte, parts []stri
 		return
 	}
 	rm := c.hooks.RoomManager()
-	op := strings.ToLower(strings.TrimFunc(parts[2], isUnicodeSpace))
+	op := pythonLower(strings.TrimFunc(parts[2], isUnicodeSpace))
 	if op == "list" {
 		st := rm.EnsureRoomState(r, nil)
 		if len(st.Bans) == 0 {
@@ -320,7 +333,7 @@ func (c *CommandHandler) handleBan(link *rns.Link, peerHash []byte, parts []stri
 // commands: the room-op gate, the room-scoped target resolution, the
 // founder deop guard, and the ops/voiced set updates.
 func (c *CommandHandler) handleOpVoice(link *rns.Link, peerHash []byte, parts []string, room *string, outgoing *OutgoingList) {
-	cmd := strings.ToLower(parts[0])
+	cmd := pythonLower(parts[0])
 	if len(parts) < 3 {
 		c.hooks.MessageHelper().EmitNotice(outgoing, link, nil,
 			fmt.Sprintf("usage: /%v <room> <nick|hashprefix|hash>", cmd))
@@ -400,7 +413,7 @@ func (c *CommandHandler) handleMode(link *rns.Link, peerHash []byte, parts []str
 		c.emitCommandError(outgoing, link, "not authorized", &r)
 		return
 	}
-	flag := strings.ToLower(strings.TrimFunc(parts[2], isUnicodeSpace))
+	flag := pythonLower(strings.TrimFunc(parts[2], isUnicodeSpace))
 	st := rm.EnsureRoomState(r, nil)
 	touch := func() {
 		rm.TouchRoom(r)
@@ -489,7 +502,9 @@ func (c *CommandHandler) handleMode(link *rns.Link, peerHash []byte, parts []str
 			}
 		}
 		touch()
-		memberNotice := fmt.Sprintf("mode for %v is now: %v %v", r, flag, hexKey(targetHash)[:12])
+		// Python's target_hash.hex()[:12] truncates safely for short
+		// hashes (ParseIdentityHash accepts 4+ bytes).
+		memberNotice := fmt.Sprintf("mode for %v is now: %v %v", r, flag, fmtHashPrefix(targetHash, 12))
 		for other := range rm.GetRoomMembers(r) {
 			c.hooks.MessageHelper().EmitNotice(outgoing, other, &r, memberNotice)
 		}
@@ -627,7 +642,7 @@ func (c *CommandHandler) handleKline(link *rns.Link, peerHash []byte, parts []st
 		c.hooks.MessageHelper().EmitNotice(outgoing, link, nil, usage)
 		return
 	}
-	op := strings.ToLower(strings.TrimFunc(parts[1], isUnicodeSpace))
+	op := pythonLower(strings.TrimFunc(parts[1], isUnicodeSpace))
 	if op == "list" {
 		items := append([]string{}, tm.BannedHexList()...)
 		sort.Strings(items)
@@ -960,7 +975,7 @@ func (c *CommandHandler) FindTargetLink(token string, room *string) *rns.Link {
 // index. Matches are ordered by peer-hash hex with unidentified sessions
 // last (Python's match order comes from dict/set iteration order).
 func (c *CommandHandler) FindTargetLinks(token string, room *string) []*rns.Link {
-	t := strings.ToLower(strings.TrimFunc(token, isUnicodeSpace))
+	t := pythonLower(strings.TrimFunc(token, isUnicodeSpace))
 	if t == "" {
 		return nil
 	}

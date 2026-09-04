@@ -194,3 +194,28 @@ func readTemp(t *testing.T, path string) string {
 	}
 	return string(data)
 }
+
+// G16.14 Non-string banned_identities entries must str()-convert during
+// the union-merge persist the way Python's str(x).strip().lower() does:
+// a hand-edited [123] survives as "123" instead of vanishing.
+func TestPersistBannedIdentitiesNonStringEntries(t *testing.T) {
+	t.Parallel()
+
+	dir := testutils.TempDir(t, "trust-nonstring-")
+	cfgPath := writeTemp(t, dir, "rrcd.toml",
+		"[hub]\nbanned_identities = [123, \"0xAABB\", 2.5, true]\n")
+
+	tm := NewTrustManager(TrustHooks{
+		ConfigPath: func() string { return cfgPath },
+	})
+	tm.AddBan([]byte{0xcc, 0xdd})
+	tm.PersistBannedIdentitiesToConfig(nil, "")
+	text := readTemp(t, cfgPath)
+	// The scalar entries str()-convert (123, 2.5, True) and merge with
+	// the live set; the 0x prefix strips.
+	for _, want := range []string{`"123"`, `"aabb"`, `"2.5"`, `"true"`, `"ccdd"`} {
+		if !strings.Contains(text, want) {
+			t.Errorf("persisted text missing %v:\n%v", want, text)
+		}
+	}
+}

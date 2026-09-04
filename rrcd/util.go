@@ -9,9 +9,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/gmlewis/go-reticulum/rrcd/toml"
 )
 
 // ExpandPath expands $VARs first, then ~, matching Python's
@@ -118,6 +121,14 @@ func isUnicodeSpace(r rune) bool {
 	return unicode.IsSpace(r)
 }
 
+// splitFieldsPython splits s the way Python's str.split() does: runs of
+// Unicode whitespace — including the \x1c-\x1f file separators — separate
+// the tokens, and leading or trailing whitespace produces no empty
+// tokens.
+func splitFieldsPython(s string) []string {
+	return strings.FieldsFunc(s, isUnicodeSpace)
+}
+
 // ParseIdentityHash parses a text identity hash the way Python's
 // HubService._parse_identity_hash does: strip, lower, optional 0x prefix,
 // all Unicode whitespace removed anywhere, then bytes.fromhex with a
@@ -159,22 +170,71 @@ func strDeref(s *string) string {
 	return *s
 }
 
-// pythonLower lowercases s the way Python's str.lower does: U+0130
-// (LATIN CAPITAL LETTER I WITH DOT ABOVE) maps to "i" + U+0307, while Go's
-// unicode.ToLower maps it to plain "i".
+// pythonLower lowercases s the way Python's str.lower() does: the
+// default Unicode lowercase mapping plus Python's special cases — İ
+// (U+0130) becomes "i" followed by a combining dot above, and a capital
+// sigma becomes the final sigma ς when the Final_Sigma condition holds
+// (preceded by a cased letter, not followed by a cased letter).
 func pythonLower(s string) string {
-	if !strings.ContainsRune(s, 0x0130) {
+	if !strings.ContainsAny(s, "\u0130\u03a3") {
 		return strings.ToLower(s)
 	}
+	runes := []rune(s)
 	var b strings.Builder
-	for _, r := range s {
-		if r == 0x0130 {
+	for i, r := range runes {
+		switch r {
+		case 0x0130:
 			b.WriteString("i\u0307")
+			continue
+		case 0x03A3:
+			if isFinalSigma(runes, i) {
+				b.WriteRune(0x03C2)
+			} else {
+				b.WriteRune(0x03C3)
+			}
 			continue
 		}
 		b.WriteRune(unicode.ToLower(r))
 	}
 	return b.String()
+}
+
+// isFinalSigma reports the Unicode Final_Sigma condition for runes[i]:
+// it is preceded by a cased letter (skipping case-ignorable characters)
+// and is not followed by case-ignorable characters and then a cased
+// letter.
+func isFinalSigma(runes []rune, i int) bool {
+	j := i - 1
+	for j >= 0 && isCaseIgnorable(runes[j]) {
+		j--
+	}
+	if j < 0 || !isCasedLetter(runes[j]) {
+		return false
+	}
+	k := i + 1
+	for k < len(runes) && isCaseIgnorable(runes[k]) {
+		k++
+	}
+	return !(k < len(runes) && isCasedLetter(runes[k]))
+}
+
+// isCasedLetter reports whether r carries case (Lu, Ll, Lt, or the
+// Other_Lowercase/Other_Uppercase letterlike sets).
+func isCasedLetter(r rune) bool {
+	return unicode.In(r, unicode.Lu, unicode.Ll, unicode.Lt,
+		unicode.Other_Lowercase, unicode.Other_Uppercase)
+}
+
+// isCaseIgnorable reports the Unicode Case_Ignorable property: the
+// MidLetter/MidNumLet/Single_Quote punctuation plus the Mn, Me, Cf, Lm,
+// and Sk categories.
+func isCaseIgnorable(r rune) bool {
+	switch r {
+	case '\'', '.', 0x00B7, 0x0387, 0x2018, 0x2019, 0x2024, 0x2027,
+		0xFE13, 0xFE52, 0xFE55, 0xFF07, 0xFF0E, 0xFF61:
+		return true
+	}
+	return unicode.In(r, unicode.Mn, unicode.Me, unicode.Cf, unicode.Lm, unicode.Sk)
 }
 
 // pythonTrim strips Python whitespace from both ends of s.
@@ -269,4 +329,25 @@ func pythonQuote(s string) string {
 	}
 	sb.WriteString(quote)
 	return sb.String()
+}
+
+// pythonScalarStrOfTOML renders a TOML scalar the way Python's str()
+// does for the value classes TOML can hold: True/False for booleans,
+// decimal digits for integers, Python repr for floats, and bare text
+// for strings.
+func pythonScalarStrOfTOML(v toml.Value) string {
+	switch v.Kind {
+	case toml.KindString:
+		return v.Str
+	case toml.KindInt:
+		return strconv.FormatInt(v.Int, 10)
+	case toml.KindFloat:
+		return toml.FormatFloat(v.Flt)
+	case toml.KindBool:
+		if v.Bool {
+			return "True"
+		}
+		return "False"
+	}
+	return ""
 }

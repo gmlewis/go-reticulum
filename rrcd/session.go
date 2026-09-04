@@ -168,8 +168,6 @@ func (m *SessionManager) onRemoteIdentifiedLocked(link *rns.Link, peerHash []byt
 // OnLinkClosed handles link closure and cleanup, returning
 // (peerHash, nick, roomsCount) for logging, mirroring on_link_closed.
 // PARTED notifications fan out to remaining room members immediately.
-func (m *RoomManager) noop() {}
-
 func (m *SessionManager) OnLinkClosed(link *rns.Link) ([]byte, *string, int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -313,6 +311,133 @@ func (m *SessionManager) GetSession(link *rns.Link) *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.sessions[link]
+}
+
+// PeerOf returns the session's peer identity hash under the state lock.
+func (m *SessionManager) PeerOf(link *rns.Link) []byte {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sess := m.sessions[link]; sess != nil {
+		return sess.Peer
+	}
+	return nil
+}
+
+// SetPeer records the link's peer identity hash under the state lock.
+func (m *SessionManager) SetPeer(link *rns.Link, peerHash []byte) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sess := m.sessions[link]; sess != nil {
+		sess.Peer = peerHash
+	}
+}
+
+// IsWelcomed reports whether the link's session has been welcomed.
+func (m *SessionManager) IsWelcomed(link *rns.Link) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sess := m.sessions[link]; sess != nil {
+		return sess.Welcomed
+	}
+	return false
+}
+
+// NickOf returns the link's session nick under the state lock.
+func (m *SessionManager) NickOf(link *rns.Link) *string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sess := m.sessions[link]; sess != nil {
+		return sess.Nick
+	}
+	return nil
+}
+
+// SetNick records the link's session nick under the state lock.
+func (m *SessionManager) SetNick(link *rns.Link, nick *string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sess := m.sessions[link]; sess != nil {
+		sess.Nick = nick
+	}
+}
+
+// SetPeerCaps records the link's learned HELLO capabilities.
+func (m *SessionManager) SetPeerCaps(link *rns.Link, caps map[int64]any) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sess := m.sessions[link]; sess != nil {
+		sess.PeerCaps = caps
+	}
+}
+
+// RoomsCountOf returns the number of rooms the link's session is in.
+func (m *SessionManager) RoomsCountOf(link *rns.Link) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sess := m.sessions[link]; sess != nil {
+		return len(sess.Rooms)
+	}
+	return 0
+}
+
+// InRoom reports whether the link's session is a member of the room.
+func (m *SessionManager) InRoom(link *rns.Link, room string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sess := m.sessions[link]; sess != nil {
+		return sess.Rooms[room]
+	}
+	return false
+}
+
+// AddSessionRoom records the link's room membership under the state lock.
+func (m *SessionManager) AddSessionRoom(link *rns.Link, room string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sess := m.sessions[link]; sess != nil {
+		sess.Rooms[room] = true
+	}
+}
+
+// DiscardSessionRoom removes the link's room membership.
+func (m *SessionManager) DiscardSessionRoom(link *rns.Link, room string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sess := m.sessions[link]; sess != nil {
+		delete(sess.Rooms, room)
+	}
+}
+
+// BeginReHello resets the session the way _handle_re_hello does: the
+// welcomed flag drops, the old rooms and nick are captured for the
+// caller, and the nick, rooms, and caps clear. It returns the old nick
+// and the old room names.
+func (m *SessionManager) BeginReHello(link *rns.Link) (*string, []string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	sess := m.sessions[link]
+	if sess == nil {
+		return nil, nil
+	}
+	oldNick := sess.Nick
+	oldRooms := make([]string, 0, len(sess.Rooms))
+	for room := range sess.Rooms {
+		oldRooms = append(oldRooms, room)
+	}
+	sess.Welcomed = false
+	sess.Rooms = map[string]bool{}
+	sess.Nick = nil
+	sess.PeerCaps = map[int64]any{}
+	return oldNick, oldRooms
+}
+
+// ClearAwaitingPong clears the link's pending PING marker.
+func (m *SessionManager) ClearAwaitingPong(link *rns.Link) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sess := m.sessions[link]; sess != nil {
+		sess.AwaitingPong = nil
+	}
 }
 
 // WelcomedSessions returns every welcomed session's link in registration
