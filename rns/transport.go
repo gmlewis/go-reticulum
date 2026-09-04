@@ -664,7 +664,13 @@ const (
 	pathTablePersistInterval = 30 * time.Second
 	packetHashRotateDefault  = 50000
 	reverseEntryTimeout      = 8 * time.Minute
-	linkEntryTimeout         = 8 * time.Minute
+	// transportLinkTimeout is the cull age for VALIDATED link-table entries,
+	// mirroring Python Transport.LINK_TIMEOUT = Link.STALE_TIME * 1.25
+	// (Transport.py:89) where Link.STALE_TIME = STALE_FACTOR * KEEPALIVE with
+	// the class-level KEEPALIVE_MAX (Link.py:92-99). Link traffic refreshes
+	// the entry's timestamp, so an active link's transit entry lives as long
+	// as the link does.
+	transportLinkTimeout = time.Duration(float64(LinkKeepaliveMax) * float64(LinkStaleFactor) * 1.25)
 
 	// interfaceJobsInterval matches Python Transport.interface_jobs_interval
 	// (Transport.py:194): the cadence at which per-interface ingress-control
@@ -3148,8 +3154,22 @@ func (ts *TransportSystem) cullStaleTransportTables(now time.Time) {
 	}
 
 	for linkID, entry := range ts.linkTable {
-		if now.Sub(entry.Timestamp) > linkEntryTimeout {
-			delete(ts.linkTable, linkID)
+		if entry.Validated {
+			// Validated (active) links are culled only when no traffic has
+			// refreshed the entry for LINK_TIMEOUT (Python Transport.py:701:
+			// `time.time() > link_entry[IDX_LT_TIMESTAMP] + LINK_TIMEOUT`),
+			// or an interface involved in the link is gone.
+			if now.Sub(entry.Timestamp) > transportLinkTimeout {
+				delete(ts.linkTable, linkID)
+				continue
+			}
+			if entry.OutboundInterface != nil && !entry.OutboundInterface.Status() {
+				delete(ts.linkTable, linkID)
+				continue
+			}
+			if entry.ReceivedInterface != nil && !entry.ReceivedInterface.Status() {
+				delete(ts.linkTable, linkID)
+			}
 			continue
 		}
 		if !entry.ProofTimeout.IsZero() && now.After(entry.ProofTimeout) {

@@ -1415,7 +1415,11 @@ func TestCullStaleTransportTables(t *testing.T) {
 	ts.reverseTable["stale"] = &ReverseEntry{Timestamp: now.Add(-reverseEntryTimeout - time.Minute)}
 	ts.reverseTable["fresh"] = &ReverseEntry{Timestamp: now}
 
-	ts.linkTable["stale-ts"] = &LinkEntry{Timestamp: now.Add(-linkEntryTimeout - time.Minute)}
+	// Validated (active) entries live until transportLinkTimeout past the
+	// last traffic refresh (Python Transport.py:701-704); unvalidated entries
+	// are culled at the proof timeout (Transport.py:709-710).
+	ts.linkTable["stale-ts"] = &LinkEntry{Timestamp: now.Add(-transportLinkTimeout - time.Minute), Validated: true}
+	ts.linkTable["fresh-validated"] = &LinkEntry{Timestamp: now, Validated: true}
 	ts.linkTable["stale-proof"] = &LinkEntry{Timestamp: now, ProofTimeout: now.Add(-time.Second)}
 	ts.linkTable["fresh"] = &LinkEntry{Timestamp: now, ProofTimeout: now.Add(time.Minute)}
 
@@ -1429,10 +1433,13 @@ func TestCullStaleTransportTables(t *testing.T) {
 	}
 
 	if _, ok := ts.linkTable["stale-ts"]; ok {
-		t.Fatalf("expected stale link entry removed by timestamp")
+		t.Fatalf("expected stale validated link entry removed by traffic timeout")
+	}
+	if _, ok := ts.linkTable["fresh-validated"]; !ok {
+		t.Fatalf("expected fresh validated link entry retained")
 	}
 	if _, ok := ts.linkTable["stale-proof"]; ok {
-		t.Fatalf("expected stale link entry removed by proof timeout")
+		t.Fatalf("expected stale unvalidated link entry removed by proof timeout")
 	}
 	if _, ok := ts.linkTable["fresh"]; !ok {
 		t.Fatalf("expected fresh link entry retained")
