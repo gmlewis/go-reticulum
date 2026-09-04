@@ -88,10 +88,10 @@ func TestRemoveMemberFromAll(t *testing.T) {
 func TestGetRoomStats(t *testing.T) {
 	t.Parallel()
 	m := newTestRoomManager(t)
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		m.AddMember("busy", &rns.Link{}, nil)
 	}
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		m.AddMember("mid", &rns.Link{}, nil)
 	}
 	emptyLink := &rns.Link{}
@@ -155,13 +155,13 @@ func TestEnsureRoomState(t *testing.T) {
 		"registered": {
 			Founder:       []byte("ff"),
 			Registered:    true,
-			Topic:         strPtr("hello"),
+			Topic:         new("hello"),
 			Moderated:     true,
 			InviteOnly:    true,
 			TopicOpsOnly:  true,
 			NoOutsideMsgs: true,
 			Private:       true,
-			Key:           strPtr("secret"),
+			Key:           new("secret"),
 			Ops:           map[string]bool{hexKey([]byte("01")): true},
 			Voiced:        map[string]bool{hexKey([]byte("02")): true},
 			Bans:          map[string]bool{hexKey([]byte("03")): true},
@@ -422,7 +422,7 @@ func TestDiffRegistrySummary(t *testing.T) {
 	}
 	// More than 10 added rooms truncate with a suffix.
 	big := map[string]*RoomState{}
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		big[strings.Repeat("r", i+1)+"x"] = &RoomState{}
 	}
 	got = DiffRegistrySummary(map[string]*RoomState{}, big)
@@ -484,9 +484,9 @@ func TestMergeRegistryIntoState(t *testing.T) {
 		"known": {
 			Founder:       []byte("new-founder"),
 			Registered:    true,
-			Topic:         strPtr("new topic"),
+			Topic:         new("new topic"),
 			Moderated:     true,
-			Key:           strPtr("k"),
+			Key:           new("k"),
 			Ops:           map[string]bool{hexKey([]byte("op")): true},
 			Voiced:        map[string]bool{hexKey([]byte("v")): true},
 			Bans:          map[string]bool{hexKey([]byte("b")): true},

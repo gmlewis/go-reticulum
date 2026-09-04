@@ -34,7 +34,7 @@ type MessageHooks struct {
 	RateLimitMsgsPerMinute func() int
 	FmtLinkID              func(link *rns.Link) string
 	FmtHash                func(hash []byte) string
-	Logf                   func(format string, args ...interface{})
+	Logf                   func(format string, args ...any)
 }
 
 // MessageHelper provides message sending and queueing utilities for the RRC
@@ -170,7 +170,7 @@ func (m *MessageHelper) QueueWelcome(outgoing *OutgoingList, link *rns.Link, pee
 	}
 	body := cbor.NewMap()
 	body.Set(BWelcomeHub, m.hooks.HubName())
-	body.Set(BWelcomeVer, HubVersion)
+	body.Set(BWelcomeVer, rns.VERSION)
 	body.Set(BWelcomeCaps, caps)
 	body.Set(BWelcomeLimits, limits)
 	welcome := MakeEnvelope(int(TWelcome), m.hooks.IdentityHash(), WithBody(body))
@@ -295,7 +295,7 @@ func (m *MessageHelper) Send(link *rns.Link, env *cbor.Map) {
 }
 
 // logf logs a hub message through the hooks.
-func (m *MessageHelper) logf(format string, args ...interface{}) {
+func (m *MessageHelper) logf(format string, args ...any) {
 	if m.hooks.Logf != nil {
 		m.hooks.Logf(format, args...)
 	}

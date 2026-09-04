@@ -25,6 +25,7 @@ const sigPubOffset = rns.IdentityKeySize / 8 / 2
 // options of commitsigs.py.
 type cliArgs struct {
 	op         string
+	version    bool
 	namespace  string
 	keyfile    string
 	principal  string
@@ -42,6 +43,9 @@ func parseArgs(argv []string) (*cliArgs, error) {
 	for i < len(argv) {
 		arg := argv[i]
 		switch {
+		case arg == "--version":
+			a.version = true
+			i++
 		case arg == "-Y":
 			if i+1 >= len(argv) {
 				return nil, errors.New("-Y requires a value")
@@ -90,6 +94,9 @@ func parseArgs(argv []string) (*cliArgs, error) {
 			a.file = arg
 			i++
 		}
+	}
+	if a.version {
+		return a, nil
 	}
 	if a.op == "" {
 		return nil, errors.New("-Y operation is required")

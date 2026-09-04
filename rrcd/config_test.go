@@ -236,7 +236,7 @@ func TestDiffConfigSummary(t *testing.T) {
 	newCfg := DefaultHubConfig()
 	newCfg.HubName = "other"
 	newCfg.MaxNickBytes = 64
-	newCfg.Greeting = strPtr("hello")
+	newCfg.Greeting = new("hello")
 	newCfg.TrustedIdentities = []string{"aa"}
 	got := DiffConfigSummary(oldCfg, newCfg)
 	sorted := []string{
@@ -256,8 +256,8 @@ func TestDiffConfigSummary(t *testing.T) {
 	// config_path is excluded from diffs.
 	a := oldCfg
 	b := oldCfg
-	a.ConfigPath = strPtr("/old")
-	b.ConfigPath = strPtr("/new")
+	a.ConfigPath = new("/old")
+	b.ConfigPath = new("/new")
 	if lines := DiffConfigSummary(a, b); len(lines) != 0 {
 		t.Errorf("config_path must be excluded; got %v", lines)
 	}

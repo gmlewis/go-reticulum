@@ -23,6 +23,7 @@ var errHelp = errors.New("help requested")
 // gorrcdOptions holds the parsed command-line options; the nil pointers
 // stand for Python's unset optional values.
 type gorrcdOptions struct {
+	version          bool
 	config           string
 	configdir        *string
 	identity         string
@@ -55,6 +56,8 @@ func parseFlags(args []string, usageOutput io.Writer) (*gorrcdOptions, error) {
 	fs.SetOutput(io.Discard)
 	fs.Usage = func() { printUsage(usageOutput) }
 
+	fs.BoolVar(&opts.version, "version", false,
+		"show program's version number and exit")
 	fs.StringVar(&opts.config, "config", opts.config,
 		"Path to a TOML config file (created on first run)")
 	fs.Func("configdir", "Reticulum config directory", func(v string) error {
@@ -189,7 +192,7 @@ func printUsage(w io.Writer) {
 
 // usageText mirrors the Python argparse help with the go-prefix
 // self-reference.
-const usageText = `usage: gorrcd [-h] [--config CONFIG] [--configdir CONFIGDIR]
+const usageText = `usage: gorrcd [-h] [--version] [--config CONFIG] [--configdir CONFIGDIR]
             [--identity IDENTITY] [--room-registry ROOM_REGISTRY]
             [--no-announce] [--announce-period ANNOUNCE_PERIOD]
             [--hub-name HUB_NAME] [--greeting GREETING]
@@ -205,6 +208,7 @@ Run an RRC hub daemon
 
 options:
   -h, --help            show this help message and exit
+  --version             show program's version number and exit
   --config CONFIG       Path to a TOML config file (created on first run)
   --configdir CONFIGDIR
                         Reticulum config directory

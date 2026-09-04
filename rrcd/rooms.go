@@ -7,6 +7,7 @@ package rrcd
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"sort"
 	"strings"
@@ -67,6 +68,8 @@ type RoomHooks struct {
 	Now func() float64
 }
 
+// RoomManager manages room memberships, room state, permissions, and the
+// room registry persistence, mirroring Python's RoomManager.
 type RoomManager struct {
 	hooks     RoomHooks
 	mu        sync.Mutex
@@ -496,9 +499,7 @@ func (m *RoomManager) PruneExpiredInvites(room string) bool {
 // copyHashSet copies a hex-keyed set.
 func copyHashSet(src map[string]bool) map[string]bool {
 	out := make(map[string]bool, len(src))
-	for k, v := range src {
-		out[k] = v
-	}
+	maps.Copy(out, src)
 	return out
 }
 
@@ -777,7 +778,7 @@ func registryRoomFromEntries(roomName string, keys []toml.KeyVal, now float64) *
 		}
 	}
 	if topic, ok := get("topic"); ok && topic.Kind == toml.KindString {
-		st.Topic = strPtr(topic.Str)
+		st.Topic = new(topic.Str)
 	}
 	if v, ok := get("moderated"); ok {
 		st.Moderated = truthy(v)
@@ -795,7 +796,7 @@ func registryRoomFromEntries(roomName string, keys []toml.KeyVal, now float64) *
 		st.Private = truthy(v)
 	}
 	if key, ok := get("key"); ok && key.Kind == toml.KindString {
-		st.Key = strPtr(key.Str)
+		st.Key = new(key.Str)
 	}
 	hexSet := func(key string, dst map[string]bool) {
 		v, ok := get(key)
@@ -908,10 +909,7 @@ func DiffRegistrySummary(old, new map[string]*RoomState) []string {
 
 // previewList renders the first 10 names with a suffix for the rest.
 func previewList(names []string) (string, string) {
-	n := len(names)
-	if n > 10 {
-		n = 10
-	}
+	n := min(len(names), 10)
 	preview := strings.Join(names[:n], ", ")
 	if len(names) <= 10 {
 		return preview, ""
@@ -971,7 +969,7 @@ func (m *RoomManager) MergeRegistryIntoState(registry map[string]*RoomState) {
 			st.Founder = reg.Founder
 		}
 		if reg.Topic != nil {
-			st.Topic = strPtr(*reg.Topic)
+			st.Topic = new(*reg.Topic)
 		}
 		st.Moderated = reg.Moderated
 		st.InviteOnly = reg.InviteOnly
@@ -979,7 +977,7 @@ func (m *RoomManager) MergeRegistryIntoState(registry map[string]*RoomState) {
 		st.NoOutsideMsgs = reg.NoOutsideMsgs
 		st.Private = reg.Private
 		if reg.Key != nil {
-			st.Key = strPtr(*reg.Key)
+			st.Key = new(*reg.Key)
 		}
 		st.Ops = copyHashSet(reg.Ops)
 		st.Voiced = copyHashSet(reg.Voiced)

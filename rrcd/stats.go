@@ -6,11 +6,13 @@
 package rrcd
 
 import (
+	"maps"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/gmlewis/go-reticulum/rns"
 	"github.com/gmlewis/go-reticulum/rrcd/toml"
 )
 
@@ -153,9 +155,7 @@ type StatsConfig struct {
 func (s *StatsManager) FormatStats(cfg StatsConfig, snap StatsSnapshot) string {
 	s.mu.Lock()
 	c := make(map[string]int, len(s.counters))
-	for k, v := range s.counters {
-		c[k] = v
-	}
+	maps.Copy(c, s.counters)
 	uptimeS := 0.0
 	if s.startedMonotonic != nil {
 		uptimeS = s.mono() - *s.startedMonotonic
@@ -163,7 +163,7 @@ func (s *StatsManager) FormatStats(cfg StatsConfig, snap StatsSnapshot) string {
 	s.mu.Unlock()
 
 	lines := []string{
-		"rrcd " + HubVersion + " stats",
+		"rrcd " + rns.VERSION + " stats",
 		"uptime_s=" + fmtFloatDot1(uptimeS),
 		"clients_total=" + itoa(snap.SessionsTotal) +
 			" clients_identified=" + itoa(snap.SessionsIdentified) +

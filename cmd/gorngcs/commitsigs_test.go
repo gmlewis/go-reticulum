@@ -282,3 +282,17 @@ func TestExtractAuthorEmptyOnBlankOnly(t *testing.T) {
 type discardWriter struct{}
 
 func (discardWriter) Write(p []byte) (int, error) { return len(p), nil }
+
+// The --version flag skips the -Y operation validation and reports the
+// repo-standard version.
+func TestParseArgsVersion(t *testing.T) {
+	t.Parallel()
+
+	a, err := parseArgs([]string{"--version"})
+	if err != nil {
+		t.Fatalf("parseArgs(--version) error: %v", err)
+	}
+	if !a.version {
+		t.Error("--version did not set a.version")
+	}
+}

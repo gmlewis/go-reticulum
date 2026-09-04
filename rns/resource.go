@@ -504,6 +504,15 @@ type Resource struct {
 	// decompression-bomb guard in Assemble.
 	maxDecompressedSize int
 
+	// assemblyLock mirrors Python Resource.assembly_lock (Resource.py:899-900):
+	// once all parts are present and Assemble has been spawned, late duplicate
+	// parts must not re-trigger assembly. Without it, every duplicate part
+	// re-runs Assemble and its conclude callback, and a late duplicate part can
+	// reset status to TRANSFERRING between two assembles — making one conclude
+	// see TRANSFERRING and kill the pending request receipt while a later
+	// conclude (now Complete) finds nothing to deliver to.
+	assemblyLock bool
+
 	mu sync.Mutex
 }
 
@@ -1104,7 +1113,16 @@ func (r *Resource) ReceivePart(packet *Packet) error {
 		return fmt.Errorf("resource transfer failed")
 	}
 
-	r.status = ResourceStatusTransferring
+	// A late duplicate part must not downgrade a resource that has already
+	// finished (or is being assembled): the conclude callback reads status via
+	// ConcludeSnapshot, and resetting COMPLETE/ASSEMBLING to TRANSFERRING here
+	// makes that callback treat a completed transfer as failed. Python only
+	// guards against FAILED (Resource.py:863-864), but Python serializes
+	// receive_part under receive_lock and assembles exactly once via
+	// assembly_lock, so the status flapping cannot be observed there.
+	if r.status != ResourceStatusComplete && r.status != ResourceStatusCorrupt && r.status != ResourceStatusAssembling {
+		r.status = ResourceStatusTransferring
+	}
 	r.lastActivity = time.Now()
 
 	partData := packet.Data
@@ -1124,7 +1142,15 @@ func (r *Resource) ReceivePart(packet *Packet) error {
 			break
 		}
 	}
-	shouldAssemble := r.receivedCount == r.totalParts
+	// Mirror Python receive_part (Resource.py:899-901): assemble exactly once.
+	// Without the assembly lock every late duplicate part re-triggers
+	// Assemble and its conclude callback, racing a fresh TRANSFERRING status
+	// write against the callback's status read.
+	shouldAssemble := false
+	if r.receivedCount == r.totalParts && !r.assemblyLock {
+		r.assemblyLock = true
+		shouldAssemble = true
+	}
 	r.mu.Unlock()
 
 	if progressCB != nil {

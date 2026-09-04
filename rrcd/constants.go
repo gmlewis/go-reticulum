@@ -13,11 +13,6 @@ const (
 	RRCVersion = 1
 	// HubDestName is the hub destination name (app "rrc", aspect "hub").
 	HubDestName = "rrc.hub"
-	// HubVersion is the hub's own version string (display-only): it
-	// flows to the wire in the WELCOME body and the stats header. The
-	// Go port ships 0.1.0 (documented divergence from the Python
-	// rrcd version).
-	HubVersion = "0.1.0"
 )
 
 // Envelope keys (flat CBOR map, unsigned-int keys).

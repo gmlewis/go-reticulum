@@ -7,6 +7,7 @@ package rrcd
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/gmlewis/go-reticulum/rrcd/toml"
@@ -81,9 +82,6 @@ func DefaultHubConfig() HubConfig {
 	}
 }
 
-// strPtr returns a pointer to a copy of s.
-func strPtr(s string) *string { return &s }
-
 // applyFlatKey applies one flattened config key to the config. It returns
 // false for keys it does not handle (unknown keys are ignored by the
 // caller, matching Python's allowed-field filtering).
@@ -113,7 +111,7 @@ func (c *HubConfig) applyFlatKey(key string, val any) {
 			if s == "" {
 				*dst = nil
 			} else {
-				*dst = strPtr(s)
+				*dst = new(s)
 			}
 		}
 	}
@@ -136,7 +134,7 @@ func (c *HubConfig) applyFlatKey(key string, val any) {
 		setOptStr(&c.IdentityPath)
 	case "room_registry_path":
 		if s, ok := val.(string); ok {
-			c.RoomRegistryPath = strPtr(s)
+			c.RoomRegistryPath = new(s)
 		}
 	case "announce_on_start":
 		setBool(&c.AnnounceOnStart)
@@ -210,13 +208,9 @@ func ApplyConfigData(base HubConfig, data map[string]any) HubConfig {
 		return cfg
 	}
 	flat := make(map[string]any, len(data))
-	for k, v := range data {
-		flat[k] = v
-	}
+	maps.Copy(flat, data)
 	if hub, ok := data["hub"].(map[string]any); ok {
-		for k, v := range hub {
-			flat[k] = v
-		}
+		maps.Copy(flat, hub)
 	}
 	if logTable, ok := data["logging"].(map[string]any); ok {
 		for from, to := range map[string]string{

@@ -10,6 +10,7 @@ package rrcd
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 
@@ -762,9 +763,7 @@ func (c *CommandHandler) handleRegister(link *rns.Link, peerHash []byte, parts [
 // copyHexSet copies a hex-keyed set, mirroring Python's set() copies.
 func copyHexSet(set map[string]bool) map[string]bool {
 	out := make(map[string]bool, len(set))
-	for key, val := range set {
-		out[key] = val
-	}
+	maps.Copy(out, set)
 	return out
 }
 

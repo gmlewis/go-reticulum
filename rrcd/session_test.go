@@ -253,7 +253,7 @@ func TestOnLinkClosedIncludeJoinedMemberList(t *testing.T) {
 	hooks.getRoomMembersResult["general"] = map[*rns.Link]bool{leaving: true, staying: true}
 	if sess := m.GetSession(leaving); sess != nil {
 		sess.Rooms["general"] = true
-		sess.Nick = strPtr("leaver")
+		sess.Nick = new("leaver")
 	}
 	if sess := m.GetSession(staying); sess != nil {
 		sess.Rooms["general"] = true
@@ -286,13 +286,13 @@ func TestUpdateNickIndex(t *testing.T) {
 	m, _ := newTestSessionManager(t)
 	link := &rns.Link{}
 
-	nick := strPtr("Alice")
+	nick := new("Alice")
 	m.UpdateNickIndex(link, nil, nick)
 	if got := m.GetLinksByNick("Alice"); len(got) != 1 {
 		t.Fatalf("index lookup = %v", got)
 	}
 	// Old nick removed, new added.
-	newNick := strPtr("bob")
+	newNick := new("bob")
 	m.UpdateNickIndex(link, nick, newNick)
 	if got := m.GetLinksByNick("alice"); len(got) != 0 {
 		t.Errorf("old nick still indexed: %v", got)
@@ -317,7 +317,7 @@ func TestRefillAndTake(t *testing.T) {
 		t.Fatal("first take rate limited")
 	}
 	// Drain the bucket: 240 takes total (first succeeded).
-	for i := 0; i < 239; i++ {
+	for i := range 239 {
 		if !m.RefillAndTake(link, 1) {
 			t.Fatalf("take %v rate limited early", i)
 		}
@@ -329,7 +329,7 @@ func TestRefillAndTake(t *testing.T) {
 	// Advance the clock by 30 seconds: half the per-minute budget refills
 	// (120 tokens).
 	hooks.nowMonotonic += 30.0
-	for i := 0; i < 120; i++ {
+	for i := range 120 {
 		if !m.RefillAndTake(link, 1) {
 			t.Fatalf("refilled take %v rate limited", i)
 		}
@@ -352,8 +352,8 @@ func TestSendWelcome(t *testing.T) {
 	m.OnLinkEstablished(link)
 	peer := bytesOf(170, 4)
 
-	oldNick := strPtr("old")
-	newNick := strPtr("new")
+	oldNick := new("old")
+	newNick := new("new")
 	outgoing := &OutgoingList{}
 	m.SendWelcome(link, outgoing, peer, oldNick, newNick)
 

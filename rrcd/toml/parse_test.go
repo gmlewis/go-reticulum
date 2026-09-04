@@ -231,7 +231,7 @@ func TestFormatFloatCrossCheck(t *testing.T) {
 	if err := os.WriteFile(path, []byte(script), 0o644); err != nil {
 		t.Fatalf("write script: %v", err)
 	}
-	defer os.Remove(path)
+	defer func() { _ = os.Remove(path) }()
 	outb, err := exec.Command("python3", path).Output()
 	if err != nil {
 		t.Fatalf("python repr run: %v", err)

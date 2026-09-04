@@ -3,10 +3,35 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// This file is the gorrcd daemon entry point, mirroring Python's cli.main
-// flow: the first-run bootstrap, the config chain (TOML overrides the path
-// seeds), the CLI overrides, logging, and the hub bring-up.
-
+// gorrcd is an RRC (Reticulum Relay Chat) hub daemon compatible with the
+// Python rrcd 0.3.2 wire protocol and on-disk storage.
+//
+// It brings up the hub in three steps:
+//   - First-run bootstrap: creates any missing state files (rrcd.toml,
+//     hub_identity, rooms.toml) under RRCD_HOME (default ~/.rrcd) from the
+//     byte-exact Python templates and exits 0 so the operator can edit the
+//     configuration.
+//   - Configuration chain: the TOML config file is applied over the path
+//     seeds (TOML keys override --configdir/--identity/--room-registry,
+//     while config_path and dest_name never come from TOML), then the CLI
+//     overrides apply in the same order as Python's argparse.
+//   - Hub run: logging is configured, the hub service announces on rrc.hub
+//     and serves the RRC protocol until SIGINT or SIGTERM.
+//
+// Usage:
+//
+//	gorrcd [--config CONFIG] [--configdir CONFIGDIR]
+//	       [--identity IDENTITY] [--room-registry ROOM_REGISTRY]
+//	       [--no-announce] [--announce-period SECONDS]
+//	       [--hub-name NAME] [--greeting TEXT]
+//	       [--include-joined-member-list] [--max-rooms N]
+//	       [--max-nick-bytes N] [--max-room-name-bytes N]
+//	       [--rate-limit-msgs-per-minute N] [--max-msg-body-bytes N]
+//	       [--ping-interval SECONDS] [--ping-timeout SECONDS]
+//	       [--log-level LEVEL] [--log-file PATH] [--version]
+//
+// State paths honor the RRCD_HOME environment variable (used literally when
+// truthy, no expansion) with ~/.rrcd as the default home.
 package main
 
 import (
@@ -31,6 +56,11 @@ func main() {
 		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
+	}
+
+	if opts.version {
+		fmt.Printf("gorrcd %v\n", rns.VERSION)
+		os.Exit(0)
 	}
 
 	configPath := opts.config

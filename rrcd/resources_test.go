@@ -54,12 +54,11 @@ func TestAddResourceExpectation(t *testing.T) {
 		t.Fatal("AddResourceExpectation() = false, want true")
 	}
 
-	key := string(rid)
 	set := m.expectations[link]
 	if set == nil || len(set.byID) != 1 {
 		t.Fatalf("expectations for link = %+v, want one entry", set)
 	}
-	exp := set.byID[key]
+	exp := set.byID[string(rid)]
 	if exp == nil {
 		t.Fatal("expectation not stored under its rid")
 	}

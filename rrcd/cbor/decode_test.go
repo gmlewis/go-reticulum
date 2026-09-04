@@ -267,13 +267,13 @@ func TestDecodeDeepNestingErrors(t *testing.T) {
 	t.Parallel()
 	// 200 nested arrays exceed the decoder depth limit.
 	data := make([]byte, 0, 200)
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		data = append(data, 0x80|1) // array head with 1 element... placeholder
 	}
 	_ = data
 	// Build: open brackets via indefinite arrays are simplest.
 	nested := make([]byte, 0, 128)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		nested = append(nested, 0x9f) // indefinite array open
 	}
 	nested = append(nested, 0x01, 0xff)

@@ -120,9 +120,13 @@ class StdioInterface(Interface):
 
     def process_incoming(self, data):
         self.rxb += len(data)
+        if os.environ.get("GORRCD_TRACE_FRAMES"):
+            emit({"event": "frame-in", "len": len(data), "hex": data[:32].hex()})
         RNS.Transport.inbound(data, self)
 
     def process_outgoing(self, data):
+        if os.environ.get("GORRCD_TRACE_FRAMES"):
+            emit({"event": "frame-out", "len": len(data), "hex": data[:32].hex()})
         frame = bytes([HDLC.FLAG]) + HDLC.escape(data) + bytes([HDLC.FLAG])
         sys.stdout.buffer.write(frame)
         sys.stdout.buffer.flush()
@@ -577,7 +581,11 @@ func writeDriverRNSConfig(t *testing.T, dir string) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	content := "[reticulum]\nshare_instance = No\n\n[logging]\nloglevel = 4\n"
+	logLevel := "4"
+	if v := os.Getenv("GORRCD_DRIVER_LOGLEVEL"); v != "" {
+		logLevel = v
+	}
+	content := "[reticulum]\nshare_instance = No\n\n[logging]\nloglevel = " + logLevel + "\n"
 	if err := os.WriteFile(filepath.Join(dir, "config"), []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -874,8 +882,8 @@ func TestIntegrationHelloWelcomeOverPipe(t *testing.T) {
 	if hubName != "TestHub" {
 		t.Errorf("parsed WELCOME hub_name = %q, want %q", hubName, "TestHub")
 	}
-	if version != "0.1.0" {
-		t.Errorf("parsed WELCOME version = %q, want %q (the Go hub version constant)", version, "0.1.0")
+	if version != rns.VERSION {
+		t.Errorf("parsed WELCOME version = %q, want %q (rns.VERSION)", version, rns.VERSION)
 	}
 	caps, _ := ev["caps"].(map[string]any)
 	if caps["1"] != true || caps["2"] != true || caps["0"] != true {
@@ -987,6 +995,7 @@ func countEnvelopesOf(er *eventReader, hubIndex int, msgType int64) int {
 // fanout JOINED with the actor's nick, and the PART produces the PARTED
 // self copy plus the fanout with the actor's nick.
 func TestIntegrationJoinPartOverPipe(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	pyPath := findRNSPython(t)
 
 	hub := startGorrcdHub(t, pyPath, hubTestConfig{
@@ -1078,6 +1087,7 @@ func TestIntegrationJoinPartOverPipe(t *testing.T) {
 // envelope with the sender's hash and nick, and the sender receives its own
 // echo with identical payload bytes.
 func TestIntegrationMsgFanoutOverPipe(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	pyPath := findRNSPython(t)
 
 	hub := startGorrcdHub(t, pyPath, hubTestConfig{
@@ -1183,6 +1193,7 @@ func firstErrorBody(er *eventReader, hubIndex int) (string, bool) {
 // G13.6 /register, /list, and /who over the pipe: the Python client parses
 // the NOTICE texts, so the byte-exact strings are the contract.
 func TestIntegrationListWhoOverPipe(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	pyPath := findRNSPython(t)
 
 	hub := startGorrcdHub(t, pyPath, hubTestConfig{
@@ -1260,6 +1271,7 @@ func containsString(list []string, want string) bool {
 // pre-HELLO JOIN, an unknown slash command, and rate limiting all produce
 // the exact wire-visible ERROR texts.
 func TestIntegrationErrorPathsOverPipe(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	pyPath := findRNSPython(t)
 
 	rateLimit := 5
@@ -1337,6 +1349,7 @@ func errorBodies(er *eventReader, hubIndex int) []string {
 // room+dst mix errors with `direct notice must not include room`; an
 // unknown destination errors with `destination not connected`.
 func TestIntegrationDirectNoticeOverPipe(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	pyPath := findRNSPython(t)
 
 	hub := startGorrcdHub(t, pyPath, hubTestConfig{
@@ -1398,6 +1411,7 @@ func TestIntegrationDirectNoticeOverPipe(t *testing.T) {
 // PARTED with the departed nick to the remaining members; a banned
 // identity is disconnected with the `banned` ERROR (two-phase hub start).
 func TestIntegrationLifecycleOverPipe(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	pyPath := findRNSPython(t)
 
 	// Phase 1: connect both clients, drop Beta's link, and emit Beta's
@@ -1467,6 +1481,7 @@ func TestIntegrationLifecycleOverPipe(t *testing.T) {
 // the real Python client against a trusted-operator hub, and the persistent
 // commands land in rooms.toml / rrcd.toml.
 func TestIntegrationSlashCommandMatrixOverPipe(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	pyPath := findRNSPython(t)
 
 	// Phase 1: learn Alpha's identity hash.
@@ -1618,6 +1633,7 @@ func runPythonScript(t *testing.T, script string) string {
 // Python client persists rooms.toml that the ORIGINAL Python loader reads;
 // a Python-written second room shows up in the hub's /list after a restart.
 func TestIntegrationStorageRoundTripOverPipe(t *testing.T) {
+	testutils.SkipShortIntegration(t)
 	pyPath := findRNSPython(t)
 
 	// Phase 1: register a room from the client.
@@ -1679,12 +1695,77 @@ func TestIntegrationStorageRoundTripOverPipe(t *testing.T) {
 	bodies := noticeBodies(hub.events, 0)
 	foundList := false
 	for _, body := range bodies {
-		if body == "Registered public rooms:\n  general\n  lounge" ||
-			body == "Registered public rooms:\n  lounge\n  general" {
+		if body == "Registered public rooms:\n  general\n  lounge - Second room" ||
+			body == "Registered public rooms:\n  lounge - Second room\n  general" {
 			foundList = true
 		}
 	}
 	if !foundList {
 		t.Errorf("the restarted hub's /list does not show both rooms; notices: %v", bodies)
+	}
+}
+
+// G13.9 MOTD delivery: with resource transfer enabled the client receives
+// the RESOURCE_ENVELOPE (kind "motd"); with it disabled the chunked-NOTICE
+// fallback delivers the same text. (The RNS resource part transfer itself
+// is an rns-package cross-implementation surface, exercised separately.)
+func TestIntegrationMotdDeliveryOverPipe(t *testing.T) {
+	testutils.SkipShortIntegration(t)
+	pyPath := findRNSPython(t)
+
+	greeting := strings.Repeat("Welcome to the hub! ", 30)
+
+	// Scenario 1: resource transfer enabled - the client receives the
+	// RESOURCE_ENVELOPE for the greeting.
+	hub := startGorrcdHub(t, pyPath, hubTestConfig{
+		announcePeriodS: 1.0,
+		greeting:        &greeting,
+		commands:        []string{"connect Alpha", "sleep 2", "wait done"},
+	})
+	hub.events.waitForMarker(t, "done", 90*time.Second)
+	resEnvelope := 0
+	for _, ev := range hub.events.envelopes(0) {
+		env := envelopeOf(ev)
+		if mt, ok := envInt(env, "1"); ok && mt == TResource {
+			resEnvelope++
+		}
+	}
+	if resEnvelope != 1 {
+		t.Errorf("the client received %v RESOURCE_ENVELOPEs, want 1", resEnvelope)
+	}
+	hub.stop()
+	time.Sleep(500 * time.Millisecond)
+
+	// Scenario 2: resource transfer disabled - the chunked-NOTICE
+	// fallback delivers the greeting text.
+	enabled := false
+	hub2 := startGorrcdHub(t, pyPath, hubTestConfig{
+		announcePeriodS:        1.0,
+		greeting:               &greeting,
+		enableResourceTransfer: &enabled,
+		commands: []string{
+			"connect Alpha",
+			"sleep 2",
+			"wait done2",
+		},
+	})
+	hub2.events.waitForMarker(t, "done2", 90*time.Second)
+
+	// The NOTICE chunks reassemble into the greeting.
+	chunks := ""
+	for _, ev := range hub2.events.envelopes(0) {
+		env := envelopeOf(ev)
+		if mt, ok := envInt(env, "1"); !ok || mt != TNotice {
+			continue
+		}
+		if _, hasRoom := env["5"]; hasRoom {
+			continue
+		}
+		if body, _ := envString(env, "6"); body != "" {
+			chunks += body
+		}
+	}
+	if !strings.Contains(chunks, "Welcome to the hub! Welcome to the hub!") {
+		t.Errorf("the chunked MOTD did not reassemble; got %q", chunks[:minInt(len(chunks), 120)])
 	}
 }

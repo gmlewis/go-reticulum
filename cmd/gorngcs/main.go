@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/gmlewis/go-reticulum/rns"
 )
 
 func main() {
@@ -34,6 +36,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
 		return 1
+	}
+	if a.version {
+		fmt.Printf("gorngcs %v\n", rns.VERSION)
+		return 0
 	}
 	switch a.op {
 	case "sign":

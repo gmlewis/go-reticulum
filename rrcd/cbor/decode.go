@@ -265,7 +265,7 @@ func (d *decoder) mapOf(info byte, depth int) (any, error) {
 	if n > uint64(len(d.data)-d.off) {
 		return nil, errTruncated
 	}
-	for i := uint64(0); i < n; i++ {
+	for range n {
 		key, err := d.value(depth + 1)
 		if err != nil {
 			return nil, err

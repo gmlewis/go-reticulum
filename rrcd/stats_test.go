@@ -7,6 +7,8 @@ package rrcd
 
 import (
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/rns"
 )
 
 // G5.5: the golden full-string output for a fixed counter snapshot,
@@ -72,7 +74,7 @@ func TestFormatStatsGolden(t *testing.T) {
 		BannedCount:  0,
 	}
 	got := s.FormatStats(cfg, snap)
-	want := "rrcd " + HubVersion + " stats" +
+	want := "rrcd " + rns.VERSION + " stats" +
 		"uptime_s=100.0" +
 		"clients_total=2 clients_identified=1 clients_welcomed=2" +
 		"rooms=1 memberships=2" +
@@ -110,7 +112,7 @@ func TestFormatStatsEmptyCounters(t *testing.T) {
 	}
 	snap := StatsSnapshot{}
 	got := s.FormatStats(cfg, snap)
-	want := "rrcd " + HubVersion + " stats" +
+	want := "rrcd " + rns.VERSION + " stats" +
 		"uptime_s=0.0" +
 		"clients_total=0 clients_identified=0 clients_welcomed=0" +
 		"rooms=0 memberships=0" +

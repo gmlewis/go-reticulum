@@ -33,7 +33,7 @@ func Parse(src string) (*Doc, error) {
 		pending = nil
 	}
 	lines := splitLines(src)
-	for i := 0; i < len(lines); i++ {
+	for i := range len(lines) {
 		raw := lines[i]
 		trimmed := strings.TrimSpace(raw)
 		switch {
@@ -199,7 +199,7 @@ func decodeEscape(s string) (rune, int, error) {
 
 func parseHex4(s string) (rune, bool) {
 	var v rune
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		d, ok := hexDigit(s[i])
 		if !ok {
 			return 0, false
@@ -211,7 +211,7 @@ func parseHex4(s string) (rune, bool) {
 
 func parseHex8(s string) (rune, bool) {
 	var v rune
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		d, ok := hexDigit(s[i])
 		if !ok {
 			return 0, false

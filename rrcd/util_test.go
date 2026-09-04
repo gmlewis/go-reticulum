@@ -83,7 +83,7 @@ func TestExpandPath(t *testing.T) {
 
 func TestExpandPathMissingVarStays(t *testing.T) {
 	// Python's expandvars leaves an undefined $VAR literal in place.
-	os.Unsetenv("RRCD_TEST_UNDEF")
+	_ = os.Unsetenv("RRCD_TEST_UNDEF")
 	if got, want := ExpandPath("x$RRCD_TEST_UNDEFINEDb/y"), "x$RRCD_TEST_UNDEFINEDb/y"; got != want {
 		t.Errorf("ExpandPath = %q, want %q", got, want)
 	}

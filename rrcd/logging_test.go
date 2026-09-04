@@ -73,7 +73,7 @@ func TestConfigureLoggingFileHandler(t *testing.T) {
 	logPath := filepath.Join(dir, "nested", "hub.log")
 	cfg := DefaultHubConfig()
 	cfg.LogConsole = false
-	cfg.LogFile = strPtr(logPath)
+	cfg.LogFile = new(logPath)
 
 	setup := ConfigureLogging(cfg, rns.NewLogger(), nil, nil)
 	if setup.File == nil || *setup.File != logPath {

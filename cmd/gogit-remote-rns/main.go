@@ -46,6 +46,10 @@ func run(args []string) int {
 // runWithOutput is the testable form of run, reading the helper protocol from
 // in and writing protocol responses to out and diagnostics to errw.
 func runWithOutput(args []string, in io.Reader, out, errw io.Writer) int {
+	if len(args) == 1 && args[0] == "--version" {
+		_, _ = fmt.Fprintf(out, "git-remote-rns %v\n", rns.VERSION)
+		return 0
+	}
 	if len(args) < 2 {
 		_, _ = fmt.Fprintf(errw, "Usage: git-remote-rns <remote-name> <url>\n")
 		return 1

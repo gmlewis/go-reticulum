@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gmlewis/go-reticulum/rns"
 	"github.com/gmlewis/go-reticulum/rrcd"
 	"github.com/gmlewis/go-reticulum/testutils"
 )
@@ -76,6 +77,15 @@ func TestParseFlags(t *testing.T) {
 	}
 	if opts.logLevel == nil || *opts.logLevel != "DEBUG" || opts.logFile == nil || *opts.logFile != "/tmp/rrcd.log" {
 		t.Errorf("log options = %v/%v", opts.logLevel, opts.logFile)
+	}
+
+	// --version: the flag is recognized.
+	opts, err = parseFlags([]string{"--version"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opts.version {
+		t.Error("--version did not set opts.version")
 	}
 
 	// Unset optionals stay nil.
@@ -156,7 +166,9 @@ func TestEnsureFirstRunFiles(t *testing.T) {
 }
 
 // G12.4 The usage text matches the live Python argparse help after
-// normalizing the go-prefix self-reference.
+// normalizing the go-prefix self-reference and stripping the Go-only
+// --version flag (Python rrcd's argparse has no --version; the Go daemon
+// adds it as the repo-standard version flag).
 func TestHelpParity(t *testing.T) {
 	t.Parallel()
 
@@ -165,10 +177,26 @@ func TestHelpParity(t *testing.T) {
 		t.Skipf("python3 with rrcd unavailable: %v", err)
 	}
 
-	normalized := normalizeHelpText(usageText)
+	normalized := normalizeHelpText(stripVersionFlag(usageText))
 	if normalized != normalizeHelpText(pythonHelp) {
-		t.Errorf("usage text mismatch:\n--- Go ---\n%v\n--- Python ---\n%v", normalized, normalizeHelpText(pythonHelp))
+		t.Errorf("usage text mismatch:\n--- Go ---\n%v\n--- Python ---\n%v",
+			normalized, normalizeHelpText(pythonHelp))
 	}
+}
+
+// stripVersionFlag removes the Go-only --version lines from the usage
+// text before the Python help comparison.
+func stripVersionFlag(text string) string {
+	text = strings.Replace(text, " [--version]", "", 1)
+	lines := strings.Split(text, "\n")
+	var kept []string
+	for _, line := range lines {
+		if strings.HasPrefix(line, "  --version") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
 }
 
 // normalizeHelpText maps the go-prefix self-reference back to the Python
@@ -296,5 +324,32 @@ func TestBuildConfigPrecedence(t *testing.T) {
 	}
 	if cfg2.HubName != "CLIHub" || cfg2.MaxNickBytes != 16 {
 		t.Errorf("CLI overrides = %q/%v, want CLIHub/16", cfg2.HubName, cfg2.MaxNickBytes)
+	}
+}
+
+// The --version flag prints the repo-standard rns.VERSION string to
+// stdout and exits 0 without touching any state.
+func TestVersionFlag(t *testing.T) {
+	t.Parallel()
+
+	dir := testutils.TempDir(t, "gorrcd-version")
+	bin := filepath.Join(dir, "gorrcd")
+	build := exec.Command("go", "build", "-o", bin, ".")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build gorrcd failed: %v\n%v", err, out)
+	}
+
+	cmd := exec.Command(bin, "--version")
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("--version run failed: %v (stderr: %v)", err, stderr.String())
+	}
+	if got, want := stdout.String(), "gorrcd "+rns.VERSION+"\n"; got != want {
+		t.Errorf("--version output = %q, want %q", got, want)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("--version wrote to stderr: %q", stderr.String())
 	}
 }
