@@ -54,7 +54,7 @@ func TestConfigTemplateRenderGolden(t *testing.T) {
 	}
 
 	home := testutils.TempDir(t, "gorrcd-first-run-")
-	out := testutils.RunPython(t, firstRunCaptureScript, home)
+	out := testutils.RunPython(t, firstRunCaptureScript, home, testutils.PythonRRCDRepoDir(t))
 	gotCfg := extractSection(t, out, "CFG")
 	gotRooms := extractSection(t, out, "ROOMS")
 
@@ -95,11 +95,12 @@ func extractSection(t *testing.T, out, name string) string {
 
 // firstRunCaptureScript runs the original Python first-run bootstrap with
 // RRCD_HOME set to a fresh temp dir and prints both templates, with the
-// interpolated paths normalized to fixed test paths.
+// interpolated paths normalized to fixed test paths. argv[2] is the
+// original-rrcd-repo directory.
 const firstRunCaptureScript = `
 import hashlib, os, sys
 os.environ["RRCD_HOME"] = sys.argv[1]
-sys.path.insert(0, "/Users/glenn/src/github.com/kc1awv/rrcd")
+sys.path.insert(0, sys.argv[2])
 from rrcd import cli
 from rrcd.paths import (
     default_config_path,

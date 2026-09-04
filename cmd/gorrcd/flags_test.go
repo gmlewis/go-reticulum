@@ -173,7 +173,7 @@ func TestEnsureFirstRunFiles(t *testing.T) {
 func TestHelpParity(t *testing.T) {
 	t.Parallel()
 
-	pythonHelp, err := capturePythonHelp()
+	pythonHelp, err := capturePythonHelp(testutils.PythonRRCDRepoDir(t))
 	if err != nil {
 		t.Skipf("python3 with rrcd unavailable: %v", err)
 	}
@@ -239,10 +239,10 @@ func normalizeHelpText(text string) string {
 // capturePythonHelp runs the live Python rrcd argparse help, probing
 // python3.14 first and skipping when no interpreter with the rrcd package
 // is available.
-func capturePythonHelp() (string, error) {
+func capturePythonHelp(rrcdRepo string) (string, error) {
 	script := strings.Join([]string{
 		"import sys",
-		"sys.path.insert(0, r\"/Users/glenn/src/github.com/kc1awv/rrcd\")",
+		"sys.path.insert(0, r\"" + rrcdRepo + "\")",
 		"from rrcd.cli import _build_arg_parser",
 		"import io, contextlib",
 		"buf = io.StringIO()",

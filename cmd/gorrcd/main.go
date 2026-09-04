@@ -48,7 +48,10 @@ import (
 )
 
 func main() {
-	log.SetFlags(0)
+	// Timestamp every standard-log line (the RNS logger stamps its own
+	// logfile; these flags stamp the process-level lines captured into the
+	// /tmp service logs by the bootstrap script).
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 	// Persist main-goroutine panics through the configured log writer: the
 	// runtime's stderr dump scrolls away in a plain SSH session, while the
 	// [logging] file (when configured) persists it for forensics.

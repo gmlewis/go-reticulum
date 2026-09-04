@@ -26,7 +26,10 @@ import (
 )
 
 func main() {
-	log.SetFlags(0)
+	// Timestamp every standard-log line (the RNS logger stamps its own
+	// logfile; these flags stamp the process-level lines captured into the
+	// /tmp service logs by the bootstrap script).
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 

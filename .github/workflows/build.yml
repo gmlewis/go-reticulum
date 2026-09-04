@@ -61,26 +61,41 @@ jobs:
             **/go.sum
 
       # The cross-implementation tests drive the real Python RNS/LXMF/nomadnet/
-      # rnsh stacks. Pinned to the local mirror HEADs so upstream drift cannot
-      # break the suite silently — bump these (git -C <repo> rev-parse HEAD)
-      # when the local clones move.
+      # rnsh/rrcd stacks. Pinned to the local mirror HEADs so upstream drift
+      # cannot break the suite silently — bump these (git -C <repo> rev-parse
+      # HEAD) when the local clones move.
       - name: Clone Python reference implementations
         run: |
-          mkdir -p "$HOME/src/github.com/markqvist" "$HOME/src/github.com/acehoss"
+          mkdir -p "$HOME/src/github.com/markqvist" "$HOME/src/github.com/acehoss" "$HOME/src/github.com/kc1awv"
           git clone --quiet https://github.com/markqvist/Reticulum "$HOME/src/github.com/markqvist/Reticulum"
           git -C "$HOME/src/github.com/markqvist/Reticulum" checkout --quiet b48b96e6
           git clone --quiet https://github.com/markqvist/lxmf "$HOME/src/github.com/markqvist/lxmf"
           git -C "$HOME/src/github.com/markqvist/lxmf" checkout --quiet 795fdaa
           git clone --quiet https://github.com/acehoss/rnsh "$HOME/src/github.com/acehoss/rnsh"
           git -C "$HOME/src/github.com/acehoss/rnsh" checkout --quiet 50f0420
+          git clone --quiet https://github.com/kc1awv/rrcd "$HOME/src/github.com/kc1awv/rrcd"
+          git -C "$HOME/src/github.com/kc1awv/rrcd" checkout --quiet f6d7e9d
 
+      # Several tests resolve the Python repos through repo-root symlinks
+      # (original-*-repo) that only exist on dev machines — recreate them.
+      - name: Symlink Python repos into the repository root
+        run: |
+          ln -s "$HOME/src/github.com/markqvist/Reticulum" original-reticulum-repo
+          ln -s "$HOME/src/github.com/markqvist/lxmf" original-lxmf-repo
+          ln -s "$HOME/src/github.com/acehoss/rnsh" original-rnsh-repo
+          ln -s "$HOME/src/github.com/kc1awv/rrcd" original-rrcd-repo
+
+      # Python 3.13+ is required: argparse's help formatting changed (e.g.
+      # "-j path" vs "-j path, --jail path") and the help-parity tests diff
+      # against live Python output. The pip pins mirror the local user-site
+      # stack the suite was validated against.
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.14'
 
       - name: Install Python dependencies
-        run: python3 -m pip install --quiet rns lxmf nomadnet
+        run: python3 -m pip install --quiet rns==1.5.0 lxmf==1.1.1 nomadnet==1.2.8 pillow tomlkit qrcode
 
       - name: Run full integration suite
         env:

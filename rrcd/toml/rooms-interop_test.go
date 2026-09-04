@@ -73,7 +73,7 @@ func TestInteropGoRoomsLoadInPython(t *testing.T) {
 	lobbyFounder := "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
 	script := `
 import json, sys
-sys.path.insert(0, "/Users/glenn/src/github.com/kc1awv/rrcd")
+sys.path.insert(0, sys.argv[2])
 from rrcd.rooms import RoomManager
 rr = RoomManager.__new__(RoomManager)
 registry, err = rr.load_registry_from_path(sys.argv[1], invite_timeout_s=900.0)
@@ -92,7 +92,7 @@ for name, data in registry.items():
     out[name] = {k: conv(v) for k, v in data.items()}
 print(json.dumps(out, sort_keys=True))
 `
-	out := testutils.RunPython(t, script, path)
+	out := testutils.RunPython(t, script, path, testutils.PythonRRCDRepoDir(t))
 	// The Python registry stores founder/topic/key as strings, flags as
 	// bools, lists as sorted hex, invited as hash→expiry pairs, and
 	// last_used_ts as a float.

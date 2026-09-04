@@ -575,7 +575,7 @@ func TestRegistryInteropWithPython(t *testing.T) {
 	// Python side: the original loader's view, hex-encoded for comparison.
 	out := testutils.RunPython(t, `
 import json, sys
-sys.path.insert(0, "/Users/glenn/src/github.com/kc1awv/rrcd")
+sys.path.insert(0, sys.argv[2])
 from rrcd.rooms import RoomManager
 rr = RoomManager.__new__(RoomManager)
 registry, err_msg = rr.load_registry_from_path(sys.argv[1], invite_timeout_s=900.0)
@@ -592,7 +592,7 @@ def conv(v):
 
 print(json.dumps({name: {k: conv(val) for k, val in data.items()}
                   for name, data in registry.items()}, sort_keys=True))
-`, path)
+`, path, testutils.PythonRRCDRepoDir(t))
 
 	wantJSON := `{"general": {"bans": [], "founder": "` + strings.Repeat("ab", 16) +
 		`", "invite_only": true, "invited": [[` + strings.Repeat("cd", 8) + `, 2000000000.0]], ` +

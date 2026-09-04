@@ -32,6 +32,39 @@ func SkipIfNoPythonRNS(t *testing.T) {
 	}
 }
 
+// PythonRRCDRepoDir resolves the original Python rrcd repo directory: the
+// original-rrcd-repo symlink found by walking up from the current directory,
+// falling back to ~/src/github.com/kc1awv/rrcd. The calling test skips when
+// neither exists. Scripts receive it as a sys.argv entry or through direct
+// Go string concatenation — no absolute path is ever embedded in a script.
+func PythonRRCDRepoDir(t *testing.T) string {
+	t.Helper()
+	if dir, err := os.Getwd(); err == nil {
+		for {
+			p := filepath.Join(dir, "original-rrcd-repo")
+			if resolved, err := filepath.EvalSymlinks(p); err == nil {
+				if fi, err := os.Stat(resolved); err == nil && fi.IsDir() {
+					return resolved
+				}
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err == nil {
+		p := filepath.Join(home, "src", "github.com", "kc1awv", "rrcd")
+		if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+			return p
+		}
+	}
+	t.Skipf("original Python rrcd repo not found (no original-rrcd-repo symlink and no ~/src/github.com/kc1awv/rrcd)")
+	return "" // unreachable
+}
+
 // RunPython writes script to a temp .py file under /tmp, runs it with
 // `python3 script.py args...`, and returns stdout. A non-zero exit fails the
 // test with both stdout and stderr shown. Stray stderr (e.g. RNS log notices)

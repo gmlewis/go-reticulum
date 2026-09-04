@@ -1,6 +1,7 @@
 /skills
 .DS_Store
 *.data
+*.log
 *.md
 *.result
 *.txt

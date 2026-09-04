@@ -1971,7 +1971,7 @@ func TestIntegrationStorageRoundTripOverPipe(t *testing.T) {
 	// The ORIGINAL Python loader reads the hub's rooms.toml.
 	roomsPath := filepath.Join(hub.homeDir, "rooms.toml")
 	output := runPythonScript(t, "import sys\n"+
-		"sys.path.insert(0, r\"/Users/glenn/src/github.com/kc1awv/rrcd\")\n"+
+		"sys.path.insert(0, r\""+testutils.PythonRRCDRepoDir(t)+"\")\n"+
 		"from rrcd.rooms import RoomManager\n"+
 		"rm = RoomManager(None)\n"+
 		"registry, err = rm.load_registry_from_path(r\""+roomsPath+"\", invite_timeout_s=900.0)\n"+
@@ -1987,7 +1987,7 @@ func TestIntegrationStorageRoundTripOverPipe(t *testing.T) {
 	hub.stop()
 	time.Sleep(500 * time.Millisecond)
 	runPythonScript(t, "import sys\n"+
-		"sys.path.insert(0, r\"/Users/glenn/src/github.com/kc1awv/rrcd\")\n"+
+		"sys.path.insert(0, r\""+testutils.PythonRRCDRepoDir(t)+"\")\n"+
 		"import tomlkit\n"+
 		"doc = tomlkit.parse(open(r\""+roomsPath+"\").read())\n"+
 		"room = tomlkit.table()\n"+
@@ -1998,7 +1998,6 @@ func TestIntegrationStorageRoundTripOverPipe(t *testing.T) {
 		"text = tomlkit.dumps(doc)\n"+
 		"open(r\""+roomsPath+"\", \"w\").write(text)\n"+
 		"print(\"WROTE\", len(text))\n")
-
 	// Restart the hub with the merged registry and list the rooms.
 	hub.writeCommands(
 		"connect Alpha",
