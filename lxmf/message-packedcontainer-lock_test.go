@@ -28,7 +28,7 @@ func TestPackedContainerGuardedByPersistLock(t *testing.T) {
 	msg := newAtomicWriteMessage(t)
 	dir := testutils.TempDir(t, tempDirPrefix)
 
-	deadline := time.Now().Add(1200 * time.Millisecond)
+	deadline := time.Now().Add(300 * time.Millisecond)
 	var wg sync.WaitGroup
 	var failed atomic.Bool
 

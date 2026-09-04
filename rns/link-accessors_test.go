@@ -8,6 +8,8 @@ package rns
 import (
 	"bytes"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 	"time"
 )
 
@@ -320,15 +322,19 @@ func TestLinkPing(t *testing.T) {
 }
 
 // TestLinkPingNoHandlerTimesOut confirms Ping returns an error (rather than
-// hanging) when the remote end has no registered ping handler.
+// hanging) when the remote end has no registered ping handler. It runs in a
+// synctest bubble so the RTT-derived ping timeout and Ping's `time.After`
+// backstop advance on virtual time instead of costing ~3s of wall clock.
 func TestLinkPingNoHandlerTimesOut(t *testing.T) {
 	t.Parallel()
 
-	initiator, _ := establishLoopbackLink(t)
-	// No ping handler registered on the receiver.
+	testutils.RunInBubble(t, func(t *testing.T) {
+		initiator, _ := establishLoopbackLink(t)
+		// No ping handler registered on the receiver.
 
-	_, err := initiator.Ping()
-	if err == nil {
-		t.Fatal("Ping() without a remote handler succeeded, want timeout/error")
-	}
+		_, err := initiator.Ping()
+		if err == nil {
+			t.Fatal("Ping() without a remote handler succeeded, want timeout/error")
+		}
+	})
 }

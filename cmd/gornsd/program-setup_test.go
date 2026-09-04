@@ -47,29 +47,22 @@ func reserveTCPPort(t *testing.T) int {
 
 func waitForFileContains(t *testing.T, path string, want string) {
 	t.Helper()
-	deadline := time.Now().Add(500 * time.Millisecond)
-	for time.Now().Before(deadline) {
+	testutils.EventuallyFatal(t, 500*time.Millisecond, func() bool {
 		data, err := os.ReadFile(path)
-		if err == nil && strings.Contains(string(data), want) {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("%v did not contain %q", path, want)
+		return err == nil && strings.Contains(string(data), want)
+	}, "%v did not contain %q", path, want)
 }
 
 func waitForMessageContains(t *testing.T, messages *[]string, want string) {
 	t.Helper()
-	deadline := time.Now().Add(500 * time.Millisecond)
-	for time.Now().Before(deadline) {
+	testutils.EventuallyFatal(t, 500*time.Millisecond, func() bool {
 		for i := range slices.Backward(*messages) {
 			if strings.Contains((*messages)[i], want) {
-				return
+				return true
 			}
 		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("messages did not contain %q: %#v", want, *messages)
+		return false
+	}, "messages did not contain %q: %#v", want, *messages)
 }
 
 func countMessageContains(messages []string, want string) int {

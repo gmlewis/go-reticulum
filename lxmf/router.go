@@ -102,10 +102,14 @@ type Router struct {
 	startRequestMessagesPathJob func()
 	outboundTriggerSleep        func(time.Duration)
 	pathWaitSleep               func(time.Duration)
-	teardownLink                func(*rns.Link)
-	now                         func() time.Time
-	processingDeferredStamps    bool
-	outboundProcessingActive    atomic.Bool
+	// propagationAnnounceSleep is Python's 0.1s delayed-announce thread before
+	// a propagation-node announce (AnnouncePropagationNode). Injectable for
+	// deterministic tests, mirroring outboundTriggerSleep.
+	propagationAnnounceSleep func(time.Duration)
+	teardownLink             func(*rns.Link)
+	now                      func() time.Time
+	processingDeferredStamps bool
+	outboundProcessingActive atomic.Bool
 
 	resourceLinks       map[string]*rns.Link
 	resourceLinkPending map[string]bool
@@ -390,8 +394,9 @@ func NewRouter(ts rns.Transport, identity *rns.Identity, storagePath string) (*R
 		requestProgress: func(receipt *rns.RequestReceipt) float64 {
 			return receipt.GetProgress()
 		},
-		outboundTriggerSleep: time.Sleep,
-		pathWaitSleep:        time.Sleep,
+		outboundTriggerSleep:     time.Sleep,
+		pathWaitSleep:            time.Sleep,
+		propagationAnnounceSleep: time.Sleep,
 		teardownLink: func(link *rns.Link) {
 			link.Teardown()
 		},
@@ -5098,9 +5103,8 @@ func (r *Router) AnnouncePropagationNode() {
 	controlAllowedCount := len(r.controlAllowed)
 	r.mu.Unlock()
 
-	// Python uses a delayed announce thread, but here we'll just send it.
-	// The delay is 0.1s in Python.
-	time.Sleep(100 * time.Millisecond)
+	// Python uses a delayed announce thread; the delay is 0.1s in Python.
+	r.propagationAnnounceSleep(100 * time.Millisecond)
 	_ = dest.Announce(appData)
 
 	if controlDest != nil && controlAllowedCount > 0 {

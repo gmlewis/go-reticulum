@@ -155,6 +155,10 @@ type ResourceManager struct {
 	// link API first exposes the *rns.Resource (Python binds the
 	// resource directly in its advertise callback).
 	pending map[*rns.Link]string
+	// hubCleanupIntervalS is the resource-cleanup loop interval in seconds
+	// (Python's fixed 30s _resource_cleanup_loop sleep). Injectable for
+	// deterministic tests.
+	hubCleanupIntervalS float64
 }
 
 // NewResourceManager creates a resource manager wired to the given
@@ -164,11 +168,12 @@ func NewResourceManager(hooks ResourceHooks) *ResourceManager {
 		hooks.Now = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 	}
 	return &ResourceManager{
-		hooks:           hooks,
-		expectations:    map[*rns.Link]*expectationSet{},
-		activeResources: map[*rns.Link]map[ResourceHandle]bool{},
-		bindings:        map[ResourceHandle]string{},
-		pending:         map[*rns.Link]string{},
+		hooks:               hooks,
+		expectations:        map[*rns.Link]*expectationSet{},
+		activeResources:     map[*rns.Link]map[ResourceHandle]bool{},
+		bindings:            map[ResourceHandle]string{},
+		pending:             map[*rns.Link]string{},
+		hubCleanupIntervalS: 30.0,
 	}
 }
 
@@ -610,13 +615,17 @@ func (m *ResourceManager) SendViaResource(link *rns.Link, kind string, payload [
 }
 
 // StartResourceCleanupLoop runs the resource-expectation cleanup loop at
-// the fixed 30-second interval until stop closes, mirroring
-// _resource_cleanup_loop. The sleep hook waits for one interval and
-// reports whether the loop should continue (false = the shutdown signal
+// the hubCleanupIntervalS interval (default 30 seconds) until stop closes,
+// mirroring _resource_cleanup_loop. The sleep hook waits for one interval
+// and reports whether the loop should continue (false = the shutdown signal
 // fired during the wait).
 func (m *ResourceManager) StartResourceCleanupLoop(stop <-chan struct{}, sleep func(interval float64) bool) {
+	interval := m.hubCleanupIntervalS
+	if interval <= 0 {
+		interval = 30.0
+	}
 	for {
-		if !sleep(30.0) {
+		if !sleep(interval) {
 			return
 		}
 		select {

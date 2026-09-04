@@ -14095,190 +14095,218 @@ func TestInterfaceAnnouncerPayloadPlainTCPClient(t *testing.T) {
 }
 
 func TestInterfaceAnnouncerStart(t *testing.T) {
-	logger := NewLogger()
-	ts := newAnnounceCaptureTransport(logger)
-	ts.identity = mustTestNewIdentity(t, true)
+	// Runs in a synctest bubble so the 40ms no-second-announce watch advances
+	// on virtual time; Stop in defer (run inside the bubble) lets the worker
+	// drain its pending sleep and exit cleanly before bubble exit.
+	testutils.RunInBubble(t, func(t *testing.T) {
+		logger := NewLogger()
+		ts := newAnnounceCaptureTransport(logger)
+		ts.identity = mustTestNewIdentity(t, true)
 
-	r := &Reticulum{
-		transport: ts,
-		logger:    logger,
-	}
-	announcer := NewInterfaceAnnouncer(r, logger)
-	announcer.jobInterval = 10 * time.Millisecond
+		r := &Reticulum{
+			transport: ts,
+			logger:    logger,
+		}
+		announcer := NewInterfaceAnnouncer(r, logger)
+		announcer.jobInterval = 10 * time.Millisecond
 
-	iface := &announceTestInterface{
-		BaseInterface: interfaces.NewBaseInterface("announce-start", interfaces.ModeGateway, 1000),
-		ifaceType:     "BackboneInterface",
-		bindIP:        "127.0.0.1",
-		bindPort:      4243,
-	}
-	iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
-		SupportsDiscovery: true,
-		Discoverable:      true,
-		AnnounceInterval:  time.Hour,
-		StampValue:        1,
-		Name:              "Start Backbone",
-		ReachableOn:       "start.example.net",
+		iface := &announceTestInterface{
+			BaseInterface: interfaces.NewBaseInterface("announce-start", interfaces.ModeGateway, 1000),
+			ifaceType:     "BackboneInterface",
+			bindIP:        "127.0.0.1",
+			bindPort:      4243,
+		}
+		iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+			SupportsDiscovery: true,
+			Discoverable:      true,
+			AnnounceInterval:  time.Hour,
+			StampValue:        1,
+			Name:              "Start Backbone",
+			ReachableOn:       "start.example.net",
+		})
+		ts.RegisterInterface(iface)
+
+		announcer.Start()
+
+		select {
+		case <-ts.packets:
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for discovery announce packet")
+		}
+
+		ts.mu.Lock()
+		ts.lastPacket = nil
+		ts.mu.Unlock()
+
+		select {
+		case packet := <-ts.packets:
+			t.Fatalf("received unexpected second announce packet before interval elapsed: %#v", packet)
+		case <-time.After(40 * time.Millisecond):
+		}
+
+		// Stop the worker and let it drain its in-flight sleep so no timer is
+		// pending when the bubble closes (see testutils.RunInBubble contract).
+		announcer.Stop()
+		time.Sleep(2 * announcer.jobInterval)
+		testutils.Wait()
 	})
-	ts.RegisterInterface(iface)
-
-	announcer.Start()
-	defer announcer.Stop()
-
-	select {
-	case <-ts.packets:
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for discovery announce packet")
-	}
-
-	ts.mu.Lock()
-	ts.lastPacket = nil
-	ts.mu.Unlock()
-
-	select {
-	case packet := <-ts.packets:
-		t.Fatalf("received unexpected second announce packet before interval elapsed: %#v", packet)
-	case <-time.After(40 * time.Millisecond):
-	}
 }
 
 func TestInterfaceAnnouncerStopDuringSleepStillAllowsCurrentCycle(t *testing.T) {
-	logger := NewLogger()
-	ts := newAnnounceCaptureTransport(logger)
-	ts.identity = mustTestNewIdentity(t, true)
+	// Runs in a synctest bubble: the sleep/release handshake channels live
+	// inside the bubble, and the 300ms no-extra-announce watch costs ~0.
+	testutils.RunInBubble(t, func(t *testing.T) {
+		logger := NewLogger()
+		ts := newAnnounceCaptureTransport(logger)
+		ts.identity = mustTestNewIdentity(t, true)
 
-	r := &Reticulum{
-		transport: ts,
-		logger:    logger,
-	}
-	announcer := NewInterfaceAnnouncer(r, logger)
-	announcer.jobInterval = 40 * time.Millisecond
-	sleepStarted := make(chan struct{}, 1)
-	releaseSleep := make(chan struct{})
-	var sleepCalls int
-	announcer.sleep = func(d time.Duration) {
-		sleepCalls++
-		if sleepCalls == 1 {
-			select {
-			case sleepStarted <- struct{}{}:
-			default:
-			}
-			<-releaseSleep
-			return
+		r := &Reticulum{
+			transport: ts,
+			logger:    logger,
 		}
-		time.Sleep(d)
-	}
+		announcer := NewInterfaceAnnouncer(r, logger)
+		announcer.jobInterval = 40 * time.Millisecond
+		sleepStarted := make(chan struct{}, 1)
+		releaseSleep := make(chan struct{})
+		var sleepCalls int
+		announcer.sleep = func(d time.Duration) {
+			sleepCalls++
+			if sleepCalls == 1 {
+				select {
+				case sleepStarted <- struct{}{}:
+				default:
+				}
+				<-releaseSleep
+				return
+			}
+			time.Sleep(d)
+		}
 
-	iface := &announceTestInterface{
-		BaseInterface: interfaces.NewBaseInterface("announce-stop-sleep", interfaces.ModeGateway, 1000),
-		ifaceType:     "BackboneInterface",
-		bindIP:        "127.0.0.1",
-		bindPort:      4250,
-	}
-	iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
-		SupportsDiscovery: true,
-		Discoverable:      true,
-		AnnounceInterval:  time.Hour,
-		StampValue:        1,
-		Name:              "Stop Sleep Backbone",
-		ReachableOn:       "stop.example.net",
+		iface := &announceTestInterface{
+			BaseInterface: interfaces.NewBaseInterface("announce-stop-sleep", interfaces.ModeGateway, 1000),
+			ifaceType:     "BackboneInterface",
+			bindIP:        "127.0.0.1",
+			bindPort:      4250,
+		}
+		iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+			SupportsDiscovery: true,
+			Discoverable:      true,
+			AnnounceInterval:  time.Hour,
+			StampValue:        1,
+			Name:              "Stop Sleep Backbone",
+			ReachableOn:       "stop.example.net",
+		})
+		ts.RegisterInterface(iface)
+
+		announcer.Start()
+		select {
+		case <-sleepStarted:
+		case <-time.After(time.Second):
+			t.Fatal("expected announcer job to enter sleep")
+		}
+		announcer.Stop()
+		close(releaseSleep)
+
+		select {
+		case <-ts.packets:
+		case <-time.After(2 * time.Second):
+			t.Fatal("expected one final discovery announce after stop during sleep")
+		}
+
+		select {
+		case packet := <-ts.packets:
+			t.Fatalf("received unexpected extra announce after post-stop cycle: %#v", packet)
+		case <-time.After(300 * time.Millisecond):
+		}
 	})
-	ts.RegisterInterface(iface)
-
-	announcer.Start()
-	select {
-	case <-sleepStarted:
-	case <-time.After(time.Second):
-		t.Fatal("expected announcer job to enter sleep")
-	}
-	announcer.Stop()
-	close(releaseSleep)
-
-	select {
-	case <-ts.packets:
-	case <-time.After(2 * time.Second):
-		t.Fatal("expected one final discovery announce after stop during sleep")
-	}
-
-	select {
-	case packet := <-ts.packets:
-		t.Fatalf("received unexpected extra announce after post-stop cycle: %#v", packet)
-	case <-time.After(300 * time.Millisecond):
-	}
 }
 
 func TestInterfaceAnnouncerStartIsIdempotentWhileRunning(t *testing.T) {
 	t.Parallel()
 
-	logger := NewLogger()
-	ts := newAnnounceCaptureTransport(logger)
-	ts.identity = mustTestNewIdentity(t, true)
+	// Runs in a synctest bubble so the completion-poll's virtual sleeps advance
+	// the bubble clock and the worker's cycle fires during the poll.
+	testutils.RunInBubble(t, func(t *testing.T) {
+		logger := NewLogger()
+		ts := newAnnounceCaptureTransport(logger)
+		ts.identity = mustTestNewIdentity(t, true)
 
-	r := &Reticulum{
-		transport: ts,
-		logger:    logger,
-	}
-	announcer := NewInterfaceAnnouncer(r, logger)
-	announcer.jobInterval = 40 * time.Millisecond
-	sleepStarted := make(chan struct{}, 1)
-	releaseSleep := make(chan struct{})
-	var sleepCalls int
-	announcer.sleep = func(d time.Duration) {
-		sleepCalls++
-		if sleepCalls == 1 {
-			select {
-			case sleepStarted <- struct{}{}:
-			default:
+		r := &Reticulum{
+			transport: ts,
+			logger:    logger,
+		}
+		announcer := NewInterfaceAnnouncer(r, logger)
+		announcer.jobInterval = 40 * time.Millisecond
+		sleepStarted := make(chan struct{}, 1)
+		releaseSleep := make(chan struct{})
+		var sleepCalls int
+		announcer.sleep = func(d time.Duration) {
+			sleepCalls++
+			if sleepCalls == 1 {
+				select {
+				case sleepStarted <- struct{}{}:
+				default:
+				}
+				<-releaseSleep
+				return
 			}
-			<-releaseSleep
-			return
+			time.Sleep(d)
 		}
-		time.Sleep(d)
-	}
 
-	iface := &announceTestInterface{
-		BaseInterface: interfaces.NewBaseInterface("announce-start-once", interfaces.ModeGateway, 1000),
-		ifaceType:     "BackboneInterface",
-		bindIP:        "127.0.0.1",
-		bindPort:      4251,
-	}
-	iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
-		SupportsDiscovery: true,
-		Discoverable:      true,
-		AnnounceInterval:  time.Hour,
-		StampValue:        1,
-		Name:              "Start Once Backbone",
-		ReachableOn:       "start-once.example.net",
+		iface := &announceTestInterface{
+			BaseInterface: interfaces.NewBaseInterface("announce-start-once", interfaces.ModeGateway, 1000),
+			ifaceType:     "BackboneInterface",
+			bindIP:        "127.0.0.1",
+			bindPort:      4251,
+		}
+		iface.SetDiscoveryConfig(interfaces.DiscoveryConfig{
+			SupportsDiscovery: true,
+			Discoverable:      true,
+			AnnounceInterval:  time.Hour,
+			StampValue:        1,
+			Name:              "Start Once Backbone",
+			ReachableOn:       "start-once.example.net",
+		})
+		ts.RegisterInterface(iface)
+
+		announcer.Start()
+		select {
+		case <-sleepStarted:
+		case <-time.After(time.Second):
+			t.Fatal("expected announcer worker to enter sleep")
+		}
+		firstStopCh := announcer.stopCh
+		announcer.Start()
+
+		if announcer.stopCh != firstStopCh {
+			t.Fatal("expected Start() while running to keep the existing worker state")
+		}
+
+		close(releaseSleep)
+
+		completed := false
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			announcer.mu.Lock()
+			last := announcer.lastAnnounced[iface]
+			announcer.mu.Unlock()
+			if !last.IsZero() {
+				completed = true
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+
+		// Stop the worker and let it drain its in-flight sleep so no timer is
+		// pending when the bubble closes (see testutils.RunInBubble contract).
+		announcer.Stop()
+		time.Sleep(2 * announcer.jobInterval)
+		testutils.Wait()
+
+		if !completed {
+			t.Fatal("timed out waiting for announcer worker to complete a cycle")
+		}
 	})
-	ts.RegisterInterface(iface)
-
-	announcer.Start()
-	select {
-	case <-sleepStarted:
-	case <-time.After(time.Second):
-		t.Fatal("expected announcer worker to enter sleep")
-	}
-	firstStopCh := announcer.stopCh
-	announcer.Start()
-	defer announcer.Stop()
-
-	if announcer.stopCh != firstStopCh {
-		t.Fatal("expected Start() while running to keep the existing worker state")
-	}
-
-	close(releaseSleep)
-
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		announcer.mu.Lock()
-		last := announcer.lastAnnounced[iface]
-		announcer.mu.Unlock()
-		if !last.IsZero() {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatal("timed out waiting for announcer worker to complete a cycle")
 }
 
 func TestInterfaceAnnouncerLogsCouldNotGenerateForUnsupportedInterface(t *testing.T) {

@@ -694,7 +694,7 @@ func TestRunInitiatorProtocolFlowLinkClosedWaitsForLateExitWithinGrace(t *testin
 		}
 	}
 
-	rt := &runtimeT{linkClosedGrace: 40 * time.Millisecond}
+	rt := &runtimeT{linkClosedGrace: 40 * time.Millisecond, postExitDrainGrace: 20 * time.Millisecond}
 	opts := options{timeoutSec: 1, mirror: true, noTTY: true}
 	code, _, err := rt.runInitiatorProtocolFlow(fake, opts, linkClosedCh, stopCh, false)
 	if err != nil {
@@ -752,13 +752,16 @@ func TestRunInitiatorProtocolFlowWaitsForLateStreamAfterExitWithinGrace(t *testi
 		case *executeCommandMessage:
 			go func() {
 				fake.emit(&commandExitedMessage{ReturnCode: 0})
-				time.Sleep(20 * time.Millisecond)
+				// Keep the delay well under the drain grace so parallel-suite
+				// load cannot push the late stream past the window under
+				// test (the point is "after exit, before grace expiry").
+				time.Sleep(5 * time.Millisecond)
 				fake.emit(&streamDataMessage{StreamID: streamIDStdout, Data: []byte("late"), EOF: true})
 			}()
 		}
 	}
 
-	rt := &runtimeT{postExitDrainGrace: 40 * time.Millisecond, retrySleep: time.Millisecond}
+	rt := &runtimeT{postExitDrainGrace: 200 * time.Millisecond, retrySleep: time.Millisecond}
 	opts := options{timeoutSec: 1, mirror: false, noTTY: true}
 	code, session, err := rt.runInitiatorProtocolFlow(fake, opts, linkClosedCh, stopCh, false)
 	if err != nil {
@@ -990,7 +993,7 @@ func TestRunInitiatorProtocolFlowWarningThenExitMirror(t *testing.T) {
 	}
 
 	opts := options{timeoutSec: 1, mirror: true, noTTY: true}
-	code, session, err := runInitiatorProtocolFlow(fake, opts, linkClosedCh, stopCh, false)
+	code, session, err := fastRuntimeT().runInitiatorProtocolFlow(fake, opts, linkClosedCh, stopCh, false)
 	if err != nil {
 		t.Fatalf("runInitiatorProtocolFlow error: %v", err)
 	}
@@ -1026,7 +1029,7 @@ func TestRunInitiatorProtocolFlowWarningThenExitNoMirror(t *testing.T) {
 	}
 
 	opts := options{timeoutSec: 1, mirror: false, noTTY: true}
-	code, session, err := runInitiatorProtocolFlow(fake, opts, linkClosedCh, stopCh, false)
+	code, session, err := fastRuntimeT().runInitiatorProtocolFlow(fake, opts, linkClosedCh, stopCh, false)
 	if err != nil {
 		t.Fatalf("runInitiatorProtocolFlow error: %v", err)
 	}
@@ -1066,7 +1069,7 @@ func TestRunInitiatorProtocolFlowTTYExecuteMessageIncludesTerminalMetadata(t *te
 	}
 
 	opts := options{timeoutSec: 1, mirror: true, noTTY: false, commandLine: []string{"/bin/sh", "-lc", "echo hi"}}
-	code, _, err := runInitiatorProtocolFlow(fake, opts, linkClosedCh, stopCh, false)
+	code, _, err := fastRuntimeT().runInitiatorProtocolFlow(fake, opts, linkClosedCh, stopCh, false)
 	if err != nil {
 		t.Fatalf("runInitiatorProtocolFlow error: %v", err)
 	}
@@ -1398,7 +1401,7 @@ func TestRunInitiatorProtocolFlowRetryWarningsThenExitMirror(t *testing.T) {
 	}
 
 	opts := options{timeoutSec: 1, mirror: true, noTTY: true}
-	code, session, err := runInitiatorProtocolFlow(fake, opts, linkClosedCh, stopCh, false)
+	code, session, err := fastRuntimeT().runInitiatorProtocolFlow(fake, opts, linkClosedCh, stopCh, false)
 	if err != nil {
 		t.Fatalf("runInitiatorProtocolFlow error: %v", err)
 	}
@@ -1476,4 +1479,17 @@ func runTimedEvents(fake *fakeChannelSession, linkClosedCh chan<- struct{}, even
 			lastDelay = ev.delay
 		}
 	}()
+}
+
+// fastRuntimeT returns a runtimeT with tiny grace/drain windows for tests that
+// do not specifically exercise the production defaults. Tests that call the
+// package-level runInitiatorProtocolFlow otherwise run with a zero-value
+// runtimeT whose defaultPostExitDrainGrace (750ms) dominates their wall time.
+func fastRuntimeT() *runtimeT {
+	return &runtimeT{
+		linkClosedGrace:    50 * time.Millisecond,
+		postExitDrainGrace: 20 * time.Millisecond,
+		minSendDeadline:    10 * time.Millisecond,
+		retrySleep:         time.Millisecond,
+	}
 }

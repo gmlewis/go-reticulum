@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 // startSingleClientServer builds a TCPServerInterface on an ephemeral local
@@ -109,14 +110,5 @@ func TestServerPruneUnregistersFromTransport(t *testing.T) {
 // failing with msg.
 func waitForCondition(t *testing.T, timeout time.Duration, cond func() bool, msg string) {
 	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for {
-		if cond() {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatal(msg)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	testutils.EventuallyFatal(t, timeout, cond, "%v", msg)
 }

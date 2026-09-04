@@ -33,16 +33,7 @@ func goroutineProfileText() string {
 
 // waitAroundFor polls cond until it returns true or the deadline elapses.
 func waitAroundFor(cond func() bool, deadline time.Duration) bool {
-	deadlineAt := time.Now().Add(deadline)
-	for {
-		if cond() {
-			return true
-		}
-		if time.Now().After(deadlineAt) {
-			return false
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	return testutils.PollUntil(deadline, cond)
 }
 
 // completesWithin runs fn on a goroutine and reports whether it returned

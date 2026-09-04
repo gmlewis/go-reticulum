@@ -7,12 +7,16 @@ package main
 
 import (
 	"encoding/hex"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 type liveHashSerial struct {
@@ -111,9 +115,41 @@ func runGornodeconfWithEnv(extraEnv map[string]string, args ...string) (string, 
 	return runGornodeconfWithInputAndEnv("", extraEnv, args...)
 }
 
+// gornodeconfBinaryOnce lazily builds the gornodeconf binary exactly once, the
+// first time a test invokes the runner. (A TestMain prebuild would also tax
+// unit-only and -short runs of this package, which never use the binary; a
+// lazy build keeps ~20 `go run .` full compiles off the per-test wall clock
+// without that cost.)
+var (
+	gornodeconfBinaryOnce sync.Once
+	gornodeconfBinaryPath string
+	gornodeconfBinaryErr  error
+)
+
+func buildGornodeconfBinaryOnce() (string, error) {
+	gornodeconfBinaryOnce.Do(func() {
+		binDir, cleanup := testutils.TempDirMain("gornodeconf-bin-")
+		gornodeconfBinaryPath = filepath.Join(binDir, "gornodeconf")
+		build := exec.Command("go", "build", "-o", gornodeconfBinaryPath, ".")
+		if out, err := build.CombinedOutput(); err != nil {
+			gornodeconfBinaryErr = fmt.Errorf("build gornodeconf binary: %v\n%s", err, out)
+			cleanup()
+			gornodeconfBinaryPath = ""
+			return
+		}
+		// Keep the bin dir (and its cleanup) for the life of the process; the
+		// OS removes it with the test temp root.
+	})
+	return gornodeconfBinaryPath, gornodeconfBinaryErr
+}
+
 func runGornodeconfWithInputAndEnv(input string, extraEnv map[string]string, args ...string) (string, error) {
-	taskArgs := append([]string{"run", "."}, args...)
-	cmd := exec.Command("go", taskArgs...)
+	binaryPath, err := buildGornodeconfBinaryOnce()
+	if err != nil {
+		return "", err
+	}
+	fullArgs := append([]string{binaryPath}, args...)
+	cmd := exec.Command(fullArgs[0], fullArgs[1:]...)
 	cmd.Dir = "."
 	cmd.Env = os.Environ()
 	cmd.Stdin = strings.NewReader(input)

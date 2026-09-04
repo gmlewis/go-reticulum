@@ -10,8 +10,10 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -25,6 +27,34 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 	"github.com/gmlewis/go-reticulum/testutils"
 )
+
+// gorncpBinaryPath is the binary built once by TestMain. Building here instead
+// of at every call site keeps ~20 `go run .`/`go build` invocations (each with
+// a full compile) off the per-test wall clock.
+var gorncpBinaryPath string
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if testing.Short() {
+		// Under -short all binary-using tests skip themselves via
+		// SkipShortIntegration, so the (unneeded) build is skipped too;
+		// unit tests in this package still run normally.
+		os.Exit(m.Run())
+	}
+
+	binDir, cleanup := testutils.TempDirMain("gorncp-bin-")
+	gorncpBinaryPath = filepath.Join(binDir, "gorncp")
+	build := exec.Command("go", "build", "-o", gorncpBinaryPath, ".")
+	build.Stdout = os.Stdout
+	build.Stderr = os.Stderr
+	if err := build.Run(); err != nil {
+		log.Fatalf("failed to build gorncp binary: %v\n", err)
+	}
+
+	exitCode := m.Run()
+	cleanup()
+	os.Exit(exitCode)
+}
 
 type nilFetchLinkResolver struct{}
 
@@ -47,10 +77,6 @@ func (sb *SafeBuffer) String() string {
 	sb.mu.Lock()
 	defer sb.mu.Unlock()
 	return sb.buf.String()
-}
-
-func TestMain(m *testing.M) {
-	os.Exit(m.Run())
 }
 
 func getFreePort() (int, error) {
@@ -125,9 +151,9 @@ func runPythonBackground(t *testing.T, configDir string, args ...string) (*exec.
 
 func runGorncp(t *testing.T, configDir string, args ...string) string {
 	t.Helper()
-	fullArgs := append([]string{"run", ".", "-config", configDir}, args...)
-	t.Logf("Running command: go %s", strings.Join(fullArgs, " "))
-	cmd := exec.Command("go", fullArgs...)
+	fullArgs := append([]string{gorncpBinaryPath, "-config", configDir}, args...)
+	t.Logf("Running command: %s", strings.Join(fullArgs, " "))
+	cmd := exec.Command(fullArgs[0], fullArgs[1:]...)
 	cmd.Dir = "."
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -138,9 +164,9 @@ func runGorncp(t *testing.T, configDir string, args ...string) string {
 
 func runGorncpBackground(t *testing.T, configDir string, args ...string) (*exec.Cmd, *SafeBuffer) {
 	t.Helper()
-	fullArgs := append([]string{"run", ".", "-config", configDir}, args...)
-	t.Logf("Running background command: go %s", strings.Join(fullArgs, " "))
-	cmd := exec.Command("go", fullArgs...)
+	fullArgs := append([]string{gorncpBinaryPath, "-config", configDir}, args...)
+	t.Logf("Running background command: %s", strings.Join(fullArgs, " "))
+	cmd := exec.Command(fullArgs[0], fullArgs[1:]...)
 	cmd.Dir = "."
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	buf := &SafeBuffer{}
@@ -641,13 +667,9 @@ func TestFetchPathLookupTimeout(t *testing.T) {
 		t.Fatalf("WriteFile config: %v", err)
 	}
 
-	binaryPath := filepath.Join(tmpDir, "gorncp")
-	buildCmd := exec.Command("go", "build", "-o", binaryPath, ".")
-	buildCmd.Dir = "."
-	buildCmd.Env = append(os.Environ(), "HOME="+tmpDir)
-	if err := buildCmd.Run(); err != nil {
-		t.Fatalf("go build failed: %v", err)
-	}
+	// TestMain already built the binary; the old per-test `go build` (with a
+	// HOME-redirected build env) was redundant with the run-time HOME override.
+	binaryPath := gorncpBinaryPath
 
 	destHash := strings.Repeat("f", (rns.TruncatedHashLength/8)*2)
 	cmd := exec.Command(binaryPath, "-config", configDir, "-f", destHash, "missing.txt", "-w", "1", "-q")
@@ -698,13 +720,9 @@ func TestFetchLinkEstablishmentTimeout(t *testing.T) {
 	seedTS.Remember([]byte("seed-packet"), seedDest.Hash, seedID.GetPublicKey(), nil)
 	seedTS.SaveKnownDestinations(filepath.Join(configDir, "storage"))
 
-	binaryPath := filepath.Join(tmpDir, "gorncp")
-	buildCmd := exec.Command("go", "build", "-o", binaryPath, ".")
-	buildCmd.Dir = "."
-	buildCmd.Env = append(os.Environ(), "HOME="+tmpDir)
-	if err := buildCmd.Run(); err != nil {
-		t.Fatalf("go build failed: %v", err)
-	}
+	// TestMain already built the binary; the old per-test `go build` (with a
+	// HOME-redirected build env) was redundant with the run-time HOME override.
+	binaryPath := gorncpBinaryPath
 
 	identityPath := filepath.Join(tmpDir, "identity")
 	cmd := exec.Command(binaryPath, "-config", configDir, "-f", seedDest.HexHash, "missing.txt", "-w", "1", "-q", "-i", identityPath)
@@ -801,13 +819,9 @@ enable_transport = Yes
 	_ = mustCreateIdentity(t, clientConfigDir, "client")
 	clientIdentityPath := filepath.Join(clientConfigDir, "identities", "client")
 
-	binaryPath := filepath.Join(tmpDir, "gorncp")
-	buildCmd := exec.Command("go", "build", "-o", binaryPath, ".")
-	buildCmd.Dir = "."
-	buildCmd.Env = append(os.Environ(), "HOME="+tmpDir)
-	if err := buildCmd.Run(); err != nil {
-		t.Fatalf("go build failed: %v", err)
-	}
+	// TestMain already built the binary; the old per-test `go build` (with a
+	// HOME-redirected build env) was redundant with the run-time HOME override.
+	binaryPath := gorncpBinaryPath
 
 	cmd := exec.Command(binaryPath, "-config", clientConfigDir, "-i", clientIdentityPath, "-q", "-f", listenerDest.HexHash, "testfile.txt")
 	cmd.Dir = "."

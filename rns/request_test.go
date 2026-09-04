@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gmlewis/go-reticulum/rns/msgpack"
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func packedBinaryKeyMapResponse(requestID, key []byte) []byte {
@@ -500,26 +501,33 @@ func TestResponseResourceFailedFailsPendingReceipt(t *testing.T) {
 func TestResponseTimeoutJobFiresFromReceivingState(t *testing.T) {
 	t.Parallel()
 
-	rr := &RequestReceipt{Status: RequestReceiving}
-	failed := make(chan *RequestReceipt, 1)
-	rr.failedCallback = func(got *RequestReceipt) { failed <- got }
+	// The bubble virtualizes the job's 100ms poll sleeps and the negative
+	// time.After bound: both cost nothing and the "did not fire" assertion
+	// is exact.
+	testutils.RunInBubble(t, func(t *testing.T) {
+		rr := &RequestReceipt{Status: RequestReceiving}
+		failed := make(chan *RequestReceipt, 1)
+		rr.failedCallback = func(got *RequestReceipt) { failed <- got }
 
-	// Deadline in the past: with the old (buggy) code the first poll
-	// iteration would fire immediately. With the fix, the loop exits
-	// immediately because status != RequestDelivered, so the failed
-	// callback must NOT fire.
-	go rr.responseTimeoutJob(time.Now().Add(-1 * time.Second))
+		// Deadline in the past: with the old (buggy) code the first poll
+		// iteration would fire immediately. With the fix, the loop exits
+		// immediately because status != RequestDelivered, so the failed
+		// callback must NOT fire.
+		go rr.responseTimeoutJob(time.Now().Add(-1 * time.Second))
 
-	select {
-	case <-failed:
-		t.Fatal("responseTimeoutJob fired from RequestReceiving state; it should disarm (exit without firing) when status is not RequestDelivered, matching Python's while self.status == DELIVERED loop")
-	case <-time.After(300 * time.Millisecond):
-		// Good: the timeout job exited without firing.
-	}
+		select {
+		case <-failed:
+			t.Fatal("responseTimeoutJob fired from RequestReceiving state; it should disarm (exit without firing) when status is not RequestDelivered, matching Python's while self.status == DELIVERED loop")
+		case <-time.After(300 * time.Millisecond):
+			// Good: the timeout job exited without firing.
+		}
 
-	if got, want := rr.GetStatus(), RequestReceiving; got != want {
-		t.Fatalf("status = %v, want %v (should be unchanged — timeout must not fire from receiving state)", got, want)
-	}
+		testutils.Wait()
+
+		if got, want := rr.GetStatus(), RequestReceiving; got != want {
+			t.Fatalf("status = %v, want %v (should be unchanged — timeout must not fire from receiving state)", got, want)
+		}
+	})
 }
 
 // TestResponseTimeoutJobFiresFromDeliveredState verifies that the response
@@ -530,23 +538,27 @@ func TestResponseTimeoutJobFiresFromReceivingState(t *testing.T) {
 func TestResponseTimeoutJobFiresFromDeliveredState(t *testing.T) {
 	t.Parallel()
 
-	rr := &RequestReceipt{Status: RequestDelivered}
-	failed := make(chan *RequestReceipt, 1)
-	rr.failedCallback = func(got *RequestReceipt) { failed <- got }
+	testutils.RunInBubble(t, func(t *testing.T) {
+		rr := &RequestReceipt{Status: RequestDelivered}
+		failed := make(chan *RequestReceipt, 1)
+		rr.failedCallback = func(got *RequestReceipt) { failed <- got }
 
-	// Deadline in the past: the first poll iteration should fire immediately.
-	go rr.responseTimeoutJob(time.Now().Add(-1 * time.Second))
+		// Deadline in the past: the first poll iteration should fire immediately.
+		go rr.responseTimeoutJob(time.Now().Add(-1 * time.Second))
 
-	select {
-	case <-failed:
-		// Good: the timeout fired.
-	case <-time.After(2 * time.Second):
-		t.Fatal("responseTimeoutJob did not fire from RequestDelivered state")
-	}
+		select {
+		case <-failed:
+			// Good: the timeout fired.
+		case <-time.After(2 * time.Second):
+			t.Fatal("responseTimeoutJob did not fire from RequestDelivered state")
+		}
 
-	if got, want := rr.GetStatus(), RequestFailed; got != want {
-		t.Fatalf("status = %v, want %v", got, want)
-	}
+		testutils.Wait()
+
+		if got, want := rr.GetStatus(), RequestFailed; got != want {
+			t.Fatalf("status = %v, want %v", got, want)
+		}
+	})
 }
 
 // TestResponseTimeoutJobDisarmsOnStatusChange verifies the key fix: the
@@ -556,30 +568,36 @@ func TestResponseTimeoutJobFiresFromDeliveredState(t *testing.T) {
 func TestResponseTimeoutJobDisarmsOnStatusChange(t *testing.T) {
 	t.Parallel()
 
-	rr := &RequestReceipt{Status: RequestDelivered}
-	failed := make(chan *RequestReceipt, 1)
-	rr.failedCallback = func(got *RequestReceipt) { failed <- got }
+	testutils.RunInBubble(t, func(t *testing.T) {
+		rr := &RequestReceipt{Status: RequestDelivered}
+		failed := make(chan *RequestReceipt, 1)
+		rr.failedCallback = func(got *RequestReceipt) { failed <- got }
 
-	// Long deadline — the timeout should NOT fire before we change the status.
-	go rr.responseTimeoutJob(time.Now().Add(10 * time.Second))
+		// Long deadline — the timeout should NOT fire before we change the status.
+		go rr.responseTimeoutJob(time.Now().Add(10 * time.Second))
 
-	// After a short wait, flip status to RequestReceiving (simulating the
-	// first part of a response resource arriving).
-	time.Sleep(200 * time.Millisecond)
-	rr.mu.Lock()
-	rr.Status = RequestReceiving
-	rr.mu.Unlock()
+		// After a short wait, flip status to RequestReceiving (simulating the
+		// first part of a response resource arriving). The 200ms sleep is
+		// virtualized: the job's poll loop advances the fake clock while the
+		// main goroutine sleeps.
+		time.Sleep(200 * time.Millisecond)
+		rr.mu.Lock()
+		rr.Status = RequestReceiving
+		rr.mu.Unlock()
 
-	select {
-	case <-failed:
-		t.Fatal("responseTimeoutJob fired after status changed to RequestReceiving; it should have disarmed")
-	case <-time.After(500 * time.Millisecond):
-		// Good: the timeout job exited without firing.
-	}
+		select {
+		case <-failed:
+			t.Fatal("responseTimeoutJob fired after status changed to RequestReceiving; it should have disarmed")
+		case <-time.After(500 * time.Millisecond):
+			// Good: the timeout job exited without firing.
+		}
 
-	if got, want := rr.GetStatus(), RequestReceiving; got != want {
-		t.Fatalf("status = %v, want %v", got, want)
-	}
+		testutils.Wait()
+
+		if got, want := rr.GetStatus(), RequestReceiving; got != want {
+			t.Fatalf("status = %v, want %v", got, want)
+		}
+	})
 }
 
 // TestResponseReceivedDoesNotReviveFailedReceipt covers the terminal guard

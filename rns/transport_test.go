@@ -725,42 +725,48 @@ func TestAnnounceRebroadcastProcessing(t *testing.T) {
 // itself.
 func TestProcessAnnounceTableStalledPeerDoesNotBlock(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem(nil)
-	ts.identity = mustTestNewIdentity(t, true)
-	ts.SetEnabled(true)
+	// The bubble virtualizes the stalled peer's 2s Send: blocking Send is
+	// durably blocked, so WaitOutboundSends lets the fake clock jump 2s and
+	// drain it instantly, making the fan-out-concurrency assertions exact.
+	testutils.RunInBubble(t, func(t *testing.T) {
+		ts := NewTransportSystem(nil)
+		ts.identity = mustTestNewIdentity(t, true)
+		ts.SetEnabled(true)
 
-	source := &capturingInterface{name: "source"}
-	stalled := &blockingInterface{capturingInterface: capturingInterface{name: "stalled"}, blockFor: 2 * time.Second}
-	fast := &capturingInterface{name: "fast"}
-	ts.interfaces = append(ts.interfaces, source, stalled, fast)
+		source := &capturingInterface{name: "source"}
+		stalled := &blockingInterface{capturingInterface: capturingInterface{name: "stalled"}, blockFor: 2 * time.Second}
+		fast := &capturingInterface{name: "fast"}
+		ts.interfaces = append(ts.interfaces, source, stalled, fast)
 
-	id := mustTestNewIdentity(t, true)
-	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "stall-test")
-	delete(ts.destinationsMap, string(dest.Hash))
-	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 1)
-	p.Hops = 1
-	ts.handleAnnounce(p, source)
+		id := mustTestNewIdentity(t, true)
+		dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "stall-test")
+		delete(ts.destinationsMap, string(dest.Hash))
+		p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 1)
+		p.Hops = 1
+		ts.handleAnnounce(p, source)
 
-	// processAnnounceTable fans the rebroadcast out on goroutines. The
-	// stalled peer's 2s Send runs in the background, so processAnnounceTable
-	// itself must return far sooner — otherwise a single half-open peer
-	// wedges maintenance and every link handshake behind it.
-	start := time.Now()
-	ts.processAnnounceTable(time.Now().Add(10 * time.Second))
-	if d := time.Since(start); d > time.Second {
-		t.Fatalf("processAnnounceTable blocked %v on a stalled peer; fan-out must be concurrent", d)
-	}
+		// processAnnounceTable fans the rebroadcast out on goroutines. The
+		// stalled peer's 2s Send runs in the background, so processAnnounceTable
+		// itself must return far sooner — otherwise a single half-open peer
+		// wedges maintenance and every link handshake behind it.
+		start := time.Now()
+		ts.processAnnounceTable(time.Now().Add(10 * time.Second))
+		if d := time.Since(start); d > time.Second {
+			t.Fatalf("processAnnounceTable blocked %v on a stalled peer; fan-out must be concurrent", d)
+		}
 
-	// The fast interface still gets its rebroadcast despite the stalled peer.
-	// WaitOutboundSends drains the dispatched goroutines, including the
-	// stalled peer's (which completes after its 2s block).
-	ts.WaitOutboundSends()
-	if fast.sendCount != 1 {
-		t.Fatalf("expected fast interface to receive rebroadcast despite stalled peer, got %v", fast.sendCount)
-	}
-	if stalled.sendCount != 1 {
-		t.Fatalf("expected stalled interface to eventually receive rebroadcast, got %v", stalled.sendCount)
-	}
+		// The fast interface still gets its rebroadcast despite the stalled peer.
+		// WaitOutboundSends drains the dispatched goroutines, including the
+		// stalled peer's (which completes after its 2s block — virtualized, so
+		// the fake clock jumps 2s and the wait returns instantly).
+		ts.WaitOutboundSends()
+		if fast.sendCount != 1 {
+			t.Fatalf("expected fast interface to receive rebroadcast despite stalled peer, got %v", fast.sendCount)
+		}
+		if stalled.sendCount != 1 {
+			t.Fatalf("expected stalled interface to eventually receive rebroadcast, got %v", stalled.sendCount)
+		}
+	})
 }
 
 func TestAnnounceQueueQueuesAndDrainsOnCappedInterface(t *testing.T) {

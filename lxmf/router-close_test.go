@@ -216,16 +216,15 @@ func TestRouterCloseTeardownGolden(t *testing.T) {
 // failing the test after a timeout.
 func waitForDeliveryLink(t *testing.T, router *Router) *rns.Link {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	var found *rns.Link
+	testutils.EventuallyFatal(t, 5*time.Second, func() bool {
 		router.mu.Lock()
-		links := router.deliveryLinks
-		router.mu.Unlock()
-		if len(links) > 0 {
-			return links[0]
+		defer router.mu.Unlock()
+		if len(router.deliveryLinks) > 0 {
+			found = router.deliveryLinks[0]
+			return true
 		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatal("timeout waiting for inbound delivery link to be recorded")
-	return nil
+		return false
+	}, "timeout waiting for inbound delivery link to be recorded")
+	return found
 }

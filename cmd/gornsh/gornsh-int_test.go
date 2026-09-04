@@ -67,6 +67,10 @@ var versionLineRE = regexp.MustCompile(`^[^[:space:]]+\s+[^[:space:]]+(\s+\([^)]
 const (
 	listenerReadinessTimeout  = 15 * time.Second
 	sharedInstancePathTimeout = 10 * time.Second
+	// listenerTeardownKillDeadline bounds how long a listener teardown waits
+	// for SIGINT to take effect before SIGKILL. It only binds on failure
+	// paths (a healthy listener exits on SIGINT well inside it).
+	listenerTeardownKillDeadline = 2 * time.Second
 )
 
 var gornshBinaryPath string
@@ -904,13 +908,13 @@ func TestIntegrationNoAuthOpenListener(t *testing.T) {
 			t.Errorf("expected failure without --no-auth and no allowlist, but succeeded")
 		}
 
-		// Verify warning in listener log
-		// Wait a bit for log to be written
-		time.Sleep(2 * time.Second)
-		logOut := listener.output()
+		// Verify warning in listener log: poll for it rather than a fixed
+		// 2s log-write wait.
 		wantWarning := "denying all command requests"
-		if !strings.Contains(logOut, wantWarning) {
-			t.Errorf("listener log missing expected warning %q\nlog:\n%v", wantWarning, logOut)
+		if !testutils.PollUntil(5*time.Second, func() bool {
+			return strings.Contains(listener.output(), wantWarning)
+		}) {
+			t.Errorf("listener log missing expected warning %q\nlog:\n%v", wantWarning, listener.output())
 		}
 	})
 }
@@ -1131,7 +1135,9 @@ func (p *gornshListenerProcess) stop(t *testing.T) {
 		if err != nil {
 			t.Fatalf("listener exit error: %v\n%v", err, p.output())
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(listenerTeardownKillDeadline):
+		// Listener ignored SIGINT: SIGKILL and move on. Only reached on
+		// failure paths, so a generous-but-bounded window is fine.
 		_ = p.cmd.Process.Kill()
 		<-done
 	}

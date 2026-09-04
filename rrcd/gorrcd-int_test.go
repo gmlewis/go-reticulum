@@ -115,7 +115,10 @@ class StdioInterface(Interface):
         self.discovery_modulation = None
         self.IN = True
         self.OUT = True
-        threading.Thread(target=self.read_loop, daemon=True).start()
+        # A SINGLE reader thread: two concurrent readers each hold their
+        # own HDLC state (in_frame/escape/buf) and interleave bytes under
+        # CPU load, so frames assemble as garbage and no announce ever
+        # decodes (mirrors Python PipeInterface's one readLoop thread).
         threading.Thread(target=self.read_loop, daemon=True).start()
 
     def process_incoming(self, data):
@@ -1468,7 +1471,15 @@ func TestIntegrationLifecycleOverPipe(t *testing.T) {
 	}
 	hub.writeCommands("connect Beta", "sleep 2", "wait done2")
 	hub.start(t)
-	time.Sleep(15 * time.Second)
+	// Poll for the banned ERROR instead of a fixed 15s wait: the restarted
+	// hub must connect the client, evaluate the ban, and emit the ERROR,
+	// which typically lands in a few seconds. The 45s cap leaves headroom
+	// for Python driver startup under heavy CPU load (GO_TEST_PARALLEL).
+	if !testutils.PollUntil(45*time.Second, func() bool {
+		return containsString(errorBodies(hub.events, 0), "banned")
+	}) {
+		t.Errorf("no banned ERROR within 45s after the restart; bodies: %v", errorBodies(hub.events, 0))
+	}
 	hub.stop()
 
 	betaErrors := errorBodies(hub.events, 0)

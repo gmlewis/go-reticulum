@@ -33,7 +33,7 @@ func TestSetStateSetMethodSynchronizedWithSnapshot(t *testing.T) {
 	msg := newAtomicWriteMessage(t)
 	dir := testutils.TempDir(t, tempDirPrefix)
 
-	deadline := time.Now().Add(1500 * time.Millisecond)
+	deadline := time.Now().Add(300 * time.Millisecond)
 	var wg sync.WaitGroup
 	var failed atomic.Bool
 
@@ -129,7 +129,7 @@ func TestSetStateSetMethodConcurrentMutatorsNoDeadlock(t *testing.T) {
 
 	msg := newAtomicWriteMessage(t)
 
-	deadline := time.Now().Add(1500 * time.Millisecond)
+	deadline := time.Now().Add(300 * time.Millisecond)
 	var wg sync.WaitGroup
 	for range 16 {
 		wg.Go(func() {
@@ -164,7 +164,7 @@ func TestSetProgressSynchronizedWithSnapshot(t *testing.T) {
 	msg := newAtomicWriteMessage(t)
 	dir := testutils.TempDir(t, tempDirPrefix)
 
-	deadline := time.Now().Add(1500 * time.Millisecond)
+	deadline := time.Now().Add(300 * time.Millisecond)
 	var wg sync.WaitGroup
 	var failed atomic.Bool
 

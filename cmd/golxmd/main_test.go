@@ -135,75 +135,89 @@ func TestJobsRecovery(t *testing.T) {
 }
 
 func TestAnnounceAtStart(t *testing.T) {
-	tmpDir := testutils.TempDir(t, tempDirPrefix)
-	identity, err := rns.NewIdentity(true, nil)
-	mustTest(t, err)
-	c := &clientT{
-		ts:  rns.NewTransportSystem(nil),
-		now: time.Now,
-	}
-	router, err := lxmf.NewRouter(c.ts, identity, tmpDir)
-	mustTest(t, err)
-	dest, err := router.RegisterDeliveryIdentity(identity, "Test Peer", nil)
-	mustTest(t, err)
+	// Runs in a synctest bubble so the 50ms stop timer and the deferred/jobs
+	// sleeps advance on virtual time; router.Close in cleanup (run inside the
+	// bubble) stops the router's default job loop before bubble exit.
+	testutils.RunInBubble(t, func(t *testing.T) {
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
+		identity, err := rns.NewIdentity(true, nil)
+		mustTest(t, err)
+		c := &clientT{
+			ts:  rns.NewTransportSystem(nil),
+			now: time.Now,
+		}
+		router, err := lxmf.NewRouter(c.ts, identity, tmpDir)
+		mustTest(t, err)
+		t.Cleanup(func() { _ = router.Close() })
+		dest, err := router.RegisterDeliveryIdentity(identity, "Test Peer", nil)
+		mustTest(t, err)
 
-	c.ac = &activeConfig{
-		PeerAnnounceAtStart: true,
-		NodeAnnounceAtStart: true,
-	}
+		c.ac = &activeConfig{
+			PeerAnnounceAtStart: true,
+			NodeAnnounceAtStart: true,
+		}
 
-	stopJobs := make(chan struct{})
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		close(stopJobs)
-	}()
-	c.runDeferredThenJobs(1*time.Millisecond, router, dest, stopJobs, 1*time.Second)
+		stopJobs := make(chan struct{})
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			close(stopJobs)
+		}()
+		c.runDeferredThenJobs(1*time.Millisecond, router, dest, stopJobs, 1*time.Second)
+	})
 }
 
 func TestDeferredStartDelay(t *testing.T) {
-	start := time.Now()
-	stopJobs := make(chan struct{})
-	go func() {
-		time.Sleep(150 * time.Millisecond)
-		close(stopJobs)
-	}()
-	c := &clientT{
-		now: time.Now,
-	}
-	c.runDeferredThenJobs(100*time.Millisecond, nil, nil, stopJobs, 1*time.Second)
-	elapsed := time.Since(start)
-	if elapsed < 100*time.Millisecond {
-		t.Errorf("elapsed %v, want >= 100ms", elapsed)
-	}
+	t.Parallel()
+	// Runs in a synctest bubble: time.Since reports VIRTUAL bubble time, so
+	// the >=100ms deferred-delay assert holds without costing wall clock.
+	testutils.RunInBubble(t, func(t *testing.T) {
+		start := time.Now()
+		stopJobs := make(chan struct{})
+		go func() {
+			time.Sleep(150 * time.Millisecond)
+			close(stopJobs)
+		}()
+		c := &clientT{
+			now: time.Now,
+		}
+		c.runDeferredThenJobs(100*time.Millisecond, nil, nil, stopJobs, 1*time.Second)
+		elapsed := time.Since(start)
+		if elapsed < 100*time.Millisecond {
+			t.Errorf("elapsed %v, want >= 100ms", elapsed)
+		}
+	})
 }
 
 func TestJobsStartAfterDeferred(t *testing.T) {
-	currentTime := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
-	c := &clientT{
-		ac:  &activeConfig{},
-		now: func() time.Time { return currentTime },
-	}
+	t.Parallel()
+	testutils.RunInBubble(t, func(t *testing.T) {
+		currentTime := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+		c := &clientT{
+			ac:  &activeConfig{},
+			now: func() time.Time { return currentTime },
+		}
 
-	stopJobs := make(chan struct{})
+		stopJobs := make(chan struct{})
 
-	// Schedule stop after deferred delay + a few job ticks.
-	go func() {
-		time.Sleep(100 * time.Millisecond)
-		close(stopJobs)
-	}()
+		// Schedule stop after deferred delay + a few job ticks.
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			close(stopJobs)
+		}()
 
-	// runDeferredThenJobs blocks: first deferred, then jobs loop until
-	// stopJobs is closed. When it returns, everything has stopped.
-	c.runDeferredThenJobs(50*time.Millisecond, nil, nil, stopJobs, 1*time.Millisecond)
+		// runDeferredThenJobs blocks: first deferred, then jobs loop until
+		// stopJobs is closed. When it returns, everything has stopped.
+		c.runDeferredThenJobs(50*time.Millisecond, nil, nil, stopJobs, 1*time.Millisecond)
 
-	// After deferred completes and jobs are stopped, announce times
-	// should have been set to currentTime by runDeferredThenJobs.
-	if !c.lastPeerAnnounce.Equal(currentTime) {
-		t.Errorf("lastPeerAnnounce = %v, want %v", c.lastPeerAnnounce, currentTime)
-	}
-	if !c.lastNodeAnnounce.Equal(currentTime) {
-		t.Errorf("lastNodeAnnounce = %v, want %v", c.lastNodeAnnounce, currentTime)
-	}
+		// After deferred completes and jobs are stopped, announce times
+		// should have been set to currentTime by runDeferredThenJobs.
+		if !c.lastPeerAnnounce.Equal(currentTime) {
+			t.Errorf("lastPeerAnnounce = %v, want %v", c.lastPeerAnnounce, currentTime)
+		}
+		if !c.lastNodeAnnounce.Equal(currentTime) {
+			t.Errorf("lastNodeAnnounce = %v, want %v", c.lastNodeAnnounce, currentTime)
+		}
+	})
 }
 
 func TestLXMFDelivery(t *testing.T) {

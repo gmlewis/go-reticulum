@@ -11599,49 +11599,47 @@ func TestRouterCleanThrottledPeers(t *testing.T) {
 func TestRouterJobLoop(t *testing.T) {
 	t.Parallel()
 
-	ts := rns.NewTransportSystem(nil)
-	tmpDir := testutils.TempDir(t, tempDirPrefix)
-	router := mustTestNewRouter(t, ts, nil, tmpDir)
+	// Runs in a synctest bubble so the 5ms job-loop ticker and the 50ms
+	// post-Close watch advance on virtual time instead of wall clock.
+	testutils.RunInBubble(t, func(t *testing.T) {
+		ts := rns.NewTransportSystem(nil)
+		tmpDir := testutils.TempDir(t, tempDirPrefix)
+		router := mustTestNewRouter(t, ts, nil, tmpDir)
 
-	// Stop the jobloop that NewRouter started (it uses the 4s default
-	// interval which is too slow for a unit test) and re-start it with a
-	// short interval so the test is fast and deterministic.
-	router.stopJobLoop()
-	router.processingInterval = 5 * time.Millisecond
+		// Stop the jobloop that NewRouter started (it uses the 4s default
+		// interval which is too slow for a unit test) and re-start it with a
+		// short interval so the test is fast and deterministic.
+		router.stopJobLoop()
+		router.processingInterval = 5 * time.Millisecond
 
-	var tickCount atomic.Uint32
-	router.jobsHook = func() {
-		tickCount.Add(1)
-	}
-	router.startJobLoop()
-
-	// Wait until at least 2 ticks fire.
-	done := make(chan struct{})
-	go func() {
-		for tickCount.Load() < 2 {
-			time.Sleep(time.Millisecond)
+		var tickCount atomic.Uint32
+		router.jobsHook = func() {
+			tickCount.Add(1)
 		}
-		close(done)
-	}()
+		router.startJobLoop()
 
-	select {
-	case <-done:
-		// good
-	case <-time.After(2 * time.Second):
-		t.Fatalf("jobloop did not tick at least twice within 2s (count=%d)", tickCount.Load())
-	}
+		// Wait until at least 2 ticks fire. PollUntil sleeps between polls,
+		// so the bubble clock advances and the ticker fires during the wait.
+		if !testutils.PollUntil(2*time.Second, func() bool {
+			return tickCount.Load() >= 2
+		}) {
+			t.Fatalf("jobloop did not tick at least twice within 2s (count=%d)", tickCount.Load())
+		}
 
-	// Close should stop the jobloop goroutine cleanly.
-	if err := router.Close(); err != nil {
-		t.Fatalf("router.Close(): %v", err)
-	}
+		// Close should stop the jobloop goroutine cleanly.
+		if err := router.Close(); err != nil {
+			t.Fatalf("router.Close(): %v", err)
+		}
 
-	// After Close, the goroutine should be gone: no new ticks may fire.
-	before := tickCount.Load()
-	time.Sleep(50 * time.Millisecond)
-	if got := tickCount.Load(); got != before {
-		t.Fatalf("jobloop ticked after Close: before=%d after=%d", before, got)
-	}
+		// After Close, the goroutine should be gone: no new ticks may fire.
+		// The sleep durably blocks the bubble goroutine, so virtual time
+		// advances and any leaked tick would be observable.
+		before := tickCount.Load()
+		time.Sleep(50 * time.Millisecond)
+		if got := tickCount.Load(); got != before {
+			t.Fatalf("jobloop ticked after Close: before=%d after=%d", before, got)
+		}
+	})
 }
 
 func TestCancelOutboundStamps(t *testing.T) {

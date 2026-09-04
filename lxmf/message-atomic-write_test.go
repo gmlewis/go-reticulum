@@ -91,7 +91,7 @@ func TestWriteToDirectoryConcurrentReaderNeverSeesPartial(t *testing.T) {
 		t.Fatalf("seed WriteToDirectory: %v", err)
 	}
 
-	deadline := time.Now().Add(1500 * time.Millisecond)
+	deadline := time.Now().Add(300 * time.Millisecond)
 	var wg sync.WaitGroup
 	errCh := make(chan string, 1)
 	reportErr := func(msg string) {

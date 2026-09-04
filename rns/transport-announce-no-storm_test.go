@@ -8,6 +8,8 @@ package rns
 import (
 	"testing"
 	"time"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 // TestRegisterInterfaceDoesNotReannounceDestinations is the regression test for
@@ -25,37 +27,40 @@ import (
 // re-announce would surface as sendCount > 0.
 func TestRegisterInterfaceDoesNotReannounceDestinations(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem(nil)
-	ts.identity = mustTestNewIdentity(t, true)
+	testutils.RunInBubble(t, func(t *testing.T) {
+		ts := NewTransportSystem(nil)
+		ts.identity = mustTestNewIdentity(t, true)
 
-	id := mustTestNewIdentity(t, true)
-	// NewDestination with the real transport auto-registers the destination.
-	// Standalone (not connected to a shared instance) so RegisterDestination
-	// schedules no path-response announce.
-	dest, err := NewDestination(ts, id, DestinationIn, DestinationSingle, "no-storm-iface")
-	if err != nil {
-		t.Fatalf("NewDestination: %v", err)
-	}
+		id := mustTestNewIdentity(t, true)
+		// NewDestination with the real transport auto-registers the destination.
+		// Standalone (not connected to a shared instance) so RegisterDestination
+		// schedules no path-response announce.
+		dest, err := NewDestination(ts, id, DestinationIn, DestinationSingle, "no-storm-iface")
+		if err != nil {
+			t.Fatalf("NewDestination: %v", err)
+		}
 
-	iface := &capturingInterface{name: "net"}
-	ts.RegisterInterface(iface)
+		iface := &capturingInterface{name: "net"}
+		ts.RegisterInterface(iface)
 
-	// Give any deferred announce a chance to fire.
-	time.Sleep(150 * time.Millisecond)
-	if iface.SendCount() != 0 {
-		t.Fatalf("RegisterInterface re-announced destinations (sendCount=%v): interface registration must not mint announces", iface.SendCount())
-	}
+		// Settle everything before asserting the negative: any reintroduced
+		// deferred re-announce would have fired by now.
+		testutils.Wait()
+		if iface.SendCount() != 0 {
+			t.Fatalf("RegisterInterface re-announced destinations (sendCount=%v): interface registration must not mint announces", iface.SendCount())
+		}
 
-	// Sanity check: the send path is live, so a reintroduced re-announce
-	// would be observable here. A direct announce reaches the registered
-	// OUT interface via Outbound.
-	if err := dest.Announce(nil); err != nil {
-		t.Fatalf("dest.Announce sanity send failed: %v", err)
-	}
-	time.Sleep(50 * time.Millisecond)
-	if iface.SendCount() == 0 {
-		t.Fatalf("dest.Announce did not reach the interface; the no-storm assertion above is not meaningful")
-	}
+		// Sanity check: the send path is live, so a reintroduced re-announce
+		// would be observable here. A direct announce reaches the registered
+		// OUT interface via Outbound.
+		if err := dest.Announce(nil); err != nil {
+			t.Fatalf("dest.Announce sanity send failed: %v", err)
+		}
+		ts.WaitOutboundSends()
+		if iface.SendCount() == 0 {
+			t.Fatalf("dest.Announce did not reach the interface; the no-storm assertion above is not meaningful")
+		}
+	})
 }
 
 // TestRegisterDestinationAnnouncesPathResponseOnceWhenShared mirrors Python
@@ -66,35 +71,38 @@ func TestRegisterInterfaceDoesNotReannounceDestinations(t *testing.T) {
 // trigger a second announce.
 func TestRegisterDestinationAnnouncesPathResponseOnceWhenShared(t *testing.T) {
 	t.Parallel()
-	ts := NewTransportSystem(nil)
-	ts.identity = mustTestNewIdentity(t, true)
-	ts.SetConnectedToSharedInstance(true)
+	testutils.RunInBubble(t, func(t *testing.T) {
+		ts := NewTransportSystem(nil)
+		ts.identity = mustTestNewIdentity(t, true)
+		ts.SetConnectedToSharedInstance(true)
 
-	iface := &capturingInterface{name: "local"}
-	ts.RegisterInterface(iface) // no destinations yet -> no announce
-	if iface.SendCount() != 0 {
-		t.Fatalf("RegisterInterface sent announces before any destination existed: sendCount=%v", iface.SendCount())
-	}
+		iface := &capturingInterface{name: "local"}
+		ts.RegisterInterface(iface) // no destinations yet -> no announce
+		if iface.SendCount() != 0 {
+			t.Fatalf("RegisterInterface sent announces before any destination existed: sendCount=%v", iface.SendCount())
+		}
 
-	id := mustTestNewIdentity(t, true)
-	// NewDestination auto-registers; connectedToSharedInstance schedules one
-	// path-response announce after the 250ms defer.
-	dest, err := NewDestination(ts, id, DestinationIn, DestinationSingle, "no-storm-shared")
-	if err != nil {
-		t.Fatalf("NewDestination: %v", err)
-	}
+		id := mustTestNewIdentity(t, true)
+		// NewDestination auto-registers; connectedToSharedInstance schedules one
+		// path-response announce after the 250ms defer (joined to outboundWG,
+		// so WaitOutboundSends advances virtual time to it and returns).
+		dest, err := NewDestination(ts, id, DestinationIn, DestinationSingle, "no-storm-shared")
+		if err != nil {
+			t.Fatalf("NewDestination: %v", err)
+		}
 
-	time.Sleep(500 * time.Millisecond)
-	if iface.SendCount() != 1 {
-		t.Fatalf("expected exactly one path-response announce on registration, got %v", iface.SendCount())
-	}
+		ts.WaitOutboundSends()
+		if iface.SendCount() != 1 {
+			t.Fatalf("expected exactly one path-response announce on registration, got %v", iface.SendCount())
+		}
 
-	// A duplicate registration must not re-announce.
-	ts.RegisterDestination(dest)
-	time.Sleep(350 * time.Millisecond)
-	if iface.SendCount() != 1 {
-		t.Fatalf("duplicate RegisterDestination re-announced (sendCount=%v): registration must announce at most once", iface.SendCount())
-	}
+		// A duplicate registration must not re-announce.
+		ts.RegisterDestination(dest)
+		ts.WaitOutboundSends()
+		if iface.SendCount() != 1 {
+			t.Fatalf("duplicate RegisterDestination re-announced (sendCount=%v): registration must announce at most once", iface.SendCount())
+		}
+	})
 }
 
 // TestOverHoppedAnnounceDoesNotInstallPath mirrors Python's PATHFINDER_M hop

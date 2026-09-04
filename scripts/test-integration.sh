@@ -1,6 +1,20 @@
 #!/bin/bash -e
 # -*- compile-command: "./test-integration.sh"; -*-
 
+# Run the integration test suite (all *_int_test.go + unit tests).
+#
+# Usage: scripts/test-integration.sh [extra go test args...] [pkgs...]
+#
+# Fast subset: pass -short as the first extra go test arg to skip the ~230
+# tests that honor testing.Short() (cross-process, Python interop, hardware):
+#
+#   scripts/test-integration.sh -short
+#
+# Other useful knobs:
+#   GO_TEST_PARALLEL=N   intra-package -parallel (tests use private loopback);
+#                        opt-in only, see the parallelism note below
+#   GO_TEST_TIMEOUT=4m   per-package go test -timeout
+
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 REPO_ROOT="${SCRIPT_DIR}/.."
 
@@ -128,7 +142,10 @@ if [[ -z "${GO_TEST_P:-}" && "$(uname -a)" == *"Darwin"* ]]; then
 	GO_TEST_P=8
 fi
 if [[ -z "${GO_TEST_PARALLEL:-}" && "$(uname -a)" == *"Darwin"* ]]; then
-	GO_TEST_PARALLEL=1
+	# All tests use private loopback, so intra-package parallelism causes no
+	# cross-talk; 4 is flake-watch-validated (5 consecutive green full-suite
+	# runs, 2026-09-04). Set GO_TEST_PARALLEL=1 to opt back out.
+	GO_TEST_PARALLEL=4
 fi
 
 GO_TEST_ARGS=()

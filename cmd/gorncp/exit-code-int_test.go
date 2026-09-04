@@ -33,7 +33,7 @@ func TestInvalidIdentityHashExitCode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := exec.Command("go", append([]string{"run", "."}, tt.args...)...)
+			cmd := exec.Command(gorncpBinaryPath, tt.args...)
 			cmd.Stdin = nil
 			cmd.Stdout = nil
 			cmd.Stderr = nil
@@ -91,7 +91,7 @@ func TestMalformedDestinationHashExitCode(t *testing.T) {
 				t.Fatalf("failed to create input file: %v", err)
 			}
 
-			cmd := exec.Command("go", "run", ".", "-config", configDir, "-i", identityPath, tt.destHash, inputFile)
+			cmd := exec.Command(gorncpBinaryPath, "-config", configDir, "-i", identityPath, tt.destHash, inputFile)
 			cmd.Dir = "."
 			cmd.Env = append(os.Environ(), "HOME="+tmpDir)
 			out, err := cmd.CombinedOutput()
@@ -130,7 +130,7 @@ func TestMissingSendFileExitCode(t *testing.T) {
 	missingFile := filepath.Join(tmpDir, "missing.txt")
 	destHash := "0123456789abcdef0123456789abcdef"
 
-	cmd := exec.Command("go", "run", ".", "-config", configDir, "-i", identityPath, destHash, missingFile)
+	cmd := exec.Command(gorncpBinaryPath, "-config", configDir, "-i", identityPath, destHash, missingFile)
 	cmd.Dir = "."
 	cmd.Env = append(os.Environ(), "HOME="+tmpDir)
 	out, err := cmd.CombinedOutput()
@@ -157,7 +157,7 @@ func TestMainExitCodeHelper(t *testing.T) {
 	tmpDir := testutils.TempDir(t, tempDirPrefix)
 
 	// This test verifies the exit code behavior
-	cmd := exec.Command("go", "run", ".", "-a", "invalid")
+	cmd := exec.Command(gorncpBinaryPath, "-a", "invalid")
 	cmd.Dir = "."
 	cmd.Env = append(os.Environ(), "HOME="+tmpDir)
 	err := cmd.Run()
@@ -187,16 +187,9 @@ func TestCorruptIdentityFileExitCode(t *testing.T) {
 	// Write corrupt data to identity file
 	mustTest(t, os.WriteFile(identityPath, []byte("corrupt data"), 0o644))
 
-	// Build the binary first (go run doesn't preserve exit codes reliably)
-	buildCmd := exec.Command("go", "build", "-o", filepath.Join(tmpDir, "gorncp"), ".")
-	buildCmd.Dir = "."
-	buildCmd.Env = append(os.Environ(), "HOME="+tmpDir)
-	if err := buildCmd.Run(); err != nil {
-		t.Fatalf("failed to build: %v", err)
-	}
-
-	// Run the binary
-	cmd := exec.Command(filepath.Join(tmpDir, "gorncp"), "-l", "-i", identityPath, "--config", configDir)
+	// TestMain already built the binary (go run doesn't preserve exit codes
+	// reliably; the per-test `go build` was redundant with it).
+	cmd := exec.Command(gorncpBinaryPath, "-l", "-i", identityPath, "--config", configDir)
 	cmd.Dir = "."
 	cmd.Env = append(os.Environ(), "HOME="+tmpDir)
 	out, err := cmd.CombinedOutput()
@@ -230,17 +223,12 @@ func TestOutputDirectoryNotFoundExitCode(t *testing.T) {
 		t.Fatalf("failed to create identity dir: %v", err)
 	}
 
-	// Build the binary first (go run doesn't preserve exit codes reliably)
-	buildCmd := exec.Command("go", "build", "-o", filepath.Join(tmpDir, "gorncp"), ".")
-	buildCmd.Dir = "."
-	buildCmd.Env = append(os.Environ(), "HOME="+tmpDir)
-	if err := buildCmd.Run(); err != nil {
-		t.Fatalf("failed to build: %v", err)
-	}
+	// TestMain already built the binary (go run doesn't preserve exit codes
+	// reliably; the per-test `go build` was redundant with it).
 
 	// Run the binary with non-existent save directory
 	nonExistentDir := "/nonexistent-gorncp-test-dir"
-	cmd := exec.Command(filepath.Join(tmpDir, "gorncp"), "-l", "-s", nonExistentDir, "--config", configDir)
+	cmd := exec.Command(gorncpBinaryPath, "-l", "-s", nonExistentDir, "--config", configDir)
 	cmd.Dir = "."
 	cmd.Env = append(os.Environ(), "HOME="+tmpDir)
 	out, err := cmd.CombinedOutput()
@@ -280,16 +268,11 @@ func TestOutputDirectoryNotWritableExitCode(t *testing.T) {
 		t.Fatalf("failed to create readonly dir: %v", err)
 	}
 
-	// Build the binary first (go run doesn't preserve exit codes reliably)
-	buildCmd := exec.Command("go", "build", "-o", filepath.Join(tmpDir, "gorncp"), ".")
-	buildCmd.Dir = "."
-	buildCmd.Env = append(os.Environ(), "HOME="+tmpDir)
-	if err := buildCmd.Run(); err != nil {
-		t.Fatalf("failed to build: %v", err)
-	}
+	// TestMain already built the binary (go run doesn't preserve exit codes
+	// reliably; the per-test `go build` was redundant with it).
 
 	// Run the binary with read-only save directory
-	cmd := exec.Command(filepath.Join(tmpDir, "gorncp"), "-l", "-s", readOnlyDir, "--config", configDir)
+	cmd := exec.Command(gorncpBinaryPath, "-l", "-s", readOnlyDir, "--config", configDir)
 	cmd.Dir = "."
 	cmd.Env = append(os.Environ(), "HOME="+tmpDir)
 	out, err := cmd.CombinedOutput()

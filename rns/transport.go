@@ -423,6 +423,15 @@ type TransportSystem struct {
 	cacheLastCleaned time.Time
 	cacheCleanSleep  func(time.Duration)
 
+	// stopFlushSleep mirrors Python's exit-handler yield before the final
+	// persistence flush (Transport.py:3402-3407: closed links get a 150ms
+	// yield before the last persist). Injectable for deterministic tests.
+	stopFlushSleep func(time.Duration)
+	// deferredAnnounceDelay is the delay before the one-time shared-instance
+	// path-response announce in RegisterDestination (Python's deferred job).
+	// Injectable for deterministic tests.
+	deferredAnnounceDelay time.Duration
+
 	// outboundWG tracks outbound sends dispatched on their own goroutines by
 	// the fan-out paths (processAnnounceTable, forwardPathRequest,
 	// forwardPathResponseToRequesters) so a single stalled peer cannot block
@@ -902,6 +911,12 @@ func (ts *TransportSystem) Start(storagePath string) error {
 	if ts.cacheCleanSleep == nil {
 		ts.cacheCleanSleep = time.Sleep
 	}
+	if ts.stopFlushSleep == nil {
+		ts.stopFlushSleep = time.Sleep
+	}
+	if ts.deferredAnnounceDelay == 0 {
+		ts.deferredAnnounceDelay = 250 * time.Millisecond
+	}
 
 	ts.storagePath = storagePath
 	if _, err := os.Stat(ts.storagePath); os.IsNotExist(err) {
@@ -1150,7 +1165,7 @@ func (ts *TransportSystem) Stop() {
 		closedLinks++
 	}
 	if closedLinks > 0 {
-		time.Sleep(150 * time.Millisecond)
+		ts.stopFlushSleep(150 * time.Millisecond)
 	}
 
 	// Final flush of the path table, packet-hash list, and tunnel table to
@@ -2522,19 +2537,7 @@ func (ts *TransportSystem) sendRebroadcast(iface interfaces.Interface, raw []byt
 	if iface == nil || len(raw) == 0 {
 		return
 	}
-	if ts.identity != nil {
-		parsed := NewPacketFromRaw(raw)
-		if err := parsed.Unpack(); err == nil && parsed.PacketType == PacketAnnounce {
-			newFlags := byte((Header2 << 6) | (parsed.ContextFlag << 5) | (TransportForward << 4) | (parsed.DestinationType << 2) | parsed.PacketType)
-			rebuilt := make([]byte, 0, 2+TruncatedHashLength/8+TruncatedHashLength/8+1+len(parsed.Data))
-			rebuilt = append(rebuilt, newFlags, byte(parsed.Hops))
-			rebuilt = append(rebuilt, ts.identity.Hash...)
-			rebuilt = append(rebuilt, parsed.DestinationHash...)
-			rebuilt = append(rebuilt, byte(parsed.Context))
-			rebuilt = append(rebuilt, parsed.Data...)
-			raw = rebuilt
-		}
-	}
+	raw = ts.reframeAnnounceForTransport(raw, "rebroadcast")
 	// Capture whether the interface was up before Send. A down interface
 	// fast-fails Send with "is not running"; that is expected and must not
 	// spam the log or trigger a full pathTable scan on every rebroadcast,
@@ -2548,6 +2551,34 @@ func (ts *TransportSystem) sendRebroadcast(iface interfaces.Interface, raw []byt
 			ts.InvalidatePathsViaInterface(iface)
 		}
 	}
+}
+
+// reframeAnnounceForTransport rebuilds an announce frame as Header2 with this
+// node's transport identity, mirroring Python's queued rebroadcast
+// (Transport.py:637-649: every rebroadcast announce is rebuilt as HEADER_2
+// with transport_id = Transport.identity.hash). Downstream nodes derive the
+// path next-hop from that transport ID, so a rebroadcast left as a Header1
+// frame makes them point the path at the DESTINATION hash instead — the
+// subsequent stamped link request then matches no transport node and is
+// silently dropped (multi-hop links never establish). Non-announce frames are
+// returned unchanged.
+func (ts *TransportSystem) reframeAnnounceForTransport(raw []byte, what string) []byte {
+	if ts.identity == nil || len(raw) == 0 {
+		return raw
+	}
+	parsed := NewPacketFromRaw(raw)
+	if err := parsed.Unpack(); err != nil || parsed.PacketType != PacketAnnounce {
+		ts.logger.Debug("%v: UNFRAMED passthrough (unpack err=%v, firstByte=%x)", what, err, raw[0])
+		return raw
+	}
+	newFlags := byte((Header2 << 6) | (parsed.ContextFlag << 5) | (TransportForward << 4) | (parsed.DestinationType << 2) | parsed.PacketType)
+	rebuilt := make([]byte, 0, 2+2*(TruncatedHashLength/8)+1+len(parsed.Data))
+	rebuilt = append(rebuilt, newFlags, byte(parsed.Hops))
+	rebuilt = append(rebuilt, ts.identity.Hash...)
+	rebuilt = append(rebuilt, parsed.DestinationHash...)
+	rebuilt = append(rebuilt, byte(parsed.Context))
+	rebuilt = append(rebuilt, parsed.Data...)
+	return rebuilt
 }
 
 // dispatchForwardSend sends one forwarded/rebroadcast frame to a single
@@ -3068,12 +3099,25 @@ func (ts *TransportSystem) forwardPathResponseToRequesters(packet *Packet, sourc
 		return false
 	}
 
-	// Dispatch each response send on its own goroutine (see forwardPathRequest
-	// for why a readLoop must not block on a stalled outbound peer). The
-	// caller ignores the return, so we report whether we dispatched to at
-	// least one requester rather than waiting on the writes.
+	// The response MUST be re-framed as Header2 with this node's transport
+	// identity before egress, mirroring Python: a path request answered
+	// remotely is served to the requestor by the announce-table rebroadcast
+	// (Transport.py:3057-3119 inserts the cached packet into announce_table,
+	// and the queued rebroadcast at Transport.py:637-649 rebuilds every
+	// announce as HEADER_2 with transport_id = Transport.identity.hash).
+	// Forwarding the arrived announce verbatim leaves it a Header1 frame, so
+	// the requester computes next_hop = destination_hash (Python
+	// Transport.py:1986 `next_hop = packet.transport_id if ... else
+	// destination_hash`), stamps its link request with the DESTINATION hash as
+	// the transport ID, and every intermediate transport node silently drops
+	// the packet because the stamped ID matches no node — links through
+	// multi-hop paths never establish (fleet-wide rrcd link churn, TODO 22).
+	// reframeAnnounceForTransport performs exactly that Header2 re-frame.
 	for _, job := range jobs {
-		ts.outboundWG.Go(func() { ts.dispatchForwardSend(job.iface, job.raw, "forwarding path response") })
+		ts.outboundWG.Go(func() {
+			raw := ts.reframeAnnounceForTransport(job.raw, "forwarding path response")
+			ts.dispatchForwardSend(job.iface, raw, "forwarding path response")
+		})
 	}
 
 	return len(jobs) > 0
@@ -3407,12 +3451,15 @@ func (ts *TransportSystem) RegisterDestination(d *Destination) {
 	// delay lets the local-client interface finish registering before the
 	// path-response is sent, matching Python's deferred job.
 	if connectedShared && d.Type == DestinationSingle {
-		go func(dest *Destination) {
-			time.Sleep(250 * time.Millisecond)
-			if err := dest.AnnouncePathResponse(nil); err != nil {
-				ts.logger.Debug("RegisterDestination path-response announce for %x failed: %v", dest.Hash, err)
+		// The goroutine joins outboundWG so WaitOutboundSends makes the
+		// deferred announce observable by tests (the wg is test-only today,
+		// so this cannot change production behavior).
+		ts.outboundWG.Go(func() {
+			time.Sleep(ts.deferredAnnounceDelay)
+			if err := d.AnnouncePathResponse(nil); err != nil {
+				ts.logger.Debug("RegisterDestination path-response announce for %x failed: %v", d.Hash, err)
 			}
-		}(d)
+		})
 	}
 }
 
@@ -5578,6 +5625,14 @@ func nextHopFromAnnounce(packet *Packet) ([]byte, error) {
 		return copyBytes(packet.TransportID), nil
 	}
 	if len(packet.DestinationHash) > 0 {
+		// FALLBACK (Python Transport.py:1986: `next_hop = packet.transport_id
+		// if packet.transport_id != None else packet.destination_hash`): an
+		// announce that arrives without a transport ID makes the next hop the
+		// destination hash itself. For a REMOTE destination that is only
+		// correct when the originator is directly adjacent; every announce an
+		// intermediate transport node emits must therefore be re-framed as
+		// Header2 with that node's identity (reframeAnnounceForTransport) so
+		// downstream stamped link requests address a real transport hop.
 		return copyBytes(packet.DestinationHash), nil
 	}
 	return nil, errors.New("announce has no next-hop material")

@@ -36,14 +36,7 @@ func allocateUDPPortPair(t *testing.T) (int, int) {
 // needed and never fatals merely because a fixed delay was too short under
 // scheduler load.
 func waitUntil(timeout time.Duration, cond func() bool) bool {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if cond() {
-			return true
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	return cond()
+	return testutils.PollUntil(timeout, cond)
 }
 
 // waitForIfaceRunning polls a client interface's Status() until it reports

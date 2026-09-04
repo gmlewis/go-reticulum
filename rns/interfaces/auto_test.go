@@ -404,6 +404,9 @@ func TestAutoInterfaceDeduplication(t *testing.T) {
 }
 
 func TestAutoInterfaceTiming(t *testing.T) {
+	// Deliberately NOT a synctest bubble: peerJobs' reverse-announce path
+	// opens a real udp6 socket (reverseAnnounce) and resyncAdoptedAddresses
+	// scans kernel interfaces, neither of which blocks on bubble time.
 	// Use very short intervals for testing
 	ai := &AutoInterface{
 		BaseInterface:          NewBaseInterface("auto-timing", ModeFull, AutoBitrateGuess),
