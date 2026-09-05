@@ -5529,14 +5529,15 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 	// Broadcast forwarding: a packet with no TransportID (Header1 broadcast)
 	// that is not for a local destination/link and is not an announce or proof
 	// is forwarded on all network interfaces, matching Python
-	// Transport.inbound's broadcast path (Transport.py:1512-1549). This
-	// handles link requests from local clients (browsers, gornsh, link-test)
-	// that have no cached path: the shared instance forwards the request on
-	// all its network interfaces so the remote node can receive it. Without
-	// this, a PacketLinkRequest with no TransportID is silently dropped,
-	// causing fleet-wide "link establishment timed out" after restarts when
-	// the path table is empty.
-	if packet.TransportID == nil && packet.PacketType != PacketAnnounce && packet.PacketType != PacketProof {
+	// Transport.inbound's broadcast path (Transport.py:1562-1572), which
+	// forwards plain broadcasts FROM LOCAL CLIENTS on the attached interfaces.
+	// The from-local-client gate is load-bearing: a HEADER_1 packet with no
+	// transport id arriving from a NETWORK interface (an orphaned keepalive of
+	// a link that died with the previous hub instance, relayed back over a
+	// shared medium) has no routing state here and must be dropped —
+	// rebroadcasting it network-wide floods the mesh with dead-link
+	// keepalive spam.
+	if ts.isLocalClientInterface(iface) && packet.TransportID == nil && packet.PacketType != PacketAnnounce && packet.PacketType != PacketProof {
 		ts.mu.Lock()
 		snapshot := append([]interfaces.Interface(nil), ts.interfaces...)
 		ts.mu.Unlock()

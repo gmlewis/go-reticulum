@@ -630,27 +630,27 @@ func (l *Link) Prove() error {
 // receive processes incoming packets targeting this link, handling decryption and delegating to context-specific routines.
 func (l *Link) receive(packet *Packet) {
 	l.mu.Lock()
-	l.lastInbound = time.Now()
-	// Payload data (non-keepalive) advances last_data, mirroring Python
-	// Link.receive: `if packet.context != RNS.Packet.KEEPALIVE:
-	// self.last_data = self.last_inbound`.
-	if packet.Context != ContextKeepalive {
-		l.lastData = l.lastInbound
-	}
-	// Count the inbound packet, mirroring Python Link.receive (Link.py:937-938):
-	// self.rx += 1; self.rxbytes += len(packet.data). Python guards the
-	// increment with `not self.status == Link.CLOSED and not (self.initiator
-	// and packet.context == KEEPALIVE and packet.data == bytes([0xFF]))`, so
-	// the initiator's own keepalive echo is not counted toward rx.
+	// Python Link.py:930-939: the clock/rx update block is guarded by
+	// `not self.status == Link.CLOSED and not (self.initiator and
+	// packet.context == KEEPALIVE and packet.data == bytes([0xFF]))`. The
+	// initiator's own 0xFF keepalive echo (looped back over a shared medium)
+	// must neither count toward rx nor refresh last_inbound — an echo of a
+	// DEAD link's keepalive would otherwise keep the watchdog from ever
+	// firing, leaving the client "Connected" to a hub that no longer holds
+	// the session. A counted packet revives a STALE link inside the
+	// watchdog's stale-grace window, mirroring Python Link.py:939
+	// (`if self.status == Link.STALE: self.status = Link.ACTIVE`).
 	if l.status.Load() != LinkClosed &&
 		!(l.initiator && packet.Context == ContextKeepalive && len(packet.Data) > 0 && packet.Data[0] == 0xFF) {
+		l.lastInbound = time.Now()
+		// Payload data (non-keepalive) advances last_data, mirroring Python
+		// Link.receive: `if packet.context != RNS.Packet.KEEPALIVE:
+		// self.last_data = self.last_inbound`.
+		if packet.Context != ContextKeepalive {
+			l.lastData = l.lastInbound
+		}
 		l.rx++
 		l.rxbytes += uint64(len(packet.Data))
-		// A counted inbound packet revives a STALE link inside the watchdog's
-		// stale-grace window, mirroring Python Link.receive (Link.py:939):
-		// `if self.status == Link.STALE: self.status = Link.ACTIVE`. Without
-		// this a link the watchdog marked STALE is torn down by the next
-		// watchdog step even when traffic resumed during the grace period.
 		if l.status.Load() == LinkStale {
 			l.status.Store(LinkActive)
 		}
