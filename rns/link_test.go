@@ -7,6 +7,7 @@ package rns
 
 import (
 	"bytes"
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -713,5 +714,68 @@ func TestTeardownReasonRecorded(t *testing.T) {
 	link.Teardown()
 	if got := TeardownReasonName(link.TeardownReason()); got != "initiator-closed" {
 		t.Errorf("reason after local Teardown = %q, want initiator-closed", got)
+	}
+}
+
+// Link data is proven only when the link's destination demands it: PROVE_ALL
+// always, PROVE_APP via the proof-request callback, and PROVE_NONE never
+// (Python Link.py:953-960). Unconditional proving generated a proof for every
+// message on every link, and proofs routed through a shared instance are
+// frequently undeliverable, starving senders' receipts.
+func TestLinkDataProofFollowsDestinationStrategy(t *testing.T) {
+	t.Parallel()
+
+	for strategy, wantProof := range map[int]bool{
+		ProveNone: false,
+		ProveAll:  true,
+	} {
+		strategy, wantProof := strategy, wantProof
+		t.Run(fmt.Sprintf("strategy-%v", strategy), func(t *testing.T) {
+			ts := NewTransportSystem(testSilentLogger())
+			dest := mustTestNewDestination(t, ts, ts.identity, DestinationIn, DestinationSingle, "prf", "dest")
+			dest.SetProofStrategy(strategy)
+
+			link := mustTestNewLink(t, ts, dest)
+			capture := &capturingInterface{name: "proof-capture"}
+			link.attachedInterface = capture
+			// Derive session keys so the receive path's decryption succeeds:
+			// load a peer keypair the same way the link-request handler does
+			// (Link.go:556: LoadPeer with the initiator's public halves).
+			peerIdentity := mustTestNewIdentity(t, true)
+			peerPub := peerIdentity.GetPublicKey()
+			if err := link.LoadPeer(peerPub[:32], peerPub[32:]); err != nil {
+				t.Fatalf("strategy %v: LoadPeer: %v", strategy, err)
+			}
+			if err := link.Handshake(); err != nil {
+				t.Fatalf("strategy %v: handshake: %v", strategy, err)
+			}
+			link.status.Store(LinkActive)
+
+			// The link's receive path decrypts DATA packets, so the probe must
+			// carry a validly encrypted payload for the prove gate to be reached.
+			ciphertext, err := link.Encrypt([]byte("strategy-probe"))
+			if err != nil {
+				t.Fatalf("strategy %v: encrypt: %v", strategy, err)
+			}
+			packet := NewPacketWithTransport(ts, link, ciphertext)
+			packet.Context = ContextNone
+			packet.PacketType = PacketData
+			link.receive(packet)
+
+			// A generated proof is a PROOF-type packet sent on the attached
+			// interface; the absence of one within the window means no proof.
+			deadline := time.Now().Add(500 * time.Millisecond)
+			gotProof := false
+			for time.Now().Before(deadline) && !gotProof {
+				time.Sleep(25 * time.Millisecond)
+				if capture.lastSent != nil && len(capture.lastSent) > 0 && capture.lastSent[0]&(0b11) == PacketProof {
+					gotProof = true
+				}
+			}
+			t.Logf("sendCount=%v lastSentLen=%v", capture.sendCount, len(capture.lastSent))
+			if gotProof != wantProof {
+				t.Fatalf("strategy %v: proof generated = %v, want %v", strategy, gotProof, wantProof)
+			}
+		})
 	}
 }

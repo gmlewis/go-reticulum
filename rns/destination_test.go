@@ -160,6 +160,38 @@ func TestDestinationAppData(t *testing.T) {
 	}
 }
 
+// TestDestinationAnnounceDefaultAppDataRace guards the buildAnnouncePacket
+// defaultAppData fallback: RegisterInterface announces destinations from its
+// own goroutine (announce-on-register and the periodic announce job), while
+// the application can call SetDefaultAppData at any time (e.g. Node.Start
+// racing RegisterInterface). The fallback read must take d.mu or the race
+// detector fails the whole suite.
+func TestDestinationAnnounceDefaultAppDataRace(t *testing.T) {
+	t.Parallel()
+
+	ts := NewTransportSystem(nil)
+	id := mustTestNewIdentity(t, true)
+	dest, err := NewDestination(ts, id, DestinationIn, DestinationSingle, "test", "race")
+	if err != nil {
+		t.Fatalf("NewDestination: %v", err)
+	}
+
+	writerDone := make(chan struct{})
+	go func() {
+		defer close(writerDone)
+		for i := 0; i < 200; i++ {
+			dest.SetDefaultAppData([]byte("race-payload"))
+			dest.ClearDefaultAppData()
+		}
+	}()
+	for i := 0; i < 200; i++ {
+		if _, err := dest.BuildAnnouncePacket(nil); err != nil {
+			t.Fatalf("BuildAnnouncePacket: %v", err)
+		}
+	}
+	<-writerDone
+}
+
 func TestDestinationRatchetConfig(t *testing.T) {
 	t.Parallel()
 

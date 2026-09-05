@@ -225,7 +225,13 @@ func (d *Destination) buildAnnouncePacket(appData []byte, pathResponse bool) (*P
 	// nameless announce that appears in peers' announce streams with an
 	// empty name.
 	if appData == nil {
-		appData = d.defaultAppData
+		// Snapshot under d.mu: SetDefaultAppData / ClearDefaultAppData write
+		// this field concurrently from the application (e.g. Node.Start
+		// racing RegisterInterface's announce-on-register goroutine).
+		d.mu.Lock()
+		appData = make([]byte, len(d.defaultAppData))
+		copy(appData, d.defaultAppData)
+		d.mu.Unlock()
 	}
 
 	// random_hash = truncated_hash(random_bytes)[:5] + timestamp(5 bytes big-endian)

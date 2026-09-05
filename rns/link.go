@@ -952,6 +952,9 @@ func (l *Link) receive(packet *Packet) {
 		}
 
 	case ContextChannel:
+		// Python proves every CHANNEL-context packet unconditionally
+		// (Link.py:1144).
+		l.ProvePacket(packet)
 		l.mu.Lock()
 		channel := l.channel
 		l.mu.Unlock()
@@ -969,8 +972,27 @@ func (l *Link) receive(packet *Packet) {
 			return
 		}
 		if packet.PacketType != PacketProof {
-			l.logger.Debug("Link %x: received DATA packet %x, generating PROOF", l.linkID, packet.PacketHash)
-			l.ProvePacket(packet)
+			// Mirror Python Link.py:953-960: link data is proven only when
+			// the link's destination demands it (PROVE_ALL, or PROVE_APP with
+			// the proof-request callback accepting the packet). Proving
+			// unconditionally here generated a proof for every message on
+			// every link, and proofs routed through a shared instance are
+			// frequently undeliverable, starving senders' receipts.
+			prove := false
+			if dest := l.destination; dest != nil {
+				switch dest.proofStrategy {
+				case ProveAll:
+					prove = true
+				case ProveApp:
+					if cb := dest.callbacks.ProofRequested; cb != nil && cb(packet) {
+						prove = true
+					}
+				}
+			}
+			if prove {
+				l.logger.Debug("Link %x: received DATA packet %x, generating PROOF", l.linkID, packet.PacketHash)
+				l.ProvePacket(packet)
+			}
 		}
 		if cb != nil {
 			cb(l, packet)
