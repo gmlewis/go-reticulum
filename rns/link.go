@@ -646,6 +646,14 @@ func (l *Link) receive(packet *Packet) {
 		!(l.initiator && packet.Context == ContextKeepalive && len(packet.Data) > 0 && packet.Data[0] == 0xFF) {
 		l.rx++
 		l.rxbytes += uint64(len(packet.Data))
+		// A counted inbound packet revives a STALE link inside the watchdog's
+		// stale-grace window, mirroring Python Link.receive (Link.py:939):
+		// `if self.status == Link.STALE: self.status = Link.ACTIVE`. Without
+		// this a link the watchdog marked STALE is torn down by the next
+		// watchdog step even when traffic resumed during the grace period.
+		if l.status.Load() == LinkStale {
+			l.status.Store(LinkActive)
+		}
 	}
 	l.mu.Unlock()
 
