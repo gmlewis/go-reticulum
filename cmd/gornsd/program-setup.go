@@ -18,9 +18,10 @@ import (
 func (app *appT) programSetup() (*rns.Reticulum, error) {
 	startPProf(app.pprofAddr)
 	logger := app.logger
-	if !app.service {
-		logger.SetPendingDelta(app.verbose - app.quiet)
-	}
+	// Apply the -v/-q verbosity delta in every mode: service mode previously
+	// skipped it, which made -s -v -v (transport-level debug capture for the
+	// /tmp service logs) a silent no-op.
+	logger.SetPendingDelta(app.verbose - app.quiet)
 	if app.service {
 		logger.SetLogDest(rns.LogDestFile)
 		logger.SetLogFilePath(filepath.Join(app.configDir, "logfile"))

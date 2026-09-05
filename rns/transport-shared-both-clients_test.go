@@ -219,7 +219,7 @@ func TestSharedInstanceBothClientsLinkSurvival(t *testing.T) {
 	case <-dead:
 		t.Fatalf("the link died through the shared instance before surviving the keepalive window (reason: %v)",
 			TeardownReasonName(initiatorLink.TeardownReason()))
-	case <-time.After(30 * time.Second):
+	case <-time.After(75 * time.Second):
 	}
 	if hubLink.GetStatus() != LinkActive {
 		t.Fatalf("hub-side link status = %v, want active", hubLink.GetStatus())

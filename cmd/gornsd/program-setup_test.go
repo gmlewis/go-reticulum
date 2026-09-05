@@ -156,7 +156,7 @@ func TestProgramSetupServiceKeepsConfigLogLevel(t *testing.T) {
 	app := &appT{
 		logger:    logger,
 		configDir: configDir,
-		verbose:   2,
+		verbose:   0,
 		quiet:     0,
 		service:   true,
 	}
@@ -171,6 +171,37 @@ func TestProgramSetupServiceKeepsConfigLogLevel(t *testing.T) {
 	})
 
 	if got, want := logger.GetLogLevel(), 4; got != want {
+		t.Fatalf("log level = %v, want %v", got, want)
+	}
+}
+
+// Service mode honors the -v/-q verbosity delta on top of the config's
+// loglevel, so `gornsd -s -v -v` raises the file-log level to Debug for
+// transport-level diagnostics.
+func TestProgramSetupServiceAppliesVerbosityDelta(t *testing.T) {
+	t.Parallel()
+	configDir := testutils.TempDir(t, "gornsd-program-service-verbose-")
+	writeGornsdConfig(t, configDir, "No", 4)
+
+	logger := rns.NewLogger()
+	app := &appT{
+		logger:    logger,
+		configDir: configDir,
+		verbose:   2,
+		quiet:     0,
+		service:   true,
+	}
+	ret, err := app.programSetup()
+	if err != nil {
+		t.Fatalf("programSetup error: %v", err)
+	}
+	t.Cleanup(func() {
+		if closeErr := ret.Close(); closeErr != nil {
+			t.Fatalf("ret.Close error: %v", closeErr)
+		}
+	})
+
+	if got, want := logger.GetLogLevel(), 6; got != want {
 		t.Fatalf("log level = %v, want %v", got, want)
 	}
 }
