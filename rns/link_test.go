@@ -729,7 +729,6 @@ func TestLinkDataProofFollowsDestinationStrategy(t *testing.T) {
 		ProveNone: false,
 		ProveAll:  true,
 	} {
-		strategy, wantProof := strategy, wantProof
 		t.Run(fmt.Sprintf("strategy-%v", strategy), func(t *testing.T) {
 			ts := NewTransportSystem(testSilentLogger())
 			dest := mustTestNewDestination(t, ts, ts.identity, DestinationIn, DestinationSingle, "prf", "dest")

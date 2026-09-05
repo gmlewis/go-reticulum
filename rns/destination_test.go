@@ -179,12 +179,12 @@ func TestDestinationAnnounceDefaultAppDataRace(t *testing.T) {
 	writerDone := make(chan struct{})
 	go func() {
 		defer close(writerDone)
-		for i := 0; i < 200; i++ {
+		for range 200 {
 			dest.SetDefaultAppData([]byte("race-payload"))
 			dest.ClearDefaultAppData()
 		}
 	}()
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		if _, err := dest.BuildAnnouncePacket(nil); err != nil {
 			t.Fatalf("BuildAnnouncePacket: %v", err)
 		}
