@@ -602,6 +602,7 @@ func (h *HubService) configPathForWrites() string {
 // _announce_once.
 func (h *HubService) AnnounceOnce() {
 	if h.destination == nil {
+		h.logf("Announce skipped: destination is not initialized")
 		return
 	}
 	appData := buildAnnounceAppData(h.Config.HubName)
@@ -609,6 +610,8 @@ func (h *HubService) AnnounceOnce() {
 		h.logf("Announce failed: %v", err)
 		return
 	}
+	h.logf("Announced hub=%v dest=%v",
+		h.Config.HubName, fmtHashPrefix(h.DestinationHash(), 0))
 	h.StatsManager.Inc("announces", 1)
 }
 
