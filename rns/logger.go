@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -19,6 +20,28 @@ const (
 	// LogTimeFmtP defines a precise timestamp format including milliseconds, typically used for performance logging.
 	LogTimeFmtP = "15:04:05.000"
 )
+
+const (
+	// LogQueueDepth bounds the async writer's pending-line queue. The packet
+	// goroutines enqueue formatted lines and never wait on sink I/O; when a
+	// burst exceeds the depth the overflow is dropped and counted instead of
+	// stalling the transport.
+	LogQueueDepth = 16384
+	// logDropWarnInterval rate-limits the queue-overflow warning the writer
+	// emits into the sink itself.
+	logDropWarnInterval = time.Second
+	// LogFlushTimeout bounds how long Flush waits for the writer to drain.
+	LogFlushTimeout = 5 * time.Second
+)
+
+// logJob is one formatted log line waiting on the writer goroutine, or a
+// flush marker when done is non-nil (the marker closes after every line
+// submitted before it has reached the sink, giving Flush exact FIFO
+// semantics).
+type logJob struct {
+	line string
+	done chan struct{}
+}
 
 // Logger stores the configuration and sinks for Reticulum log output.
 type Logger struct {
@@ -37,8 +60,22 @@ type Logger struct {
 	// RNS/__init__.py:86). Defaults to true; when false the prefix is omitted.
 	timestamps bool
 
-	// lock ensures that logging output does not corrupt itself
+	// lock serializes sink writes.
 	lock sync.Mutex
+
+	// The async writer decouples the sink's file I/O from the calling
+	// goroutines: log() formats and enqueues, the single writer goroutine
+	// performs the open/write/stat/rotate/close. Without it the transport's
+	// packet goroutines serialize on every sink syscall and a slow disk backs
+	// up packet delivery by tens of seconds (the observed raspberrypi
+	// pipeline stall).
+	logCh      chan logJob
+	stopCh     chan struct{}
+	writerOnce sync.Once
+	writerWG   sync.WaitGroup
+	closed     atomic.Bool
+	dropped    atomic.Uint64
+	dropWarned atomic.Int64
 }
 
 // NewLogger creates a logger with the default notice level and stdout output.
@@ -220,7 +257,9 @@ func (s *Logger) GetLogCallback() func(string) {
 	return s.call
 }
 
-// log constructs, formats, and safely writes a distinct log message to the configured system destination.
+// log constructs, formats, and safely submits a distinct log message to the
+// configured system destination. The caller never waits on sink I/O: the
+// formatted line is enqueued for the async writer goroutine.
 func (s *Logger) log(msg string, level int, preciseTimestamp bool) {
 	if s == nil {
 		log.Printf("(nil logger): %v", msg)
@@ -233,101 +272,238 @@ func (s *Logger) log(msg string, level int, preciseTimestamp bool) {
 	}
 
 	if currentLogLevel >= level {
-		var logString string
-		now := time.Now()
+		logString := s.formatLine(msg, level, time.Now(), preciseTimestamp)
 
-		// Timestamp prefix is gated by the logtimestamps setting
-		// (RNS.logtimestamps, RNS/__init__.py:86,133, v1.3.2).
-		timeStr := ""
-		if s.GetLogTimestamps() {
-			if preciseTimestamp {
-				timeStr = now.Format(LogTimeFmtP)
-			} else {
-				timeStr = now.Format(LogTimeFmt)
-			}
-		}
-
-		if s.GetCompactLogFmt() {
-			if timeStr != "" {
-				logString = fmt.Sprintf("[%v] %v", timeStr, msg)
-			} else {
-				logString = msg
-			}
-		} else {
-			if timeStr != "" {
-				logString = fmt.Sprintf("[%v] %v %v", timeStr, LogLevelName(level), msg)
-			} else {
-				logString = fmt.Sprintf("%v %v", LogLevelName(level), msg)
-			}
-		}
-
-		// critTS is always populated for the internal critical-error fallback
-		// diagnostics below (file write/close/rotate failures), independent of
-		// the user's logtimestamps setting, so those emergency messages stay
-		// diagnosable even when timestamp prefixes are disabled.
-		critTS := now.Format(LogTimeFmt)
-
-		s.lock.Lock()
-		defer s.lock.Unlock()
-
-		dest := s.GetLogDest()
-		filePath := s.GetLogFilePath()
-
-		if dest == LogStdout {
-			// Explicitly configured for the console (e.g. daemon -console mode
-			// with no TUI). Honor stdout as the user requested.
-			fmt.Println(logString)
-		} else if s.GetAlwaysOverride() {
-			// File logging was requested but a prior open/write/close/rotate
-			// failed and latched the override. Route to stderr — NOT stdout —
-			// so a TUI app running in raw mode + the alternate screen never has
-			// its terminal scrollback flooded (which balloons emulator memory).
-			// A launcher that redirects stderr to a file still captures these.
-			log.Print(logString)
-		} else if dest == LogDestFile && filePath != "" {
-			f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-			if err != nil {
-				s.SetAlwaysOverride(true)
-				log.Printf("[%v] [Critical] Exception occurred while writing log message to log file: %v\n", critTS, err)
-				log.Printf("[%v] [Critical] Dumping future log events to console!\n", critTS)
-				log.Print(logString)
-				return
-			}
-			defer func() {
-				if closeErr := f.Close(); closeErr != nil {
-					s.SetAlwaysOverride(true)
-					log.Printf("[%v] [Critical] Exception occurred while closing log file: %v\n", critTS, closeErr)
-				}
-			}()
-
-			if _, err := f.WriteString(logString + "\n"); err != nil {
-				s.SetAlwaysOverride(true)
-				log.Printf("[%v] [Critical] Exception occurred while writing log message to log file: %v\n", critTS, err)
-				log.Printf("[%v] [Critical] Dumping future log events to console!\n", critTS)
-				log.Print(logString)
-				return
-			}
-
-			fi, err := f.Stat()
-			if err == nil && fi.Size() > LogMaxSize {
-				prevFile := filePath + ".1"
-				if _, err := os.Stat(prevFile); err == nil {
-					if rmErr := os.Remove(prevFile); rmErr != nil {
-						s.SetAlwaysOverride(true)
-						log.Printf("[%v] [Critical] Exception occurred while rotating log file: %v\n", critTS, rmErr)
-					}
-				}
-				if renameErr := os.Rename(filePath, prevFile); renameErr != nil {
-					s.SetAlwaysOverride(true)
-					log.Printf("[%v] [Critical] Exception occurred while rotating log file: %v\n", critTS, renameErr)
-				}
-			}
-		} else if dest == LogCallback {
+		// The callback sink stays synchronous: it is an in-memory sink (the
+		// TUI bridge), delivery ordering is caller-observed, and callers may
+		// read their capture buffers immediately after logging. The slow I/O
+		// sinks (file, stdout) are what the async writer exists for.
+		if !s.closed.Load() && s.GetLogDest() == LogCallback {
 			if callback := s.GetLogCallback(); callback != nil {
 				callback(logString)
 			}
+			return
+		}
+
+		if s.closed.Load() {
+			// The writer is stopped: fall back to the standard logger so
+			// late messages neither panic on a stopped queue nor block.
+			log.Print(logString)
+			return
+		}
+		s.writerOnce.Do(s.startWriter)
+		select {
+		case s.logCh <- logJob{line: logString}:
+		default:
+			s.dropped.Add(1)
 		}
 	}
+}
+
+// formatLine renders the final log line (timestamp prefix, level label,
+// message) honoring the compact-format and timestamp settings.
+func (s *Logger) formatLine(msg string, level int, now time.Time, preciseTimestamp bool) string {
+	timeStr := ""
+	if s.GetLogTimestamps() {
+		if preciseTimestamp {
+			timeStr = now.Format(LogTimeFmtP)
+		} else {
+			timeStr = now.Format(LogTimeFmt)
+		}
+	}
+
+	if s.GetCompactLogFmt() {
+		if timeStr != "" {
+			return fmt.Sprintf("[%v] %v", timeStr, msg)
+		}
+		return msg
+	}
+	if timeStr != "" {
+		return fmt.Sprintf("[%v] %v %v", timeStr, LogLevelName(level), msg)
+	}
+	return fmt.Sprintf("%v %v", LogLevelName(level), msg)
+}
+
+// startWriter spawns the single async sink writer. It runs exactly once per
+// logger, on the first log call or Flush/Close, whichever comes first.
+func (s *Logger) startWriter() {
+	s.logCh = make(chan logJob, LogQueueDepth)
+	s.stopCh = make(chan struct{})
+	s.writerWG.Add(1)
+	go s.writerLoop()
+}
+
+// writerLoop drains the queue into the sink. On stop it first writes every
+// already-queued line, then exits.
+func (s *Logger) writerLoop() {
+	defer s.writerWG.Done()
+	for {
+		select {
+		case job := <-s.logCh:
+			if job.done != nil {
+				close(job.done)
+				continue
+			}
+			s.writeSink(job.line)
+			s.warnDropped()
+		case <-s.stopCh:
+			for {
+				select {
+				case job := <-s.logCh:
+					if job.done != nil {
+						close(job.done)
+						continue
+					}
+					s.writeSink(job.line)
+				default:
+					return
+				}
+			}
+		}
+	}
+}
+
+// writeSink delivers one formatted line to the configured destination. It
+// runs only on the writer goroutine (or a post-close fallback), so the file
+// open/write/stat/rotate/close sequence no longer sits on the transport's
+// packet path. The rotation and latching behavior matches the original
+// synchronous logger.
+func (s *Logger) writeSink(logString string) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	// critTS is always populated for the internal critical-error fallback
+	// diagnostics below (file write/close/rotate failures), independent of
+	// the user's logtimestamps setting, so those emergency messages stay
+	// diagnosable even when timestamp prefixes are disabled.
+	critTS := time.Now().Format(LogTimeFmt)
+
+	dest := s.GetLogDest()
+	filePath := s.GetLogFilePath()
+
+	if dest == LogStdout {
+		// Explicitly configured for the console (e.g. daemon -console mode
+		// with no TUI). Honor stdout as the user requested.
+		fmt.Println(logString)
+	} else if s.GetAlwaysOverride() {
+		// File logging was requested but a prior open/write/close/rotate
+		// failed and latched the override. Route to stderr — NOT stdout —
+		// so a TUI app running in raw mode + the alternate screen never has
+		// its terminal scrollback flooded (which balloons emulator memory).
+		// A launcher that redirects stderr to a file still captures these.
+		log.Print(logString)
+	} else if dest == LogDestFile && filePath != "" {
+		f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			s.SetAlwaysOverride(true)
+			log.Printf("[%v] [Critical] Exception occurred while writing log message to log file: %v\n", critTS, err)
+			log.Printf("[%v] [Critical] Dumping future log events to console!\n", critTS)
+			log.Print(logString)
+			return
+		}
+		defer func() {
+			if closeErr := f.Close(); closeErr != nil {
+				s.SetAlwaysOverride(true)
+				log.Printf("[%v] [Critical] Exception occurred while closing log file: %v\n", critTS, closeErr)
+			}
+		}()
+
+		if _, err := f.WriteString(logString + "\n"); err != nil {
+			s.SetAlwaysOverride(true)
+			log.Printf("[%v] [Critical] Exception occurred while writing log message to log file: %v\n", critTS, err)
+			log.Printf("[%v] [Critical] Dumping future log events to console!\n", critTS)
+			log.Print(logString)
+			return
+		}
+
+		fi, err := f.Stat()
+		if err == nil && fi.Size() > LogMaxSize {
+			prevFile := filePath + ".1"
+			if _, err := os.Stat(prevFile); err == nil {
+				if rmErr := os.Remove(prevFile); rmErr != nil {
+					s.SetAlwaysOverride(true)
+					log.Printf("[%v] [Critical] Exception occurred while rotating log file: %v\n", critTS, rmErr)
+				}
+			}
+			if renameErr := os.Rename(filePath, prevFile); renameErr != nil {
+				s.SetAlwaysOverride(true)
+				log.Printf("[%v] [Critical] Exception occurred while rotating log file: %v\n", critTS, renameErr)
+			}
+		}
+	} else if dest == LogCallback {
+		if callback := s.GetLogCallback(); callback != nil {
+			callback(logString)
+		}
+	}
+}
+
+// warnDropped emits a sink-level warning when queue overflow dropped lines.
+// It runs on the writer goroutine and writes directly (bypassing the queue)
+// so the warning cannot be dropped by the condition it reports.
+func (s *Logger) warnDropped() {
+	dropped := s.dropped.Load()
+	if dropped == 0 {
+		return
+	}
+	now := time.Now().UnixNano()
+	last := s.dropWarned.Load()
+	if now-last < int64(logDropWarnInterval) {
+		return
+	}
+	if !s.dropWarned.CompareAndSwap(last, now) {
+		return
+	}
+	s.writeSink(s.formatLine(fmt.Sprintf("%v log messages dropped because the log queue was full", dropped), LogWarning, time.Now(), false))
+}
+
+// Flush waits — bounded by LogFlushTimeout — for every line submitted before
+// the call to reach the sink. It returns false when the queue is full or the
+// writer is stuck on sink I/O, so callers can proceed without blocking.
+func (s *Logger) Flush() bool {
+	if s == nil {
+		return true
+	}
+	if s.closed.Load() {
+		return true
+	}
+	s.writerOnce.Do(s.startWriter)
+	done := make(chan struct{})
+	select {
+	case s.logCh <- logJob{done: done}:
+	default:
+		return false
+	}
+	select {
+	case <-done:
+		return true
+	case <-time.After(LogFlushTimeout):
+		return false
+	}
+}
+
+// Close stops the async writer after draining every queued line. Later log
+// calls fall back to the standard logger instead of blocking. Close blocks
+// until the writer exits; if the sink is wedged on I/O the caller is expected
+// to have already given up on those lines. Idempotent.
+func (s *Logger) Close() {
+	if s == nil {
+		return
+	}
+	if !s.closed.CompareAndSwap(false, true) {
+		return
+	}
+	s.writerOnce.Do(s.startWriter)
+	close(s.stopCh)
+	s.writerWG.Wait()
+}
+
+// DroppedCount reports how many log lines have been dropped because the
+// async writer's queue was full.
+func (s *Logger) DroppedCount() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.dropped.Load()
 }
 
 // Critical logs a critical message.

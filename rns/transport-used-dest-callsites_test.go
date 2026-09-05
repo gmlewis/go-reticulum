@@ -13,20 +13,40 @@ import (
 	"github.com/gmlewis/go-reticulum/rns/interfaces"
 )
 
-// localClientFakeInterface is a test-only Interface whose Type()/Name satisfy
-// TransportSystem.isLocalClientInterface ("LocalInterface" + a "Local shared
-// instance" name) without opening any real IPC channel, so tests can exercise
-// the local-client path-request branch without touching the network.
-type localClientFakeInterface struct {
-	dummyInterface
-}
-
-func (l *localClientFakeInterface) Type() string { return "LocalInterface" }
-
-// newLocalClientFake returns a fake interface that isLocalClientInterface
-// recognises as a local shared-instance client link.
-func newLocalClientFake() *localClientFakeInterface {
-	return &localClientFakeInterface{dummyInterface: dummyInterface{name: "Local shared instance"}}
+// realSpawnedLocalClient builds a genuine shared-instance spawned client pair
+// (a LocalServerInterface plus a LocalClientInterface that dialed it) and
+// returns the server-side spawned interface. Python
+// Transport.py:3018-3026 gates the local-client use-marking on the path
+// entry's receiving interface being a member of Transport.local_client_interfaces —
+// the shared instance's spawned clients — so the path-table fixture below must
+// carry a real spawned interface, not a name-shaped fake.
+func realSpawnedLocalClient(t *testing.T) interfaces.Interface {
+	t.Helper()
+	localPort := reserveTCPPort(t)
+	spawnedCh := make(chan interfaces.Interface, 1)
+	server, err := interfaces.NewLocalServerInterface("Local shared instance", "", localPort, func([]byte, interfaces.Interface) {})
+	if err != nil {
+		t.Fatalf("NewLocalServerInterface: %v", err)
+	}
+	t.Cleanup(func() { _ = server.Detach() })
+	server.SetOnClientConnected(func(c interfaces.Interface) {
+		select {
+		case spawnedCh <- c:
+		default:
+		}
+	})
+	client, err := interfaces.NewLocalClientInterface("Local shared instance", "", localPort, func([]byte, interfaces.Interface) {})
+	if err != nil {
+		t.Fatalf("NewLocalClientInterface: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Detach() })
+	select {
+	case spawned := <-spawnedCh:
+		return spawned
+	case <-time.After(5 * time.Second):
+		t.Fatal("server never accepted the spawned local client")
+		return nil
+	}
 }
 
 // useTimestampOf reads element 4 (the use-timestamp) of a known-destination
@@ -122,7 +142,7 @@ func TestPathRequestForLocalClientDestinationMarksUsed(t *testing.T) {
 	ts.pathTable[string(dest.Hash)] = &PathEntry{
 		Hops:       1,
 		NextHop:    nextHop,
-		Interface:  newLocalClientFake(),
+		Interface:  realSpawnedLocalClient(t),
 		Packet:     copyBytes(announce.Raw),
 		PacketHash: append([]byte(nil), announce.GetHash()...),
 		Expires:    time.Now().Add(time.Hour),
@@ -288,7 +308,3 @@ func TestPathRequestAnsweredFromCachedPathMarksUsed(t *testing.T) {
 		t.Fatalf("requestor sendCount = %v, want 1 (cached path response sent)", recvIface.sendCount)
 	}
 }
-
-// Compile-time check that the fake local-client interface satisfies the
-// interfaces.Interface contract used by the transport path.
-var _ interfaces.Interface = (*localClientFakeInterface)(nil)

@@ -71,12 +71,14 @@ func runPermsConnected(opts options, remoteURL string, stderr io.Writer, groupCl
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		_ = ret.Close()
+		logger.Close()
 		return 1
 	}
 
 	if err := client.connect(logger); err != nil {
 		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		_ = ret.Close()
+		logger.Close()
 		return 1
 	}
 	defer func() {

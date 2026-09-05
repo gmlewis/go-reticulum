@@ -10,9 +10,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/gmlewis/go-reticulum/rns"
 )
 
-func setupSignalHandler(cleanup func()) {
+func setupSignalHandler(logger *rns.Logger, cleanup func()) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
@@ -21,6 +23,11 @@ func setupSignalHandler(cleanup func()) {
 		fmt.Println("")
 		if cleanup != nil {
 			cleanup()
+		}
+		// The rns logger writes asynchronously; flush it before exiting so
+		// interrupt-time diagnostics are not silently lost.
+		if logger != nil {
+			logger.Close()
 		}
 		os.Exit(0)
 	}()

@@ -181,9 +181,14 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 	}
 
 	rt := newRuntime(opts)
+	// The rns logger writes asynchronously; flush it when run() returns so
+	// queued diagnostics are not silently lost.
+	defer rt.logger.Close()
 
 	if rt.opts.printIdentity {
 		if err := rt.printIdentity(); err != nil {
+			// Flush the async queue first (log.Fatalf skips deferred closes).
+			rt.logger.Flush()
 			log.Fatalf("gornsh: %v", err)
 		}
 		return 0
@@ -191,6 +196,8 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 
 	if rt.opts.listen {
 		if err := rt.doListen(); err != nil {
+			// Flush the async queue first (log.Fatalf skips deferred closes).
+			rt.logger.Flush()
 			log.Fatalf("gornsh: %v", err)
 		}
 		return 0
@@ -203,6 +210,8 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 
 	code, err := rt.doInitiate()
 	if err != nil {
+		// Flush the async queue first (log.Fatalf skips deferred closes).
+		rt.logger.Flush()
 		log.Fatalf("gornsh: %v", err)
 	}
 	return code

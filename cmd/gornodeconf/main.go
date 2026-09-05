@@ -41,6 +41,10 @@ func run(args []string) error {
 }
 
 func (rt cliRuntime) run(args []string) error {
+	// The rns logger writes asynchronously; flush it when run() returns so
+	// queued diagnostics are not silently lost before main exits.
+	defer rt.logger.Close()
+
 	if hasHelp(args) {
 		printHelp()
 		return nil

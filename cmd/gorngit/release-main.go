@@ -118,6 +118,8 @@ func runReleaseConnected(opts options, stderr io.Writer, fn func(*reticulumGitCl
 	if !ok {
 		return 1
 	}
+	// The rns logger writes asynchronously; flush it when the flow ends.
+	defer logger.Close()
 	defer func() {
 		if err := ret.Close(); err != nil {
 			logger.Warning("Could not close Reticulum: %v", err)
@@ -146,6 +148,8 @@ func runReleaseOffline(opts options, stderr io.Writer) int {
 	if !ok {
 		return 1
 	}
+	// The rns logger writes asynchronously; flush it when the flow ends.
+	defer logger.Close()
 	defer func() {
 		if err := ret.Close(); err != nil {
 			logger.Warning("Could not close Reticulum: %v", err)
@@ -181,6 +185,8 @@ func runReleaseCreate(opts options, stderr io.Writer) int {
 		if !ok {
 			return 1
 		}
+		// The rns logger writes asynchronously; flush it when the flow ends.
+		defer logger.Close()
 		defer func() {
 			if err := ret.Close(); err != nil {
 				logger.Warning("Could not close Reticulum: %v", err)
@@ -226,6 +232,7 @@ func prepareGitClientOffline(opts options, stderr io.Writer) (*reticulumGitClien
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		_ = ret.Close()
+		logger.Close()
 		return nil, nil, nil, false
 	}
 	return client, ret, logger, true

@@ -84,8 +84,14 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 
 	logger := rns.NewLogger()
 	app.logger = logger
+	// The rns logger writes asynchronously; flush it when run() returns so the
+	// daemon's final log lines are not silently lost.
+	defer logger.Close()
 	ret, err := app.programSetup()
 	if err != nil {
+		// Flush the async queue so the init diagnostics explaining the failure
+		// are not silently lost (log.Fatalf skips deferred closes).
+		logger.Flush()
 		log.Fatalf("Could not initialize Reticulum: %v\n", err)
 	}
 	defer func() {

@@ -42,6 +42,26 @@ func isAbstractUnixAddr(path string) bool {
 	return strings.HasPrefix(path, "@")
 }
 
+// IsSpawnedLocalClient reports whether iface is a server-accepted local client
+// interface of a shared instance — Python Transport.is_local_client_interface
+// (Transport.py:3155-3164): the interface has a parent_interface that is a
+// local shared instance. Only the shared instance's per-connection spawned
+// clients carry the parent pointer; a client process's own dialer interface
+// does not.
+func IsSpawnedLocalClient(iface Interface) bool {
+	lci, ok := iface.(*LocalClientInterface)
+	return ok && lci.parent != nil
+}
+
+// IsConnectedToSharedInstance reports whether iface is a client interface
+// connected to a local shared instance — Python
+// Transport.interface_to_shared_instance (Transport.py:3167-3171): the
+// initiator local client a client process dials the shared instance with.
+func IsConnectedToSharedInstance(iface Interface) bool {
+	lci, ok := iface.(*LocalClientInterface)
+	return ok && lci.isConnectedToSharedInstance
+}
+
 // LocalClientInterface establishes a high-bandwidth, low-latency IPC link to a
 // local Reticulum instance. It uses Unix domain sockets or loopback TCP to
 // proxy routing requests to the broader network.

@@ -1369,14 +1369,12 @@ func (ts *TransportSystem) AnnounceHandlers() []*AnnounceHandler {
 }
 
 func (ts *TransportSystem) isLocalClientInterface(iface interfaces.Interface) bool {
-	if iface == nil {
-		return false
-	}
-	// On Linux, local client interfaces are typically LocalClientInterface.
-	// We can check the type name or use an interface check.
-	// We check for both names used in the Go port and original Python implementation.
-	name := iface.Name()
-	return iface.Type() == "LocalInterface" && (strings.Contains(name, "Local Client") || strings.Contains(name, "Local shared instance"))
+	// Python Transport.is_local_client_interface (Transport.py:3155-3164):
+	// only the shared instance's spawned per-connection local clients count.
+	// A client process's own dialer interface to the shared instance is NOT a
+	// local client interface (Python's from_local_client is false there);
+	// the previous name-based sniffing conflated the two planes.
+	return interfaces.IsSpawnedLocalClient(iface)
 }
 
 func (ts *TransportSystem) isForLocalClient(p *Packet) bool {
@@ -5207,6 +5205,23 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 
 	packet.Hops++
 
+	// Hop-count spoofing for shared-instance planes (Python Transport.py
+	// :1496,1520-1525): the increment above models the wire arrival; the
+	// decrement undoes it so packets keep their wire hop count on the two
+	// shared-instance planes — a packet arriving from a spawned local client
+	// on a shared instance, or from the shared-instance interface on an
+	// attached client. Every hop-count comparison on these planes (path-table
+	// hops, forwarded raw[1] bytes, expected-hops and link-transport gates) is
+	// taken at Python's scale; without the decrement they all shift by one.
+	// The spawned-client case implies the shared instance has local clients
+	// (Python's `len(Transport.local_client_interfaces) > 0` gate): a spawned
+	// client's packet is itself the evidence that the instance has one.
+	if interfaces.IsSpawnedLocalClient(iface) {
+		packet.Hops--
+	} else if interfaces.IsConnectedToSharedInstance(iface) {
+		packet.Hops--
+	}
+
 	// Duplicate detection. Link-request proofs are exempt from remembering
 	// (Python Transport.py:1526-1545 sets remember_packet_hash=False for
 	// packet_type==PROOF && context==LRPROOF): their acceptance is gated
@@ -5359,6 +5374,18 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 		forLocalClientLink := packet.PacketType != PacketAnnounce && ts.isForLocalClientLink(packet)
 
 		if ts.Enabled() || fromLocalClient || forLocalClient || forLocalClientLink {
+			// Python Transport.py:1576-1582: a packet with no transport id
+			// that is destined for a local client gets ours re-inserted so the
+			// normal transport implementation can route it. Clients behind a
+			// shared instance spoof a 0-hop path entry and therefore emit
+			// HEADER_1 ("the destination looks directly reachable"); the
+			// shared instance is the one that must transport the packet.
+			// The re-insertion is logic-only: the remaining_hops == 0 branch
+			// below retransmits the received raw framing unchanged.
+			if packet.TransportID == nil && forLocalClient && ts.identity != nil {
+				packet.TransportID = copyBytes(ts.identity.Hash)
+			}
+
 			// If transport ID matches ours, we are the next hop
 			if packet.TransportID != nil && ts.identity != nil && bytes.Equal(packet.TransportID, ts.identity.Hash) {
 				ts.mu.Lock()

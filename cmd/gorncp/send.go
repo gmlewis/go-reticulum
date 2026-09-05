@@ -7,7 +7,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,20 +60,20 @@ func (a *appT) doSend(ts rns.Transport, destHashHex string, filePath string) {
 	timeoutSec := a.timeoutSec
 	destHash, err := parseDestinationHash(destHashHex)
 	if err != nil {
-		log.Fatalf("%v\n", err)
+		fatalf(a.logger, "%v\n", err)
 	}
 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		log.Fatalf("File not found\n")
+		fatalf(a.logger, "File not found\n")
 	}
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		log.Fatalf("Could not read file: %v\n", err)
+		fatalf(a.logger, "Could not read file: %v\n", err)
 	}
 
 	id, err := a.prepareIdentity(a.identityPath)
 	if err != nil {
-		log.Fatal(err)
+		fatal(a.logger, err)
 	}
 
 	remoteID := rns.RecallIdentity(ts, destHash)
@@ -83,7 +82,7 @@ func (a *appT) doSend(ts rns.Transport, destHashHex string, filePath string) {
 			fmt.Printf("Path to <%x> requested  ", destHash)
 		}
 		if err := ts.RequestPath(destHash); err != nil {
-			log.Fatalf("Could not request path to <%x>: %v\n", destHash, err)
+			fatalf(a.logger, "Could not request path to <%x>: %v\n", destHash, err)
 		}
 
 		i := 0
@@ -97,7 +96,7 @@ func (a *appT) doSend(ts rns.Transport, destHashHex string, filePath string) {
 		}
 
 		if !ts.HasPath(destHash) {
-			log.Fatalf("\r%v\rPath %q not found\n", strings.Repeat(" ", 60), destHashHex)
+			fatalf(a.logger, "\r%v\rPath %q not found\n", strings.Repeat(" ", 60), destHashHex)
 		}
 		if !silent {
 			fmt.Printf("\b\b \n")
@@ -107,7 +106,7 @@ func (a *appT) doSend(ts rns.Transport, destHashHex string, filePath string) {
 
 	remoteDest, err := rns.NewDestination(ts, remoteID, rns.DestinationOut, rns.DestinationSingle, AppName, "receive")
 	if err != nil {
-		log.Fatalf("Could not create destination: %v\n", err)
+		fatalf(a.logger, "Could not create destination: %v\n", err)
 	}
 
 	if !silent {
@@ -115,12 +114,12 @@ func (a *appT) doSend(ts rns.Transport, destHashHex string, filePath string) {
 	}
 	link, err := rns.NewLink(ts, remoteDest)
 	if err != nil {
-		log.Fatalf("Could not create link: %v\n", err)
+		fatalf(a.logger, "Could not create link: %v\n", err)
 	}
 
 	var activeResource *rns.Resource
 	activeLink := link
-	setupSignalHandler(&activeResource, &activeLink)
+	setupSignalHandler(a.logger, &activeResource, &activeLink)
 
 	established := make(chan bool, 1)
 	link.SetLinkEstablishedCallback(func(l *rns.Link) {
@@ -128,7 +127,7 @@ func (a *appT) doSend(ts rns.Transport, destHashHex string, filePath string) {
 	})
 
 	if err := link.Establish(); err != nil {
-		log.Fatalf("Could not establish link: %v\n", err)
+		fatalf(a.logger, "Could not establish link: %v\n", err)
 	}
 
 	i := 0
@@ -148,14 +147,14 @@ func (a *appT) doSend(ts rns.Transport, destHashHex string, filePath string) {
 				i = (i + 1) % len(spinnerSymbols)
 			}
 			if time.Now().After(linkTimeout) {
-				log.Fatalf("\r%v\rLink establishment timed out\n", strings.Repeat(" ", 60))
+				fatalf(a.logger, "\r%v\rLink establishment timed out\n", strings.Repeat(" ", 60))
 			}
 		}
 	}
 established:
 
 	if err := link.Identify(id); err != nil {
-		log.Fatalf("Could not identify local node on link: %v\n", err)
+		fatalf(a.logger, "Could not identify local node on link: %v\n", err)
 	}
 
 	metadata := map[string][]byte{
@@ -167,7 +166,7 @@ established:
 		Metadata:     metadata,
 	})
 	if err != nil {
-		log.Fatalf("Could not create resource: %v\n", err)
+		fatalf(a.logger, "Could not create resource: %v\n", err)
 	}
 	activeResource = res
 
@@ -221,7 +220,7 @@ established:
 		fmt.Printf("Advertising file resource  ")
 	}
 	if err := res.Advertise(); err != nil {
-		log.Fatalf("Could not advertise resource: %v\n", err)
+		fatalf(a.logger, "Could not advertise resource: %v\n", err)
 	}
 
 	start := time.Now()
@@ -257,7 +256,7 @@ established:
 			i = (i + 1) % len(spinnerSymbols)
 		}
 	}); err != nil {
-		log.Fatalf("\n%v", err)
+		fatalf(a.logger, "\n%v", err)
 	}
 
 	if !silent {

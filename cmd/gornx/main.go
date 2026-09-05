@@ -89,21 +89,37 @@ func main() {
 		log.Fatal(err)
 	}
 
+	rt := newRuntime(app)
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sigCh
 		fmt.Println("")
+		// The rns logger writes asynchronously; flush it before exiting so
+		// interrupt-time diagnostics are not silently lost.
+		rt.logger.Close()
 		os.Exit(0)
 	}()
 
-	rt := newRuntime(app)
 	rt.run()
+	// The rns logger writes asynchronously; flush it before exiting so queued
+	// diagnostics are not silently lost.
+	rt.logger.Close()
 	select {
 	case code := <-rt.exitCh:
 		os.Exit(code)
 	default:
 	}
+}
+
+// fatalf flushes the async rns log queue so queued transport diagnostics
+// reach the sink, then exits via log.Fatalf.
+func fatalf(logger *rns.Logger, format string, args ...any) {
+	if logger != nil {
+		logger.Flush()
+	}
+	log.Fatalf(format, args...)
 }
 
 func (rt *runtimeT) run() {
@@ -140,7 +156,7 @@ func (rt *runtimeT) run() {
 	ts := rns.NewTransportSystem(logger)
 	ret, err := rns.NewReticulumWithLogger(ts, app.configDir, logger)
 	if err != nil {
-		log.Fatalf("Could not initialize Reticulum: %v\n", err)
+		fatalf(rt.logger, "Could not initialize Reticulum: %v\n", err)
 	}
 	defer func() {
 		if err := ret.Close(); err != nil {
@@ -180,16 +196,16 @@ func (rt *runtimeT) prepareIdentity(idPath string) *rns.Identity {
 	if _, err := os.Stat(idPath); err == nil {
 		id, err = rns.FromFile(idPath, logger)
 		if err != nil {
-			log.Fatalf("Could not load identity: %v\n", err)
+			fatalf(rt.logger, "Could not load identity: %v\n", err)
 		}
 	} else {
 		logger.Info("No valid saved identity found, creating new...")
 		id, _ = rns.NewIdentity(true, logger)
 		if err := os.MkdirAll(filepath.Dir(idPath), 0o700); err != nil {
-			log.Fatalf("Could not create identities directory: %v\n", err)
+			fatalf(rt.logger, "Could not create identities directory: %v\n", err)
 		}
 		if err := id.ToFile(idPath); err != nil {
-			log.Fatalf("Could not save identity %q: %v\n", idPath, err)
+			fatalf(rt.logger, "Could not save identity %q: %v\n", idPath, err)
 		}
 	}
 	return id
@@ -242,7 +258,7 @@ func (rt *runtimeT) doListen(ts rns.Transport) {
 
 	dest, err := rns.NewDestination(ts, id, rns.DestinationIn, rns.DestinationSingle, AppName, "execute")
 	if err != nil {
-		log.Fatalf("Could not create destination: %v\n", err)
+		fatalf(rt.logger, "Could not create destination: %v\n", err)
 	}
 
 	if app.printIdentity {
@@ -492,7 +508,7 @@ func (rt *runtimeT) doExecute(ts rns.Transport, destHashHex string, command stri
 
 	destHash, err := rns.HexToBytes(destHashHex)
 	if err != nil {
-		log.Fatalf("Invalid destination hash %q: %v\n", destHashHex, err)
+		fatalf(rt.logger, "Invalid destination hash %q: %v\n", destHashHex, err)
 	}
 
 	id := rt.prepareIdentity(app.identityPath)
@@ -500,7 +516,7 @@ func (rt *runtimeT) doExecute(ts rns.Transport, destHashHex string, command stri
 	remoteID := rns.RecallIdentity(ts, destHash)
 	if remoteID == nil {
 		if err := ts.RequestPath(destHash); err != nil {
-			log.Fatalf("Could not request path to %v: %v\n", rns.PrettyHexRep(destHash), err)
+			fatalf(rt.logger, "Could not request path to %v: %v\n", rns.PrettyHexRep(destHash), err)
 		}
 		// Wait for path
 		deadline := time.Now().Add(time.Duration(app.timeout * float64(time.Second)))
@@ -514,17 +530,17 @@ func (rt *runtimeT) doExecute(ts rns.Transport, destHashHex string, command stri
 	}
 
 	if remoteID == nil {
-		log.Fatalf("Could not recall identity for %v\n", rns.PrettyHexRep(destHash))
+		fatalf(rt.logger, "Could not recall identity for %v\n", rns.PrettyHexRep(destHash))
 	}
 
 	dest, err := rns.NewDestination(ts, remoteID, rns.DestinationOut, rns.DestinationSingle, AppName, "execute")
 	if err != nil {
-		log.Fatalf("Could not create destination: %v\n", err)
+		fatalf(rt.logger, "Could not create destination: %v\n", err)
 	}
 
 	link, err := rns.NewLink(ts, dest)
 	if err != nil {
-		log.Fatalf("Could not establish link to %v: %v\n", rns.PrettyHexRep(destHash), err)
+		fatalf(rt.logger, "Could not establish link to %v: %v\n", rns.PrettyHexRep(destHash), err)
 	}
 
 	linkEstablished := make(chan struct{})
@@ -534,7 +550,7 @@ func (rt *runtimeT) doExecute(ts rns.Transport, destHashHex string, command stri
 	})
 
 	if err := link.Establish(); err != nil {
-		log.Fatalf("Could not start link establishment: %v\n", err)
+		fatalf(rt.logger, "Could not start link establishment: %v\n", err)
 	}
 
 	// Wait for link establishment
@@ -542,7 +558,7 @@ func (rt *runtimeT) doExecute(ts rns.Transport, destHashHex string, command stri
 	case <-linkEstablished:
 		// OK
 	case <-time.After(time.Duration(app.timeout * float64(time.Second))):
-		log.Fatalf("Link establishment timed out\n")
+		fatalf(rt.logger, "Link establishment timed out\n")
 	}
 
 	if !app.noID {
@@ -570,7 +586,7 @@ func (rt *runtimeT) doExecute(ts rns.Transport, destHashHex string, command stri
 		}
 	})
 	if err != nil {
-		log.Fatalf("Could not send request: %v\n", err)
+		fatalf(rt.logger, "Could not send request: %v\n", err)
 	}
 
 	resultTimeout := time.Duration((app.timeout + 10.0) * float64(time.Second))
@@ -599,7 +615,7 @@ func (rt *runtimeT) doExecute(ts rns.Transport, destHashHex string, command stri
 			return
 		}
 	case <-time.After(time.Duration(app.timeout * float64(time.Second))):
-		log.Fatalf("Initiator timed out waiting for response\n")
+		fatalf(rt.logger, "Initiator timed out waiting for response\n")
 	}
 }
 
@@ -689,7 +705,7 @@ func (rt *runtimeT) doInteractive(ts rns.Transport, destHashHex string) {
 
 	destHash, err := rns.HexToBytes(destHashHex)
 	if err != nil {
-		log.Fatalf("Invalid destination hash %q: %v\n", destHashHex, err)
+		fatalf(rt.logger, "Invalid destination hash %q: %v\n", destHashHex, err)
 	}
 
 	id := rt.prepareIdentity(app.identityPath)
@@ -697,7 +713,7 @@ func (rt *runtimeT) doInteractive(ts rns.Transport, destHashHex string) {
 	remoteID := rns.RecallIdentity(ts, destHash)
 	if remoteID == nil {
 		if err := ts.RequestPath(destHash); err != nil {
-			log.Fatalf("Could not request path to %v: %v\n", rns.PrettyHexRep(destHash), err)
+			fatalf(rt.logger, "Could not request path to %v: %v\n", rns.PrettyHexRep(destHash), err)
 		}
 		// Wait for path
 		deadline := time.Now().Add(time.Duration(app.timeout * float64(time.Second)))
@@ -711,17 +727,17 @@ func (rt *runtimeT) doInteractive(ts rns.Transport, destHashHex string) {
 	}
 
 	if remoteID == nil {
-		log.Fatalf("Could not recall identity for %v\n", rns.PrettyHexRep(destHash))
+		fatalf(rt.logger, "Could not recall identity for %v\n", rns.PrettyHexRep(destHash))
 	}
 
 	dest, err := rns.NewDestination(ts, remoteID, rns.DestinationOut, rns.DestinationSingle, AppName, "execute")
 	if err != nil {
-		log.Fatalf("Could not create destination: %v\n", err)
+		fatalf(rt.logger, "Could not create destination: %v\n", err)
 	}
 
 	link, err := rns.NewLink(ts, dest)
 	if err != nil {
-		log.Fatalf("Could not establish link to %v: %v\n", rns.PrettyHexRep(destHash), err)
+		fatalf(rt.logger, "Could not establish link to %v: %v\n", rns.PrettyHexRep(destHash), err)
 	}
 
 	linkEstablished := make(chan struct{})
@@ -731,7 +747,7 @@ func (rt *runtimeT) doInteractive(ts rns.Transport, destHashHex string) {
 	})
 
 	if err := link.Establish(); err != nil {
-		log.Fatalf("Could not start link establishment: %v\n", err)
+		fatalf(rt.logger, "Could not start link establishment: %v\n", err)
 	}
 
 	// Wait for link establishment
@@ -739,7 +755,7 @@ func (rt *runtimeT) doInteractive(ts rns.Transport, destHashHex string) {
 	case <-linkEstablished:
 		// OK
 	case <-time.After(time.Duration(app.timeout * float64(time.Second))):
-		log.Fatalf("Link establishment timed out\n")
+		fatalf(rt.logger, "Link establishment timed out\n")
 	}
 
 	if !app.noID {

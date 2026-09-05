@@ -7,7 +7,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -115,16 +114,16 @@ func (a *appT) doListen(ts rns.Transport) {
 		var err error
 		id, err = rns.NewIdentity(true, logger)
 		if err != nil {
-			log.Fatalf("Could not create new identity: %v\n", err)
+			fatalf(a.logger, "Could not create new identity: %v\n", err)
 		}
 		if err := id.ToFile(idPath); err != nil {
-			log.Fatalf("Could not persist identity %q: %v\n", idPath, err)
+			fatalf(a.logger, "Could not persist identity %q: %v\n", idPath, err)
 		}
 	}
 
 	dest, err := rns.NewDestination(ts, id, rns.DestinationIn, rns.DestinationSingle, AppName, "receive")
 	if err != nil {
-		log.Fatalf("Could not create destination: %v\n", err)
+		fatalf(a.logger, "Could not create destination: %v\n", err)
 	}
 
 	// Build allowed identity hashes list
@@ -176,11 +175,11 @@ func (a *appT) doListen(ts rns.Transport) {
 	// Validate and build allowed identity hashes
 	for _, a := range allowed {
 		if len(a) != destLen {
-			log.Fatalf("Allowed destination length is invalid, must be %v hexadecimal characters (%v bytes).\n", destLen, destLen/2)
+			fatalf(logger, "Allowed destination length is invalid, must be %v hexadecimal characters (%v bytes).\n", destLen, destLen/2)
 		}
 		h, err := rns.HexToBytes(a)
 		if err != nil {
-			log.Fatalf("Invalid destination entered. Check your input.\n")
+			fatalf(logger, "Invalid destination entered. Check your input.\n")
 		}
 		if h != nil {
 			allowedIdentityHashes = append(allowedIdentityHashes, h)
@@ -266,7 +265,7 @@ func (a *appT) doListen(ts rns.Transport) {
 			}
 		})
 		if err := l.SetResourceStrategy(rns.AcceptApp); err != nil {
-			log.Fatalf("l.SetResourceStrategy: %v", err)
+			fatalf(a.logger, "l.SetResourceStrategy: %v", err)
 		}
 		l.SetResourceCallback(func(adv *rns.ResourceAdvertisement) bool {
 			senderIdentity := l.GetRemoteIdentity()

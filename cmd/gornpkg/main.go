@@ -84,13 +84,23 @@ func main() {
 		log.Fatal(err)
 	}
 
+	rt := newRuntime(app)
+
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sig
 		fmt.Println()
+		// The rns logger writes asynchronously; flush it before exiting so
+		// interrupt-time diagnostics are not silently lost.
+		rt.logger.Close()
 		os.Exit(0)
 	}()
 
-	os.Exit(newRuntime(app).run())
+	code := rt.run()
+	// The rns logger writes asynchronously; flush it before exiting so queued
+	// diagnostics (including the "Could not initialize Reticulum" error path)
+	// are not silently lost.
+	rt.logger.Close()
+	os.Exit(code)
 }

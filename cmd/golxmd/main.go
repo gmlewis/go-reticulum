@@ -68,7 +68,21 @@ func (c *clientT) exit(code int) {
 		c.exitFn(code)
 		return
 	}
+	// The rns logger writes asynchronously; flush it before exiting so the
+	// error diagnostics logged just before this call are not silently lost.
+	if c != nil {
+		c.logger.Close()
+	}
 	os.Exit(code)
+}
+
+// fatalf flushes the async rns log queue so queued transport diagnostics
+// reach the sink, then exits via log.Fatalf.
+func fatalf(logger *rns.Logger, format string, args ...any) {
+	if logger != nil {
+		logger.Flush()
+	}
+	log.Fatalf(format, args...)
 }
 
 func main() {
@@ -80,7 +94,11 @@ func main() {
 		}
 		log.Fatal(err)
 	}
-	newRuntime(app).run()
+	rt := newRuntime(app)
+	rt.run()
+	// The rns logger writes asynchronously; flush it before main falls off the
+	// end so the daemon's final log lines are not silently lost.
+	rt.logger.Close()
 }
 
 func newRuntime(app *appT) *runtimeT {
@@ -134,13 +152,13 @@ func (r *runtimeT) run() {
 
 	a.configDir = resolveConfigDir(a.configDir)
 	if err := ensureConfig(a.configDir); err != nil {
-		log.Fatalf("ensure config: %v", err)
+		fatalf(r.logger, "ensure config: %v", err)
 	}
 
 	var err error
 	c.ac, err = c.loadConfig(a.configDir)
 	if err != nil {
-		log.Fatalf("load config: %v", err)
+		fatalf(r.logger, "load config: %v", err)
 	}
 
 	r.logger.SetLogLevel(resolveLogLevel(c.ac.LogLevel, int(a.verbosity), int(a.quietness)))
@@ -155,19 +173,19 @@ func (r *runtimeT) run() {
 	r.logger.Verbose("Configuration loaded from %v", a.configDir)
 
 	r.logger.Info("Substantiating Reticulum...")
-	if _, err := rns.NewReticulum(c.ts, a.rnsConfigDir); err != nil {
-		log.Fatalf("initialize Reticulum: %v", err)
+	if _, err := rns.NewReticulumWithLogger(c.ts, a.rnsConfigDir, r.logger); err != nil {
+		fatalf(r.logger, "initialize Reticulum: %v", err)
 	}
 
 	var storagePath, identityPath string
 	resolvedStorage, resolvedIdentityPath, err := c.resolvePaths(storagePath, identityPath, a.configDir)
 	if err != nil {
-		log.Fatalf("resolve paths: %v", err)
+		fatalf(r.logger, "resolve paths: %v", err)
 	}
 
 	identity, err := c.loadOrCreateIdentity(resolvedIdentityPath)
 	if err != nil {
-		log.Fatalf("load identity: %v", err)
+		fatalf(r.logger, "load identity: %v", err)
 	}
 	c.identity = identity
 
@@ -199,7 +217,7 @@ func (r *runtimeT) run() {
 		MaxInboundSyncs:            c.ac.MaxInboundSyncs,
 	})
 	if err != nil {
-		log.Fatalf("create LXMF router: %v", err)
+		fatalf(r.logger, "create LXMF router: %v", err)
 	}
 
 	router.RegisterDeliveryCallback(c.lxmfDelivery)
@@ -210,7 +228,7 @@ func (r *runtimeT) run() {
 
 	lxmfDestination, err := router.RegisterDeliveryIdentity(identity, c.ac.DisplayName, c.ac.PeerStampCost)
 	if err != nil {
-		log.Fatalf("register delivery destination: %v", err)
+		fatalf(r.logger, "register delivery destination: %v", err)
 	}
 	r.logger.Info("LXMF Router ready to receive on %v", rns.PrettyHex(lxmfDestination.Hash))
 
@@ -233,7 +251,7 @@ func (r *runtimeT) run() {
 		router.EnablePropagation()
 		propDest, err := router.RegisterPropagationDestination()
 		if err != nil {
-			log.Fatalf("register propagation destination: %v", err)
+			fatalf(r.logger, "register propagation destination: %v", err)
 		}
 		r.logger.Info("LXMF Propagation Node started on %v", rns.PrettyHex(propDest.Hash))
 
@@ -244,14 +262,14 @@ func (r *runtimeT) run() {
 			}
 		}
 		if _, err := router.RegisterPropagationControlDestination(allowed); err != nil {
-			log.Fatalf("register control destination: %v", err)
+			fatalf(r.logger, "register control destination: %v", err)
 		}
 	}
 
 	runtimeStatePath := filepath.Join(resolvedStorage, "lxmf", "golxmd-state.json")
 	c.tr, err = newRuntimeTracker(runtimeStatePath)
 	if err != nil {
-		log.Fatalf("initialize runtime tracker: %v", err)
+		fatalf(r.logger, "initialize runtime tracker: %v", err)
 	}
 	if c.tr.WasUncleanShutdown() {
 		log.Printf("golxmd detected unclean previous shutdown; entering recovery-aware startup")

@@ -220,7 +220,13 @@ func main() {
 		}
 		log.Fatalf("Error: %v\n", err)
 	}
-	os.Exit(newRuntime(app).run())
+	rt := newRuntime(app)
+	code := rt.run()
+	// The logger writes asynchronously; flush it before exiting so early-return
+	// paths (e.g. -m/-M import, which never create a Reticulum instance and so
+	// never hit its deferred Close) still emit their output.
+	rt.logger.Close()
+	os.Exit(code)
 }
 
 func (rt *runtimeT) run() int {

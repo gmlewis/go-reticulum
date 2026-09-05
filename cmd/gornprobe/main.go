@@ -45,6 +45,15 @@ func main() {
 	os.Exit(run(os.Args[1:]))
 }
 
+// fatalf flushes the async rns log queue so queued transport diagnostics
+// reach the sink, then exits via log.Fatalf.
+func fatalf(logger *rns.Logger, format string, args ...any) {
+	if logger != nil {
+		logger.Flush()
+	}
+	log.Fatalf(format, args...)
+}
+
 func run(args []string) int {
 	app, err := parseFlags(args, os.Stderr)
 	if err != nil {
@@ -54,6 +63,9 @@ func run(args []string) int {
 		log.Fatal(err)
 	}
 	rt := newRuntime(app)
+	// The rns logger writes asynchronously; flush it before exiting so queued
+	// diagnostics are not silently lost.
+	defer rt.logger.Close()
 	return rt.run()
 }
 
@@ -71,7 +83,7 @@ func (rt *runtimeT) run() int {
 	}
 
 	cleanup := func() {}
-	setupSignalHandler(func() {
+	setupSignalHandler(logger, func() {
 		cleanup()
 	})
 
@@ -99,7 +111,7 @@ func (rt *runtimeT) run() int {
 	ts := rns.NewTransportSystem(logger)
 	ret, err := rns.NewReticulumWithLogger(ts, app.configDir, logger)
 	if err != nil {
-		log.Fatalf("Could not initialize Reticulum: %v\n", err)
+		fatalf(logger, "Could not initialize Reticulum: %v\n", err)
 	}
 	cleanup = func() {
 		if err := ret.Close(); err != nil {
@@ -112,7 +124,7 @@ func (rt *runtimeT) run() int {
 
 	firstHopTimeout, err := ret.FirstHopTimeout(destHash)
 	if err != nil {
-		log.Fatalf("Could not determine first hop timeout: %v\n", err)
+		fatalf(logger, "Could not determine first hop timeout: %v\n", err)
 	}
 	probeTimeout := probeTimeoutSeconds(app.timeout, firstHopTimeout)
 
@@ -120,7 +132,7 @@ func (rt *runtimeT) run() int {
 		if err == errPathRequestTimedOut {
 			return 1
 		}
-		log.Fatal(err)
+		fatalf(logger, "%v", err)
 	}
 
 	remoteID := rns.RecallIdentity(ts, destHash)
@@ -128,7 +140,7 @@ func (rt *runtimeT) run() int {
 
 	remoteDest, err := rns.NewDestination(ts, remoteID, rns.DestinationOut, rns.DestinationSingle, appName, aspects...)
 	if err != nil {
-		log.Fatalf("Could not create destination: %v\n", err)
+		fatalf(logger, "Could not create destination: %v\n", err)
 	}
 
 	sent := 0
@@ -160,7 +172,7 @@ func (rt *runtimeT) run() int {
 
 		startTime := time.Now()
 		if err := p.Send(); err != nil {
-			log.Fatalf("Error sending probe: %v\n", err)
+			fatalf(logger, "Error sending probe: %v\n", err)
 		}
 		sent++
 

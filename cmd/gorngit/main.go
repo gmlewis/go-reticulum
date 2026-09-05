@@ -111,6 +111,9 @@ func runNode(opts options, stdout, stderr io.Writer) int {
 	}
 
 	logger := rns.NewLogger()
+	// The rns logger writes asynchronously; flush it when the flow ends so
+	// final lines (e.g. the node's "Shutting down" notice) are not lost.
+	defer logger.Close()
 	if opts.quiet > 0 {
 		logger.SetLogLevel(rns.LogCritical)
 	} else if opts.verbose > 0 {
@@ -183,6 +186,9 @@ func runCreate(opts options, stdout, stderr io.Writer) int {
 	}
 
 	logger := rns.NewLogger()
+	// The rns logger writes asynchronously; flush it when the flow ends so
+	// queued diagnostics are not silently lost.
+	defer logger.Close()
 	logger.SetLogLevel(rns.LogCritical)
 
 	ts := rns.NewTransportSystem(logger)
@@ -237,6 +243,8 @@ func runFork(opts options, stdout, stderr io.Writer) int {
 	if !ok {
 		return 1
 	}
+	// The rns logger writes asynchronously; flush it when the flow ends.
+	defer logger.Close()
 	defer func() {
 		if err := ret.Close(); err != nil {
 			logger.Warning("Could not close Reticulum: %v", err)
@@ -272,6 +280,8 @@ func runMirror(opts options, stdout, stderr io.Writer) int {
 	if !ok {
 		return 1
 	}
+	// The rns logger writes asynchronously; flush it when the flow ends.
+	defer logger.Close()
 	defer func() {
 		if err := ret.Close(); err != nil {
 			logger.Warning("Could not close Reticulum: %v", err)
@@ -303,6 +313,8 @@ func runSync(opts options, stdout, stderr io.Writer) int {
 	if !ok {
 		return 1
 	}
+	// The rns logger writes asynchronously; flush it when the flow ends.
+	defer logger.Close()
 	defer func() {
 		if err := ret.Close(); err != nil {
 			logger.Warning("Could not close Reticulum: %v", err)
@@ -344,12 +356,14 @@ func prepareGitClient(opts options, remoteURL string, stderr io.Writer) (*reticu
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		_ = ret.Close()
+		logger.Close()
 		return nil, nil, nil, false
 	}
 
 	if err := client.connect(logger); err != nil {
 		_, _ = fmt.Fprintf(stderr, "%s\n", err)
 		_ = ret.Close()
+		logger.Close()
 		return nil, nil, nil, false
 	}
 	return client, ret, logger, true

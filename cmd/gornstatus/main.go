@@ -52,6 +52,9 @@ func (rt *runtimeT) run(nameFilter string) int {
 		ts := rns.NewTransportSystem(logger)
 		ret, err := rns.NewReticulumWithLogger(ts, app.configDir, logger)
 		if err != nil {
+			// The rns logger writes asynchronously; flush the queue so the
+			// init diagnostics explaining the failure are not silently lost.
+			logger.Flush()
 			log.Fatal("No shared RNS instance available to get status from")
 		}
 		defer func() {
@@ -90,14 +93,6 @@ func (rt *runtimeT) run(nameFilter string) int {
 func main() {
 	log.SetFlags(0)
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-sig
-		fmt.Println()
-		os.Exit(0)
-	}()
-
 	app, args, err := parseFlags(os.Args[1:], os.Stdout)
 	if err != nil {
 		if err == utils.ErrHelp {
@@ -109,5 +104,22 @@ func main() {
 	if len(args) > 0 {
 		nameFilter = args[0]
 	}
-	os.Exit(newRuntime(app).run(nameFilter))
+	rt := newRuntime(app)
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sig
+		fmt.Println()
+		// The rns logger writes asynchronously; flush it before exiting so
+		// interrupt-time diagnostics are not silently lost.
+		rt.logger.Close()
+		os.Exit(0)
+	}()
+
+	code := rt.run(nameFilter)
+	// The rns logger writes asynchronously; flush it before exiting so queued
+	// diagnostics are not silently lost.
+	rt.logger.Close()
+	os.Exit(code)
 }

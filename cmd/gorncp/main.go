@@ -147,11 +147,32 @@ func main() {
 
 	run(app)
 
+	// The rns logger writes asynchronously; flush it before exiting so queued
+	// transport diagnostics are not silently lost on any exit path.
+	app.getLogger().Close()
+
 	select {
 	case code := <-app.exitCh:
 		os.Exit(code)
 	default:
 	}
+}
+
+// fatal flushes the async rns log queue so queued transport diagnostics
+// reach the sink, then exits via the stdlib logger.
+func fatal(logger *rns.Logger, v ...any) {
+	if logger != nil {
+		logger.Flush()
+	}
+	log.Fatal(v...)
+}
+
+// fatalf is the formatted variant of fatal.
+func fatalf(logger *rns.Logger, format string, args ...any) {
+	if logger != nil {
+		logger.Flush()
+	}
+	log.Fatalf(format, args...)
 }
 
 func run(app *appT) {
@@ -169,7 +190,7 @@ func run(app *appT) {
 	ts := rns.NewTransportSystem(logger)
 	ret, err := rns.NewReticulumWithLogger(ts, app.configDir, logger)
 	if err != nil {
-		log.Fatalf("Could not initialize Reticulum: %v", err)
+		fatalf(logger, "Could not initialize Reticulum: %v", err)
 	}
 	defer func() {
 		if err := ret.Close(); err != nil {
@@ -188,7 +209,7 @@ func run(app *appT) {
 	} else if app.fetchMode {
 		if len(app.args) < 2 {
 			app.usage(os.Stderr)
-			log.Fatal("destination and file must be specified")
+			fatal(app.logger, "destination and file must be specified")
 		}
 		destHashHex := app.args[0]
 		fileName := app.args[1]
@@ -196,7 +217,7 @@ func run(app *appT) {
 	} else {
 		if len(app.args) < 2 {
 			app.usage(os.Stderr)
-			log.Fatal("destination and file must be specified")
+			fatal(app.logger, "destination and file must be specified")
 		}
 		destHashHex := app.args[0]
 		filePath := app.args[1]

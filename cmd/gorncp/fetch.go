@@ -7,7 +7,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -65,21 +64,21 @@ func (a *appT) doFetch(ts rns.Transport, destHashHex string, fileName string) {
 	timeoutSec := a.timeoutSec
 	id, err := a.prepareIdentity(a.identityPath)
 	if err != nil {
-		log.Fatal(err)
+		fatal(a.logger, err)
 	}
 	_ = a.noCompress
 	_ = a.phyRates
 
 	destHash, err := parseDestinationHash(destHashHex)
 	if err != nil {
-		log.Fatalf("%v\n", err)
+		fatalf(a.logger, "%v\n", err)
 	}
 
 	remoteID := rns.RecallIdentity(ts, destHash)
 	if remoteID == nil {
 		fmt.Printf("Path to <%x> requested  ", destHash)
 		if err := ts.RequestPath(destHash); err != nil {
-			log.Fatalf("Could not request path to <%x>: %v\n", destHash, err)
+			fatalf(a.logger, "Could not request path to <%x>: %v\n", destHash, err)
 		}
 
 		i := 0
@@ -92,14 +91,14 @@ func (a *appT) doFetch(ts rns.Transport, destHashHex string, fileName string) {
 		}
 
 		if !ts.HasPath(destHash) {
-			log.Fatalf("\r%v\rPath %q not found\n", strings.Repeat(" ", 60), destHashHex)
+			fatalf(a.logger, "\r%v\rPath %q not found\n", strings.Repeat(" ", 60), destHashHex)
 		}
 		fmt.Printf("\b\b \n")
 		remoteID = rns.RecallIdentity(ts, destHash)
 	}
 	remoteDest, err := rns.NewDestination(ts, remoteID, rns.DestinationOut, rns.DestinationSingle, AppName, "receive")
 	if err != nil {
-		log.Fatalf("Could not create destination: %v\n", err)
+		fatalf(a.logger, "Could not create destination: %v\n", err)
 	}
 
 	if !silent {
@@ -107,12 +106,12 @@ func (a *appT) doFetch(ts rns.Transport, destHashHex string, fileName string) {
 	}
 	link, err := rns.NewLink(ts, remoteDest)
 	if err != nil {
-		log.Fatalf("Could not create link: %v\n", err)
+		fatalf(a.logger, "Could not create link: %v\n", err)
 	}
 
 	var activeResource *rns.Resource
 	activeLink := link
-	setupSignalHandler(&activeResource, &activeLink)
+	setupSignalHandler(a.logger, &activeResource, &activeLink)
 
 	established := make(chan bool, 1)
 	link.SetLinkEstablishedCallback(func(l *rns.Link) {
@@ -120,7 +119,7 @@ func (a *appT) doFetch(ts rns.Transport, destHashHex string, fileName string) {
 	})
 
 	if err := link.Establish(); err != nil {
-		log.Fatalf("Could not establish link: %v\n", err)
+		fatalf(a.logger, "Could not establish link: %v\n", err)
 	}
 
 	i := 0
@@ -138,21 +137,21 @@ func (a *appT) doFetch(ts rns.Transport, destHashHex string, fileName string) {
 				i = (i + 1) % len(spinnerSymbols)
 			}
 			if time.Now().After(linkTimeout) {
-				log.Fatalf("\r%v\rLink establishment timed out\n", strings.Repeat(" ", 60))
+				fatalf(a.logger, "\r%v\rLink establishment timed out\n", strings.Repeat(" ", 60))
 			}
 		}
 	}
 established:
 
 	if err := link.Identify(id); err != nil {
-		log.Fatalf("Could not identify local node on link: %v\n", err)
+		fatalf(a.logger, "Could not identify local node on link: %v\n", err)
 	}
 
 	requestResolved := make(chan bool, 1)
 	resourceStarted := make(chan *rns.Resource, 1)
 
 	if err := link.SetResourceStrategy(rns.AcceptAll); err != nil {
-		log.Fatalf("Could not set resource strategy: %v\n", err)
+		fatalf(a.logger, "Could not set resource strategy: %v\n", err)
 	}
 	link.SetResourceCallback(func(adv *rns.ResourceAdvertisement) bool {
 		return true
@@ -210,7 +209,7 @@ established:
 	}, nil, nil, 0, 0)
 
 	if err != nil {
-		log.Fatalf("Request failed: %v\n", err)
+		fatalf(a.logger, "Request failed: %v\n", err)
 	}
 
 	i = 0
@@ -231,7 +230,7 @@ established:
 				i = (i + 1) % len(spinnerSymbols)
 			}
 		case <-requestTimeout.C:
-			log.Fatalf("\r%v\rFetch request timed out\n", strings.Repeat(" ", 60))
+			fatalf(a.logger, "\r%v\rFetch request timed out\n", strings.Repeat(" ", 60))
 		}
 	}
 
@@ -268,7 +267,7 @@ requested:
 				i = (i + 1) % len(spinnerSymbols)
 			}
 		}); err != nil {
-			log.Fatalf("\n%v", err)
+			fatalf(a.logger, "\n%v", err)
 		}
 
 		if !silent {
@@ -283,12 +282,12 @@ requested:
 		if res.Status() == rns.ResourceStatusComplete {
 			metadata := res.Metadata()
 			if metadata == nil {
-				log.Fatalf("Invalid data received, ignoring resource")
+				fatalf(a.logger, "Invalid data received, ignoring resource")
 			}
 
 			nameBytes, ok := metadata["name"]
 			if !ok {
-				log.Fatalf("Invalid data received, ignoring resource")
+				fatalf(a.logger, "Invalid data received, ignoring resource")
 			}
 
 			filename := filepath.Base(string(nameBytes))
@@ -298,7 +297,7 @@ requested:
 			if savePath != "" {
 				savedFilename = filepath.Clean(filepath.Join(savePath, filename))
 				if !strings.HasPrefix(savedFilename, savePath+"/") {
-					log.Fatalf("Invalid save path %v, ignoring", savedFilename)
+					fatalf(a.logger, "Invalid save path %v, ignoring", savedFilename)
 				}
 			} else {
 				savedFilename = filename
@@ -322,7 +321,7 @@ requested:
 			}
 
 			if err := os.WriteFile(fullSavePath, res.Data(), 0o644); err != nil {
-				log.Fatalf("An error occurred while saving received resource: %v", err)
+				fatalf(a.logger, "An error occurred while saving received resource: %v", err)
 			}
 
 			if !silent {
@@ -336,7 +335,7 @@ requested:
 			return
 		}
 	case <-time.After(a.requestTimeout):
-		log.Fatalf("Timed out waiting for resource transfer to start")
+		fatalf(a.logger, "Timed out waiting for resource transfer to start")
 	}
 
 	link.Teardown()

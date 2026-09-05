@@ -89,6 +89,9 @@ func TestNewLoggerWritesToCallbackAndFile(t *testing.T) {
 		callback.WriteString(msg)
 	})
 	logger.Notice("callback message")
+	if !logger.Flush() {
+		t.Fatal("Flush() timed out waiting for the callback delivery")
+	}
 	if got, want := callback.String(), "["; !strings.HasPrefix(got, want) || !strings.Contains(got, "callback message") {
 		t.Fatalf("callback output = %q, want message containing %q", got, "callback message")
 	}
@@ -99,6 +102,9 @@ func TestNewLoggerWritesToCallbackAndFile(t *testing.T) {
 	logger.SetLogFilePath(logPath)
 	logger.SetLogDest(LogDestFile)
 	logger.Notice("file message")
+	if !logger.Flush() {
+		t.Fatal("Flush() timed out waiting for the file write")
+	}
 	data, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatalf("ReadFile error: %v", err)
@@ -160,6 +166,9 @@ func TestLogTimestampsGatesPrefix(t *testing.T) {
 	withTS.SetLogDest(LogCallback)
 	withTS.SetLogCallback(func(msg string) { cbTS.WriteString(msg) })
 	withTS.Notice("with-timestamp")
+	if !withTS.Flush() {
+		t.Fatal("Flush() timed out waiting for the callback delivery")
+	}
 	outTS := cbTS.String()
 	if !strings.Contains(outTS, "] [Notice]") {
 		t.Fatalf("timestamps enabled: output %q should contain a timestamp before the level label", outTS)
@@ -176,6 +185,9 @@ func TestLogTimestampsGatesPrefix(t *testing.T) {
 	withoutTS.SetLogDest(LogCallback)
 	withoutTS.SetLogCallback(func(msg string) { cbNoTS.WriteString(msg) })
 	withoutTS.Notice("no-timestamp")
+	if !withoutTS.Flush() {
+		t.Fatal("Flush() timed out waiting for the callback delivery")
+	}
 	outNoTS := cbNoTS.String()
 	if !strings.HasPrefix(outNoTS, "[Notice]") {
 		t.Fatalf("timestamps disabled: output %q should start with the level label, not a timestamp", outNoTS)

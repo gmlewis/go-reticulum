@@ -294,6 +294,9 @@ loglevel = 4
 		t.Fatalf("NewReticulumWithLogger() error = %v", err)
 	}
 	r.Logger().Notice("preset-logfile-marker")
+	if !r.Logger().Flush() {
+		t.Fatal("Logger().Flush() timed out waiting for the preset logfile write")
+	}
 	if err := r.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
 		t.Errorf("Close: %v", err)
 	}
@@ -329,6 +332,9 @@ loglevel = 4
 		t.Fatalf("NewReticulumWithLogger() derive error = %v", err)
 	}
 	r2.Logger().Notice("derived-logfile-marker")
+	if !r2.Logger().Flush() {
+		t.Fatal("Logger().Flush() timed out waiting for the derived logfile write")
+	}
 	if err := r2.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
 		t.Errorf("Close: %v", err)
 	}

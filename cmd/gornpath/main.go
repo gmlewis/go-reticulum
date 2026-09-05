@@ -72,6 +72,23 @@ func main() {
 	os.Exit(run(os.Args[1:]))
 }
 
+// fatalf flushes the async rns log queue so queued transport diagnostics
+// reach the sink, then exits via log.Fatalf.
+func fatalf(logger *rns.Logger, format string, args ...any) {
+	if logger != nil {
+		logger.Flush()
+	}
+	log.Fatalf(format, args...)
+}
+
+// fatal is the unformatted variant of fatalf.
+func fatal(logger *rns.Logger, v ...any) {
+	if logger != nil {
+		logger.Flush()
+	}
+	log.Fatal(v...)
+}
+
 func run(args []string) int {
 	app, err := parseFlags(args, os.Stderr)
 	if err != nil {
@@ -82,7 +99,12 @@ func run(args []string) int {
 		(&appT{}).usage(os.Stderr)
 		return 2
 	}
-	return newRuntime(app).run()
+	rt := newRuntime(app)
+	code := rt.run()
+	// The rns logger writes asynchronously; flush it before returning so the
+	// final log lines are not silently lost.
+	rt.logger.Close()
+	return code
 }
 
 func (rt *runtimeT) run() int {
@@ -113,7 +135,7 @@ func (rt *runtimeT) run() int {
 	ts := rns.NewTransportSystem(logger)
 	ret, err := rns.NewReticulumWithLogger(ts, app.configDir, logger)
 	if err != nil {
-		log.Fatalf("Could not initialize Reticulum: %v\n", err)
+		fatalf(logger, "Could not initialize Reticulum: %v\n", err)
 	}
 	defer func() {
 		if err := ret.Close(); err != nil {
@@ -136,14 +158,14 @@ func (rt *runtimeT) run() int {
 		if app.remoteHash != "" {
 			remoteHash, err := parseHash(app.remoteHash)
 			if err != nil {
-				log.Fatal(err)
+				fatal(logger, err)
 			}
 			client, err := rt.connectRemoteClient(os.Stdout, ret.Transport(), remoteHash, app.identityPath, app.remoteTimeout, remotePurposeManagement, false)
 			if err != nil {
 				if errors.Is(err, errPathRequestTimedOut) {
 					return 12
 				}
-				log.Fatal(err)
+				fatal(logger, err)
 			}
 			remoteClient = client
 		}
@@ -155,17 +177,17 @@ func (rt *runtimeT) run() int {
 			if len(app.args) > 0 {
 				destinationHash, err = parseHash(app.args[0])
 				if err != nil {
-					log.Fatal(err)
+					fatal(logger, err)
 				}
 			}
 			if err := doRemoteTable(os.Stdout, remoteClient, destinationHash, app.maxHops, app.jsonOut, app.remoteTimeout); err != nil {
 				if errors.Is(err, errRemoteRequestFailed) {
 					return 10
 				}
-				log.Fatal(err)
+				fatal(logger, err)
 			}
 		} else if err := doTable(os.Stdout, ts, app.maxHops, app.jsonOut); err != nil {
-			log.Fatal(err)
+			fatal(logger, err)
 		}
 	} else if app.rates {
 		if remoteClient != nil {
@@ -173,35 +195,35 @@ func (rt *runtimeT) run() int {
 			if len(app.args) > 0 {
 				destinationHash, err = parseHash(app.args[0])
 				if err != nil {
-					log.Fatal(err)
+					fatal(logger, err)
 				}
 			}
 			if err := doRemoteRates(os.Stdout, remoteClient, destinationHash, app.jsonOut, app.remoteTimeout); err != nil {
 				if errors.Is(err, errRemoteRequestFailed) {
 					return 10
 				}
-				log.Fatal(err)
+				fatal(logger, err)
 			}
 		} else if err := doRates(os.Stdout, ret, nil, app.jsonOut); err != nil {
 			if errors.Is(err, errNoRateInformation) {
 				return 1
 			}
-			log.Fatal(err)
+			fatal(logger, err)
 		}
 	} else if app.blackholedList {
 		if len(app.args) == 0 {
-			log.Fatal("missing destination hash")
+			fatal(logger, "missing destination hash")
 		}
 		sourceHash, err := parseHash(app.args[0])
 		if err != nil {
-			log.Fatal(err)
+			fatal(logger, err)
 		}
 		client, err := rt.connectRemoteClient(os.Stdout, ret.Transport(), sourceHash, "", app.remoteTimeout, remotePurposeBlackhole, false)
 		if err != nil {
 			if errors.Is(err, errPathRequestTimedOut) {
 				return 12
 			}
-			log.Fatal(err)
+			fatal(logger, err)
 		}
 		remoteClient = client
 		filter := ""
@@ -217,7 +239,7 @@ func (rt *runtimeT) run() int {
 			if errors.Is(err, errRemoteRequestFailed) {
 				return 10
 			}
-			log.Fatal(err)
+			fatal(logger, err)
 		}
 	} else if app.blackholed {
 		filter := ""
@@ -233,51 +255,51 @@ func (rt *runtimeT) run() int {
 			if errors.Is(err, errNoBlackholedInformation) {
 				return 20
 			}
-			log.Fatal(err)
+			fatal(logger, err)
 		}
 	} else if app.blackhole {
 		if len(app.args) == 0 {
-			log.Fatal("missing destination hash")
+			fatal(logger, "missing destination hash")
 		}
 		hash, err := parseHash(app.args[0])
 		if err != nil {
-			log.Fatal(err)
+			fatal(logger, err)
 		}
 		if err := doBlackhole(os.Stdout, ret, hash, app.duration, app.reason); err != nil {
-			log.Fatal(err)
+			fatal(logger, err)
 		}
 	} else if app.unblackhole {
 		if len(app.args) == 0 {
-			log.Fatal("missing destination hash")
+			fatal(logger, "missing destination hash")
 		}
 		hash, err := parseHash(app.args[0])
 		if err != nil {
-			log.Fatal(err)
+			fatal(logger, err)
 		}
 		if err := doUnblackhole(os.Stdout, ret, hash); err != nil {
-			log.Fatal(err)
+			fatal(logger, err)
 		}
 	} else if len(app.args) > 0 {
 		destHex := app.args[0]
 		destHash, err := hex.DecodeString(destHex)
 		if err != nil {
-			log.Fatalf("Invalid destination hash: %v\n", err)
+			fatalf(logger, "Invalid destination hash: %v\n", err)
 		}
 
 		if app.drop {
 			if err := doDrop(os.Stdout, ts, destHash); err != nil {
-				log.Fatal(err)
+				fatal(logger, err)
 			}
 		} else if app.dropVia {
 			if err := doDropVia(os.Stdout, ts, destHash); err != nil {
-				log.Fatal(err)
+				fatal(logger, err)
 			}
 		} else if app.dropAnnounces {
 			if err := doDropAnnounces(os.Stdout, ts); err != nil {
-				log.Fatal(err)
+				fatal(logger, err)
 			}
 		} else if err := doRequest(os.Stdout, ts, destHash, app.timeout); err != nil {
-			log.Fatal(err)
+			fatal(logger, err)
 		}
 	}
 	return 0

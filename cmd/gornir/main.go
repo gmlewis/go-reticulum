@@ -58,6 +58,9 @@ func (rt *runtimeT) run() {
 		if configDir == "" {
 			home, err := os.UserHomeDir()
 			if err != nil {
+				// The rns logger writes asynchronously; flush the queue so
+				// queued diagnostics are not silently lost.
+				logger.Flush()
 				log.Fatalf("Could not determine home directory: %v", err)
 			}
 			configDir = filepath.Join(home, ".reticulum")
@@ -70,6 +73,9 @@ func (rt *runtimeT) run() {
 	ts := rns.NewTransportSystem(rt.logger)
 	ret, err := rns.NewReticulumWithLogger(ts, app.configDir, logger)
 	if err != nil {
+		// The rns logger writes asynchronously; flush the queue so the init
+		// diagnostics explaining the failure are not silently lost.
+		logger.Flush()
 		log.Fatalf("Could not initialize Reticulum: %v", err)
 	}
 	defer func() {
@@ -82,14 +88,6 @@ func (rt *runtimeT) run() {
 func main() {
 	log.SetFlags(0)
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-sig
-		fmt.Println()
-		os.Exit(0)
-	}()
-
 	app, err := parseFlags(os.Args[1:], os.Stderr)
 	if err != nil {
 		if err == utils.ErrHelp {
@@ -97,5 +95,21 @@ func main() {
 		}
 		log.Fatal(err)
 	}
-	newRuntime(app).run()
+	rt := newRuntime(app)
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sig
+		fmt.Println()
+		// The rns logger writes asynchronously; flush it before exiting so
+		// interrupt-time diagnostics are not silently lost.
+		rt.logger.Close()
+		os.Exit(0)
+	}()
+
+	rt.run()
+	// The rns logger writes asynchronously; flush it before exiting so the
+	// daemon's final log lines are not silently lost.
+	rt.logger.Close()
 }

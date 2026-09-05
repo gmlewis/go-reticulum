@@ -16,7 +16,7 @@ import (
 
 // setupSignalHandler installs a signal handler for SIGINT (Ctrl+C)
 // that cleans up resources and links before exiting.
-func setupSignalHandler(resource **rns.Resource, link **rns.Link) {
+func setupSignalHandler(logger *rns.Logger, resource **rns.Resource, link **rns.Link) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
@@ -30,6 +30,11 @@ func setupSignalHandler(resource **rns.Resource, link **rns.Link) {
 		if link != nil && *link != nil {
 			fmt.Println("Tearing down link...")
 			(*link).Teardown()
+		}
+		// The rns logger writes asynchronously; flush it before exiting so
+		// interrupt-time diagnostics are not silently lost.
+		if logger != nil {
+			logger.Close()
 		}
 		os.Exit(0)
 	}()

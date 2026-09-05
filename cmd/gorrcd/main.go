@@ -104,6 +104,9 @@ func main() {
 	svc.SetLogger(rnsLogger)
 	svc.ConfigureLogging(opts.logLevel, opts.logFile)
 	if err := svc.Start(); err != nil {
+		// The rns logger writes asynchronously; flush the queue so the bring-up
+		// diagnostics explaining the failure are not silently lost.
+		rnsLogger.Flush()
 		log.Fatal(err)
 	}
 
@@ -116,6 +119,9 @@ func main() {
 
 	// Run until the shutdown signal closes the hub channel.
 	<-svc.Shutdown
+	// The rns logger writes asynchronously; flush it before exiting so the
+	// daemon's final log lines are not silently lost.
+	rnsLogger.Close()
 }
 
 // buildConfig applies the precedence chain: the path seeds, then the TOML
