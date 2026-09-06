@@ -1,11 +1,13 @@
 # ASIC Plans — Hardware Offload for Reticulum on go-reticulum
 
-This document captures the analysis (August 2026) of which parts of this
+This document captures the analysis (August–September 2026) of which parts of this
 repo (go-reticulum) and gonomadnet are suitable for ASIC/FPGA offload, how
 a chip would actually be designed and taped out with today's open tooling,
-why TL-Verilog + Makerchip.com is the recommended design entry over raw
-SystemVerilog, and how these pieces extend outward into a family of
-privacy-first, maker-friendly RISC-V/ESP32 devices built on Reticulum.
+why SpinalHDL (Scala DSL) is the recommended design entry over raw
+SystemVerilog and proprietary TL-Verilog, how the host-to-ASIC interface
+is optimized via Quad-SPI (QSPI) and DMA on the ESP32-C5, and how these pieces
+extend outward into a family of privacy-first, maker-friendly RISC-V/ESP32
+devices built on Reticulum.
 
 The fixed-function hot spots are annotated in the source with
 `ASIC suitability:` doc comments:
@@ -85,33 +87,63 @@ sharp CPU spikes that benefit directly from ASIC acceleration:
 
 ## 2. Chip architecture
 
-A realistic RNode-class device:
+A realistic RNode-class or handheld pocket communicator device:
 
 ```
-+----------------------------------------------------------+
-|  Host MCU (firmware: RNS Transport, LXMF router, app)    |
-|    - key storage, IV generation, packet framing          |
-|    - SPI or APB slave interface to the accelerator       |
-+-----------------------------+----------------------------+
-                              |
-+-----------------------------v----------------------------+
-|  Accelerator block(s)                                    |
-|  +-----------+  +------------+  +----------+  +--------+ |
-|  | SHA-256   |  | X25519     |  | Ed25519  |  | AES +  | |
-|  | pipeline  |  | Montgomery |  | verify   |  | HMAC-  | |
-|  | + lead-0  |  | ladder     |  | (sign    |  | SHA256 | |
-|  | counter   |  | core       |  |  shares  |  | token  | |
-|  | (stamps)  |  |            |  |  ladder) |  | pipe   | |
-|  +-----------+  +------------+  +----------+  +--------+ |
-|  Simple FSM + register file + interrupt/done semantics   |
-+----------------------------------------------------------+
-|  (optionally all behind one PicoRV32-class soft core     |
-|   handling job queues, DMA, and clock domain crossing)   |
-+----------------------------------------------------------+
++-------------------------------------------------------------------------+
+|  Host MCU (e.g. ESP32-C5 / RNode MCU / Linux Host)                       |
+|    - RNS Transport, LXMF router, gorrcd chat engine                     |
+|    - Keeps all secrets: key storage, IV generation, packet framing      |
+|    - General DMA (GDMA) linked to SPI2 (GP-SPI Master)                  |
+|    - GPIO Edge-triggered interrupt for asynchronous completion          |
++------------------------------------+------------------------------------+
+                                     |
+    4-bit QSPI (40–80 MHz)           |  Dedicated Active-Low IRQ Line
+    CLK, CS, IO0..IO3 (DMA stream)   |  (non-blocking completion alert)
+                                     v
++-------------------------------------------------------------------------+
+|  Reticulum Cryptographic ASIC (Authored in SpinalHDL)                   |
+|                                                                         |
+|  +-------------------------------------------------------------------+  |
+|  | QSPI Slave Controller (spinal.lib.com.spi)                        |  |
+|  | Command FSM + APB3 / AXI4-Lite Register Map + Stream Deserializer |  |
+|  +----------------------------------+--------------------------------+  |
+|                                     | Stream[Bits] (valid/ready backpressure)
+|  +----------------------------------v--------------------------------+  |
+|  | Interconnect & FIFOs: StreamFifo, StreamArbiter, StreamFork       |  |
+|  +----+-----------------+--------------------+------------------+----+  |
+|       |                 |                    |                  |       |
+|  +----v------+   +------v-----+       +------v-----+     +------v----+  |
+|  | SHA-256   |   | X25519     |       | Ed25519    |     | AES +     |  |
+|  | Pipeline  |   | Montgomery |       | Verify     |     | HMAC-     |  |
+|  | + Lead-0  |   | Ladder     |       | (Sign      |     | SHA256    |  |
+|  | Counter   |   | Core       |       |  shares    |     | Token     |  |
+|  | (stamps)  |   |            |       |  ladder)   |     | Pipeline  |  |
+|  +----+------+   +------+-----+       +------+-----+     +------+----+  |
+|       |                 |                    |                  |       |
+|  +----v-----------------v--------------------v------------------v----+  |
+|  | Result Aggregator & Stream Multiplexer                            |  |
+|  | Hardware Interrupt Controller -> Asserts External IRQ Pin         |  |
+|  +-------------------------------------------------------------------+  |
+|                                                                         |
+|  (Optionally on-die: integrated VexRiscv/NaxRiscv soft core             |
+|   written in SpinalHDL, sharing registers or custom instructions)       |
++-------------------------------------------------------------------------+
 ```
 
 Notes:
 
+- **Host interface: 4-bit QSPI + GDMA + Hardware IRQ (7 pins total)**.
+  Instead of slow 1-bit SPI or pin-exhausting parallel GPIO, the chip uses
+  Quad-SPI clocked at 40–80 MHz (20–40 MB/s throughput) linked directly to
+  the host MCU's DMA engine (e.g. ESP32-C5 GDMA). An active-low hardware IRQ
+  pin signals job completion so the host CPU does *zero* polling and spends
+  zero cycles waiting on long crypto operations.
+- **Internal pipelining and flow control via SpinalHDL `Stream`**.
+  All cryptographic blocks expose standardized `Stream[Bits]` interfaces
+  with automatic `valid`/`ready` handshaking and skid buffers. If a core is
+  busy, backpressure is propagated to the QSPI FIFO automatically without
+  manual buffer plumbing or hazard bugs.
 - **X25519 and Ed25519 share curve arithmetic.** The Montgomery ladder
   (one 256-bit word-serial multiplier + dual 256-bit register files,
   ~20–40k gates) serves X25519 key agreement directly; Ed25519 is the
@@ -120,84 +152,130 @@ Notes:
   protocols around it.
 - **The host MCU keeps all secrets.** Key storage, IV generation, and
   RNG stay in firmware; the accelerator is a stateless compute pipe over
-  SPI — mirroring how RNode firmware already talks to the LoRa radio.
+  QSPI — mirroring how RNode firmware already talks to the LoRa radio.
   This keeps the hardware security boundary small and the ASIC cheap to
   verify.
-- **Job model**: one MMIO register file (start, data-in, data-out, done)
-  per accelerator; interrupt-driven. Firmware DMA-spools workblocks for
-  stamp grinding and small buffers for everything else.
-- **The "no host MCU at all" option is real** (see §7.1.1): the
-  PicoRV32-class job-queue core could instead be an *application-class*
-  RV64 core running bare-metal Go under the TamaGo framework — TamaGo is
-  stock Go on bare metal (`GOOS=tamago`), proven on extension-constrained
-  RV64 SoCs (kotama: soft-float rv64imfc in 6–16 MB), and NXP i.MX6-class
-  TamaGo drivers already exist for SPI, UART and SD. In that configuration
-  the accelerator's host *is* a Go program running go-reticulum directly —
-  the section 7 vision without any second MCU.
+- **Job model**: one APB3/AXI-Lite register bank (start, control,
+  length, status) per accelerator, backed by streaming FIFOs for bulk data.
+  Firmware DMA-spools workblock midstates for stamp grinding and packet
+  buffers for Token encryption/decryption.
+- **The "no host MCU at all" option is native in SpinalHDL** (see §7.1.1):
+  Because the preeminent open-source RISC-V cores (**VexRiscv** for RV32
+  and **NaxRiscv** for RV64) are **both written in SpinalHDL**, the crypto
+  accelerators can be bound directly into the CPU pipeline as custom
+  instruction plugins (`Plugin[VexRiscv]`) or memory-mapped AXI/APB bus
+  slaves without crossing language or toolchain boundaries. For RV64, this
+  core can run bare-metal Go under the TamaGo framework (`GOOS=tamago`) —
+  turning the chip into a standalone Go-native Reticulum node without any
+  secondary microcontroller.
 
 ---
 
-## 3. HDL choice: TL-Verilog + Makerchip (recommended)
+## 3. HDL choice: SpinalHDL (recommended)
 
-**Recommended design entry: TL-Verilog (Transaction-Level Verilog),
-authored in [Makerchip](https://makerchip.com). NOT raw SystemVerilog.**
+**Recommended design entry: SpinalHDL (Scala DSL). NOT raw SystemVerilog, and NOT proprietary TL-Verilog.**
 
-TL-Verilog is a strict superset of Verilog that adds *transaction-level*
-abstractions: pipelines declared as `|stage` with automatic valid/ready
-plumbing, `@1`/`@2` stage-relative signals, and `$when`-scoped state
-groups — the pipeline-valid/handshake/latch-enable boilerplate that
-dominates and riddles SystemVerilog designs is *generated by the syntax
-itself*. For
-the accelerators here this is an unusually direct fit:
+While TL-Verilog initially appeared attractive for its concise pipeline syntax,
+SpinalHDL is the superior choice for a production silicon tapeout and for
+seamless integration with the Reticulum ecosystem.
 
-- The SHA-256 pipeline is literally `|round` stages `@0..@63`, one
-  `|stage` per compression round; TL-Verilog generates the
-  register-enable and validity logic that would be hundreds of lines of
-  error-prone `always_ff` plumbing in SystemVerilog.
-- The Montgomery ladder is a small number of conditional transactions
-  (`$mul_step`) — the states map naturally, and restructuring the
-  schedule (e.g. word-serial vs radix-4) is a small edit instead of a
-  datapath rewrite.
-- M4 macro pre-processing (Makerchip's native extension mechanism)
-  parameterizes the AES key length (128/256) and pipeline depth cleanly.
+SpinalHDL is a modern hardware description language implemented as an open-source
+Scala library (LGPL). It is **not** a high-level synthesis (HLS) tool; it is a
+direct RTL generator that compiles into clean, readable, synthesis-ready
+Verilog-2001 or SystemVerilog.
 
-Why this beats plain SystemVerilog for this project:
+Why SpinalHDL beats both SystemVerilog and TL-Verilog for this project:
 
-| Concern | SystemVerilog | TL-Verilog |
-|---|---|---|
-| Pipeline handshake/valid plumbing | manual, the #1 source of bugs | generated by `|stage`/`@N` syntax |
-| Refactoring a pipeline (insert/drop a stage) | touch every signal | change one number in a stage declaration |
-| Learning curve for a software developer porting this repo | steep | gentle — reads like the dataflow it describes |
-| Simulation in browser (no local toolchain at all) | no | yes, Makerchip runs in the browser |
-| Downstream tools | everything | *everything that accepts Verilog accepts TL-Verilog* — it compiles to plain Verilog |
+### 1. Toolchain Sovereignty & 100% Free/Open-Source (FOSS)
+- **The TL-Verilog trap**: TL-Verilog depends on **SandPiper**, which is a
+  proprietary/commercial preprocessor developed by Redwood EDA. Full compilation
+  features require commercial licenses or cloud SaaS dependencies.
+- **The SpinalHDL advantage**: SpinalHDL is 100% open-source (LGPL). It runs
+  completely locally via standard `sbt` and Java/Scala, with zero external cloud
+  calls, zero proprietary license servers, and zero vendor lock-in. It integrates
+  cleanly into local CI/CD pipelines and aligns with Reticulum's self-sovereign
+  philosophy.
 
-That last row is the decisive point: **TL-Verilog output is ordinary
-Verilog**, so the entire flows below (Verilator, Yosys, OpenLane,
-OpenROAD, TinyTapeout) consume it without modification. The open-source
-tooling community has largely reached the same conclusion — the
-[TL-Verilog](https://makerchip.com) / Redwood EDA ecosystem (Makerchip
-and its course toolchains) is now the standard on-ramp for RISC-V
-microarchitecture course work and hobby tapeouts, and reference cores
-(`picorv32`/`VexRiscv`-class) have published TL-Verilog versions used in
-production course material.
+### 2. Built-in Stream & Bus Plumbing (`spinal.lib`)
+In cryptographic hardware, designing the arithmetic cores is only half the battle;
+the other half is **flow control, FIFOs, and bus interfacing**:
+- In SystemVerilog or TL-Verilog, implementing robust `valid`/`ready` handshaking
+  with backpressure, skid buffers, crossbar arbiters, and bus interfaces requires
+  hundreds of lines of manual, bug-prone boilerplate.
+- In SpinalHDL, `spinal.lib` provides native, battle-tested hardware abstractions:
+  - **`Stream` (`valid` / `ready` handshake)**: Automatically manages backpressure,
+    zero-cycle skid buffers, and FIFOs (`StreamFifo`, `StreamArbiter`, `StreamFork`).
+    This is ideal for streaming Reticulum packet buffers into the AES-CBC + HMAC
+    engine and the IFAC stamp grinder.
+  - **Bus standard abstractions out of the box**: Converting an internal crypto
+    stream into an APB3 or AXI4-Lite register map takes ~10 lines of SpinalHDL
+    (`apbCtrl.drive(nonceReg, address = 0x04)`).
+  - **Data width adaptation**: Trivial conversion between 8-bit QSPI streams,
+    32-bit APB registers, and 128/256-bit crypto datapaths (`StreamWidthAdapter`).
 
-**Practical on-ramp**: prototype each core in Makerchip in the browser
-(free), visualize waveforms and pipeline stages with Makerchip's built-in
-diagram; download the generated Verilog; drop it into the Yosys/OpenLane
-flow below. When a core outgrows the browser (long stamp-grind sims),
-move the same source to a local Verilator + cocotb testbench.
+### 3. Pipelining without the Pain (`spinal.lib.pipeline`)
+TL-Verilog's primary selling point was that retiming a pipeline should not require
+manual register rewiring:
+- SpinalHDL provides the modern **`spinal.lib.pipeline`** API.
+- You declare `Stageable` data types (e.g. `val HASH_STATE = Stageable(Bits(256 bits))`),
+  define pipeline stages, and route operations between them.
+- SpinalHDL inserts the pipeline registers, generates stall/flush logic, and
+  manages hazard detection across stages automatically. You get all the retiming
+  and conciseness benefits of transaction pipelining without any proprietary syntax.
 
-SystemVerilog remains the right choice where TL-Verilog's model doesn't
-reach: clock-domain-crossing blocks, SPI pad rings, chip-level I/O and
-constraints (`SDC` files) — those stay SV, but a project doesn't need
-much of them: one CDC per accelerator domain and one SPI slave.
+### 4. Direct Symbiosis with VexRiscv and NaxRiscv (§7 On-Die Endgame)
+- The preeminent open-source RISC-V softcores—**VexRiscv** (32-bit, winner of the
+  RISC-V SoftCPU contest, standard in LiteX) and **NaxRiscv** (64-bit out-of-order)—are
+  **both written in SpinalHDL**.
+- When designing on-die RISC-V coprocessors (§7), the CPU and the crypto engine share
+  the exact same language and AST. You can attach accelerators as standard APB/AXI bus
+  slaves, or build **custom instruction plugins (`Plugin[VexRiscv]`)** that execute
+  Reticulum crypto micro-ops directly from the CPU's register file in single clock cycles.
+
+### 5. Parametric Cryptography (Area vs. Throughput Scaling)
+Cryptographic cores require trade-offs between silicon area and clock cycles:
+- *Example (SHA-256 / IFAC Grinder)*: We can parameterize 1 round per cycle
+  (compact for Tiny Tapeout) vs. 2 or 4 unrolled rounds per cycle (high throughput
+  for FPGA/shuttle).
+- *Example (X25519)*: We can choose between a single word-serial multiplier or
+  parallel DSP blocks.
+- In SpinalHDL, Scala's full metaprogramming capabilities let you configure round
+  unrolling, word widths, and FIFO depths with type safety from a single codebase:
+  ```scala
+  case class CryptoConfig(
+    unrollRounds: Int = 1,
+    busWidth: Int = 32,
+    useHardMultipliers: Boolean = false
+  )
+  ```
+
+### 6. High-Performance Bit-Accurate Verification (SpinalSim + Verilator)
+- SpinalHDL includes **SpinalSim**, which compiles designs on the fly using
+  **Verilator** and runs high-speed C++ testbenches orchestrated directly from Scala.
+- It can ingest the exact JSON/binary test vectors produced by `go-reticulum` and
+  assert bit-for-bit parity at hundreds of thousands of cycles per second in CI.
+
+### HDL Comparison Matrix
+
+| Concern | SystemVerilog | TL-Verilog | SpinalHDL (Recommended) |
+|---|---|---|---|
+| **Toolchain Freedom** | Open (Yosys/Verilator) | Proprietary SandPiper / Cloud SaaS | **100% Free & Open-Source (LGPL/Scala)** |
+| **Pipeline Handshaking** | Manual, #1 source of bugs | Generated by `\|stage`/`@N` syntax | **Automated via `spinal.lib.pipeline` & `Stream`** |
+| **Bus / Protocol Libraries** | Vendor IP or manual | Minimal / manual glue | **Extensive (`spinal.lib`: AXI, APB, FIFOs)** |
+| **SoC Integration** | Requires bus glue logic | Manual bridge | **Native symbiosis with VexRiscv & NaxRiscv** |
+| **Parametric Generics** | SV parameters (clunky) | M4 / TLV macro preprocessor | **Full Scala OOP / Functional Metaprogramming** |
+| **Verification** | UVM (complex) / cocotb | Browser / Verilator | **SpinalSim (Verilator C++) + Scala / cocotb** |
+| **Downstream Synthesis** | Yosys / OpenLane | Compiles to Verilog | **Compiles to clean Verilog-2001 / SystemVerilog** |
+
+Downstream tools (Verilator, Yosys, OpenLane, OpenROAD, TinyTapeout) consume the
+generated Verilog without modification.
 
 ## 4. Toolchain (all open source, end to end)
 
 | Stage | Tool |
 |---|---|
-| Design entry | **TL-Verilog in Makerchip** (browser) or local `tlv` → Verilog |
-| Reference sim (fast, C++) | Verilator + cocotb (Python testbench, driven by the Go vectors) |
+| Design entry | **SpinalHDL (Scala / sbt)** → generated Verilog-2001 / SystemVerilog |
+| Reference sim (fast, C++) | **SpinalSim (Verilator backend)** or **cocotb** (driven by Go vectors) |
 | Lint | Verilator lint, `svlint` |
 | Synthesis (RTL → gates) | **Yosys** (via OpenLane) |
 | Floorplan / place / route / CTS | **OpenROAD** (via OpenLane or standalone) |
@@ -205,14 +283,14 @@ much of them: one CDC per accelerator domain and one SPI slave.
 | PDK | **SkyWater sky130** (fully open, TinyTapeout-compatible, 130 nm — fine for 200 MHz pipelines; ~15 mm² is overkill here, the whole accelerator fits in a few mm²) or **IHP SG13G2** (open 130 nm SiGe BiCMOS, faster transistors, also TinyTapeout-compatible via ChipFoundry) |
 | GDS viewer | KLayout, Magic |
 
-Everything above runs on macOS/Linux without licensing: the full
+Everything above runs locally on macOS/Linux without licensing: the full
 RTL-to-GDS flow is a few shell commands in OpenLane once the Verilog
-exists.
+is generated.
 
 ### Test vectors straight from the Go implementation
 
 Because these algorithms are already implemented and tested in Go, the
-cocotb testbenches should use **actual vectors from the Go code**:
+SpinalSim / cocotb testbenches should use **actual vectors from the Go code**:
 run a small Go helper (e.g. a `cmd/` tool) that prints
 `sha256(workblock‖suffix)` triples, X25519 exchanges, Ed25519 signatures
 and Token seals in a simple hex format, and feed those to the HDL sim.
@@ -227,14 +305,14 @@ repo already uses for Python-vs-Go parity testing.
 | Path | What you get | Cost ballpark | Fits |
 |---|---|---|---|
 | **TinyTapeout** (sky130 or IHP SG13G2, via ChipFoundry) | a few hundred gates × small tiles — one accelerator core (e.g. SHA-256 pipeline + leading-zero counter) | ~$300 per tile | prototype / education |
-| **ChipFoundry / efabless-style shuttle** | a full multi-mm² die: all four accelerators + PicoRV32 + SPI | low-to-mid four figures per shuttle slot | the real RNode-crypto chip |
+| **ChipFoundry / efabless-style shuttle** | a full multi-mm² die: all four accelerators + PicoRV32/VexRiscv + QSPI | low-to-mid four figures per shuttle slot | the real RNode-crypto chip |
 | Commercial foundry | production volumes | five figures+ | only if productized |
 
 Recommended progression:
 
-1. **Phase A — Makerchip prototypes** (weeks): SHA-256 stamper, X25519
+1. **Phase A — SpinalHDL prototypes** (weeks): SHA-256 stamper, X25519
    ladder, Ed25519 verify, AES/HMAC token, all validated against Go
-   vectors in makerchip/Verilator.
+   vectors via SpinalSim / Verilator.
 2. **Phase B — TinyTapeout tile** (a month or two): the stamp-grind core
    alone on a TT tile. It needs no key material, is fault-tolerant by
    design (the verifier rejects bad stamps), and delivers the biggest
@@ -451,7 +529,7 @@ application is a BOM and a `micron` page away.
   meaningful stamp costs for the mesh's anti-spam tier — the biggest pain
   point on ESP32 today; (b) energy-constrained battery Leaves, where
   compute energy is radio energy; (c) supply-chain trust: a small, fixed,
-  auditable crypto block (TL-Verilog, tested against this repo's vectors)
+  auditable crypto block (SpinalHDL, tested against this repo's vectors)
   is *easier* to reason about than a firmware crypto stack on a flashed-and
   -forgotten device. Hence the phased plan in section 5: TinyTapeout the
   stamper first, and let it plug into the Node block as a Feather/HAT
@@ -954,6 +1032,102 @@ active RRC chat hub exposes three cryptographic bottlenecks:
   (§1) reduces computation time from minutes to milliseconds, dramatically
   preserving battery life.
 
+#### Host-to-ASIC Interconnect: Why QSPI + ESP32 GDMA + Hardware IRQ Beats Parallel GPIO & Standard SPI
+
+A critical architectural decision is how the host MCU (ESP32-C5) communicates with the
+crypto ASIC. While one might initially suspect that SPI would be a bottleneck for
+Reticulum packet throughput—prompting consideration of an 8-bit parallel GPIO bus—a
+quantitative analysis of Reticulum packet physics, ESP32-C5 silicon constraints, and
+DMA mechanics demonstrates that **Quad-SPI (QSPI) with General DMA (GDMA) and a hardware
+IRQ pin is the optimal interface**.
+
+##### 1. The Reticulum Math: Wire Throughput vs. Packet Size
+- **Reticulum MTU**: Reticulum's maximum packet size is **507 bytes** (typically
+  100–300 bytes for messages, and < 50 bytes for announces/proofs).
+- **Cryptographic Payload Traffic**:
+  - *IFAC Stamp Grinding*: The host sends ~64–128 bytes (packet header + midstate +
+    difficulty target) *once*. The ASIC grinds millions of candidate hashes internally
+    without generating any bus traffic. When finished, it returns an **8-byte nonce**.
+    Total bus round-trip: **< 150 bytes**.
+  - *X25519 Key Agreement / Ed25519 Verify*: Host sends 64 bytes (32-byte scalar +
+    32-byte point); ASIC returns 32 bytes (point) or 64 bytes (signature).
+    Total bus round-trip: **96–128 bytes**.
+  - *AES-128-CBC + HMAC-SHA256 (Token)*: Host sends 32 bytes (key + IV) + up to 500 bytes
+    payload; ASIC returns 500 bytes ciphertext + 32-byte HMAC.
+    Total bus round-trip: **~1,050 bytes**.
+- **Wire Speed vs. Transfer Time**:
+  - Standard 1-bit SPI @ 40 MHz (5 MB/s): Transmitting a full 507-byte packet takes **~101 µs**.
+  - 4-bit QSPI @ 40 MHz (20 MB/s): Transmitting a full 507-byte packet takes **~25 µs**.
+  - 4-bit QSPI @ 80 MHz (40 MB/s): Transmitting a full 507-byte packet takes **~12.5 µs**.
+- **Burst Fanout Reality**: Even during a severe `gorrcd` room fanout where an incoming
+  message is encrypted for 20 active participants (20 × 1,050 bytes = 21,000 bytes total),
+  the entire 20-client batch moves across an 80 MHz QSPI bus in **0.52 milliseconds**.
+  Compared to radio transmission times (hundreds of milliseconds over LoRa, or tens of
+  milliseconds over Wi-Fi), wire transfer time is completely negligible (< 1% of radio latency).
+  **Raw bus bandwidth is not the bottleneck.**
+
+##### 2. Pin-Budget Reality of the ESP32-C5
+The ESP32-C5 is packaged in QFN32 or QFN40, providing only **~24 to 28 usable GPIO pins**.
+A complete handheld Communicator/Hub already requires:
+- **SX1262 LoRa SPI**: `SCK`, `MOSI`, `MISO`, `CS`, `RST`, `BUSY`, `DIO1` = **7 pins**
+- **2.8" Display (SPI)**: `SCK`, `MOSI`, `CS`, `DC`, `RST` = **5 pins**
+- **MicroSD slot (FAT32)**: `CLK`, `CMD`, `DAT0` (or SPI mode) = **4 to 6 pins**
+- **I2C Keyboard / Trackball**: `SDA`, `SCL`, `INT` = **3 pins**
+- **Battery ADC, Charging Status, System LEDs**: = **3 pins**
+- **Subtotal for existing peripherals**: **22 to 24 GPIO pins**.
+
+An 8-bit parallel bus (8 data lines + `WR` + `RD` + `CS` + `RS`/`ALE`) requires
+**11 to 12 GPIO pins**. On an ESP32-C5, **a parallel bus causes immediate, fatal pin
+exhaustion**. Using an external I/O expander would negate the latency advantages of parallel
+GPIO while increasing PCB complexity and power draw.
+
+##### 3. Silicon Pad Economics ("Pad-Limited" ASIC Dies)
+In open-source silicon manufacturing (Tiny Tapeout, SkyWater sky130, GF180):
+- Silicon I/O bonding pads are physically massive (~60×60 µm to 80×80 µm each, plus
+  electrostatic discharge [ESD] rings and power rails).
+- Small crypto accelerators are almost always **pad-limited**: the silicon die size (and
+  manufacturing cost) is dictated by the perimeter needed to place the bond pads, not by
+  the internal logic gates.
+- Quad-SPI requires only **6 pads** (`CS`, `CLK`, `IO0`, `IO1`, `IO2`, `IO3`).
+- An 8-bit parallel bus requires **12 to 16 pads**, which nearly doubles the silicon
+  die perimeter and package pin count, drastically increasing unit cost.
+
+##### 4. The Real Bottleneck: Transaction Latency & CPU Context Switching
+The true bottleneck in accelerator offload is not wire clock speed; it is **software
+overhead**:
+- If the single-core RV32 CPU has to prepare a packet in software, manually toggle `CS`,
+  push words to a FIFO, wait in a `while (!ready)` polling loop, and toggle `CS` again,
+  driver overhead (15–40 µs) can dwarf the hardware computation time.
+- Polling while waiting for an X25519 scalar multiplication (~50 µs) completely starves
+  the CPU from processing background network packets.
+
+##### 5. The 7-Pin Architecture: 4-Bit QSPI + ESP32 GDMA + Dedicated Hardware IRQ
+The optimal host-to-ASIC interconnect solves software latency and CPU starvation using
+exactly **7 pins**:
+- **Pinout**: 4-bit QSPI (`CLK`, `CS`, `IO0`, `IO1`, `IO2`, `IO3`) + 1 active-low `IRQ` line.
+- **Zero-CPU Transfer via ESP32 General DMA (GDMA)**: The ESP32-C5 GP-SPI master (SPI2)
+  is coupled directly to the onboard GDMA engine. Firmware configures chained DMA
+  descriptors in SRAM. The GDMA controller streams packet buffers directly into the SPI
+  FIFO without burning CPU cycles.
+- **Asynchronous Completion via Dedicated Hardware IRQ**:
+  1. The host dispatches a job (e.g. stamp grind or X25519 point multiplication) via a
+     single non-blocking DMA write and immediately yields to other FreeRTOS tasks.
+  2. When the ASIC pipeline finishes the operation, its result aggregator pulls the
+     `IRQ` line low.
+  3. The falling edge triggers an edge-sensitive GPIO interrupt on the ESP32-C5,
+     firing a non-blocking DMA read to pull the computed result back into SRAM.
+  4. The host CPU spends **zero cycles polling** and performs **zero buffer copies**.
+
+##### 6. Implementation in SpinalHDL
+In SpinalHDL, this architecture is modeled with high fidelity:
+- A QSPI slave receiver module (`spinal.lib.com.spi`) deserializes 4-bit nibbles into
+  a standard `Stream[Bits]`.
+- Backpressure is propagated naturally: if the AES or SHA-256 core is busy, the
+  `Stream.ready` signal drops, and the QSPI controller holds off the FIFO.
+- A concise Command FSM parses the 1-byte opcode (`OP_STAMP_GRIND`, `OP_X25519_MULT`,
+  `OP_TOKEN_SEAL`, `OP_TOKEN_OPEN`), 2-byte payload length, and dispatches the
+  payload stream to the target cryptographic core via `StreamFork` or `StreamDemux`.
+
 #### Hardware Architecture of the Handheld Pocket Hub
 
 A concrete bill of materials for an open, handheld pocket communicator:
@@ -962,13 +1136,13 @@ A concrete bill of materials for an open, handheld pocket communicator:
 +-------------------------------------------------------------------------+
 |                       Handheld Pocket Communicator                      |
 |                                                                         |
-|  +---------------------+        QSPI @ 80 MHz       +----------------+  |
+|  +---------------------+   4-bit QSPI @ 80 MHz      +----------------+  |
 |  | ESP32-C5 MCU        |<==========================>| Crypto ASIC    |  |
-|  | - RV32IMAC @ 240 MHz|                            | (TinyTapeout   |  |
-|  | - 400 KB SRAM       |                            |  or Shuttle)   |  |
-|  | - 8–16 MB OPI PSRAM |                            | - SHA-256 pipe |  |
-|  | - 16 MB Flash       |                            | - X25519 ladder|  |
-|  +----------+----------+                            | - Ed25519 sign |  |
+|  | - RV32IMAC @ 240 MHz|   CLK, CS, IO[0..3] (GDMA) | (SpinalHDL)    |  |
+|  | - 400 KB SRAM       |                            | - QSPI Slave   |  |
+|  | - 8–16 MB OPI PSRAM |   Active-Low IRQ Line      | - SHA-256 pipe |  |
+|  | - 16 MB Flash       |<---------------------------| - X25519 ladder|  |
+|  +----------+----------+   (Interrupt on Done)      | - Ed25519 sign |  |
 |             |                                       | - AES+HMAC tok |  |
 |             | SPI                                   +----------------+  |
 |             v                                                           |
@@ -1043,7 +1217,8 @@ cannot be used directly. The two viable firmware paths are:
 | 12 | Reduced micron-first UI for MCU builds (fetch → parse → framebuffer) | go-nomadnet | medium | reuses `micron` + `browser` wholesale |
 | 13 | TamaGo bring-up: headless RNS relay/propagation node, `GOOS=tamago` on RISC-V64 (Nuclei QEMU + Milk-V Vega first), LoRa-over-SPI `Interface` + storage through #1/#2 | both | medium | the §7.1.1 entry point; same §7.7 parity A/B gate as every other phase |
 | 14 | `gorrcd` embedded daemon target: headless build tag (`//go:build embedded`), in-memory/SD room registry, session tables in PSRAM | go-reticulum | medium | zero-dependency `rrc` already compiles with stdlib only; enables pocket hub |
-| 15 | ESP32-C5 board support & dual-band AP bridge: TinyGo target `esp32c5`, dual-band Wi-Fi 6 AP `Interface` + BLE GATT + SX1262 LoRa SPI driver | new / both | medium | enables the standalone Pocket Hub (§7.5.2) |
+| 15 | ESP32-C5 board support & dual-band AP bridge: TinyGo target `esp32c5`, dual-band Wi-Fi 6 AP `Interface` + BLE GATT + SX1262 LoRa SPI driver + QSPI GDMA host driver for crypto ASIC (§7.5.2) | new / both | medium | enables the standalone Pocket Hub (§7.5.2) |
+| 16 | SpinalHDL Crypto ASIC cores: SHA-256 stamper, X25519/Ed25519 Montgomery ladder, AES+HMAC Token engine, QSPI slave with `Stream` interface (§2, §3) | new | large | hardware accelerator targeting TinyTapeout and full shuttles |
 
 ### 7.7 A phased path that reuses this repo's parity discipline
 
@@ -1070,9 +1245,10 @@ cannot be used directly. The two viable firmware paths are:
    on-die endgame.
 5. **Phase E3c — ESP32-C5 Handheld Pocket Hub (`gorrcd` + dual-band Wi-Fi 6 + ASIC)**:
    Deploy `gorrcd` on an ESP32-C5 with 8–16 MB OPI PSRAM; bring up the 5 GHz SoftAP
-   and SX1262 LoRa interfaces; hook the `Offloader` into the QSPI ASIC for burst
-   AES+HMAC room fanout and X25519 link handshake acceleration. Verify multi-client
-   chat fanout against desktop `gorrcd` with the parity harness.
+   and SX1262 LoRa interfaces; hook the `Offloader` into the QSPI ASIC (SpinalHDL
+   cores) via GDMA and the active-low hardware IRQ line for burst AES+HMAC room
+   fanout and X25519 link handshake acceleration. Verify multi-client chat fanout
+   against desktop `gorrcd` with the parity harness.
 6. **Phase E4 — on-die crypto**: flip the provider seams to the
    accelerators; the section 4 Go-vector tooling now serves as the
    firmware bring-up testbench.
@@ -1088,10 +1264,15 @@ cannot be used directly. The two viable firmware paths are:
   safest), **X25519/Ed25519** (shared field arithmetic, link handshake
   storms), **AES+HMAC token** (library block, `gorrcd` room fanout burst
   encryption). Everything else stays in firmware.
-- Design entry: **TL-Verilog in Makerchip** — pipelines and handshakes
-  are expressed directly instead of hand-plumbed, and the output is
-  plain Verilog so nothing downstream changes.
-- Flow: Makerchip → Verilator/cocotb (Go-generated vectors) → Yosys +
+- Design entry: **SpinalHDL (Scala DSL)** — 100% free and open-source (LGPL),
+  provides first-class `Stream` abstractions (valid/ready handshakes),
+  `spinal.lib.pipeline` stage retiming, parametric crypto configuration,
+  built-in AXI/APB bus shims, and native symbiosis with VexRiscv/NaxRiscv.
+  Compiles to clean Verilog-2001/SystemVerilog with zero proprietary tool dependencies.
+- Interconnect: **4-bit QSPI @ 40–80 MHz + ESP32 GDMA + Dedicated Hardware IRQ (7 pins total)**.
+  Moves 20–40 MB/s, transferring 507B packets in 12–25 µs with zero CPU polling
+  and zero memory copy overhead, perfectly fitting the ESP32-C5 pin budget and pad-limited ASIC dies.
+- Flow: SpinalHDL → SpinalSim/Verilator (Go-generated golden vectors) → Yosys +
   OpenLane/OpenROAD on sky130 or IHP SG13G2 → TinyTapeout first, then a
   full shuttle.
 - The Go sources in this repo serve double duty as the golden reference
