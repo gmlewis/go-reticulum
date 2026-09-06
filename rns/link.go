@@ -1036,7 +1036,7 @@ func (l *Link) send(p *Packet) error {
 		// attached-interface path bypasses Packet.Send, so the counter
 		// is bumped here; the transport path below goes through
 		// Packet.Send which records it itself.
-		l.recordOutbound(len(p.Ciphertext))
+		l.recordOutbound(len(p.Ciphertext), p.Context == ContextKeepalive)
 		// Send directly through the attached interface for link-specific packets
 		if err := iface.Send(p.Raw); err != nil {
 			l.logger.Error("Link.send: failed to send via attached interface: %v", err)

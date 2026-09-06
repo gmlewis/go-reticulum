@@ -298,7 +298,12 @@ func (p *Packet) Send() error {
 	// shortcut. Link.send's attached-interface path bumps the counter
 	// itself, so each packet is counted exactly once.
 	if link, ok := p.Destination.(*Link); ok {
-		link.recordOutbound(len(p.Ciphertext))
+		if link.status.Load() == LinkClosed {
+			p.Sent = false
+			p.Receipt = nil
+			return fmt.Errorf("attempt to transmit over closed link %x", link.linkID)
+		}
+		link.recordOutbound(len(p.Ciphertext), p.Context == ContextKeepalive)
 	}
 	if p.CreateReceipt && p.Receipt == nil {
 		p.Receipt = &PacketReceipt{

@@ -168,3 +168,68 @@ func TestLinkTrafficCountersWired(t *testing.T) {
 			got, recvRXBytes+uint64(wantCT), recvRXBytes, wantCT)
 	}
 }
+
+// TestLinkPacketSendUpdatesLastOutbound asserts that sending a packet over a
+// link advances the link's lastOutbound and lastData timestamps, mirroring
+// Python Packet.send (Packet.py:294-295: self.destination.last_outbound = time.time()).
+func TestLinkPacketSendUpdatesLastOutbound(t *testing.T) {
+	t.Parallel()
+
+	initiator, _, _ := establishLoopbackLinkPair(t)
+
+	// Artificially age the timestamps so we can reliably detect their update.
+	staleTime := time.Now().Add(-10 * time.Second)
+	initiator.mu.Lock()
+	initiator.lastOutbound = staleTime
+	initiator.lastData = staleTime
+	initiator.mu.Unlock()
+
+	beforeSend := time.Now()
+	p := NewPacket(initiator, []byte("test outbound timestamp update"))
+	if err := p.Send(); err != nil {
+		t.Fatalf("Packet.Send: %v", err)
+	}
+
+	initiator.mu.Lock()
+	gotOutbound := initiator.lastOutbound
+	gotData := initiator.lastData
+	initiator.mu.Unlock()
+
+	if gotOutbound.Before(beforeSend) {
+		t.Fatalf("initiator.lastOutbound was not updated on Packet.Send: got %v, want >= %v", gotOutbound, beforeSend)
+	}
+	if gotData.Before(beforeSend) {
+		t.Fatalf("initiator.lastData was not updated on Packet.Send: got %v, want >= %v", gotData, beforeSend)
+	}
+
+	// Sending a keepalive packet should update lastOutbound and lastKeepalive,
+	// but must NOT advance lastData.
+	initiator.mu.Lock()
+	initiator.lastOutbound = staleTime
+	initiator.lastKeepalive = staleTime
+	initiator.lastData = staleTime
+	initiator.mu.Unlock()
+
+	beforeKeepalive := time.Now()
+	kp := NewPacket(initiator, []byte{0xFF})
+	kp.Context = ContextKeepalive
+	if err := kp.Send(); err != nil {
+		t.Fatalf("Packet.Send keepalive: %v", err)
+	}
+
+	initiator.mu.Lock()
+	gotOutbound = initiator.lastOutbound
+	gotKeepalive := initiator.lastKeepalive
+	gotData = initiator.lastData
+	initiator.mu.Unlock()
+
+	if gotOutbound.Before(beforeKeepalive) {
+		t.Fatalf("initiator.lastOutbound was not updated on keepalive Send: got %v, want >= %v", gotOutbound, beforeKeepalive)
+	}
+	if gotKeepalive.Before(beforeKeepalive) {
+		t.Fatalf("initiator.lastKeepalive was not updated on keepalive Send: got %v, want >= %v", gotKeepalive, beforeKeepalive)
+	}
+	if !gotData.Equal(staleTime) {
+		t.Fatalf("initiator.lastData was modified by keepalive Send: got %v, want %v", gotData, staleTime)
+	}
+}

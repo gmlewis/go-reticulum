@@ -5,6 +5,8 @@
 
 package rns
 
+import "time"
+
 // Link traffic counters and accessors.
 //
 // This file is the Go port of Python Link.py's per-link traffic accounting:
@@ -67,21 +69,37 @@ func (l *Link) GetRXBytes() uint64 {
 	return l.rxbytes
 }
 
-// recordOutbound increments the link's outbound traffic counters for one
-// sent packet, mirroring Python's Packet.send LINK-destination branch
-// (Packet.py:294-295): self.destination.tx += 1;
-// self.destination.txbytes += len(self.ciphertext). It is called from
-// Link.send (for internally-generated link packets that bypass Packet.Send
-// via the attached-interface path) and from Packet.Send (for externally
-// generated link packets such as resource advertisements/parts). The caller
-// must NOT hold l.mu; it is taken here so the counter read in
-// accumulateEstablishmentCost's neighborhood stays consistent.
-func (l *Link) recordOutbound(ciphertextLen int) {
+// recordOutbound updates the link's outbound traffic counters and activity
+// timestamps for one sent packet, mirroring Python's Packet.send
+// LINK-destination branch (Packet.py:294-295):
+//
+//	self.destination.last_outbound = time.time()
+//	self.destination.tx += 1
+//	self.destination.txbytes += len(self.ciphertext)
+//
+// and Python's Link.had_outbound:
+//
+//	if not is_keepalive: self.last_data = self.last_outbound
+//	else:                self.last_keepalive = self.last_outbound
+//
+// It is called from Link.send (for internally-generated link packets that
+// bypass Packet.Send via the attached-interface path) and from Packet.Send
+// (for externally generated link packets such as data or resource packets).
+// The caller must NOT hold l.mu; it is taken here so the counter and
+// timestamp reads stay consistent.
+func (l *Link) recordOutbound(ciphertextLen int, isKeepalive bool) {
 	if l == nil {
 		return
 	}
+	now := time.Now()
 	l.mu.Lock()
 	l.tx++
 	l.txbytes += uint64(ciphertextLen)
+	l.lastOutbound = now
+	if !isKeepalive {
+		l.lastData = now
+	} else {
+		l.lastKeepalive = now
+	}
 	l.mu.Unlock()
 }
