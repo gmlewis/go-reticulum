@@ -15,7 +15,7 @@ The fixed-function hot spots are annotated in the source with
 | LXMF stamp grinding (SHA-256 hashcash) | `go-reticulum/lxmf/stamper.go` (`GenerateStamp`, `StampValue`, `workblockMidstate`) | millions of independent SHA-256 candidates per stamp; no key material on-chip |
 | Ed25519 sign/verify | `go-reticulum/rns/crypto/ed25519.go` | every announce, path token, proof, ratchet-file signature |
 | X25519 ECDH | `go-reticulum/rns/crypto/x25519.go` | every link establishment and every packet decrypt (one trial per stored ratchet) |
-| AES-CBC + HMAC-SHA256 (Fernet-style Token) | `go-reticulum/rns/crypto/token.go` | every encrypted LXMF/link payload |
+| AES-CBC + HMAC-SHA256 (Fernet-style Token) | `go-reticulum/rns/crypto/token.go` | every encrypted LXMF/link payload and `gorrcd` chat room fanout (burst per-member link encryption) |
 
 ---
 
@@ -55,6 +55,31 @@ ESP32, and the winning value costs nothing extra to collect.
 Stamp grinding is also the *safest* first accelerator: the workblock is
 public data, there is no key material on-chip, and a wrong answer is
 rejected by the verifier — a fault or bug fails safe.
+
+### Second dominant cost on chat hubs: gorrcd room fanout & link handshakes
+
+Since this document was originally drafted, `gorrcd` (the Reticulum Relay
+Chat hub daemon) and client stack have been integrated directly into
+`go-reticulum/rrc`. For an RRC chat node, two operational patterns create
+sharp CPU spikes that benefit directly from ASIC acceleration:
+
+1. **Room broadcast fanout (burst Token encryption)**: When a member sends a
+   message to a channel with $N$ active participants, `gorrcd`'s router
+   re-encodes the message and dispatches it across $N$ distinct Reticulum
+   `Link` instances. Each link uses an independent ephemeral encryption key
+   requiring a distinct `crypto.Token` (AES-128-CBC + HMAC-SHA256). In a room
+   with 30 or 50 members, a single incoming chat line causes 30–50 back-to-back
+   AES+HMAC operations. On a 240 MHz microcontroller (e.g. ESP32-C5), this
+   burst ties up the CPU and causes packet dispatch jitter unless offloaded to a
+   pipelined Token accelerator.
+2. **Concurrent link handshake storms (X25519 ECDH + Ed25519 verify)**: When
+   multiple clients connect or reconnect simultaneously (such as after an
+   announce, radio beacon, or network partition heal), each link handshake
+   executes one X25519 scalar multiplication and one Ed25519 signature
+   verification. In pure software on an RV32 core, point multiplication takes
+   tens of thousands of cycles (~10–25 ms each). Multiple concurrent joins
+   cause link timeout drops and keepalive churn; offloading the Montgomery
+   ladder and Ed25519 verification resolves the negotiation bottleneck.
 
 ---
 
@@ -279,6 +304,7 @@ per-product firmware.
 | **Leaf** (sensors & actuators) | CH32V003-class RISC-V (10-cent tier) up to ESP32-C3/C6 | LoRa (sleepy, duty-cycled), optionally built-in 802.15.4/WiFi/BLE | Temperature, humidity, light level, weather, door/window contacts, motion, relays, lighting control. Weeks of battery on slow LoRa announce cadence; in-home Leafs can lean on the radio already on the chip (see 6.3) |
 | **Eye** (cameras) | ESP32-P4 (H.264 encoder, dual-core RISC-V) or a Pi/OrangePi-class RISC-V SBC (e.g. Milk-V/StarFive) | Built-in WiFi for in-home streaming, LoRa for wake/alert | Doorbell, motion-triggered captures. See the bandwidth reality in 6.3 |
 | **View** (displays & UX) | ESP32 with e-ink; or any Linux SBC running this repo's Go NomadNet | LoRa for alerts, WiFi/LAN for rich UI | Wall panels, room controllers, doorbell screens — NomadNet pages as the UI layer, already designed for exactly this |
+| **Communicator / Pocket Hub** (handheld chat node) | **ESP32-C5** (single-core RISC-V @ 240 MHz, 400 KB SRAM + 8–16 MB OPI PSRAM) | Dual-band Wi-Fi 6 (2.4 GHz + 5 GHz) + BLE 5 + 802.15.4 + LoRa (SX1262 SPI) | Handheld pocket RRC relay chat hub (`gorrcd`) and optional portable NomadNet terminal. Dual-band Wi-Fi 6 enables clean 5 GHz SoftAP for nearby peers to join local chat without 2.4 GHz interference; ASIC coprocessor offloads burst AES+HMAC token encryption during room fanout and X25519/Ed25519 link handshakes |
 
 Two deliberate software decisions make the family coherent instead of a
 pile of boards:
@@ -863,6 +889,142 @@ stdlib, `reflect`, `math/big`, and `image` all compile as-is, making
 TamaGo the parity-faithful firmware route if a bare-metal node is wanted
 before any of these work items are done.
 
+### 7.5.2 The Handheld ESP32-C5 Pocket Hub: Running gorrcd (and optionally gonomadnet) natively
+
+A particularly compelling hardware realization of the Communicator tier (§6.2) is a
+**handheld, battery-powered pocket device powered by the ESP32-C5** running `gorrcd`
+(and optionally a lightweight `gonomadnet` client) assisted by the crypto ASIC.
+
+The **ESP32-C5** is Espressif's first dual-band Wi-Fi 6 (2.4 & 5 GHz) + BLE 5 +
+802.15.4 RISC-V SoC (single-core RV32IMAC @ 240 MHz). It changes the economics and
+physics of an RRC chat node in three fundamental ways:
+
+1. **Dual-Band Wi-Fi 6 (5 GHz / 2.4 GHz) for Congestion-Free Local Chat**:
+   In urban environments, field deployments, emergency shelters, or crowded
+   conventions, the 2.4 GHz band is plagued by severe RF saturation and packet
+   loss. The ESP32-C5 can spin up a clean **5 GHz SoftAP or Wi-Fi 6 ad-hoc mesh
+   link**, allowing nearby phones, laptops, or peer handhelds to join the local
+   `gorrcd` hub with minimal latency and zero 2.4 GHz channel contention.
+2. **Built-in Crypto Engine as a Tier-1 Baseline Accelerator**:
+   The ESP32-C5 includes onboard hardware blocks for AES-128/256, SHA-256, RSA, ECC,
+   HMAC, and a True Random Number Generator (TRNG). Under the `Offloader` pattern
+   (§7.4), firmware can dispatch standard AES/SHA/HMAC operations to the ESP32-C5's
+   internal peripheral immediately, providing a baseline speedup in software before
+   the custom ASIC coprocessor is attached.
+3. **Zero-Dependency Footprint of `gorrcd`**:
+   The recent consolidation of RRC into `go-reticulum/rrc` removed all external
+   dependencies (eliminating `github.com/fxamacker/cbor/v2` and `golang.org/x/text`
+   in favor of standard library decoding and in-tree `rrc/cbor`). Unlike the full
+   `gonomadnet` TUI (which carries tview/tcell and clipboard bindings), `gorrcd` is a
+   **pure network daemon**: it needs only link buffers, session tables, and the
+   room registry. It has no terminal dependencies, no cgo, and a compact working set
+   that fits comfortably within external Octal PSRAM (e.g. 8 MB or 16 MB OPI PSRAM).
+
+#### The Workload: Where ASIC Assistance is Essential on ESP32-C5
+
+While the ESP32-C5's 240 MHz RV32 core is fast for general control flow, running an
+active RRC chat hub exposes three cryptographic bottlenecks:
+
+- **The Room Fanout Spike (Burst Token Encryption)**:
+  When a message arrives in an active room with $N$ joined members, `gorrcd` loops
+  through all members and transmits the message over each member's individual `Link`.
+  Because Reticulum links use ephemeral per-link keys, the message cannot simply be
+  broadcast as raw ciphertext: the hub must generate $N$ unique `crypto.Token`
+  envelopes (AES-128-CBC encryption + HMAC-SHA256 authentication).
+  - *The problem*: For a room of 30 users, 1 message requires 30 distinct AES-CBC
+    runs and 30 HMAC-SHA256 computations in rapid succession. In software on an
+    RV32 core, this burst creates noticeable latency, jitter, and packet queuing
+    delays on the radio interface.
+  - *The ASIC solution*: The pipelined AES+HMAC Token engine (§2) processes these
+    encryptions at 200 MHz pipeline wire speed over QSPI, turning a 30-message
+    CPU choke into a sub-millisecond hardware burst.
+- **Concurrent Link Handshake Storms (X25519 ECDH + Ed25519 Verify)**:
+  Every client connecting to the pocket hub performs a full Reticulum link establishment:
+  an X25519 Diffie-Hellman exchange and an Ed25519 signature verification.
+  - *The problem*: On a 32-bit RISC-V core without 64-bit SIMD or dedicated curve
+    instructions, X25519 scalar multiplication takes ~10–25 ms and Ed25519 verify
+    takes ~15–30 ms. If 10 local users discover the pocket hub's announce and join
+    simultaneously, the MCU stalls for nearly half a second verifying proofs.
+  - *The ASIC solution*: The shared Montgomery ladder core (§2) executes field
+    arithmetic in ~20–40k gates, computing scalar multiplications in microseconds
+    and keeping the hub responsive during connection storms.
+- **LXMF Stamp Grinding (when running NomadNet alongside gorrcd)**:
+  If the handheld also runs as a client composing outbound LXMF messages or
+  propagation notices, the SHA-256 stamp grinding pipeline with midstate caching
+  (§1) reduces computation time from minutes to milliseconds, dramatically
+  preserving battery life.
+
+#### Hardware Architecture of the Handheld Pocket Hub
+
+A concrete bill of materials for an open, handheld pocket communicator:
+
+```
++-------------------------------------------------------------------------+
+|                       Handheld Pocket Communicator                      |
+|                                                                         |
+|  +---------------------+        QSPI @ 80 MHz       +----------------+  |
+|  | ESP32-C5 MCU        |<==========================>| Crypto ASIC    |  |
+|  | - RV32IMAC @ 240 MHz|                            | (TinyTapeout   |  |
+|  | - 400 KB SRAM       |                            |  or Shuttle)   |  |
+|  | - 8–16 MB OPI PSRAM |                            | - SHA-256 pipe |  |
+|  | - 16 MB Flash       |                            | - X25519 ladder|  |
+|  +----------+----------+                            | - Ed25519 sign |  |
+|             |                                       | - AES+HMAC tok |  |
+|             | SPI                                   +----------------+  |
+|             v                                                           |
+|  +---------------------+                                                |
+|  | Semtech SX1262 LoRa |                                                |
+|  | (868/915 MHz Mesh)  |                                                |
+|  +---------------------+                                                |
+|                                                                         |
+|  Built-in Radios:                                                       |
+|  - Dual-Band Wi-Fi 6 (2.4 GHz mesh + 5 GHz local SoftAP)                |
+|  - Bluetooth 5 (LE) for phone commissioning                             |
+|                                                                         |
+|  Peripherals:                                                           |
+|  - MicroSD slot (FAT32 for rooms.toml, hub_identity, message logs)     |
+|  - 2.8" SPI color LCD (320x240) or low-power e-ink display             |
+|  - I2C QWERTY keyboard (BB Q10 / CardKB) or navigation trackball       |
+|  - LiPo battery (2000–3000 mAh) with USB-C charging                     |
++-------------------------------------------------------------------------+
+```
+
+#### Operational Modes
+
+The handheld device supports two primary operating modes:
+
+1. **Autonomous Pocket Hub (Headless / Backpack Mode)**:
+   - Device rests in a pocket, backpack, or vehicle.
+   - Runs `gorrcd` as a permanent local chat hub.
+   - Radios: Listens on LoRa for incoming long-range mesh packets and announces;
+     broadcasts a local 5 GHz Wi-Fi 6 AP and BLE service.
+   - Anyone nearby (friends, field team) connects their laptop or phone to the
+     5 GHz Wi-Fi network and opens NomadNet, immediately accessing the local RRC
+     rooms hosted right on the handheld device.
+2. **Stand-Alone Pocket Communicator (TUI / Micron Mode)**:
+   - Runs a trimmed, micron-first client UI (§7.5) on the integrated LCD/e-ink
+     screen with keyboard input.
+   - Operators can read/post to local `gorrcd` channels, send point-to-point LXMF
+     messages, and browse NomadNet Micron pages directly from the palm of their hand
+     without requiring an external phone or computer.
+
+#### Firmware Compilation Path on ESP32-C5 (TinyGo vs. C-Host)
+
+Because the ESP32-C5 is 32-bit RISC-V (RV32), TamaGo (which is RV64-only, §7.1.1)
+cannot be used directly. The two viable firmware paths are:
+
+- **TinyGo + PSRAM Target (Pure Go Firmware)**:
+  - Target: `//go:build esp32c5` (extending TinyGo's ESP32-C series target).
+  - External 8 MB PSRAM provides the necessary heap room for `gorrcd` and `rns`.
+  - The zero-dependency cleanup of `go-reticulum/rrc` (dropping `fxamacker/cbor`
+    and `golang.org/x/text`) enables compilation without external module friction.
+- **Hybrid ESP-IDF + Go Library (CGo/Static Archive)**:
+  - Compile the pure-Go core (`rrc`, `rns`, `lxmf`) into a static library via
+    `tinygo build -target=esp32c5 -o librrc.a`.
+  - ESP-IDF provides the low-level dual-band Wi-Fi 6 stack, BLE GATT service,
+    display/keyboard drivers, and FreeRTOS tasks, calling into Go for packet
+    routing, envelope decoding, and chat hub management.
+
 ### 7.6 Checklist, repo by repo
 
 | # | Work item | Repo | Size | Notes |
@@ -880,6 +1042,8 @@ before any of these work items are done.
 | 11 | Firmware substrate / board-support repo: TinyGo target defs **and TamaGo `soc/<vendor>/<SoC>` + `board/…` packages** (the `runtime/goos` overlay: `ramStart`/`ramSize`, `cpuinit`, `InitRNG`/`GetRandomData`, `Nanotime`, `Printk`), linker scripts, startup, peripheral drivers (SPI radio, SD/FAT or flash FS, display, entropy, RTC) | new | medium | where the "hardware shims" physically live; TamaGo's in-tree SoC packages (SPI/ecspi, USDHC, CLINT/UART, RNG) are the driver template |
 | 12 | Reduced micron-first UI for MCU builds (fetch → parse → framebuffer) | go-nomadnet | medium | reuses `micron` + `browser` wholesale |
 | 13 | TamaGo bring-up: headless RNS relay/propagation node, `GOOS=tamago` on RISC-V64 (Nuclei QEMU + Milk-V Vega first), LoRa-over-SPI `Interface` + storage through #1/#2 | both | medium | the §7.1.1 entry point; same §7.7 parity A/B gate as every other phase |
+| 14 | `gorrcd` embedded daemon target: headless build tag (`//go:build embedded`), in-memory/SD room registry, session tables in PSRAM | go-reticulum | medium | zero-dependency `rrc` already compiles with stdlib only; enables pocket hub |
+| 15 | ESP32-C5 board support & dual-band AP bridge: TinyGo target `esp32c5`, dual-band Wi-Fi 6 AP `Interface` + BLE GATT + SX1262 LoRa SPI driver | new / both | medium | enables the standalone Pocket Hub (§7.5.2) |
 
 ### 7.7 A phased path that reuses this repo's parity discipline
 
@@ -904,10 +1068,15 @@ before any of these work items are done.
    carries *zero* of the §7.5.1 TinyGo work items, so it is the
    parity-faithful firmware node and the dress rehearsal for the §5
    on-die endgame.
-5. **Phase E4 — on-die crypto**: flip the provider seams to the
+5. **Phase E3c — ESP32-C5 Handheld Pocket Hub (`gorrcd` + dual-band Wi-Fi 6 + ASIC)**:
+   Deploy `gorrcd` on an ESP32-C5 with 8–16 MB OPI PSRAM; bring up the 5 GHz SoftAP
+   and SX1262 LoRa interfaces; hook the `Offloader` into the QSPI ASIC for burst
+   AES+HMAC room fanout and X25519 link handshake acceleration. Verify multi-client
+   chat fanout against desktop `gorrcd` with the parity harness.
+6. **Phase E4 — on-die crypto**: flip the provider seams to the
    accelerators; the section 4 Go-vector tooling now serves as the
    firmware bring-up testbench.
-6. Every phase keeps the section 6.2 rule: any firmware build must parse
+7. Every phase keeps the section 6.2 rule: any firmware build must parse
    and interoperate, byte for byte, against both this Go stack and the
    Python SOT — the port is only done when the parity harness says so.
 
@@ -916,8 +1085,9 @@ before any of these work items are done.
 ## 8. Summary
 
 - Offload targets, in priority order: **stamp grinding** (dominant,
-  safest), **X25519/Ed25519** (shared field arithmetic), **AES+HMAC
-  token** (library block). Everything else stays in firmware.
+  safest), **X25519/Ed25519** (shared field arithmetic, link handshake
+  storms), **AES+HMAC token** (library block, `gorrcd` room fanout burst
+  encryption). Everything else stays in firmware.
 - Design entry: **TL-Verilog in Makerchip** — pipelines and handshakes
   are expressed directly instead of hand-plumbed, and the output is
   plain Verilog so nothing downstream changes.
@@ -930,13 +1100,14 @@ before any of these work items are done.
 - The same crypto cores scale down into a family of maker-friendly
   RISC-V/ESP32 privacy devices (section 6): identity-first hardware
   where the device's RNS identity replaces the vendor account, the
-  owner's hub replaces the vendor cloud, and a four-block family
-  (Node / Leaf / Eye / View) covers doorbells, security, sensors,
-  lighting, weather — all speaking stock Reticulum, all owner-owned by
-  construction. Built-in WiFi and BLE on the ESP32-class parts handle
-  in-home streaming and low-energy telemetry, and BLE reaches the Go
-  port CGo-free as an external SPI/UART interface device (the RNode
-  trick, applied to a second radio).
+  owner's hub replaces the vendor cloud, and a five-block family
+  (Node / Leaf / Eye / View / **Communicator**) covers doorbells, security,
+  sensors, lighting, weather, and **handheld pocket chat hubs (`gorrcd` on
+  ESP32-C5)** — all speaking stock Reticulum, all owner-owned by
+  construction. Built-in dual-band Wi-Fi 6 (2.4 & 5 GHz) and BLE on the
+  ESP32-C5 provide clean, congestion-free local AP connectivity and
+  low-energy telemetry, while BLE reaches the Go port CGo-free as an
+  external SPI/UART interface device (the RNode trick, applied to a second radio).
 - And if the accelerator ever lands on the same die as the CPU
   (section 7), both repos are firmware-portable with no dependency debt
   and no cgo: the enabling work is a storage VFS layer (the ~320 `os.*`
@@ -949,5 +1120,7 @@ before any of these work items are done.
   in the field (ArmoredWitness) and at 6–16 MB RAM (kotama), and the
   natural firmware for an ASIC with an RV64 core sharing the die with
   the crypto cores (§2, §7.1.1, checklist #13, phase E3b) — and TinyGo
-  for the sub-1 MB ESP32-class Leaf tier, where its msgpack/reflect and
-  GC work items remain.
+  for the sub-1 MB ESP32-class Leaf tier and the **ESP32-C5 handheld
+  Communicator tier (§7.5.2)**, where the zero-dependency consolidation of
+  `gorrcd` into `go-reticulum/rrc` with external PSRAM makes a pocket chat
+  node an immediate, practical reality.
