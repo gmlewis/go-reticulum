@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gmlewis/go-reticulum/rrcd"
+	"github.com/gmlewis/go-reticulum/rrc"
 )
 
 // errHelp is the help sentinel.
@@ -51,9 +51,9 @@ type gorrcdOptions struct {
 // RRCD_HOME-aware state paths. Help maps to the errHelp sentinel.
 func parseFlags(args []string, usageOutput io.Writer) (*gorrcdOptions, error) {
 	opts := &gorrcdOptions{
-		config:       rrcd.DefaultConfigPath(),
-		identity:     rrcd.DefaultIdentityPath(),
-		roomRegistry: rrcd.DefaultRoomRegistryPath(),
+		config:       rrc.DefaultConfigPath(),
+		identity:     rrc.DefaultIdentityPath(),
+		roomRegistry: rrc.DefaultRoomRegistryPath(),
 	}
 	fs := flag.NewFlagSet("gorrcd", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)

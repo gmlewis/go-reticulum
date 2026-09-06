@@ -17,8 +17,8 @@ import (
 	"strings"
 
 	"github.com/gmlewis/go-reticulum/rns"
-	"github.com/gmlewis/go-reticulum/rrcd"
-	"github.com/gmlewis/go-reticulum/rrcd/toml"
+	"github.com/gmlewis/go-reticulum/rrc"
+	"github.com/gmlewis/go-reticulum/rrc/toml"
 )
 
 // defaultConfigTemplate is the first-run rrcd.toml template. The markers
@@ -252,7 +252,7 @@ func writeDefaultConfig(configPath, identityPath string) {
 	if dir := filepath.Dir(identityPath); dir != "" {
 		ensurePrivateDir(dir)
 	}
-	roomRegistryPath := rrcd.DefaultRoomRegistryPath()
+	roomRegistryPath := rrc.DefaultRoomRegistryPath()
 	content := defaultConfigContent(identityPath, roomRegistryPath)
 	// The write never creates the parent quietly; os.WriteFile fails on
 	// a missing parent exactly like Python's open() would.
@@ -331,5 +331,5 @@ func loadConfigTOMLFile(path string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return rrcd.ConfigDataFromDoc(doc), nil
+	return rrc.ConfigDataFromDoc(doc), nil
 }

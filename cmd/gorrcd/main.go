@@ -44,7 +44,7 @@ import (
 	"syscall"
 
 	"github.com/gmlewis/go-reticulum/rns"
-	"github.com/gmlewis/go-reticulum/rrcd"
+	"github.com/gmlewis/go-reticulum/rrc"
 )
 
 func main() {
@@ -100,7 +100,7 @@ func main() {
 
 	startPProf(opts.pprofAddr)
 
-	svc := rrcd.NewHubService(cfg)
+	svc := rrc.NewHubService(cfg)
 	svc.SetLogger(rnsLogger)
 	svc.ConfigureLogging(opts.logLevel, opts.logFile)
 	if err := svc.Start(); err != nil {
@@ -127,8 +127,8 @@ func main() {
 // buildConfig applies the precedence chain: the path seeds, then the TOML
 // load (TOML keys override the path seeds; config_path and dest_name never
 // come from TOML), then the CLI overrides in the Python order.
-func buildConfig(opts *gorrcdOptions, configPath, identityPath, roomRegistryPath string) (rrcd.HubConfig, error) {
-	cfg := rrcd.DefaultHubConfig()
+func buildConfig(opts *gorrcdOptions, configPath, identityPath, roomRegistryPath string) (rrc.HubConfig, error) {
+	cfg := rrc.DefaultHubConfig()
 	cfg.Configdir = opts.configdir
 	cfg.IdentityPath = &identityPath
 	cfg.ConfigPath = &configPath
@@ -139,7 +139,7 @@ func buildConfig(opts *gorrcdOptions, configPath, identityPath, roomRegistryPath
 		if err != nil {
 			return cfg, err
 		}
-		cfg = rrcd.ApplyConfigData(cfg, data)
+		cfg = rrc.ApplyConfigData(cfg, data)
 	}
 
 	if opts.noAnnounce {

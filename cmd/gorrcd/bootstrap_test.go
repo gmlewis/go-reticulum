@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gmlewis/go-reticulum/rrcd"
-	"github.com/gmlewis/go-reticulum/rrcd/toml"
+	"github.com/gmlewis/go-reticulum/rrc"
+	"github.com/gmlewis/go-reticulum/rrc/toml"
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
@@ -181,9 +181,9 @@ func TestFirstRunCreatesFullDefaultConfig(t *testing.T) {
 	home := testutils.TempDir(t, "gorrcd-firstrun-")
 	t.Setenv("RRCD_HOME", home)
 
-	configPath := rrcd.DefaultConfigPath()
-	identityPath := rrcd.DefaultIdentityPath()
-	roomRegistryPath := rrcd.DefaultRoomRegistryPath()
+	configPath := rrc.DefaultConfigPath()
+	identityPath := rrc.DefaultIdentityPath()
+	roomRegistryPath := rrc.DefaultRoomRegistryPath()
 
 	created := ensureFirstRunFiles(configPath, identityPath, roomRegistryPath, nil)
 	if !created {
@@ -269,15 +269,15 @@ func TestFirstRunCreatesFullDefaultConfig(t *testing.T) {
 	// of junk — is left untouched and the config is never rewritten.
 	home2 := testutils.TempDir(t, "gorrcd-firstrun2-")
 	t.Setenv("RRCD_HOME", home2)
-	configPath2 := rrcd.DefaultConfigPath()
+	configPath2 := rrc.DefaultConfigPath()
 	if err := os.WriteFile(configPath2, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	// Python still creates the missing identity and rooms files, so
 	// created_any can stay true; the pinned parity is that the config
 	// itself is never rewritten.
-	_ = ensureFirstRunFiles(rrcd.DefaultConfigPath(), rrcd.DefaultIdentityPath(),
-		rrcd.DefaultRoomRegistryPath(), nil)
+	_ = ensureFirstRunFiles(rrc.DefaultConfigPath(), rrc.DefaultIdentityPath(),
+		rrc.DefaultRoomRegistryPath(), nil)
 	data2, err := os.ReadFile(configPath2)
 	if err != nil {
 		t.Fatal(err)

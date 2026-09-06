@@ -16,7 +16,7 @@ import (
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns"
-	"github.com/gmlewis/go-reticulum/rrcd"
+	"github.com/gmlewis/go-reticulum/rrc"
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
@@ -31,9 +31,9 @@ func TestParseFlags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseFlags error: %v", err)
 	}
-	if opts.config != rrcd.DefaultConfigPath() ||
-		opts.identity != rrcd.DefaultIdentityPath() ||
-		opts.roomRegistry != rrcd.DefaultRoomRegistryPath() {
+	if opts.config != rrc.DefaultConfigPath() ||
+		opts.identity != rrc.DefaultIdentityPath() ||
+		opts.roomRegistry != rrc.DefaultRoomRegistryPath() {
 		t.Errorf("path defaults = %v/%v/%v, want the RRCD_HOME-aware defaults",
 			opts.config, opts.identity, opts.roomRegistry)
 	}
@@ -333,8 +333,8 @@ func TestBuildConfigPrecedence(t *testing.T) {
 	if cfg.ConfigPath == nil || *cfg.ConfigPath != cfgPath {
 		t.Errorf("config path after TOML = %v, want the CLI seed %v", cfg.ConfigPath, cfgPath)
 	}
-	if cfg.DestName != rrcd.HubDestName {
-		t.Errorf("dest name after TOML = %q, want %q", cfg.DestName, rrcd.HubDestName)
+	if cfg.DestName != rrc.HubDestName {
+		t.Errorf("dest name after TOML = %q, want %q", cfg.DestName, rrc.HubDestName)
 	}
 	// TOML wins over defaults.
 	if cfg.HubName != "TOMLHub" || cfg.MaxNickBytes != 48 {

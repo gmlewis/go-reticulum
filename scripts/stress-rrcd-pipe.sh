@@ -13,7 +13,7 @@
 #   STRESS_PACKAGE=./lxmf STRESS_RUN='TestRouterJobLoop' scripts/stress-rrcd-pipe.sh
 #   GO_TEST_PARALLEL=4 scripts/stress-rrcd-pipe.sh               # also stress intra-package parallelism
 #
-# Env knobs: STRESS_SPINNERS (default 8), STRESS_PACKAGE (default ./rrcd),
+# Env knobs: STRESS_SPINNERS (default 8), STRESS_PACKAGE (default ./rrc),
 # STRESS_RUN (default 'TestIntegration.*OverPipe'). Extra args are forwarded
 # to scripts/test-integration.sh (e.g. -short, -count=2).
 
@@ -25,7 +25,7 @@ export ORIGINAL_LXMF_REPO_DIR="${ORIGINAL_LXMF_REPO_DIR:-${HOME}/src/github.com/
 export ORIGINAL_RNSH_REPO_DIR="${ORIGINAL_RNSH_REPO_DIR:-${HOME}/src/github.com/acehoss/rnsh}"
 
 STRESS_SPINNERS="${STRESS_SPINNERS:-8}"
-STRESS_PACKAGE="${STRESS_PACKAGE:-./rrcd}"
+STRESS_PACKAGE="${STRESS_PACKAGE:-./rrc}"
 STRESS_RUN="${STRESS_RUN:-TestIntegration.*OverPipe}"
 
 pids=()
