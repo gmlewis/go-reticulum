@@ -41,6 +41,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/ecdh"
 	"encoding/hex"
 	"flag"
 	"fmt"
@@ -68,6 +69,42 @@ type goldenCase struct {
 	ExpectedDigest   string
 	ExpectedCandHex  string
 	ExpectedRounds   uint64
+}
+
+type goldenX25519Case struct {
+	Name              string
+	ScalarHex         string
+	UCoordHex         string
+	ExpectedSharedHex string
+}
+
+func makeX25519Case(name, scalarHex, uCoordHex string) goldenX25519Case {
+	scalarBytes, err := hex.DecodeString(scalarHex)
+	if err != nil {
+		log.Fatalf("invalid scalar hex %v: %v", scalarHex, err)
+	}
+	uBytes, err := hex.DecodeString(uCoordHex)
+	if err != nil {
+		log.Fatalf("invalid u hex %v: %v", uCoordHex, err)
+	}
+	priv, err := ecdh.X25519().NewPrivateKey(scalarBytes)
+	if err != nil {
+		log.Fatalf("failed to create X25519 private key for %v: %v", name, err)
+	}
+	pub, err := ecdh.X25519().NewPublicKey(uBytes)
+	if err != nil {
+		log.Fatalf("failed to create X25519 public key for %v: %v", name, err)
+	}
+	shared, err := priv.ECDH(pub)
+	if err != nil {
+		log.Fatalf("failed to compute ECDH for %v: %v", name, err)
+	}
+	return goldenX25519Case{
+		Name:              name,
+		ScalarHex:         scalarHex,
+		UCoordHex:         uCoordHex,
+		ExpectedSharedHex: hex.EncodeToString(shared),
+	}
 }
 
 func leadingZeroBits(data []byte) int {
@@ -227,6 +264,34 @@ func main() {
 		searchGolden("Offset Search - Target 5", "lxmf-msg-id-8a3b4c5d6e7f0123", 2, baseCand, 50, 5),
 	}
 
+	x25519Cases := []goldenX25519Case{
+		makeX25519Case(
+			"RFC 7748 Vector 1",
+			"a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4",
+			"e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c",
+		),
+		makeX25519Case(
+			"RFC 7748 Vector 2",
+			"4b66e9d4d1b4673c5ad22691957d6af5c11b6421e0ea01d42ca4169e7918ba0d",
+			"e5210f12786811d3f4b7959d0538ae2c31dbe7106fc03c3efc4cd549c715a493",
+		),
+		makeX25519Case(
+			"Base Point u=9 with Scalar 1",
+			"0100000000000000000000000000000000000000000000000000000000000000",
+			"0900000000000000000000000000000000000000000000000000000000000000",
+		),
+		makeX25519Case(
+			"Reticulum Handshake Key Exchange A",
+			"c8079d38767314f11b2a40701026702636e29618201d4fb3a6049c692a947fa5",
+			"504602762c4b84965378ac4790be450123963286f14dd16b270733a4e3b0d595",
+		),
+		makeX25519Case(
+			"Reticulum Handshake Key Exchange B",
+			"4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742",
+			"438a6800f489f1a7d0394b507c7510a976ce5439f481ac60bdab3429b59e564e",
+		),
+	}
+
 	var buf bytes.Buffer
 	buf.WriteString("package reticulum.parity\n\n")
 	buf.WriteString("/**\n")
@@ -254,6 +319,13 @@ func main() {
 	buf.WriteString("  name: String,\n")
 	buf.WriteString("  messageHex: String,\n")
 	buf.WriteString("  expectedDigestHex: String\n")
+	buf.WriteString(")\n\n")
+
+	buf.WriteString("case class GoldenX25519Case(\n")
+	buf.WriteString("  name: String,\n")
+	buf.WriteString("  scalarHex: String,\n")
+	buf.WriteString("  uCoordHex: String,\n")
+	buf.WriteString("  expectedSharedHex: String\n")
 	buf.WriteString(")\n\n")
 
 	buf.WriteString("object GoldenVectors {\n")
@@ -294,6 +366,17 @@ func main() {
 	buf.WriteString("      messageHex = \"\",\n")
 	buf.WriteString("      expectedDigestHex = \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n")
 	buf.WriteString("    )\n")
+	buf.WriteString("  )\n\n")
+
+	buf.WriteString("  val x25519Cases: Seq[GoldenX25519Case] = Seq(\n")
+	for _, c := range x25519Cases {
+		buf.WriteString("    GoldenX25519Case(\n")
+		buf.WriteString(fmt.Sprintf("      name = %q,\n", c.Name))
+		buf.WriteString(fmt.Sprintf("      scalarHex = %q,\n", c.ScalarHex))
+		buf.WriteString(fmt.Sprintf("      uCoordHex = %q,\n", c.UCoordHex))
+		buf.WriteString(fmt.Sprintf("      expectedSharedHex = %q\n", c.ExpectedSharedHex))
+		buf.WriteString("    ),\n")
+	}
 	buf.WriteString("  )\n")
 	buf.WriteString("}\n")
 
