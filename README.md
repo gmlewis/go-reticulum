@@ -26,6 +26,16 @@ It is based upon the following Python original works:
   Date:   Mon Jan 12 09:17:07 2026 -0500
   ```
 
+> [!TIP]
+> ### Standalone Off-Grid Hardware Projects
+> Looking to build, buy parts for, or flash standalone handheld Reticulum hardware devices?
+> Jump straight to the [**Reticulum Hardware Projects Guide**](https://github.com/gmlewis/asic-reticulum/tree/master/Hardware-Projects-Guide.md).
+>
+> It contains complete bills of materials (BOM), PCB manufacturing instructions, direct links to pre-compiled GitHub Release binaries, and zero-install in-browser web flashing for:
+> - **Project 1: The Pocket Linux Terminal** (Raspberry Pi Zero 2W, 2.8" SPI LCD, CardKB keyboard, LoRa)
+> - **Project 2: The Standalone Pocket Communicator** (ESP32-C5 / Heltec V4, display, keyboard, LoRa)
+> - **Project 3: The Autonomous Pocket Hub & Repeater** (ESP32-C5, LoRa, Wi-Fi 6 SoftAP mesh relay daemon)
+
 ## Go Port Security & Dependency Policy
 - **Vendored Compression Snapshot**: A local in-repo snapshot (with source commit
   `39efe44ab707ffd2c1ef32cc7dbebfe584718686`) of `github.com/dsnet/compress/bzip2`
