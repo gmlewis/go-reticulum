@@ -681,7 +681,7 @@ func buildReleaseNotes(version, repo string, assets []string) string {
 	mustFprintf(&b, "- **Form Factor C (Pocket Hub)**: Standalone `gorrcd` mesh relay daemon (no display, no keyboard).\n")
 	mustFprintf(&b, "  - `gorrcd-%v-pocket_hub-linux-arm64`, `gorrcd-...-arm`, `gorrcd-...-riscv64`, `gorrcd-...-amd64`\n", version)
 	mustFprintf(&b, "  - Accelerator variants: `gorrcd-...-pocket_hub-asic-...` and `gorrcd-...-pocket_hub-fpga-...`.\n")
-	mustFprintf(&b, "\nSee [`Hardware-Projects-Guide.md`](https://github.com/gmlewis/asic-reticulum/blob/master/Hardware-Projects-Guide.md) for the complete bill of materials, assembly, and setup instructions.\n")
+	mustFprintf(&b, "\nSee [`Hardware-Projects-Guide.md`](https://github.com/gmlewis/asic-reticulum/blob/master/Hardware-Projects-Guide.md) for the complete bill of materials, assembly, and flashing instructions (including zero-install web flashing via [ESPConnect](https://thelastoutpostworkshop.github.io/ESPConnect/) and [Espressif Web Flasher](https://espressif.github.io/esptool-js/)).\n")
 
 	mustFprintf(&b, "\n## Post-download setup\n\n")
 	mustFprintf(&b, "Make the downloaded executable runnable:\n\n")
