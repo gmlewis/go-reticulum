@@ -33,7 +33,7 @@ It is based upon the following Python original works:
 >
 > It contains complete bills of materials (BOM), PCB manufacturing instructions, direct links to pre-compiled GitHub Release binaries, and zero-install in-browser web flashing for:
 > - **Project 1: The Pocket Linux Terminal** (Raspberry Pi Zero 2W, 2.8" SPI LCD, CardKB keyboard, LoRa)
-> - **Project 2: The Standalone Pocket Communicator** (ESP32-C5 / Heltec V4, display, keyboard, LoRa)
+> - **Project 2: The Standalone Pocket Communicator** (ESP32-C5 RISC-V SoC, display, keyboard, LoRa)
 > - **Project 3: The Autonomous Pocket Hub & Repeater** (ESP32-C5, LoRa, Wi-Fi 6 SoftAP mesh relay daemon)
 
 ## Go Port Security & Dependency Policy
