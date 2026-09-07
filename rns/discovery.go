@@ -17,7 +17,6 @@ import (
 	"math/bits"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -347,11 +346,8 @@ func (ia *InterfaceAnnouncer) resolveReachableOn(raw string) (string, error) {
 		if err == nil {
 			if info, statErr := os.Stat(execPath); statErr == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
 				fromExecutable = true
-				output, err := exec.Command(execPath).Output()
+				output, err := runDiscoverySubprocess(execPath)
 				if err != nil {
-					if _, ok := errors.AsType[*exec.ExitError](err); ok {
-						return "", &discoveryReachableOnExecError{raw: raw, err: errors.New("Non-zero exit code from subprocess")}
-					}
 					return "", &discoveryReachableOnExecError{raw: raw, err: err}
 				}
 				reachableOn = sanitizeDiscoveryString(string(output))
@@ -404,11 +400,8 @@ func (ia *InterfaceAnnouncer) resolveLocation(cfg interfaces.DiscoveryConfig) (l
 		// Not an executable file; fall back to static config values.
 		return lat, lon, hgt, true
 	}
-	output, err := exec.Command(execPath).Output()
+	output, err := runDiscoverySubprocess(execPath)
 	if err != nil {
-		if _, ok := errors.AsType[*exec.ExitError](err); ok {
-			return abort("Non-zero exit code from subprocess")
-		}
 		return abort("run executable: %v", err)
 	}
 
