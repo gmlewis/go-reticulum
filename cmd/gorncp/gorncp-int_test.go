@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"os"
@@ -203,27 +202,6 @@ loglevel = 4
 	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(config), 0o644); err != nil {
 		t.Fatalf("WriteFile config: %v", err)
 	}
-}
-
-func captureStdout(f func()) string {
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	var buf bytes.Buffer
-	done := make(chan struct{})
-	go func() {
-		_, _ = io.Copy(&buf, r)
-		close(done)
-	}()
-
-	f()
-
-	_ = w.Close()
-	<-done
-
-	os.Stdout = oldStdout
-	return buf.String()
 }
 
 func TestVersionParity(t *testing.T) {

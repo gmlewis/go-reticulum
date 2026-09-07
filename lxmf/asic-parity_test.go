@@ -212,7 +212,7 @@ func addNonceHelper(base []byte, nonce uint64) []byte {
 	res := make([]byte, len(base))
 	copy(res, base)
 	carry := nonce
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		sum := uint64(res[i]) + (carry & 0xFF)
 		res[i] = byte(sum)
 		carry = (carry >> 8) + (sum >> 8)
@@ -224,7 +224,6 @@ func TestAsicParityWithGoldenVectors(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range asicGoldenCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 

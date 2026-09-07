@@ -52,12 +52,19 @@ func main() {
 	// logfile; these flags stamp the process-level lines captured into the
 	// /tmp service logs by the bootstrap script).
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
+	// The RNS logger is created further down; keep the variable visible to
+	// the panic handler so it can flush the async queue before the crash.
+	var rnsLogger *rns.Logger
 	// Persist main-goroutine panics through the configured log writer: the
 	// runtime's stderr dump scrolls away in a plain SSH session, while the
 	// [logging] file (when configured) persists it for forensics.
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("PANIC in main: %v\n%v", r, debug.Stack())
+			// The rns logger writes asynchronously; flush the queue so the
+			// forensic lines explaining the panic are not silently lost
+			// (Flush is nil-safe if the panic preceded logger creation).
+			rnsLogger.Flush()
 			panic(r)
 		}
 	}()
@@ -96,7 +103,7 @@ func main() {
 	// One RNS logger instance carries the [logging] rns_level into the
 	// live stack; the hub owns the logging state and shares the logger,
 	// mirroring Python's configure_logging before start.
-	rnsLogger := rns.NewLogger()
+	rnsLogger = rns.NewLogger()
 
 	startPProf(opts.pprofAddr)
 

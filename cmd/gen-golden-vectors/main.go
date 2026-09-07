@@ -140,7 +140,7 @@ func compressBlock(hIn [8]uint32, block []byte) [8]uint32 {
 	maj := func(a, b, c uint32) uint32 { return (a & b) ^ (a & c) ^ (b & c) }
 
 	var W [64]uint32
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		W[i] = uint32(block[i*4])<<24 | uint32(block[i*4+1])<<16 | uint32(block[i*4+2])<<8 | uint32(block[i*4+3])
 	}
 	for t := 16; t < 64; t++ {
@@ -148,7 +148,7 @@ func compressBlock(hIn [8]uint32, block []byte) [8]uint32 {
 	}
 
 	a, b, c, d, e, f, g, h := hIn[0], hIn[1], hIn[2], hIn[3], hIn[4], hIn[5], hIn[6], hIn[7]
-	for t := 0; t < 64; t++ {
+	for t := range 64 {
 		t1 := h + sigma1(e) + ch(e, f, g) + K[t] + W[t]
 		t2 := sigma0(a) + maj(a, b, c)
 		h = g
@@ -167,11 +167,11 @@ func computeMidstate(workblock []byte) []byte {
 	H0 := [8]uint32{0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19}
 	state := H0
 	numBlocks := len(workblock) / 64
-	for i := 0; i < numBlocks; i++ {
+	for i := range numBlocks {
 		state = compressBlock(state, workblock[i*64:(i+1)*64])
 	}
 	midstateBytes := make([]byte, 32)
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		midstateBytes[i*4] = byte(state[i] >> 24)
 		midstateBytes[i*4+1] = byte(state[i] >> 16)
 		midstateBytes[i*4+2] = byte(state[i] >> 8)
@@ -184,7 +184,7 @@ func addNonce(base []byte, nonce uint64) []byte {
 	res := make([]byte, len(base))
 	copy(res, base)
 	carry := nonce
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		sum := uint64(res[i]) + (carry & 0xFF)
 		res[i] = byte(sum)
 		carry = (carry >> 8) + (sum >> 8)

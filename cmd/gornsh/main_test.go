@@ -360,7 +360,11 @@ func TestDoListenHandlesSIGINT(t *testing.T) {
 		t.Fatalf("os.Pipe() error: %v", err)
 	}
 	os.Stdout = w
+	// The rns logger writes asynchronously on its own goroutine; drain it
+	// before restoring os.Stdout so queued lines land in the pipe and the
+	// writer's fmt.Println cannot race with the restore.
 	t.Cleanup(func() {
+		rt.logger.Flush()
 		os.Stdout = oldStdout
 		_ = r.Close()
 	})
@@ -414,6 +418,10 @@ func TestDoListenHandlesSIGINT(t *testing.T) {
 		t.Fatal("timed out waiting for doListen to exit")
 	}
 
+	// doListen bypasses run()'s deferred logger Close, so flush the async
+	// queue here to make sure the "Shutting down" line reached the pipe.
+	rt.logger.Flush()
+
 	_ = w.Close()
 	output := <-outputCh
 	if !strings.Contains(output, "Shutting down") {
@@ -438,7 +446,10 @@ func TestPrintIdentityUsesPrettyHexDestination(t *testing.T) {
 		_ = r.Close()
 	})
 	os.Stdout = w
+	// Drain the async logger before restoring os.Stdout (see
+	// TestDoListenHandlesSIGINT).
 	t.Cleanup(func() {
+		rt.logger.Flush()
 		os.Stdout = oldStdout
 	})
 
@@ -452,6 +463,8 @@ func TestPrintIdentityUsesPrettyHexDestination(t *testing.T) {
 	if err := rt.printIdentity(); err != nil {
 		t.Fatalf("printIdentity() error: %v", err)
 	}
+	rt.logger.Flush()
+
 	_ = w.Close()
 
 	output := <-outputCh
