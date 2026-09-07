@@ -35,17 +35,17 @@ const (
 	RNodeDefaultStopBits = 1
 	RNodeDefaultParity   = "N"
 
-	rNodeFreqMin int64 = 137000000
-	rNodeFreqMax int64 = 3000000000
-	rNodeBandwidthMin   = 7800
-	rNodeBandwidthMax   = 1625000
-	rNodeTXPowerMin     = 0
-	rNodeTXPowerMax     = 37
-	rNodeSFMin          = 5
-	rNodeSFMax          = 12
-	rNodeCRMin          = 5
-	rNodeCRMax          = 8
-	rNodeCallsignMaxLen = 32
+	rNodeFreqMin        int64 = 137000000
+	rNodeFreqMax        int64 = 3000000000
+	rNodeBandwidthMin         = 7800
+	rNodeBandwidthMax         = 1625000
+	rNodeTXPowerMin           = 0
+	rNodeTXPowerMax           = 37
+	rNodeSFMin                = 5
+	rNodeSFMax                = 12
+	rNodeCRMin                = 5
+	rNodeCRMax                = 8
+	rNodeCallsignMaxLen       = 32
 )
 
 // rnodeReconnectWait is the delay between reconnect attempts. It is a var (not
