@@ -1004,18 +1004,47 @@ While the ESP32-C5's 240 MHz RV32 core is fast for general control flow, running
 active RRC chat hub exposes three cryptographic bottlenecks:
 
 - **The Room Fanout Spike (Burst Token Encryption)**:
-  When a message arrives in an active room with $N$ joined members, `gorrcd` loops
-  through all members and transmits the message over each member's individual `Link`.
-  Because Reticulum links use ephemeral per-link keys, the message cannot simply be
-  broadcast as raw ciphertext: the hub must generate $N$ unique `crypto.Token`
-  envelopes (AES-128-CBC encryption + HMAC-SHA256 authentication).
-  - *The problem*: For a room of 30 users, 1 message requires 30 distinct AES-CBC
-    runs and 30 HMAC-SHA256 computations in rapid succession. In software on an
-    RV32 core, this burst creates noticeable latency, jitter, and packet queuing
-    delays on the radio interface.
-  - *The ASIC solution*: The pipelined AES+HMAC Token engine (§2) processes these
-    encryptions at 200 MHz pipeline wire speed over QSPI, turning a 30-message
-    CPU choke into a sub-millisecond hardware burst.
+  When a message arrives in an active room with $N$ joined members (such as the ~64 active
+  members on the standard "RNS Community Hub"), `gorrcd` loops through all members and
+  transmits the message over each member's individual `Link`. Because Reticulum links use
+  ephemeral per-link keys, the message cannot simply be broadcast as raw ciphertext: the hub
+  must generate $N$ unique `crypto.Token` envelopes (AES-128-CBC encryption + HMAC-SHA256
+  authentication).
+  - *The problem*: For a room of 64 users, 1 message requires 64 distinct AES-CBC
+    runs and 64 HMAC-SHA256 computations in rapid succession. In software on an
+    ESP32-C5 (240 MHz RV32), software AES-CBC + HMAC-SHA256 takes ~1,000 µs (1 ms) per user,
+    stalling the CPU for **64 full milliseconds**. During this burst CPU freeze, incoming
+    radio packets (Wi-Fi, BLE, LoRa) encounter buffer overflows and drop.
+  - *The ASIC solution & cycle analysis*:
+    - For a standard ~128-byte RRC chat message, PKCS#7 padding adds 16 bytes (144 bytes = 9 blocks).
+    - An iterative 1-round/cycle AES-128 core processes 9 blocks in **90 clock cycles**.
+    - HMAC-SHA256 over the $IV \parallel Ciphertext$ (160 bytes) processes 4 SHA-256 blocks in
+      the pipelined `Sha256Pipe` in **~120 clock cycles**.
+    - Total computation per user is only $\sim 210$ clock cycles ($\mathbf{4.2 \ \mu\text{s}}$ at 50 MHz).
+    - For **64 concurrent users**, the entire burst finishes in:
+      $$64 \times 4.2 \ \mu\text{s} = \mathbf{268 \ \mu\text{s}} \ (\mathbf{0.27 \text{ ms}})$$
+      yielding a **>230x speedup** over firmware and reducing CPU load to near 0%.
+  - *Bus bandwidth vs compute latency (Amdahl's law on QSPI)*:
+    - Transferring 64 separate user payloads ($64 \times 176\text{B} \approx 11.2\text{ KB}$) over
+      a 4-bit QSPI bus at 40 MHz (20 MB/s wire speed) takes $\mathbf{560 \ \mu\text{s}}$.
+    - Because hardware computation ($268\ \mu\text{s}$) is already *twice as fast as the physical
+      bus wires*, duplicating the encryption core $N$ times on silicon would yield zero end-to-end
+      speedup if packets must queue through the same QSPI bus.
+  - *Architectural decisions & Tiny Tapeout tradeoffs*:
+    1. **Silicon density**: A single iterative AES-128 core consumes ~2,500 standard cells;
+       SHA-256 consumes ~3,500 cells. Retaining a single Token pipe allows the complete ASIC
+       (Stamper + X25519 + Token + QSPI) to fit cleanly in silicon without exceeding Tiny Tapeout
+       or small shuttle area budgets.
+    2. **Broadcast Envelope Mode (`OP_TOKEN_BROADCAST`)**: Because the plaintext message is
+       identical across all 64 recipients, the host can send the plaintext payload *once*,
+       followed by an array of $N$ recipient link keys. The ASIC encrypts the plaintext once,
+       derives the $N$ per-user envelopes sequentially in 0.27 ms, and streams them back via DMA,
+       eliminating redundant QSPI bus transfers.
+    3. **SpinalHDL Parameterized Parallelism**: The core is authored as
+       `case class TokenEngine(numEngines: Int = 1)`. For Tiny Tapeout and low-power IoT nodes,
+       `numEngines = 1` provides optimal silicon density. For dedicated full-die shuttles
+       (ChipIgnite, IHP SG13G2) or FPGA hub coprocessors, setting `numEngines = 4` or `8`
+       instantiates parallel pipes via a single parameter change.
 - **Concurrent Link Handshake Storms (X25519 ECDH + Ed25519 Verify)**:
   Every client connecting to the pocket hub performs a full Reticulum link establishment:
   an X25519 Diffie-Hellman exchange and an Ed25519 signature verification.
