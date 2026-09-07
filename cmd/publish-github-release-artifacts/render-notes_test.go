@@ -18,6 +18,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -63,10 +64,13 @@ func TestRenderReleaseNotes(t *testing.T) {
 	// Build the assets in a deliberately non-alphabetical order so the test
 	// proves buildReleaseNotes sorts the table rows by filename.
 	names := []string{
-		"gornphone-0.2.0-windows-arm64.exe",
-		"gornphone-0.2.0-linux-amd64",
-		"gornphone-0.2.0-darwin-arm64",
-		"gornphone-0.2.0-linux-arm64",
+		"gorrcd-0.2.0-windows-arm64.exe",
+		"gorrcd-0.2.0-linux-amd64",
+		"gorrcd-0.2.0-darwin-arm64",
+		"gorrcd-0.2.0-linux-arm64",
+		"gorrcd-0.2.0-pocket_terminal-linux-arm64",
+		"gornsd-0.2.0-pocket_communicator-linux-arm64",
+		"gorrcd-0.2.0-pocket_hub-linux-arm64",
 	}
 	var assets []string
 	for _, n := range names {
@@ -77,6 +81,19 @@ func TestRenderReleaseNotes(t *testing.T) {
 		assets = append(assets, p)
 	}
 
-	notes := buildReleaseNotes("0.2.0", "gmlewis/go-rnphone", assets)
+	notes := buildReleaseNotes("0.2.0", "gmlewis/go-reticulum", assets)
 	t.Log("\n" + notes)
+
+	if !strings.Contains(notes, "Hardware Projects & Pre-built Artifacts") {
+		t.Error("release notes missing Hardware Projects section")
+	}
+	if !strings.Contains(notes, "pocket_terminal") {
+		t.Error("release notes missing pocket_terminal reference")
+	}
+	if !strings.Contains(notes, "pocket_communicator") {
+		t.Error("release notes missing pocket_communicator reference")
+	}
+	if !strings.Contains(notes, "pocket_hub") {
+		t.Error("release notes missing pocket_hub reference")
+	}
 }

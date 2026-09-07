@@ -35,8 +35,8 @@ const (
 	RNodeDefaultStopBits = 1
 	RNodeDefaultParity   = "N"
 
-	rNodeFreqMin        = 137000000
-	rNodeFreqMax        = 3000000000
+	rNodeFreqMin int64 = 137000000
+	rNodeFreqMax int64 = 3000000000
 	rNodeBandwidthMin   = 7800
 	rNodeBandwidthMax   = 1625000
 	rNodeTXPowerMin     = 0
@@ -144,7 +144,7 @@ func NewRNodeInterface(name, port string, speed, databits, stopbits int, parity 
 		return nil, fmt.Errorf("BLE transport (ble://) is not supported by the Go RNode port; use a serial device path or tcp:// host")
 	}
 
-	if frequency < rNodeFreqMin || frequency > rNodeFreqMax {
+	if int64(frequency) < rNodeFreqMin || int64(frequency) > rNodeFreqMax {
 		return nil, fmt.Errorf("invalid frequency configured for RNode interface")
 	}
 	if bandwidth < rNodeBandwidthMin || bandwidth > rNodeBandwidthMax {

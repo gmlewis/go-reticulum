@@ -81,6 +81,57 @@ var majorTargets = []target{
 	{"freebsd", "arm64"},
 }
 
+// hwTarget describes a build target tailored for a specific hardware form factor,
+// including its binary name, target architecture, Go build tags, and descriptive identifier.
+type hwTarget struct {
+	binaryName string
+	goos       string
+	goarch     string
+	armVersion string
+	suffix     string // e.g., "pocket_terminal", "pocket_terminal-asic", "pocket_hub"
+	buildTags  string // e.g., "pocket_terminal", "pocket_terminal,reticulum_asic"
+}
+
+// hardwareTargets lists pre-built firmware/binaries for DIY hardware targets.
+var hardwareTargets = []hwTarget{
+	// Form Factor A (Pocket Linux Terminal): RPi Zero 2W / SBC with SPI LCD & CardKB
+	{"gorrcd", "linux", "arm64", "", "pocket_terminal", "pocket_terminal"},
+	{"gorrcd", "linux", "arm", "7", "pocket_terminal", "pocket_terminal"},
+	{"gorrcd", "linux", "riscv64", "", "pocket_terminal", "pocket_terminal"},
+	{"gorrcd", "linux", "arm64", "", "pocket_terminal-asic", "pocket_terminal,reticulum_asic"},
+	{"gorrcd", "linux", "arm64", "", "pocket_terminal-fpga", "pocket_terminal,reticulum_fpga"},
+
+	{"gornsd", "linux", "arm64", "", "pocket_terminal", "pocket_terminal"},
+	{"gornsd", "linux", "arm", "7", "pocket_terminal", "pocket_terminal"},
+	{"gornsd", "linux", "riscv64", "", "pocket_terminal", "pocket_terminal"},
+	{"gornsd", "linux", "arm64", "", "pocket_terminal-asic", "pocket_terminal,reticulum_asic"},
+	{"gornsd", "linux", "arm64", "", "pocket_terminal-fpga", "pocket_terminal,reticulum_fpga"},
+
+	{"gornstatus", "linux", "arm64", "", "pocket_terminal", "pocket_terminal"},
+	{"gornstatus", "linux", "arm", "7", "pocket_terminal", "pocket_terminal"},
+	{"gornstatus", "linux", "riscv64", "", "pocket_terminal", "pocket_terminal"},
+
+	// Form Factor B (Pocket Communicator): Standalone Communicator
+	{"gornsd", "linux", "arm64", "", "pocket_communicator", "pocket_communicator"},
+	{"gornsd", "linux", "arm", "7", "pocket_communicator", "pocket_communicator"},
+	{"gornsd", "linux", "riscv64", "", "pocket_communicator", "pocket_communicator"},
+	{"gornsd", "linux", "arm64", "", "pocket_communicator-asic", "pocket_communicator,reticulum_asic"},
+	{"gornsd", "linux", "arm64", "", "pocket_communicator-fpga", "pocket_communicator,reticulum_fpga"},
+
+	{"gornstatus", "linux", "arm64", "", "pocket_communicator", "pocket_communicator"},
+	{"gornstatus", "linux", "arm", "7", "pocket_communicator", "pocket_communicator"},
+
+	// Form Factor C (Pocket Hub): Standalone gorrcd ONLY (no display, no keyboard)
+	{"gorrcd", "linux", "arm64", "", "pocket_hub", "pocket_hub"},
+	{"gorrcd", "linux", "arm", "7", "pocket_hub", "pocket_hub"},
+	{"gorrcd", "linux", "riscv64", "", "pocket_hub", "pocket_hub"},
+	{"gorrcd", "linux", "amd64", "", "pocket_hub", "pocket_hub"},
+	{"gorrcd", "linux", "arm64", "", "pocket_hub-asic", "pocket_hub,reticulum_asic"},
+	{"gorrcd", "linux", "amd64", "", "pocket_hub-asic", "pocket_hub,reticulum_asic"},
+	{"gorrcd", "linux", "arm64", "", "pocket_hub-fpga", "pocket_hub,reticulum_fpga"},
+	{"gorrcd", "linux", "amd64", "", "pocket_hub-fpga", "pocket_hub,reticulum_fpga"},
+}
+
 // platformBlacklist names programs that compile cleanly for a GOOS but whose
 // core functionality is non-functional there at runtime, so we refuse to build
 // or publish them for that platform. An entry here means "this binary would
@@ -452,6 +503,8 @@ func buildAll(outDir, version string, binaryNames []string, progress *os.File) (
 	type job struct {
 		binaryName string
 		t          target
+		armVersion string
+		buildTags  string
 		name       string
 		outPath    string
 	}
@@ -474,6 +527,17 @@ func buildAll(outDir, version string, binaryNames []string, progress *os.File) (
 				outPath:    filepath.Join(outDir, name),
 			})
 		}
+	}
+	for _, hw := range hardwareTargets {
+		name := fmt.Sprintf("%v-%v-%v-%v-%v", hw.binaryName, version, hw.suffix, hw.goos, hw.goarch)
+		jobs = append(jobs, job{
+			binaryName: hw.binaryName,
+			t:          target{goos: hw.goos, goarch: hw.goarch},
+			armVersion: hw.armVersion,
+			buildTags:  hw.buildTags,
+			name:       name,
+			outPath:    filepath.Join(outDir, name),
+		})
 	}
 	if len(skipped) > 0 {
 		sort.Strings(skipped)
@@ -526,13 +590,21 @@ func buildAll(outDir, version string, binaryNames []string, progress *os.File) (
 			mustFprintf(progress, "Building %v/%v -> %v\n", j.t.goos, j.t.goarch, j.name)
 			progressMu.Unlock()
 
-			cmd := exec.CommandContext(ctx, "go", "build",
-				"-trimpath", "-p", "1", "-o", j.outPath, "./cmd/"+j.binaryName)
-			cmd.Env = append(os.Environ(),
+			buildArgs := []string{"build", "-trimpath", "-p", "1"}
+			if j.buildTags != "" {
+				buildArgs = append(buildArgs, "-tags="+j.buildTags)
+			}
+			buildArgs = append(buildArgs, "-o", j.outPath, "./cmd/"+j.binaryName)
+			cmd := exec.CommandContext(ctx, "go", buildArgs...)
+			env := append(os.Environ(),
 				"GOOS="+j.t.goos,
 				"GOARCH="+j.t.goarch,
 				"CGO_ENABLED=0",
 			)
+			if j.armVersion != "" {
+				env = append(env, "GOARM="+j.armVersion)
+			}
+			cmd.Env = env
 			cmd.Stdout = progress
 			cmd.Stderr = progress
 			// Kill the go driver promptly when another build fails and cancels
@@ -571,7 +643,7 @@ func buildAll(outDir, version string, binaryNames []string, progress *os.File) (
 }
 
 // buildReleaseNotes assembles the Markdown body for the release, including a
-// sha256 checksum table for every artifact.
+// sha256 checksum table for every artifact and DIY hardware targets.
 func buildReleaseNotes(version, repo string, assets []string) string {
 	var b strings.Builder
 	mustFprintf(&b, "# Go Reticulum Network Stack v%v\n\n", version)
@@ -596,7 +668,21 @@ func buildReleaseNotes(version, repo string, assets []string) string {
 		}
 		mustFprintf(&b, "| %v | `%v` |\n", filepath.Base(a), sum)
 	}
-	mustFprintf(&b, "\nVerify a download with `shasum -a 256 <file>`.\n")
+	mustFprintf(&b, "\nVerify a download with `shasum -a 256 <file>`.\n\n")
+
+	mustFprintf(&b, "## Hardware Projects & Pre-built Artifacts\n\n")
+	mustFprintf(&b, "These binaries are pre-compiled for standalone DIY hardware targets:\n\n")
+	mustFprintf(&b, "- **Form Factor A (Pocket Linux Terminal)**: Full interactive stack on Raspberry Pi Zero 2W / SBC with SPI LCD, I2C keyboard, and LoRa.\n")
+	mustFprintf(&b, "  - `gorrcd-%v-pocket_terminal-linux-arm64`, `gornsd-...`, `gornstatus-...`\n", version)
+	mustFprintf(&b, "  - Accelerator variants: `*-pocket_terminal-asic-linux-arm64` (Tiny Tapeout ASIC) and `*-pocket_terminal-fpga-linux-arm64` (Tang Primer 25K FPGA).\n")
+	mustFprintf(&b, "- **Form Factor B (Pocket Communicator)**: Embedded transport daemon and status monitor.\n")
+	mustFprintf(&b, "  - `gornsd-%v-pocket_communicator-linux-arm64`, `gornsd-...-arm`, `gornsd-...-riscv64`\n", version)
+	mustFprintf(&b, "  - Accelerator variants: `*-pocket_communicator-asic-linux-arm64`, `*-pocket_communicator-fpga-linux-arm64`.\n")
+	mustFprintf(&b, "- **Form Factor C (Pocket Hub)**: Standalone `gorrcd` mesh relay daemon (no display, no keyboard).\n")
+	mustFprintf(&b, "  - `gorrcd-%v-pocket_hub-linux-arm64`, `gorrcd-...-arm`, `gorrcd-...-riscv64`, `gorrcd-...-amd64`\n", version)
+	mustFprintf(&b, "  - Accelerator variants: `gorrcd-...-pocket_hub-asic-...` and `gorrcd-...-pocket_hub-fpga-...`.\n")
+	mustFprintf(&b, "\nSee [`Hardware-Projects-Guide.md`](https://github.com/gmlewis/asic-reticulum/blob/master/Hardware-Projects-Guide.md) for the complete bill of materials, assembly, and setup instructions.\n")
+
 	mustFprintf(&b, "\n## Post-download setup\n\n")
 	mustFprintf(&b, "Make the downloaded executable runnable:\n\n")
 	mustFprintf(&b, "```\nchmod a+x <binaryname>-<version>-<os>-<arch>\n```\n\n")
