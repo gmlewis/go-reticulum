@@ -42,6 +42,8 @@ package main
 import (
 	"bytes"
 	"crypto/ecdh"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/hex"
 	"flag"
 	"fmt"
@@ -52,6 +54,7 @@ import (
 
 	"github.com/gmlewis/go-reticulum/lxmf"
 	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/rns/crypto"
 )
 
 type goldenCase struct {
@@ -76,6 +79,72 @@ type goldenX25519Case struct {
 	ScalarHex         string
 	UCoordHex         string
 	ExpectedSharedHex string
+}
+
+type goldenTokenCase struct {
+	Name          string
+	KeyHex        string
+	IVHex         string
+	PlaintextHex  string
+	PlaintextUTF8 string
+	ExpectedToken string
+}
+
+func makeTokenCase(name, keyHex, ivHex, plaintext string, isHex bool) goldenTokenCase {
+	keyBytes, err := hex.DecodeString(keyHex)
+	if err != nil {
+		log.Fatalf("invalid key hex %v: %v", keyHex, err)
+	}
+	ivBytes, err := hex.DecodeString(ivHex)
+	if err != nil {
+		log.Fatalf("invalid iv hex %v: %v", ivHex, err)
+	}
+	var ptBytes []byte
+	var ptUTF8 string
+	if isHex {
+		ptBytes, err = hex.DecodeString(plaintext)
+		if err != nil {
+			log.Fatalf("invalid pt hex %v: %v", plaintext, err)
+		}
+	} else {
+		ptBytes = []byte(plaintext)
+		ptUTF8 = plaintext
+	}
+
+	tokenObj, err := crypto.NewToken(keyBytes)
+	if err != nil {
+		log.Fatalf("NewToken failed for %v: %v", name, err)
+	}
+
+	// Encrypt deterministically with specified IV
+	padded := crypto.PKCS7Pad(ptBytes, 16)
+	ciphertext, err := crypto.AES128CBCEncrypt(padded, keyBytes[16:], ivBytes)
+	if err != nil {
+		log.Fatalf("AES128CBCEncrypt failed for %v: %v", name, err)
+	}
+	signedParts := append(ivBytes, ciphertext...)
+	h := hmac.New(sha256.New, keyBytes[:16])
+	h.Write(signedParts)
+	mac := h.Sum(nil)
+	tokenBytes := append(signedParts, mac...)
+
+	// Verify that tokenObj.Decrypt succeeds and matches
+	decrypted, err := tokenObj.Decrypt(tokenBytes)
+	if err != nil {
+		log.Fatalf("Decrypt failed on generated token for %v: %v", name, err)
+	}
+	if !bytes.Equal(decrypted, ptBytes) {
+		log.Fatalf("Decrypted data does not match plaintext for %v", name)
+	}
+
+	return goldenTokenCase{
+		Name:          name,
+		KeyHex:        keyHex,
+		IVHex:         ivHex,
+		PlaintextHex:  hex.EncodeToString(ptBytes),
+		PlaintextUTF8: ptUTF8,
+		ExpectedToken: hex.EncodeToString(tokenBytes),
+	}
 }
 
 func makeX25519Case(name, scalarHex, uCoordHex string) goldenX25519Case {
@@ -292,6 +361,37 @@ func main() {
 		),
 	}
 
+	tokenCases := []goldenTokenCase{
+		makeTokenCase(
+			"Empty Payload",
+			"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+			"202122232425262728292a2b2c2d2e2f",
+			"",
+			false,
+		),
+		makeTokenCase(
+			"Single Block 16-byte Message",
+			"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+			"2122232425262728292a2b2c2d2e2f30",
+			"RNS Pocket Hub 1",
+			false,
+		),
+		makeTokenCase(
+			"32-byte Standard Payload",
+			"a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+			"c0c1c2c3c4c5c6c7c8c9cacbcccdcecf",
+			"Reticulum Token Engine Test 1234",
+			false,
+		),
+		makeTokenCase(
+			"Multi-block RRC Chat Message (80B)",
+			"feedfacefeedfacefeedfacefeedfacecafebabecafebabecafebabecafebabe",
+			"1234567890abcdef1234567890abcdef",
+			"RNS Community Hub #general: Hi everyone, welcome to Reticulum mesh networking!",
+			false,
+		),
+	}
+
 	var buf bytes.Buffer
 	buf.WriteString("package reticulum.parity\n\n")
 	buf.WriteString("/**\n")
@@ -326,6 +426,15 @@ func main() {
 	buf.WriteString("  scalarHex: String,\n")
 	buf.WriteString("  uCoordHex: String,\n")
 	buf.WriteString("  expectedSharedHex: String\n")
+	buf.WriteString(")\n\n")
+
+	buf.WriteString("case class GoldenTokenCase(\n")
+	buf.WriteString("  name: String,\n")
+	buf.WriteString("  keyHex: String,\n")
+	buf.WriteString("  ivHex: String,\n")
+	buf.WriteString("  plaintextHex: String,\n")
+	buf.WriteString("  plaintextUtf8: String,\n")
+	buf.WriteString("  expectedTokenHex: String\n")
 	buf.WriteString(")\n\n")
 
 	buf.WriteString("object GoldenVectors {\n")
@@ -375,6 +484,19 @@ func main() {
 		buf.WriteString(fmt.Sprintf("      scalarHex = %q,\n", c.ScalarHex))
 		buf.WriteString(fmt.Sprintf("      uCoordHex = %q,\n", c.UCoordHex))
 		buf.WriteString(fmt.Sprintf("      expectedSharedHex = %q\n", c.ExpectedSharedHex))
+		buf.WriteString("    ),\n")
+	}
+	buf.WriteString("  )\n\n")
+
+	buf.WriteString("  val tokenCases: Seq[GoldenTokenCase] = Seq(\n")
+	for _, c := range tokenCases {
+		buf.WriteString("    GoldenTokenCase(\n")
+		buf.WriteString(fmt.Sprintf("      name = %q,\n", c.Name))
+		buf.WriteString(fmt.Sprintf("      keyHex = %q,\n", c.KeyHex))
+		buf.WriteString(fmt.Sprintf("      ivHex = %q,\n", c.IVHex))
+		buf.WriteString(fmt.Sprintf("      plaintextHex = %q,\n", c.PlaintextHex))
+		buf.WriteString(fmt.Sprintf("      plaintextUtf8 = %q,\n", c.PlaintextUTF8))
+		buf.WriteString(fmt.Sprintf("      expectedTokenHex = %q\n", c.ExpectedToken))
 		buf.WriteString("    ),\n")
 	}
 	buf.WriteString("  )\n")

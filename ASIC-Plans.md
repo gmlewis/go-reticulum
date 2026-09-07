@@ -1281,9 +1281,62 @@ cannot be used directly. The two viable firmware paths are:
 6. **Phase E4 — on-die crypto**: flip the provider seams to the
    accelerators; the section 4 Go-vector tooling now serves as the
    firmware bring-up testbench.
-7. Every phase keeps the section 6.2 rule: any firmware build must parse
-   and interoperate, byte for byte, against both this Go stack and the
-   Python SOT — the port is only done when the parity harness says so.
+### 7.8 FPGA Prototype & Hardware-in-the-Loop (HIL) Testbed
+
+Before submitting the design to an ASIC shuttle (e.g. Tiny Tapeout, SkyWater 130, or IHP SG13G2),
+an intermediate FPGA hardware-in-the-loop (HIL) platform allows full-speed physical verification of:
+1. **The 7-Pin 4-Bit QSPI Host Interconnect**: Physical signal integrity, clock synchronization,
+   setup/hold margins, and DMA burst streaming at 40–80 MHz between an MCU host and the accelerator.
+2. **Hardware IRQ Responsiveness**: Low-latency edge-triggered interrupt handling on the host MCU
+   (clearing the CPU from polling).
+3. **Multi-Engine Concurrency ($N=4$)**: Testing simultaneous parallel execution of 4 TokenEngines
+   under realistic RRC multi-user chat room fanouts, validating the dynamic allocator and completion FIFO.
+
+#### 7.8.1 Host Platform: ESP32-C5 Development Board
+
+The ESP32-C5 is Espressif's dual-band (2.4 & 5 GHz) Wi-Fi 6 + Bluetooth 5 (LE) + 802.15.4 RISC-V SoC.
+It features dedicated hardware GP-SPI with General DMA (GDMA) supporting 4-bit Quad-SPI master mode.
+
+**Recommended Boards**:
+1. **Espressif ESP32-C5-DevKitC-1 / DevKitM-1 (Official Reference)**:
+   - Features dual USB-C ports (one for native USB JTAG/CDC, one for UART), onboard antenna,
+     and breadboard-friendly 2.54 mm dual-row pin headers exposing all SPI2 GPIOs.
+   - [Mouser Listing](https://www.mouser.com/c/?q=ESP32-C5-DevKit) | [DigiKey Listing](https://www.digikey.com/en/products/filter/evaluation-boards-expansion-boards-daughter-cards/797?s=N4IgTCBcDaIM4CcCuAbAlgJzAGQIYDMAOUkAXQF8g) | [AliExpress Search](https://www.aliexpress.com/wholesale?SearchText=ESP32-C5+development+board)
+2. **Waveshare ESP32-C5-WIFI6-KIT / ESP32-C5-Zero**:
+   - Compact form-factor with pre-soldered header pins and well-documented pinouts.
+   - [Waveshare Official Store](https://www.waveshare.com/esp32-c5-zero.htm) | [Amazon Search](https://www.amazon.com/s?k=ESP32-C5+development+board) | [AliExpress Search](https://www.aliexpress.com/wholesale?SearchText=Waveshare+ESP32-C5)
+
+#### 7.8.2 Inexpensive FPGA Boards Supporting $N=4$ TokenEngines (~25k–35k LUTs)
+
+To accommodate the full accelerator suite with $N=4$ parallel `TokenEngine` instances, `X25519Ladder`,
+and `Stamper`, the target FPGA requires approximately **20,000–35,000 4-input LUTs**, 4–8 Block RAMs (1KB each),
+and 18x18 multipliers. Three low-cost platforms fit this profile:
+
+| Platform | FPGA Device | Logic Resources | BRAM / DSP | Toolchain | Approx. Price | Purchase Links |
+|---|---|---|---|---|---|---|
+| **Sipeed Tang Primer 25K (Recommended)** | Gowin GW5A-LV25MG121 | 23,040 LUT4 | 56 BRAMs (1008 Kb), 28 DSPs | Gowin EDA / Open-source (Yosys + Apicula) | ~$35 | [AliExpress](https://www.aliexpress.com/wholesale?SearchText=Tang+Primer+25K+Dock) / [Amazon](https://www.amazon.com/s?k=Tang+Primer+25K) |
+| **QMTECH Artix-7 Starter** | AMD Xilinx XC7A35T | 33,280 Logic Cells (~20.8k LUT6) | 50 BRAMs (1800 Kb), 90 DSPs | AMD Vivado ML (Free) / Project X-Ray | ~$40–$48 | [AliExpress](https://www.aliexpress.com/wholesale?SearchText=QMTECH+Artix-7+XC7A35T) / [GitHub](https://github.com/ChinaQMTECH/QMTECH_Artix_7_XC7A35T_Core_Board) |
+| **Colorlight i5 + Ext-Board** | Lattice ECP5 LFE5U-25F | 24,192 LUT4 | 56 BRAMs (1008 Kb), 28 DSPs | 100% Open-Source (Yosys + nextpnr-ecp5 + Trellis) | ~$20–$30 | [AliExpress](https://www.aliexpress.com/wholesale?SearchText=Colorlight+i5+FPGA) / [Amazon](https://www.amazon.com/s?k=Colorlight+FPGA) |
+
+*Recommendation*: The **Sipeed Tang Primer 25K** (with the Dock baseboard) is the simplest "plug-and-play" option:
+it includes onboard USB-C JTAG/UART, standard 2.54 mm PMOD headers, 3.3V logic level shifters, and an unencumbered free toolchain.
+
+#### 7.8.3 Physical Wiring Table (7-Pin QSPI + IRQ)
+
+Connecting the ESP32-C5 host to the FPGA requires only 7 DuPont jumper wires plus GND:
+
+| Signal Name | ESP32-C5 Pin (SPI2 GP-SPI) | FPGA PMOD / Pin | Direction | Description |
+|---|---|---|---|---|
+| **SCLK** | `GPIO 6` (SPI2_CLK) | FPGA Pin (PMOD 1) | Host $\rightarrow$ FPGA | QSPI bus clock (40–80 MHz) |
+| **CS#** | `GPIO 7` (SPI2_CS0) | FPGA Pin (PMOD 2) | Host $\rightarrow$ FPGA | Active-low chip select |
+| **IO0 (MOSI)**| `GPIO 2` (SPI2_D) | FPGA Pin (PMOD 3) | Bi-directional | Data bit 0 / standard command input |
+| **IO1 (MISO)**| `GPIO 3` (SPI2_Q) | FPGA Pin (PMOD 4) | Bi-directional | Data bit 1 / standard read output |
+| **IO2 (WP#)** | `GPIO 4` (SPI2_WP) | FPGA Pin (PMOD 7) | Bi-directional | Data bit 2 |
+| **IO3 (HD#)** | `GPIO 5` (SPI2_HD) | FPGA Pin (PMOD 8) | Bi-directional | Data bit 3 |
+| **IRQ#** | `GPIO 8` (Ext Interrupt) | FPGA Pin (PMOD 9) | FPGA $\rightarrow$ Host | Active-low asynchronous completion interrupt |
+| **GND** | `GND` | `GND` | Common | Common signal reference ground |
+
+*(Note: Exact GPIO pins on ESP32-C5 can be routed through the GPIO matrix to any available general-purpose pin).*
 
 ---
 
