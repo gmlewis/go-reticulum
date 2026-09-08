@@ -428,7 +428,12 @@ func (t *ServerTunnel) handleServerClient(stream *SAMStream) {
 	if leftover := stream.br.Buffered(); leftover > 0 {
 		buf := make([]byte, leftover)
 		if _, err := io.ReadFull(stream.br, buf); err == nil {
-			_, _ = local.Write(buf)
+			if _, err := local.Write(buf); err != nil {
+				// proxyPair re-drives the flow, but this initial payload is
+				// lost — say so rather than dropping it silently.
+				log.Printf("I2P ServerTunnel %s: writing %v leftover bytes to local service failed: %v",
+					t.sessionID(), leftover, err)
+			}
 		}
 	}
 	t.proxyPair(stream, local)

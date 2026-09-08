@@ -1777,12 +1777,14 @@ func (h *RRCHub) sendEnv(env map[any]any) {
 	}
 	data, err := EncodeEnvelope(env)
 	if err != nil {
+		log.Printf("rrc: dropping envelope send: encode failed: %v", err)
 		return
 	}
 	h.lock.Lock()
 	link := h.link
 	h.lock.Unlock()
 	if link == nil {
+		log.Printf("rrc: dropping envelope send: hub link is down")
 		return
 	}
 	p := rns.NewPacketWithTransport(link.GetTransport(), link, data)
@@ -1790,7 +1792,9 @@ func (h *RRCHub) sendEnv(env map[any]any) {
 		log.Printf("rrc: dropping envelope send over link: %v", err)
 		return
 	}
-	_ = link.SendPacket(p)
+	if err := link.SendPacket(p); err != nil {
+		log.Printf("rrc: envelope send over link failed: %v", err)
+	}
 }
 
 // HandleData decodes a CBOR-encoded RRC envelope and dispatches it
@@ -3192,14 +3196,20 @@ func (h *RRCHub) appendHistory(room string, msg *RRCMessage) {
 
 	path := h.historyPath(room)
 	dir := filepath.Dir(path)
-	_ = os.MkdirAll(dir, 0o755)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		log.Printf("[RRC %v] history for room %q will be lost: cannot create %v: %v", h.Name, room, dir, err)
+		return
+	}
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
+		log.Printf("[RRC %v] dropping history entry for room %q: cannot open %v: %v", h.Name, room, path, err)
 		return
 	}
 	defer func() { _ = f.Close() }()
-	_, _ = f.Write(data)
+	if _, err := f.Write(data); err != nil {
+		log.Printf("[RRC %v] history for room %q truncated: write to %v failed: %v", h.Name, room, path, err)
+	}
 }
 
 func (h *RRCHub) deleteHistory(room string) {

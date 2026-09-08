@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -769,11 +770,18 @@ func (ts *TransportSystem) StartedAt() time.Time {
 	return ts.startedAt
 }
 
-// LinkTable returns the active link table managed by the transport system.
+// LinkTable returns a snapshot of the active link table managed by the
+// transport system. The returned map is a copy: the live map is mutated by
+// the forwarding path and the stale-table janitor under ts.mu, so callers
+// must never iterate (or read) the internal map without holding that lock —
+// an unlocked read races those writers and is a fatal
+// `concurrent map read and map write` for the whole process.
 func (ts *TransportSystem) LinkTable() map[string]*LinkEntry {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
-	return ts.linkTable
+	out := make(map[string]*LinkEntry, len(ts.linkTable))
+	maps.Copy(out, ts.linkTable)
+	return out
 }
 
 func (ts *TransportSystem) ensureStateLocked() {
@@ -5241,25 +5249,26 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 	// churn (TODO item 22: links died after minutes of silence, logged from
 	// rrcd's __watchdog_job, because the 0xFE replies never reached the Go
 	// client).
+	// The linkTable lookup below must happen under ts.mu: Inbound runs on
+	// every interface read loop, and the forwarding path (transport.go) and
+	// the stale-table janitor mutate linkTable concurrently — an unlocked
+	// read here races them and is a fatal `concurrent map read and map write`
+	// for the whole process.
 	contextExempt := packet.Context == ContextKeepalive ||
 		packet.Context == ContextResource ||
 		packet.Context == ContextResourceReq ||
 		packet.Context == ContextResourcePrf ||
 		packet.Context == ContextCacheRequest ||
 		packet.Context == ContextChannel
-	inLinkTable := false
-	if !contextExempt {
-		if _, ok := ts.linkTable[string(packet.DestinationHash)]; ok {
-			inLinkTable = true
-		}
-	}
 	ts.mu.Lock()
 	var isDup bool
 	if isLrproof {
 		isDup = ts.packetHashSeenLocked(packet.PacketHash)
-	} else if contextExempt || inLinkTable {
-		// Never remembered, never dropped: the packet filter returns True for
-		// these contexts, and link-table packets bypass the hashlist.
+	} else if contextExempt {
+		isDup = false
+	} else if _, ok := ts.linkTable[string(packet.DestinationHash)]; ok {
+		// Link-table packets are never remembered and never dropped: the
+		// packet filter passes them, and they bypass the hashlist.
 		isDup = false
 	} else {
 		isDup = ts.seenOrRememberPacketHashLocked(packet.PacketHash, time.Now())

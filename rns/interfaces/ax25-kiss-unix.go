@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"sync"
@@ -412,7 +413,11 @@ func (ai *ax25KISSInterface) processQueue() {
 	ai.interfaceReady = true
 	ai.mu.Unlock()
 
-	_ = ai.Send(next)
+	// The packet was already dequeued: if Send fails now it is gone, so the
+	// failure must not pass silently (it would read as a lost transmission).
+	if err := ai.Send(next); err != nil {
+		log.Printf("[AX25] %v: dropping dequeued packet (%v bytes): %v", ai.name, len(next), err)
+	}
 }
 
 func (ai *ax25KISSInterface) encodeAX25(payload []byte) []byte {
