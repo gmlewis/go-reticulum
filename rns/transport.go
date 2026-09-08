@@ -4342,8 +4342,13 @@ func (ts *TransportSystem) GetRatchet(destHash []byte) []byte {
 
 // SetRatchet securely registers and optionally persists a forward-secrecy ratchet public key associated with a specific destination.
 func (ts *TransportSystem) SetRatchet(destHash, ratchetPub []byte) {
-	ts.mu.Lock()
+	if len(destHash) == 0 || len(ratchetPub) == 0 {
+		return
+	}
+
 	destHashStr := string(destHash)
+
+	ts.mu.Lock()
 	if bytes.Equal(ts.knownRatchets[destHashStr], ratchetPub) {
 		ts.mu.Unlock()
 		return
@@ -4351,10 +4356,18 @@ func (ts *TransportSystem) SetRatchet(destHash, ratchetPub []byte) {
 	ts.knownRatchets[destHashStr] = ratchetPub
 	path := ts.storagePath
 	running := ts.running
+	connectedShared := ts.connectedToSharedInstance
 	ts.mu.Unlock()
 
-	if path != "" && running {
-		ts.persistRatchet(path, destHash, ratchetPub)
+	// A client of a shared Reticulum instance must not persist ratchets
+	// to disk (the shared instance owns storage and ratchet lifecycle),
+	// mirroring Python Identity.py:420
+	// (`if not RNS.Transport.owner.is_connected_to_shared_instance:`).
+	// When persistence is performed, run it in a background goroutine
+	// (mirroring Python's `threading.Thread(target=persist_job, daemon=True).start()`)
+	// so synchronous disk I/O never blocks the inbound packet reception loop.
+	if path != "" && running && !connectedShared {
+		go ts.persistRatchet(path, destHash, ratchetPub)
 	}
 }
 
