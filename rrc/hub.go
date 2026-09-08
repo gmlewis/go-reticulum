@@ -434,6 +434,17 @@ func (h *RRCHub) onClosedWithReason(reason string) {
 	if reason != "" {
 		log.Printf("[RRC %v] link closed: %v", h.Name, reason)
 	}
+	if reason == "timeout" || reason == "transport_loss" {
+		h.lock.Lock()
+		ts := h.transport
+		hubHash := h.HubHash
+		h.lock.Unlock()
+		if ts != nil && len(hubHash) > 0 {
+			go func() {
+				_ = ts.RequestPath(hubHash)
+			}()
+		}
+	}
 	h.stopHubLivenessLoop()
 	h.lock.Lock()
 	h.link = nil
@@ -663,7 +674,16 @@ func (h *RRCHub) connectWorker() {
 	}
 	deadline := time.Now().Add(recallTimeout)
 
-	if !hasPath(hubHash) {
+	needPathRequest := !hasPath(hubHash)
+	h.lock.Lock()
+	attempts := h.reconnectAttempts
+	ts := h.transport
+	h.lock.Unlock()
+	if attempts > 1 || (ts != nil && ts.PathIsUnresponsive(hubHash)) {
+		needPathRequest = true
+	}
+
+	if needPathRequest {
 		_ = requestPath(hubHash)
 		pathDeadline := time.Now().Add(5 * time.Second)
 		if override > 0 && override < 5*time.Second {
@@ -673,7 +693,7 @@ func (h *RRCHub) connectWorker() {
 			pathDeadline = deadline
 		}
 		for time.Now().Before(pathDeadline) {
-			if hasPath(hubHash) {
+			if hasPath(hubHash) && (ts == nil || !ts.PathIsUnresponsive(hubHash)) {
 				break
 			}
 			time.Sleep(100 * time.Millisecond)
@@ -705,7 +725,7 @@ func (h *RRCHub) connectWorker() {
 		return
 	}
 
-	ts := h.transport
+	ts = h.transport
 	if ts == nil {
 		h.SetStatus(StatusFailed, "Connect error: no transport configured")
 		return

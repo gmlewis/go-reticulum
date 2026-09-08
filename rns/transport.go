@@ -87,6 +87,8 @@ type Transport interface {
 	Inbound(raw []byte, iface interfaces.Interface)
 	// InvalidatePath removes any known path to destHash.
 	InvalidatePath(destHash []byte) bool
+	// PathIsUnresponsive reports whether the path to destHash is marked unresponsive.
+	PathIsUnresponsive(destHash []byte) bool
 	// InvalidatePathsViaNextHop removes all paths that depend on nextHop.
 	InvalidatePathsViaNextHop(nextHop []byte) int
 	// IsBlackholed reports whether the given identity hash is currently on the
@@ -1633,6 +1635,7 @@ func (ts *TransportSystem) maintenance() {
 		case <-announceTicker.C:
 			now := time.Now()
 			ts.processAnnounceTable(now)
+			ts.processPendingLinks(now)
 			ts.cullPathRequests(now)
 			ts.cullExpiredPaths(now)
 			ts.cullStaleTransportTables(now)
@@ -3148,6 +3151,60 @@ func (ts *TransportSystem) cullExpiredPaths(now time.Time) {
 	}
 }
 
+// processPendingLinks inspects pending and active links, pruning closed links
+// and triggering path expiry/invalidation and rediscovery for timed-out pending
+// links, mirroring Python RNS/Transport.py:530-575.
+func (ts *TransportSystem) processPendingLinks(now time.Time) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.ensureStateLocked()
+
+	var toRediscover [][]byte
+
+	var remainingPending []*Link
+	for _, link := range ts.pendingLinks {
+		if link.GetStatus() == LinkClosed {
+			if link.destination != nil {
+				dstHash := link.destination.Hash
+				dstKey := string(dstHash)
+				if link.TeardownReason() == TeardownTimeout {
+					if !ts.enabled {
+						ts.expirePathLocked(dstHash)
+					} else {
+						ts.markPathUnresponsiveLocked(dstHash)
+					}
+
+					if !ts.connectedToSharedInstance {
+						lastPR := ts.pathRequests[dstKey]
+						if now.Sub(lastPR) > pathRequestMinInterval {
+							ts.logger.Pathing("Trying to rediscover path for %x since an attempted link was never established", dstHash)
+							ts.pathRequests[dstKey] = now
+							toRediscover = append(toRediscover, copyBytes(dstHash))
+						}
+					}
+				}
+			}
+		} else {
+			remainingPending = append(remainingPending, link)
+		}
+	}
+	ts.pendingLinks = remainingPending
+
+	var remainingActive []*Link
+	for _, link := range ts.activeLinks {
+		if link.GetStatus() != LinkClosed {
+			remainingActive = append(remainingActive, link)
+		}
+	}
+	ts.activeLinks = remainingActive
+
+	for _, dstHash := range toRediscover {
+		go func(dst []byte) {
+			_ = ts.RequestPath(dst)
+		}(dstHash)
+	}
+}
+
 func (ts *TransportSystem) cullStaleTransportTables(now time.Time) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
@@ -3158,6 +3215,8 @@ func (ts *TransportSystem) cullStaleTransportTables(now time.Time) {
 			delete(ts.reverseTable, packetHash)
 		}
 	}
+
+	var toRediscover [][]byte
 
 	for linkID, entry := range ts.linkTable {
 		if entry.Validated {
@@ -3180,7 +3239,56 @@ func (ts *TransportSystem) cullStaleTransportTables(now time.Time) {
 		}
 		if !entry.ProofTimeout.IsZero() && now.After(entry.ProofTimeout) {
 			delete(ts.linkTable, linkID)
+
+			dstKey := string(entry.DestinationHash)
+			lastPR := ts.pathRequests[dstKey]
+			pathRequestThrottle := now.Sub(lastPR) < pathRequestMinInterval
+			pathRequestConditions := false
+
+			pathEntry, hasPath := ts.pathTable[dstKey]
+			if !hasPath {
+				ts.logger.Pathing("Trying to rediscover path for %x since an attempted link was never established, and path is now missing", entry.DestinationHash)
+				pathRequestConditions = true
+			} else if !pathRequestThrottle && entry.Hops == 0 {
+				ts.logger.Pathing("Trying to rediscover path for %x since an attempted local client link was never established", entry.DestinationHash)
+				pathRequestConditions = true
+				if ts.enabled {
+					if entry.ReceivedInterface == nil || entry.ReceivedInterface.Mode() != interfaces.ModeBoundary {
+						ts.markPathUnresponsiveLocked(entry.DestinationHash)
+					}
+				}
+			} else if !pathRequestThrottle && pathEntry.Hops == 1 {
+				ts.logger.Pathing("Trying to rediscover path for %x since an attempted link was never established, and destination was previously local to an interface on this instance", entry.DestinationHash)
+				pathRequestConditions = true
+				if ts.enabled {
+					if entry.ReceivedInterface == nil || entry.ReceivedInterface.Mode() != interfaces.ModeBoundary {
+						ts.markPathUnresponsiveLocked(entry.DestinationHash)
+					}
+				}
+			} else if !pathRequestThrottle && entry.Hops == 1 {
+				ts.logger.Pathing("Trying to rediscover path for %x since an attempted link was never established, and link initiator is local to an interface on this instance", entry.DestinationHash)
+				pathRequestConditions = true
+				if ts.enabled {
+					if entry.ReceivedInterface == nil || entry.ReceivedInterface.Mode() != interfaces.ModeBoundary {
+						ts.markPathUnresponsiveLocked(entry.DestinationHash)
+					}
+				}
+			}
+
+			if pathRequestConditions {
+				ts.pathRequests[dstKey] = now
+				if !ts.enabled {
+					ts.expirePathLocked(entry.DestinationHash)
+				}
+				toRediscover = append(toRediscover, copyBytes(entry.DestinationHash))
+			}
 		}
+	}
+
+	for _, dstHash := range toRediscover {
+		go func(dst []byte) {
+			_ = ts.RequestPath(dst)
+		}(dstHash)
 	}
 }
 
@@ -5875,7 +5983,10 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 					ts.markPathUnknownStateLocked(destHash)
 					shouldReplace = true
 				} else if announceEmitted == pathTimebase {
-					if entry.Interface != nil {
+					if entry.Unresponsive {
+						ts.logger.Pathing("Replacing path table entry for %x with new announce, since previously tried path was unresponsive", packet.DestinationHash)
+						shouldReplace = true
+					} else if entry.Interface != nil {
 						currentGravity := entry.Interface.Gravity()
 						announceGravity := iface.Gravity()
 						if announceGravity > currentGravity {
@@ -5923,6 +6034,8 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 				entry.InterfaceName = iface.Name()
 				entry.IfaceHash = interfaceHash(iface)
 				entry.Expires = time.Now().Add(pathExpiryForInterface(iface))
+				entry.Unresponsive = false
+				entry.ResponsiveState = 0
 				// Cache the raw announce so a later path request for this
 				// destination can be answered from the known path (see
 				// handlePathRequest's cached-path branch) instead of relaying
@@ -6810,6 +6923,17 @@ func (ts *TransportSystem) PathIsUnresponsive(destinationHash []byte) bool {
 	return entry.Unresponsive
 }
 
+// markPathUnresponsiveLocked is the lock-free inner core of
+// MarkPathUnresponsive, for callers already holding ts.mu.
+func (ts *TransportSystem) markPathUnresponsiveLocked(destinationHash []byte) {
+	entry, ok := ts.pathTable[string(destinationHash)]
+	if !ok {
+		return
+	}
+	entry.Unresponsive = true
+	entry.ResponsiveState = 2
+}
+
 // ExpirePath removes the path to the given destination hash from the
 // path table. It is the Go port of Python's Transport.expire_path().
 func (ts *TransportSystem) ExpirePath(destinationHash []byte) {
@@ -6818,6 +6942,12 @@ func (ts *TransportSystem) ExpirePath(destinationHash []byte) {
 	}
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
+	ts.expirePathLocked(destinationHash)
+}
+
+// expirePathLocked is the lock-free inner core of ExpirePath, for callers
+// already holding ts.mu.
+func (ts *TransportSystem) expirePathLocked(destinationHash []byte) {
 	delete(ts.pathTable, string(destinationHash))
 }
 
