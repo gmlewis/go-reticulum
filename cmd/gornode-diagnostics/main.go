@@ -41,11 +41,11 @@ timed over-the-air fleet test and prints a per-radio summary report.
 Fleet usage: start this program on every node inside the grace window (all
 nodes must use the same -frequency/-bandwidth/-sf/-cr/-txpower settings).
 Each node waits the grace period, transmits uniquely-identified test packets
-for the test duration, acknowledges every peer packet it hears (or every Nth
-packet with -ack-every, to lighten the channel on big fleets), and prints a
-report. To find a radio that cannot transmit: compare the reports — a nodeID
-that appears in its own "sent" counts but in NO peer's "packets heard" table
-belongs to a radio whose transmitter is not putting out RF.
+for the test duration, acknowledges every 5th peer packet it hears by default
+(-ack-every N to tune: 1 = every packet, higher = lighter channel load), and
+prints a report. To find a radio that cannot transmit: compare the reports —
+a nodeID that appears in its own "sent" counts but in NO peer's "packets
+heard" table belongs to a radio whose transmitter is not putting out RF.
 
 Usage:
   gornode-diagnostics [flags]`
@@ -128,7 +128,7 @@ var (
 	sf        = flag.Int("sf", 9, "LoRa spreading factor (5-12)")
 	cr        = flag.Int("cr", 5, "LoRa coding rate (5-8)")
 	speed     = flag.Int("speed", 115200, "serial baud rate")
-	ackEvery  = flag.Int("ack-every", 1, "acknowledge every Nth test packet heard from each peer (1 = every packet; higher values reduce channel load on large fleets)")
+	ackEvery  = flag.Int("ack-every", 5, "acknowledge every Nth test packet heard from each peer (1 = every packet, heaviest channel load; the default 5 keeps a 1757 bps LoRa channel from saturating on large fleets)")
 	sniffOnly = flag.Bool("sniff-only", false, "only sniff for RNodes, report findings, and exit")
 )
 
@@ -263,6 +263,12 @@ type radio struct {
 	stateMu sync.RWMutex
 	state   radioState
 
+	// windowOpen gates fleet-packet handling: packets delivered before the
+	// test window opens are stale (left buffered by a previous run or another
+	// program) or belong to a foreign process, and must not be counted or
+	// acknowledged. Guarded by stateMu (handleFleetPacket runs with it held).
+	windowOpen bool
+
 	txCounterStart *uint32 // firmware TX counter snapshot at test start
 
 	sentPackets  int
@@ -371,6 +377,13 @@ func sniffSerialPorts(portArg string, speed int) []*radio {
 			r.markFailed()
 			continue
 		}
+		// Discard anything buffered on the serial line from before this open —
+		// packets a previous run (or another program) left unread can sit in
+		// the host/tty or firmware queue for a long time and would otherwise
+		// be misread as fleet traffic (fleet packets are also gated on the
+		// test window opening, so this belt-and-braces flush is not load-
+		// bearing, but it keeps the probe honest).
+		_ = flushSerialInput(file.Fd())
 		if !probeRNode(r) {
 			r.markFailed()
 		}
@@ -695,6 +708,9 @@ func runTest(radios []*radio, durationSec int, intervalSec float64) {
 	// how many packets the firmware actually transmitted during the test.
 	for _, r := range radios {
 		r.pollStats()
+		r.stateMu.Lock()
+		r.windowOpen = true
+		r.stateMu.Unlock()
 		r.stateMu.RLock()
 		if r.state.rStatTX != nil {
 			v := *r.state.rStatTX
@@ -854,8 +870,15 @@ func shouldAck(seq uint32) bool {
 }
 
 // handleFleetPacket processes one delivered CMD_DATA payload. Called with
-// stateMu held (the parser holds it across feed).
+// stateMu held (the parser holds it across feed). Packets delivered before
+// the test window opens are dropped: they are stale traffic left buffered by
+// a previous run or another program (in one real fleet run, a previous run's
+// final packets — sent 25 minutes earlier — surfaced this way, were counted
+// as phantom peers, and got pointlessly acknowledged).
 func (r *radio) handleFleetPacket(payload []byte) {
+	if !r.windowOpen {
+		return
+	}
 	typ, nodeID, seq, origin, originSeq, ok := parsePacket(payload)
 	if !ok {
 		return

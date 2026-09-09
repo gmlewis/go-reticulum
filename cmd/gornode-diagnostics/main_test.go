@@ -7,6 +7,7 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,8 +16,10 @@ import (
 )
 
 // newTestRadio returns a radio with no open port, safe for parser/codec tests.
+// The test window is open, matching the mid-test state these tests exercise.
 func newTestRadio() *radio {
 	r := newRadio("/dev/test")
+	r.windowOpen = true
 	return r
 }
 
@@ -58,6 +61,11 @@ func TestKissParserDataPayload(t *testing.T) {
 	r := newTestRadio()
 	r.nodeID = [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
 	peer := [8]byte{9, 9, 9, 9, 9, 9, 9, 9}
+
+	// Acknowledge every packet for this test (the tool's default thins ACKs).
+	oldEvery := *ackEvery
+	t.Cleanup(func() { *ackEvery = oldEvery })
+	*ackEvery = 1
 
 	packet := buildPacket(diagTypeTest, peer, 42, 12345, [8]byte{}, 0)
 	frame := append([]byte{kissFend, kissCmdData}, kissEscape(packet)...)
@@ -231,6 +239,51 @@ func TestShouldAckDefaultsToAll(t *testing.T) {
 		if !shouldAck(seq) {
 			t.Fatalf("shouldAck(%v) = false with ack-every 1", seq)
 		}
+	}
+}
+
+func TestAckEveryDefaultIsFive(t *testing.T) {
+	// The default keeps a 1757 bps LoRa channel from saturating with
+	// acknowledgements (Run 1 of the fleet test showed 25-30s RTTs under
+	// ack-everything); lock it so it cannot drift back to 1 silently.
+	if f := flag.Lookup("ack-every"); f == nil || f.DefValue != "5" {
+		t.Fatalf("ack-every default = %v, want 5", f)
+	}
+}
+
+func TestPreTestPacketsDiscarded(t *testing.T) {
+	r := newTestRadio()
+	r.nodeID = [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
+	peer := [8]byte{9, 9, 9, 9, 9, 9, 9, 9}
+	r.stateMu.Lock()
+	r.windowOpen = false
+	r.stateMu.Unlock()
+
+	packet := buildPacket(diagTypeTest, peer, 100, 0, [8]byte{}, 0)
+	frame := append([]byte{kissFend, kissCmdData}, kissEscape(packet)...)
+	frame = append(frame, kissFend)
+
+	// Before the window opens (stale traffic from a previous run), a fleet
+	// packet must be dropped entirely — not counted, not acknowledged.
+	p := r.newParser()
+	p.feedBytes(frame)
+	r.logMu.Lock()
+	heard, acked := r.heardPackets[peer], len(r.ackedPackets)
+	r.logMu.Unlock()
+	if heard != 0 || acked != 0 {
+		t.Fatalf("pre-test packet counted: heard=%v acked=%v, want 0/0", heard, acked)
+	}
+
+	// Once the test window opens, the same packet counts and is acknowledged.
+	r.stateMu.Lock()
+	r.windowOpen = true
+	r.stateMu.Unlock()
+	p.feedBytes(frame)
+	r.logMu.Lock()
+	heard, acked = r.heardPackets[peer], len(r.ackedPackets)
+	r.logMu.Unlock()
+	if heard != 1 || acked != 1 {
+		t.Fatalf("in-window packet not counted: heard=%v acked=%v, want 1/1", heard, acked)
 	}
 }
 

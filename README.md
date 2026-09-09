@@ -216,16 +216,19 @@ Start it on every node of the fleet inside the grace period (60s by default,
 so all nodes can be launched before the test begins):
 
 ```bash
-gornode-diagnostics                     # 60s grace, 300s test
+gornode-diagnostics                     # 60s grace, 300s test, ACK every 5th packet
 gornode-diagnostics -grace 120 -duration 600
+gornode-diagnostics -ack-every 1        # ACK every packet (heavier channel load — use on tiny fleets)
 gornode-diagnostics -sniff-only         # just identify RNodes, run no test
-gornode-diagnostics -ack-every 5        # ACK every 5th packet: lighter channel load on big fleets
 ```
 
 Sniffing ignores duplicate device paths that name the same physical radio
 (Linux exposes one radio as both `/dev/serial/by-id/…` and `/dev/ttyACM0`;
 the tool reports it once) and never mistakes its own open port for one held
-by another process. During the idle grace window the tool re-queries any
+by another process. The serial input queue is flushed on open and fleet
+packets are ignored until the test window opens, so stale packets buffered
+by a previous run (or another program) cannot be counted or acknowledged as
+fleet traffic. During the idle grace window the tool re-queries any
 firmware-version/platform details the radio has not reported yet, so the
 final report shows the full radio identity.
 

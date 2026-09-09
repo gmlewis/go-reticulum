@@ -1,10 +1,85 @@
 # RNode Fleet Radio Diagnostics Report
 
-**Date:** 2026-09-09 · **Tool:** `gornode-diagnostics` (first real fleet run) · **Window:** 15:33:47–15:39:55 local
-**Setup:** defaults — 60s grace, 300s test, 915.000 MHz / BW 125 kHz / SF9 / CR5 / TX 17 dBm, ~1 TEST packet every 3s
-**Fleet:** 5 RNodes on 5 machines (`glenn-nano2gb` has no RNode — its run correctly reported "no RNode found")
+**Tool:** `gornode-diagnostics` · Two fleet runs on 2026-09-09:
+**Run 1** (15:33–15:39): 5 radios — found OMEN-875 and raspberrypi TX-dead.
+**Run 2** (16:03–16:10): the two dead radios removed, the healthy MacM2Pro radio moved to
+raspberrypi — all three remaining radios confirmed healthy. Run 2 is summarized first below;
+Run 1 (the original baseline and dead-radio diagnosis) follows.
 
 ---
+
+# Run 2 (2026-09-09, ~16:05:00–16:10:11) — post-repair fleet
+
+**Setup:** defaults again (60s grace, 300s test, 915.000 MHz / BW 125 kHz / SF9 / CR5 / 17 dBm).
+**Fleet:** 3 radios — glenn-kamrui (upstairs), glenn-mac-mini-m2 and raspberrypi (downstairs;
+raspberrypi now runs the ex-MacM2Pro radio, USB unit `8C:FD:49:B5:7D:6C`). The three radio-less
+nodes (OMEN-875, nano2gb, MacM2Pro) correctly reported "no serial device that could hold an RNode"
+and exited.
+
+## Executive summary — Run 2
+
+| Node | Radio | nodeID | TESTs sent | TESTs heard | ACK receipts | Verdict |
+|---|---|---|---:|---:|---:|---|
+| glenn-kamrui (upstairs) | `by-id/…90:70:69:9C:97:A0-if00` | `206c8ebc12ed4ecd` | 101 | 199 | 181/101 | **TRANSMIT + RECEIVE OK** |
+| glenn-mac-mini-m2 | `/dev/cu.usbmodem101` | `5595134c9a8c9ad8` | 101 | 192 | 181/101 | **TRANSMIT + RECEIVE OK** |
+| raspberrypi (ex-MacM2Pro radio) | `by-id/…8C:FD:49:B5:7D:6C-if00` | `857933b03afcbadb` | 101 | 197 | **185**/101 | **TRANSMIT + RECEIVE OK** |
+
+**Every radio now in the fleet transmits and receives.** The moved radio is, in fact, the fleet's
+strongest: highest ACK-confirmation (185/101) and 97–99% bidirectional delivery.
+
+## Who heard whom — Run 2 (TEST packets, received/sent)
+
+| ↓ heard by / sent by → | kamrui (101) | mac-mini (101) | raspberrypi (101) |
+|---|---|---|---|
+| **kamrui** | — | 98 (97%) | 99 (98%) |
+| **mac-mini** | 95 (94%) | — | 94 (93%) |
+| **raspberrypi** | 99 (98%) | 98 (97%) | — |
+
+Per-sender confirmation rate (ACK receipts across both peers): kamrui 90%, mac-mini 90%,
+raspberrypi **92%** — the moved radio leads again, exactly as it did as MacM2Pro in Run 1.
+
+## Findings — Run 2
+
+1. **The radio swap fully worked.** The ex-MacM2Pro unit on raspberrypi delivers 97–99% both ways
+   and has the best per-sender confirmation (92%) of the fleet. The old raspberrypi radio
+   (`44:1B:F6:6F:28:0C`) and the OMEN-875 unit (`8C:FD:49:B6:52:68`) are out of the fleet pending
+   repair of their transmitters (both remain excellent receivers per Run 1).
+2. **kamrui (upstairs) is still the weakest healthy transmitter, and that is a placement effect**:
+   as the user notes, kamrui is upstairs while the other two are downstairs. Its TX is heard 93–94%
+   of the time by the downstairs nodes, while its own RX hears 97–99% of everything. The floor/ceiling
+   path is not the problem — its transmit margin is, exactly as in Run 1.
+3. **A stale-packet bug was caught and fixed (tool improvement #4).** At window open, both kamrui
+   ("3 peers") and mac-mini ("4 peers") reported *phantom peers* — with 1–2 packets each carrying
+   **Run 1's nodeIDs** (`8bd5…`, `a42d…`) and **seq 100/101** — Run 1's very final packets, sent
+   ~25 minutes earlier, which had sat buffered (host/tty or firmware queue) and were delivered the
+   instant the new run's RX loop began. They were even acknowledged (wasted airtime). Fixed in the
+   tool: the serial input queue is now flushed on open, and fleet packets are ignored until the
+   test window opens (a pre-test packet can never be counted or acknowledged again). raspberrypi's
+   report shows the clean result (exactly 2 peers): it had no backlog because its radio was fresh.
+4. **RTTs unchanged (~26–29s avg, 7–52s range)** because this run still acknowledged every packet
+   (no `-ack-every`; the tool's default is now `5`). CSMA bands again ratcheted `0x01 → 0x02 →
+   0x03`. With only 3 transmitters the contention is milder than Run 1, but the ACK-everything
+   policy still dominates the latency — the next run will thin ACKs by default.
+5. **Firmware identity and stat counters remain unanswered by this firmware** even with the new
+   probe retries and grace-window re-queries — reports still show plain "RNode", counters 0. The
+   over-the-air results remain the authoritative verdicts.
+6. **The device-dedupe fix is confirmed live**: each Linux machine now lists its radio exactly once
+   (by-id path), with no phantom `ttyACM0` "IN USE" line.
+
+## Run 2 per-peer detail
+
+```
+kamrui (206c…):     heard 5595: 98 TESTs,  90 ACKs of ours, RTT avg 26.8s (9.9/49.6)
+                    heard 8579: 99 TESTs,  91 ACKs of ours, RTT avg 27.6s (15.0/49.1)
+mac-mini (5595):    heard 206c: 95 TESTs,  91 ACKs of ours, RTT avg 25.9s (7.0/47.0)
+                    heard 8579: 94 TESTs,  90 ACKs of ours, RTT avg 27.8s (7.0/43.1)
+raspberrypi (8579): heard 206c: 99 TESTs,  94 ACKs of ours, RTT avg 29.4s (10.2/51.5)
+                    heard 5595: 98 TESTs,  91 ACKs of ours, RTT avg 26.2s (14.9/43.4)
+```
+
+---
+
+# Run 1 (2026-09-09, 15:33–15:39) — baseline: two dead transmitters found
 
 ## 1. Executive summary
 
@@ -266,5 +341,6 @@ transmissions; if no peer's report lists this nodeID, its transmitter is not rad
 
 ---
 
-*Raw scrollback of all five runs is preserved in the tmux sessions (`tmux capture-pane -p -S -3000 -t <session>`);
-copies of the five final-report captures from this analysis live in `/tmp/grnd-*.txt`.*
+*Raw scrollback of both runs is preserved in the tmux sessions (`tmux capture-pane -p -S -3000 -t <session>`);
+copies of the final-report captures from both analyses live in `/tmp/grnd-*.txt` (Run 1) and
+`/tmp/grnd2-*.txt`-style tmux captures (Run 2).*

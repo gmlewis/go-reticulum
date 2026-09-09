@@ -19,6 +19,20 @@ import (
 // errBusy is the errno returned when a serial line is held by another process.
 func errBusy() error { return syscall.EBUSY }
 
+// ioctlTCFLSH is the Linux TCFLSH ioctl (not exported by syscall on all
+// architectures); argument 0 is TCIFLUSH — flush the input queue.
+const ioctlTCFLSH = 0x540B
+
+// flushSerialInput discards any input buffered on the serial device (ioctl
+// TCFLSH with TCIFLUSH) so data a previous reader left unread cannot be
+// mistaken for fresh traffic.
+func flushSerialInput(fd uintptr) error {
+	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, fd, ioctlTCFLSH, 0); errno != 0 {
+		return errno
+	}
+	return nil
+}
+
 // deviceID returns the underlying character-device ID of a path, used to
 // recognize when two paths (e.g. /dev/serial/by-id/… and /dev/ttyACM0) name
 // the same physical serial device. Non-device paths report ok=false.

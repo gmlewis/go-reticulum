@@ -24,6 +24,10 @@ func errBusy() error { return errors.New("busy") }
 // simply probed once per path).
 func deviceID(path string) (uint64, bool) { return 0, false }
 
+// flushSerialInput is not implementable on this platform; serial input is
+// never flushed (harmless — stale-packet gating still applies).
+func flushSerialInput(fd uintptr) error { return nil }
+
 func errTimeout() error { return errors.New("timeout") }
 
 func nocttyFlag() int { return 0 }

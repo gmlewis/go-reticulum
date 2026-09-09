@@ -19,6 +19,17 @@ import (
 // errBusy is the errno returned when a serial line is held by another process.
 func errBusy() error { return syscall.EBUSY }
 
+// flushSerialInput discards any input buffered on the serial device (ioctl
+// TIOCFLUSH with the FREAD bit), so data a previous reader left unread cannot
+// be mistaken for fresh traffic.
+func flushSerialInput(fd uintptr) error {
+	fread := 1 // FREAD: flush the input queue
+	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, fd, uintptr(syscall.TIOCFLUSH), uintptr(unsafe.Pointer(&fread))); errno != 0 {
+		return errno
+	}
+	return nil
+}
+
 // deviceID returns the underlying character-device ID of a path, used to
 // recognize when two paths (e.g. /dev/cu.* and /dev/tty.*) name the same
 // physical serial device. Non-device paths report ok=false.
