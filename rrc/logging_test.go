@@ -227,3 +227,86 @@ func TestReloadReconfiguresLogging(t *testing.T) {
 		t.Error("the reload did not apply the DEBUG log level")
 	}
 }
+
+// TestRotatingFileWriterRotation verifies the optional gorrcd log file
+// rotates to <file>.1 when it reaches the RNS LogMaxSize bound, so an rrcd
+// with [log] file configured no longer grows without bound (Python rrcd's
+// FileHandler never rotates).
+func TestRotatingFileWriterRotates(t *testing.T) {
+	t.Parallel()
+	dir := testutils.TempDir(t, "rrcd-rotlog-")
+	logPath := filepath.Join(dir, "hub.log")
+	const maxBytes = 100
+	w, err := newRotatingFileWriter(logPath, maxBytes)
+	if err != nil {
+		t.Fatalf("open log file: %v", err)
+	}
+	defer func() { _ = w.Close() }()
+
+	// Write past the limit to trigger exactly one rotation.
+	for i := range 15 {
+		if _, err := w.Write([]byte("0123456789")); err != nil {
+			t.Fatalf("write %d: %v", i, err)
+		}
+	}
+	info, err := os.Stat(logPath)
+	if err != nil {
+		t.Fatalf("log file missing: %v", err)
+	}
+	if info.Size() > maxBytes {
+		t.Fatalf("log file size = %d, want <= %d", info.Size(), maxBytes)
+	}
+	prevInfo, err := os.Stat(logPath + ".1")
+	if err != nil {
+		t.Fatalf("rotated .1 file missing: %v", err)
+	}
+	if prevInfo.Size() != 100 {
+		t.Errorf(".1 file size = %d, want 100", prevInfo.Size())
+	}
+
+	// Keep writing: the active file stays bounded, .1 is replaced in place.
+	for i := range 10 {
+		if _, err := w.Write([]byte("0123456789")); err != nil {
+			t.Fatalf("write %d: %v", i, err)
+		}
+	}
+	info, err = os.Stat(logPath)
+	if err != nil {
+		t.Fatalf("log file missing after second batch: %v", err)
+	}
+	if info.Size() > maxBytes {
+		t.Errorf("log file size = %d after second batch, want <= %d", info.Size(), maxBytes)
+	}
+	prevInfo, err = os.Stat(logPath + ".1")
+	if err != nil {
+		t.Fatalf(".1 file missing after second batch: %v", err)
+	}
+	if prevInfo.Size() != 100 {
+		t.Errorf(".1 file size = %d after second batch, want 100", prevInfo.Size())
+	}
+}
+
+// TestRotatingFileWriterApplySwap verifies Apply closes the previous
+// rotating file when the log file changes or is disabled, so a /reload swap
+// does not leak the old handle.
+func TestRotatingFileWriterApplySwap(t *testing.T) {
+	dir := testutils.TempDir(t, "rrcd-swaplog-")
+	logPath := filepath.Join(dir, "hub.log")
+	cfg := DefaultHubConfig()
+	cfg.LogConsole = false
+	cfg.LogFile = new(logPath)
+	setup := ConfigureLogging(cfg, rns.NewLogger(), nil, nil)
+	if setup.logFile == nil {
+		t.Fatal("rotating file writer missing")
+	}
+	old := setup.logFile
+	// Re-apply with the file disabled: the old handle must be closed.
+	cfg.LogFile = nil
+	setup.Apply(cfg, nil, nil, nil)
+	if setup.logFile != nil || setup.File != nil {
+		t.Fatalf("log file still configured after disable: file=%v writer=%v", setup.File, setup.logFile)
+	}
+	if _, err := old.Write([]byte("x")); err == nil {
+		t.Fatal("previous rotating file still writable after Apply (handle leaked)")
+	}
+}

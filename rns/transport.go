@@ -1619,12 +1619,14 @@ func (ts *TransportSystem) maintenance() {
 	pathPersistTicker := time.NewTicker(pathTablePersistInterval)
 	interfaceJobsTicker := time.NewTicker(interfaceJobsInterval)
 	cacheCleanTicker := time.NewTicker(cacheCleanInterval)
+	cachesCleanTicker := time.NewTicker(cleanCachesInterval)
 	knownDestCleanTicker := time.NewTicker(KnownDestinationsInterval)
 	defer ratchetTicker.Stop()
 	defer announceTicker.Stop()
 	defer pathPersistTicker.Stop()
 	defer interfaceJobsTicker.Stop()
 	defer cacheCleanTicker.Stop()
+	defer cachesCleanTicker.Stop()
 	defer knownDestCleanTicker.Stop()
 
 	// Initial clean
@@ -1683,6 +1685,11 @@ func (ts *TransportSystem) maintenance() {
 			// Reconcile the destinations hash index with the destinations list
 			// (Python Transport.clean_destinations_map, Transport.py:2478-2496).
 			ts.CleanDestinationsMap()
+		case <-cachesCleanTicker.C:
+			// Clean the resource and packet caches (Python Reticulum.__jobs
+			// schedules __clean_caches every CLEAN_INTERVAL, Reticulum.py:382-384;
+			// Python runs it in a daemon thread when background=True).
+			go ts.cleanCaches()
 		case <-knownDestCleanTicker.C:
 			// Periodically drop stale/pathless known destinations and their
 			// ratchet files (Python Transport.jobs scheduling
@@ -1878,15 +1885,19 @@ func (ts *TransportSystem) findInterfaceByHash(hash []byte) interfaces.Interface
 	return nil
 }
 
-// announceCacheDirFor returns the cache/announces directory that corresponds
-// to a given storage path: ~/.reticulum/storage -> ~/.reticulum/cache/announces
-// (the sibling cache dir Python's Transport.cache / get_cached_packet use).
+// announceCacheDirFor returns the announce cache directory that corresponds
+// to a given storage path: ~/.reticulum/storage ->
+// ~/.reticulum/storage/cache/announces. Python derives the same location
+// without a helper: RNS.Reticulum.cachepath = storagepath + "/cache"
+// (RNS/Reticulum.py:247) and Transport.cache writes announce packets to
+// os.path.join(cachepath, "announces", packet_hash) (Transport.py:2653-2654),
+// so the cache dir is always directly inside the storage dir.
 // Returns "" when storagePath is unset.
 func announceCacheDirFor(storagePath string) string {
 	if storagePath == "" {
 		return ""
 	}
-	return filepath.Join(filepath.Dir(storagePath), "cache", "announces")
+	return filepath.Join(storagePath, "cache", "announces")
 }
 
 // announceCacheDir returns the cache/announces dir for this transport's own
@@ -6567,12 +6578,14 @@ func (ts *TransportSystem) cleanCache() {
 	ts.mu.Unlock()
 }
 
-// cleanAnnounceCache removes packet-hash cache entries older than the cache
-// timeout (30 minutes). It mirrors Python's Transport.clean_announce_cache
-// (Transport.py:2617-2636): the expired keys are snapshotted under a short
-// lock, then each is re-checked and deleted under a per-entry lock while
-// yielding between entries so a large sweep stays low priority and never
-// blocks the transport's main critical section.
+// cleanAnnounceCache removes expired packet-hash cache entries and every
+// on-disk cached announce file that is no longer referenced by an active
+// path_table or tunnel entry. It mirrors Python's Transport.clean_announce_cache
+// (Transport.py:2617-2636 for the in-memory prune and Transport.py:2532-2552
+// clean_announce_cache for the disk sweep): the expired keys are snapshotted
+// under a short lock, then each is re-checked and deleted under a per-entry
+// lock while yielding between entries so a large sweep stays low priority and
+// never blocks the transport's main critical section.
 func (ts *TransportSystem) cleanAnnounceCache() {
 	ts.mu.Lock()
 	if ts.packetHashes == nil {
@@ -6605,6 +6618,131 @@ func (ts *TransportSystem) cleanAnnounceCache() {
 		}
 		ts.mu.Unlock()
 		// Low-priority yield between entries (Python Transport.py:2636).
+		sleep(cacheCleanYieldSleep)
+	}
+
+	ts.cleanAnnounceCacheFiles(sleep)
+}
+
+// cleanAnnounceCacheFiles deletes announce cache files whose packet hash is
+// not referenced by an active path_table or tunnel entry — the Go port of
+// Python's Transport.clean_announce_cache (Transport.py:2532-2552). Python
+// lists the announce cache directory, removes every file that is not a
+// parseable packet hash or is not referenced by a live path/tunnel entry,
+// and yields between entries so a large sweep stays low priority. Without
+// this sweep the announce cache grows by one file per persisted announce,
+// forever (Python keeps the directory bounded at roughly the size of the
+// live path table).
+func (ts *TransportSystem) cleanAnnounceCacheFiles(sleep func(time.Duration)) {
+	dir := ts.announceCacheDir()
+	if dir == "" {
+		return
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if !os.IsNotExist(err) && ts.logger != nil {
+			ts.logger.Error("Failed to list announce cache directory: %v", err)
+		}
+		return
+	}
+	active := ts.activePathPacketHashes()
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() {
+			continue
+		}
+		name := entry.Name()
+		fullPath := filepath.Join(dir, name)
+		// Python tries bytes.fromhex on the filename and removes the file
+		// when it is not referenced by an active path/tunnel entry
+		// (Transport.py:2543-2546); unparseable names are removed too.
+		target, decodeErr := hex.DecodeString(name)
+		if _, activeHash := active[string(target)]; decodeErr != nil || !activeHash {
+			if err := os.Remove(fullPath); err != nil && !os.IsNotExist(err) && ts.logger != nil {
+				ts.logger.Warning("Failed to remove cached announce %v: %v", name, err)
+			} else if err == nil && ts.logger != nil {
+				ts.logger.Debug("Removed cached announce %v", name)
+			}
+		}
+		// Low priority, yield between entries (Python Transport.py:2550).
+		sleep(cacheCleanYieldSleep)
+	}
+}
+
+// activePathPacketHashes returns the set of packet hashes referenced by the
+// live path_table and tunnel entries (Python Transport.py:2536-2537).
+func (ts *TransportSystem) activePathPacketHashes() map[string]struct{} {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	active := make(map[string]struct{}, len(ts.pathTable))
+	for _, entry := range ts.pathTable {
+		if len(entry.PacketHash) > 0 {
+			active[string(entry.PacketHash)] = struct{}{}
+		}
+	}
+	for _, tunnel := range ts.tunnels {
+		for _, pathEntry := range tunnel.Paths {
+			if len(pathEntry.PacketHash) > 0 {
+				active[string(pathEntry.PacketHash)] = struct{}{}
+			}
+		}
+	}
+	return active
+}
+
+// ResourceCache is how long a resource cache file is kept before the periodic
+// cache clean removes it (Python Reticulum.RESOURCE_CACHE,
+// RNS/Reticulum.py:154). One day.
+const ResourceCache = 24 * time.Hour
+
+// cleanCachesInterval is how often the resource and packet caches are cleaned
+// (Python Reticulum.CLEAN_INTERVAL, RNS/Reticulum.py:156). Fifteen minutes.
+const cleanCachesInterval = 15 * time.Minute
+
+// cleanCaches is the Go port of Python Reticulum.__clean_caches
+// (RNS/Reticulum.py:1147-1169): remove resource cache files older than
+// ResourceCache and packet cache files older than DestinationTimeout from
+// this transport's storage path. Python runs this from Reticulum.__jobs in
+// every instance, so unlike the announce cache clean it is NOT skipped for
+// clients connected to a shared instance. Only plain files whose names are
+// truncated-hash-length hex strings are considered (Python: len(filename) ==
+// (RNS.Identity.HASHLENGTH//8)*2); the announces subdirectory inside the
+// cache dir does not match that name length and is skipped, as in Python.
+func (ts *TransportSystem) cleanCaches() {
+	if ts == nil || ts.storagePath == "" {
+		return
+	}
+	sleep := ts.cacheCleanSleep
+	if sleep == nil {
+		sleep = time.Sleep
+	}
+	now := time.Now()
+	ts.cleanCacheDir(filepath.Join(ts.storagePath, "resources"), ResourceCache, now, sleep)
+	ts.cleanCacheDir(filepath.Join(ts.storagePath, "cache"), DestinationTimeout, now, sleep)
+}
+
+func (ts *TransportSystem) cleanCacheDir(dir string, maxAge time.Duration, now time.Time, sleep func(time.Duration)) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if !os.IsNotExist(err) && ts.logger != nil {
+			ts.logger.Error("Error while cleaning caches, could not list %v: %v", dir, err)
+		}
+		return
+	}
+	nameLen := TruncatedHashLength / 8 * 2
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() || len(entry.Name()) != nameLen {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if now.Sub(info.ModTime()) > maxAge {
+			if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil && !os.IsNotExist(err) && ts.logger != nil {
+				ts.logger.Error("Error while cleaning resource and packet caches: %v", err)
+			}
+		}
+		// Low priority, yield between entries (Python Reticulum.py:1163/1176).
 		sleep(cacheCleanYieldSleep)
 	}
 }

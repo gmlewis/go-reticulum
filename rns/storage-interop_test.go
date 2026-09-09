@@ -307,9 +307,9 @@ print(idn.get_public_key().hex())
 //   - Go writes (via persistPathTable) the Python layout
 //     [destHash, timestamp(float s), next_hop, hops, expires(float s),
 //     random_blobs, interface_hash, packet_hash] AND the accompanying
-//     cache/announces/<hex(packet_hash)> file ([raw, "Type[Name]"]). Python
-//     asserts the exact layout + that get_cached_packet-style lookup recovers
-//     the raw announce.
+//     storage/cache/announces/<hex(packet_hash)> file ([raw, "Type[Name]"]).
+//     Python asserts the exact layout + that get_cached_packet-style lookup
+//     recovers the raw announce.
 //   - Python writes the same layout + cache file; Go loads it via
 //     LoadPathTable and the entry is reconstructed (Packet from the cache,
 //     Interface reattached by interface_hash, float-second timestamps).
@@ -384,7 +384,7 @@ func TestStorageInteropDestinationTable(t *testing.T) {
 	}
 	wantRaw := []byte("py-announce-raw")
 	if !bytes.Equal(entry.Packet, wantRaw) {
-		t.Fatalf("Packet not reconstructed from cache/announces: %v, want %v", entry.Packet, wantRaw)
+		t.Fatalf("Packet not reconstructed from storage/cache/announces: %v, want %v", entry.Packet, wantRaw)
 	}
 	if !bytes.Equal(entry.IfaceHash, interfaceHash(pipe2)) {
 		t.Fatalf("loaded IfaceHash = %x, want %x", entry.IfaceHash, interfaceHash(pipe2))
@@ -400,8 +400,10 @@ func TestStorageInteropDestinationTable(t *testing.T) {
 const destTableReadScript = `import sys, os
 from RNS.vendor import umsgpack
 dt = sys.argv[1]
-# cache/announces is the sibling of the storage dir (dirname of storage dir).
-cache_dir = os.path.join(os.path.dirname(os.path.dirname(dt)), "cache", "announces")
+# Python's announce cache lives inside the storage dir: cachepath =
+# storagepath + "/cache" (RNS/Reticulum.py:247) and Transport.cache writes
+# announce packets to os.path.join(cachepath, "announces", packet_hash).
+cache_dir = os.path.join(os.path.dirname(dt), "cache", "announces")
 with open(dt, "rb") as f:
     lst = umsgpack.unpackb(f.read())
 assert isinstance(lst, list) and len(lst) == 1, "want 1-entry list, got %r" % type(lst)
@@ -426,7 +428,7 @@ print("OK")
 `
 
 // destTableWriteScript: dest hex, next_hop hex, packet_hash hex, iface_hash hex.
-// Python writes the Python layout + the cache/announces/<hex(packet_hash)> file
+// Python writes the Python layout + the storage/cache/announces/<hex(packet_hash)> file
 // so Go's LoadPathTable can recover the raw announce and reattach the interface.
 const destTableWriteScript = `import sys, os, time
 from RNS.vendor import umsgpack
@@ -437,7 +439,7 @@ iface = bytes.fromhex("%s")
 entry = [dest, time.time(), nh, 3, time.time()+3600, [b"\x99"*8], iface, pkt]
 with open(sys.argv[1], "wb") as f:
     f.write(umsgpack.packb([entry]))
-cache_dir = os.path.join(os.path.dirname(os.path.dirname(sys.argv[1])), "cache", "announces")
+cache_dir = os.path.join(os.path.dirname(sys.argv[1]), "cache", "announces")
 os.makedirs(cache_dir, exist_ok=True)
 with open(os.path.join(cache_dir, pkt.hex()), "wb") as f:
     f.write(umsgpack.packb([b"py-announce-raw", "PipeInterface[interoppipe]"]))

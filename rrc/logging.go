@@ -47,8 +47,9 @@ type LogSetup struct {
 	// mu guards the live fields: Emit holds it while reading and
 	// writing, and Apply swaps every field under it so records in
 	// flight on RNS goroutines never see a torn state.
-	mu     sync.Mutex
-	writer io.Writer
+	mu      sync.Mutex
+	writer  io.Writer
+	logFile *rotatingFileWriter
 }
 
 // DefaultLogFormat is the fallback format when the configured format is
@@ -228,20 +229,22 @@ func (s *LogSetup) Apply(cfg HubConfig, rnsLogger *rns.Logger, overrideLevel, ov
 		filePath = cleanOptionalPathPtr(cfg.LogFile)
 	}
 	var file *string
+	var newLogFile *rotatingFileWriter
 	if filePath != nil {
 		p := ExpandPath(*filePath)
 		if dir := parentDir(p); dir != "" {
 			_ = os.MkdirAll(dir, 0o755)
 		}
-		f, err := os.OpenFile(p, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		rf, err := newRotatingFileWriter(p, rns.LogMaxSize)
 		if err == nil {
 			_ = os.Chmod(p, 0o600)
 			if writer != nil {
-				writer = io.MultiWriter(os.Stderr, f)
+				writer = io.MultiWriter(os.Stderr, rf)
 			} else {
-				writer = f
+				writer = rf
 			}
 			file = filePath
+			newLogFile = rf
 		}
 	}
 
@@ -251,6 +254,12 @@ func (s *LogSetup) Apply(cfg HubConfig, rnsLogger *rns.Logger, overrideLevel, ov
 	}
 
 	s.mu.Lock()
+	// Close the previous rotating file, if any, so a /reload swap does not
+	// leak the old handle.
+	if s.logFile != nil && s.logFile != newLogFile {
+		_ = s.logFile.Close()
+	}
+	s.logFile = newLogFile
 	s.Level = level
 	s.RNSLevel = rnsLevel
 	s.Console = cfg.LogConsole
@@ -380,4 +389,77 @@ func parentDir(p string) string {
 		return ""
 	}
 	return p[:idx]
+}
+
+// rotatingFileWriter appends to a log file and rotates it to <path>.1 when
+// the file reaches maxBytes, matching the RNS log rotation convention
+// (RNS/__init__.py LOG_MAXSIZE and the rns.Logger writeSink rotation; the
+// rotated artifact is the same <file>.1 RNS leaves behind). Python rrcd's
+// logging.FileHandler never rotates, so an rrcd with [log] file configured
+// grew without bound; this keeps the optional gorrcd log file bounded while
+// staying layout-compatible with the Python install.
+type rotatingFileWriter struct {
+	mu       sync.Mutex
+	path     string
+	maxBytes int64
+	f        *os.File
+}
+
+func newRotatingFileWriter(path string, maxBytes int64) (*rotatingFileWriter, error) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	return &rotatingFileWriter{path: path, maxBytes: maxBytes, f: f}, nil
+}
+
+func (w *rotatingFileWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.f == nil {
+		return 0, io.ErrClosedPipe
+	}
+	if info, err := w.f.Stat(); err == nil && info.Size()+int64(len(p)) > w.maxBytes {
+		if err := w.rotate(); err != nil {
+			return 0, err
+		}
+	}
+	return w.f.Write(p)
+}
+
+// rotate closes the current file, discards the previous .1 (RNS's rotation
+// keeps exactly one previous generation), renames the current file to .1 and
+// reopens a fresh file.
+func (w *rotatingFileWriter) rotate() error {
+	prev := w.path + ".1"
+	_ = w.f.Close()
+	w.f = nil
+	_ = os.Remove(prev)
+	if err := os.Rename(w.path, prev); err != nil && !os.IsNotExist(err) {
+		// The rename failed; reopen the current file so writes keep going.
+		f, openErr := os.OpenFile(w.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		if openErr != nil {
+			return openErr
+		}
+		w.f = f
+		return err
+	}
+	f, err := os.OpenFile(w.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	w.f = f
+	return nil
+}
+
+// Close releases the underlying file handle (nil-safe).
+func (w *rotatingFileWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.f == nil {
+		return nil
+	}
+	err := w.f.Close()
+	w.f = nil
+	return err
 }
