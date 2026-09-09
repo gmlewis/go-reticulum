@@ -1,10 +1,86 @@
 # RNode Fleet Radio Diagnostics Report
 
-**Tool:** `gornode-diagnostics` · Two fleet runs on 2026-09-09:
+**Tool:** `gornode-diagnostics` · Three fleet runs on 2026-09-09:
 **Run 1** (15:33–15:39): 5 radios — found OMEN-875 and raspberrypi TX-dead.
 **Run 2** (16:03–16:10): the two dead radios removed, the healthy MacM2Pro radio moved to
-raspberrypi — all three remaining radios confirmed healthy. Run 2 is summarized first below;
-Run 1 (the original baseline and dead-radio diagnosis) follows.
+raspberrypi — all three remaining radios confirmed healthy.
+**Run 3** (17:27–17:33): the ack-every-5 + stale-packet-fix build (v0.93.0) — lower channel
+load, thinner ACKs, zero phantom peers. Run 3 is summarized first below; Run 2 and
+Run 1 (the original baseline and dead-radio diagnosis) follow.
+
+---
+
+# Run 3 (2026-09-09, ~17:27–17:33) — ack-every-5 + stale-packet fix validated
+
+**Setup:** defaults (60s grace, 300s test, 915.000 MHz / BW 125 kHz / SF9 / CR5 / 17 dBm), now
+with the v0.93.0 build: **`-ack-every 5` is the default** (ACK thinning) and the **stale-packet
+fix is live** (serial input flushed on open; fleet packets ignored until the test window opens).
+**Fleet:** same 3 radios (kamrui upstairs; mac-mini-m2 and raspberrypi downstairs).
+
+## Executive summary — Run 3
+
+| Node | Radio | nodeID | TESTs sent | TESTs heard | ACKs sent | ACK receipts | Verdict |
+|---|---|---|---:|---:|---:|---:|---|
+| glenn-kamrui (upstairs) | `by-id/…90:70:69:9C:97:A0-if00` | `22f2c0a937c8793d` | 101 | 193 | 37 | 37/101 | **TRANSMIT + RECEIVE OK** |
+| glenn-mac-mini-m2 | `/dev/cu.usbmodem101` | `213302de41bc6eee` | 100 | 191 | 37 | 36/100 | **TRANSMIT + RECEIVE OK** |
+| raspberrypi | `by-id/…8C:FD:49:B5:7D:6C-if00` | `512e9872c721fc3c` | 100 | 192 | 37 | 34/100 | **TRANSMIT + RECEIVE OK** |
+
+Every expectation from the two fixes was met:
+
+1. **ACK receipts collapsed to ~⅕** (37/36/34 vs Run 2's 181/181/185) — exactly the thinning the
+   new default produces: with `ack-every 5`, only seq 5, 10, … are ACK-eligible (20 per sender per
+   peer, 40 receipts possible). Confirmation of ack-eligible TESTs: kamrui **37/40 (93%)**,
+   mac-mini 36/40 (90%), raspberrypi 34/40 (85%).
+2. **Zero phantom peers.** Every report lists **exactly 2 peers**, all with fresh per-run nodeIDs
+   (`22f2…`, `2133…`, `512e…`); none of Run 1's or Run 2's nodeIDs appear anywhere. The
+   serial-flush + window-gate fix is verified in the field.
+3. **The firmware's own congestion indicator confirms the lighter load**: CSMA bands oscillated
+   `0x01 ↔ 0x02` (0–29 backoff slots) on all three radios and **never reached `0x03`** —
+   in Runs 1–2 every radio ratcheted to `0x03` and stayed there.
+4. **ACK delivery was near-perfect** (97–100%): of each radio's 37 ACKs, peers heard 37, 36, 36 —
+   so the thinning did not hurt reliability.
+
+## Who heard whom — Run 3 (TEST packets, received/sent)
+
+| ↓ heard by / sent by → | kamrui (101) | mac-mini (100) | raspberrypi (100) |
+|---|---|---|---|
+| **kamrui** | — | 95 (95%) | 98 (98%) |
+| **mac-mini** | 96 (95%) | — | 95 (95%) |
+| **raspberrypi** | 99 (98%) | 93 (93%) | — |
+
+Delivery percentages stay symmetric per pair (kamrui↔rpi 98% both ways, kamrui↔mac-mini and
+mac-mini↔rpi 93–95%), i.e. the links are unchanged from Run 2 — thinning ACKs did not cost
+delivery.
+
+## RTTs — Run 3: better, but not collapsed
+
+| Pair | avg (each side) | min | max |
+|---|---|---|---|
+| kamrui ↔ mac-mini | 9.7s / 19.8s | 4.0s / 17.2s | 19.8s / 19.7s |
+| kamrui ↔ rpi | 20.4s / 11.9s | 17.8s / 3.9s | 21.2s / 19.5s |
+| mac-mini ↔ rpi | 19.8s / 19.8s | 17.2s / 17.3s | 19.7s / 20.3s |
+
+- **Minimum RTTs dropped to ~4s** (Run 2's floor was 7–15s) — the channel is fast when the ACK
+  catches the same 15s window.
+- **Averages are 10–20s**, down from 26–30s, but well above the ~0.3s airtime the frames need.
+- **RTTs look quantized to the 15s ack-eligible cadence**: with ack-every 5, ACK-eligible TESTs
+  go out every 15s, and each receipt is either ~4s (same window) or ~17–20s (one window late).
+  Each directed view is consistently fast or slow — e.g. kamrui saw mac-mini's ACKs fast
+  (avg 9.7s) while mac-mini saw kamrui's slow (avg 19.8s, min 17.2s) — a receipt-timing effect,
+  not a link-quality one (delivery percentages are symmetric). Residual latency is
+  channel-access timing (CSMA deferral of the ACK burst), not radio health.
+
+## Findings — Run 3
+
+1. **Both v0.93.0 fixes validated in the field** (thin ACKs by default; stale packets flushed and
+   gated). No tool changes outstanding from this run.
+2. **raspberrypi logged a single `read error: EOF` at window open** — its radio kept receiving
+   and acknowledging for the full 300s (192 TESTs heard), so this is a transient at the
+   flush/reopen boundary, not a fault. Worth watching on the next run; no action taken.
+3. **Firmware stat counters remain 0** on all three units (this firmware build does not answer
+   the legacy counter queries), unchanged from Runs 1–2.
+4. Fleet baseline is now: healthy 3-radio fleet delivering 93–98% TEST delivery both ways,
+   85–93% ack-eligible confirmation, ACK airtime cut ~5×, CSMA backoff staying in bands 1–2.
 
 ---
 
@@ -341,6 +417,6 @@ transmissions; if no peer's report lists this nodeID, its transmitter is not rad
 
 ---
 
-*Raw scrollback of both runs is preserved in the tmux sessions (`tmux capture-pane -p -S -3000 -t <session>`);
-copies of the final-report captures from both analyses live in `/tmp/grnd-*.txt` (Run 1) and
-`/tmp/grnd2-*.txt`-style tmux captures (Run 2).*
+*Raw scrollback of all three runs is preserved in the tmux sessions (`tmux capture-pane -p -S -3000 -t <session>`);
+copies of the final-report captures from Run 1 live in `/tmp/grnd-*.txt`; Runs 2–3 were read directly
+from the live tmux panes during analysis.*
