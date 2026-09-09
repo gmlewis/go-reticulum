@@ -200,6 +200,36 @@ A sensible manual session is usually:
 That sequence keeps the live device state observable at each step and makes it
 easy to recover if you need to back out of a change.
 
+### Fleet radio diagnostics
+
+`gornode-diagnostics` answers a different question than `gornodeconf`: not
+"what is this device?" but "how well does this radio actually transmit and
+receive over the air?" It sniffs every serial device on the machine for an
+RNode (completely ignoring `~/.reticulum/config`), refuses to touch a serial
+line held by another process (serial lines cannot be shared), and then runs a
+coordinated over-the-air test: every participating node transmits
+uniquely-identified test packets and acknowledges the packets it hears from
+the other nodes, so a radio whose transmitter is dead shows up as "sent many,
+heard by nobody" in the fleet comparison.
+
+Start it on every node of the fleet inside the grace period (60s by default,
+so all nodes can be launched before the test begins):
+
+```bash
+gornode-diagnostics                     # 60s grace, 300s test
+gornode-diagnostics -grace 120 -duration 600
+gornode-diagnostics -sniff-only         # just identify RNodes, run no test
+```
+
+The final report per radio shows the detected hardware and firmware, the
+configured LoRa parameters as validated against the radio's own report,
+firmware RX/TX packet counters (with the delta observed during the test),
+per-peer packet/acknowledgement counts and round-trip times, hardware error
+reports (e.g. `TXFAILED`, `MODEM_TIMEOUT`), and a verdict of whether the radio
+transmits and receives. Like `gornodeconf`, it requires exclusive access to
+the serial device — stop `gornsd`/`gonomadnet` (or anything else holding the
+port) first.
+
 ---
 
 What follows is Mark Qvist's original README.md.
