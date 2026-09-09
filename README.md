@@ -219,7 +219,15 @@ so all nodes can be launched before the test begins):
 gornode-diagnostics                     # 60s grace, 300s test
 gornode-diagnostics -grace 120 -duration 600
 gornode-diagnostics -sniff-only         # just identify RNodes, run no test
+gornode-diagnostics -ack-every 5        # ACK every 5th packet: lighter channel load on big fleets
 ```
+
+Sniffing ignores duplicate device paths that name the same physical radio
+(Linux exposes one radio as both `/dev/serial/by-id/…` and `/dev/ttyACM0`;
+the tool reports it once) and never mistakes its own open port for one held
+by another process. During the idle grace window the tool re-queries any
+firmware-version/platform details the radio has not reported yet, so the
+final report shows the full radio identity.
 
 The final report per radio shows the detected hardware and firmware, the
 configured LoRa parameters as validated against the radio's own report,

@@ -19,6 +19,21 @@ import (
 // errBusy is the errno returned when a serial line is held by another process.
 func errBusy() error { return syscall.EBUSY }
 
+// deviceID returns the underlying character-device ID of a path, used to
+// recognize when two paths (e.g. /dev/cu.* and /dev/tty.*) name the same
+// physical serial device. Non-device paths report ok=false.
+func deviceID(path string) (uint64, bool) {
+	info, err := os.Stat(path)
+	if err != nil || info.Mode()&(os.ModeDevice|os.ModeCharDevice) != os.ModeDevice|os.ModeCharDevice {
+		return 0, false
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, false
+	}
+	return uint64(st.Rdev), true
+}
+
 // errTimeout matches a timed-out raw read (no data available).
 func errTimeout() error { return os.ErrDeadlineExceeded }
 

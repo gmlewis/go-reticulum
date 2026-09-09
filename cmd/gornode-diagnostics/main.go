@@ -41,7 +41,8 @@ timed over-the-air fleet test and prints a per-radio summary report.
 Fleet usage: start this program on every node inside the grace window (all
 nodes must use the same -frequency/-bandwidth/-sf/-cr/-txpower settings).
 Each node waits the grace period, transmits uniquely-identified test packets
-for the test duration, acknowledges every peer packet it hears, and prints a
+for the test duration, acknowledges every peer packet it hears (or every Nth
+packet with -ack-every, to lighten the channel on big fleets), and prints a
 report. To find a radio that cannot transmit: compare the reports — a nodeID
 that appears in its own "sent" counts but in NO peer's "packets heard" table
 belongs to a radio whose transmitter is not putting out RF.
@@ -127,6 +128,7 @@ var (
 	sf        = flag.Int("sf", 9, "LoRa spreading factor (5-12)")
 	cr        = flag.Int("cr", 5, "LoRa coding rate (5-8)")
 	speed     = flag.Int("speed", 115200, "serial baud rate")
+	ackEvery  = flag.Int("ack-every", 1, "acknowledge every Nth test packet heard from each peer (1 = every packet; higher values reduce channel load on large fleets)")
 	sniffOnly = flag.Bool("sniff-only", false, "only sniff for RNodes, report findings, and exit")
 )
 
@@ -138,6 +140,10 @@ func main() {
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+	if *ackEvery < 1 {
+		log.Printf("WARNING: -ack-every must be >= 1; using 1")
+		*ackEvery = 1
+	}
 
 	log.Printf("gornode-diagnostics: sniffing serial devices for RNode radios (ignoring ~/.reticulum/config)")
 
@@ -197,7 +203,19 @@ func main() {
 	for _, r := range testable {
 		log.Printf("about to test RNode on %v (nodeID %x) — grace %vs, test %vs, then summary report", r.port, r.nodeID, *grace, *duration)
 	}
+	// The idle grace window is a good moment to fill in any identity details
+	// (firmware version, platform) the radios have not reported yet.
+	for _, r := range testable {
+		if !r.detailsKnown() {
+			r.requestRadioDetails()
+		}
+	}
 	waitGrace(*grace)
+	for _, r := range testable {
+		if !r.detailsKnown() {
+			r.requestRadioDetails()
+		}
+	}
 
 	// Phase 4: run the fleet test. All radios on this machine run concurrently
 	// in the same window so they hear the same fleet traffic (one radio per
@@ -414,6 +432,33 @@ func enumerateSerialPorts() []string {
 		}
 	}
 	sort.Strings(out)
+
+	// Several paths can name the same physical device (e.g. Linux exposes one
+	// radio as both /dev/serial/by-id/…-if00 and /dev/ttyACM0). Probing both
+	// wastes a sniff slot and reports the radio twice, so keep the first path
+	// per underlying device (sorted order puts the descriptive by-id path
+	// first).
+	return dedupeSameDevices(out)
+}
+
+// dedupeSameDevices drops later paths that name a device already represented
+// by an earlier path in the list (same character-device ID). Paths that are
+// not device nodes (or that cannot be statted) are kept as-is.
+func dedupeSameDevices(paths []string) []string {
+	var out []string
+	seenDevices := map[uint64]bool{}
+	for _, p := range paths {
+		id, ok := deviceID(p)
+		if !ok {
+			out = append(out, p)
+			continue
+		}
+		if seenDevices[id] {
+			continue
+		}
+		seenDevices[id] = true
+		out = append(out, p)
+	}
 	return out
 }
 
@@ -472,6 +517,7 @@ func probeRNode(r *radio) bool {
 	deadline := time.Now().Add(probeReadWindow)
 	buf := make([]byte, 512)
 	parser := r.newParser()
+	detected := false
 	for time.Now().Before(deadline) {
 		n, err := r.read(buf)
 		if n > 0 {
@@ -481,13 +527,67 @@ func probeRNode(r *radio) bool {
 			r.stateMu.Lock()
 			r.state.fatal = err
 			r.stateMu.Unlock()
-			return r.detected()
+			break
 		}
 		if r.detected() {
-			return true
+			detected = true
+			break
 		}
 	}
-	return r.detected()
+	if !detected {
+		return false
+	}
+	// Live units sometimes answer the DETECT request but leave the firmware
+	// version, platform, MCU and board queries unanswered within the first
+	// read window; re-ask for those so the report can show full identity
+	// details.
+	for attempt := 0; attempt < 2 && !r.detailsKnown(); attempt++ {
+		r.requestRadioDetails()
+	}
+	return true
+}
+
+// detailsKnown reports whether the radio's platform and firmware-version
+// replies have both been received.
+func (r *radio) detailsKnown() bool {
+	r.stateMu.RLock()
+	defer r.stateMu.RUnlock()
+	return r.state.platform != nil && (r.state.fwMaj != 0 || r.state.fwMin != 0)
+}
+
+// requestRadioDetails re-sends the firmware-version, platform, MCU and board
+// queries and waits one probe window for the responses.
+func (r *radio) requestRadioDetails() {
+	queries := [][]byte{
+		kissFrame(kissCmdFwVersion, nil),
+		kissFrame(kissCmdPlatform, nil),
+		kissFrame(kissCmdMcu, nil),
+		kissFrame(kissCmdBoard, nil),
+	}
+	r.writeMu.Lock()
+	if r.file == nil {
+		r.writeMu.Unlock()
+		return
+	}
+	for _, frame := range queries {
+		if _, err := r.file.Write(frame); err != nil {
+			break
+		}
+	}
+	r.writeMu.Unlock()
+
+	parser := r.newParser()
+	deadline := time.Now().Add(probeReadWindow)
+	buf := make([]byte, 512)
+	for time.Now().Before(deadline) {
+		n, err := r.read(buf)
+		if n > 0 {
+			parser.feedBytes(buf[:n])
+		}
+		if err != nil && !isReadTimeout(err) {
+			return
+		}
+	}
 }
 
 // read reads from the open port under the port pointer lock.
@@ -746,6 +846,13 @@ func (r *radio) rxLoop(deadline time.Time, wg *sync.WaitGroup) {
 	}
 }
 
+// shouldAck reports whether this node acknowledges a peer TEST packet with
+// the given sequence number, given the -ack-every setting (1 = every packet;
+// N = only sequences divisible by N, deterministic and fleet-consistent).
+func shouldAck(seq uint32) bool {
+	return *ackEvery <= 1 || seq%uint32(*ackEvery) == 0
+}
+
 // handleFleetPacket processes one delivered CMD_DATA payload. Called with
 // stateMu held (the parser holds it across feed).
 func (r *radio) handleFleetPacket(payload []byte) {
@@ -760,10 +867,14 @@ func (r *radio) handleFleetPacket(payload []byte) {
 		}
 		key := fmt.Sprintf("%x:%v", nodeID, seq)
 		alreadyAcked := r.ackedPackets[key]
-		r.ackedPackets[key] = true
 		r.heardPeers[nodeID] = true
 		r.heardPackets[nodeID]++
-		if !alreadyAcked {
+		// ACK thinning: acknowledge every Nth packet (per-sequence) so large
+		// fleets do not saturate the channel with acknowledgements. Only
+		// packets actually acknowledged are marked, keeping the "ACKs sent"
+		// accounting accurate.
+		if !alreadyAcked && shouldAck(seq) {
+			r.ackedPackets[key] = true
 			ack := buildPacket(diagTypeAck, r.nodeID, 0, 0, nodeID, seq)
 			if err := r.transmit(ack); err != nil {
 				r.logf("ACK TX failed: %v", err)
@@ -874,7 +985,11 @@ func (r *radio) report(durationSec int) {
 
 	r.logMu.Lock()
 	defer r.logMu.Unlock()
-	fmt.Printf("\nFleet test results (%vs window):\n", durationSec)
+	fmt.Printf("\nFleet test results (%vs window", durationSec)
+	if *ackEvery > 1 {
+		fmt.Printf(", ack-every %v", *ackEvery)
+	}
+	fmt.Printf("):\n")
 	fmt.Printf("  TEST packets sent:     %v\n", r.sentPackets)
 	fmt.Printf("  TEST packets heard:    %v (from %v peer(s))\n", sumValues(r.heardPackets), len(r.heardPeers))
 	fmt.Printf("  ACKs sent:             %v\n", len(r.ackedPackets))

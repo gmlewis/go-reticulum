@@ -92,18 +92,20 @@ units returned **zero** stat replies of any kind. Two readings: (a) this firmwar
 and (b) the dead-TX units were silent even on the serial stat path during the test window. The
 verdicts don't depend on the counters — the over-the-air results are the authoritative signal.
 
-### 3.6 Minor tool observations (from the live run, worth a small future tweak)
+### 3.6 Minor tool observations (from the live run) — all addressed in the tool since
 - **Duplicate device listing on Linux:** each Linux box listed the same physical radio twice — once
   as `/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_…-if00` (DETECTED) and once as
   `/dev/ttyACM0` (IN USE). The "IN USE" holder was the diagnostics process *itself*: `/proc/*/fd`
   readlink resolves the by-id symlink to the canonical `/dev/ttyACM0`, so the tool saw its own
-  already-open fd. The outcome was correct (the radio was tested once), but excluding the tool's own
-  PID from the holder scan and de-duplicating device nodes that share a USB serial number would make
-  the sniff output cleaner.
+  already-open fd. **Fixed:** the sniff now de-duplicates device paths that name the same physical
+  device (by character-device ID) and excludes its own PID from the holder scan.
 - **Firmware/platform details missing:** the live units answered the DETECT request but their
   firmware/platform/board replies weren't captured within the probe window, so the report shows
-  "RNode" without version/platform info. A slightly longer probe window (or retry of the
-  fw/platform/mcu/board queries) would fill that in.
+  "RNode" without version/platform info. **Fixed:** the tool now re-queries
+  fw/platform/MCU/board — during the probe (up to 2 retries) and again during the idle grace window.
+- **Heavy ACK load (finding 3.3):** **Addressed:** a new `-ack-every N` flag acknowledges every Nth
+  test packet heard from each peer (default 1 = every packet, as in this run), cutting channel load
+  proportionally on large fleets.
 
 ---
 
@@ -117,8 +119,8 @@ verdicts don't depend on the counters — the over-the-air results are the autho
    (`729e…`, `20a3…`) to appear in the peers' heard tables.
 2. **Check kamrui's antenna setup** — the hub radio has the lowest delivery margin of the healthy
    three; cheap win for overall fleet reliability.
-3. **Consider an ACK-thinning option in `gornode-diagnostics`** (e.g. `-ack-every N`) to reduce
-   channel load on the next run and shrink RTTs; today's run validated TX/RX conclusively at ~90%
+3. **Use `-ack-every 5` on the next fleet run** (now implemented in the tool) to cut channel load
+   ~5x and shrink the RTTs seen in this run; today's run validated TX/RX conclusively at ~90%
    delivery despite the congestion.
 4. Keep this report as the fleet baseline: healthy links deliver 92–99% both ways at 1757 bps, and
    RTTs under load run 25–30s average.

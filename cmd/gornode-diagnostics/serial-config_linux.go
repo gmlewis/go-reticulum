@@ -19,6 +19,21 @@ import (
 // errBusy is the errno returned when a serial line is held by another process.
 func errBusy() error { return syscall.EBUSY }
 
+// deviceID returns the underlying character-device ID of a path, used to
+// recognize when two paths (e.g. /dev/serial/by-id/… and /dev/ttyACM0) name
+// the same physical serial device. Non-device paths report ok=false.
+func deviceID(path string) (uint64, bool) {
+	info, err := os.Stat(path)
+	if err != nil || info.Mode()&(os.ModeDevice|os.ModeCharDevice) != os.ModeDevice|os.ModeCharDevice {
+		return 0, false
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, false
+	}
+	return st.Rdev, true
+}
+
 // errTimeout matches a timed-out raw read (no data available).
 func errTimeout() error { return os.ErrDeadlineExceeded }
 
@@ -45,7 +60,10 @@ func postOpenSerialPort(file *os.File) error {
 // by another process. Linux permits duplicate open()s of a TTY (the kernel
 // does not arbitrate), so instead of relying on EBUSY this scans /proc/*/fd
 // for file descriptors pointing at the device — a reliable way to see that
-// another process (e.g. gornsd) is using the same serial line.
+// another process (e.g. gornsd) is using the same serial line. This process
+// itself is excluded so that a path already opened by an earlier sniff step
+// (e.g. the same radio under its /dev/serial/by-id alias, whose fd readlink
+// canonicalizes to the plain device path) does not mark the port busy.
 func serialBusyCheck(port string) (bool, string) {
 	if holders := portHolders(port); len(holders) > 0 {
 		return true, fmt.Sprintf("held by other process(es): pid(s) %v", strings.Join(holders, ", "))
@@ -53,19 +71,23 @@ func serialBusyCheck(port string) (bool, string) {
 	return false, ""
 }
 
-// portHolders returns the PIDs of processes holding an open descriptor on the
-// given device path.
+// portHolders returns the PIDs of processes (other than this one) holding an
+// open descriptor on the given device path.
 func portHolders(port string) []string {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
 		return nil
 	}
+	self := strconv.Itoa(os.Getpid())
 	var holders []string
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
 		if _, err := strconv.Atoi(entry.Name()); err != nil {
+			continue
+		}
+		if entry.Name() == self {
 			continue
 		}
 		fdDir := "/proc/" + entry.Name() + "/fd"

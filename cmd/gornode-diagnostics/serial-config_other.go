@@ -19,6 +19,11 @@ import (
 
 func errBusy() error { return errors.New("busy") }
 
+// deviceID is not implementable on this platform without unix syscall access;
+// reporting false disables same-device deduplication (harmless — devices are
+// simply probed once per path).
+func deviceID(path string) (uint64, bool) { return 0, false }
+
 func errTimeout() error { return errors.New("timeout") }
 
 func nocttyFlag() int { return 0 }

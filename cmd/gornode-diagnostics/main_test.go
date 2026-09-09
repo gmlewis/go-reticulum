@@ -7,6 +7,9 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -185,5 +188,82 @@ func TestGraceWaitShort(t *testing.T) {
 	waitGrace(0)
 	if elapsed := time.Since(start); elapsed > time.Second {
 		t.Fatalf("waitGrace(0) slept %v", elapsed)
+	}
+}
+
+func TestAckEveryThinning(t *testing.T) {
+	r := newTestRadio()
+	r.nodeID = [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
+	peer := [8]byte{9, 9, 9, 9, 9, 9, 9, 9}
+
+	oldEvery := *ackEvery
+	t.Cleanup(func() { *ackEvery = oldEvery })
+	*ackEvery = 2
+
+	p := r.newParser()
+	for seq := 1; seq <= 4; seq++ {
+		packet := buildPacket(diagTypeTest, peer, uint32(seq), 0, [8]byte{}, 0)
+		frame := append([]byte{kissFend, kissCmdData}, kissEscape(packet)...)
+		frame = append(frame, kissFend)
+		p.feedBytes(frame)
+	}
+
+	r.logMu.Lock()
+	defer r.logMu.Unlock()
+	if got := r.heardPackets[peer]; got != 4 {
+		t.Fatalf("heardPackets[%x] = %v, want 4 (thinning must not affect heard counts)", peer, got)
+	}
+	if len(r.ackedPackets) != 2 {
+		t.Fatalf("acknowledged %v packets, want 2 (every 2nd of 4)", len(r.ackedPackets))
+	}
+	for seq := uint32(2); seq <= 4; seq += 2 {
+		if !r.ackedPackets[fmt.Sprintf("%x:%v", peer, seq)] {
+			t.Fatalf("seq %v was not acknowledged", seq)
+		}
+	}
+}
+
+func TestShouldAckDefaultsToAll(t *testing.T) {
+	oldEvery := *ackEvery
+	t.Cleanup(func() { *ackEvery = oldEvery })
+	*ackEvery = 1
+	for seq := uint32(1); seq <= 7; seq++ {
+		if !shouldAck(seq) {
+			t.Fatalf("shouldAck(%v) = false with ack-every 1", seq)
+		}
+	}
+}
+
+func TestDedupeSameDevices(t *testing.T) {
+	// Two paths naming the same character device (a symlink to /dev/null)
+	// must collapse to one; regular files must never be deduplicated even
+	// when they point at the same inode.
+	dir := t.TempDir()
+	same := filepath.Join(dir, "null-link")
+	if err := os.Symlink("/dev/null", same); err != nil {
+		t.Fatalf("cannot create symlink: %v", err)
+	}
+	got := dedupeSameDevices([]string{"/dev/null", same, "/dev/zero"})
+	if len(got) != 2 || got[0] != "/dev/null" || got[1] != "/dev/zero" {
+		t.Fatalf("dedupeSameDevices = %v, want [/dev/null /dev/zero]", got)
+	}
+
+	plain := filepath.Join(dir, "plain")
+	alias := filepath.Join(dir, "alias")
+	if err := os.WriteFile(plain, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(plain, alias); err != nil {
+		t.Fatal(err)
+	}
+	got = dedupeSameDevices([]string{plain, alias})
+	if len(got) != 2 {
+		t.Fatalf("regular files were deduplicated: %v", got)
+	}
+
+	// Missing paths are kept as-is.
+	got = dedupeSameDevices([]string{"/dev/null", filepath.Join(dir, "does-not-exist")})
+	if len(got) != 2 {
+		t.Fatalf("unstatable paths were dropped: %v", got)
 	}
 }
