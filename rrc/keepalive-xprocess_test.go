@@ -108,7 +108,7 @@ func TestIntegrationKeepalivePythonResponder(t *testing.T) {
 		t.Fatalf("stdout pipe: %v", err)
 	}
 	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(cmd); err != nil {
 		t.Fatalf("start python: %v", err)
 	}
 	t.Cleanup(func() {

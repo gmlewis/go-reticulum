@@ -219,7 +219,7 @@ func startGorngitNode(t *testing.T, rnsConfigDir, nodeConfigDir string) (*exec.C
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(cmd); err != nil {
 		cancel()
 		t.Fatalf("failed to start gorngit node: %v", err)
 	}

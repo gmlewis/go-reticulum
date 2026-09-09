@@ -1013,7 +1013,7 @@ func startGornshListenerWithArgs(t *testing.T, configDir string, extraArgs ...st
 	}
 	cmd.Stdout = writer
 	cmd.Stderr = writer
-	if err := cmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(cmd); err != nil {
 		_ = reader.Close()
 		_ = writer.Close()
 		t.Fatalf("failed to start gornsh listener: %v", err)
@@ -1484,7 +1484,7 @@ func startPythonListener(t *testing.T, configDir string, extraArgs ...string) *p
 	}
 	cmd.Stdout = writer
 	cmd.Stderr = writer
-	if err := cmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(cmd); err != nil {
 		_ = reader.Close()
 		_ = writer.Close()
 		t.Fatalf("failed to start Python listener: %v", err)

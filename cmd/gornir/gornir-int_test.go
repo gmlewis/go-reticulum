@@ -168,7 +168,7 @@ func TestIntegration_SIGINTCleanExit(t *testing.T) {
 	tmpDir := testutils.TempDir(t, tempDirPrefix)
 	cmd := exec.Command(bin, "--config", tmpDir, "-v", "-v", "-v")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(cmd); err != nil {
 		t.Fatalf("failed to start gornir: %v", err)
 	}
 	time.Sleep(100 * time.Millisecond)

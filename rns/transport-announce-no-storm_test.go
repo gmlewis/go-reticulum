@@ -166,3 +166,133 @@ func TestOverHoppedAnnounceDoesNotInstallPath(t *testing.T) {
 		t.Errorf("control path entry Hops = %v, want 3", entry.Hops)
 	}
 }
+
+// TestAnnounceRebroadcastCancelledByDownstreamNode verifies that hearing a
+// downstream node retransmit an announce (packet.Hops - 1 == announceEntry.Hops + 1)
+// cancels further pending rebroadcasts from this node, mirroring Python
+// Transport.py:1792-1798.
+func TestAnnounceRebroadcastCancelledByDownstreamNode(t *testing.T) {
+	t.Parallel()
+	ts := NewTransportSystem(nil)
+	ts.identity = mustTestNewIdentity(t, true)
+	ts.SetEnabled(true)
+
+	iface := &capturingInterface{name: "net"}
+
+	id := mustTestNewIdentity(t, true)
+	dest, err := NewDestination(nil, id, DestinationIn, DestinationSingle, "cancel-downstream")
+	if err != nil {
+		t.Fatalf("NewDestination: %v", err)
+	}
+
+	emission := uint64(time.Now().Unix())
+	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, emission)
+	p.Hops = 1
+	if err := p.Pack(); err != nil {
+		t.Fatalf("Pack: %v", err)
+	}
+	ts.Inbound(append([]byte(nil), p.Raw...), iface)
+
+	ts.mu.Lock()
+	entry, inAnnounceTable := ts.announceTable[string(dest.Hash)]
+	if !inAnnounceTable {
+		ts.mu.Unlock()
+		t.Fatal("announce should be queued in announceTable for rebroadcast")
+	}
+	// Simulate that this node already rebroadcast once and is waiting for next try
+	entry.Retries = 1
+	entry.NextRebroadcastAt = time.Now().Add(10 * time.Second)
+	storedHops := entry.Hops // 2 (1 + Inbound hops++)
+	ts.mu.Unlock()
+
+	// Downstream node heard our rebroadcast and transmits with its TransportID
+	// and packet.Hops = storedHops + 1 (pre-increment 3). Inbound will increment
+	// hops to 4, so packet.Hops - 1 == 3 == storedHops + 1.
+	pDownstream := mustTestAnnouncePacketWithEmission(t, ts, id, dest, emission)
+	pDownstream.HeaderType = Header2
+	pDownstream.TransportID = []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+	pDownstream.Hops = storedHops + 1 // 3
+	if err := pDownstream.Pack(); err != nil {
+		t.Fatalf("Pack downstream: %v", err)
+	}
+
+	ts.Inbound(append([]byte(nil), pDownstream.Raw...), iface)
+
+	ts.mu.Lock()
+	_, stillInTable := ts.announceTable[string(dest.Hash)]
+	ts.mu.Unlock()
+
+	if stillInTable {
+		t.Errorf("announce should have been removed from announceTable after downstream rebroadcast")
+	}
+}
+
+// TestAnnounceRateLimitingBlocksRebroadcast verifies that an incoming announce
+// exceeding the interface's announce_rate_target is blocked from rebroadcast,
+// mirroring Python Transport.py:1900-1950.
+func TestAnnounceRateLimitingBlocksRebroadcast(t *testing.T) {
+	t.Parallel()
+	ts := NewTransportSystem(nil)
+	ts.identity = mustTestNewIdentity(t, true)
+	ts.SetEnabled(true)
+
+	target := 60
+	grace := 0
+	penalty := 120
+	iface := &capturingInterface{
+		name:                "rate-limited-iface",
+		announceRateTarget:  &target,
+		announceRateGrace:   &grace,
+		announceRatePenalty: &penalty,
+	}
+
+	id := mustTestNewIdentity(t, true)
+	dest, err := NewDestination(nil, id, DestinationIn, DestinationSingle, "rate-limit-test")
+	if err != nil {
+		t.Fatalf("NewDestination: %v", err)
+	}
+
+	now := time.Now()
+	// First announce installs path and is admitted into announceTable
+	p1 := mustTestAnnouncePacketWithEmission(t, ts, id, dest, uint64(now.Unix()))
+	p1.Hops = 1
+	if err := p1.Pack(); err != nil {
+		t.Fatalf("Pack p1: %v", err)
+	}
+	ts.Inbound(append([]byte(nil), p1.Raw...), iface)
+
+	ts.mu.Lock()
+	_, inTable1 := ts.announceTable[string(dest.Hash)]
+	delete(ts.announceTable, string(dest.Hash)) // Clear it as if processed
+	ts.mu.Unlock()
+
+	if !inTable1 {
+		t.Fatal("first announce should be queued in announceTable")
+	}
+
+	// Second announce arrives immediately (current_rate < target 60s)
+	p2 := mustTestAnnouncePacketWithEmission(t, ts, id, dest, uint64(now.Unix())+1)
+	p2.Hops = 1
+	if err := p2.Pack(); err != nil {
+		t.Fatalf("Pack p2: %v", err)
+	}
+	ts.Inbound(append([]byte(nil), p2.Raw...), iface)
+
+	ts.mu.Lock()
+	_, inTable2 := ts.announceTable[string(dest.Hash)]
+	rateEntry, hasRate := ts.announceRateTable[string(dest.Hash)]
+	ts.mu.Unlock()
+
+	if inTable2 {
+		t.Errorf("second announce should have been BLOCKED from announceTable due to rate limit")
+	}
+	if !hasRate {
+		t.Fatal("expected announceRateTable entry for destination")
+	}
+	if rateEntry.RateViolations != 1 {
+		t.Errorf("rateEntry.RateViolations = %v, want 1", rateEntry.RateViolations)
+	}
+	if !rateEntry.BlockedUntil.After(now) {
+		t.Errorf("rateEntry.BlockedUntil = %v, want after %v", rateEntry.BlockedUntil, now)
+	}
+}

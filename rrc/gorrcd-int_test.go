@@ -852,7 +852,10 @@ func (g *gorrcdHub) start(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stderr pipe: %v", err)
 	}
-	if err := cmd.Start(); err != nil {
+	// StartWithReaper arms a watchdog that SIGKILLs the hub if this test
+	// binary dies (go test timeout panic, Ctrl-C) — paths where t.Cleanup
+	// never runs.
+	if err := testutils.StartWithReaper(cmd); err != nil {
 		t.Fatalf("start gorrcd: %v", err)
 	}
 	// Capture the hub's stdout and stderr into a file for failure

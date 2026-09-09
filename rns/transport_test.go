@@ -1732,13 +1732,16 @@ func (d *dummyInterface) ICPrBurstActive() bool              { return false }
 func (d *dummyInterface) ICPrBurstActivated() time.Time      { return time.Time{} }
 
 type capturingInterface struct {
-	name        string
-	mu          sync.Mutex
-	sendCount   int
-	lastSent    []byte
-	bitrate     int
-	gravity     int
-	sentPRCount int
+	name                string
+	mu                  sync.Mutex
+	sendCount           int
+	lastSent            []byte
+	bitrate             int
+	gravity             int
+	sentPRCount         int
+	announceRateTarget  *int
+	announceRateGrace   *int
+	announceRatePenalty *int
 }
 
 func (c *capturingInterface) Name() string { return c.name }
@@ -1782,9 +1785,9 @@ func (c *capturingInterface) IncomingPrFrequency() float64       { return 0 }
 func (c *capturingInterface) OutgoingPrFrequency() float64       { return 0 }
 func (c *capturingInterface) ShouldIngressLimitPr() bool         { return false }
 func (c *capturingInterface) ShouldEgressLimitPr() bool          { return false }
-func (c *capturingInterface) AnnounceRateTarget() *int           { return nil }
-func (c *capturingInterface) AnnounceRateGrace() *int            { return nil }
-func (c *capturingInterface) AnnounceRatePenalty() *int          { return nil }
+func (c *capturingInterface) AnnounceRateTarget() *int           { return c.announceRateTarget }
+func (c *capturingInterface) AnnounceRateGrace() *int            { return c.announceRateGrace }
+func (c *capturingInterface) AnnounceRatePenalty() *int          { return c.announceRatePenalty }
 func (c *capturingInterface) IncomingAnnounceFrequency() float64 { return 0 }
 func (c *capturingInterface) OutgoingAnnounceFrequency() float64 { return 0 }
 func (c *capturingInterface) ICBurstActive() bool                { return false }

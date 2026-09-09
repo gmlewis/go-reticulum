@@ -142,7 +142,7 @@ func runPythonBackground(t *testing.T, configDir string, args ...string) (*exec.
 	buf := &SafeBuffer{}
 	cmd.Stdout = buf
 	cmd.Stderr = buf
-	if err := cmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(cmd); err != nil {
 		t.Fatalf("runPythonBackground failed: %v", err)
 	}
 	return cmd, buf
@@ -171,7 +171,7 @@ func runGorncpBackground(t *testing.T, configDir string, args ...string) (*exec.
 	buf := &SafeBuffer{}
 	cmd.Stdout = buf
 	cmd.Stderr = buf
-	if err := cmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(cmd); err != nil {
 		t.Fatalf("runGorncpBackground failed: %v", err)
 	}
 	t.Logf("Background command started, PID: %d", cmd.Process.Pid)
@@ -808,7 +808,7 @@ enable_transport = Yes
 	buf := &SafeBuffer{}
 	cmd.Stdout = buf
 	cmd.Stderr = buf
-	if err := cmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(cmd); err != nil {
 		t.Fatalf("start fetch timeout command: %v", err)
 	}
 	defer killProcessGroup(cmd)

@@ -238,7 +238,7 @@ func TestIntegration_SIGINTCleanExit(t *testing.T) {
 	})
 	cmd := exec.Command(bin, "--config", tmpDir, "-m", "-I", "10")
 	setProcessGroup(cmd)
-	if err := cmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(cmd); err != nil {
 		t.Fatalf("failed to start: %v", err)
 	}
 	time.Sleep(300 * time.Millisecond)
@@ -262,7 +262,7 @@ func TestIntegration_MonitorModeSIGINT(t *testing.T) {
 	})
 	cmd := exec.Command(bin, "--config", tmpDir, "-m", "-I", "0.1")
 	setProcessGroup(cmd)
-	if err := cmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(cmd); err != nil {
 		t.Fatalf("failed to start: %v", err)
 	}
 	time.Sleep(300 * time.Millisecond)
@@ -351,7 +351,7 @@ func TestIntegration_RemoteStatus(t *testing.T) {
 	pyOut := &safeBuffer{}
 	pyCmd.Stdout = pyOut
 	pyCmd.Stderr = pyOut
-	if err := pyCmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(pyCmd); err != nil {
 		t.Fatalf("failed to start Python RNS: %v", err)
 	}
 	defer pyCmd.Process.Kill()
@@ -422,7 +422,7 @@ func TestIntegration_RemoteStatus(t *testing.T) {
 	// Trigger an announcement from Python so Go sees it
 	announceCmd := exec.Command("python3", pyAnnouncePath, pyConfigDir)
 	announceCmd.Env = append(os.Environ(), "PYTHONPATH="+getPythonPath())
-	if err := announceCmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(announceCmd); err != nil {
 		t.Fatal(err)
 	}
 	defer announceCmd.Process.Kill()

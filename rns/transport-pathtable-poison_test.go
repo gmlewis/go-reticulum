@@ -53,11 +53,14 @@ func TestPlausibleAnnounceTimebase(t *testing.T) {
 	now := time.Now()
 
 	valid := []uint64{
-		uint64(now.Unix()),                   // now
-		uint64(now.Unix()) - 86400,           // a day ago
-		0x6A906D80,                           // a real 2026 emission from the fleet logs
-		uint64(now.Unix()) + 3600,            // one hour of clock skew is tolerated
-		uint64(minPlausibleAnnounceTimebase), // exact floor
+		uint64(now.Unix()),         // now
+		uint64(now.Unix()) - 86400, // a day ago
+		0x6A906D80,                 // a real 2026 emission from the fleet logs
+		uint64(now.Unix()) + 3600,  // one hour of clock skew is tolerated
+		766445,                     // embedded device uptime (e.g. M29-LoRa-Repeater)
+		83450,                      // embedded device uptime (e.g. esp32nomad)
+		1,                          // minimal uptime
+		0,                          // device boot time
 	}
 	for _, tb := range valid {
 		if !plausibleAnnounceTimebase(tb, now) {
@@ -70,8 +73,6 @@ func TestPlausibleAnnounceTimebase(t *testing.T) {
 		0xFFFBA686BE,                      // the Mac hub's stored garbage (~1.1e12)
 		0x11A79C9FAE,                      // penguin's stored garbage (~7.6e10)
 		uint64(now.Unix()) + 86400 + 3600, // future beyond the skew window
-		1,                                 // pre-RNS epoch
-		0,
 	}
 	for _, tb := range poisoned {
 		if plausibleAnnounceTimebase(tb, now) {
@@ -116,7 +117,7 @@ func TestTimebaseFromRandomBlobsIgnoresPoisonedBlobs(t *testing.T) {
 // packetHash]) for the load tests.
 func writeTableFile(t *testing.T, entries []([]any)) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir := tempDir(t)
 	payload := make([]any, 0, len(entries))
 	for _, e := range entries {
 		payload = append(payload, e)
@@ -303,5 +304,67 @@ func TestAnnounceWithImplausibleEmissionDoesNotPoison(t *testing.T) {
 	ts.mu.Unlock()
 	if hops != 2 {
 		t.Errorf("entry.Hops = %v, want 2 (normal-clock announce replaced the future-clock path)", hops)
+	}
+}
+
+// TestEmbeddedNodeAnnounceDeduplication verifies that announces from embedded
+// devices without RTCs (whose emission timebases count up from zero or system
+// uptime, e.g. 766445) have their random blobs stored and subsequent duplicates
+// deduplicated, preventing endless announce loops across mesh nodes.
+func TestEmbeddedNodeAnnounceDeduplication(t *testing.T) {
+	t.Parallel()
+	ts := NewTransportSystem(nil)
+	ts.identity = mustTestNewIdentity(t, true)
+	ts.SetEnabled(true)
+
+	id := mustTestNewIdentity(t, true)
+	dest, err := NewDestination(nil, id, DestinationIn, DestinationSingle, "esp32-uptime")
+	if err != nil {
+		t.Fatalf("NewDestination: %v", err)
+	}
+
+	handlerCount := 0
+	ts.RegisterAnnounceHandler(&AnnounceHandler{
+		AspectFilter: "",
+		ReceivedAnnounce: func(destHash []byte, announcedIdentity *Identity, appData []byte) {
+			handlerCount++
+		},
+	})
+
+	iface := &capturingInterface{name: "rx-mesh", gravity: 0}
+
+	// First announce from embedded device (uptime = 766,445 seconds)
+	p := mustTestAnnouncePacketWithEmission(t, ts, id, dest, 766445)
+	p.Hops = 1
+	if err := p.Pack(); err != nil {
+		t.Fatalf("Pack: %v", err)
+	}
+	ts.Inbound(append([]byte(nil), p.Raw...), iface)
+
+	ts.mu.Lock()
+	entry, ok := ts.pathTable[string(dest.Hash)]
+	ts.mu.Unlock()
+	if !ok {
+		t.Fatal("path table entry not found for embedded device announce")
+	}
+	if len(entry.RandomBlobs) != 1 {
+		t.Fatalf("len(entry.RandomBlobs) = %v, want 1 (random blob must be stored for replay protection)", len(entry.RandomBlobs))
+	}
+	if handlerCount != 1 {
+		t.Fatalf("handlerCount = %v, want 1 after first announce", handlerCount)
+	}
+
+	// Duplicate announce arrives (e.g. rebroadcast from a mesh peer)
+	ts.Inbound(append([]byte(nil), p.Raw...), iface)
+
+	if handlerCount != 1 {
+		t.Errorf("handlerCount = %v, want 1 (duplicate announce must not refire handler)", handlerCount)
+	}
+
+	ts.mu.Lock()
+	entryAfter := ts.pathTable[string(dest.Hash)]
+	ts.mu.Unlock()
+	if len(entryAfter.RandomBlobs) != 1 {
+		t.Errorf("len(entryAfter.RandomBlobs) = %v, want 1", len(entryAfter.RandomBlobs))
 	}
 }

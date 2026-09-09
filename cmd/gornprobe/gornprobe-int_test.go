@@ -83,7 +83,7 @@ loglevel = 4
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(cmd); err != nil {
 		t.Fatalf("failed to start gornprobe: %v", err)
 	}
 

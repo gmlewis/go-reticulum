@@ -183,7 +183,7 @@ func startSocatPTYPair(t *testing.T) (string, string) {
 	if err != nil {
 		t.Fatalf("stderr pipe: %v", err)
 	}
-	if err := cmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(cmd); err != nil {
 		t.Fatalf("start socat: %v", err)
 	}
 	t.Cleanup(func() {

@@ -171,7 +171,7 @@ func TestIntegrationEmptyAllowListWarning(t *testing.T) {
 	buf := &safeBuffer{}
 	cmd.Stdout = buf
 	cmd.Stderr = buf
-	if err := cmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(cmd); err != nil {
 		t.Fatal(err)
 	}
 	defer cmd.Process.Kill()
@@ -209,7 +209,7 @@ func TestIntegrationEcho(t *testing.T) {
 	lBuf := &safeBuffer{}
 	cmd.Stdout = lBuf
 	cmd.Stderr = lBuf
-	if err := cmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(cmd); err != nil {
 		t.Fatal(err)
 	}
 	defer cmd.Process.Kill()
@@ -261,7 +261,7 @@ func TestIntegrationDetailedOutput(t *testing.T) {
 	lBuf := &safeBuffer{}
 	lCmd.Stdout = lBuf
 	lCmd.Stderr = lBuf
-	if err := lCmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(lCmd); err != nil {
 		t.Fatal(err)
 	}
 	defer lCmd.Process.Kill()
@@ -319,7 +319,7 @@ func TestIntegrationTruncatedOutputNotice(t *testing.T) {
 	lBuf := &safeBuffer{}
 	lCmd.Stdout = lBuf
 	lCmd.Stderr = lBuf
-	if err := lCmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(lCmd); err != nil {
 		t.Fatal(err)
 	}
 	defer lCmd.Process.Kill()
@@ -378,7 +378,7 @@ func TestIntegrationRemoteExecuteFalseExitCode(t *testing.T) {
 	lBuf := &safeBuffer{}
 	lCmd.Stdout = lBuf
 	lCmd.Stderr = lBuf
-	if err := lCmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(lCmd); err != nil {
 		t.Fatal(err)
 	}
 	defer lCmd.Process.Kill()
@@ -435,7 +435,7 @@ func TestIntegrationInteractiveLoop(t *testing.T) {
 	lBuf := &safeBuffer{}
 	lCmd.Stdout = lBuf
 	lCmd.Stderr = lBuf
-	if err := lCmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(lCmd); err != nil {
 		t.Fatal(err)
 	}
 	defer lCmd.Process.Kill()
@@ -469,7 +469,7 @@ func TestIntegrationInteractiveLoop(t *testing.T) {
 	iCmd.Stdout = iBuf
 	iCmd.Stderr = iBuf
 
-	if err := iCmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(iCmd); err != nil {
 		t.Fatal(err)
 	}
 
@@ -572,7 +572,7 @@ func TestIntegrationResultDownloadTimeout(t *testing.T) {
 	lBuf := &safeBuffer{}
 	lCmd.Stdout = lBuf
 	lCmd.Stderr = lBuf
-	if err := lCmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(lCmd); err != nil {
 		t.Fatal(err)
 	}
 	defer lCmd.Process.Kill()

@@ -67,7 +67,10 @@ func startPythonMiniHub(t *testing.T, port int) (string, string, func()) {
 	cmd := exec.Command(interp, script, "--port", fmt.Sprint(port),
 		"--log", logPath, "--name", "MiniHub")
 	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
+	// StartWithReaper arms a watchdog that SIGKILLs the mini hub if this
+	// test binary dies (go test timeout panic, Ctrl-C) — paths where
+	// t.Cleanup never runs and the hub used to be orphaned to init.
+	if err := testutils.StartWithReaper(cmd); err != nil {
 		t.Fatalf("start python mini-hub: %v", err)
 	}
 	done := make(chan struct{})
@@ -106,6 +109,10 @@ func startPythonMiniHub(t *testing.T, port int) (string, string, func()) {
 		killAndWait()
 		t.Fatal("python mini-hub never announced its address")
 	}
+
+	// Belt-and-braces: register the kill as t.Cleanup too, so a caller
+	// that forgets its own defer still reaps the hub on normal paths.
+	t.Cleanup(killAndWait)
 
 	return hubHash, logPath, killAndWait
 }

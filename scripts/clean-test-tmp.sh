@@ -45,17 +45,29 @@ done
 prefixes=(
   gorngit- gornx- gornsh- gornstatus- gorncp- gornodeconf-
   gornid- gornir- gornpath- gornpkg- gornprobe- gornsd- gorns-
+  gorrcd- rrcd- gorngcs-
   gogit-clone- gogit-remote-rns- gogit-seed- gogit-reclone-
   golxmd-test-
   rns-test-
-  lxmf-int- nomadnet-rrc-int-test nomadnet-app-test nomadnet-config-test
+  rns-discovery- rns-kd- rns-payload-sizes rns-local-client-hops
+  rns-shared-serving rns-both-clients
+  rns-auto-parity- rns-pipe-parity- rns-tcp-parity- rns-tcp-kiss-parity-
+  rns-udp-parity- rns-serial-parity- rns-hashlist- rns-cache-clean-
+  rns-clean-ratchet- rns-retain-clean- rns-void-queues- rns-persist-reentrant-
+  rns-pathtable-midpersist- rns-preset-log- rns-pubtofile- rns-location-cmd-
+  lxmf-int- lxmf-peer- lxmf-tcp- py-interop-
+  nomadnet-rrc-int-test nomadnet-app-test nomadnet-config-test
   nomadnet-conversation-test nomadnet-directory-test nomadnet-dir-persist
   nomadnet-int- nomadnet-lxmf-xproc- nomadnet-node- nomadnet-peersettings-test
   nomadnet-rrc- nomadnet-storage-test nomadnet-cbor- gonomadnet-test-
   browser-cache-test- browser-download browser-fetch- browser-partial
   pipe-repeat-ts rns-local-parity- go-reticulum-large-py-to-go-
+  go-reticulum- go-ret-local-
   probe_lxmf_store kiss-escape- rnstatus-parity-
   prettysize-parity- prettyspeed-parity-
+  logger- logging- cbor-ximpl- expand-home- registry-interop-
+  toml-interop- rooms-load- router-part-registry trust- pretty-date-parity-
+  pyfloat-parity- size-str-parity- speed-str-parity-
 )
 
 removed=0

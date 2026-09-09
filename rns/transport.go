@@ -465,6 +465,7 @@ type AnnounceEntry struct {
 	Hops              int
 	NextRebroadcastAt time.Time
 	Retries           int
+	LocalRebroadcasts int
 }
 
 type announceQueueEntry struct {
@@ -650,6 +651,7 @@ const (
 	pathfinderGrace        = 5 * time.Second
 	pathfinderRandomWindow = 500 * time.Millisecond
 	localRebroadcastsMax   = 2
+	maxRateTimestamps      = 16
 	announceCheckInterval  = 1 * time.Second
 	announceCapDefault     = 0.02
 	maxQueuedAnnounces     = 16384
@@ -4039,11 +4041,15 @@ func (ts *TransportSystem) GetRateTable() []map[string]any {
 		for _, ts := range entry.Timestamps {
 			timestamps = append(timestamps, float64(ts.UnixNano())/1e9)
 		}
+		var blockedUntil float64
+		if !entry.BlockedUntil.IsZero() {
+			blockedUntil = float64(entry.BlockedUntil.UnixNano()) / 1e9
+		}
 		out = append(out, map[string]any{
 			"hash":            []byte(hash),
 			"last":            float64(entry.Last.UnixNano()) / 1e9,
 			"rate_violations": entry.RateViolations,
-			"blocked_until":   float64(entry.BlockedUntil.UnixNano()) / 1e9,
+			"blocked_until":   blockedUntil,
 			"timestamps":      timestamps,
 		})
 	}
@@ -5938,17 +5944,29 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 		// forwarding/should_add gate (Transport.py:1805-1807). Announces that
 		// reach here therefore carry post-increment hops <= PathfinderM and
 		// are eligible to install/replace a path.
-		if rate, ok := ts.announceRateTable[destHash]; ok {
-			rate.Last = time.Now()
-			rate.Timestamps = append(rate.Timestamps, rate.Last)
-			if len(rate.Timestamps) > 32 {
-				rate.Timestamps = rate.Timestamps[len(rate.Timestamps)-32:]
-			}
-		} else {
-			now := time.Now()
-			ts.announceRateTable[destHash] = &AnnounceRateEntry{
-				Last:       now,
-				Timestamps: []time.Time{now},
+		// Check if this is a next retransmission from another node.
+		// If it is, remove the announce from our pending table
+		// (Python Transport.py:1775-1798).
+		if len(packet.TransportID) > 0 && ts.enabled {
+			if announceEntry, exists := ts.announceTable[destHash]; exists {
+				if packet.Hops-1 == announceEntry.Hops {
+					ifaceName := "<nil>"
+					if iface != nil {
+						ifaceName = iface.Name()
+					}
+					ts.logger.Extreme("Heard a rebroadcast of announce for %x on %v", packet.DestinationHash, ifaceName)
+					announceEntry.LocalRebroadcasts++
+					if announceEntry.Retries > 0 && announceEntry.LocalRebroadcasts >= localRebroadcastsMax {
+						ts.logger.Extreme("Completed announce processing for %x, local rebroadcast limit reached", packet.DestinationHash)
+						delete(ts.announceTable, destHash)
+					}
+				}
+				if packet.Hops-1 == announceEntry.Hops+1 && announceEntry.Retries > 0 {
+					if time.Now().Before(announceEntry.NextRebroadcastAt) {
+						ts.logger.Extreme("Rebroadcasted announce for %x has been passed on to another node, no further tries needed", packet.DestinationHash)
+						delete(ts.announceTable, destHash)
+					}
+				}
 			}
 		}
 
@@ -6044,16 +6062,9 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 				entry.Packet = copyBytes(packet.Raw)
 				entry.PacketHash = append([]byte(nil), packet.GetHash()...)
 				if randomBlob != nil && !containsBlob(entry.RandomBlobs, randomBlob) {
-					// Only store blobs with plausible emission timebases: an
-					// announce signed by a badly skewed clock still validates,
-					// but storing its blob would poison the timebase
-					// comparison and block future replacements after it
-					// expires from the plausible window.
-					if plausibleAnnounceTimebase(announceEmissionFromPacket(packet), time.Now()) {
-						entry.RandomBlobs = append(entry.RandomBlobs, randomBlob)
-						if len(entry.RandomBlobs) > maxRandomBlobs {
-							entry.RandomBlobs = entry.RandomBlobs[len(entry.RandomBlobs)-maxRandomBlobs:]
-						}
+					entry.RandomBlobs = append(entry.RandomBlobs, randomBlob)
+					if len(entry.RandomBlobs) > maxRandomBlobs {
+						entry.RandomBlobs = entry.RandomBlobs[len(entry.RandomBlobs)-maxRandomBlobs:]
 					}
 				}
 				shouldForwardToLocalClients = true
@@ -6066,10 +6077,7 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 			}
 			// New path
 			var blobs [][]byte
-			if randomBlob != nil && plausibleAnnounceTimebase(announceEmissionFromPacket(packet), time.Now()) {
-				// Same plausibility guard as the replace branch: a badly
-				// skewed emitter must not seed the new entry's replay state
-				// with a blob that would block later replacements.
+			if randomBlob != nil {
 				blobs = [][]byte{randomBlob}
 			}
 			ts.pathTable[destHash] = &PathEntry{
@@ -6136,27 +6144,87 @@ func (ts *TransportSystem) handleAnnounce(packet *Packet, iface interfaces.Inter
 		// announce_table insertion is inside the should_add block.
 		isFromLocalClient := ts.isLocalClientInterface(iface)
 		if shouldForwardToLocalClients && (ts.enabled || isFromLocalClient) && packet.Context != ContextPathResponse {
-			raw := make([]byte, len(packet.Raw))
-			copy(raw, packet.Raw)
-			// Python (Transport.py:1927,632): announce_hops = packet.hops
-			// (the already-incremented value from inbound), and the rebroadcast
-			// packet carries raw[1] = announce_hops. Using packet.Hops + 1
-			// here double-incremented the hop count, inflating it by 1 at every
-			// rebroadcast hop and compounding across multi-hop paths (N actual
-			// hops showed as 2N-1 instead of N).
-			hops := packet.Hops
-			if len(raw) > 1 {
-				raw[1] = byte(hops)
+			rateBlocked := false
+			now := time.Now()
+			if iface != nil && iface.AnnounceRateTarget() != nil {
+				target := float64(*iface.AnnounceRateTarget())
+				var grace int
+				if iface.AnnounceRateGrace() != nil {
+					grace = *iface.AnnounceRateGrace()
+				}
+				var penalty int
+				if iface.AnnounceRatePenalty() != nil {
+					penalty = *iface.AnnounceRatePenalty()
+				}
+
+				rateEntry, exists := ts.announceRateTable[destHash]
+				if !exists {
+					rateEntry = &AnnounceRateEntry{
+						Last:           now,
+						RateViolations: 0,
+						BlockedUntil:   time.Time{},
+						Timestamps:     []time.Time{now},
+					}
+					ts.announceRateTable[destHash] = rateEntry
+				} else {
+					rateEntry.Timestamps = append(rateEntry.Timestamps, now)
+					if len(rateEntry.Timestamps) > maxRateTimestamps {
+						rateEntry.Timestamps = rateEntry.Timestamps[len(rateEntry.Timestamps)-maxRateTimestamps:]
+					}
+
+					currentRate := now.Sub(rateEntry.Last).Seconds()
+					if now.After(rateEntry.BlockedUntil) {
+						if currentRate < target {
+							rateEntry.RateViolations++
+						} else if rateEntry.RateViolations > 0 {
+							rateEntry.RateViolations--
+						}
+
+						if rateEntry.RateViolations > grace {
+							rateEntry.BlockedUntil = rateEntry.Last.Add(time.Duration(target+float64(penalty)) * time.Second)
+							rateBlocked = true
+						} else {
+							rateEntry.Last = now
+						}
+					} else {
+						rateBlocked = true
+					}
+				}
 			}
 
-			existing, ok := ts.announceTable[destHash]
-			if !ok || hops <= existing.Hops {
-				ts.announceTable[destHash] = &AnnounceEntry{
-					PacketRaw:         raw,
-					SourceInterface:   iface,
-					Hops:              hops,
-					NextRebroadcastAt: time.Now().Add(ts.randomDuration(pathfinderRandomWindow)),
-					Retries:           0,
+			if rateBlocked {
+				ts.logger.Pathing("Blocking rebroadcast of announce from %x due to excessive announce rate", packet.DestinationHash)
+			} else {
+				raw := make([]byte, len(packet.Raw))
+				copy(raw, packet.Raw)
+				// Python (Transport.py:1927,632): announce_hops = packet.hops
+				// (the already-incremented value from inbound), and the rebroadcast
+				// packet carries raw[1] = announce_hops. Using packet.Hops + 1
+				// here double-incremented the hop count, inflating it by 1 at every
+				// rebroadcast hop and compounding across multi-hop paths (N actual
+				// hops showed as 2N-1 instead of N).
+				hops := packet.Hops
+				if len(raw) > 1 {
+					raw[1] = byte(hops)
+				}
+
+				retransmitTimeout := now.Add(ts.randomDuration(pathfinderRandomWindow))
+				retries := 0
+				if isFromLocalClient {
+					retransmitTimeout = now
+					retries = pathfinderRetries
+				}
+
+				existing, ok := ts.announceTable[destHash]
+				if !ok || hops <= existing.Hops {
+					ts.announceTable[destHash] = &AnnounceEntry{
+						PacketRaw:         raw,
+						SourceInterface:   iface,
+						Hops:              hops,
+						NextRebroadcastAt: retransmitTimeout,
+						Retries:           retries,
+						LocalRebroadcasts: 0,
+					}
 				}
 			}
 		}

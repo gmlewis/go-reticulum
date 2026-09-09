@@ -7,12 +7,6 @@ package rns
 
 import "time"
 
-// minPlausibleAnnounceTimebase is the floor for a plausible announce-emission
-// unix timestamp (2020-09-13, predating the first RNS releases). Announce
-// random blobs embed their emission time as a 5-byte big-endian unix seconds
-// value, so anything below this floor cannot be a real emission time.
-const minPlausibleAnnounceTimebase = uint64(1_600_000_000)
-
 // maxAnnounceTimebaseSkew bounds how far in the future an announce emission
 // may sit relative to local time before it is treated as garbage. Real
 // deployments tolerate some clock skew; a day is generous while still keeping
@@ -21,17 +15,15 @@ const maxAnnounceTimebaseSkew = 24 * time.Hour
 
 // plausibleAnnounceTimebase reports whether tb — the uint40 big-endian
 // emission timestamp decoded from an announce random blob's bytes [5:10] — is
-// a plausible unix timestamp. Real emissions are always < 2^32 until 2106
-// (their first byte is 0x00) and sit near local time. Blobs written by
-// pre-fix binaries that misparsed truncated announces carry values from
-// ~6e10 to ~1.1e12; because path replacement requires a newer emission than
-// the stored maximum, one such blob would otherwise block every future
-// announce for the destination until the entry expired — the fleet bug where
-// a node stopped seeing its peers and could not be linked to.
+// a plausible timestamp. Real emissions from standard nodes sit near local
+// time, while embedded devices without battery-backed RTCs (e.g. ESP32, LoRa
+// repeaters) emit timestamps counting up from zero or system uptime (such as
+// 83,450 or 766,445). Blobs written by pre-fix binaries that misparsed
+// truncated announces carried values from ~6e10 to ~1.1e12 (far in the
+// future); because path replacement requires a newer emission than the stored
+// maximum, one such future blob would block every future announce for the
+// destination until the entry expired. Any non-future timestamp is plausible.
 func plausibleAnnounceTimebase(tb uint64, now time.Time) bool {
-	if tb < minPlausibleAnnounceTimebase {
-		return false
-	}
 	if tb > uint64(now.Unix())+uint64(maxAnnounceTimebaseSkew/time.Second) {
 		return false
 	}

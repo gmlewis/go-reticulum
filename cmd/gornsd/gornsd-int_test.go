@@ -130,7 +130,7 @@ func startGornsdBinary(t *testing.T, binaryPath string, args ...string) (*exec.C
 	var stderr lockedBuffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(cmd); err != nil {
 		t.Fatalf("failed to start gornsd binary: %v", err)
 	}
 	t.Cleanup(func() {

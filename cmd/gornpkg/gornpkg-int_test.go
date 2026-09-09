@@ -163,7 +163,7 @@ func TestIntegration_SIGINTCleanExit(t *testing.T) {
 	buf := &safeBuffer{}
 	cmd.Stdout = buf
 	cmd.Stderr = buf
-	if err := cmd.Start(); err != nil {
+	if err := testutils.StartWithReaper(cmd); err != nil {
 		t.Fatalf("failed to start gornpkg: %v", err)
 	}
 

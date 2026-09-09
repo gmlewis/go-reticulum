@@ -114,15 +114,26 @@ func startIntegrationHub(t *testing.T) (*RRCHub, string, func()) {
 	}
 }
 
+// snapshotMsgs returns a race-detector-safe snapshot of a room's buffer:
+// the messages are VALUE-copied under the lock, because the hub's HandleData
+// goroutine mutates recorded messages' fields (collapseFanout backfills
+// Nick) — reading through the original pointers outside the lock races.
+func snapshotMsgs(hub *RRCHub, room string) []*RRCMessage {
+	hub.lock.Lock()
+	defer hub.lock.Unlock()
+	msgs := make([]*RRCMessage, 0, len(hub.Messages[room]))
+	for _, m := range hub.Messages[room] {
+		cp := *m
+		msgs = append(msgs, &cp)
+	}
+	return msgs
+}
+
 // waitMsgs polls the room's buffer until want returns true or times out.
 func waitMsgs(t *testing.T, hub *RRCHub, room string, want func([]*RRCMessage) bool, timeout time.Duration) []*RRCMessage {
 	t.Helper()
 	snapshot := func() []*RRCMessage {
-		hub.lock.Lock()
-		defer hub.lock.Unlock()
-		msgs := make([]*RRCMessage, len(hub.Messages[room]))
-		copy(msgs, hub.Messages[room])
-		return msgs
+		return snapshotMsgs(hub, room)
 	}
 	var msgs []*RRCMessage
 	if !testutils.PollUntil(timeout, func() bool {
@@ -158,6 +169,12 @@ func TestIntegrationFanoutBurst(t *testing.T) {
 		for _, m := range m {
 			if m.Text == "burst body" {
 				n++
+				// The kept copy is the first-arrived (empty-nick) copy; the
+				// nicked copies backfill it in arrival order, so wait until
+				// the backfill has landed before asserting on the nick.
+				if m.Nick == "" {
+					return false
+				}
 			}
 		}
 		return n == 1
@@ -185,10 +202,6 @@ func TestIntegrationFanoutBurst(t *testing.T) {
 	}
 }
 
-// TestIntegrationFanoutNickLearning pins the member/nick learning coverage
-// on the fanout burst: every NICKED copy learns nicks[src] = nick and adds
-// src to the room's member set (Python RRC.py:1031-1035 - the learning runs
-// before the collapse); the empty-nick copies carry no nick to learn.
 // TestIntegrationFanoutNickLearning pins the member/nick learning coverage
 // on the fanout burst: every NICKED copy learns nicks[src] = nick and adds
 // src to the room's member set (Python RRC.py:1031-1035 - the learning runs
@@ -272,12 +285,12 @@ func TestIntegrationFanoutNickLearning(t *testing.T) {
 			t.Errorf("members[general] has %v; an empty-nick copy must not learn", s)
 		}
 	}
+	hub.lock.Unlock()
+
 	// The burst collapses to ONE recorded message whose nick backfills
 	// from a nicked copy and whose timestamp is the ARRIVAL time, not the
 	// stale envelope ts (RRC.py:1043).
-	msgs := make([]*RRCMessage, len(hub.Messages["general"]))
-	copy(msgs, hub.Messages["general"])
-	hub.lock.Unlock()
+	msgs := snapshotMsgs(hub, "general")
 
 	n := 0
 	var kept *RRCMessage
