@@ -2977,21 +2977,22 @@ type localClientServer interface {
 // branch (Transport.py:3138-3143). Spawned LocalClientInterfaces are not
 // members of ts.interfaces, so the network-interface fan-out alone cannot
 // reach a destination hosted by gonomadnet/lxmd/etc. on this system.
-func (ts *TransportSystem) forwardPathRequestToLocalClients(packet *Packet, targetHash []byte) {
+// It returns the number of client interfaces the request was dispatched to.
+func (ts *TransportSystem) forwardPathRequestToLocalClients(packet *Packet, targetHash []byte) int {
 	if packet == nil || len(targetHash) < TruncatedHashLength/8 {
-		return
+		return 0
 	}
 
 	pathReqDst, err := NewDestination(ts, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
 	if err != nil {
 		ts.logger.Error("Failed creating local-client path request destination: %v", err)
-		return
+		return 0
 	}
 	relayReq := NewPacket(pathReqDst, copyBytes(packet.Data))
 	relayReq.TransportType = TransportBroadcast
 	if err := relayReq.Pack(); err != nil {
 		ts.logger.Error("Failed packing local-client path request packet: %v", err)
-		return
+		return 0
 	}
 
 	ts.mu.Lock()
@@ -3004,6 +3005,7 @@ func (ts *TransportSystem) forwardPathRequestToLocalClients(packet *Packet, targ
 	}
 	ts.mu.Unlock()
 
+	sent := 0
 	ts.logger.Debug("Forwarding path request for %x to local clients", targetHash)
 	for _, server := range servers {
 		for _, sc := range server.SpawnedClientInterfaces() {
@@ -3013,8 +3015,10 @@ func (ts *TransportSystem) forwardPathRequestToLocalClients(packet *Packet, targ
 			raw := make([]byte, len(relayReq.Raw))
 			copy(raw, relayReq.Raw)
 			ts.outboundWG.Go(func() { ts.dispatchForwardSend(sc, raw, "forwarding path request to local client") })
+			sent++
 		}
 	}
+	return sent
 }
 
 func (ts *TransportSystem) forwardPathRequest(packet *Packet, source interfaces.Interface) {
@@ -3074,12 +3078,20 @@ func (ts *TransportSystem) forwardPathRequest(packet *Packet, source interfaces.
 	//   is_from_local_client → flood other Transport.interfaces
 	//   should_search_for_unknown → flood with search_mode_filter
 	//   else if local_client_interfaces → forward only to those clients
-	// The last branch is what makes a co-located client's destination
-	// (nomadnetwork.node, lxmf.delivery, …) answerable before its deferred
-	// path-response announce has been ingested by this shared instance.
+	// The last branch makes a co-located client's destination (nomadnetwork.node,
+	// lxmf.delivery, …) answerable before its deferred path-response announce
+	// has been ingested by this shared instance.
+	//
+	// When there are no spawned local clients, Python ignores the request.
+	// Go still floods network interfaces here: enable_transport=False relay
+	// test rigs (and non-transport nodes with several Full-mode peers) have
+	// always relied on that fan-out, and the integrated UDP path-response
+	// tests encode it. A shared instance that has local clients (gornsd +
+	// gonomadnet/lxmd) stays on the Python path and does not flood.
 	if !ts.isLocalClientInterface(source) && !shouldSearchForUnknown {
-		ts.forwardPathRequestToLocalClients(packet, targetHash)
-		return
+		if sent := ts.forwardPathRequestToLocalClients(packet, targetHash); sent > 0 {
+			return
+		}
 	}
 
 	ts.mu.Lock()

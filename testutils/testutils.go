@@ -139,9 +139,6 @@ func SkipShortIntegration(t *testing.T) {
 // Global TCP port counter for integration tests.
 var testTCPPortCounter atomic.Uint32
 
-// Global UDP port counter for integration tests.
-var testUDPPortCounter atomic.Uint32
-
 func nextTestPort(counter *atomic.Uint32) int {
 	seed := uint32(os.Getpid()) * 977
 	return 43000 + int((seed+counter.Add(1))%20000)
@@ -170,18 +167,23 @@ func ReserveTCPPort(t *testing.T) int {
 }
 
 // ReserveUDPPort reserves a unique UDP port for integration tests.
+// The socket is bound with port 0 so the kernel picks an ephemeral port that
+// is free at bind time; the port is then closed and returned. A sequential
+// counter could collide with ports another parallel package already holds.
 func ReserveUDPPort(t *testing.T) int {
 	t.Helper()
 
-	for {
-		port := nextTestPort(&testUDPPortCounter)
-		conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: port})
-		if err != nil {
-			continue
-		}
-		if err := conn.Close(); err != nil {
-			t.Fatalf("ReserveUDPPort: close error: %v", err)
-		}
-		return port
+	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+	if err != nil {
+		t.Fatalf("ReserveUDPPort: bind :0 error: %v", err)
 	}
+	addr, ok := conn.LocalAddr().(*net.UDPAddr)
+	if !ok {
+		_ = conn.Close()
+		t.Fatalf("ReserveUDPPort: unexpected addr type %T", conn.LocalAddr())
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatalf("ReserveUDPPort: close error: %v", err)
+	}
+	return addr.Port
 }
