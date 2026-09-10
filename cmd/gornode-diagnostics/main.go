@@ -333,7 +333,7 @@ func newRadio(port string) *radio {
 func sniffSerialPorts(portArg string, speed int) []*radio {
 	var candidates []string
 	if strings.TrimSpace(portArg) != "" {
-		for _, p := range strings.Split(portArg, ",") {
+		for p := range strings.SplitSeq(portArg, ",") {
 			if p = strings.TrimSpace(p); p != "" {
 				candidates = append(candidates, p)
 			}
@@ -795,9 +795,7 @@ func (r *radio) txLoop(deadline time.Time, interval time.Duration, wg *sync.Wait
 		if !first {
 			jitter := time.Duration(rng.Int63n(int64(800*time.Millisecond))) - 400*time.Millisecond
 			sleep := interval + jitter
-			if sleep < 500*time.Millisecond {
-				sleep = 500 * time.Millisecond
-			}
+			sleep = max(sleep, 500*time.Millisecond)
 			if time.Now().Add(sleep).After(deadline) {
 				break
 			}
@@ -1098,10 +1096,7 @@ func waitGrace(seconds int) {
 	}
 	log.Printf("waiting %v seconds before the test begins (start gornode-diagnostics on the other fleet nodes now)...", seconds)
 	for i := seconds; i > 0; {
-		step := 15
-		if i < step {
-			step = i
-		}
+		step := min(15, i)
 		time.Sleep(time.Duration(step) * time.Second)
 		i -= step
 		if i > 0 {
@@ -1439,10 +1434,7 @@ func (p *kissParser) feed(b byte) {
 		p.buf = append(p.buf, b)
 		if len(p.buf) == 2 {
 			st := p.buf[0]
-			pct := int(p.buf[1])
-			if pct > 100 {
-				pct = 100
-			}
+			pct := min(int(p.buf[1]), 100)
 			s.rBatState = &st
 			s.rBatPct = &pct
 			p.buf = nil

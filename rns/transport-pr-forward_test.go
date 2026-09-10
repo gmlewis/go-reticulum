@@ -127,6 +127,51 @@ func TestForwardPathRequestRecursivePrsOverridesMode(t *testing.T) {
 	}
 }
 
+// spawnedServerInterface is a LocalServerInterface stand-in that exposes
+// SpawnedClientInterfaces so tests can pin the shared-instance path-request
+// forward to co-located clients (Python Transport.py:3138-3143) without a
+// real unix/TCP socket.
+type spawnedServerInterface struct {
+	prForwardInterface
+	clients []interfaces.Interface
+}
+
+func (s *spawnedServerInterface) SpawnedClientInterfaces() []interfaces.Interface {
+	return s.clients
+}
+
+// TestForwardPathRequestToLocalClientsFullMode pins Python's
+// `elif not is_from_local_client and len(Transport.local_client_interfaces) > 0`
+// branch (Transport.py:3138-3143). A Full-mode attached interface is NOT in
+// DISCOVER_PATHS_FOR and has recursive_prs disabled, so should_search_for_unknown
+// is false: the path request must go ONLY to co-located local clients, not be
+// flooded onto other network interfaces. Without this branch a shared-instance
+// dest (e.g. a just-registered nomadnetwork.node) is invisible until the
+// deferred path-response announce lands.
+func TestForwardPathRequestToLocalClientsFullMode(t *testing.T) {
+	t.Parallel()
+	ts := NewTransportSystem(nil)
+
+	localClient := newPRI("local-client", interfaces.ModeInternal)
+	server := &spawnedServerInterface{
+		prForwardInterface: *newPRI("local-server", interfaces.ModeFull),
+		clients:            []interfaces.Interface{localClient},
+	}
+	outNetwork := newPRI("out-network", interfaces.ModeFull)
+	source := newPRI("src-full", interfaces.ModeFull)
+	ts.interfaces = append(ts.interfaces, source, server, outNetwork)
+
+	ts.forwardPathRequest(prForwardPacket(t), source)
+	ts.WaitOutboundSends()
+
+	if localClient.sendCount != 1 {
+		t.Errorf("local client: got %d sends, want 1 (Python forwards unknown PR to local clients)", localClient.sendCount)
+	}
+	if outNetwork.sendCount != 0 {
+		t.Errorf("network egress should not receive PR when should_search_for_unknown is false: got %d sends, want 0", outNetwork.sendCount)
+	}
+}
+
 // TestForwardPathRequestRecursivePrsFullModeSource covers the "regardless of
 // mode" wording directly: a Full-mode attached interface (Full is
 // not in DISCOVER_PATHS_FOR and not boundary) with recursive_prs=true still

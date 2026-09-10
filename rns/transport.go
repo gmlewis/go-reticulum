@@ -2963,6 +2963,60 @@ func (ts *TransportSystem) cullDiscoveryPRTagsLocked() {
 	ts.discoveryPRTags = kept
 }
 
+// localClientServer is implemented by *interfaces.LocalServerInterface. It
+// exposes the spawned per-connection clients of a shared Reticulum instance so
+// path requests can be forwarded to co-located destinations the way Python
+// iterates Transport.local_client_interfaces (Transport.py:3138-3143).
+type localClientServer interface {
+	SpawnedClientInterfaces() []interfaces.Interface
+}
+
+// forwardPathRequestToLocalClients sends a path request to every co-located
+// shared-instance client, mirroring Python's
+// `elif not is_from_local_client and len(Transport.local_client_interfaces) > 0`
+// branch (Transport.py:3138-3143). Spawned LocalClientInterfaces are not
+// members of ts.interfaces, so the network-interface fan-out alone cannot
+// reach a destination hosted by gonomadnet/lxmd/etc. on this system.
+func (ts *TransportSystem) forwardPathRequestToLocalClients(packet *Packet, targetHash []byte) {
+	if packet == nil || len(targetHash) < TruncatedHashLength/8 {
+		return
+	}
+
+	pathReqDst, err := NewDestination(ts, nil, DestinationOut, DestinationPlain, "rnstransport", "path", "request")
+	if err != nil {
+		ts.logger.Error("Failed creating local-client path request destination: %v", err)
+		return
+	}
+	relayReq := NewPacket(pathReqDst, copyBytes(packet.Data))
+	relayReq.TransportType = TransportBroadcast
+	if err := relayReq.Pack(); err != nil {
+		ts.logger.Error("Failed packing local-client path request packet: %v", err)
+		return
+	}
+
+	ts.mu.Lock()
+	ts.ensureStateLocked()
+	servers := make([]localClientServer, 0, 2)
+	for _, iface := range ts.interfaces {
+		if lcs, ok := iface.(localClientServer); ok {
+			servers = append(servers, lcs)
+		}
+	}
+	ts.mu.Unlock()
+
+	ts.logger.Debug("Forwarding path request for %x to local clients", targetHash)
+	for _, server := range servers {
+		for _, sc := range server.SpawnedClientInterfaces() {
+			if sc == nil || !sc.Status() {
+				continue
+			}
+			raw := make([]byte, len(relayReq.Raw))
+			copy(raw, relayReq.Raw)
+			ts.outboundWG.Go(func() { ts.dispatchForwardSend(sc, raw, "forwarding path request to local client") })
+		}
+	}
+}
+
 func (ts *TransportSystem) forwardPathRequest(packet *Packet, source interfaces.Interface) {
 	if packet == nil || source == nil {
 		return
@@ -2999,17 +3053,33 @@ func (ts *TransportSystem) forwardPathRequest(packet *Packet, source interfaces.
 	//   - a boundary-mode attached interface enables recursive search and
 	//     restricts egress to BOUNDARY_SEARCH_MODES = [boundary, gateway]
 	//     (Transport.py:3009-3011).
-	// The filter is applied in the forward loop below; an unset filter means
-	// no mode restriction, preserving the existing forward-to-all behavior for
-	// local-client and discover-mode sources.
+	// ModeFull is intentionally NOT in DISCOVER_PATHS_FOR, so a Full-mode
+	// public gateway without recursive_prs does not discover unknown paths
+	// on the wire; Python instead takes the local-client forward branch.
 	var searchModeFilter []int
+	shouldSearchForUnknown := false
 	switch {
 	case source.RecursivePrs():
 		// should_search_for_unknown = true; search_mode_filter stays nil.
+		shouldSearchForUnknown = true
 	case interfaces.ModeIn(source.Mode(), interfaces.DiscoverPathsFor):
 		// should_search_for_unknown = true; search_mode_filter stays nil.
+		shouldSearchForUnknown = true
 	case source.Mode() == interfaces.ModeBoundary:
+		shouldSearchForUnknown = true
 		searchModeFilter = interfaces.BoundarySearchModes
+	}
+
+	// Python Transport.path_request elif chain (Transport.py:3076-3146):
+	//   is_from_local_client → flood other Transport.interfaces
+	//   should_search_for_unknown → flood with search_mode_filter
+	//   else if local_client_interfaces → forward only to those clients
+	// The last branch is what makes a co-located client's destination
+	// (nomadnetwork.node, lxmf.delivery, …) answerable before its deferred
+	// path-response announce has been ingested by this shared instance.
+	if !ts.isLocalClientInterface(source) && !shouldSearchForUnknown {
+		ts.forwardPathRequestToLocalClients(packet, targetHash)
+		return
 	}
 
 	ts.mu.Lock()
