@@ -1005,6 +1005,27 @@ func (h *RRCHub) ClearMessages(room string) {
 	h.Messages[room] = make([]*RRCMessage, 0)
 }
 
+// AddLocalMessage appends a client-only row to the room buffer without
+// transmitting anything. Mirrors Python RoomWidget._local_message
+// (Channels.py:938-946): RRCMessage(kind, room, None, None, text, now_ms)
+// stored in hub.messages[room] (capped at 500) and notified to the UI.
+// kind is "system", "error", or "notice" as used by slash-command feedback
+// (including the multi-line /help list).
+func (h *RRCHub) AddLocalMessage(kind, room, text string) {
+	if kind == "" {
+		kind = "system"
+	}
+	h.recordMessage(&RRCMessage{
+		Kind: kind,
+		Room: strings.ToLower(room),
+		Text: text,
+		Ts:   NowMs(),
+	}, true)
+	if h.Manager != nil {
+		h.Manager.NotifyChange(h)
+	}
+}
+
 // SetMOTD stores the hub's message of the day and notifies the UI (Python
 // assigns self.motd then manager._notify_change, RRC.py:1136-1141).
 func (h *RRCHub) SetMOTD(text string) {
