@@ -90,7 +90,7 @@ jobs:
       # against live Python output. The pip pins mirror the local user-site
       # stack the suite was validated against.
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.14'
 

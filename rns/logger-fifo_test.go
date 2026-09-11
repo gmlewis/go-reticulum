@@ -27,6 +27,12 @@ import (
 // sink's open call blocks until a reader appears, so every queued line sits in
 // the queue instead of the caller's goroutine. log() must enqueue without
 // blocking, count the overflow drops, and keep serving callers.
+//
+// Assertions are state-based, not throughput-based. A wall-clock budget for N
+// calls is CI-load-sensitive and does not pin the property under test:
+// non-blocking is proved by (1) the first call returning while the sink is
+// stuck and (2) every post-full call taking the drop path — DroppedCount
+// advances by exactly one per call, with the writer unable to drain.
 func TestLoggerLogNeverBlocksOnFileIO(t *testing.T) {
 	tmpDir := testutils.TempDir(t, "logger-fifo-")
 	fifoPath := filepath.Join(tmpDir, "logfile")
@@ -41,8 +47,9 @@ func TestLoggerLogNeverBlocksOnFileIO(t *testing.T) {
 	logger.SetLogFilePath(fifoPath)
 	logger.SetLogDest(LogDestFile)
 
-	// A single log call must return promptly even though the sink's open
-	// blocks forever.
+	// Hang detector (not a throughput budget): a single log call must return
+	// even though the sink's open blocks forever. Failure means logging is
+	// coupled to the hot path, not that the machine is slow.
 	done := make(chan struct{})
 	go func() {
 		logger.Notice("first line into a stuck sink")
@@ -54,18 +61,26 @@ func TestLoggerLogNeverBlocksOnFileIO(t *testing.T) {
 		t.Fatal("log() blocked on sink I/O — logging is coupled to the hot path")
 	}
 
-	// A sustained burst must keep returning promptly and overflow must be
-	// counted, not absorbed by blocking the callers.
-	start := time.Now()
-	const burst = 50000
-	for i := range burst {
-		logger.Debug("burst line %d", i)
+	// Fill past the queue. The writer is stuck in the FIFO open and cannot
+	// drain, so after LogQueueDepth successful enqueues every further call
+	// must drop. The +8 covers the race where the writer has not yet dequeued
+	// the first Notice.
+	for i := range LogQueueDepth + 8 {
+		logger.Debug("fill line %d", i)
 	}
-	elapsed := time.Since(start)
-	if elapsed > 2*time.Second {
-		t.Fatalf("%v log calls took %v with a stuck sink — the hot path blocked", burst, elapsed)
+	base := logger.DroppedCount()
+	if base == 0 {
+		t.Fatal("no overflow drops after filling the log queue — callers were blocked instead of dropping")
 	}
-	if got := logger.DroppedCount(); got == 0 {
-		t.Fatal("no overflow drops were counted while the sink was stuck")
+
+	// Every call after the queue is full must drop immediately (this loop
+	// finishing is the non-blocking proof) and must advance DroppedCount by
+	// exactly one — no silent loss, no waiting on the stuck writer.
+	const postFull = 64
+	for i := range postFull {
+		logger.Debug("post-full line %d", i)
+	}
+	if got, want := logger.DroppedCount(), base+postFull; got != want {
+		t.Fatalf("DroppedCount = %v, want %v (each post-full call must drop, not block)", got, want)
 	}
 }
