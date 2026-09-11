@@ -73,9 +73,13 @@ type ConnectHandler func(iface Interface)
 // material, and lifecycle flags to guarantee consistent behavior across
 // interface implementations.
 type BaseInterface struct {
-	name     string
-	mode     int
-	bitrate  int
+	name string
+	// mode/bitrate are accessed atomically because they are set at runtime
+	// (via SetMode/SetBitrate, e.g. applyInterfaceMode during interface init)
+	// while the interface's receive loop concurrently reads them in the
+	// transport's announce handling (pathExpiryForInterface).
+	mode     atomic.Int32
+	bitrate  atomic.Int32
 	created  time.Time
 	detached int32
 
@@ -222,10 +226,8 @@ type BaseInterface struct {
 // name, mode, and bitrate. It records a creation timestamp and provides the
 // baseline state required by specialized interfaces.
 func NewBaseInterface(name string, mode int, bitrate int) *BaseInterface {
-	return &BaseInterface{
+	bi := &BaseInterface{
 		name:                  name,
-		mode:                  mode,
-		bitrate:               bitrate,
 		created:               time.Now(),
 		announcesFromInternal: true,
 
@@ -243,6 +245,9 @@ func NewBaseInterface(name string, mode int, bitrate int) *BaseInterface {
 		ecPrFreq:              ECPrFreq,
 		egressControl:         EgressControlDefault,
 	}
+	bi.mode.Store(int32(mode))
+	bi.bitrate.Store(int32(bitrate))
+	return bi
 }
 
 // Name returns the immutably configured identifier assigned to this interface.
@@ -253,20 +258,20 @@ func (bi *BaseInterface) Name() string { return bi.name }
 // Mode returns the operational simplex/duplex mode flag for this interface.
 // It indicates whether the interface can participate in bidirectional or
 // unidirectional routing topologies.
-func (bi *BaseInterface) Mode() int { return bi.mode }
+func (bi *BaseInterface) Mode() int { return int(bi.mode.Load()) }
 
 // SetMode updates the interface's operational routing mode.
-func (bi *BaseInterface) SetMode(mode int) { bi.mode = mode }
+func (bi *BaseInterface) SetMode(mode int) { bi.mode.Store(int32(mode)) }
 
 // Bitrate returns the estimated transmission capacity of the interface in bits
 // per second. The routing engine uses this metric to calculate transit costs and
 // shape traffic queues.
-func (bi *BaseInterface) Bitrate() int { return bi.bitrate }
+func (bi *BaseInterface) Bitrate() int { return int(bi.bitrate.Load()) }
 
 // SetBitrate atomically updates the interface's operational bitrate to reflect
 // changing hardware constraints. Updating this value influences routing cost
 // calculations downstream.
-func (bi *BaseInterface) SetBitrate(bitrate int) { bi.bitrate = bitrate }
+func (bi *BaseInterface) SetBitrate(bitrate int) { bi.bitrate.Store(int32(bitrate)) }
 
 // Gravity returns the interface gravity used for weighted path selection
 // (RNS v1.4.1). Higher gravity interfaces win same-timebase path ties. The

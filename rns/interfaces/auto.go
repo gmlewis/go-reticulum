@@ -261,7 +261,7 @@ func NewAutoInterface(name string, cfg AutoInterfaceConfig, handler InboundHandl
 	}
 
 	if cfg.ConfiguredBitrate > 0 {
-		ai.bitrate = cfg.ConfiguredBitrate
+		ai.SetBitrate(cfg.ConfiguredBitrate)
 	}
 
 	if cfg.AnnounceInterval > 0 {

@@ -42,6 +42,21 @@ jobs:
       - name: Run non-integration Go tests
         run: go test ./... -race -count=1
 
+      # Nested modules (cmd/<tool>/go.mod) are invisible to the root ./...
+      # pattern, so each is tested explicitly — in default (stub) mode and,
+      # on this linux/amd64 runner, with -tags wago linking the in-process
+      # wasm runtime (wago-analysis.md §6: prevent silent skips).
+      - name: Run nested module tests
+        run: |
+          for moddir in cmd/*/; do
+            if [ -f "${moddir}go.mod" ]; then
+              echo "Testing nested module: ${moddir%/} (default)..."
+              (cd "${moddir}" && go test -race -count=1 ./...)
+              echo "Testing nested module: ${moddir%/} (-tags wago)..."
+              (cd "${moddir}" && go test -tags=wago -race -count=1 ./...)
+            fi
+          done
+
   integration:
     name: Go Tests (full integration suite)
     runs-on: ubuntu-latest

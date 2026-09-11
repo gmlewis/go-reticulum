@@ -220,7 +220,15 @@ func (r *runtimeT) run() {
 		fatalf(r.logger, "create LXMF router: %v", err)
 	}
 
-	router.RegisterDeliveryCallback(c.lxmfDelivery)
+	// Sandbox wasm filter plugins from <configdir>/plugins inspect every
+	// inbound message before the normal delivery handler; without the wago
+	// build tag this registers the plain handler (a no-op).
+	if filterHosts := setupFilterHosts(router, c.lxmfDelivery, a.configDir, r.logger); len(filterHosts) > 0 {
+		r.logger.Info("filters: %v wasm filter plugin(s) active", len(filterHosts))
+		defer closeFilterHosts(filterHosts)
+	} else {
+		router.RegisterDeliveryCallback(c.lxmfDelivery)
+	}
 
 	for _, h := range c.ac.IgnoredLXMFDestinations {
 		router.IgnoreDestination(h)

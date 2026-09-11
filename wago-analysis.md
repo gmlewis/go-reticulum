@@ -58,7 +58,7 @@ a host goroutine or thread.
 
 | Check | Result |
 |---|---|
-| Parent `go list ./...` / `go test ./...` | Nested `cmd/` packages are **automatically excluded** from the parent *module* (verified; `go.sum`-free root untouched). With a committed `go.work`, workspace *mode* re-includes them in root-level `./...` patterns, which is intentional: it gives CI nested-module coverage |
+| Parent `go list ./...` / `go test ./...` | Nested `cmd/` packages are **automatically excluded** from the parent *module* (verified; root `go.sum`-free untouched). **A committed `go.work` does NOT re-include them** — verified with a minimal two-module workspace: in workspace mode, `./...` from the root still matches only the root module's packages, so root-level CI runs silently skip nested modules regardless of `go.work` (see §6) |
 | Parent `go.mod` after nested `go mod tidy` **and** parent `go mod tidy` | Stays **zero external requires** |
 | Nested build without `-tags wago` | Stub compiles; wago runtime is not linked |
 | Nested build with `-tags wago` | Compiles, links wago, and executes wasm in-process |
@@ -149,15 +149,17 @@ Notes:
 
 ### 3.3 Workspace Development (`go.work`)
 
-For IDE support and `gopls` across multiple modules, maintain a committed root `go.work`
-(committing it is what gives CI's root `go test ./...` coverage of the nested modules;
-workspace mode resolves member modules by directory, which makes the per-module
-`replace` redundant but harmless):
+For IDE support and `gopls` across multiple modules, maintain a committed root `go.work`.
+Its value is editor/workspace resolution and explicit-path builds (e.g.
+`go list ./cmd/gorrcd`); it does NOT extend root-level `./...` patterns to the nested
+members (verified with a minimal two-module workspace), so CI still needs the explicit
+nested-module test loop from §6 regardless:
 
 ```
 go 1.26.0
 
 use .
+use ./cmd/golxmd
 use ./cmd/gorrcd
 # Additional promoted tools added here as implemented
 ```
@@ -210,10 +212,10 @@ platform, `plugins_stub.go` compiles gracefully rather than failing compilation.
 | Command | Promote? | Rationale |
 |---|---|---|
 | `cmd/gorrcd` | **M1** | RRC slash-command plugins. Clean, discrete request/response seam. |
-| `cmd/gornsd` | **M2** | LXMF inbound filters, delivery callbacks; announce observers move to M3 (Step 3.2). Promoted in Milestone 2 per §10. |
+| `cmd/golxmd` | **M2** | The standalone LXMF daemon owns the `lxmf.Router`: inbound delivery filters via `RegisterDeliveryCallback` (see the Milestone 2 note). |
+| `cmd/gornsd` | **no (M3)** | Pure RNS daemon, imports no `lxmf` package — no delivery-callback seam; announce observers (Step 3.2) are its first plugin seam. |
 | `cmd/gornx` | **M3** | Sandboxed remote execution tools (replaces raw shell execution). |
 | `cmd/gornsh` | **M3** | Optional wasm execution tools in remote terminal sessions. |
-| `cmd/golxmd` | optional | Only if standalone filter hosting is needed outside `gornsd`. |
 | `cmd/gornpkg` | later | Signed plugin package distribution; keep stub until format is finalized. |
 | `gornstatus`, `gornpath`, `gornid`, `gornprobe`, `gorncp`, `gorngit`, ... | **no** | CLI utilities; no plugin host required. |
 | `cmd/publish-github-release-artifacts` | **no** | Build orchestrator; stays in root module. |
@@ -278,6 +280,15 @@ done
 In [run-all-tests.sh](file:///Users/glenn/go/src/github.com/gmlewis/go-reticulum/run-all-tests.sh), extend static analysis checks (`errcheck`, `modernize`, `staticcheck`)
 to loop over any `cmd/*/go.mod` subdirectories so nested module code meets the same
 cleanliness standards.
+
+### 6.3 GitHub CI Update
+
+`.github/workflows/build.yml`'s root `go test ./...` step silently skips nested modules
+(even with `go.work` committed — see §3.3), so CI runs the same nested loop after the
+root tests: each `cmd/*/go.mod` module is tested in default (stub) mode and, on the
+linux/amd64 runner, with `-tags wago`. The same treatment covers go-nomadnet's
+`-tags=wago` sandboxed-page tests (single-module layout; the tag-gated files are
+invisible to its root `./...` run).
 
 ---
 
@@ -550,21 +561,57 @@ both modes while asserting mode-specific behavior; fixtures live in the untagged
 
 ---
 
-### Milestone 2: `go-nomadnet` Executable Pages & `gornsd` Promotion
+### Milestone 2: `go-nomadnet` Executable Pages & `golxmd` Promotion
 
-*Goal:* Enable `.wasm` executable page serving in `go-nomadnet` and promote `cmd/gornsd`.
+*Goal:* Enable `.wasm` executable page serving in `go-nomadnet` and promote the
+LXMF daemon to a nested module with inbound delivery-filter plugins.
 
-#### Step 2.1: `go-nomadnet` Executable Pages
-- Add `github.com/wago-org/wago v0.1.0-beta.8` to `go-nomadnet/go.mod` (behind `wago` build tag).
-- In `nomadnet/node/node.go`, wire `.wasm` page requests to `render_page(req_ptr, req_len) -> (ptr, len)`.
-- Write unit tests in `nomadnet/node/node_test.go` verifying dynamic Micron markup generation.
-- Write unit tests in `nomadnet/browser/browser_test.go` verifying local `.wasm` page rendering.
+> [!IMPORTANT]
+> **Status (Milestone 2, with one corrected target):** Step 2.2 originally said
+> "promote `cmd/gornsd` and wire `lxmf.Router.RegisterDeliveryCallback`" — but
+> `cmd/gornsd` is the pure RNS daemon and imports no `lxmf` package at all, so it has no
+> router to attach a delivery callback to. The `lxmf.Router` lives in `cmd/golxmd`
+> (§5.1's "standalone filter hosting outside `gornsd`" case), so `cmd/golxmd` is the
+> tool promoted in Milestone 2. `cmd/gornsd` stays unpromoted until its M3 announce
+> observers (Step 3.2) give it a plugin seam. The filter semantics, fixtures, and tests
+> are otherwise exactly as specified here.
 
-#### Step 2.2: Promote `cmd/gornsd`
-- Add `cmd/gornsd/go.mod` + `go.sum` with `replace => ../..`.
-- Split into `plugins_wago.go` and `plugins_stub.go`.
-- Wire `lxmf.Router.RegisterDeliveryCallback` to inbound filter plugins.
-- Add nested test loop to `run-all-tests.sh`.
+#### Step 2.1: `go-nomadnet` Executable Pages (implemented)
+- Add `github.com/wago-org/wago v0.1.0-beta.8` to `go-nomadnet/go.mod`; the importing
+  files carry the `wago` build tag (go-nomadnet's root module already allows external
+  dependencies, unlike go-reticulum's stdlib-only root).
+- New package `nomadnet/wasmpages` holds the renderer seam: `PageRequest` (JSON request
+  payload with path/request_data/link_id/remote_identity/requested_at), `Enabled()`,
+  and `Render(filePath, req)` — the wago build runs `render_page(req_ptr, req_len) ->
+  (ptr, len)` per render (fresh instance each time, so on-disk page edits take effect
+  immediately and no state survives); the stub build reports `Enabled() == false` and
+  callers fall back to static serving (the pre-sandbox behavior).
+- `nomadnet/node/node.go` `makePageHandler`: `.wasm` pages render through the sandbox
+  behind the `.allowed` access-control gate; a plugin failure returns nil (Python's
+  exception → None).
+- `nomadnet/browser/browser.go` `ServeLocalPage`: `.wasm` pages render through the
+  sandbox; a plugin failure returns the not-found body instead of leaking the plugin's
+  binary source into the page.
+- Unit tests verify dynamic Micron markup generation: `nomadnet/wasmpages`
+  (stub + wago), `nomadnet/node` (`wasm-wago_test.go`, `wasm-stub_test.go`), and
+  `nomadnet/browser` (`serve-local-wasm-wago_test.go`, `serve-local-wasm-stub_test.go`).
+- `run-all-tests.sh` / `scripts/test-all.sh` gain `-tags=wago` static checks and test
+  runs on supported host platforms (§6's no-silent-skips discipline, applied to the
+  go-nomadnet single-module layout).
+
+#### Step 2.2: Promote `cmd/golxmd` (implemented in place of `cmd/gornsd`)
+- Add `cmd/golxmd/go.mod` + `go.sum` with `replace => ../..` (wago pinned
+  `v0.1.0-beta.8`) and `use ./cmd/golxmd` in `go.work`.
+- Split into `plugins_wago.go` and `plugins_stub.go` (FilterHost: identical API across
+  both builds; `HandleFilter(msg []byte) (bool, error)` runs the §8.1
+  `filter_inbound(msg_ptr, msg_len) -> action` ABI, 1 = pass, 0 = drop, other values
+  rejected).
+- Wire `lxmf.Router.RegisterDeliveryCallback` to inbound filter plugins: plugins under
+  `<configdir>/plugins/*.wasm` receive a JSON serialization of each inbound message
+  (destination/source hashes, title, content, timestamp); an explicit drop skips the
+  normal delivery handler, a plugin error fails open with a logged error.
+- The nested test loop in `run-all-tests.sh`/`scripts/test-all.sh` (added generically in
+  Milestone 1 over `cmd/*/go.mod`) covers `golxmd` automatically in both build modes.
 
 ---
 

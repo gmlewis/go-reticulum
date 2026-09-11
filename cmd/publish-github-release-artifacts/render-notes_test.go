@@ -36,6 +36,13 @@ func TestNestedModuleDir(t *testing.T) {
 	if want := filepath.Join("cmd", "gorrcd"); !strings.HasSuffix(dir, want) {
 		t.Errorf("nestedModuleDir(gorrcd) dir = %q, want it to end with %q", dir, want)
 	}
+	dir, ok = nestedModuleDir(repoRoot, "golxmd")
+	if !ok {
+		t.Fatal("nestedModuleDir(golxmd) = false, want true (cmd/golxmd/go.mod exists)")
+	}
+	if want := filepath.Join("cmd", "golxmd"); !strings.HasSuffix(dir, want) {
+		t.Errorf("nestedModuleDir(golxmd) dir = %q, want it to end with %q", dir, want)
+	}
 	if _, ok := nestedModuleDir(repoRoot, "gornsd"); ok {
 		t.Error("nestedModuleDir(gornsd) = true, want false (no nested go.mod)")
 	}
