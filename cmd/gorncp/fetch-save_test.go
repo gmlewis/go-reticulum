@@ -74,7 +74,7 @@ func TestFetchModeSavesReceivedFiles(t *testing.T) {
 	})
 
 	// Register fetch handler that reads the test file
-	listenerDest.RegisterRequestHandler("fetch_file", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+	listenerDest.RegisterRequestHandler("fetch_file", func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 		fileData, err := os.ReadFile(testFilePath)
 		if err != nil {
 			t.Logf("Could not read file: %v", err)

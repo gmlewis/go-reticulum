@@ -35,7 +35,7 @@ func establishMaxResponseLinkPair(t *testing.T, responsePayload []byte) (initiat
 	// disabled so the resource advertisement's read size (adv.D) is exactly
 	// the packed-response length, keeping the size gate deterministic.
 	receiverDest.RegisterRequestHandler("/p",
-		func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
+		func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
 			return responsePayload
 		},
 		AllowAll, nil, false,

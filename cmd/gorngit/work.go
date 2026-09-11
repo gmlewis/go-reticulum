@@ -41,11 +41,11 @@ const signatureLength = rns.IdentityKeySize / 8
 // (server.py). It resolves repository + per-document permissions, computes
 // the read/comment/propose/manage/admin access tiers, and dispatches to the
 // matching _work_* sub-operation.
-func (n *reticulumGitNode) handleWork(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (n *reticulumGitNode) handleWork(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	if remoteIdentity == nil {
 		return append([]byte{resDisallowed}, []byte("Not identified")...)
 	}
-	unpacked, err := msgpack.UnpackPreserveBinMapKeys(data)
+	unpacked, err := msgpack.UnpackPreserveBinMapKeys(rns.RequestDataBytes(data))
 	if err != nil {
 		return append([]byte{resInvalidReq}, []byte("Invalid request")...)
 	}
@@ -263,7 +263,7 @@ func workLoadDocument(docPath string) map[any]any {
 	if err != nil {
 		return nil
 	}
-	unpacked, err := msgpack.UnpackPreserveBinMapKeys(data)
+	unpacked, err := msgpack.UnpackPreserveBinMapKeys(rns.RequestDataBytes(data))
 	if err != nil {
 		return nil
 	}

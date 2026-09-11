@@ -20,11 +20,12 @@ type fetchLinkFinder interface {
 	FindLink(linkID []byte) *rns.Link
 }
 
-func newFetchRequestHandler(logger *rns.Logger, allowFetch bool, jail string, noCompress bool, linkFinder fetchLinkFinder) func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func newFetchRequestHandler(logger *rns.Logger, allowFetch bool, jail string, noCompress bool, linkFinder fetchLinkFinder) func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	if logger == nil {
 		logger = rns.NewLogger()
 	}
-	return func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+	return func(path string, requestData any, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+		data := rns.RequestDataBytes(requestData)
 		logger.Verbose("FETCH_HANDLER CALLED: allowFetch=%v, path=%v, data=%v, requestID=%x", allowFetch, path, string(data), requestID)
 		if !allowFetch {
 			logger.Verbose("fetch not allowed, returning 0xF0")

@@ -36,8 +36,8 @@ func TestRequestResponse(t *testing.T) {
 
 	receiverDest := mustTestNewDestination(t, tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
 
-	receiverDest.RegisterRequestHandler("/test/path", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
-		return "response data: " + string(data)
+	receiverDest.RegisterRequestHandler("/test/path", func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
+		return "response data: " + string(RequestDataBytes(data))
 	}, AllowAll, nil, true)
 
 	link := mustTestNewLink(t, tsInitiator, receiverDest)
@@ -99,7 +99,7 @@ func TestRequestResponseAutoCompressPolicyInlineAndResource(t *testing.T) {
 
 			receiverDest.RegisterRequestHandlerWithAutoCompressLimit(
 				"/test/path",
-				func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
+				func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
 					return tc.responseData
 				},
 				AllowAll,
@@ -162,7 +162,7 @@ func TestRequestResponseResourceProgressCallback(t *testing.T) {
 	receiverDest := mustTestNewDestination(t, tsReceiver, tsReceiver.identity, DestinationIn, DestinationSingle, "receiver")
 	receiverDest.RegisterRequestHandlerWithAutoCompressLimit(
 		"/test/path",
-		func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
+		func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
 			return bytes.Repeat([]byte("R"), 4096)
 		},
 		AllowAll,

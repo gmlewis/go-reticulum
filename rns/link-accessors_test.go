@@ -299,7 +299,7 @@ func TestLinkPing(t *testing.T) {
 	// gets a response. Any non-nil response suffices.
 	receiverDest.RegisterRequestHandler(
 		LinkPingPath,
-		func(path string, _ []byte, _ []byte, _ []byte, _ *Identity, _ time.Time) any {
+		func(path string, _ any, _ []byte, _ []byte, _ *Identity, _ time.Time) any {
 			_ = path
 			return []byte("pong")
 		},

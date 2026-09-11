@@ -288,7 +288,7 @@ func TestIntegratedGoOnlyLargeResourceCompressionOnOff(t *testing.T) {
 
 			receiverLink.destination.RegisterRequestHandlerWithAutoCompressLimit(
 				"/test/path",
-				func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
+				func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
 					return bytes.Repeat([]byte("R"), initiatorLink.mdu+1024)
 				},
 				AllowAll,
@@ -419,7 +419,7 @@ func TestIntegratedResponseResourceCompressionPolicyPythonToGo(t *testing.T) {
 			dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "integrated_test", "parity")
 
 			payloadSize := MDU + 768
-			dest.RegisterRequestHandlerWithAutoCompressLimit("test_path", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
+			dest.RegisterRequestHandlerWithAutoCompressLimit("test_path", func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
 				return bytes.Repeat([]byte("G"), payloadSize)
 			}, AllowAll, nil, tc.autoCompress, tc.autoCompressLimit)
 

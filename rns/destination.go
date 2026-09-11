@@ -64,7 +64,7 @@ type Callbacks struct {
 // RequestHandler manages the routing, filtering, and dynamic response generation for incoming resource requests.
 type RequestHandler struct {
 	Path              string
-	ResponseGenerator func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any
+	ResponseGenerator func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any
 	Allow             int
 	AllowedList       [][]byte
 	AutoCompress      bool
@@ -491,7 +491,7 @@ func (d *Destination) LinkEstablishedCallback() func(*Link) {
 }
 
 // RegisterRequestHandler assigns a specific generator function to a path, applying generic allow-list logic.
-func (d *Destination) RegisterRequestHandler(path string, responseGenerator func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any, allow int, allowedList [][]byte, autoCompress bool) {
+func (d *Destination) RegisterRequestHandler(path string, responseGenerator func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any, allow int, allowedList [][]byte, autoCompress bool) {
 	autoCompressLimit := 0
 	if autoCompress {
 		autoCompressLimit = ResourceAutoCompressMaxSize
@@ -500,7 +500,7 @@ func (d *Destination) RegisterRequestHandler(path string, responseGenerator func
 }
 
 // RegisterRequestHandlerWithAutoCompressLimit assigns a handler with an explicitly configured automatic compression size limit.
-func (d *Destination) RegisterRequestHandlerWithAutoCompressLimit(path string, responseGenerator func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any, allow int, allowedList [][]byte, autoCompress bool, autoCompressLimit int) {
+func (d *Destination) RegisterRequestHandlerWithAutoCompressLimit(path string, responseGenerator func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any, allow int, allowedList [][]byte, autoCompress bool, autoCompressLimit int) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	pathHash := TruncatedHash([]byte(path))

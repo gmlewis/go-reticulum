@@ -1166,7 +1166,7 @@ func TestIntegratedHandshakePythonToGo(t *testing.T) {
 	})
 
 	requestReceived := make(chan bool, 1)
-	dest.RegisterRequestHandler("test_path", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
+	dest.RegisterRequestHandler("test_path", func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
 		fmt.Printf("Go: Request received: %v\n", path)
 		requestReceived <- true
 		return []byte("response from go")
@@ -1259,8 +1259,8 @@ func TestIntegratedLargeRequestPythonToGo(t *testing.T) {
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "integrated_test", "parity")
 
 	requestReceived := make(chan int, 1)
-	dest.RegisterRequestHandler("test_path", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
-		requestReceived <- len(data)
+	dest.RegisterRequestHandler("test_path", func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
+		requestReceived <- len(RequestDataBytes(data))
 		return []byte("response from go")
 	}, AllowAll, nil, false)
 

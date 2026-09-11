@@ -63,7 +63,7 @@ func TestRegisterRequestHandlerWithAutoCompressLimit(t *testing.T) {
 
 	dest.RegisterRequestHandlerWithAutoCompressLimit(
 		"/test/path",
-		func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
+		func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
 			return "ok"
 		},
 		AllowAll,
@@ -90,7 +90,7 @@ func TestRegisterRequestHandlerAutoCompressDefaults(t *testing.T) {
 	ts := NewTransportSystem(nil)
 	dest := mustTestNewDestination(t, ts, id, DestinationIn, DestinationSingle, "testapp")
 
-	handlerFn := func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
+	handlerFn := func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
 		return "ok"
 	}
 

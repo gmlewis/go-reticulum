@@ -191,7 +191,7 @@ func (p *pageNode) ownerDestHex() string {
 }
 
 // serveRepoPage mirrors serve_repo_page (pages.py:420-537).
-func (p *pageNode) serveRepoPage(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (p *pageNode) serveRepoPage(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	start := time.Now()
 	vars := unpackPageVars(data)
 	groupName := vstr(vars, "g")
@@ -379,7 +379,7 @@ func statsTimelineLabels(stats map[any]any) []string {
 }
 
 // serveStatsPage mirrors serve_stats_page (pages.py:1147-1245).
-func (p *pageNode) serveStatsPage(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (p *pageNode) serveStatsPage(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	start := time.Now()
 	vars := unpackPageVars(data)
 	groupName := vstr(vars, "g")
@@ -477,7 +477,7 @@ func (p *pageNode) serveStatsPage(path string, data []byte, requestID, linkID []
 }
 
 // serveReleasesPage mirrors serve_releases_page (pages.py:1247-1308).
-func (p *pageNode) serveReleasesPage(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (p *pageNode) serveReleasesPage(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	start := time.Now()
 	vars := unpackPageVars(data)
 	groupName := vstr(vars, "g")
@@ -565,7 +565,7 @@ func (p *pageNode) serveReleasesPage(path string, data []byte, requestID, linkID
 }
 
 // serveReleasePage mirrors serve_release_page (pages.py:1310-1409).
-func (p *pageNode) serveReleasePage(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (p *pageNode) serveReleasePage(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	start := time.Now()
 	vars := unpackPageVars(data)
 	groupName := vstr(vars, "g")
@@ -686,7 +686,7 @@ func (p *pageNode) serveReleasePage(path string, data []byte, requestID, linkID 
 }
 
 // serveWorkPage mirrors serve_work_page (pages.py:1411-1508).
-func (p *pageNode) serveWorkPage(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (p *pageNode) serveWorkPage(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	start := time.Now()
 	vars := unpackPageVars(data)
 	groupName := vstr(vars, "g")
@@ -851,7 +851,7 @@ func (p *pageNode) serveWorkPage(path string, data []byte, requestID, linkID []b
 }
 
 // serveWorkDocPage mirrors serve_work_doc_page (pages.py:1510-1656).
-func (p *pageNode) serveWorkDocPage(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (p *pageNode) serveWorkDocPage(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	start := time.Now()
 	vars := unpackPageVars(data)
 	groupName := vstr(vars, "g")
@@ -1057,7 +1057,7 @@ func (p *pageNode) serveWorkDocPage(path string, data []byte, requestID, linkID 
 
 // serveArtifact mirrors serve_artifact (pages.py:1658-1716), a file handler
 // returning [contentBytes, {"name": nameBytes}].
-func (p *pageNode) serveArtifact(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (p *pageNode) serveArtifact(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	vars := unpackPageVars(data)
 	groupName := vstr(vars, "g")
 	repoName := vstr(vars, "r")
@@ -1117,7 +1117,7 @@ func (p *pageNode) serveArtifact(path string, data []byte, requestID, linkID []b
 
 // serveDownload mirrors serve_download (pages.py:1718-1761), a file handler
 // returning [contentBytes, {"name": nameBytes}].
-func (p *pageNode) serveDownload(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (p *pageNode) serveDownload(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	vars := unpackPageVars(data)
 	groupName := vstr(vars, "g")
 	repoName := vstr(vars, "r")
@@ -1158,7 +1158,7 @@ func (p *pageNode) serveDownload(path string, data []byte, requestID, linkID []b
 // handler returning [fileName (string), contentBytes]. Unlike the artifact
 // and download handlers, the workdoc handler returns the filename as the
 // first element and the content as the second, matching the Python source.
-func (p *pageNode) serveWdDownload(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (p *pageNode) serveWdDownload(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	vars := unpackPageVars(data)
 	groupName := vstr(vars, "g")
 	repoName := vstr(vars, "r")

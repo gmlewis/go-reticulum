@@ -44,11 +44,11 @@ const (
 // handleRelease is the /mgmt/release request handler, mirroring
 // handle_release (server.py). It dispatches to the list/view/fetch/
 // create/delete/latest sub-operations based on the "operation" key.
-func (n *reticulumGitNode) handleRelease(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (n *reticulumGitNode) handleRelease(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	if remoteIdentity == nil {
 		return append([]byte{resDisallowed}, []byte("Not identified")...)
 	}
-	unpacked, err := msgpack.UnpackPreserveBinMapKeys(data)
+	unpacked, err := msgpack.UnpackPreserveBinMapKeys(rns.RequestDataBytes(data))
 	if err != nil {
 		return append([]byte{resInvalidReq}, []byte("Invalid request")...)
 	}

@@ -1360,6 +1360,22 @@ func (l *Link) watchdogStep(now time.Time) time.Duration {
 		return sleep
 
 	case LinkStale:
+		// Mirror the Python STALE branch (RNS/Link.py:761-764), which calls
+		// __teardown_packet() before marking the link closed: the peer is
+		// told the link is gone instead of having to wait out its own stale
+		// timeout - up to minutes on a high-RTT link - while everything it
+		// sends goes nowhere. The packet must be sent before the status
+		// becomes LinkClosed, since send() refuses on a closed link, and
+		// sending takes the lock itself.
+		l.mu.Unlock()
+		l.sendTeardownPacket()
+		l.mu.Lock()
+		if l.status.Load() == LinkClosed {
+			// Another goroutine closed the link while the teardown packet
+			// was in flight and already ran the close handling.
+			l.mu.Unlock()
+			return time.Millisecond
+		}
 		l.status.Store(LinkClosed)
 		l.teardownReason = TeardownTimeout
 		if l.channel != nil {
@@ -1845,18 +1861,13 @@ func (l *Link) handleRequest(requestID []byte, unpackedRequest []any) {
 	}
 	requestedAt := time.Unix(0, int64(ts*1e9))
 	pathHash, ok1 := unpackedRequest[1].([]byte)
-	requestData, ok2 := unpackedRequest[2].([]byte)
+	// request_data is passed through verbatim, whatever MessagePack type it
+	// carries (Python Link.py:803-808 assigns unpacked_request[2] without
+	// constraining it). A peer may send nil, a packed binary payload, or a
+	// decoded structure such as the form-field map a browser submits.
+	requestData := unpackedRequest[2]
 	if !ok1 {
 		l.logger.Debug("Received malformed request packet (bad path hash), ignoring")
-		return
-	}
-	// requestData can be nil
-	if unpackedRequest[2] == nil {
-		requestData = nil
-		ok2 = true
-	}
-	if !ok2 {
-		l.logger.Debug("Received malformed request packet (bad request data), ignoring")
 		return
 	}
 

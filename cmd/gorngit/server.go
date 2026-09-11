@@ -316,8 +316,8 @@ func (n *reticulumGitNode) registerRequestHandlers(logger *rns.Logger) {
 // stubHandler returns a request handler that logs and rejects an
 // unimplemented path with RES_INVALID_REQ. Release/work/perms are
 // follow-up tasks.
-func stubHandler(path string, logger *rns.Logger) func(string, []byte, []byte, []byte, *rns.Identity, time.Time) any {
-	return func(p string, _ []byte, _ []byte, _ []byte, remoteIdentity *rns.Identity, _ time.Time) any {
+func stubHandler(path string, logger *rns.Logger) func(string, any, []byte, []byte, *rns.Identity, time.Time) any {
+	return func(p string, _ any, _ []byte, _ []byte, remoteIdentity *rns.Identity, _ time.Time) any {
 		logger.Warning("Handler %q not yet implemented (remote %v)", p, remoteIdentity)
 		return []byte{resInvalidReq}
 	}
@@ -435,11 +435,11 @@ func (n *reticulumGitNode) startPageServer(ts rns.Transport, logger *rns.Logger)
 // handleList is the /git/list request handler, mirroring handle_list
 // (server.py). The response is a byte slice: result-code byte prefix +
 // ref-list text.
-func (n *reticulumGitNode) handleList(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (n *reticulumGitNode) handleList(path string, data any, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	if remoteIdentity == nil {
 		return []byte{resDisallowed}
 	}
-	unpacked, err := msgpack.UnpackPreserveBinMapKeys(data)
+	unpacked, err := msgpack.UnpackPreserveBinMapKeys(rns.RequestDataBytes(data))
 	if err != nil {
 		return []byte{resInvalidReq}
 	}
@@ -501,11 +501,11 @@ func listRepositoryRefs(repoPath string) []byte {
 
 // handleCreate is the /git/create request handler, mirroring handle_create
 // (server.py). It creates a bare git repo in the configured group directory.
-func (n *reticulumGitNode) handleCreate(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (n *reticulumGitNode) handleCreate(path string, data any, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	if remoteIdentity == nil {
 		return []byte{resDisallowed}
 	}
-	unpacked, err := msgpack.UnpackPreserveBinMapKeys(data)
+	unpacked, err := msgpack.UnpackPreserveBinMapKeys(rns.RequestDataBytes(data))
 	if err != nil {
 		return []byte{resInvalidReq}
 	}
@@ -742,11 +742,11 @@ type fetchRefEntry struct {
 // An empty bundle (all objects already on the client) returns resOK with no
 // bundle data. The link layer transparently streams large responses as a
 // Resource.
-func (n *reticulumGitNode) handleFetch(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (n *reticulumGitNode) handleFetch(path string, data any, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	if remoteIdentity == nil {
 		return []byte{resDisallowed}
 	}
-	unpacked, err := msgpack.UnpackPreserveBinMapKeys(data)
+	unpacked, err := msgpack.UnpackPreserveBinMapKeys(rns.RequestDataBytes(data))
 	if err != nil {
 		return []byte{resInvalidReq}
 	}
@@ -855,11 +855,11 @@ func (n *reticulumGitNode) handleFetch(path string, data []byte, requestID []byt
 // file, runs `git bundle verify`, then `git fetch <bundle> <local>:<remote>`
 // (with --force when requested), updating the bare repo's ref. Returns resOK
 // on success or resRemoteFail + message on failure.
-func (n *reticulumGitNode) handlePush(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (n *reticulumGitNode) handlePush(path string, data any, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	if remoteIdentity == nil {
 		return []byte{resDisallowed}
 	}
-	unpacked, err := msgpack.UnpackPreserveBinMapKeys(data)
+	unpacked, err := msgpack.UnpackPreserveBinMapKeys(rns.RequestDataBytes(data))
 	if err != nil {
 		return []byte{resInvalidReq}
 	}
@@ -1151,13 +1151,13 @@ func repoUpstreamType(repoPath string) (string, string) {
 
 // handleFork is the /git/fork request handler, mirroring handle_fork
 // (server.py). It delegates to handleRemoteClone with repoType "fork".
-func (n *reticulumGitNode) handleFork(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (n *reticulumGitNode) handleFork(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	return n.handleRemoteClone(path, data, requestID, linkID, remoteIdentity, requestedAt, "fork")
 }
 
 // handleMirror is the /git/mirror request handler, mirroring handle_mirror
 // (server.py). It delegates to handleRemoteClone with repoType "mirror".
-func (n *reticulumGitNode) handleMirror(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (n *reticulumGitNode) handleMirror(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	return n.handleRemoteClone(path, data, requestID, linkID, remoteIdentity, requestedAt, "mirror")
 }
 
@@ -1167,14 +1167,14 @@ func (n *reticulumGitNode) handleMirror(path string, data []byte, requestID, lin
 // the repository. The clone is built in a temporary directory within the group
 // path and renamed into place on success, so a failure never leaves a partial
 // repository at the final path.
-func (n *reticulumGitNode) handleRemoteClone(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time, repoType string) any {
+func (n *reticulumGitNode) handleRemoteClone(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time, repoType string) any {
 	if repoType != "mirror" && repoType != "fork" {
 		return append([]byte{resInvalidReq}, []byte("Invalid request")...)
 	}
 	if remoteIdentity == nil {
 		return append([]byte{resDisallowed}, []byte("Not identified")...)
 	}
-	unpacked, err := msgpack.UnpackPreserveBinMapKeys(data)
+	unpacked, err := msgpack.UnpackPreserveBinMapKeys(rns.RequestDataBytes(data))
 	if err != nil {
 		return append([]byte{resInvalidReq}, []byte("Invalid request")...)
 	}
@@ -1312,11 +1312,11 @@ func (n *reticulumGitNode) handleRemoteClone(path string, data []byte, requestID
 
 // handleSync is the /git/sync request handler, mirroring handle_sync
 // (server.py). It re-fetches a mirror or fork from its recorded upstream source.
-func (n *reticulumGitNode) handleSync(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (n *reticulumGitNode) handleSync(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	if remoteIdentity == nil {
 		return append([]byte{resDisallowed}, []byte("Not identified")...)
 	}
-	unpacked, err := msgpack.UnpackPreserveBinMapKeys(data)
+	unpacked, err := msgpack.UnpackPreserveBinMapKeys(rns.RequestDataBytes(data))
 	if err != nil {
 		return append([]byte{resInvalidReq}, []byte("Invalid request")...)
 	}
@@ -1369,11 +1369,11 @@ func (n *reticulumGitNode) handleSync(path string, data []byte, requestID, linkI
 // handleDelete is the /git/delete request handler, mirroring handle_delete
 // (server.py). It deletes a single ref from the named repository via
 // `git update-ref -d <ref>`.
-func (n *reticulumGitNode) handleDelete(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (n *reticulumGitNode) handleDelete(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	if remoteIdentity == nil {
 		return append([]byte{resDisallowed}, []byte("Not identified")...)
 	}
-	unpacked, err := msgpack.UnpackPreserveBinMapKeys(data)
+	unpacked, err := msgpack.UnpackPreserveBinMapKeys(rns.RequestDataBytes(data))
 	if err != nil {
 		return append([]byte{resInvalidReq}, []byte("Invalid request")...)
 	}

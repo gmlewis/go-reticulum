@@ -481,11 +481,11 @@ func writeRepoCreatePermissions(repoPath, creatorHex string) error {
 // handlePerms is the /mgmt/perms request handler, mirroring handle_perms
 // (server.py). It dispatches to group perms (gperms) or repository perms
 // (rperms) based on the "operation" key.
-func (n *reticulumGitNode) handlePerms(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (n *reticulumGitNode) handlePerms(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	if remoteIdentity == nil {
 		return append([]byte{resDisallowed}, []byte("Not identified")...)
 	}
-	unpacked, err := msgpack.UnpackPreserveBinMapKeys(data)
+	unpacked, err := msgpack.UnpackPreserveBinMapKeys(rns.RequestDataBytes(data))
 	if err != nil {
 		return append([]byte{resInvalidReq}, []byte("Invalid request")...)
 	}

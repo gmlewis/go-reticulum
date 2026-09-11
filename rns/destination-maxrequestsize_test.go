@@ -96,7 +96,7 @@ func TestDestinationMaxRequestSize_InlineRequestAcceptedUnderLimit(t *testing.T)
 
 	seen := make(chan struct{}, 1)
 	receiverDest.RegisterRequestHandler("/p",
-		func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
+		func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
 			select {
 			case seen <- struct{}{}:
 			default:
@@ -133,7 +133,7 @@ func TestDestinationMaxRequestSize_InlineRequestDroppedOverLimit(t *testing.T) {
 
 	seen := make(chan struct{}, 1)
 	receiverDest.RegisterRequestHandler("/p",
-		func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
+		func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
 			select {
 			case seen <- struct{}{}:
 			default:
@@ -172,7 +172,7 @@ func TestDestinationMaxRequestSize_ResourceRequestRejectedOverLimit(t *testing.T
 	}
 
 	receiverDest.RegisterRequestHandler("/p",
-		func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
+		func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
 			return nil
 		},
 		AllowAll, nil, false,
@@ -206,7 +206,7 @@ func TestDestinationMaxRequestSize_ResourceRequestAcceptedUnlimited(t *testing.T
 
 	// No limit set: 0 means unlimited.
 	receiverDest.RegisterRequestHandler("/p",
-		func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
+		func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
 			return nil
 		},
 		AllowAll, nil, false,

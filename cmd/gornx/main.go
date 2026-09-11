@@ -215,8 +215,8 @@ func (rt *runtimeT) prepareIdentity(idPath string) *rns.Identity {
 	return id
 }
 
-func decodeRequestPayload(data []byte) (string, float64, *int, *int, []byte, error) {
-	unpacked, err := rns.Unpack(data)
+func decodeRequestPayload(data any) (string, float64, *int, *int, []byte, error) {
+	unpacked, err := rns.Unpack(rns.RequestDataBytes(data))
 	if err != nil {
 		return "", 0, nil, nil, nil, err
 	}
@@ -364,7 +364,7 @@ func (rt *runtimeT) doListen(ts rns.Transport) {
 	select {}
 }
 
-func (rt *runtimeT) handleCommandRequest(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (rt *runtimeT) handleCommandRequest(path string, data any, requestID []byte, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	logger := rt.logger
 
 	cmdStr, timeout, stdoutLimit, stderrLimit, stdinBytes, err := decodeRequestPayload(data)

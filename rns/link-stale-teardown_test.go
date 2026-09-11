@@ -145,3 +145,51 @@ func TestLinkKeepaliveResponseGuard(t *testing.T) {
 		t.Fatalf("old lastOutbound: 0xFE response sendCount=%v, want 1", iface.sendCount)
 	}
 }
+
+// TestLinkWatchdogStaleNotifiesPeer covers the stale-teardown notification:
+// Python's watchdog STALE branch (RNS/Link.py:761-764) calls
+// __teardown_packet() before marking the link closed, so the peer is told the
+// link is gone rather than having to wait out its own stale timeout (which can
+// be minutes on a high-RTT link) while everything it sends goes nowhere.
+//
+// The observable contract is that the peer holding the other end of the link
+// closes its link with an initiator-closed reason as a direct result of the
+// teardown packet — not by running its own stale timer.
+func TestLinkWatchdogStaleNotifiesPeer(t *testing.T) {
+	t.Parallel()
+
+	initiator, receiver, _ := establishLoopbackLinkPair(t)
+
+	// The watchdog promotes a link to Stale after an inbound stall; the next
+	// step is this branch. The link is already established, so the teardown
+	// packet has a peer to reach.
+	initiator.status.Store(LinkStale)
+
+	sleep := initiator.watchdogStep(time.Now())
+
+	if got := initiator.status.Load(); got != LinkClosed {
+		t.Fatalf("initiator status=%v want=%v", got, LinkClosed)
+	}
+	if initiator.TeardownReason() != TeardownTimeout {
+		t.Fatalf("initiator teardownReason=%v want=%v", initiator.TeardownReason(), TeardownTimeout)
+	}
+	if sleep != time.Millisecond {
+		t.Fatalf("watchdog sleep=%v want=%v", sleep, time.Millisecond)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if receiver.status.Load() == LinkClosed {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	if got := receiver.status.Load(); got != LinkClosed {
+		t.Fatalf("receiver status=%v after peer stale teardown, want %v (teardown packet not sent)", got, LinkClosed)
+	}
+	// Read the reason through the locked accessor: the receiver's close ran
+	// on its own transport goroutine, so the field write races with this read.
+	if got := receiver.TeardownReason(); got != TeardownInitiatorClosed {
+		t.Fatalf("receiver teardownReason=%v want=%v", got, TeardownInitiatorClosed)
+	}
+}

@@ -50,8 +50,8 @@ func TestStackIsolation(t *testing.T) {
 	}
 
 	requestReceived := make(chan []byte, 1)
-	destB.RegisterRequestHandler("/test", func(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
-		requestReceived <- data
+	destB.RegisterRequestHandler("/test", func(path string, data any, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
+		requestReceived <- RequestDataBytes(data)
 		return []byte("pong")
 	}, AllowAll, nil, true)
 

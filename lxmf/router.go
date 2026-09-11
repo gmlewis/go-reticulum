@@ -1038,7 +1038,7 @@ func (r *Router) RegisterPropagationControlDestination(allowedList [][]byte) (*r
 	return destination, nil
 }
 
-func (r *Router) statsGetRequest(_ string, _ []byte, _ []byte, _ []byte, remoteIdentity *rns.Identity, _ time.Time) any {
+func (r *Router) statsGetRequest(_ string, _ any, _ []byte, _ []byte, remoteIdentity *rns.Identity, _ time.Time) any {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -1260,7 +1260,8 @@ func writeMsgpackBin(w *bytes.Buffer, data []byte) error {
 	return err
 }
 
-func (r *Router) peerSyncRequest(_ string, data []byte, _ []byte, linkID []byte, remoteIdentity *rns.Identity, _ time.Time) any {
+func (r *Router) peerSyncRequest(_ string, requestData any, _ []byte, linkID []byte, remoteIdentity *rns.Identity, _ time.Time) any {
+	data := rns.RequestDataBytes(requestData)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -1286,7 +1287,8 @@ func (r *Router) peerSyncRequest(_ string, data []byte, _ []byte, linkID []byte,
 	return true
 }
 
-func (r *Router) peerUnpeerRequest(_ string, data []byte, _ []byte, linkID []byte, remoteIdentity *rns.Identity, _ time.Time) any {
+func (r *Router) peerUnpeerRequest(_ string, requestData any, _ []byte, linkID []byte, remoteIdentity *rns.Identity, _ time.Time) any {
+	data := rns.RequestDataBytes(requestData)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -1319,7 +1321,8 @@ func (r *Router) checkControlAccess(remoteIdentity *rns.Identity) (any, bool) {
 	return nil, false
 }
 
-func (r *Router) offerRequest(_ string, data []byte, _ []byte, linkID []byte, remoteIdentity *rns.Identity, _ time.Time) any {
+func (r *Router) offerRequest(_ string, requestData any, _ []byte, linkID []byte, remoteIdentity *rns.Identity, _ time.Time) any {
+	data := rns.RequestDataBytes(requestData)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -1419,7 +1422,8 @@ func (r *Router) offerRequest(_ string, data []byte, _ []byte, linkID []byte, re
 	return wantedIDs
 }
 
-func (r *Router) messageGetRequest(_ string, data []byte, _ []byte, _ []byte, remoteIdentity *rns.Identity, _ time.Time) any {
+func (r *Router) messageGetRequest(_ string, requestData any, _ []byte, _ []byte, remoteIdentity *rns.Identity, _ time.Time) any {
+	data := rns.RequestDataBytes(requestData)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

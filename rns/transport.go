@@ -4920,7 +4920,7 @@ func (ts *TransportSystem) identityHash() []byte {
 // msgpack.Marshaler so the link response path writes the hand-packed bytes
 // verbatim (Go maps cannot hold []byte keys, so reflection packing cannot
 // produce the bin-keyed map Python emits).
-func (ts *TransportSystem) blackholeListHandler(path string, data []byte, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
+func (ts *TransportSystem) blackholeListHandler(path string, data any, requestID []byte, linkID []byte, remoteIdentity *Identity, requestedAt time.Time) any {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	ts.ensureStateLocked()

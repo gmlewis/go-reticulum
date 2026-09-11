@@ -397,19 +397,35 @@ func TestIntegrationClonePushReclone(t *testing.T) {
 	// push is best-effort on some git versions. Verify the push by checking
 	// the server's bare repo ref advanced to the pushed SHA, rather than
 	// relying on git's exit code alone.
-	pushOut, pushErr := runGitWithEnvChecked(cloneDir, env, "push", remoteURL, "refs/heads/main")
-	if pushErr != nil {
-		t.Logf("git push exited non-zero (verifying via server ref): %s\nstderr: %s",
-			pushErr, pushOut.stderr)
-	} else {
-		t.Logf("git push stderr: %s", pushOut.stderr)
+	//
+	// The push is retried on a transient failure for the reason documented on
+	// cmd/gorngit's sendRequestRetry: a resource transfer over a fast
+	// localhost link has RTT-proportional part-timeouts, and heavy parallel
+	// -race load can exhaust them and cancel the transfer. This test drives
+	// the real git binary, so the retry has to wrap the push itself. Retrying
+	// is safe because the push is idempotent: it either already advanced the
+	// server ref, or it sends the same SHA again.
+	const pushAttempts = 3
+	var pushErr error
+	var serverSHA string
+	for attempt := 1; attempt <= pushAttempts; attempt++ {
+		pushOut, err := runGitWithEnvChecked(cloneDir, env, "push", remoteURL, "refs/heads/main")
+		pushErr = err
+		if err != nil {
+			t.Logf("git push attempt %v/%v exited non-zero (verifying via server ref): %s\nstderr: %s",
+				attempt, pushAttempts, err, pushOut.stderr)
+		} else {
+			t.Logf("git push attempt %v/%v stderr: %s", attempt, pushAttempts, pushOut.stderr)
+		}
+		serverSHA = strings.TrimSpace(runGit(t, filepath.Join(repoRoot, repoName), "rev-parse", "refs/heads/main"))
+		if serverSHA == pushedSHA {
+			break
+		}
+		t.Logf("server ref SHA = %q, want %q; retrying the push", serverSHA, pushedSHA)
 	}
-
-	// Verify the server's bare repo ref advanced to the pushed SHA.
-	serverSHAOut := runGit(t, filepath.Join(repoRoot, repoName), "rev-parse", "refs/heads/main")
-	serverSHA := strings.TrimSpace(serverSHAOut)
 	if serverSHA != pushedSHA {
-		t.Fatalf("server ref SHA = %q, want %q (push did not advance server ref)", serverSHA, pushedSHA)
+		t.Fatalf("server ref SHA = %q, want %q (push did not advance server ref after %v attempts, last push error: %v)",
+			serverSHA, pushedSHA, pushAttempts, pushErr)
 	}
 
 	// Re-clone into a second working tree and assert both trees match.

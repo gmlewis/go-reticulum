@@ -39,15 +39,21 @@ import (
 // live in pages-render.go.
 const showDiffByDefault = true
 
-// unpackPageVars unpacks the umsgpack request body into the var_<name> map
-// used by every page handler, mirroring the `data.get("var_g", "")` pattern.
-// An empty/nil/unparseable body yields an empty map (matching the Python
+// unpackPageVars normalizes the request body into the var_<name> map used by
+// every page handler, mirroring the `data.get("var_g", "")` pattern. A browser
+// submits its form fields as a MessagePack map, so an already-decoded map is
+// used directly; anything else is decoded from its packed byte form. An
+// empty/nil/unparseable body yields an empty map (matching the Python
 // `if not data: data = {}` guard).
-func unpackPageVars(data []byte) map[any]any {
-	if len(data) == 0 {
+func unpackPageVars(data any) map[any]any {
+	if m, ok := data.(map[any]any); ok {
+		return m
+	}
+	raw := rns.RequestDataBytes(data)
+	if len(raw) == 0 {
 		return map[any]any{}
 	}
-	u, err := msgpack.UnpackPreserveBinMapKeys(data)
+	u, err := msgpack.UnpackPreserveBinMapKeys(raw)
 	if err != nil {
 		return map[any]any{}
 	}
@@ -132,7 +138,7 @@ func repoCountOf(group map[string]any) int {
 }
 
 // serveFrontPage mirrors serve_front_page (pages.py:350-375).
-func (p *pageNode) serveFrontPage(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (p *pageNode) serveFrontPage(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	start := time.Now()
 	contentParts := []string{}
 	navParts := []string{}
@@ -162,7 +168,7 @@ func (p *pageNode) serveFrontPage(path string, data []byte, requestID, linkID []
 }
 
 // serveGroupPage mirrors serve_group_page (pages.py:377-418).
-func (p *pageNode) serveGroupPage(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (p *pageNode) serveGroupPage(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	start := time.Now()
 	vars := unpackPageVars(data)
 	groupName := vstr(vars, "g")
@@ -210,7 +216,7 @@ func (p *pageNode) serveGroupPage(path string, data []byte, requestID, linkID []
 }
 
 // serveTreePage mirrors serve_tree_page (pages.py:539-678).
-func (p *pageNode) serveTreePage(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (p *pageNode) serveTreePage(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	start := time.Now()
 	vars := unpackPageVars(data)
 	groupName := vstr(vars, "g")
@@ -394,7 +400,7 @@ func safeShort(s string, n int) string {
 }
 
 // serveBlobPage mirrors serve_blob_page (pages.py:680-806).
-func (p *pageNode) serveBlobPage(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (p *pageNode) serveBlobPage(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	start := time.Now()
 	vars := unpackPageVars(data)
 	groupName := vstr(vars, "g")
@@ -566,7 +572,7 @@ func (p *pageNode) serveBlobPage(path string, data []byte, requestID, linkID []b
 }
 
 // serveCommitsPage mirrors serve_commits_page (pages.py:808-889).
-func (p *pageNode) serveCommitsPage(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (p *pageNode) serveCommitsPage(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	start := time.Now()
 	vars := unpackPageVars(data)
 	groupName := vstr(vars, "g")
@@ -653,7 +659,7 @@ func (p *pageNode) serveCommitsPage(path string, data []byte, requestID, linkID 
 }
 
 // serveCommitPage mirrors serve_commit_page (pages.py:891-1041).
-func (p *pageNode) serveCommitPage(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (p *pageNode) serveCommitPage(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	start := time.Now()
 	vars := unpackPageVars(data)
 	groupName := vstr(vars, "g")
@@ -812,7 +818,7 @@ func (p *pageNode) serveCommitPage(path string, data []byte, requestID, linkID [
 }
 
 // serveRefsPage mirrors serve_refs_page (pages.py:1043-1145).
-func (p *pageNode) serveRefsPage(path string, data []byte, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
+func (p *pageNode) serveRefsPage(path string, data any, requestID, linkID []byte, remoteIdentity *rns.Identity, requestedAt time.Time) any {
 	start := time.Now()
 	vars := unpackPageVars(data)
 	groupName := vstr(vars, "g")
