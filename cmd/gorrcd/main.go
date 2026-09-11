@@ -32,6 +32,12 @@
 //
 // State paths honor the RRCD_HOME environment variable (used literally when
 // truthy, no expansion) with ~/.rrcd as the default home.
+//
+// Plugins: every *.wasm file under RRCD_HOME/plugins is loaded into an
+// in-process sandboxed wasm runtime (see pluginshook.go and plugins_wago.go)
+// and receives the hub's unrecognized slash commands. Built without
+// -tags wago the daemon compiles with a zero-overhead stub instead
+// (plugins_stub.go) and no plugin ever runs.
 package main
 
 import (
@@ -110,6 +116,12 @@ func main() {
 	svc := rrc.NewHubService(cfg)
 	svc.SetLogger(rnsLogger)
 	svc.ConfigureLogging(opts.logLevel, opts.logFile)
+	// Unknown slash commands may run through sandboxed wasm plugins loaded
+	// from RRCD_HOME/plugins; without the wago build tag this is a no-op.
+	if pluginHosts := setupPluginHosts(svc); len(pluginHosts) > 0 {
+		log.Printf("plugins: %v wasm plugin host(s) active", len(pluginHosts))
+		defer closePluginHosts(pluginHosts)
+	}
 	if err := svc.Start(); err != nil {
 		// The rns logger writes asynchronously; flush the queue so the bring-up
 		// diagnostics explaining the failure are not silently lost.

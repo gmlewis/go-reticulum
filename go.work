@@ -1,0 +1,14 @@
+// Copyright 2026 Glenn Lewis. All rights reserved.
+//
+// Use of this source code is governed by the Reticulum License
+// that can be found in the LICENSE file.
+
+// Workspace for IDE and gopls support across the root module and the
+// nested command modules. CI and release scripts must NOT depend on this
+// file being present; they operate cleanly with GOWORK=off.
+
+go 1.26.0
+
+use .
+
+use ./cmd/gorrcd

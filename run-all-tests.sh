@@ -14,6 +14,10 @@
 set -euo pipefail
 set -x
 
+# Absolute repo root: the nested-module loops cd into subdirectories, so log
+# redirections that run after the cd need an absolute path.
+REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
+
 export ORIGINAL_RETICULUM_REPO_DIR="${ORIGINAL_RETICULUM_REPO_DIR:-$HOME/src/github.com/markqvist/Reticulum}"
 export ORIGINAL_LXMF_REPO_DIR="${ORIGINAL_LXMF_REPO_DIR:-$HOME/src/github.com/markqvist/lxmf}"
 export ORIGINAL_RNSH_REPO_DIR="${ORIGINAL_RNSH_REPO_DIR:-$HOME/src/github.com/acehoss/rnsh}"
@@ -65,12 +69,26 @@ PY
 # ---------------------------------------------------------------------------
 
 echo "Running errcheck..."
-ERRCHECK_LOG="errcheck.log"
+ERRCHECK_LOG="${REPO_ROOT}/errcheck.log"
 if ! errcheck ./... >"${ERRCHECK_LOG}" 2>&1; then
     echo "FAIL: errcheck reported unchecked errors (see ${ERRCHECK_LOG}):" >&2
     cat "${ERRCHECK_LOG}" >&2
     exit 1
 fi
+# Nested modules (cmd/<tool>/go.mod) are invisible to the root ./... pattern;
+# run the same cleanliness checks inside each one. Attaching the redirection
+# to the command (not the subshell) keeps the shell's xtrace lines out of the
+# redirected log output.
+for modfile in cmd/*/go.mod; do
+    if [ -f "${modfile}" ]; then
+        moddir=$(dirname "${modfile}")
+        if ! (cd "${moddir}" && errcheck ./... >>"${ERRCHECK_LOG}" 2>&1); then
+            echo "FAIL: errcheck reported unchecked errors in ${moddir} (see ${ERRCHECK_LOG}):" >&2
+            cat "${ERRCHECK_LOG}" >&2
+            exit 1
+        fi
+    fi
+done
 echo "errcheck: clean (all errors checked)"
 
 # echo "Running gopls check (workspace diagnostics)..."
@@ -86,17 +104,33 @@ echo "errcheck: clean (all errors checked)"
 # echo "gopls check: clean (no diagnostics)"
 
 echo "Running modernize (modernization suggestions)..."
-MODERNIZE_LOG="modernize.log"
+MODERNIZE_LOG="${REPO_ROOT}/modernize.log"
 if ! go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@latest ./... >"${MODERNIZE_LOG}" 2>&1; then
     echo "FAIL: modernize reported suggestions (see ${MODERNIZE_LOG}):" >&2
     cat "${MODERNIZE_LOG}" >&2
     exit 1
 fi
+for modfile in cmd/*/go.mod; do
+    if [ -f "${modfile}" ]; then
+        moddir=$(dirname "${modfile}")
+        if ! (cd "${moddir}" && go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@latest ./... >>"${MODERNIZE_LOG}" 2>&1); then
+            echo "FAIL: modernize reported suggestions in ${moddir} (see ${MODERNIZE_LOG}):" >&2
+            cat "${MODERNIZE_LOG}" >&2
+            exit 1
+        fi
+    fi
+done
 echo "modernize: clean (no suggestions)"
 
 echo "Running full staticcheck (all checks, with integration tags)..."
-STATICCHECK_LOG="staticcheck.log"
+STATICCHECK_LOG="${REPO_ROOT}/staticcheck.log"
 staticcheck -checks=SA* -tags=integration ./... >"${STATICCHECK_LOG}" 2>&1 || true
+for modfile in cmd/*/go.mod; do
+    if [ -f "${modfile}" ]; then
+        moddir=$(dirname "${modfile}")
+        (cd "${moddir}" && staticcheck -checks=SA* -tags=integration ./... >>"${STATICCHECK_LOG}" 2>&1 || true)
+    fi
+done
 if [[ -s "${STATICCHECK_LOG}" ]]; then
     echo "FAIL: staticcheck reported issues (see ${STATICCHECK_LOG}):" >&2
     cat "${STATICCHECK_LOG}" >&2

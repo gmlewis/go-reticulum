@@ -22,6 +22,76 @@ import (
 	"testing"
 )
 
+// TestNestedModuleDir verifies that the release builder detects which
+// programs are their own Go modules (their own go.mod) and where those
+// modules live, since a nested module is built in its own directory.
+func TestNestedModuleDir(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := "../../"
+	dir, ok := nestedModuleDir(repoRoot, "gorrcd")
+	if !ok {
+		t.Fatal("nestedModuleDir(gorrcd) = false, want true (cmd/gorrcd/go.mod exists)")
+	}
+	if want := filepath.Join("cmd", "gorrcd"); !strings.HasSuffix(dir, want) {
+		t.Errorf("nestedModuleDir(gorrcd) dir = %q, want it to end with %q", dir, want)
+	}
+	if _, ok := nestedModuleDir(repoRoot, "gornsd"); ok {
+		t.Error("nestedModuleDir(gornsd) = true, want false (no nested go.mod)")
+	}
+	if _, ok := nestedModuleDir(repoRoot, "no-such-program"); ok {
+		t.Error("nestedModuleDir(no-such-program) = true, want false")
+	}
+}
+
+// TestWagoSupportedTarget pins the platform matrix that links the wago
+// in-process wasm runtime: Linux, Darwin, or Windows on amd64 or arm64.
+func TestWagoSupportedTarget(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		goos, goarch string
+		want         bool
+	}{
+		{"linux", "amd64", true},
+		{"linux", "arm64", true},
+		{"darwin", "amd64", true},
+		{"darwin", "arm64", true},
+		{"windows", "amd64", true},
+		{"windows", "arm64", true},
+		// Everything else keeps the stub: no wago runtime linked.
+		{"linux", "arm", false},
+		{"linux", "riscv64", false},
+		{"freebsd", "amd64", false},
+		{"freebsd", "arm64", false},
+		{"js", "wasm", false},
+		{"plan9", "amd64", false},
+	}
+	for _, c := range cases {
+		if got := wagoSupportedTarget(c.goos, c.goarch); got != c.want {
+			t.Errorf("wagoSupportedTarget(%q, %q) = %v, want %v", c.goos, c.goarch, got, c.want)
+		}
+	}
+}
+
+// TestBuildTagsWithWago verifies the tag merge: wago is appended only when
+// missing, and the pocket tags stay intact.
+func TestBuildTagsWithWago(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct{ tags, want string }{
+		{"", "wago"},
+		{"pocket_terminal", "pocket_terminal,wago"},
+		{"pocket_terminal,wago", "pocket_terminal,wago"},
+		{"wago", "wago"},
+	}
+	for _, c := range cases {
+		if got := buildTagsWithWago(c.tags); got != c.want {
+			t.Errorf("buildTagsWithWago(%q) = %q, want %q", c.tags, got, c.want)
+		}
+	}
+}
+
 // TestPlatformBlacklist guards the set of programs we refuse to ship on
 // platforms where they compile but misbehave at runtime. If you intentionally
 // add or remove an entry, update this test alongside platformBlacklist.

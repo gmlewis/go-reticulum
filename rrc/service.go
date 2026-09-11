@@ -339,6 +339,14 @@ func (h *HubService) SetLogger(logger *rns.Logger) {
 	h.rnsLogger = logger
 }
 
+// SetCustomCommandHandler installs an optional handler for slash commands
+// the built-in switch does not recognize (for example sandboxed plugin
+// commands; see CommandHandlerHooks.CustomHandler). It must be called
+// before Start.
+func (h *HubService) SetCustomCommandHandler(handler func(link *rns.Link, peerHash []byte, room *string, parts []string, outgoing *OutgoingList) bool) {
+	h.CommandHandler.hooks.CustomHandler = handler
+}
+
 // ConfigureLogging renders the hub's live LogSetup from the current
 // config the way Python's configure_logging does, with the optional CLI
 // overrides. Call it before Start; /reload re-runs the Apply itself.

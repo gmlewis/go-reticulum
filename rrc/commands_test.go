@@ -2418,3 +2418,81 @@ func TestHandleOperatorCommandControlCharSplit(t *testing.T) {
 		t.Errorf("who output = %q, want a members-in-lounge notice", body)
 	}
 }
+
+// customCall records one CustomHandler hook invocation.
+type customCall struct {
+	link     *rns.Link
+	peerHash []byte
+	room     *string
+	parts    []string
+	outgoing *OutgoingList
+}
+
+// G17.1 CustomHandler: when a slash command is unrecognized by the built-in
+// switch, the optional CustomHandler hook is called with the original link,
+// peer hash, room pointer, parsed parts, and outgoing list; returning true
+// marks the command handled, and returning false keeps the unknown-command
+// behavior. Built-in commands must not invoke the hook.
+func TestCommandHandler_CustomHandlerHook(t *testing.T) {
+	t.Parallel()
+
+	chat, env := newTestCommandHandler(t)
+	link := &rns.Link{}
+	peer := bytesOf(0xaa, 32)
+	room := "lounge"
+
+	var calls []customCall
+	env.chat.hooks.CustomHandler = func(l *rns.Link, peerHash []byte, roomPtr *string, parts []string, outgoing *OutgoingList) bool {
+		calls = append(calls, customCall{link: l, peerHash: peerHash, room: roomPtr, parts: parts, outgoing: outgoing})
+		return true
+	}
+
+	if got := chat.HandleOperatorCommand(link, peer, &room, "/custom hello world", nil); !got {
+		t.Fatal("HandleOperatorCommand(\"/custom hello world\") = false, want true (CustomHandler handled it)")
+	}
+	if len(calls) != 1 {
+		t.Fatalf("CustomHandler call count = %v, want 1", len(calls))
+	}
+	call := calls[0]
+	if call.link != link {
+		t.Error("CustomHandler received a different link than the caller passed")
+	}
+	if string(call.peerHash) != string(peer) {
+		t.Errorf("CustomHandler peerHash = %v, want %v", call.peerHash, peer)
+	}
+	if call.room == nil || *call.room != room {
+		t.Errorf("CustomHandler room = %v, want pointer to %q", call.room, room)
+	}
+	if len(call.parts) != 3 || call.parts[0] != "custom" || call.parts[1] != "hello" || call.parts[2] != "world" {
+		t.Errorf("CustomHandler parts = %q, want [custom hello world]", call.parts)
+	}
+
+	// Returning false leaves the unknown-command result false.
+	env.chat.hooks.CustomHandler = func(*rns.Link, []byte, *string, []string, *OutgoingList) bool {
+		return false
+	}
+	if got := chat.HandleOperatorCommand(link, peer, &room, "/custom hello", nil); got {
+		t.Error("HandleOperatorCommand(\"/custom hello\") = true with CustomHandler returning false, want false")
+	}
+
+	// Built-in commands never reach the hook.
+	calls = nil
+	env.chat.hooks.CustomHandler = func(*rns.Link, []byte, *string, []string, *OutgoingList) bool {
+		calls = append(calls, customCall{})
+		return true
+	}
+	env.nowSec = 1730000000.0
+	env.makeServerOp(peer)
+	if got := chat.HandleOperatorCommand(link, peer, &room, "/reload", nil); !got {
+		t.Fatal("HandleOperatorCommand(\"/reload\") = false, want true")
+	}
+	if len(calls) != 0 {
+		t.Errorf("CustomHandler was invoked %v time(s) for a built-in command, want 0", len(calls))
+	}
+
+	// A nil hook restores the plain unknown-command behavior.
+	env.chat.hooks.CustomHandler = nil
+	if got := chat.HandleOperatorCommand(link, peer, &room, "/custom hello", nil); got {
+		t.Error("HandleOperatorCommand(\"/custom hello\") = true with nil CustomHandler, want false")
+	}
+}

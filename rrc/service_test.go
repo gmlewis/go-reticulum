@@ -893,3 +893,53 @@ func TestDrainOutgoingSendFailureLogging(t *testing.T) {
 		t.Errorf("the debug-tier failure line is wrong: %q", string(data))
 	}
 }
+
+// G11.x SetCustomCommandHandler installs a handler for unknown slash
+// commands on the hub's live CommandHandler: an unrecognized command is
+// forwarded with the original arguments and the hook's verdict decides the
+// dispatch result.
+func TestSetCustomCommandHandler(t *testing.T) {
+	t.Parallel()
+
+	hub := NewHubService(DefaultHubConfig())
+	link := &rns.Link{}
+	peer := bytesOf(0xbb, 32)
+	room := "lounge"
+
+	var gotPeer []byte
+	var gotRoom *string
+	var gotParts []string
+	hub.SetCustomCommandHandler(func(_ *rns.Link, peerHash []byte, roomPtr *string, parts []string, _ *OutgoingList) bool {
+		gotPeer, gotRoom, gotParts = peerHash, roomPtr, parts
+		return true
+	})
+	if !hub.CommandHandler.HandleOperatorCommand(link, peer, &room, "/custom hello", nil) {
+		t.Fatal("HandleOperatorCommand(\"/custom hello\") = false, want true (custom handler)")
+	}
+	if string(gotPeer) != string(peer) {
+		t.Errorf("custom handler peerHash = %v, want %v", gotPeer, peer)
+	}
+	if gotRoom == nil || *gotRoom != room {
+		t.Errorf("custom handler room = %v, want pointer to %q", gotRoom, room)
+	}
+	if len(gotParts) != 2 || gotParts[0] != "custom" || gotParts[1] != "hello" {
+		t.Errorf("custom handler parts = %q, want [custom hello]", gotParts)
+	}
+
+	// A false verdict keeps the unknown-command behavior.
+	hub.SetCustomCommandHandler(func(*rns.Link, []byte, *string, []string, *OutgoingList) bool {
+		return false
+	})
+	if hub.CommandHandler.HandleOperatorCommand(link, peer, &room, "/custom hello", nil) {
+		t.Error("HandleOperatorCommand(\"/custom hello\") = true with a false verdict, want false")
+	}
+
+	// A built-in command never reaches the hook.
+	hub.SetCustomCommandHandler(func(*rns.Link, []byte, *string, []string, *OutgoingList) bool {
+		t.Error("built-in /reload dispatched through the custom handler")
+		return true
+	})
+	if !hub.CommandHandler.HandleOperatorCommand(link, peer, &room, "/reload", nil) {
+		t.Error("HandleOperatorCommand(\"/reload\") = false, want true")
+	}
+}

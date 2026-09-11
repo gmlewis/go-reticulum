@@ -55,6 +55,12 @@ type CommandHandlerHooks struct {
 	Now func() float64
 	// Logf logs a hub message.
 	Logf func(format string, args ...any)
+	// CustomHandler is an optional hook for slash commands the built-in
+	// switch does not recognize (for example sandboxed plugin commands).
+	// It receives the same arguments as HandleOperatorCommand with the
+	// parsed parts; when it returns true the command is considered
+	// handled. Built-in commands never invoke it.
+	CustomHandler func(link *rns.Link, peerHash []byte, room *string, parts []string, outgoing *OutgoingList) bool
 }
 
 // CommandHandler handles operator commands for the RRC hub, mirroring
@@ -120,6 +126,10 @@ func (c *CommandHandler) HandleOperatorCommand(link *rns.Link, peerHash []byte, 
 	case "invite":
 		c.handleInvite(link, peerHash, parts, room, outgoing)
 		return true
+	default:
+		if c.hooks.CustomHandler != nil && c.hooks.CustomHandler(link, peerHash, room, parts, outgoing) {
+			return true
+		}
 	}
 	return false
 }

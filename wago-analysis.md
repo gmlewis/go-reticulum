@@ -58,15 +58,15 @@ a host goroutine or thread.
 
 | Check | Result |
 |---|---|
-| Parent `go list ./...` / `go test ./...` | Nested `cmd/` packages are **automatically excluded** from the parent module |
+| Parent `go list ./...` / `go test ./...` | Nested `cmd/` packages are **automatically excluded** from the parent *module* (verified; `go.sum`-free root untouched). With a committed `go.work`, workspace *mode* re-includes them in root-level `./...` patterns, which is intentional: it gives CI nested-module coverage |
 | Parent `go.mod` after nested `go mod tidy` **and** parent `go mod tidy` | Stays **zero external requires** |
 | Nested build without `-tags wago` | Stub compiles; wago runtime is not linked |
 | Nested build with `-tags wago` | Compiles, links wago, and executes wasm in-process |
 | Native loop timeout | Preempts in <25ms via compiler loop safepoints / signals; returns `context.DeadlineExceeded` |
 | Resource limits | `Policy.MaxMemoryBytes` enforced during admission and execution |
 | Cross-compilation | `CGO_ENABLED=0` works for all desktop/arm64 targets |
-| Binary size impact | ~2.4 MB base stub → ~10.2 MB with wago (+~7.8 MB) |
-| `golang.org/x/sys` | Not pulled in for runtime embedding (stdlib-only; x/sys is CLI-only upstream) |
+| Binary size impact | Measured on `gorrcd` (2026-09-11, `CGO_ENABLED=0`, `-trimpath`, Go 1.27): ≈13.4 MiB stub → ≈20.1 MiB with wago (+≈6.7 MiB). Absolute sizes scale with the tool binary; the wago delta is the stable part |
+| `golang.org/x/sys` | Not pulled in for runtime embedding (stdlib-only; x/sys is CLI-only upstream). Confirmed: `cmd/gorrcd/go.sum` contains only wago entries |
 
 > [!IMPORTANT]
 > **Pin wago explicitly.** Bare `go mod tidy` can resolve a retracted canary
@@ -126,17 +126,46 @@ Notes:
 - `replace github.com/gmlewis/go-reticulum => ../..` forces builds to use the local working tree.
 - The module path `github.com/gmlewis/go-reticulum/cmd/<tool>` ensures clear naming without publishing separate packages.
 
+> [!IMPORTANT]
+> **`replace` scope and external consumers.** Go honors `replace` directives only in the
+> *main* module's `go.mod`; they are ignored in every dependency
+> ([go.dev/ref/mod](https://go.dev/ref/mod)). Therefore this replace:
+> 1. applies only when `<tool>` itself is the main module (repo-local builds and the
+>    nested test/build loops) — the local working tree is used as intended;
+> 2. is silently ignored for anyone who consumes the published nested module
+>    (`go get`/`go install github.com/gmlewis/go-reticulum/cmd/<tool>@vX.Y.Z`) — they
+>    resolve the parent normally from the module proxy;
+> 3. never propagates into the root module or other modules, so root-module consumers
+>    (e.g. go-nomadnet) are unaffected by it entirely.
+>
+> The `v0.0.0` parent requirement is the real external-consumption caveat: it only
+> resolves once the parent is required at a **published tag**. Until the release flow
+> bumps `cmd/<tool>/go.mod`'s parent requirement to the released version at tag time
+> (or documents checkout-only builds), external users should install the tool from the
+> GitHub release artifacts or from a source checkout, not via
+> `go install .../cmd/<tool>@vX.Y.Z`. Note `go install pkg@version` also cannot pass
+> `-tags wago`, so a proxy-installed binary always runs the stub; the wago-enabled
+> binaries come from the release builder.
+
 ### 3.3 Workspace Development (`go.work`)
 
-For IDE support and `gopls` across multiple modules, maintain a root `go.work`:
+For IDE support and `gopls` across multiple modules, maintain a committed root `go.work`
+(committing it is what gives CI's root `go test ./...` coverage of the nested modules;
+workspace mode resolves member modules by directory, which makes the per-module
+`replace` redundant but harmless):
 
 ```
-go 1.26.4
+go 1.26.0
 
 use .
 use ./cmd/gorrcd
 # Additional promoted tools added here as implemented
 ```
+
+The workspace `go` directive must be ≥ every member module's directive (all are
+`go 1.26.0` here). No `go.work.sum` is generated for this layout (checksums come from
+each member module's own `go.sum`); should one ever appear, it is developer-local and
+gitignored.
 
 > [!NOTE]
 > CI and release scripts must **not** depend on `go.work` being present. Build and test
@@ -181,7 +210,7 @@ platform, `plugins_stub.go` compiles gracefully rather than failing compilation.
 | Command | Promote? | Rationale |
 |---|---|---|
 | `cmd/gorrcd` | **M1** | RRC slash-command plugins. Clean, discrete request/response seam. |
-| `cmd/gornsd` | **M3** | LXMF inbound filters, delivery callbacks, announce observers. |
+| `cmd/gornsd` | **M2** | LXMF inbound filters, delivery callbacks; announce observers move to M3 (Step 3.2). Promoted in Milestone 2 per §10. |
 | `cmd/gornx` | **M3** | Sandboxed remote execution tools (replaces raw shell execution). |
 | `cmd/gornsh` | **M3** | Optional wasm execution tools in remote terminal sessions. |
 | `cmd/golxmd` | optional | Only if standalone filter hosting is needed outside `gornsd`. |
@@ -203,6 +232,14 @@ If `cmd/<binaryName>/go.mod` exists:
 1. Set `cmd.Dir = filepath.Join("cmd", j.binaryName)` (or pass `-C cmd/<binaryName>`).
 2. Build `.` instead of `./cmd/<binaryName>`.
 3. Append `-tags=wago` to `buildTags` only when targeting `(linux, darwin, windows) × (amd64, arm64)`.
+4. Set `GOWORK=off` in the build environment so a nested-module build resolves its own
+   module graph instead of the workspace.
+
+> [!NOTE]
+> **Status (Milestone 1):** implemented in `cmd/publish-github-release-artifacts/main.go`
+> via `nestedModuleDir`, `wagoSupportedTarget`, and `buildTagsWithWago` (covered by
+> `TestNestedModuleDir`, `TestWagoSupportedTarget`, and `TestBuildTagsWithWago`); the
+> pocket-terminal matrix (`pocket_terminal,wago` on linux/arm64) matches §4.
 
 ---
 
@@ -379,42 +416,57 @@ var MinWasmSpin = []byte{
 	0x01, 0x04, 0x01, 0x60, 0x00, 0x00,
 	0x03, 0x02, 0x01, 0x00,
 	0x07, 0x08, 0x01, 0x04, 's', 'p', 'i', 'n', 0x00, 0x00,
-	0x0a, 0x08, 0x01, 0x06, 0x00, 0x03, 0x40, 0x0c, 0x00, 0x0b, 0x0b,
+	// Code section: body size 7 (locals 00, loop 03 40, br 0c 00, end 0b, end 0b), section size 9.
+	0x0a, 0x09, 0x01, 0x07, 0x00, 0x03, 0x40, 0x0c, 0x00, 0x0b, 0x0b,
 }
 ```
 
 ### 9.3 RRC Slash Command Echo Plugin Module
-Exports `wagoplugin_alloc`, `plugin_manifest`, and `handle_command` with 1 page memory:
+Exports `wagoplugin_alloc`, `plugin_manifest`, and `handle_command` with 1 page of memory
+(declared max 1 page — a max-less memory is rejected by the 16 MiB admission policy in
+§8.5, which computes the unbounded maximum as 4 GiB). `handle_command` echoes its request
+bytes back with `memory.copy` so tests can assert real content:
 ```go
-// Generates a canned valid plugin response for testing command dispatch and alloc.
+// Echo plugin: handle_command copies the request to offset 1024 and returns
+// (ptr=1024, len=request length), so the response bytes equal the request.
 var MinWasmCommandPlugin = []byte{
 	0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
-	// Type section: 0: () -> (), 1: (i32) -> (i32), 2: (i32, i32) -> (i32, i32), 3: () -> (i32, i32)
-	0x01, 0x16, 0x04,
+	// Type section (size 0x15 = 1 + 3 + 5 + 7 + 5):
+	// 0: () -> (), 1: (i32) -> (i32), 2: (i32, i32) -> (i32, i32), 3: () -> (i32, i32)
+	0x01, 0x15, 0x04,
 	0x60, 0x00, 0x00,
 	0x60, 0x01, 0x7f, 0x01, 0x7f,
 	0x60, 0x02, 0x7f, 0x7f, 0x02, 0x7f, 0x7f,
 	0x60, 0x00, 0x02, 0x7f, 0x7f,
 	// Function section: 0: alloc, 1: manifest, 2: handle_command
 	0x03, 0x04, 0x03, 0x01, 0x03, 0x02,
-	// Memory section: 1 page (64KB)
-	0x05, 0x03, 0x01, 0x00, 0x01,
-	// Export section
-	0x07, 0x3d, 0x04,
+	// Memory section: 1 page (64 KiB), max 1 page
+	0x05, 0x04, 0x01, 0x01, 0x01, 0x01,
+	// Export section (size 0x40 = 1 + 9 + 19 + 18 + 17)
+	0x07, 0x40, 0x04,
 	0x06, 'm', 'e', 'm', 'o', 'r', 'y', 0x02, 0x00,
 	0x10, 'w', 'a', 'g', 'o', 'p', 'l', 'u', 'g', 'i', 'n', '_', 'a', 'l', 'l', 'o', 'c', 0x00, 0x00,
 	0x0f, 'p', 'l', 'u', 'g', 'i', 'n', '_', 'm', 'a', 'n', 'i', 'f', 'e', 's', 't', 0x00, 0x01,
 	0x0e, 'h', 'a', 'n', 'd', 'l', 'e', '_', 'c', 'o', 'm', 'm', 'a', 'n', 'd', 0x00, 0x02,
-	// Code section
-	0x0a, 0x22, 0x03,
-	// func 0 (alloc): returns fixed offset 1024
-	0x06, 0x00, 0x41, 0x80, 0x08, 0x0b,
-	// func 1 (manifest): returns (offset 0, len 32)
-	0x07, 0x00, 0x41, 0x00, 0x41, 0x20, 0x0b,
-	// func 2 (handle_command): returns (offset 1024, len = input_len)
-	0x08, 0x00, 0x41, 0x80, 0x08, 0x20, 0x01, 0x0b,
+	// Code section (size 0x21 = 1 + 6 + 7 + 19); each body size byte is 1 + body length
+	0x0a, 0x21, 0x03,
+	// func 0 (alloc): returns the fixed offset 1024 (body: 00 41 80 08 0b)
+	0x05, 0x00, 0x41, 0x80, 0x08, 0x0b,
+	// func 1 (manifest): returns (offset 0, len 32) (body: 00 41 00 41 20 0b)
+	0x06, 0x00, 0x41, 0x00, 0x41, 0x20, 0x0b,
+	// func 2 (handle_command): memory.copy input to 1024, returns (1024, len)
+	// (body: 00 41 80 08 20 00 20 01 fc 0a 00 00 41 80 08 20 01 0b)
+	0x12, 0x00, 0x41, 0x80, 0x08, 0x20, 0x00, 0x20, 0x01, 0xfc, 0x0a, 0x00, 0x00, 0x41, 0x80, 0x08, 0x20, 0x01, 0x0b,
 }
 ```
+
+> [!IMPORTANT]
+> **Fixture sizes must be verified by the engine, not by eye.** The original draft of
+> §9.2 and §9.3 had off-by-one section/body sizes and an unbounded memory declaration;
+> wago's compiler rejects such modules at decode ("section size mismatch") or at
+> admission ("module maximum memory total 4294967296 bytes exceeds policy limit").
+> The corrected bytes above are validated by `TestPluginHostWagoCommandEcho` and the
+> other plugin-host tests in `cmd/gorrcd`.
 
 ---
 
@@ -443,21 +495,46 @@ while `go-reticulum` root module remains 100% stdlib.
   )
   replace github.com/gmlewis/go-reticulum => ../..
   ```
-- Run `(cd cmd/gorrcd && go mod tidy)`. Verify `cmd/gorrcd/go.sum` is created.
+- **Sequencing matters:** `go mod tidy` prunes requirements that no source file imports,
+  so run `go get github.com/wago-org/wago@v0.1.0-beta.8` only after (or together with)
+  the first file that imports the package, then `(cd cmd/gorrcd && go mod tidy)`.
+  Verify `cmd/gorrcd/go.sum` is created and pins `wago v0.1.0-beta.8` (a bare tidy with
+  nothing importing wago removes the require entirely; a tidy with no pinned version
+  can resolve the retracted canary — see §2).
 - Verify root `go.mod` and `go.sum` remain completely untouched!
 
 #### Step 1.3: Plugin Host Implementation
+- **Both build variants must expose the identical API** — the untagged glue code
+  (`pluginshook.go`) is compiled under both tags and would not compile otherwise:
+  `func NewPluginHost(timeout time.Duration, logf func(format string, args ...any)) *PluginHost`,
+  `func (h *PluginHost) LoadPlugin(path string) error`,
+  `func (h *PluginHost) Active() bool`,
+  `func (h *PluginHost) HandleCommand(cmdLine string) (string, error)`,
+  `func (h *PluginHost) Close()`.
 - Create `cmd/gorrcd/plugins_stub.go` with `//go:build !wago || (!linux && !darwin && !windows) || (!amd64 && !arm64)`:
-  Define `type PluginHost struct{}`, `func NewPluginHost(...) *PluginHost`, `func (h *PluginHost) HandleCommand(...) bool { return false }`.
+  inactive host; `LoadPlugin`/`HandleCommand` fail with `errPluginsNotLinked`.
 - Create `cmd/gorrcd/plugins_wago.go` with `//go:build wago && (linux || darwin || windows) && (amd64 || arm64)`:
-  Implement `PluginHost` embedding `wago.NewRuntime()`, `LoadPlugin(path string)`, `Call("handle_command", ...)`,
-  with `context.WithTimeout(ctx, 2*time.Second)` and memory bounds checking.
-- Connect `PluginHost` into `cmd/gorrcd/bootstrap.go` / `main.go`.
+  Implement `PluginHost` embedding `wago.NewRuntime()`, `LoadPlugin(path string)`,
+  `Call("handle_command", ...)`, with `context.WithTimeout(ctx, 2*time.Second)`,
+  `wago.Policy{MaxMemoryBytes: 16<<20, MaxTableEntries: 1024}` admission bounds, and
+  `inst.Read`/`inst.Write` bounds checking.
+- Connect `PluginHost` into `cmd/gorrcd/pluginshook.go` (scan `RRCD_HOME/plugins/*.wasm`,
+  adapt to the rrc `CustomHandler` hook via `HubService.SetCustomCommandHandler`) and
+  `main.go` (load at bring-up, release hosts at shutdown).
 
-#### Step 1.4: TDD Unit Tests (`cmd/gorrcd/plugins_test.go`)
-- **Test 1:** Default build (stub mode): verify `NewPluginHost` returns inactive host and commands return false.
-- **Test 2:** With `-tags wago`: instantiate `PluginHost` with `MinWasmCommandPlugin`, send slash command, assert correct output.
-- **Test 3 (Timeout/Cancellation):** With `-tags wago`: load `MinWasmSpin`, trigger execution with 50ms timeout, assert call returns `context.DeadlineExceeded` in <100ms and does not block.
+#### Step 1.4: TDD Unit Tests (split by build constraint — a single file cannot compile in
+both modes while asserting mode-specific behavior; fixtures live in the untagged
+`cmd/gorrcd/wasm-fixtures_test.go` so both tagged test files share them)
+- **Test 1 (`plugins_stub_test.go`, stub constraint):** verify `NewPluginHost` returns an
+  inactive host, `LoadPlugin`/`HandleCommand` fail, and the command hook returns false.
+- **Test 2 (`plugins_wago_test.go`, `-tags wago`):** instantiate `PluginHost` with
+  `MinWasmCommandPlugin`, send slash command, assert the echoed output.
+- **Test 3 (Timeout/Cancellation, `-tags wago`):** load `MinWasmSpin`, trigger execution
+  with a 50ms timeout, assert the call returns `context.DeadlineExceeded` and does not
+  block (measured ≈60ms wall; the assertion uses a 1s bound to tolerate CI jitter while
+  still proving the loop was preempted).
+- Also covered: the `rns.log` host import forwarding guest memory to the host logger, and
+  deny-by-default rejection of an unwired import (`rns.kv_get`) at instantiation.
 
 #### Step 1.5: Script & CI Updates
 - Update `scripts/test-all.sh` and `run-all-tests.sh` per §6.
@@ -465,8 +542,11 @@ while `go-reticulum` root module remains 100% stdlib.
 - Add `use ./cmd/gorrcd` to `go.work`.
 
 #### Step 1.6: Verification
-- Run `./run-all-tests.sh`. Verify output reports: "Repository is squeaky clean!".
-- Verify root `go.mod` has zero requires.
+- Run `./run-all-tests.sh`. Verify the final line reports:
+  "Repo is squeaky-clean (errcheck + gopls check + modernize + staticcheck + all tests)."
+- Verify root `go.mod` has zero requires (and no root `go.sum`).
+- Also run `./scripts/test-all.sh`, which now covers the nested module in both the
+  default (stub) and `-tags wago` build modes (see §6.1).
 
 ---
 
@@ -506,7 +586,12 @@ while `go-reticulum` root module remains 100% stdlib.
 
 ## 11. Production-Grade Host Implementation Reference
 
-Below is the production implementation pattern for `plugins_wago.go`:
+Below is the production implementation pattern for `plugins_wago.go`. The shipped
+Milestone 1 implementation (`cmd/gorrcd/plugins_wago.go`) follows this pattern with one
+structural difference: the constructor is infallible (`NewPluginHost(timeout, logf)
+*PluginHost`) and `LoadPlugin(path)` performs the compile/instantiate steps, so load
+errors are explicit and the shared API stays identical across the stub and wago builds.
+The reference here takes the wasm bytes at construction; both forms satisfy §8.
 
 ```go
 //go:build wago && (linux || darwin || windows) && (amd64 || arm64)
@@ -519,7 +604,9 @@ import (
 	"sync"
 	"time"
 
-	wago "github.com/wago-org/wago"
+	// The wasm runtime API lives under src/wago: the wago module has no
+	// package at its root, so "github.com/wago-org/wago" does not resolve.
+	wago "github.com/wago-org/wago/src/wago"
 )
 
 type PluginHost struct {
@@ -565,7 +652,8 @@ func NewPluginHost(wasmBytes []byte, timeout time.Duration) (*PluginHost, error)
 
 	inst, err := rt.Instantiate(ctx, mod, wago.WithPolicy(policy), wago.WithImports(imports))
 	if err != nil {
-		rt.Close()
+		_ = mod.Close() // the compiled module must be released, not just the runtime
+		_ = rt.Close()
 		return nil, fmt.Errorf("plugin instantiate: %w", err)
 	}
 
@@ -616,10 +704,16 @@ func (h *PluginHost) Close() error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.inst != nil {
-		h.inst.Close()
+		_ = h.inst.Close()
+		h.inst = nil
+	}
+	if h.mod != nil {
+		_ = h.mod.Close() // modules are owned separately from the runtime
+		h.mod = nil
 	}
 	if h.rt != nil {
-		h.rt.Close()
+		_ = h.rt.Close()
+		h.rt = nil
 	}
 	return nil
 }
@@ -643,4 +737,4 @@ func (h *PluginHost) Close() error {
   - `nomadnet/node/node.go`: `makePageHandler`, `ServePage`.
   - `nomadnet/browser/browser.go`: `ServeLocalPage`.
 - **Release Builder**:
-  - `cmd/publish-github-release-artifacts/main.go`: line 597 build invocation.
+  - `cmd/publish-github-release-artifacts/main.go`: nested-module build path (`nestedModuleDir`, `wagoSupportedTarget`, `buildTagsWithWago`) and the concurrent build loop in `buildAll`.

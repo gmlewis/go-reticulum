@@ -161,6 +161,49 @@ func blacklisted(goos, binaryName string) bool {
 	return platformBlacklist[goos][binaryName]
 }
 
+// nestedModuleDir reports the directory of cmd/name when that program is
+// its own Go module (it has its own go.mod): such a program is built inside
+// its module directory so its own module graph (for example the wago
+// runtime) resolves.
+func nestedModuleDir(repoRoot, name string) (string, bool) {
+	dir := filepath.Join(repoRoot, "cmd", name)
+	if _, err := os.Stat(filepath.Join(dir, "go.mod")); err != nil {
+		return "", false
+	}
+	return dir, true
+}
+
+// wagoSupportedTarget reports whether the target platform links the wago
+// in-process wasm runtime (-tags wago): Linux, Darwin, or Windows on amd64
+// or arm64; every other target keeps the zero-overhead stub.
+func wagoSupportedTarget(goos, goarch string) bool {
+	switch goos {
+	case "linux", "darwin", "windows":
+	default:
+		return false
+	}
+	switch goarch {
+	case "amd64", "arm64":
+	default:
+		return false
+	}
+	return true
+}
+
+// buildTagsWithWago appends the wago tag to a build-tag list unless it is
+// already present.
+func buildTagsWithWago(tags string) string {
+	for tag := range strings.SplitSeq(tags, ",") {
+		if tag == "wago" {
+			return tags
+		}
+	}
+	if tags == "" {
+		return "wago"
+	}
+	return tags + ",wago"
+}
+
 // discoverBinaryNames scans the cmd/ directory for every program whose name
 // starts with "go" and returns them sorted, instead of relying on a hard-coded
 // list. A directory qualifies when it starts with "go" and contains at least
@@ -591,16 +634,33 @@ func buildAll(outDir, version string, binaryNames []string, progress *os.File) (
 			progressMu.Unlock()
 
 			buildArgs := []string{"build", "-trimpath", "-p", "1"}
+			// A program with its own go.mod is a nested module: build it in
+			// its module directory (target "."), and link the wago runtime
+			// only on the platforms the wasm build supports.
+			modDir, nested := nestedModuleDir(".", j.binaryName)
+			if nested && wagoSupportedTarget(j.t.goos, j.t.goarch) {
+				j.buildTags = buildTagsWithWago(j.buildTags)
+			}
 			if j.buildTags != "" {
 				buildArgs = append(buildArgs, "-tags="+j.buildTags)
 			}
-			buildArgs = append(buildArgs, "-o", j.outPath, "./cmd/"+j.binaryName)
+			if nested {
+				buildArgs = append(buildArgs, "-o", j.outPath, ".")
+			} else {
+				buildArgs = append(buildArgs, "-o", j.outPath, "./cmd/"+j.binaryName)
+			}
 			cmd := exec.CommandContext(ctx, "go", buildArgs...)
+			cmd.Dir = modDir
 			env := append(os.Environ(),
 				"GOOS="+j.t.goos,
 				"GOARCH="+j.t.goarch,
 				"CGO_ENABLED=0",
 			)
+			// A nested-module build must resolve its own go.mod graph, not
+			// the workspace; keep it independent of go.work presence.
+			if cmd.Dir != "" {
+				env = append(env, "GOWORK=off")
+			}
 			if j.armVersion != "" {
 				env = append(env, "GOARM="+j.armVersion)
 			}
