@@ -33,12 +33,18 @@ func Parse(src string) (*Doc, error) {
 		pending = nil
 	}
 	lines := splitLines(src)
-	for i := range len(lines) {
+	// Multi-line arrays/tables need the index to skip continuation lines.
+	// `for i := range len(lines)` rebinds i every iteration (Go 1.22+), so
+	// assigning i in the body cannot advance the walk. A while-style index
+	// keeps that skip without a C-style for-increment.
+	i := 0
+	for i < len(lines) {
 		raw := lines[i]
 		trimmed := strings.TrimSpace(raw)
 		switch {
 		case trimmed == "" || strings.HasPrefix(trimmed, "#"):
 			pending = append(pending, raw)
+			i++
 		case strings.HasPrefix(trimmed, "["):
 			hdr, err := parseHeader(trimmed)
 			if err != nil {
@@ -50,17 +56,133 @@ func Parse(src string) (*Doc, error) {
 			parent := ensureTable(doc.root, hdr[:len(hdr)-1])
 			parent.Tables = append(parent.Tables, table)
 			cur = table
+			i++
 		default:
 			flushPending()
-			kv, err := parseKeyValLine(raw)
+			// TOML allows multi-line arrays and inline tables. The
+			// historical parser was line-oriented and rejected
+			// `key = [` on the next line's `]` with "unterminated
+			// array" (gorrcd crash-loop on a valid trusted_identities
+			// list). Consume continuation lines until brackets balance.
+			joined, last := joinContinuedValueLines(lines, i)
+			kv, err := parseKeyValLine(joined)
 			if err != nil {
 				return nil, err
 			}
 			cur.Keys = append(cur.Keys, *kv)
+			i = last + 1
 		}
 	}
 	flushPending()
 	return doc, nil
+}
+
+// joinContinuedValueLines returns lines[start] through the first line where
+// bracketed values opened on that assignment are closed (quote-aware), plus
+// the index of the last line consumed. The joined RawLine keeps original
+// line terminators so Dump round-trips the multi-line form.
+func joinContinuedValueLines(lines []string, start int) (string, int) {
+	raw := lines[start]
+	if !valueOpensUnclosedBracket(raw) {
+		return raw, start
+	}
+	var sb strings.Builder
+	sb.WriteString(raw)
+	last := start
+	for j := start + 1; j < len(lines); j++ {
+		sb.WriteString(lines[j])
+		last = j
+		if valueOpensUnclosedBracket(sb.String()) {
+			continue
+		}
+		return sb.String(), last
+	}
+	return sb.String(), last
+}
+
+// valueOpensUnclosedBracket reports whether a key/value assignment line opens
+// an array or inline table that is not closed on that same line.
+func valueOpensUnclosedBracket(raw string) bool {
+	trimmed := strings.TrimSpace(strings.TrimSuffix(raw, "\n"))
+	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		return false
+	}
+	eq := indexEqualsOutsideQuotes(trimmed)
+	if eq < 0 {
+		return false
+	}
+	val := strings.TrimSpace(trimmed[eq+1:])
+	// Strip a trailing comment that sits outside any brackets/quotes.
+	val = stripTrailingComment(val)
+	if val == "" || (val[0] != '[' && val[0] != '{') {
+		return false
+	}
+	return !bracketsBalanced(val)
+}
+
+func stripTrailingComment(s string) string {
+	inBasic, inLiteral := false, false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case inBasic:
+			if c == '\\' {
+				i++
+			} else if c == '"' {
+				inBasic = false
+			}
+		case inLiteral:
+			if c == '\'' {
+				inLiteral = false
+			}
+		case c == '"':
+			inBasic = true
+		case c == '\'':
+			inLiteral = true
+		case c == '#' && !inBasic && !inLiteral:
+			return strings.TrimSpace(s[:i])
+		}
+	}
+	return strings.TrimSpace(s)
+}
+
+// bracketsBalanced reports whether every [ and { opened outside strings is
+// closed, and no closer remains after all openers are matched.
+func bracketsBalanced(s string) bool {
+	var stack []byte
+	inBasic, inLiteral := false, false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case inBasic:
+			if c == '\\' {
+				i++
+			} else if c == '"' {
+				inBasic = false
+			}
+		case inLiteral:
+			if c == '\'' {
+				inLiteral = false
+			}
+		case c == '"':
+			inBasic = true
+		case c == '\'':
+			inLiteral = true
+		case c == '[' || c == '{':
+			stack = append(stack, c)
+		case c == ']':
+			if len(stack) == 0 || stack[len(stack)-1] != '[' {
+				return false
+			}
+			stack = stack[:len(stack)-1]
+		case c == '}':
+			if len(stack) == 0 || stack[len(stack)-1] != '{' {
+				return false
+			}
+			stack = stack[:len(stack)-1]
+		}
+	}
+	return len(stack) == 0 && !inBasic && !inLiteral
 }
 
 // splitLines splits src into lines, keeping line terminators.
@@ -483,16 +605,18 @@ func parseFloatValue(text string) (Value, bool) {
 	return Value{Kind: KindFloat, Flt: f, Raw: text}, true
 }
 
-// parseArray parses a single-line TOML array. Multi-line arrays are outside
-// the supported subset (the rrcd files always write single-line arrays).
+// parseArray parses a TOML array. Multi-line arrays are joined by
+// joinContinuedValueLines before this is called; whitespace here may still
+// include embedded newlines from that join.
 func parseArray(text string) (Value, error) {
+	text = strings.TrimSpace(text)
 	if !strings.HasSuffix(text, "]") {
 		return Value{}, fmt.Errorf("unterminated array")
 	}
 	inner := text[1 : len(text)-1]
 	var items []Value
 	for {
-		inner = strings.TrimLeft(inner, " \t")
+		inner = strings.TrimLeft(inner, " \t\n\r")
 		if inner == "" {
 			break
 		}
@@ -504,7 +628,7 @@ func parseArray(text string) (Value, error) {
 			return Value{}, err
 		}
 		items = append(items, item)
-		rest = strings.TrimLeft(rest, " \t")
+		rest = strings.TrimLeft(rest, " \t\n\r")
 		if rest == "" {
 			// The outer closing bracket was stripped, so an empty
 			// remainder ends the array.

@@ -161,7 +161,6 @@ func TestParseRejectsGarbage(t *testing.T) {
 		"key = unclosed'",
 		"[unclosed",
 		"key = multi\nline",
-		"arr = [1, 2\n, 3]",
 		"key = @garbage",
 	} {
 		if _, err := Parse(src); err == nil {
