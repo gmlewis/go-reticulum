@@ -150,8 +150,11 @@ type StatsConfig struct {
 	AnnouncePeriodS        float64
 }
 
-// FormatStats renders the statistics as one human-readable string, joining
-// the lines with "" (no separators), mirroring format_stats.
+// FormatStats renders the statistics as a newline-separated string, matching
+// the multi-line command-reply pattern used by /list ("\n".join). Python's
+// format_stats joins with "" (stats.py:160), but that body never fit the RNS
+// MTU as a single NOTICE; with chunking, newline separation is what makes
+// each delivered NOTICE a complete, readable stat line.
 func (s *StatsManager) FormatStats(cfg StatsConfig, snap StatsSnapshot) string {
 	s.mu.Lock()
 	c := make(map[string]int, len(s.counters))
@@ -209,7 +212,7 @@ func (s *StatsManager) FormatStats(cfg StatsConfig, snap StatsSnapshot) string {
 		" bytes_sent="+itoa(c["resource_bytes_sent"])+
 		" bytes_received="+itoa(c["resource_bytes_received"]))
 
-	return strings.Join(lines, "")
+	return strings.Join(lines, "\n")
 }
 
 // pythonBool renders a bool the way Python's str() does.

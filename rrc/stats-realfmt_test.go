@@ -75,8 +75,12 @@ func TestHandleStatsRealFormatStatsChunks(t *testing.T) {
 			t.Fatalf("payload[%d] = %+v, want one room-nil T_NOTICE", i, sent)
 		}
 		s, _ := sent[0].body.(string)
+		if rebuilt.Len() > 0 {
+			rebuilt.WriteString("\n")
+		}
 		rebuilt.WriteString(s)
 	}
+	// Chunks are complete lines; reassemble with the newlines FormatStats uses.
 	if rebuilt.String() != body {
 		t.Errorf("reassembled body:\n got %q\nwant %q", rebuilt.String(), body)
 	}

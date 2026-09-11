@@ -6,14 +6,14 @@
 package rrc
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
 // G5.5: the golden full-string output for a fixed counter snapshot,
-// captured from Python format_stats (with the "".join no-separator quirk
-// and the rrcd Version self-reference).
+// newline-separated so MTU chunking delivers complete stat lines.
 func TestFormatStatsGolden(t *testing.T) {
 	t.Parallel()
 	wall := 1730000000.0
@@ -74,18 +74,20 @@ func TestFormatStatsGolden(t *testing.T) {
 		BannedCount:  0,
 	}
 	got := s.FormatStats(cfg, snap)
-	want := "rrcd " + rns.VERSION + " stats" +
-		"uptime_s=100.0" +
-		"clients_total=2 clients_identified=1 clients_welcomed=2" +
-		"rooms=1 memberships=2" +
-		"top_rooms=general:2" +
-		"trust: trusted=1 banned=0" +
-		"limits: rate_limit_msgs_per_minute=240 max_rooms_per_session=32 max_room_name_bytes=64 max_nick_bytes=32" +
-		"features: ping_interval_s=0.0 ping_timeout_s=0.0 announce_on_start=True announce_period_s=0.0" +
-		"io: pkts_in=5 pkts_bad=1 bytes_in=120 bytes_out=340" +
-		"events: joins=2 parts=1 msgs_forwarded=7 notices_forwarded=3 actions_forwarded=1 errors_sent=1 rate_limited=1" +
-		"pings: in=4 out=4 pongs: in=3 out=3" +
-		"resources: sent=1 received=1 rejected=0 bytes_sent=100 bytes_received=90"
+	want := strings.Join([]string{
+		"rrcd " + rns.VERSION + " stats",
+		"uptime_s=100.0",
+		"clients_total=2 clients_identified=1 clients_welcomed=2",
+		"rooms=1 memberships=2",
+		"top_rooms=general:2",
+		"trust: trusted=1 banned=0",
+		"limits: rate_limit_msgs_per_minute=240 max_rooms_per_session=32 max_room_name_bytes=64 max_nick_bytes=32",
+		"features: ping_interval_s=0.0 ping_timeout_s=0.0 announce_on_start=True announce_period_s=0.0",
+		"io: pkts_in=5 pkts_bad=1 bytes_in=120 bytes_out=340",
+		"events: joins=2 parts=1 msgs_forwarded=7 notices_forwarded=3 actions_forwarded=1 errors_sent=1 rate_limited=1",
+		"pings: in=4 out=4 pongs: in=3 out=3",
+		"resources: sent=1 received=1 rejected=0 bytes_sent=100 bytes_received=90",
+	}, "\n")
 	if got != want {
 		t.Errorf("FormatStats:\n got %q\nwant %q", got, want)
 	}
@@ -112,17 +114,19 @@ func TestFormatStatsEmptyCounters(t *testing.T) {
 	}
 	snap := StatsSnapshot{}
 	got := s.FormatStats(cfg, snap)
-	want := "rrcd " + rns.VERSION + " stats" +
-		"uptime_s=0.0" +
-		"clients_total=0 clients_identified=0 clients_welcomed=0" +
-		"rooms=0 memberships=0" +
-		"trust: trusted=0 banned=0" +
-		"limits: rate_limit_msgs_per_minute=240 max_rooms_per_session=32 max_room_name_bytes=64 max_nick_bytes=32" +
-		"features: ping_interval_s=0.0 ping_timeout_s=0.0 announce_on_start=True announce_period_s=0.0" +
-		"io: pkts_in=0 pkts_bad=0 bytes_in=0 bytes_out=0" +
-		"events: joins=0 parts=0 msgs_forwarded=0 notices_forwarded=0 actions_forwarded=0 errors_sent=0 rate_limited=0" +
-		"pings: in=0 out=0 pongs: in=0 out=0" +
-		"resources: sent=0 received=0 rejected=0 bytes_sent=0 bytes_received=0"
+	want := strings.Join([]string{
+		"rrcd " + rns.VERSION + " stats",
+		"uptime_s=0.0",
+		"clients_total=0 clients_identified=0 clients_welcomed=0",
+		"rooms=0 memberships=0",
+		"trust: trusted=0 banned=0",
+		"limits: rate_limit_msgs_per_minute=240 max_rooms_per_session=32 max_room_name_bytes=64 max_nick_bytes=32",
+		"features: ping_interval_s=0.0 ping_timeout_s=0.0 announce_on_start=True announce_period_s=0.0",
+		"io: pkts_in=0 pkts_bad=0 bytes_in=0 bytes_out=0",
+		"events: joins=0 parts=0 msgs_forwarded=0 notices_forwarded=0 actions_forwarded=0 errors_sent=0 rate_limited=0",
+		"pings: in=0 out=0 pongs: in=0 out=0",
+		"resources: sent=0 received=0 rejected=0 bytes_sent=0 bytes_received=0",
+	}, "\n")
 	if got != want {
 		t.Errorf("empty FormatStats:\n got %q\nwant %q", got, want)
 	}
