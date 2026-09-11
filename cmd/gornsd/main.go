@@ -100,6 +100,13 @@ func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		}
 	}()
 
+	// Sandbox wasm observer plugins from <configdir>/plugins receive every
+	// incoming network announce through the transport's announce handler;
+	// without the wago build tag this is a no-op.
+	if observerHosts := setupAnnounceHosts(ret.Transport(), app.configDir, logger); len(observerHosts) > 0 {
+		defer closeAnnounceHosts(observerHosts)
+	}
+
 	if app.interactive {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()

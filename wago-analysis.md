@@ -619,15 +619,43 @@ LXMF daemon to a nested module with inbound delivery-filter plugins.
 
 *Goal:* Full sandboxing breadth across the ecosystem.
 
-#### Step 3.1: Sandboxed `gornx`
-- Promote `cmd/gornx` to nested module.
-- Instead of raw `exec.Command` subprocess execution, execute requested commands in sandboxed WASM runtime.
+#### Step 3.1: Sandboxed `gornx` (implemented)
+- Promoted `cmd/gornx` to a nested module (its own `go.mod`/`go.sum`, wago pinned
+  `v0.1.0-beta.8`, `use ./cmd/gornx` in `go.work`).
+- **Plugin-first dispatch with exec fallback (documented design decision):** a listen-mode
+  command whose first token matches a `<cmd>.wasm` plugin under the rnx plugins directory
+  (same candidate order as the allowed-identities paths: `/etc/rnx/plugins`,
+  `~/.config/rnx/plugins`, `~/.rnx/plugins`) runs in the sandboxed wasm runtime through
+  the `handle_command` ABI — the request is a JSON object
+  (`command`, `stdin`, `link_id`, `remote_identity`, `requested_at`) and the response
+  bytes become the command's stdout, mapped onto the rnx result array
+  (`executed=true, returncode=0`, stdout/stderr/lengths, stdout-limit applied; a plugin
+  failure or deadline preemption yields `executed=false`, the existing "not executed"
+  contract). Every other command keeps the raw `exec.Command` path — replacing ALL
+  execution with wasm would break rnx compatibility, since remotely requested commands
+  only exist as plugins once operators install them.
 
-#### Step 3.2: Announce Observers in `gornsd`
-- Register `Transport.RegisterAnnounceHandler` to notify WASM observer plugins of incoming network announcements.
+#### Step 3.2: Announce Observers in `gornsd` (implemented)
+- Promoted `cmd/gornsd` to a nested module.
+- Observer plugins under `<configdir>/plugins/*.wasm` are loaded into `ObserverHost`s
+  and one `Transport.RegisterAnnounceHandler` registration dispatches every incoming
+  announce to them through the §8.1 `on_announce(ann_ptr, ann_len) -> status` ABI
+  (status 0 = acknowledged; a nonzero status is logged, not fatal). The serialized
+  announce event carries destination/identity hashes (hex), the app_data string, the
+  path-response flag, and the receive time.
 
-#### Step 3.3: Per-Plugin KV Scratch Store
-- Implement `rns.kv_get` / `rns.kv_set` host imports backed by `~/.reticulum/plugins/data/<plugin>/` with 10MB quota and path sanitation.
+#### Step 3.3: Per-Plugin KV Scratch Store (implemented)
+- New stdlib-only root package `pluginstore`: per-plugin directories scoped under the
+  host's data root (`<root>/<plugin>/`, typically `<state-home>/plugins/data/<plugin>/`),
+  keys validated as filenames (separators, traversal, NUL, and >128-byte keys rejected),
+  plugin names validated (`[A-Za-z0-9._-]`), and a per-plugin total-size quota of
+  `MaxStoreBytes` = 10 MiB (overwrites replace, not add).
+- The `rns.kv_set` (status 0 = ok) and `rns.kv_get` (n = bytes written, 0 = missing key,
+  -1 = output buffer too small) host imports are wired into **all four** wago tool
+  hosts (`gorrcd`, `golxmd`, `gornsd`, `gornx`); each plugin's store is scoped by its
+  `.wasm` file's base name. The gorrcd suite proves the roundtrip end-to-end with a
+  fixture that stores and reads back through the real host imports
+  (`TestPluginHostKVImports`).
 
 ---
 

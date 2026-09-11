@@ -5,12 +5,13 @@
 
 //go:build wago && (linux || darwin || windows) && (amd64 || arm64)
 
-// This file is the wago LXMF filter host, compiled with -tags wago on the
-// supported desktop platforms (Linux, Darwin, and Windows on amd64/arm64).
-// Each loaded plugin is a sandboxed wasm instance running in-process:
-// deny-by-default host imports, bounded linear memory and tables, and a hard
+// This file is the wago announce observer host, compiled with -tags wago on
+// the supported desktop platforms (Linux, Darwin, and Windows on
+// amd64/arm64). Each loaded plugin is a sandboxed wasm instance running
+// in-process: deny-by-default host imports (rns.log plus the per-plugin KV
+// scratch store), bounded linear memory and tables, and a hard
 // per-invocation execution budget enforced by the runtime's interrupt
-// mechanism (loop safepoints or platform signals).
+// mechanism.
 
 package main
 
@@ -20,7 +21,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -28,18 +28,20 @@ import (
 	wago "github.com/wago-org/wago/src/wago"
 )
 
-// filterMaxMemoryBytes caps a filter module's linear memory at admission.
-const filterMaxMemoryBytes = 16 * 1024 * 1024
+// observerMaxMemoryBytes caps an observer module's linear memory at
+// admission.
+const observerMaxMemoryBytes = 16 * 1024 * 1024
 
-// filterMaxTableEntries caps a filter module's table entries at admission.
-const filterMaxTableEntries = 1024
+// observerMaxTableEntries caps an observer module's table entries at
+// admission.
+const observerMaxTableEntries = 1024
 
-// defaultFilterTimeout is the per-invocation execution budget applied when
-// the caller passes a non-positive timeout.
-const defaultFilterTimeout = 2 * time.Second
+// defaultObserverTimeout is the per-invocation execution budget applied
+// when the caller passes a non-positive timeout.
+const defaultObserverTimeout = 2 * time.Second
 
-// FilterHost hosts one sandboxed wasm filter plugin in-process.
-type FilterHost struct {
+// ObserverHost hosts one sandboxed wasm announce observer in-process.
+type ObserverHost struct {
 	mu      sync.Mutex
 	rt      *wago.Runtime
 	mod     *wago.Module
@@ -49,59 +51,66 @@ type FilterHost struct {
 	logf    func(format string, args ...any)
 }
 
-// NewFilterHost creates an empty filter host with the given per-invocation
-// execution budget (2s when non-positive) and optional logger.
-func NewFilterHost(timeout time.Duration, logf func(format string, args ...any)) *FilterHost {
+// NewObserverHost creates an empty observer host with the given
+// per-invocation execution budget (2s when non-positive) and optional
+// logger.
+func NewObserverHost(timeout time.Duration, logf func(format string, args ...any)) *ObserverHost {
 	if timeout <= 0 {
-		timeout = defaultFilterTimeout
+		timeout = defaultObserverTimeout
 	}
-	return &FilterHost{
+	return &ObserverHost{
 		rt:      wago.NewRuntime(),
 		timeout: timeout,
 		logf:    logf,
 	}
 }
 
-// LoadPlugin compiles and instantiates the wasm module at path. A host
-// carries at most one plugin; a second load is refused until Close.
-func (h *FilterHost) LoadPlugin(path string) error {
+// LoadPlugin compiles and instantiates the wasm module at path and gives it
+// a KV scratch store scoped by the plugin's base name. A host carries at
+// most one plugin; a second load is refused until Close.
+func (h *ObserverHost) LoadPlugin(path string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	if h.inst != nil {
-		return errors.New("filter host already carries a loaded plugin")
+		return errors.New("observer host already carries a loaded plugin")
 	}
 	wasmBytes, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("filter read %v: %w", path, err)
+		return fmt.Errorf("observer read %v: %w", path, err)
 	}
 
-	// Each filter gets its own KV scratch store scoped by the plugin file's
-	// base name, backed by <pluginsDir>/data (wago-analysis.md §8.4).
-	pluginName := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	pluginName := observerNameFromPath(path)
 	if h.store, err = pluginstore.New(filepath.Join(filepath.Dir(path), "data"), pluginName); err != nil {
-		return fmt.Errorf("filter store %v: %w", pluginName, err)
+		return fmt.Errorf("observer store %v: %w", pluginName, err)
 	}
 
 	mod, err := h.rt.Compile(wasmBytes)
 	if err != nil {
-		return fmt.Errorf("filter compile %v: %w", path, err)
+		return fmt.Errorf("observer compile %v: %w", path, err)
 	}
 
 	inst, err := h.instantiate(mod)
 	if err != nil {
 		_ = mod.Close()
-		return fmt.Errorf("filter instantiate %v: %w", path, err)
+		return fmt.Errorf("observer instantiate %v: %w", path, err)
 	}
 	h.mod, h.inst = mod, inst
 	return nil
 }
 
+// observerNameFromPath strips the .wasm extension and returns the base
+// name, which also scopes the plugin's KV store.
+func observerNameFromPath(path string) string {
+	base := filepath.Base(path)
+	return base[:len(base)-len(filepath.Ext(base))]
+}
+
 // instantiate wires the policy and host imports and instantiates the module.
-func (h *FilterHost) instantiate(mod *wago.Module) (*wago.Instance, error) {
+func (h *ObserverHost) instantiate(mod *wago.Module) (*wago.Instance, error) {
 	policy := wago.Policy{
-		MaxMemoryBytes:  filterMaxMemoryBytes,
-		MaxTableEntries: filterMaxTableEntries,
+		MaxMemoryBytes:  observerMaxMemoryBytes,
+		MaxTableEntries: observerMaxTableEntries,
 	}
 	imports := wago.Imports{
 		// Deny by default: only explicitly wired capabilities reach the
@@ -116,28 +125,21 @@ func (h *FilterHost) instantiate(mod *wago.Module) (*wago.Instance, error) {
 			if int(ptr)+int(length) > len(mem) || length == 0 {
 				return
 			}
-			logf("filter plugin: %s", string(mem[ptr:ptr+length]))
+			logf("observer plugin: %s", string(mem[ptr:ptr+length]))
 		}),
 	}
 	h.addStoreImports(imports)
-	instantiateCtx, cancel := context.WithTimeout(context.Background(), defaultFilterTimeout)
+	instantiateCtx, cancel := context.WithTimeout(context.Background(), defaultObserverTimeout)
 	defer cancel()
 	return h.rt.Instantiate(instantiateCtx, mod, wago.WithPolicy(policy), wago.WithImports(imports))
 }
 
-// Active reports whether a filter plugin is loaded.
-func (h *FilterHost) Active() bool {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.inst != nil
-}
-
-// addStoreImports wires the filter's KV scratch store into the import
+// addStoreImports wires the plugin's KV scratch store into the import
 // surface: rns.kv_set stores a value (status 0 = ok, 1 = error) and
 // rns.kv_get reads one (n = bytes written, 0 = missing key, -1 = output
 // buffer too small; nothing is written partially). Keys and pointers are
 // bounds-checked against guest memory.
-func (h *FilterHost) addStoreImports(imports wago.Imports) {
+func (h *ObserverHost) addStoreImports(imports wago.Imports) {
 	store := h.store
 	imports["rns.kv_set"] = wago.HostFunc(func(m wago.HostModule, params, results []uint64) {
 		results[0] = 1
@@ -178,65 +180,67 @@ func (h *FilterHost) addStoreImports(imports wago.Imports) {
 	})
 }
 
-// invoke calls a named export under the host's execution budget. It is the
+// Active reports whether an observer plugin is loaded.
+func (h *ObserverHost) Active() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.inst != nil
+}
+
+// invoke calls a named export under the given execution budget. It is the
 // direct path the timeout tests exercise.
-func (h *FilterHost) invoke(export string, args ...wago.Value) ([]wago.Value, error) {
+func (h *ObserverHost) invoke(export string, timeout time.Duration, args ...wago.Value) ([]wago.Value, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	if h.inst == nil {
-		return nil, errors.New("filter host has no loaded plugin")
+		return nil, errors.New("observer host has no loaded plugin")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), h.timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	return h.inst.Call(ctx, export, args...)
 }
 
-// HandleFilter runs the plugin's filter_inbound export: the serialized
-// message is allocated in guest memory through wagoplugin_alloc, the action
-// result is read back, and true (pass) or false (drop) is returned. Only 0
-// and 1 are valid actions; anything else is an error.
-func (h *FilterHost) HandleFilter(msg []byte) (bool, error) {
+// HandleAnnounce runs the plugin's on_announce export with the serialized
+// announce event and reports an error for plugin failures or a nonzero
+// status (0 = acknowledged).
+func (h *ObserverHost) HandleAnnounce(event []byte) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	if h.inst == nil {
-		return false, errors.New("filter host has no loaded plugin")
+		return errors.New("observer host has no loaded plugin")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), h.timeout)
 	defer cancel()
 
-	allocRes, err := h.inst.Call(ctx, "wagoplugin_alloc", wago.ValueI32(int32(len(msg))))
+	allocRes, err := h.inst.Call(ctx, "wagoplugin_alloc", wago.ValueI32(int32(len(event))))
 	if err != nil {
-		return false, fmt.Errorf("filter alloc: %w", err)
+		return fmt.Errorf("observer alloc: %w", err)
 	}
 	if len(allocRes) < 1 {
-		return false, errors.New("plugin wagoplugin_alloc must return a pointer")
+		return errors.New("plugin wagoplugin_alloc must return a pointer")
 	}
 	inPtr := uint32(allocRes[0].I32())
-	if !h.inst.Write(inPtr, msg) {
-		return false, fmt.Errorf("filter memory write at %v (%v bytes) failed", inPtr, len(msg))
+	if !h.inst.Write(inPtr, event) {
+		return fmt.Errorf("observer memory write at %v (%v bytes) failed", inPtr, len(event))
 	}
 
-	res, err := h.inst.Call(ctx, "filter_inbound", allocRes[0], wago.ValueI32(int32(len(msg))))
+	res, err := h.inst.Call(ctx, "on_announce", allocRes[0], wago.ValueI32(int32(len(event))))
 	if err != nil {
-		return false, fmt.Errorf("filter_inbound: %w", err)
+		return fmt.Errorf("observer on_announce: %w", err)
 	}
 	if len(res) < 1 {
-		return false, errors.New("plugin filter_inbound must return an action")
+		return errors.New("plugin on_announce must return a status")
 	}
-	switch action := res[0].I32(); action {
-	case 0:
-		return false, nil
-	case 1:
-		return true, nil
-	default:
-		return false, fmt.Errorf("plugin filter_inbound returned unsupported action %v", action)
+	if status := res[0].I32(); status != 0 {
+		return fmt.Errorf("plugin on_announce reported status %v", status)
 	}
+	return nil
 }
 
 // Close releases the instance, module, and runtime.
-func (h *FilterHost) Close() {
+func (h *ObserverHost) Close() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 

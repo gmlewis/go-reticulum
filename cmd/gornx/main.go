@@ -61,6 +61,10 @@ type runtimeT struct {
 	logger       *rns.Logger
 	exitCh       chan int
 	startupSleep func()
+	// commands maps <cmd>.wasm plugin file names to their loaded hosts and
+	// is nil until doListen loads them; a plugin-backed command runs in the
+	// sandbox instead of the raw-exec path.
+	commands *commandHosts
 }
 
 func newRuntime(app *appT) *runtimeT {
@@ -340,6 +344,14 @@ func (rt *runtimeT) doListen(ts rns.Transport) {
 		policy = rns.AllowAll
 	}
 
+	// Commands served by a <cmd>.wasm plugin under the rnx plugins directory
+	// run in the sandboxed wasm runtime instead of the raw-exec path; every
+	// other command keeps the existing behavior.
+	rt.commands = newCommandHosts(resolveRnxPluginsDir(home), defaultPluginTimeout, func(format string, args ...any) {
+		logger.Info("plugins: "+format, args...)
+	})
+	defer rt.commands.close()
+
 	dest.RegisterRequestHandler("command", rt.handleCommandRequest, policy, allowedIdentityHashes, true)
 
 	logger.Notice("gornx listening for commands on %v", rns.PrettyHexRep(dest.Hash))
@@ -385,6 +397,15 @@ func (rt *runtimeT) handleCommandRequest(path string, data []byte, requestID []b
 	}
 	if len(tokens) == 0 {
 		return result
+	}
+
+	// A command with a matching <cmd>.wasm plugin runs in the sandboxed wasm
+	// runtime instead of the raw-exec path below (wago-analysis.md §10 Step
+	// 3.1).
+	if host := rt.commands.forCommand(tokens[0]); host != nil {
+		return execWasmCommand(host, cmdStr, stdinBytes, linkID, remoteIdentity, requestedAt, timeout, stdoutLimit, func(format string, args ...any) {
+			logger.Info("plugins: "+format, args...)
+		})
 	}
 
 	ctx := context.Background()

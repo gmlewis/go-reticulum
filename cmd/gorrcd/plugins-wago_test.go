@@ -157,8 +157,8 @@ func TestPluginHostWagoLogImport(t *testing.T) {
 }
 
 // TestPluginHostWagoDenyByDefault verifies that a module importing a
-// capability the host does not wire (rns.kv_get in Milestone 1) fails to
-// instantiate: the deny-by-default import surface stays closed.
+// capability the host does not wire (rns.now) fails to instantiate: the
+// deny-by-default import surface stays closed.
 func TestPluginHostWagoDenyByDefault(t *testing.T) {
 	t.Parallel()
 
@@ -168,8 +168,8 @@ func TestPluginHostWagoDenyByDefault(t *testing.T) {
 	if err == nil {
 		t.Fatal("LoadPlugin of an unwired-import module succeeded, want an error")
 	}
-	if !strings.Contains(err.Error(), "kv_get") {
-		t.Errorf("LoadPlugin error = %v, want it to name the denied import kv_get", err)
+	if !strings.Contains(err.Error(), "now") {
+		t.Errorf("LoadPlugin error = %v, want it to name the denied import now", err)
 	}
 	if h.Active() {
 		t.Error("host reports Active after a failed load, want inactive")

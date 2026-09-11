@@ -118,18 +118,19 @@ var MinWasmLogPlugin = []byte{
 	0x0b, 0x09, 0x01, 0x00, 0x41, 0xC0, 0x00, 0x0b, 0x02, 'h', 'i',
 }
 
-// MinWasmDeniedPlugin imports rns.kv_get, a capability the host does not
-// wire: instantiation must fail closed (deny by default).
+// MinWasmDeniedPlugin imports rns.now, a capability the host does not wire
+// (Milestone 3 wires only rns.log and the kv store): instantiation must fail
+// closed (deny by default).
 var MinWasmDeniedPlugin = []byte{
 	0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
 	// Type section: 0: (i32, i32) -> (), 1: () -> ()
 	0x01, 0x09, 0x02,
 	0x60, 0x02, 0x7f, 0x7f, 0x00,
 	0x60, 0x00, 0x00,
-	// Import section: "rns"."kv_get" -> type 0
-	0x02, 0x0e, 0x01,
+	// Import section: "rns"."now" -> type 0 (not provided by the host)
+	0x02, 0x0b, 0x01,
 	0x03, 'r', 'n', 's',
-	0x06, 'k', 'v', '_', 'g', 'e', 't',
+	0x03, 'n', 'o', 'w',
 	0x00, 0x00,
 	// Function section: func 1 uses type 1
 	0x03, 0x02, 0x01, 0x01,
@@ -141,4 +142,65 @@ var MinWasmDeniedPlugin = []byte{
 	0x0a, 0x0b, 0x01, 0x09, 0x00, 0x41, 0xC0, 0x00, 0x41, 0x02, 0x10, 0x00, 0x0b,
 	// Data section: "hi" at offset 64
 	0x0b, 0x09, 0x01, 0x00, 0x41, 0xC0, 0x00, 0x0b, 0x02, 'h', 'i',
+}
+
+// MinWasmKVPlugin imports rns.kv_set and rns.kv_get (wired by the host) and
+// exports wagoplugin_alloc and handle_command: handle_command stores "v"
+// under "k" through kv_set, reads it back through kv_get into the guest, and
+// returns (out_ptr=128, n) — so HandleCommand's response bytes are the value
+// the host actually persisted:
+//
+//	(module (import "rns" "kv_set" (func (param i32 i32 i32 i32) (result i32)))
+//	        (import "rns" "kv_get" (func (param i32 i32 i32 i32) (result i32)))
+//	        (func $alloc (param i32) (result i32) i32.const 1024)
+//	        (func $store_and_load (local i32)
+//	          i32.const 64 i32.const 1 i32.const 96 i32.const 1 call 0 drop
+//	          i32.const 64 i32.const 1 i32.const 128 i32.const 32 call 1
+//	          local.set 0
+//	          i32.const 128
+//	          local.get 0)
+//	        (func (export "handle_command") (param i32 i32) (result i32 i32) call 3)
+//	        (memory 1 1)
+//	        (data (i32.const 64) "k") (data (i32.const 96) "v")).
+var MinWasmKVPlugin = []byte{
+	0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+	// Type section: 0: (i32,i32,i32,i32)->(i32), 1: ()->(i32,i32), 2: (i32,i32)->(i32,i32), 3: (i32)->(i32)
+	0x01, 0x1a, 0x04,
+	0x60, 0x04, 0x7f, 0x7f, 0x7f, 0x7f, 0x01, 0x7f,
+	0x60, 0x00, 0x02, 0x7f, 0x7f,
+	0x60, 0x02, 0x7f, 0x7f, 0x02, 0x7f, 0x7f,
+	0x60, 0x01, 0x7f, 0x01, 0x7f,
+	// Import section: "rns"."kv_set" -> type 0, "rns"."kv_get" -> type 0
+	0x02, 0x1b, 0x02,
+	0x03, 'r', 'n', 's',
+	0x06, 'k', 'v', '_', 's', 'e', 't',
+	0x00, 0x00,
+	0x03, 'r', 'n', 's',
+	0x06, 'k', 'v', '_', 'g', 'e', 't',
+	0x00, 0x00,
+	// Function section: local funcs [3 (alloc), 1 (store_and_load), 2 (handle_command)]
+	0x03, 0x04, 0x03, 0x03, 0x01, 0x02,
+	// Memory section: 1 page, max 1 page
+	0x05, 0x04, 0x01, 0x01, 0x01, 0x01,
+	// Export section (size 0x25 = 1 + 19 + 17)
+	0x07, 0x25, 0x02,
+	0x10, 'w', 'a', 'g', 'o', 'p', 'l', 'u', 'g', 'i', 'n', '_', 'a', 'l', 'l', 'o', 'c', 0x00, 0x02,
+	0x0e, 'h', 'a', 'n', 'd', 'l', 'e', '_', 'c', 'o', 'm', 'm', 'a', 'n', 'd', 0x00, 0x04,
+	// Code section (size 0x2f = 1 + 6 + 35 + 5)
+	0x0a, 0x31, 0x03,
+	// func 2 (alloc): returns 1024 (body: 00 41 80 08 0b)
+	0x05, 0x00, 0x41, 0x80, 0x08, 0x0b,
+	// func 3 (store_and_load): locals 1×i32; kv_set, kv_get, return (128, n)
+	// (64 is i32.const 0xC0 0x00 in SLEB128 — a lone 0x40 decodes as -64)
+	0x24, 0x01, 0x01, 0x7f,
+	0x41, 0xC0, 0x00, 0x41, 0x01, 0x41, 0xE0, 0x00, 0x41, 0x01, 0x10, 0x00, 0x1A,
+	0x41, 0xC0, 0x00, 0x41, 0x01, 0x41, 0x80, 0x01, 0x41, 0x20, 0x10, 0x01,
+	0x21, 0x00,
+	0x41, 0x80, 0x01, 0x20, 0x00, 0x0B,
+	// func 4 (handle_command): delegates to func 3
+	0x04, 0x00, 0x10, 0x03, 0x0B,
+	// Data section: "k" at offset 64, "v" at offset 96
+	0x0b, 0x0f, 0x02,
+	0x00, 0x41, 0xC0, 0x00, 0x0b, 0x01, 'k',
+	0x00, 0x41, 0xE0, 0x00, 0x0b, 0x01, 'v',
 }
