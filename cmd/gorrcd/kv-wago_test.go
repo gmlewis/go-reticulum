@@ -5,10 +5,9 @@
 
 //go:build wago && (linux || darwin || windows) && (amd64 || arm64)
 
-// This file verifies the per-plugin KV scratch store wiring (wago-analysis.md
-// §8.4): each loaded plugin gets a store scoped by its file name under
-// <pluginsDir>/data, and the rns.kv_set / rns.kv_get host imports round-trip
-// values through it.
+// This file verifies the per-plugin KV scratch store wiring: each loaded
+// plugin gets a store scoped by its file name under <pluginsDir>/data, and
+// the rns.kv_set / rns.kv_get host imports round-trip values through it.
 
 package main
 

@@ -119,8 +119,8 @@ var MinWasmLogPlugin = []byte{
 }
 
 // MinWasmDeniedPlugin imports rns.now, a capability the host does not wire
-// (Milestone 3 wires only rns.log and the kv store): instantiation must fail
-// closed (deny by default).
+// (only rns.log and the kv store are wired): instantiation must fail closed
+// (deny by default).
 var MinWasmDeniedPlugin = []byte{
 	0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
 	// Type section: 0: (i32, i32) -> (), 1: () -> ()

@@ -176,7 +176,7 @@ func TestPluginHostWagoDenyByDefault(t *testing.T) {
 	}
 }
 
-// TestPluginHostWagoEndToEndHook runs the full Milestone 1 path: an unknown
+// TestPluginHostWagoEndToEndHook runs the full command-hook path: an unknown
 // slash command flows through pluginCommandHook into the sandboxed echo
 // plugin, and the response is emitted to the requesting link as a NOTICE.
 func TestPluginHostWagoEndToEndHook(t *testing.T) {

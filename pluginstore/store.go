@@ -5,7 +5,7 @@
 
 // Package pluginstore provides the per-plugin scratch key/value store that
 // backs the sandboxed wasm plugin hosts' rns.kv_get and rns.kv_set host
-// imports (wago-analysis.md §8.4).
+// imports.
 //
 // Every plugin receives its own directory scoped under the host's plugin
 // data root — <root>/<plugin>/ — where <plugin> is the sanitized plugin name

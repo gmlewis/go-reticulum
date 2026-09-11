@@ -77,7 +77,7 @@ func (h *FilterHost) LoadPlugin(path string) error {
 	}
 
 	// Each filter gets its own KV scratch store scoped by the plugin file's
-	// base name, backed by <pluginsDir>/data (wago-analysis.md §8.4).
+	// base name, backed by <pluginsDir>/data.
 	pluginName := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	if h.store, err = pluginstore.New(filepath.Join(filepath.Dir(path), "data"), pluginName); err != nil {
 		return fmt.Errorf("filter store %v: %w", pluginName, err)

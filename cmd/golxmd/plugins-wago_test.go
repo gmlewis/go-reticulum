@@ -116,10 +116,9 @@ func TestFilterHostSpinTimeout(t *testing.T) {
 	}
 }
 
-// TestFilteredDeliveryDropAndPass runs the full Milestone 2 delivery-filter
-// path: a drop plugin suppresses the base delivery handler entirely, an
-// accept plugin lets it through with the original message, and a plugin
-// error fails open.
+// TestFilteredDeliveryDropAndPass runs the full delivery-filter path: a drop
+// plugin suppresses the base delivery handler entirely, an accept plugin
+// lets it through with the original message, and a plugin error fails open.
 func TestFilteredDeliveryDropAndPass(t *testing.T) {
 	t.Parallel()
 

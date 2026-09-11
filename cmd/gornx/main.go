@@ -400,8 +400,7 @@ func (rt *runtimeT) handleCommandRequest(path string, data []byte, requestID []b
 	}
 
 	// A command with a matching <cmd>.wasm plugin runs in the sandboxed wasm
-	// runtime instead of the raw-exec path below (wago-analysis.md §10 Step
-	// 3.1).
+	// runtime instead of the raw-exec path below.
 	if host := rt.commands.forCommand(tokens[0]); host != nil {
 		return execWasmCommand(host, cmdStr, stdinBytes, linkID, remoteIdentity, requestedAt, timeout, stdoutLimit, func(format string, args ...any) {
 			logger.Info("plugins: "+format, args...)

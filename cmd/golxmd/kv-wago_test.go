@@ -6,8 +6,8 @@
 //go:build wago && (linux || darwin || windows) && (amd64 || arm64)
 
 // This file verifies the per-plugin KV scratch store wiring for the LXMF
-// filter host (wago-analysis.md §8.4): each loaded filter gets a store
-// scoped by its file name under <pluginsDir>/data.
+// filter host: each loaded filter gets a store scoped by its file name under
+// <pluginsDir>/data.
 
 package main
 
