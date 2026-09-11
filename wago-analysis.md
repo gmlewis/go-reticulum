@@ -1,7 +1,11 @@
 # Wago-powered WebAssembly plugins for go-reticulum / go-nomadnet
 
-**Analysis only — no code has been written or merged. Preserved 2026-09-09 for
-future revisit.**
+**Analysis only — no code has been written or merged.**
+
+- Original feasibility pass preserved **2026-09-09** (sections 1–9).
+- Independent re-review completed **2026-09-11** (section 10): architecture
+  recommendation still stands; several facts were corrected and several new
+  integration opportunities were found. Read §10 before acting on §1–9.
 
 This document records a feasibility analysis of supporting sandboxed
 WebAssembly plugins in `go-reticulum` and `go-nomadnet`, using
@@ -14,6 +18,11 @@ assumed; other facts carry file:line citations from the analyzed repos.
 The conclusion was: **feasible and a natural fit — but not pursued right now.**
 This document exists so the design work does not have to be redone.
 
+The 2026-09-11 re-review **agrees with that conclusion and with the core
+architecture** (subprocess `gowagod` for go-reticulum; optional in-process
+`-tags wago` for go-nomadnet). It does **not** overturn the design — it
+tightens the facts and widens the opportunity set.
+
 ---
 
 ## TL;DR
@@ -23,17 +32,20 @@ This document exists so the design work does not have to be redone.
   resource policies, context-deadline preemption, and an explicit
   trusted/untrusted artifact split in its API.
 - The interesting constraint is **not wago** — it is (a) the hard
-  no-external-dependencies rule on go-reticulum's root module, and (b) the
-  device build matrix (linux/arm7, linux/riscv64, 386), where **no wasm JIT can
-  exist at all** (wago fails to cross-compile there — verified).
+  no-external-dependencies rule on go-reticulum's root module, and (b) parts
+  of the device build matrix (linux/arm7, linux/riscv64, 386, freebsd),
+  where **no wasm JIT can exist** (wago fails to cross-compile there —
+  verified). Note (§10.2): **linux/arm64 pocket_terminal (RPi Zero 2W) *can*
+  host wago**; only the arm7/riscv64/ESP32-class artifacts are hard-out.
 - Both are solved cleanly with build tags + one nested module. Recommended:
   **subprocess `gowagod` helper daemon for go-reticulum** (root go.mod stays
   100% pristine — verified), and **optional in-process wago for go-nomadnet**
   behind a `wago` build tag (that repo already takes external deps, so it is
   rule-legal there).
-- `../asic-reticulum` (and pocket/embedded device) builds are unaffected by
-  construction: they never pass the tag, no wago code compiles into them, and
-  their go.mod/go.sum/binary size are untouched.
+- `../asic-reticulum`'s own compile/CI graph is unaffected by construction
+  (it compiles no Go). Sibling-repo **pocket binaries** stay unaffected only
+  as long as they never pass the `wago` tag; `pocket_terminal-linux-arm64`
+  could opt in later (§10.5).
 - The wasm plugin system would mirror the hook contract of the official Python
   ecosystem (Sideband's Command/Service/Telemetry plugins, NomadNet's
   executable pages) while **upgrading** the trust model from raw `exec()` of
@@ -46,12 +58,16 @@ This document exists so the design work does not have to be redone.
 wago (`github.com/wago-org/wago`, local checkout
 `/Users/glenn/src/github.com/wago-org/wago`) is a **pure-Go, no-cgo
 WebAssembly JIT engine** (single-pass native codegen, Valent-Block/WARP
-derived): version 0.1.0, beta, Apache-2.0.
+derived): Apache-2.0. At the 2026-09-09 pass the checkout was early 0.1.0
+beta; at the 2026-09-11 re-review it is `v0.1.0-beta.7-7-g963b74d9`, with
+`CHANGELOG.md` documenting `v0.1.0-beta.8` (2026-09-10). **Pin a tagged
+release**, not `main`.
 
-Conformance pedigree (from its own docs): MVP spec suite fully passing
-(16,592 assertions); spec v2: 1,600 modules / 48,248 assertions, zero skips;
-spec v3 clean on linux/amd64, linux/arm64, darwin/arm64; 96,972 checks pass /
-0 fail / 22 skip, 86.1% coverage (`VERIFICATION.md`).
+Conformance pedigree (from its own docs; numbers refreshed in §10): MVP spec
+suite fully passing; Core 3.0 suite now cited as 2,226 modules / 58,038
+assertions with zero failures/skips (`FEATURES.md`), plus Component Model
+Preview 2 as an Authority-gated external plugin (`wago-org/component-model`)
+and WASI kept out of core (`wago-org/wasi`).
 
 ### 1.1 Embedding API (verified by PoC)
 
@@ -129,7 +145,7 @@ out, err := inst.Call(ctx, "answer")          // typed: → 42, i32
 
 | Item | Result |
 |---|---|
-| Cross-compile matrix | linux/arm64 ✅, linux/amd64 ✅, windows/arm64 ✅; **linux/arm (GOARM=7) ❌, linux/riscv64 ❌, linux/386 ❌** |
+| Cross-compile matrix | linux/arm64 ✅, linux/amd64 ✅, darwin/amd64 ✅, darwin/arm64 ✅, windows/amd64 ✅, windows/arm64 ✅; **linux/arm (GOARM=7) ❌, linux/riscv64 ❌, linux/386 ❌, freebsd/* ❌** (re-verified 2026-09-11; see §10.2 for the pocket_terminal arm64 nuance) |
 | Supported targets (docs) | linux/darwin/windows × amd64/arm64 only; guard pages (opt-in `-tags wago_guardpage`) linux/amd64, linux/arm64, darwin/arm64; default = portable explicit bounds checks |
 | Binary size | plain Go binary 1.8 MB → **10.2 MB with wago linked** (+8.4 MB) |
 | Library deps | `src/` (the embeddable runtime) is **pure stdlib**; the single `golang.org/x/sys` require is used only by its CLI — embedding links zero x/sys code |
@@ -520,3 +536,245 @@ section — the exact primitive the `rns.*` host-import ABI would use.
 - NomadNet executable pages: `nomadnet/Node.py:117-158`.
 - Upstream Reticulum (checked at 1.5.x): no plugin mechanism in RNS/LXMF
   proper; Sideband is the plugin system.
+
+---
+
+## 10. Re-review findings (2026-09-11)
+
+Independent re-analysis of the local wago checkout (`v0.1.0-beta.7-7-g963b74d9`),
+`go-reticulum`, `go-nomadnet`, and `asic-reticulum`, against sections 1–9.
+
+### 10.1 Verdict on the original analysis
+
+**Agree.** The core conclusions still hold and should be followed if/when this
+is revisited:
+
+| Claim | Verdict |
+|---|---|
+| wago is a pure-Go, no-cgo, embeddable wasm JIT with a real sandbox | **Confirmed** (`src/wago/policy.go:8-32`, `runtime.go` deny-by-default imports, `Load` vs `LoadTrustedArtifact`) |
+| go-reticulum root `go.mod` must stay stdlib-only | **Confirmed** (`AGENTS.md:54,75`; `go.mod` still has zero `require`s) |
+| go-nomadnet may take external deps | **Confirmed** (`go.mod` already requires tcell/tview forks, `go-reticulum v0.100.0`, etc.; `go.work` = `.` + `../go-reticulum`) |
+| Recommended shape: subprocess `gowagod` for go-reticulum; optional in-process `-tags wago` for go-nomadnet | **Confirmed** — still the right split |
+| Device/ASIC builds unaffected by construction | **Confirmed for the compile graph**, with one important nuance (§10.2) |
+| v1 should hook event surfaces, not the packet/interface path | **Confirmed** — still the right scope cut |
+| Highest-value first target: rrc chat slash-commands | **Still valid**, but see §10.4 — go-nomadnet executable pages are now the *parity-motivated* #1 |
+
+### 10.2 Corrections to sections 1 and 3
+
+1. **Pocket matrix is not uniformly hostile to wago.** The release matrix
+   (`cmd/publish-github-release-artifacts/main.go:98-132`) builds
+   `pocket_terminal` / `pocket_hub` / `pocket_communicator` for
+   **linux/arm64**, linux/arm7, and linux/riscv64 (plus linux/amd64 for
+   pocket_hub). Project 1 in `asic-reticulum/Hardware-Projects-Guide.md` is a
+   **Raspberry Pi Zero 2W = linux/arm64** — a wago-capable GOARCH. Only
+   arm7 (some pocket builds), riscv64 (ESP32-C5-class), and 386 are hard-out.
+   Implication: **`gowagod` / a `wago`-tagged `gonomadnet` can legitimately
+   ship for `pocket_terminal-linux-arm64`**, while remaining stubbed for
+   arm7/riscv64 artifacts. The original text lumped all pocket tags together.
+2. **Desktop matrix also includes `freebsd/amd64`** (`main.go:80`), which wago
+   does not support. Tagged builds must degrade gracefully there too — the
+   existing `//go:build wago && … && (amd64 \|\| arm64)` constraint already
+   handles this if freebsd is excluded (wago docs list only
+   linux/darwin/windows). Prefer an explicit
+   `(linux \|\| darwin || windows)` guard so freebsd builds never fail.
+3. **Version / conformance numbers are stale.** Local checkout is
+   `v0.1.0-beta.7-7-g963b74d9`; `CHANGELOG.md` has `v0.1.0-beta.8`
+   (2026-09-10) with callback re-entry, resource policies, and Core 3/GC work.
+   `FEATURES.md` now cites Core 3: **2,226 modules / 58,038 assertions, zero
+   fail/skip**. The 2026-09-09 numbers (16,592 MVP / 48,248 v2 / 96,972
+   checks) remain historical, not current.
+4. **wago's own plugin system is Go-native host composition, not third-party
+   guest wasm.** `plugin/contracts.go` + examples 08–13 implement typed
+   Contracts, Authority grants, Lifecycle, and lease-based `Ref[T].With`.
+   That is for *trusted host-side Go plugins* composing capabilities inside a
+   wago Runtime. It does **not** replace the untrusted-guest ABI in §6, and
+   the 2026-09-09 decision to treat wago as a pure engine for untrusted
+   `.wasm` is still correct. It *can* be reused inside `gowagost`/`gowagod`
+   to compose the trusted `rns.*` host-import implementations.
+5. **Component Model Preview 2 and WASI are external, Authority-gated
+   plugins** (`wago-org/component-model`, `wago-org/wasi`; `ROADMAP.md:73-78`).
+   Still correct to install neither in v1. Component Model is the obvious
+   future richer ABI if JSON-buffer hooks prove limiting — deferred.
+6. **`Policy.MaxInvokeDuration` remains deprecated** (`policy.go:28-31`
+   returns `ErrUnsupported`). Deadline-only CPU control is unchanged. Beta.8
+   adds callback re-entry (relevant if a host import must call back into the
+   guest); keep host imports non-blocking and ctx-checked.
+7. **Standalone native executables** (`wago compile` → tiny native binary;
+   README "Standalone executables") is an additional distribution path the
+   original analysis did not name: a trusted host could AOT-compile a pinned
+   `.wasm` to a native tool for `gornsh`/`gornx` without keeping the JIT
+   resident. Useful later; not required for `gowagod`.
+8. **Managed instances / prepared calls** (examples 06, 07, 17) are the right
+   building blocks for instance-per-request page serving — worth citing in
+   the runtime envelope of §6.
+
+### 10.3 go-reticulum: confirmed surfaces + new ones
+
+Confirmed still present (file:line re-checked 2026-09-11):
+
+- `rns.Transport.RegisterAnnounceHandler` — `rns/transport.go:110-111,1365`
+- `lxmf.Router.RegisterDeliveryCallback` — `lxmf/router.go:2100-2101`
+- `Destination.RegisterRequestHandler` — `rns/destination.go:493-503`
+- `rrc.CommandHandlerHooks` + closed slash-command switch —
+  `rrc/commands.go:19-58,74-109`
+- `cmd/gornsh` executes whatever program the initiator requests
+- `cmd/gornpkg` still a stub (init Reticulum and exit) — still the future
+  distribution channel
+- README/TODO policy still bans external Python interface plugins
+  (`README.md:44-47`; `TODO.md:433-437`)
+
+**New hook surfaces the original analysis underweighted:**
+
+| Surface | Why it matters for wasm plugins |
+|---|---|
+| `cmd/gornx` — rnx-compatible remote command execution (`cmd/gornx/main.go`, `RegisterRequestHandler("command", …)` at `:343`) | A sandboxed wasm tool host is a *better* fit than gornsh for untrusted remote invocation: the listener already does identity allow-lists; wasm replaces "run a shell command" with "run a pinned plugin". Elevate next to use-case #6. |
+| `cmd/gorncp` `fetch_file` handler (`cmd/gorncp/listen.go:244`) | Optional policy hooks (quota, path rewrite, audit) — lower priority. |
+| `cmd/gorngit` request handlers + micron page tree (`cmd/gorngit/server.go:302-313`, `pages-handlers2.go:1274-1289`) | Dynamic wasm-rendered pages or release-notes generators on top of an already-large page surface. Deferred. |
+| Blackhole updater `/list` handler (`rns/transport.go:1081`) | Not a plugin target; listed only so it is not mistaken for an extension point. |
+
+No other callback/hook registries were found. Zero `.go` files still contain
+"plugin"/"wasm"/"wago" (other than this document). The subprocess + nested
+module recommendation is unchanged.
+
+### 10.4 go-nomadnet: confirmed surfaces, gaps, and new opportunities
+
+**Confirmed exactly as documented:**
+
+- Delivery funnel order is still
+  `Ingest → notify → print → DeliveryCallback → UIChangeCallback`
+  (`nomadnet/app/app.go:1084-1109`). A drop-filter still must run *before*
+  `Ingest`, not on `DeliveryCallback`.
+- External deps already allowed; a `wago` build tag fits existing precedent
+  (`integration`, `no_tui`, `embedded`, `pocket_*`).
+
+**Critical gap the original analysis assumed away:** the Go port has **no
+executable-page runtime at all**. `node.ServePage` is a bare `os.ReadFile`
+(`nomadnet/node/node.go:582-590`); `makePageHandler` (`node.go:251-269`)
+receives request `data` + `remoteIdentity` and **discards the data**. The
+browser even documents the gap:
+`nomadnet/browser/browser.go:719-723` — *"Executable pages … are NOT executed
+here: the Go port does not support executable pages at all."* Client-side
+`request_data` (`var_*`) *is* parsed and sent (`browser.go:216`,
+`partials.go:103`).
+
+This **raises use-case #2 (wasm pages) to co-#1 with rrc slash-commands**:
+wasm would not merely replace Python `chmod +x` subprocesses — it would close
+a live NomadNet parity hole, with a better trust model, and the request
+context plumbing already exists on the client.
+
+**Structural constraints for any plugin host:**
+
+- `DeliveryCallback` / `UIChangeCallback` are **single func fields**, not
+  lists (`app.go:197-199`). A plugin host needs multi-subscriber semantics
+  (chain, or a fan-out field).
+- TUI slash commands are a closed switch (`tui/room-widget.go:534-664`);
+  unknown commands hit a single default branch at `:661` — the insertion
+  point for plugin-provided `/cmd`s. Server-side RRC commands remain the
+  better first target (gorrcd).
+- The TUI menu is a **static 8-item slice pinned by parity tests**
+  (`tui/theme.go:196-205`, `tui/menu-structure_test.go`). Do **not** add a
+  Plugins menu item in a parity-sensitive build; inject into existing
+  displays or gate behind a non-parity build tag/config.
+- Micron renderer is mature (`nomadnet/micron/` Parse/RenderToTView) — wasm
+  guests returning micron markup plug straight in.
+
+**New opportunities beyond the original list (all go-nomadnet-local):**
+
+1. **Outbound send hook** — `nomadnet/conversation/send.go:119` wires
+   `MessageNotification`; plugins could stamp, log, or encrypt-to-self
+   outbound traffic (the original list was inbound-only).
+2. **Print pipeline intercept** — `nomadnet/app/printing.go:50-66` already
+   shells out to a config `PrintCommand`; a wasm formatter beside
+   `ShouldPrint`/`PrintMessage` is a second natural seam and a safer
+   alternative to arbitrary shell.
+3. **Announce enrichment** — four closed announce handlers
+   (`app.go:1112-1200`: LXMF/node/PN/RRC) could feed a wasm observer for
+   directory enrichment (Sideband-like).
+4. **Partials composition** — `browser/partials.go` `FetchPartial` is a clean
+   content-composition point for plugin-authored partials.
+5. **Node event hooks** — `OnPeerConnected/OnPageServed/OnFileServed/
+   OnAnnounced` (`node.go:94-97`) are already one-way App←Node seams; a
+   telemetry-style plugin can hang off them without touching RNS.
+
+**Not a goal today:** go-nomadnet has **zero** mentions of plugin/wasm/wago/
+Sideband/telemetry in sources or TODO. Sideband plugin parity is not part of
+the current Python-parity mission. This document remains forward-looking.
+
+### 10.5 asic-reticulum: intersection is real only for pocket_terminal arm64
+
+asic-reticulum is **not a Go project**: SpinalHDL (Scala) RTL for a
+fixed-function Reticulum crypto coprocessor (SHA-256 IFAC stamper, X25519
+ladder, AES-128-CBC + HMAC-SHA256 token engine, QSPI slave) plus ESP32-C5
+**C** firmware (`fw/esp32c5/`), Python HIL (`tools/hil/`), and ScalaTest
+parity against checked-in golden vectors. No `go.mod`, no Go in CI.
+
+| Layer | wago intersection |
+|---|---|
+| ASIC / FPGA fabric | **None** |
+| ESP32-C5 firmware (C, RISC-V MCU) | **None** — wago cannot target it |
+| HIL (`tools/hil/*.py`) | **None** — Python runner, not a wago host |
+| SpinalSim / golden vectors | **None** on the asic side; a future go-reticulum `gen-golden-vectors` wasm plugin is a *go-reticulum* tooling idea only |
+| Pocket Linux Terminal (RPi Zero 2W, `linux/arm64`) | **Yes, optionally** — this is a normal wago GOOS/GOARCH. `gowagod` or a `-tags wago` gonomadnet/gorrcd is architecturally allowed here |
+| Pocket Communicator / Hub on arm7 or riscv64 | **None** (same as §3.2) |
+
+The 2026-09-09 claim "asic-reticulum builds are unaffected by construction"
+remains **true for asic-reticulum's own compile/CI graph** (it compiles no
+Go). It was **over-broad as an ecosystem claim**: `Hardware-Projects-Guide.md`
+documents users `curl`ing `gonomadnet-pocket_terminal-linux-arm64` and
+`gorrcd-pocket_*` artifacts from the sibling Go repos. If those binaries ever
+gain optional wago support, the *guide* may need a one-line note; asic-reticulum
+itself still needs no change. (Also: go-nomadnet currently has **no** publish
+workflow — the guide's gonomadnet URLs are ahead of the automation.)
+
+### 10.6 Updated recommended use-case ranking
+
+1. **go-nomadnet wasm executable pages** — closes a documented parity gap;
+   request context already parsed client-side; highest user-visible value.
+2. **rrc chat slash-command plugins** (gorrcd) — as before; lowest risk,
+   exercises the full `gowagod` stack.
+3. **LXMF inbound filters/notifiers** (gonomadnet/golxmd) — still novel vs
+   Sideband; must insert before `Ingest`; requires multi-subscriber delivery
+   hooks.
+4. **Announce observers / directory enrichment.**
+5. **gornx sandboxed tools** — replace or wrap "execute a shell command"
+   with pinned wasm tools on an existing identity-allow-listed listener.
+   (New; elevates former #6 gornsh.)
+6. **Telemetry enrichers** (Sideband TelemetryPlugin parity) — hang off node
+   event hooks and/or a periodic tick.
+7. **Outbound send + print intercepts** (new, go-nomadnet-local).
+8. **gornsh wasm tools** — as before; `wago compile` standalone exes are an
+   optional AOT variant.
+9. **Signed plugin distribution** via rsm/rsg/`gornpkg`/`gorngit` — still the
+   endgame; `gornpkg` remains a stub.
+10. **Explicitly deferred:** interface/transport plugins on the packet path;
+    Component Model guests; WASI; asic-reticulum HIL; freebsd/arm7/riscv64
+    hosts.
+
+### 10.7 What would change the recommendation
+
+Re-evaluate (do not just execute §4/§9) if any of these become true:
+
+- wago **drops** linux/arm64 or changes license.
+- wago's artifact format or embed API breaks in a way that pinning cannot
+  absorb (beta churn is expected — pin tags).
+- A fuel-metering primitive appears that is cheaper/safer than context
+  deadlines for our host-import style.
+- go-reticulum's no-external-deps rule is relaxed — then variant B (in-process
+  behind a tag) becomes legal for desktop `gornsd`/`gorrcd` too, and the
+  subprocess daemon is optional.
+- go-nomadnet's mission starts requiring Sideband plugin parity.
+
+### 10.8 Suggested M1 delta vs section 9
+
+Section 9's M1 is still correct, with three amendments:
+
+1. Build the guest-facing page hook **first inside go-nomadnet's node**
+   (make `makePageHandler` pass request context; wasm behind `-tags wago`),
+   not only rrc commands — it is the parity-driven win.
+2. Wire `gowagod` as the go-reticulum-side host and point **both** gorrcd
+   slash-commands and go-nomadnet pages at the same JSON-RPC ABI, so one
+   daemon serves the fleet on linux/arm64 pocket_terminals and desktops.
+3. Keep `//go:build wago && (linux || darwin || windows) && (amd64 || arm64)`
+   and verify **three** matrix rows explicitly: linux/amd64 (host),
+   linux/arm64 (pocket_terminal), freebsd/amd64 (must compile *without* wago,
+   plugins stubbed).
