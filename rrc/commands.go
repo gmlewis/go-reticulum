@@ -851,13 +851,31 @@ func (c *CommandHandler) handleReload(link *rns.Link, peerHash []byte, outgoing 
 
 // handleStats mirrors the Python /stats command: the server-op gate emits
 // a room-nil `not authorized` ERROR, otherwise the formatted stats body is
-// emitted as a room-nil NOTICE.
+// emitted as room-nil NOTICE chunks. FormatStats is ~600+ bytes joined with
+// no separators; a single EmitNotice envelope exceeds the RNS MTU (~431
+// MDU) and is silently dropped, so the reply goes through
+// QueueNoticeChunks (the same path large MOTD text uses).
 func (c *CommandHandler) handleStats(link *rns.Link, peerHash []byte, outgoing *OutgoingList) {
 	if !c.isServerOp(peerHash) {
 		c.emitNotAuthorized(outgoing, link, nil)
 		return
 	}
-	c.hooks.MessageHelper().EmitNotice(outgoing, link, nil, c.hooks.FormatStats())
+	mh := c.hooks.MessageHelper()
+	body := c.hooks.FormatStats()
+	if outgoing != nil {
+		mh.QueueNoticeChunks(outgoing, link, nil, body)
+		return
+	}
+	// Immediate path (outgoing == nil): chunk into a local list and send
+	// each payload, mirroring sendTextSmart's nil-outgoing NOTICE branch.
+	var chunks OutgoingList
+	mh.QueueNoticeChunks(&chunks, link, nil, body)
+	for _, item := range chunks.Queue {
+		mh.hooks.StatsInc("bytes_out", len(item.Payload))
+		if err := mh.hooks.SendPacket(item.Link, item.Payload); err != nil && mh.hooks.SendFailureLog != nil {
+			mh.hooks.SendFailureLog(err, mh.hooks.FmtLinkID(item.Link), len(item.Payload))
+		}
+	}
 }
 
 // handleList mirrors the Python /list command: registered public rooms
