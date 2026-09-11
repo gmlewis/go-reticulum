@@ -46,14 +46,54 @@ func TestParseFlagsSubcommandDispatch(t *testing.T) {
 		t.Errorf("printIdentity = false, want true")
 	}
 
-	// Unknown first token is treated as a node flag position, not a subcommand.
-	// Python falls back to "node" whenever argv[1] is not a known subcommand.
+	// Flag-first invocations that name no subcommand still default to node.
 	opts, err = parseFlags([]string{"--version"}, io.Discard)
 	if err != nil {
 		t.Fatalf("parseFlags --version: %v", err)
 	}
 	if opts.subcommand != "node" {
 		t.Errorf("--version subcommand = %q, want node", opts.subcommand)
+	}
+}
+
+// TestParseFlagsRejectsSubcommandAfterFlags guards against flag-first
+// invocations silently dispatching to the default node subcommand (e.g.
+// "gorngit -q sync <repo>" starting a second node on the repositories
+// destination).
+func TestParseFlagsRejectsSubcommandAfterFlags(t *testing.T) {
+	t.Parallel()
+
+	for _, args := range [][]string{
+		{"-q", "sync", "rns://00112233445566778899aabbccddeeff/g/r"},
+		{"-v", "-v", "sync", "rns://00112233445566778899aabbccddeeff/g/r"},
+		{"--config", "/c", "sync", "rns://00112233445566778899aabbccddeeff/g/r"},
+		{"--rnsconfig", "/r", "node"},
+	} {
+		if _, err := parseFlags(args, io.Discard); err == nil {
+			t.Errorf("parseFlags(%q) = nil error, want subcommand-after-flags error", args)
+		}
+	}
+
+	// Typo'd bare subcommands are rejected outright, not silently treated as
+	// node positionals.
+	if _, err := parseFlags([]string{"snyc", "x"}, io.Discard); err == nil {
+		t.Error("parseFlags([snyc x]) = nil error, want unknown-subcommand error")
+	}
+
+	// Flag values equal to subcommand names are not mistaken for subcommands,
+	// and flag-first invocations without a subcommand still parse as node.
+	for _, args := range [][]string{
+		{"--config", "node", "-p"},
+		{"-q"},
+		{"--rnsconfig", "sync", "--version"},
+	} {
+		opts, err := parseFlags(args, io.Discard)
+		if err != nil {
+			t.Fatalf("parseFlags(%q): %v", args, err)
+		}
+		if opts.subcommand != subNode {
+			t.Errorf("parseFlags(%q): subcommand = %q, want node", args, opts.subcommand)
+		}
 	}
 }
 

@@ -81,6 +81,10 @@ type options struct {
 // dispatch and per-subcommand argparse setup. The first argument is treated as
 // the subcommand when it matches a known name; otherwise the subcommand
 // defaults to "node" and the full argument list is parsed as node flags.
+// Flag-first invocations are guarded: a subcommand name appearing after flags
+// (e.g. "gorngit -q sync <repo>") would otherwise silently dispatch to node —
+// which starts a second node answering the repositories destination instead
+// of running the requested client.
 func parseFlags(args []string, usageOutput io.Writer) (options, error) {
 	var opts options
 	opts.subcommand = subNode
@@ -89,6 +93,10 @@ func parseFlags(args []string, usageOutput io.Writer) (options, error) {
 	if len(args) > 0 && subcommands[args[0]] {
 		opts.subcommand = subcommand(args[0])
 		rest = args[1:]
+	} else if len(args) > 0 {
+		if err := checkFlagFirstArgs(args); err != nil {
+			return options{}, err
+		}
 	}
 
 	fs := flag.NewFlagSet("gorngit", flag.ContinueOnError)
@@ -203,6 +211,46 @@ func parseFlags(args []string, usageOutput io.Writer) (options, error) {
 	}
 
 	return opts, nil
+}
+
+// valueFlags is the union of subcommand flags that consume a following value.
+// It is used by checkFlagFirstArgs so that flag values equal to a subcommand
+// name (e.g. `gorngit --config node`) are not mistaken for subcommands.
+// Ambiguity note: node's -i/-s are booleans while other subcommands use them
+// as value flags; a flag-first invocation like `gorngit -i sync <repo>` is
+// therefore still treated as `node -i` with an ignored positional, which is
+// the pre-existing (documented) node-flag fallback.
+var valueFlags = map[string]bool{
+	"config": true, "rnsconfig": true, "identity": true,
+	"signer": true, "name": true, "title": true, "id": true, "scope": true,
+	"i": true, "s": true, "n": true, "t": true, "d": true,
+}
+
+// flagName strips the leading dashes from a flag token.
+func flagName(token string) string {
+	return strings.TrimLeft(token, "-")
+}
+
+// checkFlagFirstArgs rejects flag-first invocations that would silently
+// dispatch to the default node subcommand: an unrecognized bare first token
+// (typo'd subcommand) and any bare subcommand name appearing after a
+// non-value flag. Flag-first invocations that name no subcommand (such as
+// `gorngit --version` or `gorngit -q`) still default to node.
+func checkFlagFirstArgs(args []string) error {
+	if !strings.HasPrefix(args[0], "-") {
+		return fmt.Errorf("unknown subcommand %q (run \"gorngit --help\" for usage)", args[0])
+	}
+	for i := 1; i < len(args); i++ {
+		token := args[i]
+		if valueFlags[flagName(args[i-1])] {
+			// This token is the value of the previous flag.
+			continue
+		}
+		if subcommands[token] {
+			return fmt.Errorf("subcommand %q must come before any flags (e.g. \"gorngit %s ...\")", token, token)
+		}
+	}
+	return nil
 }
 
 // countFlag is a flag.Value that increments a counter on each occurrence,
