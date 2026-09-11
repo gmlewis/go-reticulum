@@ -529,6 +529,54 @@ Some things the sandbox is designed to make safe and easy:
 - **go-nomadnet dynamic pages**: hit counters, guestbooks, form processors,
   live status dashboards (see the go-nomadnet README)
 
+### Security considerations
+
+Read this before installing plugins on an **internet-facing** node (for
+example one with a public TCP server interface):
+
+- **Plugin installation is operator-only.** There is no remote write path:
+  network peers cannot upload `.wasm` files, cannot write to plugin
+  directories, and cannot reach the KV store except through a plugin the
+  operator installed. The realistic plugin threat is a **supply-chain** one —
+  only install plugins you built or reviewed. A hostile plugin *inside* the
+  sandbox can still: burn its 2-second budget per invocation (CPU noise), emit
+  arbitrary text/markup to users, and store up to 10 MiB in its own scratch
+  store. It cannot open network connections, read files outside its store,
+  spawn processes, or survive its execution budget.
+- **The KV store is not a shared network resource.** It is scoped per plugin
+  (`<plugins-dir>/data/<plugin>/`, keys validated as safe filenames, 10 MiB
+  total quota, `0o700`/`0o600` permissions), and no host ever executes stored
+  bytes — they are data a plugin chose to keep. "Malware in the KV store" is
+  therefore only possible if you install a plugin that (a) persists
+  attacker-controlled input and (b) later serves it to other users; the
+  malicious behavior lives in the plugin, not the store. Cross-user exposure
+  then becomes a **stored content-injection** problem (see next point).
+- **Treat all plugin output as untrusted markup.** Plugin responses are
+  delivered to clients that render Micron/terminal formatting. A plugin that
+  echoes or re-renders user-controlled data (chat command arguments, announce
+  app_data, form fields) can be used to phish other users or inject links
+  inside their clients. Plugin authors must escape or strip user-controlled
+  data before returning it; operators should review what a plugin does with
+  remote input before exposing it.
+- **Announces are unauthenticated broadcasts.** On a public interface, any
+  peer can announce with arbitrary `app_data`, so gornsd observer plugins that
+  persist or re-display app_data handle attacker-controlled input. The
+  serialized JSON event neutralizes newline injection, but apply the same
+  untrusted-data rules as above.
+- **Bounded, but not rate-limited, execution.** Every execution is capped
+  (2 seconds, 16 MiB) yet a public node lets any reachable peer trigger runs —
+  each `.wasm` page request compiles a fresh instance. Mitigations: put a
+  `.allowed` file next to a plugin/page to restrict who may execute it (the
+  access check runs *before* the sandbox), keep public-node plugins trivial,
+  and consider firewall/rate-limiting at the interface level.
+- **`gornx` authentication is on by default** (allowed-identity lists) and
+  `--no-auth` turns it off — never combine `--no-auth` with a public
+  interface, since that lets anyone invoke commands.
+- **Known hardening edge**: `pluginstore` writes store files through plain
+  `os.WriteFile`, which follows symlinks. Only the local operator can plant a
+  symlink in a plugin's data directory, so this requires host access first —
+  but hardening with `O_NOFOLLOW` is a reasonable future improvement.
+
 ## Supported interface types and devices
 
 Reticulum implements a range of generalised interface types that covers most of

@@ -139,10 +139,20 @@ func validName(pluginName string) bool {
 }
 
 // validKey reports whether key is safe to use as a filename inside the
-// scoped store directory.
+// scoped store directory: no separators, traversal, NUL, or control
+// characters (which would make hostile filenames), and at most
+// maxKeyBytes long.
 func validKey(key string) bool {
 	if key == "" || key == "." || key == ".." || len(key) > maxKeyBytes {
 		return false
 	}
-	return !strings.ContainsAny(key, `/\`) && !strings.ContainsRune(key, 0)
+	if strings.ContainsAny(key, `/\`) || strings.ContainsRune(key, 0) {
+		return false
+	}
+	for _, r := range key {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	return true
 }
