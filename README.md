@@ -441,6 +441,94 @@ low-bandwidth links like LoRa or Packet Radio. For full-featured remote shells
 over Reticulum, also have a look at the [rnsh](https://github.com/acehoss/rnsh)
 program.
 
+## Wasm Plugin Sandbox
+
+Several Go tools in this repository can load third-party **wasm plugins** that
+extend them without rebuilding anything. Plugins are compiled WebAssembly
+modules running **in-process** through the
+[wago](https://github.com/wago-org/wago) runtime: deny-by-default host
+imports (a plugin only reaches the capabilities the host explicitly wires),
+bounded linear memory (16 MiB) and tables (1024 entries), and a hard
+per-invocation execution budget (2 seconds by default — runaway guest loops
+are preempted by the runtime's interrupt mechanism and return
+`context.DeadlineExceeded`).
+
+### Tools that accept plugins
+
+| Tool | Plugin directory (first existing wins) | Plugin ABI entry point | What plugins do |
+|------|----------------------------------------|------------------------|-----------------|
+| `gorrcd` | `$RRCD_HOME/plugins/` (default `~/.rrcd/plugins`) | `handle_command` | Unrecognized `/<cmd>` slash commands are executed by `<cmd>.wasm`; the response is delivered to the requesting client as a NOTICE |
+| `gornsd` | `<config-dir>/plugins/` (default `~/.reticulum/plugins`; `-config` overrides) | `on_announce` | Observer plugins receive every incoming network announce as a serialized JSON event |
+| `golxmd` | `<config-dir>/plugins/` (`/etc/lxmd` → `~/.config/lxmd` → `~/.lxmd`) | `filter_inbound` | Filter plugins accept (1) or drop (0) each inbound LXMF message before delivery |
+| `gornx` | `/etc/rnx/plugins/` → `~/.config/rnx/plugins/` → `~/.rnx/plugins/` | `handle_command` | A remote command whose first token matches `<cmd>.wasm` runs in the sandbox instead of the raw shell; other commands keep the classic rnx behavior |
+
+To install a plugin, copy its `.wasm` file into the tool's plugin directory
+(the plugin's file name minus `.wasm` is its command name / KV scope) and
+restart the tool. The data directory alongside it
+(`<plugins-dir>/data/<plugin>/`) is that plugin's private scratch store.
+
+### The plugin ABI
+
+Every plugin is an ordinary WebAssembly module. The host calls these exports
+(all pointers are offsets into the module's own linear memory):
+
+| Export | Signature | Purpose |
+|--------|-----------|---------|
+| `wagoplugin_alloc` | `(len i32) -> (ptr i32)` | Reserve guest memory for the host's request payload |
+| `handle_command` | `(req_ptr i32, req_len i32) -> (resp_ptr i32, resp_len i32)` | gorrcd / gornx: run a command; the response bytes become the output |
+| `render_page` | `(req_ptr i32, req_len i32) -> (resp_ptr i32, resp_len i32)` | go-nomadnet: render a `.wasm` page to Micron markup |
+| `filter_inbound` | `(msg_ptr i32, msg_len i32) -> (action i32)` | golxmd: 1 = accept the message, 0 = drop it |
+| `on_announce` | `(ann_ptr i32, ann_len i32) -> (status i32)` | gornsd: observe an announce; 0 = acknowledged |
+
+Host capabilities are wired one by one — a module importing anything else
+fails to instantiate. Currently wired: `rns.log(ptr, len)` (forward a message
+to the host logger), `rns.kv_set(key_ptr, key_len, val_ptr, val_len) ->
+status`, and `rns.kv_get(key_ptr, key_len, out_ptr, out_cap) -> n` — a
+per-plugin scratch key/value store (10 MiB quota per plugin, keys are
+filenames under `<plugins-dir>/data/<plugin>/`).
+
+### Writing a plugin
+
+The repository ships ready-to-run examples under
+[`assets/wasm-plugins/`](assets/wasm-plugins/), each with its WebAssembly text
+(`.wat`) source and the assembled `.wasm` binary, plus install instructions in
+the file header:
+
+- [`echo`](assets/wasm-plugins/echo/) — echoes the request JSON; works with `gorrcd` and `gornx`
+- [`kv-demo`](assets/wasm-plugins/kv-demo/) — stores and reads a value through the `rns.kv_*` imports
+- [`announce-observer`](assets/wasm-plugins/announce-observer/) — acknowledges every network announce in `gornsd`
+- [`filter-accept`](assets/wasm-plugins/filter-accept/) — accepts every inbound LXMF message in `golxmd`
+
+The typical authoring loop uses the WebAssembly Binary Toolkit (`wat2wasm`)
+and the `wago` CLI:
+
+```bash
+wat2wasm my-plugin.wat -o my-plugin.wasm
+wago validate my-plugin.wasm              # module-level validation
+wago module imports my-plugin.wasm        # list the host capabilities it needs
+cp my-plugin.wasm ~/.rrcd/plugins/        # install, then restart the tool
+```
+
+The example binaries are smoke-tested by the repository's test suites
+(`TestExamplePluginsWork` and friends), and any language that can emit plain
+WebAssembly works — for example, [TinyGo](https://tinygo.org/) can build richer
+plugins from Go source.
+
+### Plugin ideas
+
+Some things the sandbox is designed to make safe and easy:
+
+- **gorrcd chat commands**: dice roller, karma tracker, reminder bot, poll
+  bot, a bridge that relays `/<cmd>` to an LXMF feed
+- **gornsd announce observers**: node census (count and age of heard nodes),
+  first-seen alerts for new destination hashes, uptime heartbeat tracker
+- **golxmd delivery filters**: keyword spam filter, message-size limiter,
+  allowlist by source hash, quiet-hours filter
+- **gornx sandboxed commands**: any operational tool you want remote peers to
+  run without giving them a shell (disk report, time sync check, package list)
+- **go-nomadnet dynamic pages**: hit counters, guestbooks, form processors,
+  live status dashboards (see the go-nomadnet README)
+
 ## Supported interface types and devices
 
 Reticulum implements a range of generalised interface types that covers most of

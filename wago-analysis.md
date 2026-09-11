@@ -1,6 +1,6 @@
 # Design: In-Process wago via Per-Command Nested Modules
 
-**Status:** authoritative architecture and TDD implementation specification  
+**Status:** architecture and TDD implementation specification — **Milestones 1–3 implemented and verified** (see the ✅ markers in §5.1 and §10; user-facing documentation lives in each repository's README and `assets/wasm-plugins|wasm-pages/` examples)  
 **Repos:** `go-reticulum`, `go-nomadnet` (asic-reticulum / pocket devices out of scope)  
 **Engine:** [wago](https://github.com/wago-org/wago), pinned at `v0.1.0-beta.8` (or current tagged beta)  
 **Verification Date:** 2026-09-11 (engine source analyzed & native loop cancellation verified)
@@ -211,12 +211,12 @@ platform, `plugins_stub.go` compiles gracefully rather than failing compilation.
 
 | Command | Promote? | Rationale |
 |---|---|---|
-| `cmd/gorrcd` | **M1** | RRC slash-command plugins. Clean, discrete request/response seam. |
-| `cmd/golxmd` | **M2** | The standalone LXMF daemon owns the `lxmf.Router`: inbound delivery filters via `RegisterDeliveryCallback` (see the Milestone 2 note). |
-| `cmd/gornsd` | **no (M3)** | Pure RNS daemon, imports no `lxmf` package — no delivery-callback seam; announce observers (Step 3.2) are its first plugin seam. |
-| `cmd/gornx` | **M3** | Sandboxed remote execution tools (replaces raw shell execution). |
-| `cmd/gornsh` | **M3** | Optional wasm execution tools in remote terminal sessions. |
-| `cmd/gornpkg` | later | Signed plugin package distribution; keep stub until format is finalized. |
+| `cmd/gorrcd` | **M1 ✅** | RRC slash-command plugins. Clean, discrete request/response seam. |
+| `cmd/golxmd` | **M2 ✅** | The standalone LXMF daemon owns the `lxmf.Router`: inbound delivery filters via `RegisterDeliveryCallback` (see the Milestone 2 note). |
+| `cmd/gornsd` | **M3 ✅** | Announce observers via `Transport.RegisterAnnounceHandler` (Step 3.2); promoted in Milestone 3. |
+| `cmd/gornx` | **M3 ✅** | Sandboxed remote execution: commands matching a `<cmd>.wasm` plugin run in the sandbox; other commands keep the raw shell (rnx compatibility). |
+| `cmd/gornsh` | **deferred** | Optional wasm execution tools in remote terminal sessions; the gornx plugin-first dispatch covers the primary use case. |
+| `cmd/gornpkg` | **deferred** | Signed plugin package distribution; keep the copy-to-plugin-dir install model until the format is finalized. |
 | `gornstatus`, `gornpath`, `gornid`, `gornprobe`, `gorncp`, `gorngit`, ... | **no** | CLI utilities; no plugin host required. |
 | `cmd/publish-github-release-artifacts` | **no** | Build orchestrator; stays in root module. |
 
