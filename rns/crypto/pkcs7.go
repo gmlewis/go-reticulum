@@ -6,7 +6,6 @@
 package crypto
 
 import (
-	"bytes"
 	"errors"
 )
 
@@ -15,11 +14,18 @@ var (
 	ErrInvalidPadding = errors.New("invalid pkcs7 padding")
 )
 
-// PKCS7Pad appends PKCS#7 padding so len(data) becomes a multiple of blockSize.
+// PKCS7Pad returns a new buffer with PKCS#7 padding so len(result) is a
+// multiple of blockSize. It never writes into data's backing array: a naive
+// append would reuse spare capacity and race when concurrent Encrypt calls
+// share a slice (CI data race in Link.Teardown → Token.Encrypt).
 func PKCS7Pad(data []byte, blockSize int) []byte {
 	padding := blockSize - (len(data) % blockSize)
-	padText := bytes.Repeat([]byte{byte(padding)}, padding)
-	return append(data, padText...)
+	out := make([]byte, len(data)+padding)
+	copy(out, data)
+	for i := len(data); i < len(out); i++ {
+		out[i] = byte(padding)
+	}
+	return out
 }
 
 // PKCS7Unpad removes PKCS#7 padding and validates that it is well formed.
