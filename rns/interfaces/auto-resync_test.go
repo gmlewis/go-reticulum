@@ -79,7 +79,7 @@ func TestApplyAddressResyncUpdatesStateAndSockets(t *testing.T) {
 		rebuilt <- ifname + "@" + ip.String()
 		return nil
 	}
-	closeAutoSocketSet = func(s *autoSocketSet, ifname string) {
+	ai.closeSocketSet = func(s *autoSocketSet, ifname string) {
 		closedIfaces <- ifname
 	}
 
@@ -138,7 +138,7 @@ func TestApplyAddressResyncRemovesVanishedInterface(t *testing.T) {
 		timedOutIfaces:  map[string]bool{},
 	}
 	var closed []string
-	closeAutoSocketSet = func(s *autoSocketSet, ifname string) { closed = append(closed, ifname) }
+	ai.closeSocketSet = func(s *autoSocketSet, ifname string) { closed = append(closed, ifname) }
 
 	ai.applyAddressResync(addrResyncPlan{removed: []string{"wlan0"}})
 

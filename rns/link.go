@@ -1208,7 +1208,12 @@ func (l *Link) HandleRTT(packet *Packet) {
 			l.Teardown()
 			return
 		}
-		receivedRTT, ok := unpackedRTT.(float64)
+		// Every numeric MessagePack kind is a valid RTT. Python decodes the
+		// payload with umsgpack.unpackb and passes the result straight to
+		// max(measured_rtt, rtt) (Link.py:521-522) without constraining its
+		// type, so a peer that packs a single-precision (0xca), integer, or
+		// unsigned RTT must not have its link torn down over it.
+		receivedRTT, ok := numericValue(unpackedRTT)
 		if !ok {
 			l.logger.Error("Error occurred while processing RTT packet, tearing down link: invalid RTT type %T", unpackedRTT)
 			l.Teardown()
@@ -1854,7 +1859,11 @@ func (l *Link) handleRequest(requestID []byte, unpackedRequest []any) {
 		return
 	}
 
-	ts, ok0 := unpackedRequest[0].(float64)
+	// The timestamp is read without constraining its type, mirroring Python
+	// (Link.py:806 assigns unpacked_request[0] directly and hands it to the
+	// response generator), so an int, uint, or single-precision float
+	// timestamp from a peer is still handled instead of being dropped.
+	ts, ok0 := numericValue(unpackedRequest[0])
 	if !ok0 {
 		l.logger.Debug("Received malformed request packet (bad timestamp), ignoring")
 		return

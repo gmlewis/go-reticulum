@@ -4528,11 +4528,19 @@ func (ts *TransportSystem) GetRatchet(destHash []byte) []byte {
 	}
 
 	if m, ok := unpacked.(map[any]any); ok {
-		ratchetPub := m["ratchet"].([]byte)
-		received := m["received"].(float64)
+		ratchetPub, pubOK := m["ratchet"].([]byte)
+		received, receivedOK := numericValue(m["received"])
+		if !pubOK || !receivedOK {
+			// A malformed ratchet file must not panic the process: Python
+			// wraps this read in try/except and treats the entry as absent
+			// (Identity.py:488-500), and cleanRatchets treats the same
+			// malformed data as corrupted.
+			ts.logger.Error("Malformed ratchet data for %v, ignoring", hexHash)
+			return nil
+		}
 
 		// Check expiry (30 days)
-		if float64(time.Now().UnixNano())/1e9 < received+30*24*3600 {
+		if float64(time.Now().UnixNano())/1e9 < received+RatchetExpiry.Seconds() {
 			ts.mu.Lock()
 			ts.knownRatchets[destHashStr] = ratchetPub
 			ts.mu.Unlock()

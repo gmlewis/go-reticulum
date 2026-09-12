@@ -178,6 +178,12 @@ type AutoInterface struct {
 	// swappable in tests so resync logic runs without real fe80 bindings.
 	rebuildSockets func(ifname string, linkLocal net.IP) error
 
+	// closeSocketSet releases a stale socket set during resync. Defaulted in
+	// NewAutoInterface to closeAutoSocketSet; swappable in tests so resync
+	// logic runs without real sockets. A per-instance hook (not a package
+	// variable) so parallel tests cannot race on it.
+	closeSocketSet func(s *autoSocketSet, ifname string)
+
 	running atomic.Int32
 	online  int32
 	final   int32
@@ -229,6 +235,10 @@ func NewAutoInterface(name string, cfg AutoInterfaceConfig, handler InboundHandl
 		}
 		return ai.startInterfaceSockets(*iface, linkLocal)
 	}
+
+	// Default stale-socket closer: tests swap this hook to observe closures
+	// without binding real sockets.
+	ai.closeSocketSet = closeAutoSocketSet
 
 	ai.groupID = []byte(strings.TrimSpace(cfg.GroupID))
 	if len(ai.groupID) == 0 {
@@ -817,9 +827,21 @@ func planAddressResync(adopted, next map[string]net.IP) addrResyncPlan {
 	return plan
 }
 
-// closeAutoSocketSet closes one interface's three UDP sockets. A package-level
-// variable so tests can observe closures without real sockets.
-var closeAutoSocketSet = func(s *autoSocketSet, ifname string) {
+// closeStaleSocketSet releases a stale socket set through the closeSocketSet
+// hook, falling back to the real closer for AutoInterface values built
+// directly by tests rather than through NewAutoInterface (where the hook is
+// left nil).
+func (ai *AutoInterface) closeStaleSocketSet(s *autoSocketSet, ifname string) {
+	if ai.closeSocketSet != nil {
+		ai.closeSocketSet(s, ifname)
+		return
+	}
+	closeAutoSocketSet(s, ifname)
+}
+
+// closeAutoSocketSet closes one interface's three UDP sockets. Installed as
+// the default closeSocketSet hook in NewAutoInterface.
+func closeAutoSocketSet(s *autoSocketSet, ifname string) {
 	if s == nil {
 		return
 	}
@@ -909,7 +931,7 @@ func (ai *AutoInterface) applyAddressResync(plan addrResyncPlan) {
 			}
 		}
 		ai.mu.Unlock()
-		closeAutoSocketSet(staleSocket, name)
+		ai.closeStaleSocketSet(staleSocket, name)
 		for _, addr := range cullAddrs {
 			ai.removePeer(addr)
 		}
@@ -924,7 +946,7 @@ func (ai *AutoInterface) applyAddressResync(plan addrResyncPlan) {
 		delete(ai.initialEchoes, name)
 		ai.timedOutIfaces[name] = false
 		ai.mu.Unlock()
-		closeAutoSocketSet(staleSocket, name)
+		ai.closeStaleSocketSet(staleSocket, name)
 
 		if err := ai.rebuildSockets(name, pair.cur); err != nil {
 			log.Printf("auto interface %v: socket rebuild after address change failed: %v", name, err)

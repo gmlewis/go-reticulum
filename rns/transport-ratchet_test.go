@@ -6,11 +6,14 @@ package rns
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/gmlewis/go-reticulum/rns/msgpack"
 )
 
 func tempDir(t *testing.T) string {
@@ -100,5 +103,84 @@ func TestSetRatchetStandalonePersists(t *testing.T) {
 
 	if !found {
 		t.Fatalf("expected ratchet file to be persisted at %v", ratchetFile)
+	}
+}
+
+// writeRatchetFile packs payload into the ratchet file that GetRatchet reads
+// for destHash and returns a transport rooted at a fresh storage directory.
+func writeRatchetFile(t *testing.T, destHash []byte, payload any) *TransportSystem {
+	t.Helper()
+
+	tmpDir := tempDir(t)
+	storagePath := filepath.Join(tmpDir, "storage")
+	ratchetDir := filepath.Join(storagePath, "ratchets")
+	if err := os.MkdirAll(ratchetDir, 0o700); err != nil {
+		t.Fatalf("failed to create ratchet dir: %v", err)
+	}
+
+	data, err := msgpack.Pack(payload)
+	if err != nil {
+		t.Fatalf("Pack ratchet payload: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(ratchetDir, fmt.Sprintf("%x", destHash)), data, 0o600); err != nil {
+		t.Fatalf("WriteFile ratchet: %v", err)
+	}
+
+	ts := NewTransportSystem(nil)
+	ts.storagePath = storagePath
+	return ts
+}
+
+// TestGetRatchetLoadsValidFile is the happy-path control for the malformed
+// cases below: a well-formed, unexpired ratchet file is still served.
+func TestGetRatchetLoadsValidFile(t *testing.T) {
+	t.Parallel()
+
+	destHash := []byte("valid_ratchet_dest_hash")
+	ratchetPub := bytes.Repeat([]byte{0x5a}, 32)
+	ts := writeRatchetFile(t, destHash, map[string]any{
+		"ratchet":  ratchetPub,
+		"received": float64(time.Now().UnixNano()) / 1e9,
+	})
+
+	if got := ts.GetRatchet(destHash); !bytes.Equal(got, ratchetPub) {
+		t.Fatalf("GetRatchet=%x, want %x", got, ratchetPub)
+	}
+}
+
+// TestGetRatchetMalformedFile pins how GetRatchet treats ratchet storage it
+// cannot use. Python wraps the read in try/except, logs the error, and returns
+// None (Identity.py:488-500), so a malformed or foreign-written ratchet file
+// must be ignored instead of panicking the process on an unguarded type
+// assertion.
+func TestGetRatchetMalformedFile(t *testing.T) {
+	t.Parallel()
+
+	validPub := bytes.Repeat([]byte{0x42}, 32)
+
+	tests := []struct {
+		name    string
+		payload any
+	}{
+		{name: "not a map", payload: []any{1, 2, 3}},
+		{name: "ratchet is a string", payload: map[string]any{"ratchet": "not-bytes", "received": 1.0}},
+		{name: "ratchet is an int", payload: map[string]any{"ratchet": 7, "received": 1.0}},
+		{name: "received is a string", payload: map[string]any{"ratchet": validPub, "received": "recently"}},
+		{name: "received is a map", payload: map[string]any{"ratchet": validPub, "received": map[string]any{}}},
+		{name: "missing ratchet", payload: map[string]any{"received": 1.0}},
+		{name: "missing received", payload: map[string]any{"ratchet": validPub}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			destHash := []byte("malformed_ratchet_dest_hash")
+			ts := writeRatchetFile(t, destHash, tt.payload)
+
+			if got := ts.GetRatchet(destHash); got != nil {
+				t.Fatalf("GetRatchet on %v returned %x, want nil", tt.name, got)
+			}
+		})
 	}
 }
