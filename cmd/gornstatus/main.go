@@ -50,7 +50,7 @@ func (rt *runtimeT) run(nameFilter string) int {
 
 	if app.monitorMode {
 		ts := rns.NewTransportSystem(logger)
-		ret, err := rns.NewReticulumWithLogger(ts, app.configDir, logger)
+		ret, err := rns.NewReticulumWithLogger(ts, app.configDir, logger, rns.WithRequireSharedInstance())
 		if err != nil {
 			// The rns logger writes asynchronously; flush the queue so the
 			// init diagnostics explaining the failure are not silently lost.

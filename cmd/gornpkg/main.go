@@ -51,7 +51,7 @@ func (rt *runtimeT) run() int {
 	return rt.programSetup()
 }
 
-type reticulumFactory func(rns.Transport, string, *rns.Logger) (*rns.Reticulum, error)
+type reticulumFactory func(rns.Transport, string, *rns.Logger, ...rns.ReticulumOption) (*rns.Reticulum, error)
 
 func (rt *runtimeT) programSetup() int {
 	ret, err := rt.initReticulum()
@@ -71,7 +71,7 @@ func (rt *runtimeT) initReticulum() (*rns.Reticulum, error) {
 	logger.SetLogLevel(int(rt.app.verbose) - int(rt.app.quiet))
 
 	ts := rns.NewTransportSystem(logger)
-	return rt.newReticulum(ts, rt.app.configDir, logger)
+	return rt.newReticulum(ts, rt.app.configDir, logger, rns.WithRequireSharedInstance())
 }
 
 func main() {

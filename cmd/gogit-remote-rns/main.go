@@ -83,7 +83,7 @@ func runWithOutput(args []string, in io.Reader, out, errw io.Writer) int {
 	logger.SetLogLevel(rns.LogCritical)
 
 	ts := rns.NewTransportSystem(logger)
-	ret, err := rns.NewReticulumWithLogger(ts, rnsConfigDir, logger)
+	ret, err := rns.NewReticulumWithLogger(ts, rnsConfigDir, logger, rns.WithRequireSharedInstance())
 	if err != nil {
 		_, _ = fmt.Fprintf(errw, "Failed to initialize Reticulum: %s\n", err)
 		return 255

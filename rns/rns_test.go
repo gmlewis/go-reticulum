@@ -559,6 +559,12 @@ func TestReticulumBackgroundJobs(t *testing.T) {
 
 	ts := NewTransportSystem(nil)
 	tmpDir := testutils.TempDir(t, "rns-test-")
+	// A config file must exist before NewReticulum: without one the default
+	// config is created, which sets share_instance = Yes with the default
+	// instance name. That would make this test claim the machine-global
+	// shared-instance names (@rns/default and @rns/default/rpc on Linux)
+	// while other parallel tests start their own instances.
+	writeConfig(t, tmpDir, "[reticulum]\nshare_instance = No\n")
 
 	r, err := NewReticulumWithLogger(ts, tmpDir, nil)
 	if err != nil {

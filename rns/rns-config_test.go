@@ -276,8 +276,13 @@ func TestReticulumParsesStaticTransportIdentity(t *testing.T) {
 
 	// With static_transport_identity = Yes and enable_transport = No, the
 	// operative identity must equal the persistent identity (no ephemeral).
+	// Both configs below set share_instance = No: the shared-instance role is
+	// irrelevant to the identity assertions, and the default (Yes) would claim
+	// the machine-global instance name @rns/default with @rns/default/rpc on
+	// Linux, which parallel tests in this package also bind (the 2026-09-12
+	// "bind: address already in use" CI failure).
 	dir1 := testutils.TempDir(t, tempDirPrefix)
-	cfg1 := "[reticulum]\nenable_transport = No\nstatic_transport_identity = Yes\n\n[logging]\nloglevel = 2\n\n[interfaces]\n"
+	cfg1 := "[reticulum]\nenable_transport = No\nshare_instance = No\nstatic_transport_identity = Yes\n\n[logging]\nloglevel = 2\n\n[interfaces]\n"
 	if err := os.WriteFile(filepath.Join(dir1, "config"), []byte(cfg1), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -295,7 +300,7 @@ func TestReticulumParsesStaticTransportIdentity(t *testing.T) {
 	// Without static_transport_identity and enable_transport = No, the
 	// operative identity must be an ephemeral distinct from persistent.
 	dir2 := testutils.TempDir(t, tempDirPrefix)
-	cfg2 := "[reticulum]\nenable_transport = No\n\n[logging]\nloglevel = 2\n\n[interfaces]\n"
+	cfg2 := "[reticulum]\nenable_transport = No\nshare_instance = No\n\n[logging]\nloglevel = 2\n\n[interfaces]\n"
 	if err := os.WriteFile(filepath.Join(dir2, "config"), []byte(cfg2), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}

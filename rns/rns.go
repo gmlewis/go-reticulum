@@ -141,19 +141,53 @@ type Reticulum struct {
 	isStandaloneInstance        bool
 	isConnectedToSharedInstance bool
 	sharedInstanceInterface     interfaces.Interface
+	// sharedInstanceWatchInterval and sharedInstanceMissThreshold tune the
+	// recovery watcher that promotes a client back to instance owner when the
+	// shared instance it attached to stops. They are options so tests never
+	// wait for production intervals.
+	sharedInstanceWatchInterval time.Duration
+	sharedInstanceMissThreshold int
+	// stopCh is closed once by Close so background watchers exit promptly.
+	// watchDone is closed by the recovery watcher when it has exited.
+	stopCh    chan struct{}
+	watchDone chan struct{}
+	closeOnce sync.Once
 }
 
 // IsSharedInstance reports whether this Reticulum instance is running as
 // the local shared instance (server).
-func (r *Reticulum) IsSharedInstance() bool { return r.isSharedInstance }
+func (r *Reticulum) IsSharedInstance() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.isSharedInstance
+}
 
 // IsStandaloneInstance reports whether this Reticulum instance is running
 // in standalone mode (not sharing or connecting to a shared instance).
-func (r *Reticulum) IsStandaloneInstance() bool { return r.isStandaloneInstance }
+func (r *Reticulum) IsStandaloneInstance() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.isStandaloneInstance
+}
 
 // IsConnectedToSharedInstance reports whether this Reticulum instance is
 // connected to an existing shared instance (client).
-func (r *Reticulum) IsConnectedToSharedInstance() bool { return r.isConnectedToSharedInstance }
+func (r *Reticulum) IsConnectedToSharedInstance() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.isConnectedToSharedInstance
+}
+
+// setInstanceRole records the instance role. The recovery watcher can change the
+// role after construction, so the role is written under the instance mutex that
+// the exported accessors read it with.
+func (r *Reticulum) setInstanceRole(shared, standalone, connected bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.isSharedInstance = shared
+	r.isStandaloneInstance = standalone
+	r.isConnectedToSharedInstance = connected
+}
 
 func (r *Reticulum) shouldAutoconnectDiscoveredInterfaces() bool {
 	return r != nil && r.autoconnectDiscover > 0
@@ -273,9 +307,18 @@ func (r *Reticulum) Logger() *Logger {
 	return r.logger
 }
 
-// Close tears down the Reticulum instance, stopping the transport system,
-// detaching the shared-instance interface and closing the RPC listener if active.
+// Close tears down the Reticulum instance: it closes the RPC listener, stops
+// the transport system, detaches the shared-instance interface, and joins the
+// background watchers. The RPC listener is released before anything detaches
+// the shared-instance local socket (see the ordering note in the body).
 func (r *Reticulum) Close() error {
+	// Stop background watchers before tearing anything down, so a recovery
+	// attempt cannot race the shutdown and re-register interfaces.
+	r.closeOnce.Do(func() {
+		if r.stopCh != nil {
+			close(r.stopCh)
+		}
+	})
 	r.mu.Lock()
 	var closeErr error
 	if r.interfaceDiscovery != nil {
@@ -283,6 +326,25 @@ func (r *Reticulum) Close() error {
 	}
 	if r.interfaceAnnouncer != nil {
 		r.interfaceAnnouncer.Stop()
+	}
+	// Release the shared-instance RPC name before anything detaches the
+	// shared-instance local socket. Claiming the shared-instance role binds
+	// the local socket first (startLocalInterface) and the RPC name second
+	// (startRPCListener), so the two names must be released in the reverse
+	// order: a concurrent starter that finds the local socket free must also
+	// find the RPC name free. Releasing the local socket first — which is what
+	// happens when transport.Stop detaches every registered interface,
+	// including the LocalInterface server — opens a window in which another
+	// process claims the shared-instance role and then fails to start with
+	// "bind: address already in use" on @rns/<instance_name>/rpc
+	// (TestReticulumParsesStaticTransportIdentity CI failure, 2026-09-12).
+	rpcDone := r.rpcDone
+	watchDone := r.watchDone
+	if r.rpcListener != nil {
+		if err := r.rpcListener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			closeErr = errors.Join(closeErr, err)
+		}
+		r.rpcListener = nil
 	}
 	if r.transport != nil {
 		r.transport.Stop()
@@ -292,13 +354,6 @@ func (r *Reticulum) Close() error {
 			closeErr = errors.Join(closeErr, err)
 		}
 		r.sharedInstanceInterface = nil
-	}
-	rpcDone := r.rpcDone
-	if r.rpcListener != nil {
-		if err := r.rpcListener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
-			closeErr = errors.Join(closeErr, err)
-		}
-		r.rpcListener = nil
 	}
 	r.mu.Unlock()
 
@@ -314,13 +369,55 @@ func (r *Reticulum) Close() error {
 			}
 		}
 	}
+	if watchDone != nil {
+		select {
+		case <-watchDone:
+		case <-time.After(2 * time.Second):
+			if r.logger != nil {
+				r.logger.Error("Shared-instance watcher did not exit within 2s shutdown grace period")
+			}
+		}
+	}
 	return closeErr
 }
 
+// ReticulumOption customizes a Reticulum instance at construction time. Options
+// are applied after the configuration file has been read and before the
+// shared-instance role is decided, so a caller can select its role without
+// editing the user's config file.
+type ReticulumOption func(*Reticulum)
+
+// WithRequireSharedInstance makes the instance attach to an already-running
+// shared instance and fail when none is running, mirroring the semantics of
+// the Python require_shared_instance constructor argument (RNS/Reticulum.py).
+// It is meant for short-lived command-line tools, which must observe the live
+// network rather than redefine it: a tool that reads share_instance = Yes from
+// the user's config would otherwise become the shared instance while it runs,
+// and a long-running application starting in that window would attach to the
+// tool's doomed instance and lose its network stack when the tool exits.
+func WithRequireSharedInstance() ReticulumOption {
+	return func(r *Reticulum) {
+		r.shareInstance = false
+		r.requireShared = true
+	}
+}
+
+// withSharedInstanceWatchInterval sets how often an attached client checks that
+// its shared instance is still running.
+func withSharedInstanceWatchInterval(interval time.Duration) ReticulumOption {
+	return func(r *Reticulum) { r.sharedInstanceWatchInterval = interval }
+}
+
+// withSharedInstanceMissThreshold sets how many consecutive failed checks
+// confirm that a shared instance is gone rather than briefly restarting.
+func withSharedInstanceMissThreshold(threshold int) ReticulumOption {
+	return func(r *Reticulum) { r.sharedInstanceMissThreshold = threshold }
+}
+
 // NewReticulum initializes a new Reticulum stack with a specific transport system.
-func NewReticulum(ts Transport, configDir string) (*Reticulum, error) {
+func NewReticulum(ts Transport, configDir string, opts ...ReticulumOption) (*Reticulum, error) {
 	logger := NewLogger()
-	return NewReticulumWithLogger(ts, configDir, logger)
+	return NewReticulumWithLogger(ts, configDir, logger, opts...)
 }
 
 // ConfigDir returns the resolved Reticulum configuration directory in use
@@ -344,7 +441,7 @@ func (r *Reticulum) ConfigPath() string {
 }
 
 // NewReticulumWithLogger initializes a new Reticulum stack with a specific transport system and logger.
-func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger) (*Reticulum, error) {
+func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger, opts ...ReticulumOption) (*Reticulum, error) {
 	if logger == nil {
 		logger = NewLogger()
 	}
@@ -355,30 +452,33 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger) (*Re
 	configDir = resolvedConfigDir
 
 	r := &Reticulum{
-		configDir:               configDir,
-		transport:               ts,
-		logger:                  logger,
-		shareInstance:           true,
-		sharedInstanceType:      "",
-		linkMTUDiscovery:        true,
-		useImplicitProof:        true,
-		allowProbes:             false,
-		remoteMgmtEnabled:       false,
-		remoteMgmtAllowed:       nil,
-		forceSharedBitrate:      0,
-		panicOnIfaceError:       false,
-		discoverInterfaces:      false,
-		requiredDiscoveryV:      0,
-		publishBlackhole:        false,
-		blackholeSources:        nil,
-		interfaceSources:        nil,
-		blackholeUpdateInterval: BlackholeUpdateInterval,
-		autoconnectDiscover:     0,
-		localInterfacePort:      37428,
-		localControlPort:        37429,
-		localSocketPath:         "",
-		isSharedInstance:        false,
-		isStandaloneInstance:    false,
+		configDir:                   configDir,
+		transport:                   ts,
+		logger:                      logger,
+		shareInstance:               true,
+		sharedInstanceType:          "",
+		linkMTUDiscovery:            true,
+		useImplicitProof:            true,
+		allowProbes:                 false,
+		remoteMgmtEnabled:           false,
+		remoteMgmtAllowed:           nil,
+		forceSharedBitrate:          0,
+		panicOnIfaceError:           false,
+		discoverInterfaces:          false,
+		requiredDiscoveryV:          0,
+		publishBlackhole:            false,
+		blackholeSources:            nil,
+		interfaceSources:            nil,
+		blackholeUpdateInterval:     BlackholeUpdateInterval,
+		autoconnectDiscover:         0,
+		localInterfacePort:          37428,
+		localControlPort:            37429,
+		localSocketPath:             "",
+		isSharedInstance:            false,
+		isStandaloneInstance:        false,
+		sharedInstanceWatchInterval: defaultSharedInstanceWatchInterval,
+		sharedInstanceMissThreshold: defaultSharedInstanceMissThreshold,
+		stopCh:                      make(chan struct{}),
 	}
 
 	// File-logging path resolution (Python RNS.Reticulum.__init__,
@@ -414,6 +514,16 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger) (*Re
 	if err := r.applyConfig(); err != nil {
 		return nil, err
 	}
+	// Construction options override the configuration file, so a caller can
+	// select its shared-instance role without editing the user's config.
+	for _, opt := range opts {
+		if opt != nil {
+			opt(r)
+		}
+	}
+	if r.shareInstance && r.requireShared {
+		return nil, fmt.Errorf("shared-instance config conflict: share_instance and require_shared_instance are both enabled (an instance cannot both be and require a shared instance)")
+	}
 
 	if err := r.initNetworkIdentity(); err != nil {
 		return nil, err
@@ -431,7 +541,12 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger) (*Re
 		return nil, err
 	}
 
-	r.startLocalInterface()
+	if err := r.startLocalInterface(); err != nil {
+		if cerr := r.Close(); cerr != nil {
+			r.logger.Warning("Could not close Reticulum properly after initialization failure: %v", cerr)
+		}
+		return nil, err
+	}
 
 	// Record the instance role on the transport and load the path table only
 	// for instances that own network interfaces (shared or standalone). A
@@ -446,15 +561,7 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger) (*Re
 		setter.SetConnectedToSharedInstance(r.isConnectedToSharedInstance)
 	}
 	if !r.isConnectedToSharedInstance {
-		if loader, ok := r.transport.(interface{ LoadPathTable() }); ok {
-			loader.LoadPathTable()
-		}
-		// Load the packet hashlist (Python Transport.py:242-254), gated on
-		// transport enabled inside the method. A client of a shared instance
-		// skips it for the same reason it skips the path-table load.
-		if loader, ok := r.transport.(interface{ LoadPacketHashlist(string) }); ok {
-			loader.LoadPacketHashlist(storagePath)
-		}
+		r.loadOwnedTransportState(storagePath)
 	}
 
 	if err := r.startRPCListener(); err != nil {
@@ -467,39 +574,21 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger) (*Re
 	r.transport.LoadKnownDestinations(storagePath)
 
 	if r.isSharedInstance || r.isStandaloneInstance {
-		// Initialize interfaces from config
-		if err := r.initInterfaces(); err != nil {
+		if err := r.startOwnedInterfaces(); err != nil {
 			if cerr := r.Close(); cerr != nil {
 				r.logger.Warning("Could not close Reticulum properly after initialization failure: %v", cerr)
 			}
 			return nil, err
 		}
-		if r.discoverInterfaces && r.transport != nil {
-			r.interfaceDiscovery = NewInterfaceDiscovery(r)
-			if err := r.interfaceDiscovery.Start(r.requiredDiscoveryV); err != nil {
-				if cerr := r.Close(); cerr != nil {
-					r.logger.Warning("Could not close Reticulum properly after discovery initialization failure: %v", cerr)
-				}
-				return nil, err
-			}
-			if setter, ok := r.transport.(interface{ SetDiscoverInterfacesHook(func()) }); ok {
-				setter.SetDiscoverInterfacesHook(r.interfaceDiscovery.connectDiscovered)
-			}
-			r.transport.DiscoverInterfaces()
-		}
-		if len(r.blackholeSources) > 0 && r.transport != nil {
-			if setter, ok := r.transport.(interface{ SetBlackholeSources([][]byte) }); ok {
-				setter.SetBlackholeSources(r.blackholeSources)
-			}
-			if setter, ok := r.transport.(interface{ SetBlackholeUpdateInterval(time.Duration) }); ok {
-				setter.SetBlackholeUpdateInterval(r.blackholeUpdateInterval)
-			}
-			r.transport.EnableBlackholeUpdater()
-		}
-		if hasDiscoverableInterfaces(r.transport) {
-			r.interfaceAnnouncer = NewInterfaceAnnouncer(r, r.logger)
-			r.interfaceAnnouncer.Start()
-		}
+	} else if r.shareInstance {
+		// An attached client watches its shared instance, so a long-running
+		// process recovers instead of retaining a dead interface forever.
+		r.mu.Lock()
+		r.watchDone = make(chan struct{})
+		watchDone := r.watchDone
+		iface := r.sharedInstanceInterface
+		r.mu.Unlock()
+		go r.watchSharedInstance(iface, storagePath, watchDone)
 	}
 
 	return r, nil
@@ -862,31 +951,23 @@ func (r *Reticulum) useAFUnix() bool {
 	return r.sharedInstanceType != "tcp"
 }
 
-func (r *Reticulum) startLocalInterface() {
+func (r *Reticulum) startLocalInterface() error {
 	if !r.shareInstance {
-		r.isSharedInstance = false
-		r.isStandaloneInstance = true
-		r.isConnectedToSharedInstance = false
-		return
+		if r.requireShared {
+			// A caller that requires a shared instance must never create one:
+			// a second instance would take ownership from the running one and
+			// leave both processes with a degraded view of the network.
+			return r.attachLocalInterface()
+		}
+		r.setInstanceRole(false, true, false)
+		return nil
 	}
 
 	handler := func(data []byte, iface interfaces.Interface) {
 		r.transport.Inbound(data, iface)
 	}
 
-	useUnix := r.useAFUnix()
-	localPath := ""
-	if useUnix {
-		instance := r.localSocketPath
-		if instance == "" {
-			instance = "default"
-		}
-		if runtime.GOOS == "linux" {
-			localPath = "@rns/" + instance
-		} else {
-			localPath = filepath.Join(r.configDir, ".rns-"+instance+".sock")
-		}
-	}
+	localPath, _ := r.localInterfacePath()
 
 	server, err := interfaces.NewLocalServerInterface("Local shared instance", localPath, r.localInterfacePort, handler)
 	if err == nil {
@@ -896,10 +977,8 @@ func (r *Reticulum) startLocalInterface() {
 		r.mu.Lock()
 		r.sharedInstanceInterface = server
 		r.mu.Unlock()
-		r.isSharedInstance = true
-		r.isStandaloneInstance = false
-		r.isConnectedToSharedInstance = false
-		return
+		r.setInstanceRole(true, false, false)
+		return nil
 	}
 
 	client, err := interfaces.NewLocalClientInterface("Local shared instance", localPath, r.localInterfacePort, handler)
@@ -913,25 +992,271 @@ func (r *Reticulum) startLocalInterface() {
 		r.mu.Lock()
 		r.sharedInstanceInterface = client
 		r.mu.Unlock()
-		r.isSharedInstance = false
-		r.isStandaloneInstance = false
-		r.isConnectedToSharedInstance = true
-		return
+		r.setInstanceRole(false, false, true)
+		return nil
 	}
 	if err == nil {
 		if detachErr := client.Detach(); detachErr != nil {
 			r.logger.Error("Failed to detach inactive shared-instance client: %v", detachErr)
 		}
-		r.isSharedInstance = false
-		r.isStandaloneInstance = true
-		r.isConnectedToSharedInstance = false
-		return
+		r.setInstanceRole(false, true, false)
+		return nil
 	}
 
 	r.logger.Error("Local shared instance appears to be running, but it could not be connected: %v", err)
-	r.isSharedInstance = false
-	r.isStandaloneInstance = true
-	r.isConnectedToSharedInstance = false
+	r.setInstanceRole(false, true, false)
+	return nil
+}
+
+const (
+	// defaultSharedInstanceWatchInterval is how often an attached client
+	// checks that the shared instance it connected to is still running.
+	defaultSharedInstanceWatchInterval = 2 * time.Second
+	// defaultSharedInstanceMissThreshold is how many consecutive failed checks
+	// confirm that the instance is gone rather than briefly restarting.
+	defaultSharedInstanceMissThreshold = 2
+	// attachAttempts and attachRetryWait bound how long an attach to a shared
+	// instance waits for its socket to exist. The wait absorbs the moment in
+	// which an instance is starting or taking over, without hiding a genuinely
+	// absent instance for long.
+	attachAttempts  = 4
+	attachRetryWait = 50 * time.Millisecond
+)
+
+// localInterfacePath returns the address of the shared-instance interface for
+// this configuration, and whether AF_UNIX is in use. The server (owner) and the
+// client (attached) cases must resolve the same address, or a client would look
+// for the instance in the wrong place.
+func (r *Reticulum) localInterfacePath() (string, bool) {
+	useUnix := r.useAFUnix()
+	if !useUnix {
+		return "", false
+	}
+	instance := r.localSocketPath
+	if instance == "" {
+		instance = "default"
+	}
+	if runtime.GOOS == "linux" {
+		return "@rns/" + instance, true
+	}
+	return filepath.Join(r.configDir, ".rns-"+instance+".sock"), true
+}
+
+// attachLocalInterface connects to an already-running shared instance and fails
+// when none is running. It is used for callers that require a shared instance: a
+// process that requires one must never create one, because a second instance
+// would silently take ownership from the running instance.
+func (r *Reticulum) attachLocalInterface() error {
+	handler := func(data []byte, iface interfaces.Interface) {
+		r.transport.Inbound(data, iface)
+	}
+	localPath, _ := r.localInterfacePath()
+	var client *interfaces.LocalClientInterface
+	var err error
+	// An instance that is starting up or taking over has no socket bound for a
+	// moment, so a failed connect is retried briefly before reporting that no
+	// shared instance is running. The wait stays short so that a genuinely
+	// absent instance is still reported promptly.
+	for range attachAttempts {
+		client, err = interfaces.NewLocalClientInterface("Local shared instance", localPath, r.localInterfacePort, handler)
+		if err != nil || client.Status() {
+			break
+		}
+		if detachErr := client.Detach(); detachErr != nil {
+			r.logger.Error("Failed to detach inactive shared-instance client: %v", detachErr)
+		}
+		client = nil
+		time.Sleep(attachRetryWait)
+	}
+	if err != nil {
+		return fmt.Errorf("no shared instance is running: %v", err)
+	}
+	if client == nil {
+		return fmt.Errorf("no shared instance is running at %v", localPath)
+	}
+	if r.networkIdentity != nil {
+		client.SetHash(r.networkIdentity.Hash)
+	}
+	r.applyForcedSharedBitrate(client)
+	applyInterfaceErrorPolicy(client, r.panicOnIfaceError)
+	r.transport.RegisterInterface(client)
+	r.mu.Lock()
+	r.sharedInstanceInterface = client
+	r.mu.Unlock()
+	r.setInstanceRole(false, false, true)
+	if r.logger != nil {
+		r.logger.Verbose("Attached to a shared instance at %v", localPath)
+	}
+	return nil
+}
+
+// loadOwnedTransportState loads the transport state that only an instance
+// owning network interfaces may use. A client of a shared instance must NOT
+// load the shared instance's destination_table: those entries reference
+// interfaces the client does not own (Interface=nil), which would break
+// outbound transport forwarding. The client instead learns paths from announces
+// the shared instance forwards to it (Transport.py:1790-1833). Python skips the
+// load at Transport.py:259 and forces __transport_enabled=False at
+// Reticulum.py:417 for the connected-to-shared case.
+func (r *Reticulum) loadOwnedTransportState(storagePath string) {
+	if loader, ok := r.transport.(interface{ LoadPathTable() }); ok {
+		loader.LoadPathTable()
+	}
+	// Load the packet hashlist (Python Transport.py:242-254), gated on
+	// transport enabled inside the method. A client of a shared instance skips
+	// it for the same reason it skips the path-table load.
+	if loader, ok := r.transport.(interface{ LoadPacketHashlist(string) }); ok {
+		loader.LoadPacketHashlist(storagePath)
+	}
+}
+
+// startOwnedInterfaces brings up everything an instance owning network
+// interfaces needs: the interfaces from config, interface discovery, blackhole
+// updates and interface announcing. It runs during construction for an owner or
+// standalone instance, and again if a client has to take over after the shared
+// instance it was attached to stopped.
+func (r *Reticulum) startOwnedInterfaces() error {
+	if err := r.initInterfaces(); err != nil {
+		return err
+	}
+	if r.discoverInterfaces && r.transport != nil {
+		r.interfaceDiscovery = NewInterfaceDiscovery(r)
+		if err := r.interfaceDiscovery.Start(r.requiredDiscoveryV); err != nil {
+			return err
+		}
+		if setter, ok := r.transport.(interface{ SetDiscoverInterfacesHook(func()) }); ok {
+			setter.SetDiscoverInterfacesHook(r.interfaceDiscovery.connectDiscovered)
+		}
+		r.transport.DiscoverInterfaces()
+	}
+	if len(r.blackholeSources) > 0 && r.transport != nil {
+		if setter, ok := r.transport.(interface{ SetBlackholeSources([][]byte) }); ok {
+			setter.SetBlackholeSources(r.blackholeSources)
+		}
+		if setter, ok := r.transport.(interface{ SetBlackholeUpdateInterval(time.Duration) }); ok {
+			setter.SetBlackholeUpdateInterval(r.blackholeUpdateInterval)
+		}
+		r.transport.EnableBlackholeUpdater()
+	}
+	if hasDiscoverableInterfaces(r.transport) {
+		r.interfaceAnnouncer = NewInterfaceAnnouncer(r, r.logger)
+		r.interfaceAnnouncer.Start()
+	}
+	return nil
+}
+
+// watchSharedInstance keeps an attached client honest. When the shared instance
+// it connected to stops, the client detaches, re-runs the role decision and
+// takes over when nothing else owns the instance, so a long-running process
+// recovers its network stack instead of keeping a client interface that can
+// never transmit. A client that loses its instance to a short-lived process and
+// then reattaches to a stable one is recovered the same way, because the watcher
+// always inspects the interface it currently holds.
+func (r *Reticulum) watchSharedInstance(iface interfaces.Interface, storagePath string, done chan struct{}) {
+	defer close(done)
+	interval := r.sharedInstanceWatchInterval
+	if interval <= 0 {
+		interval = defaultSharedInstanceWatchInterval
+	}
+	threshold := r.sharedInstanceMissThreshold
+	if threshold <= 0 {
+		threshold = defaultSharedInstanceMissThreshold
+	}
+	missed := 0
+	for {
+		select {
+		case <-r.stopCh:
+			return
+		case <-time.After(interval):
+		}
+		r.mu.Lock()
+		current := r.sharedInstanceInterface
+		attached := r.isConnectedToSharedInstance
+		r.mu.Unlock()
+		if !attached || current == nil {
+			// This process owns the instance (or runs standalone) now.
+			return
+		}
+		if current.Status() {
+			missed = 0
+			continue
+		}
+		missed++
+		if missed < threshold {
+			continue
+		}
+		select {
+		case <-r.stopCh:
+			return
+		default:
+		}
+		r.logger.Warning("Shared instance is no longer running; attempting to take over")
+		r.takeOverSharedInstance(current, storagePath)
+		missed = 0
+	}
+}
+
+// takeOverSharedInstance detaches a client whose instance has stopped, re-runs
+// the role decision, and, when this process is now the owner or a standalone
+// instance, loads the transport state and brings up the configured interfaces.
+// When another process owns the instance instead, this process reattaches as a
+// client and the watcher keeps watching.
+func (r *Reticulum) takeOverSharedInstance(iface interfaces.Interface, storagePath string) {
+	select {
+	case <-r.stopCh:
+		// Close is already tearing the instance down.
+		return
+	default:
+	}
+	if err := iface.Detach(); err != nil {
+		r.logger.Error("Could not detach the stopped shared-instance client: %v", err)
+	}
+	if remover, ok := r.transport.(interface {
+		RemoveInterface(interfaces.Interface)
+	}); ok {
+		remover.RemoveInterface(iface)
+	}
+	r.mu.Lock()
+	if r.sharedInstanceInterface == iface {
+		r.sharedInstanceInterface = nil
+	}
+	r.mu.Unlock()
+	if err := r.startLocalInterface(); err != nil {
+		r.logger.Error("Could not attach to a shared instance: %v", err)
+		return
+	}
+	if r.isConnectedToSharedInstance {
+		r.logger.Notice("Attached to a different shared instance")
+		return
+	}
+	r.loadOwnedTransportState(storagePath)
+	if err := r.startOwnedInterfaces(); err != nil {
+		r.logger.Error("Could not start interfaces after taking over the shared instance: %v", err)
+		return
+	}
+	// A client never starts the RPC listener (startRPCListener returns early
+	// unless this process is the shared instance), so a takeover must start it
+	// now that the RPC socket belongs to this process. It no-ops when this
+	// process ended up a standalone instance instead.
+	if err := r.startRPCListener(); err != nil {
+		r.logger.Error("Could not start the RPC listener after taking over the shared instance: %v", err)
+	}
+	if r.isSharedInstance {
+		// An instance that owns the network must serve local RPC, exactly as it
+		// would have when it started up: other local programs attach to it over
+		// the shared-instance socket and then ask it for interface stats, the
+		// path table and blackhole queries. A taken-over instance that skipped
+		// the listener would accept those clients and fail every call.
+		// A bind failure is logged rather than fatal: this is a background
+		// recovery path, and the name can still be held for a moment by the
+		// owner that just stopped.
+		if err := r.startRPCListener(); err != nil {
+			r.logger.Error("Could not start the RPC listener after taking over the shared instance: %v", err)
+		}
+		r.logger.Notice("Took over as the shared instance")
+		return
+	}
+	r.logger.Notice("Running standalone after the shared instance stopped")
 }
 
 func (r *Reticulum) applyForcedSharedBitrate(iface interfaces.Interface) {

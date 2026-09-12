@@ -150,8 +150,22 @@ func (a *appT) run() int {
 		return 2
 	}
 
+	logger.SetCompactLogFmt(true)
+	if a.useStdout {
+		logger.SetLogLevel(-1)
+	}
+
+	// Generating a key pair reads and writes no network state, so it must work
+	// on a host that has no shared instance running.
+	if a.generatePath != "" {
+		return a.doGenerate(a.generatePath, a.force)
+	}
+
+	// This tool observes the live network through the shared instance. It must
+	// never become that instance itself: a tool that exits would leave any
+	// long-running process attached to it without a network stack.
 	ts := rns.NewTransportSystem(a.logger)
-	ret, err := rns.NewReticulumWithLogger(ts, a.configDir, logger)
+	ret, err := rns.NewReticulumWithLogger(ts, a.configDir, logger, rns.WithRequireSharedInstance())
 	if err != nil {
 		logger.Error("Could not initialize Reticulum: %v", err)
 		return 1
@@ -161,15 +175,6 @@ func (a *appT) run() int {
 			logger.Warning("Could not close Reticulum properly: %v", err)
 		}
 	}()
-
-	logger.SetCompactLogFmt(true)
-	if a.useStdout {
-		logger.SetLogLevel(-1)
-	}
-
-	if a.generatePath != "" {
-		return a.doGenerate(a.generatePath, a.force)
-	}
 
 	id, exitCode := a.loadIdentity(ret.Transport(), a.identityPath, a.requestID, a.noCache, a.timeout)
 	if id == nil {

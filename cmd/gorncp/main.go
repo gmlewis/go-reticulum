@@ -188,7 +188,7 @@ func run(app *appT) {
 	}
 
 	ts := rns.NewTransportSystem(logger)
-	ret, err := rns.NewReticulumWithLogger(ts, app.configDir, logger)
+	ret, err := rns.NewReticulumWithLogger(ts, app.configDir, logger, rns.WithRequireSharedInstance())
 	if err != nil {
 		fatalf(logger, "Could not initialize Reticulum: %v", err)
 	}

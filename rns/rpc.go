@@ -31,7 +31,7 @@ func (r *Reticulum) startRPCListener() error {
 	}
 
 	r.ensureRPCKey()
-	if len(r.rpcKey) == 0 {
+	if len(r.rpcAuthKey()) == 0 {
 		return nil
 	}
 
@@ -49,11 +49,27 @@ func (r *Reticulum) startRPCListener() error {
 	return nil
 }
 
+// ensureRPCKey publishes the shared-instance RPC key, derived from the transport
+// identity. The recovery watcher can start the RPC listener on an instance that
+// is already running (takeOverSharedInstance), so the key is written under the
+// instance mutex that its readers take.
 func (r *Reticulum) ensureRPCKey() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if len(r.rpcKey) > 0 || r.transport == nil || r.transport.Identity() == nil {
 		return
 	}
 	r.rpcKey = FullHash(r.transport.Identity().GetPrivateKey())
+}
+
+// rpcAuthKey returns the shared-instance RPC key. The key is published once and
+// never mutated afterwards, so the returned slice stays valid for the caller;
+// the instance mutex still has to be taken so that a reader cannot observe the
+// publication concurrently with ensureRPCKey's write.
+func (r *Reticulum) rpcAuthKey() []byte {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.rpcKey
 }
 
 func (r *Reticulum) makeRPCListener() (net.Listener, error) {
@@ -186,10 +202,11 @@ func (r *Reticulum) rpcAuthValid(auth any) bool {
 		return false
 	}
 
-	if len(provided) != len(r.rpcKey) {
+	key := r.rpcAuthKey()
+	if len(provided) != len(key) {
 		return false
 	}
-	return subtle.ConstantTimeCompare(provided, r.rpcKey) == 1
+	return subtle.ConstantTimeCompare(provided, key) == 1
 }
 
 func readRPCFrame(conn net.Conn) (any, error) {
@@ -1235,7 +1252,7 @@ func (r *Reticulum) UnblackholeIdentity(identityHash []byte) (bool, error) {
 
 func (r *Reticulum) callRPC(req any) (any, error) {
 	r.ensureRPCKey()
-	if len(r.rpcKey) == 0 {
+	if len(r.rpcAuthKey()) == 0 {
 		return nil, errors.New("rpc key unavailable")
 	}
 
@@ -1266,7 +1283,7 @@ func (r *Reticulum) callRPCOnce(req any) (any, error) {
 		}
 	}()
 
-	if err := writeRPCFrame(conn, map[string]any{"auth": r.rpcKey}); err != nil {
+	if err := writeRPCFrame(conn, map[string]any{"auth": r.rpcAuthKey()}); err != nil {
 		return nil, err
 	}
 
@@ -1297,7 +1314,17 @@ func isTransientRPCError(err error) bool {
 		return true
 	}
 	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "connection reset by peer") || strings.Contains(message, "broken pipe")
+	if strings.Contains(message, "connection reset by peer") || strings.Contains(message, "broken pipe") {
+		return true
+	}
+	// A dial during the window in which a shared instance is starting or taking
+	// over fails with ECONNREFUSED (TCP) or ENOENT (socket not yet bound), and
+	// a Unix socket that was removed while a connection was opening fails with
+	// ENOTDIR from the kernel. All are transient: retry instead of reporting a
+	// hard failure.
+	return strings.Contains(message, "connection refused") ||
+		strings.Contains(message, "no such file or directory") ||
+		strings.Contains(message, "not a directory")
 }
 
 func (r *Reticulum) dialRPCServer() (net.Conn, error) {

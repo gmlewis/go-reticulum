@@ -29,7 +29,7 @@
   # user, and should generally be turned on. This directive
   # is optional and can be removed for brevity.
   
-  share_instance = Yes
+  share_instance = No
   
   
   # If you want to run multiple *different* shared instances
@@ -37,7 +37,7 @@
   # instance names for each. On platforms supporting domain
   # sockets, this can be done with the instance_name option:
   
-  instance_name = default
+  instance_name = dummy-gornsh-config
 
 
 # Some platforms don't support domain sockets, and if that

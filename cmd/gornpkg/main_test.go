@@ -30,6 +30,7 @@ func TestInitReticulumUsesVerbosityMinusQuietness(t *testing.T) {
 	var capturedLevel int
 	var capturedDest int
 	var capturedConfigDir string
+	var capturedOptions int
 	rt := &runtimeT{
 		app: &appT{
 			configDir: tmpDir,
@@ -37,10 +38,11 @@ func TestInitReticulumUsesVerbosityMinusQuietness(t *testing.T) {
 			quiet:     1,
 		},
 		logger: logger,
-		newReticulum: func(ts rns.Transport, configDir string, logger *rns.Logger) (*rns.Reticulum, error) {
+		newReticulum: func(ts rns.Transport, configDir string, logger *rns.Logger, opts ...rns.ReticulumOption) (*rns.Reticulum, error) {
 			capturedLevel = logger.GetLogLevel()
 			capturedDest = logger.GetLogDest()
 			capturedConfigDir = configDir
+			capturedOptions = len(opts)
 			return &rns.Reticulum{}, nil
 		},
 	}
@@ -50,6 +52,9 @@ func TestInitReticulumUsesVerbosityMinusQuietness(t *testing.T) {
 	}
 	if ret == nil {
 		t.Fatal("initReticulum returned nil reticulum")
+	}
+	if got, want := capturedOptions, 1; got != want {
+		t.Fatalf("construction options = %v, want %v: the tool must request attach-only mode", got, want)
 	}
 	if got, want := capturedLevel, 2; got != want {
 		t.Fatalf("log level = %v, want %v", got, want)

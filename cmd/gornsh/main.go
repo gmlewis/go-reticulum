@@ -441,7 +441,7 @@ func (rt *runtimeT) doInitiate() (int, error) {
 		rt.logger = rns.NewLogger()
 	}
 	ts := rns.NewTransportSystem(rt.logger)
-	ret, err := rns.NewReticulumWithLogger(ts, opts.configDir, rt.logger)
+	ret, err := rns.NewReticulumWithLogger(ts, opts.configDir, rt.logger, rns.WithRequireSharedInstance())
 	if err != nil {
 		return 1, fmt.Errorf("could not initialize Reticulum: %w", err)
 	}
