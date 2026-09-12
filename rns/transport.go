@@ -365,11 +365,12 @@ type TransportSystem struct {
 	// (which only guards the in-memory map snapshot), saveMu spans the pack,
 	// temp-file write, and atomic rename so concurrent SaveKnownDestinations
 	// calls cannot stomp each other's temp files or race the rename.
+	//
+	// It serializes saves WITHIN this process only. Uniqueness of the temp file
+	// name across every process sharing one storage path comes from
+	// os.CreateTemp (see SaveKnownDestinations), matching Python's globally
+	// unique known_destinations.tmp.{time.time()} (RNS/Identity.py:193).
 	saveMu sync.Mutex
-	// saveSeq makes each temp-file name unique across back-to-back saves
-	// (Python uses time.time(); a monotonic counter is robust against
-	// coarse-clock collisions on rapid successive flushes).
-	saveSeq uint64
 
 	announceHandlers []*AnnounceHandler
 
@@ -4709,6 +4710,17 @@ func (ts *TransportSystem) SaveKnownDestinations(storagePath string) {
 	if storagePath == "" {
 		return
 	}
+	// A shared-instance client must never persist this table: it shares the
+	// storage path with the instance it is connected to, so writing would
+	// clobber the shared instance's table with the client's
+	// forwarded-announce-only view. Python enforces this by returning early
+	// from save_known_destinations itself (RNS/Identity.py:179), which covers
+	// every caller; gating here does the same for all of this package's call
+	// sites, including those that bypass PersistData (the stale-ratchet
+	// clean-up and the announce-driven saves).
+	if ts.ConnectedToSharedInstance() {
+		return
+	}
 
 	path := filepath.Join(storagePath, "known_destinations")
 	ts.mu.Lock()
@@ -4738,8 +4750,6 @@ func (ts *TransportSystem) SaveKnownDestinations(storagePath string) {
 	// saving_known_destinations, RNS/Identity.py:191-205).
 	ts.saveMu.Lock()
 	defer ts.saveMu.Unlock()
-	ts.saveSeq++
-	tempPath := fmt.Sprintf("%s.tmp.%d", path, ts.saveSeq)
 
 	// Pack outside ts.mu but inside saveMu. A pack error leaves no temp file to
 	// clean up; log and abort without touching the canonical file.
@@ -4749,12 +4759,34 @@ func (ts *TransportSystem) SaveKnownDestinations(storagePath string) {
 		return
 	}
 
+	// The temp file name must be unique across PROCESSES, not merely across
+	// back-to-back saves in this process: several RNS instances can share one
+	// storage path, and a per-process counter then hands two of them the same
+	// temp path — the earlier rename wins and the loser's os.Rename fails with
+	// "no such file or directory". Python names the temp file with a wall-clock
+	// timestamp (known_destinations.tmp.{time.time()}, RNS/Identity.py:193) for
+	// the same reason; os.CreateTemp guarantees it via O_EXCL.
+	tempFile, err := createKnownDestinationsTemp(path)
+	if err != nil {
+		ts.logger.Error("Error while creating known destinations temp file: %v", err)
+		return
+	}
+	tempPath := tempFile.Name()
+
 	// Write the temp file, then atomically rename it into place. On any write
 	// or rename error, unlink the temp file (best-effort, like Python's
 	// try/except around os.unlink, RNS/Identity.py:204-206) and abort without
 	// modifying the canonical file.
-	if err := os.WriteFile(tempPath, data, 0o600); err != nil {
+	if _, err := tempFile.Write(data); err != nil {
 		ts.logger.Error("Error while serializing and writing known destinations: %v", err)
+		// The write already failed and the temp file is about to be unlinked,
+		// so a close error carries no additional information.
+		_ = tempFile.Close()
+		removeBestEffort(tempPath, ts.logger)
+		return
+	}
+	if err := tempFile.Close(); err != nil {
+		ts.logger.Error("Error while closing known destinations temp file: %v", err)
 		removeBestEffort(tempPath, ts.logger)
 		return
 	}
@@ -4764,6 +4796,17 @@ func (ts *TransportSystem) SaveKnownDestinations(storagePath string) {
 		return
 	}
 	ts.logger.Debug("Saved %v known destinations to storage", count)
+}
+
+// createKnownDestinationsTemp creates the temp file an atomic
+// known-destinations save writes through. os.CreateTemp retries with fresh
+// names until an O_EXCL create succeeds, so the name is unique across every
+// process sharing the storage directory — the same guarantee Python gets from
+// its timestamp-suffixed name (known_destinations.tmp.{time.time()},
+// RNS/Identity.py:193). The "known_destinations.tmp." prefix is retained so
+// cleanup and leftover checks recognize the file.
+func createKnownDestinationsTemp(path string) (*os.File, error) {
+	return os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp.*")
 }
 
 // removeBestEffort deletes path, logging (not returning) any error, mirroring
