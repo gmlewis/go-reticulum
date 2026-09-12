@@ -241,6 +241,33 @@ transmits and receives. Like `gornodeconf`, it requires exclusive access to
 the serial device — stop `gornsd`/`gonomadnet` (or anything else holding the
 port) first.
 
+### The gonomadnet Public Hub
+
+The Go port also runs a public node as a live test target for the stack:
+
+- **Hub**: `go-nomadnet.duckdns.org` — a public RNS TCP gateway
+- **Endpoint**: `go-nomadnet.duckdns.org:4242`
+
+Add it to your Reticulum client config (`~/.reticulum/config`):
+
+```
+[[gonomadnet Public Hub]]
+  type = TCPClientInterface
+  interface_enabled = yes
+  target_host = go-nomadnet.duckdns.org
+  target_port = 4242
+```
+
+Then start `gonomadnet`, wait for the hub to announce, and open it from the
+Nodes list — or type its destination hash into the URL bar (`Ctrl-U`):
+`c7d0e7bbd883e595f53e14fa6986188c`. Its index page links to the executable
+pages: the guestbook, the hit counter, and the other demos described under
+[Wasm Executable Pages](#wasm-executable-pages).
+
+The hub also hosts a public RRC room, `#general`, for the Go ports —
+`rrc://a012129c10205c0b9441fcd2b755b2a7/#general` — and `rns://` mirrors of the
+source, so the repositories can be cloned over Reticulum as well as from GitHub.
+
 ---
 
 What follows is Mark Qvist's original README.md.
