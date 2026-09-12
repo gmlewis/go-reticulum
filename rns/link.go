@@ -1255,6 +1255,21 @@ func (l *Link) startWatchdog() {
 	})
 }
 
+// effectiveLastInbound returns the most recent moment this link is considered
+// to have received traffic. The keepalive and stale checks fold the activation
+// and proof timestamps into lastInbound, so a link that has just activated is
+// not immediately treated as silent. The caller must hold l.mu.
+func (l *Link) effectiveLastInbound() time.Time {
+	lastInbound := l.activatedAt
+	if l.lastInbound.After(lastInbound) {
+		lastInbound = l.lastInbound
+	}
+	if l.lastProof.After(lastInbound) {
+		lastInbound = l.lastProof
+	}
+	return lastInbound
+}
+
 func (l *Link) watchdogJob() {
 	for {
 		sleep := l.watchdogStep(time.Now())
@@ -1313,13 +1328,7 @@ func (l *Link) watchdogStep(now time.Time) time.Duration {
 		return sleep
 
 	case LinkActive:
-		lastInbound := l.activatedAt
-		if l.lastInbound.After(lastInbound) {
-			lastInbound = l.lastInbound
-		}
-		if l.lastProof.After(lastInbound) {
-			lastInbound = l.lastProof
-		}
+		lastInbound := l.effectiveLastInbound()
 
 		// v1.4.0: the keepalive/stale check also fires on outbound inactivity
 		// (RNS/Link.py:749: `now >= last_inbound + keepalive or now >=
@@ -1372,6 +1381,7 @@ func (l *Link) watchdogStep(now time.Time) time.Duration {
 		// sends goes nowhere. The packet must be sent before the status
 		// becomes LinkClosed, since send() refuses on a closed link, and
 		// sending takes the lock itself.
+		l.logger.Warning("Link %x timed out (stale): %v", l.linkID, l.staleDiagnostic(now))
 		l.mu.Unlock()
 		l.sendTeardownPacket()
 		l.mu.Lock()
