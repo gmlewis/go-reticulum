@@ -29,15 +29,17 @@ func runGornid(t *testing.T, args ...string) (string, error) {
 
 func TestVersionOutput(t *testing.T) {
 	t.Parallel()
-	out, err := runGornid(t, "--version")
-	if err != nil {
-		t.Fatalf("gornid --version failed: %v\n%v", err, out)
-	}
-	want := "gornid " + rns.VERSION
-	got := strings.TrimSpace(out)
-	if got != want {
-		t.Errorf("version output = %q, want %q", got, want)
-	}
+
+	// `go run` recompiles the artifact for every probe, so the expectation is
+	// compared against the version declared in the rns source that compile used
+	// rather than the rns.VERSION constant baked into this test binary.
+	testutils.VersionFlag(t, "gornid", func(t *testing.T) string {
+		out, err := runGornid(t, "--version")
+		if err != nil {
+			t.Fatalf("gornid --version failed: %v\n%v", err, out)
+		}
+		return out
+	})
 }
 
 func TestNoIdentityError(t *testing.T) {

@@ -15,7 +15,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gmlewis/go-reticulum/rns"
 	"github.com/gmlewis/go-reticulum/rrc"
 	"github.com/gmlewis/go-reticulum/testutils"
 )
@@ -357,6 +356,31 @@ func TestBuildConfigPrecedence(t *testing.T) {
 	}
 }
 
+// readSourceVersion returns the VERSION constant declared in the rns source
+// file the build compiles. gorrcd reports that constant, so reading it from the
+// source keeps the expectation and the artifact on one source of truth: the
+// copy of rns.VERSION compiled into this test binary was baked in when `go
+// test` compiled the package, which can be one version bump stale by the time a
+// test builds a binary.
+func readSourceVersion(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading %v: %v", path, err)
+	}
+	for line := range strings.SplitSeq(string(data), "\n") {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(line), `const VERSION = "`)
+		if !ok {
+			continue
+		}
+		if version, ok := strings.CutSuffix(rest, `"`); ok {
+			return version
+		}
+	}
+	t.Fatalf("no VERSION constant found in %v", path)
+	return ""
+}
+
 // The --version flag prints the repo-standard rns.VERSION string to
 // stdout and exits 0 without touching any state.
 func TestVersionFlag(t *testing.T) {
@@ -364,19 +388,37 @@ func TestVersionFlag(t *testing.T) {
 
 	dir := testutils.TempDir(t, "gorrcd-version")
 	bin := filepath.Join(dir, "gorrcd")
-	build := exec.Command("go", "build", "-o", bin, ".")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("go build gorrcd failed: %v\n%v", err, out)
-	}
+	sourceVersionPath := filepath.Join("..", "..", "rns", "version.go")
 
-	cmd := exec.Command(bin, "--version")
+	// The expectation is read from the source the build compiles rather than
+	// from rns.VERSION as compiled into this test binary, and a bump landing
+	// between the build and the read is absorbed by rebuilding: otherwise the
+	// test compares a stale constant against a fresh binary and fails for a
+	// reason that has nothing to do with the flag.
+	var got, want string
 	var stdout, stderr strings.Builder
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("--version run failed: %v (stderr: %v)", err, stderr.String())
+	for range 3 {
+		build := exec.Command("go", "build", "-o", bin, ".")
+		if out, err := build.CombinedOutput(); err != nil {
+			t.Fatalf("go build gorrcd failed: %v\n%v", err, out)
+		}
+
+		stdout.Reset()
+		stderr.Reset()
+		cmd := exec.Command(bin, "--version")
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("--version run failed: %v (stderr: %v)", err, stderr.String())
+		}
+
+		got = stdout.String()
+		want = "gorrcd " + readSourceVersion(t, sourceVersionPath) + "\n"
+		if got == want {
+			break
+		}
 	}
-	if got, want := stdout.String(), "gorrcd "+rns.VERSION+"\n"; got != want {
+	if got != want {
 		t.Errorf("--version output = %q, want %q", got, want)
 	}
 	if stderr.Len() != 0 {

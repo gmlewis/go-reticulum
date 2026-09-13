@@ -600,17 +600,50 @@ func findRNSPython(t *testing.T) string {
 	return ""
 }
 
-// buildGorrcdBinary compiles the gorrcd binary into a temp dir.
-func buildGorrcdBinary(t *testing.T) string {
+// gorrcdBinary is one compiled gorrcd binary together with the version that
+// binary reports about itself. Integration tests must compare wire-observed
+// values against binary.version rather than against the rns.VERSION constant
+// compiled into this test binary: `go test` bakes rns.VERSION in when it
+// compiles this package, so an edit to rns/version.go between that compile and
+// the `go build` inside buildGorrcdBinary makes the test compare a stale
+// constant against a fresh binary. Reading the version back from the artifact
+// under test removes that second source of truth entirely.
+type gorrcdBinary struct {
+	path    string
+	version string
+}
+
+// buildGorrcdBinary compiles the gorrcd binary into a temp dir and reads back
+// the version it reports, so the binary is the single source of truth for every
+// version assertion about it.
+func buildGorrcdBinary(t *testing.T) gorrcdBinary {
 	t.Helper()
 	dir := testutils.TempDir(t, "gorrcd-bin")
-	bin := filepath.Join(dir, "gorrcd")
-	cmd := exec.Command("go", "build", "-o", bin, ".")
+	path := filepath.Join(dir, "gorrcd")
+	cmd := exec.Command("go", "build", "-o", path, ".")
 	cmd.Dir = "../cmd/gorrcd"
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go build gorrcd failed: %v\n%v", err, out)
 	}
-	return bin
+	return gorrcdBinary{path: path, version: readGorrcdVersion(t, path)}
+}
+
+// readGorrcdVersion runs `<path> --version` and returns the version the built
+// binary reports. gorrcd answers with "gorrcd <version>" and exits 0 before
+// reading any config or touching any state (cmd/gorrcd/main.go), so this is a
+// cheap, side-effect-free probe of the artifact.
+func readGorrcdVersion(t *testing.T, path string) string {
+	t.Helper()
+	out, err := exec.Command(path, "--version").Output()
+	if err != nil {
+		t.Fatalf("running %v --version failed: %v", path, err)
+	}
+	line := strings.TrimSpace(string(out))
+	version, ok := strings.CutPrefix(line, "gorrcd ")
+	if !ok || version == "" {
+		t.Fatalf("--version output = %q, want \"gorrcd <version>\"", line)
+	}
+	return version
 }
 
 // writeDriverRNSConfig writes the Python driver's RNS config: standalone
@@ -632,7 +665,7 @@ func writeDriverRNSConfig(t *testing.T, dir string) {
 
 // gorrcdHub bundles one running gorrcd hub with its helper.
 type gorrcdHub struct {
-	binary    string
+	binary    gorrcdBinary
 	homeDir   string
 	rnsDir    string
 	identity  *rns.Identity
@@ -844,7 +877,7 @@ func (g *gorrcdHub) writeHubConfig(t *testing.T, cfg hubTestConfig, rnsDir, iden
 // start launches the gorrcd binary with the hub config.
 func (g *gorrcdHub) start(t *testing.T) {
 	t.Helper()
-	cmd := exec.Command(g.binary, "--config", filepath.Join(g.homeDir, "rrcd.toml"))
+	cmd := exec.Command(g.binary.path, "--config", filepath.Join(g.homeDir, "rrcd.toml"))
 	cmd.Env = append(os.Environ(), "RRCD_HOME="+g.homeDir)
 	g.cmd = cmd
 	stdout, _ := cmd.StdoutPipe()
@@ -922,12 +955,16 @@ func eventBytes(t *testing.T, ev testEvent, key string) []byte {
 	return data
 }
 
-// G13.2 The gorrcd binary builds; a --help run needs no Python.
+// G13.2 The gorrcd binary builds and advertises its own version; probing the
+// built artifact needs no Python.
 func TestIntegrationGorrcdBinaryBuilds(t *testing.T) {
 	t.Parallel()
 	binary := buildGorrcdBinary(t)
-	if info, err := os.Stat(binary); err != nil || info.Size() == 0 {
+	if info, err := os.Stat(binary.path); err != nil || info.Size() == 0 {
 		t.Fatalf("gorrcd binary missing: %v %v", info, err)
+	}
+	if binary.version == "" {
+		t.Error("built gorrcd reports an empty version")
 	}
 }
 
@@ -952,8 +989,15 @@ func TestIntegrationHelloWelcomeOverPipe(t *testing.T) {
 	if hubName != "TestHub" {
 		t.Errorf("parsed WELCOME hub_name = %q, want %q", hubName, "TestHub")
 	}
-	if version != rns.VERSION {
-		t.Errorf("parsed WELCOME version = %q, want %q (rns.VERSION)", version, rns.VERSION)
+	// The WELCOME version must be the version of the binary that produced it,
+	// read back from that binary (buildGorrcdBinary) rather than from the
+	// rns.VERSION constant compiled into this test binary: the two are
+	// compiled at different moments, so only the artifact's own answer can
+	// never disagree with the value the hub put on the wire. messages.go
+	// sourcing the field from rns.VERSION is pinned by the in-package
+	// TestQueueWelcomeVersionMatchesRNSVersion, which needs no build.
+	if version != hub.binary.version {
+		t.Errorf("parsed WELCOME version = %q, want %q (the built gorrcd binary's --version)", version, hub.binary.version)
 	}
 	caps, _ := ev["caps"].(map[string]any)
 	if caps["1"] != true || caps["2"] != true || caps["0"] != true {

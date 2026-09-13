@@ -513,7 +513,12 @@ func (pr *PacketReceipt) ValidateLinkProof(proof []byte, link *Link, proofPacket
 			now := time.Now()
 			pr.ConcludedAt = float64(now.UnixNano()) / 1e9
 			pr.ProofPacket = proofPacket
-			link.lastProof = now
+			// The link records the proof time with the same instant the
+			// receipt concluded at, as Python does (link.last_proof =
+			// self.concluded_at, Packet.py:447). The store is atomic because
+			// this path holds ts.mu (TransportSystem.Inbound) rather than
+			// l.mu; see Link.lastProof.
+			link.noteProofReceived(now)
 			cb := pr.deliveryCallback
 			pr.mu.Unlock()
 			if cb != nil {

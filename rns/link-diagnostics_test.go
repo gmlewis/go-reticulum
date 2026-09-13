@@ -158,6 +158,7 @@ func TestLinkStaleDiagnosticSnapshot(t *testing.T) {
 	tests := []struct {
 		name          string
 		link          *Link
+		proofTime     time.Time
 		wantInbound   time.Duration
 		wantOutbound  time.Duration
 		wantKnown     bool
@@ -191,9 +192,9 @@ func TestLinkStaleDiagnosticSnapshot(t *testing.T) {
 				staleTime:    10 * time.Second,
 				activatedAt:  now.Add(-30 * time.Second),
 				lastInbound:  now.Add(-20 * time.Second),
-				lastProof:    now.Add(-15 * time.Second),
 				lastOutbound: now.Add(-25 * time.Second),
 			},
+			proofTime:     now.Add(-15 * time.Second),
 			wantInbound:   15 * time.Second,
 			wantOutbound:  25 * time.Second,
 			wantKnown:     false,
@@ -206,6 +207,9 @@ func TestLinkStaleDiagnosticSnapshot(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
+			if !tt.proofTime.IsZero() {
+				tt.link.noteProofReceived(tt.proofTime)
+			}
 			got := tt.link.staleDiagnostic(now)
 
 			if got.SinceInbound != tt.wantInbound {
@@ -237,9 +241,10 @@ func TestEffectiveLastInbound(t *testing.T) {
 	base := time.Date(2026, time.September, 12, 16, 0, 0, 0, time.UTC)
 
 	tests := []struct {
-		name string
-		link *Link
-		want time.Time
+		name      string
+		link      *Link
+		proofTime time.Time
+		want      time.Time
 	}{
 		{
 			name: "activation is used when nothing arrived later",
@@ -261,9 +266,9 @@ func TestEffectiveLastInbound(t *testing.T) {
 			link: &Link{
 				activatedAt: base,
 				lastInbound: base.Add(time.Second),
-				lastProof:   base.Add(2 * time.Second),
 			},
-			want: base.Add(2 * time.Second),
+			proofTime: base.Add(2 * time.Second),
+			want:      base.Add(2 * time.Second),
 		},
 	}
 
@@ -271,6 +276,9 @@ func TestEffectiveLastInbound(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
+			if !tt.proofTime.IsZero() {
+				tt.link.noteProofReceived(tt.proofTime)
+			}
 			if got := tt.link.effectiveLastInbound(); !got.Equal(tt.want) {
 				t.Errorf("effectiveLastInbound() = %v, want %v", got, tt.want)
 			}

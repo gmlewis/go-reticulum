@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gmlewis/go-reticulum/rns"
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
@@ -89,14 +88,17 @@ func TestPositionalPortIsAcceptedWithFlags(t *testing.T) {
 func TestVersionUsesSharedGoVersion(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	out, err := runGornodeconf("--version")
-	if err != nil {
-		t.Fatalf("gornodeconf --version failed: %v\n%v", err, out)
-	}
-	want := "gornodeconf " + rns.VERSION
-	if strings.TrimSpace(out) != want {
-		t.Fatalf("version output mismatch: got %q, want %q", strings.TrimSpace(out), want)
-	}
+
+	// `go run` recompiles the artifact for every probe, so the expectation is
+	// compared against the version declared in the rns source that compile used
+	// rather than the rns.VERSION constant baked into this test binary.
+	testutils.VersionFlag(t, "gornodeconf", func(t *testing.T) string {
+		out, err := runGornodeconf("--version")
+		if err != nil {
+			t.Fatalf("gornodeconf --version failed: %v\n%v", err, out)
+		}
+		return out
+	})
 }
 
 func TestParseArgsAcceptsPythonStyleLongFlags(t *testing.T) {

@@ -156,6 +156,59 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
+// G16.4 The WELCOME carries the version of the code that welcomed the client:
+// the body's BWelcomeVer slot is rns.VERSION, which both the hub's WELCOME and
+// the `gorrcd --version` probe are compiled from. This in-package check pins
+// that source of truth deterministically, with no built artifact involved, and
+// is the counterpart of TestIntegrationHelloWelcomeOverPipe's wire assertion
+// that the WELCOME version equals the built binary's own version.
+func TestQueueWelcomeVersionMatchesRNSVersion(t *testing.T) {
+	t.Parallel()
+
+	mh := NewMessageHelper(MessageHooks{
+		IdentityHash:           func() []byte { return bytesOf(0x21, 32) },
+		StatsInc:               func(string, int) {},
+		SendPacket:             func(*rns.Link, []byte) error { return nil },
+		EnableResourceTransfer: func() bool { return false },
+		HubName:                func() string { return "TestHub" },
+		WelcomeLimits: func() []any {
+			return []any{int64(32), int64(64), int64(350), int64(32), int64(240)}
+		},
+		FmtHash:   func(hash []byte) string { return hexOf(hash) },
+		FmtLinkID: func(*rns.Link) string { return "-" },
+	})
+
+	outgoing := &OutgoingList{}
+	mh.QueueWelcome(outgoing, &rns.Link{}, bytesOf(0xaa, 32))
+	if len(outgoing.Queue) != 1 {
+		t.Fatalf("queued %v payloads, want 1", len(outgoing.Queue))
+	}
+
+	decoded, err := cbor.Decode(outgoing.Queue[0].Payload)
+	if err != nil {
+		t.Fatalf("WELCOME payload does not decode: %v", err)
+	}
+	env, ok := decoded.(*cbor.Map)
+	if !ok {
+		t.Fatal("WELCOME payload is not a CBOR map")
+	}
+	body, ok := env.Get(KBody)
+	if !ok {
+		t.Fatal("WELCOME body missing")
+	}
+	bodyMap, ok := body.(*cbor.Map)
+	if !ok {
+		t.Fatal("WELCOME body is not a CBOR map")
+	}
+	version, ok := bodyMap.Get(BWelcomeVer)
+	if !ok {
+		t.Fatal("WELCOME version field missing")
+	}
+	if got, ok := version.(string); !ok || got != rns.VERSION {
+		t.Errorf("WELCOME version = %#v, want the rns.VERSION string %q", version, rns.VERSION)
+	}
+}
+
 // TestQueueWelcomeFitsFleetMTU pins the WELCOME/MTU failure mode rrcd
 // documents (README.md:74-88): a hub whose WELCOME does not fit the link MTU
 // refuses to welcome the peer, and the client then times out waiting for a

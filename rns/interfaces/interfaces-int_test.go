@@ -9,8 +9,10 @@
 package interfaces
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -126,6 +128,140 @@ func requirePythonModule(t *testing.T, module string) {
 	}
 }
 
+// pythonEchoBindTimeout bounds how long one start attempt waits for the Python
+// echo to report that it is listening.
+const pythonEchoBindTimeout = 5 * time.Second
+
+// pythonListeningMarker is printed by each Python echo script as soon as it is
+// listening; every script must print this same literal. Python raises when its
+// bind fails (ThreadingTCPServer for the RNS-based echoes, socket.bind for the
+// Local echo), so the marker proves the port is really bound by Python, and a
+// Python process that exits before printing it proves the reserved port was
+// lost to a parallel test instead.
+const pythonListeningMarker = "RNS-ECHO-LISTENING"
+
+// startPythonEchoOnReservedPort starts python3 scriptPath with a loopback TCP
+// port as its only argument and returns that port once the script reports that
+// it is listening.
+//
+// A Go bind site adopts a reserved port as a held listener (see reserveTCPPort
+// and pending-listener.go), but Python cannot: it creates its own socket, so
+// the reservation must be given up before Python binds, and a parallel test's
+// reservation or dial can claim the port in that window. Python then fails to
+// bind and exits without printing its listening marker, so the whole start is
+// retried on a fresh port rather than failing the test.
+func startPythonEchoOnReservedPort(t *testing.T, scriptPath, pythonPath, label string) int {
+	t.Helper()
+	for attempt := 1; attempt <= portReserveAttempts; attempt++ {
+		port := reserveUnboundTCPPort(t)
+		if tryStartPythonEcho(t, scriptPath, pythonPath, label, fmt.Sprintf("%v", port)) {
+			return port
+		}
+		t.Logf("%v: port %v was claimed before Python bound it; retrying on a fresh port (attempt %v of %v)",
+			label, port, attempt, portReserveAttempts)
+	}
+	t.Fatalf("%v never reported listening on a reserved port after %v attempts", label, portReserveAttempts)
+	return 0
+}
+
+// startPythonEchoOnReservedUDPPort starts python3 scriptPath with a loopback UDP
+// port it must bind as its first argument and goPort as its second, and returns
+// the UDP port once the script reports that it is listening. Losing the UDP port
+// to a parallel test is retried on a fresh one, exactly as for the TCP echoes
+// (see startPythonEchoOnReservedPort); goPort is a port this test holds for a Go
+// interface to adopt (see reserveHeldUDPPort), so it stays fixed.
+func startPythonEchoOnReservedUDPPort(t *testing.T, scriptPath, pythonPath, label string, goPort int) int {
+	t.Helper()
+	for attempt := 1; attempt <= portReserveAttempts; attempt++ {
+		port := reserveUnboundUDPPort(t)
+		if tryStartPythonEcho(t, scriptPath, pythonPath, label, fmt.Sprintf("%v", port), fmt.Sprintf("%v", goPort)) {
+			return port
+		}
+		t.Logf("%v: port %v was claimed before Python bound it; retrying on a fresh port (attempt %v of %v)",
+			label, port, attempt, portReserveAttempts)
+	}
+	t.Fatalf("%v never reported listening on a reserved port after %v attempts", label, portReserveAttempts)
+	return 0
+}
+
+// tryStartPythonEcho starts python3 scriptPath with args as its arguments and
+// reports whether the script reported that it is listening before exiting or
+// timing out. A failed start is killed and reaped here; a successful one is
+// killed and reaped at test end.
+//
+// Readiness comes from the script's own listening marker rather than a fixed
+// "wait for Python to start" sleep: the tests used to sleep 1s (1.5s for the
+// Local echo) whether or not Python was up, and reported a failed start much
+// later as a connect timeout.
+func tryStartPythonEcho(t *testing.T, scriptPath, pythonPath, label string, args ...string) bool {
+	t.Helper()
+	cmd := exec.Command("python3", append([]string{scriptPath}, args...)...)
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPath)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("failed to capture %v stdout: %v", label, err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start %v: %v", label, err)
+	}
+	proc := &pythonEchoProcess{cmd: cmd, exited: make(chan struct{})}
+	go func() {
+		defer close(proc.exited)
+		_ = cmd.Wait()
+	}()
+	if !waitForListeningMarker(stdout, proc.exited, pythonEchoBindTimeout) {
+		killPythonEcho(t, proc, label)
+		return false
+	}
+	t.Cleanup(func() { killPythonEcho(t, proc, label) })
+	return true
+}
+
+// pythonEchoProcess is a Python echo script with the goroutine that reaps it.
+type pythonEchoProcess struct {
+	cmd    *exec.Cmd
+	exited chan struct{}
+}
+
+// waitForListeningMarker reports whether stdout carries the listening marker
+// before the process exits or timeout elapses. The scanner goroutine ends when
+// the process is reaped and its pipe closes, so a failed attempt leaves no
+// reader behind.
+func waitForListeningMarker(stdout io.Reader, exited <-chan struct{}, timeout time.Duration) bool {
+	listening := make(chan struct{})
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			if strings.Contains(scanner.Text(), pythonListeningMarker) {
+				close(listening)
+				return
+			}
+		}
+	}()
+	select {
+	case <-listening:
+		return true
+	case <-exited:
+		return false
+	case <-time.After(timeout):
+		return false
+	}
+}
+
+// killPythonEcho stops a Python echo script started by tryStartPythonEcho and
+// waits for the goroutine that reaps it.
+func killPythonEcho(t *testing.T, proc *pythonEchoProcess, label string) {
+	t.Helper()
+	if err := proc.cmd.Process.Kill(); err != nil {
+		t.Logf("failed to kill %v: %v", label, err)
+	}
+	select {
+	case <-proc.exited:
+	case <-time.After(pythonEchoBindTimeout):
+		t.Errorf("%v did not exit after being killed", label)
+	}
+}
+
 const pythonUDPEchoScript = `
 import RNS.Interfaces.UDPInterface as UDPInterface
 import time
@@ -148,6 +284,7 @@ config = {
 
 owner = Owner()
 iface = UDPInterface.UDPInterface(owner, config)
+print("RNS-ECHO-LISTENING", flush=True)
 
 # Keep alive
 try:
@@ -167,24 +304,10 @@ func TestUDPInterfaceParity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p1, p2 := allocateUDPPortPair(t)
-	pyListenPort := p1
-	goListenPort := p2
-
-	cmd := exec.Command("python3", scriptPath, fmt.Sprintf("%v", pyListenPort), fmt.Sprintf("%v", goListenPort))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPath)
-
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("failed to start Python UDP echo: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := cmd.Process.Kill(); err != nil {
-			t.Logf("failed to kill Python UDP echo: %v", err)
-		}
-	})
-
-	// Wait for Python to start
-	time.Sleep(500 * time.Millisecond)
+	// Python binds pyListenPort itself, so that one is only reserved; the Go
+	// interface adopts goListenPort from the socket held here.
+	goListenPort := reserveHeldUDPPort(t)
+	pyListenPort := startPythonEchoOnReservedUDPPort(t, scriptPath, pythonPath, "Python UDP echo", goListenPort)
 
 	received := make(chan []byte, 1)
 	handler := func(data []byte, iface Interface) {
@@ -294,6 +417,7 @@ config = {
 owner = Owner()
 # TCPServerInterface will listen and spawn TCPClientInterfaces
 iface = TCPInterface.TCPServerInterface(owner, config)
+print("RNS-ECHO-LISTENING", flush=True)
 iface.ifac_size = 16
 iface.ifac_netname = None
 iface.ifac_netkey = None
@@ -319,22 +443,7 @@ func TestTCPInterfaceParity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pyListenPort := reserveTCPPort(t)
-
-	cmd := exec.Command("python3", scriptPath, fmt.Sprintf("%v", pyListenPort))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPath)
-
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("failed to start Python TCP echo: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := cmd.Process.Kill(); err != nil {
-			t.Logf("failed to kill Python TCP echo: %v", err)
-		}
-	})
-
-	// Wait for Python to start
-	time.Sleep(1000 * time.Millisecond)
+	pyListenPort := startPythonEchoOnReservedPort(t, scriptPath, pythonPath, "Python TCP echo")
 
 	received := make(chan []byte, 1)
 	handler := func(data []byte, iface Interface) {
@@ -351,10 +460,7 @@ func TestTCPInterfaceParity(t *testing.T) {
 	})
 
 	// Wait for connection
-	time.Sleep(500 * time.Millisecond)
-	if !goIface.Status() {
-		t.Fatal("Go TCP interface failed to connect")
-	}
+	waitForIfaceRunning(t, goIface, 3*time.Second)
 
 	msg := []byte("hello from go to python via tcp")
 	if err := goIface.Send(msg); err != nil {
@@ -419,6 +525,7 @@ TCPInterface.Interface.get_config_obj = lambda c: MockConfig()
 owner = Owner()
 # TCPServerInterface will listen and spawn TCPClientInterfaces
 iface = TCPInterface.TCPServerInterface(owner, {})
+print("RNS-ECHO-LISTENING", flush=True)
 iface.ifac_size = 16
 iface.ifac_netname = None
 iface.ifac_netkey = None
@@ -439,22 +546,7 @@ except KeyboardInterrupt:
 		t.Fatal(err)
 	}
 
-	pyListenPort := reserveTCPPort(t)
-
-	cmd := exec.Command("python3", scriptPath, fmt.Sprintf("%v", pyListenPort))
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPath)
-
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("failed to start Python TCP KISS echo: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := cmd.Process.Kill(); err != nil {
-			t.Logf("failed to kill Python TCP KISS echo: %v", err)
-		}
-	})
-
-	// Wait for Python to start
-	time.Sleep(1000 * time.Millisecond)
+	pyListenPort := startPythonEchoOnReservedPort(t, scriptPath, pythonPath, "Python TCP KISS echo")
 
 	received := make(chan []byte, 1)
 	handler := func(data []byte, iface Interface) {
@@ -471,10 +563,7 @@ except KeyboardInterrupt:
 	})
 
 	// Wait for connection
-	time.Sleep(500 * time.Millisecond)
-	if !goIface.Status() {
-		t.Fatal("Go TCP interface failed to connect")
-	}
+	waitForIfaceRunning(t, goIface, 3*time.Second)
 
 	msg := []byte("hello from go to python via tcp kiss")
 	if err := goIface.Send(msg); err != nil {
@@ -526,7 +615,7 @@ def main():
         s.bind(addr)
 
     s.listen(5)
-    print(f"Listening on {addr}", flush=True)
+    print(f"RNS-ECHO-LISTENING {addr}", flush=True)
 
     try:
         while True:
@@ -552,47 +641,21 @@ func TestLocalInterfaceParity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var cmd *exec.Cmd
 	var goIface *LocalClientInterface
 	var err error
-	pyPort := reserveTCPPort(t)
+	var pyPort int
 	socketPath := filepath.Join(tmpDir, "rns-test.sock")
 
+	// Linux hands Python a unix socket path; elsewhere the rendezvous is a TCP
+	// port Python binds itself, which the test suite cannot hold for it (see
+	// startPythonEchoOnReservedPort). Both branches wait for the script's own
+	// listening marker instead of a fixed sleep.
 	if runtime.GOOS == "linux" {
-		cmd = exec.Command("python3", scriptPath, socketPath)
-	} else {
-		cmd = exec.Command("python3", scriptPath, fmt.Sprintf("%v", pyPort))
-	}
-
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPath)
-
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("failed to start Python Local echo: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := cmd.Process.Kill(); err != nil {
-			t.Logf("failed to kill Python Local echo: %v", err)
-		}
-		if err := cmd.Wait(); err != nil {
-			t.Logf("Python Local echo wait error: %v", err)
-		}
-	})
-
-	// Wait for Python to start and create the socket
-	deadline := time.Now().Add(5 * time.Second)
-	if runtime.GOOS == "linux" {
-		for {
-			if _, err := os.Stat(socketPath); err == nil {
-				break
-			}
-			if time.Now().After(deadline) {
-				t.Logf("Warning: socket file %v not found after 5s", socketPath)
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
+		if !tryStartPythonEcho(t, scriptPath, pythonPath, "Python Local echo", socketPath) {
+			t.Fatalf("Python Local echo never reported listening on %v", socketPath)
 		}
 	} else {
-		time.Sleep(1500 * time.Millisecond)
+		pyPort = startPythonEchoOnReservedPort(t, scriptPath, pythonPath, "Python Local echo")
 	}
 
 	received := make(chan []byte, 1)
@@ -616,19 +679,8 @@ func TestLocalInterfaceParity(t *testing.T) {
 		}
 	})
 
-	// Wait for connection with retries
-	connected := false
-	for range 20 {
-		if goIface.Status() {
-			connected = true
-			break
-		}
-		time.Sleep(250 * time.Millisecond)
-	}
-
-	if !connected {
-		t.Fatal("Go Local interface failed to connect after multiple attempts")
-	}
+	// Wait for connection
+	waitForIfaceRunning(t, goIface, 5*time.Second)
 
 	msg := []byte("hello from go to python via local interface")
 	if err := goIface.Send(msg); err != nil {

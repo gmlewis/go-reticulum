@@ -148,9 +148,11 @@ func runPythonBackground(t *testing.T, configDir string, args ...string) (*exec.
 	return cmd, buf
 }
 
-func runGorncp(t *testing.T, configDir string, args ...string) string {
+// runGorncpBinary runs one gorncp binary against the suite's config flag and
+// returns its combined output.
+func runGorncpBinary(t *testing.T, bin, configDir string, args ...string) string {
 	t.Helper()
-	fullArgs := append([]string{gorncpBinaryPath, "-config", configDir}, args...)
+	fullArgs := append([]string{bin, "-config", configDir}, args...)
 	t.Logf("Running command: %s", strings.Join(fullArgs, " "))
 	cmd := exec.Command(fullArgs[0], fullArgs[1:]...)
 	cmd.Dir = "."
@@ -159,6 +161,26 @@ func runGorncp(t *testing.T, configDir string, args ...string) string {
 		t.Logf("Command failed with error: %v", err)
 	}
 	return string(out)
+}
+
+// runGorncp runs the TestMain-built binary.
+func runGorncp(t *testing.T, configDir string, args ...string) string {
+	t.Helper()
+	return runGorncpBinary(t, gorncpBinaryPath, configDir, args...)
+}
+
+// buildFreshGorncp builds gorncp from the current source into a fresh temp dir.
+// TestMain's shared binary is left untouched: overwriting it would break tests
+// that are already running it.
+func buildFreshGorncp(t *testing.T) string {
+	t.Helper()
+	bin := filepath.Join(testutils.TempDir(t, "gorncp-fresh-"), "gorncp")
+	build := exec.Command("go", "build", "-o", bin, ".")
+	build.Dir = "."
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("failed to build gorncp: %v\n%v", err, out)
+	}
+	return bin
 }
 
 func runGorncpBackground(t *testing.T, configDir string, args ...string) (*exec.Cmd, *SafeBuffer) {
@@ -216,10 +238,12 @@ func TestVersionParity(t *testing.T) {
 		t.Errorf("Python version output doesn't match expected format: %q", pyOut)
 	}
 
-	goOut := runGorncp(t, configDir, "--version")
-	if !strings.Contains(goOut, "gorncp "+rns.VERSION) {
-		t.Errorf("Go version output doesn't match expected format: %q", goOut)
-	}
+	// The Go side is compared against the version declared in the rns source the
+	// build compiles rather than the rns.VERSION constant baked into this test
+	// binary, so a version bump landing between the two compiles cannot fail it.
+	testutils.VersionFlag(t, "gorncp", func(t *testing.T) string {
+		return runGorncpBinary(t, buildFreshGorncp(t), configDir, "--version")
+	})
 }
 
 func TestIdentityDisplayParity(t *testing.T) {

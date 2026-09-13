@@ -102,16 +102,18 @@ func buildGornstatus(t *testing.T) string {
 func TestIntegration_VersionOutput(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin := buildGornstatus(t)
-	out, err := exec.Command(bin, "--version").CombinedOutput()
-	if err != nil {
-		t.Fatalf("gornstatus --version failed: %v\n%v", err, string(out))
-	}
-	want := "gornstatus " + rns.VERSION
-	got := strings.TrimSpace(string(out))
-	if got != want {
-		t.Errorf("version output = %q, want %q", got, want)
-	}
+
+	// The expected version is read from the rns source the build compiles, so a
+	// version bump landing between this test binary's compile and the artifact's
+	// build cannot leave the expectation stale.
+	testutils.VersionFlag(t, "gornstatus", func(t *testing.T) string {
+		bin := buildGornstatus(t)
+		out, err := exec.Command(bin, "--version").CombinedOutput()
+		if err != nil {
+			t.Fatalf("gornstatus --version failed: %v\n%v", err, out)
+		}
+		return string(out)
+	})
 }
 
 func TestIntegration_HelpOutput(t *testing.T) {
@@ -279,16 +281,17 @@ func TestIntegration_MonitorModeSIGINT(t *testing.T) {
 func TestIntegration_VerboseStacking(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin := buildGornstatus(t)
-	out, err := exec.Command(bin, "-v", "-v", "--version").CombinedOutput()
-	if err != nil {
-		t.Fatalf("gornstatus -v -v --version failed: %v\n%v", err, string(out))
-	}
-	want := "gornstatus " + rns.VERSION
-	got := strings.TrimSpace(string(out))
-	if got != want {
-		t.Errorf("version output = %q, want %q", got, want)
-	}
+
+	// Stacked -v flags must still yield the single version line, compared
+	// against the version declared in the rns source the build compiles.
+	testutils.VersionFlag(t, "gornstatus", func(t *testing.T) string {
+		bin := buildGornstatus(t)
+		out, err := exec.Command(bin, "-v", "-v", "--version").CombinedOutput()
+		if err != nil {
+			t.Fatalf("gornstatus -v -v --version failed: %v\n%v", err, out)
+		}
+		return string(out)
+	})
 }
 
 func TestIntegration_RemoteStatus(t *testing.T) {

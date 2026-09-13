@@ -19,7 +19,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gmlewis/go-reticulum/rns"
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
@@ -91,14 +90,26 @@ func getRnxPythonBinaryPath(t *testing.T) string {
 }
 
 func TestIntegrationVersionOutput(t *testing.T) {
-	gornxBin := getGornxBinaryPath(t)
-	out, err := exec.Command(gornxBin, "--version").CombinedOutput()
-	if err != nil {
-		t.Fatalf("gornx --version failed: %v\n%v", err, string(out))
-	}
-	want := "gornx " + rns.VERSION + "\n"
-	if got := string(out); got != want {
-		t.Errorf("version output = %q, want %q", got, want)
+	// The binary is built here from the current source rather than reused from
+	// TestMain, so a version bump landing after TestMain's build is absorbed by
+	// rebuilding instead of comparing a stale constant against a fresh binary.
+	out := testutils.VersionFlag(t, "gornx", func(t *testing.T) string {
+		bin := filepath.Join(testutils.TempDir(t, "gornx-version-"), "gornx")
+		build := exec.Command("go", "build", "-o", bin, ".")
+		if buildOut, err := build.CombinedOutput(); err != nil {
+			t.Fatalf("failed to build gornx: %v\n%v", err, buildOut)
+		}
+		raw, err := exec.Command(bin, "--version").CombinedOutput()
+		if err != nil {
+			t.Fatalf("gornx --version failed: %v\n%v", err, raw)
+		}
+		return string(raw)
+	})
+	// VersionFlag pinned the line's content against the rns source; the flag must
+	// print exactly that one line, so the output equals its own trimmed form plus
+	// the single trailing newline.
+	if want := strings.TrimSpace(out) + "\n"; out != want {
+		t.Errorf("version output = %q, want %q", out, want)
 	}
 }
 

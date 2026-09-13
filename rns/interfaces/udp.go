@@ -79,9 +79,17 @@ func NewUDPInterface(name, listenIP string, listenPort int, forwardIP string, fo
 }
 
 func (ui *UDPInterface) start() error {
-	conn, err := net.ListenUDP("udp", ui.listenAddr)
-	if err != nil {
-		return err
+	var conn *net.UDPConn
+	if held := PopPendingUDPSocket(ui.listenAddr.Port); held != nil {
+		// The test suite reserved this port with a socket already bound; adopt it
+		// instead of rebinding (see pendingUDPSockets).
+		conn = held
+	} else {
+		var err error
+		conn, err = net.ListenUDP("udp", ui.listenAddr)
+		if err != nil {
+			return err
+		}
 	}
 	ui.conn = conn
 	atomic.StoreInt32(&ui.running, 1)

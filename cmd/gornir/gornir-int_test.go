@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gmlewis/go-reticulum/rns"
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
@@ -46,16 +45,18 @@ func findRnir(t *testing.T) string {
 func TestIntegration_VersionOutput(t *testing.T) {
 	t.Parallel()
 	testutils.SkipShortIntegration(t)
-	bin := buildGornir(t)
-	out, err := exec.Command(bin, "--version").CombinedOutput()
-	if err != nil {
-		t.Fatalf("gornir --version failed: %v\n%v", err, string(out))
-	}
-	want := "gornir " + rns.VERSION
-	got := strings.TrimSpace(string(out))
-	if got != want {
-		t.Errorf("version output = %q, want %q", got, want)
-	}
+
+	// The expected version is read from the rns source the build compiles, so a
+	// version bump landing between this test binary's compile and the artifact's
+	// build cannot leave the expectation stale.
+	testutils.VersionFlag(t, "gornir", func(t *testing.T) string {
+		bin := buildGornir(t)
+		out, err := exec.Command(bin, "--version").CombinedOutput()
+		if err != nil {
+			t.Fatalf("gornir --version failed: %v\n%v", err, out)
+		}
+		return string(out)
+	})
 }
 
 func TestIntegration_ExampleConfigOutput(t *testing.T) {

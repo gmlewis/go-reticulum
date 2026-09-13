@@ -6,6 +6,7 @@
 package interfaces
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -26,6 +27,14 @@ var i2pTunnelLogger = log.New(os.Stderr, "", log.LstdFlags)
 // i2pDialTimeout is the 5s timeout Python waits when dialing the local service
 // in ServerTunnel.handle_client (tunnel.py:155).
 const i2pDialTimeout = 5 * time.Second
+
+// i2pTunnelDrainTimeout bounds how long Close waits for the tracked proxy
+// goroutines. Close closes every registered conn before draining, so the drain
+// completes at once in normal operation. The bound mirrors Python's shutdown,
+// which cancels the tunnel's tasks and returns instead of waiting for them
+// (I2PController.stop), and keeps a future registration leak from consuming a
+// whole test-suite timeout as a hang.
+const i2pTunnelDrainTimeout = 5 * time.Second
 
 // I2PTunnel is the base I2P tunnel (tunnel.I2PTunnel). It holds a SAM session
 // and proxies data between a local TCP endpoint and the I2P network.
@@ -67,6 +76,12 @@ type I2PTunnel struct {
 	// tests park the accept loop in the Close-vs-track window using channel
 	// synchronization (no time.Sleep); production leaves it nil.
 	onAcceptOpened func()
+	// onConnReady, when non-nil, is invoked by both accept loops once a stream
+	// is ready to be proxied and before its conn is registered in the active
+	// set. It lets deterministic tests park the loop in the Close-vs-register
+	// window using channel synchronization (no time.Sleep); production leaves
+	// it nil.
+	onConnReady func()
 	// bgWG tracks all background proxy goroutines so Close drains them.
 	bgWG sync.WaitGroup
 	// activeConns retains the live proxy conns so they are not reaped while
@@ -157,7 +172,10 @@ func (t *I2PTunnel) preRun() error {
 	return nil
 }
 
-// trackConn registers a proxy conn in the active set.
+// trackConn registers a proxy conn in the active set without checking whether
+// the tunnel is still running. Registration that can race with Close must use
+// trackConnIfLive instead: a conn registered after Close has snapshotted the
+// active set is never closed by Close.
 func (t *I2PTunnel) trackConn(c net.Conn) {
 	t.mu.Lock()
 	if t.activeConns == nil {
@@ -165,6 +183,29 @@ func (t *I2PTunnel) trackConn(c net.Conn) {
 	}
 	t.activeConns[c] = struct{}{}
 	t.mu.Unlock()
+}
+
+// trackConnIfLive registers c in the active set, but only while the tunnel is
+// still running. It returns false when the tunnel has been closed, in which case
+// the caller owns c and must close it.
+//
+// Registration must be atomic with Close's decision to stop, because Close
+// snapshots the active set and then waits for the proxy goroutines: a conn
+// registered after that snapshot is unreachable by Close, so nothing ever closes
+// it and its copy stays blocked on a peer forever. Checking stopped and
+// registering under the one lock Close uses to set stopped closes that window
+// (the same shape as trackPendingIfLive for the in-flight STREAM ACCEPT).
+func (t *I2PTunnel) trackConnIfLive(c net.Conn) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.stopped {
+		return false
+	}
+	if t.activeConns == nil {
+		t.activeConns = map[net.Conn]struct{}{}
+	}
+	t.activeConns[c] = struct{}{}
+	return true
 }
 
 // untrackConn removes a proxy conn from the active set.
@@ -207,10 +248,32 @@ func (t *I2PTunnel) closeActiveConns() {
 	}
 }
 
+// drainBackground waits for the tracked background goroutines to exit, bounded
+// by i2pTunnelDrainTimeout. Every registered conn has already been closed when
+// it is called, so the copies unblock immediately; the bound reports a leak
+// instead of hanging the caller forever.
+func (t *I2PTunnel) drainBackground() error {
+	done := make(chan struct{})
+	go func() {
+		t.bgWG.Wait()
+		close(done)
+	}()
+	timer := time.NewTimer(i2pTunnelDrainTimeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return nil
+	case <-timer.C:
+		return fmt.Errorf("I2P tunnel %s: background proxy goroutines still running %v after close",
+			t.sessionID(), i2pTunnelDrainTimeout)
+	}
+}
+
 // Close tears the tunnel down: stops accepting, tears down the SAM session,
 // cancels any in-flight accept, drains the background proxy goroutines, and
 // closes the retained proxy conns. It blocks until all proxies have exited
-// (goroutines are tracked, never fire-and-forget).
+// (goroutines are tracked, never fire-and-forget), bounded by
+// i2pTunnelDrainTimeout so that a leaked conn cannot hang the caller forever.
 func (t *I2PTunnel) Close() error {
 	t.mu.Lock()
 	t.stopped = true
@@ -229,8 +292,7 @@ func (t *I2PTunnel) Close() error {
 	// Close the retained proxy conns first so the proxy goroutines unblock,
 	// then drain them. Waiting before closing would deadlock.
 	t.closeActiveConns()
-	t.bgWG.Wait()
-	return nil
+	return t.drainBackground()
 }
 
 // trackPendingIfLive records the in-flight STREAM ACCEPT for cancellation by
@@ -318,12 +380,15 @@ func (t *ClientTunnel) acceptLoop(ln net.Listener) {
 			_ = client.Close()
 			continue
 		}
-		if t.isStopped() {
-			_ = stream.Close()
-			_ = client.Close()
+		if t.onConnReady != nil {
+			t.onConnReady()
+		}
+		// proxyPair registers both conns only while the tunnel is live and closes
+		// them when it cannot: registering after Close has snapshotted the active
+		// set would leak them, and both copies would then block forever.
+		if !t.proxyPair(stream, client) {
 			return
 		}
-		t.proxyPair(stream, client)
 	}
 }
 
@@ -385,24 +450,38 @@ func (t *ServerTunnel) acceptLoop() {
 			}
 			continue
 		}
-		if t.isStopped() {
+		if t.onConnReady != nil {
+			t.onConnReady()
+		}
+		// Register the stream conn only while the tunnel is live. The accept loop
+		// owns the stream until the handler takes it over, so it must close the
+		// stream itself when Close has already snapshotted the active conns.
+		if !t.trackConnIfLive(stream.Conn()) {
 			_ = stream.Close()
 			return
 		}
 		// Serve the inbound stream in a tracked background goroutine so the
 		// accept loop continues to the next accept (tunnel.py:178-181
 		// asyncio.ensure_future(handle_client, ...)).
-		t.trackConn(stream.Conn())
 		t.bgWG.Go(func() { t.handleServerClient(stream) })
 	}
 }
 
 // handleServerClient reads the remote-destination line from the inbound stream,
 // dials LocalAddress, and proxies bidirectionally (tunnel.ServerTunnel.
-// handle_client). A local dial failure closes the stream and logs. The stream
-// conn is already tracked by the caller; proxyPair tracks the local conn.
+// handle_client). A local dial failure closes the stream and logs.
 func (t *ServerTunnel) handleServerClient(stream *SAMStream) {
-	defer t.untrackConn(stream.Conn())
+	// The accept loop registered the stream conn before starting this handler.
+	// Release that registration on every path that does not hand the stream to a
+	// proxy pair: proxyPair takes over both conns and unregisters them when the
+	// copies finish. Unregistering the stream before the pair starts would put it
+	// out of Close's reach while its copy is still running.
+	proxied := false
+	defer func() {
+		if !proxied {
+			t.untrackConn(stream.Conn())
+		}
+	}()
 	// Read the remote destination line; data may follow in the same chunk
 	// (tunnel.py:144-147).
 	line, err := stream.br.ReadString('\n')
@@ -436,17 +515,27 @@ func (t *ServerTunnel) handleServerClient(stream *SAMStream) {
 			}
 		}
 	}
-	t.proxyPair(stream, local)
+	proxied = t.proxyPair(stream, local)
 }
 
 // proxyPair runs two tracked proxy goroutines copying in each direction between
 // the SAM stream a and the net.Conn b (tunnel.handle_client's two proxy_data
-// tasks). Both conns are retained in the active set while the pair is live;
-// each goroutine untracks its write-side conn on completion
-// and drains the tunnel-wide bgWG so Close waits for the proxies.
-func (t *I2PTunnel) proxyPair(a *SAMStream, b net.Conn) {
-	t.trackConn(b)
-	t.trackConn(a.Conn())
+// tasks). Both conns are registered in the active set atomically with respect to
+// Close; when the tunnel has already closed it returns false after closing both
+// conns and starting no goroutine. Each goroutine untracks its read-side conn on
+// completion and drains the tunnel-wide bgWG so Close waits for the proxies.
+func (t *I2PTunnel) proxyPair(a *SAMStream, b net.Conn) bool {
+	if !t.trackConnIfLive(b) {
+		_ = b.Close()
+		_ = a.Close()
+		return false
+	}
+	if !t.trackConnIfLive(a.Conn()) {
+		t.untrackConn(b)
+		_ = b.Close()
+		_ = a.Close()
+		return false
+	}
 	t.bgWG.Add(2)
 	go func() {
 		defer t.bgWG.Done()
@@ -460,4 +549,5 @@ func (t *I2PTunnel) proxyPair(a *SAMStream, b net.Conn) {
 		_ = a.Close()
 		t.untrackConn(a.Conn())
 	}()
+	return true
 }

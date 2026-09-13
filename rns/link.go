@@ -179,7 +179,20 @@ type Link struct {
 	lastData      time.Time
 	activatedAt   time.Time
 	requestTime   time.Time
-	lastProof     time.Time
+	// lastProof is the time of the most recent validated link proof, the Go
+	// port of Python Link.last_proof (Link.py:248), which
+	// PacketReceipt.validate_link_proof stamps with concluded_at
+	// (Packet.py:447). Every other timestamp above is written under l.mu, but
+	// this one cannot be: its only writer runs inside the transport's receipt
+	// loop (TransportSystem.Inbound -> ValidateProofPacket ->
+	// ValidateLinkProof), which already holds ts.mu and the receipt's own
+	// mutex, so taking l.mu there would nest Link's mutex inside the
+	// transport's on the proof path. It is an atomic snapshot of an immutable
+	// time.Time instead: the field is never part of a multi-field invariant
+	// (it is read only as a max() input in effectiveLastInbound), so an atomic
+	// load and store hand the reader a complete, consistent value without
+	// implying any lock order.
+	lastProof atomic.Pointer[time.Time]
 
 	now func() time.Time
 
@@ -1255,17 +1268,37 @@ func (l *Link) startWatchdog() {
 	})
 }
 
+// noteProofReceived records now as this link's most recent validated proof
+// time. It is the only writer of lastProof and takes no locks, so it is safe
+// to call from the transport's proof path, which holds ts.mu and the receipt's
+// mutex while it validates a proof packet.
+func (l *Link) noteProofReceived(now time.Time) {
+	l.lastProof.Store(&now)
+}
+
+// lastProofTime returns the time of this link's most recent validated proof, or
+// the zero time when no proof has been validated yet. It is safe to call from
+// any goroutine and takes no locks.
+func (l *Link) lastProofTime() time.Time {
+	if stamped := l.lastProof.Load(); stamped != nil {
+		return *stamped
+	}
+	return time.Time{}
+}
+
 // effectiveLastInbound returns the most recent moment this link is considered
 // to have received traffic. The keepalive and stale checks fold the activation
 // and proof timestamps into lastInbound, so a link that has just activated is
-// not immediately treated as silent. The caller must hold l.mu.
+// not immediately treated as silent. The caller must hold l.mu for
+// activatedAt and lastInbound; lastProof is an atomic read (see its field
+// declaration) because the proof path writes it without l.mu.
 func (l *Link) effectiveLastInbound() time.Time {
 	lastInbound := l.activatedAt
 	if l.lastInbound.After(lastInbound) {
 		lastInbound = l.lastInbound
 	}
-	if l.lastProof.After(lastInbound) {
-		lastInbound = l.lastProof
+	if proof := l.lastProofTime(); proof.After(lastInbound) {
+		lastInbound = proof
 	}
 	return lastInbound
 }

@@ -404,19 +404,32 @@ func TestRNodeBLETransportRejected(t *testing.T) {
 // fast; the saved value is restored before return so parallel reconnect-using
 // tests (run after non-parallel ones) see the production delay.
 func TestRNodeStartupFailureSelfHeals(t *testing.T) {
-	// Reserve a free TCP port, then release it so the first dial is refused.
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
+	// The transport port must be free for the interface's first dial and must be
+	// the same port this test listens on afterwards, so it cannot be held open
+	// for the test (see reserveUnboundTCPPort). A lost reservation is retried on
+	// a fresh port instead of failing the test.
+	for range portReserveAttempts {
+		if rnodeSelfHealScenario(t) {
+			return
+		}
 	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	_ = ln.Close()
+	t.Fatalf("no reserved port stayed free for %v self-heal scenarios", portReserveAttempts)
+}
+
+// rnodeSelfHealScenario runs one attempt of TestRNodeStartupFailureSelfHeals on
+// a freshly reserved free port and reports whether it completed. It returns
+// false when the reservation was lost — the port was bound before the interface
+// dialed it, or the scenario's own listener could not bind it — which the caller
+// answers by retrying on a new port.
+func rnodeSelfHealScenario(t *testing.T) bool {
+	t.Helper()
+	port := reserveUnboundTCPPort(t)
 
 	prev := rnodeReconnectWait
 	rnodeReconnectWait = 150 * time.Millisecond
 	defer func() { rnodeReconnectWait = prev }()
 
-	iface, err := NewRNodeInterface("rnode-selfheal", fmt.Sprintf("tcp://127.0.0.1:%d", port),
+	iface, err := NewRNodeInterface("rnode-selfheal", fmt.Sprintf("tcp://127.0.0.1:%v", port),
 		115200, 8, 1, "N", 915000000, 125000, 17, 8, 5, false, 0, "", nil)
 	if err != nil {
 		t.Fatalf("constructor should not fail for an unavailable transport: %v", err)
@@ -426,14 +439,20 @@ func TestRNodeStartupFailureSelfHeals(t *testing.T) {
 		t.Fatalf("expected *RNodeInterface, got %T", iface)
 	}
 	if r.Status() {
-		t.Fatal("interface should be offline immediately after startup failure")
+		// A parallel test's reservation or dial claimed the port first, so the
+		// interface is online against a transport this scenario does not
+		// control; reserve a new port and start over.
+		_ = r.Detach()
+		return false
 	}
 
 	// Now bring the transport up; the background reconnect should connect.
-	ln2, err := net.Listen("tcp", "127.0.0.1:"+fmt.Sprint(port))
+	ln2, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%v", port))
 	if err != nil {
+		// The port was claimed between the reservation and this bind, and the
+		// interface is pinned to it; start over on a fresh port.
 		_ = r.Detach()
-		t.Fatalf("re-listen: %v", err)
+		return false
 	}
 	defer func() { _ = ln2.Close() }()
 	go func() {
@@ -455,4 +474,5 @@ func TestRNodeStartupFailureSelfHeals(t *testing.T) {
 		t.Fatalf("on-air bitrate = %d, want 3125 after reconnect", r.Bitrate())
 	}
 	_ = r.Detach()
+	return true
 }
