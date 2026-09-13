@@ -225,3 +225,35 @@ func TestHubLinkWelcomeDeliveredAndSurvivesPingLoop(t *testing.T) {
 	}
 	t.Logf("hub log:\n%v", logs)
 }
+
+// TestHubLinkAsyncConnectProducesWelcome is an exploratory probe of the
+// production connect path: the hub announces, the client learns the path and
+// recalls the identity, then connects through the async connect worker.
+func TestHubLinkAsyncConnectProducesWelcome(t *testing.T) {
+	t.Parallel()
+	rig := newHubFlapRig(t, 0.15, 0.45)
+	rig.hub.AnnounceOnce()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && !rig.clientTS.HasPath(rig.hub.DestinationHash()) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Logf("hasPath=%v", rig.clientTS.HasPath(rig.hub.DestinationHash()))
+
+	client := rig.manager.AddHub(rig.hub.DestinationHash(), "rrc.hub", "Public Hub")
+	client.SetAutoReconnect(false, false)
+	rig.client = client
+	t.Cleanup(client.Disconnect)
+	client.ConnectAsync()
+
+	if !rig.waitWelcomed(5 * time.Second) {
+		t.Fatalf("client never received WELCOME via connect worker; hub log:\n%v", rig.logs.String())
+	}
+	client.lock.Lock()
+	link := client.link
+	client.lock.Unlock()
+	if link != nil {
+		t.Logf("client link status=%v rtt=%v", link.GetStatus(), link.RTT())
+	}
+	t.Logf("hub log:\n%v", rig.logs.String())
+}

@@ -325,15 +325,25 @@ func (s *LogSetup) Writer() io.Writer {
 	return s.writer
 }
 
-// EmitSendFailure logs one send failure in Python's two tiers:
-// OSError-class failures warn with the error text, everything else logs
-// at the debug tier without it.
+// EmitSendFailure logs one send failure in Python's two tiers, keeping the
+// debug-tier message byte-identical to Python's. rrcd formats the cause into
+// the message only for OSError-class failures (rrcd/messages.py:317,
+// rrcd/service.py:537) and carries it for every other failure through
+// exc_info=True on the debug-tier message (rrcd/messages.py:323-327,
+// rrcd/service.py:544-547), whose logging handler renders the exception after
+// the message instead of inside it. Go has no traceback, so the cause follows
+// the message as its own detail record at the same tier: a silently dropped
+// WELCOME is then diagnosable at DEBUG without the parity-pinned message text
+// growing an err= field it does not have in Python.
 func (s *LogSetup) EmitSendFailure(err error, linkID string, size int) {
 	if sendErrorIsOSError(err) {
 		s.Emit(slog.LevelWarn, "rrcd.hub", "Send failed link_id=%v bytes=%v err=%v", linkID, size, err)
 		return
 	}
 	s.Emit(slog.LevelDebug, "rrcd.hub", "Send failed link_id=%v bytes=%v", linkID, size)
+	if err != nil {
+		s.Emit(slog.LevelDebug, "rrcd.hub", "Send failure cause link_id=%v cause=%v", linkID, err)
+	}
 }
 
 // slogLevelName renders a slog level as its Python logging name.

@@ -168,20 +168,29 @@ type RRCHub struct {
 	// hub re-forward them (Python's client has no such echo, RRC.py:1021).
 	serverSide bool
 
-	// Hub-liveness watchdog (startHubLivenessLoop): the hub pings every ~30 s,
-	// so total inbound silence for HubLivenessTimeout means the hub instance
-	// is gone even though this process's link object still looks active. The
-	// RNS link watchdog cannot be relied on for this: its stale window is
-	// 2*clamp(rtt*(KEEPALIVE_MAX/KEEPALIVE_MAX_RTT), 5s, 360s) with the rtt
-	// measured once at establishment, so a link established during a load
-	// spike (rtt ~15 s observed live) stays "active" for up to 12 minutes
-	// after the hub died — the client shows Connected while its joins and
-	// messages vanish. On expiry the watchdog tears the link down, which
-	// fires the closed callback and the normal reconnect machinery.
-	lastHubTraffic atomic.Int64
-	hubLiveness    time.Duration
-	livenessStop   chan struct{}
-	livenessWG     sync.WaitGroup
+	// Hub-liveness watchdog (startHubLivenessLoop): any inbound RRC envelope
+	// from the hub restarts the window, so a hub that talks to this client is
+	// alive by definition. A hub with nothing to say is not dead, though:
+	// rrcd ships its ping loop disabled (ping_interval_s = 0.0, "0 = disabled",
+	// ping_timeout_s = 0.0, "0 = no timeout" -- rrcd/config.py:35-36,
+	// EX1-RRCD.md:472-476) and documents the hub ping itself as "Optional
+	// hub-initiated PING" (README.md:117), so an idle room can legitimately
+	// hear nothing for minutes. Silence therefore only ARMS the watchdog: at
+	// the end of the window the client asks the hub to prove itself with an
+	// RRC PING, which rrcd answers with a PONG (rrcd/router.py:930-943), and it
+	// tears the link down only when that answer never comes. This is the case
+	// the watchdog exists for: a hub that died or wedged mid-session keeps the
+	// RNS link looking ACTIVE for up to ~12 minutes, because the RNS stale
+	// window is computed from the RTT measured once at establishment
+	// (2*clamp(rtt*(KEEPALIVE_MAX/KEEPALIVE_MAX_RTT), 5s, 360s)), while the
+	// client's rooms silently receive nothing. Python's RRC client has no
+	// equivalent watchdog (nomadnet/RRC.py), so this stays a Go-side safety
+	// net; it must never fire on a hub that is merely quiet.
+	lastHubTraffic    atomic.Int64
+	livenessProbeSent atomic.Int64
+	hubLiveness       time.Duration
+	livenessStop      chan struct{}
+	livenessWG        sync.WaitGroup
 	// livenessTeardownFn, when set, replaces link.Teardown on expiry (tests).
 	livenessTeardownFn func()
 }
@@ -323,9 +332,11 @@ func (h *RRCHub) onEstablished(l *rns.Link) {
 		h.HandleData(data)
 	})
 
-	// Arm the hub-liveness watchdog: hub silence beyond HubLivenessTimeout
-	// tears the link down into the normal reconnect path.
+	// Arm the hub-liveness watchdog: the window starts at establishment and
+	// restarts on every inbound hub envelope, and no probe is outstanding on a
+	// brand-new link.
 	h.lastHubTraffic.Store(time.Now().UnixNano())
+	h.livenessProbeSent.Store(0)
 	if h.hubLiveness <= 0 {
 		h.hubLiveness = HubLivenessTimeout
 	}
@@ -345,13 +356,43 @@ func (h *RRCHub) onEstablished(l *rns.Link) {
 	}
 }
 
-// HubLivenessTimeout is how long the client tolerates total inbound silence
-// from the hub before declaring the link dead: three missed hub pings (the
-// hub pings every ~30 s). This bounds reconnect latency independently of the
-// RNS link watchdog, whose stale window is derived from the
-// once-at-establishment rtt and can reach 12 minutes for links established
+// HubLivenessTimeout is how long the client tolerates inbound silence from the
+// hub before it probes the hub to find out whether the hub is still there.
+// Silence alone never tears a link down (a hub with pings disabled, which is
+// rrcd's default, says nothing to an idle room); the probe is what decides, and
+// hubProbeGrace bounds the wait for its answer. This bounds reconnect latency
+// independently of the RNS link watchdog, whose stale window is derived from
+// the once-at-establishment rtt and can reach 12 minutes for links established
 // during a load spike.
 const HubLivenessTimeout = 90 * time.Second
+
+// hubProbeGrace caps how long the client waits for the hub's answer to its
+// liveness probe. The wait is also limited to half the configured window, so a
+// shortened window stays usable in tests.
+const hubProbeGrace = 30 * time.Second
+
+// sendLivenessProbe asks the hub to prove it is alive with an RRC PING, the
+// protocol's own liveness exchange: rrcd answers every PING with a PONG that
+// echoes the body (rrcd/router.py:930-943), and that answer arrives as inbound
+// traffic which restarts the watchdog window. The probe is deliberately not
+// registered in pendingPings, so its PONG renders no "Pong from hub" row in a
+// room, and it is only sent on a welcomed, connected link, where the hub's PING
+// handling is live.
+func (h *RRCHub) sendLivenessProbe() {
+	h.lock.Lock()
+	welcomed := h.Welcomed
+	status := h.Status
+	h.lock.Unlock()
+	if !welcomed || status != StatusConnected {
+		return
+	}
+	var srcHash []byte
+	if h.Manager != nil {
+		srcHash = h.Manager.identityHash()
+	}
+	h.livenessProbeSent.Store(time.Now().UnixNano())
+	h.sendEnv(MakeClientEnvelope(TypePing, srcHash, nil, nil, []byte("rrc-liveness"), MsgID(), NowMs()))
+}
 
 // startHubLivenessLoop arms the per-establishment watchdog goroutine.
 func (h *RRCHub) startHubLivenessLoop() {
@@ -394,8 +435,24 @@ func (h *RRCHub) hubLivenessLoop(stop <-chan struct{}, liveness time.Duration) {
 		if silent <= liveness {
 			continue
 		}
-		log.Printf("[RRC %v] hub silent for %v (liveness timeout %v), tearing down for reconnect",
-			h.Name, silent.Round(time.Second), liveness)
+		// A full window of silence is not proof the hub is gone: rrcd ships
+		// its ping loop disabled (ping_interval_s = 0.0, "0 = disabled" --
+		// rrcd/config.py:35-36, EX1-RRCD.md:472-476), so an idle room hears
+		// nothing at all from a perfectly healthy hub. Ask the hub to prove
+		// itself with an RRC PING and let its PONG restart the window; only
+		// silence that survives the probe means the hub died or wedged.
+		probeSent := h.livenessProbeSent.Load()
+		if probeSent == 0 {
+			h.sendLivenessProbe()
+			continue
+		}
+		grace := min(liveness/2, hubProbeGrace)
+		waited := time.Since(time.Unix(0, probeSent))
+		if waited <= grace {
+			continue
+		}
+		log.Printf("[RRC %v] hub silent for %v and unanswered for %v after a liveness probe, tearing down for reconnect",
+			h.Name, silent.Round(time.Second), waited.Round(time.Second))
 		if fn := h.livenessTeardownFn; fn != nil {
 			fn()
 			return
@@ -1843,8 +1900,10 @@ func (h *RRCHub) sendEnv(env map[any]any) {
 func (h *RRCHub) HandleData(data []byte) {
 	log.Printf("DEBUG rrc HandleData: %d bytes: %x", len(data), data[:min(len(data), 40)])
 	// Any inbound envelope is proof the hub link is alive; the hub-liveness
-	// watchdog (startHubLivenessLoop) reads this clock.
+	// watchdog (startHubLivenessLoop) reads this clock, and it also clears any
+	// outstanding probe: whatever the hub just said, it is answering.
 	h.lastHubTraffic.Store(time.Now().UnixNano())
+	h.livenessProbeSent.Store(0)
 	env, err := DecodeEnvelope(data)
 	if err != nil {
 		log.Printf("DEBUG rrc HandleData decode failed: %v", err)
@@ -2023,6 +2082,8 @@ func (h *RRCHub) HandleData(data []byte) {
 		if h.Manager != nil {
 			srcHash = h.Manager.identityHash()
 		}
+		// A hub ping is ordinary inbound traffic for the liveness watchdog:
+		// it is stamped in HandleData before the message is dispatched.
 		h.sendEnv(MakeClientEnvelope(TypePong, srcHash, nil, nil, body, MsgID(), NowMs()))
 
 	case TypeError:

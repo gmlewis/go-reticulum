@@ -6,6 +6,7 @@
 package rrc
 
 import (
+	"errors"
 	"io"
 	"log"
 	"log/slog"
@@ -308,5 +309,61 @@ func TestRotatingFileWriterApplySwap(t *testing.T) {
 	}
 	if _, err := old.Write([]byte("x")); err == nil {
 		t.Fatal("previous rotating file still writable after Apply (handle leaked)")
+	}
+}
+
+// The debug-tier send-failure record must keep Python's message byte-identical
+// while still making the failure cause recoverable. Python formats the cause
+// into the message only for OSError-class failures (rrcd/messages.py:317,
+// rrcd/service.py:537) and carries it for every other failure through
+// exc_info=True on the debug-tier message (rrcd/messages.py:323-327,
+// rrcd/service.py:544-547), whose logging handler renders the exception after
+// the message instead of inside it. Without that detail a silently dropped
+// WELCOME is nearly invisible in the hub log.
+func TestEmitSendFailureDebugTierCarriesCause(t *testing.T) {
+	t.Parallel()
+
+	dir := testutils.TempDir(t, "logging-")
+	logPath := filepath.Join(dir, "hub.log")
+	file := logPath
+	cfg := DefaultHubConfig()
+	cfg.LogLevel = "DEBUG"
+	cfg.LogConsole = false
+	cfg.LogFile = &file
+	cfg.LogFormat = "%(levelname)s:%(name)s:%(message)s"
+	setup := ConfigureLogging(cfg, nil, nil, nil)
+
+	setup.EmitSendFailure(errors.New("interface not available"), "aabbccdd", 137)
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("log file read: %v", err)
+	}
+	text := string(data)
+
+	// The message itself stays exactly Python's: link id and byte count, no
+	// error field, or it would drift from the parity-pinned text asserted by
+	// TestDrainOutgoingSendFailureLogging.
+	if !strings.Contains(text, "DEBUG:rrcd.hub:Send failed link_id=aabbccdd bytes=137\n") {
+		t.Errorf("the debug-tier message changed: %q", text)
+	}
+	if strings.Contains(text, "err=interface") {
+		t.Errorf("the debug-tier message gained an err= field: %q", text)
+	}
+	// The cause is recoverable from the record at debug level.
+	if !strings.Contains(text, "cause=interface not available") {
+		t.Errorf("the debug-tier output does not carry the failure cause: %q", text)
+	}
+
+	// The cause rides the same tier as the message it belongs to, so INFO
+	// hides both and the level filter still means what it says.
+	if err := os.WriteFile(logPath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg.LogLevel = "INFO"
+	setup.Apply(cfg, nil, nil, nil)
+	setup.EmitSendFailure(errors.New("interface not available"), "aabbccdd", 137)
+	data, _ = os.ReadFile(logPath)
+	if got := string(data); strings.Contains(got, "interface not available") {
+		t.Errorf("the cause leaked past the INFO level filter: %q", got)
 	}
 }

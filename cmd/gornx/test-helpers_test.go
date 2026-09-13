@@ -25,6 +25,19 @@ func prepareGornxConfig(t *testing.T, configDir string) {
 	prepareGornxConfigWithInstance(t, configDir, "gornx-"+filepath.Base(configDir), 0, 0)
 }
 
+// prepareGornxConfigWithInstance writes a per-test Reticulum configuration.
+//
+// The no-port variant (listenPort == 0) configures a standalone instance, as
+// every other tool's integration helper here does. It must not ask for a shared
+// instance: gornx requires one when the configuration shares one
+// (WithRequireSharedInstance in run()), so share_instance = Yes makes these
+// tests attach to whatever shared instance the machine happens to be running —
+// the developer's own daemon locally, nothing in CI — instead of exercising the
+// tool. A test that passes only because an unrelated instance is listening on
+// the default port is not testing the tool at all.
+//
+// The ported variant configures two peers on private UDP loopback ports, so a
+// listener and an initiator can talk to each other without a shared instance.
 func prepareGornxConfigWithInstance(t *testing.T, configDir string, instanceName string, listenPort, forwardPort int) {
 	t.Helper()
 
@@ -32,7 +45,7 @@ func prepareGornxConfigWithInstance(t *testing.T, configDir string, instanceName
 		configText := strings.Join([]string{
 			"[reticulum]",
 			"enable_transport = Yes",
-			"share_instance = Yes",
+			"share_instance = No",
 			"instance_name = " + instanceName,
 			"",
 			"[logging]",

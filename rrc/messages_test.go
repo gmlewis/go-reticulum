@@ -6,6 +6,8 @@
 package rrc
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/gmlewis/go-reticulum/rns"
@@ -152,4 +154,63 @@ func equalStrings(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// TestQueueWelcomeFitsFleetMTU pins the WELCOME/MTU failure mode rrcd
+// documents (README.md:74-88): a hub whose WELCOME does not fit the link MTU
+// refuses to welcome the peer, and the client then times out waiting for a
+// WELCOME. Two properties keep the fleet's hub inside the MTU: the greeting is
+// NOT part of the WELCOME (it travels after it as chunked NOTICE messages via
+// the post-send callbacks), and include_joined_member_list only affects
+// JOINED/PARTED fanouts, never the WELCOME body (rrcd/router.py:504-640,
+// session.py:153; Go router.go:463, session.go:225).
+func TestQueueWelcomeFitsFleetMTU(t *testing.T) {
+	t.Parallel()
+
+	greeting := "Welcome! JOIN #general to discuss go-nomadnet, go-reticulum, and asic-reticulum."
+	newHelper := func(hubName string, logged *[]string) *MessageHelper {
+		return NewMessageHelper(MessageHooks{
+			IdentityHash:           func() []byte { return bytesOf(0x21, 32) },
+			StatsInc:               func(string, int) {},
+			SendPacket:             func(*rns.Link, []byte) error { return nil },
+			EnableResourceTransfer: func() bool { return true },
+			HubName:                func() string { return hubName },
+			WelcomeLimits:          func() []any { return []any{int64(32), int64(64), int64(350), int64(32), int64(240)} },
+			FmtHash:                func(hash []byte) string { return hexOf(hash) },
+			FmtLinkID:              func(*rns.Link) string { return "-" },
+			Logf: func(format string, args ...any) {
+				*logged = append(*logged, fmt.Sprintf(format, args...))
+			},
+		})
+	}
+
+	// The fleet's public hub, with the greeting the owner actually serves.
+	var fleetLog []string
+	fleet := newHelper("gonomadnet Public Hub", &fleetLog)
+	outgoing := &OutgoingList{}
+	fleet.QueueWelcome(outgoing, &rns.Link{}, bytesOf(0xaa, 32))
+	if len(outgoing.Queue) != 1 {
+		t.Fatalf("fleet WELCOME queued %v payloads, want 1 (log=%v)", len(outgoing.Queue), fleetLog)
+	}
+	payload := outgoing.Queue[0].Payload
+	if len(payload) > rnsMDU {
+		t.Errorf("fleet WELCOME is %v bytes, over the %v-byte link MDU", len(payload), rnsMDU)
+	}
+	if strings.Contains(string(payload), greeting) {
+		t.Error("fleet WELCOME carries the greeting; the greeting must travel as NOTICE chunks after it")
+	}
+	t.Logf("fleet WELCOME payload=%v bytes (mdu=%v)", len(payload), rnsMDU)
+
+	// A hub name large enough to overflow the link MTU must be refused loudly
+	// rather than queued into a send that cannot fit.
+	var oversizeLog []string
+	oversize := newHelper(strings.Repeat("h", 512), &oversizeLog)
+	oversizeOutgoing := &OutgoingList{}
+	oversize.QueueWelcome(oversizeOutgoing, &rns.Link{}, bytesOf(0xaa, 32))
+	if len(oversizeOutgoing.Queue) != 0 {
+		t.Errorf("oversized WELCOME queued %v payloads, want 0", len(oversizeOutgoing.Queue))
+	}
+	if len(oversizeLog) != 1 || !strings.Contains(oversizeLog[0], "WELCOME would not fit MTU; cannot welcome peer=") {
+		t.Errorf("oversize refusal log = %v, want the documented WELCOME-would-not-fit warning", oversizeLog)
+	}
 }

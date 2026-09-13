@@ -16,6 +16,7 @@
 package rrc
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -32,20 +33,38 @@ import (
 // TUI shows Connected while the user's joins and messages vanish.
 
 func TestHubLivenessWatchdogTearsDownSilentHub(t *testing.T) {
-	mgr, hub, _ := pingFixture(t)
+	mgr, hub, sent := pingFixture(t)
 	_ = mgr
 	hub.link = &rns.Link{}
+	hub.Welcomed = true
+	hub.Status = StatusConnected
 	hub.hubLiveness = 60 * time.Millisecond
 	torn := make(chan struct{})
 	hub.livenessTeardownFn = func() { close(torn) }
 	hub.lastHubTraffic.Store(time.Now().UnixNano())
 	hub.startHubLivenessLoop()
 
+	// This hub never pings (rrcd ships ping_interval_s = 0.0) and never
+	// answers, so the watchdog must ask it directly with an RRC PING and only
+	// declare it dead when that answer never comes.
 	select {
 	case <-torn:
 	case <-time.After(3 * time.Second):
-		t.Fatal("the liveness watchdog did not tear down a hub link that went silent")
+		t.Fatal("the liveness watchdog did not tear down a hub that stopped answering")
 	}
+	if !envelopeHasType(*sent, TypePing) {
+		t.Error("the watchdog declared the hub dead without probing it first")
+	}
+}
+
+// envelopeHasType reports whether any captured envelope carries the given type.
+func envelopeHasType(envelopes []map[any]any, want int) bool {
+	for _, env := range envelopes {
+		if intVal(env, KeyType) == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestHubLivenessWatchdogResetByTraffic(t *testing.T) {
@@ -70,4 +89,121 @@ func TestHubLivenessWatchdogResetByTraffic(t *testing.T) {
 		}
 		time.Sleep(40 * time.Millisecond)
 	}
+}
+
+// TestHubLivenessWatchdogKeepsLinkToHubWithoutPings covers the hub
+// configuration rrcd documents as its default: ping_interval_s = 0.0 disables
+// hub pings (rrcd/config.py:35-36, EX1-RRCD.md:479-482 "Default: Disabled
+// (because Reticulum already has link-level keepalives)"). A healthy hub that
+// does not ping therefore sends an idle room nothing at all for minutes at a
+// time, and the client must keep the link: tearing it down reconnects to a hub
+// that was never gone, which the hub's owner sees as a flapping connection.
+func TestHubLivenessWatchdogKeepsLinkToHubWithoutPings(t *testing.T) {
+	t.Parallel()
+	rig := newSharedHubRig(t, 0, 0)
+
+	rig.hub.AnnounceOnce()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) && !rig.clientTS.HasPath(rig.hub.DestinationHash()) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !rig.clientTS.HasPath(rig.hub.DestinationHash()) {
+		t.Fatalf("client never learned the hub path; hub log:\n%v", rig.logs.String())
+	}
+
+	client := rig.manager.AddHub(rig.hub.DestinationHash(), "rrc.hub", "Public Hub")
+	client.AddRoom("general")
+	client.SetAutoReconnect(false, false)
+	// The watchdog window must be in place before the link is established:
+	// the loop snapshots it once per establishment.
+	client.hubLiveness = 250 * time.Millisecond
+	rig.client = client
+	t.Cleanup(client.Disconnect)
+	client.ConnectAsync()
+
+	if !rig.waitWelcomed(10 * time.Second) {
+		t.Fatalf("client never received WELCOME; hub log:\n%v", rig.logs.String())
+	}
+
+	// Well past the watchdog window, with the hub healthy but silent.
+	time.Sleep(1500 * time.Millisecond)
+
+	logs := rig.logs.String()
+	client.lock.Lock()
+	status, welcomed := client.Status, client.Welcomed
+	client.lock.Unlock()
+	if status != StatusConnected || !welcomed {
+		t.Errorf("client status=%v welcomed=%v after 1.5s of silence from a non-pinging hub, want StatusConnected/true; hub log:\n%v",
+			status, welcomed, logs)
+	}
+	if got := strings.Count(logs, "Link closed"); got != 0 {
+		t.Errorf("hub logged %v link closes, want 0; hub log:\n%v", got, logs)
+	}
+}
+
+// TestHubLivenessWatchdogDetectsWedgedHubAndReconnects covers the failure the
+// watchdog exists for: a hub that still holds the link open but has stopped
+// answering. RNS keeps such a link looking ACTIVE for up to ~12 minutes because
+// its stale window comes from the RTT measured once at establishment, so the
+// client would sit there "Connected" while its joins and messages vanish. With
+// hub pings disabled (rrcd's own default) there is no hub traffic to notice the
+// wedge, so the client must probe, give the probe time, tear the wedged link
+// down, and let the normal reconnect path restore the session.
+func TestHubLivenessWatchdogDetectsWedgedHubAndReconnects(t *testing.T) {
+	t.Parallel()
+	rig := newSharedHubRig(t, 0, 0)
+
+	rig.hub.AnnounceOnce()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) && !rig.clientTS.HasPath(rig.hub.DestinationHash()) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !rig.clientTS.HasPath(rig.hub.DestinationHash()) {
+		t.Fatalf("client never learned the hub path; hub log:\n%v", rig.logs.String())
+	}
+
+	client := rig.manager.AddHub(rig.hub.DestinationHash(), "rrc.hub", "Public Hub")
+	client.AddRoom("general")
+	client.SetAutoReconnect(true, false)
+	client.hubLiveness = 400 * time.Millisecond
+	rig.client = client
+	t.Cleanup(client.Disconnect)
+	client.ConnectAsync()
+	if !rig.waitWelcomed(10 * time.Second) {
+		t.Fatalf("client never received WELCOME; hub log:\n%v", rig.logs.String())
+	}
+
+	client.lock.Lock()
+	wedged := client.link
+	client.lock.Unlock()
+	if wedged == nil {
+		t.Fatal("the welcomed client has no link to wedge")
+	}
+
+	// The hub goes deaf while holding its side of the link open.
+	rig.blockClientInbound.Store(true)
+	if !waitLinkClosed(wedged, 5*time.Second) {
+		t.Fatalf("the watchdog never tore down a wedged hub; hub log:\n%v", rig.logs.String())
+	}
+
+	// The hub answers again: the reconnect path must restore the session.
+	rig.blockClientInbound.Store(false)
+	if !rig.waitWelcomed(15 * time.Second) {
+		t.Fatalf("the client did not reconnect to the recovered hub; hub log:\n%v", rig.logs.String())
+	}
+	if got := strings.Count(rig.logs.String(), "Queued WELCOME"); got < 2 {
+		t.Errorf("hub queued %v WELCOMEs, want the reconnect to welcome again; hub log:\n%v", got, rig.logs.String())
+	}
+}
+
+// waitLinkClosed reports whether the given link reaches the closed state.
+func waitLinkClosed(link *rns.Link, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if link.GetStatus() == rns.LinkClosed {
+			return true
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return false
 }
