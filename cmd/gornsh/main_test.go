@@ -346,6 +346,15 @@ func TestTTYRestorerNoOp(t *testing.T) {
 	}
 }
 
+// TestDoListenHandlesSIGINT verifies that doListen blocks until an interrupt
+// arrives and then shuts down cleanly.
+//
+// The interrupt is injected through runtimeT.listenSignals rather than raised at
+// the test process with syscall.SIGINT: signal delivery is process-wide, so a
+// real SIGINT also reaches testutils' interrupted-run temp-dir sweep, which
+// resets the disposition and re-raises — killing the test binary before this
+// test can assert anything. Real signal delivery to a real listener process is
+// covered by the integration suite.
 func TestDoListenHandlesSIGINT(t *testing.T) {
 	configDir := testutils.TempDir(t, "gornsh-do-listen-sigint-")
 	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte("[reticulum]\nshare_instance = No\n"), 0o600); err != nil {
@@ -353,6 +362,11 @@ func TestDoListenHandlesSIGINT(t *testing.T) {
 	}
 
 	rt := newRuntime(options{configDir: configDir, rnshConfigDir: testutils.TempDir(t, "gornsh-rnsh-sigint-"), listen: true, noAuth: true})
+
+	sigCh := make(chan os.Signal, 1)
+	rt.listenSignals = func() (<-chan os.Signal, func()) {
+		return sigCh, func() {}
+	}
 
 	oldStdout := os.Stdout
 	r, w, err := os.Pipe()
@@ -401,13 +415,7 @@ func TestDoListenHandlesSIGINT(t *testing.T) {
 		t.Fatal("timed out waiting for readiness line")
 	}
 
-	proc, err := os.FindProcess(os.Getpid())
-	if err != nil {
-		t.Fatalf("os.FindProcess() error: %v", err)
-	}
-	if err := proc.Signal(syscall.SIGINT); err != nil {
-		t.Fatalf("proc.Signal() error: %v", err)
-	}
+	sigCh <- syscall.SIGINT
 
 	select {
 	case err := <-doneCh:
