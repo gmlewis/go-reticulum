@@ -349,20 +349,23 @@ loglevel = 4
 	}
 }
 
-// TestNewReticulumErrorsOnSharedInstanceConflict verifies the v1.3.4
-// shared-instance config conflict checks: New returns an error when
-// share_instance + require_shared_instance are both enabled, or when
-// shared_instance_type is set to an unrecognized value (which cannot be
-// mapped to a use_af_unix decision). Mirrors RNS/Reticulum.py:403-405,446
-// (require_shared abort) and the shared_instance_type ∈ {tcp,unix} guard at
-// Reticulum.py:480-484.
-func TestNewReticulumErrorsOnSharedInstanceConflict(t *testing.T) {
+// TestNewReticulumSharedInstanceConfigErrors verifies the shared-instance
+// configuration contract at construction time: an unrecognized
+// shared_instance_type is rejected (it cannot be mapped to a use_af_unix
+// decision, RNS/Reticulum.py:480-484), and require_shared_instance = Yes is
+// accepted as a valid configuration whose requirement is then resolved by
+// attaching at startup — so it fails when no instance is running rather than
+// being rejected as a config conflict.
+func TestNewReticulumSharedInstanceConfigErrors(t *testing.T) {
 	t.Parallel()
 
-	// Conflict A: share_instance + require_shared_instance both set.
+	// require_shared_instance with a sharing configuration, on an address that
+	// is per-test and therefore has no instance behind it.
 	cfgA := testutils.TempDir(t, tempDirPrefix)
 	writeConfig(t, cfgA, `[reticulum]
+instance_name = rns-required-shared-none
 share_instance = Yes
+shared_instance_type = unix
 require_shared_instance = Yes
 
 [logging]
@@ -372,13 +375,13 @@ loglevel = 4
 	rA, errA := NewReticulum(tsA, cfgA)
 	if errA == nil {
 		closeReticulum(t, rA)
-		t.Fatal("Conflict A: NewReticulum() = nil error, want error for share_instance + require_shared_instance")
+		t.Fatal("require_shared_instance with no running instance: NewReticulum() = nil error, want error")
 	}
-	if !strings.Contains(errA.Error(), "share_instance") && !strings.Contains(errA.Error(), "require_shared") {
-		t.Fatalf("Conflict A error %q does not mention share_instance/require_shared", errA.Error())
+	if !strings.Contains(errA.Error(), "shared instance") {
+		t.Fatalf("require_shared_instance error %q does not mention the shared instance", errA.Error())
 	}
 
-	// Conflict B: shared_instance_type set to an unrecognized value.
+	// shared_instance_type set to an unrecognized value.
 	cfgB := testutils.TempDir(t, tempDirPrefix)
 	writeConfig(t, cfgB, `[reticulum]
 share_instance = Yes
@@ -391,10 +394,10 @@ loglevel = 4
 	rB, errB := NewReticulum(tsB, cfgB)
 	if errB == nil {
 		closeReticulum(t, rB)
-		t.Fatal("Conflict B: NewReticulum() = nil error, want error for unrecognized shared_instance_type")
+		t.Fatal("NewReticulum() = nil error, want error for unrecognized shared_instance_type")
 	}
 	if !strings.Contains(errB.Error(), "shared_instance_type") {
-		t.Fatalf("Conflict B error %q does not mention shared_instance_type", errB.Error())
+		t.Fatalf("error %q does not mention shared_instance_type", errB.Error())
 	}
 
 	// Sanity: a recognized type (tcp) with share_instance and no

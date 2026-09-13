@@ -88,9 +88,11 @@ type Reticulum struct {
 	blackholeSources    [][]byte
 	interfaceSources    [][]byte
 	// requireShared mirrors the Python require_shared_instance constructor
-	// arg (RNS/Reticulum.py:215,313, v1.3.4). When true the instance must
-	// connect to an existing shared instance; it must not also be configured
-	// to be the shared instance itself.
+	// arg (RNS/Reticulum.py:215,313, v1.3.4). When true, and when the
+	// configuration shares an instance, the instance must connect to the
+	// running shared instance instead of becoming it. It has no effect on a
+	// configuration with share_instance = No, which runs standalone
+	// (Reticulum.py:448-452).
 	requireShared bool
 	// blackholeUpdateInterval is the configured minimum interval between
 	// fetches of any single blackhole source (Python
@@ -389,15 +391,22 @@ type ReticulumOption func(*Reticulum)
 
 // WithRequireSharedInstance makes the instance attach to an already-running
 // shared instance and fail when none is running, mirroring the semantics of
-// the Python require_shared_instance constructor argument (RNS/Reticulum.py).
-// It is meant for short-lived command-line tools, which must observe the live
-// network rather than redefine it: a tool that reads share_instance = Yes from
-// the user's config would otherwise become the shared instance while it runs,
-// and a long-running application starting in that window would attach to the
-// tool's doomed instance and lose its network stack when the tool exits.
+// the Python require_shared_instance constructor argument
+// (RNS/Reticulum.py:215,313,403-406,445-446). It is meant for short-lived
+// command-line tools, which must observe the live network rather than redefine
+// it: a tool that reads share_instance = Yes from the user's config would
+// otherwise become the shared instance while it runs, and a long-running
+// application starting in that window would attach to the tool's doomed
+// instance and lose its network stack when the tool exits.
+//
+// The option does NOT override the share_instance setting. Python's flag only
+// decides what an instance does when the configuration tells it to share:
+// share_instance = No makes the process standalone and the flag never comes
+// into play (Reticulum.py:448-452). A configuration that never described a
+// shared instance must therefore still run standalone, rather than have a tool
+// demand an instance the host was never configured to provide.
 func WithRequireSharedInstance() ReticulumOption {
 	return func(r *Reticulum) {
-		r.shareInstance = false
 		r.requireShared = true
 	}
 }
@@ -514,15 +523,17 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger, opts
 	if err := r.applyConfig(); err != nil {
 		return nil, err
 	}
-	// Construction options override the configuration file, so a caller can
-	// select its shared-instance role without editing the user's config.
+	// Construction options customize the instance after the configuration file
+	// has been read, so a caller can select its shared-instance role without
+	// editing the user's config. They do not conflict with the configuration:
+	// share_instance = Yes together with a caller that requires a shared
+	// instance is the ordinary tool case, and it is resolved at startup by
+	// attaching to the running instance instead of becoming one (Python's
+	// rnstatus passes require_shared_instance with a default, sharing config).
 	for _, opt := range opts {
 		if opt != nil {
 			opt(r)
 		}
-	}
-	if r.shareInstance && r.requireShared {
-		return nil, fmt.Errorf("shared-instance config conflict: share_instance and require_shared_instance are both enabled (an instance cannot both be and require a shared instance)")
 	}
 
 	if err := r.initNetworkIdentity(); err != nil {
@@ -580,9 +591,18 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger, opts
 			}
 			return nil, err
 		}
-	} else if r.shareInstance {
+	} else if r.shareInstance && !r.requireShared {
 		// An attached client watches its shared instance, so a long-running
 		// process recovers instead of retaining a dead interface forever.
+		//
+		// A caller that requires a shared instance is the exception: recovering
+		// by taking ownership would make it the shared instance, which is the
+		// one thing it must never become (Python aborts instead of taking over,
+		// Reticulum.py:403-406,445-446), and a takeover by a short-lived process
+		// is torn down again when it exits, stranding every client that attached
+		// to it in the meantime. Such a caller keeps its reconnecting client
+		// (LocalInterface.py:160-192) and reports the loss rather than silently
+		// redefining the network.
 		r.mu.Lock()
 		r.watchDone = make(chan struct{})
 		watchDone := r.watchDone
@@ -860,14 +880,13 @@ func (r *Reticulum) applyConfig() error {
 		}
 	}
 
-	// Shared-instance config conflict checks (RNS/Reticulum.py:403-405,446 +
-	// the shared_instance_type ∈ {tcp,unix} guard at Reticulum.py:480-484,
-	// v1.3.4). An instance cannot both be the shared instance and require
-	// one; and shared_instance_type must resolve to a known transport so the
-	// use_af_unix decision is well-defined.
-	if r.shareInstance && r.requireShared {
-		return fmt.Errorf("shared-instance config conflict: share_instance and require_shared_instance are both enabled (an instance cannot both be and require a shared instance)")
-	}
+	// shared_instance_type must resolve to a known transport so the use_af_unix
+	// decision is well-defined (RNS/Reticulum.py:480-484, v1.3.4).
+	//
+	// share_instance = Yes together with require_shared_instance = Yes is not
+	// an error: it is the ordinary configuration of a tool that must observe a
+	// running shared instance without becoming one, and startLocalInterface
+	// resolves it by attaching (Reticulum.py:403-406,445-446).
 	switch r.sharedInstanceType {
 	case "", "tcp", "unix":
 		// valid / unset
@@ -953,14 +972,24 @@ func (r *Reticulum) useAFUnix() bool {
 
 func (r *Reticulum) startLocalInterface() error {
 	if !r.shareInstance {
-		if r.requireShared {
-			// A caller that requires a shared instance must never create one:
-			// a second instance would take ownership from the running one and
-			// leave both processes with a degraded view of the network.
-			return r.attachLocalInterface()
-		}
+		// The configuration does not share an instance, so this process is
+		// standalone and owns the network interfaces itself (Python
+		// Reticulum.py:448-452). require_shared_instance says nothing about
+		// such a configuration: there is no instance to be had, and demanding
+		// one would refuse to start on a host that was never configured to
+		// provide it.
 		r.setInstanceRole(false, true, false)
 		return nil
+	}
+
+	if r.requireShared {
+		// A caller that requires a shared instance must never create one: a
+		// second instance would take ownership from the running one and leave
+		// both processes with a degraded view of the network (Python
+		// Reticulum.py:403-406,445-446). Python binds the server interface and
+		// detaches it again before aborting; deciding before binding keeps this
+		// process from claiming the shared instance even momentarily.
+		return r.attachLocalInterface()
 	}
 
 	handler := func(data []byte, iface interfaces.Interface) {
@@ -1043,9 +1072,11 @@ func (r *Reticulum) localInterfacePath() (string, bool) {
 }
 
 // attachLocalInterface connects to an already-running shared instance and fails
-// when none is running. It is used for callers that require a shared instance: a
-// process that requires one must never create one, because a second instance
-// would silently take ownership from the running instance.
+// when none is running. It is used for callers that require a shared instance
+// on a configuration that shares one: a process that requires one must never
+// create one, because a second instance would silently take ownership from the
+// running instance. A configuration with share_instance = No never reaches
+// here: it runs standalone (Python Reticulum.py:448-452).
 func (r *Reticulum) attachLocalInterface() error {
 	handler := func(data []byte, iface interfaces.Interface) {
 		r.transport.Inbound(data, iface)
@@ -1173,9 +1204,23 @@ func (r *Reticulum) watchSharedInstance(iface interfaces.Interface, storagePath 
 		current := r.sharedInstanceInterface
 		attached := r.isConnectedToSharedInstance
 		r.mu.Unlock()
-		if !attached || current == nil {
+		if !attached {
 			// This process owns the instance (or runs standalone) now.
 			return
+		}
+		if current == nil {
+			// A takeover attempt is in flight: takeOverSharedInstance clears
+			// the client interface and only then re-decides the role, and that
+			// decision is not instant (a server bind and then up to four attach
+			// attempts with waits between them). Exiting while the interface is
+			// cleared would end the watch during its own recovery, so a client
+			// re-attached by that attempt would have nobody watching it and the
+			// instance would keep reporting the client role with no recovery
+			// left. Every path out of the role decision moves the role off
+			// "connected to a shared instance" — owner, standalone, or a
+			// re-attached client — so the next tick either exits above or sees
+			// the client this process re-attached as.
+			continue
 		}
 		if current.Status() {
 			missed = 0
@@ -1225,7 +1270,7 @@ func (r *Reticulum) takeOverSharedInstance(iface interfaces.Interface, storagePa
 		r.logger.Error("Could not attach to a shared instance: %v", err)
 		return
 	}
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		r.logger.Notice("Attached to a different shared instance")
 		return
 	}
@@ -1234,25 +1279,21 @@ func (r *Reticulum) takeOverSharedInstance(iface interfaces.Interface, storagePa
 		r.logger.Error("Could not start interfaces after taking over the shared instance: %v", err)
 		return
 	}
-	// A client never starts the RPC listener (startRPCListener returns early
-	// unless this process is the shared instance), so a takeover must start it
-	// now that the RPC socket belongs to this process. It no-ops when this
-	// process ended up a standalone instance instead.
+	// An instance that owns the network must serve local RPC, exactly as it
+	// would have when it started up: other local programs attach to it over the
+	// shared-instance socket and then ask it for interface stats, the path
+	// table and blackhole queries. A taken-over instance that skipped the
+	// listener would accept those clients and fail every call. A client never
+	// started one (startRPCListener returns early unless this process is the
+	// shared instance), so a takeover starts it now that the RPC socket belongs
+	// to this process; it no-ops when this process ended up standalone instead.
+	// A bind failure is logged rather than fatal: this is a background recovery
+	// path, and the name can still be held for a moment by the owner that just
+	// stopped.
 	if err := r.startRPCListener(); err != nil {
 		r.logger.Error("Could not start the RPC listener after taking over the shared instance: %v", err)
 	}
-	if r.isSharedInstance {
-		// An instance that owns the network must serve local RPC, exactly as it
-		// would have when it started up: other local programs attach to it over
-		// the shared-instance socket and then ask it for interface stats, the
-		// path table and blackhole queries. A taken-over instance that skipped
-		// the listener would accept those clients and fail every call.
-		// A bind failure is logged rather than fatal: this is a background
-		// recovery path, and the name can still be held for a moment by the
-		// owner that just stopped.
-		if err := r.startRPCListener(); err != nil {
-			r.logger.Error("Could not start the RPC listener after taking over the shared instance: %v", err)
-		}
+	if r.IsSharedInstance() {
 		r.logger.Notice("Took over as the shared instance")
 		return
 	}

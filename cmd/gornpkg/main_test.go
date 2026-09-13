@@ -54,7 +54,7 @@ func TestInitReticulumUsesVerbosityMinusQuietness(t *testing.T) {
 		t.Fatal("initReticulum returned nil reticulum")
 	}
 	if got, want := capturedOptions, 1; got != want {
-		t.Fatalf("construction options = %v, want %v: the tool must request attach-only mode", got, want)
+		t.Fatalf("construction options = %v, want %v: the tool must never become the shared instance", got, want)
 	}
 	if got, want := capturedLevel, 2; got != want {
 		t.Fatalf("log level = %v, want %v", got, want)
