@@ -1114,11 +1114,7 @@ func TestPacketWouldFitMTUBoundary(t *testing.T) {
 	_ = link.Establish()
 	t.Cleanup(func() { link.Teardown() })
 
-	dir, err := os.MkdirTemp("/tmp", "nomadnet-rrc-test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir := testutils.TempDir(t, "nomadnet-rrc-test")
 	mgr := NewManager(dir, func() []byte { return id.Hash })
 	hub := mgr.AddHub(dest.Hash, "rrc.fit", "TestHub")
 

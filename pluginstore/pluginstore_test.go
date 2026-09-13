@@ -8,23 +8,15 @@ package pluginstore
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func tempDir(t *testing.T) string {
 	t.Helper()
-	base := ""
-	if runtime.GOOS == "darwin" {
-		base = "/tmp"
-	}
-	dir, err := os.MkdirTemp(base, "pluginstore-test-*")
-	if err != nil {
-		t.Fatalf("MkdirTemp: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return dir
+	return testutils.TempDir(t, "pluginstore-test-*")
 }
 
 // TestNewValidatesPluginName verifies the plugin-name sanitation: only safe

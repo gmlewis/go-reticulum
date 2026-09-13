@@ -211,7 +211,7 @@ func TestReloadReconfiguresLogging(t *testing.T) {
 	hub := env.hub
 	link := &rns.Link{}
 
-	dir := testutils.TempDir(t, "reload-log")
+	dir := testutils.TempDir(t, "rrc-reload-log-")
 	cfgPath := writeTemp(t, dir, "rrcd.toml",
 		"[hub]\nhub_name = 'rrc'\n\n[logging]\nlevel = 'DEBUG'\n")
 	hub.Config.ConfigPath = &cfgPath

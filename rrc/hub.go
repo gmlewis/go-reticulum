@@ -371,6 +371,34 @@ const HubLivenessTimeout = 90 * time.Second
 // shortened window stays usable in tests.
 const hubProbeGrace = 30 * time.Second
 
+// hubProbeAttempts is how many RRC PING probes the watchdog sends before it
+// declares the hub gone and tears the link down for reconnect.
+//
+// One unanswered probe is not proof the hub died: the 2026-09-13 glenn-kamrui
+// incident (RNS Community hub at rrc.hub.62b73cc9, see hubProbeGraceFor) was a
+// ~4 minute egress stall on the Beleth TCP interface during which the hub was
+// perfectly healthy. Tearing the link down on the first unanswered probe ended
+// that session permanently, because it is only recoverable when auto-reconnect
+// is on and the RRCHub default (Python RRC.py:238) is off. Python's client has
+// no hub watchdog at all and rides such an outage out on the RNS link layer's
+// stale window (2*clamp(rtt*(KEEPALIVE_MAX/KEEPALIVE_MAX_RTT), 5s, 360s), i.e.
+// minutes), so three escalating probes keep the Go client in the same class.
+const hubProbeAttempts = 3
+
+// hubProbeGraceFor returns the wait allowed for the probe with the given
+// zero-based index. The first probe waits min(liveness/2, hubProbeGrace) and
+// every further probe waits twice as long, so with the default 90 s window
+// (30/60/120 s graces) the watchdog tolerates 300 s — 5 minutes — of total
+// silence before it blames the hub. A hub that really died is still detected
+// and reconnected minutes sooner than the RNS link layer alone would.
+func hubProbeGraceFor(liveness time.Duration, probes int) time.Duration {
+	grace := min(liveness/2, hubProbeGrace)
+	for range probes {
+		grace *= 2
+	}
+	return grace
+}
+
 // sendLivenessProbe asks the hub to prove it is alive with an RRC PING, the
 // protocol's own liveness exchange: rrcd answers every PING with a PONG that
 // echoes the body (rrcd/router.py:930-943), and that answer arrives as inbound
@@ -415,6 +443,7 @@ func (h *RRCHub) startHubLivenessLoop() {
 func (h *RRCHub) hubLivenessLoop(stop <-chan struct{}, liveness time.Duration) {
 	defer h.livenessWG.Done()
 	interval := max(100*time.Millisecond, liveness/4)
+	var probes int
 	for {
 		select {
 		case <-stop:
@@ -433,6 +462,9 @@ func (h *RRCHub) hubLivenessLoop(stop <-chan struct{}, liveness time.Duration) {
 		}
 		silent := time.Since(time.Unix(0, last))
 		if silent <= liveness {
+			// Fresh hub traffic restarts the escalation, so an outage that
+			// healed never leaves the watchdog one probe away from teardown.
+			probes = 0
 			continue
 		}
 		// A full window of silence is not proof the hub is gone: rrcd ships
@@ -440,19 +472,23 @@ func (h *RRCHub) hubLivenessLoop(stop <-chan struct{}, liveness time.Duration) {
 		// rrcd/config.py:35-36, EX1-RRCD.md:472-476), so an idle room hears
 		// nothing at all from a perfectly healthy hub. Ask the hub to prove
 		// itself with an RRC PING and let its PONG restart the window; only
-		// silence that survives the probe means the hub died or wedged.
+		// silence that survives every probe means the hub died or wedged.
 		probeSent := h.livenessProbeSent.Load()
 		if probeSent == 0 {
 			h.sendLivenessProbe()
 			continue
 		}
-		grace := min(liveness/2, hubProbeGrace)
 		waited := time.Since(time.Unix(0, probeSent))
-		if waited <= grace {
+		if waited <= hubProbeGraceFor(liveness, probes) {
 			continue
 		}
-		log.Printf("[RRC %v] hub silent for %v and unanswered for %v after a liveness probe, tearing down for reconnect",
-			h.Name, silent.Round(time.Second), waited.Round(time.Second))
+		if probes+1 < hubProbeAttempts {
+			probes++
+			h.sendLivenessProbe()
+			continue
+		}
+		log.Printf("[RRC %v] hub silent for %v and unanswered for %v after %v liveness probes, tearing down for reconnect",
+			h.Name, silent.Round(time.Second), waited.Round(time.Second), probes+1)
 		if fn := h.livenessTeardownFn; fn != nil {
 			fn()
 			return

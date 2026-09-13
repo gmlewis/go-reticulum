@@ -158,11 +158,7 @@ func pythonKissEscape(t *testing.T, raws [][]byte) [][]byte {
 	if err != nil {
 		t.Fatalf("marshal kiss-escape inputs: %v", err)
 	}
-	dir, err := os.MkdirTemp("/tmp", "kiss-escape-")
-	if err != nil {
-		t.Fatalf("mkdtemp: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(dir) }()
+	dir := testutils.TempDir(t, "kiss-escape-")
 	jsonPath := filepath.Join(dir, "in.json")
 	if err := os.WriteFile(jsonPath, data, 0o644); err != nil {
 		t.Fatalf("write in.json: %v", err)

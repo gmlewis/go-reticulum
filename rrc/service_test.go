@@ -345,7 +345,7 @@ func TestPruneLoop(t *testing.T) {
 	hub.Config.RoomRegistryPruneAfterS = 10.0
 	hub.StatsManager.SetStartTime()
 
-	regPath := filepath.Join(testutils.TempDir(t, "prune"), "rooms.toml")
+	regPath := filepath.Join(testutils.TempDir(t, "rrc-prune-"), "rooms.toml")
 	staleTS := env.nowWall - 100.0
 	freshTS := env.nowWall - 1.0
 	roomFile := "[rooms]\n\n[rooms.stale]\nfounder = \"" + hexKey(bytesOf(0xaa, 32)) +
@@ -580,7 +580,7 @@ func TestReloadConfigFailureNotices(t *testing.T) {
 	}
 
 	// A parse error: the parse-error notice.
-	badPath := filepath.Join(testutils.TempDir(t, "badcfg"), "rrcd.toml")
+	badPath := filepath.Join(testutils.TempDir(t, "rrc-badcfg-"), "rrcd.toml")
 	if err := os.WriteFile(badPath, []byte("[hub\nbroken"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -607,7 +607,7 @@ func TestReloadConfigSuccess(t *testing.T) {
 	link := &rns.Link{}
 	hub.StatsManager.SetStartTime()
 
-	dir := testutils.TempDir(t, "reload")
+	dir := testutils.TempDir(t, "rrc-reload-")
 	cfgPath := filepath.Join(dir, "rrcd.toml")
 	regPath := filepath.Join(dir, "rooms.toml")
 	configText := "[hub]\nhub_name = \"ReloadedHub\"\nmax_nick_bytes = 40\n"
@@ -843,7 +843,7 @@ func TestPingLoopMonotonicClock(t *testing.T) {
 func TestDrainOutgoingSendFailureLogging(t *testing.T) {
 	// The logging state is process-global; this test runs serially.
 
-	dir := testutils.TempDir(t, "drain-log")
+	dir := testutils.TempDir(t, "rrc-drain-log-")
 	logPath := dir + "/hub.log"
 	file := logPath
 	cfg := DefaultHubConfig()

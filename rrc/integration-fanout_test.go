@@ -27,7 +27,6 @@ package rrc
 import (
 	"encoding/hex"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -50,10 +49,7 @@ func startIntegrationHub(t *testing.T) (*RRCHub, string, func()) {
 		}
 	}()
 
-	dir, err := os.MkdirTemp("/tmp", "nomadnet-rrc-int")
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir := testutils.TempDir(t, "nomadnet-rrc-int")
 	cfgDir := dir + "/config"
 	writeRNSConfigRRC(t, cfgDir)
 	appendTCPClientInterface(t, cfgDir+"/config", port)
@@ -110,7 +106,6 @@ func startIntegrationHub(t *testing.T) (*RRCHub, string, func()) {
 
 	return hub, hubLog, func() {
 		hubCleanup()
-		_ = os.RemoveAll(dir)
 	}
 }
 

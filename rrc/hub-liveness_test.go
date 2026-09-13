@@ -17,6 +17,7 @@ package rrc
 
 import (
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -54,6 +55,83 @@ func TestHubLivenessWatchdogTearsDownSilentHub(t *testing.T) {
 	}
 	if !envelopeHasType(*sent, TypePing) {
 		t.Error("the watchdog declared the hub dead without probing it first")
+	}
+}
+
+// TestHubLivenessWatchdogRidesOutTransientSilence pins the 2026-09-13
+// glenn-kamrui incident: the client sat on the RNS Community hub
+// (rrc.hub.62b73cc9ecd8d9eceb66ce539b1c0060) from 08:26, heard its last
+// envelope at 08:40:36, and stayed disconnected for three hours. The hub was
+// healthy — the Beleth TCP interface's egress path had stalled (a 10 s write
+// deadline expired at 08:44:44 and the interface reconnected at 08:44:49), so
+// for ~4 minutes the hub looked exactly like a dead one from the client. A
+// single unanswered probe torn the link down there (auto-reconnect is off by
+// default, Python RRC.py:238), while Python's watchdog-less client rides the
+// same outage out on the RNS link stale window. The watchdog must therefore
+// re-probe a silent hub before it blames it — and still tear down a hub that
+// never comes back.
+func TestHubLivenessWatchdogRidesOutTransientSilence(t *testing.T) {
+	mgr, hub, _ := pingFixture(t)
+	_ = mgr
+	hub.link = &rns.Link{}
+	hub.Welcomed = true
+	hub.Status = StatusConnected
+	hub.hubLiveness = 120 * time.Millisecond
+
+	torn := make(chan struct{})
+	hub.livenessTeardownFn = func() { close(torn) }
+	var mu sync.Mutex
+	probes := 0
+	hub.onSend = func(env map[any]any) {
+		if intVal(env, KeyType) != TypePing {
+			return
+		}
+		mu.Lock()
+		probes++
+		mu.Unlock()
+	}
+	probeCount := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return probes
+	}
+
+	hub.lastHubTraffic.Store(time.Now().UnixNano())
+	hub.startHubLivenessLoop()
+
+	// A silent hub is probed again instead of being torn down on the first
+	// unanswered probe (the pre-fix behavior tore down here).
+	deadline := time.Now().Add(3 * time.Second)
+	for probeCount() < 2 && time.Now().Before(deadline) {
+		select {
+		case <-torn:
+			t.Fatal("the watchdog tore the link down on the first unanswered probe")
+		default:
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if got := probeCount(); got < 2 {
+		t.Fatalf("the watchdog sent %v liveness probes to a silent hub, want it to re-probe before tearing down", got)
+	}
+
+	// The outage heals and the hub answers: the escalation restarts and the
+	// session survives a silence that already outlived the first probe grace.
+	hub.HandleData(pingEnvelope(t, []byte("pingbody"), "healed"))
+	healed := time.Now()
+	for time.Since(healed) < 500*time.Millisecond {
+		select {
+		case <-torn:
+			t.Fatal("the watchdog tore the link down after the hub started answering again")
+		default:
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// A hub that stays silent for the whole budget is still declared gone.
+	select {
+	case <-torn:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("the watchdog never tore down a hub that stayed silent; probes sent: %v", probeCount())
 	}
 }
 

@@ -8,24 +8,16 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 // tempDir creates a short-path temp dir (avoids the macOS t.TempDir socket-path
 // length pitfall) cleaned up with t.Cleanup.
 func tempDir(t *testing.T) string {
 	t.Helper()
-	base := ""
-	if runtime.GOOS == "darwin" {
-		base = "/tmp"
-	}
-	dir, err := os.MkdirTemp(base, "gornsd-lock-test-*")
-	if err != nil {
-		t.Fatalf("MkdirTemp: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return dir
+	return testutils.TempDir(t, "gornsd-lock-test-*")
 }
 
 // TestAcquireInstanceLockSingleton verifies a second acquirer on the same lock

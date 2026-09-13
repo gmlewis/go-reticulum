@@ -213,7 +213,7 @@ func TestGetRoomModeString(t *testing.T) {
 	room.Set("no_outside_msgs", toml.BoolValue(true))
 	room.Set("private", toml.BoolValue(true))
 	room.Set("key", toml.StringValue("secret"))
-	path := writeTemp(t, testutils.TempDir(t, "modes-"), "rooms.toml", doc.Dump())
+	path := writeTemp(t, testutils.TempDir(t, "rrc-modes-"), "rooms.toml", doc.Dump())
 	registry, errMsg := m.LoadRegistryFromPath(path)
 	if errMsg != "" {
 		t.Fatalf("registry load: %v", errMsg)
@@ -325,7 +325,7 @@ func TestLoadRegistryFromPath(t *testing.T) {
 	if registry, errMsg := m.LoadRegistryFromPath(""); errMsg != "" || len(registry) != 0 {
 		t.Errorf("empty path = %v, %v", registry, errMsg)
 	}
-	if registry, errMsg := m.LoadRegistryFromPath(testutils.TempDir(t, "missing") + "/rooms.toml"); errMsg != "" || len(registry) != 0 {
+	if registry, errMsg := m.LoadRegistryFromPath(testutils.TempDir(t, "rrc-missing-") + "/rooms.toml"); errMsg != "" || len(registry) != 0 {
 		t.Errorf("missing file = %v, %q", registry, errMsg)
 	}
 	if _, errMsg := m.LoadRegistryFromPath(writeTemp(t, dir, "rooms.toml", "not [valid")); errMsg == "" ||

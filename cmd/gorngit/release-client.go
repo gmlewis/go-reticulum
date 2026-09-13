@@ -228,8 +228,22 @@ func (c *reticulumGitClient) fetchRelease(target, signerHex string, offline bool
 	tag := parts[0]
 	artifactSpec := parts[1]
 
+	// Every artifact is written into one fetch directory that lives only as
+	// long as this call: fetchArtifact hands back a path to a file inside it
+	// and the caller reads (or renames) that file, so the directory has to
+	// outlive each individual fetch but nothing more.
+	fetchDir := ""
+	if !offline {
+		dir, err := os.MkdirTemp("/tmp", "gorngit-fetch-art-")
+		if err != nil {
+			return fmt.Errorf("could not create temp dir: %w", err)
+		}
+		fetchDir = dir
+		defer func() { _ = os.RemoveAll(dir) }()
+	}
+
 	// Fetch the manifest.
-	manifestPath, err := c.fetchArtifact(tag, "manifest.rsm", offline)
+	manifestPath, err := c.fetchArtifact(fetchDir, tag, "manifest.rsm", offline)
 	if err != nil {
 		return err
 	}
@@ -308,7 +322,7 @@ func (c *reticulumGitClient) fetchRelease(target, signerHex string, offline bool
 		name, _ := artifact["name"].(string)
 		name = filepath.Base(name)
 		rsgBytes, _ := artifact["rsg"].([]byte)
-		artifactPath, err := c.fetchArtifact(tag, name, offline)
+		artifactPath, err := c.fetchArtifact(fetchDir, tag, name, offline)
 		if err != nil {
 			if offline {
 				fmt.Printf("  File %s from manifest does not exist locally, cannot validate\n", name)
@@ -354,7 +368,11 @@ var errOfflineOK = errors.New("offline validation succeeded")
 
 // fetchArtifact fetches a single artifact by name. In offline mode it
 // returns the local path without contacting the server.
-func (c *reticulumGitClient) fetchArtifact(tag, name string, offline bool) (string, error) {
+//
+// The artifact is written into dir, which the caller owns and is responsible
+// for removing; fetchRelease passes a directory that its own defer reclaims.
+// In offline mode dir is unused.
+func (c *reticulumGitClient) fetchArtifact(dir, tag, name string, offline bool) (string, error) {
 	if offline {
 		// In offline mode the manifest directory is not tracked here;
 		// return the name relative to the cwd.
@@ -386,11 +404,7 @@ func (c *reticulumGitClient) fetchArtifact(tag, name string, offline bool) (stri
 		}
 		return "", fmt.Errorf("Remote error: %s", msg)
 	}
-	tmpDir, err := os.MkdirTemp("", "gorngit-fetch-art-")
-	if err != nil {
-		return "", fmt.Errorf("could not create temp dir: %w", err)
-	}
-	artifactPath := filepath.Join(tmpDir, name)
+	artifactPath := filepath.Join(dir, name)
 	if err := os.WriteFile(artifactPath, respBytes[1:], 0o644); err != nil {
 		return "", fmt.Errorf("could not write artifact: %w", err)
 	}

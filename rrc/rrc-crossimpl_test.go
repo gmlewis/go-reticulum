@@ -158,11 +158,7 @@ func TestIntegrationCrossImplPythonHub(t *testing.T) {
 	defer hubCleanup()
 
 	// The Go client's RNS config: a TCPClientInterface to the Python hub.
-	dir, err := os.MkdirTemp("/tmp", "nomadnet-rrc-cross-go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := testutils.TempDir(t, "nomadnet-rrc-cross-go")
 	cfgDir := filepath.Join(dir, "config")
 	writeRNSConfigRRC(t, cfgDir)
 	appendTCPClientInterface(t, filepath.Join(cfgDir, "config"), port)

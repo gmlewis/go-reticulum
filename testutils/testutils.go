@@ -42,13 +42,13 @@ func tempBaseDir() string {
 func TempDir(t *testing.T, prefix string) string {
 	t.Helper()
 
-	dir, err := os.MkdirTemp(tempBaseDir(), prefix)
+	dir, err := newTempDir(prefix)
 	if err != nil {
 		t.Fatalf("TempDir error: %v", err)
 	}
 
 	t.Cleanup(func() {
-		if err := removeAllWithRetry(dir); err != nil {
+		if err := cleanTempDir(dir); err != nil {
 			t.Fatalf("os.RemoveAll: %v", err)
 		}
 	})
@@ -61,13 +61,13 @@ func TempDir(t *testing.T, prefix string) string {
 func TempDirBench(b *testing.B, prefix string) string {
 	b.Helper()
 
-	dir, err := os.MkdirTemp(tempBaseDir(), prefix)
+	dir, err := newTempDir(prefix)
 	if err != nil {
 		b.Fatalf("TempDir error: %v", err)
 	}
 
 	b.Cleanup(func() {
-		if err := removeAllWithRetry(dir); err != nil {
+		if err := cleanTempDir(dir); err != nil {
 			b.Fatalf("os.RemoveAll: %v", err)
 		}
 	})
@@ -79,18 +79,42 @@ func TempDirBench(b *testing.B, prefix string) string {
 // a cleanup function that removes it. Unlike TempDir, this does not use
 // t.Cleanup since TestMain has no testing.T.
 func TempDirMain(prefix string) (string, func()) {
-	dir, err := os.MkdirTemp(tempBaseDir(), prefix)
+	dir, err := newTempDir(prefix)
 	if err != nil {
 		log.Fatalf("TempDir error: %v", err)
 	}
 
 	cleanup := func() {
-		if err := removeAllWithRetry(dir); err != nil {
+		if err := cleanTempDir(dir); err != nil {
 			log.Fatalf("os.RemoveAll: %v", err)
 		}
 	}
 
 	return dir, cleanup
+}
+
+// newTempDir creates a temporary directory and records it for removal if this
+// process is interrupted before the caller's cleanup runs.
+func newTempDir(prefix string) (string, error) {
+	dir, err := os.MkdirTemp(tempBaseDir(), prefix)
+	if err != nil {
+		return "", err
+	}
+
+	registerTempDir(dir)
+
+	return dir, nil
+}
+
+// cleanTempDir removes a directory created by newTempDir, retiring it from the
+// interruption registry only once it is actually gone.
+func cleanTempDir(dir string) error {
+	err := removeAllWithRetry(dir)
+	if err == nil {
+		unregisterTempDir(dir)
+	}
+
+	return err
 }
 
 func removeAllWithRetry(path string) error {

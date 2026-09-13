@@ -131,7 +131,7 @@ func TestParseFlags(t *testing.T) {
 func TestEnsureFirstRunFiles(t *testing.T) {
 	t.Parallel()
 
-	dir := testutils.TempDir(t, "firstrun")
+	dir := testutils.TempDir(t, "gorrcd-firstrun-")
 	configPath := filepath.Join(dir, "rrcd.toml")
 	identityPath := filepath.Join(dir, "hub_identity")
 	roomsPath := filepath.Join(dir, "rooms.toml")
@@ -289,7 +289,7 @@ func capturePythonHelp(rrcdRepo string) (string, error) {
 func TestBuildConfigPrecedence(t *testing.T) {
 	t.Parallel()
 
-	dir := testutils.TempDir(t, "precedence")
+	dir := testutils.TempDir(t, "gorrcd-precedence-")
 	cfgPath := filepath.Join(dir, "rrcd.toml")
 	configText := strings.Join([]string{
 		"[hub]",

@@ -2298,8 +2298,9 @@ func (ts *TransportSystem) InvalidatePath(destHash []byte) bool {
 
 // claimDownNotify reports whether the caller is the first to observe the given
 // interface failing while it was up. It is the once-per-down-transition latch
-// for the outbound fan-out paths (sendRebroadcast, dispatchForwardSend): the
-// first failing send claims the latch and performs the log + path invalidation,
+// for the outbound fan-out paths (sendRebroadcast, dispatchForwardSend, and the
+// path-table / link-transport forwarding branches of Inbound): the first
+// failing send claims the latch and performs the log + path invalidation,
 // while the concurrent queued sends that fail on the same now-dead connection
 // suppress. Without this, a half-open TCP peer whose write deadline fires
 // drains a burst of dozens of queued sends onto the closed socket, each running
@@ -5732,9 +5733,17 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 
 					ts.mu.Unlock()
 					ts.logger.Debug("Inbound: transmitting forwarded packet on %s", entry.Interface.Name())
+					// A down interface fast-fails Send with "is not running";
+					// that is expected, and the interface reports its own down
+					// transition, so only a real failure on an interface that
+					// was up is logged and invalidated — once per down
+					// transition, like sendRebroadcast and dispatchForwardSend.
+					wasUp := entry.Interface.Status()
 					if err := entry.Interface.Send(newRaw); err != nil {
-						ts.logger.Error("Failed to forward packet: %v", err)
-						ts.InvalidatePath(packet.DestinationHash)
+						if wasUp && ts.claimDownNotify(entry.Interface) {
+							ts.logger.Error("Failed to forward packet: %v", err)
+							ts.InvalidatePath(packet.DestinationHash)
+						}
 					}
 					return
 				}
@@ -5795,8 +5804,19 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 						linkEntry.Timestamp = time.Now()
 						ts.mu.Unlock()
 						ts.logger.Debug("Inbound: forwarding link-transport packet %x for link %x on %s", packet.PacketHash, packet.DestinationHash, outboundIface.Name())
+						// A burst of relayed packets drains onto a dead
+						// outbound interface the moment it goes down, so this
+						// failure is reported once per down transition and
+						// never per packet: the 2026-09-13 Beleth TCP outage
+						// logged 2278 of these lines in 0.3 s, which tripped
+						// journald's rate limiter and hid the incident's own
+						// diagnostics.
+						wasUp := outboundIface.Status()
 						if err := outboundIface.Send(newRaw); err != nil {
-							ts.logger.Error("Failed to forward link-transport packet: %v", err)
+							if wasUp && ts.claimDownNotify(outboundIface) {
+								ts.logger.Error("Failed to forward link-transport packet: %v", err)
+								ts.InvalidatePathsViaInterface(outboundIface)
+							}
 						}
 						return
 					}

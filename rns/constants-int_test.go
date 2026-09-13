@@ -15,6 +15,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/gmlewis/go-reticulum/testutils"
 )
 
 func TestFormatParityPrettySize(t *testing.T) {
@@ -42,11 +44,7 @@ for suffix in suffixes:
         results[key] = RNS.prettysize(v, suffix=suffix)
 print(json.dumps(results))
 `
-	tmpDir, err := os.MkdirTemp("/tmp", "prettysize-parity-")
-	if err != nil {
-		t.Fatalf("MkdirTemp: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := testutils.TempDir(t, "prettysize-parity-")
 
 	scriptPath := filepath.Join(tmpDir, "ps.py")
 	if err := os.WriteFile(scriptPath, []byte(pyScript), 0o644); err != nil {
@@ -105,11 +103,7 @@ for v in values:
     results[key] = RNS.prettyspeed(v)
 print(json.dumps(results))
 `
-	tmpDir, err := os.MkdirTemp("/tmp", "prettyspeed-parity-")
-	if err != nil {
-		t.Fatalf("MkdirTemp: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := testutils.TempDir(t, "prettyspeed-parity-")
 
 	scriptPath := filepath.Join(tmpDir, "ps.py")
 	if err := os.WriteFile(scriptPath, []byte(pyScript), 0o644); err != nil {

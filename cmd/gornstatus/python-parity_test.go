@@ -58,11 +58,7 @@ func pythonRenderBlocks(t *testing.T, cases []pyRenderBlockCase) []string {
 	if err != nil {
 		t.Fatalf("marshal render-block cases: %v", err)
 	}
-	dir, err := os.MkdirTemp("/tmp", "rnstatus-parity-")
-	if err != nil {
-		t.Fatalf("mkdtemp: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(dir) }()
+	dir := testutils.TempDir(t, "rnstatus-parity-")
 	jsonPath := filepath.Join(dir, "cases.json")
 	if err := os.WriteFile(jsonPath, data, 0o644); err != nil {
 		t.Fatalf("write cases.json: %v", err)
