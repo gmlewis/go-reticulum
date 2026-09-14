@@ -44,6 +44,43 @@ type RRCMessage struct {
 	ID string
 }
 
+// IsConversation reports whether the message is conversation rather than
+// ephemeral hub chatter, and so must survive both the loaded-history filter
+// and the periodic ephemeral-notice purge.
+//
+// A row is conversation when it is a private (K_DST) notice — a direct reply
+// is a conversation that merely happens to share the "notice" kind — or when
+// it is a notice ATTRIBUTED to a peer by nick. Hub chatter (the greeting MOTD,
+// "Direct NOTICE sent to ..." acks, /who and /list replies, join/part rows) is
+// emitted by the hub itself and carries no nick, so a nick-bearing notice is a
+// bot's or peer's answer and dropping it erased every @bot reply from a room's
+// history on the next boot (observed live: @gorrcbot's replies to a user's
+// commands vanished while the commands themselves survived).
+func (m *RRCMessage) IsConversation() bool {
+	if m == nil {
+		return false
+	}
+	if m.Direct {
+		return true
+	}
+	return m.Kind == "notice" && m.Nick != ""
+}
+
+// IsEphemeralNotice reports whether the message is ephemeral hub chatter: a
+// system or notice row that is neither pinned nor conversation. Only such rows
+// are dropped when history is loaded from disk and aged out by the periodic
+// cleanup, mirroring Python RRCHub._filter_history and _clean_history for the
+// hub's own chatter while keeping bot and private replies.
+func (m *RRCMessage) IsEphemeralNotice() bool {
+	if m == nil {
+		return false
+	}
+	if m.Kind != "system" && m.Kind != "notice" {
+		return false
+	}
+	return !m.Pinned && !m.IsConversation()
+}
+
 // HistoryEntry returns a map suitable for CBOR encoding to the
 // history file format.
 func (m *RRCMessage) HistoryEntry() map[string]any {

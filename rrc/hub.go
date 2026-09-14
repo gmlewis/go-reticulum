@@ -3572,7 +3572,12 @@ func (h *RRCHub) ephemeralNoticesHistory() int {
 
 // cleanHistory mirrors Python RRCHub._clean_history. At most once per
 // CLEAN_HISTORY_INTERVAL seconds it scans every room's message buffer and
-// removes system/notice messages older than the ephemeral-notices timeout.
+// removes EPHEMERAL system/notice messages older than the ephemeral-notices
+// timeout: the hub's own chatter. Pinned rows (the greeting MOTD) and
+// conversation rows (private notices and notices attributed to a peer by nick)
+// are exempt, so a bot's reply is not erased ten minutes after it arrives, and
+// a private reply that was reloaded from disk is not erased seconds after boot
+// (see RRCMessage.IsEphemeralNotice).
 func (h *RRCHub) cleanHistory() {
 	now := time.Now().Unix()
 	cleaned := false
@@ -3583,13 +3588,7 @@ func (h *RRCHub) cleanHistory() {
 			kept := h.Messages[r][:0]
 			removed := false
 			for _, m := range h.Messages[r] {
-				// The hub's greeting MOTD notice is pinned: standing hub
-				// info that rrcd re-sends on every WELCOME, exempt from the
-				// ephemeral-notice purge (the purge previously erased it
-				// minutes after a connect, which made some fleet nodes
-				// appear MOTD-less).
-				shouldFilter := (m.Kind == "system" || m.Kind == "notice") && !m.Pinned
-				if shouldFilter {
+				if m.IsEphemeralNotice() {
 					age := now - m.Ts/1000
 					if age > removeAfter {
 						removed = true
@@ -3817,10 +3816,12 @@ func (h *RRCHub) loadHistory() {
 
 		msgs := make([]*RRCMessage, 0, len(window))
 		for _, m := range window {
-			// The filter drops ephemeral hub chatter. A private notice is
-			// conversation that happens to share the "notice" kind, and it is
-			// recorded in the room buffer, so it is kept.
-			if filter && (m.Kind == "system" || m.Kind == "notice") && !m.Direct {
+			// The filter drops ephemeral hub chatter. Conversation recorded
+			// in the room buffer — a private (K_DST) notice, or a notice
+			// attributed to a peer by nick, such as a bot's reply — is kept:
+			// dropping it erased every bot and private reply from the room
+			// view on the next boot while the user's own commands survived.
+			if filter && m.IsEphemeralNotice() {
 				continue
 			}
 			msgs = append(msgs, m)
