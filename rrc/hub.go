@@ -741,17 +741,24 @@ func (h *RRCHub) scheduleReconnect() {
 	h.lock.Lock()
 	h.reconnectAttempts++
 	backoff := reconnectBackoff(h.reconnectAttempts)
-	if h.reconnectTimer != nil {
-		h.reconnectTimer.Stop()
-	}
 	h.Status = StatusDisconnected
 	h.StatusText = "Reconnect in " + strconv.Itoa(int(backoff.Seconds())) + "s"
-	afterFunc := h.afterFunc
-	connectFn := h.connectFn
 	h.lock.Unlock()
 	if h.Manager != nil {
 		h.Manager.NotifyChange(h)
 	}
+	h.armReconnectTimer(backoff)
+}
+
+// armReconnectTimer arms the guarded reconnect for backoff, replacing any timer
+// already pending. It is the shared tail of scheduleReconnect (the link went
+// away) and failConnect (the connection never got that far), so both fire the
+// same connect.
+func (h *RRCHub) armReconnectTimer(backoff time.Duration) {
+	h.lock.Lock()
+	afterFunc := h.afterFunc
+	connectFn := h.connectFn
+	h.lock.Unlock()
 
 	fire := func() {
 		h.lock.Lock()
@@ -775,13 +782,55 @@ func (h *RRCHub) scheduleReconnect() {
 
 	if afterFunc != nil {
 		h.lock.Lock()
+		if h.reconnectTimer != nil {
+			h.reconnectTimer.Stop()
+		}
 		h.reconnectTimer = afterFunc(backoff, fire)
 		h.lock.Unlock()
-	} else {
-		h.lock.Lock()
-		h.reconnectTimer = time.AfterFunc(backoff, fire)
-		h.lock.Unlock()
+		return
 	}
+	h.lock.Lock()
+	if h.reconnectTimer != nil {
+		h.reconnectTimer.Stop()
+	}
+	h.reconnectTimer = time.AfterFunc(backoff, fire)
+	h.lock.Unlock()
+}
+
+// failConnect records a connect failure and, when auto-reconnect is on, arms a
+// retry after the usual backoff.
+//
+// A failure before a link exists is the one failure nothing else recovers from:
+// onClosedWithReason is the only other caller of scheduleReconnect and it only
+// runs for a link that was established, so without this a transient resolution
+// failure — a hub announce that had not arrived yet, an interface that was not
+// up yet — left the hub at FAILED for the rest of the process's life no matter
+// what AutoReconnect said. The bot's own supervisor waits for the hub to report
+// CONNECTED, so a wedged hub means a bot that never joins a room or greets.
+//
+// The FAILED status and its diagnostic text are left in place while the retry
+// is armed: a caller that just asked to connect has to be able to see why it
+// failed, and the retry must not pretend the hub is merely disconnected.
+func (h *RRCHub) failConnect(text string) {
+	h.SetStatus(StatusFailed, text)
+
+	h.lock.Lock()
+	proceed := h.AutoReconnect && !h.manualDisconnect
+	if proceed {
+		h.reconnectAttempts++
+	}
+	backoff := reconnectBackoff(h.reconnectAttempts)
+	h.lock.Unlock()
+
+	if !proceed {
+		log.Printf("[RRC %v] connect failed: %v", h.Name, text)
+		return
+	}
+	if h.Manager != nil && h.Manager.IsStopped() {
+		return
+	}
+	log.Printf("[RRC %v] connect failed: %v; retrying in %v", h.Name, text, backoff)
+	h.armReconnectTimer(backoff)
 }
 
 // reconnectBackoff computes the reconnect delay for the given (post-increment)
@@ -850,11 +899,13 @@ func (h *RRCHub) SetTransport(ts rns.Transport) {
 // the hub identity, builds the destination from the configured destination name,
 // verifies the resolved hash matches the stored hub hash, then establishes a
 // link with the established/closed callbacks wired. On any resolution failure it
-// sets the FAILED status with a diagnostic message.
+// records the FAILED status with a diagnostic message and — because nothing else
+// would ever retry a connection that never produced a link — arms a reconnect
+// when auto-reconnect is on (see failConnect).
 func (h *RRCHub) connectWorker() {
 	defer func() {
 		if r := recover(); r != nil {
-			h.SetStatus(StatusFailed, "Connect error: "+fmt.Sprintf("%v", r))
+			h.failConnect("Connect error: " + fmt.Sprintf("%v", r))
 		}
 	}()
 
@@ -903,6 +954,9 @@ func (h *RRCHub) connectWorker() {
 	const timeout = 20 * time.Second
 	h.lock.Lock()
 	override := h.connectTimeout
+	attempts := h.reconnectAttempts
+	ts := h.transport
+	seams := h.hasPathFn != nil || h.requestPathFn != nil || h.recallIdentityFn != nil
 	h.lock.Unlock()
 	recallTimeout := timeout
 	if override > 0 {
@@ -910,17 +964,38 @@ func (h *RRCHub) connectWorker() {
 	}
 	deadline := time.Now().Add(recallTimeout)
 
+	// Without a transport there is nothing to ask for a path or to recall the
+	// identity from. Report that now rather than spend the whole recall window
+	// polling for an identity that can never appear and then blame the hub's
+	// identity for it. The seam functions stand in for the transport in unit
+	// tests, so their presence keeps the worker on the normal path.
+	if ts == nil && !seams {
+		h.failConnect("Connect error: no transport configured")
+		return
+	}
+
 	needPathRequest := !hasPath(hubHash)
-	h.lock.Lock()
-	attempts := h.reconnectAttempts
-	ts := h.transport
-	h.lock.Unlock()
 	if attempts > 1 || (ts != nil && ts.PathIsUnresponsive(hubHash)) {
+		needPathRequest = true
+	}
+	// A path that cannot be recalled is not a path we can use: the worker would
+	// poll an identity the path table cannot produce for the whole recall window
+	// and then fail with nothing at all sent on the wire. Asking for the path
+	// again is what fixes that — the hub re-announces, which is what installs the
+	// identity in the path table in the first place (and releases an announce
+	// held by ingress limiting) — so a path whose hub identity cannot be recalled
+	// counts as no path.
+	if !needPathRequest && recallIdentity(hubHash) == nil {
 		needPathRequest = true
 	}
 
 	if needPathRequest {
-		_ = requestPath(hubHash)
+		// Not fatal on its own: the path can still arrive from an announce, so
+		// keep polling to the deadline, but say what happened, because an
+		// undeliverable request is otherwise an unexplained silence on the wire.
+		if err := requestPath(hubHash); err != nil {
+			log.Printf("[RRC %v] path request for %x failed: %v", h.Name, hubHash, err)
+		}
 		pathDeadline := time.Now().Add(5 * time.Second)
 		if override > 0 && override < 5*time.Second {
 			pathDeadline = time.Now().Add(override)
@@ -946,29 +1021,28 @@ func (h *RRCHub) connectWorker() {
 	}
 
 	if hubIdentity == nil {
-		h.SetStatus(StatusFailed, "Hub identity unknown")
+		h.failConnect("Hub identity unknown")
 		return
 	}
 
 	hubDest, err := buildDest(hubIdentity)
 	if err != nil {
-		h.SetStatus(StatusFailed, "Connect error: "+err.Error())
+		h.failConnect("Connect error: " + err.Error())
 		return
 	}
 
 	if !bytes.Equal(hubDest.Hash, hubHash) {
-		h.SetStatus(StatusFailed, "Hash/destination name mismatch")
+		h.failConnect("Hash/destination name mismatch")
 		return
 	}
 
-	ts = h.transport
 	if ts == nil {
-		h.SetStatus(StatusFailed, "Connect error: no transport configured")
+		h.failConnect("Connect error: no transport configured")
 		return
 	}
 
 	if err := h.establishLink(ts, hubDest); err != nil {
-		h.SetStatus(StatusFailed, "Connect error: "+err.Error())
+		h.failConnect("Connect error: " + err.Error())
 	}
 }
 
@@ -1266,6 +1340,30 @@ func (h *RRCHub) AddLocalMessage(kind, room, text string) {
 	}
 }
 
+// AddLocalSelfMessage appends a client-only copy of a line the local user
+// typed to the room buffer, without transmitting anything: the room view keeps
+// the echo across refreshes, and the row is credited to the local user's own
+// identity and nick so it renders as one of their own messages. It is how a
+// client shows the command line it just sent, the way an IRC client echoes its
+// own input.
+func (h *RRCHub) AddLocalSelfMessage(room, nick, text string) {
+	var ownHash []byte
+	if h.Manager != nil {
+		ownHash = h.Manager.identityHash()
+	}
+	h.recordMessage(&RRCMessage{
+		Kind: "msg",
+		Room: strings.ToLower(room),
+		Src:  ownHash,
+		Nick: nick,
+		Text: text,
+		Ts:   NowMs(),
+	}, true)
+	if h.Manager != nil {
+		h.Manager.NotifyChange(h)
+	}
+}
+
 // SetMOTD stores the hub's message of the day and notifies the UI (Python
 // assigns self.motd then manager._notify_change, RRC.py:1136-1141).
 func (h *RRCHub) SetMOTD(text string) {
@@ -1293,6 +1391,11 @@ func (h *RRCHub) SetMOTD(text string) {
 // prefix so the COUNT is correct.
 func (h *RRCHub) applyWhoReply(room string, entries []whoEntry) {
 	room = strings.ToLower(room)
+	// Our own name is local knowledge, and the reply carries the nick the hub
+	// registered — the previous one until our next message carries the new
+	// one — so a /nick change must survive its own /who. Read the locals
+	// before h.lock, keeping the manager.lock → hub.lock order.
+	ownHash, ownNick := h.localNick()
 	h.lock.Lock()
 	// Resolve each entry BEFORE replacing, so the prefix match can see the
 	// outgoing set (the new set may carry reply-prefix keys that would
@@ -1315,7 +1418,11 @@ func (h *RRCHub) applyWhoReply(room string, entries []whoEntry) {
 				full = e.HashHex
 			}
 			key = full
-			h.Nicks[full] = e.Nick
+			if ownHash != "" && ownNick != "" && strings.HasPrefix(ownHash, e.HashHex) {
+				h.Nicks[key] = ownNick
+			} else {
+				h.Nicks[key] = e.Nick
+			}
 		}
 		if key != "" {
 			resolved[key] = true
@@ -1667,8 +1774,10 @@ func (h *RRCHub) GetMessages(room string) []*RRCMessage {
 }
 
 // DirectNotices returns the private NOTICEs the hub delivered to this client
-// alone (the K_DST extension), oldest first. They belong to no room, so a
-// client that renders rooms must show them separately from room traffic.
+// alone (the K_DST extension), oldest first. Each of them is also recorded in
+// the room buffer, attributed to the active room or fanned out to every joined
+// room, so a client that renders rooms finds them in the room's own history;
+// this accessor serves callers that want the private traffic on its own.
 func (h *RRCHub) DirectNotices() []*RRCMessage {
 	h.lock.Lock()
 	defer h.lock.Unlock()
@@ -2032,9 +2141,32 @@ func truncateUTF8(s string, maxBytes int) string {
 // set_nick_override, RRC.py:539-546: the store plus manager._notify_change —
 // the manager's change callback re-renders the room's Users pane and the hub
 // list immediately, mirroring the SetStatus notify class).
+//
+// The change also lands in the learned nick table for our own hash: the Users
+// pane renders each member through that table and the hub only learns our nick
+// from our next message, so without it a /nick change left the user's own row
+// showing the previous name until they spoke again.
 func (h *RRCHub) SetNickOverride(nick string) {
+	// The manager's identity and nickname are read before h.lock, keeping the
+	// manager.lock → hub.lock order the rest of the client uses.
+	var ownHash, effective string
+	if h.Manager != nil {
+		ownHash = hexString(h.Manager.identityHash())
+		effective = nick
+		if effective == "" {
+			effective = h.Manager.GetNickname()
+		}
+	}
+
 	h.lock.Lock()
 	h.NickOverride = nick
+	if ownHash != "" {
+		if effective == "" {
+			delete(h.Nicks, ownHash)
+		} else {
+			h.Nicks[ownHash] = effective
+		}
+	}
 	h.lock.Unlock()
 	if h.Manager != nil {
 		h.Manager.NotifyChange(h)
@@ -3020,6 +3152,16 @@ func (h *RRCHub) handlePartedNotification(roomStr, nickStr string, body any) {
 	}
 }
 
+// localNick returns this client's own identity hash and the nick we will
+// announce to the hub (the per-hub override, else the manager's nickname).
+// Callers must not hold h.lock: the manager reads take manager.lock first.
+func (h *RRCHub) localNick() (hashHex, nick string) {
+	if h.Manager == nil {
+		return "", ""
+	}
+	return hexString(h.Manager.identityHash()), h.GetEffectiveNick()
+}
+
 // displayNameForHash resolves a member's display name from the nick table,
 // falling back to the 12-hex prefix of the identity hash (Python
 // display_name_for, RRC.py:307-313). Callers must not hold h.lock.
@@ -3172,23 +3314,15 @@ func (h *RRCHub) recordInboundSystemRow(msg *RRCMessage) {
 }
 
 // recordDirectNotice records a NOTICE the hub forwarded privately to this
-// client over the K_DST extension. Direct notices go to the hub's notice
-// log — not to a room buffer, because they are addressed to one client, and
-// not through recordNotice, because that path attributes a roomless notice to
-// the active room, fans it out to every joined room, and pins it as the hub
-// greeting.
+// client over the K_DST extension. A private message is conversation, so it is
+// recorded like any other row: into the room buffer — the active room, or every
+// joined room when none is active — as well as the notice log, so a room view
+// rebuilt from the buffer still shows it. The row is pinned because its kind is
+// "notice" and the ephemeral-notice purge must not erase a private message
+// minutes after it arrives (the same pin the hub's greeting carries).
 func (h *RRCHub) recordDirectNotice(msg *RRCMessage) {
-	h.lock.Lock()
-	h.Notices = append(h.Notices, msg)
-	if len(h.Notices) > 200 {
-		h.Notices = h.Notices[len(h.Notices)-200:]
-	}
-	h.lock.Unlock()
-
-	if h.Manager != nil {
-		h.Manager.NotifyMessage(h, msg)
-	}
-	h.enqueueMessage(msg)
+	msg.Pinned = true
+	h.recordNotice(msg)
 }
 
 // rememberSentID records one of our own outgoing message ids (Python
@@ -3676,7 +3810,10 @@ func (h *RRCHub) loadHistory() {
 
 		msgs := make([]*RRCMessage, 0, len(window))
 		for _, m := range window {
-			if filter && (m.Kind == "system" || m.Kind == "notice") {
+			// The filter drops ephemeral hub chatter. A private notice is
+			// conversation that happens to share the "notice" kind, and it is
+			// recorded in the room buffer, so it is kept.
+			if filter && (m.Kind == "system" || m.Kind == "notice") && !m.Direct {
 				continue
 			}
 			msgs = append(msgs, m)

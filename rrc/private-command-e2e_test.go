@@ -208,11 +208,16 @@ func TestPrivateCommandEndToEnd(t *testing.T) {
 			texts, hex.EncodeToString(bob.hash), logs.String())
 	}
 
-	// No room ever carried the private text.
-	for _, client := range []*privateCommandClient{alice, bob} {
-		if containsSubstring(roomTexts(client.hub, "general"), body) {
-			t.Errorf("the private message leaked into a room view: %v", roomTexts(client.hub, "general"))
-		}
+	// The private text is never room traffic: it must not appear in the
+	// sender's room view (and would not appear in any other client's). The
+	// recipient's own room buffer does hold it, which is what keeps it visible
+	// in the recipient's room view across rebuilds.
+	if containsSubstring(roomTexts(alice.hub, "general"), body) {
+		t.Errorf("the private message leaked into the sender's room view: %v", roomTexts(alice.hub, "general"))
+	}
+	if !containsSubstring(roomTexts(bob.hub, "general"), body) {
+		t.Errorf("recipient room view = %v, want the private message recorded in the room buffer",
+			roomTexts(bob.hub, "general"))
 	}
 }
 

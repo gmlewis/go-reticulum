@@ -1486,6 +1486,32 @@ func TestHubLoadHistoryFiltersSystemNotice(t *testing.T) {
 	}
 }
 
+// TestHubLoadHistoryKeepsPrivateNotices verifies that a private notice survives
+// the loaded-history filter: its kind is "notice", but a private message is
+// conversation, and dropping it would erase a private conversation from the
+// room it was recorded in on the next boot.
+func TestHubLoadHistoryKeepsPrivateNotices(t *testing.T) {
+	t.Parallel()
+
+	dir := tempDir(t)
+	mgr := NewManager(dir, nil)
+	mgr.SetHistoryConfig(0, true, 600) // no cap, filter on
+	hub := mgr.AddHub([]byte{0x01}, "rrc.hub", "H")
+	hub.AddRoom("general")
+
+	appendHistoryEntry(t, hub, "general", &RRCMessage{Kind: "notice", Text: "hub chatter", Ts: 1})
+	appendHistoryEntry(t, hub, "general", &RRCMessage{Kind: "notice", Text: "private pong", Ts: 2, Direct: true})
+
+	hub.loadHistory()
+
+	hub.lock.Lock()
+	defer hub.lock.Unlock()
+	got := messageTexts(hub.Messages["general"])
+	if !slices.Equal(got, []string{"private pong"}) {
+		t.Errorf("Messages[general] = %v, want the private notice kept and plain notices filtered", got)
+	}
+}
+
 // TestHubLoadHistoryRespectsFilterDisabled verifies that when the
 // loaded-history filter is disabled, system/notice entries are kept.
 func TestHubLoadHistoryRespectsFilterDisabled(t *testing.T) {
@@ -2105,6 +2131,132 @@ func TestConnectWorkerHashMismatch(t *testing.T) {
 	}
 	if hub.StatusText != "Hash/destination name mismatch" {
 		t.Errorf("StatusText = %q, want %q", hub.StatusText, "Hash/destination name mismatch")
+	}
+}
+
+// TestConnectWorkerFailureArmsARetryWhenAutoReconnectIsOn verifies that a
+// connect that fails before a link exists is not terminal when auto-reconnect is
+// on. Nothing else would ever retry it: onClosedWithReason is the only other
+// caller of scheduleReconnect, and it only runs for a link that was established.
+// The FAILED status and its diagnostic text must survive the retry being armed,
+// because the caller that just asked to connect has to be able to see why it
+// failed.
+func TestConnectWorkerFailureArmsARetryWhenAutoReconnectIsOn(t *testing.T) {
+	t.Parallel()
+
+	mgr := NewManager(tempDir(t), func() []byte { return []byte("me") })
+	hub := mgr.AddHub([]byte{0x06}, "rrc.hub", "H")
+
+	hub.hasPathFn = func([]byte) bool { return true }
+	hub.recallIdentityFn = func([]byte) *rns.Identity { return nil }
+	hub.connectTimeout = 50 * time.Millisecond
+	hub.SetAutoReconnect(true, false)
+
+	var fire func()
+	var timer *time.Timer
+	defer func() {
+		if timer != nil {
+			timer.Stop()
+		}
+	}()
+	hub.afterFunc = func(d time.Duration, f func()) *time.Timer {
+		fire = f
+		timer = time.NewTimer(d)
+		return timer
+	}
+	retried := make(chan struct{}, 1)
+	hub.connectFn = func() {
+		select {
+		case retried <- struct{}{}:
+		default:
+		}
+	}
+
+	hub.connectWorker()
+
+	hub.lock.Lock()
+	status, text := hub.Status, hub.StatusText
+	hub.lock.Unlock()
+	if status != StatusFailed || text != "Hub identity unknown" {
+		t.Errorf("status = %v (%q), want StatusFailed (Hub identity unknown)", status, text)
+	}
+	if fire == nil {
+		t.Fatal("connectWorker armed no retry with AutoReconnect on")
+	}
+
+	fire()
+	select {
+	case <-retried:
+	case <-time.After(2 * time.Second):
+		t.Error("the armed retry did not connect again")
+	}
+}
+
+// TestConnectWorkerFailureStaysTerminalWithoutAutoReconnect verifies the other
+// half of the retry rule: auto-reconnect off means the failure is final and
+// nothing is armed to fire behind the caller's back.
+func TestConnectWorkerFailureStaysTerminalWithoutAutoReconnect(t *testing.T) {
+	t.Parallel()
+
+	mgr := NewManager(tempDir(t), func() []byte { return []byte("me") })
+	hub := mgr.AddHub([]byte{0x06}, "rrc.hub", "H")
+
+	hub.hasPathFn = func([]byte) bool { return true }
+	hub.recallIdentityFn = func([]byte) *rns.Identity { return nil }
+	hub.connectTimeout = 50 * time.Millisecond
+
+	armed := false
+	hub.afterFunc = func(d time.Duration, f func()) *time.Timer {
+		armed = true
+		return time.NewTimer(d)
+	}
+
+	hub.connectWorker()
+
+	hub.lock.Lock()
+	timer := hub.reconnectTimer
+	hub.lock.Unlock()
+	if timer != nil {
+		timer.Stop()
+	}
+	if armed || timer != nil {
+		t.Error("connectWorker armed a retry with AutoReconnect off")
+	}
+}
+
+// TestConnectWorkerRequestsAPathForAnUnrecallablePath verifies that a path which
+// yields no hub identity is treated as no path. Sitting on such a path is a
+// silent stall that ends in a failure with nothing sent on the wire; asking for
+// the path again is what makes the hub re-announce, which is what installs the
+// identity in the first place.
+func TestConnectWorkerRequestsAPathForAnUnrecallablePath(t *testing.T) {
+	t.Parallel()
+
+	hubHash := []byte("hub-dest-hash---")
+	mgr := NewManager(tempDir(t), func() []byte { return []byte("me") })
+	hub := mgr.AddHub(hubHash, "rrc.hub", "H")
+
+	hub.hasPathFn = func([]byte) bool { return true }
+	hub.connectTimeout = 50 * time.Millisecond
+
+	reqCh := make(chan []byte, 1)
+	hub.requestPathFn = func(hash []byte) error {
+		select {
+		case reqCh <- append([]byte(nil), hash...):
+		default:
+		}
+		return nil
+	}
+
+	hub.connectWorker()
+
+	select {
+	case req := <-reqCh:
+		if !bytes.Equal(req, hubHash) {
+			t.Errorf("connectWorker requested path %x, want %x", req, hubHash)
+		}
+	default:
+		t.Error("connectWorker did not ask for a path whose identity cannot be recalled")
 	}
 }
 

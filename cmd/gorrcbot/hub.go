@@ -78,10 +78,17 @@ type hubSession struct {
 	wake chan struct{}
 
 	mu sync.Mutex
-	// welcomed records that the current link has already been brought up:
-	// the rooms joined and the greetings enabled. It is cleared when the link
-	// goes away so the next link joins and greets again.
+	// welcomed records that the current link has been brought up: the
+	// link-established callback fired (or a CONNECTED status proved the link is
+	// up) and the per-link join and greeting state was reset. It is cleared when
+	// the link goes away so the next link joins and greets again.
 	welcomed bool
+	// joinAttempts counts the JOINs sent on the current link and joinedAt is
+	// when the last one went out. A JOIN only goes out once the hub has welcomed
+	// the session (see sync), and an unconfirmed room's JOIN is repeated after
+	// the bot's joinRetry.
+	joinAttempts int
+	joinedAt     time.Time
 	// joinedOK records the rooms whose JOINED confirmation the hub sent. The
 	// hub rejects room traffic for a room the session has not joined yet, so a
 	// greeting waits for this confirmation rather than for our own JOIN.
@@ -92,6 +99,11 @@ type hubSession struct {
 	// connectedAt is when the current link came up, which is what the uptime
 	// command reports as the connection age.
 	connectedAt time.Time
+	// statusSeen and lastStatus remember the connection status the supervisor
+	// last observed, so a status change is reported once instead of on every
+	// poll. statusSeen separates "still disconnected" from "not looked yet".
+	statusSeen bool
+	lastStatus int
 }
 
 // newHubSession builds the session state for one hub.
@@ -114,10 +126,6 @@ func (s *hubSession) trigger() {
 	}
 }
 
-// isJoined reports whether the bot is in the room for this session: the hub has
-// confirmed the JOIN and still reports the membership. A reply is only allowed
-// in a room the bot is actually in, because the hub rejects room traffic for any
-// other.
 // connectionAge reports how long the current link has been up, or 0 when no
 // link has been established.
 func (s *hubSession) connectionAge(now time.Time) time.Duration {
@@ -179,18 +187,25 @@ func (s *hubSession) observeJoin(msg *rrc.RRCMessage) {
 	s.trigger()
 }
 
-// onLinkEstablished brings a freshly established link up to the configured
-// state: the hub has forgotten any previous session, so every room is joined
-// again and every greeting is re-armed. It runs on the client's link goroutine,
-// so it only joins and wakes the supervisor.
+// onLinkEstablished marks the current link as up and resets the per-link state:
+// the hub has forgotten any previous session, so the rooms are joined again and
+// every greeting is re-armed.
+//
+// It does NOT join. The link callback fires before the hub has welcomed the
+// session, and a JOIN sent in that window is answered with "send HELLO first"
+// and dropped — a join sent from here can be lost for the whole session, which
+// is how the bot came up connected and silent. The join happens on the first
+// CONNECTED sync instead (see sync), and sync calls this for a link whose
+// callback was missed.
 func (s *hubSession) onLinkEstablished() {
 	s.mu.Lock()
 	s.welcomed = true
 	s.connectedAt = time.Now()
+	s.joinAttempts = 0
+	s.joinedAt = time.Time{}
 	s.joinedOK = make(map[string]bool)
 	s.greeted = make(map[string]bool)
 	s.mu.Unlock()
-	s.joinRooms()
 	s.trigger()
 }
 
@@ -228,31 +243,143 @@ func (s *hubSession) supervise() {
 }
 
 // sync reconciles the session with the connection: a connected hub whose link
-// callback was missed is brought up anyway, and a room whose JOIN the hub has
-// confirmed receives its greeting exactly once.
+// callback was missed is brought up anyway, the rooms are joined once the
+// connection is CONNECTED, and a room whose JOIN the hub has confirmed receives
+// its greeting exactly once.
+//
+// Only DISCONNECTED and FAILED count as a lost link. The client reports
+// CONNECTING for the whole HELLO-to-WELCOME window after the link callback
+// fired, so treating "not connected" as "link lost" discarded the JOINED
+// confirmation that window was waiting for, logged a link loss that never
+// happened, and sent the JOIN a second time.
 func (s *hubSession) sync() {
-	connected := s.conn.GetHubStatus() == rrc.StatusConnected
-	s.mu.Lock()
-	welcomed := s.welcomed
-	s.mu.Unlock()
-
-	if !connected {
+	status := s.conn.GetHubStatus()
+	s.noteStatus(status)
+	switch status {
+	case rrc.StatusDisconnected, rrc.StatusFailed:
+		s.mu.Lock()
+		welcomed := s.welcomed
+		s.mu.Unlock()
 		if welcomed {
 			s.linkLost()
 		}
 		return
-	}
-	if !welcomed {
-		s.onLinkEstablished()
+	case rrc.StatusConnected:
+	default:
+		// CONNECTING: the hub has not welcomed this link yet. A JOIN sent in
+		// this window is answered with "send HELLO first" and dropped, so the
+		// join waits for CONNECTED even though the link is already up.
 		return
+	}
+
+	s.mu.Lock()
+	welcomed := s.welcomed
+	s.mu.Unlock()
+	if !welcomed {
+		// A status change with no link callback: CONNECTED is proof the link is
+		// up, so the session is brought up here.
+		s.onLinkEstablished()
+	}
+	if attempt := s.beginJoin(time.Now()); attempt > 0 {
+		s.joinRooms(attempt)
 	}
 	s.greetJoinedRooms()
 }
 
-// joinRooms asks the hub to join every configured room. It runs once per
-// connection: after a reconnect the hub has forgotten the session, so the JOIN
-// has to be sent again.
-func (s *hubSession) joinRooms() {
+// beginJoin reports which JOIN attempt this is — 0 when no JOIN goes out now —
+// and records the attempt. A join goes out on the first CONNECTED sync after a
+// link comes up, and again after the bot's joinRetry while a configured room is
+// still unconfirmed: the client reports a JOINED as a silent self-join — a row
+// it keeps out of the conversation, and the hub's own welcome-time re-join makes
+// the silent case indistinguishable from a lost confirmation — so a
+// confirmation the inbound hook never saw must not leave the bot out of the room
+// for the rest of the session. A repeated JOIN is harmless (the hub's member set
+// is a set) and the attempts per link are capped.
+func (s *hubSession) beginJoin(now time.Time) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.joinAttempts >= maxJoinAttempts {
+		return 0
+	}
+	if s.joinAttempts > 0 {
+		if s.allRoomsConfirmed() || now.Before(s.joinedAt.Add(s.bot.joinRetry)) {
+			return 0
+		}
+	}
+	s.joinAttempts++
+	s.joinedAt = now
+	return s.joinAttempts
+}
+
+// allRoomsConfirmed reports whether every configured room already has the hub's
+// JOINED confirmation, so a repeat JOIN would ask for nothing. The caller holds
+// the lock.
+func (s *hubSession) allRoomsConfirmed() bool {
+	for _, room := range s.cfg.Rooms {
+		if !s.joinedOK[room.Name] {
+			return false
+		}
+	}
+	return true
+}
+
+// noteStatus reports a change of connection status once, in the bot's own
+// words. An always-on bot has to say that it cannot reach a hub, and why: the
+// client's status text is the only place the reason exists ("Hub identity
+// unknown", "Reconnect in 4s"), and the bot's log is what the operator is
+// reading. Without this, a hub that never connects leaves a bot log with
+// nothing in it at all.
+func (s *hubSession) noteStatus(status int) {
+	s.mu.Lock()
+	seen := s.statusSeen
+	if seen && s.lastStatus == status {
+		s.mu.Unlock()
+		return
+	}
+	s.statusSeen = true
+	s.lastStatus = status
+	s.mu.Unlock()
+	if !seen && status != rrc.StatusFailed {
+		// The first look is not a transition: the bot has just asked the hub to
+		// connect, and the state before that says nothing. A failure is the
+		// exception, because it is the one state a fresh session must not sit in
+		// silently.
+		return
+	}
+
+	switch status {
+	case rrc.StatusConnected:
+		s.bot.logf("hub %q: connected", s.cfg.Name)
+	case rrc.StatusFailed:
+		s.bot.logf("hub %q: cannot connect%v", s.cfg.Name, statusDetail(s.hubStatusText()))
+	case rrc.StatusDisconnected:
+		s.bot.logf("hub %q: disconnected%v", s.cfg.Name, statusDetail(s.hubStatusText()))
+	}
+}
+
+// hubStatusText returns the client's own status text when the connection
+// provides one, so a status line explains itself instead of naming only a code.
+func (s *hubSession) hubStatusText() string {
+	if st, ok := s.conn.(interface{ GetStatusText() string }); ok {
+		return st.GetStatusText()
+	}
+	return ""
+}
+
+// statusDetail renders the detail half of a status line, which is empty when
+// the connection has no text to offer.
+func statusDetail(text string) string {
+	if text == "" {
+		return ""
+	}
+	return ": " + text
+}
+
+// joinRooms asks the hub to join every configured room, on the given attempt of
+// this link. It runs on the first CONNECTED sync of a link and again while the
+// hub has not confirmed a room (see beginJoin): after a reconnect the hub has
+// forgotten the session, so the JOIN has to be sent again.
+func (s *hubSession) joinRooms(attempt int) {
 	for _, room := range s.cfg.Rooms {
 		if room.Key != "" {
 			s.conn.JoinRoomWithKey(room.Name, false, room.Key)
@@ -266,8 +393,14 @@ func (s *hubSession) joinRooms() {
 			names = append(names, room.Name)
 		}
 		// An always-on bot has to say what it is doing: without this line an
-		// operator cannot tell a joined room from a failed join.
-		s.bot.logf("hub %q: joined %v", s.cfg.Name, strings.Join(names, ", "))
+		// operator cannot tell a joined room from a failed join, and without the
+		// retry count a hub that never confirms the join looks like an idle bot.
+		if attempt > 1 {
+			s.bot.logf("hub %q: joining %v again (attempt %v of %v; the hub has not confirmed)",
+				s.cfg.Name, strings.Join(names, ", "), attempt, maxJoinAttempts)
+			return
+		}
+		s.bot.logf("hub %q: joining %v", s.cfg.Name, strings.Join(names, ", "))
 	}
 }
 

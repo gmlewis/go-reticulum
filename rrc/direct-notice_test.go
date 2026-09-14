@@ -76,7 +76,8 @@ func TestHandleDataMarksInboundDirectNotice(t *testing.T) {
 
 // TestHandleDataDirectNoticeDoesNotBecomeMOTD asserts a private notice is not
 // mistaken for the hub's greeting: only the hub's roomless broadcast sets the
-// MOTD, and a direct notice is not pinned against the ephemeral purge.
+// MOTD. The row IS pinned, because a private message is conversation and the
+// ephemeral-notice purge must not erase it minutes after it arrives.
 func TestHandleDataDirectNoticeDoesNotBecomeMOTD(t *testing.T) {
 	t.Parallel()
 
@@ -93,10 +94,18 @@ func TestHandleDataDirectNoticeDoesNotBecomeMOTD(t *testing.T) {
 	hub.lock.Lock()
 	notices := append([]*RRCMessage(nil), hub.Notices...)
 	hub.lock.Unlock()
+	seen := false
 	for _, n := range notices {
-		if n.Text == "private pong" && n.Pinned {
-			t.Error("a direct notice was recorded as a pinned (greeting) notice")
+		if n.Text != "private pong" {
+			continue
 		}
+		seen = true
+		if !n.Pinned {
+			t.Error("a direct notice is not pinned; the ephemeral purge would erase it")
+		}
+	}
+	if !seen {
+		t.Fatal("the private notice never reached the notice log")
 	}
 }
 
@@ -177,5 +186,31 @@ func TestHistoryEntryOmitsDirectKeysForPlainMessages(t *testing.T) {
 	}
 	if _, ok := entry[HDst]; ok {
 		t.Error("plain message history entry carries HDst")
+	}
+}
+
+// TestDirectNoticeIsRecordedInTheRoomBuffer asserts a private notice lands in
+// the room buffer and not only in the notice log: every room view is rebuilt
+// from that buffer on each hub refresh, so a private message must be recorded
+// there to survive the rebuild, exactly like the line the user typed.
+func TestDirectNoticeIsRecordedInTheRoomBuffer(t *testing.T) {
+	t.Parallel()
+
+	_, hub := newHookTestHub(t)
+	hub.AddRoom("general")
+
+	target := hub.Manager.identityHash()
+	env := directNoticeEnvelope(target, peerHash(0x20), "private pong")
+	hub.HandleData(cbor.Encode(env))
+
+	msgs := hub.GetMessages("general")
+	if len(msgs) != 1 {
+		t.Fatalf("room buffer = %v rows, want the private notice", len(msgs))
+	}
+	if !msgs[0].Direct || msgs[0].Text != "private pong" || msgs[0].Room != "general" {
+		t.Errorf("buffered row = %+v, want the private notice recorded in the room", msgs[0])
+	}
+	if !msgs[0].Pinned {
+		t.Error("buffered private notice is unpinned; the ephemeral purge would erase it")
 	}
 }

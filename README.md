@@ -437,11 +437,15 @@ the hub's destination hash), and the hub answers on that client's link alone.
   hash and the message id, or reports `not found`, the ambiguity list, or that
   the body does not fit the target's link.
 
-In `gonomadnet`, `/msg <nick|hash> <text>` sends one (quoting preserved), and
-both directions render in the room view marked `private from <nick>` and
-`private to <nick>`. Stock Python `nomadnet` records an inbound private notice
-in `RRC.notices` and never draws it — `nomadnet/ui/textui.py` has no notice
-widget — so a Python user can send but not yet read one.
+In `gonomadnet`, `/msg <nick|hash> <text>` sends one (quoting preserved), the
+line you typed is echoed in the room view exactly as typed — the way an IRC
+client echoes its own input — and an arriving private notice renders as
+`private from <nick>`. Both rows are recorded in the hub's room buffer like any
+other row (a private notice is attributed to the active room, or to every
+joined room when no room is active), so they survive each room-view rebuild
+instead of vanishing the moment the reply arrives. Stock Python `nomadnet` records an inbound private
+notice in `RRC.notices` and never draws it — `nomadnet/ui/textui.py` has no
+notice widget — so a Python user can send but not yet read one.
 
 ---
 

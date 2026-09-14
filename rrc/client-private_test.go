@@ -138,3 +138,34 @@ func TestSendPrivateCommandSendsAnAddressedNotice(t *testing.T) {
 		t.Errorf("K_V = %v, want %v", intVal(env, KeyVersion), RRCVersion)
 	}
 }
+
+// TestAddLocalSelfMessageKeepsTheTypedEcho asserts the local copy of a line the
+// user typed lands in the room buffer credited to the local user: the room view
+// is rebuilt from that buffer on every hub refresh, so an echo held only by the
+// widget would vanish as soon as the private reply arrived.
+func TestAddLocalSelfMessageKeepsTheTypedEcho(t *testing.T) {
+	t.Parallel()
+
+	_, hub := newHookTestHub(t)
+	sent := &[]map[any]any{}
+	hub.onSend = func(env map[any]any) { *sent = append(*sent, env) }
+
+	const line = "/msg gorrcbot help"
+	hub.AddLocalSelfMessage("general", "glenn", line)
+
+	msgs := hub.GetMessages("general")
+	if len(msgs) != 1 {
+		t.Fatalf("room buffer has %v rows, want the echo", len(msgs))
+	}
+	got := msgs[0]
+	if got.Kind != "msg" || got.Text != line || got.Nick != "glenn" || got.Room != "general" {
+		t.Errorf("echo row = %+v, want a msg row with the typed line and the local nick", got)
+	}
+	if len(got.Src) == 0 {
+		t.Error("echo row carries no source hash; the client cannot recognise it as its own")
+	}
+	// A client-only row must never reach the wire.
+	if len(*sent) != 0 {
+		t.Errorf("a local echo sent %v envelopes, want none", len(*sent))
+	}
+}

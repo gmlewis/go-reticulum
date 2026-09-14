@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -122,13 +123,69 @@ type integrationRig struct {
 	home    string
 	// botLog holds the bot's own log lines, for failure diagnostics.
 	botLog *capturedLog
+	// state renders the bot's per-hub session state, for failure diagnostics.
+	state func() string
 }
 
-// failf reports a failed assertion together with the bot's own log, so the
-// failure explains itself.
+// failf reports a failed assertion together with the bot's own log and the
+// connection state of every hub, so the failure explains itself: a bot that
+// never introduced itself is either not connected, not joined, or not sending,
+// and the dump says which.
 func (r *integrationRig) failf(t *testing.T, format string, args ...any) {
 	t.Helper()
-	t.Fatalf(format+"\n--- bot log ---\n%v", append(args, r.botLog.String())...)
+	var detail strings.Builder
+	if r.state != nil {
+		detail.WriteString("\n--- bot session state ---\n")
+		detail.WriteString(r.state())
+	}
+	for _, hub := range r.hubs {
+		asker := hub.asker
+		fmt.Fprintf(&detail, "asker on %v: status=%v (%v) room=%v\n",
+			hub.name, statusName(asker.GetHubStatus()), asker.GetStatusText(),
+			asker.HasRoom("general"))
+	}
+	t.Fatalf(format+"\n--- bot log ---\n%v%v", append(args, r.botLog.String(), detail.String())...)
+}
+
+// statusName renders a hub status code the way the client names it.
+func statusName(status int) string {
+	switch status {
+	case rrc.StatusDisconnected:
+		return "Disconnected"
+	case rrc.StatusConnecting:
+		return "Connecting"
+	case rrc.StatusConnected:
+		return "Connected"
+	case rrc.StatusFailed:
+		return "Failed"
+	default:
+		return fmt.Sprintf("Unknown(%v)", status)
+	}
+}
+
+// sessionState renders every hub session the bot owns: the status the client
+// reports, whether the session considers the link brought up, and which rooms
+// the hub has confirmed joined and been greeted.
+func sessionState(b *bot) string {
+	var sb strings.Builder
+	for _, s := range b.sessions {
+		text := ""
+		if st, ok := s.conn.(interface{ GetStatusText() string }); ok {
+			// The engine's interface carries the status code; the text is what
+			// says why the connection is not up.
+			text = st.GetStatusText()
+		}
+		s.mu.Lock()
+		welcomed := s.welcomed
+		joined := slices.Sorted(maps.Keys(s.joinedOK))
+		greeted := slices.Sorted(maps.Keys(s.greeted))
+		connectedAt := s.connectedAt
+		s.mu.Unlock()
+		fmt.Fprintf(&sb, "hub %q: status=%v (%v) welcomed=%v joined=%v greeted=%v linkUp=%v\n",
+			s.cfg.Name, statusName(s.conn.GetHubStatus()), text, welcomed, joined, greeted,
+			!connectedAt.IsZero())
+	}
+	return sb.String()
 }
 
 // capturedLog collects the bot's own log lines, so a failed end-to-end
@@ -143,7 +200,9 @@ func (c *capturedLog) Write(p []byte) (int, error) {
 	defer c.mu.Unlock()
 	for line := range strings.SplitSeq(strings.TrimRight(string(p), "\n"), "\n") {
 		// Only the bot's own lines: the stack's debug stream is noise here and
-		// would bury the story a failure needs to tell.
+		// would bury the story a failure needs to tell. What the bot cannot see
+		// for itself it reports in its own words (see hubSession.noteStatus), so
+		// a failure never depends on the stack's chatter.
 		if strings.Contains(line, "gorrcbot: ") {
 			c.lines = append(c.lines, line)
 		}
@@ -418,7 +477,13 @@ func newIntegrationRigWith(t *testing.T, hubCount int, replyMode string,
 		}
 	})
 
-	return &integrationRig{hubs: hubs, botHash: hexString(identity.Hash), home: home, botLog: botLog}
+	return &integrationRig{
+		hubs:    hubs,
+		botHash: hexString(identity.Hash),
+		home:    home,
+		botLog:  botLog,
+		state:   func() string { return sessionState(b) },
+	}
 }
 
 // notices returns the room NOTICEs the bot sent to one asker.
@@ -564,7 +629,7 @@ func TestIntegrationBotSilencesEveryOtherFormOfAddress(t *testing.T) {
 	asker := rig.hubs[0].asker
 
 	if !waitForCondition(integrationGreetWait, func() bool { return rig.greetings(t, 0) >= 1 }) {
-		t.Fatalf("the bot never introduced itself; notices: %v", rig.notices(t, 0))
+		rig.failf(t, "the bot never introduced itself; notices: %v", rig.notices(t, 0))
 	}
 	after := len(rig.notices(t, 0))
 
@@ -597,7 +662,7 @@ func TestIntegrationBotAnswersARoomRequestInTheRoom(t *testing.T) {
 	asker := rig.hubs[0].asker
 
 	if !waitForCondition(integrationGreetWait, func() bool { return rig.greetings(t, 0) >= 1 }) {
-		t.Fatalf("the bot never introduced itself; notices: %v", rig.notices(t, 0))
+		rig.failf(t, "the bot never introduced itself; notices: %v", rig.notices(t, 0))
 	}
 	if !waitForCondition(integrationWait, func() bool {
 		return asker.HasCapability(rrc.CapDirectNotice)
@@ -637,7 +702,7 @@ func TestIntegrationBotStillSendsAPrivateNoticeOnRequest(t *testing.T) {
 	asker := rig.hubs[0].asker
 
 	if !waitForCondition(integrationGreetWait, func() bool { return rig.greetings(t, 0) >= 1 }) {
-		t.Fatalf("the bot never introduced itself; notices: %v", rig.notices(t, 0))
+		rig.failf(t, "the bot never introduced itself; notices: %v", rig.notices(t, 0))
 	}
 	if !waitForCondition(integrationWait, func() bool {
 		return asker.HasCapability(rrc.CapDirectNotice)

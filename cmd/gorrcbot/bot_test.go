@@ -692,6 +692,14 @@ func defaultTestConfig() *BotConfig {
 // newEngineFixture starts a bot in the background with simulated timings.
 func newEngineFixture(t *testing.T, cfg *BotConfig) *engineFixture {
 	t.Helper()
+	return newEngineFixtureWith(t, cfg, nil)
+}
+
+// newEngineFixtureWith is newEngineFixture with the bot's timing knobs adjusted
+// before Run starts. The knobs are read by the supervisor goroutines, so they
+// have to be set here rather than on a running bot.
+func newEngineFixtureWith(t *testing.T, cfg *BotConfig, tune func(*bot)) *engineFixture {
+	t.Helper()
 	if cfg == nil {
 		cfg = defaultTestConfig()
 	}
@@ -704,6 +712,9 @@ func newEngineFixture(t *testing.T, cfg *BotConfig) *engineFixture {
 	b := newBot(cfg, BotPaths{Home: tempDir(t)}, nil, ownHash, dialer, recorder.hooks())
 	b.statusPoll = time.Millisecond
 	b.shutdownGrace = time.Second
+	if tune != nil {
+		tune(b)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	f := &engineFixture{dialer: dialer, hooks: recorder, bot: b, cancel: cancel, finished: make(chan struct{})}
@@ -796,6 +807,54 @@ func TestEngineRegistersInboundHookBeforeConnecting(t *testing.T) {
 	if hookAt > connectAt {
 		t.Errorf("call log %v registers the inbound hook after connecting", log)
 	}
+}
+
+// TestEngineJoinsOnlyAfterTheWelcome asserts the link-established callback does
+// not itself join. The callback fires before the hub has welcomed the session,
+// and the hub answers a JOIN in that window with "send HELLO first" and drops
+// it: the client then keeps the room in no confirmed state, the bot never
+// greets, and a bot that joined there came up connected and permanently silent.
+// The join belongs to the first CONNECTED sync.
+func TestEngineJoinsOnlyAfterTheWelcome(t *testing.T) {
+	f := newEngineFixture(t, nil)
+	hub := f.dialer.hub(t, "One")
+
+	// The link is up and the client is in its HELLO-to-WELCOME window.
+	hub.setStatus(rrc.StatusConnecting)
+	hub.established()
+	time.Sleep(20 * time.Millisecond)
+	if got := hub.joinList(); len(got) != 0 {
+		t.Fatalf("joins = %v in the CONNECTING window, want none", got)
+	}
+
+	hub.setStatus(rrc.StatusConnected)
+	waitFor(t, "the join after the WELCOME", func() bool { return len(hub.joinList()) == 1 })
+}
+
+// TestEngineRepeatsAJoinTheHubNeverConfirms asserts a room the hub never
+// confirms is asked for again, a bounded number of times. The client records a
+// JOINED it treats as a silent self-join without handing it to the inbound
+// hook, so a lost confirmation must not leave the bot out of the room for the
+// rest of the session — and a hub that keeps refusing the room must not be
+// asked forever.
+func TestEngineRepeatsAJoinTheHubNeverConfirms(t *testing.T) {
+	f := newEngineFixtureWith(t, nil, func(b *bot) { b.joinRetry = 10 * time.Millisecond })
+	hub := f.dialer.hub(t, "One")
+	hub.setStatus(rrc.StatusConnected)
+
+	waitFor(t, "the first join", func() bool { return len(hub.joinList()) >= 1 })
+	waitFor(t, "the join to be repeated", func() bool { return len(hub.joinList()) >= 2 })
+
+	// The repeats are capped, so a room the hub never confirms stops being
+	// asked for.
+	time.Sleep(60 * time.Millisecond)
+	if got := len(hub.joinList()); got != maxJoinAttempts {
+		t.Errorf("joins = %v with no confirmation, want exactly %v", got, maxJoinAttempts)
+	}
+
+	// A confirmation arriving late stops the repeats and greets the room.
+	hub.confirmedJoined("general")
+	waitFor(t, "the greeting", func() bool { return len(hub.greetingList()) == 1 })
 }
 
 // TestEngineJoinsConfiguredRoomsOnlyWhenConnected asserts the bot waits for the

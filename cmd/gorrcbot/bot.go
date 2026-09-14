@@ -29,6 +29,15 @@ import (
 const (
 	// defaultStatusPoll is how often each hub's connection status is checked.
 	defaultStatusPoll = 250 * time.Millisecond
+	// defaultJoinRetry is how long a room's JOINED confirmation is waited for
+	// before the JOIN is sent again (see hubSession.beginJoin). It is short
+	// enough that a lost confirmation costs a room's greeting a moment rather
+	// than the session, and long enough that a hub which answers promptly is
+	// never asked twice.
+	defaultJoinRetry = 2 * time.Second
+	// maxJoinAttempts caps the JOINs per room per link, so a hub that never
+	// confirms — a hub that refuses the room, say — is not asked forever.
+	maxJoinAttempts = 3
 	// defaultShutdownGrace bounds how long Run waits for the supervisors and
 	// the dispatcher to finish after the context is cancelled.
 	defaultShutdownGrace = 2 * time.Second
@@ -68,9 +77,10 @@ type bot struct {
 	// triggers a command.
 	ownHash []byte
 
-	// statusPoll and shutdownGrace are timing knobs; tests shorten both so no
-	// unit test ever waits on a real delay.
+	// statusPoll, joinRetry, and shutdownGrace are timing knobs; tests shorten
+	// all of them so no unit test ever waits on a real delay.
 	statusPoll    time.Duration
+	joinRetry     time.Duration
 	shutdownGrace time.Duration
 
 	sessions []*hubSession
@@ -98,6 +108,7 @@ func newBot(cfg *BotConfig, paths BotPaths, logger *rns.Logger, ownHash []byte, 
 		dialer:        dialer,
 		hooks:         hooks,
 		statusPoll:    defaultStatusPoll,
+		joinRetry:     defaultJoinRetry,
 		shutdownGrace: defaultShutdownGrace,
 		msgs:          make(chan inbound, inboundQueueDepth),
 		stopCh:        make(chan struct{}),
