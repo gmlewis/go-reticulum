@@ -126,6 +126,15 @@ func (c *CommandHandler) HandleOperatorCommand(link *rns.Link, peerHash []byte, 
 	case "invite":
 		c.handleInvite(link, peerHash, parts, room, outgoing)
 		return true
+	case "dn", "dnotice", "msg":
+		c.handleDNotice(link, peerHash, room, text, outgoing)
+		return true
+	case "dnoticeme":
+		c.handleDNoticeMe(link, peerHash, room, text, outgoing)
+		return true
+	case "dnoticecap":
+		c.handleDNoticeCap(link, outgoing)
+		return true
 	default:
 		if c.hooks.CustomHandler != nil && c.hooks.CustomHandler(link, peerHash, room, parts, outgoing) {
 			return true
@@ -1125,4 +1134,138 @@ func (c *CommandHandler) FormatAmbiguousTargets(token string, matches []*rns.Lin
 	return fmt.Sprintf("ambiguous: '%v' matches %v identities:\n", token, len(items)) +
 		strings.Join(lines, "\n") +
 		"\nUse full or longer identity hash to disambiguate."
+}
+
+// Usage strings for the private-notice commands. The official hub bot's
+// wording names only a hex destination; a hub bot that also resolves a
+// nickname, a hash prefix, and the literal "me" says so.
+const (
+	dnoticeUsage   = "Usage: /dnotice <nick|hash|me> <text>"
+	dnoticemeUsage = "Usage: /dnoticeme <text>"
+)
+
+// handleDNotice implements /dnotice <target> <text>, /dn, and /msg: one
+// private NOTICE delivered to a single participant, resolved by nickname,
+// identity-hash prefix, full identity hash, or the literal "me". A command
+// typed in a room reports its result in that room; the private command
+// channel calls the same handler with a nil room, so the request and the
+// reply stay out of every room. Resolution is exact: a token that matches
+// several participants is reported and nothing is delivered, so a private
+// message can never reach a participant the sender did not name.
+func (c *CommandHandler) handleDNotice(link *rns.Link, peerHash []byte, room *string, text string, outgoing *OutgoingList) {
+	target, body, ok := splitTargetAndText(restAfterCommandWord(text))
+	if !ok {
+		c.hooks.MessageHelper().EmitError(outgoing, link, c.hooks.IdentityHash(), dnoticeUsage, room)
+		return
+	}
+	c.sendDirectNotice(link, peerHash, room, target, body, outgoing)
+}
+
+// handleDNoticeMe implements /dnoticeme <text>: the same delivery addressed to
+// the sender, the live self-test of the private path.
+func (c *CommandHandler) handleDNoticeMe(link *rns.Link, peerHash []byte, room *string, text string, outgoing *OutgoingList) {
+	body := strings.TrimFunc(restAfterCommandWord(text), isUnicodeSpace)
+	if body == "" {
+		c.hooks.MessageHelper().EmitError(outgoing, link, c.hooks.IdentityHash(), dnoticemeUsage, room)
+		return
+	}
+	c.sendDirectNotice(link, peerHash, room, "me", body, outgoing)
+}
+
+// handleDNoticeCap implements /dnoticecap, mirroring the official hub bot's
+// reply wording.
+func (c *CommandHandler) handleDNoticeCap(link *rns.Link, outgoing *OutgoingList) {
+	c.hooks.MessageHelper().EmitNotice(outgoing, link, nil, "Direct NOTICE supported: True")
+}
+
+// sendDirectNotice resolves one target and queues the body as a direct
+// NOTICE on that participant's link alone, reporting the recipient's full
+// identity hash so the sender can see exactly who received it.
+func (c *CommandHandler) sendDirectNotice(link *rns.Link, peerHash []byte, room *string, target, body string, outgoing *OutgoingList) {
+	mh := c.hooks.MessageHelper()
+	sm := c.hooks.SessionManager()
+	idHash := c.hooks.IdentityHash()
+
+	targetLink := link
+	targetHash := peerHash
+	self := pythonLower(target) == "me"
+	if !self {
+		matches := c.FindTargetLinks(target, nil)
+		if len(matches) != 1 {
+			mh.EmitError(outgoing, link, idHash, c.FormatAmbiguousTargets(target, matches), room)
+			return
+		}
+		targetLink = matches[0]
+		sess := sm.GetSession(targetLink)
+		if sess == nil || len(sess.Peer) == 0 {
+			mh.EmitError(outgoing, link, idHash, c.FormatAmbiguousTargets(target, nil), room)
+			return
+		}
+		targetHash = sess.Peer
+	}
+
+	var nick string
+	if n := sm.NickOf(link); n != nil {
+		nick = *n
+	}
+	id, fits := mh.EmitDirectNotice(outgoing, targetLink, peerHash, nick, targetHash, body)
+	if !fits {
+		mh.EmitError(outgoing, link, idHash, "direct notice too large for the target's link", room)
+		return
+	}
+	where := c.hooks.FmtHash(targetHash, 0)
+	if self {
+		where = "self"
+	}
+	mh.EmitNotice(outgoing, link, room, fmt.Sprintf("Direct NOTICE sent to %v (id=%v)", where, c.hooks.FmtHash(id, 0)))
+}
+
+// restAfterCommandWord returns the raw text that follows the first
+// whitespace-separated word of a command line, so a target may be quoted.
+func restAfterCommandWord(text string) string {
+	trimmed := strings.TrimFunc(text, isUnicodeSpace)
+	if !strings.HasPrefix(trimmed, "/") {
+		return ""
+	}
+	rest := trimmed[1:]
+	idx := strings.IndexFunc(rest, isUnicodeSpace)
+	if idx < 0 {
+		return ""
+	}
+	return rest[idx:]
+}
+
+// splitTargetAndText splits the remainder of a command line into a target
+// token and a message body. A target that contains spaces must be quoted,
+// because the quoting a user typed is passed through unchanged:
+// "'gonomadnet on MiniPC' yo dude" yields the target "gonomadnet on MiniPC"
+// and the body "yo dude". An unquoted target ends at the first whitespace
+// run, so a nick is never guessed at.
+func splitTargetAndText(rest string) (string, string, bool) {
+	s := strings.TrimFunc(rest, isUnicodeSpace)
+	if s == "" {
+		return "", "", false
+	}
+	if quote := s[0]; quote == '\'' || quote == '"' {
+		end := strings.IndexByte(s[1:], quote)
+		if end < 0 {
+			return "", "", false
+		}
+		target := s[1 : 1+end]
+		body := strings.TrimFunc(s[1+end+1:], isUnicodeSpace)
+		if target == "" || body == "" {
+			return "", "", false
+		}
+		return target, body, true
+	}
+	idx := strings.IndexFunc(s, isUnicodeSpace)
+	if idx < 0 {
+		return "", "", false
+	}
+	target := s[:idx]
+	body := strings.TrimFunc(s[idx:], isUnicodeSpace)
+	if target == "" || body == "" {
+		return "", "", false
+	}
+	return target, body, true
 }

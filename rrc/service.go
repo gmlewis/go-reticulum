@@ -210,6 +210,7 @@ func NewHubService(config HubConfig) *HubService {
 		StatsInc:               stats.Inc,
 		SendPacket:             h.safeSendPacket,
 		EnableResourceTransfer: func() bool { return h.Config.EnableResourceTransfer },
+		EnablePrivateCommands:  func() bool { return h.Config.EnablePrivateCommands },
 		SendViaResource: func(link *rns.Link, kind string, payload []byte, room *string, encoding string) bool {
 			return h.ResourceManager.SendViaResource(link, kind, payload, room, encoding)
 		},
@@ -294,11 +295,12 @@ func NewHubService(config HubConfig) *HubService {
 	h.CommandHandler = chat
 
 	router := NewRouter(RouterHooks{
-		Sessions:     func() *SessionManager { return sessions },
-		RoomManager:  func() *RoomManager { return rooms },
-		TrustManager: func() *TrustManager { return trust },
-		StatsInc:     stats.Inc,
-		IdentityHash: func() []byte { return h.IdentityHash() },
+		Sessions:              func() *SessionManager { return sessions },
+		RoomManager:           func() *RoomManager { return rooms },
+		TrustManager:          func() *TrustManager { return trust },
+		StatsInc:              stats.Inc,
+		IdentityHash:          func() []byte { return h.IdentityHash() },
+		EnablePrivateCommands: func() bool { return h.Config.EnablePrivateCommands },
 		MaxNickBytes: func() int {
 			// Python's normalize_nick catches the int() failure and
 			// falls back to its 32-byte default.

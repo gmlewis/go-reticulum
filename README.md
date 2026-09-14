@@ -408,6 +408,41 @@ Run `gorrcbot` once by hand before installing the unit, so the configuration and
 the identity exist (and so the identity is backed up: losing `bot_identity`
 changes the bot's identity hash, which is what other clients key on).
 
+### Private messages between RRC users
+
+RRC itself has no private-message command. `gorrcd` adds one without changing
+the protocol: a client sends a `NOTICE` whose body is a command line and whose
+`K_DST` is the **hub's identity hash** (the hash the `WELCOME` came from — not
+the hub's destination hash), and the hub answers on that client's link alone.
+
+- The hub advertises the capability `CAP_PRIVATE_COMMAND` (`K_CAPS` key `3`) in
+  its `WELCOME`. Unknown capability keys are ignored by `rrcd` and by RRC
+  clients, so no Python hub or Python client needs any change, and a client only
+  ever sends one of these commands to a hub that advertises the key.
+- `gorrcd` advertises it while `enable_private_commands = true` (the default in
+  the hub's config); set it to `false` and the hub is byte-identical to the
+  Python `rrcd` `WELCOME`.
+- Commands: `/dnotice <nick|hash|me> <text>` (aliases `/dn` and `/msg`),
+  `/dnoticeme <text>`, and `/dnoticecap`. They are ordinary client commands, so
+  a user may type them in a room as well; the reply then lands in that room.
+- A target with spaces in its nick must be quoted:
+  `/msg 'gonomadnet on MiniPC' yo dude`.
+- Resolution is exact — a full identity hash, a hex prefix of at least six
+  characters, or a nick — and a token that matches more than one participant is
+  reported with nothing sent. There is no fuzzy matching, so a private message
+  cannot reach a participant the sender did not name.
+- Delivery is one `T_NOTICE` to the target's link with `K_DST` set to that
+  participant's full identity hash, no room, and the sender's own hash and nick
+  in `K_SRC`/`K_NICK`. The hub confirms to the sender with the recipient's full
+  hash and the message id, or reports `not found`, the ambiguity list, or that
+  the body does not fit the target's link.
+
+In `gonomadnet`, `/msg <nick|hash> <text>` sends one (quoting preserved), and
+both directions render in the room view marked `private from <nick>` and
+`private to <nick>`. Stock Python `nomadnet` records an inbound private notice
+in `RRC.notices` and never draws it — `nomadnet/ui/textui.py` has no notice
+widget — so a Python user can send but not yet read one.
+
 ---
 
 What follows is Mark Qvist's original README.md.

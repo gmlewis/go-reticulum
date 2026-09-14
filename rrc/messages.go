@@ -24,6 +24,10 @@ type MessageHooks struct {
 	StatsInc               func(key string, delta int)
 	SendPacket             func(link *rns.Link, payload []byte) error
 	EnableResourceTransfer func() bool
+	// EnablePrivateCommands reports the private-command setting, which adds
+	// CAPPrivateCommand to the WELCOME caps. Nil means disabled, so a test
+	// helper that predates the extension still emits Python's exact caps.
+	EnablePrivateCommands  func() bool
 	SendViaResource        func(link *rns.Link, kind string, payload []byte, room *string, encoding string) bool
 	HubName                func() string
 	Greeting               func() string
@@ -192,6 +196,9 @@ func (m *MessageHelper) QueueWelcome(outgoing *OutgoingList, link *rns.Link, pee
 	if m.hooks.EnableResourceTransfer() {
 		caps.Set(CAPResourceEnvelope, true)
 	}
+	if m.privateCommandsEnabled() {
+		caps.Set(CAPPrivateCommand, true)
+	}
 	body := cbor.NewMap()
 	body.Set(BWelcomeHub, m.hooks.HubName())
 	body.Set(BWelcomeVer, rns.VERSION)
@@ -280,6 +287,37 @@ func (m *MessageHelper) EmitNotice(outgoing *OutgoingList, link *rns.Link, room 
 	} else {
 		m.QueueEnv(outgoing, link, env)
 	}
+}
+
+// EmitDirectNotice queues one client-to-client NOTICE on the target's own
+// link, applying the same source, nick, and destination rewrites that
+// handleDirectNotice applies to a relayed notice. Only that link receives
+// the payload: a private notice never enters a room fan out. It returns the
+// notice id and whether the envelope fits the target's link.
+func (m *MessageHelper) EmitDirectNotice(outgoing *OutgoingList, targetLink *rns.Link, srcHash []byte, nick string, dstHash []byte, text string) ([]byte, bool) {
+	opts := []EnvelopeOpt{WithDst(dstHash), WithRoomPtr(nil), WithBody(text)}
+	if nick != "" {
+		opts = append(opts, WithNick(nick))
+	}
+	env := MakeEnvelope(int(TNotice), srcHash, opts...)
+	payload := cbor.Encode(env)
+	if !m.packetWouldFit(targetLink, payload) {
+		return nil, false
+	}
+	m.QueuePayload(outgoing, targetLink, payload)
+	m.hooks.StatsInc("notices_forwarded", 1)
+	mid, _ := env.Get(KID)
+	id, _ := mid.([]byte)
+	m.logf("Queued private NOTICE src=%v dst=%v chars=%v",
+		m.hooks.FmtHash(srcHash), m.hooks.FmtHash(dstHash), len(text))
+	return id, true
+}
+
+// privateCommandsEnabled reports whether the hub advertises the private
+// command extension. A nil hook means disabled, so a hook set that predates
+// the extension emits Python's exact WELCOME caps.
+func (m *MessageHelper) privateCommandsEnabled() bool {
+	return m.hooks.EnablePrivateCommands != nil && m.hooks.EnablePrivateCommands()
 }
 
 // EmitError emits an error message, queued or immediate, mirroring

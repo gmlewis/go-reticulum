@@ -216,6 +216,51 @@ func TestHasCapabilityAfterWelcomeRoundTrip(t *testing.T) {
 	}
 }
 
+// TestDirectNoticesListsOnlyPrivateNotices asserts the accessor a client
+// renders private messages from: the notice the hub addressed to this client
+// alone is listed, and ordinary room notices are not.
+func TestDirectNoticesListsOnlyPrivateNotices(t *testing.T) {
+	t.Parallel()
+
+	_, hub := newHookTestHub(t)
+	peer := peerHash(0x60)
+	own := peerHash(0x01)
+
+	if got := hub.DirectNotices(); len(got) != 0 {
+		t.Fatalf("fresh hub DirectNotices() = %v entries, want 0", len(got))
+	}
+
+	// An ordinary room notice first: it must never be listed as private.
+	feedRoomNotice(t, hub, "general", peer, "Alice", "room news")
+	if got := hub.DirectNotices(); len(got) != 0 {
+		t.Fatalf("DirectNotices() = %v entries after a room notice, want 0", len(got))
+	}
+
+	feedDirectNotice(t, hub, peer, "Alice", own, "psst")
+	got := hub.DirectNotices()
+	if len(got) != 1 {
+		t.Fatalf("DirectNotices() = %v entries, want 1", len(got))
+	}
+	if got[0].Text != "psst" || got[0].Nick != "Alice" || !got[0].Direct {
+		t.Errorf("DirectNotices()[0] = %+v, want the private notice from Alice", got[0])
+	}
+}
+
+// feedRoomNotice drives one inbound room NOTICE through the hub's decode path.
+func feedRoomNotice(t *testing.T, hub *RRCHub, room string, src []byte, nick, text string) {
+	t.Helper()
+	env := MakeClientEnvelope(TypeNotice, src, []byte(room), []byte(nick), text, make([]byte, 8), NowMs())
+	hub.HandleData(cbor.Encode(env))
+}
+
+// feedDirectNotice drives one inbound private NOTICE (K_DST) through the hub.
+func feedDirectNotice(t *testing.T, hub *RRCHub, src []byte, nick string, dst []byte, text string) {
+	t.Helper()
+	env := MakeClientEnvelope(TypeNotice, src, nil, []byte(nick), text, make([]byte, 8), NowMs())
+	env[KeyDst] = dst
+	hub.HandleData(cbor.Encode(env))
+}
+
 // TestSendDirectNoticeRejectsBadTargets asserts the guard rails: an empty or
 // wrong-length hash, a hub without the capability, and an unknown peer all fail
 // without putting anything on the wire.

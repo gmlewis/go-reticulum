@@ -44,11 +44,14 @@ const (
 	LRateLimitMsgsPerMinute = int(BLimitRateMsgsPerMinute)
 )
 
-// Capability flags (client aliases).
+// Capability flags (client aliases). CapPrivateCommand is a gorrcd
+// extension: a client must treat its absence as "this hub has no private
+// command channel" and fall back to its own route.
 const (
 	CapResourceEnvelope = int(CAPResourceEnvelope)
 	CapAction           = int(CAPAction)
 	CapDirectNotice     = int(CAPDirectNotice)
+	CapPrivateCommand   = int(CAPPrivateCommand)
 )
 
 // Resource envelope body keys (client aliases).

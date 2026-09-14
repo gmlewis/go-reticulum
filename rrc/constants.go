@@ -70,11 +70,19 @@ const (
 	BLimitRateMsgsPerMinute  int64 = 4
 )
 
-// Capability-map keys (advisory; no client gates on them).
+// Capability-map keys (advisory; a client may gate an optional feature on
+// them). CAPPrivateCommand is a gorrcd extension: a standard rrcd advertises
+// only 0, 1, and 2, and a client that does not know key 3 ignores it.
 const (
 	CAPResourceEnvelope int64 = 0
 	CAPAction           int64 = 1
 	CAPDirectNotice     int64 = 2
+	// CAPPrivateCommand marks a hub that accepts a private command: a NOTICE
+	// whose K_DST names the hub's own identity is read as a command line and
+	// answered on the sender's link instead of being relayed to a peer. It is
+	// what lets a client reach a participant whose full identity hash it does
+	// not know, because the hub resolves the named target itself.
+	CAPPrivateCommand int64 = 3
 )
 
 // RESOURCE_ENVELOPE body keys.

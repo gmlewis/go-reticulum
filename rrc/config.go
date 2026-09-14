@@ -47,12 +47,17 @@ type HubConfig struct {
 	MaxPendingResourceExpectations int
 	ResourceExpectationTTLs        float64
 	EnableResourceTransfer         bool
-	LogLevel                       string
-	LogRNSLevel                    string
-	LogConsole                     bool
-	LogFile                        *string
-	LogFormat                      string
-	LogDatefmt                     *string
+	// EnablePrivateCommands advertises CAPPrivateCommand and lets a NOTICE
+	// addressed to the hub's own identity carry a command line. It is a
+	// gorrcd extension: a standard rrcd has no such key, and a client that
+	// does not know it ignores the flag.
+	EnablePrivateCommands bool
+	LogLevel              string
+	LogRNSLevel           string
+	LogConsole            bool
+	LogFile               *string
+	LogFormat             string
+	LogDatefmt            *string
 
 	// Raw holds the TOML values exactly as applied, keyed by the flat
 	// config key. Python's use sites embed the raw field values (the
@@ -112,6 +117,7 @@ func DefaultHubConfig() HubConfig {
 		MaxPendingResourceExpectations: 8,
 		ResourceExpectationTTLs:        30.0,
 		EnableResourceTransfer:         true,
+		EnablePrivateCommands:          true,
 		LogLevel:                       "INFO",
 		LogRNSLevel:                    "WARNING",
 		LogConsole:                     true,
@@ -228,6 +234,8 @@ func (c *HubConfig) applyFlatKey(key string, val any) {
 		setFloat(&c.ResourceExpectationTTLs)
 	case "enable_resource_transfer":
 		setBool(&c.EnableResourceTransfer)
+	case "enable_private_commands":
+		setBool(&c.EnablePrivateCommands)
 	case "log_level":
 		setStr(&c.LogLevel)
 	case "log_rns_level":
@@ -307,7 +315,8 @@ func isAllowedConfigKey(key string) bool {
 		"max_room_name_bytes", "max_msg_body_bytes", "rate_limit_msgs_per_minute",
 		"ping_interval_s", "ping_timeout_s", "max_resource_bytes",
 		"max_pending_resource_expectations", "resource_expectation_ttl_s",
-		"enable_resource_transfer", "log_level", "log_rns_level", "log_console",
+		"enable_resource_transfer", "enable_private_commands", "log_level",
+		"log_rns_level", "log_console",
 		"log_file", "log_format", "log_datefmt":
 		return true
 	}
@@ -415,6 +424,7 @@ func configToMap(c HubConfig) map[string]any {
 		"max_pending_resource_expectations": c.MaxPendingResourceExpectations,
 		"resource_expectation_ttl_s":        c.ResourceExpectationTTLs,
 		"enable_resource_transfer":          c.EnableResourceTransfer,
+		"enable_private_commands":           c.EnablePrivateCommands,
 		"log_level":                         c.LogLevel,
 		"log_rns_level":                     c.LogRNSLevel,
 		"log_console":                       c.LogConsole,

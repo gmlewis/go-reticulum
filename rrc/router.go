@@ -6,6 +6,7 @@
 package rrc
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -33,6 +34,11 @@ type RouterHooks struct {
 	IdentityHash func() []byte
 	// EnableResourceTransfer reports the resource-transfer setting.
 	EnableResourceTransfer func() bool
+	// EnablePrivateCommands reports the private-command extension setting,
+	// which lets a NOTICE addressed to the hub's own identity carry a
+	// command line that the hub answers on the sender's link. Nil, or a hook
+	// that reports false, leaves the standard relay behaviour untouched.
+	EnablePrivateCommands func() bool
 	// MaxResourceBytes returns the configured resource size limit.
 	MaxResourceBytes func() int
 	// MaxNickBytes returns the configured nick limit.
@@ -773,6 +779,20 @@ func (r *Router) handleDirectNotice(link *rns.Link, sess *Session, peerHash []by
 		return
 	}
 
+	// A gorrcd extension: a NOTICE addressed to the hub's own identity
+	// carries a command line instead of a peer message. It is answered on
+	// the sender's link only, so the command and its reply stay out of every
+	// room, and the hub resolves the named target itself.
+	if r.privateCommandsEnabled() && bytes.Equal(dst, idHash) {
+		if text, isStr := envelopeText(env); isStr && strings.HasPrefix(strings.TrimFunc(text, isUnicodeSpace), "/") {
+			if r.hooks.HandleOperatorCommand(link, peerHash, nil, text, outgoing) {
+				return
+			}
+			r.hooks.EmitError(outgoing, link, idHash, "unrecognized command", nil)
+			return
+		}
+	}
+
 	targetLink := r.hooks.Sessions().GetLinkByHash(dst)
 	if targetLink == nil {
 		r.hooks.EmitError(outgoing, link, idHash, "destination not connected", nil)
@@ -793,6 +813,21 @@ func (r *Router) handleDirectNotice(link *rns.Link, sess *Session, peerHash []by
 	}
 
 	r.hooks.StatsInc("notices_forwarded", 1)
+}
+
+// privateCommandsEnabled reports whether the hub accepts a private command
+// on its own identity.
+func (r *Router) privateCommandsEnabled() bool {
+	return r.hooks.EnablePrivateCommands != nil && r.hooks.EnablePrivateCommands()
+}
+
+// bodyText returns an envelope body that is a text string.
+func envelopeText(env *cbor.Map) (string, bool) {
+	body, ok := env.Get(KBody)
+	if !ok {
+		return "", false
+	}
+	return bodyText(body)
 }
 
 // adoptNick mirrors the shared nick-handling block of _handle_message

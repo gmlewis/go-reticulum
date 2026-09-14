@@ -78,6 +78,8 @@ func newCommandTestEnv(t *testing.T) *commandTestEnv {
 			env.sentPackets = append(env.sentPackets, sentPacket{link: link, payload: payload})
 			return nil
 		},
+		FmtHash:   func(hash []byte) string { return hex.EncodeToString(hash) },
+		FmtLinkID: func(*rns.Link) string { return "-" },
 	})
 	rm.hooks.BroadcastNotice = func(outgoing *OutgoingList, l *rns.Link, room, text string) {
 		mh.EmitNotice(outgoing, l, &room, text)
@@ -138,6 +140,7 @@ func newTestCommandHandler(t *testing.T) (*CommandHandler, *commandTestEnv) {
 type testEnvelope struct {
 	msgType int64
 	src     []byte
+	dst     []byte
 	room    *string
 	body    any
 }
@@ -185,6 +188,9 @@ func envelopeToTest(m *cbor.Map) testEnvelope {
 	}
 	if v, ok := m.Get(KSrc); ok {
 		e.src, _ = v.([]byte)
+	}
+	if v, ok := m.Get(KDst); ok {
+		e.dst, _ = v.([]byte)
 	}
 	if room, ok := m.Get(KRoom); ok {
 		if s, isStr := room.(string); isStr {

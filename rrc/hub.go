@@ -30,7 +30,8 @@ import (
 type RRCHub struct {
 	Manager *RRCManager
 
-	HubHash  []byte // hub identity hash
+	HubHash []byte // configured hub hash: the hub's destination hash, from
+	// which RNS recalls the hub identity
 	DestName string // RNS destination name
 	Name     string // display name
 
@@ -38,6 +39,10 @@ type RRCHub struct {
 	Status     int
 	StatusText string
 	Welcomed   bool
+
+	// hubIdentity is the hub's identity hash, captured from the WELCOME
+	// source; it is the address K_DST needs, and it is not HubHash.
+	hubIdentity []byte
 
 	// Hub-reported info
 	HubName    string
@@ -1661,6 +1666,22 @@ func (h *RRCHub) GetMessages(room string) []*RRCMessage {
 	return result
 }
 
+// DirectNotices returns the private NOTICEs the hub delivered to this client
+// alone (the K_DST extension), oldest first. They belong to no room, so a
+// client that renders rooms must show them separately from room traffic.
+func (h *RRCHub) DirectNotices() []*RRCMessage {
+	h.lock.Lock()
+	defer h.lock.Unlock()
+
+	out := make([]*RRCMessage, 0, len(h.Notices))
+	for _, msg := range h.Notices {
+		if msg.Direct {
+			out = append(out, msg)
+		}
+	}
+	return out
+}
+
 // JoinRoom sends a T_JOIN for a room.
 func (h *RRCHub) JoinRoom(room string, silent bool) {
 	h.JoinRoomWithKey(room, silent, "")
@@ -2228,6 +2249,7 @@ func (h *RRCHub) HandleData(data []byte) {
 		h.handlePartedNotification(roomStr, nickStr, body)
 
 	case TypeWelcome:
+		h.adoptHubIdentity(src)
 		h.handleWelcome(body)
 
 	case TypePong:
