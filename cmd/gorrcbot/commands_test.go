@@ -6,8 +6,6 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -15,51 +13,6 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 	"github.com/gmlewis/go-reticulum/rrc"
 )
-
-// oracleText loads one captured oracle transcript.
-func oracleText(t *testing.T, name string) string {
-	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("testdata", name))
-	if err != nil {
-		t.Fatalf("read %s: %v", name, err)
-	}
-	return string(raw)
-}
-
-// TestOracleGoldensArePresent asserts the captured transcripts from the official
-// RNS Community Hub are checked in, since the command wording comes from them.
-func TestOracleGoldensArePresent(t *testing.T) {
-	t.Parallel()
-
-	community := oracleText(t, "oracle-rns-community.txt")
-	for _, want := range []string{
-		"hub_name    = rnscommunity",
-		"hub_version = 0.3.2",
-		`Commands: !botinfo, !dn, !dnotice, !dnoticecap, !dnoticeme, !help, !ping, !uptime, !weather, !whoami, !wx`,
-		`You are gq-oracle-b1 (c5886cc56354d5f56e0cec9ade4ad166), role=user.`,
-		`Uptime: runtime=79:19:41; hub=28c7c1a68c735693aa8e6b8193ed44b2; hub-connection=01:28:29.`,
-		`Usage: !dnotice <destination_hex|me> <text>`,
-		`Direct NOTICE supported: True`,
-		`Usage: !dnoticeme <text>`,
-		`Unknown command: !bogus`,
-		`Weather lookup failed (network error). Try again later.`,
-	} {
-		if !strings.Contains(community, want) {
-			t.Errorf("the oracle transcript is missing %q", want)
-		}
-	}
-
-	direct := oracleText(t, "oracle-direct-notice.txt")
-	for _, want := range []string{
-		"[DIRECT] kind=notice",
-		"dst=cbe3bb28f2e878fe843e9cba17bcacef",
-		"Direct NOTICE sent to self",
-	} {
-		if !strings.Contains(direct, want) {
-			t.Errorf("the direct-notice transcript is missing %q", want)
-		}
-	}
-}
 
 // commandFixture builds a connected session and a registry over it.
 func commandFixture(t *testing.T, cfg *BotConfig) (*registry, *hubSession, *fakeHub) {

@@ -63,11 +63,11 @@ func DefaultBotPaths() BotPaths {
 
 // defaultConfigTemplate is the first-run config.toml. It is written verbatim
 // and is a working configuration: the one live hub below is the gonomadnet
-// Public Hub, which is the hub this bot is developed and tested against. The
-// public RNS Community Hub is kept as a commented-out example rather than a
-// live entry, so a first run never starts talking to a public room. The
-// template must always parse through this program's own reader, so any change
-// here has to keep the schema valid.
+// Public Hub, which is the hub this bot is developed and tested against. No
+// other hub appears in it, not even commented out, so a first run can only
+// ever talk to that one hub; reaching any other hub takes a deliberate
+// [[hubs]] block. The template must always parse through this program's own
+// reader, so any change here has to keep the schema valid.
 const defaultConfigTemplate = `# gorrcbot configuration (TOML)
 #
 # This file was created on first run. Edit it, then start gorrcbot again.
@@ -88,8 +88,11 @@ identity_path = {{identity_path}}
 nick = "gorrcbot"
 
 # How replies are delivered:
-#   auto   - a direct NOTICE when the hub supports it and the requester's
-#            identity is known, an in-room NOTICE otherwise (default)
+#   auto   - an in-room NOTICE, and a direct NOTICE only when the request
+#            itself arrived as one (default). A hub advertises its own
+#            capabilities in WELCOME and never publishes what another client
+#            announced in HELLO, so the room is the one route a room asker is
+#            known to be able to read.
 #   direct - always a direct NOTICE, and stay silent if that is impossible
 #   room   - always an in-room NOTICE
 reply = "auto"

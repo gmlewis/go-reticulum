@@ -9,11 +9,13 @@
 // reply is emitted as one NOTICE per line and each line is measured. A line too
 // long for one envelope is split on a rune boundary and every continuation is
 // marked, so a reader can see the bot did not simply stop mid-sentence. The
-// reply is delivered as a direct NOTICE (K_DST) when the hub advertises
-// CAP_DIRECT_NOTICE and the requester is reachable, and as an in-room NOTICE
-// otherwise. Two guards keep an always-on bot from becoming a nuisance: a
-// per-requester cooldown, and a duplicate-envelope window so a redelivered
-// message is never answered twice.
+// reply travels as a direct NOTICE (K_DST) only when the request itself arrived
+// that way, because a room request has to be answered where the asker can read
+// it: a standard rrcd hub advertises its own capabilities in WELCOME and never
+// publishes the capabilities another client announced in HELLO, so no bot can
+// learn whether a requester could display a private answer. Two guards keep an
+// always-on bot from becoming a nuisance: a per-requester cooldown, and a
+// duplicate-envelope window so a redelivered message is never answered twice.
 
 package main
 
@@ -141,7 +143,7 @@ func (r *responder) handle(s *hubSession, msg *rrc.RRCMessage) {
 		if !r.admit(requester, now) {
 			return
 		}
-		r.send(s, room, msg, []string{staleReply})
+		r.send(s, room, msg, r.directRoute(s, msg, trig.Direct), []string{staleReply})
 		return
 	}
 
@@ -158,7 +160,7 @@ func (r *responder) handle(s *hubSession, msg *rrc.RRCMessage) {
 		Nick:    trig.Nick,
 		Now:     now,
 	})
-	r.send(s, room, msg, lines)
+	r.send(s, room, msg, r.directRoute(s, msg, trig.Direct), lines)
 }
 
 // runCommand executes one command through the runner, recovering from a panic so
@@ -251,10 +253,10 @@ func (r *responder) gcCooldownLocked(now time.Time, cooldown time.Duration) {
 	}
 }
 
-// send emits the reply lines as one NOTICE each, routed by the reply mode. A
-// reply is dropped when the room it belongs to is no longer joined, because the
-// hub would reject it anyway.
-func (r *responder) send(s *hubSession, room string, msg *rrc.RRCMessage, lines []string) {
+// send emits the reply lines as one NOTICE each, along the route the policy
+// chose. A reply is dropped when the room it belongs to is no longer joined,
+// because the hub would reject it anyway.
+func (r *responder) send(s *hubSession, room string, msg *rrc.RRCMessage, direct bool, lines []string) {
 	if len(lines) == 0 {
 		return
 	}
@@ -267,41 +269,36 @@ func (r *responder) send(s *hubSession, room string, msg *rrc.RRCMessage, lines 
 		return
 	}
 
-	// The route is chosen BEFORE anything is sent: falling back from a direct
-	// notice halfway through would deliver the reply twice.
-	direct := r.directAvailable(s, msg)
-	if direct {
-		err := r.sendDirect(s, chunks, msg)
-		if err == nil {
-			logf("replied to %v with %v direct notice(s)", hexString(msg.Src), len(chunks))
-			return
-		}
-		// Every SendDirectNotice error path returns before the envelope is
-		// sent, so nothing has been delivered and the room fallback below
-		// cannot duplicate the reply. The mode that demands a private answer
-		// still stays silent.
-		logf("direct notice to %v failed: %v", hexString(msg.Src), err)
+	if !direct {
 		if r.cfg.Reply == ReplyDirect {
+			// The mode asks for a direct notice and this hub cannot deliver one.
+			logf("no direct-notice route to %v; reply dropped (reply = %q)",
+				hexString(msg.Src), ReplyDirect)
 			return
 		}
-	}
-	if r.cfg.Reply == ReplyDirect {
-		// The mode asks for a direct notice and this hub cannot deliver one.
-		logf("no direct-notice route to %v; reply dropped (reply = %q)",
-			hexString(msg.Src), ReplyDirect)
-		return
-	}
-	if room == "" {
-		logf("no reply route for the direct request from %v", hexString(msg.Src))
-		return
-	}
-	for _, chunk := range chunks {
-		if _, err := s.conn.SendNotice(room, chunk); err != nil {
-			logf("notice in %q failed: %v", room, err)
+		if room == "" {
+			logf("no reply route for the direct request from %v", hexString(msg.Src))
 			return
 		}
+		for _, chunk := range chunks {
+			if _, err := s.conn.SendNotice(room, chunk); err != nil {
+				logf("notice in %q failed: %v", room, err)
+				return
+			}
+		}
+		logf("replied to %v in %q with %v notice(s)", hexString(msg.Src), room, len(chunks))
+		return
 	}
-	logf("replied to %v in %q with %v notice(s)", hexString(msg.Src), room, len(chunks))
+
+	// The route was chosen before anything was sent, so a direct reply either
+	// delivers every chunk or nothing: SendDirectNotice validates the
+	// destination, the capability, and the envelope size before it hands
+	// anything to the link.
+	if err := r.sendDirect(s, chunks, msg); err != nil {
+		logf("direct notice to %v failed: %v", hexString(msg.Src), err)
+		return
+	}
+	logf("replied to %v with %v direct notice(s)", hexString(msg.Src), len(chunks))
 }
 
 // sendDirect delivers every chunk as a direct NOTICE and returns the first
@@ -317,10 +314,16 @@ func (r *responder) sendDirect(s *hubSession, chunks []string, msg *rrc.RRCMessa
 	return nil
 }
 
-// directAvailable reports whether this reply can go out as a direct NOTICE:
-// the reply mode has to allow it, the hub has to advertise CAP_DIRECT_NOTICE,
-// and the requester has to be a reachable peer.
-func (r *responder) directAvailable(s *hubSession, msg *rrc.RRCMessage) bool {
+// directRoute reports whether this reply travels as a direct NOTICE (K_DST).
+// The requester's own capabilities should decide that, but a standard rrcd hub
+// never publishes them: WELCOME carries the hub's capability set, which is the
+// same for every client, while a peer's HELLO capability map stays in the hub's
+// session table. The one observable proof that a requester speaks the K_DST
+// extension is that its request arrived as a direct NOTICE, so auto mode answers
+// a room request in the room, which is the only route the asker is known to be
+// able to read. An explicit reply = "direct" overrides that, and stays silent
+// when the hub cannot deliver.
+func (r *responder) directRoute(s *hubSession, msg *rrc.RRCMessage, requesterDirect bool) bool {
 	if r.cfg.Reply == ReplyRoom {
 		return false
 	}
@@ -328,6 +331,9 @@ func (r *responder) directAvailable(s *hubSession, msg *rrc.RRCMessage) bool {
 		return false
 	}
 	if !s.conn.HasCapability(rrc.CapDirectNotice) {
+		return false
+	}
+	if r.cfg.Reply == ReplyAuto && !requesterDirect {
 		return false
 	}
 	// A direct NOTICE rides the hub link: the hub forwards an envelope whose

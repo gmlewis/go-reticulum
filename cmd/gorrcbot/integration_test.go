@@ -586,10 +586,13 @@ func TestIntegrationBotSilencesEveryOtherFormOfAddress(t *testing.T) {
 	}
 }
 
-// TestIntegrationBotRepliesDirectlyWhenTheHubSupportsIt asserts auto mode uses
-// the K_DST direct-notice route when the hub advertises it, so a private answer
-// never lands in the room.
-func TestIntegrationBotRepliesDirectlyWhenTheHubSupportsIt(t *testing.T) {
+// TestIntegrationBotAnswersARoomRequestInTheRoom is the end-to-end proof of the
+// default route: `@gorrcbot help` in a room is answered in that room, even on a
+// hub that advertises CAP_DIRECT_NOTICE. The hub's capability says nothing about
+// the asker's client, and a standard rrcd hub never publishes what the asker
+// announced in HELLO, so the room is the only route the asker is known to be
+// able to read.
+func TestIntegrationBotAnswersARoomRequestInTheRoom(t *testing.T) {
 	rig := newIntegrationRig(t, 1, ReplyAuto)
 	asker := rig.hubs[0].asker
 
@@ -604,23 +607,51 @@ func TestIntegrationBotRepliesDirectlyWhenTheHubSupportsIt(t *testing.T) {
 
 	asker.SendMessage("general", "@"+DefaultNick+" help")
 	if !waitForCondition(integrationWait, func() bool {
-		for _, text := range rig.hubs[0].inbound.fromDirect(rig.botHash) {
-			if strings.HasPrefix(text, "Commands: ") {
+		for _, notice := range rig.notices(t, 0) {
+			if strings.HasPrefix(notice, "Commands: ") {
 				return true
 			}
 		}
 		return false
 	}) {
-		t.Fatalf("the bot did not answer directly; direct replies: %v, room notices: %v",
-			rig.hubs[0].inbound.fromDirect(rig.botHash), rig.notices(t, 0))
+		t.Fatalf("the bot did not answer in the room; room notices: %v, direct replies: %v",
+			rig.notices(t, 0), rig.hubs[0].inbound.fromDirect(rig.botHash))
 	}
 
-	// The private answer must not have landed in the room: the only thing the
-	// room may hold from the bot is its self-introduction.
-	for _, notice := range rig.notices(t, 0) {
-		if strings.HasPrefix(notice, "Commands: ") {
-			t.Errorf("a direct answer also landed in the room: %q", notice)
+	// The answer went out exactly once: the route is chosen before anything is
+	// sent, so an in-room answer is never also delivered privately.
+	for _, text := range rig.hubs[0].inbound.fromDirect(rig.botHash) {
+		if strings.HasPrefix(text, "Commands: ") {
+			t.Errorf("an in-room answer was also sent as a direct notice: %q", text)
 		}
+	}
+}
+
+// TestIntegrationBotStillSendsAPrivateNoticeOnRequest asserts the K_DST path
+// still works end to end after the routing change: a requester that explicitly
+// asks for a private notice gets one, and only that requester gets it. The
+// requester is known here because it joined after the bot, so the bot holds its
+// full identity hash from the join fanout.
+func TestIntegrationBotStillSendsAPrivateNoticeOnRequest(t *testing.T) {
+	rig := newIntegrationRig(t, 1, ReplyAuto)
+	asker := rig.hubs[0].asker
+
+	if !waitForCondition(integrationGreetWait, func() bool { return rig.greetings(t, 0) >= 1 }) {
+		t.Fatalf("the bot never introduced itself; notices: %v", rig.notices(t, 0))
+	}
+	if !waitForCondition(integrationWait, func() bool {
+		return asker.HasCapability(rrc.CapDirectNotice)
+	}) {
+		t.Skip("this hub does not advertise the direct-notice capability")
+	}
+
+	const private = "private self-test"
+	asker.SendMessage("general", "@"+DefaultNick+" dnoticeme "+private)
+	if !waitForCondition(integrationWait, func() bool {
+		return slices.Contains(rig.hubs[0].inbound.fromDirect(rig.botHash), private)
+	}) {
+		t.Fatalf("the bot never sent the private notice; direct replies: %v, room notices: %v",
+			rig.hubs[0].inbound.fromDirect(rig.botHash), rig.notices(t, 0))
 	}
 }
 

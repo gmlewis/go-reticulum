@@ -9,10 +9,9 @@
 //
 // The command NAMES mirror the official RRC hub bot minus its '!' prefix
 // (botinfo, dn, dnotice, dnoticecap, dnoticeme, help, ping, uptime, weather,
-// whoami, wx — captured from the RNS Community Hub, see
-// testdata/oracle-rns-community.txt), because a client that already knows that
-// bot should feel at home. The wording of their replies follows the captured
-// transcripts. A handful of commands go beyond the official set: they answer
+// whoami, wx), because a client that already knows that bot should feel at
+// home, and the wording of their replies matches its usage lines. A handful of
+// commands go beyond the official set: they answer
 // questions that only matter on a mesh, where a peer may have been offline for
 // hours (seen, members, rooms, id).
 

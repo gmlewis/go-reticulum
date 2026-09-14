@@ -365,11 +365,17 @@ to the requester.
 **Reply routing.** `reply` chooses the route; the choice is made *before*
 anything is sent, so a reply is never delivered twice:
 
-- `auto` (default) — a **direct NOTICE** (RRC `K_DST`) when the hub advertises
-  `CAP_DIRECT_NOTICE` and the requester is reachable, so the answer stays
-  private; an in-room NOTICE otherwise.
+- `auto` (default) — an in-room NOTICE, and a **direct NOTICE** (RRC `K_DST`)
+  only when the request itself arrived as one, so a private question is answered
+  privately and a room question is answered where it was asked.
 - `direct` — always direct, and silent when that is impossible.
 - `room` — always an in-room NOTICE.
+
+A hub advertises its own capabilities in WELCOME and never publishes what
+another client announced in HELLO, so no bot can learn whether a requester could
+display a private answer. The stock RRC client renders no direct notice at all,
+which is why `auto` does not send one to a room asker: the room is the one route
+the asker is known to be able to read.
 
 Every reply line is one NOTICE and one MTU-sized envelope: long lines are split
 on a rune boundary with a `…` continuation marker, and a reply longer than

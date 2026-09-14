@@ -242,30 +242,40 @@ func TestResponderSendsOneNoticePerLine(t *testing.T) {
 }
 
 // TestResponderRoutesRepliesPerMode asserts the reply mode decides between a
-// direct NOTICE and an in-room NOTICE.
+// direct NOTICE and an in-room NOTICE. The requester's own capabilities should
+// drive that choice, but a standard rrcd hub never publishes them, so auto mode
+// answers a room request in the room and replies privately only when the request
+// itself arrived as a direct NOTICE.
 func TestResponderRoutesRepliesPerMode(t *testing.T) {
 	t.Parallel()
 
 	requester := peerHashFor(0x31)
 	tests := []struct {
-		name       string
-		mode       string
-		capability bool
-		known      bool
-		wantDirect int
-		wantRoom   int
+		name          string
+		mode          string
+		capability    bool
+		known         bool
+		requestDirect bool
+		wantDirect    int
+		wantRoom      int
 	}{
-		{name: "auto with capability and a known peer", mode: ReplyAuto, capability: true, known: true,
-			wantDirect: 1},
-		{name: "auto without the capability", mode: ReplyAuto, capability: false, known: true,
+		{name: "auto answers a room request in the room", mode: ReplyAuto, capability: true, known: true,
 			wantRoom: 1},
-		{name: "auto with an unknown peer", mode: ReplyAuto, capability: true, known: false,
-			wantRoom: 1},
+		{name: "auto answers a room request in the room without the capability", mode: ReplyAuto,
+			capability: false, known: true, wantRoom: 1},
+		{name: "auto answers a room request in the room for an unknown peer", mode: ReplyAuto,
+			capability: true, known: false, wantRoom: 1},
+		{name: "auto answers a direct request directly", mode: ReplyAuto, capability: true, known: true,
+			requestDirect: true, wantDirect: 1},
+		{name: "auto cannot answer a direct request in the room", mode: ReplyAuto, capability: true,
+			known: false, requestDirect: true},
 		{name: "direct forces a direct notice", mode: ReplyDirect, capability: true, known: true,
 			wantDirect: 1},
 		{name: "direct stays silent when impossible", mode: ReplyDirect, capability: false, known: true},
 		{name: "direct stays silent for an unknown peer", mode: ReplyDirect, capability: true, known: false},
 		{name: "room forces a room notice", mode: ReplyRoom, capability: true, known: true, wantRoom: 1},
+		{name: "room cannot answer a direct request", mode: ReplyRoom, capability: true, known: true,
+			requestDirect: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -282,7 +292,11 @@ func TestResponderRoutesRepliesPerMode(t *testing.T) {
 			r := newResponder(cfg, mustHex(replyOwnHash), func(*commandRequest) []string {
 				return []string{"pong"}
 			})
-			r.handle(session, addressedMessageFrom("general", "@gorrcbot ping", requester))
+			msg := addressedMessageFrom("general", "@gorrcbot ping", requester)
+			if tt.requestDirect {
+				msg = directMessageFrom("ping", requester)
+			}
+			r.handle(session, msg)
 
 			if got := len(fake.directList()); got != tt.wantDirect {
 				t.Errorf("direct notices = %v, want %v", got, tt.wantDirect)
@@ -291,6 +305,40 @@ func TestResponderRoutesRepliesPerMode(t *testing.T) {
 				t.Errorf("room notices = %v, want %v", got, tt.wantRoom)
 			}
 		})
+	}
+}
+
+// TestResponderAnswersARoomRequestInTheRoomEvenOnACapableHub is the regression
+// test for a reply the asker never saw: a hub that advertises CAP_DIRECT_NOTICE
+// says nothing about the asker's own client, and the stock RRC client renders no
+// private notice at all, so an in-room answer is the only route the asker is
+// known to be able to read.
+func TestResponderAnswersARoomRequestInTheRoomEvenOnACapableHub(t *testing.T) {
+	t.Parallel()
+
+	cfg := defaultTestConfig()
+	if cfg.Reply != ReplyAuto {
+		t.Fatalf("this regression test needs the default reply mode, got %q", cfg.Reply)
+	}
+	session, fake := newReplySession(t, cfg)
+	fake.setCapability(rrc.CapDirectNotice, true)
+	requester := peerHashFor(0x52)
+	fake.setKnownPeer(hexString(requester), "gonomadnet on MacM2Max")
+
+	r := newResponder(cfg, mustHex(replyOwnHash), func(*commandRequest) []string {
+		return []string{"Commands: botinfo, help, ping"}
+	})
+	r.handle(session, addressedMessageFrom("general", "@gorrcbot help", requester))
+
+	notices := fake.noticeList()
+	if len(notices) != 1 {
+		t.Fatalf("room notices = %v, want the answer in the room", notices)
+	}
+	if notices[0].Room != "general" {
+		t.Errorf("notice room = %q, want general", notices[0].Room)
+	}
+	if got := fake.directList(); len(got) != 0 {
+		t.Errorf("direct notices = %v, want none: the asker cannot display one", got)
 	}
 }
 
@@ -710,13 +758,12 @@ func TestResponderReconnectDoesNotDropReplies(t *testing.T) {
 	}
 }
 
-// TestResponderFallsBackToTheRoomWhenTheDirectSendFails asserts a direct NOTICE
-// that cannot be sent does not lose the reply: in auto mode the answer still
-// goes to the room, and it goes exactly once. The client validates the
-// destination, the capability, and the envelope size before it hands anything
-// to the link, so a failed direct send has delivered nothing and the fallback
-// cannot duplicate it.
-func TestResponderFallsBackToTheRoomWhenTheDirectSendFails(t *testing.T) {
+// TestResponderNeverPublishesADirectReplyInTheRoom asserts the route is chosen
+// once, before anything is sent. A room request is answered in the room without
+// ever touching the direct path, and a reply the policy routed privately is
+// never retried in the room when the send fails, because the asker asked
+// privately and the room did not.
+func TestResponderNeverPublishesADirectReplyInTheRoom(t *testing.T) {
 	t.Parallel()
 
 	requester := peerHashFor(0x41)
@@ -733,30 +780,40 @@ func TestResponderFallsBackToTheRoomWhenTheDirectSendFails(t *testing.T) {
 	r.handle(session, addressedMessageFrom("general", "@gorrcbot ping", requester))
 
 	if got := len(fake.directList()); got != 0 {
-		t.Errorf("direct notices = %v, want none", got)
+		t.Errorf("direct notices = %v, want none: a broken direct path cannot cost the asker its answer", got)
 	}
 	notices := fake.noticeList()
 	if len(notices) != 1 || notices[0].Text != "pong" {
-		t.Errorf("room fallback = %v, want exactly one %q", notices, "pong")
+		t.Errorf("room notices = %v, want exactly one %q", notices, "pong")
 	}
 
-	// The mode that demands a private answer still stays silent rather than
-	// publishing the reply in the room.
-	strict := defaultTestConfig()
-	strict.Reply = ReplyDirect
-	session, fake = newReplySession(t, strict)
-	fake.setCapability(rrc.CapDirectNotice, true)
-	fake.setKnownPeer(hexString(requester), "Alice")
-	fake.setDirectErr(rrc.ErrDestinationNotConnected)
-	r = newResponder(strict, mustHex(replyOwnHash), func(*commandRequest) []string {
-		return []string{"pong"}
-	})
-	r.handle(session, addressedMessageFrom("general", "@gorrcbot ping", requester))
-
-	if got := len(fake.noticeList()); got != 0 {
-		t.Errorf("room notices = %v, want none with reply = %q", got, ReplyDirect)
+	tests := []struct {
+		name string
+		mode string
+		msg  *rrc.RRCMessage
+	}{
+		{name: "direct mode", mode: ReplyDirect,
+			msg: addressedMessageFrom("general", "@gorrcbot ping", requester)},
+		{name: "a direct request in auto mode", mode: ReplyAuto,
+			msg: directMessageFrom("ping", requester)},
 	}
-	if got := len(fake.directList()); got != 0 {
-		t.Errorf("direct notices = %v, want none", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := defaultTestConfig()
+			cfg.Reply = tt.mode
+			session, fake := newReplySession(t, cfg)
+			fake.setCapability(rrc.CapDirectNotice, true)
+			fake.setKnownPeer(hexString(requester), "Alice")
+			fake.setDirectErr(rrc.ErrDestinationNotConnected)
+			r := newResponder(cfg, mustHex(replyOwnHash), func(*commandRequest) []string {
+				return []string{"pong"}
+			})
+			r.handle(session, tt.msg)
+
+			if got := len(fake.noticeList()) + len(fake.directList()); got != 0 {
+				t.Errorf("sent %v envelopes, want none: the private route failed and the reply is not public", got)
+			}
+		})
 	}
 }

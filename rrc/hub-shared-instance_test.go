@@ -252,6 +252,45 @@ func (r *sharedHubRig) waitWelcomed(timeout time.Duration) bool {
 	return false
 }
 
+// waitNotWelcomed blocks until the client has dropped its WELCOME state, which
+// onClosedWithReason does as part of the link-close handling. Because that
+// callback is dispatched on its own goroutine, a link that already reads
+// LinkClosed can still report Welcomed — waiting on the flag alone would
+// sample the dead session. Observing the clear also means the close handling
+// ran, so the reconnect it schedules is armed.
+func (r *sharedHubRig) waitNotWelcomed(timeout time.Duration) bool {
+	r.t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		r.client.lock.Lock()
+		welcomed := r.client.Welcomed
+		r.client.lock.Unlock()
+		if !welcomed {
+			return true
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return false
+}
+
+// waitWelcomeCount blocks until the hub has queued at least n WELCOMEs. The
+// client's own Welcomed flag cannot be used to detect a *reconnect*: rns.Link
+// dispatches its link-closed callback on a fresh goroutine after the status
+// already reads LinkClosed, so for a moment after a teardown the flag still
+// reports the dead session's WELCOME. The hub's log is the unambiguous signal
+// — it queues a WELCOME only for a HELLO arriving on a new link.
+func (r *sharedHubRig) waitWelcomeCount(n int, timeout time.Duration) bool {
+	r.t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if strings.Count(r.logs.String(), "Queued WELCOME") >= n {
+			return true
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return false
+}
+
 // TestSharedInstanceHubWelcomesClientAndHoldsLink covers the three live
 // symptoms in the fleet topology: the hub must deliver its WELCOME (and the
 // greeting that follows it) through the shared instance, the client must

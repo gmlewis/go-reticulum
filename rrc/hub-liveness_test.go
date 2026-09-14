@@ -265,12 +265,24 @@ func TestHubLivenessWatchdogDetectsWedgedHubAndReconnects(t *testing.T) {
 	}
 
 	// The hub answers again: the reconnect path must restore the session.
+	//
+	// Order matters here. rns.Link dispatches its link-closed callback on its
+	// own goroutine after the status already reads LinkClosed, so the client
+	// still reports the torn-down session's WELCOME for a moment after
+	// waitLinkClosed returns — and reading that stale flag as "reconnected"
+	// is exactly what made this test flake. So first wait for the close
+	// handling to clear it (which also proves the reconnect it schedules is
+	// armed), and only then open the inbound path, keeping the reconnect from
+	// firing into a still-wedged hub.
+	if !rig.waitNotWelcomed(5 * time.Second) {
+		t.Fatalf("the client never dropped its WELCOME after the wedged link was torn down; hub log:\n%v", rig.logs.String())
+	}
 	rig.blockClientInbound.Store(false)
-	if !rig.waitWelcomed(15 * time.Second) {
+	if !rig.waitWelcomeCount(2, 15*time.Second) {
 		t.Fatalf("the client did not reconnect to the recovered hub; hub log:\n%v", rig.logs.String())
 	}
-	if got := strings.Count(rig.logs.String(), "Queued WELCOME"); got < 2 {
-		t.Errorf("hub queued %v WELCOMEs, want the reconnect to welcome again; hub log:\n%v", got, rig.logs.String())
+	if !rig.waitWelcomed(5 * time.Second) {
+		t.Fatalf("the hub re-welcomed the reconnected client but the client never saw it; hub log:\n%v", rig.logs.String())
 	}
 }
 

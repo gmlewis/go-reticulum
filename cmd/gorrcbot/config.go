@@ -23,8 +23,10 @@ import (
 
 // Reply modes for the [bot] reply key.
 const (
-	// ReplyAuto sends a direct NOTICE when the hub supports it and the
-	// requester's identity is known, and an in-room NOTICE otherwise.
+	// ReplyAuto answers a room request in the room, and a request that arrived
+	// as a direct NOTICE with a direct NOTICE. A hub never publishes another
+	// client's capabilities, so the room is the one route a room asker is known
+	// to be able to read.
 	ReplyAuto = "auto"
 	// ReplyDirect always sends a direct NOTICE, staying silent when the hub
 	// cannot deliver one.

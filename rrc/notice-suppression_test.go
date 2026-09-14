@@ -72,7 +72,7 @@ func TestConversationNoticesStillRender(t *testing.T) {
 		text string
 		room string
 	}{
-		{"motd", "Welcome to the RNS Community RRC hub!", ""},
+		{"motd", "Welcome to the RRC hub!", ""},
 		{"plain roomed notice", "Hub going down for maintenance", "general"},
 		{"not an ack", "roomy conversations tonight", "general"},
 	}

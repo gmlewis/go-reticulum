@@ -629,6 +629,22 @@ func addressedMessageFrom(room, text string, src []byte) *rrc.RRCMessage {
 	}
 }
 
+// directMessageFrom builds a direct NOTICE (K_DST) from the given requester. A
+// direct notice carries no room and needs no address: the envelope is the
+// address, so its whole body is the command line.
+func directMessageFrom(text string, src []byte) *rrc.RRCMessage {
+	seq := messageSeq.Add(1)
+	return &rrc.RRCMessage{
+		Kind:   "notice",
+		Src:    src,
+		Nick:   "Alice",
+		Text:   text,
+		Ts:     time.Now().UnixMilli(),
+		ID:     fmt.Sprintf("%016x", seq),
+		Direct: true,
+	}
+}
+
 // engineFixture wires a bot around a fake dialer and millisecond timings.
 type engineFixture struct {
 	dialer *fakeDialer

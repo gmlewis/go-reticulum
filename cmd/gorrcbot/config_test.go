@@ -121,7 +121,7 @@ rooms = ["general", { name = "Ops", key = "s3cret" }]
 respond_to = { general = "hubot", OPS = "opsbot" }
 
 [[hubs]]
-name = "RNS Community"
+name = "Second Hub"
 destination = "`+testHubTwo+`"
 rooms = [{ name = "general" }]
 `)
@@ -528,7 +528,7 @@ destination = "`+testHubOne+`"
 rooms = ["general"]
 
 # [[hubs]]
-# name = "RNS Community"
+# name = "Second Hub"
 # destination = "`+testHubTwo+`"
 # rooms = [{ name = "general" }]
 `)
