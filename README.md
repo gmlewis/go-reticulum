@@ -267,6 +267,140 @@ pages: the guestbook, the hit counter, and the other demos described under
 The hub also hosts a public RRC room, `#general`, for the Go ports —
 `rrc://a012129c10205c0b9441fcd2b755b2a7/#general` — and `rns://` mirrors of the
 source, so the repositories can be cloned over Reticulum as well as from GitHub.
+[`gorrcbot`](#gorrbot--the-rrc-bot-client) lives in that room.
+
+### gorrbot — the RRC bot client
+
+`gorrcbot` is a headless, always-on RRC (Reticulum Relay Chat) bot. It is a
+**client, not a hub**: it needs no hub-side support and works against any RRC
+hub, including `gorrcd` and the Python `rrcd`. It dials every hub in its
+configuration file at once, joins that hub's rooms, keeps itself connected
+across link flaps and restarts, and answers **only** when it is addressed by
+name. Everything else it hears is ignored in silence.
+
+**First run** creates its configuration and its identity, then exits so the
+hubs can be edited before anything connects:
+
+```bash
+gorrcbot                                   # writes ~/.gorrcbot/{config.toml,bot_identity}, exits 0
+$EDITOR ~/.gorrcbot/config.toml            # set your hubs and rooms
+gorrcbot                                   # connects and stays up
+gorrcbot --check-config                    # dry run: print what it would do, connect to nothing
+```
+
+`GORRCBOT_HOME` overrides the state directory (default `~/.gorrcbot`), and
+`--bot-config`, `--identity`, `--home`, and `--nick` override individual paths
+and the advertised nick. `--log-level` (a name such as `NOTICE`, `WARNING`, or
+`DEBUG`, or the matching RNS number) and `--log-file` control logging; an
+explicit level wins over the one in the Reticulum configuration, so
+`--log-level WARNING` really is quiet. `--version` prints the version.
+
+The bot owns exactly one 64-byte Reticulum identity (`bot_identity`, created
+with mode `0600`) and uses it on every hub, so its **identity hash is the same
+everywhere** — a peer can address it by hash prefix without knowing which hub it
+is on. Next to it, `storage/` is the RRC client's own directory for the
+per-room message history it saves.
+
+**Configuration** (`~/.gorrcbot/config.toml`):
+
+```toml
+[bot]
+nick = "gorrcbot"          # advertised nick, and the default trigger nick
+reply = "auto"             # auto | direct | room — see "Reply routing" below
+cooldown_s = 8.0           # minimum seconds between replies to the same identity
+announce_on_join = true    # one self-introduction NOTICE per room per session
+max_reply_lines = 12       # a reply longer than this is truncated, visibly
+weather_url = ""           # optional; {place} is substituted. Empty disables weather/wx
+
+# One [[hubs]] entry per hub. Every entry is dialed on startup.
+[[hubs]]
+name = "gonomadnet Public Hub"
+destination = "a012129c10205c0b9441fcd2b755b2a7"   # the hub's rrc.hub hash, 32 hex
+rooms = ["general"]                                 # or { name = "...", key = "..." } for a +k room
+nick = ""                                           # optional per-hub nick override
+respond_to = { general = "gorrcbot" }                # optional per-room trigger nick
+```
+
+Unknown keys warn and never fail, so a configuration written for a newer bot
+still starts. `--check-config` shows the parsed hubs, rooms, trigger, and
+identity hash without connecting.
+
+**Addressing contract.** The bot is silent unless one of these is true, and it
+then answers with a NOTICE:
+
+| Form | Example |
+|------|---------|
+| `@<nick> <command>` at the start of a room message, case-insensitive, tolerating a trailing `:` or `,` | `@gorrcbot help` |
+| `@<identity-hash-prefix>` with at least 6 hex characters | `@0032a96e help` |
+| A **direct NOTICE** addressed to the bot (RRC `K_DST`), which may omit the address entirely | `help` |
+
+A mention in the middle of a sentence, a longer or shorter nick, another bot's
+`!command` prefix, and the bot's own messages are all ignored. Room notices from
+the hub (the MOTD), system rows, and error rows never trigger anything.
+
+**Commands** mirror the official RNS Community hub bot minus its `!` prefix,
+plus a few that only matter on a mesh:
+
+| Command | What it does |
+|---------|--------------|
+| `help` | list every command, or explain one (`help dnotice`) |
+| `ping` | answer `pong` — a liveness check |
+| `uptime` | runtime, hub hash, and how long this connection has been up |
+| `whoami` | your nick and full identity hash as this hub sees them |
+| `botinfo` | the bot, this hub, and the bot's own identity hash |
+| `dn`, `dnotice <nick\|hash\|me> <text>` | send one client a direct NOTICE |
+| `dnoticecap [target]` | whether the hub supports direct notices, and whether a target is reachable |
+| `dnoticeme <text>` | send yourself a direct NOTICE — a live test of the private path |
+| `weather`, `wx <place>` | look up the weather (needs `weather_url`) |
+| `seen <nick\|hash>` | when a client last spoke in a joined room |
+| `members [room]` | the clients the hub reports in a room |
+| `rooms` | the rooms the bot has joined |
+| `id` | the identity hash and nicks a client can address the bot by |
+
+An unrecognized command produces exactly one short line (`unknown command — try
+@gorrcbot help`), subject to the cooldown. `dnotice` accepts a nick or a hash
+prefix so a human does not have to copy a 32-character hash, and `me` resolves
+to the requester.
+
+**Reply routing.** `reply` chooses the route; the choice is made *before*
+anything is sent, so a reply is never delivered twice:
+
+- `auto` (default) — a **direct NOTICE** (RRC `K_DST`) when the hub advertises
+  `CAP_DIRECT_NOTICE` and the requester is reachable, so the answer stays
+  private; an in-room NOTICE otherwise.
+- `direct` — always direct, and silent when that is impossible.
+- `room` — always an in-room NOTICE.
+
+Every reply line is one NOTICE and one MTU-sized envelope: long lines are split
+on a rune boundary with a `…` continuation marker, and a reply longer than
+`max_reply_lines` ends with `… [truncated]`. Oversized envelopes are dropped
+silently by the link layer, so the bot measures every envelope before sending.
+
+`cooldown_s` is a per-requester rate limit that gates every reply, including the
+refusal to answer a message that waited in flight too long, so a client that
+repeats a request cannot make the bot repeat itself.
+
+**Deployment.** Any always-on supervisor works; the bot runs in the foreground,
+logs to stderr, and shuts down cleanly on `SIGINT`/`SIGTERM`:
+
+```ini
+[Unit]
+Description=gorrcbot RRC bot
+After=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/gorrcbot
+Restart=always
+RestartSec=5
+Environment=GORRCBOT_HOME=/var/lib/gorrcbot
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Run `gorrcbot` once by hand before installing the unit, so the configuration and
+the identity exist (and so the identity is backed up: losing `bot_identity`
+changes the bot's identity hash, which is what other clients key on).
 
 ---
 

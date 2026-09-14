@@ -26,6 +26,22 @@ type RRCMessage struct {
 	// after a connect, which made some fleet nodes appear MOTD-less
 	// (2026-09-03 captures).
 	Pinned bool
+	// Direct marks a NOTICE the hub forwarded privately to this client using
+	// the K_DST extension rather than broadcasting it to a room. The hub sets
+	// K_DST to the target's identity hash and rewrites K_SRC to the
+	// requester's, so Src is the requester and Room is empty.
+	Direct bool
+	// Dst is the K_DST identity hash of a direct notice: this client's own
+	// hash for every notice this client actually receives, since the hub
+	// addresses the forwarded envelope to the target's link. It is nil for
+	// every non-direct message.
+	Dst []byte
+	// ID is the K_ID message id from the envelope, in lowercase hexadecimal.
+	// The hub fans a message out once per room member, so the same id can
+	// arrive more than once; a consumer that must act on a message exactly
+	// once (a bot replying to a command) keys on it. It is empty for locally
+	// composed rows such as system notices.
+	ID string
 }
 
 // HistoryEntry returns a map suitable for CBOR encoding to the
@@ -47,6 +63,17 @@ func (m *RRCMessage) HistoryEntry() map[string]any {
 	// }
 	if m.Mention {
 		entry[HMention] = true
+	}
+	if m.ID != "" {
+		entry[HID] = m.ID
+	}
+	// Direct-notice keys are written only for direct notices, so an ordinary
+	// message's entry keeps exactly the fields it had before K_DST support.
+	if m.Direct {
+		entry[HDirect] = true
+		if len(m.Dst) > 0 {
+			entry[HDst] = m.Dst
+		}
 	}
 	return entry
 }
@@ -77,6 +104,15 @@ func DecodeHistoryEntry(entry map[string]any) *RRCMessage {
 	}
 	if v, ok := entry[HMention].(bool); ok {
 		msg.Mention = v
+	}
+	if v, ok := entry[HDirect].(bool); ok {
+		msg.Direct = v
+	}
+	if v, ok := entry[HDst].([]byte); ok {
+		msg.Dst = v
+	}
+	if v, ok := entry[HID].(string); ok {
+		msg.ID = v
 	}
 
 	return msg
@@ -136,6 +172,25 @@ func MakeClientEnvelope(msgType int, src, room, nick []byte, body any, mid []byt
 // EncodeEnvelope serializes an envelope map to CBOR bytes.
 func EncodeEnvelope(env map[any]any) ([]byte, error) {
 	return cbor.Encode(env), nil
+}
+
+// MakeDirectNoticeEnvelope constructs a direct NOTICE envelope — the RRC K_DST
+// extension a client uses to deliver a private notice straight to another
+// client's link instead of broadcasting it to a room. The hub forwards it with
+// K_DST set to the target's identity hash and K_SRC rewritten to the sender's,
+// and it REJECTS any envelope that carries both a room and a destination, so
+// this builder never sets K_ROOM: it delegates to MakeClientEnvelope with a nil
+// room, which leaves every other key byte-identical to an ordinary client
+// envelope, then adds K_DST.
+//
+// A dst shorter than a full identity hash is omitted rather than truncated:
+// SendDirectNotice validates the target before calling this.
+func MakeDirectNoticeEnvelope(src, dst, nick []byte, body any, mid []byte, ts int64) map[any]any {
+	env := MakeClientEnvelope(int(TNotice), src, nil, nick, body, mid, ts)
+	if len(dst) > 0 {
+		env[KeyDst] = dst
+	}
+	return env
 }
 
 func toMapRecursive(v any) any {

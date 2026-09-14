@@ -1,0 +1,268 @@
+// Copyright 2026 Glenn Lewis. All rights reserved.
+//
+// Use of this source code is governed by the Reticulum License
+// that can be found in the LICENSE file.
+
+// This file holds the gorrbot first-run state files: the self-documenting
+// config.toml template and the 64-byte Reticulum identity. Both are created on
+// the first run and left untouched afterwards, mirroring the gorrcd bootstrap.
+
+package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/gmlewis/go-reticulum/rns"
+	"github.com/gmlewis/go-reticulum/rrc"
+)
+
+// BotPaths holds the resolved state-file paths for one bot installation.
+type BotPaths struct {
+	// Home is the state directory: GORRCBOT_HOME when set, else ~/.gorrcbot.
+	Home string
+	// ConfigPath is the TOML configuration file.
+	ConfigPath string
+	// IdentityPath is the Reticulum identity file holding the 64-byte private
+	// key material, shared by every hub the bot dials.
+	IdentityPath string
+	// StorageDir is the RRC client's own storage directory, where it keeps the
+	// per-hub message history it saves. It is a DIRECTORY: the client creates
+	// it and writes one history file per room inside it.
+	StorageDir string
+}
+
+// The file and directory names, relative to BotPaths.Home.
+const (
+	defaultConfigFileName   = "config.toml"
+	defaultIdentityFileName = "bot_identity"
+	defaultStorageDirName   = "storage"
+)
+
+// DefaultBotPaths resolves the state directory and the three state files. The
+// GORRCBOT_HOME environment variable overrides the state directory, which is
+// how tests and alternate installs stay isolated from ~/.gorrcbot.
+func DefaultBotPaths() BotPaths {
+	home := os.Getenv("GORRCBOT_HOME")
+	if home == "" {
+		if userHome, err := os.UserHomeDir(); err == nil {
+			home = filepath.Join(userHome, ".gorrcbot")
+		} else {
+			home = ".gorrcbot"
+		}
+	}
+	return BotPaths{
+		Home:         home,
+		ConfigPath:   filepath.Join(home, defaultConfigFileName),
+		IdentityPath: filepath.Join(home, defaultIdentityFileName),
+		StorageDir:   filepath.Join(home, defaultStorageDirName),
+	}
+}
+
+// defaultConfigTemplate is the first-run config.toml. It is written verbatim
+// and is a working configuration: the one live hub below is the gonomadnet
+// Public Hub, which is the hub this bot is developed and tested against. The
+// public RNS Community Hub is kept as a commented-out example rather than a
+// live entry, so a first run never starts talking to a public room. The
+// template must always parse through this program's own reader, so any change
+// here has to keep the schema valid.
+const defaultConfigTemplate = `# gorrbot configuration (TOML)
+#
+# This file was created on first run. Edit it, then start gorrbot again.
+#
+# gorrbot is an RRC (Reticulum Relay Chat) CLIENT bot. It connects to each hub
+# below over a normal RRC link, joins the listed rooms, and answers only when it
+# is addressed by name. No hub-side support is required: any RRC hub works.
+
+[bot]
+
+# Reticulum identity file: 64 bytes of private key material (X25519 ‖ Ed25519),
+# created on first run with mode 0600. The same identity hash is used on every
+# hub, which is what makes the @<hash-prefix> alias below stable.
+identity_path = {{identity_path}}
+
+# Advertised nick (sent in HELLO) AND the default trigger nick (what the bot
+# answers to). A hub or a room may override either one; see respond_to below.
+nick = "gorrcbot"
+
+# How replies are delivered:
+#   auto   - a direct NOTICE when the hub supports it and the requester's
+#            identity is known, an in-room NOTICE otherwise (default)
+#   direct - always a direct NOTICE, and stay silent if that is impossible
+#   room   - always an in-room NOTICE
+reply = "auto"
+
+# Minimum seconds between replies to the same identity. Suppresses reply storms
+# from a client that repeats a request.
+cooldown_s = 8.0
+
+# Post one short self-introduction NOTICE in each room, once per session. The
+# RRC specification calls announcing yourself as a bot "polite".
+announce_on_join = true
+
+# Maximum number of NOTICE lines a single reply may produce. Longer replies are
+# truncated with a visible marker, because each line is one MTU-sized envelope.
+max_reply_lines = 12
+
+# The RRC client's storage DIRECTORY: it keeps the saved per-room message
+# history here. The client creates it on first connect.
+storage_dir = {{storage_dir}}
+
+# Optional weather provider template for the weather/wx commands. The literal
+# {place} is replaced with the requested place. Leave empty to disable the
+# commands, which then say so instead of guessing.
+weather_url = ""
+
+# One [[hubs]] entry per RRC hub. Every entry is dialed on startup, kept
+# connected with auto-reconnect, and joined to its rooms.
+#
+#   name         - display name (must be unique)
+#   destination  - the hub's rrc.hub destination hash, 32 hex characters
+#   nick         - optional advertised-nick override for THIS hub
+#   rooms        - room names, or { name = "...", key = "..." } for a keyed (+k) room
+#   respond_to   - inline table mapping a room to the nick the bot answers to
+#                  in that room; defaults to this hub's nick
+
+[[hubs]]
+name = "gonomadnet Public Hub"
+destination = "a012129c10205c0b9441fcd2b755b2a7"
+rooms = ["general"]
+respond_to = { general = "gorrcbot" }
+
+# A second hub is one more [[hubs]] block. This public hub is left commented
+# out so that a default configuration only ever talks to the local hub above;
+# uncomment it (and set your own rooms) to reach the wider RRC network.
+#
+# [[hubs]]
+# name = "RNS Community"
+# destination = "28c7c1a68c735693aa8e6b8193ed44b2"
+# rooms = [{ name = "general" }]
+`
+
+// defaultConfigContent renders the first-run config.toml for the given paths.
+func defaultConfigContent(paths BotPaths) string {
+	return strings.NewReplacer(
+		"{{identity_path}}", quoteTOMLString(paths.IdentityPath),
+		"{{storage_dir}}", quoteTOMLString(paths.StorageDir),
+	).Replace(defaultConfigTemplate)
+}
+
+// quoteTOMLString renders a TOML basic string, escaping the characters a
+// Windows-style path could contain.
+func quoteTOMLString(s string) string {
+	var sb strings.Builder
+	sb.WriteByte('"')
+	for i := range len(s) {
+		switch c := s[i]; c {
+		case '\\':
+			sb.WriteString(`\\`)
+		case '"':
+			sb.WriteString(`\"`)
+		case '\n':
+			sb.WriteString(`\n`)
+		case '\r':
+			sb.WriteString(`\r`)
+		case '\t':
+			sb.WriteString(`\t`)
+		default:
+			sb.WriteByte(c)
+		}
+	}
+	sb.WriteByte('"')
+	return sb.String()
+}
+
+// EnsureFirstRun creates any missing state file and reports whether it created
+// anything. The identity is created with mode 0600 through the same
+// rns.Identity.ToFile path every other tool uses.
+func EnsureFirstRun(paths BotPaths) (bool, error) {
+	created := false
+
+	identityExists := fileExists(paths.IdentityPath)
+	configExists := fileExists(paths.ConfigPath)
+	if identityExists && configExists {
+		return false, nil
+	}
+
+	if err := rrc.EnsurePrivateDir(paths.Home); err != nil {
+		return false, fmt.Errorf("creating %v: %w", paths.Home, err)
+	}
+
+	if !configExists {
+		if err := os.WriteFile(paths.ConfigPath, []byte(defaultConfigContent(paths)), 0o600); err != nil {
+			return false, fmt.Errorf("writing %v: %w", paths.ConfigPath, err)
+		}
+		created = true
+	}
+
+	if !identityExists {
+		identity, err := rns.NewIdentity(true, rns.NewLogger())
+		if err != nil {
+			return created, fmt.Errorf("creating a Reticulum identity: %w", err)
+		}
+		if err := identity.ToFile(paths.IdentityPath); err != nil {
+			return created, fmt.Errorf("writing %v: %w", paths.IdentityPath, err)
+		}
+		_ = os.Chmod(paths.IdentityPath, 0o600)
+		if len(identity.Hash) != rrc.IdentityHashLen {
+			return created, fmt.Errorf("created identity %v has a %v-byte hash, want %v",
+				paths.IdentityPath, len(identity.Hash), rrc.IdentityHashLen)
+		}
+		created = true
+	}
+
+	return created, nil
+}
+
+// fileExists reports whether path names an existing regular file (or any other
+// non-directory entry).
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+// LoadBotIdentity loads the bot identity from path, creating it on first use.
+// The bool reports whether a new identity was created. A file that exists but
+// does not hold valid key material produces an error naming the path: silently
+// replacing a corrupt identity would change the bot's identity hash, which is
+// the one thing other clients key on.
+func LoadBotIdentity(path string) (*rns.Identity, bool, error) {
+	if fileExists(path) {
+		identity, err := rns.FromFile(path, rns.NewLogger())
+		if err != nil {
+			return nil, false, fmt.Errorf(
+				"could not load the gorrbot identity from %v: the file may be corrupt or truncated: %w",
+				path, err)
+		}
+		if len(identity.Hash) != rrc.IdentityHashLen {
+			return nil, false, fmt.Errorf(
+				"could not load the gorrbot identity from %v: the file may be corrupt or truncated", path)
+		}
+		return identity, false, nil
+	}
+
+	if err := rrc.EnsurePrivateDir(filepath.Dir(path)); err != nil {
+		return nil, false, fmt.Errorf("creating %v: %w", filepath.Dir(path), err)
+	}
+	identity, err := rns.NewIdentity(true, rns.NewLogger())
+	if err != nil {
+		return nil, false, fmt.Errorf("creating a Reticulum identity: %w", err)
+	}
+	if err := identity.ToFile(path); err != nil {
+		return nil, false, fmt.Errorf("writing %v: %w", path, err)
+	}
+	_ = os.Chmod(path, 0o600)
+	return identity, true, nil
+}
+
+// firstRunMessage renders the first-run notice naming every file that was just
+// created and what to do next.
+func firstRunMessage(paths BotPaths) string {
+	return "Created default gorrbot files. Edit the configuration before starting:\n" +
+		"- Config:   " + paths.ConfigPath + "\n" +
+		"- Identity: " + paths.IdentityPath + "\n" +
+		"- Storage:  " + paths.StorageDir + "\n" +
+		"\nThen re-run gorrbot.\n"
+}

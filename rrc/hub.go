@@ -134,6 +134,16 @@ type RRCHub struct {
 	onLinkEstablished func()
 	onLinkClosed      func()
 
+	// Inbound-message hook state. onMessage is the registered callback; the
+	// queue and its single drain goroutine decouple the callback from the link
+	// goroutine, so a slow or blocking callback can never stall packet
+	// delivery. msgHookDropped counts deliveries shed by the bounded queue.
+	onMessage      func(*RRCMessage)
+	msgHookCh      chan *RRCMessage
+	msgHookStop    chan struct{}
+	msgHookDone    chan struct{}
+	msgHookDropped atomic.Int64
+
 	// onSend, when set, is invoked by sendEnv with each outbound envelope
 	// before it is encoded and transmitted. It is an observability seam used by
 	// tests (and optionally the TUI) to inspect outgoing traffic; it is nil in
@@ -259,6 +269,134 @@ func (h *RRCHub) SetOnLinkClosed(fn func()) {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 	h.onLinkClosed = fn
+}
+
+// messageHookQueueDepth bounds the inbound-message hook's hand-off queue. The
+// link goroutine only enqueues; when a callback cannot keep up the overflow is
+// dropped and counted rather than growing the queue without limit or blocking
+// packet delivery.
+const messageHookQueueDepth = 64
+
+// messageHookStopWait bounds how long SetOnMessage(nil) and Disconnect wait for
+// a blocked callback to return before abandoning its goroutine. The state is
+// already cleared by then, so an abandoned callback sees no further traffic;
+// the wait only keeps the common case leak-free.
+const messageHookStopWait = time.Second
+
+// SetOnMessage registers the inbound-message hook: fn is invoked once for every
+// RRC record this client receives — room MSGs and ACTIONs, NOTICEs (including
+// hub errors, the greeting/MOTD, and join/part system rows) — and never for
+// messages this client itself sent or for the hub's echo of them.
+//
+// Threading contract: fn runs on a dedicated goroutine owned by the hub, never
+// on the link's packet goroutine and never while any RRCHub mutex is held, so
+// it may freely call locking client methods such as GetMembers or HubStatus.
+// Each invocation receives a private copy of the message, so retaining it is
+// safe. Deliveries are handed off through a bounded queue; if fn is slower than
+// the hub's traffic the excess is dropped and counted (logged once), which keeps
+// packet delivery responsive at the cost of losing chat lines a bot cannot use
+// anyway.
+//
+// The hook stops on Disconnect and on SetOnMessage(nil), and Disconnect followed
+// by Connect starts a fresh hook. Passing nil while no hook is registered is a
+// no-op.
+func (h *RRCHub) SetOnMessage(fn func(*RRCMessage)) {
+	if fn == nil {
+		h.stopMessageHook()
+		return
+	}
+
+	h.lock.Lock()
+	h.onMessage = fn
+	start := h.msgHookCh == nil
+	if start {
+		h.msgHookCh = make(chan *RRCMessage, messageHookQueueDepth)
+		h.msgHookStop = make(chan struct{})
+		h.msgHookDone = make(chan struct{})
+	}
+	ch, stop, done := h.msgHookCh, h.msgHookStop, h.msgHookDone
+	h.lock.Unlock()
+
+	if start {
+		go h.messageHookLoop(ch, stop, done)
+	}
+}
+
+// messageHookLoop drains the hand-off queue on the hook's dedicated goroutine
+// and invokes the registered callback outside every hub lock.
+func (h *RRCHub) messageHookLoop(ch <-chan *RRCMessage, stop <-chan struct{}, done chan struct{}) {
+	defer close(done)
+	for {
+		select {
+		case <-stop:
+			return
+		case msg := <-ch:
+			h.deliverMessageHook(msg)
+		}
+	}
+}
+
+// deliverMessageHook reads the current callback under the lock and invokes it
+// unlocked; a nil callback (unregistered while messages were in flight) is a
+// no-op.
+func (h *RRCHub) deliverMessageHook(msg *RRCMessage) {
+	h.lock.Lock()
+	fn := h.onMessage
+	h.lock.Unlock()
+	if fn != nil {
+		fn(msg)
+	}
+}
+
+// enqueueMessage hands one inbound message to the hook without blocking the
+// caller. It is called with no hub lock held, from the record path. The message
+// is copied so the callback cannot observe a later in-place mutation (the
+// fanout collapse backfills a kept copy's nick after the fact).
+func (h *RRCHub) enqueueMessage(msg *RRCMessage) {
+	if msg == nil {
+		return
+	}
+	h.lock.Lock()
+	fn := h.onMessage
+	ch := h.msgHookCh
+	h.lock.Unlock()
+	if fn == nil || ch == nil {
+		return
+	}
+	snapshot := *msg
+	select {
+	case ch <- &snapshot:
+	default:
+		if h.msgHookDropped.Add(1) == 1 {
+			log.Printf("[RRC %v] inbound message hook is not keeping up; dropping received messages", h.Name)
+		}
+	}
+}
+
+// stopMessageHook unregisters the callback and stops its goroutine. The wait is
+// bounded: a callback blocked forever must not hang Disconnect.
+func (h *RRCHub) stopMessageHook() {
+	h.lock.Lock()
+	stop := h.msgHookStop
+	done := h.msgHookDone
+	h.onMessage = nil
+	h.msgHookCh = nil
+	h.msgHookStop = nil
+	h.msgHookDone = nil
+	h.lock.Unlock()
+
+	if stop == nil {
+		return
+	}
+	close(stop)
+	if done == nil {
+		return
+	}
+	select {
+	case <-done:
+	case <-time.After(messageHookStopWait):
+		log.Printf("[RRC %v] inbound message hook did not stop within %v", h.Name, messageHookStopWait)
+	}
 }
 
 // SetLink sets the RNS link used by this hub for sending data. This is
@@ -996,6 +1134,10 @@ func (h *RRCHub) Disconnect() {
 	// disconnected glyph immediately (Python's disconnect updates the UI the
 	// same way via the status setter).
 	h.SetStatus(StatusDisconnected, "Disconnected")
+
+	// The inbound hook belongs to the connection: stop it (and its goroutine)
+	// with the link so a bot's dispatcher cannot outlive the session.
+	h.stopMessageHook()
 
 	if link != nil {
 		link.Teardown()
@@ -2014,6 +2156,7 @@ func (h *RRCHub) HandleData(data []byte) {
 			Nick: nickStr,
 			Text: textStr,
 			Ts:   arrival,
+			ID:   msgIDHex(env),
 		}
 		if !h.isServerSide() {
 			if h.collapseSelfEcho("msg", roomStr, textStr, ts) || h.collapseFanout("msg", roomStr, textStr, collapseKey, nickStr, msg) {
@@ -2060,6 +2203,7 @@ func (h *RRCHub) HandleData(data []byte) {
 			Nick: nickStr,
 			Text: textStr,
 			Ts:   NowMs(),
+			ID:   msgIDHex(env),
 		}
 		if !h.isServerSide() {
 			if h.collapseSelfEcho("action", roomStr, textStr, ts) || h.collapseFanout("action", roomStr, textStr, collapseKey, nickStr, msg) {
@@ -2139,6 +2283,25 @@ func (h *RRCHub) HandleData(data []byte) {
 			// Python only records string NOTICE bodies (RRC.py:1104).
 			return
 		}
+		// A NOTICE carrying K_DST is the hub's private forward of another
+		// client's direct notice (the RRC K_DST extension): the hub rewrote
+		// K_SRC to the requester's hash and addressed the envelope to this
+		// client's link. It is not room traffic, and it must not be mistaken
+		// for the hub's greeting.
+		dst := byteVal(env, KeyDst)
+		if len(dst) > 0 {
+			h.recordDirectNotice(&RRCMessage{
+				Kind:   "notice",
+				Src:    src,
+				Nick:   nickStr,
+				Text:   textStr,
+				Ts:     NowMs(),
+				Direct: true,
+				Dst:    dst,
+				ID:     msgIDHex(env),
+			})
+			return
+		}
 		// Python T_NOTICE (RRC.py:1092-1101): /list replies populate the hub's
 		// advertised room set for the info panel. ONLY an AUTO-requested
 		// reply (the auto_list sweep, RRC.py:910-919) is consumed silently;
@@ -2184,7 +2347,12 @@ func (h *RRCHub) HandleData(data []byte) {
 		}
 		// Fanout collapse for notices too: rrcd's per-member fanout applies
 		// to hub notices ("room test: unregistered…" arrives once per fanout
-		// copy per join, TODO item 5).
+		// copy per join, TODO item 5). A NOTICE this client sent itself comes
+		// back the same way, so the self-echo check runs first — otherwise a
+		// sender would render its own notice twice.
+		if !h.isServerSide() && h.collapseSelfEcho("notice", roomStr, textStr, ts) {
+			return
+		}
 		msg := &RRCMessage{
 			Kind: "notice",
 			Room: roomStr,
@@ -2192,6 +2360,7 @@ func (h *RRCHub) HandleData(data []byte) {
 			Nick: nickStr,
 			Text: textStr,
 			Ts:   NowMs(),
+			ID:   msgIDHex(env),
 		}
 		if !h.isServerSide() && h.collapseFanout("notice", roomStr, textStr, collapseKey, nickStr, msg) {
 			return
@@ -2758,13 +2927,13 @@ func (h *RRCHub) handleJoinedNotification(roomStr, nickStr string, body any) {
 	}
 	switch {
 	case selfJoin && !silent:
-		h.recordMessage(&RRCMessage{
+		h.recordInboundSystemRow(&RRCMessage{
 			Kind: "system", Room: roomStr, Text: "You joined #" + roomStr, Ts: NowMs(),
-		}, true)
+		})
 	case joiner != "":
-		h.recordMessage(&RRCMessage{
+		h.recordInboundSystemRow(&RRCMessage{
 			Kind: "system", Room: roomStr, Text: joiner + " joined", Ts: NowMs(),
-		}, true)
+		})
 	}
 	// Python handle_joined → auto_who (RRC.py:1006-1012): fetch the room's
 	// member list right after joining; every reply copy is consumed silently.
@@ -2823,9 +2992,9 @@ func (h *RRCHub) handlePartedNotification(roomStr, nickStr string, body any) {
 	// from the " left" suffix (Channels.py:1294). The nick resolves through
 	// the just-learned nick table with the hash-prefix fallback.
 	if !selfPart && len(bodyHashes) == 1 && (ownHash == "" || bodyHashes[0] != ownHash) {
-		h.recordMessage(&RRCMessage{
+		h.recordInboundSystemRow(&RRCMessage{
 			Kind: "system", Room: roomStr, Text: h.displayNameForHash(bodyHashes[0]) + " left", Ts: NowMs(),
-		}, true)
+		})
 	}
 }
 
@@ -2905,6 +3074,9 @@ func (h *RRCHub) recordMessage(msg *RRCMessage, local bool) {
 			h.Notices = h.Notices[len(h.Notices)-100:]
 		}
 		h.lock.Unlock()
+		if !local {
+			h.enqueueMessage(msg)
+		}
 		return
 	}
 
@@ -2954,6 +3126,47 @@ func (h *RRCHub) recordMessage(msg *RRCMessage, local bool) {
 	if h.Manager != nil {
 		h.Manager.NotifyMessage(h, msg)
 	}
+
+	// The inbound hook sees only traffic that arrived over the link: a
+	// locally-composed message (local=true) is not news to its own author.
+	if !local {
+		h.enqueueMessage(msg)
+	}
+}
+
+// recordInboundSystemRow records a system row that ORIGINATED at the hub (a
+// JOINED or PARTED fanout) and forwards it to the inbound hook. local=true
+// suppresses the unread indicator for the row — it is not conversation — but
+// the row still came off the link, so a bot needs to see it.
+// msgIDHex renders the envelope's K_ID as lowercase hexadecimal, or "" when the
+// envelope carries no id.
+func msgIDHex(env map[any]any) string {
+	return hexString(byteVal(env, KeyMessageID))
+}
+
+func (h *RRCHub) recordInboundSystemRow(msg *RRCMessage) {
+	h.recordMessage(msg, true)
+	h.enqueueMessage(msg)
+}
+
+// recordDirectNotice records a NOTICE the hub forwarded privately to this
+// client over the K_DST extension. Direct notices go to the hub's notice
+// log — not to a room buffer, because they are addressed to one client, and
+// not through recordNotice, because that path attributes a roomless notice to
+// the active room, fans it out to every joined room, and pins it as the hub
+// greeting.
+func (h *RRCHub) recordDirectNotice(msg *RRCMessage) {
+	h.lock.Lock()
+	h.Notices = append(h.Notices, msg)
+	if len(h.Notices) > 200 {
+		h.Notices = h.Notices[len(h.Notices)-200:]
+	}
+	h.lock.Unlock()
+
+	if h.Manager != nil {
+		h.Manager.NotifyMessage(h, msg)
+	}
+	h.enqueueMessage(msg)
 }
 
 // rememberSentID records one of our own outgoing message ids (Python
@@ -3321,6 +3534,7 @@ func (h *RRCHub) recordNotice(msg *RRCMessage) {
 		h.appendHistory(room, msg)
 	}
 	h.cleanHistory()
+	h.enqueueMessage(msg)
 }
 
 func (h *RRCHub) appendHistory(room string, msg *RRCMessage) {

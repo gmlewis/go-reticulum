@@ -78,6 +78,13 @@ const (
 	HText    = "t"
 	HTS      = "ts"
 	HMention = "m"
+	// HDirect/HDst persist the K_DST direct-notice flag and target hash. They
+	// are Go-side extensions to the history format and are written only for
+	// direct notices, so ordinary entries are unchanged.
+	HDirect = "d"
+	HDst    = "dst"
+	// HID is the history key for the envelope message id.
+	HID = "id"
 )
 
 // Hub connection status.
