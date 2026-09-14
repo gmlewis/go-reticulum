@@ -2757,11 +2757,18 @@ func (h *RRCHub) handleWelcome(body any) {
 		h.lock.Unlock()
 	}
 	if limits, ok := envVal(bodyMap, BWelcomeLimits).(map[any]any); ok {
+		// The limits are read LIVE while the session runs — the chat composer
+		// consults MaxMsgBodyLimit on every send (Python reads
+		// self.hub.max_msg_body_bytes at send time, Channels.py:879) and the
+		// nick path consults MaxNickLimit — so this write must hold the same
+		// lock those accessors take.
+		h.lock.Lock()
 		h.MaxNickBytes = intVal(limits, LMaxNickBytes)
 		h.MaxRoomNameBytes = intVal(limits, LMaxRoomNameBytes)
 		h.MaxMsgBodyBytes = intVal(limits, LMaxMsgBodyBytes)
 		h.MaxRoomsPerSession = intVal(limits, LMaxRoomsPerSession)
 		h.RateLimitMsgsPerMin = intVal(limits, LRateLimitMsgsPerMinute)
+		h.lock.Unlock()
 	}
 
 	// Python T_WELCOME (RRC.py:906-908): the status flips to CONNECTED only
