@@ -513,3 +513,40 @@ func TestDefaultTriggerNick(t *testing.T) {
 		t.Errorf("AdvertisedNick with everything unset = %q, want %q", got, DefaultNick)
 	}
 }
+
+// TestDecodeBotConfigIgnoresACommentedOutHub asserts a hub an operator has
+// commented out is never dialled. The generated template no longer ships a
+// commented public hub, but the parser must keep honouring comments in a
+// hand-edited config.
+func TestDecodeBotConfigIgnoresACommentedOutHub(t *testing.T) {
+	t.Parallel()
+
+	cfg, warnings, err := DecodeBotConfig("config.toml", `
+[[hubs]]
+name = "gonomadnet Public Hub"
+destination = "`+testHubOne+`"
+rooms = ["general"]
+
+# [[hubs]]
+# name = "RNS Community"
+# destination = "`+testHubTwo+`"
+# rooms = [{ name = "general" }]
+`)
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none", warnings)
+	}
+	if len(cfg.Hubs) != 1 {
+		t.Fatalf("hubs = %v, want only the live hub", len(cfg.Hubs))
+	}
+	if cfg.Hubs[0].Destination != testHubOne {
+		t.Errorf("Destination = %q, want %q", cfg.Hubs[0].Destination, testHubOne)
+	}
+	for _, hub := range cfg.Hubs {
+		if hub.Destination == testHubTwo {
+			t.Error("the commented-out hub was decoded as live")
+		}
+	}
+}

@@ -303,7 +303,7 @@ func (c *commandContext) runWhoami() []string {
 }
 
 // runBotinfo reports the bot, the hub, and the bot's own identity. The official
-// bot reports hub-side scripts; gorrbot loads none, so it reports the size of
+// bot reports hub-side scripts; gorrcbot loads none, so it reports the size of
 // its own command set instead of a meaningless zero.
 func (c *commandContext) runBotinfo() []string {
 	session := c.session()

@@ -3,7 +3,7 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// This file holds the gorrbot first-run state files: the self-documenting
+// This file holds the gorrcbot first-run state files: the self-documenting
 // config.toml template and the 64-byte Reticulum identity. Both are created on
 // the first run and left untouched afterwards, mirroring the gorrcd bootstrap.
 
@@ -68,11 +68,11 @@ func DefaultBotPaths() BotPaths {
 // live entry, so a first run never starts talking to a public room. The
 // template must always parse through this program's own reader, so any change
 // here has to keep the schema valid.
-const defaultConfigTemplate = `# gorrbot configuration (TOML)
+const defaultConfigTemplate = `# gorrcbot configuration (TOML)
 #
-# This file was created on first run. Edit it, then start gorrbot again.
+# This file was created on first run. Edit it, then start gorrcbot again.
 #
-# gorrbot is an RRC (Reticulum Relay Chat) CLIENT bot. It connects to each hub
+# gorrcbot is an RRC (Reticulum Relay Chat) CLIENT bot. It connects to each hub
 # below over a normal RRC link, joins the listed rooms, and answers only when it
 # is addressed by name. No hub-side support is required: any RRC hub works.
 
@@ -131,14 +131,9 @@ destination = "a012129c10205c0b9441fcd2b755b2a7"
 rooms = ["general"]
 respond_to = { general = "gorrcbot" }
 
-# A second hub is one more [[hubs]] block. This public hub is left commented
-# out so that a default configuration only ever talks to the local hub above;
-# uncomment it (and set your own rooms) to reach the wider RRC network.
-#
-# [[hubs]]
-# name = "RNS Community"
-# destination = "28c7c1a68c735693aa8e6b8193ed44b2"
-# rooms = [{ name = "general" }]
+# A second hub would be one more [[hubs]] block, with its own name,
+# destination, rooms, and optional respond_to. None is configured here: this
+# bot talks only to the hub above until an operator deliberately adds another.
 `
 
 // defaultConfigContent renders the first-run config.toml for the given paths.
@@ -233,12 +228,12 @@ func LoadBotIdentity(path string) (*rns.Identity, bool, error) {
 		identity, err := rns.FromFile(path, rns.NewLogger())
 		if err != nil {
 			return nil, false, fmt.Errorf(
-				"could not load the gorrbot identity from %v: the file may be corrupt or truncated: %w",
+				"could not load the gorrcbot identity from %v: the file may be corrupt or truncated: %w",
 				path, err)
 		}
 		if len(identity.Hash) != rrc.IdentityHashLen {
 			return nil, false, fmt.Errorf(
-				"could not load the gorrbot identity from %v: the file may be corrupt or truncated", path)
+				"could not load the gorrcbot identity from %v: the file may be corrupt or truncated", path)
 		}
 		return identity, false, nil
 	}
@@ -260,9 +255,9 @@ func LoadBotIdentity(path string) (*rns.Identity, bool, error) {
 // firstRunMessage renders the first-run notice naming every file that was just
 // created and what to do next.
 func firstRunMessage(paths BotPaths) string {
-	return "Created default gorrbot files. Edit the configuration before starting:\n" +
+	return "Created default gorrcbot files. Edit the configuration before starting:\n" +
 		"- Config:   " + paths.ConfigPath + "\n" +
 		"- Identity: " + paths.IdentityPath + "\n" +
 		"- Storage:  " + paths.StorageDir + "\n" +
-		"\nThen re-run gorrbot.\n"
+		"\nThen re-run gorrcbot.\n"
 }

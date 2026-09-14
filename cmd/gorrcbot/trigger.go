@@ -4,7 +4,7 @@
 // that can be found in the LICENSE file.
 
 // This file holds the addressing contract: the single rule that decides whether
-// a message was addressed to gorrbot. Everything else in the bot is silent by
+// a message was addressed to gorrcbot. Everything else in the bot is silent by
 // default, so this is the only place that may turn a message into a reply.
 //
 // A message addresses the bot when the FIRST token of its text is one of:

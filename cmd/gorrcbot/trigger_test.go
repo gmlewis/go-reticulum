@@ -95,7 +95,7 @@ func TestParseTriggerHashPrefixBoundaries(t *testing.T) {
 	}
 }
 
-// TestParseTriggerMustNotTrigger covers the silence contract: gorrbot answers
+// TestParseTriggerMustNotTrigger covers the silence contract: gorrcbot answers
 // only when it is addressed, so anything else must produce nothing at all.
 func TestParseTriggerMustNotTrigger(t *testing.T) {
 	t.Parallel()

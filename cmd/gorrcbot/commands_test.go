@@ -112,7 +112,7 @@ func TestRegistryNamesAreStable(t *testing.T) {
 		}
 		seen[name] = true
 		if strings.HasPrefix(name, "!") {
-			t.Errorf("command %q carries a '!' prefix, which gorrbot never uses", name)
+			t.Errorf("command %q carries a '!' prefix, which gorrcbot never uses", name)
 		}
 	}
 	if len(reg.aliases) == 0 {
@@ -382,7 +382,7 @@ func TestDnoticeCapReportsATarget(t *testing.T) {
 }
 
 // TestDnoticeUsageMatchesTheOfficialWording asserts the usage line is the
-// official bot's, with gorrbot's missing '!' and its wider target syntax.
+// official bot's, with gorrcbot's missing '!' and its wider target syntax.
 func TestDnoticeUsageMatchesTheOfficialWording(t *testing.T) {
 	t.Parallel()
 

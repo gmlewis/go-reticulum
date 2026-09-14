@@ -93,7 +93,7 @@ func TestParseFlagsHelp(t *testing.T) {
 	}
 	text := out.String()
 	for _, want := range []string{
-		"usage: gorrbot",
+		"usage: gorrcbot",
 		"--version", "--check-config", "--config", "--bot-config",
 		"--identity", "--home", "--nick", "--log-level", "--log-file",
 		"--pprof-addr", "GORRCBOT_HOME", "config.toml", "bot_identity",
@@ -165,12 +165,12 @@ func TestFlagsDoNotUseTheGlobalFlagSet(t *testing.T) {
 func TestResolvePathsUsesTheHomeOverride(t *testing.T) {
 	t.Setenv("GORRCBOT_HOME", "")
 
-	opts, err := parseFlags([]string{"-home", "/tmp/gorrbot-home"}, &strings.Builder{})
+	opts, err := parseFlags([]string{"-home", "/tmp/gorrcbot-home"}, &strings.Builder{})
 	if err != nil {
 		t.Fatalf("parseFlags: %v", err)
 	}
 	paths := resolvePaths(opts)
-	if paths.Home != "/tmp/gorrbot-home" {
+	if paths.Home != "/tmp/gorrcbot-home" {
 		t.Errorf("Home = %q, want the override", paths.Home)
 	}
 	for name, got := range map[string]string{
@@ -178,13 +178,13 @@ func TestResolvePathsUsesTheHomeOverride(t *testing.T) {
 		"identity": paths.IdentityPath,
 		"storage":  paths.StorageDir,
 	} {
-		if filepath.Dir(got) != "/tmp/gorrbot-home" {
+		if filepath.Dir(got) != "/tmp/gorrcbot-home" {
 			t.Errorf("%v = %q, want it under the overridden home", name, got)
 		}
 	}
 
 	opts, err = parseFlags([]string{
-		"-home", "/tmp/gorrbot-home",
+		"-home", "/tmp/gorrcbot-home",
 		"-bot-config", "/tmp/elsewhere/bot.toml",
 		"-identity", "/tmp/elsewhere/bot_identity",
 	}, &strings.Builder{})
@@ -198,7 +198,7 @@ func TestResolvePathsUsesTheHomeOverride(t *testing.T) {
 	if paths.IdentityPath != "/tmp/elsewhere/bot_identity" {
 		t.Errorf("IdentityPath = %q, want the per-file override", paths.IdentityPath)
 	}
-	if paths.StorageDir != filepath.Join("/tmp/gorrbot-home", defaultStorageDirName) {
+	if paths.StorageDir != filepath.Join("/tmp/gorrcbot-home", defaultStorageDirName) {
 		t.Errorf("StorageDir = %q, want it to stay under -home", paths.StorageDir)
 	}
 }
@@ -206,20 +206,20 @@ func TestResolvePathsUsesTheHomeOverride(t *testing.T) {
 // TestResolvePathsHonorsGORRCBOTHome asserts the environment variable selects the
 // home when no flag overrides it.
 func TestResolvePathsHonorsGORRCBOTHome(t *testing.T) {
-	t.Setenv("GORRCBOT_HOME", "/tmp/gorrbot-env-home")
+	t.Setenv("GORRCBOT_HOME", "/tmp/gorrcbot-env-home")
 
 	opts, err := parseFlags(nil, &strings.Builder{})
 	if err != nil {
 		t.Fatalf("parseFlags: %v", err)
 	}
 	paths := resolvePaths(opts)
-	if paths.Home != "/tmp/gorrbot-env-home" {
+	if paths.Home != "/tmp/gorrcbot-env-home" {
 		t.Fatalf("Home = %q, want GORRCBOT_HOME", paths.Home)
 	}
-	if paths.ConfigPath != filepath.Join("/tmp/gorrbot-env-home", defaultConfigFileName) {
+	if paths.ConfigPath != filepath.Join("/tmp/gorrcbot-env-home", defaultConfigFileName) {
 		t.Errorf("ConfigPath = %q, want it under GORRCBOT_HOME", paths.ConfigPath)
 	}
-	if paths.IdentityPath != filepath.Join("/tmp/gorrbot-env-home", defaultIdentityFileName) {
+	if paths.IdentityPath != filepath.Join("/tmp/gorrcbot-env-home", defaultIdentityFileName) {
 		t.Errorf("IdentityPath = %q, want it under GORRCBOT_HOME", paths.IdentityPath)
 	}
 }
@@ -231,27 +231,27 @@ func TestConfigSummaryDescribesWhatTheBotWouldDo(t *testing.T) {
 	t.Parallel()
 
 	cfg, _, err := DecodeBotConfig("config.toml", defaultConfigContent(BotPaths{
-		Home:         "/tmp/gorrbot-summary",
-		ConfigPath:   "/tmp/gorrbot-summary/config.toml",
-		IdentityPath: "/tmp/gorrbot-summary/bot_identity",
-		StorageDir:   "/tmp/gorrbot-summary/storage",
+		Home:         "/tmp/gorrcbot-summary",
+		ConfigPath:   "/tmp/gorrcbot-summary/config.toml",
+		IdentityPath: "/tmp/gorrcbot-summary/bot_identity",
+		StorageDir:   "/tmp/gorrcbot-summary/storage",
 	}))
 	if err != nil {
 		t.Fatalf("DecodeBotConfig: %v", err)
 	}
 	paths := BotPaths{
-		Home:         "/tmp/gorrbot-summary",
-		ConfigPath:   "/tmp/gorrbot-summary/config.toml",
-		IdentityPath: "/tmp/gorrbot-summary/bot_identity",
-		StorageDir:   "/tmp/gorrbot-summary/storage",
+		Home:         "/tmp/gorrcbot-summary",
+		ConfigPath:   "/tmp/gorrcbot-summary/config.toml",
+		IdentityPath: "/tmp/gorrcbot-summary/bot_identity",
+		StorageDir:   "/tmp/gorrcbot-summary/storage",
 	}
 	summary := configSummary(paths, cfg, mustHex(fakeHubTwo))
 
 	for _, want := range []string{
-		"gorrbot " + rns.VERSION,
-		"config:     /tmp/gorrbot-summary/config.toml",
-		"identity:   /tmp/gorrbot-summary/bot_identity (" + fakeHubTwo + ")",
-		"storage:    /tmp/gorrbot-summary/storage",
+		"gorrcbot " + rns.VERSION,
+		"config:     /tmp/gorrcbot-summary/config.toml",
+		"identity:   /tmp/gorrcbot-summary/bot_identity (" + fakeHubTwo + ")",
+		"storage:    /tmp/gorrcbot-summary/storage",
 		"nick:       gorrcbot",
 		"trigger:    @gorrcbot or @" + fakeHubTwo[:12],
 		"hubs:       1",

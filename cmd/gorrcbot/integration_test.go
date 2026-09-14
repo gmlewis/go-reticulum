@@ -3,7 +3,7 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// This file is the end-to-end proof for gorrbot: real RRC hub services (the rrcd
+// This file is the end-to-end proof for gorrcbot: real RRC hub services (the rrcd
 // hub role, in process), a real Reticulum stack on every node, real second
 // clients in the rooms, and the real bot engine with its real reply policy and
 // command registry.
@@ -345,7 +345,7 @@ func newIntegrationRigWith(t *testing.T, hubCount int, replyMode string,
 		})
 	}
 
-	home := filepath.Join(root, "gorrbot-home")
+	home := filepath.Join(root, "gorrcbot-home")
 	paths := BotPaths{
 		Home:         home,
 		ConfigPath:   filepath.Join(home, defaultConfigFileName),
@@ -760,7 +760,7 @@ func TestLiveHubRoundTrip(t *testing.T) {
 	live := &inboundCollector{}
 	asker := newLiveAsker(t, root, hubHex, room, live)
 
-	home := filepath.Join(root, "gorrbot-home")
+	home := filepath.Join(root, "gorrcbot-home")
 	paths := BotPaths{
 		Home:         home,
 		ConfigPath:   filepath.Join(home, defaultConfigFileName),
@@ -908,8 +908,8 @@ func newLiveAsker(t *testing.T, root, hubHex, room string,
 		return identity.Hash
 	})
 	mgr.SetIdentity(identity)
-	mgr.SetNickname("gorrbot-live-check")
-	t.Logf("live asker identity %v nick %v", hexString(identity.Hash), "gorrbot-live-check")
+	mgr.SetNickname("gorrcbot-live-check")
+	t.Logf("live asker identity %v nick %v", hexString(identity.Hash), "gorrcbot-live-check")
 	mgr.SetTransport(ts)
 	t.Cleanup(mgr.Shutdown)
 

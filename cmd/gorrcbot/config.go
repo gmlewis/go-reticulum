@@ -50,7 +50,7 @@ const (
 // characters (16 bytes).
 const HubDestinationHexLen = rrc.IdentityHashLen * 2
 
-// BotConfig is the decoded gorrbot configuration.
+// BotConfig is the decoded gorrcbot configuration.
 type BotConfig struct {
 	// IdentityPath is the Reticulum identity file shared by every hub.
 	IdentityPath string

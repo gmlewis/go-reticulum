@@ -32,7 +32,7 @@ type botOptions struct {
 	botConfig string
 	// identity overrides the path of the bot's identity file.
 	identity string
-	// home overrides the gorrbot home directory, which defaults to
+	// home overrides the gorrcbot home directory, which defaults to
 	// GORRCBOT_HOME or ~/.gorrcbot.
 	home string
 	// nick overrides the advertised nick for every hub.
@@ -42,7 +42,7 @@ type botOptions struct {
 	logFile  string
 	// pprofAddr turns on the debug HTTP server when it is not empty.
 	pprofAddr string
-	// args holds any positional arguments, which gorrbot does not accept.
+	// args holds any positional arguments, which gorrcbot does not accept.
 	args []string
 }
 
@@ -69,7 +69,7 @@ func parseFlags(args []string, usageOutput io.Writer) (*botOptions, error) {
 	fs.StringVar(&opts.identity, "identity", "",
 		"path to the bot's identity file")
 	fs.StringVar(&opts.home, "home", "",
-		"gorrbot home directory (default GORRCBOT_HOME or ~/.gorrcbot)")
+		"gorrcbot home directory (default GORRCBOT_HOME or ~/.gorrcbot)")
 	fs.StringVar(&opts.nick, "nick", "",
 		"override the advertised nick on every hub")
 	fs.StringVar(&opts.logLevel, "log-level", "",
@@ -100,15 +100,15 @@ func (o *botOptions) validate() error {
 	return nil
 }
 
-// usageText is the help text, in the shape the other gorrbot tools use.
-const usageText = `usage: gorrbot [-h] [--version] [--check-config] [--config CONFIG]
+// usageText is the help text, in the shape the other gorrcbot tools use.
+const usageText = `usage: gorrcbot [-h] [--version] [--check-config] [--config CONFIG]
                [--bot-config BOT_CONFIG] [--identity IDENTITY] [--home HOME]
                [--nick NICK] [--log-level LOG_LEVEL] [--log-file LOG_FILE]
                [--pprof-addr PPROF_ADDR]
 
 Run a headless RRC (Reticulum Relay Chat) bot client
 
-gorrbot connects to every hub in its configuration file at once, joins the
+gorrcbot connects to every hub in its configuration file at once, joins the
 configured rooms on each, and answers only when it is addressed by name. It
 keeps its own Reticulum identity so every hub sees the same identity hash.
 
@@ -121,7 +121,7 @@ options:
   --bot-config BOT_CONFIG
                         path to the bot's TOML configuration file
   --identity IDENTITY   path to the bot's identity file
-  --home HOME           gorrbot home directory (default GORRCBOT_HOME or
+  --home HOME           gorrcbot home directory (default GORRCBOT_HOME or
                         ~/.gorrcbot)
   --nick NICK           override the advertised nick on every hub
   --log-level LOG_LEVEL

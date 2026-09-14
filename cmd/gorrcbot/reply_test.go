@@ -295,7 +295,7 @@ func TestResponderRoutesRepliesPerMode(t *testing.T) {
 }
 
 // TestResponderSilentWithoutATrigger asserts an unaddressed message produces no
-// output at all: gorrbot is not a chatterbox.
+// output at all: gorrcbot is not a chatterbox.
 func TestResponderSilentWithoutATrigger(t *testing.T) {
 	t.Parallel()
 

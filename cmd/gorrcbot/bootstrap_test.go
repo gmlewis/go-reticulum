@@ -103,8 +103,7 @@ func TestEnsureFirstRunCreatesConfigAndIdentity(t *testing.T) {
 		t.Errorf("the generated template produced warnings: %v", warnings)
 	}
 	// The default configuration talks to exactly one hub: the local
-	// development hub. The public hub is present only as a commented-out
-	// example, so a first run can never start talking to a public room.
+	// development hub.
 	if len(cfg.Hubs) != 1 {
 		t.Errorf("template hubs = %v, want 1 live hub", len(cfg.Hubs))
 	}
@@ -116,10 +115,14 @@ func TestEnsureFirstRunCreatesConfigAndIdentity(t *testing.T) {
 			t.Errorf("template hub destination = %q, want the local hub's hash", got)
 		}
 	}
-	// The commented-out public hub must be visible to an operator who wants
-	// it, and must not be decoded as a live hub.
-	if !strings.Contains(string(raw), "# destination = \"28c7c1a68c735693aa8e6b8193ed44b2\"") {
-		t.Error("the generated config does not keep the public hub as a commented-out example")
+	// The public RNS Community Hub must not appear in the generated config at
+	// all, neither live nor as a copy-pasteable example: it does not work, and
+	// a first run must never reach it.
+	if strings.Contains(string(raw), "28c7c1a68c735693aa8e6b8193ed44b2") {
+		t.Error("the generated config still carries the public RNS Community Hub hash")
+	}
+	if strings.Contains(string(raw), "RNS Community") {
+		t.Error("the generated config still names the public RNS Community Hub")
 	}
 	for _, hub := range cfg.Hubs {
 		if hub.Destination == "28c7c1a68c735693aa8e6b8193ed44b2" {

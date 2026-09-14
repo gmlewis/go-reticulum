@@ -3,7 +3,7 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// gorrbot is a headless, always-on RRC (Reticulum Relay Chat) bot client.
+// gorrcbot is a headless, always-on RRC (Reticulum Relay Chat) bot client.
 //
 // It is a CLIENT, not a hub: it dials every hub named in its configuration
 // file, joins that hub's configured rooms, and stays connected across link
@@ -25,7 +25,7 @@
 //
 // Usage:
 //
-//	gorrbot [--config CONFIG] [--bot-config BOT_CONFIG]
+//	gorrcbot [--config CONFIG] [--bot-config BOT_CONFIG]
 //	        [--identity IDENTITY] [--home HOME] [--nick NICK]
 //	        [--check-config] [--log-level LEVEL] [--log-file PATH]
 //	        [--pprof-addr ADDR] [--version]
@@ -73,7 +73,7 @@ func main() {
 	if !opts.checkConfig {
 		created, err := EnsureFirstRun(paths)
 		if err != nil {
-			log.Fatalf("gorrbot: %v", err)
+			log.Fatalf("gorrcbot: %v", err)
 		}
 		if created {
 			fmt.Fprint(os.Stderr, firstRunMessage(paths))
@@ -83,12 +83,12 @@ func main() {
 
 	cfg, warnings, err := LoadBotConfig(paths.ConfigPath)
 	if err != nil {
-		log.Fatalf("gorrbot: %v", err)
+		log.Fatalf("gorrcbot: %v", err)
 	}
 	// An unknown key is a warning, never a failure: a configuration written
 	// for a newer bot must still start.
 	for _, warning := range warnings {
-		log.Printf("gorrbot: %v", warning)
+		log.Printf("gorrcbot: %v", warning)
 	}
 	if opts.nick != "" {
 		cfg.Nick = opts.nick
@@ -96,7 +96,7 @@ func main() {
 
 	identity, _, err := LoadBotIdentity(paths.IdentityPath)
 	if err != nil {
-		log.Fatalf("gorrbot: %v", err)
+		log.Fatalf("gorrcbot: %v", err)
 	}
 	ownHash := identity.Hash
 
@@ -111,14 +111,14 @@ func main() {
 	transport := rns.NewTransportSystem(logger)
 	ret, err := rns.NewReticulumWithLogger(transport, opts.configDir, logger)
 	if err != nil {
-		log.Fatalf("gorrbot: could not start Reticulum: %v", err)
+		log.Fatalf("gorrcbot: could not start Reticulum: %v", err)
 	}
 	// The Reticulum configuration file can set its own log level, so the
 	// command line is applied after the instance reads it: an operator who
 	// asks for --log-level WARNING gets WARNING even when that config is
 	// chattier.
 	if err := applyLogging(logger, opts); err != nil {
-		log.Fatalf("gorrbot: %v", err)
+		log.Fatalf("gorrcbot: %v", err)
 	}
 
 	dialer := newManagerDialer(identity, cfg.Nick, paths.StorageDir, ret)
@@ -135,12 +135,12 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	log.Printf("gorrbot %v: identity %v, %v hub(s), nick %v",
+	log.Printf("gorrcbot %v: identity %v, %v hub(s), nick %v",
 		rns.VERSION, hexString(ownHash), len(cfg.Hubs), cfg.Nick)
 	if err := b.Run(ctx); err != nil {
-		log.Fatalf("gorrbot: %v", err)
+		log.Fatalf("gorrcbot: %v", err)
 	}
-	log.Printf("gorrbot: stopped after %v", formatDuration(b.uptime()))
+	log.Printf("gorrcbot: stopped after %v", formatDuration(b.uptime()))
 }
 
 // applyLogging applies --log-level and --log-file to the logger every part of
@@ -226,7 +226,7 @@ func resolvePaths(opts *botOptions) BotPaths {
 // configSummary renders what the bot would do, for --check-config.
 func configSummary(paths BotPaths, cfg *BotConfig, ownHash []byte) string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "gorrbot %v configuration\n", rns.VERSION)
+	fmt.Fprintf(&sb, "gorrcbot %v configuration\n", rns.VERSION)
 	fmt.Fprintf(&sb, "config:     %v\n", paths.ConfigPath)
 	fmt.Fprintf(&sb, "identity:   %v (%v)\n", paths.IdentityPath, hexString(ownHash))
 	fmt.Fprintf(&sb, "storage:    %v\n", paths.StorageDir)

@@ -267,9 +267,9 @@ pages: the guestbook, the hit counter, and the other demos described under
 The hub also hosts a public RRC room, `#general`, for the Go ports —
 `rrc://a012129c10205c0b9441fcd2b755b2a7/#general` — and `rns://` mirrors of the
 source, so the repositories can be cloned over Reticulum as well as from GitHub.
-[`gorrcbot`](#gorrbot--the-rrc-bot-client) lives in that room.
+[`gorrcbot`](#gorrcbot--the-rrc-bot-client) lives in that room.
 
-### gorrbot — the RRC bot client
+### gorrcbot — the RRC bot client
 
 `gorrcbot` is a headless, always-on RRC (Reticulum Relay Chat) bot. It is a
 **client, not a hub**: it needs no hub-side support and works against any RRC

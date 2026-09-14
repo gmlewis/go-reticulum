@@ -3,7 +3,7 @@
 // Use of this source code is governed by the Reticulum License
 // that can be found in the LICENSE file.
 
-// This file holds the gorrbot engine: it dials every configured hub, keeps the
+// This file holds the gorrcbot engine: it dials every configured hub, keeps the
 // rooms joined, drains inbound messages on a single dispatcher goroutine, and
 // shuts down in bounded time. The command and reply policy lives behind
 // botHooks, so the engine has no knowledge of commands.
@@ -55,7 +55,7 @@ type inbound struct {
 	msg     *rrc.RRCMessage
 }
 
-// bot is the running gorrbot.
+// bot is the running gorrcbot.
 type bot struct {
 	cfg    *BotConfig
 	paths  BotPaths
