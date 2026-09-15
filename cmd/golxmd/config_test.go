@@ -424,3 +424,34 @@ func TestApplyConfigMaxInboundSyncs(t *testing.T) {
 		}
 	})
 }
+
+// TestParseBool covers the INI boolean spellings the lxmd config accepts,
+// delegating to rns.ParseConfigBool: ConfigObj's as_bool set, case-insensitive
+// and whitespace-tolerant, with any unrecognized value false.
+func TestParseBool(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		in   string
+		want bool
+	}{
+		{"yes", true},
+		{"YES", true},
+		{" yes ", true},
+		{"true", true},
+		{"on", true},
+		{"1", true},
+		{"no", false},
+		{"No", false},
+		{"false", false},
+		{"off", false},
+		{"0", false},
+		{"", false},
+		{"maybe", false},
+	}
+	for _, tt := range tests {
+		if got := parseBool(tt.in); got != tt.want {
+			t.Errorf("parseBool(%q) = %v, want %v", tt.in, got, tt.want)
+		}
+	}
+}

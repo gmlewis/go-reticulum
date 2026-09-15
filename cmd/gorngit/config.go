@@ -85,9 +85,12 @@ func resolveNodeConfigDir(configDir string) (string, error) {
 	return filepath.Join(home, ".rngit"), nil
 }
 
-// defaultNodeConfig returns the baseline config used when no config file
-// exists, mirroring __default_rngit_config__ (server.py). The announce
-// interval defaults to 6 hours (360 minutes).
+// defaultNodeConfig returns the baseline config used as the starting point
+// when parsing a config file, mirroring the upstream defaults of
+// __default_rngit_config__ (server.py) for absent settings. It leaves stats
+// recording off; the generated default config file (defaultNodeConfigFile)
+// turns it on explicitly. The announce interval defaults to 6 hours (360
+// minutes).
 func defaultNodeConfig() *nodeConfig {
 	return &nodeConfig{
 		announceInterval: 360 * time.Minute,
@@ -107,11 +110,12 @@ func loadNodeConfig(configDir string) (*nodeConfig, error) {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			cfg := defaultNodeConfig()
 			if err := writeDefaultNodeConfig(configPath); err != nil {
 				return nil, fmt.Errorf("could not write default config: %w", err)
 			}
-			return cfg, nil
+			// Parse the template that was just written so the first run's
+			// effective config matches the file on disk exactly.
+			return parseNodeConfig(defaultNodeConfigFile)
 		}
 		return nil, fmt.Errorf("could not read config: %w", err)
 	}
@@ -152,7 +156,7 @@ func parseNodeConfig(text string) (*nodeConfig, error) {
 				cfg.nodeName = strings.TrimSpace(value)
 			}
 			if key == "record_stats" {
-				if b, err := strconv.ParseBool(strings.TrimSpace(value)); err == nil {
+				if b, ok := rns.ParseConfigBool(value); ok {
 					cfg.recordStats = b
 				}
 			}
@@ -170,12 +174,12 @@ func parseNodeConfig(text string) (*nodeConfig, error) {
 			cfg.access[key] = parseCommaList(value)
 		case "pages":
 			if key == "serve_nomadnet" {
-				if b, ok := parseConfigBool(value); ok {
+				if b, ok := rns.ParseConfigBool(value); ok {
 					cfg.serveNomadnet = b
 				}
 			}
 			if key == "unicode_icons" {
-				if b, ok := parseConfigBool(value); ok {
+				if b, ok := rns.ParseConfigBool(value); ok {
 					cfg.unicodeIcons = b
 				}
 			}
@@ -199,19 +203,6 @@ func parseCommaList(value string) []string {
 		}
 	}
 	return out
-}
-
-// parseConfigBool interprets a config boolean value the way ConfigObj's
-// as_bool does (server.py): true/yes/on/1 -> true, false/no/off/0 -> false,
-// case-insensitively. It returns ok=false for unrecognized values.
-func parseConfigBool(value string) (bool, bool) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "true", "yes", "on", "1":
-		return true, true
-	case "false", "no", "off", "0":
-		return false, true
-	}
-	return false, false
 }
 
 // splitConfigLine splits a "key = value" config line.
@@ -242,18 +233,21 @@ func expandPath(path string) string {
 	return path
 }
 
-// writeDefaultNodeConfig writes the default rngit config to configPath,
-// mirroring __create_default_config (server.py).
-func writeDefaultNodeConfig(configPath string) error {
-	dir := filepath.Dir(configPath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	const defaultConfig = `# This is the default gorngit config file.
+// defaultNodeConfigFile is the config file written when none exists,
+// mirroring __create_default_config (server.py). Unlike the upstream template
+// it enables record_stats and grants the "s" (stats) permission to the public
+// group, so statistics are recorded and viewable on a new node without
+// further configuration.
+const defaultNodeConfigFile = `# This is the default gorngit config file.
 
 [rngit]
 # Automatic announce interval in minutes (6 hours by default).
 announce_interval = 360
+
+# Collect view, fetch and push statistics and display them on the stats
+# pages of repositories. The "s" (stats) permission under [access] controls
+# who can view them.
+record_stats = yes
 
 # You can block specific identities from any interaction with this node.
 # blocked_identities = d31aeea49873006f13b3415520666a4e
@@ -271,8 +265,9 @@ announce_interval = 360
 
 [access]
 # Apply permissions for all repositories within a group, comma-separated
-# permission lines applied on top of the group .allowed file.
-# public = r:all, w:9710b86ba12c42d1d8f30f74fe509286
+# permission lines applied on top of the group .allowed file. The "s"
+# (stats) permission is required for statistics to be viewable.
+public = r:all, s:all
 # internal = rw:9710b86ba12c42d1d8f30f74fe509286
 
 [pages]
@@ -290,7 +285,15 @@ announce_interval = 360
 # Valid log levels are 0 through 7 (4 is the default).
 loglevel = 4
 `
-	return os.WriteFile(configPath, []byte(defaultConfig), 0o600)
+
+// writeDefaultNodeConfig writes the default rngit config to configPath,
+// mirroring __create_default_config (server.py).
+func writeDefaultNodeConfig(configPath string) error {
+	dir := filepath.Dir(configPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(configPath, []byte(defaultNodeConfigFile), 0o600)
 }
 
 // loadOrCreateIdentity loads an identity from identityPath or creates and

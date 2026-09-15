@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gmlewis/go-reticulum/rns"
 )
 
 func resolveLogLevel(configLogLevel int, verbosity int, quietness int) int {
@@ -261,9 +263,12 @@ func (c *clientT) applyConfig(cfg map[string]map[string]string) (*activeConfig, 
 	return ac, nil
 }
 
+// parseBool interprets an INI boolean value the way ConfigObj's as_bool does,
+// via the shared rns.ParseConfigBool helper. An unrecognized value leaves the
+// field false, matching the previous lenient behavior.
 func parseBool(s string) bool {
-	s = strings.ToLower(s)
-	return s == "yes" || s == "true" || s == "on" || s == "1"
+	b, _ := rns.ParseConfigBool(s)
+	return b
 }
 
 // intPtr returns a pointer to v, used to build non-nil *int config defaults

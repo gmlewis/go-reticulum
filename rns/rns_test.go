@@ -557,6 +557,41 @@ func TestParseBoolLike(t *testing.T) {
 	}
 }
 
+// TestParseConfigBool covers the ConfigObj as_bool spellings every INI boolean
+// is read with, including the yes/no/on/off forms strconv.ParseBool rejects.
+func TestParseConfigBool(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		in    string
+		value bool
+		ok    bool
+	}{
+		{"yes", true, true},
+		{"YES", true, true},
+		{" yes ", true, true},
+		{"true", true, true},
+		{"True", true, true},
+		{"on", true, true},
+		{"1", true, true},
+		{"no", false, true},
+		{"No", false, true},
+		{"false", false, true},
+		{"off", false, true},
+		{"0", false, true},
+		{"", false, false},
+		{"maybe", false, false},
+		{"y", false, false},
+		{"2", false, false},
+	}
+	for _, tt := range tests {
+		value, ok := ParseConfigBool(tt.in)
+		if value != tt.value || ok != tt.ok {
+			t.Errorf("ParseConfigBool(%q) = (%v, %v); want (%v, %v)", tt.in, value, ok, tt.value, tt.ok)
+		}
+	}
+}
+
 func TestReticulumBackgroundJobs(t *testing.T) {
 	t.Parallel()
 

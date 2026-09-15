@@ -355,16 +355,30 @@ func parseListProperty(v string) []string {
 	return out
 }
 
-func parseBoolLike(v string) bool {
-	v = strings.TrimSpace(strings.ToLower(v))
-	switch v {
-	case "1", "true", "yes", "y", "on":
-		return true
-	case "0", "false", "no", "n", "off":
-		return false
-	default:
-		return false
+// ParseConfigBool interprets an INI boolean value the way ConfigObj's as_bool
+// does: true/yes/on/1 are true and false/no/off/0 are false, case-insensitively
+// and ignoring surrounding whitespace. The ok result is false for any other
+// value, letting the caller keep its existing default. Every INI boolean in
+// the Go port is read through this helper so a spelling ConfigObj accepts is
+// never silently read as false.
+func ParseConfigBool(v string) (value, ok bool) {
+	switch strings.TrimSpace(strings.ToLower(v)) {
+	case "1", "true", "yes", "on":
+		return true, true
+	case "0", "false", "no", "off":
+		return false, true
 	}
+	return false, false
+}
+
+// parseBoolLike reports whether v is a truthy INI value. It accepts the
+// ConfigObj as_bool spellings via ParseConfigBool, plus the single-letter y/n
+// abbreviations this port has always tolerated. Any other value is false.
+func parseBoolLike(v string) bool {
+	if b, ok := ParseConfigBool(v); ok {
+		return b
+	}
+	return strings.TrimSpace(strings.ToLower(v)) == "y"
 }
 
 func parseOptionalFloat64(v string) *float64 {
