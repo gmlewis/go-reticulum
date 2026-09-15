@@ -53,7 +53,7 @@ func TestRegistryNamesAreStable(t *testing.T) {
 		"botinfo", "dn", "dnotice", "dnoticecap", "dnoticeme", "help", "ping",
 		"uptime", "weather", "whoami", "wx",
 		// This bot's own additions.
-		"catchup", "flight", "id", "launches", "lxmf", "members", "msg", "path", "rooms",
+		"catchup", "flight", "id", "kjv", "launches", "lxmf", "members", "msg", "path", "rooms",
 		"search", "seen", "unwatch", "watch", "watches",
 	}
 	// The registry sorts its rows, so the expectation is sorted too; the groups
@@ -133,19 +133,23 @@ func TestHelpIsGeneratedFromTheRegistry(t *testing.T) {
 	}
 }
 
-// TestHelpForOneCommand asserts help <command> explains that command, and an
-// unknown name gets one short line.
+// TestHelpForOneCommand asserts help <command> explains that command: the first
+// line is its purpose and usage, and the lines after it are its guidance. An
+// unknown name still gets one short line.
 func TestHelpForOneCommand(t *testing.T) {
 	t.Parallel()
 
 	reg, session, _ := commandFixture(t, nil)
 
 	lines := runLines(t, reg, session, "help dn")
-	if len(lines) != 1 {
-		t.Fatalf("help dn returned %v lines, want 1", len(lines))
+	if len(lines) == 0 {
+		t.Fatalf("help dn returned nothing")
 	}
 	if !strings.Contains(lines[0], "dnotice") || !strings.Contains(lines[0], "Usage") {
 		t.Errorf("help dn = %q, want the command's usage", lines[0])
+	}
+	if want := 1 + len(reg.byName["dn"].detail); len(lines) != want {
+		t.Errorf("help dn returned %v lines, want %v", len(lines), want)
 	}
 
 	lines = runLines(t, reg, session, "help bogus")
@@ -736,7 +740,8 @@ func TestCommandsAreCaseInsensitive(t *testing.T) {
 }
 
 // TestRegistryExposesSummariesAndUsage asserts every command documents itself,
-// which is what makes the generated help useful.
+// which is what makes the generated help useful: a summary, a handler, a detail
+// the asker can act on, and an explanation that fits one reply.
 func TestRegistryExposesSummariesAndUsage(t *testing.T) {
 	t.Parallel()
 
@@ -750,6 +755,13 @@ func TestRegistryExposesSummariesAndUsage(t *testing.T) {
 		}
 		if cmd.name != strings.ToLower(cmd.name) {
 			t.Errorf("command %q is not lowercase", cmd.name)
+		}
+		if len(cmd.detail) == 0 {
+			t.Errorf("command %q has no detail; help %v would explain nothing", cmd.name, cmd.name)
+		}
+		if got := 1 + len(cmd.detail); got > DefaultMaxReplyLines {
+			t.Errorf("help %v would produce %v lines, more than the default max_reply_lines %v",
+				cmd.name, got, DefaultMaxReplyLines)
 		}
 	}
 }

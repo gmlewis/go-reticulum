@@ -778,8 +778,13 @@ func TestMsgCommandsAreRegistered(t *testing.T) {
 		t.Errorf("aliases[lxmf] = %q, want %q", got, "msg")
 	}
 	lines := runLines(t, reg, session, "help msg")
-	if len(lines) != 1 || !strings.Contains(lines[0], msgUsage) {
+	if len(lines) == 0 || !strings.Contains(lines[0], msgUsage) {
 		t.Errorf("help msg = %q, want the command's usage line", lines)
+	}
+	msgCmd, _ := reg.byName["msg"]
+	if len(lines) != 1+len(msgCmd.detail) {
+		t.Errorf("help msg returned %v lines, want the summary line plus %v detail lines",
+			len(lines), len(msgCmd.detail))
 	}
 	if got := runLines(t, reg, session, "help"); !strings.Contains(got[0], "lxmf, members, msg") {
 		t.Errorf("help = %q, want the listing to include lxmf and msg in order", got[0])

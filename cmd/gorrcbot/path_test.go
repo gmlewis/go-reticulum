@@ -424,9 +424,7 @@ func TestPathIsRegistered(t *testing.T) {
 		Command: "help path",
 		Nick:    "gorrcbot",
 		Now:     catchupBase,
-	}), []string{
-		"path — " + cmd.summary + ". Usage: " + pathUsage,
-	})
+	}), append([]string{"path — " + cmd.summary + ". Usage: " + pathUsage}, cmd.detail...))
 }
 
 // containsString reports whether want is in the slice.

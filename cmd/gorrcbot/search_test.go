@@ -334,7 +334,5 @@ func TestSearchIsRegistered(t *testing.T) {
 		Command: "help search",
 		Nick:    "gorrcbot",
 		Now:     catchupBase,
-	}), []string{
-		"search — " + cmd.summary + ". Usage: " + searchUsage,
-	})
+	}), append([]string{"search — " + cmd.summary + ". Usage: " + searchUsage}, cmd.detail...))
 }

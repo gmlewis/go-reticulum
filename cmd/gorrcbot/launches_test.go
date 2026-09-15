@@ -290,9 +290,7 @@ func TestLaunchesIsRegistered(t *testing.T) {
 		Command: "help launches",
 		Nick:    "gorrcbot",
 		Now:     catchupBase,
-	}), []string{
-		"launches — " + cmd.summary + ". Usage: " + launchesUsage,
-	})
+	}), append([]string{"launches — " + cmd.summary + ". Usage: " + launchesUsage}, cmd.detail...))
 }
 
 // TestJSONFieldReadsTheShapesAProviderUses asserts the tiny field reader the

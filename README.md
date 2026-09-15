@@ -325,6 +325,7 @@ flight_route_url = ""      # optional second http(s) template, asked first: {fli
 lxmf_enabled = false       # true adds the LXMF sender (msg/lxmf), so a peer can be reached while offline
 lxmf_propagation_node = "" # optional 32-hex LXMF propagation node, for store-and-forward
 lxmf_announce_minutes = 360 # how often the bot announces its own lxmf.delivery address, so a reply can be routed back (at least 1)
+kjv_txt_file = ""          # optional King James text file (one verse per line); enables the kjv command. Empty disables it
 
 # One [[hubs]] entry per hub. Every entry is dialed on startup.
 [[hubs]]
@@ -375,13 +376,45 @@ plus a few that only matter on a mesh:
 | `msg`, `lxmf <nick\|hash> <text>` | send an LXMF message to a peer, so it is handed over when they come back (needs `lxmf_enabled = true`; store-and-forward additionally needs a propagation node) |
 | `catchup [window]` | what was said in your joined rooms while you were away |
 | `search <term> [#room]` | find where a term appeared in the rooms the bot has joined, newest first |
+| `kjv <reference\|words\|regex>` | look up a Bible verse or search the King James text (needs `kjv_txt_file`; see below) |
 | `seen <nick\|hash>` | when a client last spoke in a joined room |
 | `members [room]` | the clients the hub reports in a room |
 | `rooms` | the rooms the bot has joined |
 | `id` | the identity hash and nicks a client can address the bot by |
 
-Each of these can be explained on demand: `@gorrcbot help path` prints that one
-command's purpose and usage.
+Each of these can be explained on demand: `@gorrcbot help kjv` prints that one
+command's purpose, its usage, its inputs, and a worked example — as does
+`help <command>` for every other command.
+
+**Bible lookup and search never leaves the bot.** With `kjv_txt_file` pointing
+at a King James text file (one verse per line, a book abbreviation first:
+`John3:16 For God so loved the world, ...`), the `kjv` command reads it once,
+read-only, and answers three ways from one argument list:
+
+- **A reference**, however loosely spelled — `jn3:16`, `John 3:16`,
+  `Psalm 23:1-6`, `ps23`, `psalms23:3`, `1 jn 2 1`, `rom8:28` — is looked up.
+  Book names are fuzzy: a prefix resolves to every book it could be, and the
+  abbreviations the data itself uses (`Ge`, `Psa`, `1Jn`, `SSol`) all work. A
+  bare abbreviation that is not a word in the text (`gen`, `isa`) resolves to
+  that book's first verse; a bare word that does occur (`is`, `am`) is searched
+  for instead, so a two-letter abbreviation never steals a common word.
+- **Bare words** search for every verse that contains them, so
+  `kjv shepherd` finds Psalms 23:1 and `kjv love of god` finds the verses that
+  contain all three. The syntax also takes phrases (`"the love of God"`), OR
+  (`love|charity`), exclusions (`love -hate`), and wildcards (`lov*`, `l?ve`,
+  `l[ai]ve`). A term that finds nothing is retried as a prefix, so `shepher`
+  still reaches `shepherd`.
+- **A regular expression** — `love.*life`, `^In the beginning` — is matched
+  across a whole verse, for the cases the word syntax cannot express.
+
+Every answer is one complete verse per line with its full canonical name
+(`John 3:16: For God so loved the world, ...`), so a search result reads as
+scripture rather than as a fragment. The reply is bounded by `max_reply_lines`,
+and a cut-off answer says how many matching verses it did not show. A room
+mention is answered in the room and a `/msg gorrbot kjv ...` direct notice is
+answered privately, exactly like every other command; `kjv_txt_file` may be
+written in `[bot]`, above it, or (tolerantly, with a warning) after a `[[hubs]]`
+block.
 
 **Flight status uses two keyless providers, and never guesses.** `flight <number>`
 takes the number a passenger knows (`BA123`, `ba 123`, and `BA-123` all work) and

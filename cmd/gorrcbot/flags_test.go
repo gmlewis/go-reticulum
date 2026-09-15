@@ -267,6 +267,12 @@ func TestConfigSummaryDescribesWhatTheBotWouldDo(t *testing.T) {
 			t.Errorf("the summary does not list room %q", room)
 		}
 	}
+	// A configured kjv text file is reported, so an operator can see where the
+	// Bible lookup will read from.
+	cfg.KJVTxtFile = "/tmp/gorrcbot-summary/kjv.txt"
+	if got := configSummary(paths, cfg, mustHex(fakeHubTwo)); !strings.Contains(got, "kjv:        /tmp/gorrcbot-summary/kjv.txt") {
+		t.Errorf("the summary does not name the configured kjv text file:\n%v", got)
+	}
 }
 
 // TestGreetingNamesTheBotAndHowToAddressIt asserts the self-introduction says

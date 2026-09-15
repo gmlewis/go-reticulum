@@ -295,6 +295,9 @@ func configSummary(paths BotPaths, cfg *BotConfig, ownHash []byte) string {
 	if cfg.LaunchURL != "" {
 		fmt.Fprintf(&sb, "launches:   %v\n", cfg.LaunchURL)
 	}
+	if cfg.KJVTxtFile != "" {
+		fmt.Fprintf(&sb, "kjv:        %v\n", cfg.KJVTxtFile)
+	}
 	if cfg.LXMFEnabled {
 		fmt.Fprintf(&sb, "lxmf:       enabled, announcing every %vm\n", cfg.LXMFAnnounceMinutes)
 		if cfg.LXMFPropagationNode != "" {

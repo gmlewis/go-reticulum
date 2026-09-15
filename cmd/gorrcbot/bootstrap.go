@@ -115,6 +115,10 @@ max_reply_lines = 12
 # history here. The client creates it on first connect.
 storage_dir = {{storage_dir}}
 
+# kjv: The full text of the King James Version Bible for the 'kjv' command
+# that can look up verses and search through the Bible.
+kjv_txt_file = ""
+
 # Optional weather provider template for the weather/wx commands. The literal
 # {place} is replaced with the requested place, which is validated first: only
 # letters, digits, spaces, commas, periods, hyphens and apostrophes are

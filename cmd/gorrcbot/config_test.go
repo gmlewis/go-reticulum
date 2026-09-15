@@ -7,6 +7,8 @@ package main
 
 import (
 	"encoding/hex"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -49,6 +51,9 @@ rooms = ["general"]
 	}
 	if cfg.WeatherURL != "" {
 		t.Errorf("WeatherURL = %q, want empty by default", cfg.WeatherURL)
+	}
+	if cfg.KJVTxtFile != "" {
+		t.Errorf("KJVTxtFile = %q, want empty by default (the kjv command is off)", cfg.KJVTxtFile)
 	}
 	if cfg.IdentityPath == "" || cfg.StorageDir == "" {
 		t.Errorf("IdentityPath/StorageDir = %q/%q, want the default paths",
@@ -927,5 +932,141 @@ func TestDecodeBotConfigWarnsAboutMisplacedKeys(t *testing.T) {
 				t.Errorf("Nick = %q, want the [bot] value to win", cfg.Nick)
 			}
 		})
+	}
+}
+
+// TestDecodeBotConfigReadsKJVTxtFile asserts the Bible text path is read from
+// [bot], is also accepted above it like the other path keys, and that the [bot]
+// value wins when both are written.
+func TestDecodeBotConfigReadsKJVTxtFile(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join(tempDir(t), "root-kjv.txt")
+	inner := filepath.Join(tempDir(t), "inner-kjv.txt")
+	for _, path := range []string{root, inner} {
+		if err := os.WriteFile(path, []byte("Ge1:1 In the beginning\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "inside [bot]",
+			src:  "[bot]\nkjv_txt_file = \"" + inner + "\"\n" + misplacedHub,
+			want: inner,
+		},
+		{
+			name: "above [bot]",
+			src:  "kjv_txt_file = \"" + root + "\"\n" + misplacedHub,
+			want: root,
+		},
+		{
+			name: "both, [bot] wins",
+			src:  "kjv_txt_file = \"" + root + "\"\n\n[bot]\nkjv_txt_file = \"" + inner + "\"\n" + misplacedHub,
+			want: inner,
+		},
+		{
+			name: "empty means the command is off",
+			src:  "[bot]\nkjv_txt_file = \"\"\n" + misplacedHub,
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg, warnings, err := DecodeBotConfig("config.toml", tt.src)
+			if err != nil {
+				t.Fatalf("DecodeBotConfig: %v", err)
+			}
+			if len(warnings) != 0 {
+				t.Errorf("warnings = %v, want none", warnings)
+			}
+			if cfg.KJVTxtFile != tt.want {
+				t.Errorf("KJVTxtFile = %q, want %q", cfg.KJVTxtFile, tt.want)
+			}
+		})
+	}
+}
+
+// TestDecodeBotConfigWarnsOnUnreadableKJVTxtFile asserts an unusable path is
+// reported once at startup, and that the value is kept so the command reports it
+// rather than claiming the feature is unconfigured.
+func TestDecodeBotConfigWarnsOnUnreadableKJVTxtFile(t *testing.T) {
+	t.Parallel()
+
+	missing := filepath.Join(tempDir(t), "absent-kjv.txt")
+	cfg, warnings, err := DecodeBotConfig("config.toml",
+		"[bot]\nkjv_txt_file = \""+missing+"\"\n"+misplacedHub)
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "kjv_txt_file") ||
+		!strings.Contains(warnings[0], "cannot be read") {
+		t.Errorf("warnings = %v, want one naming the unreadable kjv_txt_file", warnings)
+	}
+	if cfg.KJVTxtFile != missing {
+		t.Errorf("KJVTxtFile = %q, want the configured value kept", cfg.KJVTxtFile)
+	}
+
+	dir := tempDir(t)
+	_, warnings, err = DecodeBotConfig("config.toml",
+		"kjv_txt_file = \""+dir+"\"\n"+misplacedHub)
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "is a directory") {
+		t.Errorf("warnings = %v, want one naming the directory", warnings)
+	}
+
+	// A template with the key empty is not a warning: it is the default.
+	_, warnings, err = DecodeBotConfig("config.toml", "[bot]\nkjv_txt_file = \"\"\n"+misplacedHub)
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("an empty kjv_txt_file warned: %v", warnings)
+	}
+}
+
+// TestDecodeBotConfigToleratesHubLevelKJVTxtFile asserts the Bible text path an
+// operator appended after a [[hubs]] block still works, and that the misplacement
+// is reported rather than silently ignored.
+func TestDecodeBotConfigToleratesHubLevelKJVTxtFile(t *testing.T) {
+	t.Parallel()
+
+	hubPath := filepath.Join(tempDir(t), "hub-kjv.txt")
+	botPath := filepath.Join(tempDir(t), "bot-kjv.txt")
+	for _, path := range []string{hubPath, botPath} {
+		if err := os.WriteFile(path, []byte("Ge1:1 In the beginning\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cfg, warnings, err := DecodeBotConfig("config.toml",
+		"[[hubs]]\nname = \"One\"\ndestination = \""+testHubOne+"\"\nrooms = [\"general\"]\nkjv_txt_file = \""+hubPath+"\"\n")
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "belongs inside [bot]") {
+		t.Errorf("warnings = %v, want one explaining where the key belongs", warnings)
+	}
+	if cfg.KJVTxtFile != hubPath {
+		t.Errorf("KJVTxtFile = %q, want the hub-level path accepted", cfg.KJVTxtFile)
+	}
+
+	cfg, warnings, err = DecodeBotConfig("config.toml",
+		"[bot]\nkjv_txt_file = \""+botPath+"\"\n[[hubs]]\nname = \"One\"\ndestination = \""+testHubOne+"\"\nrooms = [\"general\"]\nkjv_txt_file = \""+hubPath+"\"\n")
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if cfg.KJVTxtFile != botPath {
+		t.Errorf("KJVTxtFile = %q, want the [bot] value to win", cfg.KJVTxtFile)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "ignored") {
+		t.Errorf("warnings = %v, want one saying the hub-level copy is ignored", warnings)
 	}
 }

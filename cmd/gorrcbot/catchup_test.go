@@ -498,9 +498,7 @@ func TestCatchupIsRegistered(t *testing.T) {
 		Command: "help catchup",
 		Nick:    "gorrcbot",
 		Now:     catchupBase,
-	}), []string{
-		"catchup — " + cmd.summary + ". Usage: " + catchupUsage,
-	})
+	}), append([]string{"catchup — " + cmd.summary + ". Usage: " + catchupUsage}, cmd.detail...))
 }
 
 // TestDigestable asserts the digest's row policy directly, including the shapes a

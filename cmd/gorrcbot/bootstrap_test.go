@@ -132,6 +132,17 @@ func TestEnsureFirstRunCreatesConfigAndIdentity(t *testing.T) {
 	if cfg.Nick != "gorrcbot" {
 		t.Errorf("template nick = %q, want %q", cfg.Nick, "gorrcbot")
 	}
+	// The template offers the kjv command's text file, empty by default, with
+	// the comment that says what it is for.
+	if !strings.Contains(string(raw), "kjv_txt_file = \"\"") {
+		t.Error("the generated config does not offer the empty kjv_txt_file key")
+	}
+	if !strings.Contains(string(raw), "the 'kjv' command") {
+		t.Error("the generated config does not document what kjv_txt_file is for")
+	}
+	if cfg.KJVTxtFile != "" {
+		t.Errorf("template kjv_txt_file = %q, want empty", cfg.KJVTxtFile)
+	}
 }
 
 // TestEnsureFirstRunIsIdempotent asserts a second run leaves both files

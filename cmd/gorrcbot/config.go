@@ -97,6 +97,12 @@ type BotConfig struct {
 	// an allowlist before it is substituted, so a request can never retarget
 	// the template's own host. Empty disables the commands.
 	WeatherURL string
+	// KJVTxtFile is the path to a King James Version Bible text file, one verse
+	// per line in the reference data's shape ("John3:16 For God so loved..."),
+	// which is what the kjv command looks verses up in and searches. The file is
+	// opened read-only and parsed lazily, on the first kjv command. Empty
+	// disables the command, which then says how to turn it on.
+	KJVTxtFile string
 	// LXMFEnabled switches the msg command on. It is OFF by default, and off
 	// means absent: no LXMF router is created, no state is written under the
 	// storage directory, and the command answers with the line that says how to
@@ -254,6 +260,7 @@ var botKeys = map[string]bool{
 	"max_reply_lines":       true,
 	"storage_dir":           true,
 	"weather_url":           true,
+	"kjv_txt_file":          true,
 	"launch_url":            true,
 	"flight_url":            true,
 	"flight_route_url":      true,
@@ -290,6 +297,13 @@ func (d *configDecoder) decodeRoot(root *toml.Table) error {
 		switch {
 		case key == "identity_path", key == "storage_dir":
 			if err := d.decodeRootPathKey(key, kv); err != nil {
+				return err
+			}
+		case key == "kjv_txt_file":
+			// The Bible text path is a path, like the two above, so it is
+			// accepted above [bot] as well as inside it. The [bot] table is
+			// read afterwards and wins when both are present.
+			if err := d.setKJVTxtFile("the top level", key, kv); err != nil {
 				return err
 			}
 		case botKeys[key]:
@@ -334,6 +348,30 @@ func (d *configDecoder) setStorageDir(table, key string, kv *toml.KeyVal) error 
 	return nil
 }
 
+// setKJVTxtFile records the King James text-file path. A path that does not name
+// a readable file is an operator error, so it is reported once at startup rather
+// than only when somebody asks for a verse. The value is kept either way: the
+// command reports it, and clearing it would make a configured bot claim it is
+// not configured.
+func (d *configDecoder) setKJVTxtFile(table, key string, kv *toml.KeyVal) error {
+	s, err := d.stringValue(table, key, kv)
+	if err != nil {
+		return err
+	}
+	d.cfg.KJVTxtFile = strings.TrimSpace(s)
+	if d.cfg.KJVTxtFile == "" {
+		return nil
+	}
+	if info, statErr := os.Stat(d.cfg.KJVTxtFile); statErr != nil {
+		d.warn("%v %q cannot be read: %v; the kjv command will report this until it is fixed",
+			table, key, statErr)
+	} else if info.IsDir() {
+		d.warn("%v %q is a directory, not a Bible text file; the kjv command will report this until it is fixed",
+			table, key)
+	}
+	return nil
+}
+
 // decodeBotTable reads the [bot] table.
 func (d *configDecoder) decodeBotTable(t *toml.Table) error {
 	for i := range t.Keys {
@@ -355,6 +393,10 @@ func (d *configDecoder) decodeBotTable(t *toml.Table) error {
 			}
 		case "storage_dir":
 			if err := d.setStorageDir("[bot]", key, kv); err != nil {
+				return err
+			}
+		case "kjv_txt_file":
+			if err := d.setKJVTxtFile("[bot]", key, kv); err != nil {
 				return err
 			}
 		case "weather_url":
@@ -492,13 +534,16 @@ func (d *configDecoder) decodeBotTable(t *toml.Table) error {
 	return nil
 }
 
-// hubKeys are the recognized [[hubs]] keys.
+// hubKeys are the recognized [[hubs]] keys. kjv_txt_file is not a hub setting,
+// but it is recognized here so an operator who appended it after a [[hubs]]
+// block is told where it belongs instead of watching the bot ignore it.
 var hubKeys = map[string]bool{
-	"name":        true,
-	"destination": true,
-	"nick":        true,
-	"rooms":       true,
-	"respond_to":  true,
+	"name":         true,
+	"destination":  true,
+	"nick":         true,
+	"rooms":        true,
+	"respond_to":   true,
+	"kjv_txt_file": true,
 }
 
 // arrayTableSegment is the path segment the TOML parser records for an
@@ -587,6 +632,25 @@ func (d *configDecoder) decodeHub(index int, t *toml.Table) (HubConfig, error) {
 		case "rooms":
 			value := kv.Value
 			roomsValue = &value
+		case "kjv_txt_file":
+			// The Bible text path belongs to the bot, not to one hub, so a
+			// hub-level copy is used only when neither [bot] nor the top level
+			// set one, and either way the operator is told where it belongs.
+			s, err := d.stringValue(label, key, kv)
+			if err != nil {
+				return hub, err
+			}
+			if strings.TrimSpace(s) == "" {
+				break
+			}
+			if strings.TrimSpace(d.cfg.KJVTxtFile) != "" {
+				d.warn("%v: %q belongs inside [bot]; the hub-level copy is ignored", label, key)
+				break
+			}
+			d.warn("%v: %q belongs inside [bot]; it is accepted here until it is moved", label, key)
+			if err := d.setKJVTxtFile(label, key, kv); err != nil {
+				return hub, err
+			}
 		case "respond_to":
 			if err := d.decodeRespondTo(label, kv, &hub); err != nil {
 				return hub, err

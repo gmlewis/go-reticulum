@@ -79,6 +79,10 @@ type command struct {
 	summary string
 	// usage is the argument shape, empty when the command takes none.
 	usage string
+	// detail is the extra guidance "help <command>" prints after the summary
+	// line. The literal {nick} is replaced with the nick this bot answers to,
+	// so every example addresses the bot the way the asker must.
+	detail []string
 	// run produces the reply lines for one invocation.
 	run func(*commandContext) []string
 }
@@ -140,6 +144,10 @@ type registry struct {
 	// lxmfBudget bounds how often the msg command writes into somebody else's
 	// inbox, which no other command does.
 	lxmfBudget *lxmfBudget
+	// kjv loads and caches the Bible text the kjv command searches. It is
+	// inert until the command runs, and its path is empty when the operator
+	// has not configured one.
+	kjv *kjvCache
 }
 
 // newRegistry builds the command table for one bot.
@@ -160,6 +168,7 @@ func newRegistry(b *bot) *registry {
 		watches:    b.announces.watches,
 		announces:  b.announces,
 		lxmfBudget: newLXMFBudget(),
+		kjv:        newKJVCache(botKJVTxtFile(b)),
 	}
 	r.commands = r.build()
 	sort.Slice(r.commands, func(i, j int) bool { return r.commands[i].name < r.commands[j].name })
@@ -255,157 +264,283 @@ func splitCommandLine(line string) (string, string) {
 	return strings.ToLower(trimmed[:idx]), strings.TrimSpace(trimmed[idx+1:])
 }
 
-// build is the command table itself.
+// build is the command table itself. Every entry documents itself: the summary
+// and usage are what "help" lists, and the detail is what "help <command>"
+// explains, so no command is a mystery.
 func (r *registry) build() []command {
 	return []command{
 		{
 			name:    "help",
 			summary: "list the commands, or explain one",
 			usage:   "help [command]",
-			run:     (*commandContext).runHelp,
+			detail: []string{
+				"{nick} help lists every command.",
+				"{nick} help <command> explains one, with examples.",
+			},
+			run: (*commandContext).runHelp,
 		},
 		{
 			name:    "ping",
 			summary: "check that the bot is awake",
-			run:     (*commandContext).runPing,
+			detail: []string{
+				"Answers pong, so a client can tell the bot is up and the link is live.",
+			},
+			run: (*commandContext).runPing,
 		},
 		{
 			name:    "uptime",
 			summary: "report how long the bot and this connection have been up",
-			run:     (*commandContext).runUptime,
+			detail: []string{
+				"Reports the bot's runtime, this hub's hash, and this connection's age.",
+			},
+			run: (*commandContext).runUptime,
 		},
 		{
 			name:    "whoami",
 			summary: "report your nick and identity hash as this hub sees them",
-			run:     (*commandContext).runWhoami,
+			detail: []string{
+				"Reports the nick this hub knows you by and your full identity hash.",
+			},
+			run: (*commandContext).runWhoami,
 		},
 		{
 			name:    "botinfo",
 			summary: "report the bot, this hub, and the bot's own identity",
-			run:     (*commandContext).runBotinfo,
+			detail: []string{
+				"Reports the bot's nick and identity, its hub's name and version, and",
+				"how many rooms it has joined and commands it offers.",
+			},
+			run: (*commandContext).runBotinfo,
 		},
 		{
 			name:    "dn",
 			summary: "send a direct NOTICE to one client",
 			usage:   dnoticeUsage,
-			run:     (*commandContext).runDnotice,
+			detail: []string{
+				"<nick|hash|me> picks the recipient; a hash prefix needs at least 6",
+				"hex characters, and me means you.",
+				"The text travels as a direct NOTICE, so it must fit one envelope.",
+			},
+			run: (*commandContext).runDnotice,
 		},
 		{
 			name:    "dnotice",
 			summary: "send a direct NOTICE to one client",
 			usage:   dnoticeUsage,
-			run:     (*commandContext).runDnotice,
+			detail: []string{
+				"<nick|hash|me> picks the recipient; a hash prefix needs at least 6",
+				"hex characters, and me means you.",
+				"The text travels as a direct NOTICE, so it must fit one envelope.",
+			},
+			run: (*commandContext).runDnotice,
 		},
 		{
 			name:    "dnoticecap",
 			summary: "report the hub's direct-notice capability",
 			usage:   "dnoticecap [target]",
-			run:     (*commandContext).runDnoticeCap,
+			detail: []string{
+				"With no target, reports whether this hub supports direct notices.",
+				"With a target, also reports whether that client is connected here.",
+			},
+			run: (*commandContext).runDnoticeCap,
 		},
 		{
 			name:    "dnoticeme",
 			summary: "send yourself a direct NOTICE, to test the K_DST path",
 			usage:   dnoticemeUsage,
-			run:     (*commandContext).runDnoticeme,
+			detail: []string{
+				"Sends the text to yourself as a direct NOTICE: a live test of the",
+				"private path, which no other command exercises.",
+			},
+			run: (*commandContext).runDnoticeme,
 		},
 		{
 			name:    "weather",
 			summary: "look up the weather for a place",
 			usage:   weatherUsage,
-			run:     (*commandContext).runWeather,
+			detail: []string{
+				"Needs weather_url in config.toml; the command says so when it is empty.",
+				"A place is letters, digits, spaces, commas, periods, hyphens, or",
+				"apostrophes — never a URL, which is what keeps the request on the",
+				"operator's own provider.",
+			},
+			run: (*commandContext).runWeather,
 		},
 		{
 			name:    "wx",
 			summary: "look up the weather for a place",
 			usage:   weatherUsage,
-			run:     (*commandContext).runWeather,
+			detail: []string{
+				"Same command as weather.",
+			},
+			run: (*commandContext).runWeather,
 		},
 		{
 			name:    "seen",
 			summary: "report when a client last spoke in a joined room",
 			usage:   seenUsage,
-			run:     (*commandContext).runSeen,
+			detail: []string{
+				"<nick|hash> is the client to look for.",
+				"Reads the live room buffers and the saved history, so the answer",
+				"survives a bot restart.",
+			},
+			run: (*commandContext).runSeen,
 		},
 		{
 			name:    "catchup",
 			summary: "summarize what was said in a room while you were away",
 			usage:   catchupUsage,
-			run:     (*commandContext).runCatchup,
+			detail: []string{
+				"<window> is a duration like 30m, 2h, or 1d; the default is 24h.",
+				"<room> limits the digest to one room.",
+			},
+			run: (*commandContext).runCatchup,
 		},
 		{
 			name:    "watch",
 			summary: "tell me when a name or hash announces",
 			usage:   watchUsage,
-			run:     (*commandContext).runWatch,
+			detail: []string{
+				"<filter> is a display name, an identity hash, or an announced name.",
+				"<ttl> is how long to watch, like 30m or 2h; the default is 24h.",
+				"At most 10 per client, 100 per bot, and never more than 7d.",
+			},
+			run: (*commandContext).runWatch,
 		},
 		{
 			name:    "unwatch",
 			summary: "stop watching for one or all of them",
 			usage:   unwatchUsage,
-			run:     (*commandContext).runUnwatch,
+			detail: []string{
+				"<n> is the number from a watches row; all clears every watch you own.",
+			},
+			run: (*commandContext).runUnwatch,
 		},
 		{
 			name:    "watches",
 			summary: "list what I am watching for",
 			usage:   watchesUsage,
-			run:     (*commandContext).runWatches,
+			detail: []string{
+				"Lists each watch with its filter and how long it has left.",
+			},
+			run: (*commandContext).runWatches,
 		},
 		{
 			name:    "search",
 			summary: "find where a term appeared in the rooms I have joined",
 			usage:   searchUsage,
-			run:     (*commandContext).runSearch,
+			detail: []string{
+				"<term> is the text to find; a trailing #room or joined room name",
+				"limits the search to that room.",
+				"Reads the live room buffers and the saved history, newest first.",
+			},
+			run: (*commandContext).runSearch,
 		},
 		{
 			name:    "path",
 			summary: "report the Reticulum path to a peer's destinations",
 			usage:   pathUsage,
-			run:     (*commandContext).runPath,
+			detail: []string{
+				"<nick|hash> is a peer the bot knows.",
+				"The answer names every destination the peer's identity publishes, with",
+				"hops, next hop, interface, and path age.",
+			},
+			run: (*commandContext).runPath,
 		},
 		{
 			name:    "launches",
 			summary: "list upcoming or recent space launches",
 			usage:   launchesUsage,
-			run:     (*commandContext).runLaunches,
+			detail: []string{
+				"[upcoming|past] picks the window and [1-5] is how many to list.",
+				"Needs launch_url in config.toml; answers are cached, because the",
+				"provider allows only a few anonymous calls per hour.",
+			},
+			run: (*commandContext).runLaunches,
 		},
 		{
 			name:    "flight",
 			summary: "where one flight is right now, by its flight number",
 			usage:   flightUsage,
-			run:     (*commandContext).runFlight,
+			detail: []string{
+				"<number> is the number a passenger knows, like BA123; BA 123 and",
+				"BA-123 work too.",
+				"Needs flight_url (the live state) in config.toml; flight_route_url is",
+				"optional and adds the airline, the airports, and the callsign.",
+			},
+			run: (*commandContext).runFlight,
 		},
 		{
 			name:    "msg",
 			summary: "send an LXMF message to a peer, online or not",
 			usage:   msgUsage,
-			run:     (*commandContext).runMsg,
+			detail: []string{
+				"<nick|hash> is the recipient and <text> is the message.",
+				"Needs lxmf_enabled = true in config.toml; store-and-forward also needs",
+				"lxmf_propagation_node.",
+				"The outcome arrives later as a direct NOTICE to you.",
+			},
+			run: (*commandContext).runMsg,
 		},
 		{
 			name:    "lxmf",
 			summary: "send an LXMF message to a peer, online or not",
 			usage:   msgUsage,
-			run:     (*commandContext).runMsg,
+			detail: []string{
+				"Same command as msg.",
+			},
+			run: (*commandContext).runMsg,
+		},
+		{
+			name:    "kjv",
+			summary: "look up a Bible verse, or search the King James text",
+			usage:   kjvUsage,
+			detail: []string{
+				"Needs kjv_txt_file in config.toml, pointing at a King James text file.",
+				"{nick} kjv jn3:16 — a reference; Psalm 23:1-6, ps23, and 1 jn 2 1 work too.",
+				"{nick} kjv shepherd — every verse that contains the word.",
+				"{nick} kjv love of god — verses with all those words;",
+				`  {nick} kjv "the love of God" is a phrase, matched consecutively.`,
+				"{nick} kjv love|charity, lov*, l?ve, l[ai]ve — OR and wildcards.",
+				"{nick} kjv love -hate — exclude verses that contain hate.",
+				"{nick} kjv love.*life — a regexp, matched across a whole verse.",
+				"Answers label the whole verse: John 3:16: For God so loved the world, ...",
+			},
+			run: (*commandContext).runKJV,
 		},
 		{
 			name:    "members",
 			summary: "list the clients in a room",
 			usage:   "members [room]",
-			run:     (*commandContext).runMembers,
+			detail: []string{
+				"With no room, answers for the first joined room and names it, then",
+				"mentions the others.",
+			},
+			run: (*commandContext).runMembers,
 		},
 		{
 			name:    "rooms",
 			summary: "list the rooms the bot has joined",
-			run:     (*commandContext).runRooms,
+			detail: []string{
+				"Lists the rooms the bot has joined on this hub.",
+			},
+			run: (*commandContext).runRooms,
 		},
 		{
 			name:    "id",
 			summary: "report the identity hash clients can use to address the bot",
-			run:     (*commandContext).runID,
+			detail: []string{
+				"Reports the bot's identity hash, its nick, and the @<hash-prefix>",
+				"alias that works even where its nickname is taken.",
+			},
+			run: (*commandContext).runID,
 		},
 	}
 }
 
-// runHelp lists the commands, or explains the one that was named.
+// runHelp lists the commands, or explains the one that was named. An explanation
+// is the summary line followed by the command's own detail, with {nick} replaced
+// by the nick this bot really answers to, so the examples are usable as written.
 func (c *commandContext) runHelp() []string {
 	if c.Args == "" {
 		return c.reg.helpListing()
@@ -419,7 +554,15 @@ func (c *commandContext) runHelp() []string {
 	if cmd.usage != "" {
 		line += ". Usage: " + cmd.usage
 	}
-	return []string{line}
+	lines := []string{line}
+	if len(cmd.detail) == 0 {
+		return lines
+	}
+	nick := c.effectiveTriggerNick()
+	for _, detail := range cmd.detail {
+		lines = append(lines, strings.ReplaceAll(detail, "{nick}", nick))
+	}
+	return lines
 }
 
 // runPing answers pong, the official bot's wording.
@@ -803,6 +946,15 @@ func (r *registry) identityHex() string {
 		return ""
 	}
 	return hexString(r.bot.ownHash)
+}
+
+// botKJVTxtFile returns the configured King James text-file path, or "" when
+// the operator has not set one. The kjv command reads it read-only.
+func botKJVTxtFile(b *bot) string {
+	if b == nil || b.cfg == nil {
+		return ""
+	}
+	return b.cfg.KJVTxtFile
 }
 
 // historyStore returns the reader for the persisted room history of the session's
