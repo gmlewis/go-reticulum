@@ -276,7 +276,7 @@ func digestRows(rows []*rrc.RRCMessage, since time.Time, filter digestFilter) []
 // never hub chatter, the standing greeting, an undated row, or the bot's own
 // lines.
 func digestable(row *rrc.RRCMessage, ownHex string) bool {
-	if row == nil || row.Pinned || row.Ts <= 0 {
+	if privateRow(row) || row.Ts <= 0 {
 		return false
 	}
 	switch row.Kind {

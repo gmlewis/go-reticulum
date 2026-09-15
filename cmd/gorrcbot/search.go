@@ -178,7 +178,7 @@ func (c *commandContext) searchMatches(rooms []string, term string) []*rrc.RRCMe
 // and a clock, must not be a standing pinned greeting, and must not be one of the
 // bot's own lines.
 func searchable(row *rrc.RRCMessage, ownHex string) bool {
-	if row == nil || row.Pinned || row.Ts <= 0 {
+	if privateRow(row) || row.Ts <= 0 {
 		return false
 	}
 	if strings.TrimSpace(row.Text) == "" {

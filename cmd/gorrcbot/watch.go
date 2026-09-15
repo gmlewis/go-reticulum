@@ -33,6 +33,9 @@ const (
 	watchUsage = "watch <name|hash> [ttl]"
 	// unwatchUsage is the usage line for the unwatch command.
 	unwatchUsage = "unwatch <n|all>"
+
+	// unwatchAllArg is the one token that means every watch at once.
+	unwatchAllArg = "all"
 	// watchesUsage is the usage line for the watches command.
 	watchesUsage = "watches"
 	// minWatchFilterBytes is the shortest usable filter: shorter tokens match far
@@ -131,7 +134,7 @@ func (t *watchTable) remove(ownerHex, token string, now time.Time) (int, error) 
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.expireLocked(now)
-	if strings.EqualFold(strings.TrimSpace(token), "all") {
+	if strings.EqualFold(strings.TrimSpace(token), unwatchAllArg) {
 		kept := t.items[:0]
 		removed := 0
 		for _, w := range t.items {
@@ -256,8 +259,10 @@ var (
 	errWatchBusy = fmt.Errorf("this bot is watching for too many things right now; try again later")
 	// errNoWatches reports an unwatch with nothing to unwatch.
 	errNoWatches = fmt.Errorf("you are not watching for anything")
-	// errBadWatchNumber reports an unwatch token that is not a number.
-	errBadWatchNumber = fmt.Errorf("the watch number must be a number")
+	// errBadWatchNumber reports an unwatch token that is not a number. It names
+	// both ways out, because a filter name is the natural thing to type here and
+	// the answer has to say what would work instead.
+	errBadWatchNumber = fmt.Errorf("the watch number must be a number: %v lists them, and %q drops every watch", watchesUsage, unwatchAllArg)
 	// errNoSuchWatch reports an unwatch of a number the asker does not hold.
 	errNoSuchWatch = fmt.Errorf("you have no watch with that number")
 	// errWatchTTL reports an unusable time to live.
@@ -287,13 +292,42 @@ func (c *commandContext) runWatch() []string {
 	if err != nil {
 		return []string{err.Error()}
 	}
-	lines := []string{fmt.Sprintf("watching for %q for %v; %v", w.Filter, formatTTL(w.ExpiresAt.Sub(w.CreatedAt)), watchForgetLine)}
+	matches := c.reg.announces.countMatches(w.Filter)
+	line := fmt.Sprintf("watching for %q for %v", w.Filter, formatTTL(w.ExpiresAt.Sub(w.CreatedAt)))
+	if matches > 0 {
+		line += "; " + pluralCount(matches, "cached announce matches it now", "cached announces match it now")
+	}
+	lines := []string{line + "; " + watchForgetLine}
+	if matches == 0 {
+		// A watch that cannot match is worth saying out loud: the alternative is
+		// an asker waiting for a notice that the cache they are watching can
+		// never produce.
+		if hint := watchNoMatchLine(c.reg.announces.size(), w.Filter); hint != "" {
+			lines = append(lines, hint)
+		}
+	}
 	// A hub that cannot carry direct notices can never report a match back, so
 	// the confirmation says so instead of letting the asker wait for nothing.
 	if !c.session().conn.HasCapability(rrc.CapDirectNotice) {
 		lines = append(lines, watchDeliveryLine(rrc.ErrDirectNoticesUnsupported))
 	}
 	return lines
+}
+
+// watchNoMatchLine explains why a freshly armed watch has nothing to match, so a
+// filter that can never fire is reported at arm time rather than left to wait. An
+// empty cache is the load-bearing case: the bot matches only the announces it
+// received itself, so an empty cache means no announce has arrived at all.
+func watchNoMatchLine(cacheSize int, filter string) string {
+	if cacheSize == 0 {
+		return "no announce has been cached yet, so nothing can match: this bot only matches announces it receives itself"
+	}
+	if isHexString(strings.ToLower(strings.TrimSpace(filter))) {
+		return fmt.Sprintf("nothing matches it yet (%v cached; a hash prefix matches when that destination announces next)",
+			pluralCount(cacheSize, "announce", "announces"))
+	}
+	return fmt.Sprintf("nothing matches it yet (%v cached; an announce publishes a name only sometimes, so a hash prefix is the reliable filter)",
+		pluralCount(cacheSize, "announce", "announces"))
 }
 
 // parseWatchRequest reads a watch command's arguments: a filter, and optionally
@@ -384,7 +418,7 @@ func (c *commandContext) runUnwatch() []string {
 	if err != nil {
 		return []string{err.Error()}
 	}
-	if strings.EqualFold(strings.TrimSpace(c.Args), "all") {
+	if strings.EqualFold(strings.TrimSpace(c.Args), unwatchAllArg) {
 		return []string{fmt.Sprintf("unwatching %v", pluralCount(removed, "watch", "watches"))}
 	}
 	return []string{fmt.Sprintf("unwatching %v", c.Args)}

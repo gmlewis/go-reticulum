@@ -53,7 +53,7 @@ func TestRegistryNamesAreStable(t *testing.T) {
 		"botinfo", "dn", "dnotice", "dnoticecap", "dnoticeme", "help", "ping",
 		"uptime", "weather", "whoami", "wx",
 		// This bot's own additions.
-		"catchup", "id", "launches", "lxmf", "members", "msg", "path", "rooms",
+		"catchup", "flight", "id", "launches", "lxmf", "members", "msg", "path", "rooms",
 		"search", "seen", "unwatch", "watch", "watches",
 	}
 	// The registry sorts its rows, so the expectation is sorted too; the groups
@@ -598,7 +598,7 @@ func TestMembersReportsTheRoomMemberList(t *testing.T) {
 	if len(lines) != 1 {
 		t.Fatalf("members returned %v lines, want 1", len(lines))
 	}
-	if !strings.Contains(lines[0], "members in general") || !strings.Contains(lines[0], "Dave") {
+	if !strings.Contains(lines[0], "members of general") || !strings.Contains(lines[0], "Dave") {
 		t.Errorf("members = %q, want the official /who notice shape", lines[0])
 	}
 }
@@ -751,5 +751,49 @@ func TestRegistryExposesSummariesAndUsage(t *testing.T) {
 		if cmd.name != strings.ToLower(cmd.name) {
 			t.Errorf("command %q is not lowercase", cmd.name)
 		}
+	}
+}
+
+// TestMembersReplyIsNotProtocolTraffic asserts the members reply cannot be
+// mistaken for hub protocol traffic. "members in <room>: ..." is exactly the
+// shape of the hub's own /who reply (rrc/commands.go, handleWho), and a client
+// treats a NOTICE of that shape as a member-set update: it parses it
+// (rrc.ParseWhoNotice), overwrites the room's member list, and silently consumes
+// it whenever its periodic auto-/who is outstanding — so the reply reached
+// nobody's screen while clobbering what every client believed about the room.
+func TestMembersReplyIsNotProtocolTraffic(t *testing.T) {
+	t.Parallel()
+
+	reg, session, fake := commandFixture(t, nil)
+	peer, err := rns.NewIdentity(true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake.setKnownPeer(hexString(peer.Hash), "Dave")
+
+	tests := []struct {
+		name string
+		line string
+	}{
+		{name: "a room with members", line: "members"},
+		{name: "a room with none reported", line: "members empty"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			lines := runLines(t, reg, session, tt.line)
+			if len(lines) != 1 {
+				t.Fatalf("lines = %v, want one", lines)
+			}
+			if room, _, isWho := rrc.ParseWhoNotice(lines[0]); isWho {
+				t.Errorf("the reply %q parses as a /who reply for room %q", lines[0], room)
+			}
+			if rooms := rrc.ParseRoomListNotice(lines[0]); rooms != nil {
+				t.Errorf("the reply %q parses as a room list: %v", lines[0], rooms)
+			}
+			if strings.HasPrefix(lines[0], "room ") {
+				t.Errorf("the reply %q starts with the reserved protocol ack prefix", lines[0])
+			}
+		})
 	}
 }

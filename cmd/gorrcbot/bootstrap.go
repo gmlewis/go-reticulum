@@ -135,10 +135,22 @@ weather_url = ""
 # anonymous calls per hour per IP, which is why the bot caches every answer:
 #
 #   launch_url = "https://ll.thespacedevs.com/2.3.0/launches/{mode}/?limit={limit}"
+#   flight_url = "https://api.adsb.lol/v2/callsign/{flight}"
+#   flight_route_url = "https://api.adsbdb.com/v0/callsign/{flight}"
 #
 # The provider's default answer carries the operator and pad names; appending
 # "&mode=list" makes its answer roughly ten times smaller and drops both.
 launch_url = ""
+
+# flight reports where one flight is right now, by the number a passenger knows
+# ("BA123"). flight_route_url is asked first: it turns that number into the radio
+# callsign the live feed uses and names the airline and the two airports.
+# flight_url is the live state. Both providers are keyless and both are optional;
+# with no flight_url the command says it is not configured. Any keyed provider
+# works too: put its key in the template, and note that the bot never repeats a
+# configured URL into a room.
+flight_url = ""
+flight_route_url = ""
 
 # LXMF messaging, which is what the msg command (alias: lxmf) uses. RRC is
 # connection-oriented, so a mention of a peer who is offline is lost; LXMF is

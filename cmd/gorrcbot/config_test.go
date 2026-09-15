@@ -70,6 +70,8 @@ announce_on_join = true
 max_reply_lines = 3
 storage_dir = "/tmp/storage"
 weather_url = "https://example.invalid/{place}"
+flight_url = "https://api.adsb.invalid/v2/callsign/{flight}"
+flight_route_url = "https://api.adsbdb.invalid/v0/callsign/{flight}"
 
 [[hubs]]
 name = "One"
@@ -105,6 +107,65 @@ rooms = ["general"]
 	}
 	if cfg.WeatherURL != "https://example.invalid/{place}" {
 		t.Errorf("WeatherURL = %q, want the configured provider template", cfg.WeatherURL)
+	}
+	if cfg.FlightURL != "https://api.adsb.invalid/v2/callsign/{flight}" {
+		t.Errorf("FlightURL = %q, want the configured provider template", cfg.FlightURL)
+	}
+	if cfg.FlightRouteURL != "https://api.adsbdb.invalid/v0/callsign/{flight}" {
+		t.Errorf("FlightRouteURL = %q, want the configured provider template", cfg.FlightRouteURL)
+	}
+}
+
+// TestDecodeBotConfigWarnsOnUnusableFlightTemplates asserts both flight templates
+// follow the rule the other provider templates follow: an unusable one is reported
+// once at startup, with its own key named, and the value is kept so the command
+// refuses it instead of claiming nothing is configured.
+func TestDecodeBotConfigWarnsOnUnusableFlightTemplates(t *testing.T) {
+	t.Parallel()
+
+	cfg, warnings, err := DecodeBotConfig("config.toml", `
+[bot]
+flight_url = "https://api.adsb.invalid/v2/callsign"
+flight_route_url = "file:///etc/{flight}"
+
+[[hubs]]
+name = "One"
+destination = "`+testHubOne+`"
+rooms = ["general"]
+`)
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if cfg.FlightURL == "" || cfg.FlightRouteURL == "" {
+		t.Fatalf("templates were dropped: %q, %q", cfg.FlightURL, cfg.FlightRouteURL)
+	}
+	joined := strings.Join(warnings, "\n")
+	if !strings.Contains(joined, "flight_url") || !strings.Contains(joined, "placeholder") {
+		t.Errorf("warnings = %v, want one naming flight_url and the missing placeholder", warnings)
+	}
+	if !strings.Contains(joined, "flight_route_url") || !strings.Contains(joined, "http or https") {
+		t.Errorf("warnings = %v, want one naming flight_route_url and the scheme problem", warnings)
+	}
+	if len(warnings) != 2 {
+		t.Errorf("warnings = %v, want exactly two", warnings)
+	}
+
+	// A usable pair of templates warns about nothing.
+	_, warnings, err = DecodeBotConfig("config.toml", `
+[bot]
+flight_url = "https://api.adsb.lol/v2/callsign/{flight}"
+flight_route_url = "https://api.adsbdb.com/v0/callsign/{flight}"
+
+[[hubs]]
+name = "One"
+destination = "`+testHubOne+`"
+rooms = ["general"]
+`)
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none for two usable templates", warnings)
 	}
 }
 

@@ -141,6 +141,7 @@ func (r *responder) handle(s *hubSession, msg *rrc.RRCMessage) {
 
 	if r.isStale(msg, now) {
 		if !r.admit(requester, now) {
+			logf("suppressed the request from %v: the %vs cooldown is still running", requester, r.cfg.CooldownSecs)
 			return
 		}
 		r.send(s, room, msg, r.directRoute(s, msg, trig.Direct), []string{staleReply})
@@ -148,6 +149,9 @@ func (r *responder) handle(s *hubSession, msg *rrc.RRCMessage) {
 	}
 
 	if !r.admit(requester, now) {
+		// Without this line a suppressed request looks exactly like a bot that
+		// ignored the asker: the request line above is the only other trace.
+		logf("suppressed the request from %v: the %vs cooldown is still running", requester, r.cfg.CooldownSecs)
 		return
 	}
 

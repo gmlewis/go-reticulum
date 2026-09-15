@@ -146,16 +146,14 @@ func TestWatchConfirmsListsAndUnwatches(t *testing.T) {
 	t.Parallel()
 
 	f := newWatchFixture(t)
-	assertLines(t, f.line(t, "watch retibooks"), []string{
-		`watching for "retibooks" for 24h; a bot restart forgets it`,
-	})
+	assertWatchAnswer(t, f.line(t, "watch retibooks"),
+		`watching for "retibooks" for 24h; a bot restart forgets it`)
 	assertLines(t, f.line(t, "watches"), []string{
 		"1 watch:",
 		`1. "retibooks", 1d left`,
 	})
-	assertLines(t, f.line(t, "watch nomadnet.node"), []string{
-		`watching for "nomadnet.node" for 24h; a bot restart forgets it`,
-	})
+	assertWatchAnswer(t, f.line(t, "watch nomadnet.node"),
+		`watching for "nomadnet.node" for 24h; a bot restart forgets it`)
 	assertLines(t, f.line(t, "unwatch 1"), []string{"unwatching 1"})
 	// The remaining watch is renumbered, so "1" stays the first one shown.
 	assertLines(t, f.line(t, "watches"), []string{
@@ -186,14 +184,12 @@ func TestWatchRejectsUnusableFilters(t *testing.T) {
 		assertLines(t, got, []string{errWatchFilter.Error()})
 	}
 	// A name in another script is a name, not an attack.
-	assertLines(t, f.line(t, "watch 京都ノード"), []string{
-		`watching for "京都ノード" for 24h; a bot restart forgets it`,
-	})
+	assertWatchAnswer(t, f.line(t, "watch 京都ノード"),
+		`watching for "京都ノード" for 24h; a bot restart forgets it`)
 	// Runs of whitespace collapse, so a name typed with a stray newline or a
 	// double space still matches the announce it was meant for.
-	assertLines(t, f.line(t, "watch reti\nbooks"), []string{
-		`watching for "reti books" for 24h; a bot restart forgets it`,
-	})
+	assertWatchAnswer(t, f.line(t, "watch reti\nbooks"),
+		`watching for "reti books" for 24h; a bot restart forgets it`)
 }
 
 // TestWatchHonoursARequestedTimeToLive asserts an asker can choose how long to
@@ -265,7 +261,10 @@ func TestWatchHonoursARequestedTimeToLive(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			f := newWatchFixture(t)
-			assertLines(t, f.line(t, "watch "+tt.args), tt.lines)
+			// This table is about reading the arguments, so it asserts the first
+			// line and lets the cache hint follow: what the hint says is
+			// TestWatchReportsWhatTheCacheCanMatch's subject.
+			assertWatchAnswer(t, f.line(t, "watch "+tt.args), tt.lines[0])
 			if tt.after == 0 {
 				return
 			}
@@ -306,18 +305,16 @@ func TestWatchCapsAndDuplicates(t *testing.T) {
 	t.Parallel()
 
 	f := newWatchFixture(t)
-	assertLines(t, f.line(t, "watch alpha"), []string{
-		`watching for "alpha" for 24h; a bot restart forgets it`,
-	})
+	assertWatchAnswer(t, f.line(t, "watch alpha"),
+		`watching for "alpha" for 24h; a bot restart forgets it`)
 	assertLines(t, f.line(t, "watch ALPHA"), []string{errWatchDuplicate.Error()})
 	for i := 1; i < maxWatchesPerPeer; i++ {
 		f.line(t, fmt.Sprintf("watch filter%v", i))
 	}
 	assertLines(t, f.line(t, "watch onemore"), []string{errWatchLimit.Error()})
 	// Another asker is not affected by the first one's cap.
-	assertLines(t, f.run(t, peerHashFor(0x22), "Other", "watch onemore"), []string{
-		`watching for "onemore" for 24h; a bot restart forgets it`,
-	})
+	assertWatchAnswer(t, f.run(t, peerHashFor(0x22), "Other", "watch onemore"),
+		`watching for "onemore" for 24h; a bot restart forgets it`)
 }
 
 // TestWatchesArePerAsker asserts each asker sees only their own watches, numbered
@@ -364,9 +361,10 @@ func TestAnnounceMatchesByNameAndHash(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			f := newWatchFixture(t)
-			assertLines(t, f.line(t, "watch "+tt.filter), []string{
-				fmt.Sprintf("watching for %q for 24h; a bot restart forgets it", tt.filter),
-			})
+			// The watch is armed before the announce arrives, so the cache hint
+			// belongs here and the delivery below is this table's subject.
+			assertWatchAnswer(t, f.line(t, "watch "+tt.filter),
+				fmt.Sprintf("watching for %q for 24h; a bot restart forgets it", tt.filter))
 			f.announce(t, "nomadnetwork.node", "Retibooks Node", dest, identity)
 			notices := f.notices()
 			if tt.hit && len(notices) != 1 {
@@ -398,9 +396,8 @@ func TestWatchNoticeReportsReachability(t *testing.T) {
 		NextHop:   mustHex("9f3c9f3c9f3c9f3c9f3c9f3c9f3c9f3c"),
 		Hops:      2,
 	})
-	assertLines(t, f.line(t, "watch retibooks"), []string{
-		`watching for "retibooks" for 24h; a bot restart forgets it`,
-	})
+	assertWatchAnswer(t, f.line(t, "watch retibooks"),
+		`watching for "retibooks" for 24h; a bot restart forgets it`)
 	f.announce(t, "nomadnetwork.node", "Retibooks", dest, nil)
 	assertLines(t, f.notices(), []string{
 		"announce: Retibooks nomadnetwork.node c388d7a0b1c2 — 2 hops via 9f3c9f3c9f3c on None",
@@ -458,8 +455,11 @@ func TestWatchWithoutDirectNoticeSupportSaysSo(t *testing.T) {
 
 	f := newWatchFixture(t)
 	f.fake.setCapability(rrc.CapDirectNotice, false)
+	// A cached announce that matches keeps the no-match hint out of the answer, so
+	// this test stays about the capability caveat alone.
+	f.cache.process(announce{DestHex: "aa11", Name: "Retibooks", Aspect: "nomadnetwork.node", At: f.clock})
 	assertLines(t, f.line(t, "watch retibooks"), []string{
-		`watching for "retibooks" for 24h; a bot restart forgets it`,
+		`watching for "retibooks" for 24h; 1 cached announce matches it now; a bot restart forgets it`,
 		watchDeliveryLine(rrc.ErrDirectNoticesUnsupported),
 	})
 }
@@ -747,4 +747,107 @@ func TestWatchCommandsAreRegistered(t *testing.T) {
 			t.Errorf("%v usage = %q, want %q", name, cmd.usage, usage)
 		}
 	}
+}
+
+// assertWatchAnswer asserts the first line of a watch answer and that every line
+// after it is the no-match hint, so a table about one question need not restate
+// the other.
+func assertWatchAnswer(t *testing.T, got []string, want string) {
+	t.Helper()
+	if len(got) == 0 {
+		t.Fatal("no answer at all")
+	}
+	if got[0] != want {
+		t.Errorf("line 0 = %q, want %q", got[0], want)
+	}
+	for i, line := range got[1:] {
+		if !strings.HasPrefix(line, "no announce has been cached yet") &&
+			!strings.HasPrefix(line, "nothing matches it yet") {
+			t.Errorf("line %v = %q, want a no-match hint or nothing at all", i+1, line)
+		}
+	}
+}
+
+// TestWatchReportsWhatTheCacheCanMatch asserts the arm-time answer says what the
+// announce cache can actually match here. A filter that matches nothing in the
+// cache is a filter that may never fire — the fleet's nomadnetwork.node announces
+// carry no display name, so a name filter matches nothing — and the asker must
+// not be left to wait for a notice the cache cannot produce.
+func TestWatchReportsWhatTheCacheCanMatch(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		cached     []announce
+		args       string
+		wantFirst  string
+		wantSecond string
+	}{
+		{
+			name:       "an empty cache cannot match anything",
+			args:       "retibooks",
+			wantFirst:  `watching for "retibooks" for 24h; a bot restart forgets it`,
+			wantSecond: "no announce has been cached yet, so nothing can match: this bot only matches announces it receives itself",
+		},
+		{
+			name:       "a name filter matches nothing in a cache without a name",
+			cached:     []announce{{DestHex: "aa11", Name: "", Aspect: "nomadnetwork.node"}},
+			args:       "retibooks",
+			wantFirst:  `watching for "retibooks" for 24h; a bot restart forgets it`,
+			wantSecond: "nothing matches it yet (1 announce cached; an announce publishes a name only sometimes, so a hash prefix is the reliable filter)",
+		},
+		{
+			name:       "a hash prefix that matches nothing says when it could",
+			cached:     []announce{{DestHex: "bb22", Name: "Node", Aspect: "nomadnetwork.node"}},
+			args:       "aa11",
+			wantFirst:  `watching for "aa11" for 24h; a bot restart forgets it`,
+			wantSecond: "nothing matches it yet (1 announce cached; a hash prefix matches when that destination announces next)",
+		},
+		{
+			name:      "a filter that already matches says so",
+			cached:    []announce{{DestHex: "aa11", Name: "Retibooks Node", Aspect: "nomadnetwork.node"}},
+			args:      "retibooks",
+			wantFirst: `watching for "retibooks" for 24h; 1 cached announce matches it now; a bot restart forgets it`,
+		},
+		{
+			name: "a matching hash prefix counts every destination it names",
+			cached: []announce{
+				{DestHex: "aa1122", Name: "One", Aspect: "nomadnetwork.node"},
+				{DestHex: "aa1133", Name: "Two", Aspect: "lxmf.delivery"},
+			},
+			args:      "aa11",
+			wantFirst: `watching for "aa11" for 24h; 2 cached announces match it now; a bot restart forgets it`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f := newWatchFixture(t)
+			for _, entry := range tt.cached {
+				entry.At = f.clock
+				f.cache.process(entry)
+			}
+			lines := f.line(t, "watch "+tt.args)
+			if len(lines) == 0 || lines[0] != tt.wantFirst {
+				t.Fatalf("line 0 = %q, want %q", firstOrEmpty(lines), tt.wantFirst)
+			}
+			if tt.wantSecond == "" {
+				if len(lines) != 1 {
+					t.Errorf("lines = %q, want just the confirmation", lines)
+				}
+				return
+			}
+			if len(lines) != 2 || lines[1] != tt.wantSecond {
+				t.Errorf("lines = %q, want the confirmation and %q", lines, tt.wantSecond)
+			}
+		})
+	}
+}
+
+// firstOrEmpty reports the first line, or an empty string when there is none.
+func firstOrEmpty(lines []string) string {
+	if len(lines) == 0 {
+		return ""
+	}
+	return lines[0]
 }

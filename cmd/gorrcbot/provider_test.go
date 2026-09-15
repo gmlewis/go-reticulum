@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +31,11 @@ func TestSanitizePlaceAcceptsRealPlaces(t *testing.T) {
 		{name: "two words", in: "Ann Arbor", want: "Ann Arbor"},
 		{name: "padded and repeated spaces", in: "  Ann   Arbor  ", want: "Ann Arbor"},
 		{name: "city and country", in: "Paris, France", want: "Paris, France"},
+		{name: "city and state abbreviation", in: "Orlando, FL", want: "Orlando, FL"},
+		{name: "city and state without a space", in: "Orlando,FL", want: "Orlando,FL"},
+		{name: "city and state, padded and doubled", in: "  Orlando ,   FL  ", want: "Orlando , FL"},
+		{name: "city and abbreviated district", in: "Washington, D.C.", want: "Washington, D.C."},
+		{name: "three words and a state", in: "Salt Lake City, UT", want: "Salt Lake City, UT"},
 		{name: "abbreviation", in: "St. Louis", want: "St. Louis"},
 		{name: "apostrophe", in: "O'Fallon", want: "O'Fallon"},
 		{name: "hyphen", in: "Baden-Wuerttemberg", want: "Baden-Wuerttemberg"},
@@ -250,6 +256,100 @@ func TestProviderURLSubstitutesTheEscapedPlace(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("providerURL(%q, %q) = %q, want %q", tt.template, tt.place, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestEscapeProviderValueIsDataInEitherPosition asserts the invariant the escaper
+// exists for: an escaped value round-trips back to exactly what it was, both as a
+// path segment and as a query value, so a template may put its placeholder
+// anywhere without the value becoming structure.
+//
+// The characters in this table are the whole reason the escaper is not just
+// url.PathEscape: the last four are legal in a path, so PathEscape leaves them
+// alone, and every one of them means something in a query.
+func TestEscapeProviderValueIsDataInEitherPosition(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{
+		"Ann Arbor",
+		"Paris, France",
+		"Z\u00fcrich",
+		"\u4eac\u90fd",
+		"a&b",
+		"a=b",
+		"a+b",
+		"a;b",
+		"a?b",
+		"a#b",
+		"50%",
+		"a/b",
+		"a\\b",
+		`a"b`,
+		"a<b>c",
+		"a:b@c",
+	} {
+		t.Run(value, func(t *testing.T) {
+			t.Parallel()
+			escaped := escapeProviderValue(value)
+
+			// As a path segment: what the server would route on.
+			u, err := url.Parse("https://example.invalid/" + escaped)
+			if err != nil {
+				t.Fatalf("url.Parse(%q): %v", escaped, err)
+			}
+			if got := strings.TrimPrefix(u.Path, "/"); got != value {
+				t.Errorf("path decoded to %q, want the original %q", got, value)
+			}
+
+			// As a query value: the parameter must keep its value and gain no
+			// sibling, which is what "&" and "=" would do if they were left raw.
+			query, err := url.ParseQuery("q=" + escaped)
+			if err != nil {
+				t.Fatalf("url.ParseQuery(%q): %v", escaped, err)
+			}
+			if len(query) != 1 {
+				t.Fatalf("query %v from %q has %v parameters, want exactly one", query, escaped, len(query))
+			}
+			if got := query.Get("q"); got != value {
+				t.Errorf("query value decoded to %q, want the original %q", got, value)
+			}
+		})
+	}
+}
+
+// TestProviderURLValueCannotAddAQueryParameter asserts the concrete attack the
+// escaper closes: a value that looks like a parameter must not become one, so an
+// operator's "?q={place}&units=metric" keeps its own two parameters whatever the
+// argument says.
+func TestProviderURLValueCannotAddAQueryParameter(t *testing.T) {
+	t.Parallel()
+
+	const template = "https://api.example.invalid/wx?q={place}&units=metric"
+	for _, place := range []string{"London&units=imperial", "London&x=1&y=2", "London=other", "London;units=imperial"} {
+		t.Run(place, func(t *testing.T) {
+			t.Parallel()
+			got, err := providerURL(template, place)
+			if err != nil {
+				t.Fatalf("providerURL: %v", err)
+			}
+			parsed, err := url.Parse(got)
+			if err != nil {
+				t.Fatalf("url.Parse(%q): %v", got, err)
+			}
+			query, err := url.ParseQuery(parsed.RawQuery)
+			if err != nil {
+				t.Fatalf("url.ParseQuery(%q): %v", parsed.RawQuery, err)
+			}
+			if len(query) != 2 {
+				t.Fatalf("query %v from %q has %v parameters, want the template's own two", query, got, len(query))
+			}
+			if query.Get("q") != place {
+				t.Errorf("q = %q, want the whole argument %q as data", query.Get("q"), place)
+			}
+			if query.Get("units") != "metric" {
+				t.Errorf("units = %q, want the template's own value untouched", query.Get("units"))
 			}
 		})
 	}

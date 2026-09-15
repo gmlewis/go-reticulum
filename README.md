@@ -318,6 +318,10 @@ weather_url = ""           # optional http(s) template; {place} is substituted a
 launch_url = ""            # optional http(s) template for launches; {mode} and {limit} are substituted after sanitizing. Empty disables launches
 #                           the launch provider's default answer carries the operator and pad names;
 #                           appending "&mode=list" makes its answer ~10x smaller and drops both
+flight_url = ""            # optional http(s) template for flight; {flight} is substituted after validating the number.
+#                           Empty disables flight. This is the LIVE state: altitude, speed, track, position, squawk
+flight_route_url = ""      # optional second http(s) template, asked first: {flight} becomes the airline and airports,
+#                           and its radio callsign is what the live feed is then queried with. Empty = live state only
 lxmf_enabled = false       # true adds the LXMF sender (msg/lxmf), so a peer can be reached while offline
 lxmf_propagation_node = "" # optional 32-hex LXMF propagation node, for store-and-forward
 lxmf_announce_minutes = 360 # how often the bot announces its own lxmf.delivery address, so a reply can be routed back (at least 1)
@@ -363,6 +367,7 @@ plus a few that only matter on a mesh:
 | `dnoticeme <text>` | send yourself a direct NOTICE — a live test of the private path |
 | `weather`, `wx <place>` | look up the weather (needs `weather_url`; the place is any real name — see below — and the answer is stripped of terminal escapes) |
 | `launches [upcoming\|past] [1-5]` | the next few launches, or the most recent ones (needs `launch_url`; answers are cached, because the provider allows 15 anonymous calls per hour) |
+| `flight <number>` | where one flight is right now, by the number a passenger knows (`BA123`): the route it is flying, then its altitude, climb or descent, speed, track, position, squawk and how old that position is (needs `flight_url`; see below) |
 | `path <nick\|hash>` | how the transport would reach a peer: the destinations its identity publishes, with hops, next hop, interface, and path age |
 | `watch <name\|hash> [ttl]` | ask for a direct NOTICE when something announces — a peer, a node, or a hub. At most 10 per client, 100 per bot, 24 h by default and never more than 7 d |
 | `unwatch <n\|all>` | stop watching for one of them, or all of them |
@@ -377,6 +382,27 @@ plus a few that only matter on a mesh:
 
 Each of these can be explained on demand: `@gorrcbot help path` prints that one
 command's purpose and usage.
+
+**Flight status uses two keyless providers, and never guesses.** `flight <number>`
+takes the number a passenger knows (`BA123`, `ba 123`, and `BA-123` all work) and
+asks two providers. `flight_route_url` is asked first: it resolves the number to
+the radio callsign the live feed uses (`BA123` → `BAW123`) and names the airline
+and the two airports. `flight_url` is then asked with that callsign for the live
+state: altitude, climb or descent, ground speed, track, position, squawk and
+aircraft type. Both have sensible keyless defaults, both are plain HTTP templates
+with a `{flight}` placeholder, and either can be pointed at a keyed provider
+instead — the bot never repeats a configured URL, which may carry a key.
+
+The answer keeps the two apart on purpose. An empty aircraft list is reported as
+"no aircraft is transmitting that callsign right now: it may be between flights,
+or beyond receiver range", which is a real answer and not a failure; a number no
+route provider publishes is reported as an unknown number; and if one provider is
+unreachable the other's answer is still reported with a note saying what was
+missing. Every position is reported with its age ("position heard 4s ago"), a
+position older than a minute is called out as old, and cached answers keep ageing
+honestly rather than being re-presented as live. Emergencies are raised in plain
+words — the emergency field, the alert flag, and the 7500, 7600 and 7700 squawk
+codes — because the point of the command is the person on board.
 
 **Places and names are text, not bytes.** `weather` and the watch filters accept
 real names in any script — `Zürich`, `京都`, `São Paulo` — along with spaces,

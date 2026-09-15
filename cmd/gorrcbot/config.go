@@ -82,6 +82,15 @@ type BotConfig struct {
 	// {limit} are substituted after validation, and the window is "upcoming" or
 	// "previous". Empty disables the commands, which then say so.
 	LaunchURL string
+	// FlightURL is an optional provider template for flight; {flight} is replaced
+	// with the requested flight number. Empty disables the command, which then
+	// says so.
+	FlightURL string
+	// FlightRouteURL is an optional second provider template for flight, asked
+	// first to turn the number a passenger knows into the radio callsign the live
+	// feed uses, and to name the airline and the two airports. Empty means the
+	// command reports the live state alone.
+	FlightRouteURL string
 	// WeatherURL is an optional provider template for weather/wx; {place} is
 	// replaced with the requested place. It must be an absolute http:// or
 	// https:// URL carrying no credentials, and the place is validated against
@@ -246,6 +255,8 @@ var botKeys = map[string]bool{
 	"storage_dir":           true,
 	"weather_url":           true,
 	"launch_url":            true,
+	"flight_url":            true,
+	"flight_route_url":      true,
 	"lxmf_enabled":          true,
 	"lxmf_propagation_node": true,
 	"lxmf_announce_minutes": true,
@@ -373,6 +384,25 @@ func (d *configDecoder) decodeBotTable(t *toml.Table) error {
 			if trimmed := strings.TrimSpace(s); trimmed != "" {
 				if err := validateProviderTemplate(trimmed, launchTokens...); err != nil {
 					d.warn("[bot] launch_url is unusable (%v); launches stays off until it is fixed", err)
+				}
+			}
+		case "flight_url", "flight_route_url":
+			s, err := d.stringValue("[bot]", key, kv)
+			if err != nil {
+				return err
+			}
+			if key == "flight_url" {
+				d.cfg.FlightURL = s
+			} else {
+				d.cfg.FlightRouteURL = s
+			}
+			// Same rule as the other provider templates: an unusable template
+			// is an operator error, reported once at startup, and the value is
+			// kept so the command refuses it instead of reporting "not
+			// configured" for a setting that is set.
+			if trimmed := strings.TrimSpace(s); trimmed != "" {
+				if err := validateProviderTemplate(trimmed, flightToken); err != nil {
+					d.warn("[bot] %v is unusable (%v); flight stays off until it is fixed", key, err)
 				}
 			}
 		case "nick":

@@ -124,6 +124,10 @@ type registry struct {
 	// paths is the Reticulum transport the path command reads. It is nil when
 	// the bot runs without one (unit tests), and the command says so.
 	paths pathLookup
+	// flightRoutes and flightLive cache parsed flight answers, keyed by the URL
+	// that produced them.
+	flightRoutes *flightCache[flightRoute]
+	flightLive   *flightCache[flightLive]
 	// watches is the subscription table the watch commands read. It is small
 	// and in-memory: a watch does not survive a restart, and says so.
 	watches *watchTable
@@ -146,6 +150,11 @@ func newRegistry(b *bot) *registry {
 		aliases: map[string]string{"dn": "dnotice", "wx": "weather", "lxmf": "msg"},
 		fetch:   httpFetch,
 		cache:   newProviderCache(providerCacheTTL, providerCacheMaxEntries),
+		// Flight answers are cached apart from the shared provider cache: a
+		// route is static, while a live position is only worth reusing for as
+		// long as it is still roughly where the aircraft is.
+		flightRoutes: newFlightCache[flightRoute](flightRouteCacheTTL, providerCacheMaxEntries),
+		flightLive:   newFlightCache[flightLive](flightLiveCacheTTL, providerCacheMaxEntries),
 		// The announce cache belongs to the bot, which hears the announces; the
 		// watch commands are just its user interface.
 		watches:    b.announces.watches,
@@ -322,6 +331,12 @@ func (r *registry) build() []command {
 			summary: "list upcoming or recent space launches",
 			usage:   launchesUsage,
 			run:     (*commandContext).runLaunches,
+		},
+		{
+			name:    "flight",
+			summary: "where one flight is right now, by its flight number",
+			usage:   flightUsage,
+			run:     (*commandContext).runFlight,
 		},
 		{
 			name:    "msg",
@@ -510,8 +525,13 @@ func (c *commandContext) runWeather() []string {
 	return []string{fmt.Sprintf("@%v %v", nick, line)}
 }
 
-// runSeen reports when a client last spoke, from the bot's own room buffers.
-// This is the question a mesh client asks after being offline for hours.
+// runSeen reports when a client last spoke, from the room buffers and the
+// persisted history alike, so the answer survives a bot restart. This is the
+// question a mesh client asks after being offline for hours.
+//
+// Private rows are skipped: a direct notice the client sent to the bot is filed
+// in the room's buffer, and quoting one would publish a private command line —
+// and any text it carried — to the whole room.
 func (c *commandContext) runSeen() []string {
 	token := strings.TrimSpace(c.Args)
 	if token == "" {
@@ -527,8 +547,8 @@ func (c *commandContext) runSeen() []string {
 		bestRoom string
 	)
 	for _, room := range c.conn().JoinedRoomList() {
-		for _, msg := range c.conn().GetMessages(room) {
-			if hexString(msg.Src) != target.HashHex {
+		for _, msg := range c.conversationRows(room) {
+			if privateRow(msg) || hexString(msg.Src) != target.HashHex {
 				continue
 			}
 			if best == nil || msg.Ts > best.Ts {
@@ -554,8 +574,17 @@ func (c *commandContext) runSeen() []string {
 		safeTarget(target), age, bestRoom, text)}
 }
 
-// runMembers lists the clients the hub reports in a room, in the official /who
-// notice shape.
+// runMembers lists the clients the hub reports in a room.
+//
+// The wording deliberately does NOT start with "members in ", which is the shape
+// the hub's own /who reply uses (rrc/commands.go, handleWho). A client parses a
+// NOTICE of that shape as protocol traffic rather than conversation: it replaces
+// the client's member set for the room (rrc/hub.go, ParseWhoNotice and
+// applyWhoReply) and, whenever the client has its periodic auto-/who outstanding,
+// consumeWhoReply swallows it whole — so the answer was both invisible and able
+// to corrupt the member list of every client in the room. Observed live: the bot
+// logged "replied ... with 1 notice(s)" while neither of two clients displayed
+// anything. TestMembersReplyIsNotProtocolTraffic guards the shape.
 func (c *commandContext) runMembers() []string {
 	room := normalizeRoom(c.Args)
 	if room == "" {
@@ -566,7 +595,7 @@ func (c *commandContext) runMembers() []string {
 	}
 	members := c.conn().GetRoomMembers(room)
 	if len(members) == 0 {
-		return []string{fmt.Sprintf("members in %v: (none reported; the hub only answers for rooms it tracks)", room)}
+		return []string{fmt.Sprintf("members of %v: (none reported; the hub only answers for rooms it tracks)", room)}
 	}
 	parts := make([]string, 0, len(members))
 	for _, member := range members {
@@ -580,7 +609,7 @@ func (c *commandContext) runMembers() []string {
 		parts = append(parts, fmt.Sprintf("%v (%v)", nick, shortHash(member.HashHex)))
 	}
 	sort.Strings(parts)
-	return []string{fmt.Sprintf("members in %v: %v", room, strings.Join(parts, ", "))}
+	return []string{fmt.Sprintf("members of %v: %v", room, strings.Join(parts, ", "))}
 }
 
 // runRooms lists the rooms the bot has joined.
@@ -805,7 +834,7 @@ func httpFetch(url string) (string, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("weather provider answered %v", resp.Status)
+		return "", &providerStatusError{code: resp.StatusCode, status: resp.Status}
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxProviderBodyBytes))
 	if err != nil {

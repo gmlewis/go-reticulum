@@ -80,6 +80,23 @@ var (
 	errProviderBodyTooLarge = errors.New("provider answer is too large")
 )
 
+// providerStatusError reports a provider answer that arrived with a status other
+// than 200. It carries the code, because the difference matters to a lookup
+// command: a 400 means "that is not a number I publish", while a 5xx means the
+// provider is broken, and answering the first when the second happened would be a
+// lie. The message names no URL, which may carry a private host or a key.
+type providerStatusError struct {
+	// code is the HTTP status the provider answered with.
+	code int
+	// status is the provider's own status text, e.g. "400 Bad Request".
+	status string
+}
+
+// Error renders the status alone, never the URL it was fetched from.
+func (e *providerStatusError) Error() string {
+	return fmt.Sprintf("provider answered %v", e.status)
+}
+
 // placeAllowed reports whether r may appear in a requested place: any letter,
 // digit or combining mark in any script, plus the space, comma, period, hyphen
 // and apostrophe that real place names use ("Ann Arbor", "Paris, France", "St.
@@ -195,10 +212,44 @@ func providerURL(template, place string) (string, error) {
 	return providerURLValues(template, map[string]string{placeToken: place})
 }
 
+// providerValueEscaper percent-encodes the characters url.PathEscape deliberately
+// leaves alone but that are structure in a query string. They are legal in a path
+// segment, which is what PathEscape escapes for; in a query, "&" starts the next
+// parameter, "=" separates a key from its value, "+" means a space to many
+// servers, and ";" is a separator to some. A value that reached a query with any
+// of them raw could add or rewrite a parameter of the operator's request.
+var providerValueEscaper = strings.NewReplacer(
+	"&", "%26",
+	"=", "%3D",
+	"+", "%2B",
+	";", "%3B",
+)
+
+// escapeProviderValue escapes one already-validated value so that it is harmless
+// in either place an operator's template may put it: a path segment or a query
+// value. The characters that differ between the two positions are the ones
+// escaped on top of url.PathEscape.
+//
+// This is the second line of defence, not the first: every command validates its
+// own argument against an allowlist that is stricter than either escaper (a place
+// may not contain "&", "=", "+" or "%", and a flight number is letters and digits
+// only), so no reachable input depends on this today. An escaper that only works
+// while every allowlist stays tight is a trap for the next command, though, so it
+// is made safe for the position rather than for the argument.
+//
+// A value can never reach the authority (a template with a placeholder in its
+// host or userinfo is refused), and colon and at-sign are data in both a path and
+// a query, so those are left as url.PathEscape produces them.
+func escapeProviderValue(value string) string {
+	return providerValueEscaper.Replace(url.PathEscape(value))
+}
+
 // providerURLValues substitutes already-validated values into an
 // operator-supplied template and returns the URL to fetch. Every value must have
-// been validated by its own command before it gets here: these values are
-// escaped for a URL path, but escaping is not validation.
+// been validated by its own command before it gets here, and every value is
+// escaped before it is substituted — never after, which would corrupt the
+// template's own scheme, path and separators. Escaping is not validation: the two
+// are done separately and for different reasons.
 //
 // The built URL is re-parsed and required to address the template's own scheme
 // and host. That invariant is what makes substitution safe: no value can retarget
@@ -214,7 +265,7 @@ func providerURLValues(template string, values map[string]string) (string, error
 
 	built := template
 	for token, value := range values {
-		built = strings.ReplaceAll(built, token, url.PathEscape(value))
+		built = strings.ReplaceAll(built, token, escapeProviderValue(value))
 	}
 	got, err := url.Parse(built)
 	if err != nil {

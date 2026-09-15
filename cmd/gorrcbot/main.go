@@ -286,6 +286,12 @@ func configSummary(paths BotPaths, cfg *BotConfig, ownHash []byte) string {
 	if cfg.WeatherURL != "" {
 		fmt.Fprintf(&sb, "weather:    %v\n", cfg.WeatherURL)
 	}
+	if cfg.FlightURL != "" {
+		fmt.Fprintf(&sb, "flight:     %v\n", cfg.FlightURL)
+	}
+	if cfg.FlightRouteURL != "" {
+		fmt.Fprintf(&sb, "flight route: %v\n", cfg.FlightRouteURL)
+	}
 	if cfg.LaunchURL != "" {
 		fmt.Fprintf(&sb, "launches:   %v\n", cfg.LaunchURL)
 	}

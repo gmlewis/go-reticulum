@@ -233,6 +233,30 @@ func (c *announceCache) process(event announce) {
 	}
 }
 
+// countMatches reports how many cached announces match a watch filter right now.
+// The watch confirmation uses it to say what could match, because a filter that
+// matches nothing in the cache is a filter that may never fire: the cache holds
+// only announces this bot received, and an announce publishes a display name only
+// sometimes.
+func (c *announceCache) countMatches(filter string) int {
+	if c == nil {
+		return 0
+	}
+	lower := strings.ToLower(strings.TrimSpace(filter))
+	if lower == "" {
+		return 0
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n := 0
+	for _, entry := range c.entries {
+		if announceMatches(entry, lower) {
+			n++
+		}
+	}
+	return n
+}
+
 // store records one announce, evicting the oldest entry when the table is full.
 func (c *announceCache) store(event announce) {
 	c.mu.Lock()
