@@ -404,7 +404,7 @@ func formatThousands(value float64) string {
 	if rounded < 0 {
 		sign, rounded = "-", -rounded
 	}
-	digits := fmt.Sprintf("%d", rounded)
+	digits := fmt.Sprintf("%v", rounded)
 	var b strings.Builder
 	for i, digit := range digits {
 		if i > 0 && (len(digits)-i)%3 == 0 {

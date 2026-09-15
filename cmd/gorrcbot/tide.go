@@ -139,7 +139,7 @@ func parseTidePredictions(body string) ([]TideEvent, error) {
 	if response.Error != nil {
 		// The provider's message may name its own internals, so it goes to the
 		// log rather than into the room.
-		return nil, fmt.Errorf("tide: the provider reported an error: %s", response.Error.Message)
+		return nil, fmt.Errorf("tide: the provider reported an error: %v", response.Error.Message)
 	}
 	events := make([]TideEvent, 0, len(response.Predictions))
 	for _, prediction := range response.Predictions {
