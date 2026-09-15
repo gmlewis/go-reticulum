@@ -26,7 +26,12 @@ import (
 )
 
 func (r *Reticulum) startRPCListener() error {
-	if !r.isSharedInstance {
+	// The role is written by the recovery watcher when a client takes over
+	// (setInstanceRole) and read here from the watcher goroutine, so it must go
+	// through the accessor that takes the instance mutex. Reading the field
+	// directly would be an unsynchronized access to state another goroutine can
+	// be writing.
+	if !r.IsSharedInstance() {
 		return nil
 	}
 
@@ -40,12 +45,17 @@ func (r *Reticulum) startRPCListener() error {
 		r.logger.Error("Could not start RPC listener: %v", err)
 		return err
 	}
+	// Hand the loop its own done channel instead of letting it read r.rpcDone
+	// at exit: the field is published under the mutex for Close to join, and a
+	// takeover that restarts the listener would otherwise race a still-exiting
+	// loop closing the shared field.
+	done := make(chan struct{})
 	r.mu.Lock()
 	r.rpcListener = listener
-	r.rpcDone = make(chan struct{})
+	r.rpcDone = done
 	r.mu.Unlock()
 
-	go r.rpcLoop()
+	go r.rpcLoop(done)
 	return nil
 }
 
@@ -97,8 +107,8 @@ func (r *Reticulum) makeRPCListener() (net.Listener, error) {
 	return net.Listen("tcp", addr)
 }
 
-func (r *Reticulum) rpcLoop() {
-	defer close(r.rpcDone)
+func (r *Reticulum) rpcLoop(done chan struct{}) {
+	defer close(done)
 	// Recover from an unexpected panic so a malformed connection or internal
 	// error tears down the listener loop gracefully (logged) instead of
 	// crashing the process — the Go analog of Python wrapping the shared-
@@ -944,7 +954,7 @@ type InterfaceStatsSnapshot struct {
 // InterfaceStats returns interface stats from local transport, or via RPC when
 // this instance is connected to a shared local instance.
 func (r *Reticulum) InterfaceStats() (*InterfaceStatsSnapshot, error) {
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		resp, err := r.callRPC(map[string]any{"get": "interface_stats"})
 		if err != nil {
 			return nil, err
@@ -958,7 +968,7 @@ func (r *Reticulum) InterfaceStats() (*InterfaceStatsSnapshot, error) {
 
 // PathTable retrieves the current path table from the transport system, optionally limiting the results to a maximum number of hops.
 func (r *Reticulum) PathTable(maxHops int) ([]any, error) {
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		resp, err := r.callRPC(map[string]any{"get": "path_table", "max_hops": maxHops})
 		if err != nil {
 			return nil, err
@@ -973,7 +983,7 @@ func (r *Reticulum) PathTable(maxHops int) ([]any, error) {
 
 // RateTable retrieves the current announce rate table from the transport system.
 func (r *Reticulum) RateTable() ([]any, error) {
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		resp, err := r.callRPC(map[string]any{"get": "rate_table"})
 		if err != nil {
 			return nil, err
@@ -988,7 +998,7 @@ func (r *Reticulum) RateTable() ([]any, error) {
 
 // BlackholedIdentities retrieves the list of currently blackholed identities from the transport system.
 func (r *Reticulum) BlackholedIdentities() ([]any, error) {
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		resp, err := r.callRPC(map[string]any{"get": "blackholed_identities"})
 		if err != nil {
 			return nil, err
@@ -1011,7 +1021,7 @@ func (r *Reticulum) IsBlackholed(identityHash []byte) (bool, error) {
 	if len(identityHash) != TruncatedHashLength/8 {
 		return false, nil
 	}
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		resp, err := r.callRPC(map[string]any{"get": "is_blackholed", "identity_hash": identityHash})
 		if err != nil {
 			return false, err
@@ -1027,7 +1037,7 @@ func (r *Reticulum) IsBlackholed(identityHash []byte) (bool, error) {
 // routed to the shared instance via RPC (Python
 // Reticulum._used_destination_data, RNS/Reticulum.py:1300-1312).
 func (r *Reticulum) UsedDestinationData(destinationHash []byte) (bool, error) {
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		resp, err := r.callRPC(map[string]any{"destination_data": "used", "destination_hash": destinationHash})
 		if err != nil {
 			return false, err
@@ -1042,7 +1052,7 @@ func (r *Reticulum) UsedDestinationData(destinationHash []byte) (bool, error) {
 // call is routed to the shared instance via RPC (Python
 // Reticulum._retain_destination_data, RNS/Reticulum.py:1314-1326).
 func (r *Reticulum) RetainDestinationData(destinationHash []byte) (bool, error) {
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		resp, err := r.callRPC(map[string]any{"destination_data": "retain", "destination_hash": destinationHash})
 		if err != nil {
 			return false, err
@@ -1057,7 +1067,7 @@ func (r *Reticulum) RetainDestinationData(destinationHash []byte) (bool, error) 
 // shared instance the call is routed to the shared instance via RPC (Python
 // Reticulum._unretain_destination_data, RNS/Reticulum.py:1328-1340).
 func (r *Reticulum) UnretainDestinationData(destinationHash []byte) (bool, error) {
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		resp, err := r.callRPC(map[string]any{"destination_data": "unretain", "destination_hash": destinationHash})
 		if err != nil {
 			return false, err
@@ -1076,7 +1086,7 @@ func (r *Reticulum) RetainIdentity(identityHash []byte) (bool, error) {
 	if len(identityHash) != TruncatedHashLength/8 {
 		return false, nil
 	}
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		resp, err := r.callRPC(map[string]any{"identity_data": "retain", "identity_hash": identityHash})
 		if err != nil {
 			return false, err
@@ -1088,7 +1098,7 @@ func (r *Reticulum) RetainIdentity(identityHash []byte) (bool, error) {
 
 // NextHop determines the next hop interface hash for a given destination hash.
 func (r *Reticulum) NextHop(destinationHash []byte) ([]byte, error) {
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		resp, err := r.callRPC(map[string]any{"get": "next_hop", "destination_hash": destinationHash})
 		if err != nil {
 			return []byte{}, fmt.Errorf("rpc next_hop failed: %w", err)
@@ -1103,7 +1113,7 @@ func (r *Reticulum) NextHop(destinationHash []byte) ([]byte, error) {
 
 // NextHopInterfaceName retrieves the name of the interface that will be used for the next hop towards a destination.
 func (r *Reticulum) NextHopInterfaceName(destinationHash []byte) (string, error) {
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		resp, err := r.callRPC(map[string]any{"get": "next_hop_if_name", "destination_hash": destinationHash})
 		if err != nil {
 			return "", fmt.Errorf("rpc next_hop_if_name failed: %w", err)
@@ -1115,7 +1125,7 @@ func (r *Reticulum) NextHopInterfaceName(destinationHash []byte) (string, error)
 
 // LinkCount returns the total number of active links currently managed by the transport system.
 func (r *Reticulum) LinkCount() (int, error) {
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		resp, err := r.callRPC(map[string]any{"get": "link_count"})
 		if err != nil {
 			return 0, err
@@ -1127,7 +1137,7 @@ func (r *Reticulum) LinkCount() (int, error) {
 
 // FirstHopTimeout calculates the appropriate timeout in seconds for the first hop towards a given destination.
 func (r *Reticulum) FirstHopTimeout(destinationHash []byte) (int, error) {
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		resp, err := r.callRPC(map[string]any{"get": "first_hop_timeout", "destination_hash": destinationHash})
 		if err != nil {
 			return 6, fmt.Errorf("rpc first_hop_timeout failed: %w", err)
@@ -1144,7 +1154,7 @@ func (r *Reticulum) FirstHopTimeout(destinationHash []byte) (int, error) {
 
 // PacketRSSI retrieves the Received Signal Strength Indicator (RSSI) for a specific packet hash, if available.
 func (r *Reticulum) PacketRSSI(packetHash []byte) (any, error) {
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		resp, err := r.callRPC(map[string]any{"get": "packet_rssi", "packet_hash": packetHash})
 		if err != nil {
 			return nil, fmt.Errorf("rpc packet_rssi failed: %w", err)
@@ -1156,7 +1166,7 @@ func (r *Reticulum) PacketRSSI(packetHash []byte) (any, error) {
 
 // PacketSNR retrieves the Signal-to-Noise Ratio (SNR) for a specific packet hash, if available.
 func (r *Reticulum) PacketSNR(packetHash []byte) (any, error) {
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		resp, err := r.callRPC(map[string]any{"get": "packet_snr", "packet_hash": packetHash})
 		if err != nil {
 			return nil, fmt.Errorf("rpc packet_snr failed: %w", err)
@@ -1168,7 +1178,7 @@ func (r *Reticulum) PacketSNR(packetHash []byte) (any, error) {
 
 // PacketQ retrieves the Link Quality indicator for a specific packet hash, if available.
 func (r *Reticulum) PacketQ(packetHash []byte) (any, error) {
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		resp, err := r.callRPC(map[string]any{"get": "packet_q", "packet_hash": packetHash})
 		if err != nil {
 			return nil, fmt.Errorf("rpc packet_q failed: %w", err)
@@ -1180,7 +1190,7 @@ func (r *Reticulum) PacketQ(packetHash []byte) (any, error) {
 
 // DropPath invalidates any known path to a given destination hash from the transport system's path table.
 func (r *Reticulum) DropPath(destinationHash []byte) (bool, error) {
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		resp, err := r.callRPC(map[string]any{"drop": "path", "destination_hash": destinationHash})
 		if err != nil {
 			return false, err
@@ -1192,7 +1202,7 @@ func (r *Reticulum) DropPath(destinationHash []byte) (bool, error) {
 
 // DropAllVia invalidates all paths that go through the specified next hop destination hash.
 func (r *Reticulum) DropAllVia(destinationHash []byte) (int, error) {
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		resp, err := r.callRPC(map[string]any{"drop": "all_via", "destination_hash": destinationHash})
 		if err != nil {
 			return 0, err
@@ -1204,7 +1214,7 @@ func (r *Reticulum) DropAllVia(destinationHash []byte) (int, error) {
 
 // DropAnnounceQueues clears all pending and queued announces from the transport system.
 func (r *Reticulum) DropAnnounceQueues() (int, error) {
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		resp, err := r.callRPC(map[string]any{"drop": "announce_queues"})
 		if err != nil {
 			return 0, err
@@ -1220,7 +1230,7 @@ func (r *Reticulum) BlackholeIdentity(identityHash []byte, until *int64, reason 
 		return false, nil
 	}
 
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		req := map[string]any{"blackhole_identity": identityHash, "reason": reason}
 		if until != nil {
 			req["until"] = *until
@@ -1240,7 +1250,7 @@ func (r *Reticulum) UnblackholeIdentity(identityHash []byte) (bool, error) {
 		return false, nil
 	}
 
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		resp, err := r.callRPC(map[string]any{"unblackhole_identity": identityHash})
 		if err != nil {
 			return false, err

@@ -245,6 +245,62 @@ func TestAttachedClientTakesOverWhenSharedInstanceStops(t *testing.T) {
 	}
 }
 
+// TestAttachedClientTakesOverWhenInstanceStopsDuringAttach covers the recovery
+// of TestAttachedClientTakesOverWhenSharedInstanceStops at the moment that used
+// to break it: the owner is closed immediately after the client attaches, with
+// no settling time, so the server may still be accepting that client's
+// connection when the owner detaches. Detaching then closed the listener and a
+// spawned list the connection had not reached yet, leaving it open and unowned:
+// the client kept running=1 with a read loop blocked on a socket nothing would
+// ever close, so its watcher never saw the instance stop and never took over.
+// This surfaced in CI as "expected the attached client to take over, got
+// connected=true standalone=false" after the full 15s deadline. The
+// interface-level tests (TestLocalServerClosesConnectionAcceptedWhileDetaching
+// and TestLocalServerDetachClosesEveryAcceptedConnection) pin the defect
+// deterministically; this one pins the end-to-end contract, repeating the
+// attach/close pair to vary the interleaving.
+func TestAttachedClientTakesOverWhenInstanceStopsDuringAttach(t *testing.T) {
+	t.Parallel()
+
+	for i := range 3 {
+		cfg := tempDir(t)
+		writeSharedRoleConfig(t, cfg, fmt.Sprintf("rns-role-takeover-during-attach-%d", i), 47330+i)
+
+		owner, err := NewReticulum(NewTransportSystem(nil), cfg)
+		if err != nil {
+			t.Fatalf("iteration %d: failed to create the owning instance: %v", i, err)
+		}
+		t.Cleanup(func() { closeReticulum(t, owner) })
+		if !owner.IsSharedInstance() {
+			t.Fatalf("iteration %d: expected the first instance to own the shared instance", i)
+		}
+
+		app, err := NewReticulum(NewTransportSystem(nil), cfg,
+			withSharedInstanceWatchInterval(2*time.Millisecond),
+			withSharedInstanceMissThreshold(2))
+		if err != nil {
+			t.Fatalf("iteration %d: failed to attach the application to the shared instance: %v", i, err)
+		}
+		t.Cleanup(func() { closeReticulum(t, app) })
+		if !app.IsConnectedToSharedInstance() {
+			t.Fatalf("iteration %d: expected the application to attach to the shared instance", i)
+		}
+
+		if err := owner.Close(); err != nil {
+			t.Fatalf("iteration %d: failed to close the owning instance: %v", i, err)
+		}
+
+		deadline := time.Now().Add(15 * time.Second)
+		for time.Now().Before(deadline) && !app.IsSharedInstance() {
+			time.Sleep(2 * time.Millisecond)
+		}
+		if !app.IsSharedInstance() {
+			t.Fatalf("iteration %d: expected the attached client to take over, got connected=%v standalone=%v",
+				i, app.IsConnectedToSharedInstance(), app.IsStandaloneInstance())
+		}
+	}
+}
+
 // TestSharedInstanceWatcherSurvivesAnInFlightTakeover pins the state the
 // recovery watcher must not mistake for its own completion. A takeover clears
 // the client interface before it re-decides the role (takeOverSharedInstance),

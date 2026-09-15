@@ -752,6 +752,21 @@ func (tsi *TCPServerInterface) handleConnection(conn net.Conn) {
 	atomic.StoreInt32(&tci.running, 1)
 
 	tsi.mu.Lock()
+	if tsi.IsDetached() || atomic.LoadInt32(&tsi.running) != 1 {
+		// Detach ran while this connection was being accepted: it snapshotted
+		// spawnedInterfaces before this registration, so appending here would
+		// leave the connection open and unowned rather than detached with the
+		// rest. Nothing would ever close it, and the remote node's client
+		// interface would keep a live-looking TCP connection to a server that
+		// stopped listening. Close it instead. Detach sets running=0 before
+		// taking this lock, so checking under the lock closes the race in both
+		// interleavings rather than merely narrowing it.
+		tsi.mu.Unlock()
+		if err := conn.Close(); err != nil {
+			log.Printf("[TCP] %v: closing a connection accepted during detach failed: %v", tsi.name, err)
+		}
+		return
+	}
 	tsi.spawnedInterfaces = append(tsi.spawnedInterfaces, tci)
 	tsi.mu.Unlock()
 

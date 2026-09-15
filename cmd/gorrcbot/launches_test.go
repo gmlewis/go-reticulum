@@ -113,12 +113,15 @@ func TestLaunchesReportsUpcomingLaunches(t *testing.T) {
 	reg, session, probe := launchesFixture(t, nil, launchBody)
 	lines := runLaunchLine(t, reg, session, "launches")
 
-	// The provider's order is soonest first in the response, but the bot sorts by
-	// the launch time so an out-of-order response still reads correctly.
+	// The provider's order is not trusted, and this window is its weakest point:
+	// it keeps a launch that has already flown in "upcoming" until it updates the
+	// window. So the launch still ahead leads, and the one that flew 20 minutes
+	// ago follows it with its age, rather than the reader being shown the past
+	// first in an answer about what is next.
 	assertLines(t, lines, []string{
 		"upcoming launches (2):",
-		"2026-09-14 22:40Z 20m ago | Falcon 9 | Starlink Group 12-3 | TBD | SpaceX @ SLC-40",
 		"2026-09-15 01:21Z in 2h21m | Vega-C | Sentinel-3C & FLEX | Go | Arianespace @ Kourou ELV",
+		"2026-09-14 22:40Z 20m ago | Falcon 9 | Starlink Group 12-3 | TBD | SpaceX @ SLC-40",
 	})
 	if probe.calls != 1 {
 		t.Errorf("fetches = %v, want 1", probe.calls)
@@ -353,4 +356,31 @@ func TestParseLaunchTimeAcceptsTheProviderFormats(t *testing.T) {
 			t.Errorf("parseLaunchTime(%q) = %v, %v, want %v, %v", tt.in, got, ok, tt.want, tt.ok)
 		}
 	}
+}
+
+// TestLaunchesUpcomingLeadsWithLaunchesStillAhead asserts the ordering rule the
+// live provider made necessary: in the upcoming window the launches still ahead
+// come first, soonest first, and the ones that have already flown follow, most
+// recent first — a reader asking what is next is not asking what just went up.
+func TestLaunchesUpcomingLeadsWithLaunchesStillAhead(t *testing.T) {
+	t.Parallel()
+
+	const body = `{
+      "count": 4,
+      "results": [
+        {"name": "flew recently", "net": "2026-09-14T22:40:00Z", "status": {"abbrev": "Success"}},
+        {"name": "flies later", "net": "2026-09-15T06:00:00Z", "status": {"abbrev": "Go"}},
+        {"name": "flew long ago", "net": "2026-09-14T02:00:00Z", "status": {"abbrev": "Success"}},
+        {"name": "flies soonest", "net": "2026-09-15T01:21:00Z", "status": {"abbrev": "Go"}}
+      ]
+    }`
+	reg, session, _ := launchesFixture(t, nil, body)
+	lines := runLaunchLine(t, reg, session, "launches upcoming 4")
+	assertLines(t, lines, []string{
+		"upcoming launches (4):",
+		"2026-09-15 01:21Z in 2h21m | flies soonest | Go",
+		"2026-09-15 06:00Z in 7h | flies later | Go",
+		"2026-09-14 22:40Z 20m ago | flew recently | Success",
+		"2026-09-14 02:00Z 21h ago | flew long ago | Success",
+	})
 }

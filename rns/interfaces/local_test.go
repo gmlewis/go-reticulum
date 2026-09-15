@@ -8,6 +8,8 @@ package interfaces
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -434,5 +436,100 @@ func TestLocalSpawnedClientTearsDownOnDisconnect(t *testing.T) {
 func TestLocalClientReconnectWaitMatchesPython(t *testing.T) {
 	if LocalClientReconnectWait != 8*time.Second {
 		t.Fatalf("LocalClientReconnectWait = %v, want 8s (LocalInterface.py:63 RECONNECT_WAIT)", LocalClientReconnectWait)
+	}
+}
+
+// wantPeerClosed asserts that a client-side connection was closed by the
+// server rather than left open. A read deadline bounds the wait so a leaked
+// connection fails the test instead of hanging it, and a deadline error is
+// distinguished from a genuine close: a timeout means the peer is still there.
+func wantPeerClosed(t *testing.T, ctx string, conn net.Conn) {
+	t.Helper()
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		if allowClosedNetworkErr(err) || errors.Is(err, io.ErrClosedPipe) {
+			// Already closed: exactly the outcome this asserts.
+			return
+		}
+		t.Fatalf("%s: SetReadDeadline: %v", ctx, err)
+	}
+	if _, err := conn.Read(make([]byte, 1)); err == nil {
+		t.Fatalf("%s: peer connection stayed open; its client would never notice the shared instance stopped", ctx)
+	} else {
+		var nerr net.Error
+		if errors.As(err, &nerr) && nerr.Timeout() {
+			t.Fatalf("%s: peer connection stayed open for the whole read deadline; nothing closed it", ctx)
+		}
+	}
+}
+
+// TestLocalServerClosesConnectionAcceptedWhileDetaching is the regression test
+// for a shared instance that stops at the instant a client connects. Accept
+// returns the connection before handleConnection registers it, so a Detach
+// running in that window closed the listener and an already-empty spawned list
+// and left the accepted connection open and unowned. The peer's client
+// interface then kept running=1 with a read loop blocked on a socket whose
+// other end lives until process exit, so the client's shared-instance watcher
+// never saw it stop and never took over: TestAttachedClientTakesOverWhenShared
+// InstanceStops failed in CI with "got connected=true standalone=false" after
+// its 15s deadline. The interleaving is driven directly here so the check does
+// not depend on winning a race.
+func TestLocalServerClosesConnectionAcceptedWhileDetaching(t *testing.T) {
+	handler := func(data []byte, iface Interface) {}
+	server := &LocalServerInterface{
+		BaseInterface:  NewBaseInterface("local-server-detach-race", ModeFull, LocalBitrate),
+		inboundHandler: handler,
+	}
+	server.SetDetached(true)
+	atomic.StoreInt32(&server.running, 0)
+
+	peer, serverSide := net.Pipe()
+	defer func() { _ = peer.Close() }()
+
+	server.handleConnection(serverSide)
+
+	if got := len(server.SpawnedClientInterfaces()); got != 0 {
+		t.Fatalf("detached server registered %d spawned client(s), want 0", got)
+	}
+	server.mu.Lock()
+	clients := server.clients
+	server.mu.Unlock()
+	if clients != 0 {
+		t.Fatalf("server.clients = %d after a connection accepted while detaching, want 0", clients)
+	}
+	wantPeerClosed(t, "connection accepted while detaching", peer)
+}
+
+// TestLocalServerDetachClosesEveryAcceptedConnection drives the same guarantee
+// through the real accept path, where the connection may land before, during or
+// after Detach. Whichever way the accept loop and Detach interleave, the client
+// side must end up closed: the shared instance a client attached to cannot be
+// gone from the client's point of view while its connection is still open.
+func TestLocalServerDetachClosesEveryAcceptedConnection(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix sockets not supported on windows")
+	}
+
+	handler := func(data []byte, iface Interface) {}
+	tmp := testutils.TempDir(t, "go-ret-local-detach-*")
+	socketPath := filepath.Join(tmp, "race.sock")
+
+	for i := range 50 {
+		server := mustTestNewLocalServerInterface(t, "local-server-detach-race", socketPath, 0, handler)
+		raw, err := net.Dial("unix", socketPath)
+		if err != nil {
+			t.Fatalf("iteration %d: dial shared instance: %v", i, err)
+		}
+
+		// Detach while the connection is still in flight, so the accept loop
+		// races it. Some iterations accept and register first, some lose the
+		// race; both must end with the client side closed.
+		if err := server.Detach(); err != nil && !allowClosedNetworkErr(err) {
+			_ = raw.Close()
+			t.Fatalf("iteration %d: detach: %v", i, err)
+		}
+		wantPeerClosed(t, fmt.Sprintf("iteration %d", i), raw)
+		if err := raw.Close(); err != nil && !allowClosedNetworkErr(err) {
+			t.Fatalf("iteration %d: close raw client: %v", i, err)
+		}
 	}
 }

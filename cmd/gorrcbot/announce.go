@@ -32,8 +32,14 @@ const (
 	// real, hyphenless RNS destination names: a filter with a wrong separator
 	// silently matches nothing, which is why they are named here once.
 	announceFilters = "lxmf.delivery lxmf.propagation nomadnetwork.node rrc.hub"
-	// maxAnnounceEntries bounds the cache table.
-	maxAnnounceEntries = 512
+	// maxAnnounceEntries bounds the cache table. It has to hold more than a busy
+	// mesh sends in one announce cycle of the fleet's own nodes: those announce
+	// every six hours by design, and at 512 entries the public mesh evicted the
+	// fleet's own announces within about forty minutes, so a name lookup or an
+	// arm-time report could not see them at all. 4096 entries of a few hundred
+	// bytes each is a megabyte or so, which is nothing next to losing the only
+	// memory the bot has of a sparse announcement.
+	maxAnnounceEntries = 4096
 	// announceTTL is how long one announce stays usable for lookups.
 	announceTTL = 24 * time.Hour
 	// announceQueueDepth bounds the hand-off queue between the read-loop
@@ -233,28 +239,31 @@ func (c *announceCache) process(event announce) {
 	}
 }
 
-// countMatches reports how many cached announces match a watch filter right now.
-// The watch confirmation uses it to say what could match, because a filter that
-// matches nothing in the cache is a filter that may never fire: the cache holds
-// only announces this bot received, and an announce publishes a display name only
-// sometimes.
-func (c *announceCache) countMatches(filter string) int {
+// matchingAnnounces reports how many cached announces match a watch filter right
+// now, and when the freshest of them was received. The watch confirmation uses it
+// because announces are sparse: between two of a destination's announcements the
+// cache is the only thing the bot knows about it, so arming a watch has to say
+// what is already known rather than only what might arrive.
+func (c *announceCache) matchingAnnounces(filter string) (count int, freshest time.Time) {
 	if c == nil {
-		return 0
+		return 0, time.Time{}
 	}
 	lower := strings.ToLower(strings.TrimSpace(filter))
 	if lower == "" {
-		return 0
+		return 0, time.Time{}
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	n := 0
 	for _, entry := range c.entries {
-		if announceMatches(entry, lower) {
-			n++
+		if !announceMatches(entry, lower) {
+			continue
+		}
+		count++
+		if entry.At.After(freshest) {
+			freshest = entry.At
 		}
 	}
-	return n
+	return count, freshest
 }
 
 // store records one announce, evicting the oldest entry when the table is full.

@@ -92,7 +92,7 @@ func (c *commandContext) runLaunches() []string {
 		now = time.Now()
 	}
 	render := func(body []byte) ([]string, error) {
-		launches, err := parseLaunches(body, req.mode == "previous")
+		launches, err := parseLaunches(body, req.mode == "previous", now)
 		if err != nil {
 			return nil, err
 		}
@@ -165,7 +165,7 @@ type launch struct {
 // parseLaunches reads the provider's answer. It tolerates every field being
 // absent, because a provider may add or rename fields at any time, and it reports
 // only a body it cannot parse at all.
-func parseLaunches(body []byte, newestFirst bool) ([]launch, error) {
+func parseLaunches(body []byte, newestFirst bool, now time.Time) ([]launch, error) {
 	var root any
 	if err := json.Unmarshal(body, &root); err != nil {
 		return nil, fmt.Errorf("%w: %w", errLaunchUnreadable, err)
@@ -192,9 +192,14 @@ func parseLaunches(body []byte, newestFirst bool) ([]launch, error) {
 			pad:      safeEcho(jsonField(item, "pad.name"), maxLaunchFieldBytes),
 		})
 	}
-	// The provider's own ordering is not trusted: an upcoming list reads soonest
-	// first, and a past list reads most recent first. A launch with no parsable
-	// time sorts last rather than first, so it never displaces a dated one.
+	// The provider's own ordering is not trusted, and neither is its window: it
+	// keeps a launch in the upcoming list until it updates that window, so an
+	// "upcoming" answer can lead with something that already flew hours ago.
+	// Dated launches come first in both windows — for the upcoming window the
+	// ones still ahead, soonest first, and only then the ones that have already
+	// happened, most recent first, because a reader asking what is next is not
+	// asking what just went up. A launch with no parsable time sorts last rather
+	// than first, so it never displaces a dated one.
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].at.IsZero() || out[j].at.IsZero() {
 			return out[j].at.IsZero() && !out[i].at.IsZero()
@@ -202,7 +207,14 @@ func parseLaunches(body []byte, newestFirst bool) ([]launch, error) {
 		if newestFirst {
 			return out[i].at.After(out[j].at)
 		}
-		return out[i].at.Before(out[j].at)
+		ahead, aheadJ := out[i].at.After(now), out[j].at.After(now)
+		if ahead != aheadJ {
+			return ahead
+		}
+		if ahead {
+			return out[i].at.Before(out[j].at)
+		}
+		return out[i].at.After(out[j].at)
 	})
 	return out, nil
 }

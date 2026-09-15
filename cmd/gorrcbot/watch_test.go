@@ -459,7 +459,7 @@ func TestWatchWithoutDirectNoticeSupportSaysSo(t *testing.T) {
 	// this test stays about the capability caveat alone.
 	f.cache.process(announce{DestHex: "aa11", Name: "Retibooks", Aspect: "nomadnetwork.node", At: f.clock})
 	assertLines(t, f.line(t, "watch retibooks"), []string{
-		`watching for "retibooks" for 24h; 1 cached announce matches it now; a bot restart forgets it`,
+		`watching for "retibooks" for 24h; 1 cached announce matches it, freshest heard 0s ago; a bot restart forgets it`,
 		watchDeliveryLine(rrc.ErrDirectNoticesUnsupported),
 	})
 }
@@ -761,24 +761,27 @@ func assertWatchAnswer(t *testing.T, got []string, want string) {
 		t.Errorf("line 0 = %q, want %q", got[0], want)
 	}
 	for i, line := range got[1:] {
-		if !strings.HasPrefix(line, "no announce has been cached yet") &&
-			!strings.HasPrefix(line, "nothing matches it yet") {
+		if !strings.HasPrefix(line, "the announce cache is empty") &&
+			!strings.HasPrefix(line, "the cache does not hold it now") {
 			t.Errorf("line %v = %q, want a no-match hint or nothing at all", i+1, line)
 		}
 	}
 }
 
-// TestWatchReportsWhatTheCacheCanMatch asserts the arm-time answer says what the
-// announce cache can actually match here. A filter that matches nothing in the
-// cache is a filter that may never fire — the fleet's nomadnetwork.node announces
-// carry no display name, so a name filter matches nothing — and the asker must
-// not be left to wait for a notice the cache cannot produce.
+// TestWatchReportsWhatTheCacheCanMatch asserts the arm-time answer uses what the
+// cache already knows. Announces are sparse — the fleet's own nodes announce every
+// six hours by design — so between two announcements the cache is the only thing
+// the bot can say about a destination, and arming a watch must report that rather
+// than only what might arrive. The count comes with the freshest age so a cached
+// announce never reads as a live one, and a filter the cache cannot match is
+// reported for what it is: not held now, still armed for the next announce.
 func TestWatchReportsWhatTheCacheCanMatch(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name       string
 		cached     []announce
+		age        time.Duration
 		args       string
 		wantFirst  string
 		wantSecond string
@@ -787,44 +790,51 @@ func TestWatchReportsWhatTheCacheCanMatch(t *testing.T) {
 			name:       "an empty cache cannot match anything",
 			args:       "retibooks",
 			wantFirst:  `watching for "retibooks" for 24h; a bot restart forgets it`,
-			wantSecond: "no announce has been cached yet, so nothing can match: this bot only matches announces it receives itself",
+			wantSecond: "the announce cache is empty, so nothing can match yet: this bot only matches announces it receives itself",
 		},
 		{
-			name:       "a name filter matches nothing in a cache without a name",
+			name:       "a name filter the cache cannot match says it is still armed",
 			cached:     []announce{{DestHex: "aa11", Name: "", Aspect: "nomadnetwork.node"}},
 			args:       "retibooks",
 			wantFirst:  `watching for "retibooks" for 24h; a bot restart forgets it`,
-			wantSecond: "nothing matches it yet (1 announce cached; an announce publishes a name only sometimes, so a hash prefix is the reliable filter)",
+			wantSecond: "the cache does not hold it now (1 announce held, none matching); it fires when a matching announce arrives, and a hash prefix is the more exact filter for a destination that does not publish a name",
 		},
 		{
-			name:       "a hash prefix that matches nothing says when it could",
+			name:       "a hash prefix the cache cannot match promises only the next announce",
 			cached:     []announce{{DestHex: "bb22", Name: "Node", Aspect: "nomadnetwork.node"}},
 			args:       "aa11",
 			wantFirst:  `watching for "aa11" for 24h; a bot restart forgets it`,
-			wantSecond: "nothing matches it yet (1 announce cached; a hash prefix matches when that destination announces next)",
+			wantSecond: "the cache does not hold it now (1 announce held, none matching); it fires when a matching announce arrives",
 		},
 		{
-			name:      "a filter that already matches says so",
+			name:      "a filter that matches reports the count and the freshest age",
 			cached:    []announce{{DestHex: "aa11", Name: "Retibooks Node", Aspect: "nomadnetwork.node"}},
+			age:       42 * time.Minute,
 			args:      "retibooks",
-			wantFirst: `watching for "retibooks" for 24h; 1 cached announce matches it now; a bot restart forgets it`,
+			wantFirst: `watching for "retibooks" for 24h; 1 cached announce matches it, freshest heard 42m ago; a bot restart forgets it`,
 		},
 		{
-			name: "a matching hash prefix counts every destination it names",
+			name: "a matching hash prefix counts every destination it names, freshest first",
 			cached: []announce{
 				{DestHex: "aa1122", Name: "One", Aspect: "nomadnetwork.node"},
 				{DestHex: "aa1133", Name: "Two", Aspect: "lxmf.delivery"},
 			},
+			age:       5 * time.Minute,
 			args:      "aa11",
-			wantFirst: `watching for "aa11" for 24h; 2 cached announces match it now; a bot restart forgets it`,
+			wantFirst: `watching for "aa11" for 24h; 2 cached announces match it, freshest heard 5m ago; a bot restart forgets it`,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			f := newWatchFixture(t)
-			for _, entry := range tt.cached {
-				entry.At = f.clock
+			for i, entry := range tt.cached {
+				// The last entry is the freshest, so the reported age is its age.
+				if i == len(tt.cached)-1 {
+					entry.At = f.clock.Add(-tt.age)
+				} else {
+					entry.At = f.clock.Add(-tt.age - time.Hour)
+				}
 				f.cache.process(entry)
 			}
 			lines := f.line(t, "watch "+tt.args)

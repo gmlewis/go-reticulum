@@ -188,7 +188,7 @@ func (r *registry) Run(req *commandRequest) []string {
 	}
 	cmd, ok := r.byName[name]
 	if !ok {
-		return []string{unknownCommandLine(req.Nick)}
+		return []string{unknownCommandLine(r.effectiveTriggerNick(req.Session, req.Room, req.Nick))}
 	}
 	return cmd.run(&commandContext{reg: r, req: req, Args: args})
 }
@@ -199,11 +199,47 @@ func (r *registry) helpListing() []string {
 }
 
 // unknownCommandLine is the single short line an unrecognised command produces.
+// The nick it names must be one the bot really answers to: an in-room request
+// carries the addressed nick in its text, but a direct NOTICE carries only the
+// command, so the caller passes the nick this session resolves for the room and
+// the fallback is the operator's configured nick rather than the built-in
+// default. Naming a nick the bot does not answer to would send the asker to a
+// stranger's name.
 func unknownCommandLine(nick string) string {
-	if strings.TrimSpace(nick) == "" {
+	nick = strings.TrimSpace(nick)
+	if nick == "" {
 		nick = DefaultTriggerNick
 	}
 	return fmt.Sprintf("unknown command — try @%v help", nick)
+}
+
+// effectiveTriggerNick is the nick this bot answers to in room: the nick the
+// request itself named when it named one, and otherwise the configured nick the
+// trigger policy resolves for that room (respond_to, then the hub's nick, then the
+// global nick). A reply that tells somebody how to address the bot must name a
+// nick the bot really answers to: a direct NOTICE carries no addressed nick at
+// all, so the fallback matters, and the built-in default is only right when no
+// configuration exists to ask.
+func (r *registry) effectiveTriggerNick(session *hubSession, room, parsed string) string {
+	if nick := strings.TrimSpace(parsed); nick != "" {
+		return nick
+	}
+	if r == nil || r.bot == nil || r.bot.cfg == nil {
+		return DefaultTriggerNick
+	}
+	var hub *HubConfig
+	if session != nil {
+		hub = session.cfg
+	}
+	if nick := r.bot.cfg.TriggerNick(hub, room); nick != "" {
+		return nick
+	}
+	return DefaultTriggerNick
+}
+
+// effectiveTriggerNick is the registry method for this invocation's request.
+func (c *commandContext) effectiveTriggerNick() string {
+	return c.reg.effectiveTriggerNick(c.req.Session, c.req.Room, c.req.Nick)
 }
 
 // splitCommandLine splits a command line into its lowercase name and arguments.
@@ -377,7 +413,7 @@ func (c *commandContext) runHelp() []string {
 	name, _ := splitCommandLine(c.Args)
 	cmd, ok := c.reg.byName[name]
 	if !ok {
-		return []string{unknownCommandLine(c.req.Nick)}
+		return []string{unknownCommandLine(c.effectiveTriggerNick())}
 	}
 	line := cmd.name + " — " + cmd.summary
 	if cmd.usage != "" {
@@ -590,12 +626,28 @@ func (c *commandContext) runMembers() []string {
 	if room == "" {
 		room = normalizeRoom(c.req.Room)
 	}
+	var also []string
 	if room == "" {
-		return []string{"Usage: members [room]"}
+		// A direct NOTICE carries no room, and the bot is usually in one, so
+		// demanding a room name would be friction for no reason. Answer for the
+		// first joined room — the answer names it, so there is nothing to guess —
+		// and mention the others rather than pretending they do not exist.
+		rooms := c.conn().JoinedRoomList()
+		if len(rooms) == 0 {
+			return []string{"I have not joined any room yet."}
+		}
+		sort.Strings(rooms)
+		room = normalizeRoom(rooms[0])
+		for _, other := range rooms[1:] {
+			if name := normalizeRoom(other); name != "" {
+				also = append(also, name)
+			}
+		}
 	}
 	members := c.conn().GetRoomMembers(room)
 	if len(members) == 0 {
-		return []string{fmt.Sprintf("members of %v: (none reported; the hub only answers for rooms it tracks)", room)}
+		return append([]string{fmt.Sprintf(
+			"members of %v: (none reported; the hub only answers for rooms it tracks)", room)}, alsoLines(also)...)
 	}
 	parts := make([]string, 0, len(members))
 	for _, member := range members {
@@ -609,7 +661,17 @@ func (c *commandContext) runMembers() []string {
 		parts = append(parts, fmt.Sprintf("%v (%v)", nick, shortHash(member.HashHex)))
 	}
 	sort.Strings(parts)
-	return []string{fmt.Sprintf("members of %v: %v", room, strings.Join(parts, ", "))}
+	return append([]string{fmt.Sprintf("members of %v: %v", room, strings.Join(parts, ", "))},
+		alsoLines(also)...)
+}
+
+// alsoLines reports the other rooms the bot has joined, when there is more than
+// one, so an answer that defaulted to a room never hides the rest.
+func alsoLines(rooms []string) []string {
+	if len(rooms) == 0 {
+		return nil
+	}
+	return []string{"also joined: " + strings.Join(rooms, ", ")}
 }
 
 // runRooms lists the rooms the bot has joined.

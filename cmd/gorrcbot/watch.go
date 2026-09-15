@@ -292,10 +292,20 @@ func (c *commandContext) runWatch() []string {
 	if err != nil {
 		return []string{err.Error()}
 	}
-	matches := c.reg.announces.countMatches(w.Filter)
+	matches, freshest := c.reg.announces.matchingAnnounces(w.Filter)
 	line := fmt.Sprintf("watching for %q for %v", w.Filter, formatTTL(w.ExpiresAt.Sub(w.CreatedAt)))
 	if matches > 0 {
-		line += "; " + pluralCount(matches, "cached announce matches it now", "cached announces match it now")
+		// Announces are sparse, so what the cache already holds is worth saying:
+		// it is the only thing known about this destination until it announces
+		// again, and the age keeps it from reading as "it is announcing now".
+		line += "; " + pluralCount(matches, "cached announce matches it", "cached announces match it")
+		if !freshest.IsZero() {
+			// A clock that went backwards reports "0s ago" rather than an age in
+			// the future, which is the only honest reading of an announce that
+			// has not happened yet.
+			age := max(c.now().Sub(freshest), 0)
+			line += ", freshest heard " + countdownMagnitude(age) + " ago"
+		}
 	}
 	lines := []string{line + "; " + watchForgetLine}
 	if matches == 0 {
@@ -314,20 +324,25 @@ func (c *commandContext) runWatch() []string {
 	return lines
 }
 
-// watchNoMatchLine explains why a freshly armed watch has nothing to match, so a
-// filter that can never fire is reported at arm time rather than left to wait. An
-// empty cache is the load-bearing case: the bot matches only the announces it
-// received itself, so an empty cache means no announce has arrived at all.
+// watchNoMatchLine explains a freshly armed watch whose filter the cache does not
+// hold, and it is careful about what that means. Sparse announces are exactly why
+// this message exists: the cache is only the bot's memory of what it has heard, so
+// it will not hold a destination that announced before the bot started, nor one
+// whose entry the public mesh has since pushed out. The line therefore promises
+// the only thing that is certain — the watch fires when a matching announce
+// arrives — instead of implying that the filter can never match.
 func watchNoMatchLine(cacheSize int, filter string) string {
 	if cacheSize == 0 {
-		return "no announce has been cached yet, so nothing can match: this bot only matches announces it receives itself"
+		return "the announce cache is empty, so nothing can match yet: this bot only matches announces it receives itself"
 	}
-	if isHexString(strings.ToLower(strings.TrimSpace(filter))) {
-		return fmt.Sprintf("nothing matches it yet (%v cached; a hash prefix matches when that destination announces next)",
-			pluralCount(cacheSize, "announce", "announces"))
-	}
-	return fmt.Sprintf("nothing matches it yet (%v cached; an announce publishes a name only sometimes, so a hash prefix is the reliable filter)",
+	line := fmt.Sprintf("the cache does not hold it now (%v held, none matching); it fires when a matching announce arrives",
 		pluralCount(cacheSize, "announce", "announces"))
+	if !isHexString(strings.ToLower(strings.TrimSpace(filter))) {
+		// A name is the friendlier filter and the less exact one, and saying so
+		// here is useful precisely when the cache cannot help.
+		line += ", and a hash prefix is the more exact filter for a destination that does not publish a name"
+	}
+	return line
 }
 
 // parseWatchRequest reads a watch command's arguments: a filter, and optionally

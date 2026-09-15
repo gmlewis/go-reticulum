@@ -797,3 +797,97 @@ func TestMembersReplyIsNotProtocolTraffic(t *testing.T) {
 		})
 	}
 }
+
+// TestMembersWorksOnTheDirectRoute asserts a direct NOTICE — which carries no room
+// — is answered for the room the bot joined rather than with a usage line. A
+// private "/msg gobot members" was answered "Usage: members [room]" live, which
+// asks the asker to name a room they never chose and the bot is usually alone in.
+func TestMembersWorksOnTheDirectRoute(t *testing.T) {
+	t.Parallel()
+
+	reg, session, fake := commandFixture(t, nil)
+	peer, err := rns.NewIdentity(true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake.setKnownPeer(hexString(peer.Hash), "Dave")
+
+	lines := reg.Run(&commandRequest{
+		Session: session,
+		Msg:     directMessageFrom("members", peerHashFor(0x11)),
+		Command: "members",
+		Nick:    "gobot",
+		Now:     time.Now(),
+	})
+	if len(lines) == 0 {
+		t.Fatal("no answer at all")
+	}
+	if strings.HasPrefix(lines[0], "Usage:") {
+		t.Fatalf("answer = %q, want the member list for the joined room", lines[0])
+	}
+	if !strings.Contains(lines[0], "members of general:") {
+		t.Errorf("answer = %q, want it to name the room it answered for", lines[0])
+	}
+}
+
+// TestUnknownCommandNamesTheConfiguredNick asserts the line that tells an asker
+// how to address the bot names a nick the bot actually answers to. A direct NOTICE
+// carries no addressed nick, so the fallback used to be the built-in default:
+// live, "/msg gobot nosuchcommand" answered "try @gorrcbot help" under a bot whose
+// nick is gobot, sending the asker to a name nobody owns.
+func TestUnknownCommandNamesTheConfiguredNick(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		cfg      func(*BotConfig)
+		session  func(*hubSession)
+		nick     string
+		room     string
+		wantNick string
+	}{
+		{
+			name:     "a direct notice uses the configured nick",
+			cfg:      func(c *BotConfig) { c.Nick = "gobot" },
+			wantNick: "gobot",
+		},
+		{
+			// The session carries its own hub entry, so the override belongs
+			// there: it is the config the trigger policy is actually asked about.
+			name: "a room override wins for its room",
+			cfg:  func(c *BotConfig) { c.Nick = "gobot" },
+			session: func(s *hubSession) {
+				s.cfg.RespondTo = map[string]string{"general": "roombot"}
+			},
+			room:     "general",
+			wantNick: "roombot",
+		},
+		{
+			name:     "an addressed nick is echoed as it was written",
+			cfg:      func(c *BotConfig) { c.Nick = "gobot" },
+			nick:     "gobot",
+			room:     "general",
+			wantNick: "gobot",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := defaultTestConfig()
+			tt.cfg(cfg)
+			reg, session, _ := commandFixture(t, cfg)
+			if tt.session != nil {
+				tt.session(session)
+			}
+			lines := reg.Run(&commandRequest{
+				Session: session,
+				Msg:     directMessageFrom("nosuchcommand", peerHashFor(0x11)),
+				Room:    tt.room,
+				Command: "nosuchcommand",
+				Nick:    tt.nick,
+				Now:     time.Now(),
+			})
+			assertLines(t, lines, []string{"unknown command — try @" + tt.wantNick + " help"})
+		})
+	}
+}

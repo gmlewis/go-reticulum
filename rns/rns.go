@@ -173,7 +173,11 @@ func (r *Reticulum) IsStandaloneInstance() bool {
 }
 
 // IsConnectedToSharedInstance reports whether this Reticulum instance is
-// connected to an existing shared instance (client).
+// connected to an existing shared instance (client). The role is not fixed for
+// the life of the process — the recovery watcher re-decides it when the
+// instance a client attached to stops — so every reader, including the public
+// RPC wrappers in rpc.go that choose between a local call and a shared-instance
+// RPC, must go through this accessor rather than reading the field directly.
 func (r *Reticulum) IsConnectedToSharedInstance() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()

@@ -536,6 +536,19 @@ func (lsi *LocalServerInterface) acceptLoop() {
 			continue
 		}
 
+		if lsi.IsDetached() || atomic.LoadInt32(&lsi.running) != 1 {
+			// Detach ran between Accept returning and this check, so the
+			// connection was accepted into a server that is already gone.
+			// Nothing will ever register or close it (handleConnection would
+			// append it to a spawned list Detach has already emptied), so the
+			// peer would block in its read loop forever believing it is still
+			// connected to a live shared instance. Close it here and leave;
+			// handleConnection re-checks under the lock, which is what makes
+			// the guarantee airtight rather than merely narrow.
+			_ = conn.Close()
+			break
+		}
+
 		lsi.handleConnection(conn)
 	}
 }
@@ -585,6 +598,23 @@ func (lsi *LocalServerInterface) handleConnection(conn net.Conn) {
 	lci.copyPanicOnInterfaceErrorFrom(lsi.BaseInterface)
 
 	lsi.mu.Lock()
+	if lsi.IsDetached() || atomic.LoadInt32(&lsi.running) != 1 {
+		// Detach snapshotted spawnedInterfaces before this connection reached
+		// the registration below, so registering it here would hand out a
+		// connection that nothing owns and nothing ever closes: the peer's
+		// client interface would keep running=1 with a read loop blocked on a
+		// socket whose other end only goes away at process exit, so a watcher
+		// polling Status() would never see the shared instance die. Detach sets
+		// these flags before taking this lock, so checking them here closes the
+		// race in both interleavings: either this registration is visible to
+		// Detach and gets detached with the rest, or Detach won and this
+		// connection is closed instead of registered.
+		lsi.mu.Unlock()
+		if err := lci.Detach(); err != nil && !errors.Is(err, net.ErrClosed) {
+			log.Printf("Go LocalServerInterface %v: closing a connection accepted during detach failed: %v", lsi.name, err)
+		}
+		return
+	}
 	lsi.spawnedInterfaces = append(lsi.spawnedInterfaces, lci)
 	lsi.clients++
 	lsi.mu.Unlock()
