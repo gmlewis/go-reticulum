@@ -48,11 +48,10 @@ const (
 
 // Lunar constants.
 const (
-	// synodicMonth is the mean length of the lunar synodic month in days.
+	// synodicMonth is the mean length of the lunar synodic month in days. The
+	// phase age is reported in these days, and the MoonPhase name table is
+	// divided out of one synodic month.
 	synodicMonth = 29.530588853
-	// newMoonEpochJD is the Julian day number of a known new moon,
-	// 2000-01-06 18:14 UTC, from which the phase is counted forward.
-	newMoonEpochJD = 2451550.1
 	// lunarPhaseCount is how many phases the report names.
 	lunarPhaseCount = 8
 )
@@ -109,7 +108,7 @@ func (d SolarDay) DayLength() time.Duration {
 // coordinate. Every time it returns is in UTC.
 func SolarAlmanac(lat, lng float64, day time.Time) SolarDay {
 	midnight := utcMidnight(day)
-	declination, equationOfTime := solarPosition(julianDay(midnight))
+	declination, equationOfTime, _ := solarPosition(julianDay(midnight))
 	noonMinutes := minutesPerDay - minutesPerDegree*normalizeLongitude(lng) - equationOfTime
 
 	result := SolarDay{Day: midnight, Noon: solarMinutesToTime(midnight, noonMinutes)}
@@ -130,12 +129,13 @@ func SolarAlmanac(lat, lng float64, day time.Time) SolarDay {
 	return result
 }
 
-// solarPosition returns the sun's declination in degrees and the equation of
-// time in minutes for a Julian day, using the NOAA solar-position formulas.
-// These are the same closed-form expressions the published sunrise/sunset
-// tables are computed from, and they are good to well under a minute for any
-// date this bot will ever be asked about.
-func solarPosition(jd float64) (declination, equationOfTime float64) {
+// solarPosition returns the sun's declination in degrees, the equation of time
+// in minutes, and the sun's apparent ecliptic longitude in degrees for a Julian
+// day, using the NOAA solar-position formulas. These are the same closed-form
+// expressions the published sunrise/sunset tables are computed from, and they
+// are good to well under a minute for any date this bot will ever be asked
+// about. The longitude is what the Moon's phase is measured against.
+func solarPosition(jd float64) (declination, equationOfTime, apparentLongitude float64) {
 	t := (jd - jdJ2000) / daysPerCentury
 
 	// Geometric mean longitude and mean anomaly of the sun, in degrees.
@@ -153,11 +153,15 @@ func solarPosition(jd float64) (declination, equationOfTime float64) {
 	// True and apparent longitude, and the corrected obliquity of the
 	// ecliptic.
 	omega := 125.04 - 1934.136*t
-	apparentLongitude := meanLongitude + center - 0.00569 - 0.00478*math.Sin(radians(omega))
+	apparentLongitude = meanLongitude + center - 0.00569 - 0.00478*math.Sin(radians(omega))
 	meanObliquity := 23 + (26+(21.448-t*(46.815+t*(0.00059-t*0.001813)))/60)/60
 	obliquity := meanObliquity + 0.00256*math.Cos(radians(omega))
 
 	declination = degrees(math.Asin(math.Sin(radians(obliquity)) * math.Sin(radians(apparentLongitude))))
+	apparentLongitude = math.Mod(apparentLongitude, 360)
+	if apparentLongitude < 0 {
+		apparentLongitude += 360
+	}
 
 	// Equation of time, in minutes of clock time.
 	y := math.Tan(radians(obliquity / 2))
@@ -169,7 +173,7 @@ func solarPosition(jd float64) (declination, equationOfTime float64) {
 			4*eccentricity*y*math.Sin(anomalyRad)*math.Cos(2*longitudeRad)-
 			0.5*y*y*math.Sin(4*longitudeRad)-
 			1.25*eccentricity*eccentricity*math.Sin(2*anomalyRad))
-	return declination, equationOfTime
+	return declination, equationOfTime, apparentLongitude
 }
 
 // solarHourAngle returns the hour angle in degrees at which the sun crosses the
@@ -206,43 +210,6 @@ func julianDay(t time.Time) float64 {
 func utcMidnight(t time.Time) time.Time {
 	utc := t.UTC()
 	return time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
-}
-
-// MoonPhase is what the moon is doing at one moment.
-type MoonPhase struct {
-	// Name is the phase name, one of MoonPhaseNames.
-	Name string
-	// Index is the phase's position in MoonPhaseNames: 0 is new moon, 4 is
-	// full moon.
-	Index int
-	// Age is how many days have passed since the last new moon.
-	Age float64
-	// Illumination is the illuminated fraction of the disc, as a percentage
-	// from 0 to 100.
-	Illumination float64
-}
-
-// MoonPhaseAt reports the moon's phase at a moment, counted from a known new
-// moon forward through the mean synodic month. The mean month is accurate to
-// about a day and a half, which is well inside the eight named phases the
-// report distinguishes; the illumination is derived from the same age, so the
-// two never contradict each other.
-func MoonPhaseAt(t time.Time) MoonPhase {
-	age := math.Mod(julianDay(t)-newMoonEpochJD, synodicMonth)
-	if age < 0 {
-		age += synodicMonth
-	}
-	fraction := age / synodicMonth
-	index := int(math.Floor(fraction*lunarPhaseCount+0.5)) % lunarPhaseCount
-	if index < 0 {
-		index += lunarPhaseCount
-	}
-	return MoonPhase{
-		Name:         MoonPhaseNames[index],
-		Index:        index,
-		Age:          age,
-		Illumination: (1 - math.Cos(2*math.Pi*fraction)) / 2 * 100,
-	}
 }
 
 // ParseAlmanacDay parses the optional date a sun command names. An empty date

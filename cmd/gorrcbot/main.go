@@ -298,6 +298,18 @@ func configSummary(paths BotPaths, cfg *BotConfig, ownHash []byte) string {
 	if cfg.KJVTxtFile != "" {
 		fmt.Fprintf(&sb, "kjv:        %v\n", cfg.KJVTxtFile)
 	}
+	if cfg.TideURL != "" {
+		fmt.Fprintf(&sb, "tide:       %v\n", cfg.TideURL)
+	}
+	if cfg.BuoyURL != "" {
+		fmt.Fprintf(&sb, "buoy:       %v\n", cfg.BuoyURL)
+	}
+	if cfg.RiverURL != "" {
+		fmt.Fprintf(&sb, "river:      %v\n", cfg.RiverURL)
+	}
+	if cfg.RiverFloodURL != "" {
+		fmt.Fprintf(&sb, "river flood: %v\n", cfg.RiverFloodURL)
+	}
 	if cfg.SpaceWeatherURL != "" {
 		fmt.Fprintf(&sb, "spacewx:    %v\n", cfg.SpaceWeatherURL)
 	}

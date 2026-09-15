@@ -65,6 +65,8 @@ func TestRegistryNamesAreStable(t *testing.T) {
 		"conv", "morse", "signal",
 		// The field assistant's aviation weather commands.
 		"metar", "wxalert",
+		// The field assistant's lunar and marine commands.
+		"buoy", "coldwater", "immersion", "moon", "river", "tide",
 	}
 	// The registry sorts its rows, so the expectation is sorted too; the groups
 	// above are for the reader, not the comparison.

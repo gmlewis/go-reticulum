@@ -143,42 +143,59 @@ func TestSolarAlmanacDayLengthIsSunsetMinusSunrise(t *testing.T) {
 	}
 }
 
-// TestMoonPhaseMatchesReferenceGoldens asserts each of the eight phase names is
-// reached on a date an independent implementation agrees is that phase, and
-// that the counted age stays inside the mean synodic month's stated accuracy.
+// TestMoonPhaseMatchesReferenceGoldens asserts every phase name is reached at
+// the instant an independent implementation puts that phase at. The instants
+// are the reference's own phase instants, captured by solving the Sun-Moon
+// elongation, so a name that drifts out of its bin is caught.
 func TestMoonPhaseMatchesReferenceGoldens(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		date      string
-		name      string
-		reference float64
+		name         string
+		utJD         float64
+		illumination string
 	}{
-		{"2026-01-18", "New Moon", 0.189},
-		{"2026-01-20", "Waxing Crescent", 1.9778888888888888},
-		{"2026-01-24", "First Quarter", 5.789},
-		{"2026-01-01", "Waxing Gibbous", 12.400111111111112},
-		{"2026-01-02", "Full Moon", 13.489},
-		{"2026-01-06", "Waning Gibbous", 17.611222222222224},
-		{"2026-01-09", "Last Quarter", 20.489},
-		{"2026-01-14", "Waning Crescent", 24.689},
+		{"New Moon", 2461059.327654, "dark"},
+		{"Waxing Crescent", 2461063.013539, "crescent"},
+		{"First Quarter", 2461066.699424, "half"},
+		{"Waxing Gibbous", 2461070.061266, "gibbous"},
+		{"Full Moon", 2461073.423108, "lit"},
+		{"Waning Gibbous", 2461077.226496, "gibbous"},
+		{"Last Quarter", 2461081.029884, "half"},
+		{"Waning Crescent", 2461085.015331, "crescent"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			at := mustParseDay(t, tc.date).Add(12 * time.Hour)
-			got := MoonPhaseAt(at)
+			got := MoonPhaseAt(julianToTime(tc.utJD))
 			if got.Name != tc.name {
-				t.Errorf("MoonPhaseAt(%v).Name = %q, want %q", tc.date, got.Name, tc.name)
+				t.Errorf("at the reference %v instant the phase reads as %q", tc.name, got.Name)
 			}
 			if got.Index != indexOfPhase(t, tc.name) {
-				t.Errorf("MoonPhaseAt(%v).Index = %v, want %v", tc.date, got.Index, indexOfPhase(t, tc.name))
+				t.Errorf("at the reference %v instant the index is %v", tc.name, got.Index)
 			}
-			// The mean synodic month drifts from the true new moon by up to
-			// about a day and a half over the epoch's span.
-			if diff := math.Abs(got.Age - tc.reference); diff > 1.7 {
-				t.Errorf("MoonPhaseAt(%v).Age = %v, reference %v (off by %v)",
-					tc.date, got.Age, tc.reference, diff)
+			// The illumination has to match the phase the name claims.
+			switch tc.illumination {
+			case "dark":
+				if got.Illumination > 5 {
+					t.Errorf("new moon illumination = %.0f%%", got.Illumination)
+				}
+			case "crescent":
+				if got.Illumination <= 0 || got.Illumination >= 50 {
+					t.Errorf("crescent illumination = %.0f%%, want between 0 and 50", got.Illumination)
+				}
+			case "half":
+				if !closeWithin(got.Illumination, 50, 3) {
+					t.Errorf("quarter illumination = %.0f%%, want about 50", got.Illumination)
+				}
+			case "gibbous":
+				if got.Illumination <= 50 || got.Illumination >= 100 {
+					t.Errorf("gibbous illumination = %.0f%%, want between 50 and 100", got.Illumination)
+				}
+			case "lit":
+				if got.Illumination < 95 {
+					t.Errorf("full moon illumination = %.0f%%", got.Illumination)
+				}
 			}
 		})
 	}

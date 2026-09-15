@@ -110,6 +110,21 @@ type BotConfig struct {
 	// opened read-only and parsed lazily, on the first kjv command. Empty
 	// disables the command, which then says how to turn it on.
 	KJVTxtFile string
+	// TideURL is an optional provider template for the tide command. It must
+	// carry both {place} (the station id) and {date} (YYYYMMDD), and be an
+	// absolute http:// or https:// URL with no credentials. Empty disables the
+	// command, which then says how to turn it on.
+	TideURL string
+	// BuoyURL is an optional provider template for the buoy command; {place} is
+	// replaced with the requested buoy id. Empty disables the command.
+	BuoyURL string
+	// RiverURL is an optional provider template for the river command; {place}
+	// is replaced with the requested gauge id. Empty disables the command.
+	RiverURL string
+	// RiverFloodURL is an optional provider template for the river command's
+	// flood thresholds; it is asked with the same gauge id. Empty means the
+	// command reports the stage and flow without a flood comparison.
+	RiverFloodURL string
 	// MetarURL is an optional provider template for the metar command; {place}
 	// is replaced with the requested ICAO station code. It must be an absolute
 	// http:// or https:// URL carrying no credentials. Empty disables the
@@ -287,6 +302,10 @@ var botKeys = map[string]bool{
 	"weather_url":                true,
 	"space_weather_url":          true,
 	"metar_url":                  true,
+	"tide_url":                   true,
+	"buoy_url":                   true,
+	"river_url":                  true,
+	"river_flood_url":            true,
 	"weather_alert_url":          true,
 	"kjv_txt_file":               true,
 	"launch_url":                 true,
@@ -433,6 +452,38 @@ func (d *configDecoder) decodeBotTable(t *toml.Table) error {
 			if trimmed := strings.TrimSpace(s); trimmed != "" {
 				if err := validateProviderTemplate(trimmed); err != nil {
 					d.warn("[bot] weather_url is unusable (%v); weather stays off until it is fixed", err)
+				}
+			}
+		case "tide_url":
+			s, err := d.stringValue("[bot]", key, kv)
+			if err != nil {
+				return err
+			}
+			d.cfg.TideURL = s
+			if trimmed := strings.TrimSpace(s); trimmed != "" {
+				if err := validateProviderTemplate(trimmed, tideStationToken, tideDateToken); err != nil {
+					d.warn("[bot] tide_url is unusable (%v); tide stays off until it is fixed", err)
+				}
+			}
+		case "buoy_url", "river_url", "river_flood_url":
+			s, err := d.stringValue("[bot]", key, kv)
+			if err != nil {
+				return err
+			}
+			switch key {
+			case "buoy_url":
+				d.cfg.BuoyURL = s
+			case "river_url":
+				d.cfg.RiverURL = s
+			default:
+				d.cfg.RiverFloodURL = s
+			}
+			// Same rule as the other provider templates: an unusable template is
+			// an operator error, reported once at startup, and the value is kept
+			// so the command refuses it instead of reporting "not configured".
+			if trimmed := strings.TrimSpace(s); trimmed != "" {
+				if err := validateProviderTemplate(trimmed); err != nil {
+					d.warn("[bot] %v is unusable (%v); the command stays off until it is fixed", key, err)
 				}
 			}
 		case "metar_url", "weather_alert_url":

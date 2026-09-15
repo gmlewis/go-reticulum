@@ -556,18 +556,31 @@ func TestIntegrationBotAnswersAnAddressedCommand(t *testing.T) {
 			DefaultNick, rig.notices(t, 0))
 	}
 
-	// 4. The listing names every registered command.
+	// 4. The listing names every registered command. The listing outgrew one
+	// envelope long ago, so the reply arrives as several notices, each marked
+	// with the continuation marker except the last; every command has to appear
+	// across them.
 	reg := newRegistry(newBot(defaultTestConfig(), BotPaths{}, nil, mustHex(rig.botHash), nil, botHooks{}))
-	var help string
+	var help strings.Builder
+	first := true
 	for _, notice := range rig.notices(t, 0) {
-		if strings.HasPrefix(notice, "Commands: ") {
-			help = notice
+		if first {
+			if !strings.HasPrefix(notice, "Commands: ") {
+				continue
+			}
+			first = false
+		}
+		help.WriteString(strings.TrimSuffix(notice, splitMarker))
+	}
+	listing := help.String()
+	for _, name := range reg.names() {
+		if !strings.Contains(listing, name) {
+			t.Errorf("the help notices = %q, want them to list %q", listing, name)
 		}
 	}
-	for _, name := range reg.names() {
-		if !strings.Contains(help, name) {
-			t.Errorf("help = %q, want it to list %q", help, name)
-		}
+	if !strings.HasSuffix(listing, reg.names()[len(reg.names())-1]) {
+		t.Errorf("the help notices end at %q, want the last command %q",
+			listing[len(listing)-min(len(listing), 24):], reg.names()[len(reg.names())-1])
 	}
 
 	// 5. An unknown command gets exactly one short line.

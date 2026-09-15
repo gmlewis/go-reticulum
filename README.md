@@ -330,6 +330,10 @@ space_weather_url = ""     # optional fixed http(s) JSON URL for spacewx/solar: 
 metar_url = ""             # optional http(s) template for metar; {place} becomes the ICAO station code. Empty disables metar
 weather_alert_url = ""     # optional http(s) template for wxalert; {place} is the place or area. Cached 15 min. Empty disables wxalert
 emergency_lxmf_destination = "" # optional 32-hex lxmf.delivery hash: every new sos beacon is also queued there
+tide_url = ""              # optional http(s) template for tide; must carry {place} (station) and {date}. Empty disables tide
+buoy_url = ""              # optional http(s) template for buoy; {place} becomes the buoy id. Empty disables buoy
+river_url = ""             # optional http(s) template for river; {place} becomes the USGS gauge id. Empty disables river
+river_flood_url = ""       # optional http(s) template for the river flood categories; {place} is the same gauge id
 
 # One [[hubs]] entry per hub. Every entry is dialed on startup.
 [[hubs]]
@@ -414,6 +418,11 @@ the announce cache the bot already keeps.
 | `morse <text>` / `morse -d <code…>` | translate text to Morse code and back |
 | `metar <ICAO>` | decode the aviation weather report for an airfield into wind, visibility, temperature, dewpoint, and altimeter setting (needs `metar_url`) |
 | `wxalert <place\|area>` | severe weather warnings in force (needs `weather_alert_url`; answers are cached for 15 minutes) |
+| `moon [loc] [date]` | the lunar almanac: phase and age, moonrise, transit, moonset, the coming night's illumination rating (Dark Night, Moderate Light, Bright Moonlight), and the next new, first-quarter, full and last-quarter moons — the new and full ones named as the spring tides they drive |
+| `tide <station\|coords\|place> [date]` | high and low water for a station (a 7-digit provider id like `9414290`, a port name, or a position resolved against the bot's own reference table of ~110 stations), the state of the tide now, and the spring/neap assessment (needs `tide_url`, which carries `{place}` and `{date}`) |
+| `buoy <station_id>` | the sea state from an offshore weather buoy: wave height, dominant period and direction, wind, water temperature, and the pressure trend. The period, not the height, decides whether the sea is groundswell or chop, and the answer names it (needs `buoy_url`) |
+| `river <gauge_id>` | a stream gauge's stage and discharge, how the stage has moved over three hours, and the flood category (needs `river_url`; `river_flood_url` adds the flood thresholds and the action stage). The gauge is a USGS site number: a river *name* is deliberately not accepted, because resolving one offline would risk answering for a different river of the same name |
+| `coldwater [temp_f\|temp_c]` (alias `immersion`) | the 1-10-1 cold-water rule, or the swim-failure and survival windows for a water temperature (`48F`, `8.9C`; a bare number is Fahrenheit). Entirely offline |
 
 **Locations are resolved offline.** `loc`, `dist`, `proj`, `sun`, `sitrep`, and
 the `sos` and `checkin` position arguments all accept the same five notations —
@@ -424,6 +433,33 @@ and decimal minutes (`37°25.323'N 122°05.048'W`), and a Maidenhead grid locato
 commands say what they accept instead of guessing. The Plus Codes are produced
 by a full implementation of the specification, checked against the reference
 implementation's own test data.
+
+**Marine and coastal operations.** The tide, buoy, and river commands each read
+one optional provider, and each degrades honestly when it cannot: an
+unconfigured or unreachable provider produces one line saying so, never a
+guessed number. Two of the three carry information the provider does not: the
+tide command interpolates between the two predictions that bracket the present
+moment with the rule of twelfths (1, 2, 3, 3, 2, 1 twelfths of the range), so a
+single pair of predictions gives the depth at any moment in the six hours
+between them, and it reads the spring/neap cycle from the Moon's elongation
+rather than from a second feed. The buoy command converts the feed's metric
+units to the knots and feet a mariner uses, and names the sea state from the
+wave period, because a six-foot sea at five seconds and the same six feet at
+sixteen seconds are entirely different problems. The river command compares the
+stage against the river-forecast center's own categories, so "flood stage" is
+the local definition rather than a generic one.
+
+**`moon` is accurate, and `sun` inherits it.** The lunar almanac implements
+Meeus's abridged lunar theory (the full 60-term longitude, distance and latitude
+series) in Terrestrial Time, with a Delta T polynomial bridging the clock, and
+it is checked against an independent implementation of the same algorithms:
+positions to a fraction of an arcminute, and rise, set, transit and the four
+principal phase instants to within a couple of minutes. Those phase instants
+also anchor the phase name, the age and the illumination, so they can never
+disagree with each other, and the `sun` command's moon line reports the same
+values. The night rating is the one deliberate simplification: the Moon is
+sampled at the middle of the dark window, and a Moon below the horizon there
+means "Dark Night" whatever the phase says.
 
 **A distress beacon is acted on, not just recorded.** `sos` writes the beacon to
 `<storage_dir>/sos.json` (atomically, before anything else), alerts every room

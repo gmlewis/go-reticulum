@@ -51,6 +51,15 @@ func TestHelpHidesConfigurationGuidanceWhenConfigured(t *testing.T) {
 		{"spacewx", "Needs space_weather_url in config.toml", func(c *BotConfig) {
 			c.SpaceWeatherURL = "https://sw.example.invalid/kp.json"
 		}},
+		{"tide", "Needs tide_url in config.toml", func(c *BotConfig) {
+			c.TideURL = "https://tides.example.invalid/get?station={place}&date={date}"
+		}},
+		{"buoy", "Needs buoy_url in config.toml", func(c *BotConfig) {
+			c.BuoyURL = "https://ndbc.example.invalid/realtime2/{place}.txt"
+		}},
+		{"river", "Needs river_url in config.toml", func(c *BotConfig) {
+			c.RiverURL = "https://water.example.invalid/iv/?sites={place}&format=json"
+		}},
 		{"metar", "Needs metar_url in config.toml", func(c *BotConfig) {
 			c.MetarURL = "https://wx.example.invalid/metar?ids={place}&format=raw"
 		}},
@@ -101,6 +110,9 @@ func TestNoCommandHelpMentionsConfigWhenConfigured(t *testing.T) {
 	cfg.LXMFEnabled = true
 	cfg.KJVTxtFile = "/tmp/kjv.txt"
 	cfg.SpaceWeatherURL = "https://sw.example.invalid/kp.json"
+	cfg.TideURL = "https://tides.example.invalid/get?station={place}&date={date}"
+	cfg.BuoyURL = "https://ndbc.example.invalid/realtime2/{place}.txt"
+	cfg.RiverURL = "https://water.example.invalid/iv/?sites={place}&format=json"
 	cfg.MetarURL = "https://wx.example.invalid/metar?ids={place}&format=raw"
 	cfg.WeatherAlertURL = "https://wx.example.invalid/alerts?area={place}"
 

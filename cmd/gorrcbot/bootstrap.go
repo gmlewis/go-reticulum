@@ -131,6 +131,46 @@ kjv_txt_file = ""
 #   weather_url = "https://wttr.in/{place}?format=%l:+%C+%t+%w+%h"
 weather_url = ""
 
+# Optional provider template for the tide command: the high and low water
+# predictions for a station. It must carry BOTH {place} (the station id) and
+# {date} (YYYYMMDD), and must keep its own scheme and host. The answer is the
+# station's high/low predictions; the state of the tide between them is
+# estimated with the rule of twelfths, so one pair of predictions gives the
+# depth all day. A {place} may be a 7-digit station id (9414290 is San
+# Francisco), a port name, or a position, which resolves to the nearest station
+# in the bot's own reference table. Leave empty to disable the command.
+#
+#   tide_url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?product=predictions&datum=MLLW&time_zone=gmt&units=english&interval=hilo&format=json&station={place}&begin_date={date}&range=48"
+tide_url = ""
+
+# Optional provider template for the buoy command: the real-time sea state from
+# a weather buoy. {place} becomes the lowercased buoy id, and the template must
+# keep its own scheme and host. The answer is the fixed-column text feed the
+# National Data Buoy Center publishes; the newest observation in it is decoded.
+# Leave empty to disable the command.
+#
+#   buoy_url = "https://www.ndbc.noaa.gov/data/realtime2/{place}.txt"
+buoy_url = ""
+
+# Optional provider template for the river command: the instantaneous stage and
+# discharge at a stream gauge. {place} becomes the USGS site number, and the
+# template must keep its own scheme and host. Appending "&period=P1D" makes the
+# provider return a day of readings, which is what the three-hour trend is
+# measured over; without it the command reports the stage and flow with no
+# trend. Leave empty to disable the command.
+#
+#   river_url = "https://waterservices.usgs.gov/nwis/iv/?sites={place}&format=json&parameterCd=00065,00060&period=P1D"
+river_url = ""
+
+# Optional second template for the river command: the flood categories a river
+# forecast center publishes for the same gauge. {place} is the same USGS site
+# number. With it, the answer names the flood status and the action stage;
+# without it, the command reports the stage and says it has nothing to compare
+# it against.
+#
+#   river_flood_url = "https://api.water.noaa.gov/nwps/v1/gauges/{place}"
+river_flood_url = ""
+
 # Optional provider URL for the spacewx command (alias: solar): the solar flux
 # index, the sunspot number, and the planetary K-index, read as JSON. It takes
 # no substitution tokens and must be an absolute http:// or https:// URL
