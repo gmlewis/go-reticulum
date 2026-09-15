@@ -980,6 +980,7 @@ func (h *HubService) formatStats() string {
 // ResolveIdentityHash resolves a token to an identity hash, mirroring
 // _resolve_identity_hash.
 func (h *HubService) ResolveIdentityHash(token string, room *string) []byte {
+	token = NormalizePeerToken(token)
 	targetLink := h.CommandHandler.FindTargetLink(token, room)
 	if targetLink != nil {
 		if sess := h.SessionManager.GetSession(targetLink); sess != nil && sess.Peer != nil {

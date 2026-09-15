@@ -681,7 +681,7 @@ func (c *CommandHandler) handleKline(link *rns.Link, peerHash []byte, parts []st
 			fmt.Sprintf("usage: /kline %v <nick|hashprefix|hash>", op))
 		return
 	}
-	target := parts[2]
+	target := NormalizePeerToken(parts[2])
 	if op == "add" {
 		targetLink := c.FindTargetLink(target, nil)
 		if targetLink != nil {
@@ -1012,7 +1012,7 @@ func (c *CommandHandler) FindTargetLink(token string, room *string) *rns.Link {
 // index. Matches are ordered by peer-hash hex with unidentified sessions
 // last (Python's match order comes from dict/set iteration order).
 func (c *CommandHandler) FindTargetLinks(token string, room *string) []*rns.Link {
-	t := pythonLower(strings.TrimFunc(token, isUnicodeSpace))
+	t := pythonLower(NormalizePeerToken(token))
 	if t == "" {
 		return nil
 	}
@@ -1054,6 +1054,7 @@ func (c *CommandHandler) FindTargetLinks(token string, room *string) []*rns.Link
 // session peer hash, several yield no hash, and an offline or
 // unidentified token falls back to parsing.
 func (c *CommandHandler) ResolveIdentityHashWithMatches(token string, room *string) ([]byte, []*rns.Link) {
+	token = NormalizePeerToken(token)
 	matches := c.FindTargetLinks(token, room)
 	sm := c.hooks.SessionManager()
 	if len(matches) == 1 {
@@ -1188,6 +1189,7 @@ func (c *CommandHandler) sendDirectNotice(link *rns.Link, peerHash []byte, room 
 
 	targetLink := link
 	targetHash := peerHash
+	target = NormalizePeerToken(target)
 	self := pythonLower(target) == "me"
 	if !self {
 		matches := c.FindTargetLinks(target, nil)

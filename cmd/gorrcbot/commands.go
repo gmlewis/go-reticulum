@@ -836,10 +836,18 @@ func (c *commandContext) runID() []string {
 		hash, nick, HubDestName, shortHash(hash))}
 }
 
+// normalizePeerToken trims a peer token and drops one leading "@" sigil, the
+// sigil a room member types to address a peer. The rule lives in the rrc package
+// beside the protocol it comes from, so the bot and the RRC client agree on what
+// a token names.
+func normalizePeerToken(token string) string {
+	return rrc.NormalizePeerToken(token)
+}
+
 // resolveTarget resolves one peer token to a target, or returns the single reply
 // line that explains why it could not.
 func (c *commandContext) resolveTarget(token string) (rrc.PeerTarget, []string) {
-	token = strings.TrimSpace(token)
+	token = normalizePeerToken(token)
 	if token == "" {
 		return rrc.PeerTarget{}, []string{"no target given"}
 	}
@@ -854,6 +862,7 @@ func (c *commandContext) resolveTarget(token string) (rrc.PeerTarget, []string) 
 // returns the single reply line that explains why it could not.
 func (c *commandContext) resolveTargetWithText(args string) (rrc.PeerTarget, string, []string) {
 	token, rest := splitCommandLine(args)
+	token = normalizePeerToken(token)
 	if token == "" || rest == "" {
 		return rrc.PeerTarget{}, "", []string{"Usage: " + dnoticeUsage}
 	}

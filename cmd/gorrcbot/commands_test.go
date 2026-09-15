@@ -559,6 +559,62 @@ func TestWeatherIsPendingWithoutAProvider(t *testing.T) {
 	}
 }
 
+// TestPeerTokenAcceptsTheAtSigil asserts every command that takes a peer token
+// accepts the "@" a room member types to address someone: "@Bob" and "Bob" name
+// the same peer, so both must resolve identically.
+func TestPeerTokenAcceptsTheAtSigil(t *testing.T) {
+	t.Parallel()
+
+	reg, session, fake := commandFixture(t, nil)
+	fake.setCapability(rrc.CapDirectNotice, true)
+	peer := peerHashFor(0x13)
+	fake.setKnownPeer(hexString(peer), "Bob")
+	fake.messages["general"] = []*rrc.RRCMessage{
+		{Kind: "msg", Room: "general", Src: peer, Nick: "Bob", Text: "hello there", Ts: 1700000000000},
+	}
+
+	for _, line := range []string{"dnoticecap", "seen"} {
+		bare := runLines(t, reg, session, line+" Bob")
+		sigil := runLines(t, reg, session, line+" @Bob")
+		if !slices.Equal(bare, sigil) {
+			t.Errorf("%v @Bob = %q, want the same as %v Bob = %q", line, sigil, line, bare)
+		}
+		if len(sigil) == 0 || strings.Contains(sigil[0], "no such") {
+			t.Errorf("%v @Bob = %q, want the target resolved", line, sigil)
+		}
+	}
+}
+
+// TestNormalizePeerToken asserts a peer token is trimmed and one leading sigil is
+// dropped, so "@glenn", " glenn " and "glenn" name the same peer while a token
+// that is only the sigil normalizes to empty.
+func TestNormalizePeerToken(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		token string
+		want  string
+	}{
+		{name: "bare nick", token: "glenn", want: "glenn"},
+		{name: "sigil nick", token: "@glenn", want: "glenn"},
+		{name: "padded nick", token: "  glenn  ", want: "glenn"},
+		{name: "padded sigil nick", token: "  @glenn  ", want: "glenn"},
+		{name: "sigil only", token: "@", want: ""},
+		{name: "double sigil drops one", token: "@@glenn", want: "@glenn"},
+		{name: "empty", token: "", want: ""},
+		{name: "whitespace", token: "   ", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := normalizePeerToken(tt.token); got != tt.want {
+				t.Errorf("normalizePeerToken(%q) = %q, want %q", tt.token, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestSeenReportsTheLastMessageFromAPeer asserts the seen command answers from
 // the hub's own buffer, which is why it exists on a mesh: a client that was
 // offline can catch up.

@@ -154,6 +154,21 @@ func ParseIdentityHash(text string) ([]byte, error) {
 	return b, nil
 }
 
+// NormalizePeerToken trims a user-supplied peer token and drops one leading
+// "@" address sigil. Room members address each other as "@nick", so an asker
+// naturally names a peer that way; the sigil is never part of a nick, and no
+// hex hash prefix begins with one, so removing it turns the conversational
+// form into the form every lookup understands. A token that is only the sigil
+// normalizes to empty, which callers already treat as an absent token.
+func NormalizePeerToken(token string) string {
+	token = strings.TrimFunc(token, isUnicodeSpace)
+	rest, ok := strings.CutPrefix(token, "@")
+	if !ok {
+		return token
+	}
+	return strings.TrimFunc(rest, isUnicodeSpace)
+}
+
 // hexOf renders bytes as lowercase hex.
 func hexOf(b []byte) string { return hex.EncodeToString(b) }
 

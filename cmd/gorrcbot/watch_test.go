@@ -168,6 +168,21 @@ func TestWatchConfirmsListsAndUnwatches(t *testing.T) {
 	assertLines(t, f.line(t, "unwatch"), []string{"Usage: " + unwatchUsage})
 }
 
+// TestWatchAcceptsTheAtSigil asserts a filter typed the way a peer is addressed
+// ("@retibooks") watches for the announced name, since the sigil is not part of
+// the name and is not otherwise a legal filter character.
+func TestWatchAcceptsTheAtSigil(t *testing.T) {
+	t.Parallel()
+
+	f := newWatchFixture(t)
+	assertWatchAnswer(t, f.line(t, "watch @retibooks"),
+		`watching for "retibooks" for 24h; a bot restart forgets it`)
+	assertLines(t, f.line(t, "watches"), []string{
+		"1 watch:",
+		`1. "retibooks", 1d left`,
+	})
+}
+
 // TestWatchRejectsUnusableFilters asserts the filter rule: short, long, and
 // structurally dangerous tokens are refused, real names in any script are not.
 func TestWatchRejectsUnusableFilters(t *testing.T) {

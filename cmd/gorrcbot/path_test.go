@@ -352,6 +352,65 @@ func TestPathResolvesANameTheHubNeverShowedUs(t *testing.T) {
 	}
 }
 
+// TestPathAcceptsTheAtSigilOnAKnownPeer asserts a token typed the way a room
+// member addresses a peer ("@Carol") answers exactly as the bare nick does: the
+// sigil is how one speaks to a peer, not part of the nick.
+func TestPathAcceptsTheAtSigilOnAKnownPeer(t *testing.T) {
+	t.Parallel()
+
+	peer, err := rns.NewIdentity(true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, session, _, paths := pathFixture(t, "Carol", peer)
+	paths.setIdentity(peer)
+
+	delivery := rns.CalculateHash(peer, "lxmf", "delivery")
+	node := rns.CalculateHash(peer, "nomadnetwork", "node")
+	want := []string{
+		fmt.Sprintf("path Carol (%v): 2 destinations", shortHash(hexString(peer.Hash))),
+		fmt.Sprintf("lxmf.delivery (%v): %v", shortHash(hexString(delivery)), pathAskedLine),
+		fmt.Sprintf("nomadnetwork.node (%v): %v", shortHash(hexString(node)), pathAskedLine),
+	}
+	assertLines(t, runPathLine(t, reg, session, "path @Carol"), want)
+}
+
+// TestPathAcceptsTheAtSigilOnAnAnnouncedName asserts the sigil is dropped before
+// the announce cache is searched too, since that fallback is what answers for a
+// peer no room ever showed the hub.
+func TestPathAcceptsTheAtSigilOnAnAnnouncedName(t *testing.T) {
+	t.Parallel()
+
+	peer, err := rns.NewIdentity(true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, session, _, paths := pathFixture(t, "Carol", peer)
+	paths.setIdentity(peer)
+	delivery := rns.CalculateHash(peer, "lxmf", "delivery")
+	paths.setPath(delivery, &rns.PathInfo{
+		Timestamp: catchupBase.Add(-5 * time.Minute),
+		NextHop:   mustHex("9f3c9f3c9f3c9f3c9f3c9f3c9f3c9f3c"),
+		Hops:      1,
+		Expires:   catchupBase.Add(time.Hour),
+	})
+	reg.announces.process(announce{
+		DestHex:     hexString(mustHex("abcdefabcdefabcdefabcdefabcdefab")),
+		IdentityHex: hexString(peer.Hash),
+		Name:        "Retibooks Node",
+		Aspect:      "nomadnetwork.node",
+		At:          catchupBase,
+	})
+
+	lines := runPathLine(t, reg, session, "path @retibooks")
+	if len(lines) != 3 {
+		t.Fatalf("lines = %v, want a header and two destinations", lines)
+	}
+	if want := fmt.Sprintf("path Retibooks Node (%v): 2 destinations", shortHash(hexString(peer.Hash))); lines[0] != want {
+		t.Errorf("header = %q, want %q", lines[0], want)
+	}
+}
+
 // TestPathRefusesANameWithNoIdentityBehindIt asserts a token that is neither a
 // known peer nor an announce with an identity is refused with the hub's own
 // answer, never guessed at.

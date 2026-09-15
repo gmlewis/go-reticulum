@@ -147,6 +147,10 @@ type pathSubject struct {
 // aspect, which is the population a path question is usually about, so a token the
 // hub cannot resolve is looked up there before it is refused.
 func (c *commandContext) pathSubject(token string) (pathSubject, []string) {
+	// The token is normalized before both lookups: the sigil a room member types
+	// ("@glenn") is not part of the nick, so it must not reach the announce cache
+	// either.
+	token = normalizePeerToken(token)
 	target, rejected := c.resolveTarget(token)
 	if rejected == nil {
 		return pathSubject{hash: target.Hash, label: pathTargetLabel(target)}, nil

@@ -464,8 +464,11 @@ func (c *commandContext) runWatches() []string {
 func sanitizeWatchFilter(args string) (string, error) {
 	filter := strings.TrimSpace(args)
 	// Runs of whitespace collapse to one space, so a mistyped name still matches
-	// the announce it was meant for.
+	// the announce it was meant for. A leading "@" is the sigil a room member
+	// uses to address a peer, never part of the name it announces under, so it
+	// is dropped before the filter is validated.
 	filter = strings.Join(strings.Fields(filter), " ")
+	filter = normalizePeerToken(filter)
 	if len(filter) < minWatchFilterBytes || len(filter) > maxWatchFilterBytes {
 		return "", errWatchFilter
 	}

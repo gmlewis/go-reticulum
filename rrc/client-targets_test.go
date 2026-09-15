@@ -89,6 +89,11 @@ func TestResolvePeerToken(t *testing.T) {
 		{name: "full hash uppercase", token: strings.ToUpper(resolveH4), wantHash: resolveH4, wantNick: "Carol"},
 		{name: "our own hash", token: own, wantHash: own, wantNick: "TestNick"},
 		{name: "our own nick", token: "TestNick", wantHash: own, wantNick: "TestNick"},
+		{name: "sigil nick", token: "@Bob", wantHash: resolveH3, wantNick: "Bob"},
+		{name: "sigil lowercased nick", token: "@bob", wantHash: resolveH3, wantNick: "Bob"},
+		{name: "sigil padded nick", token: "  @Bob  ", wantHash: resolveH3, wantNick: "Bob"},
+		{name: "sigil hash prefix", token: "@bbbbbb", wantHash: resolveH3, wantNick: "Bob"},
+		{name: "sigil full hash", token: "@" + resolveH4, wantHash: resolveH4, wantNick: "Carol"},
 		{name: "prefix-only member", token: "cccccc1", wantHash: resolveH5, wantNick: "Dave", prefixOnly: true},
 
 		{
@@ -113,6 +118,8 @@ func TestResolvePeerToken(t *testing.T) {
 		},
 		{name: "empty token", token: "", wantErr: ErrPeerTokenEmpty},
 		{name: "whitespace-only token", token: "   ", wantErr: ErrPeerTokenEmpty},
+		{name: "sigil-only token", token: "@", wantErr: ErrPeerTokenEmpty},
+		{name: "sigil with whitespace only", token: "  @  ", wantErr: ErrPeerTokenEmpty},
 		{name: "unknown nick", token: "Nobody", wantErr: ErrPeerNotFound},
 		{name: "unknown full hash", token: strings.Repeat("ff", 16), wantErr: ErrPeerNotFound},
 		{name: "unknown six hex prefix", token: "eeeeee", wantErr: ErrPeerNotFound},

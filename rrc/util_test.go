@@ -55,6 +55,33 @@ func TestNormalizeNickInvalidUTF8(t *testing.T) {
 	}
 }
 
+func TestNormalizePeerToken(t *testing.T) {
+	t.Parallel()
+
+	// A peer token is trimmed and one leading "@" address sigil is dropped,
+	// so the conversational form ("@glenn") names what the bare form names.
+	for _, tc := range []struct {
+		name  string
+		token string
+		want  string
+	}{
+		{"bare nick", "glenn", "glenn"},
+		{"sigil nick", "@glenn", "glenn"},
+		{"padded nick", "  glenn  ", "glenn"},
+		{"padded sigil nick", "  @glenn  ", "glenn"},
+		{"sigil only", "@", ""},
+		{"padded sigil only", "  @  ", ""},
+		{"double sigil drops one", "@@glenn", "@glenn"},
+		{"empty", "", ""},
+		{"whitespace", "   ", ""},
+		{"hash keeps its digits", "@0xabcdef01", "0xabcdef01"},
+	} {
+		if got := NormalizePeerToken(tc.token); got != tc.want {
+			t.Errorf("%v: NormalizePeerToken(%q) = %q, want %q", tc.name, tc.token, got, tc.want)
+		}
+	}
+}
+
 func TestExpandPath(t *testing.T) {
 	t.Setenv("RRCD_TEST_VAR", "/opt/var")
 	home := testutils.TempDir(t, "expand-home-")

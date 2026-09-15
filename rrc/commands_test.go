@@ -585,6 +585,11 @@ func TestFindTargetLinks(t *testing.T) {
 		{name: "non-hex token", token: "zzzzzz", want: nil},
 		{name: "nick case-insensitive", token: "ALICE", want: []*rns.Link{linkA}},
 		{name: "nick strip", token: "  alice  ", want: []*rns.Link{linkA}},
+		{name: "sigil nick", token: "@alice", want: []*rns.Link{linkA}},
+		{name: "sigil padded nick", token: "  @ALICE  ", want: []*rns.Link{linkA}},
+		{name: "sigil full hex hash", token: "@" + hexA, want: []*rns.Link{linkA}},
+		{name: "sigil six-character prefix", token: "@" + hexA[:6], want: []*rns.Link{linkA}},
+		{name: "sigil only", token: "@", want: nil},
 		{name: "no nick for empty index hit", token: "nobody", want: nil},
 	}
 	general := "general"
@@ -712,6 +717,22 @@ func TestResolveIdentityHashWithMatches(t *testing.T) {
 	h, matches = chat.ResolveIdentityHashWithMatches("0xabcdef01", nil)
 	if h == nil || hexKey(h) != "abcdef01" || matches != nil {
 		t.Errorf("parse resolve = %v, %v", h, matches)
+	}
+
+	// The "@" a room member types to address a peer is not part of the
+	// token: a sigil-prefixed match and a sigil-prefixed hash both resolve
+	// the same way the bare token does.
+	h, matches = chat.ResolveIdentityHashWithMatches("@"+hexA, nil)
+	if h == nil || string(h) != string(peerA) || len(matches) != 1 || matches[0] != linkA {
+		t.Errorf("sigil single match resolve = %v, %v", h, matches)
+	}
+	h, matches = chat.ResolveIdentityHashWithMatches("@0xabcdef01", nil)
+	if h == nil || hexKey(h) != "abcdef01" || matches != nil {
+		t.Errorf("sigil parse resolve = %v, %v", h, matches)
+	}
+	h, matches = chat.ResolveIdentityHashWithMatches("@alice", nil)
+	if h != nil || len(matches) != 2 {
+		t.Errorf("sigil ambiguous resolve = %v, %v", h, matches)
 	}
 }
 

@@ -86,7 +86,7 @@ func (p PeerTarget) String() string {
 // on GetRoomMembers and the hub's nick table, so it knows exactly what this
 // client has seen.
 func (h *RRCHub) ResolvePeerToken(token string) (PeerTarget, error) {
-	token = strings.TrimSpace(token)
+	token = NormalizePeerToken(token)
 	if token == "" {
 		return PeerTarget{}, ErrPeerTokenEmpty
 	}
