@@ -172,20 +172,6 @@ func (h *PluginHost) addStoreImports(imports wago.Imports) {
 	})
 }
 
-// invoke calls a named export under the given execution budget. It is the
-// direct path the timeout tests exercise.
-func (h *PluginHost) invoke(export string, timeout time.Duration, args ...wago.Value) ([]wago.Value, error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	if h.inst == nil {
-		return nil, errors.New("plugin host has no loaded plugin")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	return h.inst.Call(ctx, export, args...)
-}
-
 // HandleCommand runs the plugin's handle_command export: the request bytes
 // are allocated in guest memory through wagoplugin_alloc, the response
 // (ptr, len) pair is read back, and the response bytes (the command's

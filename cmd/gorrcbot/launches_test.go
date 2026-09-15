@@ -104,30 +104,28 @@ func runLaunchLine(t *testing.T, reg *registry, session *hubSession, line string
 	})
 }
 
-// TestLaunchesReportsUpcomingLaunches asserts the default window lists the next
-// three launches, soonest first, with the countdown, vehicle, status, provider and
-// pad on one line each.
+// TestLaunchesReportsUpcomingLaunches asserts the default window lists the
+// launches still ahead, soonest first, with the countdown, vehicle, status,
+// provider and pad on one line each — and never a launch that has already flown.
 func TestLaunchesReportsUpcomingLaunches(t *testing.T) {
 	t.Parallel()
 
 	reg, session, probe := launchesFixture(t, nil, launchBody)
 	lines := runLaunchLine(t, reg, session, "launches")
 
-	// The provider's order is not trusted, and this window is its weakest point:
-	// it keeps a launch that has already flown in "upcoming" until it updates the
-	// window. So the launch still ahead leads, and the one that flew 20 minutes
-	// ago follows it with its age, rather than the reader being shown the past
-	// first in an answer about what is next.
+	// launchBody holds one launch still ahead and one that flew 20 minutes ago:
+	// only the first belongs in an answer about what is next.
 	assertLines(t, lines, []string{
-		"upcoming launches (2):",
+		"upcoming launches (1):",
 		"2026-09-15 01:21Z in 2h21m | Vega-C | Sentinel-3C & FLEX | Go | Arianespace @ Kourou ELV",
-		"2026-09-14 22:40Z 20m ago | Falcon 9 | Starlink Group 12-3 | TBD | SpaceX @ SLC-40",
 	})
 	if probe.calls != 1 {
 		t.Errorf("fetches = %v, want 1", probe.calls)
 	}
-	if got := probe.last(); !strings.Contains(got, "/launches/upcoming/") || !strings.Contains(got, "limit=3") {
-		t.Errorf("fetched %q, want the upcoming window with limit=3", got)
+	// The upcoming window asks for a margin over the three it will list: the
+	// provider leads with launches it has not yet removed after they flew.
+	if got := probe.last(); !strings.Contains(got, "/launches/upcoming/") || !strings.Contains(got, "limit=8") {
+		t.Errorf("fetched %q, want the upcoming window with limit=8", got)
 	}
 }
 
@@ -356,11 +354,11 @@ func TestParseLaunchTimeAcceptsTheProviderFormats(t *testing.T) {
 	}
 }
 
-// TestLaunchesUpcomingLeadsWithLaunchesStillAhead asserts the ordering rule the
-// live provider made necessary: in the upcoming window the launches still ahead
-// come first, soonest first, and the ones that have already flown follow, most
-// recent first — a reader asking what is next is not asking what just went up.
-func TestLaunchesUpcomingLeadsWithLaunchesStillAhead(t *testing.T) {
+// TestLaunchesUpcomingOmitsLaunchesAlreadyFlown asserts the upcoming window
+// never lists a launch that has already flown. The provider keeps such a launch
+// in that window until it updates it, and orders by time ascending, so the stale
+// entries head the answer; the launches still ahead are listed soonest first.
+func TestLaunchesUpcomingOmitsLaunchesAlreadyFlown(t *testing.T) {
 	t.Parallel()
 
 	const body = `{
@@ -375,10 +373,25 @@ func TestLaunchesUpcomingLeadsWithLaunchesStillAhead(t *testing.T) {
 	reg, session, _ := launchesFixture(t, nil, body)
 	lines := runLaunchLine(t, reg, session, "launches upcoming 4")
 	assertLines(t, lines, []string{
-		"upcoming launches (4):",
+		"upcoming launches (2):",
 		"2026-09-15 01:21Z in 2h21m | flies soonest | Go",
 		"2026-09-15 06:00Z in 7h | flies later | Go",
-		"2026-09-14 22:40Z 20m ago | flew recently | Success",
-		"2026-09-14 02:00Z 21h ago | flew long ago | Success",
 	})
+}
+
+// TestLaunchesUpcomingAllStaleReportsAnEmptyWindow asserts a window whose entries
+// have all already flown is reported as empty, rather than as a list of past
+// launches.
+func TestLaunchesUpcomingAllStaleReportsAnEmptyWindow(t *testing.T) {
+	t.Parallel()
+
+	const body = `{
+      "count": 2,
+      "results": [
+        {"name": "flew recently", "net": "2026-09-14T22:40:00Z", "status": {"abbrev": "Success"}},
+        {"name": "flew long ago", "net": "2026-09-14T02:00:00Z", "status": {"abbrev": "Success"}}
+      ]
+    }`
+	reg, session, _ := launchesFixture(t, nil, body)
+	assertLines(t, runLaunchLine(t, reg, session, "launches upcoming 3"), []string{launchesEmptyLine})
 }

@@ -83,6 +83,15 @@ type command struct {
 	// line. The literal {nick} is replaced with the nick this bot answers to,
 	// so every example addresses the bot the way the asker must.
 	detail []string
+	// configHint is configuration guidance "help <command>" prints only while
+	// configured reports the command's provider as unconfigured. Configuration
+	// is the operator's concern: once the provider is set up, a user asking
+	// about the command needs its usage, not how to install it. Empty for a
+	// command that needs no configuration.
+	configHint []string
+	// configured reports whether this command's provider is set up. Nil for a
+	// command that needs no configuration, in which case configHint is unused.
+	configured func(*BotConfig) bool
 	// run produces the reply lines for one invocation.
 	run func(*commandContext) []string
 }
@@ -189,6 +198,16 @@ func (r *registry) names() []string {
 
 // Run executes one addressed command line. It is the commandRunner the reply
 // policy calls, so its result is exactly the reply lines.
+// config returns the operator's configuration, or nil when the registry was
+// built without a bot (unit tests), in which case help prints no configuration
+// guidance.
+func (r *registry) config() *BotConfig {
+	if r.bot == nil {
+		return nil
+	}
+	return r.bot.cfg
+}
+
 func (r *registry) Run(req *commandRequest) []string {
 	name, args := splitCommandLine(req.Command)
 	if name == "" {
@@ -359,12 +378,15 @@ func (r *registry) build() []command {
 			summary: "look up the weather for a place",
 			usage:   weatherUsage,
 			detail: []string{
-				"Needs weather_url in config.toml; the command says so when it is empty.",
 				"A place is letters, digits, spaces, commas, periods, hyphens, or",
 				"apostrophes — never a URL, which is what keeps the request on the",
 				"operator's own provider.",
 			},
-			run: (*commandContext).runWeather,
+			configHint: []string{
+				"Needs weather_url in config.toml; the command says so when it is empty.",
+			},
+			configured: func(cfg *BotConfig) bool { return cfg.WeatherURL != "" },
+			run:        (*commandContext).runWeather,
 		},
 		{
 			name:    "wx",
@@ -453,10 +475,14 @@ func (r *registry) build() []command {
 			usage:   launchesUsage,
 			detail: []string{
 				"[upcoming|past] picks the window and [1-5] is how many to list.",
-				"Needs launch_url in config.toml; answers are cached, because the",
-				"provider allows only a few anonymous calls per hour.",
+				"Answers are cached, because the provider allows only a few anonymous",
+				"calls per hour.",
 			},
-			run: (*commandContext).runLaunches,
+			configHint: []string{
+				"Needs launch_url in config.toml to enable it.",
+			},
+			configured: func(cfg *BotConfig) bool { return cfg.LaunchURL != "" },
+			run:        (*commandContext).runLaunches,
 		},
 		{
 			name:    "flight",
@@ -465,10 +491,14 @@ func (r *registry) build() []command {
 			detail: []string{
 				"<number> is the number a passenger knows, like BA123; BA 123 and",
 				"BA-123 work too.",
-				"Needs flight_url (the live state) in config.toml; flight_route_url is",
-				"optional and adds the airline, the airports, and the callsign.",
+				"flight_route_url is optional and adds the airline, the airports, and",
+				"the callsign.",
 			},
-			run: (*commandContext).runFlight,
+			configHint: []string{
+				"Needs flight_url (the live state) in config.toml to enable it.",
+			},
+			configured: func(cfg *BotConfig) bool { return cfg.FlightURL != "" },
+			run:        (*commandContext).runFlight,
 		},
 		{
 			name:    "msg",
@@ -476,11 +506,14 @@ func (r *registry) build() []command {
 			usage:   msgUsage,
 			detail: []string{
 				"<nick|hash> is the recipient and <text> is the message.",
-				"Needs lxmf_enabled = true in config.toml; store-and-forward also needs",
-				"lxmf_propagation_node.",
 				"The outcome arrives later as a direct NOTICE to you.",
 			},
-			run: (*commandContext).runMsg,
+			configHint: []string{
+				"Needs lxmf_enabled = true in config.toml; store-and-forward also needs",
+				"lxmf_propagation_node.",
+			},
+			configured: func(cfg *BotConfig) bool { return cfg.LXMFEnabled },
+			run:        (*commandContext).runMsg,
 		},
 		{
 			name:    "lxmf",
@@ -496,7 +529,6 @@ func (r *registry) build() []command {
 			summary: "look up a Bible verse, or search the King James text",
 			usage:   kjvUsage,
 			detail: []string{
-				"Needs kjv_txt_file in config.toml, pointing at a King James text file.",
 				"{nick} kjv jn3:16 — a reference; Psalm 23:1-6, ps23, and 1 jn 2 1 work too.",
 				"{nick} kjv shepherd — every verse that contains the word.",
 				"{nick} kjv love of god — verses with all those words;",
@@ -506,7 +538,11 @@ func (r *registry) build() []command {
 				"{nick} kjv love.*life — a regexp, matched across a whole verse.",
 				"Answers label the whole verse: John 3:16: For God so loved the world, ...",
 			},
-			run: (*commandContext).runKJV,
+			configHint: []string{
+				"Needs kjv_txt_file in config.toml, pointing at a King James text file.",
+			},
+			configured: func(cfg *BotConfig) bool { return cfg.KJVTxtFile != "" },
+			run:        (*commandContext).runKJV,
 		},
 		{
 			name:    "members",
@@ -555,12 +591,19 @@ func (c *commandContext) runHelp() []string {
 		line += ". Usage: " + cmd.usage
 	}
 	lines := []string{line}
-	if len(cmd.detail) == 0 {
-		return lines
-	}
 	nick := c.effectiveTriggerNick()
 	for _, detail := range cmd.detail {
 		lines = append(lines, strings.ReplaceAll(detail, "{nick}", nick))
+	}
+	// Configuration guidance is for the operator, not for the room: print it
+	// only while the command's provider is actually unconfigured, so a user is
+	// never told how to install a feature the operator already enabled.
+	if len(cmd.configHint) > 0 && cmd.configured != nil {
+		if cfg := c.reg.config(); cfg != nil && !cmd.configured(cfg) {
+			for _, hint := range cmd.configHint {
+				lines = append(lines, strings.ReplaceAll(hint, "{nick}", nick))
+			}
+		}
 	}
 	return lines
 }

@@ -133,10 +133,13 @@ weather_url = ""
 
 # Optional provider template for the launches command: what is going up soon, and
 # what just went up. {mode} is the provider's window name and {limit} is how many
-# launches to list; both are validated before substitution, and the built URL is
-# required to keep this template's scheme and host. Leave empty to disable the
-# command, which then says so. This provider needs no API key and allows 15
-# anonymous calls per hour per IP, which is why the bot caches every answer:
+# launches the bot asks the provider for; both are validated before substitution,
+# and the built URL is required to keep this template's scheme and host. The
+# upcoming window is asked for a margin over the number it lists, because the
+# provider keeps launches it has not yet removed after they flew at the head of
+# that window. Leave empty to disable the command, which then says so. This
+# provider needs no API key and allows 15 anonymous calls per hour per IP, which
+# is why the bot caches every answer:
 #
 #   launch_url = "https://ll.thespacedevs.com/2.3.0/launches/{mode}/?limit={limit}"
 #   flight_url = "https://api.adsb.lol/v2/callsign/{flight}"

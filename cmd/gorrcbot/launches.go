@@ -42,6 +42,13 @@ const (
 	maxLaunchCount = 5
 	// defaultLaunchCount is how many launches a bare ask lists.
 	defaultLaunchCount = 3
+	// launchFetchSlack is how many extra launches the bot asks the provider for
+	// beyond the number it will list. The provider's upcoming window keeps a
+	// launch whose time has already passed until it updates the window, and it
+	// orders by time ascending, so those stale entries occupy the head of the
+	// answer; the margin lets the reply still hold the requested number of
+	// launches that are genuinely ahead.
+	launchFetchSlack = maxLaunchCount
 	// maxLaunchBodyBytes bounds the launch answer the bot will read. The
 	// provider's detailed mode is the useful one and runs about 11 KB per
 	// launch, so this leaves room for a full list with slack.
@@ -77,9 +84,16 @@ func (c *commandContext) runLaunches() []string {
 	if rejected != nil {
 		return rejected
 	}
+	// The upcoming window leads with launches the provider has not yet removed
+	// after they flew, so ask for a margin and drop the stale ones after
+	// parsing. The past window needs no margin: everything in it has flown.
+	fetchCount := req.count
+	if req.mode == "upcoming" {
+		fetchCount += launchFetchSlack
+	}
 	fetchURL, err := providerURLValues(template, map[string]string{
 		"{mode}":  req.mode,
-		"{limit}": strconv.Itoa(req.count),
+		"{limit}": strconv.Itoa(fetchCount),
 	})
 	if err != nil {
 		// The operator's template is at fault: the detail goes to the log, which
@@ -184,6 +198,13 @@ func parseLaunches(body []byte, newestFirst bool, now time.Time) ([]launch, erro
 		if at.IsZero() {
 			at, _ = parseLaunchTime(jsonField(item, "window_start"))
 		}
+		if !newestFirst && !at.IsZero() && at.Before(now) {
+			// An answer about what is next must not list what just went up: the
+			// provider keeps a launch in the upcoming window until it updates
+			// that window, and orders by time ascending, so the already-flown
+			// ones sit at the head.
+			continue
+		}
 		out = append(out, launch{
 			at:       at,
 			name:     safeEcho(jsonField(item, "name"), maxLaunchFieldBytes),
@@ -192,14 +213,11 @@ func parseLaunches(body []byte, newestFirst bool, now time.Time) ([]launch, erro
 			pad:      safeEcho(jsonField(item, "pad.name"), maxLaunchFieldBytes),
 		})
 	}
-	// The provider's own ordering is not trusted, and neither is its window: it
-	// keeps a launch in the upcoming list until it updates that window, so an
-	// "upcoming" answer can lead with something that already flew hours ago.
-	// Dated launches come first in both windows — for the upcoming window the
-	// ones still ahead, soonest first, and only then the ones that have already
-	// happened, most recent first, because a reader asking what is next is not
-	// asking what just went up. A launch with no parsable time sorts last rather
-	// than first, so it never displaces a dated one.
+	// The provider's own ordering is not trusted. The upcoming window is
+	// ascending (soonest first) and holds only launches still ahead, or ones
+	// whose time did not parse; the past window is newest first. A launch with
+	// no parsable time sorts last rather than first, so it never displaces a
+	// dated one.
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].at.IsZero() || out[j].at.IsZero() {
 			return out[j].at.IsZero() && !out[i].at.IsZero()
@@ -207,14 +225,7 @@ func parseLaunches(body []byte, newestFirst bool, now time.Time) ([]launch, erro
 		if newestFirst {
 			return out[i].at.After(out[j].at)
 		}
-		ahead, aheadJ := out[i].at.After(now), out[j].at.After(now)
-		if ahead != aheadJ {
-			return ahead
-		}
-		if ahead {
-			return out[i].at.Before(out[j].at)
-		}
-		return out[i].at.After(out[j].at)
+		return out[i].at.Before(out[j].at)
 	})
 	return out, nil
 }

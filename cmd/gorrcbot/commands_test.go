@@ -815,7 +815,7 @@ func TestRegistryExposesSummariesAndUsage(t *testing.T) {
 		if len(cmd.detail) == 0 {
 			t.Errorf("command %q has no detail; help %v would explain nothing", cmd.name, cmd.name)
 		}
-		if got := 1 + len(cmd.detail); got > DefaultMaxReplyLines {
+		if got := 1 + len(cmd.detail) + len(cmd.configHint); got > DefaultMaxReplyLines {
 			t.Errorf("help %v would produce %v lines, more than the default max_reply_lines %v",
 				cmd.name, got, DefaultMaxReplyLines)
 		}

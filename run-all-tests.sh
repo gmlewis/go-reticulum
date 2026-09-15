@@ -24,6 +24,12 @@ export ORIGINAL_RNSH_REPO_DIR="${ORIGINAL_RNSH_REPO_DIR:-$HOME/src/github.com/ac
 
 RUN_ALL_TESTS_TIMEOUT_SECONDS="${RUN_ALL_TESTS_TIMEOUT_SECONDS:-500}"
 
+# GOOS/GOARCH guard for the wago build-tag variants: the in-process wasm runtime
+# is only supported on linux/darwin/windows, amd64/arm64 (matching CI, which
+# runs the wago nested-module tests only on its linux/amd64 runner).
+GOOS_CHECK="$(go env GOOS)"
+GOARCH_CHECK="$(go env GOARCH)"
+
 # ---------------------------------------------------------------------------
 # Temp-dir hygiene. A test run that ends normally removes every temp dir it
 # created (testutils.TempDir registers t.Cleanup, and testutils/cleanup.go
@@ -163,6 +169,12 @@ for modfile in cmd/*/go.mod; do
     if [ -f "${modfile}" ]; then
         moddir=$(dirname "${modfile}")
         (cd "${moddir}" && staticcheck -checks=SA*,U1000 -tags=integration ./... >>"${STATICCHECK_LOG}" 2>&1 || true)
+        # The wago variant sees the wasm plugin host and its tests. A helper
+        # used by only one variant must carry a matching build tag; checking
+        # both is what keeps a wago-only helper from looking like dead code.
+        if [[ "${GOOS_CHECK}" =~ ^(linux|darwin|windows)$ && "${GOARCH_CHECK}" =~ ^(amd64|arm64)$ ]]; then
+            (cd "${moddir}" && staticcheck -checks=SA*,U1000 -tags=integration,wago ./... >>"${STATICCHECK_LOG}" 2>&1 || true)
+        fi
     fi
 done
 if [[ -s "${STATICCHECK_LOG}" ]]; then
@@ -174,6 +186,35 @@ echo "staticcheck: clean (SA* + U1000, with integration tags)"
 
 echo "Running deadcode (advisory, whole-program reachability)..."
 bash "${REPO_ROOT}/scripts/deadcode-check.sh"
+
+# ---------------------------------------------------------------------------
+# Nested modules (cmd/<tool>/go.mod) are invisible to the root ./... pattern, so
+# each is tested explicitly — in default (stub) mode and, on the platforms the
+# wago build supports, with -tags wago, exactly as GitHub CI does. Without this
+# step a nested-module build break (a test helper behind a build tag, say)
+# reaches CI undetected.
+# ---------------------------------------------------------------------------
+echo "Running nested module tests (default and -tags=wago)..."
+NESTED_TEST_LOG="${REPO_ROOT}/nested-test-failures.log"
+: > "${NESTED_TEST_LOG}"
+for modfile in cmd/*/go.mod; do
+    if [ -f "${modfile}" ]; then
+        moddir=$(dirname "${modfile}")
+        if ! (cd "${moddir}" && run_with_timeout go test -race -count=1 ./...) >>"${NESTED_TEST_LOG}" 2>&1; then
+            echo "FAIL: nested module tests failed in ${moddir} (see ${NESTED_TEST_LOG}):" >&2
+            cat "${NESTED_TEST_LOG}" >&2
+            exit 1
+        fi
+        if [[ "${GOOS_CHECK}" =~ ^(linux|darwin|windows)$ && "${GOARCH_CHECK}" =~ ^(amd64|arm64)$ ]]; then
+            if ! (cd "${moddir}" && run_with_timeout go test -tags=wago -race -count=1 ./...) >>"${NESTED_TEST_LOG}" 2>&1; then
+                echo "FAIL: nested module (-tags=wago) tests failed in ${moddir} (see ${NESTED_TEST_LOG}):" >&2
+                cat "${NESTED_TEST_LOG}" >&2
+                exit 1
+            fi
+        fi
+    fi
+done
+echo "nested module tests: clean (default and -tags=wago)"
 
 # ---------------------------------------------------------------------------
 # Integration tests: the -short suite always (fast); the full suite only in

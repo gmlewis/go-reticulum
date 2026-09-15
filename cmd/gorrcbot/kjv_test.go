@@ -513,7 +513,7 @@ func TestKJVIsRegisteredAndDocumented(t *testing.T) {
 			t.Errorf("help kjv = %q, want it to mention %q", lines, want)
 		}
 	}
-	if len(lines) != 1+len(cmd.detail) {
+	if want := helpLineCount(cmd, reg.config()); len(lines) != want {
 		t.Errorf("help kjv returned %v lines, want the summary line plus %v detail lines",
 			len(lines), len(cmd.detail))
 	}

@@ -782,7 +782,7 @@ func TestMsgCommandsAreRegistered(t *testing.T) {
 		t.Errorf("help msg = %q, want the command's usage line", lines)
 	}
 	msgCmd, _ := reg.byName["msg"]
-	if len(lines) != 1+len(msgCmd.detail) {
+	if want := helpLineCount(msgCmd, reg.config()); len(lines) != want {
 		t.Errorf("help msg returned %v lines, want the summary line plus %v detail lines",
 			len(lines), len(msgCmd.detail))
 	}
