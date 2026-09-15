@@ -204,10 +204,10 @@ func TestMoveToFront(t *testing.T) {
 		mtf.Decode(input)
 
 		if input := hex.EncodeToString(input); input != v.input {
-			t.Errorf("test %d, input differs:\ngot  %v\nwant %v", i, input, v.input)
+			t.Errorf("test %v, input differs:\ngot  %v\nwant %v", i, input, v.input)
 		}
 		if output := hex.EncodeToString(output); output != v.output {
-			t.Errorf("test %d, output differs:\ngot  %v\nwant %v", i, output, v.output)
+			t.Errorf("test %v, output differs:\ngot  %v\nwant %v", i, output, v.output)
 		}
 	}
 }

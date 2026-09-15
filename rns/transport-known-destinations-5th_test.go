@@ -141,7 +141,7 @@ print(json.dumps(result))
 	out := testutils.RunPython(t, script, path)
 	var e pyKnownDestEntry
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &e); err != nil {
-		t.Fatalf("parse python known_destinations entry: %v\nraw: %s", err, out)
+		t.Fatalf("parse python known_destinations entry: %v\nraw: %v", err, out)
 	}
 	return e
 }
@@ -167,7 +167,7 @@ func TestLoadKnownDestinationsMigrates4To5Elements(t *testing.T) {
 		t.Fatal("golden 4-element entry was not loaded")
 	}
 	if got, want := len(entry), 5; got != want {
-		t.Fatalf("entry len = %d, want %d (migrated to 5 elements)", got, want)
+		t.Fatalf("entry len = %v, want %v (migrated to 5 elements)", got, want)
 	}
 	// Elements 0-3 must be preserved verbatim.
 	if _, ok := entry[0].(float64); !ok {
@@ -211,7 +211,7 @@ func TestLoadKnownDestinationsKeeps5ElementEntry(t *testing.T) {
 		t.Fatal("golden 5-element entry was not loaded")
 	}
 	if got, want := len(entry), 5; got != want {
-		t.Fatalf("entry len = %d, want %d", got, want)
+		t.Fatalf("entry len = %v, want %v", got, want)
 	}
 	got, ok := numericValue(entry[4])
 	if !ok || got != 0 {
@@ -238,7 +238,7 @@ func TestRememberAppendsFifthElement(t *testing.T) {
 		t.Fatal("Remember did not create the entry")
 	}
 	if got, want := len(entry), 5; got != want {
-		t.Fatalf("new entry len = %d, want %d", got, want)
+		t.Fatalf("new entry len = %v, want %v", got, want)
 	}
 	if got, ok := numericValue(entry[4]); !ok || got != 0 {
 		t.Fatalf("new entry[4] = %#v, want numeric 0 (never used)", entry[4])
@@ -260,7 +260,7 @@ func TestRememberAppendsFifthElement(t *testing.T) {
 		t.Fatal("re-Remember dropped the entry")
 	}
 	if got, want := len(entry), 5; got != want {
-		t.Fatalf("re-remembered entry len = %d, want %d", got, want)
+		t.Fatalf("re-remembered entry len = %v, want %v", got, want)
 	}
 	if got, ok := numericValue(entry[4]); !ok || got != 1700000000.0 {
 		t.Fatalf("re-remembered entry[4] = %#v, want 1700000000.0 (preserved)", entry[4])
@@ -305,13 +305,13 @@ func TestGoldenKnownDestinationsHexMatchesPython(t *testing.T) {
 	dir := testutils.TempDir(t, "rns-kd-golden-")
 	got4 := pythonWriteKnownDestinations(t, dir, false)
 	if hex.EncodeToString(got4) != goldenKnownDestinations4Hex {
-		t.Fatalf("4-element known_destinations: live Python bytes != golden hex\n got: %x\nwant: %s", got4, goldenKnownDestinations4Hex)
+		t.Fatalf("4-element known_destinations: live Python bytes != golden hex\n got: %x\nwant: %v", got4, goldenKnownDestinations4Hex)
 	}
 
 	dir2 := testutils.TempDir(t, "rns-kd-golden5-")
 	got5 := pythonWriteKnownDestinations(t, dir2, true)
 	if hex.EncodeToString(got5) != goldenKnownDestinations5Hex {
-		t.Fatalf("5-element known_destinations: live Python bytes != golden hex\n got: %x\nwant: %s", got5, goldenKnownDestinations5Hex)
+		t.Fatalf("5-element known_destinations: live Python bytes != golden hex\n got: %x\nwant: %v", got5, goldenKnownDestinations5Hex)
 	}
 }
 
@@ -341,7 +341,7 @@ func TestKnownDestinationsRoundTripPythonGoPython(t *testing.T) {
 		t.Fatal("Go did not load the Python-written known_destinations entry")
 	}
 	if got, want := len(entry), 5; got != want {
-		t.Fatalf("Go-loaded entry len = %d, want %d", got, want)
+		t.Fatalf("Go-loaded entry len = %v, want %v", got, want)
 	}
 	if ts, ok := entry[0].(float64); !ok || ts != 1700000000.0 {
 		t.Fatalf("Go-loaded entry[0] = %#v, want float64 1700000000.0", entry[0])
@@ -370,19 +370,19 @@ func TestKnownDestinationsRoundTripPythonGoPython(t *testing.T) {
 	// 4. Python loads the Go-written file and the entry round-trips exactly.
 	got := pythonLoadKnownDestinationsEntry(t, goFile)
 	if got.DestHash != knownDestFixtureDestHashHex {
-		t.Fatalf("round-trip dest_hash = %s, want %s", got.DestHash, knownDestFixtureDestHashHex)
+		t.Fatalf("round-trip dest_hash = %v, want %v", got.DestHash, knownDestFixtureDestHashHex)
 	}
 	if got.Timestamp != 1700000000.0 {
 		t.Fatalf("round-trip timestamp = %v, want 1700000000.0", got.Timestamp)
 	}
 	if got.PacketHash != strings.Repeat("77", 32) {
-		t.Fatalf("round-trip packet_hash = %s, want %x... (32x 0x77)", got.PacketHash, 0x77)
+		t.Fatalf("round-trip packet_hash = %v, want %x... (32x 0x77)", got.PacketHash, 0x77)
 	}
 	if got.PublicKey != hex.EncodeToString(bytesRange(0x00, 0x40)) {
-		t.Fatalf("round-trip public_key = %s, want 00..3f (64 bytes)", got.PublicKey)
+		t.Fatalf("round-trip public_key = %v, want 00..3f (64 bytes)", got.PublicKey)
 	}
 	if got.AppData != "deadbeef" {
-		t.Fatalf("round-trip app_data = %s, want deadbeef", got.AppData)
+		t.Fatalf("round-trip app_data = %v, want deadbeef", got.AppData)
 	}
 	if got.UseTS == nil || *got.UseTS != 0 {
 		t.Fatalf("round-trip use_ts = %v, want 0", got.UseTS)

@@ -101,13 +101,13 @@ func TestMultiValueSignFlag(t *testing.T) {
 	for _, c := range cases {
 		app, err := parseFlags(c.args, io.Discard)
 		if err != nil {
-			t.Fatalf("%s: parseFlags failed: %v", c.name, err)
+			t.Fatalf("%v: parseFlags failed: %v", c.name, err)
 		}
 		if !reflect.DeepEqual(app.signList.vals, c.want) {
-			t.Errorf("%s: signList.vals = %v, want %v", c.name, app.signList.vals, c.want)
+			t.Errorf("%v: signList.vals = %v, want %v", c.name, app.signList.vals, c.want)
 		}
 		if app.signFile != "a" {
-			t.Errorf("%s: signFile = %q, want %q", c.name, app.signFile, "a")
+			t.Errorf("%v: signFile = %q, want %q", c.name, app.signFile, "a")
 		}
 	}
 }

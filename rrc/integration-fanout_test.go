@@ -157,7 +157,7 @@ func TestIntegrationFanoutBurst(t *testing.T) {
 
 	stale := NowMs() - 60_000
 	before := NowMs()
-	hub.SendMessage("general", fmt.Sprintf("FANOUT:6:%d:burst body", stale))
+	hub.SendMessage("general", fmt.Sprintf("FANOUT:6:%v:burst body", stale))
 
 	msgs := waitMsgs(t, hub, "general", func(m []*RRCMessage) bool {
 		n := 0
@@ -231,7 +231,7 @@ func TestIntegrationFanoutNickLearning(t *testing.T) {
 	}
 
 	stale := NowMs() - 60_000
-	hub.SendMessage("general", fmt.Sprintf("FANOUT:4:%d:learn burst", stale))
+	hub.SendMessage("general", fmt.Sprintf("FANOUT:4:%v:learn burst", stale))
 
 	wantNicks := map[string]string{
 		srcHex(1): "HubNick1",

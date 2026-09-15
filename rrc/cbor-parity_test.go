@@ -259,7 +259,7 @@ print(json.dumps(out))
 	cmd.Stderr = &stderr
 	stdout, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("python nomadnet.RRC constants failed: %v\nstderr:\n%s", err, stderr.String())
+		t.Fatalf("python nomadnet.RRC constants failed: %v\nstderr:\n%v", err, stderr.String())
 	}
 	var want map[string]int
 	if err := json.Unmarshal(stdout, &want); err != nil {

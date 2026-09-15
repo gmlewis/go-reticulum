@@ -104,7 +104,7 @@ func (h *remoteHelper) run() error {
 		case strings.HasPrefix(line, "fetch"):
 			fr, ok := parseFetchLine(line)
 			if !ok {
-				return fmt.Errorf("invalid fetch line: %s", line)
+				return fmt.Errorf("invalid fetch line: %v", line)
 			}
 			if !containsFetch(fetchQ, fr) {
 				fetchQ = append(fetchQ, fr)
@@ -113,7 +113,7 @@ func (h *remoteHelper) run() error {
 		case strings.HasPrefix(line, "push"):
 			pr, ok := parsePushLine(line)
 			if !ok {
-				return fmt.Errorf("invalid push line: %s", line)
+				return fmt.Errorf("invalid push line: %v", line)
 			}
 			pushQ = append(pushQ, pr)
 			fetchQ = nil
@@ -125,7 +125,7 @@ func (h *remoteHelper) run() error {
 			pushQ = nil
 			h.write("\n")
 		default:
-			return fmt.Errorf("unknown git command: %s", line)
+			return fmt.Errorf("unknown git command: %v", line)
 		}
 	}
 	return scanner.Err()
@@ -190,9 +190,9 @@ func (h *remoteHelper) processBatch(fetchQ []fetchRef, pushQ []pushRef) error {
 		}
 		for _, s := range statuses {
 			if s.ok {
-				h.write(fmt.Sprintf("ok %s\n", s.remoteRef))
+				h.write(fmt.Sprintf("ok %v\n", s.remoteRef))
 			} else {
-				h.write(fmt.Sprintf("error %s %s\n", s.remoteRef, escapeForStdout(s.msg)))
+				h.write(fmt.Sprintf("error %v %v\n", s.remoteRef, escapeForStdout(s.msg)))
 			}
 		}
 	}

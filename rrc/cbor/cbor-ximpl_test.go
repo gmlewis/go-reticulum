@@ -124,7 +124,7 @@ func TestCrossImplGoToPython(t *testing.T) {
 	}
 	out := runPythonWithCBOR(t, goToPythonScript, path, expectedPythonLiteral)
 	if !strings.HasPrefix(strings.TrimSpace(out), "OK") {
-		t.Fatalf("python cross-decode failed:\n%s", out)
+		t.Fatalf("python cross-decode failed:\n%v", out)
 	}
 }
 
@@ -159,7 +159,7 @@ func assertPythonToGo(t *testing.T, out string) {
 	t.Helper()
 	lines := strings.Split(out, "\n")
 	if len(lines) != 9 {
-		t.Fatalf("got %d sample lines, want 9: %q", len(lines), out)
+		t.Fatalf("got %v sample lines, want 9: %q", len(lines), out)
 	}
 	// {True: 7}
 	m0 := mustDecode(t, lines[0]).(*Map)
@@ -237,7 +237,7 @@ func runPythonWithCBOR(t *testing.T, script string, args ...string) string {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("python3 script failed: %v\n--- stderr ---\n%s\n--- stdout ---\n%s",
+		t.Fatalf("python3 script failed: %v\n--- stderr ---\n%v\n--- stdout ---\n%v",
 			err, stderr.String(), stdout.String())
 	}
 	return stdout.String()

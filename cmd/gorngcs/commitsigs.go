@@ -86,10 +86,10 @@ func parseArgs(argv []string) (*cliArgs, error) {
 			a.sshOptions = append(a.sshOptions, arg[2:])
 			i++
 		case strings.HasPrefix(arg, "-"):
-			return nil, fmt.Errorf("Error: Unknown argument: %s", arg)
+			return nil, fmt.Errorf("Error: Unknown argument: %v", arg)
 		default:
 			if a.file != "" {
-				return nil, fmt.Errorf("Error: Unknown argument: %s", arg)
+				return nil, fmt.Errorf("Error: Unknown argument: %v", arg)
 			}
 			a.file = arg
 			i++
@@ -104,7 +104,7 @@ func parseArgs(argv []string) (*cliArgs, error) {
 	switch a.op {
 	case "sign", "find-principals", "check-novalidate", "verify":
 	default:
-		return nil, fmt.Errorf("Error: Unknown operation: %s", a.op)
+		return nil, fmt.Errorf("Error: Unknown operation: %v", a.op)
 	}
 	return a, nil
 }
@@ -124,7 +124,7 @@ func pubkeyWireFormat(id *rns.Identity) []byte {
 func (a *cliArgs) sign(stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	keyfile := a.keyfile
 	if keyfile == "" || !fileExists(keyfile) {
-		_, _ = fmt.Fprintf(stderr, "Identity file not found: %s\n", keyfile)
+		_, _ = fmt.Fprintf(stderr, "Identity file not found: %v\n", keyfile)
 		return 1
 	}
 	identity, err := rns.FromFile(keyfile, nil)
@@ -299,14 +299,14 @@ func (a *cliArgs) verify(stdin io.Reader, stdout, stderr io.Writer) int {
 
 	signerHash := signingID.HexHash
 	if author != signerHash {
-		_, _ = fmt.Fprintf(stdout, "Commit not signed by author <%s>\n", author)
+		_, _ = fmt.Fprintf(stdout, "Commit not signed by author <%v>\n", author)
 		return 1
 	}
 	if a.principal != "" && a.principal != signerHash {
 		_, _ = fmt.Fprintln(stderr, "Principal mismatch")
 		return 1
 	}
-	_, _ = fmt.Fprintf(stdout, "Good \"git\" signature for commit, signed with Reticulum Identity key <%s>\n", signerHash)
+	_, _ = fmt.Fprintf(stdout, "Good \"git\" signature for commit, signed with Reticulum Identity key <%v>\n", signerHash)
 	return 0
 }
 

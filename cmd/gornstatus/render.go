@@ -179,7 +179,7 @@ func plural(n int) string {
 
 func formatInt(n int) string {
 	// Simple comma-formatter for integers
-	s := fmt.Sprintf("%d", n)
+	s := fmt.Sprintf("%v", n)
 	if n < 1000 {
 		return s
 	}

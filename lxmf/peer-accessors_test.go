@@ -43,7 +43,7 @@ func TestPeersAndPeerByHash(t *testing.T) {
 
 	peers := router.Peers()
 	if len(peers) != 2 {
-		t.Fatalf("Peers() returned %d peers, want 2", len(peers))
+		t.Fatalf("Peers() returned %v peers, want 2", len(peers))
 	}
 
 	seen := map[string]bool{}
@@ -95,13 +95,13 @@ func TestUnpeer(t *testing.T) {
 	addTestPeer(t, router, hashB)
 
 	if len(router.Peers()) != 2 {
-		t.Fatalf("setup: Peers() = %d, want 2", len(router.Peers()))
+		t.Fatalf("setup: Peers() = %v, want 2", len(router.Peers()))
 	}
 
 	router.Unpeer(hashA)
 	peers := router.Peers()
 	if len(peers) != 1 {
-		t.Fatalf("after Unpeer: Peers() = %d, want 1", len(peers))
+		t.Fatalf("after Unpeer: Peers() = %v, want 1", len(peers))
 	}
 	if router.PeerByHash(hashA) != nil {
 		t.Fatal("Unpeer did not remove hashA")
@@ -114,7 +114,7 @@ func TestUnpeer(t *testing.T) {
 	// `if destination_hash in self.peers` membership check).
 	router.Unpeer(bytes.Repeat([]byte{0xee}, rns.TruncatedHashLength/8))
 	if len(router.Peers()) != 1 {
-		t.Fatalf("Unpeer(unknown) changed peer count to %d, want 1", len(router.Peers()))
+		t.Fatalf("Unpeer(unknown) changed peer count to %v, want 1", len(router.Peers()))
 	}
 }
 

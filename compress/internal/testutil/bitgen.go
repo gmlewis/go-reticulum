@@ -167,7 +167,7 @@ func parse(in string) (order byte, toks []token, err error) {
 			var ok bool
 			if err, ok = ex.(error); ok {
 				if err != io.ErrUnexpectedEOF {
-					err = fmt.Errorf("parse error (offset:%d): %v", len(in)-len(p.in), err)
+					err = fmt.Errorf("parse error (offset:%v): %v", len(in)-len(p.in), err)
 				}
 				return
 			}
@@ -319,7 +319,7 @@ func (b *bitBuffer) Process(toks []token) error {
 			b.parseMode = t.order
 		case bitsToken:
 			if t.length > 64 || t.value > uint64(1<<t.length)-1 {
-				return fmt.Errorf("invalid bit value: D%d:%d", t.length, t.value)
+				return fmt.Errorf("invalid bit value: D%v:%v", t.length, t.value)
 			}
 			if t.order == '>' || (t.order == 0 && b.parseMode == '>') {
 				t.value = internal.ReverseUint64N(t.value, t.length)

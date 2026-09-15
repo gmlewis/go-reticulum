@@ -70,7 +70,7 @@ func (pr *prefixReader) ReadPrefixCodes(codes []prefix.PrefixCodes, trees []pref
 		for sym := range pc {
 			for {
 				if clen < 1 || clen > maxPrefixBits {
-					panicf(errors.Corrupted, "invalid prefix bit-length: %d", clen)
+					panicf(errors.Corrupted, "invalid prefix bit-length: %v", clen)
 				}
 
 				b, ok := pr.TryReadBits(1)

@@ -157,7 +157,7 @@ func (p *pageNode) serveFrontPage(path string, data any, requestID, linkID []byt
 				repoWord = "repository"
 			}
 			link := mLink("  "+micron.Bullet+" "+groupName, pagePathGroup, []linkField{{"g", groupName}})
-			contentParts = append(contentParts, fmt.Sprintf("%s (%d %s)\n", link, repoCount, repoWord))
+			contentParts = append(contentParts, fmt.Sprintf("%v (%v %v)\n", link, repoCount, repoWord))
 		}
 	}
 
@@ -204,7 +204,7 @@ func (p *pageNode) serveGroupPage(path string, data any, requestID, linkID []byt
 		link := mLink("  "+micron.Bullet+" "+repoName, pagePathRepo, []linkField{{"g", groupName}, {"r", repoName}})
 		contentParts = append(contentParts, link)
 		if description != "" {
-			contentParts = append(contentParts, fmt.Sprintf(" - %s\n", description))
+			contentParts = append(contentParts, fmt.Sprintf(" - %v\n", description))
 		} else {
 			contentParts = append(contentParts, "\n")
 		}
@@ -238,7 +238,7 @@ func (p *pageNode) serveTreePage(path string, data any, requestID, linkID []byte
 
 	resolvedRef := p.resolveRef(repoPath, ref)
 	if resolvedRef == "" {
-		content := mHeading("Error", 2) + fmt.Sprintf("\n\nThe ref '%s' does not exist in this repository.\n", ref)
+		content := mHeading("Error", 2) + fmt.Sprintf("\n\nThe ref '%v' does not exist in this repository.\n", ref)
 		content += "\n" + mLink("View All Refs", pagePathRefs, []linkField{{"g", groupName}, {"r", repoName}}) + "\n"
 		return p.render("tree", content, "", start)
 	}
@@ -305,11 +305,11 @@ func (p *pageNode) serveTreePage(path string, data any, requestID, linkID []byte
 			pageEntries = entries[startIdx:endIdx]
 		}
 
-		contentParts = append(contentParts, mHeading(fmt.Sprintf("Contents: %s (%s)", ref, safeShort(resolvedRef, 8)), 2))
+		contentParts = append(contentParts, mHeading(fmt.Sprintf("Contents: %v (%v)", ref, safeShort(resolvedRef, 8)), 2))
 		contentParts = append(contentParts, "\n")
 
 		if totalEntries > treeEntriesPerPage {
-			contentParts = append(contentParts, fmt.Sprintf("%sShowing %d-%d of %d entries`f\n\n",
+			contentParts = append(contentParts, fmt.Sprintf("%vShowing %v-%v of %v entries`f\n\n",
 				clrDim, startIdx+1, minInt(endIdx, totalEntries), totalEntries))
 		}
 
@@ -317,7 +317,7 @@ func (p *pageNode) serveTreePage(path string, data any, requestID, linkID []byte
 			pp := parentPathOf(treePath)
 			ilink := mLinkR(iFolder, pagePathTree, []linkField{{"g", groupName}, {"r", repoName}, {"ref", ref}, {"path", pp}})
 			parentLink := mLinkR(" ../", pagePathTree, []linkField{{"g", groupName}, {"r", repoName}, {"ref", ref}, {"path", pp}})
-			contentParts = append(contentParts, fmt.Sprintf("%s%s`f%s\n", clrFolder, ilink, parentLink))
+			contentParts = append(contentParts, fmt.Sprintf("%v%v`f%v\n", clrFolder, ilink, parentLink))
 		}
 
 		for _, entry := range pageEntries {
@@ -331,15 +331,15 @@ func (p *pageNode) serveTreePage(path string, data any, requestID, linkID []byte
 				}
 				ilink := mLinkR(iFolder, pagePathTree, []linkField{{"g", groupName}, {"r", repoName}, {"ref", ref}, {"path", subpath}})
 				link := mLinkR(" "+entryName+"/", pagePathTree, []linkField{{"g", groupName}, {"r", repoName}, {"ref", ref}, {"path", subpath}})
-				contentParts = append(contentParts, fmt.Sprintf("%s%s`f%s\n", clrFolder, ilink, link))
+				contentParts = append(contentParts, fmt.Sprintf("%v%v`f%v\n", clrFolder, ilink, link))
 			} else if entryType == "commit" {
-				contentParts = append(contentParts, fmt.Sprintf("%s⧉`f %s `F666(submodule)`f\n", clrFolder, entryName))
+				contentParts = append(contentParts, fmt.Sprintf("%v⧉`f %v `F666(submodule)`f\n", clrFolder, entryName))
 			} else if entryType == "link" {
 				target := entry.linkTarget
 				if target == "" {
 					target = "unknown"
 				}
-				contentParts = append(contentParts, fmt.Sprintf("%s↳`f %s `F666→ %s`f\n", clrFile, entryName, mEscape(target)))
+				contentParts = append(contentParts, fmt.Sprintf("%v↳`f %v `F666→ %v`f\n", clrFile, entryName, mEscape(target)))
 			} else {
 				sizeStr := formatSize(entry.size)
 				subpath := entryName
@@ -348,7 +348,7 @@ func (p *pageNode) serveTreePage(path string, data any, requestID, linkID []byte
 				}
 				ilink := mLinkR(iFile, pagePathBlob, []linkField{{"g", groupName}, {"r", repoName}, {"ref", ref}, {"path", subpath}})
 				link := mLinkR(" "+entryName, pagePathBlob, []linkField{{"g", groupName}, {"r", repoName}, {"ref", ref}, {"path", subpath}})
-				contentParts = append(contentParts, fmt.Sprintf("%s%s`f%s `F666(%s)`f\n", clrFile, ilink, link, sizeStr))
+				contentParts = append(contentParts, fmt.Sprintf("%v%v`f%v `F666(%v)`f\n", clrFile, ilink, link, sizeStr))
 			}
 		}
 
@@ -361,7 +361,7 @@ func (p *pageNode) serveTreePage(path string, data any, requestID, linkID []byte
 					[]linkField{{"g", groupName}, {"r", repoName}, {"ref", ref}, {"path", treePath}, {"page", pageNum - 1}}))
 			}
 			totalPages := (totalEntries + treeEntriesPerPage - 1) / treeEntriesPerPage
-			navLinks = append(navLinks, fmt.Sprintf("Page %d of %d", pageNum+1, totalPages))
+			navLinks = append(navLinks, fmt.Sprintf("Page %v of %v", pageNum+1, totalPages))
 			if endIdx < totalEntries {
 				navLinks = append(navLinks, mLink("Next »", pagePathTree,
 					[]linkField{{"g", groupName}, {"r", repoName}, {"ref", ref}, {"path", treePath}, {"page", pageNum + 1}}))
@@ -423,7 +423,7 @@ func (p *pageNode) serveBlobPage(path string, data any, requestID, linkID []byte
 
 	resolvedRef := p.resolveRef(repoPath, ref)
 	if resolvedRef == "" {
-		content := mHeading("Ref Not Found", 1) + fmt.Sprintf("\n\nThe ref '%s' does not exist in this repository.\n", ref)
+		content := mHeading("Ref Not Found", 1) + fmt.Sprintf("\n\nThe ref '%v' does not exist in this repository.\n", ref)
 		return p.render("blob", content, "", start)
 	}
 
@@ -483,17 +483,17 @@ func (p *pageNode) serveBlobPage(path string, data any, requestID, linkID []byte
 
 	dlLink := mLink("Download", fileDownload, []linkField{{"g", groupName}, {"r", repoName}, {"ref", ref}, {"path", filePath}})
 	if !renderable {
-		navParts = append(navParts, fmt.Sprintf("\nDisplaying Raw %s %s\n", sep, dlLink))
+		navParts = append(navParts, fmt.Sprintf("\nDisplaying Raw %v %v\n", sep, dlLink))
 	} else {
 		rndLink := mLink("View rendered", pagePathBlob, []linkField{{"g", groupName}, {"r", repoName}, {"ref", ref}, {"path", filePath}, {"render", "y"}})
 		rawLink := mLink("View raw", pagePathBlob, []linkField{{"g", groupName}, {"r", repoName}, {"ref", ref}, {"path", filePath}, {"raw", "y"}})
 		var renderControls string
 		if render {
-			renderControls = fmt.Sprintf("Displaying Rendered %s %s", sep, rawLink)
+			renderControls = fmt.Sprintf("Displaying Rendered %v %v", sep, rawLink)
 		} else {
-			renderControls = fmt.Sprintf("Displaying Raw %s %s", sep, rndLink)
+			renderControls = fmt.Sprintf("Displaying Raw %v %v", sep, rndLink)
 		}
-		navParts = append(navParts, fmt.Sprintf("\n%s %s %s\n", renderControls, sep, dlLink))
+		navParts = append(navParts, fmt.Sprintf("\n%v %v %v\n", renderControls, sep, dlLink))
 	}
 
 	blobInfo := p.getBlobInfo(repoPath, resolvedRef, filePath)
@@ -514,9 +514,9 @@ func (p *pageNode) serveBlobPage(path string, data any, requestID, linkID []byte
 			if t == "" {
 				t = "unknown"
 			}
-			symlinkStr = fmt.Sprintf(" | Symlink → %s", mEscape(t))
+			symlinkStr = fmt.Sprintf(" | Symlink → %v", mEscape(t))
 		}
-		contentParts = append(contentParts, mHeading(fmt.Sprintf("%s %s%s (%s) %s, %s%s\n",
+		contentParts = append(contentParts, mHeading(fmt.Sprintf("%v %v%v (%v) %v, %v%v\n",
 			filePath, clrDimH, ref, safeShort(resolvedRef, 8), typeStr, sizeStr, symlinkStr), 2))
 
 		switch {
@@ -525,11 +525,11 @@ func (p *pageNode) serveBlobPage(path string, data any, requestID, linkID []byte
 			if t == "" {
 				t = "unknown"
 			}
-			contentParts = append(contentParts, fmt.Sprintf("`*%s`*\n", mEscape(t)))
+			contentParts = append(contentParts, fmt.Sprintf("`*%v`*\n", mEscape(t)))
 		case blobInfo.isBinary:
 			contentParts = append(contentParts, "This file appears to be binary and cannot be displayed as text.\n")
 		case blobInfo.size > blobSizeLimit:
-			contentParts = append(contentParts, fmt.Sprintf("This file is %s, which exceeds the display limit of %s.\n",
+			contentParts = append(contentParts, fmt.Sprintf("This file is %v, which exceeds the display limit of %v.\n",
 				rns.PrettySize(float64(blobInfo.size), ""), rns.PrettySize(float64(blobSizeLimit), "")))
 		default:
 			content := p.getBlobContent(repoPath, resolvedRef, filePath)
@@ -544,19 +544,19 @@ func (p *pageNode) serveBlobPage(path string, data any, requestID, linkID []byte
 						if len(comps) > 1 {
 							urlPath = strings.Join(comps[:len(comps)-1], "/") + "/"
 						}
-						urlScope := fmt.Sprintf(":/page/blob.mu`g=%s|r=%s|ref=%s|path=%s", groupName, repoName, ref, urlPath)
+						urlScope := fmt.Sprintf(":/page/blob.mu`g=%v|r=%v|ref=%v|path=%v", groupName, repoName, ref, urlPath)
 						mdc := micron.NewConverter(micron.WithMaxWidth(maxRenderWidth), micron.WithHighlighter(p.highlighter), micron.WithURLScope(urlScope))
 						converted := mdc.FormatBlock(content)
 						contentParts = append(contentParts, strings.TrimRight(converted, " \t\r\n")+"\n")
 					default:
-						contentParts = append(contentParts, fmt.Sprintf("`=\n%s\n`=", content))
+						contentParts = append(contentParts, fmt.Sprintf("`=\n%v\n`=", content))
 					}
 				} else {
 					if p.highlightSyntax {
 						highlighted, _ := p.highlighter.Highlight(content, filePath, "")
 						contentParts = append(contentParts, strings.TrimRight(highlighted, " \t\r\n")+"\n")
 					} else {
-						contentParts = append(contentParts, fmt.Sprintf("`=\n%s\n`=", content))
+						contentParts = append(contentParts, fmt.Sprintf("`=\n%v\n`=", content))
 					}
 				}
 			} else {
@@ -594,7 +594,7 @@ func (p *pageNode) serveCommitsPage(path string, data any, requestID, linkID []b
 
 	resolvedRef := p.resolveRef(repoPath, ref)
 	if resolvedRef == "" {
-		content := mHeading("Ref Not Found", 1) + fmt.Sprintf("\n\nThe ref '%s' does not exist in this repository.\n", ref)
+		content := mHeading("Ref Not Found", 1) + fmt.Sprintf("\n\nThe ref '%v' does not exist in this repository.\n", ref)
 		return p.render("commits", content, "", start)
 	}
 
@@ -626,15 +626,15 @@ func (p *pageNode) serveCommitsPage(path string, data any, requestID, linkID []b
 	} else if len(commits) == 0 {
 		contentParts = append(contentParts, "No commits found.\n")
 	} else {
-		contentParts = append(contentParts, mHeading(fmt.Sprintf("Commits%s %s%s (%s)`f", titleSuffix, clrDimH, ref, safeShort(resolvedRef, 8)), 2))
+		contentParts = append(contentParts, mHeading(fmt.Sprintf("Commits%v %v%v (%v)`f", titleSuffix, clrDimH, ref, safeShort(resolvedRef, 8)), 2))
 		contentParts = append(contentParts, "\n")
 		now := time.Now().Unix()
 		for _, commit := range commits {
 			shortHash := safeShort(commit.hash, 7)
 			date := formatAbsoluteTime(commit.timestamp) + " - " + formatRelativeTime(commit.timestamp, now)
 			hashLink := mLink(shortHash, pagePathCommit, []linkField{{"g", groupName}, {"r", repoName}, {"ref", ref}, {"h", commit.hash}})
-			contentParts = append(contentParts, fmt.Sprintf("`F66d%s`f %s %s%s`f\n", hashLink, mEscape(commit.author), clrDim, date))
-			contentParts = append(contentParts, fmt.Sprintf("%s\n\n", mEscape(commit.subject)))
+			contentParts = append(contentParts, fmt.Sprintf("`F66d%v`f %v %v%v`f\n", hashLink, mEscape(commit.author), clrDim, date))
+			contentParts = append(contentParts, fmt.Sprintf("%v\n\n", mEscape(commit.subject)))
 		}
 		hasMore := len(commits) == commitsPerPage
 		if pageNum > 0 || hasMore {
@@ -643,7 +643,7 @@ func (p *pageNode) serveCommitsPage(path string, data any, requestID, linkID []b
 				navLinks = append(navLinks, mLink("« Newer", pagePathCommits,
 					[]linkField{{"g", groupName}, {"r", repoName}, {"ref", ref}, {"path", filePath}, {"page", pageNum - 1}}))
 			}
-			navLinks = append(navLinks, fmt.Sprintf("Page %d", pageNum+1))
+			navLinks = append(navLinks, fmt.Sprintf("Page %v", pageNum+1))
 			if hasMore {
 				navLinks = append(navLinks, mLink("Older »", pagePathCommits,
 					[]linkField{{"g", groupName}, {"r", repoName}, {"ref", ref}, {"path", filePath}, {"page", pageNum + 1}}))
@@ -684,7 +684,7 @@ func (p *pageNode) serveCommitPage(path string, data any, requestID, linkID []by
 
 	resolvedRef := p.resolveRef(repoPath, ref)
 	if resolvedRef == "" {
-		content := mHeading("Ref Not Found", 1) + fmt.Sprintf("\n\nThe ref '%s' does not exist in this repository.\n", ref)
+		content := mHeading("Ref Not Found", 1) + fmt.Sprintf("\n\nThe ref '%v' does not exist in this repository.\n", ref)
 		return p.render("commit", content, "", start)
 	}
 
@@ -695,7 +695,7 @@ func (p *pageNode) serveCommitPage(path string, data any, requestID, linkID []by
 
 	resolvedHash := p.resolveRef(repoPath, commitHash)
 	if resolvedHash == "" {
-		content := mHeading("Error", 2) + fmt.Sprintf("\nThe commit %s does not exist in this repository.\n", commitHash)
+		content := mHeading("Error", 2) + fmt.Sprintf("\nThe commit %v does not exist in this repository.\n", commitHash)
 		return p.render("commit", content, "", start)
 	}
 
@@ -711,7 +711,7 @@ func (p *pageNode) serveCommitPage(path string, data any, requestID, linkID []by
 	// Verify it is a commit object.
 	typeResult, ok := gitRun(repoPath, "cat-file", "-t", resolvedHash)
 	if !ok || strings.TrimSpace(typeResult) != "commit" {
-		content := mHeading("Error", 2) + fmt.Sprintf("\nThe hash %s does not refer to a commit.\n", commitHash)
+		content := mHeading("Error", 2) + fmt.Sprintf("\nThe hash %v does not refer to a commit.\n", commitHash)
 		return p.render("commit", content, "", start)
 	}
 
@@ -737,10 +737,10 @@ func (p *pageNode) serveCommitPage(path string, data any, requestID, linkID []by
 			sigText = "`FT66BB85Valid, signed by author`f"
 			showSig = true
 		} else if sigStatus.valid {
-			sigText = fmt.Sprintf("`Faa0%s`f", mEscape(sigStatus.message))
+			sigText = fmt.Sprintf("`Faa0%v`f", mEscape(sigStatus.message))
 			showSig = true
 		} else {
-			sigText = fmt.Sprintf("`F900%s`f", mEscape(sigStatus.message))
+			sigText = fmt.Sprintf("`F900%v`f", mEscape(sigStatus.message))
 			showSig = true
 		}
 	}
@@ -751,16 +751,16 @@ func (p *pageNode) serveCommitPage(path string, data any, requestID, linkID []by
 			parentLinks = append(parentLinks, mLink(safeShort(parentHash, 7), pagePathCommit,
 				[]linkField{{"g", groupName}, {"r", repoName}, {"ref", ref}, {"h", parentHash}}))
 		}
-		contentParts = append(contentParts, fmt.Sprintf("Parents    : %s\n", strings.Join(parentLinks, " ")))
+		contentParts = append(contentParts, fmt.Sprintf("Parents    : %v\n", strings.Join(parentLinks, " ")))
 	}
-	contentParts = append(contentParts, fmt.Sprintf("Author     : %s <%s>\n", mEscape(commitInfo.authorName), mEscape(commitInfo.authorEmail)))
+	contentParts = append(contentParts, fmt.Sprintf("Author     : %v <%v>\n", mEscape(commitInfo.authorName), mEscape(commitInfo.authorEmail)))
 	if showSig {
 		contentParts = append(contentParts, "Signature  : "+sigText+"\n")
 	}
-	contentParts = append(contentParts, fmt.Sprintf("Date       : %s\n", commitInfo.authorDate))
+	contentParts = append(contentParts, fmt.Sprintf("Date       : %v\n", commitInfo.authorDate))
 	if commitInfo.committerName != commitInfo.authorName {
-		contentParts = append(contentParts, fmt.Sprintf("Committer : %s <%s>\n", mEscape(commitInfo.committerName), mEscape(commitInfo.committerEmail)))
-		contentParts = append(contentParts, fmt.Sprintf("Date      : %s\n", commitInfo.committerDate))
+		contentParts = append(contentParts, fmt.Sprintf("Committer : %v <%v>\n", mEscape(commitInfo.committerName), mEscape(commitInfo.committerEmail)))
+		contentParts = append(contentParts, fmt.Sprintf("Date      : %v\n", commitInfo.committerDate))
 	}
 	contentParts = append(contentParts, "\n")
 
@@ -777,7 +777,7 @@ func (p *pageNode) serveCommitPage(path string, data any, requestID, linkID []by
 			totalAdditions += f.additions
 			totalDeletions += f.deletions
 		}
-		contentParts = append(contentParts, fmt.Sprintf("  %d files changed, %d insertions(+), %d deletions(-)\n\n",
+		contentParts = append(contentParts, fmt.Sprintf("  %v files changed, %v insertions(+), %v deletions(-)\n\n",
 			len(commitInfo.files), totalAdditions, totalDeletions))
 		statusIndicators := map[string]string{
 			"A": "`F0a0A`f", "D": "`F900D`f", "M": "`Faa0M`f", "R": "`F0aaR`f",
@@ -795,13 +795,13 @@ func (p *pageNode) serveCommitPage(path string, data any, requestID, linkID []by
 				[]linkField{{"g", groupName}, {"r", repoName}, {"ref", resolvedHash}, {"path", f.path}})
 			var stats []string
 			if f.additions > 0 {
-				stats = append(stats, fmt.Sprintf("`F0a0+%d`f", f.additions))
+				stats = append(stats, fmt.Sprintf("`F0a0+%v`f", f.additions))
 			}
 			if f.deletions > 0 {
-				stats = append(stats, fmt.Sprintf("`F900-%d`f", f.deletions))
+				stats = append(stats, fmt.Sprintf("`F900-%v`f", f.deletions))
 			}
 			statsStr := strings.Join(stats, " ")
-			contentParts = append(contentParts, fmt.Sprintf("  %s %s %s\n", statusDisplay, fileLink, statsStr))
+			contentParts = append(contentParts, fmt.Sprintf("  %v %v %v\n", statusDisplay, fileLink, statsStr))
 		}
 		contentParts = append(contentParts, "\n")
 	}
@@ -865,7 +865,7 @@ func (p *pageNode) serveRefsPage(path string, data any, requestID, linkID []byte
 	heads, tags := p.getRefsInfo(repoPath, defaultBranch)
 
 	if showHeads && len(heads) > 0 {
-		contentParts = append(contentParts, mHeading(fmt.Sprintf("Branches (%d)", len(heads)), 2))
+		contentParts = append(contentParts, mHeading(fmt.Sprintf("Branches (%v)", len(heads)), 2))
 		contentParts = append(contentParts, "\n")
 		for _, refInfo := range heads {
 			branchName := refInfo.name
@@ -874,7 +874,7 @@ func (p *pageNode) serveRefsPage(path string, data any, requestID, linkID []byte
 			commitSubject := refInfo.commitSubject
 			var nameDisplay string
 			if isDefault {
-				nameDisplay = fmt.Sprintf("`F0a0%s`f", branchName)
+				nameDisplay = fmt.Sprintf("`F0a0%v`f", branchName)
 			} else {
 				nameDisplay = branchName
 			}
@@ -884,13 +884,13 @@ func (p *pageNode) serveRefsPage(path string, data any, requestID, linkID []byte
 			}
 			treeLink := mLink("tree", pagePathTree, []linkField{{"g", groupName}, {"r", repoName}, {"ref", branchName}})
 			commitsLink := mLink("commits", pagePathCommits, []linkField{{"g", groupName}, {"r", repoName}, {"ref", branchName}})
-			contentParts = append(contentParts, fmt.Sprintf("%s%s [%s] [%s]\n", nameDisplay, defaultMarker, treeLink, commitsLink))
-			contentParts = append(contentParts, fmt.Sprintf("%s: %s\n\n", shortHash, mEscape(commitSubject)))
+			contentParts = append(contentParts, fmt.Sprintf("%v%v [%v] [%v]\n", nameDisplay, defaultMarker, treeLink, commitsLink))
+			contentParts = append(contentParts, fmt.Sprintf("%v: %v\n\n", shortHash, mEscape(commitSubject)))
 		}
 	}
 
 	if showTags && len(tags) > 0 {
-		contentParts = append(contentParts, mHeading(fmt.Sprintf("Tags (%d)", len(tags)), 2))
+		contentParts = append(contentParts, mHeading(fmt.Sprintf("Tags (%v)", len(tags)), 2))
 		contentParts = append(contentParts, "\n")
 		for _, refInfo := range slices.Backward(tags) {
 
@@ -905,7 +905,7 @@ func (p *pageNode) serveRefsPage(path string, data any, requestID, linkID []byte
 			}
 			treeLink := mLink("tree", pagePathTree, []linkField{{"g", groupName}, {"r", repoName}, {"ref", tagName}})
 			commitsLink := mLink("commits", pagePathCommits, []linkField{{"g", groupName}, {"r", repoName}, {"ref", tagName}})
-			contentParts = append(contentParts, fmt.Sprintf("%s%s %s%s`f [%s] [%s]\n", tagName, annotatedMarker, clrDim, shortHash, treeLink, commitsLink))
+			contentParts = append(contentParts, fmt.Sprintf("%v%v %v%v`f [%v] [%v]\n", tagName, annotatedMarker, clrDim, shortHash, treeLink, commitsLink))
 			if isAnnotated && tagMessage != "" {
 				contentParts = append(contentParts, mEscape(safeShort(tagMessage, 512))+"\n\n")
 			} else {

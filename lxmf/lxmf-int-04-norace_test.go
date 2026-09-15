@@ -50,6 +50,6 @@ func TestParallelStampGeneration(t *testing.T) {
 	// serial one. We allow a generous 2x fudge factor for goroutine
 	// scheduling overhead on busy CI machines.
 	if parallelDuration > 2*serialDuration {
-		t.Logf("parallel (%v) was not faster than serial (%v) on %d cores", parallelDuration, serialDuration, runtime.NumCPU())
+		t.Logf("parallel (%v) was not faster than serial (%v) on %v cores", parallelDuration, serialDuration, runtime.NumCPU())
 	}
 }

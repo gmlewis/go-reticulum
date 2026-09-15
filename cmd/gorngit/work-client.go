@@ -62,7 +62,7 @@ func (c *reticulumGitClient) workList(scope string) error {
 		return errors.New("No response from remote")
 	}
 	if respBytes[0] != resOK {
-		return fmt.Errorf("Remote error: %s", string(respBytes[1:]))
+		return fmt.Errorf("Remote error: %v", string(respBytes[1:]))
 	}
 	result := map[any]any{"active": []any{}, "completed": []any{}, "proposed": []any{}}
 	if len(respBytes) > 1 {
@@ -82,11 +82,11 @@ func (c *reticulumGitClient) workList(scope string) error {
 	for _, s := range scopesToShow {
 		docs, _ := result[s].([]any)
 		if len(docs) > 0 {
-			hdr := fmt.Sprintf("\n%s documents", capitalize(s))
+			hdr := fmt.Sprintf("\n%v documents", capitalize(s))
 			fmt.Println(hdr)
 			fmt.Println(strings.Repeat("=", len(hdr)))
 			fmt.Println()
-			fmt.Printf("%-4s %-30s %-17s %-18s %s\n", "ID", "Title", "Author", "Created", "Comments")
+			fmt.Printf("%-4s %-30s %-17s %-18s %v\n", "ID", "Title", "Author", "Created", "Comments")
 			fmt.Println(strings.Repeat("-", 80))
 			for _, doc := range docs {
 				dm, _ := doc.(map[any]any)
@@ -105,11 +105,11 @@ func (c *reticulumGitClient) workList(scope string) error {
 					created = time.Unix(int64(createdTs), 0).Format("2006-01-02 15:04")
 				}
 				comments, _ := dm["comments"].(int64)
-				fmt.Printf("%-4v %-30s %-17s %-18s %d\n", docID, title, author, created, comments)
+				fmt.Printf("%-4v %-30s %-17s %-18s %v\n", docID, title, author, created, comments)
 			}
 			fmt.Println()
 		} else if scope != "all" {
-			fmt.Printf("No %s work documents found.\n", s)
+			fmt.Printf("No %v work documents found.\n", s)
 		}
 	}
 	if scope == "all" {
@@ -145,7 +145,7 @@ func (c *reticulumGitClient) workView(docID int, scope string) error {
 		return errors.New("No response from remote")
 	}
 	if respBytes[0] != resOK {
-		return fmt.Errorf("Remote error: %s", string(respBytes[1:]))
+		return fmt.Errorf("Remote error: %v", string(respBytes[1:]))
 	}
 	if len(respBytes) <= 1 {
 		return errors.New("Empty response from remote")
@@ -179,23 +179,23 @@ func (c *reticulumGitClient) workView(docID int, scope string) error {
 
 	docScope, _ := doc["scope"].(string)
 	title := metaString(meta, "title", "Untitled")
-	dt := fmt.Sprintf("%s (#%v)", title, doc["id"])
+	dt := fmt.Sprintf("%v (#%v)", title, doc["id"])
 	fmt.Println(dt)
 	fmt.Println(strings.Repeat("=", len(dt)))
-	fmt.Printf("Author    : %s\n", authorStr)
-	fmt.Printf("Signature : %s\n", signatureStr)
-	fmt.Printf("Status    : %s\n", capitalize(docScope))
+	fmt.Printf("Author    : %v\n", authorStr)
+	fmt.Printf("Signature : %v\n", signatureStr)
+	fmt.Printf("Status    : %v\n", capitalize(docScope))
 	created, _ := meta["created"].(float64)
 	if created > 0 {
-		fmt.Printf("Created   : %s\n", time.Unix(int64(created), 0).Format("2006-01-02 15:04:05"))
+		fmt.Printf("Created   : %v\n", time.Unix(int64(created), 0).Format("2006-01-02 15:04:05"))
 	}
 	edited, _ := meta["edited"].(float64)
 	if edited > 0 {
-		fmt.Printf("Edited    : %s\n", time.Unix(int64(edited), 0).Format("2006-01-02 15:04:05"))
+		fmt.Printf("Edited    : %v\n", time.Unix(int64(edited), 0).Format("2006-01-02 15:04:05"))
 	}
-	fmt.Printf("Format    : %s\n", metaString(meta, "format", "markdown"))
+	fmt.Printf("Format    : %v\n", metaString(meta, "format", "markdown"))
 	comments, _ := doc["comments"].([]any)
-	fmt.Printf("Updates   : %d\n", len(comments))
+	fmt.Printf("Updates   : %v\n", len(comments))
 	fmt.Println()
 	fmt.Println(content)
 
@@ -205,8 +205,8 @@ func (c *reticulumGitClient) workView(docID int, scope string) error {
 		for _, cm := range comments {
 			c, _ := cm.(map[any]any)
 			cCreated, _ := c["created"].(float64)
-			ts := fmt.Sprintf("#%v by %v at %s", c["id"], c["author"], time.Unix(int64(cCreated), 0).Format("2006-01-02 15:04:05"))
-			fmt.Printf("\n%s\n", ts)
+			ts := fmt.Sprintf("#%v by %v at %v", c["id"], c["author"], time.Unix(int64(cCreated), 0).Format("2006-01-02 15:04:05"))
+			fmt.Printf("\n%v\n", ts)
 			fmt.Println(strings.Repeat("-", len(ts)))
 			fmt.Println(c["content"])
 		}
@@ -253,7 +253,7 @@ func (c *reticulumGitClient) workCreateInScope(title, opName, scopeResult string
 	}
 	packed, err := msgpack.Pack(requestData)
 	if err != nil {
-		return fmt.Errorf("could not pack %s request: %w", opName, err)
+		return fmt.Errorf("could not pack %v request: %w", opName, err)
 	}
 	response, _, err := c.sendRequest(pathWork, packed, workRequestTimeout)
 	if err != nil {
@@ -264,7 +264,7 @@ func (c *reticulumGitClient) workCreateInScope(title, opName, scopeResult string
 		return errors.New("No response from remote")
 	}
 	if respBytes[0] != resOK {
-		return fmt.Errorf("Server error: %s", string(respBytes[1:]))
+		return fmt.Errorf("Server error: %v", string(respBytes[1:]))
 	}
 	if len(respBytes) > 1 {
 		unpacked, err := msgpack.UnpackPreserveBinMapKeys(respBytes[1:])
@@ -303,7 +303,7 @@ func (c *reticulumGitClient) workEdit(docID int, title, scope string) error {
 		return errors.New("No response from remote")
 	}
 	if respBytes[0] != resOK {
-		return fmt.Errorf("Remote error: %s", string(respBytes[1:]))
+		return fmt.Errorf("Remote error: %v", string(respBytes[1:]))
 	}
 	unpacked, err := msgpack.UnpackPreserveBinMapKeys(respBytes[1:])
 	if err != nil {
@@ -353,16 +353,16 @@ func (c *reticulumGitClient) workEdit(docID int, title, scope string) error {
 		return errors.New("No response from remote")
 	}
 	if respBytes[0] != resOK {
-		return fmt.Errorf("Remote error: %s", string(respBytes[1:]))
+		return fmt.Errorf("Remote error: %v", string(respBytes[1:]))
 	}
-	fmt.Printf("Work document %s #%d updated\n", scope, docID)
+	fmt.Printf("Work document %v #%v updated\n", scope, docID)
 	return nil
 }
 
 // workDelete sends a work "delete" request after confirming, mirroring
 // work_delete (server.py).
 func (c *reticulumGitClient) workDelete(docID int, scope string) error {
-	fmt.Printf("Are you sure you want to delete %s work document #%d? [y/N]: ", scope, docID)
+	fmt.Printf("Are you sure you want to delete %v work document #%v? [y/N]: ", scope, docID)
 	var confirm string
 	_, _ = fmt.Scanln(&confirm)
 	if strings.ToLower(strings.TrimSpace(confirm)) != "y" {
@@ -388,16 +388,16 @@ func (c *reticulumGitClient) workDelete(docID int, scope string) error {
 		return errors.New("No response from remote")
 	}
 	if respBytes[0] != resOK {
-		return fmt.Errorf("Remote error: %s", string(respBytes[1:]))
+		return fmt.Errorf("Remote error: %v", string(respBytes[1:]))
 	}
-	fmt.Printf("Work document %s #%d deleted\n", scope, docID)
+	fmt.Printf("Work document %v #%v deleted\n", scope, docID)
 	return nil
 }
 
 // workComment sends a work "comment" (update) request after opening the
 // editor, mirroring work_comment (server.py). No signature is sent.
 func (c *reticulumGitClient) workComment(docID int, scope string) error {
-	content, err := editWorkContent(fmt.Sprintf("Update on document #%d", docID), "", true)
+	content, err := editWorkContent(fmt.Sprintf("Update on document #%v", docID), "", true)
 	if err != nil {
 		return err
 	}
@@ -426,13 +426,13 @@ func (c *reticulumGitClient) workComment(docID int, scope string) error {
 		return errors.New("No response from remote")
 	}
 	if respBytes[0] != resOK {
-		return fmt.Errorf("Remote error: %s", string(respBytes[1:]))
+		return fmt.Errorf("Remote error: %v", string(respBytes[1:]))
 	}
 	if len(respBytes) > 1 {
 		unpacked, err := msgpack.UnpackPreserveBinMapKeys(respBytes[1:])
 		if err == nil {
 			if m, ok := unpacked.(map[any]any); ok {
-				fmt.Printf("Update #%v added to %s document #%d\n", m["id"], scope, docID)
+				fmt.Printf("Update #%v added to %v document #%v\n", m["id"], scope, docID)
 				return nil
 			}
 		}
@@ -463,7 +463,7 @@ func (c *reticulumGitClient) workMove(docID int, opName, scopeResult, doneVerb s
 	}
 	packed, err := msgpack.Pack(requestData)
 	if err != nil {
-		return fmt.Errorf("could not pack %s request: %w", opName, err)
+		return fmt.Errorf("could not pack %v request: %w", opName, err)
 	}
 	response, _, err := c.sendRequest(pathWork, packed, requestTimeout)
 	if err != nil {
@@ -474,18 +474,18 @@ func (c *reticulumGitClient) workMove(docID int, opName, scopeResult, doneVerb s
 		return errors.New("No response from remote")
 	}
 	if respBytes[0] != resOK {
-		return fmt.Errorf("Remote error: %s", string(respBytes[1:]))
+		return fmt.Errorf("Remote error: %v", string(respBytes[1:]))
 	}
 	if len(respBytes) > 1 {
 		unpacked, err := msgpack.UnpackPreserveBinMapKeys(respBytes[1:])
 		if err == nil {
 			if m, ok := unpacked.(map[any]any); ok {
-				fmt.Printf("Work document #%v %s\n", m["id"], doneVerb)
+				fmt.Printf("Work document #%v %v\n", m["id"], doneVerb)
 				return nil
 			}
 		}
 	}
-	fmt.Printf("Work document %s\n", doneVerb)
+	fmt.Printf("Work document %v\n", doneVerb)
 	return nil
 }
 
@@ -512,7 +512,7 @@ func (c *reticulumGitClient) workPermissions(docID int) error {
 		return errors.New("No response from remote")
 	}
 	if respBytes[0] != resOK {
-		return fmt.Errorf("Remote error: %s", string(respBytes[1:]))
+		return fmt.Errorf("Remote error: %v", string(respBytes[1:]))
 	}
 	currentContent := ""
 	if len(respBytes) > 1 {
@@ -551,9 +551,9 @@ func (c *reticulumGitClient) workPermissions(docID int) error {
 		return errors.New("No response from remote")
 	}
 	if respBytes[0] != resOK {
-		return fmt.Errorf("Remote error: %s", string(respBytes[1:]))
+		return fmt.Errorf("Remote error: %v", string(respBytes[1:]))
 	}
-	fmt.Printf("Permissions updated for work document #%d\n", docID)
+	fmt.Printf("Permissions updated for work document #%v\n", docID)
 	return nil
 }
 

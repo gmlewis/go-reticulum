@@ -188,7 +188,7 @@ func (ui *UDPInterface) HashString() string {
 	if ui.listenAddr != nil {
 		port = ui.listenAddr.Port
 	}
-	return "UDPInterface[" + ui.Name() + "/" + listenIP + ":" + fmt.Sprintf("%d", port) + "]"
+	return "UDPInterface[" + ui.Name() + "/" + listenIP + ":" + fmt.Sprintf("%v", port) + "]"
 }
 
 // IsOut reports whether this interface can originate outbound datagrams.

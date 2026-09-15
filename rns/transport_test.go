@@ -2427,7 +2427,7 @@ func TestClaimDownNotifyOncePerDown(t *testing.T) {
 	}
 	wg.Wait()
 	if wins != 1 {
-		t.Fatalf("expected exactly 1 winning claim among 100 concurrent, got %d", wins)
+		t.Fatalf("expected exactly 1 winning claim among 100 concurrent, got %v", wins)
 	}
 	if ts.claimDownNotify(iface) {
 		t.Fatalf("expected second claim to be suppressed by latch")
@@ -2604,7 +2604,7 @@ func TestShouldHoldAnnounceGate(t *testing.T) {
 		id, dest := mkRemote(t, "gate")
 		ts.handleAnnounce(mkAnnounce(t, id, dest, 1, iface), iface)
 		if iface.HeldAnnounces() != 1 {
-			t.Fatalf("HeldAnnounces = %d, want 1 (unknown dest held)", iface.HeldAnnounces())
+			t.Fatalf("HeldAnnounces = %v, want 1 (unknown dest held)", iface.HeldAnnounces())
 		}
 		if inTable(ts, dest.Hash) {
 			t.Fatal("held announce must not enter the path table")
@@ -2621,7 +2621,7 @@ func TestShouldHoldAnnounceGate(t *testing.T) {
 		ts.mu.Unlock()
 		ts.handleAnnounce(mkAnnounce(t, id, dest, 1, iface), iface)
 		if iface.HeldAnnounces() != 0 {
-			t.Fatalf("HeldAnnounces = %d, want 0 (pending PR bypasses gate)", iface.HeldAnnounces())
+			t.Fatalf("HeldAnnounces = %v, want 0 (pending PR bypasses gate)", iface.HeldAnnounces())
 		}
 		if !inTable(ts, dest.Hash) {
 			t.Fatal("announce with pending PR must be processed into the path table")
@@ -2638,7 +2638,7 @@ func TestShouldHoldAnnounceGate(t *testing.T) {
 		ts.mu.Unlock()
 		ts.handleAnnounce(mkAnnounce(t, id, dest, 1, iface), iface)
 		if iface.HeldAnnounces() != 0 {
-			t.Fatalf("HeldAnnounces = %d, want 0 (known dest not gated)", iface.HeldAnnounces())
+			t.Fatalf("HeldAnnounces = %v, want 0 (known dest not gated)", iface.HeldAnnounces())
 		}
 	})
 
@@ -2657,7 +2657,7 @@ func TestShouldHoldAnnounceGate(t *testing.T) {
 		ts.mu.Unlock()
 		ts.handleAnnounce(mkAnnounce(t, id, dest, 1, iface), iface)
 		if iface.HeldAnnounces() != 0 {
-			t.Fatalf("HeldAnnounces = %d, want 0 (originated PR bypasses gate)", iface.HeldAnnounces())
+			t.Fatalf("HeldAnnounces = %v, want 0 (originated PR bypasses gate)", iface.HeldAnnounces())
 		}
 		if !inTable(ts, dest.Hash) {
 			t.Fatal("announce for an originated-PR destination must be processed into the path table")
@@ -2671,7 +2671,7 @@ func TestShouldHoldAnnounceGate(t *testing.T) {
 		id, dest := mkRemote(t, "nolimit")
 		ts.handleAnnounce(mkAnnounce(t, id, dest, 1, iface), iface)
 		if iface.HeldAnnounces() != 0 {
-			t.Fatalf("HeldAnnounces = %d, want 0 (ingress limit off)", iface.HeldAnnounces())
+			t.Fatalf("HeldAnnounces = %v, want 0 (ingress limit off)", iface.HeldAnnounces())
 		}
 		if !inTable(ts, dest.Hash) {
 			t.Fatal("announce with ingress limit off must be processed into the path table")
@@ -2695,7 +2695,7 @@ func TestShouldHoldAnnounceGate(t *testing.T) {
 		ts.mu.Unlock()
 		ts.handleAnnounce(mkAnnounce(t, prID, prDest, 1, iface), iface)
 		if iface.HeldAnnounces() != 5 {
-			t.Fatalf("HeldAnnounces = %d, want 5 (flooded unknowns held; PR dest not held)", iface.HeldAnnounces())
+			t.Fatalf("HeldAnnounces = %v, want 5 (flooded unknowns held; PR dest not held)", iface.HeldAnnounces())
 		}
 		if !inTable(ts, prDest.Hash) {
 			t.Fatal("pending-PR announce must be processed into the path table even under flooding")

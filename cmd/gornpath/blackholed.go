@@ -77,12 +77,12 @@ func renderBlackholedIdentities(rows []any, now time.Time, filter string, localI
 			byStr = " by " + rns.PrettyHex(entry.Source)
 		}
 
-		filterStr := fmt.Sprintf("%s %s %s %s", rns.PrettyHex(entry.IdentityHash), untilStr, reasonStr, byStr)
+		filterStr := fmt.Sprintf("%v %v %v %v", rns.PrettyHex(entry.IdentityHash), untilStr, reasonStr, byStr)
 		if filter != "" && !strings.Contains(filterStr, filter) {
 			continue
 		}
 
-		fmt.Fprintf(&builder, "%s blackholed %s%s%s\n", rns.PrettyHex(entry.IdentityHash), untilStr, reasonStr, byStr)
+		fmt.Fprintf(&builder, "%v blackholed %v%v%v\n", rns.PrettyHex(entry.IdentityHash), untilStr, reasonStr, byStr)
 		displayed++
 	}
 

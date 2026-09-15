@@ -116,10 +116,10 @@ func TestCleanAvailableTicketsGolden(t *testing.T) {
 	for _, c := range inboundCases {
 		_, present := inbound[string(inboundTickets[c.label])]
 		if c.survives && !present {
-			t.Errorf("inbound %s ticket was reaped, want kept", c.label)
+			t.Errorf("inbound %v ticket was reaped, want kept", c.label)
 		}
 		if !c.survives && present {
-			t.Errorf("inbound %s ticket was kept, want reaped", c.label)
+			t.Errorf("inbound %v ticket was kept, want reaped", c.label)
 		}
 	}
 }

@@ -153,7 +153,7 @@ func TestHoldAnnounce(t *testing.T) {
 			bi.HoldAnnounce([]byte{byte(i)}, nil, i, []byte{0, 0, 0, byte(i)})
 		}
 		if got := bi.HeldAnnounces(); got != 3 {
-			t.Fatalf("HeldAnnounces = %d, want 3 (4th dropped at cap)", got)
+			t.Fatalf("HeldAnnounces = %v, want 3 (4th dropped at cap)", got)
 		}
 	})
 	t.Run("repeat destination replaces held copy", func(t *testing.T) {
@@ -163,7 +163,7 @@ func TestHoldAnnounce(t *testing.T) {
 		bi.HoldAnnounce([]byte{0xA}, nil, 2, dh)
 		bi.HoldAnnounce([]byte{0xB}, nil, 5, dh) // same dest, replaces
 		if bi.HeldAnnounces() != 1 {
-			t.Fatalf("HeldAnnounces = %d, want 1 (replace not add)", bi.HeldAnnounces())
+			t.Fatalf("HeldAnnounces = %v, want 1 (replace not add)", bi.HeldAnnounces())
 		}
 	})
 	t.Run("max-hop announce not held", func(t *testing.T) {
@@ -175,12 +175,12 @@ func TestHoldAnnounce(t *testing.T) {
 		bi.HoldAnnounce([]byte{0xA}, nil, PathfinderM-1, []byte{1}) // hops = 127
 		bi.HoldAnnounce([]byte{0xB}, nil, PathfinderM, []byte{2})   // hops = 128
 		if got := bi.HeldAnnounces(); got != 0 {
-			t.Fatalf("HeldAnnounces = %d, want 0 (max-hop announces must not be held)", got)
+			t.Fatalf("HeldAnnounces = %v, want 0 (max-hop announces must not be held)", got)
 		}
 		// A just-below-threshold announce is still eligible.
 		bi.HoldAnnounce([]byte{0xC}, nil, PathfinderM-2, []byte{3}) // hops = 126
 		if got := bi.HeldAnnounces(); got != 1 {
-			t.Fatalf("HeldAnnounces = %d, want 1 (sub-threshold announce should be held)", got)
+			t.Fatalf("HeldAnnounces = %v, want 1 (sub-threshold announce should be held)", got)
 		}
 	})
 }
@@ -240,7 +240,7 @@ func TestProcessHeldAnnounces(t *testing.T) {
 			t.Errorf("released raw = %x, want 0xB (fewest hops)", raw)
 		}
 		if bi.HeldAnnounces() != 2 {
-			t.Errorf("HeldAnnounces after release = %d, want 2", bi.HeldAnnounces())
+			t.Errorf("HeldAnnounces after release = %v, want 2", bi.HeldAnnounces())
 		}
 		wantRelease := now.Add(time.Duration(bi.icHeldReleaseInterval) * time.Second)
 		if !bi.icHeldRelease.Equal(wantRelease) {

@@ -809,7 +809,7 @@ func TestPeerSyncLinkReadyDropsPurgedAndCollectsEntries(t *testing.T) {
 
 	got := peer.pendingOfferEntries
 	if len(got) != 2 {
-		t.Fatalf("pendingOfferEntries len = %d, want 2 (purged ID dropped)", len(got))
+		t.Fatalf("pendingOfferEntries len = %v, want 2 (purged ID dropped)", len(got))
 	}
 	byID := map[string]pendingOfferEntry{}
 	for _, e := range got {
@@ -823,7 +823,7 @@ func TestPeerSyncLinkReadyDropsPurgedAndCollectsEntries(t *testing.T) {
 		t.Fatal("tidA missing from pendingOfferEntries")
 	}
 	if eA.size != 100 {
-		t.Errorf("tidA size = %d, want 100", eA.size)
+		t.Errorf("tidA size = %v, want 100", eA.size)
 	}
 	if eA.weight != 100 {
 		t.Errorf("tidA weight = %v, want 100 (ageWeight=1, priorityWeight=1, size=100)", eA.weight)
@@ -833,7 +833,7 @@ func TestPeerSyncLinkReadyDropsPurgedAndCollectsEntries(t *testing.T) {
 		t.Fatal("tidB missing from pendingOfferEntries")
 	}
 	if eB.size != 200 {
-		t.Errorf("tidB size = %d, want 200", eB.size)
+		t.Errorf("tidB size = %v, want 200", eB.size)
 	}
 	if eB.weight != 200 {
 		t.Errorf("tidB weight = %v, want 200 (ageWeight=1, priorityWeight=1, size=200)", eB.weight)
@@ -888,7 +888,7 @@ func TestPeerSyncLinkReadyDropsLowStampValueMessages(t *testing.T) {
 
 	got := peer.pendingOfferEntries
 	if len(got) != 2 {
-		t.Fatalf("pendingOfferEntries len = %d, want 2 (low-stamp ID dropped)", len(got))
+		t.Fatalf("pendingOfferEntries len = %v, want 2 (low-stamp ID dropped)", len(got))
 	}
 	byID := map[string]pendingOfferEntry{}
 	for _, e := range got {
@@ -984,11 +984,11 @@ func TestPeerSyncLinkReadyAppliesTransferAndSyncSizeLimits(t *testing.T) {
 	// Offered list must be ordered by weight ascending: A, B, C.
 	wantOffer := [][]byte{tidA, tidB, tidC}
 	if len(got) != len(wantOffer) {
-		t.Fatalf("pendingOfferIDs len = %d, want %d\n got=%v\nwant=%v", len(got), len(wantOffer), got, wantOffer)
+		t.Fatalf("pendingOfferIDs len = %v, want %v\n got=%v\nwant=%v", len(got), len(wantOffer), got, wantOffer)
 	}
 	for i, want := range wantOffer {
 		if !bytes.Equal(got[i], want) {
-			t.Errorf("pendingOfferIDs[%d] = %v, want %v (weight-ascending order)", i, got[i], want)
+			t.Errorf("pendingOfferIDs[%v] = %v, want %v (weight-ascending order)", i, got[i], want)
 		}
 	}
 
@@ -1079,13 +1079,13 @@ func TestPeerSyncLinkReadyEarlyReturnsWhenNoUnhandledRemain(t *testing.T) {
 	peer.Sync()
 
 	if peer.state != PeerStateLinkReady {
-		t.Errorf("peer state = %d, want %d (PeerStateLinkReady, no offer sent)", peer.state, PeerStateLinkReady)
+		t.Errorf("peer state = %v, want %v (PeerStateLinkReady, no offer sent)", peer.state, PeerStateLinkReady)
 	}
 	if len(peer.lastOffer) != 0 {
-		t.Errorf("lastOffer len = %d, want 0 (no offer prepared, early return)", len(peer.lastOffer))
+		t.Errorf("lastOffer len = %v, want 0 (no offer prepared, early return)", len(peer.lastOffer))
 	}
 	if len(peer.pendingOfferIDs) != 0 {
-		t.Errorf("pendingOfferIDs len = %d, want 0 (all messages filtered out)", len(peer.pendingOfferIDs))
+		t.Errorf("pendingOfferIDs len = %v, want 0 (all messages filtered out)", len(peer.pendingOfferIDs))
 	}
 
 	logMu.Lock()
@@ -1098,7 +1098,7 @@ func TestPeerSyncLinkReadyEarlyReturnsWhenNoUnhandledRemain(t *testing.T) {
 	}
 	logMu.Unlock()
 	if !found {
-		t.Errorf("expected a debug log mentioning %q, got %d messages: %v", "no unhandled messages exist after offer preparation", len(got), got)
+		t.Errorf("expected a debug log mentioning %q, got %v messages: %v", "no unhandled messages exist after offer preparation", len(got), got)
 	}
 }
 
@@ -1193,21 +1193,21 @@ func TestPeerSyncLinkReadySendsOfferRequest(t *testing.T) {
 		t.Fatalf("msgpack.Pack(offer) failed: %v", err)
 	}
 	if gotHex := hex.EncodeToString(packed); gotHex != wantHex {
-		t.Errorf("offer msgpack = %s, want %s", gotHex, wantHex)
+		t.Errorf("offer msgpack = %v, want %v", gotHex, wantHex)
 	}
 
 	// lastOffer records the offered IDs in order.
 	if len(peer.lastOffer) != 3 {
-		t.Fatalf("lastOffer len = %d, want 3", len(peer.lastOffer))
+		t.Fatalf("lastOffer len = %v, want 3", len(peer.lastOffer))
 	}
 	for i, want := range [][]byte{tidA, tidB, tidC} {
 		if !bytes.Equal(peer.lastOffer[i], want) {
-			t.Errorf("lastOffer[%d] = %v, want %v", i, peer.lastOffer[i], want)
+			t.Errorf("lastOffer[%v] = %v, want %v", i, peer.lastOffer[i], want)
 		}
 	}
 
 	if peer.state != PeerStateRequestSent {
-		t.Errorf("peer state = %d, want %d (PeerStateRequestSent)", peer.state, PeerStateRequestSent)
+		t.Errorf("peer state = %v, want %v (PeerStateRequestSent)", peer.state, PeerStateRequestSent)
 	}
 }
 
@@ -1270,7 +1270,7 @@ func TestPeerOfferResponseErrorNoIdentity(t *testing.T) {
 	peer.OfferResponse(receipt)
 
 	if identifyCnt != 1 {
-		t.Errorf("identify called %d times, want 1", identifyCnt)
+		t.Errorf("identify called %v times, want 1", identifyCnt)
 	}
 	if gotLink != peer.link {
 		t.Error("identify was not called with the peer's link")
@@ -1279,7 +1279,7 @@ func TestPeerOfferResponseErrorNoIdentity(t *testing.T) {
 		t.Error("identify was not called with router.identity")
 	}
 	if peer.state != PeerStateLinkReady {
-		t.Errorf("peer state = %d, want %d (PeerStateLinkReady after NO_IDENTITY reset)", peer.state, PeerStateLinkReady)
+		t.Errorf("peer state = %v, want %v (PeerStateLinkReady after NO_IDENTITY reset)", peer.state, PeerStateLinkReady)
 	}
 	if peer.lastSyncAttempt != peerTime(fixedNow) {
 		t.Errorf("lastSyncAttempt = %v, want %v (Sync re-entered)", peer.lastSyncAttempt, peerTime(fixedNow))
@@ -1319,7 +1319,7 @@ func TestPeerOfferResponseErrorNoAccessAndThrottled(t *testing.T) {
 		peer.OfferResponse(receipt)
 
 		if peer.state != PeerStateResponseReceived {
-			t.Errorf("peer state = %d, want %d (NO_ACCESS must not change state)", peer.state, PeerStateResponseReceived)
+			t.Errorf("peer state = %v, want %v (NO_ACCESS must not change state)", peer.state, PeerStateResponseReceived)
 		}
 		router.mu.Lock()
 		_, stillPeered := router.peers[string(destHash)]
@@ -1348,7 +1348,7 @@ func TestPeerOfferResponseErrorNoAccessAndThrottled(t *testing.T) {
 		peer.OfferResponse(receipt)
 
 		if peer.state != PeerStateResponseReceived {
-			t.Errorf("peer state = %d, want %d (THROTTLED must not change state)", peer.state, PeerStateResponseReceived)
+			t.Errorf("peer state = %v, want %v (THROTTLED must not change state)", peer.state, PeerStateResponseReceived)
 		}
 		wantNext := peerTime(fixedNow) + float64(pnStampThrottle)/float64(time.Second)
 		if peer.nextSyncAttempt != wantNext {
@@ -1401,16 +1401,16 @@ func TestPeerOfferResponseWantsNothing(t *testing.T) {
 		}
 	}
 	if peer.state != PeerStateIdle {
-		t.Errorf("peer state = %d, want %d (PeerStateIdle)", peer.state, PeerStateIdle)
+		t.Errorf("peer state = %v, want %v (PeerStateIdle)", peer.state, PeerStateIdle)
 	}
 	if peer.link != nil {
 		t.Errorf("peer.link = %v, want nil (torn down and cleared)", peer.link)
 	}
 	if peer.offered != 2 {
-		t.Errorf("peer.offered = %d, want 2 (incremented by len(lastOffer))", peer.offered)
+		t.Errorf("peer.offered = %v, want 2 (incremented by len(lastOffer))", peer.offered)
 	}
 	if link.GetStatus() != rns.LinkClosed {
-		t.Errorf("link status = %d, want %d (LinkClosed, Teardown called)", link.GetStatus(), rns.LinkClosed)
+		t.Errorf("link status = %v, want %v (LinkClosed, Teardown called)", link.GetStatus(), rns.LinkClosed)
 	}
 }
 
@@ -1457,17 +1457,17 @@ func TestPeerOfferResponseWantsEverything(t *testing.T) {
 	// Captured live from Python umsgpack for [2000000.0, [payload1, payload2]].
 	wantHex := pythonPackHex(t, `[2000000.0, [b'\xaa\xbb\xcc\xdd', b'\xee\xff\x00\x11']]`)
 	if gotHex := hex.EncodeToString(capturedData); gotHex != wantHex {
-		t.Errorf("resource data = %s, want %s", gotHex, wantHex)
+		t.Errorf("resource data = %v, want %v", gotHex, wantHex)
 	}
 	if peer.state != PeerStateResourceTransferring {
-		t.Errorf("peer state = %d, want %d (PeerStateResourceTransferring)", peer.state, PeerStateResourceTransferring)
+		t.Errorf("peer state = %v, want %v (PeerStateResourceTransferring)", peer.state, PeerStateResourceTransferring)
 	}
 	if len(peer.currentlyTransferringMessages) != 2 {
-		t.Fatalf("currentlyTransferringMessages len = %d, want 2", len(peer.currentlyTransferringMessages))
+		t.Fatalf("currentlyTransferringMessages len = %v, want 2", len(peer.currentlyTransferringMessages))
 	}
 	for i, want := range [][]byte{tid1, tid2} {
 		if !bytes.Equal(peer.currentlyTransferringMessages[i], want) {
-			t.Errorf("currentlyTransferringMessages[%d] = %v, want %v", i, peer.currentlyTransferringMessages[i], want)
+			t.Errorf("currentlyTransferringMessages[%v] = %v, want %v", i, peer.currentlyTransferringMessages[i], want)
 		}
 	}
 	if peer.currentSyncTransferStarted != peerTime(fixedNow) {
@@ -1536,10 +1536,10 @@ func TestPeerOfferResponseWantedList(t *testing.T) {
 	// Captured live from Python umsgpack for [2000000.0, [payload2]].
 	wantHex := pythonPackHex(t, `[2000000.0, [b'\xee\xff\x00\x11']]`)
 	if gotHex := hex.EncodeToString(capturedData); gotHex != wantHex {
-		t.Errorf("resource data = %s, want %s", gotHex, wantHex)
+		t.Errorf("resource data = %v, want %v", gotHex, wantHex)
 	}
 	if peer.state != PeerStateResourceTransferring {
-		t.Errorf("peer state = %d, want %d (PeerStateResourceTransferring)", peer.state, PeerStateResourceTransferring)
+		t.Errorf("peer state = %v, want %v (PeerStateResourceTransferring)", peer.state, PeerStateResourceTransferring)
 	}
 	if len(peer.currentlyTransferringMessages) != 1 || !bytes.Equal(peer.currentlyTransferringMessages[0], tid2) {
 		t.Errorf("currentlyTransferringMessages = %v, want [tid2]", peer.currentlyTransferringMessages)
@@ -1612,12 +1612,12 @@ func TestPeerResourceConcluded(t *testing.T) {
 			t.Errorf("peer.link = %v, want nil", peer.link)
 		}
 		if got := link.GetStatus(); got != rns.LinkClosed {
-			t.Errorf("link status = %d, want %d (LinkClosed)", got, rns.LinkClosed)
+			t.Errorf("link status = %v, want %v (LinkClosed)", got, rns.LinkClosed)
 		}
 
 		// State is Idle and transfer state is cleared.
 		if peer.state != PeerStateIdle {
-			t.Errorf("peer state = %d, want %d (PeerStateIdle)", peer.state, PeerStateIdle)
+			t.Errorf("peer state = %v, want %v (PeerStateIdle)", peer.state, PeerStateIdle)
 		}
 		if peer.currentlyTransferringMessages != nil {
 			t.Errorf("currentlyTransferringMessages = %v, want nil", peer.currentlyTransferringMessages)
@@ -1629,13 +1629,13 @@ func TestPeerResourceConcluded(t *testing.T) {
 		// Statistics: offered += len(lastOffer), outgoing += 1,
 		// txBytes += data size, alive, lastHeard.
 		if peer.offered != 1 {
-			t.Errorf("offered = %d, want 1", peer.offered)
+			t.Errorf("offered = %v, want 1", peer.offered)
 		}
 		if peer.outgoing != 1 {
-			t.Errorf("outgoing = %d, want 1", peer.outgoing)
+			t.Errorf("outgoing = %v, want 1", peer.outgoing)
 		}
 		if peer.txBytes != 4 {
-			t.Errorf("txBytes = %d, want 4", peer.txBytes)
+			t.Errorf("txBytes = %v, want 4", peer.txBytes)
 		}
 		if !peer.alive {
 			t.Error("alive = false, want true")
@@ -1722,7 +1722,7 @@ func TestPeerResourceConcluded(t *testing.T) {
 			t.Error("tid2 lost unhandledBy, want it retained for the next sync")
 		}
 		if peer.state != PeerStateIdle {
-			t.Errorf("peer state = %d, want %d (PeerStateIdle) after re-sync postpone", peer.state, PeerStateIdle)
+			t.Errorf("peer state = %v, want %v (PeerStateIdle) after re-sync postpone", peer.state, PeerStateIdle)
 		}
 	})
 
@@ -1776,10 +1776,10 @@ func TestPeerResourceConcluded(t *testing.T) {
 			t.Errorf("peer.link = %v, want nil", peer.link)
 		}
 		if got := link.GetStatus(); got != rns.LinkClosed {
-			t.Errorf("link status = %d, want %d (LinkClosed)", got, rns.LinkClosed)
+			t.Errorf("link status = %v, want %v (LinkClosed)", got, rns.LinkClosed)
 		}
 		if peer.state != PeerStateIdle {
-			t.Errorf("peer state = %d, want %d (PeerStateIdle)", peer.state, PeerStateIdle)
+			t.Errorf("peer state = %v, want %v (PeerStateIdle)", peer.state, PeerStateIdle)
 		}
 		if peer.currentlyTransferringMessages != nil {
 			t.Errorf("currentlyTransferringMessages = %v, want nil", peer.currentlyTransferringMessages)
@@ -1790,13 +1790,13 @@ func TestPeerResourceConcluded(t *testing.T) {
 
 		// Statistics untouched.
 		if peer.offered != 0 {
-			t.Errorf("offered = %d, want 0 (no stat update on failure)", peer.offered)
+			t.Errorf("offered = %v, want 0 (no stat update on failure)", peer.offered)
 		}
 		if peer.outgoing != 0 {
-			t.Errorf("outgoing = %d, want 0 (no stat update on failure)", peer.outgoing)
+			t.Errorf("outgoing = %v, want 0 (no stat update on failure)", peer.outgoing)
 		}
 		if peer.txBytes != 0 {
-			t.Errorf("txBytes = %d, want 0 (no stat update on failure)", peer.txBytes)
+			t.Errorf("txBytes = %v, want 0 (no stat update on failure)", peer.txBytes)
 		}
 	})
 }

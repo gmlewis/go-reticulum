@@ -50,13 +50,13 @@ func TestFastFlapRecordAndBlock(t *testing.T) {
 	for i := 1; i <= 3; i++ {
 		b.recordFlap(ip, spawnedAt)
 		if b.isBlocked(ip) {
-			t.Fatalf("after %d flaps (== grace %d), isBlocked=true want false", i, 3)
+			t.Fatalf("after %v flaps (== grace %v), isBlocked=true want false", i, 3)
 		}
 	}
 	// The 4th flap pushes flaps > grace: the IP is now blocked.
 	b.recordFlap(ip, spawnedAt)
 	if !b.isBlocked(ip) {
-		t.Fatalf("after %d flaps (> grace %d), isBlocked=false want true", 4, 3)
+		t.Fatalf("after %v flaps (> grace %v), isBlocked=false want true", 4, 3)
 	}
 }
 
@@ -74,7 +74,7 @@ func TestFastFlapIgnoresLongConnections(t *testing.T) {
 		t.Fatal("long connection recorded a flap; want ignored")
 	}
 	if b.BlockedIPCount() != 0 {
-		t.Fatalf("BlockedIPCount=%d want 0", b.BlockedIPCount())
+		t.Fatalf("BlockedIPCount=%v want 0", b.BlockedIPCount())
 	}
 }
 
@@ -95,7 +95,7 @@ func TestFastFlapDisabledNoBlocking(t *testing.T) {
 		t.Fatal("block_fast_flapping=false but isBlocked=true")
 	}
 	if got := b.BlockedIPCount(); got != 0 {
-		t.Fatalf("BlockedIPCount=%d want 0 when blocking disabled", got)
+		t.Fatalf("BlockedIPCount=%v want 0 when blocking disabled", got)
 	}
 }
 
@@ -124,7 +124,7 @@ func TestFastFlapExpiryPurgesStaleEntry(t *testing.T) {
 		t.Fatal("expected unblocked after expiry")
 	}
 	if got := b.BlockedIPCount(); got != 0 {
-		t.Fatalf("BlockedIPCount after expiry=%d want 0", got)
+		t.Fatalf("BlockedIPCount after expiry=%v want 0", got)
 	}
 }
 
@@ -183,10 +183,10 @@ func TestBackboneFastFlapIntegration(t *testing.T) {
 	for i := range flapsToBlock {
 		conn, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 		if err != nil {
-			t.Fatalf("dial %d failed: %v", i, err)
+			t.Fatalf("dial %v failed: %v", i, err)
 		}
 		if err := conn.Close(); err != nil {
-			t.Fatalf("close %d failed: %v", i, err)
+			t.Fatalf("close %v failed: %v", i, err)
 		}
 		waitForFlaps(t, bb, "127.0.0.1", i+1)
 	}
@@ -204,7 +204,7 @@ func TestBackboneFastFlapIntegration(t *testing.T) {
 	// If the dial succeeded, the server must have closed the connection right
 	// away (reject path). A read should return EOF quickly.
 	if n, err := conn.Read(make([]byte, 32)); err == nil && n > 0 {
-		t.Fatalf("blocked IP delivered data (n=%d); expected immediate reject/close", n)
+		t.Fatalf("blocked IP delivered data (n=%v); expected immediate reject/close", n)
 	}
 
 	// Golden blocklist comparison vs Python's blocked_ip_list: the registry
@@ -239,5 +239,5 @@ func waitForFlaps(t *testing.T, b *BackboneInterface, ip string, target int) {
 		got = e.flaps
 	}
 	b.fastFlappingMu.Unlock()
-	t.Fatalf("timed out waiting for %d flaps on %s; got %d", target, ip, got)
+	t.Fatalf("timed out waiting for %v flaps on %v; got %v", target, ip, got)
 }

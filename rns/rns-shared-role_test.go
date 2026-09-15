@@ -264,30 +264,30 @@ func TestAttachedClientTakesOverWhenInstanceStopsDuringAttach(t *testing.T) {
 
 	for i := range 3 {
 		cfg := tempDir(t)
-		writeSharedRoleConfig(t, cfg, fmt.Sprintf("rns-role-takeover-during-attach-%d", i), 47330+i)
+		writeSharedRoleConfig(t, cfg, fmt.Sprintf("rns-role-takeover-during-attach-%v", i), 47330+i)
 
 		owner, err := NewReticulum(NewTransportSystem(nil), cfg)
 		if err != nil {
-			t.Fatalf("iteration %d: failed to create the owning instance: %v", i, err)
+			t.Fatalf("iteration %v: failed to create the owning instance: %v", i, err)
 		}
 		t.Cleanup(func() { closeReticulum(t, owner) })
 		if !owner.IsSharedInstance() {
-			t.Fatalf("iteration %d: expected the first instance to own the shared instance", i)
+			t.Fatalf("iteration %v: expected the first instance to own the shared instance", i)
 		}
 
 		app, err := NewReticulum(NewTransportSystem(nil), cfg,
 			withSharedInstanceWatchInterval(2*time.Millisecond),
 			withSharedInstanceMissThreshold(2))
 		if err != nil {
-			t.Fatalf("iteration %d: failed to attach the application to the shared instance: %v", i, err)
+			t.Fatalf("iteration %v: failed to attach the application to the shared instance: %v", i, err)
 		}
 		t.Cleanup(func() { closeReticulum(t, app) })
 		if !app.IsConnectedToSharedInstance() {
-			t.Fatalf("iteration %d: expected the application to attach to the shared instance", i)
+			t.Fatalf("iteration %v: expected the application to attach to the shared instance", i)
 		}
 
 		if err := owner.Close(); err != nil {
-			t.Fatalf("iteration %d: failed to close the owning instance: %v", i, err)
+			t.Fatalf("iteration %v: failed to close the owning instance: %v", i, err)
 		}
 
 		deadline := time.Now().Add(15 * time.Second)
@@ -295,7 +295,7 @@ func TestAttachedClientTakesOverWhenInstanceStopsDuringAttach(t *testing.T) {
 			time.Sleep(2 * time.Millisecond)
 		}
 		if !app.IsSharedInstance() {
-			t.Fatalf("iteration %d: expected the attached client to take over, got connected=%v standalone=%v",
+			t.Fatalf("iteration %v: expected the attached client to take over, got connected=%v standalone=%v",
 				i, app.IsConnectedToSharedInstance(), app.IsStandaloneInstance())
 		}
 	}

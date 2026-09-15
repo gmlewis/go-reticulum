@@ -268,7 +268,7 @@ func readAllowedInput(allowedPath string) (string, error) {
 		cmd.Stdout = &stdout
 		cmd.Stderr = nil
 		if err := cmd.Run(); err != nil {
-			return "", fmt.Errorf("could not run allowed script %s: %w", allowedPath, err)
+			return "", fmt.Errorf("could not run allowed script %v: %w", allowedPath, err)
 		}
 		return stdout.String(), nil
 	}
@@ -388,7 +388,7 @@ func (n *reticulumGitNode) resolveDocPermission(remoteIdentity *rns.Identity, gr
 		return false
 	}
 	workPath := repo.path + ".work"
-	docAllowedPath := workPath + "/" + fmt.Sprintf("%d.allowed", docID)
+	docAllowedPath := workPath + "/" + fmt.Sprintf("%v.allowed", docID)
 
 	var docPerms permissionLists
 	if isFile(docAllowedPath) {
@@ -692,7 +692,7 @@ func validateAllowedContent(n *reticulumGitNode, content string) error {
 		}
 		perm, target := n.parsePermissionLine(stripped)
 		if perm == 0 || target == nil {
-			return fmt.Errorf("Invalid permission %q on line %d", stripped, i+1)
+			return fmt.Errorf("Invalid permission %q on line %v", stripped, i+1)
 		}
 	}
 	return nil

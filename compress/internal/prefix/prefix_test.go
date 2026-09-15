@@ -129,18 +129,18 @@ func TestReader(t *testing.T) {
 					if br.numBits%8 != 0 {
 						cnt, err := br.Read([]byte{0})
 						if cnt != 0 {
-							t.Errorf("test %d, %s %s, write count mismatch: got %d, want 0", i, ne, nr, cnt)
+							t.Errorf("test %v, %v %v, write count mismatch: got %v, want 0", i, ne, nr, cnt)
 							break loop
 						}
 						if err == nil {
-							t.Errorf("test %d, %s %s, unexpected write success", i, ne, nr)
+							t.Errorf("test %v, %v %v, unexpected write success", i, ne, nr)
 							break loop
 						}
 					}
 
 					pads := br.ReadPads()
 					if pads != 0 {
-						t.Errorf("test %d, %s %s, bit padding mismatch: got %d, want 0", i, ne, nr, pads)
+						t.Errorf("test %v, %v %v, bit padding mismatch: got %v, want 0", i, ne, nr, pads)
 						break loop
 					}
 					want := r.Bytes(r.Intn(16))
@@ -152,15 +152,15 @@ func TestReader(t *testing.T) {
 					got := make([]byte, len(want))
 					cnt, err := io.ReadFull(&br, got)
 					if cnt != len(want) {
-						t.Errorf("test %d, %s %s, read count mismatch: got %d, want %d", i, ne, nr, cnt, len(want))
+						t.Errorf("test %v, %v %v, read count mismatch: got %v, want %v", i, ne, nr, cnt, len(want))
 						break loop
 					}
 					if err != nil {
-						t.Errorf("test %d, %s %s, unexpected read error: got %v", i, ne, nr, err)
+						t.Errorf("test %v, %v %v, unexpected read error: got %v", i, ne, nr, err)
 						break loop
 					}
 					if !bytes.Equal(want, got) {
-						t.Errorf("test %d, %s %s, read bytes mismatch:\ngot  %x\nwant %x", i, ne, nr, got, want)
+						t.Errorf("test %v, %v %v, read bytes mismatch:\ngot  %x\nwant %x", i, ne, nr, got, want)
 						break loop
 					}
 				case 1:
@@ -168,7 +168,7 @@ func TestReader(t *testing.T) {
 					want := uint(testRanges.Base() + uint32(r.Intn(n)))
 					got := br.ReadOffset(&pd, testRanges)
 					if got != want {
-						t.Errorf("test %d, %s %s, read offset mismatch: got %d, want %d", i, ne, nr, got, want)
+						t.Errorf("test %v, %v %v, read offset mismatch: got %v, want %v", i, ne, nr, got, want)
 						break loop
 					}
 				case 2:
@@ -179,7 +179,7 @@ func TestReader(t *testing.T) {
 						got = br.ReadBits(nb)
 					}
 					if got != want {
-						t.Errorf("test %d, %s %s, read bits mismatch: got %d, want %d", i, ne, nr, got, want)
+						t.Errorf("test %v, %v %v, read bits mismatch: got %v, want %v", i, ne, nr, got, want)
 						break loop
 					}
 				case 3:
@@ -189,7 +189,7 @@ func TestReader(t *testing.T) {
 						got = br.ReadSymbol(&pd)
 					}
 					if got != want {
-						t.Errorf("test %d, %s %s, read symbol mismatch: got %d, want %d", i, ne, nr, got, want)
+						t.Errorf("test %v, %v %v, read symbol mismatch: got %v, want %v", i, ne, nr, got, want)
 						break loop
 					}
 				}
@@ -197,17 +197,17 @@ func TestReader(t *testing.T) {
 
 			pads := br.ReadPads()
 			if pads != 0 {
-				t.Errorf("test %d, %s %s, bit padding mismatch: got %d, want 0", i, ne, nr, pads)
+				t.Errorf("test %v, %v %v, bit padding mismatch: got %v, want 0", i, ne, nr, pads)
 			}
 			ofs, err := br.Flush()
 			if br.numBits != 0 {
-				t.Errorf("test %d, %s, bit buffer not drained: got %d, want < 8", i, ne, br.numBits)
+				t.Errorf("test %v, %v, bit buffer not drained: got %v, want < 8", i, ne, br.numBits)
 			}
 			if ofs != int64(len(testVector)) {
-				t.Errorf("test %d, %s, offset mismatch: got %d, want %d", i, ne, ofs, len(testVector))
+				t.Errorf("test %v, %v, offset mismatch: got %v, want %v", i, ne, ofs, len(testVector))
 			}
 			if err != nil {
-				t.Errorf("test %d, %s, unexpected flush error: got %v", i, ne, err)
+				t.Errorf("test %v, %v, unexpected flush error: got %v", i, ne, err)
 			}
 			i++
 		}
@@ -238,11 +238,11 @@ func TestWriter(t *testing.T) {
 				if bw.numBits%8 != 0 {
 					cnt, err := bw.Write([]byte{0})
 					if cnt != 0 {
-						t.Errorf("test %d, %s, write count mismatch: got %d, want 0", i, ne, cnt)
+						t.Errorf("test %v, %v, write count mismatch: got %v, want 0", i, ne, cnt)
 						break loop
 					}
 					if err == nil {
-						t.Errorf("test %d, %s, unexpected write success", i, ne)
+						t.Errorf("test %v, %v, unexpected write success", i, ne)
 						break loop
 					}
 				}
@@ -256,11 +256,11 @@ func TestWriter(t *testing.T) {
 				}
 				cnt, err := bw.Write(b)
 				if cnt != len(b) {
-					t.Errorf("test %d, %s, write count mismatch: got %d, want %d", i, ne, cnt, len(b))
+					t.Errorf("test %v, %v, write count mismatch: got %v, want %v", i, ne, cnt, len(b))
 					break loop
 				}
 				if err != nil {
-					t.Errorf("test %d, %s, unexpected write error: got %v", i, ne, err)
+					t.Errorf("test %v, %v, unexpected write error: got %v", i, ne, err)
 					break loop
 				}
 			case 1:
@@ -287,16 +287,16 @@ func TestWriter(t *testing.T) {
 		bw.WritePads(0)
 		ofs, err := bw.Flush()
 		if bw.numBits != 0 {
-			t.Errorf("test %d, %s, bit buffer not drained: got %d, want 0", i, ne, bw.numBits)
+			t.Errorf("test %v, %v, bit buffer not drained: got %v, want 0", i, ne, bw.numBits)
 		}
 		if bw.cntBuf != 0 {
-			t.Errorf("test %d, %s, byte buffer not drained: got %d, want 0", i, ne, bw.cntBuf)
+			t.Errorf("test %v, %v, byte buffer not drained: got %v, want 0", i, ne, bw.cntBuf)
 		}
 		if ofs != int64(wr.Len()) {
-			t.Errorf("test %d, %s, offset mismatch: got %d, want %d", i, ne, ofs, wr.Len())
+			t.Errorf("test %v, %v, offset mismatch: got %v, want %v", i, ne, ofs, wr.Len())
 		}
 		if err != nil {
-			t.Errorf("test %d, %s, unexpected flush error: got %v", i, ne, err)
+			t.Errorf("test %v, %v, unexpected flush error: got %v", i, ne, err)
 		}
 
 		// Check that output matches expected.
@@ -307,7 +307,7 @@ func TestWriter(t *testing.T) {
 			}
 		}
 		if !bytes.Equal(buf, testVector) {
-			t.Errorf("test %d, %s, output string mismatch:\ngot  %x\nwant %x", i, ne, buf, testVector)
+			t.Errorf("test %v, %v, output string mismatch:\ngot  %x\nwant %x", i, ne, buf, testVector)
 		}
 		i++
 	}
@@ -519,7 +519,7 @@ func TestGenerate(t *testing.T) {
 
 		if err := GenerateLengths(codes, v.maxBits); err != nil {
 			if v.valid {
-				t.Errorf("test %d, unexpected failure", i)
+				t.Errorf("test %v, unexpected failure", i)
 			}
 			continue
 		}
@@ -534,13 +534,13 @@ func TestGenerate(t *testing.T) {
 		}
 
 		if !codes.checkLengths() {
-			t.Errorf("test %d, incomplete tree generated", i)
+			t.Errorf("test %v, incomplete tree generated", i)
 		}
 		if !sort.IsSorted(sort.Reverse(sort.IntSlice(lens))) {
-			t.Errorf("test %d, bit-lengths are not sorted:\ngot %v", i, lens)
+			t.Errorf("test %v, bit-lengths are not sorted:\ngot %v", i, lens)
 		}
 		if maxLen > v.maxBits {
-			t.Errorf("test %d, max bit-length exceeded: %d not in 1..%d", i, maxLen, v.maxBits)
+			t.Errorf("test %v, max bit-length exceeded: %v not in 1..%v", i, maxLen, v.maxBits)
 		}
 
 		// The whole point of prefix encoding is that the resulting bit-lengths
@@ -558,13 +558,13 @@ func TestGenerate(t *testing.T) {
 			}
 
 			if got > worst {
-				t.Errorf("test %d, actual entropy worst than worst-case: %0.3f > %0.3f", i, got, worst)
+				t.Errorf("test %v, actual entropy worst than worst-case: %0.3f > %0.3f", i, got, worst)
 			}
 			if got < best {
-				t.Errorf("test %d, actual entropy better than best-case: %0.3f < %0.3f", i, got, best)
+				t.Errorf("test %v, actual entropy better than best-case: %0.3f < %0.3f", i, got, best)
 			}
 			if got > 1.15*best {
-				t.Errorf("test %d, actual entropy too high: %0.3f > %0.3f", i, got, 1.15*best)
+				t.Errorf("test %v, actual entropy too high: %0.3f > %0.3f", i, got, 1.15*best)
 			}
 		}
 		codes.SortBySymbol()
@@ -572,19 +572,19 @@ func TestGenerate(t *testing.T) {
 	genPrefixes:
 		if err := GeneratePrefixes(codes); err != nil {
 			if v.valid {
-				t.Errorf("test %d, unexpected failure", i)
+				t.Errorf("test %v, unexpected failure", i)
 			}
 			continue
 		}
 
 		if !codes.checkPrefixes() {
-			t.Errorf("test %d, tree with non-unique prefixes generated", i)
+			t.Errorf("test %v, tree with non-unique prefixes generated", i)
 		}
 		if !codes.checkCanonical() {
-			t.Errorf("test %d, tree with non-canonical prefixes generated", i)
+			t.Errorf("test %v, tree with non-canonical prefixes generated", i)
 		}
 		if !v.valid {
-			t.Errorf("test %d, unexpected success", i)
+			t.Errorf("test %v, unexpected success", i)
 		}
 	}
 }
@@ -761,18 +761,18 @@ func TestPrefix(t *testing.T) {
 		}
 		wr.WritePads(0)
 		if _, err := wr.Flush(); err != nil {
-			t.Errorf("test %d, unexpected Writer error: %v", i, err)
+			t.Errorf("test %v, unexpected Writer error: %v", i, err)
 		}
 
 		// Verify some Writer statistics.
 		if wr.Offset != int64(buf.Len()) {
-			t.Errorf("test %d, offset mismatch: got %d, want %d", i, wr.Offset, buf.Len())
+			t.Errorf("test %v, offset mismatch: got %v, want %v", i, wr.Offset, buf.Len())
 		}
 		if wr.numBits != 0 {
-			t.Errorf("test %d, residual bits remaining: got %d, want 0", i, wr.numBits)
+			t.Errorf("test %v, residual bits remaining: got %v, want 0", i, wr.numBits)
 		}
 		if wr.cntBuf != 0 {
-			t.Errorf("test %d, residual bytes remaining: got %d, want 0", i, wr.cntBuf)
+			t.Errorf("test %v, residual bytes remaining: got %v, want 0", i, wr.cntBuf)
 		}
 
 		// Read some symbols.
@@ -782,26 +782,26 @@ func TestPrefix(t *testing.T) {
 				sym = rd.ReadSymbol(&pd)
 			}
 			if sym != syms[i] {
-				t.Errorf("test %d, read back wrong symbol: got %d, want %d", i, sym, syms[i])
+				t.Errorf("test %v, read back wrong symbol: got %v, want %v", i, sym, syms[i])
 			}
 			if rd.numBits >= 8 {
-				t.Errorf("test %d, residual bits remaining: got %d, want < 8", i, rd.numBits)
+				t.Errorf("test %v, residual bits remaining: got %v, want < 8", i, rd.numBits)
 			}
 		}
 		pads := rd.ReadPads()
 		if _, err := rd.Flush(); err != nil {
-			t.Errorf("test %d, unexpected Reader error: %v", i, err)
+			t.Errorf("test %v, unexpected Reader error: %v", i, err)
 		}
 
 		// Verify some Reader statistics.
 		if pads != 0 {
-			t.Errorf("test %d, unexpected padding bits: got %d, want 0", i, pads)
+			t.Errorf("test %v, unexpected padding bits: got %v, want 0", i, pads)
 		}
 		if rd.numBits != 0 {
-			t.Errorf("test %d, residual bits remaining: got %d, want 0", i, rd.numBits)
+			t.Errorf("test %v, residual bits remaining: got %v, want 0", i, rd.numBits)
 		}
 		if rd.Offset != wr.Offset {
-			t.Errorf("test %d, offset mismatch: got %d, want %d", i, rd.Offset, wr.Offset)
+			t.Errorf("test %v, offset mismatch: got %v, want %v", i, rd.Offset, wr.Offset)
 		}
 	}
 }
@@ -863,7 +863,7 @@ func TestRange(t *testing.T) {
 	r := testutil.NewRand(0)
 	for i, v := range vectors {
 		if valid := v.input.checkValid(); valid != v.valid {
-			t.Errorf("test %d, validity mismatch: got %v, want %v", i, valid, v.valid)
+			t.Errorf("test %v, validity mismatch: got %v, want %v", i, valid, v.valid)
 		}
 		if !v.valid {
 			continue // No point further testing invalid ranges
@@ -876,11 +876,11 @@ func TestRange(t *testing.T) {
 			offset := rc.Base + uint32(r.Intn(int(rc.End()-rc.Base)))
 			sym := re.Encode(uint(offset))
 			if int(sym) >= len(v.input) {
-				t.Errorf("test %d, invalid symbol: re.Encode(%d) = %d", i, offset, sym)
+				t.Errorf("test %v, invalid symbol: re.Encode(%v) = %v", i, offset, sym)
 			}
 			rc := v.input[sym]
 			if offset < rc.Base || offset >= rc.End() {
-				t.Errorf("test %d, symbol not in range: %d not in %d..%d", i, offset, rc.Base, rc.End()-1)
+				t.Errorf("test %v, symbol not in range: %v not in %v..%v", i, offset, rc.Base, rc.End()-1)
 			}
 		}
 	}

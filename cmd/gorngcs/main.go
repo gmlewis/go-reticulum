@@ -51,7 +51,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	case "verify":
 		return a.verify(stdin, stdout, stderr)
 	default:
-		_, _ = fmt.Fprintf(stderr, "Error: Unknown operation: %s\n", a.op)
+		_, _ = fmt.Fprintf(stderr, "Error: Unknown operation: %v\n", a.op)
 		return 1
 	}
 }

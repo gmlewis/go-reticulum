@@ -163,13 +163,13 @@ func TestPermissionsFromAllowedInput(t *testing.T) {
 		"adm:" + hashA + "\n"
 	perms := n.permissionsFromAllowedInput(input)
 	if len(perms.read) != 2 {
-		t.Errorf("read len=%d want 2 (all + hashA)", len(perms.read))
+		t.Errorf("read len=%v want 2 (all + hashA)", len(perms.read))
 	}
 	if len(perms.write) != 2 {
-		t.Errorf("write len=%d want 2 (hashA + hashB)", len(perms.write))
+		t.Errorf("write len=%v want 2 (hashA + hashB)", len(perms.write))
 	}
 	if len(perms.admin) != 1 {
-		t.Errorf("admin len=%d want 1", len(perms.admin))
+		t.Errorf("admin len=%v want 1", len(perms.admin))
 	}
 	if !permListContains(perms.read, permTargetAllBytes) {
 		t.Errorf("read missing TGT_ALL")

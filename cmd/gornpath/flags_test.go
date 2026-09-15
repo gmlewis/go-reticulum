@@ -58,7 +58,7 @@ func TestVerboseCount(t *testing.T) {
 				t.Fatalf("parseFlags failed: %v", err)
 			}
 			if int(app.verbose) != tt.wantVerbose {
-				t.Errorf("verbose = %d, want %d", int(app.verbose), tt.wantVerbose)
+				t.Errorf("verbose = %v, want %v", int(app.verbose), tt.wantVerbose)
 			}
 		})
 	}

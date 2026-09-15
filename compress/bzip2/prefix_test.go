@@ -69,7 +69,7 @@ func TestDegenerateCodes(t *testing.T) {
 		output := handleDegenerateCodes(input)
 
 		if !reflect.DeepEqual(output, v.output) {
-			t.Errorf("test %d, output mismatch:\ngot  %v\nwant %v", i, output, v.output)
+			t.Errorf("test %v, output mismatch:\ngot  %v\nwant %v", i, output, v.output)
 		}
 	}
 }

@@ -41,10 +41,10 @@ func TestTCPServerSpawnedInheritsGravity(t *testing.T) {
 	const parentGravity = 42
 	server.SetGravity(parentGravity)
 	if got := server.Gravity(); got != parentGravity {
-		t.Fatalf("server Gravity() = %d, want %d", got, parentGravity)
+		t.Fatalf("server Gravity() = %v, want %v", got, parentGravity)
 	}
 
-	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%v", port))
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestTCPServerSpawnedInheritsGravity(t *testing.T) {
 		t.Fatal("spawned TCPClientInterface was not captured via onConnect")
 	}
 	if got := sp.Gravity(); got != parentGravity {
-		t.Fatalf("spawned client Gravity() = %d, want %d (inherited from parent)", got, parentGravity)
+		t.Fatalf("spawned client Gravity() = %v, want %v (inherited from parent)", got, parentGravity)
 	}
 }
 
@@ -87,7 +87,7 @@ func TestAutoSpawnedPeerInheritsGravity(t *testing.T) {
 	const parentGravity = 7
 	auto.SetGravity(parentGravity)
 	if got := auto.Gravity(); got != parentGravity {
-		t.Fatalf("auto Gravity() = %d, want %d", got, parentGravity)
+		t.Fatalf("auto Gravity() = %v, want %v", got, parentGravity)
 	}
 
 	// Drive the real peer-adoption path the discovery loop uses, then read
@@ -100,6 +100,6 @@ func TestAutoSpawnedPeerInheritsGravity(t *testing.T) {
 		t.Fatal("addPeer did not create a spawned peer")
 	}
 	if got := peer.Gravity(); got != parentGravity {
-		t.Fatalf("spawned auto peer Gravity() = %d, want %d (inherited from parent)", got, parentGravity)
+		t.Fatalf("spawned auto peer Gravity() = %v, want %v (inherited from parent)", got, parentGravity)
 	}
 }

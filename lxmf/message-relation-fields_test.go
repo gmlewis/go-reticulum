@@ -39,7 +39,7 @@ func TestRelationFieldConstants(t *testing.T) {
 	}
 	for _, c := range cases {
 		if c.got != c.want {
-			t.Errorf("%s = %#x, want %#x", c.name, c.got, c.want)
+			t.Errorf("%v = %#x, want %#x", c.name, c.got, c.want)
 		}
 	}
 }
@@ -90,7 +90,7 @@ func TestRelationFieldsPackGolden(t *testing.T) {
 				t.Fatalf("PackSorted: %v", err)
 			}
 			if got := hexEncode(packed); got != c.hex {
-				t.Fatalf("%s packed = %s, want %s", c.name, got, c.hex)
+				t.Fatalf("%v packed = %v, want %v", c.name, got, c.hex)
 			}
 		})
 	}
@@ -114,7 +114,7 @@ func TestRelationFieldsCombinedPackGolden(t *testing.T) {
 	}
 	want := "8530c420111111111111111111111111111111111111111111111111111111111111111131c40b71756f7465642074657874408200c420111111111111111111111111111111111111111111111111111111111111111101c4067468756d6273418100c4201111111111111111111111111111111111111111111111111111111111111111428100c4201111111111111111111111111111111111111111111111111111111111111111"
 	if got := hexEncode(packed); got != want {
-		t.Fatalf("combined packed = %s, want %s", got, want)
+		t.Fatalf("combined packed = %v, want %v", got, want)
 	}
 }
 

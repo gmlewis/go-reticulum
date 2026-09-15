@@ -49,7 +49,7 @@ func TestAnnounceRebroadcastDoesNotMarkDestinationUsed(t *testing.T) {
 		t.Fatal("recallable announce entry was completed early; nil-guard misfired")
 	}
 	if entry.Retries != 1 {
-		t.Fatalf("entry retries = %d, want 1 (one rebroadcast attempt)", entry.Retries)
+		t.Fatalf("entry retries = %v, want 1 (one rebroadcast attempt)", entry.Retries)
 	}
 	// ...AND the use timestamp must still be 0 (never used), proving the
 	// rebroadcast's recall used the noUse path.

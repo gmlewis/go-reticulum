@@ -216,22 +216,22 @@ func RNodeWriteFramebuffer(line byte, lineData []byte) []byte {
 // first mismatch found, or nil if the state is valid.
 func RNodeValidateRadioState(configuredFreq, configuredBW, configuredTXPower, configuredSF, configuredCR, configuredState int, reportedFreq, reportedBW, reportedTXPower, reportedSF, reportedCR, reportedState int) error {
 	if reportedFreq != 0 && absInt(configuredFreq-reportedFreq) > rNodeFreqToleranceHz {
-		return fmt.Errorf("frequency mismatch: configured %d Hz, reported %d Hz", configuredFreq, reportedFreq)
+		return fmt.Errorf("frequency mismatch: configured %v Hz, reported %v Hz", configuredFreq, reportedFreq)
 	}
 	if reportedBW != 0 && configuredBW != reportedBW {
-		return fmt.Errorf("bandwidth mismatch: configured %d Hz, reported %d Hz", configuredBW, reportedBW)
+		return fmt.Errorf("bandwidth mismatch: configured %v Hz, reported %v Hz", configuredBW, reportedBW)
 	}
 	if reportedTXPower != 0 && configuredTXPower != reportedTXPower {
-		return fmt.Errorf("tx power mismatch: configured %d dBm, reported %d dBm", configuredTXPower, reportedTXPower)
+		return fmt.Errorf("tx power mismatch: configured %v dBm, reported %v dBm", configuredTXPower, reportedTXPower)
 	}
 	if reportedSF != 0 && configuredSF != reportedSF {
-		return fmt.Errorf("spreading factor mismatch: configured %d, reported %d", configuredSF, reportedSF)
+		return fmt.Errorf("spreading factor mismatch: configured %v, reported %v", configuredSF, reportedSF)
 	}
 	if reportedCR != 0 && configuredCR != reportedCR {
-		return fmt.Errorf("coding rate mismatch: configured %d, reported %d", configuredCR, reportedCR)
+		return fmt.Errorf("coding rate mismatch: configured %v, reported %v", configuredCR, reportedCR)
 	}
 	if configuredState != reportedState {
-		return fmt.Errorf("radio state mismatch: configured %d, reported %d", configuredState, reportedState)
+		return fmt.Errorf("radio state mismatch: configured %v, reported %v", configuredState, reportedState)
 	}
 	return nil
 }

@@ -240,14 +240,14 @@ func TestDecodeBitGen(t *testing.T) {
 		output, err := DecodeBitGen(v.input)
 		if (err == nil) != v.valid {
 			if err != nil {
-				t.Errorf("test %d, unexpected error: %v", i, err)
+				t.Errorf("test %v, unexpected error: %v", i, err)
 			} else {
-				t.Errorf("test %d, unexpected success", i)
+				t.Errorf("test %v, unexpected success", i)
 			}
 			continue
 		}
 		if got, want, ok := BytesCompare(output, v.output); !ok {
-			t.Errorf("test %d, mismatching output:\ngot  %s\nwant %s", i, got, want)
+			t.Errorf("test %v, mismatching output:\ngot  %v\nwant %v", i, got, want)
 		}
 	}
 }

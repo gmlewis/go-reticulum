@@ -96,7 +96,7 @@ func parseSSHSig(sigData []byte) (*sshSig, error) {
 	}
 	version := binary.BigEndian.Uint32(sigData[offset : offset+4])
 	if version != sshsigVersion {
-		return nil, fmt.Errorf("unsupported SSH signature version: %d", version)
+		return nil, fmt.Errorf("unsupported SSH signature version: %v", version)
 	}
 	offset += 4
 

@@ -61,7 +61,7 @@ func TestHandleStatsChunksAreWholeLines(t *testing.T) {
 	}
 	for i, ln := range lines {
 		if strings.TrimSpace(ln) == "" && i != len(lines)-1 {
-			t.Errorf("FormatStats line %d is blank", i)
+			t.Errorf("FormatStats line %v is blank", i)
 		}
 	}
 
@@ -84,16 +84,16 @@ func TestHandleStatsChunksAreWholeLines(t *testing.T) {
 	var gotLines []string
 	for i, item := range outgoing.Queue {
 		if len(item.Payload) > rnsMDU {
-			t.Errorf("payload[%d] = %v > MDU %v", i, len(item.Payload), rnsMDU)
+			t.Errorf("payload[%v] = %v > MDU %v", i, len(item.Payload), rnsMDU)
 		}
 		sent := decodeOutgoing(t, &OutgoingList{Queue: []OutgoingItem{item}})
 		if len(sent) != 1 || sent[0].msgType != TNotice || sent[0].room != nil {
-			t.Fatalf("payload[%d] not a room-nil NOTICE", i)
+			t.Fatalf("payload[%v] not a room-nil NOTICE", i)
 		}
 		text, _ := sent[0].body.(string)
 		gotLines = append(gotLines, text)
 		if !wantSet[text] {
-			t.Errorf("chunk[%d] = %q is not a complete FormatStats line", i, text)
+			t.Errorf("chunk[%v] = %q is not a complete FormatStats line", i, text)
 		}
 	}
 	// Every non-empty FormatStats line must have been delivered.

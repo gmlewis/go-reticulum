@@ -40,11 +40,11 @@ func TestKISSFrameUint32(t *testing.T) {
 	frame := KISSFrameUint32(KISSCmdFrequency, 433050000)
 	parsed := KISSUnescape(frame[2 : len(frame)-1])
 	if len(parsed) != 4 {
-		t.Fatalf("expected 4 data bytes, got %d", len(parsed))
+		t.Fatalf("expected 4 data bytes, got %v", len(parsed))
 	}
 	got := uint32(parsed[0])<<24 | uint32(parsed[1])<<16 | uint32(parsed[2])<<8 | uint32(parsed[3])
 	if got != 433050000 {
-		t.Fatalf("expected frequency 433050000, got %d", got)
+		t.Fatalf("expected frequency 433050000, got %v", got)
 	}
 	if frame[0] != KISSFend || frame[len(frame)-1] != KISSFend {
 		t.Fatalf("frame must start and end with FEND")
@@ -82,11 +82,11 @@ func TestKISSFrameUint16(t *testing.T) {
 	}
 	parsed := KISSUnescape(frame[2 : len(frame)-1])
 	if len(parsed) != 2 {
-		t.Fatalf("expected 2 data bytes, got %d", len(parsed))
+		t.Fatalf("expected 2 data bytes, got %v", len(parsed))
 	}
 	got := int(parsed[0])<<8 | int(parsed[1])
 	if got != 1550 {
-		t.Fatalf("expected 1550 (15.5%%), got %d", got)
+		t.Fatalf("expected 1550 (15.5%%), got %v", got)
 	}
 }
 

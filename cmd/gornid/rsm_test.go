@@ -107,16 +107,16 @@ func TestCheckReleaseRSMStructure(t *testing.T) {
 		err := checkReleaseRSMStructure(c.signed)
 		if c.wantErr == "" {
 			if err != nil {
-				t.Errorf("%s: expected nil error, got %q", c.name, err.Error())
+				t.Errorf("%v: expected nil error, got %q", c.name, err.Error())
 			}
 			continue
 		}
 		if err == nil {
-			t.Errorf("%s: expected error %q, got nil", c.name, c.wantErr)
+			t.Errorf("%v: expected error %q, got nil", c.name, c.wantErr)
 			continue
 		}
 		if err.Error() != c.wantErr {
-			t.Errorf("%s: error = %q, want %q", c.name, err.Error(), c.wantErr)
+			t.Errorf("%v: error = %q, want %q", c.name, err.Error(), c.wantErr)
 		}
 	}
 }

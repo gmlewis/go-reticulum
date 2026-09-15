@@ -52,7 +52,7 @@ func (c *reticulumGitClient) listReleases() error {
 		return errors.New("No response from remote")
 	}
 	if respBytes[0] != resOK {
-		return fmt.Errorf("Server error: %s", string(respBytes[1:]))
+		return fmt.Errorf("Server error: %v", string(respBytes[1:]))
 	}
 	var unpacked any
 	if len(respBytes) > 1 {
@@ -106,10 +106,10 @@ func (c *reticulumGitClient) listReleases() error {
 		if len(previewLine) > 34 {
 			previewLine = previewLine[:34]
 		}
-		fmt.Printf("%-10s %-10s %-17s %-5s %s\n", tag, status, created, artifacts, previewLine)
+		fmt.Printf("%-10s %-10s %-17s %-5s %v\n", tag, status, created, artifacts, previewLine)
 	}
 	if latestRelease != "" {
-		fmt.Printf("\nThe latest release is: %s\n", latestRelease)
+		fmt.Printf("\nThe latest release is: %v\n", latestRelease)
 	}
 	return nil
 }
@@ -135,7 +135,7 @@ func (c *reticulumGitClient) viewRelease(target string) error {
 		return errors.New("No response from remote")
 	}
 	if respBytes[0] != resOK {
-		return fmt.Errorf("Remote error: %s", string(respBytes[1:]))
+		return fmt.Errorf("Remote error: %v", string(respBytes[1:]))
 	}
 	if len(respBytes) <= 1 {
 		return errors.New("Empty response from remote")
@@ -152,18 +152,18 @@ func (c *reticulumGitClient) viewRelease(target string) error {
 	if tag == "" {
 		tag = target
 	}
-	fmt.Printf("Release : %s\n", tag)
+	fmt.Printf("Release : %v\n", tag)
 	status, _ := release["status"].(string)
 	if status == "" {
 		status = "unknown"
 	}
-	fmt.Printf("Status  : %s\n", status)
+	fmt.Printf("Status  : %v\n", status)
 	createdTs, _ := release["created"].(int64)
 	if createdTs > 0 {
-		fmt.Printf("Created : %s\n", time.Unix(createdTs, 0).Format("2006-01-02 15:04:05"))
+		fmt.Printf("Created : %v\n", time.Unix(createdTs, 0).Format("2006-01-02 15:04:05"))
 	}
 	thanks, _ := release["thanks"].(int64)
-	fmt.Printf("Thanks  : %d\n", thanks)
+	fmt.Printf("Thanks  : %v\n", thanks)
 	notes, _ := release["notes"].(string)
 	if notes != "" {
 		fmt.Println("\nRelease Notes")
@@ -173,8 +173,8 @@ func (c *reticulumGitClient) viewRelease(target string) error {
 	}
 	artifacts, _ := release["artifacts"].([]any)
 	if len(artifacts) > 0 {
-		hdr := fmt.Sprintf("Artifacts (%d)", len(artifacts))
-		fmt.Printf("\n%s\n", hdr)
+		hdr := fmt.Sprintf("Artifacts (%v)", len(artifacts))
+		fmt.Printf("\n%v\n", hdr)
 		fmt.Println(strings.Repeat("=", len(hdr)))
 		for _, a := range artifacts {
 			am, _ := a.(map[any]any)
@@ -183,7 +183,7 @@ func (c *reticulumGitClient) viewRelease(target string) error {
 				name = "unknown"
 			}
 			size, _ := am["size"].(int64)
-			fmt.Printf(" - %s (%s)\n", name, prettySize(size))
+			fmt.Printf(" - %v (%v)\n", name, prettySize(size))
 		}
 	}
 	fmt.Println()
@@ -276,7 +276,7 @@ func (c *reticulumGitClient) fetchRelease(target, signerHex string, offline bool
 	}
 	releaseName, _ := meta["name"].(string)
 	releaseVersion, _ := meta["version"].(string)
-	manifestOut := fmt.Sprintf("%s_%s.%s", releaseName, releaseVersion, msgExt)
+	manifestOut := fmt.Sprintf("%v_%v.%v", releaseName, releaseVersion, msgExt)
 	if err := os.WriteFile(manifestOut, rsgData, 0o644); err != nil {
 		return fmt.Errorf("could not write manifest: %w", err)
 	}
@@ -315,7 +315,7 @@ func (c *reticulumGitClient) fetchRelease(target, signerHex string, offline bool
 	if len(fetchArtifacts) != 1 {
 		ms = "s"
 	}
-	fmt.Printf("%s %d artifact%s...\n", op, len(fetchArtifacts), ms)
+	fmt.Printf("%v %v artifact%v...\n", op, len(fetchArtifacts), ms)
 
 	validCount := 0
 	for _, artifact := range fetchArtifacts {
@@ -325,29 +325,29 @@ func (c *reticulumGitClient) fetchRelease(target, signerHex string, offline bool
 		artifactPath, err := c.fetchArtifact(fetchDir, tag, name, offline)
 		if err != nil {
 			if offline {
-				fmt.Printf("  File %s from manifest does not exist locally, cannot validate\n", name)
+				fmt.Printf("  File %v from manifest does not exist locally, cannot validate\n", name)
 				continue
 			}
 			return err
 		}
 		fileBytes, err := os.ReadFile(artifactPath)
 		if err != nil {
-			return fmt.Errorf("could not read %s: %w", name, err)
+			return fmt.Errorf("could not read %v: %w", name, err)
 		}
 		if _, err := rsg.Validate(rsgBytes, fileBytes, signerHash); err != nil {
 			if offline {
-				fmt.Printf("  File %s does not match manifest\n", name)
+				fmt.Printf("  File %v does not match manifest\n", name)
 				continue
 			}
-			return fmt.Errorf("Fetched file %s does not match manifest, aborting", name)
+			return fmt.Errorf("Fetched file %v does not match manifest, aborting", name)
 		}
 		validCount++
 		if !offline {
 			if err := os.Rename(artifactPath, name); err != nil {
-				return fmt.Errorf("could not save %s: %w", name, err)
+				return fmt.Errorf("could not save %v: %w", name, err)
 			}
 		} else {
-			fmt.Printf("  File %s validated against manifest\n", name)
+			fmt.Printf("  File %v validated against manifest\n", name)
 		}
 	}
 
@@ -402,7 +402,7 @@ func (c *reticulumGitClient) fetchArtifact(dir, tag, name string, offline bool) 
 		if msg == "" {
 			msg = "Unknown error"
 		}
-		return "", fmt.Errorf("Remote error: %s", msg)
+		return "", fmt.Errorf("Remote error: %v", msg)
 	}
 	artifactPath := filepath.Join(dir, name)
 	if err := os.WriteFile(artifactPath, respBytes[1:], 0o644); err != nil {
@@ -435,7 +435,7 @@ func (c *reticulumGitClient) createRelease(target string, signer *rns.Identity, 
 	}
 	commitHash := commitHashFromTag(tag, ".")
 	if commitHash == "" {
-		fmt.Printf("Could not get commit hash for tag %s. Does the tag exist in the local repository?\n", tag)
+		fmt.Printf("Could not get commit hash for tag %v. Does the tag exist in the local repository?\n", tag)
 	}
 	if !isDir(artifactsPath) {
 		return errors.New("Specified artifacts directory does not exist")
@@ -455,7 +455,7 @@ func (c *reticulumGitClient) createRelease(target string, signer *rns.Identity, 
 		return errors.New("No files found in specified artifact directory")
 	}
 
-	fmt.Printf("Creating release %s\n", tag)
+	fmt.Printf("Creating release %v\n", tag)
 	notes, err := editReleaseNotes(tag)
 	if err != nil {
 		return err
@@ -494,14 +494,14 @@ func (c *reticulumGitClient) createRelease(target string, signer *rns.Identity, 
 		artifactMeta := msgpack.OrderedMap{
 			{Key: "timestamp", Value: uint64(releaseTime)},
 		}
-		fmt.Printf("Signing %s with %x\n", artifactPath, signer.Hash)
+		fmt.Printf("Signing %v with %x\n", artifactPath, signer.Hash)
 		fh, err := os.ReadFile(artifactPath)
 		if err != nil {
-			return fmt.Errorf("could not read %s: %w", artifactPath, err)
+			return fmt.Errorf("could not read %v: %w", artifactPath, err)
 		}
 		rsgBytes, err := rsg.CreateWithOptions(signer, fh, rsg.Options{Meta: artifactMeta})
 		if err != nil {
-			return fmt.Errorf("Could not create signature for %s: %w", artifactPath, err)
+			return fmt.Errorf("Could not create signature for %v: %w", artifactPath, err)
 		}
 		if err := os.WriteFile(signaturePath, rsgBytes, 0o644); err != nil {
 			return fmt.Errorf("could not write signature: %w", err)
@@ -525,7 +525,7 @@ func (c *reticulumGitClient) createRelease(target string, signer *rns.Identity, 
 	artifacts = append(artifacts, "manifest."+msgExt)
 
 	if noUpload {
-		fmt.Printf("Local release %s:%s generated successfully in %s\n", packageName, tag, target)
+		fmt.Printf("Local release %v:%v generated successfully in %v\n", packageName, tag, target)
 		return nil
 	}
 
@@ -558,7 +558,7 @@ func (c *reticulumGitClient) createRelease(target string, signer *rns.Identity, 
 		if len(respBytes) > 1 {
 			msg = string(respBytes[1:])
 		}
-		return fmt.Errorf("Server error during init: %s", msg)
+		return fmt.Errorf("Server error during init: %v", msg)
 	}
 	fmt.Println("Release initialized")
 
@@ -567,12 +567,12 @@ func (c *reticulumGitClient) createRelease(target string, signer *rns.Identity, 
 	if len(artifacts) != 1 {
 		ms = "s"
 	}
-	fmt.Printf("\nSending %d artifact%s...\n", len(artifacts), ms)
+	fmt.Printf("\nSending %v artifact%v...\n", len(artifacts), ms)
 	for _, artifact := range artifacts {
 		artifactPath := filepath.Join(artifactsPath, artifact)
 		artifactData, err := os.ReadFile(artifactPath)
 		if err != nil {
-			return fmt.Errorf("could not read %s: %w", artifact, err)
+			return fmt.Errorf("could not read %v: %w", artifact, err)
 		}
 		artData := map[any]any{
 			int64(idxRepository): c.repoPath,
@@ -596,9 +596,9 @@ func (c *reticulumGitClient) createRelease(target string, signer *rns.Identity, 
 			if len(respBytes) > 1 {
 				msg = string(respBytes[1:])
 			}
-			fmt.Printf("  Failed to send %s: %s\n", artifact, msg)
+			fmt.Printf("  Failed to send %v: %v\n", artifact, msg)
 		} else {
-			fmt.Printf("  %s (%s) transferred\n", artifact, prettySize(int64(len(artifactData))))
+			fmt.Printf("  %v (%v) transferred\n", artifact, prettySize(int64(len(artifactData))))
 		}
 	}
 
@@ -623,9 +623,9 @@ func (c *reticulumGitClient) createRelease(target string, signer *rns.Identity, 
 		return errors.New("No response from remote during finalize")
 	}
 	if respBytes[0] != resOK {
-		return fmt.Errorf("Server error during finalize: %s", string(respBytes[1:]))
+		return fmt.Errorf("Server error during finalize: %v", string(respBytes[1:]))
 	}
-	fmt.Printf("Release %s published\n", tag)
+	fmt.Printf("Release %v published\n", tag)
 	return nil
 }
 
@@ -635,7 +635,7 @@ func (c *reticulumGitClient) deleteRelease(target string) error {
 	if target == "" {
 		return errors.New("No target specified")
 	}
-	fmt.Printf("Are you sure you want to delete release %s? [y/N]: ", target)
+	fmt.Printf("Are you sure you want to delete release %v? [y/N]: ", target)
 	var confirm string
 	_, _ = fmt.Scanln(&confirm)
 	if strings.ToLower(strings.TrimSpace(confirm)) != "y" {
@@ -660,9 +660,9 @@ func (c *reticulumGitClient) deleteRelease(target string) error {
 		return errors.New("No response from remote")
 	}
 	if respBytes[0] != resOK {
-		return fmt.Errorf("Remote error: %s", string(respBytes[1:]))
+		return fmt.Errorf("Remote error: %v", string(respBytes[1:]))
 	}
-	fmt.Printf("Release %s deleted\n", target)
+	fmt.Printf("Release %v deleted\n", target)
 	return nil
 }
 
@@ -672,7 +672,7 @@ func (c *reticulumGitClient) latestRelease(target string) error {
 	if target == "" {
 		return errors.New("No target specified")
 	}
-	fmt.Printf("Are you sure you want to set %s as the latest release? [y/N]: ", target)
+	fmt.Printf("Are you sure you want to set %v as the latest release? [y/N]: ", target)
 	var confirm string
 	_, _ = fmt.Scanln(&confirm)
 	if strings.ToLower(strings.TrimSpace(confirm)) != "y" {
@@ -697,9 +697,9 @@ func (c *reticulumGitClient) latestRelease(target string) error {
 		return errors.New("No response from remote")
 	}
 	if respBytes[0] != resOK {
-		return fmt.Errorf("Remote error: %s", string(respBytes[1:]))
+		return fmt.Errorf("Remote error: %v", string(respBytes[1:]))
 	}
-	fmt.Printf("Release %s set as latest\n", target)
+	fmt.Printf("Release %v set as latest\n", target)
 	return nil
 }
 

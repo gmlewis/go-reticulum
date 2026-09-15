@@ -62,7 +62,7 @@ func TestEventuallyFatalReportsFailure(t *testing.T) {
 		EventuallyFatal(fake, 10*time.Millisecond, func() bool { return false },
 			"expected %v to happen", "thing")
 		if len(fake.errors) != 1 {
-			t.Fatalf("EventuallyFatal reported %d errors, want 1: %v", len(fake.errors), fake.errors)
+			t.Fatalf("EventuallyFatal reported %v errors, want 1: %v", len(fake.errors), fake.errors)
 		}
 		if got := fake.errors[0]; got != "expected thing to happen" {
 			t.Fatalf("EventuallyFatal error = %q, want %q", got, "expected thing to happen")

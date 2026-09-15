@@ -41,7 +41,7 @@ print(json.dumps(out))
 	out := testutils.RunPython(t, script)
 	var m map[string]float64
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &m); err != nil {
-		t.Fatalf("parse resource constants output: %v\nraw: %s", err, out)
+		t.Fatalf("parse resource constants output: %v\nraw: %v", err, out)
 	}
 	return m
 }
@@ -73,7 +73,7 @@ print(json.dumps(out))
 		Assembling int `json:"assembling"`
 	}
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &v); err != nil {
-		t.Fatalf("parse resource status constants output: %v\nraw: %s", err, out)
+		t.Fatalf("parse resource status constants output: %v\nraw: %v", err, out)
 	}
 	return v.Rejected, v.None, v.Corrupt, v.Complete, v.Assembling
 }
@@ -105,7 +105,7 @@ print(json.dumps(out))
 		Active        int `json:"active"`
 	}
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &v); err != nil {
-		t.Fatalf("parse link constants output: %v\nraw: %s", err, out)
+		t.Fatalf("parse link constants output: %v\nraw: %v", err, out)
 	}
 	return v.MTU, v.MDU, v.ModeAES256CBC, v.Active
 }
@@ -158,10 +158,10 @@ print(json.dumps(results))
 	out := testutils.RunPython(t, script, string(data))
 	var results []pyRateResult
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &results); err != nil {
-		t.Fatalf("parse link-rate output: %v\nraw: %s", err, out)
+		t.Fatalf("parse link-rate output: %v\nraw: %v", err, out)
 	}
 	if len(results) != len(cases) {
-		t.Fatalf("link-rate count mismatch: got %d want %d", len(results), len(cases))
+		t.Fatalf("link-rate count mismatch: got %v want %v", len(results), len(cases))
 	}
 	return results
 }
@@ -211,10 +211,10 @@ print(json.dumps(results))
 	out := testutils.RunPython(t, script, string(data))
 	var results []float64
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &results); err != nil {
-		t.Fatalf("parse update_eifr output: %v\nraw: %s", err, out)
+		t.Fatalf("parse update_eifr output: %v\nraw: %v", err, out)
 	}
 	if len(results) != len(cases) {
-		t.Fatalf("update_eifr count mismatch: got %d want %d", len(results), len(cases))
+		t.Fatalf("update_eifr count mismatch: got %v want %v", len(results), len(cases))
 	}
 	return results
 }

@@ -21,13 +21,13 @@ func buildTunnelSynthesizeData(t *testing.T, id *Identity, interfaceHash, random
 	t.Helper()
 	pub := id.GetPublicKey()
 	if len(pub) != IdentityKeySize/8 {
-		t.Fatalf("public key len=%d, want %d", len(pub), IdentityKeySize/8)
+		t.Fatalf("public key len=%v, want %v", len(pub), IdentityKeySize/8)
 	}
 	if len(interfaceHash) != 32 {
-		t.Fatalf("interface hash len=%d, want 32", len(interfaceHash))
+		t.Fatalf("interface hash len=%v, want 32", len(interfaceHash))
 	}
 	if len(randomHash) != TruncatedHashLength/8 {
-		t.Fatalf("random hash len=%d, want %d", len(randomHash), TruncatedHashLength/8)
+		t.Fatalf("random hash len=%v, want %v", len(randomHash), TruncatedHashLength/8)
 	}
 	tunnelIDData := append(append([]byte{}, pub...), interfaceHash...)
 	signedData := append(append([]byte{}, tunnelIDData...), randomHash...)
@@ -36,7 +36,7 @@ func buildTunnelSynthesizeData(t *testing.T, id *Identity, interfaceHash, random
 		t.Fatalf("Sign: %v", err)
 	}
 	if len(sig) != IdentityKeySize/8 {
-		t.Fatalf("signature len=%d, want %d", len(sig), IdentityKeySize/8)
+		t.Fatalf("signature len=%v, want %v", len(sig), IdentityKeySize/8)
 	}
 	return append(append(append([]byte{}, pub...), interfaceHash...), append(randomHash, sig...)...)
 }
@@ -104,7 +104,7 @@ func TestTunnelSynthesizeHandlerRejectsInvalid(t *testing.T) {
 	recvIface := &dummyInterface{name: "recv-iface"}
 	ts.tunnelSynthesizeHandler([]byte{0x01, 0x02, 0x03}, &Packet{ReceivingInterface: recvIface})
 	if got := ts.tunnelCount(); got != 0 {
-		t.Fatalf("wrong-length packet registered %d tunnels, want 0", got)
+		t.Fatalf("wrong-length packet registered %v tunnels, want 0", got)
 	}
 
 	// Bad signature: flip a signature byte so validation fails.
@@ -113,7 +113,7 @@ func TestTunnelSynthesizeHandlerRejectsInvalid(t *testing.T) {
 	bad[len(bad)-1] ^= 0xFF
 	ts.tunnelSynthesizeHandler(bad, &Packet{ReceivingInterface: recvIface})
 	if got := ts.tunnelCount(); got != 0 {
-		t.Fatalf("bad-signature packet registered %d tunnels, want 0", got)
+		t.Fatalf("bad-signature packet registered %v tunnels, want 0", got)
 	}
 }
 

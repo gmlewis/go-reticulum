@@ -194,12 +194,12 @@ func TestIntegrationCrossImplPythonHub(t *testing.T) {
 	status, welcomed, hubName, statusText := hub.Status, hub.Welcomed, hub.HubName, hub.StatusText
 	hub.lock.Unlock()
 	if status != StatusConnected || !welcomed {
-		t.Fatalf("hub not welcomed: status=%d text=%q welcomed=%v (expected the Python WELCOME to arrive)", status, statusText, welcomed)
+		t.Fatalf("hub not welcomed: status=%v text=%q welcomed=%v (expected the Python WELCOME to arrive)", status, statusText, welcomed)
 	}
 	if hubName == "" {
 		t.Error("hub name not populated from the Python WELCOME")
 	}
-	t.Logf("CONNECTED: hub name=%q status=%d", hubName, status)
+	t.Logf("CONNECTED: hub name=%q status=%v", hubName, status)
 
 	// The message echo round-trip: send to a room, expect the Python hub's
 	// NOTICE echo back through HandleData.

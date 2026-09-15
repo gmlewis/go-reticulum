@@ -89,7 +89,7 @@ func TestWaitSettlesSpawnedGoroutines(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		if counter != 1 {
-			t.Fatalf("goroutine had not run after Wait; counter = %d", counter)
+			t.Fatalf("goroutine had not run after Wait; counter = %v", counter)
 		}
 	})
 }

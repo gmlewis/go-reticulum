@@ -55,7 +55,7 @@ func TestInterfaceHashPrefersHashString(t *testing.T) {
 	testutils.SkipIfNoPythonRNS(t)
 	wantHex := pythonFullHashHex(t, iface.hashStr)
 	if h := bytesToHex(got); h != wantHex {
-		t.Fatalf("interfaceHash = %s, want Python full_hash(%q) = %s", h, iface.hashStr, wantHex)
+		t.Fatalf("interfaceHash = %v, want Python full_hash(%q) = %v", h, iface.hashStr, wantHex)
 	}
 }
 

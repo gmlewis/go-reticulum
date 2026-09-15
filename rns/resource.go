@@ -300,10 +300,10 @@ func UnpackResourceAdvertisement(data []byte) (*ResourceAdvertisement, error) {
 	// advertisement. Reject here so Accept, Reject, and every other caller are
 	// covered uniformly.
 	if adv.N < 0 || uint64(adv.N) > ResourceMaxParts {
-		return nil, fmt.Errorf("invalid resource advertisement: part count %d out of range", adv.N)
+		return nil, fmt.Errorf("invalid resource advertisement: part count %v out of range", adv.N)
 	}
 	if adv.T > 0 && int64(adv.N) > adv.T {
-		return nil, fmt.Errorf("invalid resource advertisement: part count %d exceeds total size %d", adv.N, adv.T)
+		return nil, fmt.Errorf("invalid resource advertisement: part count %v exceeds total size %v", adv.N, adv.T)
 	}
 
 	return adv, nil

@@ -52,7 +52,7 @@ func TestB256RoundTrip(t *testing.T) {
 		t.Fatalf("B256ToBytes round-trip failed: %v", err)
 	}
 	if !bytes.Equal(decoded, all) {
-		t.Errorf("round-trip mismatch: got %d bytes, want %d", len(decoded), len(all))
+		t.Errorf("round-trip mismatch: got %v bytes, want %v", len(decoded), len(all))
 	}
 }
 

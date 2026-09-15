@@ -254,7 +254,7 @@ func TestParseFetchRefs(t *testing.T) {
 			t.Fatal("parseFetchRefs ok = false, want true")
 		}
 		if len(refs) != 3 {
-			t.Fatalf("len(refs) = %d, want 3", len(refs))
+			t.Fatalf("len(refs) = %v, want 3", len(refs))
 		}
 		if refs[0].sha != "aaa" || refs[0].ref != "refs/heads/main" || refs[0].have != "bbb" {
 			t.Fatalf("refs[0] = sha=%q ref=%q have=%q, want sha=aaa ref=refs/heads/main have=bbb",
@@ -273,7 +273,7 @@ func TestParseFetchRefs(t *testing.T) {
 			t.Fatal("parseFetchRefs ok = false, want true")
 		}
 		if len(refs) != 0 {
-			t.Fatalf("len(refs) = %d, want 0", len(refs))
+			t.Fatalf("len(refs) = %v, want 0", len(refs))
 		}
 	})
 
@@ -329,11 +329,11 @@ func TestParseStringList(t *testing.T) {
 		}
 		want := []string{"aaa", "bbb", "ccc"}
 		if len(got) != len(want) {
-			t.Fatalf("parseStringList len = %d, want %d (got %q, want %q)", len(got), len(want), got, want)
+			t.Fatalf("parseStringList len = %v, want %v (got %q, want %q)", len(got), len(want), got, want)
 		}
 		for i := range want {
 			if got[i] != want[i] {
-				t.Fatalf("parseStringList[%d] = %q, want %q", i, got[i], want[i])
+				t.Fatalf("parseStringList[%v] = %q, want %q", i, got[i], want[i])
 			}
 		}
 	})
@@ -346,7 +346,7 @@ func TestParseStringList(t *testing.T) {
 			t.Fatal("parseStringList ok = false, want true")
 		}
 		if len(got) != 0 {
-			t.Fatalf("len(got) = %d, want 0", len(got))
+			t.Fatalf("len(got) = %v, want 0", len(got))
 		}
 	})
 
@@ -358,7 +358,7 @@ func TestParseStringList(t *testing.T) {
 			t.Fatal("parseStringList(nil) ok = false, want true")
 		}
 		if len(got) != 0 {
-			t.Fatalf("len(got) = %d, want 0", len(got))
+			t.Fatalf("len(got) = %v, want 0", len(got))
 		}
 	})
 
@@ -463,7 +463,7 @@ func TestParseFetchResponse(t *testing.T) {
 			t.Fatalf("code = 0x%02x, want 0x%02x", code, resOK)
 		}
 		if len(data) != 0 {
-			t.Fatalf("len(data) = %d, want 0", len(data))
+			t.Fatalf("len(data) = %v, want 0", len(data))
 		}
 		if msg != "" {
 			t.Fatalf("msg = %q, want empty", msg)
@@ -482,7 +482,7 @@ func TestParseFetchResponse(t *testing.T) {
 			t.Fatalf("code = 0x%02x, want 0x%02x", code, resRemoteFail)
 		}
 		if len(data) != 0 {
-			t.Fatalf("len(data) = %d, want 0", len(data))
+			t.Fatalf("len(data) = %v, want 0", len(data))
 		}
 		if msg != "Could not fetch refs" {
 			t.Fatalf("msg = %q, want %q", msg, "Could not fetch refs")
@@ -513,11 +513,11 @@ func TestBuildBundleCreateArgs(t *testing.T) {
 		want := []string{"bundle", "create", "--no-progress", "/tmp/bundle.bundle",
 			"refs/heads/main", "refs/tags/v1"}
 		if len(args) != len(want) {
-			t.Fatalf("len(args) = %d, want %d (%q)", len(args), len(want), args)
+			t.Fatalf("len(args) = %v, want %v (%q)", len(args), len(want), args)
 		}
 		for i := range want {
 			if args[i] != want[i] {
-				t.Fatalf("args[%d] = %q, want %q (full: %q)", i, args[i], want[i], args)
+				t.Fatalf("args[%v] = %q, want %q (full: %q)", i, args[i], want[i], args)
 			}
 		}
 	})
@@ -532,11 +532,11 @@ func TestBuildBundleCreateArgs(t *testing.T) {
 		want := []string{"bundle", "create", "--no-progress", "/tmp/b.bundle",
 			"refs/heads/main", "^bbb"}
 		if len(args) != len(want) {
-			t.Fatalf("len(args) = %d, want %d (%q)", len(args), len(want), args)
+			t.Fatalf("len(args) = %v, want %v (%q)", len(args), len(want), args)
 		}
 		for i := range want {
 			if args[i] != want[i] {
-				t.Fatalf("args[%d] = %q, want %q (full: %q)", i, args[i], want[i], args)
+				t.Fatalf("args[%v] = %q, want %q (full: %q)", i, args[i], want[i], args)
 			}
 		}
 	})
@@ -551,11 +551,11 @@ func TestBuildBundleCreateArgs(t *testing.T) {
 		want := []string{"bundle", "create", "--no-progress", "/tmp/b.bundle",
 			"refs/heads/main", "^sha1", "^sha2"}
 		if len(args) != len(want) {
-			t.Fatalf("len(args) = %d, want %d (%q)", len(args), len(want), args)
+			t.Fatalf("len(args) = %v, want %v (%q)", len(args), len(want), args)
 		}
 		for i := range want {
 			if args[i] != want[i] {
-				t.Fatalf("args[%d] = %q, want %q (full: %q)", i, args[i], want[i], args)
+				t.Fatalf("args[%v] = %q, want %q (full: %q)", i, args[i], want[i], args)
 			}
 		}
 	})
@@ -571,11 +571,11 @@ func TestBuildBundleCreateArgs(t *testing.T) {
 		want := []string{"bundle", "create", "--no-progress", "/tmp/b.bundle",
 			"refs/heads/main", "refs/tags/v1", "^sha1"}
 		if len(args) != len(want) {
-			t.Fatalf("len(args) = %d, want %d (%q)", len(args), len(want), args)
+			t.Fatalf("len(args) = %v, want %v (%q)", len(args), len(want), args)
 		}
 		for i := range want {
 			if args[i] != want[i] {
-				t.Fatalf("args[%d] = %q, want %q (full: %q)", i, args[i], want[i], args)
+				t.Fatalf("args[%v] = %q, want %q (full: %q)", i, args[i], want[i], args)
 			}
 		}
 	})
@@ -606,7 +606,7 @@ func TestBuildFetchRequestMap(t *testing.T) {
 		t.Fatalf("refs type = %T, want []map[string]string", refsVal)
 	}
 	if len(refsList) != 2 {
-		t.Fatalf("len(refsList) = %d, want 2", len(refsList))
+		t.Fatalf("len(refsList) = %v, want 2", len(refsList))
 	}
 	if refsList[0]["ref"] != "refs/heads/main" || refsList[0]["have"] != "bbb" {
 		t.Fatalf("refsList[0] = ref=%q have=%q, want ref=refs/heads/main have=bbb",
@@ -666,7 +666,7 @@ func TestBuildFetchRequestMapRoundTrip(t *testing.T) {
 	}
 	refs2, ok := parseFetchRefs(refsVal)
 	if !ok || len(refs2) != 1 {
-		t.Fatalf("round-trip parseFetchRefs ok=%t len=%d", ok, len(refs2))
+		t.Fatalf("round-trip parseFetchRefs ok=%t len=%v", ok, len(refs2))
 	}
 	if refs2[0].ref != "refs/heads/main" || refs2[0].have != "bbb" {
 		t.Fatalf("round-trip refs[0] = ref=%q have=%q", refs2[0].ref, refs2[0].have)
@@ -1006,6 +1006,6 @@ func runTestGit(t *testing.T, dir string, args ...string) {
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("git %s in %s failed: %s\nstderr: %s", strings.Join(args, " "), dir, err, stderr.String())
+		t.Fatalf("git %v in %v failed: %s\nstderr: %v", strings.Join(args, " "), dir, err, stderr.String())
 	}
 }

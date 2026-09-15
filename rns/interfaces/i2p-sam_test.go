@@ -36,7 +36,7 @@ func TestSAMRequestBuildersGolden(t *testing.T) {
 	}
 	for _, tc := range cases {
 		if string(tc.got) != tc.want {
-			t.Errorf("%s: got %q want %q", tc.name, tc.got, tc.want)
+			t.Errorf("%v: got %q want %q", tc.name, tc.got, tc.want)
 		}
 	}
 }
@@ -103,7 +103,7 @@ func TestI2PDestinationBase32(t *testing.T) {
 	d := NewI2PDestinationFromData(data)
 	b32 := d.Base32()
 	if len(b32) != 52 {
-		t.Fatalf("base32 len=%d want 52", len(b32))
+		t.Fatalf("base32 len=%v want 52", len(b32))
 	}
 	if b32 != strings.ToLower(b32) {
 		t.Fatalf("base32 %q not lowercase", b32)
@@ -259,10 +259,10 @@ func TestSAMClientCreateSession(t *testing.T) {
 	sessions := m.sessions
 	m.mu.Unlock()
 	if hellos != 1 {
-		t.Fatalf("hellos=%d want 1", hellos)
+		t.Fatalf("hellos=%v want 1", hellos)
 	}
 	if sessions != 1 {
-		t.Fatalf("sessions=%d want 1", sessions)
+		t.Fatalf("sessions=%v want 1", sessions)
 	}
 }
 
@@ -305,7 +305,7 @@ func TestSAMClientStreamConnect(t *testing.T) {
 	connects := m.connects
 	m.mu.Unlock()
 	if connects != 1 {
-		t.Fatalf("connects=%d want 1", connects)
+		t.Fatalf("connects=%v want 1", connects)
 	}
 }
 
@@ -348,7 +348,7 @@ func TestSAMClientStreamAccept(t *testing.T) {
 	accepts := m.accepts
 	m.mu.Unlock()
 	if accepts != 1 {
-		t.Fatalf("accepts=%d want 1", accepts)
+		t.Fatalf("accepts=%v want 1", accepts)
 	}
 }
 

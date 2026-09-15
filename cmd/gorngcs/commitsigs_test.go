@@ -58,19 +58,19 @@ func TestSignVerifyRoundTrip(t *testing.T) {
 	var sErr bytes.Buffer
 	code := run([]string{"-Y", "sign", "-f", keyPath, msgPath}, strings.NewReader(""), &discardWriter{}, &sErr)
 	if code != 0 {
-		t.Fatalf("sign exit %d, stderr=%s", code, sErr.String())
+		t.Fatalf("sign exit %v, stderr=%v", code, sErr.String())
 	}
 
 	var vOut, vErr bytes.Buffer
 	code = run([]string{"-Y", "verify", "-s", msgPath + ".sig"}, strings.NewReader(commit), &vOut, &vErr)
 	if code != 0 {
-		t.Fatalf("verify exit %d, stdout=%s stderr=%s", code, vOut.String(), vErr.String())
+		t.Fatalf("verify exit %v, stdout=%v stderr=%v", code, vOut.String(), vErr.String())
 	}
 	if !strings.Contains(vOut.String(), `Good "git" signature`) {
 		t.Errorf("verify stdout missing good-signature line: %q", vOut.String())
 	}
 	if !strings.Contains(vOut.String(), id.HexHash) {
-		t.Errorf("verify stdout missing signer hash %s: %q", id.HexHash, vOut.String())
+		t.Errorf("verify stdout missing signer hash %v: %q", id.HexHash, vOut.String())
 	}
 }
 
@@ -96,13 +96,13 @@ func TestVerifyWrongAuthor(t *testing.T) {
 	}
 	var sErr bytes.Buffer
 	if code := run([]string{"-Y", "sign", "-f", keyPath, msgPath}, strings.NewReader(""), &discardWriter{}, &sErr); code != 0 {
-		t.Fatalf("sign exit %d", code)
+		t.Fatalf("sign exit %v", code)
 	}
 
 	var vOut, vErr bytes.Buffer
 	code := run([]string{"-Y", "verify", "-s", msgPath + ".sig"}, strings.NewReader(commit), &vOut, &vErr)
 	if code != 1 {
-		t.Fatalf("verify exit %d, want 1 (author mismatch)", code)
+		t.Fatalf("verify exit %v, want 1 (author mismatch)", code)
 	}
 	if !strings.Contains(vOut.String(), "Commit not signed by author") {
 		t.Errorf("expected author-mismatch message on stdout, got: %q", vOut.String())
@@ -129,12 +129,12 @@ func TestVerifyPrincipalMismatch(t *testing.T) {
 	}
 	var sErr bytes.Buffer
 	if code := run([]string{"-Y", "sign", "-f", keyPath, msgPath}, strings.NewReader(""), &discardWriter{}, &sErr); code != 0 {
-		t.Fatalf("sign exit %d", code)
+		t.Fatalf("sign exit %v", code)
 	}
 	var vOut, vErr bytes.Buffer
 	code := run([]string{"-Y", "verify", "-I", "00ff00ff", "-s", msgPath + ".sig"}, strings.NewReader(commit), &vOut, &vErr)
 	if code != 1 {
-		t.Fatalf("verify exit %d, want 1 (principal mismatch)", code)
+		t.Fatalf("verify exit %v, want 1 (principal mismatch)", code)
 	}
 	if !strings.Contains(vErr.String(), "Principal mismatch") {
 		t.Errorf("expected principal mismatch on stderr, got: %q", vErr.String())
@@ -152,7 +152,7 @@ func TestFindPrincipals(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"-Y", "find-principals", "-s", sigPath}, strings.NewReader(""), &stdout, &stderr)
 	if code != 0 {
-		t.Fatalf("find-principals exit %d, stderr=%s", code, stderr.String())
+		t.Fatalf("find-principals exit %v, stderr=%v", code, stderr.String())
 	}
 	got := strings.TrimSpace(stdout.String())
 	if got != goldenIdentityHash {
@@ -171,7 +171,7 @@ func TestCheckNoValidate(t *testing.T) {
 	var stderr bytes.Buffer
 	code := run([]string{"-Y", "check-novalidate", "-s", sigPath}, strings.NewReader(""), &discardWriter{}, &stderr)
 	if code != 0 {
-		t.Fatalf("check-novalidate exit %d, want 0", code)
+		t.Fatalf("check-novalidate exit %v, want 0", code)
 	}
 }
 

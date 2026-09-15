@@ -120,10 +120,10 @@ func TestNewLoggerWritesToCallbackAndFile(t *testing.T) {
 func TestLogPathingLevelAndLabel(t *testing.T) {
 	t.Parallel()
 	if LogPathing != 7 {
-		t.Fatalf("LogPathing = %d, want 7", LogPathing)
+		t.Fatalf("LogPathing = %v, want 7", LogPathing)
 	}
 	if LogExtreme != 8 {
-		t.Fatalf("LogExtreme = %d, want 8", LogExtreme)
+		t.Fatalf("LogExtreme = %v, want 8", LogExtreme)
 	}
 	if got := LogLevelName(LogPathing); got != "[Pathing] " {
 		t.Fatalf("LogLevelName(LogPathing) = %q, want %q", got, "[Pathing] ")
@@ -142,14 +142,14 @@ func TestSetLogLevelClampsToLogExtreme(t *testing.T) {
 	logger.SetPendingDelta(100) // push the effective level past the ceiling
 	logger.SetLogLevel(LogNotice)
 	if got := logger.GetLogLevel(); got != LogExtreme {
-		t.Fatalf("clamped loglevel = %d, want %d (LogExtreme)", got, LogExtreme)
+		t.Fatalf("clamped loglevel = %v, want %v (LogExtreme)", got, LogExtreme)
 	}
 
 	low := NewLogger()
 	low.SetPendingDelta(-100) // push below the floor
 	low.SetLogLevel(LogNotice)
 	if got := low.GetLogLevel(); got != LogCritical {
-		t.Fatalf("clamped loglevel = %d, want %d (LogCritical)", got, LogCritical)
+		t.Fatalf("clamped loglevel = %v, want %v (LogCritical)", got, LogCritical)
 	}
 }
 

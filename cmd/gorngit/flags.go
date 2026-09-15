@@ -247,7 +247,7 @@ func checkFlagFirstArgs(args []string) error {
 			continue
 		}
 		if subcommands[token] {
-			return fmt.Errorf("subcommand %q must come before any flags (e.g. \"gorngit %s ...\")", token, token)
+			return fmt.Errorf("subcommand %q must come before any flags (e.g. \"gorngit %v ...\")", token, token)
 		}
 	}
 	return nil

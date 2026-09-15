@@ -53,7 +53,7 @@ import (
 func validateIdentityHash(hash string) error {
 	destLen := (rns.TruncatedHashLength / 8) * 2
 	if len(hash) != destLen {
-		return fmt.Errorf("allowed destination length is invalid, must be %d hexadecimal characters (%d bytes)", destLen, destLen/2)
+		return fmt.Errorf("allowed destination length is invalid, must be %v hexadecimal characters (%v bytes)", destLen, destLen/2)
 	}
 	if _, err := rns.HexToBytes(hash); err != nil {
 		return fmt.Errorf("invalid destination entered. check your input")
@@ -125,14 +125,14 @@ func sizeStr(num float64, suffix string) string {
 	for _, unit := range units {
 		if num < 1000.0 {
 			if unit == "" {
-				return fmt.Sprintf("%.0f %s%s", num, unit, suffix)
+				return fmt.Sprintf("%.0f %v%v", num, unit, suffix)
 			}
-			return fmt.Sprintf("%.2f %s%s", num, unit, suffix)
+			return fmt.Sprintf("%.2f %v%v", num, unit, suffix)
 		}
 		num /= 1000.0
 	}
 
-	return fmt.Sprintf("%.2f%s%s", num, lastUnit, suffix)
+	return fmt.Sprintf("%.2f%v%v", num, lastUnit, suffix)
 }
 
 func main() {

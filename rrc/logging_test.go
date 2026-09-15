@@ -247,7 +247,7 @@ func TestRotatingFileWriterRotates(t *testing.T) {
 	// Write past the limit to trigger exactly one rotation.
 	for i := range 15 {
 		if _, err := w.Write([]byte("0123456789")); err != nil {
-			t.Fatalf("write %d: %v", i, err)
+			t.Fatalf("write %v: %v", i, err)
 		}
 	}
 	info, err := os.Stat(logPath)
@@ -255,20 +255,20 @@ func TestRotatingFileWriterRotates(t *testing.T) {
 		t.Fatalf("log file missing: %v", err)
 	}
 	if info.Size() > maxBytes {
-		t.Fatalf("log file size = %d, want <= %d", info.Size(), maxBytes)
+		t.Fatalf("log file size = %v, want <= %v", info.Size(), maxBytes)
 	}
 	prevInfo, err := os.Stat(logPath + ".1")
 	if err != nil {
 		t.Fatalf("rotated .1 file missing: %v", err)
 	}
 	if prevInfo.Size() != 100 {
-		t.Errorf(".1 file size = %d, want 100", prevInfo.Size())
+		t.Errorf(".1 file size = %v, want 100", prevInfo.Size())
 	}
 
 	// Keep writing: the active file stays bounded, .1 is replaced in place.
 	for i := range 10 {
 		if _, err := w.Write([]byte("0123456789")); err != nil {
-			t.Fatalf("write %d: %v", i, err)
+			t.Fatalf("write %v: %v", i, err)
 		}
 	}
 	info, err = os.Stat(logPath)
@@ -276,14 +276,14 @@ func TestRotatingFileWriterRotates(t *testing.T) {
 		t.Fatalf("log file missing after second batch: %v", err)
 	}
 	if info.Size() > maxBytes {
-		t.Errorf("log file size = %d after second batch, want <= %d", info.Size(), maxBytes)
+		t.Errorf("log file size = %v after second batch, want <= %v", info.Size(), maxBytes)
 	}
 	prevInfo, err = os.Stat(logPath + ".1")
 	if err != nil {
 		t.Fatalf(".1 file missing after second batch: %v", err)
 	}
 	if prevInfo.Size() != 100 {
-		t.Errorf(".1 file size = %d after second batch, want 100", prevInfo.Size())
+		t.Errorf(".1 file size = %v after second batch, want 100", prevInfo.Size())
 	}
 }
 

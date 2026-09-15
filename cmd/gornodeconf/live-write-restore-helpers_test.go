@@ -223,7 +223,7 @@ func restoreFirmwareHash(t *testing.T, port string, hash []byte) {
 	t.Helper()
 
 	if len(hash) != 32 {
-		t.Fatalf("restore firmware hash requires 32-byte target hash, got %d", len(hash))
+		t.Fatalf("restore firmware hash requires 32-byte target hash, got %v", len(hash))
 	}
 	out, err := runGornodeconfWithEnv(nil, "--firmware-hash", hex.EncodeToString(hash), port)
 	if err != nil {
@@ -261,7 +261,7 @@ func restoreEEPROMImage(t *testing.T, port string, image []byte) {
 	}()
 	for addr, value := range image {
 		if err := writeEEPROMByte(serial, byte(addr), value); err != nil {
-			t.Fatalf("restore EEPROM byte %d failed: %v", addr, err)
+			t.Fatalf("restore EEPROM byte %v failed: %v", addr, err)
 		}
 	}
 }

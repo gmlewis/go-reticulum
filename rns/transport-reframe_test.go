@@ -56,10 +56,10 @@ func TestReframeAnnounceForTransportHeader2(t *testing.T) {
 		t.Fatalf("reframed frame does not unpack: %v", err)
 	}
 	if parsed.HeaderType != Header2 {
-		t.Errorf("HeaderType = %d, want Header2 (%d)", parsed.HeaderType, Header2)
+		t.Errorf("HeaderType = %v, want Header2 (%v)", parsed.HeaderType, Header2)
 	}
 	if parsed.PacketType != PacketAnnounce {
-		t.Errorf("PacketType = %d, want ANNOUNCE (%d)", parsed.PacketType, PacketAnnounce)
+		t.Errorf("PacketType = %v, want ANNOUNCE (%v)", parsed.PacketType, PacketAnnounce)
 	}
 	if parsed.TransportID == nil || !bytes.Equal(parsed.TransportID, ts.identity.Hash) {
 		t.Errorf("TransportID = %x, want this node's identity %x", parsed.TransportID, ts.identity.Hash)
@@ -71,7 +71,7 @@ func TestReframeAnnounceForTransportHeader2(t *testing.T) {
 		t.Errorf("Data = %q, want %q (payload must survive untouched — the signature covers only the payload)", parsed.Data, payload)
 	}
 	if parsed.Hops != 0 {
-		t.Errorf("Hops = %d, want 0 (hop count preserved)", parsed.Hops)
+		t.Errorf("Hops = %v, want 0 (hop count preserved)", parsed.Hops)
 	}
 
 	// A Header1 frame whose transport identity is already ours (an already

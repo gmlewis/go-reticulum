@@ -28,7 +28,7 @@ func BenchmarkEncode(b *testing.B) {
 
 			n, err := io.Copy(wr, br)
 			if n != int64(len(data)) || err != nil {
-				b.Fatalf("Copy() = (%d, %v), want (%d, nil)", n, err, len(data))
+				b.Fatalf("Copy() = (%v, %v), want (%v, nil)", n, err, len(data))
 			}
 			if err := wr.Close(); err != nil {
 				b.Fatalf("Close() = %v, want nil", err)

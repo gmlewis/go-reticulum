@@ -52,10 +52,10 @@ func TestResourceConstants(t *testing.T) {
 		case int:
 			want = int(live[tc.py])
 		default:
-			t.Fatalf("Resource constant %s has unexpected Go type %T", tc.name, tc.got)
+			t.Fatalf("Resource constant %v has unexpected Go type %T", tc.name, tc.got)
 		}
 		if !reflect.DeepEqual(tc.got, want) {
-			t.Fatalf("Resource constant %s = %v (%T), want live Python %v (%T)", tc.name, tc.got, tc.got, want, want)
+			t.Fatalf("Resource constant %v = %v (%T), want live Python %v (%T)", tc.name, tc.got, tc.got, want, want)
 		}
 	}
 }
@@ -145,13 +145,13 @@ func TestResourceStateInitiator(t *testing.T) {
 	}
 
 	if r.maxRetries != ResourceMaxRetries {
-		t.Fatalf("maxRetries = %d, want %d", r.maxRetries, ResourceMaxRetries)
+		t.Fatalf("maxRetries = %v, want %v", r.maxRetries, ResourceMaxRetries)
 	}
 	if r.maxAdvRetries != ResourceMaxAdvRetries {
-		t.Fatalf("maxAdvRetries = %d, want %d", r.maxAdvRetries, ResourceMaxAdvRetries)
+		t.Fatalf("maxAdvRetries = %v, want %v", r.maxAdvRetries, ResourceMaxAdvRetries)
 	}
 	if r.retriesLeft != r.maxRetries {
-		t.Fatalf("retriesLeft = %d, want %d (maxRetries)", r.retriesLeft, r.maxRetries)
+		t.Fatalf("retriesLeft = %v, want %v (maxRetries)", r.retriesLeft, r.maxRetries)
 	}
 	if r.timeoutFactor != link.trafficTimeoutFactor {
 		t.Fatalf("timeoutFactor = %v, want %v (link.trafficTimeoutFactor)", r.timeoutFactor, link.trafficTimeoutFactor)
@@ -163,13 +163,13 @@ func TestResourceStateInitiator(t *testing.T) {
 		t.Fatalf("senderGraceTime = %v, want %v", r.senderGraceTime, ResourceSenderGraceTime)
 	}
 	if r.windowFlexibility != ResourceWindowFlexibility {
-		t.Fatalf("windowFlexibility = %d, want %d", r.windowFlexibility, ResourceWindowFlexibility)
+		t.Fatalf("windowFlexibility = %v, want %v", r.windowFlexibility, ResourceWindowFlexibility)
 	}
 	if r.sdu != MDU {
-		t.Fatalf("sdu = %d, want %d (MDU, link with mtu=0,mdu=MDU)", r.sdu, MDU)
+		t.Fatalf("sdu = %v, want %v (MDU, link with mtu=0,mdu=MDU)", r.sdu, MDU)
 	}
 	if r.outstandingParts != 0 {
-		t.Fatalf("outstandingParts = %d, want 0", r.outstandingParts)
+		t.Fatalf("outstandingParts = %v, want 0", r.outstandingParts)
 	}
 	if r.waitingForHmu {
 		t.Fatalf("waitingForHmu = true, want false")
@@ -196,7 +196,7 @@ func TestResourceStateInitiator(t *testing.T) {
 		t.Fatalf("lastPartSent = %v, want zero (unset)", r.lastPartSent)
 	}
 	if r.watchdogJobID != 0 {
-		t.Fatalf("watchdogJobID = %d, want 0", r.watchdogJobID)
+		t.Fatalf("watchdogJobID = %v, want 0", r.watchdogJobID)
 	}
 	if r.advertisementPacket != nil {
 		t.Fatalf("advertisementPacket = %v, want nil (unset before advertise)", r.advertisementPacket)
@@ -215,13 +215,13 @@ func TestResourceStateReceiver(t *testing.T) {
 	r := testReceiverResource(t)
 
 	if r.maxRetries != ResourceMaxRetries {
-		t.Fatalf("maxRetries = %d, want %d", r.maxRetries, ResourceMaxRetries)
+		t.Fatalf("maxRetries = %v, want %v", r.maxRetries, ResourceMaxRetries)
 	}
 	if r.maxAdvRetries != ResourceMaxAdvRetries {
-		t.Fatalf("maxAdvRetries = %d, want %d", r.maxAdvRetries, ResourceMaxAdvRetries)
+		t.Fatalf("maxAdvRetries = %v, want %v", r.maxAdvRetries, ResourceMaxAdvRetries)
 	}
 	if r.retriesLeft != r.maxRetries {
-		t.Fatalf("retriesLeft = %d, want %d", r.retriesLeft, r.maxRetries)
+		t.Fatalf("retriesLeft = %v, want %v", r.retriesLeft, r.maxRetries)
 	}
 	if r.timeoutFactor != 6.0 {
 		t.Fatalf("timeoutFactor = %v, want 6.0", r.timeoutFactor)
@@ -233,13 +233,13 @@ func TestResourceStateReceiver(t *testing.T) {
 		t.Fatalf("senderGraceTime = %v, want %v", r.senderGraceTime, ResourceSenderGraceTime)
 	}
 	if r.windowFlexibility != ResourceWindowFlexibility {
-		t.Fatalf("windowFlexibility = %d, want %d", r.windowFlexibility, ResourceWindowFlexibility)
+		t.Fatalf("windowFlexibility = %v, want %v", r.windowFlexibility, ResourceWindowFlexibility)
 	}
 	if r.sdu != MDU {
-		t.Fatalf("sdu = %d, want %d", r.sdu, MDU)
+		t.Fatalf("sdu = %v, want %v", r.sdu, MDU)
 	}
 	if r.outstandingParts != 0 {
-		t.Fatalf("outstandingParts = %d, want 0", r.outstandingParts)
+		t.Fatalf("outstandingParts = %v, want 0", r.outstandingParts)
 	}
 	if r.waitingForHmu {
 		t.Fatalf("waitingForHmu = true, want false")
@@ -270,7 +270,7 @@ func TestResourceStateReceiver(t *testing.T) {
 	// Accept launches the watchdog job (mirroring Python Resource.py:234),
 	// which increments watchdogJobID from 0 to 1.
 	if r.watchdogJobID != 1 {
-		t.Fatalf("watchdogJobID = %d, want 1 (Accept starts the watchdog)", r.watchdogJobID)
+		t.Fatalf("watchdogJobID = %v, want 1 (Accept starts the watchdog)", r.watchdogJobID)
 	}
 	if r.initiator {
 		t.Fatalf("initiator = true, want false (receiver)")

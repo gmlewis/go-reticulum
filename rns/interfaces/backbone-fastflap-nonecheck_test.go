@@ -33,7 +33,7 @@ func TestRecordFlapNoPriorRecordNoCrash(t *testing.T) {
 		t.Fatal("missing record after recordFlap; want a fresh entry created")
 	}
 	if entry.flaps != 1 {
-		t.Fatalf("flaps=%d want 1 for a fresh entry", entry.flaps)
+		t.Fatalf("flaps=%v want 1 for a fresh entry", entry.flaps)
 	}
 	if !entry.lastFlap.Equal(time.Unix(10_000, 0)) {
 		t.Fatalf("lastFlap=%v want t=10000", entry.lastFlap)
@@ -81,7 +81,7 @@ func TestRecordFlapViaOnSpawnedDownNoPriorRecord(t *testing.T) {
 		t.Fatal("onSpawnedDown did not create a flap record; want a fresh entry")
 	}
 	if entry.flaps != 1 {
-		t.Fatalf("flaps=%d want 1 after onSpawnedDown", entry.flaps)
+		t.Fatalf("flaps=%v want 1 after onSpawnedDown", entry.flaps)
 	}
 }
 
@@ -100,7 +100,7 @@ func TestRecordFlapEmptyRemoteIPNoOp(t *testing.T) {
 	n := len(b.fastFlapping)
 	b.fastFlappingMu.Unlock()
 	if n != 0 {
-		t.Fatalf("empty remote IP recorded %d entries; want 0", n)
+		t.Fatalf("empty remote IP recorded %v entries; want 0", n)
 	}
 }
 

@@ -81,10 +81,10 @@ func TestRunLengthEncoder(t *testing.T) {
 		output := rle.Bytes()
 
 		if got, want, ok := testutil.BytesCompare(output, []byte(v.output)); !ok {
-			t.Errorf("test %d, output mismatch:\ngot  %s\nwant %s", i, got, want)
+			t.Errorf("test %v, output mismatch:\ngot  %v\nwant %v", i, got, want)
 		}
 		if done := err == rleDone; done != v.done {
-			t.Errorf("test %d, done mismatch: got %v want %v", i, done, v.done)
+			t.Errorf("test %v, done mismatch: got %v want %v", i, done, v.done)
 		}
 	}
 }
@@ -156,10 +156,10 @@ func TestRunLengthDecoder(t *testing.T) {
 		output := wr.Bytes()
 
 		if got, want, ok := testutil.BytesCompare(output, []byte(v.output)); !ok {
-			t.Errorf("test %d, output mismatch:\ngot  %s\nwant %s", i, got, want)
+			t.Errorf("test %v, output mismatch:\ngot  %v\nwant %v", i, got, want)
 		}
 		if fail := err != rleDone; fail != v.fail {
-			t.Errorf("test %d, failure mismatch: got %t, want %t", i, fail, v.fail)
+			t.Errorf("test %v, failure mismatch: got %t, want %t", i, fail, v.fail)
 		}
 	}
 }

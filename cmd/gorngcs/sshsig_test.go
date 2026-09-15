@@ -22,7 +22,7 @@ func TestSSHStringRoundTrip(t *testing.T) {
 	for _, in := range cases {
 		enc := sshString(in)
 		if len(enc) != 4+len(in) {
-			t.Errorf("sshString(%v) len=%d want %d", in, len(enc), 4+len(in))
+			t.Errorf("sshString(%v) len=%v want %v", in, len(enc), 4+len(in))
 		}
 		out, off, err := readSSHString(enc, 0)
 		if err != nil {
@@ -32,7 +32,7 @@ func TestSSHStringRoundTrip(t *testing.T) {
 			t.Errorf("readSSHString round-trip mismatch: got %x want %x", out, in)
 		}
 		if off != len(enc) {
-			t.Errorf("readSSHString offset=%d want %d", off, len(enc))
+			t.Errorf("readSSHString offset=%v want %v", off, len(enc))
 		}
 	}
 }
@@ -67,7 +67,7 @@ func TestCreateParseSSHSigRoundTrip(t *testing.T) {
 		t.Fatalf("parseSSHSig: %v", err)
 	}
 	if parsed.Version != 1 {
-		t.Errorf("version=%d want 1", parsed.Version)
+		t.Errorf("version=%v want 1", parsed.Version)
 	}
 	if !bytes.Equal(parsed.PublicKey, pubKeyWire) {
 		t.Errorf("public key mismatch")

@@ -159,14 +159,14 @@ func TestDecoderChatHistorySimulation(t *testing.T) {
 	}
 
 	if len(decoded) != len(entries) {
-		t.Fatalf("decoded %d entries, want %d", len(decoded), len(entries))
+		t.Fatalf("decoded %v entries, want %v", len(decoded), len(entries))
 	}
 
 	for i, want := range entries {
 		got := decoded[i]
 		for k, wantVal := range want {
 			if got[k] != wantVal {
-				t.Errorf("entry[%d][%q] = %v, want %v", i, k, got[k], wantVal)
+				t.Errorf("entry[%v][%q] = %v, want %v", i, k, got[k], wantVal)
 			}
 		}
 	}

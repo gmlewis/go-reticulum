@@ -538,7 +538,7 @@ func TestAutoInterfaceAndroidRmnetIgnore(t *testing.T) {
 	t.Parallel()
 
 	for i := 0; i <= 7; i++ {
-		name := fmt.Sprintf("rmnet%d", i)
+		name := fmt.Sprintf("rmnet%v", i)
 		ai := &AutoInterface{
 			allowedInterfaces: map[string]struct{}{},
 			ignoredInterfaces: map[string]struct{}{},
@@ -635,7 +635,7 @@ func TestAutoInterfaceDiscoveryLoopProcessesPeerBeforeRunningSet(t *testing.T) {
 			t.Errorf("onPeer called with %q, want %q", name, want)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatalf("discoveryLoop processed no peer while running=%d: it exited at birth",
+		t.Fatalf("discoveryLoop processed no peer while running=%v: it exited at birth",
 			ai.running.Load())
 	}
 }
@@ -678,7 +678,7 @@ func TestAutoInterfaceDataLoopDeliversInboundBeforeRunningSet(t *testing.T) {
 			t.Errorf("dataLoop delivered %q, want %q", got, payload)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatalf("dataLoop delivered nothing while running=%d: it exited at birth",
+		t.Fatalf("dataLoop delivered nothing while running=%v: it exited at birth",
 			ai.running.Load())
 	}
 }

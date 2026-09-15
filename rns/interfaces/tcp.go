@@ -857,7 +857,7 @@ func tcpHostPort(host string, port int) string {
 	if strings.Contains(host, ":") {
 		host = "[" + host + "]"
 	}
-	return fmt.Sprintf("%s:%d", host, port)
+	return fmt.Sprintf("%v:%v", host, port)
 }
 
 // IsOut reports whether the server can originate traffic through its spawned

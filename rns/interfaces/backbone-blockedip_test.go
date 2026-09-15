@@ -27,7 +27,7 @@ func TestBlockedIPListReturnsAllFlappedIPs(t *testing.T) {
 
 	list := b.BlockedIPList()
 	if len(list) != 2 {
-		t.Fatalf("BlockedIPList len=%d want 2 (got %v)", len(list), list)
+		t.Fatalf("BlockedIPList len=%v want 2 (got %v)", len(list), list)
 	}
 	want := map[string]bool{"192.0.2.1": true, "192.0.2.2": true}
 	for _, ip := range list {
@@ -80,7 +80,7 @@ func TestBlockedIPCountCountsOnlyOverGrace(t *testing.T) {
 	}
 
 	if got, want := b.BlockedIPCount(), 2; got != want {
-		t.Fatalf("BlockedIPCount=%d want %d", got, want)
+		t.Fatalf("BlockedIPCount=%v want %v", got, want)
 	}
 }
 
@@ -98,12 +98,12 @@ func TestBlockedIPCountPurgesExpired(t *testing.T) {
 		b.recordFlap("192.0.2.20", spawnedAt) // blocked at t=0
 	}
 	if got := b.BlockedIPCount(); got != 1 {
-		t.Fatalf("BlockedIPCount before expiry=%d want 1", got)
+		t.Fatalf("BlockedIPCount before expiry=%v want 1", got)
 	}
 
 	clock = 101 // past the 100s expiry window
 	if got := b.BlockedIPCount(); got != 0 {
-		t.Fatalf("BlockedIPCount after expiry=%d want 0", got)
+		t.Fatalf("BlockedIPCount after expiry=%v want 0", got)
 	}
 }
 
@@ -120,6 +120,6 @@ func TestBlockedIPCountZeroWhenBlockingDisabled(t *testing.T) {
 		b.recordFlap("192.0.2.30", spawnedAt)
 	}
 	if got := b.BlockedIPCount(); got != 0 {
-		t.Fatalf("BlockedIPCount=%d want 0 when blocking disabled", got)
+		t.Fatalf("BlockedIPCount=%v want 0 when blocking disabled", got)
 	}
 }

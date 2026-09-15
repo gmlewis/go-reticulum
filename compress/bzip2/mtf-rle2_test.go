@@ -136,19 +136,19 @@ func TestMoveToFront(t *testing.T) {
 
 		fail := err != nil
 		if fail && !v.fail {
-			t.Errorf("test %d, unexpected error: %v", i, err)
+			t.Errorf("test %v, unexpected error: %v", i, err)
 		}
 		if !fail && v.fail {
-			t.Errorf("test %d, unexpected success", i)
+			t.Errorf("test %v, unexpected success", i)
 		}
 		if fail || v.fail {
 			continue
 		}
 		if !reflect.DeepEqual(input, v.input) && (len(input) != 0 || len(v.input) != 0) {
-			t.Errorf("test %d, input mismatch:\ngot  %v\nwant %v", i, input, v.input)
+			t.Errorf("test %v, input mismatch:\ngot  %v\nwant %v", i, input, v.input)
 		}
 		if !reflect.DeepEqual(output, v.output) && (len(output) != 0 || len(v.output) != 0) {
-			t.Errorf("test %d, output mismatch:\ngot  %v\nwant %v", i, output, v.output)
+			t.Errorf("test %v, output mismatch:\ngot  %v\nwant %v", i, output, v.output)
 		}
 	}
 }

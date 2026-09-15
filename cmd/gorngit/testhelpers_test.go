@@ -23,7 +23,7 @@ func runGit(t *testing.T, dir string, args ...string) string {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("git %s in %s failed: %v\nstderr: %s", strings.Join(args, " "), dir, err, stderr.String())
+		t.Fatalf("git %v in %v failed: %v\nstderr: %v", strings.Join(args, " "), dir, err, stderr.String())
 	}
 	return stdout.String()
 }

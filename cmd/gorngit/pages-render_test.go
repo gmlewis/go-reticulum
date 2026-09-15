@@ -33,7 +33,7 @@ func TestMLinkGolden(t *testing.T) {
 	}
 	for _, c := range cases {
 		if c.got != c.want {
-			t.Errorf("%s = %q, want %q", c.name, c.got, c.want)
+			t.Errorf("%v = %q, want %q", c.name, c.got, c.want)
 		}
 	}
 }
@@ -61,7 +61,7 @@ func TestMicronHelpers(t *testing.T) {
 	}
 	for _, c := range cases {
 		if c.got != c.want {
-			t.Errorf("%s = %q, want %q", c.name, c.got, c.want)
+			t.Errorf("%v = %q, want %q", c.name, c.got, c.want)
 		}
 	}
 }
@@ -111,7 +111,7 @@ func TestFormatRelativeTime(t *testing.T) {
 	}
 	for _, c := range cases {
 		if g := formatRelativeTime(c.ts, now); g != c.want {
-			t.Errorf("relative_time(%d) = %q, want %q", now-c.ts, g, c.want)
+			t.Errorf("relative_time(%v) = %q, want %q", now-c.ts, g, c.want)
 		}
 	}
 }

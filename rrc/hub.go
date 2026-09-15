@@ -2235,7 +2235,7 @@ func (h *RRCHub) sendEnv(env map[any]any) {
 // HandleData decodes a CBOR-encoded RRC envelope and dispatches it
 // to the appropriate handler based on the message type.
 func (h *RRCHub) HandleData(data []byte) {
-	log.Printf("DEBUG rrc HandleData: %d bytes: %x", len(data), data[:min(len(data), 40)])
+	log.Printf("DEBUG rrc HandleData: %v bytes: %x", len(data), data[:min(len(data), 40)])
 	// Any inbound envelope is proof the hub link is alive; the hub-liveness
 	// watchdog (startHubLivenessLoop) reads this clock, and it also clears any
 	// outstanding probe: whatever the hub just said, it is answering.

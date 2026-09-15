@@ -61,13 +61,13 @@ func TestCompare(t *testing.T) {
 	for i, v := range vectors {
 		sa, sb, ok := BytesCompare([]byte(v.inA), []byte(v.inB))
 		if sa != v.outA {
-			t.Errorf("test %d, output A mismatch:\ngot  %s\nwant %s", i, sa, v.outA)
+			t.Errorf("test %v, output A mismatch:\ngot  %v\nwant %v", i, sa, v.outA)
 		}
 		if sb != v.outB {
-			t.Errorf("test %d, output B mismatch:\ngot  %s\nwant %s", i, sb, v.outB)
+			t.Errorf("test %v, output B mismatch:\ngot  %v\nwant %v", i, sb, v.outB)
 		}
 		if ok != v.ok {
-			t.Errorf("test %d, output equality mismatch: got %t, want %t", i, ok, v.ok)
+			t.Errorf("test %v, output equality mismatch: got %t, want %t", i, ok, v.ok)
 		}
 	}
 }

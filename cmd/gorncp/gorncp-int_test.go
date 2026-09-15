@@ -99,7 +99,7 @@ func runPython(t *testing.T, configDir string, args ...string) string {
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+repoDir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("runPython failed: %v\nOutput: %s", err, string(out))
+		t.Fatalf("runPython failed: %v\nOutput: %v", err, string(out))
 	}
 	return string(out)
 }
@@ -123,7 +123,7 @@ func runPythonExit(t *testing.T, configDir string, args ...string) (string, int)
 		if ee, ok := err.(*exec.ExitError); ok {
 			exit = ee.ExitCode()
 		} else {
-			t.Fatalf("runPythonExit failed to start: %v\nOutput: %s", err, string(out))
+			t.Fatalf("runPythonExit failed to start: %v\nOutput: %v", err, string(out))
 		}
 	}
 	return string(out), exit
@@ -134,7 +134,7 @@ func runPythonExit(t *testing.T, configDir string, args ...string) (string, int)
 func runGorncpBinary(t *testing.T, bin, configDir string, args ...string) string {
 	t.Helper()
 	fullArgs := append([]string{bin, "-config", configDir}, args...)
-	t.Logf("Running command: %s", strings.Join(fullArgs, " "))
+	t.Logf("Running command: %v", strings.Join(fullArgs, " "))
 	cmd := exec.Command(fullArgs[0], fullArgs[1:]...)
 	cmd.Dir = "."
 	out, err := cmd.CombinedOutput()
@@ -167,7 +167,7 @@ func buildFreshGorncp(t *testing.T) string {
 func runGorncpBackground(t *testing.T, configDir string, args ...string) (*exec.Cmd, *SafeBuffer) {
 	t.Helper()
 	fullArgs := append([]string{gorncpBinaryPath, "-config", configDir}, args...)
-	t.Logf("Running background command: %s", strings.Join(fullArgs, " "))
+	t.Logf("Running background command: %v", strings.Join(fullArgs, " "))
 	cmd := exec.Command(fullArgs[0], fullArgs[1:]...)
 	cmd.Dir = "."
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -177,7 +177,7 @@ func runGorncpBackground(t *testing.T, configDir string, args ...string) (*exec.
 	if err := testutils.StartWithReaper(cmd); err != nil {
 		t.Fatalf("runGorncpBackground failed: %v", err)
 	}
-	t.Logf("Background command started, PID: %d", cmd.Process.Pid)
+	t.Logf("Background command started, PID: %v", cmd.Process.Pid)
 	return cmd, buf
 }
 
@@ -239,11 +239,11 @@ func TestIdentityDisplayParity(t *testing.T) {
 	goOut := runGorncp(t, configDir, "-i", idPath, "-p", "-l", "-n")
 
 	if !strings.Contains(pyOut, "Identity     :") || !strings.Contains(pyOut, "Listening on :") {
-		t.Errorf("Python output format unexpected:\n%s", pyOut)
+		t.Errorf("Python output format unexpected:\n%v", pyOut)
 	}
 
 	if !strings.Contains(goOut, "Identity     :") || !strings.Contains(goOut, "Listening on :") {
-		t.Errorf("Go output format unexpected:\n%s", goOut)
+		t.Errorf("Go output format unexpected:\n%v", goOut)
 	}
 
 	goLines := strings.Split(strings.TrimSpace(goOut), "\n")
@@ -260,10 +260,10 @@ func TestIdentityDisplayParity(t *testing.T) {
 	}
 
 	if identityLine == "" {
-		t.Fatalf("Could not find Identity line in output:\n%s", goOut)
+		t.Fatalf("Could not find Identity line in output:\n%v", goOut)
 	}
 	if listeningLine == "" {
-		t.Fatalf("Could not find Listening line in output:\n%s", goOut)
+		t.Fatalf("Could not find Listening line in output:\n%v", goOut)
 	}
 
 	if !strings.HasPrefix(identityLine, "Identity     : <") || !strings.HasSuffix(identityLine, ">") {
@@ -289,7 +289,7 @@ func runRncpHelp(t *testing.T) string {
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+repoDir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("rncp --help failed: %v\nOutput: %s", err, string(out))
+		t.Fatalf("rncp --help failed: %v\nOutput: %v", err, string(out))
 	}
 	return string(out)
 }
@@ -312,7 +312,7 @@ func TestHelpParity(t *testing.T) {
 	want := normalizeGorncpHelp(runRncpHelp(t))
 	got := normalizeGorncpHelp(usageText)
 	if got != want {
-		t.Fatalf("gorncp --help differs from live Python rncp --help:\n--- got (Go, normalized) ---\n%s\n--- want (Python, normalized) ---\n%s", got, want)
+		t.Fatalf("gorncp --help differs from live Python rncp --help:\n--- got (Go, normalized) ---\n%v\n--- want (Python, normalized) ---\n%v", got, want)
 	}
 }
 
@@ -349,7 +349,7 @@ share_instance = No
     type = TCPServerInterface
     interface_enabled = yes
     listen_ip = 127.0.0.1
-    listen_port = %d
+    listen_port = %v
 `, port)
 	serverConfigPath := filepath.Join(serverConfigDir, "config")
 	if err := os.WriteFile(serverConfigPath, []byte(serverConfig), 0o644); err != nil {
@@ -364,7 +364,7 @@ share_instance = No
     type = TCPClientInterface
     interface_enabled = yes
     target_host = 127.0.0.1
-    target_port = %d
+    target_port = %v
 `, port)
 	clientConfigPath := filepath.Join(clientConfigDir, "config")
 	if err := os.WriteFile(clientConfigPath, []byte(clientConfig), 0o644); err != nil {
@@ -391,7 +391,7 @@ share_instance = No
 		for {
 			select {
 			case <-timeout:
-				t.Logf("=== LISTENER OUTPUT (complete) ===\n%s", buf.String())
+				t.Logf("=== LISTENER OUTPUT (complete) ===\n%v", buf.String())
 				t.Errorf("listener goroutine: timed out waiting for listener to start. Output above.")
 				return
 			default:
@@ -400,10 +400,10 @@ share_instance = No
 					parts := strings.Split(out, "Listening on : <")
 					if len(parts) > 1 {
 						destHash = strings.Split(parts[1], ">")[0]
-						t.Logf("listener goroutine: ready at %s", destHash)
+						t.Logf("listener goroutine: ready at %v", destHash)
 						listenerReady <- destHash
 						<-listenerDone
-						t.Logf("=== LISTENER OUTPUT (complete) ===\n%s", buf.String())
+						t.Logf("=== LISTENER OUTPUT (complete) ===\n%v", buf.String())
 						return
 					}
 				}
@@ -415,7 +415,7 @@ share_instance = No
 	var destHash string
 	select {
 	case destHash = <-listenerReady:
-		t.Logf("Listener ready, hash: %s", destHash)
+		t.Logf("Listener ready, hash: %v", destHash)
 	case <-time.After(20 * time.Second):
 		t.Fatalf("Timed out waiting for listener to become ready")
 	}
@@ -433,7 +433,7 @@ share_instance = No
 	// order (rncp.py:797-798 — file is argv[0], destination is argv[1]),
 	// so pass testFile before destHash.
 	sOut, sExit := runPythonExit(t, clientConfigDir, "-i", clientIdentity, "-w", "30", testFile, destHash, "-v")
-	t.Logf("Python sender output (exit=%d):\n%s", sExit, sOut)
+	t.Logf("Python sender output (exit=%v):\n%v", sExit, sOut)
 
 	// The sender must reach COMPLETE — i.e. exit 0 with "Transfer complete".
 	// A non-zero exit (e.g. "The transfer failed") means the Go listener did
@@ -442,10 +442,10 @@ share_instance = No
 	// succeeded. This guards the receiver-side hash/proof fixes against
 	// regressions: the file may still arrive while the sender reports failure.
 	if sExit != 0 {
-		t.Errorf("Python sender exited %d, want 0 (transfer did not conclude cleanly from the sender's view)", sExit)
+		t.Errorf("Python sender exited %v, want 0 (transfer did not conclude cleanly from the sender's view)", sExit)
 	}
 	if !strings.Contains(sOut, "Transfer complete") {
-		t.Errorf("Python sender output missing \"Transfer complete\":\n%s", sOut)
+		t.Errorf("Python sender output missing \"Transfer complete\":\n%v", sOut)
 	}
 
 	receivedFile := filepath.Join(saveDir, "test.txt")
@@ -553,7 +553,7 @@ share_instance = No
     type = TCPServerInterface
     interface_enabled = yes
     listen_ip = 127.0.0.1
-    listen_port = %d
+    listen_port = %v
 `, port)
 	serverConfigPath := filepath.Join(serverConfigDir, "config")
 	if err := os.WriteFile(serverConfigPath, []byte(serverConfig), 0o644); err != nil {
@@ -568,7 +568,7 @@ share_instance = No
     type = TCPClientInterface
     interface_enabled = yes
     target_host = 127.0.0.1
-    target_port = %d
+    target_port = %v
 `, port)
 	clientConfigPath := filepath.Join(clientConfigDir, "config")
 	if err := os.WriteFile(clientConfigPath, []byte(clientConfig), 0o644); err != nil {
@@ -595,7 +595,7 @@ share_instance = No
 		for {
 			select {
 			case <-timeout:
-				t.Logf("=== LISTENER OUTPUT (complete) ===\n%s", buf.String())
+				t.Logf("=== LISTENER OUTPUT (complete) ===\n%v", buf.String())
 				t.Errorf("listener goroutine: timed out waiting for listener to start.")
 				return
 			default:
@@ -604,7 +604,7 @@ share_instance = No
 					parts := strings.Split(out, "Listening on : <")
 					if len(parts) > 1 {
 						destHash = strings.Split(parts[1], ">")[0]
-						t.Logf("listener goroutine: ready at %s", destHash)
+						t.Logf("listener goroutine: ready at %v", destHash)
 						listenerReady <- destHash
 						<-listenerDone
 						return
@@ -618,7 +618,7 @@ share_instance = No
 	var destHash string
 	select {
 	case destHash = <-listenerReady:
-		t.Logf("Listener ready, hash: %s", destHash)
+		t.Logf("Listener ready, hash: %v", destHash)
 	case <-time.After(20 * time.Second):
 		t.Fatalf("Timed out waiting for listener to become ready")
 	}
@@ -626,7 +626,7 @@ share_instance = No
 	time.Sleep(2 * time.Second)
 
 	fOut := runGorncp(t, clientConfigDir, "-i", clientIdentity, "-w", "30", "-f", destHash, "nonexistent_file.txt", "-v")
-	t.Logf("Fetcher output:\n%s", fOut)
+	t.Logf("Fetcher output:\n%v", fOut)
 
 	if !strings.Contains(fOut, "was not found on the remote") {
 		t.Errorf("Fetcher output does not contain expected error message")
@@ -660,18 +660,18 @@ func TestFetchPathLookupTimeout(t *testing.T) {
 	cmd.Env = append(os.Environ(), "HOME="+tmpDir)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatalf("expected fetch path lookup timeout to fail, output: %s", string(out))
+		t.Fatalf("expected fetch path lookup timeout to fail, output: %v", string(out))
 	}
 	exitErr, ok := err.(*exec.ExitError)
 	if !ok {
 		t.Fatalf("expected exit error, got %T: %v", err, err)
 	}
 	if got := exitErr.ExitCode(); got != 1 {
-		t.Fatalf("exit code = %d, want 1; output: %s", got, string(out))
+		t.Fatalf("exit code = %v, want 1; output: %v", got, string(out))
 	}
 	expectedMsg := fmt.Sprintf("Path %q not found", destHash)
 	if !strings.Contains(string(out), expectedMsg) {
-		t.Fatalf("output does not contain %q: %s", expectedMsg, string(out))
+		t.Fatalf("output does not contain %q: %v", expectedMsg, string(out))
 	}
 }
 
@@ -713,17 +713,17 @@ func TestFetchLinkEstablishmentTimeout(t *testing.T) {
 	cmd.Env = append(os.Environ(), "HOME="+tmpDir)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatalf("expected link establishment timeout to fail, output: %s", string(out))
+		t.Fatalf("expected link establishment timeout to fail, output: %v", string(out))
 	}
 	exitErr, ok := err.(*exec.ExitError)
 	if !ok {
 		t.Fatalf("expected exit error, got %T: %v", err, err)
 	}
 	if got := exitErr.ExitCode(); got != 1 {
-		t.Fatalf("exit code = %d, want 1; output: %s", got, string(out))
+		t.Fatalf("exit code = %v, want 1; output: %v", got, string(out))
 	}
 	if !strings.Contains(string(out), "Link establishment timed out") {
-		t.Fatalf("output does not contain %q: %s", "Link establishment timed out", string(out))
+		t.Fatalf("output does not contain %q: %v", "Link establishment timed out", string(out))
 	}
 }
 
@@ -758,7 +758,7 @@ network_identity = %v
     type = TCPServerInterface
     interface_enabled = yes
     listen_ip = 127.0.0.1
-    listen_port = %d
+    listen_port = %v
 `, listenerIdentityPath, port)
 	if err := os.WriteFile(filepath.Join(serverConfigDir, "config"), []byte(serverConfig), 0o644); err != nil {
 		t.Fatalf("WriteFile server config: %v", err)
@@ -773,7 +773,7 @@ enable_transport = Yes
     type = TCPClientInterface
     interface_enabled = yes
     target_host = 127.0.0.1
-    target_port = %d
+    target_port = %v
 `, port)
 	if err := os.WriteFile(filepath.Join(clientConfigDir, "config"), []byte(clientConfig), 0o644); err != nil {
 		t.Fatalf("WriteFile client config: %v", err)
@@ -833,17 +833,17 @@ enable_transport = Yes
 
 	out := buf.String()
 	if waitErr == nil {
-		t.Fatalf("expected fetch request timeout to fail, output: %s", out)
+		t.Fatalf("expected fetch request timeout to fail, output: %v", out)
 	}
 	exitErr, ok := waitErr.(*exec.ExitError)
 	if !ok {
 		t.Fatalf("expected exit error, got %T: %v", waitErr, waitErr)
 	}
 	if got := exitErr.ExitCode(); got != 1 {
-		t.Fatalf("exit code = %d, want 1; output: %s", got, out)
+		t.Fatalf("exit code = %v, want 1; output: %v", got, out)
 	}
 	if !strings.Contains(out, "Fetch request timed out") {
-		t.Fatalf("output does not contain %q: %s", "Fetch request timed out", out)
+		t.Fatalf("output does not contain %q: %v", "Fetch request timed out", out)
 	}
 }
 
@@ -904,7 +904,7 @@ share_instance = No
     type = TCPServerInterface
     interface_enabled = yes
     listen_ip = 127.0.0.1
-    listen_port = %d
+    listen_port = %v
 `, port)
 	serverConfigPath := filepath.Join(serverConfigDir, "config")
 	if err := os.WriteFile(serverConfigPath, []byte(serverConfig), 0o644); err != nil {
@@ -919,7 +919,7 @@ share_instance = No
     type = TCPClientInterface
     interface_enabled = yes
     target_host = 127.0.0.1
-    target_port = %d
+    target_port = %v
 `, port)
 	clientConfigPath := filepath.Join(clientConfigDir, "config")
 	if err := os.WriteFile(clientConfigPath, []byte(clientConfig), 0o644); err != nil {
@@ -941,7 +941,7 @@ share_instance = No
 		lCmd, buf := runGorncpBackground(t, serverConfigDir, "-l", "-n", "-i", serverIdentity, "-b", "2", "-v")
 		defer func() {
 			killProcessGroup(lCmd)
-			t.Logf("=== LISTENER OUTPUT (complete) ===\n%s", buf.String())
+			t.Logf("=== LISTENER OUTPUT (complete) ===\n%v", buf.String())
 		}()
 
 		timeout := time.After(20 * time.Second)
@@ -949,7 +949,7 @@ share_instance = No
 		for {
 			select {
 			case <-timeout:
-				t.Logf("=== LISTENER OUTPUT (timeout) ===\n%s", buf.String())
+				t.Logf("=== LISTENER OUTPUT (timeout) ===\n%v", buf.String())
 				t.Errorf("listener goroutine: timed out waiting for listener to start.")
 				return
 			default:
@@ -958,7 +958,7 @@ share_instance = No
 					parts := strings.Split(out, "Listening on : <")
 					if len(parts) > 1 {
 						destHash = strings.Split(parts[1], ">")[0]
-						t.Logf("listener goroutine: ready at %s", destHash)
+						t.Logf("listener goroutine: ready at %v", destHash)
 						listenerReady <- destHash
 						<-listenerDone
 						return
@@ -972,7 +972,7 @@ share_instance = No
 	var destHash string
 	select {
 	case destHash = <-listenerReady:
-		t.Logf("Listener ready, hash: %s", destHash)
+		t.Logf("Listener ready, hash: %v", destHash)
 	case <-time.After(20 * time.Second):
 		t.Fatalf("Timed out waiting for listener to become ready")
 	}
@@ -986,7 +986,7 @@ share_instance = No
 	}
 
 	fOut := runGorncp(t, clientConfigDir, "-i", clientIdentity, "-w", "30", "-f", destHash, testFile, "-v")
-	t.Logf("Fetcher output:\n%s", fOut)
+	t.Logf("Fetcher output:\n%v", fOut)
 
 	if !strings.Contains(fOut, "was not allowed by the remote") {
 		t.Errorf("Fetcher output does not contain expected error message")
@@ -1098,7 +1098,7 @@ print(json.dumps(results))
 
 	for _, suffix := range suffixes {
 		for _, v := range values {
-			key := fmt.Sprintf("%.0f|%s", v, suffix)
+			key := fmt.Sprintf("%.0f|%v", v, suffix)
 			pyWant, ok := pyResults[key]
 			if !ok {
 				t.Errorf("no Python result for key %q", key)

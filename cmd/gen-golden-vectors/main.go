@@ -443,18 +443,18 @@ func main() {
 		buf.WriteString("    GoldenCase(\n")
 		buf.WriteString(fmt.Sprintf("      name = %q,\n", c.Name))
 		buf.WriteString(fmt.Sprintf("      material = %q,\n", c.Material))
-		buf.WriteString(fmt.Sprintf("      expandRounds = %d,\n", c.ExpandRounds))
-		buf.WriteString(fmt.Sprintf("      workblockLen = %d,\n", c.WorkblockLen))
+		buf.WriteString(fmt.Sprintf("      expandRounds = %v,\n", c.ExpandRounds))
+		buf.WriteString(fmt.Sprintf("      workblockLen = %v,\n", c.WorkblockLen))
 		buf.WriteString(fmt.Sprintf("      midstateHex = %q,\n", c.MidstateHex))
-		buf.WriteString(fmt.Sprintf("      totalLenBits = %dL,\n", c.TotalLenBits))
+		buf.WriteString(fmt.Sprintf("      totalLenBits = %vL,\n", c.TotalLenBits))
 		buf.WriteString(fmt.Sprintf("      baseCandidateHex = %q,\n", c.BaseCandidateHex))
-		buf.WriteString(fmt.Sprintf("      startNonce = %dL,\n", c.StartNonce))
-		buf.WriteString(fmt.Sprintf("      targetCost = %d,\n", c.TargetCost))
-		buf.WriteString(fmt.Sprintf("      expectedNonce = %dL,\n", c.ExpectedNonce))
-		buf.WriteString(fmt.Sprintf("      expectedZeros = %d,\n", c.ExpectedZeros))
+		buf.WriteString(fmt.Sprintf("      startNonce = %vL,\n", c.StartNonce))
+		buf.WriteString(fmt.Sprintf("      targetCost = %v,\n", c.TargetCost))
+		buf.WriteString(fmt.Sprintf("      expectedNonce = %vL,\n", c.ExpectedNonce))
+		buf.WriteString(fmt.Sprintf("      expectedZeros = %v,\n", c.ExpectedZeros))
 		buf.WriteString(fmt.Sprintf("      expectedDigestHex = %q,\n", c.ExpectedDigest))
 		buf.WriteString(fmt.Sprintf("      expectedCandidateHex = %q,\n", c.ExpectedCandHex))
-		buf.WriteString(fmt.Sprintf("      expectedRounds = %dL\n", c.ExpectedRounds))
+		buf.WriteString(fmt.Sprintf("      expectedRounds = %vL\n", c.ExpectedRounds))
 		buf.WriteString("    ),\n")
 	}
 	buf.WriteString("  )\n\n")
@@ -513,5 +513,5 @@ func main() {
 	if err := os.WriteFile(*outputPath, buf.Bytes(), 0o644); err != nil {
 		log.Fatalf("failed to write %v: %v", *outputPath, err)
 	}
-	log.Printf("Successfully wrote %d golden cases to %v", len(cases), *outputPath)
+	log.Printf("Successfully wrote %v golden cases to %v", len(cases), *outputPath)
 }

@@ -106,33 +106,33 @@ func (m *SAMMessage) String() string { return m.raw }
 // including the trailing newline.
 
 func samHelloBytes(minVer, maxVer string) []byte {
-	return fmt.Appendf(nil, "HELLO VERSION MIN=%s MAX=%s\n", minVer, maxVer)
+	return fmt.Appendf(nil, "HELLO VERSION MIN=%v MAX=%v\n", minVer, maxVer)
 }
 
 func samSessionCreateBytes(style, sessionID, destination, options string) []byte {
-	return fmt.Appendf(nil, "SESSION CREATE STYLE=%s ID=%s DESTINATION=%s %s\n",
+	return fmt.Appendf(nil, "SESSION CREATE STYLE=%v ID=%v DESTINATION=%v %v\n",
 		style, sessionID, destination, options)
 }
 
 func samStreamConnectBytes(sessionID, destination, silent string) []byte {
-	return fmt.Appendf(nil, "STREAM CONNECT ID=%s DESTINATION=%s SILENT=%s\n",
+	return fmt.Appendf(nil, "STREAM CONNECT ID=%v DESTINATION=%v SILENT=%v\n",
 		sessionID, destination, silent)
 }
 
 func samStreamAcceptBytes(sessionID, silent string) []byte {
-	return fmt.Appendf(nil, "STREAM ACCEPT ID=%s SILENT=%s\n", sessionID, silent)
+	return fmt.Appendf(nil, "STREAM ACCEPT ID=%v SILENT=%v\n", sessionID, silent)
 }
 
 func samStreamForwardBytes(sessionID string, port int, options string) []byte {
-	return fmt.Appendf(nil, "STREAM FORWARD ID=%s PORT=%d %s\n", sessionID, port, options)
+	return fmt.Appendf(nil, "STREAM FORWARD ID=%v PORT=%v %v\n", sessionID, port, options)
 }
 
 func samNamingLookupBytes(name string) []byte {
-	return fmt.Appendf(nil, "NAMING LOOKUP NAME=%s\n", name)
+	return fmt.Appendf(nil, "NAMING LOOKUP NAME=%v\n", name)
 }
 
 func samDestGenerateBytes(signatureType int) []byte {
-	return fmt.Appendf(nil, "DEST GENERATE SIGNATURE_TYPE=%d\n", signatureType)
+	return fmt.Appendf(nil, "DEST GENERATE SIGNATURE_TYPE=%v\n", signatureType)
 }
 
 // samOptionsString renders an i2cp options map to the "k=v k=v" form Python
@@ -140,7 +140,7 @@ func samDestGenerateBytes(signatureType int) []byte {
 func samOptionsString(opts map[string]string) string {
 	pairs := make([]string, 0, len(opts))
 	for k, v := range opts {
-		pairs = append(pairs, fmt.Sprintf("%s=%s", k, v))
+		pairs = append(pairs, fmt.Sprintf("%v=%v", k, v))
 	}
 	return strings.Join(pairs, " ")
 }
@@ -156,7 +156,7 @@ type SAMResultError struct {
 }
 
 func (e *SAMResultError) Error() string {
-	return fmt.Sprintf("SAM %s %s failed: RESULT=%s", e.Cmd, e.Action, e.Result)
+	return fmt.Sprintf("SAM %v %v failed: RESULT=%v", e.Cmd, e.Action, e.Result)
 }
 
 // samErrorForResult maps a SAM RESULT string to a sentinel error mirroring the
@@ -195,7 +195,7 @@ func samErrorForResult(result string) error {
 	case "TIMEOUT":
 		return ErrSAMTimeout
 	default:
-		return fmt.Errorf("%w: RESULT=%s", ErrSAMI2PError, result)
+		return fmt.Errorf("%w: RESULT=%v", ErrSAMI2PError, result)
 	}
 }
 

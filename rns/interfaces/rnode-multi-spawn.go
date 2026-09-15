@@ -194,7 +194,7 @@ func (s *RNodeMultiSubSpawn) IsOut() bool { return s.out }
 // offline subinterface returns an error.
 func (s *RNodeMultiSubSpawn) Send(data []byte) error {
 	if !s.online.Load() {
-		return fmt.Errorf("rnode subinterface %d is offline", s.Index)
+		return fmt.Errorf("rnode subinterface %v is offline", s.Index)
 	}
 	return nil
 }
@@ -305,10 +305,10 @@ func SpawnRNodeSubinterfaces(state *RNodeMultiSpawnState, parent Interface, cfgs
 		}
 		vport := cfg.Vport
 		if vport < 0 || vport >= len(interfaceTypes) {
-			return fmt.Errorf("Virtual port \"%d\" for subinterface %s does not exist", vport, cfg.Name)
+			return fmt.Errorf("Virtual port \"%v\" for subinterface %v does not exist", vport, cfg.Name)
 		}
 		if vport >= len(state.subinterfaces) {
-			return fmt.Errorf("Virtual port \"%d\" for subinterface %s does not exist", vport, cfg.Name)
+			return fmt.Errorf("Virtual port \"%v\" for subinterface %v does not exist", vport, cfg.Name)
 		}
 		if state.subinterfaces[vport] != nil {
 			// Already spawned at this vport; skip (dedup is the transport's
@@ -317,7 +317,7 @@ func SpawnRNodeSubinterfaces(state *RNodeMultiSpawnState, parent Interface, cfgs
 		}
 		name := cfg.Name
 		if name == "" {
-			name = fmt.Sprintf("sub%d", vport)
+			name = fmt.Sprintf("sub%v", vport)
 		}
 		bi := NewBaseInterface(name, ModeFull, 0)
 		// Wire the subinterface's parentInterface to the parent's PR aggregator

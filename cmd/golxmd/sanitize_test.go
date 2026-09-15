@@ -77,7 +77,7 @@ func TestSanitizeNameTruncationContract(t *testing.T) {
 	}
 	got := sanitizeName(long)
 	if len([]rune(got)) != 50 {
-		t.Errorf("expected 50 runes, got %d", len([]rune(got)))
+		t.Errorf("expected 50 runes, got %v", len([]rune(got)))
 	}
 	nn := got
 	if len([]rune(nn)) > 45 {

@@ -365,22 +365,22 @@ func TestIntegrationPythonListenerGoInitiatorEchoRepeatedHandshakes(t *testing.T
 
 	for iteration := 0; iteration < 3; iteration++ {
 		iteration := iteration
-		t.Run(fmt.Sprintf("iteration-%d", iteration), func(t *testing.T) {
-			listenerConfigDir, initiatorConfigDir := prepareGornshDirectUDPConfigPair(t, fmt.Sprintf("gornsh-py-go-repeat-%d-", iteration))
+		t.Run(fmt.Sprintf("iteration-%v", iteration), func(t *testing.T) {
+			listenerConfigDir, initiatorConfigDir := prepareGornshDirectUDPConfigPair(t, fmt.Sprintf("gornsh-py-go-repeat-%v-", iteration))
 
 			pythonListener := startPythonListener(t, listenerConfigDir, "-b", "1")
 			readyHash := pythonListener.hash()
 			if readyHash == "" {
-				t.Fatalf("iteration %d: Python listener hash is empty", iteration)
+				t.Fatalf("iteration %v: Python listener hash is empty", iteration)
 			}
 			waitForPathWithoutGornpath(t, initiatorConfigDir, readyHash, sharedInstancePathTimeout)
 
-			output, exitCode := runGornshCommand(t, initiatorConfigDir, 15*time.Second, "--timeout", "8", "-T", readyHash, "echo", fmt.Sprintf("hello-%d", iteration))
+			output, exitCode := runGornshCommand(t, initiatorConfigDir, 15*time.Second, "--timeout", "8", "-T", readyHash, "echo", fmt.Sprintf("hello-%v", iteration))
 			if exitCode != 0 {
-				t.Fatalf("iteration %d: initiator exit code = %v, want 0\ninitiator output:\n%v\nlistener output:\n%v", iteration, exitCode, output, pythonListener.output())
+				t.Fatalf("iteration %v: initiator exit code = %v, want 0\ninitiator output:\n%v\nlistener output:\n%v", iteration, exitCode, output, pythonListener.output())
 			}
-			if !strings.Contains(output, fmt.Sprintf("hello-%d", iteration)) {
-				t.Fatalf("iteration %d: initiator output %q missing hello\nlistener output:\n%v", iteration, output, pythonListener.output())
+			if !strings.Contains(output, fmt.Sprintf("hello-%v", iteration)) {
+				t.Fatalf("iteration %v: initiator output %q missing hello\nlistener output:\n%v", iteration, output, pythonListener.output())
 			}
 		})
 	}
@@ -417,22 +417,22 @@ func TestIntegrationGoListenerPythonInitiatorEchoRepeatedHandshakes(t *testing.T
 
 	for iteration := 0; iteration < 3; iteration++ {
 		iteration := iteration
-		t.Run(fmt.Sprintf("iteration-%d", iteration), func(t *testing.T) {
-			listenerConfigDir, initiatorConfigDir := prepareGornshDirectUDPConfigPair(t, fmt.Sprintf("gornsh-go-py-repeat-%d-", iteration))
+		t.Run(fmt.Sprintf("iteration-%v", iteration), func(t *testing.T) {
+			listenerConfigDir, initiatorConfigDir := prepareGornshDirectUDPConfigPair(t, fmt.Sprintf("gornsh-go-py-repeat-%v-", iteration))
 
 			listener := startGornshListenerWithArgs(t, listenerConfigDir, "--no-auth", "--announce", "1")
 			readyHash := listener.hash()
 			if readyHash == "" {
-				t.Fatalf("iteration %d: listener hash is empty", iteration)
+				t.Fatalf("iteration %v: listener hash is empty", iteration)
 			}
 			waitForPathWithoutGornpath(t, initiatorConfigDir, readyHash, sharedInstancePathTimeout)
 
-			output, exitCode := runRnshCommand(t, initiatorConfigDir, 15*time.Second, "--timeout", "8", "-T", readyHash, "echo", fmt.Sprintf("hello-%d", iteration))
+			output, exitCode := runRnshCommand(t, initiatorConfigDir, 15*time.Second, "--timeout", "8", "-T", readyHash, "echo", fmt.Sprintf("hello-%v", iteration))
 			if exitCode != 0 {
-				t.Fatalf("iteration %d: Python initiator exit code = %v, want 0\ninitiator output:\n%v\nlistener output:\n%v", iteration, exitCode, output, listener.output())
+				t.Fatalf("iteration %v: Python initiator exit code = %v, want 0\ninitiator output:\n%v\nlistener output:\n%v", iteration, exitCode, output, listener.output())
 			}
-			if !strings.Contains(output, fmt.Sprintf("hello-%d", iteration)) {
-				t.Fatalf("iteration %d: Python initiator output %q missing hello\nlistener output:\n%v", iteration, output, listener.output())
+			if !strings.Contains(output, fmt.Sprintf("hello-%v", iteration)) {
+				t.Fatalf("iteration %v: Python initiator output %q missing hello\nlistener output:\n%v", iteration, output, listener.output())
 			}
 		})
 	}
@@ -1149,7 +1149,7 @@ func waitForPathInSharedInstance(t *testing.T, configDir, hash string, timeout t
 		cmd.Env = gornshIntegrationEnv(t, "")
 		out, err := cmd.CombinedOutput()
 		if err == nil {
-			t.Logf("Found path to %v: %s", hash, string(out))
+			t.Logf("Found path to %v: %v", hash, string(out))
 			return
 		}
 		time.Sleep(1 * time.Second)
@@ -1245,7 +1245,7 @@ func runGornshCommand(t *testing.T, configDir string, timeout time.Duration, arg
 		return string(out), 0
 	}
 	if exitErr, ok := err.(*exec.ExitError); ok {
-		t.Logf("Command exited with code: %d", exitErr.ExitCode())
+		t.Logf("Command exited with code: %v", exitErr.ExitCode())
 		return string(out), exitErr.ExitCode()
 	}
 	// Check if it's a context deadline exceeded error
@@ -1438,9 +1438,9 @@ func runRnshViaWrapper(t *testing.T, args ...string) string {
 		time.Sleep(250 * time.Millisecond)
 	}
 	if lastErr != nil {
-		return string(lastOut) + fmt.Sprintf("\n[rnsh wrapper produced no output after %d attempts: %v]", maxAttempts, lastErr)
+		return string(lastOut) + fmt.Sprintf("\n[rnsh wrapper produced no output after %v attempts: %v]", maxAttempts, lastErr)
 	}
-	return string(lastOut) + fmt.Sprintf("\n[rnsh wrapper produced no output after %d attempts]", maxAttempts)
+	return string(lastOut) + fmt.Sprintf("\n[rnsh wrapper produced no output after %v attempts]", maxAttempts)
 }
 
 type pythonListenerProcess struct {

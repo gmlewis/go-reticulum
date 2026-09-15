@@ -1352,7 +1352,7 @@ func (bi *BaseInterface) ApplyIFACOutbound(data []byte) ([]byte, error) {
 	// misconfigured or directly-constructed config could still set ifacSize
 	// larger than the 64-byte Ed25519 signature and underflow the slice.
 	if ifacSize > len(sig) {
-		return nil, fmt.Errorf("ifac size %d exceeds signature length %d", ifacSize, len(sig))
+		return nil, fmt.Errorf("ifac size %v exceeds signature length %v", ifacSize, len(sig))
 	}
 	ifac := make([]byte, ifacSize)
 	copy(ifac, sig[len(sig)-ifacSize:])

@@ -49,7 +49,7 @@ func TestSaveKnownDestinationsWithRecombineMergesMissingDiskEntries(t *testing.T
 		t.Fatal("recombine dropped the in-memory entry B")
 	}
 	if got, want := len(entryA), 5; got != want {
-		t.Fatalf("merged entry A len = %d, want %d", got, want)
+		t.Fatalf("merged entry A len = %v, want %v", got, want)
 	}
 	// The merged disk entry A must retain its golden app_data (deadbeef),
 	// proving the disk copy was merged verbatim, not overwritten by entry B.
@@ -57,7 +57,7 @@ func TestSaveKnownDestinationsWithRecombineMergesMissingDiskEntries(t *testing.T
 		t.Fatalf("merged entry A app_data = %#v, want deadbeef", entryA[3])
 	}
 	if got, want := len(entryB), 5; got != want {
-		t.Fatalf("in-memory entry B len = %d, want %d", got, want)
+		t.Fatalf("in-memory entry B len = %v, want %v", got, want)
 	}
 }
 

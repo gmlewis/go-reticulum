@@ -157,7 +157,7 @@ func TestSharedInstanceLocalClientHopsParity(t *testing.T) {
 		t.Fatal("the shared instance never installed the hub destination's path")
 	}
 	if sharedHops != 0 {
-		t.Fatalf("shared-instance path-table hops for a local-client destination = %d, want 0 (Python Transport.py:2058 with the local-client decrement)", sharedHops)
+		t.Fatalf("shared-instance path-table hops for a local-client destination = %v, want 0 (Python Transport.py:2058 with the local-client decrement)", sharedHops)
 	}
 	tsR.mu.Lock()
 	clientEntry, clientOK := tsR.pathTable[string(destC.Hash)]
@@ -170,7 +170,7 @@ func TestSharedInstanceLocalClientHopsParity(t *testing.T) {
 		t.Fatal("the attached client never installed the hub destination's path")
 	}
 	if clientHops != 0 {
-		t.Fatalf("attached-client path-table hops learned via the shared instance = %d, want 0 (Python Transport.py:1496+1525 decrement)", clientHops)
+		t.Fatalf("attached-client path-table hops learned via the shared instance = %v, want 0 (Python Transport.py:1496+1525 decrement)", clientHops)
 	}
 
 	// R dials C's destination through the shared instance. With a 0-hop path
@@ -207,10 +207,10 @@ func TestSharedInstanceLocalClientHopsParity(t *testing.T) {
 		t.Fatal("no link request frame was captured at the hub attachment")
 	}
 	if got := int(lrFrame[0]&0b11000000) >> 6; got != Header1 {
-		t.Fatalf("link request frame at hub has header type %d, want Header1 (Python keeps the received framing for 0-hop local-client destinations)", got)
+		t.Fatalf("link request frame at hub has header type %v, want Header1 (Python keeps the received framing for 0-hop local-client destinations)", got)
 	}
 	if got := int(lrFrame[1]); got != 0 {
-		t.Fatalf("link request frame at hub has hop byte %d, want 0 (Python packet.hops for a local-client-sourced packet)", got)
+		t.Fatalf("link request frame at hub has hop byte %v, want 0 (Python packet.hops for a local-client-sourced packet)", got)
 	}
 
 	// The link-request proof relayed back to the client carries the wire hop
@@ -220,7 +220,7 @@ func TestSharedInstanceLocalClientHopsParity(t *testing.T) {
 		t.Fatal("no link proof frame was captured at the client attachment")
 	}
 	if got := int(proofFrame[1]); got != 0 {
-		t.Fatalf("relayed link proof has hop byte %d, want 0 (Python Transport.py:2258)", got)
+		t.Fatalf("relayed link proof has hop byte %v, want 0 (Python Transport.py:2258)", got)
 	}
 
 	// The shared instance's link-table entry records Python-scale hops.
@@ -235,7 +235,7 @@ func TestSharedInstanceLocalClientHopsParity(t *testing.T) {
 		t.Fatal("the shared instance has no link-table entry for the established link")
 	}
 	if linkHops != 0 || linkRemaining != 0 {
-		t.Fatalf("shared-instance link-table entry = (hops=%d, remaining=%d), want (0, 0) (Python Transport.py:1691/1694)", linkHops, linkRemaining)
+		t.Fatalf("shared-instance link-table entry = (hops=%v, remaining=%v), want (0, 0) (Python Transport.py:1691/1694)", linkHops, linkRemaining)
 	}
 }
 

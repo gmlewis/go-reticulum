@@ -84,7 +84,7 @@ func TestIncomingAnnounceFrequencyDecayPop(t *testing.T) {
 		t.Fatalf("first call = %v, want %v", got, 3.0/12.0)
 	}
 	if len(bi.iaFreqDeque) != 2 {
-		t.Fatalf("deque len after decay pop = %d, want 2", len(bi.iaFreqDeque))
+		t.Fatalf("deque len after decay pop = %v, want 2", len(bi.iaFreqDeque))
 	}
 	// n=2 is not > IC_DEQUE_MIN_SAMPLE(2) -> 0.
 	if got2 := bi.incomingAnnounceFrequencyAt(base.Add(12 * time.Second)); got2 != 0 {
@@ -142,16 +142,16 @@ func TestReceivedSentAnnouncePopulatesAndPropagates(t *testing.T) {
 	child.sentAnnounceAt(base.Add(3*time.Second), false)
 
 	if len(child.iaFreqDeque) != 2 {
-		t.Errorf("child iaFreqDeque len = %d, want 2", len(child.iaFreqDeque))
+		t.Errorf("child iaFreqDeque len = %v, want 2", len(child.iaFreqDeque))
 	}
 	if len(child.oaFreqDeque) != 1 {
-		t.Errorf("child oaFreqDeque len = %d, want 1", len(child.oaFreqDeque))
+		t.Errorf("child oaFreqDeque len = %v, want 1", len(child.oaFreqDeque))
 	}
 	if len(parent.iaFreqDeque) != 2 {
-		t.Errorf("parent iaFreqDeque len = %d, want 2 (propagated)", len(parent.iaFreqDeque))
+		t.Errorf("parent iaFreqDeque len = %v, want 2 (propagated)", len(parent.iaFreqDeque))
 	}
 	if len(parent.oaFreqDeque) != 1 {
-		t.Errorf("parent oaFreqDeque len = %d, want 1 (propagated)", len(parent.oaFreqDeque))
+		t.Errorf("parent oaFreqDeque len = %v, want 1 (propagated)", len(parent.oaFreqDeque))
 	}
 	// Parent must not re-propagate to a grandparent it does not have.
 	if parent.parentInterface != nil {
@@ -169,12 +169,12 @@ func TestAnnounceFreqDequeCap(t *testing.T) {
 		bi.receivedAnnounceAt(base.Add(time.Duration(i)*time.Millisecond), false)
 	}
 	if len(bi.iaFreqDeque) != IAFreqSamples {
-		t.Errorf("iaFreqDeque len = %d, want capped at %d", len(bi.iaFreqDeque), IAFreqSamples)
+		t.Errorf("iaFreqDeque len = %v, want capped at %v", len(bi.iaFreqDeque), IAFreqSamples)
 	}
 	for i := range OAFreqSamples + 10 {
 		bi.sentAnnounceAt(base.Add(time.Duration(i)*time.Millisecond), false)
 	}
 	if len(bi.oaFreqDeque) != OAFreqSamples {
-		t.Errorf("oaFreqDeque len = %d, want capped at %d", len(bi.oaFreqDeque), OAFreqSamples)
+		t.Errorf("oaFreqDeque len = %v, want capped at %v", len(bi.oaFreqDeque), OAFreqSamples)
 	}
 }

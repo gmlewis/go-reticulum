@@ -230,7 +230,7 @@ func TestCompileStatsGolden(t *testing.T) {
 		t.Fatalf("unpacked peers type=%T want map[any]any", top["peers"])
 	}
 	if len(peersMap) != 2 {
-		t.Fatalf("unpacked peers count=%d want 2", len(peersMap))
+		t.Fatalf("unpacked peers count=%v want 2", len(peersMap))
 	}
 
 	// Locate the static peer by its binary peer-id key. Default Unpack
@@ -246,7 +246,7 @@ func TestCompileStatsGolden(t *testing.T) {
 		t.Fatalf("peer type=%v want static", got)
 	}
 	if got := asInt(staticEntry["state"]); got != PeerStateResponseReceived {
-		t.Fatalf("peer state=%v want %d", staticEntry["state"], PeerStateResponseReceived)
+		t.Fatalf("peer state=%v want %v", staticEntry["state"], PeerStateResponseReceived)
 	}
 	if got := staticEntry["alive"]; got != true {
 		t.Fatalf("peer alive=%v want true", got)
@@ -255,7 +255,7 @@ func TestCompileStatsGolden(t *testing.T) {
 		t.Fatalf("peer name=%v want empty", got)
 	}
 	if got := asInt(staticEntry["last_heard"]); got != int(start.Unix()) {
-		t.Fatalf("peer last_heard=%v want %d", staticEntry["last_heard"], start.Unix())
+		t.Fatalf("peer last_heard=%v want %v", staticEntry["last_heard"], start.Unix())
 	}
 	if got := asInt(staticEntry["ler"]); got != 2 {
 		t.Fatalf("peer ler=%v want 2", staticEntry["ler"])
@@ -282,7 +282,7 @@ func TestCompileStatsGolden(t *testing.T) {
 		t.Fatalf("peer peering_key=%v want 42", staticEntry["peering_key"])
 	}
 	if got := asInt(staticEntry["network_distance"]); got != rns.PathfinderM {
-		t.Fatalf("peer network_distance=%v want %d", staticEntry["network_distance"], rns.PathfinderM)
+		t.Fatalf("peer network_distance=%v want %v", staticEntry["network_distance"], rns.PathfinderM)
 	}
 	if got := asInt(staticEntry["rx_bytes"]); got != 1024 {
 		t.Fatalf("peer rx_bytes=%v want 1024", staticEntry["rx_bytes"])
@@ -367,11 +367,11 @@ func assertStringSet(t *testing.T, label string, got, want []string) {
 	wantSorted := append([]string{}, want...)
 	sort.Strings(wantSorted)
 	if len(got) != len(wantSorted) {
-		t.Fatalf("%s keys mismatch:\n got=%v\n want=%v", label, got, wantSorted)
+		t.Fatalf("%v keys mismatch:\n got=%v\n want=%v", label, got, wantSorted)
 	}
 	for i := range got {
 		if got[i] != wantSorted[i] {
-			t.Fatalf("%s keys mismatch:\n got=%v\n want=%v", label, got, wantSorted)
+			t.Fatalf("%v keys mismatch:\n got=%v\n want=%v", label, got, wantSorted)
 		}
 	}
 }

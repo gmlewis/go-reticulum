@@ -74,7 +74,7 @@ func errWrap(err error, replaceCode int) error {
 		if errors.IsInvalid(cerr) {
 			cerr.Code = replaceCode
 		}
-		err = errorf(cerr.Code, "%s", cerr.Msg)
+		err = errorf(cerr.Code, "%v", cerr.Msg)
 	}
 	return err
 }

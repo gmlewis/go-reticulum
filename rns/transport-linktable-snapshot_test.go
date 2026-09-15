@@ -31,7 +31,7 @@ func TestLinkTableReturnsSnapshot(t *testing.T) {
 	ts := newLinkTableProbe()
 	before := ts.LinkTable()
 	if len(before) != 2 {
-		t.Fatalf("LinkTable() = %d entries, want 2", len(before))
+		t.Fatalf("LinkTable() = %v entries, want 2", len(before))
 	}
 
 	// Mutating the returned map must not touch the internal table.
@@ -39,7 +39,7 @@ func TestLinkTableReturnsSnapshot(t *testing.T) {
 		delete(before, k)
 	}
 	if after := ts.LinkTable(); len(after) != 2 {
-		t.Fatalf("internal linkTable = %d entries after the returned snapshot was mutated, want 2 (LinkTable() leaked the live map)",
+		t.Fatalf("internal linkTable = %v entries after the returned snapshot was mutated, want 2 (LinkTable() leaked the live map)",
 			len(after))
 	}
 

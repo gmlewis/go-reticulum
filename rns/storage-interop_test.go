@@ -54,7 +54,7 @@ func TestStorageInteropKnownDestinations(t *testing.T) {
 
 	out := testutils.RunPython(t, knownDestReadScript, filepath.Join(dir, "known_destinations"))
 	if !strings.HasPrefix(strings.TrimSpace(out), "OK") {
-		t.Fatalf("python failed to read Go-written known_destinations:\n%s", out)
+		t.Fatalf("python failed to read Go-written known_destinations:\n%v", out)
 	}
 
 	// --- Python writes (bin keys), Go reads ---
@@ -123,7 +123,7 @@ func TestStorageInteropRatchets(t *testing.T) {
 	ratchetPath := filepath.Join(dir, "ratchets", hexHash(destHash))
 	out := testutils.RunPython(t, ratchetReadScript, ratchetPath)
 	if !strings.HasPrefix(strings.TrimSpace(out), "OK") {
-		t.Fatalf("python failed to read Go-written ratchet:\n%s", out)
+		t.Fatalf("python failed to read Go-written ratchet:\n%v", out)
 	}
 
 	// --- Python writes, Go reads ---
@@ -190,7 +190,7 @@ func TestStorageInteropBlackhole(t *testing.T) {
 	}
 	out := testutils.RunPython(t, blackholeReadScript, path)
 	if !strings.HasPrefix(strings.TrimSpace(out), "OK") {
-		t.Fatalf("python failed to read Go-written blackhole list:\n%s", out)
+		t.Fatalf("python failed to read Go-written blackhole list:\n%v", out)
 	}
 
 	// --- Python writes (bin keys), Go reads via ReloadBlackhole ---
@@ -264,7 +264,7 @@ func TestStorageInteropTransportIdentity(t *testing.T) {
 	}
 	out := testutils.RunPython(t, fmt.Sprintf(identityReadScript, hexHash(goPriv)), goPath)
 	if !strings.HasPrefix(strings.TrimSpace(out), "OK") {
-		t.Fatalf("python failed to read Go-written identity:\n%s", out)
+		t.Fatalf("python failed to read Go-written identity:\n%v", out)
 	}
 
 	// --- Python writes a real identity, Go reads it ---
@@ -350,7 +350,7 @@ func TestStorageInteropDestinationTable(t *testing.T) {
 	}
 	out := testutils.RunPython(t, destTableReadScript, path)
 	if !strings.HasPrefix(strings.TrimSpace(out), "OK") {
-		t.Fatalf("python failed to read Go-written destination_table:\n%s", out)
+		t.Fatalf("python failed to read Go-written destination_table:\n%v", out)
 	}
 
 	// --- Python writes, Go reads ---

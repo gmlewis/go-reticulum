@@ -48,7 +48,7 @@ func keyBytes(b byte, n int) []byte { return bytes.Repeat([]byte{b}, n) }
 func okFromPython(t *testing.T, out string, what string) {
 	t.Helper()
 	if !strings.HasPrefix(strings.TrimSpace(out), "OK") {
-		t.Fatalf("python failed to read Go-written %s:\n%s", what, out)
+		t.Fatalf("python failed to read Go-written %v:\n%v", what, out)
 	}
 }
 

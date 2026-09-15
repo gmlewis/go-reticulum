@@ -71,11 +71,11 @@ func TestBootstrapEEPROMWritesExpectedFrames(t *testing.T) {
 	}
 
 	if len(writer.writes) != len(want) {
-		t.Fatalf("unexpected frame count: got %d want %d", len(writer.writes), len(want))
+		t.Fatalf("unexpected frame count: got %v want %v", len(writer.writes), len(want))
 	}
 	for i := range want {
 		if !bytes.Equal(writer.writes[i], want[i]) {
-			t.Fatalf("frame %d mismatch:\n got: %x\nwant: %x", i, writer.writes[i], want[i])
+			t.Fatalf("frame %v mismatch:\n got: %x\nwant: %x", i, writer.writes[i], want[i])
 		}
 	}
 }

@@ -114,7 +114,7 @@ func TestParseRemoteURLGolden(t *testing.T) {
 			t.Fatalf("parseRemoteURL: %v", err)
 		}
 		if hexDest(dest) != hash {
-			t.Errorf("dest = %s, want %s", hexDest(dest), hash)
+			t.Errorf("dest = %v, want %v", hexDest(dest), hash)
 		}
 		if group != "mygroup" || repo != "myrepo" {
 			t.Errorf("group=%q repo=%q, want mygroup/myrepo", group, repo)
@@ -136,7 +136,7 @@ func TestParseRemoteURLGolden(t *testing.T) {
 			t.Fatalf("parseRemoteGroupURL: %v", err)
 		}
 		if hexDest(dest) != hash || group != "mygroup" {
-			t.Errorf("dest=%s group=%q, want %s/mygroup", hexDest(dest), group, hash)
+			t.Errorf("dest=%v group=%q, want %v/mygroup", hexDest(dest), group, hash)
 		}
 	})
 
@@ -147,7 +147,7 @@ func TestParseRemoteURLGolden(t *testing.T) {
 			t.Fatalf("parseRemoteDestinationURL: %v", err)
 		}
 		if hexDest(dest) != hash {
-			t.Errorf("dest = %s, want %s", hexDest(dest), hash)
+			t.Errorf("dest = %v, want %v", hexDest(dest), hash)
 		}
 	})
 

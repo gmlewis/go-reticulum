@@ -50,13 +50,13 @@ func writeRNSConfigDir(t *testing.T, dir string, enableTransport bool, extra str
 	}
 	content := fmt.Sprintf(`[reticulum]
 share_instance = No
-enable_transport = %s
+enable_transport = %v
 
 [logging]
 loglevel = 4
 
 [interfaces]
-%s`, transport, extra)
+%v`, transport, extra)
 	if err := os.WriteFile(filepath.Join(cfgDir, "config"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -83,13 +83,13 @@ func TestIntegrationMultiHopIdleLinkSurvives(t *testing.T) {
     type = TCPClientInterface
     enabled = yes
     target_host = 127.0.0.1
-    target_port = %d
+    target_port = %v
 
   [[B-Listener]]
     type = TCPServerInterface
     enabled = yes
     listen_ip = 127.0.0.1
-    listen_port = %d
+    listen_port = %v
 `, p1, p2))
 
 	bTS := rns.NewTransportSystem(nil)
@@ -104,7 +104,7 @@ func TestIntegrationMultiHopIdleLinkSurvives(t *testing.T) {
     type = TCPClientInterface
     enabled = yes
     target_host = 127.0.0.1
-    target_port = %d
+    target_port = %v
 `, p2))
 
 	cTS := rns.NewTransportSystem(nil)
@@ -199,9 +199,9 @@ func TestIntegrationMultiHopIdleLinkSurvives(t *testing.T) {
 
 		deaths++
 		if deaths > maxLinkDeaths {
-			t.Fatalf("MULTI-HOP link died %d times during %v silence windows (status=%d): keepalives are not traversing the Go transport node", deaths, silentFor, status)
+			t.Fatalf("MULTI-HOP link died %v times during %v silence windows (status=%v): keepalives are not traversing the Go transport node", deaths, silentFor, status)
 		}
-		t.Logf("link died during silence (death %d/%d, status=%d); reconnecting", deaths, maxLinkDeaths, status)
+		t.Logf("link died during silence (death %v/%v, status=%v); reconnecting", deaths, maxLinkDeaths, status)
 		hub.ConnectAsync()
 		reconnectDeadline := time.Now().Add(reconnectFor)
 		for time.Now().Before(reconnectDeadline) {
@@ -217,11 +217,11 @@ func TestIntegrationMultiHopIdleLinkSurvives(t *testing.T) {
 		status, welcomedNow = hub.Status, hub.Welcomed
 		hub.lock.Unlock()
 		if !welcomedNow || status != StatusConnected {
-			t.Fatalf("multi-hop link died during silence and the reconnect never re-welcomed within %v (status=%d)", reconnectFor, status)
+			t.Fatalf("multi-hop link died during silence and the reconnect never re-welcomed within %v (status=%v)", reconnectFor, status)
 		}
 		// The re-welcome re-armed the who-refresh timer; silence again.
 		hub.stopWhoRefresh()
 		deadline = time.Now().Add(silentFor)
 	}
-	t.Logf("multi-hop link survived %v of silence (%d link deaths tolerated)", silentFor, deaths)
+	t.Logf("multi-hop link survived %v of silence (%v link deaths tolerated)", silentFor, deaths)
 }

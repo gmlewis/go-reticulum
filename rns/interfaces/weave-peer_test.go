@@ -51,16 +51,16 @@ func TestWeavePeerSpawnCopiesFields(t *testing.T) {
 	p := SpawnWeavePeer(nil, cfg, endpoint)
 
 	if got := p.Gravity(); got != cfg.Gravity {
-		t.Errorf("Gravity = %d, want %d", got, cfg.Gravity)
+		t.Errorf("Gravity = %v, want %v", got, cfg.Gravity)
 	}
 	if got := p.Mode(); got != cfg.Mode {
-		t.Errorf("Mode = %d, want %d", got, cfg.Mode)
+		t.Errorf("Mode = %v, want %v", got, cfg.Mode)
 	}
 	if got := p.Bitrate(); got != cfg.Bitrate {
-		t.Errorf("Bitrate = %d, want %d", got, cfg.Bitrate)
+		t.Errorf("Bitrate = %v, want %v", got, cfg.Bitrate)
 	}
 	if got := p.hwmtu; got != cfg.HWMTU {
-		t.Errorf("hwmtu = %d, want %d", got, cfg.HWMTU)
+		t.Errorf("hwmtu = %v, want %v", got, cfg.HWMTU)
 	}
 	if got := p.IsOut(); got != cfg.OUT {
 		t.Errorf("IsOut = %v, want %v", got, cfg.OUT)
@@ -72,7 +72,7 @@ func TestWeavePeerSpawnCopiesFields(t *testing.T) {
 		t.Errorf("IngressControl = %v, want %v", got, cfg.IngressControl)
 	}
 	if got := p.ICMaxHeldAnnounces(); got != cfg.ICMaxHeldAnnounces {
-		t.Errorf("ICMaxHeldAnnounces = %d, want %d", got, cfg.ICMaxHeldAnnounces)
+		t.Errorf("ICMaxHeldAnnounces = %v, want %v", got, cfg.ICMaxHeldAnnounces)
 	}
 	if got := p.ICBurstHold(); got != cfg.ICBurstHold {
 		t.Errorf("ICBurstHold = %v, want %v", got, cfg.ICBurstHold)
@@ -126,7 +126,7 @@ func TestWeavePeerSpawnIFACCopied(t *testing.T) {
 		t.Errorf("IFAC.NetName = %q, want %q", got.NetName, "weave-net")
 	}
 	if got.Size != 16 {
-		t.Errorf("IFAC.Size = %d, want 16", got.Size)
+		t.Errorf("IFAC.Size = %v, want 16", got.Size)
 	}
 	// Same IFAC inputs -> same derived config snapshot.
 	p2 := SpawnWeavePeer(nil, cfg, []byte{0x02})

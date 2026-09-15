@@ -23,7 +23,7 @@ func assertNoTempFiles(t *testing.T, storagePath string) {
 	t.Helper()
 	entries, err := os.ReadDir(storagePath)
 	if err != nil {
-		t.Fatalf("ReadDir(%s): %v", storagePath, err)
+		t.Fatalf("ReadDir(%v): %v", storagePath, err)
 	}
 	var leftovers []string
 	for _, e := range entries {
@@ -35,7 +35,7 @@ func assertNoTempFiles(t *testing.T, storagePath string) {
 	}
 	if len(leftovers) > 0 {
 		sort.Strings(leftovers)
-		t.Fatalf("found %d leftover temp file(s): %v", len(leftovers), leftovers)
+		t.Fatalf("found %v leftover temp file(s): %v", len(leftovers), leftovers)
 	}
 }
 
@@ -72,7 +72,7 @@ func TestSaveKnownDestinationsIsAtomicTempRename(t *testing.T) {
 		t.Fatal("round-tripped known_destinations is missing the remembered entry")
 	}
 	if got, want := len(entry), 5; got != want {
-		t.Fatalf("round-tripped entry len = %d, want %d", got, want)
+		t.Fatalf("round-tripped entry len = %v, want %v", got, want)
 	}
 	if got, ok := entry[2].([]byte); !ok || len(got) != len(pubKey) {
 		t.Fatalf("round-tripped entry[2] = %#v, want the public key", entry[2])

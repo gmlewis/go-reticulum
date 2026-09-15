@@ -195,13 +195,13 @@ for i, c in enumerate(cases):
 			t.Fatalf("parse case index %q: %v", idxStr, err)
 		}
 		if idx < 0 || idx >= len(cases) {
-			t.Fatalf("case index %d out of range (have %d cases)", idx, len(cases))
+			t.Fatalf("case index %v out of range (have %v cases)", idx, len(cases))
 		}
 		results[idx] = body
 	}
 	for i, r := range results {
 		if r == "" {
-			t.Fatalf("python capture missing case %d output:\n%s", i, out)
+			t.Fatalf("python capture missing case %v output:\n%v", i, out)
 		}
 	}
 	return results

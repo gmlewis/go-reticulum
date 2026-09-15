@@ -144,11 +144,11 @@ func TestWorkCreateListAndView(t *testing.T) {
 	}
 	active, _ := m["active"].([]any)
 	if len(active) != 1 {
-		t.Fatalf("active list len=%d, want 1", len(active))
+		t.Fatalf("active list len=%v, want 1", len(active))
 	}
 	entry, _ := active[0].(map[any]any)
 	if entry["id"].(int64) != int64(docID) {
-		t.Errorf("list id=%v, want %d", entry["id"], docID)
+		t.Errorf("list id=%v, want %v", entry["id"], docID)
 	}
 	if entry["title"] != "My Doc" {
 		t.Errorf("list title=%v, want My Doc", entry["title"])
@@ -184,11 +184,11 @@ func TestWorkCreateListAndView(t *testing.T) {
 	}
 	sig, _ := meta["signature"].([]byte)
 	if len(sig) != signatureLength {
-		t.Errorf("view meta signature len=%d, want %d", len(sig), signatureLength)
+		t.Errorf("view meta signature len=%v, want %v", len(sig), signatureLength)
 	}
 	pub, _ := meta["identity"].([]byte)
 	if len(pub) != rns.IdentityKeySize/8 {
-		t.Errorf("view meta identity len=%d, want %d", len(pub), rns.IdentityKeySize/8)
+		t.Errorf("view meta identity len=%v, want %v", len(pub), rns.IdentityKeySize/8)
 	}
 	author, _ := meta["author"].(string)
 	if author != bytesToHex(id.Hash) {
@@ -207,7 +207,7 @@ func TestWorkProposeWritesAllowedFile(t *testing.T) {
 	// Document lands in proposed.
 	rootPath := filepath.Join(workPath, "proposed", intToString(docID), "root")
 	if !isFile(rootPath) {
-		t.Fatalf("proposed root %s does not exist", rootPath)
+		t.Fatalf("proposed root %v does not exist", rootPath)
 	}
 	allowedPath := filepath.Join(workPath, intToString(docID)+".allowed")
 	data, err := os.ReadFile(allowedPath)
@@ -244,11 +244,11 @@ func TestWorkCommentAddsComment(t *testing.T) {
 	}
 	cid, _ := m["id"].(int64)
 	if cid != 1 {
-		t.Errorf("comment id=%d, want 1", cid)
+		t.Errorf("comment id=%v, want 1", cid)
 	}
 	commentPath := filepath.Join(workPath, "active", intToString(docID), intToString(int(cid)))
 	if !isFile(commentPath) {
-		t.Fatalf("comment file %s missing", commentPath)
+		t.Fatalf("comment file %v missing", commentPath)
 	}
 
 	// view should list the comment.
@@ -262,7 +262,7 @@ func TestWorkCommentAddsComment(t *testing.T) {
 	_, m = unpackWorkResponse(t, resp)
 	comments, _ := m["comments"].([]any)
 	if len(comments) != 1 {
-		t.Fatalf("view comments len=%d, want 1", len(comments))
+		t.Fatalf("view comments len=%v, want 1", len(comments))
 	}
 	c, _ := comments[0].(map[any]any)
 	if c["content"] != "First update." {
@@ -338,10 +338,10 @@ func TestWorkCompleteActivateRoundTrip(t *testing.T) {
 		t.Errorf("complete scope=%v, want completed", m["scope"])
 	}
 	if isDir(filepath.Join(workPath, "active", intToString(docID))) {
-		t.Errorf("active/%s still exists after complete", intToString(docID))
+		t.Errorf("active/%v still exists after complete", intToString(docID))
 	}
 	if !isDir(filepath.Join(workPath, "completed", intToString(docID))) {
-		t.Errorf("completed/%s missing after complete", intToString(docID))
+		t.Errorf("completed/%v missing after complete", intToString(docID))
 	}
 
 	activateData := map[any]any{
@@ -358,7 +358,7 @@ func TestWorkCompleteActivateRoundTrip(t *testing.T) {
 		t.Errorf("activate scope=%v, want active", m["scope"])
 	}
 	if !isDir(filepath.Join(workPath, "active", intToString(docID))) {
-		t.Errorf("active/%s missing after activate", intToString(docID))
+		t.Errorf("active/%v missing after activate", intToString(docID))
 	}
 }
 
@@ -381,11 +381,11 @@ func TestWorkDeleteRemovesDoc(t *testing.T) {
 	}
 	docDir := filepath.Join(workPath, "proposed", intToString(docID))
 	if isDir(docDir) {
-		t.Errorf("doc dir %s still exists after delete", docDir)
+		t.Errorf("doc dir %v still exists after delete", docDir)
 	}
 	allowedPath := filepath.Join(workPath, intToString(docID)+".allowed")
 	if _, err := os.Stat(allowedPath); !os.IsNotExist(err) {
-		t.Errorf(".allowed %s still exists after delete", allowedPath)
+		t.Errorf(".allowed %v still exists after delete", allowedPath)
 	}
 }
 
@@ -441,7 +441,7 @@ func TestWorkListSortedByCreatedDesc(t *testing.T) {
 	_, m := unpackWorkResponse(t, resp)
 	active, _ := m["active"].([]any)
 	if len(active) != 3 {
-		t.Fatalf("active len=%d, want 3", len(active))
+		t.Fatalf("active len=%v, want 3", len(active))
 	}
 	// Most-recently-created (id2 is the 2nd, id3 is the 3rd/last created).
 	first, _ := active[0].(map[any]any)
@@ -466,7 +466,7 @@ func TestWorkGetNextIDGlobal(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 	if got := workGetNextID(workPath); got != 9 {
-		t.Errorf("workGetNextID=%d, want 9", got)
+		t.Errorf("workGetNextID=%v, want 9", got)
 	}
 }
 
@@ -475,7 +475,7 @@ func TestWorkGetNextIDEmpty(t *testing.T) {
 	t.Parallel()
 	workPath := filepath.Join(testutils.TempDir(t, "gorngit-work-empty-"), "repo.work")
 	if got := workGetNextID(workPath); got != 1 {
-		t.Errorf("workGetNextID empty=%d, want 1", got)
+		t.Errorf("workGetNextID empty=%v, want 1", got)
 	}
 }
 
@@ -493,7 +493,7 @@ func TestWorkGetNextCommentID(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	if got := workGetNextCommentID(dir); got != 5 {
-		t.Errorf("workGetNextCommentID=%d, want 5", got)
+		t.Errorf("workGetNextCommentID=%v, want 5", got)
 	}
 }
 
@@ -542,7 +542,7 @@ func TestParsePermissionHashTarget(t *testing.T) {
 		t.Fatalf("target is %T, want []byte", target)
 	}
 	if len(b) != rns.TruncatedHashLength/8 {
-		t.Errorf("target len=%d, want %d", len(b), rns.TruncatedHashLength/8)
+		t.Errorf("target len=%v, want %v", len(b), rns.TruncatedHashLength/8)
 	}
 }
 
@@ -661,7 +661,7 @@ func TestWorkRoundTripHandler(t *testing.T) {
 	_, m = unpackWorkResponse(t, resp.([]byte))
 	active, _ := m["active"].([]any)
 	if len(active) != 1 {
-		t.Fatalf("list active len=%d, want 1", len(active))
+		t.Fatalf("list active len=%v, want 1", len(active))
 	}
 
 	// comment

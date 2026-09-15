@@ -42,7 +42,7 @@ func TestCheckFrameLen(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := CheckFrameLen(tc.frameLen, hwmtu, ifac); got != tc.want {
-				t.Fatalf("CheckFrameLen(%d, %d, %d) = %v, want %v", tc.frameLen, hwmtu, ifac, got, tc.want)
+				t.Fatalf("CheckFrameLen(%v, %v, %v) = %v, want %v", tc.frameLen, hwmtu, ifac, got, tc.want)
 			}
 		})
 	}
@@ -84,7 +84,7 @@ func TestHDLCFrameLenValidationDropsInvalidFrames(t *testing.T) {
 		}
 	}()
 
-	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%v", port))
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestHDLCFrameLenValidationDropsInvalidFrames(t *testing.T) {
 	// timing-sensitive assertion is the valid-frame delivery below, which polls.
 	mu.Lock()
 	if calls != 0 {
-		t.Fatalf("after invalid frames, inboundHandler calls = %d, want 0", calls)
+		t.Fatalf("after invalid frames, inboundHandler calls = %v, want 0", calls)
 	}
 	mu.Unlock()
 
@@ -132,7 +132,7 @@ func TestHDLCFrameLenValidationDropsInvalidFrames(t *testing.T) {
 		c := calls
 		l := append([]byte(nil), last...)
 		mu.Unlock()
-		t.Fatalf("after valid frame, inboundHandler calls = %d, want 1 (last=%v)", c, l)
+		t.Fatalf("after valid frame, inboundHandler calls = %v, want 1 (last=%v)", c, l)
 	}
 }
 
@@ -223,11 +223,11 @@ func TestHDLCReassemble(t *testing.T) {
 			t.Parallel()
 			tail, frames := hdlcReassemble(tc.in, hwmtu)
 			if len(frames) != tc.wantN {
-				t.Fatalf("frames = %d, want %d", len(frames), tc.wantN)
+				t.Fatalf("frames = %v, want %v", len(frames), tc.wantN)
 			}
 			if tc.wantTail == nil {
 				if len(tail) != 0 {
-					t.Fatalf("tail = %d bytes, want empty; tail=%v", len(tail), tail)
+					t.Fatalf("tail = %v bytes, want empty; tail=%v", len(tail), tail)
 				}
 			} else if !bytes.Equal(tail, tc.wantTail) {
 				t.Fatalf("tail = %v, want %v", tail, tc.wantTail)
@@ -240,6 +240,6 @@ func TestHDLCReassemble(t *testing.T) {
 	// the unbounded partial frame.
 	tail, _ := hdlcReassemble(append([]byte{HDLCFlag}, p(2*hwmtu+100, 0x55)...), hwmtu)
 	if len(tail) != 0 {
-		t.Fatalf("overflow guard: tail len = %d, want 0 (buffer must be dropped)", len(tail))
+		t.Fatalf("overflow guard: tail len = %v, want 0 (buffer must be dropped)", len(tail))
 	}
 }

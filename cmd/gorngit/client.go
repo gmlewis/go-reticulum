@@ -220,7 +220,7 @@ func (c *reticulumGitClient) list(forPush bool) (string, error) {
 		return "", errors.New("empty list response from server")
 	}
 	if code != resOK {
-		return "", fmt.Errorf("server refused list: %s", payload)
+		return "", fmt.Errorf("server refused list: %v", payload)
 	}
 	return payload, nil
 }
@@ -254,7 +254,7 @@ func (c *reticulumGitClient) create() error {
 
 	switch code {
 	case resOK:
-		fmt.Printf("Repository %s created\n", c.repoPath)
+		fmt.Printf("Repository %v created\n", c.repoPath)
 		return nil
 	case resInvalidReq:
 		return errors.New("Remote error: Invalid request")
@@ -269,7 +269,7 @@ func (c *reticulumGitClient) create() error {
 		if payload == "" {
 			payload = "Unknown error"
 		}
-		return fmt.Errorf("Remote error: %s", payload)
+		return fmt.Errorf("Remote error: %v", payload)
 	}
 }
 
@@ -310,7 +310,7 @@ func (c *reticulumGitClient) fetch(refs []fetchRefEntry, haves []string) ([]byte
 		if msg == "" {
 			msg = "Invalid request"
 		}
-		return nil, fmt.Errorf("Remote error: %s", msg)
+		return nil, fmt.Errorf("Remote error: %v", msg)
 	case resNotFound:
 		return nil, errors.New("Not found")
 	case resDisallowed:
@@ -322,7 +322,7 @@ func (c *reticulumGitClient) fetch(refs []fetchRefEntry, haves []string) ([]byte
 		if msg == "" {
 			msg = "Unknown error"
 		}
-		return nil, fmt.Errorf("Remote error: %s", msg)
+		return nil, fmt.Errorf("Remote error: %v", msg)
 	}
 }
 
@@ -369,7 +369,7 @@ func (c *reticulumGitClient) push(localRef, remoteRef string, force bool, bundle
 		if msg == "" {
 			msg = "Unknown error"
 		}
-		return fmt.Errorf("Remote error: %s", msg)
+		return fmt.Errorf("Remote error: %v", msg)
 	}
 }
 
@@ -395,7 +395,7 @@ func (c *reticulumGitClient) remoteCloneOperation(sourceURL, requestPath, opName
 	requestData := buildRemoteCloneRequestMap(c.repoPath, sourceURL)
 	packed, err := msgpack.Pack(requestData)
 	if err != nil {
-		return fmt.Errorf("could not pack %s request: %w", opName, err)
+		return fmt.Errorf("could not pack %v request: %w", opName, err)
 	}
 
 	response, _, err := c.sendRequest(requestPath, packed, fetchPushTimeout)
@@ -411,7 +411,7 @@ func (c *reticulumGitClient) remoteCloneOperation(sourceURL, requestPath, opName
 	code, msg := parseResultResponse(respBytes)
 	switch code {
 	case resOK:
-		fmt.Printf("Repository %sed to %s\n", opName, c.repoPath)
+		fmt.Printf("Repository %ved to %v\n", opName, c.repoPath)
 		return nil
 	case resInvalidReq:
 		if msg == "" {
@@ -432,7 +432,7 @@ func (c *reticulumGitClient) remoteCloneOperation(sourceURL, requestPath, opName
 		if msg == "" {
 			msg = "Unknown error"
 		}
-		return fmt.Errorf("Server error: %s", msg)
+		return fmt.Errorf("Server error: %v", msg)
 	}
 }
 
@@ -480,7 +480,7 @@ func (c *reticulumGitClient) sync() error {
 		if msg == "" {
 			msg = "Unknown error"
 		}
-		return fmt.Errorf("Server error: %s", msg)
+		return fmt.Errorf("Server error: %v", msg)
 	}
 }
 
@@ -528,7 +528,7 @@ func (c *reticulumGitClient) deleteRef(ref string) error {
 		if msg == "" {
 			msg = "Unknown error"
 		}
-		return fmt.Errorf("Server error: %s", msg)
+		return fmt.Errorf("Server error: %v", msg)
 	}
 }
 

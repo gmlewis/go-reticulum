@@ -1477,7 +1477,7 @@ func (ts *TransportSystem) CleanRatchets() {
 		corrupted := false
 		unpacked, err := msgpack.Unpack(data)
 		if err != nil {
-			ts.logger.Error("Corrupted ratchet data while reading %s, removing file", p)
+			ts.logger.Error("Corrupted ratchet data while reading %v, removing file", p)
 			corrupted = true
 		} else if m, ok := unpacked.(map[any]any); ok {
 			if received, ok := numericValue(m["received"]); ok {
@@ -3931,7 +3931,7 @@ func (ts *TransportSystem) RegisterInterface(iface interfaces.Interface) {
 
 	interfacesAfter := len(ts.interfaces)
 	ts.mu.Unlock()
-	ts.logger.Debug("[Transport] RegisterInterface: %s, interfaces before: %d, after: %d, destinations: %d", iface.Name(), interfacesBefore, interfacesAfter, destinationsBefore)
+	ts.logger.Debug("[Transport] RegisterInterface: %v, interfaces before: %v, after: %v, destinations: %v", iface.Name(), interfacesBefore, interfacesAfter, destinationsBefore)
 
 	// For TCP client interfaces, eagerly invalidate paths routed through
 	// the interface when its connection fails, so pathfinding re-routes
@@ -4813,7 +4813,7 @@ func createKnownDestinationsTemp(path string) (*os.File, error) {
 // (RNS/Identity.py:204-206) used to clean up a temp file after a failed save.
 func removeBestEffort(path string, logger *Logger) {
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		logger.Warning("Could not clean up temporary file %s: %v", path, err)
+		logger.Warning("Could not clean up temporary file %v: %v", path, err)
 	}
 }
 
@@ -5078,12 +5078,12 @@ func (ts *TransportSystem) reloadBlackholeAt(now time.Time) {
 			sourceIdentityHash = copyBytes(ownHash)
 		} else {
 			if len(filename) != hexLen {
-				ts.logger.Error("Identity hash length for blackhole source %s is invalid", filename)
+				ts.logger.Error("Identity hash length for blackhole source %v is invalid", filename)
 				continue
 			}
 			srcHash, err := hex.DecodeString(filename)
 			if err != nil {
-				ts.logger.Error("Could not decode blackhole source filename %s: %v", filename, err)
+				ts.logger.Error("Could not decode blackhole source filename %v: %v", filename, err)
 				continue
 			}
 			sourceIdentityHash = srcHash
@@ -5096,17 +5096,17 @@ func (ts *TransportSystem) reloadBlackholeAt(now time.Time) {
 		sourcepath := filepath.Join(ts.blackholePath, filename)
 		packed, err := os.ReadFile(sourcepath)
 		if err != nil {
-			ts.logger.Error("Could not read blackhole source file %s: %v", filename, err)
+			ts.logger.Error("Could not read blackhole source file %v: %v", filename, err)
 			continue
 		}
 		obj, err := msgpack.Unpack(packed)
 		if err != nil {
-			ts.logger.Error("Could not unpack blackhole source file %s: %v", filename, err)
+			ts.logger.Error("Could not unpack blackhole source file %v: %v", filename, err)
 			continue
 		}
 		sourceList, ok := obj.(map[any]any)
 		if !ok {
-			ts.logger.Error("Unexpected blackhole source payload type %T in %s", obj, filename)
+			ts.logger.Error("Unexpected blackhole source payload type %T in %v", obj, filename)
 			continue
 		}
 
@@ -5173,7 +5173,7 @@ func (ts *TransportSystem) removeBlackholedPathsLocked() {
 		if len(drop) > 1 {
 			ms = "s"
 		}
-		ts.logger.Info("Removed %d destination%s associated with blackholed identities from path table", len(drop), ms)
+		ts.logger.Info("Removed %v destination%v associated with blackholed identities from path table", len(drop), ms)
 	}
 }
 
@@ -5730,7 +5730,7 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 					}
 
 					ts.mu.Unlock()
-					ts.logger.Debug("Inbound: transmitting forwarded packet on %s", entry.Interface.Name())
+					ts.logger.Debug("Inbound: transmitting forwarded packet on %v", entry.Interface.Name())
 					// A down interface fast-fails Send with "is not running";
 					// that is expected, and the interface reports its own down
 					// transition, so only a real failure on an interface that
@@ -5801,7 +5801,7 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 						}
 						linkEntry.Timestamp = time.Now()
 						ts.mu.Unlock()
-						ts.logger.Debug("Inbound: forwarding link-transport packet %x for link %x on %s", packet.PacketHash, packet.DestinationHash, outboundIface.Name())
+						ts.logger.Debug("Inbound: forwarding link-transport packet %x for link %x on %v", packet.PacketHash, packet.DestinationHash, outboundIface.Name())
 						// A burst of relayed packets drains onto a dead
 						// outbound interface the moment it goes down, so this
 						// failure is reported once per down transition and
@@ -5844,7 +5844,7 @@ func (ts *TransportSystem) Inbound(raw []byte, iface interfaces.Interface) {
 				continue
 			}
 			if err := outIface.Send(packet.Raw); err != nil {
-				ts.logger.Debug("Inbound: broadcast send failed on %s: %v", outIface.Name(), err)
+				ts.logger.Debug("Inbound: broadcast send failed on %v: %v", outIface.Name(), err)
 			}
 		}
 	}
@@ -6634,7 +6634,7 @@ func (ts *TransportSystem) Outbound(packet *Packet) error {
 			raw = processed
 		}
 
-		ts.logger.Debug("Outbound packet %x to %x via %v (%d hops)",
+		ts.logger.Debug("Outbound packet %x to %x via %v (%v hops)",
 			packet.GetTruncatedHash(), packet.DestinationHash, pathEntry.Interface.Name(), pathEntry.Hops)
 
 		if err := pathEntry.Interface.Send(raw); err != nil {

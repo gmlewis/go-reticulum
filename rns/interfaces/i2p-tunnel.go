@@ -135,7 +135,7 @@ func (t *I2PTunnel) logSetupError(err error) {
 		case "TIMEOUT":
 			lg.Printf("I2P daemon timed out while setting up tunnel")
 		default:
-			lg.Printf("Unspecified I2P daemon error: RESULT=%s", se.Result)
+			lg.Printf("Unspecified I2P daemon error: RESULT=%v", se.Result)
 		}
 		return
 	}
@@ -264,7 +264,7 @@ func (t *I2PTunnel) drainBackground() error {
 	case <-done:
 		return nil
 	case <-timer.C:
-		return fmt.Errorf("I2P tunnel %s: background proxy goroutines still running %v after close",
+		return fmt.Errorf("I2P tunnel %v: background proxy goroutines still running %v after close",
 			t.sessionID(), i2pTunnelDrainTimeout)
 	}
 }
@@ -376,7 +376,7 @@ func (t *ClientTunnel) acceptLoop(ln net.Listener) {
 				_ = client.Close()
 				return
 			}
-			log.Printf("I2P ClientTunnel %s: stream connect failed: %v", t.sessionID(), err)
+			log.Printf("I2P ClientTunnel %v: stream connect failed: %v", t.sessionID(), err)
 			_ = client.Close()
 			continue
 		}
@@ -428,7 +428,7 @@ func (t *ServerTunnel) acceptLoop() {
 			if t.isStopped() {
 				return
 			}
-			log.Printf("I2P ServerTunnel %s: open accept failed: %v", t.sessionID(), err)
+			log.Printf("I2P ServerTunnel %v: open accept failed: %v", t.sessionID(), err)
 			continue
 		}
 		if t.onAcceptOpened != nil {
@@ -486,19 +486,19 @@ func (t *ServerTunnel) handleServerClient(stream *SAMStream) {
 	// (tunnel.py:144-147).
 	line, err := stream.br.ReadString('\n')
 	if err != nil && line == "" {
-		log.Printf("I2P ServerTunnel %s: read remote destination failed: %v", t.sessionID(), err)
+		log.Printf("I2P ServerTunnel %v: read remote destination failed: %v", t.sessionID(), err)
 		_ = stream.Close()
 		return
 	}
 	remoteDest := strings.TrimRight(line, "\r\n")
 	if remoteDest == "" {
-		log.Printf("I2P ServerTunnel %s: empty remote destination", t.sessionID())
+		log.Printf("I2P ServerTunnel %v: empty remote destination", t.sessionID())
 		_ = stream.Close()
 		return
 	}
 	local, err := net.DialTimeout("tcp", t.LocalAddress, i2pDialTimeout)
 	if err != nil {
-		log.Printf("I2P ServerTunnel %s: dial local %s failed: %v", t.sessionID(), t.LocalAddress, err)
+		log.Printf("I2P ServerTunnel %v: dial local %v failed: %v", t.sessionID(), t.LocalAddress, err)
 		_ = stream.Close()
 		return
 	}
@@ -510,7 +510,7 @@ func (t *ServerTunnel) handleServerClient(stream *SAMStream) {
 			if _, err := local.Write(buf); err != nil {
 				// proxyPair re-drives the flow, but this initial payload is
 				// lost — say so rather than dropping it silently.
-				log.Printf("I2P ServerTunnel %s: writing %v leftover bytes to local service failed: %v",
+				log.Printf("I2P ServerTunnel %v: writing %v leftover bytes to local service failed: %v",
 					t.sessionID(), leftover, err)
 			}
 		}

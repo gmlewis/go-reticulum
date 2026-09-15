@@ -47,7 +47,7 @@ signer = RNS.Identity.from_bytes(prv)
 print("SIGNER="+signer.hash.hex())
 
 notes = bytes.fromhex(%[2]q)
-releaseTime = %[3]d
+releaseTime = %[3]v
 origin = bytes.fromhex("00112233445566778899aabbccddeeff")
 commit = "abc123def4567890abc123def4567890abc123de"
 
@@ -82,7 +82,7 @@ print("RSG="+rsgBlob.hex())
 		}
 	}
 	if rsmHex == "" || rsgHex == "" || signerHashHex == "" {
-		t.Fatalf("python capture missing output:\n%s", out)
+		t.Fatalf("python capture missing output:\n%v", out)
 	}
 	return rsmHex, rsgHex, signerHashHex
 }
@@ -146,7 +146,7 @@ func TestRSMByteParityWithPython(t *testing.T) {
 	if !bytes.Equal(rsm, wantRSM) {
 		t.Fatalf("RSM byte mismatch with live Python capture:\n got %x\n want %x", rsm, wantRSM)
 	}
-	t.Logf("RSM byte-parity with live Python confirmed (%d bytes)", len(rsm))
+	t.Logf("RSM byte-parity with live Python confirmed (%v bytes)", len(rsm))
 }
 
 // TestRSGByteParityWithPython asserts the plain (non-embedded) artifact
@@ -174,5 +174,5 @@ func TestRSGByteParityWithPython(t *testing.T) {
 	if !bytes.Equal(rsgBlob, wantRSG) {
 		t.Fatalf("RSG byte mismatch with live Python capture:\n got %x\n want %x", rsgBlob, wantRSG)
 	}
-	t.Logf("RSG byte-parity with live Python confirmed (%d bytes)", len(rsgBlob))
+	t.Logf("RSG byte-parity with live Python confirmed (%v bytes)", len(rsgBlob))
 }

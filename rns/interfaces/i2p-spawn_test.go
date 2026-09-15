@@ -54,7 +54,7 @@ func TestI2PServerSpawnedInheritsGravityAndBurst(t *testing.T) {
 	i2p.TCPServerInterface.BaseInterface.SetGravity(parentGravity)
 	applyNonDefaultIngressEgress(i2p.TCPServerInterface.BaseInterface)
 
-	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%v", port))
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestI2PServerSpawnedInheritsGravityAndBurst(t *testing.T) {
 		t.Fatal("spawned peer was not captured via onConnect")
 	}
 	if got := sp.Gravity(); got != parentGravity {
-		t.Fatalf("spawned I2P peer Gravity() = %d, want %d (inherited)", got, parentGravity)
+		t.Fatalf("spawned I2P peer Gravity() = %v, want %v (inherited)", got, parentGravity)
 	}
 	// The full ic_*/ec_pr_freq burst-param set (I2PInterface.py:828-840).
 	assertIngressEgressInherited(t, sp.BaseInterface)

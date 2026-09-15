@@ -22,13 +22,13 @@ func TestEncodeSmoke(t *testing.T) {
 		t.Fatalf("Encode: %v", err)
 	}
 	if code.Size <= 0 {
-		t.Fatalf("code.Size=%d want >0", code.Size)
+		t.Fatalf("code.Size=%v want >0", code.Size)
 	}
 	if len(code.Bitmap) == 0 {
 		t.Fatal("code.Bitmap empty")
 	}
 	if code.Stride < (code.Size+7)/8 {
-		t.Fatalf("code.Stride=%d too small for Size=%d", code.Stride, code.Size)
+		t.Fatalf("code.Stride=%v too small for Size=%v", code.Stride, code.Size)
 	}
 
 	// The three finder patterns occupy 7x7 squares at the top-left, top-right,
@@ -41,7 +41,7 @@ func TestEncodeSmoke(t *testing.T) {
 	}
 	for _, c := range checks {
 		if !code.Black(c.x, c.y) {
-			t.Errorf("finder corner (%d,%d) not black; QR malformed", c.x, c.y)
+			t.Errorf("finder corner (%v,%v) not black; QR malformed", c.x, c.y)
 		}
 	}
 	// A white pixel just inside the top-left finder's outer ring: (0,6) is the
@@ -87,13 +87,13 @@ func TestEncodeAllLevels(t *testing.T) {
 			t.Fatalf("Encode level %v: %v", lvl, err)
 		}
 		if code.Size <= 0 {
-			t.Fatalf("level %v: Size=%d", lvl, code.Size)
+			t.Fatalf("level %v: Size=%v", lvl, code.Size)
 		}
 		sizes[lvl] = code.Size
 	}
 	// L (least redundant) should not produce a larger code than H (most
 	// redundant) for the same input.
 	if sizes[L] > sizes[H] {
-		t.Errorf("L size %d > H size %d for same text", sizes[L], sizes[H])
+		t.Errorf("L size %v > H size %v for same text", sizes[L], sizes[H])
 	}
 }

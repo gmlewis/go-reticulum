@@ -211,7 +211,7 @@ func TestDestinationRatchetConfig(t *testing.T) {
 	// SetRetainedRatchets stores and reports the configured count.
 	dest.SetRetainedRatchets(256)
 	if dest.RetainedRatchets() != 256 {
-		t.Fatalf("RetainedRatchets = %d, want 256", dest.RetainedRatchets())
+		t.Fatalf("RetainedRatchets = %v, want 256", dest.RetainedRatchets())
 	}
 
 	// EnforceRatchets toggles the enforcement flag.

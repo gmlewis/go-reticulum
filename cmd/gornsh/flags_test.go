@@ -132,7 +132,7 @@ func TestParseFlagsCommandSeparator(t *testing.T) {
 			}
 			for i, want := range tc.wantCommand {
 				if opts.commandLine[i] != want {
-					t.Fatalf("commandLine[%d]=%q, want %q", i, opts.commandLine[i], want)
+					t.Fatalf("commandLine[%v]=%q, want %q", i, opts.commandLine[i], want)
 				}
 			}
 		})
@@ -176,7 +176,7 @@ func TestParseFlagsHelp(t *testing.T) {
 	}
 	for _, want := range wantSubstrings {
 		if !strings.Contains(got, want) {
-			t.Fatalf("usage text missing %q in:\n%s", want, got)
+			t.Fatalf("usage text missing %q in:\n%v", want, got)
 		}
 	}
 }

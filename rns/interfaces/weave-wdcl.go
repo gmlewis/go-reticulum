@@ -234,7 +234,7 @@ func DecodeWeaveLogEvent(fd []byte) (WeaveLogFrame, error) {
 	// The Python parse reads fd[1]..fd[7] and fd[8:], so it needs at least 8
 	// bytes (it indexes fd[7]); shorter payloads are a malformed frame.
 	if len(fd) < 8 {
-		return WeaveLogFrame{}, fmt.Errorf("weave: log frame too short: %d bytes", len(fd))
+		return WeaveLogFrame{}, fmt.Errorf("weave: log frame too short: %v bytes", len(fd))
 	}
 	ts := uint32(fd[1])<<24 | uint32(fd[2])<<16 | uint32(fd[3])<<8 | uint32(fd[4])
 	lvl := fd[5]
@@ -264,18 +264,18 @@ func RenderWeaveLogEvent(f WeaveLogFrame) string {
 		if len(f.Data) > 0 {
 			dataString = string(f.Data)
 		}
-		return fmt.Sprintf("[%s] [%s]: %s", ts, level, dataString)
+		return fmt.Sprintf("[%v] [%v]: %v", ts, level, dataString)
 	}
 
 	// Event description: known table entry, else "0x{hex}" (lines 776-777).
 	eventDescription, ok := weaveEventDescriptions[f.Event]
 	if !ok {
-		eventDescription = fmt.Sprintf("0x%s", weaveHexrepUint(f.Event, false))
+		eventDescription = fmt.Sprintf("0x%v", weaveHexrepUint(f.Event, false))
 	}
 
 	dataString := weaveEventDataString(f)
 
-	return fmt.Sprintf("[%s] [%s] [%s]%s", ts, level, eventDescription, dataString)
+	return fmt.Sprintf("[%v] [%v] [%v]%v", ts, level, eventDescription, dataString)
 }
 
 // weaveEventDataString computes the ": ..." suffix for a non-MSG event
@@ -293,7 +293,7 @@ func weaveEventDataString(f WeaveLogFrame) string {
 			if name, ok := weaveInterfaceTypes[ifaceType]; ok {
 				typeName = name
 			}
-			return fmt.Sprintf(": %s%d", typeName, ifaceIndex)
+			return fmt.Sprintf(": %v%v", typeName, ifaceIndex)
 		}
 		return ""
 	}
@@ -311,13 +311,13 @@ func weaveEventDataString(f WeaveLogFrame) string {
 		}
 	case WeaveETDrvW80211Channel:
 		if name, ok := weaveChannelDescriptions[f.Data[0]]; ok {
-			return fmt.Sprintf(": %s", name)
+			return fmt.Sprintf(": %v", name)
 		}
-		return fmt.Sprintf(": %s", weaveHexrep(f.Data, true))
+		return fmt.Sprintf(": %v", weaveHexrep(f.Data, true))
 	case WeaveETDrvW80211Power:
 		txPower := float64(f.Data[0]) * 0.25
 		mW := int(math.Pow(10, txPower/10))
-		return fmt.Sprintf(": %s dBm (%d mW)", pyFloatStr(txPower), mW)
+		return fmt.Sprintf(": %v dBm (%v mW)", pyFloatStr(txPower), mW)
 	}
 	// Core-init .. proto-weave-running range: success / failure / stopped
 	// (lines 794-798).
@@ -332,7 +332,7 @@ func weaveEventDataString(f WeaveLogFrame) string {
 			return ": Stopped"
 		}
 	}
-	return fmt.Sprintf(": %s", weaveHexrep(f.Data, true))
+	return fmt.Sprintf(": %v", weaveHexrep(f.Data, true))
 }
 
 // weaveHexrep renders bytes as lowercase hex, colon-separated when delimit is
@@ -515,13 +515,13 @@ func HandleWeaveStatEvent(d *WeaveDeviceStat, f WeaveLogFrame, now float64) erro
 	switch f.Event {
 	case WeaveETStatTaskCPU:
 		if len(f.Data) < 1 {
-			return fmt.Errorf("weave: ET_STAT_TASK_CPU frame too short: %d bytes", len(f.Data))
+			return fmt.Errorf("weave: ET_STAT_TASK_CPU frame too short: %v bytes", len(f.Data))
 		}
 		taskID := string(f.Data[1:])
 		d.ActiveTasks[taskID] = WeaveTaskStat{CPULoad: f.Data[0], Timestamp: now}
 	case WeaveETStatCPU:
 		if len(f.Data) < 1 {
-			return fmt.Errorf("weave: ET_STAT_CPU frame too short: %d bytes", len(f.Data))
+			return fmt.Errorf("weave: ET_STAT_CPU frame too short: %v bytes", len(f.Data))
 		}
 		d.CPULoad = f.Data[0]
 		d.captureStatsCPU(now)
@@ -612,7 +612,7 @@ type WeaveMemoryStat struct {
 // zero; the Go decoder is robust instead).
 func DecodeWeaveStatMemory(data []byte) (WeaveMemoryStat, error) {
 	if len(data) < 8 {
-		return WeaveMemoryStat{}, fmt.Errorf("weave: memory stat frame too short: %d bytes", len(data))
+		return WeaveMemoryStat{}, fmt.Errorf("weave: memory stat frame too short: %v bytes", len(data))
 	}
 	free := binary.BigEndian.Uint32(data[:4])
 	total := binary.BigEndian.Uint32(data[4:8])

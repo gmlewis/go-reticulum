@@ -108,7 +108,7 @@ func TestIntegrationRenderPathTable(t *testing.T) {
 	}
 	want := "<01> is 1 hop  away via <11> on test[eth0] expires 2026-04-05 15:07:36\n<02> is 2 hops away via <22> on test[eth1] expires 2026-04-05 15:08:36\n"
 	if got != want {
-		t.Fatalf("renderPathTable mismatch:\nwant:\n%sgot:\n%s", want, got)
+		t.Fatalf("renderPathTable mismatch:\nwant:\n%vgot:\n%v", want, got)
 	}
 }
 
@@ -133,7 +133,7 @@ func TestIntegrationRenderRateTable(t *testing.T) {
 	}
 	want := "01 last heard 2 minutes ago, 0.333 announces/hour in the last 3 hours\n"
 	if got != want {
-		t.Fatalf("renderRateTable mismatch:\nwant:\n%sgot:\n%s", want, got)
+		t.Fatalf("renderRateTable mismatch:\nwant:\n%vgot:\n%v", want, got)
 	}
 }
 
@@ -157,7 +157,7 @@ func TestIntegrationRenderBlackholedIdentities(t *testing.T) {
 	}
 	want := "<01> blackholed indefinitely (Announce spam) by <090909>\n"
 	if strings.TrimSpace(got) != strings.TrimSpace(want) {
-		t.Fatalf("renderBlackholedIdentities mismatch:\nwant:\n%sgot:\n%s", want, got)
+		t.Fatalf("renderBlackholedIdentities mismatch:\nwant:\n%vgot:\n%v", want, got)
 	}
 }
 
@@ -197,7 +197,7 @@ func TestIntegrationDoRequest(t *testing.T) {
 	}
 	want := "Path to aabb requested  \rPath found, destination <aabb> is 2 hops away via <ccdd> on test[eth0]\n"
 	if out.String() != want {
-		t.Fatalf("doRequestAt mismatch:\nwant:\n%sgot:\n%s", want, out.String())
+		t.Fatalf("doRequestAt mismatch:\nwant:\n%vgot:\n%v", want, out.String())
 	}
 }
 
@@ -278,11 +278,11 @@ func TestFormatParityPrettyDate(t *testing.T) {
 	pyScript := fmt.Sprintf(`
 import sys, json
 from datetime import datetime, timezone
-now = datetime.fromtimestamp(%d, tz=timezone.utc)
+now = datetime.fromtimestamp(%v, tz=timezone.utc)
 values = json.loads(sys.argv[1])
 results = {}
 for offset in values:
-    past = datetime.fromtimestamp(%d - offset, tz=timezone.utc)
+    past = datetime.fromtimestamp(%v - offset, tz=timezone.utc)
     diff = now - past
     second_diff = diff.seconds
     day_diff = diff.days
@@ -335,7 +335,7 @@ print(json.dumps(results))
 	}
 
 	for _, offset := range offsets {
-		key := fmt.Sprintf("%d", offset)
+		key := fmt.Sprintf("%v", offset)
 		pyWant, ok := pyResults[key]
 		if !ok {
 			t.Errorf("no Python result for key %q", key)
@@ -344,7 +344,7 @@ print(json.dumps(results))
 		then := now.Add(-time.Duration(offset) * time.Second)
 		goGot := prettyDateAt(now, then)
 		if goGot != pyWant {
-			t.Errorf("prettyDateAt(now, now-%ds) = %q, want %q (Python)", offset, goGot, pyWant)
+			t.Errorf("prettyDateAt(now, now-%vs) = %q, want %q (Python)", offset, goGot, pyWant)
 		}
 	}
 }

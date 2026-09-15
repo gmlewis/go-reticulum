@@ -119,7 +119,7 @@ func TestHandleOutboundIncludesReplyTicketBeforePacking(t *testing.T) {
 
 	inboundTickets := router.ticketStore.InboundTickets(destination.Hash, now)
 	if len(inboundTickets) != 1 {
-		t.Fatalf("inbound tickets=%d want=1", len(inboundTickets))
+		t.Fatalf("inbound tickets=%v want=1", len(inboundTickets))
 	}
 	if !bytes.Equal(inboundTickets[0], entry.Ticket) {
 		t.Fatalf("generated ticket=%x want=%x", inboundTickets[0], entry.Ticket)
@@ -5527,7 +5527,7 @@ func TestWritePropagationMessageFileOmitsZeroStampSuffixForStampedZeroValue(t *t
 		t.Fatalf("writePropagationMessageFile() error = %v", err)
 	}
 
-	wantName := fmt.Sprintf("%x_%s", transientID, strconv.FormatFloat(peerTime(receivedAt), 'f', -1, 64))
+	wantName := fmt.Sprintf("%x_%v", transientID, strconv.FormatFloat(peerTime(receivedAt), 'f', -1, 64))
 	if got := filepath.Base(filePath); got != wantName {
 		t.Fatalf("file name=%q want=%q", got, wantName)
 	}
@@ -5550,7 +5550,7 @@ func TestPropagationStoreIgnoresLegacyStyleZeroStampFilenameOnRestart(t *testing
 	if err := os.MkdirAll(storePath, 0o755); err != nil {
 		t.Fatalf("MkdirAll(%q): %v", storePath, err)
 	}
-	fileName := fmt.Sprintf("%x_%s", transientID, strconv.FormatFloat(peerTime(receivedAt), 'f', -1, 64))
+	fileName := fmt.Sprintf("%x_%v", transientID, strconv.FormatFloat(peerTime(receivedAt), 'f', -1, 64))
 	filePath := filepath.Join(storePath, fileName)
 	fileData := append(append([]byte{}, lxmfPayload...), stampData...)
 	if err := os.WriteFile(filePath, fileData, 0o644); err != nil {
@@ -7519,10 +7519,10 @@ func TestRequestMessagesLinkEstablished(t *testing.T) {
 		t.Fatalf("state = %v, want PRLinkEstablishing", router.PropagationTransferState())
 	}
 	if establishCount != 1 {
-		t.Fatalf("establish count = %d, want 1", establishCount)
+		t.Fatalf("establish count = %v, want 1", establishCount)
 	}
 	if requestCount != 0 {
-		t.Fatalf("request count before callback = %d, want 0", requestCount)
+		t.Fatalf("request count before callback = %v, want 0", requestCount)
 	}
 	if establishedCallback == nil {
 		t.Fatal("expected established callback to be installed")
@@ -7536,7 +7536,7 @@ func TestRequestMessagesLinkEstablished(t *testing.T) {
 		t.Fatalf("state after callback = %v, want PRRequestSent", router.PropagationTransferState())
 	}
 	if requestCount != 1 {
-		t.Fatalf("request count after callback = %d, want 1", requestCount)
+		t.Fatalf("request count after callback = %v, want 1", requestCount)
 	}
 }
 
@@ -7690,7 +7690,7 @@ func TestRequestMessagesUsesExistingPropagationLink(t *testing.T) {
 		t.Fatalf("request data type = %T, want []any", requestedData)
 	}
 	if len(fields) != 2 {
-		t.Fatalf("request field count = %d, want 2", len(fields))
+		t.Fatalf("request field count = %v, want 2", len(fields))
 	}
 	if fields[0] != nil || fields[1] != nil {
 		t.Fatalf("request data = %#v, want [nil nil]", fields)
@@ -7760,7 +7760,7 @@ func TestPropagationSyncMessageListResponseRequestsWantedMessages(t *testing.T) 
 		t.Fatalf("request data type = %T, want []any", requestedData)
 	}
 	if len(fields) != 3 {
-		t.Fatalf("request field count = %d, want 3", len(fields))
+		t.Fatalf("request field count = %v, want 3", len(fields))
 	}
 	wants := mustListResponseEntries(t, fields[0])
 	haves := mustListResponseEntries(t, fields[1])
@@ -7864,7 +7864,7 @@ func TestPropagationSyncMessageListResponseSliceAliasesBehavePerSpecLists(t *tes
 				t.Fatalf("request data type = %T, want []any", requestedData)
 			}
 			if len(fields) != 3 {
-				t.Fatalf("request field count = %d, want 3", len(fields))
+				t.Fatalf("request field count = %v, want 3", len(fields))
 			}
 			if !reflect.DeepEqual(fields[0], tc.wantWants) {
 				t.Fatalf("wants = %#v, want %#v", fields[0], tc.wantWants)
@@ -7901,7 +7901,7 @@ func TestPropagationSyncMessageListResponseEmptyBytesTearsDown(t *testing.T) {
 	})
 
 	if teardownCount != 1 {
-		t.Fatalf("teardown count = %d, want 1", teardownCount)
+		t.Fatalf("teardown count = %v, want 1", teardownCount)
 	}
 }
 
@@ -7944,7 +7944,7 @@ func TestPropagationSyncMessageListResponseInvalidShapesTearDown(t *testing.T) {
 			})
 
 			if teardownCount != 1 {
-				t.Fatalf("teardown count = %d, want 1", teardownCount)
+				t.Fatalf("teardown count = %v, want 1", teardownCount)
 			}
 		})
 	}
@@ -7991,7 +7991,7 @@ func TestPropagationSyncMessageListResponseHashableOddEntriesRequestGet(t *testi
 				t.Fatalf("request data type = %T, want []any", requestedData)
 			}
 			if len(fields) != 3 {
-				t.Fatalf("request field count = %d, want 3", len(fields))
+				t.Fatalf("request field count = %v, want 3", len(fields))
 			}
 			wants := mustListResponseEntries(t, fields[0])
 			haves := mustListResponseEntries(t, fields[1])
@@ -8047,7 +8047,7 @@ func TestPropagationSyncMessageListResponseBytesAliasRequestsGet(t *testing.T) {
 				t.Fatalf("request data type = %T, want []any", requestedData)
 			}
 			if len(fields) != 3 {
-				t.Fatalf("request field count = %d, want 3", len(fields))
+				t.Fatalf("request field count = %v, want 3", len(fields))
 			}
 			wants := mustListResponseEntries(t, fields[0])
 			haves := mustListResponseEntries(t, fields[1])
@@ -8137,7 +8137,7 @@ func TestPropagationSyncMessageListResponseAllHavesRequestsPurge(t *testing.T) {
 		t.Fatalf("request data type = %T, want []any", requestedData)
 	}
 	if len(fields) != 3 {
-		t.Fatalf("request field count = %d, want 3", len(fields))
+		t.Fatalf("request field count = %v, want 3", len(fields))
 	}
 	wants := mustListResponseEntries(t, fields[0])
 	if len(wants) != 0 {
@@ -8171,7 +8171,7 @@ func TestPropagationSyncMessageListResponseNoIdentityTearsDown(t *testing.T) {
 	})
 
 	if teardownCount != 1 {
-		t.Fatalf("teardown count = %d, want 1", teardownCount)
+		t.Fatalf("teardown count = %v, want 1", teardownCount)
 	}
 	if router.PropagationTransferState() != PRNoIdentityRcvd {
 		t.Fatalf("state = %v, want PRNoIdentityRcvd", router.PropagationTransferState())
@@ -8200,7 +8200,7 @@ func TestPropagationSyncMessageListResponseNoAccessTearsDown(t *testing.T) {
 	})
 
 	if teardownCount != 1 {
-		t.Fatalf("teardown count = %d, want 1", teardownCount)
+		t.Fatalf("teardown count = %v, want 1", teardownCount)
 	}
 	if router.PropagationTransferState() != PRNoAccess {
 		t.Fatalf("state = %v, want PRNoAccess", router.PropagationTransferState())
@@ -8288,7 +8288,7 @@ func TestPropagationSyncMessageGetResponseTracksDuplicatesAndPurges(t *testing.T
 		t.Fatalf("request data type = %T, want []any", requestedData)
 	}
 	if len(fields) != 2 {
-		t.Fatalf("request field count = %d, want 2", len(fields))
+		t.Fatalf("request field count = %v, want 2", len(fields))
 	}
 	if fields[0] != nil {
 		t.Fatalf("purge wants field = %#v, want nil", fields[0])
@@ -8301,7 +8301,7 @@ func TestPropagationSyncMessageGetResponseTracksDuplicatesAndPurges(t *testing.T
 		t.Fatalf("purge haves = %x, want [%x %x]", haves, duplicateTransientID, freshTransientID)
 	}
 	if len(delivered) != 1 {
-		t.Fatalf("delivered count = %d, want 1", len(delivered))
+		t.Fatalf("delivered count = %v, want 1", len(delivered))
 	}
 	if !bytes.Equal(delivered[0].Packed, freshMsg.Packed) {
 		t.Fatalf("delivered packed = %x, want %x", delivered[0].Packed, freshMsg.Packed)
@@ -8756,7 +8756,7 @@ func TestPropagationSyncMessageGetResponseMixedListProcessesEarlierPayloadBefore
 			t.Fatalf("panic = %q, want %q", got, "Strings must be encoded before hashing")
 		}
 		if len(delivered) != 1 {
-			t.Fatalf("delivered count = %d, want 1", len(delivered))
+			t.Fatalf("delivered count = %v, want 1", len(delivered))
 		}
 		if _, ok := router.locallyProcessedIDs[string(freshTransientID)]; !ok {
 			t.Fatal("expected earlier valid payload to be marked processed before panic")
@@ -8837,7 +8837,7 @@ func TestPropagationSyncMessageGetResponseMixedListProcessesEarlierPayloadBefore
 					t.Fatalf("panic = %q, want %q", got, "object supporting the buffer API required")
 				}
 				if len(delivered) != 1 {
-					t.Fatalf("delivered count = %d, want 1", len(delivered))
+					t.Fatalf("delivered count = %v, want 1", len(delivered))
 				}
 				if _, ok := router.locallyProcessedIDs[string(freshTransientID)]; !ok {
 					t.Fatal("expected earlier valid payload to be marked processed before panic")
@@ -9443,7 +9443,7 @@ func TestPropagationSyncMessageGetResponseUint64ErrorCodesTearDown(t *testing.T)
 			})
 
 			if teardownCount != 1 {
-				t.Fatalf("teardown count = %d, want 1", teardownCount)
+				t.Fatalf("teardown count = %v, want 1", teardownCount)
 			}
 			if router.PropagationTransferState() != tc.wantState {
 				t.Fatalf("state = %v, want %v", router.PropagationTransferState(), tc.wantState)
@@ -9474,7 +9474,7 @@ func TestPropagationSyncMessageGetResponseNoIdentityTearsDown(t *testing.T) {
 	})
 
 	if teardownCount != 1 {
-		t.Fatalf("teardown count = %d, want 1", teardownCount)
+		t.Fatalf("teardown count = %v, want 1", teardownCount)
 	}
 	if router.PropagationTransferState() != PRNoIdentityRcvd {
 		t.Fatalf("state = %v, want PRNoIdentityRcvd", router.PropagationTransferState())
@@ -9503,7 +9503,7 @@ func TestPropagationSyncMessageGetResponseNoAccessTearsDown(t *testing.T) {
 	})
 
 	if teardownCount != 1 {
-		t.Fatalf("teardown count = %d, want 1", teardownCount)
+		t.Fatalf("teardown count = %v, want 1", teardownCount)
 	}
 	if router.PropagationTransferState() != PRNoAccess {
 		t.Fatalf("state = %v, want PRNoAccess", router.PropagationTransferState())
@@ -9949,7 +9949,7 @@ func TestPropagationSyncMessageGetFailedTearsDownIntoTransferFailed(t *testing.T
 	router.messageGetFailed(&rns.RequestReceipt{})
 
 	if teardownCount != 1 {
-		t.Fatalf("teardown count = %d, want 1", teardownCount)
+		t.Fatalf("teardown count = %v, want 1", teardownCount)
 	}
 	if router.PropagationTransferState() != PRTransferFailed {
 		t.Fatalf("state = %v, want PRTransferFailed", router.PropagationTransferState())
@@ -11623,7 +11623,7 @@ func TestRouterJobLoop(t *testing.T) {
 		if !testutils.PollUntil(2*time.Second, func() bool {
 			return tickCount.Load() >= 2
 		}) {
-			t.Fatalf("jobloop did not tick at least twice within 2s (count=%d)", tickCount.Load())
+			t.Fatalf("jobloop did not tick at least twice within 2s (count=%v)", tickCount.Load())
 		}
 
 		// Close should stop the jobloop goroutine cleanly.
@@ -11637,7 +11637,7 @@ func TestRouterJobLoop(t *testing.T) {
 		before := tickCount.Load()
 		time.Sleep(50 * time.Millisecond)
 		if got := tickCount.Load(); got != before {
-			t.Fatalf("jobloop ticked after Close: before=%d after=%d", before, got)
+			t.Fatalf("jobloop ticked after Close: before=%v after=%v", before, got)
 		}
 	})
 }
@@ -11735,7 +11735,7 @@ func TestRotatePeers(t *testing.T) {
 	after := len(router.peers)
 
 	if after >= before {
-		t.Fatalf("RotatePeers did not cull any peers: before=%d after=%d", before, after)
+		t.Fatalf("RotatePeers did not cull any peers: before=%v after=%v", before, after)
 	}
 	// Worst acceptance rate (0/100) should be gone.
 	if _, stillThere := router.peers[string(hashes[0])]; stillThere {
@@ -11921,7 +11921,7 @@ func TestValidateStampWithTicket(t *testing.T) {
 	ticket := ticketRaw[:rns.TruncatedHashLength/8]
 	// TruncatedHashLength/8 = 16 bytes
 	if len(ticket) != 16 {
-		t.Fatalf("ticket len = %d, want 16", len(ticket))
+		t.Fatalf("ticket len = %v, want 16", len(ticket))
 	}
 	material := append([]byte{}, ticket...)
 	material = append(material, msg.MessageID...)
@@ -12159,7 +12159,7 @@ func TestLXMFConstants(t *testing.T) {
 	}
 	for _, c := range checks {
 		if c.got != c.want {
-			t.Errorf("%s = 0x%x, want 0x%x", c.name, c.got, c.want)
+			t.Errorf("%v = 0x%x, want 0x%x", c.name, c.got, c.want)
 		}
 	}
 }
@@ -12242,7 +12242,7 @@ func TestRouterPropagationAllowDuplicate(t *testing.T) {
 	router.mu.Unlock()
 
 	if processedCount != 1 {
-		t.Fatalf("expected exactly 1 locallyProcessedIDs entry for transientID, got %d", processedCount)
+		t.Fatalf("expected exactly 1 locallyProcessedIDs entry for transientID, got %v", processedCount)
 	}
 }
 
@@ -12288,6 +12288,6 @@ func TestRouterIngestPropagationAllowDuplicate(t *testing.T) {
 	router.mu.Unlock()
 
 	if entryCount != 1 {
-		t.Fatalf("expected exactly 1 propagationEntries entry for transientID, got %d", entryCount)
+		t.Fatalf("expected exactly 1 propagationEntries entry for transientID, got %v", entryCount)
 	}
 }

@@ -69,7 +69,7 @@ func runWithOutput(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if opts.version {
-		_, _ = fmt.Fprintf(stdout, "gorngit %s\n", rns.VERSION)
+		_, _ = fmt.Fprintf(stdout, "gorngit %v\n", rns.VERSION)
 		return 0
 	}
 
@@ -136,12 +136,12 @@ func runNode(opts options, stdout, stderr io.Writer) int {
 			return 255
 		}
 		destHash := rns.CalculateHash(node.identity, appName, repoAspect)
-		_, _ = fmt.Fprintf(stdout, "Git Peer Identity         : %s\n", rns.PrettyHex(clientIdentity.Hash))
-		_, _ = fmt.Fprintf(stdout, "Repository Node Identity  : %s\n", rns.PrettyHex(node.identity.Hash))
-		_, _ = fmt.Fprintf(stdout, "Repositories Destination  : %s\n", rns.PrettyHex(destHash))
+		_, _ = fmt.Fprintf(stdout, "Git Peer Identity         : %v\n", rns.PrettyHex(clientIdentity.Hash))
+		_, _ = fmt.Fprintf(stdout, "Repository Node Identity  : %v\n", rns.PrettyHex(node.identity.Hash))
+		_, _ = fmt.Fprintf(stdout, "Repositories Destination  : %v\n", rns.PrettyHex(destHash))
 		if node.config.serveNomadnet {
 			nomadHash := rns.CalculateHash(node.identity, pageAppName, "node")
-			_, _ = fmt.Fprintf(stdout, "Nomad Network Destination : %s\n", rns.PrettyHex(nomadHash))
+			_, _ = fmt.Fprintf(stdout, "Nomad Network Destination : %v\n", rns.PrettyHex(nomadHash))
 		}
 		return 0
 	}

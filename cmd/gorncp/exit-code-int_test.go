@@ -41,10 +41,10 @@ func TestInvalidIdentityHashExitCode(t *testing.T) {
 			if exitErr, ok := err.(*exec.ExitError); ok {
 				got := exitErr.ExitCode()
 				if got != tt.wantExitCode {
-					t.Errorf("exit code = %d, want %d", got, tt.wantExitCode)
+					t.Errorf("exit code = %v, want %v", got, tt.wantExitCode)
 				}
 			} else {
-				t.Errorf("exit code = 0 (no error), want %d", tt.wantExitCode)
+				t.Errorf("exit code = 0 (no error), want %v", tt.wantExitCode)
 			}
 		})
 	}
@@ -96,17 +96,17 @@ func TestMalformedDestinationHashExitCode(t *testing.T) {
 			cmd.Env = append(os.Environ(), "HOME="+tmpDir)
 			out, err := cmd.CombinedOutput()
 			if err == nil {
-				t.Fatalf("expected malformed destination hash to fail, output: %s", string(out))
+				t.Fatalf("expected malformed destination hash to fail, output: %v", string(out))
 			}
 			exitErr, ok := err.(*exec.ExitError)
 			if !ok {
 				t.Fatalf("expected exit error, got %T: %v", err, err)
 			}
 			if got := exitErr.ExitCode(); got != 1 {
-				t.Fatalf("exit code = %d, want 1; output: %s", got, string(out))
+				t.Fatalf("exit code = %v, want 1; output: %v", got, string(out))
 			}
 			if !strings.Contains(string(out), tt.wantMsg) {
-				t.Fatalf("output does not contain %q: %s", tt.wantMsg, string(out))
+				t.Fatalf("output does not contain %q: %v", tt.wantMsg, string(out))
 			}
 		})
 	}
@@ -135,17 +135,17 @@ func TestMissingSendFileExitCode(t *testing.T) {
 	cmd.Env = append(os.Environ(), "HOME="+tmpDir)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatalf("expected missing send file to fail, output: %s", string(out))
+		t.Fatalf("expected missing send file to fail, output: %v", string(out))
 	}
 	exitErr, ok := err.(*exec.ExitError)
 	if !ok {
 		t.Fatalf("expected exit error, got %T: %v", err, err)
 	}
 	if got := exitErr.ExitCode(); got != 1 {
-		t.Fatalf("exit code = %d, want 1; output: %s", got, string(out))
+		t.Fatalf("exit code = %v, want 1; output: %v", got, string(out))
 	}
 	if !strings.Contains(string(out), "File not found") {
-		t.Fatalf("output does not contain %q: %s", "File not found", string(out))
+		t.Fatalf("output does not contain %q: %v", "File not found", string(out))
 	}
 }
 
@@ -163,7 +163,7 @@ func TestMainExitCodeHelper(t *testing.T) {
 	err := cmd.Run()
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		if got := exitErr.ExitCode(); got != 1 {
-			t.Errorf("invalid hash exit code = %d, want 1", got)
+			t.Errorf("invalid hash exit code = %v, want 1", got)
 		}
 	} else {
 		t.Error("expected exit error for invalid hash")
@@ -195,13 +195,13 @@ func TestCorruptIdentityFileExitCode(t *testing.T) {
 	out, err := cmd.CombinedOutput()
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		if got := exitErr.ExitCode(); got != 2 {
-			t.Errorf("corrupt identity exit code = %d, want 2", got)
+			t.Errorf("corrupt identity exit code = %v, want 2", got)
 		}
 	} else {
 		t.Error("expected exit error for corrupt identity")
 	}
 	if !strings.Contains(string(out), "may be corrupt or unreadable") {
-		t.Fatalf("output does not contain corrupt-identity message: %s", string(out))
+		t.Fatalf("output does not contain corrupt-identity message: %v", string(out))
 	}
 }
 
@@ -234,13 +234,13 @@ func TestOutputDirectoryNotFoundExitCode(t *testing.T) {
 	out, err := cmd.CombinedOutput()
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		if got := exitErr.ExitCode(); got != 3 {
-			t.Errorf("output directory not found exit code = %d, want 3", got)
+			t.Errorf("output directory not found exit code = %v, want 3", got)
 		}
 	} else {
 		t.Error("expected exit error for non-existent output directory")
 	}
 	if !strings.Contains(string(out), "Output directory not found") {
-		t.Fatalf("output does not contain output-directory message: %s", string(out))
+		t.Fatalf("output does not contain output-directory message: %v", string(out))
 	}
 }
 
@@ -278,12 +278,12 @@ func TestOutputDirectoryNotWritableExitCode(t *testing.T) {
 	out, err := cmd.CombinedOutput()
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		if got := exitErr.ExitCode(); got != 4 {
-			t.Errorf("output directory not writable exit code = %d, want 4", got)
+			t.Errorf("output directory not writable exit code = %v, want 4", got)
 		}
 	} else {
 		t.Error("expected exit error for non-writable output directory")
 	}
 	if !strings.Contains(string(out), "Output directory not writable") {
-		t.Fatalf("output does not contain output-directory message: %s", string(out))
+		t.Fatalf("output does not contain output-directory message: %v", string(out))
 	}
 }

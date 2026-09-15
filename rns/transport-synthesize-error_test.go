@@ -44,7 +44,7 @@ func TestSynthesizeTunnelLogsMissingIdentityAndKeepsRunning(t *testing.T) {
 	// registering an interface and querying it must work.
 	ts.RegisterInterface(&dummyInterface{name: "after"})
 	if got := len(ts.GetInterfaces()); got != 1 {
-		t.Fatalf("transport unusable after failed synthesis: GetInterfaces=%d, want 1", got)
+		t.Fatalf("transport unusable after failed synthesis: GetInterfaces=%v, want 1", got)
 	}
 }
 
@@ -71,7 +71,7 @@ func TestSynthesizeTunnelRecoversFromPanicAndKeepsRunning(t *testing.T) {
 	// The transport must still be usable after the recovered panic.
 	ts.RegisterInterface(&dummyInterface{name: "after"})
 	if got := len(ts.GetInterfaces()); got != 1 {
-		t.Fatalf("transport unusable after recovered panic: GetInterfaces=%d, want 1", got)
+		t.Fatalf("transport unusable after recovered panic: GetInterfaces=%v, want 1", got)
 	}
 }
 

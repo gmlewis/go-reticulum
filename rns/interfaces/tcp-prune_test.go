@@ -60,7 +60,7 @@ func TestTCPServerPrunesDeadSpawnedClient(t *testing.T) {
 	have := len(tsi.spawnedInterfaces)
 	tsi.mu.Unlock()
 	if have != 1 {
-		t.Fatalf("expected 1 spawned client before close, got %d", have)
+		t.Fatalf("expected 1 spawned client before close, got %v", have)
 	}
 
 	if err := conn.Close(); err != nil {
@@ -85,7 +85,7 @@ func TestTCPServerPrunesDeadSpawnedClient(t *testing.T) {
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf(
-				"dead spawned client not pruned after close: retained=%d live=%d",
+				"dead spawned client not pruned after close: retained=%v live=%v",
 				n, live)
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -128,7 +128,7 @@ func TestRemoveSpawnedIdempotent(t *testing.T) {
 	n := len(tsi.spawnedInterfaces)
 	tsi.mu.Unlock()
 	if n != 0 {
-		t.Fatalf("expected empty list after idempotent removals, got %d", n)
+		t.Fatalf("expected empty list after idempotent removals, got %v", n)
 	}
 }
 
@@ -197,7 +197,7 @@ func TestSpawnedOnRemoveFiresOnWireDrop(t *testing.T) {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("spawn list still holds %d entries after teardown", n)
+			t.Fatalf("spawn list still holds %v entries after teardown", n)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -216,7 +216,7 @@ func waitForSpawns(t *testing.T, timeout time.Duration, mu *sync.Mutex, counter 
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %d spawns, saw %d", want, got)
+			t.Fatalf("timed out waiting for %v spawns, saw %v", want, got)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

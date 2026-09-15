@@ -43,21 +43,21 @@ func TestTimeoutFlag(t *testing.T) {
 func TestCountFlag(t *testing.T) {
 	var c countFlag
 	if c.String() != "0" {
-		t.Errorf("expected 0, got %s", c.String())
+		t.Errorf("expected 0, got %v", c.String())
 	}
 
 	if err := c.Set("true"); err != nil {
 		t.Fatal(err)
 	}
 	if c.String() != "1" {
-		t.Errorf("expected 1, got %s", c.String())
+		t.Errorf("expected 1, got %v", c.String())
 	}
 
 	if err := c.Set("true"); err != nil {
 		t.Fatal(err)
 	}
 	if c.String() != "2" {
-		t.Errorf("expected 2, got %s", c.String())
+		t.Errorf("expected 2, got %v", c.String())
 	}
 }
 

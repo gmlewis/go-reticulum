@@ -213,7 +213,7 @@ func (n *reticulumGitNode) loadRepositoryGroup(groupName, groupPath string, logg
 		group.repositories[entry.Name()] = info
 		loaded++
 	}
-	logger.Verbose("Loaded %d repositories for group %q", loaded, groupName)
+	logger.Verbose("Loaded %v repositories for group %q", loaded, groupName)
 }
 
 // updateGroupPermissions clears and re-parses the group perm lists from
@@ -1454,7 +1454,7 @@ func gitFetchAll(repoPath, sourceURL string) error {
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("fetch from %s failed: %s: %w", sourceURL, strings.TrimSpace(stderr.String()), err)
+		return fmt.Errorf("fetch from %v failed: %v: %w", sourceURL, strings.TrimSpace(stderr.String()), err)
 	}
 	return nil
 }
@@ -1506,7 +1506,7 @@ func updateHeadToSourceDefault(repoPath, sourceURL string) error {
 	symCmd := exec.Command("git", "symbolic-ref", "HEAD", targetBranch)
 	symCmd.Dir = repoPath
 	if out, err := symCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to update HEAD to %s: %s: %w", targetBranch, strings.TrimSpace(string(out)), err)
+		return fmt.Errorf("failed to update HEAD to %v: %v: %w", targetBranch, strings.TrimSpace(string(out)), err)
 	}
 	return nil
 }

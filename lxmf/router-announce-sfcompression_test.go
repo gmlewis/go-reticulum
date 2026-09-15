@@ -41,7 +41,7 @@ func TestGetAnnounceAppDataIncludesSFCompression(t *testing.T) {
 	}
 	wantHex1 := "93c405416c696365649100"
 	if got := hexEncode(appData1); got != wantHex1 {
-		t.Fatalf("app data with stamp cost = %s, want %s", got, wantHex1)
+		t.Fatalf("app data with stamp cost = %v, want %v", got, wantHex1)
 	}
 
 	// Without a stamp cost: [b"Bob", None, [0]]. A separate router is used
@@ -63,7 +63,7 @@ func TestGetAnnounceAppDataIncludesSFCompression(t *testing.T) {
 	}
 	wantHex2 := "93c403426f62c09100"
 	if got := hexEncode(appData2); got != wantHex2 {
-		t.Fatalf("app data without stamp cost = %s, want %s", got, wantHex2)
+		t.Fatalf("app data without stamp cost = %v, want %v", got, wantHex2)
 	}
 
 	// The third element unpacks to a functionality list containing

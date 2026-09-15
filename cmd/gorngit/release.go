@@ -465,7 +465,7 @@ func (n *reticulumGitNode) releaseCreateInit(releasesPath, repositoryPath string
 	check.Stdout = nil
 	check.Stderr = nil
 	if check.Run() != nil {
-		return fmt.Appendf([]byte{resInvalidReq}, "Tag '%s' does not exist in repository", tag)
+		return fmt.Appendf([]byte{resInvalidReq}, "Tag '%v' does not exist in repository", tag)
 	}
 
 	if err := os.MkdirAll(releasesPath, 0o755); err != nil {

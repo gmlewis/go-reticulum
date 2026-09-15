@@ -632,10 +632,10 @@ func TestRPCInterfaceStatsIncludesGravity(t *testing.T) {
 	// Decode path: InterfaceStat.Gravity must be populated from the map.
 	snap := DecodeInterfaceStats(stats)
 	if len(snap.Interfaces) != 1 {
-		t.Fatalf("decoded snapshot has %d interfaces, want 1", len(snap.Interfaces))
+		t.Fatalf("decoded snapshot has %v interfaces, want 1", len(snap.Interfaces))
 	}
 	if got := snap.Interfaces[0].Gravity; got != wantGravity {
-		t.Fatalf("InterfaceStat.Gravity = %d, want %d", got, wantGravity)
+		t.Fatalf("InterfaceStat.Gravity = %v, want %v", got, wantGravity)
 	}
 }
 
@@ -960,7 +960,7 @@ func TestRPCInterfaceStatsPopulatesFreqAndBurstFields(t *testing.T) {
 	// DecodeInterfaceStats surfaces the new fields on InterfaceStat.
 	snap := DecodeInterfaceStats(stats)
 	if len(snap.Interfaces) != 1 {
-		t.Fatalf("decoded %d interfaces, want 1", len(snap.Interfaces))
+		t.Fatalf("decoded %v interfaces, want 1", len(snap.Interfaces))
 	}
 	di := snap.Interfaces[0]
 	if di.InPrFreq == nil || *di.InPrFreq <= 0 {

@@ -88,7 +88,7 @@ func (s *Store) Set(key string, value []byte) error {
 		return err
 	}
 	if used+int64(len(value)) > s.quota {
-		return fmt.Errorf("plugin store quota exceeded: %d + %d bytes > %d bytes", used, len(value), s.quota)
+		return fmt.Errorf("plugin store quota exceeded: %v + %v bytes > %v bytes", used, len(value), s.quota)
 	}
 	if err := os.WriteFile(filepath.Join(s.dir, key), value, 0o600); err != nil {
 		return fmt.Errorf("plugin store write %q: %w", key, err)

@@ -34,7 +34,7 @@ func TestBlackholeUpdaterConstants(t *testing.T) {
 	}
 	for _, tc := range cases {
 		if tc.got != tc.want {
-			t.Fatalf("%s = %v, want %v", tc.name, tc.got, tc.want)
+			t.Fatalf("%v = %v, want %v", tc.name, tc.got, tc.want)
 		}
 	}
 }
@@ -118,13 +118,13 @@ func TestBlackholeUpdaterGolden(t *testing.T) {
 
 	// First pass: both sources fetched, new entries merged.
 	if got := updater.runJobPass(t0); got != 2 {
-		t.Fatalf("first pass added %d, want 2 (ih2 + ih3; ih1 already present)", got)
+		t.Fatalf("first pass added %v, want 2 (ih2 + ih3; ih1 already present)", got)
 	}
 	if got, want := fake.callCount(srcA), 1; got != want {
-		t.Fatalf("srcA call count after first pass = %d, want %d", got, want)
+		t.Fatalf("srcA call count after first pass = %v, want %v", got, want)
 	}
 	if got, want := fake.callCount(srcB), 1; got != want {
-		t.Fatalf("srcB call count after first pass = %d, want %d", got, want)
+		t.Fatalf("srcB call count after first pass = %v, want %v", got, want)
 	}
 
 	// ih1 must remain the preseeded own-sourced entry (not overwritten).
@@ -150,26 +150,26 @@ func TestBlackholeUpdaterGolden(t *testing.T) {
 
 	// Second pass one JOB_INTERVAL later: within UPDATE_INTERVAL, no fetch.
 	if got := updater.runJobPass(t0.Add(BlackholeJobInterval)); got != 0 {
-		t.Fatalf("second pass added %d, want 0 (within UPDATE_INTERVAL)", got)
+		t.Fatalf("second pass added %v, want 0 (within UPDATE_INTERVAL)", got)
 	}
 	if got, want := fake.callCount(srcA), 1; got != want {
-		t.Fatalf("srcA refetched within UPDATE_INTERVAL: call count = %d, want %d", got, want)
+		t.Fatalf("srcA refetched within UPDATE_INTERVAL: call count = %v, want %v", got, want)
 	}
 	if got, want := fake.callCount(srcB), 1; got != want {
-		t.Fatalf("srcB refetched within UPDATE_INTERVAL: call count = %d, want %d", got, want)
+		t.Fatalf("srcB refetched within UPDATE_INTERVAL: call count = %v, want %v", got, want)
 	}
 
 	// Third pass just past UPDATE_INTERVAL: both sources refetched. The
 	// lists are unchanged so no new entries are merged (added == 0), but
 	// the fetch still happens (call counts advance).
 	if got := updater.runJobPass(t0.Add(BlackholeUpdateInterval + 1)); got != 0 {
-		t.Fatalf("third pass added %d, want 0 (entries already present)", got)
+		t.Fatalf("third pass added %v, want 0 (entries already present)", got)
 	}
 	if got, want := fake.callCount(srcA), 2; got != want {
-		t.Fatalf("srcA call count after UPDATE_INTERVAL = %d, want %d", got, want)
+		t.Fatalf("srcA call count after UPDATE_INTERVAL = %v, want %v", got, want)
 	}
 	if got, want := fake.callCount(srcB), 2; got != want {
-		t.Fatalf("srcB call count after UPDATE_INTERVAL = %d, want %d", got, want)
+		t.Fatalf("srcB call count after UPDATE_INTERVAL = %v, want %v", got, want)
 	}
 }
 
@@ -191,7 +191,7 @@ func assertPersistedSourceList(t *testing.T, blackholePath string, source []byte
 		t.Fatalf("persisted source list for %x type %T, want map", source, obj)
 	}
 	if got, want := len(m), len(list); got != want {
-		t.Fatalf("persisted source list for %x has %d entries, want %d", source, got, want)
+		t.Fatalf("persisted source list for %x has %v entries, want %v", source, got, want)
 	}
 	for _, e := range list {
 		var until any
@@ -238,7 +238,7 @@ func TestBlackholeUpdaterStartStop(t *testing.T) {
 		}
 		select {
 		case <-deadline:
-			t.Fatalf("updater loop never fetched; calls=%d", calls.Load())
+			t.Fatalf("updater loop never fetched; calls=%v", calls.Load())
 		default:
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -250,7 +250,7 @@ func TestBlackholeUpdaterStartStop(t *testing.T) {
 	callsAtStop := calls.Load()
 	time.Sleep(80 * time.Millisecond)
 	if got := calls.Load(); got != callsAtStop {
-		t.Fatalf("updater fetched after Stop: calls went %d -> %d", callsAtStop, got)
+		t.Fatalf("updater fetched after Stop: calls went %v -> %v", callsAtStop, got)
 	}
 }
 
@@ -282,23 +282,23 @@ func TestBlackholeUpdaterSetUpdateInterval(t *testing.T) {
 
 	t0 := time.Unix(1_800_000_000, 0)
 	if got := updater.runJobPass(t0); got != 1 {
-		t.Fatalf("first pass added %d, want 1", got)
+		t.Fatalf("first pass added %v, want 1", got)
 	}
 	if got := calls.Load(); got != 1 {
-		t.Fatalf("after first pass calls = %d, want 1", got)
+		t.Fatalf("after first pass calls = %v, want 1", got)
 	}
 	// 90s later: within the 2-minute interval → no refetch.
 	if got := updater.runJobPass(t0.Add(90 * time.Second)); got != 0 {
-		t.Fatalf("within-interval pass added %d, want 0", got)
+		t.Fatalf("within-interval pass added %v, want 0", got)
 	}
 	if got := calls.Load(); got != 1 {
-		t.Fatalf("within-interval refetched: calls = %d, want 1", got)
+		t.Fatalf("within-interval refetched: calls = %v, want 1", got)
 	}
 	// 121s later: past the 2-minute interval → refetch (entries unchanged → 0 added).
 	if got := updater.runJobPass(t0.Add(121 * time.Second)); got != 0 {
-		t.Fatalf("past-interval pass added %d, want 0 (entries already present)", got)
+		t.Fatalf("past-interval pass added %v, want 0 (entries already present)", got)
 	}
 	if got := calls.Load(); got != 2 {
-		t.Fatalf("past-interval did not refetch: calls = %d, want 2", got)
+		t.Fatalf("past-interval did not refetch: calls = %v, want 2", got)
 	}
 }

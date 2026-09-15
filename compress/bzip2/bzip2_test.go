@@ -85,7 +85,7 @@ func TestRoundTrip(t *testing.T) {
 			}
 			n, err := io.Copy(wr, bytes.NewReader(v.data))
 			if n != int64(len(v.data)) || err != nil {
-				t.Errorf("Copy() = (%d, %v), want (%d, nil)", n, err, len(v.data))
+				t.Errorf("Copy() = (%v, %v), want (%v, nil)", n, err, len(v.data))
 			}
 			if err := wr.Close(); err != nil {
 				t.Errorf("Close() = %v, want nil", err)
@@ -105,7 +105,7 @@ func TestRoundTrip(t *testing.T) {
 					t.Errorf("unexpected cmdDecompress error: %v", err)
 				}
 				if got, want, ok := testutil.BytesCompare(zd, v.data); !ok {
-					t.Errorf("output data mismatch:\ngot  %s\nwant %s", got, want)
+					t.Errorf("output data mismatch:\ngot  %v\nwant %v", got, want)
 				}
 				zc, err := cmdCompress(v.data)
 				if err != nil {
@@ -126,13 +126,13 @@ func TestRoundTrip(t *testing.T) {
 			}
 			n, err = io.Copy(&buf2, rd)
 			if n != int64(len(v.data)) || err != nil {
-				t.Errorf("Copy() = (%d, %v), want (%d, nil)", n, err, len(v.data))
+				t.Errorf("Copy() = (%v, %v), want (%v, nil)", n, err, len(v.data))
 			}
 			if err := rd.Close(); err != nil {
 				t.Errorf("Close() = %v, want nil", err)
 			}
 			if got, want, ok := testutil.BytesCompare(buf2.Bytes(), v.data); !ok {
-				t.Errorf("output data mismatch:\ngot  %s\nwant %s", got, want)
+				t.Errorf("output data mismatch:\ngot  %v\nwant %v", got, want)
 			}
 		})
 	}

@@ -584,7 +584,7 @@ func TestLinkResourceManagement(t *testing.T) {
 	outCount = len(link.outgoingResources)
 	link.mu.Unlock()
 	if outCount != 0 {
-		t.Fatalf("outgoing resource count = %d, want 0 after cancel", outCount)
+		t.Fatalf("outgoing resource count = %v, want 0 after cancel", outCount)
 	}
 
 	// ReadyForNewResource reflects the absence of any outgoing resources.

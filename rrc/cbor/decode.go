@@ -179,7 +179,7 @@ func (p *parser) take(n int) ([]byte, error) {
 
 func (p *parser) value(depth int) (any, error) {
 	if depth > maxDecodeDepth {
-		return nil, fmt.Errorf("cbor: nesting too deep (limit %d)", maxDecodeDepth)
+		return nil, fmt.Errorf("cbor: nesting too deep (limit %v)", maxDecodeDepth)
 	}
 	b, err := p.byteAt()
 	if err != nil {
@@ -236,7 +236,7 @@ func (p *parser) value(depth int) (any, error) {
 	case 7:
 		return p.simpleOf(info)
 	}
-	return nil, fmt.Errorf("cbor: unsupported major type %d", major)
+	return nil, fmt.Errorf("cbor: unsupported major type %v", major)
 }
 
 // argOfDirect reads a definite head argument without consuming anything for
@@ -277,7 +277,7 @@ func (p *parser) argOfDirect(info byte) (uint64, error) {
 	case info == 31:
 		return 0, errIndefinite
 	default:
-		return 0, fmt.Errorf("cbor: reserved additional info %d", info)
+		return 0, fmt.Errorf("cbor: reserved additional info %v", info)
 	}
 }
 
@@ -443,13 +443,13 @@ func (p *parser) simpleOf(info byte) (any, error) {
 	case info == 22:
 		return nil, nil
 	case info <= 23:
-		return nil, fmt.Errorf("cbor: unassigned simple value %d", info)
+		return nil, fmt.Errorf("cbor: unassigned simple value %v", info)
 	case info == 24:
 		v, err := p.take(1)
 		if err != nil {
 			return nil, err
 		}
-		return nil, fmt.Errorf("cbor: unassigned simple value %d", v[0])
+		return nil, fmt.Errorf("cbor: unassigned simple value %v", v[0])
 	case info == 25:
 		b, err := p.take(2)
 		if err != nil {
@@ -479,7 +479,7 @@ func (p *parser) simpleOf(info byte) (any, error) {
 		// message. Report it as malformed input.
 		return nil, fmt.Errorf("cbor: unexpected break code")
 	default:
-		return nil, fmt.Errorf("cbor: unsupported float/simple form %d", info)
+		return nil, fmt.Errorf("cbor: unsupported float/simple form %v", info)
 	}
 }
 

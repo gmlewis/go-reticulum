@@ -18,7 +18,7 @@ import (
 
 func main() {
 	if len(os.Args) != 3 {
-		log.Fatalf("Usage: %s GO_TYPE OUTPUT_FILE", os.Args[0])
+		log.Fatalf("Usage: %v GO_TYPE OUTPUT_FILE", os.Args[0])
 	}
 	typ := os.Args[1]
 	path := os.Args[2]

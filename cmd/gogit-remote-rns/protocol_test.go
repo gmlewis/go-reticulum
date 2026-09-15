@@ -180,7 +180,7 @@ func TestFetchBatch(t *testing.T) {
 	}
 	for i, r := range b.fetchRefs {
 		if r != wantRefs[i] {
-			t.Errorf("fetch refs[%d] = %v, want %v", i, r, wantRefs[i])
+			t.Errorf("fetch refs[%v] = %v, want %v", i, r, wantRefs[i])
 		}
 	}
 	// Output ends with the batch terminator blank line.

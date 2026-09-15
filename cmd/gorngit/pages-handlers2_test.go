@@ -67,7 +67,7 @@ func seedWorkDoc(t *testing.T, repoPath, scope string, id int, title, content st
 		},
 	}
 	if !workSaveDocument(rootPath, doc) {
-		t.Fatalf("seedWorkDoc: could not save %s", rootPath)
+		t.Fatalf("seedWorkDoc: could not save %v", rootPath)
 	}
 	return docDir
 }
@@ -83,7 +83,7 @@ func seedWorkComment(t *testing.T, docDir string, id int, content string) {
 		},
 	}
 	if !workSaveDocument(commentPath, doc) {
-		t.Fatalf("seedWorkComment: could not save %s", commentPath)
+		t.Fatalf("seedWorkComment: could not save %v", commentPath)
 	}
 }
 
@@ -407,16 +407,16 @@ func TestRepositoryThanks(t *testing.T) {
 	t.Parallel()
 	pn, repoPath, _ := newHandlerNode(t)
 	if c := pn.repositoryThanks(repoPath, false, nil); c != 0 {
-		t.Errorf("initial thanks (no add) = %d, want 0", c)
+		t.Errorf("initial thanks (no add) = %v, want 0", c)
 	}
 	if c := pn.repositoryThanks(repoPath, true, []byte("a")); c != 1 {
-		t.Errorf("first add = %d, want 1", c)
+		t.Errorf("first add = %v, want 1", c)
 	}
 	if c := pn.repositoryThanks(repoPath, true, []byte("a")); c != 1 {
-		t.Errorf("duplicate add = %d, want 1 (dedup)", c)
+		t.Errorf("duplicate add = %v, want 1 (dedup)", c)
 	}
 	if c := pn.repositoryThanks(repoPath, true, []byte("b")); c != 2 {
-		t.Errorf("second distinct add = %d, want 2", c)
+		t.Errorf("second distinct add = %v, want 2", c)
 	}
 }
 
@@ -426,10 +426,10 @@ func TestReleaseThanks(t *testing.T) {
 	releasesPath := repoPath + ".releases"
 	releaseDir := buildReleaseDir(t, releasesPath, "v1.0", "published", "1700000000", nil)
 	if c := pn.releaseThanks(releaseDir, true, []byte("a")); c != 1 {
-		t.Errorf("first release thanks = %d, want 1", c)
+		t.Errorf("first release thanks = %v, want 1", c)
 	}
 	if c := pn.releaseThanks(releaseDir, true, []byte("a")); c != 1 {
-		t.Errorf("duplicate release thanks = %d, want 1", c)
+		t.Errorf("duplicate release thanks = %v, want 1", c)
 	}
 }
 
@@ -438,13 +438,13 @@ func TestLastUpstreamSync(t *testing.T) {
 	pn, repoPath, _ := newHandlerNode(t)
 	owner := pn.owner
 	if c := owner.lastUpstreamSync(repoPath); c != 0 {
-		t.Errorf("unset lastUpstreamSync = %d, want 0", c)
+		t.Errorf("unset lastUpstreamSync = %v, want 0", c)
 	}
 	if _, ok := gitRun(repoPath, "config", "repository.rngit.upstream.sync", "1234567890"); !ok {
 		t.Fatal("could not set upstream sync")
 	}
 	if c := owner.lastUpstreamSync(repoPath); c != 1234567890 {
-		t.Errorf("lastUpstreamSync = %d, want 1234567890", c)
+		t.Errorf("lastUpstreamSync = %v, want 1234567890", c)
 	}
 }
 

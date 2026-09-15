@@ -1955,7 +1955,7 @@ func TestReticulumAutoconnectInterfaceModeTable(t *testing.T) {
 			defer closeReticulum(t, r)
 			got := r.AutoconnectInterfaceMode()
 			if got == nil || *got != tc.want {
-				t.Fatalf("AutoconnectInterfaceMode(%q) = %v, want &%d", tc.mode, got, tc.want)
+				t.Fatalf("AutoconnectInterfaceMode(%q) = %v, want &%v", tc.mode, got, tc.want)
 			}
 		})
 	}

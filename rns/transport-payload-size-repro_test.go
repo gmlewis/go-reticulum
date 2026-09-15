@@ -170,7 +170,7 @@ func TestSharedInstanceHubToClientPayloadSizes(t *testing.T) {
 		select {
 		case got := <-rxOnR:
 			if !bytes.Equal(got, payload) {
-				t.Fatalf("hub->client data mismatch size=%v: got %d bytes, want %d", size, len(got), size)
+				t.Fatalf("hub->client data mismatch size=%v: got %v bytes, want %v", size, len(got), size)
 			}
 		case <-time.After(10 * time.Second):
 			t.Fatalf("the client never received the hub's %v-byte payload through the shared instance", size)
@@ -198,7 +198,7 @@ func TestSharedInstanceHubToClientPayloadSizes(t *testing.T) {
 		select {
 		case got := <-rxOnC:
 			if !bytes.Equal(got, payload) {
-				t.Fatalf("client->hub data mismatch size=%v: got %d bytes, want %d", size, len(got), size)
+				t.Fatalf("client->hub data mismatch size=%v: got %v bytes, want %v", size, len(got), size)
 			}
 		case <-time.After(10 * time.Second):
 			t.Fatalf("the hub never received the client's %v-byte payload through the shared instance", size)

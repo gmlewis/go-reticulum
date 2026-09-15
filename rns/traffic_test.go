@@ -192,7 +192,7 @@ func TestInterfaceStatsSpeeds(t *testing.T) {
 
 	entries := stats["interfaces"].([]any)
 	if len(entries) != 1 {
-		t.Fatalf("expected 1 interface entry, got %d", len(entries))
+		t.Fatalf("expected 1 interface entry, got %v", len(entries))
 	}
 	entry := entries[0].(map[string]any)
 	if got := entry["rxs"]; got != wantRXS {

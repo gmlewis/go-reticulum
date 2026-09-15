@@ -170,7 +170,7 @@ func TestRouterCloseTeardownGolden(t *testing.T) {
 	}
 	for i, l := range deliveryLinks {
 		if l.GetStatus() != rns.LinkClosed {
-			t.Fatalf("delivery link %d status=%v want LinkClosed", i, l.GetStatus())
+			t.Fatalf("delivery link %v status=%v want LinkClosed", i, l.GetStatus())
 		}
 	}
 
@@ -206,7 +206,7 @@ func TestRouterCloseTeardownGolden(t *testing.T) {
 	router.mu.Unlock()
 	for i, l := range propLinks {
 		if l.GetStatus() != rns.LinkClosed {
-			t.Fatalf("propagation link %d status=%v want LinkClosed", i, l.GetStatus())
+			t.Fatalf("propagation link %v status=%v want LinkClosed", i, l.GetStatus())
 		}
 	}
 }

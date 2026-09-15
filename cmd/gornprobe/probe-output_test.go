@@ -169,11 +169,11 @@ print(json.dumps(out))
 	}
 
 	for _, p := range pairs {
-		key := fmt.Sprintf("%d,%d", p[0], p[1])
+		key := fmt.Sprintf("%v,%v", p[0], p[1])
 		gotText, _ := formatProbeLossSummary(p[0], p[1])
 		want := pyWant[key]
 		if gotText != want {
-			t.Errorf("formatProbeLossSummary(%d,%d) = %q, want Python %q", p[0], p[1], gotText, want)
+			t.Errorf("formatProbeLossSummary(%v,%v) = %q, want Python %q", p[0], p[1], gotText, want)
 		}
 	}
 }

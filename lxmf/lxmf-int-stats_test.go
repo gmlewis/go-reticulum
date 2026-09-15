@@ -105,9 +105,9 @@ func TestIntegrationCompileStatsShapePythonToGo(t *testing.T) {
 	pyPeers, _ := pyStats["peers"].(map[any]any)
 	goPeers, _ := goStats["peers"].(map[any]any)
 	if len(pyPeers) != len(goPeers) {
-		t.Fatalf("peers count: python=%d go=%d", len(pyPeers), len(goPeers))
+		t.Fatalf("peers count: python=%v go=%v", len(pyPeers), len(goPeers))
 	}
-	t.Logf("Go compile_stats shape matches Python across %d top-level keys", len(pyStats))
+	t.Logf("Go compile_stats shape matches Python across %v top-level keys", len(pyStats))
 }
 
 // shapeSubset walks want and reports every key/type that is missing or
@@ -127,7 +127,7 @@ func shapeSubset(path string, want, got map[any]any) string {
 		keyPath := path + "." + fmt.Sprint(k)
 		gv, present := got[k]
 		if !present {
-			mismatches += fmt.Sprintf("  %s: missing in Go\n", keyPath)
+			mismatches += fmt.Sprintf("  %v: missing in Go\n", keyPath)
 			continue
 		}
 		if wMap, ok := wv.(map[any]any); ok {
@@ -135,11 +135,11 @@ func shapeSubset(path string, want, got map[any]any) string {
 				mismatches += shapeSubset(keyPath, wMap, gMap)
 				continue
 			}
-			mismatches += fmt.Sprintf("  %s: Go type %T is not a map (Python is map)\n", keyPath, gv)
+			mismatches += fmt.Sprintf("  %v: Go type %T is not a map (Python is map)\n", keyPath, gv)
 			continue
 		}
 		if reflect.TypeOf(wv) != reflect.TypeOf(gv) {
-			mismatches += fmt.Sprintf("  %s: type mismatch python=%T go=%T\n", keyPath, wv, gv)
+			mismatches += fmt.Sprintf("  %v: type mismatch python=%T go=%T\n", keyPath, wv, gv)
 		}
 	}
 	return mismatches

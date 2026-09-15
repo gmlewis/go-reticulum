@@ -66,7 +66,7 @@ func TestLoggerLogNeverBlocksOnFileIO(t *testing.T) {
 	// must drop. The +8 covers the race where the writer has not yet dequeued
 	// the first Notice.
 	for i := range LogQueueDepth + 8 {
-		logger.Debug("fill line %d", i)
+		logger.Debug("fill line %v", i)
 	}
 	base := logger.DroppedCount()
 	if base == 0 {
@@ -78,7 +78,7 @@ func TestLoggerLogNeverBlocksOnFileIO(t *testing.T) {
 	// exactly one — no silent loss, no waiting on the stuck writer.
 	const postFull = 64
 	for i := range postFull {
-		logger.Debug("post-full line %d", i)
+		logger.Debug("post-full line %v", i)
 	}
 	if got, want := logger.DroppedCount(), base+postFull; got != want {
 		t.Fatalf("DroppedCount = %v, want %v (each post-full call must drop, not block)", got, want)

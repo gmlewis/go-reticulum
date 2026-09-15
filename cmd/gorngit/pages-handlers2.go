@@ -296,18 +296,18 @@ func (p *pageNode) serveRepoPage(path string, data any, requestID, linkID []byte
 		mLinkR(p.icon("folder")+" Files", pagePathTree, []linkField{{"g", groupName}, {"r", repoName}, {"ref", "HEAD"}})+" "+sep+" ")
 	if releasesCount > 0 {
 		contentParts = append(contentParts,
-			mLinkR(p.icon("package")+fmt.Sprintf(" Releases (%d)", releasesCount), pagePathReleases, []linkField{{"g", groupName}, {"r", repoName}})+" "+sep+" ")
+			mLinkR(p.icon("package")+fmt.Sprintf(" Releases (%v)", releasesCount), pagePathReleases, []linkField{{"g", groupName}, {"r", repoName}})+" "+sep+" ")
 	}
 	contentParts = append(contentParts,
-		mLinkR(p.icon("work")+fmt.Sprintf(" Work (%d)", workCount), pagePathWork, []linkField{{"g", groupName}, {"r", repoName}})+" "+sep+" ")
+		mLinkR(p.icon("work")+fmt.Sprintf(" Work (%v)", workCount), pagePathWork, []linkField{{"g", groupName}, {"r", repoName}})+" "+sep+" ")
 	contentParts = append(contentParts,
-		mLinkR(p.icon("commits")+fmt.Sprintf(" Commits (%d)", commitsCount), pagePathCommits, []linkField{{"g", groupName}, {"r", repoName}, {"ref", "HEAD"}})+" "+sep+" ")
+		mLinkR(p.icon("commits")+fmt.Sprintf(" Commits (%v)", commitsCount), pagePathCommits, []linkField{{"g", groupName}, {"r", repoName}, {"ref", "HEAD"}})+" "+sep+" ")
 	contentParts = append(contentParts,
-		mLinkR(p.icon("branch")+fmt.Sprintf(" Branches (%d)", branchCount), pagePathRefs, []linkField{{"g", groupName}, {"r", repoName}, {"type", "heads"}})+" "+sep+" ")
+		mLinkR(p.icon("branch")+fmt.Sprintf(" Branches (%v)", branchCount), pagePathRefs, []linkField{{"g", groupName}, {"r", repoName}, {"type", "heads"}})+" "+sep+" ")
 	contentParts = append(contentParts,
-		mLinkR(p.icon("tag")+fmt.Sprintf(" Tags (%d)", tagCount), pagePathRefs, []linkField{{"g", groupName}, {"r", repoName}, {"type", "tags"}})+" "+sep+" ")
+		mLinkR(p.icon("tag")+fmt.Sprintf(" Tags (%v)", tagCount), pagePathRefs, []linkField{{"g", groupName}, {"r", repoName}, {"type", "tags"}})+" "+sep+" ")
 	contentParts = append(contentParts,
-		mLinkR(p.icon("heart")+fmt.Sprintf(" Thanks (%d)", thanksCount), pagePathRepo, []linkField{{"g", groupName}, {"r", repoName}, {"thanks", "y"}}))
+		mLinkR(p.icon("heart")+fmt.Sprintf(" Thanks (%v)", thanksCount), pagePathRepo, []linkField{{"g", groupName}, {"r", repoName}, {"thanks", "y"}}))
 	if p.resolvePermission(remoteIdentity, groupName, repoName, permStats) {
 		contentParts = append(contentParts, " "+sep+" "+
 			mLinkR(p.icon("stats")+" Stats", pagePathStats, []linkField{{"g", groupName}, {"r", repoName}}))
@@ -321,7 +321,7 @@ func (p *pageNode) serveRepoPage(path string, data any, requestID, linkID []byte
 			contentParts = append(contentParts, mDivider())
 		}
 		if readmeIsMarkdown {
-			urlScope := fmt.Sprintf(":/page/blob.mu`g=%s|r=%s|ref=%s|path=", groupName, repoName, ref)
+			urlScope := fmt.Sprintf(":/page/blob.mu`g=%v|r=%v|ref=%v|path=", groupName, repoName, ref)
 			mdc := micron.NewConverter(micron.WithMaxWidth(maxRenderWidth), micron.WithHighlighter(p.highlighter), micron.WithURLScope(urlScope))
 			contentParts = append(contentParts, mdc.FormatBlock(readmeContent))
 		} else {
@@ -440,12 +440,12 @@ func (p *pageNode) serveStatsPage(path string, data any, requestID, linkID []byt
 	dTotal, dPeak, dTday := seriesTotal(downloads), seriesPeak(downloads), seriesToday(downloads)
 
 	contentParts = append(contentParts,
-		fmt.Sprintf("\n`FT%sFetches`f   : %5d  total %s  today: %3d  peak: %3d \n`f", rclrFetch, fTotal, clrDim, fTday, fPeak),
-		fmt.Sprintf("`FT%sPushes`f    : %5d  total %s  today: %3d  peak: %3d \n`f", rclrPush, pTotal, clrDim, pTday, pPeak),
-		fmt.Sprintf("`FT%sViews`f     : %5d  total %s  today: %3d  peak: %3d `f\n", rclrView, vTotal, clrDim, vTday, vPeak),
-		fmt.Sprintf("`FT%sDownloads`f : %5d  total %s  today: %3d  peak: %3d `f\n", rclrDownload, dTotal, clrDim, dTday, dPeak),
+		fmt.Sprintf("\n`FT%vFetches`f   : %5d  total %v  today: %3d  peak: %3d \n`f", rclrFetch, fTotal, clrDim, fTday, fPeak),
+		fmt.Sprintf("`FT%vPushes`f    : %5d  total %v  today: %3d  peak: %3d \n`f", rclrPush, pTotal, clrDim, pTday, pPeak),
+		fmt.Sprintf("`FT%vViews`f     : %5d  total %v  today: %3d  peak: %3d `f\n", rclrView, vTotal, clrDim, vTday, vPeak),
+		fmt.Sprintf("`FT%vDownloads`f : %5d  total %v  today: %3d  peak: %3d `f\n", rclrDownload, dTotal, clrDim, dTday, dPeak),
 		fmt.Sprintf("`F0aaActivity`f  : %5d points\n\n", toInt(stats["activity_score"])),
-		fmt.Sprintf("%s%s`f over the last %d days (%s)\n\n", actColor, actLabel, toInt(stats["actual_days"]), fmt.Sprint(stats["date_range"])),
+		fmt.Sprintf("%v%v`f over the last %v days (%v)\n\n", actColor, actLabel, toInt(stats["actual_days"]), fmt.Sprint(stats["date_range"])),
 	)
 
 	timelineLabels := statsTimelineLabels(stats)
@@ -515,7 +515,7 @@ func (p *pageNode) serveReleasesPage(path string, data any, requestID, linkID []
 		}
 	}
 
-	contentParts := []string{mHeading(fmt.Sprintf("Releases (%d)", len(published)), 2), "\n"}
+	contentParts := []string{mHeading(fmt.Sprintf("Releases (%v)", len(published)), 2), "\n"}
 	sep := p.icon("sep")
 	for _, rel := range published {
 		tag, _ := rel["tag"].(string)
@@ -544,8 +544,8 @@ func (p *pageNode) serveReleasesPage(path string, data any, requestID, linkID []
 		if artifacts == 1 {
 			noun = "artifact"
 		}
-		artifactsStr := fmt.Sprintf("`*%d %s`*", artifacts, noun)
-		contentParts = append(contentParts, fmt.Sprintf("%s %s%s %s %s%s`f\n", link, clrDim, dateStr, sep, artifactsStr, latestStr))
+		artifactsStr := fmt.Sprintf("`*%v %v`*", artifacts, noun)
+		contentParts = append(contentParts, fmt.Sprintf("%v %v%v %v %v%v`f\n", link, clrDim, dateStr, sep, artifactsStr, latestStr))
 		if preview != "" {
 			switch relFormat {
 			case "markdown":
@@ -628,7 +628,7 @@ func (p *pageNode) serveReleasePage(path string, data any, requestID, linkID []b
 	thanks := vbool(vars, "thanks")
 	thanksCount := p.releaseThanks(releaseDir, thanks, linkID)
 	contentParts := []string{
-		mLinkR(p.icon("heart")+fmt.Sprintf(" Thanks (%d)", thanksCount), pagePathRelease, []linkField{{"g", groupName}, {"r", repoName}, {"t", tag}, {"thanks", "y"}}) + "\n\n",
+		mLinkR(p.icon("heart")+fmt.Sprintf(" Thanks (%v)", thanksCount), pagePathRelease, []linkField{{"g", groupName}, {"r", repoName}, {"t", tag}, {"thanks", "y"}}) + "\n\n",
 	}
 
 	created := toInt(releaseInfo["created"])
@@ -654,7 +654,7 @@ func (p *pageNode) serveReleasePage(path string, data any, requestID, linkID []b
 
 	artifacts, _ := releaseInfo["artifacts"].([]map[any]any)
 	if len(artifacts) > 0 {
-		contentParts = append(contentParts, mHeading(fmt.Sprintf("Artifacts (%d)", len(artifacts)), 2), "\n")
+		contentParts = append(contentParts, mHeading(fmt.Sprintf("Artifacts (%v)", len(artifacts)), 2), "\n")
 		sort.SliceStable(artifacts, func(i, j int) bool {
 			ni, _ := artifacts[i]["name"].(string)
 			nj, _ := artifacts[j]["name"].(string)
@@ -814,10 +814,10 @@ func (p *pageNode) serveWorkPage(path string, data any, requestID, linkID []byte
 		})
 
 		if len(docs) == 0 {
-			contentParts = append(contentParts, mHeading(fmt.Sprintf("%s (%d)", capitalize(s), len(docs)), 2)+
-				fmt.Sprintf("\n`*No %s work documents`*\n", s), "\n")
+			contentParts = append(contentParts, mHeading(fmt.Sprintf("%v (%v)", capitalize(s), len(docs)), 2)+
+				fmt.Sprintf("\n`*No %v work documents`*\n", s), "\n")
 		} else {
-			contentParts = append(contentParts, mHeading(fmt.Sprintf("%s (%d)", capitalize(s), len(docs)), 2), "\n")
+			contentParts = append(contentParts, mHeading(fmt.Sprintf("%v (%v)", capitalize(s), len(docs)), 2), "\n")
 			for _, doc := range docs {
 				docTitle := truncateEllipsis(doc.title, 92)
 				titleLink := mLink(p.icon("file")+" "+docTitle, pagePathWorkDoc, []linkField{{"g", groupName}, {"r", repoName}, {"id", int64(doc.id)}, {"scope", s}})
@@ -830,11 +830,11 @@ func (p *pageNode) serveWorkPage(path string, data any, requestID, linkID []byte
 					dateStr = time.Unix(doc.created, 0).Format("2006-01-02")
 				}
 				contentParts = append(contentParts,
-					fmt.Sprintf("%s %s#%d`f\n", titleLink, clrDim, doc.id),
-					fmt.Sprintf("%s%s by %s`f\n", clrDim, dateStr, authorStr),
+					fmt.Sprintf("%v %v#%v`f\n", titleLink, clrDim, doc.id),
+					fmt.Sprintf("%v%v by %v`f\n", clrDim, dateStr, authorStr),
 				)
 				if doc.comments > 0 {
-					contentParts = append(contentParts, fmt.Sprintf("%s%d updates`f\n", clrDim, doc.comments))
+					contentParts = append(contentParts, fmt.Sprintf("%v%v updates`f\n", clrDim, doc.comments))
 				}
 				contentParts = append(contentParts, "\n")
 			}
@@ -958,18 +958,18 @@ func (p *pageNode) serveWorkDocPage(path string, data any, requestID, linkID []b
 
 	contentParts := []string{
 		mHeading(docTitle, 2),
-		fmt.Sprintf("\n%sAuthor    : %s`f\n", clrDim, authorStr),
-		fmt.Sprintf("%sSignature : %s`f\n", clrDim, signatureStr),
+		fmt.Sprintf("\n%vAuthor    : %v`f\n", clrDim, authorStr),
+		fmt.Sprintf("%vSignature : %v`f\n", clrDim, signatureStr),
 	}
 	createdStr := "unknown"
 	if created > 0 {
 		createdStr = time.Unix(created, 0).Format("2006-01-02 15:04")
 	}
-	contentParts = append(contentParts, fmt.Sprintf("%sCreated   : %s`f\n", clrDim, createdStr))
+	contentParts = append(contentParts, fmt.Sprintf("%vCreated   : %v`f\n", clrDim, createdStr))
 	if edited > 0 && edited != created {
-		contentParts = append(contentParts, fmt.Sprintf("%sEdited    : %s`f\n", clrDim, time.Unix(edited, 0).Format("2006-01-02 15:04")))
+		contentParts = append(contentParts, fmt.Sprintf("%vEdited    : %v`f\n", clrDim, time.Unix(edited, 0).Format("2006-01-02 15:04")))
 	}
-	contentParts = append(contentParts, fmt.Sprintf("%sStatus    : %s`f\n\n", clrDim, capitalize(scope)))
+	contentParts = append(contentParts, fmt.Sprintf("%vStatus    : %v`f\n\n", clrDim, capitalize(scope)))
 
 	stripped := strings.TrimSpace(content)
 	if stripped != "" {
@@ -1027,7 +1027,7 @@ func (p *pageNode) serveWorkDocPage(path string, data any, requestID, linkID []b
 	sort.SliceStable(comments, func(i, j int) bool { return comments[i].id < comments[j].id })
 
 	if len(comments) > 0 {
-		contentParts = append(contentParts, "\n"+mHeading(fmt.Sprintf("Updates (%d)", len(comments)), 2))
+		contentParts = append(contentParts, "\n"+mHeading(fmt.Sprintf("Updates (%v)", len(comments)), 2))
 		for _, c := range comments {
 			var rendered string
 			if c.format == "markdown" {
@@ -1044,7 +1044,7 @@ func (p *pageNode) serveWorkDocPage(path string, data any, requestID, linkID []b
 				cDate = time.Unix(c.created, 0).Format("2006-01-02 15:04")
 			}
 			contentParts = append(contentParts,
-				fmt.Sprintf("\n%s#%d by %s on %s`f\n", clrDim, c.id, cAuthorStr, cDate),
+				fmt.Sprintf("\n%v#%v by %v on %v`f\n", clrDim, c.id, cAuthorStr, cDate),
 				rendered+"\n",
 			)
 		}
@@ -1341,7 +1341,7 @@ func renderCombinedChart(views, fetches, pushes, downloads []int, labels []strin
 	legendParts := make([]string, 0, len(categories))
 	for _, cat := range categories {
 		col := catColors[cat]
-		legendParts = append(legendParts, fmt.Sprintf("`FT%s`BT%s██`f`b %s", col, col, capitalize(cat)))
+		legendParts = append(legendParts, fmt.Sprintf("`FT%v`BT%v██`f`b %v", col, col, capitalize(cat)))
 	}
 	legend := strings.Join(legendParts, "  ")
 	lines := []string{legend + "\n\n"}
@@ -1382,15 +1382,15 @@ func renderCombinedChart(views, fetches, pushes, downloads []int, labels []strin
 				line.WriteString(" ")
 			case upperCat == lowerCat && upperCat != "":
 				col := catColors[upperCat]
-				line.WriteString(fmt.Sprintf("`FT%s`BT%s█`f`b", col, col))
+				line.WriteString(fmt.Sprintf("`FT%v`BT%v█`f`b", col, col))
 			case upperCat != "" && lowerCat != "":
-				line.WriteString(fmt.Sprintf("`FT%s`BT%s▀`f`b", catColors[upperCat], catColors[lowerCat]))
+				line.WriteString(fmt.Sprintf("`FT%v`BT%v▀`f`b", catColors[upperCat], catColors[lowerCat]))
 			case upperCat != "":
 				col := catColors[upperCat]
-				line.WriteString(fmt.Sprintf("`FT%s▀`f", col))
+				line.WriteString(fmt.Sprintf("`FT%v▀`f", col))
 			default:
 				col := catColors[lowerCat]
-				line.WriteString(fmt.Sprintf("`FT%s▄`f", col))
+				line.WriteString(fmt.Sprintf("`FT%v▄`f", col))
 			}
 		}
 		lines = append(lines, line.String()+"\n")

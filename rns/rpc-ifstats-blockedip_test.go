@@ -65,7 +65,7 @@ func TestRPCInterfaceStatsIncludesBlockedIPs(t *testing.T) {
 		t.Fatalf("blocked_ips = %#v, want int 3", entry["blocked_ips"])
 	}
 	if count != 3 {
-		t.Fatalf("blocked_ips = %d, want 3", count)
+		t.Fatalf("blocked_ips = %v, want 3", count)
 	}
 
 	list, ok := entry["blocked_ip_list"].([]string)
@@ -79,7 +79,7 @@ func TestRPCInterfaceStatsIncludesBlockedIPs(t *testing.T) {
 	// DecodeInterfaceStats surfaces the fields on InterfaceStat.
 	snap := DecodeInterfaceStats(stats)
 	if len(snap.Interfaces) != 1 {
-		t.Fatalf("decoded %d interfaces, want 1", len(snap.Interfaces))
+		t.Fatalf("decoded %v interfaces, want 1", len(snap.Interfaces))
 	}
 	di := snap.Interfaces[0]
 	if di.BlockedIPs == nil || *di.BlockedIPs != 3 {

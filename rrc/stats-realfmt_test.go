@@ -68,11 +68,11 @@ func TestHandleStatsRealFormatStatsChunks(t *testing.T) {
 	var rebuilt strings.Builder
 	for i, item := range outgoing.Queue {
 		if len(item.Payload) > rnsMDU {
-			t.Errorf("payload[%d] = %v bytes > RNS MDU %v", i, len(item.Payload), rnsMDU)
+			t.Errorf("payload[%v] = %v bytes > RNS MDU %v", i, len(item.Payload), rnsMDU)
 		}
 		sent := decodeOutgoing(t, &OutgoingList{Queue: []OutgoingItem{item}})
 		if len(sent) != 1 || sent[0].msgType != TNotice || sent[0].room != nil {
-			t.Fatalf("payload[%d] = %+v, want one room-nil T_NOTICE", i, sent)
+			t.Fatalf("payload[%v] = %+v, want one room-nil T_NOTICE", i, sent)
 		}
 		s, _ := sent[0].body.(string)
 		if rebuilt.Len() > 0 {

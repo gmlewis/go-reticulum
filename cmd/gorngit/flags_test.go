@@ -109,7 +109,7 @@ func TestParseFlagsNode(t *testing.T) {
 		t.Errorf("node flags: p=%v s=%v i=%v, want all true", opts.printIdentity, opts.service, opts.interactive)
 	}
 	if opts.verbose != 2 || opts.quiet != 1 {
-		t.Errorf("node counts: verbose=%d quiet=%d, want 2/1", opts.verbose, opts.quiet)
+		t.Errorf("node counts: verbose=%v quiet=%v, want 2/1", opts.verbose, opts.quiet)
 	}
 }
 
@@ -167,7 +167,7 @@ func TestParseFlagsWork(t *testing.T) {
 		t.Fatalf("parseFlags work: %v", err)
 	}
 	if opts.scope != "all" || opts.title != "My Title" || opts.docID != 42 {
-		t.Errorf("work: scope=%q title=%q docID=%d, want all/My Title/42", opts.scope, opts.title, opts.docID)
+		t.Errorf("work: scope=%q title=%q docID=%v, want all/My Title/42", opts.scope, opts.title, opts.docID)
 	}
 	if opts.operation != "view" {
 		t.Errorf("work operation=%q, want view", opts.operation)
@@ -229,7 +229,7 @@ func TestParseFlagsVerboseQuietCounters(t *testing.T) {
 		t.Fatalf("parseFlags: %v", err)
 	}
 	if opts.verbose != 2 || opts.quiet != 2 {
-		t.Errorf("verbose=%d quiet=%d, want 2/2", opts.verbose, opts.quiet)
+		t.Errorf("verbose=%v quiet=%v, want 2/2", opts.verbose, opts.quiet)
 	}
 }
 

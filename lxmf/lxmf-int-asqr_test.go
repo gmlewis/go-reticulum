@@ -122,10 +122,10 @@ func TestIntegrationAsQRPythonMatrixParity(t *testing.T) {
 		t.Fatalf("qr.Encode: %v", err)
 	}
 	if goCode.Size != pyModules {
-		t.Errorf("Go QR module count=%d, Python qrcode modules_count=%d (uri len=%d)", goCode.Size, pyModules, len(uri))
+		t.Errorf("Go QR module count=%v, Python qrcode modules_count=%v (uri len=%v)", goCode.Size, pyModules, len(uri))
 	}
 	if pyVersion < 1 {
-		t.Errorf("Python QR version=%d, want >=1", pyVersion)
+		t.Errorf("Python QR version=%v, want >=1", pyVersion)
 	}
 
 	// Go AsQR image pixel dimensions must match Python's PIL image (both use
@@ -136,12 +136,12 @@ func TestIntegrationAsQRPythonMatrixParity(t *testing.T) {
 	}
 	bounds := img.Bounds()
 	if bounds.Dx() != pyPixelW || bounds.Dy() != pyPixelH {
-		t.Errorf("Go AsQR image=%dx%d, Python PIL=%dx%d", bounds.Dx(), bounds.Dy(), pyPixelW, pyPixelH)
+		t.Errorf("Go AsQR image=%vx%v, Python PIL=%vx%v", bounds.Dx(), bounds.Dy(), pyPixelW, pyPixelH)
 	}
 
 	// Sanity: both encoders agree the URI fits in a single QR (<= QRMaxStore).
 	if len(uri) > QRMaxStore {
-		t.Errorf("uri length %d exceeds QRMaxStore %d", len(uri), QRMaxStore)
+		t.Errorf("uri length %v exceeds QRMaxStore %v", len(uri), QRMaxStore)
 	}
 }
 
@@ -161,7 +161,7 @@ func parseAsQRParityOut(t *testing.T, out string) (modules, version, pixelW, pix
 		}
 	}
 	if modules == 0 || pixelW == 0 || pixelH == 0 {
-		t.Fatalf("incomplete python output:\n%s", out)
+		t.Fatalf("incomplete python output:\n%v", out)
 	}
 	return modules, version, pixelW, pixelH
 }

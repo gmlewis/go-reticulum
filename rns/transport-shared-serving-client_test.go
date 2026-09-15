@@ -174,7 +174,7 @@ func TestSharedInstanceServingClientPingPong(t *testing.T) {
 			}
 			tsS.mu.Unlock()
 			if present != last {
-				t.Logf("DEBUG hub path present=%v announceTable=%v at %s",
+				t.Logf("DEBUG hub path present=%v announceTable=%v at %v",
 					present, hops, time.Now().Format("15:04:05.000"))
 				last = present
 			}

@@ -61,10 +61,10 @@ func TestLiveCaptureRnodeHashes(t *testing.T) {
 		t.Fatalf("captureRnodeHashes() error: %v", err)
 	}
 	if len(snapshot.firmwareHashTarget) != 32 {
-		t.Fatalf("expected 32-byte target firmware hash, got %d", len(snapshot.firmwareHashTarget))
+		t.Fatalf("expected 32-byte target firmware hash, got %v", len(snapshot.firmwareHashTarget))
 	}
 	if len(snapshot.firmwareHash) != 32 {
-		t.Fatalf("expected 32-byte actual firmware hash, got %d", len(snapshot.firmwareHash))
+		t.Fatalf("expected 32-byte actual firmware hash, got %v", len(snapshot.firmwareHash))
 	}
 }
 
@@ -100,7 +100,7 @@ func TestLiveEEPROMBackupCLI(t *testing.T) {
 		t.Fatalf("ReadDir(%q): %v", backupDir, err)
 	}
 	if len(entries) != 1 {
-		t.Fatalf("expected 1 EEPROM backup artifact, got %d", len(entries))
+		t.Fatalf("expected 1 EEPROM backup artifact, got %v", len(entries))
 	}
 }
 

@@ -93,7 +93,7 @@ func deliverPart(t *testing.T, r, sender *Resource, idx int, now time.Time) {
 	r.mu.Unlock()
 
 	if !matched {
-		t.Fatalf("delivered sender part %d matched no receiver hashmap entry", idx)
+		t.Fatalf("delivered sender part %v matched no receiver hashmap entry", idx)
 	}
 }
 
@@ -129,7 +129,7 @@ func TestWatchdogLossyLinkRecovery(t *testing.T) {
 		t.Fatalf("NewResourceWithOptions: %v", err)
 	}
 	if sender.totalParts < 5 {
-		t.Fatalf("test requires >=5 parts, got %d (sdu=%d, size=%d)", sender.totalParts, sender.sdu, sender.size)
+		t.Fatalf("test requires >=5 parts, got %v (sdu=%v, size=%v)", sender.totalParts, sender.sdu, sender.size)
 	}
 
 	receiver := receiverFromSender(t, sender, link)
@@ -147,7 +147,7 @@ func TestWatchdogLossyLinkRecovery(t *testing.T) {
 	deliverPart(t, receiver, sender, 0, base)
 	deliverPart(t, receiver, sender, 1, base.Add(1*time.Second))
 	if receiver.receivedCount != 2 {
-		t.Fatalf("after initial delivery: receivedCount=%d, want 2", receiver.receivedCount)
+		t.Fatalf("after initial delivery: receivedCount=%v, want 2", receiver.receivedCount)
 	}
 
 	missing := receiver.totalParts - 2
@@ -181,13 +181,13 @@ func TestWatchdogLossyLinkRecovery(t *testing.T) {
 		t.Fatalf("before deadline: sleep=%v, want > 0", sleep)
 	}
 	if ct.sentCount() != baseline {
-		t.Fatalf("before deadline: sends=%d, want %d (no retry yet)", ct.sentCount(), baseline)
+		t.Fatalf("before deadline: sends=%v, want %v (no retry yet)", ct.sentCount(), baseline)
 	}
 	if receiver.retriesLeft != receiver.maxRetries {
-		t.Fatalf("before deadline: retriesLeft=%d, want %d (unchanged)", receiver.retriesLeft, receiver.maxRetries)
+		t.Fatalf("before deadline: retriesLeft=%v, want %v (unchanged)", receiver.retriesLeft, receiver.maxRetries)
 	}
 	if receiver.window != 4 {
-		t.Fatalf("before deadline: window=%d, want 4 (unchanged)", receiver.window)
+		t.Fatalf("before deadline: window=%v, want 4 (unchanged)", receiver.window)
 	}
 
 	// (3) Past the deadline: the watchdog re-requests the missing parts.
@@ -200,16 +200,16 @@ func TestWatchdogLossyLinkRecovery(t *testing.T) {
 		t.Fatalf("after deadline: sleep=%v, want 0.001", sleep)
 	}
 	if ct.sentCount() != baseline+1 {
-		t.Fatalf("after deadline: sends=%d, want %d (one re-request)", ct.sentCount(), baseline+1)
+		t.Fatalf("after deadline: sends=%v, want %v (one re-request)", ct.sentCount(), baseline+1)
 	}
 	if receiver.window != 3 {
-		t.Fatalf("after deadline: window=%d, want 3 (shrunk from 4)", receiver.window)
+		t.Fatalf("after deadline: window=%v, want 3 (shrunk from 4)", receiver.window)
 	}
 	if receiver.windowMax != 8 {
-		t.Fatalf("after deadline: windowMax=%d, want 8 (flexibility shrink)", receiver.windowMax)
+		t.Fatalf("after deadline: windowMax=%v, want 8 (flexibility shrink)", receiver.windowMax)
 	}
 	if receiver.retriesLeft != receiver.maxRetries-1 {
-		t.Fatalf("after deadline: retriesLeft=%d, want %d", receiver.retriesLeft, receiver.maxRetries-1)
+		t.Fatalf("after deadline: retriesLeft=%v, want %v", receiver.retriesLeft, receiver.maxRetries-1)
 	}
 	if receiver.waitingForHmu {
 		t.Fatal("after deadline: waitingForHmu=true, want false (cleared on retry)")
@@ -227,7 +227,7 @@ func TestWatchdogLossyLinkRecovery(t *testing.T) {
 	wantReq := min(missing, 3)
 	for i := 2; i < 2+wantReq; i++ {
 		if !bytes.Contains(req.Data, receiver.hashmap[i]) {
-			t.Fatalf("re-request packet missing part %d map hash", i)
+			t.Fatalf("re-request packet missing part %v map hash", i)
 		}
 	}
 	if bytes.Contains(req.Data, receiver.hashmap[0]) || bytes.Contains(req.Data, receiver.hashmap[1]) {
@@ -240,7 +240,7 @@ func TestWatchdogLossyLinkRecovery(t *testing.T) {
 		deliverPart(t, receiver, sender, i, now1.Add(time.Duration(i)*time.Second))
 	}
 	if receiver.receivedCount != receiver.totalParts {
-		t.Fatalf("after recovery delivery: receivedCount=%d, want %d", receiver.receivedCount, receiver.totalParts)
+		t.Fatalf("after recovery delivery: receivedCount=%v, want %v", receiver.receivedCount, receiver.totalParts)
 	}
 
 	receiver.Assemble()
@@ -250,6 +250,6 @@ func TestWatchdogLossyLinkRecovery(t *testing.T) {
 		t.Fatalf("after assemble: status=%v, want COMPLETE", receiver.status)
 	}
 	if !bytes.Equal(receiver.data, data) {
-		t.Fatalf("after assemble: data mismatch (got %d bytes, want %d)", len(receiver.data), len(data))
+		t.Fatalf("after assemble: data mismatch (got %v bytes, want %v)", len(receiver.data), len(data))
 	}
 }

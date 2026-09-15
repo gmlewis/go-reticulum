@@ -211,7 +211,7 @@ func TestIdentityPubToFileWritesOnlyPublicKey(t *testing.T) {
 		t.Fatalf("read pub file: %v", err)
 	}
 	if len(got) != len(pubKey) {
-		t.Fatalf("pub file length = %d, want %d (public key only)", len(got), len(pubKey))
+		t.Fatalf("pub file length = %v, want %v (public key only)", len(got), len(pubKey))
 	}
 	if string(got) != string(pubKey) {
 		t.Fatalf("pub file content = %x, want %x", got, pubKey)

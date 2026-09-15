@@ -77,7 +77,7 @@ func TestRNodeDecoderLiveRadioTelemetry(t *testing.T) {
 		t.Fatal("detected should be true after DETECT_RESP")
 	}
 	if s.majVersion != 1 || s.minVersion != 85 {
-		t.Fatalf("firmware version = %d.%d, want 1.85", s.majVersion, s.minVersion)
+		t.Fatalf("firmware version = %v.%v, want 1.85", s.majVersion, s.minVersion)
 	}
 	if !s.firmwareOK {
 		t.Fatal("firmware 1.85 (>= 1.52) should validate OK")
@@ -101,7 +101,7 @@ func TestRNodeDecoderLiveRadioTelemetry(t *testing.T) {
 		t.Fatalf("rCR = %v, want 5", s.rCR)
 	}
 	if s.bitrate != 3125 {
-		t.Fatalf("bitrate = %d, want 3125 (3.12 kbps)", s.bitrate)
+		t.Fatalf("bitrate = %v, want 3125 (3.12 kbps)", s.bitrate)
 	}
 	if s.rSymbolTimeMs == nil || *s.rSymbolTimeMs != 2.05 {
 		t.Fatalf("rSymbolTimeMs = %v, want 2.05", s.rSymbolTimeMs)
@@ -211,10 +211,10 @@ func TestRNodeDecoderAllCommands(t *testing.T) {
 			t.Fatalf("channel load = %v/%v, want 5.6/7.8", s.rChanLoadShort, s.rChanLoadLong)
 		}
 		if s.rCurrentRSSI == nil || *s.rCurrentRSSI != 0xA0-157 {
-			t.Fatalf("rCurrentRSSI = %v, want %d", s.rCurrentRSSI, 0xA0-157)
+			t.Fatalf("rCurrentRSSI = %v, want %v", s.rCurrentRSSI, 0xA0-157)
 		}
 		if s.rNoiseFloor == nil || *s.rNoiseFloor != 0x96-157 {
-			t.Fatalf("rNoiseFloor = %v, want %d", s.rNoiseFloor, 0x96-157)
+			t.Fatalf("rNoiseFloor = %v, want %v", s.rNoiseFloor, 0x96-157)
 		}
 		if s.rInterference != nil {
 			t.Fatalf("rInterference = %v, want nil (ntf=0xFF)", s.rInterference)
@@ -252,10 +252,10 @@ func TestRNodeDecoderAllCommands(t *testing.T) {
 		feedFrame(d, KISSFrame(KISSCmdFBRead, fb))
 		feedFrame(d, KISSFrame(KISSCmdDispRead, disp))
 		if !bytes.Equal(s.rFramebuffer, fb) {
-			t.Fatalf("framebuffer len = %d, want 512", len(s.rFramebuffer))
+			t.Fatalf("framebuffer len = %v, want 512", len(s.rFramebuffer))
 		}
 		if !bytes.Equal(s.rDisp, disp) {
-			t.Fatalf("display len = %d, want 1024", len(s.rDisp))
+			t.Fatalf("display len = %v, want 1024", len(s.rDisp))
 		}
 	})
 
@@ -279,7 +279,7 @@ func TestRNodeDecoderAllCommands(t *testing.T) {
 			t.Fatalf("ERROR_MODEM_TIMEOUT should be non-fatal, got %v", err)
 		}
 		if len(s.hwErrors) != 2 {
-			t.Fatalf("hwErrors len = %d, want 2", len(s.hwErrors))
+			t.Fatalf("hwErrors len = %v, want 2", len(s.hwErrors))
 		}
 	})
 

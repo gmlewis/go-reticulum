@@ -166,7 +166,7 @@ func ReserveTCPPort(t *testing.T) int {
 	t.Helper()
 	for {
 		port := nextTestPort(&testTCPPortCounter)
-		l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", port)))
+		l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", fmt.Sprintf("%v", port)))
 		if err != nil {
 			continue
 		}

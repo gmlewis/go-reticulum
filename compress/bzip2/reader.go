@@ -106,7 +106,7 @@ func (zr *Reader) Read(buf []byte) (int, error) {
 				}
 				lvl := int(zr.rd.ReadBitsBE64(8)) - '0'
 				if lvl < BestSpeed || lvl > BestCompression {
-					panicf(errors.Corrupted, "invalid block size: %d", lvl*blockSize)
+					panicf(errors.Corrupted, "invalid block size: %v", lvl*blockSize)
 				}
 				zr.level = lvl
 				zr.rdHdrFtr++
@@ -198,7 +198,7 @@ func (zr *Reader) decodeBlock() []byte {
 
 	// Step 3: Burrows-Wheeler transformation.
 	if ptr >= len(buf) {
-		panicf(errors.Corrupted, "origin pointer (0x%06x) exceeds block size: %d", ptr, len(buf))
+		panicf(errors.Corrupted, "origin pointer (0x%06x) exceeds block size: %v", ptr, len(buf))
 	}
 	zr.bwt.Decode(buf, ptr)
 
@@ -208,14 +208,14 @@ func (zr *Reader) decodeBlock() []byte {
 func (zr *Reader) decodePrefix(numSyms int) (syms []uint16) {
 	numSyms += 2 // Remove 0 symbol, add RUNA, RUNB, and EOF symbols
 	if numSyms < 3 {
-		panicf(errors.Corrupted, "not enough prefix symbols: %d", numSyms)
+		panicf(errors.Corrupted, "not enough prefix symbols: %v", numSyms)
 	}
 
 	// Read information about the trees and tree selectors.
 	var mtf internal.MoveToFront
 	numTrees := int(zr.rd.ReadBitsBE64(3))
 	if numTrees < minNumTrees || numTrees > maxNumTrees {
-		panicf(errors.Corrupted, "invalid number of prefix trees: %d", numTrees)
+		panicf(errors.Corrupted, "invalid number of prefix trees: %v", numTrees)
 	}
 	numSels := int(zr.rd.ReadBitsBE64(15))
 	if cap(zr.treeSels) < numSels {
@@ -228,7 +228,7 @@ func (zr *Reader) decodePrefix(numSyms int) (syms []uint16) {
 			sym = zr.rd.ReadSymbol(&decSel)
 		}
 		if int(sym) >= numTrees {
-			panicf(errors.Corrupted, "invalid prefix tree selector: %d", sym)
+			panicf(errors.Corrupted, "invalid prefix tree selector: %v", sym)
 		}
 		treeSels[i] = uint8(sym)
 	}
@@ -264,7 +264,7 @@ func (zr *Reader) decodePrefix(numSyms int) (syms []uint16) {
 			break // EOF marker
 		}
 		if int(sym) >= numSyms {
-			panicf(errors.Corrupted, "invalid prefix symbol: %d", sym)
+			panicf(errors.Corrupted, "invalid prefix symbol: %v", sym)
 		}
 		if len(syms) >= zr.level*blockSize {
 			panicf(errors.Corrupted, "number of prefix symbols exceeds block size")

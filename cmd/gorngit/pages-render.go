@@ -308,37 +308,37 @@ func formatRelativeTime(timestamp, now int64) string {
 		if minutes == 1 {
 			return "1 minute ago"
 		}
-		return fmt.Sprintf("%d minutes ago", minutes)
+		return fmt.Sprintf("%v minutes ago", minutes)
 	case diff < 86400:
 		hours := diff / 3600
 		if hours == 1 {
 			return "1 hour ago"
 		}
-		return fmt.Sprintf("%d hours ago", hours)
+		return fmt.Sprintf("%v hours ago", hours)
 	case diff < 604800:
 		days := diff / 86400
 		if days == 1 {
 			return "1 day ago"
 		}
-		return fmt.Sprintf("%d days ago", days)
+		return fmt.Sprintf("%v days ago", days)
 	case diff < 2592000:
 		weeks := diff / 604800
 		if weeks == 1 {
 			return "1 week ago"
 		}
-		return fmt.Sprintf("%d weeks ago", weeks)
+		return fmt.Sprintf("%v weeks ago", weeks)
 	case diff < 31536000:
 		months := diff / 2592000
 		if months == 1 {
 			return "1 month ago"
 		}
-		return fmt.Sprintf("%d months ago", months)
+		return fmt.Sprintf("%v months ago", months)
 	default:
 		years := diff / 31536000
 		if years == 1 {
 			return "1 year ago"
 		}
-		return fmt.Sprintf("%d years ago", years)
+		return fmt.Sprintf("%v years ago", years)
 	}
 }
 
@@ -462,7 +462,7 @@ func renderTemplate(pageContent, navContent, template, nodeName, version string,
 	}
 	var gt string
 	if genTimeSeconds > 0 {
-		gt = fmt.Sprintf("Generated in %s", rns.PrettyTime(genTimeSeconds, false, true))
+		gt = fmt.Sprintf("Generated in %v", rns.PrettyTime(genTimeSeconds, false, true))
 	} else {
 		gt = "Unknown generation time"
 	}
@@ -486,7 +486,7 @@ func renderChartFullBlock(data []int, labels []string, color string, height int)
 	numPoints := len(data)
 	const barWidth = 1
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "`F%sPeak: %d`f\n", color, maxVal)
+	fmt.Fprintf(&sb, "`F%vPeak: %v`f\n", color, maxVal)
 	for row := height; row > 0; row-- {
 		threshold := float64(row-1) / float64(height) * float64(maxVal)
 		sb.WriteString("│")
@@ -503,7 +503,7 @@ func renderChartFullBlock(data []int, labels []string, color string, height int)
 				default:
 					glyph = "░"
 				}
-				sb.WriteString(fmt.Sprintf("`F%s%s`f", color, strings.Repeat(glyph, barWidth)))
+				sb.WriteString(fmt.Sprintf("`F%v%v`f", color, strings.Repeat(glyph, barWidth)))
 			} else {
 				sb.WriteString(strings.Repeat(" ", barWidth))
 			}

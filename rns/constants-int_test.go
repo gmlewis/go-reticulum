@@ -67,7 +67,7 @@ print(json.dumps(results))
 
 	for _, suffix := range suffixes {
 		for _, v := range values {
-			key := fmt.Sprintf("%.0f|%s", v, suffix)
+			key := fmt.Sprintf("%.0f|%v", v, suffix)
 			pyWant, ok := pyResults[key]
 			if !ok {
 				t.Errorf("no Python result for key %q", key)

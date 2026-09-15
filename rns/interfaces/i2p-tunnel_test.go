@@ -688,10 +688,10 @@ func TestTunnelSetupLogsUnrecognizedSAMResult(t *testing.T) {
 		}
 		out := buf.String()
 		if !strings.Contains(out, "Unspecified I2P daemon error") {
-			t.Fatalf("missing catch-all log; got:\n%s", out)
+			t.Fatalf("missing catch-all log; got:\n%v", out)
 		}
 		if !strings.Contains(out, "BOGUS_RESULT") {
-			t.Fatalf("log missing BOGUS_RESULT; got:\n%s", out)
+			t.Fatalf("log missing BOGUS_RESULT; got:\n%v", out)
 		}
 	}
 
@@ -743,7 +743,7 @@ func TestTunnelSetupLogsUnrecognizedSAMError(t *testing.T) {
 	}
 	out := buf.String()
 	if !strings.Contains(out, "Unspecified I2P daemon error") {
-		t.Fatalf("missing catch-all log; got:\n%s", out)
+		t.Fatalf("missing catch-all log; got:\n%v", out)
 	}
 }
 

@@ -147,7 +147,7 @@ func (p *WeaveInterfacePeer) IsOut() bool { return p.out }
 // layer is ported).
 func (p *WeaveInterfacePeer) Send(data []byte) error {
 	if !p.Status() {
-		return fmt.Errorf("weave peer %s is offline", weaveHexrep(p.endpointAddr, false))
+		return fmt.Errorf("weave peer %v is offline", weaveHexrep(p.endpointAddr, false))
 	}
 	return nil
 }

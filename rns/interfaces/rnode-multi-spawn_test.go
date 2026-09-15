@@ -46,10 +46,10 @@ func TestRNodeMultiDetectCommandGolden(t *testing.T) {
 	cmd := RNodeMultiDetectCommand()
 	wantHex := "c00873c05000c04800c04900c07100c0"
 	if len(cmd) != 16 {
-		t.Fatalf("detect command len = %d, want 16", len(cmd))
+		t.Fatalf("detect command len = %v, want 16", len(cmd))
 	}
 	if got := hexBytes(cmd); got != wantHex {
-		t.Errorf("detect command = %s, want %s", got, wantHex)
+		t.Errorf("detect command = %v, want %v", got, wantHex)
 	}
 }
 
@@ -92,7 +92,7 @@ func TestRNodeMultiInterfacesParserGolden(t *testing.T) {
 	}
 	for i := range got {
 		if got[i] != want[i] {
-			t.Errorf("InterfaceTypes[%d] = %q, want %q", i, got[i], want[i])
+			t.Errorf("InterfaceTypes[%v] = %q, want %q", i, got[i], want[i])
 		}
 	}
 }
@@ -143,10 +143,10 @@ func TestRNodeMultiSpawnAndDespawn(t *testing.T) {
 		t.Fatalf("Spawn: %v", err)
 	}
 	if got := state.Clients(); got != 2 {
-		t.Errorf("Clients = %d, want 2", got)
+		t.Errorf("Clients = %v, want 2", got)
 	}
 	if len(added) != 2 {
-		t.Errorf("addInterface called %d times, want 2", len(added))
+		t.Errorf("addInterface called %v times, want 2", len(added))
 	}
 	sub0 := state.SubinterfaceAt(0)
 	sub1 := state.SubinterfaceAt(1)
@@ -154,10 +154,10 @@ func TestRNodeMultiSpawnAndDespawn(t *testing.T) {
 		t.Fatalf("sub0/sub1 not spawned: %v %v", sub0, sub1)
 	}
 	if sub0.Index != 0 || sub0.InterfaceType != "SX127X" {
-		t.Errorf("sub0 = {Index:%d Type:%s}, want {0, SX127X}", sub0.Index, sub0.InterfaceType)
+		t.Errorf("sub0 = {Index:%v Type:%v}, want {0, SX127X}", sub0.Index, sub0.InterfaceType)
 	}
 	if sub1.Index != 1 || sub1.InterfaceType != "SX126X" {
-		t.Errorf("sub1 = {Index:%d Type:%s}, want {1, SX126X}", sub1.Index, sub1.InterfaceType)
+		t.Errorf("sub1 = {Index:%v Type:%v}, want {1, SX126X}", sub1.Index, sub1.InterfaceType)
 	}
 	if sub0.Name() != "sub0" || sub1.Name() != "sub1" {
 		t.Errorf("names = %q %q, want sub0 sub1", sub0.Name(), sub1.Name())
@@ -172,10 +172,10 @@ func TestRNodeMultiSpawnAndDespawn(t *testing.T) {
 	// Despawn removes both, resets slots + clients.
 	DespawnRNodeSubinterfaces(state, removeInterface)
 	if got := state.Clients(); got != 0 {
-		t.Errorf("Clients after despawn = %d, want 0", got)
+		t.Errorf("Clients after despawn = %v, want 0", got)
 	}
 	if len(removed) != 2 {
-		t.Errorf("removeInterface called %d times, want 2", len(removed))
+		t.Errorf("removeInterface called %v times, want 2", len(removed))
 	}
 	if state.SubinterfaceAt(0) != nil || state.SubinterfaceAt(1) != nil {
 		t.Error("slots not reset to nil after despawn")
@@ -202,7 +202,7 @@ func TestRNodeMultiSpawnMissingVport(t *testing.T) {
 		t.Errorf("error = %q, want %q", err.Error(), want)
 	}
 	if state.Clients() != 0 {
-		t.Errorf("Clients = %d after failed spawn, want 0", state.Clients())
+		t.Errorf("Clients = %v after failed spawn, want 0", state.Clients())
 	}
 }
 
@@ -230,13 +230,13 @@ func TestRNodeMultiSpawnDedupSkip(t *testing.T) {
 		t.Fatalf("second spawn: %v", err)
 	}
 	if state.Clients() != 1 {
-		t.Errorf("Clients = %d after re-spawn of same vport, want 1", state.Clients())
+		t.Errorf("Clients = %v after re-spawn of same vport, want 1", state.Clients())
 	}
 	if state.SubinterfaceAt(0) != first {
 		t.Error("slot was overwritten by re-spawn; want the original subinterface retained")
 	}
 	if len(added) != 1 {
-		t.Errorf("addInterface called %d times, want 1 (re-spawn skipped)", len(added))
+		t.Errorf("addInterface called %v times, want 1 (re-spawn skipped)", len(added))
 	}
 }
 
@@ -296,18 +296,18 @@ func TestRNodeMultiRegistryDedupGolden(t *testing.T) {
 	// Add A once -> count 1.
 	reg.Add(a)
 	if got := reg.Count(); got != 1 {
-		t.Fatalf("Count after Add(a) = %d, want 1", got)
+		t.Fatalf("Count after Add(a) = %v, want 1", got)
 	}
 	// Re-add A: dedup keeps it at 1 (Python "if not interface in ...: append").
 	reg.Add(a)
 	if got := reg.Count(); got != 1 {
-		t.Errorf("Count after re-Add(a) = %d, want 1 (dedup)", got)
+		t.Errorf("Count after re-Add(a) = %v, want 1 (dedup)", got)
 	}
 	// Add B and c -> count 3, snapshot holds all three in insertion order.
 	reg.Add(b)
 	reg.Add(c)
 	if got := reg.Count(); got != 3 {
-		t.Errorf("Count after Add(b)+Add(c) = %d, want 3", got)
+		t.Errorf("Count after Add(b)+Add(c) = %v, want 3", got)
 	}
 	if snaps := reg.Interfaces(); len(snaps) != 3 || snaps[0] != a || snaps[1] != b || snaps[2] != c {
 		t.Errorf("Interfaces() = %v, want [a b c] in insertion order", snaps)
@@ -315,12 +315,12 @@ func TestRNodeMultiRegistryDedupGolden(t *testing.T) {
 	// Remove an absent interface (d was never registered): no-op, count stays 3.
 	reg.Remove(absent)
 	if got := reg.Count(); got != 3 {
-		t.Errorf("Count after Remove(absent) = %d, want 3 (no-op)", got)
+		t.Errorf("Count after Remove(absent) = %v, want 3 (no-op)", got)
 	}
 	// Remove A: count 2, A gone, B and c retained.
 	reg.Remove(a)
 	if got := reg.Count(); got != 2 {
-		t.Errorf("Count after Remove(a) = %d, want 2", got)
+		t.Errorf("Count after Remove(a) = %v, want 2", got)
 	}
 	for _, existing := range reg.Interfaces() {
 		if existing == a {
@@ -330,13 +330,13 @@ func TestRNodeMultiRegistryDedupGolden(t *testing.T) {
 	// Remove A again: no-op (already gone), count stays 2.
 	reg.Remove(a)
 	if got := reg.Count(); got != 2 {
-		t.Errorf("Count after re-Remove(a) = %d, want 2 (no-op)", got)
+		t.Errorf("Count after re-Remove(a) = %v, want 2 (no-op)", got)
 	}
 	// Remove B and c -> empty.
 	reg.Remove(b)
 	reg.Remove(c)
 	if got := reg.Count(); got != 0 {
-		t.Errorf("Count after removing all = %d, want 0", got)
+		t.Errorf("Count after removing all = %v, want 0", got)
 	}
 }
 
@@ -362,10 +362,10 @@ func TestRNodeMultiSpawnViaRegistryDedupOnRespawn(t *testing.T) {
 		t.Fatalf("first spawn: %v", err)
 	}
 	if got, want := state.Clients(), 2; got != want {
-		t.Fatalf("Clients after first spawn = %d, want %d", got, want)
+		t.Fatalf("Clients after first spawn = %v, want %v", got, want)
 	}
 	if got, want := reg.Count(), 2; got != want {
-		t.Fatalf("registry Count after first spawn = %d, want %d", got, want)
+		t.Fatalf("registry Count after first spawn = %v, want %v", got, want)
 	}
 	first := reg.Interfaces()
 
@@ -375,19 +375,19 @@ func TestRNodeMultiSpawnViaRegistryDedupOnRespawn(t *testing.T) {
 		t.Fatalf("re-spawn: %v", err)
 	}
 	if got, want := state.Clients(), 2; got != want {
-		t.Errorf("Clients after re-spawn = %d, want %d (no new spawns)", got, want)
+		t.Errorf("Clients after re-spawn = %v, want %v (no new spawns)", got, want)
 	}
 	if got, want := reg.Count(), 2; got != want {
-		t.Errorf("registry Count after re-spawn = %d, want %d (dedup)", got, want)
+		t.Errorf("registry Count after re-spawn = %v, want %v (dedup)", got, want)
 	}
 	// The registry holds the SAME interface objects as before the re-spawn.
 	second := reg.Interfaces()
 	if len(first) != len(second) {
-		t.Fatalf("registry snapshot len changed: first=%d second=%d", len(first), len(second))
+		t.Fatalf("registry snapshot len changed: first=%v second=%v", len(first), len(second))
 	}
 	for i := range first {
 		if first[i] != second[i] {
-			t.Errorf("registry entry %d changed identity after re-spawn (dedup should retain same object)", i)
+			t.Errorf("registry entry %v changed identity after re-spawn (dedup should retain same object)", i)
 		}
 	}
 
@@ -395,10 +395,10 @@ func TestRNodeMultiSpawnViaRegistryDedupOnRespawn(t *testing.T) {
 	// clearing it back to zero.
 	DespawnRNodeSubinterfacesRegistered(state, reg)
 	if got, want := state.Clients(), 0; got != want {
-		t.Errorf("Clients after despawn = %d, want %d", got, want)
+		t.Errorf("Clients after despawn = %v, want %v", got, want)
 	}
 	if got, want := reg.Count(), 0; got != want {
-		t.Errorf("registry Count after despawn = %d, want %d", got, want)
+		t.Errorf("registry Count after despawn = %v, want %v", got, want)
 	}
 	if state.SubinterfaceAt(0) != nil || state.SubinterfaceAt(1) != nil {
 		t.Error("slots not reset to nil after despawn")
@@ -432,10 +432,10 @@ func TestRNodeMultiPrAggregation(t *testing.T) {
 
 	// Parent PR counters start at zero.
 	if got := state.IncomingPrCount(); got != 0 {
-		t.Fatalf("IncomingPrCount before any PR = %d, want 0", got)
+		t.Fatalf("IncomingPrCount before any PR = %v, want 0", got)
 	}
 	if got := state.OutgoingPrCount(); got != 0 {
-		t.Fatalf("OutgoingPrCount before any PR = %d, want 0", got)
+		t.Fatalf("OutgoingPrCount before any PR = %v, want 0", got)
 	}
 
 	// Invoke the spawned-peer incoming PR hook (deterministic now): the event
@@ -443,29 +443,29 @@ func TestRNodeMultiPrAggregation(t *testing.T) {
 	now := time.Unix(1_000_000, 0)
 	sub0.receivedPathRequestAt(now, false)
 	if got := state.IncomingPrCount(); got != 1 {
-		t.Errorf("IncomingPrCount after 1 sub0 PR = %d, want 1", got)
+		t.Errorf("IncomingPrCount after 1 sub0 PR = %v, want 1", got)
 	}
 	// A PR from a different spawned subinterface also aggregates into the
 	// same parent counter (the aggregation is across all spawned peers).
 	sub1.receivedPathRequestAt(now, false)
 	if got := state.IncomingPrCount(); got != 2 {
-		t.Errorf("IncomingPrCount after sub0+sub1 PR = %d, want 2 (aggregated)", got)
+		t.Errorf("IncomingPrCount after sub0+sub1 PR = %v, want 2 (aggregated)", got)
 	}
 	// A second PR from sub0 advances the parent counter again.
 	sub0.receivedPathRequestAt(now, false)
 	if got := state.IncomingPrCount(); got != 3 {
-		t.Errorf("IncomingPrCount after 3 PRs = %d, want 3", got)
+		t.Errorf("IncomingPrCount after 3 PRs = %v, want 3", got)
 	}
 
 	// The outgoing PR hook aggregates into the parent's outgoing counter.
 	sub0.sentPathRequestAt(now, false)
 	sub1.sentPathRequestAt(now, false)
 	if got := state.OutgoingPrCount(); got != 2 {
-		t.Errorf("OutgoingPrCount after 2 sent PRs = %d, want 2", got)
+		t.Errorf("OutgoingPrCount after 2 sent PRs = %v, want 2", got)
 	}
 	// Incoming counter is untouched by outgoing events.
 	if got := state.IncomingPrCount(); got != 3 {
-		t.Errorf("IncomingPrCount changed after sent PRs = %d, want 3", got)
+		t.Errorf("IncomingPrCount changed after sent PRs = %v, want 3", got)
 	}
 }
 
@@ -492,7 +492,7 @@ func TestRNodeMultiPrAggregatorFrequency(t *testing.T) {
 		sub.receivedPathRequestAt(base.Add(time.Duration(i)*100*time.Millisecond), false)
 	}
 	if got := state.IncomingPrCount(); got != 6 {
-		t.Fatalf("IncomingPrCount = %d, want 6", got)
+		t.Fatalf("IncomingPrCount = %v, want 6", got)
 	}
 	// At base+0.5s the span is 0.5s, n=6 -> 12 Hz.
 	freq := state.IncomingPrFrequencyAt(base.Add(500 * time.Millisecond))

@@ -532,8 +532,8 @@ func (n *reticulumGitNode) workCreateInScope(workPath string, data map[any]any, 
 
 	if scopeDir == "proposed" {
 		hexHash := fmt.Sprintf("%x", remoteIdentity.Hash)
-		ownerPermissions := fmt.Sprintf("i:%s\nw:%s\n", hexHash, hexHash)
-		allowedPath := filepath.Join(workPath, fmt.Sprintf("%d.allowed", docID))
+		ownerPermissions := fmt.Sprintf("i:%v\nw:%v\n", hexHash, hexHash)
+		allowedPath := filepath.Join(workPath, fmt.Sprintf("%v.allowed", docID))
 		tmpPath := allowedPath + ".tmp"
 		if err := os.WriteFile(tmpPath, []byte(ownerPermissions), 0o644); err != nil {
 			return append([]byte{resRemoteFail}, []byte("Error setting document ownership")...)
@@ -668,7 +668,7 @@ func (n *reticulumGitNode) workDelete(workPath string, data map[any]any, remoteI
 		return append([]byte{resDisallowed}, []byte("No access, not author")...)
 	}
 
-	allowedPath := filepath.Join(workPath, fmt.Sprintf("%d.allowed", docID))
+	allowedPath := filepath.Join(workPath, fmt.Sprintf("%v.allowed", docID))
 	if err := os.Remove(allowedPath); err != nil && !os.IsNotExist(err) {
 		return append([]byte{resRemoteFail}, []byte("Remote error")...)
 	}
@@ -874,7 +874,7 @@ func (n *reticulumGitNode) workGetPermissions(workPath string, data map[any]any,
 	if !((isAuthor && manageAccess) || adminAccess) {
 		return append([]byte{resDisallowed}, []byte("Not allowed")...)
 	}
-	allowedPath := filepath.Join(workPath, fmt.Sprintf("%d.allowed", docID))
+	allowedPath := filepath.Join(workPath, fmt.Sprintf("%v.allowed", docID))
 	content := ""
 	if data, err := os.ReadFile(allowedPath); err == nil {
 		content = string(data)
@@ -923,11 +923,11 @@ func (n *reticulumGitNode) workSetPermissions(workPath string, data map[any]any,
 		}
 		perm, target := parsePermission(stripped)
 		if perm == 0 || target == nil {
-			return fmt.Appendf([]byte{resInvalidReq}, "Invalid permission %q on line %d", stripped, lineNum+1)
+			return fmt.Appendf([]byte{resInvalidReq}, "Invalid permission %q on line %v", stripped, lineNum+1)
 		}
 	}
 
-	allowedPath := filepath.Join(workPath, fmt.Sprintf("%d.allowed", docID))
+	allowedPath := filepath.Join(workPath, fmt.Sprintf("%v.allowed", docID))
 	tmpPath := allowedPath + ".tmp"
 	if err := os.WriteFile(tmpPath, []byte(content), 0o644); err != nil {
 		return append([]byte{resRemoteFail}, []byte("Error setting permissions")...)

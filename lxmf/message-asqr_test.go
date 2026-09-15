@@ -96,7 +96,7 @@ func TestAsQRGolden(t *testing.T) {
 	wantPixSide := (refCode.Size + 2*qrBorder) * qrBoxSize
 	bounds := img.Bounds()
 	if dx, dy := bounds.Dx(), bounds.Dy(); dx != wantPixSide || dy != wantPixSide {
-		t.Fatalf("image bounds=%dx%d want=%dx%d (Size=%d, border=%d, boxSize=%d)",
+		t.Fatalf("image bounds=%vx%v want=%vx%v (Size=%v, border=%v, boxSize=%v)",
 			dx, dy, wantPixSide, wantPixSide, refCode.Size, qrBorder, qrBoxSize)
 	}
 
@@ -116,7 +116,7 @@ func TestAsQRGolden(t *testing.T) {
 			got := gray.GrayAt(cx, cy).Y == 0x00 // black
 			want := refCode.Black(x, y)
 			if got != want {
-				t.Errorf("module (%d,%d): image black=%v want=%v", x, y, got, want)
+				t.Errorf("module (%v,%v): image black=%v want=%v", x, y, got, want)
 			}
 		}
 	}
@@ -130,7 +130,7 @@ func TestAsQRGolden(t *testing.T) {
 				continue
 			}
 			if gray.GrayAt(x, y).Y != 0xFF {
-				t.Errorf("quiet-zone pixel (%d,%d) not white", x, y)
+				t.Errorf("quiet-zone pixel (%v,%v) not white", x, y)
 			}
 		}
 	}

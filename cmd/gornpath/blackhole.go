@@ -21,7 +21,7 @@ type blackholeMutator interface {
 
 func doBlackhole(out io.Writer, provider blackholeMutator, identityHash []byte, durationHours float64, reason string) error {
 	if alreadyBlackholed(provider, identityHash) {
-		_, err := fmt.Fprintf(out, "Identity %s already blackholed\n", rns.PrettyHex(identityHash))
+		_, err := fmt.Fprintf(out, "Identity %v already blackholed\n", rns.PrettyHex(identityHash))
 		return err
 	}
 
@@ -36,16 +36,16 @@ func doBlackhole(out io.Writer, provider blackholeMutator, identityHash []byte, 
 		return fmt.Errorf("Could not blackhole identity: %v", err)
 	}
 	if ok {
-		_, writeErr := fmt.Fprintf(out, "Blackholed identity %s\n", rns.PrettyHex(identityHash))
+		_, writeErr := fmt.Fprintf(out, "Blackholed identity %v\n", rns.PrettyHex(identityHash))
 		return writeErr
 	}
-	_, writeErr := fmt.Fprintf(out, "Could not blackhole identity %s\n", rns.PrettyHex(identityHash))
+	_, writeErr := fmt.Fprintf(out, "Could not blackhole identity %v\n", rns.PrettyHex(identityHash))
 	return writeErr
 }
 
 func doUnblackhole(out io.Writer, provider blackholeMutator, identityHash []byte) error {
 	if !alreadyBlackholed(provider, identityHash) {
-		_, err := fmt.Fprintf(out, "Identity %s not blackholed\n", rns.PrettyHex(identityHash))
+		_, err := fmt.Fprintf(out, "Identity %v not blackholed\n", rns.PrettyHex(identityHash))
 		return err
 	}
 
@@ -54,10 +54,10 @@ func doUnblackhole(out io.Writer, provider blackholeMutator, identityHash []byte
 		return fmt.Errorf("Could not unblackhole identity: %v", err)
 	}
 	if ok {
-		_, writeErr := fmt.Fprintf(out, "Lifted blackhole for identity %s\n", rns.PrettyHex(identityHash))
+		_, writeErr := fmt.Fprintf(out, "Lifted blackhole for identity %v\n", rns.PrettyHex(identityHash))
 		return writeErr
 	}
-	_, writeErr := fmt.Fprintf(out, "Could not unblackhole identity %s\n", rns.PrettyHex(identityHash))
+	_, writeErr := fmt.Fprintf(out, "Could not unblackhole identity %v\n", rns.PrettyHex(identityHash))
 	return writeErr
 }
 

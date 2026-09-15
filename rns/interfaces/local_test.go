@@ -384,7 +384,7 @@ func TestLocalSpawnedClientTearsDownOnDisconnect(t *testing.T) {
 		server.mu.Unlock()
 		if spawned != nil {
 			if clients != 1 {
-				t.Fatalf("server.clients = %d, want 1 after accept", clients)
+				t.Fatalf("server.clients = %v, want 1 after accept", clients)
 			}
 			break
 		}
@@ -420,13 +420,13 @@ func TestLocalSpawnedClientTearsDownOnDisconnect(t *testing.T) {
 	}
 
 	if atomic.LoadInt32(&spawned.running) != 0 {
-		t.Fatalf("spawned client still running after teardown: running=%d", atomic.LoadInt32(&spawned.running))
+		t.Fatalf("spawned client still running after teardown: running=%v", atomic.LoadInt32(&spawned.running))
 	}
 	server.mu.Lock()
 	clients := server.clients
 	server.mu.Unlock()
 	if clients != 0 {
-		t.Fatalf("server.clients = %d after teardown, want 0", clients)
+		t.Fatalf("server.clients = %v after teardown, want 0", clients)
 	}
 }
 
@@ -450,14 +450,14 @@ func wantPeerClosed(t *testing.T, ctx string, conn net.Conn) {
 			// Already closed: exactly the outcome this asserts.
 			return
 		}
-		t.Fatalf("%s: SetReadDeadline: %v", ctx, err)
+		t.Fatalf("%v: SetReadDeadline: %v", ctx, err)
 	}
 	if _, err := conn.Read(make([]byte, 1)); err == nil {
-		t.Fatalf("%s: peer connection stayed open; its client would never notice the shared instance stopped", ctx)
+		t.Fatalf("%v: peer connection stayed open; its client would never notice the shared instance stopped", ctx)
 	} else {
 		var nerr net.Error
 		if errors.As(err, &nerr) && nerr.Timeout() {
-			t.Fatalf("%s: peer connection stayed open for the whole read deadline; nothing closed it", ctx)
+			t.Fatalf("%v: peer connection stayed open for the whole read deadline; nothing closed it", ctx)
 		}
 	}
 }
@@ -488,13 +488,13 @@ func TestLocalServerClosesConnectionAcceptedWhileDetaching(t *testing.T) {
 	server.handleConnection(serverSide)
 
 	if got := len(server.SpawnedClientInterfaces()); got != 0 {
-		t.Fatalf("detached server registered %d spawned client(s), want 0", got)
+		t.Fatalf("detached server registered %v spawned client(s), want 0", got)
 	}
 	server.mu.Lock()
 	clients := server.clients
 	server.mu.Unlock()
 	if clients != 0 {
-		t.Fatalf("server.clients = %d after a connection accepted while detaching, want 0", clients)
+		t.Fatalf("server.clients = %v after a connection accepted while detaching, want 0", clients)
 	}
 	wantPeerClosed(t, "connection accepted while detaching", peer)
 }
@@ -517,7 +517,7 @@ func TestLocalServerDetachClosesEveryAcceptedConnection(t *testing.T) {
 		server := mustTestNewLocalServerInterface(t, "local-server-detach-race", socketPath, 0, handler)
 		raw, err := net.Dial("unix", socketPath)
 		if err != nil {
-			t.Fatalf("iteration %d: dial shared instance: %v", i, err)
+			t.Fatalf("iteration %v: dial shared instance: %v", i, err)
 		}
 
 		// Detach while the connection is still in flight, so the accept loop
@@ -525,11 +525,11 @@ func TestLocalServerDetachClosesEveryAcceptedConnection(t *testing.T) {
 		// race; both must end with the client side closed.
 		if err := server.Detach(); err != nil && !allowClosedNetworkErr(err) {
 			_ = raw.Close()
-			t.Fatalf("iteration %d: detach: %v", i, err)
+			t.Fatalf("iteration %v: detach: %v", i, err)
 		}
-		wantPeerClosed(t, fmt.Sprintf("iteration %d", i), raw)
+		wantPeerClosed(t, fmt.Sprintf("iteration %v", i), raw)
 		if err := raw.Close(); err != nil && !allowClosedNetworkErr(err) {
-			t.Fatalf("iteration %d: close raw client: %v", i, err)
+			t.Fatalf("iteration %v: close raw client: %v", i, err)
 		}
 	}
 }

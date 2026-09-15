@@ -116,14 +116,14 @@ func BytesCompare(a, b []byte) (sa, sb string, ok bool) {
 		if trimHead > 0 {
 			a = a[trimHead:]
 			b = b[trimHead:]
-			head = fmt.Sprintf("(%d bytes)...", trimHead)
+			head = fmt.Sprintf("(%v bytes)...", trimHead)
 		}
 		if len(a) > maxLen {
-			atail = fmt.Sprintf("...(%d bytes)", len(a)-maxLen)
+			atail = fmt.Sprintf("...(%v bytes)", len(a)-maxLen)
 			a = a[:maxLen]
 		}
 		if len(b) > maxLen {
-			btail = fmt.Sprintf("...(%d bytes)", len(b)-maxLen)
+			btail = fmt.Sprintf("...(%v bytes)", len(b)-maxLen)
 			b = b[:maxLen]
 		}
 		sa = fmt.Sprintf("%s"+format+"%s", head, a, atail)

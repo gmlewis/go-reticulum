@@ -75,16 +75,16 @@ func TestLinkTrafficCountersZero(t *testing.T) {
 		t, newTestTransportSystem(t), mustTestNewIdentity(t, true),
 		DestinationIn, DestinationSingle, "d"))
 	if got := link.GetTX(); got != 0 {
-		t.Fatalf("GetTX() = %d, want 0", got)
+		t.Fatalf("GetTX() = %v, want 0", got)
 	}
 	if got := link.GetRX(); got != 0 {
-		t.Fatalf("GetRX() = %d, want 0", got)
+		t.Fatalf("GetRX() = %v, want 0", got)
 	}
 	if got := link.GetTXBytes(); got != 0 {
-		t.Fatalf("GetTXBytes() = %d, want 0", got)
+		t.Fatalf("GetTXBytes() = %v, want 0", got)
 	}
 	if got := link.GetRXBytes(); got != 0 {
-		t.Fatalf("GetRXBytes() = %d, want 0", got)
+		t.Fatalf("GetRXBytes() = %v, want 0", got)
 	}
 }
 
@@ -144,10 +144,10 @@ func TestLinkTrafficCountersWired(t *testing.T) {
 
 	// Outbound: tx += 1, txbytes += len(ciphertext).
 	if got := initiator.GetTX(); got != initTX+1 {
-		t.Fatalf("initiator GetTX() = %d, want %d", got, initTX+1)
+		t.Fatalf("initiator GetTX() = %v, want %v", got, initTX+1)
 	}
 	if got := initiator.GetTXBytes(); got != initTXBytes+uint64(wantCT) {
-		t.Fatalf("initiator GetTXBytes() = %d, want %d (=%d+%d)",
+		t.Fatalf("initiator GetTXBytes() = %v, want %v (=%v+%v)",
 			got, initTXBytes+uint64(wantCT), initTXBytes, wantCT)
 	}
 
@@ -161,10 +161,10 @@ func TestLinkTrafficCountersWired(t *testing.T) {
 		time.Sleep(2 * time.Millisecond)
 	}
 	if got := receiver.GetRX(); got != recvRX+1 {
-		t.Fatalf("receiver GetRX() = %d, want %d", got, recvRX+1)
+		t.Fatalf("receiver GetRX() = %v, want %v", got, recvRX+1)
 	}
 	if got := receiver.GetRXBytes(); got != recvRXBytes+uint64(wantCT) {
-		t.Fatalf("receiver GetRXBytes() = %d, want %d (=%d+%d)",
+		t.Fatalf("receiver GetRXBytes() = %v, want %v (=%v+%v)",
 			got, recvRXBytes+uint64(wantCT), recvRXBytes, wantCT)
 	}
 }

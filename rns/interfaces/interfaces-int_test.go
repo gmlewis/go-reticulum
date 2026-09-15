@@ -89,7 +89,7 @@ func TestAutoInterfaceDiscoveryPacketParity(t *testing.T) {
 			cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPath)
 			pyOut, err := cmd.CombinedOutput()
 			if err != nil {
-				t.Fatalf("python script failed: %v\n%s", err, string(pyOut))
+				t.Fatalf("python script failed: %v\n%v", err, string(pyOut))
 			}
 			pyHex := strings.TrimSpace(string(pyOut))
 
@@ -105,7 +105,7 @@ func TestAutoInterfaceDiscoveryPacketParity(t *testing.T) {
 			goHex := hex.EncodeToString(goToken[:])
 
 			if goHex != pyHex {
-				t.Errorf("token mismatch for address %q\nGo:     %s\nPython: %s", addr, goHex, pyHex)
+				t.Errorf("token mismatch for address %q\nGo:     %v\nPython: %v", addr, goHex, pyHex)
 			}
 		})
 	}
@@ -751,8 +751,8 @@ func TestSerialInterfaceParity(t *testing.T) {
 	vserial0 := filepath.Join(tmpDir, "vserial0")
 	vserial1 := filepath.Join(tmpDir, "vserial1")
 	socatCmd := exec.Command("socat", "-d", "-d",
-		fmt.Sprintf("PTY,link=%s,raw,echo=0", vserial0),
-		fmt.Sprintf("PTY,link=%s,raw,echo=0", vserial1))
+		fmt.Sprintf("PTY,link=%v,raw,echo=0", vserial0),
+		fmt.Sprintf("PTY,link=%v,raw,echo=0", vserial1))
 
 	socatOut := &bytes.Buffer{}
 	socatCmd.Stderr = socatOut
@@ -767,7 +767,7 @@ func TestSerialInterfaceParity(t *testing.T) {
 		if err := socatCmd.Wait(); err != nil {
 			t.Logf("socat wait error: %v", err)
 		}
-		fmt.Printf("socat Output: %s\n", socatOut.String())
+		fmt.Printf("socat Output: %v\n", socatOut.String())
 	})
 
 	deadline := time.Now().Add(5 * time.Second)
@@ -799,7 +799,7 @@ func TestSerialInterfaceParity(t *testing.T) {
 		if err := pyCmd.Wait(); err != nil {
 			t.Logf("Python Serial echo wait error: %v", err)
 		}
-		fmt.Printf("Python Output: %s\n", pyOut.String())
+		fmt.Printf("Python Output: %v\n", pyOut.String())
 	})
 
 	time.Sleep(2000 * time.Millisecond)

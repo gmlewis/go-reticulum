@@ -102,7 +102,7 @@ func TestTCPServerSpawnedInheritsIngressEgress(t *testing.T) {
 
 	applyNonDefaultIngressEgress(server.BaseInterface)
 
-	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%v", port))
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}

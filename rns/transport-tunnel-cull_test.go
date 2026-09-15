@@ -247,6 +247,6 @@ func TestHandleTunnelGuardsAgainstMissingTunnelID(t *testing.T) {
 	n := len(ts.tunnels)
 	ts.mu.Unlock()
 	if n != 0 {
-		t.Fatalf("tunnels map has %d entries after rejected HandleTunnel calls, want 0", n)
+		t.Fatalf("tunnels map has %v entries after rejected HandleTunnel calls, want 0", n)
 	}
 }

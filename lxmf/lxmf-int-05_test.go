@@ -265,7 +265,7 @@ func TestIntegrationRouterTwoNodeDirectLargeMessage(t *testing.T) {
 			t.Errorf("title = %q, want %q", got.TitleString(), "large direct title")
 		}
 		if got.ContentString() != largeContent {
-			t.Errorf("content length = %d, want %d", len(got.ContentString()), len(largeContent))
+			t.Errorf("content length = %v, want %v", len(got.ContentString()), len(largeContent))
 		}
 	case <-time.After(60 * time.Second):
 		t.Fatal("timed out waiting for large message delivery via direct method")

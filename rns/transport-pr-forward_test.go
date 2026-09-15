@@ -79,19 +79,19 @@ func TestForwardPathRequestBoundarySearchModeFilter(t *testing.T) {
 	ts.WaitOutboundSends()
 
 	if outBoundary.sendCount != 1 {
-		t.Errorf("boundary egress: got %d sends, want 1", outBoundary.sendCount)
+		t.Errorf("boundary egress: got %v sends, want 1", outBoundary.sendCount)
 	}
 	if outGateway.sendCount != 1 {
-		t.Errorf("gateway egress: got %d sends, want 1", outGateway.sendCount)
+		t.Errorf("gateway egress: got %v sends, want 1", outGateway.sendCount)
 	}
 	if outFull.sendCount != 0 {
-		t.Errorf("full egress should be filtered out by boundary search_mode_filter: got %d sends, want 0", outFull.sendCount)
+		t.Errorf("full egress should be filtered out by boundary search_mode_filter: got %v sends, want 0", outFull.sendCount)
 	}
 	if outAP.sendCount != 0 {
-		t.Errorf("access_point egress should be filtered out by boundary search_mode_filter: got %d sends, want 0", outAP.sendCount)
+		t.Errorf("access_point egress should be filtered out by boundary search_mode_filter: got %v sends, want 0", outAP.sendCount)
 	}
 	if outBoundaryDown.sendCount != 0 {
-		t.Errorf("offline boundary egress should be skipped (online check): got %d sends, want 0", outBoundaryDown.sendCount)
+		t.Errorf("offline boundary egress should be skipped (online check): got %v sends, want 0", outBoundaryDown.sendCount)
 	}
 }
 
@@ -122,7 +122,7 @@ func TestForwardPathRequestRecursivePrsOverridesMode(t *testing.T) {
 
 	for _, oi := range []*prForwardInterface{outFull, outAP, outBoundary, outGateway} {
 		if oi.sendCount != 1 {
-			t.Errorf("%s egress with recursive_prs=true: got %d sends, want 1 (mode should not filter)", oi.Name(), oi.sendCount)
+			t.Errorf("%v egress with recursive_prs=true: got %v sends, want 1 (mode should not filter)", oi.Name(), oi.sendCount)
 		}
 	}
 }
@@ -165,10 +165,10 @@ func TestForwardPathRequestToLocalClientsFullMode(t *testing.T) {
 	ts.WaitOutboundSends()
 
 	if localClient.sendCount != 1 {
-		t.Errorf("local client: got %d sends, want 1 (Python forwards unknown PR to local clients)", localClient.sendCount)
+		t.Errorf("local client: got %v sends, want 1 (Python forwards unknown PR to local clients)", localClient.sendCount)
 	}
 	if outNetwork.sendCount != 0 {
-		t.Errorf("network egress should not receive PR when should_search_for_unknown is false: got %d sends, want 0", outNetwork.sendCount)
+		t.Errorf("network egress should not receive PR when should_search_for_unknown is false: got %v sends, want 0", outNetwork.sendCount)
 	}
 }
 
@@ -190,9 +190,9 @@ func TestForwardPathRequestRecursivePrsFullModeSource(t *testing.T) {
 	ts.WaitOutboundSends()
 
 	if outBoundary.sendCount != 1 {
-		t.Errorf("boundary egress from full+rprs source: got %d sends, want 1", outBoundary.sendCount)
+		t.Errorf("boundary egress from full+rprs source: got %v sends, want 1", outBoundary.sendCount)
 	}
 	if outAP.sendCount != 1 {
-		t.Errorf("access_point egress from full+rprs source: got %d sends, want 1", outAP.sendCount)
+		t.Errorf("access_point egress from full+rprs source: got %v sends, want 1", outAP.sendCount)
 	}
 }

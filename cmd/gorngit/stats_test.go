@@ -103,7 +103,7 @@ func TestRepositoryStatsAtModerate(t *testing.T) {
 		t.Errorf("repository = %q, want r.git", r)
 	}
 	if lb := got["lookback_days"].(int64); lb != 3 {
-		t.Errorf("lookback_days = %d, want 3", lb)
+		t.Errorf("lookback_days = %v, want 3", lb)
 	}
 	wantDays := []string{"2026-01-13", "2026-01-14", "2026-01-15"}
 	if d := got["days"].([]string); !reflect.DeepEqual(d, wantDays) {
@@ -301,10 +301,10 @@ func TestRecordRepoStatAndPersist(t *testing.T) {
 	n.statsMu.Unlock()
 
 	if views[today] != int64(2) {
-		t.Errorf("view[%s] = %v, want 2", today, views[today])
+		t.Errorf("view[%v] = %v, want 2", today, views[today])
 	}
 	if fetches[today] != int64(1) {
-		t.Errorf("fetch[%s] = %v, want 1", today, fetches[today])
+		t.Errorf("fetch[%v] = %v, want 1", today, fetches[today])
 	}
 	// persistStats wrote the file.
 	if _, err := os.Stat(n.statsPath); err != nil {
@@ -328,10 +328,10 @@ func TestRecordGroupAndPageView(t *testing.T) {
 	n.statsMu.Unlock()
 
 	if gv[today] != int64(1) {
-		t.Errorf("group view[%s] = %v, want 1", today, gv[today])
+		t.Errorf("group view[%v] = %v, want 1", today, gv[today])
 	}
 	if front[today] != int64(1) {
-		t.Errorf("front view[%s] = %v, want 1", today, front[today])
+		t.Errorf("front view[%v] = %v, want 1", today, front[today])
 	}
 }
 
@@ -443,13 +443,13 @@ func TestViewSucceededLevels(t *testing.T) {
 	n.statsMu.Unlock()
 
 	if front[today] != int64(1) {
-		t.Errorf("front[%s] = %v, want 1", today, front[today])
+		t.Errorf("front[%v] = %v, want 1", today, front[today])
 	}
 	if gv[today] != int64(1) {
-		t.Errorf("group view[%s] = %v, want 1", today, gv[today])
+		t.Errorf("group view[%v] = %v, want 1", today, gv[today])
 	}
 	if rv[today] != int64(1) {
-		t.Errorf("repo view[%s] = %v, want 1", today, rv[today])
+		t.Errorf("repo view[%v] = %v, want 1", today, rv[today])
 	}
 }
 

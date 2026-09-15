@@ -61,7 +61,7 @@ func TestIntegrationWorkRoundTrip(t *testing.T) {
 	}()
 
 	clientConfigDir := testutils.TempDir(t, "gorngit-workrt-clientcfg-")
-	remoteURL := fmt.Sprintf("rns://%s/main/%s", fmt.Sprintf("%x", destHash), repoName)
+	remoteURL := fmt.Sprintf("rns://%v/main/%v", fmt.Sprintf("%x", destHash), repoName)
 	client, err := newReticulumGitClient(ts, clientConfigDir, "", remoteURL, logger)
 	if err != nil {
 		t.Fatalf("could not create client: %v", err)
@@ -115,12 +115,12 @@ func TestIntegrationWorkRoundTrip(t *testing.T) {
 	if docID == 0 {
 		t.Fatal("propose returned id=0")
 	}
-	t.Logf("Proposed work document #%d", docID)
+	t.Logf("Proposed work document #%v", docID)
 
 	// Verify the .allowed file was written on the server.
-	allowedPath := filepath.Join(workPath, fmt.Sprintf("%d.allowed", docID))
+	allowedPath := filepath.Join(workPath, fmt.Sprintf("%v.allowed", docID))
 	if _, err := os.Stat(allowedPath); err != nil {
-		t.Fatalf("server .allowed %s missing: %v", allowedPath, err)
+		t.Fatalf("server .allowed %v missing: %v", allowedPath, err)
 	}
 
 	// 2. List (scope=all) — the proposed document should appear.
@@ -151,11 +151,11 @@ func TestIntegrationWorkRoundTrip(t *testing.T) {
 	}
 	proposed, _ := listMap["proposed"].([]any)
 	if len(proposed) != 1 {
-		t.Fatalf("list proposed len=%d, want 1", len(proposed))
+		t.Fatalf("list proposed len=%v, want 1", len(proposed))
 	}
 	first, _ := proposed[0].(map[any]any)
 	if first["id"] != docID {
-		t.Errorf("list proposed id=%v, want %d", first["id"], docID)
+		t.Errorf("list proposed id=%v, want %v", first["id"], docID)
 	}
 	if first["title"] != "Proposal" {
 		t.Errorf("list proposed title=%v, want Proposal", first["title"])
@@ -195,11 +195,11 @@ func TestIntegrationWorkRoundTrip(t *testing.T) {
 	viewMeta, _ := viewDoc["meta"].(map[any]any)
 	sig, _ := viewMeta["signature"].([]byte)
 	if len(sig) != signatureLength {
-		t.Fatalf("view signature len=%d, want %d", len(sig), signatureLength)
+		t.Fatalf("view signature len=%v, want %v", len(sig), signatureLength)
 	}
 	pub, _ := viewMeta["identity"].([]byte)
 	if len(pub) != rns.IdentityKeySize/8 {
-		t.Fatalf("view identity len=%d, want %d", len(pub), rns.IdentityKeySize/8)
+		t.Fatalf("view identity len=%v, want %v", len(pub), rns.IdentityKeySize/8)
 	}
 	// Validate the signature locally (mirrors work_view client logic).
 	verifyID, err := rns.NewIdentity(false, nil)
@@ -246,9 +246,9 @@ func TestIntegrationWorkRoundTrip(t *testing.T) {
 	}
 	commentID, _ := commentMap["id"].(int64)
 	if commentID != 1 {
-		t.Errorf("comment id=%d, want 1", commentID)
+		t.Errorf("comment id=%v, want 1", commentID)
 	}
-	t.Logf("Comment #%d added", commentID)
+	t.Logf("Comment #%v added", commentID)
 
 	// 5. Edit — author-only (client identity is the author).
 	newContent := "Edited proposal body."
@@ -326,7 +326,7 @@ func TestIntegrationWorkRoundTrip(t *testing.T) {
 	if createMap["scope"] != "active" {
 		t.Errorf("create scope=%v, want active", createMap["scope"])
 	}
-	t.Logf("Created active work document #%d", activeDocID)
+	t.Logf("Created active work document #%v", activeDocID)
 
 	// 7. Complete the active doc → completed.
 	completeData := map[any]any{
@@ -355,13 +355,13 @@ func TestIntegrationWorkRoundTrip(t *testing.T) {
 		t.Errorf("complete scope=%v, want completed", completeMap["scope"])
 	}
 	// Assert on-disk state: active/<id> gone, completed/<id> present.
-	if isDir(filepath.Join(workPath, "active", fmt.Sprintf("%d", activeDocID))) {
-		t.Errorf("active/%d still exists after complete", activeDocID)
+	if isDir(filepath.Join(workPath, "active", fmt.Sprintf("%v", activeDocID))) {
+		t.Errorf("active/%v still exists after complete", activeDocID)
 	}
-	if !isDir(filepath.Join(workPath, "completed", fmt.Sprintf("%d", activeDocID))) {
-		t.Errorf("completed/%d missing after complete", activeDocID)
+	if !isDir(filepath.Join(workPath, "completed", fmt.Sprintf("%v", activeDocID))) {
+		t.Errorf("completed/%v missing after complete", activeDocID)
 	}
-	t.Logf("Completed work document #%d", activeDocID)
+	t.Logf("Completed work document #%v", activeDocID)
 
 	// 8. Activate the completed doc → active.
 	activateData := map[any]any{
@@ -389,10 +389,10 @@ func TestIntegrationWorkRoundTrip(t *testing.T) {
 	if activateMap["scope"] != "active" {
 		t.Errorf("activate scope=%v, want active", activateMap["scope"])
 	}
-	if !isDir(filepath.Join(workPath, "active", fmt.Sprintf("%d", activeDocID))) {
-		t.Errorf("active/%d missing after activate", activeDocID)
+	if !isDir(filepath.Join(workPath, "active", fmt.Sprintf("%v", activeDocID))) {
+		t.Errorf("active/%v missing after activate", activeDocID)
 	}
-	t.Logf("Activated work document #%d", activeDocID)
+	t.Logf("Activated work document #%v", activeDocID)
 
 	// 9. Delete the proposed doc.
 	deleteData := map[any]any{
@@ -413,14 +413,14 @@ func TestIntegrationWorkRoundTrip(t *testing.T) {
 	if !ok || len(respBytes) == 0 || respBytes[0] != resOK {
 		t.Fatalf("delete response code = %x, want resOK", firstByte(respBytes))
 	}
-	proposedDir := filepath.Join(workPath, "proposed", fmt.Sprintf("%d", docID))
+	proposedDir := filepath.Join(workPath, "proposed", fmt.Sprintf("%v", docID))
 	if isDir(proposedDir) {
-		t.Errorf("proposed/%d still exists after delete", docID)
+		t.Errorf("proposed/%v still exists after delete", docID)
 	}
 	if _, err := os.Stat(allowedPath); !os.IsNotExist(err) {
-		t.Errorf(".allowed %s still exists after delete", allowedPath)
+		t.Errorf(".allowed %v still exists after delete", allowedPath)
 	}
-	t.Logf("Deleted work document #%d", docID)
+	t.Logf("Deleted work document #%v", docID)
 
 	// 10. Perms get on the active doc (created via create, no .allowed file
 	// so content is empty).
@@ -464,7 +464,7 @@ func TestIntegrationWorkRoundTrip(t *testing.T) {
 	if !ok || len(respBytes) == 0 || respBytes[0] != resOK {
 		t.Fatalf("perms set response code = %x, want resOK", firstByte(respBytes))
 	}
-	allowedActive := filepath.Join(workPath, fmt.Sprintf("%d.allowed", activeDocID))
+	allowedActive := filepath.Join(workPath, fmt.Sprintf("%v.allowed", activeDocID))
 	got, err := os.ReadFile(allowedActive)
 	if err != nil {
 		t.Fatalf("read .allowed: %v", err)
@@ -519,7 +519,7 @@ func TestIntegrationWorkRoundTrip(t *testing.T) {
 	if !ok || len(respBytes) == 0 || respBytes[0] != resOK {
 		t.Fatalf("delete active response code = %x, want resOK", firstByte(respBytes))
 	}
-	t.Logf("Deleted active work document #%d", activeDocID)
+	t.Logf("Deleted active work document #%v", activeDocID)
 
 	// Allow the server a moment to flush. The test is done; the deferred
 	// node cleanup will terminate the subprocess.

@@ -104,7 +104,7 @@ func TestParseListResponse(t *testing.T) {
 		t.Fatal("ok = false, want true")
 	}
 	if code != resOK {
-		t.Errorf("code = %d, want %d", code, resOK)
+		t.Errorf("code = %v, want %v", code, resOK)
 	}
 	if payload != body {
 		t.Errorf("payload = %q, want %q", payload, body)
@@ -131,7 +131,7 @@ func TestParseListResponseErrorCode(t *testing.T) {
 		t.Fatal("ok = false, want true")
 	}
 	if code != resNotFound {
-		t.Errorf("code = %d, want %d", code, resNotFound)
+		t.Errorf("code = %v, want %v", code, resNotFound)
 	}
 	if payload != "no such repo" {
 		t.Errorf("payload = %q, want %q", payload, "no such repo")
@@ -150,7 +150,7 @@ func TestParseFetchResponseBundle(t *testing.T) {
 		t.Fatal("ok = false, want true")
 	}
 	if code != resOK {
-		t.Errorf("code = %d, want %d", code, resOK)
+		t.Errorf("code = %v, want %v", code, resOK)
 	}
 	if !bytes.Equal(data, bundle) {
 		t.Errorf("bundle = %q, want %q", data, bundle)
@@ -170,10 +170,10 @@ func TestParseFetchResponseEmptyBundle(t *testing.T) {
 		t.Fatal("ok = false, want true")
 	}
 	if code != resOK {
-		t.Errorf("code = %d, want %d", code, resOK)
+		t.Errorf("code = %v, want %v", code, resOK)
 	}
 	if len(data) != 0 {
-		t.Errorf("bundle len = %d, want 0", len(data))
+		t.Errorf("bundle len = %v, want 0", len(data))
 	}
 	if msg != "" {
 		t.Errorf("msg = %q, want empty", msg)
@@ -191,7 +191,7 @@ func TestParseFetchResponseError(t *testing.T) {
 		t.Fatal("ok = false, want true")
 	}
 	if code != resRemoteFail {
-		t.Errorf("code = %d, want %d", code, resRemoteFail)
+		t.Errorf("code = %v, want %v", code, resRemoteFail)
 	}
 	if data != nil {
 		t.Errorf("bundle = %x, want empty for error response", data)
@@ -222,7 +222,7 @@ func TestParseSimpleResponse(t *testing.T) {
 			t.Fatal("ok = false, want true")
 		}
 		if code != resOK {
-			t.Errorf("code = %d, want %d", code, resOK)
+			t.Errorf("code = %v, want %v", code, resOK)
 		}
 		if msg != "" {
 			t.Errorf("msg = %q, want empty", msg)
@@ -237,7 +237,7 @@ func TestParseSimpleResponse(t *testing.T) {
 			t.Fatal("ok = false, want true")
 		}
 		if code != resRemoteFail {
-			t.Errorf("code = %d, want %d", code, resRemoteFail)
+			t.Errorf("code = %v, want %v", code, resRemoteFail)
 		}
 		if msg != "Could not fetch from bundle" {
 			t.Errorf("msg = %q, want %q", msg, "Could not fetch from bundle")
@@ -274,7 +274,7 @@ func TestErrorMessage(t *testing.T) {
 	for _, tc := range cases {
 		got := errorMessage(tc.code, tc.msg)
 		if !strings.Contains(got, tc.wantHas) {
-			t.Errorf("errorMessage(%d, %q) = %q, want to contain %q", tc.code, tc.msg, got, tc.wantHas)
+			t.Errorf("errorMessage(%v, %q) = %q, want to contain %q", tc.code, tc.msg, got, tc.wantHas)
 		}
 	}
 }
@@ -465,7 +465,7 @@ func TestCacheRemoteRefs(t *testing.T) {
 		"@refs/heads/main HEAD\n"
 	c.cacheRemoteRefs(body)
 	if len(c.remoteRefs) != 2 {
-		t.Fatalf("remoteRefs has %d entries, want 2", len(c.remoteRefs))
+		t.Fatalf("remoteRefs has %v entries, want 2", len(c.remoteRefs))
 	}
 	if c.remoteRefs["refs/heads/main"] != "aaa" {
 		t.Errorf("remoteRefs[main] = %q, want aaa", c.remoteRefs["refs/heads/main"])

@@ -48,7 +48,7 @@ func expectHashString(t *testing.T, got, wantStr string) {
 		t.Fatalf("python3 full_hash: %v", err)
 	}
 	if py := strings.TrimSpace(string(out)); py != hex.EncodeToString(wantFull[:]) {
-		t.Fatalf("Python full_hash(%q) = %s, want %s", wantStr, py, hex.EncodeToString(wantFull[:]))
+		t.Fatalf("Python full_hash(%q) = %v, want %v", wantStr, py, hex.EncodeToString(wantFull[:]))
 	}
 }
 
@@ -182,6 +182,6 @@ func TestBackboneStoredParityHashCrossChecks(t *testing.T) {
 		t.Fatalf("hash material mismatch: %q vs %q", got, wantStr)
 	}
 	if py := pythonFullHash(t, wantStr); py != "" && py != fullHashHex(wantStr) {
-		t.Fatalf("python3 full_hash(%q) = %s, want %s", wantStr, py, fullHashHex(wantStr))
+		t.Fatalf("python3 full_hash(%q) = %v, want %v", wantStr, py, fullHashHex(wantStr))
 	}
 }

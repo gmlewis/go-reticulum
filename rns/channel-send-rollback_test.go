@@ -161,13 +161,13 @@ func TestChannelSendLockSerializesConcurrentSends(t *testing.T) {
 	seen := make(map[uint16]int)
 	for i := range n {
 		if errs[i] != nil {
-			t.Fatalf("send %d: %v", i, errs[i])
+			t.Fatalf("send %v: %v", i, errs[i])
 		}
 		if envs[i] == nil {
-			t.Fatalf("send %d: nil envelope", i)
+			t.Fatalf("send %v: nil envelope", i)
 		}
 		if dup, ok := seen[envs[i].Sequence]; ok {
-			t.Fatalf("duplicate sequence %v from sends %d and %d (sendLock did not serialize)", envs[i].Sequence, dup, i)
+			t.Fatalf("duplicate sequence %v from sends %v and %v (sendLock did not serialize)", envs[i].Sequence, dup, i)
 		}
 		seen[envs[i].Sequence] = i
 	}

@@ -199,12 +199,12 @@ func (b *BackboneInterface) recordFlap(remoteIP string, spawnedAt time.Time) {
 	// Log the flap (BackboneInterface.py:851). Python gates this behind
 	// LOG_DEBUG; the Go port has no leveled logger in this package, so it is
 	// emitted unconditionally via the standard logger.
-	log.Printf("BackboneInterface %s is fast flapping, connection time was %s, %d fast flaps",
+	log.Printf("BackboneInterface %v is fast flapping, connection time was %v, %v fast flaps",
 		b.Name(), connectedTime.Round(time.Second), entry.flaps)
 	if entry.flaps > b.fastFlapGrace {
 		// Grace exceeded: warn that further connections are ignored
 		// (BackboneInterface.py:852).
-		log.Printf("Ignoring further connections from %s due to fast-flapping", remoteIP)
+		log.Printf("Ignoring further connections from %v due to fast-flapping", remoteIP)
 	}
 }
 

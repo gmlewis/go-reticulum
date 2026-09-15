@@ -66,7 +66,7 @@ func genPythonIdentity(t *testing.T, idPath string) string {
 			}
 		}
 	}
-	t.Fatalf("could not parse identity hash from rnid output: %s", string(out))
+	t.Fatalf("could not parse identity hash from rnid output: %v", string(out))
 	return ""
 }
 

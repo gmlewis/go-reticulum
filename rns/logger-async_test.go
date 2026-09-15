@@ -30,7 +30,7 @@ func TestLoggerFlushDrainsToFile(t *testing.T) {
 
 	const lines = 500
 	for i := range lines {
-		logger.Debug("flush line %d", i)
+		logger.Debug("flush line %v", i)
 	}
 	if !logger.Flush() {
 		t.Fatal("Flush() timed out waiting for the writer to drain")

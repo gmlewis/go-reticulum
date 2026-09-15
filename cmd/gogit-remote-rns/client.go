@@ -259,7 +259,7 @@ func (c *rnsClient) list(forPush bool) (string, error) {
 		return "", errors.New("empty list response from server")
 	}
 	if code != resOK {
-		return "", fmt.Errorf("server refused list: %s", payload)
+		return "", fmt.Errorf("server refused list: %v", payload)
 	}
 
 	c.cacheRemoteRefs(payload)
@@ -339,7 +339,7 @@ func (c *rnsClient) fetch(refs []fetchRef) error {
 			return errors.New("invalid fetch response from server")
 		}
 		if code != resOK {
-			return fmt.Errorf("fetch failed: %s", errorMessage(code, msg))
+			return fmt.Errorf("fetch failed: %v", errorMessage(code, msg))
 		}
 		if len(bundleData) == 0 {
 			// Empty bundle: all requested objects already exist locally.
@@ -399,7 +399,7 @@ func (c *rnsClient) pushDelete(pr pushRef) pushStatus {
 // mirroring the bundle branch of process_push_queue (client.py).
 func (c *rnsClient) pushBundle(pr pushRef) pushStatus {
 	if _, ok := localRefSHA(pr.localRef); !ok {
-		return pushStatus{remoteRef: pr.remoteRef, ok: false, msg: fmt.Sprintf("Could not resolve local ref %s", pr.localRef)}
+		return pushStatus{remoteRef: pr.remoteRef, ok: false, msg: fmt.Sprintf("Could not resolve local ref %v", pr.localRef)}
 	}
 
 	bundleData, empty, err := c.createPushBundle(pr.localRef)
@@ -579,7 +579,7 @@ func resolveRemoteIdentity(ts rns.Transport, destHash []byte, timeout time.Durat
 // persists a new one, mirroring __apply_config identity loading (client.py).
 func loadOrCreateIdentity(identityPath string, logger *rns.Logger) (*rns.Identity, error) {
 	if identity, err := rns.FromFile(identityPath, logger); err == nil && identity != nil {
-		logger.Verbose("Client identity loaded from %s", identityPath)
+		logger.Verbose("Client identity loaded from %v", identityPath)
 		return identity, nil
 	}
 	identity, err := rns.NewIdentity(true, logger)
@@ -587,9 +587,9 @@ func loadOrCreateIdentity(identityPath string, logger *rns.Logger) (*rns.Identit
 		return nil, fmt.Errorf("could not create identity: %w", err)
 	}
 	if err := identity.ToFile(identityPath); err != nil {
-		return nil, fmt.Errorf("could not persist identity to %s: %w", identityPath, err)
+		return nil, fmt.Errorf("could not persist identity to %v: %w", identityPath, err)
 	}
-	logger.Verbose("Client identity generated and persisted to %s", identityPath)
+	logger.Verbose("Client identity generated and persisted to %v", identityPath)
 	return identity, nil
 }
 

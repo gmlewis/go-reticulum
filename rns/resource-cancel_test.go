@@ -186,7 +186,7 @@ func TestResourceCancelCompleteIsNoOp(t *testing.T) {
 		t.Errorf("complete resource status after cancel = %v, want Complete (no-op)", got)
 	}
 	if len(ct.sent) != 0 {
-		t.Errorf("complete resource sent %d packets; want 0 (contexts = %v)", len(ct.sent), sentContexts(ct))
+		t.Errorf("complete resource sent %v packets; want 0 (contexts = %v)", len(ct.sent), sentContexts(ct))
 	}
 	select {
 	case <-fired:

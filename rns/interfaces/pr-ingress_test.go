@@ -38,7 +38,7 @@ func TestIncomingPrFrequency(t *testing.T) {
 		t.Fatalf("incomingPrFrequencyAt after decay = %v, want > 0", got)
 	}
 	if len(bi.ipFreqDeque) != 3 {
-		t.Fatalf("expected popleft to shrink deque to 3, got %d", len(bi.ipFreqDeque))
+		t.Fatalf("expected popleft to shrink deque to 3, got %v", len(bi.ipFreqDeque))
 	}
 }
 
@@ -77,10 +77,10 @@ func TestReceivedSentPathRequest(t *testing.T) {
 	child.sentPathRequestAt(now, false)
 
 	if len(child.ipFreqDeque) != 1 || len(child.opFreqDeque) != 1 {
-		t.Fatalf("child deques: ip=%d op=%d, want 1/1", len(child.ipFreqDeque), len(child.opFreqDeque))
+		t.Fatalf("child deques: ip=%v op=%v, want 1/1", len(child.ipFreqDeque), len(child.opFreqDeque))
 	}
 	if len(parent.ipFreqDeque) != 1 || len(parent.opFreqDeque) != 1 {
-		t.Fatalf("parent deques not propagated: ip=%d op=%d, want 1/1", len(parent.ipFreqDeque), len(parent.opFreqDeque))
+		t.Fatalf("parent deques not propagated: ip=%v op=%v, want 1/1", len(parent.ipFreqDeque), len(parent.opFreqDeque))
 	}
 
 	// A from_spawned propagation must not re-propagate to the grandparent.
@@ -89,7 +89,7 @@ func TestReceivedSentPathRequest(t *testing.T) {
 	parent.receivedPathRequestAt(now, true)
 	parent.sentPathRequestAt(now, true)
 	if len(grandparent.ipFreqDeque) != 0 || len(grandparent.opFreqDeque) != 0 {
-		t.Fatalf("grandparent re-propagated: ip=%d op=%d, want 0/0", len(grandparent.ipFreqDeque), len(grandparent.opFreqDeque))
+		t.Fatalf("grandparent re-propagated: ip=%v op=%v, want 0/0", len(grandparent.ipFreqDeque), len(grandparent.opFreqDeque))
 	}
 }
 

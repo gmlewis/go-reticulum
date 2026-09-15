@@ -61,7 +61,7 @@ finally:
 		}
 	}
 	if pathsJSON == "" || ratesJSON == "" {
-		t.Fatalf("python capture missing PATHS/RATES output:\n%s", out)
+		t.Fatalf("python capture missing PATHS/RATES output:\n%v", out)
 	}
 	return pathsJSON, ratesJSON
 }
@@ -75,17 +75,17 @@ func jsonFirstObjectKeys(t *testing.T, s string) []string {
 	dec := json.NewDecoder(strings.NewReader(s))
 	tok, err := dec.Token()
 	if err != nil {
-		t.Fatalf("json decode array open: %v\nraw: %s", err, s)
+		t.Fatalf("json decode array open: %v\nraw: %v", err, s)
 	}
 	if d, ok := tok.(json.Delim); !ok || d != '[' {
-		t.Fatalf("expected JSON array, got %v\nraw: %s", tok, s)
+		t.Fatalf("expected JSON array, got %v\nraw: %v", tok, s)
 	}
 	tok, err = dec.Token()
 	if err != nil {
-		t.Fatalf("json decode first token: %v\nraw: %s", err, s)
+		t.Fatalf("json decode first token: %v\nraw: %v", err, s)
 	}
 	if d, ok := tok.(json.Delim); !ok || d != '{' {
-		t.Fatalf("expected JSON object in array, got %v\nraw: %s", tok, s)
+		t.Fatalf("expected JSON object in array, got %v\nraw: %v", tok, s)
 	}
 	var keys []string
 	for dec.More() {
@@ -108,10 +108,10 @@ func jsonFirstObjectValues(t *testing.T, s string) map[string]any {
 	t.Helper()
 	var arr []map[string]any
 	if err := json.Unmarshal([]byte(s), &arr); err != nil {
-		t.Fatalf("json unmarshal array: %v\nraw: %s", err, s)
+		t.Fatalf("json unmarshal array: %v\nraw: %v", err, s)
 	}
 	if len(arr) == 0 {
-		t.Fatalf("json array empty\nraw: %s", s)
+		t.Fatalf("json array empty\nraw: %v", s)
 	}
 	return arr[0]
 }
@@ -123,7 +123,7 @@ func assertJSONParity(t *testing.T, got, wantPython string) {
 	gotKeys := jsonFirstObjectKeys(t, got)
 	wantKeys := jsonFirstObjectKeys(t, wantPython)
 	if !reflect.DeepEqual(gotKeys, wantKeys) {
-		t.Fatalf("JSON field names/order mismatch with live Python:\n got keys: %v\nwant keys: %v\n got JSON: %s\nwant JSON: %s",
+		t.Fatalf("JSON field names/order mismatch with live Python:\n got keys: %v\nwant keys: %v\n got JSON: %v\nwant JSON: %v",
 			gotKeys, wantKeys, got, wantPython)
 	}
 	gotVals := jsonFirstObjectValues(t, got)

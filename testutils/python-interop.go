@@ -82,7 +82,7 @@ func RunPython(t *testing.T, script string, args ...string) string {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("python3 script failed: %v\n--- stderr ---\n%s\n--- stdout ---\n%s", err, stderr.String(), stdout.String())
+		t.Fatalf("python3 script failed: %v\n--- stderr ---\n%v\n--- stdout ---\n%v", err, stderr.String(), stdout.String())
 	}
 	return stdout.String()
 }

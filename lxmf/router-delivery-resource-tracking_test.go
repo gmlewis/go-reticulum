@@ -196,7 +196,7 @@ func TestJobLoopRunsCleanResourceTracking(t *testing.T) {
 	_, present := router.incomingDeliveryResources[string(terminalHash)]
 	router.incomingDeliveryResourcesMu.Unlock()
 	if !present {
-		t.Fatalf("terminal resource reaped after tick 1; want retained (clean runs every %d ticks)", JOB_RESOURCE_INTERVAL)
+		t.Fatalf("terminal resource reaped after tick 1; want retained (clean runs every %v ticks)", JOB_RESOURCE_INTERVAL)
 	}
 
 	// Tick 2: the clean job runs and reaps the terminal resource.
@@ -205,6 +205,6 @@ func TestJobLoopRunsCleanResourceTracking(t *testing.T) {
 	present = router.incomingDeliveryResources[string(terminalHash)] != nil
 	router.incomingDeliveryResourcesMu.Unlock()
 	if present {
-		t.Fatalf("terminal resource retained after tick %d; want reaped by clean job", JOB_RESOURCE_INTERVAL)
+		t.Fatalf("terminal resource retained after tick %v; want reaped by clean job", JOB_RESOURCE_INTERVAL)
 	}
 }

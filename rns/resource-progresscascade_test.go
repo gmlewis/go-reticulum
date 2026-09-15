@@ -43,7 +43,7 @@ func TestResourceProgressCallbackCascadesToNextSegment(t *testing.T) {
 		pcb := r.progressCallback
 		r.mu.Unlock()
 		if pcb == nil {
-			t.Fatalf("segment %d progressCallback not installed (cascade failed)", i)
+			t.Fatalf("segment %v progressCallback not installed (cascade failed)", i)
 		}
 		pcb(r)
 	}
@@ -51,7 +51,7 @@ func TestResourceProgressCallbackCascadesToNextSegment(t *testing.T) {
 	got := fires
 	mu.Unlock()
 	if got != 3 {
-		t.Errorf("progress callback fired %d times, want 3 (once per segment)", got)
+		t.Errorf("progress callback fired %v times, want 3 (once per segment)", got)
 	}
 }
 
@@ -85,6 +85,6 @@ func TestResourceProgressCallbackNoNextSegment(t *testing.T) {
 	got := fires
 	mu.Unlock()
 	if got != 1 {
-		t.Errorf("progress callback fired %d times, want 1", got)
+		t.Errorf("progress callback fired %v times, want 1", got)
 	}
 }

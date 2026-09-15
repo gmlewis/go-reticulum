@@ -228,10 +228,10 @@ func startGorngitNode(t *testing.T, rnsConfigDir, nodeConfigDir string) (*exec.C
 		cancel()
 		_ = cmd.Wait()
 		if stderr.Len() > 0 {
-			t.Logf("gorngit node stderr: %s", stderr.String())
+			t.Logf("gorngit node stderr: %v", stderr.String())
 		}
 		if stdout.Len() > 0 {
-			t.Logf("gorngit node stdout: %s", stdout.String())
+			t.Logf("gorngit node stdout: %v", stdout.String())
 		}
 	}
 	return cmd, cleanup
@@ -327,7 +327,7 @@ func TestIntegrationListReturnsRefs(t *testing.T) {
 	}()
 
 	clientConfigDir := testutils.TempDir(t, "gorngit-list-clientcfg-")
-	remoteURL := fmt.Sprintf("rns://%s/main/%s", fmt.Sprintf("%x", destHash), repoName)
+	remoteURL := fmt.Sprintf("rns://%v/main/%v", fmt.Sprintf("%x", destHash), repoName)
 	client, err := newReticulumGitClient(ts, clientConfigDir, "", remoteURL, logger)
 	if err != nil {
 		t.Fatalf("could not create client: %v", err)
@@ -389,7 +389,7 @@ func TestIntegrationCreateRepo(t *testing.T) {
 
 	clientConfigDir := testutils.TempDir(t, "gorngit-create-clientcfg-")
 	newRepoName := "newrepo.git"
-	remoteURL := fmt.Sprintf("rns://%s/main/%s", fmt.Sprintf("%x", destHash), newRepoName)
+	remoteURL := fmt.Sprintf("rns://%v/main/%v", fmt.Sprintf("%x", destHash), newRepoName)
 	client, err := newReticulumGitClient(ts, clientConfigDir, "", remoteURL, logger)
 	if err != nil {
 		t.Fatalf("could not create client: %v", err)
@@ -494,7 +494,7 @@ func TestIntegrationFetchReturnsBundle(t *testing.T) {
 	}()
 
 	clientConfigDir := testutils.TempDir(t, "gorngit-fetch-clientcfg-")
-	remoteURL := fmt.Sprintf("rns://%s/main/%s", fmt.Sprintf("%x", destHash), repoName)
+	remoteURL := fmt.Sprintf("rns://%v/main/%v", fmt.Sprintf("%x", destHash), repoName)
 	client, err := newReticulumGitClient(ts, clientConfigDir, "", remoteURL, logger)
 	if err != nil {
 		t.Fatalf("could not create client: %s", err)
@@ -513,7 +513,7 @@ func TestIntegrationFetchReturnsBundle(t *testing.T) {
 	if len(bundleData) == 0 {
 		t.Fatal("fetch returned empty bundle, expected non-empty bundle with commit objects")
 	}
-	t.Logf("Received bundle of %d bytes", len(bundleData))
+	t.Logf("Received bundle of %v bytes", len(bundleData))
 
 	// Write the bundle to a temp file and verify it.
 	bundleDir := testutils.TempDir(t, "gorngit-fetch-bundle-")
@@ -527,7 +527,7 @@ func TestIntegrationFetchReturnsBundle(t *testing.T) {
 	verifyDir := testutils.TempDir(t, "gorngit-fetch-verify-")
 	runGit(t, verifyDir, "init")
 	verifyOut := runGit(t, verifyDir, "bundle", "verify", bundlePath)
-	t.Logf("bundle verify output: %s", verifyOut)
+	t.Logf("bundle verify output: %v", verifyOut)
 
 	// Fetch from the bundle into the verify repo to import objects and
 	// update the ref, then confirm the commit is present.
@@ -537,7 +537,7 @@ func TestIntegrationFetchReturnsBundle(t *testing.T) {
 	if sha == "" {
 		t.Fatal("could not resolve refs/heads/main after fetch from bundle")
 	}
-	t.Logf("Unbundled commit SHA: %s", sha)
+	t.Logf("Unbundled commit SHA: %v", sha)
 
 	// Confirm the bundle's SHA matches the server's seeded commit.
 	serverSHAOut := runGit(t, filepath.Join(repoRoot, repoName), "rev-parse", "refs/heads/main")
@@ -572,7 +572,7 @@ func TestIntegrationPushRoundTrip(t *testing.T) {
 	// Build a local work repo with a commit and create a bundle.
 	workDir := testutils.TempDir(t, "gorngit-push-work-")
 	commitSHA := makeWorkRepoWithCommit(t, workDir)
-	t.Logf("Local commit SHA: %s", commitSHA)
+	t.Logf("Local commit SHA: %v", commitSHA)
 
 	bundleDir := testutils.TempDir(t, "gorngit-push-bundle-")
 	bundlePath := filepath.Join(bundleDir, "push.bundle")
@@ -598,7 +598,7 @@ func TestIntegrationPushRoundTrip(t *testing.T) {
 	}()
 
 	clientConfigDir := testutils.TempDir(t, "gorngit-push-clientcfg-")
-	remoteURL := fmt.Sprintf("rns://%s/main/%s", fmt.Sprintf("%x", destHash), repoName)
+	remoteURL := fmt.Sprintf("rns://%v/main/%v", fmt.Sprintf("%x", destHash), repoName)
 	client, err := newReticulumGitClient(ts, clientConfigDir, "", remoteURL, logger)
 	if err != nil {
 		t.Fatalf("could not create client: %s", err)
@@ -622,7 +622,7 @@ func TestIntegrationPushRoundTrip(t *testing.T) {
 	if serverSHA != commitSHA {
 		t.Fatalf("server ref SHA = %q, want %q", serverSHA, commitSHA)
 	}
-	t.Logf("Server ref updated to %s", serverSHA)
+	t.Logf("Server ref updated to %v", serverSHA)
 }
 
 // TestIntegrationFetchEmptyBundle verifies that a fetch for a ref whose
@@ -660,7 +660,7 @@ func TestIntegrationFetchEmptyBundle(t *testing.T) {
 	}()
 
 	clientConfigDir := testutils.TempDir(t, "gorngit-fetchempty-clientcfg-")
-	remoteURL := fmt.Sprintf("rns://%s/main/%s", fmt.Sprintf("%x", destHash), repoName)
+	remoteURL := fmt.Sprintf("rns://%v/main/%v", fmt.Sprintf("%x", destHash), repoName)
 	client, err := newReticulumGitClient(ts, clientConfigDir, "", remoteURL, logger)
 	if err != nil {
 		t.Fatalf("could not create client: %s", err)
@@ -680,7 +680,7 @@ func TestIntegrationFetchEmptyBundle(t *testing.T) {
 		t.Fatalf("fetch failed: %s", err)
 	}
 	if len(bundleData) != 0 {
-		t.Fatalf("expected empty bundle, got %d bytes", len(bundleData))
+		t.Fatalf("expected empty bundle, got %v bytes", len(bundleData))
 	}
 	t.Logf("Fetch returned empty bundle as expected (resOK, no data)")
 }
@@ -697,12 +697,12 @@ func startDumbHTTPRepoServer(t *testing.T, bareRepoPath string) (string, func())
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServer(http.Dir(bareRepoPath)))
 	server := &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", port),
+		Addr:    fmt.Sprintf("127.0.0.1:%v", port),
 		Handler: mux,
 	}
 	go func() { _ = server.ListenAndServe() }()
 
-	sourceURL := fmt.Sprintf("http://127.0.0.1:%d/", port)
+	sourceURL := fmt.Sprintf("http://127.0.0.1:%v/", port)
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		resp, err := http.Get(sourceURL + "info/refs")
@@ -770,7 +770,7 @@ func TestIntegrationMirrorRepo(t *testing.T) {
 
 	sourceURL, sourceRepoPath, sourceSHA, httpCleanup := prepareSeededHTTPSource(t, "gorngit-mirror-")
 	defer httpCleanup()
-	t.Logf("Source URL: %s (SHA %s)", sourceURL, sourceSHA)
+	t.Logf("Source URL: %v (SHA %v)", sourceURL, sourceSHA)
 
 	_, nodeCleanup := startGorngitNode(t, listenerRNSConfig, nodeConfigDir)
 	defer nodeCleanup()
@@ -793,7 +793,7 @@ func TestIntegrationMirrorRepo(t *testing.T) {
 
 	clientConfigDir := testutils.TempDir(t, "gorngit-mirror-clientcfg-")
 	targetRepo := "mirrored.git"
-	remoteURL := fmt.Sprintf("rns://%s/main/%s", fmt.Sprintf("%x", destHash), targetRepo)
+	remoteURL := fmt.Sprintf("rns://%v/main/%v", fmt.Sprintf("%x", destHash), targetRepo)
 	client, err := newReticulumGitClient(ts, clientConfigDir, "", remoteURL, logger)
 	if err != nil {
 		t.Fatalf("could not create client: %s", err)
@@ -819,7 +819,7 @@ func TestIntegrationMirrorRepo(t *testing.T) {
 	if mirrorSHA != sourceSHA {
 		t.Fatalf("mirror refs/heads/main = %q, want source SHA %q", mirrorSHA, sourceSHA)
 	}
-	t.Logf("Mirror created with SHA %s", mirrorSHA)
+	t.Logf("Mirror created with SHA %v", mirrorSHA)
 
 	// Confirm the upstream metadata was recorded by the server.
 	repoType := gitConfigGet(mirrorPath, "repository.rngit.type")
@@ -854,7 +854,7 @@ func TestIntegrationForkRepo(t *testing.T) {
 
 	sourceURL, _, sourceSHA, httpCleanup := prepareSeededHTTPSource(t, "gorngit-fork-")
 	defer httpCleanup()
-	t.Logf("Source URL: %s (SHA %s)", sourceURL, sourceSHA)
+	t.Logf("Source URL: %v (SHA %v)", sourceURL, sourceSHA)
 
 	_, nodeCleanup := startGorngitNode(t, listenerRNSConfig, nodeConfigDir)
 	defer nodeCleanup()
@@ -877,7 +877,7 @@ func TestIntegrationForkRepo(t *testing.T) {
 
 	clientConfigDir := testutils.TempDir(t, "gorngit-fork-clientcfg-")
 	targetRepo := "forked.git"
-	remoteURL := fmt.Sprintf("rns://%s/main/%s", fmt.Sprintf("%x", destHash), targetRepo)
+	remoteURL := fmt.Sprintf("rns://%v/main/%v", fmt.Sprintf("%x", destHash), targetRepo)
 	client, err := newReticulumGitClient(ts, clientConfigDir, "", remoteURL, logger)
 	if err != nil {
 		t.Fatalf("could not create client: %s", err)
@@ -903,7 +903,7 @@ func TestIntegrationForkRepo(t *testing.T) {
 	if forkSHA != sourceSHA {
 		t.Fatalf("fork refs/heads/main = %q, want source SHA %q", forkSHA, sourceSHA)
 	}
-	t.Logf("Fork created with SHA %s", forkSHA)
+	t.Logf("Fork created with SHA %v", forkSHA)
 
 	repoType := gitConfigGet(forkPath, "repository.rngit.type")
 	if repoType != "fork" {
@@ -927,7 +927,7 @@ func TestIntegrationSyncRepo(t *testing.T) {
 
 	sourceURL, sourceRepoPath, initialSHA, httpCleanup := prepareSeededHTTPSource(t, "gorngit-sync-")
 	defer httpCleanup()
-	t.Logf("Source URL: %s (initial SHA %s)", sourceURL, initialSHA)
+	t.Logf("Source URL: %v (initial SHA %v)", sourceURL, initialSHA)
 
 	_, nodeCleanup := startGorngitNode(t, listenerRNSConfig, nodeConfigDir)
 	defer nodeCleanup()
@@ -950,7 +950,7 @@ func TestIntegrationSyncRepo(t *testing.T) {
 
 	clientConfigDir := testutils.TempDir(t, "gorngit-sync-clientcfg-")
 	targetRepo := "synced.git"
-	remoteURL := fmt.Sprintf("rns://%s/main/%s", fmt.Sprintf("%x", destHash), targetRepo)
+	remoteURL := fmt.Sprintf("rns://%v/main/%v", fmt.Sprintf("%x", destHash), targetRepo)
 	client, err := newReticulumGitClient(ts, clientConfigDir, "", remoteURL, logger)
 	if err != nil {
 		t.Fatalf("could not create client: %s", err)
@@ -969,11 +969,11 @@ func TestIntegrationSyncRepo(t *testing.T) {
 	if strings.TrimSpace(mirrorSHAOut) != initialSHA {
 		t.Fatalf("mirror SHA = %q, want %q", strings.TrimSpace(mirrorSHAOut), initialSHA)
 	}
-	t.Logf("Mirror created with SHA %s", initialSHA)
+	t.Logf("Mirror created with SHA %v", initialSHA)
 
 	// Advance the upstream source with a second commit.
 	newSourceSHA := addCommitToBareRepo(t, sourceRepoPath)
-	t.Logf("Source advanced to SHA %s", newSourceSHA)
+	t.Logf("Source advanced to SHA %v", newSourceSHA)
 
 	// Sync the mirror from its recorded upstream.
 	if err := client.sync(); err != nil {
@@ -985,7 +985,7 @@ func TestIntegrationSyncRepo(t *testing.T) {
 	if mirrorSHA != newSourceSHA {
 		t.Fatalf("synced mirror SHA = %q, want new source SHA %q", mirrorSHA, newSourceSHA)
 	}
-	t.Logf("Mirror synced to SHA %s", mirrorSHA)
+	t.Logf("Mirror synced to SHA %v", mirrorSHA)
 }
 
 // TestIntegrationDeleteRepo verifies that a gorngit client can delete a ref
@@ -1023,7 +1023,7 @@ func TestIntegrationDeleteRepo(t *testing.T) {
 	}()
 
 	clientConfigDir := testutils.TempDir(t, "gorngit-delete-clientcfg-")
-	remoteURL := fmt.Sprintf("rns://%s/main/%s", fmt.Sprintf("%x", destHash), repoName)
+	remoteURL := fmt.Sprintf("rns://%v/main/%v", fmt.Sprintf("%x", destHash), repoName)
 	client, err := newReticulumGitClient(ts, clientConfigDir, "", remoteURL, logger)
 	if err != nil {
 		t.Fatalf("could not create client: %s", err)
@@ -1088,7 +1088,7 @@ func sendRequestRetry(t *testing.T, client *reticulumGitClient, logger *rns.Logg
 			strings.Contains(msg, "link is closed") ||
 			strings.Contains(msg, "link is not active")
 		if linkDead {
-			t.Logf("sendRequest attempt %d/%d failed (%v); reconnecting link", attempt+1, maxRetries+1, err)
+			t.Logf("sendRequest attempt %v/%v failed (%v); reconnecting link", attempt+1, maxRetries+1, err)
 			client.teardown()
 			client.linkReady = false
 			if rerr := client.connect(logger); rerr != nil {
@@ -1097,10 +1097,10 @@ func sendRequestRetry(t *testing.T, client *reticulumGitClient, logger *rns.Logg
 			}
 			continue
 		}
-		t.Logf("sendRequest attempt %d/%d failed (%v); retrying on same link", attempt+1, maxRetries+1, err)
+		t.Logf("sendRequest attempt %v/%v failed (%v); retrying on same link", attempt+1, maxRetries+1, err)
 		time.Sleep(200 * time.Millisecond)
 	}
-	return nil, fmt.Errorf("sendRequest failed after %d attempts: %w", maxRetries+1, lastErr)
+	return nil, fmt.Errorf("sendRequest failed after %v attempts: %w", maxRetries+1, lastErr)
 }
 
 // TestIntegrationReleaseRoundTrip verifies the full release lifecycle
@@ -1161,7 +1161,7 @@ func TestIntegrationReleaseRoundTrip(t *testing.T) {
 	}()
 
 	clientConfigDir := testutils.TempDir(t, "gorngit-relrt-clientcfg-")
-	remoteURL := fmt.Sprintf("rns://%s/main/%s", fmt.Sprintf("%x", destHash), repoName)
+	remoteURL := fmt.Sprintf("rns://%v/main/%v", fmt.Sprintf("%x", destHash), repoName)
 	client, err := newReticulumGitClient(ts, clientConfigDir, "", remoteURL, logger)
 	if err != nil {
 		t.Fatalf("could not create client: %v", err)
@@ -1254,7 +1254,7 @@ func TestIntegrationReleaseRoundTrip(t *testing.T) {
 		}
 		packed, err := msgpack.Pack(artData)
 		if err != nil {
-			t.Fatalf("pack artifact %s: %v", art.name, err)
+			t.Fatalf("pack artifact %v: %v", art.name, err)
 		}
 		// Artifact upload is idempotent (the server overwrites the artifact
 		// file), so a transient RNS resource-transfer failure under heavy
@@ -1264,13 +1264,13 @@ func TestIntegrationReleaseRoundTrip(t *testing.T) {
 		// flakes under load.
 		resp, err := sendRequestRetry(t, client, logger, pathRelease, packed, fetchPushTimeout, 4)
 		if err != nil {
-			t.Fatalf("artifact %s request: %v", art.name, err)
+			t.Fatalf("artifact %v request: %v", art.name, err)
 		}
 		respBytes, ok := resp.([]byte)
 		if !ok || len(respBytes) == 0 || respBytes[0] != resOK {
-			t.Fatalf("artifact %s response code = %x, want resOK", art.name, firstByte(respBytes))
+			t.Fatalf("artifact %v response code = %x, want resOK", art.name, firstByte(respBytes))
 		}
-		t.Logf("  %s transferred", art.name)
+		t.Logf("  %v transferred", art.name)
 	}
 
 	// Step 3: finalize
@@ -1321,11 +1321,11 @@ func TestIntegrationReleaseRoundTrip(t *testing.T) {
 	}
 	releases, _ := listMap["releases"].([]any)
 	if len(releases) != 1 {
-		t.Fatalf("expected 1 release, got %d", len(releases))
+		t.Fatalf("expected 1 release, got %v", len(releases))
 	}
 	first, _ := releases[0].(map[any]any)
 	if first["tag"] != tag {
-		t.Errorf("list tag = %v, want %s", first["tag"], tag)
+		t.Errorf("list tag = %v, want %v", first["tag"], tag)
 	}
 	if first["status"] != "published" {
 		t.Errorf("list status = %v, want published", first["status"])
@@ -1334,7 +1334,7 @@ func TestIntegrationReleaseRoundTrip(t *testing.T) {
 	if latest != tag {
 		t.Errorf("latest = %q, want %q", latest, tag)
 	}
-	t.Logf("List returned %d releases, latest=%q", len(releases), latest)
+	t.Logf("List returned %v releases, latest=%q", len(releases), latest)
 
 	// View the release.
 	viewData := map[any]any{
@@ -1363,13 +1363,13 @@ func TestIntegrationReleaseRoundTrip(t *testing.T) {
 		t.Fatalf("view response is %T, want map", viewUnpacked)
 	}
 	if viewInfo["tag"] != tag {
-		t.Errorf("view tag = %v, want %s", viewInfo["tag"], tag)
+		t.Errorf("view tag = %v, want %v", viewInfo["tag"], tag)
 	}
 	viewArtifacts, _ := viewInfo["artifacts"].([]any)
 	if len(viewArtifacts) != 3 {
-		t.Errorf("view artifacts count = %d, want 3", len(viewArtifacts))
+		t.Errorf("view artifacts count = %v, want 3", len(viewArtifacts))
 	}
-	t.Logf("View returned tag=%v status=%v artifacts=%d", viewInfo["tag"], viewInfo["status"], len(viewArtifacts))
+	t.Logf("View returned tag=%v status=%v artifacts=%v", viewInfo["tag"], viewInfo["status"], len(viewArtifacts))
 
 	// Fetch manifest.rsm and validate RSM signature + structure.
 	fetchManifest := map[any]any{
@@ -1506,7 +1506,7 @@ func TestIntegrationListDeniedOnRestrictedNode(t *testing.T) {
 	}()
 
 	clientConfigDir := testutils.TempDir(t, "gorngit-deny-clientcfg-")
-	remoteURL := fmt.Sprintf("rns://%s/main/%s", fmt.Sprintf("%x", destHash), repoName)
+	remoteURL := fmt.Sprintf("rns://%v/main/%v", fmt.Sprintf("%x", destHash), repoName)
 	client, err := newReticulumGitClient(ts, clientConfigDir, "", remoteURL, logger)
 	if err != nil {
 		t.Fatalf("could not create client: %v", err)

@@ -52,7 +52,7 @@ func NewWriter(w io.Writer, conf *WriterConfig) (*Writer, error) {
 		lvl = DefaultCompression
 	}
 	if lvl < BestSpeed || lvl > BestCompression {
-		return nil, errorf(errors.Invalid, "compression level: %d", lvl)
+		return nil, errorf(errors.Invalid, "compression level: %v", lvl)
 	}
 	zw := new(Writer)
 	zw.level = lvl

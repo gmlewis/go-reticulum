@@ -383,7 +383,7 @@ func (lci *LocalClientInterface) HashString() string {
 	if lci.path != "" {
 		return "LocalInterface[" + strings.ReplaceAll(lci.path, "\x00", "") + "]"
 	}
-	return "LocalInterface[" + fmt.Sprintf("%d", lci.port) + "]"
+	return "LocalInterface[" + fmt.Sprintf("%v", lci.port) + "]"
 }
 
 // IsOut reports whether the local client can originate outbound traffic.
@@ -669,7 +669,7 @@ func (lsi *LocalServerInterface) HashString() string {
 	if lsi.path != "" {
 		return "Shared Instance[" + strings.ReplaceAll(lsi.path, "\x00", "") + "]"
 	}
-	return "Shared Instance[" + fmt.Sprintf("%d", lsi.port) + "]"
+	return "Shared Instance[" + fmt.Sprintf("%v", lsi.port) + "]"
 }
 
 // IsOut reports whether the server can originate traffic through spawned

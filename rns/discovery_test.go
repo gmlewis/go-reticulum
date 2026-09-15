@@ -101,7 +101,7 @@ func startSocatLinkedPTYPair(t *testing.T) (string, string) {
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	t.Fatalf("timed out waiting for socat PTY links: %s", stderr.String())
+	t.Fatalf("timed out waiting for socat PTY links: %v", stderr.String())
 	return "", ""
 }
 
@@ -2397,7 +2397,7 @@ func TestListDiscoveredInterfaces_OnlyTransportUsesContainerTruthiness(t *testin
 			"transport":  transport,
 			"value":      1,
 		})), 0o644); err != nil {
-			t.Fatalf("failed to write %s discovery file: %v", name, err)
+			t.Fatalf("failed to write %v discovery file: %v", name, err)
 		}
 	}
 	write("empty-list", []any{})
@@ -12279,7 +12279,7 @@ func TestInterfaceDiscoveryMonitorDoesNotAutoconnectWhenFreeSlotsEqualReservedSl
 	ts := NewTransportSystem(logger)
 	for i := range 3 {
 		ts.RegisterInterface(&autoconnectCountTestInterface{
-			BaseInterface:   interfaces.NewBaseInterface(fmt.Sprintf("existing-%d", i), interfaces.ModeFull, 1000),
+			BaseInterface:   interfaces.NewBaseInterface(fmt.Sprintf("existing-%v", i), interfaces.ModeFull, 1000),
 			autoconnectHash: []byte{byte(i + 1)},
 		})
 	}

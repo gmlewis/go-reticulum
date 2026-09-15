@@ -30,7 +30,7 @@ func runSleeper(t *testing.T, secs int) (int, *exec.Cmd) {
 func killAndReap(t *testing.T, pid int, cmd *exec.Cmd) {
 	t.Helper()
 	if err := exec.Command("kill", "-9", strconv.Itoa(pid)).Run(); err != nil {
-		t.Fatalf("kill %d: %v", pid, err)
+		t.Fatalf("kill %v: %v", pid, err)
 	}
 	_ = cmd.Wait()
 }
@@ -72,7 +72,7 @@ func TestReaperKillsChildWhenParentDies(t *testing.T) {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	t.Fatalf("watchdog never killed the child (pid %d still alive)", child)
+	t.Fatalf("watchdog never killed the child (pid %v still alive)", child)
 }
 
 // TestReaperRefusesFingerprintMismatch pins the recycled-PID guard: when the

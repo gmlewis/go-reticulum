@@ -100,7 +100,7 @@ func TestProcessAnnounceTableRecallableEntryIsRebroadcast(t *testing.T) {
 		t.Fatal("recallable announce entry was completed early; nil-guard misfired")
 	}
 	if entry.Retries != 1 {
-		t.Fatalf("recallable entry retries = %d, want 1 (one rebroadcast attempt)", entry.Retries)
+		t.Fatalf("recallable entry retries = %v, want 1 (one rebroadcast attempt)", entry.Retries)
 	}
 }
 

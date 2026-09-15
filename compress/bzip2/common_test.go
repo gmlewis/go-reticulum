@@ -64,7 +64,7 @@ func TestCRC(t *testing.T) {
 			crc.val = 0
 			crc.update(str1)
 			if crc.update(str2); crc.val != v.crc {
-				t.Errorf("test %d, crc.update(crc1, str2): got 0x%08x, want 0x%08x", i, crc.val, v.crc)
+				t.Errorf("test %v, crc.update(crc1, str2): got 0x%08x, want 0x%08x", i, crc.val, v.crc)
 			}
 		}
 	}

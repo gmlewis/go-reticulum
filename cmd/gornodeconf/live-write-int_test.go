@@ -160,7 +160,7 @@ func TestLiveEEPROMBootstrapRoundTrip(t *testing.T) {
 		t.Fatal("device became unprovisioned after bootstrap")
 	}
 	if len(bootstrappedState.eeprom) < len(backup) {
-		t.Fatalf("bootstrapped EEPROM shorter than backup: got %d want at least %d", len(bootstrappedState.eeprom), len(backup))
+		t.Fatalf("bootstrapped EEPROM shorter than backup: got %v want at least %v", len(bootstrappedState.eeprom), len(backup))
 	}
 	if !bytes.Equal(bootstrappedState.eeprom[:len(backup)], backup) {
 		t.Fatalf("bootstrapped EEPROM prefix does not match saved backup")
@@ -199,7 +199,7 @@ func TestLiveEEPROMWipeRoundTrip(t *testing.T) {
 
 	wipedEEPROM := captureRawLiveEEPROMBytes(t, port)
 	if len(wipedEEPROM) <= 0x9b {
-		t.Fatalf("wiped EEPROM shorter than expected: %d", len(wipedEEPROM))
+		t.Fatalf("wiped EEPROM shorter than expected: %v", len(wipedEEPROM))
 	}
 	if wipedEEPROM[0x9b] == 0x73 {
 		t.Fatal("wiped EEPROM still reports provisioned marker")

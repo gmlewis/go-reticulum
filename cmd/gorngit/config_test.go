@@ -62,7 +62,7 @@ func TestDefaultNodeConfigFileEnablesStats(t *testing.T) {
 
 	for _, want := range []string{"record_stats = yes", "public = r:all, s:all"} {
 		if !strings.Contains(defaultNodeConfigFile, want) {
-			t.Errorf("defaultNodeConfigFile missing %q:\n%s", want, defaultNodeConfigFile)
+			t.Errorf("defaultNodeConfigFile missing %q:\n%v", want, defaultNodeConfigFile)
 		}
 	}
 

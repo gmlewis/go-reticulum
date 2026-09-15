@@ -67,7 +67,7 @@ func writeReleaseMETAFile(t *testing.T, path string, meta map[string]string) {
 		sb.WriteByte('\n')
 	}
 	if err := os.WriteFile(path, []byte(sb.String()), 0o644); err != nil {
-		t.Fatalf("write META %s: %v", path, err)
+		t.Fatalf("write META %v: %v", path, err)
 	}
 }
 
@@ -77,7 +77,7 @@ func buildReleaseDir(t *testing.T, releasesPath, tag, status, created string, ar
 	t.Helper()
 	releaseDir := filepath.Join(releasesPath, tag)
 	if err := os.MkdirAll(releaseDir, 0o755); err != nil {
-		t.Fatalf("MkdirAll %s: %v", releaseDir, err)
+		t.Fatalf("MkdirAll %v: %v", releaseDir, err)
 	}
 	writeReleaseMETAFile(t, filepath.Join(releaseDir, "META"), map[string]string{
 		"tag":        tag,
@@ -95,7 +95,7 @@ func buildReleaseDir(t *testing.T, releasesPath, tag, status, created string, ar
 	}
 	for name, data := range artifacts {
 		if err := os.WriteFile(filepath.Join(artifactsDir, name), data, 0o644); err != nil {
-			t.Fatalf("write artifact %s: %v", name, err)
+			t.Fatalf("write artifact %v: %v", name, err)
 		}
 	}
 	packed, _ := msgpack.Pack(map[any]any{"count": int64(0)})
@@ -158,7 +158,7 @@ func TestReleaseListWithData(t *testing.T) {
 	}
 	releases, _ := m["releases"].([]any)
 	if len(releases) != 2 {
-		t.Fatalf("expected 2 releases, got %d", len(releases))
+		t.Fatalf("expected 2 releases, got %v", len(releases))
 	}
 	// Sorted by created descending: v2.0.0 (200) first.
 	first, _ := releases[0].(map[any]any)
@@ -233,7 +233,7 @@ func TestReleaseView(t *testing.T) {
 	}
 	artifacts, _ := info["artifacts"].([]any)
 	if len(artifacts) != 1 {
-		t.Fatalf("expected 1 artifact, got %d", len(artifacts))
+		t.Fatalf("expected 1 artifact, got %v", len(artifacts))
 	}
 	art, _ := artifacts[0].(map[any]any)
 	if art["name"] != "app.bin" {

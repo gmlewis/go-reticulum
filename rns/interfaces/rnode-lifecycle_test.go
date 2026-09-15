@@ -193,20 +193,20 @@ func TestRNodeLifecycleDetectConfigureValidateOnline(t *testing.T) {
 	}
 	maj, min := r.RNodeFirmwareVersion()
 	if maj != 1 || min != 85 {
-		t.Fatalf("firmware = %d.%d, want 1.85", maj, min)
+		t.Fatalf("firmware = %v.%v, want 1.85", maj, min)
 	}
 	if r.Bitrate() != 3125 {
-		t.Fatalf("on-air bitrate = %d, want 3125 (3.12 kbps)", r.Bitrate())
+		t.Fatalf("on-air bitrate = %v, want 3125 (3.12 kbps)", r.Bitrate())
 	}
 	if r.RNodeSymbolRate() != 488 {
-		t.Fatalf("symbol rate = %d, want 488", r.RNodeSymbolRate())
+		t.Fatalf("symbol rate = %v, want 488", r.RNodeSymbolRate())
 	}
 	if r.RNodeSymbolTimeMs() != 2.05 {
 		t.Fatalf("symbol time = %v, want 2.05ms", r.RNodeSymbolTimeMs())
 	}
 	slot, difs := r.RNodeCSMA()
 	if slot != 24 || difs != 48 {
-		t.Fatalf("csma = %d/%d, want 24/48", slot, difs)
+		t.Fatalf("csma = %v/%v, want 24/48", slot, difs)
 	}
 	if err := r.Detach(); err != nil {
 		t.Fatalf("detach: %v", err)
@@ -361,7 +361,7 @@ func TestRNodeTCPTransport(t *testing.T) {
 		serveRNodeTCPConn(t, conn)
 	}()
 
-	iface, err := NewRNodeInterface("rnode-tcp", fmt.Sprintf("tcp://127.0.0.1:%d", port),
+	iface, err := NewRNodeInterface("rnode-tcp", fmt.Sprintf("tcp://127.0.0.1:%v", port),
 		115200, 8, 1, "N", 915000000, 125000, 17, 8, 5, false, 0, "", nil)
 	if err != nil {
 		t.Fatalf("NewRNodeInterface tcp://: %v", err)
@@ -374,10 +374,10 @@ func TestRNodeTCPTransport(t *testing.T) {
 		t.Fatal("tcp RNode should be online after configure")
 	}
 	if r.Bitrate() != 3125 {
-		t.Fatalf("on-air bitrate = %d, want 3125", r.Bitrate())
+		t.Fatalf("on-air bitrate = %v, want 3125", r.Bitrate())
 	}
 	if r.RNodeSymbolRate() != 488 {
-		t.Fatalf("symbol rate = %d, want 488", r.RNodeSymbolRate())
+		t.Fatalf("symbol rate = %v, want 488", r.RNodeSymbolRate())
 	}
 	_ = r.Detach()
 }
@@ -471,7 +471,7 @@ func rnodeSelfHealScenario(t *testing.T) bool {
 		t.Fatal("interface did not self-heal to online after transport appeared")
 	}
 	if r.Bitrate() != 3125 {
-		t.Fatalf("on-air bitrate = %d, want 3125 after reconnect", r.Bitrate())
+		t.Fatalf("on-air bitrate = %v, want 3125 after reconnect", r.Bitrate())
 	}
 	_ = r.Detach()
 	return true

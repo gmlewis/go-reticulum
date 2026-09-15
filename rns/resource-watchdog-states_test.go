@@ -100,10 +100,10 @@ func TestWatchdogAdvertised(t *testing.T) {
 		t.Fatalf("before deadline: sleep = %v, want > 0", sleep)
 	}
 	if r.retriesLeft != r.maxAdvRetries {
-		t.Fatalf("before deadline: retriesLeft = %d, want %d", r.retriesLeft, r.maxAdvRetries)
+		t.Fatalf("before deadline: retriesLeft = %v, want %v", r.retriesLeft, r.maxAdvRetries)
 	}
 	if ct.sentCount() != 0 {
-		t.Fatalf("before deadline: sent = %d, want 0", ct.sentCount())
+		t.Fatalf("before deadline: sent = %v, want 0", ct.sentCount())
 	}
 	if r.status != ResourceStatusAdvertised {
 		t.Fatalf("before deadline: status = %v, want ADVERTISED", r.status)
@@ -116,10 +116,10 @@ func TestWatchdogAdvertised(t *testing.T) {
 		t.Fatalf("after resend: sleep = %v, want 0.001", sleep)
 	}
 	if r.retriesLeft != r.maxAdvRetries-1 {
-		t.Fatalf("after resend #1: retriesLeft = %d, want %d", r.retriesLeft, r.maxAdvRetries-1)
+		t.Fatalf("after resend #1: retriesLeft = %v, want %v", r.retriesLeft, r.maxAdvRetries-1)
 	}
 	if ct.sentCount() != 1 {
-		t.Fatalf("after resend #1: sent = %d, want 1", ct.sentCount())
+		t.Fatalf("after resend #1: sent = %v, want 1", ct.sentCount())
 	}
 	if !r.advSent.Equal(now1) {
 		t.Fatalf("after resend #1: advSent = %v, want %v", r.advSent, now1)
@@ -140,10 +140,10 @@ func TestWatchdogAdvertised(t *testing.T) {
 	}
 	wantSends := r.maxAdvRetries
 	if ct.sentCount() != wantSends {
-		t.Fatalf("after all resends: sent = %d, want %d", ct.sentCount(), wantSends)
+		t.Fatalf("after all resends: sent = %v, want %v", ct.sentCount(), wantSends)
 	}
 	if r.retriesLeft != 0 {
-		t.Fatalf("after all resends: retriesLeft = %d, want 0", r.retriesLeft)
+		t.Fatalf("after all resends: retriesLeft = %v, want 0", r.retriesLeft)
 	}
 	if r.status != ResourceStatusAdvertised {
 		t.Fatalf("after all resends: status = %v, want ADVERTISED (not yet cancelled)", r.status)
@@ -156,7 +156,7 @@ func TestWatchdogAdvertised(t *testing.T) {
 		t.Fatalf("after exhaustion: status = %v, want FAILED", r.status)
 	}
 	if ct.sentCount() != wantSends {
-		t.Fatalf("after exhaustion: sent = %d, want unchanged %d", ct.sentCount(), wantSends)
+		t.Fatalf("after exhaustion: sent = %v, want unchanged %v", ct.sentCount(), wantSends)
 	}
 }
 
@@ -234,10 +234,10 @@ func TestWatchdogTransferringReceiver(t *testing.T) {
 		t.Fatalf("before deadline: sleep = %v, want %v", sleep, wantSleep)
 	}
 	if r.window != 4 || r.windowMax != 10 || r.retriesLeft != 16 {
-		t.Fatalf("before deadline: window=%d windowMax=%d retriesLeft=%d, want 4/10/16", r.window, r.windowMax, r.retriesLeft)
+		t.Fatalf("before deadline: window=%v windowMax=%v retriesLeft=%v, want 4/10/16", r.window, r.windowMax, r.retriesLeft)
 	}
 	if ct.sentCount() != 0 {
-		t.Fatalf("before deadline: sent = %d, want 0", ct.sentCount())
+		t.Fatalf("before deadline: sent = %v, want 0", ct.sentCount())
 	}
 
 	// Past the deadline: retry fires.
@@ -247,19 +247,19 @@ func TestWatchdogTransferringReceiver(t *testing.T) {
 		t.Fatalf("after retry: sleep = %v, want 0.001", sleep)
 	}
 	if r.window != 3 {
-		t.Fatalf("after retry: window = %d, want 3", r.window)
+		t.Fatalf("after retry: window = %v, want 3", r.window)
 	}
 	if r.windowMax != 8 {
-		t.Fatalf("after retry: windowMax = %d, want 8", r.windowMax)
+		t.Fatalf("after retry: windowMax = %v, want 8", r.windowMax)
 	}
 	if r.retriesLeft != 15 {
-		t.Fatalf("after retry: retriesLeft = %d, want 15", r.retriesLeft)
+		t.Fatalf("after retry: retriesLeft = %v, want 15", r.retriesLeft)
 	}
 	if r.waitingForHmu {
 		t.Fatal("after retry: waitingForHmu = true, want false")
 	}
 	if ct.sentCount() != 1 {
-		t.Fatalf("after retry: sent = %d, want 1 (requestNext invoked)", ct.sentCount())
+		t.Fatalf("after retry: sent = %v, want 1 (requestNext invoked)", ct.sentCount())
 	}
 	if !r.lastActivity.Equal(now1) {
 		t.Fatalf("after retry: lastActivity = %v, want %v (request_next resets it)", r.lastActivity, now1)
@@ -276,7 +276,7 @@ func TestWatchdogTransferringReceiver(t *testing.T) {
 		r.watchdogStep(now)
 	}
 	if ct.sentCount() != r.maxRetries {
-		t.Fatalf("after all retries: sent = %d, want %d", ct.sentCount(), r.maxRetries)
+		t.Fatalf("after all retries: sent = %v, want %v", ct.sentCount(), r.maxRetries)
 	}
 	if r.status != ResourceStatusTransferring {
 		t.Fatalf("after all retries: status = %v, want TRANSFERRING (not yet cancelled)", r.status)
@@ -411,20 +411,20 @@ func TestWatchdogAwaitingProof(t *testing.T) {
 		t.Fatalf("before deadline: timeoutFactor = %v, want %v", r.timeoutFactor, ResourceProofTimeoutFactor)
 	}
 	if r.retriesLeft != 16 {
-		t.Fatalf("before deadline: retriesLeft = %d, want 16", r.retriesLeft)
+		t.Fatalf("before deadline: retriesLeft = %v, want 16", r.retriesLeft)
 	}
 	if ct.cacheReqCount() != 0 {
-		t.Fatalf("before deadline: cacheReq = %d, want 0", ct.cacheReqCount())
+		t.Fatalf("before deadline: cacheReq = %v, want 0", ct.cacheReqCount())
 	}
 
 	// Past the deadline: cache query issued.
 	now1 := deadline.Add(time.Millisecond)
 	r.watchdogStep(now1)
 	if ct.cacheReqCount() != 1 {
-		t.Fatalf("after timeout: cacheReq = %d, want 1", ct.cacheReqCount())
+		t.Fatalf("after timeout: cacheReq = %v, want 1", ct.cacheReqCount())
 	}
 	if r.retriesLeft != 15 {
-		t.Fatalf("after timeout: retriesLeft = %d, want 15", r.retriesLeft)
+		t.Fatalf("after timeout: retriesLeft = %v, want 15", r.retriesLeft)
 	}
 	if !r.lastPartSent.Equal(now1) {
 		t.Fatalf("after timeout: lastPartSent = %v, want %v", r.lastPartSent, now1)
@@ -433,7 +433,7 @@ func TestWatchdogAwaitingProof(t *testing.T) {
 	gotHashLen := len(ct.cacheReq[0])
 	ct.mu.Unlock()
 	if gotHashLen != wantHashLen {
-		t.Fatalf("cache request hash len = %d, want %d (full packet hash)", gotHashLen, wantHashLen)
+		t.Fatalf("cache request hash len = %v, want %v (full packet hash)", gotHashLen, wantHashLen)
 	}
 	if r.status != ResourceStatusAwaitingProof {
 		t.Fatalf("after timeout: status = %v, want AWAITING_PROOF", r.status)
@@ -453,6 +453,6 @@ func TestWatchdogAwaitingProof(t *testing.T) {
 		t.Fatalf("after exhaustion: status = %v, want FAILED", r.status)
 	}
 	if ct.cacheReqCount() != r.maxRetries {
-		t.Fatalf("after exhaustion: cacheReq = %d, want %d", ct.cacheReqCount(), r.maxRetries)
+		t.Fatalf("after exhaustion: cacheReq = %v, want %v", ct.cacheReqCount(), r.maxRetries)
 	}
 }

@@ -110,13 +110,13 @@ func TestBurrowsWheelerTransform(t *testing.T) {
 		bwt.Decode(input, ptr)
 
 		if got, want, ok := testutil.BytesCompare(input, v.input); !ok {
-			t.Errorf("test %d, input mismatch:\ngot  %s\nwant %s", i, got, want)
+			t.Errorf("test %v, input mismatch:\ngot  %v\nwant %v", i, got, want)
 		}
 		if got, want, ok := testutil.BytesCompare(output, v.output); !ok {
-			t.Errorf("test %d, output mismatch:\ngot  %s\nwant %s", i, got, want)
+			t.Errorf("test %v, output mismatch:\ngot  %v\nwant %v", i, got, want)
 		}
 		if ptr != v.ptr {
-			t.Errorf("test %d, pointer mismatch: got %d, want %d", i, ptr, v.ptr)
+			t.Errorf("test %v, pointer mismatch: got %v, want %v", i, ptr, v.ptr)
 		}
 	}
 }

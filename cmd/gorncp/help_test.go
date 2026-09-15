@@ -165,7 +165,7 @@ func TestHelpOutput(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			output := usageText
 			if !tt.check(output) {
-				t.Errorf("Help output check failed for %s\ngot: %v", tt.name, output)
+				t.Errorf("Help output check failed for %v\ngot: %v", tt.name, output)
 			}
 		})
 	}

@@ -46,7 +46,7 @@ func TestTCPClientInterfaceHashMatchesPython(t *testing.T) {
 	wantHash := "e7e198b4aa347e50c20d1f51520d64e03ebb141b965f168d57e73be2d3b73ef5"
 	sum := sha256.Sum256([]byte(tci.HashString()))
 	if got := hex.EncodeToString(sum[:]); got != wantHash {
-		t.Fatalf("full_hash(HashString) = %s, want %s (the Python-stored iface hash)", got, wantHash)
+		t.Fatalf("full_hash(HashString) = %v, want %v (the Python-stored iface hash)", got, wantHash)
 	}
 
 	if exec.Command("python3", "-c", "import RNS").Run() != nil {
@@ -62,7 +62,7 @@ func TestTCPClientInterfaceHashMatchesPython(t *testing.T) {
 		t.Fatalf("python3 full_hash: %v", err)
 	}
 	if py := strings.TrimSpace(string(out)); py != wantHash {
-		t.Fatalf("Python full_hash = %s, want %s", py, wantHash)
+		t.Fatalf("Python full_hash = %v, want %v", py, wantHash)
 	}
 }
 

@@ -117,9 +117,9 @@ func prepareDirectUDPConfig(t *testing.T, configDir, instanceName string, listen
 		"    type = UDPInterface",
 		"    enabled = Yes",
 		"    listen_ip = 127.0.0.1",
-		"    listen_port = " + fmt.Sprintf("%d", listenPort),
+		"    listen_port = " + fmt.Sprintf("%v", listenPort),
 		"    forward_ip = 127.0.0.1",
-		"    forward_port = " + fmt.Sprintf("%d", forwardPort),
+		"    forward_port = " + fmt.Sprintf("%v", forwardPort),
 		"",
 	}, "\n")
 	if err := os.WriteFile(filepath.Join(configDir, "config"), []byte(configText), 0o600); err != nil {
@@ -203,7 +203,7 @@ func runGit(t *testing.T, dir string, args ...string) string {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("git %s in %s failed: %s\nstderr: %s", strings.Join(args, " "), dir, err, stderr.String())
+		t.Fatalf("git %v in %v failed: %s\nstderr: %v", strings.Join(args, " "), dir, err, stderr.String())
 	}
 	return stdout.String()
 }
@@ -227,10 +227,10 @@ func startGorngitNode(t *testing.T, rnsConfigDir, nodeConfigDir string) (*exec.C
 		cancel()
 		_ = cmd.Wait()
 		if stderr.Len() > 0 {
-			t.Logf("gorngit node stderr: %s", stderr.String())
+			t.Logf("gorngit node stderr: %v", stderr.String())
 		}
 		if stdout.Len() > 0 {
-			t.Logf("gorngit node stdout: %s", stdout.String())
+			t.Logf("gorngit node stdout: %v", stdout.String())
 		}
 	}
 	return cmd, cleanup
@@ -280,7 +280,7 @@ func waitForGorngitAnnounce(t *testing.T, initiatorConfigDir, serverConfigDir st
 		_ = ret.Transport().RequestPath(destHash)
 		time.Sleep(100 * time.Millisecond)
 	}
-	t.Fatalf("timed out waiting for announce of %x within %s", destHash, integrationAnnounceTimeout)
+	t.Fatalf("timed out waiting for announce of %x within %v", destHash, integrationAnnounceTimeout)
 	return nil
 }
 
@@ -317,7 +317,7 @@ func runGitWithEnv(t *testing.T, dir string, env []string, args ...string) strin
 	t.Helper()
 	out, err := runGitWithEnvChecked(dir, env, args...)
 	if err != nil {
-		t.Fatalf("git %s failed: %s\nstdout: %s\nstderr: %s",
+		t.Fatalf("git %v failed: %s\nstdout: %v\nstderr: %v",
 			strings.Join(args, " "), err, out.stdout, out.stderr)
 	}
 	return out.stdout
@@ -366,7 +366,7 @@ func TestIntegrationClonePushReclone(t *testing.T) {
 	t.Logf("Server destination hash: %x", destHash)
 
 	clientConfigDir := testutils.TempDir(t, "gogit-clone-clientcfg-")
-	remoteURL := fmt.Sprintf("rns://%s/main/%s", fmt.Sprintf("%x", destHash), repoName)
+	remoteURL := fmt.Sprintf("rns://%v/main/%v", fmt.Sprintf("%x", destHash), repoName)
 	env := gitEnv(clientConfigDir, initiatorRNSConfig)
 
 	// Clone the seeded repo into a fresh working tree.
@@ -389,7 +389,7 @@ func TestIntegrationClonePushReclone(t *testing.T) {
 	runGit(t, cloneDir, "commit", "-m", "second commit")
 	pushedSHAOut := runGit(t, cloneDir, "rev-parse", "refs/heads/main")
 	pushedSHA := strings.TrimSpace(pushedSHAOut)
-	t.Logf("Pushed SHA: %s", pushedSHA)
+	t.Logf("Pushed SHA: %v", pushedSHA)
 
 	// Push over RNS. Git may return a non-zero exit even when the push
 	// itself succeeds (the helper reports ok <ref> and the server ref
@@ -412,10 +412,10 @@ func TestIntegrationClonePushReclone(t *testing.T) {
 		pushOut, err := runGitWithEnvChecked(cloneDir, env, "push", remoteURL, "refs/heads/main")
 		pushErr = err
 		if err != nil {
-			t.Logf("git push attempt %v/%v exited non-zero (verifying via server ref): %s\nstderr: %s",
+			t.Logf("git push attempt %v/%v exited non-zero (verifying via server ref): %s\nstderr: %v",
 				attempt, pushAttempts, err, pushOut.stderr)
 		} else {
-			t.Logf("git push attempt %v/%v stderr: %s", attempt, pushAttempts, pushOut.stderr)
+			t.Logf("git push attempt %v/%v stderr: %v", attempt, pushAttempts, pushOut.stderr)
 		}
 		serverSHA = strings.TrimSpace(runGit(t, filepath.Join(repoRoot, repoName), "rev-parse", "refs/heads/main"))
 		if serverSHA == pushedSHA {
@@ -444,7 +444,7 @@ func TestIntegrationClonePushReclone(t *testing.T) {
 	cloneTree := runGit(t, cloneDir, "ls-tree", "-r", "--name-only", "HEAD")
 	recloneTree := runGit(t, recloneDir, "ls-tree", "-r", "--name-only", "HEAD")
 	if cloneTree != recloneTree {
-		t.Fatalf("tree mismatch:\nclone:\n%s\nreclone:\n%s", cloneTree, recloneTree)
+		t.Fatalf("tree mismatch:\nclone:\n%v\nreclone:\n%v", cloneTree, recloneTree)
 	}
-	t.Logf("Re-clone tree matches original (%d bytes of tree listing)", len(cloneTree))
+	t.Logf("Re-clone tree matches original (%v bytes of tree listing)", len(cloneTree))
 }

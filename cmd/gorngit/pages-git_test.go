@@ -92,7 +92,7 @@ func TestGetRepositoryRefs(t *testing.T) {
 		t.Errorf("tags = %+v, want one 'v1.0'", tags)
 	}
 	if len(heads[0].shortHash) != 7 {
-		t.Errorf("shortHash len = %d, want 7", len(heads[0].shortHash))
+		t.Errorf("shortHash len = %v, want 7", len(heads[0].shortHash))
 	}
 }
 
@@ -134,7 +134,7 @@ func TestGetTreeEntries(t *testing.T) {
 		t.Fatal("src entries = nil")
 	}
 	if len(sub) != 2 {
-		t.Fatalf("src entries = %d, want 2", len(sub))
+		t.Fatalf("src entries = %v, want 2", len(sub))
 	}
 	// Empty/non-tree returns nil.
 	if got := p.getTreeEntries(repoPath, "HEAD", "does/not/exist"); got != nil {
@@ -171,11 +171,11 @@ func TestGetCommitCountAndCommits(t *testing.T) {
 	p := newPageNodeTest(t)
 	repoPath, _ := seedRichRepo(t)
 	if n := p.getCommitCount(repoPath, "HEAD"); n != 2 {
-		t.Errorf("commit count = %d, want 2", n)
+		t.Errorf("commit count = %v, want 2", n)
 	}
 	commits := p.getCommits(repoPath, "HEAD", "", 0, 10)
 	if len(commits) != 2 {
-		t.Fatalf("commits = %d, want 2", len(commits))
+		t.Fatalf("commits = %v, want 2", len(commits))
 	}
 	if commits[0].subject != "second commit" {
 		t.Errorf("first commit subject = %q, want 'second commit'", commits[0].subject)
@@ -259,13 +259,13 @@ func TestMirrorSynced(t *testing.T) {
 	p := newPageNodeTest(t)
 	repoPath, _ := seedRichRepo(t)
 	if n := p.mirrorSynced(repoPath); n != 0 {
-		t.Errorf("unset mirrorSynced = %d, want 0", n)
+		t.Errorf("unset mirrorSynced = %v, want 0", n)
 	}
 	if _, ok := gitRun(repoPath, "config", "repository.rngit.upstream.sync", "1234567890"); !ok {
 		t.Fatal("could not set sync")
 	}
 	if n := p.mirrorSynced(repoPath); n != 1234567890 {
-		t.Errorf("mirrorSynced = %d, want 1234567890", n)
+		t.Errorf("mirrorSynced = %v, want 1234567890", n)
 	}
 }
 

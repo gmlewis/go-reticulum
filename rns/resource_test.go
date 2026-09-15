@@ -262,7 +262,7 @@ func TestResourceAccessors(t *testing.T) {
 	res := &Resource{link: link, data: []byte("hello")}
 
 	if got := res.GetDataSize(); got != 5 {
-		t.Fatalf("GetDataSize = %d, want 5", got)
+		t.Fatalf("GetDataSize = %v, want 5", got)
 	}
 	if res.IsRequest() {
 		t.Fatal("IsRequest should default to false")

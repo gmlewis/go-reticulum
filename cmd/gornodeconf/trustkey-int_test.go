@@ -42,7 +42,7 @@ func TestTrustKeyWritesTrustedKeyFile(t *testing.T) {
 		t.Fatalf("read trusted key file: %v", err)
 	}
 	if !bytes.Equal(got, mustDecodeHex(t, trustKeyFixtureHex)) {
-		t.Fatalf("trusted key file mismatch:\n got: %x\nwant: %s", got, trustKeyFixtureHex)
+		t.Fatalf("trusted key file mismatch:\n got: %x\nwant: %v", got, trustKeyFixtureHex)
 	}
 }
 

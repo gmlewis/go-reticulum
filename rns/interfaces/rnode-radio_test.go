@@ -23,7 +23,7 @@ func TestRNodeSetFrequency(t *testing.T) {
 	data := KISSUnescape(frame[2 : len(frame)-1])
 	got := uint32(data[0])<<24 | uint32(data[1])<<16 | uint32(data[2])<<8 | uint32(data[3])
 	if got != 433050000 {
-		t.Fatalf("expected frequency 433050000, got %d", got)
+		t.Fatalf("expected frequency 433050000, got %v", got)
 	}
 }
 
@@ -50,7 +50,7 @@ func TestRNodeSetBandwidth(t *testing.T) {
 	data := KISSUnescape(frame[2 : len(frame)-1])
 	got := uint32(data[0])<<24 | uint32(data[1])<<16 | uint32(data[2])<<8 | uint32(data[3])
 	if got != 125000 {
-		t.Fatalf("expected bandwidth 125000, got %d", got)
+		t.Fatalf("expected bandwidth 125000, got %v", got)
 	}
 }
 
@@ -71,7 +71,7 @@ func TestRNodeSetTXPowerSigned(t *testing.T) {
 	frame := RNodeSetTXPowerSigned(-5)
 	data := KISSUnescape(frame[2 : len(frame)-1])
 	if len(data) != 1 || int8(data[0]) != -5 {
-		t.Fatalf("expected signed txpower -5, got %d", int8(data[0]))
+		t.Fatalf("expected signed txpower -5, got %v", int8(data[0]))
 	}
 }
 
@@ -125,11 +125,11 @@ func TestRNodeSetSTALock(t *testing.T) {
 		}
 		data := KISSUnescape(frame[2 : len(frame)-1])
 		if len(data) != 2 {
-			t.Fatalf("expected 2 data bytes, got %d", len(data))
+			t.Fatalf("expected 2 data bytes, got %v", len(data))
 		}
 		got := int(data[0])<<8 | int(data[1])
 		if got != 1550 {
-			t.Fatalf("expected 1550 (15.5%%*100), got %d", got)
+			t.Fatalf("expected 1550 (15.5%%*100), got %v", got)
 		}
 	})
 
@@ -157,7 +157,7 @@ func TestRNodeSetLTALock(t *testing.T) {
 		data := KISSUnescape(frame[2 : len(frame)-1])
 		got := int(data[0])<<8 | int(data[1])
 		if got != 5000 {
-			t.Fatalf("expected 5000 (50.0%%*100), got %d", got)
+			t.Fatalf("expected 5000 (50.0%%*100), got %v", got)
 		}
 	})
 
@@ -320,7 +320,7 @@ func TestRNodeUpdateBitrate(t *testing.T) {
 			got := RNodeUpdateBitrate(tt.sf, tt.cr, tt.bandwidthHz)
 			if tt.tolerance == 0 {
 				if got != tt.wantApprox {
-					t.Fatalf("RNodeUpdateBitrate(%d, %d, %d) = %d, want %d", tt.sf, tt.cr, tt.bandwidthHz, got, tt.wantApprox)
+					t.Fatalf("RNodeUpdateBitrate(%v, %v, %v) = %v, want %v", tt.sf, tt.cr, tt.bandwidthHz, got, tt.wantApprox)
 				}
 				return
 			}
@@ -329,7 +329,7 @@ func TestRNodeUpdateBitrate(t *testing.T) {
 				diff = -diff
 			}
 			if diff > tt.tolerance {
-				t.Fatalf("RNodeUpdateBitrate(%d, %d, %d) = %d, want approx %d (tolerance %d)", tt.sf, tt.cr, tt.bandwidthHz, got, tt.wantApprox, tt.tolerance)
+				t.Fatalf("RNodeUpdateBitrate(%v, %v, %v) = %v, want approx %v (tolerance %v)", tt.sf, tt.cr, tt.bandwidthHz, got, tt.wantApprox, tt.tolerance)
 			}
 		})
 	}
@@ -398,7 +398,7 @@ func TestRNodeKISSConstants(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if tt.got != tt.want {
-				t.Fatalf("expected %s = 0x%02X, got 0x%02X", tt.name, tt.want, tt.got)
+				t.Fatalf("expected %v = 0x%02X, got 0x%02X", tt.name, tt.want, tt.got)
 			}
 		})
 	}
@@ -488,7 +488,7 @@ func TestRNodeDeviceCommandFrames(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := fmt.Sprintf("%x", tc.got); got != tc.want {
-				t.Fatalf("%s = %s, want %s", tc.name, got, tc.want)
+				t.Fatalf("%v = %v, want %v", tc.name, got, tc.want)
 			}
 		})
 	}

@@ -408,7 +408,7 @@ func (ia *InterfaceAnnouncer) resolveLocation(cfg interfaces.DiscoveryConfig) (l
 	sanitized := sanitizeDiscoveryString(string(output))
 	components := strings.Split(strings.ReplaceAll(sanitized, " ", ""), ",")
 	if len(components) != 3 {
-		return abort("Invalid location component count: %d", len(components))
+		return abort("Invalid location component count: %v", len(components))
 	}
 	dlat, err := strconv.ParseFloat(components[0], 64)
 	if err != nil {
@@ -3018,12 +3018,12 @@ func (h *InterfaceAnnounceHandler) decodeDiscoveryInfo(destinationHash []byte, a
 	// RNS/Discovery.py:310-312: reject announces whose interface_type is not
 	// in DISCOVERABLE_INTERFACE_TYPES.
 	if !discoveryAnnounceTypes[interfaceType] {
-		return nil, fmt.Errorf("invalid interface type in announce data: %s", interfaceType)
+		return nil, fmt.Errorf("invalid interface type in announce data: %v", interfaceType)
 	}
 	requiredValue := func(field byte, name string) (any, error) {
 		v, ok := lookupDiscovery(m, int(field))
 		if !ok || v == nil {
-			return nil, fmt.Errorf("missing %s", name)
+			return nil, fmt.Errorf("missing %v", name)
 		}
 		return v, nil
 	}

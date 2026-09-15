@@ -88,7 +88,7 @@ func TestStackIsolation(t *testing.T) {
 	select {
 	case req := <-requestReceived:
 		if !bytes.Equal(req, []byte("ping")) {
-			t.Errorf("expected ping, got %s", string(req))
+			t.Errorf("expected ping, got %v", string(req))
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for request at receiver")
@@ -97,7 +97,7 @@ func TestStackIsolation(t *testing.T) {
 	select {
 	case res := <-responseReceived:
 		if !bytes.Equal(res, []byte("pong")) {
-			t.Errorf("expected pong, got %s", string(res))
+			t.Errorf("expected pong, got %v", string(res))
 		}
 	case <-time.After(30 * time.Second):
 		t.Fatal("timeout waiting for response at initiator")

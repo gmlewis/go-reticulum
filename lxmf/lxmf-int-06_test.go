@@ -145,7 +145,7 @@ func TestIntegrationOutboundPeerSyncGoToPython(t *testing.T) {
 	cmd := exec.Command("python3", scriptPath, pyStore, offerGoldenPath, resourceGoldenPath)
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPathEnv(lxmfPath, reticulumPath))
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("python golden-capture failed: %v\noutput=%s", err, string(out))
+		t.Fatalf("python golden-capture failed: %v\noutput=%v", err, string(out))
 	}
 	offerGolden, err := os.ReadFile(offerGoldenPath)
 	if err != nil {
@@ -259,6 +259,6 @@ func TestIntegrationOutboundPeerSyncGoToPython(t *testing.T) {
 		"92c420" + hex.EncodeToString(bytes.Repeat([]byte{0xb0}, 32)) +
 		"c420" + hex.EncodeToString(bytes.Repeat([]byte{0xd0}, 32))
 	if hex.EncodeToString(offerBytes) != wantOfferHex {
-		t.Errorf("offer hex = %x, want %s", offerBytes, wantOfferHex)
+		t.Errorf("offer hex = %x, want %v", offerBytes, wantOfferHex)
 	}
 }

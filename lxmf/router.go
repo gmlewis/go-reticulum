@@ -1414,7 +1414,7 @@ func (r *Router) offerRequest(_ string, requestData any, _ []byte, linkID []byte
 	// transfer can advance it through TRANSFERRING/VALIDATING
 	// (LXMRouter.py:2326-2329, v1.1.0).
 	if len(linkID) > 0 {
-		r.logger().Debug("Accepted %d of %d offered messages from %x", len(wantedIDs), len(transientIDs), remotePropagationHash)
+		r.logger().Debug("Accepted %v of %v offered messages from %x", len(wantedIDs), len(transientIDs), remotePropagationHash)
 		r.acceptedOfferLinksMu.Lock()
 		r.acceptedOfferLinks[string(append([]byte{}, linkID...))] = OfferAccepted
 		r.acceptedOfferLinksMu.Unlock()
@@ -2324,7 +2324,7 @@ func (r *Router) CleanResourceTracking() {
 	}
 	r.incomingDeliveryResourcesMu.Unlock()
 	if len(stale) > 0 {
-		r.logger().Debug("Cleaned %d resource%s from inbound tracking", len(stale), pluralSuffix(len(stale)))
+		r.logger().Debug("Cleaned %v resource%v from inbound tracking", len(stale), pluralSuffix(len(stale)))
 	}
 }
 
@@ -2612,10 +2612,10 @@ func (r *Router) ProcessOutbound() {
 		}
 
 		if sendMethod == MethodOpportunistic {
-			r.logger().Debug("Opportunistic pass for %x: state=%d attempts=%d hasPath=%v nextIn=%.1fs",
+			r.logger().Debug("Opportunistic pass for %x: state=%v attempts=%v hasPath=%v nextIn=%.1fs",
 				destinationHash, message.state, message.DeliveryAttempts, r.hasPath(destinationHash), message.NextDeliveryAttempt-nowSeconds)
 			if !r.hasPath(destinationHash) {
-				r.logger().Debug("Opportunistic %x: no path, attempts=%d (max pathless=%d)",
+				r.logger().Debug("Opportunistic %x: no path, attempts=%v (max pathless=%v)",
 					destinationHash, message.DeliveryAttempts, maxPathlessTries)
 				if message.DeliveryAttempts >= maxPathlessTries {
 					_ = r.requestPath(destinationHash)
@@ -3080,7 +3080,7 @@ func (r *Router) sendMessagePacketLocked(message *Message) error {
 	}
 
 	packet := rns.NewPacketWithTransport(r.transport, message.Destination, packetData)
-	r.logger().Debug("Transmitting raw %v packet to %x (payload %d bytes)",
+	r.logger().Debug("Transmitting raw %v packet to %x (payload %v bytes)",
 		message.method, message.Destination.Hash, len(packetData))
 	if err := r.sendPacket(packet); err != nil {
 		return err
@@ -3414,7 +3414,7 @@ func (r *Router) deliveryPacket(data []byte, packet *rns.Packet) {
 		defer r.inboundWG.Done()
 		message, err := UnpackMessageFromBytes(r.transport, lxmfData, method)
 		if err != nil {
-			r.logger().Error("Inbound LXMF delivery packet %x (%d bytes, method=%d) could not be unpacked: %v",
+			r.logger().Error("Inbound LXMF delivery packet %x (%v bytes, method=%v) could not be unpacked: %v",
 				packet.PacketHash, len(data), method, err)
 			return
 		}
@@ -4120,9 +4120,9 @@ func (r *Router) loadTransientIDCacheOrEmpty(path, label string) map[string]time
 		return cache
 	}
 	if errors.Is(err, errInvalidTransientIDCacheFormat) {
-		r.logger().Error("Invalid data format for loaded %s transient IDs, recreating...", label)
+		r.logger().Error("Invalid data format for loaded %v transient IDs, recreating...", label)
 	} else {
-		r.logger().Error("Could not load %s message ID cache from storage: %v", label, err)
+		r.logger().Error("Could not load %v message ID cache from storage: %v", label, err)
 	}
 	return map[string]time.Time{}
 }
@@ -4750,9 +4750,9 @@ func (r *Router) writePropagationMessageFile(transientID []byte, receivedAt time
 	}
 
 	timestamp := strconv.FormatFloat(peerTime(receivedAt), 'f', -1, 64)
-	fileName := fmt.Sprintf("%x_%s_%v", transientID, timestamp, stampValue)
+	fileName := fmt.Sprintf("%x_%v_%v", transientID, timestamp, stampValue)
 	if len(stampData) > 0 && stampValue <= 0 {
-		fileName = fmt.Sprintf("%x_%s", transientID, timestamp)
+		fileName = fmt.Sprintf("%x_%v", transientID, timestamp)
 	}
 	filePath := filepath.Join(storePath, fileName)
 	fileData := make([]byte, 0, len(destinationHash)+len(payload)+len(stampData))

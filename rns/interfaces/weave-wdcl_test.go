@@ -83,7 +83,7 @@ func TestWeaveLogEventDecodeGolden(t *testing.T) {
 		t.Errorf("Timestamp = %v, want 1.0", f.Timestamp)
 	}
 	if f.Level != WeaveLogInfo {
-		t.Errorf("Level = %d, want %d (INFO)", f.Level, WeaveLogInfo)
+		t.Errorf("Level = %v, want %v (INFO)", f.Level, WeaveLogInfo)
 	}
 	if f.Event != WeaveETBoardInit {
 		t.Errorf("Event = 0x%04X, want 0x%04X (BOARD_INIT)", f.Event, WeaveETBoardInit)
@@ -122,11 +122,11 @@ func TestWeaveRenderBoardInitGolden(t *testing.T) {
 		fd := buildWeaveLogFD(1000, tc.level, WeaveETBoardInit, tc.data)
 		f, err := DecodeWeaveLogEvent(fd)
 		if err != nil {
-			t.Fatalf("%s: decode: %v", tc.name, err)
+			t.Fatalf("%v: decode: %v", tc.name, err)
 		}
 		got := RenderWeaveLogEvent(f)
 		if got != tc.want {
-			t.Errorf("%s:\n got %q\nwant %q", tc.name, got, tc.want)
+			t.Errorf("%v:\n got %q\nwant %q", tc.name, got, tc.want)
 		}
 	}
 }
@@ -238,19 +238,19 @@ func TestWeaveStatMemoryDecodeGolden(t *testing.T) {
 		}
 		stat, err := DecodeWeaveStatMemory(data)
 		if err != nil {
-			t.Fatalf("%s: decode: %v", tc.name, err)
+			t.Fatalf("%v: decode: %v", tc.name, err)
 		}
 		if stat.Free != tc.wantFree {
-			t.Errorf("%s: Free = %d, want %d", tc.name, stat.Free, tc.wantFree)
+			t.Errorf("%v: Free = %v, want %v", tc.name, stat.Free, tc.wantFree)
 		}
 		if stat.Total != tc.total {
-			t.Errorf("%s: Total = %d, want %d", tc.name, stat.Total, tc.total)
+			t.Errorf("%v: Total = %v, want %v", tc.name, stat.Total, tc.total)
 		}
 		if stat.Used != tc.wantUsed {
-			t.Errorf("%s: Used = %d, want %d", tc.name, stat.Used, tc.wantUsed)
+			t.Errorf("%v: Used = %v, want %v", tc.name, stat.Used, tc.wantUsed)
 		}
 		if stat.UsedPct != tc.wantPct {
-			t.Errorf("%s: UsedPct = %v, want %v", tc.name, stat.UsedPct, tc.wantPct)
+			t.Errorf("%v: UsedPct = %v, want %v", tc.name, stat.UsedPct, tc.wantPct)
 		}
 	}
 }
@@ -281,10 +281,10 @@ func TestWeaveStatDispatchGolden(t *testing.T) {
 		t.Fatalf("cpu: handle: %v", err)
 	}
 	if d.CPULoad != 66 {
-		t.Errorf("CPULoad = %d, want 66", d.CPULoad)
+		t.Errorf("CPULoad = %v, want 66", d.CPULoad)
 	}
 	if len(d.CPUStats) != 1 {
-		t.Fatalf("CPUStats len = %d, want 1", len(d.CPUStats))
+		t.Fatalf("CPUStats len = %v, want 1", len(d.CPUStats))
 	}
 	if d.CPUStats[0].CPULoad != 66 || d.CPUStats[0].Timestamp != now {
 		t.Errorf("CPUStats[0] = {%v,%v}, want {66,%v}", d.CPUStats[0].CPULoad, d.CPUStats[0].Timestamp, now)
@@ -325,13 +325,13 @@ func TestWeaveStatDispatchGolden(t *testing.T) {
 		t.Fatalf("memory: handle: %v", err)
 	}
 	if d.MemoryFree != 100 {
-		t.Errorf("MemoryFree = %d, want 100", d.MemoryFree)
+		t.Errorf("MemoryFree = %v, want 100", d.MemoryFree)
 	}
 	if d.MemoryTotal != 200 {
-		t.Errorf("MemoryTotal = %d, want 200", d.MemoryTotal)
+		t.Errorf("MemoryTotal = %v, want 200", d.MemoryTotal)
 	}
 	if d.MemoryUsed != 100 {
-		t.Errorf("MemoryUsed = %d, want 100", d.MemoryUsed)
+		t.Errorf("MemoryUsed = %v, want 100", d.MemoryUsed)
 	}
 	if d.MemoryUsedPct != 50.0 {
 		t.Errorf("MemoryUsedPct = %v, want 50.0", d.MemoryUsedPct)
@@ -363,15 +363,15 @@ func TestWeaveStatCapGolden(t *testing.T) {
 	}
 
 	if len(d.CPUStats) != WeaveStatLenMax {
-		t.Fatalf("CPUStats len = %d, want %d", len(d.CPUStats), WeaveStatLenMax)
+		t.Fatalf("CPUStats len = %v, want %v", len(d.CPUStats), WeaveStatLenMax)
 	}
 	// 126 total (0x42, 0..124); drop 6 oldest (0x42,0,1,2,3,4); first kept = i=5.
 	if d.CPUStats[0].CPULoad != 5 {
-		t.Errorf("CPUStats[0].CPULoad = %d, want 5 (oldest after cap)", d.CPUStats[0].CPULoad)
+		t.Errorf("CPUStats[0].CPULoad = %v, want 5 (oldest after cap)", d.CPUStats[0].CPULoad)
 	}
 	// The newest is the last fed: i=124.
 	if d.CPUStats[len(d.CPUStats)-1].CPULoad != 124 {
-		t.Errorf("CPUStats[-1].CPULoad = %d, want 124 (newest)", d.CPUStats[len(d.CPUStats)-1].CPULoad)
+		t.Errorf("CPUStats[-1].CPULoad = %v, want 124 (newest)", d.CPUStats[len(d.CPUStats)-1].CPULoad)
 	}
 }
 
@@ -403,14 +403,14 @@ func TestWeaveGetActiveTasksGolden(t *testing.T) {
 
 	got := d.GetActiveTasks(now)
 	if len(got) != 1 {
-		t.Fatalf("GetActiveTasks len = %d, want 1; got %v", len(got), got)
+		t.Fatalf("GetActiveTasks len = %v, want 1; got %v", len(got), got)
 	}
 	core, ok := got["System: Core"]
 	if !ok {
 		t.Fatalf("GetActiveTasks missing \"System: Core\"; got %v", got)
 	}
 	if core.CPULoad != 55 {
-		t.Errorf("GetActiveTasks[\"System: Core\"].CPULoad = %d, want 55", core.CPULoad)
+		t.Errorf("GetActiveTasks[\"System: Core\"].CPULoad = %v, want 55", core.CPULoad)
 	}
 	if _, ok := got["Protocol: WDCL"]; ok {
 		t.Errorf("stale protocol_wdcl should have been dropped; got %v", got)
@@ -455,7 +455,7 @@ func TestWeaveStatUpdateCallbackGolden(t *testing.T) {
 	}
 	for i, c := range calls {
 		if c != want[i] {
-			t.Errorf("OnStatsUpdate[%d] = %q, want %q", i, c, want[i])
+			t.Errorf("OnStatsUpdate[%v] = %q, want %q", i, c, want[i])
 		}
 	}
 }

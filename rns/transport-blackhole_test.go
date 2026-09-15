@@ -41,7 +41,7 @@ func mustHexDecode(t *testing.T, s string) []byte {
 func mustWriteFile(t *testing.T, path string, data []byte) {
 	t.Helper()
 	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatalf("write %s: %v", path, err)
+		t.Fatalf("write %v: %v", path, err)
 	}
 }
 
@@ -103,7 +103,7 @@ func TestReloadBlackhole(t *testing.T) {
 	}
 
 	if got, wantN := len(ts.blackholedIdentities), len(want); got != wantN {
-		t.Fatalf("merged set size = %d, want %d", got, wantN)
+		t.Fatalf("merged set size = %v, want %v", got, wantN)
 	}
 	for _, w := range want {
 		got, ok := ts.blackholedIdentities[string(w.hash)]
@@ -122,10 +122,10 @@ func TestReloadBlackhole(t *testing.T) {
 			}
 		} else {
 			if got.Until == nil {
-				t.Fatalf("identity %x: until = nil, want unix %d", w.hash, w.unix)
+				t.Fatalf("identity %x: until = nil, want unix %v", w.hash, w.unix)
 			}
 			if gu := got.Until.Unix(); gu != w.unix {
-				t.Fatalf("identity %x: until unix = %d, want %d", w.hash, gu, w.unix)
+				t.Fatalf("identity %x: until unix = %v, want %v", w.hash, gu, w.unix)
 			}
 		}
 	}
@@ -227,7 +227,7 @@ func TestPersistBlackhole(t *testing.T) {
 	}
 
 	if got, want := len(m), 2; got != want {
-		t.Fatalf("persisted %d entries, want %d (only own-sourced)", got, want)
+		t.Fatalf("persisted %v entries, want %v (only own-sourced)", got, want)
 	}
 	assertBlackholeSubEntry(t, m, ih1, own, nil, "local-ih1")
 	assertBlackholeSubEntry(t, m, ih2, own, float64(9_900_000_000), "local-ih2")
@@ -330,7 +330,7 @@ sys.stdout.write(umsgpack.packb(d).hex())
 func assertBlackholeMapsEqual(t *testing.T, got, want map[any]any) {
 	t.Helper()
 	if len(got) != len(want) {
-		t.Fatalf("entry count = %d, want %d", len(got), len(want))
+		t.Fatalf("entry count = %v, want %v", len(got), len(want))
 	}
 	for wk, wv := range want {
 		wkey := blackholeMapKey(wk)
@@ -402,7 +402,7 @@ func TestBlackholeListHandler(t *testing.T) {
 	// maps must match — hence the structural comparison.)
 	livePacked := pythonBlackholeListPacked(t)
 	if hex.EncodeToString(livePacked) != blackholeListHandlerGoldenHex {
-		t.Fatalf("live Python blackhole-list bytes != golden hex constant\n got: %x\nwant: %s", livePacked, blackholeListHandlerGoldenHex)
+		t.Fatalf("live Python blackhole-list bytes != golden hex constant\n got: %x\nwant: %v", livePacked, blackholeListHandlerGoldenHex)
 	}
 	wantMap, err := msgpack.Unpack(livePacked)
 	if err != nil {
@@ -420,6 +420,6 @@ func TestBlackholeListHandler(t *testing.T) {
 		t.Fatal("remote-sourced ih2 must be present in the /list response")
 	}
 	if len(gotMap) != 3 {
-		t.Fatalf("response has %d entries, want 3", len(gotMap))
+		t.Fatalf("response has %v entries, want 3", len(gotMap))
 	}
 }

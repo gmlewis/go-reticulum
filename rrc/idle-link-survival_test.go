@@ -152,9 +152,9 @@ func TestIntegrationIdleLinkSurvivesPythonWatchdog(t *testing.T) {
 
 		deaths++
 		if deaths > maxLinkDeaths {
-			t.Fatalf("link DIED %d times during %v silence windows: status=%d text=%q (client keepalives are not arriving at the Python hub)", deaths, silentFor, status, hub.StatusText)
+			t.Fatalf("link DIED %v times during %v silence windows: status=%v text=%q (client keepalives are not arriving at the Python hub)", deaths, silentFor, status, hub.StatusText)
 		}
-		t.Logf("link died during silence (death %d/%d, status=%d text=%q); reconnecting", deaths, maxLinkDeaths, status, hub.StatusText)
+		t.Logf("link died during silence (death %v/%v, status=%v text=%q); reconnecting", deaths, maxLinkDeaths, status, hub.StatusText)
 		hub.ConnectAsync()
 		reconnectDeadline := time.Now().Add(reconnectFor)
 		for time.Now().Before(reconnectDeadline) {
@@ -170,7 +170,7 @@ func TestIntegrationIdleLinkSurvivesPythonWatchdog(t *testing.T) {
 		status, welcomed = hub.Status, hub.Welcomed
 		hub.lock.Unlock()
 		if !welcomed || status != StatusConnected {
-			t.Fatalf("link died during silence and the reconnect never re-welcomed within %v (status=%d text=%q)", reconnectFor, status, hub.StatusText)
+			t.Fatalf("link died during silence and the reconnect never re-welcomed within %v (status=%v text=%q)", reconnectFor, status, hub.StatusText)
 		}
 		// The re-welcome re-armed the who-refresh timer; silence again.
 		hub.stopWhoRefresh()
@@ -184,5 +184,5 @@ func TestIntegrationIdleLinkSurvivesPythonWatchdog(t *testing.T) {
 	// inside Link.receive (they never reach the app-level packet callback, so
 	// the hub's event log cannot count them — the survival itself is the
 	// receipt evidence).
-	t.Logf("link survived %v of total silence (%d link deaths tolerated)", silentFor, deaths)
+	t.Logf("link survived %v of total silence (%v link deaths tolerated)", silentFor, deaths)
 }

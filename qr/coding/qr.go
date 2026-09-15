@@ -434,7 +434,7 @@ func (p *Plan) Encode(text ...Encoding) (*Code, error) {
 		t.Encode(&b, p.Version)
 	}
 	if b.Bits() > p.DataBytes*8 {
-		return nil, fmt.Errorf("cannot encode %d bits into %d-bit code", b.Bits(), p.DataBytes*8)
+		return nil, fmt.Errorf("cannot encode %v bits into %v-bit code", b.Bits(), p.DataBytes*8)
 	}
 	b.AddCheckBytes(p.Version, p.Level)
 	bytes := b.Bytes()
@@ -533,7 +533,7 @@ func grid(siz int) [][]Pixel {
 func vplan(v Version) (*Plan, error) {
 	p := &Plan{Version: v}
 	if v < 1 || v > 40 {
-		return nil, fmt.Errorf("invalid QR version %d", int(v))
+		return nil, fmt.Errorf("invalid QR version %v", int(v))
 	}
 	siz := 17 + int(v)*4
 	m := grid(siz)

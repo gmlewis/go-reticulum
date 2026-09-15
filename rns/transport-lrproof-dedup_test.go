@@ -44,10 +44,10 @@ func TestLRProofExemptFromRememberOnFirstSight(t *testing.T) {
 	ts.mu.Unlock()
 
 	if afterCur != beforeCur {
-		t.Fatalf("packetHashSeenLocked grew current generation: %d -> %d", beforeCur, afterCur)
+		t.Fatalf("packetHashSeenLocked grew current generation: %v -> %v", beforeCur, afterCur)
 	}
 	if beforePrev != 0 {
-		t.Fatalf("unexpected pre-existing previous-generation entries: %d", beforePrev)
+		t.Fatalf("unexpected pre-existing previous-generation entries: %v", beforePrev)
 	}
 }
 

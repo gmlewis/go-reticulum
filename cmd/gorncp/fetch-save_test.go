@@ -226,7 +226,7 @@ func TestFetchModeSavesReceivedFiles(t *testing.T) {
 	}
 
 	if _, err := os.Stat(savedFilePath); os.IsNotExist(err) {
-		t.Fatalf("Saved file does not exist: %s", savedFilePath)
+		t.Fatalf("Saved file does not exist: %v", savedFilePath)
 	}
 
 	savedContent, err := os.ReadFile(savedFilePath)

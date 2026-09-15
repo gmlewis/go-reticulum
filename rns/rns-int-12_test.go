@@ -221,10 +221,10 @@ share_instance = No
 			ts.mu.Lock()
 			n := len(ts.tunnels)
 			ts.mu.Unlock()
-			t.Fatalf("tunnel %x not registered on Go side (tunnels=%d)", wantTunnelID, n)
+			t.Fatalf("tunnel %x not registered on Go side (tunnels=%v)", wantTunnelID, n)
 		}
 		if len(got.ID) != len(wantTunnelID) {
-			t.Fatalf("tunnel ID len=%d, want %d", len(got.ID), len(wantTunnelID))
+			t.Fatalf("tunnel ID len=%v, want %v", len(got.ID), len(wantTunnelID))
 		}
 		if !bytesEqual(got.ID, wantTunnelID) {
 			t.Fatalf("tunnel ID=%x, want %x", got.ID, wantTunnelID)

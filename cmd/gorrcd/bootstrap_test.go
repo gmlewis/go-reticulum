@@ -62,7 +62,7 @@ func TestConfigTemplateRenderGolden(t *testing.T) {
 	const testRegistryPath = "/home/test/.rrcd/rooms.toml"
 	wantCfg := defaultConfigContent(testIdentityPath, testRegistryPath)
 	if gotCfg != wantCfg {
-		t.Fatalf("rendered config template differs from live Python capture:\n--- Go (%d bytes) ---\n%v\n--- Python (%d bytes) ---\n%v",
+		t.Fatalf("rendered config template differs from live Python capture:\n--- Go (%v bytes) ---\n%v\n--- Python (%v bytes) ---\n%v",
 			len(wantCfg), wantCfg, len(gotCfg), gotCfg)
 	}
 	if gotRooms != defaultRoomsContent() {

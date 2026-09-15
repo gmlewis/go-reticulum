@@ -875,16 +875,16 @@ func TestReader(t *testing.T) {
 			}
 
 			if got, want, ok := testutil.BytesCompare(output, v.output); !ok {
-				t.Errorf("output mismatch:\ngot  %s\nwant %s", got, want)
+				t.Errorf("output mismatch:\ngot  %v\nwant %v", got, want)
 			}
 			if rd.InputOffset != v.inIdx {
-				t.Errorf("input offset mismatch: got %d, want %d", rd.InputOffset, v.inIdx)
+				t.Errorf("input offset mismatch: got %v, want %v", rd.InputOffset, v.inIdx)
 			}
 			if rd.OutputOffset != v.outIdx {
-				t.Errorf("output offset mismatch: got %d, want %d", rd.OutputOffset, v.outIdx)
+				t.Errorf("output offset mismatch: got %v, want %v", rd.OutputOffset, v.outIdx)
 			}
 			if v.errf != "" && !errFuncs[v.errf](err) {
-				t.Errorf("mismatching error:\ngot %v\nwant %s(err) == true", err, v.errf)
+				t.Errorf("mismatching error:\ngot %v\nwant %v(err) == true", err, v.errf)
 			} else if v.errf == "" && err != nil {
 				t.Errorf("unexpected error: got %v", err)
 			}
@@ -897,7 +897,7 @@ func TestReader(t *testing.T) {
 					t.Errorf("pass mismatch: got %v, want %v", got, err)
 				}
 				if got, want, ok := testutil.BytesCompare(output, v.output); !ok && err == nil {
-					t.Errorf("output mismatch:\ngot  %s\nwant %s", got, want)
+					t.Errorf("output mismatch:\ngot  %v\nwant %v", got, want)
 				}
 			}
 		})
@@ -931,7 +931,7 @@ func BenchmarkDecode(b *testing.B) {
 
 			n, err := io.Copy(io.Discard, rd)
 			if n != int64(len(data)) || err != nil {
-				b.Fatalf("Copy() = (%d, %v), want (%d, nil)", n, err, len(data))
+				b.Fatalf("Copy() = (%v, %v), want (%v, nil)", n, err, len(data))
 			}
 			if err := rd.Close(); err != nil {
 				b.Fatalf("Close() = %v, want nil", err)

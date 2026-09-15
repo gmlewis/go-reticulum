@@ -153,9 +153,9 @@ func TestPacketUnpackRejectsExcessiveHops(t *testing.T) {
 			err := p.Unpack()
 			switch {
 			case tc.wantErr && err == nil:
-				t.Fatalf("Unpack with hops=%d expected error, got nil", tc.hops)
+				t.Fatalf("Unpack with hops=%v expected error, got nil", tc.hops)
 			case !tc.wantErr && err != nil:
-				t.Fatalf("Unpack with hops=%d unexpected error: %v", tc.hops, err)
+				t.Fatalf("Unpack with hops=%v unexpected error: %v", tc.hops, err)
 			case tc.wantErr && err != nil && !strings.Contains(err.Error(), "hop count"):
 				t.Fatalf("error %q should mention hop count", err.Error())
 			}

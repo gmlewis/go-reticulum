@@ -41,7 +41,7 @@ func TestDoRemoteTableUsesRemoteRequestPayload(t *testing.T) {
 		t.Fatalf("remote path mismatch: got %q want %q", got, want)
 	}
 	if got, want := fmt.Sprintf("%#v", fake.data), "[]interface {}{\"table\", []uint8{0xaa}, 3}"; got != want {
-		t.Fatalf("remote payload mismatch: got %s want %s", got, want)
+		t.Fatalf("remote payload mismatch: got %v want %v", got, want)
 	}
 	wantExpires := time.Unix(456, 0).Format("2006-01-02 15:04:05")
 	if got, want := out.String(), "<01> is 1 hop  away via <11> on eth0 expires "+wantExpires+"\n"; got != want {
@@ -64,7 +64,7 @@ func TestDoRemoteRatesUsesRemoteRequestPayload(t *testing.T) {
 		t.Fatalf("remote path mismatch: got %q want %q", got, want)
 	}
 	if got, want := fmt.Sprintf("%#v", fake.data), "[]interface {}{\"rates\", []uint8{0xbb}}"; got != want {
-		t.Fatalf("remote payload mismatch: got %s want %s", got, want)
+		t.Fatalf("remote payload mismatch: got %v want %v", got, want)
 	}
 	if got, want := out.String(), "01 last heard 2 minutes ago, 0.333 announces/hour in the last 3 hours\n"; got != want {
 		t.Fatalf("remote rates output mismatch: got %q want %q", got, want)

@@ -341,7 +341,7 @@ func (p *Packet) Unpack() error {
 	// continue, so rejecting here prevents forwarding of an over-hopped or
 	// hop-count-attacked packet.
 	if p.Hops >= PathfinderM {
-		return fmt.Errorf("invalid hop count %d", p.Hops)
+		return fmt.Errorf("invalid hop count %v", p.Hops)
 	}
 
 	p.HeaderType = int((p.Flags & 0b01000000) >> 6)

@@ -77,16 +77,16 @@ func TestLinkCapabilityAccessors(t *testing.T) {
 	// The Go constants must equal the live Python values.
 	pyMTU, pyMDU, pyMode, pyActive := pythonLinkConstants(t)
 	if MTU != pyMTU {
-		t.Fatalf("Go MTU = %d, want live Python %d", MTU, pyMTU)
+		t.Fatalf("Go MTU = %v, want live Python %v", MTU, pyMTU)
 	}
 	if MDU != pyMDU {
-		t.Fatalf("Go MDU = %d, want live Python %d", MDU, pyMDU)
+		t.Fatalf("Go MDU = %v, want live Python %v", MDU, pyMDU)
 	}
 	if LinkModeAES256CBC != pyMode {
-		t.Fatalf("Go LinkModeAES256CBC = %d, want live Python %d", LinkModeAES256CBC, pyMode)
+		t.Fatalf("Go LinkModeAES256CBC = %v, want live Python %v", LinkModeAES256CBC, pyMode)
 	}
 	if LinkActive != pyActive {
-		t.Fatalf("Go LinkActive = %d, want live Python %d", LinkActive, pyActive)
+		t.Fatalf("Go LinkActive = %v, want live Python %v", LinkActive, pyActive)
 	}
 
 	initiator, _ := establishLoopbackLink(t)
@@ -188,7 +188,7 @@ func TestLinkRateAccessors(t *testing.T) {
 func rateCheck(t *testing.T, label string, got, want *float64) {
 	t.Helper()
 	if (got == nil) != (want == nil) || (got != nil && *got != *want) {
-		t.Fatalf("%s = %v, want live Python %v", label, floatPtrVal(got), floatPtrVal(want))
+		t.Fatalf("%v = %v, want live Python %v", label, floatPtrVal(got), floatPtrVal(want))
 	}
 }
 

@@ -27,7 +27,7 @@ func runScan(rt cliRuntime) error {
 		fmt.Println("Check that the device is plugged in with a DATA cable (not a charge-only cable).")
 		return nil
 	}
-	fmt.Printf("Scanning %d serial port(s) for RNode devices at %d baud...\n\n", len(ports), rnodeBaudRate)
+	fmt.Printf("Scanning %v serial port(s) for RNode devices at %v baud...\n\n", len(ports), rnodeBaudRate)
 	found := false
 	for _, port := range ports {
 		detected, err := probePortAtBaud(rt, port, rnodeBaudRate)
@@ -60,7 +60,7 @@ func runScan(rt cliRuntime) error {
 // diagnostic — the question that distinguishes a baud mismatch from a
 // wiring/cable/power problem.
 func runProbe(rt cliRuntime, port string) error {
-	fmt.Printf("Probing %s at %d baud rate(s)...\n\n", port, len(probeBaudRates))
+	fmt.Printf("Probing %v at %v baud rate(s)...\n\n", port, len(probeBaudRates))
 	for _, baud := range probeBaudRates {
 		detected, err := probePortAtBaud(rt, port, baud)
 		if err != nil {
@@ -70,15 +70,15 @@ func runProbe(rt cliRuntime, port string) error {
 		if detected {
 			fmt.Printf("  %6d baud: RNode detected!\n", baud)
 			fmt.Printf("\nUse this port and baud in your Reticulum config:\n")
-			fmt.Printf("  port = %s\n", port)
+			fmt.Printf("  port = %v\n", port)
 			if baud != rnodeBaudRate {
-				fmt.Printf("  speed = %d\n", baud)
+				fmt.Printf("  speed = %v\n", baud)
 			}
 			return nil
 		}
 		fmt.Printf("  %6d baud: no response\n", baud)
 	}
-	fmt.Printf("\nNo RNode response on %s at any baud rate.\n", port)
+	fmt.Printf("\nNo RNode response on %v at any baud rate.\n", port)
 	fmt.Println("Possible causes:")
 	fmt.Println("  - The USB cable is power-only (no data pair) — try a different cable.")
 	fmt.Println("  - The radio is not powered or not in host-controlled (Normal) mode.")

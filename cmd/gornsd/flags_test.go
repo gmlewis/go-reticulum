@@ -29,7 +29,7 @@ func runRnsdHelpLive(t *testing.T) string {
 	}
 	scriptPath := filepath.Join(repoRoot, "RNS", "Utilities", "rnsd.py")
 	if _, err := os.Stat(scriptPath); err != nil {
-		t.Skipf("rnsd.py not found at %s: %v", scriptPath, err)
+		t.Skipf("rnsd.py not found at %v: %v", scriptPath, err)
 	}
 	cmd := exec.Command("python3", scriptPath, "--help")
 	cmd.Dir = repoRoot

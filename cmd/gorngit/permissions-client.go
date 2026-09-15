@@ -92,7 +92,7 @@ func (c *reticulumGitClient) groupPermissions() error {
 	if err := permsCheckOK(response); err != nil {
 		return err
 	}
-	fmt.Printf("Permissions updated for group %s\n", c.groupName)
+	fmt.Printf("Permissions updated for group %v\n", c.groupName)
 	return nil
 }
 
@@ -145,7 +145,7 @@ func (c *reticulumGitClient) repositoryPermissions() error {
 	if err := permsCheckOK(response); err != nil {
 		return err
 	}
-	fmt.Printf("Permissions updated for %s\n", c.repoPath)
+	fmt.Printf("Permissions updated for %v\n", c.repoPath)
 	return nil
 }
 
@@ -159,7 +159,7 @@ func permsResponseContent(response any) (string, error) {
 		return "", errors.New("No response from remote")
 	}
 	if respBytes[0] != resOK {
-		return "", fmt.Errorf("Remote error: %s", string(respBytes[1:]))
+		return "", fmt.Errorf("Remote error: %v", string(respBytes[1:]))
 	}
 	if len(respBytes) > 1 {
 		unpacked, err := msgpack.UnpackPreserveBinMapKeys(respBytes[1:])
@@ -183,7 +183,7 @@ func permsCheckOK(response any) error {
 		return errors.New("No response from remote")
 	}
 	if respBytes[0] != resOK {
-		return fmt.Errorf("Remote error: %s", string(respBytes[1:]))
+		return fmt.Errorf("Remote error: %v", string(respBytes[1:]))
 	}
 	return nil
 }

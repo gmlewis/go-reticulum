@@ -37,7 +37,7 @@ func runRnodeconfHelp(t *testing.T) string {
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("rnodeconf --help failed: %v\nstderr: %s", err, stderr.String())
+		t.Fatalf("rnodeconf --help failed: %v\nstderr: %v", err, stderr.String())
 	}
 	return stdout.String()
 }
@@ -98,7 +98,7 @@ print(json.dumps(out))
 		Dsrdtr           bool     `json:"dsrdtr"`
 	}
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &s); err != nil {
-		t.Fatalf("parse rnode_open_serial output: %v\nraw: %s", err, out)
+		t.Fatalf("parse rnode_open_serial output: %v\nraw: %v", err, out)
 	}
 	settings := serialSettings{
 		BaudRate: s.Baudrate,
@@ -178,10 +178,10 @@ print(json.dumps(out))
 	out := testutils.RunPython(t, script, jsonPath)
 	var hexOut []string
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &hexOut); err != nil {
-		t.Fatalf("parse kiss-escape output: %v\nraw: %s", err, out)
+		t.Fatalf("parse kiss-escape output: %v\nraw: %v", err, out)
 	}
 	if len(hexOut) != len(raws) {
-		t.Fatalf("kiss-escape count mismatch: got %d want %d", len(hexOut), len(raws))
+		t.Fatalf("kiss-escape count mismatch: got %v want %v", len(hexOut), len(raws))
 	}
 	results := make([][]byte, len(raws))
 	for i, h := range hexOut {

@@ -249,13 +249,13 @@ func TestAsicParityWithGoldenVectors(t *testing.T) {
 			// Verify candidate derivation from baseCand + expectedNonce
 			derivedCand := addNonceHelper(baseCand, tc.expectedNonce)
 			if hex.EncodeToString(derivedCand) != tc.expectedCandHex {
-				t.Fatalf("candidate derivation mismatch:\n  got:  %x\n  want: %s", derivedCand, tc.expectedCandHex)
+				t.Fatalf("candidate derivation mismatch:\n  got:  %x\n  want: %v", derivedCand, tc.expectedCandHex)
 			}
 
 			// 3. Verify digest and leading zero count
 			fullHash := rns.FullHash(append(wb, expCand...))
 			if gotHex := hex.EncodeToString(fullHash); gotHex != tc.expectedDigest {
-				t.Fatalf("digest mismatch:\n  got:  %s\n  want: %s", gotHex, tc.expectedDigest)
+				t.Fatalf("digest mismatch:\n  got:  %v\n  want: %v", gotHex, tc.expectedDigest)
 			}
 
 			val := StampValue(wb, expCand)

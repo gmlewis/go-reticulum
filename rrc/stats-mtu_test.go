@@ -58,15 +58,15 @@ func TestHandleStatsChunksLongBody(t *testing.T) {
 	var rebuilt strings.Builder
 	for i, item := range outgoing.Queue {
 		if len(item.Payload) > rnsMDU {
-			t.Errorf("queued payload[%d] is %v bytes > RNS MDU %v — RNS will drop it",
+			t.Errorf("queued payload[%v] is %v bytes > RNS MDU %v — RNS will drop it",
 				i, len(item.Payload), rnsMDU)
 		}
 		sent := decodeOutgoing(t, &OutgoingList{Queue: []OutgoingItem{item}})
 		if len(sent) != 1 || sent[0].msgType != TNotice {
-			t.Fatalf("queued payload[%d] = %+v, want one T_NOTICE", i, sent[0])
+			t.Fatalf("queued payload[%v] = %+v, want one T_NOTICE", i, sent[0])
 		}
 		if sent[0].room != nil {
-			t.Errorf("queued payload[%d] room = %v, want room=nil", i, *sent[0].room)
+			t.Errorf("queued payload[%v] room = %v, want room=nil", i, *sent[0].room)
 		}
 		body, _ := sent[0].body.(string)
 		rebuilt.WriteString(body)

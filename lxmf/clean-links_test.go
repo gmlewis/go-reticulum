@@ -207,7 +207,7 @@ func TestCleanLinksPropagationSweep(t *testing.T) {
 	router.mu.Unlock()
 
 	if len(remaining) != 1 {
-		t.Fatalf("activePropagationLinks len = %d, want 1 (only the active link)", len(remaining))
+		t.Fatalf("activePropagationLinks len = %v, want 1 (only the active link)", len(remaining))
 	}
 	if remaining[0] != active {
 		t.Fatal("the active propagation link was removed, want it retained")
