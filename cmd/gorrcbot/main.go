@@ -298,10 +298,22 @@ func configSummary(paths BotPaths, cfg *BotConfig, ownHash []byte) string {
 	if cfg.KJVTxtFile != "" {
 		fmt.Fprintf(&sb, "kjv:        %v\n", cfg.KJVTxtFile)
 	}
+	if cfg.SpaceWeatherURL != "" {
+		fmt.Fprintf(&sb, "spacewx:    %v\n", cfg.SpaceWeatherURL)
+	}
+	if cfg.MetarURL != "" {
+		fmt.Fprintf(&sb, "metar:      %v\n", cfg.MetarURL)
+	}
+	if cfg.WeatherAlertURL != "" {
+		fmt.Fprintf(&sb, "wxalert:    %v\n", cfg.WeatherAlertURL)
+	}
 	if cfg.LXMFEnabled {
 		fmt.Fprintf(&sb, "lxmf:       enabled, announcing every %vm\n", cfg.LXMFAnnounceMinutes)
 		if cfg.LXMFPropagationNode != "" {
 			fmt.Fprintf(&sb, "lxmf node:  %v\n", cfg.LXMFPropagationNode)
+		}
+		if cfg.EmergencyLXMFDestination != "" {
+			fmt.Fprintf(&sb, "sos dispatch: %v\n", cfg.EmergencyLXMFDestination)
 		}
 	}
 	fmt.Fprintf(&sb, "hubs:       %v\n", len(cfg.Hubs))

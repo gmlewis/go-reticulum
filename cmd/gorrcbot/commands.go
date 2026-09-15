@@ -157,16 +157,27 @@ type registry struct {
 	// inert until the command runs, and its path is empty when the operator
 	// has not configured one.
 	kjv *kjvCache
+	// spaceWeather is the last space-weather reading, fetched or entered by
+	// hand. It is typed rather than a rendered line, so a manual entry and a
+	// provider answer are the same thing to every reader.
+	spaceWeather *spaceWeatherCache
+	// alerts reuses a recent severe-weather answer for longer than the general
+	// provider cache does, because a warning changes on the scale of tens of
+	// minutes.
+	alerts *providerCache
 }
 
 // newRegistry builds the command table for one bot.
 func newRegistry(b *bot) *registry {
 	r := &registry{
-		bot:     b,
-		byName:  make(map[string]*command),
-		aliases: map[string]string{"dn": "dnotice", "wx": "weather", "lxmf": "msg"},
-		fetch:   httpFetch,
-		cache:   newProviderCache(providerCacheTTL, providerCacheMaxEntries),
+		bot:    b,
+		byName: make(map[string]*command),
+		aliases: map[string]string{
+			"dn": "dnotice", "wx": "weather", "lxmf": "msg",
+			"rx": "firstaid", "triage": "firstaid", "solar": "spacewx",
+		},
+		fetch: httpFetch,
+		cache: newProviderCache(providerCacheTTL, providerCacheMaxEntries),
 		// Flight answers are cached apart from the shared provider cache: a
 		// route is static, while a live position is only worth reusing for as
 		// long as it is still roughly where the aircraft is.
@@ -174,10 +185,12 @@ func newRegistry(b *bot) *registry {
 		flightLive:   newFlightCache[flightLive](flightLiveCacheTTL, providerCacheMaxEntries),
 		// The announce cache belongs to the bot, which hears the announces; the
 		// watch commands are just its user interface.
-		watches:    b.announces.watches,
-		announces:  b.announces,
-		lxmfBudget: newLXMFBudget(),
-		kjv:        newKJVCache(botKJVTxtFile(b)),
+		watches:      b.announces.watches,
+		announces:    b.announces,
+		lxmfBudget:   newLXMFBudget(),
+		kjv:          newKJVCache(botKJVTxtFile(b)),
+		spaceWeather: &spaceWeatherCache{},
+		alerts:       newProviderCache(wxalertCacheTTL, providerCacheMaxEntries),
 	}
 	r.commands = r.build()
 	sort.Slice(r.commands, func(i, j int) bool { return r.commands[i].name < r.commands[j].name })
@@ -571,6 +584,224 @@ func (r *registry) build() []command {
 				"alias that works even where its nickname is taken.",
 			},
 			run: (*commandContext).runID,
+		},
+		{
+			name:    "loc",
+			summary: "render one location in every navigation notation",
+			usage:   locUsage,
+			detail: []string{
+				"Accepts a Plus Code, decimal degrees, DMS, DDM, or a Maidenhead grid.",
+				"{nick} loc 849VCWC8+R9 — a Plus Code.",
+				"{nick} loc 37.42205, -122.08409 — decimal degrees.",
+				`{nick} loc 37°25'19"N 122°05'03"W — degrees, minutes, seconds.`,
+				"{nick} loc CM87uk — a Maidenhead grid locator.",
+			},
+			run: (*commandContext).runLoc,
+		},
+		{
+			name:    "dist",
+			summary: "report the distance and headings between two locations",
+			usage:   distUsage,
+			detail: []string{
+				"Both locations accept every notation loc accepts, and \"to\" may",
+				"separate them when one of them contains spaces.",
+				"{nick} dist 849VCWC8+R9 to 8FVC9G8F+6X",
+			},
+			run: (*commandContext).runDist,
+		},
+		{
+			name:    "proj",
+			summary: "project a waypoint from a course and a distance",
+			usage:   projUsage,
+			detail: []string{
+				projDistanceHelp + ".",
+				projBearingHelp + ".",
+				"{nick} proj 849VCWC8+R9 048 3.5km",
+			},
+			run: (*commandContext).runProj,
+		},
+		{
+			name:    "sun",
+			summary: "report sunrise, sunset, twilight, and the moon",
+			usage:   sunUsage,
+			detail: []string{
+				"Accepts every notation loc accepts, and an optional date",
+				"(YYYY-MM-DD, today, tomorrow, or yesterday); times are UTC.",
+				"{nick} sun 849VCWC8+R9 2026-06-21",
+			},
+			run: (*commandContext).runSun,
+		},
+		{
+			name:    "sos",
+			summary: "raise, list, or stand down a distress beacon",
+			usage:   sosUsage,
+			detail: []string{
+				"Records the beacon on disk, alerts every joined room, sends you a",
+				"direct NOTICE, and queues an LXMF dispatch copy when the operator",
+				"has configured emergency_lxmf_destination.",
+				"The triage level is one of " + strings.Join(SOSTriageLevels, ", ") + ".",
+				"{nick} sos 849VCWC8+R9 RED 2 hikers, 1 leg fracture",
+				"{nick} " + sosListUsage + " | {nick} " + sosClearUsage,
+			},
+			run: (*commandContext).runSOS,
+		},
+		{
+			name:    "checkin",
+			summary: "set, clear, or list an overdue-trip watchdog",
+			usage:   checkinUsage,
+			detail: []string{
+				"The window is capped between 10m and 48h; the watchdog broadcasts",
+				"an alarm on its own if the check-in never comes.",
+				"{nick} checkin 849VCWC8+R9 overdue 4h Hiking to Eagle Peak",
+				"{nick} checkin ok | {nick} checkin list",
+			},
+			run: (*commandContext).runCheckin,
+		},
+		{
+			name:    "sitrep",
+			summary: "file and find geolocated situation reports",
+			usage:   sitrepUsage,
+			detail: []string{
+				"The category is one of " + strings.Join(SitrepCategories, ", ") + ".",
+				"Reports expire after 7 days and the board keeps the newest 500.",
+				"{nick} sitrep add 849VCWC8+R9 HAZARD Bridge out on Route 4",
+				"{nick} sitrep near 849VCWC8+R9 10km | {nick} sitrep recent 5",
+			},
+			run: (*commandContext).runSitrep,
+		},
+		{
+			name:    "firstaid",
+			summary: "offline wilderness-medicine action card",
+			usage:   firstaidUsage,
+			detail: []string{
+				"One line per card, embedded in the binary: bleeding, cpr, triage,",
+				"shock, hypo, heat, burns, water, and snake.",
+				"Decision support, not a substitute for training.",
+				"{nick} firstaid bleed | {nick} firstaid water | {nick} firstaid",
+			},
+			run: (*commandContext).runFirstAid,
+		},
+		{
+			name:    "rx",
+			summary: "offline wilderness-medicine action card",
+			usage:   firstaidUsage,
+			detail: []string{
+				"Same command as firstaid.",
+			},
+			run: (*commandContext).runFirstAid,
+		},
+		{
+			name:    "triage",
+			summary: "offline wilderness-medicine action card",
+			usage:   firstaidUsage,
+			detail: []string{
+				"Same command as firstaid.",
+			},
+			run: (*commandContext).runFirstAid,
+		},
+		{
+			name:    "spacewx",
+			summary: "report space weather and the HF band outlook",
+			usage:   spacewxUsage,
+			detail: []string{
+				"Reports the solar flux index, the sunspot number, the K-index,",
+				"the geomagnetic storm scale, and which HF bands are worth trying.",
+				"The reading is cached for an hour; with no provider reachable it",
+				"reports the last reading it has.",
+				"{nick} spacewx | {nick} spacewx set sfi=158 ssn=112 kp=4",
+			},
+			configHint: []string{
+				"Needs space_weather_url in config.toml to fetch a reading, or an",
+				"operator entry with spacewx set.",
+			},
+			configured: func(cfg *BotConfig) bool { return cfg.SpaceWeatherURL != "" },
+			run:        (*commandContext).runSpacewx,
+		},
+		{
+			name:    "solar",
+			summary: "report space weather and the HF band outlook",
+			usage:   spacewxUsage,
+			detail: []string{
+				"Same command as spacewx.",
+			},
+			run: (*commandContext).runSpacewx,
+		},
+		{
+			name:    "conv",
+			summary: "convert field units: pressure, distance, speed, weight, battery",
+			usage:   convUsage,
+			detail: []string{
+				conversionHelpLine(),
+				"{nick} conv 29.92inHg hPa — an altimeter setting.",
+				"{nick} conv 5 gal_water lbs — what the water weighs.",
+				"{nick} conv 5000mAh@3.7V Wh — what the battery holds.",
+			},
+			run: (*commandContext).runConv,
+		},
+		{
+			name:    "signal",
+			summary: "ground-to-air, sound, and light distress signals",
+			usage:   signalUsage,
+			detail: []string{
+				"With no section, prints the whole guide: air, sound, and light.",
+				"{nick} signal air | {nick} signal sound | {nick} signal light",
+			},
+			run: (*commandContext).runSignal,
+		},
+		{
+			name:    "morse",
+			summary: "translate text to Morse code, or Morse code back to text",
+			usage:   morseUsage,
+			detail: []string{
+				"Letters are separated by spaces and words by a slash.",
+				"{nick} morse SOS MAYDAY",
+				"{nick} morse -d ... --- ...",
+			},
+			run: (*commandContext).runMorse,
+		},
+		{
+			name:    "metar",
+			summary: "decode the aviation weather report for an airfield",
+			usage:   metarUsage,
+			detail: []string{
+				"<ICAO> is a 4-letter station code, like KDEN, EGLL, or KJFK.",
+				"The answer names the wind, visibility, temperature and dewpoint,",
+				"and the altimeter setting; an undecodable report is shown raw.",
+				"{nick} metar KDEN",
+			},
+			configHint: []string{
+				"Needs metar_url in config.toml to enable it.",
+			},
+			configured: func(cfg *BotConfig) bool { return cfg.MetarURL != "" },
+			run:        (*commandContext).runMetar,
+		},
+		{
+			name:    "wxalert",
+			summary: "report severe weather warnings in force for a place",
+			usage:   wxalertUsage,
+			detail: []string{
+				"Accepts a place or a two-letter area code, like OK or TX.",
+				"Answers are cached for 15 minutes.",
+				"{nick} wxalert OK",
+			},
+			configHint: []string{
+				"Needs weather_alert_url in config.toml to enable it.",
+			},
+			configured: func(cfg *BotConfig) bool { return cfg.WeatherAlertURL != "" },
+			run:        (*commandContext).runWxalert,
+		},
+		{
+			name:    "net",
+			summary: "list the mesh services the bot has heard",
+			usage:   netUsage,
+			detail: []string{
+				"Lists every announced hub, LXMF node, and NomadNet node with its",
+				"hop count and the interface its path leaves by.",
+				"The hop limit defaults to 3; near is accepted but explains why an",
+				"announce cannot be filtered by position.",
+				"{nick} net | {nick} net 2",
+			},
+			run: (*commandContext).runNet,
 		},
 	}
 }

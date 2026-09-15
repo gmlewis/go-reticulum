@@ -48,6 +48,15 @@ func TestHelpHidesConfigurationGuidanceWhenConfigured(t *testing.T) {
 		{"kjv", "Needs kjv_txt_file in config.toml", func(c *BotConfig) {
 			c.KJVTxtFile = "/tmp/kjv.txt"
 		}},
+		{"spacewx", "Needs space_weather_url in config.toml", func(c *BotConfig) {
+			c.SpaceWeatherURL = "https://sw.example.invalid/kp.json"
+		}},
+		{"metar", "Needs metar_url in config.toml", func(c *BotConfig) {
+			c.MetarURL = "https://wx.example.invalid/metar?ids={place}&format=raw"
+		}},
+		{"wxalert", "Needs weather_alert_url in config.toml", func(c *BotConfig) {
+			c.WeatherAlertURL = "https://wx.example.invalid/alerts?area={place}"
+		}},
 	}
 
 	for _, tc := range cases {
@@ -91,6 +100,9 @@ func TestNoCommandHelpMentionsConfigWhenConfigured(t *testing.T) {
 	cfg.FlightURL = "https://fl.example.invalid/{flight}"
 	cfg.LXMFEnabled = true
 	cfg.KJVTxtFile = "/tmp/kjv.txt"
+	cfg.SpaceWeatherURL = "https://sw.example.invalid/kp.json"
+	cfg.MetarURL = "https://wx.example.invalid/metar?ids={place}&format=raw"
+	cfg.WeatherAlertURL = "https://wx.example.invalid/alerts?area={place}"
 
 	reg, session, _ := commandFixture(t, cfg)
 	for _, cmd := range reg.commands {

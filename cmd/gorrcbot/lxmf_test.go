@@ -786,8 +786,14 @@ func TestMsgCommandsAreRegistered(t *testing.T) {
 		t.Errorf("help msg returned %v lines, want the summary line plus %v detail lines",
 			len(lines), len(msgCmd.detail))
 	}
-	if got := runLines(t, reg, session, "help"); !strings.Contains(got[0], "lxmf, members, msg") {
-		t.Errorf("help = %q, want the listing to include lxmf and msg in order", got[0])
+	// The listing is alphabetical, so msg and its lxmf alias are not adjacent
+	// once the field-assistant commands are registered; what matters is that
+	// both are listed, in order.
+	got := runLines(t, reg, session, "help")[0]
+	lxmfAt := strings.Index(got, "lxmf")
+	msgAt := strings.Index(got, "msg")
+	if lxmfAt < 0 || msgAt < 0 || lxmfAt > msgAt {
+		t.Errorf("help = %q, want both lxmf and msg listed with lxmf first", got)
 	}
 }
 

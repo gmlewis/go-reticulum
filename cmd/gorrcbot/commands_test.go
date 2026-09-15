@@ -55,6 +55,16 @@ func TestRegistryNamesAreStable(t *testing.T) {
 		// This bot's own additions.
 		"catchup", "flight", "id", "kjv", "launches", "lxmf", "members", "msg", "path", "rooms",
 		"search", "seen", "unwatch", "watch", "watches",
+		// The field assistant's navigation commands.
+		"dist", "loc", "proj", "sun",
+		// The field assistant's emergency and situation commands.
+		"checkin", "firstaid", "rx", "sitrep", "sos", "triage",
+		// The field assistant's propagation and mesh commands.
+		"net", "solar", "spacewx",
+		// The field assistant's tactical references.
+		"conv", "morse", "signal",
+		// The field assistant's aviation weather commands.
+		"metar", "wxalert",
 	}
 	// The registry sorts its rows, so the expectation is sorted too; the groups
 	// above are for the reader, not the comparison.

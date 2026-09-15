@@ -99,6 +99,17 @@ type bot struct {
 	// closes it, because the router holds a job loop and persisted state.
 	lxmf lxmfSender
 
+	// sos is the persistent distress beacon registry and sitreps the
+	// persistent situation-report board. Both are created with the bot, so a
+	// command and the watchdog share one instance, and both keep their state
+	// under the storage directory.
+	sos     *sosStore
+	sitreps *sitrepStore
+	// checkins is the safety-timer store and checkinWatch the daemon that
+	// raises an overdue alarm with no request behind it.
+	checkins     *checkinStore
+	checkinWatch *checkinWatchdog
+
 	msgs      chan inbound
 	stopCh    chan struct{}
 	stopOnce  sync.Once
@@ -114,7 +125,7 @@ type bot struct {
 // newBot builds the engine for one configuration. dialer and hooks are
 // injected so the engine can be exercised without a Reticulum stack.
 func newBot(cfg *BotConfig, paths BotPaths, logger *rns.Logger, ownHash []byte, dialer hubDialer, hooks botHooks) *bot {
-	return &bot{
+	b := &bot{
 		cfg:           cfg,
 		paths:         paths,
 		logger:        logger,
@@ -127,7 +138,15 @@ func newBot(cfg *BotConfig, paths BotPaths, logger *rns.Logger, ownHash []byte, 
 		announces:     newAnnounceCache(),
 		msgs:          make(chan inbound, inboundQueueDepth),
 		stopCh:        make(chan struct{}),
+		sos:           newSOSStore(paths.StorageDir),
+		sitreps:       newSitrepStore(paths.StorageDir),
+		checkins:      newCheckinStore(paths.StorageDir),
 	}
+	// The watchdog broadcasts through this bot, so it is wired here rather than
+	// in the command layer.
+	b.checkinWatch = newCheckinWatchdog(b.checkins)
+	b.checkinWatch.deliver = b.deliverOverdue
+	return b
 }
 
 // logf writes one operator-facing line. The Reticulum logger is async and
@@ -191,6 +210,9 @@ func (b *bot) Run(ctx context.Context) error {
 	// announce is missed, and drains on its own goroutine so the interface
 	// read-loop is never asked to wait.
 	b.announces.start(b.announceFeed, b.pathsTable, b.deliverWatchNotice, &b.wg, b.stopCh)
+	// The check-in watchdog owns no session state: it reads the persisted
+	// timers and broadcasts through whatever sessions exist when one expires.
+	b.checkinWatch.start(&b.wg, b.stopCh)
 
 	// The dispatcher owns the command layer; the supervisors own the per-hub
 	// connection state. Both stop when stopCh closes.

@@ -326,6 +326,10 @@ lxmf_enabled = false       # true adds the LXMF sender (msg/lxmf), so a peer can
 lxmf_propagation_node = "" # optional 32-hex LXMF propagation node, for store-and-forward
 lxmf_announce_minutes = 360 # how often the bot announces its own lxmf.delivery address, so a reply can be routed back (at least 1)
 kjv_txt_file = ""          # optional King James text file (one verse per line); enables the kjv command. Empty disables it
+space_weather_url = ""     # optional fixed http(s) JSON URL for spacewx/solar: solar flux, sunspot number, K-index. Cached 1 h
+metar_url = ""             # optional http(s) template for metar; {place} becomes the ICAO station code. Empty disables metar
+weather_alert_url = ""     # optional http(s) template for wxalert; {place} is the place or area. Cached 15 min. Empty disables wxalert
+emergency_lxmf_destination = "" # optional 32-hex lxmf.delivery hash: every new sos beacon is also queued there
 
 # One [[hubs]] entry per hub. Every entry is dialed on startup.
 [[hubs]]
@@ -385,6 +389,52 @@ plus a few that only matter on a mesh:
 Each of these can be explained on demand: `@gorrcbot help kjv` prints that one
 command's purpose, its usage, its inputs, and a worked example — as does
 `help <command>` for every other command.
+
+**Field assistant commands.** Reticulum is used where the telephone network has
+failed or never existed, so the bot also carries the tools a party in the field
+actually needs. Every one of them works with no internet at all: the geodesy,
+the almanac, the medical cards, the conversions, the signal guide, and the Morse
+translator are computed or embedded in the binary, and the mesh directory reads
+the announce cache the bot already keeps.
+
+| Command | What it does |
+|---------|--------------|
+| `loc <pluscode\|coords\|grid>` | resolve any of the five location notations and render it in all of them: `DD: 37.4220°N, 122.0841°W \| DDM: … \| Grid: CM87wk \| OLC: 849VCWC8+R9` |
+| `dist <from> <to>` | great-circle distance and both headings between two locations, in km, miles, and nautical miles |
+| `proj <origin> <bearing> <distance>` | dead reckoning: where a course and distance from a known point ends up, as a Plus Code, a coordinate, and a grid locator |
+| `sun <loc> [date]` | sunrise, sunset, civil twilight, day length, and the moon's phase and illumination, all in UTC |
+| `sos <loc> <RED\|YELLOW\|GREEN\|INFO> <details>` | raise a distress beacon: recorded on disk, alerted in every joined room, confirmed to the sender by direct NOTICE, and queued to the configured LXMF dispatch destination when there is one. `sos list` and `sos clear <id>` (the sender only) complete it |
+| `checkin <loc> overdue <duration> <note>` | arm a dead-man switch: if the check-in never comes, the bot broadcasts an overdue alarm on its own. `checkin ok` clears it, `checkin list` shows them; windows are capped between 10 minutes and 48 hours |
+| `sitrep add <loc> <category> <text>` | file a geolocated situation report (HAZARD, RESOURCE, SHELTER, ROAD, INFO) on a board that expires after 7 days. `sitrep near <loc> [radius]` answers what is within reach, closest first, and `sitrep recent [n]` lists the newest |
+| `firstaid <topic>` (aliases `rx`, `triage`) | one-line offline wilderness-medicine action cards: bleed, cpr, triage, shock, hypo, heat, burns, water, snake. Decision support, not a substitute for training |
+| `spacewx` (alias `solar`) | solar flux, sunspot number, K-index, geomagnetic storm scale, and which HF bands are worth trying — the diagnosis for an HF link that stopped working. `spacewx set sfi=N ssn=N kp=N` enters a reading by hand |
+| `net [hops]` | the mesh directory: every announced hub, LXMF node, and NomadNet node the bot has heard, with its hop count and interface |
+| `conv <value><unit> <target>` | tactical conversions: pressure and altimeter settings, distance, speed, temperature, water and fuel weight, and battery capacity (`5000mAh@3.7V` → `18.50 Wh`) |
+| `signal [air\|sound\|light]` | the distress-signal guide: ground-to-air markings, whistle and horn cadences, and mirror or torch flashes |
+| `morse <text>` / `morse -d <code…>` | translate text to Morse code and back |
+| `metar <ICAO>` | decode the aviation weather report for an airfield into wind, visibility, temperature, dewpoint, and altimeter setting (needs `metar_url`) |
+| `wxalert <place\|area>` | severe weather warnings in force (needs `weather_alert_url`; answers are cached for 15 minutes) |
+
+**Locations are resolved offline.** `loc`, `dist`, `proj`, `sun`, `sitrep`, and
+the `sos` and `checkin` position arguments all accept the same five notations —
+a Plus Code (`849VCWC8+R9`), decimal degrees (`37.42205, -122.08409` or
+`N37.42205 W122.08409`), degrees/minutes/seconds (`37°25'19"N 122°05'03"W`), degrees
+and decimal minutes (`37°25.323'N 122°05.048'W`), and a Maidenhead grid locator
+(`CM87uk`). A place *name* cannot be resolved without a geocoder, so the
+commands say what they accept instead of guessing. The Plus Codes are produced
+by a full implementation of the specification, checked against the reference
+implementation's own test data.
+
+**A distress beacon is acted on, not just recorded.** `sos` writes the beacon to
+`<storage_dir>/sos.json` (atomically, before anything else), alerts every room
+the bot has joined, sends the sender a direct NOTICE, and — when
+`emergency_lxmf_destination` is set and LXMF is enabled — queues the same report
+to that destination, which is store-and-forward and keeps trying after the local
+link has failed. Only the identity that raised a beacon can clear it. The
+check-in watchdog is the one part of the bot that acts with no request behind
+it: it wakes every 30 seconds, and a timer that expires without a check-in
+produces one overdue alarm naming the last known position and the note the
+traveller left.
 
 **Bible lookup and search never leaves the bot.** With `kjv_txt_file` pointing
 at a King James text file (one verse per line, a book abbreviation first:

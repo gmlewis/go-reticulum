@@ -187,7 +187,16 @@ func validateProviderTemplate(template string, tokens ...string) error {
 	if !found {
 		return fmt.Errorf("it does not contain any of the placeholders %v", strings.Join(tokens, ", "))
 	}
-	u, err := url.Parse(trimmed)
+	return validateProviderURL(trimmed)
+}
+
+// validateProviderURL checks that a provider URL is one the bot is willing to
+// fetch: an absolute http:// or https:// URL with a host and no credentials. It
+// is the part of the check that applies to a fixed URL as well as to a
+// template, so a provider that needs no substitution — a published JSON
+// product, say — is validated exactly as strictly as a templated one.
+func validateProviderURL(template string) error {
+	u, err := url.Parse(strings.TrimSpace(template))
 	if err != nil {
 		return fmt.Errorf("it is not a URL: %w", err)
 	}

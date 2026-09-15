@@ -131,6 +131,36 @@ kjv_txt_file = ""
 #   weather_url = "https://wttr.in/{place}?format=%l:+%C+%t+%w+%h"
 weather_url = ""
 
+# Optional provider URL for the spacewx command (alias: solar): the solar flux
+# index, the sunspot number, and the planetary K-index, read as JSON. It takes
+# no substitution tokens and must be an absolute http:// or https:// URL
+# carrying no credentials. The reading is cached for an hour, and with no
+# provider reachable the command reports the last reading it has; an operator
+# can also enter one by hand with "spacewx set sfi=158 ssn=112 kp=4". Leave
+# empty to disable the fetch.
+#
+#   space_weather_url = "https://services.swpc.noaa.gov/products/solar-cycle/observed-solar-flux.json"
+space_weather_url = ""
+
+# Optional provider template for the metar command: the aviation weather report
+# for an ICAO station code. {place} becomes the lowercased station code, and the
+# template must keep its own scheme and host. The answer is decoded into wind,
+# visibility, temperature, dewpoint, and altimeter setting; a report that does
+# not decode is reported raw. Leave empty to disable the command.
+#
+#   metar_url = "https://aviationweather.gov/api/data/metar?ids={place}&format=raw"
+metar_url = ""
+
+# Optional provider template for the wxalert command: the severe weather
+# warnings in force for a place or area. {place} is substituted after the same
+# sanitizing the weather command applies, and the template must keep its own
+# scheme and host. A JSON answer built on CAP becomes one line per warning; a
+# plain-text answer becomes one headline. Answers are cached for 15 minutes.
+# Leave empty to disable the command.
+#
+#   weather_alert_url = "https://api.weather.gov/alerts/active?area={place}"
+weather_alert_url = ""
+
 # Optional provider template for the launches command: what is going up soon, and
 # what just went up. {mode} is the provider's window name and {limit} is how many
 # launches the bot asks the provider for; both are validated before substitution,
@@ -182,6 +212,13 @@ flight_route_url = ""
 lxmf_enabled = false
 lxmf_propagation_node = ""
 lxmf_announce_minutes = 360
+
+# The lxmf.delivery destination hash (32 hex characters) of an emergency
+# dispatch destination. With lxmf_enabled = true, a new distress beacon raised
+# with the sos command is also queued to it: LXMF is store-and-forward, so that
+# copy keeps trying after the local link has failed. Empty means beacons are
+# only alerted in the joined rooms.
+emergency_lxmf_destination = ""
 
 # One [[hubs]] entry per RRC hub. Every entry is dialed on startup, kept
 # connected with auto-reconnect, and joined to its rooms.

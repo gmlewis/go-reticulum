@@ -97,12 +97,29 @@ type BotConfig struct {
 	// an allowlist before it is substituted, so a request can never retarget
 	// the template's own host. Empty disables the commands.
 	WeatherURL string
+	// SpaceWeatherURL is an optional provider URL for the spacewx command. It
+	// is an absolute http:// or https:// URL carrying no credentials and no
+	// substitution tokens, and its answer is read as JSON for the solar flux
+	// index, the sunspot number, and the K-index. Empty disables the fetch, and
+	// the command then reports the last reading it has, or says how to turn it
+	// on.
+	SpaceWeatherURL string
 	// KJVTxtFile is the path to a King James Version Bible text file, one verse
 	// per line in the reference data's shape ("John3:16 For God so loved..."),
 	// which is what the kjv command looks verses up in and searches. The file is
 	// opened read-only and parsed lazily, on the first kjv command. Empty
 	// disables the command, which then says how to turn it on.
 	KJVTxtFile string
+	// MetarURL is an optional provider template for the metar command; {place}
+	// is replaced with the requested ICAO station code. It must be an absolute
+	// http:// or https:// URL carrying no credentials. Empty disables the
+	// command, which then says how to turn it on.
+	MetarURL string
+	// WeatherAlertURL is an optional provider template for the wxalert command;
+	// {place} is replaced with the requested place or area. It must be an
+	// absolute http:// or https:// URL carrying no credentials. Empty disables
+	// the command, which then says how to turn it on.
+	WeatherAlertURL string
 	// LXMFEnabled switches the msg command on. It is OFF by default, and off
 	// means absent: no LXMF router is created, no state is written under the
 	// storage directory, and the command answers with the line that says how to
@@ -119,6 +136,14 @@ type BotConfig struct {
 	// LXMFAnnounceMinutes is how often the bot announces its own lxmf.delivery
 	// destination, so a peer can route a reply back to it.
 	LXMFAnnounceMinutes int
+	// EmergencyLXMFDestination is the lxmf.delivery destination hash of an
+	// emergency dispatch destination, lowercase hexadecimal, empty when none is
+	// configured. With LXMF enabled, a new distress beacon is also queued to
+	// it: LXMF is store-and-forward, so that copy keeps trying after the local
+	// link has failed.
+	EmergencyLXMFDestination string
+	// EmergencyLXMFDestinationHash is EmergencyLXMFDestination decoded to bytes.
+	EmergencyLXMFDestinationHash []byte
 	// Hubs are the RRC hubs to dial, in configuration order.
 	Hubs []HubConfig
 }
@@ -252,21 +277,25 @@ func (d *configDecoder) decodeBot() error {
 
 // botKeys are the recognized [bot] keys.
 var botKeys = map[string]bool{
-	"identity_path":         true,
-	"nick":                  true,
-	"reply":                 true,
-	"cooldown_s":            true,
-	"announce_on_join":      true,
-	"max_reply_lines":       true,
-	"storage_dir":           true,
-	"weather_url":           true,
-	"kjv_txt_file":          true,
-	"launch_url":            true,
-	"flight_url":            true,
-	"flight_route_url":      true,
-	"lxmf_enabled":          true,
-	"lxmf_propagation_node": true,
-	"lxmf_announce_minutes": true,
+	"identity_path":              true,
+	"nick":                       true,
+	"reply":                      true,
+	"cooldown_s":                 true,
+	"announce_on_join":           true,
+	"max_reply_lines":            true,
+	"storage_dir":                true,
+	"weather_url":                true,
+	"space_weather_url":          true,
+	"metar_url":                  true,
+	"weather_alert_url":          true,
+	"kjv_txt_file":               true,
+	"launch_url":                 true,
+	"flight_url":                 true,
+	"flight_route_url":           true,
+	"lxmf_enabled":               true,
+	"lxmf_propagation_node":      true,
+	"lxmf_announce_minutes":      true,
+	"emergency_lxmf_destination": true,
 }
 
 // warn records a non-fatal configuration problem.
@@ -406,6 +435,38 @@ func (d *configDecoder) decodeBotTable(t *toml.Table) error {
 					d.warn("[bot] weather_url is unusable (%v); weather stays off until it is fixed", err)
 				}
 			}
+		case "metar_url", "weather_alert_url":
+			s, err := d.stringValue("[bot]", key, kv)
+			if err != nil {
+				return err
+			}
+			if key == "metar_url" {
+				d.cfg.MetarURL = s
+			} else {
+				d.cfg.WeatherAlertURL = s
+			}
+			// Same rule as the other provider templates: an unusable template is
+			// an operator error, reported once at startup, and the value is kept
+			// so the command refuses it instead of reporting "not configured".
+			if trimmed := strings.TrimSpace(s); trimmed != "" {
+				if err := validateProviderTemplate(trimmed); err != nil {
+					d.warn("[bot] %v is unusable (%v); the command stays off until it is fixed", key, err)
+				}
+			}
+		case "space_weather_url":
+			s, err := d.stringValue("[bot]", key, kv)
+			if err != nil {
+				return err
+			}
+			d.cfg.SpaceWeatherURL = s
+			// Same rule as the other provider templates: an unusable URL is an
+			// operator error, reported once at startup, and the value is kept so
+			// the command refuses it instead of reporting "not configured".
+			if trimmed := strings.TrimSpace(s); trimmed != "" {
+				if err := validateProviderURL(trimmed); err != nil {
+					d.warn("[bot] space_weather_url is unusable (%v); spacewx stays off until it is fixed", err)
+				}
+			}
 		case "launch_url":
 			s, err := d.stringValue("[bot]", key, kv)
 			if err != nil {
@@ -521,6 +582,29 @@ func (d *configDecoder) decodeBotTable(t *toml.Table) error {
 			}
 			d.cfg.LXMFPropagationNode = node
 			d.cfg.LXMFPropagationNodeHash = raw
+		case "emergency_lxmf_destination":
+			s, err := d.stringValue("[bot]", key, kv)
+			if err != nil {
+				return err
+			}
+			destination := strings.ToLower(strings.TrimSpace(s))
+			if destination == "" {
+				d.cfg.EmergencyLXMFDestination = ""
+				d.cfg.EmergencyLXMFDestinationHash = nil
+				break
+			}
+			if len(destination) != lxmfDestinationHexLen {
+				return d.keyError("[bot]", key, fmt.Sprintf(
+					"must be %v hexadecimal characters (%v bytes), the length of an lxmf.delivery destination hash; got %v characters",
+					lxmfDestinationHexLen, lxmfDestinationHashLen, len(destination)))
+			}
+			raw, err := hex.DecodeString(destination)
+			if err != nil {
+				return d.keyError("[bot]", key, fmt.Sprintf(
+					"must be a hexadecimal destination hash; %q is not valid hexadecimal: %v", s, err))
+			}
+			d.cfg.EmergencyLXMFDestination = destination
+			d.cfg.EmergencyLXMFDestinationHash = raw
 		}
 	}
 	return nil
