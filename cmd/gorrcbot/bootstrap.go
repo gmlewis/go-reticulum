@@ -101,9 +101,11 @@ reply = "auto"
 # from a client that repeats a request.
 cooldown_s = 8.0
 
-# Post one short self-introduction NOTICE in each room, once per session. The
-# RRC specification calls announcing yourself as a bot "polite".
-announce_on_join = true
+# Post one short self-introduction NOTICE in each room, once per session. OFF by
+# default: the bot joins, leaves and answers exactly like any other member, and
+# speaks only when it is addressed. Turn it on to tell a room that a bot has
+# arrived.
+announce_on_join = false
 
 # Maximum number of NOTICE lines a single reply may produce. Longer replies are
 # truncated with a visible marker, because each line is one MTU-sized envelope.
@@ -114,9 +116,53 @@ max_reply_lines = 12
 storage_dir = {{storage_dir}}
 
 # Optional weather provider template for the weather/wx commands. The literal
-# {place} is replaced with the requested place. Leave empty to disable the
-# commands, which then say so instead of guessing.
+# {place} is replaced with the requested place, which is validated first: only
+# letters, digits, spaces, commas, periods, hyphens and apostrophes are
+# accepted, so a requested place can never change this URL's host, path or
+# query. The template itself must be an absolute http:// or https:// URL that
+# carries no credentials. Leave empty to disable the commands, which then say so
+# instead of guessing. This provider needs no API key and answers in a single
+# line of plain text:
+#
+#   weather_url = "https://wttr.in/{place}?format=%l:+%C+%t+%w+%h"
 weather_url = ""
+
+# Optional provider template for the launches command: what is going up soon, and
+# what just went up. {mode} is the provider's window name and {limit} is how many
+# launches to list; both are validated before substitution, and the built URL is
+# required to keep this template's scheme and host. Leave empty to disable the
+# command, which then says so. This provider needs no API key and allows 15
+# anonymous calls per hour per IP, which is why the bot caches every answer:
+#
+#   launch_url = "https://ll.thespacedevs.com/2.3.0/launches/{mode}/?limit={limit}"
+#
+# The provider's default answer carries the operator and pad names; appending
+# "&mode=list" makes its answer roughly ten times smaller and drops both.
+launch_url = ""
+
+# LXMF messaging, which is what the msg command (alias: lxmf) uses. RRC is
+# connection-oriented, so a mention of a peer who is offline is lost; LXMF is
+# store-and-forward, so the same message can wait for them.
+#
+#   lxmf_enabled          - OFF by default, and off means absent: no LXMF router
+#                           is created, no state is written under the storage
+#                           directory, and the command answers with the line
+#                           that says how to turn it on
+#   lxmf_propagation_node - the lxmf.propagation destination hash (32 hex
+#                           characters) of a store-and-forward node. The bot
+#                           never discovers one on its own, so without this a
+#                           message to a peer with no known path fails visibly
+#                           instead of waiting for them
+#   lxmf_announce_minutes - how often the bot announces its own lxmf.delivery
+#                           destination, so a peer can route a reply back to it
+#
+# This command writes into somebody else's inbox, so it carries its own budget
+# on top of the reply cooldown: 5 messages per asker per minute, 20 for the whole
+# bot. The outcome of a message arrives later as a direct NOTICE to the asker;
+# a propagated message is reported as accepted by the node, never as delivered.
+lxmf_enabled = false
+lxmf_propagation_node = ""
+lxmf_announce_minutes = 360
 
 # One [[hubs]] entry per RRC hub. Every entry is dialed on startup, kept
 # connected with auto-reconnect, and joined to its rooms.

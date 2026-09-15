@@ -6,6 +6,7 @@
 package main
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -39,24 +40,35 @@ func runLines(t *testing.T, reg *registry, session *hubSession, line string) []s
 	})
 }
 
-// TestRegistryNamesAreStable asserts the command set: the official hub bot's
-// names minus the '!' plus the mesh additions, with no duplicates.
+// TestRegistryNamesAreStable asserts the exact command set: the official hub
+// bot's names minus the '!' plus this bot's own additions, with no duplicates and
+// no name carrying a prefix. It is exact rather than a substring check because
+// "id" is a substring of "dnotice", which would hide a missing command.
 func TestRegistryNamesAreStable(t *testing.T) {
 	t.Parallel()
 
-	reg, session, _ := commandFixture(t, nil)
+	reg, _, _ := commandFixture(t, nil)
+	want := []string{
+		// The official RNS Community Hub bot's set, minus its '!' prefix.
+		"botinfo", "dn", "dnotice", "dnoticecap", "dnoticeme", "help", "ping",
+		"uptime", "weather", "whoami", "wx",
+		// This bot's own additions.
+		"catchup", "id", "launches", "lxmf", "members", "msg", "path", "rooms",
+		"search", "seen", "unwatch", "watch", "watches",
+	}
+	// The registry sorts its rows, so the expectation is sorted too; the groups
+	// above are for the reader, not the comparison.
+	slices.Sort(want)
 	var names []string
 	for _, cmd := range reg.commands {
 		names = append(names, cmd.name)
-	}
-	joined := strings.Join(names, " ")
-	for _, want := range []string{
-		"botinfo", "dn", "dnotice", "dnoticecap", "dnoticeme", "help", "ping",
-		"uptime", "weather", "whoami", "wx", "seen", "members", "rooms", "id",
-	} {
-		if !strings.Contains(joined, want) {
-			t.Errorf("the command registry has no %q command (have %v)", want, names)
+		if strings.HasPrefix(cmd.name, "!") {
+			t.Errorf("command %q carries a '!' prefix, which gorrcbot never uses", cmd.name)
 		}
+	}
+	if got := strings.Join(names, " "); got != strings.Join(want, " ") {
+		t.Errorf("command set = %v,\nwant %v\nmissing: %v\nunexpected: %v",
+			names, want, missingFrom(want, names), missingFrom(names, want))
 	}
 	seen := map[string]bool{}
 	for _, name := range names {
@@ -64,14 +76,26 @@ func TestRegistryNamesAreStable(t *testing.T) {
 			t.Errorf("command %q is registered twice", name)
 		}
 		seen[name] = true
-		if strings.HasPrefix(name, "!") {
-			t.Errorf("command %q carries a '!' prefix, which gorrcbot never uses", name)
-		}
 	}
 	if len(reg.aliases) == 0 {
 		t.Error("the registry has no aliases; dn/dnotice and weather/wx share a handler")
 	}
-	_ = session
+}
+
+// missingFrom reports the entries of want that are absent from have, in want's
+// order, so a failure names exactly what is wrong.
+func missingFrom(want, have []string) []string {
+	present := make(map[string]bool, len(have))
+	for _, name := range have {
+		present[name] = true
+	}
+	var missing []string
+	for _, name := range want {
+		if !present[name] {
+			missing = append(missing, name)
+		}
+	}
+	return missing
 }
 
 // TestHelpIsGeneratedFromTheRegistry asserts help is never hand-maintained: the
@@ -576,6 +600,54 @@ func TestMembersReportsTheRoomMemberList(t *testing.T) {
 	}
 	if !strings.Contains(lines[0], "members in general") || !strings.Contains(lines[0], "Dave") {
 		t.Errorf("members = %q, want the official /who notice shape", lines[0])
+	}
+}
+
+// TestEchoedPeerTextIsStrippedOfEscapes asserts the commands that repeat
+// peer-supplied text — a room member's nick, a member's message — never publish
+// raw terminal escapes under the bot's name. A NOTICE is rendered by everybody
+// else's terminal, and a nick is chosen by its owner.
+func TestEchoedPeerTextIsStrippedOfEscapes(t *testing.T) {
+	t.Parallel()
+
+	const hostileNick = "Ev\x1b[31mil"
+	reg, session, fake := commandFixture(t, nil)
+	peer := peerHashFor(0x1b)
+	fake.setKnownPeer(hexString(peer), hostileNick)
+	fake.messages["general"] = []*rrc.RRCMessage{{
+		Kind: "msg",
+		Room: "general",
+		Src:  peer,
+		Nick: hostileNick,
+		Text: "look\x1b]0;pwned\x07here",
+		Ts:   1700000000000,
+	}}
+
+	for _, line := range []string{"members", "seen " + hostileNick, "seen " + hexString(peer)} {
+		for _, reply := range runLines(t, reg, session, line) {
+			if strings.ContainsAny(reply, "\x1b\x07") {
+				t.Errorf("%v = %q, which carries a terminal escape", line, reply)
+			}
+		}
+	}
+
+	// The readable part of the nick and the message still reaches the answer.
+	lines := runLines(t, reg, session, "seen "+hexString(peer))
+	if len(lines) != 1 || !strings.Contains(lines[0], "Evil") || !strings.Contains(lines[0], "look") {
+		t.Errorf("seen = %q, want the readable name and message", lines)
+	}
+	members := runLines(t, reg, session, "members")
+	if len(members) != 1 || !strings.Contains(members[0], "Evil") {
+		t.Errorf("members = %q, want the readable nick", members)
+	}
+
+	// A nick or message that is nothing but escapes leaves nothing to show.
+	fake.setKnownPeer(hexString(peerHashFor(0x1c)), "\x1b[2J")
+	fake.messages["general"] = append(fake.messages["general"], &rrc.RRCMessage{
+		Kind: "msg", Room: "general", Src: peerHashFor(0x1c), Nick: "\x1b[2J", Text: "\x1b[H", Ts: 1700000001000,
+	})
+	if got := runLines(t, reg, session, "seen "+hexString(peerHashFor(0x1c))); !strings.Contains(got[0], "no readable text") {
+		t.Errorf("seen on an all-escape message = %q, want the honest placeholder", got)
 	}
 }
 

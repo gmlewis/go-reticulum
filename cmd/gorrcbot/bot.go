@@ -85,6 +85,20 @@ type bot struct {
 
 	sessions []*hubSession
 
+	// announces is the one place announces are heard and remembered; it is
+	// inert until Run starts it.
+	announces *announceCache
+	// announceFeed is the transport the announce handlers register on, and
+	// pathsTable is the same transport's path table. Both are nil for a bot
+	// with no transport, which leaves announce watching inert, not broken.
+	announceFeed announceFeed
+	pathsTable   pathLookup
+
+	// lxmf is the LXMF router the msg command queues through. It is nil unless
+	// the operator enabled LXMF, and the bot owns it from then on: shutdown
+	// closes it, because the router holds a job loop and persisted state.
+	lxmf lxmfSender
+
 	msgs      chan inbound
 	stopCh    chan struct{}
 	stopOnce  sync.Once
@@ -110,6 +124,7 @@ func newBot(cfg *BotConfig, paths BotPaths, logger *rns.Logger, ownHash []byte, 
 		statusPoll:    defaultStatusPoll,
 		joinRetry:     defaultJoinRetry,
 		shutdownGrace: defaultShutdownGrace,
+		announces:     newAnnounceCache(),
 		msgs:          make(chan inbound, inboundQueueDepth),
 		stopCh:        make(chan struct{}),
 	}
@@ -172,6 +187,11 @@ func (b *bot) Run(ctx context.Context) error {
 		return err
 	}
 
+	// The announce cache registers its handlers before any hub connects, so no
+	// announce is missed, and drains on its own goroutine so the interface
+	// read-loop is never asked to wait.
+	b.announces.start(b.announceFeed, b.pathsTable, b.deliverWatchNotice, &b.wg, b.stopCh)
+
 	// The dispatcher owns the command layer; the supervisors own the per-hub
 	// connection state. Both stop when stopCh closes.
 	b.wg.Go(b.dispatch)
@@ -216,6 +236,30 @@ func (b *bot) addHub(cfg *HubConfig) error {
 	conn.SetOnMessage(func(msg *rrc.RRCMessage) { b.enqueue(s, msg) })
 	b.sessions = append(b.sessions, s)
 	return nil
+}
+
+// deliverWatchNotice sends one watch notice back through the hub the asker used,
+// since that is the only hub that can reach them. A failure is logged and the
+// subscription is kept: a peer that is offline right now may be online for the
+// next announce, and dropping the watch would silently break the promise.
+func (b *bot) deliverWatchNotice(w *watch, a announce) {
+	text := watchNoticeLine(a, b.announces.paths)
+	owner, err := hexToBytes(w.OwnerHex)
+	if err != nil {
+		b.logf("watch %q: unreadable owner hash %q", w.Filter, w.OwnerHex)
+		return
+	}
+	for _, s := range b.sessions {
+		if s.conn.HubAddressHex() != w.HubHex {
+			continue
+		}
+		if err := s.conn.SendDirectNotice(owner, text); err != nil {
+			b.logf("watch %q: cannot reach %v: %v", w.Filter, w.OwnerNick, err)
+			return
+		}
+		return
+	}
+	b.logf("watch %q: no session for hub %v", w.Filter, w.HubHex)
 }
 
 // enqueue hands one inbound message to the dispatcher. It never blocks: it runs
@@ -294,6 +338,10 @@ func (b *bot) shutdown() {
 		case <-time.After(b.shutdownGrace):
 			b.logf("shutdown did not finish within %v; disconnecting anyway", b.shutdownGrace)
 		}
+		// The LXMF router goes before the transport beneath it: its job loop
+		// and its ratchet storage belong to a Reticulum instance that must
+		// still exist when they are flushed.
+		b.closeLXMF()
 		b.dialer.Close()
 		if n := b.dropped.Load(); n > 0 {
 			b.logf("dropped %v inbound message(s) over this run", n)
@@ -315,4 +363,26 @@ func (b *bot) hubError() error {
 	b.hubErrMu.Lock()
 	defer b.hubErrMu.Unlock()
 	return b.hubErr
+}
+
+// closeLXMF releases the LXMF router, if this bot has one. The wait is bounded by
+// the same grace the rest of shutdown uses, because closing the router waits for
+// the deliveries already queued, and one of those can be waiting on a link that
+// will never come up; shutdown must still return. A failure to close is logged
+// rather than returned: shutdown has already happened by the time it runs, so
+// there is nothing left that could act on an error.
+func (b *bot) closeLXMF() {
+	if b.lxmf == nil {
+		return
+	}
+	done := make(chan error, 1)
+	go func() { done <- b.lxmf.Close() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			b.logf("%v", err)
+		}
+	case <-time.After(b.shutdownGrace):
+		b.logf("the LXMF router did not close within %v; exiting anyway", b.shutdownGrace)
+	}
 }

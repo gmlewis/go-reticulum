@@ -304,13 +304,23 @@ per-room message history it saves.
 **Configuration** (`~/.gorrcbot/config.toml`):
 
 ```toml
+# Top level: where the bot keeps its identity and its saved room history.
+identity_path = "~/.gorrcbot/bot_identity"   # 64 bytes of private key, mode 0600, created on first run
+storage_dir = "~/.gorrcbot/storage"          # the RRC client's directory; per-room history lives here
+
 [bot]
 nick = "gorrcbot"          # advertised nick, and the default trigger nick
 reply = "auto"             # auto | direct | room — see "Reply routing" below
 cooldown_s = 8.0           # minimum seconds between replies to the same identity
-announce_on_join = true    # one self-introduction NOTICE per room per session
+announce_on_join = false   # false = silent like any member; true = one self-introduction NOTICE per room per session
 max_reply_lines = 12       # a reply longer than this is truncated, visibly
-weather_url = ""           # optional; {place} is substituted. Empty disables weather/wx
+weather_url = ""           # optional http(s) template; {place} is substituted after sanitizing. Empty disables weather/wx
+launch_url = ""            # optional http(s) template for launches; {mode} and {limit} are substituted after sanitizing. Empty disables launches
+#                           the launch provider's default answer carries the operator and pad names;
+#                           appending "&mode=list" makes its answer ~10x smaller and drops both
+lxmf_enabled = false       # true adds the LXMF sender (msg/lxmf), so a peer can be reached while offline
+lxmf_propagation_node = "" # optional 32-hex LXMF propagation node, for store-and-forward
+lxmf_announce_minutes = 360 # how often the bot announces its own lxmf.delivery address, so a reply can be routed back (at least 1)
 
 # One [[hubs]] entry per hub. Every entry is dialed on startup.
 [[hubs]]
@@ -351,11 +361,34 @@ plus a few that only matter on a mesh:
 | `dn`, `dnotice <nick\|hash\|me> <text>` | send one client a direct NOTICE |
 | `dnoticecap [target]` | whether the hub supports direct notices, and whether a target is reachable |
 | `dnoticeme <text>` | send yourself a direct NOTICE — a live test of the private path |
-| `weather`, `wx <place>` | look up the weather (needs `weather_url`) |
+| `weather`, `wx <place>` | look up the weather (needs `weather_url`; the place is any real name — see below — and the answer is stripped of terminal escapes) |
+| `launches [upcoming\|past] [1-5]` | the next few launches, or the most recent ones (needs `launch_url`; answers are cached, because the provider allows 15 anonymous calls per hour) |
+| `path <nick\|hash>` | how the transport would reach a peer: the destinations its identity publishes, with hops, next hop, interface, and path age |
+| `watch <name\|hash> [ttl]` | ask for a direct NOTICE when something announces — a peer, a node, or a hub. At most 10 per client, 100 per bot, 24 h by default and never more than 7 d |
+| `unwatch <n\|all>` | stop watching for one of them, or all of them |
+| `watches` | what you are watching for, and how long each has left |
+| `msg`, `lxmf <nick\|hash> <text>` | send an LXMF message to a peer, so it is handed over when they come back (needs `lxmf_enabled = true`; store-and-forward additionally needs a propagation node) |
+| `catchup [window]` | what was said in your joined rooms while you were away |
+| `search <term> [#room]` | find where a term appeared in the rooms the bot has joined, newest first |
 | `seen <nick\|hash>` | when a client last spoke in a joined room |
 | `members [room]` | the clients the hub reports in a room |
 | `rooms` | the rooms the bot has joined |
 | `id` | the identity hash and nicks a client can address the bot by |
+
+Each of these can be explained on demand: `@gorrcbot help path` prints that one
+command's purpose and usage.
+
+**Places and names are text, not bytes.** `weather` and the watch filters accept
+real names in any script — `Zürich`, `京都`, `São Paulo` — along with spaces,
+commas, periods, hyphens, and apostrophes. What they refuse is structure: a
+slash, a URL separator such as `?`, `#`, `&`, `=`, or `%`, an `@`, a quote, an
+angle bracket, a backslash, an emoji, an invisible separator, or any control or
+bidirectional formatting character. A name is escaped before it reaches a URL,
+and the built URL must still address the configured template's own scheme and
+host, so no argument can retarget the request. In the other direction, every field the bot posts is
+somebody else's text: provider answers, announced display names, and room history
+are stripped of terminal escapes and control characters, shortened, and truncated
+before they are sent.
 
 An unrecognized command produces exactly one short line (`unknown command — try
 @gorrcbot help`), subject to the cooldown. `dnotice` accepts a nick or a hash
@@ -385,6 +418,31 @@ silently by the link layer, so the bot measures every envelope before sending.
 `cooldown_s` is a per-requester rate limit that gates every reply, including the
 refusal to answer a message that waited in flight too long, so a client that
 repeats a request cannot make the bot repeat itself.
+
+**Watching for announces.** RRC is connection-oriented, so a peer only speaks
+while it is online; an announce is broadcast, so watching for one is the only way
+to notice a peer the bot has never met. `watch` registers a filter — a
+case-insensitive substring of the announced display name, or a hash prefix of the
+destination or identity — and answers with a direct NOTICE the moment something
+matches, including how far away it is. Watches are deliberately small and
+forgiving: at most 10 per client and 100 per bot, one notice per filter per
+minute, memory only (`a bot restart forgets it`, exactly as the confirmation
+says), and a watcher who cannot be reached right now keeps the subscription
+rather than being told the notice arrived.
+
+**LXMF, when it is enabled.** RRC delivers to whoever is connected, and a mention
+to an offline peer is simply lost. With `lxmf_enabled = true` the bot also runs an
+LXMF router on the same identity, so `msg <nick|hash> <text>` can hand a message
+to the store-and-forward network. The reply says what actually happened: the
+immediate line is `queued for LXMF delivery to <nick> (<hash>…) via <method>`, and
+the outcome follows as a direct NOTICE — `delivered`, `failed after 5 attempts`,
+or `accepted by propagation node <hash> (store-and-forward)`. It writes into
+somebody else's inbox rather than into a room, so it carries its own budget on
+top of the reply cooldown: five messages per asker per minute, twenty for the
+whole bot. Without a propagation node there is no store-and-forward, by design:
+the bot never guesses at one, and a message to a peer with no known path fails
+visibly instead of quietly waiting forever. Inbound LXMF is logged, not relayed
+into a room, and offline catch-up from a propagation node is a later task.
 
 **Deployment.** Any always-on supervisor works; the bot runs in the foreground,
 logs to stderr, and shuts down cleanly on `SIGINT`/`SIGTERM`:

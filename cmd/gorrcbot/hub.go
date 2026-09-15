@@ -36,6 +36,10 @@ type hubConn interface {
 	GetServerName() string
 	GetHubVersion() string
 	HubAddressHex() string
+	// HubIdentityHash is the hub's identity hash, which the client captures
+	// from the WELCOME. It is what makes the hub's own rrc.hub destination
+	// derivable, so it is empty until the hub has welcomed this client.
+	HubIdentityHash() []byte
 	GetEffectiveNick() string
 	GetMOTD() string
 	HasCapability(capability int) bool

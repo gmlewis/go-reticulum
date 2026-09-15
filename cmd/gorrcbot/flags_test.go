@@ -408,3 +408,68 @@ func TestApplyLoggingConfiguresTheSharedLogger(t *testing.T) {
 		t.Error("a bad log level was accepted")
 	}
 }
+
+// TestApplyConfiguredPathsHonourTheConfigFile asserts the configuration file can
+// move the identity and the storage directory, and that an explicit command-line
+// flag still wins. The keys were parsed and documented but never consulted, so a
+// deliberate override silently used the default path.
+func TestApplyConfiguredPathsHonourTheConfigFile(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		opts botOptions
+		cfg  *BotConfig
+		// An empty want means "whatever the command line alone resolved to".
+		wantID   string
+		wantStor string
+	}{
+		{
+			name: "a default configuration changes nothing",
+		},
+		{
+			name:     "the config file moves both",
+			cfg:      &BotConfig{IdentityPath: "/etc/gorrcbot/id", StorageDir: "/var/lib/gorrcbot"},
+			wantID:   "/etc/gorrcbot/id",
+			wantStor: "/var/lib/gorrcbot",
+		},
+		{
+			name:     "an explicit identity flag beats the config file",
+			opts:     botOptions{identity: "/tmp/flag_identity"},
+			cfg:      &BotConfig{IdentityPath: "/etc/gorrcbot/id", StorageDir: "/var/lib/gorrcbot"},
+			wantID:   "/tmp/flag_identity",
+			wantStor: "/var/lib/gorrcbot",
+		},
+		{
+			name: "the home flag wins over a configured storage directory",
+			opts: botOptions{home: "/tmp/gorrcbot-home"},
+			cfg:  &BotConfig{StorageDir: "/var/lib/gorrcbot"},
+		},
+		{
+			name:     "the config file alone still moves the identity",
+			cfg:      &BotConfig{IdentityPath: "/etc/gorrcbot/id"},
+			wantID:   "/etc/gorrcbot/id",
+			wantStor: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			resolved := resolvePaths(&tt.opts)
+			got := applyConfiguredPaths(resolved, tt.cfg, &tt.opts)
+			wantID, wantStor := tt.wantID, tt.wantStor
+			if wantID == "" {
+				wantID = resolved.IdentityPath
+			}
+			if wantStor == "" {
+				wantStor = resolved.StorageDir
+			}
+			if got.IdentityPath != wantID {
+				t.Errorf("IdentityPath = %q, want %q", got.IdentityPath, wantID)
+			}
+			if got.StorageDir != wantStor {
+				t.Errorf("StorageDir = %q, want %q", got.StorageDir, wantStor)
+			}
+		})
+	}
+}

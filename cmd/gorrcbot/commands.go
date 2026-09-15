@@ -45,6 +45,17 @@ const (
 	dnoticemeUsage = "dnoticeme <text>"
 	// weatherUsage is the usage line for the weather commands.
 	weatherUsage = "weather <place>"
+	// weatherNotConfiguredLine is the answer when the operator has set no
+	// weather_url.
+	weatherNotConfiguredLine = "weather is not configured: set weather_url in config.toml to enable it"
+	// weatherPlaceRejectedLine is the answer to a place outside the allowlist.
+	// It never quotes the request back: the text is attacker-chosen, and
+	// repeating it would publish it in a room under the bot's name.
+	weatherPlaceRejectedLine = "weather: place may only contain letters, digits, spaces, commas, periods, hyphens or apostrophes (up to 64 bytes)"
+	// weatherMisconfiguredLine is the answer when weather_url itself is
+	// unusable. It never quotes the template, which may name a private host or
+	// carry a key.
+	weatherMisconfiguredLine = "weather is misconfigured: the operator must fix weather_url"
 	// seenUsage is the usage line for the seen command.
 	seenUsage = "seen <nick|hash>"
 	// maxSeenTextBytes bounds the quoted message a seen reply includes.
@@ -52,8 +63,12 @@ const (
 	// weatherTimeout bounds one weather lookup so a slow provider cannot hold
 	// the command layer.
 	weatherTimeout = 8 * time.Second
-	// maxWeatherBodyBytes bounds the provider response the bot will read.
-	maxWeatherBodyBytes = 8 << 10
+	// maxProviderBodyBytes bounds the provider response the bot will read. It is
+	// deliberately generous: a weather answer is one short line, but a JSON
+	// provider sends kilobytes, and a body cut short is invalid JSON that looks
+	// like a provider failure. Each command applies its own, smaller limit on top
+	// of this one through registry.fetchBounded.
+	maxProviderBodyBytes = 256 << 10
 )
 
 // command is one registry entry.
@@ -79,6 +94,15 @@ type commandContext struct {
 // session is the hub session the command runs against.
 func (c *commandContext) session() *hubSession { return c.req.Session }
 
+// now is the clock this request runs on. A request without one is answered
+// against the wall clock, which is what production always does.
+func (c *commandContext) now() time.Time {
+	if c.req.Now.IsZero() {
+		return time.Now()
+	}
+	return c.req.Now
+}
+
 // conn is the connection the command runs against.
 func (c *commandContext) conn() hubConn { return c.req.Session.conn }
 
@@ -91,9 +115,27 @@ type registry struct {
 	byName map[string]*command
 	// aliases groups the names that share a handler, for introspection only.
 	aliases map[string]string
-	// fetch performs one weather lookup. It is injected so the command layer
+	// fetch performs one provider lookup. It is injected so the command layer
 	// never reaches the network by itself.
 	fetch func(url string) (string, error)
+	// cache reuses a recent provider answer, so an active room cannot turn one
+	// command into one request per asker.
+	cache *providerCache
+	// paths is the Reticulum transport the path command reads. It is nil when
+	// the bot runs without one (unit tests), and the command says so.
+	paths pathLookup
+	// watches is the subscription table the watch commands read. It is small
+	// and in-memory: a watch does not survive a restart, and says so.
+	watches *watchTable
+	// announces is the announce cache the watch commands look names up in.
+	announces *announceCache
+	// lxmf is the LXMF router the msg command queues through. It is nil when
+	// the operator has not enabled LXMF, and the command says exactly that
+	// rather than reporting a failure.
+	lxmf lxmfSender
+	// lxmfBudget bounds how often the msg command writes into somebody else's
+	// inbox, which no other command does.
+	lxmfBudget *lxmfBudget
 }
 
 // newRegistry builds the command table for one bot.
@@ -101,8 +143,14 @@ func newRegistry(b *bot) *registry {
 	r := &registry{
 		bot:     b,
 		byName:  make(map[string]*command),
-		aliases: map[string]string{"dn": "dnotice", "wx": "weather"},
+		aliases: map[string]string{"dn": "dnotice", "wx": "weather", "lxmf": "msg"},
 		fetch:   httpFetch,
+		cache:   newProviderCache(providerCacheTTL, providerCacheMaxEntries),
+		// The announce cache belongs to the bot, which hears the announces; the
+		// watch commands are just its user interface.
+		watches:    b.announces.watches,
+		announces:  b.announces,
+		lxmfBudget: newLXMFBudget(),
 	}
 	r.commands = r.build()
 	sort.Slice(r.commands, func(i, j int) bool { return r.commands[i].name < r.commands[j].name })
@@ -234,6 +282,60 @@ func (r *registry) build() []command {
 			run:     (*commandContext).runSeen,
 		},
 		{
+			name:    "catchup",
+			summary: "summarize what was said in a room while you were away",
+			usage:   catchupUsage,
+			run:     (*commandContext).runCatchup,
+		},
+		{
+			name:    "watch",
+			summary: "tell me when a name or hash announces",
+			usage:   watchUsage,
+			run:     (*commandContext).runWatch,
+		},
+		{
+			name:    "unwatch",
+			summary: "stop watching for one or all of them",
+			usage:   unwatchUsage,
+			run:     (*commandContext).runUnwatch,
+		},
+		{
+			name:    "watches",
+			summary: "list what I am watching for",
+			usage:   watchesUsage,
+			run:     (*commandContext).runWatches,
+		},
+		{
+			name:    "search",
+			summary: "find where a term appeared in the rooms I have joined",
+			usage:   searchUsage,
+			run:     (*commandContext).runSearch,
+		},
+		{
+			name:    "path",
+			summary: "report the Reticulum path to a peer's destinations",
+			usage:   pathUsage,
+			run:     (*commandContext).runPath,
+		},
+		{
+			name:    "launches",
+			summary: "list upcoming or recent space launches",
+			usage:   launchesUsage,
+			run:     (*commandContext).runLaunches,
+		},
+		{
+			name:    "msg",
+			summary: "send an LXMF message to a peer, online or not",
+			usage:   msgUsage,
+			run:     (*commandContext).runMsg,
+		},
+		{
+			name:    "lxmf",
+			summary: "send an LXMF message to a peer, online or not",
+			usage:   msgUsage,
+			run:     (*commandContext).runMsg,
+		},
+		{
 			name:    "members",
 			summary: "list the clients in a room",
 			usage:   "members [room]",
@@ -333,7 +435,7 @@ func (c *commandContext) runDnotice() []string {
 	if err := c.conn().SendDirectNotice(target.Hash, text); err != nil {
 		return []string{directNoticeErrorLine(err)}
 	}
-	return []string{fmt.Sprintf("Direct NOTICE sent to %v", target.String())}
+	return []string{fmt.Sprintf("Direct NOTICE sent to %v", safeTarget(target))}
 }
 
 // directNoticeFits reports whether text fits one direct-notice envelope. Like a
@@ -376,27 +478,33 @@ func (c *commandContext) runDnoticeCap() []string {
 		return lines
 	}
 	return []string{fmt.Sprintf("Direct NOTICE supported: %v; %v reachable: %v",
-		pyBool(supported), target.String(), pyBool(c.session().knowsPeer(target.HashHex)))}
+		pyBool(supported), safeTarget(target), pyBool(c.session().knowsPeer(target.HashHex)))}
 }
 
 // runWeather looks the place up with the configured provider. With no provider
 // configured it says so instead of guessing, which is the honest answer.
 func (c *commandContext) runWeather() []string {
-	url := strings.TrimSpace(c.reg.bot.cfg.WeatherURL)
-	if url == "" {
-		return []string{"weather is not configured: set weather_url in config.toml to enable it"}
+	template := strings.TrimSpace(c.reg.bot.cfg.WeatherURL)
+	if template == "" {
+		return []string{weatherNotConfiguredLine}
 	}
-	place := strings.TrimSpace(c.Args)
-	if place == "" {
+	if strings.TrimSpace(c.Args) == "" {
 		return []string{"Usage: " + weatherUsage}
 	}
-	nick := c.peerName(c.req.Msg.Src)
-	body, err := c.reg.fetch(strings.ReplaceAll(url, "{place}", place))
+	place, err := sanitizePlace(c.Args)
 	if err != nil {
-		return []string{fmt.Sprintf(weatherFailedLine, nick)}
+		return []string{weatherPlaceRejectedLine}
 	}
-	line := firstNonEmptyLine(body)
-	if line == "" {
+	fetchURL, err := providerURL(template, place)
+	if err != nil {
+		// The operator's template is at fault. The detail goes to the log,
+		// which only the operator reads, and never into the room.
+		logf("weather: %v", err)
+		return []string{weatherMisconfiguredLine}
+	}
+	nick := c.peerName(c.req.Msg.Src)
+	line, err := c.reg.providerLine(fetchURL, c.req.Now)
+	if err != nil {
 		return []string{fmt.Sprintf(weatherFailedLine, nick)}
 	}
 	return []string{fmt.Sprintf("@%v %v", nick, line)}
@@ -429,14 +537,21 @@ func (c *commandContext) runSeen() []string {
 		}
 	}
 	if best == nil {
-		return []string{fmt.Sprintf("no messages from %v in the rooms I have joined", target.String())}
+		return []string{fmt.Sprintf("no messages from %v in the rooms I have joined", safeTarget(target))}
 	}
 	age := "an unknown time"
 	if best.Ts > 0 {
 		age = formatAge(c.req.Now.Sub(time.UnixMilli(best.Ts)))
 	}
+	// The quoted message and its nick are both peer-supplied: strip terminal
+	// escapes and control characters before repeating them, or a room member
+	// could paint every other member's terminal through the bot.
+	text := safeEcho(best.Text, maxSeenTextBytes)
+	if text == "" {
+		text = "(a message with no readable text)"
+	}
 	return []string{fmt.Sprintf("%v last spoke %v ago in %v: %q",
-		target.String(), age, bestRoom, truncateUTF8Bytes(best.Text, maxSeenTextBytes))}
+		safeTarget(target), age, bestRoom, text)}
 }
 
 // runMembers lists the clients the hub reports in a room, in the official /who
@@ -455,7 +570,10 @@ func (c *commandContext) runMembers() []string {
 	}
 	parts := make([]string, 0, len(members))
 	for _, member := range members {
-		nick := member.Nick
+		// A nick is chosen by its owner, so it is untrusted text that the bot
+		// is about to publish under its own name: it gets the same hygiene as
+		// any other echoed text.
+		nick := safeEcho(member.Nick, maxEchoNickBytes)
 		if nick == "" {
 			nick = "unknown"
 		}
@@ -512,7 +630,7 @@ func (c *commandContext) resolveTargetWithText(args string) (rrc.PeerTarget, str
 	if len(target.Hash) != rrc.IdentityHashLen {
 		return rrc.PeerTarget{}, "", []string{fmt.Sprintf(
 			"I only know %v by a short hash prefix; use the full 32-character hash to reach them",
-			target.String())}
+			safeTarget(target))}
 	}
 	return target, rest, nil
 }
@@ -543,6 +661,8 @@ func targetLookupErrorLine(err error) string {
 	case isError(err, rrc.ErrPeerTokenTooShort):
 		return fmt.Sprintf("a hash prefix needs at least %v characters; use the full hash or a nick",
 			rrc.MinPeerHashPrefix)
+	case isError(err, rrc.ErrPeerNotFound):
+		return "no such peer"
 	case isError(err, rrc.ErrPeerAmbiguous):
 		return "that target is ambiguous: " + err.Error()
 	default:
@@ -592,6 +712,16 @@ func (r *registry) identityHex() string {
 		return ""
 	}
 	return hexString(r.bot.ownHash)
+}
+
+// historyStore returns the reader for the persisted room history of the session's
+// hub. A bot with no configured storage directory gets a reader that finds
+// nothing, so the commands that use it answer from the live buffers alone.
+func (r *registry) historyStore(s *hubSession) *historyStore {
+	if r.bot == nil || r.bot.cfg == nil || s == nil || s.conn == nil {
+		return &historyStore{}
+	}
+	return newHistoryStore(r.bot.cfg.StorageDir, s.conn.HubAddressHex())
 }
 
 // pyBool renders a boolean the way the official bot's Python does, because the
@@ -665,18 +795,7 @@ func isRuneStart(s string, i int) bool {
 	return s[i]&0xC0 != 0x80
 }
 
-// firstNonEmptyLine returns the first line of body with visible content,
-// trimmed. It is what a plain-text weather provider's answer is reduced to.
-func firstNonEmptyLine(body string) string {
-	for line := range strings.SplitSeq(body, "\n") {
-		if trimmed := strings.TrimSpace(line); trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
-}
-
-// httpFetch performs one weather lookup and returns the response body. The bot
+// httpFetch performs one provider lookup and returns the response body. The bot
 // never reaches the network for any other command.
 func httpFetch(url string) (string, error) {
 	client := &http.Client{Timeout: weatherTimeout}
@@ -688,7 +807,7 @@ func httpFetch(url string) (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("weather provider answered %v", resp.Status)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxWeatherBodyBytes))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxProviderBodyBytes))
 	if err != nil {
 		return "", err
 	}

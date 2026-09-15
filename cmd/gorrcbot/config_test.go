@@ -41,8 +41,8 @@ rooms = ["general"]
 	if cfg.CooldownSecs != DefaultCooldownSecs {
 		t.Errorf("CooldownSecs = %v, want %v", cfg.CooldownSecs, DefaultCooldownSecs)
 	}
-	if !cfg.AnnounceOnJoin {
-		t.Error("AnnounceOnJoin = false, want true by default")
+	if cfg.AnnounceOnJoin {
+		t.Error("AnnounceOnJoin = true, want false by default (the bot speaks only when addressed)")
 	}
 	if cfg.MaxReplyLines != DefaultMaxReplyLines {
 		t.Errorf("MaxReplyLines = %v, want %v", cfg.MaxReplyLines, DefaultMaxReplyLines)
@@ -66,7 +66,7 @@ identity_path = "/tmp/bot_id"
 nick = "meshbot"
 reply = "room"
 cooldown_s = 2.5
-announce_on_join = false
+announce_on_join = true
 max_reply_lines = 3
 storage_dir = "/tmp/storage"
 weather_url = "https://example.invalid/{place}"
@@ -94,8 +94,8 @@ rooms = ["general"]
 	if cfg.CooldownSecs != 2.5 {
 		t.Errorf("CooldownSecs = %v, want 2.5", cfg.CooldownSecs)
 	}
-	if cfg.AnnounceOnJoin {
-		t.Error("AnnounceOnJoin = true, want false")
+	if !cfg.AnnounceOnJoin {
+		t.Error("AnnounceOnJoin = false, want true (announce_on_join turns the greeting on)")
 	}
 	if cfg.MaxReplyLines != 3 {
 		t.Errorf("MaxReplyLines = %v, want 3", cfg.MaxReplyLines)
@@ -377,6 +377,54 @@ rooms = ["   "]
 	}
 }
 
+// TestDecodeBotConfigWarnsOnAnUnusableWeatherURL asserts a provider template the
+// bot would refuse is reported once at startup, with the reason, and is still
+// kept: the operator sees the problem before a user asks, and the command then
+// reports its own line rather than claiming nothing is configured.
+func TestDecodeBotConfigWarnsOnAnUnusableWeatherURL(t *testing.T) {
+	t.Parallel()
+
+	cfg, warnings, err := DecodeBotConfig("config.toml", `
+[bot]
+weather_url = "file:///etc/{place}"
+
+[[hubs]]
+name = "One"
+destination = "`+testHubOne+`"
+rooms = ["general"]
+`)
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if cfg.WeatherURL != "file:///etc/{place}" {
+		t.Errorf("WeatherURL = %q, want the configured template kept", cfg.WeatherURL)
+	}
+	joined := strings.Join(warnings, "\n")
+	if !strings.Contains(joined, "weather_url") || !strings.Contains(joined, "http or https") {
+		t.Errorf("warnings = %v, want one naming weather_url and the scheme problem", warnings)
+	}
+	if len(warnings) != 1 {
+		t.Errorf("warnings = %v, want exactly one", warnings)
+	}
+
+	// A usable template warns about nothing.
+	_, warnings, err = DecodeBotConfig("config.toml", `
+[bot]
+weather_url = "https://wttr.in/{place}?format=%l:+%C+%t+%w+%h"
+
+[[hubs]]
+name = "One"
+destination = "`+testHubOne+`"
+rooms = ["general"]
+`)
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v with a usable provider, want none", warnings)
+	}
+}
+
 // TestDecodeBotConfigWarnsOnUnknownKeys asserts unknown keys are reported
 // without failing the load, so a template from a newer version still runs.
 func TestDecodeBotConfigWarnsOnUnknownKeys(t *testing.T) {
@@ -548,5 +596,275 @@ rooms = ["general"]
 		if hub.Destination == testHubTwo {
 			t.Error("the commented-out hub was decoded as live")
 		}
+	}
+}
+
+// lxmfConfig is one LXMF configuration, with the one [[hubs]] entry every
+// decoding test needs.
+func lxmfConfig(body string) string {
+	return body + `
+
+[[hubs]]
+name = "One"
+destination = "` + testHubOne + `"
+rooms = ["general"]
+`
+}
+
+// TestDecodeBotConfigLXMFDefaults asserts LXMF is off unless an operator turns
+// it on, and that the announce interval has its documented default.
+func TestDecodeBotConfigLXMFDefaults(t *testing.T) {
+	t.Parallel()
+
+	cfg, warnings, err := DecodeBotConfig("config.toml", lxmfConfig(""))
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none", warnings)
+	}
+	if cfg.LXMFEnabled {
+		t.Error("LXMFEnabled = true, want false by default (no router until an operator opts in)")
+	}
+	if cfg.LXMFPropagationNode != "" || cfg.LXMFPropagationNodeHash != nil {
+		t.Errorf("propagation node = %q/%v, want none by default",
+			cfg.LXMFPropagationNode, cfg.LXMFPropagationNodeHash)
+	}
+	if cfg.LXMFAnnounceMinutes != DefaultLXMFAnnounceMinutes {
+		t.Errorf("LXMFAnnounceMinutes = %v, want %v", cfg.LXMFAnnounceMinutes, DefaultLXMFAnnounceMinutes)
+	}
+}
+
+// TestDecodeBotConfigLXMFOverrides asserts every LXMF key is read, that the node
+// hash is normalized to lowercase and decoded, and that an empty node means no
+// node rather than an empty hash.
+func TestDecodeBotConfigLXMFOverrides(t *testing.T) {
+	t.Parallel()
+
+	cfg, warnings, err := DecodeBotConfig("config.toml", lxmfConfig(`[bot]
+lxmf_enabled = true
+lxmf_propagation_node = "`+strings.ToUpper(testHubTwo)+`"
+lxmf_announce_minutes = 60
+`))
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none", warnings)
+	}
+	if !cfg.LXMFEnabled {
+		t.Error("LXMFEnabled = false, want true")
+	}
+	if cfg.LXMFPropagationNode != testHubTwo {
+		t.Errorf("LXMFPropagationNode = %q, want the lowercase %q", cfg.LXMFPropagationNode, testHubTwo)
+	}
+	if got := len(cfg.LXMFPropagationNodeHash); got != lxmfDestinationHashLen {
+		t.Errorf("the decoded node hash = %v bytes, want %v", got, lxmfDestinationHashLen)
+	}
+	if cfg.LXMFAnnounceMinutes != 60 {
+		t.Errorf("LXMFAnnounceMinutes = %v, want 60", cfg.LXMFAnnounceMinutes)
+	}
+
+	// An explicitly empty node is no node.
+	cfg, _, err = DecodeBotConfig("config.toml", lxmfConfig(`[bot]
+lxmf_enabled = true
+lxmf_propagation_node = ""
+`))
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if cfg.LXMFPropagationNode != "" || cfg.LXMFPropagationNodeHash != nil {
+		t.Errorf("propagation node = %q/%v, want none", cfg.LXMFPropagationNode, cfg.LXMFPropagationNodeHash)
+	}
+}
+
+// TestDecodeBotConfigLXMFErrors asserts a badly shaped LXMF key fails the load
+// with a message naming the key and what is wrong with it, because silently
+// ignoring either would leave an operator believing a message will be queued
+// when it cannot be.
+func TestDecodeBotConfigLXMFErrors(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name    string
+		body    string
+		wantKey string
+		wantSub string
+	}{
+		{
+			name:    "a node hash that is too short",
+			body:    "[bot]\nlxmf_propagation_node = \"abcd12\"\n",
+			wantKey: "lxmf_propagation_node",
+			wantSub: "hexadecimal characters",
+		},
+		{
+			name:    "a node hash that is not hexadecimal",
+			body:    "[bot]\nlxmf_propagation_node = \"" + strings.Repeat("z", lxmfDestinationHexLen) + "\"\n",
+			wantKey: "lxmf_propagation_node",
+			wantSub: "not valid hexadecimal",
+		},
+		{
+			name:    "an announce interval of zero",
+			body:    "[bot]\nlxmf_announce_minutes = 0\n",
+			wantKey: "lxmf_announce_minutes",
+			wantSub: "at least 1",
+		},
+		{
+			name:    "an announce interval that is not a number",
+			body:    "[bot]\nlxmf_announce_minutes = \"often\"\n",
+			wantKey: "lxmf_announce_minutes",
+			wantSub: "whole number",
+		},
+		{
+			name:    "lxmf_enabled that is not a boolean",
+			body:    "[bot]\nlxmf_enabled = \"yes\"\n",
+			wantKey: "lxmf_enabled",
+			wantSub: "true or false",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, _, err := DecodeBotConfig("config.toml", lxmfConfig(tt.body))
+			if err == nil {
+				t.Fatalf("DecodeBotConfig accepted %q", tt.body)
+			}
+			if !strings.Contains(err.Error(), tt.wantKey) {
+				t.Errorf("error = %q, want it to name %q", err, tt.wantKey)
+			}
+			if !strings.Contains(err.Error(), tt.wantSub) {
+				t.Errorf("error = %q, want it to explain %q", err, tt.wantSub)
+			}
+		})
+	}
+}
+
+// TestDecodeBotConfigWarnsOnANodeWithoutLXMF asserts a propagation node
+// configured while LXMF is off is reported once at startup: the key is dead
+// configuration, and the operator has to hear that rather than wonder later why
+// nothing is store-and-forwarded.
+func TestDecodeBotConfigWarnsOnANodeWithoutLXMF(t *testing.T) {
+	t.Parallel()
+
+	cfg, warnings, err := DecodeBotConfig("config.toml", lxmfConfig(`[bot]
+lxmf_propagation_node = "`+testHubTwo+`"
+`))
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if cfg.LXMFEnabled {
+		t.Error("LXMFEnabled = true, want false: a node alone must not switch LXMF on")
+	}
+	joined := strings.Join(warnings, "\n")
+	if !strings.Contains(joined, "lxmf_propagation_node") || !strings.Contains(joined, "lxmf_enabled") {
+		t.Errorf("warnings = %v, want one naming both keys", warnings)
+	}
+	if len(warnings) != 1 {
+		t.Errorf("warnings = %v, want exactly one", warnings)
+	}
+
+	// With LXMF on there is nothing to warn about.
+	_, warnings, err = DecodeBotConfig("config.toml", lxmfConfig(`[bot]
+lxmf_enabled = true
+lxmf_propagation_node = "`+testHubTwo+`"
+`))
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v with LXMF enabled, want none", warnings)
+	}
+}
+
+// TestDecodeBotConfigReadsTheTopLevelPaths asserts the two keys the first-run
+// template writes above [bot] take effect there. Both were dropped silently, so a
+// bot told to keep its identity elsewhere quietly used the default path instead.
+func TestDecodeBotConfigReadsTheTopLevelPaths(t *testing.T) {
+	t.Parallel()
+
+	cfg, warnings, err := DecodeBotConfig("config.toml", `
+identity_path = "/etc/gorrcbot/bot_identity"
+storage_dir = "/var/lib/gorrcbot"
+
+[bot]
+nick = "gorrcbot"
+`+misplacedHub)
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none: the template writes exactly this shape", warnings)
+	}
+	if cfg.IdentityPath != "/etc/gorrcbot/bot_identity" {
+		t.Errorf("IdentityPath = %q, want the top-level value", cfg.IdentityPath)
+	}
+	if cfg.StorageDir != "/var/lib/gorrcbot" {
+		t.Errorf("StorageDir = %q, want the top-level value", cfg.StorageDir)
+	}
+}
+
+// TestDecodeBotConfigPrefersTheBotTablePaths asserts [bot] wins over the top level
+// when a key appears twice, so the more specific location is the one that counts.
+func TestDecodeBotConfigPrefersTheBotTablePaths(t *testing.T) {
+	t.Parallel()
+
+	cfg, _, err := DecodeBotConfig("config.toml", `
+identity_path = "/etc/gorrcbot/bot_identity"
+storage_dir = "/var/lib/gorrcbot"
+
+[bot]
+identity_path = "/srv/gorrcbot/id"
+storage_dir = "/srv/gorrcbot/storage"
+`+misplacedHub)
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if cfg.IdentityPath != "/srv/gorrcbot/id" {
+		t.Errorf("IdentityPath = %q, want the [bot] value", cfg.IdentityPath)
+	}
+	if cfg.StorageDir != "/srv/gorrcbot/storage" {
+		t.Errorf("StorageDir = %q, want the [bot] value", cfg.StorageDir)
+	}
+}
+
+// misplacedHub is one minimal hub entry, so a test about a top-level key is not
+// answered with the separate complaint that no hub is configured.
+const misplacedHub = "\n[[hubs]]\nname = \"h\"\ndestination = \"a012129c10205c0b9441fcd2b755b2a7\"\nrooms = [\"general\"]\n"
+
+// TestDecodeBotConfigWarnsAboutMisplacedKeys asserts a key outside [bot] is
+// reported rather than dropped in silence: a setting the operator wrote and the
+// bot ignored is the worst of both worlds.
+func TestDecodeBotConfigWarnsAboutMisplacedKeys(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		src      string
+		wantWarn string
+	}{
+		{
+			name:     "a [bot] key at the top level",
+			src:      "nick = \"sneaky\"\n\n[bot]\nnick = \"gorrcbot\"\n" + misplacedHub,
+			wantWarn: "must be inside [bot]",
+		},
+		{
+			name:     "an unknown key at the top level",
+			src:      "state_path = \"/tmp/state\"\n\n[bot]\nnick = \"gorrcbot\"\n" + misplacedHub,
+			wantWarn: "unknown top-level key",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg, warnings, err := DecodeBotConfig("config.toml", tt.src)
+			if err != nil {
+				t.Fatalf("DecodeBotConfig: %v", err)
+			}
+			if len(warnings) != 1 || !strings.Contains(warnings[0], tt.wantWarn) {
+				t.Errorf("warnings = %v, want one containing %q", warnings, tt.wantWarn)
+			}
+			if cfg.Nick != "gorrcbot" {
+				t.Errorf("Nick = %q, want the [bot] value to win", cfg.Nick)
+			}
+		})
 	}
 }

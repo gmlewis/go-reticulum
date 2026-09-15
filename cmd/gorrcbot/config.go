@@ -46,6 +46,11 @@ const (
 	DefaultCooldownSecs = 8.0
 	// DefaultMaxReplyLines bounds how many NOTICE lines one reply may produce.
 	DefaultMaxReplyLines = 12
+	// DefaultLXMFAnnounceMinutes is how often the bot re-announces its own
+	// lxmf.delivery destination. Six hours is deliberately unhurried: the
+	// announce exists so a peer can learn where to send a reply, not to keep a
+	// path warm.
+	DefaultLXMFAnnounceMinutes = 360
 )
 
 // HubDestinationHexLen is the length of a hub destination hash in hexadecimal
@@ -63,14 +68,42 @@ type BotConfig struct {
 	// CooldownSecs is the per-identity reply cooldown.
 	CooldownSecs float64
 	// AnnounceOnJoin posts one self-introduction NOTICE per room per session.
+	// It is OFF by default: an always-on bot reconnects often, and each
+	// reconnect re-introduced it into every room, so a room filled up with
+	// "I am gorrbot, an RRC bot …" lines nobody asked for. Left off, the bot
+	// behaves like any other member — it joins, leaves, and speaks only when
+	// addressed. Set announce_on_join = true to publish the greeting.
 	AnnounceOnJoin bool
 	// MaxReplyLines bounds the NOTICE lines a single reply may produce.
 	MaxReplyLines int
 	// StorageDir is the RRC client's storage directory for saved history.
 	StorageDir string
+	// LaunchURL is an optional provider template for launches; {mode} and
+	// {limit} are substituted after validation, and the window is "upcoming" or
+	// "previous". Empty disables the commands, which then say so.
+	LaunchURL string
 	// WeatherURL is an optional provider template for weather/wx; {place} is
-	// replaced with the requested place. Empty disables the commands.
+	// replaced with the requested place. It must be an absolute http:// or
+	// https:// URL carrying no credentials, and the place is validated against
+	// an allowlist before it is substituted, so a request can never retarget
+	// the template's own host. Empty disables the commands.
 	WeatherURL string
+	// LXMFEnabled switches the msg command on. It is OFF by default, and off
+	// means absent: no LXMF router is created, no state is written under the
+	// storage directory, and the command answers with the line that says how to
+	// turn it on.
+	LXMFEnabled bool
+	// LXMFPropagationNode is the lxmf.propagation destination hash of a
+	// store-and-forward node, lowercase hexadecimal, empty when none is
+	// configured. The router never discovers a node by itself, so without one
+	// there is no store-and-forward at all and a message to a peer with no path
+	// fails visibly instead of waiting.
+	LXMFPropagationNode string
+	// LXMFPropagationNodeHash is LXMFPropagationNode decoded to bytes.
+	LXMFPropagationNodeHash []byte
+	// LXMFAnnounceMinutes is how often the bot announces its own lxmf.delivery
+	// destination, so a peer can route a reply back to it.
+	LXMFAnnounceMinutes int
 	// Hubs are the RRC hubs to dial, in configuration order.
 	Hubs []HubConfig
 }
@@ -159,6 +192,9 @@ func DecodeBotConfig(name, src string) (*BotConfig, []string, error) {
 		return nil, nil, err
 	}
 	root := doc.Root()
+	if err := d.decodeRoot(root); err != nil {
+		return nil, nil, err
+	}
 	if botTable := findTable(root, []string{"bot"}); botTable != nil {
 		if err := d.decodeBotTable(botTable); err != nil {
 			return nil, nil, err
@@ -183,35 +219,108 @@ type configDecoder struct {
 }
 
 // decodeBot applies the [bot] defaults before the table is read, so an absent
-// table still yields a usable configuration.
+// table still yields a usable configuration. AnnounceOnJoin is deliberately
+// absent from the literal: its zero value (false) is the default, and only an
+// explicit announce_on_join = true turns the self-introduction back on.
 func (d *configDecoder) decodeBot() error {
 	d.cfg = BotConfig{
-		IdentityPath:   d.defaults.IdentityPath,
-		Nick:           DefaultNick,
-		Reply:          ReplyAuto,
-		CooldownSecs:   DefaultCooldownSecs,
-		AnnounceOnJoin: true,
-		MaxReplyLines:  DefaultMaxReplyLines,
-		StorageDir:     d.defaults.StorageDir,
+		IdentityPath:        d.defaults.IdentityPath,
+		Nick:                DefaultNick,
+		Reply:               ReplyAuto,
+		CooldownSecs:        DefaultCooldownSecs,
+		MaxReplyLines:       DefaultMaxReplyLines,
+		StorageDir:          d.defaults.StorageDir,
+		LXMFAnnounceMinutes: DefaultLXMFAnnounceMinutes,
 	}
 	return nil
 }
 
 // botKeys are the recognized [bot] keys.
 var botKeys = map[string]bool{
-	"identity_path":    true,
-	"nick":             true,
-	"reply":            true,
-	"cooldown_s":       true,
-	"announce_on_join": true,
-	"max_reply_lines":  true,
-	"storage_dir":      true,
-	"weather_url":      true,
+	"identity_path":         true,
+	"nick":                  true,
+	"reply":                 true,
+	"cooldown_s":            true,
+	"announce_on_join":      true,
+	"max_reply_lines":       true,
+	"storage_dir":           true,
+	"weather_url":           true,
+	"launch_url":            true,
+	"lxmf_enabled":          true,
+	"lxmf_propagation_node": true,
+	"lxmf_announce_minutes": true,
 }
 
 // warn records a non-fatal configuration problem.
 func (d *configDecoder) warn(format string, args ...any) {
 	d.warnings = append(d.warnings, d.name+": "+fmt.Sprintf(format, args...))
+}
+
+// rootPathKeys are the two keys the first-run template writes ABOVE [bot], because
+// they say where the bot keeps its files rather than how it behaves. They are read
+// from the root table as well as from [bot], and [bot] wins when both are present.
+var rootPathKeys = map[string]bool{
+	"identity_path": true,
+	"storage_dir":   true,
+}
+
+// decodeRoot reads the keys written above any table header. Only the two path
+// keys belong there; any other known key is misplaced, and saying so turns a
+// silent drop into a visible one. Both path keys used to be dropped here without
+// a word, so a bot told to keep its identity elsewhere quietly used the default
+// path — and the template wrote exactly that shape.
+func (d *configDecoder) decodeRoot(root *toml.Table) error {
+	for i := range root.Keys {
+		kv := &root.Keys[i]
+		if kv.IsRaw {
+			continue
+		}
+		key := strings.TrimSpace(kv.Key)
+		switch {
+		case key == "identity_path", key == "storage_dir":
+			if err := d.decodeRootPathKey(key, kv); err != nil {
+				return err
+			}
+		case botKeys[key]:
+			d.warn("%q must be inside [bot]; the top-level copy is ignored", key)
+		default:
+			d.warn("unknown top-level key %q ignored", key)
+		}
+	}
+	return nil
+}
+
+// decodeRootPathKey records a path key found above [bot]. The [bot] table is read
+// afterwards, so a value written there overrides this one.
+func (d *configDecoder) decodeRootPathKey(key string, kv *toml.KeyVal) error {
+	if key == "identity_path" {
+		return d.setIdentityPath("the top level", key, kv)
+	}
+	return d.setStorageDir("the top level", key, kv)
+}
+
+// setIdentityPath records the identity file path. table labels the location for
+// error messages, so a failure names where the operator actually wrote the key.
+func (d *configDecoder) setIdentityPath(table, key string, kv *toml.KeyVal) error {
+	s, err := d.stringValue(table, key, kv)
+	if err != nil {
+		return err
+	}
+	if s == "" {
+		return d.keyError(table, key, "must not be empty")
+	}
+	d.cfg.IdentityPath = s
+	return nil
+}
+
+// setStorageDir records the storage directory path.
+func (d *configDecoder) setStorageDir(table, key string, kv *toml.KeyVal) error {
+	s, err := d.stringValue(table, key, kv)
+	if err != nil {
+		return err
+	}
+	d.cfg.StorageDir = s
+	return nil
 }
 
 // decodeBotTable reads the [bot] table.
@@ -230,26 +339,42 @@ func (d *configDecoder) decodeBotTable(t *toml.Table) error {
 		}
 		switch key {
 		case "identity_path":
-			s, err := d.stringValue("[bot]", key, kv)
-			if err != nil {
+			if err := d.setIdentityPath("[bot]", key, kv); err != nil {
 				return err
 			}
-			if s == "" {
-				return d.keyError("[bot]", key, "must not be empty")
-			}
-			d.cfg.IdentityPath = s
 		case "storage_dir":
-			s, err := d.stringValue("[bot]", key, kv)
-			if err != nil {
+			if err := d.setStorageDir("[bot]", key, kv); err != nil {
 				return err
 			}
-			d.cfg.StorageDir = s
 		case "weather_url":
 			s, err := d.stringValue("[bot]", key, kv)
 			if err != nil {
 				return err
 			}
 			d.cfg.WeatherURL = s
+			// An unusable template is an operator error, so it is reported
+			// once at startup rather than only when a user asks. The value is
+			// kept: the command refuses it with its own line, and clearing it
+			// here would report "not configured" for a setting that is set.
+			if trimmed := strings.TrimSpace(s); trimmed != "" {
+				if err := validateProviderTemplate(trimmed); err != nil {
+					d.warn("[bot] weather_url is unusable (%v); weather stays off until it is fixed", err)
+				}
+			}
+		case "launch_url":
+			s, err := d.stringValue("[bot]", key, kv)
+			if err != nil {
+				return err
+			}
+			d.cfg.LaunchURL = s
+			// Same rule as weather_url: an unusable template is an operator
+			// error, reported once at startup, and the value is kept so the
+			// command can refuse it instead of reporting "not configured".
+			if trimmed := strings.TrimSpace(s); trimmed != "" {
+				if err := validateProviderTemplate(trimmed, launchTokens...); err != nil {
+					d.warn("[bot] launch_url is unusable (%v); launches stays off until it is fixed", err)
+				}
+			}
 		case "nick":
 			s, err := d.stringValue("[bot]", key, kv)
 			if err != nil {
@@ -294,6 +419,44 @@ func (d *configDecoder) decodeBotTable(t *toml.Table) error {
 				return d.keyError("[bot]", key, fmt.Sprintf("must be at least 1; got %v", n))
 			}
 			d.cfg.MaxReplyLines = int(n)
+		case "lxmf_enabled":
+			b, err := d.boolValue("[bot]", key, kv)
+			if err != nil {
+				return err
+			}
+			d.cfg.LXMFEnabled = b
+		case "lxmf_announce_minutes":
+			n, err := d.intValue("[bot]", key, kv)
+			if err != nil {
+				return err
+			}
+			if n < 1 {
+				return d.keyError("[bot]", key, fmt.Sprintf("must be at least 1; got %v", n))
+			}
+			d.cfg.LXMFAnnounceMinutes = int(n)
+		case "lxmf_propagation_node":
+			s, err := d.stringValue("[bot]", key, kv)
+			if err != nil {
+				return err
+			}
+			node := strings.ToLower(strings.TrimSpace(s))
+			if node == "" {
+				d.cfg.LXMFPropagationNode = ""
+				d.cfg.LXMFPropagationNodeHash = nil
+				break
+			}
+			if len(node) != lxmfDestinationHexLen {
+				return d.keyError("[bot]", key, fmt.Sprintf(
+					"must be %v hexadecimal characters (%v bytes), the length of an lxmf.propagation destination hash; got %v characters",
+					lxmfDestinationHexLen, lxmfDestinationHashLen, len(node)))
+			}
+			raw, err := hex.DecodeString(node)
+			if err != nil {
+				return d.keyError("[bot]", key, fmt.Sprintf(
+					"must be a hexadecimal destination hash; %q is not valid hexadecimal: %v", s, err))
+			}
+			d.cfg.LXMFPropagationNode = node
+			d.cfg.LXMFPropagationNodeHash = raw
 		}
 	}
 	return nil
@@ -571,6 +734,12 @@ func (d *configDecoder) finish() error {
 		names = append(names, hub.Name)
 	}
 	sort.Strings(names)
+	// A propagation node without LXMF enabled is dead configuration: saying so
+	// once at startup is the difference between an operator noticing a typo and
+	// wondering for a week why nothing is store-and-forwarded.
+	if d.cfg.LXMFPropagationNode != "" && !d.cfg.LXMFEnabled {
+		d.warn("[bot] lxmf_propagation_node is set but lxmf_enabled is false, so LXMF stays off and no message is queued")
+	}
 	return nil
 }
 

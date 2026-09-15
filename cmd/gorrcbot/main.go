@@ -17,8 +17,10 @@
 //   - Identity: the bot owns one Reticulum identity, used on every hub, so its
 //     identity hash is the same everywhere and a peer can address it by a hash
 //     prefix without knowing which hub it is on.
-//   - Engine: one hub session per configured hub, each with its own reconnects,
-//     joins, and one self-introduction NOTICE per room per session.
+//   - Engine: one hub session per configured hub, each with its own reconnects
+//     and joins. It introduces itself with one NOTICE per room per session only
+//     when announce_on_join = true; by default it arrives and leaves as
+//     silently as any other member.
 //   - Commands: the reply policy plus the command registry. Nothing is answered
 //     unless the message starts with @<nick>, @<hash prefix>, or is a direct
 //     NOTICE to the bot.
@@ -93,6 +95,7 @@ func main() {
 	if opts.nick != "" {
 		cfg.Nick = opts.nick
 	}
+	paths = applyConfiguredPaths(paths, cfg, opts)
 
 	identity, _, err := LoadBotIdentity(paths.IdentityPath)
 	if err != nil {
@@ -128,7 +131,28 @@ func main() {
 	// The registry answers commands; the reply policy decides which messages
 	// are commands at all, and sends every reply.
 	reg := newRegistry(b)
+	// The path command reads the shared transport's path table, and the announce
+	// cache watches the same transport: the registry and the bot never reach the
+	// network by themselves.
+	reg.paths = livePathLookup{ts: transport}
+	b.pathsTable = reg.paths
+	b.announceFeed = liveAnnounceFeed{ts: transport}
 	b.hooks.Inbound = newResponder(cfg, ownHash, reg.Run).handle
+
+	// LXMF is opt-in. With lxmf_enabled = false this returns nothing at all, so
+	// no router, no job loop and no state under the storage directory can come
+	// into existence; with it true the bot owns the router from here on and
+	// closes it during shutdown.
+	sender, err := openLXMFDelivery(cfg, transport, identity, nil)
+	if err != nil {
+		log.Fatalf("gorrcbot: %v", err)
+	}
+	if sender != nil {
+		reg.lxmf = sender
+		b.lxmf = sender
+		log.Printf("gorrcbot: LXMF enabled, announcing the delivery destination every %vm",
+			cfg.LXMFAnnounceMinutes)
+	}
 
 	startPProf(opts.pprofAddr)
 
@@ -206,6 +230,29 @@ func parseLogLevel(name string) (int, error) {
 }
 
 // resolvePaths applies the CLI overrides to the default bot paths.
+// applyConfiguredPaths returns the paths the bot will actually use. Precedence,
+// highest first, is the command line, then the configuration file, then the home
+// directory defaults. The config keys exist and are documented, and the template
+// restates the defaults, so a default configuration is unchanged; before this,
+// however, a deliberate override was parsed, validated, and then never consulted,
+// which meant a bot told to keep its identity elsewhere quietly used the default
+// path instead — and the LXMF state honoured the setting while the room history
+// next to it did not.
+func applyConfiguredPaths(paths BotPaths, cfg *BotConfig, opts *botOptions) BotPaths {
+	if cfg == nil {
+		return paths
+	}
+	if opts.identity == "" && cfg.IdentityPath != "" {
+		paths.IdentityPath = cfg.IdentityPath
+	}
+	if opts.home == "" && cfg.StorageDir != "" {
+		paths.StorageDir = cfg.StorageDir
+	}
+	return paths
+}
+
+// resolvePaths returns the paths the command line alone asks for, before the
+// configuration file is read: home, if given, moves all three together.
 func resolvePaths(opts *botOptions) BotPaths {
 	paths := DefaultBotPaths()
 	if opts.home != "" {
@@ -238,6 +285,15 @@ func configSummary(paths BotPaths, cfg *BotConfig, ownHash []byte) string {
 	fmt.Fprintf(&sb, "announce:   %v\n", pyBool(cfg.AnnounceOnJoin))
 	if cfg.WeatherURL != "" {
 		fmt.Fprintf(&sb, "weather:    %v\n", cfg.WeatherURL)
+	}
+	if cfg.LaunchURL != "" {
+		fmt.Fprintf(&sb, "launches:   %v\n", cfg.LaunchURL)
+	}
+	if cfg.LXMFEnabled {
+		fmt.Fprintf(&sb, "lxmf:       enabled, announcing every %vm\n", cfg.LXMFAnnounceMinutes)
+		if cfg.LXMFPropagationNode != "" {
+			fmt.Fprintf(&sb, "lxmf node:  %v\n", cfg.LXMFPropagationNode)
+		}
 	}
 	fmt.Fprintf(&sb, "hubs:       %v\n", len(cfg.Hubs))
 	for _, hub := range cfg.Hubs {

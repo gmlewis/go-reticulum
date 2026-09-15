@@ -43,6 +43,7 @@ type fakeHub struct {
 	caps          map[int]bool
 	rooms         map[string]bool
 	serverName    string
+	hubIdentity   []byte
 	hubVersion    string
 	motd          string
 	members       map[string][]string
@@ -272,6 +273,21 @@ func (f *fakeHub) inboundHook() func(*rrc.RRCMessage) {
 func (f *fakeHub) GetServerName() string { return f.serverName }
 func (f *fakeHub) GetHubVersion() string { return f.hubVersion }
 func (f *fakeHub) HubAddressHex() string { return f.cfg.Destination }
+
+// HubIdentityHash reports the identity hash a test gave the fake hub, standing in
+// for the one a real hub sends in its WELCOME.
+func (f *fakeHub) HubIdentityHash() []byte {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.hubIdentity
+}
+
+// setHubIdentity gives the fake hub an identity hash.
+func (f *fakeHub) setHubIdentity(hash []byte) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.hubIdentity = hash
+}
 
 func (f *fakeHub) GetEffectiveNick() string {
 	f.mu.Lock()
