@@ -27,9 +27,6 @@ import (
 	"github.com/gmlewis/go-reticulum/rrc/toml"
 )
 
-// hubCleanupIntervalS is the fixed resource-expectation cleanup interval.
-const hubCleanupIntervalS = 30.0
-
 // HubService ties the RRC hub managers to a live RNS instance, mirroring
 // Python's HubService. Python's re-entrant state lock maps to the
 // manager-level mutexes plus the hub StateLock for hub-level fields.

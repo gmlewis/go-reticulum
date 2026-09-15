@@ -3408,10 +3408,6 @@ func validDiscoveryAnnounceReachableOn(v any) bool {
 	}
 }
 
-func discoveryHexValue(v any) (string, bool) {
-	return discoveryHexLikeString(v)
-}
-
 func discoveryHexLikeString(v any) (string, bool) {
 	switch t := v.(type) {
 	case []byte:

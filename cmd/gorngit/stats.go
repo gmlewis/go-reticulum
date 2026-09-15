@@ -245,28 +245,6 @@ func (n *reticulumGitNode) viewSucceeded(group, repo *string, remote *rns.Identi
 	n.recordRepoStat(*group, *repo, "view")
 }
 
-// fetchSucceeded records a fetch event, mirroring fetch_succeeded
-// (server.py:4725-4727).
-func (n *reticulumGitNode) fetchSucceeded(group, repo string, remote *rns.Identity) {
-	if !n.statsEnabled {
-		return
-	}
-	if group != "" && repo != "" {
-		n.recordRepoStat(group, repo, "fetch")
-	}
-}
-
-// pushSucceeded records a push event, mirroring push_succeeded
-// (server.py:4729-4731).
-func (n *reticulumGitNode) pushSucceeded(group, repo string, remote *rns.Identity) {
-	if !n.statsEnabled {
-		return
-	}
-	if group != "" && repo != "" {
-		n.recordRepoStat(group, repo, "push")
-	}
-}
-
 // downloadSucceeded records a blob download, mirroring download_succeeded
 // (server.py:4735-4738).
 func (n *reticulumGitNode) downloadSucceeded(group, repo string, remote *rns.Identity) {
@@ -293,15 +271,6 @@ func (n *reticulumGitNode) releaseDownloadSucceeded(group, repo string, remote *
 	if group != "" && repo != "" {
 		n.recordRepoStat(group, repo, "release_download")
 	}
-}
-
-// statSeries is one metric's daily counts and aggregates, mirroring the
-// per-metric dicts built by repository_stats (server.py:4607-4684).
-type statSeries struct {
-	daily   []int64
-	total   int64
-	peak    int64
-	peakDay string
 }
 
 // repositoryStats returns the aggregated stats for a repo over the

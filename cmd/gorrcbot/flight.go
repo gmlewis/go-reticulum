@@ -725,10 +725,10 @@ func (c *commandContext) runFlight() []string {
 // flightRouteOutcome is what one route lookup produced.
 type flightRouteOutcome int
 
-// The outcomes of a route lookup.
+// The outcomes of a route lookup. The zero value is reserved for the case
+// where no route provider is configured, which is not a lookup outcome.
 const (
-	// flightRouteSkipped means no route provider is configured.
-	flightRouteSkipped flightRouteOutcome = iota
+	_ flightRouteOutcome = iota
 	// flightRouteOK means a route was read.
 	flightRouteOK
 	// flightRouteUnknown means the provider answered that it does not publish

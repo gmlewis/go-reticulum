@@ -99,10 +99,6 @@ func (s *serialDiscoveryState) discover() (string, []string, error) {
 	}
 }
 
-func resolveLivePort(port string, opts options) (string, error) {
-	return newRuntime().resolveLivePort(port, opts)
-}
-
 func (rt cliRuntime) resolveLivePort(port string, opts options) (string, error) {
 	if port != "" {
 		return port, nil

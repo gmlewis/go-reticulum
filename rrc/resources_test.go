@@ -428,11 +428,8 @@ func (f *fakeResource) Data() []byte { return f.data }
 
 // recorder captures the sends and stats of a resource-manager test.
 type resourceRecorder struct {
-	sent      []sentPacket
-	stats     map[string]int
-	accepted  []*rns.Link
-	acceptedK []string
-	logs      []string
+	sent  []sentPacket
+	stats map[string]int
 }
 
 // G10.4 OnResourceConcluded mirrors _resource_concluded: unbinding, the

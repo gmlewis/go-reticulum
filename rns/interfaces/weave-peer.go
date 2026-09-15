@@ -62,15 +62,12 @@ type WeavePeerSpawnConfig struct {
 // multiplexed over a parent WeaveInterface (WeaveInterface.py:1009-1018,
 // class WeaveInterfacePeer). It embeds a BaseInterface for the routing-policy
 // surface. The endpoint address identifies the remote peer on the shared
-// connection; viaSwitchID/peerAddr are filled later by the Weave control
-// protocol (WeaveInterface.py:1019-1021, set by endpoint_via). OUT/IN/HWMTU are
-// peer-specific copies of the parent's values (they are not on BaseInterface).
+// connection. OUT/IN/HWMTU are peer-specific copies of the parent's values
+// (they are not on BaseInterface).
 type WeaveInterfacePeer struct {
 	*BaseInterface
 	owner        Interface
 	endpointAddr []byte
-	viaSwitchID  []byte
-	peerAddr     []byte
 	out          bool
 	in           bool
 	hwmtu        int

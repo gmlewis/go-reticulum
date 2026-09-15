@@ -19,10 +19,6 @@ import (
 	"time"
 )
 
-func runFirmwareExtract(out io.Writer, port string, opts options) error {
-	return newRuntime().runFirmwareExtract(out, port, opts)
-}
-
 func (rt cliRuntime) runFirmwareExtract(out io.Writer, port string, opts options) (err error) {
 	serial, err := rt.rnodeOpenSerial(port)
 	if err != nil {

@@ -21,14 +21,6 @@ import (
 	"time"
 )
 
-type testMainTB struct{}
-
-func (testMainTB) Helper() {}
-
-func (t testMainTB) Fatalf(format string, args ...any) {
-	log.Fatalf(format, args...)
-}
-
 func tempBaseDir() string {
 	if runtime.GOOS == "darwin" {
 		return "/tmp"

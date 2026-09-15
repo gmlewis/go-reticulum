@@ -230,8 +230,6 @@ type TransportSystem struct {
 	// re-announces; nil means announceDestinationsOnInterface directly.
 	reannounceImpl func(iface interfaces.Interface)
 
-	lastReannounce time.Time
-
 	pathRequestHash []byte
 
 	interfaces   []interfaces.Interface

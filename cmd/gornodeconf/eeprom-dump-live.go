@@ -13,10 +13,6 @@ import (
 	"time"
 )
 
-func runEEPROMDump(out io.Writer, port string) error {
-	return newRuntime().runEEPROMDump(out, port)
-}
-
 func (rt cliRuntime) runEEPROMDump(out io.Writer, port string) (err error) {
 	serial, err := rt.rnodeOpenSerial(port)
 	if err != nil {

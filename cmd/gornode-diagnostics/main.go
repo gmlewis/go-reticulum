@@ -1227,59 +1227,6 @@ func (s *radioState) statTXTotal() uint32 {
 	return 0
 }
 
-// statLine renders one statistics snapshot for the report.
-func (s *radioState) statLine() string {
-	line := fmt.Sprintf("fw RX=%v TX=%v", s.statRXTotal(), s.statTXTotal())
-	if s.rRSSI != nil {
-		line += fmt.Sprintf(", last-packet RSSI %v dBm", *s.rRSSI)
-	}
-	if s.rSNR != nil {
-		line += fmt.Sprintf(", SNR %.2f dB", *s.rSNR)
-	}
-	if s.rNoiseFloor != nil {
-		line += fmt.Sprintf(", noise floor %v dBm", *s.rNoiseFloor)
-	}
-	if s.rCurrentRSSI != nil {
-		line += fmt.Sprintf(", current RSSI %v dBm", *s.rCurrentRSSI)
-	}
-	if s.rInterference != nil {
-		line += fmt.Sprintf(", interference %v dBm", *s.rInterference)
-	}
-	if s.rAirtimeS != 0 || s.rAirtimeL != 0 {
-		line += fmt.Sprintf(", airtime %.1f%%/%.1f%% (short/long)", s.rAirtimeS, s.rAirtimeL)
-	}
-	if s.rChanS != 0 || s.rChanL != 0 {
-		line += fmt.Sprintf(", channel load %.1f%%/%.1f%%", s.rChanS, s.rChanL)
-	}
-	if s.symbolRate != 0 {
-		line += fmt.Sprintf(", symbol rate %v baud", s.symbolRate)
-	}
-	if s.rTemp != nil {
-		line += fmt.Sprintf(", temp %v C", *s.rTemp)
-	}
-	if s.rBatPct != nil {
-		st := ""
-		if s.rBatState != nil {
-			st = batteryStateName(*s.rBatState)
-		}
-		line += fmt.Sprintf(", battery %v%v%%", st, *s.rBatPct)
-	}
-	return line
-}
-
-func batteryStateName(b byte) string {
-	switch b {
-	case 0x01:
-		return "discharging/"
-	case 0x02:
-		return "charging/"
-	case 0x03:
-		return "charged/"
-	default:
-		return ""
-	}
-}
-
 // kissParser is a byte-by-byte KISS frame parser for the RNode inbound serial
 // stream (rnodeDecoder semantics). Delivered CMD_DATA payloads go to the
 // owning radio's fleet-packet handler; every other command updates radioState.

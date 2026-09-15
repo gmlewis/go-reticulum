@@ -163,6 +163,7 @@ func (s *rnodeReadLoopState) resetForIdleTimeout() {
 	s.dataBuffer = s.dataBuffer[:0]
 }
 
+//lint:ignore U1000 referenced only by the linux-tagged test readloop-state_test.go
 func (s *rnodeReadLoopState) idleTimeoutExpired(nowMs, lastReadMs, timeoutMs int) bool {
 	if len(s.dataBuffer) > 0 && nowMs-lastReadMs > timeoutMs {
 		s.resetForIdleTimeout()
@@ -171,6 +172,7 @@ func (s *rnodeReadLoopState) idleTimeoutExpired(nowMs, lastReadMs, timeoutMs int
 	return false
 }
 
+//lint:ignore U1000 referenced only by the linux-tagged test readloop-state_test.go
 func (s *rnodeReadLoopState) shutdownCleanup() {
 	s.resetFrame()
 }

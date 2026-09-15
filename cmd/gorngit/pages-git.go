@@ -88,7 +88,6 @@ type commitFile struct {
 type commitSigStatus struct {
 	signed      bool
 	valid       bool
-	signerHash  string
 	authorMatch bool
 	message     string
 }

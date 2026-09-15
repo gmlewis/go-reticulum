@@ -13,10 +13,6 @@ import (
 	"time"
 )
 
-func runEEPROMWipe(out io.Writer, port string) error {
-	return newRuntime().runEEPROMWipe(out, port)
-}
-
 func (rt cliRuntime) runEEPROMWipe(out io.Writer, port string) (err error) {
 	serial, err := rt.rnodeOpenSerial(port)
 	if err != nil {

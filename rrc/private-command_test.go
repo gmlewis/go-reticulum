@@ -344,7 +344,6 @@ type privateRouterRecorder struct {
 	commands []string
 	roomSeen []*string
 	errors   []string
-	relayed  []OutgoingItem
 }
 
 // newPrivateRouterFixture builds a router over the command test hub, with one

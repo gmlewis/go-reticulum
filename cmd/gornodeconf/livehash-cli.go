@@ -14,10 +14,6 @@ import (
 	"time"
 )
 
-func runFirmwareHashReadbacks(out io.Writer, port string, opts options) (err error) {
-	return newRuntime().runFirmwareHashReadbacks(out, port, opts)
-}
-
 func (rt cliRuntime) runFirmwareHashReadbacks(out io.Writer, port string, opts options) (err error) {
 	serial, err := rt.rnodeOpenSerial(port)
 	if err != nil {

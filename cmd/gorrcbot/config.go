@@ -274,14 +274,6 @@ func (d *configDecoder) warn(format string, args ...any) {
 	d.warnings = append(d.warnings, d.name+": "+fmt.Sprintf(format, args...))
 }
 
-// rootPathKeys are the two keys the first-run template writes ABOVE [bot], because
-// they say where the bot keeps its files rather than how it behaves. They are read
-// from the root table as well as from [bot], and [bot] wins when both are present.
-var rootPathKeys = map[string]bool{
-	"identity_path": true,
-	"storage_dir":   true,
-}
-
 // decodeRoot reads the keys written above any table header. Only the two path
 // keys belong there; any other known key is misplaced, and saying so turns a
 // silent drop into a visible one. Both path keys used to be dropped here without

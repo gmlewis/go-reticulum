@@ -7,7 +7,6 @@ package main
 
 import (
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -68,12 +67,6 @@ func logLiveHardwareTest(t *testing.T, port string, safety liveSerialSafety) {
 	t.Helper()
 
 	t.Logf("live hardware os=%v port=%v safety=%v", runtime.GOOS, port, safety)
-}
-
-func liveHardwareTempPath(t *testing.T, prefix, name string) string {
-	t.Helper()
-
-	return filepath.Join(liveHardwareTempDir(t, prefix), name)
 }
 
 func liveHardwareTempDir(t *testing.T, prefix string) string {

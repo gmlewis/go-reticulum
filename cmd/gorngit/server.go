@@ -101,7 +101,6 @@ type reticulumGitNode struct {
 	groups            map[string]*groupInfo
 	blockedIdentities map[string]bool
 	identityAliases   map[string]string
-	ready             bool
 	shouldRun         bool
 	announceInterval  time.Duration
 	nodeName          string
@@ -311,16 +310,6 @@ func (n *reticulumGitNode) registerRequestHandlers(logger *rns.Logger) {
 	n.destination.RegisterRequestHandler(pathRelease, n.handleRelease, rns.AllowAll, nil, false)
 	n.destination.RegisterRequestHandler(pathWork, n.handleWork, rns.AllowAll, nil, false)
 	n.destination.RegisterRequestHandler(pathPerms, n.handlePerms, rns.AllowAll, nil, false)
-}
-
-// stubHandler returns a request handler that logs and rejects an
-// unimplemented path with RES_INVALID_REQ. Release/work/perms are
-// follow-up tasks.
-func stubHandler(path string, logger *rns.Logger) func(string, any, []byte, []byte, *rns.Identity, time.Time) any {
-	return func(p string, _ any, _ []byte, _ []byte, remoteIdentity *rns.Identity, _ time.Time) any {
-		logger.Warning("Handler %q not yet implemented (remote %v)", p, remoteIdentity)
-		return []byte{resInvalidReq}
-	}
 }
 
 // remoteConnected is the link-established callback, mirroring

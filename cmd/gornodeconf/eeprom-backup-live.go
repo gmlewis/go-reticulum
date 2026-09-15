@@ -15,10 +15,6 @@ import (
 	"time"
 )
 
-func runEEPROMBackup(out io.Writer, port string) error {
-	return newRuntime().runEEPROMBackup(out, port)
-}
-
 func (rt cliRuntime) runEEPROMBackup(out io.Writer, port string) error {
 	serial, err := rt.rnodeOpenSerial(port)
 	if err != nil {

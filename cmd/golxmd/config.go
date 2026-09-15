@@ -271,14 +271,6 @@ func parseBool(s string) bool {
 	return b
 }
 
-// intPtr returns a pointer to v, used to build non-nil *int config defaults
-// and parsed values (e.g. PeerStampCost, which Python always sets).
-//
-//go:fix inline
-func intPtr(v int) *int {
-	return new(v)
-}
-
 func (c *clientT) parseInt(s string) int {
 	i, err := strconv.Atoi(s)
 	if err != nil {

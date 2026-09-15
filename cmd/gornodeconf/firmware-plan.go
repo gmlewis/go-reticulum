@@ -9,7 +9,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"path/filepath"
 )
 
@@ -54,11 +53,4 @@ func resolveFirmwareDownloadPlan(opts options, firmwareFilename string) (firmwar
 	plan.fallbackURL = fallbackFirmwareVersionURL
 	plan.updateURL = firmwareBinaryURL(opts.fwURL, plan.selectedVersion, plan.firmwareFilename)
 	return plan, nil
-}
-
-func (p firmwareDownloadPlan) describe() string {
-	if p.selectedVersion == "" {
-		return fmt.Sprintf("%v (latest)", p.firmwareFilename)
-	}
-	return fmt.Sprintf("%v @ %v", p.firmwareFilename, p.selectedVersion)
 }

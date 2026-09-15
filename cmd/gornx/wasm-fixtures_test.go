@@ -18,17 +18,6 @@ import (
 	"github.com/gmlewis/go-reticulum/testutils"
 )
 
-// writeFixtureFile writes fixture bytes under dir with the given plugin file
-// name (which also names the command it serves) and returns the path.
-func writeFixtureFile(t *testing.T, dir, name string, wasm []byte) string {
-	t.Helper()
-	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, wasm, 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	return path
-}
-
 // MinWasmEchoCommandPlugin is the echo command plugin (mirroring the gorrcd
 // fixture): exports wagoplugin_alloc and handle_command over one memory
 // page; handle_command echoes its request bytes back, so a plugin-backed

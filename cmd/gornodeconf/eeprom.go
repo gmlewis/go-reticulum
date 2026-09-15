@@ -98,6 +98,7 @@ func (s *eepromDownloaderState) downloadEEPROM() error {
 	return nil
 }
 
+//lint:ignore U1000 referenced only by the linux-tagged test eeprom_linux_test.go
 func (s *eepromDownloaderState) downloadCfgSector() error {
 	s.cfgSector = nil
 	command := []byte{kissFend, 0x6d, 0x00, kissFend}
@@ -169,6 +170,7 @@ func (s *eepromDownloaderState) parseEEPROM() error {
 	return nil
 }
 
+//lint:ignore U1000 referenced only by the linux-tagged test eeprom_linux_test.go
 func (s *eepromDownloaderState) deviceInfoLines(timestring string) []string {
 	sigstring := "Unverified"
 	if s.signatureValid {

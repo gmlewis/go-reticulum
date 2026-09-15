@@ -11,12 +11,6 @@ import (
 	"github.com/gmlewis/go-reticulum/rsg"
 )
 
-// sigLen is the byte length of an Ed25519 signature.
-const sigLen = rsg.SigLen
-
-// rsgHashType is the only hash type supported by the canonical RSG format.
-const rsgHashType = rsg.HashType
-
 // rsgOptions controls the extended createRSGWithOptions behaviour,
 // matching Python's create_rsg embed and meta parameters. It is a thin
 // adapter over rsg.Options so existing gornid callers keep their

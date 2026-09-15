@@ -10,10 +10,6 @@ import (
 	"time"
 )
 
-func prettyDate(value time.Time) string {
-	return prettyDateAt(time.Now(), value)
-}
-
 func prettyDateAt(now, value time.Time) string {
 	diff := now.Sub(value)
 	if diff < 0 {

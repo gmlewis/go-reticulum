@@ -42,18 +42,6 @@ func motdEnvelope(t *testing.T, text, mid string, ts int64) []byte {
 	return data
 }
 
-// roomedNoticeEnvelope builds one room-scoped T_NOTICE with a chosen
-// timestamp.
-func roomedNoticeEnvelope(t *testing.T, room, text, mid string, ts int64) []byte {
-	t.Helper()
-	env := MakeClientEnvelope(TypeNotice, []byte("hubsrc"), []byte(room), nil, text, []byte(mid), ts)
-	data, err := EncodeEnvelope(env)
-	if err != nil {
-		t.Fatalf("EncodeEnvelope: %v", err)
-	}
-	return data
-}
-
 // TestRoomlessMOTDWithoutActiveRoomFallsBackToJoinedRooms pins the fresh-boot
 // fix: with no active room the roomless MOTD notice is recorded into EVERY
 // joined room's buffer (and marks none of them unread), so the greeting is

@@ -30,10 +30,12 @@ type modeSwitchState struct {
 	sleeper  modeSwitchSleeper
 }
 
+//lint:ignore U1000 referenced only by the linux-tagged test mode_linux_test.go
 func rnodeSetNormalMode(writer modeSwitchWriter) error {
 	return writeModeCommand(writer, []byte{kissFend, 0x54, 0x00, kissFend}, "configuring device mode")
 }
 
+//lint:ignore U1000 referenced only by the linux-tagged test mode_linux_test.go
 func (s *modeSwitchState) setTNCMode() error {
 	if err := writeModeCommand(s.writer, []byte{kissFend, 0x53, 0x00, kissFend}, "configuring device mode"); err != nil {
 		return err

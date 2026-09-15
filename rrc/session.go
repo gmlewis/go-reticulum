@@ -238,8 +238,6 @@ func (m *SessionManager) onLinkClosedLocked(link *rns.Link) ([]byte, *string, in
 	return peer, nick, roomsCount
 }
 
-func nickStr(n *string) *string { return n }
-
 // UpdateNickIndex updates the nickname index when a nick changes,
 // mirroring update_nick_index.
 func (m *SessionManager) UpdateNickIndex(link *rns.Link, oldNick, newNick *string) {

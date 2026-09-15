@@ -87,20 +87,6 @@ func prepareGornxConfigWithInstance(t *testing.T, configDir string, instanceName
 	}
 }
 
-func getPythonPath() string {
-	if path := os.Getenv("ORIGINAL_RETICULUM_REPO_DIR"); path != "" {
-		return path
-	}
-	return ""
-}
-
-func getRnshPythonPath() string {
-	if path := os.Getenv("ORIGINAL_RNSH_REPO_DIR"); path != "" {
-		return path
-	}
-	return ""
-}
-
 type safeBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer

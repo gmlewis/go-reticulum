@@ -33,10 +33,6 @@ var permTargetNoneBytes = []byte{permTargetNone}
 // used as an entry in perm lists to grant a permission to everyone.
 var permTargetAllBytes = []byte{permTargetAll}
 
-// allPerms is the ordered list of permission names, mirroring ALL_PERMS
-// (server.py). Used by config loading to clear/iterate perm lists.
-var allPerms = []string{"read", "write", "create", "stats", "release", "interact", "propose", "admin"}
-
 // permissionLists holds the eight parsed permission target lists for a
 // group or repository, mirroring the per-group/repo "read"/"write"/...
 // lists in server.py. Each list entry is either permTargetNoneBytes,

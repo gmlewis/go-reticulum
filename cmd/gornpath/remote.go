@@ -18,7 +18,6 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-var errRemoteOperationUnavailable = errors.New("remote operation unavailable")
 var errPathRequestTimedOut = errors.New("path request timed out")
 var errRemoteRequestFailed = errors.New("the remote request failed")
 
@@ -33,14 +32,6 @@ type remoteRequestClient interface {
 	Request(path string, data any, timeout float64) (any, error)
 	Close() error
 }
-
-type remoteRequestFunc func(path string, data any, timeout float64) (any, error)
-
-func (f remoteRequestFunc) Request(path string, data any, timeout float64) (any, error) {
-	return f(path, data, timeout)
-}
-
-func (f remoteRequestFunc) Close() error { return nil }
 
 type remoteLinkClient struct {
 	link *rns.Link

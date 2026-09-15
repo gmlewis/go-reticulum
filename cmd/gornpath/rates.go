@@ -17,8 +17,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/gmlewis/go-reticulum/rns"
 )
 
 var errNoRateInformation = errors.New("no rate information available")
@@ -290,13 +288,4 @@ func asFloat64Slice(value any) ([]float64, error) {
 	default:
 		return nil, fmt.Errorf("unexpected timestamps type %T", value)
 	}
-}
-
-func _rateRowsFromTransport(ts *rns.TransportSystem) []any {
-	rows := ts.GetRateTable()
-	out := make([]any, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, row)
-	}
-	return out
 }

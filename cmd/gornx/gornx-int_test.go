@@ -14,15 +14,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gmlewis/go-reticulum/testutils"
 )
-
-var versionLineRE = regexp.MustCompile(`^[^[:space:]]+\s+[^[:space:]]+$`)
 
 var gornxBinaryPath string
 var gornstatusBinaryPath string
@@ -78,15 +75,6 @@ func getGornxBinaryPath(t *testing.T) string {
 		t.Fatal("gornx binary path not initialized by TestMain")
 	}
 	return gornxBinaryPath
-}
-
-func getRnxPythonBinaryPath(t *testing.T) string {
-	t.Helper()
-	path, err := exec.LookPath("rnx")
-	if err != nil {
-		t.Fatal("rnx not found in PATH, skipping Python/Go integration tests")
-	}
-	return path
 }
 
 func TestIntegrationVersionOutput(t *testing.T) {

@@ -17,10 +17,6 @@ import (
 	"github.com/gmlewis/go-reticulum/rns"
 )
 
-func runDeviceSigning(out io.Writer, port string) (err error) {
-	return newRuntime().runDeviceSigning(out, port)
-}
-
 func (rt cliRuntime) runDeviceSigning(out io.Writer, port string) (err error) {
 	serial, err := rt.rnodeOpenSerial(port)
 	if err != nil {

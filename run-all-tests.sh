@@ -156,13 +156,13 @@ for modfile in cmd/*/go.mod; do
 done
 echo "modernize: clean (no suggestions)"
 
-echo "Running full staticcheck (all checks, with integration tags)..."
+echo "Running staticcheck (SA* + U1000, with integration tags)..."
 STATICCHECK_LOG="${REPO_ROOT}/staticcheck.log"
-staticcheck -checks=SA* -tags=integration ./... >"${STATICCHECK_LOG}" 2>&1 || true
+staticcheck -checks=SA*,U1000 -tags=integration ./... >"${STATICCHECK_LOG}" 2>&1 || true
 for modfile in cmd/*/go.mod; do
     if [ -f "${modfile}" ]; then
         moddir=$(dirname "${modfile}")
-        (cd "${moddir}" && staticcheck -checks=SA* -tags=integration ./... >>"${STATICCHECK_LOG}" 2>&1 || true)
+        (cd "${moddir}" && staticcheck -checks=SA*,U1000 -tags=integration ./... >>"${STATICCHECK_LOG}" 2>&1 || true)
     fi
 done
 if [[ -s "${STATICCHECK_LOG}" ]]; then
@@ -170,7 +170,10 @@ if [[ -s "${STATICCHECK_LOG}" ]]; then
     cat "${STATICCHECK_LOG}" >&2
     exit 1
 fi
-echo "staticcheck: clean (all checks, with integration tags)"
+echo "staticcheck: clean (SA* + U1000, with integration tags)"
+
+echo "Running deadcode (advisory, whole-program reachability)..."
+bash "${REPO_ROOT}/scripts/deadcode-check.sh"
 
 # ---------------------------------------------------------------------------
 # Integration tests: the -short suite always (fast); the full suite only in
@@ -204,4 +207,4 @@ echo "All tests completed."
 sweep_test_tmp 0 || true
 trap - EXIT
 
-echo "Repo is squeaky-clean (errcheck + gopls check + modernize + staticcheck + all tests)."
+echo "Repo is squeaky-clean (errcheck + gopls check + modernize + staticcheck SA*/U1000 + deadcode advisory + all tests)."

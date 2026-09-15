@@ -458,11 +458,6 @@ func statsHashHex(id *rns.Identity) string {
 	return fmt.Sprintf("%x", id.Hash)
 }
 
-// strPtr returns a pointer to s (convenience for viewSucceeded's *string args).
-//
-//go:fix inline
-func strPtr(s string) *string { return new(s) }
-
 // snapshotCounts returns a deep-enough copy of the stats counters to detect
 // whether a recorder mutated anything.
 func snapshotCounts(n *reticulumGitNode) map[string]int64 {

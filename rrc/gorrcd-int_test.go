@@ -672,7 +672,6 @@ type gorrcdHub struct {
 	events    *eventReader
 	cmd       *exec.Cmd
 	eventPath string
-	hubIndex  int
 }
 
 // hubTestConfig holds the hub config knobs a test wants to override.
@@ -937,22 +936,6 @@ func silentRNSLogger() *rns.Logger {
 	logger := rns.NewLogger()
 	logger.SetLogLevel(rns.LogNone)
 	return logger
-}
-
-// eventBytes converts an event field carrying {"__bytes__": hex} to raw
-// bytes.
-func eventBytes(t *testing.T, ev testEvent, key string) []byte {
-	t.Helper()
-	raw, ok := ev[key].(map[string]any)
-	if !ok {
-		t.Fatalf("event field %q is not a bytes object: %v", key, ev)
-	}
-	hexStr, _ := raw["__bytes__"].(string)
-	data, err := hex.DecodeString(hexStr)
-	if err != nil {
-		t.Fatalf("event field %q is not hex: %v", key, err)
-	}
-	return data
 }
 
 // G13.2 The gorrcd binary builds and advertises its own version; probing the
@@ -1525,20 +1508,6 @@ func TestIntegrationMsgFanoutOverPipe(t *testing.T) {
 	}
 
 	_ = fwdSrc
-}
-
-// firstErrorBody returns the first ERROR envelope body for a hub.
-func firstErrorBody(er *eventReader, hubIndex int) (string, bool) {
-	for _, ev := range er.envelopes(hubIndex) {
-		env := envelopeOf(ev)
-		mt, ok := envInt(env, "1")
-		if !ok || mt != TError {
-			continue
-		}
-		body, _ := envString(env, "6")
-		return body, true
-	}
-	return "", false
 }
 
 // G13.6 /register, /list, and /who over the pipe: the Python client parses

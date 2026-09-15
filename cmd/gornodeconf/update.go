@@ -14,10 +14,6 @@ import (
 	"time"
 )
 
-func runFirmwareUpdate(out io.Writer, port string, opts options) error {
-	return newRuntime().runFirmwareUpdate(out, port, opts)
-}
-
 func (rt cliRuntime) runFirmwareUpdate(out io.Writer, port string, opts options) (err error) {
 	if opts.useExtracted {
 		input := rt.stdin

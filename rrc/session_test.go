@@ -25,7 +25,6 @@ type recordingSessionHooks struct {
 	includeJoinedMemberList bool
 	identityHash            []byte
 	nowMonotonic            float64
-	queueWelcomeCalls       int
 	sendTextSmartCalls      []string
 	sendPacketCalls         [][2][]byte // linkHash, payload
 	sendPacketErr           error

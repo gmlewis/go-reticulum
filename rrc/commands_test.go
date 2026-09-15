@@ -26,7 +26,6 @@ type sentPacket struct {
 // instances with recording hooks.
 type commandTestEnv struct {
 	identity      []byte
-	serverOp      bool
 	sentPackets   []sentPacket
 	reloadCalls   int
 	reloadRooms   []*string

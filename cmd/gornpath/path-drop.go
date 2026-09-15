@@ -8,8 +8,6 @@ package main
 import (
 	"fmt"
 	"io"
-
-	"github.com/gmlewis/go-reticulum/rns"
 )
 
 type pathDropper interface {
@@ -40,12 +38,4 @@ func doDropVia(out io.Writer, ts pathDropper, destHash []byte) error {
 		return err
 	}
 	return fmt.Errorf("Unable to drop paths via %x. Does the transport instance exist?", destHash)
-}
-
-func dropDestinationBytes(input string) ([]byte, error) {
-	return parseHash(input)
-}
-
-func _dropToTransportSystem(ts *rns.TransportSystem, destHash []byte) bool {
-	return ts.InvalidatePath(destHash)
 }

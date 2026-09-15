@@ -15,10 +15,6 @@ import (
 	"time"
 )
 
-func runFirmwareFlash(out io.Writer, port string, opts options) error {
-	return newRuntime().runFirmwareFlash(out, port, opts)
-}
-
 func (rt cliRuntime) runFirmwareFlash(out io.Writer, port string, opts options) (err error) {
 	if opts.useExtracted {
 		input := rt.stdin

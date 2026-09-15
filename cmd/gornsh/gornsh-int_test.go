@@ -1071,10 +1071,6 @@ func startGornshListenerWithArgs(t *testing.T, configDir string, extraArgs ...st
 	return proc
 }
 
-func startGornshListener(t *testing.T, configDir string) *gornshListenerProcess {
-	return startGornshListenerWithArgs(t, configDir, "--no-auth")
-}
-
 // listenerHashRE matches the destination-hash line emitted by either a gornsh
 // listener ("gornsh listening for commands on <hash>") or a Python rnsh
 // listener ("rnsh listening for commands on <hash>"). gornsh refers to itself
@@ -1293,10 +1289,6 @@ func gornshIntegrationEnv(t *testing.T, pythonPathOverride string) []string {
 		}
 	}
 	return filtered
-}
-
-func prepareGornshConfig(t *testing.T, configDir string) {
-	prepareGornshConfigWithInstance(t, configDir, "gornsh-"+filepath.Base(configDir), 0, 0)
 }
 
 // prepareGornshConfigNoNetwork writes a minimal RNS config with no network

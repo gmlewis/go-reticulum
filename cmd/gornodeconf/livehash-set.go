@@ -15,10 +15,6 @@ import (
 	"time"
 )
 
-func runFirmwareHashSet(out io.Writer, port, hashHex string) (err error) {
-	return newRuntime().runFirmwareHashSet(out, port, hashHex)
-}
-
 func (rt cliRuntime) runFirmwareHashSet(out io.Writer, port, hashHex string) (err error) {
 	hashBytes, err := hex.DecodeString(hashHex)
 	if err != nil || len(hashBytes) != 32 {

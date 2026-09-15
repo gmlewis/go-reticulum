@@ -198,29 +198,6 @@ func (d *dumper) writeSyntheticHeader(parent *Table, t *Table) {
 	d.sb.WriteString("\n")
 }
 
-// writeSyntheticHeader emits the header of an edited table, with the
-// separator behavior captured from tomlkit: empty output → none;
-// unterminated last line → complete the line; trailing blank line → none;
-// first sub-table of an empty-bodied existing parent → none; otherwise one
-// blank line.
-func writeSyntheticHeader(sb *strings.Builder, parent *Table, t *Table) {
-	header := t.HeaderRaw
-	if header == "" {
-		header = renderTableHeader(t.Path)
-		t.HeaderRaw = header
-	}
-	soFar := sb.String()
-	blank := syntheticHeaderSeparator(soFar, parent, t)
-	if blank {
-		sb.WriteString("\n")
-	}
-	if len(soFar) > 0 && !endsWithNewline(soFar) {
-		sb.WriteString("\n")
-	}
-	sb.WriteString(header)
-	sb.WriteString("\n")
-}
-
 // syntheticHeaderSeparator reports whether a blank line separates the new
 // table header from the content rendered so far.
 func syntheticHeaderSeparator(soFar string, parent *Table, t *Table) bool {
@@ -257,18 +234,6 @@ func renderTableHeader(path []string) string {
 		parts[i] = renderKey(seg)
 	}
 	return "[" + strings.Join(parts, ".") + "]"
-}
-
-// writeRenderedKeyVal emits an edited or newly created key/value line.
-func writeRenderedKeyVal(sb *strings.Builder, kv *KeyVal) {
-	sb.WriteString(renderKey(kv.Key))
-	sb.WriteString(" = ")
-	sb.WriteString(renderValue(kv.Value))
-	if kv.Comment != "" {
-		sb.WriteString(" ")
-		sb.WriteString(kv.Comment)
-	}
-	sb.WriteString("\n")
 }
 
 // renderKey quotes key unless it is a legal bare key (digits-only keys stay

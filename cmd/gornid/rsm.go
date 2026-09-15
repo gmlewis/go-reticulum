@@ -9,18 +9,6 @@ import (
 	"github.com/gmlewis/go-reticulum/rsg"
 )
 
-// RSM validation error strings, aliased from the shared rsg package so
-// existing gornid callers keep their lower-case names. These match
-// Python's check_release_rsm_structure exactly (rnid.py lines 588-600).
-var (
-	errRSMNoMeta        = rsg.ErrRSMNoMeta
-	errRSMIncompletePkg = rsg.ErrRSMIncompletePkg
-	errRSMIncompleteOrg = rsg.ErrRSMIncompleteOrg
-	errRSMInvalidData   = rsg.ErrRSMInvalidData
-	errRSMInvalidLen    = rsg.ErrRSMInvalidLen
-	errRSMInvalidOrigin = rsg.ErrRSMInvalidOrigin
-)
-
 // checkReleaseRSMStructure validates a signed RSM envelope against the
 // canonical release-structure rules. It is a thin wrapper over
 // rsg.CheckReleaseRSMStructure so gornid shares a single implementation

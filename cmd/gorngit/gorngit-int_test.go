@@ -443,20 +443,6 @@ func makeWorkRepoWithCommit(t *testing.T, workDir string) string {
 	return strings.TrimSpace(shaOut)
 }
 
-// addCommitToWorkRepo adds a second commit to the work repo at workDir and
-// returns the new refs/heads/main SHA.
-func addCommitToWorkRepo(t *testing.T, workDir string) string {
-	t.Helper()
-
-	if err := os.WriteFile(filepath.Join(workDir, "file2.txt"), []byte("second file\n"), 0o644); err != nil {
-		t.Fatalf("write file2: %s", err)
-	}
-	runGit(t, workDir, "add", "file2.txt")
-	runGit(t, workDir, "commit", "-m", "second commit")
-	shaOut := runGit(t, workDir, "rev-parse", "refs/heads/main")
-	return strings.TrimSpace(shaOut)
-}
-
 // createLocalBundle creates a git bundle at bundlePath from the work repo at
 // workDir containing refs/heads/main, excluding any SHAs in excludeSHAs that
 // exist locally. Returns when the bundle is created.

@@ -13,10 +13,6 @@ import (
 	"time"
 )
 
-func runEEPROMBootstrap(out io.Writer, port string, opts options) error {
-	return newRuntime().runEEPROMBootstrap(out, port, opts)
-}
-
 func (rt cliRuntime) runEEPROMBootstrap(out io.Writer, port string, opts options) (err error) {
 	serial, err := rt.rnodeOpenSerial(port)
 	if err != nil {

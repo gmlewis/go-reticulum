@@ -129,25 +129,6 @@ func runPythonExit(t *testing.T, configDir string, args ...string) (string, int)
 	return string(out), exit
 }
 
-func runPythonBackground(t *testing.T, configDir string, args ...string) (*exec.Cmd, *SafeBuffer) {
-	t.Helper()
-	repoDir := os.Getenv("ORIGINAL_RETICULUM_REPO_DIR")
-	if repoDir == "" {
-		t.Fatal("missing required environment variable ORIGINAL_RETICULUM_REPO_DIR (set by scripts/test-integration.sh)")
-	}
-	scriptPath := filepath.Join(repoDir, "RNS", "Utilities", "rncp.py")
-	fullArgs := append([]string{"-u", scriptPath, "--config", configDir}, args...)
-	cmd := exec.Command("python3", fullArgs...)
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+repoDir)
-	buf := &SafeBuffer{}
-	cmd.Stdout = buf
-	cmd.Stderr = buf
-	if err := testutils.StartWithReaper(cmd); err != nil {
-		t.Fatalf("runPythonBackground failed: %v", err)
-	}
-	return cmd, buf
-}
-
 // runGorncpBinary runs one gorncp binary against the suite's config flag and
 // returns its combined output.
 func runGorncpBinary(t *testing.T, bin, configDir string, args ...string) string {
