@@ -2319,9 +2319,11 @@ func TestConnectAsyncGuard(t *testing.T) {
 // must use the int/uint64-tolerant *Val helpers — not raw bodyMap[intKey]
 // indexing, which silently misses every field except Welcomed.
 //
-// Golden WELCOME body mirrors Python's RRC server contract (RRC.py:73-82) and
-// the Go handleHello sender (hub.go:1196-1207): hub name, ver "0.1", empty
-// caps, limits {0:32, 1:64, 2:350, 3:32, 4:240}.
+// Golden WELCOME body mirrors Python's RRC server contract (RRC.py:73-82) as an
+// inbound fixture: a hub that advertises ver "0.1", empty caps, and limits
+// {0:32, 1:64, 2:350, 3:32, 4:240}. The value is deliberately unlike
+// rns.VERSION so the parse path is exercised with a foreign hub's version; the
+// Go hub sender announces rns.VERSION.
 func TestHandleWelcomeParsesFieldsAfterCBORRoundTrip(t *testing.T) {
 	t.Parallel()
 

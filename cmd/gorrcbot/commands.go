@@ -326,8 +326,9 @@ func (r *registry) build() []command {
 			name:    "botinfo",
 			summary: "report the bot, this hub, and the bot's own identity",
 			detail: []string{
-				"Reports the bot's nick and identity, its hub's name and version, and",
+				"Reports the bot's nick, identity, and version, its hub's name, and",
 				"how many rooms it has joined and commands it offers.",
+				"The hub's own version is named only when it differs from the bot's.",
 			},
 			run: (*commandContext).runBotinfo,
 		},
@@ -648,10 +649,26 @@ func (c *commandContext) runBotinfo() []string {
 	conn := c.conn()
 	nick := c.reg.advertisedNick(session)
 	rooms := len(conn.JoinedRoomList())
-	return []string{fmt.Sprintf(
-		"BotInfo: nickname=%v; dest=%v; hub=%v; hubname=%v; hubversion=%v; identity=%v; rooms=%v; commands=%v.",
-		nick, HubDestName, conn.HubAddressHex(), hubNameOrUnknown(conn.GetServerName()),
-		hubNameOrUnknown(conn.GetHubVersion()), c.reg.identityHex(), rooms, len(c.reg.commands))}
+	fields := []string{
+		"nickname=" + nick,
+		"dest=" + HubDestName,
+		"hub=" + conn.HubAddressHex(),
+		"hubname=" + hubNameOrUnknown(conn.GetServerName()),
+		"botversion=" + rns.VERSION,
+	}
+	// The hub's own version is named only when it differs from this bot's. On a
+	// hub built from the same tree the two are the same number, and the room
+	// header already shows the hub's; naming it anyway reads as a second, and
+	// therefore confusing, copy of the bot's version. A hub that advertises no
+	// version has no difference to report.
+	if hubVersion := conn.GetHubVersion(); hubVersion != "" && hubVersion != rns.VERSION {
+		fields = append(fields, "hubversion="+hubVersion)
+	}
+	fields = append(fields,
+		"identity="+c.reg.identityHex(),
+		fmt.Sprintf("rooms=%v", rooms),
+		fmt.Sprintf("commands=%v", len(c.reg.commands)))
+	return []string{"BotInfo: " + strings.Join(fields, "; ") + "."}
 }
 
 // runDnotice sends one direct NOTICE to a resolved target.

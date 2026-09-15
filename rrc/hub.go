@@ -1097,6 +1097,12 @@ func (h *RRCHub) sendHello(_ *rns.Link) {
 
 	// Python's _send_hello body values are TEXT strings (RRC.py:447-448);
 	// byte strings here made the hub silently drop the hello.
+	//
+	// BHelloVer is "0.1" because that is what Python's nomadnet RRC client
+	// sends (RRC.py _send_hello): it is a wire identifier shared with the
+	// Python original, like the "nomadnet" client name beside it, and
+	// TestGoldenHello pins the exact bytes. It is deliberately NOT this port's
+	// own version, so it must not be replaced with rns.VERSION.
 	body := map[any]any{
 		BHelloName: "nomadnet",
 		BHelloVer:  "0.1",
@@ -2975,7 +2981,7 @@ func (h *RRCHub) handleHello(src, nick []byte, _ any) {
 
 	welcomeBody := map[any]any{
 		BWelcomeHub:  []byte(hubName),
-		BWelcomeVer:  []byte("0.1"),
+		BWelcomeVer:  []byte(rns.VERSION),
 		BWelcomeCaps: map[any]any{},
 		BWelcomeLimits: map[any]any{
 			LMaxNickBytes:           DefaultMaxNickBytes,

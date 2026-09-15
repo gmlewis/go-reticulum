@@ -252,7 +252,8 @@ func TestWhoamiWithUnknownRequesterFallsBackToTheHash(t *testing.T) {
 
 // TestBotinfoMirrorsTheOfficialWording asserts botinfo reports the nick, the
 // destination name, the hub hash, and the room and command counts in the
-// official bot's shape.
+// official bot's shape, plus the bot's own version; the hub's version is named
+// only when it differs from the bot's.
 func TestBotinfoMirrorsTheOfficialWording(t *testing.T) {
 	t.Parallel()
 
@@ -275,10 +276,19 @@ func TestBotinfoMirrorsTheOfficialWording(t *testing.T) {
 		t.Errorf("botinfo = %q, want it to name the hub server", got)
 	}
 	if !strings.Contains(got, "hubversion=0.3.2") {
-		t.Errorf("botinfo = %q, want it to report the hub version", got)
+		t.Errorf("botinfo = %q, want it to report the hub version when it differs", got)
+	}
+	if !strings.Contains(got, "botversion="+rns.VERSION) {
+		t.Errorf("botinfo = %q, want it to report the bot's own version %v", got, rns.VERSION)
 	}
 	if !strings.Contains(got, "identity="+fakeHubTwo) {
 		t.Errorf("botinfo = %q, want it to report the bot's identity hash", got)
+	}
+	// A hub built from the same tree advertises the bot's own version, so the
+	// field is omitted rather than repeating it.
+	fake.hubVersion = rns.VERSION
+	if got := runLines(t, reg, session, "botinfo")[0]; strings.Contains(got, "hubversion=") {
+		t.Errorf("botinfo = %q, want no hubversion when the hub reports the bot's version", got)
 	}
 }
 
