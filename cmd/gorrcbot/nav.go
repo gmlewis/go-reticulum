@@ -49,7 +49,8 @@ const olcCodeLength = 10
 
 // runLoc resolves one location and renders it in every notation the bot can
 // produce, so a person who has it in one form can read it in the form the
-// person at the other end of the link uses.
+// person at the other end of the link uses. A position inside China also gets
+// the GCJ-02 pair, which is the one datum a Chinese map app accepts.
 func (c *commandContext) runLoc() []string {
 	if strings.TrimSpace(c.Args) == "" {
 		return []string{"Usage: " + locUsage, locationNotationHelp}
@@ -62,8 +63,17 @@ func (c *commandContext) runLoc() []string {
 	if err != nil {
 		return []string{"loc: could not build a Plus Code: " + err.Error()}
 	}
-	return []string{fmt.Sprintf("DD: %v | DDM: %v | Grid: %v | OLC: %v",
+	lines := []string{fmt.Sprintf("DD: %v | DDM: %v | Grid: %v | OLC: %v",
 		formatDD(point), formatDDM(point), LatLngToMaidenhead(point.Lat, point.Lng), code)}
+	// Printing the Mars coordinate here is what lets a position move between
+	// this bot and Amap, Gaode, Tencent Maps, or WeChat in either direction
+	// without the several-hundred-meter offset that mixing the two datums
+	// silently introduces. Outside China the two datums are identical, so
+	// there is nothing to add.
+	if gcj := FormatGCJ02(point.Lat, point.Lng); gcj != "" {
+		lines = append(lines, fmt.Sprintf("GCJ-02 (Amap/Gaode/WeChat): %v", gcj))
+	}
+	return lines
 }
 
 // runDist reports the distance and both headings between two locations, which

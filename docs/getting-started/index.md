@@ -65,5 +65,6 @@ Sent Traffic        : 0 bytes
 ## What's Next?
 
 - Configure interfaces and bootstrap mesh connectivity in [**Bootstrapping Connectivity**](bootstrapping.md).
+- Orchestrate a full Reticulum node (transport, chat, bot, propagation, web) in [**Running a Node**](../guides/running-a-node.md).
 - Learn about the security and pure-Go design in [**Architecture & Security**](architecture.md).
 - Explore available tools in [**Tools Directory**](../tools/index.md).

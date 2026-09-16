@@ -143,6 +143,18 @@ func TestEnsureFirstRunCreatesConfigAndIdentity(t *testing.T) {
 	if cfg.KJVTxtFile != "" {
 		t.Errorf("template kjv_txt_file = %q, want empty", cfg.KJVTxtFile)
 	}
+	// The template offers the tower command's local dataset, pointed at the
+	// state directory so an operator can simply drop the file there, and
+	// documents the column order it expects.
+	if !strings.Contains(string(raw), "towers_path = ") {
+		t.Error("the generated config does not offer the towers_path key")
+	}
+	if !strings.Contains(string(raw), "id,name,type,lat,lng,freq,offset,tone,operator,city,region,country,elev") {
+		t.Error("the generated config does not document the towers.csv column order")
+	}
+	if want := paths.TowersPath; cfg.TowersPath != want {
+		t.Errorf("template towers_path = %q, want %q", cfg.TowersPath, want)
+	}
 }
 
 // TestEnsureFirstRunIsIdempotent asserts a second run leaves both files

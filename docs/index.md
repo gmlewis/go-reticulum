@@ -52,7 +52,7 @@ The Go port provides a modern, high-performance, single-binary implementation of
 - **Standard Library Only**: The root module has **zero external Go dependencies** and **zero Cgo**. All cryptographic primitives (Ed25519, X25519, AES-128, Fernet, SHA-256/512, HKDF) and protocol codecs are implemented natively.
 - **High Concurrency & Low Footprint**: Built with Go's lightweight goroutines and channels, providing exceptional throughput and minimal RAM/CPU consumption on low-power devices.
 - **Drop-In Interoperability**: Fully wire-compatible with Python Reticulum, LXMF, and RRC hubs and clients.
-- **Field-Ready Autonomous Agents**: Includes `gorrcbot`, an autonomous RRC client and field assistant equipped with offline geodesy, Plus Codes, ephemeris, marine telemetry, wilderness medicine cards, and emergency signaling. Its marine, aviation, and navigation station catalogs are embedded, so `search`, `near`, and `list` find an opaque station id with no network at all, and long answers are paginated to the reply budget with `more` / `next`.
+- **Field-Ready Autonomous Agents**: Includes `gorrcbot`, an autonomous RRC client and field assistant equipped with offline geodesy, Plus Codes, ephemeris, marine telemetry, wilderness medicine cards, emergency signaling, and an offline cell/repeater finder with built-in WGS-84 ↔ GCJ-02 coordinate conversion for China. Its marine, aviation, navigation, and communications-site catalogs are embedded, so `search`, `near`, and `list` find an opaque station id with no network at all, and long answers are paginated to the reply budget with `more` / `next`.
 - **Hardware & Firmware Management**: Complete device lifecycle tools (`gornodeconf`) for flashing, backing up, and provisioning LoRa RNodes on Linux, macOS, and FreeBSD.
 
 ---
@@ -61,10 +61,15 @@ The Go port provides a modern, high-performance, single-binary implementation of
 
 - [**Getting Started**](getting-started/index.md) — Installation, initial configuration, and joining the mesh.
 - [**Tools & Daemons**](tools/index.md) — Overview of all included executables:
-    - [**gorrcbot**](tools/gorrcbot.md) — The autonomous RRC chat bot and off-grid field assistant, with offline station discovery (`search`, `near`, `list`) and low-bandwidth pagination (`more`, `next`).
+    - [**gorrcbot**](tools/gorrcbot.md) — The autonomous RRC chat bot and off-grid field assistant, with offline station discovery (`search`, `near`, `list`), an offline cell/repeater/cell-tower finder (`tower`, `repeater`, `cell`), and low-bandwidth pagination (`more`, `next`).
     - [**gobot**](tools/gobot.md) — Ask a live RRC bot one question from the shell and print its reply.
     - [**gorrcd**](tools/gorrcd.md) — Standalone high-performance RRC hub daemon.
+    - [**golxmd**](tools/golxmd.md) — Standalone LXMF message routing and store-and-forward propagation node.
     - [**gornodeconf**](tools/gornodeconf.md) — Hardware provisioning and firmware flasher for LoRa RNodes.
     - [**CLI Utilities**](tools/cli-utilities.md) — Diagnostic and operational commands (`gornstatus`, `gornpath`, `gornprobe`, etc.).
-- [**Guides**](guides/hardware.md) — Hardware projects, Wasm plugin sandboxing, and radio diagnostics.
+- [**Guides**](guides/running-a-node.md) — Multi-daemon orchestration, hardware projects, Wasm plugin sandboxing, and radio diagnostics:
+    - [**Running a Node**](guides/running-a-node.md) — Multi-daemon architecture (`gornsd -s`), interactive local launcher, and systemd deployment.
+    - [**Hardware & LoRa**](guides/hardware.md) — Building and provisioning LoRa RNode interfaces.
+    - [**WebAssembly Plugins**](guides/wasm-plugins.md) — In-process sandboxed Wasm extensions.
+    - [**Radio Diagnostics**](guides/diagnostics.md) — Real-time telemetry and channel diagnostics.
 - [**Reference**](reference/support-matrix.md) — Certified platform support matrix and cryptographic specifications.

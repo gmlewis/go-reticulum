@@ -342,6 +342,7 @@ lxmf_enabled = false       # true adds the LXMF sender (msg/lxmf), so a peer can
 lxmf_propagation_node = "" # optional 32-hex LXMF propagation node, for store-and-forward
 lxmf_announce_minutes = 360 # how often the bot announces its own lxmf.delivery address, so a reply can be routed back (at least 1)
 kjv_txt_file = ""          # optional King James text file (one verse per line); enables the kjv command. Empty disables it
+towers_path = "~/.gorrcbot/towers.csv" # optional local cell/repeater dataset merged over the embedded catalog; absent is normal
 emergency_lxmf_destination = "" # optional 32-hex lxmf.delivery hash: every new sos beacon is also queued there
 
 # One [[hubs]] entry per hub. Every entry is dialed on startup.
@@ -415,7 +416,7 @@ the announce cache the bot already keeps.
 
 | Command | What it does |
 |---------|--------------|
-| `loc <pluscode\|coords\|grid>` | resolve any of the five location notations and render it in all of them: `DD: 37.4220°N, 122.0841°W \| DDM: … \| Grid: CM87wk \| OLC: 849VCWC8+R9` |
+| `loc <pluscode\|coords\|grid>` | resolve any of the five location notations and render it in all of them: `DD: 37.4220°N, 122.0841°W \| DDM: … \| Grid: CM87wk \| OLC: 849VCWC8+R9`, plus the GCJ-02 "Mars coordinate" when the position is inside China |
 | `dist <from> <to>` | great-circle distance and both headings between two locations, in km, miles, and nautical miles |
 | `proj <origin> <bearing> <distance>` | dead reckoning: where a course and distance from a known point ends up, as a Plus Code, a coordinate, and a grid locator |
 | `sun <loc> [date]` | sunrise, sunset, civil twilight, day length, and the moon's phase and illumination, all in UTC |
@@ -435,6 +436,10 @@ the announce cache the bot already keeps.
 | `buoy <station_id>` | the sea state from an offshore weather buoy: wave height, dominant period and direction, wind, water temperature, and the pressure trend. The period, not the height, decides whether the sea is groundswell or chop, and the answer names it (needs `buoy_url`). `buoy search <query>`, `buoy near <place>`, and `buoy list [region\|state]` find the buoy offline first |
 | `river <gauge_id>` | a stream gauge's stage and discharge, how the stage has moved over three hours, and the flood category (needs `river_url`; `river_flood_url` adds the flood thresholds and the action stage). The gauge is a USGS site number: a river *name* is deliberately not accepted, because resolving one offline would risk answering for a different river of the same name |
 | `coldwater [temp_f\|temp_c]` (alias `immersion`) | the 1-10-1 cold-water rule, or the swim-failure and survival windows for a water temperature (`48F`, `8.9C`; a bare number is Fahrenheit). Entirely offline |
+| `tower near <place\|coords\|pluscode>` (aliases `repeater`, `cell`, `mast`) | the nearest communications sites — cellular masts, amateur VHF/UHF repeaters, emergency/public-safety relays, and marine VHF — with the **distance in kilometers and the bearing** to aim a directional antenna or choose a direction to walk, plus the frequency, the repeater offset, the CTCSS/PL tone, and the operator. Entirely offline: the catalog is embedded and no provider is needed |
+| `tower search <query> [page]` | find a site offline by callsign, identifier, name, city, pinyin place name, state or province, frequency, or operator (`sutro`, `beijing`, `sichuan`, `145.150`, `china mobile`) |
+| `tower list [country\|region] [page]` | every site, or one country's (`US`, `CN`, `GB`), one country's by name (`china`, `germany`), one US state's (`CA`, `CO`) or its name, or one Chinese province's (`BJ`, `GD`, `SC`, `XJ`) |
+| `tower info <id>` | one site in full: the exact WGS-84 position, the GCJ-02 "Mars coordinate" when the site is in China, the Maidenhead grid, the elevation, the frequency, the offset, the tone, and the operator |
 
 **Station ids are discoverable offline.** `tide`, `buoy`, and `metar` all take
 an opaque identifier — a NOAA station number, an NDBC buoy id, an ICAO code —
@@ -448,6 +453,28 @@ closest stations with the distance in nautical miles and the bearing; and
 `metar list CO`, `buoy list HI`, and `tide list OR` filter by state, basin, or
 country. A station id outside a catalog is still accepted, because the provider
 is authoritative about its own stations.
+
+**The cell and repeater finder needs no provider at all.** `tower` (aliases
+`repeater`, `cell`, `mast`) answers "what transmits near here, which way, and how
+far?" from a curated catalog of ~220 mountain-top and regional communications
+sites — amateur repeaters, cellular masts, public-safety relays, and marine VHF
+— **balanced between the United States and China**, with major international
+hubs. `tower near 37.7553,-122.4527` names the three closest sites with the
+distance in kilometers and the bearing (`W6PW-2M (0.0 km 0° N) [RPT]: 145.150 MHz
+-0.6 (PL 114.8) - Sutro Tower, San Francisco, CA`); `tower search` and
+`tower list` page through the catalog offline; and `tower info` prints both
+datums, the Maidenhead grid, the elevation, and every radio detail. Chinese
+province codes and pinyin place names are searchable, so `tower search beijing`,
+`tower search sichuan`, and `tower list GD` all work. A site **inside China**
+additionally prints its **GCJ-02** coordinate, ready to paste into Amap, Gaode,
+Tencent Maps, or WeChat, and a GCJ-02 coordinate from any of those apps can be
+searched from by prefixing it with `gcj:` (`tower near gcj:39.9069,116.4038`,
+`loc gcj:39.9069,116.4038`) — the conversion is a pure-Go implementation of the
+mandated offset, and nothing outside China is ever moved. Operators who need
+micro-cell density drop an OpenCelliD-style extract at `towers_path` (by default
+`towers.csv` beside `config.toml`): a row whose `id` matches an embedded one
+replaces it, a new `id` is added, and an absent file simply means the embedded
+catalog alone.
 
 **Long answers are paginated.** Every catalog answer is cut to the operator's
 `max_reply_lines` budget — two lines for the header and footer, at most four
@@ -467,7 +494,10 @@ and decimal minutes (`37°25.323'N 122°05.048'W`), and a Maidenhead grid locato
 (`CM87uk`). A place *name* cannot be resolved without a geocoder, so the
 commands say what they accept instead of guessing. The Plus Codes are produced
 by a full implementation of the specification, checked against the reference
-implementation's own test data.
+implementation's own test data. A sixth input form is a **GCJ-02 "Mars
+coordinate"** copied from a Chinese map app, marked with a `gcj:` (or `gcj02:`)
+prefix — `loc gcj:39.9069,116.4038`, `tower near gcj:39.9069,116.4038` — which
+is converted back to GPS automatically.
 
 **Marine and coastal operations.** The tide, buoy, and river commands each read
 one optional provider, and each degrades honestly when it cannot: an

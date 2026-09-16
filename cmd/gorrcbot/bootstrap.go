@@ -32,6 +32,10 @@ type BotPaths struct {
 	// per-hub message history it saves. It is a DIRECTORY: the client creates
 	// it and writes one history file per room inside it.
 	StorageDir string
+	// TowersPath is the optional local tower dataset the tower command merges
+	// over its embedded catalog. It is a FILE, and it need not exist: an
+	// absent dataset means the embedded catalog is the whole answer.
+	TowersPath string
 }
 
 // The file and directory names, relative to BotPaths.Home.
@@ -39,6 +43,7 @@ const (
 	defaultConfigFileName   = "config.toml"
 	defaultIdentityFileName = "bot_identity"
 	defaultStorageDirName   = "storage"
+	defaultTowersFileName   = "towers.csv"
 )
 
 // DefaultBotPaths resolves the state directory and the three state files. The
@@ -58,6 +63,7 @@ func DefaultBotPaths() BotPaths {
 		ConfigPath:   filepath.Join(home, defaultConfigFileName),
 		IdentityPath: filepath.Join(home, defaultIdentityFileName),
 		StorageDir:   filepath.Join(home, defaultStorageDirName),
+		TowersPath:   filepath.Join(home, defaultTowersFileName),
 	}
 }
 
@@ -127,6 +133,16 @@ storage_dir = {{storage_dir}}
 # Full kjv.txt file available for download here:
 # https://github.com/gmlewis/kjv-ref/blob/master/kjv.txt
 kjv_txt_file = ""
+
+# tower: An optional local dataset of cell and repeater sites, merged over the
+# catalog embedded in the binary. It is CSV with this exact column order:
+#   id,name,type,lat,lng,freq,offset,tone,operator,city,region,country,elev
+# type is RPT, CELL, EMERG, or MAR (the words "repeater", "cellular",
+# "emergency", and "maritime" are accepted too), coordinates are WGS-84, and a
+# row whose id matches an embedded one replaces it while a new id is added.
+# A file that is absent is normal: the embedded catalog is then the whole
+# answer, and the command stays fully offline either way.
+towers_path = {{towers_path}}
 
 # Optional weather provider template for the weather/wx commands. The literal
 # {place} is replaced with the requested place, which is validated first: only
@@ -280,6 +296,7 @@ func defaultConfigContent(paths BotPaths) string {
 	return strings.NewReplacer(
 		"{{identity_path}}", quoteTOMLString(paths.IdentityPath),
 		"{{storage_dir}}", quoteTOMLString(paths.StorageDir),
+		"{{towers_path}}", quoteTOMLString(paths.TowersPath),
 	).Replace(defaultConfigTemplate)
 }
 

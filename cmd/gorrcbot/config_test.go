@@ -1074,3 +1074,97 @@ func TestDecodeBotConfigToleratesHubLevelKJVTxtFile(t *testing.T) {
 		t.Errorf("warnings = %v, want one saying the hub-level copy is ignored", warnings)
 	}
 }
+
+// TestDecodeBotConfigReadsTowersPath asserts the optional local tower dataset
+// path is read from either place, that it defaults to towers.csv in the state
+// directory so an operator can simply drop the file there, and that empty means
+// the embedded catalog alone.
+func TestDecodeBotConfigReadsTowersPath(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join(tempDir(t), "root-towers.csv")
+	inner := filepath.Join(tempDir(t), "inner-towers.csv")
+	for _, path := range []string{root, inner} {
+		if err := os.WriteFile(path, []byte("id,name\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "defaults to the state directory",
+			src:  "[bot]\n" + misplacedHub,
+			want: DefaultBotPaths().TowersPath,
+		},
+		{
+			name: "inside [bot]",
+			src:  "[bot]\ntowers_path = \"" + inner + "\"\n" + misplacedHub,
+			want: inner,
+		},
+		{
+			name: "above [bot]",
+			src:  "towers_path = \"" + root + "\"\n" + misplacedHub,
+			want: root,
+		},
+		{
+			name: "both, [bot] wins",
+			src:  "towers_path = \"" + root + "\"\n\n[bot]\ntowers_path = \"" + inner + "\"\n" + misplacedHub,
+			want: inner,
+		},
+		{
+			name: "empty means the embedded catalog alone",
+			src:  "[bot]\ntowers_path = \"\"\n" + misplacedHub,
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg, warnings, err := DecodeBotConfig("config.toml", tt.src)
+			if err != nil {
+				t.Fatalf("DecodeBotConfig: %v", err)
+			}
+			if len(warnings) != 0 {
+				t.Errorf("warnings = %v, want none", warnings)
+			}
+			if cfg.TowersPath != tt.want {
+				t.Errorf("TowersPath = %q, want %q", cfg.TowersPath, tt.want)
+			}
+		})
+	}
+}
+
+// TestDecodeBotConfigToleratesAnAbsentTowersCSV asserts an absent dataset is not
+// a warning: the documented way to use the feature is to drop the file in only
+// when a dataset is wanted, so a default configuration whose towers.csv does not
+// exist must load silently. A path that could never be a dataset is reported.
+func TestDecodeBotConfigToleratesAnAbsentTowersCSV(t *testing.T) {
+	t.Parallel()
+
+	missing := filepath.Join(tempDir(t), "absent-towers.csv")
+	cfg, warnings, err := DecodeBotConfig("config.toml",
+		"[bot]\ntowers_path = \""+missing+"\"\n"+misplacedHub)
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none for an absent dataset", warnings)
+	}
+	if cfg.TowersPath != missing {
+		t.Errorf("TowersPath = %q, want the configured value kept", cfg.TowersPath)
+	}
+
+	dir := tempDir(t)
+	_, warnings, err = DecodeBotConfig("config.toml",
+		"[bot]\ntowers_path = \""+dir+"\"\n"+misplacedHub)
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "is a directory") {
+		t.Errorf("warnings = %v, want one naming the directory", warnings)
+	}
+}

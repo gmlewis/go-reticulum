@@ -68,10 +68,22 @@ var CompassPoints = []string{
 // locator, in any mix of upper and lower case. A form that cannot be placed
 // without more information — a short Plus Code above all — is refused rather
 // than guessed, because a wrong position is worse than no position.
+//
+// A "gcj:" (or "gcj02:") prefix marks the value as a Mars coordinate copied out
+// of a Chinese map app; the result is the GPS position behind it. Every other
+// notation is WGS-84 and is returned as given.
 func ParseLocation(input string) (LatLng, error) {
 	text := strings.TrimSpace(input)
 	if text == "" {
 		return LatLng{}, fmt.Errorf("%w: empty", ErrLocationUnrecognized)
+	}
+	if inner, ok := trimGCJPrefix(text); ok {
+		gcj, err := ParseLocation(inner)
+		if err != nil {
+			return LatLng{}, err
+		}
+		lat, lng := GCJ02ToWGS84(gcj.Lat, gcj.Lng)
+		return LatLng{Lat: lat, Lng: lng}, nil
 	}
 	if IsFullOLC(text) {
 		area, err := DecodeOLC(text)

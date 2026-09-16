@@ -115,6 +115,13 @@ type BotConfig struct {
 	// opened read-only and parsed lazily, on the first kjv command. Empty
 	// disables the command, which then says how to turn it on.
 	KJVTxtFile string
+	// TowersPath is the path to an optional local tower dataset in the shape
+	// tower.go documents ("id,name,type,lat,lng,freq,...,country,elev"), which
+	// the tower command merges over its embedded cell and repeater catalog: a
+	// row whose id matches an embedded one replaces it, and a new id is added.
+	// The file is opened read-only and parsed once, on the first tower command.
+	// An absent file is normal, and empty means the embedded catalog alone.
+	TowersPath string
 	// TideURL is an optional provider template for the tide command. It must
 	// carry both {place} (the station id) and {date} (YYYYMMDD), and be an
 	// absolute http:// or https:// URL with no credentials. Empty disables the
@@ -290,6 +297,7 @@ func (d *configDecoder) decodeBot() error {
 		CooldownSecs:        DefaultCooldownSecs,
 		MaxReplyLines:       DefaultMaxReplyLines,
 		StorageDir:          d.defaults.StorageDir,
+		TowersPath:          d.defaults.TowersPath,
 		LXMFAnnounceMinutes: DefaultLXMFAnnounceMinutes,
 	}
 	return nil
@@ -314,6 +322,7 @@ var botKeys = map[string]bool{
 	"river_flood_url":            true,
 	"weather_alert_url":          true,
 	"kjv_txt_file":               true,
+	"towers_path":                true,
 	"launch_url":                 true,
 	"flight_url":                 true,
 	"flight_route_url":           true,
@@ -341,7 +350,7 @@ func (d *configDecoder) decodeRoot(root *toml.Table) error {
 		}
 		key := strings.TrimSpace(kv.Key)
 		switch {
-		case key == "identity_path", key == "storage_dir":
+		case key == "identity_path", key == "storage_dir", key == "towers_path":
 			if err := d.decodeRootPathKey(key, kv); err != nil {
 				return err
 			}
@@ -364,10 +373,14 @@ func (d *configDecoder) decodeRoot(root *toml.Table) error {
 // decodeRootPathKey records a path key found above [bot]. The [bot] table is read
 // afterwards, so a value written there overrides this one.
 func (d *configDecoder) decodeRootPathKey(key string, kv *toml.KeyVal) error {
-	if key == "identity_path" {
+	switch key {
+	case "identity_path":
 		return d.setIdentityPath("the top level", key, kv)
+	case "towers_path":
+		return d.setTowersPath("the top level", key, kv)
+	default:
+		return d.setStorageDir("the top level", key, kv)
 	}
-	return d.setStorageDir("the top level", key, kv)
 }
 
 // setIdentityPath records the identity file path. table labels the location for
@@ -418,6 +431,34 @@ func (d *configDecoder) setKJVTxtFile(table, key string, kv *toml.KeyVal) error 
 	return nil
 }
 
+// setTowersPath records the optional local tower dataset path. A path that does
+// not name a readable file is NOT an error: the documented way to use the feature
+// is to drop the file in only when a dataset is wanted, so an absent file is
+// reported to the operator as normal and the embedded catalog answers.
+func (d *configDecoder) setTowersPath(table, key string, kv *toml.KeyVal) error {
+	s, err := d.stringValue(table, key, kv)
+	if err != nil {
+		return err
+	}
+	d.cfg.TowersPath = strings.TrimSpace(s)
+	if d.cfg.TowersPath == "" {
+		return nil
+	}
+	info, statErr := os.Stat(d.cfg.TowersPath)
+	switch {
+	case statErr != nil:
+		// Absent is expected; anything else is worth one startup line.
+		if !os.IsNotExist(statErr) {
+			d.warn("%v %q cannot be read: %v; the tower command will use its embedded catalog",
+				table, key, statErr)
+		}
+	case info.IsDir():
+		d.warn("%v %q is a directory, not a CSV file; the tower command will use its embedded catalog",
+			table, key)
+	}
+	return nil
+}
+
 // decodeBotTable reads the [bot] table.
 func (d *configDecoder) decodeBotTable(t *toml.Table) error {
 	for i := range t.Keys {
@@ -443,6 +484,10 @@ func (d *configDecoder) decodeBotTable(t *toml.Table) error {
 			}
 		case "kjv_txt_file":
 			if err := d.setKJVTxtFile("[bot]", key, kv); err != nil {
+				return err
+			}
+		case "towers_path":
+			if err := d.setTowersPath("[bot]", key, kv); err != nil {
 				return err
 			}
 		case "weather_url":

@@ -168,6 +168,9 @@ type registry struct {
 	// pager is where the page each requester is reading is remembered, so a
 	// bare "more" answers the page after the one just sent.
 	pager *PagerSession
+	// towers caches the resolved cell and repeater catalog: the embedded rows
+	// with the operator's local towers.csv, if any, merged over them.
+	towers *towerStore
 }
 
 // newRegistry builds the command table for one bot.
@@ -179,6 +182,7 @@ func newRegistry(b *bot) *registry {
 			"dn": "dnotice", "wx": "weather", "lxmf": "msg",
 			"rx": "firstaid", "triage": "firstaid", "solar": "spacewx",
 			"immersion": "coldwater", "next": "more",
+			"repeater": "tower", "cell": "tower", "mast": "tower",
 		},
 		fetch: httpFetch,
 		cache: newProviderCache(providerCacheTTL, providerCacheMaxEntries),
@@ -196,6 +200,7 @@ func newRegistry(b *bot) *registry {
 		spaceWeather: &spaceWeatherCache{},
 		alerts:       newProviderCache(wxalertCacheTTL, providerCacheMaxEntries),
 		pager:        newPagerSession(),
+		towers:       &towerStore{},
 	}
 	r.commands = r.build()
 	sort.Slice(r.commands, func(i, j int) bool { return r.commands[i].name < r.commands[j].name })
@@ -891,6 +896,53 @@ func (r *registry) build() []command {
 			},
 			configured: func(cfg *BotConfig) bool { return cfg.TideURL != "" },
 			run:        (*commandContext).runTide,
+		},
+		{
+			name:    "tower",
+			summary: "find the nearest cell tower, repeater, or emergency relay",
+			usage:   towerUsage,
+			detail: []string{
+				"{nick} tower near <place|coords|pluscode> — the 3 closest sites, with distance and bearing.",
+				"{nick} tower search <query> [page] — a site by callsign, city, frequency, or operator.",
+				"{nick} tower list [country|region] [page] — every site, or one country's (US, CN)",
+				"  or province's (BJ, GD, SC).",
+				"{nick} tower info <id> — one site in full: both datums, the grid, the frequency, the tone.",
+				"The catalog is embedded, so it answers with no network at all; a towers.csv beside the",
+				"configuration adds local sites. A site in China also prints the GCJ-02 coordinate that",
+				"Amap, Gaode, and WeChat expect.",
+				"{nick} tower near 39.9055,116.3976 | {nick} tower search beijing | {nick} tower info BJ-RPT-01",
+			},
+			run: (*commandContext).runTower,
+		},
+		{
+			name:    "repeater",
+			summary: "find the nearest amateur radio repeaters",
+			usage:   towerUsage,
+			detail: []string{
+				"Same command as tower.",
+				"{nick} repeater near <place|coords|pluscode> names the 3 closest sites.",
+			},
+			run: (*commandContext).runTower,
+		},
+		{
+			name:    "cell",
+			summary: "find the nearest cellular masts",
+			usage:   towerUsage,
+			detail: []string{
+				"Same command as tower.",
+				"{nick} cell near <place|coords|pluscode> names the 3 closest masts.",
+			},
+			run: (*commandContext).runTower,
+		},
+		{
+			name:    "mast",
+			summary: "find the nearest cellular masts",
+			usage:   towerUsage,
+			detail: []string{
+				"Same command as tower.",
+				"{nick} mast near <place|coords|pluscode> names the 3 closest masts.",
+			},
+			run: (*commandContext).runTower,
 		},
 		{
 			name:    "more",

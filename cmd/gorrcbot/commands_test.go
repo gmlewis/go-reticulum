@@ -67,6 +67,9 @@ func TestRegistryNamesAreStable(t *testing.T) {
 		"metar", "wxalert",
 		// The field assistant's lunar and marine commands.
 		"buoy", "coldwater", "immersion", "moon", "river", "tide",
+		// The field assistant's offline cell and repeater finder, and its
+		// aliases.
+		"cell", "mast", "repeater", "tower",
 		// The shared discovery pagination shortcuts.
 		"more", "next",
 	}

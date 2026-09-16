@@ -9,7 +9,7 @@
 - **Single Identity Everywhere**: `gorrcbot` generates one 64-byte Reticulum private identity (`bot_identity`) and uses it across all connected hubs. Its identity hash is identical on all hubs, allowing users to reach it using consistent address prefixes.
 - **Strict Addressing Contract**: The bot is completely silent unless addressed directly. It will never spam channels, and it completely ignores chat traffic not directed at it.
 - **Rate-Limiting & Cooldowns**: Built-in per-identity cooldown prevents abuse or channel flooding over low-bandwidth LoRa links.
-- **Offline First**: The vast majority of tactical and field assistant commands (Plus Codes, geodesy, dead reckoning, sun/moon ephemeris, wilderness medicine cards, Morse code, unit conversions) compute entirely in-process with **zero internet connection required**. The marine, aviation, and navigation station catalogs are embedded too, so `search`, `near`, and `list` find a station id before any provider is configured and while a provider is unreachable.
+- **Offline First**: The vast majority of tactical and field assistant commands (Plus Codes, geodesy, dead reckoning, sun/moon ephemeris, wilderness medicine cards, Morse code, unit conversions, and the cell/repeater finder with its built-in WGS-84 ↔ GCJ-02 conversion) compute entirely in-process with **zero internet connection required**. The marine, aviation, navigation, and communications-site catalogs are embedded too, so `search`, `near`, and `list` find a station id before any provider is configured and while a provider is unreachable.
 - **Low-Bandwidth by Design**: Long answers are paginated to the operator's `max_reply_lines` budget, every page carries the exact command that asks for the next one, and `more` / `next` continue a walk through a catalog without retyping the query.
 - **Graceful Telemetry Degradation**: For commands that query external live telemetry (weather, marine tides, buoys, river gauges, flight tracking, space weather), providers are queried through sanitized HTTP/HTTPS templates. If an endpoint is unconfigured or unreachable, the bot reports honest failure without guessing or hallucinating.
 
@@ -125,6 +125,16 @@ flight_route_url = "https://api.adsbdb.com/v0/callsign/{flight}"
 # Full kjv.txt file available for download here:
 # https://github.com/gmlewis/kjv-ref/blob/master/kjv.txt
 kjv_txt_file = ""
+
+# Optional local dataset for the tower/repeater/cell finder, merged over the
+# cell, repeater, and emergency-site catalog embedded in the binary. The column
+# order is fixed:
+#   id,name,type,lat,lng,freq,offset,tone,operator,city,region,country,elev
+# type is RPT, CELL, EMERG, or MAR; coordinates are WGS-84 decimal degrees; a
+# row whose id matches an embedded one replaces it, and a new id is added. The
+# file may simply be dropped in at this path; it need not exist, and the
+# command stays fully offline either way.
+towers_path = "~/.gorrcbot/towers.csv"
 
 # LXMF messaging support (msg/lxmf command)
 lxmf_enabled = false
@@ -257,6 +267,7 @@ telemetry: `@gobot tide 9414290`, `@gobot buoy 46026`, `@gobot metar KDEN`.
 | `tide` | NOAA tide and current stations an operator is likely to name | ~110 stations | US state codes, plus `GU`, `AS` |
 | `buoy` | NDBC offshore weather buoys that report meteorological data, from the Pacific, Atlantic, Gulf, Hawaii, Alaska, and the Great Lakes | ~115 buoys | US state codes, plus `ATL`, `GOM`, `CAR`, `PAC` |
 | `metar` | Every large US airport with an IATA code, the regional fields that carry scheduled passenger service, and the world's major international hubs | ~625 airfields | US state codes, plus two-letter country codes (`GB`, `FR`, `JP`, …) |
+| `tower` | Curated mountain-top and regional communications sites: amateur repeaters, cellular masts, public-safety relays, and marine VHF stations, balanced between the United States and China with major international hubs | ~220 sites | US state codes, Chinese province codes (`BJ`, `GD`, `SC`, `XJ`, …), and country codes (`US`, `CN`, `GB`, `JP`, …) |
 
 > [!NOTE]
 > A `metar` region may be a state code or a country code, and the two can
@@ -351,6 +362,184 @@ they were sent to.
 
 ---
 
+## Cell & Radio Tower Finder (`tower`, `repeater`, `cell`)
+
+`tower` answers the question that decides whether an off-grid party can
+communicate at all: **what transmits near here, which way is it, and how far?**
+The catalog, the geometry, and the coordinate conversion are all embedded in the
+binary, so the answer is available with no network connection of any kind.
+
+### Why it matters
+
+1. **Aiming a directional antenna.** With a weak or unusable signal on a
+   rubber-duck antenna, a Yagi, log-periodic, or grid antenna pointed at the
+   right mast can hold an emergency uplink. What the operator needs is not a map
+   but a **bearing and a distance** — which is exactly what `tower near` prints.
+2. **Choosing a direction to walk.** A stranded driver or hiker who has lost
+   coverage needs to know which way regains it, and how far the walk is.
+3. **Amateur radio when the cellular network is gone.** Mountain-top VHF/UHF
+   repeaters are frequently solar- and battery-backed and survive the event that
+   took the commercial network down — but only if the operator knows the
+   frequency, the offset, and the CTCSS/PL tone.
+4. **Public safety and marine channels.** Search-and-rescue relays and coastal
+   marine VHF stations are in the same catalog, so the same query reaches the
+   people whose job the emergency is.
+
+### Syntax
+
+```text
+tower near <place|coords|pluscode>
+tower search <query> [page]
+tower list [country|region] [page]
+tower info <id>
+more / next
+```
+
+`repeater`, `cell`, and `mast` are aliases for `tower` and behave identically.
+
+### Examples
+
+A proximity answer names the three closest sites, with the distance, the bearing
+and compass point, the service, and the radio details needed to use the site:
+
+```text
+/msg gobot tower near 37.7553,-122.4527
+  Tower sites near 37.7553,-122.4527 (Page 1 of 1):
+    W6PW-2M (0.0 km 0° N) [RPT]: 145.150 MHz -0.6 (PL 114.8) - Sutro Tower, San Francisco, CA
+    W6PW-70C (0.0 km 0° N) [RPT]: 442.700 MHz +5.0 (PL 114.8) - Sutro Tower 70cm, San Francisco, CA
+    US-CA-T042 (0.0 km 218° SW) [CELL]: Band 2/4/12/71 - Sutro Cell Mast, San Francisco, CA
+  [Page 1 of 1: end of results]
+```
+
+Search and list are offline lookups over the whole catalog, and both paginate to
+the reply budget:
+
+```text
+/msg gobot tower search sutro
+  Tower sites matching "sutro" (Page 1 of 1):
+    W6PW-2M: Sutro Tower, San Francisco, CA
+    W6PW-70C: Sutro Tower 70cm, San Francisco, CA
+    US-CA-T042: Sutro Cell Mast, San Francisco, CA
+  [Page 1 of 1: end of results]
+
+/msg gobot tower list BJ
+  Tower sites in BJ (Page 1 of 2):
+    BJ-RPT-01: Xiangshan Relay, Beijing, BJ
+    BJ-RPT-02: Miaofengshan Relay, Beijing, BJ
+    BJ-RPT-03: Beijing Central Radio Tower, Beijing, BJ
+    BJ-RPT-04: Wuling Mountain Relay, Beijing, BJ
+  [Page 1 of 2: ask "tower list BJ 2" or "more" for next]
+```
+
+`tower info` renders one site in full — both datums, the Maidenhead grid an
+operator signs with, the elevation, and every radio detail:
+
+```text
+/msg gobot tower info W6PW-2M
+W6PW-2M [RPT]: Sutro Tower, San Francisco, CA
+  WGS-84 37.755300, -122.452700 | Maidenhead CM87ss | elevation 254 m | Amateur repeater
+  145.150 MHz, offset -0.6 MHz, tone 114.8 Hz, operator W6PW
+```
+
+### International parity: the United States and China
+
+The catalog is deliberately balanced between the United States and China, with a
+selection of major international hubs, because the same tool has to be as useful
+on the Sichuan–Tibet highway as it is on a Colorado fourteener. Chinese entries
+carry province codes and pinyin place names, so an operator who thinks in
+English and an operator who knows the two-letter code both reach the same rows:
+
+```text
+/msg gobot tower search beijing
+/msg gobot tower search sichuan
+/msg gobot tower list GD
+/msg gobot tower near 30.05,101.96
+```
+
+**WGS-84 ↔ GCJ-02 ("Mars coordinates") conversion.** China mandates that
+domestic maps publish coordinates in GCJ-02, which is GPS with a deliberately
+non-linear offset of several hundred meters. A coordinate copied out of Amap,
+Gaode, Tencent Maps, or WeChat and fed to a GPS receiver lands in the wrong
+street, and a GPS coordinate dropped into Amap lands several hundred meters
+away. The bot handles both directions:
+
+- A site **inside China** prints its GCJ-02 coordinate alongside the WGS-84 one,
+  ready to paste into a Chinese map app:
+
+  ```text
+  /msg gobot tower near 39.9055,116.3976
+    Tower sites near 39.9055,116.3976 (Page 1 of 1):
+      CN-BJ-T001 (0.4 km 359° N) [CELL]: Band 3/8/41 - China Mobile Beijing Mast, Beijing, BJ, CN
+      BJ-E001 (0.8 km 100° E) [EMERG]: 439.000 MHz -5.0 (PL 88.5) - Beijing Emergency Comms, Beijing, BJ, CN
+      BJ-RPT-03 (6.1 km 76° ENE) [RPT]: 438.500 MHz -5.0 (PL 88.5) - Beijing Central Radio Tower, Beijing, BJ, CN
+    GCJ-02 CN-BJ-T001 (paste into Amap/Gaode/WeChat): 39.910204, 116.403744
+    [Page 1 of 1: end of results]
+  ```
+
+- A GCJ-02 coordinate is handed **back** to the bot with a `gcj:` (or `gcj02:`)
+  prefix, anywhere a location is accepted, and is converted to the GPS position
+  behind it first. Nothing outside China is ever moved: the conversion is
+  applied only inside the mandated bounding box, so every foreign coordinate
+  round-trips bit-for-bit.
+
+  ```text
+  /msg gobot tower near gcj:39.9069,116.4038
+  /msg gobot loc gcj:39.9069,116.4038
+  ```
+
+  The inverse transform is recovered by fixed-point refinement of the published
+  forward equations, converging to better than a centimeter.
+
+### Region and country filters
+
+`tower list` accepts a region code (`CA`, `CO`, `BJ`, `GD`, `SC`, `XJ`), a US
+state's name (`california`), a country code (`US`, `CN`, `GB`, `JP`), or a
+country's name (`china`, `germany`, `canada`).
+
+> [!NOTE]
+> A two-letter code that is a US state names the **state**, so `tower list CA`
+> is California rather than Canada, and `tower list DE` is Delaware rather than
+> Germany — those countries are reached by name (`tower list canada`,
+> `tower list germany`). A Chinese province that shares a US state's code is
+> still listed beside it, because the region itself matches: `tower list SC`
+> covers South Carolina and Sichuan, and `tower list SD`, `NM`, and `HI`
+> similarly cover both countries' regions of that name.
+
+### Using a local dataset (`towers.csv`)
+
+The curated catalog is a planning reference, not a live directory. An operator
+who needs micro-cell density — for example an OpenCelliD extract reduced to the
+area of operations — drops a CSV at the path configured as `towers_path`
+(by default `towers.csv` beside `config.toml`) and every query sees it:
+
+```csv
+id,name,type,lat,lng,freq,offset,tone,operator,city,region,country,elev
+W6PW-2M,Local Sutro Repeater,RPT,37.7600,-122.4500,146.100 MHz,-0.6 MHz,100.0 Hz,W6LOCAL,San Francisco,CA,US,250
+ZZ-OP-0001,Ops Ridge Mast,CELL,39.0000,-120.0000,Band 2/4/12,,,OpsNet,Testville,CA,US,1200
+```
+
+- The column order is fixed: `id,name,type,lat,lng,freq,offset,tone,operator,city,region,country,elev`.
+- `type` is `RPT`, `CELL`, `EMERG`, or `MAR` (the words `repeater`, `cellular`,
+  `emergency`, and `maritime` are accepted too).
+- `lat` and `lng` are **WGS-84** decimal degrees; the GCJ-02 conversion is
+  applied on display.
+- A row whose `id` matches an embedded one **replaces** it, so a corrected
+  frequency is corrected everywhere at once; a new `id` is **added**.
+- The header line is optional, `#` comments are ignored, and a malformed row is
+  skipped with a log line naming it rather than silently shortening the file.
+- **An absent file is normal**, and an unreadable one degrades to the embedded
+  catalog: a bad export can never cost the tool its built-in data.
+
+### Offline guarantee
+
+Nothing in a `tower` query touches the network. There is no provider URL for
+this command and no configuration it needs: the catalog is compiled into the
+binary, the distance, bearing, and datum arithmetic are closed form, and the
+only file it ever reads is an optional local dataset. It is the one discovery
+command that is fully useful before its operator has configured anything at all.
+
+---
+
 ## Complete Command Reference
 
 ### Core & Administration
@@ -404,9 +593,15 @@ All location commands accept **5 coordinate notations** without network connecti
 4. **Degrees, Minutes & Seconds (DMS)**: `37°25'19"N 122°05'03"W`
 5. **Maidenhead Grid Locator**: `CM87uk`
 
+A sixth input form is a **GCJ-02 "Mars coordinate"** copied from a Chinese map
+app (Amap/Gaode, Tencent, WeChat), marked with a `gcj:` or `gcj02:` prefix:
+`loc gcj:39.9069,116.4038` or `tower near gcj:39.9069,116.4038`. It is converted
+back to the WGS-84 GPS position before anything else is computed. See
+[Cell & Radio Tower Finder](#cell-radio-tower-finder-tower-repeater-cell).
+
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `loc` | `@gobot loc <location>` | Converts any supported coordinate format and outputs it in all five notations simultaneously. |
+| `loc` | `@gobot loc <location>` | Converts any supported coordinate format and outputs it in all five notations simultaneously. A position inside China also prints the GCJ-02 "Mars coordinate" that Amap and Gaode expect. |
 | `dist` | `@gobot dist <from> <to>` | Calculates great-circle distance (km, statute miles, nautical miles) and forward/reverse bearings between two points. |
 | `proj` | `@gobot proj <origin> <bearing°> <distance>` | Dead reckoning: calculates the destination coordinate from a starting location, course, and distance (e.g. `@gobot proj CM87uk 045 15km`). |
 
@@ -469,6 +664,17 @@ All location commands accept **5 coordinate notations** without network connecti
 | `spacewx` / `solar` | `@gobot spacewx` | Reports Solar Flux Index (SFI), Sunspot Number (SSN), K-index, geomagnetic storm levels, and recommended HF propagation bands. |
 | `launches` | `@gobot launches [upcoming\|past]` | Schedules and status of upcoming orbital space launches. |
 | `flight` | `@gobot flight <flight_num>` | Real-time ADS-B flight telemetry: route, altitude, groundspeed, climb rate, and squawk code. |
+
+---
+
+### Cell & Radio Tower Finder
+
+| Command | Syntax | Description & Example |
+|---------|--------|-----------------------|
+| `tower` / `repeater` / `cell` / `mast` | `@gobot tower near <place\|coords\|pluscode>` | The three closest communications sites, with the distance in kilometers, the bearing, the service, the frequency with its offset and tone, and the place. Entirely offline; a site inside China also prints the GCJ-02 coordinate for Amap/Gaode/WeChat. See [Cell & Radio Tower Finder](#cell-radio-tower-finder-tower-repeater-cell). |
+| `tower search` | `@gobot tower search <query> [page]` | Finds a site offline by callsign, identifier, name, city, pinyin place name, state or province, frequency, or operator (`sutro`, `beijing`, `sichuan`, `145.150`, `china mobile`). |
+| `tower list` | `@gobot tower list [country\|region] [page]` | Every site, or one country's (`US`, `CN`, `GB`), one country's by name (`china`, `germany`), one US state's (`CA`, `CO`) or its name, or one Chinese province's (`BJ`, `GD`, `SC`, `XJ`). |
+| `tower info` | `@gobot tower info <id>` | One site in full: the exact WGS-84 position, the GCJ-02 position when the site is in China, the Maidenhead grid, the elevation, the frequency, the offset, the tone, and the operator. |
 
 ---
 
