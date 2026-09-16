@@ -6,6 +6,7 @@
 package main
 
 import (
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -227,8 +228,8 @@ func TestBuoyCommandReportsItsConfiguration(t *testing.T) {
 	reg, session, _ = commandFixture(t, buoyConfig())
 	for _, line := range []string{"buoy", "buoy 12", "buoy 46026/../etc", "buoy 4602612"} {
 		lines := runLinesAt(t, reg, session, line, spacewxClock)
-		if len(lines) != 1 || lines[0] != buoyStationRejectedLine {
-			t.Errorf("%q = %v, want the station line", line, lines)
+		if len(lines) != 2 || lines[0] != buoyStationRejectedLine || lines[1] != buoyUsageHint {
+			t.Errorf("%q = %v, want the station line and the discovery hint", line, lines)
 		}
 	}
 
@@ -263,6 +264,180 @@ func TestBuoyCommandLinesFitOneEnvelope(t *testing.T) {
 		}
 		if !fits {
 			t.Errorf("line %q does not fit one envelope", line)
+		}
+	}
+}
+
+// TestBuoySearchFindsABuoyByPlaceAndID asserts the two things an asker can type
+// without knowing a station id: the place they would say, and the id they are
+// holding.
+func TestBuoySearchFindsABuoyByPlaceAndID(t *testing.T) {
+	t.Parallel()
+
+	reg, session, _ := commandFixture(t, nil)
+
+	byPlace := runLines(t, reg, session, "buoy search san francisco")
+	if len(byPlace) < 2 || !strings.Contains(byPlace[0], `Weather buoys matching "san francisco" (Page 1 of `) {
+		t.Fatalf("buoy search san francisco = %v, want a paged answer", byPlace)
+	}
+	if !strings.Contains(byPlace[1], "  46026: San Francisco, CA") {
+		t.Errorf("first match = %q, want the San Francisco buoy", byPlace[1])
+	}
+
+	byID := runLines(t, reg, session, "buoy search 44013")
+	if len(byID) < 2 || !strings.Contains(byID[1], "  44013: Boston, MA") {
+		t.Errorf("buoy search 44013 = %v, want the Boston buoy first", byID)
+	}
+
+	byRegion := runLines(t, reg, session, "buoy search cape")
+	if len(byRegion) < 2 || !strings.Contains(byRegion[0], `Weather buoys matching "cape" (Page 1 of 2):`) {
+		t.Fatalf("buoy search cape = %v, want the Cape buoys over two pages", byRegion)
+	}
+	if !strings.Contains(byRegion[1], "  46028: Cape San Martin, CA") {
+		t.Errorf("first match = %q, want Cape San Martin first", byRegion[1])
+	}
+	for _, line := range byRegion[1 : len(byRegion)-1] {
+		if !strings.Contains(line, "Cape ") {
+			t.Errorf("buoy search cape listed a buoy that is not a cape: %q", line)
+		}
+	}
+	if !strings.Contains(strings.Join(runLines(t, reg, session, "buoy search mendocino"), "\n"), "46213") {
+		t.Error("buoy search mendocino did not find the Cape Mendocino buoy")
+	}
+
+	if got := runLines(t, reg, session, "buoy search zzyzx"); len(got) != 2 ||
+		!strings.Contains(got[0], `No Weather buoys match "zzyzx"`) {
+		t.Errorf("buoy search zzyzx = %v, want a no-match line and a hint", got)
+	}
+	if got := runLines(t, reg, session, "buoy search"); len(got) == 0 ||
+		!strings.Contains(got[0], "Usage: buoy search") {
+		t.Errorf("buoy search with no words = %v, want the usage line", got)
+	}
+}
+
+// TestBuoyListFiltersByRegion asserts the list form takes a state code, the
+// state's own name, and a basin code for the buoys outside the states.
+func TestBuoyListFiltersByRegion(t *testing.T) {
+	t.Parallel()
+
+	reg, session, _ := commandFixture(t, nil)
+	byCode := runLines(t, reg, session, "buoy list CA")
+	if len(byCode) == 0 || !strings.Contains(byCode[0], "Weather buoys in CA (Page 1 of ") {
+		t.Fatalf("buoy list CA = %v, want the Californian buoys paged", byCode)
+	}
+	for _, line := range byCode[1 : len(byCode)-1] {
+		if !strings.Contains(line, ", CA") {
+			t.Errorf("buoy list CA listed a buoy outside California: %q", line)
+		}
+	}
+
+	byName := runLines(t, reg, session, "buoy list california")
+	if len(byName) == 0 || !strings.Contains(byName[0], "Weather buoys in CALIFORNIA (Page 1 of ") ||
+		byName[1] != byCode[1] {
+		t.Errorf("buoy list california = %v, want the same first page as buoy list CA", byName)
+	}
+
+	basin := runLines(t, reg, session, "buoy list GOM")
+	if len(basin) == 0 || !strings.Contains(basin[0], "Weather buoys in GOM (Page 1 of 1):") {
+		t.Errorf("buoy list GOM = %v, want the open Gulf of Mexico buoy", basin)
+	}
+
+	if got := runLines(t, reg, session, "buoy list ZZ"); len(got) != 2 ||
+		!strings.Contains(got[0], "No Weather buoys in ZZ") {
+		t.Errorf("buoy list ZZ = %v, want a no-region line and a hint", got)
+	}
+	all := runLines(t, reg, session, "buoy list")
+	if len(all) == 0 || !strings.Contains(all[0], "Weather buoys (Page 1 of ") {
+		t.Errorf("buoy list = %v, want the whole catalog paged", all)
+	}
+}
+
+// TestBuoyNearNamesTheClosestBuoys asserts a position resolves to the buoys
+// around it, and that a station id resolves to the buoy's own position, which is
+// how "buoy near 46026" answers.
+func TestBuoyNearNamesTheClosestBuoys(t *testing.T) {
+	t.Parallel()
+
+	reg, session, _ := commandFixture(t, nil)
+	lines := runLines(t, reg, session, "buoy near 37.8,-122.4")
+	if len(lines) != 5 {
+		t.Fatalf("buoy near 37.8,-122.4 = %v, want a header, three buoys, and a footer", lines)
+	}
+	if !strings.Contains(lines[0], "Weather buoys near 37.8,-122.4 (Page 1 of 1):") {
+		t.Errorf("header = %q, want the position that was asked for", lines[0])
+	}
+	if !strings.Contains(lines[1], "46026 (") || !strings.Contains(lines[1], " nmi ") ||
+		!strings.Contains(lines[1], "): San Francisco, CA") {
+		t.Errorf("nearest buoy = %q, want a distance, a bearing, and the name", lines[1])
+	}
+	if !strings.Contains(lines[2], "46012") {
+		t.Errorf("the second buoy = %q, want Half Moon Bay next", lines[2])
+	}
+
+	byID := runLines(t, reg, session, "buoy near 46026")
+	if len(byID) < 2 || !strings.Contains(byID[1], "46026 (0.0 nmi ") {
+		t.Errorf("buoy near 46026 = %v, want the buoy itself at zero distance", byID)
+	}
+
+	if got := runLines(t, reg, session, "buoy near nowhere at all"); len(got) != 2 ||
+		!strings.Contains(got[0], "not a place, a coordinate, or a plus code") {
+		t.Errorf("buoy near nowhere = %v, want an explanation and a hint", got)
+	}
+}
+
+// TestBuoyDiscoveryNeedsNoProvider asserts finding a buoy is an offline
+// question: it answers on a bot with no buoy_url at all.
+func TestBuoyDiscoveryNeedsNoProvider(t *testing.T) {
+	t.Parallel()
+
+	reg, session, _ := commandFixture(t, nil)
+	reg.fetch = func(url string) (string, error) {
+		t.Errorf("discovery reached the network: %v", url)
+		return "", nil
+	}
+	for _, line := range []string{"buoy search boston", "buoy list HI", "buoy near 21.3,-157.9"} {
+		if lines := runLinesAt(t, reg, session, line, spacewxClock); len(lines) < 2 {
+			t.Errorf("%v = %v, want an offline answer", line, lines)
+		}
+	}
+	if lines := runLinesAt(t, reg, session, "buoy 46026", spacewxClock); len(lines) != 1 ||
+		lines[0] != buoyNotConfiguredLine {
+		t.Errorf("buoy 46026 = %v, want %q", lines, buoyNotConfiguredLine)
+	}
+}
+
+// TestBuoyStationTableIsCoherent asserts the reference catalog has no duplicate
+// ids, no empty names, real positions, and the coverage it claims.
+func TestBuoyStationTableIsCoherent(t *testing.T) {
+	t.Parallel()
+
+	if len(buoyStations) < 80 {
+		t.Fatalf("the reference table holds %v buoys, want at least 80", len(buoyStations))
+	}
+	seen := map[string]bool{}
+	regions := map[string]bool{}
+	for _, station := range buoyStations {
+		if seen[station.ID] {
+			t.Errorf("buoy %v appears twice", station.ID)
+		}
+		seen[station.ID] = true
+		if len(station.ID) < 4 || len(station.ID) > 6 {
+			t.Errorf("buoy id %q is not 4 to 6 characters", station.ID)
+		}
+		if station.Name == "" {
+			t.Errorf("buoy %v has no name", station.ID)
+		}
+		if station.Region == "" {
+			t.Errorf("buoy %v has no region", station.ID)
+		}
+		if math.Abs(station.Lat) > 90 || math.Abs(station.Lng) > 180 {
+			t.Errorf("buoy %v is at an impossible position: %v, %v", station.ID, station.Lat, station.Lng)
+		}
+		regions[station.Region] = true
+	}
+	for _, want := range []string{"CA", "OR", "WA", "AK", "HI", "FL", "MA", "TX", "MI"} {
+		if !regions[want] {
+			t.Errorf("the reference table has no buoy in %v", want)
 		}
 	}
 }

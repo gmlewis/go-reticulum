@@ -109,7 +109,14 @@ announce_on_join = false
 
 # Maximum number of NOTICE lines a single reply may produce. Longer replies are
 # truncated with a visible marker, because each line is one MTU-sized envelope.
+# The discovery commands size a catalog page from this budget, so raising it
+# widens every page.
 max_reply_lines = 12
+
+# Render the discovery (search, near, and list) rows as clickable Micron links,
+# the notation a NomadNet client displays as a button. Every other client shows
+# the link text literally, so leave this false unless the room reads Micron.
+micron_links = false
 
 # The RRC client's storage DIRECTORY: it keeps the saved per-room message
 # history here. The client creates it on first connect.

@@ -165,6 +165,9 @@ type registry struct {
 	// provider cache does, because a warning changes on the scale of tens of
 	// minutes.
 	alerts *providerCache
+	// pager is where the page each requester is reading is remembered, so a
+	// bare "more" answers the page after the one just sent.
+	pager *PagerSession
 }
 
 // newRegistry builds the command table for one bot.
@@ -175,7 +178,7 @@ func newRegistry(b *bot) *registry {
 		aliases: map[string]string{
 			"dn": "dnotice", "wx": "weather", "lxmf": "msg",
 			"rx": "firstaid", "triage": "firstaid", "solar": "spacewx",
-			"immersion": "coldwater",
+			"immersion": "coldwater", "next": "more",
 		},
 		fetch: httpFetch,
 		cache: newProviderCache(providerCacheTTL, providerCacheMaxEntries),
@@ -192,6 +195,7 @@ func newRegistry(b *bot) *registry {
 		kjv:          newKJVCache(botKJVTxtFile(b)),
 		spaceWeather: &spaceWeatherCache{},
 		alerts:       newProviderCache(wxalertCacheTTL, providerCacheMaxEntries),
+		pager:        newPagerSession(),
 	}
 	r.commands = r.build()
 	sort.Slice(r.commands, func(i, j int) bool { return r.commands[i].name < r.commands[j].name })
@@ -766,9 +770,11 @@ func (r *registry) build() []command {
 			usage:   metarUsage,
 			detail: []string{
 				"<ICAO> is a 4-letter station code, like KDEN, EGLL, or KJFK.",
-				"The answer names the wind, visibility, temperature and dewpoint,",
-				"and the altimeter setting; an undecodable report is shown raw.",
-				"{nick} metar KDEN",
+				"metar search <city|name|code> [page] finds a code from a city,",
+				"an airfield name, or an IATA code; metar near <place> names the",
+				"3 closest; metar list [state|country] lists them, and \"more\"",
+				"turns the page. An undecodable report is shown raw.",
+				"{nick} metar search denver | {nick} metar KDEN",
 			},
 			configHint: []string{
 				"Needs metar_url in config.toml to enable it.",
@@ -855,10 +861,12 @@ func (r *registry) build() []command {
 			detail: []string{
 				"<station_id> is a 4 to 6 character buoy id, like 46026 (San",
 				"Francisco offshore), 41009 (Cape Canaveral), or 44013 (Boston).",
-				"Reports wave height, dominant period and direction, wind, water",
-				"temperature, and the pressure trend. The period decides whether",
-				"the sea is groundswell or chop, and the answer says which.",
-				"{nick} buoy 46026",
+				"buoy search <query> [page] finds one by place, id, or state;",
+				"buoy near <place|coords|pluscode> names the 3 closest;",
+				"buoy list [region|state] [page] lists them, and \"more\" turns the",
+				"page. The wave period decides whether the sea is groundswell or",
+				"chop, and the answer says which.",
+				"{nick} buoy search san francisco | {nick} buoy 46026",
 			},
 			configHint: []string{
 				"Needs buoy_url in config.toml to enable it.",
@@ -873,15 +881,38 @@ func (r *registry) build() []command {
 			detail: []string{
 				"A station is a 7-digit provider id (9414290 is San Francisco), a",
 				"port name, or a position, which resolves to the nearest station.",
-				"The state of the tide between two predictions comes from the rule",
-				"of twelfths, so one pair of predictions gives the depth all day.",
-				"{nick} tide 9414290 | {nick} tide san francisco 2026-09-15",
+				"tide search <query> [page] finds a station by name or id;",
+				"tide near <place|coords|pluscode> names the 3 closest;",
+				"tide list [state] [page] lists them, and \"more\" turns the page.",
+				"{nick} tide search san francisco | {nick} tide 9414290",
 			},
 			configHint: []string{
 				"Needs tide_url in config.toml (with {place} and {date}) to enable it.",
 			},
 			configured: func(cfg *BotConfig) bool { return cfg.TideURL != "" },
 			run:        (*commandContext).runTide,
+		},
+		{
+			name:    "more",
+			summary: "show the next page of the last search, near, or list",
+			usage:   "more",
+			detail: []string{
+				"Every paged answer ends with the exact command that asks for the",
+				"page after it, and \"more\" is the shortcut for that command.",
+				"The page is remembered per identity for five minutes; with",
+				"nothing pending the answer is \"no more pages or search expired\".",
+				"{nick} buoy search san francisco | {nick} more",
+			},
+			run: (*commandContext).runMore,
+		},
+		{
+			name:    "next",
+			summary: "show the next page of the last search, near, or list",
+			usage:   "next",
+			detail: []string{
+				"Same command as more.",
+			},
+			run: (*commandContext).runMore,
 		},
 		{
 			name:    "net",

@@ -73,6 +73,7 @@ reply = "room"
 cooldown_s = 2.5
 announce_on_join = true
 max_reply_lines = 3
+micron_links = true
 storage_dir = "/tmp/storage"
 weather_url = "https://example.invalid/{place}"
 flight_url = "https://api.adsb.invalid/v2/callsign/{flight}"
@@ -106,6 +107,9 @@ rooms = ["general"]
 	}
 	if cfg.MaxReplyLines != 3 {
 		t.Errorf("MaxReplyLines = %v, want 3", cfg.MaxReplyLines)
+	}
+	if !cfg.MicronLinks {
+		t.Error("MicronLinks = false, want true (micron_links turns the links on)")
 	}
 	if cfg.StorageDir != "/tmp/storage" {
 		t.Errorf("StorageDir = %q, want %q", cfg.StorageDir, "/tmp/storage")

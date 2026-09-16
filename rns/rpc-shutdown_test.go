@@ -69,7 +69,7 @@ loglevel = 4
 
 	ts := NewTransportSystem(nil)
 	r := mustTestNewReticulum(t, ts, cfg)
-	if !r.isSharedInstance {
+	if !r.IsSharedInstance() {
 		t.Fatalf("expected shared instance")
 	}
 

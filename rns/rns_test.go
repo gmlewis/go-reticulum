@@ -454,8 +454,8 @@ loglevel = 4
 		t.Fatalf("failed to create reticulum 1: %v", err)
 	}
 	defer closeReticulum(t, r1)
-	if !r1.isSharedInstance || r1.isConnectedToSharedInstance || r1.isStandaloneInstance {
-		t.Fatalf("first instance role mismatch: shared=%v connected=%v standalone=%v", r1.isSharedInstance, r1.isConnectedToSharedInstance, r1.isStandaloneInstance)
+	if !r1.IsSharedInstance() || r1.IsConnectedToSharedInstance() || r1.IsStandaloneInstance() {
+		t.Fatalf("first instance role mismatch: shared=%v connected=%v standalone=%v", r1.IsSharedInstance(), r1.IsConnectedToSharedInstance(), r1.IsStandaloneInstance())
 	}
 
 	r2, err := NewReticulum(ts2, cfg2)
@@ -463,8 +463,8 @@ loglevel = 4
 		t.Fatalf("failed to create reticulum 2: %v", err)
 	}
 	defer closeReticulum(t, r2)
-	if r2.isSharedInstance || !r2.isConnectedToSharedInstance || r2.isStandaloneInstance {
-		t.Fatalf("second instance role mismatch: shared=%v connected=%v standalone=%v", r2.isSharedInstance, r2.isConnectedToSharedInstance, r2.isStandaloneInstance)
+	if r2.IsSharedInstance() || !r2.IsConnectedToSharedInstance() || r2.IsStandaloneInstance() {
+		t.Fatalf("second instance role mismatch: shared=%v connected=%v standalone=%v", r2.IsSharedInstance(), r2.IsConnectedToSharedInstance(), r2.IsStandaloneInstance())
 	}
 }
 
@@ -488,8 +488,8 @@ loglevel = 4
 		t.Fatalf("failed to create reticulum: %v", err)
 	}
 	defer closeReticulum(t, r)
-	if r.isSharedInstance || r.isConnectedToSharedInstance || !r.isStandaloneInstance {
-		t.Fatalf("instance role mismatch: shared=%v connected=%v standalone=%v", r.isSharedInstance, r.isConnectedToSharedInstance, r.isStandaloneInstance)
+	if r.IsSharedInstance() || r.IsConnectedToSharedInstance() || !r.IsStandaloneInstance() {
+		t.Fatalf("instance role mismatch: shared=%v connected=%v standalone=%v", r.IsSharedInstance(), r.IsConnectedToSharedInstance(), r.IsStandaloneInstance())
 	}
 }
 
@@ -522,8 +522,8 @@ loglevel = 4
 		t.Fatalf("failed to create reticulum 1: %v", err)
 	}
 	defer closeReticulum(t, r1)
-	if !r1.isSharedInstance || r1.isConnectedToSharedInstance || r1.isStandaloneInstance {
-		t.Fatalf("first instance role mismatch: shared=%v connected=%v standalone=%v", r1.isSharedInstance, r1.isConnectedToSharedInstance, r1.isStandaloneInstance)
+	if !r1.IsSharedInstance() || r1.IsConnectedToSharedInstance() || r1.IsStandaloneInstance() {
+		t.Fatalf("first instance role mismatch: shared=%v connected=%v standalone=%v", r1.IsSharedInstance(), r1.IsConnectedToSharedInstance(), r1.IsStandaloneInstance())
 	}
 
 	r2, err := NewReticulum(ts2, cfg)
@@ -531,11 +531,12 @@ loglevel = 4
 		t.Fatalf("failed to create reticulum 2: %v", err)
 	}
 	defer closeReticulum(t, r2)
-	if r2.isSharedInstance || !r2.isConnectedToSharedInstance || r2.isStandaloneInstance {
-		t.Fatalf("second instance role mismatch: shared=%v connected=%v standalone=%v", r2.isSharedInstance, r2.isConnectedToSharedInstance, r2.isStandaloneInstance)
+	if r2.IsSharedInstance() || !r2.IsConnectedToSharedInstance() || r2.IsStandaloneInstance() {
+		t.Fatalf("second instance role mismatch: shared=%v connected=%v standalone=%v", r2.IsSharedInstance(), r2.IsConnectedToSharedInstance(), r2.IsStandaloneInstance())
 	}
 
-	if r2.sharedInstanceInterface == nil || r2.sharedInstanceInterface.Type() != "LocalInterface" {
+	iface := r2.currentSharedInstanceInterface()
+	if iface == nil || iface.Type() != "LocalInterface" {
 		t.Fatalf("expected second instance to use LocalInterface shared-instance client")
 	}
 }

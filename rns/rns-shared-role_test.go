@@ -344,7 +344,12 @@ func TestSharedInstanceWatcherSurvivesAnInFlightTakeover(t *testing.T) {
 		t.Fatal("expected the application to attach to the shared instance")
 	}
 
-	// The in-flight state: interface cleared, role not yet re-decided.
+	// The in-flight state: interface cleared, role not yet re-decided. This
+	// reaches the field directly rather than through
+	// currentSharedInstanceInterface/setInstanceRole because the read and the
+	// clear must be one critical section: split across two accessor calls, a
+	// watcher tick landing in between could publish a fresh interface that the
+	// clear would then discard, breaking the very window this simulates.
 	app.mu.Lock()
 	iface := app.sharedInstanceInterface
 	app.sharedInstanceInterface = nil
@@ -357,7 +362,8 @@ func TestSharedInstanceWatcherSurvivesAnInFlightTakeover(t *testing.T) {
 	time.Sleep(60 * time.Millisecond)
 
 	// The attempt re-attached as a client rather than taking over: the watch
-	// must still be running, so the next loss is recovered.
+	// must still be running, so the next loss is recovered. Same single
+	// critical section as above, for the same reason.
 	app.mu.Lock()
 	app.sharedInstanceInterface = iface
 	app.mu.Unlock()

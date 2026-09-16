@@ -43,7 +43,7 @@ func newDestinationDataInstances(t *testing.T, ts *TransportSystem) (r1, r2 *Ret
 	writeConfig(t, cfg2, fmt.Sprintf(destinationDataConfig, t.Name()+"-2", sharedPort, rpcPort, rpcKeyHex))
 	r1 = mustTestNewReticulum(t, ts, cfg1)
 	r2 = mustTestNewReticulum(t, ts, cfg2)
-	if !r2.isConnectedToSharedInstance {
+	if !r2.IsConnectedToSharedInstance() {
 		t.Fatal("expected second instance to be connected to shared instance")
 	}
 	return r1, r2

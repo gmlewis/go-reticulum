@@ -393,7 +393,7 @@ func TestLocalSpawnedClientTearsDownOnDisconnect(t *testing.T) {
 	if spawned == nil {
 		t.Fatalf("server never accepted the spawned client")
 	}
-	if spawned.isConnectedToSharedInstance {
+	if IsConnectedToSharedInstance(spawned) {
 		t.Fatalf("spawned client flagged as initiator; must be a spawned (non-initiator) client")
 	}
 

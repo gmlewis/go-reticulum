@@ -29,6 +29,13 @@ import (
 const (
 	// metarUsage is the usage line for the command.
 	metarUsage = "metar <ICAO>"
+	// metarCatalogName names the airfields in a discovery answer.
+	metarCatalogName = "Airports"
+	// metarUsageHint is the second line of an unusable request: the three ways
+	// into the catalog, which are how an asker who does not know a station code
+	// gets one.
+	metarUsageHint = "search, near, and list find a station: " +
+		"metar search <city|name|code> [page] | metar near <place|coords|pluscode> | metar list [state|country] [page]"
 	// metarNotConfiguredLine is the answer when the operator has set no
 	// provider.
 	metarNotConfiguredLine = "metar is not configured: set metar_url in config.toml to enable it"
@@ -243,8 +250,8 @@ func (r METARReport) Line() string {
 	return header + ": " + strings.Join(segments, " | ")
 }
 
-// metarStation validates and normalizes an ICAO station code.
-func metarStation(token string) (string, error) {
+// metarStationID validates and normalizes an ICAO station code.
+func metarStationID(token string) (string, error) {
 	trimmed := strings.ToUpper(strings.TrimSpace(token))
 	if len(trimmed) != metarStationLength {
 		return "", fmt.Errorf("metar: %q is not a station code", token)
@@ -259,18 +266,25 @@ func metarStation(token string) (string, error) {
 	return trimmed, nil
 }
 
-// runMetar answers with the decoded report for one station.
+// runMetar answers with the decoded report for one station, or with a page of
+// the offline airfield catalog when the request is a discovery one. Discovery is
+// answered before the provider is consulted: finding the code of the field at a
+// city is a question the reference table can answer, and it must work on a link
+// that cannot reach the provider at all.
 func (c *commandContext) runMetar() []string {
+	if kind, text := splitDiscovery(c.Args); kind != "" {
+		return c.runMetarDiscovery(kind, text)
+	}
 	template := strings.TrimSpace(c.reg.metarURL())
 	if template == "" {
 		return []string{metarNotConfiguredLine}
 	}
 	if strings.TrimSpace(c.Args) == "" {
-		return []string{"Usage: " + metarUsage}
+		return []string{"Usage: " + metarUsage, metarUsageHint}
 	}
-	station, err := metarStation(c.Args)
+	station, err := metarStationID(c.Args)
 	if err != nil {
-		return []string{metarPlaceRejectedLine}
+		return []string{metarPlaceRejectedLine, metarUsageHint}
 	}
 	fetchURL, err := providerURL(template, strings.ToLower(station))
 	if err != nil {
@@ -285,6 +299,39 @@ func (c *commandContext) runMetar() []string {
 		return []string{metarFailedLine}
 	}
 	return lines
+}
+
+// runMetarDiscovery answers a metar search, near, or list request from the
+// airfield catalog. Every answer is offline, so an asker can find a station code
+// before the operator has configured the provider, or while it is unreachable.
+func (c *commandContext) runMetarDiscovery(kind, text string) []string {
+	q := discoveryQuery{Command: "metar", Catalog: metarCatalogName, Kind: kind}
+	switch kind {
+	case discoveryKindSearch:
+		words, page := splitPageArgument(text)
+		query := strings.Join(searchWords(words), " ")
+		if query == "" {
+			return []string{"Usage: metar search <city|name|code> [page]", metarUsageHint}
+		}
+		q.Text = query
+		matches := searchCatalog(metarCatalog, query)
+		if len(matches) == 0 {
+			return []string{fmt.Sprintf("No %v match %q.", metarCatalogName, q.Text), searchHint(q)}
+		}
+		return c.renderCatalogPage(q, matches, page)
+	case discoveryKindNear:
+		return c.renderNearAnswer(q, metarCatalog, text)
+	case discoveryKindList:
+		region, page := splitListArgument(text)
+		entries := filterCatalogRegion(metarCatalog, region)
+		if len(entries) == 0 {
+			return []string{fmt.Sprintf("No %v in %v.", metarCatalogName, safeEcho(region, maxDiscoveryEchoBytes)), listHint(q)}
+		}
+		q.Text = strings.ToUpper(strings.Join(strings.Fields(region), " "))
+		return c.renderCatalogPage(q, entries, page)
+	default:
+		return []string{"Usage: " + metarUsage, metarUsageHint}
+	}
 }
 
 // renderMetarAnswer decodes the provider's answer into reply lines, falling

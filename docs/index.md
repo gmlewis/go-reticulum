@@ -52,7 +52,7 @@ The Go port provides a modern, high-performance, single-binary implementation of
 - **Standard Library Only**: The root module has **zero external Go dependencies** and **zero Cgo**. All cryptographic primitives (Ed25519, X25519, AES-128, Fernet, SHA-256/512, HKDF) and protocol codecs are implemented natively.
 - **High Concurrency & Low Footprint**: Built with Go's lightweight goroutines and channels, providing exceptional throughput and minimal RAM/CPU consumption on low-power devices.
 - **Drop-In Interoperability**: Fully wire-compatible with Python Reticulum, LXMF, and RRC hubs and clients.
-- **Field-Ready Autonomous Agents**: Includes `gorrcbot`, an autonomous RRC client and field assistant equipped with offline geodesy, Plus Codes, ephemeris, marine telemetry, wilderness medicine cards, and emergency signaling.
+- **Field-Ready Autonomous Agents**: Includes `gorrcbot`, an autonomous RRC client and field assistant equipped with offline geodesy, Plus Codes, ephemeris, marine telemetry, wilderness medicine cards, and emergency signaling. Its marine, aviation, and navigation station catalogs are embedded, so `search`, `near`, and `list` find an opaque station id with no network at all, and long answers are paginated to the reply budget with `more` / `next`.
 - **Hardware & Firmware Management**: Complete device lifecycle tools (`gornodeconf`) for flashing, backing up, and provisioning LoRa RNodes on Linux, macOS, and FreeBSD.
 
 ---
@@ -61,7 +61,7 @@ The Go port provides a modern, high-performance, single-binary implementation of
 
 - [**Getting Started**](getting-started/index.md) — Installation, initial configuration, and joining the mesh.
 - [**Tools & Daemons**](tools/index.md) — Overview of all included executables:
-    - [**gorrcbot**](tools/gorrcbot.md) — The autonomous RRC chat bot and off-grid field assistant.
+    - [**gorrcbot**](tools/gorrcbot.md) — The autonomous RRC chat bot and off-grid field assistant, with offline station discovery (`search`, `near`, `list`) and low-bandwidth pagination (`more`, `next`).
     - [**gobot**](tools/gobot.md) — Ask a live RRC bot one question from the shell and print its reply.
     - [**gorrcd**](tools/gorrcd.md) — Standalone high-performance RRC hub daemon.
     - [**gornodeconf**](tools/gornodeconf.md) — Hardware provisioning and firmware flasher for LoRa RNodes.

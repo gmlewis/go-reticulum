@@ -34,6 +34,13 @@ import (
 const (
 	// buoyUsage is the usage line for the command.
 	buoyUsage = "buoy <station_id>"
+	// buoyCatalogName names the buoys in a discovery answer.
+	buoyCatalogName = "Weather buoys"
+	// buoyUsageHint is the second line of an unusable request: the three ways
+	// into the catalog, which are how an asker who does not know a station id
+	// gets one.
+	buoyUsageHint = "search, near, and list find a station: " +
+		"buoy search <query> [page] | buoy near <place|coords|pluscode> | buoy list [region|state] [page]"
 	// buoyNotConfiguredLine is the answer when the operator has set no provider.
 	buoyNotConfiguredLine = "buoy is not configured: set buoy_url in config.toml to enable it"
 	// buoyMisconfiguredLine is the answer when buoy_url itself is unusable.
@@ -268,15 +275,22 @@ func BuoyPressureTrend(report BuoyReport) string {
 	}
 }
 
-// runBuoy answers with the current sea state at one buoy.
+// runBuoy answers with the current sea state at one buoy, or with a page of the
+// offline buoy catalog when the request is a discovery one. Discovery is
+// answered before the provider is consulted: finding the id of a buoy near a
+// place is a question the reference table can answer, and it must work on a
+// link that cannot reach the feed at all.
 func (c *commandContext) runBuoy() []string {
+	if kind, text := splitDiscovery(c.Args); kind != "" {
+		return c.runBuoyDiscovery(kind, text)
+	}
 	template := strings.TrimSpace(c.reg.buoyURL())
 	if template == "" {
 		return []string{buoyNotConfiguredLine}
 	}
-	station, err := buoyStation(c.Args)
+	station, err := buoyStationID(c.Args)
 	if err != nil {
-		return []string{buoyStationRejectedLine}
+		return []string{buoyStationRejectedLine, buoyUsageHint}
 	}
 	fetchURL, err := providerURL(template, strings.ToLower(station))
 	if err != nil {
@@ -297,8 +311,42 @@ func (c *commandContext) runBuoy() []string {
 	return lines
 }
 
-// buoyStation validates a station id: the four to six characters the feed uses.
-func buoyStation(text string) (string, error) {
+// runBuoyDiscovery answers a buoy search, near, or list request from the station
+// catalog. Every answer is offline, so an asker can find an id before the
+// operator has configured the feed, or while it is unreachable.
+func (c *commandContext) runBuoyDiscovery(kind, text string) []string {
+	q := discoveryQuery{Command: "buoy", Catalog: buoyCatalogName, Kind: kind}
+	switch kind {
+	case discoveryKindSearch:
+		words, page := splitPageArgument(text)
+		query := strings.Join(searchWords(words), " ")
+		if query == "" {
+			return []string{"Usage: buoy search <query> [page]", buoyUsageHint}
+		}
+		q.Text = query
+		matches := searchCatalog(buoyCatalog, query)
+		if len(matches) == 0 {
+			return []string{fmt.Sprintf("No %v match %q.", buoyCatalogName, q.Text), searchHint(q)}
+		}
+		return c.renderCatalogPage(q, matches, page)
+	case discoveryKindNear:
+		return c.renderNearAnswer(q, buoyCatalog, text)
+	case discoveryKindList:
+		region, page := splitListArgument(text)
+		entries := filterCatalogRegion(buoyCatalog, region)
+		if len(entries) == 0 {
+			return []string{fmt.Sprintf("No %v in %v.", buoyCatalogName, safeEcho(region, maxDiscoveryEchoBytes)), listHint(q)}
+		}
+		q.Text = strings.ToUpper(strings.Join(strings.Fields(region), " "))
+		return c.renderCatalogPage(q, entries, page)
+	default:
+		return []string{"Usage: " + buoyUsage, buoyUsageHint}
+	}
+}
+
+// buoyStationID validates and normalizes a station id: the four to six
+// characters the feed uses.
+func buoyStationID(text string) (string, error) {
 	trimmed := strings.ToUpper(strings.TrimSpace(text))
 	if len(trimmed) < 4 || len(trimmed) > 6 {
 		return "", fmt.Errorf("buoy: %q is not a station id", text)

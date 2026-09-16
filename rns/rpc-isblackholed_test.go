@@ -42,7 +42,7 @@ loglevel = 4
 	ts := NewTransportSystem(nil)
 	r := mustTestNewReticulum(t, ts, cfg)
 	defer closeReticulum(t, r)
-	if r.isConnectedToSharedInstance {
+	if r.IsConnectedToSharedInstance() {
 		t.Fatal("shared instance reports connectedToSharedInstance; expected local path")
 	}
 
@@ -102,7 +102,7 @@ loglevel = 4
 	defer closeReticulum(t, r1)
 	r2 := mustTestNewReticulum(t, ts, cfg2)
 	defer closeReticulum(t, r2)
-	if !r2.isConnectedToSharedInstance {
+	if !r2.IsConnectedToSharedInstance() {
 		t.Fatal("expected second instance to be connected to shared instance")
 	}
 

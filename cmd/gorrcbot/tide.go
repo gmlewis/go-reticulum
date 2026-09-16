@@ -36,6 +36,13 @@ import (
 const (
 	// tideUsage is the usage line for the command.
 	tideUsage = "tide <station|coords|place> [date]"
+	// tideCatalogName names the tide stations in a discovery answer.
+	tideCatalogName = "Tide stations"
+	// tideUsageHint is the second line of a bare tide request: the three ways
+	// into the catalog, which are how an asker who does not know a station id
+	// gets one.
+	tideUsageHint = "search, near, and list find a station: " +
+		"tide search <query> [page] | tide near <place|coords|pluscode> | tide list [state] [page]"
 	// tideNotConfiguredLine is the answer when the operator has set no provider.
 	tideNotConfiguredLine = "tide is not configured: set tide_url in config.toml to enable it"
 	// tideMisconfiguredLine is the answer when tide_url itself is unusable. It
@@ -272,16 +279,22 @@ func nearestTideStation(point LatLng) (tideStation, float64, bool) {
 	return best, bestMeters, true
 }
 
-// runTide answers with the day's tide at a station.
+// runTide answers with the day's tide at a station, or with a page of the
+// offline station catalog when the request is a discovery one. Discovery is
+// answered before the provider is consulted: finding the id of a station is a
+// question the reference table can answer, and it must work on a link that
+// cannot reach the provider at all.
 func (c *commandContext) runTide() []string {
+	if kind, text := splitDiscovery(c.Args); kind != "" {
+		return c.runTideDiscovery(kind, text)
+	}
 	template := strings.TrimSpace(c.reg.tideURL())
 	if template == "" {
 		return []string{tideNotConfiguredLine}
 	}
 	station, day, ok := c.resolveTideRequest(strings.TrimSpace(c.Args))
 	if !ok {
-		return []string{"Usage: " + tideUsage,
-			"a station is a 7-digit provider id, a port name, or a position"}
+		return []string{"Usage: " + tideUsage, tideUsageHint}
 	}
 	fetchURL, err := providerURLValues(template, map[string]string{
 		tideStationToken: station.ID,
@@ -299,6 +312,39 @@ func (c *commandContext) runTide() []string {
 		return []string{tideFailedLine}
 	}
 	return lines
+}
+
+// runTideDiscovery answers a tide search, near, or list request from the station
+// catalog. Every answer is offline: the catalog is the provider's own station
+// list, embedded, so it answers at the same speed as the geodesy commands.
+func (c *commandContext) runTideDiscovery(kind, text string) []string {
+	q := discoveryQuery{Command: "tide", Catalog: tideCatalogName, Kind: kind}
+	switch kind {
+	case discoveryKindSearch:
+		words, page := splitPageArgument(text)
+		query := strings.Join(searchWords(words), " ")
+		if query == "" {
+			return []string{"Usage: tide search <query> [page]", searchHint(q)}
+		}
+		q.Text = query
+		matches := searchCatalog(tideCatalog, query)
+		if len(matches) == 0 {
+			return []string{fmt.Sprintf("No %v match %q.", tideCatalogName, q.Text), searchHint(q)}
+		}
+		return c.renderCatalogPage(q, matches, page)
+	case discoveryKindNear:
+		return c.renderNearAnswer(q, tideCatalog, text)
+	case discoveryKindList:
+		region, page := splitListArgument(text)
+		entries := filterCatalogRegion(tideCatalog, region)
+		if len(entries) == 0 {
+			return []string{fmt.Sprintf("No %v in %v.", tideCatalogName, safeEcho(region, maxDiscoveryEchoBytes)), listHint(q)}
+		}
+		q.Text = strings.ToUpper(strings.Join(strings.Fields(region), " "))
+		return c.renderCatalogPage(q, entries, page)
+	default:
+		return []string{"Usage: " + tideUsage, tideUsageHint}
+	}
 }
 
 // resolveTideRequest works out which station and which day a request means. A

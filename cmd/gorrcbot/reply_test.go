@@ -527,6 +527,46 @@ func TestResponderCooldownSuppressesBursts(t *testing.T) {
 	}
 }
 
+// TestResponderAnswersPageTurnsInsideTheCooldown asserts "more" and "next" are
+// exempt from the per-identity cooldown: a paged walk would otherwise cost the
+// cooldown per page, and a page turn can only answer a page the asker already
+// asked for. Any other command is still suppressed.
+func TestResponderAnswersPageTurnsInsideTheCooldown(t *testing.T) {
+	t.Parallel()
+
+	cfg := defaultTestConfig()
+	cfg.CooldownSecs = 8
+	session, fake := newReplySession(t, cfg)
+	now := time.Unix(1700000000, 0)
+	ran := make([]string, 0, 4)
+	r := newResponder(cfg, mustHex(replyOwnHash), func(req *commandRequest) []string {
+		ran = append(ran, req.Command)
+		return []string{"ok"}
+	})
+	r.now = func() time.Time { return now }
+
+	requester := peerHashFor(0x61)
+	r.handle(session, addressedMessageFrom("general", "@gorrcbot tide list CA", requester))
+	now = now.Add(time.Second)
+	r.handle(session, addressedMessageFrom("general", "@gorrcbot more", requester))
+	now = now.Add(time.Second)
+	r.handle(session, addressedMessageFrom("general", "@gorrcbot next", requester))
+	if len(ran) != 3 {
+		t.Fatalf("ran %v, want the search and both page turns inside the cooldown", ran)
+	}
+	if got := len(fake.noticeList()); got != 3 {
+		t.Errorf("sent %v notices, want one per page turn", got)
+	}
+
+	// The page turn must not refresh the cooldown either: a new question from
+	// the same identity inside the window is still suppressed.
+	now = now.Add(time.Second)
+	r.handle(session, addressedMessageFrom("general", "@gorrcbot ping", requester))
+	if len(ran) != 3 {
+		t.Errorf("ran %v, want the ping suppressed by the cooldown", ran)
+	}
+}
+
 // TestResponderCooldownIsBounded asserts the cooldown table cannot grow without
 // limit: an always-on bot must survive a busy hub.
 func TestResponderCooldownIsBounded(t *testing.T) {

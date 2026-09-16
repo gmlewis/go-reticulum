@@ -67,6 +67,8 @@ func TestRegistryNamesAreStable(t *testing.T) {
 		"metar", "wxalert",
 		// The field assistant's lunar and marine commands.
 		"buoy", "coldwater", "immersion", "moon", "river", "tide",
+		// The shared discovery pagination shortcuts.
+		"more", "next",
 	}
 	// The registry sorts its rows, so the expectation is sorted too; the groups
 	// above are for the reader, not the comparison.

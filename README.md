@@ -325,7 +325,8 @@ nick = "gobot"             # advertised nick, and the default trigger nick
 reply = "auto"             # auto | direct | room — see "Reply routing" below
 cooldown_s = 8.0           # minimum seconds between replies to the same identity
 announce_on_join = false   # false = silent like any member; true = one self-introduction NOTICE per room per session
-max_reply_lines = 12       # a reply longer than this is truncated, visibly
+max_reply_lines = 12       # a reply longer than this is truncated, visibly; it also sets the catalog page size
+micron_links = false       # true renders discovery rows and the next-page footer as clickable Micron links for NomadNet clients
 weather_url = "http://wttr.in/{place}?format=%l:+%C+%t+%w+%h"
 tide_url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?product=predictions&datum=MLLW&time_zone=gmt&units=english&interval=hilo&format=json&station={place}&begin_date={date}&range=48"
 buoy_url = "https://www.ndbc.noaa.gov/data/realtime2/{place}.txt"
@@ -427,13 +428,36 @@ the announce cache the bot already keeps.
 | `conv <value><unit> <target>` | tactical conversions: pressure and altimeter settings, distance, speed, temperature, water and fuel weight, and battery capacity (`5000mAh@3.7V` → `18.50 Wh`) |
 | `signal [air\|sound\|light]` | the distress-signal guide: ground-to-air markings, whistle and horn cadences, and mirror or torch flashes |
 | `morse <text>` / `morse -d <code…>` | translate text to Morse code and back |
-| `metar <ICAO>` | decode the aviation weather report for an airfield into wind, visibility, temperature, dewpoint, and altimeter setting (needs `metar_url`) |
+| `metar <ICAO>` | decode the aviation weather report for an airfield into wind, visibility, temperature, dewpoint, and altimeter setting (needs `metar_url`). `metar search <city\|name\|code>`, `metar near <place>`, and `metar list [state\|country]` find the code offline first |
 | `wxalert <place\|area>` | severe weather warnings in force (needs `weather_alert_url`; answers are cached for 15 minutes) |
 | `moon [loc] [date]` | the lunar almanac: phase and age, moonrise, transit, moonset, the coming night's illumination rating (Dark Night, Moderate Light, Bright Moonlight), and the next new, first-quarter, full and last-quarter moons — the new and full ones named as the spring tides they drive |
-| `tide <station\|coords\|place> [date]` | high and low water for a station (a 7-digit provider id like `9414290`, a port name, or a position resolved against the bot's own reference table of ~110 stations), the state of the tide now, and the spring/neap assessment (needs `tide_url`, which carries `{place}` and `{date}`) |
-| `buoy <station_id>` | the sea state from an offshore weather buoy: wave height, dominant period and direction, wind, water temperature, and the pressure trend. The period, not the height, decides whether the sea is groundswell or chop, and the answer names it (needs `buoy_url`) |
+| `tide <station\|coords\|place> [date]` | high and low water for a station (a 7-digit provider id like `9414290`, a port name, or a position resolved against the bot's own reference table of ~110 stations), the state of the tide now, and the spring/neap assessment (needs `tide_url`, which carries `{place}` and `{date}`). `tide search <query>`, `tide near <place>`, and `tide list [state]` find the station offline first |
+| `buoy <station_id>` | the sea state from an offshore weather buoy: wave height, dominant period and direction, wind, water temperature, and the pressure trend. The period, not the height, decides whether the sea is groundswell or chop, and the answer names it (needs `buoy_url`). `buoy search <query>`, `buoy near <place>`, and `buoy list [region\|state]` find the buoy offline first |
 | `river <gauge_id>` | a stream gauge's stage and discharge, how the stage has moved over three hours, and the flood category (needs `river_url`; `river_flood_url` adds the flood thresholds and the action stage). The gauge is a USGS site number: a river *name* is deliberately not accepted, because resolving one offline would risk answering for a different river of the same name |
 | `coldwater [temp_f\|temp_c]` (alias `immersion`) | the 1-10-1 cold-water rule, or the swim-failure and survival windows for a water temperature (`48F`, `8.9C`; a bare number is Fahrenheit). Entirely offline |
+
+**Station ids are discoverable offline.** `tide`, `buoy`, and `metar` all take
+an opaque identifier — a NOAA station number, an NDBC buoy id, an ICAO code —
+and each carries its provider's own station catalog **embedded in the binary**,
+so the identifier can be found before `tide_url`, `buoy_url`, or `metar_url` is
+configured, and while that provider is unreachable. `tide search san francisco`
+matches a name, a state, or a partial id; `metar search denver` matches a city
+name, an airport name, an ICAO code (`KDEN`), or the IATA code on a ticket
+(`DEN`); `tide near 849VCWC8+R9` and `buoy near 37.8,-122.4` name the three
+closest stations with the distance in nautical miles and the bearing; and
+`metar list CO`, `buoy list HI`, and `tide list OR` filter by state, basin, or
+country. A station id outside a catalog is still accepted, because the provider
+is authoritative about its own stations.
+
+**Long answers are paginated.** Every catalog answer is cut to the operator's
+`max_reply_lines` budget — two lines for the header and footer, at most four
+rows — and every page ends with the exact command that asks for the next one
+(`[Page 1 of 3: ask "tide list CA 2" or "more" for next]`). In a private session
+`/msg gobot more` (or `next`) continues the walk without retyping the query: the
+pending page is remembered per identity for five minutes, in memory only, and
+one asker's page is never handed to another. With `micron_links = true` the rows
+and the next-page footer are rendered as clickable Micron links for NomadNet
+clients.
 
 **Locations are resolved offline.** `loc`, `dist`, `proj`, `sun`, `sitrep`, and
 the `sos` and `checkin` position arguments all accept the same five notations —

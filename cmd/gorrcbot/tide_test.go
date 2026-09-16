@@ -455,3 +455,183 @@ func TestTideStationTableIsCoherent(t *testing.T) {
 		}
 	}
 }
+
+// TestTideSearchFindsAStationByNameAndID asserts the two things an asker can
+// type without knowing anything: the name they would say, and the id they
+// half-remember.
+func TestTideSearchFindsAStationByNameAndID(t *testing.T) {
+	t.Parallel()
+
+	reg, session, _ := commandFixture(t, nil)
+
+	byName := runLines(t, reg, session, "tide search san francisco")
+	if len(byName) == 0 || !strings.Contains(byName[0], `Tide stations matching "san francisco" (Page 1 of 1):`) {
+		t.Fatalf("tide search san francisco = %v, want one page of matches", byName)
+	}
+	if !strings.Contains(byName[1], "  9414290: San Francisco (Golden Gate), CA") {
+		t.Errorf("first match = %q, want the Golden Gate station", byName[1])
+	}
+
+	byID := runLines(t, reg, session, "tide search 9414")
+	if len(byID) < 2 || !strings.Contains(byID[1], "9414") {
+		t.Errorf("tide search 9414 = %v, want the stations whose id starts 9414", byID)
+	}
+
+	byState := runLines(t, reg, session, "tide search Oregon")
+	if len(byState) < 2 {
+		t.Fatalf("tide search Oregon = %v, want the Oregon stations", byState)
+	}
+	for _, line := range byState[1:] {
+		if strings.HasPrefix(line, "[") {
+			continue
+		}
+		if !strings.Contains(line, ", OR") {
+			t.Errorf("tide search Oregon listed a station outside Oregon: %q", line)
+		}
+	}
+}
+
+// TestTideSearchPaginates asserts a query with more hits than one page carries
+// is cut into pages that say so, and that the page after the first is reachable
+// by its explicit command.
+func TestTideSearchPaginates(t *testing.T) {
+	t.Parallel()
+
+	reg, session, _ := commandFixture(t, nil)
+	first := runLines(t, reg, session, "tide search 94")
+	if len(first) == 0 || !strings.Contains(first[0], `Tide stations matching "94" (Page 1 of `) {
+		t.Fatalf("tide search 94 = %v, want a paged answer", first)
+	}
+	footer := first[len(first)-1]
+	if !strings.HasPrefix(footer, "[Page 1 of ") ||
+		!strings.Contains(footer, `ask "tide search 94 2" or "more" for next]`) {
+		t.Errorf("footer = %q, want the explicit next-page command", footer)
+	}
+	second := runLines(t, reg, session, "tide search 94 2")
+	if len(second) == 0 || !strings.Contains(second[0], "(Page 2 of ") {
+		t.Fatalf("tide search 94 2 = %v, want page 2", second)
+	}
+	if second[1] == first[1] {
+		t.Error("page 2 repeated page 1's rows")
+	}
+}
+
+// TestTideSearchExplainsAnEmptyAnswer asserts a query that matches nothing is
+// answered with the ways into the catalog rather than with silence.
+func TestTideSearchExplainsAnEmptyAnswer(t *testing.T) {
+	t.Parallel()
+
+	reg, session, _ := commandFixture(t, nil)
+	lines := runLines(t, reg, session, "tide search zzyzx")
+	if len(lines) != 2 || !strings.Contains(lines[0], `No Tide stations match "zzyzx"`) {
+		t.Fatalf("tide search zzyzx = %v, want a no-match line and a hint", lines)
+	}
+	if !strings.Contains(lines[1], "tide list CA") || !strings.Contains(lines[1], "tide near") {
+		t.Errorf("the hint = %q, want the other two ways into the catalog", lines[1])
+	}
+	for _, line := range []string{"tide search", "tide search   ", "tide search ???"} {
+		if got := runLines(t, reg, session, line); len(got) == 0 || !strings.Contains(got[0], "Usage: tide search") {
+			t.Errorf("%q = %v, want the search usage line", line, got)
+		}
+	}
+	if got := runLines(t, reg, session, "tide list CA 9"); len(got) != 1 ||
+		!strings.Contains(got[0], "page 9 not found (total 3 pages)") {
+		t.Errorf("a page past the end = %v, want the totals", got)
+	}
+}
+
+// TestTideListFiltersByStateOrName asserts the list form takes a state code or
+// the state's own name, and that the unfiltered form lists everything.
+func TestTideListFiltersByStateOrName(t *testing.T) {
+	t.Parallel()
+
+	reg, session, _ := commandFixture(t, nil)
+	byCode := runLines(t, reg, session, "tide list OR")
+	if len(byCode) == 0 || !strings.Contains(byCode[0], "Tide stations in OR (Page 1 of 1):") {
+		t.Fatalf("tide list OR = %v, want Oregon's four stations on one page", byCode)
+	}
+	joined := strings.Join(byCode, "\n")
+	for _, want := range []string{"9432845", "9435308", "9439040", "9439221"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("tide list OR is missing station %v:\n%v", want, joined)
+		}
+	}
+
+	byName := runLines(t, reg, session, "tide list oregon")
+	if len(byName) == 0 || !strings.Contains(byName[0], "Tide stations in OREGON (Page 1 of 1):") ||
+		!strings.Contains(strings.Join(byName, "\n"), "9432845") {
+		t.Errorf("tide list oregon = %v, want the same stations as tide list OR", byName)
+	}
+
+	all := runLines(t, reg, session, "tide list")
+	if len(all) == 0 || !strings.Contains(all[0], "Tide stations (Page 1 of ") {
+		t.Fatalf("tide list = %v, want the whole catalog paged", all)
+	}
+	pageTwo := runLines(t, reg, session, "tide list 2")
+	if len(pageTwo) == 0 || !strings.Contains(pageTwo[0], "Tide stations (Page 2 of ") {
+		t.Errorf("tide list 2 = %v, want page 2 of the whole catalog", pageTwo)
+	}
+	if got := runLines(t, reg, session, "tide list ZZ"); len(got) != 2 ||
+		!strings.Contains(got[0], "No Tide stations in ZZ") {
+		t.Errorf("tide list ZZ = %v, want a no-region line and a hint", got)
+	}
+}
+
+// TestTideNearNamesTheClosestStations asserts a position resolves to the
+// stations around it, nearest first, with the distance and the bearing.
+func TestTideNearNamesTheClosestStations(t *testing.T) {
+	t.Parallel()
+
+	reg, session, _ := commandFixture(t, nil)
+	lines := runLines(t, reg, session, "tide near 37.8,-122.4")
+	if len(lines) != 5 {
+		t.Fatalf("tide near 37.8,-122.4 = %v, want a header, three stations, and a footer", lines)
+	}
+	if !strings.Contains(lines[0], "Tide stations near 37.8,-122.4 (Page 1 of 1):") {
+		t.Errorf("header = %q, want the position that was asked for", lines[0])
+	}
+	if !strings.HasPrefix(lines[1], "  9414290 (") || !strings.Contains(lines[1], " nmi ") ||
+		!strings.Contains(lines[1], "): San Francisco (Golden Gate), CA") {
+		t.Errorf("nearest station = %q, want a distance, a bearing, and the name", lines[1])
+	}
+	if !strings.Contains(lines[2], "9414750") || !strings.Contains(lines[3], "9414764") {
+		t.Errorf("the answer = %v, want Alameda and Oakland next", lines)
+	}
+	if want := "[Page 1 of 1: end of results]"; lines[4] != want {
+		t.Errorf("footer = %q, want %q", lines[4], want)
+	}
+
+	byName := runLines(t, reg, session, "tide near golden gate")
+	if len(byName) < 2 || !strings.Contains(byName[1], "9414290") {
+		t.Errorf("tide near golden gate = %v, want the station named for it", byName)
+	}
+	if got := runLines(t, reg, session, "tide near nowhere at all"); len(got) != 2 ||
+		!strings.Contains(got[0], "not a place, a coordinate, or a plus code") {
+		t.Errorf("tide near nowhere = %v, want an explanation and a hint", got)
+	}
+	if got := runLines(t, reg, session, "tide near"); len(got) == 0 ||
+		!strings.Contains(got[0], "Usage: tide near") {
+		t.Errorf("tide near with no place = %v, want the usage line", got)
+	}
+}
+
+// TestTideDiscoveryNeedsNoProvider asserts finding a station is an offline
+// question: it answers on a bot with no tide_url at all, which is what makes the
+// opaque ids discoverable before any provider is configured.
+func TestTideDiscoveryNeedsNoProvider(t *testing.T) {
+	t.Parallel()
+
+	reg, session, _ := commandFixture(t, nil)
+	reg.fetch = func(url string) (string, error) {
+		t.Errorf("discovery reached the network: %v", url)
+		return "", nil
+	}
+	for _, line := range []string{"tide search san francisco", "tide list CA", "tide near 37.8,-122.4"} {
+		if lines := runLines(t, reg, session, line); len(lines) < 2 {
+			t.Errorf("%v = %v, want an offline answer", line, lines)
+		}
+	}
+	if lines := runLines(t, reg, session, "tide 9414290"); len(lines) != 1 || lines[0] != tideNotConfiguredLine {
+		t.Errorf("tide 9414290 = %v, want %q", lines, tideNotConfiguredLine)
+	}
+}

@@ -139,6 +139,26 @@ var tideStations = []tideStation{
 	{"1615680", "Kahului", "HI", 20.894944, -156.469000},
 	{"1617760", "Hilo", "HI", 19.730278, -155.055556},
 	{"1617433", "Kawaihae", "HI", 20.036600, -155.829400},
-	{"1630000", "Apra Harbor, Guam", "", 13.443389, 144.656361},
-	{"1770000", "Pago Pago Harbor, Tutuila Island", "", -14.280000, -170.690002},
+	{"1630000", "Apra Harbor, Guam", "GU", 13.443389, 144.656361},
+	{"1770000", "Pago Pago Harbor, Tutuila Island", "AS", -14.280000, -170.690002},
 }
+
+// catalogEntry renders this station as a searchable catalog row: the name a
+// person would say, with the state it sits in.
+func (s tideStation) catalogEntry() catalogEntry {
+	label := s.Name
+	if s.State != "" {
+		label += ", " + s.State
+	}
+	return catalogEntry{
+		ID:     s.ID,
+		Label:  label,
+		Region: s.State,
+		Point:  LatLng{Lat: s.Lat, Lng: s.Lng},
+	}
+}
+
+// tideCatalog is the reference table in the uniform form the discovery commands
+// search. It is built once from the same table the tide command resolves a
+// station against, so the lookup and the discovery can never disagree.
+var tideCatalog = catalogFrom(tideStations, tideStation.catalogEntry)

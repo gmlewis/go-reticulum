@@ -139,6 +139,15 @@ func (r *responder) handle(s *hubSession, msg *rrc.RRCMessage) {
 	logf("request from %v in %q (age %v): %q", requester, room, msgAge(msg, now),
 		trig.Command)
 
+	// "more" and "next" are page turns, not new questions: the page before them
+	// invited exactly one of them, and every page they can produce is an offline
+	// catalog page the asker already searched for. They are therefore exempt
+	// from the per-identity cooldown, which would otherwise make a walk through
+	// a paged list cost cooldown_s per page. They cannot be used as a general
+	// flood channel: with nothing cached the answer is one short line, and the
+	// cache is bounded and expires.
+	pagerCommand := isPagerCommand(trig.Command)
+
 	if r.isStale(msg, now) {
 		if !r.admit(requester, now) {
 			logf("suppressed the request from %v: the %vs cooldown is still running", requester, r.cfg.CooldownSecs)
@@ -148,7 +157,7 @@ func (r *responder) handle(s *hubSession, msg *rrc.RRCMessage) {
 		return
 	}
 
-	if !r.admit(requester, now) {
+	if !pagerCommand && !r.admit(requester, now) {
 		// Without this line a suppressed request looks exactly like a bot that
 		// ignored the asker: the request line above is the only other trace.
 		logf("suppressed the request from %v: the %vs cooldown is still running", requester, r.cfg.CooldownSecs)

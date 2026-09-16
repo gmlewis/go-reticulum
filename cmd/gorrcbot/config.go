@@ -76,6 +76,11 @@ type BotConfig struct {
 	AnnounceOnJoin bool
 	// MaxReplyLines bounds the NOTICE lines a single reply may produce.
 	MaxReplyLines int
+	// MicronLinks renders the discovery commands' rows as clickable Micron
+	// links, the notation a NomadNet client turns into a button and every other
+	// client shows literally. It is OFF by default: an RRC NOTICE is plain text
+	// to every reader except a NomadNet one.
+	MicronLinks bool
 	// StorageDir is the RRC client's storage directory for saved history.
 	StorageDir string
 	// LaunchURL is an optional provider template for launches; {mode} and
@@ -298,6 +303,7 @@ var botKeys = map[string]bool{
 	"cooldown_s":                 true,
 	"announce_on_join":           true,
 	"max_reply_lines":            true,
+	"micron_links":               true,
 	"storage_dir":                true,
 	"weather_url":                true,
 	"space_weather_url":          true,
@@ -595,6 +601,12 @@ func (d *configDecoder) decodeBotTable(t *toml.Table) error {
 				return d.keyError("[bot]", key, fmt.Sprintf("must be at least 1; got %v", n))
 			}
 			d.cfg.MaxReplyLines = int(n)
+		case "micron_links":
+			b, err := d.boolValue("[bot]", key, kv)
+			if err != nil {
+				return err
+			}
+			d.cfg.MicronLinks = b
 		case "lxmf_enabled":
 			b, err := d.boolValue("[bot]", key, kv)
 			if err != nil {

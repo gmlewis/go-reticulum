@@ -1330,10 +1330,11 @@ loglevel = 4
 	if r.forceSharedBitrate != forcedBitrate {
 		t.Fatalf("expected force_shared_instance_bitrate=%v, got %v", forcedBitrate, r.forceSharedBitrate)
 	}
-	if r.sharedInstanceInterface == nil {
+	sharedIface := r.currentSharedInstanceInterface()
+	if sharedIface == nil {
 		t.Fatalf("expected local shared interface to be initialized")
 	}
-	if got := r.sharedInstanceInterface.Bitrate(); got != forcedBitrate {
+	if got := sharedIface.Bitrate(); got != forcedBitrate {
 		t.Fatalf("expected shared interface bitrate=%v, got %v", forcedBitrate, got)
 	}
 }

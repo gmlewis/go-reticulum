@@ -9,7 +9,8 @@
 - **Single Identity Everywhere**: `gorrcbot` generates one 64-byte Reticulum private identity (`bot_identity`) and uses it across all connected hubs. Its identity hash is identical on all hubs, allowing users to reach it using consistent address prefixes.
 - **Strict Addressing Contract**: The bot is completely silent unless addressed directly. It will never spam channels, and it completely ignores chat traffic not directed at it.
 - **Rate-Limiting & Cooldowns**: Built-in per-identity cooldown prevents abuse or channel flooding over low-bandwidth LoRa links.
-- **Offline First**: The vast majority of tactical and field assistant commands (Plus Codes, geodesy, dead reckoning, sun/moon ephemeris, wilderness medicine cards, Morse code, unit conversions) compute entirely in-process with **zero internet connection required**.
+- **Offline First**: The vast majority of tactical and field assistant commands (Plus Codes, geodesy, dead reckoning, sun/moon ephemeris, wilderness medicine cards, Morse code, unit conversions) compute entirely in-process with **zero internet connection required**. The marine, aviation, and navigation station catalogs are embedded too, so `search`, `near`, and `list` find a station id before any provider is configured and while a provider is unreachable.
+- **Low-Bandwidth by Design**: Long answers are paginated to the operator's `max_reply_lines` budget, every page carries the exact command that asks for the next one, and `more` / `next` continue a walk through a catalog without retyping the query.
 - **Graceful Telemetry Degradation**: For commands that query external live telemetry (weather, marine tides, buoys, river gauges, flight tracking, space weather), providers are queried through sanitized HTTP/HTTPS templates. If an endpoint is unconfigured or unreachable, the bot reports honest failure without guessing or hallucinating.
 
 ---
@@ -75,6 +76,11 @@ announce_on_join = false
 
 # Maximum reply lines before truncation occurs
 max_reply_lines = 12
+
+# Render the discovery rows (search/near/list) as clickable Micron links,
+# which a NomadNet client shows as buttons and every other client shows
+# literally. Leave false unless the room reads Micron.
+micron_links = false
 
 # ---------------------------------------------------------------------
 # Live Telemetry & API Provider Templates
@@ -194,6 +200,157 @@ While `@gobot` can be triggered publicly inside any room it has joined, **privat
 
 ---
 
+## Station Discovery & Search (`search`, `near`, `list`)
+
+Three of the field assistant's commands are useless without an identifier: `tide`
+takes a 7-digit NOAA station id, `buoy` takes a 4–6 character NDBC station id,
+and `metar` takes a 4-letter ICAO code. None of them can be guessed. Rather than
+leave an operator to find one on another device, every one of those catalogs is
+**embedded in the binary** and searched offline:
+
+| Form | What it does | Example |
+|------|--------------|---------|
+| `<cmd> search <query> [page]` | Case-insensitive match on the identifier, the name, the state or region, and (for `metar`) the city and IATA code. Every word of the query must appear somewhere in the row. | `@gobot tide search san francisco` |
+| `<cmd> near <place\|coords\|pluscode>` | The three rows closest to a position, nearest first, with the distance in nautical miles and the compass bearing. The argument may be a position in any of the five notations, a Plus Code, or a name or identifier **from the catalog itself**. | `@gobot buoy near 37.8,-122.4` |
+| `<cmd> list [state\|region] [page]` | Every row, or only those in a state (`CA`, `OR`, `WA`), a state's own name (`california`), or a basin or country code (`GOM`, `ATL`, `CAR`, `GB`). | `@gobot metar list CO` |
+
+The catalogs are data, not guesses, and they are read without touching the
+network — which is the point. A station id is discoverable **before** the
+operator has configured `tide_url`, `buoy_url`, or `metar_url`, and while that
+provider is unreachable:
+
+```text
+/msg gobot tide search san francisco
+  Tide stations matching "san francisco" (Page 1 of 1):
+    9414290: San Francisco (Golden Gate), CA
+  [Page 1 of 1: end of results]
+
+/msg gobot tide near 849VCWC8+R9
+  Tide stations near 849VCWC8+R9 (Page 1 of 1):
+    9414750 (23.4 nmi NNW): Alameda, CA
+    9414764 (24.3 nmi NNW): Oakland Inner Harbor, CA
+    9414290 (29.4 nmi NW): San Francisco (Golden Gate), CA
+  [Page 1 of 1: end of results]
+
+/msg gobot buoy list HI
+  Weather buoys in HI (Page 1 of 3):
+    51000: Northern Hawaii One, HI
+    51001: Northwestern Hawaii One, HI
+    51002: Southwest Hawaii, HI
+    51004: Southeast Hawaii, HI
+  [Page 1 of 3: ask "buoy list HI 2" or "more" for next]
+
+/msg gobot metar search denver
+  Airports matching "denver" (Page 1 of 1):
+    KDEN: Denver International (CO)
+    KBJC: Rocky Mountain Metropolitan (CO)
+  [Page 1 of 1: end of results]
+```
+
+Once an id is known, the original form is unchanged and answers with live
+telemetry: `@gobot tide 9414290`, `@gobot buoy 46026`, `@gobot metar KDEN`.
+
+### What Each Catalog Covers
+
+| Command | Catalog | Size | Region codes |
+|---------|---------|------|--------------|
+| `tide` | NOAA tide and current stations an operator is likely to name | ~110 stations | US state codes, plus `GU`, `AS` |
+| `buoy` | NDBC offshore weather buoys that report meteorological data, from the Pacific, Atlantic, Gulf, Hawaii, Alaska, and the Great Lakes | ~115 buoys | US state codes, plus `ATL`, `GOM`, `CAR`, `PAC` |
+| `metar` | Every large US airport with an IATA code, the regional fields that carry scheduled passenger service, and the world's major international hubs | ~625 airfields | US state codes, plus two-letter country codes (`GB`, `FR`, `JP`, …) |
+
+> [!NOTE]
+> A `metar` region may be a state code or a country code, and the two can
+> collide (`CO` is both Colorado and Colombia). A **state always wins**: `metar
+> list CO` lists Colorado, and Colombia's fields are reached by name — `metar
+> list colombia`. The same rule applies to `AR`, `CA`, `DE`, `ID`, `IN`, `MA`,
+> and `TN`. Every country code that does not collide works unchanged.
+
+A station id that is **not** in a catalog is still accepted by its command,
+because each provider is authoritative about its own stations; the embedded
+catalog is a shortcut for finding the right one, not a filter on what may be
+asked.
+
+---
+
+## Low-Bandwidth Pagination & `more` / `next`
+
+A catalog answer is deliberately bite-sized. On a 1–5 kbps LoRa link a long
+reply is not merely slow, it is *truncated*: the reply policy emits one NOTICE
+per line and cuts anything past `max_reply_lines`. A page is therefore sized from
+that same budget:
+
+- **Page size follows the budget.** The bot reserves two of the `max_reply_lines`
+  lines for the header and the footer, and puts at most four rows on a page
+  (`max_reply_lines = 12` → 4 rows; `max_reply_lines = 4` → 2 rows;
+  `max_reply_lines = 3` → 1 row). Raising the budget widens every page with no
+  command change.
+- **Every page says where it is.** The first line names the query and the
+  position — `Tide stations in CA (Page 1 of 3):`.
+- **Every page says how to continue.** The last line carries the exact command
+  for the next page, and the `more` shortcut:
+  `[Page 1 of 3: ask "tide list CA 2" or "more" for next]`. The last page ends
+  with `[Page 3 of 3: end of results]`.
+- **Pages are explicit and repeatable.** `<cmd> search <query> 2` and
+  `<cmd> list CA 2` reach page 2 directly, so a page can be quoted, shared, and
+  re-read. A page past the end answers `page 9 not found (total 3 pages)`
+  instead of an empty reply.
+
+### The `more` and `next` Shortcuts
+
+For a one-to-one private session, `/msg gobot more` (or `/msg gobot next`)
+answers the page after the one just sent, with no need to retype the query:
+
+```text
+/msg gobot tide list CA
+  Tide stations in CA (Page 1 of 3):
+    9410135: South San Diego Bay, CA
+    9410660: Los Angeles (Outer Harbor), CA
+    9410840: Santa Monica, Municipal Pier, CA
+    9410678: Long Beach Fire Boat Pier, CA
+  [Page 1 of 3: ask "tide list CA 2" or "more" for next]
+
+/msg gobot more
+  Tide stations in CA (Page 2 of 3):
+    ...
+  [Page 2 of 3: ask "tide list CA 3" or "more" for next]
+```
+
+- The pending page is remembered **per identity**, in memory only, for **five
+  minutes** and for at most 256 requesters. Nothing is written to disk, a restart
+  forgets every pager, and one asker's page is never handed to another.
+- The cache holds the *command for the next page*, not the page itself, so a
+  walk through a hundred rows costs a few bytes per asker and every page is
+  rendered with its own correct footer.
+- With nothing pending, or after the timeout, the answer is
+  `no more pages or search expired`.
+- `more` and `next` are exempt from the per-identity cooldown, because a page
+  turn answers a page the asker was just told to ask for and can only produce
+  offline catalog rows. Every other command keeps its cooldown.
+
+### Clickable Micron Links (`micron_links`)
+
+A NomadNet client renders Micron markup, so the bot can offer the same pages as
+buttons instead of as commands to retype. Set `micron_links = true` in
+`config.toml` to render each row as a link to the command that fetches it, and
+the footer as a **Next Page** link:
+
+```text
+/msg gobot tide list OR
+  Tide stations in OR (Page 1 of 1):
+    ["9432845":/msg gobot tide 9432845]: Coos Bay, OR
+    ["9435308":/msg gobot tide 9435308]: Weiser Point, Yaquina River, OR
+    ["9439040":/msg gobot tide 9439040]: Astoria (Tongue Point), Oreg., OR
+    ["9439221":/msg gobot tide 9439221]: Portland Morrison Street Bridge, OR
+  [Page 1 of 1: end of results]
+```
+
+The option is **off by default**: an RRC NOTICE is plain text to every reader
+except a NomadNet one, and a link that is not rendered is just noise. The links
+address the nick the bot really answers to, so they work as written in the room
+they were sent to.
+
+---
+
 ## Complete Command Reference
 
 ### Core & Administration
@@ -209,6 +366,7 @@ While `@gobot` can be triggered publicly inside any room it has joined, **privat
 | `members` | `@gobot members [room]` | Lists members reported by the hub in the specified room. |
 | `seen` | `@gobot seen <nick\|hash>` | Shows the timestamp when a given nick or identity hash was last seen speaking in joined rooms. |
 | `id` | `@gobot id` | Displays the bot's full identity hash and configured trigger nicknames. |
+| `more` / `next` | `@gobot more` | Shows the next page of the last `search`, `near`, or `list` answer (see [Low-Bandwidth Pagination](#low-bandwidth-pagination-more-next)). The pending page is remembered per identity for 5 minutes; with nothing pending the answer is `no more pages or search expired`. |
 
 ---
 
@@ -295,9 +453,18 @@ All location commands accept **5 coordinate notations** without network connecti
 |---------|--------|-----------------------|
 | `weather` / `wx` | `@gobot weather <location>` | Live conditions from plain-text weather feed. |
 | `tide` | `@gobot tide <station\|coords\|place> [date]` | 48-hour high/low water predictions, Rule of Twelfths hourly depth interpolation, and spring/neap tide classification. |
+| `tide search` | `@gobot tide search <query> [page]` | Finds a station offline by name, state, or id, four per page. |
+| `tide near` | `@gobot tide near <place\|coords\|pluscode>` | The three closest stations, with distance in nautical miles and bearing. |
+| `tide list` | `@gobot tide list [state] [page]` | Every station, or one state's (`CA`, `OR`, `WA`, `AK`, `HI`, …). |
 | `buoy` | `@gobot buoy <buoy_id>` | Real-time ocean buoy sea state: wave height, dominant wave period, swell vs chop classification, water temp, pressure trend. |
+| `buoy search` | `@gobot buoy search <query> [page]` | Finds a buoy offline by place, id, region, or state. |
+| `buoy near` | `@gobot buoy near <place\|coords\|pluscode>` | The three closest buoys, with distance in nautical miles and bearing. |
+| `buoy list` | `@gobot buoy list [region\|state] [page]` | Every buoy, or one region's (`CA`, `HI`, `AK`, `GOM`, `ATL`, …). |
 | `river` | `@gobot river <usgs_gauge_id>` | Stream gauge stage, discharge rate, 3-hour trend, and official NOAA river forecast flood categories. |
-| `metar` | `@gobot metar <ICAO>` | Decodes raw aviation weather reports into wind, flight category (VFR/MVFR/IFR), ceiling, temperature, and altimeter setting. |
+| `metar` | `@gobot metar <ICAO>` | Decodes raw aviation weather reports into wind, visibility, temperature, dewpoint, and altimeter setting in both units. |
+| `metar search` | `@gobot metar search <city\|name\|code> [page]` | Finds an airfield offline by city, airport name, ICAO code, or IATA code (`denver`, `heathrow`, `KDEN`, `LHR`). |
+| `metar near` | `@gobot metar near <place\|coords\|pluscode>` | The three closest airfields, with distance in nautical miles and bearing. |
+| `metar list` | `@gobot metar list [state\|country] [page]` | Every airfield, or one state's or country's (`CO`, `CA`, `TX`, `GB`, `JP`, …). |
 | `wxalert` | `@gobot wxalert <place\|zone>` | Queries active National Weather Service severe weather warnings and advisories. |
 | `spacewx` / `solar` | `@gobot spacewx` | Reports Solar Flux Index (SFI), Sunspot Number (SSN), K-index, geomagnetic storm levels, and recommended HF propagation bands. |
 | `launches` | `@gobot launches [upcoming\|past]` | Schedules and status of upcoming orbital space launches. |

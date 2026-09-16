@@ -161,6 +161,12 @@ gobot help buoy
 # Live weather for a place
 gobot wx Denver
 
+# Find an opaque station id before asking about it: the bot's station catalogs
+# are embedded, so search, near, and list answer offline
+gobot metar search denver
+gobot buoy near 37.8,-122.4
+gobot tide list OR
+
 # Convert a Plus Code to every supported coordinate notation
 gobot loc 849VCWC8+R9
 
@@ -184,6 +190,13 @@ answered by the bot rather than rejected locally:
 $ gobot nosuchcommand
 unknown command — try @gobot help
 ```
+
+> [!NOTE]
+> The bot remembers the pending page of a `search`, `near`, or `list` answer per
+> identity for five minutes, so `gobot tide list CA` followed by `gobot more`
+> continues the same walk — both invocations present the same identity, which is
+> the one under `--config` unless `--identity` says otherwise. See
+> [Low-Bandwidth Pagination](gorrcbot.md#low-bandwidth-pagination-more-next).
 
 ---
 

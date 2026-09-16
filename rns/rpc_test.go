@@ -97,7 +97,7 @@ loglevel = 4
 	ts := NewTransportSystem(nil)
 	r := mustTestNewReticulum(t, ts, cfg)
 	defer closeReticulum(t, r)
-	if !r.isSharedInstance {
+	if !r.IsSharedInstance() {
 		t.Fatalf("expected shared instance")
 	}
 
@@ -234,13 +234,13 @@ loglevel = 4
 	ts := NewTransportSystem(nil)
 	r1 := mustTestNewReticulum(t, ts, cfg1)
 	defer closeReticulum(t, r1)
-	if !r1.isSharedInstance {
+	if !r1.IsSharedInstance() {
 		t.Fatalf("expected first instance to be shared")
 	}
 
 	r2 := mustTestNewReticulum(t, ts, cfg2)
 	defer closeReticulum(t, r2)
-	if !r2.isConnectedToSharedInstance {
+	if !r2.IsConnectedToSharedInstance() {
 		t.Fatalf("expected second instance to be connected to shared instance")
 	}
 
@@ -356,7 +356,7 @@ loglevel = 4
 
 	r2 := mustTestNewReticulum(t, ts, cfg2)
 	defer closeReticulum(t, r2)
-	if !r2.isConnectedToSharedInstance {
+	if !r2.IsConnectedToSharedInstance() {
 		t.Fatalf("expected second instance to be connected to shared instance")
 	}
 
@@ -1083,28 +1083,41 @@ loglevel = 4
 			ts := NewTransportSystem(nil)
 			r1 := mustTestNewReticulum(t, ts, cfg1)
 			defer closeReticulum(t, r1)
-			if !r1.isSharedInstance {
-				t.Fatalf("expected first instance to be shared, got shared=%v connected=%v standalone=%v", r1.isSharedInstance, r1.isConnectedToSharedInstance, r1.isStandaloneInstance)
+			// The recovery watcher re-decides the role from its own goroutine,
+			// so read it through the accessors (rns.go IsConnectedToSharedInstance)
+			// rather than touching the fields directly.
+			if !r1.IsSharedInstance() {
+				t.Fatalf("expected first instance to be shared, got shared=%v connected=%v standalone=%v", r1.IsSharedInstance(), r1.IsConnectedToSharedInstance(), r1.IsStandaloneInstance())
 			}
 
 			r2 := mustTestNewReticulum(t, ts, cfg2)
 			defer closeReticulum(t, r2)
 
-			if !r2.isConnectedToSharedInstance {
-				t.Fatalf("expected connected-to-shared role, got shared=%v connected=%v standalone=%v", r2.isSharedInstance, r2.isConnectedToSharedInstance, r2.isStandaloneInstance)
+			if !r2.IsConnectedToSharedInstance() {
+				t.Fatalf("expected connected-to-shared role, got shared=%v connected=%v standalone=%v", r2.IsSharedInstance(), r2.IsConnectedToSharedInstance(), r2.IsStandaloneInstance())
 			}
 
 			if _, err := r2.LinkCount(); err != nil {
 				t.Fatalf("baseline LinkCount failed before restart: %v", err)
 			}
 
-			if r1.rpcListener == nil {
+			// Read, close and clear the listener under the instance mutex.
+			// rpcLoop reads r.rpcListener under that same mutex, so poking the
+			// field straight from the test goroutine races the accept loop's
+			// read (DATA RACE, 2026-09-16 full-integration CI run). Close/clear
+			// under the mutex mirrors what Reticulum.Close does.
+			r1.mu.Lock()
+			listener := r1.rpcListener
+			if listener == nil {
+				r1.mu.Unlock()
 				t.Fatalf("expected shared instance rpc listener")
 			}
-			if err := r1.rpcListener.Close(); err != nil {
+			if err := listener.Close(); err != nil {
+				r1.mu.Unlock()
 				t.Fatalf("closing shared rpc listener failed: %v", err)
 			}
 			r1.rpcListener = nil
+			r1.mu.Unlock()
 
 			if _, err := r2.LinkCount(); err == nil {
 				t.Fatalf("expected LinkCount to fail while rpc listener is down")
@@ -1113,7 +1126,10 @@ loglevel = 4
 			if err := r1.startRPCListener(); err != nil {
 				t.Fatalf("failed to restart rpc listener: %v", err)
 			}
-			if r1.rpcListener == nil {
+			r1.mu.Lock()
+			restarted := r1.rpcListener
+			r1.mu.Unlock()
+			if restarted == nil {
 				t.Fatalf("rpc listener did not restart")
 			}
 

@@ -195,6 +195,17 @@ func (r *Reticulum) setInstanceRole(shared, standalone, connected bool) {
 	r.isConnectedToSharedInstance = connected
 }
 
+// currentSharedInstanceInterface returns the local interface this instance uses
+// as its shared-instance endpoint, or nil when it holds none. Like the role
+// above, the recovery watcher clears and re-sets the field from its own
+// goroutine (takeOverSharedInstance), so readers must go through this accessor
+// rather than reading the field directly.
+func (r *Reticulum) currentSharedInstanceInterface() interfaces.Interface {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.sharedInstanceInterface
+}
+
 func (r *Reticulum) shouldAutoconnectDiscoveredInterfaces() bool {
 	return r != nil && r.autoconnectDiscover > 0
 }
@@ -573,9 +584,9 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger, opts
 	// skips the load at Transport.py:259 and forces __transport_enabled=False
 	// at Reticulum.py:417 for the connected-to-shared case.
 	if setter, ok := r.transport.(interface{ SetConnectedToSharedInstance(bool) }); ok {
-		setter.SetConnectedToSharedInstance(r.isConnectedToSharedInstance)
+		setter.SetConnectedToSharedInstance(r.IsConnectedToSharedInstance())
 	}
-	if !r.isConnectedToSharedInstance {
+	if !r.IsConnectedToSharedInstance() {
 		r.loadOwnedTransportState(storagePath)
 	}
 
@@ -588,7 +599,7 @@ func NewReticulumWithLogger(ts Transport, configDir string, logger *Logger, opts
 
 	r.transport.LoadKnownDestinations(storagePath)
 
-	if r.isSharedInstance || r.isStandaloneInstance {
+	if r.IsSharedInstance() || r.IsStandaloneInstance() {
 		if err := r.startOwnedInterfaces(); err != nil {
 			if cerr := r.Close(); cerr != nil {
 				r.logger.Warning("Could not close Reticulum properly after initialization failure: %v", cerr)

@@ -125,7 +125,7 @@ func (h *ObserverHost) instantiate(mod *wago.Module) (*wago.Instance, error) {
 			if int(ptr)+int(length) > len(mem) || length == 0 {
 				return
 			}
-			logf("observer plugin: %s", string(mem[ptr:ptr+length]))
+			logf("observer plugin: %v", string(mem[ptr:ptr+length]))
 		}),
 	}
 	h.addStoreImports(imports)
