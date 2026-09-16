@@ -125,11 +125,9 @@ kjv_txt_file = ""
 # accepted, so a requested place can never change this URL's host, path or
 # query. The template itself must be an absolute http:// or https:// URL that
 # carries no credentials. Leave empty to disable the commands, which then say so
-# instead of guessing. This provider needs no API key and answers in a single
-# line of plain text:
+# instead of guessing. http:// avoids the expired SSL certificate on wttr.in:
 #
-#   weather_url = "https://wttr.in/{place}?format=%l:+%C+%t+%w+%h"
-weather_url = ""
+weather_url = "http://wttr.in/{place}?format=%l:+%C+%t+%w+%h"
 
 # Optional provider template for the tide command: the high and low water
 # predictions for a station. It must carry BOTH {place} (the station id) and
@@ -140,8 +138,7 @@ weather_url = ""
 # Francisco), a port name, or a position, which resolves to the nearest station
 # in the bot's own reference table. Leave empty to disable the command.
 #
-#   tide_url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?product=predictions&datum=MLLW&time_zone=gmt&units=english&interval=hilo&format=json&station={place}&begin_date={date}&range=48"
-tide_url = ""
+tide_url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?product=predictions&datum=MLLW&time_zone=gmt&units=english&interval=hilo&format=json&station={place}&begin_date={date}&range=48"
 
 # Optional provider template for the buoy command: the real-time sea state from
 # a weather buoy. {place} becomes the lowercased buoy id, and the template must
@@ -149,8 +146,7 @@ tide_url = ""
 # National Data Buoy Center publishes; the newest observation in it is decoded.
 # Leave empty to disable the command.
 #
-#   buoy_url = "https://www.ndbc.noaa.gov/data/realtime2/{place}.txt"
-buoy_url = ""
+buoy_url = "https://www.ndbc.noaa.gov/data/realtime2/{place}.txt"
 
 # Optional provider template for the river command: the instantaneous stage and
 # discharge at a stream gauge. {place} becomes the USGS site number, and the
@@ -159,8 +155,7 @@ buoy_url = ""
 # measured over; without it the command reports the stage and flow with no
 # trend. Leave empty to disable the command.
 #
-#   river_url = "https://waterservices.usgs.gov/nwis/iv/?sites={place}&format=json&parameterCd=00065,00060&period=P1D"
-river_url = ""
+river_url = "https://waterservices.usgs.gov/nwis/iv/?sites={place}&format=json&parameterCd=00065,00060&period=P1D"
 
 # Optional second template for the river command: the flood categories a river
 # forecast center publishes for the same gauge. {place} is the same USGS site
@@ -168,8 +163,7 @@ river_url = ""
 # without it, the command reports the stage and says it has nothing to compare
 # it against.
 #
-#   river_flood_url = "https://api.water.noaa.gov/nwps/v1/gauges/{place}"
-river_flood_url = ""
+river_flood_url = "https://api.water.noaa.gov/nwps/v1/gauges/{place}"
 
 # Optional provider URL for the spacewx command (alias: solar): the solar flux
 # index, the sunspot number, and the planetary K-index, read as JSON. It takes
@@ -179,8 +173,7 @@ river_flood_url = ""
 # can also enter one by hand with "spacewx set sfi=158 ssn=112 kp=4". Leave
 # empty to disable the fetch.
 #
-#   space_weather_url = "https://services.swpc.noaa.gov/products/solar-cycle/observed-solar-flux.json"
-space_weather_url = ""
+space_weather_url = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json"
 
 # Optional provider template for the metar command: the aviation weather report
 # for an ICAO station code. {place} becomes the lowercased station code, and the
@@ -188,8 +181,7 @@ space_weather_url = ""
 # visibility, temperature, dewpoint, and altimeter setting; a report that does
 # not decode is reported raw. Leave empty to disable the command.
 #
-#   metar_url = "https://aviationweather.gov/api/data/metar?ids={place}&format=raw"
-metar_url = ""
+metar_url = "https://aviationweather.gov/api/data/metar?ids={place}&format=raw"
 
 # Optional provider template for the wxalert command: the severe weather
 # warnings in force for a place or area. {place} is substituted after the same
@@ -198,8 +190,7 @@ metar_url = ""
 # plain-text answer becomes one headline. Answers are cached for 15 minutes.
 # Leave empty to disable the command.
 #
-#   weather_alert_url = "https://api.weather.gov/alerts/active?area={place}"
-weather_alert_url = ""
+weather_alert_url = "https://api.weather.gov/alerts/active?area={place}"
 
 # Optional provider template for the launches command: what is going up soon, and
 # what just went up. {mode} is the provider's window name and {limit} is how many
@@ -211,13 +202,7 @@ weather_alert_url = ""
 # provider needs no API key and allows 15 anonymous calls per hour per IP, which
 # is why the bot caches every answer:
 #
-#   launch_url = "https://ll.thespacedevs.com/2.3.0/launches/{mode}/?limit={limit}"
-#   flight_url = "https://api.adsb.lol/v2/callsign/{flight}"
-#   flight_route_url = "https://api.adsbdb.com/v0/callsign/{flight}"
-#
-# The provider's default answer carries the operator and pad names; appending
-# "&mode=list" makes its answer roughly ten times smaller and drops both.
-launch_url = ""
+launch_url = "https://ll.thespacedevs.com/2.3.0/launches/{mode}/?limit={limit}"
 
 # flight reports where one flight is right now, by the number a passenger knows
 # ("BA123"). flight_route_url is asked first: it turns that number into the radio
@@ -226,8 +211,8 @@ launch_url = ""
 # with no flight_url the command says it is not configured. Any keyed provider
 # works too: put its key in the template, and note that the bot never repeats a
 # configured URL into a room.
-flight_url = ""
-flight_route_url = ""
+flight_url = "https://api.adsb.lol/v2/callsign/{flight}"
+flight_route_url = "https://api.adsbdb.com/v0/callsign/{flight}"
 
 # LXMF messaging, which is what the msg command (alias: lxmf) uses. RRC is
 # connection-oriented, so a mention of a peer who is offline is lost; LXMF is

@@ -26,6 +26,10 @@ It is based upon the following Python original works:
   Date:   Mon Jan 12 09:17:07 2026 -0500
   ```
 
+> [!NOTE]
+> ### 📖 Official Documentation Site
+> For complete guides, searchable command references, API provider templates, and hardware provisioning tutorials, visit the **[Go Reticulum Documentation Site](https://gmlewis.github.io/go-reticulum/)**.
+
 > [!TIP]
 > ### Standalone Off-Grid Hardware Projects
 > Looking to build, buy parts for, or flash standalone handheld Reticulum hardware devices?
@@ -278,6 +282,8 @@ configuration file at once, joins that hub's rooms, keeps itself connected
 across link flaps and restarts, and answers **only** when it is addressed by
 name. Everything else it hears is ignored in silence.
 
+> For comprehensive documentation, see the [**gorrcbot Documentation Guide**](https://gmlewis.github.io/go-reticulum/tools/gorrcbot/).
+
 **First run** creates its configuration and its identity, then exits so the
 hubs can be edited before anything connects:
 
@@ -314,26 +320,22 @@ reply = "auto"             # auto | direct | room — see "Reply routing" below
 cooldown_s = 8.0           # minimum seconds between replies to the same identity
 announce_on_join = false   # false = silent like any member; true = one self-introduction NOTICE per room per session
 max_reply_lines = 12       # a reply longer than this is truncated, visibly
-weather_url = ""           # optional http(s) template; {place} is substituted after sanitizing. Empty disables weather/wx
-launch_url = ""            # optional http(s) template for launches; {mode} and {limit} are substituted after sanitizing. Empty disables launches
-#                           the launch provider's default answer carries the operator and pad names;
-#                           appending "&mode=list" makes its answer ~10x smaller and drops both
-flight_url = ""            # optional http(s) template for flight; {flight} is substituted after validating the number.
-#                           Empty disables flight. This is the LIVE state: altitude, speed, track, position, squawk
-flight_route_url = ""      # optional second http(s) template, asked first: {flight} becomes the airline and airports,
-#                           and its radio callsign is what the live feed is then queried with. Empty = live state only
+weather_url = "http://wttr.in/{place}?format=%l:+%C+%t+%w+%h"
+tide_url = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?product=predictions&datum=MLLW&time_zone=gmt&units=english&interval=hilo&format=json&station={place}&begin_date={date}&range=48"
+buoy_url = "https://www.ndbc.noaa.gov/data/realtime2/{place}.txt"
+river_url = "https://waterservices.usgs.gov/nwis/iv/?sites={place}&format=json&parameterCd=00065,00060&period=P1D"
+river_flood_url = "https://api.water.noaa.gov/nwps/v1/gauges/{place}"
+space_weather_url = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json"
+metar_url = "https://aviationweather.gov/api/data/metar?ids={place}&format=raw"
+weather_alert_url = "https://api.weather.gov/alerts/active?area={place}"
+launch_url = "https://ll.thespacedevs.com/2.3.0/launches/{mode}/?limit={limit}"
+flight_url = "https://api.adsb.lol/v2/callsign/{flight}"
+flight_route_url = "https://api.adsbdb.com/v0/callsign/{flight}"
 lxmf_enabled = false       # true adds the LXMF sender (msg/lxmf), so a peer can be reached while offline
 lxmf_propagation_node = "" # optional 32-hex LXMF propagation node, for store-and-forward
 lxmf_announce_minutes = 360 # how often the bot announces its own lxmf.delivery address, so a reply can be routed back (at least 1)
 kjv_txt_file = ""          # optional King James text file (one verse per line); enables the kjv command. Empty disables it
-space_weather_url = ""     # optional fixed http(s) JSON URL for spacewx/solar: solar flux, sunspot number, K-index. Cached 1 h
-metar_url = ""             # optional http(s) template for metar; {place} becomes the ICAO station code. Empty disables metar
-weather_alert_url = ""     # optional http(s) template for wxalert; {place} is the place or area. Cached 15 min. Empty disables wxalert
 emergency_lxmf_destination = "" # optional 32-hex lxmf.delivery hash: every new sos beacon is also queued there
-tide_url = ""              # optional http(s) template for tide; must carry {place} (station) and {date}. Empty disables tide
-buoy_url = ""              # optional http(s) template for buoy; {place} becomes the buoy id. Empty disables buoy
-river_url = ""             # optional http(s) template for river; {place} becomes the USGS gauge id. Empty disables river
-river_flood_url = ""       # optional http(s) template for the river flood categories; {place} is the same gauge id
 
 # One [[hubs]] entry per hub. Every entry is dialed on startup.
 [[hubs]]

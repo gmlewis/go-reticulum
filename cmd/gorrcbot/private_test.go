@@ -77,17 +77,18 @@ func privateFixture(t *testing.T) (*registry, *hubSession, *fakeHub) {
 	reg, session, fake := commandFixture(t, cfg)
 	asker := peerHashFor(0x11)
 	botHash := mustHex(replyOwnHash)
+	base := time.Now().UnixMilli()
 
 	// The live buffer row carries every marker, exactly as recordDirectNotice
 	// leaves it.
 	seedLive(t, fake,
 		&rrc.RRCMessage{
 			Kind: "notice", Room: "general", Src: asker, Nick: "Dave", Text: privateCanary,
-			Pinned: true, Direct: true, Dst: botHash, Ts: time.Now().UnixMilli(),
+			Pinned: true, Direct: true, Dst: botHash, Ts: base,
 		},
 		&rrc.RRCMessage{
 			Kind: "msg", Room: "general", Src: asker, Nick: "Dave", Text: publicLine,
-			Ts: time.Now().UnixMilli(),
+			Ts: base,
 		},
 	)
 	// The persisted row is what the file really holds: K_DST support writes the
@@ -96,7 +97,7 @@ func privateFixture(t *testing.T) (*registry, *hubSession, *fakeHub) {
 	writeHistoryDir(t, cfg.StorageDir, fakeHubOne, map[string][]*rrc.RRCMessage{
 		"general": {{
 			Kind: "notice", Room: "general", Src: asker, Nick: "Dave", Text: privateCanary,
-			Direct: true, Dst: botHash, Ts: time.Now().UnixMilli(),
+			Direct: true, Dst: botHash, Ts: base,
 		}},
 	})
 	return reg, session, fake

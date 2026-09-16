@@ -1,0 +1,72 @@
+site_name: Go Reticulum Network Stack (RNS)
+site_description: 100% Pure Go Implementation of Reticulum, LXMF, and RRC
+site_author: Glenn M. Lewis
+site_url: https://gmlewis.github.io/go-reticulum/
+repo_url: https://github.com/gmlewis/go-reticulum
+repo_name: gmlewis/go-reticulum
+edit_uri: edit/master/docs/
+
+theme:
+  name: material
+  language: en
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - attr_list
+  - md_in_html
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Overview: getting-started/index.md
+      - Bootstrapping: getting-started/bootstrapping.md
+      - Architecture & Security: getting-started/architecture.md
+  - Tools & Daemons:
+      - Directory: tools/index.md
+      - gorrcbot (Chat Bot): tools/gorrcbot.md
+      - gorrcd (Hub Daemon): tools/gorrcd.md
+      - gornodeconf (RNode Manager): tools/gornodeconf.md
+      - CLI Utilities: tools/cli-utilities.md
+  - Guides:
+      - Off-Grid Hardware: guides/hardware.md
+      - Wasm Plugins: guides/wasm-plugins.md
+      - Radio Diagnostics: guides/diagnostics.md
+  - Reference:
+      - Support Matrix: reference/support-matrix.md
+      - Cryptography: reference/cryptography.md

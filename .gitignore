@@ -3,6 +3,7 @@
 *.data
 *.log
 *.md
+!docs/**
 *.result
 *.txt
 .antigravitycli
@@ -10,6 +11,7 @@
 /.claude
 /.dsh
 /compress
+/site
 
 # Handy symlinks
 /pull.sh

@@ -206,7 +206,7 @@ func catchupAnchor(rows []*rrc.RRCMessage, askerHex, skipID, botNick string) int
 		if row == nil || hexString(row.Src) != askerHex || row.ID == skipID {
 			continue
 		}
-		if addressedToNick(row.Text, botNick) {
+		if privateRow(row) || addressedToNick(row.Text, botNick) {
 			continue
 		}
 		if row.Ts > latest {

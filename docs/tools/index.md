@@ -1,0 +1,37 @@
+# Included Tools & Daemons
+
+Go Reticulum includes a comprehensive suite of command-line tools and standalone daemons.
+
+---
+
+## Chat & Messaging Daemons
+
+| Tool | Purpose | Description |
+|------|---------|-------------|
+| [**gorrcbot**](gorrcbot.md) | Autonomous Chat Bot & Field Assistant | Headless, always-on RRC client that joins multiple hubs, manages room catchups, and provides 30+ offline & online field tools. |
+| [**gorrcd**](gorrcd.md) | Reticulum Relay Chat (RRC) Hub Daemon | Standalone chat server supporting persistent rooms, key-protected channels (`+k`), direct client notices, and MOTD broadcasts. |
+| **golxmd** | LXMF Propagation Daemon | Standalone LXMF message routing and store-and-forward propagation node. |
+
+---
+
+## Device & Hardware Management
+
+| Tool | Purpose | Description |
+|------|---------|-------------|
+| [**gornodeconf**](gornodeconf.md) | RNode Hardware Manager | Configure, bootstrap, sign, backup, and flash LoRa RNode devices over serial ports. |
+| **gornode-diagnostics** | Fleet Radio Diagnostics | Inspect and profile fleets of RNodes, reporting RSSI, SNR, hardware revisions, and firmware statuses. |
+
+---
+
+## Core Network Diagnostics & CLI
+
+| Tool | Command | Description |
+|------|---------|-------------|
+| [**gornstatus**](cli-utilities.md#gornstatus) | `gornstatus` | View interface traffic statistics, routing tables, and interface health. |
+| [**gornpath**](cli-utilities.md#gornpath) | `gornpath <dest>` | Discover and display the active hop count and route to a destination. |
+| [**gornprobe**](cli-utilities.md#gornprobe) | `gornprobe <dest>` | Probe reachability and calculate round-trip latency to a destination. |
+| [**gornid**](cli-utilities.md#gornid) | `gornid` | Generate, import, export, and inspect 64-byte Reticulum cryptographic identities. |
+| [**gorncp**](cli-utilities.md#gorncp) | `gorncp` | Secure peer-to-peer file transfer over Reticulum. |
+| [**gornsh**](cli-utilities.md#gornsh) | `gornsh` | Authenticated, encrypted remote shell over Reticulum. |
+| [**gorngit**](cli-utilities.md#gorngit) | `gorngit` | Git transport helper (`gogit-remote-rns`) allowing git clones and pushes over mesh links. |
+| [**gornpkg**](cli-utilities.md#gornpkg) | `gornpkg` | Package manager for distribution of files and software bundles over Reticulum. |
