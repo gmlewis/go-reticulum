@@ -85,7 +85,7 @@ identity_path = {{identity_path}}
 
 # Advertised nick (sent in HELLO) AND the default trigger nick (what the bot
 # answers to). A hub or a room may override either one; see respond_to below.
-nick = "gorrcbot"
+nick = "gobot"
 
 # How replies are delivered:
 #   auto   - an in-room NOTICE, and a direct NOTICE only when the request
@@ -117,6 +117,8 @@ storage_dir = {{storage_dir}}
 
 # kjv: The full text of the King James Version Bible for the 'kjv' command
 # that can look up verses and search through the Bible.
+# Full kjv.txt file available for download here:
+# https://github.com/gmlewis/kjv-ref/blob/master/kjv.txt
 kjv_txt_file = ""
 
 # Optional weather provider template for the weather/wx commands. The literal
@@ -259,7 +261,7 @@ emergency_lxmf_destination = ""
 name = "gonomadnet Public Hub"
 destination = "a012129c10205c0b9441fcd2b755b2a7"
 rooms = ["general"]
-respond_to = { general = "gorrcbot" }
+respond_to = { general = "gobot" }
 
 # A second hub would be one more [[hubs]] block, with its own name,
 # destination, rooms, and optional respond_to. None is configured here: this

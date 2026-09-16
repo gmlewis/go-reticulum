@@ -15,7 +15,7 @@ Static, standalone release executables are automatically built and published on 
 - **FreeBSD** (`amd64`, `arm64`)
 - **Windows** (`amd64`, `arm64`)
 
-Download the appropriate binary archive for your system, extract it, and place the executables in your `$PATH` (for example, `/usr/local/bin` or `~/bin`).
+Download the appropriate binary archive for your system, extract it, and place the executables in your `$PATH` (for example, `/usr/local/bin` or `~/go/bin`).
 
 ### Building from Source
 
@@ -26,7 +26,7 @@ git clone https://github.com/gmlewis/go-reticulum.git
 cd go-reticulum
 
 # Install all CLI utilities to $GOPATH/bin:
-go install ./cmd/...
+go install ./cmd/go*
 ```
 
 To build a specific daemon or tool (for example, `gorrcbot` or `gorrcd`):

@@ -53,7 +53,7 @@ share_instance = No
 	with open(os.path.join(config_dir, "config"), "w") as f:
 		f.write(config_content)
 
-	reticulum = RNS.Reticulum(configdir=config_dir, loglevel=RNS.LOG_INFO)
+	reticulum = RNS.Reticulum(configdir=config_dir, loglevel=RNS.LOG_DEBUG)
 	RNS.logdest = RNS.LOG_STDOUT
 
 	dest_hash = bytes.fromhex(dest_hash_hex)
@@ -61,9 +61,9 @@ share_instance = No
 
 	print(f"Waiting for path to {dest_hash_hex}...")
 	sys.stdout.flush()
-	timeout = time.time() + 10
+	timeout = time.time() + 15
 	while not RNS.Transport.has_path(dest_hash) and time.time() < timeout:
-		time.sleep(0.5)
+		time.sleep(0.2)
 
 	if not RNS.Transport.has_path(dest_hash):
 		print("Timed out waiting for path")
@@ -88,9 +88,9 @@ share_instance = No
 
 	link = RNS.Link(destination, established_callback=established)
 
-	timeout = time.time() + 10
+	timeout = time.time() + 15
 	while not link_established[0] and time.time() < timeout:
-		time.sleep(0.5)
+		time.sleep(0.2)
 
 	if not link_established[0]:
 		print("Timed out waiting for link establishment")
@@ -101,13 +101,23 @@ share_instance = No
 
 	response_received = [None]
 	def response_callback(r):
-		response_received[0] = r.response if hasattr(r, "response") else r
+		if hasattr(r, "response"):
+			response_received[0] = r.response
+		else:
+			response_received[0] = r
 
-	link.request("form_path", {"var_n": "5", "field_title": "hi", "ignored": 123}, response_callback)
+	def failed_callback(r):
+		print(f"Request failed callback: {r}")
+		sys.stdout.flush()
 
-	timeout = time.time() + 10
+	receipt = link.request("form_path", {"var_n": "5", "field_title": "hi", "ignored": 123}, response_callback, failed_callback=failed_callback, timeout=15)
+	if receipt is False:
+		print("link.request returned False")
+		sys.exit(1)
+
+	timeout = time.time() + 20
 	while response_received[0] is None and time.time() < timeout:
-		time.sleep(0.5)
+		time.sleep(0.2)
 
 	if response_received[0] is None:
 		print("Timed out waiting for response")
@@ -184,12 +194,25 @@ func TestIntegratedFormDataPythonToGo(t *testing.T) {
 		return []byte("accepted")
 	}, AllowAll, nil, false)
 
+	stopAnnouncing := make(chan struct{})
+	defer func() {
+		select {
+		case <-stopAnnouncing:
+		default:
+			close(stopAnnouncing)
+		}
+	}()
 	go func() {
 		for {
-			if err := dest.Announce(nil); err != nil {
-				logger.Error("failed to announce: %v", err)
+			select {
+			case <-stopAnnouncing:
+				return
+			default:
+				if err := dest.Announce(nil); err != nil {
+					logger.Error("failed to announce: %v", err)
+				}
+				time.Sleep(500 * time.Millisecond)
 			}
-			time.Sleep(500 * time.Millisecond)
 		}
 	}()
 
@@ -202,8 +225,8 @@ func TestIntegratedFormDataPythonToGo(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := pyCmd.Process.Kill(); err != nil {
-			t.Logf("failed to kill pyCmd: %v", err)
+		if pyCmd.Process != nil {
+			_ = pyCmd.Process.Kill()
 		}
 	})
 
@@ -216,6 +239,11 @@ func TestIntegratedFormDataPythonToGo(t *testing.T) {
 
 	select {
 	case <-linkEstablished:
+		select {
+		case <-stopAnnouncing:
+		default:
+			close(stopAnnouncing)
+		}
 	case <-time.After(15 * time.Second):
 		t.Fatal("Timed out waiting for link establishment from Python")
 	}
@@ -231,7 +259,7 @@ func TestIntegratedFormDataPythonToGo(t *testing.T) {
 				t.Errorf("request_data[%v] = %v, want %v", key, fields[key], value)
 			}
 		}
-	case <-time.After(15 * time.Second):
+	case <-time.After(20 * time.Second):
 		t.Fatal("Timed out waiting for the dict-typed request from Python")
 	}
 

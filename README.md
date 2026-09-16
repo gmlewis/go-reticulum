@@ -29,6 +29,7 @@ It is based upon the following Python original works:
 > [!NOTE]
 > ### 📖 Official Documentation Site
 > For complete guides, searchable command references, API provider templates, and hardware provisioning tutorials, visit the **[Go Reticulum Documentation Site](https://gmlewis.github.io/go-reticulum/)**.
+> - [**Protocol & Markup Extensions Guide**](https://gmlewis.github.io/go-reticulum/reference/protocol-extensions/): Full specifications and Python back-port guides for `CAP_PRIVATE_COMMAND = 3`, `` `T `` (Timestamp Localization), and `` `L `` (Plus Code Offline Geo-Rendering).
 
 > [!TIP]
 > ### Standalone Off-Grid Hardware Projects
@@ -315,7 +316,7 @@ identity_path = "~/.gorrcbot/bot_identity"   # 64 bytes of private key, mode 060
 storage_dir = "~/.gorrcbot/storage"          # the RRC client's directory; per-room history lives here
 
 [bot]
-nick = "gorrcbot"          # advertised nick, and the default trigger nick
+nick = "gobot"             # advertised nick, and the default trigger nick
 reply = "auto"             # auto | direct | room — see "Reply routing" below
 cooldown_s = 8.0           # minimum seconds between replies to the same identity
 announce_on_join = false   # false = silent like any member; true = one self-introduction NOTICE per room per session
@@ -343,7 +344,7 @@ name = "gonomadnet Public Hub"
 destination = "a012129c10205c0b9441fcd2b755b2a7"   # the hub's rrc.hub hash, 32 hex
 rooms = ["general"]                                 # or { name = "...", key = "..." } for a +k room
 nick = ""                                           # optional per-hub nick override
-respond_to = { general = "gorrcbot" }                # optional per-room trigger nick
+respond_to = { general = "gobot" }                  # optional per-room trigger nick
 ```
 
 Unknown keys warn and never fail, so a configuration written for a newer bot
@@ -355,9 +356,12 @@ then answers with a NOTICE:
 
 | Form | Example |
 |------|---------|
-| `@<nick> <command>` at the start of a room message, case-insensitive, tolerating a trailing `:` or `,` | `@gorrcbot help` |
+| `@<nick> <command>` at the start of a room message, case-insensitive, tolerating a trailing `:` or `,` | `@gobot help` |
 | `@<identity-hash-prefix>` with at least 6 hex characters | `@0032a96e help` |
-| A **direct NOTICE** addressed to the bot (RRC `K_DST`), which may omit the address entirely | `help` |
+| A **direct NOTICE** addressed to the bot (RRC `K_DST`), which may omit the address entirely | `/msg gobot help` or `help` |
+
+**Private Messaging (`/msg gobot <command>`).**
+While `@gobot` can be addressed publicly in any joined room, **private direct messaging is strongly recommended** for most commands (e.g. `/msg gobot help`, `/msg gobot wx Denver`, `/msg gobot loc <coords>`, `/msg gobot sun <coords>`, `/msg gobot checkin ...`). Private messaging saves bandwidth on low-speed LoRa/radio links, keeps channels clear for peer conversation, protects the privacy of operational coordinates, and guarantees that replies travel as direct notices (`K_DST`) back to your identity alone without entering public rooms.
 
 A mention in the middle of a sentence, a longer or shorter nick, another bot's
 `!command` prefix, and the bot's own messages are all ignored. Room notices from
@@ -392,7 +396,7 @@ plus a few that only matter on a mesh:
 | `rooms` | the rooms the bot has joined |
 | `id` | the identity hash and nicks a client can address the bot by |
 
-Each of these can be explained on demand: `@gorrcbot help kjv` prints that one
+Each of these can be explained on demand: `@gobot help kjv` prints that one
 command's purpose, its usage, its inputs, and a worked example — as does
 `help <command>` for every other command.
 
@@ -538,7 +542,7 @@ are stripped of terminal escapes and control characters, shortened, and truncate
 before they are sent.
 
 An unrecognized command produces exactly one short line (`unknown command — try
-@gorrcbot help`), subject to the cooldown. `dnotice` accepts a nick or a hash
+@gobot help`), subject to the cooldown. `dnotice` accepts a nick or a hash
 prefix so a human does not have to copy a 32-character hash, and `me` resolves
 to the requester.
 

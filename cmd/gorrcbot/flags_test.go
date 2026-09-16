@@ -252,8 +252,8 @@ func TestConfigSummaryDescribesWhatTheBotWouldDo(t *testing.T) {
 		"config:     /tmp/gorrcbot-summary/config.toml",
 		"identity:   /tmp/gorrcbot-summary/bot_identity (" + fakeHubTwo + ")",
 		"storage:    /tmp/gorrcbot-summary/storage",
-		"nick:       gorrcbot",
-		"trigger:    @gorrcbot or @" + fakeHubTwo[:12],
+		"nick:       gobot",
+		"trigger:    @gobot or @" + fakeHubTwo[:12],
 		"hubs:       1",
 		"gonomadnet Public Hub (" + fakeHubOne + ")",
 	} {

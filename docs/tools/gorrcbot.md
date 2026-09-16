@@ -59,7 +59,7 @@ storage_dir = "~/.gorrcbot/storage"
 
 [bot]
 # Advertised nickname and default trigger nick
-nick = "gorrcbot"
+nick = "gobot"
 
 # Reply routing policy:
 #   "auto"   - direct notices reply by direct notice; room queries reply to room
@@ -115,7 +115,9 @@ flight_route_url = "https://api.adsbdb.com/v0/callsign/{flight}"
 # Offline Text, LXMF & Emergency Dispatch
 # ---------------------------------------------------------------------
 
-# Path to King James Bible text file (one verse per line)
+# Path to King James Bible text file (one verse per line).
+# Full kjv.txt file available for download here:
+# https://github.com/gmlewis/kjv-ref/blob/master/kjv.txt
 kjv_txt_file = ""
 
 # LXMF messaging support (msg/lxmf command)
@@ -135,7 +137,7 @@ name = "gonomadnet Public Hub"
 destination = "a012129c10205c0b9441fcd2b755b2a7"
 rooms = ["general"]
 nick = ""
-respond_to = { general = "gorrcbot" }
+respond_to = { general = "gobot" }
 ```
 
 ---
@@ -146,9 +148,43 @@ The bot answers when addressed in any of the following manners:
 
 | Method | Example | Behavior |
 |--------|---------|----------|
-| **Room message with nick prefix** | `@gorrcbot help` | Works in any room where the bot is present. Tolerates `:` or `,` suffix (`@gorrcbot: ping`). |
+| **Room message with nick prefix** | `@gobot help` | Works in any room where the bot is present. Tolerates `:` or `,` suffix (`@gobot: ping`). |
 | **Room message with hash prefix** | `@a012129c help` | Addressed by the first 6+ hex characters of the bot's identity hash. |
-| **Direct Notice (`K_DST`)** | `/notice @gorrcbot help` or direct notice UI | Direct notices do not require typing `@gorrcbot`. The bot replies directly back to the sender. |
+| **Direct Notice (`K_DST`)** | `/notice @gobot help` or `/msg gobot help` | Direct notices do not require typing `@gobot`. The bot replies directly back to the sender. |
+
+---
+
+## Private Messaging to @gobot
+
+While `@gobot` can be triggered publicly inside any room it has joined, **private direct messaging is strongly recommended** for most commands:
+
+```text
+/msg gobot help
+/msg gobot wx Denver
+/msg gobot loc 849VCWC8+R9
+/msg gobot sun 37.422,-122.084
+/msg gobot checkin 849VCWC8+R9 overdue 4h Trail run to summit
+```
+
+### Why Private Messaging is Recommended
+
+1. **Bandwidth Preservation on LoRa & Radio Meshes**:
+   Reticulum channels often operate over bandwidth-constrained radio networks (such as LoRa at 1–5 kbps or VHF packet radio). Commands with verbose or multi-line responses (such as `help`, `metar`, `sun`, `weather`, `tide`, `loc`, `buoy`, or `kjv`) take several seconds to transmit. Running them privately keeps shared room airtime clear for human peer conversation.
+2. **Operational Security (OPSEC) & Coordinate Privacy**:
+   Commands such as `loc`, `proj`, `dist`, `sun`, `weather`, and especially `checkin` or `sitrep` involve exact geographic coordinates, personal waypoints, or overdue travel timelines. Querying privately ensures that your physical location and itinerary are not broadcast to every listener on a public hub.
+3. **Channel Courtesy**:
+   Queries for space weather (`spacewx`), flight tracking (`flight`), marine buoys (`buoy`), or unit conversions (`conv`) generate chatter that may distract or interrupt other room participants.
+
+*(Note: Emergency distress beacons like `@gobot sos` should typically still be sent publicly to rooms so fellow operators and rescuers are alerted!)*
+
+### How Private Addressing & Reply Routing Work
+
+- **Addressing Flexibility**: In RRC, `/msg gobot <command>` (or `/dnotice gobot <command>`) packages the message into a direct notice envelope with `K_DST` set directly to the bot's 16-byte identity hash. Because the envelope itself addresses the bot, the trigger prefix is optional:
+  - `/msg gobot help`
+  - `/msg gobot @gobot help`
+  Both work identically.
+- **Strict Private Reply Guarantee**: When a request arrives via direct notice (`K_DST`), `gorrcbot`'s reply routing policy **always** transmits the response as a direct notice back to the sender's cryptographic identity hash (`msg.Src`). The response **never** leaks or appears in any public room.
+- **Direct Notice Capabilities (`CAP_DIRECT_NOTICE`)**: Direct messaging requires that the connected hub supports RRC direct notice routing (`CAP_DIRECT_NOTICE = 2`), which all modern `rrcd` and `gorrcd` hubs provide. If a hub cannot deliver direct notices, `gorrcbot` safely drops the direct reply rather than leaking it into a public channel.
 
 ---
 
@@ -158,15 +194,15 @@ The bot answers when addressed in any of the following manners:
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `help` | `@gorrcbot help [command]` | Lists all available commands, or provides comprehensive help for a specific command (e.g. `@gorrcbot help loc`). |
-| `ping` | `@gorrcbot ping` | Responds `pong` to verify link liveness and latency. |
-| `uptime` | `@gorrcbot uptime` | Reports bot uptime, hub connection duration, and hub identity hash. |
-| `whoami` | `@gorrcbot whoami` | Displays your nickname and full 32-character identity hash as seen by the current hub. |
-| `botinfo` | `@gorrcbot botinfo` | Details the bot's identity hash, version, connected hubs, and active rooms. |
-| `rooms` | `@gorrcbot rooms` | Lists all rooms the bot is currently participating in. |
-| `members` | `@gorrcbot members [room]` | Lists members reported by the hub in the specified room. |
-| `seen` | `@gorrcbot seen <nick\|hash>` | Shows the timestamp when a given nick or identity hash was last seen speaking in joined rooms. |
-| `id` | `@gorrcbot id` | Displays the bot's full identity hash and configured trigger nicknames. |
+| `help` | `@gobot help [command]` | Lists all available commands, or provides comprehensive help for a specific command (e.g. `@gobot help loc`). |
+| `ping` | `@gobot ping` | Responds `pong` to verify link liveness and latency. |
+| `uptime` | `@gobot uptime` | Reports bot uptime, hub connection duration, and hub identity hash. |
+| `whoami` | `@gobot whoami` | Displays your nickname and full 32-character identity hash as seen by the current hub. |
+| `botinfo` | `@gobot botinfo` | Details the bot's identity hash, version, connected hubs, and active rooms. |
+| `rooms` | `@gobot rooms` | Lists all rooms the bot is currently participating in. |
+| `members` | `@gobot members [room]` | Lists members reported by the hub in the specified room. |
+| `seen` | `@gobot seen <nick\|hash>` | Shows the timestamp when a given nick or identity hash was last seen speaking in joined rooms. |
+| `id` | `@gobot id` | Displays the bot's full identity hash and configured trigger nicknames. |
 
 ---
 
@@ -174,10 +210,10 @@ The bot answers when addressed in any of the following manners:
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `dn` / `dnotice` | `@gorrcbot dn <nick\|hash\|me> <text>` | Sends an encrypted direct notice (`K_DST`) to the specified client. |
-| `dnoticecap` | `@gorrcbot dnoticecap [target]` | Checks if the current hub supports direct notice delivery, and checks if a target user is online. |
-| `dnoticeme` | `@gorrcbot dnoticeme <text>` | Sends a direct notice to your own identity (tests private path functionality). |
-| `msg` / `lxmf` | `@gorrcbot msg <nick\|hash> <text>` | Queues an asynchronous LXMF message to an offline peer via propagation nodes. |
+| `dn` / `dnotice` | `@gobot dn <nick\|hash\|me> <text>` | Sends an encrypted direct notice (`K_DST`) to the specified client. |
+| `dnoticecap` | `@gobot dnoticecap [target]` | Checks if the current hub supports direct notice delivery, and checks if a target user is online. |
+| `dnoticeme` | `@gobot dnoticeme <text>` | Sends a direct notice to your own identity (tests private path functionality). |
+| `msg` / `lxmf` | `@gobot msg <nick\|hash> <text>` | Queues an asynchronous LXMF message to an offline peer via propagation nodes. |
 
 ---
 
@@ -185,13 +221,13 @@ The bot answers when addressed in any of the following manners:
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `path` | `@gorrcbot path <nick\|hash>` | Queries the Reticulum routing table to report hops, next-hop interface, and path age to a peer. |
-| `watch` | `@gorrcbot watch <name\|hash> [ttl]` | Requests a direct notice when a peer, node, or hub announces on the network. |
-| `unwatch` | `@gorrcbot unwatch <n\|all>` | Cancels an active watch. |
-| `watches` | `@gorrcbot watches` | Lists your active announce watches and remaining TTLs. |
-| `net` | `@gorrcbot net [max_hops]` | Mesh directory: lists recently heard hubs, LXMF nodes, and NomadNet pages with hop counts. |
-| `catchup` | `@gorrcbot catchup [window]` | Delivers messages from joined rooms that were missed while you were offline. |
-| `search` | `@gorrcbot search <term> [#room]` | Searches recent room history for messages containing the given keyword. |
+| `path` | `@gobot path <nick\|hash>` | Queries the Reticulum routing table to report hops, next-hop interface, and path age to a peer. |
+| `watch` | `@gobot watch <name\|hash> [ttl]` | Requests a direct notice when a peer, node, or hub announces on the network. |
+| `unwatch` | `@gobot unwatch <n\|all>` | Cancels an active watch. |
+| `watches` | `@gobot watches` | Lists your active announce watches and remaining TTLs. |
+| `net` | `@gobot net [max_hops]` | Mesh directory: lists recently heard hubs, LXMF nodes, and NomadNet pages with hop counts. |
+| `catchup` | `@gobot catchup [window]` | Delivers messages from joined rooms that were missed while you were offline. |
+| `search` | `@gobot search <term> [#room]` | Searches recent room history for messages containing the given keyword. |
 
 ---
 
@@ -206,9 +242,9 @@ All location commands accept **5 coordinate notations** without network connecti
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `loc` | `@gorrcbot loc <location>` | Converts any supported coordinate format and outputs it in all five notations simultaneously. |
-| `dist` | `@gorrcbot dist <from> <to>` | Calculates great-circle distance (km, statute miles, nautical miles) and forward/reverse bearings between two points. |
-| `proj` | `@gorrcbot proj <origin> <bearing°> <distance>` | Dead reckoning: calculates the destination coordinate from a starting location, course, and distance (e.g. `@gorrcbot proj CM87uk 045 15km`). |
+| `loc` | `@gobot loc <location>` | Converts any supported coordinate format and outputs it in all five notations simultaneously. |
+| `dist` | `@gobot dist <from> <to>` | Calculates great-circle distance (km, statute miles, nautical miles) and forward/reverse bearings between two points. |
+| `proj` | `@gobot proj <origin> <bearing°> <distance>` | Dead reckoning: calculates the destination coordinate from a starting location, course, and distance (e.g. `@gobot proj CM87uk 045 15km`). |
 
 ---
 
@@ -216,8 +252,8 @@ All location commands accept **5 coordinate notations** without network connecti
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `sun` | `@gorrcbot sun <location> [date]` | Computes UTC sunrise, sunset, civil twilight dawn/dusk, and total daylight hours for any location on Earth. |
-| `moon` | `@gorrcbot moon [location] [date]` | Reports moon phase, illumination percentage, lunar age, moonrise/moonset, nighttime illumination rating, and upcoming spring/neap tides. |
+| `sun` | `@gobot sun <location> [date]` | Computes UTC sunrise, sunset, civil twilight dawn/dusk, and total daylight hours for any location on Earth. |
+| `moon` | `@gobot moon [location] [date]` | Reports moon phase, illumination percentage, lunar age, moonrise/moonset, nighttime illumination rating, and upcoming spring/neap tides. |
 
 ---
 
@@ -225,13 +261,13 @@ All location commands accept **5 coordinate notations** without network connecti
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `sos` | `@gorrcbot sos <loc> <RED\|YELLOW\|GREEN\|INFO> <details>` | Broadcasts an emergency distress beacon across all rooms, confirms receipt to sender, persists beacon to disk, and dispatches via LXMF to emergency responders. |
-| `sos list` | `@gorrcbot sos list` | Lists all active distress beacons. |
-| `sos clear` | `@gorrcbot sos clear <id>` | Resolves and clears an SOS beacon (restricted to the original sender). |
-| `checkin` | `@gorrcbot checkin <loc> overdue <duration> <note>` | Arms an overdue dead-man timer (e.g. `overdue 4h`). If not cleared before expiry, the bot raises an automatic overdue alarm. |
-| `checkin ok` | `@gorrcbot checkin ok` | Clears your active overdue check-in timer. |
-| `sitrep add` | `@gorrcbot sitrep add <loc> <HAZARD\|RESOURCE\|SHELTER\|ROAD\|INFO> <text>` | Files a geolocated situation report to the 7-day tactical board. |
-| `sitrep near` | `@gorrcbot sitrep near <loc> [radius_km]` | Finds situation reports within the specified radius, sorted nearest-first. |
+| `sos` | `@gobot sos <loc> <RED\|YELLOW\|GREEN\|INFO> <details>` | Broadcasts an emergency distress beacon across all rooms, confirms receipt to sender, persists beacon to disk, and dispatches via LXMF to emergency responders. |
+| `sos list` | `@gobot sos list` | Lists all active distress beacons. |
+| `sos clear` | `@gobot sos clear <id>` | Resolves and clears an SOS beacon (restricted to the original sender). |
+| `checkin` | `@gobot checkin <loc> overdue <duration> <note>` | Arms an overdue dead-man timer (e.g. `overdue 4h`). If not cleared before expiry, the bot raises an automatic overdue alarm. |
+| `checkin ok` | `@gobot checkin ok` | Clears your active overdue check-in timer. |
+| `sitrep add` | `@gobot sitrep add <loc> <HAZARD\|RESOURCE\|SHELTER\|ROAD\|INFO> <text>` | Files a geolocated situation report to the 7-day tactical board. |
+| `sitrep near` | `@gobot sitrep near <loc> [radius_km]` | Finds situation reports within the specified radius, sorted nearest-first. |
 
 ---
 
@@ -239,11 +275,11 @@ All location commands accept **5 coordinate notations** without network connecti
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `firstaid` / `rx` | `@gorrcbot firstaid <topic>` | Offline clinical decision-support cards for wilderness medicine: `bleed`, `cpr`, `triage`, `shock`, `hypo`, `heat`, `burns`, `water`, `snake`. |
-| `coldwater` | `@gorrcbot coldwater [temp]` | 1-10-1 cold water survival rule and swim failure timelines for water temperatures (e.g. `@gorrcbot coldwater 48F`). |
-| `signal` | `@gorrcbot signal [air\|sound\|light]` | Distress signaling standards: ground-to-air visual markers (V, X, N, Y), whistle cadences, mirror/torch patterns. |
-| `morse` | `@gorrcbot morse <text>` / `morse -d <code...>` | Bidirectional Morse code encoder and decoder. |
-| `conv` | `@gorrcbot conv <val><unit> <target>` | Tactical unit conversions: barometric pressure (`29.92inHg` → `hPa`), distance, speed, fuel/water weight, and battery watt-hours (`5000mAh@3.7V` → `Wh`). |
+| `firstaid` / `rx` | `@gobot firstaid <topic>` | Offline clinical decision-support cards for wilderness medicine: `bleed`, `cpr`, `triage`, `shock`, `hypo`, `heat`, `burns`, `water`, `snake`. |
+| `coldwater` | `@gobot coldwater [temp]` | 1-10-1 cold water survival rule and swim failure timelines for water temperatures (e.g. `@gobot coldwater 48F`). |
+| `signal` | `@gobot signal [air\|sound\|light]` | Distress signaling standards: ground-to-air visual markers (V, X, N, Y), whistle cadences, mirror/torch patterns. |
+| `morse` | `@gobot morse <text>` / `morse -d <code...>` | Bidirectional Morse code encoder and decoder. |
+| `conv` | `@gobot conv <val><unit> <target>` | Tactical unit conversions: barometric pressure (`29.92inHg` → `hPa`), distance, speed, fuel/water weight, and battery watt-hours (`5000mAh@3.7V` → `Wh`). |
 
 ---
 
@@ -251,15 +287,15 @@ All location commands accept **5 coordinate notations** without network connecti
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `weather` / `wx` | `@gorrcbot weather <location>` | Live conditions from plain-text weather feed. |
-| `tide` | `@gorrcbot tide <station\|coords\|place> [date]` | 48-hour high/low water predictions, Rule of Twelfths hourly depth interpolation, and spring/neap tide classification. |
-| `buoy` | `@gorrcbot buoy <buoy_id>` | Real-time ocean buoy sea state: wave height, dominant wave period, swell vs chop classification, water temp, pressure trend. |
-| `river` | `@gorrcbot river <usgs_gauge_id>` | Stream gauge stage, discharge rate, 3-hour trend, and official NOAA river forecast flood categories. |
-| `metar` | `@gorrcbot metar <ICAO>` | Decodes raw aviation weather reports into wind, flight category (VFR/MVFR/IFR), ceiling, temperature, and altimeter setting. |
-| `wxalert` | `@gorrcbot wxalert <place\|zone>` | Queries active National Weather Service severe weather warnings and advisories. |
-| `spacewx` / `solar` | `@gorrcbot spacewx` | Reports Solar Flux Index (SFI), Sunspot Number (SSN), K-index, geomagnetic storm levels, and recommended HF propagation bands. |
-| `launches` | `@gorrcbot launches [upcoming\|past]` | Schedules and status of upcoming orbital space launches. |
-| `flight` | `@gorrcbot flight <flight_num>` | Real-time ADS-B flight telemetry: route, altitude, groundspeed, climb rate, and squawk code. |
+| `weather` / `wx` | `@gobot weather <location>` | Live conditions from plain-text weather feed. |
+| `tide` | `@gobot tide <station\|coords\|place> [date]` | 48-hour high/low water predictions, Rule of Twelfths hourly depth interpolation, and spring/neap tide classification. |
+| `buoy` | `@gobot buoy <buoy_id>` | Real-time ocean buoy sea state: wave height, dominant wave period, swell vs chop classification, water temp, pressure trend. |
+| `river` | `@gobot river <usgs_gauge_id>` | Stream gauge stage, discharge rate, 3-hour trend, and official NOAA river forecast flood categories. |
+| `metar` | `@gobot metar <ICAO>` | Decodes raw aviation weather reports into wind, flight category (VFR/MVFR/IFR), ceiling, temperature, and altimeter setting. |
+| `wxalert` | `@gobot wxalert <place\|zone>` | Queries active National Weather Service severe weather warnings and advisories. |
+| `spacewx` / `solar` | `@gobot spacewx` | Reports Solar Flux Index (SFI), Sunspot Number (SSN), K-index, geomagnetic storm levels, and recommended HF propagation bands. |
+| `launches` | `@gobot launches [upcoming\|past]` | Schedules and status of upcoming orbital space launches. |
+| `flight` | `@gobot flight <flight_num>` | Real-time ADS-B flight telemetry: route, altitude, groundspeed, climb rate, and squawk code. |
 
 ---
 

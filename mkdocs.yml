@@ -70,3 +70,4 @@ nav:
   - Reference:
       - Support Matrix: reference/support-matrix.md
       - Cryptography: reference/cryptography.md
+      - Protocol & Markup Extensions: reference/protocol-extensions.md

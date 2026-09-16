@@ -27,11 +27,11 @@ To discover and connect automatically to any other Reticulum nodes on your local
 To connect to a remote Reticulum node or hub over the internet:
 
 ```ini
-[[Dublin Testnet Node]]
+[[gonomadnet Public RRC Hub]]
   type = TCPClientInterface
   enabled = yes
-  target_host = dublin.connect.reticulum.network
-  target_port = 4965
+  target_host = go-nomadnet.duckdns.org
+  target_port = 4242
 ```
 
 Popular public testnet bootstrap nodes include:
@@ -53,10 +53,10 @@ To connect a LoRa radio flashed with RNode firmware over USB serial:
   type = RNodeInterface
   enabled = yes
   port = /dev/ttyUSB0
-  frequency = 868000000       # e.g., 915000000 for US, 868000000 for EU
+  frequency = 915000000       # e.g., 915000000 for US, 868000000 for EU
   bandwidth = 125000
-  txpower = 7
-  spreadingfactor = 7
+  txpower = 17
+  spreadingfactor = 9
   codingrate = 5
 ```
 

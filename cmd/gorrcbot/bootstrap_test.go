@@ -129,8 +129,8 @@ func TestEnsureFirstRunCreatesConfigAndIdentity(t *testing.T) {
 			t.Error("the public RNS Community Hub is live in the default configuration")
 		}
 	}
-	if cfg.Nick != "gorrcbot" {
-		t.Errorf("template nick = %q, want %q", cfg.Nick, "gorrcbot")
+	if cfg.Nick != "gobot" {
+		t.Errorf("template nick = %q, want %q", cfg.Nick, "gobot")
 	}
 	// The template offers the kjv command's text file, empty by default, with
 	// the comment that says what it is for.
