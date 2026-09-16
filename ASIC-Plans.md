@@ -382,7 +382,7 @@ per-product firmware.
 | **Leaf** (sensors & actuators) | CH32V003-class RISC-V (10-cent tier) up to ESP32-C3/C6 | LoRa (sleepy, duty-cycled), optionally built-in 802.15.4/WiFi/BLE | Temperature, humidity, light level, weather, door/window contacts, motion, relays, lighting control. Weeks of battery on slow LoRa announce cadence; in-home Leafs can lean on the radio already on the chip (see 6.3) |
 | **Eye** (cameras) | ESP32-P4 (H.264 encoder, dual-core RISC-V) or a Pi/OrangePi-class RISC-V SBC (e.g. Milk-V/StarFive) | Built-in WiFi for in-home streaming, LoRa for wake/alert | Doorbell, motion-triggered captures. See the bandwidth reality in 6.3 |
 | **View** (displays & UX) | ESP32 with e-ink; or any Linux SBC running this repo's Go NomadNet | LoRa for alerts, WiFi/LAN for rich UI | Wall panels, room controllers, doorbell screens — NomadNet pages as the UI layer, already designed for exactly this |
-| **Communicator / Pocket Hub** (handheld chat node) | **ESP32-C5** (single-core RISC-V @ 240 MHz, 400 KB SRAM + 8–16 MB OPI PSRAM) | Dual-band Wi-Fi 6 (2.4 GHz + 5 GHz) + BLE 5 + 802.15.4 + LoRa (SX1262 SPI) | Handheld pocket RRC relay chat hub (`gorrcd`) and optional portable NomadNet terminal. Dual-band Wi-Fi 6 enables clean 5 GHz SoftAP for nearby peers to join local chat without 2.4 GHz interference; ASIC coprocessor offloads burst AES+HMAC token encryption during room fanout and X25519/Ed25519 link handshakes |
+| **Communicator / Pocket Hub / Traveler's Lifesaver** (handheld off-grid companion) | **ESP32-C5** (single-core RISC-V @ 240 MHz, 400 KB SRAM + 8–16 MB OPI PSRAM) | Dual-band Wi-Fi 6 (2.4 GHz + 5 GHz) + BLE 5 + 802.15.4 + LoRa (SX1262 SPI) + GNSS/GPS (UART) | Pocket-sized, battery-powered survival node and RRC chat hub. Runs local `gobot` field intelligence (wilderness first aid, repeater catalog, ephemeris), GNSS receiver with Open Location Code (`/whereami`), and Wi-Fi 6 captive web/Micron portal for zero-hardware-screen smartphone access. ASIC coprocessor offloads burst crypto to maximize survival battery life |
 
 Two deliberate software decisions make the family coherent instead of a
 pile of boards:
@@ -567,6 +567,223 @@ application is a BOM and a `micron` page away.
    of the 6.3 bandwidth split.
 4. The ASIC stamper (section 5 Phase B) rides along as optional
    acceleration once Node blocks exist to host it.
+
+### 6.9 The Traveler's Lifesaver: Sovereign Off-Grid Survival Device
+
+The intersection of `go-reticulum`, `go-nomadnet`, and `asic-reticulum` enables a
+product category of profound global utility: **an inexpensive ($20–$25 BOM),
+pocket-sized, sovereign off-grid lifesaver and field assistant** that anyone can
+carry in remote travel, wilderness exploration, maritime passages, or disaster zones.
+
+#### 6.9.1 Why Commercial Satellite & Mesh Devices Fall Short
+1. **Predatory Subscriptions**: Popular commercial travel-companion devices
+   cost $300–$600 upfront and demand recurring fees of $15–$65/month. If a traveler
+   falls on hard times or cancels their subscription, their emergency SOS hardware
+   is remotely deactivated.
+2. **Proprietary Silos**: You cannot message other nearby hikers, search parties,
+   or local amateur radio operators unless they use the exact same vendor ecosystem.
+3. **Zero Local Survival Intelligence**: Commercial communicators are dumb satellite
+   modems: they cannot tell you what to do for hypothermia or snakebite, cannot
+   calculate sunset or tide times, cannot find nearby amateur repeaters, and cannot
+   operate without a satellite link.
+4. **Meshtastic's Limitations**: While Meshtastic popularized open LoRa messaging,
+   it lacks self-sovereign cryptographic identities, has no application/document
+   layer (no Micron pages, no file transport), and has no embedded offline knowledge
+   engine.
+
+#### 6.9.2 The Autonomous Local Intelligence Rule (Why Remote Hubs Are NOT Enough)
+A natural initial thought when designing a handheld communicator is: *"the device can
+simply run gonomadnet and query a remote RRC Hub over LoRa to reach @gobot."*
+
+**In life-and-death off-grid scenarios, this assumption is fatally flawed:**
+- **Links drop when you need them most**: An injured traveler in a steep slot canyon,
+  under dense wet tree canopy, or behind a ridgeline will often have zero line-of-sight
+  to a distant LoRa relay or internet gateway.
+- **Airtime is precious**: LoRa carries only 1–5 kbps. Sending coordinates across
+  multiple radio hops burns battery, creates channel congestion, and leaks personal
+  location over RF airwaves.
+- **The Engine is Already Offline-First**: As established in `go-reticulum/cmd/gorrcbot`,
+  the vast majority of critical survival tools—**wilderness first aid protocols
+  (`med`), repeater/mast catalogs (`tower near`), sun/moon ephemeris (`sun`), geodetic
+  calculations (`geo`/`nav`), Plus Codes (`olc`), Morse code (`morse`), and SAR check-ins
+  (`checkin`)**—are **100% in-process mathematics and embedded static tables**. They
+  require ZERO internet connectivity and ZERO external API calls.
+
+**The Golden Architecture Rule**:
+> **Survival intelligence MUST run locally in-process.** Queries for first aid, local
+> repeaters, sunset, or `/whereami` must resolve **locally in microseconds with 0 radio
+> hops and 0 airtime**. Long-range LoRa radio is reserved for what radio is truly for:
+> **broadcasting emergency SOS distress beacons, coordinating with human rescue
+> teams, peer-to-peer LXMF messaging, and syncing with remote hubs ONLY when a gateway
+> happens to be reachable.**
+
+---
+
+### 6.10 The Geodetic & GNSS Subsystem: `/whereami`, Plus Codes, and Distress Beacons
+
+Location is the anchor of all wilderness safety. Coupling an inexpensive GNSS receiver
+to the ESP32-C5 transforms the handheld device into an autonomous geodetic computer.
+
+#### 6.10.1 GNSS Hardware: Low-Cost, Multi-Constellation UART
+The device interfaces with an inexpensive GNSS module over a 3.3V UART (9600 baud,
+using standard `$GNRMC` and `$GNGGA` NMEA-0183 sentences).
+- **ATGM336H ($3–$4)**: Ultra-compact (12x16 mm), high sensitivity (-162 dBm),
+  multi-constellation (BDS, GPS, GLONASS, Galileo), low power (25 mA tracking).
+- **Quectel L80-M39 / L76K ($5–$7)**: Integrated 15x15 mm patch antenna, excellent
+  canopy fix, eliminates external antenna wiring.
+- **u-blox NEO-M10 ($12–$15)**: Premium ultra-low-power (<15 mW), rapid Time-To-First-Fix.
+
+#### 6.10.2 The Life-Saving Power of Plus Codes (Open Location Codes)
+In an emergency, reading raw decimal coordinates (`37.755321, -122.452719`) over a
+crackling VHF handheld, marine radio, or satellite call is fraught with peril: digits are
+transposed, negative signs are dropped, and rescuers are dispatched to the wrong valley.
+
+The device integrates `go-reticulum/cmd/gorrcbot/olc.go` (a pure-Go, standard-library-only
+implementation of Open Location Code):
+- **Short & Speakable**: A code like `849VCWC8+R9` encodes a 14m × 14m box in 10 characters.
+- **Error-Resistant**: Uses a 20-character alphabet excluding vowels and ambiguous
+  glyphs (`1`, `I`, `0`, `O`, `L`).
+- **Universally Decodable**: Native in Google Maps, OpenStreetMap, and emergency dispatch systems.
+
+#### 6.10.3 The `/whereami` Command
+Available via RRC chat, local CLI, or the web portal, `/whereami` queries the local GNSS
+receiver and outputs a clean, comprehensive operational fix:
+
+```text
+/whereami
+------------------------------------------------------------
+Plus Code (OLC)   : 849VCWC8+R9 (Area: ~14m x 14m)
+Coordinates       : 37.75532° N, 122.45272° W
+Maidenhead Grid   : CM87ss (Amateur Radio QTH)
+Elevation         : 142 m (466 ft) MSL
+GNSS Fix Status   : 3D Fix (9 satellites, HDOP 0.8)
+Local Solar Time  : 14:23 UTC-7 (Solar noon: 13:08)
+Sunset Countdown  : Sunset at 19:12 (4h 49m daylight remaining)
+Emergency Status  : System Nominal · Battery: 86% (4.08V)
+------------------------------------------------------------
+```
+
+#### 6.10.4 Zero-Argument Automatic Context Injection
+When the GNSS subsystem has a 3D lock, the device caches the coordinates in memory.
+Every other field tool automatically inherits the traveler's position without typing:
+- `tower near` $\rightarrow$ automatically prints the 3 closest radio repeaters and
+  cell masts relative to where the traveler is currently standing.
+- `sun` $\rightarrow$ calculates twilight and sunrise/sunset for current position.
+- `tide near` $\rightarrow$ locates nearest ocean tide stations.
+- `/sos` $\rightarrow$ automatically generates an emergency distress beacon.
+
+#### 6.10.5 Cryptographically Signed Emergency SOS Beacons
+When the traveler activates `/sos [reason]`, the device:
+1. Locks the freshest high-precision GPS fix.
+2. Derives the 10-character Plus Code and Maidenhead grid.
+3. Constructs an emergency packet containing:
+   - Traveler's self-sovereign Reticulum Identity hash
+   - Precise Plus Code and GPS coordinates + altitude
+   - Battery level, fix accuracy, and optional message (e.g. "Injured leg, need extraction")
+4. Signs the packet with the traveler's Ed25519 private key.
+5. Broadcasts the beacon over LoRa on maximum TX power (+22 dBm) with repeated fallback
+   cadences, repeating to all listening peers and RRC emergency channels.
+
+---
+
+### 6.11 The Zero-Hardware UI Paradigm: Captive Portal & Smartphone as Terminal
+
+A primary reason open-source communicators fail to achieve mass adoption is the
+**Hardware UI Trap**: sourcing custom LCD screens, physical QWERTY keyboards, and
+injection-molded cases drives the bill of materials to $80–$150 and produces bulky,
+fragile gadgets with tiny, hard-to-type keyboards.
+
+**The Paradigm Shift**:
+Almost every traveler on Earth already carries an ultra-advanced mobile computer with a
+gorgeous high-resolution OLED touchscreen, virtual keyboard, large battery, and modern
+web browser: **their smartphone (iPhone or Android)**.
+
+Even in total off-grid isolation (airplane mode, zero cellular coverage), a smartphone's
+Wi-Fi and browser remain 100% operational.
+
+```
++-----------------------------------------------------------------------------+
+|                           Traveler's Smartphone                             |
+|          (iPhone / Android running Safari / Chrome in Airplane Mode)        |
++-------------------------------------+---------------------------------------+
+                                      |
+                                      | 5 GHz Wi-Fi 6 (Captive Portal / HTTP)
+                                      v
++-----------------------------------------------------------------------------+
+|                  The Lifesaver Puck (Sealed, Waterproof, $25 BOM)           |
+|                                                                             |
+|  +-----------------------------------------------------------------------+  |
+|  | ESP32-C5 Host MCU (RV32IMAC @ 240 MHz, 400KB SRAM + 8MB PSRAM)        |  |
+|  |  - Wi-Fi 6 SoftAP ("Reticulum-Lifesaver-[ID]") + HTTP/Micron Portal   |  |
+|  |  - Pure-Go RNS Transport + Local gorrcd Chat Hub                      |  |
+|  |  - Embedded gobot Field Tools (first aid, towers, ephemeris, OLC)     |  |
+|  +-------------------+--------------------+--------------------+---------+  |
+|                      |                    |                    |            |
+|                      | SPI                | UART (9600)        | 4-bit QSPI |
+|                      v                    v                    v            |
+|            +------------------+  +-----------------+  +-----------------+   |
+|            | Semtech SX1262   |  | ATGM336H GNSS   |  | SpinalHDL       |   |
+|            | LoRa Transceiver |  | Multi-Satellite |  | Crypto ASIC     |   |
+|            | (868/915 MHz)    |  | (GPS/BDS/GLO)   |  | (Offloader)     |   |
+|            +------------------+  +-----------------+  +-----------------+   |
+|                      |                    |                    |            |
+|                      |                    |                    |            |
+|  +-------------------+--------------------+--------------------+---------+  |
+|  | Power: 18650 Li-Ion (3000 mAh) + TP4056 USB-C Charger (3-5 days idle) |  |
+|  | Storage: MicroSD (FAT32: offline survival manuals, topo maps, logs)   |  |
+|  +-----------------------------------------------------------------------+  |
++-----------------------------------------------------------------------------+
+```
+
+#### How the User Experience Works in the Field
+1. The Lifesaver device rests in the traveler's pocket or carabiner-clipped to a backpack.
+2. The traveler opens Wi-Fi settings on their phone and taps `Reticulum-Lifesaver`.
+3. The phone's operating system detects the captive portal probe and **instantly pops up
+   the Lifesaver interface**—no app installation, no App Store, no account creation!
+4. The traveler sees a clean, touch-optimized survival dashboard:
+   - **Where Am I**: Big bold Plus Code, coordinates, elevation, and sunset clock.
+   - **Emergency SOS**: Single-button distress broadcast.
+   - **Chat & Mesh**: Direct access to local `#general` and `#emergency` channels.
+   - **Field Assistant**: Ask `@gobot` any question (`med snakebite`, `tower near`, `sun`).
+   - **Offline Survival Library**: Access Micron survival pages (first aid manuals, edible
+     plants, emergency radio guides) served directly from the device's MicroSD card.
+5. When the traveler puts their phone away, the puck continues listening to the LoRa mesh
+   in low-power sleep mode, caching incoming messages in RAM/SD.
+
+---
+
+### 6.12 Recommended Hardware Bill of Materials (BOM) & Pinout on ESP32-C5
+
+The complete hardware bill of materials for the sealed Lifesaver puck:
+
+| Component | Part / Spec | Approx. Cost | Source / Notes |
+|---|---|---|---|
+| **Host MCU** | Espressif ESP32-C5-DevKitC-1 (or bare ESP32-C5 module) | ~$4.00 | Dual-band Wi-Fi 6 (2.4/5GHz), BLE 5, 240 MHz RV32, 8MB PSRAM |
+| **LoRa Radio** | Semtech SX1262 SPI module (+22 dBm, 868/915 MHz) | ~$4.50 | Ai-Thinker Ra-01SH or Ebyte E22-900M22S |
+| **GNSS / GPS** | ATGM336H or Quectel L80-M39 (with ceramic patch antenna) | ~$3.50 | 3.3V UART, BDS/GPS/GLO, -162 dBm sensitivity |
+| **Storage** | MicroSD card slot + 16GB FAT32 card | ~$3.00 | Stores offline survival manuals, logs, and catalogs |
+| **Battery & Power**| 18650 Li-Ion (3000 mAh) + TP4056 USB-C charge board | ~$4.00 | 3–5 days active standby; weeks on duty-cycle sleep |
+| **Enclosure** | 3D printed ruggedized PETG/TPU carabiner case | ~$2.00 | Compact, water-resistant, shock-absorbing |
+| **Total BOM** | Complete sovereign off-grid communicator | **~$21.00** | **1/20th the cost of proprietary satellite hardware!** |
+
+#### ESP32-C5 Pin Allocation Table (Zero Pin Contention)
+The ESP32-C5 exposes 24–28 usable GPIOs. The entire system—LoRa, GNSS, Crypto ASIC,
+MicroSD, and battery monitor—coexists cleanly without pin exhaustion:
+
+| Subsystem | Signal Name | ESP32-C5 Pin | Direction | Description |
+|---|---|---|---|---|
+| **SX1262 LoRa** | `SCK` | `GPIO 11` | Host $\rightarrow$ Radio | SPI Bus Clock |
+| | `MOSI` | `GPIO 12` | Host $\rightarrow$ Radio | SPI Data In |
+| | `MISO` | `GPIO 13` | Radio $\rightarrow$ Host | SPI Data Out |
+| | `CS#` | `GPIO 14` | Host $\rightarrow$ Radio | Active-low chip select |
+| | `RST` | `GPIO 15` | Host $\rightarrow$ Radio | Hardware reset |
+| | `BUSY`| `GPIO 16` | Radio $\rightarrow$ Host | Modem busy status line |
+| | `DIO1`| `GPIO 17` | Radio $\rightarrow$ Host | Packet received / TX done interrupt |
+| **GNSS (GPS)** | `RX1` | `GPIO 9` | GNSS $\rightarrow$ Host | NMEA-0183 serial stream (9600 baud) |
+| | `TX1` | `GPIO 10` | Host $\rightarrow$ GNSS | Optional configuration commands |
+| **MicroSD** | `DAT0` / `CLK` / `CMD` | `GPIO 18, 19, 20` | Bi-directional | Standard SD 1-bit or SPI mode |
+| **Power Sense** | `BATT_ADC` | `GPIO 1` (ADC1_CH0) | Analog In | Resistor divider to monitor battery voltage |
+| **Crypto ASIC** | `CLK`, `CS`, `IO0..IO3`, `IRQ` | `GPIO 2..8` | Bi-directional | 7-Pin QSPI interconnect + interrupt (§7.8.3) |
 
 ---
 
@@ -1060,6 +1277,18 @@ active RRC chat hub exposes three cryptographic bottlenecks:
   propagation notices, the SHA-256 stamp grinding pipeline with midstate caching
   (§1) reduces computation time from minutes to milliseconds, dramatically
   preserving battery life.
+- **Autonomous Local Field Intelligence & GNSS Integration (The gobot Engine)**:
+  In emergency and off-grid survival scenarios, the pocket device cannot rely on
+  reaching a distant RRC hub. The 30+ field tools from `cmd/gorrcbot` (wilderness first
+  aid `med`, repeater catalog `tower near`, solar/lunar ephemeris `sun`/`moon`, Open
+  Location Codes `olc`, and SAR status `checkin`) are compiled directly into the local
+  firmware runtime.
+  - *Zero-Hop Execution*: Survival queries resolve in microseconds in RAM without emitting
+    a single radio packet, preserving battery and maintaining radio silence.
+  - *GNSS & `/whereami` Subsystem*: A low-cost GNSS receiver on UART1 streams NMEA
+    sentences. The local engine computes the 10-digit Plus Code, Maidenhead grid, and
+    solar time, automatically populating the context for `tower near`, `sun`, and `/sos`
+    distress beacons.
 
 #### Host-to-ASIC Interconnect: Why QSPI + ESP32 GDMA + Hardware IRQ Beats Parallel GPIO & Standard SPI
 
@@ -1248,6 +1477,9 @@ cannot be used directly. The two viable firmware paths are:
 | 14 | `gorrcd` embedded daemon target: headless build tag (`//go:build pocket_hub || embedded || no_tui`), in-memory/SD room registry, session tables in PSRAM | go-reticulum | medium | zero-dependency `rrc` compiles with stdlib only; enables Target 3 (Pocket Hub: ESP32-C5 + LoRa + Wi-Fi, no display, no keyboard) |
 | 15 | ESP32-C5 board support & dual-band AP bridge: TinyGo target `esp32c5`, dual-band Wi-Fi 6 AP `Interface` + BLE GATT + SX1262 LoRa SPI driver + QSPI GDMA host driver for crypto ASIC (§7.5.2) | new / both | medium | enables the standalone Pocket Hub (§7.5.2) |
 | 16 | SpinalHDL Crypto ASIC cores: SHA-256 stamper, X25519/Ed25519 Montgomery ladder, AES+HMAC Token engine, QSPI slave with `Stream` interface (§2, §3) | new | large | hardware accelerator targeting TinyTapeout and full shuttles |
+| 17 | GNSS NMEA-0183 driver & geodetic coordinate engine (`/whereami`): pure-Go parser for `$GNRMC`/`$GNGGA`, wraps in-tree `cmd/gorrcbot/olc.go` (Plus Codes) & `geo.go` (Maidenhead); automatic context injection (§6.10) | go-reticulum | small | stdlib-only; zero external dependencies |
+| 18 | Embedded Captive Portal & Web Micron UI: lightweight HTTP/WebSocket daemon serving smartphone browsers over Wi-Fi 6 SoftAP; `/whereami` dashboard, local chat, `@gobot` interface, emergency SOS (§6.11) | go-nomadnet / go-reticulum | medium | enables $21 screenless Lifesaver puck; zero app installation |
+| 19 | Autonomous `gobot` field engine decoupling: in-process command evaluator (`med` first aid, `tower` repeaters, `sun`/`moon`, `checkin`) for zero-hop execution without network links (§6.9.2) | go-reticulum | medium | executes in microseconds in RAM with 0 airtime and 0 RF emissions |
 
 ### 7.7 A phased path that reuses this repo's parity discipline
 
@@ -1365,12 +1597,20 @@ Connecting the ESP32-C5 host to the FPGA requires only 7 DuPont jumper wires plu
   where the device's RNS identity replaces the vendor account, the
   owner's hub replaces the vendor cloud, and a five-block family
   (Node / Leaf / Eye / View / **Communicator**) covers doorbells, security,
-  sensors, lighting, weather, and **handheld pocket chat hubs (`gorrcd` on
-  ESP32-C5)** — all speaking stock Reticulum, all owner-owned by
+  sensors, lighting, weather, and **handheld pocket chat hubs & sovereign survival companions (The Traveler's Lifesaver: ESP32-C5 + SX1262 LoRa + GNSS + Wi-Fi 6 Captive Portal)** — all speaking stock Reticulum, all owner-owned by
   construction. Built-in dual-band Wi-Fi 6 (2.4 & 5 GHz) and BLE on the
   ESP32-C5 provide clean, congestion-free local AP connectivity and
   low-energy telemetry, while BLE reaches the Go port CGo-free as an
   external SPI/UART interface device (the RNode trick, applied to a second radio).
+- **The Traveler's Lifesaver & `/whereami` (§6.9, §6.10, §6.11)**: By compiling the 30+
+  `gobot` field tools (wilderness first aid `med`, repeater finder `tower near`, solar
+  ephemeris `sun`, Plus Codes `olc`) into local in-process firmware, an inexpensive
+  (~$21 BOM) sealed puck transforms any traveler's smartphone into a life-saving off-grid
+  terminal via a Wi-Fi 6 SoftAP without requiring an app store, internet, or predatory
+  monthly satellite subscriptions ($15–$65/mo). The GNSS subsystem provides real-time
+  `/whereami` Plus Codes (`849VCWC8+R9`), Maidenhead grids, and signs automatic SOS beacons
+  over LoRa, while the SpinalHDL crypto ASIC offloads burst crypto to extend battery life
+  across multi-day survival operations.
 - And if the accelerator ever lands on the same die as the CPU
   (section 7), both repos are firmware-portable with no dependency debt
   and no cgo: the enabling work is a storage VFS layer (the ~320 `os.*`
