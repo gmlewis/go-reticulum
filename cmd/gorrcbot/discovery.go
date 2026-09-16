@@ -234,8 +234,10 @@ func nearestCatalog(entries []catalogEntry, from LatLng, limit int) []catalogDis
 }
 
 // resolveCatalogPoint resolves a proximity request's argument to a position: a
-// row of the catalog itself, by identifier or name, and otherwise any of the
-// notations the navigation commands accept.
+// row of the catalog itself, by identifier or name, any of the notations the
+// navigation commands accept, and otherwise any place known to the other offline
+// reference catalogs (the airfield/city gazetteer, coastal tide stations, or
+// weather buoys).
 func resolveCatalogPoint(entries []catalogEntry, argument string) (LatLng, bool) {
 	text := strings.TrimSpace(argument)
 	if text == "" {
@@ -244,11 +246,15 @@ func resolveCatalogPoint(entries []catalogEntry, argument string) (LatLng, bool)
 	if entry, ok := findCatalogEntry(entries, text); ok {
 		return entry.Point, true
 	}
-	point, err := ParseLocation(text)
-	if err != nil {
-		return LatLng{}, false
+	if point, err := ParseLocation(text); err == nil {
+		return point, true
 	}
-	return point, true
+	for _, fallback := range [][]catalogEntry{metarCatalog, tideCatalog, buoyCatalog} {
+		if entry, ok := findCatalogEntry(fallback, text); ok {
+			return entry.Point, true
+		}
+	}
+	return LatLng{}, false
 }
 
 // splitDiscovery splits an argument line into a discovery sub-command and its

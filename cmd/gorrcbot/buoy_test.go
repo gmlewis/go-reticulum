@@ -379,6 +379,17 @@ func TestBuoyNearNamesTheClosestBuoys(t *testing.T) {
 		t.Errorf("buoy near 46026 = %v, want the buoy itself at zero distance", byID)
 	}
 
+	byCity := runLines(t, reg, session, "buoy near Orlando, fl")
+	if len(byCity) != 5 {
+		t.Fatalf("buoy near Orlando, fl = %v, want a header, three buoys, and a footer", byCity)
+	}
+	if !strings.Contains(byCity[0], "Weather buoys near Orlando, fl") {
+		t.Errorf("header = %q, want the city that was asked for", byCity[0])
+	}
+	if !strings.Contains(byCity[1], "41009") || !strings.Contains(byCity[1], "Canaveral") {
+		t.Errorf("nearest buoy to Orlando = %q, want Canaveral (41009)", byCity[1])
+	}
+
 	if got := runLines(t, reg, session, "buoy near nowhere at all"); len(got) != 2 ||
 		!strings.Contains(got[0], "not a place, a coordinate, or a plus code") {
 		t.Errorf("buoy near nowhere = %v, want an explanation and a hint", got)

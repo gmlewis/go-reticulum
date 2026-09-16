@@ -605,6 +605,16 @@ func TestTideNearNamesTheClosestStations(t *testing.T) {
 	if len(byName) < 2 || !strings.Contains(byName[1], "9414290") {
 		t.Errorf("tide near golden gate = %v, want the station named for it", byName)
 	}
+	byCity := runLines(t, reg, session, "tide near Orlando, fl")
+	if len(byCity) != 5 {
+		t.Fatalf("tide near Orlando, fl = %v, want a header, three stations, and a footer", byCity)
+	}
+	if !strings.Contains(byCity[0], "Tide stations near Orlando, fl") {
+		t.Errorf("header = %q, want the city that was asked for", byCity[0])
+	}
+	if !strings.Contains(byCity[1], "8721604") || !strings.Contains(byCity[1], "Port Canaveral") {
+		t.Errorf("nearest tide station to Orlando = %q, want Port Canaveral (8721604)", byCity[1])
+	}
 	if got := runLines(t, reg, session, "tide near nowhere at all"); len(got) != 2 ||
 		!strings.Contains(got[0], "not a place, a coordinate, or a plus code") {
 		t.Errorf("tide near nowhere = %v, want an explanation and a hint", got)
