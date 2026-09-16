@@ -1,4 +1,8 @@
-# Go Reticulum Network Stack
+# Go Reticulum Network Stack (RNS)
+
+![gonomadnet Mascot](assets/gonomadnet-mascot.png)
+
+*The Go gopher was designed by Renee French. The design is licensed under the Creative Commons 4.0 Attribution license.*
 
 Welcome to the documentation for **Go Reticulum**, a 100% pure Go rewrite of the [Reticulum Network Stack (RNS)](https://github.com/markqvist/Reticulum), the [LXMF messaging protocol](https://github.com/markqvist/lxmf), and the [RRC (Reticulum Relay Chat)](https://github.com/kc1awv/rrcd) ecosystem.
 
