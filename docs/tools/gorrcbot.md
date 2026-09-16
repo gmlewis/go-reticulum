@@ -166,6 +166,12 @@ While `@gobot` can be triggered publicly inside any room it has joined, **privat
 /msg gobot checkin 849VCWC8+R9 overdue 4h Trail run to summit
 ```
 
+> **From a shell:** the [**`gobot`**](gobot.md) CLI performs exactly this
+> exchange without a chat client — it joins the hub, sends one `/msg gobot ...`
+> line, prints the reply to stdout, and exits. Its hub destination is hard-coded
+> to the official gonomadnet Public RRC Hub, so `gobot help` reaches the
+> official `@gobot` out of the box.
+
 ### Why Private Messaging is Recommended
 
 1. **Bandwidth Preservation on LoRa & Radio Meshes**:

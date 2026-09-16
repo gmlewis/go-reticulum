@@ -60,6 +60,7 @@ nav:
   - Tools & Daemons:
       - Directory: tools/index.md
       - gorrcbot (Chat Bot): tools/gorrcbot.md
+      - gobot (Bot CLI): tools/gobot.md
       - gorrcd (Hub Daemon): tools/gorrcd.md
       - gornodeconf (RNode Manager): tools/gornodeconf.md
       - CLI Utilities: tools/cli-utilities.md

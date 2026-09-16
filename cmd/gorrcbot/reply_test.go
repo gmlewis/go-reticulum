@@ -660,6 +660,79 @@ func TestResponderSplitsLongLinesIntoEnvelopes(t *testing.T) {
 	}
 }
 
+// TestResponderSplitsDirectLinesToTheForwardedEnvelope asserts a long direct
+// reply is split against the envelope the hub really forwards. A direct notice
+// carries K_DST and the sender's nick, so it is larger than the plain client
+// notice the room route measures; a chunk sized by that smaller shape passes
+// the split, is then refused by SendDirectNotice as over the link MDU, and the
+// reply is lost without a word reaching the asker.
+func TestResponderSplitsDirectLinesToTheForwardedEnvelope(t *testing.T) {
+	t.Parallel()
+
+	requester := peerHashFor(0x41)
+	cfg := defaultTestConfig()
+	cfg.MaxReplyLines = 10
+	session, fake := newReplySession(t, cfg)
+	fake.setCapability(rrc.CapDirectNotice, true)
+	fake.setKnownPeer(hexString(requester), "Alice")
+
+	r := newResponder(cfg, mustHex(replyOwnHash), func(*commandRequest) []string {
+		return []string{strings.Repeat("q", 1200)}
+	})
+	r.handle(session, directMessageFrom("help", requester))
+
+	directs := fake.directList()
+	if len(directs) < 3 {
+		t.Fatalf("sent %v direct notices for a 1200-byte line, want several", len(directs))
+	}
+	nick := cfg.AdvertisedNick(session.cfg)
+	for i, text := range directs {
+		fits, err := directNoticeFits(mustHex(replyOwnHash), requester, nick, text)
+		if err != nil {
+			t.Fatalf("direct notice %v: %v", i, err)
+		}
+		if !fits {
+			t.Errorf("direct notice %v does not fit one forwarded envelope (%v bytes): %q",
+				i, len(text), text)
+		}
+	}
+}
+
+// TestResponderSplitsTheRealHelpListingDirectly pins the concrete failure that
+// motivated the forwarded-envelope model: "help" with no argument returns the
+// whole command listing as ONE long line, the live bot refused to send it as a
+// direct notice because it measured it against the smaller room shape, and the
+// asker saw nothing at all. The real registry produces the real listing here.
+func TestResponderSplitsTheRealHelpListingDirectly(t *testing.T) {
+	t.Parallel()
+
+	cfg := defaultTestConfig()
+	cfg.MaxReplyLines = 12
+	reg, session, fake := commandFixture(t, cfg)
+	requester := peerHashFor(0x41)
+	fake.setCapability(rrc.CapDirectNotice, true)
+	fake.setKnownPeer(hexString(requester), "Alice")
+
+	r := newResponder(cfg, mustHex(replyOwnHash), reg.Run)
+	r.handle(session, directMessageFrom("help", requester))
+
+	directs := fake.directList()
+	if len(directs) == 0 {
+		t.Fatal("the bot sent no direct notice for `help`; the listing did not fit any envelope")
+	}
+	nick := cfg.AdvertisedNick(session.cfg)
+	for i, text := range directs {
+		fits, err := directNoticeFits(mustHex(replyOwnHash), requester, nick, text)
+		if err != nil {
+			t.Fatalf("direct notice %v: %v", i, err)
+		}
+		if !fits {
+			t.Errorf("direct notice %v does not fit one forwarded envelope (%v bytes): %q",
+				i, len(text), text)
+		}
+	}
+}
+
 // TestResponderDropsRepliesForRoomsTheBotLeft asserts a reply is refused when
 // the room is no longer joined, so the hub's rejection never becomes a mystery.
 func TestResponderDropsRepliesForRoomsTheBotLeft(t *testing.T) {

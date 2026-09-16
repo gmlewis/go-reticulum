@@ -268,10 +268,6 @@ func (r *responder) send(s *hubSession, room string, msg *rrc.RRCMessage, direct
 		return
 	}
 	nick := r.cfg.AdvertisedNick(s.cfg)
-	chunks := r.chunksFor(room, nick, lines)
-	if len(chunks) == 0 {
-		return
-	}
 
 	if !direct {
 		if r.cfg.Reply == ReplyDirect {
@@ -284,6 +280,10 @@ func (r *responder) send(s *hubSession, room string, msg *rrc.RRCMessage, direct
 			logf("no reply route for the direct request from %v", hexString(msg.Src))
 			return
 		}
+		chunks := r.chunksFor(roomFits(r.ownHash, room, nick), lines)
+		if len(chunks) == 0 {
+			return
+		}
 		for _, chunk := range chunks {
 			if _, err := s.conn.SendNotice(room, chunk); err != nil {
 				logf("notice in %q failed: %v", room, err)
@@ -294,10 +294,17 @@ func (r *responder) send(s *hubSession, room string, msg *rrc.RRCMessage, direct
 		return
 	}
 
-	// The route was chosen before anything was sent, so a direct reply either
-	// delivers every chunk or nothing: SendDirectNotice validates the
-	// destination, the capability, and the envelope size before it hands
-	// anything to the link.
+	// A direct reply rides the hub's forward, which rewrites K_SRC to the
+	// sender's hash and attaches the sender's nick. Its envelope is therefore
+	// larger than a room notice carrying the same text, and a line that fits
+	// the room shape can still be one byte over the link MDU once K_DST and
+	// K_NICK are on it -- which SendDirectNotice refuses before anything
+	// reaches the wire. Measuring the direct shape is what keeps a long reply
+	// line from being dropped whole.
+	chunks := r.chunksFor(directFits(r.ownHash, nick), lines)
+	if len(chunks) == 0 {
+		return
+	}
 	if err := r.sendDirect(s, chunks, msg); err != nil {
 		logf("direct notice to %v failed: %v", hexString(msg.Src), err)
 		return
@@ -348,15 +355,17 @@ func (r *responder) directRoute(s *hubSession, msg *rrc.RRCMessage, requesterDir
 
 // chunksFor turns the reply lines into the envelopes they will be sent as: one
 // chunk per line, long lines split, and the whole reply bounded by
-// max_reply_lines.
-func (r *responder) chunksFor(room, nick string, lines []string) []string {
+// max_reply_lines. fits is the size model for the envelope shape the reply will
+// travel in, so a room notice and a direct notice are both measured as what the
+// hub will really put on the wire.
+func (r *responder) chunksFor(fits noticeSizer, lines []string) []string {
 	budget := max(r.cfg.MaxReplyLines, 1)
 	chunks := make([]string, 0, len(lines))
 	for _, line := range lines {
 		if line == "" {
 			continue
 		}
-		split, err := splitNoticeText(r.ownHash, room, nick, line, budget)
+		split, err := splitNoticeTextWith(fits, line, budget)
 		if err != nil {
 			logf("could not fit a reply into envelopes: %v", err)
 			continue
@@ -364,10 +373,29 @@ func (r *responder) chunksFor(room, nick string, lines []string) []string {
 		chunks = append(chunks, split...)
 	}
 	if len(chunks) > budget {
-		last := trimToFit(r.ownHash, room, nick, chunks[budget-1], truncatedMarker)
+		last := trimToFitWith(fits, chunks[budget-1], truncatedMarker)
 		chunks = append(chunks[:budget-1], last)
 	}
 	return chunks
+}
+
+// noticeSizer reports whether one reply line fits the envelope shape it is
+// about to travel in.
+type noticeSizer func(text string) (bool, error)
+
+// roomFits sizes a reply line as an in-room NOTICE.
+func roomFits(ownHash []byte, room, nick string) noticeSizer {
+	return func(text string) (bool, error) { return noticeFits(ownHash, room, nick, text) }
+}
+
+// directFits sizes a reply line the way it will reach the target: the hub
+// forwards a direct NOTICE with K_SRC rewritten and the sender's nick attached,
+// so the model includes K_DST and K_NICK. The destination's value never changes
+// the encoded size, only its length does, so a full-length placeholder is
+// exact.
+func directFits(ownHash []byte, nick string) noticeSizer {
+	dst := make([]byte, rrc.IdentityHashLen)
+	return func(text string) (bool, error) { return directNoticeFits(ownHash, dst, nick, text) }
 }
 
 // noticeEnvelopeSize returns the encoded size of the notice the client would
@@ -387,40 +415,45 @@ func noticeEnvelopeSize(ownHash []byte, room, nick, text string) (int, error) {
 // other than the last end with splitMarker, and a chunk cut off by the line
 // budget ends with truncatedMarker. Splits always land on a rune boundary.
 func splitNoticeText(ownHash []byte, room, nick, text string, maxLines int) ([]string, error) {
+	return splitNoticeTextWith(roomFits(ownHash, room, nick), text, maxLines)
+}
+
+// splitNoticeTextWith is splitNoticeText against an explicit envelope shape.
+func splitNoticeTextWith(fits noticeSizer, text string, maxLines int) ([]string, error) {
 	if text == "" {
 		return nil, nil
 	}
 	if maxLines < 1 {
 		maxLines = 1
 	}
-	if fits, err := noticeFits(ownHash, room, nick, text); err != nil {
+	if ok, err := fits(text); err != nil {
 		return nil, err
-	} else if fits {
+	} else if ok {
 		return []string{text}, nil
 	}
 
 	var chunks []string
 	remaining := text
 	for len(chunks) < maxLines {
-		if fits, err := noticeFits(ownHash, room, nick, remaining); err != nil {
+		if ok, err := fits(remaining); err != nil {
 			return nil, err
-		} else if fits {
+		} else if ok {
 			chunks = append(chunks, remaining)
 			return chunks, nil
 		}
 		// The line budget is exhausted by this chunk: cut it to the marker
 		// that says the rest was dropped.
 		if len(chunks) == maxLines-1 {
-			chunks = append(chunks, trimToFit(ownHash, room, nick, remaining, truncatedMarker))
+			chunks = append(chunks, trimToFitWith(fits, remaining, truncatedMarker))
 			return chunks, nil
 		}
-		head, tail, err := splitPrefix(ownHash, room, nick, remaining, splitMarker)
+		head, tail, err := splitPrefixWith(fits, remaining, splitMarker)
 		if err != nil {
 			return nil, err
 		}
 		if head == "" {
 			// Even the marker alone will not fit; emit the best truncation.
-			chunks = append(chunks, trimToFit(ownHash, room, nick, remaining, truncatedMarker))
+			chunks = append(chunks, trimToFitWith(fits, remaining, truncatedMarker))
 			return chunks, nil
 		}
 		chunks = append(chunks, head+splitMarker)
@@ -438,13 +471,14 @@ func noticeFits(ownHash []byte, room, nick, text string) (bool, error) {
 	return size <= rns.MDU, nil
 }
 
-// trimToFit returns the longest rune-aligned prefix of text whose length plus
-// marker fits one envelope. The marker is dropped when even that cannot fit.
-func trimToFit(ownHash []byte, room, nick, text, marker string) string {
-	if fits, err := noticeFits(ownHash, room, nick, text+marker); err == nil && fits {
+// trimToFitWith returns the longest rune-aligned prefix of text whose length
+// plus marker fits one envelope of the given shape. The marker is dropped when
+// even that cannot fit.
+func trimToFitWith(fits noticeSizer, text, marker string) string {
+	if ok, err := fits(text + marker); err == nil && ok {
 		return text + marker
 	}
-	head, _, err := splitPrefix(ownHash, room, nick, text, marker)
+	head, _, err := splitPrefixWith(fits, text, marker)
 	if err != nil {
 		return ""
 	}
@@ -454,22 +488,22 @@ func trimToFit(ownHash []byte, room, nick, text, marker string) string {
 	return head + marker
 }
 
-// splitPrefix finds the longest rune-aligned prefix of text that still fits one
-// envelope once marker is appended, and returns it with the untouched remainder.
-// A small tail shorter than a marker is folded into the head so the remainder
-// never ends up empty.
-func splitPrefix(ownHash []byte, room, nick, text, marker string) (string, string, error) {
+// splitPrefixWith finds the longest rune-aligned prefix of text that still fits
+// one envelope once marker is appended, and returns it with the untouched
+// remainder. A small tail shorter than a marker is folded into the head so the
+// remainder never ends up empty.
+func splitPrefixWith(fits noticeSizer, text, marker string) (string, string, error) {
 	runes := []rune(text)
 	// Binary search the largest rune count that fits.
 	lo, hi := 0, len(runes)
 	best := -1
 	for lo <= hi {
 		mid := (lo + hi) / 2
-		fits, err := noticeFits(ownHash, room, nick, string(runes[:mid])+marker)
+		ok, err := fits(string(runes[:mid]) + marker)
 		if err != nil {
 			return "", "", err
 		}
-		if fits {
+		if ok {
 			best = mid
 			lo = mid + 1
 			continue

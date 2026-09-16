@@ -62,6 +62,7 @@ The Go port provides a modern, high-performance, single-binary implementation of
 - [**Getting Started**](getting-started/index.md) — Installation, initial configuration, and joining the mesh.
 - [**Tools & Daemons**](tools/index.md) — Overview of all included executables:
     - [**gorrcbot**](tools/gorrcbot.md) — The autonomous RRC chat bot and off-grid field assistant.
+    - [**gobot**](tools/gobot.md) — Ask a live RRC bot one question from the shell and print its reply.
     - [**gorrcd**](tools/gorrcd.md) — Standalone high-performance RRC hub daemon.
     - [**gornodeconf**](tools/gornodeconf.md) — Hardware provisioning and firmware flasher for LoRa RNodes.
     - [**CLI Utilities**](tools/cli-utilities.md) — Diagnostic and operational commands (`gornstatus`, `gornpath`, `gornprobe`, etc.).

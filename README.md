@@ -275,7 +275,7 @@ gonomadnet Public RRC Hub  (gonomadnet node + gornsd + gorngit + gorrcd + golxmd
 ```
 
 - **NomadNet Page**: Open `c7d0e7bbd883e595f53e14fa6986188c` (`Ctrl-U` in `gonomadnet`) to browse Micron pages and live [Wasm Executable Pages](#wasm-executable-pages).
-- **RRC Chat & `@gobot`**: Join `rrc://a012129c10205c0b9441fcd2b755b2a7/#general` to chat and interact with [`@gobot`](#gorrcbot--the-rrc-bot-client).
+- **RRC Chat & `@gobot`**: Join `rrc://a012129c10205c0b9441fcd2b755b2a7/#general` to chat and interact with [`@gobot`](#gorrcbot--the-rrc-bot-client). From a shell, the [`gobot`](#gobot--the-one-shot-cli-for-gobot) CLI reaches the same official bot with one command and no setup.
 - **Git over Reticulum**: Clone repositories directly over the mesh using `gorngit` / `git`: `git clone rns://58a0406047ec2e7ce23e9e9a83b744df/go-reticulum`.
 - **LXMF Propagation Node**: Use `7acc095f0e83182feb58c888d090a3cc` as your LXMF propagation node for offline store-and-forward message delivery.
 
@@ -621,6 +621,32 @@ WantedBy=multi-user.target
 Run `gorrcbot` once by hand before installing the unit, so the configuration and
 the identity exist (and so the identity is backed up: losing `bot_identity`
 changes the bot's identity hash, which is what other clients key on).
+
+### gobot — the one-shot CLI for `@gobot`
+
+`gobot` is the shell-friendly counterpart to `gorrcbot`: a small client that
+connects to a hub, privately asks a live bot one question the way `/msg gobot
+...` would, prints the answer to stdout, and exits. It writes no state and
+generates no identity — it reuses the one already in `~/.reticulum`, and fails
+if there is none.
+
+Its hub destination is **hard-coded to the official gonomadnet Public RRC Hub**,
+so it reaches the official `@gobot` with no configuration; `-dest` overrides it
+to reach your own bot.
+
+```bash
+go install ./cmd/gobot/
+
+gobot help buoy                    # ask the official @gobot
+gobot wx Denver                    # live weather
+gobot -dest <your-hub-hash> --to <your-bot-nick> help
+```
+
+The reply is plain text on stdout, diagnostics go to stderr, and the exit status
+is `0` for an answer, `1` for an operational failure, `2` for a usage error, and
+`3` when the request was delivered but the bot stayed silent.
+
+> For comprehensive documentation, see the [**gobot Documentation Guide**](https://gmlewis.github.io/go-reticulum/tools/gobot/).
 
 ### Private messages between RRC users
 
