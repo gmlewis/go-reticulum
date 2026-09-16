@@ -263,16 +263,21 @@ Add it to your Reticulum client config (`~/.reticulum/config`):
   target_port = 4242
 ```
 
-Then start `gonomadnet`, wait for the hub to announce, and open it from the
-Nodes list — or type its destination hash into the URL bar (`Ctrl-U`):
-`c7d0e7bbd883e595f53e14fa6986188c`. Its index page links to the executable
-pages: the guestbook, the hit counter, and the other demos described under
-[Wasm Executable Pages](#wasm-executable-pages).
+**Live Public Demo Destinations (`glenn-kamrui`):**
 
-The hub also hosts a public RRC room, `#general`, for the Go ports —
-`rrc://a012129c10205c0b9441fcd2b755b2a7/#general` — and `rns://` mirrors of the
-source, so the repositories can be cloned over Reticulum as well as from GitHub.
-[`gorrcbot`](#gorrcbot--the-rrc-bot-client) lives in that room.
+```text
+gonomadnet Public RRC Hub  (gonomadnet node + gornsd + gorngit + gorrcd + golxmd)
+  gonomadnet node dest  <c7d0e7bbd883e595f53e14fa6986188c>  nomadnetwork://c7d0e7bbd883e595f53e14fa6986188c
+  gorngit repos dest    <58a0406047ec2e7ce23e9e9a83b744df>  rns://58a0406047ec2e7ce23e9e9a83b744df/<repo>
+  gorngit page dest     <cb3677a1bb8e37f334096566ed8ff895>  nomadnetwork://cb3677a1bb8e37f334096566ed8ff895
+  gorrcd hub dest       <a012129c10205c0b9441fcd2b755b2a7>  rrc://a012129c10205c0b9441fcd2b755b2a7/#general
+  golxmd prop dest      <7acc095f0e83182feb58c888d090a3cc>  lxmf.propagation
+```
+
+- **NomadNet Page**: Open `c7d0e7bbd883e595f53e14fa6986188c` (`Ctrl-U` in `gonomadnet`) to browse Micron pages and live [Wasm Executable Pages](#wasm-executable-pages).
+- **RRC Chat & `@gobot`**: Join `rrc://a012129c10205c0b9441fcd2b755b2a7/#general` to chat and interact with [`@gobot`](#gorrcbot--the-rrc-bot-client).
+- **Git over Reticulum**: Clone repositories directly over the mesh using `gorngit` / `git`: `git clone rns://58a0406047ec2e7ce23e9e9a83b744df/go-reticulum`.
+- **LXMF Propagation Node**: Use `7acc095f0e83182feb58c888d090a3cc` as your LXMF propagation node for offline store-and-forward message delivery.
 
 ### gorrcbot — the RRC bot client
 

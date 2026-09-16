@@ -34,6 +34,17 @@ To connect to a remote Reticulum node or hub over the internet:
   target_port = 4242
 ```
 
+Once connected to `go-nomadnet.duckdns.org:4242`, all public services hosted on the hub (`glenn-kamrui`) are immediately reachable over the mesh:
+
+| Service Daemon | Destination Hash | Protocol / URL | Description |
+|----------------|------------------|----------------|-------------|
+| **gonomadnet Node** | `<c7d0e7bbd883e595f53e14fa6986188c>` | `nomadnetwork://c7d0e7bbd883e595f53e14fa6986188c` | Live Micron pages served over Reticulum. |
+| **gorrcd Chat Hub** | `<a012129c10205c0b9441fcd2b755b2a7>` | `rrc://a012129c10205c0b9441fcd2b755b2a7/#general` | Public RRC chat hub. Home of `@gobot`! |
+| **gorngit Repos** | `<58a0406047ec2e7ce23e9e9a83b744df>` | `rns://58a0406047ec2e7ce23e9e9a83b744df/<repo>` | Git clone & push over Reticulum mesh links. |
+| **gorngit Pages** | `<cb3677a1bb8e37f334096566ed8ff895>` | `nomadnetwork://cb3677a1bb8e37f334096566ed8ff895` | Micron code browser for mesh-hosted repositories. |
+| **golxmd Propagation** | `<7acc095f0e83182feb58c888d090a3cc>` | `lxmf.propagation` | Store-and-forward LXMF message propagation node. |
+
+
 Popular public testnet bootstrap nodes include:
 
 | Location | Target Host | Port |

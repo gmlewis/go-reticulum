@@ -1032,6 +1032,9 @@ func TestEngineDispatchesInboundToHandler(t *testing.T) {
 	f := newEngineFixture(t, cfg)
 	one := f.dialer.hub(t, "One")
 	two := f.dialer.hub(t, "Two")
+	waitFor(t, "both hubs to connect", func() bool {
+		return one.connectCount() == 1 && two.connectCount() == 1
+	})
 
 	one.deliver(&rrc.RRCMessage{Kind: "msg", Room: "general", Text: "hello from one"})
 	two.deliver(&rrc.RRCMessage{Kind: "msg", Room: "general", Text: "hello from two"})
@@ -1081,11 +1084,13 @@ func TestEngineShutdownDisconnectsEveryHubAndReturns(t *testing.T) {
 // drains what is already queued.
 func TestEngineShutdownFlushesQueuedInbound(t *testing.T) {
 	release := make(chan struct{})
+	started := make(chan struct{})
 	var handled []string
 	f := newEngineFixture(t, nil)
 	f.hooks.mu.Lock()
 	f.hooks.onInbound = func(_ *hubSession, msg *rrc.RRCMessage) {
 		if msg.Text == "block" {
+			close(started)
 			<-release
 		}
 		f.hooks.mu.Lock()
@@ -1095,7 +1100,9 @@ func TestEngineShutdownFlushesQueuedInbound(t *testing.T) {
 	f.hooks.mu.Unlock()
 
 	hub := f.dialer.hub(t, "One")
+	waitFor(t, "the hub to connect", func() bool { return hub.connectCount() == 1 })
 	hub.deliver(&rrc.RRCMessage{Kind: "msg", Room: "general", Text: "block"})
+	<-started
 	for i := range 3 {
 		hub.deliver(&rrc.RRCMessage{Kind: "msg", Room: "general", Text: "queued" + string(rune('a'+i))})
 	}
