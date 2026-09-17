@@ -59,7 +59,7 @@ func (a *announceFilterInterface) Send(data []byte) error {
 
 // TestShouldTransmitAnnounceParity walks every branch of the
 // RNS/Transport.py:1207-1290 announce-broadcast filter (v1.4.1) and asserts the
-// Go decision matches the verbatim-Python golden for each curated case. The
+// Go decision matches the verbatim-Python golden for each chosen case. The
 // golden decisions were derived by reproducing the Python elif chain exactly
 // and enumerating combinations; the representative cases below cover every
 // branch (B1–B7) including the local-destination, announces_from_internal and

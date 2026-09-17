@@ -1,0 +1,49 @@
+name: Check Offline Reference Data
+
+on:
+  schedule:
+    # Runs every Saturday at 09:00 UTC (04:00 EST)
+    - cron: '0 9 * * 6'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-offline-data:
+    name: Verify Upstream Public Datasets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: |
+            go.mod
+            **/go.sum
+
+      - name: Run dry-run offline data check
+        run: |
+          echo "Checking upstream public data sources..."
+          output=$(./scripts/update-offline-data.sh -n)
+          echo "${output}"
+          {
+            echo "## Offline Public Reference Data Status"
+            echo "Automated weekly verification of upstream public datasets (NOAA NDBC, NOAA CO-OPS, OurAirports, NOAA WMM):"
+            echo ""
+            echo '```text'
+            echo "${output}"
+            echo '```'
+            echo ""
+            echo "To refresh local datasets prior to release, run: \`./scripts/update-offline-data.sh\`"
+          } >> "${GITHUB_STEP_SUMMARY}"

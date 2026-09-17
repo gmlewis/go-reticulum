@@ -136,4 +136,8 @@ files:
 
 The configuration file and the identity are created on the first run, which
 then exits so the operator can edit the hubs before the bot connects.
+
+safety:
+  gorrcbot is experimental and NOT a certified medical or life-safety tool.
+  First-aid and navigation tools are informational only. See DISCLAIMER.md.
 `

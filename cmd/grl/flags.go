@@ -140,5 +140,9 @@ The configuration file is created with documented defaults on the first run.
 GRL_HOME overrides the appliance's home directory, which is how a second
 appliance, or a test, stays isolated on one workstation.
 
+safety:
+  grl is experimental and NOT a certified medical or life-safety device.
+  Transmission over unlicensed LoRa is never guaranteed. See DISCLAIMER.md.
+
 Once it is running, open http://localhost:9111/ for the survival dashboard.
 `

@@ -21,6 +21,7 @@ Go Reticulum includes a comprehensive suite of command-line tools and standalone
 | Tool | Purpose | Description |
 |------|---------|-------------|
 | [**gornodeconf**](gornodeconf.md) | RNode Hardware Manager | Configure, bootstrap, sign, backup, and flash LoRa RNode devices over serial ports. |
+| [**update-offline-data**](update-offline-data.md) | Embedded Data Refresher | Keeps the embedded public catalogs (NDBC buoys, NOAA tide stations, OurAirports airfields, the WMM notice) in step with their live sources, with an idempotent check that names the stations that changed. |
 | **gornode-diagnostics** | Fleet Radio Diagnostics | Inspect and profile fleets of RNodes, reporting RSSI, SNR, hardware revisions, and firmware statuses. |
 
 ---

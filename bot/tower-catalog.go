@@ -31,7 +31,7 @@
 // transmits 600 kHz below its output, a 70 cm repeater 5 MHz below, cellular
 // rows name the 3GPP bands a mast serves rather than a channel).
 //
-// This is a curated planning reference, not a live directory. Repeater
+// This is a hand-maintained planning reference, not a live directory. Repeater
 // coordination, ownership, and tones change, a mast is re-banded, and a machine
 // goes off the air; an operator must confirm a frequency before transmitting on
 // it. For micro-cell density, an operator can drop an OpenCelliD extract in as

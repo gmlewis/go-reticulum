@@ -7,6 +7,7 @@ package bot
 
 import (
 	"math"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -280,25 +281,30 @@ func TestBuoySearchFindsABuoyByPlaceAndID(t *testing.T) {
 	if len(byPlace) < 2 || !strings.Contains(byPlace[0], `Weather buoys matching "san francisco" (Page 1 of `) {
 		t.Fatalf("buoy search san francisco = %v, want a paged answer", byPlace)
 	}
-	if !strings.Contains(byPlace[1], "  46026: San Francisco, CA") {
+	// The label is the provider's own published name, matched case-insensitively:
+	// the catalog carries the stations as they are published, so the test asks
+	// which station came first, not how the center capitalizes it.
+	if !strings.Contains(byPlace[1], "  46026: ") ||
+		!strings.Contains(strings.ToUpper(byPlace[1]), "SAN FRANCISCO") {
 		t.Errorf("first match = %q, want the San Francisco buoy", byPlace[1])
 	}
 
 	byID := runLines(t, reg, session, "buoy search 44013")
-	if len(byID) < 2 || !strings.Contains(byID[1], "  44013: Boston, MA") {
+	if len(byID) < 2 || !strings.Contains(byID[1], "  44013: ") ||
+		!strings.Contains(strings.ToUpper(byID[1]), "BOSTON") {
 		t.Errorf("buoy search 44013 = %v, want the Boston buoy first", byID)
 	}
 
 	byRegion := runLines(t, reg, session, "buoy search cape")
-	if len(byRegion) < 2 || !strings.Contains(byRegion[0], `Weather buoys matching "cape" (Page 1 of 2):`) {
-		t.Fatalf("buoy search cape = %v, want the Cape buoys over two pages", byRegion)
+	if len(byRegion) < 2 || !strings.Contains(byRegion[0], `Weather buoys matching "cape" (Page 1 of `) {
+		t.Fatalf("buoy search cape = %v, want a paged answer", byRegion)
 	}
-	if !strings.Contains(byRegion[1], "  46028: Cape San Martin, CA") {
-		t.Errorf("first match = %q, want Cape San Martin first", byRegion[1])
-	}
+	// Every row on the page must match the query somewhere, which is the whole
+	// search contract; which cape is listed first is the catalog's own order
+	// over the stations the center publishes.
 	for _, line := range byRegion[1 : len(byRegion)-1] {
-		if !strings.Contains(line, "Cape ") {
-			t.Errorf("buoy search cape listed a buoy that is not a cape: %q", line)
+		if !strings.Contains(strings.ToUpper(line), "CAPE") {
+			t.Errorf("buoy search cape listed a buoy that does not match: %q", line)
 		}
 	}
 	if !strings.Contains(strings.Join(runLines(t, reg, session, "buoy search mendocino"), "\n"), "46213") {
@@ -337,9 +343,17 @@ func TestBuoyListFiltersByRegion(t *testing.T) {
 		t.Errorf("buoy list california = %v, want the same first page as buoy list CA", byName)
 	}
 
+	// The Gulf is a region filter over the full catalog, so the answer is paged;
+	// what it must never do is call a station on Florida's Atlantic coast a Gulf
+	// station, which is what the basin bounds have to get right.
 	basin := runLines(t, reg, session, "buoy list GOM")
-	if len(basin) == 0 || !strings.Contains(basin[0], "Weather buoys in GOM (Page 1 of 1):") {
-		t.Errorf("buoy list GOM = %v, want the open Gulf of Mexico buoy", basin)
+	if len(basin) < 3 || !strings.Contains(basin[0], "Weather buoys in GOM (Page 1 of ") {
+		t.Fatalf("buoy list GOM = %v, want the Gulf buoys paged", basin)
+	}
+	for _, line := range basin[1 : len(basin)-1] {
+		if !strings.Contains(line, ", GOM") {
+			t.Errorf("buoy list GOM listed a buoy outside the Gulf: %q", line)
+		}
 	}
 
 	if got := runLines(t, reg, session, "buoy list ZZ"); len(got) != 2 ||
@@ -366,12 +380,17 @@ func TestBuoyNearNamesTheClosestBuoys(t *testing.T) {
 	if !strings.Contains(lines[0], "Weather buoys near 37.8,-122.4 (Page 1 of 1):") {
 		t.Errorf("header = %q, want the position that was asked for", lines[0])
 	}
-	if !strings.Contains(lines[1], "46026 (") || !strings.Contains(lines[1], " nmi ") ||
-		!strings.Contains(lines[1], "): San Francisco, CA") {
-		t.Errorf("nearest buoy = %q, want a distance, a bearing, and the name", lines[1])
+	// The catalog carries every station the center publishes, so which three are
+	// nearest is the center's data, not this test's business: what the command
+	// promises is a distance, a bearing, a name, and the nearest first.
+	for i, line := range lines[1:4] {
+		if !strings.Contains(line, " (") || !strings.Contains(line, " nmi ") ||
+			!strings.Contains(line, "): ") {
+			t.Errorf("buoy %v of the answer = %q, want a distance, a bearing, and the name", i+1, line)
+		}
 	}
-	if !strings.Contains(lines[2], "46012") {
-		t.Errorf("the second buoy = %q, want Half Moon Bay next", lines[2])
+	if !closerFirst(lines[1:4]) {
+		t.Errorf("buoy near 37.8,-122.4 = %v, want the nearest station first", lines[1:4])
 	}
 
 	byID := runLines(t, reg, session, "buoy near 46026")
@@ -386,8 +405,17 @@ func TestBuoyNearNamesTheClosestBuoys(t *testing.T) {
 	if !strings.Contains(byCity[0], "Weather buoys near Orlando, fl") {
 		t.Errorf("header = %q, want the city that was asked for", byCity[0])
 	}
-	if !strings.Contains(byCity[1], "41009") || !strings.Contains(byCity[1], "Canaveral") {
-		t.Errorf("nearest buoy to Orlando = %q, want Canaveral (41009)", byCity[1])
+	// Which buoy is nearest to Orlando is the center's data, and the catalog
+	// carries every station it publishes; the command promises the nearest
+	// first, in the state that was asked for.
+	if !strings.Contains(byCity[1], " nmi ") || !strings.Contains(byCity[1], "): ") {
+		t.Errorf("nearest buoy to Orlando = %q, want a distance and a name", byCity[1])
+	}
+	if !closerFirst(byCity[1:4]) {
+		t.Errorf("buoy near Orlando, fl = %v, want the nearest station first", byCity[1:4])
+	}
+	if !strings.Contains(byCity[0], "Orlando, fl") {
+		t.Errorf("header = %q, want the city that was asked for", byCity[0])
 	}
 
 	if got := runLines(t, reg, session, "buoy near nowhere at all"); len(got) != 2 ||
@@ -432,8 +460,15 @@ func TestBuoyStationTableIsCoherent(t *testing.T) {
 			t.Errorf("buoy %v appears twice", station.ID)
 		}
 		seen[station.ID] = true
-		if len(station.ID) < 4 || len(station.ID) > 6 {
-			t.Errorf("buoy id %q is not 4 to 6 characters", station.ID)
+		// The center publishes partner stations whose ids are longer than the
+		// five-character NDBC ids ("4403585") and some in lower case ("pxsc1"),
+		// and the table carries the feed in full. The shape worth refusing is an
+		// id no command could take, not one that is longer than the classic.
+		if len(station.ID) < 4 || len(station.ID) > 8 {
+			t.Errorf("buoy id %q is not 4 to 8 characters", station.ID)
+		}
+		if strings.ContainsAny(station.ID, " \t") {
+			t.Errorf("buoy id %q carries whitespace", station.ID)
 		}
 		if station.Name == "" {
 			t.Errorf("buoy %v has no name", station.ID)
@@ -451,4 +486,27 @@ func TestBuoyStationTableIsCoherent(t *testing.T) {
 			t.Errorf("the reference table has no buoy in %v", want)
 		}
 	}
+}
+
+// closerFirst reports whether a page of proximity rows is ordered nearest first,
+// which is the promise the command makes regardless of which stations the
+// provider happens to publish. Each row carries its distance as "(0.2 nmi NE)".
+func closerFirst(rows []string) bool {
+	previous := -1.0
+	for _, row := range rows {
+		start := strings.Index(row, "(")
+		end := strings.Index(row, " nmi")
+		if start < 0 || end < start {
+			return false
+		}
+		value, err := strconv.ParseFloat(strings.TrimSpace(row[start+1:end]), 64)
+		if err != nil {
+			return false
+		}
+		if value < previous {
+			return false
+		}
+		previous = value
+	}
+	return true
 }

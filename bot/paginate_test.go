@@ -168,28 +168,48 @@ func TestMoreAnswersTheNextPageAndChains(t *testing.T) {
 
 	reg, session, _ := commandFixture(t, tideConfig())
 
+	// How many pages California has is the provider's data, now that the catalog
+	// carries every station it publishes; what the pager promises is the chain.
 	first := runLines(t, reg, session, "tide list CA")
-	if len(first) == 0 || !strings.Contains(first[0], "Tide stations in CA (Page 1 of 3):") {
-		t.Fatalf("tide list CA = %v, want page 1 of 3 Californian stations", first)
+	if len(first) == 0 || !strings.Contains(first[0], "Tide stations in CA (Page 1 of ") {
+		t.Fatalf("tide list CA = %v, want Californian stations paged", first)
 	}
-	if want := `[Page 1 of 3: ask "tide list CA 2" or "more" for next]`; first[len(first)-1] != want {
-		t.Errorf("footer = %q, want %q", first[len(first)-1], want)
+	if footer := first[len(first)-1]; !strings.HasPrefix(footer, "[Page 1 of ") ||
+		!strings.Contains(footer, `: ask "tide list CA 2" or "more" for next]`) {
+		t.Errorf("footer = %q, want a next-page hint", footer)
 	}
 
 	second := runLines(t, reg, session, "more")
-	if len(second) == 0 || !strings.Contains(second[0], "(Page 2 of 3):") {
+	if len(second) == 0 || !strings.Contains(second[0], "(Page 2 of ") {
 		t.Fatalf("more = %v, want page 2", second)
 	}
 	if second[0] == first[0] {
 		t.Error("more repeated the page it followed")
 	}
 
+	// Walk the rest of the provider's catalog: the chain must end with the
+	// expired line rather than repeating the last page.
 	third := runLines(t, reg, session, "next")
-	if len(third) == 0 || !strings.Contains(third[0], "(Page 3 of 3):") {
+	if len(third) == 0 || !strings.Contains(third[0], "(Page 3 of ") {
 		t.Fatalf("next = %v, want page 3", third)
 	}
-	if want := "[Page 3 of 3: end of results]"; third[len(third)-1] != want {
-		t.Errorf("last footer = %q, want %q", third[len(third)-1], want)
+	last := third
+	reachedEnd := false
+	for page := 4; page <= 256; page++ {
+		last = runLines(t, reg, session, "next")
+		if len(last) == 0 {
+			t.Fatalf("next = %v after page %v", last, page-1)
+		}
+		if strings.Contains(last[len(last)-1], "end of results") {
+			reachedEnd = true
+			break
+		}
+	}
+	if !reachedEnd {
+		t.Fatal("the walk never reached the end of the catalog")
+	}
+	if last[0] == third[0] {
+		t.Error("the walk did not advance past page 3")
 	}
 
 	if lines := runLines(t, reg, session, "more"); len(lines) != 1 || lines[0] != pagerExpiredLine {
@@ -234,7 +254,7 @@ func TestPagerIsPerRequester(t *testing.T) {
 	if lines := run(bob, "more"); len(lines) != 1 || lines[0] != pagerExpiredLine {
 		t.Errorf("bob's more = %v, want %q", lines, pagerExpiredLine)
 	}
-	if lines := run(alice, "more"); len(lines) == 0 || !strings.Contains(lines[0], "Page 2 of 3") {
+	if lines := run(alice, "more"); len(lines) == 0 || !strings.Contains(lines[0], "Page 2 of ") {
 		t.Errorf("alice's more = %v, want page 2 of her own search", lines)
 	}
 }
@@ -253,8 +273,18 @@ func TestMicronLinksRenderTheRowsAndTheNextPage(t *testing.T) {
 	if len(lines) < 3 {
 		t.Fatalf("tide list CA = %v, want a header, rows, and a footer", lines)
 	}
-	if !strings.Contains(lines[1], `["9410135":/msg gorrcbot tide 9410135]`) {
-		t.Errorf("row = %q, want a Micron link to the station", lines[1])
+	// The first row is whatever the catalog lists first, so the link is checked
+	// against the row's own identifier rather than a station pinned by hand.
+	row := lines[1]
+	const prefix = `["`
+	const middle = `":/msg gorrcbot tide `
+	open, mid := strings.Index(row, prefix), strings.Index(row, middle)
+	if open < 0 || mid < open {
+		t.Fatalf("row = %q, want a Micron link to the station", row)
+	}
+	id := row[open+len(prefix) : mid]
+	if rest := row[mid+len(middle):]; !strings.HasPrefix(rest, id+"]: ") {
+		t.Errorf("row = %q, want the link to fetch the row's own identifier %q", row, id)
 	}
 	if want := `["Next Page":/msg gorrcbot tide list CA 2]`; lines[len(lines)-1] != want {
 		t.Errorf("footer = %q, want %q", lines[len(lines)-1], want)

@@ -26,6 +26,11 @@ It is based upon the following Python original works:
   Date:   Mon Jan 12 09:17:07 2026 -0500
   ```
 
+> [!WARNING]
+> ### ⚠️ Emergency, Medical, and Safety Disclaimer
+> **NOT A CERTIFIED LIFE-SAFETY OR MEDICAL DEVICE.**
+> Communications over unlicensed LoRa/ISM frequencies are best-effort and **never guaranteed**. This software and associated hardware (including the Go Reticulum Lifesaver) are **NOT** connected to official 911/112 emergency dispatch, government rescue agencies, or COSPAS-SARSAT search-and-rescue satellites, and are **NOT** a substitute for certified EPIRBs, PLBs, or commercial satellite messengers. First-aid protocols (`med`), navigation fixes (`/whereami`), and direction-finding vectors (`tower near`) are informational references only. Users assume all risks of wilderness travel and off-grid communications. Read [**DISCLAIMER.md**](DISCLAIMER.md) for the full legal terms and release of liability.
+
 > [!NOTE]
 > ### 📖 Official Documentation Site
 > For complete guides, searchable command references, API provider templates, and hardware provisioning tutorials, visit the **[Go Reticulum Documentation Site](https://gmlewis.github.io/go-reticulum/)**.
@@ -494,7 +499,7 @@ is authoritative about its own stations.
 
 **The cell and repeater finder needs no provider at all.** `tower` (aliases
 `repeater`, `cell`, `mast`) answers "what transmits near here, which way, and how
-far?" from a curated catalog of ~220 mountain-top and regional communications
+far?" from a hand-maintained catalog of ~220 mountain-top and regional communications
 sites — amateur repeaters, cellular masts, public-safety relays, and marine VHF
 — **balanced between the United States and China**, with major international
 hubs. `tower near 37.7553,-122.4527` names the three closest sites with the
@@ -752,6 +757,18 @@ field SoftAP and simply reaches it at `http://localhost:9111/` on a desk.
 
 `GRL_HOME` overrides the state directory (default `~/.grl`), exactly as
 `GORRCBOT_HOME` does for the bot.
+
+**Embedded data.** The `tide`, `buoy`, and `metar` reference tables are the
+public providers' catalogs **in full** — every NOAA CO-OPS tide station, every
+NDBC station that reports weather, and every OurAirports field with an IATA code
+and scheduled service — so `near` answers with the genuinely nearest station
+anywhere on earth and `search`/`list` page through the rest. Only `tower` is
+assembled by hand, because no public feed publishes a comparable site list. The
+tables are refreshed from their live sources by
+[`scripts/update-offline-data.sh`](https://gmlewis.github.io/go-reticulum/tools/update-offline-data/),
+which is idempotent and names the stations that changed. For comprehensive
+documentation, see
+[**update-offline-data**](https://gmlewis.github.io/go-reticulum/tools/update-offline-data/).
 
 **Shared engine.** Both tools run
 [`github.com/gmlewis/go-reticulum/bot`](https://gmlewis.github.io/go-reticulum/tools/grl/#architecture-the-shared-bot-package),

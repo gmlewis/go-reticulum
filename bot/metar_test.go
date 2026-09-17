@@ -7,6 +7,7 @@ package bot
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -240,11 +241,13 @@ func TestMetarSearchFindsAnAirfieldByCityNameAndCode(t *testing.T) {
 	if len(byCity) < 3 || !strings.Contains(byCity[0], `Airports matching "denver" (Page 1 of `) {
 		t.Fatalf("metar search denver = %v, want a paged answer", byCity)
 	}
-	if !strings.Contains(byCity[1], "  KDEN: Denver International (CO)") {
+	if !strings.Contains(byCity[1], "  KDEN: ") {
 		t.Errorf("first match = %q, want Denver International first", byCity[1])
 	}
-	if !strings.Contains(byCity[2], "KBJC") {
-		t.Errorf("second match = %q, want the Denver satellite fields next", byCity[2])
+	// Which Denver-area field comes second is the provider's catalog; both of
+	// these are Denver satellite fields, and the search may name either.
+	if !strings.Contains(byCity[2], "KBJC") && !strings.Contains(byCity[2], "KAPA") {
+		t.Errorf("second match = %q, want a Denver satellite field next", byCity[2])
 	}
 
 	byCode := runLines(t, reg, session, "metar search EGLL")
@@ -297,10 +300,27 @@ func TestMetarListFiltersByStateAndCountry(t *testing.T) {
 		t.Errorf("metar list colorado = %v, want the same first page as metar list CO", byName)
 	}
 
+	// The catalog carries every British field the provider publishes, so Heathrow
+	// is reached by paging rather than by being on the first page.
 	byCountry := runLines(t, reg, session, "metar list GB")
-	if len(byCountry) == 0 || !strings.Contains(byCountry[0], "Airports in GB (Page 1 of ") ||
-		!strings.Contains(strings.Join(byCountry, "\n"), "EGLL") {
-		t.Errorf("metar list GB = %v, want Heathrow among the British fields", byCountry)
+	if len(byCountry) < 3 || !strings.Contains(byCountry[0], "Airports in GB (Page 1 of ") {
+		t.Fatalf("metar list GB = %v, want the British fields paged", byCountry)
+	}
+	foundHeathrow := false
+	for page := 1; page <= 256 && !foundHeathrow; page++ {
+		pageLines := runLines(t, reg, session, fmt.Sprintf("metar list GB %v", page))
+		if len(pageLines) < 3 {
+			break
+		}
+		if strings.Contains(strings.Join(pageLines, "\n"), "EGLL") {
+			foundHeathrow = true
+		}
+		if strings.Contains(pageLines[len(pageLines)-1], "end of results") {
+			break
+		}
+	}
+	if !foundHeathrow {
+		t.Error("metar list GB never reached Heathrow")
 	}
 
 	// A country code that is also a state code must not leak its country into

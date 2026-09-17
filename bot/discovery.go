@@ -20,6 +20,7 @@ package bot
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -73,6 +74,17 @@ type catalogDistance struct {
 type catalogMatch struct {
 	entry catalogEntry
 	score int
+}
+
+// mentionsRegion reports whether a published name already spells the region
+// out, so a catalog label never prints it twice. The region codes are short and
+// turn up inside ordinary words, so the name is split into letter runs and each
+// one is compared whole: "Cape Canaveral" does not mention CA, and "Fort
+// Pierce, FL (FTP)" does.
+func mentionsRegion(name, region string) bool {
+	return slices.Contains(strings.FieldsFunc(strings.ToUpper(name), func(r rune) bool {
+		return r < 'A' || r > 'Z'
+	}), region)
 }
 
 // haystack is the lowercased text a query is matched against: the identifier,
@@ -148,7 +160,14 @@ func containsAll(haystack string, words []string) bool {
 }
 
 // matchScore ranks one hit: an exact identifier is best, then a leading
-// identifier or label, then a match inside the row.
+// identifier, then a row whose region is what was asked for, then a leading or
+// interior label match, and anything else last.
+//
+// The region tier is what keeps a query that names a place from being answered
+// with a same-named place somewhere else. The catalogs carry every station their
+// provider publishes, so "oregon" reaches Oregon Inlet in North Carolina by name;
+// ranking a match on the state it sits in above a match buried in a name puts
+// Oregon's own stations first, which is what the person typing the state meant.
 func (e catalogEntry) matchScore(phrase string) int {
 	id := strings.ToLower(e.ID)
 	label := strings.ToLower(e.Label)
@@ -157,13 +176,26 @@ func (e catalogEntry) matchScore(phrase string) int {
 		return 0
 	case strings.HasPrefix(id, phrase):
 		return 1
-	case strings.HasPrefix(label, phrase):
+	case e.regionName() == phrase:
 		return 2
-	case strings.Contains(" "+label, " "+phrase):
+	case strings.HasPrefix(label, phrase):
 		return 3
-	default:
+	case strings.Contains(" "+label, " "+phrase):
 		return 4
+	default:
+		return 5
 	}
+}
+
+// regionName is the lowercased place name a row's region stands for: the state
+// or territory a code spells out ("OR" is "oregon"), and the code itself for a
+// region that names no state, like an airport's country or a buoy's basin.
+func (e catalogEntry) regionName() string {
+	region := strings.ToLower(strings.TrimSpace(e.Region))
+	if name := usStateNames[strings.ToUpper(e.Region)]; name != "" {
+		return name
+	}
+	return region
 }
 
 // findCatalogEntry resolves a token to one row: an exact identifier first, then

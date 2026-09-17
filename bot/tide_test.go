@@ -6,6 +6,7 @@
 package bot
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -302,7 +303,11 @@ func TestTideCommandRendersTheDay(t *testing.T) {
 	if lines[1] != want {
 		t.Errorf("events line =\n  %v\nwant\n  %v", lines[1], want)
 	}
-	if !strings.HasPrefix(lines[0], "Tides for San Francisco (Golden Gate) (9414290) on Sep 15 (MLLW UTC):") {
+	// The name in the header is the provider's own published one, so the test
+	// checks the id and the rest of the line rather than the center's capitals.
+	if !strings.HasPrefix(lines[0], "Tides for ") ||
+		!strings.Contains(strings.ToUpper(lines[0]), "SAN FRANCISCO (GOLDEN GATE)") ||
+		!strings.Contains(lines[0], "(9414290) on Sep 15 (MLLW UTC):") {
 		t.Errorf("header = %q", lines[0])
 	}
 	if !strings.HasPrefix(lines[2], "Current: FLOODING (+") || !strings.Contains(lines[2], "% to high)") ||
@@ -468,7 +473,8 @@ func TestTideSearchFindsAStationByNameAndID(t *testing.T) {
 	if len(byName) == 0 || !strings.Contains(byName[0], `Tide stations matching "san francisco" (Page 1 of 1):`) {
 		t.Fatalf("tide search san francisco = %v, want one page of matches", byName)
 	}
-	if !strings.Contains(byName[1], "  9414290: San Francisco (Golden Gate), CA") {
+	if !strings.Contains(byName[1], "  9414290: ") ||
+		!strings.Contains(strings.ToUpper(byName[1]), "SAN FRANCISCO") {
 		t.Errorf("first match = %q, want the Golden Gate station", byName[1])
 	}
 
@@ -534,8 +540,12 @@ func TestTideSearchExplainsAnEmptyAnswer(t *testing.T) {
 			t.Errorf("%q = %v, want the search usage line", line, got)
 		}
 	}
-	if got := runLines(t, reg, session, "tide list CA 9"); len(got) != 1 ||
-		!strings.Contains(got[0], "page 9 not found (total 3 pages)") {
+	// The catalog carries every station the provider publishes, so how many
+	// pages California has is the provider's data: ask for a page far past the
+	// end and check that the answer names the total it really has.
+	if got := runLines(t, reg, session, "tide list CA 9999"); len(got) != 1 ||
+		!strings.Contains(got[0], "page 9999 not found (total ") ||
+		!strings.Contains(got[0], " pages)") {
 		t.Errorf("a page past the end = %v, want the totals", got)
 	}
 }
@@ -546,21 +556,43 @@ func TestTideListFiltersByStateOrName(t *testing.T) {
 	t.Parallel()
 
 	reg, session, _ := commandFixture(t, nil)
+	// Oregon's stations are the provider's, all of them, so the answer is a
+	// region filter that pages: every row must be in OR, and paging through must
+	// reach the stations a person names.
 	byCode := runLines(t, reg, session, "tide list OR")
-	if len(byCode) == 0 || !strings.Contains(byCode[0], "Tide stations in OR (Page 1 of 1):") {
-		t.Fatalf("tide list OR = %v, want Oregon's four stations on one page", byCode)
+	if len(byCode) < 3 || !strings.Contains(byCode[0], "Tide stations in OR (Page 1 of ") {
+		t.Fatalf("tide list OR = %v, want Oregon's stations paged", byCode)
 	}
-	joined := strings.Join(byCode, "\n")
+	for _, line := range byCode[1 : len(byCode)-1] {
+		if !strings.Contains(line, ", OR") {
+			t.Errorf("tide list OR listed a station outside Oregon: %q", line)
+		}
+	}
+	found := map[string]bool{}
+	for page := 1; page <= 64; page++ {
+		lines := runLines(t, reg, session, fmt.Sprintf("tide list OR %v", page))
+		if len(lines) < 3 {
+			break
+		}
+		for _, want := range []string{"9432845", "9435308", "9439040", "9439221"} {
+			if strings.Contains(strings.Join(lines, "\n"), want) {
+				found[want] = true
+			}
+		}
+		if strings.Contains(lines[len(lines)-1], "end of results") {
+			break
+		}
+	}
 	for _, want := range []string{"9432845", "9435308", "9439040", "9439221"} {
-		if !strings.Contains(joined, want) {
-			t.Errorf("tide list OR is missing station %v:\n%v", want, joined)
+		if !found[want] {
+			t.Errorf("tide list OR never reached station %v", want)
 		}
 	}
 
 	byName := runLines(t, reg, session, "tide list oregon")
-	if len(byName) == 0 || !strings.Contains(byName[0], "Tide stations in OREGON (Page 1 of 1):") ||
-		!strings.Contains(strings.Join(byName, "\n"), "9432845") {
-		t.Errorf("tide list oregon = %v, want the same stations as tide list OR", byName)
+	if len(byName) == 0 || !strings.Contains(byName[0], "Tide stations in OREGON (Page 1 of ") ||
+		byName[1] != byCode[1] {
+		t.Errorf("tide list oregon = %v, want the same first page as tide list OR", byName)
 	}
 
 	all := runLines(t, reg, session, "tide list")
@@ -590,12 +622,14 @@ func TestTideNearNamesTheClosestStations(t *testing.T) {
 	if !strings.Contains(lines[0], "Tide stations near 37.8,-122.4 (Page 1 of 1):") {
 		t.Errorf("header = %q, want the position that was asked for", lines[0])
 	}
-	if !strings.HasPrefix(lines[1], "  9414290 (") || !strings.Contains(lines[1], " nmi ") ||
-		!strings.Contains(lines[1], "): San Francisco (Golden Gate), CA") {
-		t.Errorf("nearest station = %q, want a distance, a bearing, and the name", lines[1])
+	for i, line := range lines[1:4] {
+		if !strings.Contains(line, " (") || !strings.Contains(line, " nmi ") ||
+			!strings.Contains(line, "): ") {
+			t.Errorf("station %v of the answer = %q, want a distance, a bearing, and the name", i+1, line)
+		}
 	}
-	if !strings.Contains(lines[2], "9414750") || !strings.Contains(lines[3], "9414764") {
-		t.Errorf("the answer = %v, want Alameda and Oakland next", lines)
+	if !closerFirst(lines[1:4]) {
+		t.Errorf("tide near 37.8,-122.4 = %v, want the nearest station first", lines[1:4])
 	}
 	if want := "[Page 1 of 1: end of results]"; lines[4] != want {
 		t.Errorf("footer = %q, want %q", lines[4], want)
@@ -612,8 +646,13 @@ func TestTideNearNamesTheClosestStations(t *testing.T) {
 	if !strings.Contains(byCity[0], "Tide stations near Orlando, fl") {
 		t.Errorf("header = %q, want the city that was asked for", byCity[0])
 	}
-	if !strings.Contains(byCity[1], "8721604") || !strings.Contains(byCity[1], "Port Canaveral") {
-		t.Errorf("nearest tide station to Orlando = %q, want Port Canaveral (8721604)", byCity[1])
+	// Which station is nearest to Orlando is the provider's data: the command
+	// promises the nearest first, with its distance and bearing.
+	if !strings.Contains(byCity[1], " nmi ") || !strings.Contains(byCity[1], "): ") {
+		t.Errorf("nearest tide station to Orlando = %q, want a distance and a name", byCity[1])
+	}
+	if !closerFirst(byCity[1:4]) {
+		t.Errorf("tide near Orlando, fl = %v, want the nearest station first", byCity[1:4])
 	}
 	if got := runLines(t, reg, session, "tide near nowhere at all"); len(got) != 2 ||
 		!strings.Contains(got[0], "not a place, a coordinate, or a plus code") {

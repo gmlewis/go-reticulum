@@ -618,6 +618,9 @@ simply run gonomadnet and query a remote RRC Hub over LoRa to reach @gobot."*
 > teams, peer-to-peer LXMF messaging, and syncing with remote hubs ONLY when a gateway
 > happens to be reachable.**
 
+> [!WARNING]
+> **Safety, Medical, and Emergency Disclaimer**: The Go Reticulum Lifesaver is an experimental, open-source communication appliance. It is NOT a certified life-safety device, NOT a certified medical instrument, and NOT connected to official 911/112 dispatch or government search-and-rescue satellites. Transmission over unlicensed LoRa mesh frequencies is best-effort and never guaranteed. Always carry certified primary safety equipment (EPIRB/PLB, paper maps, magnetic compass). See [**DISCLAIMER.md**](DISCLAIMER.md) for full terms and total release of liability.
+
 ---
 
 ### 6.10 The Geodetic & GNSS Subsystem: `/whereami`, Plus Codes, and Distress Beacons

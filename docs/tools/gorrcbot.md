@@ -248,7 +248,7 @@ While `@gobot` can be triggered publicly inside any room it has joined, **privat
 ## Station Discovery & Search (`search`, `near`, `list`)
 
 Three of the field assistant's commands are useless without an identifier: `tide`
-takes a 7-digit NOAA station id, `buoy` takes a 4–6 character NDBC station id,
+takes a 7-digit NOAA station id, `buoy` takes a 4–8 character NDBC station id,
 and `metar` takes a 4-letter ICAO code. None of them can be guessed. Rather than
 leave an operator to find one on another device, every one of those catalogs is
 **embedded in the binary** and searched offline:
@@ -299,10 +299,22 @@ telemetry: `@gobot tide 9414290`, `@gobot buoy 46026`, `@gobot metar KDEN`.
 
 | Command | Catalog | Size | Region codes |
 |---------|---------|------|--------------|
-| `tide` | NOAA tide and current stations an operator is likely to name | ~110 stations | US state codes, plus `GU`, `AS` |
-| `buoy` | NDBC offshore weather buoys that report meteorological data, from the Pacific, Atlantic, Gulf, Hawaii, Alaska, and the Great Lakes | ~115 buoys | US state codes, plus `ATL`, `GOM`, `CAR`, `PAC` |
-| `metar` | Every large US airport with an IATA code, the regional fields that carry scheduled passenger service, and the world's major international hubs | ~625 airfields | US state codes, plus two-letter country codes (`GB`, `FR`, `JP`, …) |
-| `tower` | Curated mountain-top and regional communications sites: amateur repeaters, cellular masts, public-safety relays, and marine VHF stations, balanced between the United States and China with major international hubs | ~220 sites | US state codes, Chinese province codes (`BJ`, `GD`, `SC`, `XJ`, …), and country codes (`US`, `CN`, `GB`, `JP`, …) |
+| `tide` | **Every** NOAA CO-OPS tide-prediction station the provider publishes | ~3,500 stations | US state codes, plus `PR`, `VI`, `GU`, `AS`, `MP` |
+| `buoy` | **Every** NDBC station that reports meteorological data, worldwide: Pacific, Atlantic, Gulf, Caribbean, Hawaii, Alaska, and the Great Lakes | ~900 stations | US state codes, plus `ATL`, `GOM`, `CAR`, `PAC` |
+| `metar` | **Every** OurAirports field with an IATA code and scheduled service, worldwide | ~5,100 airfields | US state codes, plus two-letter country codes (`GB`, `FR`, `JP`, …) |
+| `tower` | Hand-maintained mountain-top and regional communications sites: amateur repeaters, cellular masts, public-safety relays, and marine VHF stations, balanced between the United States and China with major international hubs | ~220 sites | US state codes, Chinese province codes (`BJ`, `GD`, `SC`, `XJ`, …), and country codes (`US`, `CN`, `GB`, `JP`, …) |
+
+> [!IMPORTANT]
+> The `tide`, `buoy`, and `metar` tables are the providers' catalogs **in full**,
+> not a selection: a station is carried because it meets the filter in its file's
+> header, so `near` answers with the genuinely nearest station anywhere on earth
+> and `search` / `list` page through the rest. Only `tower` is assembled by
+> hand, because no public feed publishes a comparable site list.
+>
+> They are refreshed from the live public sources by
+> [`update-offline-data`](update-offline-data.md), which rewrites a table only
+> when upstream differs and then reports it up to date. The **`tower`** table is
+> the one dataset the tool does not touch.
 
 > [!NOTE]
 > A `metar` region may be a state code or a country code, and the two can
@@ -551,7 +563,7 @@ country's name (`china`, `germany`, `canada`).
 
 ### Using a local dataset (`towers.csv`)
 
-The curated catalog is a planning reference, not a live directory. An operator
+The embedded tower list is a planning reference, not a live directory. An operator
 who needs micro-cell density — for example an OpenCelliD extract reduced to the
 area of operations — drops a CSV at the path configured as `towers_path`
 (by default `towers.csv` beside `config.toml`) and every query sees it:

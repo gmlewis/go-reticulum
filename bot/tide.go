@@ -249,14 +249,30 @@ func findTideStation(query string) (tideStation, bool) {
 			return station, true
 		}
 	}
+	// Nothing matched exactly, so prefer the station whose name starts with what
+	// was asked for over one that merely contains it, and the shortest of
+	// equally good matches. The catalog carries every station the provider
+	// publishes, so "san francisco" must reach the Golden Gate station rather
+	// than South San Francisco.
 	best := tideStation{}
+	bestScore := 0
 	found := false
 	for _, station := range tideStations {
-		if !strings.Contains(strings.ToLower(station.Name), word) {
+		name := strings.ToLower(station.Name)
+		var score int
+		switch {
+		case strings.HasPrefix(name, word):
+			score = 2
+		case strings.Contains(name, word):
+			score = 1
+		default:
 			continue
 		}
-		if !found || len(station.Name) < len(best.Name) {
-			best, found = station, true
+		switch {
+		case !found, score > bestScore:
+			best, bestScore, found = station, score, true
+		case score == bestScore && len(station.Name) < len(best.Name):
+			best = station
 		}
 	}
 	return best, found

@@ -65,6 +65,7 @@ nav:
       - golxmd (LXMF Propagation): tools/golxmd.md
       - gorrcd (Hub Daemon): tools/gorrcd.md
       - gornodeconf (RNode Manager): tools/gornodeconf.md
+      - update-offline-data (Embedded Data): tools/update-offline-data.md
       - CLI Utilities: tools/cli-utilities.md
   - Guides:
       - Off-Grid Hardware: guides/hardware.md

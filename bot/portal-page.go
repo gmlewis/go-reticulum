@@ -91,6 +91,8 @@ input[type=text] {
 .legend span::before { content: "■ "; }
 .legend .key-heading::before { color: var(--accent); }
 .legend .key-target::before { color: var(--danger); }
+footer { text-align: center; padding: 16px 12px; margin-top: 24px; border-top: 1px solid var(--border); }
+.disclaimer { color: var(--muted); font-size: .72rem; line-height: 1.4; max-width: 600px; margin: 0 auto; }
 </style>
 </head>
 <body>
@@ -162,6 +164,9 @@ input[type=text] {
     <div id="replies" aria-live="polite"></div>
   </section>
 </main>
+<footer>
+  <p class="disclaimer">⚠️ <strong>Safety Disclaimer:</strong> Unofficial / experimental. Not a certified life-safety device or medical instrument. Transmission over unlicensed LoRa is best-effort and never guaranteed. Not connected to 911/112 or rescue satellites. See DISCLAIMER.md.</p>
+</footer>
 <script id="portal-data" type="application/json">@@INITIAL_JSON@@</script>
 <script>
 (function () {

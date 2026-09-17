@@ -19,7 +19,7 @@
 // Nothing in a query touches the network. The embedded catalog is the data, the
 // geometry is closed form, and the answer is available with the binary alone —
 // which is the only kind of answer that is any use in the situation the command
-// exists for. An operator who needs more sites than the curated catalog holds
+// exists for. An operator who needs more sites than the embedded catalog holds
 // drops a towers.csv beside the configuration and every query sees it; the
 // parser, the merge, and the fallback are all here.
 //
@@ -110,7 +110,7 @@ func (c *commandContext) towerRecords() ([]TowerRecord, []catalogEntry) {
 // identifier is already in the catalog replaces it in place, so a corrected
 // frequency is corrected everywhere at once; a row with a new identifier is
 // appended, so an OpenCelliD extract adds sites rather than replacing the
-// curated ones. An absent, empty, or unreadable dataset is not an error: the
+// embedded ones. An absent, empty, or unreadable dataset is not an error: the
 // embedded catalog is the answer, and a bad export must never cost a field tool
 // its built-in data.
 func mergeTowerRecords(embedded []TowerRecord, path string) ([]TowerRecord, []string) {

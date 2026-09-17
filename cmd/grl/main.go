@@ -113,7 +113,7 @@ func run(args []string) int {
 		log.Printf("%v", err)
 		return exitFailure
 	}
-	logf("%v %v: %v, dashboard on http://%v/", programName, rns.VERSION,
+	logf("%v %v: %v, dashboard on http://%v/ (see DISCLAIMER.md)", programName, rns.VERSION,
 		cfg.AdvertisedName(), app.PortalAddr())
 
 	<-ctx.Done()
