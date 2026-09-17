@@ -139,6 +139,28 @@ func main() {
 	b.announceFeed = liveAnnounceFeed{ts: transport}
 	b.hooks.Inbound = newResponder(cfg, ownHash, reg.Run).handle
 
+	// The GNSS receiver is optional, and it is one source shared by every
+	// position-aware command and by the captive portal, so the radio answer and
+	// the dashboard answer can never disagree about where the device is.
+	gps, err := openGPS(cfg)
+	if err != nil {
+		log.Fatalf("gorrcbot: %v", err)
+	}
+	if gps != nil {
+		defer func() {
+			if err := gps.Close(); err != nil {
+				log.Printf("gorrcbot: closing the GNSS source: %v", err)
+			}
+		}()
+		reg.gps = gps
+		switch {
+		case cfg.GPSPort != "":
+			log.Printf("gorrcbot: reading GNSS sentences from %v", cfg.GPSPort)
+		default:
+			log.Printf("gorrcbot: static GNSS fix %v", cfg.GPSFix)
+		}
+	}
+
 	// LXMF is opt-in. With lxmf_enabled = false this returns nothing at all, so
 	// no router, no job loop and no state under the storage directory can come
 	// into existence; with it true the bot owns the router from here on and
@@ -155,6 +177,25 @@ func main() {
 	}
 
 	startPProf(opts.pprofAddr)
+
+	// The captive portal is opt-in: with no portal_addr the bot binds no HTTP
+	// listener at all, which is the right default for a node on a shared
+	// network. With one, the dashboard is the same offline command surface the
+	// radio commands are, so a phone that joins the device's Wi-Fi can read the
+	// position and ask the field assistant without installing anything.
+	var portal *PortalServer
+	if cfg.PortalAddr != "" {
+		portal = newPortalServer(cfg.PortalAddr, gps, reg)
+		if err := portal.Start(); err != nil {
+			log.Fatalf("gorrcbot: %v", err)
+		}
+		defer func() {
+			if err := portal.Close(); err != nil {
+				log.Printf("gorrcbot: closing the captive portal: %v", err)
+			}
+		}()
+		log.Printf("gorrcbot: captive portal on http://%v/", portal.Addr())
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -327,6 +368,18 @@ func configSummary(paths BotPaths, cfg *BotConfig, ownHash []byte) string {
 		if cfg.EmergencyLXMFDestination != "" {
 			fmt.Fprintf(&sb, "sos dispatch: %v\n", cfg.EmergencyLXMFDestination)
 		}
+	}
+	if cfg.PortalAddr != "" {
+		fmt.Fprintf(&sb, "portal:     http://%v/\n", cfg.PortalAddr)
+	} else {
+		fmt.Fprintf(&sb, "portal:     (off)\n")
+	}
+	if cfg.GPSPort != "" {
+		fmt.Fprintf(&sb, "gps:        reading %v\n", cfg.GPSPort)
+	} else if cfg.GPSFix != "" {
+		fmt.Fprintf(&sb, "gps:        static fix %v\n", cfg.GPSFix)
+	} else {
+		fmt.Fprintf(&sb, "gps:        (no receiver)\n")
 	}
 	fmt.Fprintf(&sb, "hubs:       %v\n", len(cfg.Hubs))
 	for _, hub := range cfg.Hubs {

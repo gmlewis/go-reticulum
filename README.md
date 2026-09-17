@@ -278,6 +278,7 @@ gonomadnet Public RRC Hub  (gonomadnet node + gornsd + gorngit + gorrcd + golxmd
 - **RRC Chat & `@gobot`**: Join `rrc://a012129c10205c0b9441fcd2b755b2a7/#general` to chat and interact with [`@gobot`](#gorrcbot--the-rrc-bot-client). From a shell, the [`gobot`](#gobot--the-one-shot-cli-for-gobot) CLI reaches the same official bot with one command and no setup.
 - **Git over Reticulum**: Clone repositories directly over the mesh using `gorngit` / `git`: `git clone rns://58a0406047ec2e7ce23e9e9a83b744df/go-reticulum`.
 - **LXMF Propagation Node**: Use `7acc095f0e83182feb58c888d090a3cc` as your LXMF propagation node for offline store-and-forward message delivery.
+- **Go Reticulum Lifesaver (GRL)**: Run [`gorrcbot`](#gorrcbot--the-rrc-bot-client) on a field node with a GNSS receiver and a captive portal, and any phone that joins its Wi-Fi gets the survival dashboard — `/whereami` Plus Codes, one-word `tower near` / `sun` queries, and a `/sos` that raises a beacon at the verified position, all with zero radio hops.
 
 ### gorrcbot — the RRC bot client
 
@@ -344,6 +345,9 @@ lxmf_announce_minutes = 360 # how often the bot announces its own lxmf.delivery 
 kjv_txt_file = ""          # optional King James text file (one verse per line); enables the kjv command. Empty disables it
 towers_path = "~/.gorrcbot/towers.csv" # optional local cell/repeater dataset merged over the embedded catalog; absent is normal
 emergency_lxmf_destination = "" # optional 32-hex lxmf.delivery hash: every new sos beacon is also queued there
+portal_addr = ""            # Go Reticulum Lifesaver: captive survival dashboard for any phone that joins this node's Wi-Fi; empty binds nothing
+gps_port = ""               # GNSS receiver streaming NMEA-0183 (for example /dev/ttyACM0); enables the live fix
+gps_fix = ""                # static position for a headless node (for example "37.7553,-122.4527"); used when gps_port is empty
 
 # One [[hubs]] entry per hub. Every entry is dialed on startup.
 [[hubs]]
@@ -357,6 +361,30 @@ respond_to = { general = "gobot" }                  # optional per-room trigger 
 Unknown keys warn and never fail, so a configuration written for a newer bot
 still starts. `--check-config` shows the parsed hubs, rooms, trigger, and
 identity hash without connecting.
+
+**Go Reticulum Lifesaver (GRL).** On a field node, `gorrcbot` is also the
+[Go Reticulum Lifesaver](https://gmlewis.github.io/go-reticulum/tools/gorrcbot/#the-go-reticulum-lifesaver-grl),
+a pocket-sized off-grid survival communicator. It reads an **NMEA-0183 GNSS
+receiver** with no Cgo and no third-party library (`gps_port`, or a static
+`gps_fix`), and it answers the survival questions **locally, in-process, with
+zero radio hops**:
+
+- **`/whereami`** prints the operational location card: the Plus Code, both
+  coordinates, the Maidenhead grid, the altitude, the fix status, the local
+  solar time, and the sunset countdown — plus the GCJ-02 "Mars coordinate" when
+  the position is inside China, so it can be pasted straight into Amap, Gaode,
+  or WeChat.
+- **Zero-argument context injection:** with a live fix, `tower near`,
+  `tide near`, and `sun` use the operator's own position, and `/sos` raises a RED
+  beacon there, attaching the satellites, HDOP, altitude, fix quality, and
+  receiver timestamp to the alert. A typed location always wins.
+- **A captive portal with no app to install:** set `portal_addr` and any
+  smartphone that joins the node's Wi-Fi has the survival dashboard opened for it
+  by the operating system itself, answering the Apple, Android, and Windows
+  captive-network probes. The page is one self-contained document served from the
+  binary — the big Plus Code with a copy button, the SOS button, and the offline
+  field assistant (`med hypothermia`, `tower near`, `sun`) — with
+  `/api/whereami` and `/api/query` JSON endpoints behind it.
 
 **Addressing contract.** The bot is silent unless one of these is true, and it
 then answers with a NOTICE:

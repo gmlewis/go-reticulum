@@ -309,10 +309,17 @@ func splitListArgument(text string) (region string, page int) {
 
 // renderNearAnswer answers a "<cmd> near <place>" request from one catalog: it
 // resolves the argument to a position, finds the closest rows, and renders them
-// as the single page a proximity answer is.
+// as the single page a proximity answer is. With no argument at all it uses the
+// live GNSS fix, so the discovery commands inherit the operator's own position
+// without a single coordinate being typed.
 func (c *commandContext) renderNearAnswer(q discoveryQuery, entries []catalogEntry, argument string) []string {
 	if strings.TrimSpace(argument) == "" {
-		return []string{"Usage: " + q.Command + " near <place|coords|pluscode>"}
+		point, label, ok := c.gnssContext()
+		if !ok {
+			return []string{"Usage: " + q.Command + " near <place|coords|pluscode>", discoveryNoFixHint}
+		}
+		q.Text = label
+		return c.renderNearPage(q, nearestCatalog(entries, point, discoveryNearLimit))
 	}
 	point, ok := resolveCatalogPoint(entries, argument)
 	if !ok {

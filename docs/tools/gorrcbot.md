@@ -145,6 +145,22 @@ lxmf_announce_minutes = 360
 emergency_lxmf_destination = ""
 
 # ---------------------------------------------------------------------
+# Go Reticulum Lifesaver (GRL): GNSS & the captive survival portal
+# ---------------------------------------------------------------------
+
+# GNSS receiver streaming NMEA-0183 sentences, for example /dev/ttyUSB0 or
+# /dev/ttyACM0. It supplies the position that /whereami, "tower near",
+# "tide near", "sun", and /sos use automatically.
+gps_port = ""
+
+# Static position for a node with no receiver (any location notation).
+gps_fix = ""
+
+# Captive survival dashboard for any phone that joins this node's Wi-Fi:
+# "127.0.0.1:8080" while testing, ":80" in the field. Empty binds nothing.
+portal_addr = ""
+
+# ---------------------------------------------------------------------
 # Connected Hubs & Rooms
 # ---------------------------------------------------------------------
 
@@ -540,6 +556,171 @@ command that is fully useful before its operator has configured anything at all.
 
 ---
 
+## The Go Reticulum Lifesaver (GRL)
+
+The **Go Reticulum Lifesaver (GRL)** is the role `gorrcbot` plays on a
+pocket-sized, off-grid survival communicator: a device that replaces a
+$300–$600 commercial satellite messenger and its monthly subscription with an
+inexpensive, open-source node that works when every link has already failed.
+
+It obeys one rule above all others, the **Autonomous Local Intelligence Rule**:
+
+> Survival intelligence must run locally, in-process. Emergency medicine,
+> nearby masts, the sun, and "where am I?" answer in microseconds with **0 radio
+> hops, 0 airtime, and 0 RF emissions**.
+
+Everything in this section therefore works with the radio switched off, with no
+internet, and with no account.
+
+### GNSS / GPS receiver integration
+
+`gorrcbot` speaks **NMEA-0183** directly, with no Cgo driver and no third-party
+library. It reads `$GNRMC` / `$GPRMC` (position, time, date, validity, speed,
+course) and `$GNGGA` / `$GPGGA` (fix quality, satellites, HDOP, altitude,
+geoidal separation), validates the XOR checksum of every sentence byte-for-byte,
+and merges the rotation of sentences a receiver emits into one live fix. A
+sentence that fails validation is dropped silently: a corrupted sentence is a
+wrong position, and a wrong position is worse than no position at all.
+
+Two `[bot]` keys configure the source:
+
+```toml
+# A streaming receiver, for example /dev/ttyUSB0 or /dev/ttyACM0.
+# The port must already be configured for the receiver's line speed.
+gps_port = ""
+
+# A static position for a headless node, a fixed relay, or an operator
+# rehearsing the field tools. Accepts every location notation below.
+gps_fix = "37.7553,-122.4527"
+```
+
+With neither key set, the node simply has no position, and every command that
+would use one says so instead of guessing. With `gps_port` set, the sentences
+are parsed in the background as they arrive; with `gps_fix`, the position is
+constant and no device is opened.
+
+Every position-aware command shares **one** receiver, so the radio reply and the
+web dashboard can never disagree about where the device is.
+
+### `/whereami` — the operational location card
+
+`whereami` (also typed `/whereami`) prints the card an operator reads before
+moving, assembled entirely from the in-tree geodetic engines:
+
+```text
+/whereami
+------------------------------------------------------------
+Plus Code (OLC)   : 849VQG4W+4W (Area: ~14m x 14m)
+Coordinates       : 37.75532° N, 122.45272° W
+Maidenhead Grid   : CM87ss (Amateur Radio QTH)
+Elevation         : 142 m (467 ft) MSL
+GNSS Fix Status   : 3D Fix (9 satellites, HDOP 0.8)
+Local Solar Time  : 12:45 UTC-8 (Solar noon: 12:04)
+Sunset Countdown  : Sunset at 18:15 (5h 29m daylight remaining)
+------------------------------------------------------------
+```
+
+Every notation is there because somebody else needs it: a Plus Code is what a
+dispatcher can paste into a map, a Maidenhead square is what an amateur operator
+logs, decimal degrees are what a GPS unit takes, and — inside China — the
+**GCJ-02** pair is the only form Amap, Gaode, Tencent Maps, and WeChat accept, so
+the card adds that line for a position in China.
+
+| Form | Example | Notes |
+|------|---------|-------|
+| No argument | `@gobot whereami` | Uses the live GNSS fix, or reports that it is acquiring one. |
+| Coordinates | `@gobot whereami 37.7553,-122.4527` | Places a remote position; the card says `manual position` and shows no altitude, because no receiver reported one. |
+| Plus Code | `@gobot whereami 849VQG4W+4W` | Any notation `loc` accepts works. |
+| Maidenhead grid | `@gobot whereami CM87ss` | The square's own center. |
+
+The **eleven-character** high-precision Plus Code (about 3 m by 3 m) is computed
+alongside the ten-character code and is carried by the dashboard's JSON API
+rather than printed on the card.
+
+The **local solar time** is the zone the position's own longitude defines —
+`round(longitude / 15)` hours — because a node with no timezone database cannot
+honestly claim to know an operator's civil zone or whether summer time is in
+force. Solar noon and the sunset countdown are computed against that same clock,
+for the operator's **local calendar day**.
+
+### Zero-argument automatic context injection
+
+A person with cold hands, in the dark, does not want to type coordinates. When a
+GNSS fix is live, the field commands inherit it automatically:
+
+| Command | With a fix | Without a fix |
+|---------|-----------|---------------|
+| `tower near` | The three closest masts and repeaters to the operator's own position. | Asks for `<place\|coords\|pluscode>`. |
+| `cell near`, `repeater near`, `mast near` | Same, for one service. | Same. |
+| `tide near` | The three closest tide stations, offline. | Asks for a location. |
+| `sun` | The almanac at the current position; `sun 2026-06-21` keeps the date and takes the position from the fix. | Asks for a location. |
+| `sos` | Raises a **RED** beacon at the verified position. | Asks for `<loc> <TRIAGE> <details>`. |
+| `sos RED two hikers, one leg fracture` | Raises the beacon at the fix with the triage and details given. | Same as above. |
+
+A beacon raised from the fix attaches the receiver facts to the record and to
+the reply — satellites, HDOP, altitude, fix quality, and the receiver's own
+timestamp — so a rescue party reading the registry after the link has failed
+knows not just **where** the beacon is but **how much the position can be
+trusted**:
+
+```text
+[SOS #1 RECORDED] RED @ 849VQG4W+4W by @gobot: two hikers, one leg fracture | Alerted 2 rooms
+GNSS fix: 3D fix, 9 satellites, HDOP 0.8, 142 m MSL, fix quality 1, 2026-09-16T20:45:33Z
+```
+
+A **typed location always wins**: `sos 39.7392,-104.9903 RED climber hurt` stays
+about the climber in Denver, never about the device's own position. And with no
+fix at all, the automatic fallback never fires, so a mistyped request can never
+become a beacon somewhere arbitrary.
+
+### Captive portal & smartphone dashboard
+
+Set one key and the device serves a survival dashboard to any phone that joins
+its Wi-Fi:
+
+```toml
+# "127.0.0.1:8080" while testing, ":80" in the field. Empty binds nothing.
+portal_addr = ":80"
+```
+
+Nothing is installed, because the page **is** the binary: one self-contained
+HTML document with inline CSS and JavaScript and **zero external references** —
+no stylesheet, font, image, or script from a network. A traveler's phone in
+airplane mode opens it with the browser it already has.
+
+The portal answers the captive-network probes the operating systems use, so the
+phone's native captive browser opens the dashboard by itself instead of
+reporting "connected, no internet":
+
+| Probe | Operating system |
+|-------|------------------|
+| `/hotspot-detect.html` | Apple iOS and macOS |
+| `/generate_204`, `/gen_204` | Android |
+| `/ncsi.txt`, `/connecttest.txt` | Windows |
+
+Each probe is answered with a `302` redirect to `/` and `Cache-Control:
+no-store`.
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/` | `GET` | The dashboard: the large Plus Code with a **Copy Plus Code** button, coordinates, grid, elevation, fix status, the local solar clock, the sunset countdown, the red **SOS** button (with a confirmation dialog), and the field-assistant chat box. |
+| `/api/whereami` | `GET` | The current fix and its full geodetic synthesis as JSON: both Plus Codes, the grid, the coordinates, altitude, speed, course, satellites, HDOP, fix quality, the local solar clock, the sunset, the GCJ-02 pair inside China, and the card's own lines. |
+| `/api/query` | `POST` | Runs one **local** command and returns its reply lines: `{"command": "med hypothermia"}` → `{"command": "med hypothermia", "lines": ["[HYPOTHERMIA] …"]}`. An addressed nick and a leading slash are both accepted, so `@gobot med hypothermia`, `/med hypothermia`, and `med hypothermia` are the same request. |
+
+The chat box is restricted to the commands whose answers are computed
+in-process — `med` (first aid), `tower near`, `tide near`, `sun`, `whereami`,
+`morse`, `conv`, and the rest of the offline field set. A command that needs a
+live radio link answers with a line saying exactly that, rather than failing
+obscurely.
+
+The **SOS** button asks for confirmation, then raises a RED beacon through the
+same registry command the radio uses: the beacon is persisted, every room of
+every live hub session is alerted, and the LXMF dispatch copy is queued when one
+is configured. A device with no hub currently connected still records the beacon
+and says that no room could be alerted.
+
+---
+
 ## Complete Command Reference
 
 ### Core & Administration
@@ -604,6 +785,7 @@ back to the WGS-84 GPS position before anything else is computed. See
 | `loc` | `@gobot loc <location>` | Converts any supported coordinate format and outputs it in all five notations simultaneously. A position inside China also prints the GCJ-02 "Mars coordinate" that Amap and Gaode expect. |
 | `dist` | `@gobot dist <from> <to>` | Calculates great-circle distance (km, statute miles, nautical miles) and forward/reverse bearings between two points. |
 | `proj` | `@gobot proj <origin> <bearing°> <distance>` | Dead reckoning: calculates the destination coordinate from a starting location, course, and distance (e.g. `@gobot proj CM87uk 045 15km`). |
+| `whereami` | `@gobot whereami [location]` | The operational location card: Plus Code, coordinates, Maidenhead grid, elevation, fix status, local solar time, and the sunset countdown. With no argument it uses the live GNSS fix. Also accepted as `/whereami`. See [The Go Reticulum Lifesaver](#the-go-reticulum-lifesaver-grl). |
 
 ---
 
@@ -611,7 +793,7 @@ back to the WGS-84 GPS position before anything else is computed. See
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `sun` | `@gobot sun <location> [date]` | Computes UTC sunrise, sunset, civil twilight dawn/dusk, and total daylight hours for any location on Earth. |
+| `sun` | `@gobot sun [location] [date]` | Computes UTC sunrise, sunset, civil twilight dawn/dusk, and total daylight hours for any location on Earth. With no location it uses the live GNSS fix, and a bare date (`sun 2026-06-21`) keeps the date while taking the position from the fix. |
 | `moon` | `@gobot moon [location] [date]` | Reports moon phase, illumination percentage, lunar age, moonrise/moonset, nighttime illumination rating, and upcoming spring/neap tides. |
 
 ---
@@ -620,7 +802,7 @@ back to the WGS-84 GPS position before anything else is computed. See
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `sos` | `@gobot sos <loc> <RED\|YELLOW\|GREEN\|INFO> <details>` | Broadcasts an emergency distress beacon across all rooms, confirms receipt to sender, persists beacon to disk, and dispatches via LXMF to emergency responders. |
+| `sos` | `@gobot sos [loc] [RED\|YELLOW\|GREEN\|INFO] [details]` | Broadcasts an emergency distress beacon across all rooms, confirms receipt to sender, persists beacon to disk, and dispatches via LXMF to emergency responders. With no location, and with a live GNSS fix, the beacon is raised at the operator's own position (RED by default) and the receiver facts are attached. |
 | `sos list` | `@gobot sos list` | Lists all active distress beacons. |
 | `sos clear` | `@gobot sos clear <id>` | Resolves and clears an SOS beacon (restricted to the original sender). |
 | `checkin` | `@gobot checkin <loc> overdue <duration> <note>` | Arms an overdue dead-man timer (e.g. `overdue 4h`). If not cleared before expiry, the bot raises an automatic overdue alarm. |
@@ -634,7 +816,7 @@ back to the WGS-84 GPS position before anything else is computed. See
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `firstaid` / `rx` | `@gobot firstaid <topic>` | Offline clinical decision-support cards for wilderness medicine: `bleed`, `cpr`, `triage`, `shock`, `hypo`, `heat`, `burns`, `water`, `snake`. |
+| `firstaid` / `rx` / `med` | `@gobot firstaid <topic>` | Offline clinical decision-support cards for wilderness medicine: `bleed`, `cpr`, `triage`, `shock`, `hypo` (hypothermia), `heat`, `burns`, `water`, `snake`. `med` is the short name the field guides and the portal chat box use. |
 | `coldwater` | `@gobot coldwater [temp]` | 1-10-1 cold water survival rule and swim failure timelines for water temperatures (e.g. `@gobot coldwater 48F`). |
 | `signal` | `@gobot signal [air\|sound\|light]` | Distress signaling standards: ground-to-air visual markers (V, X, N, Y), whistle cadences, mirror/torch patterns. |
 | `morse` | `@gobot morse <text>` / `morse -d <code...>` | Bidirectional Morse code encoder and decoder. |
@@ -649,7 +831,7 @@ back to the WGS-84 GPS position before anything else is computed. See
 | `weather` / `wx` | `@gobot weather <location>` | Live conditions from plain-text weather feed. |
 | `tide` | `@gobot tide <station\|coords\|place> [date]` | 48-hour high/low water predictions, Rule of Twelfths hourly depth interpolation, and spring/neap tide classification. |
 | `tide search` | `@gobot tide search <query> [page]` | Finds a station offline by name, state, or id, four per page. |
-| `tide near` | `@gobot tide near <place\|coords\|pluscode>` | The three closest stations, with distance in nautical miles and bearing. |
+| `tide near` | `@gobot tide near [place\|coords\|pluscode]` | The three closest stations, with distance in nautical miles and bearing. With no argument it uses the live GNSS fix. |
 | `tide list` | `@gobot tide list [state] [page]` | Every station, or one state's (`CA`, `OR`, `WA`, `AK`, `HI`, …). |
 | `buoy` | `@gobot buoy <buoy_id>` | Real-time ocean buoy sea state: wave height, dominant wave period, swell vs chop classification, water temp, pressure trend. |
 | `buoy search` | `@gobot buoy search <query> [page]` | Finds a buoy offline by place, id, region, or state. |
@@ -671,7 +853,7 @@ back to the WGS-84 GPS position before anything else is computed. See
 
 | Command | Syntax | Description & Example |
 |---------|--------|-----------------------|
-| `tower` / `repeater` / `cell` / `mast` | `@gobot tower near <place\|coords\|pluscode>` | The three closest communications sites, with the distance in kilometers, the bearing, the service, the frequency with its offset and tone, and the place. Entirely offline; a site inside China also prints the GCJ-02 coordinate for Amap/Gaode/WeChat. See [Cell & Radio Tower Finder](#cell-radio-tower-finder-tower-repeater-cell). |
+| `tower` / `repeater` / `cell` / `mast` | `@gobot tower near [place\|coords\|pluscode]` | The three closest communications sites, with the distance in kilometers, the bearing, the service, the frequency with its offset and tone, and the place. Entirely offline; a site inside China also prints the GCJ-02 coordinate for Amap/Gaode/WeChat. With no argument beyond `near` it uses the live GNSS fix. See [Cell & Radio Tower Finder](#cell-radio-tower-finder-tower-repeater-cell). |
 | `tower search` | `@gobot tower search <query> [page]` | Finds a site offline by callsign, identifier, name, city, pinyin place name, state or province, frequency, or operator (`sutro`, `beijing`, `sichuan`, `145.150`, `china mobile`). |
 | `tower list` | `@gobot tower list [country\|region] [page]` | Every site, or one country's (`US`, `CN`, `GB`), one country's by name (`china`, `germany`), one US state's (`CA`, `CO`) or its name, or one Chinese province's (`BJ`, `GD`, `SC`, `XJ`). |
 | `tower info` | `@gobot tower info <id>` | One site in full: the exact WGS-84 position, the GCJ-02 position when the site is in China, the Maidenhead grid, the elevation, the frequency, the offset, the tone, and the operator. |

@@ -371,10 +371,15 @@ func (c *commandContext) runTowerDiscovery(command string, records []TowerRecord
 }
 
 // renderTowerNearArgument resolves a proximity request's argument and renders the
-// closest sites, or explains why the argument could not be placed.
+// closest sites, or explains why the argument could not be placed. With no
+// argument at all it uses the live GNSS fix, which is the whole point of a
+// receiver: "tower near" is what an operator with cold hands can type.
 func (c *commandContext) renderTowerNearArgument(q discoveryQuery, records []TowerRecord, entries []catalogEntry, argument string) []string {
 	if strings.TrimSpace(argument) == "" {
-		return []string{"Usage: " + q.Command + " near <place|coords|pluscode>"}
+		if point, label, ok := c.gnssContext(); ok {
+			return c.renderTowerNear(q, records, entries, point, label)
+		}
+		return []string{"Usage: " + q.Command + " near <place|coords|pluscode>", discoveryNoFixHint}
 	}
 	point, ok := resolveCatalogPoint(entries, argument)
 	if !ok {

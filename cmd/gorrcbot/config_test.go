@@ -1168,3 +1168,80 @@ func TestDecodeBotConfigToleratesAnAbsentTowersCSV(t *testing.T) {
 		t.Errorf("warnings = %v, want one naming the directory", warnings)
 	}
 }
+
+// TestDecodePortalAndGNSSSettings asserts the Go Reticulum Lifesaver's Phase 0
+// keys decode: the captive portal's listen address, the GNSS receiver's device,
+// and a static fix for a headless node with no receiver at all.
+func TestDecodePortalAndGNSSSettings(t *testing.T) {
+	t.Parallel()
+
+	cfg, warnings, err := DecodeBotConfig("config.toml", `
+[bot]
+portal_addr = "127.0.0.1:8080"
+gps_port = "/dev/ttyUSB0"
+gps_fix = "37.7553,-122.4527"
+`+misplacedHub)
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none", warnings)
+	}
+	if cfg.PortalAddr != "127.0.0.1:8080" {
+		t.Errorf("PortalAddr = %q, want %q", cfg.PortalAddr, "127.0.0.1:8080")
+	}
+	if cfg.GPSPort != "/dev/ttyUSB0" {
+		t.Errorf("GPSPort = %q, want %q", cfg.GPSPort, "/dev/ttyUSB0")
+	}
+	if cfg.GPSFix != "37.7553,-122.4527" {
+		t.Errorf("GPSFix = %q, want %q", cfg.GPSFix, "37.7553,-122.4527")
+	}
+}
+
+// TestPortalAndGNSSSettingsDefaultOff asserts a configuration that says nothing
+// about the portal or a receiver starts neither: a bot that never asked for an
+// HTTP listener must never bind one.
+func TestPortalAndGNSSSettingsDefaultOff(t *testing.T) {
+	t.Parallel()
+
+	cfg, warnings, err := DecodeBotConfig("config.toml", misplacedHub)
+	if err != nil {
+		t.Fatalf("DecodeBotConfig: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none", warnings)
+	}
+	if cfg.PortalAddr != "" || cfg.GPSPort != "" || cfg.GPSFix != "" {
+		t.Errorf("portal_addr/gps_port/gps_fix = %q/%q/%q, want all empty",
+			cfg.PortalAddr, cfg.GPSPort, cfg.GPSFix)
+	}
+}
+
+// TestPortalAndGNSSSettingsValidate asserts an unusable setting is reported once
+// at startup instead of silently doing nothing.
+func TestPortalAndGNSSSettingsValidate(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		line string
+		want string
+	}{
+		{"addr without a port", `portal_addr = "127.0.0.1"`, "portal_addr"},
+		{"addr with a bad port", `portal_addr = "127.0.0.1:http"`, "portal_addr"},
+		{"fix that is not a place", `gps_fix = "not a place at all"`, "gps_fix"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, warnings, err := DecodeBotConfig("config.toml", "[bot]\n"+tc.line+"\n"+misplacedHub)
+			if err != nil {
+				t.Fatalf("DecodeBotConfig: %v", err)
+			}
+			joined := strings.Join(warnings, "\n")
+			if !strings.Contains(joined, tc.want) {
+				t.Errorf("warnings = %v, want one naming %v", warnings, tc.want)
+			}
+		})
+	}
+}

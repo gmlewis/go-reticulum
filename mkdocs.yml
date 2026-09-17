@@ -61,11 +61,13 @@ nav:
       - Directory: tools/index.md
       - gorrcbot (Chat Bot): tools/gorrcbot.md
       - gobot (Bot CLI): tools/gobot.md
+      - golxmd (LXMF Propagation): tools/golxmd.md
       - gorrcd (Hub Daemon): tools/gorrcd.md
       - gornodeconf (RNode Manager): tools/gornodeconf.md
       - CLI Utilities: tools/cli-utilities.md
   - Guides:
       - Off-Grid Hardware: guides/hardware.md
+      - Running a Node: guides/running-a-node.md
       - Wasm Plugins: guides/wasm-plugins.md
       - Radio Diagnostics: guides/diagnostics.md
   - Reference:

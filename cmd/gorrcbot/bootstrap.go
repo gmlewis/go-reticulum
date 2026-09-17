@@ -200,6 +200,30 @@ river_flood_url = "https://api.water.noaa.gov/nwps/v1/gauges/{place}"
 #
 space_weather_url = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json"
 
+# The Go Reticulum Lifesaver's captive web portal: a self-contained survival
+# dashboard a traveler's phone opens by itself the moment it joins this device's
+# Wi-Fi. Nothing has to be installed, because the page is served from this
+# binary: the position panel, the SOS button, and the offline field assistant
+# are all in it. It answers the captive-network probes Apple, Android, and
+# Windows use, so the phone pops the dashboard instead of reporting "connected,
+# no internet".
+# Set an address to turn it on, for example "127.0.0.1:8080" while testing or
+# ":80" in the field. Leave empty to bind no HTTP listener at all.
+portal_addr = ""
+
+# GNSS receiver: the device that streams NMEA-0183 sentences, for example
+# /dev/ttyUSB0 or /dev/ttyACM0. A receiver supplies the position that
+# /whereami, "tower near", "tide near", "sun", and /sos use automatically, so
+# nothing has to be typed with cold hands. The port must already be configured
+# for the receiver's line speed. Leave empty for no streaming receiver.
+gps_port = ""
+
+# A static position for a node with no receiver: a fixed relay, a headless
+# installation, or an operator rehearsing the field tools. It accepts every
+# notation the location commands accept, like "37.7553,-122.4527", a Plus Code,
+# a Maidenhead grid, or DMS. Leave empty when gps_port supplies the position.
+gps_fix = ""
+
 # Optional provider template for the metar command: the aviation weather report
 # for an ICAO station code. {place} becomes the lowercased station code, and the
 # template must keep its own scheme and host. The answer is decoded into wind,

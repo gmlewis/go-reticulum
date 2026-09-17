@@ -12,9 +12,12 @@ package main
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"net"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/gmlewis/go-reticulum/rrc"
@@ -171,6 +174,19 @@ type BotConfig struct {
 	EmergencyLXMFDestination string
 	// EmergencyLXMFDestinationHash is EmergencyLXMFDestination decoded to bytes.
 	EmergencyLXMFDestinationHash []byte
+	// PortalAddr is the captive web portal's listen address, like
+	// "127.0.0.1:8080" or ":80". Empty disables the portal entirely: a bot
+	// that never asked for an HTTP listener never binds one.
+	PortalAddr string
+	// GPSPort is the device or file the GNSS receiver's NMEA sentences are
+	// read from, like /dev/ttyUSB0 or /dev/ttyACM0. Empty means no streaming
+	// receiver.
+	GPSPort string
+	// GPSFix is a static position for a node with no receiver — a headless
+	// installation, a fixed relay, or an operator rehearsing the field tools.
+	// It accepts every notation the location commands accept. Empty means the
+	// node has no position unless a receiver supplies one.
+	GPSFix string
 	// Hubs are the RRC hubs to dial, in configuration order.
 	Hubs []HubConfig
 }
@@ -330,6 +346,9 @@ var botKeys = map[string]bool{
 	"lxmf_propagation_node":      true,
 	"lxmf_announce_minutes":      true,
 	"emergency_lxmf_destination": true,
+	"portal_addr":                true,
+	"gps_port":                   true,
+	"gps_fix":                    true,
 }
 
 // warn records a non-fatal configuration problem.
@@ -713,7 +732,61 @@ func (d *configDecoder) decodeBotTable(t *toml.Table) error {
 			}
 			d.cfg.EmergencyLXMFDestination = destination
 			d.cfg.EmergencyLXMFDestinationHash = raw
+		case "portal_addr":
+			s, err := d.stringValue("[bot]", key, kv)
+			if err != nil {
+				return err
+			}
+			d.cfg.PortalAddr = strings.TrimSpace(s)
+			// An address the listener cannot use is an operator error,
+			// reported once at startup rather than as a failure to start. The
+			// value is kept so the startup line names what was configured.
+			if err := validatePortalAddr(d.cfg.PortalAddr); err != nil {
+				d.warn("[bot] portal_addr is unusable (%v); the captive portal stays off until it is fixed", err)
+			}
+		case "gps_port":
+			s, err := d.stringValue("[bot]", key, kv)
+			if err != nil {
+				return err
+			}
+			d.cfg.GPSPort = strings.TrimSpace(s)
+		case "gps_fix":
+			s, err := d.stringValue("[bot]", key, kv)
+			if err != nil {
+				return err
+			}
+			d.cfg.GPSFix = strings.TrimSpace(s)
+			// A static fix that cannot be placed is worse than none: it would
+			// answer every location query with a position from nowhere. The
+			// value is kept so the warning can name it and help can show it.
+			if d.cfg.GPSFix != "" {
+				if _, err := ParseLocation(d.cfg.GPSFix); err != nil {
+					d.warn("[bot] gps_fix %q is not a location the bot can place; the static fix is unusable", d.cfg.GPSFix)
+				}
+			}
 		}
+	}
+	return nil
+}
+
+// validatePortalAddr reports whether a configured portal address is one the TCP
+// listener can use. It checks the shape only — an empty host is the legal
+// "every interface" form — because resolving a name belongs to Start, not to a
+// configuration read that must work on a node with no network.
+func validatePortalAddr(addr string) error {
+	if addr == "" {
+		return nil
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("want host:port, like 127.0.0.1:8080 or :80: %w", err)
+	}
+	_ = host
+	if port == "" {
+		return errors.New("want a port, like 127.0.0.1:8080 or :80")
+	}
+	if _, err := strconv.Atoi(port); err != nil {
+		return fmt.Errorf("want a numeric port, got %q", port)
 	}
 	return nil
 }

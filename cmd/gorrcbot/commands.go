@@ -94,6 +94,11 @@ type command struct {
 	configured func(*BotConfig) bool
 	// run produces the reply lines for one invocation.
 	run func(*commandContext) []string
+	// local reports that the command computes its whole answer in-process and
+	// needs no hub session, so the captive portal can run it with no RRC link
+	// at all. A command that touches a session, the pager, the announce cache,
+	// or a peer's identity must leave this false.
+	local bool
 }
 
 // commandContext is one command invocation.
@@ -171,6 +176,10 @@ type registry struct {
 	// towers caches the resolved cell and repeater catalog: the embedded rows
 	// with the operator's local towers.csv, if any, merged over them.
 	towers *towerStore
+	// gps is the live GNSS receiver every position-aware command falls back on
+	// when the request names no location. It is nil when no receiver is
+	// configured, and nil means "no fix", never a panic.
+	gps *GPSReader
 }
 
 // newRegistry builds the command table for one bot.
@@ -229,6 +238,50 @@ func (r *registry) config() *BotConfig {
 		return nil
 	}
 	return r.bot.cfg
+}
+
+// currentFix returns the live GNSS fix and whether it is usable. A node with no
+// receiver, and a receiver that has not locked yet, both report no fix, which is
+// the same answer the commands need: "I do not know where you are."
+func (r *registry) currentFix() (GPSFix, bool) {
+	if r == nil || r.gps == nil {
+		return GPSFix{}, false
+	}
+	fix := r.gps.LastFix()
+	return fix, fix.Valid
+}
+
+// localNames returns the names the offline portal can run, in registry order.
+func (r *registry) localNames() []string {
+	out := make([]string, 0, len(r.commands))
+	for _, cmd := range r.commands {
+		if cmd.local {
+			out = append(out, cmd.name)
+		}
+	}
+	return out
+}
+
+// RunLocal executes one command line that needs no hub session. It is the
+// captive portal's entry point: the portal has no RRC link behind it, so only
+// the commands whose answers are computed in-process — the survival
+// intelligence the Lifesaver promises works with zero radio hops — are
+// available there. A command that needs a live link says so instead of
+// failing obscurely.
+func (r *registry) RunLocal(line string) []string {
+	name, args := splitCommandLine(line)
+	if name == "" {
+		return []string{"offline commands: " + strings.Join(r.localNames(), ", ")}
+	}
+	cmd, ok := r.byName[name]
+	if !ok {
+		return []string{fmt.Sprintf("unknown command %q — the offline portal has: %v",
+			name, strings.Join(r.localNames(), ", "))}
+	}
+	if !cmd.local {
+		return []string{fmt.Sprintf("%v needs a live hub link and is not available on the offline portal", name)}
+	}
+	return cmd.run(&commandContext{reg: r, req: &commandRequest{Command: line, Now: time.Now()}, Args: args})
 }
 
 func (r *registry) Run(req *commandRequest) []string {
@@ -294,8 +347,13 @@ func (c *commandContext) effectiveTriggerNick() string {
 }
 
 // splitCommandLine splits a command line into its lowercase name and arguments.
+// A leading slash is accepted and dropped, so the "/whereami" and "/sos" forms
+// the field guides use — and the forms a person types out of habit in a chat
+// box — reach exactly the same command as the bare name.
 func splitCommandLine(line string) (string, string) {
 	trimmed := strings.TrimSpace(line)
+	trimmed = strings.TrimPrefix(trimmed, "/")
+	trimmed = strings.TrimSpace(trimmed)
 	if trimmed == "" {
 		return "", ""
 	}
@@ -606,7 +664,8 @@ func (r *registry) build() []command {
 				`{nick} loc 37°25'19"N 122°05'03"W — degrees, minutes, seconds.`,
 				"{nick} loc CM87uk — a Maidenhead grid locator.",
 			},
-			run: (*commandContext).runLoc,
+			run:   (*commandContext).runLoc,
+			local: true,
 		},
 		{
 			name:    "dist",
@@ -617,7 +676,8 @@ func (r *registry) build() []command {
 				"separate them when one of them contains spaces.",
 				"{nick} dist 849VCWC8+R9 to 8FVC9G8F+6X",
 			},
-			run: (*commandContext).runDist,
+			run:   (*commandContext).runDist,
+			local: true,
 		},
 		{
 			name:    "proj",
@@ -628,7 +688,8 @@ func (r *registry) build() []command {
 				projBearingHelp + ".",
 				"{nick} proj 849VCWC8+R9 048 3.5km",
 			},
-			run: (*commandContext).runProj,
+			run:   (*commandContext).runProj,
+			local: true,
 		},
 		{
 			name:    "sun",
@@ -637,9 +698,27 @@ func (r *registry) build() []command {
 			detail: []string{
 				"Accepts every notation loc accepts, and an optional date",
 				"(YYYY-MM-DD, today, tomorrow, or yesterday); times are UTC.",
-				"{nick} sun 849VCWC8+R9 2026-06-21",
+				"With no location it uses the live GNSS fix, so an operator in the",
+				"field can just ask for the day's light.",
+				"{nick} sun 849VCWC8+R9 2026-06-21 | {nick} sun",
 			},
-			run: (*commandContext).runSun,
+			run:   (*commandContext).runSun,
+			local: true,
+		},
+		{
+			name:    "whereami",
+			summary: "report the operational location card",
+			usage:   whereamiUsage,
+			detail: []string{
+				"With no argument it reports the live GNSS fix. Every notation loc",
+				"accepts works as an argument, so a remote position can be placed",
+				"too. The card carries the Plus Code, both coordinates, the",
+				"Maidenhead grid, the altitude, the fix quality, and the local solar",
+				"time with the daylight the operator has left.",
+				"{nick} whereami | {nick} whereami 37.7553,-122.4527",
+			},
+			run:   (*commandContext).runWhereami,
+			local: true,
 		},
 		{
 			name:    "sos",
@@ -650,10 +729,14 @@ func (r *registry) build() []command {
 				"direct NOTICE, and queues an LXMF dispatch copy when the operator",
 				"has configured emergency_lxmf_destination.",
 				"The triage level is one of " + strings.Join(SOSTriageLevels, ", ") + ".",
+				"With no location, and with a live GNSS fix, the beacon is raised at",
+				"the operator's own position and the fix is attached to the alert.",
 				"{nick} sos 849VCWC8+R9 RED 2 hikers, 1 leg fracture",
+				"{nick} sos RED 2 hikers, one leg fracture",
 				"{nick} " + sosListUsage + " | {nick} " + sosClearUsage,
 			},
-			run: (*commandContext).runSOS,
+			run:   (*commandContext).runSOS,
+			local: true,
 		},
 		{
 			name:    "checkin",
@@ -689,7 +772,8 @@ func (r *registry) build() []command {
 				"Decision support, not a substitute for training.",
 				"{nick} firstaid bleed | {nick} firstaid water | {nick} firstaid",
 			},
-			run: (*commandContext).runFirstAid,
+			run:   (*commandContext).runFirstAid,
+			local: true,
 		},
 		{
 			name:    "rx",
@@ -698,7 +782,19 @@ func (r *registry) build() []command {
 			detail: []string{
 				"Same command as firstaid.",
 			},
-			run: (*commandContext).runFirstAid,
+			run:   (*commandContext).runFirstAid,
+			local: true,
+		},
+		{
+			name:    "med",
+			summary: "offline wilderness-medicine action card",
+			usage:   firstaidUsage,
+			detail: []string{
+				"Same command as firstaid, under the short name the field guides",
+				"and the captive portal's chat box use.",
+			},
+			run:   (*commandContext).runFirstAid,
+			local: true,
 		},
 		{
 			name:    "triage",
@@ -707,7 +803,8 @@ func (r *registry) build() []command {
 			detail: []string{
 				"Same command as firstaid.",
 			},
-			run: (*commandContext).runFirstAid,
+			run:   (*commandContext).runFirstAid,
+			local: true,
 		},
 		{
 			name:    "spacewx",
@@ -746,7 +843,8 @@ func (r *registry) build() []command {
 				"{nick} conv 5 gal_water lbs — what the water weighs.",
 				"{nick} conv 5000mAh@3.7V Wh — what the battery holds.",
 			},
-			run: (*commandContext).runConv,
+			run:   (*commandContext).runConv,
+			local: true,
 		},
 		{
 			name:    "signal",
@@ -756,7 +854,8 @@ func (r *registry) build() []command {
 				"With no section, prints the whole guide: air, sound, and light.",
 				"{nick} signal air | {nick} signal sound | {nick} signal light",
 			},
-			run: (*commandContext).runSignal,
+			run:   (*commandContext).runSignal,
+			local: true,
 		},
 		{
 			name:    "morse",
@@ -767,7 +866,8 @@ func (r *registry) build() []command {
 				"{nick} morse SOS MAYDAY",
 				"{nick} morse -d ... --- ...",
 			},
-			run: (*commandContext).runMorse,
+			run:   (*commandContext).runMorse,
+			local: true,
 		},
 		{
 			name:    "metar",
@@ -814,7 +914,8 @@ func (r *registry) build() []command {
 				"moons; the new and full ones drive the spring tides.",
 				"{nick} moon 849VCWC8+R9 | {nick} moon 2026-06-21",
 			},
-			run: (*commandContext).runMoon,
+			run:   (*commandContext).runMoon,
+			local: true,
 		},
 		{
 			name:    "coldwater",
@@ -828,7 +929,8 @@ func (r *registry) build() []command {
 				"Fahrenheit) it prints the swim-failure and survival windows.",
 				"{nick} coldwater | {nick} coldwater 48F",
 			},
-			run: (*commandContext).runColdwater,
+			run:   (*commandContext).runColdwater,
+			local: true,
 		},
 		{
 			name:    "immersion",
@@ -837,7 +939,8 @@ func (r *registry) build() []command {
 			detail: []string{
 				"Same command as coldwater.",
 			},
-			run: (*commandContext).runColdwater,
+			run:   (*commandContext).runColdwater,
+			local: true,
 		},
 		{
 			name:    "river",
@@ -858,6 +961,7 @@ func (r *registry) build() []command {
 			},
 			configured: func(cfg *BotConfig) bool { return cfg.RiverURL != "" },
 			run:        (*commandContext).runRiver,
+			local:      true,
 		},
 		{
 			name:    "buoy",
@@ -878,6 +982,7 @@ func (r *registry) build() []command {
 			},
 			configured: func(cfg *BotConfig) bool { return cfg.BuoyURL != "" },
 			run:        (*commandContext).runBuoy,
+			local:      true,
 		},
 		{
 			name:    "tide",
@@ -887,7 +992,9 @@ func (r *registry) build() []command {
 				"A station is a 7-digit provider id (9414290 is San Francisco), a",
 				"port name, or a position, which resolves to the nearest station.",
 				"tide search <query> [page] finds a station by name or id;",
-				"tide near <place|coords|pluscode> names the 3 closest;",
+				"tide near <place|coords|pluscode> names the 3 closest; with no",
+				"argument it uses the live GNSS fix, so \"tide near\" works in the",
+				"field with nothing typed;",
 				"tide list [state] [page] lists them, and \"more\" turns the page.",
 				"{nick} tide search san francisco | {nick} tide 9414290",
 			},
@@ -896,6 +1003,7 @@ func (r *registry) build() []command {
 			},
 			configured: func(cfg *BotConfig) bool { return cfg.TideURL != "" },
 			run:        (*commandContext).runTide,
+			local:      true,
 		},
 		{
 			name:    "tower",
@@ -911,8 +1019,11 @@ func (r *registry) build() []command {
 				"configuration adds local sites. A site in China also prints the GCJ-02 coordinate that",
 				"Amap, Gaode, and WeChat expect.",
 				"{nick} tower near 39.9055,116.3976 | {nick} tower search beijing | {nick} tower info BJ-RPT-01",
+				"With no argument beyond the word near, \"tower near\" uses the live",
+				"GNSS fix, so the operator's three closest sites are one word away.",
 			},
-			run: (*commandContext).runTower,
+			run:   (*commandContext).runTower,
+			local: true,
 		},
 		{
 			name:    "repeater",
@@ -922,7 +1033,8 @@ func (r *registry) build() []command {
 				"Same command as tower.",
 				"{nick} repeater near <place|coords|pluscode> names the 3 closest sites.",
 			},
-			run: (*commandContext).runTower,
+			run:   (*commandContext).runTower,
+			local: true,
 		},
 		{
 			name:    "cell",
@@ -932,7 +1044,8 @@ func (r *registry) build() []command {
 				"Same command as tower.",
 				"{nick} cell near <place|coords|pluscode> names the 3 closest masts.",
 			},
-			run: (*commandContext).runTower,
+			run:   (*commandContext).runTower,
+			local: true,
 		},
 		{
 			name:    "mast",
@@ -942,7 +1055,8 @@ func (r *registry) build() []command {
 				"Same command as tower.",
 				"{nick} mast near <place|coords|pluscode> names the 3 closest masts.",
 			},
-			run: (*commandContext).runTower,
+			run:   (*commandContext).runTower,
+			local: true,
 		},
 		{
 			name:    "more",

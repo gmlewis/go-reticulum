@@ -33,7 +33,7 @@ A full Reticulum node comprises five cooperating components:
 | [**gornsd**](../tools/cli-utilities.md) `-s` | Transport Daemon | Layer 3 | Owns all physical network interfaces (TCP server, AutoInterface, LoRa radios). Provides the shared IPC socket. |
 | [**golxmd**](../tools/golxmd.md) `-p` | LXMF Propagation Node | Layer 4 | Caches, synchronizes, and delivers asynchronous encrypted messages for offline peers across the mesh. |
 | [**gorrcd**](../tools/gorrcd.md) | Chat Hub Daemon | Layer 4 | Manages persistent Reticulum Relay Chat (RRC) rooms, channel history, and client notifications. |
-| [**gorrcbot**](../tools/gorrcbot.md) | Autonomous Field Assistant | Layer 4 | Connects to the local hub, providing offline station databases, navigation tools, and telemetry to chat users. |
+| [**gorrcbot**](../tools/gorrcbot.md) | Autonomous Field Assistant | Layer 4 | Connects to the local hub, providing offline station databases, navigation tools, and telemetry to chat users. On a field node it is also the **Go Reticulum Lifesaver (GRL)**: it reads a GNSS receiver, answers `/whereami` locally, and serves the captive survival portal to any smartphone that joins the node's Wi-Fi. |
 | **gonomadnet** | Micron Server & TUI | Layer 7 | Serves Micron markdown pages and file downloads over Reticulum, with an interactive terminal UI for the operator. |
 
 ---
@@ -223,3 +223,41 @@ gornprobe <destination_hash>
 ```bash
 journalctl -u gornsd -u golxmd -u gorrcd -f
 ```
+
+---
+
+## The Field Node: The Go Reticulum Lifesaver (GRL)
+
+On a portable or vehicle node, `gorrcbot` takes on a second role: it is the
+**Go Reticulum Lifesaver**, the survival communicator described in
+[gorrcbot — The Go Reticulum Lifesaver](../tools/gorrcbot.md#the-go-reticulum-lifesaver-grl).
+Two settings turn it on, and both are optional:
+
+```toml
+[bot]
+# A GNSS receiver streaming NMEA-0183 sentences (or a static position)
+gps_port = "/dev/ttyACM0"
+
+# The captive survival portal: a phone that joins this node's Wi-Fi opens it
+portal_addr = ":80"
+```
+
+What that buys a field node:
+
+- **A position the node knows without a network.** `/whereami` prints the Plus
+  Code, both coordinates, the Maidenhead grid, the altitude, the fix quality, the
+  local solar time, and the daylight remaining — all computed in-process.
+- **One-word questions.** `tower near`, `tide near`, and `sun` inherit the live
+  fix, so nothing has to be typed with cold hands. `/sos` raises a RED beacon at
+  the verified position and attaches the receiver facts to it.
+- **A dashboard with no app.** A traveler's phone in airplane mode that joins the
+  node's Wi-Fi has the survival dashboard opened for it by the operating
+  system's captive-network probe, with the Plus Code, a copy button, the SOS
+  button, and the offline field assistant.
+- **The same answers on both paths.** The portal and the radio commands share one
+  command registry restricted to its offline commands, and one GNSS receiver, so
+  the two can never disagree.
+
+The portal binds an HTTP listener, so put it on the field node's own access point
+(and behind the node's firewall on a shared network), or leave `portal_addr`
+empty to bind nothing at all.

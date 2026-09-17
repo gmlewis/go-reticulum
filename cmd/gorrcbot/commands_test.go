@@ -56,9 +56,9 @@ func TestRegistryNamesAreStable(t *testing.T) {
 		"catchup", "flight", "id", "kjv", "launches", "lxmf", "members", "msg", "path", "rooms",
 		"search", "seen", "unwatch", "watch", "watches",
 		// The field assistant's navigation commands.
-		"dist", "loc", "proj", "sun",
+		"dist", "loc", "proj", "sun", "whereami",
 		// The field assistant's emergency and situation commands.
-		"checkin", "firstaid", "rx", "sitrep", "sos", "triage",
+		"checkin", "firstaid", "med", "rx", "sitrep", "sos", "triage",
 		// The field assistant's propagation and mesh commands.
 		"net", "solar", "spacewx",
 		// The field assistant's tactical references.
@@ -984,5 +984,194 @@ func TestUnknownCommandNamesTheConfiguredNick(t *testing.T) {
 			})
 			assertLines(t, lines, []string{"unknown command — try @" + tt.wantNick + " help"})
 		})
+	}
+}
+
+// gnssFixture builds a registry and session whose GNSS source holds fix. A zero
+// fix leaves the registry with no receiver, which is the headless case every
+// zero-argument fallback must survive.
+func gnssFixture(t *testing.T, fix GPSFix) (*registry, *hubSession) {
+	t.Helper()
+	reg, session, _ := commandFixture(t, nil)
+	if fix.Valid {
+		reader := NewGPSReader(nil)
+		reader.SetFix(fix)
+		t.Cleanup(func() { _ = reader.Close() })
+		reg.gps = reader
+	}
+	return reg, session
+}
+
+// TestZeroArgumentCommandsUseTheGNSSFix asserts a fix makes "tower near" and
+// "tide near" answer with the operator's own three closest sites, which is the
+// question a person with cold hands actually asks: one word, no coordinates
+// typed from a screen.
+func TestZeroArgumentCommandsUseTheGNSSFix(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		line string
+		want []string
+	}{
+		{"tower near", []string{"Tower sites near " + refPlus10, "km", "MHz"}},
+		{"tide near", []string{"Tide stations near " + refPlus10}},
+		{"cell near", []string{"Tower sites near " + refPlus10}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.line, func(t *testing.T) {
+			t.Parallel()
+			reg, session := gnssFixture(t, sfFix())
+			lines := runLines(t, reg, session, tc.line)
+			joined := strings.Join(lines, "\n")
+			if strings.Contains(joined, "Usage:") {
+				t.Fatalf("%v asked for an argument despite a live fix:\n%v", tc.line, joined)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(joined, want) {
+					t.Errorf("%v = %v, want it to contain %q", tc.line, lines, want)
+				}
+			}
+		})
+	}
+}
+
+// TestZeroArgumentCommandsWithoutAFixStillAsk asserts the fallback never
+// invents a position: with no fix the command asks for the argument it needs.
+func TestZeroArgumentCommandsWithoutAFixStillAsk(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		line string
+		want string
+	}{
+		{"tower near", "Usage: tower near <place|coords|pluscode>"},
+		{"tide near", "Usage: tide near <place|coords|pluscode>"},
+		{"sun", "Usage: " + sunUsage},
+	}
+	for _, tc := range cases {
+		t.Run(tc.line, func(t *testing.T) {
+			t.Parallel()
+			reg, session := gnssFixture(t, GPSFix{})
+			lines := runLines(t, reg, session, tc.line)
+			joined := strings.Join(lines, "\n")
+			if !strings.Contains(joined, tc.want) {
+				t.Errorf("%v without a fix = %v, want %q", tc.line, lines, tc.want)
+			}
+		})
+	}
+}
+
+// TestSunUsesTheGNSSFix asserts a bare "sun" reports the almanac for the
+// operator's own position, and that a date may still be given on its own.
+func TestSunUsesTheGNSSFix(t *testing.T) {
+	t.Parallel()
+
+	reg, session := gnssFixture(t, sfFix())
+	joined := strings.Join(runLines(t, reg, session, "sun"), "\n")
+	if strings.Contains(joined, "Usage:") {
+		t.Fatalf("a bare sun asked for a location despite a live fix:\n%v", joined)
+	}
+	if !strings.Contains(joined, refPlus10) {
+		t.Errorf("sun = %q, want the fix's Plus Code %v", joined, refPlus10)
+	}
+	if !strings.Contains(joined, "Almanac for") {
+		t.Errorf("sun = %q, want an almanac", joined)
+	}
+
+	joined = strings.Join(runLines(t, reg, session, "sun 2026-06-21"), "\n")
+	if strings.Contains(joined, "Usage:") {
+		t.Fatalf("a dated sun asked for a location despite a live fix:\n%v", joined)
+	}
+	if !strings.Contains(joined, "2026-06-21") {
+		t.Errorf("sun 2026-06-21 = %q, want the requested date", joined)
+	}
+}
+
+// TestSOSRaisesAtTheGNSSFix asserts a beacon raised with no typed location uses
+// the operator's verified position, and that the receiver facts travel with it.
+func TestSOSRaisesAtTheGNSSFix(t *testing.T) {
+	t.Parallel()
+
+	reg, session := gnssFixture(t, sfFix())
+	lines := runLines(t, reg, session, "sos RED two hikers, one leg fracture")
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, refPlus10) {
+		t.Errorf("sos = %v, want the fix's Plus Code %v", lines, refPlus10)
+	}
+	if !strings.Contains(joined, "RED") {
+		t.Errorf("sos = %v, want the triage level", lines)
+	}
+	if !strings.Contains(joined, "two hikers") {
+		t.Errorf("sos = %v, want the details", lines)
+	}
+	if !strings.Contains(joined, "GNSS") {
+		t.Errorf("sos = %v, want the receiver facts attached", lines)
+	}
+}
+
+// TestSOSDefaultsTriageAndDetailsAtTheGNSSFix asserts the shortest possible
+// distress call works: "sos" alone raises a RED beacon at the current position,
+// because somebody typing one word is somebody in trouble.
+func TestSOSDefaultsTriageAndDetailsAtTheGNSSFix(t *testing.T) {
+	t.Parallel()
+
+	reg, session := gnssFixture(t, sfFix())
+	lines := runLines(t, reg, session, "sos")
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, refPlus10) || !strings.Contains(joined, "RED") {
+		t.Errorf("a bare sos = %v, want a RED beacon at %v", lines, refPlus10)
+	}
+}
+
+// TestSOSWithoutAFixStillRequiresALocation asserts the automatic context never
+// turns a mistyped request into a beacon somewhere arbitrary.
+func TestSOSWithoutAFixStillRequiresALocation(t *testing.T) {
+	t.Parallel()
+
+	reg, session := gnssFixture(t, GPSFix{})
+	lines := runLines(t, reg, session, "sos RED two hikers")
+	if !strings.Contains(strings.Join(lines, "\n"), "Usage: "+sosUsage) {
+		t.Errorf("sos without a fix = %v, want the usage line", lines)
+	}
+}
+
+// TestSOSExplicitLocationStillWins asserts a typed location is never replaced
+// by the receiver's: a call for a party somewhere else must stay about them.
+func TestSOSExplicitLocationStillWins(t *testing.T) {
+	t.Parallel()
+
+	reg, session := gnssFixture(t, sfFix())
+	lines := runLines(t, reg, session, "sos 39.7392,-104.9903 RED climber hurt")
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "85FQP2Q5+MV") {
+		t.Errorf("sos with a typed location = %v, want the typed position", lines)
+	}
+	if strings.Contains(joined, refPlus10) {
+		t.Errorf("sos with a typed location = %v, want the live fix ignored", lines)
+	}
+}
+
+// TestWhereAmIUsesTheGNSSFixThroughTheRegistry asserts the registry's own fix
+// accessor is what every zero-argument command reads, so one receiver feeds
+// them all.
+func TestWhereAmIUsesTheGNSSFixThroughTheRegistry(t *testing.T) {
+	t.Parallel()
+
+	reg, session := gnssFixture(t, sfFix())
+	fix, ok := reg.currentFix()
+	if !ok {
+		t.Fatal("currentFix reported no fix for a valid one")
+	}
+	if fix.Lat != refLat || fix.Lng != refLng {
+		t.Errorf("currentFix = %v,%v, want %v,%v", fix.Lat, fix.Lng, refLat, refLng)
+	}
+	joined := strings.Join(runLines(t, reg, session, "whereami"), "\n")
+	if !strings.Contains(joined, refPlus10) {
+		t.Errorf("whereami = %q, want the fix's Plus Code", joined)
+	}
+
+	empty, _ := gnssFixture(t, GPSFix{})
+	if _, ok := empty.currentFix(); ok {
+		t.Error("currentFix reported a fix with no receiver")
 	}
 }

@@ -110,6 +110,21 @@ gobot help buoy
 gobot "help buoy"
 ```
 
+The command line is the bot's own syntax, including the field shorthand. A
+leading slash is accepted, and any command that takes a location may take none
+at all when the bot has a GNSS fix of its own:
+
+```bash
+gobot whereami              # the bot's operational location card
+gobot /whereami             # the same command, slash form
+gobot tower near            # the three closest masts to the bot
+gobot tide near             # the three closest tide stations to the bot
+gobot sun                   # today's light at the bot's position
+```
+
+See [The Go Reticulum Lifesaver](gorrcbot.md#the-go-reticulum-lifesaver-grl) for
+the receiver, the `/whereami` card, and the captive portal.
+
 ### Options
 
 | Option | Default | Description |
@@ -169,6 +184,15 @@ gobot tide list OR
 
 # Convert a Plus Code to every supported coordinate notation
 gobot loc 849VCWC8+R9
+
+# The operational location card: Plus Code, coordinates, grid, elevation,
+# fix status, local solar time, and the sunset countdown
+gobot whereami 37.7553,-122.4527
+
+# With no argument, whereami uses the bot's own GNSS fix (if the node has a
+# receiver, or a gps_fix configured), so a field operator types one word
+gobot whereami
+gobot /whereami
 
 # Great-circle distance and bearings between two grid squares
 gobot dist CM87uk CM87wj

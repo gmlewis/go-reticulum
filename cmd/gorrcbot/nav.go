@@ -110,9 +110,14 @@ func (c *commandContext) runProj() []string {
 
 // runSun reports the day's almanac: the light a party has left, and the moon it
 // will have after dark. Every time is UTC, and the answer says so, because a
-// mesh node cannot know the reader's time zone.
+// mesh node cannot know the reader's time zone. With no location it uses the
+// live GNSS fix, so an operator in the field can ask for the day's light with
+// one word.
 func (c *commandContext) runSun() []string {
 	point, day, ok := c.splitSunArgs(c.Args)
+	if !ok {
+		point, day, ok = c.sunArgsFromFix()
+	}
 	if !ok {
 		return []string{"Usage: " + sunUsage, locationNotationHelp}
 	}
@@ -234,6 +239,27 @@ func (c *commandContext) splitSunArgs(args string) (LatLng, time.Time, bool) {
 		return point, day, true
 	}
 	return LatLng{}, time.Time{}, false
+}
+
+// sunArgsFromFix resolves a sun request that named no location against the live
+// GNSS fix. The argument may be empty — "sun" alone, the field shorthand — or a
+// bare date, which is what an operator asks to plan a trip on a fixed day
+// without naming the place they are already standing in.
+func (c *commandContext) sunArgsFromFix() (LatLng, time.Time, bool) {
+	fix, ok := c.reg.currentFix()
+	if !ok {
+		return LatLng{}, time.Time{}, false
+	}
+	point := fix.Position()
+	text := strings.TrimSpace(c.Args)
+	if text == "" {
+		return point, utcMidnight(c.now()), true
+	}
+	day, err := ParseAlmanacDay(text, c.now())
+	if err != nil {
+		return LatLng{}, time.Time{}, false
+	}
+	return point, day, true
 }
 
 // splitBoundaries returns the byte offsets inside text at which a whitespace

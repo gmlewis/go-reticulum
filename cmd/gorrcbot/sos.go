@@ -21,6 +21,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -66,6 +67,13 @@ const (
 	sosLXMFQueued = "queued to LXMF dispatch"
 	// sosLXMFLine is the dispatch payload.
 	sosLXMFLine = "[SOS #%d] %v at %v by %v: %v"
+	// sosGNSSLine prefixes the receiver facts attached to a beacon raised from
+	// the live fix, so the asker can see how good the position is.
+	sosGNSSLine = "GNSS fix: %v"
+	// sosDefaultDetails stands in when a beacon is raised with no message at
+	// all. It is deliberately not empty: a rescue party reading the registry
+	// must be able to tell "no details were sent" from "the details were lost".
+	sosDefaultDetails = "distress beacon raised with no details"
 )
 
 // SOSTriageLevels are the triage categories a beacon may carry, most urgent
@@ -89,6 +97,11 @@ type SOSRecord struct {
 	Triage string `json:"triage"`
 	// Details is the sanitized free text the sender supplied.
 	Details string `json:"details"`
+	// GNSS is a compact summary of the receiver fix the beacon was raised
+	// from — satellites, dilution of precision, altitude, fix quality, and the
+	// receiver's own timestamp. It is empty for a beacon whose location was
+	// typed, because the receiver had nothing to do with that position.
+	GNSS string `json:"gnss,omitempty"`
 	// Timestamp is when the beacon was raised.
 	Timestamp time.Time `json:"timestamp"`
 	// Resolved reports that the beacon has been stood down.
@@ -247,7 +260,13 @@ func (c *commandContext) runSOS() []string {
 	sub, rest := splitCommandLine(c.Args)
 	switch strings.ToLower(sub) {
 	case "":
-		return []string{"Usage: " + sosUsage, sosListUsage + " | " + sosClearUsage}
+		// A bare "sos" with a live fix is the shortest distress call there
+		// is: raise a RED beacon at the operator's own verified position.
+		// Without a fix there is nothing to raise it at, so the usage stands.
+		if _, ok := c.reg.currentFix(); !ok {
+			return []string{"Usage: " + sosUsage, sosListUsage + " | " + sosClearUsage}
+		}
+		return c.runSOSRaise("")
 	case "list":
 		return c.runSOSList()
 	case "clear":
@@ -258,19 +277,37 @@ func (c *commandContext) runSOS() []string {
 }
 
 // runSOSRaise records one beacon and raises the alarm everywhere the bot can
-// reach.
+// reach. A request that names a location and a triage level is taken exactly as
+// written. A request that names neither — the bare "sos" of somebody in
+// trouble, or "sos two hikers, broken leg" — is placed at the live GNSS fix and
+// raised RED, which is the level an operator who typed no level meant.
 func (c *commandContext) runSOSRaise(args string) []string {
 	location, triage, details, ok := splitSOSRaise(args)
-	if !ok {
-		return []string{"Usage: " + sosUsage, "the triage level is one of " + strings.Join(SOSTriageLevels, ", ")}
-	}
-	point, err := ParseLocation(location)
-	if err != nil {
-		return []string{"sos: no location found — " + locationNotationHelp}
+	var (
+		point LatLng
+		gnss  string
+	)
+	if ok {
+		parsed, err := ParseLocation(location)
+		if err != nil {
+			return []string{"sos: no location found — " + locationNotationHelp}
+		}
+		point = parsed
+	} else {
+		live, haveFix := c.reg.currentFix()
+		if !haveFix {
+			return []string{"Usage: " + sosUsage, "the triage level is one of " + strings.Join(SOSTriageLevels, ", ")}
+		}
+		// The beacon is placed at the fix's own point, not at the center of
+		// the Plus Code cell, so the recorded coordinate is the one the
+		// receiver reported.
+		point = live.Position()
+		triage, details = splitSOSFixArgs(args)
+		gnss = sosGNSSContext(live)
 	}
 	details = safeEcho(details, maxSOSDetailsBytes)
 	if details == "" {
-		return []string{"Usage: " + sosUsage, "the details say what is wrong and how many people need help"}
+		details = sosDefaultDetails
 	}
 	code, err := EncodeOLC(point.Lat, point.Lng, olcCodeLength)
 	if err != nil {
@@ -280,8 +317,8 @@ func (c *commandContext) runSOSRaise(args string) []string {
 		return []string{"sos: the beacon registry is unavailable on this bot"}
 	}
 
-	nick := safeEcho(c.peerName(c.req.Msg.Src), maxEchoNickBytes)
-	senderHash := hexString(c.req.Msg.Src)
+	nick := c.senderNick()
+	senderHash := c.senderHash()
 	record, err := c.reg.sos().add(SOSRecord{
 		Sender:     nick,
 		SenderHash: senderHash,
@@ -289,6 +326,7 @@ func (c *commandContext) runSOSRaise(args string) []string {
 		LatLng:     point,
 		Triage:     triage,
 		Details:    details,
+		GNSS:       gnss,
 		Timestamp:  c.now(),
 	})
 	if err != nil {
@@ -301,8 +339,75 @@ func (c *commandContext) runSOSRaise(args string) []string {
 	dispatched := c.dispatchSOS(record)
 	summary := sosAlertSummary(alerted, dispatched)
 	c.confirmSOS(record, summary)
-	return []string{fmt.Sprintf(sosRecordedLine, record.ID, record.Triage, record.Location,
+	lines := []string{fmt.Sprintf(sosRecordedLine, record.ID, record.Triage, record.Location,
 		nick, record.Details, summary)}
+	if record.GNSS != "" {
+		lines = append(lines, fmt.Sprintf(sosGNSSLine, record.GNSS))
+	}
+	return lines
+}
+
+// senderNick is the display name a beacon is attributed to: the peer that asked
+// when a hub session carried the request, and the operator's own nickname when
+// the captive portal raised it locally and there is no peer at all.
+func (c *commandContext) senderNick() string {
+	if c.req != nil && c.req.Msg != nil {
+		return safeEcho(c.peerName(c.req.Msg.Src), maxEchoNickBytes)
+	}
+	cfg := c.reg.config()
+	if cfg != nil && strings.TrimSpace(cfg.Nick) != "" {
+		return safeEcho(cfg.Nick, maxEchoNickBytes)
+	}
+	return safeEcho(DefaultNick, maxEchoNickBytes)
+}
+
+// senderHash is the identity a beacon belongs to, which is what makes it the
+// raiser's to clear: the peer's hash for a hub request, and the bot's own
+// identity for a beacon raised from the portal on the device itself.
+func (c *commandContext) senderHash() string {
+	if c.req != nil && c.req.Msg != nil {
+		return hexString(c.req.Msg.Src)
+	}
+	return c.reg.identityHex()
+}
+
+// splitSOSFixArgs interprets a raise request that named no location: an
+// optional triage word anywhere in the line, and everything else as the
+// details. With no triage word the beacon is RED.
+func splitSOSFixArgs(args string) (triage, details string) {
+	triage = SOSTriageLevels[0]
+	seen := false
+	words := make([]string, 0, 8)
+	for field := range strings.FieldsSeq(strings.TrimSpace(args)) {
+		if !seen && isSOSTriage(field) {
+			triage = strings.ToUpper(field)
+			seen = true
+			continue
+		}
+		words = append(words, field)
+	}
+	details = strings.Join(words, " ")
+	if details == "" {
+		details = sosDefaultDetails
+	}
+	return triage, details
+}
+
+// sosGNSSContext summarizes the receiver fix a beacon was raised from. It is
+// attached to the record so that a rescue party reading the registry — or a
+// dispatch copy that outlives the original link — knows not just where the
+// beacon is but how much the position can be trusted.
+func sosGNSSContext(fix GPSFix) string {
+	when := "receiver time unknown"
+	if !fix.TimeUTC.IsZero() {
+		when = fix.TimeUTC.UTC().Format(time.RFC3339)
+	}
+	altitude := "altitude not reported"
+	if fix.AltitudeM != 0 {
+		altitude = fmt.Sprintf("%v m MSL", math.Round(fix.AltitudeM))
+	}
+	return fmt.Sprintf("3D fix, %v satellites, HDOP %v, %v, fix quality %v, %v",
+		fix.Satellites, fix.HDOP, altitude, fix.FixQuality, when)
 }
 
 // splitSOSRaise splits a raise request into its location, triage level, and
@@ -337,10 +442,14 @@ func isSOSTriage(word string) bool {
 // joined, and returns how many notices went out. The emergency room is not
 // special-cased: every joined room gets the alert, which is strictly more
 // useful than one designated room, because a room is only reachable while the
-// bot is joined to it.
+// bot is joined to it. A beacon raised with no hub session behind it — the
+// captive portal case — goes to every room of every live session instead.
 func (c *commandContext) alertSOS(record SOSRecord) int {
 	text := fmt.Sprintf(sosAlertLine, record.ID, record.Triage, record.Location,
 		safeEcho(record.Sender, maxEchoNickBytes), record.Details)
+	if c.req == nil || c.req.Session == nil {
+		return c.reg.alertEverySession(text)
+	}
 	sent := 0
 	for _, room := range c.conn().JoinedRoomList() {
 		if _, err := c.conn().SendNotice(room, text); err != nil {
@@ -348,6 +457,27 @@ func (c *commandContext) alertSOS(record SOSRecord) int {
 			continue
 		}
 		sent++
+	}
+	return sent
+}
+
+// alertEverySession broadcasts one alert into every room of every live hub
+// session. It is the portal's route to the same alarm an in-room beacon raises,
+// so a distress call typed into the web interface reaches exactly the rooms the
+// radio interface would have reached.
+func (r *registry) alertEverySession(text string) int {
+	if r.bot == nil {
+		return 0
+	}
+	sent := 0
+	for _, session := range r.bot.sessions {
+		for _, room := range session.conn.JoinedRoomList() {
+			if _, err := session.conn.SendNotice(room, text); err != nil {
+				logf("sos: could not alert %q: %v", room, err)
+				continue
+			}
+			sent++
+		}
 	}
 	return sent
 }
@@ -363,14 +493,24 @@ func (c *commandContext) dispatchSOS(record SOSRecord) bool {
 	if len(cfg.EmergencyLXMFDestinationHash) != rrc.IdentityHashLen {
 		return false
 	}
+	// A beacon raised from the captive portal has no peer and no hub behind
+	// it, so the dispatch copy is attributed to the operator and the hub field
+	// is left empty rather than dereferencing a session that does not exist.
 	ask := lxmfAsk{
-		AskerHash: c.req.Msg.Src,
-		AskerNick: safeEcho(c.peerName(c.req.Msg.Src), maxEchoNickBytes),
-		HubHex:    c.conn().HubAddressHex(),
-		PeerName:  "dispatch",
+		PeerName: "dispatch",
+	}
+	if c.req != nil && c.req.Msg != nil {
+		ask.AskerHash = c.req.Msg.Src
+		ask.AskerNick = safeEcho(c.peerName(c.req.Msg.Src), maxEchoNickBytes)
+		ask.HubHex = c.conn().HubAddressHex()
+	} else {
+		ask.AskerNick = c.senderNick()
 	}
 	payload := fmt.Sprintf(sosLXMFLine, record.ID, record.Triage, record.Location,
 		record.Sender, record.Details)
+	if record.GNSS != "" {
+		payload += " | " + record.GNSS
+	}
 	if _, err := c.reg.lxmf.Send(lxmfSend{
 		Ask:      ask,
 		PeerHash: cfg.EmergencyLXMFDestinationHash,
@@ -385,9 +525,10 @@ func (c *commandContext) dispatchSOS(record SOSRecord) bool {
 
 // confirmSOS sends the sender a direct NOTICE that their beacon landed. A
 // direct notice rides the hub link, so it reaches them even though the alarm
-// went into rooms they may not be reading.
+// went into rooms they may not be reading. A beacon raised with no peer behind
+// it has nobody to confirm to, and the portal shows the same confirmation line.
 func (c *commandContext) confirmSOS(record SOSRecord, summary string) {
-	if len(c.req.Msg.Src) != rrc.IdentityHashLen {
+	if c.req == nil || c.req.Msg == nil || len(c.req.Msg.Src) != rrc.IdentityHashLen {
 		return
 	}
 	text := fmt.Sprintf(sosDirectLine, record.ID, record.Triage, record.Location, summary)
@@ -446,7 +587,7 @@ func (c *commandContext) runSOSClear(args string) []string {
 	if err != nil {
 		return []string{"Usage: " + sosClearUsage}
 	}
-	record, err := store.clear(id, hexString(c.req.Msg.Src))
+	record, err := store.clear(id, c.senderHash())
 	switch {
 	case err == nil:
 		return []string{fmt.Sprintf(sosClearedLine, record.ID)}
