@@ -568,12 +568,13 @@ application is a BOM and a `micron` page away.
 4. The ASIC stamper (section 5 Phase B) rides along as optional
    acceleration once Node blocks exist to host it.
 
-### 6.9 The Traveler's Lifesaver: Sovereign Off-Grid Survival Device
+### 6.9 The Go Reticulum Lifesaver (GRL): Sovereign Off-Grid Survival Device
 
 The intersection of `go-reticulum`, `go-nomadnet`, and `asic-reticulum` enables a
-product category of profound global utility: **an inexpensive ($20–$25 BOM),
-pocket-sized, sovereign off-grid lifesaver and field assistant** that anyone can
-carry in remote travel, wilderness exploration, maritime passages, or disaster zones.
+product category of profound global utility: the **Go Reticulum Lifesaver (GRL)** —
+an inexpensive ($20–$25 BOM), pocket-sized, sovereign off-grid lifesaver and field
+assistant that anyone can carry in remote travel, wilderness exploration, maritime
+passages, or disaster zones.
 
 #### 6.9.1 Why Commercial Satellite & Mesh Devices Fall Short
 1. **Predatory Subscriptions**: Popular commercial travel-companion devices
@@ -710,7 +711,7 @@ Wi-Fi and browser remain 100% operational.
                                       | 5 GHz Wi-Fi 6 (Captive Portal / HTTP)
                                       v
 +-----------------------------------------------------------------------------+
-|                  The Lifesaver Puck (Sealed, Waterproof, $25 BOM)           |
+|             The Go Reticulum Lifesaver (GRL) (Sealed, Waterproof, ~$21 BOM)  |
 |                                                                             |
 |  +-----------------------------------------------------------------------+  |
 |  | ESP32-C5 Host MCU (RV32IMAC @ 240 MHz, 400KB SRAM + 8MB PSRAM)        |  |
@@ -736,10 +737,10 @@ Wi-Fi and browser remain 100% operational.
 ```
 
 #### How the User Experience Works in the Field
-1. The Lifesaver device rests in the traveler's pocket or carabiner-clipped to a backpack.
+1. The GRL device rests in the traveler's pocket or carabiner-clipped to a backpack.
 2. The traveler opens Wi-Fi settings on their phone and taps `Reticulum-Lifesaver`.
 3. The phone's operating system detects the captive portal probe and **instantly pops up
-   the Lifesaver interface**—no app installation, no App Store, no account creation!
+   the GRL interface**—no app installation, no App Store, no account creation!
 4. The traveler sees a clean, touch-optimized survival dashboard:
    - **Where Am I**: Big bold Plus Code, coordinates, elevation, and sunset clock.
    - **Emergency SOS**: Single-button distress broadcast.
@@ -747,14 +748,14 @@ Wi-Fi and browser remain 100% operational.
    - **Field Assistant**: Ask `@gobot` any question (`med snakebite`, `tower near`, `sun`).
    - **Offline Survival Library**: Access Micron survival pages (first aid manuals, edible
      plants, emergency radio guides) served directly from the device's MicroSD card.
-5. When the traveler puts their phone away, the puck continues listening to the LoRa mesh
+5. When the traveler puts their phone away, the GRL puck continues listening to the LoRa mesh
    in low-power sleep mode, caching incoming messages in RAM/SD.
 
 ---
 
 ### 6.12 Recommended Hardware Bill of Materials (BOM) & Pinout on ESP32-C5
 
-The complete hardware bill of materials for the sealed Lifesaver puck:
+The complete hardware bill of materials for the sealed Go Reticulum Lifesaver (GRL):
 
 | Component | Part / Spec | Approx. Cost | Source / Notes |
 |---|---|---|---|
@@ -1478,7 +1479,7 @@ cannot be used directly. The two viable firmware paths are:
 | 15 | ESP32-C5 board support & dual-band AP bridge: TinyGo target `esp32c5`, dual-band Wi-Fi 6 AP `Interface` + BLE GATT + SX1262 LoRa SPI driver + QSPI GDMA host driver for crypto ASIC (§7.5.2) | new / both | medium | enables the standalone Pocket Hub (§7.5.2) |
 | 16 | SpinalHDL Crypto ASIC cores: SHA-256 stamper, X25519/Ed25519 Montgomery ladder, AES+HMAC Token engine, QSPI slave with `Stream` interface (§2, §3) | new | large | hardware accelerator targeting TinyTapeout and full shuttles |
 | 17 | GNSS NMEA-0183 driver & geodetic coordinate engine (`/whereami`): pure-Go parser for `$GNRMC`/`$GNGGA`, wraps in-tree `cmd/gorrcbot/olc.go` (Plus Codes) & `geo.go` (Maidenhead); automatic context injection (§6.10) | go-reticulum | small | stdlib-only; zero external dependencies |
-| 18 | Embedded Captive Portal & Web Micron UI: lightweight HTTP/WebSocket daemon serving smartphone browsers over Wi-Fi 6 SoftAP; `/whereami` dashboard, local chat, `@gobot` interface, emergency SOS (§6.11) | go-nomadnet / go-reticulum | medium | enables $21 screenless Lifesaver puck; zero app installation |
+| 18 | Embedded Captive Portal & Web Micron UI: lightweight HTTP/WebSocket daemon serving smartphone browsers over Wi-Fi 6 SoftAP; `/whereami` dashboard, local chat, `@gobot` interface, emergency SOS (§6.11) | go-nomadnet / go-reticulum | medium | enables $21 screenless Go Reticulum Lifesaver (GRL); zero app installation |
 | 19 | Autonomous `gobot` field engine decoupling: in-process command evaluator (`med` first aid, `tower` repeaters, `sun`/`moon`, `checkin`) for zero-hop execution without network links (§6.9.2) | go-reticulum | medium | executes in microseconds in RAM with 0 airtime and 0 RF emissions |
 
 ### 7.7 A phased path that reuses this repo's parity discipline
@@ -1597,12 +1598,12 @@ Connecting the ESP32-C5 host to the FPGA requires only 7 DuPont jumper wires plu
   where the device's RNS identity replaces the vendor account, the
   owner's hub replaces the vendor cloud, and a five-block family
   (Node / Leaf / Eye / View / **Communicator**) covers doorbells, security,
-  sensors, lighting, weather, and **handheld pocket chat hubs & sovereign survival companions (The Traveler's Lifesaver: ESP32-C5 + SX1262 LoRa + GNSS + Wi-Fi 6 Captive Portal)** — all speaking stock Reticulum, all owner-owned by
+  sensors, lighting, weather, and **handheld pocket chat hubs & sovereign survival companions: the Go Reticulum Lifesaver (GRL: ESP32-C5 + SX1262 LoRa + GNSS + Wi-Fi 6 Captive Portal)** — all speaking stock Reticulum, all owner-owned by
   construction. Built-in dual-band Wi-Fi 6 (2.4 & 5 GHz) and BLE on the
   ESP32-C5 provide clean, congestion-free local AP connectivity and
   low-energy telemetry, while BLE reaches the Go port CGo-free as an
   external SPI/UART interface device (the RNode trick, applied to a second radio).
-- **The Traveler's Lifesaver & `/whereami` (§6.9, §6.10, §6.11)**: By compiling the 30+
+- **The Go Reticulum Lifesaver (GRL) & `/whereami` (§6.9, §6.10, §6.11)**: By compiling the 30+
   `gobot` field tools (wilderness first aid `med`, repeater finder `tower near`, solar
   ephemeris `sun`, Plus Codes `olc`) into local in-process firmware, an inexpensive
   (~$21 BOM) sealed puck transforms any traveler's smartphone into a life-saving off-grid
