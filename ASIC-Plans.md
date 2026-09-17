@@ -685,6 +685,27 @@ When the traveler activates `/sos [reason]`, the device:
 5. Broadcasts the beacon over LoRa on maximum TX power (+22 dBm) with repeated fallback
    cadences, repeating to all listening peers and RRC emergency channels.
 
+#### 6.10.6 The Electronic Compass Subsystem: Direction-Finding (RDF) & Antenna Pointing
+A critical limitation of GNSS/GPS is **stationary blindness**: GPS determines course over ground (COG)
+strictly from physical velocity vectors (>1–2 km/h). When an operator is standing still, injured,
+trapped in a blizzard, lost in dense fog, or orienting a high-gain directional antenna (such as a 3-element
+Yagi, Moxon, or bi-quad) toward a distant mountain repeater or search party, **GPS heading is completely
+undefined or fluctuates wildly as noise**.
+
+The Go Reticulum Lifesaver pairs the GNSS receiver with an inexpensive **3-axis electronic magnetometer /
+digital compass (QMC5883L or tilt-compensated LSM303DLHC)** connected over I2C (`GPIO 21 SDA`, `GPIO 22 SCL`):
+1. **Instant Stationary Heading**: Provides instantaneous, jitter-free 360° heading relative to Magnetic North
+   regardless of whether the operator is moving or stationary.
+2. **True North & Magnetic Declination**: Using the active GNSS coordinate, the device calculates local
+   magnetic variation/declination (WMM), translating raw magnetic heading into True North heading automatically.
+3. **Radio Direction Finding (RDF) & Relative Antenna Aiming**: When the operator queries `tower near`, the
+   system computes the relative steering command against the device's live orientation:
+   - Example: `Mt. Tamalpais Repeater (146.820 MHz) · 14.2 km at 042° True [Turn 15° RIGHT · 1 o'clock]`
+   This tells an operator or rescue party exactly which way to point their antenna or travel without doing
+   mental arithmetic in high-stress emergencies.
+4. **Live Compass Rose on Smartphone Portal**: The captive web portal displays a dynamic graphical compass rose
+   showing the device's real-time heading and vectoring arrows toward nearby repeater sites and emergency beacons.
+
 ---
 
 ### 6.11 The Zero-Hardware UI Paradigm: Captive Portal & Smartphone as Terminal
@@ -718,22 +739,22 @@ Wi-Fi and browser remain 100% operational.
 |  |  - Wi-Fi 6 SoftAP ("Reticulum-Lifesaver-[ID]") + HTTP/Micron Portal   |  |
 |  |  - Pure-Go RNS Transport + Local gorrcd Chat Hub                      |  |
 |  |  - Embedded gobot Field Tools (first aid, towers, ephemeris, OLC)     |  |
-|  +-------------------+--------------------+--------------------+---------+  |
-|                      |                    |                    |            |
-|                      | SPI                | UART (9600)        | 4-bit QSPI |
-|                      v                    v                    v            |
-|            +------------------+  +-----------------+  +-----------------+   |
-|            | Semtech SX1262   |  | ATGM336H GNSS   |  | SpinalHDL       |   |
-|            | LoRa Transceiver |  | Multi-Satellite |  | Crypto ASIC     |   |
-|            | (868/915 MHz)    |  | (GPS/BDS/GLO)   |  | (Offloader)     |   |
-|            +------------------+  +-----------------+  +-----------------+   |
-|                      |                    |                    |            |
-|                      |                    |                    |            |
-|  +-------------------+--------------------+--------------------+---------+  |
-|  | Power: 18650 Li-Ion (3000 mAh) + TP4056 USB-C Charger (3-5 days idle) |  |
-|  | Storage: MicroSD (FAT32: offline survival manuals, topo maps, logs)   |  |
-|  +-----------------------------------------------------------------------+  |
-+-----------------------------------------------------------------------------+
+|  +-------------------+--------------------+--------------------+---------+---------+  |
+|                      |                    |                    |         |         |  |
+|                      | SPI                | UART (9600)        | 4-b QSPI| I2C     |  |
+|                      v                    v                    v         v         |  |
+|            +------------------+  +-----------------+  +-----------------+  +-----------------+   |
+|            | Semtech SX1262   |  | ATGM336H GNSS   |  | SpinalHDL       |  | QMC5883L/LSM303 |   |
+|            | LoRa Transceiver |  | Multi-Satellite |  | Crypto ASIC     |  | Digital Compass |   |
+|            | (868/915 MHz)    |  | (GPS/BDS/GLO)   |  | (Offloader)     |  | (Magnetometer)  |   |
+|            +------------------+  +-----------------+  +-----------------+  +-----------------+   |
+|                      |                    |                    |         |         |  |
+|                      |                    |                    |         |         |  |
+|  +-------------------+--------------------+--------------------+---------+---------+  |
+|  | Power: 18650 Li-Ion (3000 mAh) + TP4056 USB-C Charger (3-5 days idle)              |  |
+|  | Storage: MicroSD (FAT32: offline survival manuals, topo maps, logs)                |  |
+|  +------------------------------------------------------------------------------------+  |
++------------------------------------------------------------------------------------------+
 ```
 
 #### How the User Experience Works in the Field
@@ -742,7 +763,8 @@ Wi-Fi and browser remain 100% operational.
 3. The phone's operating system detects the captive portal probe and **instantly pops up
    the GRL interface**—no app installation, no App Store, no account creation!
 4. The traveler sees a clean, touch-optimized survival dashboard:
-   - **Where Am I**: Big bold Plus Code, coordinates, elevation, and sunset clock.
+   - **Where Am I**: Big bold Plus Code, coordinates, elevation, live compass rose, and sunset clock.
+   - **Antenna & Direction Finding**: Real-time steering arrows pointing straight at nearest repeaters.
    - **Emergency SOS**: Single-button distress broadcast.
    - **Chat & Mesh**: Direct access to local `#general` and `#emergency` channels.
    - **Field Assistant**: Ask `@gobot` any question (`med snakebite`, `tower near`, `sun`).
@@ -762,13 +784,14 @@ The complete hardware bill of materials for the sealed Go Reticulum Lifesaver (G
 | **Host MCU** | Espressif ESP32-C5-DevKitC-1 (or bare ESP32-C5 module) | ~$4.00 | Dual-band Wi-Fi 6 (2.4/5GHz), BLE 5, 240 MHz RV32, 8MB PSRAM |
 | **LoRa Radio** | Semtech SX1262 SPI module (+22 dBm, 868/915 MHz) | ~$4.50 | Ai-Thinker Ra-01SH or Ebyte E22-900M22S |
 | **GNSS / GPS** | ATGM336H or Quectel L80-M39 (with ceramic patch antenna) | ~$3.50 | 3.3V UART, BDS/GPS/GLO, -162 dBm sensitivity |
+| **Compass / RDF**| QMC5883L or LSM303DLHC (I2C breakout board) | ~$1.50 | 3.3V I2C, 360° stationary heading, antenna pointing & RDF |
 | **Storage** | MicroSD card slot + 16GB FAT32 card | ~$3.00 | Stores offline survival manuals, logs, and catalogs |
 | **Battery & Power**| 18650 Li-Ion (3000 mAh) + TP4056 USB-C charge board | ~$4.00 | 3–5 days active standby; weeks on duty-cycle sleep |
 | **Enclosure** | 3D printed ruggedized PETG/TPU carabiner case | ~$2.00 | Compact, water-resistant, shock-absorbing |
-| **Total BOM** | Complete sovereign off-grid communicator | **~$21.00** | **1/20th the cost of proprietary satellite hardware!** |
+| **Total BOM** | Complete sovereign off-grid communicator | **~$22.50** | **1/20th the cost of proprietary satellite hardware!** |
 
 #### ESP32-C5 Pin Allocation Table (Zero Pin Contention)
-The ESP32-C5 exposes 24–28 usable GPIOs. The entire system—LoRa, GNSS, Crypto ASIC,
+The ESP32-C5 exposes 24–28 usable GPIOs. The entire system—LoRa, GNSS, Compass, Crypto ASIC,
 MicroSD, and battery monitor—coexists cleanly without pin exhaustion:
 
 | Subsystem | Signal Name | ESP32-C5 Pin | Direction | Description |
@@ -782,6 +805,8 @@ MicroSD, and battery monitor—coexists cleanly without pin exhaustion:
 | | `DIO1`| `GPIO 17` | Radio $\rightarrow$ Host | Packet received / TX done interrupt |
 | **GNSS (GPS)** | `RX1` | `GPIO 9` | GNSS $\rightarrow$ Host | NMEA-0183 serial stream (9600 baud) |
 | | `TX1` | `GPIO 10` | Host $\rightarrow$ GNSS | Optional configuration commands |
+| **Compass (I2C)**| `SDA` | `GPIO 21` | Bi-directional | I2C Data bus (QMC5883L / LSM303) |
+| | `SCL` | `GPIO 22` | Host $\rightarrow$ Compass | I2C Clock bus |
 | **MicroSD** | `DAT0` / `CLK` / `CMD` | `GPIO 18, 19, 20` | Bi-directional | Standard SD 1-bit or SPI mode |
 | **Power Sense** | `BATT_ADC` | `GPIO 1` (ADC1_CH0) | Analog In | Resistor divider to monitor battery voltage |
 | **Crypto ASIC** | `CLK`, `CS`, `IO0..IO3`, `IRQ` | `GPIO 2..8` | Bi-directional | 7-Pin QSPI interconnect + interrupt (§7.8.3) |
@@ -1481,6 +1506,7 @@ cannot be used directly. The two viable firmware paths are:
 | 17 | GNSS NMEA-0183 driver & geodetic coordinate engine (`/whereami`): pure-Go parser for `$GNRMC`/`$GNGGA`, wraps in-tree `cmd/gorrcbot/olc.go` (Plus Codes) & `geo.go` (Maidenhead); automatic context injection (§6.10) | go-reticulum | small | stdlib-only; zero external dependencies |
 | 18 | Embedded Captive Portal & Web Micron UI: lightweight HTTP/WebSocket daemon serving smartphone browsers over Wi-Fi 6 SoftAP; `/whereami` dashboard, local chat, `@gobot` interface, emergency SOS (§6.11) | go-nomadnet / go-reticulum | medium | enables $21 screenless Go Reticulum Lifesaver (GRL); zero app installation |
 | 19 | Autonomous `gobot` field engine decoupling: in-process command evaluator (`med` first aid, `tower` repeaters, `sun`/`moon`, `checkin`) for zero-hop execution without network links (§6.9.2) | go-reticulum | medium | executes in microseconds in RAM with 0 airtime and 0 RF emissions |
+| 20 | Electronic Compass driver & direction-finding (RDF): I2C magnetometer driver / NMEA-0183 ($HCHDG/$HCHDM) parser, magnetic declination calculation, relative antenna pointing for `tower near`, live compass rose on portal (§6.10.6) | go-reticulum | small | stdlib-only; zero external dependencies |
 
 ### 7.7 A phased path that reuses this repo's parity discipline
 
