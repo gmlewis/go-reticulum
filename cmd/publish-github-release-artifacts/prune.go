@@ -286,7 +286,7 @@ func (p *pacer) interval() time.Duration {
 func deleteAsset(id int64) error {
 	var stderr bytes.Buffer
 	cmd := exec.Command("gh", "api", "--method", "DELETE",
-		fmt.Sprintf("repos/:owner/:repo/releases/assets/%d", id))
+		fmt.Sprintf("repos/:owner/:repo/releases/assets/%v", id))
 	cmd.Stdout = io.Discard
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -294,20 +294,21 @@ func deleteAsset(id int64) error {
 		if strings.Contains(s, "not found") || strings.Contains(s, "404") {
 			return errAssetGone
 		}
-		return fmt.Errorf("delete asset %d: %w (stderr: %v)", id, err, strings.TrimSpace(stderr.String()))
+		return fmt.Errorf("delete asset %v: %w (stderr: %v)", id, err, strings.TrimSpace(stderr.String()))
 	}
 	return nil
 }
 
 // deleteAssetWithRetry deletes one asset, retrying transient failures with
-// exponential backoff (1s, 2s, 4s, 8s). A throttled response is reported as
-// 403/429; the backoff covers it, and the next rate-limit check parks the run
-// until the window resets if the budget really is exhausted.
+// exponential backoff (the schedule retryBackoff shares with the upload path:
+// 1s, 2s, 4s, 8s). A throttled response is reported as 403/429; the backoff
+// covers it, and the next rate-limit check parks the run until the window
+// resets if the budget really is exhausted.
 func deleteAssetWithRetry(id int64) error {
 	var err error
 	for i := range deleteAttempts {
 		if i > 0 {
-			time.Sleep(time.Duration(1<<uint(i-1)) * time.Second)
+			time.Sleep(retryBackoff(i, time.Second))
 		}
 		err = deleteAsset(id)
 		if err == nil || errors.Is(err, errAssetGone) {

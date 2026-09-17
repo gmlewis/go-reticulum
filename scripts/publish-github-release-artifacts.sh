@@ -26,6 +26,14 @@
 # Releases, their notes, and their git tags are never deleted, so module
 # checksums and changelog links stay valid.
 #
+# Publishing is resumable. The release is created as a draft and its artifacts
+# uploaded to it one at a time, each retried with exponential backoff, and only
+# then is the draft published — so a failure (GitHub's upload endpoint
+# intermittently answers with "HTTP 500: Error saving asset") leaves an
+# unpublished draft rather than a half-visible release. Re-run the same command
+# to finish it: the draft is adopted, the artifacts already uploaded are not
+# sent again, and the release is published. Nothing to clean up by hand.
+#
 # Usage:
 #
 #	./scripts/publish-github-release-artifacts.sh          # publish a new release

@@ -22,8 +22,8 @@
 // (slow) build/upload, so downstream modules can `go mod tidy` against the tag
 // immediately. An existing tag is never modified.
 //
-// If a release for that version already exists, the command fails unless
-// --force is supplied. --force deletes the existing GitHub Release (the
+// If a PUBLISHED release for that version already exists, the command fails
+// unless --force is supplied. --force deletes the existing GitHub Release (the
 // release page and its uploaded asset binaries) and recreates it with freshly
 // built artifacts — but it does NOT touch the git tag. Keeping the tag
 // immutable means the Go module proxy (proxy.golang.org / pkg.go.dev) checksum
@@ -32,6 +32,12 @@
 // modifying a known tagged release") error, while the published binaries can
 // still be refreshed. The release notes embed a sha256 checksum table for
 // every uploaded artifact.
+//
+// The release is created as a draft, its artifacts are uploaded one at a time
+// (each retried with exponential backoff), and only then is the draft
+// published. A failure therefore leaves an unpublished draft rather than a
+// half-visible release, and re-running the command resumes from it — uploading
+// only what is missing — and publishes. See upload.go.
 //
 // Pruning happens LAST, after a successful publish: the assets of every release
 // older than the newest --keep-releases (default 10) releases that still have
@@ -63,6 +69,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // versionFile is parsed (not imported) so the publisher always reads whatever
@@ -357,14 +364,18 @@ func run(opts options) error {
 	mustFprintf(progress, "Publishing %v program(s): %v\n",
 		len(binaryNames), strings.Join(binaryNames, ", "))
 
-	exists := false
 	hasTag := false
+	var st releaseState
 	if !opts.dryRun {
-		exists, err = releaseExists(tag)
+		st, err = releaseStateFor(tag)
 		if err != nil {
 			return err
 		}
-		if exists && !opts.force {
+		// A published release for this version means it is already out; refuse
+		// unless --force. A DRAFT is unfinished work from an interrupted run of
+		// this tool — invisible to users — so it is adopted and finished below
+		// rather than refused.
+		if st.isPublished() && !opts.force {
 			return fmt.Errorf(
 				"release %v already exists; run scripts/bump-minor-version.sh to "+
 					"bump the minor version in %v, then retry "+
@@ -432,20 +443,43 @@ func run(opts options) error {
 	}
 
 	// Recreate the GitHub Release (release page + uploaded binaries) WITHOUT
-	// touching the git tag. With --force the existing release is deleted first;
-	// `gh release create` then reuses the existing (immutable) tag.
-	if opts.force && exists {
+	// touching the git tag. With --force the existing release is deleted first —
+	// a draft included, since --force means "replace it with freshly built
+	// artifacts" — and the replacement is created from that same tag.
+	if opts.force && st.exists {
+		kind := "release"
+		if st.draft {
+			kind = "draft release"
+		}
 		mustFprintf(progress,
-			"--force: deleting existing release %v and its assets (tag is left untouched)\n", tag)
-		if err := gh("release", "delete", tag, "--yes"); err != nil {
+			"--force: deleting existing %v %v and its assets (tag is left untouched)\n", kind, tag)
+		if err := ghRetry("delete existing release "+tag, progress,
+			"release", "delete", tag, "--yes"); err != nil {
 			return fmt.Errorf("delete existing release: %w", err)
 		}
+		st = releaseState{} // nothing is left to resume
 	}
 
-	args := []string{"release", "create", tag, "--title", tag, "--notes", notes}
-	args = append(args, assets...)
-	if err := gh(args...); err != nil {
-		return fmt.Errorf("create release: %w", err)
+	// Create the release page as a draft, upload every artifact to it (each one
+	// separately, with its own retries), and publish. Nothing a user can see
+	// exists until the last step, so a failure — a flaky upload, a dropped
+	// connection, a Ctrl-C — leaves a draft that re-running this command
+	// adopts and finishes. See upload.go.
+	if err := ensureDraftRelease(tag, notes, st, progress); err != nil {
+		return err
+	}
+	up := uploader{
+		tag:         tag,
+		concurrency: uploadConcurrency,
+		attempts:    uploadAttempts,
+		base:        time.Second,
+		progress:    progress,
+	}
+	if err := up.run(assets, st); err != nil {
+		return err
+	}
+	if err := publishRelease(tag, progress); err != nil {
+		return err
 	}
 
 	mustFprintf(progress, "\nPublished release %v with %v asset(s):\n", tag, len(assets))
@@ -485,30 +519,6 @@ func readVersion() (string, error) {
 	return v, nil
 }
 
-// releaseExists reports whether a GitHub release with the given tag exists.
-func releaseExists(tag string) (bool, error) {
-	cmd := exec.Command("gh", "release", "view", tag, "--json", "tagName")
-	if err := cmd.Run(); err != nil {
-		// gh returns a non-zero exit (and a message like "release not found")
-		// when the tag does not exist; treat that as "does not exist".
-		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
-			if strings.Contains(string(ee.Stderr), "not found") {
-				return false, nil
-			}
-		}
-		// Fall back to parsing combined output for the not-found signal.
-		out, outErr := exec.Command("gh", "release", "view", tag).CombinedOutput()
-		if outErr != nil && strings.Contains(string(out), "not found") {
-			return false, nil
-		}
-		if outErr == nil {
-			return true, nil
-		}
-		return false, fmt.Errorf("check existing release %v: %w", tag, err)
-	}
-	return true, nil
-}
-
 // tagExists reports whether a git tag named tag exists on the remote.
 func tagExists(tag string) (bool, error) {
 	var stderr bytes.Buffer
@@ -518,10 +528,8 @@ func tagExists(tag string) (bool, error) {
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		// gh exits non-zero with a "Not Found" / 404 message when the ref
-		// does not exist; treat that as "no such tag". The check is
-		// case-insensitive because gh outputs "Not Found" (capitalized).
-		s := strings.ToLower(stderr.String())
-		if strings.Contains(s, "not found") || strings.Contains(s, "404") {
+		// does not exist; treat that as "no such tag".
+		if ghNotFound(stderr.String()) {
 			return false, nil
 		}
 		return false, fmt.Errorf("check existing tag %v: %w (stderr: %v)", tag, err, stderr.String())
@@ -566,14 +574,6 @@ func ghRepoSlug() (string, error) {
 		return "", fmt.Errorf("determine repo slug: %w", err)
 	}
 	return strings.TrimSpace(string(out)), nil
-}
-
-// gh runs a gh command, streaming stdio to the terminal.
-func gh(args ...string) error {
-	cmd := exec.Command("gh", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
 }
 
 // buildAll builds one executable per (binary, target) into outDir and returns
