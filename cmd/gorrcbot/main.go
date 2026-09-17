@@ -10,6 +10,12 @@
 // flaps and restarts. It answers only when it is addressed by name, and it
 // says nothing at all otherwise.
 //
+// This executable is a thin wrapper. The engine, the field tools, the sensors,
+// and the captive portal all live in the shared library package
+// github.com/gmlewis/go-reticulum/bot, which the single-appliance Lifesaver
+// executable (cmd/grl) runs in-process; this file only parses the command line
+// and hands the result to bot.Run.
+//
 // It brings up the bot in four steps:
 //   - First-run bootstrap: creates ~/.gorrcbot/config.toml and
 //     ~/.gorrcbot/bot_identity (GORRCBOT_HOME overrides the directory) and
@@ -40,419 +46,72 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
-	"net"
-	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strconv"
-	"strings"
 	"syscall"
 
+	"github.com/gmlewis/go-reticulum/bot"
 	"github.com/gmlewis/go-reticulum/rns"
-	"github.com/gmlewis/go-reticulum/rrc"
+)
+
+// Exit codes. A clean exit is 0, an operational failure is 1, and a command
+// line that cannot mean anything is 2, which is what every other tool in this
+// repository does.
+const (
+	exitOK      = 0
+	exitFailure = 1
+	exitUsage   = 2
 )
 
 func main() {
 	log.SetFlags(0)
+	os.Exit(run(os.Args[1:], os.Stderr))
+}
 
-	opts, err := parseFlags(os.Args[1:], os.Stderr)
+// run parses the command line, applies it to the shared engine, and reports the
+// exit code. It is separate from main so every deferred teardown runs before the
+// process ends.
+func run(args []string, usageOutput io.Writer) int {
+	opts, err := parseFlags(args, usageOutput)
 	if err != nil {
 		if errors.Is(err, errHelp) {
-			os.Exit(0)
+			return exitOK
 		}
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
+		return exitUsage
 	}
 
 	if opts.version {
 		fmt.Printf("gorrcbot %v\n", rns.VERSION)
-		os.Exit(0)
-	}
-
-	paths := resolvePaths(opts)
-	if !opts.checkConfig {
-		created, err := EnsureFirstRun(paths)
-		if err != nil {
-			log.Fatalf("gorrcbot: %v", err)
-		}
-		if created {
-			fmt.Fprint(os.Stderr, firstRunMessage(paths))
-			os.Exit(0)
-		}
-	}
-
-	cfg, warnings, err := LoadBotConfig(paths.ConfigPath)
-	if err != nil {
-		log.Fatalf("gorrcbot: %v", err)
-	}
-	// An unknown key is a warning, never a failure: a configuration written
-	// for a newer bot must still start.
-	for _, warning := range warnings {
-		log.Printf("gorrcbot: %v", warning)
-	}
-	if opts.nick != "" {
-		cfg.Nick = opts.nick
-	}
-	paths = applyConfiguredPaths(paths, cfg, opts)
-
-	identity, _, err := LoadBotIdentity(paths.IdentityPath)
-	if err != nil {
-		log.Fatalf("gorrcbot: %v", err)
-	}
-	ownHash := identity.Hash
-
-	if opts.checkConfig {
-		fmt.Print(configSummary(paths, cfg, ownHash))
-		os.Exit(0)
-	}
-
-	// The bot owns one Reticulum instance and one manager; every hub shares
-	// them, which is what gives the bot a single identity across hubs.
-	logger := rns.NewLogger()
-	transport := rns.NewTransportSystem(logger)
-	ret, err := rns.NewReticulumWithLogger(transport, opts.configDir, logger)
-	if err != nil {
-		log.Fatalf("gorrcbot: could not start Reticulum: %v", err)
-	}
-	// The Reticulum configuration file can set its own log level, so the
-	// command line is applied after the instance reads it: an operator who
-	// asks for --log-level WARNING gets WARNING even when that config is
-	// chattier.
-	if err := applyLogging(logger, opts); err != nil {
-		log.Fatalf("gorrcbot: %v", err)
-	}
-
-	dialer := newManagerDialer(identity, cfg.Nick, paths.StorageDir, ret)
-	b := newBot(cfg, paths, logger, ownHash, dialer, botHooks{
-		Greeting: greeting,
-	})
-	// The registry answers commands; the reply policy decides which messages
-	// are commands at all, and sends every reply.
-	reg := newRegistry(b)
-	// The path command reads the shared transport's path table, and the announce
-	// cache watches the same transport: the registry and the bot never reach the
-	// network by themselves.
-	reg.paths = livePathLookup{ts: transport}
-	b.pathsTable = reg.paths
-	b.announceFeed = liveAnnounceFeed{ts: transport}
-	b.hooks.Inbound = newResponder(cfg, ownHash, reg.Run).handle
-
-	// The GNSS receiver is optional, and it is one source shared by every
-	// position-aware command and by the captive portal, so the radio answer and
-	// the dashboard answer can never disagree about where the device is.
-	gps, err := openGPS(cfg)
-	if err != nil {
-		log.Fatalf("gorrcbot: %v", err)
-	}
-	if gps != nil {
-		defer func() {
-			if err := gps.Close(); err != nil {
-				log.Printf("gorrcbot: closing the GNSS source: %v", err)
-			}
-		}()
-		reg.gps = gps
-		switch {
-		case cfg.GPSPort != "":
-			log.Printf("gorrcbot: reading GNSS sentences from %v", cfg.GPSPort)
-		default:
-			log.Printf("gorrcbot: static GNSS fix %v", cfg.GPSFix)
-		}
-	}
-
-	// The electronic compass is optional and is the other half of the position
-	// picture: the receiver says where the device is, and the compass says
-	// which way it is pointing. It reads the same one fix the commands do, so a
-	// magnetic heading is corrected to true north with the variation at the
-	// device's own position.
-	compass, err := openCompass(cfg)
-	if err != nil {
-		log.Fatalf("gorrcbot: %v", err)
-	}
-	if compass != nil {
-		defer func() {
-			if err := compass.Close(); err != nil {
-				log.Printf("gorrcbot: closing the compass source: %v", err)
-			}
-		}()
-		compass.SetLocationSource(reg.currentFix)
-		reg.compass = compass
-		switch {
-		case cfg.CompassPort != "":
-			log.Printf("gorrcbot: reading compass sentences from %v", cfg.CompassPort)
-		default:
-			log.Printf("gorrcbot: static compass heading %v", cfg.CompassHeading)
-		}
-	}
-
-	// LXMF is opt-in. With lxmf_enabled = false this returns nothing at all, so
-	// no router, no job loop and no state under the storage directory can come
-	// into existence; with it true the bot owns the router from here on and
-	// closes it during shutdown.
-	sender, err := openLXMFDelivery(cfg, transport, identity, nil)
-	if err != nil {
-		log.Fatalf("gorrcbot: %v", err)
-	}
-	if sender != nil {
-		reg.lxmf = sender
-		b.lxmf = sender
-		log.Printf("gorrcbot: LXMF enabled, announcing the delivery destination every %vm",
-			cfg.LXMFAnnounceMinutes)
-	}
-
-	startPProf(opts.pprofAddr)
-
-	// The captive portal is opt-in: with no portal_addr the bot binds no HTTP
-	// listener at all, which is the right default for a node on a shared
-	// network. With one, the dashboard is the same offline command surface the
-	// radio commands are, so a phone that joins the device's Wi-Fi can read the
-	// position and ask the field assistant without installing anything.
-	var portal *PortalServer
-	if cfg.PortalAddr != "" {
-		portal = newPortalServer(cfg.PortalAddr, gps, reg)
-		if err := portal.Start(); err != nil {
-			log.Fatalf("gorrcbot: %v", err)
-		}
-		defer func() {
-			if err := portal.Close(); err != nil {
-				log.Printf("gorrcbot: closing the captive portal: %v", err)
-			}
-		}()
-		log.Printf("gorrcbot: captive portal on http://%v/", portal.Addr())
+		return exitOK
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	log.Printf("gorrcbot %v: identity %v, %v hub(s), nick %v",
-		rns.VERSION, hexString(ownHash), len(cfg.Hubs), cfg.Nick)
-	if err := b.Run(ctx); err != nil {
-		log.Fatalf("gorrcbot: %v", err)
+	err = bot.Run(ctx, bot.Options{
+		ConfigDir:   opts.configDir,
+		BotConfig:   opts.botConfig,
+		Identity:    opts.identity,
+		Home:        opts.home,
+		Nick:        opts.nick,
+		LogLevel:    opts.logLevel,
+		LogFile:     opts.logFile,
+		PProfAddr:   opts.pprofAddr,
+		CheckConfig: opts.checkConfig,
+		Stdout:      os.Stdout,
+		Stderr:      os.Stderr,
+	})
+	// Creating the first-run files is a successful exit: the operator has
+	// editing to do before the bot may connect to anything.
+	if errors.Is(err, bot.ErrFirstRun) {
+		return exitOK
 	}
-	log.Printf("gorrcbot: stopped after %v", formatDuration(b.uptime()))
-}
-
-// applyLogging applies --log-level and --log-file to the logger every part of
-// the bot shares. The bot logs a lot during a busy hub session, so an operator
-// needs one switch that quiets the whole process.
-func applyLogging(logger *rns.Logger, opts *botOptions) error {
-	if logger == nil {
-		return errors.New("no logger to configure")
-	}
-	if opts.logLevel != "" {
-		level, err := parseLogLevel(opts.logLevel)
-		if err != nil {
-			return err
-		}
-		logger.SetLogLevel(level)
-	}
-	if opts.logFile != "" {
-		logger.SetLogFilePath(opts.logFile)
-		logger.SetLogDest(rns.LogDestFile)
-	}
-	return nil
-}
-
-// parseLogLevel maps a level name onto the RNS logger's level. It accepts the
-// names the other tools accept, and the numeric levels too, so a script that
-// already passes a number keeps working.
-func parseLogLevel(name string) (int, error) {
-	trimmed := strings.TrimSpace(name)
-	if trimmed == "" {
-		return 0, errors.New("empty log level")
-	}
-	switch strings.ToUpper(trimmed) {
-	case "CRITICAL", "FATAL":
-		return rns.LogCritical, nil
-	case "ERROR":
-		return rns.LogError, nil
-	case "WARNING", "WARN":
-		return rns.LogWarning, nil
-	case "NOTICE":
-		return rns.LogNotice, nil
-	case "INFO":
-		return rns.LogInfo, nil
-	case "VERBOSE":
-		return rns.LogVerbose, nil
-	case "DEBUG":
-		return rns.LogDebug, nil
-	case "PATHING":
-		return rns.LogPathing, nil
-	case "EXTREME":
-		return rns.LogExtreme, nil
-	case "NONE", "OFF", "SILENT":
-		return rns.LogNone, nil
-	}
-	numeric, err := strconv.Atoi(trimmed)
 	if err != nil {
-		return 0, fmt.Errorf("unknown log level %q", name)
+		log.Printf("gorrcbot: %v", err)
+		return exitFailure
 	}
-	if numeric < rns.LogNone || numeric > rns.LogExtreme {
-		return 0, fmt.Errorf("log level %v is outside the range %v to %v",
-			numeric, rns.LogNone, rns.LogExtreme)
-	}
-	return numeric, nil
+	return exitOK
 }
-
-// resolvePaths applies the CLI overrides to the default bot paths.
-// applyConfiguredPaths returns the paths the bot will actually use. Precedence,
-// highest first, is the command line, then the configuration file, then the home
-// directory defaults. The config keys exist and are documented, and the template
-// restates the defaults, so a default configuration is unchanged; before this,
-// however, a deliberate override was parsed, validated, and then never consulted,
-// which meant a bot told to keep its identity elsewhere quietly used the default
-// path instead — and the LXMF state honoured the setting while the room history
-// next to it did not.
-func applyConfiguredPaths(paths BotPaths, cfg *BotConfig, opts *botOptions) BotPaths {
-	if cfg == nil {
-		return paths
-	}
-	if opts.identity == "" && cfg.IdentityPath != "" {
-		paths.IdentityPath = cfg.IdentityPath
-	}
-	if opts.home == "" && cfg.StorageDir != "" {
-		paths.StorageDir = cfg.StorageDir
-	}
-	return paths
-}
-
-// resolvePaths returns the paths the command line alone asks for, before the
-// configuration file is read: home, if given, moves all three together.
-func resolvePaths(opts *botOptions) BotPaths {
-	paths := DefaultBotPaths()
-	if opts.home != "" {
-		paths.Home = opts.home
-		paths.ConfigPath = filepath.Join(paths.Home, defaultConfigFileName)
-		paths.IdentityPath = filepath.Join(paths.Home, defaultIdentityFileName)
-		paths.StorageDir = filepath.Join(paths.Home, defaultStorageDirName)
-	}
-	if opts.botConfig != "" {
-		paths.ConfigPath = opts.botConfig
-	}
-	if opts.identity != "" {
-		paths.IdentityPath = opts.identity
-	}
-	return paths
-}
-
-// configSummary renders what the bot would do, for --check-config.
-func configSummary(paths BotPaths, cfg *BotConfig, ownHash []byte) string {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "gorrcbot %v configuration\n", rns.VERSION)
-	fmt.Fprintf(&sb, "config:     %v\n", paths.ConfigPath)
-	fmt.Fprintf(&sb, "identity:   %v (%v)\n", paths.IdentityPath, hexString(ownHash))
-	fmt.Fprintf(&sb, "storage:    %v\n", paths.StorageDir)
-	fmt.Fprintf(&sb, "nick:       %v\n", cfg.Nick)
-	fmt.Fprintf(&sb, "trigger:    @%v or @%v\n", cfg.Nick, shortHash(hexString(ownHash)))
-	fmt.Fprintf(&sb, "reply:      %v\n", cfg.Reply)
-	fmt.Fprintf(&sb, "cooldown:   %vs\n", cfg.CooldownSecs)
-	fmt.Fprintf(&sb, "max lines:  %v\n", cfg.MaxReplyLines)
-	fmt.Fprintf(&sb, "announce:   %v\n", pyBool(cfg.AnnounceOnJoin))
-	if cfg.WeatherURL != "" {
-		fmt.Fprintf(&sb, "weather:    %v\n", cfg.WeatherURL)
-	}
-	if cfg.FlightURL != "" {
-		fmt.Fprintf(&sb, "flight:     %v\n", cfg.FlightURL)
-	}
-	if cfg.FlightRouteURL != "" {
-		fmt.Fprintf(&sb, "flight route: %v\n", cfg.FlightRouteURL)
-	}
-	if cfg.LaunchURL != "" {
-		fmt.Fprintf(&sb, "launches:   %v\n", cfg.LaunchURL)
-	}
-	if cfg.KJVTxtFile != "" {
-		fmt.Fprintf(&sb, "kjv:        %v\n", cfg.KJVTxtFile)
-	}
-	if cfg.TideURL != "" {
-		fmt.Fprintf(&sb, "tide:       %v\n", cfg.TideURL)
-	}
-	if cfg.BuoyURL != "" {
-		fmt.Fprintf(&sb, "buoy:       %v\n", cfg.BuoyURL)
-	}
-	if cfg.RiverURL != "" {
-		fmt.Fprintf(&sb, "river:      %v\n", cfg.RiverURL)
-	}
-	if cfg.RiverFloodURL != "" {
-		fmt.Fprintf(&sb, "river flood: %v\n", cfg.RiverFloodURL)
-	}
-	if cfg.SpaceWeatherURL != "" {
-		fmt.Fprintf(&sb, "spacewx:    %v\n", cfg.SpaceWeatherURL)
-	}
-	if cfg.MetarURL != "" {
-		fmt.Fprintf(&sb, "metar:      %v\n", cfg.MetarURL)
-	}
-	if cfg.WeatherAlertURL != "" {
-		fmt.Fprintf(&sb, "wxalert:    %v\n", cfg.WeatherAlertURL)
-	}
-	if cfg.LXMFEnabled {
-		fmt.Fprintf(&sb, "lxmf:       enabled, announcing every %vm\n", cfg.LXMFAnnounceMinutes)
-		if cfg.LXMFPropagationNode != "" {
-			fmt.Fprintf(&sb, "lxmf node:  %v\n", cfg.LXMFPropagationNode)
-		}
-		if cfg.EmergencyLXMFDestination != "" {
-			fmt.Fprintf(&sb, "sos dispatch: %v\n", cfg.EmergencyLXMFDestination)
-		}
-	}
-	if cfg.PortalAddr != "" {
-		fmt.Fprintf(&sb, "portal:     http://%v/\n", cfg.PortalAddr)
-	} else {
-		fmt.Fprintf(&sb, "portal:     (off)\n")
-	}
-	if cfg.GPSPort != "" {
-		fmt.Fprintf(&sb, "gps:        reading %v\n", cfg.GPSPort)
-	} else if cfg.GPSFix != "" {
-		fmt.Fprintf(&sb, "gps:        static fix %v\n", cfg.GPSFix)
-	} else {
-		fmt.Fprintf(&sb, "gps:        (no receiver)\n")
-	}
-	if cfg.CompassPort != "" {
-		fmt.Fprintf(&sb, "compass:    reading %v\n", cfg.CompassPort)
-	} else if cfg.CompassHeading != "" {
-		fmt.Fprintf(&sb, "compass:    static heading %v\n", cfg.CompassHeading)
-	} else {
-		fmt.Fprintf(&sb, "compass:    (no compass)\n")
-	}
-	fmt.Fprintf(&sb, "hubs:       %v\n", len(cfg.Hubs))
-	for _, hub := range cfg.Hubs {
-		fmt.Fprintf(&sb, "  - %v (%v)\n", hub.Name, hub.Destination)
-		if len(hub.Rooms) == 0 {
-			fmt.Fprintf(&sb, "    rooms: (none)\n")
-			continue
-		}
-		for _, room := range hub.Rooms {
-			if room.Key != "" {
-				fmt.Fprintf(&sb, "    room: %v (with key)\n", room.Name)
-				continue
-			}
-			fmt.Fprintf(&sb, "    room: %v\n", room.Name)
-		}
-	}
-	return sb.String()
-}
-
-// startPProf starts an HTTP server exposing net/http/pprof endpoints at addr
-// when addr is not empty.
-func startPProf(addr string) {
-	if addr == "" {
-		return
-	}
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		log.Printf("pprof: listen %v: %v", addr, err)
-		return
-	}
-	go func() {
-		log.Printf("pprof: serving on http://%v/debug/pprof/", ln.Addr())
-		if err := http.Serve(ln, nil); err != nil {
-			log.Printf("pprof: serve %v: %v", addr, err)
-		}
-	}()
-}
-
-// compile-time assertions: the production dialer is what the engine expects, and
-// the manager's hub connection is what a session wraps.
-var (
-	_ hubDialer = (*managerDialer)(nil)
-	_ hubConn   = (*rrc.RRCHub)(nil)
-)

@@ -6,6 +6,15 @@
 
 ## Architecture & Principles
 
+- **A Thin CLI Over a Shared Engine**: The sensors, the geodetic maths, the
+  field tools, the command registry, and the captive portal all live in the
+  library package
+  [`github.com/gmlewis/go-reticulum/bot`](https://pkg.go.dev/github.com/gmlewis/go-reticulum/bot),
+  where [`grl`](grl.md) — the Go Reticulum Lifesaver appliance — runs the very
+  same code in-process. `cmd/gorrcbot` is only the command line and the
+  Reticulum wiring, so a radio reply and a dashboard answer can never drift
+  apart, and `bot.Engine.Eval` evaluates a command with zero hops and zero
+  airtime.
 - **Single Identity Everywhere**: `gorrcbot` generates one 64-byte Reticulum private identity (`bot_identity`) and uses it across all connected hubs. Its identity hash is identical on all hubs, allowing users to reach it using consistent address prefixes.
 - **Strict Addressing Contract**: The bot is completely silent unless addressed directly. It will never spam channels, and it completely ignores chat traffic not directed at it.
 - **Rate-Limiting & Cooldowns**: Built-in per-identity cooldown prevents abuse or channel flooding over low-bandwidth LoRa links.
@@ -581,6 +590,14 @@ The **Go Reticulum Lifesaver (GRL)** is the role `gorrcbot` plays on a
 pocket-sized, off-grid survival communicator: a device that replaces a
 $300–$600 commercial satellite messenger and its monthly subscription with an
 inexpensive, open-source node that works when every link has already failed.
+
+!!! tip "The appliance itself is `grl`"
+    This section describes the survival intelligence `gorrcbot` shares with the
+    appliance. To run the whole appliance — Reticulum, the GNSS receiver and
+    compass, the zero-hop field assistant, and the captive dashboard the phone
+    reads — use [`grl`](grl.md), which mounts the very same
+    [`bot`](https://pkg.go.dev/github.com/gmlewis/go-reticulum/bot) engine
+    in-process.
 
 It obeys one rule above all others, the **Autonomous Local Intelligence Rule**:
 

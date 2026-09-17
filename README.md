@@ -278,7 +278,7 @@ gonomadnet Public RRC Hub  (gonomadnet node + gornsd + gorngit + gorrcd + golxmd
 - **RRC Chat & `@gobot`**: Join `rrc://a012129c10205c0b9441fcd2b755b2a7/#general` to chat and interact with [`@gobot`](#gorrcbot--the-rrc-bot-client). From a shell, the [`gobot`](#gobot--the-one-shot-cli-for-gobot) CLI reaches the same official bot with one command and no setup.
 - **Git over Reticulum**: Clone repositories directly over the mesh using `gorngit` / `git`: `git clone rns://58a0406047ec2e7ce23e9e9a83b744df/go-reticulum`.
 - **LXMF Propagation Node**: Use `7acc095f0e83182feb58c888d090a3cc` as your LXMF propagation node for offline store-and-forward message delivery.
-- **Go Reticulum Lifesaver (GRL)**: Run [`gorrcbot`](#gorrcbot--the-rrc-bot-client) on a field node with a GNSS receiver and a captive portal, and any phone that joins its Wi-Fi gets the survival dashboard — `/whereami` Plus Codes, one-word `tower near` / `sun` queries, and a `/sos` that raises a beacon at the verified position, all with zero radio hops.
+- **Go Reticulum Lifesaver (GRL)**: Run [`grl`](#grl--the-go-reticulum-lifesaver-appliance) — the whole off-grid appliance in one executable — on a field node or a desktop, and any phone that joins its network gets the survival dashboard: `/whereami` Plus Codes, one-word `tower near` / `sun` queries, and a `/sos` that raises a beacon at the verified position, all with zero radio hops.
 
 ### gorrcbot — the RRC bot client
 
@@ -713,6 +713,51 @@ WantedBy=multi-user.target
 Run `gorrcbot` once by hand before installing the unit, so the configuration and
 the identity exist (and so the identity is backed up: losing `bot_identity`
 changes the bot's identity hash, which is what other clients key on).
+
+### grl — the Go Reticulum Lifesaver appliance
+
+`grl` is the [Go Reticulum Lifesaver](https://gmlewis.github.io/go-reticulum/tools/grl/)
+as a single executable: the sovereign, pocket-sized off-grid survival
+communicator and field assistant, running natively on macOS, Linux Mint, or any
+workstation. It is the reference the ESP32-C5 firmware is measured against, and
+it runs the **whole appliance in one process**:
+
+- a local **Reticulum** stack,
+- a pure-Go **NMEA-0183 GNSS receiver** and **electronic compass** (or their
+  configured static fallbacks, so it works on a desk with nothing plugged in),
+- the shared **zero-hop field assistant** — the same command table `gorrcbot`
+  answers over a radio link, computed in-process with no airtime,
+- and the **captive survival dashboard** a smartphone reads with no app
+  installed.
+
+```console
+$ go build -o bin/grl ./cmd/grl
+$ ./bin/grl                     # creates ~/.grl/config.toml, then serves
+$ open http://localhost:9111/   # the survival dashboard
+```
+
+```console
+$ ./bin/grl --verbose                                   # show the resolved configuration
+$ ./bin/grl --portal-addr 0.0.0.0:9111                  # let a phone on the LAN reach it
+$ ./bin/grl --gps-port /dev/ttyUSB0 --compass-port /dev/ttyUSB1
+```
+
+`portal_addr = "127.0.0.1:9111"` (the default) serves the dashboard to this
+workstation only; `"0.0.0.0:9111"` exposes it to a smartphone on the same
+network, which is how the captive-portal experience is rehearsed before you have
+hardware. Every captive-probe route the common operating systems already request
+(`/generate_204`, `/hotspot-detect.html`, `/ncsi.txt`, `/connecttest.txt`) is
+answered with `302 Found → /`, so the phone pops the dashboard up by itself on a
+field SoftAP and simply reaches it at `http://localhost:9111/` on a desk.
+
+`GRL_HOME` overrides the state directory (default `~/.grl`), exactly as
+`GORRCBOT_HOME` does for the bot.
+
+**Shared engine.** Both tools run
+[`github.com/gmlewis/go-reticulum/bot`](https://gmlewis.github.io/go-reticulum/tools/grl/#architecture-the-shared-bot-package),
+so a radio reply and a dashboard answer can never drift apart; `cmd/gorrcbot`
+and `cmd/grl` are thin wrappers over it. For comprehensive documentation, see
+the [**grl Documentation Guide**](https://gmlewis.github.io/go-reticulum/tools/grl/).
 
 ### gobot — the one-shot CLI for `@gobot`
 

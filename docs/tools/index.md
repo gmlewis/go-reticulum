@@ -9,6 +9,7 @@ Go Reticulum includes a comprehensive suite of command-line tools and standalone
 | Tool | Purpose | Description |
 |------|---------|-------------|
 | [**gorrcbot**](gorrcbot.md) | Autonomous Chat Bot & Field Assistant | Headless, always-on RRC client that joins multiple hubs, manages room catchups, and provides 30+ offline & online field tools, including embedded station catalogs (`search`, `near`, `list`), an offline cell/repeater finder (`tower`, `repeater`, `cell`) with WGS-84 ↔ GCJ-02 conversion, and low-bandwidth pagination (`more`, `next`). |
+| [**grl**](grl.md) | Go Reticulum Lifesaver (GRL) Appliance | The whole off-grid survival appliance in one executable: local Reticulum stack, NMEA-0183 GNSS receiver and electronic compass (or static fallbacks), the shared zero-hop field assistant, and the captive survival dashboard a smartphone reads with no app installed. |
 | [**gobot**](gobot.md) | One-Shot Bot CLI | Connects to a hub, privately asks a live bot one question (`/msg gobot ...`), prints the reply to stdout, and exits. |
 | [**gorrcd**](gorrcd.md) | Reticulum Relay Chat (RRC) Hub Daemon | Standalone chat server supporting persistent rooms, key-protected channels (`+k`), direct client notices, and MOTD broadcasts. |
 | [**golxmd**](golxmd.md) | LXMF Propagation Daemon | Standalone LXMF message routing and store-and-forward propagation node. |

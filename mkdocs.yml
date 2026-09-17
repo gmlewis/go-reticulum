@@ -60,6 +60,7 @@ nav:
   - Tools & Daemons:
       - Directory: tools/index.md
       - gorrcbot (Chat Bot): tools/gorrcbot.md
+      - grl (Lifesaver Appliance): tools/grl.md
       - gobot (Bot CLI): tools/gobot.md
       - golxmd (LXMF Propagation): tools/golxmd.md
       - gorrcd (Hub Daemon): tools/gorrcd.md

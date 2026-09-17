@@ -603,7 +603,7 @@ simply run gonomadnet and query a remote RRC Hub over LoRa to reach @gobot."*
 - **Airtime is precious**: LoRa carries only 1–5 kbps. Sending coordinates across
   multiple radio hops burns battery, creates channel congestion, and leaks personal
   location over RF airwaves.
-- **The Engine is Already Offline-First**: As established in `go-reticulum/cmd/gorrcbot`,
+- **The Engine is Already Offline-First**: As established in `go-reticulum/bot`,
   the vast majority of critical survival tools—**wilderness first aid protocols
   (`med`), repeater/mast catalogs (`tower near`), sun/moon ephemeris (`sun`), geodetic
   calculations (`geo`/`nav`), Plus Codes (`olc`), Morse code (`morse`), and SAR check-ins
@@ -639,7 +639,7 @@ In an emergency, reading raw decimal coordinates (`37.755321, -122.452719`) over
 crackling VHF handheld, marine radio, or satellite call is fraught with peril: digits are
 transposed, negative signs are dropped, and rescuers are dispatched to the wrong valley.
 
-The device integrates `go-reticulum/cmd/gorrcbot/olc.go` (a pure-Go, standard-library-only
+The device integrates `go-reticulum/bot/olc.go` (a pure-Go, standard-library-only
 implementation of Open Location Code):
 - **Short & Speakable**: A code like `849VCWC8+R9` encodes a 14m × 14m box in 10 characters.
 - **Error-Resistant**: Uses a 20-character alphabet excluding vowels and ambiguous
@@ -1305,7 +1305,7 @@ active RRC chat hub exposes three cryptographic bottlenecks:
   preserving battery life.
 - **Autonomous Local Field Intelligence & GNSS Integration (The gobot Engine)**:
   In emergency and off-grid survival scenarios, the pocket device cannot rely on
-  reaching a distant RRC hub. The 30+ field tools from `cmd/gorrcbot` (wilderness first
+  reaching a distant RRC hub. The 30+ field tools from `bot` (wilderness first
   aid `med`, repeater catalog `tower near`, solar/lunar ephemeris `sun`/`moon`, Open
   Location Codes `olc`, and SAR status `checkin`) are compiled directly into the local
   firmware runtime.
@@ -1503,9 +1503,9 @@ cannot be used directly. The two viable firmware paths are:
 | 14 | `gorrcd` embedded daemon target: headless build tag (`//go:build pocket_hub || embedded || no_tui`), in-memory/SD room registry, session tables in PSRAM | go-reticulum | medium | zero-dependency `rrc` compiles with stdlib only; enables Target 3 (Pocket Hub: ESP32-C5 + LoRa + Wi-Fi, no display, no keyboard) |
 | 15 | ESP32-C5 board support & dual-band AP bridge: TinyGo target `esp32c5`, dual-band Wi-Fi 6 AP `Interface` + BLE GATT + SX1262 LoRa SPI driver + QSPI GDMA host driver for crypto ASIC (§7.5.2) | new / both | medium | enables the standalone Pocket Hub (§7.5.2) |
 | 16 | SpinalHDL Crypto ASIC cores: SHA-256 stamper, X25519/Ed25519 Montgomery ladder, AES+HMAC Token engine, QSPI slave with `Stream` interface (§2, §3) | new | large | hardware accelerator targeting TinyTapeout and full shuttles |
-| 17 | GNSS NMEA-0183 driver & geodetic coordinate engine (`/whereami`): pure-Go parser for `$GNRMC`/`$GNGGA`, wraps in-tree `cmd/gorrcbot/olc.go` (Plus Codes) & `geo.go` (Maidenhead); automatic context injection (§6.10) | go-reticulum | small | stdlib-only; zero external dependencies |
-| 18 | Embedded Captive Portal & Web Micron UI: lightweight HTTP/WebSocket daemon serving smartphone browsers over Wi-Fi 6 SoftAP; `/whereami` dashboard, local chat, `@gobot` interface, emergency SOS (§6.11) | go-nomadnet / go-reticulum | medium | enables $21 screenless Go Reticulum Lifesaver (GRL); zero app installation |
-| 19 | Autonomous `gobot` field engine decoupling: in-process command evaluator (`med` first aid, `tower` repeaters, `sun`/`moon`, `checkin`) for zero-hop execution without network links (§6.9.2) | go-reticulum | medium | executes in microseconds in RAM with 0 airtime and 0 RF emissions |
+| 17 | GNSS NMEA-0183 driver & geodetic coordinate engine (`/whereami`): pure-Go parser for `$GNRMC`/`$GNGGA`, wraps in-tree `bot/olc.go` (Plus Codes) & `bot/geo.go` (Maidenhead); automatic context injection (§6.10) | go-reticulum | small | **Go half landed.** `bot/gps.go` is a streaming `$GNRMC`/`$GNGGA` reader (or a static provider), `bot/declination.go` carries WMM2025, and `bot/olc.go`/`bot/geo.go`/`bot/whereami.go` hold the geodetic maths and the operational card; `bot.OpenGPS` is the entry point. Remaining: ESP32-C5 UART bring-up |
+| 18 | Embedded Captive Portal & Web Micron UI: lightweight HTTP/WebSocket daemon serving smartphone browsers over Wi-Fi 6 SoftAP; `/whereami` dashboard, local chat, `@gobot` interface, emergency SOS (§6.11) | go-nomadnet / go-reticulum | medium | **Go half landed on desktop.** `bot/portal.go` + `bot/portal-page.go` are the daemon and the survival dashboard, mounted by `cmd/grl` (`portal_addr = "127.0.0.1:9111"` for a desk, `"0.0.0.0:9111"` for a phone on the LAN) and by `gorrcbot`; every captive-probe route (`/generate_204`, `/hotspot-detect.html`, `/ncsi.txt`, `/connecttest.txt`, `/gen_204`) answers `302 → /`. Remaining: the Wi-Fi 6 SoftAP and its firmware |
+| 19 | Autonomous `gobot` field engine decoupling: in-process command evaluator (`med` first aid, `tower` repeaters, `sun`/`moon`, `checkin`) for zero-hop execution without network links (§6.9.2) | go-reticulum | medium | **Landed.** The whole engine was promoted out of `cmd/gorrcbot` into the library package `bot`, so more than one executable runs it in-process: `bot.Engine.Eval` answers a command with zero hops and zero airtime, and `bot.Run` is the complete RRC client. `cmd/gorrcbot` is now a thin CLI wrapper, and `cmd/grl` (the GRL appliance) mounts the same engine behind its local sensors and dashboard — microseconds in RAM, 0 airtime, 0 RF emissions |
 | 20 | Electronic Compass driver & direction-finding (RDF): I2C magnetometer driver / NMEA-0183 ($HCHDG/$HCHDM) parser, magnetic declination calculation, relative antenna pointing for `tower near`, live compass rose on portal (§6.10.6) | go-reticulum | small | stdlib-only; zero external dependencies |
 
 ### 7.7 A phased path that reuses this repo's parity discipline
