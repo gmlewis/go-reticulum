@@ -30,6 +30,15 @@ const (
 	refAltitude = 142.4
 )
 
+// whereamiTestNow is the fixed clock every card test is answered against: the
+// instant the reference fix carries, which is 12:45 local solar at the reference
+// position and therefore hours inside the daylight the countdown describes. A
+// card asked against the wall clock instead asserts "daylight remaining" by day
+// and fails every night once the sun is down — which is exactly how a build that
+// ran at 18:22 local solar failed a card whose answer was correct, and how it
+// would have failed again every evening after that.
+var whereamiTestNow = time.Date(2026, time.September, 16, 20, 45, 33, 0, time.UTC)
+
 // sfFix is the reference GNSS fix the whereami tests build on.
 func sfFix() GPSFix {
 	return GPSFix{
@@ -41,7 +50,7 @@ func sfFix() GPSFix {
 		Satellites:  9,
 		HDOP:        0.8,
 		FixQuality:  1,
-		TimeUTC:     time.Date(2026, time.September, 16, 20, 45, 33, 0, time.UTC),
+		TimeUTC:     whereamiTestNow,
 	}
 }
 
@@ -60,13 +69,15 @@ func whereamiFixture(t *testing.T, fix GPSFix) (*registry, *hubSession) {
 }
 
 // whereami runs the command against the fixture session and returns its lines.
+// It answers on the reference clock rather than the wall clock, so the card it
+// renders is the same card whatever time of day the build runs at.
 func whereami(t *testing.T, reg *registry, session *hubSession, args string) []string {
 	t.Helper()
 	line := "whereami"
 	if strings.TrimSpace(args) != "" {
 		line += " " + args
 	}
-	return runLines(t, reg, session, line)
+	return runLinesAt(t, reg, session, line, whereamiTestNow)
 }
 
 // TestWhereAmICard asserts the operational card's content at the reference
@@ -113,7 +124,7 @@ func TestWhereAmIFormats(t *testing.T) {
 	t.Parallel()
 
 	point := LatLng{Lat: refLat, Lng: refLng}
-	now := time.Date(2026, time.September, 16, 20, 45, 33, 0, time.UTC)
+	now := whereamiTestNow
 	built, err := buildWhereAmI(sfFix(), point, whereamiSourceGNSS, now)
 	if err != nil {
 		t.Fatalf("buildWhereAmI: %v", err)
@@ -273,7 +284,7 @@ func TestWhereAmISlashForm(t *testing.T) {
 	t.Parallel()
 
 	reg, session := whereamiFixture(t, sfFix())
-	lines := runLines(t, reg, session, "/whereami")
+	lines := runLinesAt(t, reg, session, "/whereami", whereamiTestNow)
 	if !strings.Contains(strings.Join(lines, "\n"), refPlus10) {
 		t.Errorf("/whereami = %v, want the same card as whereami", lines)
 	}
@@ -634,7 +645,7 @@ func TestWhereAmIHeadingIsLocalAndRegisteredWithTheCard(t *testing.T) {
 	t.Parallel()
 
 	reg, session := whereamiCompassFixture(t, cardHDTSentence)
-	card := strings.Join(runLines(t, reg, session, "/whereami"), "\n")
+	card := strings.Join(runLinesAt(t, reg, session, "/whereami", whereamiTestNow), "\n")
 	if !strings.Contains(card, "042° True · NE") {
 		t.Errorf("/whereami = %v, want the true heading alone", card)
 	}
